@@ -6,6 +6,18 @@ import { expect, test } from "@playwright/test";
 import { APP_PATH, SHELL_ORIGIN, SHELL_PATH } from "../../src/spike/origin-topology.mjs";
 import { TOPOLOGIE_RETENUE, ouvrirCoquille, releverCoquille } from "./origin-helpers.mjs";
 
+/**
+ * Publie une mesure dans le rapport Playwright plutôt que sur la sortie standard : un relevé brut
+ * imprimé à chaque exécution polluerait le journal de toutes les PR. Les mesures de référence du
+ * spike sont figées dans `docs/spikes/0035-topologie-origine-de-confiance.md`.
+ */
+function joindre(info, nom, valeur) {
+  return info.attach(`${nom}-${info.project.name}.json`, {
+    body: JSON.stringify(valeur, null, 2),
+    contentType: "application/json",
+  });
+}
+
 test("la CSP est servie sur la coquille et absente du territoire applicatif", async ({
   request,
 }) => {
@@ -26,9 +38,7 @@ test("la CSP de la coquille refuse une origine absente de frame-src", async ({ p
     .toBeGreaterThan(0);
 
   const coquille = await releverCoquille(page);
-  process.stdout.write(
-    `\n<<<CSP ${info.project.name}>>> ${JSON.stringify(coquille.violationsCsp)}\n`,
-  );
+  await joindre(info, "violations-csp", coquille.violationsCsp);
   expect(coquille.violationsCsp.map((violation) => violation.directive)).toContain("frame-src");
 });
 
@@ -64,16 +74,10 @@ test("sans COOP/COEP la coquille n'est pas isolée ; avec, la page et son Worker
   await ouvrirCoquille(page, TOPOLOGIE_RETENUE, { isolation: "require-corp" });
   const isole = await attendreWorker(page);
 
-  process.stdout.write(
-    `\n<<<ISOLATION ${info.project.name}>>>\n${JSON.stringify(
-      {
-        nu: { page: nu.isolationPage, worker: nu.isolationWorker },
-        isole: { page: isole.isolationPage, worker: isole.isolationWorker },
-      },
-      null,
-      2,
-    )}\n`,
-  );
+  await joindre(info, "isolation", {
+    nu: { page: nu.isolationPage, worker: nu.isolationWorker },
+    isole: { page: isole.isolationPage, worker: isole.isolationWorker },
+  });
 
   test.skip(browserName !== MOTEUR_DE_REFERENCE, RAISON_ECART);
   expect(nu.isolationPage.crossOriginIsolated).toBe(false);
@@ -102,7 +106,7 @@ test("sous require-corp, une iframe inter-origine sans COEP est refusée", async
   await expect(page.frameLocator("#app-frame").locator("#app-status")).toHaveCount(0, {
     timeout: 8000,
   });
-  process.stdout.write(`\n<<<COEP-REFUS ${info.project.name}>>> ${JSON.stringify(echecs)}\n`);
+  await joindre(info, "coep-refus", echecs);
 
   test.skip(browserName !== MOTEUR_DE_REFERENCE, RAISON_ECART);
   expect(echecs.join(" ")).toContain("app.html");
@@ -133,7 +137,7 @@ test("sous require-corp, l'iframe inter-origine charge sans hériter de l'isolat
     .toHaveText(/sondes-terminees/, { timeout: 20000 })
     .then(async () => JSON.parse(await cadre.locator("#app-isolation").textContent()))
     .catch((erreur) => ({ chargement: `${erreur.name}: cadre non chargé`, journal }));
-  process.stdout.write(`\n<<<COEP-CADRE ${info.project.name}>>> ${JSON.stringify(charge)}\n`);
+  await joindre(info, "coep-cadre", charge);
 
   test.skip(browserName !== MOTEUR_DE_REFERENCE, RAISON_ECART);
   expect(charge.crossOriginIsolated).toBe(false);

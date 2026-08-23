@@ -45,9 +45,10 @@ for (const topologie of TOPOLOGY_IDS) {
       coquille,
       sondes,
     };
-    const corps = JSON.stringify(releve, null, 2);
-    await info.attach(`releve-${topologie}.json`, { body: corps, contentType: "application/json" });
-    process.stdout.write(`\n<<<RELEVE ${info.project.name} ${topologie}>>>\n${corps}\n<<<FIN>>>\n`);
+    await info.attach(`releve-${info.project.name}-${topologie}.json`, {
+      body: JSON.stringify(releve, null, 2),
+      contentType: "application/json",
+    });
 
     expect(sondes).toHaveLength(NOMBRE_DE_SONDES);
     for (const sonde of sondes) {
@@ -151,9 +152,10 @@ for (const topologie of TOPOLOGY_IDS) {
     await page.waitForTimeout(700);
 
     const urlFinale = page.url();
-    process.stdout.write(
-      `\n<<<NAVIGATION ${info.project.name} ${topologie}>>> appel=${appel} url=${urlFinale}\n`,
-    );
+    await info.attach(`navigation-${info.project.name}-${topologie}.json`, {
+      body: JSON.stringify({ moteur: info.project.name, topologie, appel, urlFinale }, null, 2),
+      contentType: "application/json",
+    });
     if (topologie === TOPOLOGIE_TEMOIN) {
       expect(urlFinale).toBe("about:blank");
     } else {

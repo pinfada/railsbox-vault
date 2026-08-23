@@ -77,8 +77,29 @@ npm run check                           # lint, format, unitaires, navigateur, c
 npm run test:browser:moteurs -- chromium,firefox,webkit
 ```
 
-Les relevés bruts sont attachés à chaque épreuve (`releve-<topologie>.json`) et recopiés sur la
-sortie standard entre `<<<RELEVE …>>>` et `<<<FIN>>>`.
+### Où lire les relevés bruts
+
+Chaque épreuve **joint** ses mesures au rapport Playwright ; aucune n'écrit sur la sortie standard,
+qui resterait polluée à chaque exécution de `npm run check` :
+
+| Attachement                            | Contenu                                                              |
+| -------------------------------------- | -------------------------------------------------------------------- |
+| `releve-<moteur>-<topologie>.json`     | les dix-neuf sondes, le relevé de la coquille, canary, contamination |
+| `navigation-<moteur>-<topologie>.json` | tentative de navigation du sommet et URL finale                      |
+| `violations-csp-<moteur>.json`         | violations CSP observées                                             |
+| `isolation-<moteur>.json`              | isolation en page et en Worker, avec et sans COOP/COEP               |
+| `coep-refus-<moteur>.json`             | échecs réseau et console d'une iframe sans COEP                      |
+| `coep-cadre-<moteur>.json`             | isolation mesurée dans le cadre applicatif                           |
+
+```sh
+npx playwright test tests/browser/origin-topology.spec.mjs --reporter=html
+npx playwright show-report
+```
+
+Ces attachements ne sont pas archivés systématiquement en CI : le dépôt n'y publie le rapport
+Playwright qu'en cas d'échec, ce qui suffit à diagnostiquer une régression. La reproductibilité du
+spike ne dépend pas de cet archivage — les mesures de référence sont figées ci-dessous, et la
+commande ci-dessus les régénère à l'identique.
 
 ## Résultat de `npm run check`
 
@@ -263,9 +284,9 @@ base-uri 'none'; form-action 'none'; object-src 'none'
 Sonde d'encadrement d'une origine hors liste, sur les trois moteurs :
 
 ```text
-<<<CSP chromium>>> [{"directive":"frame-src","ressource":"http://127.0.0.1:4199"}]
-<<<CSP firefox>>>  [{"directive":"frame-src","ressource":"http://127.0.0.1:4199"}]
-<<<CSP webkit>>>   [{"directive":"frame-src","ressource":"http://127.0.0.1:4199"}]
+violations-csp-chromium.json  [{"directive":"frame-src","ressource":"http://127.0.0.1:4199"}]
+violations-csp-firefox.json   [{"directive":"frame-src","ressource":"http://127.0.0.1:4199"}]
+violations-csp-webkit.json    [{"directive":"frame-src","ressource":"http://127.0.0.1:4199"}]
 ```
 
 `/spike/origin/app.html` est servi **sans** `Content-Security-Policy`, dans les deux topologies : en
@@ -306,10 +327,10 @@ artefact du graphe du runtime, pas seulement par la page.
 Iframe inter-origine **sans** COEP, sous une coquille en `require-corp` :
 
 ```text
-<<<COEP-REFUS chromium>>> ["http://localhost:4174/spike/origin/app.html → net::ERR_BLOCKED_BY_RESPONSE"]
-<<<COEP-REFUS webkit>>>   ["… Refused to display 'http://localhost:4174/spike/origin/app.html' in a frame
+coep-refus-chromium.json  ["http://localhost:4174/spike/origin/app.html → net::ERR_BLOCKED_BY_RESPONSE"]
+coep-refus-webkit.json    ["… Refused to display 'http://localhost:4174/spike/origin/app.html' in a frame
                             because of Cross-Origin-Embedder-Policy.", "… → Load request cancelled"]
-<<<COEP-REFUS firefox>>>  []
+coep-refus-firefox.json   []
 ```
 
 Firefox refuse aussi le cadre — l'épreuve constate son absence — mais n'expose ni requête en échec
@@ -318,9 +339,9 @@ ni message de console à Playwright dans nos conditions. L'assertion reste donc 
 Iframe inter-origine **avec** COEP :
 
 ```text
-<<<COEP-CADRE chromium>>> {"crossOriginIsolated":false,"sharedArrayBuffer":"constructeur-absent",…}
-<<<COEP-CADRE webkit>>>   {"crossOriginIsolated":true,"sharedArrayBuffer":"alloue",…}
-<<<COEP-CADRE firefox>>>  {"chargement":"Error: cadre non chargé","journal":[]}
+coep-cadre-chromium.json  {"crossOriginIsolated":false,"sharedArrayBuffer":"constructeur-absent",…}
+coep-cadre-webkit.json    {"crossOriginIsolated":true,"sharedArrayBuffer":"alloue",…}
+coep-cadre-firefox.json   {"chargement":"Error: cadre non chargé","journal":[]}
 ```
 
 Écart notable : sous Chromium, `cross-origin-isolated` étant une fonctionnalité pilotée par

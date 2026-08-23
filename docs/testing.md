@@ -30,6 +30,18 @@ tous les deux. Trois précautions les rendent opposables :
   une sonde applicative ne sait pas dans quelle partition elle a écrit ;
 - un troisième résultat `indisponible`, distinct de `bloque`, pour une capacité absente du moteur.
 
+Leurs mesures sont **jointes** au rapport Playwright (`releve-…`, `navigation-…`, `isolation-…`,
+`coep-…`), jamais imprimées sur la sortie standard : un relevé brut recopié à chaque `npm run check`
+polluerait le journal de toutes les PR. Pour les consulter :
+
+```sh
+npx playwright test tests/browser/origin-topology.spec.mjs --reporter=html
+npx playwright show-report
+```
+
+La CI n'archive le rapport qu'en cas d'échec, ce qui suffit à diagnostiquer une régression : les
+mesures de référence du spike sont figées dans `docs/spikes/0035-topologie-origine-de-confiance.md`.
+
 ### Plusieurs moteurs
 
 ```sh
@@ -72,9 +84,9 @@ malformé, une sonde qui plante ou une erreur de page non capturée provoquent u
 Chaque exécution écrit `reports/compat/<moteur>.json` (dossier ignoré par git) et attache le même
 contenu au rapport Playwright. La CI archive `reports/compat/` en artefact à chaque exécution.
 
-La suite est rattachée à `npm run check` : son coût mesuré est d'environ 20 s, et l'ensemble de
-`npm run check` reste sous 30 s en local, donc bien sous la limite de 2 min. Elle exige que les
-trois moteurs soient installés (voir `docs/development.md`).
+La suite est rattachée à `npm run check` : son coût mesuré est d'environ 20 s. Depuis l'ajout de la
+frontière d'origine, l'ensemble de `npm run check` tient en un peu plus d'une minute en local, sous
+la limite de 3 min. Elle exige que les trois moteurs soient installés (voir `docs/development.md`).
 
 ## Preuve rouge
 
