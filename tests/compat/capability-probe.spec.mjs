@@ -24,9 +24,15 @@ async function collectReport({ page, browser, browserName }) {
   page.on("pageerror", (error) => pageErrors.push(`${error.name} : ${error.message}`));
 
   await page.goto("/compat.html");
-  await expect(page.locator("html")).toHaveAttribute("data-compat-state", "done", {
+  // Attendre un état terminal plutôt que « done » : un échec de sonde est ainsi rapporté avec sa
+  // cause au lieu d'expirer silencieusement au bout du délai.
+  await expect(page.locator("html")).toHaveAttribute("data-compat-state", /done|failed/, {
     timeout: 60_000,
   });
+
+  const state = await page.getAttribute("html", "data-compat-state");
+  const probeError = await page.evaluate(() => globalThis.railsboxCompatError ?? null);
+  expect(state, `sonde en échec : ${probeError ?? "cause inconnue"}`).toBe("done");
 
   const probeReport = await page.evaluate(() => globalThis.railsboxCompatReport);
   expect(pageErrors, "la sonde ne doit produire aucune erreur de page non capturée").toEqual([]);

@@ -40,8 +40,10 @@ l'exigence.
 ## Compatibilité
 
 La cible produit est les deux dernières versions stables de Chromium, Firefox et Safari sur
-ordinateur. Elle reste **candidate** jusqu'aux mesures de #2. Un moteur n'est annoncé supporté que
-si toute capacité obligatoire et le scénario E2E du jalon passent dans sa CI ou sa recette publiée.
+ordinateur. Depuis les mesures de #2, Chromium et Firefox sont **mesurés** et Safari reste
+**candidat** : le moteur WebKit de Playwright ne le qualifie pas. Un moteur n'est annoncé supporté
+que si toute capacité obligatoire et le scénario E2E du jalon passent dans sa CI ou sa recette
+publiée. Les verdicts par capacité sont dans [`compatibility.md`](compatibility.md).
 
 Le mobile est exploratoire tant que mémoire, stockage, fermeture des Workers et WebAuthn PRF ne
 satisfont pas les mêmes preuves.
