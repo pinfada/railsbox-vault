@@ -51,6 +51,8 @@ frontière aura été éprouvée. Aucun paquet commun n'est extrait prématurém
 
 - [Vision](docs/vision.md)
 - [Architecture exploratoire](docs/architecture.md)
+- [Feuille de route](docs/roadmap.md)
+- [Contribuer et travailler en TDD](CONTRIBUTING.md)
 - [Modèle de menace](SECURITY.md)
 - [ADR 0001 — un produit et un dépôt séparés](docs/decisions/0001-produit-et-depot-separes.md)
 
