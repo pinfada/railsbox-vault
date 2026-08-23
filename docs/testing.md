@@ -48,7 +48,7 @@ règle** par `buildProbeImage()`, et `tests/unit/vm-opfs-scenarios.test.mjs` vé
 publiée en est bien l'empreinte. La fixture principale suit la convention de la pièce jointe
 d'invariant d'`apps/reference/` : bloc `i` de 32 octets valant `SHA-256(label + i)`.
 
-La suite navigateur est rattachée à `npm run check` : **3,1 s mesurées** sous Chromium, aucun
+La suite navigateur est rattachée à `npm run check` : **3,4 s mesurées** sous Chromium, aucun
 artefact tiers, aucun réseau. Une régression du backend de persistance doit bloquer une PR.
 
 Elle n'accorde aucune indulgence à un moteur sans OPFS synchrone, et elle ne l'ignore pas non plus.
