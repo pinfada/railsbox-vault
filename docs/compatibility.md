@@ -97,9 +97,11 @@ Verdicts Vault correspondants :
 
 **Le projet `webkit` de Playwright ne qualifie pas Safari.** C'est un build WebKit dédié aux tests,
 compilé pour la plateforme hôte, dont la surface d'API diffère de celle du Safari livré par Apple.
-La mesure du 2026-08-23 le montre directement : le build WebKit Playwright sous Windows n'expose ni
+La mesure du 2026-08-23 le montre directement : le build WebKit Playwright n'expose ni
 `navigator.storage` ni `PublicKeyCredential`, alors que Safari de bureau fournit OPFS,
-`FileSystemSyncAccessHandle` et WebAuthn depuis plusieurs versions.
+`FileSystemSyncAccessHandle` et WebAuthn depuis plusieurs versions. Ce n'est pas un accident de
+plateforme : la CI Linux (`ubuntu-latest`, noyau 6.17, Node 22) produit exactement les mêmes
+verdicts que la machine Windows de développement, pour les trois moteurs.
 
 Conséquences retenues :
 
@@ -117,9 +119,11 @@ npm run test:compat
 ```
 
 Chaque exécution écrit `reports/compat/<moteur>.json`. Ce dossier est ignoré par git et archivé en
-artefact de CI à chaque exécution, réussie ou non. La fixture versionnée
-`tests/fixtures/compat/reference-report.json` sert uniquement de rapport de référence pour valider
-le schéma ; elle n'engage aucun verdict, comme l'explique `tests/fixtures/compat/README.md`.
+artefact de CI à chaque exécution, réussie ou non, sous le nom `rapports-compatibilite`. Les
+verdicts ci-dessus ont été reproduits à l'identique par cet artefact sous `ubuntu-latest` et
+Node 22. La fixture versionnée `tests/fixtures/compat/reference-report.json` sert uniquement de
+rapport de référence pour valider le schéma ; elle n'engage aucun verdict, comme l'explique
+`tests/fixtures/compat/README.md`.
 
 ## Applications Rails
 
