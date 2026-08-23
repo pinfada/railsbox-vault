@@ -7,3 +7,4 @@ reports/
 .env
 .DS_Store
 Thumbs.db
+vendor/v86/artefacts/
