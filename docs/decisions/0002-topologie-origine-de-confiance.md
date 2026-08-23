@@ -121,7 +121,7 @@ Adversaire : script hostile exécuté DANS le document applicatif
   ⑪ Service Worker interceptant ────► portée bornée à l'origine applicative
 
 Hors de portée de cette décision :
-  · compromission de la publication de la coquille elle-même (→ #16, SEC-UPDATE-001)
+  · compromission de la publication de la coquille elle-même (→ #45, SEC-UPDATE-001)
   · extension navigateur ou profil compromis
   · attaques sur le format de volume (→ SEC-BLOCK-001, SEC-GEN-001)
 ```
@@ -270,10 +270,10 @@ options :
 | ----------------------------------------- | ----------------------------------------------------------------------------- |
 | domaine propre + sous-domaine applicatif  | un nom de domaine, deux enregistrements DNS, deux certificats gérés par Pages |
 | second compte ou organisation GitHub      | gratuit, mais deux comptes à maintenir et deux publications à synchroniser    |
-| autre hébergeur statique pour une origine | dépendance supplémentaire, à peser dans #16                                   |
+| autre hébergeur statique pour une origine | dépendance supplémentaire, à peser dans #45                                   |
 
 Aucune n'est bloquante ; la première est recommandée parce qu'elle rend la relation entre les deux
-origines lisible pour l'utilisateur. Le choix appartient à la publication (#16) et n'est pas figé
+origines lisible pour l'utilisateur. Le choix appartient à la publication (#45) et n'est pas figé
 ici. En développement, `tools/serve.mjs --role app --host localhost --port 4174` fournit la seconde
 origine sans DNS.
 
@@ -283,7 +283,7 @@ La séparation d'origine ne change pas #12 mais la rend explicite : **aucun cana
 deux origines**. Un export produit par la coquille traverse la frontière comme un fichier choisi par
 l'utilisateur, jamais par un stockage partagé. Cela vaut aussi pour un changement d'origine de la
 coquille elle-même — passage à un domaine propre, changement de compte : l'OPFS de l'ancienne
-origine devient inatteignable. L'export doit donc précéder tout déménagement d'origine, et #16 doit
+origine devient inatteignable. L'export doit donc précéder tout déménagement d'origine, et #45 doit
 traiter ce cas comme une migration, pas comme un détail de publication.
 
 ## Interfaces à ne pas figer avant #24
@@ -307,14 +307,13 @@ le port qui les relie est un objet transféré, non une adresse devinable.
 
 1. **Une seule origine applicative pour toutes les applications.** Deux applications Rails publiées
    sur la même origine se lisent mutuellement OPFS, IndexedDB et cookies. Une origine par
-   application, ou un partitionnement explicite, reste à décider — travail découvert, à ouvrir en
-   issue.
+   application, ou un partitionnement explicite, reste à décider — travail découvert, suivi par #46.
 2. **Le port restreint reste une capacité.** Une fois transféré, il est joignable par tout script du
    document applicatif. Sa surface doit rester minimale et ne jamais transporter de handle.
 3. **Compromission de la coquille elle-même.** La frontière ne protège pas d'une publication
-   coquille altérée : `SEC-UPDATE-001` et #16 restent la seule réponse.
+   coquille altérée : `SEC-UPDATE-001` et #45 restent la seule réponse.
 4. **Deux publications à faire coïncider.** Une origine applicative en retard sur la coquille est un
-   risque de compatibilité ; la vérification d'identité des artefacts (#16) doit couvrir les deux.
+   risque de compatibilité ; la vérification d'identité des artefacts (#45) doit couvrir les deux.
 5. **Écarts moteurs sur COOP/COEP.** WebKit refuse le module importé par un Worker tant que ce
    module ne porte pas lui-même la politique, et accorde l'isolation à l'iframe inter-origine que
    Chromium lui refuse ; Firefox n'a pas chargé l'iframe applicative sous `require-corp` dans nos

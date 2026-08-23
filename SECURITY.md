@@ -80,7 +80,7 @@ ci-dessous reste donc fermé.
 
 Ce que la frontière d'origine ne couvre pas :
 
-- une publication compromise de la coquille elle-même (`SEC-UPDATE-001`, #16) ;
+- une publication compromise de la coquille elle-même (`SEC-UPDATE-001`, #45) ;
 - deux applications partageant l'origine applicative, qui se lisent mutuellement tant qu'une origine
   par application ou un partitionnement explicite n'est pas décidé ;
 - le port restreint une fois transféré : il est joignable par tout script du document applicatif, et

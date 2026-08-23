@@ -375,7 +375,7 @@ Travail découvert, à ouvrir en issues par la supervision :
 
 1. décider si toutes les applications partagent l'origine applicative ou si chacune reçoit la sienne
    : sur une origine partagée, deux applications se lisent mutuellement ;
-2. choisir l'option d'hébergement des deux origines dans le parcours de publication (#16) et traiter
+2. choisir l'option d'hébergement des deux origines dans le parcours de publication (#45) et traiter
    le changement d'origine comme une migration exigeant un export préalable (#12) ;
 3. reconfirmer par moteur, dans #2, l'héritage de `cross-origin-isolated` par l'iframe applicative
    et le comportement du Worker sous `require-corp` si l'isolation devient obligatoire.
