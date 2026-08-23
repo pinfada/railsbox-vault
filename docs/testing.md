@@ -2,16 +2,46 @@
 
 ## Suites disponibles
 
-| Commande               | Portée                                              |                     Coût attendu |
-| ---------------------- | --------------------------------------------------- | -------------------------------: |
-| `npm run test:unit`    | contrats et logique pure sous Node                  |                         secondes |
-| `npm run test:browser` | vraie page et Worker dédié sous Chromium            |                         secondes |
-| `npm run test:compat`  | sonde de capacités sous Chromium, Firefox et WebKit |  environ 20 s après installation |
-| `npm test`             | suites unitaire et navigateur                       |                         secondes |
-| `npm run check`        | lint, format et toutes les suites actuelles         | moins de 2 min hors installation |
+| Commande                       | Portée                                                        |                     Coût attendu |
+| ------------------------------ | ------------------------------------------------------------- | -------------------------------: |
+| `npm run test:unit`            | contrats et logique pure sous Node                            |                         secondes |
+| `npm run test:browser`         | vraie page, Worker dédié et frontière d'origine sous Chromium |                    environ 1 min |
+| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                 |                    environ 1 min |
+| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                     |                    environ 2 min |
+| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit           |  environ 20 s après installation |
+| `npm test`                     | suites unitaire et navigateur                                 |                         secondes |
+| `npm run check`                | lint, format et toutes les suites actuelles                   | moins de 3 min hors installation |
 
-Les suites `test:vm`, `test:e2e`, `test:resilience` et `test:security` seront ajoutées lorsqu'elles
-posséderont un premier scénario réel. Un script vide qui réussit ne constitue pas une preuve.
+Les suites `test:vm`, `test:e2e` et `test:resilience` seront ajoutées lorsqu'elles posséderont un
+premier scénario réel. Un script vide qui réussit ne constitue pas une preuve.
+
+### Frontière d'origine
+
+`tests/browser/origin-topology.spec.mjs` et `tests/browser/origin-isolation.spec.mjs` sont la preuve
+de sécurité de `SEC-ORIGIN-001` (ADR 0002). Elles sont rattachées à `npm run check` plutôt que
+périodiques : elles durent moins d'une minute, ne demandent aucune image VM, et une régression de
+frontière doit bloquer une PR, pas être découverte à la recette suivante.
+
+Elles exigent **deux serveurs**, donc deux origines réelles ; `playwright.config.mjs` les démarre
+tous les deux. Trois précautions les rendent opposables :
+
+- un **témoin positif** en même origine, qui exige que les mêmes tentatives aboutissent ;
+- l'**arbitrage depuis la coquille** pour tout ce qui concerne la persistance et l'interception, car
+  une sonde applicative ne sait pas dans quelle partition elle a écrit ;
+- un troisième résultat `indisponible`, distinct de `bloque`, pour une capacité absente du moteur.
+
+### Plusieurs moteurs
+
+```sh
+npx playwright install firefox webkit
+npm run test:browser:moteurs -- chromium,firefox,webkit
+```
+
+Le script pose `VAULT_MOTEURS` sans dépendre de la syntaxe du shell. Les épreuves COOP/COEP mesurent
+sur tout moteur mais n'assertent que sous Chromium : les écarts constatés sont consignés dans
+`docs/spikes/0035-topologie-origine-de-confiance.md`, et la matrice de support reste l'objet de
+l'issue #2. La commande reste manuelle : `npm run check` exécute la frontière d'origine sous
+Chromium seulement, et la couverture multi-moteurs de la CI passe par `test:compat`.
 
 ## Suite de compatibilité
 

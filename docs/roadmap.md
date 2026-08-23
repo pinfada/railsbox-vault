@@ -27,7 +27,10 @@ qualifier la persistance.
 L'utilisateur exporte un volume complet, vérifiable et versionné, puis le restaure sur une autre
 origine avec la bonne version de l'application et du runtime.
 
-Ordre : #10 → #11 → #12 → #13. La restauration inter-origine réutilise la topologie décidée par #35.
+Ordre : #10 → #11 → #12 → #13. La restauration inter-origine applique la topologie arrêtée par
+l'[ADR 0002](decisions/0002-topologie-origine-de-confiance.md) : aucun canal implicite ne relie deux
+origines, un export traverse la frontière comme un fichier choisi par l'utilisateur, et un
+changement d'origine de la coquille est une migration qui exige un export préalable.
 
 ## 3 — Résilience transactionnelle
 
@@ -52,9 +55,9 @@ Une clé de volume aléatoire est enveloppée par une ou plusieurs clés de dév
 rotation, révocation et récupération sont testées. La coquille de confiance est isolée du code
 applicatif.
 
-La décision #35 précède les interfaces persistantes ; #24 en réalise la version complète avant toute
-levée du gate « données sensibles ». Ordre des clés : #21 → #22 → #23, avec #25 avant qualification
-produit.
+La décision #35 est prise (ADR 0002 : origine distincte pour le document applicatif) et précède les
+interfaces persistantes ; #24 en réalise la version complète avant toute levée du gate « données
+sensibles ». Ordre des clés : #21 → #22 → #23, avec #25 avant qualification produit.
 
 ## 6 — Échanges chiffrés optionnels
 
