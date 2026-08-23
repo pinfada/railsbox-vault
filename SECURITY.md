@@ -74,9 +74,16 @@ et tester.
   `durable: true` et son acquittement de barrière suit un `FileSystemSyncAccessHandle.flush()` réel,
   ce que prouvent `tests/browser/opfs-block-backend.spec.mjs` et
   `tests/vm/opfs-persistence.spec.mjs` — un guest écrit, l'hôte ferme le handle, rouvre et retrouve
-  les octets. L'invariant n'est pas tenu pour autant : ce qui est établi est que la barrière atteint
-  le support, pas qu'aucune écriture ne soit annoncée durable avant elle de bout en bout. Cette
-  barrière complète reste #14 ;
+  les octets. #14 ferme enfin la barrière de bout en bout : le backend **attend** le
+  `FileSystemSyncAccessHandle.flush()` avant d'enregistrer l'acquittement, si bien qu'aucune
+  écriture n'est annoncée durable au guest avant que le flush OPFS ait rendu la main. Le contrat
+  complet figure dans [`docs/architecture.md`](docs/architecture.md) (§ « Contrat de barrière de
+  durabilité »), et ses cinq propriétés — ordre causal, flush retardé sans succès anticipé, échec ou
+  fermeture pendant le flush, deux barrières à vide, RPO 0 après acquittement — sont prouvées de
+  façon déterministe par `tests/unit/vm-durability-barrier.test.mjs` (chaîne complète moins
+  l'émulateur, avec son témoin de barrière retardée) et rejouées sur le vrai support par
+  `tests/vm/opfs-barrier.spec.mjs`. Restent hors de cet invariant l'atomicité transactionnelle d'une
+  génération (#16) et la reprise complète après fermeture (#7) ;
 - `SEC-UPDATE-001` — runtime et application sont identifiés et vérifiés avant d'ouvrir le volume en
   écriture ;
 - `SEC-RECOVERY-001` — chaque moyen de récupération annoncé possède un test de succès, de révocation
