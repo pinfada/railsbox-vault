@@ -1,0 +1,84 @@
+name: Tranche d'évolution
+description: Décrire un résultat fonctionnel suffisamment petit pour une PR testée.
+title: ""
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Une issue décrit le résultat attendu, pas une solution déjà supposée.
+  - type: textarea
+    id: exigence
+    attributes:
+      label: Exigence ou invariant lié
+      description: Identifiant du PRD, invariant de sécurité ou contrat composant concerné.
+      placeholder: VAULT-PERSIST-001
+    validations:
+      required: true
+  - type: textarea
+    id: probleme
+    attributes:
+      label: Problème observable
+      description: Que ne peut-on pas encore faire ou prouver ?
+    validations:
+      required: true
+  - type: textarea
+    id: resultat
+    attributes:
+      label: Résultat attendu
+      description: Décrire le comportement observable une fois l'issue terminée.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptation
+    attributes:
+      label: Critères d'acceptation
+      description: Utiliser si possible des exemples Étant donné / Quand / Alors.
+      placeholder: |
+        - Étant donné …
+          Quand …
+          Alors …
+    validations:
+      required: true
+  - type: dropdown
+    id: preuve
+    attributes:
+      label: Niveau de preuve principal
+      options:
+        - Test unitaire
+        - Intégration navigateur
+        - Intégration VM
+        - Bout en bout
+        - Résilience
+        - Sécurité
+        - Spike reproductible
+    validations:
+      required: true
+  - type: textarea
+    id: hors_perimetre
+    attributes:
+      label: Hors périmètre
+      description: Ce que cette tranche ne cherche volontairement pas à résoudre.
+    validations:
+      required: true
+  - type: textarea
+    id: dependances
+    attributes:
+      label: Dépendances et décisions liées
+      description: Issues et ADR prérequis, puis capacités débloquées par cette tranche.
+    validations:
+      required: true
+  - type: checkboxes
+    id: securite
+    attributes:
+      label: Sécurité et données
+      options:
+        - label: L'impact sur les frontières de confiance a été évalué.
+          required: true
+        - label: Aucun test ne nécessite de donnée personnelle réelle.
+          required: true
+        - label: Les dépendances sont closes ou leurs contrats sont stables.
+          required: true
+        - label: Le périmètre tient dans une pull request révisable.
+          required: true

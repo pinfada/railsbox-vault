@@ -1,0 +1,31 @@
+name: Audit ou revue externe
+description: Examiner un périmètre sans lui imposer artificiellement une boucle TDD.
+title: "audit: "
+labels:
+  - "area:security"
+body:
+  - type: textarea
+    id: perimetre
+    attributes:
+      label: Périmètre et hors périmètre
+    validations:
+      required: true
+  - type: textarea
+    id: methode
+    attributes:
+      label: Méthode et preuves accessibles
+    validations:
+      required: true
+  - type: textarea
+    id: sortie
+    attributes:
+      label: Livrables et sévérité des constats
+    validations:
+      required: true
+  - type: textarea
+    id: fermeture
+    attributes:
+      label: Condition de fermeture
+      description: Comment chaque constat sera corrigé, accepté ou transféré dans une issue.
+    validations:
+      required: true

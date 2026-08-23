@@ -1,0 +1,32 @@
+name: Documentation ou ADR
+description: Modifier une règle, un contrat, une décision ou un guide vérifiable.
+title: "docs: "
+labels:
+  - documentation
+body:
+  - type: textarea
+    id: manque
+    attributes:
+      label: Manque ou contradiction observé
+    validations:
+      required: true
+  - type: textarea
+    id: lecteurs
+    attributes:
+      label: Lecteurs et décision rendue possible
+      description: Qui utilisera ce document, et pour décider ou exécuter quoi ?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptation
+    attributes:
+      label: Contrôles d'acceptation
+      description: Liens, exemples, commandes de forme ou relectures nécessaires.
+    validations:
+      required: true
+  - type: textarea
+    id: impacts
+    attributes:
+      label: Documents et décisions à garder cohérents
+    validations:
+      required: true

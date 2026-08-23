@@ -1,0 +1,9 @@
+# Responsabilité provisoire tant que l'équipe ne compte qu'un mainteneur.
+* @pinfada
+
+# Toute évolution de ces chemins exige explicitement le regard du propriétaire
+# sécurité/architecture. Les rôles seront répartis dès l'arrivée de l'équipe.
+/SECURITY.md @pinfada
+/docs/architecture.md @pinfada
+/docs/decisions/ @pinfada
+/.github/ @pinfada

@@ -1,0 +1,33 @@
+name: Spike technique
+description: Lever une inconnue par une expérience reproductible et bornée.
+title: "spike: "
+labels:
+  - "type:spike"
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question à trancher
+      description: Une question précise à laquelle l'expérience doit répondre.
+    validations:
+      required: true
+  - type: textarea
+    id: protocole
+    attributes:
+      label: Protocole reproductible
+      description: Environnement, entrées, mesures et comparaison prévues.
+    validations:
+      required: true
+  - type: textarea
+    id: sortie
+    attributes:
+      label: Livrables et critère d'arrêt
+      description: Mesures, prototype jetable, conclusion, ADR éventuel et limite de temps.
+    validations:
+      required: true
+  - type: textarea
+    id: hors_perimetre
+    attributes:
+      label: Hors périmètre
+    validations:
+      required: true

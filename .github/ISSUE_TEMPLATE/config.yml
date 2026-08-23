@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question générale
+    url: https://github.com/pinfada/railsbox-vault/discussions
+    about: Discuter d'une idée avant d'en faire une tranche planifiée.
