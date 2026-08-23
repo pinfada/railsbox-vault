@@ -22,8 +22,12 @@ const PAGE_FILES = ["public/**/*.mjs", "src/**/page-*.mjs"];
 /** Modules de contrat de `src/`, partagés par défaut entre la page et le Worker. */
 const SHARED_WEB_FILES = ["src/**/*.mjs"];
 
-/** Code exécuté par Node : outillage, suite unitaire et configurations à la racine. */
-const NODE_FILES = ["tools/**/*.mjs", "tests/unit/**/*.mjs", "*.config.mjs"];
+/**
+ * Code exécuté par Node : outillage, suites unitaire et VM, configurations à la racine. La suite
+ * `tests/vm/` boote une VM sous Node et ne touche jamais au DOM : elle relève donc du même contexte
+ * que `tests/unit/`, pas de celui des spécifications Playwright.
+ */
+const NODE_FILES = ["tools/**/*.mjs", "tests/unit/**/*.mjs", "tests/vm/**/*.mjs", "*.config.mjs"];
 
 // Spécifications Playwright : le corps du test s'exécute sous Node, mais les rappels passés à
 // `page.evaluate` sont du code navigateur analysé dans le même fichier. Les deux jeux sont donc

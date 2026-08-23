@@ -1,6 +1,6 @@
 /**
  * Vérifie que `eslint.config.mjs` sépare réellement les globals par répertoire et par contexte
- * d'exécution : Node dans `tools/`, `tests/unit/` et les configurations racine ; page dans
+ * d'exécution : Node dans `tools/`, `tests/unit/`, `tests/vm/` et les configurations racine ; page dans
  * `public/` ; Worker dédié pour les modules `*worker*.mjs` ; et, pour les modules de `src/`
  * partagés entre la page et le Worker, l'intersection des deux jeux.
  *
@@ -69,6 +69,11 @@ test("le code Node n'a pas accès aux globals du navigateur", async () => {
   assert.deepEqual(await globalsRefuses("tests/unit/temoin-globals.test.mjs", USAGE_DOM), [
     "document",
   ]);
+  // La suite VM boote un émulateur sous Node : elle n'a jamais de DOM, malgré
+  // le mot « navigateur » qui traîne dans son sujet.
+  assert.deepEqual(await globalsRefuses("tests/vm/temoin-globals.test.mjs", USAGE_DOM), [
+    "document",
+  ]);
 });
 
 test("un module Worker n'a pas accès au DOM mais garde ses globals propres", async () => {
@@ -95,6 +100,7 @@ test("un module de page garde le DOM et un module Node garde les globals Node", 
   assert.deepEqual(await globalsRefuses("public/temoin-globals.mjs", USAGE_DOM), []);
   assert.deepEqual(await globalsRefuses("src/compat/page-temoin.mjs", USAGE_DOM), []);
   assert.deepEqual(await globalsRefuses("tools/temoin-globals.mjs", USAGE_NODE), []);
+  assert.deepEqual(await globalsRefuses("tests/vm/temoin-globals.test.mjs", USAGE_NODE), []);
   assert.deepEqual(await globalsRefuses("temoin.config.mjs", USAGE_NODE), []);
 });
 
