@@ -28,7 +28,7 @@ const NODE_FILES = ["tools/**/*.mjs", "tests/unit/**/*.mjs", "*.config.mjs"];
 // Spécifications Playwright : le corps du test s'exécute sous Node, mais les rappels passés à
 // `page.evaluate` sont du code navigateur analysé dans le même fichier. Les deux jeux sont donc
 // légitimes ici ; les couvrir par des commentaires `/* global */` reviendrait à désactiver la règle.
-const PLAYWRIGHT_FILES = ["tests/browser/**/*.mjs", "tests/compat/**/*.mjs"];
+const PLAYWRIGHT_FILES = ["tests/browser/**/*.mjs", "tests/compat/**/*.mjs", "tests/vm/**/*.mjs"];
 
 /**
  * Globals communs à la page et au Worker dédié. Les modules de `src/` sont importés par les deux
