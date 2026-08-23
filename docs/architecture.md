@@ -70,6 +70,26 @@ Son interface de stockage expose au minimum :
 Le spike #4 a confirmé ce contrat et l'a éprouvé contre un vrai guest Linux
 ([ADR 0003](decisions/0003-backend-de-blocs-v86.md)). Trois ajustements en découlent.
 
+Le backend de production #6 (`src/vm/opfs-block-backend.mjs`) l'implémente au-dessus d'un
+`FileSystemSyncAccessHandle`. Quatre précisions que seule une implémentation réelle pouvait apporter
+:
+
+- **le support est injecté.** Le backend reçoit un ouvreur de handle, pas OPFS. En production c'est
+  `src/vm/opfs-sync-access.mjs` ; sous Node c'est `src/vm/sync-access-double.mjs`, un double
+  calibré. Sans cette couture, quota, handle perdu et écriture partielle ne seraient jamais exercés
+  — ou le seraient par un `throw` posé dans le code même que le test prétend vérifier ;
+- **le handle exclusif ne quitte jamais le Worker dédié.** `openOpfsSyncAccess` refuse tout autre
+  contexte avec `VAULT_STORAGE_UNSUPPORTED`, et le backend range le sien dans un champ privé de
+  classe. Ni la coquille, ni l'adaptateur v86, ni donc la VM n'ont de chemin vers OPFS ;
+- **la géométrie est celle de la session, pas celle du fichier.** Elle est fixée à l'ouverture —
+  déclarée pour un volume neuf, RELUE du fichier à la réouverture — et revérifiée avant chaque E/S.
+  Un fichier qui change de taille sous un volume ouvert est un `VAULT_STORAGE_GEOMETRY_MISMATCH`,
+  jamais une nouvelle valeur de `size()` ;
+- **l'alignement du contrat v86 est vérifié, pas supposé.** Les tampons asynchrones de v86 adressent
+  par blocs de 256 octets ; la géométrie exigée est un multiple de 512, donc aussi de 256. Les accès
+  eux-mêmes ne sont pas contraints : OPFS adresse à l'octet, et le backend relit exactement une
+  écriture non alignée. Le spike #4 a mesuré que le guest n'en émet de toute façon jamais.
+
 **Le contrat de Vault n'est pas celui de v86.** L'émulateur attend un tampon à callbacks —
 `byteLength`, `load()`, `get(offset, length, fn, { signal })`, `set(offset, bytes, fn)` — accepté
 tel quel dès qu'un objet porte `get`, `set` et `load`. Un adaptateur traduit ; le contrat ci-dessus
@@ -133,10 +153,29 @@ il se traite comme une migration exigeant un export préalable, pas comme un dé
 
 Quota, handle perdu, authentification invalide, format incompatible, écriture partielle et échec de
 flush sont des états distincts. Aucune couche ne les convertit en succès, en bloc zéro ou en
-réinitialisation silencieuse. Les codes stables seront définis avec le premier backend #6 ; le spike
-#4 en propose une première série éprouvée dans `src/vm/storage-errors.mjs`
-(`VAULT_STORAGE_OUT_OF_RANGE`, `_SHORT_READ`, `_PARTIAL_WRITE`, `_FLUSH_FAILED`, `_HANDLE_LOST`,
-`_CLOSED`, `_BUSY`, `_UNSUPPORTED`).
+réinitialisation silencieuse. Les codes sont figés par le backend #6 dans
+`src/vm/storage-errors.mjs` :
+
+| Code                              | État                                                           | Origine |
+| --------------------------------- | -------------------------------------------------------------- | ------- |
+| `VAULT_STORAGE_OUT_OF_RANGE`      | accès hors de la géométrie déclarée                            | #4      |
+| `VAULT_STORAGE_SHORT_READ`        | le support a rendu moins d'octets que demandé                  | #4      |
+| `VAULT_STORAGE_PARTIAL_WRITE`     | le support a accepté moins d'octets que demandé                | #4      |
+| `VAULT_STORAGE_FLUSH_FAILED`      | la barrière de durabilité n'a pas abouti                       | #4      |
+| `VAULT_STORAGE_HANDLE_LOST`       | le handle exclusif a disparu sous le volume ouvert             | #4      |
+| `VAULT_STORAGE_CLOSED`            | E/S demandée après fermeture du volume                         | #4      |
+| `VAULT_STORAGE_BUSY`              | un autre détenteur possède déjà l'exclusivité                  | #4      |
+| `VAULT_STORAGE_UNSUPPORTED`       | capacité absente : jamais remplacée par un repli               | #4      |
+| `VAULT_STORAGE_QUOTA_EXCEEDED`    | le quota de stockage de l'origine est épuisé                   | **#6**  |
+| `VAULT_STORAGE_GEOMETRY_MISMATCH` | la géométrie du support diffère de celle de la session         | **#6**  |
+| `VAULT_STORAGE_SUPPORT_FAILURE`   | échec du support non classable : jamais deviné, toujours nommé | **#6**  |
+
+Les trois derniers naissent de l'implémentation OPFS. Le quota **n'est pas** une écriture partielle
+— l'un se corrige en libérant de la place, l'autre décrit un état intermédiaire du volume. La
+géométrie **n'est pas** un accès hors bornes — elle dit que le support a changé, pas que l'appelant
+s'est trompé. Et un `DOMException` de nom inconnu **n'est pas** rangé dans l'état le plus proche :
+`src/vm/opfs-error-mapping.mjs` traduit les noms qu'il connaît et nomme les autres
+`VAULT_STORAGE_SUPPORT_FAILURE`, parce que deviner un diagnostic serait l'inventer.
 
 Ce que le guest en perçoit est mesuré et n'est pas symétrique : une faute transitoire est absorbée
 par les tentatives du noyau, une faute persistante devient une erreur d'E/S, une panne de support

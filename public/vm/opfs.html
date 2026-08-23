@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RailsBox Vault — banc du backend de blocs OPFS (#6)</title>
+  </head>
+  <body>
+    <h1>Banc du backend de blocs OPFS</h1>
+    <p>
+      Cette page n'ouvre aucun volume : elle démarre un Worker dédié qui porte le backend OPFS, puis
+      affiche son compte rendu. Le handle exclusif ne quitte jamais le Worker, conformément à
+      l'<code>ADR 0002</code>.
+    </p>
+    <p id="etat">Prêt.</p>
+    <pre id="rapport"></pre>
+    <script type="module" src="./opfs-banc.mjs"></script>
+  </body>
+</html>

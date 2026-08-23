@@ -1,7 +1,8 @@
 // Erreurs contractuelles du backend de blocs. `docs/architecture.md` exige que quota, handle perdu,
 // écriture partielle et échec de flush restent des états DISTINCTS : aucun d'eux ne doit se
-// dégrader en succès, en bloc de zéros ou en réinitialisation silencieuse. Les codes ci-dessous
-// sont la première proposition stable ; l'issue #6 les figera pour le backend de production.
+// dégrader en succès, en bloc de zéros ou en réinitialisation silencieuse. Le spike #4 a proposé
+// les huit premiers codes ; l'issue #6 les fige pour le backend OPFS de production et en ajoute
+// trois que seul un support réel peut produire.
 
 export const STORAGE_ERROR_CODES = Object.freeze({
   /** Lecture ou écriture hors de la géométrie déclarée. */
@@ -20,6 +21,12 @@ export const STORAGE_ERROR_CODES = Object.freeze({
   busy: "VAULT_STORAGE_BUSY",
   /** Capacité absente : jamais remplacée par un repli silencieux. */
   unsupported: "VAULT_STORAGE_UNSUPPORTED",
+  /** Le quota de stockage de l'origine est épuisé (#6). Distinct d'une écriture partielle. */
+  quotaExceeded: "VAULT_STORAGE_QUOTA_EXCEEDED",
+  /** La géométrie du support diffère de celle de la session (#6). Jamais suivie en silence. */
+  geometryMismatch: "VAULT_STORAGE_GEOMETRY_MISMATCH",
+  /** Échec du support non classable dans les codes ci-dessus (#6). Jamais deviné, toujours nommé. */
+  supportFailure: "VAULT_STORAGE_SUPPORT_FAILURE",
 });
 
 const KNOWN_CODES = new Set(Object.values(STORAGE_ERROR_CODES));
@@ -57,5 +64,18 @@ export function outOfRange(offset, length, size) {
     STORAGE_ERROR_CODES.outOfRange,
     `Accès hors bornes : ${length} octet(s) à l'offset ${offset} d'un volume de ${size} octets.`,
     { offset, length, size },
+  );
+}
+
+/**
+ * La géométrie observée sur le support n'est pas celle de la session. Le backend refuse plutôt que
+ * d'adopter la nouvelle taille : un volume qui rétrécit sous la VM n'est pas un volume plus petit,
+ * c'est un volume corrompu.
+ */
+export function geometryMismatch(volume, { observed, expected, reason }) {
+  return new StorageError(
+    STORAGE_ERROR_CODES.geometryMismatch,
+    `Géométrie du volume « ${volume} » incohérente : ${observed} octet(s) observés, ${expected ?? "aucune taille"} attendu(s). ${reason}`,
+    { volume, observed, expected: expected ?? null, reason },
   );
 }
