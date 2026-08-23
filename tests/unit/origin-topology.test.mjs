@@ -20,6 +20,7 @@ import {
 import {
   ISOLATION_REQUIRE_CORP,
   isApplicationTerritory,
+  isCapabilityProbe,
   parseServerOptions,
   securityHeaders,
   shellContentSecurityPolicy,
@@ -97,6 +98,20 @@ test("le territoire applicatif est reconnu par son préfixe", () => {
   assert.equal(isApplicationTerritory("/spike/origin/shell.html"), false);
 });
 
+test("la sonde de capacités est exemptée de la CSP de la coquille", () => {
+  assert.equal(isCapabilityProbe("/compat.html"), true);
+  assert.equal(isCapabilityProbe("/compat-worker.mjs"), true);
+  assert.equal(isCapabilityProbe("/spike/origin/shell.html"), false);
+  const entetes = securityHeaders({
+    role: "shell",
+    pathname: "/compat.html",
+    isolation: ISOLATION_REQUIRE_CORP,
+    appOrigin: APP_ORIGIN,
+  });
+  assert.equal(entetes["Content-Security-Policy"], undefined);
+  assert.equal(entetes["Cross-Origin-Embedder-Policy"], "require-corp");
+});
+
 test("les en-têtes distinguent coquille, territoire applicatif et serveur applicatif", () => {
   const coquille = securityHeaders({
     role: "shell",
@@ -151,16 +166,26 @@ test("les options du serveur ont des défauts par rôle et refusent une valeur i
     host: "127.0.0.1",
     port: 4173,
     appOrigin: APP_ORIGIN,
+    crossOriginIsolated: false,
   });
   assert.deepEqual(parseServerOptions(["--role", "app"]), {
     role: "app",
     host: "localhost",
     port: 4174,
     appOrigin: APP_ORIGIN,
+    crossOriginIsolated: false,
   });
   assert.equal(parseServerOptions(["--host", "127.0.0.1", "--port", "5000"]).port, 5000);
   assert.throws(() => parseServerOptions(["--port", "abc"]), /Port invalide/);
   assert.throws(() => parseServerOptions(["--port"]), /L'option --port attend une valeur/);
+});
+
+test("l'invocation historique de la suite de compatibilité reste comprise", () => {
+  const options = parseServerOptions(["--port", "4180", "--cross-origin-isolated"]);
+  assert.equal(options.port, 4180);
+  assert.equal(options.role, "shell");
+  assert.equal(options.host, "127.0.0.1");
+  assert.equal(options.crossOriginIsolated, true);
 });
 
 test("le Service Worker hostile recopie les constantes partagées sans dériver", async () => {

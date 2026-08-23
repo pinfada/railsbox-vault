@@ -126,10 +126,12 @@ test("sous require-corp, l'iframe inter-origine charge sans hériter de l'isolat
 
   await ouvrirCoquille(page, TOPOLOGIE_RETENUE, { isolation: "require-corp" });
   const cadre = page.frameLocator("#app-frame");
-  const charge = await cadre
-    .locator("#app-isolation")
-    .textContent({ timeout: 15000 })
-    .then((texte) => JSON.parse(texte))
+  // Attendre la FIN des sondes, pas seulement l'existence de l'élément : `#app-isolation` vaut
+  // « {} » tant que le module applicatif n'a pas été évalué, et lire trop tôt donnerait un relevé
+  // vide que l'on prendrait pour une mesure.
+  const charge = await expect(cadre.locator("#app-status"))
+    .toHaveText(/sondes-terminees/, { timeout: 20000 })
+    .then(async () => JSON.parse(await cadre.locator("#app-isolation").textContent()))
     .catch((erreur) => ({ chargement: `${erreur.name}: cadre non chargé`, journal }));
   process.stdout.write(`\n<<<COEP-CADRE ${info.project.name}>>> ${JSON.stringify(charge)}\n`);
 
