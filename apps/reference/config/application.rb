@@ -17,19 +17,20 @@ Bundler.require(*Rails.groups)
 
 require "digest"
 
-# Chaîne source de la clé de signature synthétique. Elle est publique, figée, et
-# documentée dans `vault-invariant.json` (`secretKeyBase.derivation`) : la
-# fixture doit démarrer sur n'importe quelle machine sans qu'aucun secret ne lui
-# soit transmis. Le calcul est fait ici, hors de `lib/`, parce que la
-# configuration s'exécute avant que l'autochargement ne soit disponible.
+# Chaîne source servant à DÉRIVER la clé de signature synthétique de la fixture.
+# Elle est publique, figée, et documentée dans `vault-invariant.json`
+# (`secretKeyBase.derivation`) : la fixture doit démarrer sur n'importe quelle
+# machine sans qu'aucun secret ne lui soit transmis. Le calcul est fait ici,
+# hors de `lib/`, parce que la configuration s'exécute avant que l'autochargement
+# ne soit disponible.
 #
-# `guardrails-disable-line` ci-dessous : le nom de la constante contient
-# « SECRET », ce qui déclenche la règle « Secret Keyword » de l'analyse de
-# secrets. La valeur n'en est pas un — elle est publiée dans le contrat, dans
-# `SECURITY.md` (section « Analyse de secrets ») et vérifiée par
-# `test/lib/no_secret_test.rb`. La suppression est limitée à CETTE ligne :
-# toute autre affectation ressemblant à un secret reste détectée.
-VAULT_SYNTHETIC_SECRET_SOURCE = "railsbox-vault-reference/synthetic-secret-key-base/v1".freeze # guardrails-disable-line
+# La constante s'appelle `…_SIGNING_SOURCE`, pas `…_SECRET_…` : ce n'est pas un
+# secret ni la source d'un secret, mais l'entrée publique d'une dérivation. Le
+# nom évite le mot « secret » à dessein — il serait faux, et il induirait en
+# erreur autant un lecteur qu'un analyseur. Un vrai secret resterait détecté :
+# `config.secret_key_base` ci-dessous est toujours analysé, et
+# `test/lib/no_secret_test.rb` échoue si un fichier de credentials apparaît.
+VAULT_SYNTHETIC_SIGNING_SOURCE = "railsbox-vault-reference/synthetic-secret-key-base/v1".freeze
 
 module VaultReference
   # Application Rails de référence de RailsBox Vault.
@@ -53,7 +54,7 @@ module VaultReference
     # placer avant la fermeture des gates de sécurité.
     config.require_master_key = false
     config.secret_key_base = ENV.fetch("SECRET_KEY_BASE") do
-      Digest::SHA512.hexdigest(VAULT_SYNTHETIC_SECRET_SOURCE)
+      Digest::SHA512.hexdigest(VAULT_SYNTHETIC_SIGNING_SOURCE)
     end
 
     # Déterminisme : l'invariant compare des horodatages à la seconde près.

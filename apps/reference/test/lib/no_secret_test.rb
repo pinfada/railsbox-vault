@@ -14,7 +14,7 @@ class NoSecretTest < ActiveSupport::TestCase
   end
 
   test "la clé de signature est la valeur synthétique documentée" do
-    attendue = Digest::SHA512.hexdigest(VAULT_SYNTHETIC_SECRET_SOURCE)
+    attendue = Digest::SHA512.hexdigest(VAULT_SYNTHETIC_SIGNING_SOURCE)
 
     assert_equal attendue, Rails.application.secret_key_base
     assert Vault::Contract.data.dig("secretKeyBase", "synthetic"),
