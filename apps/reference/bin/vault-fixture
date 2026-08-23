@@ -10,8 +10,12 @@
 #
 # Aucune autre issue : une commande inconnue sort en 64, une erreur inattendue
 # en 70. Un succès silencieux n'existe pas ici.
-
-require "json"
+#
+# RIEN n'est requis avant `config/environment`. Charger `json` ici activerait la
+# gemme par défaut de Ruby (2.7.2) et Bundler refuserait ensuite la version du
+# verrou : « You have already activated json ... but your Gemfile requires ... ».
+# Le diagnostic est obscur et n'apparaît que hors de `bundle exec` — c'est-à-dire
+# exactement là où la commande est appelée, dans la construction du disque.
 
 CODES = {
   "conforming" => 0,

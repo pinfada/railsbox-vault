@@ -21,7 +21,11 @@ const invariant = JSON.parse(
 );
 
 /** @param {number} index */
-const empreinte = (index) => String(index).repeat(64).slice(0, 64).replace(/[^0-9a-f]/g, "a");
+const empreinte = (index) =>
+  String(index)
+    .repeat(64)
+    .slice(0, 64)
+    .replace(/[^0-9a-f]/g, "a");
 
 const artefacts = ARTEFACTS_ATTENDUS.map((name, index) => ({
   name,
@@ -82,7 +86,9 @@ test("les artefacts sont ordonnés par nom, quel que soit l'ordre de production"
 
 test("un artefact attendu manquant est refusé", () => {
   const manifeste = manifesteDEssai();
-  manifeste.artifacts = manifeste.artifacts.filter((artefact) => artefact.name !== "reference-app.ext2");
+  manifeste.artifacts = manifeste.artifacts.filter(
+    (artefact) => artefact.name !== "reference-app.ext2",
+  );
   manifeste.totals.byteSize = manifeste.artifacts.reduce((somme, a) => somme + a.byteSize, 0);
 
   const codes = validerManifeste(manifeste).map((anomalie) => anomalie.code);
@@ -115,7 +121,10 @@ test("un total incohérent est refusé : le manifeste ne se contredit pas", () =
 test("la comparaison au disque nomme l'artefact absent et l'empreinte divergente", () => {
   const manifeste = manifesteDEssai();
   const observes = new Map(
-    manifeste.artifacts.map((artefact) => [artefact.name, { byteSize: artefact.byteSize, sha256: artefact.sha256 }]),
+    manifeste.artifacts.map((artefact) => [
+      artefact.name,
+      { byteSize: artefact.byteSize, sha256: artefact.sha256 },
+    ]),
   );
   observes.delete("seabios.bin");
   observes.set("reference-app.ext2", { byteSize: 1, sha256: empreinte(9) });
@@ -131,7 +140,10 @@ test("la comparaison au disque nomme l'artefact absent et l'empreinte divergente
 test("une comparaison sans écart ne rend rien", () => {
   const manifeste = manifesteDEssai();
   const observes = new Map(
-    manifeste.artifacts.map((artefact) => [artefact.name, { byteSize: artefact.byteSize, sha256: artefact.sha256 }]),
+    manifeste.artifacts.map((artefact) => [
+      artefact.name,
+      { byteSize: artefact.byteSize, sha256: artefact.sha256 },
+    ]),
   );
 
   assert.deepEqual(comparerArtefacts(manifeste, observes), []);

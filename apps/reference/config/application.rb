@@ -64,6 +64,10 @@ module VaultReference
     config.active_storage.analyzers = []
     config.active_storage.previewers = []
     config.active_storage.draw_routes = false
+    # Aucune variante n'est produite : le déclarer évite qu'ActiveStorage
+    # avertisse à chaque démarrage qu'`image_processing` est absent, alors que
+    # son absence est délibérée.
+    config.active_storage.variant_processor = :disabled
 
     # Les traitements ActiveStorage s'exécutent dans la requête : une file
     # asynchrone rendrait l'invariant non déterministe juste après sa création.

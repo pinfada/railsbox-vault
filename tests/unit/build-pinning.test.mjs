@@ -75,7 +75,11 @@ test("un montage de secret BuildKit est refusé", () => {
 });
 
 test("copier une clé maîtresse Rails est refusé", () => {
-  const texte = [`FROM debian:bookworm-slim@${DIGEST_CONNU}`, "COPY config/master.key /app/", ""].join("\n");
+  const texte = [
+    `FROM debian:bookworm-slim@${DIGEST_CONNU}`,
+    "COPY config/master.key /app/",
+    "",
+  ].join("\n");
 
   assert.deepEqual(codes(analyserDockerfile(texte)), ["secret-copie"]);
 });
@@ -102,7 +106,11 @@ test("le même téléchargement suivi d'un sha256sum -c est accepté", () => {
 });
 
 test("ADD depuis une URL est refusé même avec une empreinte ailleurs", () => {
-  const texte = [`FROM debian:bookworm-slim@${DIGEST_CONNU}`, "ADD https://exemple.test/x /x", ""].join("\n");
+  const texte = [
+    `FROM debian:bookworm-slim@${DIGEST_CONNU}`,
+    "ADD https://exemple.test/x /x",
+    "",
+  ].join("\n");
 
   assert.ok(codes(analyserDockerfile(texte)).includes("telechargement-non-verifie"));
 });

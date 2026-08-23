@@ -36,16 +36,7 @@ function docker(arguments_, etape) {
 }
 
 docker(
-  [
-    "build",
-    "--platform",
-    "linux/amd64",
-    "-f",
-    dockerfile,
-    "-t",
-    etiquette,
-    dossierApplication,
-  ],
+  ["build", "--platform", "linux/amd64", "-f", dockerfile, "-t", etiquette, dossierApplication],
   "construction de l'image de test",
 );
 

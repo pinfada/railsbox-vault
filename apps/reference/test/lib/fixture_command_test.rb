@@ -59,7 +59,14 @@ class FixtureCommandTest < ActiveSupport::TestCase
       environnement = {
         "RAILS_ENV" => "test",
         "VAULT_DATABASE_PATH" => File.join(repertoire, "vault.sqlite3"),
-        "VAULT_STORAGE_ROOT" => File.join(repertoire, "storage")
+        "VAULT_STORAGE_ROOT" => File.join(repertoire, "storage"),
+        # La commande est appelée SANS `bundle exec` dans la construction du
+        # disque applicatif. Hériter du `RUBYOPT=-rbundler/setup` du processus
+        # de test masquerait cette différence — et c'est précisément elle qui a
+        # fait échouer la première construction, sur une activation prématurée
+        # de la gemme par défaut `json`.
+        "RUBYOPT" => nil,
+        "RUBYLIB" => nil
       }
       _, erreur, statut = Open3.capture3(environnement, RbConfig.ruby, "bin/rails", "db:migrate",
                                          chdir: Rails.root.to_s)

@@ -42,7 +42,10 @@ test("un corps plus long qu'une tranche est découpé en tranches acquittables",
 });
 
 test("un identifiant de requête non alphanumérique est refusé", () => {
-  assert.throws(() => construireTramesRequete("id avec espace", { method: "GET", path: "/" }), TypeError);
+  assert.throws(
+    () => construireTramesRequete("id avec espace", { method: "GET", path: "/" }),
+    TypeError,
+  );
 });
 
 test("l'assembleur de lignes ne rend que des lignes complètes", () => {
@@ -60,10 +63,15 @@ test("l'assembleur de lignes ne rend que des lignes complètes", () => {
 
 test("une réponse découpée en tranches est réassemblée à l'octet près", () => {
   const assembleur = creerAssembleurReponses();
-  const charge = encodeur.encode("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"a\":1}");
+  const charge = encodeur.encode(
+    'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{"a":1}',
+  );
 
   assert.equal(assembleur.traiterLigne(`${MAGIC} RSB 3 ${charge.byteLength}`), null);
-  assert.equal(assembleur.traiterLigne(`${MAGIC} DAT 3 ${base64Depuis(charge.subarray(0, 8))}`), null);
+  assert.equal(
+    assembleur.traiterLigne(`${MAGIC} DAT 3 ${base64Depuis(charge.subarray(0, 8))}`),
+    null,
+  );
   assert.equal(assembleur.traiterLigne(`${MAGIC} DAT 3 ${base64Depuis(charge.subarray(8))}`), null);
 
   const evenement = assembleur.traiterLigne(`${MAGIC} END 3`);
@@ -85,7 +93,9 @@ test("une tranche qui déborde de la taille annoncée est refusée", () => {
   const assembleur = creerAssembleurReponses();
   assembleur.traiterLigne(`${MAGIC} RSB 5 2`);
 
-  const evenement = assembleur.traiterLigne(`${MAGIC} DAT 5 ${base64Depuis(encodeur.encode("beaucoup"))}`);
+  const evenement = assembleur.traiterLigne(
+    `${MAGIC} DAT 5 ${base64Depuis(encodeur.encode("beaucoup"))}`,
+  );
   assert.equal(evenement.type, "erreur");
   assert.equal(evenement.libelle, "reponse-plus-longue-qu-annoncee");
 });
@@ -113,7 +123,7 @@ test("une ligne hors protocole est un journal, pas une réponse", () => {
 
 test("la réponse HTTP est découpée en statut, en-têtes et corps", () => {
   const brut = encodeur.encode(
-    "HTTP/1.1 409 Conflict\r\nContent-Type: application/json; charset=utf-8\r\nX-Vide: \r\n\r\n{\"status\":\"divergent\"}",
+    'HTTP/1.1 409 Conflict\r\nContent-Type: application/json; charset=utf-8\r\nX-Vide: \r\n\r\n{"status":"divergent"}',
   );
 
   const reponse = decouperReponseHttp(brut);
