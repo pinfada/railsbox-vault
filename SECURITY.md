@@ -61,7 +61,14 @@ et tester.
   chiffrement des blocs ;
 - `SEC-BLOCK-001` — un bloc est authentifié avec volume, adresse, format et génération ;
 - `SEC-GEN-001` — rejeu, troncature et mélange de générations sont refusés ;
-- `SEC-DURABLE-001` — aucune écriture n'est annoncée durable avant le flush effectif ;
+- `SEC-DURABLE-001` — aucune écriture n'est annoncée durable avant le flush effectif. Le spike #4 a
+  établi que l'émulateur amont rend cet invariant **inatteignable** : son disque n'annonce pas de
+  cache d'écriture, le guest n'émet donc jamais de barrière, et la commande FLUSH CACHE serait de
+  toute façon acquittée sans atteindre le stockage.
+  L'[ADR 0003](docs/decisions/0003-backend-de-blocs-v86.md) pose le pont qui rétablit la barrière ;
+  l'ordre écriture → flush → acquittement est prouvé par `tests/vm/durability-barrier.spec.mjs`,
+  avec son témoin négatif. L'invariant n'est pas pour autant tenu : le backend éprouvé est en
+  mémoire et déclare `durable: false`. La durabilité réelle appartient à #6 ;
 - `SEC-UPDATE-001` — runtime et application sont identifiés et vérifiés avant d'ouvrir le volume en
   écriture ;
 - `SEC-RECOVERY-001` — chaque moyen de récupération annoncé possède un test de succès, de révocation
@@ -119,6 +126,19 @@ Les dépendances sont verrouillées. Les workflows ont des permissions minimales
 seront épinglées avant la première publication. Les images VM publiées devront fournir empreinte,
 provenance de build et SBOM. Aucun secret de signature ne réside dans un artefact servi au
 navigateur.
+
+Les artefacts de la machine virtuelle ne sont pas versionnés mais **épinglés** :
+`vendor/v86/MANIFEST.json` fixe pour chacun son nom, sa taille, son empreinte SHA-256, sa licence et
+son URL source, avec le commit amont exact. `npm run vm:check` échoue si un fichier manque ou
+diffère. Deux limites subsistent, inscrites comme risques dans l'ADR 0003 : l'image de guest
+provient d'un hôte tiers qui ne publie pas d'empreinte de son côté — la nôtre protège de
+l'altération, pas de la disparition — et aucune de ces sources ne fournit encore de provenance de
+build vérifiable.
+
+La CSP de la coquille autorise depuis l'ADR 0003 le jeton `'wasm-unsafe-eval'` dans `script-src` :
+le runtime instancie un module WebAssembly. Ce jeton n'ouvre ni `eval` ni `new Function` ;
+`'unsafe-eval'` et `'unsafe-inline'` restent interdits, ce que vérifie
+`tests/unit/origin-topology.test.mjs`.
 
 ## Analyse de secrets
 

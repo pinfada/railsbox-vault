@@ -1,0 +1,78 @@
+{
+  "contract": {
+    "id": "railsbox-vault-vendor-v86",
+    "version": 1
+  },
+  "note": "Empreintes mesurées le 2026-08-23. Les binaires ne sont pas versionnés : `npm run vm:fetch` les télécharge dans `vendor/v86/artefacts/` et `npm run vm:check` échoue si une empreinte ne correspond pas.",
+  "pins": {
+    "npmPackage": "v86@0.5.432",
+    "npmTarball": "https://registry.npmjs.org/v86/-/v86-0.5.432.tgz",
+    "npmTarballSha256": "de9379ee1ccc118903558faed9ff577a66d486c5551b9e5ef359f0d388c40ebb",
+    "upstreamCommit": "847e34d5499b17b90d2783d5342ddd243c753497",
+    "upstreamCommitDate": "2026-08-21T18:25:12+02:00"
+  },
+  "artifacts": [
+    {
+      "name": "libv86.mjs",
+      "bytes": 356131,
+      "sha256": "408b0969f943dfd4d0350f6196404fc99fe676e853c36dc09a1959a0f9f751c2",
+      "license": "BSD-2-Clause",
+      "licenseFile": "vendor/v86/LICENSE-v86.txt",
+      "source": {
+        "kind": "npm-tarball-entry",
+        "url": "https://registry.npmjs.org/v86/-/v86-0.5.432.tgz",
+        "entry": "package/build/libv86.mjs"
+      },
+      "role": "Émulateur v86 compilé par Closure en niveau SIMPLE : les noms de propriétés sont conservés, ce qui rend le pont de durabilité observable et greffable sans reconstruire."
+    },
+    {
+      "name": "v86.wasm",
+      "bytes": 2096474,
+      "sha256": "8a969d64cf8f64b8183fdcc3a2ccdb31ae5ae6db7c9fba49949106f574640a7b",
+      "license": "BSD-2-Clause",
+      "licenseFile": "vendor/v86/LICENSE-v86.txt",
+      "source": {
+        "kind": "npm-tarball-entry",
+        "url": "https://registry.npmjs.org/v86/-/v86-0.5.432.tgz",
+        "entry": "package/build/v86.wasm"
+      },
+      "role": "Cœur CPU x86 en WebAssembly. Les périphériques — IDE compris — restent en JavaScript."
+    },
+    {
+      "name": "seabios.bin",
+      "bytes": 131072,
+      "sha256": "73e3f359102e3a9982c35fce98eb7cd08f18303ac7f1ba6ebfbe6cdc1c244d98",
+      "license": "LGPL-3.0-or-later",
+      "licenseFile": "vendor/v86/LICENSE-bios.txt",
+      "source": {
+        "kind": "github-raw",
+        "url": "https://raw.githubusercontent.com/copy/v86/847e34d5499b17b90d2783d5342ddd243c753497/bios/seabios.bin"
+      },
+      "role": "BIOS du guest. Absent du paquet npm, récupéré au commit épinglé."
+    },
+    {
+      "name": "vgabios.bin",
+      "bytes": 36352,
+      "sha256": "a4bc0d80cc3ca028c73dafa8fee396b8d054ce87ebd8abfbd31b06b437607880",
+      "license": "LGPL-3.0-or-later",
+      "licenseFile": "vendor/v86/LICENSE-bios.txt",
+      "source": {
+        "kind": "github-raw",
+        "url": "https://raw.githubusercontent.com/copy/v86/847e34d5499b17b90d2783d5342ddd243c753497/bios/vgabios.bin"
+      },
+      "role": "BIOS vidéo du guest."
+    },
+    {
+      "name": "linux4.iso",
+      "bytes": 7731200,
+      "sha256": "a8ea434ab3b177c55f01275dcc1d35f52cfbee9bd44a32e74765c975b58bcc73",
+      "license": "GPL-2.0-only et licences amont du système de fichiers Buildroot",
+      "licenseFile": null,
+      "source": {
+        "kind": "http",
+        "url": "https://i.copy.sh/linux4.iso"
+      },
+      "role": "Image i386 minimale Linux 4 / Buildroot utilisée par l'intégration continue de v86 elle-même. Contient libata, ata_piix, busybox avec mke2fs, dd et sync : le guest sait donc formater, monter et synchroniser un disque IDE. Amont ne publie pas d'empreinte ; celle inscrite ici est la nôtre, mesurée le 2026-08-23."
+    }
+  ]
+}

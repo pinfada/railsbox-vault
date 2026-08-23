@@ -9,15 +9,56 @@
 | `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                 |                                environ 1 min |
 | `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                     |                                environ 2 min |
 | `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit           |              environ 20 s après installation |
+| `npm run test:vm`              | guest Linux réel écrivant sur le backend de blocs (Chromium)  |                environ 1 min, **périodique** |
+| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker | environ 1 min après la première construction |
+| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86            |   plus de 10 min, Docker et artefacts requis |
 | `npm test`                     | suites unitaire et navigateur                                 |                                     secondes |
 | `npm run check`                | lint, format et toutes les suites actuelles                   |             moins de 2 min hors installation |
-| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker | environ 1 min après la première construction |
-| `npm run test:vm`              | boot à froid réel de l'image de référence sous v86            |   plus de 10 min, Docker et artefacts requis |
 
 Les suites `test:e2e` et `test:resilience` seront ajoutées lorsqu'elles posséderont un premier
 scénario réel. Un script vide qui réussit ne constitue pas une preuve.
 
-## Application Rails de référence
+### Intégration VM
+
+`tests/vm/durability-barrier.spec.mjs` est la preuve de niveau **intégration VM** du spike #4 : un
+guest Linux i386 réel démarre dans un Worker dédié, écrit sur un disque IDE dont le tampon est le
+backend de blocs de Vault, puis franchit une barrière de durabilité. La suite affirme deux choses
+complémentaires :
+
+- **témoin négatif** — sans le pont de durabilité, le guest classe le disque en `write through` et
+  n'émet aucune barrière ; le backend n'en voit aucune ;
+- **résultat** — avec le pont, l'ordre écriture → `flush` → acquittement est vérifiable dans le
+  journal du backend, barrière par barrière.
+
+Sans le témoin négatif, un test qui ne mesurerait que le cas corrigé ne prouverait pas que la
+correction sert à quelque chose.
+
+Elle **n'est pas rattachée à `npm run check`**, et la raison n'est pas sa durée : les trois épreuves
+de barrière tiennent en une vingtaine de secondes et la mesure de premier boot en ajoute une
+trentaine, soit **56 s mesurées** pour l'ensemble. La raison est sa dépendance.
+
+`test:vm` exige 9,9 Mio d'artefacts tiers — émulateur, BIOS, image de guest — que `npm run vm:fetch`
+télécharge depuis `registry.npmjs.org`, `raw.githubusercontent.com` et `i.copy.sh`. Rattacher la
+suite au contrôle obligatoire rendrait toute PR dépendante de la disponibilité de trois hôtes
+extérieurs, dont un qui ne publie pas d'empreinte de son côté. Un contrôle bloquant qui rougit parce
+qu'un CDN tiers est indisponible n'apprend rien sur la PR.
+
+Elle tourne donc dans un job CI dédié et **non bloquant** (`.github/workflows/vm.yml`), déclenché
+manuellement et chaque nuit. Elle deviendra bloquante lorsque le backend OPFS de production (#6) en
+fera une preuve de durabilité du produit et que les artefacts seront servis depuis une source que le
+projet maîtrise.
+
+```sh
+npm run vm:fetch     # récupère et vérifie les artefacts v86 (empreintes SHA-256)
+npm run test:vm
+npm run vm:protocol  # protocole de mesure complet sous Node, écrit reports/vm/protocole.json
+```
+
+`npm run vm:check` vérifie les empreintes sans réseau et échoue si un artefact manque ou diffère.
+Les mesures de référence du spike sont figées dans
+[`docs/spikes/0004-backend-de-blocs-v86.md`](spikes/0004-backend-de-blocs-v86.md).
+
+### Application Rails de référence
 
 `npm run app:test` exécute la suite Minitest d'`apps/reference/` dans une image Docker épinglée par
 digest (`ruby:3.3.12-slim-bookworm`). Elle couvre le contrat d'invariant, le modèle porteur de
@@ -33,19 +74,19 @@ Deux précautions la rendent opposable :
   précisément échoué sur cette différence.
 
 Ce que la suite **n'affirme pas** : le comportement sous i386. Son image est amd64, choisie pour que
-la boucle de développement reste en minutes. La preuve i386 est le rôle de `test:vm`, et d'elle
-seule.
+la boucle de développement reste en minutes. La preuve i386 est le rôle de `test:vm:reference`, et
+d'elle seule.
 
 Elle n'est pas rattachée à `npm run check` : elle exige Docker, que `docs/development.md` ne pose
 pas en prérequis du contrôle obligatoire. Elle est exécutée à chaque exécution du contrôle
 `Image de référence`, déclenché par toute modification d'`apps/**` ou de la chaîne de construction.
 
-## Boot réel de la VM : `test:vm`
+### Boot réel de la VM : `test:vm:reference`
 
-`npm run test:vm` boote **réellement** l'image de référence sous v86, dans Node, sans instantané, et
-interroge Rails par le port série. Elle vérifie que la route de santé annonce les versions du
-manifeste et que `/vault/invariant` rend le verdict `conforming` avec le digest de pièce jointe
-attendu.
+`npm run test:vm:reference` boote **réellement** l'image de référence sous v86, dans Node, sans
+instantané, et interroge Rails par le port série. Elle vérifie que la route de santé annonce les
+versions du manifeste et que `/vault/invariant` rend le verdict `conforming` avec le digest de pièce
+jointe attendu.
 
 Trois règles la gouvernent :
 

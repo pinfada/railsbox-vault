@@ -23,16 +23,27 @@ const PAGE_FILES = ["public/**/*.mjs", "src/**/page-*.mjs"];
 const SHARED_WEB_FILES = ["src/**/*.mjs"];
 
 /**
- * Code exécuté par Node : outillage, suites unitaire et VM, configurations à la racine. La suite
- * `tests/vm/` boote une VM sous Node et ne touche jamais au DOM : elle relève donc du même contexte
- * que `tests/unit/`, pas de celui des spécifications Playwright.
+ * Code exécuté par Node : outillage, suites unitaire et VM sous Node, configurations à la racine.
+ * `tests/vm/` héberge deux natures de fichiers : les `*.test.mjs` bootent une VM sous Node et ne
+ * touchent jamais au DOM (contexte Node, comme `tests/unit/`), tandis que les `*.spec.mjs` sont des
+ * spécifications Playwright classées plus bas. La distinction se fait donc à l'extension.
  */
-const NODE_FILES = ["tools/**/*.mjs", "tests/unit/**/*.mjs", "tests/vm/**/*.mjs", "*.config.mjs"];
+const NODE_FILES = [
+  "tools/**/*.mjs",
+  "tests/unit/**/*.mjs",
+  "tests/vm/**/*.test.mjs",
+  "*.config.mjs",
+];
 
 // Spécifications Playwright : le corps du test s'exécute sous Node, mais les rappels passés à
 // `page.evaluate` sont du code navigateur analysé dans le même fichier. Les deux jeux sont donc
 // légitimes ici ; les couvrir par des commentaires `/* global */` reviendrait à désactiver la règle.
-const PLAYWRIGHT_FILES = ["tests/browser/**/*.mjs", "tests/compat/**/*.mjs"];
+// Sous `tests/vm/`, seules les `*.spec.mjs` (barrière de durabilité #4) relèvent de ce contexte.
+const PLAYWRIGHT_FILES = [
+  "tests/browser/**/*.mjs",
+  "tests/compat/**/*.mjs",
+  "tests/vm/**/*.spec.mjs",
+];
 
 /**
  * Globals communs à la page et au Worker dédié. Les modules de `src/` sont importés par les deux
@@ -45,7 +56,15 @@ const SHARED_WEB_GLOBALS = Object.freeze(
 
 export default [
   {
-    ignores: ["node_modules/**", "playwright-report/**", "test-results/**", "reports/**"],
+    ignores: [
+      "node_modules/**",
+      "playwright-report/**",
+      "test-results/**",
+      "reports/**",
+      // Artefacts tiers récupérés par `npm run vm:fetch` : ils sont vérifiés par empreinte, pas
+      // relus par notre linter. Les modifier reviendrait à casser cette vérification.
+      "vendor/v86/artefacts/**",
+    ],
   },
   eslint.configs.recommended,
   {

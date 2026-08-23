@@ -73,7 +73,7 @@ jobs:
       - name: Boot à froid et vérification de l'invariant
         env:
           VAULT_VM_VERBEUX: "1"
-        run: npm run test:vm
+        run: npm run test:vm:reference
 
       - name: Manifeste et mesures
         if: always()

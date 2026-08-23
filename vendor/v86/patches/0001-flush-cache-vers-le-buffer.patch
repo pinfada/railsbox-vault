@@ -1,0 +1,38 @@
+--- a/src/ide.js
++++ b/src/ide.js
+@@ -1271,11 +1271,19 @@
+             break;
+ 
+         case ATA_CMD_FLUSH_CACHE:
+-            this.status_reg = ATA_SR_DRDY|ATA_SR_DSC;
+-            this.push_irq();
+-            break;
+-
+         case ATA_CMD_FLUSH_CACHE_EXT:
++            // Buffers able to persist data expose an optional flush(fn). The command stays busy
++            // until the buffer acknowledges, which is what makes the guest's fsync meaningful.
++            if(this.buffer && this.buffer.flush)
++            {
++                this.status_reg = ATA_SR_BSY;
++                this.buffer.flush(() =>
++                {
++                    this.status_reg = ATA_SR_DRDY|ATA_SR_DSC;
++                    this.push_irq();
++                });
++                break;
++            }
+             this.status_reg = ATA_SR_DRDY|ATA_SR_DSC;
+             this.push_irq();
+             break;
+@@ -2481,7 +2489,10 @@
+     const major_version = 0x0000;   // device does not report version
+     // supported ATA:   NOP, FLUSH CACHE, FLUSH CACHE EXT, 48-bit addr
+     // supported ATAPI: NOP, DEVICE RESET, PACKET and FLUSH CACHE
+-    const feat_82 = this.is_atapi ? 1 << 14 | 1 << 9 | 1 << 5 : 1 << 14;
++    // Bit 5 announces a volatile write cache. Word 85 below is a copy of word 82, so this
++    // single bit also reports the cache as enabled. Without it Linux configures the disk as
++    // write-through and never issues FLUSH CACHE, so a buffer can never be told to persist.
++    const feat_82 = this.is_atapi ? 1 << 14 | 1 << 9 | 1 << 5 : 1 << 14 | 1 << 5;
+     const feat_83 = this.is_atapi ? 1 << 14 | 1 << 12 : 1 << 14 | 1 << 13 | 1 << 12 | 1 << 10;
+     const feat_84 = this.is_atapi ? 1 << 14 : 1 << 14;
+ 

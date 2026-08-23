@@ -58,7 +58,7 @@ avant l'implémentation complète #24.
 Le runtime prend en charge l'exécution, la persistance, le verrouillage, l'export, la restauration
 et l'identité des artefacts. Il ne connaît pas les concepts métier de l'application.
 
-Son interface de stockage devra exposer au minimum :
+Son interface de stockage expose au minimum :
 
 - `read(offset, length)` avec lecture exacte ou erreur typée ;
 - `write(offset, bytes)` avec détection des écritures partielles ;
@@ -67,8 +67,23 @@ Son interface de stockage devra exposer au minimum :
 - fermeture exclusive et transfert explicite de propriété ;
 - injection déterministe d'erreurs pour les tests de résilience.
 
-Les callbacks précis dépendront du spike v86 #4. Le contrat ci-dessus est le comportement exigé, pas
-une supposition sur l'API actuelle de v86.
+Le spike #4 a confirmé ce contrat et l'a éprouvé contre un vrai guest Linux
+([ADR 0003](decisions/0003-backend-de-blocs-v86.md)). Trois ajustements en découlent.
+
+**Le contrat de Vault n'est pas celui de v86.** L'émulateur attend un tampon à callbacks —
+`byteLength`, `load()`, `get(offset, length, fn, { signal })`, `set(offset, bytes, fn)` — accepté
+tel quel dès qu'un objet porte `get`, `set` et `load`. Un adaptateur traduit ; le contrat ci-dessus
+reste celui du runtime.
+
+**`get` et `set` n'ont aucun canal d'erreur.** Le périphérique IDE émulé ne sait pas représenter un
+échec de support : ses callbacks ne prennent qu'un succès. Un backend en panne a donc trois
+conduites possibles, et deux sont interdites — rendre des zéros, ou acquitter quand même. La
+troisième est retenue : **ne pas acquitter, remonter l'erreur typée au runtime, arrêter la VM**. Le
+guest observe alors une erreur d'E/S après son délai de garde ATA ; l'exploitant, une erreur nommée.
+
+**La barrière de durabilité n'existe pas en amont.** Elle est ajoutée par un pont qui traduit ATA
+FLUSH CACHE en `flush()`. Sans lui, `SEC-DURABLE-001` est inatteignable, non par négligence du
+backend mais parce que le guest n'émet jamais la barrière. Le détail est dans l'ADR 0003.
 
 ### Application Rails
 
@@ -118,7 +133,15 @@ il se traite comme une migration exigeant un export préalable, pas comme un dé
 
 Quota, handle perdu, authentification invalide, format incompatible, écriture partielle et échec de
 flush sont des états distincts. Aucune couche ne les convertit en succès, en bloc zéro ou en
-réinitialisation silencieuse. Les codes stables seront définis avec le premier backend #6.
+réinitialisation silencieuse. Les codes stables seront définis avec le premier backend #6 ; le spike
+#4 en propose une première série éprouvée dans `src/vm/storage-errors.mjs`
+(`VAULT_STORAGE_OUT_OF_RANGE`, `_SHORT_READ`, `_PARTIAL_WRITE`, `_FLUSH_FAILED`, `_HANDLE_LOST`,
+`_CLOSED`, `_BUSY`, `_UNSUPPORTED`).
+
+Ce que le guest en perçoit est mesuré et n'est pas symétrique : une faute transitoire est absorbée
+par les tentatives du noyau, une faute persistante devient une erreur d'E/S, une panne de support
+bloque le périphérique. Le tableau figure dans
+[`docs/spikes/0004-backend-de-blocs-v86.md`](spikes/0004-backend-de-blocs-v86.md).
 
 ## Ordre des preuves
 
