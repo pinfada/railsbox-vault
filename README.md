@@ -53,6 +53,8 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [Compatibilité](docs/compatibility.md)
 - [Versions et publications](docs/release-policy.md)
 - [Feuille de route](docs/roadmap.md)
+- [Démarrer dans l'équipe](docs/team-start.md)
+- [Évaluation de readiness](docs/readiness-assessment.md)
 - [Contribuer et travailler en TDD](CONTRIBUTING.md)
 - [Gouvernance de développement](docs/governance.md)
 - [Développement](docs/development.md)
