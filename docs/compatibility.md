@@ -44,13 +44,14 @@ Les capacités facultatives sont mesurées pour information et n'entrent pas dan
 
 Mesures produites par `npm run test:compat` le **2026-08-23**.
 
-| Élément    | Valeur                                                     |
-| ---------- | ---------------------------------------------------------- |
-| Système    | Windows 11 Home, `win32` 10.0.26200                        |
-| Node       | v24.14.0 en local, version de `.node-version` en CI        |
-| Playwright | 1.62.1                                                     |
-| Moteurs    | Chromium 151.0.7922.34, Firefox 153.0, WebKit 26.5         |
-| Serveur    | `node tools/serve.mjs --cross-origin-isolated` (COOP/COEP) |
+| Élément    | Valeur                                                       |
+| ---------- | ------------------------------------------------------------ |
+| Système    | Windows 11 Home, `win32` 10.0.26200                          |
+| Node       | v24.14.0 en local, version de `.node-version` en CI          |
+| Playwright | 1.62.1                                                       |
+| Moteurs    | Chromium 151.0.7922.34, Firefox 153.0, WebKit 26.5           |
+| Serveur    | `node tools/serve.mjs --cross-origin-isolated` (COOP/COEP)   |
+| Contexte   | `isSecureContext` vrai et `crossOriginIsolated` vrai partout |
 
 | Capacité                                        | Contexte | Obligatoire | Chromium  | Firefox     | WebKit      |
 | ----------------------------------------------- | -------- | ----------- | --------- | ----------- | ----------- |
@@ -65,8 +66,8 @@ Mesures produites par `npm run test:compat` le **2026-08-23**.
 | Contexte isolé multi-origine                    | page     | non         | supported | supported   | supported   |
 | BroadcastChannel                                | page     | oui         | supported | supported   | supported   |
 | Web Locks (`navigator.locks`)                   | page     | oui         | supported | supported   | supported   |
-| `PublicKeyCredential` exposé                    | page     | non         | supported | supported   | unsupported |
-| `isUserVerifyingPlatformAuthenticatorAvailable` | page     | non         | supported | supported   | unsupported |
+| `PublicKeyCredential` exposé                    | page     | non         | supported | supported   | supported   |
+| `isUserVerifyingPlatformAuthenticatorAvailable` | page     | non         | supported | supported   | supported   |
 | `performance.memory` (spécifique Chromium)      | page     | non         | supported | unsupported | unsupported |
 | WebCrypto AES-GCM dans le Worker                | worker   | oui         | supported | supported   | supported   |
 | `FileSystemSyncAccessHandle` dans le Worker     | worker   | oui         | supported | supported   | unsupported |
@@ -88,6 +89,15 @@ Verdicts Vault correspondants :
   accordée et savoir la demander plus tard.
 - **`performance.memory` absent hors Chromium.** Verdict `unsupported`, sans erreur : l'API est une
   extension propriétaire et ne peut pas servir de base à un budget mémoire portable.
+- **WebAuthn présent dans les trois moteurs, y compris WebKit.** Attention au piège de détection :
+  WebKit expose `PublicKeyCredential` comme un **objet**, pas comme une fonction. Tester
+  `typeof === "function"` publie un faux négatif. La sonde accepte donc une fonction ou un objet non
+  nul pour un objet d'interface, et réserve `typeof === "function"` aux méthodes, qui doivent être
+  appelables. Voir `src/compat/host-api.mjs`.
+- **Toutes les mesures sont prises en contexte sécurisé et isolé.** `agent.isSecureContext` et
+  `agent.crossOriginIsolated` figurent dans chaque rapport. C'est ce qui permet d'affirmer que
+  l'absence de `navigator.storage` sous WebKit est bien une absence d'API, et non la conséquence
+  d'un contexte non sécurisé.
 - **SharedArrayBuffer et `Atomics.wait` disponibles partout, mais seulement en contexte isolé.** La
   sonde sert la page avec `Cross-Origin-Opener-Policy: same-origin` et
   `Cross-Origin-Embedder-Policy: require-corp`. Sans ces en-têtes, `SharedArrayBuffer` disparaît des
@@ -97,11 +107,18 @@ Verdicts Vault correspondants :
 
 **Le projet `webkit` de Playwright ne qualifie pas Safari.** C'est un build WebKit dédié aux tests,
 compilé pour la plateforme hôte, dont la surface d'API diffère de celle du Safari livré par Apple.
-La mesure du 2026-08-23 le montre directement : le build WebKit Playwright n'expose ni
-`navigator.storage` ni `PublicKeyCredential`, alors que Safari de bureau fournit OPFS,
-`FileSystemSyncAccessHandle` et WebAuthn depuis plusieurs versions. Ce n'est pas un accident de
-plateforme : la CI Linux (`ubuntu-latest`, noyau 6.17, Node 22) produit exactement les mêmes
-verdicts que la machine Windows de développement, pour les trois moteurs.
+La mesure du 2026-08-23 le montre directement : le build WebKit Playwright n'expose pas
+`navigator.storage`, donc ni OPFS, ni `FileSystemSyncAccessHandle`, ni `estimate()`, alors que
+Safari de bureau les fournit depuis plusieurs versions. L'absence est bien celle de l'API et non
+celle d'un contexte sécurisé : `agent.isSecureContext` vaut `true` dans le rapport WebKit.
+
+Ce n'est pas non plus un accident de plateforme : la CI Linux (`ubuntu-latest`, noyau 6.17, Node 22)
+produit exactement les mêmes verdicts que la machine Windows de développement, pour les trois
+moteurs.
+
+`PublicKeyCredential`, en revanche, **est** exposé par WebKit Playwright — comme un objet et non
+comme une fonction. Une première version de cette page l'annonçait absent : c'était un défaut de
+détection de la sonde, corrigé depuis, et non une limite du moteur.
 
 Conséquences retenues :
 

@@ -34,6 +34,7 @@ function probeReportWith(overrides = {}) {
       userAgentPlatform: "Windows",
       hardwareConcurrency: 8,
       crossOriginIsolated: true,
+      isSecureContext: true,
     },
     capabilities,
     vaultVerdict: computeVaultVerdict(capabilities),
@@ -53,7 +54,7 @@ const RUNNER = Object.freeze({
 test("le contrat de sonde déclare un identifiant et une version stables", () => {
   assert.deepEqual(CAPABILITY_PROBE_CONTRACT, {
     id: "railsbox-vault-capability-probe",
-    version: 1,
+    version: 2,
   });
   assert.deepEqual(CAPABILITY_VERDICTS, ["supported", "unsupported", "denied", "error"]);
 });
@@ -248,6 +249,15 @@ test("le validateur refuse un verdict Vault incohérent avec les capacités mesu
   };
 
   assert.match(validateCompatReport(tampered).problems.join(" "), /incohérent/i);
+});
+
+test("le validateur exige les booléens explicatifs du bloc agent", () => {
+  for (const flag of ["crossOriginIsolated", "isSecureContext"]) {
+    const report = structuredClone(finalizeCompatReport(probeReportWith(), RUNNER));
+    delete report.agent[flag];
+
+    assert.match(validateCompatReport(report).problems.join(" "), new RegExp(flag));
+  }
 });
 
 test("le validateur exige le bloc exécutant et un horodatage exploitable", () => {

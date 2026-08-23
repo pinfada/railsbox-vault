@@ -5,13 +5,14 @@
 complet, produit par un vrai navigateur, sur lequel valider le schéma de
 `src/compat/capability-contract.mjs`.
 
-| Champ         | Valeur                             |
-| ------------- | ---------------------------------- |
-| Moteur        | Chromium Playwright 151.0.7922.34  |
-| Playwright    | 1.62.1                             |
-| Système       | win32 10.0.26200 (Windows 11 Home) |
-| Node          | v24.14.0                           |
-| Enregistré le | 2026-08-23                         |
+| Champ              | Valeur                             |
+| ------------------ | ---------------------------------- |
+| Version du contrat | 2                                  |
+| Moteur             | Chromium Playwright 151.0.7922.34  |
+| Playwright         | 1.62.1                             |
+| Système            | win32 10.0.26200 (Windows 11 Home) |
+| Node               | v24.14.0                           |
+| Enregistré le      | 2026-08-23                         |
 
 ## Ce que la fixture prouve et ne prouve pas
 

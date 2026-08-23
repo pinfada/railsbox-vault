@@ -1,14 +1,15 @@
 {
   "contract": {
     "id": "railsbox-vault-capability-probe",
-    "version": 1
+    "version": 2
   },
-  "generatedAt": "2026-08-23T15:28:18.413Z",
+  "generatedAt": "2026-08-23T15:53:23.166Z",
   "agent": {
     "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
     "userAgentPlatform": "Windows",
     "hardwareConcurrency": 28,
-    "crossOriginIsolated": true
+    "crossOriginIsolated": true,
+    "isSecureContext": true
   },
   "runner": {
     "engine": "chromium",
@@ -17,7 +18,7 @@
     "os": "win32",
     "osRelease": "10.0.26200",
     "node": "v24.14.0",
-    "recordedAt": "2026-08-23T15:28:18.447Z"
+    "recordedAt": "2026-08-23T15:53:23.208Z"
   },
   "capabilities": [
     {
@@ -90,13 +91,13 @@
       "id": "publicKeyCredential",
       "context": "page",
       "verdict": "supported",
-      "detail": "PublicKeyCredential exposé ; aucune cérémonie WebAuthn exécutée"
+      "detail": "PublicKeyCredential exposé comme fonction ; aucune cérémonie WebAuthn exécutée"
     },
     {
       "id": "platformAuthenticatorPresence",
       "context": "page",
       "verdict": "supported",
-      "detail": "fonction présente ; volontairement non appelée pour éviter toute cérémonie"
+      "detail": "isUserVerifyingPlatformAuthenticatorAvailable présente ; volontairement non appelée pour éviter toute cérémonie"
     },
     {
       "id": "performanceMemory",

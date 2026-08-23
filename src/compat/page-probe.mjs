@@ -11,6 +11,11 @@ import {
 } from "./capability-contract.mjs";
 import { probeAesGcm, probeHkdf } from "./crypto-probes.mjs";
 import {
+  detectPlatformAuthenticatorPresence,
+  detectPublicKeyCredential,
+  isConstructorLike,
+} from "./host-api.mjs";
+import {
   DeniedCapabilityError,
   MissingCapabilityError,
   ProbeTimeoutError,
@@ -38,8 +43,10 @@ function formatBytes(value) {
 }
 
 async function requestWorkerCapabilities(workerUrl) {
-  if (typeof Worker !== "function") {
-    throw new MissingCapabilityError("le constructeur Worker n'est pas exposé");
+  if (!isConstructorLike(globalThis.Worker)) {
+    throw new MissingCapabilityError(
+      `l'objet d'interface Worker n'est pas exposé (typeof ${typeof globalThis.Worker})`,
+    );
   }
 
   const worker = new Worker(workerUrl, { type: "module" });
@@ -174,7 +181,7 @@ async function probeWebAssembly() {
 }
 
 function probeSharedArrayBuffer() {
-  if (typeof SharedArrayBuffer !== "function") {
+  if (!isConstructorLike(globalThis.SharedArrayBuffer)) {
     throw new MissingCapabilityError(
       "SharedArrayBuffer n'est pas exposé : contexte probablement non isolé",
     );
@@ -197,8 +204,10 @@ function probeCrossOriginIsolation() {
 }
 
 async function probeBroadcastChannel() {
-  if (typeof BroadcastChannel !== "function") {
-    throw new MissingCapabilityError("BroadcastChannel n'est pas exposé");
+  if (!isConstructorLike(globalThis.BroadcastChannel)) {
+    throw new MissingCapabilityError(
+      `BroadcastChannel n'est pas exposé (typeof ${typeof globalThis.BroadcastChannel})`,
+    );
   }
   const name = uniqueName("channel");
   const emitter = new BroadcastChannel(name);
@@ -235,24 +244,6 @@ async function probeWebLocks() {
   return "verrou exclusif acquis puis relâché";
 }
 
-function probePublicKeyCredential() {
-  if (typeof globalThis.PublicKeyCredential !== "function") {
-    throw new MissingCapabilityError("PublicKeyCredential n'est pas exposé");
-  }
-  return "PublicKeyCredential exposé ; aucune cérémonie WebAuthn exécutée";
-}
-
-function probePlatformAuthenticatorPresence() {
-  const api = globalThis.PublicKeyCredential;
-  if (typeof api !== "function") {
-    throw new MissingCapabilityError("PublicKeyCredential n'est pas exposé");
-  }
-  if (typeof api.isUserVerifyingPlatformAuthenticatorAvailable !== "function") {
-    throw new MissingCapabilityError("isUserVerifyingPlatformAuthenticatorAvailable est absent");
-  }
-  return "fonction présente ; volontairement non appelée pour éviter toute cérémonie";
-}
-
 function probePerformanceMemory() {
   const memory = globalThis.performance?.memory;
   if (!memory) {
@@ -277,8 +268,8 @@ const PAGE_PROBES = new Map([
   ["crossOriginIsolated", async () => probeCrossOriginIsolation()],
   ["broadcastChannel", probeBroadcastChannel],
   ["webLocks", probeWebLocks],
-  ["publicKeyCredential", async () => probePublicKeyCredential()],
-  ["platformAuthenticatorPresence", async () => probePlatformAuthenticatorPresence()],
+  ["publicKeyCredential", async () => detectPublicKeyCredential(globalThis)],
+  ["platformAuthenticatorPresence", async () => detectPlatformAuthenticatorPresence(globalThis)],
   ["performanceMemory", async () => probePerformanceMemory()],
 ]);
 
@@ -289,6 +280,9 @@ function describeAgent() {
     hardwareConcurrency:
       typeof navigator.hardwareConcurrency === "number" ? navigator.hardwareConcurrency : null,
     crossOriginIsolated: globalThis.crossOriginIsolated === true,
+    // Variable explicative indispensable : `navigator.storage` et WebCrypto n'existent qu'en
+    // contexte sécurisé. Un verdict `unsupported` se lit différemment selon ce booléen.
+    isSecureContext: globalThis.isSecureContext === true,
   };
 }
 

@@ -5,6 +5,7 @@
  */
 
 import { probeAesGcm } from "./crypto-probes.mjs";
+import { isConstructorLike } from "./host-api.mjs";
 import { MissingCapabilityError, deniedIfRefused, measureCapability } from "./probe-runner.mjs";
 import { AES_GCM_VECTOR, bytesToHex, hexToBytes } from "./probe-vectors.mjs";
 
@@ -99,7 +100,7 @@ async function probeSyncAccessHandle() {
 }
 
 function probeAtomicsWait() {
-  if (typeof SharedArrayBuffer !== "function") {
+  if (!isConstructorLike(globalThis.SharedArrayBuffer)) {
     throw new MissingCapabilityError("SharedArrayBuffer n'est pas exposé dans le Worker");
   }
   if (typeof Atomics?.wait !== "function") {

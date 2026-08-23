@@ -4,9 +4,11 @@
  * et réutilisé aussi bien par la sonde que par la suite Playwright.
  */
 
+// Version 2 : le bloc `agent` porte désormais `isSecureContext`, indispensable pour lire un
+// verdict `unsupported` sur une API réservée aux contextes sécurisés.
 export const CAPABILITY_PROBE_CONTRACT = Object.freeze({
   id: "railsbox-vault-capability-probe",
-  version: 1,
+  version: 2,
 });
 
 export const CAPABILITY_VERDICTS = Object.freeze(["supported", "unsupported", "denied", "error"]);
@@ -213,8 +215,10 @@ export function validateCompatReport(report) {
   if (!isNonEmptyString(report.agent?.userAgent)) {
     problems.push("Agent : `userAgent` manquant.");
   }
-  if (typeof report.agent?.crossOriginIsolated !== "boolean") {
-    problems.push("Agent : `crossOriginIsolated` doit être un booléen.");
+  for (const flag of ["crossOriginIsolated", "isSecureContext"]) {
+    if (typeof report.agent?.[flag] !== "boolean") {
+      problems.push(`Agent : \`${flag}\` doit être un booléen.`);
+    }
   }
 
   problems.push(...collectCapabilityProblems(report.capabilities));
