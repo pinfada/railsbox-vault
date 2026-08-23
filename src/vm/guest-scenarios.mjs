@@ -45,6 +45,50 @@ export const FILESYSTEM_STEPS = Object.freeze([
   },
 ]);
 
+/**
+ * Marques ASCII de la preuve de persistance OPFS (#6). Deux directions sont mesurées :
+ * l'hôte écrit `HOST_MARKER` dans le volume AVANT le boot et le guest doit le relire ; le guest
+ * écrit `GUEST_MARKER` puis `sync`, et l'hôte doit le retrouver dans le fichier OPFS après avoir
+ * fermé puis rouvert le handle.
+ *
+ * Elles sont en ASCII imprimable pour traverser la console série sans encodage, et leurs secteurs
+ * sont éloignés des structures que le noyau examine à l'amorçage.
+ */
+export const HOST_MARKER = "VAULT-HOTE-OPFS-0123456789ABCDEF";
+export const GUEST_MARKER = "VAULT-GUEST-OPFS-0123456789ABCD";
+export const HOST_MARKER_OFFSET = 2048 * 512;
+export const GUEST_MARKER_OFFSET = 4096 * 512;
+
+/**
+ * Étapes de la preuve de persistance OPFS. Trois précautions les rendent lisibles :
+ *
+ *  - `dd bs=1` adresse à l'OCTET : la mesure porte sur des octets exacts, pas sur un secteur
+ *    arrondi, ce qui exerce le chemin non aligné du backend depuis le guest lui-même ;
+ *  - chaque lecture est suivie d'un `echo` : `dd` n'émet pas de fin de ligne, et la marque se
+ *    confondrait avec le jeton de fin de commande de la console série ;
+ *  - chaque commande tient sous 80 colonnes, largeur à laquelle le terminal du guest replie son
+ *    écho — un écho replié brouille la frontière entre commande et sortie.
+ *
+ * `conv=fsync` est indispensable : le spike #4 a mesuré que `sync` seul ne fait pas émettre de
+ * FLUSH CACHE au guest sur ce noyau. Sans lui, la barrière ne traverserait jamais le backend.
+ */
+export const OPFS_PERSISTENCE_STEPS = Object.freeze([
+  { label: "cache-type", command: "cat /sys/block/sda/device/scsi_disk/*/cache_type" },
+  {
+    label: "lire-marque-hote",
+    command: `dd if=/dev/sda bs=1 skip=${HOST_MARKER_OFFSET} count=${HOST_MARKER.length} 2>/dev/null; echo`,
+  },
+  { label: "preparer-marque", command: `printf ${GUEST_MARKER} > /tmp/m; echo rc=$?` },
+  {
+    label: "ecrire-marque-guest",
+    command: `dd if=/tmp/m of=/dev/sda bs=1 seek=${GUEST_MARKER_OFFSET} conv=fsync 2>/dev/null`,
+  },
+  {
+    label: "relire-marque-guest",
+    command: `dd if=/dev/sda bs=1 skip=${GUEST_MARKER_OFFSET} count=${GUEST_MARKER.length} 2>/dev/null; echo`,
+  },
+]);
+
 /** Exécute une liste d'étapes sur une session ouverte. */
 export async function runSteps(session, steps) {
   const results = [];

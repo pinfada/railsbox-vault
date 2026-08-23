@@ -6,22 +6,17 @@
 // v86 avant d'écrire le backend OPFS de production (#6). Sa `flush` acquitte une durabilité
 // simulée, et il le dit : `durable` vaut `false` dans son descripteur.
 
+import { SECTOR_SIZE, assertBlockGeometry } from "./block-geometry.mjs";
 import { BlockJournal, JOURNAL_OPERATIONS } from "./block-journal.mjs";
 import { FAULT_KINDS, createFaultPlan } from "./fault-plan.mjs";
 import { STORAGE_ERROR_CODES, StorageError, outOfRange } from "./storage-errors.mjs";
 
-/** Secteur ATA : plus petite unité que le matériel émulé sait adresser. */
-export const SECTOR_SIZE = 512;
+// La géométrie est partagée avec le backend OPFS de #6 : deux définitions du secteur pourraient
+// diverger sans que rien ne le signale. `SECTOR_SIZE` reste réexporté, les appelants du spike #4
+// l'important d'ici.
+export { SECTOR_SIZE };
 
 const openVolumes = new Map();
-
-function assertGeometry(size) {
-  if (!Number.isInteger(size) || size <= 0 || size % SECTOR_SIZE !== 0) {
-    throw new RangeError(
-      `Taille de volume invalide : ${size}. Un multiple entier de ${SECTOR_SIZE} octets est exigé.`,
-    );
-  }
-}
 
 export class MemoryBlockBackend {
   #name;
@@ -35,7 +30,7 @@ export class MemoryBlockBackend {
 
   /** Utiliser `openMemoryVolume` : le constructeur ne garantit pas l'exclusivité. */
   constructor({ name, size, journal, faults, flushDelay }) {
-    assertGeometry(size);
+    assertBlockGeometry(size);
     this.#name = name;
     this.#bytes = new Uint8Array(size);
     this.#journal = journal;
