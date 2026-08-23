@@ -21,6 +21,9 @@
 | PostgreSQL dans la VM | candidat                    | fixture #5 et persistance #7                              |
 | SQLite dans la VM     | candidat                    | fixture dédiée après preuve PostgreSQL ou ADR de priorité |
 
+La frontière d'origine décidée par l'ADR 0002 a été mesurée séparément sur les trois mêmes moteurs
+et n'y change aucun statut : elle tient partout. Voir « Frontière d'origine » plus bas.
+
 La détection porte sur les capacités effectives, pas seulement sur un numéro de navigateur. Une
 extension optionnelle comme WebAuthn PRF doit confirmer son résultat à l'enregistrement et au
 déverrouillage.
@@ -141,6 +144,34 @@ verdicts ci-dessus ont été reproduits à l'identique par cet artefact sous `ub
 Node 22. La fixture versionnée `tests/fixtures/compat/reference-report.json` sert uniquement de
 rapport de référence pour valider le schéma ; elle n'engage aucun verdict, comme l'explique
 `tests/fixtures/compat/README.md`.
+
+## Frontière d'origine
+
+Mesures produites par `npm run test:browser:moteurs -- chromium,firefox,webkit` le **2026-08-23**,
+sur les mêmes moteurs et la même machine que la sonde de capacités. Le protocole complet est dans
+`docs/spikes/0035-topologie-origine-de-confiance.md`.
+
+| Constat                                                             | Chromium |       Firefox        |        WebKit         |
+| ------------------------------------------------------------------- | :------: | :------------------: | :-------------------: |
+| Origine distincte : les onze tentatives visant la coquille échouent |   oui    |         oui          |          oui          |
+| Même origine sans sandbox : les mêmes tentatives aboutissent        |   oui    |         oui          | oui, hors sondes OPFS |
+| CSP `frame-src` observable par `securitypolicyviolation`            |   oui    |         oui          |          oui          |
+| Iframe inter-origine sans COEP refusée sous `require-corp`          |   oui    | oui, non instrumenté |          oui          |
+| Iframe inter-origine avec COEP : hérite de l'isolation              | **non**  |   cadre non chargé   |        **oui**        |
+
+Deux écarts méritent attention pour la suite :
+
+- **héritage de `cross-origin-isolated` par l'iframe applicative.** Chromium le refuse — la
+  fonctionnalité est pilotée par permission, liste par défaut `self` — ce qui prive utilement le
+  code applicatif de `SharedArrayBuffer` ; WebKit l'accorde. Si l'isolation devient obligatoire pour
+  v86 (#4), l'écart devra être tranché ici.
+- **portée de la politique d'intégration.** Sous `require-corp`, WebKit a refusé le module importé
+  par le Worker runtime tant que ce module ne portait pas lui-même la politique. La sonde de
+  capacités ne rencontre pas le problème parce que son serveur pose COOP/COEP sur **toutes** ses
+  réponses. Les deux mesures disent la même chose : la politique doit être portée par chaque
+  artefact du runtime, pas seulement par la page.
+
+La ligne WebKit reste celle du moteur de test, jamais celle de Safari.
 
 ## Applications Rails
 

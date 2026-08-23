@@ -3,10 +3,9 @@
 Cette architecture organise les questions à prouver ; elle ne fige pas encore une implémentation.
 
 ```text
-Publication statique
-├── coquille de confiance
-├── runtime RailsBox Vault versionné
-└── application Rails versionnée
+Publication statique — DEUX origines (ADR 0002)
+├── origine de confiance : coquille + runtime RailsBox Vault versionné
+└── origine applicative  : documents et assets de l'application Rails versionnée
             │
             ▼
 Navigateur / Worker dédié
@@ -34,15 +33,25 @@ Stockage local
                          ▼
 Utilisateur ──geste──► Coquille de confiance ──capacité minimale──► Runtime Worker
                               │                                  │
-                              │ aucun secret applicatif          ├── VM Rails
-                              │                                  └── volume OPFS
+                              │ MessagePort restreint            ├── VM Rails
+                              │ (aucun secret applicatif)        └── volume OPFS
+                              ▼
+              ORIGINE APPLICATIVE distincte : document Rails, son stockage,
+              son Service Worker — aucun canal implicite vers la coquille
+                              │
                               ▼
                        export utilisateur ──► autre origine/appareil
 ```
 
 Le JavaScript rendu par l'application Rails est une entrée hostile potentielle. Il ne partage pas
-automatiquement l'autorité de la coquille. La topologie exacte est le résultat attendu du spike #35
-; aucune interface durable de ports ne sera figée avant cette décision.
+l'autorité de la coquille, et depuis l'[ADR 0002](decisions/0002-topologie-origine-de-confiance.md)
+il ne partage pas non plus son **origine** : le document applicatif vit sur une origine distincte,
+encadré par `sandbox="allow-scripts allow-same-origin"`. La partition d'origine sépare OPFS,
+IndexedDB, Web Locks, `BroadcastChannel`, stockage clé-valeur, cookies et portée des Service
+Workers. La coquille n'accorde qu'un `MessagePort` transféré, restreint à une liste d'admission.
+
+Les formes exactes de ces ports restent ouvertes : l'ADR 0002 énumère les interfaces à ne pas figer
+avant l'implémentation complète #24.
 
 ### Runtime générique
 
@@ -71,22 +80,38 @@ L'application ne reçoit ni clé brute ni accès OPFS. Elle observe un disque ID
 erreurs que le guest sait représenter. Ses migrations métier restent distinctes des migrations du
 format Vault.
 
+Son document vit sur l'origine applicative. Elle y dispose pleinement de son propre stockage —
+cookies de session, IndexedDB, cache, Service Worker hors ligne — et de rien d'autre. Une
+conséquence reste à trancher : sur une origine applicative partagée, deux applications se lisent
+mutuellement. Origine par application ou partitionnement explicite est un travail découvert du spike
+#35.
+
 ### Services optionnels
 
 Un hébergement statique distribue les artefacts. Un relais peut transporter des paquets chiffrés.
 Aucun de ces services ne doit être requis pour ouvrir un volume déjà installé, ni disposer des clés
 permettant de lire les données.
 
+L'hébergement doit fournir **deux** origines. GitHub Pages n'en sert qu'une par compte, les sites de
+projet en étant des chemins ; les options mesurées — domaine propre avec sous-domaine, second
+compte, ou hébergeur distinct pour une origine — sont comparées dans l'ADR 0002 et le choix
+appartient à la publication #16. Un changement d'origine rend l'OPFS de l'ancienne inatteignable :
+il se traite comme une migration exigeant un export préalable, pas comme un détail de déploiement.
+
 ## Cycle de vie de référence
 
 1. La coquille vérifie identités et compatibilité avant de demander une clé.
-2. Elle acquiert l'exclusivité du volume et un canal privé vers le Worker.
+2. Elle acquiert l'exclusivité du volume et un canal privé vers le Worker, **avant qu'aucun document
+   applicatif n'existe** : un canal établi après coup serait à portée du code applicatif.
 3. Le Worker ouvre le backend, puis seulement la VM.
-4. Le guest lit et écrit ; un flush traverse toutes les couches avant son acquittement.
-5. Export et migration créent une génération cohérente distincte.
-6. Verrouillage arrête les nouvelles E/S, termine proprement si possible, ferme le handle exclusif
+4. La coquille encadre alors le document applicatif sur l'origine distincte et lui transfère un
+   `MessagePort` restreint, après vérification du type, de l'origine et de la fenêtre émettrice de
+   son annonce.
+5. Le guest lit et écrit ; un flush traverse toutes les couches avant son acquittement.
+6. Export et migration créent une génération cohérente distincte.
+7. Verrouillage arrête les nouvelles E/S, termine proprement si possible, ferme le handle exclusif
    et relâche les clés au mieux de JavaScript.
-7. La reprise part d'un boot à froid tant qu'un snapshot lié à une génération exacte n'est pas
+8. La reprise part d'un boot à froid tant qu'un snapshot lié à une génération exacte n'est pas
    démontré.
 
 ## Erreurs contractuelles
@@ -102,7 +127,9 @@ réinitialisation silencieuse. Les codes stables seront définis avec le premier
 3. Résistance aux arrêts brutaux et cohérence de la base.
 4. Format de volume authentifié et transactionnel.
 5. Déverrouillage, récupération et rotation des clés.
-6. Implémentation complète de la séparation d'origine décidée dès la fondation.
+6. Implémentation complète (#24) de la séparation d'origine décidée par l'ADR 0002 ; sa preuve de
+   frontière existe déjà (`tests/browser/origin-topology.spec.mjs`) et devra être rejouée sur les
+   ports réels.
 7. Échanges chiffrés optionnels entre utilisateurs.
 
 La restauration d'un instantané mémoire pré-calculé sur un disque mutable est écartée du premier

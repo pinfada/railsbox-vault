@@ -53,6 +53,28 @@ node tools/serve.mjs --port 4180 --cross-origin-isolated
 ```
 
 La sonde est alors visible sur `http://127.0.0.1:4180/compat.html`, avec un tableau des verdicts.
+Elle est exemptée de la CSP de la coquille : une politique qui lui refuserait WebAssembly lui ferait
+rendre « capacité absente » sur un moteur qui la possède.
+
+### Deux origines
+
+L'ADR 0002 sépare la coquille de confiance et le document applicatif par une frontière d'origine. Le
+serveur de test prend donc un rôle :
+
+```sh
+node tools/serve.mjs --role shell --host 127.0.0.1 --port 4173   # coquille, CSP stricte
+node tools/serve.mjs --role app   --host localhost  --port 4174   # territoire applicatif
+```
+
+`127.0.0.1` et `localhost` sont deux origines distinctes au sens du navigateur et deux contextes
+sécurisés : la frontière est réelle sans DNS ni certificat. Le rôle `shell` sert une CSP stricte à
+ses propres documents et n'en impose aucune sous `/spike/origin/app*`, territoire applicatif. Le
+paramètre `?isolation=require-corp` ajoute COOP/COEP à une réponse, pour mesurer l'isolation
+cross-origin. `playwright.config.mjs` démarre les deux serveurs.
+
+La coquille du spike s'ouvre à l'adresse
+`http://127.0.0.1:4173/spike/origin/shell.html?topologie=T2-origine-distincte-sandbox` ; les
+topologies disponibles sont listées dans `src/spike/origin-topology.mjs`.
 
 ## Vérification avant une PR
 

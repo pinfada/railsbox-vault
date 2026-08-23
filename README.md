@@ -61,6 +61,8 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [Stratégie de test](docs/testing.md)
 - [Modèle de menace](SECURITY.md)
 - [ADR 0001 — un produit et un dépôt séparés](docs/decisions/0001-produit-et-depot-separes.md)
+- [ADR 0002 — la frontière coquille / application est une frontière d'origine](docs/decisions/0002-topologie-origine-de-confiance.md)
+- [Spike #35 — protocole et mesures de la topologie d'origine](docs/spikes/0035-topologie-origine-de-confiance.md)
 
 ## Licence
 

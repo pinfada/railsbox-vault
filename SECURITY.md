@@ -22,13 +22,29 @@ RailsBox Vault est au stade expérimental et ne doit contenir aucune donnée ré
 
 ## Frontières de confiance
 
-| Composant               | Autorité maximale admise                                      |
-| ----------------------- | ------------------------------------------------------------- |
-| Coquille Vault          | courtage du canal, déverrouillage et consentement utilisateur |
-| Worker runtime          | clé de volume en session et E/S authentifiées                 |
-| VM et application Rails | données nécessaires à l'usage, jamais la clé ni OPFS direct   |
-| Hébergement statique    | distribution d'artefacts publics vérifiables                  |
-| Relais optionnel        | transport de ciphertext et métadonnées minimales              |
+Depuis l'[ADR 0002](docs/decisions/0002-topologie-origine-de-confiance.md), cette frontière est une
+frontière d'**origine web** : la coquille et son Worker vivent sur l'origine de confiance, le
+document applicatif sur une origine distincte, encadré par
+`sandbox="allow-scripts allow-same-origin"`.
+
+| Composant               | Origine     | Autorité maximale admise                                           |
+| ----------------------- | ----------- | ------------------------------------------------------------------ |
+| Coquille Vault          | confiance   | courtage du canal, déverrouillage et consentement utilisateur      |
+| Worker runtime          | confiance   | clé de volume en session et E/S authentifiées                      |
+| Port restreint accordé  | frontière   | requêtes de la liste d'admission ; jamais une clé ni un handle     |
+| VM et application Rails | applicative | données nécessaires à l'usage, et le stockage de SA propre origine |
+| Hébergement statique    | les deux    | distribution d'artefacts publics vérifiables                       |
+| Relais optionnel        | —           | transport de ciphertext et métadonnées minimales                   |
+
+La partition d'origine sépare OPFS, IndexedDB, Web Locks, `BroadcastChannel`, stockage clé-valeur,
+cookies et portée des Service Workers. C'est ce que le spike #35 a mesuré : en même origine, onze
+tentatives sur dix-neuf aboutissent, dont la lecture de l'OPFS de la coquille, la capture d'un jeton
+par remplacement de `MessagePort.prototype.postMessage` et l'interception du réseau de la coquille
+par un Service Worker applicatif. Sur une origine distincte, aucune n'aboutit.
+
+Le durcissement du realm — capture des intrinsèques, `Reflect.apply` — reste utile en défense en
+profondeur. Il ne remplace pas la frontière : il n'atteint ni le stockage, ni les verrous, ni la
+portée des Service Workers.
 
 Le code applicatif, les dépendances Rails, l'hébergement et le relais restent des entrées
 potentiellement hostiles. La coquille et son Worker forment la base de confiance minimale à réduire
@@ -37,7 +53,10 @@ et tester.
 ## Invariants vérifiables
 
 - `SEC-ORIGIN-001` — un script applicatif ne peut acquérir le canal privilégié ou lire une clé de
-  volume ;
+  volume. La topologie qui le garantit est arrêtée par l'ADR 0002 ; la preuve de frontière est
+  `tests/browser/origin-topology.spec.mjs`, rattachée à `npm run check`. Elle comporte un témoin
+  positif qui exige que les mêmes tentatives ABOUTISSENT en même origine, sans quoi un relevé tout
+  vert ne prouverait rien ;
 - `SEC-KEY-001` — une clé de déverrouillage enveloppe une DEK aléatoire sans servir directement au
   chiffrement des blocs ;
 - `SEC-BLOCK-001` — un bloc est authentifié avec volume, adresse, format et génération ;
@@ -54,8 +73,18 @@ public et sa disposition.
 ## Ce que le chiffrement au repos ne résout pas
 
 Le chiffrement d'un volume ne protège pas les données déjà déverrouillées contre du code exécuté
-dans la même autorité web. Une séparation d'origine entre la coquille de confiance et l'application
-doit être étudiée avant tout usage avec des données sensibles.
+dans la même autorité web. La séparation d'origine entre la coquille de confiance et l'application
+est désormais décidée (ADR 0002) et sa frontière est éprouvée sur les quatre topologies comparées ;
+elle n'est pas encore implémentée dans le produit, ce que fera #24. Le gate « données sensibles »
+ci-dessous reste donc fermé.
+
+Ce que la frontière d'origine ne couvre pas :
+
+- une publication compromise de la coquille elle-même (`SEC-UPDATE-001`, #16) ;
+- deux applications partageant l'origine applicative, qui se lisent mutuellement tant qu'une origine
+  par application ou un partitionnement explicite n'est pas décidé ;
+- le port restreint une fois transféré : il est joignable par tout script du document applicatif, et
+  sa liste d'admission doit rester minimale.
 
 L'authentification indépendante de chaque bloc ne protège pas à elle seule contre le rejeu d'un
 ancien bloc, le déplacement d'un bloc valide, la troncature ou la restauration complète d'une
