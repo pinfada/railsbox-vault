@@ -4,7 +4,7 @@
 
 | Commande                       | Portée                                                        |                     Coût attendu |
 | ------------------------------ | ------------------------------------------------------------- | -------------------------------: |
-| `npm run test:unit`            | contrats et logique pure sous Node                            |                         secondes |
+| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node     |                         secondes |
 | `npm run test:browser`         | vraie page, Worker dédié et frontière d'origine sous Chromium |                    environ 1 min |
 | `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                 |                    environ 1 min |
 | `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                     |                    environ 2 min |
@@ -14,6 +14,19 @@
 
 Les suites `test:vm`, `test:e2e` et `test:resilience` seront ajoutées lorsqu'elles posséderont un
 premier scénario réel. Un script vide qui réussit ne constitue pas une preuve.
+
+### Configuration du lint
+
+`tests/unit/eslint-config.test.mjs` traite `eslint.config.mjs` comme un contrat testable. Il charge
+la configuration réelle du dépôt via l'API `ESLint` et lint des sources témoins présentées sous des
+chemins **virtuels** — aucun fichier n'est déposé dans l'arborescence — pour vérifier qu'un global
+Node est refusé sous `public/` et `src/`, qu'un global DOM est refusé sous `tools/`, `tests/unit/`
+et dans un module Worker, et que chaque contexte conserve les siens. La répartition attendue est
+décrite dans [`docs/development.md`](development.md).
+
+Cette suite est rattachée à `npm run test:unit`, donc à `npm run check` : son coût est de quelques
+centaines de millisecondes et une régression de configuration doit bloquer une PR. `npm run lint`
+seul ne le ferait pas, puisqu'un jeu de globals trop large ne produit aucun avertissement.
 
 ### Frontière d'origine
 
