@@ -129,3 +129,60 @@ test("une écriture plafonnée rend moins d'octets qu'on ne lui en donne", async
   assert.equal(handle.write(new Uint8Array(10).fill(5), { at: 0 }), 3);
   assert.equal(handle.getSize(), 3);
 });
+
+// L'instrument de latence de #14 (`blockFlush`/`releaseFlush`) est calibré ici : un instrument non
+// calibré invaliderait la preuve de barrière durable qui s'appuie sur lui. La règle est double : par
+// défaut, `flush()` reste SYNCHRONE et rend `undefined` — comme le vrai handle ; armé, il rend une
+// barrière EN VOL qui ne se matérialise qu'à sa libération.
+
+test("par défaut, flush est synchrone et rend undefined comme le vrai handle", async () => {
+  const store = ouvrir();
+  const handle = await store.openHandle("volume");
+
+  assert.equal(handle.flush(), undefined, "un flush non retardé ne rend rien");
+  assert.equal(store.flushCount("volume"), 1);
+  assert.equal(store.isFlushPending("volume"), false);
+});
+
+test("une barrière retardée reste en vol et ne se matérialise qu'à sa libération", async () => {
+  const store = ouvrir();
+  const handle = await store.openHandle("volume");
+
+  store.blockFlush("volume");
+  const enVol = handle.flush();
+
+  assert.ok(enVol instanceof Promise, "une barrière armée rend une promesse");
+  assert.equal(store.isFlushPending("volume"), true);
+  assert.equal(
+    store.flushCount("volume"),
+    0,
+    "rien n'est matérialisé tant que la barrière est en vol",
+  );
+
+  store.releaseFlush("volume");
+  await enVol;
+  assert.equal(store.flushCount("volume"), 1, "la barrière n'est comptée qu'une fois libérée");
+  assert.equal(store.isFlushPending("volume"), false);
+});
+
+test("une barrière retardée peut échouer à la libération, comme un support qui disparaît", async () => {
+  const store = ouvrir();
+  const handle = await store.openHandle("volume");
+
+  store.blockFlush("volume");
+  const enVol = handle.flush();
+  store.releaseFlush("volume", { fail: "InvalidStateError" });
+
+  await assert.rejects(
+    () => enVol,
+    (erreur) => erreur instanceof DOMException && erreur.name === "InvalidStateError",
+  );
+  assert.equal(store.flushCount("volume"), 0, "une barrière échouée n'est jamais matérialisée");
+});
+
+test("libérer une barrière absente est une erreur, pas un succès silencieux", async () => {
+  const store = ouvrir();
+  await store.openHandle("volume");
+
+  assert.throws(() => store.releaseFlush("volume"), /Aucune barrière en attente/);
+});
