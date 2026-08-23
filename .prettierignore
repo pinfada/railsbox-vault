@@ -2,5 +2,6 @@ node_modules/
 playwright-report/
 test-results/
 reports/
+.claude/
 vendor/v86/artefacts/
 vendor/v86/patches/
