@@ -42,7 +42,7 @@ function etape(rapport, label) {
 }
 
 test("sans le pont, aucune barrière du guest n'atteint le backend", async ({ page }, testInfo) => {
-  const rapport = await executer(page, { scenario: "barrier", durability: false });
+  const rapport = await executer(page, { scenario: "barrier", mode: "observe" });
   await testInfo.attach("vm-amont.json", {
     body: JSON.stringify(rapport, null, 2),
     contentType: "application/json",
@@ -60,7 +60,7 @@ test("sans le pont, aucune barrière du guest n'atteint le backend", async ({ pa
 test("avec le pont, l'écriture du guest est suivie d'une barrière acquittée", async ({
   page,
 }, testInfo) => {
-  const rapport = await executer(page, { scenario: "barrier", durability: true });
+  const rapport = await executer(page, { scenario: "barrier", mode: "full" });
   await testInfo.attach("vm-pont.json", {
     body: JSON.stringify(rapport, null, 2),
     contentType: "application/json",
@@ -88,7 +88,7 @@ test("avec le pont, l'écriture du guest est suivie d'une barrière acquittée",
 test("le verdict du rapport se rejoue hors du navigateur", async ({ page }) => {
   // Le même audit, appliqué côté Node aux barrières rapportées : la preuve ne dépend pas d'un
   // calcul fait dans la page.
-  const rapport = await executer(page, { scenario: "barrier", durability: true });
+  const rapport = await executer(page, { scenario: "barrier", mode: "full" });
   const rejoue = auditDurabilityBarriers(
     rapport.verdict.barriers.flatMap((barriere) => [
       { seq: barriere.flushSeq - 1, operation: "write", offset: 0, length: 512 },

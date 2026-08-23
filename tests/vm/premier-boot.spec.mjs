@@ -32,7 +32,7 @@ test("premier boot : p50 et p95 sur cinq essais après échauffement", async ({ 
   let dernier = null;
   for (let essai = 0; essai < ECHAUFFEMENT + ESSAIS; essai += 1) {
     dernier = await page.evaluate(() =>
-      globalThis.bancVault.executer({ scenario: "barrier", durability: true }),
+      globalThis.bancVault.executer({ scenario: "barrier", mode: "full" }),
     );
     if (essai >= ECHAUFFEMENT) durees.push(dernier.bootMilliseconds);
   }

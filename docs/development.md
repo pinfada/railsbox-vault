@@ -130,8 +130,17 @@ npm run vm:protocol   # protocole de mesure complet sous Node → reports/vm/pro
 
 Le banc s'observe aussi à la main : `npm start`, puis `http://127.0.0.1:4173/vm/`. La page ne fait
 rien elle-même ; elle démarre le Worker runtime et affiche son compte rendu. La console offre
-`await bancVault.executer({ scenario: "filesystem", durability: true })` ; `scenario` vaut `barrier`
-ou `filesystem`, et `durability: false` reproduit le comportement amont de v86.
+`await bancVault.executer({ scenario: "filesystem", mode: "full" })`. `scenario` vaut `barrier` ou
+`filesystem` ; `mode` vaut :
+
+| Mode       | Comportement de v86                                                     |
+| ---------- | ----------------------------------------------------------------------- |
+| `observe`  | amont exact ; seules les commandes ATA sont journalisées                |
+| `identify` | le disque annonce un cache d'écriture, mais la barrière reste chez v86  |
+| `full`     | la barrière du guest atteint le backend et n'est acquittée qu'après lui |
+
+Les trois modes existent parce que les deux ruptures mesurées par le spike #4 sont en série : sans
+le mode intermédiaire, on ne saurait pas laquelle des deux corrections produit quel effet.
 
 ## Vérification avant une PR
 

@@ -31,7 +31,7 @@ portent la décision :
 2. **La rupture de durabilité est plus profonde qu'annoncé.** Elle n'est pas seulement dans le
    traitement de FLUSH CACHE : le paquet IDENTIFY de v86 n'arme pas le bit « write cache » (mot 82
    bit 5, recopié en mot 85). Le guest classe donc `sda` en `write through` et **n'émet aucune
-   commande FLUSH CACHE**, pas même sur `sync` ou `fsync`. Mesuré : 176 commandes ATA sur le
+   commande FLUSH CACHE**, pas même sur `sync` ou `fsync`. Mesuré : 177 commandes ATA sur le
    protocole complet, dont zéro `0xE7` et zéro `0xEA`. Corriger `ata_command` seul n'aurait rien
    changé — le correctif n'aurait jamais été atteint.
 

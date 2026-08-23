@@ -13,6 +13,7 @@ import {
 import { createGuestSession } from "/src/vm/guest-session.mjs";
 import { openMemoryVolume } from "/src/vm/memory-block-backend.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
+import { BRIDGE_MODES } from "/src/vm/v86-flush-bridge.mjs";
 
 const ARTIFACTS = "/vendor/v86/artefacts/";
 const SCENARIOS = { barrier: BARRIER_STEPS, filesystem: FILESYSTEM_STEPS };
@@ -64,7 +65,7 @@ async function loadArtifacts() {
 
 async function run({
   scenario = "barrier",
-  durability = true,
+  mode = BRIDGE_MODES.full,
   volumeBytes = 16 * 1024 * 1024,
   flushDelay = 5,
 }) {
@@ -89,7 +90,7 @@ async function run({
     backend,
     onFatal: (error) => failures.push(error.toJSON()),
   });
-  const session = createGuestSession({ V86, artifacts, adapter, journal, durability });
+  const session = createGuestSession({ V86, artifacts, adapter, journal, mode });
 
   try {
     const bootMilliseconds = await session.boot();
@@ -97,7 +98,7 @@ async function run({
     const verdict = verdictForBarrierScenario(journal);
     return {
       scenario,
-      durability,
+      mode,
       bootMilliseconds: Number(bootMilliseconds.toFixed(1)),
       transferredBytes,
       counts: journal.counts(),

@@ -17,6 +17,7 @@ import { FILESYSTEM_STEPS, runSteps, summariseSteps } from "../src/vm/guest-scen
 import { createGuestSession } from "../src/vm/guest-session.mjs";
 import { openMemoryVolume } from "../src/vm/memory-block-backend.mjs";
 import { createV86BufferAdapter } from "../src/vm/v86-buffer-adapter.mjs";
+import { BRIDGE_MODES } from "../src/vm/v86-flush-bridge.mjs";
 import { ARTIFACT_DIRECTORY, MANIFEST_PATH, REPOSITORY_ROOT } from "./v86-paths.mjs";
 
 const REPORT_PATH = join(REPOSITORY_ROOT, "reports", "vm", "protocole.json");
@@ -50,7 +51,7 @@ function percentile(values, ratio) {
 
 let volumeCounter = 0;
 
-async function withSession({ V86, artifacts, durability, faults }, body) {
+async function withSession({ V86, artifacts, mode, faults }, body) {
   volumeCounter += 1;
   const journal = new BlockJournal();
   const backend = openMemoryVolume({
@@ -62,7 +63,7 @@ async function withSession({ V86, artifacts, durability, faults }, body) {
   });
   const failures = [];
   const adapter = createV86BufferAdapter({ backend, onFatal: (error) => failures.push(error) });
-  const session = createGuestSession({ V86, artifacts, adapter, journal, durability });
+  const session = createGuestSession({ V86, artifacts, adapter, journal, mode });
   try {
     return await body({ session, journal, backend, adapter, failures });
   } finally {
@@ -71,12 +72,12 @@ async function withSession({ V86, artifacts, durability, faults }, body) {
   }
 }
 
-async function measureSemantics({ V86, artifacts, durability }) {
-  return withSession({ V86, artifacts, durability }, async ({ session, journal }) => {
+async function measureSemantics({ V86, artifacts, mode }) {
+  return withSession({ V86, artifacts, mode }, async ({ session, journal }) => {
     const bootMilliseconds = await session.boot();
     const results = await runSteps(session, FILESYSTEM_STEPS);
     return {
-      durability,
+      mode,
       bootMilliseconds: Number(bootMilliseconds.toFixed(1)),
       counts: journal.counts(),
       steps: summariseSteps(journal, results),
@@ -87,7 +88,7 @@ async function measureSemantics({ V86, artifacts, durability }) {
 async function measureBoots({ V86, artifacts }, attempts) {
   const durations = [];
   for (let attempt = 0; attempt < attempts + 1; attempt += 1) {
-    const elapsed = await withSession({ V86, artifacts, durability: true }, ({ session }) =>
+    const elapsed = await withSession({ V86, artifacts, mode: BRIDGE_MODES.full }, ({ session }) =>
       session.boot(),
     );
     // Le premier essai échauffe le compilateur JIT du moteur : il est mesuré puis écarté.
@@ -161,7 +162,7 @@ async function measureFaults({ V86, artifacts }) {
   for (const testCase of FAULT_CASES) {
     process.stdout.write(`  faute : ${testCase.label}\n`);
     const observation = await withSession(
-      { V86, artifacts, durability: true, faults: createFaultPlan(testCase.faults) },
+      { V86, artifacts, mode: BRIDGE_MODES.full, faults: createFaultPlan(testCase.faults) },
       async ({ session, journal, failures, backend }) => {
         await session.boot();
         let guest;
@@ -204,10 +205,15 @@ async function main() {
   const artifacts = await loadArtifacts();
   const manifest = JSON.parse(await readFile(MANIFEST_PATH, "utf8"));
 
-  process.stdout.write("Sémantiques amont (sans pont de durabilité)…\n");
-  const upstream = await measureSemantics({ V86, artifacts, durability: false });
-  process.stdout.write("Sémantiques avec pont de durabilité…\n");
-  const bridged = await measureSemantics({ V86, artifacts, durability: true });
+  process.stdout.write("Sémantiques amont (aucune correction)…\n");
+  const upstream = await measureSemantics({ V86, artifacts, mode: BRIDGE_MODES.observe });
+  // Le mode intermédiaire isole la SECONDE rupture : le guest demande ses barrières, `ide.js` les
+  // acquitte, et le backend n'en voit aucune. Sans lui, on ne saurait pas laquelle des deux
+  // corrections fait quoi.
+  process.stdout.write("Sémantiques avec IDENTIFY corrigé seulement…\n");
+  const identifyOnly = await measureSemantics({ V86, artifacts, mode: BRIDGE_MODES.identify });
+  process.stdout.write("Sémantiques avec pont de durabilité complet…\n");
+  const bridged = await measureSemantics({ V86, artifacts, mode: BRIDGE_MODES.full });
   process.stdout.write("Injection de fautes…\n");
   const faults = await measureFaults({ V86, artifacts });
   let boots = null;
@@ -230,6 +236,7 @@ async function main() {
     volumeBytes: VOLUME_BYTES,
     flushDelayMilliseconds: FLUSH_DELAY_MS,
     upstream,
+    identifyOnly,
     bridged,
     faults,
     boots,
@@ -238,8 +245,22 @@ async function main() {
   await mkdir(dirname(REPORT_PATH), { recursive: true });
   await writeFile(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`);
   process.stdout.write(`\nRapport écrit : ${REPORT_PATH}\n`);
+  const flushCount = (measure) => measure.counts[JOURNAL_OPERATIONS.flush] ?? 0;
+  const ataCount = (measure) => measure.counts[JOURNAL_OPERATIONS.ata] ?? 0;
+  const barrierCount = (measure) =>
+    measure.steps.reduce(
+      (total, step) => total + (step.ata["0xE7"] ?? 0) + (step.ata["0xEA"] ?? 0),
+      0,
+    );
   process.stdout.write(
-    `Barrières atteignant le backend — amont : ${upstream.counts[JOURNAL_OPERATIONS.flush] ?? 0}, avec pont : ${bridged.counts[JOURNAL_OPERATIONS.flush] ?? 0}\n`,
+    [
+      "",
+      "Mode        FLUSH CACHE demandés par le guest   barrières reçues par le backend   commandes ATA",
+      `amont       ${String(barrierCount(upstream)).padEnd(34)} ${String(flushCount(upstream)).padEnd(33)} ${ataCount(upstream)}`,
+      `identify    ${String(barrierCount(identifyOnly)).padEnd(34)} ${String(flushCount(identifyOnly)).padEnd(33)} ${ataCount(identifyOnly)}`,
+      `pont        ${String(barrierCount(bridged)).padEnd(34)} ${String(flushCount(bridged)).padEnd(33)} ${ataCount(bridged)}`,
+      "",
+    ].join("\n"),
   );
 }
 

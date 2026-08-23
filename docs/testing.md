@@ -9,7 +9,7 @@
 | `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                 |                    environ 1 min |
 | `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                     |                    environ 2 min |
 | `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit           |  environ 20 s après installation |
-| `npm run test:vm`              | guest Linux réel écrivant sur le backend de blocs (Chromium)  |     environ 45 s, **périodique** |
+| `npm run test:vm`              | guest Linux réel écrivant sur le backend de blocs (Chromium)  |    environ 1 min, **périodique** |
 | `npm test`                     | suites unitaire et navigateur                                 |                         secondes |
 | `npm run check`                | lint, format et toutes les suites actuelles                   | moins de 2 min hors installation |
 
@@ -32,8 +32,8 @@ Sans le témoin négatif, un test qui ne mesurerait que le cas corrigé ne prouv
 correction sert à quelque chose.
 
 Elle **n'est pas rattachée à `npm run check`**, et la raison n'est pas sa durée : les trois épreuves
-de barrière tiennent en **14,3 s** mesurées, la mesure de premier boot ajoutant une trentaine de
-secondes. La raison est sa dépendance.
+de barrière tiennent en une vingtaine de secondes et la mesure de premier boot en ajoute une
+trentaine, soit **56 s mesurées** pour l'ensemble. La raison est sa dépendance.
 
 `test:vm` exige 9,9 Mio d'artefacts tiers — émulateur, BIOS, image de guest — que `npm run vm:fetch`
 télécharge depuis `registry.npmjs.org`, `raw.githubusercontent.com` et `i.copy.sh`. Rattacher la

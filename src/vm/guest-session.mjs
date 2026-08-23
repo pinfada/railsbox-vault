@@ -6,7 +6,7 @@
 // lire un fichier, ce qui le garde vérifiable sans réseau ni système de fichiers.
 
 import { JOURNAL_OPERATIONS } from "./block-journal.mjs";
-import { installDurabilityBridge } from "./v86-flush-bridge.mjs";
+import { BRIDGE_MODES, installDurabilityBridge } from "./v86-flush-bridge.mjs";
 
 /** Invite du shell BusyBox de l'image `linux4.iso`. */
 export const GUEST_PROMPT = "~%";
@@ -27,16 +27,16 @@ class GuestTimeout extends Error {
  * @param {{ V86: Function, artifacts: { wasm: BufferSource, bios: BufferSource,
  *           vgaBios: BufferSource, cdrom: BufferSource },
  *           adapter: object, journal: import("./block-journal.mjs").BlockJournal,
- *           durability?: boolean, memorySize?: number }} options
- *   `durability: false` laisse v86 dans son comportement amont : les commandes ATA sont
- *   journalisées, aucune barrière n'est propagée.
+ *           mode?: string, memorySize?: number }} options
+ *   `mode` est une valeur de `BRIDGE_MODES` : `observe` reproduit le comportement amont,
+ *   `identify` n'annonce que le cache d'écriture, `full` propage la barrière.
  */
 export function createGuestSession({
   V86,
   artifacts,
   adapter,
   journal,
-  durability = true,
+  mode = BRIDGE_MODES.full,
   memorySize = 128 * 1024 * 1024,
 }) {
   let transcript = "";
@@ -97,7 +97,7 @@ export function createGuestSession({
         ideController: emulator.v86.cpu.devices.ide,
         adapter,
         journal,
-        durability,
+        mode,
       });
 
       const started = performance.now();

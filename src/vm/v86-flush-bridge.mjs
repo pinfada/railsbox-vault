@@ -37,20 +37,43 @@ function setIdentifyBit(data, word, bit) {
 }
 
 /**
- * Installe l'observation des commandes ATA et, si `durability` vaut vrai, le pont de durabilité.
+ * Modes du pont. Les trois sont mesurés par le spike #4, et il en faut trois : les deux ruptures
+ * sont en série, et seul le mode intermédiaire montre la seconde à l'œuvre.
+ */
+export const BRIDGE_MODES = Object.freeze({
+  /** Comportement amont exact ; seules les commandes ATA sont journalisées. */
+  observe: "observe",
+  /** IDENTIFY corrigé, FLUSH CACHE laissé à v86 : le guest demande, le backend ne reçoit rien. */
+  identify: "identify",
+  /** Les deux corrections : la barrière du guest atteint le backend. */
+  full: "full",
+});
+
+const KNOWN_MODES = new Set(Object.values(BRIDGE_MODES));
+
+/**
+ * Installe l'observation des commandes ATA et, selon le mode, le pont de durabilité.
  *
  * À appeler AVANT `emulator.run()` : le noyau lit le paquet IDENTIFY une seule fois au démarrage,
  * et un pont posé après coup n'obtiendrait de barrières qu'après un `rescan` explicite du guest.
  *
- * `durability: false` conserve exactement le comportement amont tout en journalisant les
- * commandes : c'est le témoin négatif du spike, celui qui montre que le guest n'émet même PAS de
- * FLUSH CACHE quand le disque ne déclare pas de cache d'écriture.
- *
- * @param {{ ideController: object, adapter: object, durability?: boolean,
+ * @param {{ ideController: object, adapter: object, mode?: string,
  *           journal: import("./block-journal.mjs").BlockJournal }} options
  * @returns {{ uninstall: () => void }}
  */
-export function installDurabilityBridge({ ideController, adapter, journal, durability = true }) {
+export function installDurabilityBridge({
+  ideController,
+  adapter,
+  journal,
+  mode = BRIDGE_MODES.full,
+}) {
+  if (!KNOWN_MODES.has(mode)) {
+    throw new Error(
+      `Mode de pont inconnu : ${mode}. Valeurs admises : ${[...KNOWN_MODES].join(", ")}.`,
+    );
+  }
+  const announcesWriteCache = mode !== BRIDGE_MODES.observe;
+  const forwardsBarrier = mode === BRIDGE_MODES.full;
   const master = ideController?.primary?.master;
   if (!master) {
     throw new Error("Contrôleur IDE inattendu : `primary.master` est absent.");
@@ -66,7 +89,7 @@ export function installDurabilityBridge({ ideController, adapter, journal, durab
 
   prototype.create_identify_packet = function patchedIdentify() {
     originalIdentify.call(this);
-    if (!durability || !targets(this) || this.is_atapi) return;
+    if (!announcesWriteCache || !targets(this) || this.is_atapi) return;
     for (const word of ATA.identifyWriteCacheWords) {
       setIdentifyBit(this.data, word, ATA.identifyWriteCacheBit);
     }
@@ -78,7 +101,7 @@ export function installDurabilityBridge({ ideController, adapter, journal, durab
 
     journal.record(JOURNAL_OPERATIONS.ata, { command });
 
-    if (!durability || (command !== ATA.cmdFlushCache && command !== ATA.cmdFlushCacheExt)) {
+    if (!forwardsBarrier || (command !== ATA.cmdFlushCache && command !== ATA.cmdFlushCacheExt)) {
       return originalAtaCommand.call(this, command);
     }
 

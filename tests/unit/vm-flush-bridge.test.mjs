@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { BlockJournal, JOURNAL_OPERATIONS } from "../../src/vm/block-journal.mjs";
-import { ATA, installDurabilityBridge } from "../../src/vm/v86-flush-bridge.mjs";
+import { ATA, BRIDGE_MODES, installDurabilityBridge } from "../../src/vm/v86-flush-bridge.mjs";
 
 // Double de `IDEInterface` reproduisant ce que le pont touche : le dispatch de commandes ATA, le
 // paquet IDENTIFY, les registres d'état et l'interruption. Les vraies instances de v86 sont
@@ -67,9 +67,40 @@ test("le pont arme les bits de cache d'écriture du paquet IDENTIFY", () => {
   pont.uninstall();
 });
 
-test("sans durabilité, IDENTIFY reste celui d'amont et FLUSH CACHE n'atteint pas le backend", () => {
+test("mode identify : le guest reçoit le cache d'écriture, le backend ne reçoit rien", () => {
   const { journal, adapter, master, ideController } = banc();
-  const pont = installDurabilityBridge({ ideController, adapter, journal, durability: false });
+  const pont = installDurabilityBridge({
+    ideController,
+    adapter,
+    journal,
+    mode: BRIDGE_MODES.identify,
+  });
+
+  master.create_identify_packet();
+  assert.equal((motIdentify(master.data, 82) >> ATA.identifyWriteCacheBit) & 1, 1);
+
+  master.ata_command(ATA.cmdFlushCache);
+  assert.equal(adapter.flushCalls, 0, "la barrière doit rester chez v86 dans ce mode");
+  assert.deepEqual(master.handled, [ATA.cmdFlushCache]);
+  pont.uninstall();
+});
+
+test("un mode inconnu est refusé au lieu d'être interprété", () => {
+  const { journal, adapter, ideController } = banc();
+  assert.throws(
+    () => installDurabilityBridge({ ideController, adapter, journal, mode: "presque" }),
+    /Mode de pont inconnu/,
+  );
+});
+
+test("mode observe : IDENTIFY reste celui d'amont et FLUSH CACHE n'atteint pas le backend", () => {
+  const { journal, adapter, master, ideController } = banc();
+  const pont = installDurabilityBridge({
+    ideController,
+    adapter,
+    journal,
+    mode: BRIDGE_MODES.observe,
+  });
 
   master.create_identify_packet();
   assert.equal(motIdentify(master.data, 82), 0);

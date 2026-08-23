@@ -134,7 +134,7 @@ après remontage dans les deux modes.
 | `set` au callback retardé       | supporté : le guest reste occupé jusqu'à l'acquittement (chemin DMA)                                                |
 | Signal d'annulation             | `get` reçoit `{ signal }` ; le callback doit rester appelé, `ide.js` filtre lui-même                                |
 
-Le détail par étape, mode amont à gauche, pont de durabilité à droite :
+Le détail par étape, mode `observe` à gauche, mode `full` à droite :
 
 | Étape         | ATA amont            | ATA avec pont                    | `get` | `set` | barrières |
 | ------------- | -------------------- | -------------------------------- | ----: | ----: | --------: |
@@ -142,13 +142,15 @@ Le détail par étape, mode amont à gauche, pont de durabilité à droite :
 | `write-raw`   | `0xCA`×1             | `0xCA`×1                         |     0 |     1 |         0 |
 | `write-fsync` | `0xCA`×1             | `0xCA`×1, **`0xE7`×1**           |     0 |     1 |     **1** |
 | `mkfs`        | `0xC8`×135, `0x35`×2 | `0xC8`×135, `0x35`×2             |   135 |     2 |         0 |
-| `mount`       | `0xC8`×7, `0xCA`×1   | `0xC8`×8, `0xCA`×1, **`0xE7`×1** |   7-8 |     1 |     **1** |
+| `mount`       | `0xC8`×7, `0xCA`×1   | `0xC8`×7, `0xCA`×1, **`0xE7`×1** |     7 |     1 |     **1** |
 | `file-sync`   | `0xC8`×4, `0xCA`×3   | `0xC8`×4, `0xCA`×3, **`0xE7`×1** |     4 |     3 |     **1** |
 | `umount`      | `0xCA`×1             | `0xCA`×1, **`0xE7`×2**           |     0 |     1 |     **2** |
 | `remount`     | `0xC8`×9, `0xCA`×3   | `0xC8`×9, `0xCA`×3, **`0xE7`×3** |     9 |     3 |     **3** |
 
-Totaux : **176 commandes ATA en mode amont, dont zéro `0xE7` et zéro `0xEA`**, contre 185 avec le
-pont, dont 8 barrières, toutes acquittées.
+Totaux : **177 commandes ATA en mode amont, dont zéro `0xE7` et zéro `0xEA`**, contre 184 avec le
+pont, dont 8 barrières, toutes acquittées. Ces totaux varient d'une ou deux commandes d'une
+exécution à l'autre — lecture anticipée du noyau et écriture d'horodatage au démontage — mais le
+nombre de barrières, lui, ne varie pas.
 
 ## La barrière de durabilité : deux ruptures, pas une
 
@@ -171,7 +173,7 @@ $ cat /sys/block/sda/device/scsi_disk/*/cache_type
 write through
 ```
 
-Conséquence directe, mesurée : sur les 176 commandes ATA du protocole complet en mode amont, aucune
+Conséquence directe, mesurée : sur les 177 commandes ATA du protocole complet en mode amont, aucune
 n'est un FLUSH CACHE. Corriger `ata_command` seul n'aurait rien changé — le correctif n'aurait
 jamais été atteint. C'est le résultat le plus important du spike.
 
@@ -184,9 +186,18 @@ $ dd if=/dev/urandom of=/dev/sda bs=4096 count=4 seek=64 conv=fsync
 → ata 0xCA, ata 0xE7
 ```
 
-En mode « IDENTIFY corrigé mais `ata_command` intact », le guest émet bien ses huit FLUSH CACHE et
-le backend n'en voit **aucune** : la démonstration expérimentale que la commande est acquittée sans
-atteindre le stockage.
+Les deux ruptures étant **en série**, il faut trois modes pour savoir laquelle produit quel effet ;
+`npm run vm:protocol` les mesure tous les trois (`BRIDGE_MODES` dans `src/vm/v86-flush-bridge.mjs`)
+:
+
+| Mode       | Correction posée                     | FLUSH CACHE demandés par le guest | Barrières reçues par le backend |
+| ---------- | ------------------------------------ | --------------------------------: | ------------------------------: |
+| `observe`  | aucune (amont exact)                 |                             **0** |                               0 |
+| `identify` | seulement le bit de cache d'écriture |                             **8** |                           **0** |
+| `full`     | les deux                             |                                 8 |                           **8** |
+
+La ligne du milieu est la démonstration expérimentale de la seconde rupture : le guest demande ses
+huit barrières, `ide.js` les acquitte, et le backend n'en voit aucune.
 
 Avec le pont complet, le journal du backend donne, pour `write-then-flush` :
 
@@ -233,11 +244,11 @@ trois lectures et aucune écriture.
 
 | Faute injectée                        | Erreur remontée au runtime        | Ce que le guest observe                                 |        Durée |
 | ------------------------------------- | --------------------------------- | ------------------------------------------------------- | -----------: |
-| Lecture courte, une fois              | `VAULT_STORAGE_SHORT_READ`        | **succès** après reprise : `8+0 records out`, `rc=0`    |    30 851 ms |
-| Écriture partielle, une fois          | `VAULT_STORAGE_PARTIAL_WRITE`     | **succès** après reprise : `4+0 records out`, `rc=0`    |    30 763 ms |
+| Lecture courte, une fois              | `VAULT_STORAGE_SHORT_READ`        | **succès** après reprise : `8+0 records out`, `rc=0`    |    30 637 ms |
+| Écriture partielle, une fois          | `VAULT_STORAGE_PARTIAL_WRITE`     | **succès** après reprise : `4+0 records out`, `rc=0`    |    30 920 ms |
 | Écriture partielle, six fois de suite | 4 × `VAULT_STORAGE_PARTIAL_WRITE` | **blocage** : aucune sortie au bout de 120 s            | > 120 000 ms |
-| Échec de barrière, une fois           | `VAULT_STORAGE_FLUSH_FAILED`      | **succès** après reprise : `rc=0`                       |       295 ms |
-| Échec de barrière, six fois de suite  | 6 × `VAULT_STORAGE_FLUSH_FAILED`  | **erreur** : `dd: /dev/sda: Input/output error`, `rc=1` |       285 ms |
+| Échec de barrière, une fois           | `VAULT_STORAGE_FLUSH_FAILED`      | **succès** après reprise : `rc=0`                       |       236 ms |
+| Échec de barrière, six fois de suite  | 6 × `VAULT_STORAGE_FLUSH_FAILED`  | **erreur** : `dd: /dev/sda: Input/output error`, `rc=1` |       268 ms |
 | Handle perdu à la première écriture   | 4 × `VAULT_STORAGE_HANDLE_LOST`   | **blocage** : aucune sortie au bout de 120 s            | > 120 000 ms |
 
 Quatre lectures s'imposent, et elles pèsent lourd pour #14 et #15.
@@ -262,7 +273,7 @@ lecture courte : c'est le délai de garde de `libata`, pas une latence du backen
 support ne peut pas être signalée à `get` ou `set`, donc le seul signal disponible est le silence.
 
 **La barrière, elle, sait échouer vite.** Le pont dispose d'un canal d'erreur — les registres ATA —
-et abandonne explicitement la commande : `ABRT`, 295 ms au lieu de 31 s. Répétée, la faute devient
+et abandonne explicitement la commande : `ABRT`, 236 ms au lieu de 31 s. Répétée, la faute devient
 une erreur d'E/S franche que l'application reçoit :
 
 ```text
@@ -288,17 +299,19 @@ Cinq essais après un échauffement écarté, guest complet jusqu'à l'invite du
 référence : le **navigateur**, puisque c'est là que le produit s'exécute
 (`reports/vm/premier-boot-chromium.json`).
 
-| Série                      | Essais (ms)                  |  p50 |  p95 |
-| -------------------------- | ---------------------------- | ---: | ---: |
-| Chromium 151, Worker dédié | 3300, 3285, 3264, 3391, 3336 | 3300 | 3391 |
-| Node 24, machine au repos  | 3480, 3361, 3327, 3544, 3575 | 3480 | 3575 |
-| Node 24, machine chargée   | 8433, 5717, 5406, 4545, 4633 | 5407 | 8433 |
+| Série                                |                  Essais (ms) |  p50 |  p95 |
+| ------------------------------------ | ---------------------------: | ---: | ---: |
+| Chromium 151, Worker dédié, au repos | 3300, 3285, 3264, 3391, 3336 | 3300 | 3391 |
+| Chromium 151, Worker dédié, chargé   | 4638, 4761, 5041, 5165, 4521 | 4761 | 5165 |
+| Node 24, au repos                    | 3480, 3361, 3327, 3544, 3575 | 3480 | 3575 |
+| Node 24, chargé                      | 8433, 5717, 5406, 4545, 4633 | 5407 | 8433 |
 
-La troisième série est publiée telle quelle : elle montre la dispersion réelle d'une mesure prise
-sur un poste de travail occupé, et pourquoi les deux premières ne valent que pour leurs conditions.
-Le budget de `docs/quality-attributes.md` — p95 ≤ 15 min pour un premier boot de preuve — est
-respecté de trois ordres de grandeur, sur un guest qui n'est pas encore une application Rails. La
-fixture qui donnera un chiffre comparable au budget appartient à #5.
+Les séries « chargé » sont publiées plutôt qu'écartées : elles ont été prises pendant qu'un autre
+travail occupait le poste, et elles disent ce qu'un chiffre unique cacherait — un p95 qui varie du
+simple au double selon la charge d'une machine de bureau. Aucune des quatre ne vaut hors de ses
+conditions. Le budget de `docs/quality-attributes.md` — p95 ≤ 15 min pour un premier boot de preuve
+— est respecté de trois ordres de grandeur, sur un guest qui n'est pas encore une application Rails.
+La fixture qui donnera un chiffre comparable au budget appartient à #5.
 
 ### Mémoire
 
