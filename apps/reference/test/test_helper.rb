@@ -16,7 +16,9 @@ require_relative "../config/environment"
 
 # Le dépôt ne contient pas de `schema.rb` : les migrations sont la seule
 # description du schéma, et le schéma de test est celui qu'elles produisent.
-ActiveRecord::Base.connection_pool.migration_context.migrate
+ActiveRecord::Migration.suppress_messages do
+  ActiveRecord::Base.connection_pool.migration_context.migrate
+end
 
 require "rails/test_help"
 require "tmpdir"
