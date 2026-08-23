@@ -22,7 +22,14 @@ require "digest"
 # fixture doit démarrer sur n'importe quelle machine sans qu'aucun secret ne lui
 # soit transmis. Le calcul est fait ici, hors de `lib/`, parce que la
 # configuration s'exécute avant que l'autochargement ne soit disponible.
-VAULT_SYNTHETIC_SECRET_SOURCE = "railsbox-vault-reference/synthetic-secret-key-base/v1".freeze
+#
+# `guardrails-disable-line` ci-dessous : le nom de la constante contient
+# « SECRET », ce qui déclenche la règle « Secret Keyword » de l'analyse de
+# secrets. La valeur n'en est pas un — elle est publiée dans le contrat, dans
+# `SECURITY.md` (section « Analyse de secrets ») et vérifiée par
+# `test/lib/no_secret_test.rb`. La suppression est limitée à CETTE ligne :
+# toute autre affectation ressemblant à un secret reste détectée.
+VAULT_SYNTHETIC_SECRET_SOURCE = "railsbox-vault-reference/synthetic-secret-key-base/v1".freeze # guardrails-disable-line
 
 module VaultReference
   # Application Rails de référence de RailsBox Vault.
