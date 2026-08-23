@@ -213,6 +213,84 @@ async function runOpfsPersistence({
   };
 }
 
+/**
+ * Barrière durable de bout en bout sur le backend OPFS (#14, `SEC-DURABLE-001`). Un vrai guest écrit
+ * puis `fsync` sur un disque IDE adossé au backend OPFS ; la mesure porte sur la CHAÎNE causale
+ * write → flush(OPFS réel) → acquittement, et sur les deux écarts qui la rendraient fausse :
+ *
+ *  - `flushDelay > 0` retarde la barrière du support. Le guest reste occupé (BSY) jusqu'à sa
+ *    résolution — le rapport le montre par un ordre `flush` avant `flush-ack` maintenu, jamais
+ *    inversé ;
+ *  - `fault` (une valeur de `FAULT_KINDS` sur l'opération `flush`) fait échouer la barrière. La
+ *    commande ATA est alors ABANDONNÉE : le guest reçoit une erreur d'E/S, la coquille une erreur
+ *    typée dans `failures`, et AUCUN `flush-ack` n'est inventé.
+ */
+async function runOpfsBarrier({
+  mode = BRIDGE_MODES.full,
+  volumeBytes = 16 * 1024 * 1024,
+  flushDelay = 0,
+  fault = null,
+  volume = "guest-barriere",
+}) {
+  assertSchedulingApi();
+
+  const { V86 } = await import(`${ARTIFACTS}libv86.mjs`);
+  const { artifacts, transferredBytes } = await loadArtifacts();
+
+  await removeOpfsVolume(volume);
+  const journal = new BlockJournal();
+  const faults = fault
+    ? createFaultPlan([{ kind: fault, operation: "flush", occurrence: 1 }])
+    : createFaultPlan();
+  const backend = await openOpfsVolume({
+    name: volume,
+    size: volumeBytes,
+    journal,
+    faults,
+    flushDelay,
+  });
+
+  const failures = [];
+  const adapter = createV86BufferAdapter({
+    backend,
+    onFatal: (error) => failures.push(error.toJSON()),
+  });
+  const session = createGuestSession({ V86, artifacts, adapter, journal, mode });
+
+  let bootMilliseconds;
+  let results;
+  try {
+    bootMilliseconds = await session.boot();
+    results = await runSteps(session, BARRIER_STEPS);
+  } finally {
+    session.stop();
+    await backend.close();
+  }
+
+  return {
+    scenario: "opfs-barrier",
+    mode,
+    volume,
+    volumeBytes,
+    flushDelay,
+    fault,
+    bootMilliseconds: Number(bootMilliseconds.toFixed(1)),
+    transferredBytes,
+    counts: journal.counts(),
+    steps: summariseSteps(journal, results),
+    verdict: verdictForBarrierScenario(journal),
+    faultsFired: faults.fired(),
+    faultsUnfired: faults.unfired(),
+    failures,
+    crossOriginIsolated: globalThis.crossOriginIsolated ?? null,
+  };
+}
+
+const OPFS_SCENARIOS = new Map([
+  ["opfs-persistence", runOpfsPersistence],
+  ["opfs-barrier", runOpfsBarrier],
+]);
+
 self.addEventListener("message", (event) => {
   const { id, type, payload } = event.data ?? {};
   if (type !== "run") {
@@ -220,8 +298,8 @@ self.addEventListener("message", (event) => {
     return;
   }
   const options = payload ?? {};
-  const execute =
-    options.scenario === "opfs-persistence" ? runOpfsPersistence(options) : run(options);
+  const opfsRunner = OPFS_SCENARIOS.get(options.scenario);
+  const execute = opfsRunner ? opfsRunner(options) : run(options);
   execute.then(
     (report) => self.postMessage({ id, ok: true, report }),
     (error) =>
