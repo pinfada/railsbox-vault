@@ -1,8 +1,7 @@
 # Modèle de menace initial
 
-Ce document décrit les frontières visées. Il ne constitue pas encore une
-garantie de sécurité : RailsBox Vault est au stade expérimental et ne doit
-contenir aucune donnée réelle.
+Ce document décrit les frontières visées. Il ne constitue pas encore une garantie de sécurité :
+RailsBox Vault est au stade expérimental et ne doit contenir aucune donnée réelle.
 
 ## Actifs à protéger
 
@@ -23,15 +22,13 @@ contenir aucune donnée réelle.
 
 ## Ce que le chiffrement au repos ne résout pas
 
-Le chiffrement d'un volume ne protège pas les données déjà déverrouillées contre
-du code exécuté dans la même autorité web. Une séparation d'origine entre la
-coquille de confiance et l'application doit être étudiée avant tout usage avec
-des données sensibles.
+Le chiffrement d'un volume ne protège pas les données déjà déverrouillées contre du code exécuté
+dans la même autorité web. Une séparation d'origine entre la coquille de confiance et l'application
+doit être étudiée avant tout usage avec des données sensibles.
 
-L'authentification indépendante de chaque bloc ne protège pas à elle seule
-contre le rejeu d'un ancien bloc, le déplacement d'un bloc valide, la
-troncature ou la restauration complète d'une ancienne génération. Le format de
-volume devra fournir une intégrité transactionnelle globale.
+L'authentification indépendante de chaque bloc ne protège pas à elle seule contre le rejeu d'un
+ancien bloc, le déplacement d'un bloc valide, la troncature ou la restauration complète d'une
+ancienne génération. Le format de volume devra fournir une intégrité transactionnelle globale.
 
 ## Propriétés exigées avant une version utilisable
 
@@ -47,6 +44,6 @@ volume devra fournir une intégrité transactionnelle globale.
 
 ## Signaler une vulnérabilité
 
-Tant qu'aucun canal privé propre à RailsBox Vault n'est publié, utilisez les
-avis de sécurité privés du dépôt GitHub. N'ouvrez pas d'issue publique contenant
-une procédure d'exploitation ou des données personnelles.
+Tant qu'aucun canal privé propre à RailsBox Vault n'est publié, utilisez les avis de sécurité privés
+du dépôt GitHub. N'ouvrez pas d'issue publique contenant une procédure d'exploitation ou des données
+personnelles.
