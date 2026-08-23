@@ -12,6 +12,10 @@
     "test:browser:moteurs": "node tools/run-moteurs.mjs",
     "test:spike:origin": "playwright test tests/browser/origin-topology.spec.mjs tests/browser/origin-isolation.spec.mjs",
     "test:compat": "playwright test --config playwright.compat.config.mjs",
+    "test:vm": "node --test \"tests/vm/**/*.test.mjs\"",
+    "app:test": "node tools/run-app-tests.mjs",
+    "image:build": "node tools/build-reference-image/build-image.mjs",
+    "image:manifest": "node tools/build-reference-image/manifest.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -25,6 +29,7 @@
     "@playwright/test": "^1.62.1",
     "eslint": "^10.8.1",
     "globals": "^17.11.0",
-    "prettier": "^3.9.6"
+    "prettier": "^3.9.6",
+    "v86": "^0.5.432"
   }
 }

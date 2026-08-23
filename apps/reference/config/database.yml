@@ -1,0 +1,34 @@
+# SQLite, un seul fichier, dans le volume applicatif.
+#
+# Les deux pragmas de durabilité sont explicites parce que l'invariant sert à
+# prouver la persistance après coupure, et qu'un défaut de bibliothèque ne doit
+# jamais décider à notre place :
+#
+#   journal_mode: delete   — journal d'annulation, effacé à chaque commit. Au
+#                            repos la base est UN fichier. En WAL, les
+#                            transactions acquittées vivent dans un second
+#                            fichier `-wal` : perdre ce fichier lors d'une
+#                            capture partielle du volume perdrait des écritures
+#                            déjà acquittées, en silence.
+#   synchronous: full      — `fsync` avant d'acquitter le commit. C'est la
+#                            condition de « RPO 0 après la barrière durable du
+#                            guest » (docs/quality-attributes.md).
+#
+# `tests/lib/durability_pragmas_test.rb` interroge la connexion réelle : ces
+# deux lignes sont vérifiées, pas seulement écrites.
+default: &default
+  adapter: sqlite3
+  pool: 5
+  timeout: 5000
+  pragmas:
+    journal_mode: delete
+    synchronous: full
+    foreign_keys: "on"
+
+production:
+  <<: *default
+  database: <%= ENV.fetch("VAULT_DATABASE_PATH") { Rails.root.join("var/db/vault.sqlite3").to_s } %>
+
+test:
+  <<: *default
+  database: <%= ENV.fetch("VAULT_DATABASE_PATH") { Rails.root.join("tmp/test.sqlite3").to_s } %>

@@ -1,0 +1,29 @@
+{
+  "contractVersion": 1,
+  "application": {
+    "id": "railsbox-vault-reference",
+    "version": "1.0.0"
+  },
+  "record": {
+    "id": "f2b2a4e0-6a5f-4a3c-9c1a-1d0a5b8e7c31",
+    "label": "invariant durable de reference",
+    "sequence": 1,
+    "payload": "railsbox-vault-reference/invariant/1",
+    "recordedAt": "2026-01-01T00:00:00Z"
+  },
+  "attachment": {
+    "filename": "invariant.bin",
+    "contentType": "application/octet-stream",
+    "byteSize": 4096,
+    "sha256": "b1cacc262df233ceacdbb2fe38d06ca586a2f7cf8ec2e27ad3e372c24e597916",
+    "derivation": {
+      "blocks": 128,
+      "blockBytes": 32,
+      "rule": "bloc i = SHA-256(\"railsbox-vault-reference/invariant/\" + i), i de 0 a 127, concatenes"
+    }
+  },
+  "secretKeyBase": {
+    "synthetic": true,
+    "derivation": "SHA-512 hexadecimal de \"railsbox-vault-reference/synthetic-secret-key-base/v1\""
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "description": "Source unique des versions et empreintes de la chaine de construction de l'image de reference. Toute valeur non epinglee ici est refusee par verify-pinning.mjs.",
+  "images": {
+    "rootfs": {
+      "role": "rootfs i386 du guest",
+      "reference": "i386/debian:bookworm-slim",
+      "digest": "sha256:72b77a38b741753a64ebd7ff26c200d5eb5119f8b385409c5aaaa1aee12e9045",
+      "platform": "linux/386",
+      "license": "diverses licences libres Debian, voir /usr/share/doc dans l'image"
+    },
+    "ruby": {
+      "role": "execution de la suite Minitest et resolution du Gemfile.lock, hors VM",
+      "reference": "ruby:3.3.12-slim-bookworm",
+      "digest": "sha256:41120b37f3a8147ae5dbca5020b5be4dafaa8ffa589ee539d184dad0ba0b5ae5",
+      "platform": "linux/amd64",
+      "license": "Ruby / BSD-2-Clause, base Debian"
+    },
+    "diskBuilder": {
+      "role": "fabrication des systemes de fichiers ext2/ext4 (e2fsprogs), hors VM",
+      "reference": "debian:bookworm-slim",
+      "digest": "sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241",
+      "platform": "linux/amd64",
+      "license": "diverses licences libres Debian"
+    }
+  },
+  "ruby": {
+    "version": "3.3.12",
+    "series": "3.3",
+    "url": "https://cache.ruby-lang.org/pub/ruby/3.3/ruby-3.3.12.tar.gz",
+    "sha256": "b06d63beae271933033e27f0a389bc582a009e7845357d44365c39de525a051b",
+    "license": "Ruby / BSD-2-Clause"
+  },
+  "firmware": {
+    "origin": "https://github.com/copy/v86",
+    "commit": "847e34d5499b17b90d2783d5342ddd243c753497",
+    "note": "Micrologiciels necessaires au demarrage direct bzimage+initrd sous v86. Ils ne sont pas commites : le script de construction les recupere et verifie leur empreinte.",
+    "files": [
+      {
+        "name": "seabios.bin",
+        "url": "https://raw.githubusercontent.com/copy/v86/847e34d5499b17b90d2783d5342ddd243c753497/bios/seabios.bin",
+        "sha256": "73e3f359102e3a9982c35fce98eb7cd08f18303ac7f1ba6ebfbe6cdc1c244d98",
+        "byteSize": 131072,
+        "license": "LGPL-3.0-or-later (SeaBIOS)"
+      },
+      {
+        "name": "vgabios.bin",
+        "url": "https://raw.githubusercontent.com/copy/v86/847e34d5499b17b90d2783d5342ddd243c753497/bios/vgabios.bin",
+        "sha256": "a4bc0d80cc3ca028c73dafa8fee396b8d054ce87ebd8abfbd31b06b437607880",
+        "byteSize": 36352,
+        "license": "LGPL-2.1-or-later (SeaVGABIOS)"
+      }
+    ]
+  },
+  "debian": {
+    "suite": "bookworm",
+    "note": "Les paquets viennent du miroir Debian courant. L'epinglage exact par snapshot.debian.org est un travail decouvert, documente dans l'ADR 0004 : le digest de l'image de base fige le socle, pas l'index apt lu au moment du build.",
+    "packages": [
+      "linux-image-686",
+      "initramfs-tools",
+      "build-essential",
+      "libyaml-dev",
+      "zlib1g-dev",
+      "libssl-dev",
+      "libffi-dev",
+      "libgmp-dev",
+      "libreadline-dev",
+      "bison",
+      "pkg-config",
+      "libsqlite3-dev",
+      "libxml2-dev",
+      "libxslt1-dev",
+      "python3",
+      "procps",
+      "ca-certificates",
+      "curl"
+    ]
+  },
+  "disk": {
+    "rootfsMarginPercent": 25,
+    "rootfsMarginMiB": 256,
+    "appDiskMiB": 512,
+    "appDiskFilesystem": "ext2",
+    "rootfsFilesystem": "ext4",
+    "blockSize": 4096,
+    "note": "La geometrie est parametrable : IMAGE_APP_DISK_MIB et IMAGE_ROOTFS_MIB surchargent ces valeurs. Le spike #4 peut imposer une autre taille ou un autre systeme de fichiers ; seul ce bloc change alors."
+  },
+  "guest": {
+    "cmdline": "root=/dev/sda rw console=ttyS0 init=/opt/vault/guest-init.sh net.ifnames=0 quiet loglevel=4",
+    "memoryMiB": 512,
+    "appMountpoint": "/app",
+    "httpPort": 3000
+  }
+}
