@@ -7,6 +7,16 @@ const publicRoot = resolve("public");
 const sourceRoot = resolve("src");
 const portFlag = process.argv.indexOf("--port");
 const port = portFlag >= 0 ? Number(process.argv[portFlag + 1]) : 4173;
+// L'isolation multi-origine reste optionnelle : elle est nécessaire pour mesurer réellement
+// SharedArrayBuffer et Atomics.wait, mais ne doit pas changer les conditions du harnais par défaut.
+const isolatesOrigin = process.argv.includes("--cross-origin-isolated");
+
+const isolationHeaders = isolatesOrigin
+  ? {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    }
+  : {};
 
 const contentTypes = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -33,6 +43,8 @@ createServer(async (request, response) => {
     response.writeHead(200, {
       "Content-Type": contentTypes.get(extname(candidate)) ?? "application/octet-stream",
       "Cache-Control": "no-store",
+      "Cross-Origin-Resource-Policy": "same-origin",
+      ...isolationHeaders,
     });
     createReadStream(candidate).pipe(response);
   } catch {

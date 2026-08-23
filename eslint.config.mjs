@@ -3,7 +3,7 @@ import globals from "globals";
 
 export default [
   {
-    ignores: ["node_modules/**", "playwright-report/**", "test-results/**"],
+    ignores: ["node_modules/**", "playwright-report/**", "test-results/**", "reports/**"],
   },
   eslint.configs.recommended,
   {

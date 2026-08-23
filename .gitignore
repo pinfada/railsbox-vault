@@ -3,6 +3,7 @@ coverage/
 dist/
 playwright-report/
 test-results/
+reports/
 .env
 .DS_Store
 Thumbs.db
