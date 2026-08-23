@@ -182,6 +182,58 @@ par les tentatives du noyau, une faute persistante devient une erreur d'E/S, une
 bloque le périphérique. Le tableau figure dans
 [`docs/spikes/0004-backend-de-blocs-v86.md`](spikes/0004-backend-de-blocs-v86.md).
 
+## Contrat de barrière de durabilité
+
+L'issue #14 ferme la barrière de bout en bout que #6 avait laissée ouverte : #6 avait prouvé que la
+barrière ATTEINT le support ; #14 prouve qu'**aucune écriture n'est annoncée durable au guest avant
+que le flush OPFS ait réellement rendu la main**. C'est l'invariant `SEC-DURABLE-001`.
+
+La barrière traverse une chaîne fixe, sans court-circuit :
+
+```text
+guest FLUSH CACHE (0xE7/0xEA)
+  → pont v86 (v86-flush-bridge) : pose BSY, appelle adapter.flush(ack, échec)
+    → adaptateur (v86-buffer-adapter) : appelle backend.flush()
+      → backend OPFS (opfs-block-backend) : journalise `flush`, ATTEND
+         FileSystemSyncAccessHandle.flush(), puis journalise `flush-ack`
+      ← acquittement RÉEL du support
+    ← ack() → le pont lève BSY (DRDY|DSC) et pousse l'IRQ
+  ← le guest reprend
+```
+
+Les propriétés garanties, chacune reliée à un test :
+
+- **Ordre causal strict.** Dans le journal, toute écriture précède la barrière, et l'acquittement
+  suit la barrière : `write* → flush → flush-ack`. Le backend **attend** le flush du support avant
+  d'enregistrer `flush-ack` ; l'acquittement du guest ne peut donc pas devancer la durabilité. La
+  trace corrèle commande guest (`ata`), appel backend (`flush`) et résultat (`flush-ack`) **sans
+  aucune donnée utilisateur** — le journal ne porte que des offsets, des longueurs et des numéros de
+  barrière.
+- **Flush retardé, aucun succès anticipé.** Tant que `flush()` n'a pas rendu la main, le guest reste
+  occupé (BSY). C'est la conséquence directe de l'attente ci-dessus, éprouvée par un double de
+  stockage dont on **contrôle la latence** de la barrière.
+- **Échec ou fermeture pendant le flush.** La commande ATA est **abandonnée** (`ABRT`, `DRDY|ERR`) :
+  le guest reçoit une erreur d'E/S plutôt qu'un délai de garde muet, la coquille reçoit une erreur
+  typée, et **aucun état durable n'est inventé** — ni `flush-ack`, ni bloc de zéros, ni succès
+  silencieux. Le code remonté distingue les états : `VAULT_STORAGE_QUOTA_EXCEEDED` et
+  `VAULT_STORAGE_HANDLE_LOST` sont **préservés** tels quels, tout autre échec du support devient
+  `VAULT_STORAGE_FLUSH_FAILED`. Les fondre en un seul code effacerait des remèdes distincts —
+  libérer de la place, rouvrir le volume, réessayer.
+- **Deux barrières consécutives sans écriture** sont sûres et mesurables : chacune franchit le
+  support et s'acquitte, sans erreur.
+
+Ces propriétés sont prouvées à deux niveaux. Le niveau unitaire
+(`tests/unit/vm-durability-barrier.test.mjs`) assemble la chaîne complète moins l'émulateur — pont,
+adaptateur, backend OPFS, double déterministe — et contrôle ordre, latence et fautes ; son témoin de
+barrière retardée échoue si le backend acquitte avant la résolution du flush. Le niveau intégration
+VM (`tests/vm/opfs-barrier.spec.mjs`) rejoue le tout avec un vrai guest Linux et le vrai OPFS. La
+persistance RPO 0 après une barrière acquittée — relecture des octets après réouverture du handle —
+reste prouvée par `tests/vm/opfs-persistence.spec.mjs`.
+
+Ce que #14 ne couvre pas : l'atomicité d'une génération complète et la récupération (#16), le
+regroupement ou l'optimisation des flush, le chiffrement, la reprise Rails complète (#7) et l'accès
+concurrent (#8).
+
 ## Ordre des preuves
 
 1. Persistance locale non chiffrée avec redémarrage complet de la VM.

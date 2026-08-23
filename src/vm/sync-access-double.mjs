@@ -58,6 +58,8 @@ export function createSyncAccessStore({
         size: 0,
         lost: false,
         starved: false,
+        gateArmed: false,
+        gate: null,
         flushes: 0,
         reads: 0,
       };
@@ -127,7 +129,18 @@ export function createSyncAccessStore({
         if (file.starved) {
           throw domException("QuotaExceededError", "Plus de place pour matérialiser la barrière.");
         }
+        // Barrière RETARDÉE : instrument de latence. Le vrai `flush()` est synchrone ; ce mode rend
+        // une promesse EN VOL jusqu'à `releaseFlush`, uniquement pour éprouver que l'acquittement
+        // du guest attend réellement la résolution de la barrière (`SEC-DURABLE-001`). Il n'est
+        // jamais armé en production : par défaut `flush()` reste synchrone et rend `undefined`.
+        if (file.gateArmed) {
+          file.gateArmed = false;
+          return new Promise((resolve, reject) => {
+            file.gate = { resolve, reject };
+          });
+        }
         file.flushes += 1;
+        return undefined;
       },
       close() {
         closed = true;
@@ -155,6 +168,35 @@ export function createSyncAccessStore({
     /** Le support n'a plus de place : la prochaine barrière du fichier échoue sur le quota. */
     starve(name) {
       fileOf(name).starved = true;
+    },
+    /**
+     * Arme une barrière RETARDÉE : le prochain `flush()` de ce fichier reste en vol jusqu'à
+     * `releaseFlush`. C'est l'instrument de latence de #14 : il permet d'observer que le guest reste
+     * occupé tant que le flush OPFS n'a pas rendu la main.
+     */
+    blockFlush(name) {
+      fileOf(name).gateArmed = true;
+    },
+    /** Vrai si une barrière retardée attend d'être libérée. */
+    isFlushPending(name) {
+      return Boolean(fileOf(name).gate);
+    },
+    /**
+     * Libère une barrière retardée. Sans argument, elle aboutit — le support a fini d'écrire. Avec
+     * `fail` (un nom de `DOMException`), elle échoue comme le ferait un support qui disparaît PENDANT
+     * l'écriture de la barrière : l'acquittement ne doit alors jamais remonter au guest.
+     */
+    releaseFlush(name, { fail } = {}) {
+      const file = fileOf(name);
+      if (!file.gate) throw new Error(`Aucune barrière en attente sur « ${name} ».`);
+      const { resolve, reject } = file.gate;
+      file.gate = null;
+      if (fail) {
+        reject(domException(fail, `Barrière du volume « ${name} » interrompue : ${fail}.`));
+        return;
+      }
+      file.flushes += 1;
+      resolve();
     },
     /** Le support redimensionne le fichier à l'insu du volume ouvert. */
     resize(name, newSize) {

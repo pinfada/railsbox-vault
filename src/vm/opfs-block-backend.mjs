@@ -121,19 +121,40 @@ export class OpfsBlockBackend {
     }
   }
 
-  /** Appelle le support et traduit tout échec en état contractuel. Aucune erreur n'est avalée. */
+  /** Traduit un échec du support en état contractuel, marque le handle perdu et le journalise. */
+  #mapSupportFailure(cause, operation, details) {
+    const typed = toStorageError(cause, { operation, volume: this.#name, ...details });
+    if (typed.code === STORAGE_ERROR_CODES.handleLost) this.#handleLost = true;
+    this.#journal.record(JOURNAL_OPERATIONS.failure, {
+      code: typed.code,
+      message: typed.message,
+      source: operation,
+    });
+    return typed;
+  }
+
+  /** Appelle le support SYNCHRONE et traduit tout échec en état contractuel. Rien n'est avalé. */
   #support(operation, action, details = {}) {
     try {
       return action();
     } catch (cause) {
-      const typed = toStorageError(cause, { operation, volume: this.#name, ...details });
-      if (typed.code === STORAGE_ERROR_CODES.handleLost) this.#handleLost = true;
-      this.#journal.record(JOURNAL_OPERATIONS.failure, {
-        code: typed.code,
-        message: typed.message,
-        source: operation,
-      });
-      throw typed;
+      throw this.#mapSupportFailure(cause, operation, details);
+    }
+  }
+
+  /**
+   * Appelle le support et ATTEND sa résolution avant de rendre la main. Réservé à la barrière : elle
+   * est la seule opération dont le guest doit attendre l'aboutissement RÉEL, parce que son
+   * acquittement vaut promesse de durabilité (`SEC-DURABLE-001`). Un `FileSystemSyncAccessHandle`
+   * réel rend `undefined` de façon synchrone — `await undefined` ne coûte alors qu'une microtâche —,
+   * mais attendre garantit qu'un support dont la barrière n'a pas encore abouti n'est jamais acquitté
+   * par anticipation.
+   */
+  async #awaitSupport(operation, action, details = {}) {
+    try {
+      return await action();
+    } catch (cause) {
+      throw this.#mapSupportFailure(cause, operation, details);
     }
   }
 
@@ -279,10 +300,11 @@ export class OpfsBlockBackend {
     }
 
     try {
-      // Passer par `#support` et non par un `try` local : c'est lui qui pose `#handleLost` et
+      // Passer par `#awaitSupport` et non par un `try` local : c'est lui qui pose `#handleLost` et
       // journalise la panne. Un `catch` parallèle laisserait le volume se croire sain après une
-      // perte de support découverte par la barrière.
-      this.#support("flush", () => this.#handle.flush(), { barrier });
+      // perte de support découverte par la barrière. L'ATTENTE est le cœur de #14 : le `flush-ack`
+      // ne sera enregistré qu'APRÈS que la barrière du support a réellement rendu la main.
+      await this.#awaitSupport("flush", () => this.#handle.flush(), { barrier });
     } catch (typed) {
       // Un quota atteint pendant la barrière reste un quota, et un handle perdu reste un handle
       // perdu : les trois états se corrigent différemment — libérer de la place, rouvrir le

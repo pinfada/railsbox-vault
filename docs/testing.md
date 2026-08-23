@@ -29,8 +29,10 @@ ce que les autres ne peuvent pas.
 | unitaire       | `tests/unit/vm-sync-access-double.test.mjs` | le double lui-même          | `npm run check`   |
 | unitaire       | `tests/unit/vm-opfs-scenarios.test.mjs`     | double déterministe         | `npm run check`   |
 | unitaire       | `tests/unit/vm-block-fixture.test.mjs`      | aucun (règle de la fixture) | `npm run check`   |
+| unitaire       | `tests/unit/vm-durability-barrier.test.mjs` | chaîne complète + double    | `npm run check`   |
 | navigateur     | `tests/browser/opfs-block-backend.spec.mjs` | **vrai OPFS**, Worker dédié | `npm run check`   |
 | intégration VM | `tests/vm/opfs-persistence.spec.mjs`        | vrai OPFS + guest Linux     | `npm run test:vm` |
+| intégration VM | `tests/vm/opfs-barrier.spec.mjs`            | vrai OPFS + guest Linux     | `npm run test:vm` |
 
 **Le niveau unitaire mesure ce que le vrai support refuse de produire.** Aucun navigateur ne rend un
 quota, un handle perdu ou une écriture partielle sur demande. Le double
@@ -84,10 +86,13 @@ Une seule direction ne prouverait qu'une moitié : qu'un guest voie le support n
 écritures y atterrissent. La barrière est comptée **sur l'étape du guest** et non sur le total du
 journal, qui inclurait le flush émis par l'hôte avant le boot.
 
-Ce que ces trois niveaux n'affirment pas : que la barrière du guest garantisse la durabilité avant
-son acquittement — c'est #14 —, la reprise d'une application Rails après fermeture complète (#7),
-l'accès concurrent multi-onglets (#8), ni la politique de quota côté produit (#9). Le quota n'est
-ici qu'un état détecté et nommé.
+Ce que la barrière du guest garantisse la durabilité **avant** son acquittement — qu'aucune écriture
+ne soit annoncée durable avant que le flush OPFS ait rendu la main — est prouvé par #14 :
+`tests/unit/vm-durability-barrier.test.mjs` (chaîne complète moins l'émulateur, ordre/latence/fautes
+déterministes) et `tests/vm/opfs-barrier.spec.mjs` (guest réel, vrai OPFS). Ce que ces niveaux
+n'affirment pas : la reprise d'une application Rails après fermeture complète (#7), l'accès
+concurrent multi-onglets (#8), ni la politique de quota côté produit (#9). Le quota n'est ici qu'un
+état détecté et nommé.
 
 ### Intégration VM
 
@@ -118,10 +123,16 @@ Elle tourne donc dans un job CI dédié et **non bloquant** (`.github/workflows/
 manuellement et chaque nuit.
 
 Depuis #6 elle porte aussi `tests/vm/opfs-persistence.spec.mjs`, donc une preuve de persistance
-réelle du produit. La condition restante pour la rendre bloquante n'est plus la nature de la preuve
-mais sa dépendance : tant que les artefacts viennent de trois hôtes tiers, un contrôle obligatoire
-rougirait pour des raisons étrangères à la PR. La preuve de niveau navigateur du même backend, elle,
-**est** bloquante — elle n'a besoin d'aucun artefact.
+réelle du produit. Depuis #14 elle porte enfin `tests/vm/opfs-barrier.spec.mjs`, qui démontre sur le
+vrai OPFS l'ordre causal write → flush(OPFS réel) → acquittement, le cas du flush retardé (le guest
+reste occupé jusqu'à la résolution) et le cas du flush en échec (la commande est abandonnée, rien
+n'est acquitté). La condition restante pour rendre `test:vm` bloquante n'est pas la nature de ces
+preuves mais leur dépendance : tant que les artefacts viennent de trois hôtes tiers, un contrôle
+obligatoire rougirait pour des raisons étrangères à la PR. Le cœur de la barrière durable est donc
+aussi prouvé **sans artefact** par `tests/unit/vm-durability-barrier.test.mjs`, rattaché à
+`npm run check` : une régression de l'ordre ou de la latence de barrière bloque une PR. La preuve de
+niveau navigateur du backend OPFS, elle, **est** également bloquante — elle n'a besoin d'aucun
+artefact.
 
 ```sh
 npm run vm:fetch     # récupère et vérifie les artefacts v86 (empreintes SHA-256)
