@@ -120,6 +120,41 @@ seront épinglées avant la première publication. Les images VM publiées devro
 provenance de build et SBOM. Aucun secret de signature ne réside dans un artefact servi au
 navigateur.
 
+## Analyse de secrets
+
+Chaque pull request est analysée par GuardRails (statut de commit `guardrails/scan`). L'analyse
+couvre les secrets codés en dur, les bibliothèques vulnérables et les motifs de code dangereux.
+
+Deux emplacements en sont explicitement exclus, parce qu'ils portent des valeurs **publiques et
+déterministes** que les moteurs d'entropie confondent avec des secrets :
+
+- `apps/reference/config/application.rb`, la ligne qui définit `VAULT_SYNTHETIC_SECRET_SOURCE` —
+  constat « Secret Keyword », écarté par un commentaire `guardrails-disable-line` sur cette ligne
+  seule. Le nom de la constante contient « SECRET » ; sa valeur est une chaîne publiée dans
+  `apps/reference/vault-invariant.json` (`secretKeyBase.derivation`). La clé de signature de la
+  fixture en est le SHA-512 : elle ne protège rien, la fixture ne porte ni session ni donnée réelle,
+  et `SECRET_KEY_BASE` reste surchargeable par l'environnement.
+- `tools/build-reference-image/manifest.json` — constat « Hex High Entropy String », écarté par une
+  entrée nommée dans `.guardrails/ignore`. Le format JSON n'admet pas de commentaire, donc pas de
+  suppression à la ligne. Ce fichier est généré par `tools/build-reference-image/manifest.mjs` et ne
+  contient que des noms d'artefacts, des tailles, des licences, des origines et les empreintes
+  SHA-256 d'une construction reproductible.
+
+Ces exclusions sont **étroites par construction** : une ligne d'un côté, un fichier généré de
+l'autre. Aucune règle n'est désactivée, aucun répertoire n'est exclu. Un vrai secret introduit
+ailleurs — dans `apps/`, `src/`, `tools/`, `tests/` ou `.github/` — reste détecté. Le premier gate
+d'utilisation interdit de toute façon d'en placer un avant la fermeture des gates de sécurité, et
+`apps/reference/test/lib/no_secret_test.rb` échoue si un fichier de credentials ou une clé maîtresse
+apparaît dans l'application de référence.
+
+Élargir cette liste exige la même justification écrite qu'une nouvelle dépendance, dans la pull
+request qui l'introduit.
+
+Les constats de **bibliothèque vulnérable** ne sont jamais écartés de cette façon : ils se corrigent
+par une montée de version dans `Gemfile`/`Gemfile.lock` ou `package.json`/`package-lock.json`. C'est
+ce qui a été fait pour Puma, monté de 6.6.1 à 8.0.2 (CVE-2026-47736 et CVE-2026-47737, analyseur
+PROXY protocol v1).
+
 ## Signaler une vulnérabilité
 
 Tant qu'aucun canal privé propre à RailsBox Vault n'est publié, utilisez les avis de sécurité privés
