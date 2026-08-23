@@ -20,11 +20,14 @@ import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 const TAILLE = 64 * SECTOR_SIZE;
 let compteur = 0;
 
-/** Ouvre un volume adossé à un double neuf, sous un nom jamais réutilisé. */
+/**
+ * Ouvre un volume adossé à un double neuf, sous un nom jamais réutilisé.
+ * `options.store` configure le double (quota, plafond d'écriture), il ne le remplace pas.
+ */
 async function volume(options = {}) {
   compteur += 1;
-  const { store = createSyncAccessStore(options.store), ...reste } = options;
-  delete reste.store;
+  const { store: configuration, ...reste } = options;
+  const store = createSyncAccessStore(configuration);
   const journal = reste.journal ?? new BlockJournal();
   const backend = await openOpfsVolume({
     name: `test-${compteur}`,
