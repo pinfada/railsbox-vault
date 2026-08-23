@@ -95,7 +95,7 @@ permettant de lire les données.
 L'hébergement doit fournir **deux** origines. GitHub Pages n'en sert qu'une par compte, les sites de
 projet en étant des chemins ; les options mesurées — domaine propre avec sous-domaine, second
 compte, ou hébergeur distinct pour une origine — sont comparées dans l'ADR 0002 et le choix
-appartient à la publication #16. Un changement d'origine rend l'OPFS de l'ancienne inatteignable :
+appartient à la publication #45. Un changement d'origine rend l'OPFS de l'ancienne inatteignable :
 il se traite comme une migration exigeant un export préalable, pas comme un détail de déploiement.
 
 ## Cycle de vie de référence
