@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
 
 const publicRoot = resolve("public");
+const sourceRoot = resolve("src");
 const portFlag = process.argv.indexOf("--port");
 const port = portFlag >= 0 ? Number(process.argv[portFlag + 1]) : 4173;
 
@@ -16,10 +17,12 @@ const contentTypes = new Map([
 
 createServer(async (request, response) => {
   const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
-  const relativePath = pathname === "/" ? "index.html" : pathname.slice(1);
-  const candidate = resolve(publicRoot, relativePath);
+  const servesSource = pathname.startsWith("/src/");
+  const root = servesSource ? sourceRoot : publicRoot;
+  const relativePath = pathname === "/" ? "index.html" : pathname.slice(servesSource ? 5 : 1);
+  const candidate = resolve(root, relativePath);
 
-  if (candidate !== publicRoot && !candidate.startsWith(`${publicRoot}${sep}`)) {
+  if (candidate !== root && !candidate.startsWith(`${root}${sep}`)) {
     response.writeHead(403).end("Forbidden");
     return;
   }

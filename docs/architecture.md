@@ -1,7 +1,6 @@
 # Architecture exploratoire
 
-Cette architecture organise les questions à prouver ; elle ne fige pas encore
-une implémentation.
+Cette architecture organise les questions à prouver ; elle ne fige pas encore une implémentation.
 
 ```text
 Publication statique
@@ -29,21 +28,20 @@ Stockage local
 
 ### Runtime générique
 
-Le runtime prend en charge l'exécution, la persistance, le verrouillage,
-l'export, la restauration et l'identité des artefacts. Il ne connaît pas les
-concepts métier de l'application.
+Le runtime prend en charge l'exécution, la persistance, le verrouillage, l'export, la restauration
+et l'identité des artefacts. Il ne connaît pas les concepts métier de l'application.
 
 ### Application Rails
 
-L'application définit son schéma, ses migrations, ses identifiants et ses règles
-de fusion. Une future bibliothèque Rails pourra proposer des primitives de
-réplication, sans les rendre obligatoires.
+L'application définit son schéma, ses migrations, ses identifiants et ses règles de fusion. Une
+future bibliothèque Rails pourra proposer des primitives de réplication, sans les rendre
+obligatoires.
 
 ### Services optionnels
 
-Un hébergement statique distribue les artefacts. Un relais peut transporter des
-paquets chiffrés. Aucun de ces services ne doit être requis pour ouvrir un
-volume déjà installé, ni disposer des clés permettant de lire les données.
+Un hébergement statique distribue les artefacts. Un relais peut transporter des paquets chiffrés.
+Aucun de ces services ne doit être requis pour ouvrir un volume déjà installé, ni disposer des clés
+permettant de lire les données.
 
 ## Ordre des preuves
 
@@ -55,7 +53,6 @@ volume déjà installé, ni disposer des clés permettant de lire les données.
 6. Séparation de l'origine de confiance et de l'application.
 7. Échanges chiffrés optionnels entre utilisateurs.
 
-La restauration d'un instantané mémoire pré-calculé sur un disque mutable est
-écartée du premier prototype. Le boot à froid constitue la référence de
-cohérence jusqu'à ce qu'un snapshot puisse être lié à une génération exacte et
-proprement arrêtée du volume.
+La restauration d'un instantané mémoire pré-calculé sur un disque mutable est écartée du premier
+prototype. Le boot à froid constitue la référence de cohérence jusqu'à ce qu'un snapshot puisse être
+lié à une génération exacte et proprement arrêtée du volume.
