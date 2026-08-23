@@ -1,0 +1,99 @@
+name: Image de référence
+
+# Cette recette construit l'image VM de l'application Rails de référence et la
+# boote réellement. Elle est longue (compilation de Ruby et des gemmes natives
+# sous i386, puis un boot à froid sous v86) : elle n'est donc PAS un contrôle
+# obligatoire de la protection de branche, et `npm run check` ne l'appelle pas.
+# Sa périodicité et son coût sont documentés dans docs/testing.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publier_artefacts:
+        description: "Publier aussi les images de disque (environ 1 Gio)"
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - "apps/**"
+      - "tools/build-reference-image/**"
+      - "tools/vm/**"
+      - "tools/run-app-tests.mjs"
+      - "tests/vm/**"
+      - ".github/workflows/image-reference.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "tools/build-reference-image/**"
+      - "tools/vm/**"
+      - "tests/vm/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-reference-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image:
+    name: Construction et boot de l'image de référence
+    runs-on: ubuntu-latest
+    # Mesures locales du 2026-08-23 : construction environ 20 min sans cache,
+    # boot à froid de l'ordre de la dizaine de minutes. La marge couvre un
+    # exécutant GitHub plus lent que la machine de développement.
+    timeout-minutes: 120
+
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@v5
+
+      - name: Installation de Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Épinglage de la chaîne de construction
+        run: node tools/build-reference-image/verify-pinning.mjs
+
+      - name: Suite Minitest de l'application de référence
+        run: npm run app:test
+
+      - name: Construction de l'image
+        run: npm run image:build
+
+      - name: Manifeste produit
+        run: cat tools/build-reference-image/manifest.json
+
+      - name: Boot à froid et vérification de l'invariant
+        env:
+          VAULT_VM_VERBEUX: "1"
+        run: npm run test:vm
+
+      - name: Manifeste et mesures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-reference-manifeste
+          path: |
+            tools/build-reference-image/manifest.json
+            reports/vm/
+          if-no-files-found: warn
+          retention-days: 90
+
+      # Les images de disque pèsent environ 1 Gio : elles ne sont publiées que
+      # sur demande explicite, pour ne pas saturer le quota d'artefacts à chaque
+      # pull request.
+      - name: Artefacts binaires
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publier_artefacts }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-reference-artefacts
+          path: artifacts/reference-image/
+          if-no-files-found: error
+          retention-days: 7

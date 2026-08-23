@@ -41,7 +41,14 @@ export const ARTEFACTS_ATTENDUS = Object.freeze([
  * }} entrees
  * @returns {Record<string, any>}
  */
-export function construireManifeste({ sources, artefacts, invariant, rails, environnement, genereLe }) {
+export function construireManifeste({
+  sources,
+  artefacts,
+  invariant,
+  rails,
+  environnement,
+  genereLe,
+}) {
   const tries = [...artefacts].sort((gauche, droite) => gauche.name.localeCompare(droite.name));
   return {
     manifestVersion: VERSION_MANIFESTE,
@@ -107,7 +114,8 @@ export function validerManifeste(manifeste) {
     ajouter("horodatage-absent", "generatedAt absent ou mal formé");
   }
   for (const champ of ["id", "version", "invariantRecordId", "attachmentSha256"]) {
-    if (!donnees.application?.[champ]) ajouter("application-incomplete", `application.${champ} absent`);
+    if (!donnees.application?.[champ])
+      ajouter("application-incomplete", `application.${champ} absent`);
   }
   for (const champ of ["ruby", "rails", "debianSuite"]) {
     if (!donnees.toolchain?.[champ]) ajouter("chaine-incomplete", `toolchain.${champ} absent`);
@@ -116,7 +124,8 @@ export function validerManifeste(manifeste) {
   const artefacts = Array.isArray(donnees.artifacts) ? donnees.artifacts : [];
   const noms = new Set(artefacts.map((artefact) => artefact?.name));
   for (const attendu of ARTEFACTS_ATTENDUS) {
-    if (!noms.has(attendu)) ajouter("artefact-manquant", `artefact absent du manifeste : ${attendu}`);
+    if (!noms.has(attendu))
+      ajouter("artefact-manquant", `artefact absent du manifeste : ${attendu}`);
   }
   for (const artefact of artefacts) {
     const nom = artefact?.name ?? "(sans nom)";
@@ -132,7 +141,10 @@ export function validerManifeste(manifeste) {
 
   const attendu = artefacts.reduce((somme, artefact) => somme + (artefact?.byteSize ?? 0), 0);
   if (donnees.totals?.byteSize !== attendu) {
-    ajouter("total-incoherent", `totals.byteSize ${donnees.totals?.byteSize} au lieu de ${attendu}`);
+    ajouter(
+      "total-incoherent",
+      `totals.byteSize ${donnees.totals?.byteSize} au lieu de ${attendu}`,
+    );
   }
 
   for (const role of ["kernel", "initrd", "hda", "hdb", "bios", "vgaBios"]) {

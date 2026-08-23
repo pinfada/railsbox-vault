@@ -115,7 +115,12 @@ export function creerAssembleurReponses() {
         case "RSB": {
           const taille = Number.parseInt(reste[0] ?? "", 10);
           if (!Number.isInteger(taille) || taille < 0) {
-            return { type: "erreur", id: identifiant, code: 56, libelle: "taille-annoncee-invalide" };
+            return {
+              type: "erreur",
+              id: identifiant,
+              code: 56,
+              libelle: "taille-annoncee-invalide",
+            };
           }
           enCours.set(identifiant, { octets: new Uint8Array(taille), position: 0 });
           return null;
@@ -128,7 +133,12 @@ export function creerAssembleurReponses() {
           const morceau = octetsDepuisBase64(reste[0] ?? "");
           if (entree.position + morceau.byteLength > entree.octets.byteLength) {
             enCours.delete(identifiant);
-            return { type: "erreur", id: identifiant, code: 56, libelle: "reponse-plus-longue-qu-annoncee" };
+            return {
+              type: "erreur",
+              id: identifiant,
+              code: 56,
+              libelle: "reponse-plus-longue-qu-annoncee",
+            };
           }
           entree.octets.set(morceau, entree.position);
           entree.position += morceau.byteLength;

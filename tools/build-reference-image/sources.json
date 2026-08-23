@@ -85,7 +85,7 @@
         "libffi8",
         "libgmp10",
         "libreadline8",
-        "python3-minimal",
+        "python3",
         "iproute2",
         "procps"
       ]

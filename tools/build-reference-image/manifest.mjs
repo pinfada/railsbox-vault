@@ -152,7 +152,9 @@ if (executeDirectement) {
     console.log(`Manifeste écrit : ${chemin}`);
     console.log(`  ${manifeste.totals.artifactCount} artefacts, ${mib} Mio au total`);
     for (const artefact of manifeste.artifacts) {
-      console.log(`  · ${artefact.name.padEnd(28)} ${String(artefact.byteSize).padStart(12)} octets  ${artefact.sha256}`);
+      console.log(
+        `  · ${artefact.name.padEnd(28)} ${String(artefact.byteSize).padStart(12)} octets  ${artefact.sha256}`,
+      );
     }
   } catch (erreur) {
     console.error(erreur instanceof Error ? erreur.message : String(erreur));

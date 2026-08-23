@@ -42,7 +42,8 @@ function analyserArguments(arguments_) {
   for (const argument of arguments_) {
     if (argument === "--sans-cache") sansCache = true;
     else if (argument.startsWith("--seulement=")) seulement = argument.slice("--seulement=".length);
-    else if (argument.startsWith("--taille-app=")) tailleApp = Number.parseInt(argument.slice(13), 10);
+    else if (argument.startsWith("--taille-app="))
+      tailleApp = Number.parseInt(argument.slice(13), 10);
     else {
       console.error(`option inconnue : ${argument}`);
       process.exit(64);
@@ -146,7 +147,9 @@ function fabriquerDisque({ etiquette, nom, type, sousArbre, tailleMiB }) {
     }
     const conteneur = creation.stdout.trim();
 
-    const exportation = spawn("docker", ["export", conteneur], { stdio: ["ignore", "pipe", "inherit"] });
+    const exportation = spawn("docker", ["export", conteneur], {
+      stdio: ["ignore", "pipe", "inherit"],
+    });
     const fabrication = spawn(
       "docker",
       [

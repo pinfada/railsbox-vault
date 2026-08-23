@@ -43,7 +43,10 @@ export function verifierEpinglage() {
 
   // Un secret peut aussi entrer par l'arbre de l'application plutôt que par le
   // Dockerfile ; la fixture doit rester sans clé maîtresse.
-  for (const relatif of ["apps/reference/config/master.key", "apps/reference/config/credentials.yml.enc"]) {
+  for (const relatif of [
+    "apps/reference/config/master.key",
+    "apps/reference/config/credentials.yml.enc",
+  ]) {
     try {
       readFileSync(join(racineDepot, relatif));
       anomalies.push({
@@ -59,7 +62,8 @@ export function verifierEpinglage() {
   return { anomalies, fichiers };
 }
 
-const executeDirectement = process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+const executeDirectement =
+  process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
 if (executeDirectement) {
   const { anomalies, fichiers } = verifierEpinglage();
   if (anomalies.length > 0) {

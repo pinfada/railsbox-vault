@@ -45,7 +45,8 @@ export function instructionsDockerfile(texte) {
       courante = { numero: index + 1, contenu: "" };
     }
     const continuee = ligne.endsWith("\\");
-    courante.contenu += (courante.contenu === "" ? "" : "\n") + (continuee ? ligne.slice(0, -1) : ligne);
+    courante.contenu +=
+      (courante.contenu === "" ? "" : "\n") + (continuee ? ligne.slice(0, -1) : ligne);
     if (!continuee) {
       instructions.push(courante);
       courante = null;
@@ -129,7 +130,8 @@ export function analyserDockerfile(texte, options = {}) {
       anomalies.push({
         code: "telechargement-non-verifie",
         ligne: numero,
-        message: "ADD depuis une URL : aucune empreinte n'est vérifiable, utiliser curl + sha256sum",
+        message:
+          "ADD depuis une URL : aucune empreinte n'est vérifiable, utiliser curl + sha256sum",
       });
     }
 
