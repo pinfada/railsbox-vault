@@ -6,9 +6,9 @@
 - Node 22, version déclarée dans `.node-version` et `.nvmrc` ;
 - les trois moteurs Playwright — Chromium, Firefox et WebKit — requis par `npm run check`.
 
-Aucun secret et aucune donnée personnelle ne sont nécessaires. Les futurs artefacts VM devront être
-récupérables par un script versionné ; un fichier transmis manuellement ne sera jamais un prérequis
-accepté.
+Aucun secret et aucune donnée personnelle ne sont nécessaires. Les artefacts VM sont récupérables
+par un script versionné (`npm run vm:fetch`) et vérifiés par empreinte ; un fichier transmis
+manuellement n'est jamais un prérequis accepté.
 
 ## Installation
 
@@ -108,6 +108,30 @@ cross-origin. `playwright.config.mjs` démarre les deux serveurs.
 La coquille du spike s'ouvre à l'adresse
 `http://127.0.0.1:4173/spike/origin/shell.html?topologie=T2-origine-distincte-sandbox` ; les
 topologies disponibles sont listées dans `src/spike/origin-topology.mjs`.
+
+## Machine virtuelle et backend de blocs
+
+Les artefacts v86 et l'image de guest ne sont pas versionnés. Ils sont décrits par
+`vendor/v86/MANIFEST.json` — nom, taille, empreinte SHA-256, licence, URL source — et récupérés dans
+`vendor/v86/artefacts/`, dossier ignoré par git :
+
+```sh
+npm run vm:fetch      # télécharge ce qui manque, vérifie toutes les empreintes
+npm run vm:check      # vérifie seulement, sans réseau
+```
+
+`vm:check` échoue si un artefact manque ou si son empreinte diffère : une mesure de VM ne provient
+jamais d'un binaire non identifié. Environ 9,9 Mio sont transférés au premier appel.
+
+```sh
+npm run test:vm       # preuve « intégration VM » sous Chromium (périodique, hors `npm run check`)
+npm run vm:protocol   # protocole de mesure complet sous Node → reports/vm/protocole.json
+```
+
+Le banc s'observe aussi à la main : `npm start`, puis `http://127.0.0.1:4173/vm/`. La page ne fait
+rien elle-même ; elle démarre le Worker runtime et affiche son compte rendu. La console offre
+`await bancVault.executer({ scenario: "filesystem", durability: true })` ; `scenario` vaut `barrier`
+ou `filesystem`, et `durability: false` reproduit le comportement amont de v86.
 
 ## Vérification avant une PR
 

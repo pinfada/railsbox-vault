@@ -62,7 +62,9 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [Modèle de menace](SECURITY.md)
 - [ADR 0001 — un produit et un dépôt séparés](docs/decisions/0001-produit-et-depot-separes.md)
 - [ADR 0002 — la frontière coquille / application est une frontière d'origine](docs/decisions/0002-topologie-origine-de-confiance.md)
+- [ADR 0003 — le backend de blocs v86 est un adaptateur et un pont de durabilité](docs/decisions/0003-backend-de-blocs-v86.md)
 - [Spike #35 — protocole et mesures de la topologie d'origine](docs/spikes/0035-topologie-origine-de-confiance.md)
+- [Spike #4 — protocole et mesures du backend de blocs v86](docs/spikes/0004-backend-de-blocs-v86.md)
 
 ## Licence
 
