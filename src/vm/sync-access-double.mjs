@@ -53,7 +53,14 @@ export function createSyncAccessStore({
   const fileOf = (name) => {
     let file = files.get(name);
     if (!file) {
-      file = { bytes: new Uint8Array(0), size: 0, lost: false, flushes: 0, reads: 0 };
+      file = {
+        bytes: new Uint8Array(0),
+        size: 0,
+        lost: false,
+        starved: false,
+        flushes: 0,
+        reads: 0,
+      };
       files.set(name, file);
     }
     return file;
@@ -116,6 +123,10 @@ export function createSyncAccessStore({
       },
       flush() {
         assertLive();
+        // Un vrai `flush()` écrit : il peut donc buter sur le quota comme une écriture.
+        if (file.starved) {
+          throw domException("QuotaExceededError", "Plus de place pour matérialiser la barrière.");
+        }
         file.flushes += 1;
       },
       close() {
@@ -140,6 +151,10 @@ export function createSyncAccessStore({
     /** Le fichier disparaît sous les handles ouverts, sans fermeture propre. */
     lose(name) {
       fileOf(name).lost = true;
+    },
+    /** Le support n'a plus de place : la prochaine barrière du fichier échoue sur le quota. */
+    starve(name) {
+      fileOf(name).starved = true;
     },
     /** Le support redimensionne le fichier à l'insu du volume ouvert. */
     resize(name, newSize) {

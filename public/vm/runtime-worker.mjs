@@ -174,11 +174,20 @@ async function runOpfsPersistence({
   }
 
   // Handle fermé, volume rouvert sans géométrie déclarée : la relecture porte sur le fichier.
+  // Le `finally` n'est pas décoratif : sans lui, une lecture qui échoue laisserait le handle
+  // exclusif ouvert et l'exécution suivante rougirait sur `VAULT_STORAGE_BUSY`, en masquant la
+  // cause réelle.
   const reopened = await openOpfsVolume({ name: volume, journal: new BlockJournal() });
-  const guestBytes = await reopened.read(GUEST_MARKER_OFFSET, GUEST_MARKER.length);
-  const hostBytes = await reopened.read(HOST_MARKER_OFFSET, HOST_MARKER.length);
-  const reopenedSize = reopened.size();
-  await reopened.close();
+  let guestBytes;
+  let hostBytes;
+  let reopenedSize;
+  try {
+    guestBytes = await reopened.read(GUEST_MARKER_OFFSET, GUEST_MARKER.length);
+    hostBytes = await reopened.read(HOST_MARKER_OFFSET, HOST_MARKER.length);
+    reopenedSize = reopened.size();
+  } finally {
+    await reopened.close();
+  }
 
   const steps = summariseSteps(journal, results);
   const stepOutput = (label) => steps.find((step) => step.label === label)?.output ?? null;

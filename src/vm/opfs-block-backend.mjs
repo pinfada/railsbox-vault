@@ -279,20 +279,24 @@ export class OpfsBlockBackend {
     }
 
     try {
-      this.#handle.flush();
-    } catch (cause) {
-      const typed = toStorageError(cause, { operation: "flush", volume: this.#name, barrier });
-      // Un quota atteint pendant la barrière reste un quota : le confondre avec un échec de flush
-      // ferait perdre l'information qui permet d'agir. Tout le reste est un échec de barrière.
-      const failure =
-        typed.code === STORAGE_ERROR_CODES.quotaExceeded
-          ? typed
-          : new StorageError(
-              STORAGE_ERROR_CODES.flushFailed,
-              `Barrière de durabilité ${barrier} refusée par le support du volume « ${this.#name} » : ${typed.message}`,
-              { volume: this.#name, barrier, cause: typed.context.cause ?? typed.code },
-            );
-      if (failure.code === STORAGE_ERROR_CODES.handleLost) this.#handleLost = true;
+      // Passer par `#support` et non par un `try` local : c'est lui qui pose `#handleLost` et
+      // journalise la panne. Un `catch` parallèle laisserait le volume se croire sain après une
+      // perte de support découverte par la barrière.
+      this.#support("flush", () => this.#handle.flush(), { barrier });
+    } catch (typed) {
+      // Un quota atteint pendant la barrière reste un quota, et un handle perdu reste un handle
+      // perdu : les trois états se corrigent différemment — libérer de la place, rouvrir le
+      // volume, réessayer — et les fondre en « échec de barrière » effacerait cette différence.
+      const preserved =
+        typed.code === STORAGE_ERROR_CODES.quotaExceeded ||
+        typed.code === STORAGE_ERROR_CODES.handleLost;
+      const failure = preserved
+        ? typed
+        : new StorageError(
+            STORAGE_ERROR_CODES.flushFailed,
+            `Barrière de durabilité ${barrier} refusée par le support du volume « ${this.#name} » : ${typed.message}`,
+            { volume: this.#name, barrier, cause: typed.context?.cause ?? typed.code },
+          );
       this.#journal.record(JOURNAL_OPERATIONS.fault, {
         kind: FAULT_KINDS.flushFailure,
         barrier,

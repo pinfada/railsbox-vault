@@ -122,64 +122,73 @@ export async function buildProbeImage() {
  * @returns {Promise<object>} rapport sérialisable
  */
 export async function observePersistence({ openVolume, name, support = "double" }) {
+  // Chaque phase ferme SON volume dans un `finally`. Une erreur inattendue en cours de sonde
+  // laisserait sinon le handle exclusif ouvert, et l'exécution suivante échouerait sur
+  // `VAULT_STORAGE_BUSY` — un symptôme qui masquerait la cause.
   const first = await openVolume({ name, size: PROBE_VOLUME_BYTES });
   const opened = first.describe();
-
   const written = [];
-  for (const region of PROBE_REGIONS) {
-    const bytes = await regionBytes(region);
-    await first.write(region.offset, bytes);
-    written.push({ label: region.label, offset: region.offset, length: region.length });
+  try {
+    for (const region of PROBE_REGIONS) {
+      const bytes = await regionBytes(region);
+      await first.write(region.offset, bytes);
+      written.push({ label: region.label, offset: region.offset, length: region.length });
+    }
+    await first.flush();
+  } finally {
+    // Le handle est rendu au support AVANT toute relecture : ce que la suite lit vient du fichier,
+    // pas d'un tampon resté vivant dans le backend.
+    await first.close();
   }
-  await first.flush();
-
-  // Le handle est rendu au support AVANT toute relecture : ce que la suite lit vient du fichier,
-  // pas d'un tampon resté vivant dans le backend.
-  await first.close();
 
   const second = await openVolume({ name });
   const reopened = second.describe();
-
   const chunks = [];
-  const image = new Uint8Array(reopened.size);
-  for (let offset = 0; offset < reopened.size; offset += CHUNK_BYTES) {
-    const length = Math.min(CHUNK_BYTES, reopened.size - offset);
-    const bytes = await second.read(offset, length);
-    image.set(bytes, offset);
-    chunks.push(length);
-  }
-
   const regions = [];
-  for (const region of PROBE_REGIONS) {
-    const bytes = await second.read(region.offset, region.length);
-    regions.push({
-      label: region.label,
-      offset: region.offset,
-      length: region.length,
-      digest: await digestHex(bytes),
-      firstBytes: [...bytes.subarray(0, 8)],
-      lastBytes: [...bytes.subarray(-8)],
-    });
-  }
-
   const boundaries = [];
-  for (const boundary of PROBE_BOUNDARIES) {
-    const bytes = await second.read(boundary.offset, boundary.length);
-    boundaries.push({ ...boundary, digest: await digestHex(bytes) });
-  }
+  let image;
+  let outOfRange;
+  let handleExposed;
 
-  // Un octet au-delà du dernier : la seule réponse acceptable est une erreur typée. Un succès ici
-  // serait la faute exacte que le contrat interdit — compléter par des zéros.
-  let outOfRange = { code: null, message: "La lecture hors bornes a réussi." };
   try {
-    await second.read(PROBE_VOLUME_BYTES - 1, 2);
-  } catch (error) {
-    outOfRange = { code: error.code ?? null, message: error.message };
+    image = new Uint8Array(reopened.size);
+    for (let offset = 0; offset < reopened.size; offset += CHUNK_BYTES) {
+      const length = Math.min(CHUNK_BYTES, reopened.size - offset);
+      const bytes = await second.read(offset, length);
+      image.set(bytes, offset);
+      chunks.push(length);
+    }
+
+    for (const region of PROBE_REGIONS) {
+      const bytes = await second.read(region.offset, region.length);
+      regions.push({
+        label: region.label,
+        offset: region.offset,
+        length: region.length,
+        digest: await digestHex(bytes),
+        firstBytes: [...bytes.subarray(0, 8)],
+        lastBytes: [...bytes.subarray(-8)],
+      });
+    }
+
+    for (const boundary of PROBE_BOUNDARIES) {
+      const bytes = await second.read(boundary.offset, boundary.length);
+      boundaries.push({ ...boundary, digest: await digestHex(bytes) });
+    }
+
+    // Un octet au-delà du dernier : la seule réponse acceptable est une erreur typée. Un succès ici
+    // serait la faute exacte que le contrat interdit — compléter par des zéros.
+    outOfRange = { code: null, message: "La lecture hors bornes a réussi." };
+    try {
+      await second.read(PROBE_VOLUME_BYTES - 1, 2);
+    } catch (error) {
+      outOfRange = { code: error.code ?? null, message: error.message };
+    }
+
+    handleExposed = exposesSyncAccessHandle(second);
+  } finally {
+    await second.close();
   }
-
-  const handleExposed = exposesSyncAccessHandle(second);
-
-  await second.close();
 
   return {
     support,

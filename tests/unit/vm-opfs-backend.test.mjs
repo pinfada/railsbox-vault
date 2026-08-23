@@ -252,6 +252,34 @@ test("un handle perdu contamine toutes les opérations suivantes", async () => {
   );
 });
 
+test("un handle perdu reste un handle perdu, même découvert par la barrière", async () => {
+  // La barrière est le seul chemin qui reconstruit son erreur : elle ne doit pas ranger une perte
+  // de support dans « échec de barrière ». Les deux états se corrigent différemment — l'un exige
+  // de rouvrir le volume, l'autre de réessayer — et les confondre effacerait cette différence.
+  const { backend, store, name } = await volume();
+  store.lose(name);
+
+  await assert.rejects(
+    () => backend.flush(),
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.handleLost),
+  );
+  // L'état est retenu : l'E/S suivante n'a pas besoin de redécouvrir la panne.
+  await assert.rejects(
+    () => backend.read(0, SECTOR_SIZE),
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.handleLost),
+  );
+});
+
+test("un quota atteint pendant la barrière reste un quota, pas un échec de barrière", async () => {
+  const { backend, store, name } = await volume();
+  store.starve(name);
+
+  await assert.rejects(
+    () => backend.flush(),
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.quotaExceeded),
+  );
+});
+
 test("la faute programmée « handle perdu » produit le même état que la perte réelle", async () => {
   const faults = createFaultPlan([
     { kind: FAULT_KINDS.lostHandle, operation: "write", occurrence: 1 },

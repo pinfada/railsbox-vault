@@ -51,10 +51,25 @@ d'invariant d'`apps/reference/` : bloc `i` de 32 octets valant `SHA-256(label + 
 La suite navigateur est rattachée à `npm run check` : **3,1 s mesurées** sous Chromium, aucun
 artefact tiers, aucun réseau. Une régression du backend de persistance doit bloquer une PR.
 
-Elle n'accorde aucune indulgence à un moteur sans OPFS synchrone : si `createSyncAccessHandle`
-manque, le Worker remonte `VAULT_STORAGE_UNSUPPORTED` et la suite échoue. Un moteur sans cette API
-ne peut pas porter le produit ; la mesure de sa disponibilité par moteur reste le rôle de
-`test:compat` et de [`docs/compatibility.md`](compatibility.md).
+Elle n'accorde aucune indulgence à un moteur sans OPFS synchrone, et elle ne l'ignore pas non plus.
+Chaque épreuve commence par mesurer la capacité du Worker — en **ouvrant réellement** un handle, car
+une API présente peut refuser à l'exécution — puis :
+
+- **sous Chromium**, la capacité est EXIGÉE. C'est le moteur du contrôle obligatoire : l'y voir
+  disparaître doit bloquer une PR, pas faire basculer la suite en mesure négative ;
+- **sur un moteur qui la porte**, toutes les assertions s'appliquent. Mesuré le 2026-08-23 :
+  Chromium 151 et Firefox 153 exécutent la sonde complète et rendent la même empreinte de volume ;
+- **sur un moteur qui ne la porte pas**, la suite exige un refus **typé**
+  `VAULT_STORAGE_UNSUPPORTED`. Un plantage non typé, ou pire un succès, la fait échouer. Mesuré :
+  WebKit 26.5 de Playwright n'expose `navigator.storage` ni en page ni en Worker, ce que
+  [`docs/compatibility.md`](compatibility.md) classe déjà « refusé (OPFS absent) ».
+
+```sh
+npm run test:browser:moteurs -- chromium,firefox,webkit   # 15 épreuves, les trois moteurs verts
+```
+
+Cette conduite suit celle des épreuves COOP/COEP de la frontière d'origine : mesurer partout,
+asserter là où la capacité existe, et ne jamais rendre vert un relevé qui n'a rien mesuré.
 
 **Le niveau intégration VM mesure ce que le guest en obtient.** `tests/vm/opfs-persistence.spec.mjs`
 démarre un vrai guest Linux i386 sur un disque IDE adossé au backend OPFS et vérifie les **deux**

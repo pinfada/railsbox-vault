@@ -24,6 +24,21 @@
 La frontière d'origine décidée par l'ADR 0002 a été mesurée séparément sur les trois mêmes moteurs
 et n'y change aucun statut : elle tient partout. Voir « Frontière d'origine » plus bas.
 
+Le backend de blocs OPFS de #6 a été exécuté sur les trois moteurs le **2026-08-23** et confirme
+cette matrice sans la modifier. `tests/browser/opfs-block-backend.spec.mjs` n'interroge pas
+seulement `typeof` : il OUVRE réellement un handle exclusif depuis un Worker dédié.
+
+| Moteur       | Handle exclusif dans le Worker | Sonde de persistance complète       |
+| ------------ | ------------------------------ | ----------------------------------- |
+| Chromium 151 | ouvert                         | exécutée, empreinte de volume juste |
+| Firefox 153  | ouvert                         | exécutée, même empreinte            |
+| WebKit 26.5  | refusé                         | `VAULT_STORAGE_UNSUPPORTED`         |
+
+Le refus de WebKit est **asserté**, pas ignoré : la suite exige le code typé. Un plantage non typé,
+ou un succès inattendu, la ferait échouer. Le statut « refusé (OPFS absent) » de WebKit Playwright
+est donc désormais adossé à une tentative réelle d'ouverture, et non seulement à la sonde de
+capacités.
+
 La détection porte sur les capacités effectives, pas seulement sur un numéro de navigateur. Une
 extension optionnelle comme WebAuthn PRF doit confirmer son résultat à l'enregistrement et au
 déverrouillage.
