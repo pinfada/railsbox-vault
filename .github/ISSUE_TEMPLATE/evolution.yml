@@ -9,6 +9,14 @@ body:
       value: |
         Une issue décrit le résultat attendu, pas une solution déjà supposée.
   - type: textarea
+    id: exigence
+    attributes:
+      label: Exigence ou invariant lié
+      description: Identifiant du PRD, invariant de sécurité ou contrat composant concerné.
+      placeholder: VAULT-PERSIST-001
+    validations:
+      required: true
+  - type: textarea
     id: probleme
     attributes:
       label: Problème observable
@@ -58,7 +66,9 @@ body:
     id: dependances
     attributes:
       label: Dépendances et décisions liées
-      description: Issues, ADR, navigateurs ou composants concernés.
+      description: Issues et ADR prérequis, puis capacités débloquées par cette tranche.
+    validations:
+      required: true
   - type: checkboxes
     id: securite
     attributes:
@@ -67,4 +77,8 @@ body:
         - label: L'impact sur les frontières de confiance a été évalué.
           required: true
         - label: Aucun test ne nécessite de donnée personnelle réelle.
+          required: true
+        - label: Les dépendances sont closes ou leurs contrats sont stables.
+          required: true
+        - label: Le périmètre tient dans une pull request révisable.
           required: true
