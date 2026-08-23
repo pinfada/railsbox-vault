@@ -4,7 +4,7 @@
 
 - Git ;
 - Node 22, version déclarée dans `.node-version` et `.nvmrc` ;
-- un navigateur Chromium installé par Playwright.
+- les trois moteurs Playwright — Chromium, Firefox et WebKit — requis par `npm run check`.
 
 Aucun secret et aucune donnée personnelle ne sont nécessaires. Les futurs artefacts VM devront être
 récupérables par un script versionné ; un fichier transmis manuellement ne sera jamais un prérequis
@@ -16,14 +16,17 @@ accepté.
 git clone https://github.com/pinfada/railsbox-vault.git
 cd railsbox-vault
 npm ci
-npx playwright install chromium
+npx playwright install chromium firefox webkit
 ```
 
 Sous Linux CI ou sur une machine vierge, Playwright peut installer les dépendances système avec :
 
 ```sh
-npx playwright install --with-deps chromium
+npx playwright install --with-deps chromium firefox webkit
 ```
+
+Chromium seul suffit pour `npm run test:browser`. Les trois moteurs sont nécessaires à
+`npm run test:compat`, et donc à `npm run check`.
 
 ## Boucle rapide
 
@@ -41,6 +44,15 @@ npm start
 
 La page est servie sur `http://127.0.0.1:4173`. Le serveur ne sert que `public/` et les modules de
 contrat sous `src/` ; il refuse toute traversée hors de ces racines.
+
+Pour observer la sonde de capacités à la main, il faut un contexte isolé multi-origine, sans quoi
+`SharedArrayBuffer` disparaît :
+
+```sh
+node tools/serve.mjs --port 4180 --cross-origin-isolated
+```
+
+La sonde est alors visible sur `http://127.0.0.1:4180/compat.html`, avec un tableau des verdicts.
 
 ## Vérification avant une PR
 

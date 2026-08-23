@@ -16,7 +16,7 @@ jobs:
   check:
     name: Qualité et tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Récupération du dépôt
         uses: actions/checkout@v5
@@ -30,11 +30,20 @@ jobs:
       - name: Installation des dépendances
         run: npm ci
 
-      - name: Installation de Chromium
-        run: npx playwright install --with-deps chromium
+      - name: Installation des moteurs de navigateur
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Vérifications
         run: npm run check
+
+      - name: Rapports de compatibilité
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapports-compatibilite
+          path: reports/compat/
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Rapport Playwright en cas d'échec
         if: failure()

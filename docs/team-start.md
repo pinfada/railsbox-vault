@@ -11,13 +11,14 @@ Pré requis : Git et la version de Node indiquée par `.node-version`.
 git clone https://github.com/pinfada/railsbox-vault.git
 cd railsbox-vault
 npm ci
-npx playwright install --with-deps chromium
+npx playwright install --with-deps chromium firefox webkit
 npm run check
 ```
 
-Le résultat attendu est une analyse statique verte, un test unitaire vert et un scénario Chromium
-page/Worker vert. Une erreur à cette étape est un défaut d'installation à signaler ; elle ne doit
-pas être contournée dans une évolution sans rapport.
+Le résultat attendu est une analyse statique verte, un test unitaire vert, un scénario Chromium
+page/Worker vert et la sonde de capacités verte sur les trois moteurs. Une erreur à cette étape est
+un défaut d'installation à signaler ; elle ne doit pas être contournée dans une évolution sans
+rapport.
 
 ## 2. Choisir une tâche
 

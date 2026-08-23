@@ -1,0 +1,133 @@
+{
+  "contract": {
+    "id": "railsbox-vault-capability-probe",
+    "version": 2
+  },
+  "generatedAt": "2026-08-23T15:53:23.166Z",
+  "agent": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+    "userAgentPlatform": "Windows",
+    "hardwareConcurrency": 28,
+    "crossOriginIsolated": true,
+    "isSecureContext": true
+  },
+  "runner": {
+    "engine": "chromium",
+    "engineVersion": "151.0.7922.34",
+    "playwrightVersion": "1.62.1",
+    "os": "win32",
+    "osRelease": "10.0.26200",
+    "node": "v24.14.0",
+    "recordedAt": "2026-08-23T15:53:23.208Z"
+  },
+  "capabilities": [
+    {
+      "id": "moduleDedicatedWorker",
+      "context": "page",
+      "verdict": "supported",
+      "detail": "Worker de type module opérationnel, 3 mesure(s) rapatriée(s)"
+    },
+    {
+      "id": "webCryptoAesGcm",
+      "context": "page",
+      "verdict": "supported",
+      "detail": "AES-256-GCM conforme au vecteur connu (47 octets scellés)"
+    },
+    {
+      "id": "webCryptoHkdf",
+      "context": "page",
+      "verdict": "supported",
+      "detail": "HKDF-SHA-256 conforme au cas de test 1 de la RFC 5869"
+    },
+    {
+      "id": "opfsGetDirectory",
+      "context": "page",
+      "verdict": "supported",
+      "detail": "racine OPFS obtenue et exploitable depuis la page"
+    },
+    {
+      "id": "storageEstimate",
+      "context": "page",
+      "verdict": "supported",
+      "detail": "quota 6144 Mio, usage 0 Mio"
+    },
+    {
+      "id": "storagePersist",
+      "context": "page",
+      "verdict": "denied",
+      "detail": "navigator.storage.persist() a renvoyé false (autorisation « prompt »)"
+    },
+    {
+      "id": "webAssembly",
+      "context": "page",
+      "verdict": "supported",
+      "detail": "module minimal instancié, add(2, 3) = 5"
+    },
+    {
+      "id": "sharedArrayBuffer",
+      "context": "page",
+      "verdict": "supported",
+      "detail": "SharedArrayBuffer de 8 octets alloué dans la page"
+    },
+    {
+      "id": "crossOriginIsolated",
+      "context": "page",
+      "verdict": "supported",
+      "detail": "contexte isolé multi-origine actif"
+    },
+    {
+      "id": "broadcastChannel",
+      "context": "page",
+      "verdict": "supported",
+      "detail": "message diffusé et reçu entre deux canaux de la même origine"
+    },
+    {
+      "id": "webLocks",
+      "context": "page",
+      "verdict": "supported",
+      "detail": "verrou exclusif acquis puis relâché"
+    },
+    {
+      "id": "publicKeyCredential",
+      "context": "page",
+      "verdict": "supported",
+      "detail": "PublicKeyCredential exposé comme fonction ; aucune cérémonie WebAuthn exécutée"
+    },
+    {
+      "id": "platformAuthenticatorPresence",
+      "context": "page",
+      "verdict": "supported",
+      "detail": "isUserVerifyingPlatformAuthenticatorAvailable présente ; volontairement non appelée pour éviter toute cérémonie"
+    },
+    {
+      "id": "performanceMemory",
+      "context": "page",
+      "verdict": "supported",
+      "detail": "limite de tas JS 3586 Mio"
+    },
+    {
+      "id": "workerWebCryptoAesGcm",
+      "context": "worker",
+      "verdict": "supported",
+      "detail": "AES-256-GCM conforme au vecteur connu (47 octets scellés)"
+    },
+    {
+      "id": "opfsSyncAccessHandle",
+      "context": "worker",
+      "verdict": "supported",
+      "detail": "write/flush/read/truncate/close vérifiés sur 47 octets, artefacts supprimés"
+    },
+    {
+      "id": "workerAtomicsWait",
+      "context": "worker",
+      "verdict": "supported",
+      "detail": "Atomics.wait bloque puis expire, et détecte une valeur différente"
+    }
+  ],
+  "vaultVerdict": {
+    "status": "mesuré",
+    "supported": true,
+    "blocking": [],
+    "rule": "Le parcours Vault est « mesuré » seulement si toutes les capacités obligatoires valent « supported ». Une capacité obligatoire « unsupported » ou « denied » donne « refusé ». Une capacité obligatoire « error » ou absente du rapport donne « candidat » : la mesure n'est pas concluante. La sonde ne promeut jamais au statut « supporté », qui exige le scénario bout en bout du jalon 1."
+  }
+}
