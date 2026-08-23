@@ -1,0 +1,88 @@
+{
+  "manifestVersion": 1,
+  "generatedAt": "2026-08-23T18:47:00.936Z",
+  "application": {
+    "id": "railsbox-vault-reference",
+    "version": "1.0.0",
+    "invariantRecordId": "f2b2a4e0-6a5f-4a3c-9c1a-1d0a5b8e7c31",
+    "attachmentSha256": "b1cacc262df233ceacdbb2fe38d06ca586a2f7cf8ec2e27ad3e372c24e597916"
+  },
+  "toolchain": {
+    "ruby": "3.3.12",
+    "rails": "8.1.3.1",
+    "debianSuite": "bookworm",
+    "images": {
+      "rootfs": "i386/debian:bookworm-slim@sha256:72b77a38b741753a64ebd7ff26c200d5eb5119f8b385409c5aaaa1aee12e9045",
+      "ruby": "ruby:3.3.12-slim-bookworm@sha256:41120b37f3a8147ae5dbca5020b5be4dafaa8ffa589ee539d184dad0ba0b5ae5",
+      "diskBuilder": "debian:bookworm-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241"
+    }
+  },
+  "boot": {
+    "cmdline": "root=/dev/sda rw console=ttyS0 init=/opt/vault/guest-init.sh net.ifnames=0 quiet loglevel=4",
+    "memoryMiB": 512,
+    "kernel": "reference-rootfs-vmlinuz",
+    "initrd": "reference-rootfs-initrd",
+    "hda": "reference-rootfs.ext4",
+    "hdb": "reference-app.ext2",
+    "bios": "seabios.bin",
+    "vgaBios": "vgabios.bin"
+  },
+  "environment": {
+    "node": "24.14.0",
+    "platform": "win32 x64"
+  },
+  "artifacts": [
+    {
+      "name": "reference-app.ext2",
+      "role": "hdb — volume applicatif : application, bundle, base SQLite, pièce jointe",
+      "license": "MIT (RailsBox Vault) ; gemmes selon apps/reference/Gemfile.lock",
+      "origin": "tools/build-reference-image/guest.Dockerfile (cible disque-app)",
+      "byteSize": 536870912,
+      "sha256": "2731455c2226c564286a6404b8220f9984eb5f8a1b93ff62ac899d5eb6f20526"
+    },
+    {
+      "name": "reference-rootfs-initrd",
+      "role": "initrd (pilotes ext2/ext4 avant montage de la racine)",
+      "license": "licences libres diverses (initramfs-tools et modules Debian)",
+      "origin": "tools/build-reference-image/guest.Dockerfile (cible rootfs)",
+      "byteSize": 25321871,
+      "sha256": "51ece85a79828a2b1718bade333d5eef019c64a57afcd0a2f754e1a4c8fef1a2"
+    },
+    {
+      "name": "reference-rootfs-vmlinuz",
+      "role": "noyau Linux, démarré directement par v86",
+      "license": "GPL-2.0-only (paquet Debian linux-image-686)",
+      "origin": "tools/build-reference-image/guest.Dockerfile (cible rootfs)",
+      "byteSize": 5711808,
+      "sha256": "9d20bb1d97785a0e2e1207764cf954586e27db704cf859972825e241b6d926d8"
+    },
+    {
+      "name": "reference-rootfs.ext4",
+      "role": "hda — rootfs du guest",
+      "license": "Debian bookworm (licences libres diverses) ; Ruby 3.3.12 (Ruby / BSD-2-Clause)",
+      "origin": "tools/build-reference-image/guest.Dockerfile (cible rootfs)",
+      "byteSize": 403701760,
+      "sha256": "1c5719dbbd45066c2636703fa74f3090af1e5a2adfa895dba2d36e5e5b906f2b"
+    },
+    {
+      "name": "seabios.bin",
+      "role": "bios",
+      "license": "LGPL-3.0-or-later (SeaBIOS)",
+      "origin": "https://github.com/copy/v86 @ 847e34d5499b17b90d2783d5342ddd243c753497",
+      "byteSize": 131072,
+      "sha256": "73e3f359102e3a9982c35fce98eb7cd08f18303ac7f1ba6ebfbe6cdc1c244d98"
+    },
+    {
+      "name": "vgabios.bin",
+      "role": "vga-bios",
+      "license": "LGPL-2.1-or-later (SeaVGABIOS)",
+      "origin": "https://github.com/copy/v86 @ 847e34d5499b17b90d2783d5342ddd243c753497",
+      "byteSize": 36352,
+      "sha256": "a4bc0d80cc3ca028c73dafa8fee396b8d054ce87ebd8abfbd31b06b437607880"
+    }
+  ],
+  "totals": {
+    "artifactCount": 6,
+    "byteSize": 971773775
+  }
+}

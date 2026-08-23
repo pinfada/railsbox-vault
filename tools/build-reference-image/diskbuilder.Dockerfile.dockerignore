@@ -1,0 +1,4 @@
+# Le fabricant n'a besoin que de son script. Sans cette liste, le dépôt entier —
+# `node_modules/` compris — serait envoyé au démon Docker.
+*
+!tools/build-reference-image/fabriquer-systeme-de-fichiers.sh

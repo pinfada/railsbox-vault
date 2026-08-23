@@ -1,0 +1,84 @@
+#!/usr/bin/env ruby
+# Commande de fixture de l'invariant durable.
+#
+#   bin/vault-fixture create   crée l'invariant s'il manque, le retrouve sinon.
+#                              Idempotente : deux exécutions donnent le même
+#                              état et le même code de sortie 0.
+#   bin/vault-fixture verify   compare l'état persisté au contrat. Code 0 si
+#                              conforme, 1 si divergent, 2 si absent, avec un
+#                              diagnostic champ par champ sur la sortie d'erreur.
+#
+# Aucune autre issue : une commande inconnue sort en 64, une erreur inattendue
+# en 70. Un succès silencieux n'existe pas ici.
+#
+# RIEN n'est requis avant `config/environment`. Charger `json` ici activerait la
+# gemme par défaut de Ruby (2.7.2) et Bundler refuserait ensuite la version du
+# verrou : « You have already activated json ... but your Gemfile requires ... ».
+# Le diagnostic est obscur et n'apparaît que hors de `bundle exec` — c'est-à-dire
+# exactement là où la commande est appelée, dans la construction du disque.
+
+CODES = {
+  "conforming" => 0,
+  "divergent" => 1,
+  "absent" => 2
+}.freeze
+
+USAGE_EXIT = 64
+INTERNAL_EXIT = 70
+
+def usage(flux = $stderr)
+  flux.puts <<~TEXTE
+    Usage : bin/vault-fixture <create|verify> [--json]
+
+      create   crée ou retrouve l'invariant durable (idempotent, sortie 0)
+      verify   vérifie l'invariant (0 conforme, 1 divergent, 2 absent)
+      --json   écrit le résultat en JSON sur la sortie standard
+  TEXTE
+end
+
+commande = ARGV[0]
+json = ARGV.include?("--json")
+inconnues = ARGV[1..].to_a.reject { |argument| argument == "--json" }
+
+unless %w[create verify].include?(commande) && inconnues.empty?
+  $stderr.puts("argument invalide : #{ARGV.inspect}") unless ARGV.empty?
+  usage
+  exit USAGE_EXIT
+end
+
+require_relative "../config/environment"
+
+begin
+  case commande
+  when "create"
+    resultat = Vault::Fixture.create
+    verification = Vault::Fixture.verify
+    if json
+      $stdout.puts JSON.pretty_generate(resultat.merge("verification" => verification.as_json))
+    else
+      etat = resultat.fetch("created") ? "créé" : "retrouvé"
+      piece = resultat.fetch("attached") ? "pièce jointe attachée" : "pièce jointe déjà présente"
+      $stdout.puts "invariant #{etat}, #{piece} (#{Vault::Contract.record.fetch("id")})"
+    end
+    # Créer sans obtenir un invariant conforme est un échec, pas un succès :
+    # la commande vérifie ce qu'elle vient d'écrire.
+    unless verification.conforming?
+      $stderr.puts verification.report
+      exit CODES.fetch(verification.status)
+    end
+    exit 0
+  when "verify"
+    verification = Vault::Fixture.verify
+    if json
+      $stdout.puts JSON.pretty_generate(verification.as_json)
+    else
+      $stdout.puts verification.report
+    end
+    $stderr.puts verification.report unless verification.conforming?
+    exit CODES.fetch(verification.status)
+  end
+rescue StandardError => erreur
+  $stderr.puts "échec de bin/vault-fixture #{commande} : #{erreur.class} — #{erreur.message}"
+  $stderr.puts erreur.backtrace&.first(10)
+  exit INTERNAL_EXIT
+end

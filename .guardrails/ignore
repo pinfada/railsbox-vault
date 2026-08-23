@@ -1,0 +1,25 @@
+# Fichiers exclus de l'analyse GuardRails (statut de commit `guardrails/scan`).
+#
+# Syntaxe : motifs .gitignore — https://docs.guardrails.io/docs/configuration
+#
+# Ce dépôt ne contient aucun secret réel : `SECURITY.md`, gate « données
+# synthétiques uniquement », l'interdit tant que les gates de sécurité ne sont
+# pas fermés. Cette liste ne doit donc jamais s'élargir à un répertoire, à une
+# extension ou à une règle : chaque entrée vise UN fichier généré dont le
+# contenu est intégralement public, et la détection de secrets reste active
+# partout ailleurs — `apps/`, `src/`, `tools/`, `tests/`, `.github/`.
+#
+# Un vrai secret introduit dans l'un de ces fichiers serait de toute façon
+# refusé en amont : il n'est produit que par
+# `tools/build-reference-image/manifest.mjs`, à partir d'artefacts sur disque.
+# Ajouter une entrée ici exige la même justification écrite qu'une dépendance.
+
+# Manifeste de construction de l'image de référence. Il ne porte que des noms
+# d'artefacts, des tailles, des licences, des origines et des empreintes
+# SHA-256. Ces empreintes hexadécimales de 64 caractères sont prises pour des
+# secrets à haute entropie (« Hex High Entropy String ») alors qu'elles sont le
+# produit documenté d'une construction reproductible : voir `docs/development.md`,
+# section « Application Rails de référence », et
+# `apps/reference/vault-invariant.json`, qui publie la règle de dérivation de
+# l'empreinte de la pièce jointe.
+tools/build-reference-image/manifest.json

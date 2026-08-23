@@ -4,7 +4,9 @@
 
 - Git ;
 - Node 22, version déclarée dans `.node-version` et `.nvmrc` ;
-- les trois moteurs Playwright — Chromium, Firefox et WebKit — requis par `npm run check`.
+- les trois moteurs Playwright — Chromium, Firefox et WebKit — requis par `npm run check` ;
+- Docker, **uniquement** pour l'application Rails de référence et son image VM (`npm run app:test`,
+  `npm run image:build`, `npm run test:vm:reference`). `npm run check` n'en a pas besoin.
 
 Aucun secret et aucune donnée personnelle ne sont nécessaires. Les artefacts VM sont récupérables
 par un script versionné (`npm run vm:fetch`) et vérifiés par empreinte ; un fichier transmis
@@ -43,14 +45,14 @@ Le dépôt exécute son code dans cinq contextes qui n'offrent pas les mêmes AP
 Node dans du code servi au navigateur, ou une API DOM dans un Worker, soit refusé à la première
 exécution de `npm run lint` plutôt qu'à la première exécution dans le navigateur.
 
-| Contexte           | Fichiers concernés                                   | Globals accordés    |
-| ------------------ | ---------------------------------------------------- | ------------------- |
-| Page               | `public/**`, `src/**/page-*.mjs`                     | navigateur          |
-| Worker dédié       | `public/**/*worker*.mjs`, `src/**/*worker*.mjs`      | Worker              |
-| Service Worker     | `public/**/*-sw.mjs`                                 | Service Worker      |
-| Module partagé     | le reste de `src/**`                                 | navigateur ∩ Worker |
-| Node               | `tools/**`, `tests/unit/**`, `*.config.mjs`          | Node                |
-| Spécification Node | `tests/browser/**`, `tests/compat/**`, `tests/vm/**` | Node et navigateur  |
+| Contexte           | Fichiers concernés                                                    | Globals accordés    |
+| ------------------ | --------------------------------------------------------------------- | ------------------- |
+| Page               | `public/**`, `src/**/page-*.mjs`                                      | navigateur          |
+| Worker dédié       | `public/**/*worker*.mjs`, `src/**/*worker*.mjs`                       | Worker              |
+| Service Worker     | `public/**/*-sw.mjs`                                                  | Service Worker      |
+| Module partagé     | le reste de `src/**`                                                  | navigateur ∩ Worker |
+| Node               | `tools/**`, `tests/unit/**`, `tests/vm/**/*.test.mjs`, `*.config.mjs` | Node                |
+| Spécification Node | `tests/browser/**`, `tests/compat/**`, `tests/vm/**/*.spec.mjs`       | Node et navigateur  |
 
 Trois conséquences pour un nouveau module :
 
@@ -142,6 +144,96 @@ rien elle-même ; elle démarre le Worker runtime et affiche son compte rendu. L
 
 Les trois modes existent parce que les deux ruptures mesurées par le spike #4 sont en série : sans
 le mode intermédiaire, on ne saurait pas laquelle des deux corrections produit quel effet.
+
+## Application Rails de référence
+
+`apps/reference/` est l'application Rails minimale qui porte l'invariant durable de
+`VAULT-PERSIST-001` : un enregistrement d'UUID figé et une pièce jointe d'empreinte connue. Elle
+n'est pas un exemple d'usage ni un gabarit d'application ; c'est un instrument de mesure.
+
+Le choix d'`apps/` plutôt que de `fixtures/` est délibéré : `tests/fixtures/` désigne déjà, dans ce
+dépôt, des données de test versionnées. Une application Rails complète, avec son `Gemfile.lock`, ses
+migrations et sa suite Minitest, n'est pas une donnée de test — et `apps/` laisse la place à une
+seconde application de référence (PostgreSQL, cf. ADR 0004) sans réorganisation.
+
+Aucun secret n'y figure : ni `config/master.key`, ni `credentials.yml.enc`. La clé de signature est
+dérivée d'une chaîne publique documentée dans `apps/reference/vault-invariant.json`, et
+`verify-pinning.mjs` refuse la construction si l'un de ces fichiers réapparaît.
+
+### Suite Minitest
+
+```sh
+npm run app:test
+```
+
+La suite tourne dans une image Docker `ruby:3.3.12-slim-bookworm` épinglée par digest, pas avec le
+Ruby de la machine : la fixture promet Ruby 3.3.12 et un `Gemfile.lock` résolu pour la plateforme
+`ruby`, et un Ruby local d'une autre version ferait passer des tests qui échoueraient dans la VM.
+L'image de test est **amd64** pour rester en minutes ; elle ne prouve donc rien sur i386, ce que
+seul `npm run test:vm:reference` peut faire.
+
+Pour une commande arbitraire dans le même environnement :
+
+```sh
+node tools/run-app-tests.mjs bundle exec ruby bin/rails test test/lib/fixture_test.rb
+node tools/run-app-tests.mjs bundle exec ruby bin/vault-fixture verify --json
+```
+
+### Construction de l'image VM
+
+```sh
+npm run image:build                       # tout
+npm run image:build -- --seulement=app    # le disque applicatif seul
+npm run image:build -- --taille-app=768   # géométrie du disque applicatif, en Mio
+npm run image:build -- --sans-cache
+npm run image:manifest                    # réécrit le manifeste depuis les artefacts présents
+```
+
+La construction refuse de commencer si un artefact n'est pas épinglé ou si un secret est requis :
+
+```sh
+node tools/build-reference-image/verify-pinning.mjs
+```
+
+Ce que la commande produit, dans `artifacts/reference-image/` (dossier ignoré par git) :
+
+| Artefact                   | Rôle                                                            |
+| -------------------------- | --------------------------------------------------------------- |
+| `reference-rootfs.ext4`    | `hda` : Debian i386, Ruby, scripts du guest, pont série         |
+| `reference-rootfs-vmlinuz` | noyau démarré directement par v86, sans amorceur                |
+| `reference-rootfs-initrd`  | initrd (pilotes ext2/ext4 avant montage de la racine)           |
+| `reference-app.ext2`       | `hdb` : application, bundle, base SQLite migrée et invariant    |
+| `seabios.bin`              | micrologiciel exigé par v86 pour exécuter l'option ROM du noyau |
+| `vgabios.bin`              | micrologiciel VGA                                               |
+
+Les artefacts binaires ne sont **jamais** commités. Le manifeste
+`tools/build-reference-image/manifest.json` l'est : il porte nom, taille, empreinte SHA-256, licence
+et origine de chaque artefact, ainsi que les versions de la chaîne. Il est la référence à laquelle
+`npm run test:vm:reference` se compare.
+
+Coût mesuré le 2026-08-23 (Windows 11, Docker Desktop 29.4.3, 28 threads logiques, 32 Gio) :
+
+| Étape                                                 |           Temps | Résultat                                      |
+| ----------------------------------------------------- | --------------: | --------------------------------------------- |
+| `outils` : Debian i386 + Ruby 3.3.12 compilé          |      env. 4 min | image intermédiaire, jamais publiée           |
+| `rootfs` : noyau, bibliothèques, scripts du guest     |      env. 2 min | 367 Mio en ext4                               |
+| `disque-app` : bundle i386, migration, invariant créé |      env. 4 min | 512 Mio en ext2, dimensionnement paramétrable |
+| Fabrication des deux systèmes de fichiers             |    env. 1,5 min | —                                             |
+| **Construction complète, cache vide**                 | **env. 12 min** | 927 Mio d'artefacts, ≈ 200 Mio compressés     |
+| Cache Docker conservé sur l'hôte                      |               — | environ 3 Gio                                 |
+
+Une reconstruction sans changement de `Gemfile.lock` ni de paquets réutilise le cache Docker : elle
+se limite aux étapes modifiées et retombe sous les deux minutes.
+
+### Boot réel
+
+```sh
+npm run test:vm:reference
+VAULT_VM_VERBEUX=1 npm run test:vm:reference     # relaie la console du guest
+```
+
+Voir [`testing.md`](testing.md) pour ce que cette suite affirme, ce qu'elle ne peut pas affirmer, et
+pourquoi elle n'est pas rattachée à `npm run check`.
 
 ## Vérification avant une PR
 

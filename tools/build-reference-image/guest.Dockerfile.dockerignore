@@ -1,0 +1,12 @@
+# Contexte de construction du guest : la racine du dépôt, réduite à ce qui
+# entre réellement dans l'image. Sans cette liste, `node_modules/` et les
+# artefacts déjà construits seraient envoyés au démon Docker à chaque appel.
+*
+!apps/reference/
+!tools/build-reference-image/guest/
+
+apps/reference/tmp/
+apps/reference/log/
+apps/reference/var/
+apps/reference/vendor/
+apps/reference/.bundle/

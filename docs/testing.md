@@ -2,16 +2,18 @@
 
 ## Suites disponibles
 
-| Commande                       | Portée                                                        |                     Coût attendu |
-| ------------------------------ | ------------------------------------------------------------- | -------------------------------: |
-| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node     |                         secondes |
-| `npm run test:browser`         | vraie page, Worker dédié et frontière d'origine sous Chromium |                    environ 1 min |
-| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                 |                    environ 1 min |
-| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                     |                    environ 2 min |
-| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit           |  environ 20 s après installation |
-| `npm run test:vm`              | guest Linux réel écrivant sur le backend de blocs (Chromium)  |    environ 1 min, **périodique** |
-| `npm test`                     | suites unitaire et navigateur                                 |                         secondes |
-| `npm run check`                | lint, format et toutes les suites actuelles                   | moins de 2 min hors installation |
+| Commande                       | Portée                                                        |                                 Coût attendu |
+| ------------------------------ | ------------------------------------------------------------- | -------------------------------------------: |
+| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node     |                                     secondes |
+| `npm run test:browser`         | vraie page, Worker dédié et frontière d'origine sous Chromium |                                environ 1 min |
+| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                 |                                environ 1 min |
+| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                     |                                environ 2 min |
+| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit           |              environ 20 s après installation |
+| `npm run test:vm`              | guest Linux réel écrivant sur le backend de blocs (Chromium)  |                environ 1 min, **périodique** |
+| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker | environ 1 min après la première construction |
+| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86            |   plus de 10 min, Docker et artefacts requis |
+| `npm test`                     | suites unitaire et navigateur                                 |                                     secondes |
+| `npm run check`                | lint, format et toutes les suites actuelles                   |             moins de 2 min hors installation |
 
 Les suites `test:e2e` et `test:resilience` seront ajoutées lorsqu'elles posséderont un premier
 scénario réel. Un script vide qui réussit ne constitue pas une preuve.
@@ -55,6 +57,59 @@ npm run vm:protocol  # protocole de mesure complet sous Node, écrit reports/vm/
 `npm run vm:check` vérifie les empreintes sans réseau et échoue si un artefact manque ou diffère.
 Les mesures de référence du spike sont figées dans
 [`docs/spikes/0004-backend-de-blocs-v86.md`](spikes/0004-backend-de-blocs-v86.md).
+
+### Application Rails de référence
+
+`npm run app:test` exécute la suite Minitest d'`apps/reference/` dans une image Docker épinglée par
+digest (`ruby:3.3.12-slim-bookworm`). Elle couvre le contrat d'invariant, le modèle porteur de
+l'UUID, la commande `bin/vault-fixture` — exécutée comme un **processus**, avec ses vrais codes de
+sortie —, les deux routes JSON, l'absence de secret et les pragmas de durabilité SQLite.
+
+Deux précautions la rendent opposable :
+
+- **les pragmas sont interrogés sur la connexion réelle**, pas relus dans `database.yml`. Une ligne
+  de configuration non appliquée est indiscernable d'une ligne absente ;
+- **la commande de fixture est lancée sans `bundle exec`** et sans hériter du `RUBYOPT` du processus
+  de test, parce que c'est ainsi que la construction du disque l'appelle. La première construction a
+  précisément échoué sur cette différence.
+
+Ce que la suite **n'affirme pas** : le comportement sous i386. Son image est amd64, choisie pour que
+la boucle de développement reste en minutes. La preuve i386 est le rôle de `test:vm:reference`, et
+d'elle seule.
+
+Elle n'est pas rattachée à `npm run check` : elle exige Docker, que `docs/development.md` ne pose
+pas en prérequis du contrôle obligatoire. Elle est exécutée à chaque exécution du contrôle
+`Image de référence`, déclenché par toute modification d'`apps/**` ou de la chaîne de construction.
+
+### Boot réel de la VM : `test:vm:reference`
+
+`npm run test:vm:reference` boote **réellement** l'image de référence sous v86, dans Node, sans
+instantané, et interroge Rails par le port série. Elle vérifie que la route de santé annonce les
+versions du manifeste et que `/vault/invariant` rend le verdict `conforming` avec le digest de pièce
+jointe attendu.
+
+Trois règles la gouvernent :
+
+- **elle ne réussit jamais sans avoir booté.** Si le manifeste ou les artefacts sont absents, elle
+  se déclare `skipped` avec la raison exacte et la commande à lancer ; elle ne rend jamais un succès
+  qui n'a rien mesuré ;
+- **un artefact présent mais différent du manifeste est un échec**, pas une indisponibilité : le
+  manifeste est la référence versionnée, et booter autre chose que ce qu'il décrit ne prouverait
+  rien ;
+- **la mesure est publiée**, dans `reports/vm/reference-boot.json` (dossier ignoré par git, archivé
+  en artefact de CI).
+
+Elle **n'est pas** rattachée à `npm run check`, et ce n'est pas un compromis de confort : un boot à
+froid dépasse les dix minutes, la suite exige Docker et environ un gigaoctet d'artefacts construits,
+et `docs/quality-attributes.md` lui accorde explicitement un budget de 15 minutes au p95. La
+rattacher ferait passer `npm run check` de deux minutes à plus d'un quart d'heure sur chaque PR, y
+compris celles qui ne touchent ni l'application ni l'image.
+
+Sa périodicité est donc la suivante : elle s'exécute à chaque modification de `apps/`, de
+`tools/build-reference-image/`, de `tools/vm/` ou de `tests/vm/`, par le contrôle GitHub
+`Image de référence`, qui construit l'image puis la boote. Ce contrôle n'est pas obligatoire pour la
+protection de branche — sa durée le rendrait bloquant pour des PR qui ne le concernent pas — mais un
+échec y est traité comme un échec de `npm run check`.
 
 ### Configuration du lint
 
@@ -159,6 +214,14 @@ utilisent leurs preuves propres.
 
 Les tests emploient uniquement des données synthétiques, déterministes et versionnées. Les scénarios
 de corruption conservent une graine de reproduction.
+
+La pièce jointe de l'invariant, `apps/reference/invariant/invariant.bin`, est le seul binaire
+versionné du dépôt. Elle n'est pas arbitraire : ses 4096 octets sont la concaténation de 128 blocs
+de 32 octets, le bloc `i` valant `SHA-256("railsbox-vault-reference/invariant/" + i)`. La règle est
+publiée dans `apps/reference/vault-invariant.json` et **réappliquée** par
+`apps/reference/test/lib/contract_test.rb`, qui compare le résultat au fichier commité : un octet
+modifié dans le dépôt fait échouer la suite, sans qu'il faille faire confiance à une empreinte
+recopiée à la main.
 
 ## Navigateurs
 

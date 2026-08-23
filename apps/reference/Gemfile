@@ -1,0 +1,34 @@
+# Application Rails de référence de RailsBox Vault.
+#
+# Elle ne rend que du JSON : ni interface, ni courrier, ni WebSocket, ni texte
+# riche. On dépend donc des composants de Rails un par un plutôt que de la
+# gemme parapluie `rails`, qui tirerait `actiontext` — donc `nokogiri`, une
+# extension native lourde à compiler sous i386 — ainsi qu'`actionmailer`,
+# `actionmailbox` et `actioncable`, dont aucun n'est chargé par
+# `config/application.rb`. Le verrou passe de 68 à une trentaine de gemmes.
+#
+# Les versions exactes sont figées ici ET dans `Gemfile.lock`, qui est commité ;
+# le disque applicatif est construit avec `BUNDLE_FROZEN=true`, donc une
+# résolution différente de celle du verrou fait échouer la construction.
+source "https://rubygems.org"
+
+ruby "3.3.12"
+
+# Composants Rails réellement chargés (voir config/application.rb).
+gem "railties", "= 8.1.3.1"
+gem "activerecord", "= 8.1.3.1"
+gem "activestorage", "= 8.1.3.1"
+gem "actionpack", "= 8.1.3.1"
+gem "actionview", "= 8.1.3.1"
+gem "activejob", "= 8.1.3.1"
+gem "activemodel", "= 8.1.3.1"
+gem "activesupport", "= 8.1.3.1"
+
+gem "sqlite3", "= 2.9.6"
+
+# Puma 8.0.2 et non 6.6.1 : les versions 5.5.0 à 7.2.0 et 8.0.0 à 8.0.1 sont
+# exposées à CVE-2026-47736 et CVE-2026-47737 (analyseur PROXY protocol v1).
+# La fixture n'active pas `proxy_protocol` — elle écoute sur 127.0.0.1 dans le
+# guest — donc elle n'est pas exploitable, mais une dépendance vulnérable ne se
+# tait pas : elle se corrige. Voir `SECURITY.md`, section « Analyse de secrets ».
+gem "puma", "= 8.0.2"

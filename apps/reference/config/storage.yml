@@ -1,0 +1,6 @@
+# Un seul service : le disque local, enraciné dans le volume applicatif. Aucun
+# service distant n'est déclaré — un identifiant de service inconnu doit faire
+# échouer le démarrage, pas basculer sur un stockage réseau.
+local:
+  service: Disk
+  root: <%= ENV.fetch("VAULT_STORAGE_ROOT") { Rails.root.join("var/storage").to_s } %>

@@ -7,4 +7,12 @@ reports/
 .env
 .DS_Store
 Thumbs.db
+
+# Artefacts de l'image de reference : construits, jamais commites (le manifeste l'est).
+artifacts/
+apps/reference/tmp/
+apps/reference/log/
+apps/reference/var/
+apps/reference/.bundle/
+apps/reference/vendor/bundle/
 vendor/v86/artefacts/
