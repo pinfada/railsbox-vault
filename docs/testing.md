@@ -2,21 +2,77 @@
 
 ## Suites disponibles
 
-| Commande                       | Portée                                                        |                                 Coût attendu |
-| ------------------------------ | ------------------------------------------------------------- | -------------------------------------------: |
-| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node     |                                     secondes |
-| `npm run test:browser`         | vraie page, Worker dédié et frontière d'origine sous Chromium |                                environ 1 min |
-| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                 |                                environ 1 min |
-| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                     |                                environ 2 min |
-| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit           |              environ 20 s après installation |
-| `npm run test:vm`              | guest Linux réel écrivant sur le backend de blocs (Chromium)  |                environ 1 min, **périodique** |
-| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker | environ 1 min après la première construction |
-| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86            |   plus de 10 min, Docker et artefacts requis |
-| `npm test`                     | suites unitaire et navigateur                                 |                                     secondes |
-| `npm run check`                | lint, format et toutes les suites actuelles                   |             moins de 2 min hors installation |
+| Commande                       | Portée                                                                     |                                 Coût attendu |
+| ------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------: |
+| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                  |                                     secondes |
+| `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontière d'origine sous Chromium |                                environ 1 min |
+| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                              |                                environ 1 min |
+| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                  |                                environ 2 min |
+| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                        |              environ 20 s après installation |
+| `npm run test:vm`              | guest Linux réel écrivant sur les backends mémoire et OPFS (Chromium)      |                environ 1 min, **périodique** |
+| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker              | environ 1 min après la première construction |
+| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                         |   plus de 10 min, Docker et artefacts requis |
+| `npm test`                     | suites unitaire et navigateur                                              |                                     secondes |
+| `npm run check`                | lint, format et toutes les suites actuelles                                |             moins de 2 min hors installation |
 
 Les suites `test:e2e` et `test:resilience` seront ajoutées lorsqu'elles posséderont un premier
 scénario réel. Un script vide qui réussit ne constitue pas une preuve.
+
+### Backend de blocs OPFS
+
+Le backend de production de `VAULT-PERSIST-001` est prouvé sur **trois** niveaux, et chacun affirme
+ce que les autres ne peuvent pas.
+
+| Niveau         | Fichier                                     | Support                     | Rattachement      |
+| -------------- | ------------------------------------------- | --------------------------- | ----------------- |
+| unitaire       | `tests/unit/vm-opfs-backend.test.mjs`       | double déterministe         | `npm run check`   |
+| unitaire       | `tests/unit/vm-sync-access-double.test.mjs` | le double lui-même          | `npm run check`   |
+| unitaire       | `tests/unit/vm-opfs-scenarios.test.mjs`     | double déterministe         | `npm run check`   |
+| unitaire       | `tests/unit/vm-block-fixture.test.mjs`      | aucun (règle de la fixture) | `npm run check`   |
+| navigateur     | `tests/browser/opfs-block-backend.spec.mjs` | **vrai OPFS**, Worker dédié | `npm run check`   |
+| intégration VM | `tests/vm/opfs-persistence.spec.mjs`        | vrai OPFS + guest Linux     | `npm run test:vm` |
+
+**Le niveau unitaire mesure ce que le vrai support refuse de produire.** Aucun navigateur ne rend un
+quota, un handle perdu ou une écriture partielle sur demande. Le double
+`src/vm/sync-access-double.mjs` le fait, de façon déterministe. Il est lui-même testé, parce qu'un
+instrument non calibré invaliderait tout ce qu'il mesure.
+
+**Le niveau navigateur mesure le vrai OPFS.** Il exécute la MÊME sonde de persistance que le niveau
+unitaire — `src/vm/opfs-scenarios.mjs` — dans un Worker Chromium : écrire quatre régions dont une
+non alignée sur le secteur et une jusqu'au dernier octet du volume, franchir la barrière, **fermer
+le handle**, rouvrir sans redéclarer de géométrie, tout relire. Les deux niveaux doivent produire la
+même empreinte SHA-256 de volume, `PROBE_VOLUME_DIGEST`. Un écart entre eux serait un résultat.
+
+Cette empreinte n'est pas un binaire versionné : l'image attendue est **reconstruite depuis sa
+règle** par `buildProbeImage()`, et `tests/unit/vm-opfs-scenarios.test.mjs` vérifie que la constante
+publiée en est bien l'empreinte. La fixture principale suit la convention de la pièce jointe
+d'invariant d'`apps/reference/` : bloc `i` de 32 octets valant `SHA-256(label + i)`.
+
+La suite navigateur est rattachée à `npm run check` : **3,1 s mesurées** sous Chromium, aucun
+artefact tiers, aucun réseau. Une régression du backend de persistance doit bloquer une PR.
+
+Elle n'accorde aucune indulgence à un moteur sans OPFS synchrone : si `createSyncAccessHandle`
+manque, le Worker remonte `VAULT_STORAGE_UNSUPPORTED` et la suite échoue. Un moteur sans cette API
+ne peut pas porter le produit ; la mesure de sa disponibilité par moteur reste le rôle de
+`test:compat` et de [`docs/compatibility.md`](compatibility.md).
+
+**Le niveau intégration VM mesure ce que le guest en obtient.** `tests/vm/opfs-persistence.spec.mjs`
+démarre un vrai guest Linux i386 sur un disque IDE adossé au backend OPFS et vérifie les **deux**
+directions du support :
+
+- l'hôte dépose une marque dans le fichier OPFS **avant** le boot, et le guest la relit sur
+  `/dev/sda` par un `dd bs=1` — donc à l'octet, sur un offset non aligné du point de vue du guest ;
+- le guest écrit sa propre marque avec `conv=fsync`, l'hôte ferme le handle exclusif, rouvre le
+  volume et la retrouve.
+
+Une seule direction ne prouverait qu'une moitié : qu'un guest voie le support n'implique pas que ses
+écritures y atterrissent. La barrière est comptée **sur l'étape du guest** et non sur le total du
+journal, qui inclurait le flush émis par l'hôte avant le boot.
+
+Ce que ces trois niveaux n'affirment pas : que la barrière du guest garantisse la durabilité avant
+son acquittement — c'est #14 —, la reprise d'une application Rails après fermeture complète (#7),
+l'accès concurrent multi-onglets (#8), ni la politique de quota côté produit (#9). Le quota n'est
+ici qu'un état détecté et nommé.
 
 ### Intégration VM
 
@@ -44,9 +100,13 @@ extérieurs, dont un qui ne publie pas d'empreinte de son côté. Un contrôle b
 qu'un CDN tiers est indisponible n'apprend rien sur la PR.
 
 Elle tourne donc dans un job CI dédié et **non bloquant** (`.github/workflows/vm.yml`), déclenché
-manuellement et chaque nuit. Elle deviendra bloquante lorsque le backend OPFS de production (#6) en
-fera une preuve de durabilité du produit et que les artefacts seront servis depuis une source que le
-projet maîtrise.
+manuellement et chaque nuit.
+
+Depuis #6 elle porte aussi `tests/vm/opfs-persistence.spec.mjs`, donc une preuve de persistance
+réelle du produit. La condition restante pour la rendre bloquante n'est plus la nature de la preuve
+mais sa dépendance : tant que les artefacts viennent de trois hôtes tiers, un contrôle obligatoire
+rougirait pour des raisons étrangères à la PR. La preuve de niveau navigateur du même backend, elle,
+**est** bloquante — elle n'a besoin d'aucun artefact.
 
 ```sh
 npm run vm:fetch     # récupère et vérifie les artefacts v86 (empreintes SHA-256)

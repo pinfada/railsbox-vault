@@ -133,8 +133,9 @@ npm run vm:protocol   # protocole de mesure complet sous Node → reports/vm/pro
 
 Le banc s'observe aussi à la main : `npm start`, puis `http://127.0.0.1:4173/vm/`. La page ne fait
 rien elle-même ; elle démarre le Worker runtime et affiche son compte rendu. La console offre
-`await bancVault.executer({ scenario: "filesystem", mode: "full" })`. `scenario` vaut `barrier` ou
-`filesystem` ; `mode` vaut :
+`await bancVault.executer({ scenario: "filesystem", mode: "full" })`. `scenario` vaut `barrier`,
+`filesystem` ou `opfs-persistence` — ce dernier adosse le disque du guest au backend OPFS et ne
+prend pas de `mode` autre que `full` en pratique. `mode` vaut :
 
 | Mode       | Comportement de v86                                                     |
 | ---------- | ----------------------------------------------------------------------- |
@@ -144,6 +145,26 @@ rien elle-même ; elle démarre le Worker runtime et affiche son compte rendu. L
 
 Les trois modes existent parce que les deux ruptures mesurées par le spike #4 sont en série : sans
 le mode intermédiaire, on ne saurait pas laquelle des deux corrections produit quel effet.
+
+## Backend de blocs OPFS
+
+Le banc du backend de persistance vit à `http://127.0.0.1:4173/vm/opfs.html` et n'exige **aucun**
+artefact v86. La page n'ouvre aucun volume : elle démarre `public/vm/opfs-runtime-worker.mjs`, seul
+contexte autorisé à détenir un handle exclusif (ADR 0002). La console offre :
+
+```js
+await bancOpfs.executer({ scenario: "persistance" }); // écrire, fermer, rouvrir, tout relire
+await bancOpfs.executer({ scenario: "exclusivite" }); // second détenteur refusé, puis rendu
+await bancOpfs.executer({ scenario: "adaptateur" }); // contrat de tampon v86 sur support durable
+await bancOpfs.sondePage(); // ce que la PAGE obtient d'OPFS : rien
+```
+
+Les volumes vivent sous `vault-volumes/` dans l'OPFS de l'origine. Chaque scénario supprime le sien
+avant de commencer : une mesure de persistance ne doit rien devoir à l'exécution précédente. Pour
+repartir de zéro à la main, vider les données de site de `127.0.0.1:4173` dans le navigateur.
+
+La suite automatisée correspondante, `tests/browser/opfs-block-backend.spec.mjs`, est rattachée à
+`npm run check`.
 
 ## Application Rails de référence
 

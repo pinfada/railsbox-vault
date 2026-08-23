@@ -56,7 +56,10 @@ et tester.
   volume. La topologie qui le garantit est arrêtée par l'ADR 0002 ; la preuve de frontière est
   `tests/browser/origin-topology.spec.mjs`, rattachée à `npm run check`. Elle comporte un témoin
   positif qui exige que les mêmes tentatives ABOUTISSENT en même origine, sans quoi un relevé tout
-  vert ne prouverait rien ;
+  vert ne prouverait rien. Depuis #6 la frontière porte aussi sur le stockage local : le handle OPFS
+  exclusif ne s'ouvre que dans un Worker dédié, la page reçoit `VAULT_STORAGE_UNSUPPORTED`, et
+  `tests/browser/opfs-block-backend.spec.mjs` vérifie qu'aucun objet du système de fichiers n'est
+  atteignable depuis le backend ni depuis l'adaptateur v86 rendu à l'émulateur ;
 - `SEC-KEY-001` — une clé de déverrouillage enveloppe une DEK aléatoire sans servir directement au
   chiffrement des blocs ;
 - `SEC-BLOCK-001` — un bloc est authentifié avec volume, adresse, format et génération ;
@@ -67,8 +70,13 @@ et tester.
   toute façon acquittée sans atteindre le stockage.
   L'[ADR 0003](docs/decisions/0003-backend-de-blocs-v86.md) pose le pont qui rétablit la barrière ;
   l'ordre écriture → flush → acquittement est prouvé par `tests/vm/durability-barrier.spec.mjs`,
-  avec son témoin négatif. L'invariant n'est pas pour autant tenu : le backend éprouvé est en
-  mémoire et déclare `durable: false`. La durabilité réelle appartient à #6 ;
+  avec son témoin négatif. Depuis #6 le support n'est plus la mémoire : le backend OPFS déclare
+  `durable: true` et son acquittement de barrière suit un `FileSystemSyncAccessHandle.flush()` réel,
+  ce que prouvent `tests/browser/opfs-block-backend.spec.mjs` et
+  `tests/vm/opfs-persistence.spec.mjs` — un guest écrit, l'hôte ferme le handle, rouvre et retrouve
+  les octets. L'invariant n'est pas tenu pour autant : ce qui est établi est que la barrière atteint
+  le support, pas qu'aucune écriture ne soit annoncée durable avant elle de bout en bout. Cette
+  barrière complète reste #14 ;
 - `SEC-UPDATE-001` — runtime et application sont identifiés et vérifiés avant d'ouvrir le volume en
   écriture ;
 - `SEC-RECOVERY-001` — chaque moyen de récupération annoncé possède un test de succès, de révocation
