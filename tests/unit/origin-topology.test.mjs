@@ -89,7 +89,11 @@ test("la CSP de la coquille nomme chaque capacité et n'autorise que l'origine a
   assert.match(politique, /default-src 'none'/);
   assert.match(politique, /frame-ancestors 'none'/);
   assert.match(politique, new RegExp(`frame-src 'self' ${APP_ORIGIN.replace(/[/.]/g, "\\$&")}`));
-  assert.doesNotMatch(politique, /unsafe-inline|unsafe-eval/);
+  assert.doesNotMatch(politique, /'unsafe-inline'/);
+  // `'unsafe-eval'` reste interdit ; `'wasm-unsafe-eval'` est un jeton distinct et strictement plus
+  // étroit, exigé par le runtime v86 depuis l'ADR 0003.
+  assert.doesNotMatch(politique, /(^|[\s;])'unsafe-eval'/);
+  assert.match(politique, /script-src 'self' 'wasm-unsafe-eval'/);
 });
 
 test("le territoire applicatif est reconnu par son préfixe", () => {

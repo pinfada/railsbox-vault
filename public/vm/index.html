@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RailsBox Vault — banc du backend de blocs (spike #4)</title>
+  </head>
+  <body>
+    <h1>Banc du backend de blocs v86</h1>
+    <p>
+      Cette page n'exécute rien d'elle-même : elle démarre un Worker dédié qui porte v86 et le
+      backend, puis affiche son compte rendu. Le protocole complet est décrit dans
+      <code>docs/spikes/0004-backend-de-blocs-v86.md</code>.
+    </p>
+    <p id="etat">Prêt.</p>
+    <pre id="rapport"></pre>
+    <script type="module" src="./banc.mjs"></script>
+  </body>
+</html>
