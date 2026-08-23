@@ -19,6 +19,9 @@ const SERVICE_WORKER_FILES = ["public/**/*-sw.mjs"];
 /** Documents et scripts de page servis tels quels, plus les modules `src/` réservés à la page. */
 const PAGE_FILES = ["public/**/*.mjs", "src/**/page-*.mjs"];
 
+/** Modules de contrat de `src/`, partagés par défaut entre la page et le Worker. */
+const SHARED_WEB_FILES = ["src/**/*.mjs"];
+
 /** Code exécuté par Node : outillage, suite unitaire et configurations à la racine. */
 const NODE_FILES = ["tools/**/*.mjs", "tests/unit/**/*.mjs", "*.config.mjs"];
 
@@ -52,7 +55,9 @@ export default [
     },
   },
   {
-    files: ["src/**/*.mjs"],
+    // Placé avant les blocs page et Worker : ceux-ci n'ajoutent ensuite que ce que leur contexte
+    // possède en propre, l'intersection étant incluse dans les deux.
+    files: SHARED_WEB_FILES,
     languageOptions: { globals: SHARED_WEB_GLOBALS },
   },
   {
