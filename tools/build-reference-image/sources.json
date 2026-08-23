@@ -55,35 +55,50 @@
   "debian": {
     "suite": "bookworm",
     "note": "Les paquets viennent du miroir Debian courant. L'epinglage exact par snapshot.debian.org est un travail decouvert, documente dans l'ADR 0004 : le digest de l'image de base fige le socle, pas l'index apt lu au moment du build.",
-    "packages": [
-      "linux-image-686",
-      "initramfs-tools",
-      "build-essential",
-      "libyaml-dev",
-      "zlib1g-dev",
-      "libssl-dev",
-      "libffi-dev",
-      "libgmp-dev",
-      "libreadline-dev",
-      "bison",
-      "pkg-config",
-      "libsqlite3-dev",
-      "libxml2-dev",
-      "libxslt1-dev",
-      "python3",
-      "procps",
-      "ca-certificates",
-      "curl"
-    ]
+    "packages": {
+      "outils": [
+        "build-essential",
+        "pkg-config",
+        "patch",
+        "libyaml-dev",
+        "zlib1g-dev",
+        "libssl-dev",
+        "libffi-dev",
+        "libgmp-dev",
+        "libreadline-dev",
+        "libsqlite3-dev",
+        "libxml2-dev",
+        "libxslt1-dev",
+        "bison",
+        "curl",
+        "ca-certificates"
+      ],
+      "rootfs": [
+        "linux-image-686",
+        "initramfs-tools",
+        "libsqlite3-0",
+        "libxml2",
+        "libxslt1.1",
+        "zlib1g",
+        "libyaml-0-2",
+        "libssl3",
+        "libffi8",
+        "libgmp10",
+        "libreadline8",
+        "python3-minimal",
+        "iproute2",
+        "procps"
+      ]
+    }
   },
   "disk": {
-    "rootfsMarginPercent": 25,
-    "rootfsMarginMiB": 256,
+    "rootfsMarginPercent": 10,
+    "rootfsMarginMiB": 64,
     "appDiskMiB": 512,
     "appDiskFilesystem": "ext2",
     "rootfsFilesystem": "ext4",
     "blockSize": 4096,
-    "note": "La geometrie est parametrable : IMAGE_APP_DISK_MIB et IMAGE_ROOTFS_MIB surchargent ces valeurs. Le spike #4 peut imposer une autre taille ou un autre systeme de fichiers ; seul ce bloc change alors."
+    "note": "La geometrie est parametrable : `npm run image:build -- --taille-app=<Mio>` surcharge appDiskMiB. Le spike #4 peut imposer une autre taille ou un autre systeme de fichiers ; seul ce bloc change alors. La marge du rootfs est faible parce qu'il est monte en lecture quasi exclusive : seul /var/log y ecrit."
   },
   "guest": {
     "cmdline": "root=/dev/sda rw console=ttyS0 init=/opt/vault/guest-init.sh net.ifnames=0 quiet loglevel=4",
