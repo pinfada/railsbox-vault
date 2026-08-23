@@ -6,10 +6,15 @@
 // lire un fichier, ce qui le garde vérifiable sans réseau ni système de fichiers.
 
 import { JOURNAL_OPERATIONS } from "./block-journal.mjs";
+import {
+  GUEST_PROMPT,
+  buildCommandFrame,
+  endToken,
+  reassembleCommandOutput,
+} from "./serial-console.mjs";
 import { BRIDGE_MODES, installDurabilityBridge } from "./v86-flush-bridge.mjs";
 
-/** Invite du shell BusyBox de l'image `linux4.iso`. */
-export const GUEST_PROMPT = "~%";
+export { GUEST_PROMPT };
 
 const POLL_INTERVAL_MS = 20;
 const DEFAULT_BOOT_TIMEOUT_MS = 240000;
@@ -112,29 +117,19 @@ export function createGuestSession({
     /**
      * Exécute une commande shell et rend sa sortie.
      *
-     * Le jeton de fin est écrit `R""B<n>` dans la commande envoyée : l'écho du terminal montre les
-     * guillemets, la sortie non. Attendre le jeton évite donc de confondre l'écho de la commande
-     * avec son résultat — piège qui fausse silencieusement toute mesure pilotée par console série.
+     * La commande émise et le réassemblage de la sortie vivent dans `serial-console.mjs`, module
+     * pur : la logique fragile — celle que le repli du terminal du guest à 80 colonnes met en
+     * défaut — est ainsi vérifiable sans démarrer de VM.
      */
     async shell(command, { timeout = DEFAULT_COMMAND_TIMEOUT_MS, label = command } = {}) {
       sequence += 1;
-      const token = `RB${sequence}`;
+      const token = endToken(sequence);
       const from = journal.length;
       journal.record(JOURNAL_OPERATIONS.mark, { label: `shell:${label}` });
       transcript = "";
-      emulator.serial0_send(`${command}; echo R""B${sequence}\n`);
+      emulator.serial0_send(buildCommandFrame(command, sequence));
       await wait(() => transcript.includes(token), timeout, `commande « ${label} »`);
-      // Le résultat est ce qui sépare la FIN de l'écho de la commande du jeton. L'écho peut occuper
-      // plusieurs lignes — le terminal replie à 80 colonnes — donc on le borne par la marque
-      // `R""B`, présente dans l'écho et absente de la sortie.
-      const lines = transcript.split("\n").map((line) => line.replace(/\r$/, ""));
-      const start = lines.findIndex((line) => line.includes('R""B')) + 1;
-      const end = lines.findIndex((line, index) => index >= start && line.includes(token));
-      const output = lines
-        .slice(start, end < 0 ? undefined : end)
-        .filter((line) => !line.startsWith(GUEST_PROMPT))
-        .join("\n")
-        .trim();
+      const output = reassembleCommandOutput(transcript, sequence);
       return { label, command, output, from, to: journal.length };
     },
 
