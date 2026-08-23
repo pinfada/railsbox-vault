@@ -10,7 +10,7 @@
 | `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                     |                    environ 2 min |
 | `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit           |  environ 20 s après installation |
 | `npm test`                     | suites unitaire et navigateur                                 |                         secondes |
-| `npm run check`                | lint, format et toutes les suites actuelles                   | moins de 3 min hors installation |
+| `npm run check`                | lint, format et toutes les suites actuelles                   | moins de 2 min hors installation |
 
 Les suites `test:vm`, `test:e2e` et `test:resilience` seront ajoutées lorsqu'elles posséderont un
 premier scénario réel. Un script vide qui réussit ne constitue pas une preuve.
@@ -86,7 +86,8 @@ contenu au rapport Playwright. La CI archive `reports/compat/` en artefact à ch
 
 La suite est rattachée à `npm run check` : son coût mesuré est d'environ 20 s. Depuis l'ajout de la
 frontière d'origine, l'ensemble de `npm run check` tient en un peu plus d'une minute en local, sous
-la limite de 3 min. Elle exige que les trois moteurs soient installés (voir `docs/development.md`).
+la limite de 2 min (86 s mesurées en CI le 2026-08-23). Elle exige que les trois moteurs soient
+installés (voir `docs/development.md`).
 
 ## Preuve rouge
 
