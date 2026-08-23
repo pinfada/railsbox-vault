@@ -4,6 +4,7 @@ dist/
 playwright-report/
 test-results/
 reports/
+.claude/
 .env
 .DS_Store
 Thumbs.db
