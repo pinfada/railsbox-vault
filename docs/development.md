@@ -36,6 +36,39 @@ npm run lint
 npm run format:check
 ```
 
+## Contextes d'exécution et lint
+
+Le dépôt exécute son code dans cinq contextes qui n'offrent pas les mêmes API globales.
+`eslint.config.mjs` n'accorde à chaque fichier que les globals de son contexte, afin qu'un appel
+Node dans du code servi au navigateur, ou une API DOM dans un Worker, soit refusé à la première
+exécution de `npm run lint` plutôt qu'à la première exécution dans le navigateur.
+
+| Contexte           | Fichiers concernés                              | Globals accordés    |
+| ------------------ | ----------------------------------------------- | ------------------- |
+| Page               | `public/**`, `src/**/page-*.mjs`                | navigateur          |
+| Worker dédié       | `public/**/*worker*.mjs`, `src/**/*worker*.mjs` | Worker              |
+| Service Worker     | `public/**/*-sw.mjs`                            | Service Worker      |
+| Module partagé     | le reste de `src/**`                            | navigateur ∩ Worker |
+| Node               | `tools/**`, `tests/unit/**`, `*.config.mjs`     | Node                |
+| Spécification Node | `tests/browser/**`, `tests/compat/**`           | Node et navigateur  |
+
+Trois conséquences pour un nouveau module :
+
+- un module de `src/` est **partagé par défaut** : il ne reçoit que les globals communs à la page et
+  au Worker. S'il est réservé à la page, son nom commence par `page-` ; s'il est chargé par un
+  Worker, son nom contient `worker` ;
+- les spécifications Playwright cumulent Node et navigateur parce que les rappels passés à
+  `page.evaluate` sont analysés dans le même fichier que le corps du test. Cette exception est
+  bornée à `tests/browser/` et `tests/compat/` ; elle ne doit pas être élargie par des commentaires
+  `/* global */`, qui reviendraient à désactiver la règle ;
+- un module réellement partagé entre la page et le Worker doit vivre sous `src/` pour recevoir
+  l'intersection. `public/spike/origin/isolation-probe.mjs`, importé par la coquille comme par son
+  Worker, reste analysé comme un script de page : la configuration y est plus permissive que
+  nécessaire. C'est du code de spike, et le déplacer relève d'une tranche distincte.
+
+`tests/unit/eslint-config.test.mjs` vérifie cette répartition en lintant des chemins virtuels : une
+régression de la configuration fait échouer `npm run test:unit`, pas seulement le lint du jour.
+
 ## Navigateur
 
 ```sh
