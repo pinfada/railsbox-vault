@@ -9,11 +9,52 @@
 | `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                 |                    environ 1 min |
 | `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                     |                    environ 2 min |
 | `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit           |  environ 20 s après installation |
+| `npm run test:vm`              | guest Linux réel écrivant sur le backend de blocs (Chromium)  |    environ 1 min, **périodique** |
 | `npm test`                     | suites unitaire et navigateur                                 |                         secondes |
 | `npm run check`                | lint, format et toutes les suites actuelles                   | moins de 2 min hors installation |
 
-Les suites `test:vm`, `test:e2e` et `test:resilience` seront ajoutées lorsqu'elles posséderont un
-premier scénario réel. Un script vide qui réussit ne constitue pas une preuve.
+Les suites `test:e2e` et `test:resilience` seront ajoutées lorsqu'elles posséderont un premier
+scénario réel. Un script vide qui réussit ne constitue pas une preuve.
+
+### Intégration VM
+
+`tests/vm/durability-barrier.spec.mjs` est la preuve de niveau **intégration VM** du spike #4 : un
+guest Linux i386 réel démarre dans un Worker dédié, écrit sur un disque IDE dont le tampon est le
+backend de blocs de Vault, puis franchit une barrière de durabilité. La suite affirme deux choses
+complémentaires :
+
+- **témoin négatif** — sans le pont de durabilité, le guest classe le disque en `write through` et
+  n'émet aucune barrière ; le backend n'en voit aucune ;
+- **résultat** — avec le pont, l'ordre écriture → `flush` → acquittement est vérifiable dans le
+  journal du backend, barrière par barrière.
+
+Sans le témoin négatif, un test qui ne mesurerait que le cas corrigé ne prouverait pas que la
+correction sert à quelque chose.
+
+Elle **n'est pas rattachée à `npm run check`**, et la raison n'est pas sa durée : les trois épreuves
+de barrière tiennent en une vingtaine de secondes et la mesure de premier boot en ajoute une
+trentaine, soit **56 s mesurées** pour l'ensemble. La raison est sa dépendance.
+
+`test:vm` exige 9,9 Mio d'artefacts tiers — émulateur, BIOS, image de guest — que `npm run vm:fetch`
+télécharge depuis `registry.npmjs.org`, `raw.githubusercontent.com` et `i.copy.sh`. Rattacher la
+suite au contrôle obligatoire rendrait toute PR dépendante de la disponibilité de trois hôtes
+extérieurs, dont un qui ne publie pas d'empreinte de son côté. Un contrôle bloquant qui rougit parce
+qu'un CDN tiers est indisponible n'apprend rien sur la PR.
+
+Elle tourne donc dans un job CI dédié et **non bloquant** (`.github/workflows/vm.yml`), déclenché
+manuellement et chaque nuit. Elle deviendra bloquante lorsque le backend OPFS de production (#6) en
+fera une preuve de durabilité du produit et que les artefacts seront servis depuis une source que le
+projet maîtrise.
+
+```sh
+npm run vm:fetch     # récupère et vérifie les artefacts v86 (empreintes SHA-256)
+npm run test:vm
+npm run vm:protocol  # protocole de mesure complet sous Node, écrit reports/vm/protocole.json
+```
+
+`npm run vm:check` vérifie les empreintes sans réseau et échoue si un artefact manque ou diffère.
+Les mesures de référence du spike sont figées dans
+[`docs/spikes/0004-backend-de-blocs-v86.md`](spikes/0004-backend-de-blocs-v86.md).
 
 ### Configuration du lint
 

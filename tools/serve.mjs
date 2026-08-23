@@ -7,6 +7,9 @@ import { ISOLATION_REQUIRE_CORP, parseServerOptions, securityHeaders } from "./s
 
 const publicRoot = resolve("public");
 const sourceRoot = resolve("src");
+// Les artefacts v86 du spike #4 ne sont pas versionnés : ils vivent sous `vendor/`, récupérés et
+// vérifiés par `npm run vm:fetch`. Le serveur les expose en lecture seule, sous leur propre racine.
+const vendorRoot = resolve("vendor");
 const options = parseServerOptions(process.argv.slice(2));
 
 const contentTypes = new Map([
@@ -15,14 +18,25 @@ const contentTypes = new Map([
   [".mjs", "text/javascript; charset=utf-8"],
   [".json", "application/json; charset=utf-8"],
   [".txt", "text/plain; charset=utf-8"],
+  [".wasm", "application/wasm"],
 ]);
+
+/** Racine et chemin relatif d'une requête, selon le préfixe d'URL. */
+function resolveRoot(pathname) {
+  if (pathname.startsWith("/src/")) return { root: sourceRoot, relativePath: pathname.slice(5) };
+  if (pathname.startsWith("/vendor/")) return { root: vendorRoot, relativePath: pathname.slice(8) };
+  // Un chemin terminé par « / » désigne le document d'index du dossier ; aucune liste de fichiers
+  // n'est jamais servie.
+  const relativePath = pathname.endsWith("/")
+    ? `${pathname.slice(1)}index.html`
+    : pathname.slice(1);
+  return { root: publicRoot, relativePath };
+}
 
 createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", "http://localhost");
   const pathname = url.pathname;
-  const servesSource = pathname.startsWith("/src/");
-  const root = servesSource ? sourceRoot : publicRoot;
-  const relativePath = pathname === "/" ? "index.html" : pathname.slice(servesSource ? 5 : 1);
+  const { root, relativePath } = resolveRoot(pathname);
   const candidate = resolve(root, relativePath);
 
   if (candidate !== root && !candidate.startsWith(`${root}${sep}`)) {

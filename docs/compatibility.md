@@ -163,8 +163,9 @@ Deux écarts méritent attention pour la suite :
 
 - **héritage de `cross-origin-isolated` par l'iframe applicative.** Chromium le refuse — la
   fonctionnalité est pilotée par permission, liste par défaut `self` — ce qui prive utilement le
-  code applicatif de `SharedArrayBuffer` ; WebKit l'accorde. Si l'isolation devient obligatoire pour
-  v86 (#4), l'écart devra être tranché ici.
+  code applicatif de `SharedArrayBuffer` ; WebKit l'accorde. La question « l'isolation est-elle
+  obligatoire pour v86 ? » est tranchée par le spike #4 : **non**, le guest démarre et écrit sans
+  isolation. L'écart reste à surveiller pour une capacité qui l'exigerait, pas pour le runtime.
 - **portée de la politique d'intégration.** Sous `require-corp`, WebKit a refusé le module importé
   par le Worker runtime tant que ce module ne portait pas lui-même la politique. La sonde de
   capacités ne rencontre pas le problème parce que son serveur pose COOP/COEP sur **toutes** ses
@@ -172,6 +173,35 @@ Deux écarts méritent attention pour la suite :
   artefact du runtime, pas seulement par la page.
 
 La ligne WebKit reste celle du moteur de test, jamais celle de Safari.
+
+## Machine virtuelle v86
+
+Mesures du spike #4, le **2026-08-23**, sur la même machine que les relevés précédents. Émulateur
+`v86@0.5.432`, guest Linux 4 / Buildroot i386, runtime dans un Worker dédié de type module.
+
+| Constat                                                              | Chromium 151 |   Firefox 153   | WebKit 26.5 |
+| -------------------------------------------------------------------- | :----------: | :-------------: | :---------: |
+| Guest démarre et écrit depuis un Worker, backend Vault               |     oui      | non mesuré (#4) | non mesuré  |
+| Fonctionne sans isolation multi-origine (`crossOriginIsolated` faux) |     oui      |        —        |      —      |
+| `scheduler.postTask` disponible en page                              |     oui      |       oui       |   **non**   |
+| Worker imbriqué `blob:` sous `worker-src 'self'`                     |    refusé    |     refusé      |   refusé    |
+
+Trois conséquences pour la matrice produit :
+
+- **La CSP de la coquille doit nommer WebAssembly.** Sous `script-src 'self'` seul, Chromium refuse
+  `WebAssembly.instantiate`. Le jeton `'wasm-unsafe-eval'` est ajouté ; il n'autorise ni `eval` ni
+  `new Function` (ADR 0003).
+- **v86 a besoin d'un ordonnanceur qui ne soit pas un Worker `blob:`.** Il choisit
+  `scheduler.postTask` lorsque l'URL de son contexte contient `use-scheduling-api`, sinon un Worker
+  imbriqué créé depuis une URL `blob:` — que `worker-src 'self'` refuse sur les trois moteurs.
+  L'échec est silencieux côté page : l'émulateur ne bat simplement jamais. WebKit n'exposant pas
+  `scheduler.postTask`, un support Safari exigerait soit `worker-src blob:` dans la CSP de la
+  coquille, soit une boucle d'ordonnancement fournie par nous.
+- **`SharedArrayBuffer` n'est pas requis** pour démarrer et écrire. L'écart d'héritage de
+  `cross-origin-isolated` relevé plus haut ne bloque donc pas le runtime.
+
+Le protocole et les mesures complètes sont dans
+[`docs/spikes/0004-backend-de-blocs-v86.md`](spikes/0004-backend-de-blocs-v86.md).
 
 ## Applications Rails
 

@@ -20,12 +20,17 @@ export const ISOLATION_REQUIRE_CORP = "require-corp";
  * CSP de la coquille de confiance. `default-src 'none'` impose de nommer chaque capacité ;
  * `frame-src` n'autorise que l'origine applicative déclarée, ce qui rend observable toute
  * tentative d'encadrer un document tiers.
+ *
+ * `'wasm-unsafe-eval'` est ajouté depuis le spike #4 : le runtime v86 instancie un module
+ * WebAssembly, et sous `script-src 'self'` seul Chromium refuse `WebAssembly.instantiate`. C'est le
+ * jeton le plus étroit qui autorise WebAssembly — il n'ouvre ni `eval` ni `new Function`, à la
+ * différence de `'unsafe-eval'`. Voir l'ADR 0003.
  * @param {string} appOrigin
  */
 export function shellContentSecurityPolicy(appOrigin) {
   return [
     "default-src 'none'",
-    "script-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval'",
     "style-src 'self'",
     "img-src 'self'",
     "connect-src 'self'",

@@ -6,9 +6,9 @@
 - Node 22, version déclarée dans `.node-version` et `.nvmrc` ;
 - les trois moteurs Playwright — Chromium, Firefox et WebKit — requis par `npm run check`.
 
-Aucun secret et aucune donnée personnelle ne sont nécessaires. Les futurs artefacts VM devront être
-récupérables par un script versionné ; un fichier transmis manuellement ne sera jamais un prérequis
-accepté.
+Aucun secret et aucune donnée personnelle ne sont nécessaires. Les artefacts VM sont récupérables
+par un script versionné (`npm run vm:fetch`) et vérifiés par empreinte ; un fichier transmis
+manuellement n'est jamais un prérequis accepté.
 
 ## Installation
 
@@ -43,14 +43,14 @@ Le dépôt exécute son code dans cinq contextes qui n'offrent pas les mêmes AP
 Node dans du code servi au navigateur, ou une API DOM dans un Worker, soit refusé à la première
 exécution de `npm run lint` plutôt qu'à la première exécution dans le navigateur.
 
-| Contexte           | Fichiers concernés                              | Globals accordés    |
-| ------------------ | ----------------------------------------------- | ------------------- |
-| Page               | `public/**`, `src/**/page-*.mjs`                | navigateur          |
-| Worker dédié       | `public/**/*worker*.mjs`, `src/**/*worker*.mjs` | Worker              |
-| Service Worker     | `public/**/*-sw.mjs`                            | Service Worker      |
-| Module partagé     | le reste de `src/**`                            | navigateur ∩ Worker |
-| Node               | `tools/**`, `tests/unit/**`, `*.config.mjs`     | Node                |
-| Spécification Node | `tests/browser/**`, `tests/compat/**`           | Node et navigateur  |
+| Contexte           | Fichiers concernés                                   | Globals accordés    |
+| ------------------ | ---------------------------------------------------- | ------------------- |
+| Page               | `public/**`, `src/**/page-*.mjs`                     | navigateur          |
+| Worker dédié       | `public/**/*worker*.mjs`, `src/**/*worker*.mjs`      | Worker              |
+| Service Worker     | `public/**/*-sw.mjs`                                 | Service Worker      |
+| Module partagé     | le reste de `src/**`                                 | navigateur ∩ Worker |
+| Node               | `tools/**`, `tests/unit/**`, `*.config.mjs`          | Node                |
+| Spécification Node | `tests/browser/**`, `tests/compat/**`, `tests/vm/**` | Node et navigateur  |
 
 Trois conséquences pour un nouveau module :
 
@@ -59,8 +59,8 @@ Trois conséquences pour un nouveau module :
   Worker, son nom contient `worker` ;
 - les spécifications Playwright cumulent Node et navigateur parce que les rappels passés à
   `page.evaluate` sont analysés dans le même fichier que le corps du test. Cette exception est
-  bornée à `tests/browser/` et `tests/compat/` ; elle ne doit pas être élargie par des commentaires
-  `/* global */`, qui reviendraient à désactiver la règle ;
+  bornée à `tests/browser/`, `tests/compat/` et `tests/vm/` ; elle ne doit pas être élargie par des
+  commentaires `/* global */`, qui reviendraient à désactiver la règle ;
 - un module réellement partagé entre la page et le Worker doit vivre sous `src/` pour recevoir
   l'intersection. `public/spike/origin/isolation-probe.mjs`, importé par la coquille comme par son
   Worker, reste analysé comme un script de page : la configuration y est plus permissive que
@@ -75,8 +75,9 @@ régression de la configuration fait échouer `npm run test:unit`, pas seulement
 npm start
 ```
 
-La page est servie sur `http://127.0.0.1:4173`. Le serveur ne sert que `public/` et les modules de
-contrat sous `src/` ; il refuse toute traversée hors de ces racines.
+La page est servie sur `http://127.0.0.1:4173`. Le serveur ne sert que trois racines — `public/`,
+les modules de contrat sous `src/`, et les artefacts vérifiés sous `vendor/` — et il refuse toute
+traversée hors de celles-ci.
 
 Pour observer la sonde de capacités à la main, il faut un contexte isolé multi-origine, sans quoi
 `SharedArrayBuffer` disparaît :
@@ -108,6 +109,39 @@ cross-origin. `playwright.config.mjs` démarre les deux serveurs.
 La coquille du spike s'ouvre à l'adresse
 `http://127.0.0.1:4173/spike/origin/shell.html?topologie=T2-origine-distincte-sandbox` ; les
 topologies disponibles sont listées dans `src/spike/origin-topology.mjs`.
+
+## Machine virtuelle et backend de blocs
+
+Les artefacts v86 et l'image de guest ne sont pas versionnés. Ils sont décrits par
+`vendor/v86/MANIFEST.json` — nom, taille, empreinte SHA-256, licence, URL source — et récupérés dans
+`vendor/v86/artefacts/`, dossier ignoré par git :
+
+```sh
+npm run vm:fetch      # télécharge ce qui manque, vérifie toutes les empreintes
+npm run vm:check      # vérifie seulement, sans réseau
+```
+
+`vm:check` échoue si un artefact manque ou si son empreinte diffère : une mesure de VM ne provient
+jamais d'un binaire non identifié. Environ 9,9 Mio sont transférés au premier appel.
+
+```sh
+npm run test:vm       # preuve « intégration VM » sous Chromium (périodique, hors `npm run check`)
+npm run vm:protocol   # protocole de mesure complet sous Node → reports/vm/protocole.json
+```
+
+Le banc s'observe aussi à la main : `npm start`, puis `http://127.0.0.1:4173/vm/`. La page ne fait
+rien elle-même ; elle démarre le Worker runtime et affiche son compte rendu. La console offre
+`await bancVault.executer({ scenario: "filesystem", mode: "full" })`. `scenario` vaut `barrier` ou
+`filesystem` ; `mode` vaut :
+
+| Mode       | Comportement de v86                                                     |
+| ---------- | ----------------------------------------------------------------------- |
+| `observe`  | amont exact ; seules les commandes ATA sont journalisées                |
+| `identify` | le disque annonce un cache d'écriture, mais la barrière reste chez v86  |
+| `full`     | la barrière du guest atteint le backend et n'est acquittée qu'après lui |
+
+Les trois modes existent parce que les deux ruptures mesurées par le spike #4 sont en série : sans
+le mode intermédiaire, on ne saurait pas laquelle des deux corrections produit quel effet.
 
 ## Vérification avant une PR
 

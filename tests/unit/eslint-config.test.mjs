@@ -99,7 +99,7 @@ test("un module de page garde le DOM et un module Node garde les globals Node", 
 });
 
 test("les spécifications Playwright cumulent Node et navigateur", async () => {
-  for (const repertoire of ["tests/browser", "tests/compat"]) {
+  for (const repertoire of ["tests/browser", "tests/compat", "tests/vm"]) {
     assert.deepEqual(await globalsRefuses(`${repertoire}/temoin.spec.mjs`, USAGE_NODE), []);
     assert.deepEqual(await globalsRefuses(`${repertoire}/temoin.spec.mjs`, USAGE_DOM), []);
   }
