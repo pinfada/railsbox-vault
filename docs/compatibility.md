@@ -10,16 +10,16 @@
 
 ## Matrice des cibles
 
-| Cible                 | Statut                      | Condition de promotion                                    |
-| --------------------- | --------------------------- | --------------------------------------------------------- |
-| Chromium ordinateur   | mesuré                      | scénario bout en bout du jalon 1                          |
-| Firefox ordinateur    | mesuré                      | scénario bout en bout du jalon 1                          |
-| WebKit Playwright     | refusé (OPFS absent)        | build WebKit exposant `navigator.storage`                 |
-| Safari ordinateur     | candidat                    | sonde exécutée sur un vrai Safari, puis jalon 1           |
-| Navigateurs mobiles   | expérimental                | budgets mémoire, cycle Worker et récupération             |
-| Node 22               | supporté pour développement | contrôle obligatoire `Qualité et tests`                   |
-| PostgreSQL dans la VM | candidat                    | fixture #5 et persistance #7                              |
-| SQLite dans la VM     | candidat                    | fixture dédiée après preuve PostgreSQL ou ADR de priorité |
+| Cible                 | Statut                      | Condition de promotion                          |
+| --------------------- | --------------------------- | ----------------------------------------------- |
+| Chromium ordinateur   | mesuré                      | scénario bout en bout du jalon 1                |
+| Firefox ordinateur    | mesuré                      | scénario bout en bout du jalon 1                |
+| WebKit Playwright     | refusé (OPFS absent)        | build WebKit exposant `navigator.storage`       |
+| Safari ordinateur     | candidat                    | sonde exécutée sur un vrai Safari, puis jalon 1 |
+| Navigateurs mobiles   | expérimental                | budgets mémoire, cycle Worker et récupération   |
+| Node 22               | supporté pour développement | contrôle obligatoire `Qualité et tests`         |
+| PostgreSQL dans la VM | candidat                    | persistance #7 et image de référence dédiée     |
+| SQLite dans la VM     | mesuré                      | scénario bout en bout du jalon 1                |
 
 La frontière d'origine décidée par l'ADR 0002 a été mesurée séparément sur les trois mêmes moteurs
 et n'y change aucun statut : elle tient partout. Voir « Frontière d'origine » plus bas.
@@ -172,6 +172,28 @@ Deux écarts méritent attention pour la suite :
   artefact du runtime, pas seulement par la page.
 
 La ligne WebKit reste celle du moteur de test, jamais celle de Safari.
+
+## Base de données dans la VM
+
+L'**ADR 0004** est la décision de priorité que la ligne « SQLite dans la VM » attendait : la fixture
+de l'invariant durable (#5) utilise SQLite, avec `journal_mode = delete` et `synchronous = full`
+déclarés et vérifiés sur la connexion. PostgreSQL n'est pas écarté ; il n'entre pas dans cette
+fixture, et sa promotion dépend désormais de #7 et d'une image de référence qui lui soit propre.
+
+Le passage de SQLite à **mesuré** repose sur un fait vérifiable et rien d'autre : `npm run test:vm`
+boote l'image de référence à froid, sans instantané, et obtient de `/vault/invariant` un verdict
+`conforming` dont le digest de pièce jointe est celui du manifeste. Comme partout dans ce document,
+**mesuré** ne veut pas dire supporté : le statut **supporté** exige le scénario bout en bout du
+jalon 1, qui couvre fermeture, reprise, export et restauration — aucun de ces quatre parcours n'est
+exercé ici.
+
+Ce qui n'est **pas** mesuré, et qu'il ne faut pas déduire de cette ligne :
+
+- la durabilité après coupure réelle. `synchronous = full` est vérifié, l'injection de coupures est
+  l'objet de #7 ;
+- le comportement de PostgreSQL sous i386, jamais exécuté dans ce dépôt ;
+- la tenue de SQLite au-dessus du backend de blocs OPFS, qui n'existe pas encore (#4, #6) : le test
+  VM utilise le disque en mémoire de v86.
 
 ## Applications Rails
 
