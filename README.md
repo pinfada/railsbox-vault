@@ -47,7 +47,11 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 ## Documentation
 
 - [Vision](docs/vision.md)
+- [Exigences produit](docs/product-requirements.md)
 - [Architecture exploratoire](docs/architecture.md)
+- [Attributs de qualité](docs/quality-attributes.md)
+- [Compatibilité](docs/compatibility.md)
+- [Versions et publications](docs/release-policy.md)
 - [Feuille de route](docs/roadmap.md)
 - [Contribuer et travailler en TDD](CONTRIBUTING.md)
 - [Gouvernance de développement](docs/governance.md)

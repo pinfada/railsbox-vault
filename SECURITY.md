@@ -20,6 +20,37 @@ RailsBox Vault est au stade expérimental et ne doit contenir aucune donnée ré
 - code applicatif ou dépendance exécutant du JavaScript hostile ;
 - perte d'un appareil, d'une passkey ou d'une origine web.
 
+## Frontières de confiance
+
+| Composant               | Autorité maximale admise                                      |
+| ----------------------- | ------------------------------------------------------------- |
+| Coquille Vault          | courtage du canal, déverrouillage et consentement utilisateur |
+| Worker runtime          | clé de volume en session et E/S authentifiées                 |
+| VM et application Rails | données nécessaires à l'usage, jamais la clé ni OPFS direct   |
+| Hébergement statique    | distribution d'artefacts publics vérifiables                  |
+| Relais optionnel        | transport de ciphertext et métadonnées minimales              |
+
+Le code applicatif, les dépendances Rails, l'hébergement et le relais restent des entrées
+potentiellement hostiles. La coquille et son Worker forment la base de confiance minimale à réduire
+et tester.
+
+## Invariants vérifiables
+
+- `SEC-ORIGIN-001` — un script applicatif ne peut acquérir le canal privilégié ou lire une clé de
+  volume ;
+- `SEC-KEY-001` — une clé de déverrouillage enveloppe une DEK aléatoire sans servir directement au
+  chiffrement des blocs ;
+- `SEC-BLOCK-001` — un bloc est authentifié avec volume, adresse, format et génération ;
+- `SEC-GEN-001` — rejeu, troncature et mélange de générations sont refusés ;
+- `SEC-DURABLE-001` — aucune écriture n'est annoncée durable avant le flush effectif ;
+- `SEC-UPDATE-001` — runtime et application sont identifiés et vérifiés avant d'ouvrir le volume en
+  écriture ;
+- `SEC-RECOVERY-001` — chaque moyen de récupération annoncé possède un test de succès, de révocation
+  et de perte définitive.
+
+Chaque invariant devra être relié à un test automatisé ou, pour une revue externe, à un constat
+public et sa disposition.
+
 ## Ce que le chiffrement au repos ne résout pas
 
 Le chiffrement d'un volume ne protège pas les données déjà déverrouillées contre du code exécuté
@@ -41,6 +72,24 @@ ancienne génération. Le format de volume devra fournir une intégrité transac
 - politique explicite de mise à jour et de retour à une version antérieure ;
 - tests de séparation d'origine et d'exfiltration ;
 - audit externe du format cryptographique avant toute promesse de production.
+
+## Gates d'utilisation
+
+1. **Données synthétiques uniquement** jusqu'à la persistance transactionnelle,
+   l'export/restauration et le refus d'incompatibilité.
+2. **Données sensibles interdites** jusqu'à l'implémentation de la séparation d'origine, du
+   verrouillage, de la récupération et du format chiffré.
+3. **Qualification produit interdite** jusqu'à la revue externe, la résolution des constats
+   critiques et élevés et la publication de la matrice navigateur.
+
+Une démonstration réussie ne lève jamais seule un gate.
+
+## Chaîne d'approvisionnement
+
+Les dépendances sont verrouillées. Les workflows ont des permissions minimales et leurs actions
+seront épinglées avant la première publication. Les images VM publiées devront fournir empreinte,
+provenance de build et SBOM. Aucun secret de signature ne réside dans un artefact servi au
+navigateur.
 
 ## Signaler une vulnérabilité
 
