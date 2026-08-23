@@ -24,6 +24,10 @@ configuration distincte, `playwright.compat.config.mjs`, pour trois raisons :
   `SharedArrayBuffer` et `Atomics.wait` ; le harnais de base ne doit pas changer de conditions ;
 - elle écrit ses artefacts ailleurs (`test-results/compat`) pour ne pas écraser ceux du harnais.
 
+Son serveur écoute sur le port 4180 et n'est **jamais** réutilisé : un rapport de compatibilité doit
+provenir de la page du dépôt, servie avec les en-têtes d'isolation attendus. Si le port est déjà
+occupé, la suite échoue immédiatement au lieu de mesurer un serveur étranger.
+
 Ce que la suite affirme :
 
 - le rapport respecte le schéma de `src/compat/capability-contract.mjs`, validé par une fonction

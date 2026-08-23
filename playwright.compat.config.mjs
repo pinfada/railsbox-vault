@@ -4,7 +4,7 @@ import { defineConfig } from "@playwright/test";
 // moteurs et a besoin d'un serveur isolé multi-origine (COOP/COEP) pour mesurer réellement
 // SharedArrayBuffer et Atomics.wait. Le harnais `test:browser` reste sur Chromium et sur un
 // serveur sans en-tête d'isolation, afin de ne pas changer ses conditions d'exécution.
-const port = 4174;
+const port = 4180;
 
 export default defineConfig({
   testDir: "tests/compat",
@@ -21,7 +21,10 @@ export default defineConfig({
   webServer: {
     command: `node tools/serve.mjs --port ${port} --cross-origin-isolated`,
     port,
-    reuseExistingServer: !process.env.CI,
+    // Jamais de réutilisation : un rapport de compatibilité doit provenir de cette page-ci, servie
+    // avec ces en-têtes-ci. Si le port est déjà pris, l'échec doit être bruyant plutôt que de
+    // mesurer un serveur étranger.
+    reuseExistingServer: false,
   },
   projects: [
     { name: "chromium", use: { browserName: "chromium" } },

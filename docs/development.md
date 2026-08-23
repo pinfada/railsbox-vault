@@ -49,10 +49,10 @@ Pour observer la sonde de capacités à la main, il faut un contexte isolé mult
 `SharedArrayBuffer` disparaît :
 
 ```sh
-node tools/serve.mjs --port 4174 --cross-origin-isolated
+node tools/serve.mjs --port 4180 --cross-origin-isolated
 ```
 
-La sonde est alors visible sur `http://127.0.0.1:4174/compat.html`, avec un tableau des verdicts.
+La sonde est alors visible sur `http://127.0.0.1:4180/compat.html`, avec un tableau des verdicts.
 
 ## Vérification avant une PR
 

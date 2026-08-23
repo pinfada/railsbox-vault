@@ -165,6 +165,29 @@ test("finalizeCompatReport ajoute le bloc exécutant sans muter le rapport de so
   }, TypeError);
 });
 
+test("finalizeCompatReport fige tous les blocs mesurés du rapport", () => {
+  const report = finalizeCompatReport(probeReportWith(), RUNNER);
+
+  assert.throws(() => {
+    report.contract.version = 99;
+  }, TypeError);
+  assert.throws(() => {
+    report.agent.userAgent = "usurpé";
+  }, TypeError);
+  assert.throws(() => {
+    report.capabilities[0].verdict = "supported";
+  }, TypeError);
+  assert.throws(() => {
+    report.capabilities.push({ id: "intrus" });
+  }, TypeError);
+  assert.throws(() => {
+    report.vaultVerdict.status = "supporté";
+  }, TypeError);
+  assert.throws(() => {
+    report.vaultVerdict.blocking.push("webLocks");
+  }, TypeError);
+});
+
 test("finalizeCompatReport refuse un moteur inconnu", () => {
   assert.throws(
     () => finalizeCompatReport(probeReportWith(), { ...RUNNER, engine: "trident" }),

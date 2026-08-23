@@ -106,19 +106,26 @@ export function computeVaultVerdict(capabilities) {
   return { status: "mesuré", supported: true, blocking: [], rule: VAULT_VERDICT_RULE };
 }
 
-/** Complète le rapport produit dans la page avec les métadonnées de l'exécutant Playwright. */
+/**
+ * Complète le rapport produit dans la page avec les métadonnées de l'exécutant Playwright.
+ * Le rapport renvoyé est une copie profonde et figée du rapport de sonde : le finaliser ne peut
+ * pas altérer son entrée, et les blocs mesurés ne peuvent plus être réécrits après coup.
+ */
 export function finalizeCompatReport(probeReport, runner) {
   if (!SUPPORTED_ENGINES.includes(runner?.engine)) {
     throw new TypeError(`moteur inconnu : ${runner?.engine}`);
   }
 
+  const verdict = probeReport.vaultVerdict;
   return {
-    contract: { ...probeReport.contract },
+    contract: Object.freeze({ ...probeReport.contract }),
     generatedAt: probeReport.generatedAt,
-    agent: { ...probeReport.agent },
+    agent: Object.freeze({ ...probeReport.agent }),
     runner: Object.freeze({ ...runner }),
-    capabilities: probeReport.capabilities.map((entry) => ({ ...entry })),
-    vaultVerdict: { ...probeReport.vaultVerdict },
+    capabilities: Object.freeze(
+      probeReport.capabilities.map((entry) => Object.freeze({ ...entry })),
+    ),
+    vaultVerdict: Object.freeze({ ...verdict, blocking: Object.freeze([...verdict.blocking]) }),
   };
 }
 
