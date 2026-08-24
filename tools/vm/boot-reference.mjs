@@ -17,7 +17,7 @@ import {
   creerAssembleurLignes,
   creerAssembleurReponses,
   decouperReponseHttp,
-} from "./serial-protocol.mjs";
+} from "../../src/vm/serial-protocol.mjs";
 
 export const RACINE_DEPOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const DOSSIER_ARTEFACTS = join(RACINE_DEPOT, "artifacts", "reference-image");

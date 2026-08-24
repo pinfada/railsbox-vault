@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RailsBox Vault — reprise d'une mutation Rails (#7)</title>
+  </head>
+  <body>
+    <h1>Reprise d'une mutation Rails après boot à froid</h1>
+    <p>
+      Cette page n'exécute rien d'elle-même : elle démarre un Worker dédié qui porte v86, le backend
+      OPFS et le pont série vers Rails, puis rend son compte rendu (ADR 0002). Le scénario complet
+      est décrit dans <code>docs/testing.md</code> et prouvé par
+      <code>tests/e2e/reprise-mutation-boot-froid.spec.mjs</code>.
+    </p>
+    <p id="etat">Prêt.</p>
+    <pre id="rapport"></pre>
+    <script type="module" src="./reference-banc.mjs"></script>
+  </body>
+</html>

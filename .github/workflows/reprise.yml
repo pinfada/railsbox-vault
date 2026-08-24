@@ -1,0 +1,76 @@
+name: Reprise MVP
+
+# Scénario de sortie du MVP (#7) : une mutation Rails retrouvée après fermeture complète et boot à
+# froid hors ligne. La recette construit l'image de référence (compilation Ruby/gemmes sous i386),
+# récupère les artefacts v86, puis boote plusieurs fois un guest Rails complet dans Chromium.
+#
+# Elle est longue et dépend de Docker et d'artefacts tiers : elle n'est donc PAS un contrôle
+# obligatoire de la protection de branche, et `npm run check` ne l'appelle pas. Sa périodicité et son
+# coût sont documentés dans docs/testing.md.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 4 * * *"
+  pull_request:
+    paths:
+      - "src/vm/**"
+      - "public/vm/**"
+      - "tests/e2e/**"
+      - "playwright.e2e.config.mjs"
+      - "tools/serve.mjs"
+      - ".github/workflows/reprise.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reprise-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reprise:
+    name: Reprise d'une mutation Rails après boot à froid
+    runs-on: ubuntu-latest
+    # Construction de l'image environ 20 min sans cache, puis préparation OPFS et quatre boots à
+    # froid d'un Rails i386. La marge couvre un exécutant GitHub plus lent que la machine de dev.
+    timeout-minutes: 120
+
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@v5
+
+      - name: Installation de Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Installation de Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Épinglage de la chaîne de construction
+        run: node tools/build-reference-image/verify-pinning.mjs
+
+      - name: Construction de l'image de référence
+        run: npm run image:build
+
+      - name: Récupération vérifiée des artefacts v86
+        run: npm run vm:fetch
+
+      - name: Reprise MVP (E2E)
+        run: npm run test:e2e
+
+      - name: Mesures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mesures-reprise
+          path: |
+            reports/e2e/
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 30

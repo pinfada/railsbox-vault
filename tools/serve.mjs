@@ -10,6 +10,10 @@ const sourceRoot = resolve("src");
 // Les artefacts v86 du spike #4 ne sont pas versionnés : ils vivent sous `vendor/`, récupérés et
 // vérifiés par `npm run vm:fetch`. Le serveur les expose en lecture seule, sous leur propre racine.
 const vendorRoot = resolve("vendor");
+// Les artefacts de l'image de référence (#5) ne sont pas versionnés : ils vivent sous
+// `artifacts/reference-image/`, produits par `npm run image:build`. La preuve de reprise (#7) les
+// sert à v86 dans le navigateur, en lecture seule, sous leur propre racine.
+const artifactRoot = resolve("artifacts");
 const options = parseServerOptions(process.argv.slice(2));
 
 const contentTypes = new Map([
@@ -25,6 +29,8 @@ const contentTypes = new Map([
 function resolveRoot(pathname) {
   if (pathname.startsWith("/src/")) return { root: sourceRoot, relativePath: pathname.slice(5) };
   if (pathname.startsWith("/vendor/")) return { root: vendorRoot, relativePath: pathname.slice(8) };
+  if (pathname.startsWith("/artifacts/"))
+    return { root: artifactRoot, relativePath: pathname.slice(11) };
   // Un chemin terminé par « / » désigne le document d'index du dossier ; aucune liste de fichiers
   // n'est jamais servie.
   const relativePath = pathname.endsWith("/")
