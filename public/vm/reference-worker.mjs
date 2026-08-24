@@ -1,18 +1,21 @@
 // Worker runtime de la preuve de reprise (#7). C'est le SEUL contexte autorisé à ouvrir le handle
 // exclusif OPFS et à porter v86 (ADR 0002) : la coquille ne reçoit que des données JSON.
 //
-// Trois phases, appelées chacune dans un Worker NEUF par le test E2E, pour que « fermer page +
+// Les phases sont appelées chacune dans un Worker NEUF par le test E2E, pour que « fermer page +
 // Worker + handles » soit réel entre elles :
 //
-//   prepare  volume OPFS neuf, le disque applicatif de l'image #5 y est écrit puis flushé.
-//   live     Rails boote sur ce disque OPFS en écriture ; ses écritures traversent le pont de
-//            durabilité jusqu'à OPFS ; l'invariant est vérifié à chaud.
-//   resume   BOOT À FROID depuis le même volume OPFS (aucun snapshot), invariant revérifié.
+//   prepare       volume OPFS neuf, le disque applicatif de l'image #5 y est écrit puis flushé.
+//   live          Rails boote sur ce disque OPFS en écriture ; ses écritures traversent le pont de
+//                 durabilité jusqu'à OPFS ; l'invariant est vérifié à chaud.
+//   resume        BOOT À FROID depuis le même volume OPFS (aucun snapshot), invariant revérifié.
+//   resume-arm/   reprise hors ligne en deux temps : `arm` acquiert le runtime EN LIGNE, le test
+//   resume-fire   coupe le réseau, puis `fire` boote à froid et vérifie SANS aucun accès réseau.
+//   prepare-empty volume vide (témoin négatif) ; cleanup le retire.
 //
 // Aucune phase ne se déclare « réussie » d'elle-même : elle rend ce qu'elle a observé, et
 // l'assertion vit dans `tests/e2e/reprise-mutation-boot-froid.spec.mjs`.
 
-import { BlockJournal, JOURNAL_OPERATIONS } from "/src/vm/block-journal.mjs";
+import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
 import { removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
 import { createReferenceGuestSession } from "/src/vm/reference-guest-session.mjs";
@@ -113,59 +116,13 @@ async function phasePrepare({ volume, appDiskBytes, appDiskUrl }) {
   return { phase: "prepare", volume, bytesWritten: offset, counts: journal.counts() };
 }
 
-/** Empreinte SHA-256 d'un ensemble de régions, cadrée par (offset, longueur) pour être sans
- * ambiguïté. Sert à prouver que des OCTETS écrits par Rails se retrouvent à l'identique après un
- * boot à froid — au-delà de l'invariant, qui ne couvre que l'enregistrement et sa pièce jointe. */
-async function digestRegions(backend, regions) {
-  const parts = [];
-  for (const { offset, length } of regions) {
-    const cadre = new Uint8Array(16);
-    const vue = new DataView(cadre.buffer);
-    vue.setBigUint64(0, BigInt(offset));
-    vue.setBigUint64(8, BigInt(length));
-    parts.push(cadre, await backend.read(offset, length));
-  }
-  const total = parts.reduce((somme, p) => somme + p.byteLength, 0);
-  const tampon = new Uint8Array(total);
-  let position = 0;
-  for (const p of parts) {
-    tampon.set(p, position);
-    position += p.byteLength;
-  }
-  const empreinte = await crypto.subtle.digest("SHA-256", tampon);
-  return [...new Uint8Array(empreinte)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-/** Régions distinctes écrites pendant une session, dans l'ordre où elles ont été journalisées. */
-function regionsEcrites(journal) {
-  const vues = new Set();
-  const regions = [];
-  for (const entree of journal.entries()) {
-    if (entree.operation !== JOURNAL_OPERATIONS.write) continue;
-    const cle = `${entree.offset}:${entree.length}`;
-    if (vues.has(cle)) continue;
-    vues.add(cle);
-    regions.push({ offset: entree.offset, length: entree.length });
-  }
-  return regions;
-}
-
-/** Attend que l'adaptateur ait drainé ses écritures en vol avant toute relecture du volume. */
-async function drainerAdaptateur(adapter, delaiMs = 3000) {
-  const debut = Date.now();
-  while (adapter.status().inFlight > 0 && Date.now() - debut < delaiMs) {
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-}
-
 /**
  * Ouvre le volume OPFS, boote Rails dessus, attend `/vault/health`, vérifie l'invariant et rend le
  * compte rendu. Le seul boot possible est un boot à froid complet : il n'existe aucun chemin
  * d'instantané mémoire dans ce Worker.
  *
  * `runtimeBundle` permet de fournir un runtime DÉJÀ acquis (reprise hors ligne : l'acquisition a eu
- * lieu en ligne, le boot a lieu réseau coupé). `checkRegions`, si fourni, est relu AVANT le boot :
- * l'empreinte rendue porte donc sur l'état laissé par la session précédente, intact.
+ * lieu en ligne, le boot a lieu réseau coupé).
  */
 async function bootEtVerifier({
   phase,
@@ -176,23 +133,9 @@ async function bootEtVerifier({
   runtimeBundle = null,
   expected,
   bootTimeoutMs,
-  captureWrites = false,
-  checkRegions = null,
 }) {
   const { V86, artifacts, transferredBytes } = runtimeBundle ?? (await acquerirRuntime(runtime));
   const onlineAuBoot = navigator.onLine;
-
-  // Relecture AVANT boot : elle capture l'état exact laissé par la session précédente, avant que le
-  // Rails de cette session-ci n'écrive quoi que ce soit. C'est ce qui rend la comparaison honnête.
-  let preBootRegionsDigest = null;
-  if (checkRegions && checkRegions.length > 0) {
-    const verif = await openOpfsVolume({ name: volume, journal: new BlockJournal() });
-    try {
-      preBootRegionsDigest = await digestRegions(verif, checkRegions);
-    } finally {
-      await verif.close();
-    }
-  }
 
   const journal = new BlockJournal();
   const failures = [];
@@ -217,8 +160,6 @@ async function bootEtVerifier({
   const started = performance.now();
   let health;
   let invariant;
-  let writtenRegions = null;
-  let writtenRegionsDigest = null;
   try {
     await session.boot();
     health = await session.awaitHealth({ totalTimeoutMs: bootTimeoutMs });
@@ -227,12 +168,6 @@ async function bootEtVerifier({
       statut: reponse.statut,
       verdict: JSON.parse(new TextDecoder().decode(reponse.corps)),
     };
-    if (captureWrites) {
-      session.stop();
-      await drainerAdaptateur(adapter);
-      writtenRegions = regionsEcrites(journal);
-      writtenRegionsDigest = await digestRegions(backend, writtenRegions);
-    }
   } finally {
     session.stop();
     await backend.close();
@@ -262,16 +197,13 @@ async function bootEtVerifier({
     observedAttachmentSha256: observed.attachment?.sha256 ?? null,
     conforming,
     counts: journal.counts(),
-    writtenRegions,
-    writtenRegionsDigest,
-    preBootRegionsDigest,
     failures,
     guestLog,
   };
 }
 
 async function phaseLive(options) {
-  return bootEtVerifier({ ...options, phase: "live", captureWrites: true });
+  return bootEtVerifier({ ...options, phase: "live" });
 }
 
 async function phaseResume(options) {

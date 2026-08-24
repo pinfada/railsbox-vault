@@ -202,24 +202,25 @@ protection de branche — sa durée le rendrait bloquant pour des PR qui ne le c
 ### Reprise d'une mutation Rails : `test:e2e`
 
 `npm run test:e2e` est le test du **niveau le plus élevé** du dépôt et le scénario de **sortie du
-MVP** (#7, `VAULT-PERSIST-001`). Une vraie application Rails boote dans Chromium sur un disque adossé
-à OPFS, on ferme la page, son Worker et ses handles, **on coupe le réseau**, et un **boot à froid**
-depuis le même volume OPFS la retrouve. Il assemble les acquis sans les réinventer : image de
-référence #5, backend OPFS #6, barrière durable #14, console série #54.
+MVP** (#7, `VAULT-PERSIST-001`). Une vraie application Rails boote dans Chromium sur un disque
+adossé à OPFS, on ferme la page, son Worker et ses handles, **on coupe le réseau**, et un **boot à
+froid** depuis le même volume OPFS la retrouve. Il assemble les acquis sans les réinventer : image
+de référence #5, backend OPFS #6, barrière durable #14, console série #54.
 
-Le point technique dur de #7 est d'adosser le disque applicatif de v86 à OPFS **en écriture**. Il est
-traité côté données : la phase `prepare` écrit le disque `reference-app.ext2` de l'image #5 dans un
-volume OPFS neuf, en flux, sans jamais tenir 512 Mio en mémoire. Ce volume est ensuite servi à v86
-comme `hdb` (`/dev/sdb`) par l'adaptateur de tampon (#4). Le rootfs, lui, reste un tampon en lecture
-servi comme `hda`. Les écritures de Rails — SQLite en `synchronous = full`, ActiveStorage — atteignent
-donc réellement OPFS, et leurs barrières `fsync` sont propagées jusqu'au flush OPFS par le pont de
-durabilité (#14). Le guest n'a pas de réseau émulé : la vérification passe par le pont série `@VLT1`.
+Le point technique dur de #7 est d'adosser le disque applicatif de v86 à OPFS **en écriture**. Il
+est traité côté données : la phase `prepare` écrit le disque `reference-app.ext2` de l'image #5 dans
+un volume OPFS neuf, en flux, sans jamais tenir 512 Mio en mémoire. Ce volume est ensuite servi à
+v86 comme `hdb` (`/dev/sdb`) par l'adaptateur de tampon (#4). Le rootfs, lui, reste un tampon en
+lecture servi comme `hda`. Les écritures de Rails — SQLite en `synchronous = full`, ActiveStorage —
+atteignent donc réellement OPFS, et leurs barrières `fsync` sont propagées jusqu'au flush OPFS par
+le pont de durabilité (#14). Le guest n'a pas de réseau émulé : la vérification passe par le pont
+série `@VLT1`.
 
 Le scénario, tel que `tests/e2e/reprise-mutation-boot-froid.spec.mjs` l'affirme :
 
 - **boot à chaud** — Rails répond à `/vault/health`, `/vault/invariant` est conforme, et le journal
-  du backend montre des écritures **et** au moins une barrière `flush` acquittée : des octets de Rails
-  ont bien atteint OPFS avec une barrière durable, pas seulement un tampon ;
+  du backend montre des écritures **et** au moins une barrière `flush` acquittée : des octets de
+  Rails ont bien atteint OPFS avec une barrière durable, pas seulement un tampon ;
 - **fermeture complète** — chaque phase s'exécute dans une **page neuve** ; la fermer ferme son
   Worker et rend le handle OPFS exclusif ;
 - **boot à froid hors ligne** — le runtime (wasm, noyau, initrd, rootfs) est acquis pendant que la
@@ -231,25 +232,27 @@ Le scénario, tel que `tests/e2e/reprise-mutation-boot-froid.spec.mjs` l'affirme
 - **aucun instantané mémoire** — il n'existe aucun chemin de snapshot dans le Worker (`get_state` /
   `set_state` de l'adaptateur sont refusés, #4), et chaque reprise est un boot complet mesuré en
   dizaines de secondes, non une restauration instantanée ;
-- **octets retrouvés** — les régions exactes écrites par Rails à chaud sont relues, avant tout boot,
-  au début de chaque reprise : leur empreinte est identique, l'écriture de Rails a bien survécu au
-  boot à froid ;
-- **≥ 3 reprises**, et un **témoin négatif** : un volume OPFS vide ne rend jamais l'invariant, ce qui
-  prouve que la reprise dépend du contenu d'OPFS et non du réseau ou de l'artefact resservi.
+- **persistance byte-exacte** — la pièce jointe ActiveStorage de l'invariant (4096 octets, digest
+  SHA-256 connu) est rendue durable et retrouvée à l'identique après chaque boot à froid. La preuve
+  porte sur l'état **rendu durable** : la barrière de #14 ne garantit que ce qui a franchi un flush,
+  et l'invariant est flushé dès la phase `prepare`. Les écritures de boot non flushées de Rails ne
+  sont, elles, pas garanties de survivre — c'est exactement la distinction de `SEC-DURABLE-001` ;
+- **≥ 3 reprises**, et un **témoin négatif** : un volume OPFS vide ne rend jamais l'invariant, ce
+  qui prouve que la reprise dépend du contenu d'OPFS et non du réseau ou de l'artefact resservi.
 
 Les mesures — temps de reprise p50/p95, mémoire du tas JS, tailles transférées et du volume — sont
 écrites dans `reports/e2e/reprise-boot-froid.json` (dossier ignoré par git, archivé en artefact de
-CI) et jointes au rapport Playwright. La cible de `docs/quality-attributes.md` est une reprise p95
-≤ 60 s ; un dépassement n'échoue pas la suite (il exigera un ADR de qualification), mais l'absence
+CI) et jointes au rapport Playwright. La cible de `docs/quality-attributes.md` est une reprise p95 ≤
+60 s ; un dépassement n'échoue pas la suite (il exigera un ADR de qualification), mais l'absence
 totale de mesure, elle, serait un échec.
 
-Ce que la suite **n'affirme pas**, délibérément : une mutation **initiée par l'utilisateur au cours de
-la session** via HTTP. L'application #5 n'expose que deux routes en lecture (`/vault/health`,
+Ce que la suite **n'affirme pas**, délibérément : une mutation **initiée par l'utilisateur au cours
+de la session** via HTTP. L'application #5 n'expose que deux routes en lecture (`/vault/health`,
 `/vault/invariant`) et aucune route d'écriture ; la « mutation » prouvée est donc l'état persistant
 **écrit par Rails** (l'invariant, produit par `bin/vault-fixture create` à la construction, plus les
-écritures de boot de Puma, SQLite et ActiveStorage) retrouvé après fermeture complète et boot à froid.
-Prouver une écriture utilisateur intra-session — une route de mutation, ou une commande passée au
-guest par le pont série — est le sujet d'une issue de suivi.
+écritures de boot de Puma, SQLite et ActiveStorage) retrouvé après fermeture complète et boot à
+froid. Prouver une écriture utilisateur intra-session — une route de mutation, ou une commande
+passée au guest par le pont série — est le sujet d'une issue de suivi.
 
 Elle **n'est pas rattachée à `npm run check`**, pour les mêmes raisons que `test:vm:reference` : un
 boot à froid dépasse les dix minutes, la suite exige Docker et environ un gigaoctet d'artefacts

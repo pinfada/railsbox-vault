@@ -17,7 +17,10 @@ const baseOptions = () => ({
 });
 
 test("une classe V86 absente est refusée explicitement", () => {
-  assert.throws(() => createReferenceGuestSession({ ...baseOptions(), V86: undefined }), /classe V86/);
+  assert.throws(
+    () => createReferenceGuestSession({ ...baseOptions(), V86: undefined }),
+    /classe V86/,
+  );
 });
 
 test("un adaptateur applicatif absent est refusé explicitement", () => {

@@ -45,14 +45,14 @@ Le dépôt exécute son code dans cinq contextes qui n'offrent pas les mêmes AP
 Node dans du code servi au navigateur, ou une API DOM dans un Worker, soit refusé à la première
 exécution de `npm run lint` plutôt qu'à la première exécution dans le navigateur.
 
-| Contexte           | Fichiers concernés                                                    | Globals accordés    |
-| ------------------ | --------------------------------------------------------------------- | ------------------- |
-| Page               | `public/**`, `src/**/page-*.mjs`                                      | navigateur          |
-| Worker dédié       | `public/**/*worker*.mjs`, `src/**/*worker*.mjs`                       | Worker              |
-| Service Worker     | `public/**/*-sw.mjs`                                                  | Service Worker      |
-| Module partagé     | le reste de `src/**`                                                  | navigateur ∩ Worker |
-| Node               | `tools/**`, `tests/unit/**`, `tests/vm/**/*.test.mjs`, `*.config.mjs` | Node                |
-| Spécification Node | `tests/browser/**`, `tests/compat/**`, `tests/vm/**/*.spec.mjs`, `tests/e2e/**/*.spec.mjs` | Node et navigateur |
+| Contexte           | Fichiers concernés                                                                         | Globals accordés    |
+| ------------------ | ------------------------------------------------------------------------------------------ | ------------------- |
+| Page               | `public/**`, `src/**/page-*.mjs`                                                           | navigateur          |
+| Worker dédié       | `public/**/*worker*.mjs`, `src/**/*worker*.mjs`                                            | Worker              |
+| Service Worker     | `public/**/*-sw.mjs`                                                                       | Service Worker      |
+| Module partagé     | le reste de `src/**`                                                                       | navigateur ∩ Worker |
+| Node               | `tools/**`, `tests/unit/**`, `tests/vm/**/*.test.mjs`, `*.config.mjs`                      | Node                |
+| Spécification Node | `tests/browser/**`, `tests/compat/**`, `tests/vm/**/*.spec.mjs`, `tests/e2e/**/*.spec.mjs` | Node et navigateur  |
 
 Trois conséquences pour un nouveau module :
 
