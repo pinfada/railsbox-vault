@@ -120,6 +120,34 @@ image dépouillée — un seul service, aucune base serveur, aucun processus de 
 servi depuis la mémoire. Il ne préjuge donc pas du boot d'une application réelle sur le backend de
 blocs de #4.
 
+### Première mesure de reprise sur le backend OPFS (#7)
+
+Relevé du 2026-08-24 par `npm run test:e2e`, sur le disque applicatif **adossé à OPFS** — donc, pour
+la première fois, dans les conditions réelles du produit et non sur un disque en mémoire. **Ce n'est
+pas l'environnement de référence** (28 threads, 32 Gio au lieu de 4 cœurs, 16 Gio ; trois essais au
+lieu de dix) : ces chiffres valent comme premier ordre de grandeur, pas comme relevé de référence.
+
+| Élément                    | Valeur                                                            |
+| -------------------------- | ----------------------------------------------------------------- |
+| Machine                    | Windows 11, Node 24.14.0, Chromium (Playwright), VM à 512 Mio     |
+| Disque applicatif          | 512 Mio dans OPFS ; runtime (rootfs, noyau, initrd, BIOS) 437 Mio |
+| Boot à chaud (santé Rails) | 94 s ; 40 écritures et 1 barrière durable acquittée vers OPFS     |
+| Reprise à froid, 3 essais  | 94,5 s, 92,2 s, 162,1 s → **p50 = 94,5 s, p95 = 162,1 s**         |
+
+**Le p95 de reprise dépasse la cible de 60 s.** Conformément au budget ci-dessus, un dépassement
+n'abaisse pas l'exigence en silence : il **exigera un ADR** de qualification produit — snapshot
+cohérent, autre stratégie de reprise ou changement de runtime — avant de trancher. Ce n'est pas
+demandé maintenant : la tranche #7 prouve que la reprise **fonctionne** hors ligne à froid, pas
+qu'elle tient déjà le budget. Le troisième essai (162 s) est un point isolé — vraisemblablement une
+contention machine ou un ramasse-miettes — que le protocole à dix essais de l'environnement de
+référence départagera. La cause du surcoût par rapport au boot en mémoire de #5 est attendue : le
+disque est servi depuis OPFS, non depuis la RAM.
+
+La mémoire publiée par le relevé (`memoireTasJs`) est le **tas JS de la page**, pas l'empreinte de
+la VM : v86 et ses 512 Mio de RAM invitée vivent dans le Worker, que `performance.memory` de la page
+ne mesure pas. Une mesure de l'empreinte réelle du processus navigateur reste à outiller (issue de
+suivi).
+
 ## Compatibilité
 
 La cible produit est les deux dernières versions stables de Chromium, Firefox et Safari sur
