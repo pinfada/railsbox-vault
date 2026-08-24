@@ -17,9 +17,16 @@
 
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
-import { removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
+import { openOpfsSyncAccess, removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
 import { createReferenceGuestSession } from "/src/vm/reference-guest-session.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
+import { createManifest } from "/src/vm/volume-manifest.mjs";
+import {
+  CONSISTENCY_KINDS,
+  backendSource,
+  readArchive,
+  writeArchive,
+} from "/src/vm/volume-export.mjs";
 
 /**
  * v86 choisit sa boucle d'ordonnancement à l'initialisation : `scheduler.postTask` si son URL
@@ -335,6 +342,146 @@ async function phaseCleanup({ volume }) {
   return { phase: "cleanup", volume };
 }
 
+/** Bloc de streaming de l'export/vérification E2E : 4 Mio, très en deçà du budget de surmémoire. */
+const EXPORT_BLOCK_BYTES = 4 * 1024 * 1024;
+
+/**
+ * EXPORTE le volume applicatif OPFS (#11) vers une ARCHIVE OPFS, en flux. La source est lue via le
+ * handle exclusif de #6 (aucun autre écrivain dans l'origine) : c'est le point cohérent déclaré. La
+ * plus grande lecture est mesurée — un export à surmémoire bornée ne demande jamais tout le volume
+ * d'un coup — et l'archive est écrite dans un fichier OPFS distinct, jamais tenue en RAM.
+ */
+async function phaseExportVolume({ volume, archive, manifest, blockBytes = EXPORT_BLOCK_BYTES }) {
+  await removeOpfsVolume(archive);
+  const backend = await openOpfsVolume({ name: volume, journal: new BlockJournal() });
+  const base = backendSource(backend);
+  const compteur = { maxLecture: 0, blocs: 0 };
+  const source = {
+    size: base.size,
+    read(offset, length) {
+      compteur.maxLecture = Math.max(compteur.maxLecture, length);
+      compteur.blocs += 1;
+      return base.read(offset, length);
+    },
+  };
+
+  const handle = await openOpfsSyncAccess(archive);
+  const sink = {
+    offset: 0,
+    write(bytes) {
+      const written = handle.write(bytes, { at: this.offset });
+      if (written !== bytes.byteLength) {
+        throw new Error(`Écriture d'archive courte : ${written}/${bytes.byteLength} octet(s).`);
+      }
+      this.offset += written;
+    },
+  };
+
+  let result;
+  try {
+    const m = createManifest({
+      runtime: manifest.runtime,
+      app: manifest.app,
+      volumeSize: source.size,
+      identity: { algorithm: "sha-256", digest: null },
+    });
+    result = await writeArchive({
+      source,
+      sink,
+      manifest: m,
+      consistency: {
+        kind: CONSISTENCY_KINDS.exclusiveHandle,
+        detail: "volume lu via le handle OPFS exclusif (#6), aucun autre écrivain dans l'origine",
+      },
+      blockBytes,
+    });
+    handle.flush();
+  } finally {
+    handle.close();
+    await backend.close();
+  }
+
+  return {
+    phase: "export",
+    volume,
+    archive,
+    volumeBytes: source.size,
+    archiveLength: result.archiveLength,
+    headerLength: result.headerLength,
+    contentLength: result.contentLength,
+    digest: result.digest,
+    manifestDigest: result.manifest.identity.digest,
+    consistency: result.consistency,
+    maxBlockBytes: compteur.maxLecture,
+    blocs: compteur.blocs,
+    blockBytes,
+  };
+}
+
+/** Applique une altération sur l'archive AVANT vérification, pour éprouver les refus typés. */
+async function muterArchive(archive, mutate) {
+  if (mutate === "none") return;
+  const handle = await openOpfsSyncAccess(archive);
+  try {
+    const size = handle.getSize();
+    if (mutate === "truncate") {
+      handle.truncate(Math.max(0, size - 512));
+    } else if (mutate === "tamper") {
+      const octet = new Uint8Array(1);
+      handle.read(octet, { at: size - 100 });
+      octet[0] ^= 0x01;
+      handle.write(octet, { at: size - 100 });
+    } else {
+      throw new Error(`Altération inconnue : ${mutate}.`);
+    }
+    handle.flush();
+  } finally {
+    handle.close();
+  }
+}
+
+/**
+ * VÉRIFIE l'archive OPFS (#11) en STREAMING : recalcule l'empreinte du contenu et valide le
+ * manifeste. `mutate` permet d'éprouver les refus typés (contenu altéré, archive tronquée). La
+ * vérification rend un verdict ou un échec typé — jamais un succès silencieux.
+ */
+async function phaseVerifyExport({ archive, mutate = "none", blockBytes = EXPORT_BLOCK_BYTES }) {
+  await muterArchive(archive, mutate);
+  const handle = await openOpfsSyncAccess(archive);
+  const byteLength = handle.getSize();
+  const compteur = { maxLecture: 0 };
+  const read = (offset, length) => {
+    compteur.maxLecture = Math.max(compteur.maxLecture, length);
+    const buffer = new Uint8Array(length);
+    const lus = handle.read(buffer, { at: offset });
+    return lus === length ? buffer : buffer.subarray(0, lus);
+  };
+
+  let verdict = null;
+  let error = null;
+  try {
+    verdict = await readArchive({ read, byteLength, blockBytes });
+  } catch (cause) {
+    error = { name: cause.name, code: cause.code ?? null, message: cause.message };
+  } finally {
+    handle.close();
+  }
+
+  return {
+    phase: "verify-export",
+    archive,
+    mutate,
+    byteLength,
+    ok: verdict !== null,
+    contentDigest: verdict?.contentDigest ?? null,
+    contentLength: verdict?.contentLength ?? null,
+    consistency: verdict?.consistency ?? null,
+    manifestDigest: verdict?.manifest?.identity?.digest ?? null,
+    maxBlockBytes: compteur.maxLecture,
+    error,
+  };
+}
+
 /** Feasibilité : prepare puis live dans un même Worker. Le test E2E n'utilise pas cette phase. */
 async function phaseFull(options) {
   const prepare = await phasePrepare(options);
@@ -350,6 +497,8 @@ const PHASES = new Map([
   ["resume", phaseResume],
   ["resume-arm", phaseResumeArm],
   ["resume-fire", phaseResumeFire],
+  ["export", phaseExportVolume],
+  ["verify-export", phaseVerifyExport],
   ["full", phaseFull],
 ]);
 

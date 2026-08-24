@@ -217,8 +217,50 @@ application étrangère, et **écriture refusée sans identité connue** (`asser
 
 Ce niveau suffit parce que le module ne dépend d'aucune capacité que seul un vrai support pourrait
 produire : contrairement au backend OPFS (#6), il n'a ni quota, ni handle, ni horloge à éprouver. Le
-calcul de l'empreinte du **contenu** du volume, qui exigera de lire un vrai volume, viendra avec
-l'export (#11) et portera ses propres preuves.
+calcul de l'empreinte du **contenu** du volume, qui exige de lire un vrai volume, arrive avec
+l'export (#11), décrit ci-dessous.
+
+### Export vérifiable
+
+L'export portable de `VAULT-PORT-001` (#11) — `src/vm/volume-export.mjs`, son hachage incrémental
+`src/vm/sha256-stream.mjs` et sa famille d'erreurs `src/vm/archive-errors.mjs` — est prouvé sur
+**deux** niveaux. La décision complète est
+l'[ADR 0008](decisions/0008-format-d-archive-d-export.md).
+
+| Niveau       | Fichier                                       | Support                       | Rattachement      |
+| ------------ | --------------------------------------------- | ----------------------------- | ----------------- |
+| unitaire     | `tests/unit/vm-sha256-stream.test.mjs`        | `crypto.subtle` (calibration) | `npm run check`   |
+| unitaire     | `tests/unit/vm-volume-export.test.mjs`        | doubles déterministes         | `npm run check`   |
+| Bout en bout | `tests/e2e/export-volume-verifiable.spec.mjs` | **vrai OPFS** + image #5      | job `Reprise MVP` |
+
+**Le niveau unitaire calibre l'instrument puis éprouve le codec.** `sha256-stream` existe parce que
+WebCrypto n'offre aucun hachage incrémental et que `node:crypto` est absent du Worker (ADR 0002) :
+empreinter un volume à surmémoire bornée exige un hachage incrémental portable. Un instrument se
+calibre — la suite le confronte à `crypto.subtle.digest` sur toutes les tailles frontières du
+padding et tous les découpages en morceaux, jusqu'à une entrée multi-mégaoctets découpée
+irrégulièrement ; un écart, à n'importe quelle frontière de bloc, échouerait. La suite du codec
+éprouve l'aller-retour vérifiable, l'empreinte inscrite dans le manifeste (#10), l'archive ≤ 2× la
+taille logique, le **streaming borné** (aucune lecture ne dépasse le bloc), la garantie de cohérence
+exigée, et les **refus typés** : contenu altéré (`VAULT_ARCHIVE_DIGEST_MISMATCH`), troncature
+(`VAULT_ARCHIVE_TRUNCATED`), marqueur/en-tête méconnaissable (`VAULT_ARCHIVE_MALFORMED`), et
+incompatibilité de manifeste (`ManifestError` de #10 propagée, jamais reconditionnée).
+
+**Le niveau Bout en bout mesure le vrai support.** `tests/e2e/export-volume-verifiable.spec.mjs`
+écrit le disque applicatif de l'image #5 (qui porte l'invariant durable créé par
+`bin/vault-fixture`) dans un volume OPFS, l'**exporte en flux** vers une archive OPFS distincte — le
+volume est lu via le handle exclusif de #6, point cohérent déclaré —, puis la **vérifie** :
+l'empreinte recalculée depuis l'archive égale celle calculée à l'export et celle du manifeste, ce
+qui prouve que la copie est byte-exacte et que l'invariant écrit par Rails est capturé fidèlement.
+Elle éprouve enfin les refus typés sur une archive **altérée** puis **tronquée**. La plus grande
+lecture émise est mesurée et publiée (`reports/e2e/export-verifiable.json`) : elle ne dépasse jamais
+le bloc de streaming (4 Mio), preuve déterministe que l'export ne demande jamais tout le volume d'un
+coup.
+
+Elle **n'est pas rattachée à `npm run check`** : comme la reprise (#7), elle exige les artefacts de
+l'image #5 (`npm run image:build`, Docker). Elle tourne dans le job CI **non bloquant**
+`Reprise MVP` (`.github/workflows/reprise.yml`), qui couvre déjà `tests/e2e/**`. Elle n'exige
+toutefois **pas** les artefacts v86 ni de boot de guest : l'export s'exerce sur le disque OPFS sans
+démarrer la VM.
 
 ### Intégration VM
 
