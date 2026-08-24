@@ -64,7 +64,10 @@ function manifeste(volumeSize) {
   });
 }
 
-const cohérence = { kind: CONSISTENCY_KINDS.lease, detail: "bail détenu, aucun écrivain concurrent" };
+const cohérence = {
+  kind: CONSISTENCY_KINDS.lease,
+  detail: "bail détenu, aucun écrivain concurrent",
+};
 
 test("aller-retour : l'archive se vérifie et porte l'empreinte du contenu dans le manifeste", async () => {
   const source = sourceVolume(64 * 1024);
@@ -96,7 +99,10 @@ test("archive ≤ 2× la taille logique et en-tête de quelques centaines d'octe
     manifest: manifeste(source.size),
     consistency: cohérence,
   });
-  assert.ok(archive.byteLength <= 2 * source.size, `archive ${archive.byteLength} ≤ 2×${source.size}`);
+  assert.ok(
+    archive.byteLength <= 2 * source.size,
+    `archive ${archive.byteLength} ≤ 2×${source.size}`,
+  );
   assert.ok(headerLength < 1024, `en-tête ${headerLength} octets`);
   // Surcoût = préambule + en-tête ; le reste est le contenu octet pour octet.
   assert.equal(archive.byteLength, PREAMBLE_BYTES + headerLength + source.size);

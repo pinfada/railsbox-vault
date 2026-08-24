@@ -39,7 +39,7 @@ function pseudoBytes(length, seed) {
   return bytes;
 }
 
-test("vecteur connu : SHA-256(\"abc\")", () => {
+test('vecteur connu : SHA-256("abc")', () => {
   const hash = createSha256Stream();
   hash.update(encoder.encode("abc"));
   assert.equal(
@@ -60,7 +60,11 @@ test("concorde avec WebCrypto sur les tailles frontières du padding (55, 56, 63
   for (const length of [0, 1, 55, 56, 57, 63, 64, 65, 119, 120, 127, 128, 191, 200]) {
     const bytes = pseudoBytes(length, length + 1);
     const attendu = await referenceHex(bytes);
-    assert.equal(streamHex(bytes, bytes.byteLength || 1), attendu, `un seul morceau, longueur ${length}`);
+    assert.equal(
+      streamHex(bytes, bytes.byteLength || 1),
+      attendu,
+      `un seul morceau, longueur ${length}`,
+    );
   }
 });
 
