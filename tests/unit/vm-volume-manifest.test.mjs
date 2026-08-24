@@ -72,7 +72,10 @@ test("createManifest refuse une géométrie inadmissible", () => {
 
 test("createManifest refuse un runtime hors SemVer et une application sans identité", () => {
   assert.throws(() => createManifest(champsValides({ runtime: { version: "1.4" } })), TypeError);
-  assert.throws(() => createManifest(champsValides({ app: { id: "", version: "1.0.0" } })), TypeError);
+  assert.throws(
+    () => createManifest(champsValides({ app: { id: "", version: "1.0.0" } })),
+    TypeError,
+  );
 });
 
 test("serializeManifest est déterministe : aller-retour stable octet à octet", () => {
@@ -127,7 +130,9 @@ test("parseManifest rejette une entrée malformée par une erreur typée", () =>
 });
 
 test("parseManifest tolère des champs futurs inconnus sans les rejeter", () => {
-  const objet = JSON.parse(new TextDecoder().decode(serializeManifest(createManifest(champsValides()))));
+  const objet = JSON.parse(
+    new TextDecoder().decode(serializeManifest(createManifest(champsValides()))),
+  );
   objet.champInconnu = { futur: true };
   const m = parseManifest(objet);
   assert.equal(m.formatVersion, MANIFEST_FORMAT_VERSION);
@@ -223,13 +228,19 @@ test("assertVolumeWritable refuse un volume sans manifeste (jamais d'écriture n
 
 test("assertVolumeWritable propage le refus typé d'un manifeste malformé", () => {
   assert.throws(
-    () => assertVolumeWritable({ manifestBytes: new TextEncoder().encode("{"), expectations: attentesCourantes() }),
+    () =>
+      assertVolumeWritable({
+        manifestBytes: new TextEncoder().encode("{"),
+        expectations: attentesCourantes(),
+      }),
     (e) => isManifestError(e, MANIFEST_ERROR_CODES.malformed),
   );
 });
 
 test("assertVolumeWritable refuse un format futur avant toute écriture", () => {
-  const octets = serializeManifest(createManifest(champsValides({ formatVersion: MANIFEST_FORMAT_VERSION + 1 })));
+  const octets = serializeManifest(
+    createManifest(champsValides({ formatVersion: MANIFEST_FORMAT_VERSION + 1 })),
+  );
   assert.throws(
     () => assertVolumeWritable({ manifestBytes: octets, expectations: attentesCourantes() }),
     (e) => isManifestError(e, MANIFEST_ERROR_CODES.formatTooNew),
@@ -253,7 +264,10 @@ test("ManifestError porte un code stable et une forme transportable", () => {
     message: "message",
     context: { a: 1 },
   });
-  assert.throws(() => new ManifestError("VAULT_INCONNU", "x"), /Code d'erreur de manifeste inconnu/);
+  assert.throws(
+    () => new ManifestError("VAULT_INCONNU", "x"),
+    /Code d'erreur de manifeste inconnu/,
+  );
 });
 
 // --- utilitaires de fabrication d'entrées malformées ------------------------------------------
