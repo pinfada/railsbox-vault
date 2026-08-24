@@ -13,10 +13,7 @@
 // sont ceux de #9, jamais une copie.
 
 import { describeDiagnostic } from "./storage-budget-messages.mjs";
-import {
-  DURABILITY_PROMISE,
-  SHELL_STATES,
-} from "./persistence-conduct.mjs";
+import { DURABILITY_PROMISE, SHELL_STATES } from "./persistence-conduct.mjs";
 
 /** Texte accessible propre à chaque état de coquille dépourvu de diagnostic #9. */
 const TEXT_BY_STATE = Object.freeze({
