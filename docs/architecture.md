@@ -274,7 +274,90 @@ reste prouvée par `tests/vm/opfs-persistence.spec.mjs`.
 
 Ce que #14 ne couvre pas : l'atomicité d'une génération complète et la récupération (#16), le
 regroupement ou l'optimisation des flush, le chiffrement, la reprise Rails complète (#7) et l'accès
-concurrent (#8).
+concurrent (#8), désormais traité ci-dessous.
+
+## Concurrence et bail d'écriture
+
+L'issue #8 (`VAULT-PERSIST-002`) tient le budget multi-onglets de `docs/quality-attributes.md` :
+**un volume possède au plus un écrivain**, et un second contexte obtient en 5 s au plus soit un
+relais sûr après fermeture effective, soit un refus explicite — jamais un accès concurrent
+implicite.
+
+Le handle OPFS de #6 est déjà exclusif par moteur, mais s'appuyer sur cette seule coïncidence serait
+fragile — le même raisonnement que l'ADR 0002 tient pour l'ouverture du handle. #8 construit donc un
+**bail explicite** : une machine à états pure (`src/vm/write-lease.mjs`) porte l'invariant, et un
+transport mince (`src/vm/write-lease-transport.mjs`) l'alimente depuis Web Locks et le handle OPFS
+de l'origine coquille — les deux canaux de coordination autorisés par l'ADR 0002.
+
+### Machine à états du bail
+
+Six états, du point de vue d'un contexte (un onglet, un Worker) :
+
+| État      | Signification                                                        | Statut d'UI     |
+| --------- | -------------------------------------------------------------------- | --------------- |
+| `libre`   | ni détenu ni demandé : le contexte n'écrit pas                       | `lecture-seule` |
+| `attente` | bail demandé ; un autre le détient, on patiente dans la file         | `attente`       |
+| `detenu`  | ce contexte détient le bail ET le handle exclusif : c'est l'écrivain | `ecriture`      |
+| `relais`  | le détenteur rend la main ; le handle se ferme avant tout octroi     | `lecture-seule` |
+| `refus`   | demande refusée (délai dépassé ou refus explicite)                   | `conflit`       |
+| `perdu`   | bail détenu puis perdu sans fermeture propre (mort du support)       | `erreur`        |
+
+Le statut d'UI est un **état explicite**, jamais un booléen « peut écrire » : un onglet en attente,
+en conflit ou en erreur ne se distinguerait pas d'un onglet en lecture seule sous un simple drapeau,
+et l'utilisateur ne saurait pas s'il doit patienter, réessayer ou s'inquiéter.
+
+Les transitions autorisées forment le contrat — toute paire absente lève `VAULT_LEASE_TRANSITION`,
+jamais un glissement silencieux :
+
+```text
+libre    ──request──► attente
+attente  ──grant────► detenu     (verrou obtenu ET handle ouvert)
+attente  ──deny─────► refus      (refus explicite d'un autre détenteur)
+attente  ──expire───► refus      (échéance de relais-ou-refus atteinte)
+attente  ──abandon──► libre      (renoncement du contexte)
+detenu   ──release──► relais     (début de fermeture du handle)
+relais   ──settle───► libre      (handle effectivement fermé, verrou rendu)
+detenu   ──lose─────► perdu      (support ou contexte disparu)
+refus|perdu ──reset──► libre  ·  refus|perdu ──retry──► attente
+```
+
+La machine est **pure et immuable** : chaque transition rend une nouvelle instance, l'horloge est
+injectée (échéances contrôlables au test, réelles en production), et l'invariant « au plus un
+écrivain » est vérifiable par `assertAtMostOneWriter`. Elle ne connaît ni Web Locks, ni OPFS, ni
+`BroadcastChannel`.
+
+### Transport et règles de relais
+
+Le transport tient le verrou Web Locks pendant qu'il détient le handle OPFS, et **ferme le handle
+AVANT de rendre le verrou**. Web Locks n'exécute la requête suivante qu'après la résolution de la
+requête courante : le second contexte n'ouvre donc son handle qu'après la fermeture effective du
+premier. Le relais est sûr par construction, et non parce qu'un événement l'a annoncé.
+
+La récupération après **crash** ne suppose aucun événement de fermeture fiable. Elle repose sur deux
+faits mesurés :
+
+- Web Locks relâche un verrou à la **mort du contexte** (onglet fermé, Worker terminé) ;
+- un handle OPFS survivant à un contexte mort peut mettre un instant à être réclamé : l'ouverture
+  est donc **réessayée** sur `VAULT_STORAGE_BUSY` tant que le budget de 5 s dure — un bail à
+  expiration vérifiée par tentative de réacquisition du handle, plutôt qu'une confiance aveugle en
+  un signal.
+
+Un **onglet suspendu** n'est pas un onglet mort : son verrou n'est pas relâché, le waiter reste en
+`attente` et ne devient jamais un second écrivain. Un **volume différent** est un verrou différent
+et un fichier différent : aucune contention artificielle. Une **origine différente** est
+partitionnée par le navigateur (ADR 0002, `SEC-ORIGIN-001`) : ses verrous et son OPFS sont
+invisibles à la coquille, donc sans contention non plus.
+
+### Erreur de transition
+
+Le bail ajoute une erreur typée, distincte des états de stockage de #6 :
+
+| Code                     | État                                                  | Origine |
+| ------------------------ | ----------------------------------------------------- | ------- |
+| `VAULT_LEASE_TRANSITION` | transition de bail interdite ou expiration prématurée | **#8**  |
+
+Elle porte l'état source et l'événement refusé. Un refus de délai côté transport reste, lui, un état
+de bail (`refus`), pas une exception : le contexte l'affiche en `conflit` et peut réessayer.
 
 ## Ordre des preuves
 

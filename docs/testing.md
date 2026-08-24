@@ -121,9 +121,50 @@ Ce que la barrière du guest garantisse la durabilité **avant** son acquittemen
 ne soit annoncée durable avant que le flush OPFS ait rendu la main — est prouvé par #14 :
 `tests/unit/vm-durability-barrier.test.mjs` (chaîne complète moins l'émulateur, ordre/latence/fautes
 déterministes) et `tests/vm/opfs-barrier.spec.mjs` (guest réel, vrai OPFS). Ce que ces niveaux
-n'affirment pas : la reprise d'une application Rails après fermeture complète (#7), l'accès
-concurrent multi-onglets (#8), ni la politique de quota côté produit (#9). Le quota n'est ici qu'un
-état détecté et nommé.
+n'affirment pas : la reprise d'une application Rails après fermeture complète (#7) ni la politique
+de quota côté produit (#9). L'accès concurrent multi-onglets (#8) est désormais couvert (voir « Bail
+d'écriture » ci-dessous). Le quota n'est ici qu'un état détecté et nommé.
+
+### Bail d'écriture (multi-onglets)
+
+Le bail d'écriture de `VAULT-PERSIST-002` (#8) est prouvé sur **deux** niveaux : la machine à états
+pure sous Node, et le transport réel sur Web Locks et OPFS dans le navigateur.
+
+| Niveau     | Fichier                              | Support                        | Rattachement    |
+| ---------- | ------------------------------------ | ------------------------------ | --------------- |
+| unitaire   | `tests/unit/vm-write-lease.test.mjs` | horloge et événements injectés | `npm run check` |
+| navigateur | `tests/browser/write-lease.spec.mjs` | **vrai Web Locks + vrai OPFS** | `npm run check` |
+
+**Le niveau unitaire mesure la logique.** Il éprouve la machine à états (`src/vm/write-lease.mjs`)
+et son arbitre modèle (`src/vm/write-lease-arbiter.mjs`) sur une horloge injectée : transitions
+autorisées et interdites, invariant « au plus un écrivain », délai de relais mesuré au tic près,
+récupération après crash sans événement de fermeture, refus à l'échéance, absence de contention
+entre volumes. Le vrai Web Locks ne laisse contrôler ni le temps ni l'instant d'une mort de contexte
+: l'arbitre modèle le fait, déterministiquement.
+
+**Le niveau navigateur mesure le transport réel.** Plusieurs pages du même contexte — donc de la
+même origine et de la même partition — se disputent le bail par le vrai Web Locks et le vrai handle
+OPFS exclusif, chacune dans son Worker dédié. Aucune VM n'est bootée : la preuve n'exerce que le
+bail. Les neuf épreuves couvrent chaque scénario d'acceptation :
+
+- deux onglets simultanés : un seul atteint `detenu`, l'autre reste `attente` ;
+- fermeture propre : le second n'atteint `detenu` qu'après avoir **ouvert** le handle exclusif, ce
+  qui n'est possible qu'après la fermeture effective du premier ;
+- **terminaison brutale** du Worker détenteur (`worker.terminate()`, ni release ni fermeture propre)
+  : le waiter récupère le bail ;
+- onglet suspendu (détenteur qui ne relâche pas) : le waiter reste `attente`, jamais un second
+  écrivain, jusqu'au réveil et à la fermeture propre ;
+- volume différent : les deux détiennent en même temps, sans attente ;
+- l'UI affiche un état explicite — `attente`, `ecriture`, `lecture-seule`, `conflit`, `erreur` — lu
+  dans le DOM, jamais un booléen.
+
+Le délai de relais-ou-refus est **mesuré** par l'horloge monotone du Worker demandeur (injectée dans
+le transport via `now`) et joint au rapport Playwright (`bail-relais-delai`, `bail-crash-delai`,
+`bail-refus-delai`). Relevé du 2026-08-24 sous Chromium : relais après fermeture propre **15 ms**,
+récupération après crash **9 ms**, refus à l'échéance **801 ms** (budget de 800 ms) — tous très en
+deçà des 5 s. La suite est rattachée à `npm run check` : **7,1 s mesurées** sous Chromium, aucun
+artefact, aucun réseau. Comme la suite OPFS, elle exige la capacité sous Chromium et, sur un moteur
+sans OPFS synchrone dans le Worker, se contente d'un refus typé sans asserter le reste.
 
 ### Intégration VM
 
