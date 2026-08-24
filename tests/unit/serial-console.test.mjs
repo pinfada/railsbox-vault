@@ -34,7 +34,7 @@ test("un jeton de fin coupé en deux par le repli reste détecté", () => {
 test("les vraies fins de ligne d'une sortie multiligne sont préservées", () => {
   // Garde-fou : le recollage ne doit retirer que le repli du terminal, jamais les « \r\n » qui
   // séparent de vraies lignes (ex. `dmesg | tail`).
-  const transcript = "dmesg | tail -2; echo R\"\"B3\r\nligne un\r\nligne deux\r\nRB3\r\n~% ";
+  const transcript = 'dmesg | tail -2; echo R""B3\r\nligne un\r\nligne deux\r\nRB3\r\n~% ';
 
   assert.equal(reassembleCommandOutput(transcript, 3), "ligne un\nligne deux");
 });
