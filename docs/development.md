@@ -52,7 +52,7 @@ exécution de `npm run lint` plutôt qu'à la première exécution dans le navig
 | Service Worker     | `public/**/*-sw.mjs`                                                  | Service Worker      |
 | Module partagé     | le reste de `src/**`                                                  | navigateur ∩ Worker |
 | Node               | `tools/**`, `tests/unit/**`, `tests/vm/**/*.test.mjs`, `*.config.mjs` | Node                |
-| Spécification Node | `tests/browser/**`, `tests/compat/**`, `tests/vm/**/*.spec.mjs`       | Node et navigateur  |
+| Spécification Node | `tests/browser/**`, `tests/compat/**`, `tests/vm/**/*.spec.mjs`, `tests/e2e/**/*.spec.mjs` | Node et navigateur |
 
 Trois conséquences pour un nouveau module :
 
@@ -61,8 +61,8 @@ Trois conséquences pour un nouveau module :
   Worker, son nom contient `worker` ;
 - les spécifications Playwright cumulent Node et navigateur parce que les rappels passés à
   `page.evaluate` sont analysés dans le même fichier que le corps du test. Cette exception est
-  bornée à `tests/browser/`, `tests/compat/` et `tests/vm/` ; elle ne doit pas être élargie par des
-  commentaires `/* global */`, qui reviendraient à désactiver la règle ;
+  bornée à `tests/browser/`, `tests/compat/`, `tests/vm/` et `tests/e2e/` ; elle ne doit pas être
+  élargie par des commentaires `/* global */`, qui reviendraient à désactiver la règle ;
 - un module réellement partagé entre la page et le Worker doit vivre sous `src/` pour recevoir
   l'intersection. `public/spike/origin/isolation-probe.mjs`, importé par la coquille comme par son
   Worker, reste analysé comme un script de page : la configuration y est plus permissive que
