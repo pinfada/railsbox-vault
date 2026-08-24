@@ -237,12 +237,16 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
       ecrituresOpfs: live.counts.write,
       barrieres: live.counts.flush,
       barrieresAcquittees: live.counts["flush-ack"],
+      timeline: live.timeline,
     },
     repriseMs: {
       essais: reprisesMs,
       p50: percentile(reprisesMs, 50),
       p95: percentile(reprisesMs, 95),
     },
+    // Décomposition du temps de reprise (#60) : où passent les secondes, essai par essai. Chaque
+    // durée est réellement observée ; un jalon non atteint reste `null` plutôt qu'inventé.
+    repriseTimeline: reprises.map((r) => r.timeline),
     memoireTasJs: derniereMemoire,
     cible: { repriseP95Ms: 60_000 },
   };

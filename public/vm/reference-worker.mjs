@@ -77,6 +77,72 @@ async function acquerirRuntime(runtime) {
 }
 
 /**
+ * Enregistreur de décomposition du temps de reprise (#60). Il n'INSTRUMENTE rien du boot : il pose
+ * des jalons `performance.now()` que le banc lit déjà, plus quelques jalons repérés dans le flux
+ * série BRUT du guest (`onSerial`). Chaque jalon horodate un événement RÉELLEMENT observé ; un jalon
+ * jamais vu reste `null` et n'est pas inventé. Les repères série sont exactement les lignes que
+ * `guest-init.sh` imprime sur la console avant que le pont `@VLT1` ne démarre.
+ */
+function createBootTimeline() {
+  const REPERES_SERIE = [
+    ["montageDisqueApp", "[init] montage du disque applicatif"],
+    ["lancementApp", "[init] lancement de l'application"],
+    ["pontSerieActif", "[init] pont serie actif"],
+  ];
+  const jalons = new Map();
+  let tampon = "";
+  let premierOctet = null;
+  let dmesgDernierSec = null;
+
+  const noter = (cle) => {
+    if (!jalons.has(cle)) jalons.set(cle, performance.now());
+  };
+
+  return {
+    /** Jalon posé côté hôte (entrée du boot, runtime prêt, boot rendu, santé, invariant). */
+    marquer: noter,
+    /** Fragment de série brut : repère les lignes d'init et le dernier horodatage dmesg du noyau. */
+    ingererSerie(fragment) {
+      if (fragment.length === 0) return;
+      if (premierOctet === null) premierOctet = performance.now();
+      // On garde une fenêtre glissante bornée : un repère tient sur une seule ligne.
+      tampon = (tampon + fragment).slice(-4096);
+      for (const [cle, aiguille] of REPERES_SERIE) {
+        if (!jalons.has(cle) && tampon.includes(aiguille)) noter(cle);
+      }
+      const horodatages = tampon.match(/\[\s*(\d+\.\d+)\]/g);
+      if (horodatages) {
+        const dernier = Number.parseFloat(
+          horodatages[horodatages.length - 1].replace(/[[\]]/g, ""),
+        );
+        if (Number.isFinite(dernier)) dmesgDernierSec = dernier;
+      }
+    },
+    /**
+     * Décomposition finale. Les durées sont en millisecondes, arrondies, relatives au jalon indiqué.
+     * `healthMs` reste la mesure publiée (fenêtre de `awaitHealth`) ; les autres l'éclairent.
+     */
+    decomposer({ healthMs }) {
+      const t = (cle) => jalons.get(cle) ?? null;
+      const octet = premierOctet;
+      const delta = (a, b) => (a === null || b === null ? null : Number((b - a).toFixed(0)));
+      return {
+        acquisitionRuntimeMs: delta(t("debut"), t("runtimePret")),
+        initEmulateurMs: delta(t("runtimePret"), t("bootRendu")),
+        premierOctetSerieMs: delta(t("bootRendu"), octet),
+        noyauVersMontageMs: delta(octet, t("montageDisqueApp")),
+        montageVersLancementMs: delta(t("montageDisqueApp"), t("lancementApp")),
+        lancementVersPontMs: delta(t("lancementApp"), t("pontSerieActif")),
+        pontVersSanteMs: delta(t("pontSerieActif"), t("santePrete")),
+        healthMs,
+        invariantMs: delta(t("santePrete"), t("invariantRendu")),
+        noyauDmesgDernierSec: dmesgDernierSec,
+      };
+    },
+  };
+}
+
+/**
  * État armé de la reprise hors ligne. La reprise se joue en deux temps pour prouver que le RÉSEAU
  * ne participe pas au boot à froid : `resume-arm` acquiert le runtime pendant que la page est en
  * ligne, puis le test coupe le réseau, puis `resume-fire` boote et vérifie SANS aucun accès réseau.
@@ -134,7 +200,11 @@ async function bootEtVerifier({
   expected,
   bootTimeoutMs,
 }) {
+  // La décomposition (#60) pose ses jalons DÈS l'entrée, pour dater aussi l'acquisition du runtime.
+  const timeline = createBootTimeline();
+  timeline.marquer("debut");
   const { V86, artifacts, transferredBytes } = runtimeBundle ?? (await acquerirRuntime(runtime));
+  timeline.marquer("runtimePret");
   const onlineAuBoot = navigator.onLine;
 
   const journal = new BlockJournal();
@@ -155,6 +225,7 @@ async function bootEtVerifier({
     onJournal: (ligne) => {
       if (guestLog.length < 200) guestLog.push(ligne);
     },
+    onSerial: (fragment) => timeline.ingererSerie(fragment),
   });
 
   const started = performance.now();
@@ -162,8 +233,11 @@ async function bootEtVerifier({
   let invariant;
   try {
     await session.boot();
+    timeline.marquer("bootRendu");
     health = await session.awaitHealth({ totalTimeoutMs: bootTimeoutMs });
+    timeline.marquer("santePrete");
     const reponse = await session.request("GET", "/vault/invariant");
+    timeline.marquer("invariantRendu");
     invariant = {
       statut: reponse.statut,
       verdict: JSON.parse(new TextDecoder().decode(reponse.corps)),
@@ -186,6 +260,7 @@ async function bootEtVerifier({
     volumeBytes: backend.size?.() ?? null,
     bootMilliseconds: Number((performance.now() - started).toFixed(1)),
     healthMilliseconds: health.durationMs,
+    timeline: timeline.decomposer({ healthMs: health.durationMs }),
     transferredBytes,
     memoryBytes,
     usedSnapshot: false,
