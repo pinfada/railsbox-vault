@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RailsBox Vault — banc du bail d'écriture (#8)</title>
+  </head>
+  <body>
+    <h1>Banc du bail d'écriture</h1>
+    <p>
+      Cette page démarre un Worker dédié qui se dispute le bail d'écriture d'un volume avec les
+      Workers des autres onglets, par Web Locks et le handle OPFS exclusif. Le statut ci-dessous est
+      un état explicite : <code>lecture-seule</code>, <code>attente</code>, <code>ecriture</code>,
+      <code>conflit</code> ou <code>erreur</code>.
+    </p>
+    <p>Statut : <span id="bail-etat">Prêt.</span></p>
+    <pre id="bail-journal"></pre>
+    <script type="module" src="./lease-banc.mjs"></script>
+  </body>
+</html>
