@@ -312,9 +312,14 @@ Le scénario, tel que `tests/e2e/reprise-mutation-boot-froid.spec.mjs` l'affirme
 
 Les mesures — temps de reprise p50/p95, mémoire du tas JS, tailles transférées et du volume — sont
 écrites dans `reports/e2e/reprise-boot-froid.json` (dossier ignoré par git, archivé en artefact de
-CI) et jointes au rapport Playwright. La cible de `docs/quality-attributes.md` est une reprise p95 ≤
-60 s ; un dépassement n'échoue pas la suite (il exigera un ADR de qualification), mais l'absence
-totale de mesure, elle, serait un échec.
+CI) et jointes au rapport Playwright. Depuis #60, le rapport porte aussi une **décomposition** du
+temps de reprise (`repriseTimeline`, un objet par reprise) : jalons `performance.now()` côté hôte et
+repères lus dans le flux série brut du guest (montage de `/dev/sdb`, lancement de Puma, pont série
+actif). Chaque durée horodate un événement réellement observé ; un jalon jamais atteint reste
+`null`, jamais estimé. Elle sert l'[ADR 0005](decisions/0005-qualification-de-la-reprise.md), qui
+montre que le boot de Puma/Rails domine (~79 %) et que le montage OPFS est négligeable (~65 ms). La
+cible de `docs/quality-attributes.md` est une reprise p95 ≤ 60 s ; un dépassement n'échoue pas la
+suite (il a exigé l'ADR 0005), mais l'absence totale de mesure, elle, serait un échec.
 
 Ce que la suite **n'affirme pas**, délibérément : une mutation **initiée par l'utilisateur au cours
 de la session** via HTTP. L'application #5 n'expose que deux routes en lecture (`/vault/health`,

@@ -95,25 +95,28 @@ Trois réserves, à ne pas perdre de vue quand ces chiffres seront comparés à 
 
 ## Budgets prototype
 
-| Attribut               | Seuil de sortie du jalon concerné                                                 |
-| ---------------------- | --------------------------------------------------------------------------------- |
-| Installation           | `npm ci` + navigateurs reproductibles depuis un clone vierge                      |
-| Premier boot de preuve | p95 ≤ 15 min, aucun timeout silencieux                                            |
-| Reprise locale au MVP  | cible p95 ≤ 60 s ; dépassement exige un ADR avant qualification produit           |
-| Mémoire                | pic navigateur ≤ 1,5 Gio au prototype ; cible MVP ≤ 1,2 Gio                       |
-| Artefacts              | ≤ 500 Mio transférés par application au premier usage, inventaire détaillé publié |
-| Écriture acquittée     | RPO 0 après la barrière durable du guest                                          |
-| Récupération           | dernière génération valide trouvée en ≤ 60 s hors temps de boot VM                |
-| Coupures injectées     | 100 % des points donnent ancien état, nouvel état ou erreur explicite             |
-| Export                 | archive ≤ 2× la taille logique utilisée ; surmémoire de streaming ≤ 64 Mio        |
-| Restauration           | empreinte vérifiée avant première mutation ; aucune écriture sur incompatibilité  |
-| Multi-onglets          | jamais deux écrivains ; relais ou refus explicite en ≤ 5 s                        |
-| Accessibilité          | parcours coquille conformes WCAG 2.2 AA avant qualification produit               |
+| Attribut               | Seuil de sortie du jalon concerné                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------ |
+| Installation           | `npm ci` + navigateurs reproductibles depuis un clone vierge                         |
+| Premier boot de preuve | p95 ≤ 15 min, aucun timeout silencieux                                               |
+| Reprise locale au MVP  | cible p95 ≤ 60 s ; **gate fermé** (mesuré ~94 s), voie de qualification par ADR 0005 |
+| Mémoire                | pic navigateur ≤ 1,5 Gio au prototype ; cible MVP ≤ 1,2 Gio                          |
+| Artefacts              | ≤ 500 Mio transférés par application au premier usage, inventaire détaillé publié    |
+| Écriture acquittée     | RPO 0 après la barrière durable du guest                                             |
+| Récupération           | dernière génération valide trouvée en ≤ 60 s hors temps de boot VM                   |
+| Coupures injectées     | 100 % des points donnent ancien état, nouvel état ou erreur explicite                |
+| Export                 | archive ≤ 2× la taille logique utilisée ; surmémoire de streaming ≤ 64 Mio           |
+| Restauration           | empreinte vérifiée avant première mutation ; aucune écriture sur incompatibilité     |
+| Multi-onglets          | jamais deux écrivains ; relais ou refus explicite en ≤ 5 s                           |
+| Accessibilité          | parcours coquille conformes WCAG 2.2 AA avant qualification produit                  |
 
 Le budget de premier boot accepte temporairement la réalité de l'émulation ; il ne vaut pas
 validation produit. La cible à 60 secondes est un gate : snapshot cohérent, autre stratégie de
 reprise ou changement de runtime devront être évalués plutôt que d'abaisser silencieusement
-l'exigence.
+l'exigence. Cette évaluation est faite dans
+[ADR 0005](decisions/0005-qualification-de-la-reprise.md) : la voie retenue est l'instantané lié à
+une génération arrêtée, la cible reste 60 s, et le gate **reste fermé** jusqu'à sa mesure sur
+l'environnement de référence.
 
 Le premier boot mesuré sur la fixture de #5 tient largement sous ce budget, mais il le doit à une
 image dépouillée — un seul service, aucune base serveur, aucun processus de fond — et à un disque
@@ -135,13 +138,39 @@ lieu de dix) : ces chiffres valent comme premier ordre de grandeur, pas comme re
 | Reprise à froid, 3 essais  | 94,5 s, 92,2 s, 162,1 s → **p50 = 94,5 s, p95 = 162,1 s**         |
 
 **Le p95 de reprise dépasse la cible de 60 s.** Conformément au budget ci-dessus, un dépassement
-n'abaisse pas l'exigence en silence : il **exigera un ADR** de qualification produit — snapshot
-cohérent, autre stratégie de reprise ou changement de runtime — avant de trancher. Ce n'est pas
-demandé maintenant : la tranche #7 prouve que la reprise **fonctionne** hors ligne à froid, pas
-qu'elle tient déjà le budget. Le troisième essai (162 s) est un point isolé — vraisemblablement une
-contention machine ou un ramasse-miettes — que le protocole à dix essais de l'environnement de
-référence départagera. La cause du surcoût par rapport au boot en mémoire de #5 est attendue : le
-disque est servi depuis OPFS, non depuis la RAM.
+n'abaisse pas l'exigence en silence : il **exige un ADR** de qualification produit. Cet ADR est
+désormais rendu — [ADR 0005](decisions/0005-qualification-de-la-reprise.md), accepté : la voie de
+qualification retenue est un **instantané mémoire lié à une génération proprement arrêtée**, et **le
+gate reste fermé** tant qu'il n'est pas construit puis mesuré sur l'environnement de référence. La
+tranche #7 prouve que la reprise **fonctionne** hors ligne à froid, pas qu'elle tient le budget.
+
+### Décomposition mesurée de la reprise (#60)
+
+Relevé du 2026-08-24, `npm run test:e2e`, **même machine de développement** que #7 (donc pas
+l'environnement de référence), trois reprises. Le troisième essai aberrant de #7 (162 s) **ne s'est
+pas reproduit** : p50 92,4 s, p95 94,1 s — ce qui conforte l'hypothèse d'un point isolé (contention
+ou ramasse-miettes) que le protocole à dix essais de l'environnement de référence départagera. Même
+sans cette aberration, le p95 dépasse la cible de ~57 %.
+
+La décomposition est **outillée** (jalons `performance.now()` et repères du flux série brut du
+guest, publiés dans `reports/e2e/reprise-boot-froid.json`, champ `repriseTimeline`) et non
+modélisée. Un jalon jamais atteint reste `null`. Valeurs représentatives des trois essais, de
+`emulator.run()` à la première réponse `/vault/health` :
+
+| Étape                                            |     Durée |      Part |
+| ------------------------------------------------ | --------: | --------: |
+| Instanciation v86 + WebAssembly + contrôleur IDE |   ~130 ms |      ~0 % |
+| BIOS → premier octet série                       |    ~3,4 s |      ~4 % |
+| Boot noyau → init (montage `/app`)               |   ~15,5 s |     ~17 % |
+| Montage du disque applicatif OPFS (`/dev/sdb`)   |    ~65 ms |      ~0 % |
+| **Boot Puma/Rails → première `/vault/health`**   | **~73 s** | **~79 %** |
+| **Total (`healthMilliseconds`)**                 | **~92 s** |     100 % |
+
+Deux enseignements portent l'ADR 0005 : le **boot de Puma/Rails sur l'i386 émulé domine** (~79 %),
+et le **backend OPFS n'est pas le goulot** (montage ~65 ms). L'hypothèse de #7 — le surcoût
+viendrait de ce que le disque est servi depuis OPFS — est donc infirmée pour la part dominante : le
+coût est du CPU émulé, non de la latence OPFS. Aucune optimisation de boot à froid ne peut à elle
+seule tenir 60 s, puisque le seul boot Rails (~73 s) dépasse déjà la cible.
 
 La mémoire publiée par le relevé (`memoireTasJs`) est le **tas JS de la page**, pas l'empreinte de
 la VM : v86 et ses 512 Mio de RAM invitée vivent dans le Worker, que `performance.memory` de la page
