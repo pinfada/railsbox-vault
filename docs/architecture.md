@@ -182,6 +182,48 @@ par les tentatives du noyau, une faute persistante devient une erreur d'E/S, une
 bloque le périphérique. Le tableau figure dans
 [`docs/spikes/0004-backend-de-blocs-v86.md`](spikes/0004-backend-de-blocs-v86.md).
 
+## Budget de stockage : quota, persistance, espace insuffisant
+
+L'issue #9 ajoute au-dessus des erreurs contractuelles une couche de **budget** qui ne touche ni
+OPFS ni le handle exclusif (#8) : elle estime l'espace, demande la persistance quand elle existe, et
+transforme quatre situations en **diagnostics stables**. Un diagnostic porte toujours un **code
+stable**, l'**opération** concernée et une **action de récupération sûre**, sans jamais exposer le
+contenu de l'utilisateur. Le code vit dans `src/vm/storage-budget.mjs` ; son rendu accessible (rôle
+ARIA + texte) dans `src/vm/storage-budget-messages.mjs`.
+
+Cette couche **détecte et diagnostique** ; elle ne tranche aucune politique produit. La conduite à
+tenir sur un refus de persistance est laissée à #42, qui décidera à partir de ce diagnostic.
+
+| Code                                | Situation                                                             |
+| ----------------------------------- | --------------------------------------------------------------------- |
+| `VAULT_BUDGET_PERSIST_DENIED`       | `persist()` refusé : poursuite volatile ou arrêt, jamais durable      |
+| `VAULT_BUDGET_PERSIST_UNSUPPORTED`  | `persist()`/`persisted()` absents : aucune durabilité inventée        |
+| `VAULT_BUDGET_ESTIMATE_UNAVAILABLE` | `estimate()` indisponible : état `unknown`, jamais zéro capacité      |
+| `VAULT_BUDGET_SPACE_LOW`            | espace estimé < besoin, mesuré **avant** toute mutation               |
+| `VAULT_BUDGET_QUOTA_EXCEEDED`       | quota dépassé pendant write/flush : volume préservé, non réinitialisé |
+
+Quatre invariants gouvernent ces états :
+
+- **un refus de `navigator.storage.persist()` n'est ni une erreur ni une promesse de durabilité.**
+  Comme #2 l'a mesuré, `persist()` est refusé sans geste utilisateur (verdict `denied`, pas
+  `error`). Le diagnostic qualifie une poursuite explicitement volatile ou un arrêt ; il ne rend
+  jamais `durable` vrai sur un refus ;
+- **l'espace insuffisant est avertí AVANT la mutation.** `reserve(besoin)` compare le besoin à
+  l'espace estimé disponible et rend un avertissement `VAULT_BUDGET_SPACE_LOW` avant qu'aucune
+  écriture ne soit tentée ;
+- **le quota dépassé pendant l'écriture préserve le volume.** #6 le remonte déjà comme
+  `StorageError` typée sans réinitialiser le volume ; `classifyWriteFailure` le requalifie en
+  diagnostic de budget en préservant l'état — `volumeReset: false`, `priorDataReadable: true` — et
+  ne réétiquette jamais les autres états typés de #6, qui ne lui appartiennent pas ;
+- **une estimation indisponible est l'état `unknown`, pas une capacité nulle.** Traiter l'inconnu
+  comme zéro bloquerait à tort une coquille saine ; `reserve` rend alors un verdict indéterminé
+  (`sufficient: null`), jamais insuffisant.
+
+**Aucune récupération ne supprime de données.** Les actions publiées (`RECOVERY_ACTIONS`) informent,
+proposent un export ou invitent l'utilisateur à libérer de l'espace lui-même, puis laissent la
+couche supérieure décider. Un test de contrat exige qu'aucun texte d'action ne propose d'effacer, de
+purger ou de réinitialiser. Le nettoyage automatique et l'achat de stockage sont hors périmètre.
+
 ## Contrat de barrière de durabilité
 
 L'issue #14 ferme la barrière de bout en bout que #6 avait laissée ouverte : #6 avait prouvé que la

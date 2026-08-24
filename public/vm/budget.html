@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RailsBox Vault — banc du budget de stockage (#9)</title>
+  </head>
+  <body>
+    <h1>Banc du budget de stockage</h1>
+    <p>
+      Cette page mesure le budget de stockage sur le vrai <code>navigator.storage</code> :
+      estimation, demande de persistance et réservation. Elle n'ouvre aucun volume et ne détient
+      aucun handle : la couche budget diagnostique, elle n'écrit pas.
+    </p>
+    <p id="etat">Prêt.</p>
+    <!-- Région vivante où la coquille pose le message accessible du diagnostic. -->
+    <div id="annonce"></div>
+    <pre id="rapport"></pre>
+    <script type="module" src="./budget-banc.mjs"></script>
+  </body>
+</html>
