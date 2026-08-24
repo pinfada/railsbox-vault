@@ -125,6 +125,35 @@ n'affirment pas : la reprise d'une application Rails après fermeture complète 
 de quota côté produit (#9). L'accès concurrent multi-onglets (#8) est désormais couvert (voir « Bail
 d'écriture » ci-dessous). Le quota n'est ici qu'un état détecté et nommé.
 
+### Conduite sur refus de persistance
+
+La couche de conduite de `VAULT-PERSIST-001` (#42) — `src/vm/persistence-conduct.mjs` et son rendu
+accessible `src/vm/persistence-conduct-messages.mjs` — se pose au-dessus du diagnostic de budget de
+#9 (qu'elle importe sans le modifier) et décide de la conduite produit : quand demander la
+persistance, ce que la coquille affiche, et quelle promesse de durabilité elle fait. Elle est
+prouvée sur **deux** niveaux.
+
+| Niveau     | Fichier                                      | Support                            | Rattachement    |
+| ---------- | -------------------------------------------- | ---------------------------------- | --------------- |
+| unitaire   | `tests/unit/vm-persistence-conduct.test.mjs` | logique pure                       | `npm run check` |
+| navigateur | `tests/browser/persistence-conduct.spec.mjs` | **vrai** DOM + `navigator.storage` | `npm run check` |
+
+**Le niveau unitaire couvre chaque conduite** avec des verdicts déterministes et des verdicts réels
+produits par les doubles de #9 : la règle « demander derrière un geste, jamais au chargement », les
+cinq états de coquille (consentement requis, durable garanti, attente pendante, poursuite volatile
+qualifiée, arrêt), la promesse de durabilité à trois valeurs, la réutilisation réelle du diagnostic
+de refus de #9, le refus typé d'un verdict inconnu et l'absence de toute action de suppression.
+L'**invariant central** — une durabilité `GARANTIE` n'existe que derrière une persistance réellement
+accordée — est éprouvé sur **toutes** les combinaisons de verdict × geste × choix, l'attente
+pendante comprise (traitée comme non accordée, donc jamais durable).
+
+**Le niveau navigateur mesure le rendu réel** : l'état de coquille, la promesse de durabilité et le
+message accessible (rôle ARIA `status`) sont posés dans un vrai DOM et relus, et l'invariant est
+vérifié sur le verdict **réel** rendu par le vrai `navigator.storage` sans geste. Les branches de
+logique restent prouvées par le niveau unitaire ; les rejouer dans le navigateur n'apprendrait rien
+de plus que le rendu déjà vérifié. La décision complète est
+l'[ADR 0006](decisions/0006-conduite-refus-persistance.md).
+
 ### Bail d'écriture (multi-onglets)
 
 Le bail d'écriture de `VAULT-PERSIST-002` (#8) est prouvé sur **deux** niveaux : la machine à états
