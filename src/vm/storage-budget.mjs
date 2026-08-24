@@ -82,7 +82,16 @@ export class BudgetDiagnostic {
    * @param {string} [détail.recovery] une valeur de `RECOVERY_ACTIONS`
    * @param {Record<string, unknown>} [détail.context] contexte structuré, sans contenu utilisateur
    */
-  constructor(code, { operation, severity = BUDGET_SEVERITY.warning, message = "", recovery = RECOVERY_ACTIONS.informUser, context = {} } = {}) {
+  constructor(
+    code,
+    {
+      operation,
+      severity = BUDGET_SEVERITY.warning,
+      message = "",
+      recovery = RECOVERY_ACTIONS.informUser,
+      context = {},
+    } = {},
+  ) {
     if (!KNOWN_CODES.has(code)) {
       throw new Error(`Code de diagnostic de budget inconnu : ${code}`);
     }
@@ -197,7 +206,7 @@ export function createStorageBudget({ estimate, persist, persisted } = {}) {
       return { operation: "persist", state: "already", durable: true, diagnostic: null };
     }
 
-    let granted = false;
+    let granted;
     try {
       granted = (await persist()) === true;
     } catch {
@@ -227,7 +236,9 @@ export function createStorageBudget({ estimate, persist, persisted } = {}) {
 
   async function reserve(requiredBytes) {
     if (!isNumericBytes(requiredBytes)) {
-      throw new TypeError(`Le besoin de réservation doit être un nombre d'octets ≥ 0 : ${requiredBytes}`);
+      throw new TypeError(
+        `Le besoin de réservation doit être un nombre d'octets ≥ 0 : ${requiredBytes}`,
+      );
     }
     const mesure = await measure();
     if (mesure.state === "unknown") {

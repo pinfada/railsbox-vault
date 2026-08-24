@@ -72,6 +72,35 @@ une API présente peut refuser à l'exécution — puis :
 npm run test:browser:moteurs -- chromium,firefox,webkit   # 15 épreuves, les trois moteurs verts
 ```
 
+### Budget de stockage : quota, persistance, espace insuffisant
+
+La couche budget de `VAULT-PERSIST-001` (#9) — `src/vm/storage-budget.mjs` et son rendu accessible
+`src/vm/storage-budget-messages.mjs` — est prouvée sur **deux** niveaux. Elle ne touche ni OPFS ni
+le handle exclusif : elle estime, demande la persistance quand elle existe, et transforme refus,
+espace faible, quota dépassé et estimation indisponible en **diagnostics stables**.
+
+| Niveau     | Fichier                                 | Support                            | Rattachement    |
+| ---------- | --------------------------------------- | ---------------------------------- | --------------- |
+| unitaire   | `tests/unit/vm-storage-budget.test.mjs` | doubles déterministes              | `npm run check` |
+| navigateur | `tests/browser/storage-budget.spec.mjs` | **vrai** `navigator.storage`, page | `npm run check` |
+
+**Le niveau unitaire couvre tous les scénarios d'acceptation** avec des doubles déterministes
+d'`estimate`/`persist`/`persisted` et des `StorageError` typées de #6 : estimation connue et
+inconnue (état `unknown`, jamais zéro capacité), refus de persistance (jamais durable),
+avertissement d'espace faible **avant** mutation, quota dépassé pendant write/flush (volume
+préservé, ancienne donnée lisible) et absence de fuite de contenu dans le message. Un test de
+contrat exige qu'aucune action de récupération publiée ne propose d'effacer, de purger ou de
+réinitialiser des données.
+
+**Le niveau navigateur mesure les branches réellement atteignables** sur le vrai
+`navigator.storage`, dans la page : estimation réelle, demande de persistance réelle (l'invariant «
+un refus n'est jamais durable » tient quel que soit le verdict du moteur sans geste utilisateur),
+réservation réelle, et le rendu d'un diagnostic dans un vrai DOM — une erreur en `role="alert"`, un
+avertissement en `role="status"`. Les branches d'absence d'API et la vraie saturation du disque
+restent prouvées par les doubles : les provoquer réellement dégraderait le moteur ou remplirait le
+disque sans rien prouver de plus. Mesuré le 2026-08-24 : **4 épreuves vertes en 3,2 s** sous
+Chromium, sans réseau ni artefact.
+
 Cette conduite suit celle des épreuves COOP/COEP de la frontière d'origine : mesurer partout,
 asserter là où la capacité existe, et ne jamais rendre vert un relevé qui n'a rien mesuré.
 

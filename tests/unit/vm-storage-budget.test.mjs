@@ -300,10 +300,7 @@ test("un diagnostic porte toujours code stable, opération et action connue", ()
 });
 
 test("BudgetDiagnostic refuse un code inconnu", () => {
-  assert.throws(
-    () => new BudgetDiagnostic("VAULT_BUDGET_INVENTÉ", { operation: "x" }),
-    /inconnu/i,
-  );
+  assert.throws(() => new BudgetDiagnostic("VAULT_BUDGET_INVENTÉ", { operation: "x" }), /inconnu/i);
 });
 
 test("BudgetDiagnostic gèle son contexte et se sérialise pour postMessage", () => {
