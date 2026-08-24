@@ -74,7 +74,9 @@ export function acquireWriteLease({
     throw new TypeError("acquireWriteLease exige un ouvreur de handle (openHandle).");
   }
   if (!locks || typeof locks.request !== "function") {
-    throw new TypeError("Web Locks est indisponible : le bail d'écriture ne peut pas être arbitré.");
+    throw new TypeError(
+      "Web Locks est indisponible : le bail d'écriture ne peut pas être arbitré.",
+    );
   }
 
   const lockName = lockNameFor(volume);

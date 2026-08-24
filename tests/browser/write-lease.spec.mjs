@@ -30,7 +30,10 @@ const attendreEtat = (page, state, options) =>
   page.evaluate(({ s, o }) => globalThis.bancBail.attendreEtat(s, o), { s: state, o: options });
 
 const attendreStatut = (page, uiStatus, options) =>
-  page.evaluate(({ s, o }) => globalThis.bancBail.attendreStatut(s, o), { s: uiStatus, o: options });
+  page.evaluate(({ s, o }) => globalThis.bancBail.attendreStatut(s, o), {
+    s: uiStatus,
+    o: options,
+  });
 
 /** Ce moteur ouvre-t-il un handle OPFS exclusif dans un Worker ? Sinon, le bail n'a pas de support. */
 async function porteOpfs(page) {
