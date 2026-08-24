@@ -28,6 +28,14 @@ d'un downgrade de runtime (`VAULT_MANIFEST_RUNTIME_DOWNGRADE`), et la distinctio
 tolérée / écriture refusée y sont implémentés et prouvés en unitaire. La reprise de migration et les
 vecteurs par version restent réservés à #13.
 
+Depuis #11, l'**export de sauvegarde** est implémenté (`src/vm/volume-export.mjs`,
+[ADR 0008](decisions/0008-format-d-archive-d-export.md)) : une archive versionnée
+(`archiveFormatVersion`) lie le manifeste au contenu du volume et à son **empreinte SHA-256** — l'«
+inventaire des artefacts et empreintes de contenu » exigé ci-dessous. `verifyArchive` recalcule
+l'empreinte et valide le manifeste ; une archive tronquée ou altérée est refusée par une erreur
+typée. L'archive v1 prouve l'intégrité mais n'est **ni chiffrée ni signée** (jalon 4) ; la
+restauration inter-origine est #12.
+
 ## Publication
 
 Une version publiable exige :

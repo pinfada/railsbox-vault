@@ -453,6 +453,60 @@ structurellement mais n'est ni calculé ni confronté au contenu —, la restaur
 (#12), le détail des migrations et le copy-on-write (#13), et l'authentification ou le chiffrement
 du manifeste lui-même.
 
+## Export portable et vérifiable
+
+L'issue #11 (`VAULT-PORT-001`) transforme le manifeste de #10, jusqu'ici sans empreinte de contenu,
+en un **export portable, complet et vérifiable** d'un point cohérent du volume. Le code vit dans
+`src/vm/volume-export.mjs` ; le format est figé par
+l'[ADR 0008](decisions/0008-format-d-archive-d-export.md).
+
+Une **archive** lie, en un conteneur binaire, le manifeste v1 de #10 — avec son `identity.digest`
+désormais **renseigné** — au contenu intégral du volume et à son empreinte SHA-256. Sa disposition,
+append-only donc streamable :
+
+```text
+[ marqueur 8 o ][ longueur d'en-tête uint32 BE 4 o ][ en-tête JSON H o ][ contenu N o ]
+```
+
+Le marqueur `RBVAULT1` reconnaît une archive avant toute interprétation ; l'en-tête JSON porte le
+manifeste (digest renseigné) et un descripteur de contenu (`algorithm`, `digest`, `length`,
+`consistency`) ; le contenu est le volume octet pour octet. Le surcoût se limite au préambule et à
+l'en-tête (quelques centaines d'octets) : l'archive tient donc **très en deçà de 2× la taille
+logique** (`docs/quality-attributes.md`).
+
+Trois propriétés la gouvernent :
+
+- **Streaming à surmémoire bornée.** L'export lit et empreinte le volume PAR BLOCS ; il ne le tient
+  jamais entier en mémoire (budget ≤ 64 Mio). WebCrypto n'offrant aucun hachage incrémental et
+  `node:crypto` étant absent du Worker (ADR 0002), l'empreinte est calculée par un **hachage SHA-256
+  incrémental portable** (`src/vm/sha256-stream.mjs`), calibré contre `crypto.subtle.digest`.
+  `writeArchive` fait deux passes sur la source relisible : empreinter, puis recopier.
+- **Point cohérent exigé, non pris.** L'export ne prend pas le bail lui-même : il **exige** que
+  l'appelant déclare la garantie sous laquelle le point est tenu — `handle-exclusif` (#6),
+  `bail-ecrivain-unique` (#8) ou `barriere-acquittee` (#14) — et l'inscrit dans l'archive. Un export
+  sans garantie est refusé. L'atomicité complète d'une génération sous écriture concurrente reste
+  réservée à **#16**.
+- **Vérifiabilité.** `verifyArchive(bytes)` recalcule l'empreinte du contenu et valide le manifeste
+  par #10. Les échecs sont typés, jamais silencieux : `VAULT_ARCHIVE_MALFORMED`,
+  `VAULT_ARCHIVE_TRUNCATED`, `VAULT_ARCHIVE_DIGEST_MISMATCH`, `VAULT_ARCHIVE_GEOMETRY_MISMATCH`. Un
+  manifeste incompatible remonte comme `ManifestError` de #10, propagée telle quelle.
+
+Ces erreurs forment une famille **distincte** des états de stockage (#6), du bail (#8) et du
+manifeste (#10), avec la même forme transportable (`code`, message français, contexte, `toJSON`),
+dans `src/vm/archive-errors.mjs` :
+
+| Code                              | État                                                           | Origine |
+| --------------------------------- | -------------------------------------------------------------- | ------- |
+| `VAULT_ARCHIVE_MALFORMED`         | marqueur/en-tête méconnaissable, digests internes divergents   | **#11** |
+| `VAULT_ARCHIVE_TRUNCATED`         | archive plus courte que ce que l'en-tête déclare               | **#11** |
+| `VAULT_ARCHIVE_DIGEST_MISMATCH`   | empreinte recalculée ≠ empreinte inscrite : contenu altéré     | **#11** |
+| `VAULT_ARCHIVE_GEOMETRY_MISMATCH` | longueur de contenu incohérente avec la géométrie du manifeste | **#11** |
+
+Ce que l'export v1 **ne** couvre pas : la restauration inter-origine (#12, qui réhydrate un volume
+depuis une archive), le chiffrement et la **signature** de l'archive (jalon 4 — l'archive v1 prouve
+l'INTÉGRITÉ, pas l'AUTHENTICITÉ : un support hostile peut la forger), l'atomicité d'une génération
+sous écriture concurrente (#16), et la compression.
+
 ## Ordre des preuves
 
 1. Persistance locale non chiffrée avec redémarrage complet de la VM.
