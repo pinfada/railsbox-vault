@@ -192,7 +192,9 @@ contenu de l'utilisateur. Le code vit dans `src/vm/storage-budget.mjs` ; son ren
 ARIA + texte) dans `src/vm/storage-budget-messages.mjs`.
 
 Cette couche **détecte et diagnostique** ; elle ne tranche aucune politique produit. La conduite à
-tenir sur un refus de persistance est laissée à #42, qui décidera à partir de ce diagnostic.
+tenir sur un refus de persistance est décidée par #42 (voir « Conduite sur refus de persistance »
+ci-dessous et l'[ADR 0006](decisions/0006-conduite-refus-persistance.md)), qui se pose au-dessus de
+ce diagnostic sans le modifier.
 
 | Code                                | Situation                                                             |
 | ----------------------------------- | --------------------------------------------------------------------- |
@@ -223,6 +225,39 @@ Quatre invariants gouvernent ces états :
 proposent un export ou invitent l'utilisateur à libérer de l'espace lui-même, puis laissent la
 couche supérieure décider. Un test de contrat exige qu'aucun texte d'action ne propose d'effacer, de
 purger ou de réinitialiser. Le nettoyage automatique et l'achat de stockage sont hors périmètre.
+
+## Conduite sur refus de persistance
+
+L'issue #42 se pose **au-dessus** du diagnostic de #9 : #9 qualifie un verdict de `persist()` ; #42
+décide de la **conduite produit**. Le code vit dans `src/vm/persistence-conduct.mjs` ; son rendu
+accessible dans `src/vm/persistence-conduct-messages.mjs`. Il **réutilise** la couche de budget de
+#9 (import, pas copie) et ne la modifie pas. La décision complète est
+l'[ADR 0006](decisions/0006-conduite-refus-persistance.md).
+
+À partir d'un verdict de persistance et du contexte (geste utilisateur, choix), la conduite produit
+un **état de coquille** explicite et une **promesse de durabilité à trois valeurs** — jamais un
+booléen, jamais une promesse fausse :
+
+| Verdict de persistance                 | État de coquille               | Promesse de durabilité |
+| -------------------------------------- | ------------------------------ | ---------------------- |
+| aucune demande, aucun geste            | `CONSENTEMENT_REQUIS`          | `INCONNUE`             |
+| `granted` / `already`                  | `DURABLE_GARANTI`              | `GARANTIE`             |
+| `pending` (Firefox, invite en attente) | `ATTENTE_RESOLUTION`           | `INCONNUE`             |
+| `denied` / `unsupported` + poursuite   | `POURSUITE_VOLATILE_QUALIFIEE` | `NON_GARANTIE`         |
+| `denied` / `unsupported` + arrêt       | `ARRET`                        | `NON_GARANTIE`         |
+
+Trois règles la gouvernent :
+
+- **la persistance n'est demandée que derrière un geste utilisateur explicite**, jamais au
+  chargement — #2 a mesuré qu'une demande sans geste est refusée d'office, et l'ADR 0002 confie le
+  consentement à la coquille. `shouldRequestPersistence` l'énonce : au chargement, on lit
+  `persisted()` sans geste, et l'on attend un geste avant d'appeler `persist()` ;
+- **une durabilité `GARANTIE` n'existe que derrière une persistance réellement accordée**
+  (`granted`/`already`). C'est la traduction produit de `SEC-DURABLE-001`, éprouvée sur toutes les
+  combinaisons de verdict × geste × choix ;
+- **une attente pendante est traitée comme non accordée**, donc jamais durable. Elle halte la
+  décision (`ATTENTE_RESOLUTION`) au lieu de trancher à la place du navigateur, puis la conduite est
+  réévaluée avec le verdict résolu.
 
 ## Contrat de barrière de durabilité
 

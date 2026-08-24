@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RailsBox Vault — banc de conduite de persistance (#42)</title>
+  </head>
+  <body>
+    <h1>Banc de conduite de persistance</h1>
+    <p>
+      Cette page exerce la couche de conduite (#42) au-dessus du diagnostic de budget (#9). Elle
+      calcule, pour un verdict de persistance donné, l'état de coquille et la promesse de
+      durabilité, puis pose le message accessible dans une région vivante du DOM. Elle n'ouvre aucun
+      volume et ne détient aucun handle : la conduite décide, elle n'écrit pas.
+    </p>
+    <p id="etat">Prêt.</p>
+    <!-- État de coquille et promesse de durabilité, lus par le test dans le DOM, jamais un booléen. -->
+    <p id="coquille" data-shell-state="" data-durability=""></p>
+    <!-- Région vivante où la coquille pose le message accessible de la conduite. -->
+    <div id="annonce"></div>
+    <pre id="rapport"></pre>
+    <script type="module" src="./conduite-banc.mjs"></script>
+  </body>
+</html>
