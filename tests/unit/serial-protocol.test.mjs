@@ -10,7 +10,7 @@ import {
   creerAssembleurReponses,
   decouperReponseHttp,
   octetsDepuisBase64,
-} from "../../tools/vm/serial-protocol.mjs";
+} from "../../src/vm/serial-protocol.mjs";
 
 const encodeur = new TextEncoder();
 
