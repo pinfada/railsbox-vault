@@ -21,6 +21,13 @@ implicitement de la version npm.
 - reprise déterministe après interruption de migration ;
 - vecteurs de test conservés pour chaque version publiée.
 
+Depuis #10, ces trois identités sont portées par un **manifeste versionné**
+(`src/vm/volume-manifest.mjs`, [ADR 0007](decisions/0007-manifeste-de-volume.md)) : la lecture d'une
+version connue avant écriture, le refus typé d'un format futur (`VAULT_MANIFEST_FORMAT_TOO_NEW`) et
+d'un downgrade de runtime (`VAULT_MANIFEST_RUNTIME_DOWNGRADE`), et la distinction lecture seule
+tolérée / écriture refusée y sont implémentés et prouvés en unitaire. La reprise de migration et les
+vecteurs par version restent réservés à #13.
+
 ## Publication
 
 Une version publiable exige :

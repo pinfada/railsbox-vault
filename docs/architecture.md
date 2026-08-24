@@ -394,6 +394,65 @@ Le bail ajoute une erreur typée, distincte des états de stockage de #6 :
 Elle porte l'état source et l'événement refusé. Un refus de délai côté transport reste, lui, un état
 de bail (`refus`), pas une exception : le contexte l'affiche en `conflit` et peut réessayer.
 
+## Manifeste de volume et compatibilité
+
+L'issue #10 (`VAULT-PORT-001`, `VAULT-COMPAT-001`) donne une représentation aux trois identités
+indépendantes de `docs/release-policy.md`. Le **manifeste versionné** (`src/vm/volume-manifest.mjs`)
+est le document qui lie, pour un volume donné, la version entière du **format**, la version SemVer
+du **runtime**, l'identité immuable et la version de l'**application**, et la **géométrie** immuable
+de #6. C'est le socle de l'export (#11) et de la restauration inter-origine (#12). C'est un contrat
+de format persistant, figé par l'[ADR 0007](decisions/0007-manifeste-de-volume.md).
+
+Le module est **pur et déterministe** : il ne lit ni OPFS, ni le temps, ni le réseau. Sa
+sérialisation est canonique — clés triées récursivement — pour qu'un même manifeste rende toujours
+les mêmes octets, condition d'une empreinte reproductible. `parseManifest` valide le cœur v1 ou lève
+`VAULT_MANIFEST_MALFORMED` : jamais un objet à moitié valide. Il tolère les champs futurs
+surnuméraires (compatibilité ascendante) mais exige le préambule figé `magic` + `formatVersion`.
+
+La règle de compatibilité distingue **lecture seule tolérée** et **écriture refusée**, sur deux axes
+indépendants :
+
+| Situation                                               | Lecture | Écriture | Code de refus                       |
+| ------------------------------------------------------- | :-----: | :------: | ----------------------------------- |
+| format plus récent que le format courant du runtime     | refusée | refusée  | `VAULT_MANIFEST_FORMAT_TOO_NEW`     |
+| format sous le plus ancien format lisible               | refusée | refusée  | `VAULT_MANIFEST_FORMAT_TOO_OLD`     |
+| application (`app.id`) différente                       | refusée | refusée  | `VAULT_MANIFEST_IDENTITY_MISMATCH`  |
+| format lisible mais antérieur au format courant         | tolérée | refusée  | `VAULT_MANIFEST_MIGRATION_REQUIRED` |
+| runtime majeur du volume > runtime en cours (downgrade) | tolérée | refusée  | `VAULT_MANIFEST_RUNTIME_DOWNGRADE`  |
+
+Le **format futur** est refusé en lecture comme en écriture : sa disposition n'est pas interprétable
+en confiance. Le **downgrade dangereux** — un volume écrit par un runtime de version majeure
+supérieure — est refusé en écriture seule ; la lecture reste tolérée pour le diagnostic et l'export
+(#11). Seule `app.id` doit correspondre : la version de l'application peut différer, ses migrations
+métier restant distinctes de celles du format Vault.
+
+**Vérification avant écriture (`SEC-UPDATE-001`).**
+`assertVolumeWritable({ manifestBytes, expectations })` est le chemin d'ouverture en écriture : un
+volume sans manifeste identifiable est refusé par `VAULT_MANIFEST_UNIDENTIFIED` — jamais d'écriture
+sur un support non identifié — et un manifeste incompatible propage son refus typé. Identité et
+version sont donc exigées et vérifiées **avant** que l'écriture soit autorisée, conformément au
+cycle de vie de référence (« la coquille vérifie identités et compatibilité avant de demander une
+clé »).
+
+Les erreurs du manifeste forment une famille **distincte** des états de stockage de #6 et du bail de
+#8, avec la même forme transportable (`code`, message français, contexte, `toJSON`) :
+
+| Code                                | État                                                           | Origine |
+| ----------------------------------- | -------------------------------------------------------------- | ------- |
+| `VAULT_MANIFEST_MALFORMED`          | l'entrée n'est pas structurellement un manifeste v1            | **#10** |
+| `VAULT_MANIFEST_FORMAT_TOO_NEW`     | format plus récent que ce runtime : refusé en lecture/écriture | **#10** |
+| `VAULT_MANIFEST_FORMAT_TOO_OLD`     | format sous le plancher lisible de ce runtime                  | **#10** |
+| `VAULT_MANIFEST_MIGRATION_REQUIRED` | format antérieur : écriture refusée jusqu'à migration (#13)    | **#10** |
+| `VAULT_MANIFEST_RUNTIME_DOWNGRADE`  | volume écrit par un runtime majeur plus récent : downgrade     | **#10** |
+| `VAULT_MANIFEST_IDENTITY_MISMATCH`  | l'application en cours ne possède pas ce volume                | **#10** |
+| `VAULT_MANIFEST_UNIDENTIFIED`       | ouverture en écriture d'un volume sans manifeste connu         | **#10** |
+
+Ce que le manifeste v1 **ne** couvre pas, et qu'il ne faut pas en déduire : l'empreinte du
+**contenu** du volume et l'export portable (#11) — `identity.digest` existe et est validé
+structurellement mais n'est ni calculé ni confronté au contenu —, la restauration inter-origine
+(#12), le détail des migrations et le copy-on-write (#13), et l'authentification ou le chiffrement
+du manifeste lui-même.
+
 ## Ordre des preuves
 
 1. Persistance locale non chiffrée avec redémarrage complet de la VM.

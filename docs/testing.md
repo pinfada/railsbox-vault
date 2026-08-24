@@ -195,6 +195,31 @@ deçà des 5 s. La suite est rattachée à `npm run check` : **7,1 s mesurées**
 artefact, aucun réseau. Comme la suite OPFS, elle exige la capacité sous Chromium et, sur un moteur
 sans OPFS synchrone dans le Worker, se contente d'un refus typé sans asserter le reste.
 
+### Manifeste de volume
+
+Le manifeste versionné de `VAULT-PORT-001`/`VAULT-COMPAT-001` (#10) — `src/vm/volume-manifest.mjs`
+et sa famille d'erreurs typées `src/vm/manifest-errors.mjs` — est un **contrat de format** pur. Il
+est donc prouvé à un **seul** niveau, unitaire sous Node : ni OPFS, ni navigateur, ni VM ne sont
+requis pour éprouver une structure, une sérialisation et une règle de compatibilité.
+
+| Niveau   | Fichier                                  | Support | Rattachement    |
+| -------- | ---------------------------------------- | ------- | --------------- |
+| unitaire | `tests/unit/vm-volume-manifest.test.mjs` | aucun   | `npm run check` |
+
+Les vingt épreuves couvrent chaque critère d'acceptation : création et gel d'un manifeste v1, refus
+des entrées invalides à la création, **sérialisation déterministe** (aller-retour stable octet à
+octet et indépendance à l'ordre d'insertion des clés), **parse strict** d'entrées malformées vers
+une erreur typée (jamais un objet à moitié valide), tolérance des champs futurs, compatibilité
+acceptée, puis les **refus** exigés : format futur (lecture et écriture), format trop ancien,
+écriture d'un format antérieur (migration réservée à #13), **downgrade** de runtime majeur,
+application étrangère, et **écriture refusée sans identité connue** (`assertVolumeWritable`,
+`SEC-UPDATE-001`). La décision complète est l'[ADR 0007](decisions/0007-manifeste-de-volume.md).
+
+Ce niveau suffit parce que le module ne dépend d'aucune capacité que seul un vrai support pourrait
+produire : contrairement au backend OPFS (#6), il n'a ni quota, ni handle, ni horloge à éprouver. Le
+calcul de l'empreinte du **contenu** du volume, qui exigera de lire un vrai volume, viendra avec
+l'export (#11) et portera ses propres preuves.
+
 ### Intégration VM
 
 `tests/vm/durability-barrier.spec.mjs` est la preuve de niveau **intégration VM** du spike #4 : un
