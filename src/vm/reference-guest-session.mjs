@@ -43,6 +43,7 @@ const asArrayBuffer = (source) =>
  *   memoryBytes?: number,
  *   mode?: string,
  *   onJournal?: (ligne: string) => void,
+ *   onSerial?: (fragment: string) => void,
  * }} options
  */
 export function createReferenceGuestSession({
@@ -54,6 +55,7 @@ export function createReferenceGuestSession({
   memoryBytes = 512 * 1024 * 1024,
   mode = BRIDGE_MODES.full,
   onJournal = () => {},
+  onSerial = () => {},
 }) {
   if (typeof V86 !== "function")
     throw new TypeError("createReferenceGuestSession exige la classe V86.");
@@ -117,6 +119,12 @@ export function createReferenceGuestSession({
       emulator.add_listener("serial0-output-byte", (byte) => {
         const fragment = decoder.decode(new Uint8Array([byte]), { stream: true });
         transcript += fragment;
+        // `onSerial` reçoit le flux série BRUT (BIOS, noyau, init) tel qu'il sort du guest, avant
+        // le pont `@VLT1`. C'est ce que `onJournal` ne peut pas donner : `onJournal` ne voit que
+        // les lignes applicatives relayées par le pont, une fois celui-ci démarré. Le banc de
+        // reprise s'en sert pour horodater les jalons de boot (montage /dev/sdb, lancement de Puma,
+        // pont série actif) et décomposer le temps de reprise. Aucun effet sur le démarrage.
+        onSerial(fragment);
         client.ingest(fragment);
       });
 
