@@ -38,6 +38,7 @@ import { BlockJournal } from "./block-journal.mjs";
 import { openOpfsVolume } from "./opfs-block-backend.mjs";
 import {
   manifestSidecarName,
+  migrationJournalName,
   openOpfsSyncAccess,
   removeOpfsVolume,
   statOpfsVolume,
@@ -126,13 +127,23 @@ export async function readVolumeManifest(volume, primitives = {}) {
   }
 }
 
-/** Inscrit le manifeste voisin d'un volume. Dernier geste d'une création ou d'une restauration. */
+/**
+ * Inscrit le manifeste voisin d'un volume. Dernier geste d'une création ou d'une restauration.
+ *
+ * Le JOURNAL DE MIGRATION éventuel est retiré au passage (#13). Créer un volume, c'est décider de
+ * tout ce qu'il contient : un journal laissé par une migration interrompue sur un volume du même nom
+ * ne décrit plus rien. Le garder ne serait pas seulement inutile — il ferait AUTORITÉ sur le format
+ * de départ à la prochaine migration, et rendrait le volume neuf non migrable jusqu'à un nettoyage
+ * manuel. Ce retrait n'efface donc jamais l'indice d'une migration en cours : celle-ci n'écrit pas
+ * de manifeste par ce chemin.
+ */
 export async function writeVolumeManifest(
   volume,
   manifest,
-  { writeFile = writeSidecarBytes } = {},
+  { writeFile = writeSidecarBytes, removeFile = removeOpfsVolume } = {},
 ) {
   await writeFile(manifestSidecarName(volume), serializeManifest(manifest));
+  await removeFile(migrationJournalName(volume));
 }
 
 /** Retire le manifeste voisin : le volume cesse d'être identifié, donc d'être inscriptible. */

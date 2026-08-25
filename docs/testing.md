@@ -391,9 +391,22 @@ depuis le support, application et taille comparées — avec son refus
 jamais un verdict conforme ; le journal qui porte son marqueur, sa chaîne et la preuve retenue ; le
 journal **illisible refusé sans être supprimé** ; la reprise qui repart du manifeste **source** du
 journal **sans redemander la sauvegarde** ; le journal resté derrière un manifeste déjà migré,
-simplement retiré (idempotence) ; le manifeste **relu** divergent qui laisse le volume non identifié
-; et les refus de #10 propagés **tels quels** (volume sans manifeste, application étrangère, format
-futur).
+simplement retiré (idempotence) — mais **seulement s'il vise bien ce format** ; le manifeste
+**relu** divergent qui laisse le volume non identifié ; et les refus de #10 propagés **tels quels**
+(volume sans manifeste, application étrangère, format futur).
+
+**Et le fait qu'un journal ne fasse PAS AUTORITÉ**, qui est la seconde moitié du contrat de reprise.
+Un journal peut être le reliquat périmé d'un volume détruit puis recréé sous le même nom. Trois
+épreuves l'imposent, toutes **avant la moindre ouverture** : un journal qui **contredit le manifeste
+présent** est refusé — sans ce contrôle, un journal forgé supplanterait un manifeste sain **et**
+tiendrait lieu de preuve de sauvegarde, faisant inscrire une géométrie et une identité inventées ;
+un manifeste de départ dont la **géométrie ne décrit pas le support** est refusé
+(`VAULT_MIGRATION_GEOMETRY_MISMATCH`) ; un journal **visant un autre format** que celui porté n'est
+pas retiré en silence. Chaque fois, la suite exige que la cible n'ait **pas été ouverte**, que le
+manifeste reste intact et que le journal ne soit **pas** supprimé. Deux épreuves complémentaires
+couvrent l'hygiène : la **création** d'un volume (`vm-opfs-volume-open.test.mjs`) et la
+**restauration** depuis une archive (`vm-opfs-import-target.test.mjs`) retirent le journal voisin
+périmé, sans quoi un volume neuf resterait non migrable à cause d'un indice qui ne décrit plus rien.
 
 **Et surtout la DÉFAILLANCE EN COURS de migration**, qui est le cœur du contrat : une panne est
 injectée à chacun des **cinq** points de rupture — ouverture de la cible, inscription du journal de
@@ -429,7 +442,9 @@ application Rails :
   jamais retéléchargé, et `/vault/invariant` retrouve l'identifiant d'enregistrement et l'empreinte
   SHA-256 de la pièce jointe ActiveStorage du contrat `apps/reference/vault-invariant.json` ;
 - **refus par une « ancienne version »** — un runtime qui ne connaît que le format 1 refuse le
-  volume migré par `VAULT_MANIFEST_FORMAT_TOO_NEW`, en lecture comme en écriture.
+  volume migré par `VAULT_MANIFEST_FORMAT_TOO_NEW`. Ce témoin n'exerce que l'ouverture **en
+  écriture** (`openVolumeForWrite`) : le refus en lecture, qui existe aussi, est prouvé en unitaire
+  seulement.
 
 Les mesures — formats avant/après, empreintes, taille et empreinte de la sauvegarde, preuve retenue,
 durées, et les quatre refus avec leur code — sont écrites dans

@@ -110,7 +110,7 @@ puisque aucun octet ne bouge : ce que le digest attestait (l'état au moment de 
 | 7   | RÉVOQUER                | à partir d'ici, le boot refuse le volume : une migration en cours n'est pas valide |
 | 8   | APPLIQUER puis BARRIÈRE | les octets sont durables avant qu'on prétende les avoir migrés                     |
 | 9   | INSCRIRE puis RELIRE    | écrire n'est pas persister : un manifeste non relu n'est pas déclaré valide        |
-| 10  | RETIRER LE JOURNAL      | dernier geste : sa présence signale **toujours** une migration inachevée           |
+| 10  | RETIRER LE JOURNAL      | dernier geste : sa présence signale un dernier geste **non franchi**               |
 
 Le geste 4 avant le geste 7 reprend la correction de
 l'[ADR 0009](0009-restauration-inter-origine.md) (point B4 de sa revue) : révoquer avant d'avoir le
@@ -121,7 +121,7 @@ handle rendrait inutilisable un volume que l'on n'a finalement pas touché.
 C'est le point où une migration peut mentir le plus facilement. Voici exactement ce que le code
 exige, et ce qu'il vérifie.
 
-**Deux preuves sont admises, et il n'y en a pas de troisième** ni d'implicite :
+**Deux preuves sont admises à l'ENGAGEMENT d'une migration**, et il n'y en a pas de troisième :
 
 1. **une archive de sauvegarde VÉRIFIÉE** (`sauvegarde-verifiee`). L'archive n'est pas _annoncée_ :
    elle est **relue** par `readArchive` de #11 — structure, en-tête, empreinte SHA-256 du contenu
@@ -138,10 +138,29 @@ exige, et ce qu'il vérifie.
 
 2. **un consentement NOMMÉ** (`consentement-nomme`). Un exploitant identifié assume la migration
    sans sauvegarde. `acknowledgedBy` doit être une chaîne non vide — un consentement anonyme n'en
-   est pas un — et il est **inscrit dans le journal**, donc opposable après coup.
+   est pas un — et il est inscrit dans le journal **tant que la migration n'a pas abouti**.
+
+   Il faut le dire exactement : **aucune trace ne subsiste après le succès.** Le geste 10 retire le
+   journal, et rien d'autre ne conserve le consentement. Il sert donc à la REPRISE — repartir sans
+   redemander une preuve déjà donnée — et non à rendre compte après coup.
+
+   C'est un choix, pas un oubli. Persister le consentement supposerait de le porter dans le
+   manifeste, or le manifeste décrit l'IDENTITÉ du volume — format, runtime, application, géométrie,
+   empreinte —, pas l'HISTOIRE des gestes qu'on lui a appliqués. Un champ d'audit y grossirait à
+   chaque migration, changerait des octets qui ne décrivent pas le volume alors que sa sérialisation
+   est déterministe et empreintée, et — le manifeste n'étant ni signé ni authentifié (jalon 4) —
+   serait falsifiable : il donnerait l'apparence d'une responsabilité opposable sans en avoir la
+   substance. Un vrai journal d'audit durable et infalsifiable est une capacité distincte, à décider
+   séparément.
 
 Sans l'une ni l'autre, `VAULT_MIGRATION_BACKUP_REQUIRED` est levé au geste 3 : **la cible n'est pas
 ouverte**, le manifeste n'est pas touché, aucun journal n'est écrit.
+
+Une **reprise** ne fournit ni l'une ni l'autre : elle relit la preuve déjà retenue dans le journal.
+Ce n'est pas une troisième preuve, c'est la même — et le journal qui la porte doit d'abord faire
+autorité, ce que la section suivante détaille : s'accorder octet pour octet avec le manifeste
+présent s'il y en a un, et décrire la géométrie réelle du support. Un journal seul ne vaut jamais
+autorisation de migrer.
 
 Ce que ce contrôle **n'atteste pas** : l'**authenticité** de l'archive — elle n'est ni signée ni
 chiffrée (jalon 4) —, ni qu'elle sera encore là demain. Il atteste que l'archive présentée
@@ -187,6 +206,34 @@ refuse alors par `VAULT_MANIFEST_UNIDENTIFIED`, avant même que v86 ne soit cons
 propriété centrale : **une migration interrompue ne peut pas se faire passer pour un volume
 valide.**
 
+### Un journal n'est pas une AUTORITÉ
+
+Le journal est un **indice** laissé par une migration inachevée, pas une source de vérité supérieure
+au volume. Rien ne garantit qu'un journal trouvé à côté d'un volume décrive CE volume : il peut être
+le reliquat **périmé** d'un volume détruit puis recréé sous le même nom. Trois contrôles
+l'encadrent, tous **avant** la moindre ouverture :
+
+- **il doit s'accorder au manifeste présent.** Si le volume porte encore un manifeste, celui-ci et
+  le `sourceManifest` du journal doivent coïncider **octet pour octet** — c'est exactement ce qu'une
+  interruption entre la journalisation (geste 6) et la révocation (geste 7) laisse derrière elle.
+  Toute divergence lève `VAULT_MIGRATION_JOURNAL_MALFORMED`. Sans ce contrôle, un journal forgé
+  supplanterait un manifeste sain **et** tiendrait lieu de preuve de sauvegarde : la migration
+  inscrirait une géométrie et une identité inventées, puis effacerait le journal, sans laisser de
+  trace ;
+- **la géométrie déclarée doit décrire le support réel.** `source.geometry.volumeSize` est confronté
+  à la taille observée ; l'écart lève `VAULT_MIGRATION_GEOMETRY_MISMATCH`. Un volume n'est jamais
+  retaillé par une migration, et une géométrie ne se devine pas ;
+- **un journal ne se retire que s'il est le reliquat de CETTE migration.** Quand le volume porte
+  déjà le format visé, le journal n'est écarté que si son `to` est bien ce format. Sinon il porte
+  sur autre chose, et l'effacer supprimerait l'indice d'une migration inachevée.
+
+En complément, les chemins qui **recréent** un volume — inscription du manifeste à la création
+(`writeVolumeManifest`) et restauration depuis une archive (`createOpfsImportTarget`) — retirent le
+journal voisin. Un volume dont tous les octets viennent d'être décidés ne doit pas rester non
+migrable à cause du reliquat d'une migration portant sur un contenu qui n'existe plus. Ce retrait
+n'efface jamais l'indice d'une migration en cours : celle-ci n'écrit son manifeste par aucun de ces
+deux chemins.
+
 ### Le nommage réserve le suffixe, et borne le nom des volumes
 
 `.migration` rejoint `.manifest` dans `RESERVED_SIDECAR_SUFFIXES` : aucun volume ne peut porter l'un
@@ -194,6 +241,11 @@ de ces suffixes, sans quoi migrer « donnees » détruirait un volume légitime 
 donnees.migration ». La longueur maximale d'un nom de volume se règle désormais sur le **plus long**
 des voisins réservés, et non sur le seul manifeste — un volume créable reste ainsi toujours un
 volume migrable, au lieu de découvrir trop tard qu'il manque de place pour son journal.
+
+**Conséquence rétroactive, assumée** : `MAX_VOLUME_NAME` passe de 55 à 54 caractères. Un nom de 55
+caractères, valide avant cette décision, est désormais refusé à la création comme à l'ouverture.
+Aucun format n'ayant été publié, aucun volume d'utilisateur n'est concerné ; un banc du dépôt qui
+utiliserait un tel nom devrait le raccourcir.
 
 ## Erreurs ajoutées
 
@@ -203,14 +255,15 @@ différents. « Aucune étape enregistrée vers ce format » n'appelle pas la m�
 sauvegarde ne décrit pas ce volume ». Même forme transportable (`code`, message français, contexte,
 `toJSON`) pour traverser `postMessage`.
 
-| Code                                  | État                                                              |
-| ------------------------------------- | ----------------------------------------------------------------- |
-| `VAULT_MIGRATION_NO_PATH`             | aucune étape enregistrée ne relie le format du volume au demandé  |
-| `VAULT_MIGRATION_DOWNGRADE_REFUSED`   | le format demandé est antérieur : une migration ne descend jamais |
-| `VAULT_MIGRATION_BACKUP_REQUIRED`     | ni sauvegarde vérifiée, ni consentement nommé : rien n'est ouvert |
-| `VAULT_MIGRATION_BACKUP_MISMATCH`     | l'archive ne décrit pas ce volume dans son état courant           |
-| `VAULT_MIGRATION_JOURNAL_MALFORMED`   | journal présent mais illisible : jamais deviné, jamais supprimé   |
-| `VAULT_MIGRATION_VERIFICATION_FAILED` | le manifeste relu diverge de l'inscrit : volume non identifié     |
+| Code                                  | État                                                                            |
+| ------------------------------------- | ------------------------------------------------------------------------------- |
+| `VAULT_MIGRATION_NO_PATH`             | aucune étape enregistrée ne relie le format du volume au demandé                |
+| `VAULT_MIGRATION_DOWNGRADE_REFUSED`   | le format demandé est antérieur : une migration ne descend jamais               |
+| `VAULT_MIGRATION_BACKUP_REQUIRED`     | ni sauvegarde vérifiée, ni consentement nommé : rien n'est ouvert               |
+| `VAULT_MIGRATION_BACKUP_MISMATCH`     | l'archive ne décrit pas ce volume dans son état courant                         |
+| `VAULT_MIGRATION_JOURNAL_MALFORMED`   | journal illisible, contredisant le manifeste présent, ou visant un autre format |
+| `VAULT_MIGRATION_GEOMETRY_MISMATCH`   | le manifeste de départ ne décrit pas la géométrie réelle du support             |
+| `VAULT_MIGRATION_VERIFICATION_FAILED` | le manifeste relu diverge de l'inscrit : volume non identifié                   |
 
 Les refus de #10 (`VAULT_MANIFEST_FORMAT_TOO_NEW`, `..._IDENTITY_MISMATCH`, `..._UNIDENTIFIED`) **ne
 sont pas reconditionnés** : ils remontent tels quels.
@@ -268,7 +321,11 @@ Ces limites sont **connues et assumées**. Aucune n'est corrigée par cette déc
 6. **Le journal peut être séparé de son volume.** L'échec est alors sûr — le volume reste non
    identifié, donc non inscriptible — mais c'est une perte d'usage : sans journal ni manifeste, la
    reprise est impossible et il faut restaurer la sauvegarde ;
-7. **Une seule chaîne à un seul pas est éprouvée en vrai.** `planMigration` compose des chaînes plus
+7. **La matrice de pannes n'est pas complète.** Le double unitaire injecte la panne AVANT l'effet du
+   geste, là où le Worker la déclenche APRÈS ; deux états réels restent donc non couverts — un crash
+   après l'inscription du manifeste mais avant sa relecture, et un crash dans `close()` masquant une
+   erreur antérieure. Suivi : **issue #79** ;
+8. **Une seule chaîne à un seul pas est éprouvée en vrai.** `planMigration` compose des chaînes plus
    longues et ses refus sont couverts en unitaire, mais aucune migration 1 → 3 n'a jamais tourné sur
    un vrai volume : le deuxième pas n'existe pas encore.
 
@@ -279,7 +336,10 @@ Ces limites sont **connues et assumées**. Aucune n'est corrigée par cette déc
 - **Les vecteurs de test conservés par version publiée** (`docs/release-policy.md`) : ils exigent
   qu'une version soit publiée ;
 - **Les migrations métier de l'application Rails**, distinctes des migrations du format Vault
-  (`docs/architecture.md`) ; la version d'application n'entre dans aucun refus.
+  (`docs/architecture.md`) ; la version d'application n'entre dans aucun refus ;
+- **Un journal d'audit durable des migrations**, qui conserverait après succès qui a consenti à
+  migrer sans sauvegarde. Le manifeste n'est pas cet endroit (voir ci-dessus), et un audit
+  falsifiable ne vaut pas mieux que pas d'audit tant que le manifeste n'est pas authentifié.
 
 ## Ce qui est explicitement refusé
 
@@ -292,6 +352,8 @@ Ces limites sont **connues et assumées**. Aucune n'est corrigée par cette déc
 - **Déclarer un manifeste valide sans l'avoir relu depuis le support.** Une relecture divergente le
   retire et laisse le volume non identifié ;
 - **Supprimer ou deviner un journal illisible.** L'écarter est un geste explicite ;
+- **Laisser un journal faire autorité sur le volume.** Il doit s'accorder au manifeste présent et à
+  la géométrie du support, sinon il est refusé — jamais préféré ;
 - **Inventer un `minWriter` pour un manifeste v1.** Chaque format est jugé par sa propre règle.
 
 ## Risques et conditions d'abandon
