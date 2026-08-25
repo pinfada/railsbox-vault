@@ -2,9 +2,23 @@
 //
 // `assertVolumeWritable` existe depuis le manifeste (#10) et `SECURITY.md` en fait un invariant :
 // « jamais d'écriture sur un support non identifié ». Jusqu'ici, pourtant, AUCUN chemin de
-// production ne l'appelait — la règle vivait dans les documents et pas dans le code. Ce module est
-// le point de passage unique qui la rend vraie : toute phase qui va ÉCRIRE dans un volume passe par
-// lui, et personne n'appelle `openOpfsVolume` directement pour écrire.
+// production ne l'appelait — la règle vivait dans les documents et pas dans le code. Ce module la
+// rend vraie. La règle EXACTE, telle que le code la tient, est la suivante :
+//
+//  - un volume IDENTIFIÉ ne s'ouvre en écriture que par `openVolumeForWrite`. Le boot y passe, et un
+//    volume sans manifeste y est refusé par `VAULT_MANIFEST_UNIDENTIFIED` AVANT que v86 ne soit
+//    construit ;
+//  - un volume ANONYME n'est ouvrable que par le chemin qui va précisément l'identifier — la
+//    préparation depuis l'image de référence, la restauration — et il reste refusé au boot tant que
+//    son manifeste n'est pas inscrit ;
+//  - les bancs #4/#14/#6 et les phases de mesure (export, empreinte) n'ouvrent aucun volume
+//    applicatif : ils éprouvent ou lisent la couche blocs, et ne sont pas concernés.
+//
+// Ce qu'il ne faut PAS lire ici : « plus personne n'appelle `openOpfsVolume` ». C'est faux, et
+// treize appels directs subsistent en production, énumérés et justifiés dans l'ADR 0009. Rien dans
+// l'outillage n'empêche un nouveau chemin d'en ajouter un sans passer par cet ouvreur : c'est une
+// DISCIPLINE DE REVUE, pas une contrainte du code. Une contrainte réelle supposerait de fermer
+// `openOpfsVolume` derrière un module privé — c'est du travail découvert, pas ce que fait #12.
 //
 // La conséquence est celle que #12 promet : une restauration interrompue laisse un volume SANS
 // manifeste voisin, et le boot suivant est refusé par `VAULT_MANIFEST_UNIDENTIFIED` — avant que v86

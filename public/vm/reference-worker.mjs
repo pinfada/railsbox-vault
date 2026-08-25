@@ -385,6 +385,9 @@ async function phaseResumeFire(options) {
 async function phasePrepareEmpty({ volume, appDiskBytes, manifest }) {
   attentesDe(manifest);
   await removeOpfsVolume(volume);
+  // Même règle qu'à la préparation : le volume naît ANONYME. Sans cette révocation, un manifeste
+  // hérité d'une exécution précédente identifierait le volume vide pendant toute sa fabrication.
+  await revokeVolumeManifest(volume);
   const backend = await openOpfsVolume({
     name: volume,
     size: appDiskBytes,

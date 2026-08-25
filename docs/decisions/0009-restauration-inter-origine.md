@@ -73,15 +73,40 @@ comme manifeste fait refuser la restauration ; il n'est jamais supprimé.
 ### Le manifeste voisin CONDITIONNE l'ouverture en écriture
 
 Ce voisin porte la **validité** du volume, et cela n'a de sens que si quelqu'un le lit. C'est le
-rôle de `openVolumeForWrite` (`src/vm/opfs-volume-open.mjs`) : **point de passage unique** de toute
-ouverture en écriture, il lit le voisin, le soumet à `assertVolumeWritable` (#10) et n'ouvre le
-volume qu'ensuite. Aucun chemin écrivant n'appelle plus `openOpfsVolume` directement.
+rôle de `openVolumeForWrite` (`src/vm/opfs-volume-open.mjs`) : il lit le voisin, le soumet à
+`assertVolumeWritable` (#10) et n'ouvre le volume qu'ensuite. La règle exacte, telle que le code la
+tient, tient en trois lignes :
+
+- un volume **identifié** ne s'ouvre en écriture que par `openVolumeForWrite` — le boot y passe, et
+  un volume sans manifeste y est refusé par `VAULT_MANIFEST_UNIDENTIFIED` **avant** que v86 ne soit
+  construit ;
+- un volume **anonyme** n'est ouvrable que par le chemin qui va précisément l'identifier —
+  préparation depuis l'image de référence, restauration — et il reste refusé au boot tant que son
+  manifeste n'est pas inscrit ;
+- les bancs #4/#6/#14 et les phases de mesure n'ouvrent **aucun volume applicatif** : ils éprouvent
+  ou lisent la couche blocs.
+
+Ce qu'il ne faut **pas** en conclure : que plus personne n'appelle `openOpfsVolume`. **Treize appels
+directs subsistent** dans le code de production, et rien dans l'outillage n'empêche un nouveau
+chemin d'en ajouter un sans passer par l'ouvreur. C'est une **discipline de revue, pas une
+contrainte du code** ; une contrainte réelle supposerait de fermer `openOpfsVolume` derrière un
+module privé, ce qui est du travail découvert et non le périmètre de #12.
+
+| Appel direct                                  | Raison                                                             |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| `src/vm/opfs-import-target.mjs:63`            | la restauration elle-même : c'est elle qui va identifier le volume |
+| `public/vm/reference-worker.mjs:203`          | `phasePrepare` : création depuis l'image, manifeste inscrit après  |
+| `public/vm/reference-worker.mjs:388`          | `phasePrepareEmpty` : création du témoin, manifeste inscrit après  |
+| `public/vm/reference-worker.mjs:437`          | `phaseExportVolume` : **lecture seule**                            |
+| `public/vm/reference-worker.mjs:592`          | `phaseDigestVolume` : **lecture seule** (mesure)                   |
+| `public/vm/opfs-runtime-worker.mjs` (5 sites) | banc du backend de blocs #6 : aucun volume applicatif              |
+| `public/vm/runtime-worker.mjs` (3 sites)      | bancs de barrière #4/#14 : aucun volume applicatif                 |
 
 C'est ce qui donne leur portée aux gestes 4 et 7. Une restauration interrompue — onglet fermé, quota
 atteint, support perdu — laisse une cible sans voisin ; le boot suivant est refusé par
 `VAULT_MANIFEST_UNIDENTIFIED` **avant** que v86 ne démarre et que Rails ne monte un système de
 fichiers tronqué. `SEC-UPDATE-001` cesse d'être une règle sans appelant : elle avait un énoncé
-depuis #10, il lui manquait ce point de passage et le code qui **écrit** le manifeste.
+depuis #10, il lui manquait un lecteur sur le chemin de boot et le code qui **écrit** le manifeste.
 
 En corollaire, toute création de volume l'inscrit : la préparation d'un volume à partir de l'image
 de référence écrit son manifeste **après** avoir écrit et flushé le disque. Un volume à moitié

@@ -171,7 +171,7 @@ test("un voisin démesuré est refusé sans être chargé en mémoire", async ()
   assert.deepEqual(s.journal.ouvertures, []);
 });
 
-test("readVolumeManifest rend le manifeste analysé, ou null quand il n'y a pas de voisin", async () => {
+test("readVolumeManifest rend les OCTETS du voisin, ou null quand il n'y en a pas", async () => {
   const s = support();
   assert.equal(await readVolumeManifest("vault-app", { stat: s.stat, readFile: s.lire }), null);
 

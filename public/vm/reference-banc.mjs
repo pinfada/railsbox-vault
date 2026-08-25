@@ -74,13 +74,6 @@ async function executer(payload = {}) {
   return report;
 }
 
-/**
- * EXPORTE l'archive hors de cette origine, par le seul chemin que le produit emprunte : un
- * téléchargement vers le système de fichiers de l'utilisateur. Le `File` rendu par le Worker est
- * adossé au support — le navigateur le diffuse sans que la page ne tienne l'archive en mémoire.
- * Aucun canal inter-origines n'est ouvert : la CSP de la coquille n'en autorise aucun.
- * @param {string} archive nom du volume d'archive dans OPFS
- */
 /** URL objet de l'archive en cours de remise, à révoquer dès que le transfert est fini. */
 let urlArchive = null;
 
@@ -98,6 +91,14 @@ function libererArchive() {
 
 addEventListener("pagehide", libererArchive);
 
+/**
+ * EXPORTE l'archive hors de cette origine, par le seul chemin que le produit emprunte : un
+ * téléchargement vers le système de fichiers de l'utilisateur. Le `File` rendu par le Worker est
+ * adossé au support — le navigateur le diffuse sans que la page ne tienne l'archive en mémoire.
+ * Aucun canal inter-origines n'est ouvert : la CSP de la coquille n'en autorise aucun. Le Worker
+ * refuse par ailleurs de remettre autre chose qu'une archive (marqueur `RBVAULT1` exigé).
+ * @param {string} archive nom du volume d'archive dans OPFS
+ */
 async function telecharger(archive) {
   const report = await appeler({ phase: "archive-file", archive });
   libererArchive();

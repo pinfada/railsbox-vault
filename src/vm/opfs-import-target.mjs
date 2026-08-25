@@ -17,6 +17,7 @@
 
 import { BlockJournal } from "./block-journal.mjs";
 import { openOpfsVolume } from "./opfs-block-backend.mjs";
+import { isManifestError } from "./manifest-errors.mjs";
 import { manifestSidecarName, statOpfsVolume } from "./opfs-sync-access.mjs";
 import {
   readVolumeManifest,
@@ -38,7 +39,17 @@ const VOISIN_ILLISIBLE = new TextEncoder().encode("vault:voisin-illisible");
  * @param {string} volume nom du volume à restaurer
  * @param {{ journal?: BlockJournal }} [options] journal du backend, pour publier les compteurs d'E/S
  */
-export function createOpfsImportTarget(volume, { journal = new BlockJournal() } = {}) {
+export function createOpfsImportTarget(
+  volume,
+  {
+    journal = new BlockJournal(),
+    stat = statOpfsVolume,
+    readManifest = readVolumeManifest,
+    revoke = revokeVolumeManifest,
+    writeManifest = writeSidecarBytes,
+    openVolume = openOpfsVolume,
+  } = {},
+) {
   const sidecar = manifestSidecarName(volume);
 
   return {
@@ -48,11 +59,18 @@ export function createOpfsImportTarget(volume, { journal = new BlockJournal() } 
 
     /** Observe la cible SANS la créer : poser une question ne doit rien fabriquer sur le support. */
     async inspect() {
-      const etatVolume = await statOpfsVolume(volume);
+      const etatVolume = await stat(volume);
       let manifestBytes;
       try {
-        manifestBytes = await readVolumeManifest(volume);
-      } catch {
+        manifestBytes = await readManifest(volume);
+      } catch (cause) {
+        // SEULE une erreur de FORMAT devient un fait observé. Un voisin au-delà du plafond de
+        // lecture n'est pas un manifeste : le dire à l'orchestration la fait refuser sans rien
+        // détruire. Un échec de SUPPORT — volume occupé, handle perdu, OPFS absent — est autre
+        // chose, et le convertir ferait remonter « cible non vide » là où l'exploitant doit lire
+        // « volume occupé ». Le refus resterait sûr, mais il nommerait la mauvaise cause, donc
+        // enverrait vers le mauvais remède. Il est propagé tel quel.
+        if (!isManifestError(cause)) throw cause;
         manifestBytes = VOISIN_ILLISIBLE;
       }
       return { present: etatVolume.present, size: etatVolume.size, manifestBytes };
@@ -60,17 +78,17 @@ export function createOpfsImportTarget(volume, { journal = new BlockJournal() } 
 
     /** Ouvre le volume en exclusivité, à la géométrie de l'archive. */
     open({ size }) {
-      return openOpfsVolume({ name: volume, size, journal });
+      return openVolume({ name: volume, size, journal });
     },
 
     /** Retire le manifeste : le volume cesse d'être identifié, donc d'être inscriptible. */
     async revokeManifest() {
-      await revokeVolumeManifest(volume);
+      await revoke(volume);
     },
 
     /** Inscrit le manifeste de l'archive : dernier geste de la restauration. */
     async commitManifest(bytes) {
-      await writeSidecarBytes(sidecar, bytes);
+      await writeManifest(sidecar, bytes);
     },
   };
 }

@@ -42,15 +42,18 @@ précédente démontré », exigé ci-dessous pour toute publication, dispose d�
 automatisé et d'une preuve Bout en bout sur deux origines distinctes. Deux conséquences pour cette
 politique. D'abord, la « lecture d'une version connue avant toute écriture » est enfin **exercée**,
 et non plus seulement écrite : tout volume porte son **manifeste** dans un fichier voisin
-(`<volume>.manifest`), inscrit en dernier geste par sa création comme par sa restauration, et
-`openVolumeForWrite` — point de passage unique de toute ouverture en écriture — l'exige avant
-d'ouvrir, sinon `VAULT_MANIFEST_UNIDENTIFIED`. Il n'y a **aucune période de transition** : un volume
-sans manifeste est refusé, jamais complété par une identité devinée ; aucun format n'ayant été
-publié dans la série `0.x`, aucun volume d'utilisateur n'est concerné. Ensuite, la restauration ne
-**migre** rien : un volume d'un format antérieur est restaurable, mais son écriture reste refusée
-par `VAULT_MANIFEST_MIGRATION_REQUIRED` jusqu'à #13. L'« export de sauvegarde obligatoire avant
-migration irréversible » a donc désormais son pendant — la remise en place — mais la migration
-elle-même, sa reprise après interruption et ses vecteurs par version restent à faire.
+(`<volume>.manifest`), inscrit en dernier geste par sa création comme par sa restauration, et le
+**boot** l'exige : un volume identifié ne s'ouvre en écriture que par `openVolumeForWrite`, qui
+refuse un volume sans manifeste par `VAULT_MANIFEST_UNIDENTIFIED` avant même de construire la VM. La
+portée exacte de ce contrôle — et les appels directs à `openOpfsVolume` qui subsistent, relevant
+d'une discipline de revue et non d'une contrainte du code — est détaillée dans
+[l'ADR 0009](decisions/0009-restauration-inter-origine.md). Il n'y a **aucune période de
+transition** : un volume sans manifeste est refusé, jamais complété par une identité devinée ; aucun
+format n'ayant été publié dans la série `0.x`, aucun volume d'utilisateur n'est concerné. Ensuite,
+la restauration ne **migre** rien : un volume d'un format antérieur est restaurable, mais son
+écriture reste refusée par `VAULT_MANIFEST_MIGRATION_REQUIRED` jusqu'à #13. L'« export de sauvegarde
+obligatoire avant migration irréversible » a donc désormais son pendant — la remise en place — mais
+la migration elle-même, sa reprise après interruption et ses vecteurs par version restent à faire.
 
 ## Publication
 
