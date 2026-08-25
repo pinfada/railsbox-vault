@@ -14,9 +14,23 @@ import { defineConfig } from "@playwright/test";
 //
 // Son serveur écoute sur un port qui lui est propre et n'est jamais réutilisé : une mesure de
 // reprise doit provenir de la coquille du dépôt, servie avec sa CSP.
+//
+// DEUX origines sont servies depuis #12 (« restaurer un volume depuis une autre origine »). OPFS est
+// cloisonné PAR ORIGINE : sans deux origines réellement distinctes, un « import » ne prouverait rien
+// — il relirait le stockage qu'il vient d'écrire. `127.0.0.1` et `localhost` désignent la même
+// interface de bouclage mais forment deux origines distinctes au sens du navigateur, et les ports
+// diffèrent aussi ; c'est le même procédé que le spike d'origine de l'ADR 0002, sans DNS ni
+// certificat. Les deux serveurs sont liés à `127.0.0.1` pour que l'attente de port soit sans
+// ambiguïté ; seule l'URL visitée par le navigateur décide de l'origine.
 
 export const E2E_HOST = "127.0.0.1";
 export const E2E_PORT = 4177;
+export const E2E_PORT_B = 4178;
+
+/** Origine d'EXPORT : celle qui détient le volume d'origine. */
+export const E2E_ORIGIN_A = `http://${E2E_HOST}:${E2E_PORT}`;
+/** Origine de RESTAURATION : un stockage OPFS entièrement distinct de celui de A. */
+export const E2E_ORIGIN_B = `http://localhost:${E2E_PORT_B}`;
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -28,13 +42,20 @@ export default defineConfig({
   outputDir: "test-results/e2e",
   reporter: process.env.CI ? [["html", { open: "never" }], ["github"]] : "list",
   use: {
-    baseURL: `http://${E2E_HOST}:${E2E_PORT}`,
+    baseURL: E2E_ORIGIN_A,
     trace: "retain-on-failure",
   },
-  webServer: {
-    command: `node tools/serve.mjs --role shell --host ${E2E_HOST} --port ${E2E_PORT}`,
-    port: E2E_PORT,
-    reuseExistingServer: false,
-  },
+  webServer: [
+    {
+      command: `node tools/serve.mjs --role shell --host ${E2E_HOST} --port ${E2E_PORT}`,
+      port: E2E_PORT,
+      reuseExistingServer: false,
+    },
+    {
+      command: `node tools/serve.mjs --role shell --host ${E2E_HOST} --port ${E2E_PORT_B}`,
+      port: E2E_PORT_B,
+      reuseExistingServer: false,
+    },
+  ],
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],
 });
