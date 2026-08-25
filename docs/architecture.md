@@ -134,11 +134,20 @@ appartient à la publication #45. Un changement d'origine rend l'OPFS de l'ancie
 il se traite comme une migration exigeant un export préalable, pas comme un détail de déploiement.
 
 L'hébergement n'a en revanche **aucun en-tête d'isolation à servir**.
-L'[ADR 0010](decisions/0010-isolation-multi-origine.md) établit que ni `Cross-Origin-Opener-Policy`
-ni `Cross-Origin-Embedder-Policy` ne sont exigés : aucun module de production n'utilise
+L'[ADR 0010](decisions/0010-isolation-multi-origine.md) établit qu'aucun
+`Cross-Origin-Embedder-Policy` n'est exigé : aucun module de production n'utilise
 `SharedArrayBuffer` ou `Atomics`, et la mémoire WebAssembly de v86 épinglé n'est pas partagée. C'est
 ce qui garde utilisable un hébergement statique incapable d'en-têtes personnalisés — GitHub Pages
 notamment. `Cross-Origin-Resource-Policy` reste servi, il ne dépend pas de cette décision.
+
+Le même ADR distingue **COOP de COEP**, et ne les rejette pas ensemble.
+`Cross-Origin-Opener-Policy: same-origin` servi **seul** ne confère pas `crossOriginIsolated`, ne
+s'applique qu'aux contextes de navigation de plus haut niveau — donc sans effet sur le cadre
+applicatif ni sur la topologie ci-dessus — et n'exige rien de l'origine applicative. Il est
+**recommandé** sur l'origine de confiance, comme **exigence différée** vers la publication #45 : il
+ferme la relation d'ouverture inter-fenêtres (`window.opener`), que `frame-ancestors 'none'` ne
+couvre pas, autour d'une coquille destinée à détenir les clés du volume (#24). GitHub Pages ne sait
+pas le servir : c'est un critère de plus pour #45, pas un couperet.
 
 ## Cycle de vie de référence
 
