@@ -29,7 +29,9 @@
 //   8. APPLIQUER puis franchir une BARRIÈRE ;
 //   9. INSCRIRE le manifeste cible, puis le RELIRE depuis le support — écrire n'est pas persister.
 //      Une relecture divergente le retire et lève `VAULT_MIGRATION_VERIFICATION_FAILED` ;
-//  10. RETIRER LE JOURNAL — dernier geste. Sa présence signale toujours une migration inachevée.
+//  10. RETIRER LE JOURNAL — dernier geste. Sa présence signale une migration dont le dernier geste
+//      n'a pas été franchi : soit elle a été coupée en chemin, soit elle a abouti sans pouvoir se
+//      relire. Le distinguer est le travail de `rienAMigrer`, pas une lecture de la seule présence.
 //
 // Ce que ce module NE fait PAS : descendre d'un format (l'ADR 0007 refuse le downgrade), migrer une
 // application (les migrations métier de Rails sont distinctes), construire une génération
@@ -60,7 +62,14 @@ export const MIGRATION_JOURNAL_VERSION = 1;
 /** Bloc de streaming par défaut : identique à l'export, très en deçà du budget de 64 Mio. */
 export const DEFAULT_MIGRATION_BLOCK_BYTES = 4 * 1024 * 1024;
 
-/** Les deux preuves qu'une migration accepte. Il n'y en a pas de troisième, ni d'implicite. */
+/**
+ * Les deux preuves qu'une migration accepte à son ENGAGEMENT. Il n'y en a pas de troisième.
+ *
+ * Une REPRISE, elle, ne redemande rien : elle se fonde sur la preuve déjà retenue et inscrite dans
+ * le journal. Ce n'est donc pas une troisième preuve, mais la MÊME, relue — et elle n'est acceptée
+ * que si le journal qui la porte s'accorde avec le manifeste présent et la géométrie du support
+ * (`manifesteSource`). Un journal seul ne vaut pas autorisation de migrer.
+ */
 export const EVIDENCE_KINDS = Object.freeze({
   /** Une archive #11 relue, dont le contenu est celui du volume à cet instant. */
   verifiedBackup: "sauvegarde-verifiee",
@@ -370,8 +379,29 @@ async function lireEtat(target, expectations) {
  * Manifeste dont PART la migration : celui du volume, ou — si le manifeste a déjà été révoqué par
  * une migration interrompue — celui que le journal a conservé. Sans l'un ni l'autre, le volume n'a
  * pas d'identité, et une identité ne se devine pas.
+ *
+ * Un journal n'est PAS une autorité supérieure au volume. Rien ne garantit qu'un journal trouvé à
+ * côté d'un volume décrive CE volume : ni la restauration (#12) ni la préparation d'un volume neuf
+ * ne retirent le voisin `.migration`, si bien qu'un journal PÉRIMÉ peut survivre à la recréation du
+ * volume qu'il prétend décrire. Quand les deux sont présents, ils doivent donc coïncider OCTET POUR
+ * OCTET — c'est ce qu'une interruption entre la journalisation (geste 6) et la révocation (geste 7)
+ * laisse derrière elle. Toute divergence fait refuser : préférer le journal reviendrait à laisser un
+ * voisin réécrire l'identité d'un volume parfaitement sain.
  */
 function manifesteSource({ support, journal, courant }, expectations) {
+  if (journal !== null && courant !== null) {
+    const attendu = serializeManifest(courant);
+    const porte = serializeManifest(journal.sourceManifest);
+    if (!memesOctets(attendu, porte)) {
+      throw journalMalforme(
+        "il décrit un volume dont le manifeste n'est pas celui présent à côté de lui.",
+        {
+          volumeFormatVersion: courant.formatVersion,
+          journalSourceFormatVersion: journal.sourceManifest.formatVersion,
+        },
+      );
+    }
+  }
   const source = journal === null ? courant : journal.sourceManifest;
   if (source === null) {
     throw new ManifestError(
@@ -381,7 +411,22 @@ function manifesteSource({ support, journal, courant }, expectations) {
     );
   }
   if (journal !== null) assertReadable(source, expectations);
+  assertGeometrieDuSupport(source, support);
   return source;
+}
+
+/**
+ * La géométrie déclarée par le manifeste source doit décrire le support RÉEL, sinon la migration
+ * inscrirait une taille qui ne correspond à aucun octet présent. Le contrôle précède l'ouverture :
+ * un volume dont on ne sait pas la taille ne se retaille pas, il se refuse.
+ */
+function assertGeometrieDuSupport(source, support) {
+  if (source.geometry.volumeSize === support.size) return;
+  throw new MigrationError(
+    MIGRATION_ERROR_CODES.geometryMismatch,
+    `Migration refusée : le manifeste de départ décrit un volume de ${source.geometry.volumeSize} octet(s) et le support en porte ${support.size}. Un volume n'est jamais retaillé par une migration, et une géométrie ne se devine pas.`,
+    { manifestVolumeSize: source.geometry.volumeSize, supportSize: support.size ?? null },
+  );
 }
 
 /**
@@ -525,7 +570,18 @@ export async function migrateVolume({
  * qui rend `migrateVolume` idempotente.
  */
 async function rienAMigrer({ target, courant, journal, toVersion }) {
-  if (journal !== null) await target.removeJournal();
+  if (journal !== null) {
+    // Le journal n'est retiré que s'il est BIEN le reliquat de la migration qui a produit ce
+    // manifeste. Un journal visant un autre format porte sur autre chose — un volume recréé depuis,
+    // par exemple — et l'effacer supprimerait l'indice d'une migration inachevée.
+    if (journal.to !== courant.formatVersion) {
+      throw journalMalforme(
+        `il vise le format ${journal.to} alors que le volume porte le format ${courant.formatVersion} : il n'est pas le reliquat de cette migration.`,
+        { journalTo: journal.to, volumeFormatVersion: courant.formatVersion },
+      );
+    }
+    await target.removeJournal();
+  }
   return rapport({
     migrated: false,
     resumed: journal !== null,
@@ -586,7 +642,8 @@ async function executerMigration({
     await backend.close();
   }
 
-  // 10. RETIRER LE JOURNAL — dernier geste. Sa présence signale une migration inachevée.
+  // 10. RETIRER LE JOURNAL — dernier geste : sa présence signale une migration dont il n'a pas été
+  //     franchi.
   await target.removeJournal();
   return migre;
 }

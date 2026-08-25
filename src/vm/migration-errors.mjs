@@ -22,8 +22,14 @@ export const MIGRATION_ERROR_CODES = Object.freeze({
   backupRequired: "VAULT_MIGRATION_BACKUP_REQUIRED",
   /** L'archive présentée comme sauvegarde ne décrit pas ce volume dans son état courant. */
   backupMismatch: "VAULT_MIGRATION_BACKUP_MISMATCH",
-  /** Le journal de reprise existe mais n'est pas analysable : jamais deviné, jamais supprimé. */
+  /**
+   * Le journal de reprise existe mais ne fait pas AUTORITÉ : illisible, ou contredisant le
+   * manifeste présent, ou visant un format que le volume ne porte pas. Jamais deviné, jamais
+   * supprimé — un journal peut être le reliquat périmé d'un volume qui a été recréé depuis.
+   */
   journalMalformed: "VAULT_MIGRATION_JOURNAL_MALFORMED",
+  /** Le manifeste dont part la migration ne décrit pas la géométrie réelle du support. */
+  geometryMismatch: "VAULT_MIGRATION_GEOMETRY_MISMATCH",
   /** Le manifeste relu depuis le support ne rend pas les octets inscrits : volume non identifié. */
   verificationFailed: "VAULT_MIGRATION_VERIFICATION_FAILED",
 });

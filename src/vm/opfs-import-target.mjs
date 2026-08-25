@@ -18,7 +18,12 @@
 import { BlockJournal } from "./block-journal.mjs";
 import { openOpfsVolume } from "./opfs-block-backend.mjs";
 import { isManifestError } from "./manifest-errors.mjs";
-import { manifestSidecarName, statOpfsVolume } from "./opfs-sync-access.mjs";
+import {
+  manifestSidecarName,
+  migrationJournalName,
+  removeOpfsVolume,
+  statOpfsVolume,
+} from "./opfs-sync-access.mjs";
 import {
   readVolumeManifest,
   revokeVolumeManifest,
@@ -47,6 +52,7 @@ export function createOpfsImportTarget(
     readManifest = readVolumeManifest,
     revoke = revokeVolumeManifest,
     writeManifest = writeSidecarBytes,
+    removeSidecar = removeOpfsVolume,
     openVolume = openOpfsVolume,
   } = {},
 ) {
@@ -86,9 +92,16 @@ export function createOpfsImportTarget(
       await revoke(volume);
     },
 
-    /** Inscrit le manifeste de l'archive : dernier geste de la restauration. */
+    /**
+     * Inscrit le manifeste de l'archive : dernier geste de la restauration. Le JOURNAL DE MIGRATION
+     * éventuel est retiré au passage (#13) : le volume vient d'être réécrit intégralement depuis
+     * l'archive, si bien qu'un journal laissé par une migration interrompue ne décrit plus aucun
+     * octet présent. Le garder le ferait FAIRE AUTORITÉ sur le format de départ à la prochaine
+     * migration, et rendrait le volume restauré non migrable jusqu'à un nettoyage manuel.
+     */
     async commitManifest(bytes) {
       await writeManifest(sidecar, bytes);
+      await removeSidecar(migrationJournalName(volume));
     },
   };
 }

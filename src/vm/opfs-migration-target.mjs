@@ -105,7 +105,7 @@ export function createOpfsMigrationTarget(
       await writeSidecar(manifeste, bytes);
     },
 
-    /** Retire le journal : dernier geste. Sa présence signale toujours une migration inachevée. */
+    /** Retire le journal : dernier geste. Sa présence signale un dernier geste non franchi. */
     async removeJournal() {
       await removeSidecar(journalVoisin);
     },

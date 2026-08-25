@@ -663,7 +663,14 @@ flusher, inscrire puis relire, retirer le journal. Quatre propriétés en décou
   refuser, jamais deviner ni supprimer ; un journal resté derrière un manifeste déjà migré est
   simplement retiré, ce qui rend la migration idempotente ;
 - **le manifeste n'est déclaré valide qu'après avoir été RELU** depuis le support ; une relecture
-  divergente le retire (`VAULT_MIGRATION_VERIFICATION_FAILED`).
+  divergente le retire (`VAULT_MIGRATION_VERIFICATION_FAILED`) ;
+- **un journal ne fait pas AUTORITÉ sur le volume.** Un journal peut être le reliquat périmé d'un
+  volume recréé depuis : s'il coexiste avec un manifeste, les deux doivent coïncider octet pour
+  octet, et la géométrie déclarée doit décrire le support réel
+  (`VAULT_MIGRATION_GEOMETRY_MISMATCH`), faute de quoi la migration est refusée **avant toute
+  ouverture**. Les chemins qui recréent un volume — création et restauration — retirent le journal
+  voisin, pour qu'un volume neuf ne reste pas non migrable à cause d'un indice qui ne décrit plus
+  rien.
 
 Le suffixe `.migration` rejoint `.manifest` parmi les voisins **réservés** par la frontière de
 nommage : aucun volume ne peut le porter, et la longueur maximale d'un nom de volume se règle sur le
@@ -672,14 +679,15 @@ plus long des voisins — un volume créable reste un volume migrable.
 Les erreurs de migration forment une famille distincte (`src/vm/migration-errors.mjs`), avec la même
 forme transportable que les autres :
 
-| Code                                  | État                                                              | Origine |
-| ------------------------------------- | ----------------------------------------------------------------- | ------- |
-| `VAULT_MIGRATION_NO_PATH`             | aucune étape enregistrée ne relie le format du volume au demandé  | **#13** |
-| `VAULT_MIGRATION_DOWNGRADE_REFUSED`   | format demandé antérieur : une migration ne descend jamais        | **#13** |
-| `VAULT_MIGRATION_BACKUP_REQUIRED`     | ni sauvegarde vérifiée, ni consentement nommé : rien n'est ouvert | **#13** |
-| `VAULT_MIGRATION_BACKUP_MISMATCH`     | l'archive ne décrit pas ce volume dans son état courant           | **#13** |
-| `VAULT_MIGRATION_JOURNAL_MALFORMED`   | journal présent mais illisible : jamais deviné, jamais supprimé   | **#13** |
-| `VAULT_MIGRATION_VERIFICATION_FAILED` | manifeste relu divergent : le volume reste non identifié          | **#13** |
+| Code                                  | État                                                                    | Origine |
+| ------------------------------------- | ----------------------------------------------------------------------- | ------- |
+| `VAULT_MIGRATION_NO_PATH`             | aucune étape enregistrée ne relie le format du volume au demandé        | **#13** |
+| `VAULT_MIGRATION_DOWNGRADE_REFUSED`   | format demandé antérieur : une migration ne descend jamais              | **#13** |
+| `VAULT_MIGRATION_BACKUP_REQUIRED`     | ni sauvegarde vérifiée, ni consentement nommé : rien n'est ouvert       | **#13** |
+| `VAULT_MIGRATION_BACKUP_MISMATCH`     | l'archive ne décrit pas ce volume dans son état courant                 | **#13** |
+| `VAULT_MIGRATION_JOURNAL_MALFORMED`   | journal illisible, contredisant le manifeste, ou visant un autre format | **#13** |
+| `VAULT_MIGRATION_GEOMETRY_MISMATCH`   | le manifeste de départ ne décrit pas la géométrie du support            | **#13** |
+| `VAULT_MIGRATION_VERIFICATION_FAILED` | manifeste relu divergent : le volume reste non identifié                | **#13** |
 
 Ce que la migration v2 **ne** couvre pas : la **génération copy-on-write** et l'atomicité
 transactionnelle (#16 — entre la révocation et l'inscription, l'état est sûr mais pas révocable en

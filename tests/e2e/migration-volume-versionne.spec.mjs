@@ -10,8 +10,9 @@
 //   4. la REPRISE aboutit, sans redemander la sauvegarde — le journal porte la preuve retenue ;
 //   5. un BOOT À FROID HORS LIGNE retrouve l'invariant Rails, à l'octet près : la migration n'a
 //      touché aucun octet du volume ;
-//   6. un runtime « ancien », qui ne connaît que le format 1, refuse le volume migré
-//      (`VAULT_MANIFEST_FORMAT_TOO_NEW`).
+//   6. un runtime « ancien », qui ne connaît que le format 1, refuse le volume migré à
+//      l'OUVERTURE EN ÉCRITURE (`VAULT_MANIFEST_FORMAT_TOO_NEW`). Le refus en LECTURE existe aussi,
+//      mais il est prouvé en unitaire : ce scénario n'exerce que `openVolumeForWrite`.
 //
 // Deux règles le gouvernent, comme les autres scénarios de `tests/e2e/` :
 //
@@ -311,8 +312,10 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   expect(bootApresMigration.observedAttachmentSha256).toBe(contrat.attachment.sha256);
 
   // 9. TÉMOIN — REFUS DE DOWNGRADE. Un runtime qui ne connaît que le format 1 refuse le volume
-  //    migré, en lecture comme en écriture. La « vieille version » est simulée par ses ATTENTES
-  //    (`supportedFormat`), pas par un binaire antérieur : voir la limite en tête de fichier.
+  //    migré à l'ouverture EN ÉCRITURE — c'est ce que cette phase exerce, et rien de plus. Le refus
+  //    en LECTURE est prouvé par `tests/unit/vm-volume-manifest.test.mjs`. La « vieille version »
+  //    est simulée par ses ATTENTES (`supportedFormat`), pas par un binaire antérieur : voir la
+  //    limite en tête de fichier.
   session = await nouvellePage();
   const refusAncienRuntime = await courirEnEchec(session.page, {
     ...configBoot,

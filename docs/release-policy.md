@@ -65,9 +65,11 @@ plus seulement énoncées :
 - « **export de sauvegarde obligatoire avant migration irréversible** » — c'est désormais un
   **contrôle**. L'archive présentée est relue par #11 et son empreinte confrontée à celle du volume
   relu depuis le support, dans son état courant ; l'application et la taille sont comparées. À
-  défaut d'archive, un **consentement nommé**, inscrit dans le journal de reprise et donc opposable.
-  Sans l'un ni l'autre, `VAULT_MIGRATION_BACKUP_REQUIRED` est levé et la cible n'est **même pas
-  ouverte** ;
+  défaut d'archive, un **consentement nommé**, inscrit dans le journal de reprise **tant que la
+  migration n'a pas abouti** — le dernier geste retire ce journal, et aucune trace du consentement
+  ne subsiste après le succès : il sert la reprise, pas la reddition de comptes (ADR 0011). Sans
+  l'un ni l'autre, `VAULT_MIGRATION_BACKUP_REQUIRED` est levé et la cible n'est **même pas ouverte**
+  ;
 - « **refus explicite d'un format futur ou d'un downgrade dangereux** » — le refus de downgrade
   cesse d'être une supposition. Le format **v2** ajoute `runtime.minWriter`, la version de runtime
   la plus ancienne autorisée à écrire ce volume, **déclarée** par le runtime qui l'écrit. La règle
