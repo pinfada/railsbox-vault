@@ -207,6 +207,35 @@ test("le puits d'archive nomme le manque de place au lieu d'une « écriture d'a
   assert.equal(sink.offset, 0, "aucun octet n'est compté comme écrit après un refus");
 });
 
+test("le puits d'archive ne mesure le budget QUE sur un échec", async () => {
+  let mesures = 0;
+  const accepte = {
+    write: (bytes) => bytes.byteLength,
+    flush() {},
+    close() {},
+  };
+  const measureStorage = async () => {
+    mesures += 1;
+    return { state: "known", quota: 1, usage: 0, available: 1 };
+  };
+
+  const bon = createOpfsArchiveSink(accepte, { volume: "a", measureStorage });
+  await bon.write(new Uint8Array(1024));
+  await bon.write(new Uint8Array(1024));
+  assert.equal(
+    mesures,
+    0,
+    "cent vingt-huit blocs ne doivent pas coûter cent vingt-huit estimations",
+  );
+
+  const mauvais = createOpfsArchiveSink(handleQuiRend(RENDU_NO_SPACE, 0), {
+    volume: "a",
+    measureStorage,
+  });
+  await mauvais.write(new Uint8Array(1024)).catch(() => {});
+  assert.equal(mesures, 1, "un échec, lui, est daté par rapport au quota");
+});
+
 test("le puits d'archive avance de ce qui a été écrit, et seulement de cela", async () => {
   const ecrit = [];
   const handle = {

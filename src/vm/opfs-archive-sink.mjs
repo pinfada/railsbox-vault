@@ -14,7 +14,7 @@
 // qui n'intéresse que le diagnostic. Sans mesure, le contexte de l'erreur dit `storage: null` —
 // « non mesuré », et non « quota inconnu ».
 
-import { toStorageError, writeCountFailure } from "./opfs-error-mapping.mjs";
+import { decodeSupportCount, toStorageError, writeCountFailure } from "./opfs-error-mapping.mjs";
 
 /**
  * Crée le puits d'archive.
@@ -57,17 +57,21 @@ export function createOpfsArchiveSink(handle, { volume, measureStorage = null })
         });
       }
 
-      const echec = writeCountFailure(returned, {
+      // Le cas nominal ne coûte RIEN de plus qu'une comparaison : une archive de 512 Mio écrite par
+      // blocs de 4 Mio, c'est cent vingt-huit passages ici. La mesure du budget n'est demandée
+      // qu'une fois la valeur de retour reconnue comme un échec.
+      if (decodeSupportCount(returned, requested).kind === "exact") {
+        this.offset = offset + requested;
+        return requested;
+      }
+
+      throw writeCountFailure(returned, {
         requested,
         volume,
         offset,
         operation: "write-archive",
         storage: measureStorage === null ? null : await measureStorage(),
       });
-      if (echec !== null) throw echec;
-
-      this.offset = offset + requested;
-      return requested;
     },
 
     /** Barrière de durabilité du support, propagée telle quelle : elle n'est jamais anticipée. */
