@@ -32,20 +32,18 @@ worker.addEventListener("error", (event) => {
 });
 
 /**
- * Exécute une phase du scénario de reprise dans le Worker.
+ * Appelle une phase du Worker et rend son compte rendu BRUT. Certains comptes rendus portent des
+ * objets non sérialisables en JSON (un `File`, pour l'export d'archive) : ils ne peuvent pas passer
+ * par l'affichage.
  * @param {{ phase?: string }} payload
  */
-function executer(payload = {}) {
+function appeler(payload = {}) {
   compteur += 1;
   const id = compteur;
   etat.textContent = `Phase « ${payload.phase ?? "full"} »…`;
   return new Promise((resolve, reject) => {
     enCours.set(id, {
-      resolve: (report) => {
-        etat.textContent = "Terminé.";
-        rapport.textContent = JSON.stringify(report, null, 2);
-        resolve(report);
-      },
+      resolve,
       reject: (erreur) => {
         etat.textContent = `Échec : ${erreur.message}`;
         reject(erreur);
@@ -53,6 +51,54 @@ function executer(payload = {}) {
     });
     worker.postMessage({ id, type: "run", payload });
   });
+}
+
+/**
+ * Exécute une phase du scénario de reprise dans le Worker et publie son compte rendu.
+ * @param {{ phase?: string }} payload
+ */
+async function executer(payload = {}) {
+  const report = await appeler(payload);
+  etat.textContent = "Terminé.";
+  rapport.textContent = JSON.stringify(report, null, 2);
+  return report;
+}
+
+/**
+ * EXPORTE l'archive hors de cette origine, par le seul chemin que le produit emprunte : un
+ * téléchargement vers le système de fichiers de l'utilisateur. Le `File` rendu par le Worker est
+ * adossé au support — le navigateur le diffuse sans que la page ne tienne l'archive en mémoire.
+ * Aucun canal inter-origines n'est ouvert : la CSP de la coquille n'en autorise aucun.
+ * @param {string} archive nom du volume d'archive dans OPFS
+ */
+async function telecharger(archive) {
+  const report = await appeler({ phase: "archive-file", archive });
+  const url = URL.createObjectURL(report.file);
+  const lien = document.createElement("a");
+  lien.href = url;
+  lien.download = `${archive}.rbvault`;
+  document.body.append(lien);
+  lien.click();
+  lien.remove();
+  // La révocation attend que le navigateur ait pris l'archive en charge ; la révoquer aussitôt
+  // interromprait un téléchargement de plusieurs centaines de Mio.
+  setTimeout(() => URL.revokeObjectURL(url), 300_000);
+  etat.textContent = `Archive « ${archive} » remise au navigateur.`;
+  return { archive, byteLength: report.byteLength };
+}
+
+/**
+ * RESTAURE depuis l'archive remise à cette origine par le champ de fichier. C'est l'autre moitié du
+ * geste utilisateur : le fichier entre par la boîte de dialogue du navigateur, jamais par le réseau.
+ * @param {{ phase?: string }} payload
+ */
+function executerAvecFichier(payload = {}) {
+  const champ = document.querySelector("#archive-entrante");
+  const fichier = champ?.files?.[0] ?? null;
+  if (fichier === null) {
+    return Promise.reject(new Error("Aucune archive n'a été remise à cette origine."));
+  }
+  return executer({ ...payload, archiveFile: fichier });
 }
 
 /** Mémoire du tas JavaScript, quand le moteur l'expose (Chromium uniquement). */
@@ -66,5 +112,5 @@ function memoire() {
   };
 }
 
-globalThis.bancReprise = Object.freeze({ executer, memoire });
+globalThis.bancReprise = Object.freeze({ executer, telecharger, executerAvecFichier, memoire });
 etat.textContent = "Worker runtime prêt.";

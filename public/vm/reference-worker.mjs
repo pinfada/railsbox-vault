@@ -17,10 +17,19 @@
 
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
-import { openOpfsSyncAccess, removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
+import { createOpfsImportTarget } from "/src/vm/opfs-import-target.mjs";
+import {
+  openOpfsSyncAccess,
+  openOpfsVolumeFile,
+  removeOpfsVolume,
+  statOpfsVolume,
+} from "/src/vm/opfs-sync-access.mjs";
 import { createReferenceGuestSession } from "/src/vm/reference-guest-session.mjs";
+import { createSha256Stream } from "/src/vm/sha256-stream.mjs";
+import { bindNavigatorStorage, createStorageBudget } from "/src/vm/storage-budget.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { createManifest } from "/src/vm/volume-manifest.mjs";
+import { importArchive, manifestSidecarName } from "/src/vm/volume-import.mjs";
 import {
   CONSISTENCY_KINDS,
   backendSource,
@@ -482,6 +491,143 @@ async function phaseVerifyExport({ archive, mutate = "none", blockBytes = EXPORT
   };
 }
 
+// --- Restauration inter-origine (#12) ---------------------------------------------------------
+
+/**
+ * OBSERVE un volume et son manifeste voisin, sans rien créer ni ouvrir en exclusivité. C'est ce qui
+ * permet au test de prouver l'ISOLATION D'ORIGINE — l'OPFS de l'origine de restauration ignore tout
+ * du volume de l'origine d'export — et, après un refus, qu'aucun octet n'a été écrit.
+ */
+async function phaseInspectVolume({ volume }) {
+  const etat = await statOpfsVolume(volume);
+  const manifeste = await statOpfsVolume(manifestSidecarName(volume));
+  return {
+    phase: "inspect-volume",
+    volume,
+    present: etat.present,
+    size: etat.size,
+    manifestPresent: manifeste.present && manifeste.size > 0,
+    manifestSize: manifeste.size,
+  };
+}
+
+/**
+ * Empreinte SHA-256 du CONTENU d'un volume OPFS, relue en flux depuis le support. Elle ne sert pas
+ * la restauration elle-même : elle donne au test un moyen INDÉPENDANT de comparer octet pour octet
+ * le volume de l'origine d'export et celui de l'origine de restauration.
+ */
+async function phaseDigestVolume({ volume, blockBytes = EXPORT_BLOCK_BYTES }) {
+  const backend = await openOpfsVolume({ name: volume, journal: new BlockJournal() });
+  const hash = createSha256Stream();
+  let maxLecture = 0;
+  try {
+    const taille = backend.size();
+    for (let offset = 0; offset < taille; offset += blockBytes) {
+      const length = Math.min(blockBytes, taille - offset);
+      maxLecture = Math.max(maxLecture, length);
+      hash.update(await backend.read(offset, length));
+    }
+    return {
+      phase: "digest-volume",
+      volume,
+      size: taille,
+      digest: hash.digestHex(),
+      maxBlockBytes: maxLecture,
+    };
+  } finally {
+    await backend.close();
+  }
+}
+
+/**
+ * Rend l'archive OPFS sous forme de `File`, pour que la coquille la remette au navigateur. C'est le
+ * geste d'EXPORT côté utilisateur : l'archive quitte l'origine par le système de fichiers de l'hôte,
+ * jamais par un canal inter-origines — la CSP de la coquille n'en ouvre aucun.
+ */
+async function phaseArchiveFile({ archive }) {
+  const file = await openOpfsVolumeFile(archive);
+  return { phase: "archive-file", archive, byteLength: file.size, file };
+}
+
+/**
+ * RESTAURE un volume OPFS depuis une archive remise à cette origine (#12). L'archive est un `File` :
+ * elle est lue par tranches, jamais chargée en entier. La couche budget de #9 est branchée, si le
+ * moteur l'expose, pour refuser l'espace insuffisant AVANT toute mutation.
+ *
+ * La phase ne lève pas : elle rend `ok` et, le cas échéant, l'erreur TYPÉE — c'est le test qui
+ * décide si un refus était attendu.
+ */
+async function phaseImport({
+  volume,
+  archiveFile,
+  expectations = {},
+  overwrite = false,
+  blockBytes = EXPORT_BLOCK_BYTES,
+}) {
+  if (!archiveFile || typeof archiveFile.slice !== "function") {
+    throw new Error("Aucune archive n'a été remise à cette origine.");
+  }
+  const compteur = { maxLecture: 0 };
+  const source = {
+    byteLength: archiveFile.size,
+    async read(offset, length) {
+      compteur.maxLecture = Math.max(compteur.maxLecture, length);
+      return new Uint8Array(await archiveFile.slice(offset, offset + length).arrayBuffer());
+    },
+  };
+  const journal = new BlockJournal();
+  const target = createOpfsImportTarget(volume, { journal });
+  const budget = createStorageBudget(bindNavigatorStorage(navigator.storage));
+
+  const debut = performance.now();
+  try {
+    const rapport = await importArchive({
+      source,
+      target,
+      expectations,
+      overwrite,
+      blockBytes,
+      budget,
+    });
+    return {
+      phase: "import",
+      volume,
+      ok: true,
+      error: null,
+      restored: rapport.restored,
+      overwritten: rapport.overwritten,
+      volumeSize: rapport.volumeSize,
+      contentDigest: rapport.contentDigest,
+      verifiedDigest: rapport.verifiedDigest,
+      manifestDigest: rapport.manifest.identity.digest,
+      manifestApp: rapport.manifest.app,
+      archiveConsistency: rapport.archiveConsistency,
+      archiveLength: rapport.archiveLength,
+      blockBytes: rapport.blockBytes,
+      maxSourceReadBytes: Math.max(rapport.maxSourceReadBytes, compteur.maxLecture),
+      maxTargetWriteBytes: rapport.maxTargetWriteBytes,
+      maxTargetReadBytes: rapport.maxTargetReadBytes,
+      budget: rapport.budget,
+      counts: journal.counts(),
+      durationMs: Number((performance.now() - debut).toFixed(1)),
+    };
+  } catch (cause) {
+    return {
+      phase: "import",
+      volume,
+      ok: false,
+      restored: false,
+      error: {
+        name: cause.name,
+        code: cause.code ?? null,
+        message: cause.message,
+        context: cause.context ?? null,
+      },
+      durationMs: Number((performance.now() - debut).toFixed(1)),
+    };
+  }
+}
+
 /** Feasibilité : prepare puis live dans un même Worker. Le test E2E n'utilise pas cette phase. */
 async function phaseFull(options) {
   const prepare = await phasePrepare(options);
@@ -499,6 +645,10 @@ const PHASES = new Map([
   ["resume-fire", phaseResumeFire],
   ["export", phaseExportVolume],
   ["verify-export", phaseVerifyExport],
+  ["inspect-volume", phaseInspectVolume],
+  ["digest-volume", phaseDigestVolume],
+  ["archive-file", phaseArchiveFile],
+  ["import", phaseImport],
   ["full", phaseFull],
 ]);
 

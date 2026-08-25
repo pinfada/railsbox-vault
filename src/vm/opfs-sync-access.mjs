@@ -91,6 +91,57 @@ export async function openOpfsSyncAccess(name) {
 }
 
 /**
+ * OBSERVE un volume sans le créer ni l'ouvrir en exclusivité. La restauration (#12) doit savoir si
+ * une cible est déjà occupée AVANT de décider quoi que ce soit : ouvrir le handle exclusif pour le
+ * découvrir créerait le fichier, c'est-à-dire muterait le support pour poser une question.
+ *
+ * @param {string} name
+ * @returns {Promise<{ present: boolean, size: number }>}
+ * @throws {StorageError} `VAULT_STORAGE_UNSUPPORTED` hors Worker ou sans OPFS.
+ */
+export async function statOpfsVolume(name) {
+  assertDedicatedWorker();
+  assertVolumeName(name);
+
+  try {
+    const directory = await volumeDirectory({ create: true });
+    const file = await directory.getFileHandle(name, { create: false });
+    const { size } = await file.getFile();
+    return { present: true, size };
+  } catch (cause) {
+    // Un volume absent n'est pas un échec : c'est la réponse « non ». Toute AUTRE cause est
+    // remontée typée — un support qui refuse de répondre ne doit pas passer pour un support vide.
+    if (cause?.name === "NotFoundError") return { present: false, size: 0 };
+    throw toStorageError(cause, { operation: "stat", volume: name });
+  }
+}
+
+/**
+ * Ouvre un volume en LECTURE SEULE, sous la forme d'un `File` adossé au support. Aucun octet n'est
+ * chargé en mémoire : le `File` est une vue paresseuse, que l'appelant lit par tranches (`slice`) ou
+ * remet au navigateur pour un téléchargement. C'est ce qui permet d'extraire une archive de plusieurs
+ * centaines de Mio sans jamais la tenir dans le tas.
+ *
+ * Contrairement à `openOpfsSyncAccess`, cette ouverture ne prend AUCUNE exclusivité et ne crée rien :
+ * un volume absent est un refus typé, pas un fichier vide fabriqué pour l'occasion.
+ *
+ * @param {string} name
+ * @returns {Promise<File>}
+ */
+export async function openOpfsVolumeFile(name) {
+  assertDedicatedWorker();
+  assertVolumeName(name);
+
+  try {
+    const directory = await volumeDirectory({ create: true });
+    const file = await directory.getFileHandle(name, { create: false });
+    return await file.getFile();
+  } catch (cause) {
+    throw toStorageError(cause, { operation: "open-read-only", volume: name });
+  }
+}
+
+/**
  * Supprime un volume. Réservé à l'hygiène des tests et aux migrations explicites : le produit ne
  * détruit jamais un volume sans geste de l'utilisateur.
  * @param {string} name
