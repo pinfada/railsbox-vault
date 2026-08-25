@@ -16,13 +16,31 @@ const enCours = new Map();
 let compteur = 0;
 
 /**
- * Une erreur qui traverse `page.evaluate` ne conserve que son MESSAGE : le code typé se perdrait au
- * passage. Il est donc préfixé au message. Sans cela, un test ne pourrait affirmer que « ça a
- * échoué », jamais « ça a échoué pour la bonne raison » — et un refus de sécurité vaut par sa raison.
+ * Une erreur qui traverse `page.evaluate` ne conserve que son MESSAGE : le code typé comme le
+ * contexte se perdraient au passage. Tous deux sont donc portés PAR le message. Sans le code, un
+ * test ne pourrait affirmer que « ça a échoué », jamais « ça a échoué pour la bonne raison » — et un
+ * refus de sécurité vaut par sa raison. Sans le contexte, un échec de support arrive en CI privé de
+ * ses mesures (offset, quota, errno), et l'on en est réduit à supposer sa cause (#73).
+ *
+ * Le contexte d'une `StorageError` ne porte que des nombres et des noms — jamais un octet de
+ * contenu : le sérialiser dans un message de test n'expose rien de l'utilisateur.
  */
 function erreurDuWorker(error) {
   const message = error?.message ?? "Échec du Worker runtime";
-  return new Error(error?.code ? `[${error.code}] ${message}` : message);
+  const prefixe = error?.code ? `[${error.code}] ` : "";
+  const contexte = decrireContexte(error?.context);
+  return new Error(`${prefixe}${message}${contexte}`);
+}
+
+/** Sérialise le contexte d'une erreur typée, ou rend une chaîne vide s'il n'y en a pas. */
+function decrireContexte(contexte) {
+  if (!contexte || typeof contexte !== "object") return "";
+  try {
+    return ` — contexte : ${JSON.stringify(contexte)}`;
+  } catch {
+    // Un contexte non sérialisable ne doit pas faire disparaître l'erreur qu'il accompagne.
+    return " — contexte non sérialisable";
+  }
 }
 
 worker.addEventListener("message", (event) => {

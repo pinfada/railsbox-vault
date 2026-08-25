@@ -22,7 +22,7 @@ import {
 } from "./block-geometry.mjs";
 import { BlockJournal, JOURNAL_OPERATIONS } from "./block-journal.mjs";
 import { FAULT_KINDS, createFaultPlan } from "./fault-plan.mjs";
-import { toStorageError } from "./opfs-error-mapping.mjs";
+import { readCountFailure, toStorageError, writeCountFailure } from "./opfs-error-mapping.mjs";
 import { openOpfsSyncAccess } from "./opfs-sync-access.mjs";
 import {
   STORAGE_ERROR_CODES,
@@ -215,13 +215,14 @@ export class OpfsBlockBackend {
       { offset, length },
     );
 
-    if (obtained !== length) {
-      throw new StorageError(
-        STORAGE_ERROR_CODES.shortRead,
-        `Lecture courte : ${obtained} octet(s) rendus sur ${length} demandés à l'offset ${offset} du volume « ${this.#name} ».`,
-        { volume: this.#name, offset, requested: length, obtained },
-      );
-    }
+    // Une valeur de retour est INTERPRÉTÉE, jamais comparée à la va-vite : un support qui rend un
+    // code d'échec casté en non signé (#73) n'a pas fait une lecture courte, il n'a rien lu.
+    const echecDeLecture = readCountFailure(obtained, {
+      requested: length,
+      volume: this.#name,
+      offset,
+    });
+    if (echecDeLecture !== null) throw echecDeLecture;
 
     this.#journal.record(JOURNAL_OPERATIONS.read, { offset, length });
     return target;
@@ -260,13 +261,15 @@ export class OpfsBlockBackend {
       { offset, length: requested },
     );
 
-    if (accepted !== requested) {
-      throw new StorageError(
-        STORAGE_ERROR_CODES.partialWrite,
-        `Écriture partielle : ${accepted} octet(s) acceptés sur ${requested} à l'offset ${offset} du volume « ${this.#name} ».`,
-        { volume: this.#name, offset, requested, accepted },
-      );
-    }
+    // Même règle qu'en lecture : `4294967288` n'est pas « plus d'octets qu'on n'en demandait »,
+    // c'est `FILE_ERROR_NO_SPACE` casté en non signé sur 32 bits (#73). L'écriture partielle et le
+    // manque de place ont des remèdes différents ; les confondre les rendrait tous deux inutiles.
+    const echecDEcriture = writeCountFailure(accepted, {
+      requested,
+      volume: this.#name,
+      offset,
+    });
+    if (echecDEcriture !== null) throw echecDEcriture;
 
     this.#journal.record(JOURNAL_OPERATIONS.write, { offset, length: requested });
   }

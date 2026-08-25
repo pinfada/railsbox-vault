@@ -53,3 +53,174 @@ export function toStorageError(cause, context) {
     { ...context, cause: name },
   );
 }
+
+// --- Valeurs de RETOUR d'une écriture ou d'une lecture (#73) -------------------------------------
+//
+// Les deux fonctions ci-dessous ne traduisent pas une EXCEPTION mais une VALEUR DE RETOUR. Elles
+// existent parce que le job « Reprise MVP » a observé, sur les exécutants GitHub et jamais en local,
+// un `FileSystemSyncAccessHandle.write()` qui rend **4294967288** pour 4194304 octets demandés.
+//
+// 4294967288 = 2^32 − 8 : l'entier signé −8 lu comme non signé sur 32 bits. Chromium implémente ces
+// handles au-dessus de `base::File`, dont les échecs sont les valeurs NÉGATIVES de l'énumération
+// `base::File::Error` (`base/files/file.h`), où `-8` est `FILE_ERROR_NO_SPACE`. La spécification,
+// elle, n'admet aucune valeur de retour supérieure à la longueur demandée : `write()` doit LEVER
+// (`QuotaExceededError`, `InvalidStateError`…) plutôt que rendre un code.
+//
+// Le dépôt ne peut pas corriger le moteur. Il peut refuser d'en tirer une phrase fausse : dire
+// « 4294967288 octets écrits sur 4194304 » n'est pas décrire une écriture courte, c'est présenter un
+// ÉCHEC comme un compte. Trois lectures possibles, trois états distincts :
+//
+//   rendu == demandé      → succès ;
+//   0 ≤ rendu < demandé   → écriture réellement partielle / lecture réellement courte ;
+//   rendu > demandé       → ce n'est pas un compte. Décodé en entier signé 32 bits, nommé quand la
+//                           table le connaît, et classé — `NO_SPACE` en quota épuisé, tout le reste
+//                           en échec de support NON classé, jamais deviné.
+
+/** Étendue des entiers non signés sur 32 bits : le cast qui produit 4294967288. */
+const UINT32_SPAN = 2 ** 32;
+
+/**
+ * Noms de `base::File::Error` (Chromium, `base/files/file.h`). Ils ne servent QU'À NOMMER une valeur
+ * observée : aucun comportement du dépôt ne dépend de la table au-delà de `FILE_ERROR_NO_SPACE`.
+ * Une valeur absente reste un échec, avec son errno brut et sans nom inventé.
+ *
+ * @see https://source.chromium.org/chromium/chromium/src/+/main:base/files/file.h
+ */
+export const CHROMIUM_FILE_ERRORS = new Map([
+  [-1, "FILE_ERROR_FAILED"],
+  [-2, "FILE_ERROR_IN_USE"],
+  [-3, "FILE_ERROR_EXISTS"],
+  [-4, "FILE_ERROR_NOT_FOUND"],
+  [-5, "FILE_ERROR_ACCESS_DENIED"],
+  [-6, "FILE_ERROR_TOO_MANY_OPENED"],
+  [-7, "FILE_ERROR_NO_MEMORY"],
+  [-8, "FILE_ERROR_NO_SPACE"],
+  [-9, "FILE_ERROR_NOT_A_DIRECTORY"],
+  [-10, "FILE_ERROR_INVALID_OPERATION"],
+  [-11, "FILE_ERROR_SECURITY"],
+  [-12, "FILE_ERROR_ABORT"],
+  [-13, "FILE_ERROR_NOT_A_FILE"],
+  [-14, "FILE_ERROR_NOT_EMPTY"],
+  [-15, "FILE_ERROR_INVALID_URL"],
+  [-16, "FILE_ERROR_IO"],
+  [-17, "FILE_ERROR_MAX"],
+]);
+
+/** Le seul errno que le dépôt CLASSE : plus de place est un état contractuel distinct. */
+const ERRNO_NO_SPACE = -8;
+
+/**
+ * Interprète la valeur rendue par un `read`/`write` de `FileSystemSyncAccessHandle`.
+ *
+ * @param {unknown} returned valeur rendue par le support
+ * @param {number} requested longueur demandée
+ * @returns {{ kind: "exact"|"court"|"errno", errno: number|null, name: string|null }}
+ */
+export function decodeSupportCount(returned, requested) {
+  if (returned === requested) return { kind: "exact", errno: null, name: null };
+  if (Number.isInteger(returned) && returned >= 0 && returned < requested) {
+    return { kind: "court", errno: null, name: null };
+  }
+  // Tout le reste — au-dessus de la demande, négatif, ou non entier — n'est pas un compte d'octets.
+  // Le cas OBSERVÉ est le cast non signé d'un entier négatif sur 32 bits ; on le défait.
+  const signe =
+    Number.isInteger(returned) && returned >= 2 ** 31 && returned < UINT32_SPAN
+      ? returned - UINT32_SPAN
+      : returned;
+  const errno = Number.isInteger(signe) ? signe : null;
+  const name = errno === null ? null : (CHROMIUM_FILE_ERRORS.get(errno) ?? null);
+  return { kind: "errno", errno, name };
+}
+
+/** Phrase qui NOMME l'errno observé, sans jamais parler d'octets écrits ou lus. */
+function phraseErrno({ returned, errno, name, operation, volume, offset }) {
+  const nomme = name === null ? `l'errno ${errno}` : `${name} (${errno})`;
+  return (
+    `Le support OPFS a rendu un code d'échec au lieu d'un nombre d'octets pour « ${operation} » ` +
+    `sur « ${volume} » à l'offset ${offset} : ${returned} se décode en ${nomme}. ` +
+    `Aucun octet ne peut être tenu pour traité.`
+  );
+}
+
+/** Contexte commun d'un retour errno : de quoi trancher sans relire les journaux du moteur. */
+function contexteErrno({ operation, volume, offset, requested, returned, errno, name, storage }) {
+  return {
+    operation,
+    volume,
+    offset,
+    requested,
+    returned,
+    errno,
+    errnoName: name,
+    // `null` DIT que la mesure n'a pas été prise ; il ne prétend pas que le moteur ignore son quota.
+    // L'appelant qui peut mesurer (`navigator.storage.estimate()`) la fournit.
+    storage: storage ?? null,
+  };
+}
+
+/**
+ * Erreur typée d'une valeur de retour de `write()`, ou `null` si l'écriture est complète.
+ *
+ * @param {number} returned valeur rendue par `FileSystemSyncAccessHandle.write()`
+ * @param {{ requested: number, volume: string, offset: number, operation?: string,
+ *           storage?: { state: string, quota: number|null, usage: number|null,
+ *                       available: number|null } | null }} contexte
+ * @returns {StorageError|null}
+ */
+export function writeCountFailure(
+  returned,
+  { requested, volume, offset, operation = "write", storage = null },
+) {
+  const { kind, errno, name } = decodeSupportCount(returned, requested);
+  if (kind === "exact") return null;
+
+  if (kind === "court") {
+    return new StorageError(
+      STORAGE_ERROR_CODES.partialWrite,
+      `Écriture partielle : ${returned} octet(s) acceptés sur ${requested} à l'offset ${offset} du volume « ${volume} ».`,
+      { volume, offset, requested, accepted: returned },
+    );
+  }
+
+  // Plus de place est un état contractuel à part : il a son remède (libérer de l'espace) et sa
+  // conduite produit (#9). Tout autre errno reste NON classé — le nommer suffit, le ranger mentirait.
+  const code =
+    errno === ERRNO_NO_SPACE
+      ? STORAGE_ERROR_CODES.quotaExceeded
+      : STORAGE_ERROR_CODES.supportFailure;
+  return new StorageError(
+    code,
+    phraseErrno({ returned, errno, name, operation, volume, offset }),
+    contexteErrno({ operation, volume, offset, requested, returned, errno, name, storage }),
+  );
+}
+
+/**
+ * Erreur typée d'une valeur de retour de `read()`, ou `null` si la lecture est exacte.
+ *
+ * Une lecture qui rend un errno n'est JAMAIS classée en manque de place : lire ne réclame pas
+ * d'espace. Elle reste un échec de support non classé, quel que soit l'errno.
+ *
+ * @returns {StorageError|null}
+ */
+export function readCountFailure(
+  returned,
+  { requested, volume, offset, operation = "read", storage = null },
+) {
+  const { kind, errno, name } = decodeSupportCount(returned, requested);
+  if (kind === "exact") return null;
+
+  if (kind === "court") {
+    return new StorageError(
+      STORAGE_ERROR_CODES.shortRead,
+      `Lecture courte : ${returned} octet(s) rendus sur ${requested} demandés à l'offset ${offset} du volume « ${volume} ».`,
+      { volume, offset, requested, obtained: returned },
+    );
+  }
+
+  return new StorageError(
+    STORAGE_ERROR_CODES.supportFailure,
+    phraseErrno({ returned, errno, name, operation, volume, offset }),
+    contexteErrno({ operation, volume, offset, requested, returned, errno, name, storage }),
+  );
+}

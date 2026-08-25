@@ -182,6 +182,9 @@ test("un volume OPFS est exporté en archive vérifiable, et une archive altér�
       node: process.versions.node,
     },
     volumeOctets: appDiskBytes,
+    // Budget de stockage encadrant l'export (#73). Il n'est pas une assertion : il est la mesure qui
+    // permet de dire, après coup, s'il restait de la place — au lieu de le supposer.
+    stockage: exporte.storage,
     archive: {
       octets: exporte.archiveLength,
       enteteOctets: exporte.headerLength,

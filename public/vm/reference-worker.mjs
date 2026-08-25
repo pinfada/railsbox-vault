@@ -22,6 +22,7 @@
 
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
+import { createOpfsArchiveSink } from "/src/vm/opfs-archive-sink.mjs";
 import { createOpfsImportTarget } from "/src/vm/opfs-import-target.mjs";
 import { createOpfsMigrationTarget } from "/src/vm/opfs-migration-target.mjs";
 import {
@@ -196,6 +197,24 @@ async function phaseRevokeManifest({ volume }) {
 const EXPORT_BLOCK_BYTES = 4 * 1024 * 1024;
 
 /**
+ * INSTANTANÉ du budget de stockage de l'origine (#9), pris pour être PUBLIÉ (#73).
+ *
+ * Il ne décide de rien et ne bloque rien : il donne au rapport de quoi situer une écriture par
+ * rapport au quota que le moteur accorde. Un moteur qui n'estime pas rend l'état `unknown` — une
+ * inconnue, jamais une capacité nulle, exactement comme le pose `storage-budget.mjs`.
+ */
+async function instantaneStockage() {
+  const budget = createStorageBudget(bindNavigatorStorage(navigator.storage));
+  const mesure = await budget.measure();
+  return {
+    state: mesure.state,
+    quota: mesure.quota,
+    usage: mesure.usage,
+    available: mesure.available,
+  };
+}
+
+/**
  * EXPORTE le volume applicatif OPFS (#11) vers une ARCHIVE OPFS, en flux. La source est lue via le
  * handle exclusif de #6 (aucun autre écrivain dans l'origine) : c'est le point cohérent déclaré. La
  * plus grande lecture est mesurée — un export à surmémoire bornée ne demande jamais tout le volume
@@ -216,17 +235,16 @@ async function phaseExportVolume({ volume, archive, manifest, blockBytes = EXPOR
   };
 
   const handle = await openOpfsSyncAccess(archive);
-  const sink = {
-    offset: 0,
-    write(bytes) {
-      const written = handle.write(bytes, { at: this.offset });
-      if (written !== bytes.byteLength) {
-        throw new Error(`Écriture d'archive courte : ${written}/${bytes.byteLength} octet(s).`);
-      }
-      this.offset += written;
-    },
-  };
+  // Le puits vit dans `src/vm/opfs-archive-sink.mjs` (#73) : la lecture de la valeur de retour d'un
+  // `write()` est le point où ce banc a longtemps affirmé une « écriture d'archive courte » là où le
+  // support rendait `FILE_ERROR_NO_SPACE` casté en non signé. Un point qui peut mentir doit être
+  // testable sans navigateur ; le budget de stockage n'est mesuré qu'en cas d'échec.
+  const sink = createOpfsArchiveSink(handle, {
+    volume: archive,
+    measureStorage: () => instantaneStockage(),
+  });
 
+  const stockageAvant = await instantaneStockage();
   let result;
   try {
     const m = manifesteDuDescripteur(manifest, source.size);
@@ -240,7 +258,7 @@ async function phaseExportVolume({ volume, archive, manifest, blockBytes = EXPOR
       },
       blockBytes,
     });
-    handle.flush();
+    sink.flush();
   } finally {
     handle.close();
     await backend.close();
@@ -250,6 +268,10 @@ async function phaseExportVolume({ volume, archive, manifest, blockBytes = EXPOR
     phase: "export",
     volume,
     archive,
+    // Budget de stockage encadrant l'export (#73). Il ne conditionne rien : il DATE l'écriture par
+    // rapport au quota de l'origine, pour que « il n'y avait plus de place » cesse d'être une
+    // hypothèse. `state: "unknown"` dit que le moteur n'estime pas, pas que la capacité est nulle.
+    storage: { avant: stockageAvant, apres: await instantaneStockage() },
     volumeBytes: source.size,
     archiveLength: result.archiveLength,
     headerLength: result.headerLength,
@@ -651,7 +673,15 @@ self.addEventListener("message", (event) => {
       self.postMessage({
         id,
         ok: false,
-        error: { name: error.name, code: error.code ?? null, message: error.message },
+        // Le CONTEXTE traverse le port au même titre que le code (#73). Sans lui, un échec de
+        // support arrive en CI réduit à une phrase : ni offset, ni quota, ni errno — c'est-à-dire
+        // sans rien de ce qui permet de le diagnostiquer. Il ne porte que des nombres et des noms.
+        error: {
+          name: error.name,
+          code: error.code ?? null,
+          message: error.message,
+          context: error.context ?? null,
+        },
       }),
   );
 });
