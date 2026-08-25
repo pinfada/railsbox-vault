@@ -66,6 +66,35 @@ function percentile(valeurs, p) {
 
 const raison = raisonDIndisponibilite();
 
+/**
+ * Hygiène tenue MÊME quand le scénario échoue (#73). Le volume applicatif pèse un demi-gigaoctet et
+ * n'était retiré NULLE PART : il restait dans le profil du navigateur pour toute la suite du job, au
+ * détriment des scénarios suivants — qui en écrivent chacun autant, sur deux origines pour la
+ * restauration. Le témoin négatif est retiré ici aussi, plutôt qu'à la seule ligne du test.
+ *
+ * Un défaut de nettoyage ne doit jamais masquer l'échec qu'il suit : il est journalisé, pas relancé.
+ */
+test.afterEach(async ({ context }) => {
+  if (raison !== null) return;
+  const page = await context.newPage();
+  try {
+    await page.goto("/vm/reference.html", { waitUntil: "load" });
+    await page.waitForFunction(() => globalThis.bancReprise !== undefined, null, {
+      timeout: 20_000,
+    });
+    for (const nom of [VOLUME, VOLUME_VIDE]) {
+      await page.evaluate(
+        (n) => globalThis.bancReprise.executer({ phase: "cleanup", volume: n }),
+        nom,
+      );
+    }
+  } catch (erreur) {
+    process.stderr.write(`[hygiène] reprise : ${erreur.message}\n`);
+  } finally {
+    await page.close();
+  }
+});
+
 test("une mutation Rails et sa pièce jointe survivent à la fermeture complète et à un boot à froid hors ligne", async ({
   context,
   baseURL,

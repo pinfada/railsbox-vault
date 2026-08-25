@@ -48,6 +48,37 @@ function raisonDIndisponibilite() {
 
 const raison = raisonDIndisponibilite();
 
+/**
+ * Hygiène tenue MÊME quand le scénario échoue (#73). Le volume et son archive pèsent un demi-
+ * gigaoctet chacun ; jusqu'ici ils n'étaient retirés qu'à la dernière ligne du test, si bien qu'un
+ * échec en plein milieu laissait un gigaoctet dans le profil du navigateur pour toute la suite du
+ * job — et faisait tomber les scénarios suivants pour une raison qui n'était pas la leur.
+ *
+ * C'est le même crochet que `restauration-inter-origine.spec.mjs` et
+ * `migration-volume-versionne.spec.mjs`. Un défaut de nettoyage ne doit jamais masquer l'échec
+ * qu'il suit : il est journalisé, pas relancé.
+ */
+test.afterEach(async ({ context }) => {
+  if (raison !== null) return;
+  const page = await context.newPage();
+  try {
+    await page.goto("/vm/reference.html", { waitUntil: "load" });
+    await page.waitForFunction(() => globalThis.bancReprise !== undefined, null, {
+      timeout: 20_000,
+    });
+    for (const nom of [VOLUME, ARCHIVE]) {
+      await page.evaluate(
+        (n) => globalThis.bancReprise.executer({ phase: "cleanup", volume: n }),
+        nom,
+      );
+    }
+  } catch (erreur) {
+    process.stderr.write(`[hygiène] export : ${erreur.message}\n`);
+  } finally {
+    await page.close();
+  }
+});
+
 test("un volume OPFS est exporté en archive vérifiable, et une archive altérée ou tronquée est refusée", async ({
   context,
 }, testInfo) => {
@@ -167,11 +198,8 @@ test("un volume OPFS est exporté en archive vérifiable, et une archive altér�
   expect(tronque.ok, "une archive tronquée ne doit jamais se vérifier").toBe(false);
   expect(tronque.error?.code).toBe("VAULT_ARCHIVE_TRUNCATED");
 
-  // 6. Hygiène : retirer volume et archive.
-  page = await nouvellePage();
-  await courir(page, { phase: "cleanup", volume: VOLUME }).catch(() => {});
-  await courir(page, { phase: "cleanup", volume: ARCHIVE }).catch(() => {});
-  await page.close();
+  // L'hygiène est tenue par le crochet `afterEach` : un échec en cours de scénario ne doit pas
+  // laisser un gigaoctet derrière lui (#73).
 
   // Mesures publiées.
   const mesures = {
