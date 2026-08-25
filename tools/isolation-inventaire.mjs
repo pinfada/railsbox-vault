@@ -40,7 +40,10 @@ const FICHIERS_RACINE = Object.freeze([
   "eslint.config.mjs",
   "package.json",
 ]);
-const EXTENSIONS = new Set([".mjs", ".js", ".html", ".json"]);
+// `.rb` et `.erb` ne sont pas décoratifs : l'application Rails de référence vit sous `apps/`, et
+// c'est précisément le territoire applicatif qu'une isolation `require-corp` obligerait à servir
+// COEP. Ne scanner que le JavaScript laisserait un usage côté Rails apparaître sans être vu.
+const EXTENSIONS = new Set([".mjs", ".js", ".html", ".json", ".rb", ".erb"]);
 const DOSSIERS_IGNORES = new Set(["node_modules", "artefacts", "tmp", "log", "var"]);
 
 async function* fichiers(racine) {
@@ -95,12 +98,25 @@ async function inventorierCode() {
   );
 }
 
-/** Entier LEB128 non signé, avec la position d'arrivée. */
+/**
+ * Entier LEB128 non signé, avec la position d'arrivée.
+ *
+ * Le garde sur le décalage n'est pas de la superstition : `<<` et `|=` sont des opérateurs 32 bits
+ * en JavaScript. Un varuint32 malformé de plus de cinq octets ferait reboucler le décalage modulo
+ * 32 et rendrait un nombre plausible tiré d'octets qui n'en sont pas un. Un inventaire dont la
+ * conclusion porte une décision d'architecture doit échouer bruyamment plutôt que deviner.
+ */
 function lireEntier(octets, position) {
   let resultat = 0;
   let decalage = 0;
   let octet;
   do {
+    if (position >= octets.length) {
+      throw new Error("Entier LEB128 tronqué : fin du module atteinte.");
+    }
+    if (decalage > 28) {
+      throw new Error("Entier LEB128 malformé : plus de cinq octets pour un varuint32.");
+    }
     octet = octets[position];
     position += 1;
     resultat |= (octet & 0x7f) << decalage;
@@ -139,9 +155,20 @@ function lireLimites(octets, position) {
 const TYPES_IMPORT = Object.freeze(["fonction", "table", "memoire", "global"]);
 
 /** Sections « memory » et « import » d'un module WebAssembly, sans dépendance externe. */
+/** `\0asm` puis la version, sur quatre octets chacun. */
+const EN_TETE_WASM = Object.freeze([0x00, 0x61, 0x73, 0x6d]);
+const VERSION_WASM = Object.freeze([0x01, 0x00, 0x00, 0x00]);
+
 function analyserWasm(octets) {
-  if (octets.length < 8 || octets[0] !== 0x00 || octets[1] !== 0x61) {
+  const debute = (attendu, decalage) =>
+    attendu.every((valeur, index) => octets[decalage + index] === valeur);
+  if (octets.length < 8 || !debute(EN_TETE_WASM, 0)) {
     throw new Error("Le fichier n'est pas un module WebAssembly.");
+  }
+  if (!debute(VERSION_WASM, 4)) {
+    throw new Error(
+      "Version de module WebAssembly inattendue : l'analyse des sections n'est pas garantie.",
+    );
   }
   const memoires = [];
   const memoiresImportees = [];
@@ -231,16 +258,45 @@ async function inventorierV86() {
   };
 }
 
+/**
+ * Agrégat par fichier. C'est cette vue-là que la documentation du spike publie : une liste de 96
+ * lignes brutes ne se relit pas, et un tableau recopié à la main se périme au premier fichier
+ * ajouté. Le compte total et le nombre de fichiers sont rendus avec, pour que toute citation soit
+ * vérifiable par une seule commande.
+ */
+function agregerParFichier(occurrences) {
+  const parFichier = new Map();
+  for (const occurrence of occurrences) {
+    if (!parFichier.has(occurrence.fichier)) {
+      parFichier.set(occurrence.fichier, { occurrences: 0, jetons: new Set() });
+    }
+    const agregat = parFichier.get(occurrence.fichier);
+    agregat.occurrences += 1;
+    agregat.jetons.add(occurrence.jeton);
+  }
+  return [...parFichier]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([fichier, agregat]) => ({
+      fichier,
+      occurrences: agregat.occurrences,
+      jetons: [...agregat.jetons].sort(),
+    }));
+}
+
 function afficher(inventaire) {
   const lignes = [];
   lignes.push("Inventaire des dépendances à l'isolation multi-origine (spike #41)");
   lignes.push("");
-  lignes.push("— Code du dépôt —");
-  if (inventaire.code.length === 0) {
+  lignes.push(
+    `— Code du dépôt : ${inventaire.code.length} occurrences dans ${inventaire.parFichier.length} fichiers —`,
+  );
+  if (inventaire.parFichier.length === 0) {
     lignes.push("  aucune occurrence.");
   } else {
-    for (const occurrence of inventaire.code) {
-      lignes.push(`  ${occurrence.fichier}:${occurrence.ligne}  ${occurrence.jeton}`);
+    for (const agregat of inventaire.parFichier) {
+      lignes.push(
+        `  ${String(agregat.occurrences).padStart(3)}  ${agregat.fichier}  ::  ${agregat.jetons.join(", ")}`,
+      );
     }
   }
   lignes.push("");
@@ -269,11 +325,13 @@ function afficher(inventaire) {
 const dossier = join(REPOSITORY_ROOT, "reports", "isolation");
 await mkdir(dossier, { recursive: true });
 const chemin = join(dossier, "inventaire.json");
+const code = await inventorierCode();
 const inventaire = {
   spike: 41,
   date: new Date().toISOString(),
   jetons: JETONS,
-  code: await inventorierCode(),
+  code,
+  parFichier: agregerParFichier(code),
   v86: await inventorierV86(),
   rapport: relative(REPOSITORY_ROOT, chemin).replaceAll("\\", "/"),
 };
