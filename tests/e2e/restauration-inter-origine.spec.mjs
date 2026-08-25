@@ -133,7 +133,9 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
   const appDiskUrl = `/artifacts/reference-image/${manifeste.boot.hdb}`;
 
   const descripteurManifeste = {
-    runtime: { version: paquet.version, artifact: null },
+    // `minWriter` est exigé par le format v2 (#13) : le volume DÉCLARE le plus ancien runtime
+    // autorisé à l'écrire. Le banc déclare la version en cours, le choix le plus strict.
+    runtime: { version: paquet.version, artifact: null, minWriter: paquet.version },
     app: { id: contrat.application.id, version: contrat.application.version },
   };
   const attentes = { app: { id: contrat.application.id } };

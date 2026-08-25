@@ -23,17 +23,36 @@ export const VOLUME_DIRECTORY = "vault-volumes";
 export const MANIFEST_SIDECAR_SUFFIX = ".manifest";
 
 /**
+ * Suffixe RÉSERVÉ du JOURNAL DE REPRISE d'une migration (#13). Il vit à côté du volume pour la même
+ * raison que le manifeste : les octets du volume sont servis tels quels à v86, et y intercaler quoi
+ * que ce soit décalerait le système de fichiers du guest.
+ */
+export const MIGRATION_JOURNAL_SUFFIX = ".migration";
+
+/**
+ * Tous les suffixes réservés aux voisins d'un volume. Aucun volume ne peut en porter un, sans quoi
+ * migrer « donnees » détruirait un volume légitime nommé « donnees.migration ».
+ */
+export const RESERVED_SIDECAR_SUFFIXES = Object.freeze([
+  MANIFEST_SIDECAR_SUFFIX,
+  MIGRATION_JOURNAL_SUFFIX,
+]);
+
+/** Longueur du plus long voisin à réserver : c'est elle qui borne le nom d'un volume. */
+const LONGEST_SIDECAR_SUFFIX = Math.max(...RESERVED_SIDECAR_SUFFIXES.map((s) => s.length));
+
+/**
  * Longueur maximale d'un NOM DE FICHIER dans le répertoire des volumes. C'est la vraie borne du
  * support ; elle doit accueillir le nom du manifeste voisin, pas seulement celui du volume.
  */
 export const MAX_STORAGE_NAME = 64;
 
 /**
- * Longueur maximale d'un NOM DE VOLUME : la borne du support, moins la place du suffixe réservé.
- * Un volume plus long serait créable et exportable, puis IRRESTAURABLE faute de place pour son
- * manifeste — une impasse découverte trop tard. La frontière la refuse d'emblée.
+ * Longueur maximale d'un NOM DE VOLUME : la borne du support, moins la place du PLUS LONG suffixe
+ * réservé. Un volume plus long serait créable et exportable, puis IRRESTAURABLE — ou IMMIGRABLE —
+ * faute de place pour son voisin, une impasse découverte trop tard. La frontière la refuse d'emblée.
  */
-export const MAX_VOLUME_NAME = MAX_STORAGE_NAME - MANIFEST_SIDECAR_SUFFIX.length;
+export const MAX_VOLUME_NAME = MAX_STORAGE_NAME - LONGEST_SIDECAR_SUFFIX;
 
 /** Noms de fichier admis dans le répertoire des volumes : ni séparateur, ni remontée de chemin. */
 const STORAGE_NAME = new RegExp(`^[a-z0-9][a-z0-9._-]{0,${MAX_STORAGE_NAME - 1}}$`);
@@ -74,14 +93,15 @@ export function assertStorageName(name) {
  */
 export function assertVolumeName(name) {
   assertStorageName(name);
-  if (name.endsWith(MANIFEST_SIDECAR_SUFFIX)) {
+  const reserve = RESERVED_SIDECAR_SUFFIXES.find((suffixe) => name.endsWith(suffixe));
+  if (reserve !== undefined) {
     throw new TypeError(
-      `Nom de volume invalide : ${JSON.stringify(name)}. Le suffixe « ${MANIFEST_SIDECAR_SUFFIX} » est réservé au manifeste d'un volume.`,
+      `Nom de volume invalide : ${JSON.stringify(name)}. Le suffixe « ${reserve} » est réservé à un voisin de volume.`,
     );
   }
   if (name.length > MAX_VOLUME_NAME) {
     throw new TypeError(
-      `Nom de volume trop long : ${JSON.stringify(name)} (${name.length} > ${MAX_VOLUME_NAME}). Il doit rester de la place pour son manifeste voisin.`,
+      `Nom de volume trop long : ${JSON.stringify(name)} (${name.length} > ${MAX_VOLUME_NAME}). Il doit rester de la place pour ses voisins.`,
     );
   }
   return name;
@@ -96,6 +116,16 @@ export function assertVolumeName(name) {
 export function manifestSidecarName(volume) {
   assertVolumeName(volume);
   return `${volume}${MANIFEST_SIDECAR_SUFFIX}`;
+}
+
+/**
+ * Nom du JOURNAL DE REPRISE d'une migration, posé à côté du volume (#13). Même règle de longueur :
+ * un volume créable est toujours un volume migrable.
+ * @param {string} volume
+ */
+export function migrationJournalName(volume) {
+  assertVolumeName(volume);
+  return `${volume}${MIGRATION_JOURNAL_SUFFIX}`;
 }
 
 async function volumeDirectory({ create }) {

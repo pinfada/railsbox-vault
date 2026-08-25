@@ -20,7 +20,7 @@ const TAILLE = 8 * SECTOR_SIZE;
 
 function manifesteValide() {
   return createManifest({
-    runtime: { version: "0.1.0", artifact: null },
+    runtime: { version: "0.1.0", artifact: null, minWriter: "0.1.0" },
     app: { id: "railsbox-vault-reference", version: "1.0.0" },
     volumeSize: TAILLE,
     identity: { algorithm: "sha-256", digest: null },

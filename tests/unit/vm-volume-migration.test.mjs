@@ -221,7 +221,9 @@ test("la migration inscrit le manifeste cible EN DERNIER, après le journal et l
 
 test("la migration v1 → v2 traduit la règle de downgrade v1 en une déclaration portée par le volume", async () => {
   const cible = creerCible({
-    manifestBytes: serializeManifest(manifesteV1({ runtime: { version: "2.7.3", artifact: null } })),
+    manifestBytes: serializeManifest(
+      manifesteV1({ runtime: { version: "2.7.3", artifact: null } }),
+    ),
   });
   await migrateVolume({
     target: cible,
@@ -363,7 +365,7 @@ const POINTS = [
     geste: "write-journal",
     description: "inscription du journal de reprise",
     identifie: true,
-    journal: true,
+    journal: false,
   },
   { geste: "revoke", description: "révocation du manifeste", identifie: true, journal: true },
   { geste: "flush", description: "barrière de durabilité", identifie: false, journal: true },

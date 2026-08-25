@@ -93,7 +93,9 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
   // boot le vérifie.
   const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
   const descripteurManifeste = {
-    runtime: { version: paquet.version, artifact: null },
+    // `minWriter` est exigé par le format v2 (#13) : le volume DÉCLARE le plus ancien runtime
+    // autorisé à l'écrire. Le banc déclare la version en cours, le choix le plus strict.
+    runtime: { version: paquet.version, artifact: null, minWriter: paquet.version },
     app: { id: contrat.application.id, version: contrat.application.version },
   };
   const configBoot = {

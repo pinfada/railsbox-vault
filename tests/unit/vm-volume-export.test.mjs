@@ -58,7 +58,7 @@ async function digestVolume(source) {
 
 function manifeste(volumeSize) {
   return createManifest({
-    runtime: { version: "1.4.2", artifact: "sha256:abcdef" },
+    runtime: { version: "1.4.2", artifact: "sha256:abcdef", minWriter: "1.0.0" },
     app: { id: "railsbox/reference", version: "3.1.0" },
     volumeSize,
     identity: { algorithm: "sha-256", digest: null },
@@ -287,7 +287,7 @@ test("la compatibilité du manifeste est vérifiée PAR DÉFAUT, sans attente à
   const source = sourceVolume(SECTOR_SIZE * 4);
   const futur = createManifest({
     formatVersion: MANIFEST_FORMAT_VERSION + 1,
-    runtime: { version: "1.4.2", artifact: null },
+    runtime: { version: "1.4.2", artifact: null, minWriter: "1.0.0" },
     app: { id: "railsbox/reference", version: "3.1.0" },
     volumeSize: source.size,
     identity: { algorithm: "sha-256", digest: null },
