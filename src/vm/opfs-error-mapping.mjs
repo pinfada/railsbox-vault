@@ -132,12 +132,21 @@ export function decodeSupportCount(returned, requested) {
   return { kind: "errno", errno, name };
 }
 
-/** Phrase qui NOMME l'errno observé, sans jamais parler d'octets écrits ou lus. */
+/**
+ * Phrase qui NOMME ce qui a été observé, sans jamais parler d'octets écrits ou lus.
+ *
+ * Trois degrés de certitude, et la phrase ne va jamais au-delà du sien : un errno connu de la table
+ * est nommé ; un errno hors table est donné brut ; une valeur qui ne se décode même pas en entier
+ * est signalée comme telle plutôt que présentée comme « l'errno null ».
+ */
 function phraseErrno({ returned, errno, name, operation, volume, offset }) {
-  const nomme = name === null ? `l'errno ${errno}` : `${name} (${errno})`;
+  const decodage =
+    errno === null
+      ? `${JSON.stringify(returned) ?? String(returned)} n'est pas un nombre d'octets`
+      : `${returned} se décode en ${name === null ? `l'errno ${errno}` : `${name} (${errno})`}`;
   return (
     `Le support OPFS a rendu un code d'échec au lieu d'un nombre d'octets pour « ${operation} » ` +
-    `sur « ${volume} » à l'offset ${offset} : ${returned} se décode en ${nomme}. ` +
+    `sur « ${volume} » à l'offset ${offset} : ${decodage}. ` +
     `Aucun octet ne peut être tenu pour traité.`
   );
 }

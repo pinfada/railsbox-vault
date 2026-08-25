@@ -119,6 +119,17 @@ test("un errno qui n'est pas un manque de place n'est jamais rangé dans le quot
   assert.match(erreur.message, /FILE_ERROR_ACCESS_DENIED/);
 });
 
+test("une valeur qui ne se décode même pas en entier est dite telle quelle", () => {
+  const erreur = writeCountFailure(undefined, { requested: DEMANDE, volume: "v", offset: 0 });
+  assert.ok(isStorageError(erreur, STORAGE_ERROR_CODES.supportFailure));
+  assert.equal(erreur.context.errno, null);
+  assert.equal(erreur.context.errnoName, null);
+  // Ni « l'errno null », ni une écriture courte : ce que l'on sait, et rien de plus.
+  assert.match(erreur.message, /n'est pas un nombre d'octets/);
+  assert.doesNotMatch(erreur.message, /errno null/);
+  assert.doesNotMatch(erreur.message, /courte|partielle/i);
+});
+
 test("sans mesure de stockage, le contexte dit « inconnu » plutôt que de taire la question", () => {
   const erreur = writeCountFailure(RENDU_NO_SPACE, { requested: DEMANDE, volume: "v", offset: 0 });
   assert.equal(erreur.context.storage, null);
