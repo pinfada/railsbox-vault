@@ -308,7 +308,8 @@ Risques résiduels, au-delà des limites ci-dessus :
    objet littéral de méthodes d'une ligne et leurs commentaires. Elle n'est pas fendue ici : la
    découper pour la métrique nuirait à sa lisibilité. Trois fonctions **antérieures** à #13 restent
    également au-dessus — `phaseExportVolume` (61), `createBootTimeline` (58), `bootEtVerifier` (93)
-   —, déjà couvertes par l'issue de suivi proposée dans la PR #70.
+   —. La PR #70 avait **proposé** une issue de suivi pour les découper sans jamais la créer ; c'est
+   désormais l'**issue #77**, qui couvre les quatre fonctions.
 
 Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi :
 
