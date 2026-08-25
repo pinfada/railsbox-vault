@@ -548,15 +548,27 @@ est **réservé** par la frontière de nommage, et la longueur maximale d'un nom
 d'autant : aucun volume ne peut porter le nom d'un manifeste, et un volume créable est toujours
 restaurable.
 
-**L'ouverture en écriture EXIGE ce voisin** (`src/vm/opfs-volume-open.mjs`, `SEC-UPDATE-001`).
-`openVolumeForWrite` est le point de passage unique : il lit le manifeste voisin, le soumet à
-`assertVolumeWritable` (#10) et n'ouvre le volume qu'ensuite ; aucun chemin écrivant n'appelle plus
-`openOpfsVolume` directement. C'est ce qui donne leur portée aux gestes 4 et 7 — une restauration
-interrompue laisse une cible sans voisin, et le boot suivant est refusé par
-`VAULT_MANIFEST_UNIDENTIFIED` **avant** que le guest ne monte un système de fichiers tronqué. En
-corollaire, toute création de volume inscrit son manifeste en dernier geste. Il n'existe **aucune
-période de transition** : un volume sans manifeste est refusé, jamais complété par une identité
-devinée.
+**Le BOOT exige ce voisin** (`src/vm/opfs-volume-open.mjs`, `SEC-UPDATE-001`). La règle exacte,
+telle que le code la tient :
+
+- un volume **identifié** ne s'ouvre en écriture que par `openVolumeForWrite`, qui lit le manifeste
+  voisin, le soumet à `assertVolumeWritable` (#10) et n'ouvre qu'ensuite. Le boot y passe : un
+  volume sans manifeste y est refusé par `VAULT_MANIFEST_UNIDENTIFIED` **avant** la construction de
+  v86 ;
+- un volume **anonyme** n'est ouvrable que par le chemin qui va l'identifier — préparation depuis
+  l'image, restauration — et reste refusé au boot tant que son manifeste n'est pas inscrit ;
+- les bancs #4/#6/#14 et les phases de mesure (export, empreinte) n'ouvrent aucun volume applicatif.
+
+C'est ce qui donne leur portée aux gestes 4 et 7 — une restauration interrompue laisse une cible
+sans voisin, et le boot suivant la refuse avant que le guest ne monte un système de fichiers
+tronqué. En corollaire, toute création de volume inscrit son manifeste en dernier geste, et il
+n'existe **aucune période de transition** : un volume sans manifeste est refusé, jamais complété par
+une identité devinée.
+
+En revanche, `openOpfsVolume` **reste appelable directement** — treize sites le font encore,
+énumérés et justifiés dans l'[ADR 0009](decisions/0009-restauration-inter-origine.md). Rien dans
+l'outillage n'empêche un nouveau chemin d'en ajouter un : c'est une **discipline de revue, pas une
+contrainte du code**.
 
 **Écraser exige un consentement ; retailler est toujours refusé.** Une cible non vide est refusée
 par défaut ; l'appelant peut consentir explicitement, et ce consentement est inscrit dans le compte

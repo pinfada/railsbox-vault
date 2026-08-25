@@ -99,17 +99,25 @@ et tester.
 - `SEC-UPDATE-001` — runtime et application sont identifiés et vérifiés avant d'ouvrir le volume en
   écriture. #10 en a écrit la règle — `assertVolumeWritable` refuse un volume sans manifeste
   identifiable (`VAULT_MANIFEST_UNIDENTIFIED`) — mais aucun chemin de production ne l'appelait :
-  l'invariant était énoncé, pas exercé. Depuis #12 il l'est. `openVolumeForWrite`
-  (`src/vm/opfs-volume-open.mjs`) est le **point de passage unique** de toute ouverture en écriture
-  : il lit le manifeste posé à côté du volume, le soumet à `assertVolumeWritable`, et n'ouvre le
-  volume qu'ensuite ; plus aucun chemin écrivant n'appelle `openOpfsVolume` directement. Les deux
-  moitiés existent donc enfin : la restauration (et toute création de volume) **écrit** le
-  manifeste, en dernier geste et après avoir relu le volume entier, et le boot **l'exige**. Une
-  restauration interrompue laisse un volume non identifié, que ce refus rejette avant que le guest
-  ne démarre. Il n'existe **aucune période de transition** : un volume sans manifeste est refusé,
-  jamais complété par une identité devinée. Preuves : `tests/unit/vm-opfs-volume-open.test.mjs` (le
-  refus précède l'ouverture) et un témoin Bout en bout où le manifeste d'un volume restauré est
-  retiré, puis le boot refusé (`tests/e2e/restauration-inter-origine.spec.mjs`) ;
+  l'invariant était énoncé, pas exercé. Depuis #12 il l'est, et voici exactement dans quelle mesure.
+  Un volume **identifié** ne s'ouvre en écriture que par `openVolumeForWrite`
+  (`src/vm/opfs-volume-open.mjs`), qui lit le manifeste posé à côté du volume, le soumet à
+  `assertVolumeWritable` et n'ouvre qu'ensuite ; **le boot y passe**, et un volume sans manifeste y
+  est refusé avant même la construction de v86. Un volume **anonyme** n'est ouvrable que par le
+  chemin qui va l'identifier — préparation depuis l'image de référence, restauration — et reste
+  refusé au boot tant que son manifeste n'est pas inscrit. Les bancs #4/#6/#14 et les phases de
+  mesure n'ouvrent aucun volume applicatif. Les deux moitiés de l'invariant existent donc enfin : la
+  restauration (et toute création de volume) **écrit** le manifeste, en dernier geste et après avoir
+  relu le volume entier, et le boot **l'exige**. Il n'existe **aucune période de transition** : un
+  volume sans manifeste est refusé, jamais complété par une identité devinée. **Portée exacte du
+  contrôle** : `openOpfsVolume` reste appelable directement, et treize sites de production le font
+  encore (énumérés et justifiés dans
+  [l'ADR 0009](docs/decisions/0009-restauration-inter-origine.md)). Rien dans l'outillage n'empêche
+  un nouveau chemin d'en ajouter un sans passer par l'ouvreur : c'est une **discipline de revue, pas
+  une contrainte du code**. Fermer `openOpfsVolume` derrière un module privé reste du travail
+  découvert. Preuves : `tests/unit/vm-opfs-volume-open.test.mjs` (le refus précède l'ouverture) et
+  un témoin Bout en bout où le manifeste d'un volume restauré est retiré, puis le boot refusé
+  (`tests/e2e/restauration-inter-origine.spec.mjs`) ;
 - `SEC-RECOVERY-001` — chaque moyen de récupération annoncé possède un test de succès, de révocation
   et de perte définitive.
 

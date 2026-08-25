@@ -11,16 +11,21 @@
 //      un seul octet. Une archive tronquée, altérée ou d'une autre application est refusée ici, et
 //      la cible n'est même pas ouverte ;
 //   2. REFUSER ce qui doit l'être avant la mutation : cible déjà occupée sans consentement
-//      explicite, espace estimé insuffisant (diagnostics de #9) ;
-//   3. RÉVOQUER le manifeste de la cible. C'est la première mutation, et elle va dans le sens de la
-//      sûreté : dès l'instant où la restauration commence, le volume cesse d'être présenté comme
-//      valide. Une interruption à n'importe quel moment laisse donc un volume SANS manifeste, que
+//      explicite, géométrie inconciliable, espace estimé insuffisant (diagnostics de #9) ;
+//   3. OUVRIR la cible en exclusivité. Ouvrir un volume de géométrie inchangée ne mute rien, mais
+//      l'ouverture peut échouer pour des raisons étrangères à la restauration — un autre onglet
+//      détient l'exclusivité (#8), le support a perdu le handle, le quota refuse l'allocation. Elle
+//      précède donc la révocation : sinon un volume PARFAITEMENT INTACT deviendrait inutilisable par
+//      la seule faute du produit ;
+//   4. RÉVOQUER le manifeste de la cible. C'est la première mutation, et elle va dans le sens de la
+//      sûreté : avant le premier octet écrit, le volume cesse d'être présenté comme valide. Une
+//      interruption au-delà de ce point laisse donc un volume SANS manifeste, que
 //      `assertVolumeWritable` (#10) refuse par `VAULT_MANIFEST_UNIDENTIFIED` ;
-//   4. RESTAURER le contenu octet pour octet, EN FLUX (surmémoire ≤ 64 Mio), puis franchir une
+//   5. RESTAURER le contenu octet pour octet, EN FLUX (surmémoire ≤ 64 Mio), puis franchir une
 //      barrière de durabilité ;
-//   5. RE-VÉRIFIER le volume restauré en le RELISANT depuis le support : l'empreinte recalculée doit
+//   6. RE-VÉRIFIER le volume restauré en le RELISANT depuis le support : l'empreinte recalculée doit
 //      égaler celle de l'archive. Écrire n'est pas persister ; relire, si ;
-//   6. INSCRIRE le manifeste. Seule cette dernière étape rend le volume présentable comme valide.
+//   7. INSCRIRE le manifeste. Seule cette dernière étape rend le volume présentable comme valide.
 //
 // Il n'existe donc pas de restauration partielle silencieuse : soit le volume est complet, relu et
 // identifié, soit l'échec est typé et le volume reste non identifié.
@@ -249,7 +254,11 @@ async function restaurerEtRelire({ target, read, verdict, volumeSize, blockBytes
  *   blockBytes?: number,
  *   overwrite?: boolean,
  *   budget?: { reserve: (bytes: number) => Promise<object> } | null,
+ *   enforceCompatibility?: boolean,
  * }} args
+ *   `enforceCompatibility` vaut `true` par défaut : la compatibilité du manifeste est contrôlée même
+ *   sans `expectations`. Le passer à `false` est une DÉROGATION explicite, réservée au diagnostic —
+ *   lire un conteneur qu'on ne saurait pas ouvrir en écriture.
  * @returns {Promise<object>} compte rendu de la restauration
  * @throws {import("./archive-errors.mjs").ArchiveError} archive malformée, tronquée, altérée
  * @throws {import("./manifest-errors.mjs").ManifestError} manifeste incompatible (propagée de #10)
@@ -290,7 +299,7 @@ export async function importArchive({
   const occupee = refuserCible(etat, { overwrite, volumeSize });
   const budgetRapport = await reserverEspace(budget, volumeSize, occupee ? etat.size : 0);
 
-  // 3/4/5. OUVRIR, RÉVOQUER, RESTAURER puis RE-VÉRIFIER, sous handle exclusif.
+  // 3/4/5/6. OUVRIR, RÉVOQUER, RESTAURER puis RE-VÉRIFIER, sous handle exclusif.
   const { recopie, relecture } = await restaurerEtRelire({
     target,
     read: lire,
@@ -299,7 +308,7 @@ export async function importArchive({
     blockBytes,
   });
 
-  // 6. INSCRIRE — dernier geste, et seul à rendre le volume présentable comme valide.
+  // 7. INSCRIRE — dernier geste, et seul à rendre le volume présentable comme valide.
   await target.commitManifest(serializeManifest(verdict.manifest));
 
   return rapportDeRestauration({
