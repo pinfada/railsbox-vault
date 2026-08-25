@@ -96,7 +96,8 @@ quelle** : l'archive ne reconditionne pas le refus de compatibilité, elle le la
 ## Ce qui est explicitement réservé
 
 - **La restauration inter-origine** → #12. L'archive lui donne un conteneur vérifiable ; le parcours
-  d'import (réhydrater un volume OPFS depuis une archive) n'est pas écrit ici.
+  d'import (réhydrater un volume OPFS depuis une archive) n'est pas écrit ici. Il l'est depuis par
+  l'[ADR 0009](0009-restauration-inter-origine.md), qui n'a exigé aucun changement de ce format.
 - **Le chiffrement et la signature de l'archive** → jalon 4. L'archive v1 n'est ni chiffrée ni
   signée : un support hostile peut la forger. La vérification repose, pour l'instant, sur la
   confiance dans le support local (OPFS partitionné par origine, ADR 0002) et prouve l'INTÉGRITÉ
