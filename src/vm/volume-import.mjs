@@ -112,6 +112,32 @@ async function reserverEspace(budget, volumeSize) {
 }
 
 /**
+ * Refuse ce qui doit l'être AVANT toute mutation, en examinant la cible telle qu'elle est. Rend
+ * `true` si la cible était occupée et que l'appelant a consenti à l'écraser.
+ */
+function refuserCible(etat, { overwrite, volumeSize }) {
+  const occupee = etat.present === true && etat.size > 0;
+  if (occupee && !overwrite) {
+    throw refus(
+      IMPORT_ERROR_CODES.targetNotEmpty,
+      `Restauration refusée : la cible porte déjà un volume de ${etat.size} octet(s). Un écrasement exige un consentement explicite (« overwrite »).`,
+      { targetSize: etat.size, volumeSize, identified: Boolean(etat.manifestBytes) },
+    );
+  }
+  // Un volume existant n'est jamais RETAILLÉ, même avec consentement : ce serait détruire une
+  // géométrie que #6 tient pour immuable. La restauration refuse et laisse l'exploitant retirer
+  // explicitement la cible — elle ne supprime jamais de données de sa propre initiative.
+  if (occupee && etat.size !== volumeSize) {
+    throw refus(
+      IMPORT_ERROR_CODES.geometryMismatch,
+      `Restauration refusée : la cible porte un volume de ${etat.size} octet(s) et l'archive en décrit ${volumeSize}. Un volume existant n'est jamais retaillé ; retirer la cible explicitement avant de restaurer.`,
+      { targetSize: etat.size, volumeSize },
+    );
+  }
+  return occupee;
+}
+
+/**
  * Recopie le contenu de l'archive dans le volume, PAR BLOCS. Le contenu n'est jamais tenu en entier :
  * ni côté archive, ni côté volume. Rend les plus grandes tailles réellement demandées — la preuve
  * déterministe de la borne, plus fiable qu'une mesure de tas.
@@ -156,6 +182,43 @@ async function empreinteDuVolume({ backend, volumeSize, blockBytes }) {
     offset += length;
   }
   return { digest: hash.digestHex(), maxRead };
+}
+
+/**
+ * Ouvre la cible, y recopie le contenu, franchit la barrière, puis RELIT tout le volume et confronte
+ * son empreinte à celle de l'archive. Le handle exclusif est rendu quoi qu'il arrive. Un écart de
+ * géométrie ou d'empreinte laisse la cible sans manifeste — donc non identifiée.
+ */
+async function restaurerEtRelire({ target, read, verdict, volumeSize, blockBytes }) {
+  const backend = await target.open({ size: volumeSize });
+  try {
+    if (backend.size() !== volumeSize) {
+      throw refus(
+        IMPORT_ERROR_CODES.geometryMismatch,
+        `Restauration refusée : la cible ouverte porte ${backend.size()} octet(s) alors que l'archive en décrit ${volumeSize}. Un volume n'est jamais retaillé en silence.`,
+        { targetSize: backend.size(), volumeSize },
+      );
+    }
+    const recopie = await recopier({
+      read,
+      backend,
+      contentOffset: verdict.contentOffset,
+      volumeSize,
+      blockBytes,
+    });
+    await backend.flush();
+    const relecture = await empreinteDuVolume({ backend, volumeSize, blockBytes });
+    if (relecture.digest !== verdict.contentDigest) {
+      throw refus(
+        IMPORT_ERROR_CODES.verificationFailed,
+        `Restauration refusée : le volume relu porte l'empreinte ${relecture.digest} au lieu de ${verdict.contentDigest}. Le volume n'est pas identifié et ne doit pas être présenté comme valide.`,
+        { expected: verdict.contentDigest, observed: relecture.digest, volumeSize },
+      );
+    }
+    return { recopie, relecture };
+  } finally {
+    await backend.close();
+  }
 }
 
 /**
@@ -208,61 +271,20 @@ export async function importArchive({
   const volumeSize = verdict.contentLength;
 
   // 2. REFUSER — la cible d'abord : on ne piétine jamais un volume sans consentement explicite.
-  const etat = await target.inspect();
-  const occupee = etat.present === true && etat.size > 0;
-  if (occupee && !overwrite) {
-    throw refus(
-      IMPORT_ERROR_CODES.targetNotEmpty,
-      `Restauration refusée : la cible porte déjà un volume de ${etat.size} octet(s). Un écrasement exige un consentement explicite (« overwrite »).`,
-      { targetSize: etat.size, volumeSize, identified: Boolean(etat.manifestBytes) },
-    );
-  }
-  // Un volume existant n'est jamais RETAILLÉ, même avec consentement : ce serait détruire une
-  // géométrie que #6 tient pour immuable. La restauration refuse et laisse l'exploitant retirer
-  // explicitement la cible — elle ne supprime jamais de données de sa propre initiative.
-  if (occupee && etat.size !== volumeSize) {
-    throw refus(
-      IMPORT_ERROR_CODES.geometryMismatch,
-      `Restauration refusée : la cible porte un volume de ${etat.size} octet(s) et l'archive en décrit ${volumeSize}. Un volume existant n'est jamais retaillé ; retirer la cible explicitement avant de restaurer.`,
-      { targetSize: etat.size, volumeSize },
-    );
-  }
+  const occupee = refuserCible(await target.inspect(), { overwrite, volumeSize });
   const budgetRapport = await reserverEspace(budget, volumeSize);
 
   // 3. RÉVOQUER — première mutation : la cible cesse d'être présentée comme valide.
   await target.revokeManifest();
 
   // 4/5. RESTAURER puis RE-VÉRIFIER, sous handle exclusif.
-  const backend = await target.open({ size: volumeSize });
-  let recopie;
-  let relecture;
-  try {
-    if (backend.size() !== volumeSize) {
-      throw refus(
-        IMPORT_ERROR_CODES.geometryMismatch,
-        `Restauration refusée : la cible ouverte porte ${backend.size()} octet(s) alors que l'archive en décrit ${volumeSize}. Un volume n'est jamais retaillé en silence.`,
-        { targetSize: backend.size(), volumeSize },
-      );
-    }
-    recopie = await recopier({
-      read: lire,
-      backend,
-      contentOffset: verdict.contentOffset,
-      volumeSize,
-      blockBytes,
-    });
-    await backend.flush();
-    relecture = await empreinteDuVolume({ backend, volumeSize, blockBytes });
-    if (relecture.digest !== verdict.contentDigest) {
-      throw refus(
-        IMPORT_ERROR_CODES.verificationFailed,
-        `Restauration refusée : le volume relu porte l'empreinte ${relecture.digest} au lieu de ${verdict.contentDigest}. Le volume n'est pas identifié et ne doit pas être présenté comme valide.`,
-        { expected: verdict.contentDigest, observed: relecture.digest, volumeSize },
-      );
-    }
-  } finally {
-    await backend.close();
-  }
+  const { recopie, relecture } = await restaurerEtRelire({
+    target,
+    read: lire,
+    verdict,
+    volumeSize,
+    blockBytes,
+  });
 
   // 6. INSCRIRE — dernier geste, et seul à rendre le volume présentable comme valide.
   await target.commitManifest(serializeManifest(verdict.manifest));

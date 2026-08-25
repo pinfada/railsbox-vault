@@ -36,6 +36,19 @@ l'empreinte et valide le manifeste ; une archive tronquée ou altérée est refu
 typée. L'archive v1 prouve l'intégrité mais n'est **ni chiffrée ni signée** (jalon 4) ; la
 restauration inter-origine est #12.
 
+Depuis #12, la **restauration** l'est aussi (`src/vm/volume-import.mjs`,
+[ADR 0009](decisions/0009-restauration-inter-origine.md)) : « export/restauration de la version
+précédente démontré », exigé ci-dessous pour toute publication, dispose désormais d'un chemin
+automatisé et d'une preuve Bout en bout sur deux origines distinctes. Deux conséquences pour cette
+politique. D'abord, un volume restauré porte enfin son **manifeste** dans un fichier voisin
+(`<volume>.manifest`) : la « lecture d'une version connue avant toute écriture » cesse d'être une
+règle sans support, puisqu'un volume non identifié est refusé par `VAULT_MANIFEST_UNIDENTIFIED`.
+Ensuite, la restauration ne **migre** rien : un volume d'un format antérieur est restaurable, mais
+son écriture reste refusée par `VAULT_MANIFEST_MIGRATION_REQUIRED` jusqu'à #13. L'« export de
+sauvegarde obligatoire avant migration irréversible » a donc désormais son pendant — la remise en
+place — mais la migration elle-même, sa reprise après interruption et ses vecteurs par version
+restent à faire.
+
 ## Publication
 
 Une version publiable exige :

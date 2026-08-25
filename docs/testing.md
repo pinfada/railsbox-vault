@@ -2,23 +2,26 @@
 
 ## Suites disponibles
 
-| Commande                       | Portée                                                                     |                                 Coût attendu |
-| ------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------: |
-| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                  |                                     secondes |
-| `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontière d'origine sous Chromium |                                environ 1 min |
-| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                              |                                environ 1 min |
-| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                  |                                environ 2 min |
-| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                        |              environ 20 s après installation |
-| `npm run test:vm`              | guest Linux réel écrivant sur les backends mémoire et OPFS (Chromium)      |                environ 1 min, **périodique** |
-| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker              | environ 1 min après la première construction |
-| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                         |   plus de 10 min, Docker et artefacts requis |
-| `npm run test:e2e`             | reprise d'une mutation Rails après boot à froid hors ligne (Chromium)      |   plus de 10 min, Docker et artefacts requis |
-| `npm test`                     | suites unitaire et navigateur                                              |                                     secondes |
-| `npm run check`                | lint, format et toutes les suites actuelles                                |             moins de 2 min hors installation |
+| Commande                       | Portée                                                                      |                                 Coût attendu |
+| ------------------------------ | --------------------------------------------------------------------------- | -------------------------------------------: |
+| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                   |                                     secondes |
+| `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontière d'origine sous Chromium  |                                environ 1 min |
+| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                               |                                environ 1 min |
+| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                   |                                environ 2 min |
+| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                         |              environ 20 s après installation |
+| `npm run test:vm`              | guest Linux réel écrivant sur les backends mémoire et OPFS (Chromium)       |                environ 1 min, **périodique** |
+| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker               | environ 1 min après la première construction |
+| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                          |   plus de 10 min, Docker et artefacts requis |
+| `npm run test:e2e`             | reprise après boot à froid, export vérifiable et restauration inter-origine |   plus de 20 min, Docker et artefacts requis |
+| `npm test`                     | suites unitaire et navigateur                                               |                                     secondes |
+| `npm run check`                | lint, format et toutes les suites actuelles                                 |             moins de 2 min hors installation |
 
-La suite `test:e2e` porte depuis #7 le scénario de sortie du MVP (voir plus bas). La suite
-`test:resilience` sera ajoutée lorsqu'elle possédera un premier scénario réel : un script vide qui
-réussit ne constitue pas une preuve.
+La suite `test:e2e` porte depuis #7 le scénario de sortie du MVP (voir plus bas), auquel se sont
+ajoutés l'export vérifiable (#11) et la restauration inter-origine (#12). Depuis #12, sa
+configuration démarre **deux** serveurs sur deux origines distinctes : un import ne prouve rien tant
+qu'il peut relire le stockage qu'il vient d'écrire. La suite `test:resilience` sera ajoutée
+lorsqu'elle possédera un premier scénario réel : un script vide qui réussit ne constitue pas une
+preuve.
 
 ### Backend de blocs OPFS
 
@@ -261,6 +264,76 @@ l'image #5 (`npm run image:build`, Docker). Elle tourne dans le job CI **non blo
 `Reprise MVP` (`.github/workflows/reprise.yml`), qui couvre déjà `tests/e2e/**`. Elle n'exige
 toutefois **pas** les artefacts v86 ni de boot de guest : l'export s'exerce sur le disque OPFS sans
 démarrer la VM.
+
+### Restauration inter-origine
+
+La restauration de `VAULT-PORT-001` (#12) — `src/vm/volume-import.mjs`, sa cible OPFS
+`src/vm/opfs-import-target.mjs` et sa famille d'erreurs `src/vm/import-errors.mjs` — est prouvée sur
+**deux** niveaux. La décision complète est
+l'[ADR 0009](decisions/0009-restauration-inter-origine.md).
+
+| Niveau       | Fichier                                         | Support                             | Rattachement      |
+| ------------ | ----------------------------------------------- | ----------------------------------- | ----------------- |
+| unitaire     | `tests/unit/vm-volume-import.test.mjs`          | doubles déterministes               | `npm run check`   |
+| Bout en bout | `tests/e2e/restauration-inter-origine.spec.mjs` | **deux origines** + OPFS + image #5 | job `Reprise MVP` |
+
+**Le niveau unitaire éprouve l'ORDRE des gestes, qui est le contrat.** Une cible en mémoire compte
+chaque geste de l'orchestration — ouvertures, révocations, inscriptions —, ce qui permet d'affirmer
+non pas « la restauration a échoué » mais « la cible n'a même pas été ouverte ». Les treize épreuves
+couvrent : la restauration octet pour octet suivie de l'inscription du manifeste ; l'absence
+**totale** de mutation sur archive altérée puis tronquée (les refus de #11 remontent tels quels) ;
+le refus d'une cible non vide sans consentement, qui laisse le volume occupant **et son manifeste**
+intacts ; l'écrasement consenti ; la relecture divergente qui laisse le volume **non identifié**
+(manifeste jamais inscrit) ; le streaming borné, lectures et écritures ; l'espace insuffisant refusé
+avant toute mutation, avec le `BudgetDiagnostic` de #9 ; l'estimation indisponible qui ne bloque pas
+(l'inconnu n'est pas zéro) ; la géométrie de cible refusée ; la `ManifestError` d'identité de #10
+propagée sans reétiquetage ; et l'idempotence de deux restaurations successives.
+
+**Le niveau Bout en bout mesure le changement d'origine RÉEL.** `playwright.e2e.config.mjs` sert
+deux origines distinctes au sens du navigateur — `http://127.0.0.1:4177` (A, export) et
+`http://localhost:4178` (B, restauration) —, le même procédé que le spike d'origine de l'ADR 0002,
+sans DNS ni certificat. Le scénario enchaîne :
+
+- **mutation Rails sur A** — le disque applicatif de l'image #5 est écrit dans un volume OPFS de A,
+  Rails y boote, écrit, et ses barrières `fsync` sont acquittées jusqu'à OPFS (#14) ;
+- **export** — l'archive vérifiable de #11 est écrite dans l'OPFS de A, et son empreinte est
+  confrontée à une empreinte indépendante du volume relu depuis le support ;
+- **transfert** — l'archive est **téléchargée** vers le système de fichiers de l'hôte, puis remise à
+  B par un `<input type="file">`. C'est le test — et, en production, l'utilisateur — qui la
+  transporte : aucun canal inter-origines n'est ouvert, aucune directive de CSP n'est assouplie ;
+- **preuve d'isolation, avant l'import** — l'OPFS de B ne connaît ni le volume de A, ni son archive.
+  Sans cette vérification préalable, un « import » réussi ne prouverait rien : il pourrait relire un
+  stockage déjà présent ;
+- **import sur B** — vérification complète avant mutation, restauration en flux, relecture du
+  volume, puis inscription du manifeste. La plus grande lecture d'archive et la plus grande écriture
+  de volume sont mesurées : elles ne dépassent jamais le bloc de streaming ;
+- **boot à froid hors ligne sur B** — le runtime est acquis en ligne, `context.setOffline(true)`
+  coupe le réseau (une requête de contrôle échoue alors), puis Rails boote **à froid** sur le volume
+  restauré, sans instantané mémoire ; le disque applicatif n'est jamais retéléchargé et toute
+  requête de la page reste sur l'origine B ;
+- **vérification Rails** — `/vault/invariant` est conforme, et l'identifiant d'enregistrement comme
+  l'empreinte SHA-256 de la pièce jointe ActiveStorage sont ceux du contrat
+  `apps/reference/vault-invariant.json`. La donnée écrite par Rails sur A est retrouvée, à l'octet
+  près, sur une origine qui ne l'avait jamais vue ;
+- **deux témoins négatifs** — une archive dont **un bit** de contenu a été retourné pendant le
+  transfert est refusée par `VAULT_ARCHIVE_DIGEST_MISMATCH` et **rien n'est écrit** (la cible
+  n'existe toujours pas après le refus) ; une seconde restauration dans le volume déjà restauré est
+  refusée par `VAULT_IMPORT_TARGET_NOT_EMPTY`, et le volume valide garde son manifeste et son
+  empreinte.
+
+Les mesures — origines, empreintes, tailles de bloc, budget, durées — sont écrites dans
+`reports/e2e/restauration-inter-origine.json` et jointes au rapport Playwright.
+
+Ce que la suite **n'affirme pas**, délibérément : la portabilité entre deux **appareils** ou deux
+systèmes d'exploitation (deux origines servies par le harnais prouvent le cloisonnement OPFS, qui
+est la propriété en jeu, pas un transport réseau) ; la **migration** d'un format antérieur (#13) ;
+l'**authenticité** de l'archive (jalon 4 : l'intégrité est prouvée, la signature non) ; et
+l'atomicité d'une génération sous écriture concurrente (#16).
+
+Elle **n'est pas rattachée à `npm run check`** : elle exige les artefacts de l'image #5
+(`npm run image:build`, Docker) **et** ceux de v86 (`npm run vm:fetch`), puisqu'elle boote un guest.
+Elle tourne dans le job CI **non bloquant** `Reprise MVP` (`.github/workflows/reprise.yml`), qui
+couvre déjà `tests/e2e/**`.
 
 ### Intégration VM
 
