@@ -1,4 +1,4 @@
-# ADR 0010 — La distribution de Vault n'impose pas l'isolation multi-origine
+# ADR 0010 — La distribution de Vault n'impose pas l'isolation multi-origine ; COOP seul reste recommandé
 
 - Statut : accepté
 - Date : 2026-08-25
@@ -45,7 +45,10 @@ portent la décision :
 3. **Le runtime complet fonctionne sans isolation, et c'est mesuré, pas déduit.** La même page
    servie par deux serveurs — l'un nu, l'autre sous COOP/COEP — boote un vrai guest Linux, écrit 4
    Mio sur un disque IDE adossé au backend Vault, franchit sa barrière de durabilité et la voit
-   acquittée. Les compteurs du journal de blocs sont identiques dans les deux conditions.
+   acquittée. Les compteurs du journal de blocs sont identiques dans les deux conditions. Le backend
+   traversé est celui **en mémoire** (`openMemoryVolume`,
+   `public/spike/isolation/runtime-worker.mjs:158`), choisi pour que la latence du disque hôte
+   n'écrase pas un écart petit : **le chemin OPFS n'est donc pas mesuré ici** — risque résiduel n°6.
 
 4. **Aucun coût de premier ordre n'apparaît.** Sous Chromium 151, conditions entrelacées et ordre
    inversé un tour sur deux : **+0,6 % sur le premier boot** (3 600 ms contre 3 621 ms) et **−0,5 %
@@ -60,14 +63,18 @@ portent la décision :
    son résultat publié dans le spike : un témoin négatif qu'on ne peut plus reproduire n'est qu'une
    anecdote.
 
-5. **Poser l'isolation coûte, en revanche, cher à la topologie.** Le spike #35 a mesuré que sous
-   `require-corp` une iframe inter-origine sans COEP est refusée (`net::ERR_BLOCKED_BY_RESPONSE`)
-   sur les trois moteurs. L'origine applicative devrait donc servir COEP elle aussi — c'est-à-dire
-   qu'une décision de la coquille imposerait un en-tête au territoire applicatif, exactement ce que
-   l'ADR 0002 s'interdit ailleurs. S'ajoutent deux écarts moteurs déjà relevés : Firefox n'a pas
-   chargé le cadre applicatif sous `require-corp` dans ces conditions, et WebKit **accorde**
-   l'isolation à l'iframe applicative là où Chromium la lui refuse — donc `SharedArrayBuffer`
-   deviendrait accessible au code hostile sur un moteur et pas sur l'autre.
+5. **Poser COEP `require-corp` coûte, en revanche, cher à la topologie.** Le spike #35 a mesuré que
+   sous `require-corp` une iframe inter-origine sans COEP n'est pas chargée sur les trois moteurs —
+   mais avec **trois signatures distinctes**, et une seule est celle qu'on cite d'ordinaire :
+   `net::ERR_BLOCKED_BY_RESPONSE` n'est relevé que sur **Chromium** ; WebKit rend un refus typé («
+   Refused to display … because of Cross-Origin-Embedder-Policy », puis « Load request cancelled »)
+   ; Firefox n'expose à Playwright ni requête en échec ni message de console, et son refus n'est
+   constaté que par l'**absence** du cadre. L'origine applicative devrait donc servir COEP elle
+   aussi — c'est-à-dire qu'une décision de la coquille imposerait un en-tête au territoire
+   applicatif, exactement ce que l'ADR 0002 s'interdit ailleurs. S'ajoutent deux écarts moteurs déjà
+   relevés : Firefox n'a pas chargé le cadre applicatif sous `require-corp` dans ces conditions, et
+   WebKit **accorde** l'isolation à l'iframe applicative là où Chromium la lui refuse — donc
+   `SharedArrayBuffer` deviendrait accessible au code hostile sur un moteur et pas sur l'autre.
 
 6. **Le seul bénéfice attendu ne s'est pas matérialisé.** Le spike #4 avait échoué à mesurer la
    mémoire faute de `performance.measureUserAgentSpecificMemory`, réputée réservée au contexte
@@ -82,28 +89,100 @@ portent la décision :
    WebKit 26.5 n'expose pas `scheduler.postTask` : sous la CSP de la coquille (`worker-src 'self'`)
    v86 n'a aucune boucle d'ordonnancement (ADR 0003, #52). Firefox 153 charge le Worker et l'isole,
    mais **son thread cesse entièrement de rendre la main** dès que v86 démarre : zéro battement de
-   pouls en 180 s, dans les deux conditions. Le témoin d'isolation, lui, est relevé sur les
-   **trois** moteurs, page et Worker : la question posée par cet ADR ne dépend d'aucun de ces deux
-   trous.
+   pouls en 180 s, dans les deux conditions — **#74**. Le témoin d'isolation, lui, est relevé sur
+   les **trois** moteurs, page et Worker : la question posée par cet ADR ne dépend d'aucun de ces
+   deux trous.
 
 ## Décision
 
-**La distribution de RailsBox Vault n'exige pas le contexte isolé multi-origine. Aucun en-tête
-`Cross-Origin-Opener-Policy` ni `Cross-Origin-Embedder-Policy` n'est posé sur l'origine de confiance
-ni sur l'origine applicative.** Le mécanisme retenu est donc **l'absence**.
+**La distribution de RailsBox Vault n'exige pas le contexte isolé multi-origine.** Aucun en-tête
+`Cross-Origin-Embedder-Policy` n'est posé, ni sur l'origine de confiance ni sur l'origine
+applicative, et `crossOriginIsolated` reste `false` partout. Sur ce point, le mécanisme retenu est
+**l'absence**.
 
-Trois précisions, pour que l'absence ne se lise pas comme un oubli :
+### COOP n'est pas COEP, et n'est pas rejeté avec lui
 
-1. l'option `--cross-origin-isolated` de `tools/serve.mjs` **reste** et n'est pas dépréciée : la
-   sonde de capacités #2 doit servir ses pages isolées pour pouvoir mesurer `SharedArrayBuffer` et
-   `Atomics.wait`. Mesurer une primitive n'est pas en dépendre ;
+Une première rédaction de cet ADR décidait « aucun COOP ni COEP ». C'était une contagion : toute la
+démonstration qui précède — les faits 1, 2 et 5, la table des mécanismes, les alternatives rejetées
+— ne vise que **COEP `require-corp`**. Aucune ligne de preuve ne porte sur COOP servi **seul**.
+
+`Cross-Origin-Opener-Policy: same-origin` posé **sans** COEP a trois propriétés que cette
+démonstration n'atteint pas :
+
+- il ne confère **pas** `crossOriginIsolated` : l'isolation exige les deux en-têtes. COOP seul ne
+  rend disponibles ni `SharedArrayBuffer` ni `Atomics.wait`, et ne change donc rien aux faits 1 et 2
+  ;
+- il ne s'applique qu'aux **contextes de navigation de plus haut niveau**. Une iframe n'en est pas
+  un : COOP est sans effet sur le cadre applicatif, donc **sans effet sur la topologie T2** de l'ADR
+  0002 ;
+- il n'exige **rien de l'origine applicative**. L'application Rails n'a aucun en-tête à servir pour
+  que la coquille porte COOP.
+
+Des trois motifs qui écartent `require-corp`, deux ne l'atteignent donc pas : ni la dépendance
+imposée au territoire applicatif, ni le refus du cadre inter-origine. Le troisième — GitHub Pages ne
+sert aucun en-tête de réponse personnalisé — l'atteint, et c'est précisément ce qui fait de COOP une
+exigence **différée** plutôt qu'immédiate.
+
+### Ce que COOP protège, et que rien d'autre ne couvre ici
+
+La coquille de confiance est destinée à détenir les clés du volume (#24, jalon 5). Un document qui
+ne porte pas COOP reste dans le même groupe de contextes de navigation que celui qui l'a ouvert et
+que ceux qu'il ouvre : `window.opener` survit à travers les origines, et avec lui une poignée de
+canaux inter-fenêtres — référence de fenêtre conservée, navigations observables, XS-Leaks — dont la
+coquille n'a aucun usage.
+
+`frame-ancestors 'none'` (`tools/serve-headers.mjs:38`) couvre l'**encadrement** : personne ne met
+la coquille dans une iframe. Il ne couvre pas l'**ouverture**. Ce sont deux relations distinctes, et
+seule la seconde est du ressort de COOP.
+
+### Décision sur COOP
+
+**`Cross-Origin-Opener-Policy: same-origin` est RECOMMANDÉ sur l'origine de confiance** — ou
+`same-origin-allow-popups` si la coquille doit un jour ouvrir une fenêtre et en garder la référence.
+Cette recommandation est une **exigence différée**, portée par la chaîne de publication **#45** :
+
+1. elle n'est pas applicable sur GitHub Pages, qui ne sert aucun en-tête personnalisé. #45 doit donc
+   la compter parmi les critères qui départagent un hébergement capable d'en-têtes d'un hébergement
+   qui ne l'est pas — ou décider d'un Service Worker, au prix cette fois de code privilégié dans la
+   frontière de confiance, prix qui se pèse avec **#24** et non ici ;
+2. elle n'est **pas** posée par le serveur de test de ce dépôt, et cet ADR ne le modifie pas :
+   `tools/serve.mjs` ne sert jamais COOP autrement qu'accompagné de COEP
+   (`tools/serve-headers.mjs:101-104`), sous `--cross-origin-isolated` ou `?isolation=require-corp`.
+   Savoir servir COOP seul est un travail de #45, pas du présent spike ;
+3. elle sera **vérifiable**. Quand l'hébergement le permettra, un témoin `window.opener === null`,
+   relevé depuis une fenêtre ouverte par un document d'une autre origine, s'ajoute à la sonde
+   d'origine au même titre que les témoins d'isolation déjà relevés sur les trois moteurs. Une
+   recommandation non mesurée ne vaudrait pas mieux que l'affirmation de `docs/compatibility.md` que
+   ce spike a dû corriger.
+
+Cette recommandation ne rouvre pas la question de l'isolation et ne l'approche pas : COOP seul ne
+rend `crossOriginIsolated` à personne. Décider COEP resterait un ADR entier à écrire, sous les
+conditions de réouverture ci-dessous.
+
+### Trois précisions, pour que l'absence de COEP ne se lise pas comme un oubli
+
+1. l'option `--cross-origin-isolated` de `tools/serve.mjs` **reste** et n'est pas dépréciée. Elle a
+   quatre consommateurs, tous de mesure, et **aucun chemin de production** :
+   `playwright.compat.config.mjs:22` — la sonde de capacités #2, qui doit servir ses pages isolées
+   pour pouvoir mesurer `SharedArrayBuffer` et `Atomics.wait` ; `playwright.isolation.config.mjs:43`
+   — le harnais du présent spike, qui en fait sa condition « isolée » ; et les deux procédures
+   manuelles de `docs/development.md:93` et `docs/development.md:168`.
+   `tests/unit/origin-topology.test.mjs:188` en vérifie l'analyse d'argument. Mesurer une primitive
+   n'est pas en dépendre ;
 2. `Cross-Origin-Resource-Policy` reste servi tel qu'il l'est aujourd'hui — `same-origin` sur la
-   coquille, `cross-origin` sur le territoire applicatif. Cet en-tête ne dépend pas de COEP : il
-   rend l'origine applicative encadrable et l'origine de confiance non encadrable, ce qui est une
-   propriété de l'ADR 0002 et lui survit ;
+   coquille, `cross-origin` sur le territoire applicatif — mais **pas pour la raison qu'une première
+   rédaction lui prêtait**. Sans COEP, CORP ne gouverne **pas** le chargement d'un document dans une
+   iframe : il gouverne les récupérations de **sous-ressources** en mode `no-cors`. Ce qui rend la
+   coquille non encadrable est `frame-ancestors 'none'` dans sa CSP (`tools/serve-headers.mjs:38`),
+   pas CORP. Ce que CORP fait réellement ici, et qui reste utile : il empêche une autre origine de
+   charger les ressources de la coquille comme sous-ressources `no-cors`, et il laisse celles du
+   territoire applicatif chargeables. Le commentaire de `tools/serve-headers.mjs:83` porte encore
+   l'attribution erronée : il est signalé comme dette dans la PR et n'est pas corrigé ici, ce
+   fichier étant hors du périmètre du spike ;
 3. le harnais du spike est conservé et exécutable : `npm run test:isolation` remesure le coût de
-   l'isolation à la demande, et `npm run isolation:inventaire` rejoue l'inventaire. Une décision de
-   ne rien faire doit rester falsifiable.
+   l'isolation à la demande, et `npm run isolation:inventaire` rejoue l'inventaire — sous
+   `--exiger-v86` il **échoue** sur une mémoire WebAssembly partagée (code 2) comme sur des
+   artefacts absents (code 3). Une décision de ne rien faire doit rester falsifiable.
 
 ## Mécanismes comparés
 
@@ -117,7 +196,12 @@ Trois précisions, pour que l'absence ne se lise pas comme un oubli :
 `credentialless` et l'injection par Service Worker n'ont **pas** été prototypés. C'est assumé : la
 décision retenue est l'absence, et prototyper deux mécanismes d'une contrainte qu'on ne pose pas
 serait du travail sans preuve à produire. Si l'isolation redevenait nécessaire, les mesurer serait
-le premier travail — l'issue de suivi le dit.
+le premier travail — c'est l'objet de **#76**, ouverte comme conditionnelle : elle ne devient du
+travail que si une condition de réouverture ci-dessous se réalise.
+
+Cette table compare des mécanismes pour **obtenir l'isolation**. COOP servi **seul** n'y figure pas
+parce qu'il n'en obtient aucune : il est décidé plus haut, sur ses propres motifs, et aucune ligne
+de cette table ne s'applique à lui.
 
 `require-corp` est écarté avant `credentialless` pour un motif qui n'est pas de commodité :
 `require-corp` fait dépendre le chargement du territoire applicatif d'un en-tête que **l'application
@@ -142,6 +226,13 @@ et une épreuve de #24 qui ne passerait qu'en contexte isolé mesurerait autre c
 prétend. Corollaire utile : la propriété « le code applicatif n'obtient pas `SharedArrayBuffer` »
 est aujourd'hui obtenue **gratuitement**, puisque personne n'est isolé.
 
+COOP, lui, entre dans le périmètre de #24 — et par la porte opposée. Il ne démontre aucune
+frontière, mais il retire à la future détentrice de clés une surface que la partition d'origine ne
+couvre pas : la relation d'ouverture inter-fenêtres. #24 décidera si cette surface compte assez pour
+peser dans le choix d'hébergement de #45, et si un Service Worker injectant COOP est acceptable
+**dans** la frontière qu'elle doit prouver. Cet ADR ne tranche pas ce second point : il constate
+seulement que le prix se paie là, et pas ici.
+
 ### Sur la CSP de v86 dans la coquille (#52)
 
 #52 garde son espace de décision entier et indépendant. `'wasm-unsafe-eval'`, le sort du Worker
@@ -155,7 +246,16 @@ et non l'isolation.
 C'est le gain principal. GitHub Pages, qui n'autorise aucun en-tête de réponse personnalisé, reste
 un hébergement viable pour les deux origines de l'ADR 0002. Les options d'origine comparées par
 l'ADR 0002 — domaine propre, second compte, hébergeur distinct — restent départagées par leurs
-propres critères, sans qu'une contrainte d'en-têtes n'en élimine aucune.
+propres critères, sans qu'une contrainte d'en-têtes **d'isolation** n'en élimine aucune.
+
+#45 hérite en revanche d'une **exigence différée** : servir
+`Cross-Origin-Opener-Policy: same-origin` sur l'origine de confiance, décidé plus haut. C'est une
+recommandation, pas un couperet — aucune capacité du produit n'en dépend, et un hébergement qui ne
+sait pas la servir reste viable. Elle change seulement le poids relatif des options : un hébergement
+capable d'en-têtes personnalisés l'obtient sans code ; GitHub Pages ne l'obtient qu'au prix d'un
+Service Worker, dont #24 doit dire s'il est admissible dans la frontière de confiance. #45 doit donc
+trancher explicitement l'une des deux voies, ou consigner qu'elle renonce à COOP et pourquoi. Le
+témoin `window.opener === null` est la preuve attendue de son application.
 
 ### Sur les budgets de qualité
 
@@ -175,9 +275,9 @@ issue ne peut pas compter sur l'isolation pour obtenir son instrument.
    remesurer, l'inventaire pour détecter l'arrivée d'un consommateur.
 2. **Le fait 2 est daté.** Il vaut pour `v86@0.5.432`, commit `847e34d5`. Une montée de version doit
    rejouer `npm run isolation:inventaire` : une mémoire `shared` apparue dans `v86.wasm`
-   invaliderait la décision sans aucun autre signal. Cette vérification est aujourd'hui une
-   consigne, pas une garde automatique — travail découvert, à rattacher à la chaîne de mise à jour
-   des artefacts v86.
+   invaliderait la décision sans aucun autre signal. L'instrument existe et sait refuser
+   (`--exiger-v86`, codes 2 et 3) ; ce qui manque est son **déclenchement** automatique à la montée
+   de version — **#75**.
 3. **L'absence d'isolation n'est pas une protection.** Elle ne referme aucune brèche ; elle n'ouvre
    simplement pas une contrainte inutile. Aucune propriété de sécurité de `SECURITY.md` ne repose
    sur elle, et aucune frontière ne change.
@@ -185,12 +285,26 @@ issue ne peut pas compter sur l'isolation pour obtenir son instrument.
    bureau Windows. Elle établit qu'aucun coût de premier ordre n'apparaît là, pas qu'aucun coût
    n'existe partout. Le témoin d'isolation, lui, vaut sur les trois moteurs. L'instrument a en outre
    une résolution de 20 ms par étape du guest : il ne réfuterait pas un coût de quelques pour cent
-   sur une commande courte.
+   sur une commande courte. À noter, sans conséquence ici : `performance.now()` n'est pas grossi de
+   la même manière dans les deux conditions — de l'ordre de 100 µs en contexte nu contre 5 µs en
+   contexte isolé sous Chromium, l'isolation étant précisément ce qui autorise le navigateur à
+   rendre l'horloge plus fine. Les deux conditions ne sont donc pas chronométrées avec la même
+   graduation. L'écart est de trois à quatre ordres de grandeur sous les grandeurs comparées — 20 ms
+   par palier d'étape, 3 600 ms de boot —, et il jouerait de toute façon en faveur de la condition
+   isolée, celle qui n'exhibe aucun surcoût.
 5. **Spectre et exécution spéculative.** L'isolation multi-origine est aussi une défense de
    plateforme contre les attaques par canal auxiliaire. Ne pas la poser laisse Vault dans le régime
    par défaut du navigateur, sans mémoire partagée ni minuteur de haute résolution — c'est-à-dire
    sans les primitives qui rendent ces attaques praticables. C'est un arbitrage assumé, pas un
-   oubli.
+   oubli. La recommandation COOP ci-dessus retire par ailleurs, quand #45 l'appliquera, la relation
+   d'ouverture inter-fenêtres, qui est l'autre moitié de ce que l'isolation aurait couvert.
+6. **Le chemin OPFS n'est pas mesuré.** Le fait 3 fait traverser au guest le backend **en mémoire**
+   (`openMemoryVolume`), choisi pour que la latence du disque hôte n'écrase pas un écart petit. Le
+   coût de l'isolation **sur le chemin OPFS** reste donc inconnu. Ce qui est su par ailleurs :
+   `npm run test:vm` fait lire et écrire un vrai guest sur un volume OPFS, barrière de durabilité
+   acquittée, sur un serveur **sans** en-tête d'isolation (`playwright.vm.config.mjs` ne passe pas
+   `--cross-origin-isolated`). L'absence d'isolation ne bloque donc pas OPFS ; son éventuel coût sur
+   ce chemin reste à mesurer si la question se pose, et le harnais du spike sait le faire.
 
 ## Conditions de réouverture
 
@@ -228,5 +342,11 @@ qu'aucun consommateur ne l'exige.
   Pages, mais ajoute du code privilégié dans la frontière de confiance, ne peut pas isoler le
   premier chargement, et ne fait rien pour la seconde origine. À reconsidérer seulement si
   l'isolation redevient nécessaire.
-- **Attendre #52 pour trancher.** #52 porte sur la CSP, pas sur les en-têtes d'isolation ; les deux
-  décisions sont indépendantes et #41 bloquait #6.
+- **Attendre #52 pour trancher.** #52 porte sur la CSP, pas sur les en-têtes d'isolation, et les
+  deux décisions sont indépendantes. Une version antérieure de cet ADR justifiait en outre l'urgence
+  par « #41 bloquait #6 » : c'est faux au moment où il est écrit. #6 (« Écrire et relire des blocs
+  v86 dans un fichier OPFS ») est **fermée depuis le 23/08/2026**, donc livrée **sans** cette
+  décision — et sans dommage, puisque son chemin n'utilise ni `SharedArrayBuffer` ni `Atomics`. Ce
+  n'est pas un détail de date : c'est la confirmation empirique du fait 1. Une tranche entière du
+  chemin critique a franchi la ligne pendant que la question restait ouverte, ce qui montre que
+  l'isolation n'était bloquante pour personne.
