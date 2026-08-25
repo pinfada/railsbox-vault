@@ -62,7 +62,9 @@ test("un volume OPFS est exporté en archive vérifiable, et une archive altér�
   const appDiskUrl = `/artifacts/reference-image/${manifeste.boot.hdb}`;
 
   const manifestDescriptor = {
-    runtime: { version: paquet.version, artifact: null },
+    // `minWriter` est exigé par le format v2 (#13) : le volume DÉCLARE le plus ancien runtime
+    // autorisé à l'écrire. Le banc déclare la version en cours, le choix le plus strict.
+    runtime: { version: paquet.version, artifact: null, minWriter: paquet.version },
     app: { id: contrat.application.id, version: contrat.application.version },
   };
 

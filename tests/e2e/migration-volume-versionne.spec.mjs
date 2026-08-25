@@ -245,8 +245,10 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
     volume: VOLUME,
   });
   await session.page.close();
-  expect(refusNonIdentifie, "une migration interrompue ne passe jamais pour un volume valide")
-    .toMatch(/VAULT_MANIFEST_UNIDENTIFIED/);
+  expect(
+    refusNonIdentifie,
+    "une migration interrompue ne passe jamais pour un volume valide",
+  ).toMatch(/VAULT_MANIFEST_UNIDENTIFIED/);
 
   // 7. REPRISE — sans preuve de sauvegarde : le journal porte celle qui a été retenue.
   session = await nouvellePage();
@@ -319,8 +321,10 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
     manifest: { ...descripteurCourant, supportedFormat: { current: 1, minReadable: 1 } },
   });
   await session.page.close();
-  expect(refusAncienRuntime, "un runtime plus ancien ne doit jamais écrire sur un volume v2")
-    .toMatch(/VAULT_MANIFEST_FORMAT_TOO_NEW/);
+  expect(
+    refusAncienRuntime,
+    "un runtime plus ancien ne doit jamais écrire sur un volume v2",
+  ).toMatch(/VAULT_MANIFEST_FORMAT_TOO_NEW/);
 
   // Mesures publiées.
   const mesures = {
@@ -332,7 +336,10 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
     },
     volumeOctets: appDiskBytes,
     formats: { avant: 1, apres: 2 },
-    empreinteVolume: { avantMigration: avantMigration.digest, apresMigration: apresMigration.digest },
+    empreinteVolume: {
+      avantMigration: avantMigration.digest,
+      apresMigration: apresMigration.digest,
+    },
     sauvegarde: { octets: sauvegarde.archiveLength, digest: sauvegarde.digest },
     migration: {
       reprise: reprise.resumed,

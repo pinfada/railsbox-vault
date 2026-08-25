@@ -11,30 +11,37 @@
 //   resume-arm/   reprise hors ligne en deux temps : `arm` acquiert le runtime EN LIGNE, le test
 //   resume-fire   coupe le réseau, puis `fire` boote à froid et vérifie SANS aucun accès réseau.
 //   prepare-empty volume vide (témoin négatif) ; cleanup le retire.
+//   export/import  archive vérifiable (#11) et restauration inter-origine (#12).
+//   migrate        migration de format et reprise d'une migration interrompue (#13).
+//
+// L'acquisition du runtime et le boot vérifié vivent dans `./reference-worker-boot.mjs` : ce
+// fichier serait sinon au-delà du plafond de 800 lignes du dépôt.
 //
 // Aucune phase ne se déclare « réussie » d'elle-même : elle rend ce qu'elle a observé, et
-// l'assertion vit dans `tests/e2e/reprise-mutation-boot-froid.spec.mjs`.
+// l'assertion vit dans les spécifications de `tests/e2e/`.
 
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
 import { createOpfsImportTarget } from "/src/vm/opfs-import-target.mjs";
+import { createOpfsMigrationTarget } from "/src/vm/opfs-migration-target.mjs";
 import {
+  migrationJournalName,
   openOpfsSyncAccess,
   openOpfsVolumeFile,
   removeOpfsVolume,
   statOpfsVolume,
 } from "/src/vm/opfs-sync-access.mjs";
-import {
-  openVolumeForWrite,
-  revokeVolumeManifest,
-  writeVolumeManifest,
-} from "/src/vm/opfs-volume-open.mjs";
-import { createReferenceGuestSession } from "/src/vm/reference-guest-session.mjs";
+import { revokeVolumeManifest, writeVolumeManifest } from "/src/vm/opfs-volume-open.mjs";
 import { createSha256Stream } from "/src/vm/sha256-stream.mjs";
 import { bindNavigatorStorage, createStorageBudget } from "/src/vm/storage-budget.mjs";
-import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
-import { createManifest } from "/src/vm/volume-manifest.mjs";
 import { importArchive, manifestSidecarName } from "/src/vm/volume-import.mjs";
+import { migrateVolume } from "/src/vm/volume-migration.mjs";
+import {
+  attentesDe,
+  acquerirRuntime,
+  bootEtVerifier,
+  manifesteDuDescripteur,
+} from "./reference-worker-boot.mjs";
 import {
   ARCHIVE_MAGIC,
   CONSISTENCY_KINDS,
@@ -44,141 +51,6 @@ import {
   writeArchive,
 } from "/src/vm/volume-export.mjs";
 import { ARCHIVE_ERROR_CODES, ArchiveError } from "/src/vm/archive-errors.mjs";
-
-/**
- * Identités du volume, telles qu'un scénario les déclare. Elles servent DEUX fois : à inscrire le
- * manifeste quand le volume est créé, et à l'exiger quand il est rouvert en écriture.
- * `SEC-UPDATE-001` n'admet aucun volume anonyme, donc aucune phase écrivante sans descripteur.
- */
-function attentesDe(manifest) {
-  if (!manifest?.app?.id || !manifest?.runtime?.version) {
-    throw new Error(
-      "Descripteur de manifeste requis : un volume ne s'ouvre en écriture que s'il est identifié (SEC-UPDATE-001).",
-    );
-  }
-  return { app: { id: manifest.app.id }, runtime: { version: manifest.runtime.version } };
-}
-
-/**
- * v86 choisit sa boucle d'ordonnancement à l'initialisation : `scheduler.postTask` si son URL
- * contient `use-scheduling-api`, sinon un Worker imbriqué `blob:` que la CSP de la coquille refuse.
- * La condition est vérifiée AVANT tout démarrage, et son absence est une erreur explicite.
- */
-function assertSchedulingApi() {
-  if (!location.href.includes("use-scheduling-api")) {
-    throw new Error(
-      "Le Worker runtime doit être chargé avec « ?use-scheduling-api » : sinon v86 tente un Worker imbriqué « blob: » que la CSP refuse.",
-    );
-  }
-  if (typeof globalThis.scheduler?.postTask !== "function") {
-    throw new Error(
-      "scheduler.postTask est absent de ce moteur : v86 ne peut pas battre sous la CSP de la coquille. Voir docs/compatibility.md.",
-    );
-  }
-}
-
-async function fetchBytes(url) {
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Artefact ${url} indisponible (${response.status}).`);
-  }
-  return new Uint8Array(await response.arrayBuffer());
-}
-
-/** Charge les tampons du runtime. Le disque applicatif n'en fait PAS partie : il vit dans OPFS. */
-async function loadRuntime(runtime) {
-  const [wasm, bios, vgaBios, kernel, initrd, rootfs] = await Promise.all([
-    fetchBytes(runtime.wasm),
-    fetchBytes(runtime.bios),
-    fetchBytes(runtime.vgaBios),
-    fetchBytes(runtime.kernel),
-    fetchBytes(runtime.initrd),
-    fetchBytes(runtime.rootfs),
-  ]);
-  const artifacts = { wasm, bios, vgaBios, kernel, initrd, rootfs };
-  const transferredBytes = Object.values(artifacts).reduce((total, a) => total + a.byteLength, 0);
-  return { artifacts, transferredBytes };
-}
-
-/** Importe la classe V86 depuis l'artefact vendor déjà vérifié par empreinte. */
-async function importV86(libUrl) {
-  const module = await import(libUrl);
-  return module.V86;
-}
-
-/** Acquiert TOUT ce qui vient du réseau : la classe V86 et les tampons du runtime. */
-async function acquerirRuntime(runtime) {
-  assertSchedulingApi();
-  const V86 = await importV86(runtime.lib);
-  const { artifacts, transferredBytes } = await loadRuntime(runtime);
-  return { V86, artifacts, transferredBytes };
-}
-
-/**
- * Enregistreur de décomposition du temps de reprise (#60). Il n'INSTRUMENTE rien du boot : il pose
- * des jalons `performance.now()` que le banc lit déjà, plus quelques jalons repérés dans le flux
- * série BRUT du guest (`onSerial`). Chaque jalon horodate un événement RÉELLEMENT observé ; un jalon
- * jamais vu reste `null` et n'est pas inventé. Les repères série sont exactement les lignes que
- * `guest-init.sh` imprime sur la console avant que le pont `@VLT1` ne démarre.
- */
-function createBootTimeline() {
-  const REPERES_SERIE = [
-    ["montageDisqueApp", "[init] montage du disque applicatif"],
-    ["lancementApp", "[init] lancement de l'application"],
-    ["pontSerieActif", "[init] pont serie actif"],
-  ];
-  const jalons = new Map();
-  let tampon = "";
-  let premierOctet = null;
-  let dmesgDernierSec = null;
-
-  const noter = (cle) => {
-    if (!jalons.has(cle)) jalons.set(cle, performance.now());
-  };
-
-  return {
-    /** Jalon posé côté hôte (entrée du boot, runtime prêt, boot rendu, santé, invariant). */
-    marquer: noter,
-    /** Fragment de série brut : repère les lignes d'init et le dernier horodatage dmesg du noyau. */
-    ingererSerie(fragment) {
-      if (fragment.length === 0) return;
-      if (premierOctet === null) premierOctet = performance.now();
-      // On garde une fenêtre glissante bornée : un repère tient sur une seule ligne.
-      tampon = (tampon + fragment).slice(-4096);
-      for (const [cle, aiguille] of REPERES_SERIE) {
-        if (!jalons.has(cle) && tampon.includes(aiguille)) noter(cle);
-      }
-      const horodatages = tampon.match(/\[\s*(\d+\.\d+)\]/g);
-      if (horodatages) {
-        const dernier = Number.parseFloat(
-          horodatages[horodatages.length - 1].replace(/[[\]]/g, ""),
-        );
-        if (Number.isFinite(dernier)) dmesgDernierSec = dernier;
-      }
-    },
-    /**
-     * Décomposition finale. Les durées sont en millisecondes, arrondies, relatives au jalon indiqué.
-     * `healthMs` reste la mesure publiée (fenêtre de `awaitHealth`) ; les autres l'éclairent.
-     */
-    decomposer({ healthMs }) {
-      const t = (cle) => jalons.get(cle) ?? null;
-      const octet = premierOctet;
-      const delta = (a, b) => (a === null || b === null ? null : Number((b - a).toFixed(0)));
-      return {
-        acquisitionRuntimeMs: delta(t("debut"), t("runtimePret")),
-        initEmulateurMs: delta(t("runtimePret"), t("bootRendu")),
-        premierOctetSerieMs: delta(t("bootRendu"), octet),
-        noyauVersMontageMs: delta(octet, t("montageDisqueApp")),
-        montageVersLancementMs: delta(t("montageDisqueApp"), t("lancementApp")),
-        lancementVersPontMs: delta(t("lancementApp"), t("pontSerieActif")),
-        pontVersSanteMs: delta(t("pontSerieActif"), t("santePrete")),
-        healthMs,
-        invariantMs: delta(t("santePrete"), t("invariantRendu")),
-        noyauDmesgDernierSec: dmesgDernierSec,
-      };
-    },
-  };
-}
 
 /**
  * État armé de la reprise hors ligne. La reprise se joue en deux temps pour prouver que le RÉSEAU
@@ -222,123 +94,18 @@ async function phasePrepare({ volume, appDiskBytes, appDiskUrl, manifest }) {
   if (offset !== appDiskBytes) {
     throw new Error(`Disque applicatif tronqué : ${offset} octets écrits sur ${appDiskBytes}.`);
   }
-  // Dernier geste : le volume devient identifié, donc ouvrable en écriture.
-  await writeVolumeManifest(
-    volume,
-    createManifest({
-      runtime: manifest.runtime,
-      app: manifest.app,
-      volumeSize: appDiskBytes,
-      identity: { algorithm: "sha-256", digest: null },
-    }),
-  );
+  // Dernier geste : le volume devient identifié, donc ouvrable en écriture. Le format inscrit est
+  // celui que le descripteur demande — un scénario de migration prépare délibérément un volume au
+  // format ANTÉRIEUR, sans quoi il n'aurait rien à migrer.
+  const inscrit = manifesteDuDescripteur(manifest, appDiskBytes);
+  await writeVolumeManifest(volume, inscrit);
   return {
     phase: "prepare",
     volume,
     bytesWritten: offset,
+    formatVersion: inscrit.formatVersion,
     counts: journal.counts(),
     identified: identites,
-  };
-}
-
-/**
- * Ouvre le volume OPFS, boote Rails dessus, attend `/vault/health`, vérifie l'invariant et rend le
- * compte rendu. Le seul boot possible est un boot à froid complet : il n'existe aucun chemin
- * d'instantané mémoire dans ce Worker.
- *
- * `runtimeBundle` permet de fournir un runtime DÉJÀ acquis (reprise hors ligne : l'acquisition a eu
- * lieu en ligne, le boot a lieu réseau coupé).
- */
-async function bootEtVerifier({
-  phase,
-  volume,
-  cmdline,
-  memoryBytes,
-  runtime,
-  runtimeBundle = null,
-  manifest,
-  expected,
-  bootTimeoutMs,
-}) {
-  // `SEC-UPDATE-001` : le volume est ouvert EN ÉCRITURE pour le guest. Son identité et sa
-  // compatibilité sont donc exigées AVANT le premier octet — un volume sans manifeste (restauration
-  // interrompue, préparation incomplète) est refusé ici, pas découvert par Rails sur un système de
-  // fichiers tronqué.
-  const attentes = attentesDe(manifest);
-  // La décomposition (#60) pose ses jalons DÈS l'entrée, pour dater aussi l'acquisition du runtime.
-  const timeline = createBootTimeline();
-  timeline.marquer("debut");
-  const { V86, artifacts, transferredBytes } = runtimeBundle ?? (await acquerirRuntime(runtime));
-  timeline.marquer("runtimePret");
-  const onlineAuBoot = navigator.onLine;
-
-  const journal = new BlockJournal();
-  const failures = [];
-  const backend = await openVolumeForWrite({ name: volume, journal, expectations: attentes });
-  const adapter = createV86BufferAdapter({
-    backend,
-    onFatal: (error) => failures.push(error.toJSON()),
-  });
-  const guestLog = [];
-  const session = createReferenceGuestSession({
-    V86,
-    artifacts,
-    appAdapter: adapter,
-    journal,
-    cmdline,
-    memoryBytes,
-    onJournal: (ligne) => {
-      if (guestLog.length < 200) guestLog.push(ligne);
-    },
-    onSerial: (fragment) => timeline.ingererSerie(fragment),
-  });
-
-  const started = performance.now();
-  let health;
-  let invariant;
-  try {
-    await session.boot();
-    timeline.marquer("bootRendu");
-    health = await session.awaitHealth({ totalTimeoutMs: bootTimeoutMs });
-    timeline.marquer("santePrete");
-    const reponse = await session.request("GET", "/vault/invariant");
-    timeline.marquer("invariantRendu");
-    invariant = {
-      statut: reponse.statut,
-      verdict: JSON.parse(new TextDecoder().decode(reponse.corps)),
-    };
-  } finally {
-    session.stop();
-    await backend.close();
-  }
-
-  const observed = invariant.verdict.observed ?? {};
-  const conforming =
-    invariant.statut === 200 &&
-    invariant.verdict.status === "conforming" &&
-    observed.record?.id === expected.recordId &&
-    observed.attachment?.sha256 === expected.attachmentSha256;
-
-  return {
-    phase,
-    volume,
-    volumeBytes: backend.size?.() ?? null,
-    bootMilliseconds: Number((performance.now() - started).toFixed(1)),
-    healthMilliseconds: health.durationMs,
-    timeline: timeline.decomposer({ healthMs: health.durationMs }),
-    transferredBytes,
-    memoryBytes,
-    usedSnapshot: false,
-    online: onlineAuBoot,
-    sante: health.sante,
-    invariantStatus: invariant.verdict.status,
-    invariantHttpStatus: invariant.statut,
-    observedRecordId: observed.record?.id ?? null,
-    observedAttachmentSha256: observed.attachment?.sha256 ?? null,
-    conforming,
-    counts: journal.counts(),
-    failures,
-    guestLog,
   };
 }
 
@@ -398,23 +165,22 @@ async function phasePrepareEmpty({ volume, appDiskBytes, manifest }) {
   // Le témoin est IDENTIFIÉ comme n'importe quel volume, mais VIDE. Sans manifeste, il serait
   // refusé pour non-identification (#12) et ne dirait plus rien du CONTENU d'OPFS — qui est
   // précisément ce qu'il doit prouver.
-  await writeVolumeManifest(
-    volume,
-    createManifest({
-      runtime: manifest.runtime,
-      app: manifest.app,
-      volumeSize: appDiskBytes,
-      identity: { algorithm: "sha-256", digest: null },
-    }),
-  );
+  await writeVolumeManifest(volume, manifesteDuDescripteur(manifest, appDiskBytes));
   return { phase: "prepare-empty", volume, appDiskBytes };
 }
 
-/** Retire un volume OPFS ET son manifeste voisin : rend le profil réellement « neuf ». */
+/** Retire un volume OPFS ET tous ses voisins : rend le profil réellement « neuf ». */
 async function phaseCleanup({ volume }) {
   const retire = await removeOpfsVolume(volume);
   const manifesteRetire = await revokeVolumeManifest(volume);
-  return { phase: "cleanup", volume, removed: retire, manifestRemoved: manifesteRetire };
+  const journalRetire = await removeOpfsVolume(migrationJournalName(volume));
+  return {
+    phase: "cleanup",
+    volume,
+    removed: retire,
+    manifestRemoved: manifesteRetire,
+    migrationJournalRemoved: journalRetire,
+  };
 }
 
 /**
@@ -463,12 +229,7 @@ async function phaseExportVolume({ volume, archive, manifest, blockBytes = EXPOR
 
   let result;
   try {
-    const m = createManifest({
-      runtime: manifest.runtime,
-      app: manifest.app,
-      volumeSize: source.size,
-      identity: { algorithm: "sha-256", digest: null },
-    });
+    const m = manifesteDuDescripteur(manifest, source.size);
     result = await writeArchive({
       source,
       sink,
@@ -576,6 +337,9 @@ async function phaseVerifyExport({ archive, mutate = "none", blockBytes = EXPORT
 async function phaseInspectVolume({ volume }) {
   const etat = await statOpfsVolume(volume);
   const manifeste = await statOpfsVolume(manifestSidecarName(volume));
+  // Le journal de migration (#13) est observé au même titre : sa présence signale une migration
+  // inachevée, et c'est ce que le scénario d'interruption doit pouvoir constater.
+  const journalMigration = await statOpfsVolume(migrationJournalName(volume));
   return {
     phase: "inspect-volume",
     volume,
@@ -583,6 +347,8 @@ async function phaseInspectVolume({ volume }) {
     size: etat.size,
     manifestPresent: manifeste.present && manifeste.size > 0,
     manifestSize: manifeste.size,
+    migrationJournalPresent: journalMigration.present && journalMigration.size > 0,
+    migrationJournalSize: journalMigration.size,
   };
 }
 
@@ -721,6 +487,116 @@ function rapportImport({ volume, rapport, compteur, journal, durationMs }) {
   };
 }
 
+// --- Migration de format (#13) ------------------------------------------------------------------
+
+/**
+ * Points d'interruption nommés d'une migration. Ils ne servent QU'aux scénarios : une migration
+ * interrompue est le cas que le contrat doit tenir, et l'éprouver suppose de pouvoir la couper à un
+ * endroit précis plutôt que d'espérer une panne. Le geste visé s'exécute, PUIS la migration échoue —
+ * c'est exactement ce que laisse derrière lui un onglet fermé.
+ */
+const POINTS_INTERRUPTION = Object.freeze({
+  "write-journal": "writeJournal",
+  revoke: "revokeManifest",
+  commit: "commitManifest",
+});
+
+/** Enveloppe la cible pour qu'un geste nommé réussisse puis fasse échouer la migration. */
+function interrompreApres(cible, point) {
+  if (point === null || point === undefined) return cible;
+  const membre = POINTS_INTERRUPTION[point];
+  if (membre === undefined) {
+    throw new Error(
+      `Point d'interruption inconnu : ${point}. Attendu l'un de ${Object.keys(POINTS_INTERRUPTION).join(", ")}.`,
+    );
+  }
+  const original = cible[membre].bind(cible);
+  return {
+    ...cible,
+    async [membre](...args) {
+      await original(...args);
+      throw new Error(`Migration interrompue après « ${point} » (panne injectée par le scénario).`);
+    },
+  };
+}
+
+/**
+ * Rend une archive OPFS sous forme de SOURCE lisible par tranches, pour servir de preuve de
+ * sauvegarde. Le `File` est adossé au support : l'archive n'est jamais tenue en mémoire.
+ */
+async function sourceDeSauvegarde(archive) {
+  const fichier = await openOpfsVolumeFile(archive);
+  return {
+    byteLength: fichier.size,
+    async read(offset, length) {
+      return new Uint8Array(await fichier.slice(offset, offset + length).arrayBuffer());
+    },
+  };
+}
+
+/**
+ * MIGRE un volume OPFS vers le format courant, ou REPREND une migration interrompue (#13).
+ *
+ * La phase ne lève pas : elle rend `ok` et, le cas échéant, l'erreur TYPÉE — c'est le scénario qui
+ * décide si un refus était attendu.
+ */
+async function phaseMigrate({
+  volume,
+  manifest,
+  backupArchive = null,
+  consent = null,
+  interruptAfter = null,
+  blockBytes = EXPORT_BLOCK_BYTES,
+}) {
+  const attentes = attentesDe(manifest);
+  const journal = new BlockJournal();
+  const cible = interrompreApres(createOpfsMigrationTarget(volume, { journal }), interruptAfter);
+  const backup =
+    backupArchive === null ? null : { source: await sourceDeSauvegarde(backupArchive) };
+
+  const debut = performance.now();
+  const duree = () => Number((performance.now() - debut).toFixed(1));
+  try {
+    const rapport = await migrateVolume({
+      target: cible,
+      expectations: attentes,
+      backup,
+      consent,
+      blockBytes,
+    });
+    return {
+      phase: "migrate",
+      volume,
+      ok: true,
+      error: null,
+      migrated: rapport.migrated,
+      resumed: rapport.resumed,
+      fromVersion: rapport.fromVersion,
+      toVersion: rapport.toVersion,
+      evidence: rapport.evidence,
+      steps: rapport.steps,
+      minWriter: rapport.manifest.runtime.minWriter ?? null,
+      counts: journal.counts(),
+      durationMs: duree(),
+    };
+  } catch (cause) {
+    return {
+      phase: "migrate",
+      volume,
+      ok: false,
+      migrated: false,
+      error: {
+        name: cause.name,
+        code: cause.code ?? null,
+        message: cause.message,
+        context: cause.context ?? null,
+      },
+      counts: journal.counts(),
+      durationMs: duree(),
+    };
+  }
+}
+
 /** Feasibilité : prepare puis live dans un même Worker. Le test E2E n'utilise pas cette phase. */
 async function phaseFull(options) {
   const prepare = await phasePrepare(options);
@@ -743,6 +619,7 @@ const PHASES = new Map([
   ["digest-volume", phaseDigestVolume],
   ["archive-file", phaseArchiveFile],
   ["import", phaseImport],
+  ["migrate", phaseMigrate],
   ["full", phaseFull],
 ]);
 

@@ -1,10 +1,15 @@
-// Manifeste versionné d'un volume (#10, `VAULT-PORT-001`, `VAULT-COMPAT-001`).
+// Manifeste versionné d'un volume (#10, puis #13 pour le format v2 ; `VAULT-PORT-001`,
+// `VAULT-COMPAT-001`).
 //
 // Le manifeste est le DOCUMENT qui lie les trois identités indépendantes de `docs/release-policy.md`
 // — la version entière du FORMAT de volume, la version SemVer du RUNTIME, l'identité immuable et la
 // version de l'APPLICATION — à la géométrie immuable du volume (#6). C'est un contrat de format
-// persistant : sa structure v1 est figée par l'ADR 0007, et le format ne dépend jamais implicitement
-// de la version npm.
+// persistant : sa structure v1 est figée par l'ADR 0007, sa structure v2 par l'ADR 0011, et le
+// format ne dépend jamais implicitement de la version npm.
+//
+// Deux formats coexistent donc, et chacun est jugé par SA règle : v2 est le format écrit, v1 reste
+// LISIBLE (donc exportable, restaurable et migrable) mais son écriture est refusée par
+// `VAULT_MANIFEST_MIGRATION_REQUIRED` jusqu'à ce que `src/vm/volume-migration.mjs` l'ait migré.
 //
 // Ce module est PUR et déterministe : il ne lit ni OPFS, ni le temps, ni le réseau. La sérialisation
 // est canonique (clés triées) pour qu'un même manifeste rende toujours les mêmes octets — condition
@@ -18,8 +23,23 @@ import { MANIFEST_ERROR_CODES, ManifestError } from "./manifest-errors.mjs";
 /** Marqueur figé : distingue un manifeste Vault d'un objet JSON quelconque. Jamais modifié. */
 export const MANIFEST_MAGIC = "railsbox-vault/volume-manifest";
 
-/** Version du format de volume que ce runtime écrit. Un entier, jamais dérivé de la version npm. */
-export const MANIFEST_FORMAT_VERSION = 1;
+/**
+ * Version du format de volume que ce runtime écrit. Un entier, jamais dérivé de la version npm.
+ *
+ * v2 (#13, ADR 0011) ajoute un champ OBLIGATOIRE, `runtime.minWriter` : la version de runtime la
+ * plus ancienne autorisée à écrire ce volume, DÉCLARÉE par le runtime qui l'écrit. v1 devinait ce
+ * refus à partir du seul majeur SemVer — une heuristique que l'ADR 0007 signalait déjà comme à
+ * revoir (risque n°2) et qui, en série `0.x`, ne peut RIEN refuser : `docs/release-policy.md` y
+ * exprime une rupture d'API runtime par un incrément du MINEUR, si bien que les deux majeurs valent
+ * 0 et que la comparaison est toujours fausse.
+ */
+export const MANIFEST_FORMAT_VERSION = 2;
+
+/** Plus ancien format que ce runtime sait encore LIRE (donc exporter, restaurer et migrer). */
+export const MIN_READABLE_FORMAT_VERSION = 1;
+
+/** Premier format qui porte `runtime.minWriter`. En deçà, le champ n'existe pas. */
+export const MIN_WRITER_FORMAT_VERSION = 2;
 
 /**
  * SEUL algorithme d'empreinte du format v1. Il est ÉPINGLÉ, et non simplement « une chaîne non
@@ -36,7 +56,7 @@ export const DIGEST_ALGORITHM = "sha-256";
  */
 export const DEFAULT_SUPPORTED_FORMAT = Object.freeze({
   current: MANIFEST_FORMAT_VERSION,
-  minReadable: MANIFEST_FORMAT_VERSION,
+  minReadable: MIN_READABLE_FORMAT_VERSION,
 });
 
 /** SemVer minimal (major.minor.patch, pré-version et métadonnées tolérées mais ignorées). */
@@ -49,6 +69,20 @@ function parseSemVer(version) {
   const m = SEMVER.exec(version);
   if (m === null) return null;
   return { major: Number(m[1]), minor: Number(m[2]), patch: Number(m[3]) };
+}
+
+/**
+ * Compare deux versions SemVer analysées. La pré-version est ignorée, comme à l'analyse : le dépôt
+ * n'exprime pas de compatibilité d'écriture au niveau d'une pré-version.
+ * @returns {number} négatif si `a` précède `b`, nul s'ils sont égaux, positif sinon
+ */
+export function compareSemVer(a, b) {
+  const x = parseSemVer(a);
+  const y = parseSemVer(b);
+  if (x === null || y === null) {
+    throw new TypeError(`Comparaison SemVer impossible : ${JSON.stringify([a, b])}.`);
+  }
+  return x.major - y.major || x.minor - y.minor || x.patch - y.patch;
 }
 
 /** Gèle en profondeur : un manifeste est immuable comme tout le reste du dépôt. */
@@ -88,7 +122,7 @@ export function createManifest({
   if (!Number.isInteger(formatVersion) || formatVersion < 1) {
     throw new TypeError(`Version de format invalide : ${JSON.stringify(formatVersion)}.`);
   }
-  const runtimeNorm = normalizeRuntime(runtime, TypeError);
+  const runtimeNorm = normalizeRuntime(runtime, null, formatVersion);
   const appNorm = normalizeApp(app, TypeError);
   const identityNorm = normalizeIdentity(identity, TypeError);
   assertBlockGeometry(volumeSize);
@@ -130,7 +164,7 @@ export function parseManifest(input) {
       formatVersion: raw.formatVersion,
     });
   }
-  const runtime = normalizeRuntime(raw.runtime, malformedThrower("runtime"));
+  const runtime = normalizeRuntime(raw.runtime, malformedThrower("runtime"), raw.formatVersion);
   const app = normalizeApp(raw.app, malformedThrower("app"));
   const identity = normalizeIdentity(raw.identity, malformedThrower("identity"));
   const geometry = normalizeGeometry(raw.geometry);
@@ -210,15 +244,29 @@ function verdict(readable, writable, refusal, scope) {
   return { readable, writable, refusal, scope };
 }
 
+/**
+ * Refus du DOWNGRADE d'écriture. Chaque format est jugé par SA propre règle :
+ *
+ * - à partir de v2, le volume DÉCLARE `runtime.minWriter` ; le refus est une comparaison, pas une
+ *   supposition. C'est la règle qui compte, parce que c'est celle que les volumes que ce runtime
+ *   écrit portent désormais ;
+ * - un manifeste v1 n'a pas ce champ. Il conserve la règle v1 — « majeur du volume > majeur en
+ *   cours » — au lieu d'une valeur inventée pour lui. En pratique elle ne s'applique qu'à un
+ *   runtime dont le format courant est 1 : sinon `migrationRequired` refuse déjà l'écriture, plus
+ *   tôt dans `evaluateCompatibility`.
+ */
 function isRuntimeDowngrade(manifest, expectations) {
   if (!expectations.runtime) return false;
-  const volume = parseSemVer(manifest.runtime.version);
   const running = parseSemVer(expectations.runtime.version);
   if (running === null) {
     throw new TypeError(
       `Version de runtime en cours invalide : ${JSON.stringify(expectations.runtime.version)}.`,
     );
   }
+  if (typeof manifest.runtime.minWriter === "string") {
+    return compareSemVer(expectations.runtime.version, manifest.runtime.minWriter) < 0;
+  }
+  const volume = parseSemVer(manifest.runtime.version);
   // Le manifeste a déjà été validé (SemVer garanti) ; ce garde-fou reste par prudence.
   if (volume === null) return false;
   return volume.major > running.major;
@@ -254,7 +302,12 @@ function malformedThrower(champ) {
   };
 }
 
-function normalizeRuntime(runtime, onError) {
+/**
+ * Normalise le bloc `runtime`, dont la forme DÉPEND de la version de format. À partir de v2, le
+ * champ `minWriter` est exigé : le volume déclare lui-même le plus ancien runtime autorisé à
+ * l'écrire, au lieu que chaque ouverture le devine (ADR 0011).
+ */
+function normalizeRuntime(runtime, onError, formatVersion) {
   if (!runtime || typeof runtime !== "object") throwWith(onError, "runtime absent.", TypeError);
   if (parseSemVer(runtime.version) === null) {
     throwWith(onError, `version SemVer invalide : ${JSON.stringify(runtime.version)}.`, TypeError);
@@ -263,7 +316,33 @@ function normalizeRuntime(runtime, onError) {
   if (artifact !== null && typeof artifact !== "string") {
     throwWith(onError, "artefact de runtime : chaîne ou null attendu.", TypeError);
   }
-  return { version: runtime.version, artifact };
+  if (formatVersion < MIN_WRITER_FORMAT_VERSION) {
+    // Le champ n'existe pas avant v2. À la CRÉATION c'est une faute (`onError` absent) ; à la
+    // relecture d'un manifeste v1, c'est un champ surnuméraire, toléré et ignoré comme les autres.
+    if (runtime.minWriter !== undefined && typeof onError !== "function") {
+      throwWith(
+        onError,
+        `« minWriter » n'existe qu'à partir du format ${MIN_WRITER_FORMAT_VERSION} ; ce manifeste déclare le format ${formatVersion}.`,
+        TypeError,
+      );
+    }
+    return { version: runtime.version, artifact };
+  }
+  if (parseSemVer(runtime.minWriter) === null) {
+    throwWith(
+      onError,
+      `« minWriter » absent ou hors SemVer : ${JSON.stringify(runtime.minWriter)}. Le format ${formatVersion} l'exige : le plus ancien écrivain admis est déclaré, jamais deviné.`,
+      TypeError,
+    );
+  }
+  if (compareSemVer(runtime.minWriter, runtime.version) > 0) {
+    throwWith(
+      onError,
+      `« minWriter » (${runtime.minWriter}) est plus récent que le runtime qui écrit (${runtime.version}) : ce volume s'interdirait à son propre auteur.`,
+      TypeError,
+    );
+  }
+  return { version: runtime.version, artifact, minWriter: runtime.minWriter };
 }
 
 function normalizeApp(app, onError) {
@@ -341,6 +420,7 @@ function refusalError(code, manifest, expectations) {
     formatVersion: manifest.formatVersion,
     supportedFormat: { current: supported.current, minReadable: supported.minReadable },
     volumeRuntime: manifest.runtime.version,
+    volumeMinWriter: manifest.runtime.minWriter ?? null,
     runningRuntime: expectations.runtime?.version ?? null,
     volumeApp: manifest.app.id,
     runningApp: expectations.app?.id ?? null,

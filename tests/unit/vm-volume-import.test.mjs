@@ -4,7 +4,12 @@ import test from "node:test";
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
 import { FAULT_KINDS, createFaultPlan } from "../../src/vm/fault-plan.mjs";
 import { STORAGE_ERROR_CODES, StorageError } from "../../src/vm/storage-errors.mjs";
-import { assertVolumeName } from "../../src/vm/opfs-sync-access.mjs";
+import {
+  MAX_STORAGE_NAME,
+  MAX_VOLUME_NAME,
+  assertVolumeName,
+  migrationJournalName,
+} from "../../src/vm/opfs-sync-access.mjs";
 import { MANIFEST_ERROR_CODES, isManifestError } from "../../src/vm/manifest-errors.mjs";
 import { ARCHIVE_ERROR_CODES, isArchiveError } from "../../src/vm/archive-errors.mjs";
 import { IMPORT_ERROR_CODES, isImportError } from "../../src/vm/import-errors.mjs";
@@ -43,7 +48,7 @@ function contenuVolume(size, seed = 3) {
 
 function manifeste(volumeSize) {
   return createManifest({
-    runtime: { version: "1.4.2", artifact: "sha256:abcdef" },
+    runtime: { version: "1.4.2", artifact: "sha256:abcdef", minWriter: "1.0.0" },
     app: { id: "railsbox/reference", version: "3.1.0" },
     volumeSize,
     identity: { algorithm: "sha-256", digest: null },
@@ -468,17 +473,20 @@ test("restaurer deux fois la même archive rend exactement le même volume", asy
 test("le nom du manifeste dérive du volume et tient toujours dans la frontière de nommage", () => {
   assert.equal(manifestSidecarName("vault-app"), "vault-app.manifest");
   assert.throws(() => manifestSidecarName("Vault-App"), TypeError);
-  // Le nom le plus long ADMIS porte encore son manifeste : plus aucun volume n'est créable puis
-  // irrestaurable faute de place pour son voisin.
-  const limite = "v".repeat(55);
-  assert.equal(manifestSidecarName(limite).length, 64);
-  assert.throws(() => manifestSidecarName("v".repeat(56)), TypeError);
+  // Le nom le plus long ADMIS porte encore TOUS ses voisins, y compris le plus long d'entre eux
+  // (le journal de migration, #13) : plus aucun volume n'est créable puis irrestaurable ou
+  // immigrable faute de place.
+  const limite = "v".repeat(MAX_VOLUME_NAME);
+  assert.equal(manifestSidecarName(limite).length <= MAX_STORAGE_NAME, true);
+  assert.equal(migrationJournalName(limite).length, MAX_STORAGE_NAME);
+  assert.throws(() => manifestSidecarName("v".repeat(MAX_VOLUME_NAME + 1)), TypeError);
 });
 
-test("le suffixe du manifeste est RÉSERVÉ : aucun volume ne peut le porter", () => {
+test("les suffixes des voisins sont RÉSERVÉS : aucun volume ne peut les porter", () => {
   // Sans cette réserve, restaurer « donnees » détruirait un volume légitime « donnees.manifest ».
   assert.throws(() => assertVolumeName("donnees.manifest"), TypeError);
   assert.throws(() => manifestSidecarName("donnees.manifest"), TypeError);
+  assert.throws(() => assertVolumeName("donnees.migration"), TypeError);
   // Un nom qui contient le mot sans en faire son suffixe reste admis.
   assert.equal(assertVolumeName("donnees.manifeste-2"), "donnees.manifeste-2");
 });
@@ -670,7 +678,7 @@ test("la compatibilité est contrôlée PAR DÉFAUT : un format futur est refus�
   const contenu = contenuVolume(4 * SECTOR_SIZE);
   const futur = createManifest({
     formatVersion: MANIFEST_FORMAT_VERSION + 1,
-    runtime: { version: "1.4.2", artifact: null },
+    runtime: { version: "1.4.2", artifact: null, minWriter: "1.0.0" },
     app: { id: "railsbox/reference", version: "3.1.0" },
     volumeSize: contenu.byteLength,
     identity: { algorithm: "sha-256", digest: null },

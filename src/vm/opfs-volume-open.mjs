@@ -81,6 +81,30 @@ export async function writeSidecarBytes(nom, bytes) {
 }
 
 /**
+ * Rend les OCTETS d'un VOISIN de volume — manifeste (#10) ou journal de migration (#13) —, ou
+ * `null` s'il n'y en a pas. Un voisin démesuré n'est PAS lu : poser une question ne doit pas coûter
+ * un gigaoctet. Il lève alors un `RangeError`, que chaque appelant convertit dans SA famille
+ * d'erreurs — un manifeste illisible et un journal illisible n'appellent pas le même remède.
+ *
+ * @param {string} sidecar nom du fichier voisin
+ * @param {{ stat?: Function, readFile?: Function }} [primitives]
+ * @returns {Promise<Uint8Array|null>}
+ */
+export async function readSidecarBytes(
+  sidecar,
+  { stat = statOpfsVolume, readFile = lireFichierOpfs } = {},
+) {
+  const etat = await stat(sidecar);
+  if (!etat.present || etat.size === 0) return null;
+  if (etat.size > MAX_SIDECAR_BYTES) {
+    throw new RangeError(
+      `Le voisin « ${sidecar} » annonce ${etat.size} octet(s), au-delà du plafond de ${MAX_SIDECAR_BYTES}. Il n'est pas lu.`,
+    );
+  }
+  return readFile(sidecar, etat.size);
+}
+
+/**
  * Rend les OCTETS du manifeste voisin d'un volume, ou `null` s'il n'y en a pas. Un voisin démesuré
  * n'est pas lu : il est traité comme absent d'un manifeste plausible, et l'appelant refusera.
  *
@@ -88,21 +112,18 @@ export async function writeSidecarBytes(nom, bytes) {
  * @param {{ stat?: Function, readFile?: Function }} [primitives]
  * @returns {Promise<Uint8Array|null>}
  */
-export async function readVolumeManifest(
-  volume,
-  { stat = statOpfsVolume, readFile = lireFichierOpfs } = {},
-) {
+export async function readVolumeManifest(volume, primitives = {}) {
   const sidecar = manifestSidecarName(volume);
-  const etat = await stat(sidecar);
-  if (!etat.present || etat.size === 0) return null;
-  if (etat.size > MAX_SIDECAR_BYTES) {
+  try {
+    return await readSidecarBytes(sidecar, primitives);
+  } catch (cause) {
+    if (!(cause instanceof RangeError)) throw cause;
     throw new ManifestError(
       MANIFEST_ERROR_CODES.malformed,
-      `Manifeste malformé : le voisin du volume « ${volume} » annonce ${etat.size} octet(s), au-delà du plafond de ${MAX_SIDECAR_BYTES}. Il n'est pas lu.`,
-      { volume, size: etat.size, maxBytes: MAX_SIDECAR_BYTES },
+      `Manifeste malformé : le voisin du volume « ${volume} » est démesuré et n'est pas lu (${cause.message}).`,
+      { volume, maxBytes: MAX_SIDECAR_BYTES },
     );
   }
-  return readFile(sidecar, etat.size);
 }
 
 /** Inscrit le manifeste voisin d'un volume. Dernier geste d'une création ou d'une restauration. */

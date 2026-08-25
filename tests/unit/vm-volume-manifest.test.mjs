@@ -28,14 +28,24 @@ import {
 // vérification de version/identité. Aucun OPFS, aucun navigateur, aucune VM : un format se prouve en
 // unitaire.
 
-/** Champs valides d'un volume neuf, réutilisés par les épreuves. */
+/** Champs valides d'un volume neuf, au format COURANT, réutilisés par les épreuves. */
 function champsValides(surcharge = {}) {
   return {
     formatVersion: MANIFEST_FORMAT_VERSION,
-    runtime: { version: "1.4.2", artifact: "sha256:abcdef" },
+    runtime: { version: "1.4.2", artifact: "sha256:abcdef", minWriter: "1.0.0" },
     app: { id: "railsbox/reference", version: "3.1.0" },
     volumeSize: SECTOR_SIZE * 8,
     identity: { algorithm: "sha-256", digest: null },
+    ...surcharge,
+  };
+}
+
+/** Champs d'un manifeste au format v1 : le bloc `runtime` n'y porte pas encore `minWriter`. */
+function champsV1(surcharge = {}) {
+  return {
+    ...champsValides(),
+    formatVersion: 1,
+    runtime: { version: "1.4.2", artifact: "sha256:abcdef" },
     ...surcharge,
   };
 }
@@ -50,7 +60,7 @@ function attentesCourantes(surcharge = {}) {
   };
 }
 
-test("createManifest fige un manifeste v1 complet et immuable", () => {
+test("createManifest fige un manifeste complet et immuable", () => {
   const m = createManifest(champsValides());
   assert.equal(m.magic, MANIFEST_MAGIC);
   assert.equal(m.formatVersion, MANIFEST_FORMAT_VERSION);
@@ -94,7 +104,7 @@ test("serializeManifest ignore l'ordre d'insertion des clés", () => {
     identity: { algorithm: "sha-256", digest: null },
     volumeSize: SECTOR_SIZE * 8,
     app: { version: "3.1.0", id: "railsbox/reference" },
-    runtime: { artifact: "sha256:abcdef", version: "1.4.2" },
+    runtime: { minWriter: "1.0.0", artifact: "sha256:abcdef", version: "1.4.2" },
     formatVersion: MANIFEST_FORMAT_VERSION,
   });
   assert.deepEqual([...serializeManifest(b)], [...serializeManifest(a)]);
@@ -166,7 +176,7 @@ test("un format FUTUR inconnu est refusé en lecture comme en écriture", () => 
 });
 
 test("un format trop ANCIEN pour ce runtime est refusé", () => {
-  const m = createManifest(champsValides({ formatVersion: 1 }));
+  const m = createManifest(champsV1());
   const attentes = attentesCourantes({ supportedFormat: { current: 3, minReadable: 2 } });
   assert.throws(
     () => assertReadable(m, attentes),
@@ -188,10 +198,16 @@ test("un format LISIBLE mais antérieur tolère la lecture et refuse l'écriture
   );
 });
 
-test("un DOWNGRADE de runtime majeur est lisible mais refuse l'écriture", () => {
-  // Le volume a été écrit par un runtime 2.x ; on tourne en 1.x : écriture dangereuse.
-  const m = createManifest(champsValides({ runtime: { version: "2.0.1", artifact: null } }));
-  const attentes = attentesCourantes({ runtime: { version: "1.9.9", artifact: null } });
+test("un manifeste v1 conserve SA règle de downgrade : le majeur du runtime qui l'a écrit", () => {
+  // Le volume v1 a été écrit par un runtime 2.x ; on tourne en 1.x : écriture dangereuse. Un
+  // manifeste v1 ne porte pas `minWriter` ; il n'en reçoit pas un d'office, il garde sa règle. Elle
+  // ne s'applique qu'à un runtime dont le format courant est 1 : au-delà, `migrationRequired`
+  // refuse déjà l'écriture, plus tôt.
+  const m = createManifest(champsV1({ runtime: { version: "2.0.1", artifact: null } }));
+  const attentes = attentesCourantes({
+    runtime: { version: "1.9.9", artifact: null },
+    supportedFormat: { current: 1, minReadable: 1 },
+  });
   const verdict = evaluateCompatibility(m, attentes);
   assert.equal(verdict.readable, true);
   assert.equal(verdict.writable, false);
