@@ -8,6 +8,7 @@ import {
   isManifestError,
 } from "../../src/vm/manifest-errors.mjs";
 import {
+  DEFAULT_SUPPORTED_FORMAT,
   MANIFEST_FORMAT_VERSION,
   MANIFEST_MAGIC,
   assertReadable,
@@ -281,6 +282,96 @@ test("ManifestError porte un code stable et une forme transportable", () => {
     () => new ManifestError("VAULT_INCONNU", "x"),
     /Code d'erreur de manifeste inconnu/,
   );
+});
+
+// --- Format v2 : le plus ancien écrivain admis est DÉCLARÉ, plus deviné (#13, ADR 0011) --------
+
+/** Champs d'un manifeste au format v2, dont `runtime.minWriter` est obligatoire. */
+function champsV2(surcharge = {}) {
+  return {
+    formatVersion: 2,
+    runtime: { version: "1.4.2", artifact: null, minWriter: "1.0.0" },
+    app: { id: "railsbox/reference", version: "3.1.0" },
+    volumeSize: SECTOR_SIZE * 8,
+    identity: { algorithm: "sha-256", digest: null },
+    ...surcharge,
+  };
+}
+
+test("le format courant est 2, et le plancher lisible reste 1", () => {
+  assert.equal(MANIFEST_FORMAT_VERSION, 2);
+  assert.equal(DEFAULT_SUPPORTED_FORMAT.current, 2);
+  assert.equal(DEFAULT_SUPPORTED_FORMAT.minReadable, 1);
+});
+
+test("v2 EXIGE « runtime.minWriter » : ni à la création, ni à la relecture il n'est deviné", () => {
+  assert.throws(
+    () => createManifest(champsV2({ runtime: { version: "1.4.2", artifact: null } })),
+    TypeError,
+  );
+  const brut = JSON.parse(new TextDecoder().decode(serializeManifest(createManifest(champsV2()))));
+  delete brut.runtime.minWriter;
+  assert.throws(
+    () => parseManifest(brut),
+    (e) => isManifestError(e, MANIFEST_ERROR_CODES.malformed),
+  );
+});
+
+test("v1 ne connaît pas « runtime.minWriter » : l'inscrire à la création est une faute", () => {
+  assert.throws(
+    () =>
+      createManifest({
+        ...champsV2(),
+        formatVersion: 1,
+        runtime: { version: "1.4.2", artifact: null, minWriter: "1.0.0" },
+      }),
+    TypeError,
+  );
+});
+
+test("un volume ne peut pas exiger un écrivain plus récent que celui qui l'écrit", () => {
+  assert.throws(
+    () =>
+      createManifest(
+        champsV2({ runtime: { version: "1.4.2", artifact: null, minWriter: "2.0.0" } }),
+      ),
+    TypeError,
+  );
+});
+
+test("le downgrade v2 est jugé sur « minWriter », et non plus sur le seul majeur", () => {
+  // Le cas que la règle v1 laissait passer : en série 0.x, une rupture d'écriture incrémente le
+  // MINEUR (docs/release-policy.md). Un volume écrit par 0.2.0 doit refuser l'écriture à 0.1.0 —
+  // ce que « majeur du volume > majeur en cours » ne détecte jamais, les deux majeurs valant 0.
+  const m = createManifest(
+    champsV2({ runtime: { version: "0.2.0", artifact: null, minWriter: "0.2.0" } }),
+  );
+  const ancien = attentesCourantes({ runtime: { version: "0.1.0", artifact: null } });
+  const verdict = evaluateCompatibility(m, ancien);
+  assert.equal(verdict.readable, true, "la lecture reste tolérée : diagnostic et export");
+  assert.equal(verdict.writable, false);
+  assert.equal(verdict.refusal, MANIFEST_ERROR_CODES.runtimeDowngrade);
+  assert.throws(
+    () => assertWritable(m, ancien),
+    (e) => isManifestError(e, MANIFEST_ERROR_CODES.runtimeDowngrade),
+  );
+  assert.doesNotThrow(() =>
+    assertWritable(m, attentesCourantes({ runtime: { version: "0.2.1", artifact: null } })),
+  );
+});
+
+test("un manifeste v1 reste LISIBLE par ce runtime, et son écriture attend la migration", () => {
+  const v1 = createManifest({
+    formatVersion: 1,
+    runtime: { version: "1.4.2", artifact: null },
+    app: { id: "railsbox/reference", version: "3.1.0" },
+    volumeSize: SECTOR_SIZE * 8,
+    identity: { algorithm: "sha-256", digest: null },
+  });
+  const verdict = evaluateCompatibility(v1, attentesCourantes({ supportedFormat: undefined }));
+  assert.equal(verdict.readable, true);
+  assert.equal(verdict.writable, false);
+  assert.equal(verdict.refusal, MANIFEST_ERROR_CODES.migrationRequired);
 });
 
 // --- utilitaires de fabrication d'entrées malformées ------------------------------------------
