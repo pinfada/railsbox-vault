@@ -254,6 +254,19 @@ test("assertVolumeWritable rend le manifeste validé quand l'identité et la ver
   assert.equal(Object.isFrozen(m), true);
 });
 
+test("l'algorithme d'empreinte est ÉPINGLÉ à sha-256, à la création comme à la relecture", () => {
+  // Le manifeste n'atteste que ce que le dépôt calcule réellement. Accepter une autre étiquette la
+  // rendrait persistante sans qu'aucun code ne l'honore — une affirmation fausse gravée sur disque.
+  assert.throws(
+    () => createManifest({ ...champsValides(), identity: { algorithm: "sha-1", digest: null } }),
+    TypeError,
+  );
+  assert.throws(
+    () => parseManifest(avecChamp("identity", { algorithm: "sha-1", digest: null })),
+    (e) => isManifestError(e, MANIFEST_ERROR_CODES.malformed),
+  );
+});
+
 test("ManifestError porte un code stable et une forme transportable", () => {
   const e = new ManifestError(MANIFEST_ERROR_CODES.formatTooNew, "message", { a: 1 });
   assert.equal(e.name, "ManifestError");

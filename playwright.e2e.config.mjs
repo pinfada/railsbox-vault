@@ -20,17 +20,22 @@ import { defineConfig } from "@playwright/test";
 // — il relirait le stockage qu'il vient d'écrire. `127.0.0.1` et `localhost` désignent la même
 // interface de bouclage mais forment deux origines distinctes au sens du navigateur, et les ports
 // diffèrent aussi ; c'est le même procédé que le spike d'origine de l'ADR 0002, sans DNS ni
-// certificat. Les deux serveurs sont liés à `127.0.0.1` pour que l'attente de port soit sans
-// ambiguïté ; seule l'URL visitée par le navigateur décide de l'origine.
+// certificat.
+//
+// Chaque serveur est lié au NOM D'HÔTE par lequel le navigateur le visitera, et son attente porte
+// sur l'URL complète, non sur un numéro de port : si `localhost` résolvait `::1` alors que le
+// serveur n'écoute que sur `127.0.0.1`, une attente de port réussirait pendant que le navigateur
+// échouerait — et TOUTE la suite tomberait en délai, y compris les scénarios existants.
 
 export const E2E_HOST = "127.0.0.1";
+export const E2E_HOST_B = "localhost";
 export const E2E_PORT = 4177;
 export const E2E_PORT_B = 4178;
 
 /** Origine d'EXPORT : celle qui détient le volume d'origine. */
 export const E2E_ORIGIN_A = `http://${E2E_HOST}:${E2E_PORT}`;
 /** Origine de RESTAURATION : un stockage OPFS entièrement distinct de celui de A. */
-export const E2E_ORIGIN_B = `http://localhost:${E2E_PORT_B}`;
+export const E2E_ORIGIN_B = `http://${E2E_HOST_B}:${E2E_PORT_B}`;
 
 export default defineConfig({
   testDir: "tests/e2e",
@@ -48,12 +53,12 @@ export default defineConfig({
   webServer: [
     {
       command: `node tools/serve.mjs --role shell --host ${E2E_HOST} --port ${E2E_PORT}`,
-      port: E2E_PORT,
+      url: `${E2E_ORIGIN_A}/vm/reference.html`,
       reuseExistingServer: false,
     },
     {
-      command: `node tools/serve.mjs --role shell --host ${E2E_HOST} --port ${E2E_PORT_B}`,
-      port: E2E_PORT_B,
+      command: `node tools/serve.mjs --role shell --host ${E2E_HOST_B} --port ${E2E_PORT_B}`,
+      url: `${E2E_ORIGIN_B}/vm/reference.html`,
       reuseExistingServer: false,
     },
   ],

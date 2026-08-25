@@ -2,13 +2,20 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
+import { FAULT_KINDS, createFaultPlan } from "../../src/vm/fault-plan.mjs";
+import { STORAGE_ERROR_CODES, StorageError } from "../../src/vm/storage-errors.mjs";
+import { assertVolumeName } from "../../src/vm/opfs-sync-access.mjs";
 import { MANIFEST_ERROR_CODES, isManifestError } from "../../src/vm/manifest-errors.mjs";
 import { ARCHIVE_ERROR_CODES, isArchiveError } from "../../src/vm/archive-errors.mjs";
 import { IMPORT_ERROR_CODES, isImportError } from "../../src/vm/import-errors.mjs";
 import { BUDGET_DIAGNOSTIC_CODES } from "../../src/vm/storage-budget.mjs";
 import { createSha256Stream } from "../../src/vm/sha256-stream.mjs";
 import { CONSISTENCY_KINDS, exportVolumeToBytes } from "../../src/vm/volume-export.mjs";
-import { createManifest, serializeManifest } from "../../src/vm/volume-manifest.mjs";
+import {
+  MANIFEST_FORMAT_VERSION,
+  createManifest,
+  serializeManifest,
+} from "../../src/vm/volume-manifest.mjs";
 import {
   DEFAULT_IMPORT_BLOCK_BYTES,
   importArchive,
@@ -85,23 +92,33 @@ function sourceArchive(bytes) {
 /**
  * Cible d'import en mémoire. Elle survit aux ouvertures successives — sans quoi « cible déjà
  * occupée » et l'idempotence ne voudraient rien dire —, compte les gestes de l'orchestration, et
- * peut imposer une géométrie ou corrompre sa relecture pour éprouver les refus.
+ * peut imposer une géométrie, corrompre sa relecture ou TOMBER EN PANNE pour éprouver les refus.
+ *
+ * Les pannes d'écriture et de barrière viennent du `FaultPlan` du dépôt (#4) : le même instrument
+ * déterministe que le backend de blocs, et non un `throw` improvisé. `FaultPlan` ne modélise en
+ * revanche ni l'OUVERTURE ni l'inscription du manifeste, qui ne sont pas des opérations de bloc :
+ * celles-là sont injectées explicitement.
  */
 function cibleMemoire({
   contenu = null,
   manifestBytes = null,
   tailleImposee = null,
   corrompreRelecture = false,
+  faults = createFaultPlan(),
+  panneOuverture = null,
+  panneCommit = null,
 } = {}) {
   const etat = {
     bytes: contenu,
     manifestBytes,
     ouvertures: 0,
+    fermetures: 0,
     revocations: 0,
     commits: 0,
     flushes: 0,
     maxEcriture: 0,
     maxLecture: 0,
+    blocsEcrits: 0,
   };
   return {
     etat,
@@ -113,6 +130,7 @@ function cibleMemoire({
       });
     },
     open({ size }) {
+      if (panneOuverture !== null) return Promise.reject(panneOuverture);
       etat.ouvertures += 1;
       const taille = tailleImposee ?? size;
       const bytes =
@@ -128,15 +146,36 @@ function cibleMemoire({
           return Promise.resolve(lu);
         },
         write(offset, morceau) {
+          const faute = faults.consume("write");
+          if (faute?.kind === FAULT_KINDS.partialWrite) {
+            return Promise.reject(
+              new StorageError(
+                STORAGE_ERROR_CODES.quotaExceeded,
+                `Quota dépassé à l'offset ${offset} du volume cible.`,
+                { offset },
+              ),
+            );
+          }
           etat.maxEcriture = Math.max(etat.maxEcriture, morceau.byteLength);
+          etat.blocsEcrits += 1;
           bytes.set(morceau, offset);
           return Promise.resolve();
         },
         flush() {
+          const faute = faults.consume("flush");
+          if (faute?.kind === FAULT_KINDS.flushFailure) {
+            return Promise.reject(
+              new StorageError(
+                STORAGE_ERROR_CODES.flushFailed,
+                "Barrière de durabilité refusée par la cible.",
+              ),
+            );
+          }
           etat.flushes += 1;
           return Promise.resolve();
         },
         close() {
+          etat.fermetures += 1;
           etat.bytes = bytes;
           return Promise.resolve();
         },
@@ -148,6 +187,7 @@ function cibleMemoire({
       return Promise.resolve();
     },
     commitManifest(bytes) {
+      if (panneCommit !== null) return Promise.reject(panneCommit);
       etat.commits += 1;
       etat.manifestBytes = bytes;
       return Promise.resolve();
@@ -294,7 +334,17 @@ test("la restauration est en flux : aucune lecture ni écriture ne dépasse le b
   assert.ok(cible.etat.maxLecture <= blockBytes, "aucune relecture ne dépasse le bloc");
   assert.equal(rapport.maxSourceReadBytes, source.compteur.maxLecture);
   assert.ok(rapport.maxTargetWriteBytes <= blockBytes);
-  assert.ok(DEFAULT_IMPORT_BLOCK_BYTES <= 64 * 1024 * 1024, "le bloc par défaut tient le budget");
+  assert.equal(rapport.maxTargetReadBytes, cible.etat.maxLecture);
+
+  // Le bloc PAR DÉFAUT est celui qu'une restauration non paramétrée emploie réellement, et il tient
+  // le budget : on l'éprouve par le comportement observé, non par une comparaison de constantes.
+  const parDefaut = cibleMemoire();
+  const rapportParDefaut = await importArchive({
+    source: sourceArchive(archive),
+    target: parDefaut,
+  });
+  assert.equal(rapportParDefaut.blockBytes, DEFAULT_IMPORT_BLOCK_BYTES);
+  assert.ok(parDefaut.etat.maxEcriture <= 64 * 1024 * 1024);
 });
 
 test("un espace insuffisant est refusé AVANT toute mutation, avec le diagnostic de #9", async () => {
@@ -415,8 +465,263 @@ test("restaurer deux fois la même archive rend exactement le même volume", asy
   assert.equal(cible.etat.commits, 2);
 });
 
-test("le nom du manifeste dérive du volume et reste un nom de volume admissible", () => {
+test("le nom du manifeste dérive du volume et tient toujours dans la frontière de nommage", () => {
   assert.equal(manifestSidecarName("vault-app"), "vault-app.manifest");
   assert.throws(() => manifestSidecarName("Vault-App"), TypeError);
-  assert.throws(() => manifestSidecarName("v".repeat(60)), RangeError);
+  // Le nom le plus long ADMIS porte encore son manifeste : plus aucun volume n'est créable puis
+  // irrestaurable faute de place pour son voisin.
+  const limite = "v".repeat(55);
+  assert.equal(manifestSidecarName(limite).length, 64);
+  assert.throws(() => manifestSidecarName("v".repeat(56)), TypeError);
+});
+
+test("le suffixe du manifeste est RÉSERVÉ : aucun volume ne peut le porter", () => {
+  // Sans cette réserve, restaurer « donnees » détruirait un volume légitime « donnees.manifest ».
+  assert.throws(() => assertVolumeName("donnees.manifest"), TypeError);
+  assert.throws(() => manifestSidecarName("donnees.manifest"), TypeError);
+  // Un nom qui contient le mot sans en faire son suffixe reste admis.
+  assert.equal(assertVolumeName("donnees.manifeste-2"), "donnees.manifeste-2");
+});
+
+// --- Défaillance EN COURS de restauration (ADR 0009) -------------------------------------------
+//
+// Le contrat ne dit pas seulement ce qui arrive quand tout va bien : il dit qu'une interruption, à
+// N'IMPORTE QUEL moment, laisse un volume NON IDENTIFIÉ plutôt qu'un volume d'apparence valide.
+// Ces épreuves coupent la restauration à chacun de ses points de rupture.
+
+test("panne à l'OUVERTURE de la cible : le manifeste existant n'est PAS détruit", async () => {
+  const contenu = contenuVolume(4 * SECTOR_SIZE);
+  const { archive } = await archiveDe(contenu);
+  const precedent = serializeManifest(manifeste(contenu.byteLength));
+  const cible = cibleMemoire({
+    contenu: contenuVolume(4 * SECTOR_SIZE, 9),
+    manifestBytes: precedent,
+    panneOuverture: new StorageError(
+      STORAGE_ERROR_CODES.busy,
+      "Le volume est déjà ouvert en exclusivité dans un autre onglet.",
+    ),
+  });
+
+  await assert.rejects(
+    () =>
+      importArchive({
+        source: sourceArchive(archive),
+        target: cible,
+        blockBytes: SECTOR_SIZE,
+        overwrite: true,
+      }),
+    (erreur) => erreur.code === STORAGE_ERROR_CODES.busy,
+  );
+
+  // L'ouverture ayant échoué, aucun octet n'a pu être écrit : révoquer le manifeste aurait rendu un
+  // volume intact inutilisable, par la seule faute du produit.
+  assert.deepEqual(
+    cible.etat.manifestBytes,
+    precedent,
+    "le manifeste survit à une ouverture ratée",
+  );
+  assert.equal(cible.etat.revocations, 0);
+  assert.equal(cible.etat.commits, 0);
+});
+
+test("panne d'ÉCRITURE au troisième bloc : manifeste révoqué, cible refermée, aucun commit", async () => {
+  const contenu = contenuVolume(8 * SECTOR_SIZE);
+  const { archive } = await archiveDe(contenu);
+  const cible = cibleMemoire({
+    manifestBytes: serializeManifest(manifeste(contenu.byteLength)),
+    faults: createFaultPlan([
+      { kind: FAULT_KINDS.partialWrite, operation: "write", occurrence: 3 },
+    ]),
+  });
+
+  await assert.rejects(
+    () =>
+      importArchive({
+        source: sourceArchive(archive),
+        target: cible,
+        blockBytes: SECTOR_SIZE,
+        overwrite: true,
+      }),
+    (erreur) => erreur.code === STORAGE_ERROR_CODES.quotaExceeded,
+  );
+
+  assert.equal(cible.etat.blocsEcrits, 2, "la panne survient bien en cours de restauration");
+  assert.equal(cible.etat.manifestBytes, null, "le volume reste NON identifié");
+  assert.equal(cible.etat.commits, 0);
+  assert.equal(cible.etat.fermetures, 1, "le handle exclusif est rendu malgré l'exception");
+});
+
+test("panne de BARRIÈRE : manifeste révoqué, cible refermée, aucun commit", async () => {
+  const contenu = contenuVolume(4 * SECTOR_SIZE);
+  const { archive } = await archiveDe(contenu);
+  const cible = cibleMemoire({
+    manifestBytes: serializeManifest(manifeste(contenu.byteLength)),
+    faults: createFaultPlan([
+      { kind: FAULT_KINDS.flushFailure, operation: "flush", occurrence: 1 },
+    ]),
+  });
+
+  await assert.rejects(
+    () =>
+      importArchive({
+        source: sourceArchive(archive),
+        target: cible,
+        blockBytes: SECTOR_SIZE,
+        overwrite: true,
+      }),
+    (erreur) => erreur.code === STORAGE_ERROR_CODES.flushFailed,
+  );
+
+  assert.equal(cible.etat.manifestBytes, null);
+  assert.equal(cible.etat.commits, 0);
+  assert.equal(cible.etat.fermetures, 1);
+});
+
+test("panne à l'INSCRIPTION du manifeste : le volume reste non identifié", async () => {
+  const contenu = contenuVolume(4 * SECTOR_SIZE);
+  const { archive } = await archiveDe(contenu);
+  const cible = cibleMemoire({
+    panneCommit: new StorageError(
+      STORAGE_ERROR_CODES.quotaExceeded,
+      "Quota dépassé à l'inscription du manifeste.",
+    ),
+  });
+
+  await assert.rejects(
+    () => importArchive({ source: sourceArchive(archive), target: cible, blockBytes: SECTOR_SIZE }),
+    (erreur) => erreur.code === STORAGE_ERROR_CODES.quotaExceeded,
+  );
+
+  // Le contenu est bien là, mais rien ne l'identifie : c'est exactement l'état sûr recherché.
+  assert.deepEqual(cible.etat.bytes, contenu);
+  assert.equal(cible.etat.manifestBytes, null);
+  assert.equal(cible.etat.fermetures, 1);
+});
+
+test("une restauration interrompue se reprend avec consentement, et sans lui reste refusée", async () => {
+  const contenu = contenuVolume(8 * SECTOR_SIZE);
+  const { archive, digest } = await archiveDe(contenu);
+  const interrompue = cibleMemoire({
+    manifestBytes: serializeManifest(manifeste(contenu.byteLength)),
+    faults: createFaultPlan([
+      { kind: FAULT_KINDS.partialWrite, operation: "write", occurrence: 3 },
+    ]),
+  });
+  await assert.rejects(() =>
+    importArchive({
+      source: sourceArchive(archive),
+      target: interrompue,
+      blockBytes: SECTOR_SIZE,
+      overwrite: true,
+    }),
+  );
+
+  // La cible porte désormais des octets partiels et AUCUN manifeste. Une reprise sans consentement
+  // reste refusée : la restauration ne devine jamais qu'un volume occupé est un rebut.
+  const reprise = cibleMemoire({ contenu: interrompue.etat.bytes, manifestBytes: null });
+  await assert.rejects(
+    () =>
+      importArchive({
+        source: sourceArchive(archive),
+        target: reprise,
+        blockBytes: SECTOR_SIZE,
+      }),
+    (erreur) =>
+      isImportError(erreur, IMPORT_ERROR_CODES.targetNotEmpty) &&
+      erreur.context.identified === false,
+  );
+
+  // Avec consentement, elle repart et rend un volume complet et identifié.
+  const rapport = await importArchive({
+    source: sourceArchive(archive),
+    target: reprise,
+    blockBytes: SECTOR_SIZE,
+    overwrite: true,
+  });
+  assert.equal(rapport.verifiedDigest, digest);
+  assert.deepEqual(reprise.etat.bytes, contenu);
+});
+
+// --- Voisin illisible, compatibilité par défaut, réservation nette ------------------------------
+
+test("un voisin qui n'est pas un manifeste analysable est REFUSÉ, jamais supprimé", async () => {
+  const contenu = contenuVolume(4 * SECTOR_SIZE);
+  const { archive } = await archiveDe(contenu);
+  const etranger = new TextEncoder().encode("des octets qui ne sont pas un manifeste Vault");
+  const cible = cibleMemoire({ manifestBytes: etranger });
+
+  await assert.rejects(
+    () =>
+      importArchive({
+        source: sourceArchive(archive),
+        target: cible,
+        blockBytes: SECTOR_SIZE,
+        overwrite: true,
+      }),
+    (erreur) => isImportError(erreur, IMPORT_ERROR_CODES.targetNotEmpty),
+  );
+
+  assert.deepEqual(cible.etat.manifestBytes, etranger, "le voisin étranger n'est pas détruit");
+  assert.equal(cible.etat.revocations, 0);
+  assert.equal(cible.etat.ouvertures, 0);
+});
+
+test("la compatibilité est contrôlée PAR DÉFAUT : un format futur est refusé sans rien demander", async () => {
+  const contenu = contenuVolume(4 * SECTOR_SIZE);
+  const futur = createManifest({
+    formatVersion: MANIFEST_FORMAT_VERSION + 1,
+    runtime: { version: "1.4.2", artifact: null },
+    app: { id: "railsbox/reference", version: "3.1.0" },
+    volumeSize: contenu.byteLength,
+    identity: { algorithm: "sha-256", digest: null },
+  });
+  const { archive } = await exportVolumeToBytes({
+    source: {
+      size: contenu.byteLength,
+      read: (offset, length) => Promise.resolve(contenu.slice(offset, offset + length)),
+    },
+    manifest: futur,
+    consistency: cohérence,
+  });
+  const cible = cibleMemoire();
+
+  // Aucune `expectations` n'est fournie : le contrôle ne doit PAS être facultatif pour autant.
+  await assert.rejects(
+    () => importArchive({ source: sourceArchive(archive), target: cible, blockBytes: SECTOR_SIZE }),
+    (erreur) => isManifestError(erreur, MANIFEST_ERROR_CODES.formatTooNew),
+  );
+  assert.equal(cible.etat.ouvertures, 0);
+});
+
+test("l'écrasement sur place ne réserve que le besoin NET, jamais la taille totale", async () => {
+  const contenu = contenuVolume(4 * SECTOR_SIZE);
+  const { archive, digest } = await archiveDe(contenu);
+  const cible = cibleMemoire({ contenu: contenuVolume(4 * SECTOR_SIZE, 9) });
+  const demandes = [];
+  const budget = {
+    reserve(octets) {
+      demandes.push(octets);
+      return Promise.resolve({
+        operation: "reserve",
+        state: "known",
+        requiredBytes: octets,
+        // L'espace libre est plus petit que le volume : une réservation brute échouerait à tort.
+        available: SECTOR_SIZE,
+        sufficient: octets <= SECTOR_SIZE,
+        diagnostic: null,
+      });
+    },
+  };
+
+  const rapport = await importArchive({
+    source: sourceArchive(archive),
+    target: cible,
+    budget,
+    blockBytes: SECTOR_SIZE,
+    overwrite: true,
+  });
+
+  assert.deepEqual(demandes, [0], "un volume de même géométrie ne coûte aucun octet de plus");
+  assert.equal(rapport.verifiedDigest, digest);
+  assert.equal(rapport.budget.requiredBytes, 0);
 });

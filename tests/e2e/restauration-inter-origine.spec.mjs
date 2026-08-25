@@ -87,6 +87,38 @@ async function copieAlteree(chemin, cible) {
 
 const raison = raisonDIndisponibilite();
 
+/**
+ * Hygiène des DEUX origines, tenue même quand le scénario échoue : chaque volume pèse un demi-
+ * gigaoctet, et un échec en plein milieu en laisserait plusieurs dans les profils de navigateur.
+ * Un défaut de nettoyage ne doit jamais masquer l'échec qu'il suit : il est journalisé, pas relancé.
+ */
+test.afterEach(async ({ context }) => {
+  if (raison !== null) return;
+  const aRetirer = [
+    [E2E_ORIGIN_A, [VOLUME_A, ARCHIVE]],
+    [E2E_ORIGIN_B, [VOLUME_B, VOLUME_B_REFUS]],
+  ];
+  for (const [origine, noms] of aRetirer) {
+    const page = await context.newPage();
+    try {
+      await page.goto(`${origine}/vm/reference.html`, { waitUntil: "load" });
+      await page.waitForFunction(() => globalThis.bancReprise !== undefined, null, {
+        timeout: 20_000,
+      });
+      for (const nom of noms) {
+        await page.evaluate(
+          (n) => globalThis.bancReprise.executer({ phase: "cleanup", volume: n }),
+          nom,
+        );
+      }
+    } catch (erreur) {
+      process.stderr.write(`[hygiène] ${origine} : ${erreur.message}\n`);
+    } finally {
+      await page.close();
+    }
+  }
+});
+
 test("un volume exporté depuis une origine est restauré, booté à froid et vérifié par Rails depuis une AUTRE origine", async ({
   context,
 }, testInfo) => {
@@ -234,6 +266,10 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
   // Surmémoire bornée : aucune lecture ni écriture ne demande tout le volume d'un coup.
   expect(importe.maxSourceReadBytes).toBeLessThanOrEqual(importe.blockBytes);
   expect(importe.maxTargetWriteBytes).toBeLessThanOrEqual(importe.blockBytes);
+  expect(
+    importe.maxTargetReadBytes,
+    "la re-vérification relit elle aussi par blocs bornés",
+  ).toBeLessThanOrEqual(importe.blockBytes);
   expect(importe.blockBytes).toBeLessThanOrEqual(64 * 1024 * 1024);
 
   session = await nouvellePage(E2E_ORIGIN_B);
@@ -319,17 +355,43 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
   expect(reprise.observedRecordId).toBe(contrat.record.id);
   expect(reprise.observedAttachmentSha256).toBe(contrat.attachment.sha256);
 
-  // 10. Hygiène : retirer volumes et archive des DEUX origines.
-  session = await nouvellePage(E2E_ORIGIN_A);
-  for (const nom of [VOLUME_A, ARCHIVE]) {
-    await courir(session.page, { phase: "cleanup", volume: nom }).catch(() => {});
-  }
-  await session.page.close();
+  // 10. TÉMOIN — le manifeste voisin n'est pas décoratif : il CONDITIONNE l'ouverture en écriture.
+  //     On le retire du volume restauré (ce que laisserait une restauration interrompue), et le
+  //     boot suivant doit être refusé par `VAULT_MANIFEST_UNIDENTIFIED` avant même de démarrer v86.
   session = await nouvellePage(E2E_ORIGIN_B);
-  for (const nom of [VOLUME_B, `${VOLUME_B}.manifest`, VOLUME_B_REFUS]) {
-    await courir(session.page, { phase: "cleanup", volume: nom }).catch(() => {});
+  const revocation = await courir(session.page, {
+    phase: "revoke-manifest",
+    volume: VOLUME_B,
+  });
+  expect(revocation.revoked, "le manifeste voisin existait bien").toBe(true);
+  let refusNonIdentifie = null;
+  try {
+    await courir(session.page, { ...configBoot, phase: "resume", volume: VOLUME_B });
+  } catch (erreur) {
+    refusNonIdentifie = erreur.message;
   }
   await session.page.close();
+  expect(
+    refusNonIdentifie,
+    "un volume sans manifeste ne doit jamais être ouvert en écriture",
+  ).toMatch(/VAULT_MANIFEST_UNIDENTIFIED/);
+
+  // 11. TÉMOIN — l'extraction d'un `File` est bornée à une ARCHIVE (SEC-ORIGIN-001). Demander le
+  //     fichier d'un VOLUME est refusé : la coquille n'obtient jamais de vue sur un volume.
+  session = await nouvellePage(E2E_ORIGIN_B);
+  let refusFichierVolume = null;
+  try {
+    await session.page.evaluate((nom) => globalThis.bancReprise.telecharger(nom), VOLUME_B);
+  } catch (erreur) {
+    refusFichierVolume = erreur.message;
+  }
+  await session.page.close();
+  expect(refusFichierVolume, "seule une archive peut être remise à la coquille").toMatch(
+    /VAULT_ARCHIVE_MALFORMED/,
+  );
+
+  // L'hygiène des DEUX origines est tenue par le crochet `afterEach` : un échec en cours de
+  // scénario laisserait sinon plus d'un gigaoctet orphelin dans deux profils de navigateur.
 
   // Mesures publiées.
   const mesures = {

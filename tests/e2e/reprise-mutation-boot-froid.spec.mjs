@@ -20,6 +20,7 @@ import { expect, test } from "@playwright/test";
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CHEMIN_MANIFESTE = join(RACINE, "tools", "build-reference-image", "manifest.json");
 const CHEMIN_CONTRAT = join(RACINE, "apps", "reference", "vault-invariant.json");
+const CHEMIN_PACKAGE = join(RACINE, "package.json");
 const DOSSIER_IMAGE = join(RACINE, "artifacts", "reference-image");
 const DOSSIER_V86 = join(RACINE, "vendor", "v86", "artefacts");
 const DOSSIER_RAPPORTS = join(RACINE, "reports", "e2e");
@@ -87,11 +88,20 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
     initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
     rootfs: `/artifacts/reference-image/${manifeste.boot.hda}`,
   };
+  // Identités portées par le manifeste du volume (#10). Depuis #12, un volume ne s'ouvre en écriture
+  // que s'il porte un manifeste compatible (`SEC-UPDATE-001`) : la préparation l'inscrit, et chaque
+  // boot le vérifie.
+  const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
+  const descripteurManifeste = {
+    runtime: { version: paquet.version, artifact: null },
+    app: { id: contrat.application.id, version: contrat.application.version },
+  };
   const configBoot = {
     volume: VOLUME,
     cmdline: manifeste.boot.cmdline,
     memoryBytes: manifeste.boot.memoryMiB * 1024 * 1024,
     runtime,
+    manifest: descripteurManifeste,
     expected: { recordId: contrat.record.id, attachmentSha256: contrat.attachment.sha256 },
     bootTimeoutMs: BUDGET_BOOT_MS,
   };
@@ -121,6 +131,7 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
     volume: VOLUME,
     appDiskBytes,
     appDiskUrl,
+    manifest: descripteurManifeste,
   });
   await session.page.close();
   expect(prepare.bytesWritten, "le disque applicatif entier est écrit dans OPFS").toBe(
@@ -200,7 +211,15 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
   // 4. Témoin négatif : un volume OPFS VIDE ne peut PAS rendre l'invariant. La reprise dépend donc
   //    du CONTENU d'OPFS, non du réseau ni de l'artefact resservi.
   session = await nouvellePage();
-  await courir(session.page, { phase: "prepare-empty", volume: VOLUME_VIDE, appDiskBytes });
+  // Le volume témoin est IDENTIFIÉ comme les autres — manifeste voisin compris — mais VIDE. Sans
+  // cela, le boot serait refusé pour absence de manifeste (#12) et le témoin ne dirait plus rien
+  // du contenu d'OPFS, qui est pourtant ce qu'il doit prouver.
+  await courir(session.page, {
+    phase: "prepare-empty",
+    volume: VOLUME_VIDE,
+    appDiskBytes,
+    manifest: descripteurManifeste,
+  });
   let echecTemoin = null;
   try {
     await courir(session.page, {
