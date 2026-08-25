@@ -55,14 +55,31 @@ jobs:
       - name: Épinglage de la chaîne de construction
         run: node tools/build-reference-image/verify-pinning.mjs
 
+      # Mesures d'espace disque (#73). Le quota OPFS que Chromium accorde à une origine est dérivé de
+      # l'espace RÉELLEMENT libre du disque ; une écriture OPFS courte en CI et jamais en local pose
+      # donc d'abord la question de la place restante. Ces mesures la documentent à chaque étape et
+      # partent avec les artefacts. Elles n'échouent jamais : elles n'ont rien à décider.
+      - name: Espace disque au départ
+        run: node tools/mesure-espace-disque.mjs --etape depart
+
       - name: Construction de l'image de référence
         run: npm run image:build
+
+      - name: Espace disque après construction de l'image
+        run: node tools/mesure-espace-disque.mjs --etape apres-image-build
 
       - name: Récupération vérifiée des artefacts v86
         run: npm run vm:fetch
 
+      - name: Espace disque avant les scénarios
+        run: node tools/mesure-espace-disque.mjs --etape avant-e2e
+
       - name: Reprise MVP (E2E)
         run: npm run test:e2e
+
+      - name: Espace disque après les scénarios
+        if: always()
+        run: node tools/mesure-espace-disque.mjs --etape apres-e2e
 
       - name: Mesures
         if: always()
