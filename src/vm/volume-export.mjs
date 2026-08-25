@@ -392,6 +392,10 @@ export async function readArchive({
     manifest,
     contentDigest: computed,
     contentLength,
+    // Offset du premier octet de contenu. Il est déductible (`archiveLength - contentLength`), mais
+    // la restauration (#12) le relit bloc par bloc : le rendre explicite évite qu'un appelant
+    // refasse l'arithmétique de la disposition d'archive à sa façon.
+    contentOffset,
     consistency: header.content.consistency ?? null,
     archiveLength: declaredLength,
   };

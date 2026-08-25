@@ -247,7 +247,42 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
     exporte.digest,
   );
 
-  // 7. BOOT À FROID HORS LIGNE sur B, depuis le volume restauré, sans aucun snapshot.
+  // 7. TÉMOIN NÉGATIF — archive altérée : refus typé, et RIEN n'est écrit sur la cible.
+  //    Les deux témoins précèdent le boot à froid : celui-ci fait tourner Rails sur le volume
+  //    restauré, qui y écrit — le volume cesse alors d'être comparable à l'archive.
+  const cheminAltere = testInfo.outputPath("volume-origine-a-altere.rbvault");
+  await copieAlteree(cheminArchive, cheminAltere);
+  session = await nouvellePage(E2E_ORIGIN_B);
+  const refusAltere = await importer(session.page, cheminAltere, {
+    phase: "import",
+    volume: VOLUME_B_REFUS,
+    expectations: attentes,
+  });
+  const cibleRefusee = await courir(session.page, {
+    phase: "inspect-volume",
+    volume: VOLUME_B_REFUS,
+  });
+  await session.page.close();
+  expect(refusAltere.ok, "une archive altérée ne doit jamais se restaurer").toBe(false);
+  expect(refusAltere.error?.code).toBe("VAULT_ARCHIVE_DIGEST_MISMATCH");
+  expect(cibleRefusee.present, "rien n'est écrit quand la vérification échoue").toBe(false);
+
+  // 8. TÉMOIN NÉGATIF — cible non vide sans consentement : refus typé, volume restauré intact.
+  session = await nouvellePage(E2E_ORIGIN_B);
+  const refusOccupe = await importer(session.page, cheminArchive, {
+    phase: "import",
+    volume: VOLUME_B,
+    expectations: attentes,
+  });
+  const cibleIntacte = await courir(session.page, { phase: "inspect-volume", volume: VOLUME_B });
+  const digestIntact = await courir(session.page, { phase: "digest-volume", volume: VOLUME_B });
+  await session.page.close();
+  expect(refusOccupe.ok).toBe(false);
+  expect(refusOccupe.error?.code).toBe("VAULT_IMPORT_TARGET_NOT_EMPTY");
+  expect(cibleIntacte.manifestPresent, "le volume valide garde son manifeste").toBe(true);
+  expect(digestIntact.digest, "le volume valide n'a pas été touché").toBe(exporte.digest);
+
+  // 9. BOOT À FROID HORS LIGNE sur B, depuis le volume restauré, sans aucun snapshot.
   session = await nouvellePage(E2E_ORIGIN_B);
   const arm = await courir(session.page, { ...configBoot, phase: "resume-arm", volume: VOLUME_B });
   expect(arm.ready).toBe(true);
@@ -283,39 +318,6 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
   expect(reprise.conforming, "invariant conforme après restauration inter-origine").toBe(true);
   expect(reprise.observedRecordId).toBe(contrat.record.id);
   expect(reprise.observedAttachmentSha256).toBe(contrat.attachment.sha256);
-
-  // 8. TÉMOIN NÉGATIF — archive altérée : refus typé, et RIEN n'est écrit sur la cible.
-  const cheminAltere = testInfo.outputPath("volume-origine-a-altere.rbvault");
-  await copieAlteree(cheminArchive, cheminAltere);
-  session = await nouvellePage(E2E_ORIGIN_B);
-  const refusAltere = await importer(session.page, cheminAltere, {
-    phase: "import",
-    volume: VOLUME_B_REFUS,
-    expectations: attentes,
-  });
-  const cibleRefusee = await courir(session.page, {
-    phase: "inspect-volume",
-    volume: VOLUME_B_REFUS,
-  });
-  await session.page.close();
-  expect(refusAltere.ok, "une archive altérée ne doit jamais se restaurer").toBe(false);
-  expect(refusAltere.error?.code).toBe("VAULT_ARCHIVE_DIGEST_MISMATCH");
-  expect(cibleRefusee.present, "rien n'est écrit quand la vérification échoue").toBe(false);
-
-  // 9. TÉMOIN NÉGATIF — cible non vide sans consentement : refus typé, volume restauré intact.
-  session = await nouvellePage(E2E_ORIGIN_B);
-  const refusOccupe = await importer(session.page, cheminArchive, {
-    phase: "import",
-    volume: VOLUME_B,
-    expectations: attentes,
-  });
-  const cibleIntacte = await courir(session.page, { phase: "inspect-volume", volume: VOLUME_B });
-  const digestIntact = await courir(session.page, { phase: "digest-volume", volume: VOLUME_B });
-  await session.page.close();
-  expect(refusOccupe.ok).toBe(false);
-  expect(refusOccupe.error?.code).toBe("VAULT_IMPORT_TARGET_NOT_EMPTY");
-  expect(cibleIntacte.manifestPresent, "le volume valide garde son manifeste").toBe(true);
-  expect(digestIntact.digest, "le volume valide n'a pas été touché").toBe(exporte.digest);
 
   // 10. Hygiène : retirer volumes et archive des DEUX origines.
   session = await nouvellePage(E2E_ORIGIN_A);

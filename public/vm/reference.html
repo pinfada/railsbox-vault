@@ -13,6 +13,15 @@
       est décrit dans <code>docs/testing.md</code> et prouvé par
       <code>tests/e2e/reprise-mutation-boot-froid.spec.mjs</code>.
     </p>
+    <p>
+      Le champ ci-dessous est la seule porte d'entrée d'une archive dans cette origine (#12) :
+      restaurer un volume exporté depuis une AUTRE origine suppose que l'utilisateur transporte
+      lui-même le fichier. Aucun canal inter-origines n'est ouvert.
+    </p>
+    <p>
+      <label for="archive-entrante">Archive de volume à restaurer</label>
+      <input id="archive-entrante" type="file" accept=".rbvault" />
+    </p>
     <p id="etat">Prêt.</p>
     <pre id="rapport"></pre>
     <script type="module" src="./reference-banc.mjs"></script>
