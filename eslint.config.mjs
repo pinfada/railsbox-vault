@@ -44,6 +44,7 @@ const PLAYWRIGHT_FILES = [
   "tests/compat/**/*.mjs",
   "tests/vm/**/*.spec.mjs",
   "tests/e2e/**/*.spec.mjs",
+  "tests/isolation/**/*.spec.mjs",
 ];
 
 /**
