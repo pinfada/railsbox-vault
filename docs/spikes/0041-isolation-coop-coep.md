@@ -295,7 +295,21 @@ même ordre que l'incertitude de la mesure, et il n'y a rien à en conclure dans
 l'autre. Les essais bruts le montrent aussi : les quatre valeurs nues de `lecture-disque` — 141,0 ·
 141,7 · 121,9 · 122,9 — s'étalent déjà sur un palier entier à l'intérieur d'une même condition.
 
-Les deux métriques qui ne subissent pas cette quantification disent la même chose plus proprement :
+Une seconde propriété de l'instrument mérite d'être écrite, bien qu'elle ne change rien ici : les
+deux conditions ne sont **pas chronométrées avec la même graduation**. `performance.now()` est
+volontairement grossi par le navigateur hors contexte isolé — de l'ordre de **100 µs** en condition
+nue contre **5 µs** en condition isolée sous Chromium —, l'isolation multi-origine étant précisément
+ce qui autorise le moteur à rendre l'horloge plus fine, puisqu'elle referme les canaux que la
+finesse ouvrirait.
+
+Un protocole qui comparerait des durées de l'ordre de la milliseconde devrait en tenir compte.
+Celui-ci ne le doit pas : la plus petite grandeur qu'il compare est un palier de 20 ms, soit deux
+ordres de grandeur au-dessus du grossissement le plus lourd, et quatre au-dessus des 3 600 ms du
+boot. Le biais, s'il jouait, jouerait par ailleurs **en faveur** de la condition isolée — celle qui
+n'exhibe aucun surcoût. Il est donc mentionné pour être écarté, pas pour être corrigé.
+
+Les deux métriques qui ne subissent pas la quantification à 20 ms disent la même chose plus
+proprement :
 
 - le **premier boot** dure cent quatre-vingts paliers, donc un palier y pèse 0,6 % : l'écart mesuré
   (+0,6 %) vaut exactement un palier ;
@@ -342,7 +356,8 @@ Zéro. Pas même le premier, ni le délai de garde interne de `guest-session.mjs
 lui aussi sur un `setInterval`. Ce n'est donc pas un guest lent : **le thread du Worker cesse
 entièrement de rendre la main dès que v86 démarre sous Firefox**. Le défaut est identique avec et
 sans isolation ; il n'a rien à voir avec la question de ce spike, et il rejoint la case « non mesuré
-(#4) » de `docs/compatibility.md`. Il vaut une issue à lui seul.
+(#4) » de `docs/compatibility.md`. Il vaut une issue à lui seul : c'est **#74**, ouverte avec le
+protocole du pouls et le relevé ci-dessus.
 
 ### WebKit 26.5 — pas de boucle d'ordonnancement sous la CSP de la coquille
 
@@ -363,21 +378,35 @@ chemin OPFS** n'est donc pas mesuré ici. Ce que l'on sait par ailleurs : `npm r
 et écrire un vrai guest sur un volume OPFS, avec barrière de durabilité acquittée, sur un serveur
 **sans** en-tête d'isolation — `playwright.vm.config.mjs` ne passe pas `--cross-origin-isolated`.
 L'absence d'isolation ne bloque donc pas OPFS ; son éventuel coût sur ce chemin reste à mesurer si
-la question se pose.
+la question se pose. C'est le **risque résiduel n°6** de l'ADR 0010, qui nomme la limite plutôt que
+de la laisser dans le compte rendu seul.
 
 ### `Cross-Origin-Embedder-Policy: credentialless` et l'injection par Service Worker
 
 Ni l'un ni l'autre n'a été prototypé. Ce sont deux mécanismes pour **poser** l'isolation, et la
 décision est de ne pas la poser ; les mesurer aurait été produire une preuve sans décision à
-soutenir. L'ADR 0010 les compare sur leurs propriétés connues et l'issue de suivi dit ce qu'il
-faudrait mesurer si l'isolation redevenait nécessaire.
+soutenir. L'ADR 0010 les compare sur leurs propriétés connues, et **#76** — ouverte comme
+**conditionnelle**, à n'engager que si une condition de réouverture de l'ADR 0010 se réalise — dit
+ce qu'il faudrait alors mesurer.
 
 ### L'iframe applicative sous `require-corp`
 
 Déjà mesurée par le spike #35 et non refaite ici : sous `require-corp`, une iframe inter-origine
-sans COEP est refusée (`net::ERR_BLOCKED_BY_RESPONSE`) sur les trois moteurs ; Chromium ne transmet
-pas l'isolation au cadre, WebKit la lui accorde, et Firefox n'a pas chargé le cadre dans ces
-conditions. Voir `docs/spikes/0035-topologie-origine-de-confiance.md`.
+sans COEP n'est chargée sur **aucun** des trois moteurs. Le refus est unanime ; sa **signature** ne
+l'est pas, et confondre les deux prêterait au relevé une homogénéité qu'il n'a pas :
+
+| Moteur   | Ce que le spike #35 a relevé                                                                                            |
+| -------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Chromium | `net::ERR_BLOCKED_BY_RESPONSE` — requête en échec observable ; c'est la **seule** occurrence de ce code                 |
+| WebKit   | « Refused to display … in a frame because of Cross-Origin-Embedder-Policy », puis « Load request cancelled »            |
+| Firefox  | ni requête en échec ni message de console exposés à Playwright : le refus n'est constaté que par l'**absence** du cadre |
+
+L'assertion du spike #35 est donc restée chromium, et son relevé `coep-refus-firefox.json` est un
+tableau **vide** — ce qui se lit comme un défaut d'instrument, pas comme une permission.
+
+Pour la suite : Chromium ne transmet pas l'isolation au cadre, WebKit la lui **accorde**, et Firefox
+n'a pas chargé le cadre dans ces conditions. Voir
+`docs/spikes/0035-topologie-origine-de-confiance.md`.
 
 ## Lecture
 
