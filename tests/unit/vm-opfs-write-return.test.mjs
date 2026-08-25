@@ -11,6 +11,7 @@ import {
   writeCountFailure,
 } from "../../src/vm/opfs-error-mapping.mjs";
 import { createOpfsArchiveSink } from "../../src/vm/opfs-archive-sink.mjs";
+import { ecrireHandleEntier, lireTeteDeHandle } from "../../src/vm/opfs-volume-open.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 
 // Ce que `FileSystemSyncAccessHandle.write()` rend quand il N'A PAS écrit (#73).
@@ -256,4 +257,56 @@ test("le puits d'archive avance de ce qui a été écrit, et seulement de cela",
     { at: 0, length: 12 },
     { at: 12, length: 300 },
   ]);
+});
+
+// --- Le voisin de volume (#10, #13) sur le même support -----------------------------------------
+
+test("un manifeste voisin que le support refuse d'écrire n'est jamais tenu pour inscrit", () => {
+  const erreur = (() => {
+    try {
+      ecrireHandleEntier(handleQuiRend(RENDU_NO_SPACE, 0), "v.manifest", new Uint8Array(400));
+      return null;
+    } catch (cause) {
+      return cause;
+    }
+  })();
+
+  assert.ok(erreur !== null, "un voisin non écrit ne doit jamais passer pour écrit");
+  assert.ok(
+    isStorageError(erreur, STORAGE_ERROR_CODES.quotaExceeded),
+    `attendu VAULT_STORAGE_QUOTA_EXCEEDED, obtenu ${erreur.code} : ${erreur.message}`,
+  );
+  assert.doesNotMatch(erreur.message, /courte/i);
+  assert.equal(erreur.context.errno, -8);
+});
+
+test("un voisin plus court que sa taille annoncée est rendu tel quel ; un errno est refusé", () => {
+  const contenu = Uint8Array.from({ length: 400 }, (_, i) => i % 251);
+
+  // Lecture courte LÉGITIME : c'est ce que laisse une écriture interrompue, et l'appelant doit
+  // pouvoir le constater. Elle est rendue tronquée, pas complétée.
+  const partiel = {
+    read(cible) {
+      cible.set(contenu.subarray(0, 120));
+      return 120;
+    },
+  };
+  const lu = lireTeteDeHandle(partiel, "v.manifest", 400);
+  assert.equal(lu.byteLength, 120);
+  assert.deepEqual(lu, contenu.subarray(0, 120));
+
+  // Code d'échec : sans refus, `subarray(0, 4294967288)` bornerait à 400 et rendrait 400 zéros
+  // comme s'ils avaient été lus — un manifeste fabriqué de toutes pièces.
+  const errno = { read: () => RENDU_NO_SPACE };
+  const erreur = (() => {
+    try {
+      lireTeteDeHandle(errno, "v.manifest", 400);
+      return null;
+    } catch (cause) {
+      return cause;
+    }
+  })();
+  assert.ok(erreur !== null, "un tampon de zéros ne doit jamais passer pour un voisin lu");
+  assert.ok(isStorageError(erreur, STORAGE_ERROR_CODES.supportFailure));
+  assert.equal(erreur.context.errno, -8);
 });

@@ -33,6 +33,8 @@ import {
   statOpfsVolume,
 } from "/src/vm/opfs-sync-access.mjs";
 import { revokeVolumeManifest, writeVolumeManifest } from "/src/vm/opfs-volume-open.mjs";
+import { readCountFailure } from "/src/vm/opfs-error-mapping.mjs";
+import { STORAGE_ERROR_CODES } from "/src/vm/storage-errors.mjs";
 import { createSha256Stream } from "/src/vm/sha256-stream.mjs";
 import { bindNavigatorStorage, createStorageBudget } from "/src/vm/storage-budget.mjs";
 import { importArchive, manifestSidecarName } from "/src/vm/volume-import.mjs";
@@ -321,6 +323,17 @@ async function phaseVerifyExport({ archive, mutate = "none", blockBytes = EXPORT
     compteur.maxLecture = Math.max(compteur.maxLecture, length);
     const buffer = new Uint8Array(length);
     const lus = handle.read(buffer, { at: offset });
+    // Une lecture COURTE est rendue telle quelle : `readArchive` en fait une troncature typée, et
+    // c'est précisément ce que le scénario éprouve. Un CODE D'ÉCHEC, lui, n'est pas un compte
+    // (#73) : `subarray` le bornerait à `length` et rendrait un tampon de zéros comme s'il avait
+    // été lu — l'archive se vérifierait alors contre du vide.
+    const echec = readCountFailure(lus, {
+      requested: length,
+      volume: archive,
+      offset,
+      operation: "read-archive",
+    });
+    if (echec !== null && echec.code !== STORAGE_ERROR_CODES.shortRead) throw echec;
     return lus === length ? buffer : buffer.subarray(0, lus);
   };
 
