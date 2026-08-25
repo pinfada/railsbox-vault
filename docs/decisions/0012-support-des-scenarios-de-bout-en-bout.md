@@ -120,8 +120,11 @@ CI. Aucun réessai, aucun repli : une écriture refusée reste refusée.
 
 ## Conséquences
 
-- Les scénarios écrivent réellement sur le disque de l'exécutant : environ **1 Gio par scénario** en
-  pic, rendu à la fin. `docs/testing.md` documente cette empreinte comme une précondition du job.
+- Les scénarios écrivent réellement sur le disque de l'exécutant : environ **1 Gio par scénario**,
+  et les profils restent dans `test-results/e2e/` jusqu'à la fin du job — d'où les **3,03 Gio**
+  relevés ci-dessus, cumulés et non rendus au fil de l'eau. `docs/testing.md` documente cette
+  empreinte comme une précondition du job. Elle reste très en deçà des 83 Gio disponibles mesurés
+  avant les scénarios, mais elle n'est plus théorique.
 - Le lancement d'un navigateur par test coûte quelques secondes ; négligeable devant des scénarios
   qui se comptent en minutes.
 - La capture de trace n'est pas reprise à la main : Playwright instrumente tout contexte créé
