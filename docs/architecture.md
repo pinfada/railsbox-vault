@@ -133,6 +133,13 @@ compte, ou hébergeur distinct pour une origine — sont comparées dans l'ADR 0
 appartient à la publication #45. Un changement d'origine rend l'OPFS de l'ancienne inatteignable :
 il se traite comme une migration exigeant un export préalable, pas comme un détail de déploiement.
 
+L'hébergement n'a en revanche **aucun en-tête d'isolation à servir**.
+L'[ADR 0010](decisions/0010-isolation-multi-origine.md) établit que ni `Cross-Origin-Opener-Policy`
+ni `Cross-Origin-Embedder-Policy` ne sont exigés : aucun module de production n'utilise
+`SharedArrayBuffer` ou `Atomics`, et la mémoire WebAssembly de v86 épinglé n'est pas partagée. C'est
+ce qui garde utilisable un hébergement statique incapable d'en-têtes personnalisés — GitHub Pages
+notamment. `Cross-Origin-Resource-Policy` reste servi, il ne dépend pas de cette décision.
+
 ## Cycle de vie de référence
 
 1. La coquille vérifie identités et compatibilité avant de demander une clé.

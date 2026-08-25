@@ -45,14 +45,14 @@ Le dépôt exécute son code dans cinq contextes qui n'offrent pas les mêmes AP
 Node dans du code servi au navigateur, ou une API DOM dans un Worker, soit refusé à la première
 exécution de `npm run lint` plutôt qu'à la première exécution dans le navigateur.
 
-| Contexte           | Fichiers concernés                                                                         | Globals accordés    |
-| ------------------ | ------------------------------------------------------------------------------------------ | ------------------- |
-| Page               | `public/**`, `src/**/page-*.mjs`                                                           | navigateur          |
-| Worker dédié       | `public/**/*worker*.mjs`, `src/**/*worker*.mjs`                                            | Worker              |
-| Service Worker     | `public/**/*-sw.mjs`                                                                       | Service Worker      |
-| Module partagé     | le reste de `src/**`                                                                       | navigateur ∩ Worker |
-| Node               | `tools/**`, `tests/unit/**`, `tests/vm/**/*.test.mjs`, `*.config.mjs`                      | Node                |
-| Spécification Node | `tests/browser/**`, `tests/compat/**`, `tests/vm/**/*.spec.mjs`, `tests/e2e/**/*.spec.mjs` | Node et navigateur  |
+| Contexte           | Fichiers concernés                                                                                                          | Globals accordés    |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| Page               | `public/**`, `src/**/page-*.mjs`                                                                                            | navigateur          |
+| Worker dédié       | `public/**/*worker*.mjs`, `src/**/*worker*.mjs`                                                                             | Worker              |
+| Service Worker     | `public/**/*-sw.mjs`                                                                                                        | Service Worker      |
+| Module partagé     | le reste de `src/**`                                                                                                        | navigateur ∩ Worker |
+| Node               | `tools/**`, `tests/unit/**`, `tests/vm/**/*.test.mjs`, `*.config.mjs`                                                       | Node                |
+| Spécification Node | `tests/browser/**`, `tests/compat/**`, `tests/vm/**/*.spec.mjs`, `tests/e2e/**/*.spec.mjs`, `tests/isolation/**/*.spec.mjs` | Node et navigateur  |
 
 Trois conséquences pour un nouveau module :
 
@@ -62,12 +62,14 @@ Trois conséquences pour un nouveau module :
 - les spécifications Playwright cumulent Node et navigateur parce que les rappels passés à
   `page.evaluate` sont analysés dans le même fichier que le corps du test. Cette exception est
   bornée à `tests/browser/`, `tests/compat/`, `tests/vm/` et `tests/e2e/` ; elle ne doit pas être
-  élargie par des commentaires `/* global */`, qui reviendraient à désactiver la règle ;
+  élargie par des commentaires `/* global */`, qui reviendraient à désactiver la règle. Elle couvre
+  aussi `tests/isolation/`, ajoutée par le spike #41 ;
 - un module réellement partagé entre la page et le Worker doit **vivre sous `src/`** pour recevoir
   l'intersection, y compris s'il n'existe que pour un spike. Il est alors importé par son chemin
   absolu `/src/…`, que le serveur de test sert sous sa propre racine.
   `src/spike/isolation-probe.mjs`, chargé par la coquille du spike #35, par son Worker runtime et
-  par le document applicatif, en est l'exemple.
+  par le document applicatif, en est l'exemple ; `src/spike/mesure-memoire.mjs`, chargé par la page
+  du banc #41 comme par son Worker, en est un second.
 
 `tests/unit/eslint-config.test.mjs` vérifie cette répartition en lintant des chemins virtuels : une
 régression de la configuration fait échouer `npm run test:unit`, pas seulement le lint du jour. Une
@@ -148,6 +150,32 @@ prend pas de `mode` autre que `full` en pratique. `mode` vaut :
 
 Les trois modes existent parce que les deux ruptures mesurées par le spike #4 sont en série : sans
 le mode intermédiaire, on ne saurait pas laquelle des deux corrections produit quel effet.
+
+### Coût de l'isolation multi-origine
+
+Le banc du spike #41 se lance à la main comme les autres — `npm start`, puis
+`http://127.0.0.1:4173/spike/isolation/`. La page ne fait rien d'elle-même ; la console offre :
+
+```js
+await bancIsolation.capacites(); // isolation du Worker, et raison typée s'il ne peut pas porter v86
+await bancIsolation.mesurer({}); // un boot de guest et les étapes chronométrées
+bancIsolation.isolationDocument(); // ce que voit le DOCUMENT ; il ne le déduit pas du Worker
+```
+
+Servi par `npm start`, le banc est en condition **nue**. Pour la condition isolée :
+
+```sh
+node tools/serve.mjs --role shell --host 127.0.0.1 --port 4185 --cross-origin-isolated
+```
+
+La campagne complète, deux serveurs et trois moteurs, est `npm run test:isolation` ; elle est hors
+de `npm run check`. `VAULT_ISOLATION_ESSAIS` règle le nombre d'essais, `VAULT_MOTEURS` les moteurs,
+et `VAULT_ISOLATION_ENTRELACEMENT=non` rejoue le protocole en blocs dont le spike publie le faux
+résultat. L'inventaire des dépendances à l'isolation, lui, n'a besoin d'aucun navigateur :
+
+```sh
+npm run isolation:inventaire   # → reports/isolation/inventaire.json
+```
 
 ## Backend de blocs OPFS
 

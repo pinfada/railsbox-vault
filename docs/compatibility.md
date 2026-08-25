@@ -119,7 +119,12 @@ Verdicts Vault correspondants :
 - **SharedArrayBuffer et `Atomics.wait` disponibles partout, mais seulement en contexte isolé.** La
   sonde sert la page avec `Cross-Origin-Opener-Policy: same-origin` et
   `Cross-Origin-Embedder-Policy: require-corp`. Sans ces en-têtes, `SharedArrayBuffer` disparaît des
-  trois moteurs. La distribution de Vault devra donc imposer cette isolation.
+  trois moteurs. **Cela ne rend pas l'isolation obligatoire pour la distribution** : une version
+  antérieure de cette page l'affirmait, sans mesure à l'appui. Le spike #41 a établi que personne
+  n'utilise ces primitives — ni dans le dépôt, ni dans v86 épinglé, dont la mémoire WebAssembly
+  n'est pas partagée — et l'[ADR 0010](decisions/0010-isolation-multi-origine.md) décide de ne pas
+  poser l'isolation. La sonde continue de la poser parce qu'elle **mesure** ces primitives ; mesurer
+  n'est pas dépendre.
 
 ## WebKit Playwright n'est pas une qualification Safari
 
@@ -180,7 +185,9 @@ Deux écarts méritent attention pour la suite :
   fonctionnalité est pilotée par permission, liste par défaut `self` — ce qui prive utilement le
   code applicatif de `SharedArrayBuffer` ; WebKit l'accorde. La question « l'isolation est-elle
   obligatoire pour v86 ? » est tranchée par le spike #4 : **non**, le guest démarre et écrit sans
-  isolation. L'écart reste à surveiller pour une capacité qui l'exigerait, pas pour le runtime.
+  isolation. La question « la distribution doit-elle l'imposer ? » l'est par le spike #41 et
+  l'[ADR 0010](decisions/0010-isolation-multi-origine.md) : **non plus**. L'écart d'héritage ne se
+  réalise donc pas ; il reste à surveiller pour une capacité qui exigerait l'isolation.
 - **portée de la politique d'intégration.** Sous `require-corp`, WebKit a refusé le module importé
   par le Worker runtime tant que ce module ne portait pas lui-même la politique. La sonde de
   capacités ne rencontre pas le problème parce que son serveur pose COOP/COEP sur **toutes** ses
@@ -217,6 +224,38 @@ Trois conséquences pour la matrice produit :
 
 Le protocole et les mesures complètes sont dans
 [`docs/spikes/0004-backend-de-blocs-v86.md`](spikes/0004-backend-de-blocs-v86.md).
+
+## Isolation multi-origine
+
+Mesures du spike #41, le **2026-08-25**, sur la même machine. La même page et le même Worker runtime
+sont servis par deux serveurs dont le seul écart est COOP/COEP, les essais étant entrelacés.
+
+| Constat                                                          | Chromium 151 |  Firefox 153  |  WebKit 26.5  |
+| ---------------------------------------------------------------- | :----------: | :-----------: | :-----------: |
+| Isolation obtenue en page sous COOP/COEP                         |     oui      |      oui      |      oui      |
+| Isolation obtenue dans le Worker sous COOP/COEP                  |     oui      |      oui      |      oui      |
+| `SharedArrayBuffer` alloué dans le Worker isolé                  |     oui      |      oui      |      oui      |
+| Guest démarre, écrit et franchit sa barrière **sans** isolation  |   **oui**    | non mesurable | non mesurable |
+| Guest démarre, écrit et franchit sa barrière **avec** isolation  |   **oui**    | non mesurable | non mesurable |
+| `measureUserAgentSpecificMemory` utilisable dans le Worker isolé |   **non**    |  non mesurée  |  non mesurée  |
+
+Coût mesuré sous Chromium, quatre essais entrelacés par condition : **+0,6 %** sur le premier boot
+(3 600 ms contre 3 621 ms) et **−0,5 %** sur le temps processeur du rendu. Les écarts par étape du
+guest sont sous la résolution de l'instrument, qui scrute la console série toutes les 20 ms.
+
+Les deux moteurs non mesurables le sont pour des raisons **étrangères** à l'isolation, et identiques
+dans les deux conditions :
+
+- **WebKit** n'expose pas `scheduler.postTask` : sous `worker-src 'self'`, v86 n'a aucune boucle
+  d'ordonnancement (voir plus haut, et #52) ;
+- **Firefox** charge le Worker, l'isole et alloue un `SharedArrayBuffer` — puis son thread cesse
+  entièrement de rendre la main dès que v86 démarre. Le pouls émis toutes les 250 ms par le Worker
+  n'a produit **aucun battement en 180 s**, avec comme sans isolation. La case « non mesuré » de la
+  ligne v86 ci-dessus a donc désormais un diagnostic.
+
+Le protocole complet est dans
+[`docs/spikes/0041-isolation-coop-coep.md`](spikes/0041-isolation-coop-coep.md), la décision dans
+l'[ADR 0010](decisions/0010-isolation-multi-origine.md).
 
 ## Base de données dans la VM
 

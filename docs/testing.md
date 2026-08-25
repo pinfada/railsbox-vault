@@ -10,6 +10,7 @@
 | `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                   |                                environ 2 min |
 | `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                         |              environ 20 s après installation |
 | `npm run test:vm`              | guest Linux réel écrivant sur les backends mémoire et OPFS (Chromium)       |                environ 1 min, **périodique** |
+| `npm run test:isolation`       | coût de l'isolation multi-origine sur le runtime v86, trois moteurs         |              environ 8 min, **à la demande** |
 | `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker               | environ 1 min après la première construction |
 | `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                          |   plus de 10 min, Docker et artefacts requis |
 | `npm run test:e2e`             | reprise après boot à froid, export vérifiable et restauration inter-origine |   plus de 20 min, Docker et artefacts requis |
@@ -361,6 +362,51 @@ Elle **n'est pas rattachée à `npm run check`** : elle exige les artefacts de l
 (`npm run image:build`, Docker) **et** ceux de v86 (`npm run vm:fetch`), puisqu'elle boote un guest.
 Elle tourne dans le job CI **non bloquant** `Reprise MVP` (`.github/workflows/reprise.yml`), qui
 couvre déjà `tests/e2e/**`.
+
+### Coût de l'isolation multi-origine
+
+`tests/isolation/cout-isolation.spec.mjs` est le harnais de mesure du spike #41
+([ADR 0010](decisions/0010-isolation-multi-origine.md)). Il n'est ni une preuve de comportement ni
+une garde de régression de performance : il **mesure**, et n'affirme que ce qui rendrait la mesure
+fausse.
+
+Il démarre **deux serveurs simultanés** servant le même contenu — l'un nu, l'autre avec
+`--cross-origin-isolated` — puis exécute la même campagne sur les deux, essais **entrelacés** et
+ordre inversé un tour sur deux. La raison de l'entrelacement est documentée dans le spike : la
+première version mesurait en blocs successifs et rendait un écart qui n'a pas survécu au changement
+de protocole.
+
+Ce que la suite affirme :
+
+- le **témoin d'isolation** — la condition nue n'est pas isolée, l'isolée l'est, en page comme dans
+  le Worker. Sans lui, deux colonnes identiques ne prouveraient rien ;
+- l'**égalité du travail** — écritures et barrières identiques entre les deux conditions, lectures à
+  10 % près (la lecture anticipée du noyau invité varie, le spike #4 l'a mesuré) ;
+- le fait central de l'ADR 0010 : le runtime v86 épinglé **boote, écrit et franchit sa barrière sans
+  isolation**. Si cela cesse d'être vrai, la suite rougit et l'ADR doit être rouvert.
+
+Ce que la suite n'affirme **pas** : un seuil de performance. Un écart mesuré est publié dans
+`reports/isolation/cout-isolation-<moteur>.json`, jamais jugé par le harnais.
+
+Un moteur qui ne peut pas porter le runtime rend une **raison typée** plutôt qu'un silence — c'est
+ainsi que Firefox et WebKit sont consignés. Le Worker émet un pouls toutes les 250 ms pendant la
+mesure, ce qui distingue « le guest ne démarre pas » de « le thread du Worker ne rend plus la main
+».
+
+Le protocole fautif que le spike documente est conservé et rejouable — un témoin négatif qu'on ne
+peut plus reproduire n'est qu'une anecdote :
+
+```sh
+VAULT_MOTEURS=chromium VAULT_ISOLATION_ENTRELACEMENT=non npm run test:isolation
+```
+
+Il écrit `reports/isolation/cout-isolation-blocs-<moteur>.json`, distinct du rapport retenu, et le
+champ `protocole` nomme le mode employé dans les deux.
+
+Elle est **hors de `npm run check`**, pour les mêmes raisons que `test:vm` : artefacts tiers
+téléchargés et vrais guests Linux. `npm run isolation:inventaire` l'accompagne et n'a besoin d'aucun
+navigateur : il recense les dépendances à l'isolation dans le code et **dans les artefacts v86
+épinglés**, section `memory` du binaire WebAssembly comprise.
 
 ### Intégration VM
 
