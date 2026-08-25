@@ -72,9 +72,12 @@ const raison = raisonDIndisponibilite();
  * détriment des scénarios suivants — qui en écrivent chacun autant, sur deux origines pour la
  * restauration. Le témoin négatif est retiré ici aussi, plutôt qu'à la seule ligne du test.
  *
- * Un défaut de nettoyage ne doit jamais masquer l'échec qu'il suit : il est journalisé, pas relancé.
+ * Un défaut de nettoyage ne doit jamais masquer l'échec qu'il suit : il est journalisé, PAS relancé —
+ * mais il est aussi ATTACHÉ au rapport, faute de quoi la panne de l'hygiène ne se verrait que dans
+ * un `stderr` noyé au milieu d'un job de deux heures, pendant qu'un demi-gibioctet resterait dans le
+ * profil.
  */
-test.afterEach(async ({ context }) => {
+test.afterEach(async ({ context }, testInfo) => {
   if (raison !== null) return;
   const page = await context.newPage();
   try {
@@ -90,6 +93,10 @@ test.afterEach(async ({ context }) => {
     }
   } catch (erreur) {
     process.stderr.write(`[hygiène] reprise : ${erreur.message}\n`);
+    await testInfo.attach("hygiene-echouee.txt", {
+      body: `Nettoyage de ${VOLUME} et ${VOLUME_VIDE} en échec : ${erreur.message}`,
+      contentType: "text/plain",
+    });
   } finally {
     await page.close();
   }

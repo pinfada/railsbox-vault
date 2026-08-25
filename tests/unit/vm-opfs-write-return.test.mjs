@@ -54,6 +54,30 @@ test("une valeur de retour supérieure à la demande se décode en entier signé
   assert.equal(inconnu.errno, -9999);
   assert.equal(inconnu.name, null);
 
+  // Un entier négatif rendu SANS cast se lit directement : le décodage n'invente rien de plus.
+  assert.deepEqual(decodeSupportCount(-8, DEMANDE), {
+    kind: "errno",
+    errno: -8,
+    name: "FILE_ERROR_NO_SPACE",
+  });
+
+  // Ce qui ne se décode EN RIEN ne reçoit pas l'étiquette « errno » : une valeur positive au-delà
+  // de la plage du cast, ou qui n'est pas un entier, est un échec dont la cause reste inconnue.
+  for (const valeur of [
+    2 ** 32,
+    2 ** 32 + 5,
+    5_000_000_000,
+    Number.NaN,
+    Infinity,
+    1.5,
+    undefined,
+  ]) {
+    const hors = decodeSupportCount(valeur, DEMANDE);
+    assert.equal(hors.kind, "errno", `${valeur} reste un échec`);
+    assert.equal(hors.errno, null, `${valeur} ne se décode en aucun errno`);
+    assert.equal(hors.name, null);
+  }
+
   // La table est celle de `base::File::Error` : les deux valeurs qui nous concernent y figurent.
   assert.equal(CHROMIUM_FILE_ERRORS.get(-8), "FILE_ERROR_NO_SPACE");
   assert.equal(CHROMIUM_FILE_ERRORS.get(-5), "FILE_ERROR_ACCESS_DENIED");
@@ -268,6 +292,14 @@ test("le puits d'archive avance de ce qui a été écrit, et seulement de cela",
     { at: 0, length: 12 },
     { at: 12, length: 300 },
   ]);
+
+  // L'offset ne dépend PAS de la façon dont l'appelant invoque la méthode : un puits déstructuré
+  // continue de compter juste. `writeArchive` appelle `sink.write(...)`, mais rien dans son contrat
+  // ne l'y oblige.
+  const { write } = sink;
+  await write(new Uint8Array(8));
+  assert.equal(sink.offset, 320);
+  assert.deepEqual(ecrit.at(-1), { at: 312, length: 8 });
 });
 
 // --- Le voisin de volume (#10, #13) sur le même support -----------------------------------------

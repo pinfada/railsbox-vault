@@ -34,10 +34,19 @@ export { expect } from "@playwright/test";
 /**
  * `test` étendu : la fixture `context` rend un contexte à profil persistant, sur disque.
  *
- * La capture de trace n'est PAS reprise ici : Playwright instrumente tout contexte créé pendant un
- * test, y compris celui-ci, si bien que `trace: "retain-on-failure"` de `playwright.e2e.config.mjs`
- * continue de s'appliquer. La démarrer à la main lève d'ailleurs « Tracing has been already
- * started » — c'est ainsi que nous l'avons vérifié.
+ * **Ce que cette fixture honore du bloc `use` du projet, et rien d'autre :** `baseURL` et `headless`,
+ * repris nommément ci-dessous, plus `trace` — que Playwright applique lui-même, parce qu'il
+ * instrumente TOUT contexte créé pendant un test, y compris celui-ci. (Le démarrer à la main lève
+ * « Tracing has been already started » ; c'est ainsi que nous l'avons vérifié.)
+ *
+ * C'est exactement ce que `playwright.e2e.config.mjs` déclare aujourd'hui. Mais un contexte lancé
+ * par nous n'hérite de RIEN automatiquement : toute option ajoutée plus tard à ce bloc — `viewport`,
+ * `permissions`, `locale`, `extraHTTPHeaders`, `offline`, `storageState`… — serait ignorée ici **sans
+ * erreur ni avertissement**. Elle doit être ajoutée à la main juste en dessous.
+ *
+ * De même, le navigateur est Chromium **nommément**, et non `testInfo.project.use.browserName` : le
+ * projet n'en déclare qu'un. Ajouter un projet Firefox ou WebKit sans toucher à ce fichier ferait
+ * tourner ses scénarios sur Chromium sans le dire.
  */
 export const test = base.extend({
   context: async ({ baseURL }, use, testInfo) => {

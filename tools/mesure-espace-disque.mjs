@@ -223,12 +223,28 @@ export function mesurer({
   };
 }
 
-/** Ajoute une mesure au journal JSONL, en créant son répertoire au besoin. */
+/**
+ * Ajoute une mesure au journal JSONL, en créant son répertoire au besoin.
+ *
+ * Cette fonction NE LÈVE PAS, et c'est le point le plus important de tout l'outil. Le mode d'échec
+ * le plus probable de l'écriture d'un journal est `ENOSPC` — c'est-à-dire exactement la panne que cet
+ * outil existe pour diagnostiquer. S'il mourait dessus, il ferait échouer l'étape qui le porte, et
+ * l'on perdrait à la fois la mesure ET la panne cherchée, remplacées par une trace d'outillage.
+ *
+ * Un échec d'écriture est donc signalé sur `stderr` et rendu comme état, jamais levé.
+ *
+ * @returns {{ ecrit: boolean, chemin: string, raison?: string }}
+ */
 export function inscrire(mesure, journal) {
   const chemin = resolve(RACINE, journal);
-  mkdirSync(dirname(chemin), { recursive: true });
-  appendFileSync(chemin, `${JSON.stringify(mesure)}\n`, "utf8");
-  return chemin;
+  try {
+    mkdirSync(dirname(chemin), { recursive: true });
+    appendFileSync(chemin, `${JSON.stringify(mesure)}\n`, "utf8");
+    return { ecrit: true, chemin };
+  } catch (cause) {
+    process.stderr.write(`[espace-disque] journal non écrit (${chemin}) : ${cause.message}\n`);
+    return { ecrit: false, chemin, raison: cause.message };
+  }
 }
 
 /** Lecture d'arguments `--clef valeur`, avec `--repertoire` répétable. */
@@ -289,8 +305,16 @@ function suivre(options) {
   process.stdout.write(
     `[espace-disque] suivi de « ${options.etape} » toutes les ${options.suivre} s → ${journal}\n`,
   );
+  // La MESURE elle-même peut échouer là où `inscrire` ne le fait plus : une exception non
+  // interceptée dans un rappel de `setInterval` tuerait le processus d'échantillonnage en silence,
+  // puisqu'il tourne en arrière-plan et que son code de sortie n'atteint pas l'étape. Le suivi
+  // s'arrêterait net, précisément quand la ressource qu'il traque commence à manquer.
   const minuteur = setInterval(() => {
-    inscrire(mesurer({ ...options, leger: true }), options.journal);
+    try {
+      inscrire(mesurer({ ...options, leger: true }), options.journal);
+    } catch (cause) {
+      process.stderr.write(`[espace-disque] échantillon manqué : ${cause.message}\n`);
+    }
   }, options.suivre * 1000);
 
   // Sortie propre sur signal, avec une dernière ligne si l'on nous en laisse le temps. C'est un
@@ -323,8 +347,9 @@ function principal(argv) {
     return;
   }
   const mesure = mesurer(options);
-  const chemin = inscrire(mesure, options.journal);
-  process.stdout.write(`[espace-disque] ${mesure.etape} : ${resumer(mesure)} → ${chemin}\n`);
+  const { ecrit, chemin } = inscrire(mesure, options.journal);
+  const destination = ecrit ? `→ ${chemin}` : "(journal NON écrit, voir stderr)";
+  process.stdout.write(`[espace-disque] ${mesure.etape} : ${resumer(mesure)} ${destination}\n`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
