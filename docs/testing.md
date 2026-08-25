@@ -695,6 +695,66 @@ npm run vm:fetch       # artefacts v86 vérifiés par empreinte
 npm run test:e2e       # scénario complet sous Chromium
 ```
 
+#### Le support des scénarios : un profil de navigateur PERSISTANT
+
+Les quatre scénarios de `tests/e2e/` tirent leur contexte de
+[`tests/e2e/contexte-persistant.mjs`](../tests/e2e/contexte-persistant.mjs) et non de la fixture
+`context` par défaut de Playwright. La raison n'est pas cosmétique.
+
+`browser.newContext()` crée un profil **hors enregistrement** — un profil « navigation privée » —,
+et Chromium n'adosse alors pas OPFS à un disque : il l'adosse à un système de fichiers **en
+mémoire**. Mesuré sur ce dépôt le 26/08/2026, sonde d'échantillonnage pendant le scénario d'export :
+
+| Contexte                                     | Écrit dans OPFS | Variation du disque pendant le scénario |
+| -------------------------------------------- | --------------- | --------------------------------------- |
+| `browser.newContext()` (hors enregistrement) | > 1 Gio         | **< 1 Mio**                             |
+| `chromium.launchPersistentContext()`         | > 1 Gio         | **≈ 1,0 Gio**, rendue à la fin          |
+
+Deux conséquences, toutes deux corrigées par le passage au profil persistant.
+
+D'abord, **la preuve portait sur un support qui n'est pas celui du produit**. `VAULT-PERSIST-001`
+promet une reprise depuis un volume OPFS, et un utilisateur exécute Vault dans un profil ORDINAIRE,
+dont l'OPFS est sur disque. Ce que les scénarios établissaient reste vrai — la donnée survit à la
+fermeture de la page, du Worker et des handles — mais elle le faisait contre un système de fichiers
+en mémoire, ce qui est une promesse plus étroite que celle affichée.
+
+Ensuite, **la mémoire de l'exécutant tenait lieu de quota**, et c'est la cause de l'issue #73 : le
+backend en mémoire finissait par refuser une allocation et rendait `FILE_ERROR_NO_SPACE`, pendant
+que `navigator.storage.estimate()` — calculé, lui, sur le disque — annonçait plusieurs gibioctets
+disponibles. Les deux mesures parlaient de supports différents, et leur désaccord était la seule
+piste exploitable.
+
+Le profil vit dans le répertoire de sortie du test, donc **un par test** : l'isolation entre
+scénarios est celle d'avant, et le cloisonnement d'OPFS par origine (ADR 0002) reste celui du
+navigateur. Aucune assertion n'a été modifiée pour ce changement.
+
+La décision complète, ses mesures et ses limites — notamment ce qui n'est **pas** affirmé de
+Chromium — sont dans l'[ADR 0012](decisions/0012-support-des-scenarios-de-bout-en-bout.md).
+
+#### Empreinte de stockage et diagnostic publié
+
+La suite est de loin la plus gourmande du dépôt, et l'espace qu'elle consomme n'est pas celui du
+dépôt : c'est celui du **profil de navigateur**. Chaque scénario écrit dans OPFS un volume
+applicatif de 512 Mio ; l'export lui adjoint une archive de la même taille, la migration une
+sauvegarde, et la restauration écrit autant sur une **seconde origine**. Il faut compter environ **1
+Gio par scénario** en pic, auquel s'ajoutent, sur le disque de l'exécutant, les 927 Mio d'artefacts
+de l'image de référence et les couches Docker de sa construction (≈ 2,9 Go mesurés en CI).
+
+Trois mesures partent avec les artefacts du job, et servent à trancher plutôt qu'à supposer :
+
+| Fichier                                | Contenu                                                                                                                                                   |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reports/e2e/espace-disque.jsonl`      | une ligne par étape nommée de la recette : espace de chaque point de montage, mémoire de l'hôte, taille des répertoires d'artefacts, occupation de Docker |
+| `reports/e2e/espace-pendant-e2e.jsonl` | le même relevé **toutes les cinq secondes pendant** les scénarios — une mesure avant et une après ne disent rien d'une ressource qui s'épuise au milieu   |
+| `reports/e2e/export-verifiable.json`   | champ `stockage` : `navigator.storage.estimate()` avant et après l'écriture de l'archive                                                                  |
+
+À quoi s'ajoute le contexte d'un refus : celui d'une `StorageError` — demandé, rendu, errno, offset,
+quota, usage — traverse `postMessage` puis `page.evaluate` jusqu'au journal de CI.
+
+Aucune de ces mesures ne conditionne un verdict : elles ne décident rien et ne font jamais échouer
+la recette. Elles existent pour qu'un échec de support arrive **nommé et daté**, au lieu d'arriver
+sous la forme d'une phrase à interpréter.
+
 ### Configuration du lint
 
 `tests/unit/eslint-config.test.mjs` traite `eslint.config.mjs` comme un contrat testable. Il charge

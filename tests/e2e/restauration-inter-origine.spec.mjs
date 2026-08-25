@@ -27,7 +27,7 @@ import { copyFile, open } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./contexte-persistant.mjs";
 
 import { E2E_ORIGIN_A, E2E_ORIGIN_B } from "../../playwright.e2e.config.mjs";
 

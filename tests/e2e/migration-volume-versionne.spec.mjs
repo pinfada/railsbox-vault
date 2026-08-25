@@ -30,7 +30,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./contexte-persistant.mjs";
 
 import { E2E_ORIGIN_A } from "../../playwright.e2e.config.mjs";
 

@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./contexte-persistant.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CHEMIN_MANIFESTE = join(RACINE, "tools", "build-reference-image", "manifest.json");
