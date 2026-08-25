@@ -1,16 +1,24 @@
-// Mesure de l'ESPACE DISQUE de l'exécutant, à des points nommés d'une recette CI.
+// Mesure des RESSOURCES de l'exécutant — espace disque et mémoire — à des points nommés d'une
+// recette CI, ou en continu pendant une étape.
 //
 // Elle existe pour une raison précise (#73) : le job « Reprise MVP » écrit dans OPFS un volume de
 // 512 Mio puis une archive de la même taille, sur un exécutant GitHub qui a déjà construit une image
 // Docker i386 complète. Quand une écriture OPFS échoue en CI et jamais en local, la première
 // question est « restait-il de la place ? » — et sans mesure, elle reste une opinion.
 //
+// La première mesure a réfuté la réponse évidente : le système de fichiers du dépôt gardait 83 Gio
+// libres, et n'a PAS bougé pendant que les scénarios écrivaient près d'un gigaoctet dans OPFS. Les
+// octets d'OPFS ne sont donc pas là. L'outil mesure désormais TOUS les points de montage
+// plausibles — dont celui des fichiers temporaires, où vit le profil du navigateur — et la MÉMOIRE,
+// puisqu'un profil de navigateur éphémère peut ne jamais toucher le disque.
+//
 // Ce que l'outil mesure et ce qu'il NE mesure pas :
 //
-//  - il mesure l'espace du SYSTÈME DE FICHIERS qui porte un chemin donné (par défaut le dépôt), et
-//    la taille des répertoires d'artefacts qu'on lui nomme ;
+//  - il mesure l'espace des systèmes de fichiers qui portent les chemins qu'on lui nomme, la taille
+//    des répertoires d'artefacts, l'occupation de Docker et la mémoire de l'hôte ;
 //  - il ne mesure PAS le quota OPFS, qui appartient au navigateur et se lit depuis le Worker par
-//    `navigator.storage.estimate()` — le banc E2E le publie de son côté.
+//    `navigator.storage.estimate()` — le banc E2E le publie de son côté. Les deux sont
+//    complémentaires : c'est leur DÉSACCORD qui est instructif.
 //
 // Chaque appel AJOUTE une ligne JSON au journal (JSONL) : un fichier lisible par un humain et par
 // un outil, dont l'ordre des lignes est celui de la recette. Aucun appel n'écrase les précédents.
@@ -23,9 +31,18 @@
 //   node tools/mesure-espace-disque.mjs --etape depart
 //   node tools/mesure-espace-disque.mjs --etape apres-image-build --repertoire artifacts
 //   node tools/mesure-espace-disque.mjs --etape fin --journal reports/e2e/espace-disque.jsonl
+//   node tools/mesure-espace-disque.mjs --etape pendant-e2e --suivre 5   (jusqu'à SIGTERM)
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync, readdirSync, statSync, statfsSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  statfsSync,
+} from "node:fs";
+import { freemem, tmpdir, totalmem } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,6 +56,53 @@ const REPERTOIRES_PAR_DEFAUT = Object.freeze([
   join("artifacts"),
   join("vendor", "v86", "artefacts"),
 ]);
+
+/**
+ * Points de montage à mesurer, en plus de la racine du dépôt.
+ *
+ * `tmpdir()` est le plus important : c'est là que Playwright dépose le profil du navigateur, donc
+ * là que vivraient les octets d'OPFS s'ils vivaient sur un disque. Les autres sont les montages
+ * usuels d'un exécutant Linux ; ceux qui n'existent pas s'inscrivent comme indisponibles.
+ */
+const MONTAGES_PAR_DEFAUT = Object.freeze([tmpdir(), "/", "/mnt", "/dev/shm", "/home/runner"]);
+
+/**
+ * Mémoire de l'hôte. Sous Linux, `/proc/meminfo` donne `MemAvailable`, qui est la seule valeur
+ * honnête : `freemem()` ignore le cache réclamable et sous-estime massivement ce qui est
+ * réellement disponible. Ailleurs, on se rabat sur ce que Node expose, en le disant.
+ */
+export function memoireDeLHote() {
+  try {
+    const brut = readFileSync("/proc/meminfo", "utf8");
+    const lire = (clef) => {
+      const trouve = new RegExp(`^${clef}:\\s+(\\d+) kB$`, "m").exec(brut);
+      return trouve === null ? null : Number(trouve[1]) * 1024;
+    };
+    return {
+      etat: "connu",
+      source: "/proc/meminfo",
+      totalOctets: lire("MemTotal"),
+      disponibleOctets: lire("MemAvailable"),
+      libreOctets: lire("MemFree"),
+      cacheOctets: lire("Cached"),
+      swapTotalOctets: lire("SwapTotal"),
+      swapLibreOctets: lire("SwapFree"),
+    };
+  } catch {
+    // `freemem()` n'est PAS `MemAvailable` : il exclut le cache réclamable. On ne le fait pas
+    // passer pour la même chose.
+    return {
+      etat: "approche",
+      source: "node:os",
+      totalOctets: totalmem(),
+      disponibleOctets: null,
+      libreOctets: freemem(),
+      cacheOctets: null,
+      swapTotalOctets: null,
+      swapLibreOctets: null,
+    };
+  }
+}
 
 /**
  * Espace du système de fichiers portant `chemin`. Rend un état NOMMÉ plutôt qu'une exception : une
@@ -136,6 +200,7 @@ export function mesurer({
   racine = RACINE,
   repertoires = REPERTOIRES_PAR_DEFAUT,
   docker = true,
+  leger = false,
 }) {
   if (typeof etape !== "string" || etape.trim() === "") {
     throw new TypeError("Une mesure d'espace disque doit nommer son étape.");
@@ -145,8 +210,16 @@ export function mesurer({
     mesureLe: new Date().toISOString(),
     plateforme: `${process.platform} ${process.arch}`,
     systemeDeFichiers: espaceDuSystemeDeFichiers(racine),
-    repertoires: repertoires.map((relatif) => tailleDuRepertoire(resolve(racine, relatif))),
-    docker: docker ? occupationDocker() : { etat: "non-demande" },
+    // Tous les montages plausibles, dont celui des fichiers temporaires : c'est là que vit le profil
+    // du navigateur, et donc là que se verraient les octets d'OPFS s'ils touchaient un disque.
+    montages: MONTAGES_PAR_DEFAUT.map((chemin) => espaceDuSystemeDeFichiers(chemin)),
+    memoire: memoireDeLHote(),
+    // Un échantillonnage continu doit rester bon marché : parcourir des répertoires et interroger
+    // Docker toutes les cinq secondes changerait la charge de la machine qu'on prétend observer.
+    repertoires: leger
+      ? []
+      : repertoires.map((relatif) => tailleDuRepertoire(resolve(racine, relatif))),
+    docker: leger ? { etat: "non-demande" } : docker ? occupationDocker() : { etat: "non-demande" },
   };
 }
 
@@ -160,7 +233,13 @@ export function inscrire(mesure, journal) {
 
 /** Lecture d'arguments `--clef valeur`, avec `--repertoire` répétable. */
 export function lireArguments(argv) {
-  const options = { etape: null, journal: JOURNAL_PAR_DEFAUT, repertoires: [], docker: true };
+  const options = {
+    etape: null,
+    journal: JOURNAL_PAR_DEFAUT,
+    repertoires: [],
+    docker: true,
+    suivre: null,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const clef = argv[i];
     if (clef === "--sans-docker") {
@@ -171,6 +250,12 @@ export function lireArguments(argv) {
       options.journal = argv[++i];
     } else if (clef === "--repertoire") {
       options.repertoires.push(argv[++i]);
+    } else if (clef === "--suivre") {
+      const secondes = Number(argv[++i]);
+      if (!Number.isFinite(secondes) || secondes <= 0) {
+        throw new TypeError(`Intervalle de suivi invalide : ${secondes}`);
+      }
+      options.suivre = secondes;
     } else {
       throw new TypeError(`Argument inconnu : ${clef}`);
     }
@@ -179,22 +264,62 @@ export function lireArguments(argv) {
   return options;
 }
 
+/** Résumé d'une ligne, pour le journal de la recette. */
+function resumer(mesure) {
+  const gio = (octets) => (octets === null ? "?" : (octets / 1024 ** 3).toFixed(2));
+  const fs = mesure.systemeDeFichiers;
+  const disque =
+    fs.etat === "connu"
+      ? `${gio(fs.disponibleOctets)} Gio disponibles sur ${gio(fs.totalOctets)} Gio`
+      : `espace indisponible (${fs.raison})`;
+  const memoire = `mémoire ${gio(mesure.memoire.disponibleOctets)} / ${gio(mesure.memoire.totalOctets)} Gio`;
+  return `${disque} ; ${memoire}`;
+}
+
+/**
+ * ÉCHANTILLONNAGE CONTINU, jusqu'à ce qu'on nous arrête. Il sert à voir une ressource s'épuiser
+ * PENDANT une étape : une mesure avant et une après ne disent rien d'un pic au milieu.
+ *
+ * Il ne s'arrête pas tout seul et n'a pas de durée maximale : c'est l'étape qui l'encadre et le
+ * termine. Sans cela, un suivi qui expirerait avant la fin des scénarios laisserait un trou
+ * précisément là où l'on cherche.
+ */
+function suivre(options) {
+  const journal = resolve(RACINE, options.journal);
+  process.stdout.write(
+    `[espace-disque] suivi de « ${options.etape} » toutes les ${options.suivre} s → ${journal}\n`,
+  );
+  const minuteur = setInterval(() => {
+    inscrire(mesurer({ ...options, leger: true }), options.journal);
+  }, options.suivre * 1000);
+  // Une dernière mesure au moment de l'arrêt : c'est celle qui suit immédiatement l'échec.
+  const arreter = () => {
+    clearInterval(minuteur);
+    inscrire(mesurer({ ...options, etape: `${options.etape}-fin`, leger: true }), options.journal);
+    process.exit(0);
+  };
+  process.on("SIGTERM", arreter);
+  process.on("SIGINT", arreter);
+}
+
 function principal(argv) {
   const options = lireArguments(argv);
   if (options.etape === null) {
     throw new TypeError(
-      "Usage : node tools/mesure-espace-disque.mjs --etape <nom> [--repertoire r]",
+      "Usage : node tools/mesure-espace-disque.mjs --etape <nom> [--repertoire r] [--suivre s]",
     );
+  }
+  if (options.suivre !== null) {
+    inscrire(
+      mesurer({ ...options, etape: `${options.etape}-debut`, leger: true }),
+      options.journal,
+    );
+    suivre(options);
+    return;
   }
   const mesure = mesurer(options);
   const chemin = inscrire(mesure, options.journal);
-  const fs = mesure.systemeDeFichiers;
-  const gio = (octets) => (octets / 1024 ** 3).toFixed(2);
-  const resume =
-    fs.etat === "connu"
-      ? `${gio(fs.disponibleOctets)} Gio disponibles sur ${gio(fs.totalOctets)} Gio`
-      : `espace indisponible (${fs.raison})`;
-  process.stdout.write(`[espace-disque] ${mesure.etape} : ${resume} → ${chemin}\n`);
+  process.stdout.write(`[espace-disque] ${mesure.etape} : ${resumer(mesure)} → ${chemin}\n`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {

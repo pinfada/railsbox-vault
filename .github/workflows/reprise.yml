@@ -74,8 +74,21 @@ jobs:
       - name: Espace disque avant les scénarios
         run: node tools/mesure-espace-disque.mjs --etape avant-e2e
 
+      # Le suivi tourne PENDANT les scénarios (#73) : une mesure avant et une après ne disent rien
+      # d'une ressource qui s'épuise au milieu, et c'est au milieu que l'écriture OPFS est refusée.
+      # Le code de sortie des scénarios est celui de l'étape — le suivi n'a pas le droit de le
+      # masquer, ni en le remplaçant par le sien, ni en faisant échouer l'étape à sa place.
       - name: Reprise MVP (E2E)
-        run: npm run test:e2e
+        run: |
+          node tools/mesure-espace-disque.mjs --etape pendant-e2e --suivre 5 \
+            --journal reports/e2e/espace-pendant-e2e.jsonl &
+          suivi=$!
+          set +e
+          npm run test:e2e
+          code=$?
+          kill "$suivi" 2>/dev/null || true
+          wait "$suivi" 2>/dev/null || true
+          exit "$code"
 
       - name: Espace disque après les scénarios
         if: always()
