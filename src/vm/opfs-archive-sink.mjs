@@ -16,6 +16,22 @@
 
 import { decodeSupportCount, toStorageError, writeCountFailure } from "./opfs-error-mapping.mjs";
 
+/** Nom d'opération porté par toutes les erreurs de ce puits. */
+const OPERATION = "write-archive";
+
+/**
+ * Écrit un bloc et rend la valeur BRUTE du support, ou traduit son exception. Séparé pour que la
+ * lecture de cette valeur — le geste qui a longtemps menti — soit un endroit et un seul.
+ */
+function ecrireBloc(handle, bytes, { volume, offset }) {
+  try {
+    return handle.write(bytes, { at: offset });
+  } catch (cause) {
+    // Une exception du support garde sa traduction habituelle : quota, handle perdu, exclusivité.
+    throw toStorageError(cause, { operation: OPERATION, volume, offset, length: bytes.byteLength });
+  }
+}
+
 /**
  * Crée le puits d'archive.
  *
@@ -43,19 +59,7 @@ export function createOpfsArchiveSink(handle, { volume, measureStorage = null })
       }
       const requested = bytes.byteLength;
       const offset = this.offset;
-
-      let returned;
-      try {
-        returned = handle.write(bytes, { at: offset });
-      } catch (cause) {
-        // Une exception du support garde sa traduction habituelle : quota, handle perdu, exclusivité.
-        throw toStorageError(cause, {
-          operation: "write-archive",
-          volume,
-          offset,
-          length: requested,
-        });
-      }
+      const returned = ecrireBloc(handle, bytes, { volume, offset });
 
       // Le cas nominal ne coûte RIEN de plus qu'une comparaison : une archive de 512 Mio écrite par
       // blocs de 4 Mio, c'est cent vingt-huit passages ici. La mesure du budget n'est demandée
@@ -69,7 +73,7 @@ export function createOpfsArchiveSink(handle, { volume, measureStorage = null })
         requested,
         volume,
         offset,
-        operation: "write-archive",
+        operation: OPERATION,
         storage: measureStorage === null ? null : await measureStorage(),
       });
     },
