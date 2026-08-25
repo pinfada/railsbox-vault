@@ -27,7 +27,12 @@
 // l'en-tête JSON porte le manifeste (digest renseigné) et le descripteur de contenu ; le contenu est
 // le volume octet pour octet. `offset du contenu = 12 + H` ; `taille de l'archive = 12 + H + N`.
 
-import { createManifest, parseManifest, assertReadable } from "./volume-manifest.mjs";
+import {
+  DIGEST_ALGORITHM,
+  createManifest,
+  parseManifest,
+  assertReadable,
+} from "./volume-manifest.mjs";
 import { createSha256Stream } from "./sha256-stream.mjs";
 import { ARCHIVE_ERROR_CODES, ArchiveError } from "./archive-errors.mjs";
 
@@ -249,8 +254,14 @@ async function readExact(read, offset, length, byteLength) {
   return bytes;
 }
 
-/** Vrai si les huit octets de tête sont le marqueur d'archive. */
-function hasMagic(bytes) {
+/**
+ * Vrai si les huit octets de tête sont le marqueur d'archive. Exporté parce que le marqueur est le
+ * SEUL moyen bon marché de distinguer une archive d'un volume : huit octets lus suffisent, là où
+ * juger sur un nom de fichier reviendrait à croire une convention plutôt qu'un contenu.
+ * @param {Uint8Array} bytes au moins les huit premiers octets du candidat
+ */
+export function hasArchiveMagic(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength < ARCHIVE_MAGIC.byteLength) return false;
   for (let i = 0; i < ARCHIVE_MAGIC.byteLength; i += 1) {
     if (bytes[i] !== ARCHIVE_MAGIC[i]) return false;
   }
@@ -280,8 +291,14 @@ function validateHeaderShape(header) {
   if (!Number.isInteger(content.length) || content.length < 0) {
     throw malformed("longueur de contenu absente ou invalide.", { length: content.length ?? null });
   }
-  if (typeof content.algorithm !== "string" || content.algorithm === "") {
-    throw malformed("algorithme d'empreinte absent.", {});
+  // L'archive ne connaît qu'un algorithme, et c'est celui qu'elle calcule. Accepter une autre
+  // étiquette rendrait persistante une affirmation que ce code ne tient pas : l'empreinte serait
+  // recalculée en SHA-256 et confrontée à une valeur annoncée comme étant autre chose.
+  if (content.algorithm !== DIGEST_ALGORITHM) {
+    throw malformed(`algorithme d'empreinte non pris en charge : ${content.algorithm}.`, {
+      algorithm: content.algorithm ?? null,
+      expected: DIGEST_ALGORITHM,
+    });
   }
 }
 
@@ -304,6 +321,7 @@ export async function readArchive({
   byteLength,
   blockBytes = DEFAULT_BLOCK_BYTES,
   expectations = {},
+  enforceCompatibility = true,
 }) {
   if (typeof read !== "function" || !Number.isInteger(byteLength) || byteLength < 0) {
     throw new TypeError("readArchive attend { read(offset, length), byteLength }.");
@@ -318,7 +336,7 @@ export async function readArchive({
   }
 
   const preamble = await readExact(read, 0, PREAMBLE_BYTES, byteLength);
-  if (!hasMagic(preamble)) {
+  if (!hasArchiveMagic(preamble)) {
     throw malformed("marqueur binaire absent : ce n'est pas une archive Vault.", {});
   }
   const headerLength = new DataView(
@@ -341,7 +359,12 @@ export async function readArchive({
 
   // Manifeste validé par #10 : objet à moitié valide impossible, refus typé propagé.
   const manifest = parseManifest(header.manifest);
-  if (expectations && (expectations.app || expectations.runtime || expectations.supportedFormat)) {
+  // La compatibilité est vérifiée PAR DÉFAUT, avec ou sans attentes fournies : un contrôle qui ne
+  // s'exécute que si l'appelant pense à le demander n'est pas un contrôle. Sans attentes, la plage
+  // de formats de ce runtime (`DEFAULT_SUPPORTED_FORMAT`) s'applique déjà. La dérogation existe pour
+  // un outil de DIAGNOSTIC — lire un conteneur qu'on ne saurait pas ouvrir en écriture —, mais elle
+  // doit être demandée, nommément.
+  if (enforceCompatibility) {
     assertReadable(manifest, expectations);
   }
 
@@ -434,10 +457,19 @@ export async function exportVolumeToBytes({ source, manifest, consistency, block
  * @param {Uint8Array} bytes
  * @param {{ expectations?: object, blockBytes?: number }} [options]
  */
-export async function verifyArchive(bytes, { expectations = {}, blockBytes } = {}) {
+export async function verifyArchive(
+  bytes,
+  { expectations = {}, blockBytes, enforceCompatibility = true } = {},
+) {
   if (!(bytes instanceof Uint8Array)) {
     throw new TypeError("verifyArchive attend un Uint8Array.");
   }
   const read = (offset, length) => bytes.subarray(offset, offset + length);
-  return readArchive({ read, byteLength: bytes.byteLength, expectations, blockBytes });
+  return readArchive({
+    read,
+    byteLength: bytes.byteLength,
+    expectations,
+    blockBytes,
+    enforceCompatibility,
+  });
 }

@@ -22,6 +22,14 @@ export const MANIFEST_MAGIC = "railsbox-vault/volume-manifest";
 export const MANIFEST_FORMAT_VERSION = 1;
 
 /**
+ * SEUL algorithme d'empreinte du format v1. Il est ÉPINGLÉ, et non simplement « une chaîne non
+ * vide » : le dépôt ne sait calculer que celui-là (`sha256-stream.mjs`). Accepter une autre étiquette
+ * la rendrait persistante sans qu'aucun code ne l'honore — un manifeste affirmerait « sha-1 » pendant
+ * que la vérification comparerait un SHA-256. Un second algorithme exigera une version de format.
+ */
+export const DIGEST_ALGORITHM = "sha-256";
+
+/**
  * Plage de formats que ce runtime prend en charge par défaut. `current` est le format qu'il écrit ;
  * `minReadable` le plus ancien qu'il sait encore lire. Un appelant fournit la sienne à mesure que la
  * matrice de `docs/release-policy.md` grandit ; tant qu'il n'existe qu'un format, les deux valent 1.
@@ -271,8 +279,12 @@ function normalizeApp(app, onError) {
 
 function normalizeIdentity(identity, onError) {
   if (!identity || typeof identity !== "object") throwWith(onError, "identité absente.", TypeError);
-  if (typeof identity.algorithm !== "string" || identity.algorithm === "") {
-    throwWith(onError, "algorithme d'empreinte absent.", TypeError);
+  if (identity.algorithm !== DIGEST_ALGORITHM) {
+    throwWith(
+      onError,
+      `algorithme d'empreinte non pris en charge : ${JSON.stringify(identity.algorithm)}. Le format v1 n'en connaît qu'un : ${DIGEST_ALGORITHM}.`,
+      TypeError,
+    );
   }
   const digest = identity.digest ?? null;
   if (digest !== null && typeof digest !== "string") {

@@ -15,13 +15,23 @@ const worker = new Worker("/vm/reference-worker.mjs?use-scheduling-api", {
 const enCours = new Map();
 let compteur = 0;
 
+/**
+ * Une erreur qui traverse `page.evaluate` ne conserve que son MESSAGE : le code typé se perdrait au
+ * passage. Il est donc préfixé au message. Sans cela, un test ne pourrait affirmer que « ça a
+ * échoué », jamais « ça a échoué pour la bonne raison » — et un refus de sécurité vaut par sa raison.
+ */
+function erreurDuWorker(error) {
+  const message = error?.message ?? "Échec du Worker runtime";
+  return new Error(error?.code ? `[${error.code}] ${message}` : message);
+}
+
 worker.addEventListener("message", (event) => {
   const { id, ok, report, error } = event.data ?? {};
   const attente = enCours.get(id);
   if (!attente) return;
   enCours.delete(id);
   if (ok) attente.resolve(report);
-  else attente.reject(new Error(error?.message ?? "Échec du Worker runtime"));
+  else attente.reject(erreurDuWorker(error));
 });
 
 worker.addEventListener("error", (event) => {
@@ -71,18 +81,33 @@ async function executer(payload = {}) {
  * Aucun canal inter-origines n'est ouvert : la CSP de la coquille n'en autorise aucun.
  * @param {string} archive nom du volume d'archive dans OPFS
  */
+/** URL objet de l'archive en cours de remise, à révoquer dès que le transfert est fini. */
+let urlArchive = null;
+
+/**
+ * Révoque l'URL objet de la dernière archive remise. Une URL objet retient le fichier tant qu'elle
+ * vit : la libérer est un geste, pas un délai deviné. Le banc l'appelle sur `pagehide`, et
+ * l'appelant peut le faire dès que le transfert est terminé.
+ */
+function libererArchive() {
+  if (urlArchive === null) return false;
+  URL.revokeObjectURL(urlArchive);
+  urlArchive = null;
+  return true;
+}
+
+addEventListener("pagehide", libererArchive);
+
 async function telecharger(archive) {
   const report = await appeler({ phase: "archive-file", archive });
-  const url = URL.createObjectURL(report.file);
+  libererArchive();
+  urlArchive = URL.createObjectURL(report.file);
   const lien = document.createElement("a");
-  lien.href = url;
+  lien.href = urlArchive;
   lien.download = `${archive}.rbvault`;
   document.body.append(lien);
   lien.click();
   lien.remove();
-  // La révocation attend que le navigateur ait pris l'archive en charge ; la révoquer aussitôt
-  // interromprait un téléchargement de plusieurs centaines de Mio.
-  setTimeout(() => URL.revokeObjectURL(url), 300_000);
   etat.textContent = `Archive « ${archive} » remise au navigateur.`;
   return { archive, byteLength: report.byteLength };
 }
@@ -112,5 +137,11 @@ function memoire() {
   };
 }
 
-globalThis.bancReprise = Object.freeze({ executer, telecharger, executerAvecFichier, memoire });
+globalThis.bancReprise = Object.freeze({
+  executer,
+  telecharger,
+  libererArchive,
+  executerAvecFichier,
+  memoire,
+});
 etat.textContent = "Worker runtime prêt.";

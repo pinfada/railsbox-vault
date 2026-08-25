@@ -24,6 +24,11 @@ import {
   removeOpfsVolume,
   statOpfsVolume,
 } from "/src/vm/opfs-sync-access.mjs";
+import {
+  openVolumeForWrite,
+  revokeVolumeManifest,
+  writeVolumeManifest,
+} from "/src/vm/opfs-volume-open.mjs";
 import { createReferenceGuestSession } from "/src/vm/reference-guest-session.mjs";
 import { createSha256Stream } from "/src/vm/sha256-stream.mjs";
 import { bindNavigatorStorage, createStorageBudget } from "/src/vm/storage-budget.mjs";
@@ -31,11 +36,28 @@ import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { createManifest } from "/src/vm/volume-manifest.mjs";
 import { importArchive, manifestSidecarName } from "/src/vm/volume-import.mjs";
 import {
+  ARCHIVE_MAGIC,
   CONSISTENCY_KINDS,
   backendSource,
+  hasArchiveMagic,
   readArchive,
   writeArchive,
 } from "/src/vm/volume-export.mjs";
+import { ARCHIVE_ERROR_CODES, ArchiveError } from "/src/vm/archive-errors.mjs";
+
+/**
+ * Identités du volume, telles qu'un scénario les déclare. Elles servent DEUX fois : à inscrire le
+ * manifeste quand le volume est créé, et à l'exiger quand il est rouvert en écriture.
+ * `SEC-UPDATE-001` n'admet aucun volume anonyme, donc aucune phase écrivante sans descripteur.
+ */
+function attentesDe(manifest) {
+  if (!manifest?.app?.id || !manifest?.runtime?.version) {
+    throw new Error(
+      "Descripteur de manifeste requis : un volume ne s'ouvre en écriture que s'il est identifié (SEC-UPDATE-001).",
+    );
+  }
+  return { app: { id: manifest.app.id }, runtime: { version: manifest.runtime.version } };
+}
 
 /**
  * v86 choisit sa boucle d'ordonnancement à l'initialisation : `scheduler.postTask` si son URL
@@ -170,8 +192,13 @@ let armed = null;
  * 512 Mio n'est jamais tenu en mémoire. C'est le point technique dur de #7 — faire pointer le
  * disque `hdb` de v86 vers OPFS en écriture — traité côté données : le disque naît dans OPFS.
  */
-async function phasePrepare({ volume, appDiskBytes, appDiskUrl }) {
+async function phasePrepare({ volume, appDiskBytes, appDiskUrl, manifest }) {
+  const identites = attentesDe(manifest);
   await removeOpfsVolume(volume);
+  // Le volume naît anonyme : son manifeste ne sera inscrit qu'une fois le disque écrit et flushé.
+  // Un volume à moitié préparé est donc, lui aussi, non identifié — la même règle qu'à la
+  // restauration, appliquée à la création.
+  await revokeVolumeManifest(volume);
   const journal = new BlockJournal();
   const backend = await openOpfsVolume({ name: volume, size: appDiskBytes, journal });
   let offset = 0;
@@ -195,7 +222,23 @@ async function phasePrepare({ volume, appDiskBytes, appDiskUrl }) {
   if (offset !== appDiskBytes) {
     throw new Error(`Disque applicatif tronqué : ${offset} octets écrits sur ${appDiskBytes}.`);
   }
-  return { phase: "prepare", volume, bytesWritten: offset, counts: journal.counts() };
+  // Dernier geste : le volume devient identifié, donc ouvrable en écriture.
+  await writeVolumeManifest(
+    volume,
+    createManifest({
+      runtime: manifest.runtime,
+      app: manifest.app,
+      volumeSize: appDiskBytes,
+      identity: { algorithm: "sha-256", digest: null },
+    }),
+  );
+  return {
+    phase: "prepare",
+    volume,
+    bytesWritten: offset,
+    counts: journal.counts(),
+    identified: identites,
+  };
 }
 
 /**
@@ -213,9 +256,15 @@ async function bootEtVerifier({
   memoryBytes,
   runtime,
   runtimeBundle = null,
+  manifest,
   expected,
   bootTimeoutMs,
 }) {
+  // `SEC-UPDATE-001` : le volume est ouvert EN ÉCRITURE pour le guest. Son identité et sa
+  // compatibilité sont donc exigées AVANT le premier octet — un volume sans manifeste (restauration
+  // interrompue, préparation incomplète) est refusé ici, pas découvert par Rails sur un système de
+  // fichiers tronqué.
+  const attentes = attentesDe(manifest);
   // La décomposition (#60) pose ses jalons DÈS l'entrée, pour dater aussi l'acquisition du runtime.
   const timeline = createBootTimeline();
   timeline.marquer("debut");
@@ -225,7 +274,7 @@ async function bootEtVerifier({
 
   const journal = new BlockJournal();
   const failures = [];
-  const backend = await openOpfsVolume({ name: volume, journal });
+  const backend = await openVolumeForWrite({ name: volume, journal, expectations: attentes });
   const adapter = createV86BufferAdapter({
     backend,
     onFatal: (error) => failures.push(error.toJSON()),
@@ -333,7 +382,8 @@ async function phaseResumeFire(options) {
  * `/dev/sdb` ni servir l'invariant — ce qui prouve que la reprise dépend du CONTENU d'OPFS, et non
  * du réseau ou de l'artefact resservi.
  */
-async function phasePrepareEmpty({ volume, appDiskBytes }) {
+async function phasePrepareEmpty({ volume, appDiskBytes, manifest }) {
+  attentesDe(manifest);
   await removeOpfsVolume(volume);
   const backend = await openOpfsVolume({
     name: volume,
@@ -342,13 +392,35 @@ async function phasePrepareEmpty({ volume, appDiskBytes }) {
   });
   await backend.flush();
   await backend.close();
+  // Le témoin est IDENTIFIÉ comme n'importe quel volume, mais VIDE. Sans manifeste, il serait
+  // refusé pour non-identification (#12) et ne dirait plus rien du CONTENU d'OPFS — qui est
+  // précisément ce qu'il doit prouver.
+  await writeVolumeManifest(
+    volume,
+    createManifest({
+      runtime: manifest.runtime,
+      app: manifest.app,
+      volumeSize: appDiskBytes,
+      identity: { algorithm: "sha-256", digest: null },
+    }),
+  );
   return { phase: "prepare-empty", volume, appDiskBytes };
 }
 
-/** Retire un volume OPFS : rend le profil réellement « neuf » entre deux exécutions. */
+/** Retire un volume OPFS ET son manifeste voisin : rend le profil réellement « neuf ». */
 async function phaseCleanup({ volume }) {
-  await removeOpfsVolume(volume);
-  return { phase: "cleanup", volume };
+  const retire = await removeOpfsVolume(volume);
+  const manifesteRetire = await revokeVolumeManifest(volume);
+  return { phase: "cleanup", volume, removed: retire, manifestRemoved: manifesteRetire };
+}
+
+/**
+ * Retire le SEUL manifeste voisin, en laissant le volume intact. C'est l'état exact que laisse une
+ * restauration interrompue : le test s'en sert pour vérifier que le boot suivant est bien refusé.
+ */
+async function phaseRevokeManifest({ volume }) {
+  const revoked = await revokeVolumeManifest(volume);
+  return { phase: "revoke-manifest", volume, revoked };
 }
 
 /** Bloc de streaming de l'export/vérification E2E : 4 Mio, très en deçà du budget de surmémoire. */
@@ -546,6 +618,18 @@ async function phaseDigestVolume({ volume, blockBytes = EXPORT_BLOCK_BYTES }) {
  */
 async function phaseArchiveFile({ archive }) {
   const file = await openOpfsVolumeFile(archive);
+  // Le nom demandé ne prouve rien : c'est le CONTENU qui décide. Huit octets suffisent — si le
+  // marqueur `RBVAULT1` n'est pas là, ce n'est pas une archive, et la coquille n'obtiendra pas de
+  // vue sur ces octets (`SEC-ORIGIN-001` : l'archive, jamais le volume). Le fichier étant adossé au
+  // support, cette lecture ne charge rien d'autre que ces huit octets.
+  const tete = new Uint8Array(await file.slice(0, ARCHIVE_MAGIC.byteLength).arrayBuffer());
+  if (!hasArchiveMagic(tete)) {
+    throw new ArchiveError(
+      ARCHIVE_ERROR_CODES.malformed,
+      `Extraction refusée : « ${archive} » ne porte pas le marqueur d'archive Vault. Seule une archive quitte l'origine ; un volume, jamais.`,
+      { volume: archive, byteLength: file.size },
+    );
+  }
   return { phase: "archive-file", archive, byteLength: file.size, file };
 }
 
@@ -580,6 +664,7 @@ async function phaseImport({
   const budget = createStorageBudget(bindNavigatorStorage(navigator.storage));
 
   const debut = performance.now();
+  const duree = () => Number((performance.now() - debut).toFixed(1));
   try {
     const rapport = await importArchive({
       source,
@@ -589,28 +674,7 @@ async function phaseImport({
       blockBytes,
       budget,
     });
-    return {
-      phase: "import",
-      volume,
-      ok: true,
-      error: null,
-      restored: rapport.restored,
-      overwritten: rapport.overwritten,
-      volumeSize: rapport.volumeSize,
-      contentDigest: rapport.contentDigest,
-      verifiedDigest: rapport.verifiedDigest,
-      manifestDigest: rapport.manifest.identity.digest,
-      manifestApp: rapport.manifest.app,
-      archiveConsistency: rapport.archiveConsistency,
-      archiveLength: rapport.archiveLength,
-      blockBytes: rapport.blockBytes,
-      maxSourceReadBytes: Math.max(rapport.maxSourceReadBytes, compteur.maxLecture),
-      maxTargetWriteBytes: rapport.maxTargetWriteBytes,
-      maxTargetReadBytes: rapport.maxTargetReadBytes,
-      budget: rapport.budget,
-      counts: journal.counts(),
-      durationMs: Number((performance.now() - debut).toFixed(1)),
-    };
+    return rapportImport({ volume, rapport, compteur, journal, durationMs: duree() });
   } catch (cause) {
     return {
       phase: "import",
@@ -623,9 +687,35 @@ async function phaseImport({
         message: cause.message,
         context: cause.context ?? null,
       },
-      durationMs: Number((performance.now() - debut).toFixed(1)),
+      durationMs: duree(),
     };
   }
+}
+
+/** Compte rendu JSON d'une restauration réussie, tel que la coquille le reçoit. */
+function rapportImport({ volume, rapport, compteur, journal, durationMs }) {
+  return {
+    phase: "import",
+    volume,
+    ok: true,
+    error: null,
+    restored: rapport.restored,
+    overwritten: rapport.overwritten,
+    volumeSize: rapport.volumeSize,
+    contentDigest: rapport.contentDigest,
+    verifiedDigest: rapport.verifiedDigest,
+    manifestDigest: rapport.manifest.identity.digest,
+    manifestApp: rapport.manifest.app,
+    archiveConsistency: rapport.archiveConsistency,
+    archiveLength: rapport.archiveLength,
+    blockBytes: rapport.blockBytes,
+    maxSourceReadBytes: Math.max(rapport.maxSourceReadBytes, compteur.maxLecture),
+    maxTargetWriteBytes: rapport.maxTargetWriteBytes,
+    maxTargetReadBytes: rapport.maxTargetReadBytes,
+    budget: rapport.budget,
+    counts: journal.counts(),
+    durationMs,
+  };
 }
 
 /** Feasibilité : prepare puis live dans un même Worker. Le test E2E n'utilise pas cette phase. */
@@ -645,6 +735,7 @@ const PHASES = new Map([
   ["resume-fire", phaseResumeFire],
   ["export", phaseExportVolume],
   ["verify-export", phaseVerifyExport],
+  ["revoke-manifest", phaseRevokeManifest],
   ["inspect-volume", phaseInspectVolume],
   ["digest-volume", phaseDigestVolume],
   ["archive-file", phaseArchiveFile],

@@ -34,33 +34,15 @@
 import { createSha256Stream } from "./sha256-stream.mjs";
 import { IMPORT_ERROR_CODES, ImportError } from "./import-errors.mjs";
 import { readArchive } from "./volume-export.mjs";
-import { assertVolumeName } from "./opfs-sync-access.mjs";
-import { serializeManifest } from "./volume-manifest.mjs";
+import { MANIFEST_SIDECAR_SUFFIX, manifestSidecarName } from "./opfs-sync-access.mjs";
+import { parseManifest, serializeManifest } from "./volume-manifest.mjs";
 
 /** Bloc de streaming par défaut : identique à celui de l'export, très en deçà du budget de 64 Mio. */
 export const DEFAULT_IMPORT_BLOCK_BYTES = 4 * 1024 * 1024;
 
-/** Suffixe du manifeste posé À CÔTÉ du volume. Un volume est un flux de blocs ; son manifeste, non. */
-export const MANIFEST_SIDECAR_SUFFIX = ".manifest";
-
-/** Longueur maximale d'un nom de volume, imposée par `opfs-sync-access.mjs`. */
-const MAX_VOLUME_NAME = 64;
-
-/**
- * Nom du manifeste d'un volume. Il doit rester lui-même un nom de volume admissible : c'est un
- * fichier du même répertoire OPFS, soumis à la même validation de frontière.
- * @param {string} volume
- */
-export function manifestSidecarName(volume) {
-  assertVolumeName(volume);
-  const nom = `${volume}${MANIFEST_SIDECAR_SUFFIX}`;
-  if (nom.length > MAX_VOLUME_NAME) {
-    throw new RangeError(
-      `Nom de volume trop long pour porter un manifeste : « ${volume} » (${nom.length} > ${MAX_VOLUME_NAME}).`,
-    );
-  }
-  return nom;
-}
+// Le nom du manifeste voisin appartient à la frontière de nommage du support : il est défini une
+// fois, dans `opfs-sync-access.mjs`, et réexporté ici pour les appelants de la restauration.
+export { MANIFEST_SIDECAR_SUFFIX, manifestSidecarName };
 
 /** Refus typé de la restauration. */
 function refus(code, message, context) {
@@ -87,12 +69,16 @@ function assertContract({ source, target, blockBytes }) {
  * insuffisant est un refus typé ; une estimation indisponible est un état INCONNU, jamais une
  * capacité nulle — la restauration se poursuit et le diagnostic est rendu à l'appelant.
  */
-async function reserverEspace(budget, volumeSize) {
+async function reserverEspace(budget, volumeSize, dejaOccupes = 0) {
   if (!budget || typeof budget.reserve !== "function") return null;
-  const reservation = await budget.reserve(volumeSize);
+  // Le besoin est NET, pas brut : écraser sur place un volume de même géométrie ne consomme pas un
+  // octet de plus. Réclamer la taille totale ferait refuser, pour espace insuffisant, une
+  // restauration qui n'en demande aucun — un refus faux est aussi grave qu'une acceptation fausse.
+  const besoin = Math.max(0, volumeSize - dejaOccupes);
+  const reservation = await budget.reserve(besoin);
   const rapport = {
     state: reservation.state,
-    requiredBytes: reservation.requiredBytes ?? volumeSize,
+    requiredBytes: reservation.requiredBytes ?? besoin,
     available: reservation.available ?? null,
     sufficient: reservation.sufficient ?? null,
     diagnostic: reservation.diagnostic ? reservation.diagnostic.toJSON() : null,
@@ -100,9 +86,10 @@ async function reserverEspace(budget, volumeSize) {
   if (reservation.sufficient === false) {
     throw refus(
       IMPORT_ERROR_CODES.spaceInsufficient,
-      `Restauration refusée : ${volumeSize} octet(s) sont nécessaires et l'espace estimé disponible est de ${reservation.available}. Aucune écriture n'est tentée.`,
+      `Restauration refusée : ${besoin} octet(s) supplémentaires sont nécessaires pour un volume de ${volumeSize}, et l'espace estimé disponible est de ${reservation.available}. Aucune écriture n'est tentée.`,
       {
-        requiredBytes: volumeSize,
+        requiredBytes: besoin,
+        volumeSize,
         available: reservation.available,
         diagnostic: rapport.diagnostic,
       },
@@ -117,6 +104,23 @@ async function reserverEspace(budget, volumeSize) {
  */
 function refuserCible(etat, { overwrite, volumeSize }) {
   const occupee = etat.present === true && etat.size > 0;
+
+  // Défense en profondeur sur le VOISIN. La frontière de nommage réserve déjà le suffixe
+  // `.manifest`, mais un fichier antérieur à cette réserve — ou d'un autre outil — pourrait le
+  // porter. La restauration ne le supprime pas pour se faire de la place : elle refuse. Détruire
+  // sans consentement des octets qu'on ne comprend pas est exactement ce que l'ADR 0009 interdit.
+  if (etat.manifestBytes) {
+    try {
+      parseManifest(etat.manifestBytes);
+    } catch {
+      throw refus(
+        IMPORT_ERROR_CODES.targetNotEmpty,
+        `Restauration refusée : la cible porte un voisin « ${MANIFEST_SIDECAR_SUFFIX} » qui n'est pas un manifeste Vault analysable. Il n'est pas supprimé ; l'écarter est un geste explicite.`,
+        { targetSize: etat.size, volumeSize, identified: false, neighbourReadable: false },
+      );
+    }
+  }
+
   if (occupee && !overwrite) {
     throw refus(
       IMPORT_ERROR_CODES.targetNotEmpty,
@@ -190,6 +194,12 @@ async function empreinteDuVolume({ backend, volumeSize, blockBytes }) {
  * géométrie ou d'empreinte laisse la cible sans manifeste — donc non identifiée.
  */
 async function restaurerEtRelire({ target, read, verdict, volumeSize, blockBytes }) {
+  // L'OUVERTURE PRÉCÈDE LA RÉVOCATION. Ouvrir un volume de géométrie inchangée ne mute rien ; en
+  // revanche l'ouverture peut échouer pour des raisons qui n'ont rien à voir avec la restauration —
+  // un second onglet détient le handle (#8), le support l'a perdu, le quota refuse l'allocation. Si
+  // le manifeste avait déjà été retiré, un volume PARFAITEMENT INTACT deviendrait inutilisable par
+  // la seule faute du produit. Après cette ligne, en revanche, la révocation doit précéder le
+  // premier octet écrit.
   const backend = await target.open({ size: volumeSize });
   try {
     if (backend.size() !== volumeSize) {
@@ -199,6 +209,8 @@ async function restaurerEtRelire({ target, read, verdict, volumeSize, blockBytes
         { targetSize: backend.size(), volumeSize },
       );
     }
+    // Première mutation : la cible cesse d'être présentée comme valide AVANT d'être touchée.
+    await target.revokeManifest();
     const recopie = await recopier({
       read,
       backend,
@@ -250,6 +262,7 @@ export async function importArchive({
   blockBytes = DEFAULT_IMPORT_BLOCK_BYTES,
   overwrite = false,
   budget = null,
+  enforceCompatibility = true,
 }) {
   assertContract({ source, target, blockBytes });
 
@@ -261,23 +274,23 @@ export async function importArchive({
     return source.read(offset, length);
   };
 
-  // 1. VÉRIFIER — aucune mutation avant ce point. Les refus de #10 et #11 remontent tels quels.
+  // 1. VÉRIFIER — aucune mutation avant ce point. Les refus de #10 et #11 remontent tels quels, et
+  //    la compatibilité du manifeste est contrôlée par défaut (`enforceCompatibility`).
   const verdict = await readArchive({
     read: lire,
     byteLength: source.byteLength,
     expectations,
     blockBytes,
+    enforceCompatibility,
   });
   const volumeSize = verdict.contentLength;
 
   // 2. REFUSER — la cible d'abord : on ne piétine jamais un volume sans consentement explicite.
-  const occupee = refuserCible(await target.inspect(), { overwrite, volumeSize });
-  const budgetRapport = await reserverEspace(budget, volumeSize);
+  const etat = await target.inspect();
+  const occupee = refuserCible(etat, { overwrite, volumeSize });
+  const budgetRapport = await reserverEspace(budget, volumeSize, occupee ? etat.size : 0);
 
-  // 3. RÉVOQUER — première mutation : la cible cesse d'être présentée comme valide.
-  await target.revokeManifest();
-
-  // 4/5. RESTAURER puis RE-VÉRIFIER, sous handle exclusif.
+  // 3/4/5. OUVRIR, RÉVOQUER, RESTAURER puis RE-VÉRIFIER, sous handle exclusif.
   const { recopie, relecture } = await restaurerEtRelire({
     target,
     read: lire,
@@ -289,6 +302,29 @@ export async function importArchive({
   // 6. INSCRIRE — dernier geste, et seul à rendre le volume présentable comme valide.
   await target.commitManifest(serializeManifest(verdict.manifest));
 
+  return rapportDeRestauration({
+    verdict,
+    volumeSize,
+    occupee,
+    blockBytes,
+    lectures,
+    recopie,
+    relecture,
+    budgetRapport,
+  });
+}
+
+/** Compte rendu d'une restauration réussie. Extrait pour que l'orchestration reste lisible d'un œil. */
+function rapportDeRestauration({
+  verdict,
+  volumeSize,
+  occupee,
+  blockBytes,
+  lectures,
+  recopie,
+  relecture,
+  budgetRapport,
+}) {
   return {
     restored: true,
     overwritten: occupee,
