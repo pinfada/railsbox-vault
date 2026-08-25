@@ -702,8 +702,8 @@ Les quatre scénarios de `tests/e2e/` tirent leur contexte de
 `context` par défaut de Playwright. La raison n'est pas cosmétique.
 
 `browser.newContext()` crée un profil **hors enregistrement** — un profil « navigation privée » —,
-et Chromium n'adosse alors pas OPFS à un disque : il l'adosse à un système de fichiers **en
-mémoire**. Mesuré sur ce dépôt le 26/08/2026, sonde d'échantillonnage pendant le scénario d'export :
+et Chromium n'adosse alors **pas OPFS à un disque**. Mesuré sur ce dépôt le 26/08/2026, sonde
+d'échantillonnage pendant le scénario d'export :
 
 | Contexte                                     | Écrit dans OPFS | Variation du disque pendant le scénario |
 | -------------------------------------------- | --------------- | --------------------------------------- |
@@ -715,14 +715,16 @@ Deux conséquences, toutes deux corrigées par le passage au profil persistant.
 D'abord, **la preuve portait sur un support qui n'est pas celui du produit**. `VAULT-PERSIST-001`
 promet une reprise depuis un volume OPFS, et un utilisateur exécute Vault dans un profil ORDINAIRE,
 dont l'OPFS est sur disque. Ce que les scénarios établissaient reste vrai — la donnée survit à la
-fermeture de la page, du Worker et des handles — mais elle le faisait contre un système de fichiers
-en mémoire, ce qui est une promesse plus étroite que celle affichée.
+fermeture de la page, du Worker et des handles — mais elle le faisait contre un support qui n'écrit
+rien sur disque, ce qui est une promesse plus étroite que celle affichée.
 
-Ensuite, **la mémoire de l'exécutant tenait lieu de quota**, et c'est la cause de l'issue #73 : le
-backend en mémoire finissait par refuser une allocation et rendait `FILE_ERROR_NO_SPACE`, pendant
-que `navigator.storage.estimate()` — calculé, lui, sur le disque — annonçait plusieurs gibioctets
-disponibles. Les deux mesures parlaient de supports différents, et leur désaccord était la seule
-piste exploitable.
+Ensuite, **le support qui refusait n'était pas celui que l'on mesurait**, et c'est la cause de
+l'issue #73 : `FILE_ERROR_NO_SPACE` était rendu pendant que `navigator.storage.estimate()` —
+calculé, lui, sur le disque — annonçait **exactement 3 Gio** disponibles, trois refus de suite et
+quel que soit l'usage courant. La valeur publiée par `estimate()` est arrondie (une valeur exacte
+renseignerait une empreinte de machine) : elle ne décrit pas le support, et ne peut servir de seuil.
+Que la ressource épuisée soit la mémoire est l'inférence qui reste — déduite du support et du code
+d'erreur, non mesurée directement ; l'ADR 0012 le dit sous « Limites ».
 
 Le profil vit dans le répertoire de sortie du test, donc **un par test** : l'isolation entre
 scénarios est celle d'avant, et le cloisonnement d'OPFS par origine (ADR 0002) reste celui du
