@@ -13,11 +13,17 @@
 //    dit si le module réclame une mémoire PARTAGÉE, seule construction qui exigerait un
 //    `SharedArrayBuffer` — donc l'isolation.
 //
-// Sortie : un tableau lisible sur la sortie standard et `reports/isolation/inventaire.json`.
+// Sortie : un tableau lisible sur la sortie standard, `reports/isolation/inventaire.json`, et un
+// CODE DE SORTIE. Ce dernier est la garde de l'ADR 0010 : trouver une mémoire partagée fait échouer
+// la commande, parce qu'une décision de ne rien faire ne reste falsifiable que si son instrument
+// sait dire non. `--exiger-v86` transforme en outre l'absence d'artefacts en échec, pour les
+// contextes — intégration continue, montée de version de v86 — où n'avoir rien lu n'est pas un
+// succès.
 
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { extname, join, relative } from "node:path";
 
+import { CODES_DE_SORTIE, analyserWasm, codeDeSortie } from "./isolation-analyse-wasm.mjs";
 import { ARTIFACT_DIRECTORY, REPOSITORY_ROOT } from "./v86-paths.mjs";
 
 /** Jetons cherchés. Chacun est une manière distincte de dépendre de l'isolation. */
@@ -98,129 +104,6 @@ async function inventorierCode() {
   );
 }
 
-/**
- * Entier LEB128 non signé, avec la position d'arrivée.
- *
- * Le garde sur le décalage n'est pas de la superstition : `<<` et `|=` sont des opérateurs 32 bits
- * en JavaScript. Un varuint32 malformé de plus de cinq octets ferait reboucler le décalage modulo
- * 32 et rendrait un nombre plausible tiré d'octets qui n'en sont pas un. Un inventaire dont la
- * conclusion porte une décision d'architecture doit échouer bruyamment plutôt que deviner.
- */
-function lireEntier(octets, position) {
-  let resultat = 0;
-  let decalage = 0;
-  let octet;
-  do {
-    if (position >= octets.length) {
-      throw new Error("Entier LEB128 tronqué : fin du module atteinte.");
-    }
-    if (decalage > 28) {
-      throw new Error("Entier LEB128 malformé : plus de cinq octets pour un varuint32.");
-    }
-    octet = octets[position];
-    position += 1;
-    resultat |= (octet & 0x7f) << decalage;
-    decalage += 7;
-  } while (octet & 0x80);
-  return { valeur: resultat >>> 0, position };
-}
-
-/**
- * Limites d'une mémoire WebAssembly. Le premier octet est un drapeau : le bit 0 signale la présence
- * d'un maximum, le **bit 1 signale une mémoire PARTAGÉE**. C'est ce bit-là, et lui seul, qui
- * rendrait `SharedArrayBuffer` — donc l'isolation multi-origine — nécessaire au module.
- */
-function lireLimites(octets, position) {
-  const drapeaux = octets[position];
-  position += 1;
-  const minimum = lireEntier(octets, position);
-  position = minimum.position;
-  let maximum = null;
-  if (drapeaux & 0x01) {
-    const lu = lireEntier(octets, position);
-    maximum = lu.valeur;
-    position = lu.position;
-  }
-  return {
-    position,
-    limites: {
-      drapeaux: `0x${drapeaux.toString(16).padStart(2, "0")}`,
-      partagee: Boolean(drapeaux & 0x02),
-      pagesMinimum: minimum.valeur,
-      pagesMaximum: maximum,
-    },
-  };
-}
-
-const TYPES_IMPORT = Object.freeze(["fonction", "table", "memoire", "global"]);
-
-/** Sections « memory » et « import » d'un module WebAssembly, sans dépendance externe. */
-/** `\0asm` puis la version, sur quatre octets chacun. */
-const EN_TETE_WASM = Object.freeze([0x00, 0x61, 0x73, 0x6d]);
-const VERSION_WASM = Object.freeze([0x01, 0x00, 0x00, 0x00]);
-
-function analyserWasm(octets) {
-  const debute = (attendu, decalage) =>
-    attendu.every((valeur, index) => octets[decalage + index] === valeur);
-  if (octets.length < 8 || !debute(EN_TETE_WASM, 0)) {
-    throw new Error("Le fichier n'est pas un module WebAssembly.");
-  }
-  if (!debute(VERSION_WASM, 4)) {
-    throw new Error(
-      "Version de module WebAssembly inattendue : l'analyse des sections n'est pas garantie.",
-    );
-  }
-  const memoires = [];
-  const memoiresImportees = [];
-  let position = 8;
-  while (position < octets.length) {
-    const identifiant = octets[position];
-    position += 1;
-    const taille = lireEntier(octets, position);
-    position = taille.position;
-    const finSection = position + taille.valeur;
-
-    if (identifiant === 5) {
-      let curseur = lireEntier(octets, position);
-      const nombre = curseur.valeur;
-      let p = curseur.position;
-      for (let index = 0; index < nombre; index += 1) {
-        const lu = lireLimites(octets, p);
-        memoires.push(lu.limites);
-        p = lu.position;
-      }
-    } else if (identifiant === 2) {
-      let p = lireEntier(octets, position);
-      const nombre = p.valeur;
-      let curseur = p.position;
-      for (let index = 0; index < nombre; index += 1) {
-        const module = lireEntier(octets, curseur);
-        curseur = module.position + module.valeur;
-        const nom = lireEntier(octets, curseur);
-        curseur = nom.position + nom.valeur;
-        const genre = octets[curseur];
-        curseur += 1;
-        if (genre === 0x02) {
-          const lu = lireLimites(octets, curseur);
-          memoiresImportees.push(lu.limites);
-          curseur = lu.position;
-        } else if (genre === 0x00) {
-          curseur = lireEntier(octets, curseur).position;
-        } else if (genre === 0x01) {
-          curseur += 1;
-          curseur = lireLimites(octets, curseur).position;
-        } else if (genre === 0x03) {
-          curseur += 2;
-        } else {
-          throw new Error(`Genre d'import inconnu : ${genre} (${TYPES_IMPORT.join(", ")}).`);
-        }
-      }
-    }
-    position = finSection;
-  }
-  return { memoires, memoiresImportees };
-}
-
 async function inventorierV86() {
   const cheminJs = join(ARTIFACT_DIRECTORY, "libv86.mjs");
   const cheminWasm = join(ARTIFACT_DIRECTORY, "v86.wasm");
@@ -238,10 +121,7 @@ async function inventorierV86() {
   }
 
   const compter = (jeton) => source.split(jeton).length - 1;
-  const { memoires, memoiresImportees } = analyserWasm(binaire);
-  const partagee =
-    memoires.some((memoire) => memoire.partagee) ||
-    memoiresImportees.some((memoire) => memoire.partagee);
+  const analyse = analyserWasm(binaire);
 
   return {
     disponible: true,
@@ -249,12 +129,7 @@ async function inventorierV86() {
       octets: Buffer.byteLength(source),
       occurrences: Object.fromEntries(JETONS.map((jeton) => [jeton, compter(jeton)])),
     },
-    wasm: {
-      octets: binaire.length,
-      memoiresDeclarees: memoires,
-      memoiresImportees,
-      memoirePartagee: partagee,
-    },
+    wasm: { octets: binaire.length, ...analyse },
   };
 }
 
@@ -319,21 +194,46 @@ function afficher(inventaire) {
   }
   lignes.push("");
   lignes.push(`Rapport : ${inventaire.rapport}`);
+  lignes.push("");
+  lignes.push(`Verdict : ${verdict(inventaire)}`);
   process.stdout.write(`${lignes.join("\n")}\n`);
 }
 
+/**
+ * Phrase du verdict. Elle dit ce que le code de sortie signifie, sur la sortie standard, pour que
+ * l'échec d'une commande ne se lise pas comme une panne d'outil.
+ */
+function verdict(inventaire) {
+  switch (inventaire.codeDeSortie) {
+    case CODES_DE_SORTIE.memoirePartagee:
+      return "ÉCHEC — v86 épinglé déclare ou importe une mémoire WebAssembly PARTAGÉE. Le fait qui porte l'ADR 0010 ne tient plus : la décision de ne pas imposer l'isolation multi-origine doit être rouverte.";
+    case CODES_DE_SORTIE.artefactsAbsents:
+      return "ÉCHEC — artefacts v86 exigés (--exiger-v86) et absents. Exécuter « npm run vm:fetch » : une garde qui n'a rien lu ne garde rien.";
+    default:
+      return inventaire.v86.disponible
+        ? "aucune dépendance à l'isolation, et aucune mémoire WebAssembly partagée dans v86 épinglé."
+        : "aucune dépendance à l'isolation dans le code. v86 non inventorié : artefacts absents, et non exigés.";
+  }
+}
+
+const exigerV86 = process.argv.slice(2).includes("--exiger-v86");
 const dossier = join(REPOSITORY_ROOT, "reports", "isolation");
 await mkdir(dossier, { recursive: true });
 const chemin = join(dossier, "inventaire.json");
 const code = await inventorierCode();
+const v86 = await inventorierV86();
 const inventaire = {
   spike: 41,
   date: new Date().toISOString(),
   jetons: JETONS,
+  exigerV86,
   code,
   parFichier: agregerParFichier(code),
-  v86: await inventorierV86(),
+  v86,
+  codeDeSortie: codeDeSortie({ v86, exigerV86 }),
   rapport: relative(REPOSITORY_ROOT, chemin).replaceAll("\\", "/"),
 };
 await writeFile(chemin, `${JSON.stringify(inventaire, null, 2)}\n`);
 afficher(inventaire);
+// Le rapport est écrit AVANT de sortir en erreur : un échec doit laisser de quoi être diagnostiqué.
+process.exitCode = inventaire.codeDeSortie;
