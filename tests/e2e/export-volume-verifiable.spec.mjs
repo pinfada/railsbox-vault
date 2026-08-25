@@ -85,6 +85,7 @@ test("un volume OPFS est exporté en archive vérifiable, et une archive altér�
     volume: VOLUME,
     appDiskBytes,
     appDiskUrl,
+    manifest: manifestDescriptor,
   });
   await page.close();
   expect(prepare.bytesWritten, "le disque applicatif entier est écrit dans OPFS").toBe(

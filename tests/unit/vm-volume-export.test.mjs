@@ -11,6 +11,7 @@ import {
   CONSISTENCY_KINDS,
   PREAMBLE_BYTES,
   exportVolumeToBytes,
+  hasArchiveMagic,
   readArchive,
   verifyArchive,
   writeArchive,
@@ -62,6 +63,27 @@ function manifeste(volumeSize) {
     volumeSize,
     identity: { algorithm: "sha-256", digest: null },
   });
+}
+
+/**
+ * Réécrit l'en-tête JSON d'une archive après l'avoir laissé modifier. Le préambule est recalculé :
+ * l'archive reste STRUCTURELLEMENT valide, ce qui est exactement le point — seul le contenu de
+ * l'en-tête ment, et c'est la validation qui doit s'en apercevoir.
+ */
+function archiveAvecEnTete(archive, modifier) {
+  const vue = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+  const longueur = vue.getUint32(ARCHIVE_MAGIC.byteLength, false);
+  const debut = PREAMBLE_BYTES;
+  const entete = JSON.parse(new TextDecoder().decode(archive.subarray(debut, debut + longueur)));
+  modifier(entete);
+  const octets = new TextEncoder().encode(JSON.stringify(entete));
+  const contenu = archive.subarray(debut + longueur);
+  const refaite = new Uint8Array(PREAMBLE_BYTES + octets.byteLength + contenu.byteLength);
+  refaite.set(ARCHIVE_MAGIC, 0);
+  new DataView(refaite.buffer).setUint32(ARCHIVE_MAGIC.byteLength, octets.byteLength, false);
+  refaite.set(octets, PREAMBLE_BYTES);
+  refaite.set(contenu, PREAMBLE_BYTES + octets.byteLength);
+  return refaite;
 }
 
 const cohérence = {
@@ -257,6 +279,66 @@ test("export refusé si le manifeste et la source divergent en géométrie", asy
       }),
     (e) => isArchiveError(e, ARCHIVE_ERROR_CODES.geometryMismatch),
   );
+});
+
+test("la compatibilité du manifeste est vérifiée PAR DÉFAUT, sans attente à fournir", async () => {
+  // Un contrôle qui ne s'exécute que si l'appelant pense à le demander n'est pas un contrôle : une
+  // archive d'un format que ce runtime ne sait pas lire doit être refusée d'office.
+  const source = sourceVolume(SECTOR_SIZE * 4);
+  const futur = createManifest({
+    formatVersion: MANIFEST_FORMAT_VERSION + 1,
+    runtime: { version: "1.4.2", artifact: null },
+    app: { id: "railsbox/reference", version: "3.1.0" },
+    volumeSize: source.size,
+    identity: { algorithm: "sha-256", digest: null },
+  });
+  const { archive } = await exportVolumeToBytes({
+    source,
+    manifest: futur,
+    consistency: cohérence,
+  });
+
+  await assert.rejects(
+    () => verifyArchive(archive),
+    (e) => isManifestError(e, MANIFEST_ERROR_CODES.formatTooNew),
+  );
+
+  // La dérogation existe, mais elle est NOMMÉE : un outil de diagnostic peut lire un conteneur
+  // qu'il ne saurait pas ouvrir en écriture, à condition de le dire.
+  const verdict = await verifyArchive(archive, { enforceCompatibility: false });
+  assert.equal(verdict.manifest.formatVersion, MANIFEST_FORMAT_VERSION + 1);
+});
+
+test("l'algorithme d'empreinte est ÉPINGLÉ : une étiquette mensongère est refusée", async () => {
+  // L'archive ne porte qu'un seul algorithme et le calcule elle-même. Laisser passer une autre
+  // étiquette rendrait persistante une affirmation que le code ne tient pas.
+  const source = sourceVolume(SECTOR_SIZE * 4);
+  const { archive } = await exportVolumeToBytes({
+    source,
+    manifest: manifeste(source.size),
+    consistency: cohérence,
+  });
+  const falsifiee = archiveAvecEnTete(archive, (entete) => {
+    entete.content.algorithm = "sha-1";
+  });
+  await assert.rejects(
+    () => verifyArchive(falsifiee),
+    (e) => isArchiveError(e, ARCHIVE_ERROR_CODES.malformed),
+  );
+});
+
+test("le marqueur d'archive est reconnaissable AVANT toute interprétation", async () => {
+  const source = sourceVolume(SECTOR_SIZE * 4);
+  const { archive } = await exportVolumeToBytes({
+    source,
+    manifest: manifeste(source.size),
+    consistency: cohérence,
+  });
+  assert.equal(hasArchiveMagic(archive), true);
+  assert.equal(hasArchiveMagic(archive.subarray(0, ARCHIVE_MAGIC.byteLength)), true);
+  // Un volume brut — des octets quelconques — n'est pas une archive, et huit octets suffisent à le dire.
+  assert.equal(hasArchiveMagic(new Uint8Array(64)), false);
+  assert.equal(hasArchiveMagic(new Uint8Array(4)), false);
 });
 
 test("les trois garanties de cohérence connues sont acceptées et inscrites", async () => {
