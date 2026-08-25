@@ -87,3 +87,30 @@ test("un support absent de ce moteur est propagé, pas transformé en cible occu
     (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.unsupported),
   );
 });
+
+// Un JOURNAL DE MIGRATION périmé ne doit pas survivre à la restauration du volume (#13). Sans ce
+// retrait, un volume restauré depuis une archive garderait à côté de lui le journal d'une migration
+// interrompue portant sur un contenu qui n'existe plus — et ce journal, faisant autorité sur le
+// format de départ, rendrait le volume non migrable jusqu'à un nettoyage manuel.
+
+test("la restauration RETIRE le journal de migration périmé en inscrivant son manifeste", async () => {
+  const retires = [];
+  const inscrits = [];
+  const cible = createOpfsImportTarget("vault-app", {
+    stat: () => Promise.resolve({ present: true, size: TAILLE }),
+    readManifest: () => Promise.resolve(null),
+    writeManifest: (nom, bytes) => {
+      inscrits.push(nom);
+      return Promise.resolve(bytes);
+    },
+    removeSidecar: (nom) => {
+      retires.push(nom);
+      return Promise.resolve();
+    },
+  });
+
+  await cible.commitManifest(serializeManifest(manifesteValide()));
+
+  assert.deepEqual(inscrits, ["vault-app.manifest"]);
+  assert.deepEqual(retires, ["vault-app.migration"]);
+});

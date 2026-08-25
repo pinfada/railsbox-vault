@@ -7,6 +7,7 @@ import {
   MAX_SIDECAR_BYTES,
   openVolumeForWrite,
   readVolumeManifest,
+  writeVolumeManifest,
 } from "../../src/vm/opfs-volume-open.mjs";
 import { createManifest, serializeManifest } from "../../src/vm/volume-manifest.mjs";
 
@@ -178,4 +179,25 @@ test("readVolumeManifest rend les OCTETS du voisin, ou null quand il n'y en a pa
   await s.ecrire("vault-app.manifest", serializeManifest(manifesteValide()));
   const octets = await readVolumeManifest("vault-app", { stat: s.stat, readFile: s.lire });
   assert.deepEqual(octets, serializeManifest(manifesteValide()));
+});
+
+// Créer un volume, c'est décider de tout ce qu'il contient. Un JOURNAL DE MIGRATION laissé par une
+// migration interrompue sur un volume du même nom ne décrit plus rien (#13) : le garder rendrait le
+// volume neuf non migrable, puisque le journal fait autorité sur le format de départ.
+
+test("créer un volume RETIRE le journal de migration périmé qui traînait à côté", async () => {
+  const inscrits = [];
+  const retires = [];
+  await writeVolumeManifest("vault-app", manifesteValide(), {
+    writeFile: (nom, bytes) => {
+      inscrits.push(nom);
+      return Promise.resolve(bytes);
+    },
+    removeFile: (nom) => {
+      retires.push(nom);
+      return Promise.resolve();
+    },
+  });
+  assert.deepEqual(inscrits, ["vault-app.manifest"]);
+  assert.deepEqual(retires, ["vault-app.migration"]);
 });

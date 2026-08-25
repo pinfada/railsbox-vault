@@ -479,3 +479,87 @@ test("le journal porte son propre marqueur, sa chaîne et la preuve retenue", as
   assert.equal(journal.evidence.acknowledgedBy, CONSENTEMENT.acknowledgedBy);
   assert.equal(parseManifest(journal.sourceManifest).formatVersion, 1);
 });
+
+// --- Un journal n'est pas une AUTORITÉ ----------------------------------------------------------
+//
+// Le journal de reprise est un indice laissé par une migration inachevée, pas une source de vérité
+// supérieure au volume. Trois épreuves l'imposent, parce que rien ne garantit qu'un journal trouvé
+// à côté d'un volume décrive CE volume : ni `createOpfsImportTarget` (#12) ni la préparation d'un
+// volume neuf ne retirent le voisin `.migration`, si bien qu'un journal PÉRIMÉ peut survivre à la
+// recréation du volume qu'il prétend décrire.
+
+/** Journal FORGÉ, tel qu'un support pourrait en porter un — périmé, contradictoire ou menteur. */
+function journalForge({ from = 1, to = MANIFEST_FORMAT_VERSION, sourceManifest, evidence }) {
+  return new TextEncoder().encode(
+    JSON.stringify({
+      magic: MIGRATION_JOURNAL_MAGIC,
+      journalVersion: 1,
+      from,
+      to,
+      sourceManifest,
+      evidence: evidence ?? { kind: "sauvegarde-verifiee", contentDigest: "00".repeat(32) },
+    }),
+  );
+}
+
+test("un journal qui CONTREDIT le manifeste présent est refusé, jamais préféré à lui", async () => {
+  // Le volume porte un manifeste v1 parfaitement valide. À côté traîne un journal périmé qui
+  // annonce un AUTRE volume — huit fois plus grand, avec une empreinte inventée — et une sauvegarde
+  // « vérifiée » qui ne l'a jamais été. Sans contrôle de cohérence, ce journal supplanterait le
+  // manifeste ET tiendrait lieu de preuve de sauvegarde : la migration inscrirait une géométrie et
+  // une identité forgées, puis effacerait le journal — sans laisser de trace.
+  const cible = creerCible({
+    journalBytes: journalForge({
+      sourceManifest: manifesteV1({
+        volumeSize: TAILLE * 8,
+        identity: { algorithm: "sha-256", digest: "ab".repeat(32) },
+      }),
+    }),
+  });
+  await assert.rejects(
+    () => migrateVolume({ target: cible, expectations: attentes() }),
+    (e) => isMigrationError(e, MIGRATION_ERROR_CODES.journalMalformed),
+  );
+  // Le volume est INTACT : son manifeste v1 est toujours là, et la cible n'a pas été ouverte.
+  assert.equal(parseManifest(cible.etat.manifestBytes).formatVersion, 1);
+  assert.equal(cible.etat.ouvertures, 0);
+  assert.equal(cible.gestes.includes("open"), false);
+  // Le journal n'est pas supprimé : l'écarter reste un geste explicite d'exploitant.
+  assert.notEqual(cible.etat.journalBytes, null);
+});
+
+test("un manifeste source dont la GÉOMÉTRIE ne décrit pas le support est refusé avant ouverture", async () => {
+  // Migration REPRISE : plus de manifeste, seul le journal parle. Il annonce un volume de 32 768 o
+  // alors que le support en porte 4 096. Rien ne doit être ouvert : appliquer une étape ici
+  // inscrirait une géométrie qui ne décrit pas les octets réellement présents.
+  const cible = creerCible({
+    manifestBytes: null,
+    journalBytes: journalForge({ sourceManifest: manifesteV1({ volumeSize: TAILLE * 8 }) }),
+  });
+  await assert.rejects(
+    () => migrateVolume({ target: cible, expectations: attentes() }),
+    (e) => isMigrationError(e, MIGRATION_ERROR_CODES.geometryMismatch),
+  );
+  assert.equal(cible.etat.ouvertures, 0);
+  assert.equal(cible.etat.manifestBytes, null);
+});
+
+test("un journal dont la cible ne correspond PAS au format porté n'est pas retiré en silence", async () => {
+  // Le volume est déjà au format courant. Un journal traîne, mais il visait un autre format : il ne
+  // peut pas être le reliquat de la migration qui a produit ce manifeste. Le retirer serait effacer
+  // l'indice d'une migration inachevée portant sur autre chose.
+  const cible = creerCible({
+    manifestBytes: serializeManifest(manifesteCourant()),
+    journalBytes: journalForge({
+      from: 1,
+      to: MANIFEST_FORMAT_VERSION + 3,
+      sourceManifest: manifesteV1(),
+    }),
+  });
+  await assert.rejects(
+    () => migrateVolume({ target: cible, expectations: attentes() }),
+    (e) => isMigrationError(e, MIGRATION_ERROR_CODES.journalMalformed),
+  );
+  assert.notEqual(cible.etat.journalBytes, null);
+  assert.equal(parseManifest(cible.etat.manifestBytes).formatVersion, MANIFEST_FORMAT_VERSION);
+});
