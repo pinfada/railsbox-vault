@@ -1,5 +1,11 @@
-// Mesure d'isolation cross-origin, partagée par la page coquille et son Worker runtime : les deux
-// contextes doivent être relevés séparément, `crossOriginIsolated` ne se déduisant pas de l'autre.
+// Mesure d'isolation cross-origin, partagée par la page coquille, son Worker runtime et le document
+// applicatif : ces contextes doivent être relevés séparément, `crossOriginIsolated` ne se déduisant
+// pas de l'un à l'autre.
+//
+// Le module vit sous `src/` parce qu'il est chargé par une page ET par un Worker : `eslint.config.mjs`
+// ne lui accorde ainsi que l'intersection des deux jeux de globals. Sous `public/`, il recevrait tout
+// le jeu navigateur et un `document` y passerait le lint pour ne casser que le Worker, à l'exécution.
+// `tests/unit/eslint-config.test.mjs` maintient cet emplacement.
 
 /**
  * @returns {{ crossOriginIsolated: boolean, sharedArrayBuffer: string, secureContext: boolean }}

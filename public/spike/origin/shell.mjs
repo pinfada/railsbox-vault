@@ -7,6 +7,7 @@
 // la frontière d'origine apporte sans durcissement, et l'ADR 0002 discute le durcissement comme
 // mitigation complémentaire, jamais comme substitut.
 
+import { measureIsolation } from "/src/spike/isolation-probe.mjs";
 import {
   MESSAGE_TYPES,
   appDocumentUrl,
@@ -16,7 +17,6 @@ import {
   isAllowedAppRequest,
   topologyOf,
 } from "/src/spike/origin-topology.mjs";
-import { measureIsolation } from "./isolation-probe.mjs";
 import {
   CONTROL_CHANNEL_NAME,
   SHELL_SECRET,

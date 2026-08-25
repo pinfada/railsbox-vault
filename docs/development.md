@@ -63,13 +63,16 @@ Trois conséquences pour un nouveau module :
   `page.evaluate` sont analysés dans le même fichier que le corps du test. Cette exception est
   bornée à `tests/browser/`, `tests/compat/`, `tests/vm/` et `tests/e2e/` ; elle ne doit pas être
   élargie par des commentaires `/* global */`, qui reviendraient à désactiver la règle ;
-- un module réellement partagé entre la page et le Worker doit vivre sous `src/` pour recevoir
-  l'intersection. `public/spike/origin/isolation-probe.mjs`, importé par la coquille comme par son
-  Worker, reste analysé comme un script de page : la configuration y est plus permissive que
-  nécessaire. C'est du code de spike, et le déplacer relève d'une tranche distincte.
+- un module réellement partagé entre la page et le Worker doit **vivre sous `src/`** pour recevoir
+  l'intersection, y compris s'il n'existe que pour un spike. Il est alors importé par son chemin
+  absolu `/src/…`, que le serveur de test sert sous sa propre racine.
+  `src/spike/isolation-probe.mjs`, chargé par la coquille du spike #35, par son Worker runtime et
+  par le document applicatif, en est l'exemple.
 
 `tests/unit/eslint-config.test.mjs` vérifie cette répartition en lintant des chemins virtuels : une
-régression de la configuration fait échouer `npm run test:unit`, pas seulement le lint du jour.
+régression de la configuration fait échouer `npm run test:unit`, pas seulement le lint du jour. Une
+épreuve y vise en outre un module réel, `isolation-probe.mjs`, et échoue s'il est rangé sous une
+racine qui lui accorderait plus que l'intersection.
 
 ## Navigateur
 
