@@ -353,6 +353,108 @@ function memesOctets(a, b) {
 }
 
 /**
+ * GESTE 1 — LIRE. L'état du support, le journal de reprise éventuel et le manifeste courant, dans
+ * cet ordre. Rien n'est ouvert ici : les refus de #10 doivent tomber avant toute prise de handle.
+ */
+async function lireEtat(target, expectations) {
+  const support = await target.inspect();
+  const journalBytes = await target.readJournal();
+  const journal = journalBytes === null ? null : parseJournal(journalBytes);
+  const manifestBytes = await target.readManifest();
+  const courant = manifestBytes === null ? null : parseManifest(manifestBytes);
+  if (courant !== null) assertReadable(courant, expectations);
+  return { support, journal, courant };
+}
+
+/**
+ * Manifeste dont PART la migration : celui du volume, ou — si le manifeste a déjà été révoqué par
+ * une migration interrompue — celui que le journal a conservé. Sans l'un ni l'autre, le volume n'a
+ * pas d'identité, et une identité ne se devine pas.
+ */
+function manifesteSource({ support, journal, courant }, expectations) {
+  const source = journal === null ? courant : journal.sourceManifest;
+  if (source === null) {
+    throw new ManifestError(
+      MANIFEST_ERROR_CODES.unidentified,
+      "Migration refusée : le volume ne porte ni manifeste identifiable, ni journal de reprise. Rien ne dit de quel format il vient, et une identité ne se devine pas.",
+      { volumeSize: support.size ?? null },
+    );
+  }
+  if (journal !== null) assertReadable(source, expectations);
+  return source;
+}
+
+/**
+ * GESTE 3 — EXIGER UNE PREUVE, avant d'ouvrir quoi que ce soit. Une REPRISE, elle, s'appuie sur la
+ * preuve déjà retenue et inscrite dans le journal : redemander une archive au moment de la reprise
+ * transformerait une interruption en impasse.
+ */
+function assertPreuveDisponible({ journal, backup, consentement, fromVersion, toVersion }) {
+  if (journal !== null || backup !== null || consentement !== null) return;
+  throw new MigrationError(
+    MIGRATION_ERROR_CODES.backupRequired,
+    `Migration refusée : « export de sauvegarde obligatoire avant migration irréversible » (docs/release-policy.md). Fournir une archive de sauvegarde à vérifier, ou un consentement explicite nommé. Aucune ouverture n'est tentée.`,
+    { fromVersion, toVersion },
+  );
+}
+
+/** GESTE 5 — la preuve RETENUE : celle du journal en reprise, sinon l'archive vérifiée, sinon le consentement. */
+function retenirPreuve({
+  journal,
+  backup,
+  consentement,
+  backend,
+  source,
+  blockBytes,
+  expectations,
+}) {
+  if (journal !== null) return journal.evidence;
+  if (backup !== null) {
+    return verifierSauvegarde({ backend, backup, manifest: source, blockBytes, expectations });
+  }
+  return consentement;
+}
+
+/**
+ * GESTES 6 à 9 — la partie MUTANTE, dans son ordre non négociable : journaliser, révoquer,
+ * appliquer, franchir la barrière, inscrire, relire. Une relecture divergente retire le manifeste
+ * inscrit : le volume reste NON IDENTIFIÉ plutôt que présenté comme migré.
+ */
+async function muter({ target, backend, chaine, source, toVersion, evidence }) {
+  // 6. JOURNALISER — avant la révocation, sinon la reprise n'aurait plus de point de départ.
+  await target.writeJournal(
+    serialiserJournal({
+      from: source.formatVersion,
+      to: toVersion,
+      sourceManifest: source,
+      evidence,
+    }),
+  );
+
+  // 7. RÉVOQUER — à partir d'ici, `openVolumeForWrite` refuse le volume.
+  await target.revokeManifest();
+
+  // 8. APPLIQUER, puis franchir la barrière de durabilité.
+  let manifest = source;
+  for (const etape of chaine) manifest = etape.apply({ manifest, backend });
+  await backend.flush();
+
+  // 9. INSCRIRE, puis RELIRE depuis le support : écrire n'est pas persister.
+  const octets = serializeManifest(manifest);
+  await target.commitManifest(octets);
+  const relu = await target.readManifest();
+  if (!memesOctets(relu, octets)) {
+    await target.revokeManifest();
+    throw new MigrationError(
+      MIGRATION_ERROR_CODES.verificationFailed,
+      `Migration refusée : le manifeste relu depuis le support ne rend pas les octets inscrits. Le volume reste NON IDENTIFIÉ plutôt que présenté comme migré ; le journal de reprise subsiste.`,
+      { expectedBytes: octets.byteLength, observedBytes: relu?.byteLength ?? null },
+    );
+  }
+  return manifest;
+}
+
+/**
  * Migre un volume vers le format `toVersion`, ou REPREND une migration interrompue.
  *
  * @param {{
@@ -379,103 +481,98 @@ export async function migrateVolume({
   assertContract(target, blockBytes);
 
   // 1. LIRE. L'état du support, le journal éventuel, puis le manifeste courant.
-  const etat = await target.inspect();
-  const journalBytes = await target.readJournal();
-  const journal = journalBytes === null ? null : parseJournal(journalBytes);
-  const manifestBytes = await target.readManifest();
-  const courant = manifestBytes === null ? null : parseManifest(manifestBytes);
-  if (courant !== null) assertReadable(courant, expectations);
+  const etat = await lireEtat(target, expectations);
+  const { support, journal, courant } = etat;
 
-  // Le volume porte DÉJÀ le format visé : rien à migrer. Un journal resté derrière lui signale une
-  // migration interrompue APRÈS l'inscription du manifeste — elle a abouti ; il suffit de le
-  // retirer. C'est ce qui rend `migrateVolume` idempotente.
+  // Le volume porte DÉJÀ le format visé : rien à migrer.
   if (courant !== null && courant.formatVersion === toVersion) {
-    if (journal !== null) await target.removeJournal();
-    return rapport({
-      migrated: false,
-      resumed: journal !== null,
-      fromVersion: courant.formatVersion,
-      toVersion,
-      manifest: courant,
-      evidence: journal?.evidence ?? null,
-      steps: [],
-    });
+    return rienAMigrer({ target, courant, journal, toVersion });
   }
 
-  const source = journal === null ? courant : journal.sourceManifest;
-  if (source === null) {
-    throw new ManifestError(
-      MANIFEST_ERROR_CODES.unidentified,
-      "Migration refusée : le volume ne porte ni manifeste identifiable, ni journal de reprise. Rien ne dit de quel format il vient, et une identité ne se devine pas.",
-      { volumeSize: etat.size ?? null },
-    );
-  }
-  if (journal !== null) assertReadable(source, expectations);
+  const source = manifesteSource(etat, expectations);
 
   // 2. PLANIFIER. Un PAS à la fois, jamais un saut ; jamais une descente.
   const chaine = planMigration(source.formatVersion, toVersion);
 
-  // 3. EXIGER UNE PREUVE — avant d'ouvrir quoi que ce soit. Une reprise, elle, s'appuie sur la
-  //    preuve déjà retenue et inscrite dans le journal : redemander une archive au moment de la
-  //    reprise transformerait une interruption en impasse.
+  // 3. EXIGER UNE PREUVE — avant d'ouvrir quoi que ce soit.
   const consentement = consentementNomme(consent);
-  if (journal === null && backup === null && consentement === null) {
-    throw new MigrationError(
-      MIGRATION_ERROR_CODES.backupRequired,
-      `Migration refusée : « export de sauvegarde obligatoire avant migration irréversible » (docs/release-policy.md). Fournir une archive de sauvegarde à vérifier, ou un consentement explicite nommé. Aucune ouverture n'est tentée.`,
-      { fromVersion: source.formatVersion, toVersion },
-    );
-  }
+  assertPreuveDisponible({
+    journal,
+    backup,
+    consentement,
+    fromVersion: source.formatVersion,
+    toVersion,
+  });
 
+  // 4 à 10. OUVRIR, vérifier, muter, refermer, retirer le journal.
+  return executerMigration({
+    target,
+    support,
+    journal,
+    source,
+    chaine,
+    toVersion,
+    backup,
+    consentement,
+    blockBytes,
+    expectations,
+  });
+}
+
+/**
+ * Le volume porte déjà le format visé. Un journal resté derrière lui signale une migration
+ * interrompue APRÈS l'inscription du manifeste — elle a abouti ; il suffit de le retirer. C'est ce
+ * qui rend `migrateVolume` idempotente.
+ */
+async function rienAMigrer({ target, courant, journal, toVersion }) {
+  if (journal !== null) await target.removeJournal();
+  return rapport({
+    migrated: false,
+    resumed: journal !== null,
+    fromVersion: courant.formatVersion,
+    toVersion,
+    manifest: courant,
+    evidence: journal?.evidence ?? null,
+    steps: [],
+  });
+}
+
+/**
+ * GESTES 4 à 10 — la partie qui tient un HANDLE. Elle est isolée pour que la fermeture du backend
+ * soit gouvernée par un seul `finally`, et pour que le retrait du journal reste ce qu'il doit être :
+ * le dernier geste, franchi seulement si tout ce qui précède a abouti.
+ */
+async function executerMigration({
+  target,
+  support,
+  journal,
+  source,
+  chaine,
+  toVersion,
+  backup,
+  consentement,
+  blockBytes,
+  expectations,
+}) {
   // 4. OUVRIR. Comme à la restauration, l'ouverture précède la révocation : une ouverture ratée ne
   //    doit pas rendre inutilisable un volume parfaitement intact.
-  const backend = await target.open({ size: etat.size });
+  const backend = await target.open({ size: support.size });
   let migre;
   try {
     // 5. VÉRIFIER LA SAUVEGARDE, s'il en est fourni une.
-    const evidence =
-      journal !== null
-        ? journal.evidence
-        : backup !== null
-          ? await verifierSauvegarde({
-              backend,
-              backup,
-              manifest: source,
-              blockBytes,
-              expectations,
-            })
-          : consentement;
+    const evidence = await retenirPreuve({
+      journal,
+      backup,
+      consentement,
+      backend,
+      source,
+      blockBytes,
+      expectations,
+    });
 
-    // 6. JOURNALISER — avant la révocation, sinon la reprise n'aurait plus de point de départ.
-    await target.writeJournal(
-      serialiserJournal({
-        from: source.formatVersion,
-        to: toVersion,
-        sourceManifest: source,
-        evidence,
-      }),
-    );
+    // 6 à 9. JOURNALISER, RÉVOQUER, APPLIQUER, INSCRIRE puis RELIRE.
+    const manifest = await muter({ target, backend, chaine, source, toVersion, evidence });
 
-    // 7. RÉVOQUER — à partir d'ici, `openVolumeForWrite` refuse le volume.
-    await target.revokeManifest();
-
-    // 8. APPLIQUER, puis franchir la barrière de durabilité.
-    let manifest = source;
-    for (const etape of chaine) manifest = etape.apply({ manifest, backend });
-    await backend.flush();
-
-    // 9. INSCRIRE, puis RELIRE depuis le support : écrire n'est pas persister.
-    const octets = serializeManifest(manifest);
-    await target.commitManifest(octets);
-    const relu = await target.readManifest();
-    if (!memesOctets(relu, octets)) {
-      await target.revokeManifest();
-      throw new MigrationError(
-        MIGRATION_ERROR_CODES.verificationFailed,
-        `Migration refusée : le manifeste relu depuis le support ne rend pas les octets inscrits. Le volume reste NON IDENTIFIÉ plutôt que présenté comme migré ; le journal de reprise subsiste.`,
-        { expectedBytes: octets.byteLength, observedBytes: relu?.byteLength ?? null },
-      );
-    }
     migre = rapport({
       migrated: true,
       resumed: journal !== null,

@@ -55,6 +55,44 @@ la restauration ne **migre** rien : un volume d'un format antérieur est restaur
 obligatoire avant migration irréversible » a donc désormais son pendant — la remise en place — mais
 la migration elle-même, sa reprise après interruption et ses vecteurs par version restent à faire.
 
+Depuis #13, la **migration** l'est aussi (`src/vm/volume-migration.mjs`,
+[ADR 0011](decisions/0011-migration-de-format-et-reprise.md)), et le **format de volume passe à
+v2**. Quatre des six exigences ci-dessus sont maintenant exercées par du code et des tests, et non
+plus seulement énoncées :
+
+- « **lecture d'une version connue avant toute écriture** » — inchangée depuis #12, et la migration
+  s'y soumet : les refus de #10 tombent avant qu'aucun handle ne soit pris ;
+- « **export de sauvegarde obligatoire avant migration irréversible** » — c'est désormais un
+  **contrôle**. L'archive présentée est relue par #11 et son empreinte confrontée à celle du volume
+  relu depuis le support, dans son état courant ; l'application et la taille sont comparées. À
+  défaut d'archive, un **consentement nommé**, inscrit dans le journal de reprise et donc opposable.
+  Sans l'un ni l'autre, `VAULT_MIGRATION_BACKUP_REQUIRED` est levé et la cible n'est **même pas
+  ouverte** ;
+- « **refus explicite d'un format futur ou d'un downgrade dangereux** » — le refus de downgrade
+  cesse d'être une supposition. Le format **v2** ajoute `runtime.minWriter`, la version de runtime
+  la plus ancienne autorisée à écrire ce volume, **déclarée** par le runtime qui l'écrit. La règle
+  v1, qui comparait les majeurs SemVer, ne pouvait **rien** refuser dans cette politique : elle
+  exprime une rupture d'API runtime par un incrément du **mineur** en `0.x`, si bien que les deux
+  majeurs valent 0 et que la comparaison est toujours fausse. C'était le risque n°2 de l'ADR 0007,
+  et il était déjà réalisé. Un manifeste v1 garde SA règle plutôt que de recevoir une valeur qu'il
+  n'a jamais portée ;
+- « **reprise déterministe après interruption de migration** » — une migration interrompue laisse un
+  volume **non identifié**, que le boot refuse (`VAULT_MANIFEST_UNIDENTIFIED`), et un journal voisin
+  `<volume>.migration` portant le manifeste source, la chaîne visée et la preuve retenue. La reprise
+  repart de là **sans redemander la sauvegarde** : l'exiger de nouveau ferait d'une interruption une
+  impasse, sur un volume que le boot n'ouvre déjà plus. Elle est **déterministe** parce qu'elle
+  recommence la chaîne depuis le manifeste source au lieu de deviner un point d'arrêt, et
+  **idempotente** : un journal resté derrière un manifeste déjà migré est simplement retiré.
+
+Deux exigences restent ouvertes. La « **migration sur une nouvelle génération copy-on-write** »
+n'est pas faite : la migration mute en place, et entre la révocation et l'inscription du manifeste
+l'état est sûr — non identifié, donc non inscriptible — mais **pas révocable en un geste** (#16).
+Les « **vecteurs de test conservés pour chaque version publiée** » non plus, et pour une raison de
+fond : aucune version n'a encore été publiée. Le témoin de refus par une ancienne version simule
+donc celle-ci par ses **attentes déclarées** (`supportedFormat`), non par un binaire antérieur — la
+limite est écrite dans l'ADR 0011 et dans `docs/testing.md`. Un volume v1 reste par ailleurs
+**lisible**, donc exportable, restaurable et migrable : le passage à v2 n'orpheline aucun volume.
+
 ## Publication
 
 Une version publiable exige :
