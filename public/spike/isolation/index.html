@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RailsBox Vault — banc d'isolation multi-origine (spike #41)</title>
+  </head>
+  <body>
+    <h1>Coût de l'isolation multi-origine sur le runtime v86</h1>
+    <p>
+      Cette page ne mesure rien d'elle-même : elle démarre le Worker runtime, lui demande de booter
+      un guest et d'exécuter des étapes chronométrées, puis affiche son compte rendu. La même page
+      est servie par deux serveurs — l'un nu, l'autre sous
+      <code>Cross-Origin-Opener-Policy: same-origin</code> et
+      <code>Cross-Origin-Embedder-Policy: require-corp</code>. La seule variable est l'en-tête. Le
+      protocole est décrit dans <code>docs/spikes/0041-isolation-coop-coep.md</code>.
+    </p>
+    <p id="etat">Prêt.</p>
+    <pre id="rapport"></pre>
+    <script type="module" src="./banc.mjs"></script>
+  </body>
+</html>

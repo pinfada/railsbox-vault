@@ -13,6 +13,8 @@
     "test:spike:origin": "playwright test tests/browser/origin-topology.spec.mjs tests/browser/origin-isolation.spec.mjs",
     "test:compat": "playwright test --config playwright.compat.config.mjs",
     "test:vm": "playwright test --config playwright.vm.config.mjs",
+    "test:isolation": "playwright test --config playwright.isolation.config.mjs",
+    "isolation:inventaire": "node tools/isolation-inventaire.mjs",
     "test:e2e": "playwright test --config playwright.e2e.config.mjs",
     "test:vm:reference": "node --test \"tests/vm/**/*.test.mjs\"",
     "app:test": "node tools/run-app-tests.mjs",
