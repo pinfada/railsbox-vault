@@ -56,9 +56,11 @@ const raison = raisonDIndisponibilite();
  *
  * C'est le même crochet que `restauration-inter-origine.spec.mjs` et
  * `migration-volume-versionne.spec.mjs`. Un défaut de nettoyage ne doit jamais masquer l'échec
- * qu'il suit : il est journalisé, pas relancé.
+ * qu'il suit : il est journalisé, PAS relancé — mais il est aussi ATTACHÉ au rapport, faute de quoi
+ * la panne de l'hygiène ne se verrait que dans un `stderr` noyé au milieu d'un job de deux heures,
+ * pendant qu'un gibioctet resterait dans le profil.
  */
-test.afterEach(async ({ context }) => {
+test.afterEach(async ({ context }, testInfo) => {
   if (raison !== null) return;
   const page = await context.newPage();
   try {
@@ -74,6 +76,10 @@ test.afterEach(async ({ context }) => {
     }
   } catch (erreur) {
     process.stderr.write(`[hygiène] export : ${erreur.message}\n`);
+    await testInfo.attach("hygiene-echouee.txt", {
+      body: `Nettoyage de ${VOLUME} et ${ARCHIVE} en échec : ${erreur.message}`,
+      contentType: "text/plain",
+    });
   } finally {
     await page.close();
   }

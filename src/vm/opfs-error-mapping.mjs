@@ -121,15 +121,23 @@ export function decodeSupportCount(returned, requested) {
   if (Number.isInteger(returned) && returned >= 0 && returned < requested) {
     return { kind: "court", errno: null, name: null };
   }
+
   // Tout le reste — au-dessus de la demande, négatif, ou non entier — n'est pas un compte d'octets.
-  // Le cas OBSERVÉ est le cast non signé d'un entier négatif sur 32 bits ; on le défait.
-  const signe =
+  // Le cas OBSERVÉ est le cast non signé d'un entier négatif sur 32 bits ; on le défait, mais SEULEMENT
+  // dans la plage où ce cast a un sens.
+  const cast =
     Number.isInteger(returned) && returned >= 2 ** 31 && returned < UINT32_SPAN
       ? returned - UINT32_SPAN
       : returned;
-  const errno = Number.isInteger(signe) ? signe : null;
-  const name = errno === null ? null : (CHROMIUM_FILE_ERRORS.get(errno) ?? null);
-  return { kind: "errno", errno, name };
+
+  // Un errno est un entier NÉGATIF, casté ou rendu tel quel. Une valeur positive qui dépasse la
+  // demande — 2^32 et au-delà, par exemple — ne se décode en rien : la rendre sous l'étiquette
+  // « errno » inventerait un diagnostic, et c'est précisément ce que ce module refuse de faire.
+  // Elle reste un échec, dit comme une valeur non interprétée.
+  if (!Number.isInteger(cast) || cast >= 0) {
+    return { kind: "errno", errno: null, name: null };
+  }
+  return { kind: "errno", errno: cast, name: CHROMIUM_FILE_ERRORS.get(cast) ?? null };
 }
 
 /**

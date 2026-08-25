@@ -49,30 +49,37 @@ export function createOpfsArchiveSink(handle, { volume, measureStorage = null })
     throw new TypeError("Le puits d'archive doit nommer le fichier qu'il écrit.");
   }
 
+  // L'offset vit dans une FERMETURE, non sur l'objet rendu : un puits déstructuré
+  // (`const { write } = sink`) ou passé en rappel nu continue de compter juste. Le porter sur `this`
+  // rendrait la justesse du compteur dépendante de la façon dont l'appelant invoque la méthode.
+  let offset = 0;
+
   return {
     /** Offset du prochain octet à écrire : il ne compte que des octets réellement acceptés. */
-    offset: 0,
+    get offset() {
+      return offset;
+    },
 
     async write(bytes) {
       if (!(bytes instanceof Uint8Array)) {
         throw new TypeError("Le puits d'archive attend un Uint8Array.");
       }
       const requested = bytes.byteLength;
-      const offset = this.offset;
-      const returned = ecrireBloc(handle, bytes, { volume, offset });
+      const debut = offset;
+      const returned = ecrireBloc(handle, bytes, { volume, offset: debut });
 
       // Le cas nominal ne coûte RIEN de plus qu'une comparaison : une archive de 512 Mio écrite par
       // blocs de 4 Mio, c'est cent vingt-huit passages ici. La mesure du budget n'est demandée
       // qu'une fois la valeur de retour reconnue comme un échec.
       if (decodeSupportCount(returned, requested).kind === "exact") {
-        this.offset = offset + requested;
+        offset = debut + requested;
         return requested;
       }
 
       throw writeCountFailure(returned, {
         requested,
         volume,
-        offset,
+        offset: debut,
         operation: OPERATION,
         storage: measureStorage === null ? null : await measureStorage(),
       });
