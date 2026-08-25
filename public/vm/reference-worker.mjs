@@ -217,6 +217,22 @@ async function instantaneStockage() {
 }
 
 /**
+ * Enveloppe une source d'export pour COMPTER ses lectures. La plus grande lecture émise est la
+ * preuve déterministe qu'un export à surmémoire bornée ne demande jamais tout le volume d'un coup :
+ * elle est mesurée ici, pas déclarée ailleurs.
+ */
+function sourceMesuree(base, compteur) {
+  return {
+    size: base.size,
+    read(offset, length) {
+      compteur.maxLecture = Math.max(compteur.maxLecture, length);
+      compteur.blocs += 1;
+      return base.read(offset, length);
+    },
+  };
+}
+
+/**
  * EXPORTE le volume applicatif OPFS (#11) vers une ARCHIVE OPFS, en flux. La source est lue via le
  * handle exclusif de #6 (aucun autre écrivain dans l'origine) : c'est le point cohérent déclaré. La
  * plus grande lecture est mesurée — un export à surmémoire bornée ne demande jamais tout le volume
@@ -225,16 +241,8 @@ async function instantaneStockage() {
 async function phaseExportVolume({ volume, archive, manifest, blockBytes = EXPORT_BLOCK_BYTES }) {
   await removeOpfsVolume(archive);
   const backend = await openOpfsVolume({ name: volume, journal: new BlockJournal() });
-  const base = backendSource(backend);
   const compteur = { maxLecture: 0, blocs: 0 };
-  const source = {
-    size: base.size,
-    read(offset, length) {
-      compteur.maxLecture = Math.max(compteur.maxLecture, length);
-      compteur.blocs += 1;
-      return base.read(offset, length);
-    },
-  };
+  const source = sourceMesuree(backendSource(backend), compteur);
 
   const handle = await openOpfsSyncAccess(archive);
   // Le puits vit dans `src/vm/opfs-archive-sink.mjs` (#73) : la lecture de la valeur de retour d'un
