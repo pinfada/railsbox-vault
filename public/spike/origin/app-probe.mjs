@@ -4,10 +4,10 @@
 // Playwright le lit dans le contexte du cadre, sans passer par la coquille — un canal d'attaque
 // ne doit pas servir à transporter la mesure.
 
+import { measureIsolation } from "/src/spike/isolation-probe.mjs";
 import { MESSAGE_TYPES } from "/src/spike/origin-topology.mjs";
 import REALM_PROBES from "./app-probes-realm.mjs";
 import STORAGE_PROBES from "./app-probes-storage.mjs";
-import { measureIsolation } from "./isolation-probe.mjs";
 
 const statusNode = document.querySelector("#app-status");
 const reportNode = document.querySelector("#app-report");

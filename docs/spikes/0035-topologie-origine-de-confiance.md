@@ -324,6 +324,11 @@ que son serveur pose COOP/COEP sur **toutes** ses réponses — et y mesure `Ato
 sous WebKit. Les deux mesures disent donc la même chose : la politique doit être portée par chaque
 artefact du graphe du runtime, pas seulement par la page.
 
+Le relevé ci-dessus est conservé tel qu'il a été produit. Le module a depuis été déplacé sous
+`src/spike/isolation-probe.mjs` (#49), pour être linté avec l'intersection page ∩ Worker ; il est
+donc servi sur `/src/spike/isolation-probe.mjs`. Le constat WebKit est inchangé : l'emplacement ne
+modifie pas les en-têtes de la réponse, que le serveur pose sur la seule requête qui les demande.
+
 Iframe inter-origine **sans** COEP, sous une coquille en `require-corp` :
 
 ```text

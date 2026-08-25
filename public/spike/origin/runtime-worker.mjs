@@ -2,7 +2,7 @@
 // la coquille la lui transmet une fois, sur un port privé créé avant tout contenu applicatif, et
 // le worker ne la renvoie jamais — même à qui la demande sur ce port.
 
-import { measureIsolation } from "./isolation-probe.mjs";
+import { measureIsolation } from "/src/spike/isolation-probe.mjs";
 
 let volumeKey = null;
 let privilegedPort = null;
