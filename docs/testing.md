@@ -268,26 +268,46 @@ démarrer la VM.
 ### Restauration inter-origine
 
 La restauration de `VAULT-PORT-001` (#12) — `src/vm/volume-import.mjs`, sa cible OPFS
-`src/vm/opfs-import-target.mjs` et sa famille d'erreurs `src/vm/import-errors.mjs` — est prouvée sur
-**deux** niveaux. La décision complète est
+`src/vm/opfs-import-target.mjs`, l'ouvreur en écriture `src/vm/opfs-volume-open.mjs` et sa famille
+d'erreurs `src/vm/import-errors.mjs` — est prouvée sur **deux** niveaux. La décision complète est
 l'[ADR 0009](decisions/0009-restauration-inter-origine.md).
 
 | Niveau       | Fichier                                         | Support                             | Rattachement      |
 | ------------ | ----------------------------------------------- | ----------------------------------- | ----------------- |
 | unitaire     | `tests/unit/vm-volume-import.test.mjs`          | doubles déterministes               | `npm run check`   |
+| unitaire     | `tests/unit/vm-opfs-volume-open.test.mjs`       | doubles déterministes               | `npm run check`   |
 | Bout en bout | `tests/e2e/restauration-inter-origine.spec.mjs` | **deux origines** + OPFS + image #5 | job `Reprise MVP` |
 
 **Le niveau unitaire éprouve l'ORDRE des gestes, qui est le contrat.** Une cible en mémoire compte
-chaque geste de l'orchestration — ouvertures, révocations, inscriptions —, ce qui permet d'affirmer
-non pas « la restauration a échoué » mais « la cible n'a même pas été ouverte ». Les treize épreuves
-couvrent : la restauration octet pour octet suivie de l'inscription du manifeste ; l'absence
-**totale** de mutation sur archive altérée puis tronquée (les refus de #11 remontent tels quels) ;
-le refus d'une cible non vide sans consentement, qui laisse le volume occupant **et son manifeste**
-intacts ; l'écrasement consenti ; la relecture divergente qui laisse le volume **non identifié**
-(manifeste jamais inscrit) ; le streaming borné, lectures et écritures ; l'espace insuffisant refusé
-avant toute mutation, avec le `BudgetDiagnostic` de #9 ; l'estimation indisponible qui ne bloque pas
-(l'inconnu n'est pas zéro) ; la géométrie de cible refusée ; la `ManifestError` d'identité de #10
-propagée sans reétiquetage ; et l'idempotence de deux restaurations successives.
+chaque geste de l'orchestration — ouvertures, fermetures, révocations, inscriptions —, ce qui permet
+d'affirmer non pas « la restauration a échoué » mais « la cible n'a même pas été ouverte ». Les
+épreuves couvrent : la restauration octet pour octet suivie de l'inscription du manifeste ;
+l'absence **totale** de mutation sur archive altérée puis tronquée (les refus de #11 remontent tels
+quels) ; le refus d'une cible non vide sans consentement, qui laisse le volume occupant **et son
+manifeste** intacts ; l'écrasement consenti ; la relecture divergente qui laisse le volume **non
+identifié** (manifeste jamais inscrit) ; le streaming borné en lecture, en écriture et en relecture
+; l'espace insuffisant refusé avant toute mutation, avec le `BudgetDiagnostic` de #9 ; la
+réservation **nette** sur un écrasement de même géométrie, qui ne doit rien réclamer ; l'estimation
+indisponible qui ne bloque pas (l'inconnu n'est pas zéro) ; la géométrie de cible refusée ; la
+compatibilité de manifeste contrôlée **par défaut**, sans attente à fournir ; le suffixe `.manifest`
+réservé et la longueur de nom bornée, pour qu'un volume créable soit toujours restaurable ; un
+voisin illisible **refusé sans être supprimé** ; la `ManifestError` d'identité de #10 propagée sans
+reétiquetage ; et l'idempotence de deux restaurations successives.
+
+**Et surtout la DÉFAILLANCE EN COURS de restauration**, qui est le cœur du contrat : une panne est
+injectée à chacun des quatre points de rupture — ouverture de la cible, écriture du troisième bloc
+(par le `FaultPlan` du dépôt, le même instrument déterministe que le backend de blocs), barrière de
+durabilité, inscription du manifeste. À chaque fois la suite exige que le handle exclusif ait été
+rendu, que le manifeste reste **absent** et qu'aucun commit n'ait eu lieu. Un cas est traité à part
+: une panne à l'**ouverture** doit laisser le manifeste existant intact, puisque aucun octet n'a pu
+être écrit — révoquer là rendrait inutilisable un volume parfaitement sain. La reprise d'une
+restauration interrompue suit : refusée sans consentement (le refus porte `identified: false`),
+reprise avec.
+
+`tests/unit/vm-opfs-volume-open.test.mjs` éprouve l'autre moitié de `SEC-UPDATE-001` : un volume
+sans manifeste voisin, appartenant à une autre application, ou dont le voisin est illisible ou
+démesuré, n'est **jamais** ouvert en écriture. Le double compte les ouvertures réellement tentées,
+ce qui distingue « refusé » de « refusé après coup ».
 
 **Le niveau Bout en bout mesure le changement d'origine RÉEL.** `playwright.e2e.config.mjs` sert
 deux origines distinctes au sens du navigateur — `http://127.0.0.1:4177` (A, export) et
@@ -315,11 +335,18 @@ sans DNS ni certificat. Le scénario enchaîne :
   l'empreinte SHA-256 de la pièce jointe ActiveStorage sont ceux du contrat
   `apps/reference/vault-invariant.json`. La donnée écrite par Rails sur A est retrouvée, à l'octet
   près, sur une origine qui ne l'avait jamais vue ;
-- **deux témoins négatifs** — une archive dont **un bit** de contenu a été retourné pendant le
+- **quatre témoins négatifs** — une archive dont **un bit** de contenu a été retourné pendant le
   transfert est refusée par `VAULT_ARCHIVE_DIGEST_MISMATCH` et **rien n'est écrit** (la cible
   n'existe toujours pas après le refus) ; une seconde restauration dans le volume déjà restauré est
   refusée par `VAULT_IMPORT_TARGET_NOT_EMPTY`, et le volume valide garde son manifeste et son
-  empreinte.
+  empreinte ; le **manifeste voisin du volume restauré est retiré** — l'état exact que laisserait
+  une restauration interrompue — et le boot suivant est alors refusé par
+  `VAULT_MANIFEST_UNIDENTIFIED`, avant même que v86 ne démarre ; enfin, demander à la coquille le
+  **fichier d'un volume** au lieu d'une archive est refusé par `VAULT_ARCHIVE_MALFORMED`, le Worker
+  exigeant le marqueur `RBVAULT1` dans les huit premiers octets (`SEC-ORIGIN-001`).
+
+Les deux derniers témoins comptent autant que le scénario nominal : sans eux, « un volume partiel ne
+peut pas passer pour valide » et « l'archive, jamais le volume » ne seraient que des phrases.
 
 Les mesures — origines, empreintes, tailles de bloc, budget, durées — sont écrites dans
 `reports/e2e/restauration-inter-origine.json` et jointes au rapport Playwright.

@@ -64,11 +64,14 @@ et tester.
   l'[ADR 0009](docs/decisions/0009-restauration-inter-origine.md) : pour qu'une archive puisse
   quitter l'origine par un téléchargement, le Worker remet à la coquille un `File` en **lecture
   seule**, adossé au support, portant l'**archive** — jamais le volume, jamais une clé, jamais le
-  handle exclusif, qui reste dans le Worker. Dans l'autre sens, une archive n'entre dans une origine
-  que par un champ de fichier ouvert par l'utilisateur : aucun canal inter-origines n'est ajouté et
-  aucune directive de CSP n'est assouplie — le cloisonnement OPFS par origine reste ce qui rend la
-  restauration significative, et `tests/e2e/restauration-inter-origine.spec.mjs` le vérifie avant
-  d'importer ;
+  handle exclusif, qui reste dans le Worker. Cette borne est tenue **par le code, non par une
+  convention de nom** : le Worker lit les huit premiers octets du fichier demandé et exige le
+  marqueur d'archive `RBVAULT1` (ADR 0008) avant de remettre quoi que ce soit ; demander le fichier
+  d'un VOLUME est refusé par `VAULT_ARCHIVE_MALFORMED`, ce qu'un témoin négatif de
+  `tests/e2e/restauration-inter-origine.spec.mjs` éprouve. Dans l'autre sens, une archive n'entre
+  dans une origine que par un champ de fichier ouvert par l'utilisateur : aucun canal inter-origines
+  n'est ajouté et aucune directive de CSP n'est assouplie — le cloisonnement OPFS par origine reste
+  ce qui rend la restauration significative, et le même scénario le vérifie avant d'importer ;
 - `SEC-KEY-001` — une clé de déverrouillage enveloppe une DEK aléatoire sans servir directement au
   chiffrement des blocs ;
 - `SEC-BLOCK-001` — un bloc est authentifié avec volume, adresse, format et génération ;
@@ -94,11 +97,19 @@ et tester.
   `tests/vm/opfs-barrier.spec.mjs`. Restent hors de cet invariant l'atomicité transactionnelle d'une
   génération (#16) et la reprise complète après fermeture (#7) ;
 - `SEC-UPDATE-001` — runtime et application sont identifiés et vérifiés avant d'ouvrir le volume en
-  écriture. Depuis #10, `assertVolumeWritable` refuse un volume sans manifeste identifiable
-  (`VAULT_MANIFEST_UNIDENTIFIED`) ; depuis #12, cette règle a enfin un support, puisque la
-  restauration **écrit** le manifeste dans un fichier voisin du volume — et ne l'écrit qu'après
-  avoir relu le volume entier. Une restauration interrompue laisse donc un volume non identifié, que
-  ce refus couvre déjà : c'est ce qui interdit qu'un volume partiellement écrit passe pour valide ;
+  écriture. #10 en a écrit la règle — `assertVolumeWritable` refuse un volume sans manifeste
+  identifiable (`VAULT_MANIFEST_UNIDENTIFIED`) — mais aucun chemin de production ne l'appelait :
+  l'invariant était énoncé, pas exercé. Depuis #12 il l'est. `openVolumeForWrite`
+  (`src/vm/opfs-volume-open.mjs`) est le **point de passage unique** de toute ouverture en écriture
+  : il lit le manifeste posé à côté du volume, le soumet à `assertVolumeWritable`, et n'ouvre le
+  volume qu'ensuite ; plus aucun chemin écrivant n'appelle `openOpfsVolume` directement. Les deux
+  moitiés existent donc enfin : la restauration (et toute création de volume) **écrit** le
+  manifeste, en dernier geste et après avoir relu le volume entier, et le boot **l'exige**. Une
+  restauration interrompue laisse un volume non identifié, que ce refus rejette avant que le guest
+  ne démarre. Il n'existe **aucune période de transition** : un volume sans manifeste est refusé,
+  jamais complété par une identité devinée. Preuves : `tests/unit/vm-opfs-volume-open.test.mjs` (le
+  refus précède l'ouverture) et un témoin Bout en bout où le manifeste d'un volume restauré est
+  retiré, puis le boot refusé (`tests/e2e/restauration-inter-origine.spec.mjs`) ;
 - `SEC-RECOVERY-001` — chaque moyen de récupération annoncé possède un test de succès, de révocation
   et de perte définitive.
 

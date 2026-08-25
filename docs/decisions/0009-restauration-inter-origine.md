@@ -30,20 +30,29 @@ Le chemin inverse n'est pas symétrique de l'export, et c'est ce qui exige une d
 
 ## Décision
 
-**La restauration (`src/vm/volume-import.mjs`) exécute six gestes, dans cet ordre, et cet ordre fait
-partie du contrat :**
+**La restauration (`src/vm/volume-import.mjs`) exécute sept gestes, dans cet ordre, et cet ordre
+fait partie du contrat :**
 
 | #   | Geste           | Ce qu'il garantit                                                                         |
 | --- | --------------- | ----------------------------------------------------------------------------------------- |
 | 1   | **Vérifier**    | l'archive entière est validée (empreinte recalculée + manifeste #10) sans écrire un octet |
 | 2   | **Refuser**     | cible occupée, géométrie inconciliable, espace insuffisant — avant toute mutation         |
-| 3   | **Révoquer**    | le manifeste de la cible est retiré : le volume cesse d'être présenté comme valide        |
-| 4   | **Restaurer**   | le contenu est recopié octet pour octet, en flux, puis une barrière est franchie          |
-| 5   | **Re-vérifier** | le volume est **relu depuis le support** et son empreinte confrontée à celle de l'archive |
-| 6   | **Inscrire**    | le manifeste est écrit : seul ce dernier geste rend le volume présentable comme valide    |
+| 3   | **Ouvrir**      | le handle exclusif est pris ; une ouverture ratée ne doit rien avoir détruit              |
+| 4   | **Révoquer**    | le manifeste de la cible est retiré : le volume cesse d'être présenté comme valide        |
+| 5   | **Restaurer**   | le contenu est recopié octet pour octet, en flux, puis une barrière est franchie          |
+| 6   | **Re-vérifier** | le volume est **relu depuis le support** et son empreinte confrontée à celle de l'archive |
+| 7   | **Inscrire**    | le manifeste est écrit : seul ce dernier geste rend le volume présentable comme valide    |
 
 Il n'existe donc **pas de restauration partielle silencieuse** : soit le volume est complet, relu et
 identifié, soit l'échec est typé et le volume reste **non identifié**.
+
+**Pourquoi ouvrir AVANT de révoquer.** Ouvrir un volume de géométrie inchangée ne mute rien, mais
+l'ouverture peut échouer pour des raisons étrangères à la restauration : un autre onglet détient
+l'exclusivité (#8), le support a perdu le handle, le quota refuse l'allocation. Révoquer d'abord
+rendrait alors inutilisable un volume **parfaitement intact**, par la seule faute du produit. Après
+l'ouverture, en revanche, la révocation précède impérativement le premier octet écrit. La règle
+n'est pas « révoquer tôt » mais « ne jamais laisser des octets partiels derrière un manifeste valide
+».
 
 ### Le manifeste est un fichier VOISIN, et il porte la validité
 
@@ -54,16 +63,50 @@ Il n'est **pas** placé en tête du volume : la géométrie de #6 est une suite 
 octets servie **telle quelle** à v86, que le guest monte comme un disque. Y intercaler un en-tête
 décalerait le système de fichiers du guest de la taille du manifeste.
 
-Ce voisin porte la **validité** du volume, et c'est ce qui donne son sens aux gestes 3 et 6. Un
-volume sans son voisin est un volume non identifié, que `assertVolumeWritable` (#10) refuse par
-`VAULT_MANIFEST_UNIDENTIFIED`. Une restauration interrompue — onglet fermé, quota atteint, support
-perdu — laisse donc une cible que le runtime refuse d'ouvrir en écriture, sans qu'aucun code de
-détection ait à être écrit : le refus de #10 existait déjà, il lui manquait ce que ce module écrit.
+Le suffixe `.manifest` est donc **réservé** par la frontière de nommage (`opfs-sync-access.mjs`) :
+aucun volume ne peut le porter, sans quoi restaurer « donnees » détruirait un volume légitime nommé
+« donnees.manifest ». La longueur maximale d'un nom de volume est réduite d'autant, pour qu'un
+volume créable soit toujours un volume **restaurable** — une impasse fermée à la création plutôt que
+découverte à la restauration. En défense en profondeur, un voisin présent mais **non analysable**
+comme manifeste fait refuser la restauration ; il n'est jamais supprimé.
+
+### Le manifeste voisin CONDITIONNE l'ouverture en écriture
+
+Ce voisin porte la **validité** du volume, et cela n'a de sens que si quelqu'un le lit. C'est le
+rôle de `openVolumeForWrite` (`src/vm/opfs-volume-open.mjs`) : **point de passage unique** de toute
+ouverture en écriture, il lit le voisin, le soumet à `assertVolumeWritable` (#10) et n'ouvre le
+volume qu'ensuite. Aucun chemin écrivant n'appelle plus `openOpfsVolume` directement.
+
+C'est ce qui donne leur portée aux gestes 4 et 7. Une restauration interrompue — onglet fermé, quota
+atteint, support perdu — laisse une cible sans voisin ; le boot suivant est refusé par
+`VAULT_MANIFEST_UNIDENTIFIED` **avant** que v86 ne démarre et que Rails ne monte un système de
+fichiers tronqué. `SEC-UPDATE-001` cesse d'être une règle sans appelant : elle avait un énoncé
+depuis #10, il lui manquait ce point de passage et le code qui **écrit** le manifeste.
+
+En corollaire, toute création de volume l'inscrit : la préparation d'un volume à partir de l'image
+de référence écrit son manifeste **après** avoir écrit et flushé le disque. Un volume à moitié
+préparé est donc, lui aussi, non identifié.
+
+**Politique de transition, explicite : il n'y en a pas.** Un volume sans manifeste est refusé en
+écriture, sans période de tolérance et sans manifeste fabriqué à la volée — inventer une identité
+pour un volume qu'on ne connaît pas serait précisément l'écriture non identifiée que l'invariant
+refuse. Aucun format n'ayant été publié (série `0.x`, `docs/release-policy.md`), aucun volume
+d'utilisateur n'est concerné ; les volumes que le dépôt fabrique lui-même reçoivent leur manifeste à
+la création. Si un volume antérieur devait être récupéré, le chemin est l'export puis la
+restauration, non l'assouplissement de la règle.
 
 ### Écraser exige un consentement ; retailler est toujours refusé
 
 Une cible non vide est **refusée par défaut** (`VAULT_IMPORT_TARGET_NOT_EMPTY`). L'appelant peut
 consentir explicitement (`overwrite`), et le consentement est inscrit dans le compte rendu.
+
+**Reprendre une restauration interrompue exige donc un consentement**, et c'est voulu. Une cible
+interrompue est pleine d'octets partiels et dépourvue de manifeste : la restauration la voit occupée
+(`identified: false` dans le contexte du refus) et s'arrête. Elle ne déduit pas qu'un volume occupé
+mais non identifié est un rebut — cette déduction serait une licence d'écraser, et c'est justement
+ce que l'exigence de consentement retire au produit. Le refus **nomme** l'état, il ne le cache pas :
+`identified: false` dit à l'exploitant que la cible n'est plus valide et que la reprise est sûre.
+C'est le cas de reprise le plus probable, et il est éprouvé en unitaire.
 
 Un volume existant n'est en revanche **jamais retaillé**, consentement ou non
 (`VAULT_IMPORT_GEOMETRY_MISMATCH`) : #6 tient la géométrie pour immuable — « un volume existant
@@ -73,16 +116,33 @@ l'exige déjà de ses procédures de récupération.
 
 ### L'espace est réservé avant la mutation, et l'inconnu n'est pas zéro
 
-La restauration branche la couche budget de #9 : `reserve(volumeSize)` est appelée **avant** le
-premier octet écrit. Un espace estimé insuffisant est un refus typé
-(`VAULT_IMPORT_SPACE_INSUFFICIENT`) qui porte le `BudgetDiagnostic` de #9 — donc son remède, «
-libérer de la place », et non un remède inventé. Une **estimation indisponible** reste l'état
-`unknown` de #9 : la restauration se poursuit et rend le diagnostic. Traiter l'inconnu comme une
-capacité nulle bloquerait à tort un support parfaitement sain.
+La restauration branche la couche budget de #9 : la réservation est demandée **avant** le premier
+octet écrit, et porte sur le besoin **net** — écraser sur place un volume de même géométrie ne
+consomme pas un octet de plus, et réclamer la taille totale ferait refuser, pour espace insuffisant,
+une restauration qui n'en demande aucun. Un refus faux est aussi grave qu'une acceptation fausse.
+
+Un espace estimé insuffisant est un refus typé (`VAULT_IMPORT_SPACE_INSUFFICIENT`) qui porte le
+`BudgetDiagnostic` de #9 — donc son remède, « libérer de la place », et non un remède inventé. Une
+**estimation indisponible** reste l'état `unknown` de #9 : la restauration se poursuit et rend le
+diagnostic. Traiter l'inconnu comme une capacité nulle bloquerait à tort un support parfaitement
+sain.
+
+### La compatibilité et l'algorithme sont contrôlés d'office, jamais sur demande
+
+La vérification de l'archive (geste 1) applique `assertReadable` de #10 **par défaut**, avec ou sans
+attentes fournies : sans attente, la plage de formats de ce runtime s'applique déjà. Un contrôle qui
+ne s'exécute que si l'appelant pense à le demander n'est pas un contrôle. La dérogation existe pour
+un outil de **diagnostic** — lire un conteneur qu'on ne saurait pas ouvrir en écriture — mais elle
+doit être demandée nommément (`enforceCompatibility: false`).
+
+De même, l'algorithme d'empreinte est **épinglé** à `sha-256`, à la création du manifeste comme à la
+relecture d'une archive. Le dépôt ne sait calculer que celui-là ; accepter une autre étiquette la
+rendrait persistante sans qu'aucun code ne l'honore — un manifeste affirmerait « sha-1 » pendant que
+la vérification comparerait un SHA-256. Un second algorithme exigera une version de format.
 
 ### Re-vérifier, c'est RELIRE le support
 
-Le geste 5 ne rejoue pas l'empreinte des octets qu'on vient d'écrire : il les **relit depuis le
+Le geste 6 ne rejoue pas l'empreinte des octets qu'on vient d'écrire : il les **relit depuis le
 support**, bloc par bloc, et recalcule. Écrire n'est pas persister ; c'est exactement la distinction
 que `SEC-DURABLE-001` et la barrière de #14 posent déjà. Une relecture divergente est
 `VAULT_IMPORT_VERIFICATION_FAILED`, et le manifeste n'est jamais inscrit.
@@ -104,6 +164,28 @@ L'exception est bornée et assumée — le Worker remet un `File` en **lecture s
 l'**archive** et non le volume, et le handle exclusif ne quitte jamais le Worker. Elle est inscrite
 dans `SECURITY.md` sous `SEC-ORIGIN-001`. L'alternative — que la page ouvre elle-même OPFS — serait,
 elle, une véritable brèche.
+
+Et « l'archive, jamais le volume » est **contraint par le code**, non par une convention de nom : le
+Worker lit les huit premiers octets du fichier demandé et exige le marqueur `RBVAULT1` de l'ADR 0008
+avant de remettre quoi que ce soit. Un nom peut mentir ; un marqueur de contenu, non. Demander le
+fichier d'un volume est refusé par `VAULT_ARCHIVE_MALFORMED`.
+
+## Ce que le manifeste inscrit atteste — et ce qu'il n'atteste pas
+
+Le manifeste écrit au geste 7 porte, dans `identity.digest`, l'empreinte du contenu **tel qu'il
+vient d'être restauré**. Dès la première écriture du guest — le boot suivant, la première requête
+Rails — cette empreinte cesse de décrire le volume courant, et **rien ne l'invalide**. Ce n'est pas
+un oubli : c'est la sémantique retenue, et elle doit être dite plutôt que découverte.
+
+- `identity.digest` atteste l'**état restauré**, c'est-à-dire la provenance : « ce volume vient de
+  cette archive-là ». Il n'atteste pas l'état courant.
+- `assertVolumeWritable` (#10) ne le compare à rien : il juge le format, le runtime et l'identité de
+  l'application, jamais le contenu. Un volume mutable dont l'empreinte serait vérifiée à chaque
+  ouverture ne pourrait jamais être écrit.
+- Toute évolution qui le comparerait au contenu — vérification d'intégrité au montage, détection de
+  corruption — serait un **changement de contrat**, à décider par un nouvel ADR, et supposerait
+  d'abord un moyen de le mettre à jour à chaque barrière. C'est le terrain de #16 (générations) et
+  du jalon 4 (blocs authentifiés), pas celui de la restauration.
 
 ## Ce qui est explicitement réservé
 
@@ -146,16 +228,28 @@ transportable (`code`, message français, contexte, `toJSON`), dans `src/vm/impo
 
 ## Preuves
 
-- `tests/unit/vm-volume-import.test.mjs` (rattaché à `npm run check`) : l'ordre des six gestes,
+- `tests/unit/vm-volume-import.test.mjs` (rattaché à `npm run check`) : l'ordre des sept gestes,
   l'absence totale de mutation sur archive altérée ou tronquée, le refus de cible non vide, le
-  diagnostic de #9 sur espace insuffisant, l'estimation inconnue qui ne bloque pas, la géométrie
-  refusée, la relecture divergente qui laisse le volume non identifié, la `ManifestError` de #10
-  propagée telle quelle, le streaming borné et l'idempotence.
+  diagnostic de #9 sur espace insuffisant, la réservation **nette** sur écrasement, l'estimation
+  inconnue qui ne bloque pas, la géométrie refusée, la relecture divergente qui laisse le volume non
+  identifié, la `ManifestError` de #10 propagée telle quelle, le streaming borné, l'idempotence, le
+  suffixe réservé, le voisin illisible refusé sans être supprimé, la compatibilité contrôlée par
+  défaut — et surtout la **défaillance en cours de restauration**, injectée aux quatre points de
+  rupture (ouverture, écriture du troisième bloc via le `FaultPlan` du dépôt, barrière, inscription
+  du manifeste) : à chaque fois, le handle est rendu, le manifeste reste absent, rien n'est déclaré
+  valide.
+- `tests/unit/vm-opfs-volume-open.test.mjs` (rattaché à `npm run check`) : l'ouverture en écriture
+  refuse un volume sans manifeste, d'une autre application, au voisin illisible ou démesuré — et le
+  refus **précède** l'ouverture, ce que le double mesure en comptant les ouvertures réellement
+  tentées.
 - `tests/e2e/restauration-inter-origine.spec.mjs` (job CI non bloquant `Reprise MVP`) : sur **deux
   origines réellement distinctes**, une mutation Rails sur A, un export, un transfert par le système
   de fichiers de l'hôte, un import sur B, un **boot à froid hors ligne** sur B et la vérification
   Rails de l'invariant — plus la preuve préalable que l'OPFS de B ignorait tout du volume de A, et
-  deux témoins négatifs (archive altérée, cible non vide).
+  quatre témoins négatifs : archive altérée refusée sans rien écrire, cible non vide refusée sans
+  toucher au volume valide, **manifeste voisin retiré → boot refusé** par
+  `VAULT_MANIFEST_UNIDENTIFIED`, et **extraction du `File` d'un volume refusée** par
+  `VAULT_ARCHIVE_MALFORMED`.
 
 La preuve rouge/verte figure dans la description de la pull request.
 

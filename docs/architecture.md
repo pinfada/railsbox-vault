@@ -522,32 +522,48 @@ un **téléchargement** vers le système de fichiers de l'utilisateur et entre p
 fichier** ; le `File` rendu par OPFS est adossé au support, donc lu par tranches, jamais tenu en
 mémoire.
 
-La restauration exécute **six gestes, dans cet ordre**, et l'ordre fait partie du contrat :
+La restauration exécute **sept gestes, dans cet ordre**, et l'ordre fait partie du contrat :
 
 | #   | Geste           | Ce qu'il garantit                                                                           |
 | --- | --------------- | ------------------------------------------------------------------------------------------- |
 | 1   | **Vérifier**    | l'archive entière est validée (empreinte #11 + manifeste #10) **sans écrire un seul octet** |
 | 2   | **Refuser**     | cible occupée, géométrie inconciliable, espace insuffisant (#9) — avant toute mutation      |
-| 3   | **Révoquer**    | le manifeste de la cible est retiré : le volume cesse d'être présenté comme valide          |
-| 4   | **Restaurer**   | le contenu est recopié octet pour octet, en flux (≤ 64 Mio), puis une barrière est franchie |
-| 5   | **Re-vérifier** | le volume est **relu depuis le support** et son empreinte confrontée à celle de l'archive   |
-| 6   | **Inscrire**    | le manifeste est écrit : seul ce dernier geste rend le volume présentable comme valide      |
+| 3   | **Ouvrir**      | le handle exclusif est pris ; une ouverture ratée ne doit rien avoir détruit                |
+| 4   | **Révoquer**    | le manifeste de la cible est retiré : le volume cesse d'être présenté comme valide          |
+| 5   | **Restaurer**   | le contenu est recopié octet pour octet, en flux (≤ 64 Mio), puis une barrière est franchie |
+| 6   | **Re-vérifier** | le volume est **relu depuis le support** et son empreinte confrontée à celle de l'archive   |
+| 7   | **Inscrire**    | le manifeste est écrit : seul ce dernier geste rend le volume présentable comme valide      |
 
 Il n'existe donc **pas de restauration partielle silencieuse** : soit le volume est complet, relu et
-identifié, soit l'échec est typé et le volume reste **non identifié**.
+identifié, soit l'échec est typé et le volume reste **non identifié**. L'ouverture précède la
+révocation parce qu'elle peut échouer pour des raisons étrangères à la restauration — un autre
+onglet détient l'exclusivité (#8), le support a perdu le handle, le quota refuse l'allocation — et
+qu'un volume **intact** ne doit pas devenir inutilisable par la faute du produit. Après l'ouverture,
+la révocation précède impérativement le premier octet écrit.
 
 **Le manifeste est un fichier voisin, et il porte la validité.** Il est écrit sous
 `<volume>.manifest` dans le même répertoire OPFS — jamais en tête du volume, dont les octets sont
-servis tels quels à v86 et dont un en-tête décalerait le système de fichiers du guest. C'est ce
-voisin qui donne leur sens aux gestes 3 et 6 : un volume sans lui est un volume non identifié, que
-`assertVolumeWritable` (#10) refuse déjà par `VAULT_MANIFEST_UNIDENTIFIED`. Une restauration
-interrompue ne peut pas se faire passer pour un volume valide, sans qu'aucun mécanisme de détection
-nouveau ait été inventé.
+servis tels quels à v86 et dont un en-tête décalerait le système de fichiers du guest. Le suffixe
+est **réservé** par la frontière de nommage, et la longueur maximale d'un nom de volume réduite
+d'autant : aucun volume ne peut porter le nom d'un manifeste, et un volume créable est toujours
+restaurable.
+
+**L'ouverture en écriture EXIGE ce voisin** (`src/vm/opfs-volume-open.mjs`, `SEC-UPDATE-001`).
+`openVolumeForWrite` est le point de passage unique : il lit le manifeste voisin, le soumet à
+`assertVolumeWritable` (#10) et n'ouvre le volume qu'ensuite ; aucun chemin écrivant n'appelle plus
+`openOpfsVolume` directement. C'est ce qui donne leur portée aux gestes 4 et 7 — une restauration
+interrompue laisse une cible sans voisin, et le boot suivant est refusé par
+`VAULT_MANIFEST_UNIDENTIFIED` **avant** que le guest ne monte un système de fichiers tronqué. En
+corollaire, toute création de volume inscrit son manifeste en dernier geste. Il n'existe **aucune
+période de transition** : un volume sans manifeste est refusé, jamais complété par une identité
+devinée.
 
 **Écraser exige un consentement ; retailler est toujours refusé.** Une cible non vide est refusée
 par défaut ; l'appelant peut consentir explicitement, et ce consentement est inscrit dans le compte
 rendu. Un volume existant n'est en revanche jamais retaillé, consentement ou non — #6 tient la
-géométrie pour immuable. La restauration ne supprime jamais de données de sa propre initiative.
+géométrie pour immuable. La restauration ne supprime jamais de données de sa propre initiative : un
+voisin présent mais non analysable comme manifeste fait **refuser** la restauration, il n'est pas
+effacé.
 
 Les refus forment une famille **distincte** du stockage (#6), du bail (#8), du manifeste (#10) et de
 l'archive (#11), avec la même forme transportable, dans `src/vm/import-errors.mjs`. Les refus de #10
@@ -559,6 +575,13 @@ et #11 remontent, eux, **tels quels** :
 | `VAULT_IMPORT_SPACE_INSUFFICIENT`  | espace estimé inférieur au volume : refusé avant toute mutation     | **#12** |
 | `VAULT_IMPORT_GEOMETRY_MISMATCH`   | la cible n'a pas la géométrie de l'archive : jamais retaillée       | **#12** |
 | `VAULT_IMPORT_VERIFICATION_FAILED` | le volume relu ne rend pas l'empreinte de l'archive : non identifié | **#12** |
+
+**Ce que le manifeste inscrit atteste.** `identity.digest` porte l'empreinte du contenu **tel qu'il
+vient d'être restauré** : il atteste la provenance (« ce volume vient de cette archive-là »), pas
+l'état courant. Dès la première écriture du guest il ne décrit plus le volume, et rien ne
+l'invalide. `assertVolumeWritable` ne le compare à rien — il juge le format, le runtime et
+l'identité de l'application, jamais le contenu. Toute évolution qui le comparerait serait un
+changement de contrat, à décider par ADR (voir ADR 0009).
 
 Ce que la restauration v1 **ne** couvre pas : la **migration** d'un format antérieur (#13 — un tel
 manifeste est restaurable mais son écriture reste refusée par `VAULT_MANIFEST_MIGRATION_REQUIRED`),

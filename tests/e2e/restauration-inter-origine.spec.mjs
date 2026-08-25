@@ -151,6 +151,9 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
     cmdline: manifeste.boot.cmdline,
     memoryBytes: manifeste.boot.memoryMiB * 1024 * 1024,
     runtime,
+    // Identités exigées à l'ouverture en écriture (`SEC-UPDATE-001`) : depuis #12, un volume ne
+    // s'ouvre pour le guest que s'il porte un manifeste voisin compatible.
+    manifest: descripteurManifeste,
     expected: { recordId: contrat.record.id, attachmentSha256: contrat.attachment.sha256 },
     bootTimeoutMs: BUDGET_BOOT_MS,
   };
@@ -189,6 +192,7 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
     volume: VOLUME_A,
     appDiskBytes,
     appDiskUrl,
+    manifest: descripteurManifeste,
   });
   await session.page.close();
   expect(prepare.bytesWritten, "le disque applicatif entier est écrit dans OPFS").toBe(
@@ -228,6 +232,8 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
     session.page.evaluate((nom) => globalThis.bancReprise.telecharger(nom), ARCHIVE),
   ]);
   await telechargement.saveAs(cheminArchive);
+  // Le transfert est fini : l'URL objet est libérée par un geste, pas par un délai deviné.
+  expect(await session.page.evaluate(() => globalThis.bancReprise.libererArchive())).toBe(true);
   await session.page.close();
   expect(statSync(cheminArchive).size, "l'archive transférée est complète").toBe(
     exporte.archiveLength,

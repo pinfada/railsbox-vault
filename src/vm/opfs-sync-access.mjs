@@ -16,8 +16,27 @@ import { STORAGE_ERROR_CODES, StorageError } from "./storage-errors.mjs";
 /** Répertoire OPFS où vivent les volumes. Isolé pour ne pas heurter d'autres usages du stockage. */
 export const VOLUME_DIRECTORY = "vault-volumes";
 
-/** Noms de volume admis : pas de séparateur, pas de remontée de chemin, longueur bornée. */
-const VOLUME_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+/**
+ * Suffixe RÉSERVÉ : il désigne le manifeste posé à côté d'un volume (#12). Un volume ne peut pas le
+ * porter, sinon restaurer « donnees » détruirait un volume légitime nommé « donnees.manifest ».
+ */
+export const MANIFEST_SIDECAR_SUFFIX = ".manifest";
+
+/**
+ * Longueur maximale d'un NOM DE FICHIER dans le répertoire des volumes. C'est la vraie borne du
+ * support ; elle doit accueillir le nom du manifeste voisin, pas seulement celui du volume.
+ */
+export const MAX_STORAGE_NAME = 64;
+
+/**
+ * Longueur maximale d'un NOM DE VOLUME : la borne du support, moins la place du suffixe réservé.
+ * Un volume plus long serait créable et exportable, puis IRRESTAURABLE faute de place pour son
+ * manifeste — une impasse découverte trop tard. La frontière la refuse d'emblée.
+ */
+export const MAX_VOLUME_NAME = MAX_STORAGE_NAME - MANIFEST_SIDECAR_SUFFIX.length;
+
+/** Noms de fichier admis dans le répertoire des volumes : ni séparateur, ni remontée de chemin. */
+const STORAGE_NAME = new RegExp(`^[a-z0-9][a-z0-9._-]{0,${MAX_STORAGE_NAME - 1}}$`);
 
 function unsupported(message, context) {
   return new StorageError(STORAGE_ERROR_CODES.unsupported, message, context);
@@ -34,14 +53,49 @@ function assertDedicatedWorker() {
   }
 }
 
-/** Valide le nom à la frontière : il devient un nom de fichier réel. */
-export function assertVolumeName(name) {
-  if (typeof name !== "string" || !VOLUME_NAME.test(name)) {
+/**
+ * Valide un nom de FICHIER du répertoire des volumes : il devient un nom réel sur le support. Les
+ * portes ci-dessous l'emploient parce qu'elles manipulent aussi bien un volume que son manifeste
+ * voisin ; le nom de VOLUME, lui, est plus étroit — voir `assertVolumeName`.
+ */
+export function assertStorageName(name) {
+  if (typeof name !== "string" || !STORAGE_NAME.test(name)) {
     throw new TypeError(
-      `Nom de volume invalide : ${JSON.stringify(name)}. Attendu : ${VOLUME_NAME.source}`,
+      `Nom de fichier de volume invalide : ${JSON.stringify(name)}. Attendu : ${STORAGE_NAME.source}`,
     );
   }
   return name;
+}
+
+/**
+ * Valide un nom de VOLUME. En plus de la frontière de nommage, il refuse le suffixe réservé au
+ * manifeste et laisse la place à celui-ci : deux impasses fermées à la création plutôt qu'à la
+ * restauration.
+ */
+export function assertVolumeName(name) {
+  assertStorageName(name);
+  if (name.endsWith(MANIFEST_SIDECAR_SUFFIX)) {
+    throw new TypeError(
+      `Nom de volume invalide : ${JSON.stringify(name)}. Le suffixe « ${MANIFEST_SIDECAR_SUFFIX} » est réservé au manifeste d'un volume.`,
+    );
+  }
+  if (name.length > MAX_VOLUME_NAME) {
+    throw new TypeError(
+      `Nom de volume trop long : ${JSON.stringify(name)} (${name.length} > ${MAX_VOLUME_NAME}). Il doit rester de la place pour son manifeste voisin.`,
+    );
+  }
+  return name;
+}
+
+/**
+ * Nom du manifeste posé À CÔTÉ d'un volume. Il vit dans le même répertoire et porte le suffixe
+ * réservé ; comme `assertVolumeName` borne déjà la longueur du volume, le nom obtenu tient toujours
+ * dans la frontière de nommage — un volume créable est toujours un volume restaurable.
+ * @param {string} volume
+ */
+export function manifestSidecarName(volume) {
+  assertVolumeName(volume);
+  return `${volume}${MANIFEST_SIDECAR_SUFFIX}`;
 }
 
 async function volumeDirectory({ create }) {
@@ -66,7 +120,7 @@ async function volumeDirectory({ create }) {
  */
 export async function openOpfsSyncAccess(name) {
   assertDedicatedWorker();
-  assertVolumeName(name);
+  assertStorageName(name);
 
   let file;
   try {
@@ -101,16 +155,18 @@ export async function openOpfsSyncAccess(name) {
  */
 export async function statOpfsVolume(name) {
   assertDedicatedWorker();
-  assertVolumeName(name);
+  assertStorageName(name);
 
   try {
-    const directory = await volumeDirectory({ create: true });
+    // `create: false` jusqu'au bout : observer ne doit rien fabriquer, pas même le répertoire.
+    const directory = await volumeDirectory({ create: false });
     const file = await directory.getFileHandle(name, { create: false });
     const { size } = await file.getFile();
     return { present: true, size };
   } catch (cause) {
-    // Un volume absent n'est pas un échec : c'est la réponse « non ». Toute AUTRE cause est
-    // remontée typée — un support qui refuse de répondre ne doit pas passer pour un support vide.
+    // Un volume absent — ou un répertoire qui n'existe pas encore — n'est pas un échec : c'est la
+    // réponse « non ». Toute AUTRE cause est remontée typée : un support qui refuse de répondre ne
+    // doit pas passer pour un support vide.
     if (cause?.name === "NotFoundError") return { present: false, size: 0 };
     throw toStorageError(cause, { operation: "stat", volume: name });
   }
@@ -130,10 +186,10 @@ export async function statOpfsVolume(name) {
  */
 export async function openOpfsVolumeFile(name) {
   assertDedicatedWorker();
-  assertVolumeName(name);
+  assertStorageName(name);
 
   try {
-    const directory = await volumeDirectory({ create: true });
+    const directory = await volumeDirectory({ create: false });
     const file = await directory.getFileHandle(name, { create: false });
     return await file.getFile();
   } catch (cause) {
@@ -149,10 +205,10 @@ export async function openOpfsVolumeFile(name) {
  */
 export async function removeOpfsVolume(name) {
   assertDedicatedWorker();
-  assertVolumeName(name);
+  assertStorageName(name);
 
   try {
-    const directory = await volumeDirectory({ create: true });
+    const directory = await volumeDirectory({ create: false });
     await directory.removeEntry(name);
     return true;
   } catch (cause) {
