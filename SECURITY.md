@@ -117,7 +117,21 @@ et tester.
   une contrainte du code**. Fermer `openOpfsVolume` derrière un module privé reste du travail
   découvert. Preuves : `tests/unit/vm-opfs-volume-open.test.mjs` (le refus précède l'ouverture) et
   un témoin Bout en bout où le manifeste d'un volume restauré est retiré, puis le boot refusé
-  (`tests/e2e/restauration-inter-origine.spec.mjs`) ;
+  (`tests/e2e/restauration-inter-origine.spec.mjs`). **Depuis #13**, un troisième état est couvert
+  par le même contrôle : un volume dont la **migration de format** a été interrompue. La migration
+  révoque le manifeste avant de muter et ne le réinscrit qu'après l'avoir relu depuis le support ;
+  entre les deux, le volume est **non identifié** et le boot le refuse par
+  `VAULT_MANIFEST_UNIDENTIFIED` avant même que v86 ne soit construit — une migration inachevée ne
+  peut pas se faire passer pour un volume valide. Le **journal de reprise** `<volume>.migration`,
+  nouveau voisin persistant, porte le manifeste source et la preuve de sauvegarde retenue ; il n'est
+  **ni chiffré ni authentifié** (jalon 4, comme le manifeste), si bien qu'un support hostile
+  pourrait faire reprendre une migration depuis une identité forgée : la confiance repose ici encore
+  sur le partitionnement OPFS par origine (ADR 0002). Son suffixe est **réservé** — aucun volume ne
+  peut le porter — pour que migrer un volume ne puisse jamais détruire un volume légitime homonyme.
+  Preuves : `tests/unit/vm-volume-migration.test.mjs` (cinq points de rupture, volume jamais valide
+  à moitié) et un témoin Bout en bout où la migration est coupée après la révocation, puis le boot
+  refusé (`tests/e2e/migration-volume-versionne.spec.mjs`). Décision :
+  [ADR 0011](docs/decisions/0011-migration-de-format-et-reprise.md) ;
 - `SEC-RECOVERY-001` — chaque moyen de récupération annoncé possède un test de succès, de révocation
   et de perte définitive.
 

@@ -428,19 +428,28 @@ surnuméraires (compatibilité ascendante) mais exige le préambule figé `magic
 La règle de compatibilité distingue **lecture seule tolérée** et **écriture refusée**, sur deux axes
 indépendants :
 
-| Situation                                               | Lecture | Écriture | Code de refus                       |
-| ------------------------------------------------------- | :-----: | :------: | ----------------------------------- |
-| format plus récent que le format courant du runtime     | refusée | refusée  | `VAULT_MANIFEST_FORMAT_TOO_NEW`     |
-| format sous le plus ancien format lisible               | refusée | refusée  | `VAULT_MANIFEST_FORMAT_TOO_OLD`     |
-| application (`app.id`) différente                       | refusée | refusée  | `VAULT_MANIFEST_IDENTITY_MISMATCH`  |
-| format lisible mais antérieur au format courant         | tolérée | refusée  | `VAULT_MANIFEST_MIGRATION_REQUIRED` |
-| runtime majeur du volume > runtime en cours (downgrade) | tolérée | refusée  | `VAULT_MANIFEST_RUNTIME_DOWNGRADE`  |
+| Situation                                           | Lecture | Écriture | Code de refus                       |
+| --------------------------------------------------- | :-----: | :------: | ----------------------------------- |
+| format plus récent que le format courant du runtime | refusée | refusée  | `VAULT_MANIFEST_FORMAT_TOO_NEW`     |
+| format sous le plus ancien format lisible           | refusée | refusée  | `VAULT_MANIFEST_FORMAT_TOO_OLD`     |
+| application (`app.id`) différente                   | refusée | refusée  | `VAULT_MANIFEST_IDENTITY_MISMATCH`  |
+| format lisible mais antérieur au format courant     | tolérée | refusée  | `VAULT_MANIFEST_MIGRATION_REQUIRED` |
+| runtime en cours antérieur à l'écrivain admis       | tolérée | refusée  | `VAULT_MANIFEST_RUNTIME_DOWNGRADE`  |
 
 Le **format futur** est refusé en lecture comme en écriture : sa disposition n'est pas interprétable
-en confiance. Le **downgrade dangereux** — un volume écrit par un runtime de version majeure
-supérieure — est refusé en écriture seule ; la lecture reste tolérée pour le diagnostic et l'export
-(#11). Seule `app.id` doit correspondre : la version de l'application peut différer, ses migrations
-métier restant distinctes de celles du format Vault.
+en confiance. Le **downgrade dangereux** est refusé en écriture seule ; la lecture reste tolérée
+pour le diagnostic et l'export (#11). Seule `app.id` doit correspondre : la version de l'application
+peut différer, ses migrations métier restant distinctes de celles du format Vault.
+
+**Ce que « downgrade » veut dire dépend du format**, et chaque format est jugé par SA règle. À
+partir de **v2** (#13), le volume **déclare** `runtime.minWriter` et le refus est une comparaison :
+le runtime en cours est-il antérieur à l'écrivain le plus ancien que le volume admet ? Un manifeste
+**v1** ne porte pas ce champ et conserve la règle v1 — « majeur du volume > majeur en cours » —, au
+lieu de recevoir d'office une valeur que son auteur n'a jamais déclarée ; en pratique elle ne
+s'applique qu'à un runtime dont le format courant est 1, sinon `MIGRATION_REQUIRED` refuse
+l'écriture plus tôt. Le détail et la raison du changement figurent dans
+l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md) et au § « Migration de format et
+reprise ».
 
 **Vérification avant écriture (`SEC-UPDATE-001`).**
 `assertVolumeWritable({ manifestBytes, expectations })` est le chemin d'ouverture en écriture : un
@@ -463,11 +472,12 @@ Les erreurs du manifeste forment une famille **distincte** des états de stockag
 | `VAULT_MANIFEST_IDENTITY_MISMATCH`  | l'application en cours ne possède pas ce volume                | **#10** |
 | `VAULT_MANIFEST_UNIDENTIFIED`       | ouverture en écriture d'un volume sans manifeste connu         | **#10** |
 
-Ce que le manifeste v1 **ne** couvre pas, et qu'il ne faut pas en déduire : l'empreinte du
-**contenu** du volume et l'export portable (#11) — `identity.digest` existe et est validé
-structurellement mais n'est ni calculé ni confronté au contenu —, la restauration inter-origine
-(#12), le détail des migrations et le copy-on-write (#13), et l'authentification ou le chiffrement
-du manifeste lui-même.
+Ce que le manifeste **ne** couvre pas, et qu'il ne faut pas en déduire : la **génération
+copy-on-write** et l'atomicité transactionnelle (#16), et l'**authentification** ou le
+**chiffrement** du manifeste lui-même (jalon 4). L'empreinte du contenu et l'export portable sont
+venus avec #11 — `identity.digest` atteste la provenance, pas l'état courant (ADR 0009) —, la
+restauration inter-origine avec #12, et le détail des migrations avec #13 (§ « Migration de format
+et reprise »).
 
 ## Export portable et vérifiable
 
@@ -616,6 +626,68 @@ manifeste est restaurable mais son écriture reste refusée par `VAULT_MANIFEST_
 le **déchiffrement** et l'**authentification** de l'archive (jalon 4 : l'intégrité est prouvée,
 l'authenticité non), l'atomicité d'une génération (#16), le transport de l'archive entre origines —
 qui reste un geste de l'utilisateur — et une interface produit de restauration.
+
+## Migration de format et reprise
+
+L'issue #13 (`VAULT-COMPAT-001`) donne enfin une **sortie** au refus posé par #10 : jusqu'ici un
+volume d'un format antérieur était lisible mais définitivement non inscriptible. La décision
+complète est l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md).
+
+**Le format de volume passe à v2.** Il ajoute un champ obligatoire, `runtime.minWriter` : la version
+de runtime la plus ancienne autorisée à écrire ce volume, **déclarée** par le runtime qui l'écrit.
+v1 la devinait à partir du seul majeur SemVer — une heuristique que l'ADR 0007 signalait déjà comme
+à revoir et qui, en série `0.x`, ne peut **rien** refuser, puisque `docs/release-policy.md` y
+exprime une rupture d'API runtime par un incrément du **mineur** : les deux majeurs valent 0 et la
+comparaison est toujours fausse. Chaque format est jugé par SA règle — un manifeste v1 ne reçoit pas
+d'office une valeur qu'il n'a jamais portée — et `minReadable` reste 1 : un volume v1 demeure
+lisible, donc exportable, restaurable et migrable ; seule son écriture reste refusée par
+`VAULT_MANIFEST_MIGRATION_REQUIRED`.
+
+**La migration** (`src/vm/volume-migration.mjs`, module pur ; cible OPFS
+`src/vm/opfs-migration-target.mjs`) exécute dix gestes dont l'ordre est le contrat : lire,
+planifier, exiger une preuve, ouvrir, vérifier la sauvegarde, journaliser, révoquer, appliquer et
+flusher, inscrire puis relire, retirer le journal. Quatre propriétés en découlent :
+
+- **la chaîne va d'un format au SUIVANT**, une étape enregistrée à la fois. Un saut
+  (`VAULT_MIGRATION_NO_PATH`) et un retour en arrière (`VAULT_MIGRATION_DOWNGRADE_REFUSED`) sont des
+  refus typés. Un contrôle au chargement du module refuse une étape non contiguë ;
+- **« export de sauvegarde obligatoire avant migration irréversible » est un contrôle**, pas une
+  phrase : l'archive fournie est relue par #11 et son empreinte confrontée à celle du volume relu
+  depuis le support, dans son état courant. À défaut, un consentement **nommé**, inscrit au journal.
+  Sans l'un ni l'autre, `VAULT_MIGRATION_BACKUP_REQUIRED` tombe et la cible n'est **même pas
+  ouverte** ;
+- **une migration interrompue laisse un volume NON IDENTIFIÉ** que `openVolumeForWrite` refuse
+  (`VAULT_MANIFEST_UNIDENTIFIED`), et un journal voisin `<volume>.migration` qui porte le manifeste
+  **source**, la chaîne visée et la preuve retenue. La reprise repart de là, **sans redemander
+  l'archive** — l'exiger de nouveau ferait d'une interruption une impasse. Un journal illisible fait
+  refuser, jamais deviner ni supprimer ; un journal resté derrière un manifeste déjà migré est
+  simplement retiré, ce qui rend la migration idempotente ;
+- **le manifeste n'est déclaré valide qu'après avoir été RELU** depuis le support ; une relecture
+  divergente le retire (`VAULT_MIGRATION_VERIFICATION_FAILED`).
+
+Le suffixe `.migration` rejoint `.manifest` parmi les voisins **réservés** par la frontière de
+nommage : aucun volume ne peut le porter, et la longueur maximale d'un nom de volume se règle sur le
+plus long des voisins — un volume créable reste un volume migrable.
+
+Les erreurs de migration forment une famille distincte (`src/vm/migration-errors.mjs`), avec la même
+forme transportable que les autres :
+
+| Code                                  | État                                                              | Origine |
+| ------------------------------------- | ----------------------------------------------------------------- | ------- |
+| `VAULT_MIGRATION_NO_PATH`             | aucune étape enregistrée ne relie le format du volume au demandé  | **#13** |
+| `VAULT_MIGRATION_DOWNGRADE_REFUSED`   | format demandé antérieur : une migration ne descend jamais        | **#13** |
+| `VAULT_MIGRATION_BACKUP_REQUIRED`     | ni sauvegarde vérifiée, ni consentement nommé : rien n'est ouvert | **#13** |
+| `VAULT_MIGRATION_BACKUP_MISMATCH`     | l'archive ne décrit pas ce volume dans son état courant           | **#13** |
+| `VAULT_MIGRATION_JOURNAL_MALFORMED`   | journal présent mais illisible : jamais deviné, jamais supprimé   | **#13** |
+| `VAULT_MIGRATION_VERIFICATION_FAILED` | manifeste relu divergent : le volume reste non identifié          | **#13** |
+
+Ce que la migration v2 **ne** couvre pas : la **génération copy-on-write** et l'atomicité
+transactionnelle (#16 — entre la révocation et l'inscription, l'état est sûr mais pas révocable en
+un geste), le **chiffrement** et l'**authentification** du manifeste comme du journal (jalon 4), et
+les **vecteurs de test par version publiée** qu'exige `docs/release-policy.md`, qui supposent qu'une
+version le soit. Le témoin de refus par une « ancienne version » simule celle-ci par ses attentes
+déclarées, non par un binaire antérieur : la limite est écrite dans l'ADR 0011 et dans
+`docs/testing.md`.
 
 ## Ordre des preuves
 

@@ -2,27 +2,27 @@
 
 ## Suites disponibles
 
-| Commande                       | Portée                                                                      |                                 Coût attendu |
-| ------------------------------ | --------------------------------------------------------------------------- | -------------------------------------------: |
-| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                   |                                     secondes |
-| `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontière d'origine sous Chromium  |                                environ 1 min |
-| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                               |                                environ 1 min |
-| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                   |                                environ 2 min |
-| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                         |              environ 20 s après installation |
-| `npm run test:vm`              | guest Linux réel écrivant sur les backends mémoire et OPFS (Chromium)       |                environ 1 min, **périodique** |
-| `npm run test:isolation`       | coût de l'isolation multi-origine sur le runtime v86, trois moteurs         |              environ 8 min, **à la demande** |
-| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker               | environ 1 min après la première construction |
-| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                          |   plus de 10 min, Docker et artefacts requis |
-| `npm run test:e2e`             | reprise après boot à froid, export vérifiable et restauration inter-origine |   plus de 20 min, Docker et artefacts requis |
-| `npm test`                     | suites unitaire et navigateur                                               |                                     secondes |
-| `npm run check`                | lint, format et toutes les suites actuelles                                 |             moins de 2 min hors installation |
+| Commande                       | Portée                                                                        |                                 Coût attendu |
+| ------------------------------ | ----------------------------------------------------------------------------- | -------------------------------------------: |
+| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                     |                                     secondes |
+| `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontière d'origine sous Chromium    |                                environ 1 min |
+| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                                 |                                environ 1 min |
+| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                     |                                environ 2 min |
+| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                           |              environ 20 s après installation |
+| `npm run test:vm`              | guest Linux réel écrivant sur les backends mémoire et OPFS (Chromium)         |                environ 1 min, **périodique** |
+| `npm run test:isolation`       | coût de l'isolation multi-origine sur le runtime v86, trois moteurs           |              environ 8 min, **à la demande** |
+| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker                 | environ 1 min après la première construction |
+| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                            |   plus de 10 min, Docker et artefacts requis |
+| `npm run test:e2e`             | reprise, export vérifiable, restauration inter-origine et migration de format |   plus de 20 min, Docker et artefacts requis |
+| `npm test`                     | suites unitaire et navigateur                                                 |                                     secondes |
+| `npm run check`                | lint, format et toutes les suites actuelles                                   |             moins de 2 min hors installation |
 
 La suite `test:e2e` porte depuis #7 le scénario de sortie du MVP (voir plus bas), auquel se sont
-ajoutés l'export vérifiable (#11) et la restauration inter-origine (#12). Depuis #12, sa
-configuration démarre **deux** serveurs sur deux origines distinctes : un import ne prouve rien tant
-qu'il peut relire le stockage qu'il vient d'écrire. La suite `test:resilience` sera ajoutée
-lorsqu'elle possédera un premier scénario réel : un script vide qui réussit ne constitue pas une
-preuve.
+ajoutés l'export vérifiable (#11), la restauration inter-origine (#12) et la migration de format
+avec sa reprise après interruption (#13). Depuis #12, sa configuration démarre **deux** serveurs sur
+deux origines distinctes : un import ne prouve rien tant qu'il peut relire le stockage qu'il vient
+d'écrire. La suite `test:resilience` sera ajoutée lorsqu'elle possédera un premier scénario réel :
+un script vide qui réussit ne constitue pas une preuve.
 
 ### Backend de blocs OPFS
 
@@ -215,9 +215,11 @@ des entrées invalides à la création, **sérialisation déterministe** (aller-
 octet et indépendance à l'ordre d'insertion des clés), **parse strict** d'entrées malformées vers
 une erreur typée (jamais un objet à moitié valide), tolérance des champs futurs, compatibilité
 acceptée, puis les **refus** exigés : format futur (lecture et écriture), format trop ancien,
-écriture d'un format antérieur (migration réservée à #13), **downgrade** de runtime majeur,
+écriture d'un format antérieur (dont #13 donne désormais la sortie), **downgrade** de runtime,
 application étrangère, et **écriture refusée sans identité connue** (`assertVolumeWritable`,
-`SEC-UPDATE-001`). La décision complète est l'[ADR 0007](decisions/0007-manifeste-de-volume.md).
+`SEC-UPDATE-001`). La décision complète est l'[ADR 0007](decisions/0007-manifeste-de-volume.md), que
+l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md) complète pour le format **v2** et sa
+règle de downgrade déclarée (§ « Migration de format et reprise »).
 
 Ce niveau suffit parce que le module ne dépend d'aucune capacité que seul un vrai support pourrait
 produire : contrairement au backend OPFS (#6), il n'a ni quota, ni handle, ni horloge à éprouver. Le
@@ -354,9 +356,103 @@ Les mesures — origines, empreintes, tailles de bloc, budget, durées — sont 
 
 Ce que la suite **n'affirme pas**, délibérément : la portabilité entre deux **appareils** ou deux
 systèmes d'exploitation (deux origines servies par le harnais prouvent le cloisonnement OPFS, qui
-est la propriété en jeu, pas un transport réseau) ; la **migration** d'un format antérieur (#13) ;
-l'**authenticité** de l'archive (jalon 4 : l'intégrité est prouvée, la signature non) ; et
-l'atomicité d'une génération sous écriture concurrente (#16).
+est la propriété en jeu, pas un transport réseau) ; la **migration** d'un format antérieur, qui a
+désormais sa propre suite (#13, § « Migration de format et reprise ») ; l'**authenticité** de
+l'archive (jalon 4 : l'intégrité est prouvée, la signature non) ; et l'atomicité d'une génération
+sous écriture concurrente (#16).
+
+Elle **n'est pas rattachée à `npm run check`** : elle exige les artefacts de l'image #5
+(`npm run image:build`, Docker) **et** ceux de v86 (`npm run vm:fetch`), puisqu'elle boote un guest.
+Elle tourne dans le job CI **non bloquant** `Reprise MVP` (`.github/workflows/reprise.yml`), qui
+couvre déjà `tests/e2e/**`.
+
+### Migration de format et reprise
+
+La migration de `VAULT-COMPAT-001` (#13) — `src/vm/volume-migration.mjs`, sa cible OPFS
+`src/vm/opfs-migration-target.mjs` et sa famille d'erreurs `src/vm/migration-errors.mjs` — est
+prouvée sur **deux** niveaux. La décision complète est
+l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md).
+
+| Niveau       | Fichier                                         | Support                   | Rattachement      |
+| ------------ | ----------------------------------------------- | ------------------------- | ----------------- |
+| unitaire     | `tests/unit/vm-volume-migration.test.mjs`       | doubles déterministes     | `npm run check`   |
+| unitaire     | `tests/unit/vm-volume-manifest.test.mjs`        | aucun                     | `npm run check`   |
+| Bout en bout | `tests/e2e/migration-volume-versionne.spec.mjs` | **OPFS** + image #5 + v86 | job `Reprise MVP` |
+
+**Le niveau unitaire éprouve l'ORDRE des gestes, qui est le contrat.** Une cible en mémoire compte
+chaque geste — inspections, ouvertures, fermetures, inscriptions de journal, révocations, commits —,
+ce qui permet d'affirmer non pas « la migration a échoué » mais « la cible n'a même pas été ouverte
+». Les épreuves couvrent : la chaîne d'un format au **suivant** et le refus d'un saut
+(`VAULT_MIGRATION_NO_PATH`) comme d'une descente (`VAULT_MIGRATION_DOWNGRADE_REFUSED`) ; le refus
+sans preuve **avant toute ouverture** (`VAULT_MIGRATION_BACKUP_REQUIRED`) ; la sauvegarde
+**vérifiée** et non annoncée — archive relue par #11, empreinte confrontée à celle du volume relu
+depuis le support, application et taille comparées — avec son refus
+(`VAULT_MIGRATION_BACKUP_MISMATCH`) ; une **lecture courte** pendant cette vérification qui ne rend
+jamais un verdict conforme ; le journal qui porte son marqueur, sa chaîne et la preuve retenue ; le
+journal **illisible refusé sans être supprimé** ; la reprise qui repart du manifeste **source** du
+journal **sans redemander la sauvegarde** ; le journal resté derrière un manifeste déjà migré,
+simplement retiré (idempotence) ; le manifeste **relu** divergent qui laisse le volume non identifié
+; et les refus de #10 propagés **tels quels** (volume sans manifeste, application étrangère, format
+futur).
+
+**Et surtout la DÉFAILLANCE EN COURS de migration**, qui est le cœur du contrat : une panne est
+injectée à chacun des **cinq** points de rupture — ouverture de la cible, inscription du journal de
+reprise, révocation du manifeste, barrière de durabilité, inscription du manifeste cible. À chaque
+fois la suite exige que le volume ne soit **jamais présenté comme valide à moitié** et que le handle
+exclusif ait été rendu.
+
+Côté format, `tests/unit/vm-volume-manifest.test.mjs` éprouve **v2** : `runtime.minWriter` exigé à
+partir du format 2, refusé avant, refusé s'il dépasse la version qui écrit (un volume ne s'interdit
+pas à son propre auteur), le downgrade jugé par comparaison au `minWriter` **déclaré**, et la règle
+v1 conservée pour un manifeste v1 — jamais complétée par une valeur inventée.
+
+**Le niveau Bout en bout enchaîne le résultat entier**, sur un vrai volume OPFS et une vraie
+application Rails :
+
+- **volume au format antérieur** — le disque applicatif de l'image #5 est écrit dans un volume OPFS
+  portant un manifeste **v1**, et le boot est refusé par `VAULT_MANIFEST_MIGRATION_REQUIRED` :
+  lisible, mais pas inscriptible ;
+- **migration sans preuve refusée** — `VAULT_MIGRATION_BACKUP_REQUIRED` ; le manifeste v1 est intact
+  et **aucun journal n'a été inscrit**, ce qui prouve que la cible n'a pas été ouverte ;
+- **sauvegarde** — l'archive vérifiable de #11 est exportée, et son empreinte confrontée à une
+  empreinte indépendante du volume relu depuis le support ;
+- **migration INTERROMPUE** juste après la révocation du manifeste — l'état exact que laisse un
+  onglet fermé. Le volume n'est plus identifié, le journal de reprise subsiste, et le boot suivant
+  est refusé par `VAULT_MANIFEST_UNIDENTIFIED` **avant même que v86 ne démarre** ;
+- **reprise** — sans fournir de nouveau l'archive : le journal porte la preuve retenue. Le rapport
+  affirme `resumed: true`, `fromVersion: 1`, `toVersion: 2`, preuve `sauvegarde-verifiee` ; le
+  manifeste est réinscrit et le **journal retiré en dernier geste** ;
+- **aucun octet du volume touché** — l'empreinte après migration est identique à celle mesurée
+  avant. C'est ce qui distingue « la migration a réussi » de « la migration n'a rien cassé » ;
+- **boot à froid hors ligne** sur le volume migré — `context.setOffline(true)` coupe le réseau (une
+  requête de contrôle échoue alors), Rails boote sans instantané mémoire, le disque applicatif n'est
+  jamais retéléchargé, et `/vault/invariant` retrouve l'identifiant d'enregistrement et l'empreinte
+  SHA-256 de la pièce jointe ActiveStorage du contrat `apps/reference/vault-invariant.json` ;
+- **refus par une « ancienne version »** — un runtime qui ne connaît que le format 1 refuse le
+  volume migré par `VAULT_MANIFEST_FORMAT_TOO_NEW`, en lecture comme en écriture.
+
+Les mesures — formats avant/après, empreintes, taille et empreinte de la sauvegarde, preuve retenue,
+durées, et les quatre refus avec leur code — sont écrites dans
+`reports/e2e/migration-volume-versionne.json` et jointes au rapport Playwright.
+
+Ce que la suite **n'affirme pas**, délibérément :
+
+- **le comportement d'une version publiée antérieurement.** Le runtime « ancien » du dernier témoin
+  n'est pas un binaire installé : c'est le runtime courant à qui l'on **déclare** une plage de
+  formats plus étroite (`supportedFormat: { current: 1, minReadable: 1 }`). Le test prouve que la
+  **règle de compatibilité refuse** ; il ne prouve pas ce que ferait une release antérieure,
+  qu'aucune publication n'a encore produite. Les **vecteurs de test conservés par version publiée**
+  exigés par `docs/release-policy.md` restent à faire ;
+- **une migration qui écrirait dans le volume.** L'étape 1 → 2 ne touche que le manifeste. L'ordre
+  des gestes est conçu pour qu'une étape future qui écrirait n'ait pas à réinventer sa sûreté, mais
+  cette sûreté-là n'est pas encore exercée par une étape réelle ;
+- **une chaîne de plus d'un pas.** `planMigration` compose des chaînes plus longues et ses refus
+  sont couverts en unitaire, mais aucune migration 1 → 3 n'a tourné sur un vrai volume : le deuxième
+  pas n'existe pas ;
+- **l'atomicité d'une génération** (#16) : entre la révocation et l'inscription, l'état est **sûr**
+  — non identifié, donc non inscriptible — mais pas révocable en un geste ;
+- **l'authenticité** du manifeste et du journal (jalon 4) : ni l'un ni l'autre n'est signé ou
+  chiffré.
 
 Elle **n'est pas rattachée à `npm run check`** : elle exige les artefacts de l'image #5
 (`npm run image:build`, Docker) **et** ceux de v86 (`npm run vm:fetch`), puisqu'elle boote un guest.

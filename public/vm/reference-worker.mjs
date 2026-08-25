@@ -564,37 +564,47 @@ async function phaseMigrate({
       consent,
       blockBytes,
     });
-    return {
-      phase: "migrate",
-      volume,
-      ok: true,
-      error: null,
-      migrated: rapport.migrated,
-      resumed: rapport.resumed,
-      fromVersion: rapport.fromVersion,
-      toVersion: rapport.toVersion,
-      evidence: rapport.evidence,
-      steps: rapport.steps,
-      minWriter: rapport.manifest.runtime.minWriter ?? null,
-      counts: journal.counts(),
-      durationMs: duree(),
-    };
+    return migrationReussie({ volume, rapport, counts: journal.counts(), durationMs: duree() });
   } catch (cause) {
-    return {
-      phase: "migrate",
-      volume,
-      ok: false,
-      migrated: false,
-      error: {
-        name: cause.name,
-        code: cause.code ?? null,
-        message: cause.message,
-        context: cause.context ?? null,
-      },
-      counts: journal.counts(),
-      durationMs: duree(),
-    };
+    return migrationRefusee({ volume, cause, counts: journal.counts(), durationMs: duree() });
   }
+}
+
+/** Compte rendu d'une migration ABOUTIE, tel que le scénario le reçoit en JSON. */
+function migrationReussie({ volume, rapport, counts, durationMs }) {
+  return {
+    phase: "migrate",
+    volume,
+    ok: true,
+    error: null,
+    migrated: rapport.migrated,
+    resumed: rapport.resumed,
+    fromVersion: rapport.fromVersion,
+    toVersion: rapport.toVersion,
+    evidence: rapport.evidence,
+    steps: rapport.steps,
+    minWriter: rapport.manifest.runtime.minWriter ?? null,
+    counts,
+    durationMs,
+  };
+}
+
+/** Compte rendu d'une migration REFUSÉE : le code typé traverse le port, il ne se perd pas en route. */
+function migrationRefusee({ volume, cause, counts, durationMs }) {
+  return {
+    phase: "migrate",
+    volume,
+    ok: false,
+    migrated: false,
+    error: {
+      name: cause.name,
+      code: cause.code ?? null,
+      message: cause.message,
+      context: cause.context ?? null,
+    },
+    counts,
+    durationMs,
+  };
 }
 
 /** Feasibilité : prepare puis live dans un même Worker. Le test E2E n'utilise pas cette phase. */
