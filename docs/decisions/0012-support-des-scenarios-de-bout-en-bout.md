@@ -88,6 +88,22 @@ une contrainte qui n'existe pas chez l'utilisateur.
 **Aucune assertion n'est modifiée**, aucun scénario n'est allégé, aucun volume n'est réduit : le
 disque applicatif de référence reste à 512 Mio. Seul le support change.
 
+### Le même contraste, mesuré sur l'exécutant
+
+L'échantillonnage continu ajouté par cette issue permet de refaire la mesure locale **en CI**, sur
+le disque du runner et pendant le job complet :
+
+| Run           | Profil              | Mouvement du disque pendant les scénarios | Relevé                              |
+| ------------- | ------------------- | ----------------------------------------- | ----------------------------------- |
+| `32903478142` | hors enregistrement | **0,03 Gio** (83,87 → 83,84)              | étapes avant / après                |
+| `32907545747` | persistant          | **3,03 Gio** (creux à 80,83)              | 188 échantillons, un toutes les 5 s |
+
+Les scénarios écrivent enfin ce qu'ils prétendent écrire, là où ils prétendent l'écrire.
+
+Le même relevé donne la mémoire de l'exécutant : **15,61 Gio au total, 12,28 Gio disponibles au
+minimum** pendant tout le job. Elle n'a donc jamais manqué — mais dans ce run, OPFS est sur disque,
+et c'est précisément pourquoi. L'instrument existe désormais ; il n'a pas encore observé d'échec.
+
 ## Ce que le code fait désormais d'une telle valeur de retour
 
 Indépendamment du support, toute valeur rendue par un `read`/`write` OPFS est INTERPRÉTÉE plutôt que
