@@ -23,7 +23,12 @@ async function exerciseSyncAccessHandle(fileHandle) {
     const written = handle.write(payload, { at: 0 });
     handle.flush();
     if (written !== payload.length) {
-      throw new Error(`écriture partielle : ${written}/${payload.length} octets`);
+      // La sonde dit ce qu'elle a VU, elle ne le classe pas : une valeur SUPÉRIEURE à la demande
+      // n'est pas une écriture partielle mais un code d'échec rendu en guise de compte (#73), et un
+      // rapport de compatibilité qui la nommerait « partielle » désignerait la mauvaise cause. La
+      // lecture typée de cette valeur vit dans `src/vm/opfs-error-mapping.mjs` ; la couche compat
+      // reste délibérément indépendante de la couche de stockage.
+      throw new Error(`write() a rendu ${written} pour ${payload.length} octet(s) demandés`);
     }
 
     const size = handle.getSize();
