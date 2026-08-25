@@ -292,7 +292,12 @@ function suivre(options) {
   const minuteur = setInterval(() => {
     inscrire(mesurer({ ...options, leger: true }), options.journal);
   }, options.suivre * 1000);
-  // Une dernière mesure au moment de l'arrêt : c'est celle qui suit immédiatement l'échec.
+
+  // Sortie propre sur signal, avec une dernière ligne si l'on nous en laisse le temps. C'est un
+  // BONUS, pas une garantie : le signal n'est pas toujours interceptable — vérifié le 26/08/2026,
+  // `kill` depuis Git Bash sous Windows termine le processus sans que ce gestionnaire s'exécute.
+  // La mesure d'après-scénarios sur laquelle on compte est l'étape `if: always()` de la recette, et
+  // l'échantillon le plus proche d'un échec est de toute façon à moins d'un intervalle de celui-ci.
   const arreter = () => {
     clearInterval(minuteur);
     inscrire(mesurer({ ...options, etape: `${options.etape}-fin`, leger: true }), options.journal);
