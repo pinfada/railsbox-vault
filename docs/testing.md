@@ -726,6 +726,11 @@ renseignerait une empreinte de machine) : elle ne décrit pas le support, et ne 
 Que la ressource épuisée soit la mémoire est l'inférence qui reste — déduite du support et du code
 d'erreur, non mesurée directement ; l'ADR 0012 le dit sous « Limites ».
 
+Le même contraste se relit **sur l'exécutant CI**, où l'échantillonnage continu mesure le disque du
+runner pendant le job complet : le run `32903478142` (profil hors enregistrement) déplace **0,03
+Gio** pendant les scénarios, le run `32907545747` (profil persistant) en déplace **3,03 Gio**. Les
+scénarios écrivent enfin ce qu'ils prétendent écrire, là où ils prétendent l'écrire.
+
 Le profil vit dans le répertoire de sortie du test, donc **un par test** : l'isolation entre
 scénarios est celle d'avant, et le cloisonnement d'OPFS par origine (ADR 0002) reste celui du
 navigateur. Aucune assertion n'a été modifiée pour ce changement.
