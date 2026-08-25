@@ -36,6 +36,7 @@
 
 import { BlockJournal } from "./block-journal.mjs";
 import { openOpfsVolume } from "./opfs-block-backend.mjs";
+import { decodeSupportCount, readCountFailure, writeCountFailure } from "./opfs-error-mapping.mjs";
 import {
   manifestSidecarName,
   migrationJournalName,
@@ -54,13 +55,53 @@ import { assertVolumeWritable, serializeManifest } from "./volume-manifest.mjs";
  */
 export const MAX_SIDECAR_BYTES = 1024 * 1024;
 
+/**
+ * Lit la tête d'un handle déjà ouvert, sur au plus `taille` octets.
+ *
+ * Un voisin PLUS COURT que sa taille annoncée reste admis — c'est ce que laisse une écriture
+ * interrompue, et l'appelant doit pouvoir le constater plutôt que d'être privé de la réponse. Un
+ * support qui rend un CODE D'ÉCHEC au lieu d'un compte, lui, est refusé (#73) : `subarray` bornant
+ * silencieusement à `taille`, l'ancienne écriture rendait alors un tampon entier — des zéros
+ * présentés comme un manifeste lu.
+ *
+ * Séparée de l'ouverture pour être éprouvable sous Node, où il n'y a ni OPFS ni Worker dédié.
+ */
+export function lireTeteDeHandle(handle, nom, taille) {
+  const bytes = new Uint8Array(taille);
+  const lus = handle.read(bytes, { at: 0 });
+  if (decodeSupportCount(lus, taille).kind === "errno") {
+    throw readCountFailure(lus, {
+      requested: taille,
+      volume: nom,
+      offset: 0,
+      operation: "read-sidecar",
+    });
+  }
+  return lus === taille ? bytes : bytes.subarray(0, lus);
+}
+
+/**
+ * Remplace le contenu d'un handle déjà ouvert et franchit sa barrière. Toute valeur de retour qui
+ * n'est pas le compte exact est un échec TYPÉ (#73) : le manifeste voisin identifie le volume, et un
+ * manifeste écrit à moitié — ou pas écrit du tout — ne doit jamais passer pour inscrit.
+ */
+export function ecrireHandleEntier(handle, nom, bytes) {
+  handle.truncate(0);
+  const echec = writeCountFailure(handle.write(bytes, { at: 0 }), {
+    requested: bytes.byteLength,
+    volume: nom,
+    offset: 0,
+    operation: "write-sidecar",
+  });
+  if (echec !== null) throw echec;
+  handle.flush();
+}
+
 /** Lit intégralement un petit fichier OPFS. */
 async function lireFichierOpfs(nom, taille) {
   const handle = await openOpfsSyncAccess(nom);
   try {
-    const bytes = new Uint8Array(taille);
-    const lus = handle.read(bytes, { at: 0 });
-    return lus === taille ? bytes : bytes.subarray(0, lus);
+    return lireTeteDeHandle(handle, nom, taille);
   } finally {
     handle.close();
   }
@@ -70,12 +111,7 @@ async function lireFichierOpfs(nom, taille) {
 export async function writeSidecarBytes(nom, bytes) {
   const handle = await openOpfsSyncAccess(nom);
   try {
-    handle.truncate(0);
-    const ecrits = handle.write(bytes, { at: 0 });
-    if (ecrits !== bytes.byteLength) {
-      throw new Error(`Écriture de manifeste courte : ${ecrits}/${bytes.byteLength} octet(s).`);
-    }
-    handle.flush();
+    ecrireHandleEntier(handle, nom, bytes);
   } finally {
     handle.close();
   }
