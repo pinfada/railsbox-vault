@@ -28,11 +28,12 @@ Protocole, environnement, commandes et mesures brutes :
 portent la décision :
 
 1. **Aucun consommateur.** `npm run isolation:inventaire` recense chaque occurrence de
-   `SharedArrayBuffer`, `Atomics`, `crossOriginIsolated` et des deux en-têtes dans le code du dépôt.
-   Toutes appartiennent à du code qui **mesure** l'isolation — sonde de capacités #2, sondes du
-   spike #35, harnais du présent spike, serveur de test — ou qui la **journalise**. Aucune n'est un
-   usage : pas une allocation de mémoire partagée, pas un `Atomics.wait`, dans aucun module de
-   production.
+   `SharedArrayBuffer`, `Atomics`, `crossOriginIsolated` et des deux en-têtes dans le code du dépôt
+   — **96 occurrences sur 21 fichiers**, `apps/` et son Ruby compris. Toutes appartiennent à du code
+   qui **mesure** l'isolation — sonde de capacités #2, sondes du spike #35, harnais du présent spike
+   —, qui **sert** les en-têtes, ou qui **journalise** la valeur observée. Aucune n'est un usage :
+   pas une allocation de mémoire partagée, pas un `Atomics.wait`, dans aucun module de production.
+   La liste exhaustive est dans le spike.
 
 2. **v86 épinglé ne demande rien.** `libv86.mjs` de `v86@0.5.432` contient **zéro** occurrence de
    `SharedArrayBuffer`, `Atomics` ou `crossOriginIsolated`. Et le fait décisif n'est pas textuel :
@@ -50,13 +51,14 @@ portent la décision :
    inversé un tour sur deux : **+0,6 % sur le premier boot** (3 600 ms contre 3 621 ms) et **−0,5 %
    sur le temps processeur du rendu** mesuré par le protocole DevTools. Les étapes du guest
    affichent des écarts à deux chiffres qui n'en sont pas : leur durée est quantifiée par la
-   scrutation à 20 ms de la console série, +14 % y valant un ou deux paliers, et le signe s'inverse
-   d'une campagne à l'autre. Une première version du harnais, qui mesurait les conditions **en blocs
-   successifs**, rendait +17,6 % sur le boot et +65,2 % sur la copie mémoire ; rejouée, la même
-   mesure en blocs rend **−3,0 %** et **−19,6 %**. Un protocole dont le signe s'inverse ne mesure
-   pas l'isolation, il mesure la dérive de la machine pendant la campagne. Le protocole fautif est
-   conservé et rejouable (`VAULT_ISOLATION_ENTRELACEMENT=non`), et son résultat publié dans le spike
-   : un témoin négatif qu'on ne peut plus reproduire n'est qu'une anecdote.
+   scrutation à 20 ms de la console série, +14 % y valant un ou deux paliers — moins que la
+   dispersion observée à l'intérieur d'une même condition. Une première version du harnais, qui
+   mesurait les conditions **en blocs successifs**, rendait +17,6 % sur le boot et +65,2 % sur la
+   copie mémoire ; rejouée, la même mesure en blocs rend **−3,0 %** et **−19,6 %**. Un protocole
+   dont le signe s'inverse ne mesure pas l'isolation, il mesure la dérive de la machine pendant la
+   campagne. Le protocole fautif est conservé et rejouable (`VAULT_ISOLATION_ENTRELACEMENT=non`), et
+   son résultat publié dans le spike : un témoin négatif qu'on ne peut plus reproduire n'est qu'une
+   anecdote.
 
 5. **Poser l'isolation coûte, en revanche, cher à la topologie.** Le spike #35 a mesuré que sous
    `require-corp` une iframe inter-origine sans COEP est refusée (`net::ERR_BLOCKED_BY_RESPONSE`)

@@ -89,6 +89,19 @@ Le nombre d'essais se règle par `VAULT_ISOLATION_ESSAIS` (défaut 4, plus un es
 condition), les moteurs par `VAULT_MOTEURS`, et `VAULT_ISOLATION_ENTRELACEMENT=non` rejoue le
 protocole en blocs dont la section suivante donne le résultat.
 
+### Où lire les relevés bruts
+
+| Fichier                                                | Contenu                                                        |
+| ------------------------------------------------------ | -------------------------------------------------------------- |
+| `reports/isolation/inventaire.json`                    | occurrences ligne à ligne, agrégat par fichier, analyse de v86 |
+| `reports/isolation/cout-isolation-<moteur>.json`       | campagne entrelacée, un fichier par moteur                     |
+| `reports/isolation/cout-isolation-blocs-<moteur>.json` | campagne en blocs, le protocole fautif                         |
+
+`reports/` est **ignoré par git**, comme pour la sonde de capacités #2 et les mesures VM du spike #4
+: un relevé n'est pas une source. Les épreuves joignent le même corps au rapport Playwright, et les
+chiffres qui comptent sont figés dans le présent document. Reproduire les commandes ci-dessus sur un
+poste vierge régénère l'ensemble.
+
 ## Étapes chronométrées
 
 Chaque essai démarre un guest neuf, puis exécute ces commandes dans l'ordre. La durée est prise côté
@@ -145,23 +158,47 @@ rapport. Les chiffres retenus, ci-dessous, sont ceux de la campagne entrelacée 
 ## Inventaire : qui dépend de l'isolation ?
 
 `npm run isolation:inventaire` lit deux sources : le code du dépôt (`src/`, `public/`, `tools/`,
-`tests/`, `apps/`, configurations racine) et les artefacts v86 épinglés.
+`tests/`, `apps/`, configurations racine — `.mjs`, `.js`, `.html`, `.json`, `.rb` et `.erb`) et les
+artefacts v86 épinglés.
 
 ### Code du dépôt
 
-**93 occurrences réparties sur 20 fichiers** au 2026-08-25. Toutes appartiennent à l'une de ces
-trois catégories, et à aucune autre :
+**96 occurrences réparties sur 21 fichiers** au 2026-08-25. La liste est **exhaustive** : elle est
+l'agrégat par fichier que l'outil imprime, recopié tel quel. Un tableau d'exemples ne se vérifierait
+pas.
 
-| Catégorie                    | Fichiers                                                                                                                                         | Nature                                     |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ |
-| Sonde de capacités (#2)      | `src/compat/capability-contract.mjs`, `page-probe.mjs`, `worker-probe.mjs`, `host-api.mjs`, `tests/compat/`, fixtures                            | **mesure**                                 |
-| Sondes des spikes #35 et #41 | `public/spike/origin/isolation-probe.mjs`, `public/spike/isolation/*`, `tests/browser/origin-isolation.spec.mjs`, `tests/isolation/`             | **mesure**                                 |
-| Serveur de test et journal   | `tools/serve.mjs`, `tools/serve-headers.mjs`, `tools/isolation-inventaire.mjs`, `public/vm/runtime-worker.mjs`, `tests/vm/premier-boot.spec.mjs` | **en-têtes servis, ou valeur journalisée** |
+| Occ. | Fichier                                       | Nature                         |
+| ---: | --------------------------------------------- | ------------------------------ |
+|   13 | `src/compat/worker-probe.mjs`                 | sonde de capacités #2 — mesure |
+|   11 | `src/compat/page-probe.mjs`                   | sonde de capacités #2 — mesure |
+|    9 | `tools/isolation-inventaire.mjs`              | l'inventaire lui-même          |
+|    7 | `src/spike/isolation-probe.mjs`               | sonde du spike #35 — mesure    |
+|    7 | `tests/unit/origin-topology.test.mjs`         | contrat des en-têtes servis    |
+|    6 | `tests/isolation/cout-isolation.spec.mjs`     | harnais du spike #41 — mesure  |
+|    5 | `tests/browser/origin-isolation.spec.mjs`     | épreuve du spike #35 — mesure  |
+|    5 | `tests/fixtures/compat/reference-report.json` | rapport de référence #2        |
+|    5 | `tests/unit/compat-contract.test.mjs`         | contrat de la sonde #2         |
+|    5 | `public/spike/isolation/runtime-worker.mjs`   | banc du spike #41 — mesure     |
+|    4 | `src/compat/capability-contract.mjs`          | contrat de la sonde #2         |
+|    3 | `public/vm/runtime-worker.mjs`                | valeur **journalisée**         |
+|    3 | `src/spike/mesure-memoire.mjs`                | instrument du spike #41        |
+|    3 | `tools/serve-headers.mjs`                     | **en-têtes servis**            |
+|    2 | `playwright.compat.config.mjs`                | commentaire de configuration   |
+|    2 | `public/spike/isolation/banc.mjs`             | banc du spike #41 — mesure     |
+|    2 | `public/spike/isolation/index.html`           | texte de la page du banc       |
+|    1 | `playwright.isolation.config.mjs`             | commentaire de configuration   |
+|    1 | `src/compat/host-api.mjs`                     | détection de capacité #2       |
+|    1 | `tools/serve.mjs`                             | **en-têtes servis**            |
+|    1 | `tests/vm/premier-boot.spec.mjs`              | valeur **journalisée**         |
+
+Trois natures, et aucune quatrième : du code qui **mesure** l'isolation, du code qui **sert** les
+en-têtes, et du code qui **journalise** la valeur observée.
 
 **Aucun module de production n'alloue de `SharedArrayBuffer`, n'appelle `Atomics`, ni ne branche un
 comportement sur `crossOriginIsolated`.** Les trois occurrences de `crossOriginIsolated` dans
 `public/vm/runtime-worker.mjs` sont des champs de compte rendu : le runtime consigne la valeur, il
-n'en dépend pas.
+n'en dépend pas. `apps/` — l'application Rails de référence — n'en contient aucune, `.rb` et `.erb`
+compris.
 
 ### v86 épinglé
 
@@ -253,9 +290,10 @@ durées observées le montrent sans ambiguïté : 300,6 · 301,3 · 301,6 · 321
 · 362,9 — des paliers de 20 ms.
 
 Sur `ecriture-disque`, +14,1 % vaut **42 ms**, soit deux paliers. Sur `lecture-disque`, +14,5 % en
-vaut **18**, soit un. Ces écarts sont **sous la résolution utile de l'instrument**, et le signe le
-confirme : la campagne précédente, également entrelacée, donnait −12 % sur la même étape
-`ecriture-disque`. Un effet qui change de signe d'une campagne à l'autre n'est pas un effet.
+vaut **18**, soit un. Ces écarts sont **sous la résolution utile de l'instrument** : ils sont du
+même ordre que l'incertitude de la mesure, et il n'y a rien à en conclure dans un sens ou dans
+l'autre. Les essais bruts le montrent aussi : les quatre valeurs nues de `lecture-disque` — 141,0 ·
+141,7 · 121,9 · 122,9 — s'étalent déjà sur un palier entier à l'intérieur d'une même condition.
 
 Les deux métriques qui ne subissent pas cette quantification disent la même chose plus proprement :
 
@@ -351,9 +389,10 @@ Linux, écrit 4 Mio sur un disque IDE adossé au backend Vault, franchit sa barr
 la voit acquittée, avec des compteurs de blocs identiques à ceux de la condition isolée.
 
 **Le coût de la poser n'est pas mesurable avec cet instrument.** +0,6 % sur le boot, −0,5 % sur le
-temps processeur. Les écarts à deux chiffres sur les étapes valent un ou deux paliers de 20 ms et
-changent de signe d'une campagne à l'autre. Ce n'est pas « l'isolation est gratuite » : c'est «
-aucun coût de premier ordre n'apparaît ici ».
+temps processeur. Les écarts à deux chiffres sur les étapes valent un ou deux paliers de 20 ms,
+moins que la dispersion mesurée à l'intérieur d'une même condition. Ce n'est pas « l'isolation est
+gratuite » : c'est « aucun coût de premier ordre n'apparaît ici, avec un instrument dont la
+résolution par étape est de 20 ms ».
 
 **Le seul bénéfice attendu ne se matérialise pas.** L'instrument de mesure mémoire reste
 inutilisable dans le document et absent du Worker, isolation ou non.
