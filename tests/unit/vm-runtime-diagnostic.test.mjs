@@ -7,7 +7,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { RUNTIME_ERROR_CODES, RuntimeError, isRuntimeError } from "../../src/vm/runtime-errors.mjs";
-import { executerSousGarde, surveillerPremierTour } from "../../src/vm/runtime-environment.mjs";
+import {
+  executerSousGarde,
+  mesurerRythme,
+  surveillerPremierTour,
+} from "../../src/vm/runtime-environment.mjs";
 import {
   CHEMINS_ORDONNANCEMENT,
   cheminOrdonnancement,
@@ -228,6 +232,25 @@ test("la garde couvre TOUTE la phase confiée, pas seulement sa première attent
   assert.ok(isRuntimeError(erreur, RUNTIME_ERROR_CODES.noTick));
   assert.ok(Date.now() - debut < 3000, "la garde doit trancher sans attendre la seconde phase");
   assert.equal(secondePhaseTerminee, false);
+});
+
+test("le rythme de la boucle est une mesure : un compteur illisible ne vaut pas zéro tour", () => {
+  // Le rythme sert à COMPARER deux exécutions de l'émulateur — avec et sans la boucle posée par
+  // Vault (#74). Il faut donc qu'un compteur absent se distingue d'un compteur à zéro : le premier
+  // dit « instrument perdu », le second dirait « émulateur arrêté ».
+  assert.deepEqual(mesurerRythme({ ticks: 2000, fenetreMs: 4000 }), {
+    ticks: 2000,
+    fenetreMs: 4000,
+    ticksParSeconde: 500,
+  });
+  assert.deepEqual(mesurerRythme({ ticks: null, fenetreMs: 4000 }), {
+    ticks: null,
+    fenetreMs: 4000,
+    ticksParSeconde: null,
+  });
+  // Une fenêtre nulle ou absente ne produit pas une division : elle produit une absence de mesure.
+  assert.equal(mesurerRythme({ ticks: 10, fenetreMs: 0 }).ticksParSeconde, null);
+  assert.equal(mesurerRythme({ ticks: 10, fenetreMs: null }).ticksParSeconde, null);
 });
 
 test("la garde rend la valeur de la phase et ses observations quand la boucle avance", async () => {

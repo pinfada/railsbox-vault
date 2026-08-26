@@ -23,6 +23,7 @@ import {
   controlerContexteCourant,
   executerSousGarde,
   exigerContexteExecutable,
+  mesurerRythme,
 } from "/src/vm/runtime-environment.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { BRIDGE_MODES } from "/src/vm/v86-flush-bridge.mjs";
@@ -44,17 +45,28 @@ const decoder = new TextDecoder();
  * toute l'attente utile. Sur le chemin de l'image de référence, où `boot()` rend la main bien plus
  * tôt, la garde couvre une phase plus large — voir `reference-worker-boot.mjs`.
  *
+ * Il rend AUSSI le rythme observé de la boucle sur la fenêtre du boot. C'est la mesure qui permet
+ * de comparer deux exécutions de l'émulateur (#74) : une durée de boot seule ne dirait pas si
+ * l'émulateur a tourné plus vite ou si le guest a eu moins à faire. Le compteur est cumulé depuis
+ * la construction de l'émulateur, donc quelques tours avant `run()` entrent dans la fenêtre — sur
+ * des milliers de tours, l'écart est sous la résolution de l'instrument.
+ *
  * @param {object} session
  * @param {Record<string, unknown>[]} observations recueille les observations non fatales de la garde
+ * @returns {Promise<{ bootMilliseconds: number, rythme: Record<string, number | null> }>}
  */
-function booter(session, observations) {
-  return executerSousGarde(
+async function booter(session, observations) {
+  const ecouleMs = await executerSousGarde(
     () => session.ticks(),
     () => session.boot(),
     {
       onObservation: (observation) => observations.push(observation),
     },
   );
+  return {
+    bootMilliseconds: Number(ecouleMs.toFixed(1)),
+    rythme: mesurerRythme({ ticks: session.ticks(), fenetreMs: ecouleMs }),
+  };
 }
 
 let volumeCounter = 0;
@@ -113,13 +125,14 @@ async function run({
   const session = createGuestSession({ V86, artifacts, adapter, journal, mode });
 
   try {
-    const bootMilliseconds = await booter(session, observations);
+    const { bootMilliseconds, rythme } = await booter(session, observations);
     const results = await runSteps(session, steps);
     const verdict = verdictForBarrierScenario(journal);
     return {
       scenario,
       mode,
-      bootMilliseconds: Number(bootMilliseconds.toFixed(1)),
+      bootMilliseconds,
+      rythme,
       transferredBytes,
       counts: journal.counts(),
       steps: summariseSteps(journal, results),
@@ -176,10 +189,10 @@ async function runOpfsPersistence({
   });
   const session = createGuestSession({ V86, artifacts, adapter, journal, mode });
 
-  let bootMilliseconds;
+  let boot;
   let results;
   try {
-    bootMilliseconds = await booter(session, observations);
+    boot = await booter(session, observations);
     results = await runSteps(session, OPFS_PERSISTENCE_STEPS);
   } finally {
     session.stop();
@@ -211,7 +224,8 @@ async function runOpfsPersistence({
     volume,
     volumeBytes,
     reopenedSize,
-    bootMilliseconds: Number(bootMilliseconds.toFixed(1)),
+    bootMilliseconds: boot.bootMilliseconds,
+    rythme: boot.rythme,
     transferredBytes,
     counts: journal.counts(),
     steps,
@@ -272,10 +286,10 @@ async function runOpfsBarrier({
   });
   const session = createGuestSession({ V86, artifacts, adapter, journal, mode });
 
-  let bootMilliseconds;
+  let boot;
   let results;
   try {
-    bootMilliseconds = await booter(session, observations);
+    boot = await booter(session, observations);
     results = await runSteps(session, BARRIER_STEPS);
   } finally {
     session.stop();
@@ -289,7 +303,8 @@ async function runOpfsBarrier({
     volumeBytes,
     flushDelay,
     fault,
-    bootMilliseconds: Number(bootMilliseconds.toFixed(1)),
+    bootMilliseconds: boot.bootMilliseconds,
+    rythme: boot.rythme,
     transferredBytes,
     counts: journal.counts(),
     steps: summariseSteps(journal, results),
