@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RailsBox Vault — banc de résilience : arrêts et écritures partielles (#15)</title>
+  </head>
+  <body>
+    <h1>Banc de résilience</h1>
+    <p>
+      Cette page ne détient aucun volume : elle démarre des Workers runtime, en
+      <strong>tue un</strong> pendant qu'il écrit — c'est l'arrêt réel —, puis fait relire et
+      classer le volume par un autre. Le handle exclusif ne quitte jamais un Worker, conformément à
+      l'<code>ADR 0002</code>.
+    </p>
+    <p>
+      Le banc ne promet aucune atomicité. Il <em>mesure</em> ce qu'une coupure laisse sur le support
+      aujourd'hui, et publie la graine et le point atteint pour que chaque verdict soit rejouable.
+    </p>
+    <p id="etat">Prêt.</p>
+    <pre id="rapport"></pre>
+    <script type="module" src="./resilience-banc.mjs"></script>
+  </body>
+</html>
