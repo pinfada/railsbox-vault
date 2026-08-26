@@ -234,6 +234,53 @@ test("la garde couvre TOUTE la phase confiée, pas seulement sa première attent
   assert.equal(secondePhaseTerminee, false);
 });
 
+test("compteur figé et boucle jamais empruntée : la garde nomme le marqueur d'URL", async () => {
+  // Depuis #74, la boucle d'ordonnancement est POSÉE par Vault dans tout Worker runtime. Un
+  // compteur figé n'a donc plus la même cause qu'avant : ou bien v86 n'emprunte pas notre boucle —
+  // et il ne reste qu'une raison, le marqueur d'URL —, ou bien il l'emprunte et la panne est
+  // ailleurs. Le compteur d'appels de la boucle est ce qui sépare les deux ; sans lui, le message
+  // devrait deviner.
+  const garde = surveillerPremierTour(() => 1, {
+    delaiMs: 150,
+    periodeMs: 20,
+    decrireBoucle: () => ({ source: "vault-sur-native", natifPresent: true, appels: 0 }),
+  });
+  const erreur = await garde.promesse.catch((echec) => echec);
+  garde.arreter();
+
+  assert.ok(isRuntimeError(erreur, RUNTIME_ERROR_CODES.noTick));
+  assert.deepEqual(erreur.context.boucle, {
+    source: "vault-sur-native",
+    natifPresent: true,
+    appels: 0,
+  });
+  assert.match(erreur.message, /use-scheduling-api/);
+});
+
+test("compteur figé alors que la boucle a reçu des tâches : la panne est déclarée ailleurs", async () => {
+  const garde = surveillerPremierTour(() => 4, {
+    delaiMs: 150,
+    periodeMs: 20,
+    decrireBoucle: () => ({ source: "vault", natifPresent: false, appels: 12 }),
+  });
+  const erreur = await garde.promesse.catch((echec) => echec);
+  garde.arreter();
+
+  assert.ok(isRuntimeError(erreur, RUNTIME_ERROR_CODES.noTick));
+  assert.equal(erreur.context.boucle.appels, 12);
+  assert.doesNotMatch(erreur.message, /use-scheduling-api/);
+  assert.match(erreur.message, /ailleurs/);
+});
+
+test("sans boucle décrite, le message de compteur figé reste celui d'avant #74", async () => {
+  const garde = surveillerPremierTour(() => 1, { delaiMs: 150, periodeMs: 20 });
+  const erreur = await garde.promesse.catch((echec) => echec);
+  garde.arreter();
+
+  assert.ok(isRuntimeError(erreur, RUNTIME_ERROR_CODES.noTick));
+  assert.equal(erreur.context.boucle, null);
+});
+
 test("le rythme de la boucle est une mesure : un compteur illisible ne vaut pas zéro tour", () => {
   // Le rythme sert à COMPARER deux exécutions de l'émulateur — avec et sans la boucle posée par
   // Vault (#74). Il faut donc qu'un compteur absent se distingue d'un compteur à zéro : le premier

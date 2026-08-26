@@ -33,8 +33,11 @@ jobs:
       - name: Installation des dépendances
         run: npm ci
 
-      - name: Installation de Chromium
-        run: npx playwright install --with-deps chromium
+      # Les trois moteurs, depuis #74 : `test:vm` porte un témoin de démarrage du guest sur
+      # Chromium, Firefox et WebKit. Sans Firefox ni WebKit installés, ce témoin ne s'exécuterait
+      # pas — et la matrice de `docs/compatibility.md` reposerait de nouveau sur un seul moteur.
+      - name: Installation des moteurs
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Récupération vérifiée des artefacts v86
         run: npm run vm:fetch
