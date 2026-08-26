@@ -33,9 +33,9 @@ import {
 import { ARTIFACT_DIRECTORY, MANIFEST_PATH } from "./v86-paths.mjs";
 
 /** Nom de l'artefact que la garde de l'ADR 0010 doit lire. */
-const NOM_ARTEFACT_WASM = "v86.wasm";
+const WASM_ARTIFACT_NAME = "v86.wasm";
 /** Code de sortie historique d'un défaut d'empreinte. Il reste le sien. */
-const CODE_EMPREINTE = 1;
+const DIGEST_EXIT_CODE = 1;
 
 async function readIfPresent(path) {
   try {
@@ -107,12 +107,12 @@ async function fetchMissing(manifest, verdicts) {
  * désarmerait la garde en silence, exactement pendant la montée de version qu'elle surveille.
  */
 function guardSharedMemory(entries) {
-  const entry = entries.find(({ artifact }) => artifact.name === NOM_ARTEFACT_WASM);
+  const entry = entries.find(({ artifact }) => artifact.name === WASM_ARTIFACT_NAME);
   if (entry === undefined) {
     return {
       statut: "absent",
       codeDeSortie: CODES_DE_SORTIE.artefactsAbsents,
-      message: `le manifeste ne décrit aucun ${NOM_ARTEFACT_WASM} : la garde de mémoire partagée (ADR 0010) n'a rien à lire.`,
+      message: `le manifeste ne décrit aucun ${WASM_ARTIFACT_NAME} : la garde de mémoire partagée (ADR 0010) n'a rien à lire.`,
     };
   }
   return verdictGardeMemoire(entry.content);
@@ -125,7 +125,7 @@ function guardSharedMemory(entries) {
  */
 function exitCode(failureCount, guard) {
   if (guard.codeDeSortie === CODES_DE_SORTIE.memoirePartagee) return guard.codeDeSortie;
-  if (failureCount > 0) return CODE_EMPREINTE;
+  if (failureCount > 0) return DIGEST_EXIT_CODE;
   return guard.codeDeSortie;
 }
 
@@ -147,7 +147,7 @@ async function main() {
   }
 
   const guard = guardSharedMemory(entries);
-  process.stdout.write(`${NOM_ARTEFACT_WASM} : ${guard.message}\n`);
+  process.stdout.write(`${WASM_ARTIFACT_NAME} : ${guard.message}\n`);
 
   const failures = entries.filter(({ verdict }) => verdict.status !== "ok");
   if (failures.length > 0) {
@@ -156,7 +156,12 @@ async function main() {
     );
   }
   if (guard.codeDeSortie !== CODES_DE_SORTIE.succes) {
-    process.stderr.write(`\nGarde de mémoire WebAssembly — ÉCHEC : ${guard.message}\n`);
+    // Le verdict est déjà écrit sur la sortie standard : cette ligne dit la suite, pas la même
+    // chose. Une montée de version ne se contourne pas, elle se décide.
+    process.stderr.write(
+      `\nGarde de mémoire WebAssembly (ADR 0010) — ÉCHEC, code ${guard.codeDeSortie}. ` +
+        `Voir le verdict ci-dessus et « Monter v86 de version » dans docs/development.md.\n`,
+    );
   }
 
   process.exitCode = exitCode(failures.length, guard);
