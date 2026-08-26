@@ -14,7 +14,7 @@ const vendorRoot = resolve("vendor");
 // `artifacts/reference-image/`, produits par `npm run image:build`. La preuve de reprise (#7) les
 // sert à v86 dans le navigateur, en lecture seule, sous leur propre racine.
 const artifactRoot = resolve("artifacts");
-const options = parseServerOptions(process.argv.slice(2));
+const options = parseServerOptions(process.argv.slice(2), process.env);
 
 const contentTypes = new Map([
   [".html", "text/html; charset=utf-8"],

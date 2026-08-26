@@ -17,12 +17,25 @@ export const SERVER_ROLES = Object.freeze(["shell", "app"]);
 export const ISOLATION_REQUIRE_CORP = "require-corp";
 
 /**
+ * Variable d'environnement par laquelle le harnais de mesure #52 se déclare, et jeton attendu.
+ *
+ * `--worker-src-blob` ÉLARGIT une frontière de sécurité. L'ADR 0013 et `SECURITY.md` affirment
+ * qu'aucun lancement de service ne le pose : cette paire fait de cette phrase une garantie du code
+ * plutôt qu'une convention de relecture. Un `npm start -- --worker-src-blob` échoue au démarrage,
+ * bruyamment, au lieu de servir la politique élargie en silence.
+ */
+export const HARNAIS_CSP_ENV = "VAULT_HARNAIS_CSP";
+export const HARNAIS_CSP_VALEUR = "mesure-worker-src";
+
+/**
  * CSP de la coquille de confiance. `default-src 'none'` impose de nommer chaque capacité ;
  * `frame-src` n'autorise que l'origine applicative déclarée, ce qui rend observable toute
  * tentative d'encadrer un document tiers.
  *
  * `'wasm-unsafe-eval'` est ajouté depuis le spike #4 : le runtime v86 instancie un module
- * WebAssembly, et sous `script-src 'self'` seul Chromium refuse `WebAssembly.instantiate`. C'est le
+ * WebAssembly, et sous `script-src 'self'` seul, `WebAssembly.instantiate` est refusé par les TROIS
+ * moteurs de la matrice — le spike #4 ne l'avait mesuré que sous Chromium, l'ADR 0013 l'a mesuré
+ * partout et `tests/browser/csp-frontiere.spec.mjs` le rejoue à chaque `npm run check`. C'est le
  * jeton le plus étroit qui autorise WebAssembly — il n'ouvre ni `eval` ni `new Function`, à la
  * différence de `'unsafe-eval'`. Voir l'ADR 0003.
  *
@@ -150,15 +163,27 @@ function readPort(argv, fallback) {
 
 /**
  * @param {string[]} argv arguments bruts, `process.argv.slice(2)`
+ * @param {Record<string, string | undefined>} [env] environnement du processus
  * @returns {{ role: string, host: string, port: number, appOrigin: string,
  *             crossOriginIsolated: boolean, workerSrcBlob: boolean }}
  */
-export function parseServerOptions(argv) {
+export function parseServerOptions(argv, env = {}) {
   const role = readFlag(argv, "role") ?? "shell";
   if (!SERVER_ROLES.includes(role)) {
     throw new Error(`Rôle inconnu : ${role}. Valeurs admises : ${SERVER_ROLES.join(", ")}.`);
   }
   const isApp = role === "app";
+
+  const workerSrcBlob = argv.includes("--worker-src-blob");
+  if (workerSrcBlob && env[HARNAIS_CSP_ENV] !== HARNAIS_CSP_VALEUR) {
+    throw new Error(
+      `L'option --worker-src-blob élargit la CSP de la coquille (« worker-src 'self' blob: ») et ` +
+        `n'est admise que par le harnais de mesure « npm run test:csp », qui pose ` +
+        `${HARNAIS_CSP_ENV}=${HARNAIS_CSP_VALEUR}. L'ADR 0013 a retenu « worker-src 'self' » : ` +
+        `aucun lancement de service ne doit servir la politique élargie.`,
+    );
+  }
+
   return Object.freeze({
     role,
     host: readFlag(argv, "host") ?? (isApp ? APP_HOST : SHELL_HOST),
@@ -168,8 +193,8 @@ export function parseServerOptions(argv) {
     // là où le spike #35 n'isole que la requête qui le demande.
     crossOriginIsolated: argv.includes("--cross-origin-isolated"),
     // Drapeau de MESURE (#52) : il ajoute `blob:` à `worker-src` pour que le harnais
-    // `npm run test:csp` puisse comparer les deux politiques sur les trois moteurs. Aucun
-    // lancement de production ne le pose — l'ADR 0013 a retenu `worker-src 'self'`.
-    workerSrcBlob: argv.includes("--worker-src-blob"),
+    // `npm run test:csp` puisse comparer les deux politiques sur les trois moteurs. Il est REFUSÉ
+    // partout ailleurs, ci-dessus — l'ADR 0013 a retenu `worker-src 'self'`.
+    workerSrcBlob,
   });
 }

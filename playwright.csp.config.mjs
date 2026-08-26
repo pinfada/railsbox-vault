@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+import { HARNAIS_CSP_ENV, HARNAIS_CSP_VALEUR } from "./tools/serve-headers.mjs";
+
 // Harnais de mesure de l'issue #52 — sous quelle CSP la boucle d'ordonnancement de v86 bat-elle ?
 //
 // Configuration distincte, pour les mêmes raisons que celle du spike #41 et non par commodité :
@@ -43,6 +45,9 @@ const serveur = (port, blob) => ({
     blob ? " --worker-src-blob" : ""
   }`,
   url: `http://${CSP_HOST}:${port}/`,
+  // Ce harnais est le SEUL endroit du dépôt autorisé à demander `worker-src 'self' blob:`, et il le
+  // déclare : sans cette variable, `tools/serve.mjs` refuse le drapeau au démarrage.
+  env: { [HARNAIS_CSP_ENV]: HARNAIS_CSP_VALEUR },
   // Jamais de réutilisation : la mesure ne vaut que si la CSP est celle de CE serveur-ci. Un
   // serveur étranger déjà posé sur le port fausserait le relevé sans le dire.
   reuseExistingServer: false,

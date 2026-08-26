@@ -102,6 +102,66 @@ test("relevé de la boucle d'ordonnancement sur les deux politiques", async ({ p
   }
 });
 
+test("sous « worker-src blob: », le Worker blob: vit et aucune violation worker-src n'est émise", async ({
+  page,
+}, info) => {
+  // Contre-épreuve de `tests/browser/csp-frontiere.spec.mjs`, qui exige sous la politique servie une
+  // violation portant À LA FOIS la directive `worker-src` et la ressource `blob`. Ce couple doit
+  // DISPARAÎTRE quand la politique admet `blob:`, sinon l'épreuve de frontière resterait verte sur
+  // un Worker devenu vivant — c'est-à-dire ne prouverait rien.
+  await page.goto(`http://${CSP_HOST}:${PORT_BLOB}/csp/frontiere.html`);
+  await page.waitForFunction(() => Boolean(globalThis.releveFrontiere), null, { timeout: 30000 });
+  const releve = await page.evaluate(() => globalThis.releveFrontiere);
+  await info.attach(`frontiere-sous-blob-${info.project.name}.json`, {
+    body: JSON.stringify(releve, null, 2),
+    contentType: "application/json",
+  });
+
+  expect(releve.workerBlob).toBe("vivant");
+  expect(
+    releve.violations.filter(
+      (violation) =>
+        (violation.directive.includes("worker-src") || violation.directive.includes("child-src")) &&
+        /blob/.test(String(violation.bloque)),
+    ),
+  ).toHaveLength(0);
+  // `script-src` reste fermé sous les DEUX politiques : élargir `worker-src` ne l'entame pas.
+  expect(releve.scriptBlob).toBe("non-execute");
+  expect(releve.scriptInline).toBe("non-execute");
+});
+
+test("sous « worker-src blob: », le contrôle du runtime n'accuse plus la CSP", async ({
+  page,
+}, info) => {
+  // C'est l'épreuve qui distingue « le contrôle OBSERVE » de « le contrôle AFFIRME ». Le Worker
+  // runtime est chargé SANS « ?use-scheduling-api », donc sur le chemin de la boucle de secours ;
+  // sous une politique qui admet `blob:`, ce Worker vit et le contrôle ne doit rien refuser. Un
+  // contrôle qui se contenterait de lire l'URL rendrait ici un faux refus — et son message
+  // mentirait sur la politique servie.
+  await page.goto(`http://${CSP_HOST}:${PORT_BLOB}/csp/ordonnancement.html`);
+  const reponse = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const worker = new Worker("/vm/runtime-worker.mjs", { type: "module" });
+        const echeance = setTimeout(() => resolve({ silence: true }), 20000);
+        worker.addEventListener("message", (evenement) => {
+          clearTimeout(echeance);
+          worker.terminate();
+          resolve(evenement.data);
+        });
+        worker.postMessage({ id: 1, type: "controler" });
+      }),
+  );
+  await info.attach(`controle-sous-blob-${info.project.name}.json`, {
+    body: JSON.stringify(reponse, null, 2),
+    contentType: "application/json",
+  });
+
+  expect(reponse.silence).toBeUndefined();
+  expect(reponse.ok).toBe(true);
+  expect(reponse.report.diagnostic).toBe(null);
+});
+
 test("témoin positif : la configuration retenue fait battre l'émulateur", async ({
   page,
   browserName,

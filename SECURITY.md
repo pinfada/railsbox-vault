@@ -246,10 +246,13 @@ entièrement de rendre la main (Firefox, #74), aucune minuterie de ce Worker ne 
 code n'est émis ; c'est alors la garde de l'appelant qui borne l'attente.
 
 Enfin, `tools/serve.mjs` porte un drapeau de MESURE `--worker-src-blob` qui sert la politique
-élargie. Il n'est déclenchable que par un argument de ligne de commande, jamais par une URL, il
-n'est posé que par `npm run test:csp`, et deux épreuves — une unitaire sur la chaîne produite, une
-de navigateur sur l'en-tête réellement servi — vérifient que la politique par défaut ne contient
-aucune occurrence de `blob:`.
+élargie. Trois propriétés le tiennent, et chacune est vérifiée plutôt qu'affirmée : il n'est
+déclenchable que par un argument de ligne de commande, jamais par une URL ni par une variable seule
+; il est **refusé au démarrage** si le processus ne porte pas `VAULT_HARNAIS_CSP=mesure-worker-src`,
+que seul `playwright.csp.config.mjs` pose — un `npm start -- --worker-src-blob` échoue donc
+bruyamment au lieu de servir la politique élargie en silence, et une épreuve unitaire fige ce refus
+; et deux épreuves — une unitaire sur la chaîne produite, une de navigateur sur l'en-tête réellement
+servi — vérifient que la politique par défaut ne contient aucune occurrence de `blob:`.
 
 ## Analyse de secrets
 

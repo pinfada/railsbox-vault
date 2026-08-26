@@ -1,12 +1,15 @@
 // Sondes de FRONTIÈRE de la CSP de la coquille (#52). Chaque sonde tente une chose précise et
 // publie ce qui s'est réellement passé — jamais un verdict.
 //
-// Une leçon du relevé #52, qui commande la forme de ce fichier : sous Chromium, un Worker créé
-// depuis une URL `blob:` refusée par `worker-src 'self'` ne lève AUCUNE exception. Le constructeur
-// rend un objet, et cet objet ne fait rien. Une sonde qui se contenterait d'un `try/catch`
-// conclurait donc « autorisé » sur un Worker mort. Les sondes de Worker mesurent par conséquent le
-// SIGNE DE VIE — un message reçu dans un délai borné — et le complètent par le journal des
-// événements `securitypolicyviolation`, qui est la seule observation fiable du refus.
+// Une leçon du relevé #52, qui commande la forme de ce fichier : un Worker créé depuis une URL
+// `blob:` refusée par `worker-src 'self'` ne lève AUCUNE exception. Le constructeur rend un objet,
+// et cet objet ne fait rien. Une sonde qui se contenterait d'un `try/catch` conclurait donc
+// « autorisé » sur un Worker mort. Les sondes de Worker mesurent par conséquent le SIGNE DE VIE —
+// un message reçu dans un délai borné.
+//
+// Le refus, lui, EST observable, par deux canaux distincts que la sonde consigne tous les deux : un
+// événement `securitypolicyviolation` sur le document, et un événement `error` sur le Worker. Ni
+// l'un ni l'autre n'est une exception, et aucun des deux n'interrompt le code appelant.
 
 /** Délai accordé à un Worker ou à un script pour donner signe de vie. */
 const DELAI_SIGNE_DE_VIE_MS = 2000;

@@ -23,6 +23,8 @@ import {
   isCapabilityProbe,
   parseServerOptions,
   securityHeaders,
+  HARNAIS_CSP_ENV,
+  HARNAIS_CSP_VALEUR,
   shellContentSecurityPolicy,
 } from "../../tools/serve-headers.mjs";
 
@@ -193,6 +195,31 @@ test("les options du serveur ont des défauts par rôle et refusent une valeur i
   assert.equal(parseServerOptions(["--host", "127.0.0.1", "--port", "5000"]).port, 5000);
   assert.throws(() => parseServerOptions(["--port", "abc"]), /Port invalide/);
   assert.throws(() => parseServerOptions(["--port"]), /L'option --port attend une valeur/);
+});
+
+test("le drapeau de mesure --worker-src-blob est refusé hors du harnais", () => {
+  // L'ADR 0013 et SECURITY.md affirment que ce drapeau n'est jamais posé par un lancement de
+  // service. Sans ce contrôle, `npm start -- --worker-src-blob` servirait la politique élargie EN
+  // SILENCE, et la phrase serait une convention, pas une garantie du code.
+  assert.throws(
+    () => parseServerOptions(["--worker-src-blob"], {}),
+    /harnais de mesure/,
+    "un lancement de service doit être refusé, pas servi",
+  );
+  assert.throws(
+    () => parseServerOptions(["--worker-src-blob"], { [HARNAIS_CSP_ENV]: "n-importe-quoi" }),
+    /harnais de mesure/,
+  );
+  assert.equal(
+    parseServerOptions(["--worker-src-blob"], { [HARNAIS_CSP_ENV]: HARNAIS_CSP_VALEUR })
+      .workerSrcBlob,
+    true,
+  );
+  // Le harnais n'accorde rien d'autre : sans le drapeau, la politique reste celle de la coquille.
+  assert.equal(
+    parseServerOptions([], { [HARNAIS_CSP_ENV]: HARNAIS_CSP_VALEUR }).workerSrcBlob,
+    false,
+  );
 });
 
 test("l'invocation historique de la suite de compatibilité reste comprise", () => {
