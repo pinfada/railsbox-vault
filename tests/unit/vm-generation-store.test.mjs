@@ -18,25 +18,50 @@ const TAILLE_VOLUME = 32 * 512;
 function creerSupport() {
   const magasin = createSyncAccessStore();
   const volume = new Uint8Array(TAILLE_VOLUME);
-  return {
+  const support = {
     magasin,
     volume,
+    /** Armé par un test pour couper le point de contrôle APRÈS la recopie et AVANT le vidage. */
+    echouerBarriereVolume: false,
     lireVolume: (offset, longueur) => volume.slice(offset, offset + longueur),
     ecrireVolume: (offset, octets) => {
       volume.set(octets, offset);
       return octets.byteLength;
     },
+    barriereVolume: async () => {
+      if (support.echouerBarriereVolume) throw new DOMException("Barrière refusée", "AbortError");
+    },
+  };
+  return support;
+}
+
+/**
+ * Handle dont l'ÉCRITURE échoue tant que `refuse` est armé. Le double calibré sait affamer un
+ * fichier, mais définitivement : un test qui doit rouvrir ensuite a besoin d'une panne qu'on désarme.
+ */
+function handleRefusant(handle, etat) {
+  return {
+    getSize: () => handle.getSize(),
+    read: (tampon, position) => handle.read(tampon, position),
+    write(octets, position) {
+      if (etat.refuse) throw new DOMException("Plus de place", "QuotaExceededError");
+      return handle.write(octets, position);
+    },
+    truncate: (taille) => handle.truncate(taille),
+    flush: () => handle.flush(),
+    close: () => handle.close(),
   };
 }
 
-async function ouvrirMagasin(support, nom = "vol.gen") {
-  const handle = await support.magasin.openHandle(nom);
+async function ouvrirMagasin(support, nom = "vol.gen", { enveloppe = (h) => h } = {}) {
+  const handle = enveloppe(await support.magasin.openHandle(nom));
   return GenerationStore.ouvrir({
     volume: "vol",
     handle,
     tailleVolume: TAILLE_VOLUME,
     lireVolume: support.lireVolume,
     ecrireVolume: support.ecrireVolume,
+    barriereVolume: support.barriereVolume,
   });
 }
 
@@ -201,6 +226,43 @@ test("une validation dont la racine échoue ne rend pas la génération rangeabl
   );
 });
 
+test("un point de contrôle interrompu ne rend pas le volume irouvrable", async () => {
+  // Le point de contrôle recopie la charge validée dans le volume, PUIS vide le journal. S'il est
+  // interrompu entre les deux — quota, handle perdu, mort de l'onglet —, les octets sont dans le
+  // volume ET la racine les déclare encore dans le journal. La réouverture doit alors les REJOUER
+  // une seconde fois, ce qui est sans effet, et surtout PAS refuser le volume.
+  //
+  // C'est l'ordre qui le garantit : la racine vide est rendue durable AVANT la troncature. L'ordre
+  // inverse retirerait du fichier des octets qu'une racine autoritaire déclare toujours, et la
+  // réouverture lèverait `VAULT_STORAGE_GENERATION_CORRUPT` sur une donnée pourtant intacte.
+  const support = creerSupport();
+  const nouveau = buildPattern(512, 2000);
+
+  const etat = { refuse: false };
+  const premier = await ouvrirMagasin(support, "vol.gen", {
+    enveloppe: (handle) => handleRefusant(handle, etat),
+  });
+  await premier.deposer(0, nouveau);
+  await premier.valider();
+
+  // Le support refuse d'écrire au moment PRÉCIS où le point de contrôle vide le journal : les octets
+  // sont déjà dans le volume, la racine les déclare encore dans le journal. C'est la fenêtre où
+  // l'ordre des gestes décide du sort du volume.
+  etat.refuse = true;
+  await assert.rejects(() => premier.pointDeControle());
+  support.magasin.abandon("vol.gen");
+
+  // La session suivante retrouve un support sain — l'exploitant a libéré de la place, ou rouvert
+  // l'onglet. Le volume doit alors S'OUVRIR, et sa génération être rejouée une seconde fois, ce qui
+  // est sans effet. Avec l'ordre inverse — troncature avant racine —, la racine autoritaire
+  // déclarerait une charge que le fichier ne porte plus, et l'ouverture lèverait
+  // `VAULT_STORAGE_GENERATION_CORRUPT` sur une donnée pourtant intacte.
+  const second = await ouvrirMagasin(support);
+  assert.equal(second.rapport.etat, GENERATION_ETATS.rejouee, second.rapport.raison ?? "");
+  assert.equal(second.generationValidee, 1);
+  assert.deepEqual([...support.volume.subarray(0, 512)], [...nouveau]);
+});
+
 test("le journal borné refuse la génération démesurée au lieu de la publier à moitié", async () => {
   const support = creerSupport();
   const handle = await support.magasin.openHandle("vol.gen");
@@ -210,6 +272,7 @@ test("le journal borné refuse la génération démesurée au lieu de la publier
     tailleVolume: TAILLE_VOLUME,
     lireVolume: support.lireVolume,
     ecrireVolume: support.ecrireVolume,
+    barriereVolume: support.barriereVolume,
     plafondOctets: 1024,
   });
 
