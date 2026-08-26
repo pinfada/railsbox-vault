@@ -18,8 +18,17 @@ import {
   exigerContexteExecutable,
   mesurerRythme,
 } from "/src/vm/runtime-environment.mjs";
+import { decrireBoucle, installerBoucleOrdonnancement } from "/src/vm/scheduling-loop.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { createManifest } from "/src/vm/volume-manifest.mjs";
+
+/**
+ * La boucle d'ordonnancement de v86 est posée À L'ÉVALUATION de ce module — donc au démarrage du
+ * Worker, avant `importV86` et avant le contrôle préalable. v86 fige son chemin d'ordonnancement à
+ * l'évaluation de SON module et ne le révise jamais : posée plus tard, elle n'aurait aucun effet
+ * (ADR 0013, § « Mise en œuvre par #74 »).
+ */
+const boucleOrdonnancement = installerBoucleOrdonnancement();
 
 /**
  * Identités du volume, telles qu'un scénario les déclare. Elles servent DEUX fois : à inscrire le
@@ -81,7 +90,10 @@ function booterEtAttendreSante(session, { bootTimeoutMs, timeline, observations 
       timeline.marquer("bootRendu");
       return session.awaitHealth({ totalTimeoutMs: bootTimeoutMs });
     },
-    { onObservation: (observation) => observations.push(observation) },
+    {
+      onObservation: (observation) => observations.push(observation),
+      decrireBoucle: () => decrireBoucle(boucleOrdonnancement),
+    },
   );
 }
 
@@ -246,6 +258,7 @@ export async function bootEtVerifier({
   let health;
   let invariant;
   let rythme;
+  let boucle;
   try {
     health = await booterEtAttendreSante(session, { bootTimeoutMs, timeline, observations });
     timeline.marquer("santePrete");
@@ -253,6 +266,7 @@ export async function bootEtVerifier({
     // comparables deux exécutions de l'IMAGE DE RÉFÉRENCE avec des boucles d'ordonnancement
     // différentes (#74) : `healthMilliseconds` seul ne dirait pas si l'émulateur a battu plus vite.
     rythme = mesurerRythme({ ticks: session.ticks(), fenetreMs: performance.now() - started });
+    boucle = decrireBoucle(boucleOrdonnancement);
     const reponse = await session.request("GET", "/vault/invariant");
     timeline.marquer("invariantRendu");
     invariant = {
@@ -278,6 +292,7 @@ export async function bootEtVerifier({
     bootMilliseconds: Number((performance.now() - started).toFixed(1)),
     healthMilliseconds: health.durationMs,
     rythme,
+    boucleOrdonnancement: boucle,
     timeline: timeline.decomposer({ healthMs: health.durationMs }),
     transferredBytes,
     memoryBytes,

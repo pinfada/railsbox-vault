@@ -99,15 +99,32 @@ export function schedulingUnavailable({ raison, observation }) {
 }
 
 /**
+ * Ce que la boucle d'ordonnancement posée par Vault apprend sur un compteur figé. Le nombre de
+ * tâches qu'elle a reçues sépare deux pannes que rien d'autre ne distingue : v86 emprunte-t-il
+ * cette boucle, ou une autre ?
+ */
+function verdictSurLaBoucle(boucle) {
+  if (!boucle) return "";
+  if (boucle.appels > 0) {
+    return ` La boucle d'ordonnancement posée par Vault (« ${boucle.source} ») a reçu ${boucle.appels} tâche(s) : v86 l'emprunte bien, et la panne est donc ailleurs.`;
+  }
+  return ` La boucle d'ordonnancement posée par Vault (« ${boucle.source} ») n'a reçu AUCUNE tâche : v86 ne l'emprunte pas. Il ne reste qu'une cause possible — l'URL de ce Worker ne contient pas « use-scheduling-api ».`;
+}
+
+/**
  * L'émulateur existe, son compteur de tours est LISIBLE, et il n'a pas bougé dans le délai imparti.
  * `ticks` porte donc toujours un nombre : un compteur illisible relève de `ticksUnreadable`, qui
  * n'est pas une panne.
+ *
+ * `boucle` est la forme sérialisable de la boucle d'ordonnancement posée par Vault (#74), ou `null`
+ * quand l'appelant n'en a pas posé. Elle n'est pas décorative : sans elle, le message devrait
+ * DEVINER pourquoi un émulateur muni d'une boucle ne bat pas.
  */
-export function noTick({ delaiMs, ticks }) {
+export function noTick({ delaiMs, ticks, boucle = null }) {
   return new RuntimeError(
     RUNTIME_ERROR_CODES.noTick,
-    `L'émulateur n'a effectué aucun tour de boucle en ${delaiMs} ms (compteur figé à ${ticks}). Le contrôle préalable n'a donc pas prédit cette panne : c'est un fait à consigner dans l'ADR 0013 avant de conclure.`,
-    { delaiMs, ticks },
+    `L'émulateur n'a effectué aucun tour de boucle en ${delaiMs} ms (compteur figé à ${ticks}).${verdictSurLaBoucle(boucle)} Le contrôle préalable n'a donc pas prédit cette panne : c'est un fait à consigner dans l'ADR 0013 avant de conclure.`,
+    { delaiMs, ticks, boucle },
   );
 }
 

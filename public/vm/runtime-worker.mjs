@@ -25,8 +25,18 @@ import {
   exigerContexteExecutable,
   mesurerRythme,
 } from "/src/vm/runtime-environment.mjs";
+import { decrireBoucle, installerBoucleOrdonnancement } from "/src/vm/scheduling-loop.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { BRIDGE_MODES } from "/src/vm/v86-flush-bridge.mjs";
+
+/**
+ * La boucle d'ordonnancement de v86 est posée À L'ÉVALUATION de ce module, donc avant tout import
+ * dynamique de `libv86.mjs` et avant le contrôle préalable. L'ordre n'est pas négociable : v86 fige
+ * son chemin d'ordonnancement à l'évaluation de SON module et ne le révise jamais (ADR 0013, § « Mise
+ * en œuvre par #74 »). Posée plus tard, elle ne servirait à rien ; posée ici, elle sert aux trois
+ * moteurs de la matrice.
+ */
+const boucleOrdonnancement = installerBoucleOrdonnancement();
 
 const ARTIFACTS = "/vendor/v86/artefacts/";
 const SCENARIOS = { barrier: BARRIER_STEPS, filesystem: FILESYSTEM_STEPS };
@@ -61,11 +71,15 @@ async function booter(session, observations) {
     () => session.boot(),
     {
       onObservation: (observation) => observations.push(observation),
+      decrireBoucle: () => decrireBoucle(boucleOrdonnancement),
     },
   );
   return {
     bootMilliseconds: Number(ecouleMs.toFixed(1)),
     rythme: mesurerRythme({ ticks: session.ticks(), fenetreMs: ecouleMs }),
+    // Relevé sur la MÊME fenêtre que le rythme : le nombre de tâches dit si v86 a réellement
+    // emprunté la boucle posée, ce que « la boucle est posée » ne prouve pas à soi seul.
+    boucleOrdonnancement: decrireBoucle(boucleOrdonnancement),
   };
 }
 
@@ -125,14 +139,15 @@ async function run({
   const session = createGuestSession({ V86, artifacts, adapter, journal, mode });
 
   try {
-    const { bootMilliseconds, rythme } = await booter(session, observations);
+    const boot = await booter(session, observations);
     const results = await runSteps(session, steps);
     const verdict = verdictForBarrierScenario(journal);
     return {
       scenario,
       mode,
-      bootMilliseconds,
-      rythme,
+      bootMilliseconds: boot.bootMilliseconds,
+      rythme: boot.rythme,
+      boucleOrdonnancement: boot.boucleOrdonnancement,
       transferredBytes,
       counts: journal.counts(),
       steps: summariseSteps(journal, results),
@@ -226,6 +241,7 @@ async function runOpfsPersistence({
     reopenedSize,
     bootMilliseconds: boot.bootMilliseconds,
     rythme: boot.rythme,
+    boucleOrdonnancement: boot.boucleOrdonnancement,
     transferredBytes,
     counts: journal.counts(),
     steps,
@@ -305,6 +321,7 @@ async function runOpfsBarrier({
     fault,
     bootMilliseconds: boot.bootMilliseconds,
     rythme: boot.rythme,
+    boucleOrdonnancement: boot.boucleOrdonnancement,
     transferredBytes,
     counts: journal.counts(),
     steps: summariseSteps(journal, results),
@@ -337,6 +354,10 @@ self.addEventListener("message", (event) => {
           report: {
             url: location.href,
             schedulerPostTask: typeof globalThis.scheduler?.postTask === "function",
+            // La boucle réellement en place dans CE contexte. Sans elle, `schedulerPostTask` serait
+            // ambigu : il vaut « vrai » aussi bien pour l'implémentation du moteur que pour la
+            // nôtre, et ce sont deux situations que #74 a mesurées comme opposées sous Firefox.
+            boucleOrdonnancement: decrireBoucle(boucleOrdonnancement),
             diagnostic: erreur ? erreur.toJSON() : null,
           },
         }),
