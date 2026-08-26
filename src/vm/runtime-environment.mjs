@@ -47,9 +47,9 @@ export async function sonderWorkerBlob({
     );
     worker = new contexte.Worker(url);
   } catch (erreur) {
-    return `refusé à la construction : ${erreur.name}`;
-  } finally {
+    // Aucun Worker n'a été construit : plus personne ne peut avoir besoin du blob.
     if (url) contexte.URL.revokeObjectURL(url);
+    return `refusé à la construction : ${erreur.name}`;
   }
   try {
     return await new Promise((resolve) => {
@@ -65,6 +65,9 @@ export async function sonderWorkerBlob({
     });
   } finally {
     worker.terminate();
+    // Révoquée SEULEMENT ici : le Worker a donné signe de vie, ou le délai l'a déclaré muet. La
+    // fenêtre où un chargement de blob en cours pourrait échouer sur une URL disparue est fermée.
+    contexte.URL.revokeObjectURL(url);
   }
 }
 
