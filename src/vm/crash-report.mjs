@@ -12,7 +12,14 @@
 // requis pour cela — la compatibilité persistante du dépôt n'est pas engagée.
 
 import { VERDICTS } from "./crash-oracle.mjs";
-import { BARRIERE_TOUS_LES, BLOC_OCTETS, BLOCS_SUIVIS } from "./crash-scenario.mjs";
+import {
+  BARRIERES,
+  BARRIERE_TOUS_LES,
+  BLOCS_SUIVIS,
+  BLOC_OCTETS,
+  ECRITURES,
+  PASSES,
+} from "./crash-scenario.mjs";
 
 /**
  * Profil du scénario mesuré. Un taux sans lui n'est comparable à rien : 0,25 sur douze points de
@@ -22,8 +29,12 @@ import { BARRIERE_TOUS_LES, BLOC_OCTETS, BLOCS_SUIVIS } from "./crash-scenario.m
 const PROFIL_MESURE = Object.freeze({
   blocsSuivis: BLOCS_SUIVIS,
   tailleBloc: BLOC_OCTETS,
-  ecritures: BLOCS_SUIVIS,
-  barrieres: Math.ceil(BLOCS_SUIVIS / BARRIERE_TOUS_LES),
+  // `ecritures` n'est PAS le nombre de blocs suivis depuis #16 : le scénario réécrit les mêmes blocs
+  // à chaque passe. Les confondre publierait « 8 écritures » sous un relevé qui en émet 24, et le
+  // taux ne serait plus comparable à celui de #15.
+  ecritures: ECRITURES,
+  passes: PASSES,
+  barrieres: BARRIERES,
   barriereTousLes: BARRIERE_TOUS_LES,
 });
 

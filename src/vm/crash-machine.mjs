@@ -29,7 +29,9 @@ import {
   relireBlocs,
 } from "./crash-scenario.mjs";
 import { createFaultPlan } from "./fault-plan.mjs";
+import { GenerationStore } from "./generation-store.mjs";
 import { OpfsBlockBackend } from "./opfs-block-backend.mjs";
+import { generationJournalName } from "./opfs-sync-access.mjs";
 import { createSyncAccessStore } from "./sync-access-double.mjs";
 
 /**
@@ -60,6 +62,21 @@ export function creerMachineJetable({ nom = "resilience", taille = VOLUME_OCTETS
         faults,
         flushDelay: 0,
       });
+      // Le journal de génération est ouvert et RÉCUPÉRÉ ici, comme le fait `openOpfsVolume` en
+      // production : c'est ce geste qui rejoue la dernière génération validée ou écarte celle qui ne
+      // l'est pas. Sans lui, la machine jetable éprouverait un backend qui n'est pas celui du
+      // produit, et sa mesure ne dirait plus rien du produit.
+      const journalGeneration = await support.openHandle(generationJournalName(nom));
+      backend.installerGeneration(
+        await GenerationStore.ouvrir({
+          volume: nom,
+          handle: journalGeneration,
+          tailleVolume: taille,
+          lireVolume: (offset, longueur) => backend.lireSupportBrut(offset, longueur),
+          ecrireVolume: (offset, octets) => backend.ecrireSupportBrut(offset, octets),
+          barriereVolume: () => backend.barriereSupportBrute(),
+        }),
+      );
       return backend;
     },
 
@@ -77,6 +94,10 @@ export function creerMachineJetable({ nom = "resilience", taille = VOLUME_OCTETS
     /** Arrêt brutal : ni fermeture, ni barrière. L'exclusivité est reprise, comme après une mort. */
     arreterBrutalement() {
       support.abandon(nom);
+      // Le journal de génération meurt avec la machine, et sans fermeture : c'est précisément ce qui
+      // laisse une génération non validée derrière elle. L'oublier ferait de la coupure une
+      // fermeture propre déguisée, exactement comme l'oubli du volume lui-même.
+      support.abandon(generationJournalName(nom));
       backend = null;
     },
 

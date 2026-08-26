@@ -203,7 +203,7 @@ test("une lecture courte du support devient une erreur typée, jamais un tampon 
   await backend.close();
 });
 
-test("une écriture partielle du support est signalée et les octets acceptés restent écrits", async () => {
+test("une écriture partielle du support est signalée et n'entame pas le volume", async () => {
   const { backend } = await volume({ store: { maxWriteBytes: SECTOR_SIZE } });
   const donnees = new Uint8Array(4 * SECTOR_SIZE).fill(0xab);
 
@@ -215,23 +215,34 @@ test("une écriture partielle du support est signalée et les octets acceptés r
       erreur.context.requested === 4 * SECTOR_SIZE,
   );
 
-  // Ni ancien état complet, ni nouvel état complet : l'état intermédiaire est réel et connu.
+  // C'est ici que #16 change le contrat de #6. Jusqu'à cette tranche, une écriture partielle
+  // laissait dans le VOLUME les octets acceptés : « ni ancien état complet, ni nouvel état complet »,
+  // un état intermédiaire réel et connu — mais un état que l'oracle de #15 classait DÉCHIRÉ. La
+  // génération transactionnelle déplace ces octets dans le journal voisin : la déchirure y est aussi
+  // réelle, mais elle n'atteint plus le volume, et la génération sera écartée à la réouverture.
   const relue = await backend.read(0, 2 * SECTOR_SIZE);
-  assert.equal(relue[0], 0xab);
+  assert.equal(relue[0], 0x00, "le volume porte encore l'état d'avant l'écriture");
   assert.equal(relue[SECTOR_SIZE], 0x00);
   await backend.close();
 });
 
 test("un dépassement de quota du support est un état distinct, jamais un succès", async () => {
-  const { backend } = await volume({ store: { quotaBytes: TAILLE, writeCostBytes: SECTOR_SIZE } });
+  // Le quota laisse juste de quoi ouvrir le volume et son journal de génération, plus une poignée
+  // d'octets : l'écriture qui déborde est celle du JOURNAL, puisque c'est là que va désormais une
+  // génération en cours. Le code et le remède ne changent pas — libérer de la place.
+  const { backend } = await volume({ store: { quotaBytes: TAILLE + 2048 } });
 
-  await assert.rejects(
-    () => backend.write(0, new Uint8Array(SECTOR_SIZE)),
-    (erreur) =>
-      isStorageError(erreur, STORAGE_ERROR_CODES.quotaExceeded) &&
-      erreur.context.operation === "write",
-  );
-  await backend.close();
+  let refus = null;
+  for (let essai = 0; essai < 8 && refus === null; essai += 1) {
+    try {
+      await backend.write(essai * SECTOR_SIZE, new Uint8Array(SECTOR_SIZE).fill(essai + 1));
+    } catch (erreur) {
+      refus = erreur;
+    }
+  }
+  assert.ok(refus !== null, "le quota doit finir par être atteint");
+  assert.ok(isStorageError(refus, STORAGE_ERROR_CODES.quotaExceeded), refus?.code);
+  assert.equal(refus.context.operation, "write");
 });
 
 test("un handle perdu contamine toutes les opérations suivantes", async () => {
@@ -272,7 +283,10 @@ test("un handle perdu reste un handle perdu, même découvert par la barrière",
 
 test("un quota atteint pendant la barrière reste un quota, pas un échec de barrière", async () => {
   const { backend, store, name } = await volume();
-  store.starve(name);
+  // Depuis #16 la barrière scelle le JOURNAL DE GÉNÉRATION voisin : c'est lui que le manque de place
+  // frappe désormais. Le remède est le même — libérer de la place —, et le code doit rester distinct
+  // d'un échec de barrière.
+  store.starve(`${name}.gen`);
 
   await assert.rejects(
     () => backend.flush(),
@@ -329,8 +343,14 @@ test("la barrière franchie journalise écriture, barrière puis acquittement, d
     journal.entries().map((entree) => entree.operation),
     [JOURNAL_OPERATIONS.write, JOURNAL_OPERATIONS.flush, JOURNAL_OPERATIONS.flushAck],
   );
-  assert.equal(store.flushCount(name), 1, "l'acquittement suit un flush réel du support");
+  // Trois barrières RÉELLES du support : une à l'ouverture, qui rend durable la racine initiale du
+  // journal, puis DEUX par validation (#16, ADR 0014) — la charge d'abord, la racine ensuite.
+  // L'ordre est ce qui distingue « validé » de « probablement écrit », et le compte est épinglé pour
+  // qu'un raccourci qui n'en franchirait qu'une soit visible.
+  assert.equal(store.flushCount(`${name}.gen`), 3, "une à l'ouverture, deux pour la validation");
+  assert.equal(store.flushCount(name), 0, "le volume lui-même n'est franchi qu'au point de contrôle");
   await backend.close();
+  assert.equal(store.flushCount(name), 1, "la fermeture propre range la génération dans le volume");
 });
 
 test("l'ouverture est exclusive et la fermeture transfère la propriété du volume", async () => {

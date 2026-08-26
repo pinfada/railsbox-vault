@@ -93,6 +93,10 @@ export class GenerationStore {
   #longueurCharge = 0;
   #enregistrements = 0;
   #sommeCharge = 0;
+  /** Charge SCELLÉE par la dernière racine. Ce qui la dépasse n'est pas encore validé. */
+  #longueurValidee = 0;
+  #enregistrementsValides = 0;
+  #sommeValidee = 0;
   #sequence = 0;
   #generation = 0;
   #sequenceValidee = 0;
@@ -356,15 +360,44 @@ export class GenerationStore {
   }
 
   /**
+   * SUPERPOSE la génération en cours à un tampon déjà relu du volume, en place.
+   *
+   * Le backend garde ainsi son chemin de lecture — bornes, faute programmée, contrôle de géométrie,
+   * traduction des échecs du support — et n'y ajoute qu'un recouvrement. Sans lui, un guest ne se
+   * relirait pas : il écrirait un secteur, le relirait avant la barrière, et retrouverait l'état
+   * d'avant. Aucun système de fichiers ne survit à cela.
+   *
+   * @param {number} offset offset logique du premier octet de `tampon`
+   * @param {Uint8Array} tampon modifié en place, puis rendu
+   */
+  superposer(offset, tampon) {
+    if (this.#index.size === 0) return tampon;
+    const fin = offset + tampon.byteLength;
+    for (let secteur = alignerBas(offset); secteur < fin; secteur += SECTOR_SIZE) {
+      const position = this.#index.get(secteur);
+      if (position === undefined) continue;
+      const depuis = Math.max(offset, secteur);
+      const jusque = Math.min(fin, secteur + SECTOR_SIZE);
+      const octets = this.#lireJournal(position + (depuis - secteur), jusque - depuis);
+      tampon.set(octets, depuis - offset);
+    }
+    return tampon;
+  }
+
+  /**
    * VALIDE la génération en cours. Au retour, elle est durable : c'est le point où la barrière du
    * guest peut être acquittée sans mentir.
    *
    * @returns {Promise<number>} le numéro de la génération validée
    */
   async valider() {
-    if (this.#longueurCharge === 0 && this.#sequenceValidee === this.#sequence) {
-      // Barrière à vide : rien n'a été déposé depuis la dernière validation. Il n'y a rien à
-      // sceller, et écrire une racine identique ne rendrait rien plus durable.
+    if (this.#longueurCharge === this.#longueurValidee) {
+      // Barrière À VIDE : rien n'a été déposé depuis la dernière validation, et écrire une racine
+      // identique ne rendrait rien plus durable. Le support est TOUT DE MÊME sollicité : le guest a
+      // demandé une durabilité, et lui répondre « oui » sans rien demander au support serait
+      // exactement l'acquittement anticipé que `SEC-DURABLE-001` refuse — un support qui ne peut plus
+      // écrire resterait alors invisible jusqu'à la prochaine écriture.
+      await this.#barriereJournal();
       return this.#generation;
     }
     // La charge AVANT la racine : sans cette barrière, un support pourrait rendre la racine durable
@@ -373,6 +406,9 @@ export class GenerationStore {
     await this.#barriereJournal();
     this.#sequence += 1;
     this.#generation += 1;
+    this.#longueurValidee = this.#longueurCharge;
+    this.#enregistrementsValides = this.#enregistrements;
+    this.#sommeValidee = this.#sommeCharge;
     await this.#ecrireRacine();
     this.#sequenceValidee = this.#sequence;
     return this.#generation;
@@ -383,9 +419,9 @@ export class GenerationStore {
       sequence: this.#sequence,
       generation: this.#generation,
       tailleVolume: this.#tailleVolume,
-      enregistrements: this.#enregistrements,
-      longueurCharge: this.#longueurCharge,
-      sommeCharge: this.#sommeCharge,
+      enregistrements: this.#enregistrementsValides,
+      longueurCharge: this.#longueurValidee,
+      sommeCharge: this.#sommeValidee,
     });
     this.#ecrireJournal(offsetDeRacine(racineDeSequence(this.#sequence)), racine);
     await this.#barriereJournal();
@@ -393,7 +429,15 @@ export class GenerationStore {
 
   /** Vrai si la charge validée mérite d'être rangée dans le volume dès maintenant. */
   get pointDeControleDu() {
-    return this.#longueurCharge >= this.#seuilPointDeControle;
+    return this.#longueurValidee >= this.#seuilPointDeControle;
+  }
+
+  /**
+   * Vrai si tout ce qui est déposé est validé. Une charge non validée n'est JAMAIS rangée dans le
+   * volume : elle n'a été acquittée à personne, et la prochaine ouverture l'écartera.
+   */
+  get rangeable() {
+    return this.#longueurValidee > 0 && this.#longueurValidee === this.#longueurCharge;
   }
 
   /**
@@ -404,19 +448,19 @@ export class GenerationStore {
    * reste dans le journal, et la prochaine ouverture la rejouera.
    */
   async pointDeControle() {
-    if (this.#longueurCharge === 0) return;
-    if (this.#sequenceValidee !== this.#sequence) {
+    if (this.#longueurValidee === 0) return;
+    if (!this.rangeable) {
       throw new StorageError(
         STORAGE_ERROR_CODES.generationPending,
-        `Point de contrôle refusé sur le volume « ${this.#volume} » : la génération en cours n'est pas validée, la recopier publierait des octets qu'aucune barrière n'a acquittés.`,
+        `Point de contrôle refusé sur le volume « ${this.#volume} » : ${this.#longueurCharge - this.#longueurValidee} octet(s) déposés ne sont validés par aucune barrière, et les recopier publierait un état que personne n'a acquitté.`,
         { volume: this.#volume, generation: this.#generation },
       );
     }
     for (const entree of this.#relireCharge({
       generation: this.#generation,
-      enregistrements: this.#enregistrements,
-      longueurCharge: this.#longueurCharge,
-      sommeCharge: this.#sommeCharge,
+      enregistrements: this.#enregistrementsValides,
+      longueurCharge: this.#longueurValidee,
+      sommeCharge: this.#sommeValidee,
     })) {
       this.#ecrireVolume(entree.offset, entree.octets);
     }
@@ -432,6 +476,9 @@ export class GenerationStore {
     this.#longueurCharge = 0;
     this.#enregistrements = 0;
     this.#sommeCharge = 0;
+    this.#longueurValidee = 0;
+    this.#enregistrementsValides = 0;
+    this.#sommeValidee = 0;
     this.#handle.truncate(ZONE_ENREGISTREMENTS);
   }
 
@@ -441,6 +488,9 @@ export class GenerationStore {
     this.#longueurCharge = 0;
     this.#enregistrements = 0;
     this.#sommeCharge = 0;
+    this.#longueurValidee = 0;
+    this.#enregistrementsValides = 0;
+    this.#sommeValidee = 0;
     this.#sequence = sequence + 1;
     this.#generation = generation;
     this.#handle.truncate(ZONE_ENREGISTREMENTS);

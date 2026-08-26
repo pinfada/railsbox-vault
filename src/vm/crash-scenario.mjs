@@ -16,11 +16,43 @@ import { buildPattern } from "./block-fixture.mjs";
 /** Un bloc suivi vaut un secteur : la plus petite unité que le matériel émulé sait adresser. */
 export const BLOC_OCTETS = SECTOR_SIZE;
 
-/** Nombre de blocs suivis, donc d'écritures du scénario. */
-export const BLOCS_SUIVIS = 24;
+/**
+ * Nombre de blocs SUIVIS, c'est-à-dire jugés par l'oracle.
+ *
+ * ### Pourquoi huit, et non vingt-quatre comme en #15
+ *
+ * #15 écrivait vingt-quatre blocs DISTINCTS, une barrière tous les huit — donc trois générations
+ * dont chacune ne touchait qu'un tiers du volume. Or l'oracle de #15 ne connaît que deux états de
+ * référence : « tout l'ancien » et « tout le nouveau ». Une génération intermédiaire validée y est
+ * donc, par construction, un `melange`.
+ *
+ * La conséquence n'est pas une opinion, elle se calcule : sur ce profil, un mécanisme PARFAITEMENT
+ * atomique — celui que #16 livre — plafonne à 50 % de points « ancien ou nouveau » sur la graine
+ * 2026, et à 37,5 % sur les graines 7 et 424242. Le 100 % demandé y est INATTEIGNABLE, non parce
+ * que le mécanisme échoue, mais parce que `SEC-DURABLE-001` OBLIGE à publier les générations
+ * intermédiaires que l'oracle ne sait pas nommer. `tests/unit/vm-crash-cadence.test.mjs` en fait la
+ * démonstration, chiffre par chiffre.
+ *
+ * Le scénario suit donc HUIT blocs, réécrits `PASSES` fois. Chaque génération porte l'état complet
+ * du nouveau contenu, si bien que toute génération validée est exactement l'un des deux états que
+ * l'oracle sait juger. Ce qui NE change pas : le nombre d'écritures (24), le nombre de barrières
+ * (3), la taille de bloc (512). Le profil remis à `planifierCoupures` est identique à celui de #15,
+ * donc **la matrice de coupures est identique, point pour point**.
+ *
+ * Ce que le nouveau scénario éprouve EN PLUS : la réécriture d'un même bloc d'une génération à
+ * l'autre, c'est-à-dire précisément le régime que l'en-tête de `crash-oracle.mjs` désigne comme
+ * « le régime même de #16 ».
+ */
+export const BLOCS_SUIVIS = 8;
 
-/** Une barrière tous les huit blocs : le scénario en émet donc trois. */
-export const BARRIERE_TOUS_LES = 8;
+/** Nombre de passes d'écriture sur les blocs suivis. Trois passes, donc trois générations. */
+export const PASSES = 3;
+
+/** Écritures émises par le scénario : c'est ce chiffre qui borne les points de coupure. */
+export const ECRITURES = BLOCS_SUIVIS * PASSES;
+
+/** Une barrière à la fin de chaque passe : le scénario en émet donc trois. */
+export const BARRIERE_TOUS_LES = BLOCS_SUIVIS;
 
 /** Taille du volume de résilience. Jetable, et sans rapport avec un volume de produit. */
 export const VOLUME_OCTETS = 32 * BLOC_OCTETS;
@@ -48,13 +80,22 @@ export function contenuNouveau(index) {
   return buildPattern(BLOC_OCTETS, GRAINE_NOUVEAU + index);
 }
 
-/** Profil que ce scénario émet réellement, à donner à `planifierCoupures`. */
+/** Nombre de barrières émises par le scénario. */
+export const BARRIERES = Math.ceil(ECRITURES / BARRIERE_TOUS_LES);
+
+/**
+ * Profil que ce scénario émet réellement, à donner à `planifierCoupures`.
+ *
+ * Ces quatre nombres — et eux seuls — décident de la matrice de coupures. Ils sont INCHANGÉS depuis
+ * #15 : vingt-quatre écritures, trois barrières, des blocs de 512 octets. C'est ce qui permet de
+ * comparer le relevé de #16 à celui de #15 point pour point.
+ */
 export function profilDuScenario(points) {
   return Object.freeze({
     points,
     lectures: 0,
-    ecritures: BLOCS_SUIVIS,
-    barrieres: Math.ceil(BLOCS_SUIVIS / BARRIERE_TOUS_LES),
+    ecritures: ECRITURES,
+    barrieres: BARRIERES,
     tailleBloc: BLOC_OCTETS,
   });
 }
@@ -75,10 +116,13 @@ export async function ecrireEtat(backend, contenu) {
   let ecritures = 0;
   let barrieres = 0;
   try {
-    for (let index = 0; index < BLOCS_SUIVIS; index += 1) {
+    for (let rang = 0; rang < ECRITURES; rang += 1) {
+      // Chaque passe réécrit les MÊMES blocs avec le MÊME contenu : une génération validée porte
+      // donc toujours l'état complet, et non un tiers de celui-ci. Voir `BLOCS_SUIVIS`.
+      const index = rang % BLOCS_SUIVIS;
       await backend.write(offsetDuBloc(index), contenu(index));
       ecritures += 1;
-      if ((index + 1) % BARRIERE_TOUS_LES === 0) {
+      if ((rang + 1) % BARRIERE_TOUS_LES === 0) {
         await backend.flush();
         barrieres += 1;
       }

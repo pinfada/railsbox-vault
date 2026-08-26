@@ -30,12 +30,21 @@ export const MANIFEST_SIDECAR_SUFFIX = ".manifest";
 export const MIGRATION_JOURNAL_SUFFIX = ".migration";
 
 /**
+ * Suffixe RÉSERVÉ du JOURNAL DE GÉNÉRATION (#16). Il vit à côté du volume pour la même raison que
+ * les deux précédents, et il est délibérément COURT : `MAX_VOLUME_NAME` se déduit du plus long
+ * suffixe réservé, et un suffixe de plus de dix caractères aurait rétréci les noms de volume
+ * admissibles — c'est-à-dire cassé la compatibilité de nommage pour un fichier interne.
+ */
+export const GENERATION_JOURNAL_SUFFIX = ".gen";
+
+/**
  * Tous les suffixes réservés aux voisins d'un volume. Aucun volume ne peut en porter un, sans quoi
  * migrer « donnees » détruirait un volume légitime nommé « donnees.migration ».
  */
 export const RESERVED_SIDECAR_SUFFIXES = Object.freeze([
   MANIFEST_SIDECAR_SUFFIX,
   MIGRATION_JOURNAL_SUFFIX,
+  GENERATION_JOURNAL_SUFFIX,
 ]);
 
 /** Longueur du plus long voisin à réserver : c'est elle qui borne le nom d'un volume. */
@@ -126,6 +135,17 @@ export function manifestSidecarName(volume) {
 export function migrationJournalName(volume) {
   assertVolumeName(volume);
   return `${volume}${MIGRATION_JOURNAL_SUFFIX}`;
+}
+
+/**
+ * Nom du JOURNAL DE GÉNÉRATION posé à côté du volume (#16). Il n'est PAS dans le volume : les octets
+ * du volume sont servis tels quels à v86, et y réserver une aire décalerait le système de fichiers
+ * du guest — la même raison qui a exilé le manifeste (#10) et le journal de migration (#13).
+ * @param {string} volume
+ */
+export function generationJournalName(volume) {
+  assertVolumeName(volume);
+  return `${volume}${GENERATION_JOURNAL_SUFFIX}`;
 }
 
 async function volumeDirectory({ create }) {
