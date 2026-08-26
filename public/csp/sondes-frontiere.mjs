@@ -37,11 +37,21 @@ async function sondeWasm() {
   }
 }
 
-/** Attend le premier message d'un Worker, ou déclare le silence. */
+/**
+ * Attend le premier message d'un Worker, ou déclare le silence.
+ *
+ * `construire` peut rendre une fonction de LIBÉRATION en plus du Worker : elle n'est appelée
+ * qu'après la sonde. C'est ce qui permet de révoquer une URL `blob:` une fois le signe de vie
+ * obtenu — ou le délai écoulé — plutôt que dans la foulée de `new Worker`, où un faux refus se
+ * lirait comme un refus de CSP (#85).
+ */
 async function signeDeVie(construire) {
   let worker = null;
+  let liberer = () => {};
   try {
-    worker = construire();
+    const construit = construire();
+    worker = construit.worker ?? construit;
+    liberer = construit.liberer ?? liberer;
   } catch (erreur) {
     return `refuse-a-la-construction:${erreur.name}`;
   }
@@ -51,6 +61,7 @@ async function signeDeVie(construire) {
   });
   const resultat = await Promise.race([vivant, apresDelai("muet")]);
   worker.terminate();
+  liberer();
   return resultat;
 }
 
@@ -64,9 +75,7 @@ const sondeWorkerBlob = () =>
     const url = URL.createObjectURL(
       new Blob(["self.postMessage('tick')"], { type: "text/javascript" }),
     );
-    const worker = new Worker(url);
-    URL.revokeObjectURL(url);
-    return worker;
+    return { worker: new Worker(url), liberer: () => URL.revokeObjectURL(url) };
   });
 
 /**

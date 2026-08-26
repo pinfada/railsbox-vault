@@ -228,7 +228,10 @@ function poserOrdonnanceur(cible, valeur) {
         value: valeur,
         writable: true,
         configurable: true,
-        enumerable: true,
+        // NON énumérable, comme le `scheduler` natif des moteurs mesurés. L'écart n'a aucun effet
+        // connu, mais du code qui énumère le global verrait sinon apparaître une propriété que la
+        // plateforme ne lui montre pas — et il est gratuit de ne pas la lui montrer (#87).
+        enumerable: false,
       });
     } catch (erreur) {
       refus.push(`defineProperty : ${erreur.message}`);
@@ -297,8 +300,9 @@ export function installerBoucleOrdonnancement({ cible = globalThis, siNatifAbsen
   }
 
   const boucle = creerBoucle(cible);
+  const pose = composerOrdonnanceur(boucle, natif);
   try {
-    poserOrdonnanceur(cible, composerOrdonnanceur(boucle, natif));
+    poserOrdonnanceur(cible, pose);
   } catch (erreur) {
     // Une pose refusée ne doit pas laisser un canal de messages ouvert derrière elle : il
     // maintiendrait le contexte en vie pour une boucle que personne n'emprunte.
@@ -321,8 +325,20 @@ export function installerBoucleOrdonnancement({ cible = globalThis, siNatifAbsen
     // rendu continuerait d'annoncer « boucle de Vault » après un retrait — exactement le genre de
     // succès simulé que le harnais de mesure de #74 doit rendre impossible.
     retiree: false,
+    /**
+     * Rend le contexte à son état d'origine — mais SEULEMENT si la boucle en place est encore la
+     * nôtre. Un tiers qui aurait posé son ordonnanceur par-dessus se le ferait sinon retirer en
+     * silence, puisque le retrait réaffecte le natif ou supprime la propriété. Le refus LÈVE, et ne
+     * touche à rien : le retrait redevient possible dès que ce qui est en place est de nouveau à
+     * nous (#87).
+     */
     retirer() {
       if (descripteur.retiree) return;
+      if (cible.scheduler !== pose) {
+        throw new Error(
+          "Retrait refusé : la boucle d'ordonnancement en place dans ce contexte n'est plus celle de Vault. La retirer emporterait l'ordonnanceur posé par un tiers — voir l'ADR 0013 et l'issue #87.",
+        );
+      }
       descripteur.retiree = true;
       POSEES.delete(cible);
       boucle.fermer();
