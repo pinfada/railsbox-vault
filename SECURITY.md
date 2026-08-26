@@ -243,11 +243,25 @@ imbriqué refusé, aucune boucle d'ordonnancement, aucun tour de boucle. Le cont
 d'accuser — il sonde un Worker `blob:` réel plutôt que de postuler le refus —, ce qui l'empêche de
 mentir sur la politique servie. La limite est nommée dans l'ADR : quand le thread du Worker cesse
 entièrement de rendre la main, aucune minuterie de ce Worker ne s'exécute et aucun code n'est émis ;
-c'est alors la garde de l'appelant qui borne l'attente. Cette limite **demeure**, mais son seul cas
-connu a disparu : depuis #74, la boucle d'ordonnancement de v86 est fournie par Vault
-(`src/vm/scheduling-loop.mjs`) et non plus par le moteur, dont l'implémentation native monopolisait
-le thread sous Firefox. La barrière durable elle-même n'est pas touchée par ce changement — elle
-reste prouvée par les mêmes suites, exécutées à nouveau.
+c'est alors la garde de l'appelant qui borne l'attente. **Cette limite demeure**, et #74 en a
+déplacé la frontière dans les deux sens :
+
+- le cas connu de thread entièrement monopolisé — l'ordonnanceur natif de Firefox — n'est plus sur
+  le chemin : la boucle d'ordonnancement de v86 est fournie par Vault (`src/vm/scheduling-loop.mjs`)
+  et non plus par le moteur ;
+- **un cas voisin a été mesuré et traité** : sous WebKit, une boucle serrée de messages de canal
+  affame les minuteries du Worker — `setInterval` et `setTimeout` ne s'exécutent pas tant qu'elle
+  dure, alors que les messages venus de la page passent
+  (`tests/browser/ordonnancement-famine.spec.mjs`, les trois moteurs). Un chien de garde posé sur
+  une minuterie seule n'aurait donc pas pu expirer pendant la plage qu'il borne. Le chien de garde
+  du premier tour et les délais de garde des sessions de guest se cadencent désormais **aussi sur
+  les battements de la boucle**, si bien qu'ils tranchent que la boucle tourne ou non ;
+- ce qui reste non couvert est le cas où le thread ne rend la main à **personne** : ni minuterie, ni
+  message de canal. Aucun code `VAULT_RUNTIME_*` n'est alors émis, et c'est la garde de l'appelant
+  qui borne l'attente.
+
+La barrière durable elle-même n'est pas touchée par ces changements — elle reste prouvée par les
+mêmes suites, exécutées à nouveau.
 
 Enfin, `tools/serve.mjs` porte un drapeau de MESURE `--worker-src-blob` qui sert la politique
 élargie. Trois propriétés le tiennent, et chacune est vérifiée plutôt qu'affirmée : il n'est

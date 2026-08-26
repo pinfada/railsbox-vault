@@ -20,6 +20,7 @@ import { openMemoryVolume } from "/src/vm/memory-block-backend.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
 import { removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
 import {
+  consignerRejetsNonTraites,
   controlerContexteCourant,
   executerSousGarde,
   exigerContexteExecutable,
@@ -37,6 +38,13 @@ import { BRIDGE_MODES } from "/src/vm/v86-flush-bridge.mjs";
  * moteurs de la matrice.
  */
 const boucleOrdonnancement = installerBoucleOrdonnancement();
+
+/**
+ * Rejets non traités du Worker, consignés dès son évaluation. `libv86.mjs` jette la valeur de
+ * retour de `scheduler.postTask` : une exception dans un tour de boucle rejette une promesse que
+ * rien n'attend, arrête l'émulateur sans bruit, et se déguise ensuite en délai de garde du guest.
+ */
+const lireRejets = consignerRejetsNonTraites();
 
 const ARTIFACTS = "/vendor/v86/artefacts/";
 const SCENARIOS = { barrier: BARRIER_STEPS, filesystem: FILESYSTEM_STEPS };
@@ -72,6 +80,10 @@ async function booter(session, observations) {
     {
       onObservation: (observation) => observations.push(observation),
       decrireBoucle: () => decrireBoucle(boucleOrdonnancement),
+      // La garde se cadence sur les BATTEMENTS de la boucle en plus de la minuterie : sous un
+      // moteur qui affame ses minuteries pendant que la boucle tourne, elle n'expirerait pas
+      // pendant la plage qu'elle borne (WebKit, mesuré — voir `scheduling-loop.mjs`).
+      boucle: boucleOrdonnancement,
     },
   );
   return {
@@ -136,7 +148,14 @@ async function run({
     backend,
     onFatal: (error) => failures.push(error.toJSON()),
   });
-  const session = createGuestSession({ V86, artifacts, adapter, journal, mode });
+  const session = createGuestSession({
+    V86,
+    artifacts,
+    adapter,
+    journal,
+    mode,
+    boucle: boucleOrdonnancement,
+  });
 
   try {
     const boot = await booter(session, observations);
@@ -153,7 +172,7 @@ async function run({
       steps: summariseSteps(journal, results),
       verdict,
       failures,
-      observationsRuntime: observations,
+      observationsRuntime: [...observations, ...lireRejets()],
       crossOriginIsolated: globalThis.crossOriginIsolated ?? null,
     };
   } finally {
@@ -202,7 +221,14 @@ async function runOpfsPersistence({
     backend,
     onFatal: (error) => failures.push(error.toJSON()),
   });
-  const session = createGuestSession({ V86, artifacts, adapter, journal, mode });
+  const session = createGuestSession({
+    V86,
+    artifacts,
+    adapter,
+    journal,
+    mode,
+    boucle: boucleOrdonnancement,
+  });
 
   let boot;
   let results;
@@ -252,7 +278,7 @@ async function runOpfsPersistence({
     hostReadOfGuestMarker: decoder.decode(guestBytes),
     hostReadOfHostMarker: decoder.decode(hostBytes),
     failures,
-    observationsRuntime: observations,
+    observationsRuntime: [...observations, ...lireRejets()],
     crossOriginIsolated: globalThis.crossOriginIsolated ?? null,
   };
 }
@@ -300,7 +326,14 @@ async function runOpfsBarrier({
     backend,
     onFatal: (error) => failures.push(error.toJSON()),
   });
-  const session = createGuestSession({ V86, artifacts, adapter, journal, mode });
+  const session = createGuestSession({
+    V86,
+    artifacts,
+    adapter,
+    journal,
+    mode,
+    boucle: boucleOrdonnancement,
+  });
 
   let boot;
   let results;
@@ -329,7 +362,7 @@ async function runOpfsBarrier({
     faultsFired: faults.fired(),
     faultsUnfired: faults.unfired(),
     failures,
-    observationsRuntime: observations,
+    observationsRuntime: [...observations, ...lireRejets()],
     crossOriginIsolated: globalThis.crossOriginIsolated ?? null,
   };
 }
