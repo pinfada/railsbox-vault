@@ -81,10 +81,11 @@ de cet ADR ne dépend d'une différence de cet ordre.
 
 Quatre faits, dont trois n'étaient pas connus avant cette mesure :
 
-1. **le refus d'un Worker `blob:` ne lève aucune exception.** Sous Chromium, `new Worker(blobUrl)`
-   sous `worker-src 'self'` rend un objet, et cet objet ne fait rien ; seul un événement
-   `securitypolicyviolation` en témoigne. C'est la cause mécanique du « sans erreur visible » de
-   #52, et la raison pour laquelle un contrôle par `try/catch` conclurait « autorisé » ;
+1. **le refus d'un Worker `blob:` ne lève aucune exception.** `new Worker(blobUrl)` sous
+   `worker-src 'self'` rend un objet, et cet objet ne fait rien. Le refus reste observable, mais par
+   deux canaux qui n'interrompent pas l'appelant : un événement `securitypolicyviolation` sur le
+   document et un événement `error` sur le Worker. C'est la cause mécanique du « sans erreur visible
+   » de #52, et la raison pour laquelle un contrôle par `try/catch` conclurait « autorisé » ;
 2. **v86 privé de boucle laisse un compteur figé à 1.** Il construit son contrôleur IDE, appelle
    `next_tick(0)` une fois, et s'arrête là. La seule erreur produite arrive au bout du délai de
    garde du guest — 240 s en configuration de production — et elle nomme « invite du guest non
@@ -200,9 +201,11 @@ pas — elle la rend dicible, mesurée et diagnostiquée.
 ## Conséquences immédiates
 
 - `tools/serve-headers.mjs` sert la même politique qu'avant. Le seul changement de comportement est
-  le drapeau de mesure `--worker-src-blob`, réservé à `npm run test:csp` et jamais posé par un
-  lancement de service ; deux épreuves vérifient que la politique par défaut ne contient aucune
-  occurrence de `blob:` ;
+  le drapeau de mesure `--worker-src-blob`, **refusé au démarrage** hors du harnais : il exige
+  `VAULT_HARNAIS_CSP=mesure-worker-src`, que seul `playwright.csp.config.mjs` pose. Un
+  `npm start -- --worker-src-blob` échoue donc bruyamment au lieu de servir la politique élargie en
+  silence, ce qu'une épreuve unitaire fige ; deux autres vérifient que la politique par défaut ne
+  contient aucune occurrence de `blob:` ;
 - le commentaire erroné de `serve-headers.mjs` relevé par l'ADR 0010 est corrigé : la
   non-encadrabilité de la coquille vient de `frame-ancestors 'none'`, pas de
   `Cross-Origin-Resource-Policy` ;
@@ -218,12 +221,25 @@ pas — elle la rend dicible, mesurée et diagnostiquée.
 
 1. **Le diagnostic dépend d'un nom conservé par la compilation Closure.** `tick_counter` rejoint
    `ata_command`, `create_identify_packet` et `push_irq` dans la liste des noms dont dépend notre
-   outillage. Une montée de v86 qui le renommerait rendrait `null` : le chien de garde dit alors «
-   compteur illisible », pas « zéro tour », et une épreuve unitaire fige cette nuance.
+   outillage — mais il ne casse pas de la même façon : les trois premiers font échouer
+   l'installation du pont **bruyamment**, celui-ci rendrait seulement le chien de garde aveugle. Un
+   compteur jamais lisible ne fait donc **pas** échouer le boot : il est consigné en
+   `VAULT_RUNTIME_TICKS_UNREADABLE` dans `observationsRuntime` du compte rendu, et deux épreuves
+   unitaires figent les deux moitiés — compteur figé fatal, compteur illisible non fatal. La
+   checklist de montée de version de l'ADR 0003 et de `docs/development.md` demande de vérifier ce
+   champ.
 2. **Le chien de garde ne couvre pas un thread monopolisé.** Quand le thread du Worker cesse de
    rendre la main, aucune minuterie de ce Worker ne s'exécute — pas même la nôtre. C'est exactement
    le cas de Firefox (#74), et c'est la garde de l'appelant qui borne alors l'attente. Aucun code de
    `VAULT_RUNTIME_*` n'est émis dans ce cas, et il serait faux de laisser croire le contraire.
+
+   Ce que la garde couvre, en revanche, est une **phase** et non une attente : sur le chemin de
+   l'image de référence, `boot()` rend la main juste après `emulator.run()`, avant que le guest ait
+   rien dit. Une garde arrêtée là n'aurait pas eu le temps de prendre deux échantillons, et un
+   émulateur qui ne bat pas serait retombé sur `awaitHealth`, dont l'expiration accuse le GUEST — la
+   cause fausse que cette issue combat. `executerSousGarde` couvre donc le boot **et** l'attente de
+   santé sur ce chemin, ce qu'une épreuve unitaire à deux phases fige.
+
 3. **La sonde de Worker `blob:` coûte jusqu'à 1,5 s** au démarrage — uniquement lorsque v86
    emprunterait ce chemin, donc jamais dans la configuration servie.
 4. **Les mesures viennent d'une seule machine.** Les rapports `reports/csp/<moteur>.json` sont

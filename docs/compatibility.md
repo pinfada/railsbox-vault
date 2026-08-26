@@ -225,8 +225,10 @@ Quatre conséquences pour la matrice produit :
   `scheduler.postTask` lorsque l'URL de son contexte contient `use-scheduling-api`, sinon un Worker
   imbriqué créé depuis une URL `blob:` — que `worker-src 'self'` refuse sur les trois moteurs. Ce
   refus ne lève **aucune exception** : le constructeur rend un objet inerte, et l'émulateur ne bat
-  jamais. Depuis #52, le Worker runtime le **dit** : `VAULT_RUNTIME_WORKER_REFUSED` en quelques
-  secondes, avec la raison exacte du repli.
+  jamais. Il reste observable — événement `securitypolicyviolation` sur le document, événement
+  `error` sur le Worker —, mais aucun de ces deux canaux n'interrompt l'appelant. Depuis #52, le
+  Worker runtime le **dit** : `VAULT_RUNTIME_WORKER_REFUSED` en quelques secondes, avec la raison
+  exacte du repli.
 - **WebKit n'expose pas `scheduler.postTask` et ne démarre donc pas sous la CSP servie.**
   L'[ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md) a mesuré qu'une boucle
   d'ordonnancement fournie par Vault le fait démarrer en 5,0 s **sans** élargir la CSP ; elle a donc
