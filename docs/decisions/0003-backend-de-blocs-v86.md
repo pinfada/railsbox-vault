@@ -125,12 +125,20 @@ Conséquences immédiates :
 ## Coût de mise à jour de v86
 
 Monter de version demande : mettre à jour les cinq entrées de `MANIFEST.json`, exécuter
-`npm run vm:fetch` puis `npm run test:vm`. Le pont est le seul point fragile — il dépend de trois
+`npm run vm:fetch` puis `npm run test:vm`. Le pont est le point le plus fragile — il dépend de trois
 noms conservés par la compilation Closure `SIMPLE` (`ata_command`, `create_identify_packet`,
 `push_irq`) et de la structure `devices.ide.primary.master`. Une montée qui les renommerait ferait
 échouer l'installation du pont **bruyamment** : `installDurabilityBridge` refuse un contrôleur dont
 `primary.master` est absent, et le témoin négatif de `test:vm` échouerait en sens inverse. Le coût
 n'est donc pas un risque de dégradation silencieuse, mais une tâche d'adaptation visible.
+
+**Un quatrième nom s'y est ajouté depuis #52 : `tick_counter`**, dont dépend le chien de garde du
+premier tour de boucle (`src/vm/runtime-environment.mjs`). Il ne se comporte PAS comme les trois
+autres : son renommage ne casse rien bruyamment, il rend seulement le chien de garde aveugle. C'est
+pourquoi l'aveuglement est lui-même consigné — `VAULT_RUNTIME_TICKS_UNREADABLE` apparaît alors dans
+`observationsRuntime` du compte rendu — plutôt que de faire échouer un émulateur sain. Une montée de
+version doit donc **vérifier ce champ**, en plus de rejouer `npm run test:vm` : un compte rendu qui
+le porte annonce un instrument perdu, pas une panne.
 
 ## Risques résiduels
 

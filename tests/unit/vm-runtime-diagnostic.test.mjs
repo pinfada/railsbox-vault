@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { RUNTIME_ERROR_CODES, RuntimeError, isRuntimeError } from "../../src/vm/runtime-errors.mjs";
-import { surveillerPremierTour } from "../../src/vm/runtime-environment.mjs";
+import { executerSousGarde, surveillerPremierTour } from "../../src/vm/runtime-environment.mjs";
 import {
   CHEMINS_ORDONNANCEMENT,
   cheminOrdonnancement,
@@ -172,13 +172,79 @@ test("le chien de garde se tait quand le compteur avance, et s'arrête sans rien
   assert.equal(verdict, "silencieuse");
 });
 
-test("un compteur illisible n'est pas confondu avec un compteur figé", async () => {
-  // Une montée de v86 qui renommerait `tick_counter` rendrait `null`. Le chien de garde doit alors
-  // dire « illisible » et non « zéro tour » : la nuance change le diagnostic de l'exploitant.
+test("un compteur JAMAIS lisible ne fait pas échouer le boot : il est consigné", async () => {
+  // Une montée de v86 qui renommerait `tick_counter` rendrait `null` à chaque lecture. Faire alors
+  // échouer un émulateur SAIN au bout de vingt secondes serait pire que le silence que cette issue
+  // combat : le chien de garde perdrait sa capacité d'observation et gagnerait un faux positif.
+  // Il se tait donc, et consigne une observation TYPÉE non fatale.
   const garde = surveillerPremierTour(() => null, { delaiMs: 150, periodeMs: 20 });
+  const verdict = await Promise.race([
+    garde.promesse.then(
+      () => "resolue",
+      () => "rejetee",
+    ),
+    new Promise((resolve) => setTimeout(() => resolve("silencieuse"), 300)),
+  ]);
+  garde.arreter();
+
+  assert.equal(verdict, "silencieuse");
+  const observations = garde.observations();
+  assert.equal(observations.length, 1);
+  assert.equal(observations[0].code, RUNTIME_ERROR_CODES.ticksUnreadable);
+  assert.match(observations[0].message, /tick_counter/);
+});
+
+test("un compteur figé reste fatal, et son contexte porte un nombre, pas « illisible »", async () => {
+  const garde = surveillerPremierTour(() => 3, { delaiMs: 150, periodeMs: 20 });
   const erreur = await garde.promesse.catch((echec) => echec);
   garde.arreter();
 
-  assert.equal(erreur.context.ticks, null);
-  assert.match(erreur.message, /illisible/);
+  assert.ok(isRuntimeError(erreur, RUNTIME_ERROR_CODES.noTick));
+  assert.equal(erreur.context.ticks, 3);
+  assert.doesNotMatch(erreur.message, /illisible/);
+  assert.deepEqual(garde.observations(), []);
+});
+
+test("la garde couvre TOUTE la phase confiée, pas seulement sa première attente", async () => {
+  // Défaut réel du chemin de l'image de référence : `boot()` y rend la main juste après
+  // `emulator.run()`, AVANT l'invite. Une garde annulée à la fin de `boot()` n'aurait pas eu le
+  // temps de prendre deux échantillons, et un émulateur qui ne bat pas serait retombé sur
+  // `awaitHealth`, dont l'expiration accuse le GUEST — exactement le symptôme de #52.
+  let secondePhaseTerminee = false;
+  const travail = async () => {
+    // Première phase, courte : l'équivalent de `boot()`.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Seconde phase, longue : l'équivalent de `awaitHealth()`.
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    secondePhaseTerminee = true;
+  };
+
+  const debut = Date.now();
+  const erreur = await executerSousGarde(() => 1, travail, {
+    delaiMs: 150,
+    periodeMs: 20,
+  }).catch((echec) => echec);
+
+  assert.ok(isRuntimeError(erreur, RUNTIME_ERROR_CODES.noTick));
+  assert.ok(Date.now() - debut < 3000, "la garde doit trancher sans attendre la seconde phase");
+  assert.equal(secondePhaseTerminee, false);
+});
+
+test("la garde rend la valeur de la phase et ses observations quand la boucle avance", async () => {
+  let tours = 0;
+  const observations = [];
+  const valeur = await executerSousGarde(
+    () => {
+      tours += 5;
+      return tours;
+    },
+    async () => {
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      return "sante";
+    },
+    { delaiMs: 400, periodeMs: 20, onObservation: (o) => observations.push(o) },
+  );
+
+  assert.equal(valeur, "sante");
+  assert.deepEqual(observations, []);
 });

@@ -152,9 +152,12 @@ pas un de mémoire, ni l'inverse.
 5. inscrire dans la pull request la version amont, le commit épinglé et la date de mesure des
    empreintes.
 
-Le coût d'adaptation du pont de durabilité à une montée de version — les trois noms conservés par la
-compilation Closure dont il dépend — est décrit par
-[l'ADR 0003](decisions/0003-backend-de-blocs-v86.md).
+Le coût d'adaptation à une montée de version — les quatre noms conservés par la compilation Closure
+dont le dépôt dépend — est décrit par [l'ADR 0003](decisions/0003-backend-de-blocs-v86.md). Trois
+portent le pont de durabilité et cassent bruyamment. Le quatrième, `tick_counter`, porte le chien de
+garde du premier tour (#52) et **ne casse rien** : son renommage rend seulement la garde aveugle.
+Après une montée, vérifier donc aussi que `observationsRuntime` reste vide dans les comptes rendus —
+un `VAULT_RUNTIME_TICKS_UNREADABLE` y annonce un instrument perdu.
 
 ```sh
 npm run test:vm       # preuve « intégration VM » sous Chromium (périodique, hors `npm run check`)

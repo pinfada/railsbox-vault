@@ -13,7 +13,7 @@
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { openVolumeForWrite } from "/src/vm/opfs-volume-open.mjs";
 import { createReferenceGuestSession } from "/src/vm/reference-guest-session.mjs";
-import { exigerContexteExecutable, surveillerPremierTour } from "/src/vm/runtime-environment.mjs";
+import { executerSousGarde, exigerContexteExecutable } from "/src/vm/runtime-environment.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { createManifest } from "/src/vm/volume-manifest.mjs";
 
@@ -61,14 +61,24 @@ export function manifesteDuDescripteur(manifest, volumeSize) {
  * Le contexte est contrôlé AVANT toute construction d'émulateur, et son refus porte un code de
  * `src/vm/runtime-errors.mjs` (#52). Sans ce contrôle, un contexte privé de boucle d'ordonnancement
  * ne produirait aucune exception : l'émulateur ne battrait simplement jamais.
+ *
+ * La garde du premier tour couvre ici DEUX phases, et c'est le point délicat de ce chemin :
+ * `createReferenceGuestSession.boot()` rend la main juste après `emulator.run()`, avant que le
+ * guest ait dit quoi que ce soit. Une garde arrêtée là n'aurait pas eu le temps de prendre deux
+ * échantillons, et un émulateur qui ne bat pas serait retombé sur `awaitHealth`, dont l'expiration
+ * accuse le GUEST — exactement la cause fausse que #52 combat. La garde couvre donc le boot ET
+ * l'attente de santé, et rend le compte rendu de cette dernière.
  */
-async function booter(session, options = {}) {
-  const garde = surveillerPremierTour(() => session.ticks());
-  try {
-    return await Promise.race([session.boot(options), garde.promesse]);
-  } finally {
-    garde.arreter();
-  }
+function booterEtAttendreSante(session, { bootTimeoutMs, timeline, observations }) {
+  return executerSousGarde(
+    () => session.ticks(),
+    async () => {
+      await session.boot();
+      timeline.marquer("bootRendu");
+      return session.awaitHealth({ totalTimeoutMs: bootTimeoutMs });
+    },
+    { onObservation: (observation) => observations.push(observation) },
+  );
 }
 
 async function fetchBytes(url) {
@@ -228,12 +238,11 @@ export async function bootEtVerifier({
   });
 
   const started = performance.now();
+  const observations = [];
   let health;
   let invariant;
   try {
-    await booter(session);
-    timeline.marquer("bootRendu");
-    health = await session.awaitHealth({ totalTimeoutMs: bootTimeoutMs });
+    health = await booterEtAttendreSante(session, { bootTimeoutMs, timeline, observations });
     timeline.marquer("santePrete");
     const reponse = await session.request("GET", "/vault/invariant");
     timeline.marquer("invariantRendu");
@@ -272,6 +281,7 @@ export async function bootEtVerifier({
     conforming,
     counts: journal.counts(),
     failures,
+    observationsRuntime: observations,
     guestLog,
   };
 }
