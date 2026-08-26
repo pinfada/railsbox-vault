@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      Témoin NÉGATIF de « 'wasm-unsafe-eval' ». Une politique portée par <meta> s'AJOUTE à celle de
+      l'en-tête : les deux s'appliquent, et une ressource doit satisfaire les deux. Ce document
+      s'exécute donc sous l'intersection de la CSP de la coquille et de « script-src 'self' »,
+      c'est-à-dire sous « script-src 'self' » SANS « 'wasm-unsafe-eval' » — exactement la politique
+      d'avant l'ADR 0003. Aucun réglage de serveur n'est nécessaire pour l'obtenir : aucune
+      commodité de test n'entre donc dans le code qui sert la vraie politique.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self'" />
+    <title>RailsBox Vault — CSP sans wasm-unsafe-eval (#52)</title>
+  </head>
+  <body>
+    <h1>Frontière sans <code>'wasm-unsafe-eval'</code></h1>
+    <pre id="resultat"></pre>
+    <script type="module" src="./sondes-frontiere.mjs"></script>
+  </body>
+</html>
