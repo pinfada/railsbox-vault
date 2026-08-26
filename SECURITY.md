@@ -286,22 +286,38 @@ code servi à l'origine de la coquille. Trois faits, et leurs limites :
 - **dans un Worker de navigateur, il n'y a pas d'environnement de processus.** La garde exige alors
   le JETON exact du harnais, que seul `public/vm/resilience-banc.mjs` transmet — et seulement au
   Worker qui coupe, jamais à celui qui prépare l'ancien état ni à celui qui relit. Aucun chemin du
-  produit ne le transmet : ni `public/vm/banc.mjs`, ni les scénarios `barrier`, `filesystem`,
-  `opfs-persistence` et `opfs-barrier` du Worker runtime. **Cette phrase est vérifiée, pas
-  convenue** : `tests/unit/vm-crash-armement.test.mjs` inspecte tout ce qui est servi sous `src/` et
-  `public/`, et exige que le jeton ne soit nommé que par la garde et par le banc de résilience, que
-  `armerInjecteur` ne soit appelé que par la machine jetable et par le Worker runtime, et que cet
-  unique appel du Worker vive bien dans le scénario de coupure et nulle part ailleurs ;
+  produit ne le FABRIQUE : ni `public/vm/banc.mjs`, ni les scénarios `barrier`, `filesystem`,
+  `opfs-persistence` et `opfs-barrier` du Worker runtime. Le Worker runtime, lui, RELAIE le jeton
+  que son appelant lui présente — c'est le sens exact de la garde, et la page de résilience du
+  harnais est la seule à le présenter. Cette phrase est **tenue par une inspection des sources**
+  (`tests/unit/vm-crash-armement.test.mjs`, qui balaye tout `src/` et `public/`) : le jeton n'est
+  nommé que par la garde et par le banc de résilience, `armerInjecteur` n'est appelé que par la
+  machine jetable et par `public/vm/resilience-scenarios.mjs`, et `runtime-worker.mjs` ne nomme
+  l'injecteur nulle part. Une inspection de sources **interdit la dérive accidentelle** ; elle ne
+  résiste pas à un contournement délibéré — un nom construit à l'exécution y échapperait —, et ce
+  cas relève de la frontière d'origine de l'ADR 0002 ;
 - **cette seconde garde est plus faible que la première, et elle est donnée pour ce qu'elle est.**
   Un appelant déjà présent dans le Worker peut nommer le jeton, qui est une constante de source.
   Elle interdit l'armement ACCIDENTEL et rend l'intention explicite ; elle ne prétend pas résister à
   du code hostile qui exécuterait déjà dans le Worker de la coquille — ce cas est traité par la
   frontière d'origine de l'ADR 0002, pas par un jeton.
 
+**Le volume de résilience est figé, et c'est une dette qu'il faut nommer.** `runResiliencePreparer`
+commence par EFFACER son volume, et cette suppression est en amont de tout armement : elle ne
+présente aucun jeton. Le nom du volume est donc une constante du module (`VOLUME_RESILIENCE`),
+jamais une valeur reçue par `postMessage`, et une épreuve d'inspection le fige. Deux portes
+PRÉEXISTANTES restent ouvertes à côté : les scénarios `opfs-persistence` et `opfs-barrier` du Worker
+runtime acceptent, eux, un nom de volume de leur appelant et l'effacent (`removeOpfsVolume`) avant
+de l'ouvrir. Elles datent de #6 et #14, cette tranche ne les élargit pas, et elles restent bornées
+par la frontière d'origine de l'ADR 0002 — seul du code de l'origine coquille peut adresser ce
+Worker. Les refermer relève d'une tranche à elle, avec sa propre preuve.
+
 `SEC-DURABLE-001` n'est pas modifié par cette tranche : aucune promesse de durabilité ne change, le
 backend acquitte ses barrières exactement comme depuis #14, et les volumes de résilience sont
 jetables et nommés à part. L'instrument MESURE le budget « coupures injectées » de
-`docs/quality-attributes.md` ; il ne le déplace pas.
+`docs/quality-attributes.md` ; il ne le déplace pas. Il en surveille même le respect à l'envers : un
+bloc acquitté, franchi par une barrière et pourtant absent du support serait classé `corrompu`, et
+un témoin négatif vérifie que cette règle sait se déclencher.
 
 ## Analyse de secrets
 

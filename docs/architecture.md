@@ -341,23 +341,35 @@ Quatre pièces, toutes dans `src/vm/` :
   panne est exécutée par le code de backend de production et non par un `throw` posé pour
   l'occasion. Le générateur pseudo-aléatoire est écrit dans le module ; la graine est une donnée
   versionnable ;
-- **l'arrêt** est réel. Sur le chemin navigateur, la page appelle `Worker.terminate()` pendant que
-  le Worker runtime tient encore le handle exclusif du volume, sans fermeture — qui matérialiserait
-  les écritures en attente — et sans barrière. Sous Node, `crash-machine.mjs` reproduit la même
-  sémantique sur le double calibré : l'exclusivité est reprise, aucun `close()` n'est appelé ;
+- **l'arrêt** est une mort réelle de Worker. Sur le chemin navigateur, la page appelle
+  `Worker.terminate()` pendant que le Worker runtime tient encore le handle exclusif du volume, sans
+  fermeture — qui matérialiserait les écritures en attente — et sans barrière. Sous Node,
+  `crash-machine.mjs` reproduit la même sémantique sur le double calibré : l'exclusivité est
+  reprise, aucun `close()` n'est appelé. Ce n'est PAS une mort de processus : le navigateur survit,
+  et aucun cache volatil n'est perdu au passage. Le genre de coupure nommé `arret-brutal` arrête le
+  **chemin d'E/S** — le handle est déclaré perdu —, pas la machine. Couper plus bas est un protocole
+  que #16 devra écrire ;
 - **l'oracle** (`crash-oracle.mjs`) classe, après réouverture, chaque bloc suivi en `ancien`,
   `nouveau`, `dechire` ou `corrompu`, et en tire un verdict de volume : `ancien`, `nouveau`,
   `melange` ou `corrompu`. Il lit les octets ET le **journal de blocs** : un bloc dont l'écriture a
   été acquittée puis franchie par une barrière, et qui rend pourtant l'ancien état, est une
   corruption — c'est `SEC-DURABLE-001` lu à l'envers. Un bloc qu'il ne sait pas rattacher est
   `corrompu` avec diagnostic, jamais ignoré : c'est la règle « aucun succès silencieux » de
-  `quality-attributes.md` appliquée à l'instrument lui-même ;
+  `quality-attributes.md` appliquée à l'instrument lui-même. **L'oracle est le juge de #16**, et il
+  est écrit pour ne jamais se tromper du côté flatteur : la discernabilité octet par octet des deux
+  états attendus est une précondition vérifiée, une barrière franchie ne se dé-franchit pas quand
+  une écriture postérieure suit, et le journal est exigé plutôt que supposé vide — les détails et
+  leurs contre-exemples sont dans `docs/testing.md` ;
 - **le compte rendu** (`crash-report.mjs`) agrège la matrice d'une graine et publie le taux « ancien
-  ou nouveau », point par point et globalement.
+  ou nouveau », point par point et globalement, AVEC le profil du scénario mesuré : un taux sans le
+  nombre d'écritures, de barrières et de blocs suivis n'est comparable à rien.
 
 L'injecteur ne s'arme jamais hors harnais (`crash-harness.mjs`), sur le modèle du drapeau
 `--worker-src-blob` de `tools/serve.mjs` : variable d'environnement exigée sous Node, jeton exigé
-dans un Worker de navigateur. Aucun chemin du produit ne transmet l'un ni l'autre.
+dans un Worker de navigateur. Aucun chemin du produit ne FABRIQUE l'un ni l'autre — le Worker
+runtime, lui, relaie le jeton que son appelant lui présente, et c'est la page de résilience du
+harnais qui est la seule à le présenter. La portée exacte de cette garde, et ce qu'elle ne couvre
+pas, sont dans `SECURITY.md`.
 
 Ce que #15 ne couvre pas : l'atomicité et la récupération d'une génération (#16), la participation
 d'un guest v86 à la coupure — le scénario écrit depuis le Worker runtime, la chaîne guest → pont ATA
