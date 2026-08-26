@@ -186,3 +186,31 @@ test("libérer une barrière absente est une erreur, pas un succès silencieux",
 
   assert.throws(() => store.releaseFlush("volume"), /Aucune barrière en attente/);
 });
+
+test("abandonner un volume relâche l'exclusivité et tue le handle, sans le fermer (#15)", async () => {
+  // C'est la mort de la MACHINE : le processus disparaît, le système d'exploitation reprend le
+  // fichier, mais `close()` n'a jamais été appelé — et la fermeture d'un vrai
+  // `FileSystemSyncAccessHandle` matérialise les écritures en attente. Confondre les deux ferait de
+  // toute coupure une fermeture propre déguisée.
+  const store = ouvrir();
+  const handle = await store.openHandle("volume");
+  handle.truncate(1024);
+  handle.write(new Uint8Array([1, 2, 3]), { at: 0 });
+
+  store.abandon("volume");
+
+  assert.equal(store.isOpen("volume"), false, "l'exclusivité doit être reprise");
+  assert.throws(
+    () => handle.getSize(),
+    (erreur) => erreur instanceof DOMException && erreur.name === "InvalidStateError",
+    "le handle de la machine morte ne répond plus",
+  );
+  assert.equal(store.flushCount("volume"), 0, "aucune barrière n'a été franchie");
+
+  // Le FICHIER, lui, survit avec les octets déjà acceptés : le double ne modélise pas de cache
+  // d'écriture volatil, et il le dit dans son en-tête plutôt que de le laisser deviner.
+  const rouvert = await store.openHandle("volume");
+  const relu = new Uint8Array(3);
+  assert.equal(rouvert.read(relu, { at: 0 }), 3);
+  assert.deepEqual([...relu], [1, 2, 3]);
+});

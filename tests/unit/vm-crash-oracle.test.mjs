@@ -108,7 +108,15 @@ test("des longueurs incohérentes sont refusées, jamais complétées", () => {
   assert.throws(
     () =>
       classerVolume({
-        blocs: [{ index: 0, offset: 0, ancien: ancien(0), nouveau: nouveau(0), observe: new Uint8Array(4) }],
+        blocs: [
+          {
+            index: 0,
+            offset: 0,
+            ancien: ancien(0),
+            nouveau: nouveau(0),
+            observe: new Uint8Array(4),
+          },
+        ],
       }),
     /longueur/i,
   );

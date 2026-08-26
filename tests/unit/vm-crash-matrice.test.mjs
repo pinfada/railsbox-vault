@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  HARNAIS_RESILIENCE_ENV,
-  HARNAIS_RESILIENCE_VALEUR,
-} from "../../src/vm/crash-harness.mjs";
+import { HARNAIS_RESILIENCE_ENV, HARNAIS_RESILIENCE_VALEUR } from "../../src/vm/crash-harness.mjs";
 import { rejouerCoupure, rejouerMatrice } from "../../src/vm/crash-machine.mjs";
 import { VERDICTS } from "../../src/vm/crash-oracle.mjs";
 import { CRASH_KINDS } from "../../src/vm/crash-plan.mjs";
 import { RESILIENCE_REPORT_VERSION, resumerMatrice } from "../../src/vm/crash-report.mjs";
-import { BARRIERE_TOUS_LES, BLOCS_SUIVIS } from "../../src/vm/crash-scenario.mjs";
+import {
+  BARRIERE_TOUS_LES,
+  BLOCS_SUIVIS,
+  contenuAncien,
+  contenuNouveau,
+} from "../../src/vm/crash-scenario.mjs";
 
 // Ce fichier arme l'injecteur : il pose donc la variable du harnais, comme le ferait
 // `npm run test:vm`. Le refus hors harnais est figé par `vm-crash-harnais.test.mjs`, dans son
@@ -18,6 +20,28 @@ process.env[HARNAIS_RESILIENCE_ENV] = HARNAIS_RESILIENCE_VALEUR;
 
 const point = (kind, operation, occurrence, bytes = null) =>
   Object.freeze({ graine: 0, index: 0, kind, operation, occurrence, bytes });
+
+test("l'ancien et le nouveau contenu d'un bloc diffèrent OCTET PAR OCTET", () => {
+  // Sans cela, un octet resté à l'ancien état pourrait coïncider avec le nouveau, et l'oracle
+  // classerait « nouveau » un bloc déchiré. La propriété est vérifiée, pas supposée.
+  for (let index = 0; index < BLOCS_SUIVIS; index += 1) {
+    const ancien = contenuAncien(index);
+    const nouveau = contenuNouveau(index);
+    assert.equal(ancien.byteLength, nouveau.byteLength);
+    for (let octet = 0; octet < ancien.byteLength; octet += 1) {
+      assert.notEqual(ancien[octet], nouveau[octet], `bloc ${index}, octet ${octet}`);
+    }
+  }
+});
+
+test("deux blocs suivis distincts ne portent jamais le même contenu", () => {
+  // Deux blocs identiques rendraient une écriture mal placée indétectable : elle passerait pour
+  // l'écriture attendue.
+  const empreintes = new Set(
+    Array.from({ length: BLOCS_SUIVIS }, (_, index) => contenuNouveau(index).join(",")),
+  );
+  assert.equal(empreintes.size, BLOCS_SUIVIS);
+});
 
 test("couper à la toute première écriture laisse le volume à l'ancien état", async () => {
   const rapport = await rejouerCoupure(point(CRASH_KINDS.abrupt, "write", 1));
@@ -75,13 +99,22 @@ test("une matrice publie son taux « ancien ou nouveau », et il n'est pas de 10
   assert.equal(resume.graine, 2026);
   assert.equal(resume.pointsRejoues, 12);
   assert.equal(
-    resume.verdicts.ancien + resume.verdicts.nouveau + resume.verdicts.melange + resume.verdicts.corrompu,
+    resume.verdicts.ancien +
+      resume.verdicts.nouveau +
+      resume.verdicts.melange +
+      resume.verdicts.corrompu,
     12,
   );
   // C'est la mesure que #16 devra porter à 100 %. Aujourd'hui elle ne l'est pas, et l'affirmer
   // serait la seule façon de rendre ce test creux.
   assert.ok(resume.tauxAtomique < 1, `taux mesuré : ${resume.tauxAtomique}`);
   assert.ok(resume.verdicts.melange + resume.verdicts.corrompu > 0);
+
+  // La répartition exacte est figée : la graine est une donnée versionnable, et un changement du
+  // générateur qui passerait inaperçu rendrait « même graine, même séquence » invérifiable.
+  assert.deepEqual(resume.verdicts, { ancien: 0, nouveau: 3, melange: 6, corrompu: 3 });
+  assert.equal(resume.tauxAtomique, 0.25);
+  assert.equal(resume.classes.dechire, 3);
 
   // Chaque point est rejouable seul, avec sa graine et sa description.
   for (const ligne of resume.rejeu) {
