@@ -15,6 +15,7 @@
 | `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker                                               | environ 1 min après la première construction |
 | `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                                                          |   plus de 10 min, Docker et artefacts requis |
 | `npm run test:e2e`             | reprise, export vérifiable, restauration inter-origine et migration de format                               |   plus de 20 min, Docker et artefacts requis |
+| `npm run test:rythme`          | coût de la boucle d'ordonnancement, dix boots entrelacés de l'image de référence                            |             environ 18 min, **à la demande** |
 | `npm test`                     | suites unitaire et navigateur                                                                               |                                     secondes |
 | `npm run check`                | lint, format et toutes les suites actuelles                                                                 |             moins de 2 min hors installation |
 
@@ -860,8 +861,18 @@ projets dédiés de `playwright.config.mjs`, indépendamment de `VAULT_MOTEURS` 
 sécurité ne s'applique pas de la même façon d'un moteur à l'autre, et l'asserter sur un seul
 publierait une garantie que les deux autres ne tiennent peut-être pas.
 
+Depuis #74, `tests/browser/ordonnancement-famine.spec.mjs` les rejoint, et pour la même raison :
+elle mesure un comportement d'**ordonnancement** qui diffère d'un moteur à l'autre. Une boucle
+serrée de messages de canal — ce que fait la boucle de Vault pendant un boot — affame les minuteries
+du Worker sous WebKit (0 intervalle sur 20, `setTimeout` jamais tiré) et pas sous Chromium ni
+Firefox (19 sur 20). Les messages venus de la page passent partout. L'épreuve exige que le port ET
+une échéance cadencée par la boucle traversent sur les trois moteurs, et fige le comportement des
+minuteries moteur par moteur : un moteur qui changerait, dans un sens comme dans l'autre, doit faire
+rougir — c'est une hypothèse dont dépend la cadence du chien de garde du runtime.
+
 Elles n'ont besoin d'aucun artefact v86 : le contrôle préalable du Worker runtime précède le
-chargement des artefacts, et les sondes de CSP n'instancient qu'un module WebAssembly vide.
+chargement des artefacts, les sondes de CSP n'instancient qu'un module WebAssembly vide, et la sonde
+de famine ne démarre aucun émulateur.
 
 Ce qu'elles établissent, dans les deux sens :
 
@@ -905,6 +916,31 @@ Compter environ 25 minutes pour les trois moteurs. Il écrit `reports/csp/<moteu
 n'asserte que deux choses — que chaque relevé existe, et qu'au moins le moteur de référence fasse
 battre l'émulateur dans la configuration retenue. Un moteur qui ne démarre pas est un fait de
 compatibilité, consigné dans l'ADR, pas une régression du dépôt.
+
+### Coût de la boucle d'ordonnancement : `test:rythme`
+
+`tests/rythme/boucle-ordonnancement.spec.mjs` répond à une question que ni `test:vm` ni `test:e2e`
+ne posent : remplacer la boucle d'ordonnancement de v86 par celle de Vault (#74) coûte-t-il du temps
+de boot à l'image de référence ? Un essai par bras ne peut pas y répondre — sur la machine de
+développement, un boot de Rails i386 varie de plus de 15 % d'un essai à l'autre.
+
+Le protocole est celui du spike #41 : le volume applicatif est préparé **une fois** et réutilisé par
+les dix boots ; les essais sont **entrelacés** (native, Vault, native, Vault…) pour qu'une dérive de
+la machine frappe les deux bras également ; chaque boot part d'une page neuve, donc d'un Worker neuf
+et de handles OPFS rendus.
+
+Le bras « native » n'introduit **aucun drapeau dans le code du produit**. Il passe par
+`public/vm/reference-worker-boucle-native.mjs`, un Worker de mesure qui importe le Worker runtime en
+entier — phases comprises — et retire la boucle posée à l'évaluation du module, avant l'import de
+`libv86.mjs`. Il n'est atteignable que par `reference.html?boucle=native`, que seul ce harnais
+demande, et son compte rendu porte `boucleOrdonnancement: null` : la bascule ne peut pas passer
+inaperçue. La spécification exige d'ailleurs, essai par essai, que chaque bras ait tourné sur la
+boucle annoncée — sans quoi une bascule inopérante rendrait dix essais identiques et un verdict
+trompeur.
+
+Le verdict est **calculé** et publié dans `reports/rythme/boucle-ordonnancement.json` : l'écart de
+p50 entre les deux bras est comparé à l'étendue observée à l'intérieur d'une série. Il ne fait pas
+échouer la suite — un écart est un fait à nommer et à décider, pas une régression de code à bloquer.
 
 ## Suite de compatibilité
 

@@ -292,7 +292,12 @@ Trois lectures, et une mise en garde :
   zéro tâche pour un compteur qui avance ;
 - **`vault` contre `vault-sur-native`** dit ce que la boucle a remplacé : une absence sous WebKit,
   l'implémentation du moteur sous Chromium et Firefox. C'est la décision « toujours posée » de l'ADR
-  0013 § « Mise en œuvre par #74 » ;
+  0013 § « Mise en œuvre par #74 ». Conséquence à connaître : **dans un Worker runtime de Vault,
+  WebKit expose désormais un `scheduler`** — partiel, `{ postTask }` — là où il n'en exposait aucun.
+  Du code qui déduirait des capacités de sa seule présence se tromperait (suivi : #87) ;
+- **la boucle affame les minuteries sur un moteur.** Pendant qu'elle enchaîne les tours, WebKit
+  n'exécute aucun `setInterval` ni `setTimeout` du Worker — mesuré, table ci-dessous. Les gardes du
+  runtime se cadencent donc aussi sur les battements de la boucle ;
 - **la barrière durable traverse le backend sur les trois moteurs**, dans l'ordre écriture → flush →
   acquittement. C'est le scénario `barrier` du spike #4, rejoué ici moteur par moteur ;
 - **les tours par seconde ne mesurent PAS la vitesse d'émulation.** Un tour ne représente pas la
@@ -301,6 +306,28 @@ Trois lectures, et une mise en garde :
   (544 tours/s) là où celle de Vault en produit 1 368 en 3 716 ms (368 tours/s) — **moins de tours,
   un boot légèrement plus court**. La grandeur comparable reste la durée ; les tours servent à
   distinguer « bat » de « ne bat pas », ce pour quoi ils ont été introduits.
+
+### Ce que la boucle de Vault affame, et ce qu'elle laisse passer (#74)
+
+Mesures du **2026-08-26** par `tests/browser/ordonnancement-famine.spec.mjs`, rattachée à
+`npm run check` sur les trois moteurs (six secondes, aucun artefact v86). Une boucle serrée
+`postTask({ delay: 0 })` auto-réamorcée tourne pendant cinq secondes, et l'on compte ce qui
+traverse.
+
+| Moteur       | Tâches en 5 s | `setInterval` 250 ms | `setTimeout` 500 ms | Messages de la page | Échéance cadencée par la boucle |
+| ------------ | ------------: | -------------------: | ------------------- | ------------------: | ------------------------------: |
+| Chromium 151 |     1 120 303 |                19/20 | tiré                |                 5/5 |                        1 250 ms |
+| Firefox 153  |       594 263 |                19/20 | tiré                |                 5/5 |                        1 000 ms |
+| WebKit 26.5  |        61 650 |             **0/20** | **jamais tiré**     |                 5/5 |                        1 000 ms |
+
+Trois conséquences :
+
+- **le port traverse partout.** Une coquille peut parler à un Worker occupé, sur les trois moteurs ;
+- **les minuteries, non.** Sous WebKit, la priorité stricte donnée aux messages de port prive le
+  Worker de ses minuteries tant que la boucle dure. Une garde posée sur `setTimeout` n'expirerait
+  donc pas pendant la plage qu'elle borne — celle où v86 tourne à plein ;
+- **une échéance cadencée par la boucle expire partout.** C'est ce dont dépendent, depuis #74, le
+  chien de garde du premier tour et les délais de garde des sessions de guest.
 
 Le protocole et les mesures complètes sont dans
 [`docs/spikes/0004-backend-de-blocs-v86.md`](spikes/0004-backend-de-blocs-v86.md).
