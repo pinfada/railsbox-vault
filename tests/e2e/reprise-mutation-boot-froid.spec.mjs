@@ -295,6 +295,7 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
       barrieres: live.counts.flush,
       barrieresAcquittees: live.counts["flush-ack"],
       timeline: live.timeline,
+      rythme: live.rythme,
     },
     repriseMs: {
       essais: reprisesMs,
@@ -304,6 +305,10 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
     // Décomposition du temps de reprise (#60) : où passent les secondes, essai par essai. Chaque
     // durée est réellement observée ; un jalon non atteint reste `null` plutôt qu'inventé.
     repriseTimeline: reprises.map((r) => r.timeline),
+    // Rythme de la boucle d'ordonnancement de v86, essai par essai. Publié parce que remplacer
+    // cette boucle (#74) change le rythme de TOUT l'émulateur : sans cette colonne, une reprise
+    // plus lente ne se distinguerait pas d'un guest qui a eu davantage à faire.
+    repriseRythme: reprises.map((r) => r.rythme),
     memoireTasJs: derniereMemoire,
     cible: { repriseP95Ms: 60_000 },
   };

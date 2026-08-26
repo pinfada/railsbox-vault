@@ -13,7 +13,11 @@
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { openVolumeForWrite } from "/src/vm/opfs-volume-open.mjs";
 import { createReferenceGuestSession } from "/src/vm/reference-guest-session.mjs";
-import { executerSousGarde, exigerContexteExecutable } from "/src/vm/runtime-environment.mjs";
+import {
+  executerSousGarde,
+  exigerContexteExecutable,
+  mesurerRythme,
+} from "/src/vm/runtime-environment.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { createManifest } from "/src/vm/volume-manifest.mjs";
 
@@ -241,9 +245,14 @@ export async function bootEtVerifier({
   const observations = [];
   let health;
   let invariant;
+  let rythme;
   try {
     health = await booterEtAttendreSante(session, { bootTimeoutMs, timeline, observations });
     timeline.marquer("santePrete");
+    // Rythme de la boucle sur la fenêtre boot → santé de Rails. C'est l'instrument qui rend
+    // comparables deux exécutions de l'IMAGE DE RÉFÉRENCE avec des boucles d'ordonnancement
+    // différentes (#74) : `healthMilliseconds` seul ne dirait pas si l'émulateur a battu plus vite.
+    rythme = mesurerRythme({ ticks: session.ticks(), fenetreMs: performance.now() - started });
     const reponse = await session.request("GET", "/vault/invariant");
     timeline.marquer("invariantRendu");
     invariant = {
@@ -268,6 +277,7 @@ export async function bootEtVerifier({
     volumeBytes: backend.size?.() ?? null,
     bootMilliseconds: Number((performance.now() - started).toFixed(1)),
     healthMilliseconds: health.durationMs,
+    rythme,
     timeline: timeline.decomposer({ healthMs: health.durationMs }),
     transferredBytes,
     memoryBytes,

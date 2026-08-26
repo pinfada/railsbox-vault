@@ -76,6 +76,31 @@ export async function exigerContexteExecutable() {
 }
 
 /**
+ * Rythme observé de la boucle de v86 sur une fenêtre donnée, à partir de son compteur de tours.
+ *
+ * C'est l'instrument de comparaison de #74 : remplacer la boucle d'ordonnancement de v86 change le
+ * rythme de TOUT l'émulateur, et une durée de boot seule ne dirait pas si l'émulateur a tourné plus
+ * vite ou si le guest a eu moins à faire. Deux précautions valent d'être dites :
+ *
+ *  - un compteur ILLISIBLE rend `null`, jamais `0`. Le premier dit « l'instrument a disparu »
+ *    (`VAULT_RUNTIME_TICKS_UNREADABLE`), le second dirait « l'émulateur n'a pas battu » ;
+ *  - une fenêtre nulle ou absente ne produit pas de division : elle produit une absence de mesure.
+ *
+ * @param {{ ticks: number | null, fenetreMs: number | null }} mesure
+ * @returns {{ ticks: number | null, fenetreMs: number | null, ticksParSeconde: number | null }}
+ */
+export function mesurerRythme({ ticks, fenetreMs }) {
+  const toursLisibles = typeof ticks === "number" && Number.isFinite(ticks);
+  const fenetreLisible = typeof fenetreMs === "number" && Number.isFinite(fenetreMs);
+  const mesurable = toursLisibles && fenetreLisible && fenetreMs > 0;
+  return {
+    ticks: toursLisibles ? ticks : null,
+    fenetreMs: fenetreLisible ? Number(fenetreMs.toFixed(0)) : null,
+    ticksParSeconde: mesurable ? Number(((ticks * 1000) / fenetreMs).toFixed(1)) : null,
+  };
+}
+
+/**
  * Chien de garde du PREMIER TOUR de boucle. Le contrôle préalable prédit les pannes connues ;
  * celui-ci attrape celles qu'il n'a pas prédites, en observant le compteur de tours de v86 pendant
  * que la phase surveillée se déroule.
