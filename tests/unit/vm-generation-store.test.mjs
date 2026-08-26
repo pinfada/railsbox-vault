@@ -177,6 +177,30 @@ test("une écriture non alignée sur le secteur est complétée par relecture, p
   assert.deepEqual([...relu.subarray(104)], [...ancien.subarray(104)]);
 });
 
+test("une validation dont la racine échoue ne rend pas la génération rangeable", async () => {
+  // Le support refuse la barrière qui scelle la racine : la génération n'est PAS validée, et le guest
+  // reçoit l'échec. Le magasin ne doit pas se croire scellé pour autant — sinon la fermeture propre
+  // rangerait dans le volume un état que personne n'a acquitté. C'est un ordre, pas une intention :
+  // les compteurs de validation ne bougent qu'APRÈS le succès de la racine.
+  const support = creerSupport();
+  const ancien = buildPattern(512, 1000);
+  support.volume.set(ancien, 0);
+  const magasin = await ouvrirMagasin(support);
+
+  await magasin.deposer(0, buildPattern(512, 2000));
+  support.magasin.starve("vol.gen");
+
+  await assert.rejects(() => magasin.valider());
+  assert.equal(magasin.generationValidee, 0, "aucune génération n'a été validée");
+  assert.equal(magasin.rangeable, false, "rien n'est rangeable");
+  await magasin.pointDeControle();
+  assert.deepEqual(
+    [...support.volume.subarray(0, 512)],
+    [...ancien],
+    "le volume porte encore l'état d'avant",
+  );
+});
+
 test("le journal borné refuse la génération démesurée au lieu de la publier à moitié", async () => {
   const support = creerSupport();
   const handle = await support.magasin.openHandle("vol.gen");
