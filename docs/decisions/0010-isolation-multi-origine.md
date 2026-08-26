@@ -276,8 +276,9 @@ issue ne peut pas compter sur l'isolation pour obtenir son instrument.
 2. **Le fait 2 est daté.** Il vaut pour `v86@0.5.432`, commit `847e34d5`. Une montée de version doit
    rejouer `npm run isolation:inventaire` : une mémoire `shared` apparue dans `v86.wasm`
    invaliderait la décision sans aucun autre signal. L'instrument existe et sait refuser
-   (`--exiger-v86`, codes 2 et 3) ; ce qui manque est son **déclenchement** automatique à la montée
-   de version — **#75**.
+   (`--exiger-v86`, codes 2 et 3), et **depuis #75 le contrôle est automatique dans
+   `npm run vm:check`** : le seul point par lequel un artefact v86 entre dans le dépôt refuse
+   désormais une mémoire partagée (code 2) sans attendre qu'on pense à rejouer l'inventaire.
 3. **L'absence d'isolation n'est pas une protection.** Elle ne referme aucune brèche ; elle n'ouvre
    simplement pas une contrainte inutile. Aucune propriété de sécurité de `SECURITY.md` ne repose
    sur elle, et aucune frontière ne change.

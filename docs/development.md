@@ -131,6 +131,31 @@ npm run vm:check      # vérifie seulement, sans réseau
 `vm:check` échoue si un artefact manque ou si son empreinte diffère : une mesure de VM ne provient
 jamais d'un binaire non identifié. Environ 9,9 Mio sont transférés au premier appel.
 
+Le **contrôle de mémoire partagée fait partie de `vm:check`** (#75). C'est une vérification
+distincte de l'empreinte : elle lit la section « memory » de `v86.wasm` et refuse un module qui
+déclare ou importe une mémoire `shared` — code de sortie **2**, message nommant l'ADR 0010, dont la
+décision de ne pas imposer l'isolation multi-origine repose précisément sur ce fait. Un artefact
+absent, illisible ou disparu du manifeste rend **3** ; une empreinte fautive rend **1** comme
+auparavant. Les deux verdicts sont imprimés à chaque exécution : un échec d'empreinte n'en masque
+pas un de mémoire, ni l'inverse.
+
+### Monter v86 de version
+
+1. mettre à jour `vendor/v86/MANIFEST.json` : version npm, empreinte de l'archive, commit amont,
+   puis taille et SHA-256 de chaque artefact ;
+2. vider `vendor/v86/artefacts/` et exécuter `npm run vm:fetch`, qui refuse tout octet étranger au
+   manifeste **et** tout `v86.wasm` réclamant une mémoire partagée ;
+3. si le contrôle de mémoire partagée échoue, ne pas le contourner : l'ADR 0010 doit être rouvert
+   par un nouvel ADR (#76) avant que la montée de version soit prise ;
+4. rejouer `npm run test:vm` puis `npm run vm:protocol` — une empreinte dit la provenance, pas le
+   comportement ;
+5. inscrire dans la pull request la version amont, le commit épinglé et la date de mesure des
+   empreintes.
+
+Le coût d'adaptation du pont de durabilité à une montée de version — les trois noms conservés par la
+compilation Closure dont il dépend — est décrit par
+[l'ADR 0003](decisions/0003-backend-de-blocs-v86.md).
+
 ```sh
 npm run test:vm       # preuve « intégration VM » sous Chromium (périodique, hors `npm run check`)
 npm run vm:protocol   # protocole de mesure complet sous Node → reports/vm/protocole.json
