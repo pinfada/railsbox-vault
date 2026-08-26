@@ -272,6 +272,33 @@ bruyamment au lieu de servir la politique élargie en silence, et une épreuve u
 ; et deux épreuves — une unitaire sur la chaîne produite, une de navigateur sur l'en-tête réellement
 servi — vérifient que la politique par défaut ne contient aucune occurrence de `blob:`.
 
+## Injecteur d'arrêts et d'écritures partielles (#15)
+
+L'issue #15 ajoute au dépôt un instrument qui FABRIQUE des pannes de stockage : handle perdu,
+écriture tronquée, barrière qui n'aboutit pas. Il vit dans `src/vm/crash-plan.mjs`, donc dans du
+code servi à l'origine de la coquille. Trois faits, et leurs limites :
+
+- **il ne s'arme que par une porte, et cette porte est gardée.** `armerInjecteur` appelle
+  `exigerHarnaisResilience` (`src/vm/crash-harness.mjs`) avant de rendre le moindre plan de fautes.
+  Sous Node, le processus doit porter `VAULT_HARNAIS_RESILIENCE=mesure-arrets` ; le refus hors
+  harnais est figé par `tests/unit/vm-crash-harnais.test.mjs`, qui s'exécute dans son propre
+  processus et ne pose jamais la variable ;
+- **dans un Worker de navigateur, il n'y a pas d'environnement de processus.** La garde exige alors
+  le JETON exact du harnais, que seul `public/vm/resilience-banc.mjs` transmet — et seulement au
+  Worker qui coupe, jamais à celui qui prépare l'ancien état ni à celui qui relit. Aucun chemin du
+  produit ne le transmet : ni `public/vm/banc.mjs`, ni les scénarios `barrier`, `filesystem`,
+  `opfs-persistence` et `opfs-barrier` du Worker runtime ;
+- **cette seconde garde est plus faible que la première, et elle est donnée pour ce qu'elle est.**
+  Un appelant déjà présent dans le Worker peut nommer le jeton, qui est une constante de source.
+  Elle interdit l'armement ACCIDENTEL et rend l'intention explicite ; elle ne prétend pas résister à
+  du code hostile qui exécuterait déjà dans le Worker de la coquille — ce cas est traité par la
+  frontière d'origine de l'ADR 0002, pas par un jeton.
+
+`SEC-DURABLE-001` n'est pas modifié par cette tranche : aucune promesse de durabilité ne change, le
+backend acquitte ses barrières exactement comme depuis #14, et les volumes de résilience sont
+jetables et nommés à part. L'instrument MESURE le budget « coupures injectées » de
+`docs/quality-attributes.md` ; il ne le déplace pas.
+
 ## Analyse de secrets
 
 Chaque pull request est analysée par GuardRails (statut de commit `guardrails/scan`). L'analyse

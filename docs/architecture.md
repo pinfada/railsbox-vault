@@ -327,6 +327,44 @@ Ce que #14 ne couvre pas : l'atomicité d'une génération complète et la récu
 regroupement ou l'optimisation des flush, le chiffrement, la reprise Rails complète (#7) et l'accès
 concurrent (#8), désormais traité ci-dessous.
 
+## Résilience aux coupures : l'instrument avant la garantie
+
+L'issue #15 livre l'**instrument** de mesure des arrêts brutaux ; #16 livrera la **garantie**
+d'atomicité. La distinction est structurante : rien de ce qui suit ne promet qu'une coupure laisse
+le volume dans un état atomique. L'instrument rend cet état **observable, reproductible et classé**.
+
+Quatre pièces, toutes dans `src/vm/` :
+
+- **l'injecteur** (`crash-plan.mjs`) tire d'une graine entière une séquence déterministe de points
+  de coupure — arrêt brutal, écriture déchirée, coupure entre écriture et barrière. Il n'invente
+  aucune sorte de faute : il traduit chaque point dans le plan de `fault-plan.mjs`, si bien que la
+  panne est exécutée par le code de backend de production et non par un `throw` posé pour
+  l'occasion. Le générateur pseudo-aléatoire est écrit dans le module ; la graine est une donnée
+  versionnable ;
+- **l'arrêt** est réel. Sur le chemin navigateur, la page appelle `Worker.terminate()` pendant que
+  le Worker runtime tient encore le handle exclusif du volume, sans fermeture — qui matérialiserait
+  les écritures en attente — et sans barrière. Sous Node, `crash-machine.mjs` reproduit la même
+  sémantique sur le double calibré : l'exclusivité est reprise, aucun `close()` n'est appelé ;
+- **l'oracle** (`crash-oracle.mjs`) classe, après réouverture, chaque bloc suivi en `ancien`,
+  `nouveau`, `dechire` ou `corrompu`, et en tire un verdict de volume : `ancien`, `nouveau`,
+  `melange` ou `corrompu`. Il lit les octets ET le **journal de blocs** : un bloc dont l'écriture a
+  été acquittée puis franchie par une barrière, et qui rend pourtant l'ancien état, est une
+  corruption — c'est `SEC-DURABLE-001` lu à l'envers. Un bloc qu'il ne sait pas rattacher est
+  `corrompu` avec diagnostic, jamais ignoré : c'est la règle « aucun succès silencieux » de
+  `quality-attributes.md` appliquée à l'instrument lui-même ;
+- **le compte rendu** (`crash-report.mjs`) agrège la matrice d'une graine et publie le taux « ancien
+  ou nouveau », point par point et globalement.
+
+L'injecteur ne s'arme jamais hors harnais (`crash-harness.mjs`), sur le modèle du drapeau
+`--worker-src-blob` de `tools/serve.mjs` : variable d'environnement exigée sous Node, jeton exigé
+dans un Worker de navigateur. Aucun chemin du produit ne transmet l'un ni l'autre.
+
+Ce que #15 ne couvre pas : l'atomicité et la récupération d'une génération (#16), la participation
+d'un guest v86 à la coupure — le scénario écrit depuis le Worker runtime, la chaîne guest → pont ATA
+→ backend restant prouvée par les suites de #6 et #14 —, et la perte d'une écriture non barriérée,
+qu'aucun des deux supports éprouvés ne produit aujourd'hui. La première mesure du taux est publiée
+dans `docs/quality-attributes.md`.
+
 ## Concurrence et bail d'écriture
 
 L'issue #8 (`VAULT-PERSIST-002`) tient le budget multi-onglets de `docs/quality-attributes.md` :

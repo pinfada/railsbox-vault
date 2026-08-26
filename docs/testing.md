@@ -2,29 +2,34 @@
 
 ## Suites disponibles
 
-| Commande                       | Portée                                                                                                      |                                 Coût attendu |
-| ------------------------------ | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------: |
-| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                                                   |                                     secondes |
-| `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontière d'origine sous Chromium                                  |                                environ 1 min |
-| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                                                               |                                environ 1 min |
-| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                                                   |                                environ 2 min |
-| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                                                         |              environ 20 s après installation |
-| `npm run test:vm`              | guest Linux réel sur les backends mémoire et OPFS (Chromium), et démarrage du runtime sur les trois moteurs |              environ 1,6 min, **périodique** |
-| `npm run test:isolation`       | coût de l'isolation multi-origine sur le runtime v86, trois moteurs                                         |              environ 8 min, **à la demande** |
-| `npm run test:csp`             | démarrage de v86 sous deux CSP, quatre configurations, trois moteurs                                        |             environ 25 min, **à la demande** |
-| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker                                               | environ 1 min après la première construction |
-| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                                                          |   plus de 10 min, Docker et artefacts requis |
-| `npm run test:e2e`             | reprise, export vérifiable, restauration inter-origine et migration de format                               |   plus de 20 min, Docker et artefacts requis |
-| `npm run test:rythme`          | coût de la boucle d'ordonnancement, dix boots entrelacés de l'image de référence                            |             environ 18 min, **à la demande** |
-| `npm test`                     | suites unitaire et navigateur                                                                               |                                     secondes |
-| `npm run check`                | lint, format et toutes les suites actuelles                                                                 |             moins de 2 min hors installation |
+| Commande                       | Portée                                                                                                                           |                                 Coût attendu |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------: |
+| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                                                                        |                                     secondes |
+| `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontière d'origine sous Chromium                                                       |                                environ 1 min |
+| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                                                                                    |                                environ 1 min |
+| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                                                                        |                                environ 2 min |
+| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                                                                              |              environ 20 s après installation |
+| `npm run test:vm`              | guest Linux réel sur les backends mémoire et OPFS (Chromium), matrice de coupures, et démarrage du runtime sur les trois moteurs |              environ 1,6 min, **périodique** |
+| `npm run test:isolation`       | coût de l'isolation multi-origine sur le runtime v86, trois moteurs                                                              |              environ 8 min, **à la demande** |
+| `npm run test:csp`             | démarrage de v86 sous deux CSP, quatre configurations, trois moteurs                                                             |             environ 25 min, **à la demande** |
+| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker                                                                    | environ 1 min après la première construction |
+| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                                                                               |   plus de 10 min, Docker et artefacts requis |
+| `npm run test:e2e`             | reprise, export vérifiable, restauration inter-origine et migration de format                                                    |   plus de 20 min, Docker et artefacts requis |
+| `npm run test:rythme`          | coût de la boucle d'ordonnancement, dix boots entrelacés de l'image de référence                                                 |             environ 18 min, **à la demande** |
+| `npm test`                     | suites unitaire et navigateur                                                                                                    |                                     secondes |
+| `npm run check`                | lint, format et toutes les suites actuelles                                                                                      |             moins de 2 min hors installation |
 
 La suite `test:e2e` porte depuis #7 le scénario de sortie du MVP (voir plus bas), auquel se sont
 ajoutés l'export vérifiable (#11), la restauration inter-origine (#12) et la migration de format
 avec sa reprise après interruption (#13). Depuis #12, sa configuration démarre **deux** serveurs sur
 deux origines distinctes : un import ne prouve rien tant qu'il peut relire le stockage qu'il vient
-d'écrire. La suite `test:resilience` sera ajoutée lorsqu'elle possédera un premier scénario réel :
-un script vide qui réussit ne constitue pas une preuve.
+d'écrire.
+
+Le premier scénario de niveau **résilience** existe depuis #15 : il vit dans `test:vm`
+(`tests/vm/resilience-arrets.spec.mjs`), parce qu'il exige exactement le même harnais — la coquille
+servie, le Worker runtime, un volume OPFS réel sous Chromium. Aucune commande `test:resilience`
+séparée n'est créée pour l'instant : elle démarrerait le même serveur pour exécuter un fichier de
+plus, et un script qui n'ajoute pas de preuve n'ajoute que du temps.
 
 ### Backend de blocs OPFS
 
@@ -545,6 +550,81 @@ complémentaires :
 
 Sans le témoin négatif, un test qui ne mesurerait que le cas corrigé ne prouverait pas que la
 correction sert à quelque chose.
+
+#### Résilience : arrêts, écritures partielles et rejeu
+
+`tests/vm/resilience-arrets.spec.mjs` est la preuve de niveau **résilience** de #15. Elle ne
+démontre AUCUNE atomicité : elle rend observable, reproductible et classé ce qu'une coupure laisse
+aujourd'hui sur un volume OPFS réel. C'est l'instrument ; la garantie est l'objet de #16.
+
+**Commande.** `npm run test:vm`, projet `chromium` uniquement — la suite ouvre un volume OPFS, que
+WebKit Playwright n'expose pas. Le banc est servi à `/vm/resilience.html` et s'exécute aussi à la
+main.
+
+**Ce qui coupe.** `src/vm/crash-plan.mjs` tire d'une **graine** entière une séquence déterministe de
+points de coupure. Trois genres, disjoints :
+
+| Genre                    | Ce qu'il fait                                                | Faute de `fault-plan.mjs` |
+| ------------------------ | ------------------------------------------------------------ | ------------------------- |
+| `arret-brutal`           | l'opération visée et toutes les suivantes n'ont pas lieu     | `lost-handle`             |
+| `ecriture-dechiree`      | une partie des octets d'un bloc seulement atteint le support | `partial-write`           |
+| `coupure-avant-barriere` | les écritures ont eu lieu, la barrière jamais                | `lost-handle` sur `flush` |
+
+Un arrêt brutal ne vise jamais une barrière : ce cas porte un nom à lui, parce que la barrière est
+le seul point qui sépare une écriture **acquittée** d'une écriture **durable**. Aucune nouvelle
+sorte de faute n'est inventée — le plan de `src/vm/fault-plan.mjs` est réutilisé tel quel, si bien
+que c'est le même code de backend qui exécute la panne.
+
+Le générateur pseudo-aléatoire est écrit dans le module (mulberry32, 32 bits d'état) ; `Math.random`
+n'apparaît nulle part. Même graine ⇒ même séquence, et l'épreuve `npm run test:vm` le vérifie sur le
+vrai support en rejouant la matrice deux fois.
+
+**Ce qui arrête.** L'arrêt est réel : la page appelle `Worker.terminate()` pendant que le Worker
+runtime tient encore le handle exclusif du volume, sans `close()` — qui matérialiserait les
+écritures en attente — et sans barrière. Le Worker qui coupe publie son journal de blocs **avant**
+de mourir ; un autre rouvre le volume et le classe. Sous Node, `src/vm/crash-machine.mjs` reproduit
+la même sémantique sur le double calibré : `abandon()` reprend l'exclusivité sans jamais fermer.
+
+**Ce qui classe.** `src/vm/crash-oracle.mjs` classe chaque bloc suivi en `ancien`, `nouveau`,
+`dechire` ou `corrompu`, et en tire un verdict de volume : `ancien`, `nouveau`, `melange` ou
+`corrompu`. Deux règles empêchent le succès silencieux :
+
+- un bloc que l'oracle ne rattache ni à l'ancien état ni au nouveau est `corrompu` **avec
+  diagnostic** — l'octet fautif et les deux valeurs attendues — et jamais ignoré ;
+- un bloc dont le journal dit que l'écriture a été acquittée **puis franchie par une barrière**, et
+  qui rend pourtant l'ancien état, est `corrompu` lui aussi : c'est `SEC-DURABLE-001` lu à l'envers.
+
+Un bloc déchiré n'est ni l'ancien état ni le nouveau : au niveau du volume il rejoint `corrompu`. Le
+compte par classe conserve la distinction.
+
+**Rejeu.** Chaque ligne du compte rendu porte sa graine et son point complet (genre, opération,
+rang, octets). Rejouer un point seul se fait depuis le banc :
+
+```js
+globalThis.bancResilience.executerPoint({
+  graine: 2026,
+  index: 0,
+  kind: "ecriture-dechiree",
+  operation: "write",
+  occurrence: 5,
+  bytes: 192,
+});
+```
+
+et la matrice entière par `bancResilience.executerMatrice({ graine: 2026, points: 8 })`.
+
+**L'injecteur ne s'arme pas hors harnais.** `src/vm/crash-harness.mjs` refuse l'armement, sur le
+modèle du drapeau `--worker-src-blob` de `tools/serve.mjs` : sous Node, le processus doit porter
+`VAULT_HARNAIS_RESILIENCE=mesure-arrets` ; dans un Worker de navigateur, faute d'environnement de
+processus, l'appel doit présenter le jeton du harnais, que seul `public/vm/resilience-banc.mjs`
+transmet — et seulement au Worker qui coupe. Le refus est figé par
+`tests/unit/vm-crash-harnais.test.mjs`, dans son propre processus.
+
+**Limites.** Pas d'atomicité (#16). Pas de guest v86 dans la boucle : le scénario écrit depuis le
+Worker runtime sur le volume OPFS, sans émulateur — la chaîne guest → pont ATA → backend reste
+prouvée par `opfs-barrier.spec.mjs` et `opfs-persistence.spec.mjs`, et l'y adjoindre coûterait un
+boot de guest par point de coupure. Pas de scénario Rails ni de bout en bout (#16). OPFS impose
+Chromium.
 
 #### Le démarrage du runtime, sur les trois moteurs
 
