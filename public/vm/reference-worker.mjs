@@ -689,6 +689,7 @@ const PHASES = new Map([
   ["prepare-empty", phasePrepareEmpty],
   ["cleanup", phaseCleanup],
   ["live", phaseLive],
+  ["live-couper", phaseLiveCouper],
   ["resume", phaseResume],
   ["resume-arm", phaseResumeArm],
   ["resume-fire", phaseResumeFire],

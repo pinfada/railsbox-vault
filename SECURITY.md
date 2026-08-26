@@ -94,8 +94,23 @@ et tester.
   fermeture pendant le flush, deux barrières à vide, RPO 0 après acquittement — sont prouvées de
   façon déterministe par `tests/unit/vm-durability-barrier.test.mjs` (chaîne complète moins
   l'émulateur, avec son témoin de barrière retardée) et rejouées sur le vrai support par
-  `tests/vm/opfs-barrier.spec.mjs`. Restent hors de cet invariant l'atomicité transactionnelle d'une
-  génération (#16) et la reprise complète après fermeture (#7) ;
+  `tests/vm/opfs-barrier.spec.mjs`. **#16 change ce que « durable » recouvre : ce n'est plus une
+  écriture isolée, c'est une GÉNÉRATION.** L'ensemble des écritures comprises entre deux barrières
+  acquittées est déposé dans un journal voisin `<volume>.gen` et n'atteint le volume qu'ENTIER ; la
+  barrière valide la génération en scellant sa charge par une racine d'un seul secteur
+  ([ADR 0014](docs/decisions/0014-generation-transactionnelle.md)). L'acquittement au guest reste ce
+  qu'il était — il suit un flush réel du support —, mais il porte désormais sur un état complet :
+  une coupure laisse la dernière génération VALIDÉE, jamais un mélange. La récupération d'ouverture
+  écarte une génération non validée (`VAULT_STORAGE_GENERATION_DISCARDED`, publié et jamais tu),
+  rejoue une génération validée, et REFUSE une charge scellée devenue incohérente
+  (`VAULT_STORAGE_GENERATION_CORRUPT`) plutôt que de la réparer par devinette. La mesure : le taux
+  de coupures laissant « ancien ou nouveau » passe de 12,5 % (#15) à 100 % sur trois graines, sur
+  OPFS réel (`tests/vm/resilience-arrets.spec.mjs`), avec zéro bloc déchiré et zéro bloc non
+  rattachable. Reste hors de cet invariant la perte d'un cache d'écriture VOLATIL — mort du
+  processus du navigateur, coupure de courant : `Worker.terminate()` ne la produit pas, aucun des
+  deux supports éprouvés ne la produit, et #16 ne la mesure donc pas. Restent également hors
+  périmètre l'authentification des blocs (`SEC-BLOCK-001`, jalon 4) et la reprise complète après
+  fermeture (#7) ;
 - `SEC-UPDATE-001` — runtime et application sont identifiés et vérifiés avant d'ouvrir le volume en
   écriture. #10 en a écrit la règle — `assertVolumeWritable` refuse un volume sans manifeste
   identifiable (`VAULT_MANIFEST_UNIDENTIFIED`) — mais aucun chemin de production ne l'appelait :
@@ -131,7 +146,16 @@ et tester.
   Preuves : `tests/unit/vm-volume-migration.test.mjs` (cinq points de rupture, volume jamais valide
   à moitié) et un témoin Bout en bout où la migration est coupée après la révocation, puis le boot
   refusé (`tests/e2e/migration-volume-versionne.spec.mjs`). Décision :
-  [ADR 0011](docs/decisions/0011-migration-de-format-et-reprise.md) ;
+  [ADR 0011](docs/decisions/0011-migration-de-format-et-reprise.md). **Depuis #16**, un TROISIÈME
+  voisin persistant existe : le **journal de génération** `<volume>.gen`, qui porte les écritures
+  d'une génération en cours et la racine qui la valide. Il n'est **ni chiffré ni authentifié** — sa
+  somme de contrôle est un CRC-32, qui détecte la déchirure et l'octet retourné mais qu'un
+  altérateur ayant accès à OPFS recalculerait sans difficulté. Le remède est celui du jalon 4
+  (`SEC-BLOCK-001`, `SEC-GEN-001`) ; jusque-là, la confiance repose ici encore sur le
+  partitionnement OPFS par origine (ADR 0002). Son suffixe est **réservé**, et il est retiré avec le
+  volume qu'il décrit : un journal survivant ferait rejouer, sur un volume homonyme, une génération
+  qui ne lui appartient pas. Décision :
+  [ADR 0014](docs/decisions/0014-generation-transactionnelle.md) ;
 - `SEC-RECOVERY-001` — chaque moyen de récupération annoncé possède un test de succès, de révocation
   et de perte définitive.
 

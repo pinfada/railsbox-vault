@@ -111,6 +111,14 @@ refus typé ; sinon la fonction rend le manifeste validé. L'identité et la ver
   antérieur (`MIGRATION_REQUIRED`) et d'un downgrade de runtime ; il ne décrit pas comment migrer.
 - **Le chiffrement et l'authentification du manifeste** restent hors périmètre : le manifeste v1
   n'est ni chiffré ni signé. Un manifeste authentifié est un travail ultérieur.
+- **La génération transactionnelle** → #16, et elle N'A PAS ajouté de champ au manifeste. La
+  question se posait — la génération validée doit pouvoir être nommée — et
+  [l'ADR 0014](0014-generation-transactionnelle.md) l'a tranchée en la nommant AILLEURS : dans la
+  racine du journal voisin `<volume>.gen`, publiée par `describe().generation`. Le manifeste décrit
+  une IDENTITÉ, pas une histoire, et un compteur qui change à chaque barrière aurait imposé de
+  réécrire le manifeste sur le chemin le plus chaud — où un manifeste déchiré rend le volume non
+  identifié, donc non bootable. Le format du manifeste reste donc **v2**, et aucun volume existant
+  n'est concerné.
 
 ## Ce qui est explicitement refusé
 

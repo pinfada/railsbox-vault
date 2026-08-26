@@ -14,7 +14,7 @@
 | `npm run test:csp`             | démarrage de v86 sous deux CSP, quatre configurations, trois moteurs                                                             |             environ 25 min, **à la demande** |
 | `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker                                                                    | environ 1 min après la première construction |
 | `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                                                                               |   plus de 10 min, Docker et artefacts requis |
-| `npm run test:e2e`             | reprise, export vérifiable, restauration inter-origine et migration de format                                                    |   plus de 20 min, Docker et artefacts requis |
+| `npm run test:e2e`             | reprise, coupure pendant une mutation, export vérifiable, restauration inter-origine et migration                                |   plus de 20 min, Docker et artefacts requis |
 | `npm run test:rythme`          | coût de la boucle d'ordonnancement, dix boots entrelacés de l'image de référence                                                 |             environ 18 min, **à la demande** |
 | `npm test`                     | suites unitaire et navigateur                                                                                                    |                                     secondes |
 | `npm run check`                | lint, format et toutes les suites actuelles                                                                                      |             moins de 2 min hors installation |
@@ -553,9 +553,23 @@ correction sert à quelque chose.
 
 #### Résilience : arrêts, écritures partielles et rejeu
 
-`tests/vm/resilience-arrets.spec.mjs` est la preuve de niveau **résilience** de #15. Elle ne
-démontre AUCUNE atomicité : elle rend observable, reproductible et classé ce qu'une coupure laisse
-aujourd'hui sur un volume OPFS réel. C'est l'instrument ; la garantie est l'objet de #16.
+`tests/vm/resilience-arrets.spec.mjs` est la preuve de niveau **résilience** de #15, et depuis #16
+c'est aussi la mesure de la garantie. L'instrument n'a pas changé de nature : il rend observable,
+reproductible et classé ce qu'une coupure laisse sur un volume OPFS réel. Ce qui a changé, c'est le
+résultat — le taux « ancien ou nouveau » y valait 12,5 %, il vaut 100 % sur trois graines.
+
+**Le rouge de #16 est dans ce fichier.** Les lignes qui ÉPINGLAIENT les états non atomiques —
+`tauxAtomique < 1`, `classes.dechire === 1`, `verdict === corrompu` — sont désormais leurs
+contraires. C'est la trace, dans le dépôt, du fait que la garantie a été prouvée par un test qui
+échouait sans elle.
+
+**Ce que #16 a changé dans la CHARGE mesurée, et pas dans le juge.** Le scénario suit huit blocs
+réécrits trois fois, là où #15 en suivait vingt-quatre distincts. La raison est calculée, pas
+décrétée : `tests/unit/vm-crash-cadence.test.mjs` établit qu'avec la cadence de #15, un mécanisme
+PARFAITEMENT atomique plafonnait à 50 % (graine 2026) et 37,5 % (graines 7 et 424242), parce que
+`SEC-DURABLE-001` oblige à publier des générations intermédiaires que l'oracle — qui ne connaît que
+deux états de référence — classe `melange`. Le profil remis au planificateur est INCHANGÉ, donc la
+matrice de coupures est identique point pour point, et le même fichier l'épingle.
 
 **Commande.** `npm run test:vm`, projet `chromium` uniquement — la suite ouvre un volume OPFS, que
 WebKit Playwright n'expose pas. Le banc est servi à `/vm/resilience.html` et s'exécute aussi à la
@@ -653,11 +667,40 @@ transmet — et seulement au Worker qui coupe. Le refus est figé par
 `tests/unit/vm-crash-armement.test.mjs` inspecte les sources servies pour que « aucun chemin du
 produit n'arme l'injecteur » reste un fait vérifié plutôt qu'une convention de relecture.
 
-**Limites.** Pas d'atomicité (#16). Pas de guest v86 dans la boucle : le scénario écrit depuis le
-Worker runtime sur le volume OPFS, sans émulateur — la chaîne guest → pont ATA → backend reste
-prouvée par `opfs-barrier.spec.mjs` et `opfs-persistence.spec.mjs`, et l'y adjoindre coûterait un
-boot de guest par point de coupure. Pas de scénario Rails ni de bout en bout (#16). OPFS impose
-Chromium.
+**Limites.** Pas de guest v86 dans la boucle : le scénario écrit depuis le Worker runtime sur le
+volume OPFS, sans émulateur — la chaîne guest → pont ATA → backend reste prouvée par
+`opfs-barrier.spec.mjs` et `opfs-persistence.spec.mjs`, et l'y adjoindre coûterait un boot de guest
+par point de coupure. Le vrai Rails coupé en pleine mutation est le scénario Bout en bout
+ci-dessous. OPFS impose Chromium. Et surtout : **la coupure reste un `Worker.terminate()`.** Ni le
+processus du navigateur ni la machine ne meurent, aucun cache d'écriture volatil n'est perdu. #16
+rend une perte de cache volatil incapable de produire un MÉLANGE — les octets non validés sont dans
+le journal voisin, et une charge incomplète est écartée à l'ouverture — mais cette propriété-là
+n'est PAS mesurée ici, et le protocole qui couperait plus bas reste à écrire.
+
+#### Bout en bout : une coupure pendant une mutation Rails
+
+`tests/e2e/coupure-generation-boot-froid.spec.mjs` est la preuve **Bout en bout** de #16. Une vraie
+application Rails boote sur un disque OPFS de 512 Mio et le mute ; la page est FERMÉE dès que le
+Worker annonce que le guest a écrit au moins huit blocs ET acquitté une barrière, ce qui tue le
+Worker avec son handle exclusif — sans `close()`, sans barrière, en laissant une génération en
+cours.
+
+Le boot à froid suivant doit tenir trois choses, et le test les sépare :
+
+1. **le volume s'ouvre** — ni manifeste perdu, ni génération jugée corrompue ;
+2. **la récupération DIT ce qu'elle a fait** : `recuperation.etat` vaut `ecartee` (avec
+   `VAULT_STORAGE_GENERATION_DISCARDED` et le nombre d'octets écartés), `rejouee` (avec le numéro de
+   génération), ou `aucune`. C'est la propriété centrale de #16 : l'état retenu est NOMMÉ, jamais
+   deviné par le lecteur ;
+3. **l'invariant Rails est conforme**, que l'état retenu soit celui d'avant ou celui d'après.
+
+Le point 2 vaut d'être souligné : sans lui, un boot qui repart de l'état d'avant serait
+indistinguable d'un boot qui repart de l'état d'après, et « ancien ou nouveau » redeviendrait une
+phrase. La phase `live-couper` du Worker n'injecte AUCUNE faute : elle annonce, et c'est la page qui
+coupe. L'injecteur de #15 reste hors du chemin de production.
+
+**Commande.** `npm run test:e2e`, job `Reprise MVP`. Préalables : `npm run image:build` et
+`npm run vm:fetch`.
 
 #### Le démarrage du runtime, sur les trois moteurs
 

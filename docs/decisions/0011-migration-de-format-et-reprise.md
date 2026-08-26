@@ -259,6 +259,12 @@ caractères, valide avant cette décision, est désormais refusé à la créatio
 Aucun format n'ayant été publié, aucun volume d'utilisateur n'est concerné ; un banc du dépôt qui
 utiliserait un tel nom devrait le raccourcir.
 
+**Amendement #16** : un troisième voisin réservé existe, `.gen`
+([ADR 0014](0014-generation-transactionnelle.md)). Son suffixe est délibérément COURT pour cette
+raison même : la borne se règle sur le plus long, `.migration` la fixe déjà à dix caractères, et
+`MAX_VOLUME_NAME` reste donc à 54. Un fichier interne ne doit pas rétrécir les noms de volume
+admissibles une seconde fois.
+
 ## Erreurs ajoutées
 
 Famille **distincte** de celles du stockage (#4/#6), du bail (#8), du manifeste (#10), de l'archive
@@ -332,11 +338,14 @@ Ces limites sont **connues et assumées**. Aucune n'est corrigée par cette déc
    peut forger un journal et faire reprendre une migration depuis un manifeste source inventé. La
    confiance repose sur le partitionnement OPFS par origine
    ([ADR 0002](0002-topologie-origine-de-confiance.md)) ;
-5. **Pas d'atomicité de génération.** La migration n'est pas une transaction copy-on-write : entre
-   les gestes 7 et 9 le volume est dans un état intermédiaire **sûr** (non identifié, donc non
-   inscriptible) mais **pas révocable en un geste**. La génération copy-on-write que
-   `docs/release-policy.md` évoque (« migration sur une nouvelle génération copy-on-write ») reste
-   **#16** ;
+5. **Pas d'atomicité de génération POUR LA MIGRATION.** La migration n'est pas une transaction
+   copy-on-write : entre les gestes 7 et 9 le volume est dans un état intermédiaire **sûr** (non
+   identifié, donc non inscriptible) mais **pas révocable en un geste**. #16 a livré la génération
+   transactionnelle du chemin d'écriture du guest ([ADR 0014](0014-generation-transactionnelle.md)),
+   et la cible de migration l'emprunte — un journal en attente est donc rejoué avant toute mutation,
+   au lieu d'être perdu. Mais l'étape de migration elle-même reste une mutation en place, et la «
+   migration sur une nouvelle génération copy-on-write » que `docs/release-policy.md` demande
+   **n'est toujours pas faite** ;
 6. **Le journal peut être séparé de son volume.** L'échec est alors sûr — le volume reste non
    identifié, donc non inscriptible — mais c'est une perte d'usage : sans journal ni manifeste, la
    reprise est impossible et il faut restaurer la sauvegarde ;
