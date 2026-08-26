@@ -116,6 +116,16 @@ Le geste 4 avant le geste 7 reprend la correction de
 l'[ADR 0009](0009-restauration-inter-origine.md) (point B4 de sa revue) : révoquer avant d'avoir le
 handle rendrait inutilisable un volume que l'on n'a finalement pas touché.
 
+**La restitution du handle n'est pas un onzième geste**, et une fermeture qui rate ne masque pas ce
+qui l'a précédée. La fermeture rend ce que le geste 4 avait pris ; elle est tentée quoi qu'il
+arrive. Si elle échoue alors qu'une erreur était déjà en cours de propagation, c'est **l'erreur
+d'origine** qui remonte — la fermeture lui est jointe en `cause`, jamais substituée. Sans cette
+règle, l'exploitant lirait « fermeture impossible » là où la migration s'est en réalité arrêtée
+entre les gestes 7 et 9, volume laissé non identifié : le diagnostic disparaîtrait au moment précis
+où il désigne le remède, qui est de reprendre depuis le journal. Une fermeture qui rate **seule**
+fait, elle, échouer la migration et laisse le journal en place : affirmer « migré » sans avoir pu
+rendre le handle serait affirmer un état que personne n'a constaté.
+
 ### « Sauvegarde obligatoire » est un CONTRÔLE, pas une phrase
 
 C'est le point où une migration peut mentir le plus facilement. Voici exactement ce que le code
@@ -198,8 +208,10 @@ D'où la stratégie de reprise, et sa justification :
   d'exploitant. Un journal **démesuré** n'est pas lu du tout — poser une question ne doit pas coûter
   un gigaoctet ;
 - **un journal resté derrière un manifeste DÉJÀ au format visé** signale une interruption survenue
-  entre les gestes 9 et 10 : la migration a abouti. Il est simplement retiré, et `migrateVolume`
-  rend `migrated: false`. C'est ce qui la rend **idempotente**.
+  après l'inscription du manifeste cible : la migration a abouti. Que la **relecture** du geste 9
+  ait eu lieu ou non ne change rien — le manifeste est sur le support, et la reprise le CONSTATE au
+  lieu de recommencer une chaîne dont elle n'a plus besoin. Le journal est simplement retiré, et
+  `migrateVolume` rend `migrated: false`. C'est ce qui la rend **idempotente**.
 
 Entre le geste 7 et le geste 9, le volume est **non identifié**. `openVolumeForWrite` (ADR 0009) le
 refuse alors par `VAULT_MANIFEST_UNIDENTIFIED`, avant même que v86 ne soit construit. C'est la
@@ -282,6 +294,13 @@ pas été ouverte ». Une panne est injectée à **chacun des cinq points de rup
 inscription du journal, révocation, barrière, inscription du manifeste — et la suite exige à chaque
 fois que le volume reste non identifié plutôt que présenté comme valide à moitié, et que le handle
 ait été rendu.
+
+Ces cinq pannes coupent **avant** l'effet du geste. Un onglet fermé laisse l'état inverse : le geste
+a porté, puis plus rien ne s'exécute — c'est ce que `interrompreApres` injecte au niveau Bout en
+bout. Le double unitaire porte donc le même mode, et **trois ruptures supplémentaires** couvrent les
+états que le premier n'atteint jamais : journal inscrit alors que le manifeste source est intact,
+manifeste cible inscrit mais jamais relu (dont la reprise doit aboutir sans rien redemander), et
+fermeture ratée — seule, ou par-dessus une erreur antérieure qu'elle ne doit pas masquer.
 
 Le niveau Bout en bout enchaîne, sur un vrai volume OPFS et une vraie application Rails : volume v1
 refusé au boot → migration sans sauvegarde refusée → export de sauvegarde (#11) → migration
