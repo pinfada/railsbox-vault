@@ -44,11 +44,14 @@
 // support : la `target` est injectée — un double déterministe sous Node,
 // `src/vm/opfs-migration-target.mjs` dans le Worker.
 
+import {
+  assertPreuveDisponible,
+  consentementNomme,
+  retenirPreuve,
+} from "./migration-backup-proof.mjs";
 import { MIGRATION_ERROR_CODES, MigrationError } from "./migration-errors.mjs";
+import { journalMalforme, parseJournal, serialiserJournal } from "./migration-journal.mjs";
 import { MANIFEST_ERROR_CODES, ManifestError } from "./manifest-errors.mjs";
-import { MIGRATION_JOURNAL_SUFFIX, migrationJournalName } from "./opfs-sync-access.mjs";
-import { createSha256Stream } from "./sha256-stream.mjs";
-import { readArchive } from "./volume-export.mjs";
 import {
   MANIFEST_FORMAT_VERSION,
   MIN_WRITER_FORMAT_VERSION,
@@ -58,33 +61,20 @@ import {
   serializeManifest,
 } from "./volume-manifest.mjs";
 
-/** Marqueur du journal de reprise : il n'est jamais confondu avec un manifeste. */
-export const MIGRATION_JOURNAL_MAGIC = "railsbox-vault/volume-migration";
-
-/** Version du format du JOURNAL. Comme les autres formats persistants, un entier indépendant. */
-export const MIGRATION_JOURNAL_VERSION = 1;
-
 /** Bloc de streaming par défaut : identique à l'export, très en deçà du budget de 64 Mio. */
 export const DEFAULT_MIGRATION_BLOCK_BYTES = 4 * 1024 * 1024;
 
-/**
- * Les deux preuves qu'une migration accepte à son ENGAGEMENT. Il n'y en a pas de troisième.
- *
- * Une REPRISE, elle, ne redemande rien : elle se fonde sur la preuve déjà retenue et inscrite dans
- * le journal. Ce n'est donc pas une troisième preuve, mais la MÊME, relue — et elle n'est acceptée
- * que si le journal qui la porte s'accorde avec le manifeste présent et la géométrie du support
- * (`manifesteSource`). Un journal seul ne vaut pas autorisation de migrer.
- */
-export const EVIDENCE_KINDS = Object.freeze({
-  /** Une archive #11 relue, dont le contenu est celui du volume à cet instant. */
-  verifiedBackup: "sauvegarde-verifiee",
-  /** Un exploitant nommé assume la migration sans sauvegarde. Inscrit dans le journal. */
-  namedConsent: "consentement-nomme",
-});
-
-// Le nom du journal appartient à la frontière de nommage du support : il est défini une fois, dans
-// `opfs-sync-access.mjs`, et réexporté ici pour les appelants de la migration.
-export { MIGRATION_JOURNAL_SUFFIX, migrationJournalName };
+// Le JOURNAL DE REPRISE et la PREUVE DE SAUVEGARDE sont deux responsabilités distinctes de
+// l'orchestration : elles vivent dans leurs propres modules. Leur surface publique est réexportée
+// ici, parce que c'est la migration que les appelants importent.
+export {
+  MIGRATION_JOURNAL_MAGIC,
+  MIGRATION_JOURNAL_SUFFIX,
+  MIGRATION_JOURNAL_VERSION,
+  migrationJournalName,
+  parseJournal,
+} from "./migration-journal.mjs";
+export { EVIDENCE_KINDS } from "./migration-backup-proof.mjs";
 
 /**
  * ÉTAPES ENREGISTRÉES, une par PAS de version. Il n'existe aucun chemin direct d'un format vers un
@@ -175,161 +165,6 @@ export function planMigration(from, to) {
     courant = etape.to;
   }
   return chaine;
-}
-
-// --- Journal de reprise --------------------------------------------------------------------------
-
-/** Sérialise le journal de reprise. Déterministe, comme le manifeste. */
-function serialiserJournal({ from, to, sourceManifest, evidence }) {
-  return new TextEncoder().encode(
-    JSON.stringify({
-      magic: MIGRATION_JOURNAL_MAGIC,
-      journalVersion: MIGRATION_JOURNAL_VERSION,
-      from,
-      to,
-      sourceManifest,
-      evidence,
-    }),
-  );
-}
-
-function journalMalforme(detail, context = {}) {
-  return new MigrationError(
-    MIGRATION_ERROR_CODES.journalMalformed,
-    `Journal de migration illisible : ${detail} Il n'est ni supprimé, ni deviné : l'écarter est un geste explicite.`,
-    context,
-  );
-}
-
-/**
- * Analyse le journal de reprise, ou lève un refus typé. Un journal présent mais illisible fait
- * REFUSER la migration : il signale une migration inachevée dont on ignore l'état de départ, et
- * passer outre reviendrait à réinventer une identité pour le volume.
- */
-export function parseJournal(input) {
-  let brut;
-  try {
-    brut = JSON.parse(input instanceof Uint8Array ? new TextDecoder().decode(input) : input);
-  } catch {
-    throw journalMalforme("JSON invalide.");
-  }
-  if (!brut || typeof brut !== "object" || brut.magic !== MIGRATION_JOURNAL_MAGIC) {
-    throw journalMalforme("marqueur absent ou inconnu.", { magic: brut?.magic ?? null });
-  }
-  if (brut.journalVersion !== MIGRATION_JOURNAL_VERSION) {
-    throw journalMalforme("version de journal non prise en charge.", {
-      journalVersion: brut.journalVersion ?? null,
-    });
-  }
-  if (!Number.isInteger(brut.from) || !Number.isInteger(brut.to) || brut.to < brut.from) {
-    throw journalMalforme("chaîne de versions absente ou incohérente.", {
-      from: brut.from ?? null,
-      to: brut.to ?? null,
-    });
-  }
-  if (!brut.evidence || !Object.values(EVIDENCE_KINDS).includes(brut.evidence.kind)) {
-    throw journalMalforme("preuve de sauvegarde absente ou inconnue.", {
-      kind: brut.evidence?.kind ?? null,
-    });
-  }
-  let sourceManifest;
-  try {
-    sourceManifest = parseManifest(brut.sourceManifest);
-  } catch (cause) {
-    throw journalMalforme(`manifeste source invalide (${cause.message}).`);
-  }
-  return Object.freeze({
-    from: brut.from,
-    to: brut.to,
-    sourceManifest,
-    evidence: Object.freeze({ ...brut.evidence }),
-  });
-}
-
-// --- Preuve de sauvegarde ------------------------------------------------------------------------
-
-/** Consentement NOMMÉ, ou `null` s'il n'y en a pas. Un consentement anonyme n'en est pas un. */
-function consentementNomme(consent) {
-  const nom = consent?.acknowledgedBy;
-  if (typeof nom !== "string" || nom.trim() === "") return null;
-  return {
-    kind: EVIDENCE_KINDS.namedConsent,
-    acknowledgedBy: nom,
-    reason: typeof consent.reason === "string" ? consent.reason : null,
-  };
-}
-
-/** RELIT le volume depuis le support et rend son empreinte, en flux. */
-async function empreinteDuVolume({ backend, blockBytes }) {
-  const hash = createSha256Stream();
-  const taille = backend.size();
-  let offset = 0;
-  while (offset < taille) {
-    const length = Math.min(blockBytes, taille - offset);
-    const bytes = await backend.read(offset, length);
-    if (!(bytes instanceof Uint8Array) || bytes.byteLength !== length) {
-      throw new TypeError(
-        `Relecture de volume incohérente : ${bytes?.byteLength} octet(s) rendus sur ${length} à l'offset ${offset}.`,
-      );
-    }
-    hash.update(bytes);
-    offset += length;
-  }
-  return hash.digestHex();
-}
-
-function sauvegardeNonConforme(detail, context) {
-  return new MigrationError(
-    MIGRATION_ERROR_CODES.backupMismatch,
-    `Migration refusée : ${detail} L'archive présentée ne permettrait pas de revenir à l'état actuel de ce volume.`,
-    context,
-  );
-}
-
-/**
- * VÉRIFIE qu'une archive est bien la sauvegarde de CE volume, dans son état COURANT. Ce que le code
- * contrôle, exactement : l'archive est structurellement valide et son empreinte de contenu est
- * recalculée par #11 ; le volume est relu depuis le support et empreinté ; les deux empreintes
- * coïncident ; l'application et la taille du volume coïncident aussi. Ce qu'il ne contrôle pas :
- * l'AUTHENTICITÉ de l'archive — elle n'est ni signée ni chiffrée (jalon 4) —, ni qu'elle soit
- * toujours là demain.
- */
-async function verifierSauvegarde({ backend, backup, manifest, blockBytes, expectations }) {
-  const source = backup?.source;
-  if (!source || typeof source.read !== "function" || !Number.isInteger(source.byteLength)) {
-    throw new TypeError("Une sauvegarde attend une source { byteLength, read(offset, length) }.");
-  }
-  const verdict = await readArchive({
-    read: (offset, length) => source.read(offset, length),
-    byteLength: source.byteLength,
-    blockBytes,
-    expectations: { supportedFormat: expectations.supportedFormat },
-  });
-  if (verdict.manifest.app.id !== manifest.app.id) {
-    throw sauvegardeNonConforme("la sauvegarde décrit une autre application.", {
-      backupApp: verdict.manifest.app.id,
-      volumeApp: manifest.app.id,
-    });
-  }
-  if (verdict.contentLength !== backend.size()) {
-    throw sauvegardeNonConforme(
-      `la sauvegarde porte ${verdict.contentLength} octet(s) et le volume ${backend.size()}.`,
-      { backupLength: verdict.contentLength, volumeSize: backend.size() },
-    );
-  }
-  const courant = await empreinteDuVolume({ backend, blockBytes });
-  if (courant !== verdict.contentDigest) {
-    throw sauvegardeNonConforme(
-      `le volume porte l'empreinte ${courant} et la sauvegarde ${verdict.contentDigest}.`,
-      { volumeDigest: courant, backupDigest: verdict.contentDigest },
-    );
-  }
-  return {
-    kind: EVIDENCE_KINDS.verifiedBackup,
-    contentDigest: courant,
-    archiveLength: verdict.archiveLength,
-    archiveFormatVersion: verdict.manifest.formatVersion,
-  };
 }
 
 // --- Orchestration -------------------------------------------------------------------------------
@@ -432,41 +267,6 @@ function assertGeometrieDuSupport(source, support) {
     `Migration refusée : le manifeste de départ décrit un volume de ${source.geometry.volumeSize} octet(s) et le support en porte ${support.size}. Un volume n'est jamais retaillé par une migration, et une géométrie ne se devine pas.`,
     { manifestVolumeSize: source.geometry.volumeSize, supportSize: support.size ?? null },
   );
-}
-
-/**
- * GESTE 3 — EXIGER UNE PREUVE, avant d'ouvrir quoi que ce soit. Une REPRISE, elle, s'appuie sur la
- * preuve déjà retenue et inscrite dans le journal : redemander une archive au moment de la reprise
- * transformerait une interruption en impasse.
- */
-function assertPreuveDisponible({ journal, backup, consentement, fromVersion, toVersion }) {
-  if (journal !== null || backup !== null || consentement !== null) return;
-  throw new MigrationError(
-    MIGRATION_ERROR_CODES.backupRequired,
-    `Migration refusée : « export de sauvegarde obligatoire avant migration irréversible » (docs/release-policy.md). Fournir une archive de sauvegarde à vérifier, ou un consentement explicite nommé. Aucune ouverture n'est tentée.`,
-    { fromVersion, toVersion },
-  );
-}
-
-/**
- * GESTE 5 — la preuve RETENUE : celle du journal en reprise, sinon l'archive vérifiée, sinon le
- * consentement. `async` parce qu'un seul de ces trois chemins relit le support : la signature doit
- * annoncer l'attente que l'appelant subit dans tous les cas, pas celle du chemin le plus court.
- */
-async function retenirPreuve({
-  journal,
-  backup,
-  consentement,
-  backend,
-  source,
-  blockBytes,
-  expectations,
-}) {
-  if (journal !== null) return journal.evidence;
-  if (backup !== null) {
-    return verifierSauvegarde({ backend, backup, manifest: source, blockBytes, expectations });
-  }
-  return consentement;
 }
 
 /**
