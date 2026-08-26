@@ -106,7 +106,10 @@ Une version publiable exige :
 - signature des artefacts dès que la chaîne de publication existe ;
 - matrice runtime/application/format mise à jour ;
 - procédure de rollback testée ;
-- export/restauration de la version précédente démontré.
+- export/restauration de la version précédente démontré ;
+- surfaces de mesure exclues de l'artefact publié — `public/csp/`, `public/spike/` et
+  `public/compat/` sont des bancs de mesure servis depuis la racine du serveur de développement, pas
+  le produit ; la liste des chemins publiés est une décision de publication, tranchée par #45.
 
 ## Support et retrait
 

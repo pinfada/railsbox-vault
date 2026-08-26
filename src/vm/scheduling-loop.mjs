@@ -32,9 +32,34 @@
 // Ce que `postTask` posé N'IMPLÉMENTE PAS, et que la plateforme offre : `priority` est ignorée, et
 // `signal` n'est honoré que s'il est DÉJÀ abandonné à la prise en charge — une annulation survenant
 // ensuite ne l'est pas. v86 n'en passe aucun des deux (`postTask(rappel, { delay })`, valeur de
-// retour jetée). Un `delay > 0` retombe sur `setTimeout` du contexte, donc sous le plafond de
-// quatre millisecondes après cinq imbrications : cet effet n'est PAS mesuré ici, et v86 ne l'atteint
-// pas dans les relevés du dépôt (le compteur d'appels y suit le compteur de tours).
+// retour jetée).
+//
+// **Un `delay > 0` retombe sur `setTimeout` du contexte, et v86 ATTEINT bien l'imbrication qui le
+// plafonne à quatre millisecondes.** C'était une supposition depuis #74 — le compteur d'appels
+// suivait le compteur de tours, ce qui suggérait le contraire ; #87 l'a mesurée. Relevé du
+// 2026-08-26, Chromium 151, guest de mesure (Linux 4 / Buildroot i386), boucle posée par-dessus
+// l'implémentation native :
+//
+// | Harnais                                    | Tâches | dont `delay > 0` | Imbrication max |
+// | ------------------------------------------ | -----: | ---------------: | --------------: |
+// | Worker runtime du produit (`test:vm`)      |  1 365 |               18 |          **18** |
+// | Banc CSP, `worker-src 'self'` (`test:csp`) |  1 369 |               20 |          **19** |
+// | Banc CSP, `worker-src 'self' blob:`        |  1 371 |               20 |          **20** |
+//
+// Lecture : le seuil de CINQ imbrications est franchi, largement — les minuteries de v86 forment une
+// chaîne CONTIGUË (imbrication ≈ nombre d'appels), chacune armée depuis le rappel de la précédente.
+// Toutes celles au-delà de la cinquième sont donc bornées à quatre millisecondes. Mais ce chemin ne
+// porte que 1,3 à 1,5 % des tâches, et la durée du boot ne s'en ressent pas : 3 625 ms avec la
+// boucle posée contre 3 608 ms sans, sur le même guest et la même politique — sous le bruit d'une
+// mesure unique. Le plafond est donc RÉEL et sans effet observé sur ce guest.
+//
+// Chemin sans `setTimeout`, PROPOSÉ et non implémenté (#87) : tenir les tâches différées dans une
+// file ordonnée par échéance et les drainer depuis `battre()`, en comparant l'horloge à chaque tour
+// — la boucle bat des centaines de fois par seconde, bien plus dru que le plafond de quatre
+// millisecondes. Une seule difficulté, et elle est structurelle : quand la file d'immédiats est
+// vide, plus rien ne bat, et une tâche différée seule n'expirerait jamais. Il faudrait alors amorcer
+// un message de canal — ou conserver une minuterie de secours pour ce seul cas. À trancher sur une
+// mesure qui montrerait un coût, ce que celle-ci ne montre pas.
 //
 // [ADR 0013]: ../../docs/decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md
 

@@ -33,9 +33,24 @@ jobs:
       - name: Installation des dépendances
         run: npm ci
 
+      # Depuis #74 le job installe TROIS moteurs au lieu d'un : le téléchargement domine désormais sa
+      # durée. La clé porte la version de `@playwright/test` résolue dans `package-lock.json` — les
+      # binaires des moteurs sont liés à cette version, et une clé sur autre chose restituerait des
+      # moteurs que la bibliothèque refuserait de piloter (#87).
+      - name: Cache des moteurs Playwright
+        id: cache-moteurs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       # Les trois moteurs, depuis #74 : `test:vm` porte un témoin de démarrage du guest sur
       # Chromium, Firefox et WebKit. Sans Firefox ni WebKit installés, ce témoin ne s'exécuterait
       # pas — et la matrice de `docs/compatibility.md` reposerait de nouveau sur un seul moteur.
+      #
+      # `--with-deps` est réexécuté même sur cache retrouvé : le cache porte les BINAIRES des
+      # moteurs, jamais les paquets système du runner, qui sont remis à zéro à chaque job. Sur cache
+      # retrouvé, `playwright install` constate que les moteurs sont là et ne télécharge rien.
       - name: Installation des moteurs
         run: npx playwright install --with-deps chromium firefox webkit
 
