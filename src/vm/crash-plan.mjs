@@ -82,8 +82,13 @@ function exigerEntierPositif(valeur, nom) {
  * @returns {readonly CrashPoint[]}
  */
 export function planifierCoupures(graine, profil) {
-  if (!Number.isInteger(graine) || graine < 0) {
-    throw new RangeError(`Graine invalide : ${graine}. Un entier positif ou nul est exigé.`);
+  // Le générateur travaille sur 32 bits. Accepter au-delà ferait de 2^31 et de 2^31 + 2^32 la MÊME
+  // séquence : deux relevés publiés sous deux graines différentes seraient identiques, sans que rien
+  // ne l'explique. La borne est dite, pas subie.
+  if (!Number.isInteger(graine) || graine < 0 || graine > 0xffffffff) {
+    throw new RangeError(
+      `Graine invalide : ${graine}. Un entier de 0 à ${0xffffffff} est exigé — au-delà, le générateur tronquerait à 32 bits et deux graines distinctes rejoueraient la même séquence.`,
+    );
   }
   const { points, ecritures, barrieres, tailleBloc, lectures = 0 } = profil ?? {};
   exigerEntierPositif(points, "points");

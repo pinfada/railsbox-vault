@@ -123,6 +123,10 @@ export async function rejouerCoupure(point, { jeton } = {}) {
     arret: ecriture.arret,
     fautesTirees: fautes.fired(),
     fautesNonTirees: fautes.unfired(),
+    // Les octets RÉELLEMENT relus, pour qu'un appelant puisse rejuger le même support avec un autre
+    // journal. C'est ce qui permet au témoin négatif de #15 d'exercer la règle `SEC-DURABLE-001`
+    // sur une relecture réelle plutôt que sur des octets fabriqués.
+    relecture: Object.freeze(relecture),
   });
 }
 

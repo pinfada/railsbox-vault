@@ -95,6 +95,10 @@ async function rejouerPoint(atelier, point) {
     classes: classement.classes,
     blocs: classement.blocs,
     reouverture: classement.reouverture,
+    // Relayés jusqu'au compte rendu : ils disent si la règle `SEC-DURABLE-001` a seulement pu se
+    // déclencher. Les perdre en route rendrait un taux atomique plus flatteur, sans le dire.
+    journalConsulte: classement.journalConsulte,
+    entreesJournal: classement.entreesJournal,
     ecritures: coupe.ecritures,
     barrieres: coupe.barrieres,
     arret: coupe.arret,
@@ -145,5 +149,25 @@ async function executerPoint(point) {
   }
 }
 
-globalThis.bancResilience = Object.freeze({ executerMatrice, executerPoint });
+/**
+ * RECLASSE le volume tel qu'il est, sans rien y écrire, avec le journal fourni. Sert au témoin
+ * négatif de la règle `SEC-DURABLE-001` : la relecture reste RÉELLE — ce sont les octets qu'une
+ * vraie coupure a laissés sur OPFS —, seul le journal est trafiqué pour prétendre qu'un bloc resté
+ * à l'ancien état avait été écrit puis franchi par une barrière.
+ * @param {object[]} journal
+ */
+async function reclasserAvec(journal) {
+  const atelier = brancher("vault-resilience-atelier");
+  try {
+    etat.textContent = "Reclassement avec un journal fourni…";
+    const classement = await atelier.demander({ scenario: "resilience-classer", journal });
+    etat.textContent = `Reclassé : verdict « ${classement.verdict} ».`;
+    rapport.textContent = JSON.stringify(classement, null, 2);
+    return classement;
+  } finally {
+    atelier.worker.terminate();
+  }
+}
+
+globalThis.bancResilience = Object.freeze({ executerMatrice, executerPoint, reclasserAvec });
 etat.textContent = "Banc de résilience prêt.";

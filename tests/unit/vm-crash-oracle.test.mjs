@@ -143,7 +143,13 @@ test("un bloc dont l'ancien et le nouveau partagent UN SEUL octet est refusé, a
     () =>
       classerVolume({
         blocs: [
-          { index: 0, offset: 0, ancien: ancienPartage, nouveau: nouveauPartage, observe: ancienPartage },
+          {
+            index: 0,
+            offset: 0,
+            ancien: ancienPartage,
+            nouveau: nouveauPartage,
+            observe: ancienPartage,
+          },
         ],
         sansJournal: true,
       }),

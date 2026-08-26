@@ -53,20 +53,33 @@ function valider(bloc) {
       `Bloc ${index} : longueur incohérente — ancien ${ancien.byteLength}, nouveau ${nouveau.byteLength}, relu ${observe.byteLength}. Compléter serait inventer des octets.`,
     );
   }
-  if (memesOctets(ancien, nouveau)) {
+  // Discernabilité OCTET PAR OCTET, et non seulement « les deux blocs diffèrent quelque part ».
+  // Un seul octet commun suffit à fausser le verdict dans le sens qui arrange : avec
+  // ancien [7,7,9,9] et nouveau [7,7,1,1], un support qui n'a écrit que les deux premiers octets
+  // du nouvel état rend [7,7,9,9] — identique à l'ancien état, donc classé « ancien » et compté
+  // ATOMIQUE, alors que c'est une déchirure. La propriété que le scénario de #15 garantit est donc
+  // une PRÉCONDITION de l'instrument, vérifiée à chaque appel plutôt que supposée.
+  const commun = ancien.findIndex((octet, position) => octet === nouveau[position]);
+  if (commun !== -1) {
     throw new Error(
-      `Bloc ${index} : ancien et nouveau contenus indiscernables. L'oracle ne peut pas classer un bloc dont les deux états attendus sont identiques ; il rendrait un tirage au sort présenté comme une mesure.`,
+      `Bloc ${index} : ancien et nouveau contenus indiscernables à l'octet ${commun} (0x${ancien[commun].toString(16).padStart(2, "0")} des deux côtés). L'oracle exige qu'ils diffèrent en CHAQUE octet : un seul octet commun rend un bloc partiellement écrit indistinguable d'un bloc intact, et le compterait atomique.`,
     );
   }
 }
 
 /**
  * Ce que le JOURNAL dit d'un bloc : son écriture a-t-elle été acquittée, et une barrière l'a-t-elle
- * suivie ? La barrière compte à partir du numéro de séquence de la DERNIÈRE écriture couvrant le
- * bloc : un acquittement antérieur ne rend pas durable une écriture postérieure.
+ * franchie ?
+ *
+ * `durable` demande qu'il EXISTE une écriture couvrant le bloc antérieure à un acquittement, et non
+ * que la DERNIÈRE écriture le soit. La nuance décide du verdict : une génération qui écrit, franchit
+ * sa barrière, puis réécrit le même bloc sans barrière — le régime même de #16 : journal, copie —
+ * laisse une version acquittée ET barriérée. Si elle a disparu du support, `SEC-DURABLE-001` ne
+ * tient pas, quoi qu'ait fait l'écriture suivante. Ne regarder que la dernière rendrait ce cas
+ * invisible, et l'oracle classerait « ancien », donc atomique.
  */
 function lireJournal(journal, offset, longueur) {
-  let derniereEcriture = -1;
+  let premiereEcriture = -1;
   let dernierAcquittement = -1;
   for (const entree of journal) {
     if (
@@ -74,18 +87,25 @@ function lireJournal(journal, offset, longueur) {
       entree.offset <= offset &&
       entree.offset + entree.length >= offset + longueur
     ) {
-      derniereEcriture = entree.seq;
+      if (premiereEcriture === -1) premiereEcriture = entree.seq;
     } else if (entree.operation === JOURNAL_OPERATIONS.flushAck) {
       dernierAcquittement = entree.seq;
     }
   }
   return {
-    acquitte: derniereEcriture >= 0,
-    durable: derniereEcriture >= 0 && dernierAcquittement > derniereEcriture,
+    acquitte: premiereEcriture >= 0,
+    durable: premiereEcriture >= 0 && dernierAcquittement > premiereEcriture,
   };
 }
 
-/** Classe un bloc à partir de ses seuls octets. Le journal intervient ensuite, jamais avant. */
+/**
+ * Classe un bloc à partir de ses seuls octets. Le journal intervient ensuite, jamais avant.
+ *
+ * `valider` garantit qu'aucun octet n'est commun aux deux états attendus : chaque octet relu
+ * appartient donc à AU PLUS un des deux, et l'ordre des comparaisons ci-dessous n'introduit aucun
+ * biais. Sans cette précondition, tester `nouveau` en premier ferait pencher tout octet ambigu du
+ * côté qui arrange.
+ */
 function classerOctets({ ancien, nouveau, observe }) {
   if (memesOctets(observe, nouveau)) return { classe: CLASSES.nouveau, diagnostic: null };
   if (memesOctets(observe, ancien)) return { classe: CLASSES.ancien, diagnostic: null };
@@ -132,53 +152,93 @@ function verdictDuVolume(classes, total) {
   };
 }
 
+/** Classe un bloc unique : octets d'abord, journal ensuite. Aucun compteur n'est muté ici. */
+function classerBloc(bloc, journal, journalConsulte) {
+  valider(bloc);
+  const { acquitte, durable } = journalConsulte
+    ? lireJournal(journal, bloc.offset, bloc.observe.byteLength)
+    : { acquitte: null, durable: null };
+  const octets = classerOctets(bloc);
+
+  // La règle `SEC-DURABLE-001` lue à l'envers. Elle ne s'applique QUE si le journal a été consulté :
+  // sans lui, « durable » est inconnu, pas faux, et présumer que non ferait passer une violation
+  // pour un ancien état légitime.
+  if (octets.classe === CLASSES.ancien && durable === true) {
+    return Object.freeze({
+      index: bloc.index,
+      offset: bloc.offset,
+      classe: CLASSES.corrompu,
+      acquitte,
+      durable,
+      diagnostic:
+        "écriture acquittée puis franchie par une barrière de durabilité, pourtant absente du support : SEC-DURABLE-001 ne tient pas sur ce bloc.",
+    });
+  }
+  return Object.freeze({
+    index: bloc.index,
+    offset: bloc.offset,
+    classe: octets.classe,
+    acquitte,
+    durable,
+    diagnostic: octets.diagnostic,
+  });
+}
+
 /**
  * Classe un volume relu après coupure.
  *
  * @param {{ blocs: Array<{ index: number, offset: number, ancien: Uint8Array, nouveau: Uint8Array,
  *                          observe: Uint8Array }>,
- *           journal?: readonly object[] }} entree
+ *           journal?: readonly object[], sansJournal?: boolean }} entree
  *   `journal` est la sortie de `BlockJournal#entries()` de la session COUPÉE, transmise avant sa
- *   mort. Absent, l'oracle classe sur les seuls octets et ne prétend rien sur la durabilité.
+ *   mort. Il est OBLIGATOIRE : sans lui la règle `SEC-DURABLE-001` ci-dessus est inerte, et son
+ *   absence ferait monter le taux atomique sans que rien ne le dise. Un appelant qui ne veut classer
+ *   que des octets — l'épreuve unitaire de l'oracle — doit poser `sansJournal: true`, et le rapport
+ *   le republie : « acquitté » et « durable » valent alors `null`, jamais `false`.
  * @returns {{ verdict: string, raison: string | null, atomique: boolean,
+ *             journalConsulte: boolean, entreesJournal: number,
  *             classes: Record<string, number>,
- *             blocs: Array<{ index: number, offset: number, classe: string, acquitte: boolean,
- *                            durable: boolean, diagnostic: string | null }> }}
+ *             blocs: Array<{ index: number, offset: number, classe: string,
+ *                            acquitte: boolean | null, durable: boolean | null,
+ *                            diagnostic: string | null }> }}
  */
-export function classerVolume({ blocs, journal = [] }) {
+export function classerVolume({ blocs, journal, sansJournal = false }) {
   if (!Array.isArray(blocs) || blocs.length === 0) {
     throw new RangeError("Aucun bloc à classer : un verdict sur zéro bloc ne mesurerait rien.");
   }
+  if (sansJournal && journal !== undefined) {
+    throw new Error(
+      "Classer « sansJournal » avec un journal serait ambigu : il faut vouloir l'un ou l'autre.",
+    );
+  }
+  if (!sansJournal && !Array.isArray(journal)) {
+    throw new Error(
+      "L'oracle exige le journal de la session coupée. Sans lui, la règle SEC-DURABLE-001 est inerte et le taux atomique monte sans raison. Poser « sansJournal: true » pour ne classer que des octets, et l'assumer.",
+    );
+  }
 
-  const classes = { ancien: 0, nouveau: 0, dechire: 0, corrompu: 0 };
-  const detail = blocs.map((bloc) => {
-    valider(bloc);
-    const { acquitte, durable } = lireJournal(journal, bloc.offset, bloc.observe.byteLength);
-    let { classe, diagnostic } = classerOctets(bloc);
+  const journalConsulte = !sansJournal;
+  const entrees = journalConsulte ? journal : [];
+  const detail = blocs.map((bloc) => classerBloc(bloc, entrees, journalConsulte));
 
-    if (classe === CLASSES.ancien && durable) {
-      classe = CLASSES.corrompu;
-      diagnostic =
-        "écriture acquittée puis franchie par une barrière de durabilité, pourtant absente du support : SEC-DURABLE-001 ne tient pas sur ce bloc.";
-    }
-
-    classes[classe] += 1;
-    return Object.freeze({
-      index: bloc.index,
-      offset: bloc.offset,
-      classe,
-      acquitte,
-      durable,
-      diagnostic,
-    });
-  });
-
+  const classes = Object.freeze(
+    detail.reduce((compte, bloc) => ({ ...compte, [bloc.classe]: compte[bloc.classe] + 1 }), {
+      ancien: 0,
+      nouveau: 0,
+      dechire: 0,
+      corrompu: 0,
+    }),
+  );
   const { verdict, raison } = verdictDuVolume(classes, detail.length);
   return Object.freeze({
     verdict,
     raison,
     atomique: verdict === VERDICTS.ancien || verdict === VERDICTS.nouveau,
-    classes: Object.freeze(classes),
+    // Publiés pour que « la règle SEC-DURABLE a-t-elle seulement pu se déclencher ? » soit une
+    // question à laquelle le compte rendu répond, et non une hypothèse du lecteur.
+    journalConsulte,
+    entreesJournal: entrees.length,
+    classes,
     blocs: Object.freeze(detail),
   });
 }
