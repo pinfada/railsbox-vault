@@ -223,6 +223,59 @@ test("« retirer » rend le contexte à son état d'origine, natif compris", () 
   seconde.retirer();
 });
 
+test("« retirer » REFUSE de retirer une boucle qui n'est plus la nôtre", () => {
+  // Un tiers qui pose son ordonnanceur par-dessus le nôtre ne doit pas se le faire retirer en
+  // silence : notre retrait réaffecterait le natif — ou supprimerait la propriété — et emporterait
+  // son travail. Le retrait est donc conditionné à l'IDENTITÉ de ce qui est en place (#87).
+  const natif = faireNatif();
+  const cible = faireCible({ natif });
+  const boucle = installerBoucleOrdonnancement({ cible });
+  const posee = cible.scheduler;
+  const etranger = { postTask: () => Promise.resolve("étranger") };
+  cible.scheduler = etranger;
+
+  assert.throws(() => boucle.retirer(), /n'est plus celle de Vault/);
+  assert.equal(cible.scheduler, etranger, "l'ordonnanceur du tiers est intact");
+  // Le refus n'a rien consommé : le tiers retiré, le retrait redevient possible.
+  cible.scheduler = posee;
+  boucle.retirer();
+  assert.equal(cible.scheduler, natif);
+});
+
+test("« retirer » refuse aussi quand la propriété a été supprimée sous la boucle", () => {
+  const cible = faireCible();
+  const boucle = installerBoucleOrdonnancement({ cible });
+  const posee = cible.scheduler;
+  delete cible.scheduler;
+
+  assert.throws(() => boucle.retirer(), /n'est plus celle de Vault/);
+
+  cible.scheduler = posee;
+  boucle.retirer();
+  assert.equal(cible.scheduler, undefined);
+});
+
+test("le repli « defineProperty » pose un « scheduler » NON énumérable, comme le natif", async () => {
+  // `globalThis.scheduler` n'est énumérable dans aucun des moteurs mesurés. L'écart est sans effet
+  // connu, mais du code qui énumère le global verrait apparaître une propriété que la plateforme ne
+  // lui montre pas — et il est gratuit de ne pas la lui montrer (#87).
+  const cible = faireCible();
+  // Affectation sans effet : c'est ce qui force le repli sur `defineProperty`.
+  Object.defineProperty(cible, "scheduler", {
+    get: () => undefined,
+    set: () => {},
+    configurable: true,
+  });
+
+  const boucle = installerBoucleOrdonnancement({ cible });
+
+  const descripteur = Object.getOwnPropertyDescriptor(cible, "scheduler");
+  assert.equal(descripteur.enumerable, false);
+  assert.equal(Object.keys(cible).includes("scheduler"), false);
+  assert.equal(await cible.scheduler.postTask(() => "posée"), "posée");
+  boucle.retirer();
+});
+
 test("une boucle RETIRÉE n'est plus décrite comme en place", async () => {
   // Le harnais de mesure de #74 boote l'image de référence avec la boucle du MOTEUR, en retirant la
   // nôtre avant que v86 ne l'emprunte. Si le descripteur continuait de se décrire, le compte rendu

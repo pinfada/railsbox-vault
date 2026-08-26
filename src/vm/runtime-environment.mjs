@@ -23,27 +23,43 @@ const MODULE_VIDE = new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]);
  * Crée un Worker depuis une URL `blob:` et attend son premier message. La mesure porte sur le SIGNE
  * DE VIE, jamais sur l'absence d'exception : sous `worker-src 'self'`, Chromium ne lève rien à la
  * construction — il rend un objet mort (mesuré, #52).
+ *
+ * L'URL de l'objet est révoquée APRÈS la sonde, jamais dans un `finally` accolé à `new Worker`. La
+ * spécification retient bien une référence au blob pour un Worker DÉJÀ construit, et aucun faux
+ * refus n'a été observé sur les trois moteurs — mais la fenêtre est étroite, et un faux refus se
+ * lirait ici comme un refus de CSP. La sonde est bornée par `delaiMs` : la révocation a donc lieu au
+ * plus tard après ce délai, et au plus tôt après le premier signe de vie (#85).
+ *
+ * Le contexte est INJECTABLE, non pour la généralité mais parce que ce placement est précisément ce
+ * qu'une épreuve doit pouvoir observer sans navigateur.
+ *
+ * @param {{ contexte?: object, delaiMs?: number }} [options]
  */
-async function sonderWorkerBlob() {
+export async function sonderWorkerBlob({
+  contexte = globalThis,
+  delaiMs = DELAI_SIGNE_DE_VIE_MS,
+} = {}) {
   let url = null;
   let worker = null;
   try {
-    url = URL.createObjectURL(new Blob(["self.postMessage(1)"], { type: "text/javascript" }));
-    worker = new Worker(url);
+    url = contexte.URL.createObjectURL(
+      new contexte.Blob(["self.postMessage(1)"], { type: "text/javascript" }),
+    );
+    worker = new contexte.Worker(url);
   } catch (erreur) {
     return `refusé à la construction : ${erreur.name}`;
   } finally {
-    if (url) URL.revokeObjectURL(url);
+    if (url) contexte.URL.revokeObjectURL(url);
   }
   try {
     return await new Promise((resolve) => {
-      const echeance = setTimeout(() => resolve("aucun message reçu"), DELAI_SIGNE_DE_VIE_MS);
+      const echeance = contexte.setTimeout(() => resolve("aucun message reçu"), delaiMs);
       worker.addEventListener("message", () => {
-        clearTimeout(echeance);
+        contexte.clearTimeout(echeance);
         resolve("vivant");
       });
       worker.addEventListener("error", (evenement) => {
-        clearTimeout(echeance);
+        contexte.clearTimeout(echeance);
         resolve(`erreur du Worker : ${evenement.message ?? "sans message"}`);
       });
     });
