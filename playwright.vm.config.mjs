@@ -33,5 +33,23 @@ export default defineConfig({
     // cette CSP-ci. Un serveur étranger sur le port fausserait le relevé sans le dire.
     reuseExistingServer: false,
   },
-  projects: [{ name: "chromium", use: { browserName: "chromium" } }],
+  // Chromium porte TOUTE la suite : c'est le moteur où OPFS et la barrière de durabilité sont
+  // mesurés (#6, #14). Firefox et WebKit ne portent que le TÉMOIN de démarrage sur les trois
+  // moteurs (#74) — les autres épreuves y échoueraient pour une raison déjà mesurée et étrangère à
+  // l'ordonnancement : WebKit Playwright n'expose pas OPFS (`VAULT_STORAGE_UNSUPPORTED`).
+  //
+  // Coût mesuré de cette extension : un boot de guest par moteur, artefacts compris.
+  projects: [
+    { name: "chromium", use: { browserName: "chromium" } },
+    {
+      name: "firefox",
+      use: { browserName: "firefox" },
+      testMatch: /boot-trois-moteurs\.spec\.mjs/,
+    },
+    {
+      name: "webkit",
+      use: { browserName: "webkit" },
+      testMatch: /boot-trois-moteurs\.spec\.mjs/,
+    },
+  ],
 });

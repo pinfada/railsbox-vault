@@ -68,17 +68,16 @@ test("sans « use-scheduling-api », le contrôle nomme le Worker imbriqué refu
   expect(reponse.silence).toBe(false);
   expect(reponse.ok).toBe(true);
   expect(reponse.report.diagnostic?.code).toBe("VAULT_RUNTIME_WORKER_REFUSED");
-  // La raison nomme la cause DOMINANTE du repli, et les deux causes ne sont pas interchangeables :
-  // un moteur sans `scheduler.postTask` (WebKit, mesuré en #41) ne serait pas guéri par l'ajout du
-  // marqueur, un moteur qui l'expose le serait. Le relevé publie le fait qui les départage.
-  expect(reponse.report.diagnostic.context.raison).toMatch(
-    reponse.report.schedulerPostTask ? /use-scheduling-api/ : /scheduler\.postTask/,
-  );
+  // Depuis que la boucle de Vault est posée dans tout Worker runtime (#74), la cause du repli ne
+  // dépend plus du moteur : `scheduler.postTask` est toujours là, et la seule raison restante de
+  // ne pas l'emprunter est l'URL du Worker. La raison le dit, sur les trois moteurs.
+  expect(reponse.report.boucleOrdonnancement.source).toMatch(/^vault/);
+  expect(reponse.report.diagnostic.context.raison).toMatch(/use-scheduling-api/);
   // Et l'observation dit ce qui a été MESURÉ du Worker `blob:`, pas ce qu'on en supposait.
   expect(reponse.report.diagnostic.context.observation).not.toBe("vivant");
 });
 
-test("avec « use-scheduling-api », le verdict suit ce que le moteur expose réellement", async ({
+test("avec « use-scheduling-api », les trois moteurs peuvent exécuter le runtime", async ({
   page,
 }, info) => {
   await page.goto("/");
@@ -91,14 +90,12 @@ test("avec « use-scheduling-api », le verdict suit ce que le moteur expose ré
   expect(reponse.silence).toBe(false);
   expect(reponse.ok).toBe(true);
 
-  // La branche est choisie par un FAIT publié dans le relevé, pas par un nom de moteur : un moteur
-  // qui gagnerait `scheduler.postTask` changerait de branche sans qu'on touche à cette épreuve.
-  if (reponse.report.schedulerPostTask) {
-    expect(reponse.report.diagnostic).toBe(null);
-  } else {
-    expect(reponse.report.diagnostic?.code).toBe("VAULT_RUNTIME_WORKER_REFUSED");
-    expect(reponse.report.diagnostic.context.raison).toMatch(/scheduler\.postTask/);
-  }
+  // Avant #74, ce verdict dépendait du moteur : WebKit n'expose pas `scheduler.postTask` et se
+  // voyait refusé ici. La boucle posée par Vault supprime cette dépendance — et l'épreuve le dit
+  // sans nommer aucun moteur, pour qu'un moteur qui régresserait la fasse rougir.
+  expect(reponse.report.boucleOrdonnancement.source).toMatch(/^vault/);
+  expect(reponse.report.schedulerPostTask).toBe(true);
+  expect(reponse.report.diagnostic).toBe(null);
 });
 
 test("un scénario lancé sans boucle d'ordonnancement est REFUSÉ, pas laissé en silence", async ({
