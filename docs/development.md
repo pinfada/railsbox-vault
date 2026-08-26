@@ -159,8 +159,18 @@ garde du premier tour (#52) et **ne casse rien** : son renommage rend seulement 
 Après une montée, vérifier donc aussi que `observationsRuntime` reste vide dans les comptes rendus —
 un `VAULT_RUNTIME_TICKS_UNREADABLE` y annonce un instrument perdu.
 
+**Une cinquième dépendance est apparue avec #74**, et elle ne casse pas bruyamment non plus : v86
+choisit `scheduler.postTask` en cherchant la sous-chaîne `use-scheduling-api` dans `location.href`.
+C'est cette condition qui fait emprunter à l'émulateur la boucle d'ordonnancement fournie par Vault
+(`src/vm/scheduling-loop.mjs`). Une montée de version qui la supprimerait ou la renommerait ferait
+retomber v86 sur son Worker imbriqué `blob:`, que la CSP refuse. Le fait à vérifier après une montée
+est publié dans chaque compte rendu : **`boucleOrdonnancement.appels` doit être positif**, et
+`npm run test:vm` l'exige déjà sur les trois moteurs. Zéro tâche pour un émulateur qui bat signifie
+que v86 emprunte une autre boucle que la nôtre.
+
 ```sh
-npm run test:vm       # preuve « intégration VM » sous Chromium (périodique, hors `npm run check`)
+npm run test:vm       # preuve « intégration VM » : Chromium complet, plus le démarrage du runtime
+                      # sur Firefox et WebKit (périodique, hors `npm run check`)
 npm run vm:protocol   # protocole de mesure complet sous Node → reports/vm/protocole.json
 ```
 
