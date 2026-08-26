@@ -1,8 +1,8 @@
 # ADR 0013 — La CSP de la coquille garde `worker-src 'self'` ; la boucle de v86 est nommée, jamais devinée
 
 - Statut : accepté
-- Date : 2026-08-26
-- Issue : #52 · Invariants : `SEC-ORIGIN-001` · Jalon 5
+- Date : 2026-08-26 · amendé le 2026-08-26 (§ « Mise en œuvre par #74 »)
+- Issue : #52, amendé par #74 · Invariants : `SEC-ORIGIN-001` · Jalon 5
 
 ## Contexte
 
@@ -197,6 +197,71 @@ revient à **#74**, qui possède déjà le symptôme Firefox et à qui cette mes
 que #74 n'est pas fermée, la matrice de `docs/compatibility.md` reste ce qu'elle était : sous la CSP
 servie, **seul Chromium fait battre le runtime**. Cette tranche ne l'améliore pas et ne la dégrade
 pas — elle la rend dicible, mesurée et diagnostiquée.
+
+> **#74 a été fermée le 2026-08-26.** Le paragraphe ci-dessus décrit l'état laissé par #52 et reste
+> tel quel : c'est ce que cette tranche-là ne faisait pas. Ce que #74 a livré, décidé et mesuré est
+> consigné dans la section « Mise en œuvre par #74 » plus bas.
+
+## Mise en œuvre par #74 — la boucle est posée TOUJOURS, et seulement dans les Workers
+
+Amendement du **2026-08-26**, issue #74. Il ne révise aucune décision de cet ADR : la CSP servie ne
+change pas, et l'option 3′ que cette section met en œuvre est celle que la table des options
+retenait déjà. Il inscrit ce que l'implémentation a tranché, et ce qu'elle a mesuré.
+
+### « Toujours », et non « seulement si l'API native est absente »
+
+La boucle de `src/vm/scheduling-loop.mjs` est posée **inconditionnellement** dans les Workers
+runtime, y compris par-dessus une implémentation native.
+
+Le fait qui décide est mesuré, et il ne laisse pas le choix : **Firefox EXPOSE
+`scheduler.postTask`**. « Poser si l'API manque » ne poserait donc rien sous Firefox — la ligne «
+cale Vault posée si l'API manque » du tableau ci-dessus le montre : _aucun compte rendu en 120 s_,
+cale non posée. C'est bien l'implémentation **native** qu'il faut remplacer, et non une absence
+qu'il suffirait de compléter.
+
+Deux bornes, parce que remplacer une API du moteur n'est pas anodin :
+
+- **dans les Workers de Vault uniquement, jamais dans une page.** v86 vit dans le Worker (ADR 0002),
+  et remplacer l'ordonnanceur d'un document changerait le rythme de code étranger pour un gain nul.
+  `installerBoucleOrdonnancement` **refuse** de se poser sur un contexte portant `document`, ce
+  qu'une épreuve unitaire fige ;
+- **`postTask` seulement.** Les autres membres de l'ordonnanceur natif — `scheduler.yield` là où le
+  moteur l'expose — restent atteignables et relayés au natif.
+
+La pose est **vérifiée** : si l'écriture de `scheduler` restait sans effet, l'installation lève au
+lieu de rendre un succès. Sans ce contrôle, v86 emprunterait la boucle du moteur en silence — la
+panne de #74 — pendant que le compte rendu affirmerait le contraire.
+
+Le mode `siNatifAbsent` existe toujours : c'est celui que le harnais `npm run test:csp` compare, et
+la ligne « cale Vault posée si l'API manque » ne se rejouerait pas sans lui. Il n'est **pas** ce que
+le produit utilise. Depuis #74, ce harnais n'écrit plus sa propre cale : il appelle le module livré,
+si bien que la mesure de cet ADR porte désormais sur le code du produit et non sur une réplique qui
+pourrait en diverger.
+
+### Ce que devient le diagnostic
+
+La boucle est posée **avant** le contrôle préalable, qui observe donc un contexte où
+`scheduler.postTask` est toujours une fonction. Trois conséquences, qu'il vaut mieux écrire que
+laisser découvrir :
+
+1. `VAULT_RUNTIME_SCHEDULING_UNAVAILABLE` **ne peut plus être produit par un Worker qui a posé la
+   boucle** : il nomme le cas où aucun des deux chemins n'existe, et l'un des deux existe désormais
+   toujours. Le code reste dans `runtime-errors.mjs` et reste éprouvé sur contexte injecté — le
+   contrôle préalable reçoit son environnement en paramètre et n'a pas à supposer qu'une boucle a
+   été posée. Il n'est pas retiré : un contexte sans constructeur `Worker` le produirait encore ;
+2. `VAULT_RUNTIME_WORKER_REFUSED` **change de sens et gagne en précision**. Sa raison ne peut plus
+   être « le moteur n'expose pas `scheduler.postTask` » ; il n'en reste qu'une, la même sur les
+   trois moteurs : **l'URL du Worker ne porte pas `use-scheduling-api`**. C'est une faute de la
+   coquille, pas une limite du moteur, et `tests/browser/runtime-diagnostic.spec.mjs` l'exige
+   désormais sans nommer aucun moteur ;
+3. `VAULT_RUNTIME_NO_TICK` reste le filet, et devient plus utile : son contexte porte la boucle
+   posée et le **nombre de tâches qu'elle a reçues**. Zéro tâche avec un compteur figé dit « v86
+   n'emprunte pas notre boucle » ; des tâches reçues avec un compteur figé dit « il l'emprunte, la
+   panne est ailleurs ». Deux épreuves unitaires figent les deux moitiés.
+
+Le risque résiduel 2 de cet ADR — _le chien de garde ne couvre pas un thread monopolisé_ — reste
+exact et n'est pas levé. Il devient seulement moins probable : la cause mesurée du seul cas connu,
+l'ordonnanceur natif de Firefox, n'est plus sur le chemin.
 
 ## Conséquences immédiates
 

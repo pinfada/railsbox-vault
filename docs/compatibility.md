@@ -203,17 +203,22 @@ Mesures du spike #4, le **2026-08-23**, sur la même machine que les relevés pr
 
 | Constat                                                              | Chromium 151 | Firefox 153 | WebKit 26.5 |
 | -------------------------------------------------------------------- | :----------: | :---------: | :---------: |
-| Guest démarre et écrit depuis un Worker, backend Vault               |     oui      |   **non**   |   **non**   |
+| Guest démarre et écrit depuis un Worker, backend Vault               |     oui      |   **oui**   |   **oui**   |
 | Fonctionne sans isolation multi-origine (`crossOriginIsolated` faux) |     oui      |      —      |      —      |
 | `scheduler.postTask` disponible en page                              |     oui      |     oui     |   **non**   |
 | Worker imbriqué `blob:` sous `worker-src 'self'`                     |    refusé    |   refusé    |   refusé    |
 | `WebAssembly.instantiate` sous `script-src 'self'` seul              |    refusé    |   refusé    |   refusé    |
 | `WebAssembly.instantiate` sous `'wasm-unsafe-eval'`                  |    admis     |    admis    |    admis    |
 
-Les deux cases « non mesuré (#4) » de la ligne « guest démarre » sont désormais **mesurées**, par
-`npm run test:csp` (#52) : sous la CSP servie, ni Firefox ni WebKit ne font battre le runtime, et
-les deux causes sont distinctes et étrangères l'une à l'autre. Les deux dernières lignes viennent de
-`tests/browser/csp-frontiere.spec.mjs`, rattachée à `npm run check`.
+La première ligne a changé deux fois. Le spike #4 la laissait « non mesuré » pour Firefox et WebKit
+; #52 l'a mesurée à **non** sur les deux, pour deux causes distinctes et étrangères l'une à l'autre
+; **#74 la porte à oui sur les trois**, en fournissant la boucle d'ordonnancement de v86 au lieu de
+la prendre du moteur. Le relevé est plus bas, § « Démarrage du runtime livré ». Les deux dernières
+lignes viennent de `tests/browser/csp-frontiere.spec.mjs`, rattachée à `npm run check`.
+
+**Cette ligne ne promeut aucun statut de la matrice des cibles.** Démarrer l'émulateur n'est pas
+persister un volume : WebKit Playwright reste **refusé** parce qu'il n'expose pas OPFS, et Safari
+reste **candidat** parce qu'il n'a jamais été mesuré.
 
 Quatre conséquences pour la matrice produit :
 
@@ -229,16 +234,22 @@ Quatre conséquences pour la matrice produit :
   `error` sur le Worker —, mais aucun de ces deux canaux n'interrompt l'appelant. Depuis #52, le
   Worker runtime le **dit** : `VAULT_RUNTIME_WORKER_REFUSED` en quelques secondes, avec la raison
   exacte du repli.
-- **WebKit n'expose pas `scheduler.postTask` et ne démarre donc pas sous la CSP servie.**
-  L'[ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md) a mesuré qu'une boucle
-  d'ordonnancement fournie par Vault le fait démarrer en 5,0 s **sans** élargir la CSP ; elle a donc
-  refusé `worker-src blob:`. Cette boucle n'est pas encore livrée (#74). Le statut de WebKit
-  Playwright reste de toute façon **refusé** pour une raison indépendante : OPFS absent.
-- **Firefox ne démarre pas non plus sous la CSP servie**, et la cause est maintenant connue : c'est
-  son implémentation **native** de `scheduler.postTask` qui monopolise le thread du Worker (#74). La
-  même boucle fournie par Vault fait démarrer le guest en 21,5 s, sous `worker-src 'self'` comme
-  sous `worker-src 'self' blob:`. Tant que #74 n'est pas fermée, **seul Chromium fait battre le
-  runtime v86**.
+- **WebKit n'expose pas `scheduler.postTask`, et démarre quand même depuis #74.** Sous la CSP
+  servie, v86 n'y avait aucune boucle d'ordonnancement : ni `postTask`, ni Worker imbriqué `blob:`.
+  La boucle fournie par Vault comble l'absence, et le guest atteint son invite en **6,2 s**. Le
+  statut de WebKit Playwright reste **refusé** pour une raison indépendante et déjà mesurée : OPFS
+  absent.
+- **Firefox démarre depuis #74, et la cause de son blocage est nommée.** C'était son implémentation
+  **native** de `scheduler.postTask` qui monopolisait le thread du Worker dès que v86 démarrait —
+  mesuré par l'[ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md), qui a aussi montré
+  que la CSP n'y était pour rien. La boucle de Vault la remplace, et le guest atteint son invite en
+  **22,4 s**.
+- **Les 22 s de Firefox sont la vitesse du moteur sur ce guest, pas un défaut de la boucle.** Le
+  fait qui le montre est indépendant de notre code : sous une politique qui admet `blob:`, le Worker
+  imbriqué **de v86** met le même temps — 21,8 s, reproduit à 21,6 s (ADR 0013). Deux boucles
+  différentes, le même ordre de grandeur, six fois Chromium. Ce qui n'est **pas** mesuré, et qu'il
+  ne faut donc pas déduire : la cause interne de cet écart dans le moteur. Aucune conclusion du
+  dépôt n'en dépend.
 - **`SharedArrayBuffer` n'est pas requis** pour démarrer et écrire. L'écart d'héritage de
   `cross-origin-isolated` relevé plus haut ne bloque donc pas le runtime.
 
@@ -254,9 +265,41 @@ diffère que par `worker-src`. Tableau complet et décision :
 | `worker-src 'self'` + boucle fournie par Vault       | invite en 3,6 s | **invite en 21,5 s** | **invite en 4,8 s** |
 | `worker-src 'self' blob:` sans marqueur d'URL        | invite en 3,6 s | **invite en 21,8 s** | **invite en 5,2 s** |
 
-La ligne du milieu est celle que l'ADR 0013 retient comme direction ; elle appartient à #74, pas à
+La ligne du milieu est celle que l'ADR 0013 a retenue comme direction. Elle appartenait à #74, pas à
 #52, parce qu'elle change le rythme de l'émulateur et se revalide par `npm run test:vm` et
-`npm run test:e2e`.
+`npm run test:e2e` — ce que la section suivante mesure.
+
+### Démarrage du runtime livré, sur les trois moteurs (#74)
+
+Mesures du **2026-08-26** par `npm run test:vm` (`tests/vm/boot-trois-moteurs.spec.mjs`), sous la
+CSP servie et avec le **Worker runtime du produit**, contrôle préalable compris — non plus avec un
+banc de mesure. Guest Linux 4 / Buildroot i386, volume de 16 Mio en mémoire, pont de durabilité
+posé. Rapports bruts : `reports/vm/boot-trois-moteurs-<moteur>.json`.
+
+| Moteur       | Invite du guest | Tours de boucle | Tours/s | Boucle en place    | Barrière acquittée |
+| ------------ | --------------: | --------------: | ------: | ------------------ | :----------------: |
+| Chromium 151 |        3 716 ms |           1 368 |     368 | `vault-sur-native` |        oui         |
+| Firefox 153  |       22 415 ms |           2 047 |      91 | `vault-sur-native` |        oui         |
+| WebKit 26.5  |        6 186 ms |           1 425 |     230 | `vault`            |        oui         |
+
+Trois lectures, et une mise en garde :
+
+- **v86 emprunte bien la boucle posée, et cela est observé, pas supposé.** Le nombre de tâches
+  reçues par la boucle est égal, sur les trois moteurs, au compteur de tours de v86 (1 368, 2 047,
+  1 425) : chaque tour de l'émulateur est une tâche que Vault a ordonnancée. Une boucle posée mais
+  jamais empruntée — l'URL du Worker perdant son marqueur `use-scheduling-api` — se lirait comme
+  zéro tâche pour un compteur qui avance ;
+- **`vault` contre `vault-sur-native`** dit ce que la boucle a remplacé : une absence sous WebKit,
+  l'implémentation du moteur sous Chromium et Firefox. C'est la décision « toujours posée » de l'ADR
+  0013 § « Mise en œuvre par #74 » ;
+- **la barrière durable traverse le backend sur les trois moteurs**, dans l'ordre écriture → flush →
+  acquittement. C'est le scénario `barrier` du spike #4, rejoué ici moteur par moteur ;
+- **les tours par seconde ne mesurent PAS la vitesse d'émulation.** Un tour ne représente pas la
+  même quantité de travail d'une boucle à l'autre : v86 choisit le délai de son prochain tour selon
+  ce qu'il lui reste à faire. Sous Chromium, la boucle du moteur produisait 2 144 tours en 3 943 ms
+  (544 tours/s) là où celle de Vault en produit 1 368 en 3 716 ms (368 tours/s) — **moins de tours,
+  un boot légèrement plus court**. La grandeur comparable reste la durée ; les tours servent à
+  distinguer « bat » de « ne bat pas », ce pour quoi ils ont été introduits.
 
 Le protocole et les mesures complètes sont dans
 [`docs/spikes/0004-backend-de-blocs-v86.md`](spikes/0004-backend-de-blocs-v86.md).
@@ -289,6 +332,13 @@ dans les deux conditions :
   entièrement de rendre la main dès que v86 démarre. Le pouls émis toutes les 250 ms par le Worker
   n'a produit **aucun battement en 180 s**, avec comme sans isolation. La case « non mesuré » de la
   ligne v86 ci-dessus a donc désormais un diagnostic.
+
+Ces deux cases restent « non mesurable » **après #74**, et c'est délibéré : elles décrivent le
+harnais du spike #41 (`npm run test:isolation`), dont le Worker est un banc propre à ce spike et ne
+pose pas la boucle de Vault. L'empêchement qu'elles nomment a disparu du **produit** — le § «
+Démarrage du runtime livré » le mesure sur les trois moteurs —, mais tant que ce harnais-là n'a pas
+été réexécuté, écrire autre chose ici serait une déduction et non une mesure. Rejouer le coût de
+l'isolation sur Firefox et WebKit est désormais possible ; ce n'est pas fait.
 
 Le protocole complet est dans
 [`docs/spikes/0041-isolation-coop-coep.md`](spikes/0041-isolation-coop-coep.md), la décision dans
