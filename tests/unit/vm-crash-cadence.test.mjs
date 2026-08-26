@@ -91,7 +91,10 @@ test("la cadence retenue atteint 100 % sur les trois graines, sans jamais rendre
     // Et surtout : les DEUX issues sont exercées. Une matrice qui ne rendrait que « ancien » serait
     // satisfaite par un backend qui n'écrit rien du tout — c'est-à-dire par une preuve creuse.
     assert.ok(verdicts.includes("ancien"), `graine ${graine} : aucun point ne rend l'ancien état`);
-    assert.ok(verdicts.includes("nouveau"), `graine ${graine} : aucun point ne rend le nouvel état`);
+    assert.ok(
+      verdicts.includes("nouveau"),
+      `graine ${graine} : aucun point ne rend le nouvel état`,
+    );
   }
 });
 

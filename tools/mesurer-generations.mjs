@@ -14,7 +14,11 @@
 // Usage : node tools/mesurer-generations.mjs [--blocs N] [--barrieres B] [--par-barriere P]
 
 import { SECTOR_SIZE } from "../src/vm/block-geometry.mjs";
-import { ENTETE_OCTETS, RACINE_OCTETS, ZONE_ENREGISTREMENTS } from "../src/vm/generation-format.mjs";
+import {
+  ENTETE_OCTETS,
+  RACINE_OCTETS,
+  ZONE_ENREGISTREMENTS,
+} from "../src/vm/generation-format.mjs";
 import { GenerationStore } from "../src/vm/generation-store.mjs";
 import { createSyncAccessStore } from "../src/vm/sync-access-double.mjs";
 
@@ -100,7 +104,8 @@ async function mesurerJournal(config) {
   let generation = 0;
   for (const ecritures of travail(config)) {
     generation += 1;
-    for (const bloc of ecritures) await store.deposer(bloc * SECTOR_SIZE, contenu(bloc, generation));
+    for (const bloc of ecritures)
+      await store.deposer(bloc * SECTOR_SIZE, contenu(bloc, generation));
     await store.valider();
     if (store.pointDeControleDu) await store.pointDeControle();
   }
@@ -151,7 +156,11 @@ async function mesurerCopieSurEcriture(config) {
     handle.write(new Uint8Array(RACINE_OCTETS), { at: racine * RACINE_OCTETS });
     await handle.flush();
   }
-  return { compte, espaceVoisin: 0, espaceInterne: zoneDonnees + config.parBarriere * 2 * SECTOR_SIZE };
+  return {
+    compte,
+    espaceVoisin: 0,
+    espaceInterne: zoneDonnees + config.parBarriere * 2 * SECTOR_SIZE,
+  };
 }
 
 /** (c) Ombre par génération : le volume entier est recopié à chaque génération. Maquette de COÛT. */

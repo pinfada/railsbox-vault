@@ -82,7 +82,10 @@ test("une déchirure AU-DELÀ de l'en-tête ne fait rien perdre, et le format le
   const relue = decoderRacine(partielle, { tailleVolume: TAILLE_VOLUME });
   assert.equal(relue.valide, true);
   assert.equal(relue.racine.generation, 3);
-  assert.deepEqual([...octets.subarray(RACINE_ENTETE_OCTETS)], [...new Uint8Array(RACINE_OCTETS - RACINE_ENTETE_OCTETS)]);
+  assert.deepEqual(
+    [...octets.subarray(RACINE_ENTETE_OCTETS)],
+    [...new Uint8Array(RACINE_OCTETS - RACINE_ENTETE_OCTETS)],
+  );
 });
 
 test("une racine écrite pour un autre volume est refusée, pas adoptée", () => {
