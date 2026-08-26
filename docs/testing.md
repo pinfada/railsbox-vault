@@ -565,9 +565,11 @@ npm run test:vm
 npm run vm:protocol  # protocole de mesure complet sous Node, écrit reports/vm/protocole.json
 ```
 
-`npm run vm:check` vérifie les empreintes sans réseau et échoue si un artefact manque ou diffère.
-Les mesures de référence du spike sont figées dans
-[`docs/spikes/0004-backend-de-blocs-v86.md`](spikes/0004-backend-de-blocs-v86.md).
+`npm run vm:check` vérifie les empreintes sans réseau et échoue si un artefact manque ou diffère. Il
+porte en outre la garde de l'ADR 0010 : un `v86.wasm` déclarant ou important une mémoire WebAssembly
+partagée le fait échouer avec le code 2 — voir
+[`docs/development.md`](development.md#monter-v86-de-version). Les mesures de référence du spike
+sont figées dans [`docs/spikes/0004-backend-de-blocs-v86.md`](spikes/0004-backend-de-blocs-v86.md).
 
 ### Application Rails de référence
 
