@@ -13,6 +13,7 @@
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { openVolumeForWrite } from "/src/vm/opfs-volume-open.mjs";
 import { createReferenceGuestSession } from "/src/vm/reference-guest-session.mjs";
+import { exigerContexteExecutable, surveillerPremierTour } from "/src/vm/runtime-environment.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { createManifest } from "/src/vm/volume-manifest.mjs";
 
@@ -57,20 +58,16 @@ export function manifesteDuDescripteur(manifest, volumeSize) {
 }
 
 /**
- * v86 choisit sa boucle d'ordonnancement à l'initialisation : `scheduler.postTask` si son URL
- * contient `use-scheduling-api`, sinon un Worker imbriqué `blob:` que la CSP de la coquille refuse.
- * La condition est vérifiée AVANT tout démarrage, et son absence est une erreur explicite.
+ * Le contexte est contrôlé AVANT toute construction d'émulateur, et son refus porte un code de
+ * `src/vm/runtime-errors.mjs` (#52). Sans ce contrôle, un contexte privé de boucle d'ordonnancement
+ * ne produirait aucune exception : l'émulateur ne battrait simplement jamais.
  */
-function assertSchedulingApi() {
-  if (!location.href.includes("use-scheduling-api")) {
-    throw new Error(
-      "Le Worker runtime doit être chargé avec « ?use-scheduling-api » : sinon v86 tente un Worker imbriqué « blob: » que la CSP refuse.",
-    );
-  }
-  if (typeof globalThis.scheduler?.postTask !== "function") {
-    throw new Error(
-      "scheduler.postTask est absent de ce moteur : v86 ne peut pas battre sous la CSP de la coquille. Voir docs/compatibility.md.",
-    );
+async function booter(session, options = {}) {
+  const garde = surveillerPremierTour(() => session.ticks());
+  try {
+    return await Promise.race([session.boot(options), garde.promesse]);
+  } finally {
+    garde.arreter();
   }
 }
 
@@ -105,7 +102,7 @@ async function importV86(libUrl) {
 
 /** Acquiert TOUT ce qui vient du réseau : la classe V86 et les tampons du runtime. */
 export async function acquerirRuntime(runtime) {
-  assertSchedulingApi();
+  await exigerContexteExecutable();
   const V86 = await importV86(runtime.lib);
   const { artifacts, transferredBytes } = await loadRuntime(runtime);
   return { V86, artifacts, transferredBytes };
@@ -234,7 +231,7 @@ export async function bootEtVerifier({
   let health;
   let invariant;
   try {
-    await session.boot();
+    await booter(session);
     timeline.marquer("bootRendu");
     health = await session.awaitHealth({ totalTimeoutMs: bootTimeoutMs });
     timeline.marquer("santePrete");
