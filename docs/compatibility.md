@@ -201,26 +201,60 @@ La ligne WebKit reste celle du moteur de test, jamais celle de Safari.
 Mesures du spike #4, le **2026-08-23**, sur la même machine que les relevés précédents. Émulateur
 `v86@0.5.432`, guest Linux 4 / Buildroot i386, runtime dans un Worker dédié de type module.
 
-| Constat                                                              | Chromium 151 |   Firefox 153   | WebKit 26.5 |
-| -------------------------------------------------------------------- | :----------: | :-------------: | :---------: |
-| Guest démarre et écrit depuis un Worker, backend Vault               |     oui      | non mesuré (#4) | non mesuré  |
-| Fonctionne sans isolation multi-origine (`crossOriginIsolated` faux) |     oui      |        —        |      —      |
-| `scheduler.postTask` disponible en page                              |     oui      |       oui       |   **non**   |
-| Worker imbriqué `blob:` sous `worker-src 'self'`                     |    refusé    |     refusé      |   refusé    |
+| Constat                                                              | Chromium 151 | Firefox 153 | WebKit 26.5 |
+| -------------------------------------------------------------------- | :----------: | :---------: | :---------: |
+| Guest démarre et écrit depuis un Worker, backend Vault               |     oui      |   **non**   |   **non**   |
+| Fonctionne sans isolation multi-origine (`crossOriginIsolated` faux) |     oui      |      —      |      —      |
+| `scheduler.postTask` disponible en page                              |     oui      |     oui     |   **non**   |
+| Worker imbriqué `blob:` sous `worker-src 'self'`                     |    refusé    |   refusé    |   refusé    |
+| `WebAssembly.instantiate` sous `script-src 'self'` seul              |    refusé    |   refusé    |   refusé    |
+| `WebAssembly.instantiate` sous `'wasm-unsafe-eval'`                  |    admis     |    admis    |    admis    |
 
-Trois conséquences pour la matrice produit :
+Les deux cases « non mesuré (#4) » de la ligne « guest démarre » sont désormais **mesurées**, par
+`npm run test:csp` (#52) : sous la CSP servie, ni Firefox ni WebKit ne font battre le runtime, et
+les deux causes sont distinctes et étrangères l'une à l'autre. Les deux dernières lignes viennent de
+`tests/browser/csp-frontiere.spec.mjs`, rattachée à `npm run check`.
 
-- **La CSP de la coquille doit nommer WebAssembly.** Sous `script-src 'self'` seul, Chromium refuse
-  `WebAssembly.instantiate`. Le jeton `'wasm-unsafe-eval'` est ajouté ; il n'autorise ni `eval` ni
-  `new Function` (ADR 0003).
+Quatre conséquences pour la matrice produit :
+
+- **La CSP de la coquille doit nommer WebAssembly.** Sous `script-src 'self'` seul, les **trois**
+  moteurs refusent `WebAssembly.instantiate` — le spike #4 ne l'avait mesuré que sous Chromium. Le
+  jeton `'wasm-unsafe-eval'` est admis par les trois ; il n'autorise ni `eval` ni `new Function`
+  (ADR 0003, confirmé par l'ADR 0013).
 - **v86 a besoin d'un ordonnanceur qui ne soit pas un Worker `blob:`.** Il choisit
   `scheduler.postTask` lorsque l'URL de son contexte contient `use-scheduling-api`, sinon un Worker
-  imbriqué créé depuis une URL `blob:` — que `worker-src 'self'` refuse sur les trois moteurs.
-  L'échec est silencieux côté page : l'émulateur ne bat simplement jamais. WebKit n'exposant pas
-  `scheduler.postTask`, un support Safari exigerait soit `worker-src blob:` dans la CSP de la
-  coquille, soit une boucle d'ordonnancement fournie par nous.
+  imbriqué créé depuis une URL `blob:` — que `worker-src 'self'` refuse sur les trois moteurs. Ce
+  refus ne lève **aucune exception** : le constructeur rend un objet inerte, et l'émulateur ne bat
+  jamais. Depuis #52, le Worker runtime le **dit** : `VAULT_RUNTIME_WORKER_REFUSED` en quelques
+  secondes, avec la raison exacte du repli.
+- **WebKit n'expose pas `scheduler.postTask` et ne démarre donc pas sous la CSP servie.**
+  L'[ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md) a mesuré qu'une boucle
+  d'ordonnancement fournie par Vault le fait démarrer en 5,0 s **sans** élargir la CSP ; elle a donc
+  refusé `worker-src blob:`. Cette boucle n'est pas encore livrée (#74). Le statut de WebKit
+  Playwright reste de toute façon **refusé** pour une raison indépendante : OPFS absent.
+- **Firefox ne démarre pas non plus sous la CSP servie**, et la cause est maintenant connue : c'est
+  son implémentation **native** de `scheduler.postTask` qui monopolise le thread du Worker (#74). La
+  même boucle fournie par Vault fait démarrer le guest en 21,5 s, sous `worker-src 'self'` comme
+  sous `worker-src 'self' blob:`. Tant que #74 n'est pas fermée, **seul Chromium fait battre le
+  runtime v86**.
 - **`SharedArrayBuffer` n'est pas requis** pour démarrer et écrire. L'écart d'héritage de
   `cross-origin-isolated` relevé plus haut ne bloque donc pas le runtime.
+
+### CSP et boucle d'ordonnancement, mesuré sur les trois moteurs
+
+Mesures du **2026-08-26** (`npm run test:csp`). Deux serveurs servent le même contenu, leur CSP ne
+diffère que par `worker-src`. Tableau complet et décision :
+[ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md).
+
+| Configuration                                        |  Chromium 151   |     Firefox 153      |     WebKit 26.5     |
+| ---------------------------------------------------- | :-------------: | :------------------: | :-----------------: |
+| `worker-src 'self'` + `?use-scheduling-api` (servie) | invite en 3,5 s |  thread monopolisé   |     ne bat pas      |
+| `worker-src 'self'` + boucle fournie par Vault       | invite en 3,6 s | **invite en 21,5 s** | **invite en 4,8 s** |
+| `worker-src 'self' blob:` sans marqueur d'URL        | invite en 3,6 s | **invite en 21,8 s** | **invite en 5,2 s** |
+
+La ligne du milieu est celle que l'ADR 0013 retient comme direction ; elle appartient à #74, pas à
+#52, parce qu'elle change le rythme de l'émulateur et se revalide par `npm run test:vm` et
+`npm run test:e2e`.
 
 Le protocole et les mesures complètes sont dans
 [`docs/spikes/0004-backend-de-blocs-v86.md`](spikes/0004-backend-de-blocs-v86.md).
@@ -247,7 +281,8 @@ Les deux moteurs non mesurables le sont pour des raisons **étrangères** à l'i
 dans les deux conditions :
 
 - **WebKit** n'expose pas `scheduler.postTask` : sous `worker-src 'self'`, v86 n'a aucune boucle
-  d'ordonnancement (voir plus haut, et #52) ;
+  d'ordonnancement (voir plus haut). #52 a tranché la question de CSP qu'il posait — la politique
+  n'est pas élargie — et mesuré qu'une boucle fournie par Vault suffirait (ADR 0013) ;
 - **Firefox** charge le Worker, l'isole et alloue un `SharedArrayBuffer` — puis son thread cesse
   entièrement de rendre la main dès que v86 démarre. Le pouls émis toutes les 250 ms par le Worker
   n'a produit **aucun battement en 180 s**, avec comme sans isolation. La case « non mesuré » de la

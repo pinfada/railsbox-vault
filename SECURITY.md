@@ -196,10 +196,60 @@ provient d'un hôte tiers qui ne publie pas d'empreinte de son côté — la nô
 l'altération, pas de la disparition — et aucune de ces sources ne fournit encore de provenance de
 build vérifiable.
 
-La CSP de la coquille autorise depuis l'ADR 0003 le jeton `'wasm-unsafe-eval'` dans `script-src` :
-le runtime instancie un module WebAssembly. Ce jeton n'ouvre ni `eval` ni `new Function` ;
-`'unsafe-eval'` et `'unsafe-inline'` restent interdits, ce que vérifie
-`tests/unit/origin-topology.test.mjs`.
+## La CSP de la coquille est une frontière
+
+La CSP servie à la coquille de confiance n'est pas un durcissement décoratif : elle tient une
+propriété d'**intégrité du code**, distincte de la partition d'origine. Le seul JavaScript qui
+s'exécute sur l'origine de confiance est celui que cette origine a **servi**.
+
+Politique servie, inchangée par #52 et arrêtée par
+l'[ADR 0013](docs/decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md) :
+
+```text
+default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self';
+connect-src 'self'; worker-src 'self'; frame-src 'self' <origine applicative>;
+frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'
+```
+
+`'wasm-unsafe-eval'` est là depuis l'ADR 0003 parce que le runtime instancie un module WebAssembly.
+C'est le jeton le plus étroit qui l'autorise : il n'ouvre ni `eval` ni `new Function`, à la
+différence de `'unsafe-eval'`, qui reste interdit avec `'unsafe-inline'`.
+
+**Ce que #52 change** n'est pas la politique mais sa **preuve**, et le diagnostic de son refus.
+Jusqu'ici, seul `tests/unit/origin-topology.test.mjs` vérifiait la chaîne servie : retirer
+`'wasm-unsafe-eval'` ne faisait rougir aucun test. Depuis, `tests/browser/csp-frontiere.spec.mjs`
+mesure l'**effet** de la politique sur les trois moteurs de la matrice, à chaque `npm run check`,
+dans les deux sens :
+
+- **admis** — `WebAssembly.instantiate` réussit ; un Worker servi par l'origine vit. Ce sont les
+  témoins positifs, sans lesquels un relevé « tout refusé » ne prouverait qu'un banc cassé ;
+- **refusé** — un script `blob:`, un script `data:` et un script inline ne s'exécutent pas ; un
+  Worker créé depuis une URL `blob:` ne donne pas signe de vie ; et sous une politique additionnelle
+  `script-src 'self'`, l'instanciation WebAssembly est refusée sur les trois moteurs, ce qui rend le
+  jeton falsifiable.
+
+`blob:` n'entre **ni** dans `script-src`, **ni** dans `worker-src`. L'ADR 0013 a pesé l'ajout de
+`blob:` à `worker-src` — v86 en aurait besoin pour sa boucle d'ordonnancement de secours — et l'a
+refusé : la mesure montre qu'une boucle fournie par Vault couvre les trois moteurs sans élargir la
+politique. Ce que l'élargissement aurait retiré est précisé dans l'ADR : il ne rouvre aucune brèche
+fermée par #35 — l'adversaire de `SEC-ORIGIN-001` vit sur une autre origine et n'y crée aucun
+`blob:` — mais il aurait permis à une injection **sur la coquille elle-même** (#45,
+`SEC-UPDATE-001`) d'exécuter du code arbitraire dans le Worker qui détient le handle OPFS exclusif
+et détiendra la clé de volume.
+
+Un contexte qui ne peut pas exécuter le runtime le **dit** désormais, dans un délai borné et avec un
+code stable de la série `VAULT_RUNTIME_*` (`src/vm/runtime-errors.mjs`) : WebAssembly refusé, Worker
+imbriqué refusé, aucune boucle d'ordonnancement, aucun tour de boucle. Le contrôle **observe** avant
+d'accuser — il sonde un Worker `blob:` réel plutôt que de postuler le refus —, ce qui l'empêche de
+mentir sur la politique servie. La limite est nommée dans l'ADR : quand le thread du Worker cesse
+entièrement de rendre la main (Firefox, #74), aucune minuterie de ce Worker ne s'exécute et aucun
+code n'est émis ; c'est alors la garde de l'appelant qui borne l'attente.
+
+Enfin, `tools/serve.mjs` porte un drapeau de MESURE `--worker-src-blob` qui sert la politique
+élargie. Il n'est déclenchable que par un argument de ligne de commande, jamais par une URL, il
+n'est posé que par `npm run test:csp`, et deux épreuves — une unitaire sur la chaîne produite, une
+de navigateur sur l'en-tête réellement servi — vérifient que la politique par défaut ne contient
+aucune occurrence de `blob:`.
 
 ## Analyse de secrets
 

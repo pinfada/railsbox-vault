@@ -84,8 +84,21 @@ test("relevé de la boucle d'ordonnancement sur les deux politiques", async ({ p
 
   expect(releves).toHaveLength(POLITIQUES.length * CONFIGURATIONS.length);
   for (const entree of releves) {
-    // Un relevé absent n'est pas une mesure : le banc doit avoir rendu la main dans tous les cas.
-    expect(entree.silence, `${entree.politique} / ${entree.configuration}`).toBe(false);
+    // Le banc rend TOUJOURS un verdict : soit le Worker a répondu, soit son silence est constaté et
+    // daté. Un silence est une mesure — c'est ainsi que le thread monopolisé de Firefox (#74) est
+    // consigné — mais une entrée sans l'un ni l'autre signalerait un banc cassé.
+    const decide = Boolean(entree.releve) || Boolean(entree.echec) || entree.silence === true;
+    expect(decide, `${entree.politique} / ${entree.configuration}`).toBe(true);
+  }
+
+  // Garde d'anti-vacuité : si AUCUNE configuration d'une politique n'avait produit de relevé, le
+  // tableau serait fait de silences et ne dirait rien du moteur. Chaque politique doit avoir fait
+  // parler le Worker au moins une fois.
+  for (const politique of POLITIQUES) {
+    const parlantes = releves.filter(
+      (entree) => entree.politique === politique.nom && Boolean(entree.releve),
+    );
+    expect(parlantes.length, `aucun relevé sous ${politique.nom}`).toBeGreaterThan(0);
   }
 });
 
@@ -93,6 +106,12 @@ test("témoin positif : la configuration retenue fait battre l'émulateur", asyn
   page,
   browserName,
 }, info) => {
+  // Le témoin n'est exigé que sur le moteur de référence, et il est écarté AVANT de mesurer :
+  // Firefox et WebKit ont des empêchements MESURÉS et étrangers à la CSP (#74 pour l'un, absence de
+  // `scheduler.postTask` pour l'autre), consignés dans l'ADR 0013 par le relevé ci-dessus plutôt que
+  // transformés en échec de ce dépôt. Les rejouer ici ne coûterait que deux minutes d'attente.
+  test.skip(browserName !== "chromium", "écart de moteur consigné dans l'ADR 0013");
+
   await page.goto(`http://${CSP_HOST}:${PORT_STRICT}/csp/ordonnancement.html`);
   await page.waitForFunction(() => Boolean(globalThis.bancOrdonnancement));
   const brut = await page.evaluate(
@@ -104,10 +123,6 @@ test("témoin positif : la configuration retenue fait battre l'émulateur", asyn
     contentType: "application/json",
   });
 
-  // Le témoin n'est exigé que sur le moteur de référence : Firefox et WebKit ont des empêchements
-  // MESURÉS et étrangers à la CSP (#74 pour l'un, absence de `scheduler.postTask` pour l'autre),
-  // consignés dans l'ADR 0013 plutôt que transformés en échec de ce dépôt.
-  test.skip(browserName !== "chromium", "écart de moteur consigné dans l'ADR 0013");
   expect(aBattu(brut.releve)).toBe(true);
   expect(brut.releve.invite).toBe(true);
 });
