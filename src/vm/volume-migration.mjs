@@ -33,6 +33,11 @@
 //      n'a pas été franchi : soit elle a été coupée en chemin, soit elle a abouti sans pouvoir se
 //      relire. Le distinguer est le travail de `rienAMigrer`, pas une lecture de la seule présence.
 //
+// La fermeture du handle n'est PAS un de ces gestes : c'est la restitution de ce que le geste 4
+// avait pris. Elle est tentée quoi qu'il arrive, et si elle rate elle ne REMPLACE pas l'erreur qui a
+// fait échouer la migration — elle lui est jointe en `cause`. Sinon le diagnostic, donc le remède,
+// serait perdu au moment précis où le volume est laissé non identifié.
+//
 // Ce que ce module NE fait PAS : descendre d'un format (l'ADR 0007 refuse le downgrade), migrer une
 // application (les migrations métier de Rails sont distinctes), construire une génération
 // copy-on-write (#16), ni chiffrer ou authentifier le manifeste (jalon 4). Il est PUR de tout
@@ -613,7 +618,8 @@ async function executerMigration({
   // 4. OUVRIR. Comme à la restauration, l'ouverture précède la révocation : une ouverture ratée ne
   //    doit pas rendre inutilisable un volume parfaitement intact.
   const backend = await target.open({ size: support.size });
-  let migre;
+  let migre = null;
+  let echec = null;
   try {
     // 5. VÉRIFIER LA SAUVEGARDE, s'il en est fourni une.
     const evidence = await retenirPreuve({
@@ -638,14 +644,49 @@ async function executerMigration({
       evidence,
       steps: chaine,
     });
-  } finally {
-    await backend.close();
+  } catch (cause) {
+    echec = cause;
   }
+
+  // Le handle est rendu QUOI QU'IL ARRIVE, mais une fermeture qui rate ne masque rien.
+  const fermeture = await fermer(backend);
+  if (echec !== null) throw joindreFermeture(echec, fermeture);
+  if (fermeture !== null) throw fermeture;
 
   // 10. RETIRER LE JOURNAL — dernier geste : sa présence signale une migration dont il n'a pas été
   //     franchi.
   await target.removeJournal();
   return migre;
+}
+
+/**
+ * Rend le handle et rapporte l'échec de la fermeture PLUTÔT que de le laisser remonter seul. Une
+ * fermeture n'est pas un geste de la migration : c'est la restitution de ce qu'elle avait pris.
+ * @returns {Promise<Error | null>} l'erreur de fermeture, ou `null` si le handle a été rendu
+ */
+async function fermer(backend) {
+  try {
+    await backend.close();
+    return null;
+  } catch (cause) {
+    return cause;
+  }
+}
+
+/**
+ * JOINT une fermeture ratée à l'erreur qui a fait échouer la migration, sans la remplacer. Le
+ * diagnostic d'une migration est celui de ce qui l'a interrompue ; une fermeture qui rate ensuite
+ * est une circonstance. La substituer ferait lire « fermeture impossible » là où le volume a été
+ * laissé NON IDENTIFIÉ par la barrière — et le remède (reprendre depuis le journal) ne se
+ * déduirait plus du message.
+ *
+ * La fermeture prend la place que la plateforme lui donne, `cause`, et seulement si elle est libre :
+ * une erreur qui porte déjà la sienne ne se la fait pas réécrire.
+ */
+function joindreFermeture(echec, fermeture) {
+  if (fermeture === null) return echec;
+  if (echec instanceof Error && echec.cause === undefined) echec.cause = fermeture;
+  return echec;
 }
 
 /** Compte rendu d'une migration. Extrait pour que l'orchestration reste lisible d'un œil. */
