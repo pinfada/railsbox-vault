@@ -420,26 +420,35 @@ export class GenerationStore {
     // avant les octets qu'elle scelle, et la relecture refuserait une génération que rien n'obligeait
     // à perdre.
     await this.#barriereJournal();
-    this.#sequence += 1;
-    this.#generation += 1;
+
+    // La racine est écrite AVANT que la mémoire n'enregistre quoi que ce soit. L'ordre décide d'un
+    // cas réel : si le support refuse la racine — quota, handle perdu —, la barrière du guest échoue
+    // et la génération n'est PAS validée. Poser les compteurs d'abord ferait croire au magasin qu'une
+    // génération scellée l'attend, et la fermeture propre la rangerait dans le volume : elle
+    // publierait un état que personne n'a acquitté. La racine partiellement écrite, elle, occupe
+    // l'emplacement ALTERNÉ : celle qui fait autorité est intacte.
+    const sequence = this.#sequence + 1;
+    const generation = this.#generation + 1;
+    await this.#ecrireRacine({
+      sequence,
+      generation,
+      enregistrements: this.#enregistrements,
+      longueurCharge: this.#longueurCharge,
+      sommeCharge: this.#sommeCharge,
+    });
+
+    this.#sequence = sequence;
+    this.#generation = generation;
+    this.#sequenceValidee = sequence;
     this.#longueurValidee = this.#longueurCharge;
     this.#enregistrementsValides = this.#enregistrements;
     this.#sommeValidee = this.#sommeCharge;
-    await this.#ecrireRacine();
-    this.#sequenceValidee = this.#sequence;
     return this.#generation;
   }
 
-  async #ecrireRacine() {
-    const racine = encoderRacine({
-      sequence: this.#sequence,
-      generation: this.#generation,
-      tailleVolume: this.#tailleVolume,
-      enregistrements: this.#enregistrementsValides,
-      longueurCharge: this.#longueurValidee,
-      sommeCharge: this.#sommeValidee,
-    });
-    this.#ecrireJournal(offsetDeRacine(racineDeSequence(this.#sequence)), racine);
+  async #ecrireRacine(descripteur) {
+    const racine = encoderRacine({ ...descripteur, tailleVolume: this.#tailleVolume });
+    this.#ecrireJournal(offsetDeRacine(racineDeSequence(descripteur.sequence)), racine);
     await this.#barriereJournal();
   }
 
@@ -481,24 +490,17 @@ export class GenerationStore {
       this.#ecrireVolume(entree.offset, entree.octets);
     }
     await this.#barriereVolume();
-    this.#sequence += 1;
-    await this.#viderCharge();
-    await this.#ecrireRacine();
-    this.#sequenceValidee = this.#sequence;
+    await this.#vider({ sequence: this.#sequence, generation: this.#generation });
   }
 
-  async #viderCharge() {
-    this.#index.clear();
-    this.#longueurCharge = 0;
-    this.#enregistrements = 0;
-    this.#sommeCharge = 0;
-    this.#longueurValidee = 0;
-    this.#enregistrementsValides = 0;
-    this.#sommeValidee = 0;
-    this.#handle.truncate(ZONE_ENREGISTREMENTS);
-  }
-
-  /** Remet le journal à l'état « rien en attente », en conservant la génération constatée. */
+  /**
+   * Remet le journal à l'état « rien en attente », en conservant la génération constatée.
+   *
+   * La troncature précède la racine : une racine qui annoncerait une charge vide au-dessus d'octets
+   * encore présents serait juste — la charge est bornée par sa longueur —, mais l'ordre inverse
+   * laisserait, entre les deux gestes, une racine désignant une charge déjà tronquée. La séquence
+   * avance, donc l'emplacement alterne, et la racine d'avant reste lisible jusqu'au bout.
+   */
   async #vider({ sequence, generation }) {
     this.#index.clear();
     this.#longueurCharge = 0;
@@ -507,11 +509,18 @@ export class GenerationStore {
     this.#longueurValidee = 0;
     this.#enregistrementsValides = 0;
     this.#sommeValidee = 0;
-    this.#sequence = sequence + 1;
-    this.#generation = generation;
     this.#handle.truncate(ZONE_ENREGISTREMENTS);
-    await this.#ecrireRacine();
-    this.#sequenceValidee = this.#sequence;
+    const suivante = sequence + 1;
+    await this.#ecrireRacine({
+      sequence: suivante,
+      generation,
+      enregistrements: 0,
+      longueurCharge: 0,
+      sommeCharge: 0,
+    });
+    this.#sequence = suivante;
+    this.#generation = generation;
+    this.#sequenceValidee = suivante;
   }
 
   /** Ferme le journal. La charge validée non rangée reste dans le fichier : elle est durable. */
