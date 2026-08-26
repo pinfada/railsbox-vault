@@ -644,9 +644,13 @@ lisible, donc exportable, restaurable et migrable ; seule son écriture reste re
 `VAULT_MANIFEST_MIGRATION_REQUIRED`.
 
 **La migration** (`src/vm/volume-migration.mjs`, module pur ; cible OPFS
-`src/vm/opfs-migration-target.mjs`) exécute dix gestes dont l'ordre est le contrat : lire,
-planifier, exiger une preuve, ouvrir, vérifier la sauvegarde, journaliser, révoquer, appliquer et
-flusher, inscrire puis relire, retirer le journal. Quatre propriétés en découlent :
+`src/vm/opfs-migration-target.mjs` ; format du journal de reprise `src/vm/migration-journal.mjs` ;
+contrôle de la preuve de sauvegarde `src/vm/migration-backup-proof.mjs`) exécute dix gestes dont
+l'ordre est le contrat : lire, planifier, exiger une preuve, ouvrir, vérifier la sauvegarde,
+journaliser, révoquer, appliquer et flusher, inscrire puis relire, retirer le journal. La
+restitution du handle n'en est pas un onzième : elle est tentée quoi qu'il arrive, et si elle rate
+elle ne remplace pas l'erreur d'origine — celle-ci remonte, la fermeture jointe en `cause`. Quatre
+propriétés en découlent :
 
 - **la chaîne va d'un format au SUIVANT**, une étape enregistrée à la fois. Un saut
   (`VAULT_MIGRATION_NO_PATH`) et un retour en arrière (`VAULT_MIGRATION_DOWNGRADE_REFUSED`) sont des

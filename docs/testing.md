@@ -414,6 +414,15 @@ reprise, révocation du manifeste, barrière de durabilité, inscription du mani
 fois la suite exige que le volume ne soit **jamais présenté comme valide à moitié** et que le handle
 exclusif ait été rendu.
 
+Ces cinq pannes coupent **avant** l'effet du geste : rien n'a été modifié sur le support. Un onglet
+fermé laisse l'état inverse — le geste a porté, puis la migration s'arrête —, et c'est ce que le
+niveau Bout en bout injecte avec `interrompreApres`. Le double unitaire porte donc le **même mode**,
+et **trois ruptures supplémentaires** couvrent les états que le premier n'atteint jamais : journal
+inscrit alors que le manifeste source est intact ; manifeste cible inscrit mais **jamais relu**, la
+reprise devant le constater et aboutir sans redemander de preuve ; et fermeture ratée — seule, ou
+par-dessus une erreur antérieure, auquel cas c'est **l'erreur d'origine** qui remonte, la fermeture
+lui étant jointe en `cause`. Soit **huit ruptures** couvertes en unitaire.
+
 Côté format, `tests/unit/vm-volume-manifest.test.mjs` éprouve **v2** : `runtime.minWriter` exigé à
 partir du format 2, refusé avant, refusé s'il dépasse la version qui écrit (un volume ne s'interdit
 pas à son propre auteur), le downgrade jugé par comparaison au `minWriter` **déclaré**, et la règle
