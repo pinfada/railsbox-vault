@@ -23,7 +23,8 @@ import {
 import { BlockJournal, JOURNAL_OPERATIONS } from "./block-journal.mjs";
 import { FAULT_KINDS, createFaultPlan } from "./fault-plan.mjs";
 import { readCountFailure, toStorageError, writeCountFailure } from "./opfs-error-mapping.mjs";
-import { openOpfsSyncAccess } from "./opfs-sync-access.mjs";
+import { GenerationStore } from "./generation-store.mjs";
+import { generationJournalName, openOpfsSyncAccess } from "./opfs-sync-access.mjs";
 import {
   STORAGE_ERROR_CODES,
   StorageError,
@@ -52,18 +53,74 @@ export class OpfsBlockBackend {
   #journal;
   #faults;
   #flushDelay;
+  #generation;
   #closed = false;
   #handleLost = false;
   #barrier = 0;
 
   /** Utiliser `openOpfsVolume` : le constructeur ne garantit ni géométrie ni exclusivité. */
-  constructor({ name, handle, size, journal, faults, flushDelay }) {
+  constructor({ name, handle, size, journal, faults, flushDelay, generation = null }) {
     this.#name = name;
     this.#handle = handle;
     this.#size = size;
     this.#journal = journal;
     this.#faults = faults;
     this.#flushDelay = flushDelay;
+    this.#generation = generation;
+  }
+
+  /**
+   * Magasin de générations du volume, ou `null` si le volume est ouvert SANS transaction.
+   *
+   * L'absence n'est pas un repli silencieux : `openOpfsVolume` en installe toujours un, et seuls les
+   * bancs qui construisent le backend à la main peuvent s'en passer — auquel cas `describe()` le
+   * publie, et aucune atomicité n'est prétendue.
+   */
+  get generation() {
+    return this.#generation;
+  }
+
+  /** Installe le magasin après l'ouverture : il a besoin du backend pour lire et écrire le volume. */
+  installerGeneration(magasin) {
+    if (this.#generation !== null) {
+      throw new Error(`Le volume « ${this.#name} » a déjà un magasin de générations.`);
+    }
+    this.#generation = magasin;
+  }
+
+  /**
+   * Accès BRUT au support, sans faute programmée, sans superposition et sans journal d'E/S. Réservé
+   * au magasin de générations, qui est la seule pièce ayant à écrire le volume lui-même : les fautes
+   * de #15 visent les gestes du GUEST, et les compter deux fois déplacerait les points de coupure.
+   */
+  lireSupportBrut(offset, longueur) {
+    const cible = new Uint8Array(longueur);
+    const obtenus = this.#support("read", () => this.#handle.read(cible, { at: offset }), {
+      offset,
+      length: longueur,
+    });
+    const echec = readCountFailure(obtenus, { requested: longueur, volume: this.#name, offset });
+    if (echec !== null) throw echec;
+    return cible;
+  }
+
+  /** Écrit dans le volume au nom du magasin. Un compte inexact reste un échec typé (#73). */
+  ecrireSupportBrut(offset, octets) {
+    const acceptes = this.#support("write", () => this.#handle.write(octets, { at: offset }), {
+      offset,
+      length: octets.byteLength,
+    });
+    const echec = writeCountFailure(acceptes, {
+      requested: octets.byteLength,
+      volume: this.#name,
+      offset,
+    });
+    if (echec !== null) throw echec;
+  }
+
+  /** Barrière du volume, franchie par le point de contrôle. Elle n'acquitte rien au guest. */
+  barriereSupportBrute() {
+    return this.#awaitSupport("flush", () => this.#handle.flush());
   }
 
   get name() {
@@ -92,6 +149,10 @@ export class OpfsBlockBackend {
       durable: true,
       sectorSize: SECTOR_SIZE,
       v86BlockSize: V86_BLOCK_SIZE,
+      // Ce que le volume promet d'une coupure. `false` n'est pas une panne : c'est un banc qui a
+      // construit le backend sans magasin, et qui ne doit pas pouvoir se croire transactionnel.
+      transactionnel: this.#generation !== null,
+      generation: this.#generation?.generationValidee ?? null,
     });
   }
 
@@ -224,6 +285,10 @@ export class OpfsBlockBackend {
     });
     if (echecDeLecture !== null) throw echecDeLecture;
 
+    // La génération EN COURS se superpose au volume : l'écrivain se relit. Elle n'est visible que
+    // de lui — un lecteur qui rouvrirait le volume ne verrait que la dernière génération validée.
+    if (this.#generation !== null) this.#generation.superposer(offset, target);
+
     this.#journal.record(JOURNAL_OPERATIONS.read, { offset, length });
     return target;
   }
@@ -253,6 +318,25 @@ export class OpfsBlockBackend {
         length: requested,
         accepted: offered,
       });
+    }
+
+    // L'écriture va dans la GÉNÉRATION EN COURS, pas dans le volume (#16, ADR 0014). Les octets
+    // atteignent bien le support — le journal voisin est un fichier comme un autre, et une déchirure
+    // y est aussi réelle qu'ailleurs —, mais ils ne deviennent l'état du volume qu'à la validation.
+    if (this.#generation !== null) {
+      await this.#awaitSupport("write", () => this.#generation.deposer(offset, bytes.subarray(0, offered)), {
+        offset,
+        length: requested,
+      });
+      if (offered !== requested) {
+        throw new StorageError(
+          STORAGE_ERROR_CODES.partialWrite,
+          `Écriture partielle : ${offered} octet(s) acceptés sur ${requested} à l'offset ${offset}.`,
+          { volume: this.#name, offset, requested, accepted: offered },
+        );
+      }
+      this.#journal.record(JOURNAL_OPERATIONS.write, { offset, length: requested });
+      return;
     }
 
     const accepted = this.#support(
@@ -285,6 +369,11 @@ export class OpfsBlockBackend {
     const fault = this.#faults.consume("flush");
     this.#applyLostHandle(fault, "flush", 0, 0);
     this.#assertUsable();
+    // Depuis #16 la barrière ne touche plus le fichier du VOLUME — elle scelle le journal voisin.
+    // Sans ce contrôle, un volume disparu sous la session ne serait plus découvert par la barrière,
+    // et la perte ne se révélerait qu'au point de contrôle suivant. Le coût est un `getSize()`
+    // synchrone et local, pas une E/S.
+    this.#assertGeometryUnchanged("flush");
 
     const barrier = this.#barrier++;
     this.#journal.record(JOURNAL_OPERATIONS.flush, { barrier });
@@ -307,7 +396,15 @@ export class OpfsBlockBackend {
       // journalise la panne. Un `catch` parallèle laisserait le volume se croire sain après une
       // perte de support découverte par la barrière. L'ATTENTE est le cœur de #14 : le `flush-ack`
       // ne sera enregistré qu'APRÈS que la barrière du support a réellement rendu la main.
-      await this.#awaitSupport("flush", () => this.#handle.flush(), { barrier });
+      // Avec un magasin de générations, la barrière VALIDE la génération en cours : la charge est
+      // franchie par une barrière, puis la racine est écrite et franchie à son tour. C'est ce geste,
+      // et lui seul, qui autorise l'acquittement — `SEC-DURABLE-001` porte désormais sur une
+      // génération entière, pas sur des écritures isolées.
+      await this.#awaitSupport(
+        "flush",
+        () => (this.#generation === null ? this.#handle.flush() : this.#generation.valider()),
+        { barrier },
+      );
     } catch (typed) {
       // Un quota atteint pendant la barrière reste un quota, et un handle perdu reste un handle
       // perdu : les trois états se corrigent différemment — libérer de la place, rouvrir le
@@ -331,6 +428,14 @@ export class OpfsBlockBackend {
     }
 
     this.#journal.record(JOURNAL_OPERATIONS.flushAck, { barrier });
+
+    // Le POINT DE CONTRÔLE vient APRÈS l'acquittement, et n'en fait pas partie : les octets sont
+    // déjà durables, le ranger ne promet rien de neuf. Il est amorti — une génération sur beaucoup —
+    // parce que recopier à chaque barrière doublerait le coût de chaque `fsync` du guest.
+    if (this.#generation !== null && this.#generation.pointDeControleDu) {
+      await this.#awaitSupport("flush", () => this.#generation.pointDeControle(), { barrier });
+      this.#journal.record(JOURNAL_OPERATIONS.mark, { kind: "point-de-controle", barrier });
+    }
   }
 
   /**
@@ -345,11 +450,26 @@ export class OpfsBlockBackend {
     openVolumes.delete(this.#name);
     this.#journal.record(JOURNAL_OPERATIONS.close, { volume: this.#name });
 
+    // Une fermeture PROPRE range la génération validée dans le volume : l'export (#11), la
+    // restauration (#12) et la migration (#13) lisent le FICHIER, et doivent y trouver la génération
+    // validée sans rien savoir du journal. Une génération non validée n'est PAS rangée — personne ne
+    // l'a acquittée, et la prochaine ouverture l'écartera.
+    let rangement = null;
     try {
+      if (this.#generation !== null && this.#generation.rangeable) {
+        await this.#generation.pointDeControle();
+      }
+    } catch (cause) {
+      rangement = toStorageError(cause, { operation: "checkpoint", volume: this.#name });
+    }
+
+    try {
+      this.#generation?.close();
       this.#handle.close();
     } catch (cause) {
-      throw toStorageError(cause, { operation: "close", volume: this.#name });
+      throw rangement ?? toStorageError(cause, { operation: "close", volume: this.#name });
     }
+    if (rangement !== null) throw rangement;
   }
 }
 
@@ -418,6 +538,7 @@ export async function openOpfsVolume({
   faults = createFaultPlan(),
   flushDelay = 0,
   openHandle = openOpfsSyncAccess,
+  transactionnel = true,
 } = {}) {
   if (openVolumes.has(name)) {
     throw new StorageError(
@@ -471,6 +592,61 @@ export async function openOpfsVolume({
     faults,
     flushDelay,
   });
+
+  if (transactionnel) {
+    try {
+      backend.installerGeneration(
+        await ouvrirGeneration({ name, size: geometry.size, backend, openHandle }),
+      );
+    } catch (cause) {
+      // Le handle du volume est rendu avant de propager : un refus de génération ne doit pas laisser
+      // le nom occupé par un volume que personne ne détient.
+      await backend.close().catch(() => {});
+      throw cause;
+    }
+  }
+
   openVolumes.set(name, backend);
   return backend;
+}
+
+/**
+ * Ouvre le journal de génération voisin et RÉCUPÈRE. C'est ici que se joue la promesse de #16 : au
+ * retour, le volume porte la dernière génération VALIDÉE, et rien d'autre.
+ */
+async function ouvrirGeneration({ name, size, backend, openHandle }) {
+  const nomJournal = generationJournalName(name);
+  let handle;
+  try {
+    handle = await openHandle(nomJournal);
+  } catch (cause) {
+    throw toStorageError(cause, { operation: "open-generation", volume: name });
+  }
+  try {
+    return await ouvrirMagasin({ name, size, backend, handle });
+  } catch (cause) {
+    try {
+      handle.close();
+    } catch {
+      // La fermeture de secours ne doit jamais masquer la raison du refus.
+    }
+    throw cause;
+  }
+}
+
+async function ouvrirMagasin({ name, size, backend, handle }) {
+  try {
+    return await GenerationStore.ouvrir({
+      volume: name,
+      handle,
+      tailleVolume: size,
+      lireVolume: (offset, longueur) => backend.lireSupportBrut(offset, longueur),
+      ecrireVolume: (offset, octets) => backend.ecrireSupportBrut(offset, octets),
+      barriereVolume: () => backend.barriereSupportBrute(),
+    });
+  } catch (cause) {
+    // Un échec du SUPPORT pendant la récupération — quota, handle perdu — reste un état contractuel
+    // nommé. Les refus propres au journal (`VAULT_STORAGE_GENERATION_*`) traversent tels quels.
+    throw toStorageError(cause, { operation: "recover-generation", volume: name });
+  }
 }
