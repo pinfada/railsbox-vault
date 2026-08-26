@@ -198,12 +198,13 @@ La ligne WebKit reste celle du moteur de test, jamais celle de Safari.
 
 ## Machine virtuelle v86
 
-Mesures du spike #4, le **2026-08-23**, sur la même machine que les relevés précédents. Émulateur
-`v86@0.5.432`, guest Linux 4 / Buildroot i386, runtime dans un Worker dédié de type module.
+Mesures du spike #4, le **2026-08-23**, sur la même machine que les relevés précédents — sauf la
+première ligne, remesurée le **2026-08-26** par #74 et repérée par ✱. Émulateur `v86@0.5.432`, guest
+Linux 4 / Buildroot i386, runtime dans un Worker dédié de type module.
 
 | Constat                                                              | Chromium 151 | Firefox 153 | WebKit 26.5 |
 | -------------------------------------------------------------------- | :----------: | :---------: | :---------: |
-| Guest démarre et écrit depuis un Worker, backend Vault               |     oui      |   **oui**   |   **oui**   |
+| ✱ Guest démarre et écrit depuis un Worker, backend Vault             |     oui      |   **oui**   |   **oui**   |
 | Fonctionne sans isolation multi-origine (`crossOriginIsolated` faux) |     oui      |      —      |      —      |
 | `scheduler.postTask` disponible en page                              |     oui      |     oui     |   **non**   |
 | Worker imbriqué `blob:` sous `worker-src 'self'`                     |    refusé    |   refusé    |   refusé    |
