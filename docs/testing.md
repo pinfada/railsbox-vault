@@ -2,21 +2,21 @@
 
 ## Suites disponibles
 
-| Commande                       | Portée                                                                        |                                 Coût attendu |
-| ------------------------------ | ----------------------------------------------------------------------------- | -------------------------------------------: |
-| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                     |                                     secondes |
-| `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontière d'origine sous Chromium    |                                environ 1 min |
-| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                                 |                                environ 1 min |
-| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                     |                                environ 2 min |
-| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                           |              environ 20 s après installation |
-| `npm run test:vm`              | guest Linux réel écrivant sur les backends mémoire et OPFS (Chromium)         |                environ 1 min, **périodique** |
-| `npm run test:isolation`       | coût de l'isolation multi-origine sur le runtime v86, trois moteurs           |              environ 8 min, **à la demande** |
-| `npm run test:csp`             | démarrage de v86 sous deux CSP, quatre configurations, trois moteurs          |             environ 25 min, **à la demande** |
-| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker                 | environ 1 min après la première construction |
-| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                            |   plus de 10 min, Docker et artefacts requis |
-| `npm run test:e2e`             | reprise, export vérifiable, restauration inter-origine et migration de format |   plus de 20 min, Docker et artefacts requis |
-| `npm test`                     | suites unitaire et navigateur                                                 |                                     secondes |
-| `npm run check`                | lint, format et toutes les suites actuelles                                   |             moins de 2 min hors installation |
+| Commande                       | Portée                                                                                                      |                                 Coût attendu |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------: |
+| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                                                   |                                     secondes |
+| `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontière d'origine sous Chromium                                  |                                environ 1 min |
+| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                                                               |                                environ 1 min |
+| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                                                   |                                environ 2 min |
+| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                                                         |              environ 20 s après installation |
+| `npm run test:vm`              | guest Linux réel sur les backends mémoire et OPFS (Chromium), et démarrage du runtime sur les trois moteurs |              environ 1,6 min, **périodique** |
+| `npm run test:isolation`       | coût de l'isolation multi-origine sur le runtime v86, trois moteurs                                         |              environ 8 min, **à la demande** |
+| `npm run test:csp`             | démarrage de v86 sous deux CSP, quatre configurations, trois moteurs                                        |             environ 25 min, **à la demande** |
+| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker                                               | environ 1 min après la première construction |
+| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                                                          |   plus de 10 min, Docker et artefacts requis |
+| `npm run test:e2e`             | reprise, export vérifiable, restauration inter-origine et migration de format                               |   plus de 20 min, Docker et artefacts requis |
+| `npm test`                     | suites unitaire et navigateur                                                                               |                                     secondes |
+| `npm run check`                | lint, format et toutes les suites actuelles                                                                 |             moins de 2 min hors installation |
 
 La suite `test:e2e` porte depuis #7 le scénario de sortie du MVP (voir plus bas), auquel se sont
 ajoutés l'export vérifiable (#11), la restauration inter-origine (#12) et la migration de format
@@ -40,6 +40,7 @@ ce que les autres ne peuvent pas.
 | navigateur     | `tests/browser/opfs-block-backend.spec.mjs` | **vrai OPFS**, Worker dédié | `npm run check`   |
 | intégration VM | `tests/vm/opfs-persistence.spec.mjs`        | vrai OPFS + guest Linux     | `npm run test:vm` |
 | intégration VM | `tests/vm/opfs-barrier.spec.mjs`            | vrai OPFS + guest Linux     | `npm run test:vm` |
+| intégration VM | `tests/vm/boot-trois-moteurs.spec.mjs`      | guest Linux, trois moteurs  | `npm run test:vm` |
 
 **Le niveau unitaire mesure ce que le vrai support refuse de produire.** Aucun navigateur ne rend un
 quota, un handle perdu ou une écriture partielle sur demande. Le double
@@ -544,9 +545,30 @@ complémentaires :
 Sans le témoin négatif, un test qui ne mesurerait que le cas corrigé ne prouverait pas que la
 correction sert à quelque chose.
 
+#### Le démarrage du runtime, sur les trois moteurs
+
+Depuis #74, `tests/vm/boot-trois-moteurs.spec.mjs` exécute le **Worker runtime du produit** —
+contrôle préalable et boucle d'ordonnancement compris — sur **Chromium, Firefox et WebKit**, sous la
+CSP servie. Il exige quatre faits sur chaque moteur : la boucle en place est celle de Vault, v86 l'a
+réellement empruntée (le nombre de tâches reçues est positif), le compteur de tours a dépassé le
+tour unique d'un émulateur abandonné, et le guest a écrit puis franchi sa barrière.
+
+`playwright.vm.config.mjs` donne Firefox et WebKit à ce seul fichier. Ce n'est pas de la frilosité :
+les autres épreuves de `test:vm` ouvrent un volume OPFS, que WebKit Playwright n'expose pas — elles
+y échoueraient pour une raison déjà mesurée et étrangère à l'ordonnancement. Le scénario du témoin,
+lui, tient sur un volume en mémoire.
+
+Coût de l'extension : **+35 s environ** (1,6 min contre 1,1 min sur Chromium seul), essentiellement
+les 22 s que Firefox met à atteindre l'invite du guest. Le job CI `Intégration VM` installe donc les
+trois moteurs.
+
+Un moteur qui ne démarrerait plus fait désormais **rougir la suite**. C'est le changement de nature
+apporté par #74 : jusque-là, un moteur qui ne faisait pas battre le runtime était un fait consigné
+dans un ADR ; c'est maintenant une épreuve.
+
 Elle **n'est pas rattachée à `npm run check`**, et la raison n'est pas sa durée : les trois épreuves
-de barrière tiennent en une vingtaine de secondes et la mesure de premier boot en ajoute une
-trentaine, soit **56 s mesurées** pour l'ensemble. La raison est sa dépendance.
+de barrière tiennent en une vingtaine de secondes, la mesure de premier boot en ajoute une trentaine
+et le témoin des trois moteurs une trentaine de plus. La raison est sa dépendance.
 
 `test:vm` exige 9,9 Mio d'artefacts tiers — émulateur, BIOS, image de guest — que `npm run vm:fetch`
 télécharge depuis `registry.npmjs.org`, `raw.githubusercontent.com` et `i.copy.sh`. Rattacher la
@@ -866,6 +888,12 @@ deux serveurs servant le même contenu, dont la CSP ne diffère que par `worker-
 deux politiques avec quatre configurations du contexte du Worker. Le Worker de mesure
 (`public/csp/ordonnancement-worker.mjs`) ne vérifie **aucun** prérequis, délibérément : il démarre
 v86 quoi qu'il arrive, pour observer la panne au lieu de la postuler.
+
+Depuis #74, ce Worker n'écrit plus sa propre cale d'ordonnancement : il appelle
+`src/vm/scheduling-loop.mjs`, le module livré dans les Workers runtime. Le harnais mesure donc le
+code du produit et non une réplique — sans quoi ses relevés pourraient rester verts pendant que la
+boucle livrée diverge. Ses deux modes (poser la boucle toujours, ou seulement si le moteur n'expose
+pas l'API) restent ce qui distingue les deux dernières lignes de son tableau.
 
 Le fait publié est le compteur de tours de v86 (`session.ticks()`). Figé, la boucle n'a jamais battu
 ; positif, elle bat et un non-démarrage a une autre cause. Rien d'autre ne sépare ces deux

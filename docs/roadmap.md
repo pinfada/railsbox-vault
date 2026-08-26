@@ -91,8 +91,10 @@ la coquille n'est **pas** élargie — `worker-src` reste `'self'` — parce que
 qu'une boucle d'ordonnancement fournie par Vault couvre les trois moteurs sans elle. La CSP possède
 désormais des épreuves de frontière dans les deux sens, sur les trois moteurs et dans
 `npm run check`, et un contexte qui ne peut pas exécuter le runtime rend un code `VAULT_RUNTIME_*`
-au lieu de se taire. La boucle elle-même appartient à **#74**, à qui cette mesure apporte la cause
-du blocage Firefox.
+au lieu de se taire. La boucle elle-même appartenait à **#74**, à qui cette mesure a apporté la
+cause du blocage Firefox ; #74 l'a livrée (`src/vm/scheduling-loop.mjs`, amendement de l'ADR 0013),
+et le runtime bat désormais sur les trois moteurs sous la CSP servie — ce que `npm run test:vm`
+mesure, moteur par moteur.
 
 ## 6 — Échanges chiffrés optionnels
 

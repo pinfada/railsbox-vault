@@ -242,8 +242,12 @@ code stable de la série `VAULT_RUNTIME_*` (`src/vm/runtime-errors.mjs`) : WebAs
 imbriqué refusé, aucune boucle d'ordonnancement, aucun tour de boucle. Le contrôle **observe** avant
 d'accuser — il sonde un Worker `blob:` réel plutôt que de postuler le refus —, ce qui l'empêche de
 mentir sur la politique servie. La limite est nommée dans l'ADR : quand le thread du Worker cesse
-entièrement de rendre la main (Firefox, #74), aucune minuterie de ce Worker ne s'exécute et aucun
-code n'est émis ; c'est alors la garde de l'appelant qui borne l'attente.
+entièrement de rendre la main, aucune minuterie de ce Worker ne s'exécute et aucun code n'est émis ;
+c'est alors la garde de l'appelant qui borne l'attente. Cette limite **demeure**, mais son seul cas
+connu a disparu : depuis #74, la boucle d'ordonnancement de v86 est fournie par Vault
+(`src/vm/scheduling-loop.mjs`) et non plus par le moteur, dont l'implémentation native monopolisait
+le thread sous Firefox. La barrière durable elle-même n'est pas touchée par ce changement — elle
+reste prouvée par les mêmes suites, exécutées à nouveau.
 
 Enfin, `tools/serve.mjs` porte un drapeau de MESURE `--worker-src-blob` qui sert la politique
 élargie. Trois propriétés le tiennent, et chacune est vérifiée plutôt qu'affirmée : il n'est
