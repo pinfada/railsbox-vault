@@ -197,6 +197,10 @@ test("le backend OPFS refuse une écriture dont le support rend un errno, sans l
     size: taille,
     journal: new BlockJournal(),
     openHandle: async () => handleQuiRend(RENDU_NO_SPACE, taille),
+    // SANS génération : le chemin éprouvé ici est l'écriture directe du backend dans le volume.
+    // Le même errno rencontré par le journal de génération est éprouvé juste en dessous, et il ne
+    // doit surtout pas être confondu — les deux fichiers échouent, mais pas au même moment.
+    transactionnel: false,
   });
 
   const erreur = await backend.write(0, new Uint8Array(SECTOR_SIZE)).then(
@@ -212,6 +216,32 @@ test("le backend OPFS refuse une écriture dont le support rend un errno, sans l
   );
   assert.equal(erreur.context.errno, -8);
   assert.equal(erreur.context.returned, RENDU_NO_SPACE);
+});
+
+test("un journal de génération dont le support rend un errno fait ÉCHOUER l'ouverture", async () => {
+  // Même piège qu'au-dessus, un cran plus tôt (#16). Le journal de génération est écrit dès
+  // l'ouverture : un support qui rend `4294967288` au lieu d'un compte doit faire refuser
+  // l'ouverture, et le refus doit nommer le manque de place — pas une « écriture partielle ».
+  // Sans ce contrôle, `#ecrireJournal` aurait comparé le compte à la va-vite et le volume se serait
+  // ouvert sur un journal que le support n'a jamais accepté.
+  const taille = 64 * SECTOR_SIZE;
+  const erreur = await openOpfsVolume({
+    name: "errno-generation",
+    size: taille,
+    journal: new BlockJournal(),
+    openHandle: async () => handleQuiRend(RENDU_NO_SPACE, taille),
+  }).then(
+    () => null,
+    (cause) => cause,
+  );
+
+  assert.ok(erreur !== null, "un volume dont le journal n'est pas écrit ne doit pas s'ouvrir");
+  assert.ok(
+    isStorageError(erreur, STORAGE_ERROR_CODES.quotaExceeded),
+    `attendu VAULT_STORAGE_QUOTA_EXCEEDED, obtenu ${erreur.code} : ${erreur.message}`,
+  );
+  assert.doesNotMatch(erreur.message, /partielle/i);
+  assert.equal(erreur.context.errno, -8);
 });
 
 // --- Le puits d'archive (#11) sur le même support ----------------------------------------------

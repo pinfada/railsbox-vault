@@ -348,7 +348,11 @@ test("la barrière franchie journalise écriture, barrière puis acquittement, d
   // L'ordre est ce qui distingue « validé » de « probablement écrit », et le compte est épinglé pour
   // qu'un raccourci qui n'en franchirait qu'une soit visible.
   assert.equal(store.flushCount(`${name}.gen`), 3, "une à l'ouverture, deux pour la validation");
-  assert.equal(store.flushCount(name), 0, "le volume lui-même n'est franchi qu'au point de contrôle");
+  assert.equal(
+    store.flushCount(name),
+    0,
+    "le volume lui-même n'est franchi qu'au point de contrôle",
+  );
   await backend.close();
   assert.equal(store.flushCount(name), 1, "la fermeture propre range la génération dans le volume");
 });

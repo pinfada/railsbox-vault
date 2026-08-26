@@ -324,10 +324,14 @@ export class OpfsBlockBackend {
     // atteignent bien le support — le journal voisin est un fichier comme un autre, et une déchirure
     // y est aussi réelle qu'ailleurs —, mais ils ne deviennent l'état du volume qu'à la validation.
     if (this.#generation !== null) {
-      await this.#awaitSupport("write", () => this.#generation.deposer(offset, bytes.subarray(0, offered)), {
-        offset,
-        length: requested,
-      });
+      await this.#awaitSupport(
+        "write",
+        () => this.#generation.deposer(offset, bytes.subarray(0, offered)),
+        {
+          offset,
+          length: requested,
+        },
+      );
       if (offered !== requested) {
         throw new StorageError(
           STORAGE_ERROR_CODES.partialWrite,

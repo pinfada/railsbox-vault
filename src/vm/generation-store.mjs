@@ -37,6 +37,7 @@ import {
   RACINE_OCTETS,
   racineDeSequence,
 } from "./generation-format.mjs";
+import { decodeSupportCount, readCountFailure, writeCountFailure } from "./opfs-error-mapping.mjs";
 import {
   STORAGE_ERROR_CODES,
   StorageError,
@@ -160,21 +161,35 @@ export class GenerationStore {
 
   // ---------------------------------------------------------------- support
 
+  /**
+   * Lit le journal. Une valeur de retour est INTERPRÉTÉE, jamais comparée à la va-vite (#73) : un
+   * support qui rend un code d'échec casté en non signé n'a pas fait une lecture courte, il n'a rien
+   * lu — et `subarray` bornerait silencieusement le tampon, rendant un secteur de zéros pour une
+   * racine. Une lecture COURTE, elle, est légitime : c'est ce que laisse une génération interrompue.
+   */
   #lireJournal(offset, longueur) {
     const cible = new Uint8Array(longueur);
     const lus = this.#handle.read(cible, { at: offset });
-    return lus === longueur ? cible : cible.subarray(0, Math.max(0, lus));
+    if (decodeSupportCount(lus, longueur).kind === "errno") {
+      throw readCountFailure(lus, {
+        requested: longueur,
+        volume: this.#volume,
+        offset,
+        operation: "read-generation",
+      });
+    }
+    return lus === longueur ? cible : cible.subarray(0, lus);
   }
 
+  /** Écrit dans le journal. Tout compte qui n'est pas exact est un échec TYPÉ, jamais avalé (#73). */
   #ecrireJournal(offset, octets) {
-    const ecrits = this.#handle.write(octets, { at: offset });
-    if (ecrits !== octets.byteLength) {
-      throw new StorageError(
-        STORAGE_ERROR_CODES.partialWrite,
-        `Journal de génération du volume « ${this.#volume} » : ${ecrits} octet(s) acceptés sur ${octets.byteLength} à l'offset ${offset}.`,
-        { volume: this.#volume, offset, requested: octets.byteLength, accepted: ecrits },
-      );
-    }
+    const echec = writeCountFailure(this.#handle.write(octets, { at: offset }), {
+      requested: octets.byteLength,
+      volume: this.#volume,
+      offset,
+      operation: "write-generation",
+    });
+    if (echec !== null) throw echec;
   }
 
   async #barriereJournal() {
@@ -254,7 +269,8 @@ export class GenerationStore {
     if (crc32(charge) !== racine.sommeCharge) {
       throw generationCorrupt(this.#volume, {
         generation: racine.generation,
-        reason: "la somme de contrôle de la charge ne concorde pas avec celle que la racine scelle.",
+        reason:
+          "la somme de contrôle de la charge ne concorde pas avec celle que la racine scelle.",
       });
     }
 

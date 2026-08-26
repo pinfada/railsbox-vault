@@ -8,6 +8,7 @@ import {
   auditDurabilityBarriers,
 } from "../../src/vm/block-journal.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
+import { generationJournalName } from "../../src/vm/opfs-sync-access.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 import { ATA, installDurabilityBridge } from "../../src/vm/v86-flush-bridge.mjs";
 import { createV86BufferAdapter } from "../../src/vm/v86-buffer-adapter.mjs";
@@ -87,6 +88,13 @@ async function banc({ flushDelay = 0 } = {}) {
     openHandle: store.openHandle,
   });
   const failures = [];
+  // Depuis #16 (ADR 0014), la barrière ne franchit plus le fichier du VOLUME : elle scelle la
+  // génération dans le journal voisin. C'est donc CE fichier que le témoin de barrière retardée doit
+  // bloquer, et c'est sur lui que se comptent les flush réels du support. La propriété éprouvée par
+  // ce banc — aucun acquittement avant que le support ait rendu la main — est inchangée ; seul le
+  // fichier que le support matérialise a changé, et le dire ici évite qu'un témoin devenu inerte
+  // passe pour un témoin vert.
+  const nomJournal = generationJournalName(name);
   const adapter = createV86BufferAdapter({
     backend,
     onFatal: (error) => failures.push(error),
@@ -99,7 +107,7 @@ async function banc({ flushDelay = 0 } = {}) {
     adapter,
     journal,
   });
-  return { name, store, journal, backend, adapter, failures, master, bridge };
+  return { name, nomJournal, store, journal, backend, adapter, failures, master, bridge };
 }
 
 async function fermer({ bridge, backend }) {
@@ -114,7 +122,7 @@ function seqs(journal, operation) {
 
 test("l'ordre écriture → flush → acquittement traverse le backend OPFS réel", async () => {
   const banc0 = await banc();
-  const { journal, store, name, adapter, master, failures } = banc0;
+  const { journal, store, name, nomJournal, adapter, master, failures } = banc0;
   try {
     await ecrire(adapter, 0, motif(SECTOR_SIZE, 1));
     await ecrire(adapter, 2 * SECTOR_SIZE, motif(SECTOR_SIZE, 2));
@@ -128,7 +136,10 @@ test("l'ordre écriture → flush → acquittement traverse le backend OPFS rée
     assert.equal(writes.length, 2);
     assert.ok(Math.max(...writes) < flushSeq, "toute écriture précède la barrière dans le journal");
     assert.ok(flushSeq < ackSeq, "l'acquittement suit la barrière");
-    assert.equal(store.flushCount(name), 1, "l'acquittement suit un flush RÉEL du support");
+    // Trois flush réels du support : un à l'ouverture, qui rend durable la racine initiale du
+    // journal, puis DEUX pour la validation — la charge, puis la racine qui la scelle.
+    assert.equal(store.flushCount(nomJournal), 3, "l'acquittement suit des flush RÉELS du support");
+    assert.equal(store.flushCount(name), 0, "le volume n'est franchi qu'au point de contrôle");
     assert.equal(master.status_reg, ATA.srDrdy | ATA.srDsc, "le guest est acquitté");
     assert.equal(master.irqs, 1);
     assert.deepEqual(failures, [], "aucune erreur de support n'a été absorbée");
@@ -153,12 +164,13 @@ test("l'ordre écriture → flush → acquittement traverse le backend OPFS rée
 
 test("aucune barrière n'est acquittée au guest avant que le flush OPFS ait rendu la main", async () => {
   const banc0 = await banc();
-  const { journal, store, name, adapter, master } = banc0;
+  const { journal, store, nomJournal, adapter, master } = banc0;
   try {
     await ecrire(adapter, 0, motif(SECTOR_SIZE, 3));
 
-    // La barrière est RETARDÉE : `flush()` du support reste en vol jusqu'à `releaseFlush`.
-    store.blockFlush(name);
+    // La barrière est RETARDÉE : `flush()` du support reste en vol jusqu'à `releaseFlush`. Elle est
+    // posée sur le JOURNAL DE GÉNÉRATION, seul fichier que la barrière franchit depuis #16.
+    store.blockFlush(nomJournal);
     master.ata_command(ATA.cmdFlushCache);
     await tick();
 
@@ -170,19 +182,20 @@ test("aucune barrière n'est acquittée au guest avant que le flush OPFS ait ren
       "le guest reste BSY tant que le flush n'a pas abouti",
     );
     assert.equal(master.irqs, 0, "aucun acquittement anticipé");
-    assert.equal(store.flushCount(name), 0, "le support n'a pas encore matérialisé la barrière");
+    // Un seul flush a eu lieu : celui de l'OUVERTURE. La barrière du guest, elle, est toujours en vol.
+    assert.equal(store.flushCount(nomJournal), 1, "le support n'a pas matérialisé cette barrière");
     assert.equal(
       journal.counts()[JOURNAL_OPERATIONS.flushAck] ?? 0,
       0,
       "aucun flush-ack avant le flush réel",
     );
-    assert.ok(store.isFlushPending(name), "la barrière est bien en vol");
+    assert.ok(store.isFlushPending(nomJournal), "la barrière est bien en vol");
 
     // Le flush OPFS rend enfin la main : l'acquittement peut alors, et seulement alors, remonter.
-    store.releaseFlush(name);
+    store.releaseFlush(nomJournal);
     await tick();
 
-    assert.equal(store.flushCount(name), 1, "le flush réel a eu lieu");
+    assert.equal(store.flushCount(nomJournal), 3, "les deux flush de la validation ont eu lieu");
     assert.equal(master.status_reg, ATA.srDrdy | ATA.srDsc, "le guest est acquitté APRÈS le flush");
     assert.equal(master.irqs, 1);
     assert.equal(journal.counts()[JOURNAL_OPERATIONS.flushAck], 1);
@@ -193,7 +206,7 @@ test("aucune barrière n'est acquittée au guest avant que le flush OPFS ait ren
 
 test("deux flush consécutifs sans écriture intermédiaire restent sûrs et mesurables", async () => {
   const banc0 = await banc();
-  const { journal, store, name, adapter, master, failures } = banc0;
+  const { journal, store, nomJournal, adapter, master, failures } = banc0;
   try {
     await ecrire(adapter, 0, motif(SECTOR_SIZE, 5));
 
@@ -206,7 +219,10 @@ test("deux flush consécutifs sans écriture intermédiaire restent sûrs et mes
     await tick();
     assert.equal(master.irqs, 2, "seconde barrière acquittée");
 
-    assert.equal(store.flushCount(name), 2, "deux flush réels du support");
+    // Une à l'ouverture, deux pour la première validation, puis UNE pour la barrière à vide : rien
+    // n'a été déposé entre les deux, il n'y a donc pas de racine à réécrire — mais le support est
+    // TOUT DE MÊME sollicité, faute de quoi un support devenu incapable d'écrire resterait invisible.
+    assert.equal(store.flushCount(nomJournal), 4, "quatre flush réels du support");
     assert.equal(journal.counts()[JOURNAL_OPERATIONS.flush], 2);
     assert.equal(journal.counts()[JOURNAL_OPERATIONS.flushAck], 2);
     assert.deepEqual(failures, []);
@@ -218,17 +234,17 @@ test("deux flush consécutifs sans écriture intermédiaire restent sûrs et mes
 
 test("un échec du support PENDANT la barrière remonte au guest et à la coquille, sans état durable inventé", async () => {
   const banc0 = await banc();
-  const { journal, store, name, adapter, master, failures } = banc0;
+  const { journal, store, nomJournal, adapter, master, failures } = banc0;
   try {
     await ecrire(adapter, 0, motif(SECTOR_SIZE, 7));
 
-    store.blockFlush(name);
+    store.blockFlush(nomJournal);
     master.ata_command(ATA.cmdFlushCache);
     await tick();
     assert.equal(master.status_reg, ATA.srBsy, "le guest attend la barrière");
 
     // Le support disparaît PENDANT l'écriture de la barrière : la barrière échoue.
-    store.releaseFlush(name, { fail: "InvalidStateError" });
+    store.releaseFlush(nomJournal, { fail: "InvalidStateError" });
     await tick();
 
     // Le guest observe une erreur d'E/S (registre ABRT), pas un délai de garde muet…
@@ -243,7 +259,7 @@ test("un échec du support PENDANT la barrière remonte au guest et à la coquil
       0,
       "une barrière en échec n'est jamais acquittée",
     );
-    assert.equal(store.flushCount(name), 0, "le support n'a jamais matérialisé cette barrière");
+    assert.equal(store.flushCount(nomJournal), 1, "seul le flush d'ouverture a eu lieu");
   } finally {
     await fermer(banc0);
   }
@@ -251,12 +267,13 @@ test("un échec du support PENDANT la barrière remonte au guest et à la coquil
 
 test("une barrière refusée immédiatement par le support est typée et jamais acquittée", async () => {
   const banc0 = await banc();
-  const { journal, store, name, adapter, master, failures } = banc0;
+  const { journal, store, nomJournal, adapter, master, failures } = banc0;
   try {
     await ecrire(adapter, 0, motif(SECTOR_SIZE, 9));
 
-    // Quota épuisé : le support refuse la barrière sans délai (pas de barrière retardée).
-    store.starve(name);
+    // Quota épuisé : le support refuse la barrière sans délai (pas de barrière retardée). C'est le
+    // JOURNAL DE GÉNÉRATION qui manque de place, puisque c'est lui que la barrière franchit.
+    store.starve(nomJournal);
     master.ata_command(ATA.cmdFlushCache);
     await tick();
 
