@@ -27,6 +27,22 @@ export const STORAGE_ERROR_CODES = Object.freeze({
   geometryMismatch: "VAULT_STORAGE_GEOMETRY_MISMATCH",
   /** Échec du support non classable dans les codes ci-dessus (#6). Jamais deviné, toujours nommé. */
   supportFailure: "VAULT_STORAGE_SUPPORT_FAILURE",
+  /**
+   * Une génération déposée sans validation a été ÉCARTÉE à l'ouverture (#16). Ce n'est pas une
+   * panne : c'est le résultat normal d'une coupure, et le volume porte la génération validée
+   * précédente. Le code existe pour que la mise au rebut soit NOMMÉE plutôt que silencieuse.
+   */
+  generationDiscarded: "VAULT_STORAGE_GENERATION_DISCARDED",
+  /**
+   * Une génération VALIDÉE dont la charge ne concorde plus (#16). Elle est refusée : la rejouer à
+   * moitié écrirait un état que personne ne sait cohérent, et l'ignorer perdrait une écriture
+   * acquittée. Aucune réparation par devinette.
+   */
+  generationCorrupt: "VAULT_STORAGE_GENERATION_CORRUPT",
+  /** La génération en cours dépasse le plafond du journal (#16). Refusé tôt, jamais à moitié. */
+  generationOverflow: "VAULT_STORAGE_GENERATION_OVERFLOW",
+  /** Un geste exigeant une génération validée a été demandé sur une génération en cours (#16). */
+  generationPending: "VAULT_STORAGE_GENERATION_PENDING",
 });
 
 const KNOWN_CODES = new Set(Object.values(STORAGE_ERROR_CODES));
@@ -72,6 +88,27 @@ export function outOfRange(offset, length, size) {
  * d'adopter la nouvelle taille : un volume qui rétrécit sous la VM n'est pas un volume plus petit,
  * c'est un volume corrompu.
  */
+/**
+ * Une génération validée dont la charge ne tient plus. Le message porte la raison exacte, parce que
+ * « corruption » sans le POURQUOI n'apprend rien à qui doit décider s'il restaure une sauvegarde.
+ */
+export function generationCorrupt(volume, { generation, reason }) {
+  return new StorageError(
+    STORAGE_ERROR_CODES.generationCorrupt,
+    `Génération ${generation} du volume « ${volume} » refusée : ${reason} Le volume n'est pas modifié ; restaurer une sauvegarde (#12) est le seul remède, deviner n'en est pas un.`,
+    { volume, generation, reason },
+  );
+}
+
+/** La génération en cours dépasserait le plafond du journal : refusée avant d'écrire quoi que ce soit. */
+export function generationOverflow(volume, { pending, requested, limit }) {
+  return new StorageError(
+    STORAGE_ERROR_CODES.generationOverflow,
+    `Génération du volume « ${volume} » trop grande : ${pending} octet(s) déjà déposés, ${requested} de plus demandés, plafond de ${limit}. Le guest doit franchir une barrière pour valider ce qui est en cours.`,
+    { volume, pending, requested, limit },
+  );
+}
+
 export function geometryMismatch(volume, { observed, expected, reason }) {
   return new StorageError(
     STORAGE_ERROR_CODES.geometryMismatch,
