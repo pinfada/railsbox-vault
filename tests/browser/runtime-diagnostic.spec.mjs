@@ -93,9 +93,9 @@ test("avec « use-scheduling-api », les trois moteurs peuvent exécuter le runt
   // Avant #74, ce verdict dépendait du moteur : WebKit n'expose pas `scheduler.postTask` et se
   // voyait refusé ici. La boucle posée par Vault supprime cette dépendance — et l'épreuve le dit
   // sans nommer aucun moteur, pour qu'un moteur qui régresserait la fasse rougir.
-  expect(reponse.report.boucleOrdonnancement.source).toMatch(/^vault/);
-  expect(reponse.report.schedulerPostTask).toBe(true);
   expect(reponse.report.diagnostic).toBe(null);
+  expect(reponse.report.schedulerPostTask).toBe(true);
+  expect(reponse.report.boucleOrdonnancement.source).toMatch(/^vault/);
 });
 
 test("un scénario lancé sans boucle d'ordonnancement est REFUSÉ, pas laissé en silence", async ({
