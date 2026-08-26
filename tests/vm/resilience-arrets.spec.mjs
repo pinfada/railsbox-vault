@@ -55,8 +55,9 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
   expect(resume.support).toBe("OPFS réel (Chromium)");
 
   for (const resultat of resultats) {
+    const ou = JSON.stringify(resultat.point);
     // La coupure a bien eu lieu : une faute programmée jamais tirée ne prouverait rien.
-    expect(resultat.fautesNonTirees, JSON.stringify(resultat.point)).toEqual([]);
+    expect(resultat.fautesNonTirees, ou).toEqual([]);
     expect(resultat.fautesTirees.length).toBe(1);
     // Elle s'est traduite par une erreur TYPÉE du stockage, jamais par un succès.
     expect(resultat.arret).not.toBeNull();
@@ -66,9 +67,41 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
     expect(resultat.blocs.length).toBe(BLOCS_SUIVIS);
     const total = Object.values(resultat.classes).reduce((somme, compte) => somme + compte, 0);
     expect(total).toBe(BLOCS_SUIVIS);
-    // Le volume a bien été rouvert après la mort du Worker, et le coût de la reprise est publié.
-    expect(resultat.reouverture.essais).toBeGreaterThanOrEqual(1);
+    // Aucun bloc non rattachable : l'oracle a su dire de chacun s'il porte l'ancien état, le
+    // nouveau, ou un mélange des deux. Ce zéro est FIGÉ — le laisser flotter permettrait à une
+    // régression de l'oracle de ranger des blocs en « corrompu » sans que rien ne le remarque.
+    expect(resultat.classes.corrompu, ou).toBe(0);
+
+    // L'oracle a bien eu le journal de la session morte SOUS LES YEUX. Sans lui, la règle
+    // `SEC-DURABLE-001` serait inerte et le taux atomique monterait sans raison.
+    expect(resultat.journalConsulte, ou).toBe(true);
+    expect(resultat.entreesJournal, ou).toBeGreaterThan(0);
+
+    // Et la règle a de quoi mordre : dès qu'une barrière a été acquittée, au moins un bloc est
+    // DURABLE. Sans cette ligne, un journal relayé mais vide de barrières passerait inaperçu.
+    const durables = resultat.blocs.filter((bloc) => bloc.durable === true);
+    if (resultat.barrieres >= 1) {
+      expect(
+        durables.length,
+        `${ou} — ${resultat.barrieres} barrière(s) acquittée(s)`,
+      ).toBeGreaterThan(0);
+    }
+
+    // Le volume a bien été rouvert après la mort du Worker. Un seul essai suffit : Chromium rend
+    // l'exclusivité avec le Worker terminé, avant que la page n'ait démarré le suivant. La reprise
+    // borne l'attente jusqu'à soixante essais, mais mesurer qu'elle n'en consomme qu'un est ce qui
+    // rend le relevé comparable d'une exécution à l'autre.
+    expect(resultat.reouverture.essais, ou).toBe(1);
   }
+
+  // Le point 2 de cette graine est une coupure sur la TROISIÈME barrière : les vingt-quatre
+  // écritures ont eu lieu, les deux premières barrières ont été acquittées, et seules les huit
+  // dernières écritures n'ont été franchies par aucune. Seize blocs sont donc durables — un chiffre
+  // épinglé pour que la règle SEC-DURABLE ne devienne pas silencieusement inapplicable.
+  const surLaDerniereBarriere = resultats[2];
+  expect(surLaDerniereBarriere.point.operation).toBe("flush");
+  expect(surLaDerniereBarriere.barrieres).toBe(2);
+  expect(surLaDerniereBarriere.blocs.filter((bloc) => bloc.durable === true).length).toBe(16);
 
   // La MESURE, publiée telle qu'elle est. `docs/quality-attributes.md` demande que 100 % des points
   // de coupure donnent ancien état, nouvel état ou erreur explicite ; #15 mesure ce taux, #16 le
@@ -141,4 +174,51 @@ test("une écriture déchirée laisse, sur OPFS réel, un bloc qui n'est ni l'an
   // Le volume n'est donc ni l'ancien état ni le nouveau. C'est le rouge que #16 fermera.
   expect(resultat.atomique).toBe(false);
   expect(resultat.verdict).toBe(VERDICTS.corrompu);
+});
+
+test("sur le vrai support, une écriture barriérée disparue est une corruption — témoin négatif", async ({
+  page,
+}, testInfo) => {
+  await ouvrirBanc(page);
+
+  // La règle « acquitté + barriéré, mais l'ancien état sur le support » ne se déclenche sur aucun
+  // point de la matrice. C'est une bonne nouvelle, pas une preuve qu'elle fonctionne : sans ce
+  // témoin, elle pourrait être morte depuis longtemps et la matrice n'en dirait rien — pire, sa
+  // mort ferait MONTER le taux atomique.
+  //
+  // La relecture reste RÉELLE : une vraie coupure à la cinquième écriture a laissé le bloc 10 à
+  // l'ancien état sur OPFS. Seul le journal est trafiqué, pour prétendre que ce bloc-là avait été
+  // écrit puis franchi par une barrière.
+  const reel = await page.evaluate((choisi) => globalThis.bancResilience.executerPoint(choisi), {
+    graine: GRAINE,
+    index: 0,
+    kind: CRASH_KINDS.abrupt,
+    operation: "write",
+    occurrence: 5,
+  });
+  expect(reel.verdict).toBe(VERDICTS.melange);
+  expect(reel.classes.corrompu).toBe(0);
+  const avant = reel.blocs.find((bloc) => bloc.index === 10);
+  expect(avant.classe).toBe("ancien");
+  expect(avant.durable).toBe(false);
+
+  const rejuge = await page.evaluate((offset) => {
+    const journal = [
+      { seq: 0, operation: "write", offset, length: 512 },
+      { seq: 1, operation: "flush", barrier: 0 },
+      { seq: 2, operation: "flush-ack", barrier: 0 },
+    ];
+    return globalThis.bancResilience.reclasserAvec(journal);
+  }, 10 * 512);
+  await testInfo.attach("vm-resilience-temoin-sec-durable.json", {
+    body: JSON.stringify({ reel, rejuge }, null, 2),
+    contentType: "application/json",
+  });
+
+  const apres = rejuge.blocs.find((bloc) => bloc.index === 10);
+  expect(apres.durable).toBe(true);
+  expect(apres.classe).toBe("corrompu");
+  expect(apres.diagnostic).toMatch(/barrière/i);
+  expect(rejuge.verdict).toBe(VERDICTS.corrompu);
+  expect(rejuge.atomique).toBe(false);
 });

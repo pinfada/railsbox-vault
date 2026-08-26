@@ -28,11 +28,11 @@ const EXTENSIONS = [".mjs", ".js", ".html"];
 /** Le jeton n'est TRANSMIS que par le banc de résilience ; la garde, elle, le DÉFINIT. */
 const AUTORISES_JETON = new Set(["src/vm/crash-harness.mjs", "public/vm/resilience-banc.mjs"]);
 
-/** L'armement n'est appelé que par la machine jetable de Node et par le Worker qui coupe. */
+/** L'armement n'est appelé que par la machine jetable de Node et par les scénarios de résilience. */
 const AUTORISES_ARMEMENT = new Set([
   "src/vm/crash-plan.mjs",
   "src/vm/crash-machine.mjs",
-  "public/vm/runtime-worker.mjs",
+  "public/vm/resilience-scenarios.mjs",
 ]);
 
 function parcourir(repertoire, trouves = []) {
@@ -103,16 +103,34 @@ test("la coquille du produit ignore tout de la résilience", () => {
   assert.equal(banc.includes("resilience"), false);
 });
 
-test("le Worker runtime n'arme qu'UNE fois, et seulement dans le scénario qui coupe", () => {
+test("le Worker runtime lui-même n'arme jamais : l'armement vit dans un module à part", () => {
+  // Depuis l'extraction des scénarios de résilience, la frontière est un FICHIER et non une plage
+  // de texte entre deux déclarations : `runtime-worker.mjs` — qui porte v86, la barrière et la
+  // persistance — ne nomme plus l'injecteur du tout, et c'est bien plus facile à tenir dans le temps
+  // qu'un `indexOf` sur des noms de fonctions.
   const worker = readFileSync(join(RACINE, "public", "vm", "runtime-worker.mjs"), "utf8");
-  const appels = worker.match(/armerInjecteur\(/g) ?? [];
-  assert.equal(appels.length, 1, "un second armement dans le Worker runtime doit être remarqué");
+  assert.equal(worker.includes("armerInjecteur"), false);
+  assert.equal(worker.includes("crash-plan"), false);
 
-  // L'unique appel vit dans `runResilienceCouper`, entre sa déclaration et celle du scénario
-  // suivant. Un armement glissé dans `runOpfsBarrier` ou `run` tomberait hors de cette plage.
-  const debut = worker.indexOf("async function runResilienceCouper");
-  const fin = worker.indexOf("async function runResilienceClasser");
-  const position = worker.indexOf("armerInjecteur(");
-  assert.ok(debut > 0 && fin > debut, "les deux scénarios de résilience doivent être présents");
-  assert.ok(position > debut && position < fin, "l'armement doit vivre dans le scénario qui coupe");
+  const scenarios = readFileSync(join(RACINE, "public", "vm", "resilience-scenarios.mjs"), "utf8");
+  const appels = scenarios.match(/armerInjecteur\(/g) ?? [];
+  assert.equal(appels.length, 1, "un second armement dans les scénarios doit être remarqué");
+});
+
+test("le volume de résilience est FIGÉ : aucun appelant ne choisit ce qui sera effacé", () => {
+  // `runResiliencePreparer` commence par effacer son volume. Le laisser nommer par l'appelant
+  // donnerait à n'importe quel `postMessage` du contexte le pouvoir de détruire un volume de
+  // production, et ce AVANT tout armement — donc sans présenter le moindre jeton.
+  const scenarios = readFileSync(join(RACINE, "public", "vm", "resilience-scenarios.mjs"), "utf8");
+  assert.match(scenarios, /export const VOLUME_RESILIENCE = "resilience";/);
+  assert.equal(
+    /removeOpfsVolume\(VOLUME_RESILIENCE\)/.test(scenarios),
+    true,
+    "la suppression doit viser la constante, jamais un nom reçu",
+  );
+  assert.equal(
+    /function runResilience\w+\(\{[^}]*\bvolume\b/.test(scenarios),
+    false,
+    "aucun scénario de résilience ne doit accepter un nom de volume de l'appelant",
+  );
 });
