@@ -239,7 +239,10 @@ Quatre conséquences pour la matrice produit :
   servie, v86 n'y avait aucune boucle d'ordonnancement : ni `postTask`, ni Worker imbriqué `blob:`.
   La boucle fournie par Vault comble l'absence, et le guest atteint son invite en **6,2 s**. Le
   statut de WebKit Playwright reste **refusé** pour une raison indépendante et déjà mesurée : OPFS
-  absent.
+  absent. **Ce que WebKit expose change alors de nature, et du code étranger doit le savoir** : dans
+  un Worker runtime de Vault, il porte depuis #74 un `scheduler` **partiel** — `{ postTask }` seul,
+  plus `yield` là où le moteur l'expose — au lieu d'aucun `scheduler`, si bien qu'y déduire les
+  capacités du moteur de la seule présence de l'objet est désormais faux (#87).
 - **Firefox démarre depuis #74, et la cause de son blocage est nommée.** C'était son implémentation
   **native** de `scheduler.postTask` qui monopolisait le thread du Worker dès que v86 démarrait —
   mesuré par l'[ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md), qui a aussi montré
@@ -294,7 +297,8 @@ Trois lectures, et une mise en garde :
   l'implémentation du moteur sous Chromium et Firefox. C'est la décision « toujours posée » de l'ADR
   0013 § « Mise en œuvre par #74 ». Conséquence à connaître : **dans un Worker runtime de Vault,
   WebKit expose désormais un `scheduler`** — partiel, `{ postTask }` — là où il n'en exposait aucun.
-  Du code qui déduirait des capacités de sa seule présence se tromperait (suivi : #87) ;
+  Du code qui déduirait des capacités de sa seule présence se tromperait — c'est dit plus haut,
+  parmi les conséquences de la matrice produit (#87) ;
 - **la boucle affame les minuteries sur un moteur.** Pendant qu'elle enchaîne les tours, WebKit
   n'exécute aucun `setInterval` ni `setTimeout` du Worker — mesuré, table ci-dessous. Les gardes du
   runtime se cadencent donc aussi sur les battements de la boucle ;
