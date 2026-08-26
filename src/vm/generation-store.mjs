@@ -496,10 +496,17 @@ export class GenerationStore {
   /**
    * Remet le journal à l'état « rien en attente », en conservant la génération constatée.
    *
-   * La troncature précède la racine : une racine qui annoncerait une charge vide au-dessus d'octets
-   * encore présents serait juste — la charge est bornée par sa longueur —, mais l'ordre inverse
-   * laisserait, entre les deux gestes, une racine désignant une charge déjà tronquée. La séquence
-   * avance, donc l'emplacement alterne, et la racine d'avant reste lisible jusqu'au bout.
+   * **La racine vide est rendue DURABLE avant la troncature, et l'ordre inverse serait une perte.**
+   * Tronquer d'abord retirerait du fichier les octets qu'une racine encore autoritaire déclare
+   * toujours : un arrêt — ou une simple exception, quota ou handle perdu — entre les deux gestes
+   * laisserait une racine annonçant `L` octets au-dessus d'un fichier qui n'en porte plus aucun, et
+   * la prochaine ouverture REFUSERAIT le volume par `VAULT_STORAGE_GENERATION_CORRUPT` alors que ses
+   * octets sont intacts. Dans l'ordre retenu, les deux interruptions possibles sont sûres :
+   *
+   *  - avant que la racine vide ne soit durable, l'ancienne racine fait toujours autorité et sa
+   *    charge est encore là — la génération est rejouée une seconde fois, ce qui est idempotent ;
+   *  - après, la racine vide fait autorité et les octets qui traînent au-delà ne sont pas lus : une
+   *    charge est bornée par la longueur que sa racine déclare, pas par la taille du fichier.
    */
   async #vider({ sequence, generation }) {
     this.#index.clear();
@@ -509,7 +516,6 @@ export class GenerationStore {
     this.#longueurValidee = 0;
     this.#enregistrementsValides = 0;
     this.#sommeValidee = 0;
-    this.#handle.truncate(ZONE_ENREGISTREMENTS);
     const suivante = sequence + 1;
     await this.#ecrireRacine({
       sequence: suivante,
@@ -518,6 +524,7 @@ export class GenerationStore {
       longueurCharge: 0,
       sommeCharge: 0,
     });
+    this.#handle.truncate(ZONE_ENREGISTREMENTS);
     this.#sequence = suivante;
     this.#generation = generation;
     this.#sequenceValidee = suivante;

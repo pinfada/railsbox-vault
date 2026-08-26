@@ -54,6 +54,7 @@ export class OpfsBlockBackend {
   #faults;
   #flushDelay;
   #generation;
+  #rangement = null;
   #closed = false;
   #handleLost = false;
   #barrier = 0;
@@ -437,9 +438,43 @@ export class OpfsBlockBackend {
     // déjà durables, le ranger ne promet rien de neuf. Il est amorti — une génération sur beaucoup —
     // parce que recopier à chaque barrière doublerait le coût de chaque `fsync` du guest.
     if (this.#generation !== null && this.#generation.pointDeControleDu) {
-      await this.#awaitSupport("flush", () => this.#generation.pointDeControle(), { barrier });
-      this.#journal.record(JOURNAL_OPERATIONS.mark, { kind: "point-de-controle", barrier });
+      await this.#rangerApresAcquittement(barrier);
     }
+  }
+
+  /**
+   * Range la génération validée, APRÈS que la barrière a été acquittée.
+   *
+   * Son échec **ne remonte pas** au guest, et c'est délibéré : la barrière a réussi, les octets sont
+   * durables dans le journal, et la prochaine ouverture les rejouera. Propager l'échec dirait au
+   * guest « ta barrière a échoué » alors qu'elle a abouti — un mensonge dans le sens inverse de celui
+   * que `SEC-DURABLE-001` interdit, et qui de surcroît marquerait l'adaptateur v86 comme fatal, donc
+   * tuerait la session entière pour un geste de rangement.
+   *
+   * Ce n'est pas pour autant un échec avalé : il est JOURNALISÉ avec son code, publié par
+   * `dernierRangement`, et il se signalera de lui-même — un journal qui ne se vide plus finit par
+   * atteindre son plafond, et `VAULT_STORAGE_GENERATION_OVERFLOW` est levé, lui, à l'écriture.
+   */
+  async #rangerApresAcquittement(barrier) {
+    try {
+      await this.#generation.pointDeControle();
+      this.#rangement = null;
+      this.#journal.record(JOURNAL_OPERATIONS.mark, { kind: "point-de-controle", barrier });
+    } catch (cause) {
+      const typed = toStorageError(cause, { operation: "checkpoint", volume: this.#name });
+      if (typed.code === STORAGE_ERROR_CODES.handleLost) this.#handleLost = true;
+      this.#rangement = typed.toJSON();
+      this.#journal.record(JOURNAL_OPERATIONS.failure, {
+        code: typed.code,
+        message: typed.message,
+        source: "checkpoint",
+      });
+    }
+  }
+
+  /** Dernier échec de rangement, ou `null`. Publié : un échec toléré n'est pas un échec caché. */
+  get dernierRangement() {
+    return this.#rangement;
   }
 
   /**
