@@ -95,6 +95,10 @@ async function rejouerPoint(atelier, point) {
     classes: classement.classes,
     blocs: classement.blocs,
     reouverture: classement.reouverture,
+    // Ce que la récupération de #16 a trouvé et fait à la réouverture : génération écartée, rejouée,
+    // ou rien en attente. Le relayer est ce qui distingue « la coupure n'a rien laissé » de « la
+    // génération a été écartée » — deux états que le seul verdict de l'oracle ne sépare pas.
+    recuperation: classement.recuperation,
     // Relayés jusqu'au compte rendu : ils disent si la règle `SEC-DURABLE-001` a seulement pu se
     // déclencher. Les perdre en route rendrait un taux atomique plus flatteur, sans le dire.
     journalConsulte: classement.journalConsulte,

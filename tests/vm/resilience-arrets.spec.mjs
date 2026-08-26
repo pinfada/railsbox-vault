@@ -35,6 +35,9 @@ import { BLOCS_SUIVIS } from "../../src/vm/crash-scenario.mjs";
 const GRAINE = 2026;
 const POINTS = 8;
 
+/** Deux graines de contrôle : elles n'ont jamais servi à mettre le mécanisme au point. */
+const AUTRES_GRAINES = [7, 424242];
+
 async function ouvrirBanc(page) {
   await page.goto("/vm/resilience.html");
   await expect(page.locator("#etat")).toHaveText("Banc de résilience prêt.");
@@ -134,6 +137,49 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
     expect(ligne.graine).toBe(GRAINE);
     expect(ligne.point.occurrence).toBeGreaterThanOrEqual(1);
   }
+});
+
+test("deux AUTRES graines rendent elles aussi 100 % sur le vrai support", async ({
+  page,
+}, testInfo) => {
+  // Une garantie qui ne tiendrait que sur la graine publiée n'en serait pas une : la graine 2026 est
+  // celle dont #15 a publié le relevé, et elle a servi à écrire cette tranche. Ces deux-là tirent
+  // d'autres genres de coupure à d'autres rangs, et n'ont jamais servi à mettre au point le
+  // mécanisme.
+  await ouvrirBanc(page);
+
+  const releves = [];
+  for (const graine of AUTRES_GRAINES) {
+    const compteRendu = await page.evaluate(
+      (options) => globalThis.bancResilience.executerMatrice(options),
+      { graine, points: POINTS },
+    );
+    releves.push(compteRendu.resume);
+
+    const { resume, resultats } = compteRendu;
+    expect(resume.graine, `graine ${graine}`).toBe(graine);
+    expect(resume.tauxAtomique, `graine ${graine}`).toBe(1);
+    expect(resume.verdicts.melange + resume.verdicts.corrompu, `graine ${graine}`).toBe(0);
+    expect(resume.classes.dechire, `graine ${graine}`).toBe(0);
+    expect(resume.classes.corrompu, `graine ${graine}`).toBe(0);
+    expect(resume.verdicts.ancien, `graine ${graine}`).toBeGreaterThan(0);
+    expect(resume.verdicts.nouveau, `graine ${graine}`).toBeGreaterThan(0);
+
+    for (const resultat of resultats) {
+      const ou = `graine ${graine} — ${JSON.stringify(resultat.point)}`;
+      // La coupure a réellement eu lieu à chaque point, et elle s'est dite.
+      expect(resultat.fautesNonTirees, ou).toEqual([]);
+      expect(resultat.arret, ou).not.toBeNull();
+      expect(resultat.arret.code, ou).toMatch(/^VAULT_STORAGE_/);
+      expect(resultat.journalConsulte, ou).toBe(true);
+      expect(resultat.recuperation, ou).not.toBeNull();
+    }
+  }
+
+  await testInfo.attach("vm-resilience-autres-graines.json", {
+    body: JSON.stringify(releves, null, 2),
+    contentType: "application/json",
+  });
 });
 
 test("la même graine rejoue exactement la même matrice sur le vrai support", async ({

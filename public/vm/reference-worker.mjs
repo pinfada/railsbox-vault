@@ -129,6 +129,24 @@ async function phaseResume(options) {
   return bootEtVerifier({ ...options, phase: "resume" });
 }
 
+/**
+ * Boot identique à `live`, mais qui ANNONCE l'instant où le guest a muté le volume et acquitté une
+ * barrière (#16). Il ne coupe rien : c'est la PAGE qui ferme, et fermer une page tue son Worker avec
+ * son handle exclusif, sans fermeture propre et sans barrière — la coupure la plus réaliste que ce
+ * dépôt sache produire sans tuer le navigateur lui-même.
+ *
+ * Le message d'annonce ne porte AUCUN identifiant de requête : il n'est la réponse de personne. Le
+ * banc l'écoute à part, et la promesse de la phase ne se résout jamais si la page coupe — ce qui est
+ * exactement ce qu'on veut mesurer.
+ */
+async function phaseLiveCouper(options) {
+  return bootEtVerifier({
+    ...options,
+    phase: "live-couper",
+    surMutation: (etat) => self.postMessage({ type: "mutation", ...etat }),
+  });
+}
+
 /** Arme la reprise hors ligne : acquiert le runtime PENDANT que la page est en ligne. */
 async function phaseResumeArm(options) {
   const bundle = await acquerirRuntime(options.runtime);

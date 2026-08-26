@@ -220,6 +220,29 @@ function createBootTimeline() {
  * `runtimeBundle` permet de fournir un runtime DÉJÀ acquis (reprise hors ligne : l'acquisition a eu
  * lieu en ligne, le boot a lieu réseau coupé).
  */
+/** Écritures du guest exigées avant d'annoncer une mutation. Une seule ne prouverait pas grand-chose. */
+const ECRITURES_AVANT_COUPURE = 8;
+
+/**
+ * Surveille le journal d'E/S et prévient DÈS que le guest a muté le volume et qu'une barrière a été
+ * acquittée. Le guet est un intervalle, non un abonnement : le journal de blocs est une trace, pas
+ * un émetteur, et lui ajouter un canal d'événements pour un seul banc de mesure serait une frontière
+ * de plus dans le chemin de production.
+ *
+ * @param {import("/src/vm/block-journal.mjs").BlockJournal} journal
+ * @param {(etat: object) => void} prevenir appelé UNE fois
+ */
+function guetterMutation(journal, prevenir) {
+  const minuterie = setInterval(() => {
+    const counts = journal.counts();
+    if ((counts.write ?? 0) < ECRITURES_AVANT_COUPURE) return;
+    if ((counts["flush-ack"] ?? 0) < 1) return;
+    clearInterval(minuterie);
+    prevenir({ counts });
+  }, 200);
+  return { arreter: () => clearInterval(minuterie) };
+}
+
 export async function bootEtVerifier({
   phase,
   volume,
@@ -230,6 +253,7 @@ export async function bootEtVerifier({
   manifest,
   expected,
   bootTimeoutMs,
+  surMutation = null,
 }) {
   // `SEC-UPDATE-001` : le volume est ouvert EN ÉCRITURE pour le guest. Son identité et sa
   // compatibilité sont donc exigées AVANT le premier octet — un volume sans manifeste (restauration
@@ -247,6 +271,11 @@ export async function bootEtVerifier({
   const journal = new BlockJournal();
   const failures = [];
   const backend = await openVolumeForWrite({ name: volume, journal, expectations: attentes });
+  // Ce que la RÉCUPÉRATION de #16 a trouvé et fait, lu AVANT le premier octet du guest. C'est la
+  // seule occasion de le lire : le point de contrôle qui suivra remettra le magasin à zéro. Une
+  // génération écartée ou rejouée doit arriver jusqu'au compte rendu, sans quoi un boot qui repart
+  // d'un état d'avant serait indistinguable d'un boot qui repart d'un état d'après.
+  const recuperation = backend.generation?.rapport ?? null;
   const adapter = createV86BufferAdapter({
     backend,
     onFatal: (error) => failures.push(error.toJSON()),
@@ -270,6 +299,11 @@ export async function bootEtVerifier({
   });
 
   const started = performance.now();
+  // Guet de MUTATION : il prévient l'appelant dès que le guest a réellement muté le volume ET
+  // qu'une barrière a été acquittée. C'est le seul instant où couper prouve quelque chose — couper
+  // avant la première barrière ne mesurerait qu'un volume jamais touché. Il ne coupe RIEN lui-même :
+  // la coupure est la mort du Worker, décidée par la page.
+  const guet = surMutation === null ? null : guetterMutation(journal, surMutation);
   const observations = [];
   let health;
   let invariant;
@@ -290,6 +324,7 @@ export async function bootEtVerifier({
       verdict: JSON.parse(new TextDecoder().decode(reponse.corps)),
     };
   } finally {
+    guet?.arreter();
     session.stop();
     await backend.close();
   }
@@ -320,6 +355,7 @@ export async function bootEtVerifier({
     observedRecordId: observed.record?.id ?? null,
     observedAttachmentSha256: observed.attachment?.sha256 ?? null,
     conforming,
+    recuperation,
     counts: journal.counts(),
     failures,
     observationsRuntime: [...observations, ...lireRejets()],
