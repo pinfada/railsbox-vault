@@ -3,14 +3,17 @@ import test from "node:test";
 
 import { HARNAIS_RESILIENCE_ENV, HARNAIS_RESILIENCE_VALEUR } from "../../src/vm/crash-harness.mjs";
 import { rejouerCoupure, rejouerMatrice } from "../../src/vm/crash-machine.mjs";
-import { VERDICTS } from "../../src/vm/crash-oracle.mjs";
+import { VERDICTS, classerVolume } from "../../src/vm/crash-oracle.mjs";
 import { CRASH_KINDS } from "../../src/vm/crash-plan.mjs";
 import { RESILIENCE_REPORT_VERSION, resumerMatrice } from "../../src/vm/crash-report.mjs";
 import {
   BARRIERE_TOUS_LES,
+  BLOC_OCTETS,
   BLOCS_SUIVIS,
+  blocsAttendus,
   contenuAncien,
   contenuNouveau,
+  offsetDuBloc,
 } from "../../src/vm/crash-scenario.mjs";
 
 // Ce fichier arme l'injecteur : il pose donc la variable du harnais, comme le ferait
@@ -74,6 +77,34 @@ test("une écriture déchirée laisse un bloc qui n'est ni l'ancien ni le nouvea
   assert.equal(abime.index, 4);
 });
 
+test("la règle SEC-DURABLE se déclenche sur un rapport RÉEL dont le journal est trafiqué", async () => {
+  // Témoin négatif exigé par la revue de #88 (HIGH-3). La règle « acquitté + barriéré rendant
+  // l'ancien état = corrompu » ne se déclenche sur aucun point de la matrice — c'est une bonne
+  // nouvelle, pas une preuve qu'elle marche. Ici la RELECTURE est réelle : le backend a vraiment
+  // coupé à la cinquième écriture, et le bloc 10 est vraiment resté à l'ancien état. Seul le
+  // journal est trafiqué, pour prétendre que ce bloc-là avait été écrit puis barriéré.
+  const resultat = await rejouerCoupure(point(CRASH_KINDS.abrupt, "write", 5));
+  assert.equal(resultat.verdict, VERDICTS.melange, "le verdict réel, avec le vrai journal");
+  assert.equal(resultat.classes.corrompu, 0);
+
+  const journalTrafique = [
+    { seq: 0, operation: "write", offset: offsetDuBloc(10), length: BLOC_OCTETS },
+    { seq: 1, operation: "flush", barrier: 0 },
+    { seq: 2, operation: "flush-ack", barrier: 0 },
+  ];
+  const rejuge = classerVolume({
+    blocs: blocsAttendus(resultat.relecture),
+    journal: journalTrafique,
+  });
+
+  const bloc = rejuge.blocs.find((candidat) => candidat.index === 10);
+  assert.equal(bloc.durable, true);
+  assert.equal(bloc.classe, "corrompu");
+  assert.match(bloc.diagnostic, /barrière/i);
+  assert.equal(rejuge.verdict, VERDICTS.corrompu);
+  assert.equal(rejuge.atomique, false, "un volume qui viole SEC-DURABLE-001 n'est jamais atomique");
+});
+
 test("la coupure est bien ATTEINTE : une faute programmée jamais tirée ne prouverait rien", async () => {
   const rapport = await rejouerCoupure(point(CRASH_KINDS.abrupt, "write", 5));
   assert.equal(rapport.fautesNonTirees.length, 0);
@@ -111,10 +142,23 @@ test("une matrice publie son taux « ancien ou nouveau », et il n'est pas de 10
   assert.ok(resume.verdicts.melange + resume.verdicts.corrompu > 0);
 
   // La répartition exacte est figée : la graine est une donnée versionnable, et un changement du
-  // générateur qui passerait inaperçu rendrait « même graine, même séquence » invérifiable.
+  // générateur qui passerait inaperçu rendrait « même graine, même séquence » invérifiable. Le
+  // compte par CLASSE l'est aussi, `corrompu: 0` compris : c'est ce zéro qui dit qu'aucun bloc n'a
+  // échappé au classement, et le laisser flotter permettrait à une régression de l'oracle de
+  // ranger des blocs en « corrompu » sans que rien ne le remarque.
   assert.deepEqual(resume.verdicts, { ancien: 0, nouveau: 3, melange: 6, corrompu: 3 });
+  assert.deepEqual(resume.classes, { ancien: 133, nouveau: 152, dechire: 3, corrompu: 0 });
   assert.equal(resume.tauxAtomique, 0.25);
-  assert.equal(resume.classes.dechire, 3);
+
+  // Le PROFIL du scénario voyage avec le taux : 0,25 sur douze points de vingt-quatre écritures
+  // n'est pas comparable à un taux mesuré sur un autre scénario, et #16 devra comparer.
+  assert.deepEqual(resume.profil, {
+    blocsSuivis: BLOCS_SUIVIS,
+    tailleBloc: BLOC_OCTETS,
+    ecritures: BLOCS_SUIVIS,
+    barrieres: Math.ceil(BLOCS_SUIVIS / BARRIERE_TOUS_LES),
+    barriereTousLes: BARRIERE_TOUS_LES,
+  });
 
   // Chaque point est rejouable seul, avec sa graine et sa description.
   for (const ligne of resume.rejeu) {
@@ -122,4 +166,26 @@ test("une matrice publie son taux « ancien ou nouveau », et il n'est pas de 10
     assert.ok(Number.isInteger(ligne.point.occurrence));
     assert.ok(Object.values(VERDICTS).includes(ligne.verdict));
   }
+});
+
+test("la même graine et le même nombre de points donnent la même répartition que la VM", async () => {
+  // `docs/quality-attributes.md` publie 0,125 pour huit points sur OPFS réel. Le même relevé sur le
+  // double calibré doit donner la même chose : si les deux supports divergeaient, le chiffre publié
+  // ne dirait plus si l'écart vient du support ou de l'instrument.
+  const resume = resumerMatrice({
+    graine: 2026,
+    resultats: await rejouerMatrice(2026, { points: 8 }),
+    support: "double calibré (Node)",
+  });
+  assert.deepEqual(resume.verdicts, { ancien: 0, nouveau: 1, melange: 4, corrompu: 3 });
+  assert.equal(resume.tauxAtomique, 0.125);
+  assert.equal(resume.classes.corrompu, 0);
+});
+
+test("le nombre d'entrées de journal consultées est publié pour chaque point", async () => {
+  // Sans ce chiffre, un journal cessant d'être relayé rendrait la règle SEC-DURABLE inerte tout en
+  // faisant MONTER le taux atomique — une amélioration apparente qui serait une perte de mesure.
+  const rapport = await rejouerCoupure(point(CRASH_KINDS.abrupt, "write", 5));
+  assert.equal(rapport.journalConsulte, true);
+  assert.ok(rapport.entreesJournal > 0, "le journal de la session coupée n'est pas vide");
 });
