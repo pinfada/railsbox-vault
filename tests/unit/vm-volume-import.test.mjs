@@ -482,6 +482,18 @@ test("le nom du manifeste dérive du volume et tient toujours dans la frontière
   assert.throws(() => manifestSidecarName("v".repeat(MAX_VOLUME_NAME + 1)), TypeError);
 });
 
+test("la borne d'un nom de volume vaut 54 : 54 est admis, 55 est refusé", () => {
+  // La valeur est ÉPINGLÉE, pas seulement dérivée : elle est passée de 55 à 54 quand le journal de
+  // migration (#13) est devenu le plus long des voisins réservés. C'est une RÉTROACTIVITÉ — un nom
+  // de 55 caractères créable hier ne l'est plus (ADR 0011) —, et une rétroactivité qu'aucun test
+  // n'épingle finit par se reperdre au premier suffixe ajouté.
+  assert.equal(MAX_VOLUME_NAME, 54);
+  const admis = "v".repeat(54);
+  assert.equal(assertVolumeName(admis), admis);
+  assert.equal(migrationJournalName(admis).length, MAX_STORAGE_NAME);
+  assert.throws(() => assertVolumeName("v".repeat(55)), TypeError);
+});
+
 test("les suffixes des voisins sont RÉSERVÉS : aucun volume ne peut les porter", () => {
   // Sans cette réserve, restaurer « donnees » détruirait un volume légitime « donnees.manifest ».
   assert.throws(() => assertVolumeName("donnees.manifest"), TypeError);

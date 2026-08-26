@@ -345,6 +345,27 @@ test("v1 ne connaît pas « runtime.minWriter » : l'inscrire à la création es
   );
 });
 
+test("un « minWriter » DÉCLARÉ sur un manifeste v1 relu est ignoré, jamais honoré", () => {
+  // Un support peut porter un v1 qu'un outil tiers a décoré d'un champ qu'il ne connaît pas. La
+  // relecture le tolère comme n'importe quel champ surnuméraire (compatibilité ascendante) — mais
+  // l'HONORER laisserait un v1 s'interdire à son propre runtime alors que son format ne prévoit
+  // aucun moyen de le déclarer. Il conserve donc SA règle : le seul majeur SemVer.
+  const relu = parseManifest({
+    ...JSON.parse(new TextDecoder().decode(serializeManifest(createManifest(champsV1())))),
+    runtime: { version: "1.4.2", artifact: "sha256:abcdef", minWriter: "9.0.0" },
+  });
+  assert.equal(relu.formatVersion, 1);
+  assert.equal(relu.runtime.minWriter, undefined, "le champ n'entre pas dans le manifeste gelé");
+  // « 9.0.0 » exigerait un runtime bien plus récent que celui en cours. Le seul refus qui subsiste
+  // pour un v1 vu par un runtime au format courant 2 reste la migration, pas le downgrade.
+  const verdict = evaluateCompatibility(
+    relu,
+    attentesCourantes({ supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 } }),
+  );
+  assert.equal(verdict.readable, true);
+  assert.equal(verdict.refusal, MANIFEST_ERROR_CODES.migrationRequired);
+});
+
 test("un volume ne peut pas exiger un écrivain plus récent que celui qui l'écrit", () => {
   assert.throws(
     () =>
