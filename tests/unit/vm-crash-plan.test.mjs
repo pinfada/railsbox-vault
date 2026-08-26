@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  HARNAIS_RESILIENCE_ENV,
-  HARNAIS_RESILIENCE_VALEUR,
-} from "../../src/vm/crash-harness.mjs";
+import { HARNAIS_RESILIENCE_ENV, HARNAIS_RESILIENCE_VALEUR } from "../../src/vm/crash-harness.mjs";
 import { CRASH_KINDS, armerInjecteur, planifierCoupures } from "../../src/vm/crash-plan.mjs";
 import { FAULT_KINDS } from "../../src/vm/fault-plan.mjs";
 
@@ -95,7 +92,13 @@ test("un profil incohérent est refusé plutôt qu'arrondi", () => {
 });
 
 test("un arrêt brutal s'arme en handle perdu : l'opération visée et toutes les suivantes échouent", () => {
-  const point = { graine: 1, index: 0, kind: CRASH_KINDS.abrupt, operation: "write", occurrence: 5 };
+  const point = {
+    graine: 1,
+    index: 0,
+    kind: CRASH_KINDS.abrupt,
+    operation: "write",
+    occurrence: 5,
+  };
   const plan = armerInjecteur(point);
   for (let rang = 1; rang < 5; rang += 1) assert.equal(plan.consume("write"), null);
   const faute = plan.consume("write");
@@ -133,7 +136,8 @@ test("une coupure entre écriture et barrière s'arme sur la barrière, pas sur 
 
 test("un point inventé est refusé à l'armement", () => {
   assert.throws(
-    () => armerInjecteur({ graine: 1, index: 0, kind: "sabotage", operation: "write", occurrence: 1 }),
+    () =>
+      armerInjecteur({ graine: 1, index: 0, kind: "sabotage", operation: "write", occurrence: 1 }),
     /genre de coupure inconnu/i,
   );
 });

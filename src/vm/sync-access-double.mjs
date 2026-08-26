@@ -62,6 +62,9 @@ export function createSyncAccessStore({
         gate: null,
         flushes: 0,
         reads: 0,
+        // Handles distribués et encore vivants. `abandon` doit pouvoir les invalider SANS passer
+        // par leur `close()`, qui est une fermeture propre — voir plus bas.
+        vivants: new Set(),
       };
       files.set(name, file);
     }
@@ -82,6 +85,11 @@ export function createSyncAccessStore({
   function makeHandle(name) {
     const file = fileOf(name);
     let closed = false;
+
+    const tuer = () => {
+      closed = true;
+    };
+    file.vivants.add(tuer);
 
     const assertLive = () => {
       if (closed) domExceptionThrow("Handle fermé.");
@@ -144,6 +152,7 @@ export function createSyncAccessStore({
       },
       close() {
         closed = true;
+        file.vivants.delete(tuer);
         open.delete(name);
       },
     };
@@ -164,6 +173,23 @@ export function createSyncAccessStore({
     /** Le fichier disparaît sous les handles ouverts, sans fermeture propre. */
     lose(name) {
       fileOf(name).lost = true;
+    },
+    /**
+     * La MACHINE meurt (#15). Les handles distribués deviennent inutilisables et l'exclusivité est
+     * relâchée — un système d'exploitation la reprend quand le processus disparaît —, mais
+     * `close()` n'est JAMAIS appelé : c'est toute la différence avec `arreterProprement`, puisque
+     * la fermeture d'un `FileSystemSyncAccessHandle` matérialise les écritures en attente.
+     *
+     * Le fichier, lui, survit avec les octets déjà écrits. Ce double ne modélise PAS de cache
+     * d'écriture volatil : tout octet accepté par `write` est dans le fichier avant l'abandon. Une
+     * perte d'écriture non barriérée ne peut donc pas être observée ici — seul le vrai support peut
+     * la produire, et c'est `tests/vm/resilience-arrets.spec.mjs` qui la mesure.
+     */
+    abandon(name) {
+      const file = fileOf(name);
+      for (const tuer of file.vivants) tuer();
+      file.vivants.clear();
+      open.delete(name);
     },
     /** Le support n'a plus de place : la prochaine barrière du fichier échoue sur le quota. */
     starve(name) {
