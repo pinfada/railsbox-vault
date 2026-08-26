@@ -121,13 +121,22 @@ export function mesurerRythme({ ticks, fenetreMs }) {
  *
  * @param {() => number | null} lireTicks accès au compteur de tours, `null` si illisible
  * @param {{ delaiMs?: number, periodeMs?: number,
- *           onObservation?: (o: Record<string, unknown>) => void }} [options]
+ *           onObservation?: (o: Record<string, unknown>) => void,
+ *           decrireBoucle?: () => Record<string, unknown> | null }} [options]
+ *   `decrireBoucle` rend la boucle d'ordonnancement posée par Vault (#74), consignée dans le
+ *   contexte de `VAULT_RUNTIME_NO_TICK` : le nombre de tâches qu'elle a reçues dit si v86 l'a
+ *   empruntée, et c'est ce qui sépare « boucle ignorée » de « panne ailleurs ».
  * @returns {{ promesse: Promise<never>, arreter: () => void,
  *             observations: () => Record<string, unknown>[] }}
  */
 export function surveillerPremierTour(
   lireTicks,
-  { delaiMs = DELAI_PREMIER_TOUR_MS, periodeMs = 250, onObservation = () => {} } = {},
+  {
+    delaiMs = DELAI_PREMIER_TOUR_MS,
+    periodeMs = 250,
+    onObservation = () => {},
+    decrireBoucle = () => null,
+  } = {},
 ) {
   let minuterie = null;
   let scrutation = null;
@@ -149,7 +158,7 @@ export function surveillerPremierTour(
         onObservation(observation);
         return;
       }
-      reject(noTick({ delaiMs, ticks: dernier }));
+      reject(noTick({ delaiMs, ticks: dernier, boucle: decrireBoucle() }));
     }, delaiMs);
   });
 
@@ -179,7 +188,11 @@ export function surveillerPremierTour(
  * @param {() => number | null} lireTicks
  * @param {() => Promise<T>} travail
  * @param {{ delaiMs?: number, periodeMs?: number,
- *           onObservation?: (o: Record<string, unknown>) => void }} [options]
+ *           onObservation?: (o: Record<string, unknown>) => void,
+ *           decrireBoucle?: () => Record<string, unknown> | null }} [options]
+ *   `decrireBoucle` rend la boucle d'ordonnancement posée par Vault (#74), consignée dans le
+ *   contexte de `VAULT_RUNTIME_NO_TICK` : le nombre de tâches qu'elle a reçues dit si v86 l'a
+ *   empruntée, et c'est ce qui sépare « boucle ignorée » de « panne ailleurs ».
  * @returns {Promise<T>}
  */
 export async function executerSousGarde(lireTicks, travail, options = {}) {
