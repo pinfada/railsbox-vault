@@ -63,8 +63,11 @@ export const GENERATION_ETATS = Object.freeze({
  * jusqu'au quota, et l'échec surviendrait au pire endroit — au milieu d'une validation. Le plafond
  * refuse TÔT, avec un code à lui, plutôt que de publier une génération à moitié.
  *
- * 64 Mio : le même ordre de grandeur que la surmémoire de streaming de `docs/quality-attributes.md`,
- * et très au-dessus de ce qu'une génération de l'image de référence a mesuré (voir ADR 0014).
+ * 64 Mio : le même ordre de grandeur que la surmémoire de streaming de `docs/quality-attributes.md`.
+ * Le seul relevé existant — 90 304 octets déposés par Rails entre une barrière acquittée et une
+ * coupure, scénario Bout en bout de #16 — est trois ordres de grandeur en dessous, mais ce n'est PAS
+ * une mesure de la plus grande génération possible. Le chiffre reste un garde-fou, pas un seuil
+ * calibré, et l'ADR 0014 l'inscrit comme travail découvert.
  */
 export const PLAFOND_CHARGE_OCTETS = 64 * 1024 * 1024;
 
