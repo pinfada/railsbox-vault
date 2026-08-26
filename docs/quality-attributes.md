@@ -308,12 +308,37 @@ produise pas n'est pas MESURÉ ici. Le protocole qui coupe plus bas reste à éc
 **Le surcoût d'écriture n'a pas de budget opposable, et ce relevé n'en fabrique pas.** L'ADR 0014
 mesure ×2,06 sur son banc — chaque octet écrit par le guest entre deux barrières est écrit une fois
 dans le journal, une fois dans le volume — et deux barrières du support par barrière du guest au
-lieu d'une. Ce que cela devient sur un boot Rails complet n'est pas mesurable sur la machine de
-développement : l'étendue intra-série y atteint 16 à 17 % (§ précédent), très au-dessus de ce qu'un
-surcoût noyé dans un boot dominé à 79 % par le CPU émulé pourrait déplacer. Conclure « pas de
-régression » exigerait le protocole de l'environnement de référence — dix essais après échauffement,
-sur 4 cœurs et 16 Gio. Le tableau des budgets ne reçoit donc **aucune** ligne « surcoût d'écriture »
-: un seuil posé sans mesure opposable serait une promesse, pas un budget.
+lieu d'une. Le tableau des budgets ne reçoit **aucune** ligne « surcoût d'écriture » : un seuil posé
+sans mesure opposable serait une promesse, pas un budget.
+
+### Ce que `test:rythme` dit, et surtout ce qu'il ne dit pas (#16)
+
+Relevé du 2026-08-26, `npm run test:rythme`, cinq essais par bras entrelacés, machine de
+développement. **Vert**, verdict publié « dans le bruit de cette machine ».
+
+| Bras            |   p50 (ms) | p95 (ms) | Étendue intra-série | Écritures OPFS par boot |
+| --------------- | ---------: | -------: | ------------------: | ----------------------: |
+| Boucle native   |    114 362 |  117 616 |               5,4 % |                 63 à 73 |
+| Boucle de Vault |    115 468 |  118 875 |               7,6 % |                 63 à 72 |
+| **Écart p50**   | **+1,0 %** |        — |         bruit 7,6 % |                       — |
+
+**Ce banc ne mesure PAS le surcoût de #16.** Il compare deux boucles d'ordonnancement, et **les deux
+bras portent la génération transactionnelle** : le surcoût d'écriture est présent des deux côtés et
+s'annule dans l'écart. Ce qu'il établit est plus modeste, et c'est la non-régression demandée : avec
+#16, la reprise reste conforme, l'invariant Rails aussi, et la boucle de Vault ne dérive pas.
+
+Comparé au relevé #74 sur la même machine (boucle de Vault, boot à chaud, point unique : 110 465
+ms), le p50 de cinq essais passe à **115 468 ms**, soit **+4,5 %** — sous l'étendue intra-série de
+15,8 % que ce relevé-là publiait. Et le bras NATIF a bougé davantage encore, de 99 475 à 114 362 ms
+(+15 %), alors qu'il porte exactement le même stockage. **L'écart entre les deux relevés est donc
+dominé par l'état de la machine, pas par #16**, et personne ne peut conclure autrement à partir de
+ces chiffres. Le nombre d'écritures OPFS par boot, lui, est inchangé : le journal ne multiplie pas
+les écritures LOGIQUES, il double les octets écrits sur le support.
+
+Conclure « pas de régression du surcoût d'écriture » exigerait un protocole que cette tranche n'a
+pas exécuté : dix essais après échauffement sur l'environnement de référence, avec un bras SANS
+génération transactionnelle. C'est du travail découvert. Le gate de reprise reste fermé pour les
+raisons de l'ADR 0005, qui n'ont pas changé.
 
 ## Compatibilité
 
