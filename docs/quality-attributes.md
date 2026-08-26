@@ -172,6 +172,32 @@ viendrait de ce que le disque est servi depuis OPFS — est donc infirmée pour 
 coût est du CPU émulé, non de la latence OPFS. Aucune optimisation de boot à froid ne peut à elle
 seule tenir 60 s, puisque le seul boot Rails (~73 s) dépasse déjà la cible.
 
+### Reprise avec la boucle d'ordonnancement de Vault (#74)
+
+Relevé du 2026-08-26, `npm run test:e2e`, **même machine de développement** que #7 et #60. Depuis
+#74, la boucle d'ordonnancement de v86 est fournie par Vault et non plus par le moteur
+([ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md), § « Mise en œuvre par #74 »).
+C'est un changement du **rythme de tout l'émulateur** : il devait être mesuré ici, pas supposé.
+
+| Mesure                                   | Boucle native | Boucle de Vault |   Écart |
+| ---------------------------------------- | ------------: | --------------: | ------: |
+| Boot à chaud jusqu'à `/vault/health` (1) |     99 475 ms |      110 465 ms | +11,0 % |
+| Reprise à froid, p50 (3 essais)          |     94 870 ms |       97 568 ms |  +2,8 % |
+| Reprise à froid, p95 (3 essais)          |    109 412 ms |      110 140 ms |  +0,7 % |
+| Boot après migration de format (1)       |     97 173 ms |      105 293 ms |  +8,4 % |
+
+**Ces écarts ne sont pas distinguables du bruit de cette machine, et cela ne veut pas dire qu'ils
+sont nuls.** L'étendue à l'intérieur d'une même série de trois reprises atteint 17,4 % avant et 15,8
+% après ; les deux lignes marquées « (1) » sont des points uniques, et le boot à chaud « après » a
+en outre produit **60 écritures OPFS contre 40** — deux boots qui n'ont pas fait le même travail.
+Une conclusion de non-régression exigerait le protocole de l'environnement de référence : dix essais
+après échauffement, sur 4 cœurs et 16 Gio.
+
+Ce que le relevé établit sans ambiguïté : **aucun budget de cette page n'est franchi**, la barrière
+durable reste émise et acquittée, et **le gate de reprise reste fermé** pour la même raison qu'avant
+— la cible est p95 ≤ 60 s, le mesuré reste autour de 100 s, et la voie de qualification retenue par
+l'ADR 0005 est l'instantané de #65. Cette tranche ne l'a ni rapproché ni éloigné.
+
 La mémoire publiée par le relevé (`memoireTasJs`) est le **tas JS de la page**, pas l'empreinte de
 la VM : v86 et ses 512 Mio de RAM invitée vivent dans le Worker, que `performance.memory` de la page
 ne mesure pas. Une mesure de l'empreinte réelle du processus navigateur reste à outiller (issue de
