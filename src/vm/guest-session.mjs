@@ -143,5 +143,22 @@ export function createGuestSession({
     transcript() {
       return transcript;
     },
+
+    /**
+     * Compteur de tours de la boucle d'ordonnancement de v86, ou `null` tant que l'émulateur n'a
+     * pas été construit. Il sert à distinguer deux pannes que rien d'autre ne sépare (#52) : un
+     * guest LENT, dont le compteur avance, et un émulateur qui ne BAT PAS, dont le compteur reste
+     * figé parce que v86 n'a aucune boucle disponible — `scheduler.postTask` absent et Worker
+     * imbriqué « blob: » refusé par la CSP de la coquille.
+     *
+     * `tick_counter` est un nom conservé par la compilation Closure `SIMPLE` des artefacts publiés,
+     * comme les trois noms dont dépend déjà le pont de durabilité (ADR 0003). Une montée de version
+     * qui le renommerait rendrait `null` au lieu d'un nombre : le chien de garde du Worker runtime
+     * traite ce cas explicitement plutôt que de conclure à l'arrêt.
+     */
+    ticks() {
+      const compteur = emulator?.v86?.tick_counter;
+      return typeof compteur === "number" ? compteur : null;
+    },
   };
 }

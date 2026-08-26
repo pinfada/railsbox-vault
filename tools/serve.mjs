@@ -66,6 +66,7 @@ createServer(async (request, response) => {
           : url.searchParams.get("isolation"),
         appOrigin: options.appOrigin,
         requestOrigin: request.headers.origin ?? null,
+        workerSrcBlob: options.workerSrcBlob,
       }),
     });
     createReadStream(candidate).pipe(response);

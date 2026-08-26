@@ -196,5 +196,16 @@ export function createReferenceGuestSession({
     transcript() {
       return transcript;
     },
+
+    /**
+     * Compteur de tours de la boucle d'ordonnancement de v86, ou `null` tant que l'émulateur n'a pas
+     * été construit ou si le nom n'est plus celui-là après une montée de version. Même contrat et
+     * même raison d'être que dans `guest-session.mjs` : distinguer un guest LENT d'un émulateur qui
+     * NE BAT PAS (#52).
+     */
+    ticks() {
+      const compteur = emulator?.v86?.tick_counter;
+      return typeof compteur === "number" ? compteur : null;
+    },
   };
 }
