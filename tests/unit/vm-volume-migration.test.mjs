@@ -67,13 +67,21 @@ function contenu() {
 /**
  * Cible de migration EN MÉMOIRE. Elle journalise chaque geste dans l'ordre : c'est ce qui permet
  * d'affirmer non pas « la migration a échoué » mais « la cible n'a même pas été ouverte ».
- * `pannes` fait échouer un geste nommé ; `faults` injecte une panne dans les E/S du volume.
+ * `faults` injecte une panne dans les E/S du volume ; les deux autres coupent la migration à un
+ * geste NOMMÉ, et ils ne décrivent pas le même sinistre :
+ *
+ * - `pannes` coupe AVANT l'effet du geste — rien n'a été modifié sur le support ;
+ * - `apres` coupe APRÈS : le geste a porté, PUIS la migration s'arrête. C'est ce qu'un onglet fermé
+ *   laisse derrière lui, et c'est ce que `interrompreApres` injecte dans
+ *   `public/vm/reference-worker.mjs`. Sans ce second mode, la matrice de pannes unitaire ne dirait
+ *   rien de la moitié des états réellement atteignables.
  */
 function creerCible({
   volume = contenu(),
   manifestBytes = serializeManifest(manifesteV1()),
   journalBytes = null,
   pannes = {},
+  apres = {},
   faults = createFaultPlan(),
 } = {}) {
   const etat = { manifestBytes, journalBytes, ouvertures: 0, fermetures: 0 };
@@ -81,6 +89,9 @@ function creerCible({
   const trace = (nom) => {
     gestes.push(nom);
     if (pannes[nom]) throw pannes[nom];
+  };
+  const puisEchouer = (nom) => {
+    if (apres[nom]) throw apres[nom];
   };
 
   const backend = {
@@ -92,10 +103,12 @@ function creerCible({
     },
     async flush() {
       trace("flush");
+      puisEchouer("flush");
     },
     async close() {
       etat.fermetures += 1;
       gestes.push("close");
+      puisEchouer("close");
     },
   };
 
@@ -122,18 +135,22 @@ function creerCible({
     async writeJournal(bytes) {
       trace("write-journal");
       etat.journalBytes = bytes;
+      puisEchouer("write-journal");
     },
     async revokeManifest() {
       trace("revoke");
       etat.manifestBytes = null;
+      puisEchouer("revoke");
     },
     async commitManifest(bytes) {
       trace("commit");
       etat.manifestBytes = bytes;
+      puisEchouer("commit");
     },
     async removeJournal() {
       trace("remove-journal");
       etat.journalBytes = null;
+      puisEchouer("remove-journal");
     },
   };
 }
@@ -196,9 +213,9 @@ test("la migration inscrit le manifeste cible EN DERNIER, après le journal et l
   assert.equal(rapport.migrated, true);
   assert.equal(rapport.fromVersion, 1);
   assert.equal(rapport.toVersion, MANIFEST_FORMAT_VERSION);
-  // L'ordre EST le contrat : lire, ouvrir, journaliser, révoquer, appliquer, flusher, inscrire,
-  // relire, rendre le handle, retirer le journal. La révocation précède toute mutation du volume ;
-  // l'inscription du manifeste les suit toutes.
+  // L'ordre EST le contrat, et il n'est énoncé qu'à UN endroit : l'ADR 0011 (« Ordre des gestes »),
+  // dont l'en-tête de `src/vm/volume-migration.mjs` est la transcription. La liste ci-dessous n'en
+  // est pas une seconde définition : c'est la TRACE que cet ordre laisse sur la cible.
   assert.deepEqual(cible.gestes, [
     "inspect",
     "read-journal",
@@ -399,6 +416,103 @@ for (const { geste, description, identifie, journal } of POINTS) {
     assert.equal(cible.etat.journalBytes !== null, journal, "état du journal de reprise");
   });
 }
+
+// --- Défaillance APRÈS l'effet du geste ---------------------------------------------------------
+//
+// Les cinq points ci-dessus coupent AVANT l'effet : le geste n'a rien modifié. Un onglet fermé
+// laisse l'état INVERSE — le geste a porté, puis plus rien n'est exécuté. Ces trois épreuves
+// couvrent les ruptures où ce second mode produit un état que le premier n'atteint jamais.
+
+test("panne APRÈS l'inscription du journal : le journal subsiste alors que le manifeste est intact", async () => {
+  // État qu'une interruption entre le geste 6 et le geste 7 laisse : journal ET manifeste source,
+  // qui doivent coïncider octet pour octet. C'est le cas nominal que `manifesteSource` autorise, et
+  // aucune panne coupant AVANT l'effet ne le produit.
+  const cible = creerCible({ apres: { "write-journal": new Error("onglet fermé") } });
+  await assert.rejects(() =>
+    migrateVolume({ target: cible, expectations: attentes(), consent: CONSENTEMENT }),
+  );
+
+  assert.equal(parseManifest(cible.etat.manifestBytes).formatVersion, 1, "le volume reste v1");
+  assert.notEqual(
+    cible.etat.journalBytes,
+    null,
+    "le journal est inscrit : la reprise est possible",
+  );
+  assert.equal(cible.etat.fermetures, 1, "le handle exclusif est rendu");
+  assert.ok(!cible.gestes.includes("revoke"), "la révocation n'a pas été franchie");
+});
+
+test("la reprise CONSTATE un manifeste cible déjà inscrit mais jamais relu, et aboutit", async () => {
+  // Le manifeste cible est sur le support ; l'onglet s'est fermé avant sa relecture. Rien ne
+  // distingue cet état de celui d'une migration aboutie dont le dernier geste n'a pas été franchi :
+  // la reprise doit le constater, retirer le journal et rendre la main — ni repartir de zéro (elle
+  // redemanderait une preuve qu'elle n'a plus), ni refuser (le volume est valide).
+  const interrompue = creerCible({ apres: { commit: new Error("onglet fermé") } });
+  await assert.rejects(() =>
+    migrateVolume({ target: interrompue, expectations: attentes(), consent: CONSENTEMENT }),
+  );
+  assert.equal(
+    parseManifest(interrompue.etat.manifestBytes).formatVersion,
+    MANIFEST_FORMAT_VERSION,
+    "le manifeste cible EST sur le support",
+  );
+  assert.ok(!interrompue.gestes.includes("remove-journal"), "le journal n'a pas été retiré");
+
+  const reprise = creerCible({
+    manifestBytes: interrompue.etat.manifestBytes,
+    journalBytes: interrompue.etat.journalBytes,
+  });
+  const rapport = await migrateVolume({ target: reprise, expectations: attentes() });
+  assert.equal(rapport.migrated, false, "il n'y a plus rien à migrer");
+  assert.equal(rapport.resumed, true);
+  assert.equal(rapport.fromVersion, MANIFEST_FORMAT_VERSION);
+  assert.equal(reprise.etat.journalBytes, null, "le dernier geste est franchi");
+  assert.equal(reprise.etat.ouvertures, 0, "rien n'est rouvert : aucun octet n'est à muter");
+});
+
+test("une fermeture qui rate ne REMPLACE pas l'erreur qui a fait échouer la migration", async () => {
+  const origine = new Error("panne injectée : barrière de durabilité");
+  const fermeture = new Error("fermeture impossible : le handle est perdu");
+  const cible = creerCible({ pannes: { flush: origine }, apres: { close: fermeture } });
+
+  const rejet = await migrateVolume({
+    target: cible,
+    expectations: attentes(),
+    consent: CONSENTEMENT,
+  }).then(
+    () => null,
+    (echec) => echec,
+  );
+
+  // Le diagnostic rendu reste celui de ce qui a fait échouer la migration. La fermeture ratée est
+  // une CIRCONSTANCE : elle est jointe en `cause`, jamais substituée — sinon l'exploitant lirait
+  // « fermeture impossible » là où le volume a été laissé NON IDENTIFIÉ par la barrière, et le
+  // remède (reprendre depuis le journal) ne se déduirait plus du message.
+  assert.equal(rejet, origine, "l'erreur d'origine est celle qui remonte");
+  assert.equal(rejet.cause, fermeture, "la fermeture ratée n'est pas perdue pour autant");
+  assert.equal(cible.etat.fermetures, 1, "la fermeture a bien été tentée");
+  assert.equal(cible.etat.manifestBytes, null, "le volume reste NON IDENTIFIÉ");
+  assert.notEqual(cible.etat.journalBytes, null, "la reprise reste possible");
+});
+
+test("une fermeture qui rate SEULE fait échouer la migration : le journal n'est pas retiré", async () => {
+  // Tout a abouti sauf la restitution du handle. Rendre « migré » ici serait affirmer un état que
+  // personne n'a pu constater : le journal subsiste, et la reprise le retirera après relecture.
+  const fermeture = new Error("fermeture impossible : le handle est perdu");
+  const cible = creerCible({ apres: { close: fermeture } });
+  const rejet = await migrateVolume({
+    target: cible,
+    expectations: attentes(),
+    consent: CONSENTEMENT,
+  }).then(
+    () => null,
+    (echec) => echec,
+  );
+
+  assert.equal(rejet, fermeture);
+  assert.notEqual(cible.etat.journalBytes, null, "le dernier geste n'est pas franchi");
+  assert.ok(!cible.gestes.includes("remove-journal"));
+});
 
 test("un manifeste relu qui diffère de l'inscrit laisse le volume non identifié", async () => {
   const cible = creerCible();
