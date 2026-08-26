@@ -14,7 +14,12 @@ import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { createFaultPlan } from "/src/vm/fault-plan.mjs";
 import { createGuestSession } from "/src/vm/guest-session.mjs";
 import { openMemoryVolume } from "/src/vm/memory-block-backend.mjs";
-import { SOURCES_BOUCLE, installerBoucleOrdonnancement } from "/src/vm/scheduling-loop.mjs";
+import { sonderWorkerBlob } from "/src/vm/runtime-environment.mjs";
+import {
+  SOURCES_BOUCLE,
+  decrireBoucle,
+  installerBoucleOrdonnancement,
+} from "/src/vm/scheduling-loop.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { BRIDGE_MODES } from "/src/vm/v86-flush-bridge.mjs";
 
@@ -59,8 +64,9 @@ self.addEventListener("securitypolicyviolation", (evenement) =>
  * façon de savoir si la boucle `postTask` native est ce qui monopolise le thread sous Firefox (#74).
  */
 function installerCale(mode) {
+  if (!mode) return { libelle: "absente", descripteur: null };
   const boucle = installerBoucleOrdonnancement({ siNatifAbsent: mode !== "toujours" });
-  return LIBELLES_CALE[boucle.source];
+  return { libelle: LIBELLES_CALE[boucle.source], descripteur: boucle };
 }
 
 /** Chemin que v86 choisira, déduit des mêmes conditions que son module. */
@@ -92,25 +98,6 @@ async function chargerArtefacts() {
   return { wasm, bios, vgaBios, cdrom };
 }
 
-/**
- * Tentative de création d'un Worker imbriqué depuis une URL `blob:`, exactement comme v86 le fait
- * dans le constructeur de sa boucle. Elle est menée SÉPARÉMENT de l'émulateur : c'est ce qui permet
- * d'attribuer un non-démarrage à la CSP plutôt qu'à v86.
- */
-function essayerWorkerBlob() {
-  let url = null;
-  try {
-    url = URL.createObjectURL(new Blob(["self.onmessage=()=>postMessage(1)"], {}));
-    const worker = new Worker(url);
-    worker.terminate();
-    return "cree";
-  } catch (erreur) {
-    return `refuse:${erreur.name}`;
-  } finally {
-    if (url) URL.revokeObjectURL(url);
-  }
-}
-
 /** Instanciation d'un module WebAssembly minimal — le module vide, huit octets d'en-tête. */
 async function essayerWasm() {
   const octets = new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]);
@@ -122,19 +109,32 @@ async function essayerWasm() {
   }
 }
 
-async function mesurer({ cale = null, bootTimeoutMs = 45000, volumeBytes = 16 * MIO } = {}) {
-  const caleInstallee = cale ? installerCale(cale) : "absente";
+/**
+ * Ce que le contexte offre AVANT que l'émulateur ne soit construit. Le relevé est pris ici et non
+ * après le boot : c'est ce qui permet d'attribuer un non-démarrage à la CSP plutôt qu'à v86.
+ *
+ * `workerBlob` passe par `sonderWorkerBlob()` du runtime livré, qui mesure un SIGNE DE VIE borné.
+ * L'ancienne sonde de ce banc concluait « cree » dès que le constructeur n'avait pas levé — or
+ * c'est exactement ce que #52 a mesuré : sous `worker-src 'self'`, le constructeur ne lève jamais et
+ * rend un objet inerte. Le champ annonçait donc « cree » sur des Workers morts (#85).
+ */
+async function relevePrealable({ cale, bootTimeoutMs }) {
+  const { libelle, descripteur } = installerCale(cale);
   const releve = {
     urlContexte: location.href,
     marqueurUrl: location.href.includes("use-scheduling-api"),
     schedulerPostTask: typeof globalThis.scheduler?.postTask === "function",
-    cale: caleInstallee,
+    cale: libelle,
     cheminAttendu: cheminAttendu(),
-    workerBlob: essayerWorkerBlob(),
+    workerBlob: await sonderWorkerBlob(),
     wasm: await essayerWasm(),
     bootTimeoutMs,
   };
+  return { releve, descripteur };
+}
 
+/** Ouvre un volume en mémoire et la session de guest qui s'y adosse. */
+async function ouvrirSession(volumeBytes) {
   const { V86 } = await import(`${ARTEFACTS}libv86.mjs`);
   const artifacts = await chargerArtefacts();
   const journal = new BlockJournal();
@@ -147,7 +147,14 @@ async function mesurer({ cale = null, bootTimeoutMs = 45000, volumeBytes = 16 * 
   });
   const adapter = createV86BufferAdapter({ backend, onFatal: (e) => noter("backend", e.message) });
   const session = createGuestSession({ V86, artifacts, adapter, journal, mode: BRIDGE_MODES.full });
+  return { session, journal, backend };
+}
 
+/**
+ * Boot borné, sous scrutation du compteur de tours. Le boot est mené jusqu'au bout ou jusqu'à son
+ * délai ; un échec est CONSIGNÉ, jamais propagé : un moteur qui ne démarre pas est une mesure.
+ */
+async function mesurerBoot({ session, backend, bootTimeoutMs }) {
   let ticks = null;
   let battements = 0;
   const sonde = setInterval(() => {
@@ -168,20 +175,33 @@ async function mesurer({ cale = null, bootTimeoutMs = 45000, volumeBytes = 16 * 
     session.stop();
     await backend.close();
   }
+  return {
+    ticks,
+    battements,
+    bootMs,
+    erreur,
+    dureeTotaleMs: Math.round(performance.now() - debut),
+  };
+}
+
+async function mesurer({ cale = null, bootTimeoutMs = 45000, volumeBytes = 16 * MIO } = {}) {
+  const { releve, descripteur } = await relevePrealable({ cale, bootTimeoutMs });
+  const { session, journal, backend } = await ouvrirSession(volumeBytes);
+  const boot = await mesurerBoot({ session, backend, bootTimeoutMs });
 
   return {
     ...releve,
     // `ticks` est le fait décisif : figé à `0`/`null`, la boucle n'a jamais battu ; positif, elle
     // bat et un non-démarrage a une autre cause.
-    ticks,
-    battements,
-    bootMs,
-    invite: bootMs !== null,
-    dureeTotaleMs: Number((performance.now() - debut).toFixed(0)),
+    ...boot,
+    invite: boot.bootMs !== null,
+    // Relevé de la boucle APRÈS le boot : son compteur de tâches dit si v86 l'a réellement
+    // empruntée, et `minuteries` dit si le chemin `setTimeout` — celui que le plafond de quatre
+    // millisecondes menace — a été emprunté, et jusqu'à quelle imbrication (#87).
+    boucleOrdonnancement: decrireBoucle(descripteur),
     counts: journal.counts(),
     transcriptFin: session.transcript().slice(-400),
     incidents,
-    erreur,
   };
 }
 

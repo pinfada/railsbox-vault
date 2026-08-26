@@ -25,6 +25,40 @@ function creerWorker(marqueur) {
   return new Worker(url, { type: "module", name: "vault-mesure-ordonnancement" });
 }
 
+/** Assemble le relevé d'une configuration et l'affiche dans la page, d'où le harnais le lit. */
+function publier(nom, configuration, journalPage, complement) {
+  const releve = { configuration: nom, ...configuration, journalPage, ...complement };
+  etat.textContent = `Mesure « ${nom} » terminée.`;
+  rapport.textContent = JSON.stringify(releve, null, 2);
+  return releve;
+}
+
+/**
+ * Branche les écouteurs du Worker de mesure et lui confie la configuration. Les événements de la
+ * PAGE sont journalisés séparément du relevé du Worker : un Worker qui meurt à son chargement ne
+ * publie rien, et c'est ce journal qui dit alors ce qui s'est passé.
+ */
+function brancherWorker(worker, { configuration, bootTimeoutMs, journalPage, terminer }) {
+  worker.addEventListener("error", (evenement) => {
+    journalPage.push(`worker-error: ${evenement.message}`);
+  });
+  worker.addEventListener("messageerror", () => journalPage.push("worker-messageerror"));
+  worker.addEventListener("message", (evenement) => {
+    const { ok, report, error } = evenement.data ?? {};
+    terminer({
+      chargementWorker: "charge",
+      silence: false,
+      ...(ok ? { releve: report } : { echec: error }),
+    });
+  });
+
+  worker.postMessage({
+    id: 1,
+    type: "mesurer",
+    payload: { cale: configuration.cale, bootTimeoutMs },
+  });
+}
+
 /**
  * Exécute une configuration et rend son relevé. La promesse est TOUJOURS résolue : un Worker qui
  * ne charge pas, ou qui se tait, est une mesure et non une exception à propager.
@@ -35,58 +69,27 @@ function mesurer(nom, { bootTimeoutMs = 45000 } = {}) {
   etat.textContent = `Mesure « ${nom} »…`;
 
   return new Promise((resolve) => {
-    let worker;
-    let echeance = null;
     const journalPage = [];
+    let worker = null;
+    let echeance = null;
 
-    const terminer = (releve) => {
+    const terminer = (complement) => {
       if (echeance !== null) clearTimeout(echeance);
       if (worker) worker.terminate();
-      etat.textContent = `Mesure « ${nom} » terminée.`;
-      rapport.textContent = JSON.stringify(releve, null, 2);
-      resolve(releve);
+      resolve(publier(nom, configuration, journalPage, complement));
     };
 
     // Garde de dernier ressort : le Worker borne déjà son propre boot, mais un Worker qui ne
     // charge pas du tout ne bornerait rien. La page ne reste jamais suspendue.
-    echeance = setTimeout(() => {
-      terminer({ configuration: nom, ...configuration, silence: true, journalPage });
-    }, bootTimeoutMs + 60000);
+    echeance = setTimeout(() => terminer({ silence: true }), bootTimeoutMs + 60000);
 
     try {
       worker = creerWorker(configuration.marqueur);
     } catch (erreur) {
-      terminer({
-        configuration: nom,
-        ...configuration,
-        chargementWorker: `refuse:${erreur.name}`,
-        journalPage,
-        silence: false,
-      });
+      terminer({ chargementWorker: `refuse:${erreur.name}`, silence: false });
       return;
     }
-
-    worker.addEventListener("error", (evenement) => {
-      journalPage.push(`worker-error: ${evenement.message}`);
-    });
-    worker.addEventListener("messageerror", () => journalPage.push("worker-messageerror"));
-    worker.addEventListener("message", (evenement) => {
-      const { ok, report, error } = evenement.data ?? {};
-      terminer({
-        configuration: nom,
-        ...configuration,
-        chargementWorker: "charge",
-        silence: false,
-        journalPage,
-        ...(ok ? { releve: report } : { echec: error }),
-      });
-    });
-
-    worker.postMessage({
-      id: 1,
-      type: "mesurer",
-      payload: { cale: configuration.cale, bootTimeoutMs },
-    });
+    brancherWorker(worker, { configuration, bootTimeoutMs, journalPage, terminer });
   });
 }
 
