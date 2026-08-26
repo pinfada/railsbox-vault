@@ -55,6 +55,46 @@ const POSEES = new WeakMap();
 const MAX_INCIDENTS = 10;
 
 /**
+ * Chemin `setTimeout` de la boucle, et sa MESURE (#87).
+ *
+ * Deux nombres, parce qu'un seul ne dirait rien : le nombre d'appels à `delay > 0` dit si ce chemin
+ * est emprunté du tout, l'imbrication maximale dit s'il approche les cinq niveaux au-delà desquels
+ * les moteurs bornent le délai à quatre millisecondes. Un chemin jamais emprunté rend `0` et `0` —
+ * ce qui est une mesure, pas une absence. L'en-tête de ce module affirmait ce risque depuis #74 sans
+ * que rien ne l'observe ; c'est ce que ce compteur corrige.
+ *
+ * Le niveau reproduit celui que la plateforme compte : une minuterie armée depuis le rappel d'une
+ * autre minuterie est un cran plus profonde, une minuterie armée depuis une tâche du canal repart de
+ * zéro — le canal n'est pas une minuterie.
+ *
+ * @param {{ setTimeout: Function }} cible
+ */
+function creerMinuteries(cible) {
+  let appels = 0;
+  let imbricationMax = 0;
+  /** Niveau d'imbrication de la tâche EN COURS quand elle vient d'une minuterie ; 0 sinon. */
+  let courante = 0;
+
+  return {
+    differer(tache, delai) {
+      appels += 1;
+      const profondeur = courante + 1;
+      if (profondeur > imbricationMax) imbricationMax = profondeur;
+      cible.setTimeout(() => {
+        const precedente = courante;
+        courante = profondeur;
+        try {
+          tache();
+        } finally {
+          courante = precedente;
+        }
+      }, delai);
+    },
+    releve: () => ({ appels, imbricationMax }),
+  };
+}
+
+/**
  * Boucle proprement dite. Elle ne connaît que sa cible : `MessageChannel` et `setTimeout` sont pris
  * SUR elle, ce qui la rend éprouvable sous Node avec un faux contexte.
  *
@@ -65,6 +105,7 @@ function creerBoucle(cible) {
   const canal = new cible.MessageChannel();
   const abonnes = new Set();
   const incidents = [];
+  const minuteries = creerMinuteries(cible);
   let sequence = 0;
   let appels = 0;
 
@@ -123,13 +164,15 @@ function creerBoucle(cible) {
         }
       };
       const delai = Number(options.delay ?? 0);
-      if (Number.isFinite(delai) && delai > 0) cible.setTimeout(executer, delai);
+      if (Number.isFinite(delai) && delai > 0) minuteries.differer(executer, delai);
       else immediat(executer);
     });
 
   return {
     postTask,
     appels: () => appels,
+    /** Relevé du chemin `setTimeout` : combien de fois emprunté, et jusqu'à quelle imbrication. */
+    minuteries: minuteries.releve,
     incidents: () => incidents.slice(),
     auBattement(rappel) {
       abonnes.add(rappel);
@@ -258,6 +301,58 @@ function composerOrdonnanceur(boucle, natif) {
 }
 
 /**
+ * Descripteur rendu à l'appelant : tout ce qu'un compte rendu peut dire de la boucle en place, et
+ * le seul geste qui la retire. Il vit à part de la pose parce qu'il n'en est pas : la pose décide,
+ * le descripteur OBSERVE.
+ */
+function creerDescripteur({ cible, boucle, natif, pose }) {
+  const descripteur = {
+    source: natif ? SOURCES_BOUCLE.vaultSurNative : SOURCES_BOUCLE.vault,
+    natifPresent: Boolean(natif),
+    appels: boucle.appels,
+    /**
+     * Relevé du chemin `setTimeout` (#87). Il est publié dans les comptes rendus parce que l'en-tête
+     * de ce module affirmait un risque — le plafond de quatre millisecondes après cinq imbrications
+     * — que rien ne mesurait. Ces deux nombres le mesurent.
+     */
+    minuteries: boucle.minuteries,
+    /** Fautes d'abonnés aux battements, consignées plutôt que relancées ou perdues. */
+    incidents: boucle.incidents,
+    /**
+     * Abonne un rappel aux battements de la boucle — un par tâche exécutée. C'est ce qui permet à
+     * une échéance d'expirer sous un moteur qui affame ses minuteries pendant une boucle serrée.
+     * Rend la fonction de désabonnement.
+     */
+    auBattement: boucle.auBattement,
+    // Un descripteur RETIRÉ décrit une boucle qui n'est plus en place. Sans ce drapeau, un compte
+    // rendu continuerait d'annoncer « boucle de Vault » après un retrait — exactement le genre de
+    // succès simulé que le harnais de mesure de #74 doit rendre impossible.
+    retiree: false,
+    /**
+     * Rend le contexte à son état d'origine — mais SEULEMENT si la boucle en place est encore la
+     * nôtre. Un tiers qui aurait posé son ordonnanceur par-dessus se le ferait sinon retirer en
+     * silence, puisque le retrait réaffecte le natif ou supprime la propriété. Le refus LÈVE, et ne
+     * touche à rien : le retrait redevient possible dès que ce qui est en place est de nouveau à
+     * nous (#87).
+     */
+    retirer() {
+      if (descripteur.retiree) return;
+      if (cible.scheduler !== pose) {
+        throw new Error(
+          "Retrait refusé : la boucle d'ordonnancement en place dans ce contexte n'est plus celle de Vault. La retirer emporterait l'ordonnanceur posé par un tiers — voir l'ADR 0013 et l'issue #87.",
+        );
+      }
+      descripteur.retiree = true;
+      POSEES.delete(cible);
+      boucle.fermer();
+      if (natif) cible.scheduler = natif;
+      else delete cible.scheduler;
+    },
+  };
+  return descripteur;
+}
+
+/**
  * Pose la boucle d'ordonnancement de Vault sur `cible`. À appeler AVANT tout import de
  * `libv86.mjs` : v86 fige son chemin à l'évaluation de son module et ne le révise jamais.
  *
@@ -309,43 +404,7 @@ export function installerBoucleOrdonnancement({ cible = globalThis, siNatifAbsen
     boucle.fermer();
     throw erreur;
   }
-  const descripteur = {
-    source: natif ? SOURCES_BOUCLE.vaultSurNative : SOURCES_BOUCLE.vault,
-    natifPresent: Boolean(natif),
-    appels: boucle.appels,
-    /** Fautes d'abonnés aux battements, consignées plutôt que relancées ou perdues. */
-    incidents: boucle.incidents,
-    /**
-     * Abonne un rappel aux battements de la boucle — un par tâche exécutée. C'est ce qui permet à
-     * une échéance d'expirer sous un moteur qui affame ses minuteries pendant une boucle serrée.
-     * Rend la fonction de désabonnement.
-     */
-    auBattement: boucle.auBattement,
-    // Un descripteur RETIRÉ décrit une boucle qui n'est plus en place. Sans ce drapeau, un compte
-    // rendu continuerait d'annoncer « boucle de Vault » après un retrait — exactement le genre de
-    // succès simulé que le harnais de mesure de #74 doit rendre impossible.
-    retiree: false,
-    /**
-     * Rend le contexte à son état d'origine — mais SEULEMENT si la boucle en place est encore la
-     * nôtre. Un tiers qui aurait posé son ordonnanceur par-dessus se le ferait sinon retirer en
-     * silence, puisque le retrait réaffecte le natif ou supprime la propriété. Le refus LÈVE, et ne
-     * touche à rien : le retrait redevient possible dès que ce qui est en place est de nouveau à
-     * nous (#87).
-     */
-    retirer() {
-      if (descripteur.retiree) return;
-      if (cible.scheduler !== pose) {
-        throw new Error(
-          "Retrait refusé : la boucle d'ordonnancement en place dans ce contexte n'est plus celle de Vault. La retirer emporterait l'ordonnanceur posé par un tiers — voir l'ADR 0013 et l'issue #87.",
-        );
-      }
-      descripteur.retiree = true;
-      POSEES.delete(cible);
-      boucle.fermer();
-      if (natif) cible.scheduler = natif;
-      else delete cible.scheduler;
-    },
-  };
+  const descripteur = creerDescripteur({ cible, boucle, natif, pose });
   POSEES.set(cible, descripteur);
   return descripteur;
 }
@@ -363,6 +422,9 @@ export function decrireBoucle(descripteur) {
     source: descripteur.source,
     natifPresent: descripteur.natifPresent,
     appels: descripteur.appels(),
+    // Publié même à zéro : « v86 n'emprunte pas le chemin `setTimeout` » est un fait, et c'est
+    // celui que #87 demandait de mesurer au lieu de le supposer.
+    minuteries: descripteur.minuteries?.() ?? null,
     // Publié même vide : une liste absente se lirait comme « pas d'incident », une liste vide le
     // DIT. Un abonné aux battements qui lève est un défaut de notre code, pas du moteur.
     incidents,

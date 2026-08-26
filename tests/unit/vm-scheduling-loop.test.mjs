@@ -126,6 +126,40 @@ test("un délai non nul passe par la minuterie de la cible, avec ce délai", asy
   boucle.retirer();
 });
 
+test("le chemin « setTimeout » est COMPTÉ, et son imbrication mesurée", async () => {
+  // L'en-tête du module affirmait un risque — au-delà de cinq imbrications, `setTimeout` est borné à
+  // quatre millisecondes — que rien ne mesurait (#87-1). Ces deux compteurs le rendent observable
+  // dans un compte rendu de Worker, au lieu d'être supposé d'après le seul compteur de tours.
+  const cible = faireCible();
+  const boucle = installerBoucleOrdonnancement({ cible });
+
+  assert.deepEqual(boucle.minuteries(), { appels: 0, imbricationMax: 0 });
+
+  // Un délai nul n'emprunte pas ce chemin, et ne doit donc pas le compter.
+  await cible.scheduler.postTask(() => null, { delay: 0 });
+  assert.deepEqual(boucle.minuteries(), { appels: 0, imbricationMax: 0 });
+
+  // Trois minuteries en CHAÎNE : chacune est armée depuis le rappel de la précédente, ce qui est
+  // exactement ce que la plateforme compte comme imbrication.
+  const chainer = (reste) =>
+    cible.scheduler.postTask(() => (reste > 1 ? chainer(reste - 1) : null), { delay: 1 });
+  await chainer(3);
+
+  assert.deepEqual(boucle.minuteries(), { appels: 3, imbricationMax: 3 });
+  boucle.retirer();
+});
+
+test("une minuterie armée depuis le CANAL repart de zéro : le canal n'est pas une minuterie", async () => {
+  const cible = faireCible();
+  const boucle = installerBoucleOrdonnancement({ cible });
+
+  await cible.scheduler.postTask(() => cible.scheduler.postTask(() => null, { delay: 1 }));
+  await cible.scheduler.postTask(() => cible.scheduler.postTask(() => null, { delay: 1 }));
+
+  assert.deepEqual(boucle.minuteries(), { appels: 2, imbricationMax: 1 });
+  boucle.retirer();
+});
+
 test("les tâches à délai nul s'exécutent dans l'ordre où elles ont été confiées", async () => {
   const cible = faireCible();
   const boucle = installerBoucleOrdonnancement({ cible });
@@ -290,6 +324,7 @@ test("une boucle RETIRÉE n'est plus décrite comme en place", async () => {
     source: SOURCES_BOUCLE.vaultSurNative,
     natifPresent: true,
     appels: 1,
+    minuteries: { appels: 0, imbricationMax: 0 },
     incidents: [],
   });
 
