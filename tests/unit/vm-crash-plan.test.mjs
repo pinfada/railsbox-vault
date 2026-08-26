@@ -83,6 +83,14 @@ test("un arrêt brutal ne vise jamais une barrière : c'est l'autre genre qui la
   }
 });
 
+test("une graine au-delà de 32 bits est refusée, pas tronquée en silence", () => {
+  // Le générateur travaille sur 32 bits : `graine | 0` ferait de 2^31 et 2^31 + 2^32 la MÊME
+  // séquence. Deux relevés publiés sous deux graines différentes seraient alors identiques sans que
+  // rien ne l'explique. La borne est dite plutôt que subie.
+  assert.doesNotThrow(() => planifierCoupures(0xffffffff, PROFIL));
+  assert.throws(() => planifierCoupures(0x100000000, PROFIL), /graine/i);
+});
+
 test("un profil incohérent est refusé plutôt qu'arrondi", () => {
   assert.throws(() => planifierCoupures(1.5, PROFIL), /graine/i);
   assert.throws(() => planifierCoupures(-1, PROFIL), /graine/i);
