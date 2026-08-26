@@ -448,8 +448,12 @@ function assertPreuveDisponible({ journal, backup, consentement, fromVersion, to
   );
 }
 
-/** GESTE 5 — la preuve RETENUE : celle du journal en reprise, sinon l'archive vérifiée, sinon le consentement. */
-function retenirPreuve({
+/**
+ * GESTE 5 — la preuve RETENUE : celle du journal en reprise, sinon l'archive vérifiée, sinon le
+ * consentement. `async` parce qu'un seul de ces trois chemins relit le support : la signature doit
+ * annoncer l'attente que l'appelant subit dans tous les cas, pas celle du chemin le plus court.
+ */
+async function retenirPreuve({
   journal,
   backup,
   consentement,

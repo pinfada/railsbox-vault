@@ -42,7 +42,8 @@ export const MIN_READABLE_FORMAT_VERSION = 1;
 export const MIN_WRITER_FORMAT_VERSION = 2;
 
 /**
- * SEUL algorithme d'empreinte du format v1. Il est ÉPINGLÉ, et non simplement « une chaîne non
+ * SEUL algorithme d'empreinte du format de volume, v1 comme v2. Il est ÉPINGLÉ, et non simplement
+ * « une chaîne non
  * vide » : le dépôt ne sait calculer que celui-là (`sha256-stream.mjs`). Accepter une autre étiquette
  * la rendrait persistante sans qu'aucun code ne l'honore — un manifeste affirmerait « sha-1 » pendant
  * que la vérification comparerait un SHA-256. Un second algorithme exigera une version de format.
@@ -106,7 +107,8 @@ function canonicalize(value) {
 }
 
 /**
- * Construit et gèle un manifeste v1 à partir de champs bruts. Une entrée invalide au moment de la
+ * Construit et gèle un manifeste à partir de champs bruts, au format demandé. Une entrée invalide
+ * au moment de la
  * CRÉATION est une faute de programmation (`TypeError`/`RangeError`), pas un état de format : elle
  * n'atteint jamais le disque. La géométrie est validée par le contrat commun de #6.
  * @param {{ formatVersion?: number, runtime: object, app: object, volumeSize: number,
@@ -143,12 +145,12 @@ export function serializeManifest(manifest) {
 }
 
 /**
- * Valide une entrée (octets, chaîne ou objet) et rend un manifeste v1 GELÉ, ou lève une
+ * Valide une entrée (octets, chaîne ou objet) et rend un manifeste GELÉ, ou lève une
  * `ManifestError` `VAULT_MANIFEST_MALFORMED`. Jamais un objet à moitié valide. Le marqueur et la
  * version de format forment le préambule figé : ils sont vérifiés d'abord, pour qu'un manifeste
  * reconnu mais d'un format futur soit ensuite REFUSÉ par `assertCompatible`, et non pris pour du
- * bruit. Les champs inconnus surnuméraires sont tolérés (compatibilité ascendante) ; le cœur v1 est
- * exigé.
+ * bruit. Les champs inconnus surnuméraires sont tolérés (compatibilité ascendante) ; le cœur exigé
+ * par la version de format DÉCLARÉE l'est, lui, sans exception.
  * @param {Uint8Array | string | object} input
  */
 export function parseManifest(input) {
@@ -361,7 +363,7 @@ function normalizeIdentity(identity, onError) {
   if (identity.algorithm !== DIGEST_ALGORITHM) {
     throwWith(
       onError,
-      `algorithme d'empreinte non pris en charge : ${JSON.stringify(identity.algorithm)}. Le format v1 n'en connaît qu'un : ${DIGEST_ALGORITHM}.`,
+      `algorithme d'empreinte non pris en charge : ${JSON.stringify(identity.algorithm)}. Aucun format n'en connaît d'autre : ${DIGEST_ALGORITHM}.`,
       TypeError,
     );
   }
