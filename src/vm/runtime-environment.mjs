@@ -2,7 +2,7 @@
 // le contexte RÉEL — celui du Worker runtime — et rien d'autre. La logique de décision reste dans
 // le module injectable ; ici ne vivent que les gestes qui exigent un navigateur.
 
-import { noTick } from "./runtime-errors.mjs";
+import { noTick, ticksUnreadable } from "./runtime-errors.mjs";
 import { controlerRuntime } from "./runtime-preflight.mjs";
 
 /** Délai laissé à un Worker `blob:` pour donner signe de vie avant d'être déclaré refusé. */
@@ -78,25 +78,37 @@ export async function exigerContexteExecutable() {
 /**
  * Chien de garde du PREMIER TOUR de boucle. Le contrôle préalable prédit les pannes connues ;
  * celui-ci attrape celles qu'il n'a pas prédites, en observant le compteur de tours de v86 pendant
- * que le boot se déroule.
+ * que la phase surveillée se déroule.
  *
- * Il ne remplace pas le délai de garde du boot : un guest peut battre et ne pas atteindre son
- * invite, ce qui est une panne du GUEST et porte déjà un autre nom. Il ne couvre pas non plus un
+ * Trois issues, et une seule est fatale :
+ *
+ *  - le compteur AVANCE — la garde se tait, l'émulateur bat ;
+ *  - le compteur est LISIBLE et FIGÉ — `VAULT_RUNTIME_NO_TICK`, la seule panne que cette garde sait
+ *    nommer ;
+ *  - le compteur n'est JAMAIS lisible — la garde se tait aussi, et consigne
+ *    `VAULT_RUNTIME_TICKS_UNREADABLE`. Faire échouer un émulateur sain parce que notre instrument a
+ *    disparu remplacerait un défaut d'observation par une panne inventée.
+ *
+ * Elle ne remplace pas le délai de garde du boot : un guest peut battre et ne pas atteindre son
+ * invite, ce qui est une panne du GUEST et porte déjà un autre nom. Elle ne couvre pas non plus un
  * thread de Worker monopolisé — dans ce cas aucune minuterie de ce Worker ne s'exécute, et c'est la
- * garde de la page qui borne l'attente (mesuré sous Firefox, #74).
+ * garde de l'appelant qui borne l'attente (mesuré sous Firefox, #74).
  *
  * @param {() => number | null} lireTicks accès au compteur de tours, `null` si illisible
- * @param {{ delaiMs?: number, periodeMs?: number }} [options]
- * @returns {{ promesse: Promise<never>, arreter: () => void }}
+ * @param {{ delaiMs?: number, periodeMs?: number,
+ *           onObservation?: (o: Record<string, unknown>) => void }} [options]
+ * @returns {{ promesse: Promise<never>, arreter: () => void,
+ *             observations: () => Record<string, unknown>[] }}
  */
 export function surveillerPremierTour(
   lireTicks,
-  { delaiMs = DELAI_PREMIER_TOUR_MS, periodeMs = 250 } = {},
+  { delaiMs = DELAI_PREMIER_TOUR_MS, periodeMs = 250, onObservation = () => {} } = {},
 ) {
   let minuterie = null;
   let scrutation = null;
   let dernier = null;
   let avance = false;
+  const observations = [];
 
   const promesse = new Promise((_, reject) => {
     scrutation = setInterval(() => {
@@ -105,12 +117,20 @@ export function surveillerPremierTour(
       if (typeof tours === "number") dernier = tours;
     }, periodeMs);
     minuterie = setTimeout(() => {
-      if (!avance) reject(noTick({ delaiMs, ticks: dernier }));
+      if (avance) return;
+      if (dernier === null) {
+        const observation = ticksUnreadable({ delaiMs }).toJSON();
+        observations.push(observation);
+        onObservation(observation);
+        return;
+      }
+      reject(noTick({ delaiMs, ticks: dernier }));
     }, delaiMs);
   });
 
   return {
     promesse,
+    observations: () => observations.slice(),
     arreter() {
       if (scrutation !== null) clearInterval(scrutation);
       if (minuterie !== null) clearTimeout(minuterie);
@@ -119,4 +139,29 @@ export function surveillerPremierTour(
       promesse.catch(() => {});
     },
   };
+}
+
+/**
+ * Exécute une PHASE entière sous le chien de garde du premier tour.
+ *
+ * La phase, et non la première attente : sur le chemin de l'image de référence, `boot()` rend la
+ * main juste après `emulator.run()`, avant que le guest ait dit quoi que ce soit. Une garde annulée
+ * là n'aurait pas eu le temps de prendre deux échantillons, et un émulateur qui ne bat pas serait
+ * retombé sur le délai de garde suivant, dont l'expiration accuse le GUEST — le symptôme même de
+ * #52. L'appelant confie donc ici tout ce qui doit être couvert.
+ *
+ * @template T
+ * @param {() => number | null} lireTicks
+ * @param {() => Promise<T>} travail
+ * @param {{ delaiMs?: number, periodeMs?: number,
+ *           onObservation?: (o: Record<string, unknown>) => void }} [options]
+ * @returns {Promise<T>}
+ */
+export async function executerSousGarde(lireTicks, travail, options = {}) {
+  const garde = surveillerPremierTour(lireTicks, options);
+  try {
+    return await Promise.race([travail(), garde.promesse]);
+  } finally {
+    garde.arreter();
+  }
 }

@@ -21,8 +21,8 @@ import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
 import { removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
 import {
   controlerContexteCourant,
+  executerSousGarde,
   exigerContexteExecutable,
-  surveillerPremierTour,
 } from "/src/vm/runtime-environment.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { BRIDGE_MODES } from "/src/vm/v86-flush-bridge.mjs";
@@ -39,14 +39,22 @@ const decoder = new TextDecoder();
  *
  * Le chien de garde du premier tour complète le contrôle : il attrape les pannes que celui-ci n'a
  * pas su prédire, au lieu de laisser le délai de garde du guest les attribuer à un guest lent.
+ *
+ * Ici, `session.boot()` de `guest-session.mjs` attend l'INVITE du guest : la garde couvre donc
+ * toute l'attente utile. Sur le chemin de l'image de référence, où `boot()` rend la main bien plus
+ * tôt, la garde couvre une phase plus large — voir `reference-worker-boot.mjs`.
+ *
+ * @param {object} session
+ * @param {Record<string, unknown>[]} observations recueille les observations non fatales de la garde
  */
-async function booter(session, options = {}) {
-  const garde = surveillerPremierTour(() => session.ticks());
-  try {
-    return await Promise.race([session.boot(options), garde.promesse]);
-  } finally {
-    garde.arreter();
-  }
+function booter(session, observations) {
+  return executerSousGarde(
+    () => session.ticks(),
+    () => session.boot(),
+    {
+      onObservation: (observation) => observations.push(observation),
+    },
+  );
 }
 
 let volumeCounter = 0;
@@ -97,6 +105,7 @@ async function run({
     flushDelay,
   });
   const failures = [];
+  const observations = [];
   const adapter = createV86BufferAdapter({
     backend,
     onFatal: (error) => failures.push(error.toJSON()),
@@ -104,7 +113,7 @@ async function run({
   const session = createGuestSession({ V86, artifacts, adapter, journal, mode });
 
   try {
-    const bootMilliseconds = await booter(session);
+    const bootMilliseconds = await booter(session, observations);
     const results = await runSteps(session, steps);
     const verdict = verdictForBarrierScenario(journal);
     return {
@@ -116,6 +125,7 @@ async function run({
       steps: summariseSteps(journal, results),
       verdict,
       failures,
+      observationsRuntime: observations,
       crossOriginIsolated: globalThis.crossOriginIsolated ?? null,
     };
   } finally {
@@ -159,6 +169,7 @@ async function runOpfsPersistence({
   await backend.flush();
 
   const failures = [];
+  const observations = [];
   const adapter = createV86BufferAdapter({
     backend,
     onFatal: (error) => failures.push(error.toJSON()),
@@ -168,7 +179,7 @@ async function runOpfsPersistence({
   let bootMilliseconds;
   let results;
   try {
-    bootMilliseconds = await booter(session);
+    bootMilliseconds = await booter(session, observations);
     results = await runSteps(session, OPFS_PERSISTENCE_STEPS);
   } finally {
     session.stop();
@@ -211,6 +222,7 @@ async function runOpfsPersistence({
     hostReadOfGuestMarker: decoder.decode(guestBytes),
     hostReadOfHostMarker: decoder.decode(hostBytes),
     failures,
+    observationsRuntime: observations,
     crossOriginIsolated: globalThis.crossOriginIsolated ?? null,
   };
 }
@@ -253,6 +265,7 @@ async function runOpfsBarrier({
   });
 
   const failures = [];
+  const observations = [];
   const adapter = createV86BufferAdapter({
     backend,
     onFatal: (error) => failures.push(error.toJSON()),
@@ -262,7 +275,7 @@ async function runOpfsBarrier({
   let bootMilliseconds;
   let results;
   try {
-    bootMilliseconds = await booter(session);
+    bootMilliseconds = await booter(session, observations);
     results = await runSteps(session, BARRIER_STEPS);
   } finally {
     session.stop();
@@ -284,6 +297,7 @@ async function runOpfsBarrier({
     faultsFired: faults.fired(),
     faultsUnfired: faults.unfired(),
     failures,
+    observationsRuntime: observations,
     crossOriginIsolated: globalThis.crossOriginIsolated ?? null,
   };
 }

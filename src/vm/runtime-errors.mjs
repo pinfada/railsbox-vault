@@ -17,8 +17,10 @@ export const RUNTIME_ERROR_CODES = Object.freeze({
   schedulingUnavailable: "VAULT_RUNTIME_SCHEDULING_UNAVAILABLE",
   /**
    * Le Worker imbriqué que v86 crée depuis une URL `blob:` ne donne pas signe de vie. Sous
-   * `worker-src 'self'`, le constructeur ne lève RIEN : il rend un objet mort. Ce code nomme ce
-   * refus, que rien d'autre ne rend observable côté appelant.
+   * `worker-src 'self'`, le constructeur ne lève RIEN : il rend un objet mort. Le refus se
+   * manifeste ailleurs — un événement `securitypolicyviolation`, un événement `error` sur le
+   * Worker —, jamais par une exception que l'appelant pourrait attraper. Ce code lui donne un nom
+   * là où il est utile : au retour de l'appel.
    */
   workerRefused: "VAULT_RUNTIME_WORKER_REFUSED",
   /** L'instanciation d'un module WebAssembly est refusée : la CSP ne nomme pas WebAssembly. */
@@ -28,6 +30,11 @@ export const RUNTIME_ERROR_CODES = Object.freeze({
    * sécurité du contrôle préalable : il attrape les causes que celui-ci n'a pas su prédire.
    */
   noTick: "VAULT_RUNTIME_NO_TICK",
+  /**
+   * Le compteur de tours de v86 n'a jamais été lisible. C'est une OBSERVATION, jamais une panne :
+   * elle dit que le chien de garde a perdu son instrument, pas que l'émulateur s'est arrêté.
+   */
+  ticksUnreadable: "VAULT_RUNTIME_TICKS_UNREADABLE",
 });
 
 const CODES_CONNUS = new Set(Object.values(RUNTIME_ERROR_CODES));
@@ -91,11 +98,29 @@ export function schedulingUnavailable({ raison, observation }) {
   );
 }
 
-/** L'émulateur existe mais sa boucle n'a pas avancé dans le délai imparti. */
+/**
+ * L'émulateur existe, son compteur de tours est LISIBLE, et il n'a pas bougé dans le délai imparti.
+ * `ticks` porte donc toujours un nombre : un compteur illisible relève de `ticksUnreadable`, qui
+ * n'est pas une panne.
+ */
 export function noTick({ delaiMs, ticks }) {
   return new RuntimeError(
     RUNTIME_ERROR_CODES.noTick,
-    `L'émulateur n'a effectué aucun tour de boucle en ${delaiMs} ms (compteur : ${ticks === null ? "illisible" : ticks}). Le contrôle préalable n'a donc pas prédit cette panne : c'est un fait à consigner dans l'ADR 0013 avant de conclure.`,
+    `L'émulateur n'a effectué aucun tour de boucle en ${delaiMs} ms (compteur figé à ${ticks}). Le contrôle préalable n'a donc pas prédit cette panne : c'est un fait à consigner dans l'ADR 0013 avant de conclure.`,
     { delaiMs, ticks },
+  );
+}
+
+/**
+ * Le compteur de tours n'a jamais rendu de nombre. Cette observation ne fait échouer aucun boot :
+ * un émulateur SAIN dont le compteur a été renommé par une montée de v86 doit continuer de démarrer.
+ * Elle est consignée dans le compte rendu pour que la perte d'instrument soit visible — un chien de
+ * garde muet qui ne le dit pas serait exactement le silence que #52 combat.
+ */
+export function ticksUnreadable({ delaiMs }) {
+  return new RuntimeError(
+    RUNTIME_ERROR_CODES.ticksUnreadable,
+    `Le compteur de tours de v86 (« tick_counter ») n'a rendu aucun nombre en ${delaiMs} ms : le chien de garde du premier tour est SANS EFFET pour cette exécution. Le boot n'en est pas empêché. Cause probable : une montée de v86 dont la compilation Closure ne conserve plus ce nom — voir l'ADR 0003 § « Coût de mise à jour de v86 ».`,
+    { delaiMs },
   );
 }
