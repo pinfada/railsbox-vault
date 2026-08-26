@@ -263,6 +263,64 @@ Le risque résiduel 2 de cet ADR — _le chien de garde ne couvre pas un thread 
 exact et n'est pas levé. Il devient seulement moins probable : la cause mesurée du seul cas connu,
 l'ordonnanceur natif de Firefox, n'est plus sur le chemin.
 
+### Ce que la boucle change au rythme de l'émulateur
+
+C'est la question que cet ADR posait en refusant de livrer l'option 3′, et elle se mesure en deux
+endroits : le guest de mesure de `npm run test:vm`, et l'**image de référence** de
+`npm run test:e2e` — celle qui porte Rails, SQLite et la barrière durable. Mesures du 2026-08-26,
+Windows 11, machine de développement (28 threads, 32 Gio), Chromium 151 de Playwright.
+
+**Guest de mesure, Chromium** (`tests/vm/premier-boot.spec.mjs`, cinq essais après échauffement) :
+
+| Boucle         | Boot p50   | Boot p95   |
+| -------------- | ---------- | ---------- |
+| native (avant) | 4 724,5 ms | 4 907,1 ms |
+| Vault (après)  | 4 700,5 ms | 5 069,0 ms |
+
+Écart p50 −0,5 %, p95 +3,3 %, pour cinq essais dont l'étendue interne est de 8 % : rien n'est
+distinguable du bruit de cette machine.
+
+**Image de référence, Chromium** (`npm run test:e2e`, scénario de reprise de #7 : un boot à chaud et
+trois reprises à froid, Rails sur SQLite, disque applicatif de 512 Mio dans OPFS) :
+
+| Mesure                                   | Boucle native | Boucle de Vault |   Écart |
+| ---------------------------------------- | ------------: | --------------: | ------: |
+| Boot à chaud jusqu'à `/vault/health` (1) |     99 475 ms |      110 465 ms | +11,0 % |
+| Reprise à froid, p50 (3 essais)          |     94 870 ms |       97 568 ms |  +2,8 % |
+| Reprise à froid, p95 (3 essais)          |    109 412 ms |      110 140 ms |  +0,7 % |
+| Reprise à froid, moyenne des 3           |     99 170 ms |      100 928 ms |  +1,8 % |
+| Boot après migration de format (1)       |     97 173 ms |      105 293 ms |  +8,4 % |
+| Tours par seconde au boot à chaud        |         694,5 |           629,5 |  −9,4 % |
+| Barrières durables émises et acquittées  |         1 / 1 |           1 / 1 |       — |
+
+**Ce que cette mesure permet d'affirmer, et ce qu'elle ne permet pas.** L'étendue **à l'intérieur
+d'une même série** de trois reprises atteint 17,4 % avant et 15,8 % après : sur cette machine, un
+écart de 3 % entre deux séries n'est pas distinguable du bruit, et un point unique ne l'est pas
+davantage. Le boot à chaud « +11,0 % » est un point unique dont le journal montre en outre **60
+écritures OPFS contre 40** — deux boots qui n'ont pas fait le même travail. Il serait donc faux de
+présenter ces chiffres comme une absence de coût prouvée ; ils ne montrent aucun coût **mesurable**
+sur cette machine, ce qui n'est pas la même chose.
+
+Ce qu'ils établissent en revanche sans ambiguïté :
+
+- **aucun budget de `docs/quality-attributes.md` n'est franchi** — le premier boot de preuve reste
+  deux ordres de grandeur sous son p95 de 15 min ;
+- **la barrière durable est intacte** : `npm run test:vm` et les quatre scénarios de
+  `npm run test:e2e` passent, barrière émise et acquittée comprise (`SEC-DURABLE-001`) ;
+- **le gate de reprise de l'[ADR 0005](0005-qualification-de-la-reprise.md) reste fermé**, pour la
+  même raison qu'avant et sans que cette tranche l'ait déplacé : la cible est p95 ≤ 60 s, le mesuré
+  reste autour de 100 s, et la voie de qualification retenue est l'instantané de #65.
+
+La condition de réouverture « dérive du temps de boot au-delà des budgets » posée plus bas n'est
+donc **pas** réalisée.
+
+**Comparaison des tours, et pourquoi ils ne se comparent pas.** Sur le même guest, la boucle du
+moteur produisait 2 144 tours en 3 943 ms (544 tours/s), la nôtre 1 368 en 3 716 ms (368 tours/s) :
+**moins de tours, et un boot un peu plus court**. Un tour ne porte donc pas la même quantité de
+travail d'une boucle à l'autre — v86 choisit le délai de son prochain tour selon ce qui lui reste à
+faire. Le compteur de tours sert à distinguer « bat » de « ne bat pas », ce pour quoi il a été
+introduit ; il ne mesure pas une vitesse d'émulation, et cet ADR ne lui fait pas dire cela.
+
 ## Conséquences immédiates
 
 - `tools/serve-headers.mjs` sert la même politique qu'avant. Le seul changement de comportement est
