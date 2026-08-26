@@ -1,0 +1,149 @@
+// Coquille du banc de résilience (#15).
+//
+// C'est ELLE qui exécute l'arrêt réel : `Worker.terminate()`, appelé pendant que le Worker qui
+// vient d'écrire tient encore le handle exclusif du volume OPFS, sans fermeture et sans barrière.
+// Un backend ne peut pas se tuer lui-même de façon crédible ; la page le peut.
+//
+// La coquille n'ouvre aucun volume et ne voit jamais un handle. Elle planifie, elle tue, elle
+// recueille des comptes rendus. Le jeton du harnais n'est transmis qu'au Worker qui coupe : ni le
+// Worker qui prépare l'ancien état, ni celui qui relit ne peuvent armer quoi que ce soit.
+
+import { HARNAIS_RESILIENCE_JETON } from "/src/vm/crash-harness.mjs";
+import { planifierCoupures } from "/src/vm/crash-plan.mjs";
+import { resumerMatrice } from "/src/vm/crash-report.mjs";
+import { profilDuScenario } from "/src/vm/crash-scenario.mjs";
+
+const etat = document.querySelector("#etat");
+const rapport = document.querySelector("#rapport");
+
+/**
+ * Branche un Worker runtime et rend de quoi lui parler. `?use-scheduling-api` est repris de
+ * `banc.mjs` : v86 choisit sa boucle en inspectant `location.href`, et ces Workers sont les mêmes
+ * que ceux du produit, même si aucun scénario de résilience ne construit d'émulateur.
+ */
+function brancher(nom) {
+  const worker = new Worker("/vm/runtime-worker.mjs?use-scheduling-api", {
+    type: "module",
+    name: nom,
+  });
+  const enCours = new Map();
+  let compteur = 0;
+
+  worker.addEventListener("message", (event) => {
+    const { id, ok, report, error } = event.data ?? {};
+    const attente = enCours.get(id);
+    if (!attente) return;
+    enCours.delete(id);
+    if (ok) attente.resolve(report);
+    else attente.reject(new Error(`${error?.code ?? "sans code"} — ${error?.message ?? "échec"}`));
+  });
+
+  worker.addEventListener("error", (event) => {
+    for (const attente of enCours.values()) {
+      attente.reject(new Error(`Erreur du Worker « ${nom} » : ${event.message}`));
+    }
+    enCours.clear();
+  });
+
+  return {
+    worker,
+    demander(payload) {
+      compteur += 1;
+      const id = compteur;
+      return new Promise((resolve, reject) => {
+        enCours.set(id, { resolve, reject });
+        worker.postMessage({ id, type: "run", payload });
+      });
+    },
+  };
+}
+
+/**
+ * Rejoue UN point : ancien état, coupure, mort du Worker, relecture, classement.
+ *
+ * @param {{ demander: (payload: object) => Promise<object> }} atelier Worker de longue vie, qui
+ *   prépare et relit. Il ne reçoit jamais le jeton du harnais.
+ * @param {object} point point de coupure planifié
+ */
+async function rejouerPoint(atelier, point) {
+  await atelier.demander({ scenario: "resilience-preparer" });
+
+  const coupeur = brancher("vault-resilience-coupeur");
+  let coupe;
+  try {
+    coupe = await coupeur.demander({
+      scenario: "resilience-couper",
+      point,
+      jeton: HARNAIS_RESILIENCE_JETON,
+    });
+  } finally {
+    // L'ARRÊT RÉEL. Le Worker tient encore le handle exclusif : ni `close()`, ni `flush()`, ni
+    // fermeture ordonnée. Ce que le volume garde après cela est ce que la coupure a laissé.
+    coupeur.worker.terminate();
+  }
+
+  const classement = await atelier.demander({
+    scenario: "resilience-classer",
+    journal: coupe.journal,
+  });
+
+  return {
+    point,
+    verdict: classement.verdict,
+    raison: classement.raison,
+    atomique: classement.atomique,
+    classes: classement.classes,
+    blocs: classement.blocs,
+    reouverture: classement.reouverture,
+    ecritures: coupe.ecritures,
+    barrieres: coupe.barrieres,
+    arret: coupe.arret,
+    fautesTirees: coupe.fautesTirees,
+    fautesNonTirees: coupe.fautesNonTirees,
+  };
+}
+
+/**
+ * Rejoue la matrice d'une graine sur le vrai support et rend son compte rendu.
+ * @param {{ graine?: number, points?: number }} options
+ */
+async function executerMatrice({ graine = 2026, points = 8 } = {}) {
+  const suite = planifierCoupures(graine, profilDuScenario(points));
+  const atelier = brancher("vault-resilience-atelier");
+  const resultats = [];
+  try {
+    for (const point of suite) {
+      etat.textContent = `Point ${point.index + 1}/${suite.length} — ${point.kind} sur ${point.operation}#${point.occurrence}…`;
+      resultats.push(await rejouerPoint(atelier, point));
+    }
+  } finally {
+    atelier.worker.terminate();
+  }
+
+  const resume = resumerMatrice({ graine, resultats, support: "OPFS réel (Chromium)" });
+  const compteRendu = { resume, resultats };
+  etat.textContent = `Terminé : taux « ancien ou nouveau » ${resume.tauxAtomique}.`;
+  rapport.textContent = JSON.stringify(compteRendu, null, 2);
+  return compteRendu;
+}
+
+/**
+ * Rejoue UN point nommé explicitement, sans passer par une graine. Sert à éprouver un genre de
+ * coupure précis sur le vrai support, là où une matrice ne garantit pas qu'il sera tiré.
+ * @param {object} point
+ */
+async function executerPoint(point) {
+  const atelier = brancher("vault-resilience-atelier");
+  try {
+    etat.textContent = `Point isolé — ${point.kind} sur ${point.operation}#${point.occurrence}…`;
+    const resultat = await rejouerPoint(atelier, point);
+    etat.textContent = `Terminé : verdict « ${resultat.verdict} ».`;
+    rapport.textContent = JSON.stringify(resultat, null, 2);
+    return resultat;
+  } finally {
+    atelier.worker.terminate();
+  }
+}
+
+globalThis.bancResilience = Object.freeze({ executerMatrice, executerPoint });
+etat.textContent = "Banc de résilience prêt.";

@@ -2,6 +2,15 @@
 // Le document n'obtient jamais l'émulateur ni le backend — il reçoit un compte rendu.
 
 import { BlockJournal } from "/src/vm/block-journal.mjs";
+import { classerVolume } from "/src/vm/crash-oracle.mjs";
+import { armerInjecteur } from "/src/vm/crash-plan.mjs";
+import {
+  VOLUME_OCTETS as RESILIENCE_VOLUME_OCTETS,
+  blocsAttendus,
+  ecrireEtatAncien,
+  ecrireEtatNouveau,
+  relireBlocs,
+} from "/src/vm/crash-scenario.mjs";
 import { createFaultPlan } from "/src/vm/fault-plan.mjs";
 import {
   BARRIER_STEPS,
@@ -19,6 +28,7 @@ import { createGuestSession } from "/src/vm/guest-session.mjs";
 import { openMemoryVolume } from "/src/vm/memory-block-backend.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
 import { removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
+import { STORAGE_ERROR_CODES, isStorageError } from "/src/vm/storage-errors.mjs";
 import {
   consignerRejetsNonTraites,
   controlerContexteCourant,
@@ -367,9 +377,123 @@ async function runOpfsBarrier({
   };
 }
 
+/**
+ * Trois scénarios de RÉSILIENCE (#15). Ils n'ouvrent aucun émulateur : aucun artefact v86 n'est
+ * chargé, et `exigerContexteExecutable` n'est donc pas appelé — ce contrôle porte sur la capacité à
+ * faire tourner v86, qui n'est pas en jeu ici. Ce qui est en jeu, c'est ce qu'une coupure laisse sur
+ * un volume OPFS RÉEL.
+ *
+ * Ils se répartissent le travail parce que l'arrêt est RÉEL : c'est la page qui appelle
+ * `Worker.terminate()`, et un Worker terminé ne rend plus de compte rendu. Le Worker qui coupe rend
+ * donc son journal AVANT de mourir ; un autre relit ensuite le volume et classe.
+ */
+const VOLUME_RESILIENCE = "resilience";
+
+const attendre = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Rouvre un volume dont le détenteur précédent est mort sans fermer son handle. Le moteur reprend
+ * l'exclusivité quand le Worker disparaît, mais pas forcément AVANT que la page ait démarré le
+ * suivant : l'attente est bornée et son coût est PUBLIÉ, jamais masqué par une réussite tardive.
+ */
+async function rouvrirApresCoupure(volume, { tentatives, attenteMs, journal }) {
+  for (let essai = 1; essai <= tentatives; essai += 1) {
+    try {
+      const backend = await openOpfsVolume({ name: volume, journal, faults: createFaultPlan() });
+      return { backend, essais: essai };
+    } catch (erreur) {
+      if (!isStorageError(erreur, STORAGE_ERROR_CODES.busy) || essai === tentatives) throw erreur;
+      await attendre(attenteMs);
+    }
+  }
+  throw new Error("Inatteignable : la boucle rend ou relance toujours.");
+}
+
+/** Prépare l'ANCIEN état du volume, puis referme proprement. Le point de coupure part de là. */
+async function runResiliencePreparer({ volume = VOLUME_RESILIENCE }) {
+  await removeOpfsVolume(volume);
+  const journal = new BlockJournal();
+  const backend = await openOpfsVolume({
+    name: volume,
+    size: RESILIENCE_VOLUME_OCTETS,
+    journal,
+    faults: createFaultPlan(),
+  });
+  let ancien;
+  try {
+    ancien = await ecrireEtatAncien(backend);
+  } finally {
+    await backend.close();
+  }
+  if (ancien.arret !== null) {
+    throw new Error(
+      `La préparation de l'ancien état a échoué (${ancien.arret.code}) : la coupure ne mesurerait pas ce qu'elle prétend.`,
+    );
+  }
+  return { scenario: "resilience-preparer", volume, ...ancien, counts: journal.counts() };
+}
+
+/**
+ * Écrit le NOUVEL état sous injecteur armé, puis rend la main SANS fermer le volume et SANS
+ * franchir de barrière. Le handle exclusif reste ouvert : la page tue ce Worker juste après avoir
+ * reçu ce compte rendu, et c'est ce `terminate()` qui est l'arrêt réel.
+ */
+async function runResilienceCouper({ volume = VOLUME_RESILIENCE, point, jeton }) {
+  const journal = new BlockJournal();
+  const fautes = armerInjecteur(point, { jeton });
+  const backend = await openOpfsVolume({ name: volume, journal, faults: fautes });
+  const ecriture = await ecrireEtatNouveau(backend);
+  return {
+    scenario: "resilience-couper",
+    volume,
+    point,
+    ...ecriture,
+    // Le journal traverse le port AVANT la mort du Worker : l'oracle en a besoin pour savoir
+    // quelles écritures ont été acquittées et lesquelles une barrière a franchies.
+    journal: journal.entries().map((entree) => ({ ...entree })),
+    fautesTirees: fautes.fired().map((faute) => ({ ...faute })),
+    fautesNonTirees: fautes.unfired().map((faute) => ({ ...faute })),
+  };
+}
+
+/** Rouvre le volume après la coupure, relit les blocs suivis et les classe. */
+async function runResilienceClasser({
+  volume = VOLUME_RESILIENCE,
+  journal = [],
+  tentatives = 60,
+  attenteMs = 50,
+}) {
+  const relecture = new BlockJournal();
+  const { backend, essais } = await rouvrirApresCoupure(volume, {
+    tentatives,
+    attenteMs,
+    journal: relecture,
+  });
+  let blocs;
+  try {
+    blocs = await relireBlocs(backend);
+  } finally {
+    await backend.close();
+  }
+  const rapport = classerVolume({ blocs: blocsAttendus(blocs), journal });
+  return {
+    scenario: "resilience-classer",
+    volume,
+    reouverture: { essais, attenteMs },
+    verdict: rapport.verdict,
+    raison: rapport.raison,
+    atomique: rapport.atomique,
+    classes: rapport.classes,
+    blocs: rapport.blocs.map((bloc) => ({ ...bloc })),
+  };
+}
+
 const OPFS_SCENARIOS = new Map([
   ["opfs-persistence", runOpfsPersistence],
   ["opfs-barrier", runOpfsBarrier],
+  ["resilience-preparer", runResiliencePreparer],
+  ["resilience-couper", runResilienceCouper],
+  ["resilience-classer", runResilienceClasser],
 ]);
 
 self.addEventListener("message", (event) => {

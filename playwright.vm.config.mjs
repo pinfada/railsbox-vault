@@ -33,10 +33,13 @@ export default defineConfig({
     // cette CSP-ci. Un serveur étranger sur le port fausserait le relevé sans le dire.
     reuseExistingServer: false,
   },
-  // Chromium porte TOUTE la suite : c'est le moteur où OPFS et la barrière de durabilité sont
-  // mesurés (#6, #14). Firefox et WebKit ne portent que le TÉMOIN de démarrage sur les trois
-  // moteurs (#74) — les autres épreuves y échoueraient pour une raison déjà mesurée et étrangère à
-  // l'ordonnancement : WebKit Playwright n'expose pas OPFS (`VAULT_STORAGE_UNSUPPORTED`).
+  // Chromium porte TOUTE la suite : c'est le moteur où OPFS, la barrière de durabilité (#6, #14) et
+  // la matrice de coupures de #15 (`resilience-arrets.spec.mjs`) sont mesurés. Cette dernière est
+  // donc, elle aussi, une épreuve CHROMIUM SEULEMENT : elle ouvre un volume OPFS réel, et son
+  // résultat n'est annoncé que pour ce moteur. Firefox et WebKit ne portent que le TÉMOIN de
+  // démarrage sur les trois moteurs (#74) — les autres épreuves y échoueraient pour une raison déjà
+  // mesurée et étrangère à l'ordonnancement : WebKit Playwright n'expose pas OPFS
+  // (`VAULT_STORAGE_UNSUPPORTED`).
   //
   // Coût mesuré de cette extension : un boot de guest par moteur, artefacts compris.
   projects: [
