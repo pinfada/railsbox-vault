@@ -19,6 +19,11 @@ import { createGuestSession } from "/src/vm/guest-session.mjs";
 import { openMemoryVolume } from "/src/vm/memory-block-backend.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
 import { removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
+import {
+  controlerContexteCourant,
+  exigerContexteExecutable,
+  surveillerPremierTour,
+} from "/src/vm/runtime-environment.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { BRIDGE_MODES } from "/src/vm/v86-flush-bridge.mjs";
 
@@ -28,22 +33,19 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 /**
- * v86 choisit sa boucle d'ordonnancement à l'initialisation : `scheduler.postTask` si son URL
- * contient `use-scheduling-api`, sinon un Worker imbriqué chargé depuis une URL `blob:`. Ce second
- * chemin est refusé par la CSP de la coquille et l'émulateur ne bat alors jamais — sans erreur, ce
- * qui se lit comme un guest qui ne démarre pas. La condition est donc vérifiée AVANT le démarrage,
- * et son absence est une erreur explicite, jamais un repli silencieux.
+ * Le contexte est contrôlé AVANT toute construction d'émulateur, et son refus porte un code de
+ * `src/vm/runtime-errors.mjs`. C'est la réponse au symptôme central de #52 : sous la CSP de la
+ * coquille, v86 privé de boucle d'ordonnancement ne bat jamais, sans lever la moindre exception.
+ *
+ * Le chien de garde du premier tour complète le contrôle : il attrape les pannes que celui-ci n'a
+ * pas su prédire, au lieu de laisser le délai de garde du guest les attribuer à un guest lent.
  */
-function assertSchedulingApi() {
-  if (!location.href.includes("use-scheduling-api")) {
-    throw new Error(
-      "Le Worker runtime doit être chargé avec « ?use-scheduling-api » : sinon v86 tente un Worker imbriqué « blob: » que la CSP refuse.",
-    );
-  }
-  if (typeof globalThis.scheduler?.postTask !== "function") {
-    throw new Error(
-      "scheduler.postTask est absent de ce moteur : v86 ne peut pas battre sous la CSP de la coquille. Voir docs/compatibility.md.",
-    );
+async function booter(session, options = {}) {
+  const garde = surveillerPremierTour(() => session.ticks());
+  try {
+    return await Promise.race([session.boot(options), garde.promesse]);
+  } finally {
+    garde.arreter();
   }
 }
 
@@ -80,7 +82,7 @@ async function run({
 }) {
   const steps = SCENARIOS[scenario];
   if (!steps) throw new Error(`Scénario inconnu : ${scenario}`);
-  assertSchedulingApi();
+  await exigerContexteExecutable();
 
   const { V86 } = await import(`${ARTIFACTS}libv86.mjs`);
   const { artifacts, transferredBytes } = await loadArtifacts();
@@ -102,7 +104,7 @@ async function run({
   const session = createGuestSession({ V86, artifacts, adapter, journal, mode });
 
   try {
-    const bootMilliseconds = await session.boot();
+    const bootMilliseconds = await booter(session);
     const results = await runSteps(session, steps);
     const verdict = verdictForBarrierScenario(journal);
     return {
@@ -136,7 +138,7 @@ async function runOpfsPersistence({
   flushDelay = 0,
   volume = "guest-persistance",
 }) {
-  assertSchedulingApi();
+  await exigerContexteExecutable();
 
   const { V86 } = await import(`${ARTIFACTS}libv86.mjs`);
   const { artifacts, transferredBytes } = await loadArtifacts();
@@ -166,7 +168,7 @@ async function runOpfsPersistence({
   let bootMilliseconds;
   let results;
   try {
-    bootMilliseconds = await session.boot();
+    bootMilliseconds = await booter(session);
     results = await runSteps(session, OPFS_PERSISTENCE_STEPS);
   } finally {
     session.stop();
@@ -232,7 +234,7 @@ async function runOpfsBarrier({
   fault = null,
   volume = "guest-barriere",
 }) {
-  assertSchedulingApi();
+  await exigerContexteExecutable();
 
   const { V86 } = await import(`${ARTIFACTS}libv86.mjs`);
   const { artifacts, transferredBytes } = await loadArtifacts();
@@ -260,7 +262,7 @@ async function runOpfsBarrier({
   let bootMilliseconds;
   let results;
   try {
-    bootMilliseconds = await session.boot();
+    bootMilliseconds = await booter(session);
     results = await runSteps(session, BARRIER_STEPS);
   } finally {
     session.stop();
@@ -293,6 +295,26 @@ const OPFS_SCENARIOS = new Map([
 
 self.addEventListener("message", (event) => {
   const { id, type, payload } = event.data ?? {};
+  // Le diagnostic est interrogeable SANS démarrer d'émulateur ni charger un seul artefact. C'est ce
+  // qui permet de l'éprouver sur les trois moteurs dans `npm run check`, qui n'a pas de préalable
+  // réseau — et à une coquille de savoir, avant d'ouvrir un volume, si ce contexte peut exécuter le
+  // runtime.
+  if (type === "controler") {
+    controlerContexteCourant().then(
+      (erreur) =>
+        self.postMessage({
+          id,
+          ok: true,
+          report: {
+            url: location.href,
+            schedulerPostTask: typeof globalThis.scheduler?.postTask === "function",
+            diagnostic: erreur ? erreur.toJSON() : null,
+          },
+        }),
+      (erreur) => self.postMessage({ id, ok: false, error: { message: erreur.message } }),
+    );
+    return;
+  }
   if (type !== "run") {
     self.postMessage({ id, ok: false, error: { message: `Message inattendu : ${type}` } });
     return;
@@ -302,11 +324,17 @@ self.addEventListener("message", (event) => {
   const execute = opfsRunner ? opfsRunner(options) : run(options);
   execute.then(
     (report) => self.postMessage({ id, ok: true, report }),
+    // Une erreur TYPÉE traverse le port avec son code ET son contexte : la coquille doit pouvoir
+    // distinguer « la CSP refuse WebAssembly » de « le Worker imbriqué est mort » sans lire un
+    // message. `toJSON()` est le contrat commun de `StorageError` et de `RuntimeError`.
     (error) =>
       self.postMessage({
         id,
         ok: false,
-        error: { name: error.name, code: error.code ?? null, message: error.message },
+        error:
+          typeof error.toJSON === "function"
+            ? error.toJSON()
+            : { name: error.name, code: error.code ?? null, message: error.message },
       }),
   );
 });
