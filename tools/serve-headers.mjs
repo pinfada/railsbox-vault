@@ -150,7 +150,8 @@ function readPort(argv, fallback) {
 
 /**
  * @param {string[]} argv arguments bruts, `process.argv.slice(2)`
- * @returns {{ role: string, host: string, port: number, appOrigin: string }}
+ * @returns {{ role: string, host: string, port: number, appOrigin: string,
+ *             crossOriginIsolated: boolean, workerSrcBlob: boolean }}
  */
 export function parseServerOptions(argv) {
   const role = readFlag(argv, "role") ?? "shell";

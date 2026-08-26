@@ -77,7 +77,7 @@ export async function controlerRuntime({
 
   if (cheminOrdonnancement({ href, scheduler }) === CHEMINS_ORDONNANCEMENT.postTask) return null;
 
-  const raison = raisonDuRepli({ href, scheduler });
+  const raison = raisonDuRepli({ scheduler });
   if (!workerDisponible) {
     return schedulingUnavailable({
       raison,

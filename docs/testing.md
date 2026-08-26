@@ -11,6 +11,7 @@
 | `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                           |              environ 20 s après installation |
 | `npm run test:vm`              | guest Linux réel écrivant sur les backends mémoire et OPFS (Chromium)         |                environ 1 min, **périodique** |
 | `npm run test:isolation`       | coût de l'isolation multi-origine sur le runtime v86, trois moteurs           |              environ 8 min, **à la demande** |
+| `npm run test:csp`             | démarrage de v86 sous deux CSP, quatre configurations, trois moteurs          |             environ 25 min, **à la demande** |
 | `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker                 | environ 1 min après la première construction |
 | `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                            |   plus de 10 min, Docker et artefacts requis |
 | `npm run test:e2e`             | reprise, export vérifiable, restauration inter-origine et migration de format |   plus de 20 min, Docker et artefacts requis |
@@ -823,8 +824,59 @@ npm run test:browser:moteurs -- chromium,firefox,webkit
 Le script pose `VAULT_MOTEURS` sans dépendre de la syntaxe du shell. Les épreuves COOP/COEP mesurent
 sur tout moteur mais n'assertent que sous Chromium : les écarts constatés sont consignés dans
 `docs/spikes/0035-topologie-origine-de-confiance.md`, et la matrice de support reste l'objet de
-l'issue #2. La commande reste manuelle : `npm run check` exécute la frontière d'origine sous
-Chromium seulement, et la couverture multi-moteurs de la CI passe par `test:compat`.
+l'issue #2. La commande reste manuelle : `npm run check` exécute la frontière d'ORIGINE sous
+Chromium seulement. La couverture multi-moteurs de la CI passe par `test:compat` et, depuis #52, par
+les projets `frontiere-csp-<moteur>` décrits ci-dessous, qui exécutent la frontière de CSP et le
+diagnostic du runtime sur les trois moteurs à chaque `npm run check`.
+
+### Frontière de CSP et diagnostic du runtime
+
+`tests/browser/csp-frontiere.spec.mjs` et `tests/browser/runtime-diagnostic.spec.mjs` sont la preuve
+de la CSP de la coquille (ADR 0013, #52). Elles sont rattachées à `npm run check` — environ 19 s
+mesurées pour les vingt et une épreuves — et exécutées sur **chromium, firefox et webkit** par des
+projets dédiés de `playwright.config.mjs`, indépendamment de `VAULT_MOTEURS` : une politique de
+sécurité ne s'applique pas de la même façon d'un moteur à l'autre, et l'asserter sur un seul
+publierait une garantie que les deux autres ne tiennent peut-être pas.
+
+Elles n'ont besoin d'aucun artefact v86 : le contrôle préalable du Worker runtime précède le
+chargement des artefacts, et les sondes de CSP n'instancient qu'un module WebAssembly vide.
+
+Ce qu'elles établissent, dans les deux sens :
+
+- **admis** — `WebAssembly.instantiate` réussit sous la politique servie, et un Worker de l'origine
+  vit. Ce sont les témoins positifs : sans eux, un relevé « tout refusé » ne prouverait qu'un banc
+  cassé ;
+- **refusé** — un Worker `blob:`, un script `blob:`, un script `data:` et un script inline ne
+  s'exécutent pas ; et sur une page portant en plus
+  `<meta http-equiv="Content-Security-Policy" content="script-src 'self'">`, l'instanciation
+  WebAssembly est refusée, ce qui rend `'wasm-unsafe-eval'` falsifiable sans toucher au serveur ;
+- **diagnostiqué** — un Worker runtime chargé sans `?use-scheduling-api` rend un
+  `VAULT_RUNTIME_WORKER_REFUSED` en quelques secondes, avec la raison exacte du repli, au lieu du
+  silence que #52 décrivait.
+
+Un point de méthode qui a coûté une mesure fausse : sous `worker-src 'self'`, Chromium ne lève
+**aucune** exception à la construction d'un Worker `blob:` refusé — il rend un objet inerte. Les
+sondes mesurent donc le SIGNE DE VIE (un message reçu dans un délai borné) et le journal des
+événements `securitypolicyviolation`, jamais l'absence d'erreur.
+
+### Démarrage de v86 sous deux CSP : `test:csp`
+
+`tests/csp/ordonnancement-v86.spec.mjs` est le harnais de MESURE qui a tranché l'ADR 0013. Il lève
+deux serveurs servant le même contenu, dont la CSP ne diffère que par `worker-src`, et croise les
+deux politiques avec quatre configurations du contexte du Worker. Le Worker de mesure
+(`public/csp/ordonnancement-worker.mjs`) ne vérifie **aucun** prérequis, délibérément : il démarre
+v86 quoi qu'il arrive, pour observer la panne au lieu de la postuler.
+
+Le fait publié est le compteur de tours de v86 (`session.ticks()`). Figé, la boucle n'a jamais battu
+; positif, elle bat et un non-démarrage a une autre cause. Rien d'autre ne sépare ces deux
+diagnostics.
+
+Le harnais **n'est pas rattaché à `npm run check`** : il exige les artefacts de `npm run vm:fetch`
+et démarre de vrais guests Linux, dont plusieurs atteignent volontairement leur délai de garde.
+Compter environ 25 minutes pour les trois moteurs. Il écrit `reports/csp/<moteur>.json`, et il
+n'asserte que deux choses — que chaque relevé existe, et qu'au moins le moteur de référence fasse
+battre l'émulateur dans la configuration retenue. Un moteur qui ne démarre pas est un fait de
+compatibilité, consigné dans l'ADR, pas une régression du dépôt.
 
 ## Suite de compatibilité
 

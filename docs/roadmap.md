@@ -86,6 +86,14 @@ La décision #35 est prise (ADR 0002 : origine distincte pour le document applic
 interfaces persistantes ; #24 en réalise la version complète avant toute levée du gate « données
 sensibles ». Ordre des clés : #21 → #22 → #23, avec #25 avant qualification produit.
 
+#52 est tranchée par l'[ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md) : la CSP de
+la coquille n'est **pas** élargie — `worker-src` reste `'self'` — parce que la mesure a montré
+qu'une boucle d'ordonnancement fournie par Vault couvre les trois moteurs sans elle. La CSP possède
+désormais des épreuves de frontière dans les deux sens, sur les trois moteurs et dans
+`npm run check`, et un contexte qui ne peut pas exécuter le runtime rend un code `VAULT_RUNTIME_*`
+au lieu de se taire. La boucle elle-même appartient à **#74**, à qui cette mesure apporte la cause
+du blocage Firefox.
+
 ## 6 — Échanges chiffrés optionnels
 
 Deux utilisateurs peuvent échanger des paquets confidentiels, authentifiés et résistants au rejeu
