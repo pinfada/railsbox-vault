@@ -46,6 +46,7 @@ const PLAYWRIGHT_FILES = [
   "tests/e2e/**/*.spec.mjs",
   "tests/isolation/**/*.spec.mjs",
   "tests/csp/**/*.spec.mjs",
+  "tests/rythme/**/*.spec.mjs",
 ];
 
 /**

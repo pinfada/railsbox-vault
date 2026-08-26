@@ -17,6 +17,7 @@
     "test:csp": "playwright test --config playwright.csp.config.mjs",
     "isolation:inventaire": "node tools/isolation-inventaire.mjs",
     "test:e2e": "playwright test --config playwright.e2e.config.mjs",
+    "test:rythme": "playwright test --config playwright.rythme.config.mjs",
     "test:vm:reference": "node --test \"tests/vm/**/*.test.mjs\"",
     "app:test": "node tools/run-app-tests.mjs",
     "image:build": "node tools/build-reference-image/build-image.mjs",

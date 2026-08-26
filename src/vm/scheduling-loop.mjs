@@ -179,7 +179,13 @@ export function installerBoucleOrdonnancement({ cible = globalThis, siNatifAbsen
     source: natif ? SOURCES_BOUCLE.vaultSurNative : SOURCES_BOUCLE.vault,
     natifPresent: Boolean(natif),
     appels: boucle.appels,
+    // Un descripteur RETIRÉ décrit une boucle qui n'est plus en place. Sans ce drapeau, un compte
+    // rendu continuerait d'annoncer « boucle de Vault » après un retrait — exactement le genre de
+    // succès simulé que le harnais de mesure de #74 doit rendre impossible.
+    retiree: false,
     retirer() {
+      if (descripteur.retiree) return;
+      descripteur.retiree = true;
       POSEES.delete(cible);
       boucle.fermer();
       if (natif) cible.scheduler = natif;
@@ -191,11 +197,13 @@ export function installerBoucleOrdonnancement({ cible = globalThis, siNatifAbsen
 }
 
 /**
- * Forme sérialisable de la boucle pour un compte rendu de Worker. `null` si aucune boucle n'a été
- * posée — ce qui doit rester dicible, plutôt que devenir un objet vide qui se lirait comme une pose.
+ * Forme sérialisable de la boucle pour un compte rendu de Worker. `null` quand aucune boucle de
+ * Vault n'est en place — parce qu'aucune n'a été posée, ou parce qu'elle a été RETIRÉE. Cette
+ * absence doit rester dicible : un objet vide se lirait comme une pose, et un descripteur périmé
+ * ferait dire au compte rendu le contraire de ce qui s'est passé.
  */
 export function decrireBoucle(descripteur) {
-  if (!descripteur) return null;
+  if (!descripteur || descripteur.retiree) return null;
   return {
     source: descripteur.source,
     natifPresent: descripteur.natifPresent,
