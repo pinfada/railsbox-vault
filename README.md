@@ -64,8 +64,17 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0002 — la frontière coquille / application est une frontière d'origine](docs/decisions/0002-topologie-origine-de-confiance.md)
 - [ADR 0003 — le backend de blocs v86 est un adaptateur et un pont de durabilité](docs/decisions/0003-backend-de-blocs-v86.md)
 - [ADR 0004 — SQLite porte l'invariant de l'application de référence](docs/decisions/0004-sqlite-pour-l-application-de-reference.md)
+- [ADR 0005 — la reprise se qualifiera par un instantané lié à une génération arrêtée](docs/decisions/0005-qualification-de-la-reprise.md)
+- [ADR 0006 — la coquille ne promet jamais une durabilité qu'elle ne tient pas](docs/decisions/0006-conduite-refus-persistance.md)
+- [ADR 0007 — le manifeste versionné lie format, runtime, application et géométrie](docs/decisions/0007-manifeste-de-volume.md)
+- [ADR 0008 — le format d'archive lie manifeste, contenu et empreinte vérifiable](docs/decisions/0008-format-d-archive-d-export.md)
+- [ADR 0009 — la restauration vérifie avant d'écrire et n'identifie le volume qu'après l'avoir relu](docs/decisions/0009-restauration-inter-origine.md)
+- [ADR 0010 — la distribution n'impose pas l'isolation multi-origine ; COOP seul reste recommandé](docs/decisions/0010-isolation-multi-origine.md)
+- [ADR 0011 — la migration va d'un format au suivant, exige une preuve et reprend depuis son journal](docs/decisions/0011-migration-de-format-et-reprise.md)
+- [ADR 0012 — les scénarios de bout en bout s'exécutent sur un OPFS adossé au disque](docs/decisions/0012-support-des-scenarios-de-bout-en-bout.md)
 - [Spike #35 — protocole et mesures de la topologie d'origine](docs/spikes/0035-topologie-origine-de-confiance.md)
 - [Spike #4 — protocole et mesures du backend de blocs v86](docs/spikes/0004-backend-de-blocs-v86.md)
+- [Spike #41 — coût mesuré de l'isolation multi-origine sur le runtime v86](docs/spikes/0041-isolation-coop-coep.md)
 
 ## Licence
 
