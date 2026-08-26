@@ -4,6 +4,13 @@ import { APP_HOST, APP_PORT, SHELL_HOST, SHELL_PORT } from "./src/spike/origin-t
 
 const MOTEURS_CONNUS = ["chromium", "firefox", "webkit"];
 
+/**
+ * Épreuves de frontière de la CSP et du diagnostic qu'elle commande (#52) : exécutées sur les trois
+ * moteurs, jamais sur un seul. Une politique de sécurité ne s'applique pas de la même façon d'un
+ * moteur à l'autre, et le diagnostic du runtime dépend de ce que chacun expose.
+ */
+const FRONTIERE_CSP = ["**/csp-frontiere.spec.mjs", "**/runtime-diagnostic.spec.mjs"];
+
 // Le harnais mesure une frontière d'origine : il lui faut DEUX serveurs, donc deux origines
 // réelles. `127.0.0.1` et `localhost` en fournissent sans DNS ni certificat, et restent tous deux
 // des contextes sécurisés.
@@ -44,5 +51,21 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
   ],
-  projects: moteurs.map((nom) => ({ name: nom, use: { browserName: nom } })),
+  projects: [
+    ...moteurs.map((nom) => ({
+      name: nom,
+      use: { browserName: nom },
+      testIgnore: FRONTIERE_CSP,
+    })),
+    // La frontière de CSP (#52) est une frontière de SÉCURITÉ, et une politique ne s'applique pas de
+    // la même façon d'un moteur à l'autre : la mesurer sur le seul moteur par défaut publierait une
+    // garantie que les deux autres ne tiennent peut-être pas. Ces épreuves n'ont besoin d'aucun
+    // artefact v86 et durent quelques secondes ; les trois moteurs de la matrice #2 sont donc
+    // TOUJOURS exécutés, indépendamment de `VAULT_MOTEURS`, qui gouverne les relevés du spike #35.
+    ...MOTEURS_CONNUS.map((nom) => ({
+      name: `frontiere-csp-${nom}`,
+      use: { browserName: nom },
+      testMatch: FRONTIERE_CSP,
+    })),
+  ],
 });
