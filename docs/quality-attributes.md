@@ -95,20 +95,20 @@ Trois réserves, à ne pas perdre de vue quand ces chiffres seront comparés à 
 
 ## Budgets prototype
 
-| Attribut               | Seuil de sortie du jalon concerné                                                    |
-| ---------------------- | ------------------------------------------------------------------------------------ |
-| Installation           | `npm ci` + navigateurs reproductibles depuis un clone vierge                         |
-| Premier boot de preuve | p95 ≤ 15 min, aucun timeout silencieux                                               |
-| Reprise locale au MVP  | cible p95 ≤ 60 s ; **gate fermé** (mesuré ~94 s), voie de qualification par ADR 0005 |
-| Mémoire                | pic navigateur ≤ 1,5 Gio au prototype ; cible MVP ≤ 1,2 Gio                          |
-| Artefacts              | ≤ 500 Mio transférés par application au premier usage, inventaire détaillé publié    |
-| Écriture acquittée     | RPO 0 après la barrière durable du guest                                             |
-| Récupération           | dernière génération valide trouvée en ≤ 60 s hors temps de boot VM                   |
-| Coupures injectées     | 100 % des points donnent ancien état, nouvel état ou erreur explicite                |
-| Export                 | archive ≤ 2× la taille logique utilisée ; surmémoire de streaming ≤ 64 Mio           |
-| Restauration           | empreinte vérifiée avant première mutation ; aucune écriture sur incompatibilité     |
-| Multi-onglets          | jamais deux écrivains ; relais ou refus explicite en ≤ 5 s                           |
-| Accessibilité          | parcours coquille conformes WCAG 2.2 AA avant qualification produit                  |
+| Attribut               | Seuil de sortie du jalon concerné                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Installation           | `npm ci` + navigateurs reproductibles depuis un clone vierge                                                               |
+| Premier boot de preuve | p95 ≤ 15 min, aucun timeout silencieux                                                                                     |
+| Reprise locale au MVP  | cible p95 ≤ 60 s ; **gate fermé** (mesuré ~94 s), voie de qualification par ADR 0005                                       |
+| Mémoire                | pic navigateur ≤ 1,5 Gio au prototype ; cible MVP ≤ 1,2 Gio                                                                |
+| Artefacts              | ≤ 500 Mio transférés par application au premier usage, inventaire détaillé publié                                          |
+| Écriture acquittée     | RPO 0 après la barrière durable du guest                                                                                   |
+| Récupération           | dernière génération valide trouvée en ≤ 60 s hors temps de boot VM                                                         |
+| Coupures injectées     | 100 % des points donnent ancien état, nouvel état ou erreur explicite — **mesuré à 100 %** (#16, trois graines, OPFS réel) |
+| Export                 | archive ≤ 2× la taille logique utilisée ; surmémoire de streaming ≤ 64 Mio                                                 |
+| Restauration           | empreinte vérifiée avant première mutation ; aucune écriture sur incompatibilité                                           |
+| Multi-onglets          | jamais deux écrivains ; relais ou refus explicite en ≤ 5 s                                                                 |
+| Accessibilité          | parcours coquille conformes WCAG 2.2 AA avant qualification produit                                                        |
 
 Le budget de premier boot accepte temporairement la réalité de l'émulation ; il ne vaut pas
 validation produit. La cible à 60 secondes est un gate : snapshot cohérent, autre stratégie de
@@ -256,6 +256,64 @@ qui coupe plus bas.
 graine rejoue la même matrice, ce que la suite vérifie en l'exécutant deux fois sur le vrai support.
 Le protocole est décrit dans [`testing.md`](testing.md), § « Résilience : arrêts, écritures
 partielles et rejeu ».
+
+## Le taux de coupures atomiques atteint sa cible (#16)
+
+Relevé du 2026-08-27, `npm run test:vm`, projet `chromium`, volume OPFS réel. **La matrice de
+coupures est celle de #15, point pour point** : le profil remis au planificateur — vingt-quatre
+écritures, trois barrières, blocs de 512 octets — est inchangé, et
+`tests/unit/vm-crash-cadence.test.mjs` épingle la suite de points obtenue pour la graine 2026.
+
+Ce qui a changé dans la mesure, et pourquoi il fallait le changer : le scénario suit désormais
+**huit blocs réécrits trois fois** au lieu de vingt-quatre blocs distincts. Avec la cadence de #15,
+un mécanisme PARFAITEMENT atomique plafonnait à 50 % sur la graine 2026 et à 37,5 % sur deux autres
+— non par faiblesse du mécanisme, mais parce que `SEC-DURABLE-001` oblige à publier les générations
+intermédiaires, que l'oracle ne sait nommer ni « ancien » ni « nouveau ». La borne est calculée, pas
+affirmée, par `tests/unit/vm-crash-cadence.test.mjs`. **L'oracle n'a pas été modifié** : il reste le
+juge de #15, avec les mêmes refus. Le détail de ce constat est dans
+[l'ADR 0014](decisions/0014-generation-transactionnelle.md).
+
+| Mesure                                       |                           #15 (2026-08-26) |                           #16 (2026-08-27) |
+| -------------------------------------------- | -----------------------------------------: | -----------------------------------------: |
+| Taux « ancien ou nouveau » (**cible 100 %**) |                                     12,5 % |                                  **100 %** |
+| Verdicts de volume, graine 2026              | 0 ancien, 1 nouveau, 4 melange, 3 corrompu | 4 ancien, 4 nouveau, 0 melange, 0 corrompu |
+| Blocs déchirés                               |                                          3 |                                      **0** |
+| Blocs non rattachables                       |                                          0 |                                      **0** |
+
+Deux autres graines, jamais employées pour mettre le mécanisme au point, sur le même support :
+
+| Graine   |  Taux | Verdicts                                   |
+| -------- | ----: | ------------------------------------------ |
+| `7`      | **1** | 3 ancien, 5 nouveau, 0 melange, 0 corrompu |
+| `424242` | **1** | 3 ancien, 5 nouveau, 0 melange, 0 corrompu |
+
+Le **double calibré** de Node rend exactement la même répartition sur les trois graines
+(`tests/unit/vm-crash-matrice.test.mjs`) : les deux supports ne divergent pas.
+
+**Ce que le relevé établit.** Les huit points de chaque graine laissent le volume dans l'état
+d'avant ou dans l'état d'après, et les DEUX issues sont exercées — une matrice qui ne rendrait que «
+ancien » serait satisfaite par un backend qui n'écrirait rien du tout. Chaque coupure s'est traduite
+par une erreur typée du stockage, et chaque réouverture a NOMMÉ ce que la récupération a fait :
+génération écartée (`VAULT_STORAGE_GENERATION_DISCARDED`), rejouée, ou rien en attente. La règle
+`SEC-DURABLE-001` de l'oracle n'est pas devenue inerte au passage : sur le point 2 de la graine
+2026, huit blocs sont acquittés ET franchis par une barrière, et les huit sont sur le support ; le
+témoin négatif qui la fait mordre est conservé.
+
+**Ce qu'il n'établit pas.** La coupure reste un `Worker.terminate()` : ni le processus du navigateur
+ni la machine ne meurent, aucun cache volatil n'est perdu. Ce que #16 change sur ce point est plus
+étroit qu'il n'y paraît — une perte de cache volatil ne peut plus produire un MÉLANGE, puisque les
+octets non validés sont dans le journal et qu'une charge incomplète est écartée ; mais qu'elle ne le
+produise pas n'est pas MESURÉ ici. Le protocole qui coupe plus bas reste à écrire.
+
+**Le surcoût d'écriture n'a pas de budget opposable, et ce relevé n'en fabrique pas.** L'ADR 0014
+mesure ×2,06 sur son banc — chaque octet écrit par le guest entre deux barrières est écrit une fois
+dans le journal, une fois dans le volume — et deux barrières du support par barrière du guest au
+lieu d'une. Ce que cela devient sur un boot Rails complet n'est pas mesurable sur la machine de
+développement : l'étendue intra-série y atteint 16 à 17 % (§ précédent), très au-dessus de ce qu'un
+surcoût noyé dans un boot dominé à 79 % par le CPU émulé pourrait déplacer. Conclure « pas de
+régression » exigerait le protocole de l'environnement de référence — dix essais après échauffement,
+sur 4 cœurs et 16 Gio. Le tableau des budgets ne reçoit donc **aucune** ligne « surcoût d'écriture »
+: un seuil posé sans mesure opposable serait une promesse, pas un budget.
 
 ## Compatibilité
 

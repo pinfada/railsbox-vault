@@ -87,13 +87,26 @@ plus seulement énoncées :
   **idempotente** : un journal resté derrière un manifeste déjà migré est simplement retiré.
 
 Deux exigences restent ouvertes. La « **migration sur une nouvelle génération copy-on-write** »
-n'est pas faite : la migration mute en place, et entre la révocation et l'inscription du manifeste
-l'état est sûr — non identifié, donc non inscriptible — mais **pas révocable en un geste** (#16).
-Les « **vecteurs de test conservés pour chaque version publiée** » non plus, et pour une raison de
-fond : aucune version n'a encore été publiée. Le témoin de refus par une ancienne version simule
-donc celle-ci par ses **attentes déclarées** (`supportedFormat`), non par un binaire antérieur — la
-limite est écrite dans l'ADR 0011 et dans `docs/testing.md`. Un volume v1 reste par ailleurs
-**lisible**, donc exportable, restaurable et migrable : le passage à v2 n'orpheline aucun volume.
+n'est **toujours pas faite** : la migration mute en place, et entre la révocation et l'inscription
+du manifeste l'état est sûr — non identifié, donc non inscriptible — mais **pas révocable en un
+geste**. #16 n'a pas fermé cette exigence-là, et il faut le dire précisément : il a livré la
+génération transactionnelle du chemin d'écriture du GUEST
+([ADR 0014](decisions/0014-generation-transactionnelle.md)), pas la migration copy-on-write. Ce que
+#16 change ici est réel mais étroit — la cible de migration ouvre le volume par le chemin
+transactionnel, si bien qu'une génération validée en attente est rejouée avant toute mutation au
+lieu d'être perdue — et le **format du volume n'a pas changé**, précisément pour que l'export, la
+restauration et la migration continuent de lire le fichier tel quel.
+
+Une précision de compatibilité, puisque cette page l'exige : #16 **n'incrémente aucune version de
+format**. Le manifeste reste en v2, le volume garde sa disposition, aucun volume existant n'est
+refusé ni migré. Le journal de génération `<volume>.gen` porte sa propre version de format,
+indépendante — une racine d'un format inconnu n'est pas une racine, et la génération qu'elle
+scellerait est écartée. Les « **vecteurs de test conservés pour chaque version publiée** » non plus,
+et pour une raison de fond : aucune version n'a encore été publiée. Le témoin de refus par une
+ancienne version simule donc celle-ci par ses **attentes déclarées** (`supportedFormat`), non par un
+binaire antérieur — la limite est écrite dans l'ADR 0011 et dans `docs/testing.md`. Un volume v1
+reste par ailleurs **lisible**, donc exportable, restaurable et migrable : le passage à v2
+n'orpheline aucun volume.
 
 ## Publication
 

@@ -159,7 +159,11 @@ pas le servir : c'est un critère de plus pour #45, pas un couperet.
    `MessagePort` restreint, après vérification du type, de l'origine et de la fenêtre émettrice de
    son annonce.
 5. Le guest lit et écrit ; un flush traverse toutes les couches avant son acquittement.
-6. Export et migration créent une génération cohérente distincte.
+6. Export et migration créent une génération cohérente distincte. Depuis #16, « cohérente » a un
+   sens opposable : la récupération d'ouverture applique la dernière génération VALIDÉE avant que
+   quiconque lise le volume, et l'export porte donc cet état-là. Ce que #16 ne fournit pas, c'est la
+   migration sur une génération copy-on-write que `release-policy.md` demande : la migration mute
+   toujours en place.
 7. Verrouillage arrête les nouvelles E/S, termine proprement si possible, ferme le handle exclusif
    et relâche les clés au mieux de JavaScript.
 8. La reprise part d'un boot à froid tant qu'un snapshot lié à une génération exacte n'est pas
@@ -172,25 +176,34 @@ flush sont des états distincts. Aucune couche ne les convertit en succès, en b
 réinitialisation silencieuse. Les codes sont figés par le backend #6 dans
 `src/vm/storage-errors.mjs` :
 
-| Code                              | État                                                           | Origine |
-| --------------------------------- | -------------------------------------------------------------- | ------- |
-| `VAULT_STORAGE_OUT_OF_RANGE`      | accès hors de la géométrie déclarée                            | #4      |
-| `VAULT_STORAGE_SHORT_READ`        | le support a rendu moins d'octets que demandé                  | #4      |
-| `VAULT_STORAGE_PARTIAL_WRITE`     | le support a accepté moins d'octets que demandé                | #4      |
-| `VAULT_STORAGE_FLUSH_FAILED`      | la barrière de durabilité n'a pas abouti                       | #4      |
-| `VAULT_STORAGE_HANDLE_LOST`       | le handle exclusif a disparu sous le volume ouvert             | #4      |
-| `VAULT_STORAGE_CLOSED`            | E/S demandée après fermeture du volume                         | #4      |
-| `VAULT_STORAGE_BUSY`              | un autre détenteur possède déjà l'exclusivité                  | #4      |
-| `VAULT_STORAGE_UNSUPPORTED`       | capacité absente : jamais remplacée par un repli               | #4      |
-| `VAULT_STORAGE_QUOTA_EXCEEDED`    | le quota de stockage de l'origine est épuisé                   | **#6**  |
-| `VAULT_STORAGE_GEOMETRY_MISMATCH` | la géométrie du support diffère de celle de la session         | **#6**  |
-| `VAULT_STORAGE_SUPPORT_FAILURE`   | échec du support non classable : jamais deviné, toujours nommé | **#6**  |
+| Code                                 | État                                                           | Origine |
+| ------------------------------------ | -------------------------------------------------------------- | ------- |
+| `VAULT_STORAGE_OUT_OF_RANGE`         | accès hors de la géométrie déclarée                            | #4      |
+| `VAULT_STORAGE_SHORT_READ`           | le support a rendu moins d'octets que demandé                  | #4      |
+| `VAULT_STORAGE_PARTIAL_WRITE`        | le support a accepté moins d'octets que demandé                | #4      |
+| `VAULT_STORAGE_FLUSH_FAILED`         | la barrière de durabilité n'a pas abouti                       | #4      |
+| `VAULT_STORAGE_HANDLE_LOST`          | le handle exclusif a disparu sous le volume ouvert             | #4      |
+| `VAULT_STORAGE_CLOSED`               | E/S demandée après fermeture du volume                         | #4      |
+| `VAULT_STORAGE_BUSY`                 | un autre détenteur possède déjà l'exclusivité                  | #4      |
+| `VAULT_STORAGE_UNSUPPORTED`          | capacité absente : jamais remplacée par un repli               | #4      |
+| `VAULT_STORAGE_QUOTA_EXCEEDED`       | le quota de stockage de l'origine est épuisé                   | **#6**  |
+| `VAULT_STORAGE_GEOMETRY_MISMATCH`    | la géométrie du support diffère de celle de la session         | **#6**  |
+| `VAULT_STORAGE_SUPPORT_FAILURE`      | échec du support non classable : jamais deviné, toujours nommé | **#6**  |
+| `VAULT_STORAGE_GENERATION_DISCARDED` | une génération non validée a été écartée à l'ouverture         | **#16** |
+| `VAULT_STORAGE_GENERATION_CORRUPT`   | une génération validée dont la charge ne concorde plus         | **#16** |
+| `VAULT_STORAGE_GENERATION_OVERFLOW`  | la génération en cours dépasse le plafond du journal           | **#16** |
+| `VAULT_STORAGE_GENERATION_PENDING`   | point de contrôle demandé sur une génération non validée       | **#16** |
 
-Les trois derniers naissent de l'implémentation OPFS. Le quota **n'est pas** une écriture partielle
-— l'un se corrige en libérant de la place, l'autre décrit un état intermédiaire du volume. La
-géométrie **n'est pas** un accès hors bornes — elle dit que le support a changé, pas que l'appelant
-s'est trompé. Et un `DOMException` de nom inconnu **n'est pas** rangé dans l'état le plus proche :
-`src/vm/opfs-error-mapping.mjs` traduit les noms qu'il connaît et nomme les autres
+Les quatre derniers naissent de la génération transactionnelle (#16, ADR 0014). Le premier n'est
+jamais **levé** : il est PUBLIÉ dans le compte rendu de récupération, parce qu'écarter une
+génération non validée est le résultat NORMAL d'une coupure — mais qu'une mise au rebut silencieuse
+serait un succès muet. Les trois derniers sont levés.
+
+Les trois précédents naissent de l'implémentation OPFS. Le quota **n'est pas** une écriture
+partielle — l'un se corrige en libérant de la place, l'autre décrit un état intermédiaire du volume.
+La géométrie **n'est pas** un accès hors bornes — elle dit que le support a changé, pas que
+l'appelant s'est trompé. Et un `DOMException` de nom inconnu **n'est pas** rangé dans l'état le plus
+proche : `src/vm/opfs-error-mapping.mjs` traduit les noms qu'il connaît et nomme les autres
 `VAULT_STORAGE_SUPPORT_FAILURE`, parce que deviner un diagnostic serait l'inventer.
 
 Ce que le guest en perçoit est mesuré et n'est pas symétrique : une faute transitoire est absorbée
@@ -287,9 +300,10 @@ La barrière traverse une chaîne fixe, sans court-circuit :
 guest FLUSH CACHE (0xE7/0xEA)
   → pont v86 (v86-flush-bridge) : pose BSY, appelle adapter.flush(ack, échec)
     → adaptateur (v86-buffer-adapter) : appelle backend.flush()
-      → backend OPFS (opfs-block-backend) : journalise `flush`, ATTEND
-         FileSystemSyncAccessHandle.flush(), puis journalise `flush-ack`
-      ← acquittement RÉEL du support
+      → backend OPFS (opfs-block-backend) : journalise `flush`, VALIDE la génération
+         en cours (generation-store) — barrière sur la charge, écriture de la racine,
+         barrière sur la racine —, puis journalise `flush-ack`
+      ← acquittement RÉEL du support (deux flush du journal voisin, #16)
     ← ack() → le pont lève BSY (DRDY|DSC) et pousse l'IRQ
   ← le guest reprend
 ```
@@ -323,15 +337,54 @@ VM (`tests/vm/opfs-barrier.spec.mjs`) rejoue le tout avec un vrai guest Linux et
 persistance RPO 0 après une barrière acquittée — relecture des octets après réouverture du handle —
 reste prouvée par `tests/vm/opfs-persistence.spec.mjs`.
 
-Ce que #14 ne couvre pas : l'atomicité d'une génération complète et la récupération (#16), le
-regroupement ou l'optimisation des flush, le chiffrement, la reprise Rails complète (#7) et l'accès
-concurrent (#8), désormais traité ci-dessous.
+Ce que #14 ne couvre pas : le regroupement ou l'optimisation des flush, le chiffrement, la reprise
+Rails complète (#7) et l'accès concurrent (#8), traité plus bas. L'atomicité d'une génération et sa
+récupération sont désormais couvertes par #16 — voir « La génération transactionnelle ».
 
-## Résilience aux coupures : l'instrument avant la garantie
+## La génération transactionnelle (#16)
 
-L'issue #15 livre l'**instrument** de mesure des arrêts brutaux ; #16 livrera la **garantie**
-d'atomicité. La distinction est structurante : rien de ce qui suit ne promet qu'une coupure laisse
-le volume dans un état atomique. L'instrument rend cet état **observable, reproductible et classé**.
+Une génération est l'ensemble des écritures comprises entre deux barrières ACQUITTÉES, et
+l'acquittement est le point de validation. Le guest n'émet aucune transaction : la barrière est la
+seule frontière observable, et c'est donc elle qui devient la frontière transactionnelle. La
+décision et ses alternatives mesurées sont dans
+[l'ADR 0014](decisions/0014-generation-transactionnelle.md).
+
+Trois pièces, dans `src/vm/` :
+
+- **`generation-format.mjs`** — le format du journal voisin `<volume>.gen` : deux racines qui
+  ALTERNENT, chacune d'un seul secteur, portant un numéro de séquence monotone, le numéro de
+  génération, la longueur de la charge et sa somme de contrôle. L'alternance est ce qui empêche une
+  validation interrompue de détruire la racine qui fait autorité.
+- **`generation-store.mjs`** — la machine d'état : DÉPOSER (les octets vont au journal, jamais au
+  volume), VALIDER (barrière sur la charge, puis racine, puis barrière — c'est le point où le guest
+  peut être acquitté sans mentir), POINT DE CONTRÔLE (la charge validée est recopiée dans le volume,
+  après l'acquittement et jamais sur son chemin), RÉCUPÉRER.
+- **`opfs-block-backend.mjs`** — le backend délègue : `write` dépose, `read` superpose la génération
+  en cours au volume relu (l'écrivain se relit, un lecteur qui rouvre ne voit rien), `flush` valide,
+  `close` range.
+
+**Le volume ne change ni de format ni de disposition.** Il reste l'image que v86 lit, ce dont
+dépendent l'export (#11), la restauration (#12) et la migration (#13). Aucun format v3 n'est
+introduit, ni pour le volume, ni pour le manifeste : la génération validée est nommée par la racine
+du journal, publiée par `describe().generation`, pas par le manifeste — qui décrit une IDENTITÉ, pas
+une histoire (ADR 0011).
+
+**La récupération vit dans `openOpfsVolume`**, non dans le seul `openVolumeForWrite`. La règle de
+l'ADR 0009 n'est ni affaiblie ni élargie : elle est simplement insuffisante ici, puisque douze
+chemins ouvrent encore le volume directement — dont l'export, qui aurait exporté un état antérieur à
+la dernière barrière acquittée. Trois chemins ouvrent SANS génération et le disent
+(`describe().transactionnel`) : la préparation depuis l'image de référence et la restauration
+écrivent un volume entier et portent déjà leur atomicité (manifeste inscrit en dernier).
+
+Mesure : le taux de coupures laissant « ancien ou nouveau » passe de 12,5 % à 100 % sur trois
+graines, sur OPFS réel. Voir [`quality-attributes.md`](quality-attributes.md).
+
+## Résilience aux coupures : l'instrument, puis la garantie
+
+L'issue #15 a livré l'**instrument** de mesure des arrêts brutaux ; #16 a livré la **garantie**
+d'atomicité qu'il mesure. La distinction reste structurante : rien de ce qui suit ne PROMET
+d'atomicité — l'instrument rend l'état laissé par une coupure **observable, reproductible et
+classé**, et c'est le mécanisme décrit ci-dessus qui le rend atomique.
 
 Quatre pièces, toutes dans `src/vm/` :
 
@@ -347,8 +400,8 @@ Quatre pièces, toutes dans `src/vm/` :
   `crash-machine.mjs` reproduit la même sémantique sur le double calibré : l'exclusivité est
   reprise, aucun `close()` n'est appelé. Ce n'est PAS une mort de processus : le navigateur survit,
   et aucun cache volatil n'est perdu au passage. Le genre de coupure nommé `arret-brutal` arrête le
-  **chemin d'E/S** — le handle est déclaré perdu —, pas la machine. Couper plus bas est un protocole
-  que #16 devra écrire ;
+  **chemin d'E/S** — le handle est déclaré perdu —, pas la machine. Couper plus bas reste un
+  protocole à écrire : #16 ne l'a pas fourni, et le dit ;
 - **l'oracle** (`crash-oracle.mjs`) classe, après réouverture, chaque bloc suivi en `ancien`,
   `nouveau`, `dechire` ou `corrompu`, et en tire un verdict de volume : `ancien`, `nouveau`,
   `melange` ou `corrompu`. Il lit les octets ET le **journal de blocs** : un bloc dont l'écriture a
@@ -371,11 +424,21 @@ runtime, lui, relaie le jeton que son appelant lui présente, et c'est la page d
 harnais qui est la seule à le présenter. La portée exacte de cette garde, et ce qu'elle ne couvre
 pas, sont dans `SECURITY.md`.
 
-Ce que #15 ne couvre pas : l'atomicité et la récupération d'une génération (#16), la participation
-d'un guest v86 à la coupure — le scénario écrit depuis le Worker runtime, la chaîne guest → pont ATA
-→ backend restant prouvée par les suites de #6 et #14 —, et la perte d'une écriture non barriérée,
-qu'aucun des deux supports éprouvés ne produit aujourd'hui. La première mesure du taux est publiée
-dans `docs/quality-attributes.md`.
+Ce que l'instrument ne couvre pas : la participation d'un guest v86 à la coupure — le scénario écrit
+depuis le Worker runtime, la chaîne guest → pont ATA → backend restant prouvée par les suites de #6
+et #14, et le scénario Bout en bout de #16 la couvrant avec un vrai Rails —, et la perte d'une
+écriture non barriérée, qu'aucun des deux supports éprouvés ne produit aujourd'hui. Les deux mesures
+du taux, avant et après #16, sont publiées dans `docs/quality-attributes.md`.
+
+**Ce que #16 a dû changer dans la MESURE, et pourquoi ce n'était pas l'oracle.** La cadence de #15 —
+vingt-quatre blocs distincts, une barrière tous les huit — rendait 100 % inatteignable pour TOUT
+mécanisme : les générations intermédiaires y sont validées mais ne couvrent qu'une fraction du
+volume, et un oracle qui ne connaît que deux états de référence les classe `melange`. La borne est
+calculée par `tests/unit/vm-crash-cadence.test.mjs` : 50 % sur la graine 2026, 37,5 % sur deux
+autres. #16 a donc changé la CHARGE mesurée — huit blocs réécrits trois fois, si bien que toute
+génération validée est l'un des deux états que l'oracle sait juger — en laissant le juge intact et
+le profil remis au planificateur inchangé, donc la matrice de coupures identique point pour point.
+Élargir l'oracle aurait été plus court, et aurait consisté à déplacer la barre.
 
 ## Concurrence et bail d'écriture
 

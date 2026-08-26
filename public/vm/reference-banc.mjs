@@ -51,14 +51,40 @@ function decrireContexte(contexte) {
   }
 }
 
+/**
+ * Résolveurs en attente d'une MUTATION du guest (#16). La phase `live-couper` annonce l'instant où
+ * le guest a écrit et acquitté une barrière ; la page peut alors se fermer, ce qui tue le Worker
+ * avec son handle exclusif, sans fermeture propre et sans barrière.
+ */
+const guetteursDeMutation = [];
+let derniereMutation = null;
+
 worker.addEventListener("message", (event) => {
-  const { id, ok, report, error } = event.data ?? {};
+  const { id, ok, report, error, type } = event.data ?? {};
+  if (type === "mutation") {
+    // Annonce, pas réponse : elle ne porte aucun identifiant et ne résout aucune phase. La phase,
+    // elle, ne se terminera jamais si la page coupe — et c'est exactement ce qu'on mesure.
+    derniereMutation = { counts: event.data.counts };
+    etat.textContent = `Mutation du guest observée (${event.data.counts.write} écritures).`;
+    while (guetteursDeMutation.length > 0) guetteursDeMutation.pop()(derniereMutation);
+    return;
+  }
   const attente = enCours.get(id);
   if (!attente) return;
   enCours.delete(id);
   if (ok) attente.resolve(report);
   else attente.reject(erreurDuWorker(error));
 });
+
+/**
+ * Rend une promesse tenue dès que le guest a muté le volume et acquitté une barrière. Si l'annonce
+ * est déjà passée, elle est rendue telle quelle : une course entre l'annonce et l'attente ferait
+ * attendre indéfiniment un événement déjà survenu.
+ */
+function attendreMutation() {
+  if (derniereMutation !== null) return Promise.resolve(derniereMutation);
+  return new Promise((resolve) => guetteursDeMutation.push(resolve));
+}
 
 worker.addEventListener("error", (event) => {
   for (const attente of enCours.values()) {
@@ -164,8 +190,23 @@ function memoire() {
   };
 }
 
+/**
+ * Lance une phase SANS attendre son compte rendu. Réservé à `live-couper` (#16) : la coupure est la
+ * mort de la page, et une phase coupée ne rend jamais de compte rendu. `await`-er la promesse ferait
+ * attendre le test jusqu'à son propre délai de garde.
+ */
+function lancer(payload = {}) {
+  // Le rejet est absorbé DÉLIBÉRÉMENT : la page se ferme sous le Worker, et le rejet qui s'ensuit
+  // n'a aucun lecteur. Le laisser passer produirait un « unhandled rejection » que le test
+  // interpréterait comme une panne du produit.
+  appeler(payload).catch(() => {});
+  return { lancee: payload.phase ?? "full" };
+}
+
 globalThis.bancReprise = Object.freeze({
   executer,
+  lancer,
+  attendreMutation,
   telecharger,
   libererArchive,
   executerAvecFichier,
