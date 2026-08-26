@@ -13,6 +13,11 @@ composants suffisamment petits pour commencer les changements en TDD.
 Ordre critique : #3 → (#2, #35) → #4 → #5. Le jalon se ferme avec les contrats opérationnels #34 et
 les ADR produits par les spikes.
 
+**Clos le 23 août 2026** — ADR 0001 à 0004. Le spike #41, rattaché à ce jalon, a été tranché le 25
+août par l'[ADR 0010](decisions/0010-isolation-multi-origine.md) : la distribution n'impose pas
+l'isolation multi-origine ; COOP `same-origin` seul reste recommandé sur la coquille, à poser par la
+chaîne de publication #45. Reste ouvert : #40 (Safari réel).
+
 ## 1 — Persistance locale
 
 Une vraie application Rails modifie son disque applicatif dans le navigateur, le navigateur est
@@ -21,6 +26,13 @@ ne masque encore les problèmes de cohérence.
 
 Dépendances : #4 et #5. Ordre : #6 → #14 → #7, tandis que #8 et #9 doivent être fermées avant de
 qualifier la persistance.
+
+**Clos le 24 août 2026** — la reprise à froid hors ligne est prouvée de bout en bout (#7), l'accès
+concurrent (#8) et le budget de stockage (#9) sont fermés. Deux décisions encadrent ce qui n'est pas
+encore atteint : l'[ADR 0005](decisions/0005-qualification-de-la-reprise.md) maintient le gate de
+reprise (60 s) fermé — p95 mesuré 162 s, voie retenue #65 — et
+l'[ADR 0006](decisions/0006-conduite-refus-persistance.md) fixe la conduite quand `persist()` est
+refusé (#42).
 
 ## 2 — Portabilité
 
@@ -32,6 +44,17 @@ l'[ADR 0002](decisions/0002-topologie-origine-de-confiance.md) : aucun canal imp
 origines, un export traverse la frontière comme un fichier choisi par l'utilisateur, et un
 changement d'origine de la coquille est une migration qui exige un export préalable.
 
+**Clos le 25 août 2026** — quatre décisions gelées :
+[ADR 0007](decisions/0007-manifeste-de-volume.md) (manifeste versionné),
+[ADR 0008](decisions/0008-format-d-archive-d-export.md) (archive vérifiable),
+[ADR 0009](decisions/0009-restauration-inter-origine.md) (restauration : vérifier avant d'écrire,
+identifier après relecture, ouvreur unique en écriture) et
+[ADR 0011](decisions/0011-migration-de-format-et-reprise.md) (migration d'un format au suivant,
+preuve exigée avant de muter, reprise depuis un journal). Les quatre scénarios de bout en bout
+s'exécutent depuis le 26 août sur un OPFS adossé au disque
+([ADR 0012](decisions/0012-support-des-scenarios-de-bout-en-bout.md), #73). Reste ouvert : #45
+(chaîne de publication des deux origines), qui n'est pas requis pour ouvrir le jalon 3.
+
 ## 3 — Résilience transactionnelle
 
 Les barrières du système invité atteignent le stockage. Les écritures partielles, arrêts brutaux et
@@ -39,6 +62,10 @@ corruptions injectées produisent soit l'état validé précédent, soit le nouv
 succès silencieux incohérent.
 
 Ordre : #14 → #15 → #16. Le jalon 4 ne fige aucun format chiffré avant #16.
+
+#14 est fermé depuis le jalon 1. Avant d'ouvrir #15, la tranche #52 (servir v86 dans la coquille :
+CSP `wasm-unsafe-eval` et Worker `blob:`), débloquée par l'ADR 0010, est prise en premier : elle
+conditionne le passage du banc de référence à la coquille de production.
 
 ## 4 — Volume chiffré
 
