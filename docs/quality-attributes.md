@@ -221,25 +221,36 @@ fermeture et sans barrière ; le volume est rouvert et classé.
 | `arret-brutal`           |      3 | 3 × `melange`                                  |
 | `coupure-avant-barriere` |      2 | 1 × `melange`, 1 × `nouveau`                   |
 
-| Mesure                                       |                                             Valeur |
-| -------------------------------------------- | -------------------------------------------------: |
-| Taux « ancien ou nouveau » (**cible 100 %**) |                                         **12,5 %** |
-| Verdicts de volume                           |         0 ancien, 1 nouveau, 4 melange, 3 corrompu |
-| Blocs classés                                | 114 ancien, 75 nouveau, 3 déchirés, 0 inclassables |
+| Mesure                                       |                                                Valeur |
+| -------------------------------------------- | ----------------------------------------------------: |
+| Taux « ancien ou nouveau » (**cible 100 %**) |                                            **12,5 %** |
+| Verdicts de volume                           |            0 ancien, 1 nouveau, 4 melange, 3 corrompu |
+| Blocs classés                                | 114 ancien, 75 nouveau, 3 déchirés, 0 non rattachable |
+| Blocs durables au moment de la coupure       |    40 sur 192, à partir de 93 entrées de journal lues |
+
+Le même relevé sur le **double calibré** de Node — mêmes huit points, même graine — donne la même
+répartition et le même taux (`tests/unit/vm-crash-matrice.test.mjs` le fige). Les deux supports ne
+divergent donc pas, ce qui est la condition pour que le chiffre publié dise quelque chose du SUPPORT
+et non de l'instrument.
 
 **Ce que le relevé établit.** Sept points sur huit laissent aujourd'hui un état **non atomique** :
 un volume où d'anciens et de nouveaux blocs cohabitent, ou un bloc dont une partie seulement des
-octets a atteint le support. Aucune coupure n'a produit de bloc inclassable, et aucune n'a produit
-de succès silencieux : chacune s'est traduite par une erreur typée du stockage
-(`VAULT_STORAGE_PARTIAL_WRITE` ou `VAULT_STORAGE_HANDLE_LOST`).
+octets a atteint le support. Aucune coupure n'a produit de bloc non rattachable, et aucune n'a
+produit de succès silencieux : chacune s'est traduite par une erreur typée du stockage
+(`VAULT_STORAGE_PARTIAL_WRITE` ou `VAULT_STORAGE_HANDLE_LOST`). Aucune non plus n'a violé
+`SEC-DURABLE-001` : quarante blocs étaient acquittés ET franchis par une barrière au moment de la
+coupure, et les quarante étaient sur le support. Que cette règle sache mordre est vérifié par un
+témoin négatif — un rapport réel rejugé avec un journal trafiqué — et non déduit de son silence.
 
 **Ce qu'il n'établit pas.** Le seul point classé `nouveau` est une coupure posée sur la **dernière**
-barrière : les vingt-quatre écritures avaient eu lieu, aucune barrière ne les avait franchies, et
-elles se sont pourtant retrouvées sur le support après la mort du Worker. Ce relevé n'a donc observé
-**aucune perte d'écriture non barriérée** sur l'OPFS de Chromium — ce qui ne veut pas dire qu'il n'y
-en a pas : huit points, une machine, un moteur, et une écriture qui atteint le fichier n'est pas une
-écriture qui a atteint le disque. La question relève de #16 et d'un protocole qui coupe le processus
-lui-même, pas seulement le Worker.
+barrière : les vingt-quatre écritures avaient eu lieu, les deux premières barrières avaient été
+acquittées, et les huit dernières écritures — qu'aucune barrière n'avait franchies — se sont elles
+aussi retrouvées sur le support après la mort du Worker. Ce relevé n'a donc observé **aucune perte
+d'écriture non barriérée** sur l'OPFS de Chromium — ce qui ne veut pas dire qu'il n'y en a pas :
+huit points, une machine, un moteur, et une écriture qui atteint le fichier n'est pas une écriture
+qui a atteint le disque. Un `Worker.terminate()` ne tue d'ailleurs ni le processus du navigateur ni
+la machine : aucun cache volatil n'est perdu au passage. La question relève de #16 et d'un protocole
+qui coupe plus bas.
 
 **Rejeu.** La graine et le point complet sont publiés pour chaque ligne du compte rendu ; la même
 graine rejoue la même matrice, ce que la suite vérifie en l'exécutant deux fois sur le vrai support.

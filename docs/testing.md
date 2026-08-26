@@ -575,27 +575,58 @@ le seul point qui sépare une écriture **acquittée** d'une écriture **durable
 sorte de faute n'est inventée — le plan de `src/vm/fault-plan.mjs` est réutilisé tel quel, si bien
 que c'est le même code de backend qui exécute la panne.
 
-Le générateur pseudo-aléatoire est écrit dans le module (mulberry32, 32 bits d'état) ; `Math.random`
-n'apparaît nulle part. Même graine ⇒ même séquence, et l'épreuve `npm run test:vm` le vérifie sur le
-vrai support en rejouant la matrice deux fois.
+`arret-brutal` nomme l'arrêt du **chemin d'E/S**, combiné à la mort réelle du Worker. Ce n'est ni
+une mort de processus, ni une coupure d'alimentation : le processus du navigateur survit, et aucun
+cache volatil n'est perdu au passage. C'est précisément pourquoi ce protocole ne peut pas répondre à
+la question « une écriture non barriérée survit-elle ? », et pourquoi #16 devra couper plus bas.
 
-**Ce qui arrête.** L'arrêt est réel : la page appelle `Worker.terminate()` pendant que le Worker
-runtime tient encore le handle exclusif du volume, sans `close()` — qui matérialiserait les
-écritures en attente — et sans barrière. Le Worker qui coupe publie son journal de blocs **avant**
-de mourir ; un autre rouvre le volume et le classe. Sous Node, `src/vm/crash-machine.mjs` reproduit
-la même sémantique sur le double calibré : `abandon()` reprend l'exclusivité sans jamais fermer.
+Une opération que le scénario n'émet pas n'est **jamais planifiée** — une lecture dans un scénario
+qui n'en fait aucune, une barrière n° 4 dans un scénario qui en émet trois —, et une faute qui
+serait malgré tout restée non tirée est SIGNALÉE : `FaultPlan#unfired` la remonte, le compte rendu
+la publie, et la suite exige que la liste soit vide à chaque point.
+
+Le générateur pseudo-aléatoire est écrit dans le module (mulberry32, 32 bits d'état) ; `Math.random`
+n'apparaît nulle part. Une graine au-delà de 2³²−1 est refusée plutôt que tronquée : deux graines
+distinctes rejoueraient sinon la même séquence. Même graine ⇒ même séquence, et l'épreuve
+`npm run test:vm` le vérifie sur le vrai support en rejouant la matrice deux fois.
+
+**Ce qui arrête.** La page appelle `Worker.terminate()` pendant que le Worker runtime tient encore
+le handle exclusif du volume, sans `close()` — qui matérialiserait les écritures en attente — et
+sans barrière. C'est une mort réelle de Worker, pas une simulation ; ce n'est pas une mort de
+processus (voir ci-dessus). Le Worker qui coupe publie son journal de blocs **avant** de mourir ; un
+autre rouvre le volume et le classe. Sous Node, `src/vm/crash-machine.mjs` reproduit la même
+sémantique sur le double calibré : `abandon()` reprend l'exclusivité sans jamais fermer.
 
 **Ce qui classe.** `src/vm/crash-oracle.mjs` classe chaque bloc suivi en `ancien`, `nouveau`,
 `dechire` ou `corrompu`, et en tire un verdict de volume : `ancien`, `nouveau`, `melange` ou
-`corrompu`. Deux règles empêchent le succès silencieux :
+`corrompu`. L'oracle est le JUGE de #16 : un défaut qui SURESTIME le taux atomique y est plus grave
+qu'un faux négatif, et quatre règles l'en empêchent :
 
+- **précondition** : les deux états attendus d'un bloc doivent différer **en chaque octet**, et
+  l'oracle le vérifie à chaque appel. Un seul octet commun suffirait à rendre un bloc partiellement
+  écrit indistinguable d'un bloc intact — donc à le compter atomique. Avec ancien `[7,7,9,9]` et
+  nouveau `[7,7,1,1]`, un support n'ayant écrit que deux octets rend `[7,7,9,9]`, identique à
+  l'ancien état ;
 - un bloc que l'oracle ne rattache ni à l'ancien état ni au nouveau est `corrompu` **avec
   diagnostic** — l'octet fautif et les deux valeurs attendues — et jamais ignoré ;
 - un bloc dont le journal dit que l'écriture a été acquittée **puis franchie par une barrière**, et
   qui rend pourtant l'ancien état, est `corrompu` lui aussi : c'est `SEC-DURABLE-001` lu à l'envers.
+  « Franchie » se lit sur l'EXISTENCE d'une écriture antérieure à un acquittement, pas sur la
+  dernière écriture du bloc : une génération qui écrit, barre, puis réécrit sans barrière — le
+  régime de #16 — laisse bel et bien une version durable, et la perdre reste une violation ;
+- **le journal est obligatoire.** `classerVolume` le refuse absent : sans lui la règle ci-dessus est
+  inerte et le taux atomique monte sans raison. Un appelant qui ne veut classer que des octets pose
+  `sansJournal: true`, le rapport le republie, et « acquitté » et « durable » valent alors `null` —
+  inconnus, jamais faux. Le nombre d'entrées consultées voyage jusque dans le compte rendu.
 
 Un bloc déchiré n'est ni l'ancien état ni le nouveau : au niveau du volume il rejoint `corrompu`. Le
 compte par classe conserve la distinction.
+
+Que la règle `SEC-DURABLE-001` sache mordre n'est pas déduit de son silence : elle ne se déclenche
+sur aucun point de la matrice, et un **témoin négatif** — aux deux niveaux — rejoue un rapport réel
+avec un journal trafiqué prétendant qu'un bloc resté à l'ancien état avait été écrit puis barriéré.
+Le verdict doit alors passer à `corrompu`. La suite exige en outre qu'au moins un bloc soit durable
+dès qu'une barrière a été acquittée.
 
 **Rejeu.** Chaque ligne du compte rendu porte sa graine et son point complet (genre, opération,
 rang, octets). Rejouer un point seul se fait depuis le banc :
