@@ -203,6 +203,49 @@ la VM : v86 et ses 512 Mio de RAM invitée vivent dans le Worker, que `performan
 ne mesure pas. Une mesure de l'empreinte réelle du processus navigateur reste à outiller (issue de
 suivi).
 
+## Première mesure du taux de coupures atomiques (#15)
+
+Le budget « Coupures injectées » du tableau ci-dessus — _100 % des points donnent ancien état,
+nouvel état ou erreur explicite_ — n'avait jusqu'ici aucun instrument. #15 en fournit un et publie
+sa **première mesure**. Il ne rapproche pas le budget de sa cible : il rend enfin visible l'écart
+qui l'en sépare. La garantie est l'objet de #16.
+
+Relevé du 2026-08-26, `npm run test:vm`, projet `chromium`, volume OPFS réel. Graine `2026`, huit
+points de coupure, vingt-quatre blocs de 512 octets suivis par point. Le Worker runtime écrit une
+suite de blocs connus ; la page l'arrête par `Worker.terminate()`, handle exclusif ouvert, sans
+fermeture et sans barrière ; le volume est rouvert et classé.
+
+| Genre de coupure         | Points | Verdicts obtenus                               |
+| ------------------------ | -----: | ---------------------------------------------- |
+| `ecriture-dechiree`      |      3 | 3 × `corrompu` (un bloc déchiré à chaque fois) |
+| `arret-brutal`           |      3 | 3 × `melange`                                  |
+| `coupure-avant-barriere` |      2 | 1 × `melange`, 1 × `nouveau`                   |
+
+| Mesure                                       |                                             Valeur |
+| -------------------------------------------- | -------------------------------------------------: |
+| Taux « ancien ou nouveau » (**cible 100 %**) |                                         **12,5 %** |
+| Verdicts de volume                           |         0 ancien, 1 nouveau, 4 melange, 3 corrompu |
+| Blocs classés                                | 114 ancien, 75 nouveau, 3 déchirés, 0 inclassables |
+
+**Ce que le relevé établit.** Sept points sur huit laissent aujourd'hui un état **non atomique** :
+un volume où d'anciens et de nouveaux blocs cohabitent, ou un bloc dont une partie seulement des
+octets a atteint le support. Aucune coupure n'a produit de bloc inclassable, et aucune n'a produit
+de succès silencieux : chacune s'est traduite par une erreur typée du stockage
+(`VAULT_STORAGE_PARTIAL_WRITE` ou `VAULT_STORAGE_HANDLE_LOST`).
+
+**Ce qu'il n'établit pas.** Le seul point classé `nouveau` est une coupure posée sur la **dernière**
+barrière : les vingt-quatre écritures avaient eu lieu, aucune barrière ne les avait franchies, et
+elles se sont pourtant retrouvées sur le support après la mort du Worker. Ce relevé n'a donc observé
+**aucune perte d'écriture non barriérée** sur l'OPFS de Chromium — ce qui ne veut pas dire qu'il n'y
+en a pas : huit points, une machine, un moteur, et une écriture qui atteint le fichier n'est pas une
+écriture qui a atteint le disque. La question relève de #16 et d'un protocole qui coupe le processus
+lui-même, pas seulement le Worker.
+
+**Rejeu.** La graine et le point complet sont publiés pour chaque ligne du compte rendu ; la même
+graine rejoue la même matrice, ce que la suite vérifie en l'exécutant deux fois sur le vrai support.
+Le protocole est décrit dans [`testing.md`](testing.md), § « Résilience : arrêts, écritures
+partielles et rejeu ».
+
 ## Compatibilité
 
 La cible produit est les deux dernières versions stables de Chromium, Firefox et Safari sur
