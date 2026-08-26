@@ -73,6 +73,12 @@ guest Linux 4 / Buildroot i386, délai de garde du boot 60 s, garde de la page 1
 | cale Vault posée si l'API manque             | invite à 3 560 ms     | aucun compte rendu en 120 s | invite à 4 670 ms     |
 | cale Vault posée toujours                    | invite à 3 490 ms     | invite à 21 254 ms          | invite à 4 804 ms     |
 
+Les deux relevés décisifs de Firefox ont été **reproduits** par une seconde exécution complète du
+harnais : 21 719 ms pour la cale forcée sous `worker-src 'self'` (contre 21 508 ms), 21 612 ms pour
+le Worker imbriqué sous `worker-src 'self' blob:` (contre 21 786 ms). Les quatre silences sont
+reproduits à l'identique. L'écart entre les deux exécutions reste sous 1,5 %, et aucune conclusion
+de cet ADR ne dépend d'une différence de cet ordre.
+
 Quatre faits, dont trois n'étaient pas connus avant cette mesure :
 
 1. **le refus d'un Worker `blob:` ne lève aucune exception.** Sous Chromium, `new Worker(blobUrl)`
