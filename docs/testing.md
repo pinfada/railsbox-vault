@@ -618,7 +618,9 @@ modèle du drapeau `--worker-src-blob` de `tools/serve.mjs` : sous Node, le proc
 `VAULT_HARNAIS_RESILIENCE=mesure-arrets` ; dans un Worker de navigateur, faute d'environnement de
 processus, l'appel doit présenter le jeton du harnais, que seul `public/vm/resilience-banc.mjs`
 transmet — et seulement au Worker qui coupe. Le refus est figé par
-`tests/unit/vm-crash-harnais.test.mjs`, dans son propre processus.
+`tests/unit/vm-crash-harnais.test.mjs`, dans son propre processus ; et
+`tests/unit/vm-crash-armement.test.mjs` inspecte les sources servies pour que « aucun chemin du
+produit n'arme l'injecteur » reste un fait vérifié plutôt qu'une convention de relecture.
 
 **Limites.** Pas d'atomicité (#16). Pas de guest v86 dans la boucle : le scénario écrit depuis le
 Worker runtime sur le volume OPFS, sans émulateur — la chaîne guest → pont ATA → backend reste

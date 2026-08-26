@@ -287,7 +287,11 @@ code servi à l'origine de la coquille. Trois faits, et leurs limites :
   le JETON exact du harnais, que seul `public/vm/resilience-banc.mjs` transmet — et seulement au
   Worker qui coupe, jamais à celui qui prépare l'ancien état ni à celui qui relit. Aucun chemin du
   produit ne le transmet : ni `public/vm/banc.mjs`, ni les scénarios `barrier`, `filesystem`,
-  `opfs-persistence` et `opfs-barrier` du Worker runtime ;
+  `opfs-persistence` et `opfs-barrier` du Worker runtime. **Cette phrase est vérifiée, pas
+  convenue** : `tests/unit/vm-crash-armement.test.mjs` inspecte tout ce qui est servi sous `src/` et
+  `public/`, et exige que le jeton ne soit nommé que par la garde et par le banc de résilience, que
+  `armerInjecteur` ne soit appelé que par la machine jetable et par le Worker runtime, et que cet
+  unique appel du Worker vive bien dans le scénario de coupure et nulle part ailleurs ;
 - **cette seconde garde est plus faible que la première, et elle est donnée pour ce qu'elle est.**
   Un appelant déjà présent dans le Worker peut nommer le jeton, qui est une constante de source.
   Elle interdit l'armement ACCIDENTEL et rend l'intention explicite ; elle ne prétend pas résister à
