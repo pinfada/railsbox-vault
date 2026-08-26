@@ -14,12 +14,20 @@ import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { createFaultPlan } from "/src/vm/fault-plan.mjs";
 import { createGuestSession } from "/src/vm/guest-session.mjs";
 import { openMemoryVolume } from "/src/vm/memory-block-backend.mjs";
+import { SOURCES_BOUCLE, installerBoucleOrdonnancement } from "/src/vm/scheduling-loop.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { BRIDGE_MODES } from "/src/vm/v86-flush-bridge.mjs";
 
 const ARTEFACTS = "/vendor/v86/artefacts/";
 const MIO = 1024 * 1024;
 const PERIODE_SONDE_MS = 250;
+
+/** Libellés du relevé, figés depuis la mesure de l'ADR 0013 : les rapports doivent rester lisibles. */
+const LIBELLES_CALE = Object.freeze({
+  [SOURCES_BOUCLE.native]: "native",
+  [SOURCES_BOUCLE.vault]: "posee",
+  [SOURCES_BOUCLE.vaultSurNative]: "posee-par-dessus-native",
+});
 
 /** Tout ce qui ressemblerait, sans être capté, à un échec silencieux. */
 const incidents = [];
@@ -41,55 +49,18 @@ self.addEventListener("securitypolicyviolation", (evenement) =>
 /**
  * Cale de `scheduler.postTask` fournie par Vault, évaluée comme option 3 de l'ADR 0013.
  *
- * v86 arrête son chemin d'ordonnancement à l'ÉVALUATION de son module, sur deux conditions :
- * `globalThis.scheduler.postTask` doit être une fonction ET `location.href` doit contenir
- * « use-scheduling-api ». Poser la cale AVANT l'import fait donc emprunter à v86 le chemin
- * `postTask` même sur un moteur qui n'expose pas l'API — sans blob, sans Worker imbriqué, sans
- * élargir la CSP.
- *
- * Le délai nul passe par un `MessageChannel` et non par `setTimeout` : au-delà de cinq imbrications,
- * les moteurs bornent `setTimeout(…, 0)` à quatre millisecondes, ce qui plafonnerait la boucle de
- * v86 à 250 tours par seconde. Un message de canal n'est pas bridé.
+ * Depuis #74, elle n'est plus écrite ici : c'est `src/vm/scheduling-loop.mjs`, le module LIVRÉ dans
+ * les Workers runtime, qui la pose. Le harnais mesure donc désormais le code du produit et non une
+ * réplique — sans quoi la mesure de l'ADR 0013 pourrait rester verte pendant que la boucle livrée
+ * diverge. Les libellés du relevé sont inchangés, pour que les rapports restent comparables.
  *
  * Deux modes, parce qu'ils répondent à deux questions différentes : « si-absent » complète un moteur
  * qui n'a pas l'API (WebKit), « toujours » remplace aussi l'implémentation NATIVE — c'est la seule
  * façon de savoir si la boucle `postTask` native est ce qui monopolise le thread sous Firefox (#74).
  */
 function installerCale(mode) {
-  const natif = typeof globalThis.scheduler?.postTask === "function";
-  if (natif && mode !== "toujours") return "native";
-
-  const enAttente = new Map();
-  let sequence = 0;
-  const canal = new MessageChannel();
-  canal.port1.onmessage = (evenement) => {
-    const tache = enAttente.get(evenement.data);
-    enAttente.delete(evenement.data);
-    if (tache) tache();
-  };
-
-  const immediat = (tache) => {
-    sequence += 1;
-    enAttente.set(sequence, tache);
-    canal.port2.postMessage(sequence);
-  };
-
-  globalThis.scheduler = {
-    postTask: (callback, options = {}) =>
-      new Promise((resolve, reject) => {
-        const executer = () => {
-          try {
-            resolve(callback());
-          } catch (erreur) {
-            reject(erreur);
-          }
-        };
-        const delai = Math.max(0, options.delay ?? 0);
-        if (delai === 0) immediat(executer);
-        else setTimeout(executer, delai);
-      }),
-  };
-  return natif ? "posee-par-dessus-native" : "posee";
+  const boucle = installerBoucleOrdonnancement({ siNatifAbsent: mode !== "toujours" });
+  return LIBELLES_CALE[boucle.source];
 }
 
 /** Chemin que v86 choisira, déduit des mêmes conditions que son module. */
