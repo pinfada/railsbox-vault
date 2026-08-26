@@ -15,12 +15,17 @@ import { BLOCS_SUIVIS } from "../../src/vm/crash-scenario.mjs";
 //  - la coupure est ATTEINTE à chaque point (aucune faute programmée ne reste non tirée) ;
 //  - chaque point est classé, et aucun bloc n'échappe au classement ;
 //  - la même graine rejoue la même matrice sur le vrai support ;
-//  - le taux « ancien ou nouveau » est MESURÉ et publié.
+//  - depuis #16, le taux « ancien ou nouveau » vaut 100 %, sans bloc déchiré ni bloc non
+//    rattachable, et la récupération d'ouverture NOMME ce qu'elle a fait.
 //
-// Ce qu'elle n'affirme PAS, et qui appartient à #16 : qu'une coupure laisse le volume atomique. Les
-// états non atomiques sont ATTENDUS ici — le test les enregistre et les publie, il ne rougit pas
-// dessus. Quand #16 fermera la garantie, les lignes qui épinglent ces états devront changer : c'est
-// voulu, et c'est le rouge que #16 aura à produire.
+// C'est ici que #15 et #16 se distinguent. #15 ATTENDAIT des états non atomiques et les publiait
+// tels quels ; les lignes qui les épinglaient sont inversées ci-dessous, et c'est le rouge que cette
+// tranche a dû produire avant de passer au vert.
+//
+// Ce que la suite n'affirme toujours PAS : qu'une coupure du PROCESSUS — perte du cache volatil du
+// navigateur, mort de l'onglet, coupure de courant — laisse le même état. `Worker.terminate()` ne
+// tue ni le processus du navigateur ni la machine. Cette limite est celle de #15, et #16 ne la lève
+// pas : elle est réinscrite dans `docs/testing.md`.
 //
 // Ce qu'elle ne fait pas non plus : faire tourner un guest v86. Le scénario écrit depuis le Worker
 // runtime sur le volume OPFS, sans émulateur. La chaîne guest → pont ATA → backend est prouvée
@@ -67,10 +72,19 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
     expect(resultat.blocs.length).toBe(BLOCS_SUIVIS);
     const total = Object.values(resultat.classes).reduce((somme, compte) => somme + compte, 0);
     expect(total).toBe(BLOCS_SUIVIS);
-    // Aucun bloc non rattachable : l'oracle a su dire de chacun s'il porte l'ancien état, le
-    // nouveau, ou un mélange des deux. Ce zéro est FIGÉ — le laisser flotter permettrait à une
-    // régression de l'oracle de ranger des blocs en « corrompu » sans que rien ne le remarque.
+    // Aucun bloc non rattachable, et aucun bloc DÉCHIRÉ. Le premier zéro dit que l'oracle a su
+    // classer chaque bloc ; le second est la garantie de #16 elle-même — une génération n'atteint le
+    // volume qu'entière.
     expect(resultat.classes.corrompu, ou).toBe(0);
+    expect(resultat.classes.dechire, ou).toBe(0);
+
+    // Le volume rouvert porte l'ancien état ou le nouveau, jamais un mélange.
+    expect(resultat.atomique, `${ou} — ${resultat.raison ?? "sans raison"}`).toBe(true);
+
+    // Et la RÉCUPÉRATION s'est dite. Une génération écartée ou rejouée en silence serait le succès
+    // muet que `docs/quality-attributes.md` refuse ; le compte rendu la nomme.
+    expect(resultat.recuperation, ou).not.toBeNull();
+    expect(["aucune", "ecartee", "rejouee"], ou).toContain(resultat.recuperation.etat);
 
     // L'oracle a bien eu le journal de la session morte SOUS LES YEUX. Sans lui, la règle
     // `SEC-DURABLE-001` serait inerte et le taux atomique monterait sans raison.
@@ -95,20 +109,25 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
   }
 
   // Le point 2 de cette graine est une coupure sur la TROISIÈME barrière : les vingt-quatre
-  // écritures ont eu lieu, les deux premières barrières ont été acquittées, et seules les huit
-  // dernières écritures n'ont été franchies par aucune. Seize blocs sont donc durables — un chiffre
-  // épinglé pour que la règle SEC-DURABLE ne devienne pas silencieusement inapplicable.
+  // écritures ont eu lieu et les deux premières barrières ont été acquittées. Les huit blocs suivis
+  // sont donc DURABLES — un chiffre épinglé pour que la règle SEC-DURABLE ne devienne pas
+  // silencieusement inapplicable, ce qui ferait monter le taux atomique sans raison.
   const surLaDerniereBarriere = resultats[2];
   expect(surLaDerniereBarriere.point.operation).toBe("flush");
   expect(surLaDerniereBarriere.barrieres).toBe(2);
-  expect(surLaDerniereBarriere.blocs.filter((bloc) => bloc.durable === true).length).toBe(16);
+  expect(surLaDerniereBarriere.blocs.filter((bloc) => bloc.durable === true).length).toBe(8);
+  expect(surLaDerniereBarriere.verdict).toBe(VERDICTS.nouveau);
 
-  // La MESURE, publiée telle qu'elle est. `docs/quality-attributes.md` demande que 100 % des points
-  // de coupure donnent ancien état, nouvel état ou erreur explicite ; #15 mesure ce taux, #16 le
-  // garantira. L'épingler ici évite qu'un futur « c'est déjà atomique » passe sans preuve.
-  expect(resume.tauxAtomique).toBeGreaterThanOrEqual(0);
-  expect(resume.tauxAtomique).toBeLessThan(1);
-  expect(resume.verdicts.melange + resume.verdicts.corrompu).toBeGreaterThan(0);
+  // LA MESURE. `docs/quality-attributes.md` demande que 100 % des points de coupure donnent ancien
+  // état, nouvel état ou erreur explicite ; #15 l'a mesurée à 12,5 %, #16 la porte à 100 %.
+  expect(resume.tauxAtomique).toBe(1);
+  expect(resume.verdicts.melange + resume.verdicts.corrompu).toBe(0);
+  expect(resume.classes.dechire).toBe(0);
+  expect(resume.classes.corrompu).toBe(0);
+  // Les DEUX issues sont exercées : une matrice qui ne rendrait que « ancien » serait satisfaite par
+  // un backend qui n'écrirait rien du tout.
+  expect(resume.verdicts.ancien).toBeGreaterThan(0);
+  expect(resume.verdicts.nouveau).toBeGreaterThan(0);
 
   // Chaque ligne du compte rendu se rejoue seule.
   for (const ligne of resume.rejeu) {
@@ -142,13 +161,13 @@ test("la même graine rejoue exactement la même matrice sur le vrai support", a
   expect(seconde.resume.tauxAtomique).toBe(premiere.resume.tauxAtomique);
 });
 
-test("une écriture déchirée laisse, sur OPFS réel, un bloc qui n'est ni l'ancien ni le nouveau", async ({
-  page,
-}, testInfo) => {
+test("sur OPFS réel, une écriture déchirée n'entame plus le volume", async ({ page }, testInfo) => {
   await ouvrirBanc(page);
 
-  // Point nommé explicitement : une matrice ne garantit pas qu'une déchirure sera tirée, et c'est
-  // l'état le plus intéressant à montrer — celui qu'aucune relecture ne peut rattraper.
+  // Point nommé explicitement : une matrice ne garantit pas qu'une déchirure sera tirée, et c'était
+  // l'état le plus intéressant de #15 — celui qu'aucune relecture ne pouvait rattraper. C'est
+  // exactement celui que #16 supprime : la déchirure a bien lieu, mais dans le journal de
+  // génération, et cette génération n'est jamais validée.
   const point = {
     graine: GRAINE,
     index: 0,
@@ -166,14 +185,16 @@ test("une écriture déchirée laisse, sur OPFS réel, un bloc qui n'est ni l'an
     contentType: "application/json",
   });
 
+  // La coupure a bien eu lieu, et elle s'est dite par une erreur typée du stockage.
   expect(resultat.arret.code).toBe("VAULT_STORAGE_PARTIAL_WRITE");
-  expect(resultat.classes.dechire).toBe(1);
-  const abime = resultat.blocs.find((bloc) => bloc.classe === "dechire");
-  expect(abime.index).toBe(4);
-  expect(abime.diagnostic).toMatch(/octet/);
-  // Le volume n'est donc ni l'ancien état ni le nouveau. C'est le rouge que #16 fermera.
-  expect(resultat.atomique).toBe(false);
-  expect(resultat.verdict).toBe(VERDICTS.corrompu);
+  expect(resultat.classes.dechire).toBe(0);
+  expect(resultat.classes.corrompu).toBe(0);
+  expect(resultat.atomique).toBe(true);
+  expect(resultat.verdict).toBe(VERDICTS.ancien);
+  // La génération déposée a été ÉCARTÉE, et le compte rendu la NOMME.
+  expect(resultat.recuperation.etat).toBe("ecartee");
+  expect(resultat.recuperation.code).toBe("VAULT_STORAGE_GENERATION_DISCARDED");
+  expect(resultat.recuperation.octetsEcartes).toBeGreaterThan(0);
 });
 
 test("sur le vrai support, une écriture barriérée disparue est une corruption — témoin négatif", async ({
@@ -196,9 +217,9 @@ test("sur le vrai support, une écriture barriérée disparue est une corruption
     operation: "write",
     occurrence: 5,
   });
-  expect(reel.verdict).toBe(VERDICTS.melange);
+  expect(reel.verdict).toBe(VERDICTS.ancien);
   expect(reel.classes.corrompu).toBe(0);
-  const avant = reel.blocs.find((bloc) => bloc.index === 10);
+  const avant = reel.blocs.find((bloc) => bloc.index === 3);
   expect(avant.classe).toBe("ancien");
   expect(avant.durable).toBe(false);
 
@@ -209,13 +230,13 @@ test("sur le vrai support, une écriture barriérée disparue est une corruption
       { seq: 2, operation: "flush-ack", barrier: 0 },
     ];
     return globalThis.bancResilience.reclasserAvec(journal);
-  }, 10 * 512);
+  }, 3 * 512);
   await testInfo.attach("vm-resilience-temoin-sec-durable.json", {
     body: JSON.stringify({ reel, rejuge }, null, 2),
     contentType: "application/json",
   });
 
-  const apres = rejuge.blocs.find((bloc) => bloc.index === 10);
+  const apres = rejuge.blocs.find((bloc) => bloc.index === 3);
   expect(apres.durable).toBe(true);
   expect(apres.classe).toBe("corrompu");
   expect(apres.diagnostic).toMatch(/barrière/i);

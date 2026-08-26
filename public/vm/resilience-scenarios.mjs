@@ -27,7 +27,7 @@ import {
 } from "/src/vm/crash-scenario.mjs";
 import { createFaultPlan } from "/src/vm/fault-plan.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
-import { removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
+import { generationJournalName, removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "/src/vm/storage-errors.mjs";
 
 /**
@@ -69,6 +69,10 @@ async function rouvrirApresCoupure({ tentatives, attenteMs, journal }) {
 /** Prépare l'ANCIEN état du volume, puis referme proprement. Le point de coupure part de là. */
 export async function runResiliencePreparer() {
   await removeOpfsVolume(VOLUME_RESILIENCE);
+  // Le journal de génération voisin est effacé avec le volume (#16). L'oublier ferait rejouer, sur
+  // un volume neuf, la génération laissée par le point précédent : le verdict d'un point dépendrait
+  // alors de son prédécesseur, et la matrice cesserait d'être une suite de points indépendants.
+  await removeOpfsVolume(generationJournalName(VOLUME_RESILIENCE));
   const journal = new BlockJournal();
   const backend = await openOpfsVolume({
     name: VOLUME_RESILIENCE,
@@ -142,6 +146,9 @@ export async function runResilienceClasser({ journal, tentatives = 60, attenteMs
     journal: relecture,
   });
   let blocs;
+  // Ce que la RÉCUPÉRATION a trouvé et fait, lu AVANT la relecture : c'est la seule occasion de le
+  // dire. Une génération écartée en silence serait exactement le succès muet que le dépôt refuse.
+  const recuperation = backend.generation?.rapport ?? null;
   try {
     blocs = await relireBlocs(backend);
   } finally {
@@ -152,6 +159,7 @@ export async function runResilienceClasser({ journal, tentatives = 60, attenteMs
     scenario: "resilience-classer",
     volume: VOLUME_RESILIENCE,
     reouverture: { essais, attenteMs },
+    recuperation,
     verdict: rapport.verdict,
     raison: rapport.raison,
     atomique: rapport.atomique,

@@ -257,6 +257,14 @@ export async function removeOpfsVolume(name) {
   assertDedicatedWorker();
   assertStorageName(name);
 
+  // Retirer un volume retire AUSSI son journal de génération (#16). Ce n'est pas une commodité : un
+  // journal survivant décrirait un volume qui n'existe plus, et la prochaine ouverture d'un volume
+  // du MÊME NOM y rejouerait une génération validée qui ne lui appartient pas — des octets d'un
+  // volume précédent écrits par-dessus un volume neuf. La garde évite la récursion sur les voisins
+  // eux-mêmes, qui n'ont pas de journal.
+  const estUnVoisin = RESERVED_SIDECAR_SUFFIXES.some((suffixe) => name.endsWith(suffixe));
+  if (!estUnVoisin) await removeOpfsVolume(`${name}${GENERATION_JOURNAL_SUFFIX}`);
+
   try {
     const directory = await volumeDirectory({ create: false });
     await directory.removeEntry(name);
