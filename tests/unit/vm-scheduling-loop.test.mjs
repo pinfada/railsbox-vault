@@ -9,7 +9,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { SOURCES_BOUCLE, installerBoucleOrdonnancement } from "../../src/vm/scheduling-loop.mjs";
+import {
+  SOURCES_BOUCLE,
+  decrireBoucle,
+  installerBoucleOrdonnancement,
+} from "../../src/vm/scheduling-loop.mjs";
 
 /** Faux contexte de Worker : les primitives réelles, plus un compteur d'appels à `setTimeout`. */
 function faireCible({ natif = null } = {}) {
@@ -196,6 +200,31 @@ test("« retirer » rend le contexte à son état d'origine, natif compris", () 
   const seconde = installerBoucleOrdonnancement({ cible });
   assert.equal(seconde.source, SOURCES_BOUCLE.vaultSurNative);
   seconde.retirer();
+});
+
+test("une boucle RETIRÉE n'est plus décrite comme en place", async () => {
+  // Le harnais de mesure de #74 boote l'image de référence avec la boucle du MOTEUR, en retirant la
+  // nôtre avant que v86 ne l'emprunte. Si le descripteur continuait de se décrire, le compte rendu
+  // annoncerait une boucle de Vault sur un boot qui n'en avait pas : la mesure « avant » et la
+  // mesure « après » deviendraient indiscernables dans les rapports.
+  const natif = faireNatif();
+  const cible = faireCible({ natif });
+  const boucle = installerBoucleOrdonnancement({ cible });
+
+  await cible.scheduler.postTask(() => null);
+  assert.deepEqual(decrireBoucle(boucle), {
+    source: SOURCES_BOUCLE.vaultSurNative,
+    natifPresent: true,
+    appels: 1,
+  });
+
+  boucle.retirer();
+
+  assert.equal(decrireBoucle(boucle), null);
+  assert.equal(cible.scheduler, natif);
+  // Un second retrait ne doit rien casser : le harnais peut le demander sans savoir s'il a eu lieu.
+  boucle.retirer();
+  assert.equal(cible.scheduler, natif);
 });
 
 test("les autres membres de l'ordonnanceur natif restent atteignables", async () => {

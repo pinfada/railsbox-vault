@@ -8,10 +8,18 @@
 const etat = document.querySelector("#etat");
 const rapport = document.querySelector("#rapport");
 
-const worker = new Worker("/vm/reference-worker.mjs?use-scheduling-api", {
-  type: "module",
-  name: "vault-vm-reference",
-});
+/**
+ * Quelle boucle d'ordonnancement fera tourner l'émulateur. Par défaut, celle du produit — la boucle
+ * de Vault (#74). `?boucle=native` charge le Worker de MESURE qui la retire avant l'import de v86,
+ * pour comparer le produit à l'état d'avant #74 sur le même code et le même volume. Seul
+ * `npm run test:rythme` le demande, et le compte rendu du Worker de mesure porte
+ * `boucleOrdonnancement: null` : la bascule ne peut pas passer inaperçue dans un relevé.
+ */
+const boucle = new URL(location.href).searchParams.get("boucle") === "native" ? "native" : "vault";
+const worker = new Worker(
+  `/vm/${boucle === "native" ? "reference-worker-boucle-native" : "reference-worker"}.mjs?use-scheduling-api`,
+  { type: "module", name: `vault-vm-reference-${boucle}` },
+);
 const enCours = new Map();
 let compteur = 0;
 
@@ -162,5 +170,7 @@ globalThis.bancReprise = Object.freeze({
   libererArchive,
   executerAvecFichier,
   memoire,
+  /** Boucle demandée par l'URL de la page. Le harnais de rythme vérifie qu'il a bien eu celle-là. */
+  boucle,
 });
 etat.textContent = "Worker runtime prêt.";

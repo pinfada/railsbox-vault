@@ -28,7 +28,7 @@ import { createManifest } from "/src/vm/volume-manifest.mjs";
  * l'évaluation de SON module et ne le révise jamais : posée plus tard, elle n'aurait aucun effet
  * (ADR 0013, § « Mise en œuvre par #74 »).
  */
-const boucleOrdonnancement = installerBoucleOrdonnancement();
+export const boucleOrdonnancement = installerBoucleOrdonnancement();
 
 /**
  * Identités du volume, telles qu'un scénario les déclare. Elles servent DEUX fois : à inscrire le
