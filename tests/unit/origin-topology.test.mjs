@@ -94,6 +94,15 @@ test("la CSP de la coquille nomme chaque capacité et n'autorise que l'origine a
   // étroit, exigé par le runtime v86 depuis l'ADR 0003.
   assert.doesNotMatch(politique, /(^|[\s;])'unsafe-eval'/);
   assert.match(politique, /script-src 'self' 'wasm-unsafe-eval'/);
+  // `worker-src` reste `'self'` par défaut : l'ADR 0013 refuse d'y ajouter `blob:`, et la variante
+  // qui l'ajoute n'existe que pour le harnais de mesure `npm run test:csp`. Les deux moitiés sont
+  // vérifiées ici, sans quoi le drapeau pourrait devenir le défaut sans qu'aucun test ne bouge.
+  assert.match(politique, /worker-src 'self';/);
+  assert.doesNotMatch(politique, /blob:/);
+  assert.match(
+    shellContentSecurityPolicy(APP_ORIGIN, { workerSrcBlob: true }),
+    /worker-src 'self' blob:/,
+  );
 });
 
 test("le territoire applicatif est reconnu par son préfixe", () => {
@@ -171,6 +180,7 @@ test("les options du serveur ont des défauts par rôle et refusent une valeur i
     port: 4173,
     appOrigin: APP_ORIGIN,
     crossOriginIsolated: false,
+    workerSrcBlob: false,
   });
   assert.deepEqual(parseServerOptions(["--role", "app"]), {
     role: "app",
@@ -178,6 +188,7 @@ test("les options du serveur ont des défauts par rôle et refusent une valeur i
     port: 4174,
     appOrigin: APP_ORIGIN,
     crossOriginIsolated: false,
+    workerSrcBlob: false,
   });
   assert.equal(parseServerOptions(["--host", "127.0.0.1", "--port", "5000"]).port, 5000);
   assert.throws(() => parseServerOptions(["--port", "abc"]), /Port invalide/);

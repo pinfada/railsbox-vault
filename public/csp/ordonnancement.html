@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RailsBox Vault — mesure de la boucle d'ordonnancement de v86 (#52)</title>
+  </head>
+  <body>
+    <h1>Boucle d'ordonnancement de v86 sous la CSP de la coquille</h1>
+    <p>
+      Cette page ne conclut rien : elle démarre un Worker de mesure par configuration et publie son
+      relevé brut. Le protocole et les mesures retenues vivent dans
+      <code>docs/decisions/0013-csp-de-la-coquille-et-boucle-v86.md</code>.
+    </p>
+    <p id="etat">Prêt.</p>
+    <pre id="rapport"></pre>
+    <script type="module" src="./ordonnancement-banc.mjs"></script>
+  </body>
+</html>

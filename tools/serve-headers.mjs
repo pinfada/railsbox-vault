@@ -25,16 +25,25 @@ export const ISOLATION_REQUIRE_CORP = "require-corp";
  * WebAssembly, et sous `script-src 'self'` seul Chromium refuse `WebAssembly.instantiate`. C'est le
  * jeton le plus étroit qui autorise WebAssembly — il n'ouvre ni `eval` ni `new Function`, à la
  * différence de `'unsafe-eval'`. Voir l'ADR 0003.
+ *
+ * `worker-src` reste `'self'` : l'ADR 0013 refuse d'y ajouter `blob:`. Le seul consommateur qui
+ * l'exigerait est la boucle d'ordonnancement de secours de v86, dont aucun moteur capable de porter
+ * le produit n'a besoin. `workerSrcBlob` n'est PAS une option de service : c'est l'instrument de
+ * mesure qui rend cette décision falsifiable, réservé au harnais `npm run test:csp`. Aucun chemin
+ * de production ne la pose, et `tests/browser/csp-frontiere.spec.mjs` vérifie que la politique
+ * servie par défaut ne contient jamais `blob:`.
+ *
  * @param {string} appOrigin
+ * @param {{ workerSrcBlob?: boolean }} [variante]
  */
-export function shellContentSecurityPolicy(appOrigin) {
+export function shellContentSecurityPolicy(appOrigin, { workerSrcBlob = false } = {}) {
   return [
     "default-src 'none'",
     "script-src 'self' 'wasm-unsafe-eval'",
     "style-src 'self'",
     "img-src 'self'",
     "connect-src 'self'",
-    "worker-src 'self'",
+    workerSrcBlob ? "worker-src 'self' blob:" : "worker-src 'self'",
     `frame-src 'self' ${appOrigin}`,
     "frame-ancestors 'none'",
     "base-uri 'none'",
@@ -69,10 +78,17 @@ export function isCapabilityProbe(pathname) {
 
 /**
  * @param {{ role: string, pathname: string, isolation: string | null, appOrigin: string,
- *           requestOrigin?: string | null }} request
+ *           requestOrigin?: string | null, workerSrcBlob?: boolean }} request
  * @returns {Record<string, string>}
  */
-export function securityHeaders({ role, pathname, isolation, appOrigin, requestOrigin = null }) {
+export function securityHeaders({
+  role,
+  pathname,
+  isolation,
+  appOrigin,
+  requestOrigin = null,
+  workerSrcBlob = false,
+}) {
   if (!SERVER_ROLES.includes(role)) {
     throw new Error(`Rôle de serveur inconnu : ${role}.`);
   }
@@ -80,12 +96,16 @@ export function securityHeaders({ role, pathname, isolation, appOrigin, requestO
   const headers = {
     "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
-    // L'origine applicative doit rester encadrable par la coquille ; l'origine coquille, non.
+    // CORP gouverne les récupérations de SOUS-RESSOURCES en mode `no-cors` : il empêche une autre
+    // origine de charger les ressources de la coquille, et laisse celles du territoire applicatif
+    // chargeables. Il ne gouverne PAS l'encadrement d'un document — ce que la coquille doit à
+    // `frame-ancestors 'none'` dans sa CSP. Le commentaire précédent attribuait la non-encadrabilité
+    // à CORP ; l'ADR 0010 (§ « Ce qui reste servi ») a relevé l'erreur, corrigée ici.
     "Cross-Origin-Resource-Policy": role === "app" ? "cross-origin" : "same-origin",
   };
 
   if (role === "shell" && !isApplicationTerritory(pathname) && !isCapabilityProbe(pathname)) {
-    headers["Content-Security-Policy"] = shellContentSecurityPolicy(appOrigin);
+    headers["Content-Security-Policy"] = shellContentSecurityPolicy(appOrigin, { workerSrcBlob });
   }
 
   // Un document d'origine OPAQUE récupère ses modules ES en mode CORS avec « Origin: null » :
@@ -146,5 +166,9 @@ export function parseServerOptions(argv) {
     // Drapeau sans valeur : la suite de compatibilité #2 sert TOUTES ses réponses sous COOP/COEP,
     // là où le spike #35 n'isole que la requête qui le demande.
     crossOriginIsolated: argv.includes("--cross-origin-isolated"),
+    // Drapeau de MESURE (#52) : il ajoute `blob:` à `worker-src` pour que le harnais
+    // `npm run test:csp` puisse comparer les deux politiques sur les trois moteurs. Aucun
+    // lancement de production ne le pose — l'ADR 0013 a retenu `worker-src 'self'`.
+    workerSrcBlob: argv.includes("--worker-src-blob"),
   });
 }
