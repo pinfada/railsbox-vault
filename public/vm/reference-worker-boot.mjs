@@ -14,6 +14,7 @@ import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { openVolumeForWrite } from "/src/vm/opfs-volume-open.mjs";
 import { createReferenceGuestSession } from "/src/vm/reference-guest-session.mjs";
 import {
+  consignerRejetsNonTraites,
   executerSousGarde,
   exigerContexteExecutable,
   mesurerRythme,
@@ -29,6 +30,13 @@ import { createManifest } from "/src/vm/volume-manifest.mjs";
  * (ADR 0013, § « Mise en œuvre par #74 »).
  */
 export const boucleOrdonnancement = installerBoucleOrdonnancement();
+
+/**
+ * Rejets non traités du Worker, consignés dès son évaluation. `libv86.mjs` jette la valeur de
+ * retour de `scheduler.postTask` : une exception dans un tour de boucle rejette une promesse que
+ * rien n'attend, arrête l'émulateur sans bruit, et se déguise ensuite en délai de garde du guest.
+ */
+const lireRejets = consignerRejetsNonTraites();
 
 /**
  * Identités du volume, telles qu'un scénario les déclare. Elles servent DEUX fois : à inscrire le
@@ -93,6 +101,10 @@ function booterEtAttendreSante(session, { bootTimeoutMs, timeline, observations 
     {
       onObservation: (observation) => observations.push(observation),
       decrireBoucle: () => decrireBoucle(boucleOrdonnancement),
+      // Cadencée par la boucle autant que par la minuterie : sous un moteur qui affame ses
+      // minuteries pendant que la boucle tourne, une garde posée sur `setTimeout` n'expirerait pas
+      // dans la plage qu'elle borne (mesuré, voir `src/vm/scheduling-loop.mjs`).
+      boucle: boucleOrdonnancement,
     },
   );
 }
@@ -251,6 +263,10 @@ export async function bootEtVerifier({
       if (guestLog.length < 200) guestLog.push(ligne);
     },
     onSerial: (fragment) => timeline.ingererSerie(fragment),
+    // Les attentes de la session se cadencent aussi sur la boucle : sans cela, un moteur qui affame
+    // ses minuteries pendant que la boucle tourne laisserait un boot sans issue rester suspendu,
+    // sans jamais rendre de `BootTimeout` (WebKit, mesuré).
+    boucle: boucleOrdonnancement,
   });
 
   const started = performance.now();
@@ -306,7 +322,7 @@ export async function bootEtVerifier({
     conforming,
     counts: journal.counts(),
     failures,
-    observationsRuntime: observations,
+    observationsRuntime: [...observations, ...lireRejets()],
     guestLog,
   };
 }

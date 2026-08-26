@@ -12,6 +12,7 @@ import {
   endToken,
   reassembleCommandOutput,
 } from "./serial-console.mjs";
+import { cadencer } from "./scheduling-loop.mjs";
 import { BRIDGE_MODES, installDurabilityBridge } from "./v86-flush-bridge.mjs";
 
 export { GUEST_PROMPT };
@@ -43,6 +44,8 @@ export function createGuestSession({
   journal,
   mode = BRIDGE_MODES.full,
   memorySize = 128 * 1024 * 1024,
+  boucle = null,
+  cadence = (rappel) => cadencer(rappel, { periodeMs: POLL_INTERVAL_MS, boucle }),
 }) {
   let transcript = "";
   let emulator = null;
@@ -54,18 +57,32 @@ export function createGuestSession({
       ? source
       : source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength);
 
+  /**
+   * Attente CADENCÉE, et non « scrutée par une minuterie ». La différence porte : sous un moteur qui
+   * affame ses minuteries pendant que la boucle d'ordonnancement tourne (WebKit, mesuré le
+   * 2026-08-26), un `setInterval` ne s'exécuterait pas pendant la plage même que cette attente
+   * borne — et un guest qui n'aboutit pas resterait suspendu sans jamais rendre de `GuestTimeout`.
+   * `cadencer` avance depuis la minuterie ET depuis les battements de la boucle.
+   */
   const wait = (predicate, timeout, description) =>
     new Promise((resolve, reject) => {
       const started = Date.now();
-      const timer = setInterval(() => {
+      let fini = false;
+      let arreter = () => {};
+      const verifier = () => {
+        if (fini) return;
         if (predicate()) {
-          clearInterval(timer);
+          fini = true;
+          arreter();
           resolve();
         } else if (Date.now() - started > timeout) {
-          clearInterval(timer);
+          fini = true;
+          arreter();
           reject(new GuestTimeout(`Délai dépassé : ${description}`, transcript.slice(-4000)));
         }
-      }, POLL_INTERVAL_MS);
+      };
+      arreter = cadence(verifier);
+      if (fini) arreter();
     });
 
   return {

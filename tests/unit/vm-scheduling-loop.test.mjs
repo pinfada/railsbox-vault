@@ -11,9 +11,30 @@ import test from "node:test";
 
 import {
   SOURCES_BOUCLE,
+  cadencer,
   decrireBoucle,
   installerBoucleOrdonnancement,
 } from "../../src/vm/scheduling-loop.mjs";
+
+/**
+ * Boucle de simulation : elle expose le point d'abonnement `auBattement` du descripteur réel, et
+ * laisse l'épreuve décider QUAND la boucle bat. C'est ce qui permet de reproduire sous Node la
+ * famine mesurée sous WebKit — la boucle tourne, les minuteries ne s'exécutent pas.
+ */
+function boucleDeSimulation() {
+  const abonnes = new Set();
+  return {
+    source: SOURCES_BOUCLE.vault,
+    auBattement(rappel) {
+      abonnes.add(rappel);
+      return () => abonnes.delete(rappel);
+    },
+    battre() {
+      for (const rappel of [...abonnes]) rappel();
+    },
+    abonnes: () => abonnes.size,
+  };
+}
 
 /** Faux contexte de Worker : les primitives réelles, plus un compteur d'appels à `setTimeout`. */
 function faireCible({ natif = null } = {}) {
@@ -216,6 +237,7 @@ test("une boucle RETIRÉE n'est plus décrite comme en place", async () => {
     source: SOURCES_BOUCLE.vaultSurNative,
     natifPresent: true,
     appels: 1,
+    incidents: [],
   });
 
   boucle.retirer();
@@ -225,6 +247,157 @@ test("une boucle RETIRÉE n'est plus décrite comme en place", async () => {
   // Un second retrait ne doit rien casser : le harnais peut le demander sans savoir s'il a eu lieu.
   boucle.retirer();
   assert.equal(cible.scheduler, natif);
+});
+
+test("la cadence avance par la BOUCLE quand les minuteries sont affamées", () => {
+  // Fait mesuré le 2026-08-26 dans un Worker de la coquille : sous WebKit, une boucle serrée de
+  // messages de canal empêche `setInterval` et `setTimeout` de s'exécuter. Une échéance posée sur
+  // une minuterie seule n'expirerait donc jamais pendant la fenêtre qu'elle borne — la plage où v86
+  // tourne à plein. La cadence doit donc avancer aussi depuis la boucle elle-même.
+  const boucle = boucleDeSimulation();
+  let maintenant = 0;
+  let appels = 0;
+  const arreter = cadencer(() => (appels += 1), {
+    periodeMs: 100,
+    boucle,
+    horloge: () => maintenant,
+    // Minuteries affamées : `planifier` ne rappellera jamais. C'est WebKit sous boucle serrée.
+    planifier: () => null,
+    annuler: () => {},
+  });
+
+  boucle.battre();
+  assert.equal(appels, 0, "un battement avant la période ne déclenche rien");
+  maintenant = 150;
+  boucle.battre();
+  assert.equal(appels, 1);
+  boucle.battre();
+  assert.equal(appels, 1, "la cadence est bridée : un seul rappel par période");
+  maintenant = 260;
+  boucle.battre();
+  assert.equal(appels, 2);
+
+  arreter();
+  maintenant = 500;
+  boucle.battre();
+  assert.equal(appels, 2, "arrêter désabonne la boucle");
+  assert.equal(boucle.abonnes(), 0);
+});
+
+test("la cadence avance aussi par la minuterie, sans boucle posée", () => {
+  let maintenant = 0;
+  let appels = 0;
+  let tic = null;
+  const arreter = cadencer(() => (appels += 1), {
+    periodeMs: 50,
+    horloge: () => maintenant,
+    planifier: (rappel) => {
+      tic = rappel;
+      return "minuterie";
+    },
+    annuler: (identifiant) => {
+      assert.equal(identifiant, "minuterie");
+      tic = null;
+    },
+  });
+
+  maintenant = 60;
+  tic();
+  assert.equal(appels, 1);
+  arreter();
+  assert.equal(tic, null, "arrêter annule la minuterie");
+});
+
+test("les deux sources partagent le même bridage : la cadence ne double pas", () => {
+  const boucle = boucleDeSimulation();
+  let maintenant = 0;
+  let appels = 0;
+  let tic = null;
+  cadencer(() => (appels += 1), {
+    periodeMs: 100,
+    boucle,
+    horloge: () => maintenant,
+    planifier: (rappel) => {
+      tic = rappel;
+      return 1;
+    },
+    annuler: () => {},
+  });
+
+  maintenant = 120;
+  boucle.battre();
+  tic();
+  assert.equal(appels, 1, "battement et minuterie dans la même période ne comptent qu'une fois");
+});
+
+test("une boucle sans point d'abonnement ne fait pas échouer la cadence", () => {
+  // C'est le descripteur rendu quand rien n'a été posé (mode « si le natif est absent ») : la
+  // cadence doit alors retomber sur la minuterie seule, sans lever.
+  let maintenant = 0;
+  let appels = 0;
+  let tic = null;
+  cadencer(() => (appels += 1), {
+    periodeMs: 10,
+    boucle: { source: "native" },
+    horloge: () => maintenant,
+    planifier: (rappel) => {
+      tic = rappel;
+      return 1;
+    },
+    annuler: () => {},
+  });
+  maintenant = 100;
+  tic();
+  assert.equal(appels, 1);
+});
+
+test("la boucle posée expose ses battements, un par tâche exécutée", async () => {
+  const cible = faireCible();
+  const boucle = installerBoucleOrdonnancement({ cible });
+  let battements = 0;
+  const desabonner = boucle.auBattement(() => (battements += 1));
+
+  await cible.scheduler.postTask(() => null);
+  await cible.scheduler.postTask(() => null);
+  assert.equal(battements, 2);
+
+  desabonner();
+  await cible.scheduler.postTask(() => null);
+  assert.equal(battements, 2, "se désabonner arrête les battements");
+  boucle.retirer();
+});
+
+test("un abonné fautif n'emporte pas la boucle, et sa faute est consignée", async () => {
+  // Un rappel qui lève ne doit pas arrêter l'émulateur — mais il ne doit pas disparaître non plus.
+  // Sa faute est consignée et publiée par le compte rendu ; le tour suivant a lieu quand même.
+  const cible = faireCible();
+  const boucle = installerBoucleOrdonnancement({ cible });
+  boucle.auBattement(() => {
+    throw new Error("abonné fautif");
+  });
+
+  assert.equal(await cible.scheduler.postTask(() => "premier"), "premier");
+  assert.equal(await cible.scheduler.postTask(() => "second"), "second");
+  assert.deepEqual(decrireBoucle(boucle).incidents, ["abonné fautif", "abonné fautif"]);
+  boucle.retirer();
+});
+
+test("une tâche dont le signal est déjà abandonné est refusée, pas exécutée en silence", async () => {
+  // `postTask` de la plateforme accepte `signal` et `priority` ; la boucle de Vault n'implémente
+  // NI l'un NI l'autre — v86 n'en passe aucun. Ignorer un signal DÉJÀ abandonné exécuterait une
+  // tâche que l'appelant a annulée : le seul cas décidable sans machinerie est donc refusé net.
+  const cible = faireCible();
+  const boucle = installerBoucleOrdonnancement({ cible });
+  const controle = new AbortController();
+  controle.abort();
+  let executee = false;
+
+  await assert.rejects(
+    cible.scheduler.postTask(() => (executee = true), { signal: controle.signal }),
+    (erreur) => erreur.name === "AbortError",
+  );
+  assert.equal(executee, false);
+  boucle.retirer();
 });
 
 test("les autres membres de l'ordonnanceur natif restent atteignables", async () => {

@@ -35,6 +35,13 @@ export const RUNTIME_ERROR_CODES = Object.freeze({
    * elle dit que le chien de garde a perdu son instrument, pas que l'émulateur s'est arrêté.
    */
   ticksUnreadable: "VAULT_RUNTIME_TICKS_UNREADABLE",
+  /**
+   * Une promesse a été rejetée sans que personne ne l'observe dans le Worker runtime. C'est une
+   * OBSERVATION, non fatale, et elle vaut d'être publiée : v86 n'attend PAS la promesse rendue par
+   * `scheduler.postTask`, si bien qu'une exception levée dans son rappel de tour arrête l'émulateur
+   * en silence et se déguise ensuite en délai de garde du guest.
+   */
+  unhandledRejection: "VAULT_RUNTIME_UNHANDLED_REJECTION",
 });
 
 const CODES_CONNUS = new Set(Object.values(RUNTIME_ERROR_CODES));
@@ -84,8 +91,22 @@ export function wasmRefused(cause) {
 export function workerRefused({ raison, observation }) {
   return new RuntimeError(
     RUNTIME_ERROR_CODES.workerRefused,
-    `v86 emprunterait sa boucle de secours (Worker imbriqué « blob: ») parce que ${raison}, et ce Worker ne donne pas signe de vie (${observation}) : la CSP de la coquille sert « worker-src 'self' ». Charger le Worker runtime avec « ?use-scheduling-api » sur un moteur exposant « scheduler.postTask ». Voir l'ADR 0013 et docs/compatibility.md.`,
+    `v86 emprunterait sa boucle de secours (Worker imbriqué « blob: ») parce que ${raison}, et ce Worker ne donne pas signe de vie (${observation}) : la CSP de la coquille sert « worker-src 'self' ». Charger le Worker runtime avec « ?use-scheduling-api » : depuis #74, Vault fournit lui-même la boucle « scheduler.postTask », y compris sur un moteur qui ne l'expose pas. Voir l'ADR 0013 et docs/compatibility.md.`,
     { raison, observation },
+  );
+}
+
+/**
+ * Une promesse rejetée que personne n'observait. Ce n'est PAS une panne du runtime : c'est une
+ * observation publiée dans le compte rendu. Elle existe parce que v86 jette la valeur de retour de
+ * `scheduler.postTask` — une exception dans son rappel de tour n'atteint donc aucun `try` du dépôt,
+ * arrête l'émulateur sans bruit, et se déguise ensuite en délai de garde du guest.
+ */
+export function unhandledRejection({ raison }) {
+  return new RuntimeError(
+    RUNTIME_ERROR_CODES.unhandledRejection,
+    `Une promesse a été rejetée sans être observée dans ce Worker : ${raison}. v86 n'attend pas la promesse de « scheduler.postTask » : si ce rejet vient d'un tour de boucle, l'émulateur s'est arrêté là, et tout délai de garde ultérieur accuserait le GUEST à tort.`,
+    { raison },
   );
 }
 
@@ -108,7 +129,7 @@ function verdictSurLaBoucle(boucle) {
   if (boucle.appels > 0) {
     return ` La boucle d'ordonnancement posée par Vault (« ${boucle.source} ») a reçu ${boucle.appels} tâche(s) : v86 l'emprunte bien, et la panne est donc ailleurs.`;
   }
-  return ` La boucle d'ordonnancement posée par Vault (« ${boucle.source} ») n'a reçu AUCUNE tâche : v86 ne l'emprunte pas. Il ne reste qu'une cause possible — l'URL de ce Worker ne contient pas « use-scheduling-api ».`;
+  return ` La boucle d'ordonnancement posée par Vault (« ${boucle.source} ») n'a reçu AUCUNE tâche : v86 ne l'emprunte pas. Cause la plus probable : l'URL de ce Worker ne contient pas « use-scheduling-api ». Autres causes possibles, et à écarter dans cet ordre : la boucle a été posée APRÈS l'import de « libv86.mjs » (v86 fige son chemin à l'évaluation de son module), ou une montée de version de v86 a changé la condition qu'il teste — voir docs/development.md § « Monter v86 de version ».`;
 }
 
 /**

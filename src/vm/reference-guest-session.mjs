@@ -12,6 +12,7 @@
 // ouvrir de handle, ce qui le garde vérifiable sans réseau ni support.
 
 import { JOURNAL_OPERATIONS } from "./block-journal.mjs";
+import { cadencer } from "./scheduling-loop.mjs";
 import { createSerialHttpClient } from "./serial-http-client.mjs";
 import { BRIDGE_MODES, installDurabilityBridge } from "./v86-flush-bridge.mjs";
 
@@ -56,6 +57,8 @@ export function createReferenceGuestSession({
   mode = BRIDGE_MODES.full,
   onJournal = () => {},
   onSerial = () => {},
+  boucle = null,
+  cadence = (rappel) => cadencer(rappel, { periodeMs: POLL_INTERVAL_MS, boucle }),
 }) {
   if (typeof V86 !== "function")
     throw new TypeError("createReferenceGuestSession exige la classe V86.");
@@ -74,18 +77,32 @@ export function createReferenceGuestSession({
     onLog: (texte) => onJournal(texte),
   });
 
+  /**
+   * Attente CADENCÉE : elle avance depuis la minuterie ET depuis les battements de la boucle
+   * d'ordonnancement. Sous un moteur qui affame ses minuteries pendant que la boucle tourne
+   * (WebKit, mesuré le 2026-08-26), une attente scrutée par un `setInterval` ne s'exécuterait pas
+   * pendant la plage qu'elle borne : un boot qui n'aboutit pas resterait suspendu, sans
+   * `BootTimeout` — le silence que #52 combat.
+   */
   const wait = (predicate, timeout, description) =>
     new Promise((resolve, reject) => {
       const started = Date.now();
-      const timer = setInterval(() => {
+      let fini = false;
+      let arreter = () => {};
+      const verifier = () => {
+        if (fini) return;
         if (predicate()) {
-          clearInterval(timer);
+          fini = true;
+          arreter();
           resolve();
         } else if (Date.now() - started > timeout) {
-          clearInterval(timer);
+          fini = true;
+          arreter();
           reject(new BootTimeout(`Délai dépassé : ${description}`, transcript.slice(-4000)));
         }
-      }, POLL_INTERVAL_MS);
+      };
+      arreter = cadence(verifier);
+      if (fini) arreter();
     });
 
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

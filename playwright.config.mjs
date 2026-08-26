@@ -8,8 +8,17 @@ const MOTEURS_CONNUS = ["chromium", "firefox", "webkit"];
  * Épreuves de frontière de la CSP et du diagnostic qu'elle commande (#52) : exécutées sur les trois
  * moteurs, jamais sur un seul. Une politique de sécurité ne s'applique pas de la même façon d'un
  * moteur à l'autre, et le diagnostic du runtime dépend de ce que chacun expose.
+ *
+ * Depuis #74, la famine des minuteries sous la boucle d'ordonnancement de Vault rejoint la liste,
+ * pour la même raison : elle mesure un comportement d'ORDONNANCEMENT qui diffère d'un moteur à
+ * l'autre — mesuré, WebKit affame ses minuteries là où Chromium et Firefox ne le font pas — et dont
+ * dépend la cadence du chien de garde du runtime.
  */
-const FRONTIERE_CSP = ["**/csp-frontiere.spec.mjs", "**/runtime-diagnostic.spec.mjs"];
+const FRONTIERE_CSP = [
+  "**/csp-frontiere.spec.mjs",
+  "**/runtime-diagnostic.spec.mjs",
+  "**/ordonnancement-famine.spec.mjs",
+];
 
 // Le harnais mesure une frontière d'origine : il lui faut DEUX serveurs, donc deux origines
 // réelles. `127.0.0.1` et `localhost` en fournissent sans DNS ni certificat, et restent tous deux

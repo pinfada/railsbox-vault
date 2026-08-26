@@ -2,8 +2,9 @@
 // le contexte RÉEL — celui du Worker runtime — et rien d'autre. La logique de décision reste dans
 // le module injectable ; ici ne vivent que les gestes qui exigent un navigateur.
 
-import { noTick, ticksUnreadable } from "./runtime-errors.mjs";
+import { noTick, ticksUnreadable, unhandledRejection } from "./runtime-errors.mjs";
 import { controlerRuntime } from "./runtime-preflight.mjs";
+import { cadencer } from "./scheduling-loop.mjs";
 
 /** Délai laissé à un Worker `blob:` pour donner signe de vie avant d'être déclaré refusé. */
 export const DELAI_SIGNE_DE_VIE_MS = 1500;
@@ -75,6 +76,31 @@ export async function exigerContexteExecutable() {
   if (erreur) throw erreur;
 }
 
+/** Rejets non traités retenus par contexte. Bornés : un compte rendu n'est pas un journal. */
+const MAX_REJETS = 20;
+
+/**
+ * Consigne les promesses rejetées que personne n'observe dans ce contexte.
+ *
+ * Ce n'est pas de la prudence générale : `libv86.mjs` appelle `scheduler.postTask(rappel, …)` et
+ * **jette la valeur de retour**. Une exception levée dans le rappel de tour rejette donc une
+ * promesse que rien n'attend — l'émulateur s'arrête, aucun `try` du dépôt n'est traversé, et le
+ * délai de garde suivant accuse le GUEST. C'est le silence de #52, à l'intérieur de la boucle.
+ *
+ * @param {{ addEventListener?: Function }} [cible]
+ * @returns {() => Record<string, unknown>[]} lecture des observations accumulées
+ */
+export function consignerRejetsNonTraites(cible = globalThis) {
+  const observations = [];
+  cible.addEventListener?.("unhandledrejection", (evenement) => {
+    if (observations.length >= MAX_REJETS) return;
+    const cause = evenement?.reason;
+    const raison = String(cause?.message ?? cause ?? "sans raison").slice(0, 300);
+    observations.push(unhandledRejection({ raison }).toJSON());
+  });
+  return () => observations.slice();
+}
+
 /**
  * Rythme observé de la boucle de v86 sur une fenêtre donnée, à partir de son compteur de tours.
  *
@@ -122,10 +148,14 @@ export function mesurerRythme({ ticks, fenetreMs }) {
  * @param {() => number | null} lireTicks accès au compteur de tours, `null` si illisible
  * @param {{ delaiMs?: number, periodeMs?: number,
  *           onObservation?: (o: Record<string, unknown>) => void,
- *           decrireBoucle?: () => Record<string, unknown> | null }} [options]
+ *           decrireBoucle?: () => Record<string, unknown> | null,
+ *           boucle?: object | null, horloge?: () => number,
+ *           cadence?: (rappel: () => void) => () => void }} [options]
  *   `decrireBoucle` rend la boucle d'ordonnancement posée par Vault (#74), consignée dans le
  *   contexte de `VAULT_RUNTIME_NO_TICK` : le nombre de tâches qu'elle a reçues dit si v86 l'a
  *   empruntée, et c'est ce qui sépare « boucle ignorée » de « panne ailleurs ».
+ *   `boucle` est ce même descripteur : la garde s'abonne à ses BATTEMENTS, faute de quoi elle
+ *   n'expirerait pas sous un moteur qui affame ses minuteries pendant qu'elle tourne.
  * @returns {{ promesse: Promise<never>, arreter: () => void,
  *             observations: () => Record<string, unknown>[] }}
  */
@@ -136,21 +166,31 @@ export function surveillerPremierTour(
     periodeMs = 250,
     onObservation = () => {},
     decrireBoucle = () => null,
+    boucle = null,
+    horloge = () => Date.now(),
+    cadence = (rappel) => cadencer(rappel, { periodeMs, boucle }),
   } = {},
 ) {
-  let minuterie = null;
-  let scrutation = null;
   let dernier = null;
   let avance = false;
+  let arreterCadence = () => {};
   const observations = [];
+  const debut = horloge();
 
   const promesse = new Promise((_, reject) => {
-    scrutation = setInterval(() => {
+    // UNE seule mécanique : l'échantillonnage ET l'échéance sont consultés à chaque battement de
+    // cadence. L'échéance n'est donc plus portée par un `setTimeout` — sous un moteur qui affame ses
+    // minuteries pendant que la boucle tourne (WebKit, mesuré), elle n'expirerait jamais dans la
+    // plage qu'elle borne.
+    const battement = () => {
       const tours = lireTicks();
-      if (typeof tours === "number" && dernier !== null && tours > dernier) avance = true;
-      if (typeof tours === "number") dernier = tours;
-    }, periodeMs);
-    minuterie = setTimeout(() => {
+      if (typeof tours === "number") {
+        if (dernier !== null && tours > dernier) avance = true;
+        dernier = tours;
+      }
+      if (horloge() - debut < delaiMs) return;
+
+      arreterCadence();
       if (avance) return;
       if (dernier === null) {
         const observation = ticksUnreadable({ delaiMs }).toJSON();
@@ -159,15 +199,15 @@ export function surveillerPremierTour(
         return;
       }
       reject(noTick({ delaiMs, ticks: dernier, boucle: decrireBoucle() }));
-    }, delaiMs);
+    };
+    arreterCadence = cadence(battement);
   });
 
   return {
     promesse,
     observations: () => observations.slice(),
     arreter() {
-      if (scrutation !== null) clearInterval(scrutation);
-      if (minuterie !== null) clearTimeout(minuterie);
+      arreterCadence();
       // Une promesse rejetée que plus personne n'observe deviendrait un rejet non traité, c'est-à-
       // dire exactement le silence que cette issue combat. On la neutralise explicitement.
       promesse.catch(() => {});
@@ -189,10 +229,14 @@ export function surveillerPremierTour(
  * @param {() => Promise<T>} travail
  * @param {{ delaiMs?: number, periodeMs?: number,
  *           onObservation?: (o: Record<string, unknown>) => void,
- *           decrireBoucle?: () => Record<string, unknown> | null }} [options]
+ *           decrireBoucle?: () => Record<string, unknown> | null,
+ *           boucle?: object | null, horloge?: () => number,
+ *           cadence?: (rappel: () => void) => () => void }} [options]
  *   `decrireBoucle` rend la boucle d'ordonnancement posée par Vault (#74), consignée dans le
  *   contexte de `VAULT_RUNTIME_NO_TICK` : le nombre de tâches qu'elle a reçues dit si v86 l'a
  *   empruntée, et c'est ce qui sépare « boucle ignorée » de « panne ailleurs ».
+ *   `boucle` est ce même descripteur : la garde s'abonne à ses BATTEMENTS, faute de quoi elle
+ *   n'expirerait pas sous un moteur qui affame ses minuteries pendant qu'elle tourne.
  * @returns {Promise<T>}
  */
 export async function executerSousGarde(lireTicks, travail, options = {}) {

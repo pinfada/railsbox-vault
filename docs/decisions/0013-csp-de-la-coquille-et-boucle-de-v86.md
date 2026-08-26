@@ -150,12 +150,13 @@ couvrent la même matrice, la plus étroite l'emporte, et celle-ci ne coûte auc
 **Et un refus cesse d'être silencieux.** Le Worker runtime contrôle son contexte AVANT de construire
 l'émulateur et rend un code de `src/vm/runtime-errors.mjs` :
 
-| Code                                   | Ce qu'il nomme                                                             |
-| -------------------------------------- | -------------------------------------------------------------------------- |
-| `VAULT_RUNTIME_WASM_REFUSED`           | la CSP du contexte ne nomme pas WebAssembly                                |
-| `VAULT_RUNTIME_WORKER_REFUSED`         | v86 emprunterait sa boucle `blob:`, et ce Worker ne donne pas signe de vie |
-| `VAULT_RUNTIME_SCHEDULING_UNAVAILABLE` | aucun des deux chemins d'ordonnancement n'existe dans ce contexte          |
-| `VAULT_RUNTIME_NO_TICK`                | l'émulateur est construit et sa boucle n'a pas avancé en 20 s              |
+| Code                                   | Ce qu'il nomme                                                              |
+| -------------------------------------- | --------------------------------------------------------------------------- |
+| `VAULT_RUNTIME_WASM_REFUSED`           | la CSP du contexte ne nomme pas WebAssembly                                 |
+| `VAULT_RUNTIME_WORKER_REFUSED`         | v86 emprunterait sa boucle `blob:`, et ce Worker ne donne pas signe de vie  |
+| `VAULT_RUNTIME_SCHEDULING_UNAVAILABLE` | aucun des deux chemins d'ordonnancement n'existe dans ce contexte           |
+| `VAULT_RUNTIME_NO_TICK`                | l'émulateur est construit et sa boucle n'a pas avancé en 20 s               |
+| `VAULT_RUNTIME_UNHANDLED_REJECTION`    | une promesse a été rejetée sans observateur dans le Worker (#74, non fatal) |
 
 Le contrôle **constate** au lieu d'affirmer : quand v86 emprunterait sa boucle de secours, il sonde
 un Worker `blob:` réel et n'accuse la CSP que si ce Worker se tait. Sous une politique qui
@@ -219,14 +220,19 @@ cale Vault posée si l'API manque » du tableau ci-dessus le montre : _aucun com
 cale non posée. C'est bien l'implémentation **native** qu'il faut remplacer, et non une absence
 qu'il suffirait de compléter.
 
-Deux bornes, parce que remplacer une API du moteur n'est pas anodin :
+Trois bornes, parce que remplacer une API du moteur n'est pas anodin :
 
 - **dans les Workers de Vault uniquement, jamais dans une page.** v86 vit dans le Worker (ADR 0002),
   et remplacer l'ordonnanceur d'un document changerait le rythme de code étranger pour un gain nul.
   `installerBoucleOrdonnancement` **refuse** de se poser sur un contexte portant `document`, ce
   qu'une épreuve unitaire fige ;
-- **`postTask` seulement.** Les autres membres de l'ordonnanceur natif — `scheduler.yield` là où le
-  moteur l'expose — restent atteignables et relayés au natif.
+- **`postTask` seulement.** Les autres MEMBRES de l'ordonnanceur natif — `scheduler.yield` là où le
+  moteur l'expose — restent atteignables et relayés au natif ;
+- **et `postTask` n'est pas complet.** Ses OPTIONS ne sont pas les membres : `priority` est
+  **ignorée**, et `signal` n'est honoré que s'il est **déjà abandonné** à la prise en charge — une
+  annulation survenant ensuite ne l'est pas. v86 n'en passe aucun des deux : il appelle
+  `postTask(rappel, { delay })` et jette la valeur de retour. Un signal déjà abandonné est refusé
+  net plutôt qu'ignoré, parce que l'ignorer exécuterait une tâche que l'appelant a annulée.
 
 La pose est **vérifiée** : si l'écriture de `scheduler` restait sans effet, l'installation lève au
 lieu de rendre un succès. Sans ce contrôle, v86 emprunterait la boucle du moteur en silence — la
@@ -244,24 +250,65 @@ La boucle est posée **avant** le contrôle préalable, qui observe donc un cont
 `scheduler.postTask` est toujours une fonction. Trois conséquences, qu'il vaut mieux écrire que
 laisser découvrir :
 
-1. `VAULT_RUNTIME_SCHEDULING_UNAVAILABLE` **ne peut plus être produit par un Worker qui a posé la
-   boucle** : il nomme le cas où aucun des deux chemins n'existe, et l'un des deux existe désormais
-   toujours. Le code reste dans `runtime-errors.mjs` et reste éprouvé sur contexte injecté — le
-   contrôle préalable reçoit son environnement en paramètre et n'a pas à supposer qu'une boucle a
-   été posée. Il n'est pas retiré : un contexte sans constructeur `Worker` le produirait encore ;
+1. `VAULT_RUNTIME_SCHEDULING_UNAVAILABLE` devient **inatteignable dans un navigateur**, et la
+   condition exacte est celle du code, pas celle de la pose. `controlerRuntime` rend `null` dès que
+   le chemin retenu est `scheduler.postTask` — c'est-à-dire dès que **l'URL porte le marqueur** et
+   que `postTask` existe. Ce code n'est atteint que sur l'autre branche, et il y exige **en plus**
+   l'absence du constructeur `Worker`, qu'aucun navigateur ne présente. Poser la boucle ne suffit
+   donc pas à le rendre inatteignable : c'est le marqueur d'URL qui décide, et sans marqueur c'est
+   `VAULT_RUNTIME_WORKER_REFUSED` qui est rendu. Le code reste dans `runtime-errors.mjs` et reste
+   éprouvé sur contexte injecté — le contrôle préalable reçoit son environnement en paramètre et n'a
+   pas à supposer qu'une boucle a été posée ;
 2. `VAULT_RUNTIME_WORKER_REFUSED` **change de sens et gagne en précision**. Sa raison ne peut plus
-   être « le moteur n'expose pas `scheduler.postTask` » ; il n'en reste qu'une, la même sur les
-   trois moteurs : **l'URL du Worker ne porte pas `use-scheduling-api`**. C'est une faute de la
-   coquille, pas une limite du moteur, et `tests/browser/runtime-diagnostic.spec.mjs` l'exige
-   désormais sans nommer aucun moteur ;
+   être « le moteur n'expose pas `scheduler.postTask` » ; il ne reste que la faute de coquille, la
+   même sur les trois moteurs : **l'URL du Worker ne porte pas `use-scheduling-api`**. Et
+   `tests/browser/runtime-diagnostic.spec.mjs` l'exige désormais sans nommer aucun moteur ;
 3. `VAULT_RUNTIME_NO_TICK` reste le filet, et devient plus utile : son contexte porte la boucle
    posée et le **nombre de tâches qu'elle a reçues**. Zéro tâche avec un compteur figé dit « v86
    n'emprunte pas notre boucle » ; des tâches reçues avec un compteur figé dit « il l'emprunte, la
-   panne est ailleurs ». Deux épreuves unitaires figent les deux moitiés.
+   panne est ailleurs ». Son message nomme la cause la plus **probable** — le marqueur d'URL — puis
+   les deux autres à écarter : une boucle posée après l'import de `libv86.mjs`, ou une montée de
+   version qui aurait changé la condition testée par v86 ;
+4. `VAULT_RUNTIME_UNHANDLED_REJECTION` **est nouveau**, non fatal, et il comble un silence propre à
+   cette boucle : `libv86.mjs` appelle `scheduler.postTask(rappel, …)` et **jette la valeur de
+   retour**. Une exception dans un tour de boucle rejette donc une promesse que rien n'attend —
+   l'émulateur s'arrête, aucun `try` du dépôt n'est traversé, et le délai de garde suivant
+   accuserait le GUEST. Les deux Workers runtime consignent ces rejets dans `observationsRuntime`.
+
+### La boucle affame les minuteries sur un moteur, et le chien de garde en dépendait
+
+Fait mesuré le **2026-08-26** dans un Worker de la coquille, sur les trois moteurs
+(`tests/browser/ordonnancement-famine.spec.mjs`, six secondes, aucun artefact v86). Une boucle
+serrée `postTask({ delay: 0 })` auto-réamorcée pendant cinq secondes, et l'on compte ce qui traverse
+:
+
+| Moteur       | Tâches en 5 s | `setInterval` 250 ms | `setTimeout` 500 ms | Messages de la page | Échéance cadencée par la boucle |
+| ------------ | ------------: | -------------------: | ------------------- | ------------------: | ------------------------------: |
+| Chromium 151 |     1 120 303 |                19/20 | tiré                |                 5/5 |                        1 250 ms |
+| Firefox 153  |       594 263 |                19/20 | tiré                |                 5/5 |                        1 000 ms |
+| WebKit 26.5  |        61 650 |             **0/20** | **jamais tiré**     |                 5/5 |                        1 000 ms |
+
+**« Un message de canal n'est pas bridé » n'était donc que la moitié du fait.** L'autre moitié :
+sous WebKit, le port a priorité stricte sur la source « minuteries », et pendant que la boucle
+tourne, **aucune** minuterie du Worker ne s'exécute. Or c'est exactement la plage qu'un chien de
+garde doit borner — celle où v86 tourne à plein. Posés sur `setInterval` et `setTimeout`, le chien
+de garde du premier tour et les attentes des sessions de guest n'auraient pu ni échantillonner ni
+expirer là où ils servent : `VAULT_RUNTIME_NO_TICK` serait resté inatteignable pendant sa propre
+fenêtre, et un boot sans issue serait resté suspendu sans `GuestTimeout`. C'est le silence de #52,
+rentrant par une autre porte, sur le moteur même que cette tranche fait passer à « oui ».
+
+**Ce que la mise en œuvre en tire.** La boucle expose ses **battements** — un par tâche exécutée —
+et `cadencer` fait avancer toute échéance depuis DEUX sources, la minuterie et les battements, avec
+un bridage partagé. Les deux sont nécessaires, et pour des raisons opposées : la minuterie seule est
+affamée pendant que la boucle tourne ; la boucle seule ne cadence rien lorsqu'elle ne bat pas — mais
+elle n'affame alors plus personne, et la minuterie reprend la main. Le chien de garde n'a plus de
+`setTimeout` du tout : son échéance est consultée à chaque battement de cadence, sur une horloge.
 
 Le risque résiduel 2 de cet ADR — _le chien de garde ne couvre pas un thread monopolisé_ — reste
-exact et n'est pas levé. Il devient seulement moins probable : la cause mesurée du seul cas connu,
-l'ordonnanceur natif de Firefox, n'est plus sur le chemin.
+exact, et sa frontière a bougé dans les deux sens : le cas connu (l'ordonnanceur natif de Firefox)
+n'est plus sur le chemin, un cas voisin (la famine des minuteries sous WebKit) est désormais
+couvert, et ce qui reste non couvert est le thread qui ne rend la main **à personne** — ni
+minuterie, ni message de canal.
 
 ### Ce que la boucle change au rythme de l'émulateur
 

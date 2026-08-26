@@ -234,6 +234,77 @@ test("la garde couvre TOUTE la phase confiée, pas seulement sa première attent
   assert.equal(secondePhaseTerminee, false);
 });
 
+test("sous famine des minuteries, la garde expire quand même — par la boucle", async () => {
+  // Le cas mesuré sous WebKit : la boucle d'ordonnancement tourne à plein, et AUCUNE minuterie de
+  // ce Worker ne s'exécute. Une garde posée sur `setTimeout` n'expirerait donc jamais pendant la
+  // plage qu'elle borne, et un émulateur qui ne bat pas retomberait sur le délai de garde du guest
+  // — dont l'expiration accuse le GUEST. C'est le silence de #52 par une autre porte.
+  //
+  // Le délai est ici de cinq secondes de temps RÉEL : si la garde dépendait encore d'une minuterie,
+  // rien n'expirerait dans la fenêtre de cette épreuve. Seul le battement de la boucle, lu sur une
+  // horloge injectée, peut la faire trancher.
+  let maintenant = 0;
+  let battre = null;
+  const garde = surveillerPremierTour(() => 1, {
+    delaiMs: 5000,
+    horloge: () => maintenant,
+    cadence: (rappel) => {
+      battre = rappel;
+      return () => {
+        battre = null;
+      };
+    },
+  });
+
+  maintenant = 1000;
+  battre();
+  maintenant = 6000;
+  battre();
+  const erreur = await Promise.race([
+    garde.promesse.catch((echec) => echec),
+    new Promise((resolve) => setTimeout(() => resolve("aucune expiration"), 300)),
+  ]);
+  garde.arreter();
+
+  assert.ok(isRuntimeError(erreur, RUNTIME_ERROR_CODES.noTick));
+  assert.equal(erreur.context.ticks, 1);
+});
+
+test("la garde reste silencieuse quand la boucle avance, même cadencée par elle", async () => {
+  let maintenant = 0;
+  let tours = 0;
+  let battre = null;
+  const garde = surveillerPremierTour(
+    () => {
+      tours += 3;
+      return tours;
+    },
+    {
+      delaiMs: 5000,
+      horloge: () => maintenant,
+      cadence: (rappel) => {
+        battre = rappel;
+        return () => {};
+      },
+    },
+  );
+
+  maintenant = 1000;
+  battre();
+  maintenant = 6000;
+  battre();
+  const verdict = await Promise.race([
+    garde.promesse.then(
+      () => "resolue",
+      () => "rejetee",
+    ),
+    new Promise((resolve) => setTimeout(() => resolve("silencieuse"), 200)),
+  ]);
+  garde.arreter();
+
+  assert.equal(verdict, "silencieuse");
+});
+
 test("compteur figé et boucle jamais empruntée : la garde nomme le marqueur d'URL", async () => {
   // Depuis #74, la boucle d'ordonnancement est POSÉE par Vault dans tout Worker runtime. Un
   // compteur figé n'a donc plus la même cause qu'avant : ou bien v86 n'emprunte pas notre boucle —

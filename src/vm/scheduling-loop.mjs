@@ -17,7 +17,24 @@
 //
 // Le délai nul passe par un `MessageChannel` et non par `setTimeout` : au-delà de cinq
 // imbrications, les moteurs bornent `setTimeout(…, 0)` à quatre millisecondes, ce qui plafonnerait
-// la boucle de v86 à 250 tours par seconde. Un message de canal n'est pas bridé.
+// la boucle de v86 à 250 tours par seconde. Un message de canal n'est pas bridé de cette façon.
+//
+// **Mais « pas bridé » n'est que la moitié du fait, et l'autre moitié coûte cher.** Mesuré le
+// 2026-08-26 dans un Worker de la coquille, sur les trois moteurs
+// (`tests/browser/ordonnancement-famine.spec.mjs`) : pendant une boucle serrée de messages de
+// canal, **WebKit n'exécute AUCUNE minuterie** — ni `setInterval`, ni `setTimeout` — tant que la
+// boucle dure ; Chromium et Firefox les exécutent. Les messages venus de la page, eux, passent
+// partout : le port n'est pas la même source de tâches. Un chien de garde posé sur une minuterie
+// seule ne pourrait donc ni échantillonner ni expirer pendant la plage qu'il borne — celle où v86
+// tourne à plein. C'est pourquoi cette boucle expose ses BATTEMENTS (`auBattement`) et pourquoi
+// `cadencer` s'en sert : une échéance se consulte depuis la boucle elle-même.
+//
+// Ce que `postTask` posé N'IMPLÉMENTE PAS, et que la plateforme offre : `priority` est ignorée, et
+// `signal` n'est honoré que s'il est DÉJÀ abandonné à la prise en charge — une annulation survenant
+// ensuite ne l'est pas. v86 n'en passe aucun des deux (`postTask(rappel, { delay })`, valeur de
+// retour jetée). Un `delay > 0` retombe sur `setTimeout` du contexte, donc sous le plafond de
+// quatre millisecondes après cinq imbrications : cet effet n'est PAS mesuré ici, et v86 ne l'atteint
+// pas dans les relevés du dépôt (le compteur d'appels y suit le compteur de tours).
 //
 // [ADR 0013]: ../../docs/decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md
 
@@ -34,6 +51,9 @@ export const SOURCES_BOUCLE = Object.freeze({
 /** Une pose par contexte : un second appel rend la boucle déjà en place, il n'en empile pas. */
 const POSEES = new WeakMap();
 
+/** Fautes d'abonnés retenues par boucle. Bornées : un compte rendu n'est pas un journal. */
+const MAX_INCIDENTS = 10;
+
 /**
  * Boucle proprement dite. Elle ne connaît que sa cible : `MessageChannel` et `setTimeout` sont pris
  * SUR elle, ce qui la rend éprouvable sous Node avec un faux contexte.
@@ -43,13 +63,36 @@ const POSEES = new WeakMap();
 function creerBoucle(cible) {
   const enAttente = new Map();
   const canal = new cible.MessageChannel();
+  const abonnes = new Set();
+  const incidents = [];
   let sequence = 0;
   let appels = 0;
+
+  /**
+   * Un battement par tâche exécutée. C'est la seule horloge qui avance quand un moteur affame ses
+   * minuteries sous une boucle serrée (mesuré sous WebKit) : sans elle, aucune échéance de ce
+   * contexte n'expirerait pendant la plage où v86 tourne à plein.
+   *
+   * Un abonné fautif ne doit ni emporter l'émulateur, ni disparaître. Sa faute est donc CONSIGNÉE
+   * — les comptes rendus la publient par `decrireBoucle` — et le tour suivant a lieu quand même.
+   * La relancer hors de la boucle en ferait une exception non attrapée par tour, c'est-à-dire un
+   * bruit qui noierait la panne au lieu de la nommer.
+   */
+  const battre = () => {
+    for (const abonne of [...abonnes]) {
+      try {
+        abonne();
+      } catch (erreur) {
+        if (incidents.length < MAX_INCIDENTS) incidents.push(String(erreur?.message ?? erreur));
+      }
+    }
+  };
 
   canal.port1.onmessage = (evenement) => {
     const tache = enAttente.get(evenement.data);
     enAttente.delete(evenement.data);
     if (tache) tache();
+    battre();
   };
 
   const immediat = (tache) => {
@@ -60,6 +103,14 @@ function creerBoucle(cible) {
 
   const postTask = (rappel, options = {}) =>
     new Promise((resolve, reject) => {
+      // `signal` et `priority` de la plateforme ne sont PAS implémentés (v86 n'en passe aucun).
+      // Un signal DÉJÀ abandonné est pourtant décidable sans machinerie : l'ignorer exécuterait une
+      // tâche que l'appelant a annulée. Une annulation SURVENANT après la prise en charge, elle,
+      // n'est pas honorée — c'est dit dans l'en-tête de ce module et dans l'ADR 0013.
+      if (options.signal?.aborted) {
+        reject(options.signal.reason ?? new DOMException("Tâche abandonnée", "AbortError"));
+        return;
+      }
       appels += 1;
       const executer = () => {
         try {
@@ -79,12 +130,83 @@ function creerBoucle(cible) {
   return {
     postTask,
     appels: () => appels,
+    incidents: () => incidents.slice(),
+    auBattement(rappel) {
+      abonnes.add(rappel);
+      return () => abonnes.delete(rappel);
+    },
     fermer() {
       canal.port1.onmessage = null;
       canal.port1.close();
       canal.port2.close();
       enAttente.clear();
+      abonnes.clear();
     },
+  };
+}
+
+/**
+ * Cadence robuste : appelle `rappel` au plus une fois par `periodeMs`, et depuis DEUX sources — la
+ * minuterie du contexte **et** les battements de la boucle d'ordonnancement.
+ *
+ * Les deux sont nécessaires, et pour des raisons opposées :
+ *
+ *  - **la minuterie seule ne suffit pas.** Mesuré le 2026-08-26 dans un Worker de la coquille : sous
+ *    WebKit, une boucle serrée de messages de canal donne priorité stricte au port, et ni
+ *    `setInterval` ni `setTimeout` ne s'exécutent tant qu'elle dure. Or c'est exactement la plage
+ *    qu'un chien de garde doit borner — celle où v86 tourne à plein ;
+ *  - **la boucle seule ne suffit pas non plus.** Une boucle qui ne bat pas — la panne que le chien
+ *    de garde nomme — ne cadencerait rien. Mais elle n'affame alors plus personne, et la minuterie
+ *    reprend la main.
+ *
+ * Le bridage est PARTAGÉ : deux sources dans la même période ne produisent qu'un rappel.
+ *
+ * @param {() => void} rappel
+ * @param {{ periodeMs?: number, boucle?: { auBattement?: Function } | null, horloge?: () => number,
+ *           planifier?: (rappel: () => void, ms: number) => unknown,
+ *           annuler?: (identifiant: unknown) => void }} [options]
+ * @returns {() => void} arrêt : annule la minuterie et désabonne la boucle
+ */
+export function cadencer(
+  rappel,
+  {
+    periodeMs = 250,
+    boucle = null,
+    horloge = () => Date.now(),
+    planifier = (fonction, ms) => setTimeout(fonction, ms),
+    annuler = (identifiant) => clearTimeout(identifiant),
+  } = {},
+) {
+  let dernier = horloge();
+  let minuterie = null;
+  let arrete = false;
+
+  const battre = () => {
+    if (arrete) return;
+    const maintenant = horloge();
+    if (maintenant - dernier < periodeMs) return;
+    dernier = maintenant;
+    rappel();
+  };
+
+  // La minuterie se réarme elle-même : un `setInterval` accumulerait ses rappels en retard derrière
+  // une plage de famine, et les libérerait tous d'un coup à la sortie.
+  const armer = () => {
+    minuterie = planifier(() => {
+      battre();
+      if (!arrete) armer();
+    }, periodeMs);
+  };
+  armer();
+
+  const desabonner =
+    typeof boucle?.auBattement === "function" ? boucle.auBattement(battre) : () => {};
+
+  return () => {
+    if (arrete) return;
+    arrete = true;
+    annuler(minuterie);
+    desabonner();
   };
 }
 
@@ -155,7 +277,15 @@ export function installerBoucleOrdonnancement({ cible = globalThis, siNatifAbsen
 
   const natif = typeof cible.scheduler?.postTask === "function" ? cible.scheduler : null;
   if (natif && siNatifAbsent) {
-    return { source: SOURCES_BOUCLE.native, natifPresent: true, appels: () => null, retirer() {} };
+    return {
+      source: SOURCES_BOUCLE.native,
+      natifPresent: true,
+      appels: () => null,
+      // Aucune boucle de Vault : aucun battement à offrir. La cadence retombe sur la minuterie
+      // seule, ce qui est exact — sans boucle serrée de messages, rien ne l'affame.
+      auBattement: () => () => {},
+      retirer() {},
+    };
   }
   if (typeof cible.MessageChannel !== "function") {
     throw new Error(
@@ -179,6 +309,14 @@ export function installerBoucleOrdonnancement({ cible = globalThis, siNatifAbsen
     source: natif ? SOURCES_BOUCLE.vaultSurNative : SOURCES_BOUCLE.vault,
     natifPresent: Boolean(natif),
     appels: boucle.appels,
+    /** Fautes d'abonnés aux battements, consignées plutôt que relancées ou perdues. */
+    incidents: boucle.incidents,
+    /**
+     * Abonne un rappel aux battements de la boucle — un par tâche exécutée. C'est ce qui permet à
+     * une échéance d'expirer sous un moteur qui affame ses minuteries pendant une boucle serrée.
+     * Rend la fonction de désabonnement.
+     */
+    auBattement: boucle.auBattement,
     // Un descripteur RETIRÉ décrit une boucle qui n'est plus en place. Sans ce drapeau, un compte
     // rendu continuerait d'annoncer « boucle de Vault » après un retrait — exactement le genre de
     // succès simulé que le harnais de mesure de #74 doit rendre impossible.
@@ -204,9 +342,13 @@ export function installerBoucleOrdonnancement({ cible = globalThis, siNatifAbsen
  */
 export function decrireBoucle(descripteur) {
   if (!descripteur || descripteur.retiree) return null;
+  const incidents = descripteur.incidents?.() ?? [];
   return {
     source: descripteur.source,
     natifPresent: descripteur.natifPresent,
     appels: descripteur.appels(),
+    // Publié même vide : une liste absente se lirait comme « pas d'incident », une liste vide le
+    // DIT. Un abonné aux battements qui lève est un défaut de notre code, pas du moteur.
+    incidents,
   };
 }
