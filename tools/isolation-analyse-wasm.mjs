@@ -9,7 +9,12 @@
 // dit — bit 0, présence d'un maximum ; **bit 1, mémoire partagée**. C'est ce bit-là, et lui seul,
 // qui rendrait l'isolation multi-origine nécessaire au module.
 
-/** Codes de sortie de `npm run isolation:inventaire`. */
+/**
+ * Codes de sortie de `npm run isolation:inventaire`, et de la garde de `npm run vm:check` (#75).
+ *
+ * Les deux commandes partagent cette table à dessein : un même fait — une mémoire partagée dans
+ * v86 épinglé — doit rendre le même code, quel que soit l'outil qui le constate.
+ */
 export const CODES_DE_SORTIE = Object.freeze({
   succes: 0,
   /** Une mémoire partagée a été trouvée : le fait qui porte l'ADR 0010 ne tient plus. */
@@ -17,6 +22,13 @@ export const CODES_DE_SORTIE = Object.freeze({
   /** Les artefacts étaient exigés et manquent : la garde n'a rien lu, elle ne garde rien. */
   artefactsAbsents: 3,
 });
+
+/**
+ * Phrase du refus. Elle est ici, et non dans l'un des deux appelants, pour que l'inventaire du
+ * spike #41 et la garde de `vm:check` disent exactement la même chose du même fait.
+ */
+export const VERDICT_MEMOIRE_PARTAGEE =
+  "v86 épinglé déclare ou importe une mémoire WebAssembly PARTAGÉE. Le fait qui porte l'ADR 0010 ne tient plus : la décision de ne pas imposer l'isolation multi-origine doit être rouverte.";
 
 /**
  * Entier LEB128 non signé, avec la position d'arrivée.
@@ -177,4 +189,71 @@ export function codeDeSortie({ v86, exigerV86 }) {
     return exigerV86 ? CODES_DE_SORTIE.artefactsAbsents : CODES_DE_SORTIE.succes;
   }
   return v86.wasm?.memoirePartagee ? CODES_DE_SORTIE.memoirePartagee : CODES_DE_SORTIE.succes;
+}
+
+/**
+ * Verdict de garde sur les octets d'un artefact `v86.wasm`, tel que `npm run vm:check` le rend.
+ *
+ * Le risque résiduel n°2 de l'ADR 0010 dit ce que cette fonction ferme : le fait qui porte la
+ * décision est daté — il vaut pour `v86@0.5.432` — et une montée de version l'invaliderait sans
+ * aucun autre signal, les empreintes du manifeste ne regardant pas le drapeau de partage.
+ *
+ * Trois refus, et aucun silence : une mémoire partagée rouvre la décision ; un artefact absent ou
+ * illisible n'est pas un succès, parce qu'une garde qui n'a rien lu ne garde rien. L'analyse lève
+ * sur un binaire malformé ; ce refus est rendu comme verdict plutôt que propagé, pour que la
+ * commande le rapporte à côté de la vérification d'empreinte au lieu de s'interrompre avant elle.
+ *
+ * @param {Uint8Array | null} octets contenu de l'artefact, ou `null` s'il n'a pas pu être lu
+ * @returns {{ statut: "conforme" | "partagee" | "illisible" | "absent",
+ *             codeDeSortie: number, message: string, analyse: object | null }}
+ */
+export function verdictGardeMemoire(octets) {
+  if (octets === null || octets === undefined) {
+    return {
+      statut: "absent",
+      codeDeSortie: CODES_DE_SORTIE.artefactsAbsents,
+      message:
+        "artefact absent : la garde de mémoire partagée (ADR 0010) n'a rien lu. Exécuter « npm run vm:fetch ».",
+      analyse: null,
+    };
+  }
+
+  let analyse;
+  try {
+    analyse = analyserWasm(octets);
+  } catch (erreur) {
+    return {
+      statut: "illisible",
+      codeDeSortie: CODES_DE_SORTIE.artefactsAbsents,
+      message: `artefact illisible, garde de mémoire partagée (ADR 0010) inapplicable : ${erreur.message}`,
+      analyse: null,
+    };
+  }
+
+  if (analyse.memoirePartagee) {
+    return {
+      statut: "partagee",
+      codeDeSortie: CODES_DE_SORTIE.memoirePartagee,
+      message: VERDICT_MEMOIRE_PARTAGEE,
+      analyse,
+    };
+  }
+
+  return {
+    statut: "conforme",
+    codeDeSortie: CODES_DE_SORTIE.succes,
+    message: decrireMemoires(analyse),
+    analyse,
+  };
+}
+
+/** Ce que la garde a effectivement lu. Un « conforme » muet ne se distingue pas d'un contrôle mort. */
+function decrireMemoires({ memoiresDeclarees, memoiresImportees }) {
+  const drapeaux = [...memoiresDeclarees, ...memoiresImportees]
+    .map((memoire) => memoire.drapeaux)
+    .join(", ");
+  return (
+    `mémoire WebAssembly non partagée — ${memoiresDeclarees.length} déclarée(s), ` +
+    `${memoiresImportees.length} importée(s)${drapeaux === "" ? "" : `, drapeaux ${drapeaux}`}`
+  );
 }

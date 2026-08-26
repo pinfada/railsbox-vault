@@ -23,7 +23,12 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { extname, join, relative } from "node:path";
 
-import { CODES_DE_SORTIE, analyserWasm, codeDeSortie } from "./isolation-analyse-wasm.mjs";
+import {
+  CODES_DE_SORTIE,
+  VERDICT_MEMOIRE_PARTAGEE,
+  analyserWasm,
+  codeDeSortie,
+} from "./isolation-analyse-wasm.mjs";
 import { ARTIFACT_DIRECTORY, REPOSITORY_ROOT } from "./v86-paths.mjs";
 
 /** Jetons cherchés. Chacun est une manière distincte de dépendre de l'isolation. */
@@ -206,7 +211,9 @@ function afficher(inventaire) {
 function verdict(inventaire) {
   switch (inventaire.codeDeSortie) {
     case CODES_DE_SORTIE.memoirePartagee:
-      return "ÉCHEC — v86 épinglé déclare ou importe une mémoire WebAssembly PARTAGÉE. Le fait qui porte l'ADR 0010 ne tient plus : la décision de ne pas imposer l'isolation multi-origine doit être rouverte.";
+      // La phrase vit dans `isolation-analyse-wasm.mjs` : `npm run vm:check` la rend aussi (#75), et
+      // deux formulations du même refus se seraient mises à diverger.
+      return `ÉCHEC — ${VERDICT_MEMOIRE_PARTAGEE}`;
     case CODES_DE_SORTIE.artefactsAbsents:
       return "ÉCHEC — artefacts v86 exigés (--exiger-v86) et absents. Exécuter « npm run vm:fetch » : une garde qui n'a rien lu ne garde rien.";
     default:
