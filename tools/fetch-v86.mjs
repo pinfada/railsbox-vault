@@ -5,10 +5,24 @@
 //
 //   node tools/fetch-v86.mjs          télécharge ce qui manque puis vérifie tout
 //   node tools/fetch-v86.mjs --check  vérifie seulement, sans réseau
+//
+// DEUX vérifications post-récupération, indépendantes et toutes deux rapportées :
+//
+//  - l'EMPREINTE dit d'où vient l'octet. Code de sortie 1 si elle ne correspond pas ;
+//  - la GARDE DE MÉMOIRE PARTAGÉE dit ce que l'octet réclame de la plateforme. L'ADR 0010 décide de
+//    ne pas imposer l'isolation multi-origine, sur un fait daté : `v86.wasm` de `v86@0.5.432` ne
+//    déclare ni n'importe de mémoire `shared`. Une montée de version peut invalider ce fait sans
+//    aucun autre signal — une empreinte mise à jour reste conforme. Ce script étant le seul point
+//    par lequel un artefact v86 entre dans le dépôt, la garde y est rattachée (#75). Code 2 sur une
+//    mémoire partagée, 3 si l'artefact est absent, illisible ou disparu du manifeste.
+//
+// La garde ne masque pas la vérification d'empreinte et ne s'y substitue pas : les deux verdicts
+// sont imprimés à chaque exécution, la première qui échoue n'avalant pas l'autre.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { CODES_DE_SORTIE, verdictGardeMemoire } from "./isolation-analyse-wasm.mjs";
 import {
   describeVerdict,
   extractTgzEntries,
@@ -17,6 +31,11 @@ import {
   verifyArtifact,
 } from "./v86-manifest.mjs";
 import { ARTIFACT_DIRECTORY, MANIFEST_PATH } from "./v86-paths.mjs";
+
+/** Nom de l'artefact que la garde de l'ADR 0010 doit lire. */
+const NOM_ARTEFACT_WASM = "v86.wasm";
+/** Code de sortie historique d'un défaut d'empreinte. Il reste le sien. */
+const CODE_EMPREINTE = 1;
 
 async function readIfPresent(path) {
   try {
@@ -35,13 +54,19 @@ async function download(url) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-async function verifyAll(manifest) {
-  const verdicts = [];
+/**
+ * Lit chaque artefact une fois et rend son verdict d'empreinte AVEC son contenu. Le contenu est
+ * conservé parce que la garde de mémoire partagée doit relire les mêmes octets : le fichier est
+ * déjà en mémoire pour son empreinte, et le relire serait admettre qu'il ait pu changer entre les
+ * deux vérifications.
+ */
+async function readAll(manifest) {
+  const entries = [];
   for (const artifact of manifest.artifacts) {
     const content = await readIfPresent(join(ARTIFACT_DIRECTORY, artifact.name));
-    verdicts.push(verifyArtifact(artifact, content));
+    entries.push({ artifact, content, verdict: verifyArtifact(artifact, content) });
   }
-  return verdicts;
+  return entries;
 }
 
 async function fetchMissing(manifest, verdicts) {
@@ -75,29 +100,69 @@ async function fetchMissing(manifest, verdicts) {
   }
 }
 
+/**
+ * Garde de l'ADR 0010 sur l'artefact wasm du manifeste.
+ *
+ * Le cas « aucun artefact de ce nom » n'est pas théorique : renommer `v86.wasm` dans le manifeste
+ * désarmerait la garde en silence, exactement pendant la montée de version qu'elle surveille.
+ */
+function guardSharedMemory(entries) {
+  const entry = entries.find(({ artifact }) => artifact.name === NOM_ARTEFACT_WASM);
+  if (entry === undefined) {
+    return {
+      statut: "absent",
+      codeDeSortie: CODES_DE_SORTIE.artefactsAbsents,
+      message: `le manifeste ne décrit aucun ${NOM_ARTEFACT_WASM} : la garde de mémoire partagée (ADR 0010) n'a rien à lire.`,
+    };
+  }
+  return verdictGardeMemoire(entry.content);
+}
+
+/**
+ * Code de sortie global. Une mémoire partagée l'emporte parce qu'elle rouvre une décision
+ * d'architecture, là où une empreinte fautive ne fait qu'invalider un téléchargement — mais les
+ * deux échecs sont écrits, quel que soit le code retenu.
+ */
+function exitCode(failureCount, guard) {
+  if (guard.codeDeSortie === CODES_DE_SORTIE.memoirePartagee) return guard.codeDeSortie;
+  if (failureCount > 0) return CODE_EMPREINTE;
+  return guard.codeDeSortie;
+}
+
 async function main() {
   const checkOnly = process.argv.includes("--check");
   const manifest = JSON.parse(await readFile(MANIFEST_PATH, "utf8"));
 
-  let verdicts = await verifyAll(manifest);
+  let entries = await readAll(manifest);
   if (!checkOnly) {
-    await fetchMissing(manifest, verdicts);
-    verdicts = await verifyAll(manifest);
+    await fetchMissing(
+      manifest,
+      entries.map(({ verdict }) => verdict),
+    );
+    entries = await readAll(manifest);
   }
 
-  for (const verdict of verdicts) {
+  for (const { verdict } of entries) {
     process.stdout.write(`${describeVerdict(verdict)}\n`);
   }
 
-  const failures = verdicts.filter((verdict) => verdict.status !== "ok");
+  const guard = guardSharedMemory(entries);
+  process.stdout.write(`${NOM_ARTEFACT_WASM} : ${guard.message}\n`);
+
+  const failures = entries.filter(({ verdict }) => verdict.status !== "ok");
   if (failures.length > 0) {
     process.stderr.write(
       `\n${failures.length} artefact(s) non conforme(s). Les mesures du spike #4 ne sont pas reproductibles en l'état.\n`,
     );
-    process.exitCode = 1;
-    return;
   }
-  process.stdout.write(`\n${verdicts.length} artefacts conformes dans ${ARTIFACT_DIRECTORY}\n`);
+  if (guard.codeDeSortie !== CODES_DE_SORTIE.succes) {
+    process.stderr.write(`\nGarde de mémoire WebAssembly — ÉCHEC : ${guard.message}\n`);
+  }
+
+  process.exitCode = exitCode(failures.length, guard);
+  if (process.exitCode === CODES_DE_SORTIE.succes) {
+    process.stdout.write(`\n${entries.length} artefacts conformes dans ${ARTIFACT_DIRECTORY}\n`);
+  }
 }
 
 await main();

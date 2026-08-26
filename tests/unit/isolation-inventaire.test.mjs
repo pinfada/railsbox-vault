@@ -2,6 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { analyserWasm, codeDeSortie } from "../../tools/isolation-analyse-wasm.mjs";
+import {
+  LIMITES_PARTAGEES,
+  LIMITES_SIMPLES,
+  moduleWasm,
+  sectionImportMemoire,
+  sectionMemoire,
+} from "./fabrique-module-wasm.mjs";
 
 // L'ADR 0010 décide de ne PAS imposer l'isolation multi-origine, et fait reposer cette décision sur
 // un fait vérifiable : la mémoire WebAssembly de v86 épinglé n'est pas partagée. Il ajoute que la
@@ -16,43 +23,10 @@ import { analyserWasm, codeDeSortie } from "../../tools/isolation-analyse-wasm.m
 //     faut un module fabriqué AVEC le drapeau partagé pour prouver que la détection existe ;
 //  2. le verdict se traduit en code de sortie non nul. Sans cela, la garde est un commentaire.
 //
-// Les modules sont fabriqués ici plutôt que lus dans `vendor/` : une épreuve unitaire ne doit
-// dépendre ni du réseau, ni d'artefacts tiers, et surtout elle doit pouvoir exhiber le cas que le
-// dépôt ne contient pas.
-
-const EN_TETE = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
-
-/** Assemble un module minimal à partir de sections déjà encodées. */
-function moduleWasm(...sections) {
-  return Uint8Array.from([...EN_TETE, ...sections.flat()]);
-}
-
-/** Section « memory » (identifiant 5) portant une seule mémoire. */
-function sectionMemoire(limites) {
-  const contenu = [1, ...limites];
-  return [5, contenu.length, ...contenu];
-}
-
-/** Section « import » (identifiant 2) important `env.memory` avec les limites données. */
-function sectionImportMemoire(limites) {
-  const nomModule = [...new TextEncoder().encode("env")];
-  const nomChamp = [...new TextEncoder().encode("memory")];
-  const contenu = [
-    1,
-    nomModule.length,
-    ...nomModule,
-    nomChamp.length,
-    ...nomChamp,
-    0x02,
-    ...limites,
-  ];
-  return [2, contenu.length, ...contenu];
-}
-
-/** Limites non partagées, sans maximum : le cas de `v86.wasm`. */
-const LIMITES_SIMPLES = [0x00, 1];
-/** Limites PARTAGÉES avec maximum : ce que le drapeau 0x03 encode. */
-const LIMITES_PARTAGEES = [0x03, 1, 2];
+// Les modules sont fabriqués plutôt que lus dans `vendor/` : une épreuve unitaire ne doit dépendre
+// ni du réseau, ni d'artefacts tiers, et surtout elle doit pouvoir exhiber le cas que le dépôt ne
+// contient pas. La fabrique vit dans `fabrique-module-wasm.mjs`, partagée avec l'épreuve de la
+// garde branchée sur `npm run vm:check` (#75).
 
 test("une mémoire déclarée non partagée est rendue telle quelle", () => {
   const analyse = analyserWasm(moduleWasm(sectionMemoire(LIMITES_SIMPLES)));
