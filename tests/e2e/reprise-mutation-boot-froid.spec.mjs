@@ -194,6 +194,11 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
   // cette barrière — pas les écritures non flushées — qui garantit la persistance (`SEC-DURABLE-001`).
   expect(live.counts.flush, "une barrière fsync a atteint OPFS").toBeGreaterThan(0);
   expect(live.counts["flush-ack"], "chaque barrière est acquittée").toBe(live.counts.flush);
+  // La boucle d'ordonnancement qui a fait tourner CE boot est celle de Vault, et v86 l'a bien
+  // empruntée (#74). Sans cette exigence, la mesure de reprise pourrait être publiée sur une
+  // horloge et le produit tourner sur une autre.
+  expect(live.boucleOrdonnancement.source, "boucle d'ordonnancement de Vault").toMatch(/^vault/);
+  expect(live.boucleOrdonnancement.appels, "v86 emprunte la boucle posée").toBeGreaterThan(0);
 
   // 3. Reprises À FROID, hors ligne, depuis le MÊME volume OPFS. Au moins trois.
   const reprises = [];
@@ -296,6 +301,7 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
       barrieresAcquittees: live.counts["flush-ack"],
       timeline: live.timeline,
       rythme: live.rythme,
+      boucleOrdonnancement: live.boucleOrdonnancement,
     },
     repriseMs: {
       essais: reprisesMs,
@@ -309,6 +315,7 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
     // cette boucle (#74) change le rythme de TOUT l'émulateur : sans cette colonne, une reprise
     // plus lente ne se distinguerait pas d'un guest qui a eu davantage à faire.
     repriseRythme: reprises.map((r) => r.rythme),
+    repriseBoucle: reprises.map((r) => r.boucleOrdonnancement),
     memoireTasJs: derniereMemoire,
     cible: { repriseP95Ms: 60_000 },
   };
