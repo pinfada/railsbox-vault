@@ -19,6 +19,7 @@ import { BlockJournal } from "./block-journal.mjs";
 import { openOpfsVolume } from "./opfs-block-backend.mjs";
 import { isManifestError } from "./manifest-errors.mjs";
 import {
+  generationJournalName,
   manifestSidecarName,
   migrationJournalName,
   removeOpfsVolume,
@@ -82,9 +83,25 @@ export function createOpfsImportTarget(
       return { present: etatVolume.present, size: etatVolume.size, manifestBytes };
     },
 
-    /** Ouvre le volume en exclusivité, à la géométrie de l'archive. */
-    open({ size }) {
-      return openVolume({ name: volume, size, journal });
+    /**
+     * Ouvre le volume en exclusivité, à la géométrie de l'archive, et SANS génération
+     * transactionnelle (#16, ADR 0014).
+     *
+     * Une restauration réécrit le volume ENTIER, d'un bloc à l'autre, avec une seule barrière à la
+     * fin. Ce n'est pas une génération du guest : la restauration porte déjà son propre protocole
+     * d'atomicité — manifeste révoqué avant la première mutation, volume relu depuis le support,
+     * manifeste inscrit en dernier (ADR 0009) —, et une restauration interrompue laisse un volume
+     * NON IDENTIFIÉ que le boot refuse. Empiler le journal de génération par-dessus doublerait les
+     * écritures d'une archive de plusieurs centaines de mébioctets et buterait sur le plafond de
+     * charge, sans rien garantir de plus.
+     *
+     * Le journal de génération d'un volume ÉCRASÉ est retiré ici, explicitement. Le laisser ferait
+     * rejouer, au premier boot suivant, une génération du volume d'AVANT par-dessus le volume
+     * restauré — une corruption silencieuse d'un volume pourtant relu et vérifié.
+     */
+    async open({ size }) {
+      await removeSidecar(generationJournalName(volume));
+      return openVolume({ name: volume, size, journal, transactionnel: false });
     },
 
     /** Retire le manifeste : le volume cesse d'être identifié, donc d'être inscriptible. */

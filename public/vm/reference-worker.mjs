@@ -75,7 +75,16 @@ async function phasePrepare({ volume, appDiskBytes, appDiskUrl, manifest }) {
   // restauration, appliquée à la création.
   await revokeVolumeManifest(volume);
   const journal = new BlockJournal();
-  const backend = await openOpfsVolume({ name: volume, size: appDiskBytes, journal });
+  // SANS génération transactionnelle (#16, ADR 0014), pour la même raison qu'à la restauration :
+  // écrire un disque applicatif de plusieurs centaines de mébioctets d'un seul tenant n'est pas une
+  // génération du guest, et la création porte déjà son atomicité — le manifeste n'est inscrit
+  // qu'après le disque écrit et flushé, si bien qu'un volume à moitié préparé reste non identifié.
+  const backend = await openOpfsVolume({
+    name: volume,
+    size: appDiskBytes,
+    journal,
+    transactionnel: false,
+  });
   let offset = 0;
   try {
     const response = await fetch(appDiskUrl, { cache: "no-store" });
