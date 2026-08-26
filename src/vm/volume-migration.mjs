@@ -403,22 +403,18 @@ async function rienAMigrer({ target, courant, journal, toVersion }) {
 }
 
 /**
- * GESTES 4 à 10 — la partie qui tient un HANDLE. Elle est isolée pour que la fermeture du backend
- * soit gouvernée par un seul `finally`, et pour que le retrait du journal reste ce qu'il doit être :
- * le dernier geste, franchi seulement si tout ce qui précède a abouti.
+ * GESTES 4 à 10 — la partie qui tient un HANDLE. Elle est isolée pour que la restitution du backend
+ * soit gouvernée en un seul endroit, et pour que le retrait du journal reste ce qu'il doit être : le
+ * dernier geste, franchi seulement si tout ce qui précède a abouti.
+ *
+ * @param {object} plan tout ce que `migrateVolume` a établi avant d'ouvrir quoi que ce soit :
+ *   `target`, `support`, `journal`, `source`, `chaine`, `toVersion`, `backup`, `consentement`,
+ *   `blockBytes`, `expectations`. Il est transmis tel quel à `retenirPreuve`, qui n'y prend que les
+ *   champs dont dépend la preuve.
  */
-async function executerMigration({
-  target,
-  support,
-  journal,
-  source,
-  chaine,
-  toVersion,
-  backup,
-  consentement,
-  blockBytes,
-  expectations,
-}) {
+async function executerMigration(plan) {
+  const { target, support, journal, source, chaine, toVersion } = plan;
+
   // 4. OUVRIR. Comme à la restauration, l'ouverture précède la révocation : une ouverture ratée ne
   //    doit pas rendre inutilisable un volume parfaitement intact.
   const backend = await target.open({ size: support.size });
@@ -426,15 +422,7 @@ async function executerMigration({
   let echec = null;
   try {
     // 5. VÉRIFIER LA SAUVEGARDE, s'il en est fourni une.
-    const evidence = await retenirPreuve({
-      journal,
-      backup,
-      consentement,
-      backend,
-      source,
-      blockBytes,
-      expectations,
-    });
+    const evidence = await retenirPreuve({ ...plan, backend });
 
     // 6 à 9. JOURNALISER, RÉVOQUER, APPLIQUER, INSCRIRE puis RELIRE.
     const manifest = await muter({ target, backend, chaine, source, toVersion, evidence });
@@ -453,9 +441,7 @@ async function executerMigration({
   }
 
   // Le handle est rendu QUOI QU'IL ARRIVE, mais une fermeture qui rate ne masque rien.
-  const fermeture = await fermer(backend);
-  if (echec !== null) throw joindreFermeture(echec, fermeture);
-  if (fermeture !== null) throw fermeture;
+  await rendreHandle(backend, echec);
 
   // 10. RETIRER LE JOURNAL — dernier geste : sa présence signale une migration dont il n'a pas été
   //     franchi.
@@ -464,33 +450,34 @@ async function executerMigration({
 }
 
 /**
- * Rend le handle et rapporte l'échec de la fermeture PLUTÔT que de le laisser remonter seul. Une
- * fermeture n'est pas un geste de la migration : c'est la restitution de ce qu'elle avait pris.
- * @returns {Promise<Error | null>} l'erreur de fermeture, ou `null` si le handle a été rendu
+ * Rend le handle, puis TRANCHE ce qui doit remonter. La fermeture n'est pas un geste de la
+ * migration : c'est la restitution de ce que le geste 4 avait pris.
+ *
+ * - une fermeture ratée par-dessus une erreur en cours est JOINTE en `cause`, jamais substituée. Le
+ *   diagnostic d'une migration est celui de ce qui l'a interrompue ; la substituer ferait lire
+ *   « fermeture impossible » là où le volume a été laissé NON IDENTIFIÉ par la barrière, et le
+ *   remède — reprendre depuis le journal — ne se déduirait plus du message. La place n'est prise
+ *   que si elle est libre : une erreur qui porte déjà sa `cause` ne se la fait pas réécrire ;
+ * - une fermeture ratée SEULE remonte telle quelle : affirmer « migré » sans avoir pu rendre le
+ *   handle serait affirmer un état que personne n'a constaté.
+ *
+ * @param {Error | null} echec l'erreur déjà survenue, ou `null` si tout a abouti jusqu'ici
  */
-async function fermer(backend) {
+async function rendreHandle(backend, echec) {
+  let fermeture = null;
   try {
     await backend.close();
-    return null;
   } catch (cause) {
-    return cause;
+    fermeture = cause;
   }
-}
-
-/**
- * JOINT une fermeture ratée à l'erreur qui a fait échouer la migration, sans la remplacer. Le
- * diagnostic d'une migration est celui de ce qui l'a interrompue ; une fermeture qui rate ensuite
- * est une circonstance. La substituer ferait lire « fermeture impossible » là où le volume a été
- * laissé NON IDENTIFIÉ par la barrière — et le remède (reprendre depuis le journal) ne se
- * déduirait plus du message.
- *
- * La fermeture prend la place que la plateforme lui donne, `cause`, et seulement si elle est libre :
- * une erreur qui porte déjà la sienne ne se la fait pas réécrire.
- */
-function joindreFermeture(echec, fermeture) {
-  if (fermeture === null) return echec;
-  if (echec instanceof Error && echec.cause === undefined) echec.cause = fermeture;
-  return echec;
+  if (echec === null) {
+    if (fermeture !== null) throw fermeture;
+    return;
+  }
+  if (fermeture !== null && echec instanceof Error && echec.cause === undefined) {
+    echec.cause = fermeture;
+  }
+  throw echec;
 }
 
 /** Compte rendu d'une migration. Extrait pour que l'orchestration reste lisible d'un œil. */
