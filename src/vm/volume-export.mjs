@@ -87,7 +87,7 @@ function normalizeConsistency(consistency) {
   return { kind: consistency.kind, detail };
 }
 
-/** Rend un manifeste v1 GELÉ identique à `base`, mais dont `identity.digest` porte l'empreinte donnée. */
+/** Rend un manifeste GELÉ identique à `base`, mais dont `identity.digest` porte l'empreinte donnée. */
 function withContentDigest(base, digest) {
   return createManifest({
     formatVersion: base.formatVersion,
