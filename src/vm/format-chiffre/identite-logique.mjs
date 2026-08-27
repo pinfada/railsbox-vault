@@ -18,7 +18,7 @@
 // Le choix qui compte est l'ABSENCE de l'adresse. L'ADR 0014 admet qu'un même bloc soit réécrit
 // plusieurs fois dans une même génération : un nonce construit sur (génération, adresse) se
 // répéterait alors sur des clairs différents, ce qui sous AES-GCM livre le XOR des deux clairs ET la
-// clé d'authentification H — donc la capacité de forger (NIST SP 800-38D, annexe A ; « forbidden
+// clé d'authentification H — donc la capacité de forger (NIST SP 800-38D § 8.1 ; « forbidden
 // attack », Joux 2006). Le RANG de l'entrée dans le journal de sa génération, lui, est unique par
 // construction. L'adresse reste authentifiée par les données associées, où l'unicité n'est pas
 // exigée.
