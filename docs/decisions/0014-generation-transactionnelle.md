@@ -4,6 +4,12 @@
 - Date : 2026-08-27
 - Issue : #16 · Invariant : `SEC-DURABLE-001` · Jalon 3
 
+> **Amendé le 2026-08-28 par l'[ADR 0016](0016-format-de-volume-v3-dispositions.md) (#18).** Le
+> CRC-32 de la racine est remplacé par une ÉTIQUETTE AES-256-GCM, l'en-tête de racine passe de 60 à
+> 136 octets dans le même secteur, le format du journal de 1 à 2, un enregistrement grossit de 34
+> octets — sceau et GÉNÉRATION comprises, l'ADR 0015 en annonçait 28 — et le point de contrôle
+> RESCELLE chaque secteur sous un nonce neuf.
+
 ## Contexte
 
 #14 a fermé la barrière de durabilité de bout en bout : le backend attend le
