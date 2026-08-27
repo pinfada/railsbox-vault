@@ -28,7 +28,7 @@ import {
 } from "/src/vm/crash-scenario.mjs";
 import { createFaultPlan } from "/src/vm/fault-plan.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
-import { generationJournalName, removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
+import { removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "/src/vm/storage-errors.mjs";
 
 /**
@@ -69,11 +69,12 @@ async function rouvrirApresCoupure({ tentatives, attenteMs, journal }) {
 
 /** Prépare l'ANCIEN état du volume, puis referme proprement. Le point de coupure part de là. */
 export async function runResiliencePreparer() {
+  // `removeOpfsVolume` emporte le journal de génération voisin — c'est une propriété de la primitive
+  // elle-même (#16, ADR 0014), pas un geste à répéter ici. Elle compte pour cette matrice : sans
+  // elle, la génération laissée par le point précédent serait rejouée sur le volume neuf, et le
+  // verdict d'un point dépendrait de son prédécesseur. Ce que ce banc ÉPROUVE, lui, c'est la
+  // conséquence : « la même graine rejoue la même matrice », deux fois de suite, dans la spec.
   await removeOpfsVolume(VOLUME_RESILIENCE);
-  // Le journal de génération voisin est effacé avec le volume (#16). L'oublier ferait rejouer, sur
-  // un volume neuf, la génération laissée par le point précédent : le verdict d'un point dépendrait
-  // alors de son prédécesseur, et la matrice cesserait d'être une suite de points indépendants.
-  await removeOpfsVolume(generationJournalName(VOLUME_RESILIENCE));
   const journal = new BlockJournal();
   const backend = await openOpfsVolume({
     name: VOLUME_RESILIENCE,

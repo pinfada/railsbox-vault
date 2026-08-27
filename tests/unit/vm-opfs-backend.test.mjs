@@ -243,6 +243,9 @@ test("un dépassement de quota du support est un état distinct, jamais un succ�
   assert.ok(refus !== null, "le quota doit finir par être atteint");
   assert.ok(isStorageError(refus, STORAGE_ERROR_CODES.quotaExceeded), refus?.code);
   assert.equal(refus.context.operation, "write");
+  // Le volume est refermé même après un refus : un handle laissé ouvert bloquerait le nom pour tout
+  // le fichier de tests, et l'échec suivant nommerait `VAULT_STORAGE_BUSY` au lieu de sa vraie cause.
+  await backend.close().catch(() => {});
 });
 
 test("un handle perdu contamine toutes les opérations suivantes", async () => {

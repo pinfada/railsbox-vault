@@ -395,14 +395,19 @@ dans l'épreuve elle-même.
    journal de génération n'est protégé que par l'exclusivité du handle.
 3. **Ni chiffrement ni authentification.** Le journal est en clair, comme le manifeste et le journal
    de migration. Un altérateur qui a accès à OPFS peut fabriquer une racine valide.
-4. **Le plafond de charge est un refus, pas une dégradation.** Un guest qui n'émettrait jamais de
+4. **La récupération n'est pas bornée en mémoire, et sa durée n'est pas mesurée.** `#relireCharge`
+   lit la charge validée d'un seul tenant : au plafond, une récupération alloue jusqu'à ~128 Mio —
+   la charge entière plus les tranches rejouées. Aucun relevé n'en approche (90 304 octets mesurés
+   de bout en bout), mais rien ne le borne, et le budget « dernière génération valide trouvée en ≤
+   60 s » de `docs/quality-attributes.md` n'est **mesuré nulle part**. Suivi : **issue #91**.
+5. **Le plafond de charge est un refus, pas une dégradation.** Un guest qui n'émettrait jamais de
    barrière verrait ses écritures refusées au-delà de 64 Mio. Le chiffre reste un garde-fou choisi
    par analogie avec la surmémoire de streaming, **pas un seuil calibré** : le scénario Bout en bout
    a mesuré **90 304 octets** déposés entre la première barrière acquittée de Rails et la coupure,
    soit près de trois ordres de grandeur sous le plafond — mais treize écritures d'un boot ne sont
    pas la plus grande génération que l'image de référence puisse produire, et personne n'a mesuré
    celle-là. Travail découvert.
-5. **Le surcoût d'écriture n'est pas mesuré de bout en bout sur l'image de référence.** Le ×2 est
+6. **Le surcoût d'écriture n'est pas mesuré de bout en bout sur l'image de référence.** Le ×2 est
    mesuré sur le banc ; ce qu'il devient sur un boot Rails complet dépend de la cadence réelle des
    `fsync` du guest, et le bruit de mesure de la machine de développement (~16-17 % d'étendue
    intra-série, `docs/quality-attributes.md`) ne permet pas de conclure sur `test:rythme`.
