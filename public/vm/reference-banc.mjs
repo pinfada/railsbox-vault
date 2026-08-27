@@ -5,6 +5,8 @@
 // `location.href`. Sans ce paramètre, il crée un Worker imbriqué depuis une URL `blob:`, que la CSP
 // de la coquille (`worker-src 'self'`) refuse — l'émulateur ne bat alors jamais. Voir l'ADR 0003.
 
+import { HARNAIS_CLE_JETON } from "/src/vm/cle-de-volume.mjs";
+
 const etat = document.querySelector("#etat");
 const rapport = document.querySelector("#rapport");
 
@@ -111,7 +113,13 @@ function appeler(payload = {}) {
         reject(erreur);
       },
     });
-    worker.postMessage({ id, type: "run", payload });
+    worker.postMessage({
+      id,
+      type: "run",
+      // Jeton du harnais : il n'ouvre que la clé de volume de TEST (ADR 0016, décision 6). Ce
+      // fichier est un banc ; aucun chemin du produit ne le transmet.
+      payload: { ...payload, jetonCle: HARNAIS_CLE_JETON },
+    });
   });
 }
 

@@ -10,6 +10,7 @@
 // non ouvrable en écriture. C'est la même règle qu'à la restauration, appliquée à la création.
 
 import { BlockJournal } from "/src/vm/block-journal.mjs";
+import { cleDuBanc } from "./cle-du-banc.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
 import {
   migrationJournalName,
@@ -70,6 +71,7 @@ export async function phasePrepare({ volume, appDiskBytes, appDiskUrl, manifest 
     name: volume,
     size: appDiskBytes,
     journal,
+    cle: cleDuBanc(),
     transactionnel: false,
   });
   // Déclaré hors du `try` pour survivre au `finally` qui ferme le backend ; jamais lu quand le
@@ -113,6 +115,7 @@ export async function phasePrepareEmpty({ volume, appDiskBytes, manifest }) {
     name: volume,
     size: appDiskBytes,
     journal: new BlockJournal(),
+    cle: cleDuBanc(),
   });
   await backend.flush();
   await backend.close();
@@ -175,7 +178,11 @@ export async function phaseInspectVolume({ volume }) {
  * le volume de l'origine d'export et celui de l'origine de restauration.
  */
 export async function phaseDigestVolume({ volume, blockBytes = EXPORT_BLOCK_BYTES }) {
-  const backend = await openOpfsVolume({ name: volume, journal: new BlockJournal() });
+  const backend = await openOpfsVolume({
+    name: volume,
+    journal: new BlockJournal(),
+    cle: cleDuBanc(),
+  });
   const hash = createSha256Stream();
   let maxLecture = 0;
   try {

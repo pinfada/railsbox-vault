@@ -19,6 +19,7 @@
 // Aucune phase ne se déclare « réussie » d'elle-même : elle rend ce qu'elle a observé, et
 // l'assertion vit dans les spécifications de `tests/e2e/`.
 
+import { poserCleDuBanc } from "./cle-du-banc.mjs";
 import {
   phaseArchiveFile,
   phaseExportVolume,
@@ -81,21 +82,32 @@ self.addEventListener("message", (event) => {
     self.postMessage({ id, ok: false, error: { message: `Phase inconnue : ${options.phase}` } });
     return;
   }
-  runner(options).then(
-    (report) => self.postMessage({ id, ok: true, report }),
-    (error) =>
-      self.postMessage({
-        id,
-        ok: false,
-        // Le CONTEXTE traverse le port au même titre que le code (#73). Sans lui, un échec de
-        // support arrive en CI réduit à une phrase : ni offset, ni quota, ni errno — c'est-à-dire
-        // sans rien de ce qui permet de le diagnostiquer. Il ne porte que des nombres et des noms.
-        error: {
-          name: error.name,
-          code: error.code ?? null,
-          message: error.message,
-          context: error.context ?? null,
-        },
-      }),
-  );
+  // La clé du harnais est posée pour la durée de la phase, et relâchée après elle (ADR 0016).
+  // Ce Worker est un BANC : le jeton lui vient de la page, jamais du produit.
+  let relacher;
+  try {
+    relacher = poserCleDuBanc(options.jetonCle);
+  } catch (error) {
+    self.postMessage({ id, ok: false, error: { name: error.name, message: error.message } });
+    return;
+  }
+  runner(options)
+    .finally(relacher)
+    .then(
+      (report) => self.postMessage({ id, ok: true, report }),
+      (error) =>
+        self.postMessage({
+          id,
+          ok: false,
+          // Le CONTEXTE traverse le port au même titre que le code (#73). Sans lui, un échec de
+          // support arrive en CI réduit à une phrase : ni offset, ni quota, ni errno — c'est-à-dire
+          // sans rien de ce qui permet de le diagnostiquer. Il ne porte que des nombres et des noms.
+          error: {
+            name: error.name,
+            code: error.code ?? null,
+            message: error.message,
+            context: error.context ?? null,
+          },
+        }),
+    );
 });

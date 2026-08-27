@@ -12,6 +12,7 @@
 
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
+import { cleDuBanc } from "./cle-du-banc.mjs";
 import { createOpfsArchiveSink } from "/src/vm/opfs-archive-sink.mjs";
 import { createOpfsImportTarget } from "/src/vm/opfs-import-target.mjs";
 import {
@@ -107,7 +108,11 @@ export async function phaseExportVolume({
   blockBytes = EXPORT_BLOCK_BYTES,
 }) {
   await removeOpfsVolume(archive);
-  const backend = await openOpfsVolume({ name: volume, journal: new BlockJournal() });
+  const backend = await openOpfsVolume({
+    name: volume,
+    journal: new BlockJournal(),
+    cle: cleDuBanc(),
+  });
   const compteur = { maxLecture: 0, blocs: 0 };
   const source = sourceMesuree(backendSource(backend), compteur);
   const { handle, sink } = await ouvrirPuitsArchive(archive);
