@@ -22,6 +22,7 @@ import {
   SPECIFICATION_VERSION,
 } from "../src/vm/format-chiffre/identite-logique.mjs";
 import { scellerBloc, scellerRacine } from "../src/vm/format-chiffre/modele-reference.mjs";
+import { hexEnOctets } from "../src/vm/format-chiffre/octets.mjs";
 import { octetsEnHex } from "../src/vm/format-chiffre/octets.mjs";
 
 const DESTINATION = new URL("../tests/vectors/format-chiffre-v1.json", import.meta.url);
@@ -134,9 +135,16 @@ async function main() {
   const cle = await importerCleDeVolume(CLE_DE_TEST);
 
   const blocs = [];
+  let scellements = 0;
   for (const modele of BLOCS) {
     const octetsClairs = contenu(modele.contenu.longueur, modele.contenu.graine);
-    const scelle = await scellerBloc({ cle, identite: modele.identite, contenu: octetsClairs });
+    const scelle = await scellerBloc({
+      cle,
+      identite: modele.identite,
+      contenu: octetsClairs,
+      attentes: { scellementsCumules: scellements },
+    });
+    scellements += 1;
     blocs.push({
       nom: modele.nom,
       couvre: modele.couvre,
@@ -151,9 +159,10 @@ async function main() {
   }
 
   const racines = [];
-  let scellementsCumules = blocs.length;
+  let sequencePrecedente = null;
   for (const modele of GENERATIONS) {
-    scellementsCumules += 1;
+    const scellementsCumules = scellements;
+    scellements += 1;
     const entrees = modele.blocs.map((index) => ({
       adresse: BLOCS[index].identite.adresse,
       longueur: BLOCS[index].identite.longueur,
@@ -170,13 +179,10 @@ async function main() {
         tailleVolume: TAILLE_VOLUME,
         scellementsCumules,
       },
-      entrees: entrees.map((entree) => ({
-        ...entree,
-        etiquette: Uint8Array.from(
-          entree.etiquette.match(/../g).map((paire) => Number.parseInt(paire, 16)),
-        ),
-      })),
+      entrees: entrees.map((entree) => ({ ...entree, etiquette: hexEnOctets(entree.etiquette) })),
+      attentes: { sequencePrecedente },
     });
+    sequencePrecedente = modele.sequence;
     racines.push({
       nom: modele.nom,
       couvre: modele.couvre,

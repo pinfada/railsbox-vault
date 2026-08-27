@@ -7,8 +7,8 @@ import {
   importerCleDeVolume,
   ouvrirBloc,
   ouvrirRacine,
-  scellerBloc,
-  scellerRacine,
+  scellerBlocSousNonce,
+  scellerRacineSousNonce,
 } from "../../src/vm/format-chiffre/modele-reference.mjs";
 import { hexEnOctets, octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
 
@@ -23,6 +23,10 @@ import { hexEnOctets, octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs
 // Les vecteurs sont produits par `node tools/figer-vecteurs-scellement.mjs`, qui écrit ce fichier
 // depuis le modèle. Régénérer n'est PAS une correction : c'est un changement de format, qui exige
 // une version et un ADR.
+//
+// **Le nonce est désormais TIRÉ, donc figé comme une DONNÉE du vecteur et non recalculé.** Les
+// épreuves emploient pour cela `scellerBlocSousNonce` et `scellerRacineSousNonce`, dont c'est
+// l'unique raison d'être avec la reproduction par #18 : le chemin de production, lui, tire.
 
 const VECTEURS = JSON.parse(
   readFileSync(new URL("../vectors/format-chiffre-v1.json", import.meta.url), "utf8"),
@@ -59,10 +63,12 @@ test("le modèle reproduit OCTET POUR OCTET les blocs scellés figés", async ()
   const cle = await importerCleDeVolume(hexEnOctets(VECTEURS.cle.hex));
 
   for (const vecteur of VECTEURS.blocs) {
-    const scelle = await scellerBloc({
+    const scelle = await scellerBlocSousNonce({
       cle,
       identite: vecteur.identite,
       contenu: contenuDepuisRegle(vecteur.contenu),
+      nonce: hexEnOctets(vecteur.attendu.nonce),
+      attentes: { scellementsCumules: 0 },
     });
     assert.equal(octetsEnHex(scelle.nonce), vecteur.attendu.nonce, `nonce de « ${vecteur.nom} »`);
     assert.equal(
@@ -90,6 +96,7 @@ test("le modèle rouvre les blocs figés depuis leurs seuls octets publiés", as
         chiffre: hexEnOctets(vecteur.attendu.chiffre),
         etiquette: hexEnOctets(vecteur.attendu.etiquette),
       },
+      attentes: { generationMinimale: null },
     });
     assert.equal(octetsEnHex(ouvert), vecteur.contenu.hex, `réouverture de « ${vecteur.nom} »`);
   }
@@ -103,7 +110,13 @@ test("le modèle reproduit OCTET POUR OCTET les racines scellées figées", asyn
       ...entree,
       etiquette: hexEnOctets(entree.etiquette),
     }));
-    const racine = await scellerRacine({ cle, racine: vecteur.racine, entrees });
+    const racine = await scellerRacineSousNonce({
+      cle,
+      racine: vecteur.racine,
+      entrees,
+      nonce: hexEnOctets(vecteur.attendu.nonce),
+      attentes: { sequencePrecedente: null },
+    });
 
     assert.equal(octetsEnHex(racine.nonce), vecteur.attendu.nonce, `nonce de « ${vecteur.nom} »`);
     assert.equal(
@@ -171,4 +184,33 @@ test("les vecteurs couvrent les cinq menaces plutôt qu'un seul cas heureux", ()
       `aucun vecteur ne couvre la menace « ${menace} »`,
     );
   }
+});
+
+test("aucun nonce n'apparaît DEUX FOIS dans les vecteurs", () => {
+  // Les vecteurs sont scellés sous une seule clé. Un nonce répété y serait le défaut même que la
+  // révision de l'ADR 0015 a corrigé, figé pour toujours dans le fichier qui sert de critère à #18.
+  const vus = new Map();
+  for (const vecteur of [...VECTEURS.blocs, ...VECTEURS.racines]) {
+    const nonce = vecteur.attendu.nonce;
+    assert.equal(
+      vus.has(nonce),
+      false,
+      `nonce ${nonce} partagé par « ${vus.get(nonce)} » et « ${vecteur.nom} »`,
+    );
+    vus.set(nonce, vecteur.nom);
+  }
+  assert.equal(vus.size, VECTEURS.blocs.length + VECTEURS.racines.length);
+});
+
+test("les compteurs de scellements des vecteurs croissent et COMPTENT les racines", () => {
+  // Le § 8.3 de SP 800-38D compte « all instances of the authenticated encryption function » : une
+  // racine en est une. Un compteur qui ne compterait que les blocs sous-estimerait le budget.
+  const compteurs = VECTEURS.racines.map((vecteur) => vecteur.racine.scellementsCumules);
+  for (const [index, compteur] of compteurs.entries()) {
+    assert.ok(Number.isInteger(compteur) && compteur >= 0);
+    if (index > 0) {
+      assert.ok(compteur > compteurs[index - 1], "la racine précédente a consommé un scellement");
+    }
+  }
+  assert.equal(compteurs[0], VECTEURS.blocs.length, "les blocs déjà scellés sont comptés");
 });

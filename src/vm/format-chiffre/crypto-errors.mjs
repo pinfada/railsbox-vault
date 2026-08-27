@@ -19,7 +19,15 @@
 // l'en-tête de racine est les données associées et l'empreinte des entrées le clair : vérifier
 // d'abord, classer ensuite.
 
-/** Les cinq menaces nommées par l'ADR 0015. Un refus en cite au moins une. */
+/**
+ * Les cinq menaces nommées par l'ADR 0015.
+ *
+ * **Tous les refus n'en citent pas.** Ceux qui répondent d'une menace la nomment — sceau refusé,
+ * identité incohérente, rejeu, troncature, mélange. Les quatre autres — entrée malformée, nonce
+ * réutilisé, budget de clé, algorithme inconnu — répondent d'une VIOLATION DE CONTRAT par
+ * l'appelant, en amont de toute menace, et leur `menaces` est vide. Confondre les deux ferait croire
+ * qu'un adversaire est à l'œuvre là où c'est une faute de programmation, et l'inverse.
+ */
 export const MENACES = Object.freeze({
   modification: "modification",
   deplacement: "deplacement",
@@ -45,8 +53,21 @@ export const CRYPTO_ERROR_CODES = Object.freeze({
   truncation: "VAULT_CRYPTO_TRONCATURE",
   /** Le compte est juste, l'ensemble ne l'est pas : au moins une entrée n'est pas de cette génération. */
   mixing: "VAULT_CRYPTO_MELANGE",
-  /** Deux entrées d'une même génération portent le même rang : ce serait une réutilisation de nonce. */
-  nonceReuse: "VAULT_CRYPTO_NONCE_REUTILISE",
+  /**
+   * L'ordre canonique d'une génération est violé : rangs qui ne croissent pas strictement, ou
+   * séquence de racine qui ne dépasse pas la précédente.
+   *
+   * **Ce code s'appelait `VAULT_CRYPTO_NONCE_REUTILISE`, et le renommer est une correction, pas un
+   * ravalement.** Tant que le nonce était dérivé de (génération, rang), un rang répété RÉÉMETTAIT
+   * un nonce : le nom disait vrai. Depuis que le nonce est tiré (ADR 0015), il ne le dit plus, et
+   * le garder aurait fait affirmer au modèle une conséquence qu'il ne produit plus. Ce que ces
+   * refus protègent désormais est réel mais différent : une racine scelle une SUITE ordonnée, et
+   * deux racines de même séquence rendraient l'autorité ambiguë pour `#racineFaisantAutorite`.
+   *
+   * Le modèle, lui, ne sait PLUS détecter une réutilisation de nonce : il est sans état, et
+   * l'unicité vient du tirage, pas d'un contrôle.
+   */
+  orderInvalid: "VAULT_CRYPTO_ORDRE_INVALIDE",
   /** Le budget de scellements de cette clé est atteint (NIST SP 800-38D, § 8.3). Changer de clé. */
   keyBudget: "VAULT_CRYPTO_BUDGET_DE_CLE",
   /** Entrée structurellement inadmissible : largeur, type, longueur. Jamais complétée ni arrondie. */
@@ -117,19 +138,19 @@ export function sceauRefuse(context = {}) {
 }
 
 /**
- * Le sceau ne se DÉCRIT pas comme l'identité présentée : nonce qui n'encode pas la génération et le
- * rang annoncés, ou en-tête authentique qui nomme un autre volume, un autre format, une autre
- * taille. Établi sans le secours de l'étiquette dans le premier cas, après elle dans le second.
+ * L'en-tête AUTHENTIFIÉ d'une racine ne décrit pas le volume que l'appelant croit ouvrir : autre
+ * identifiant de volume, autre version de format, autre taille. Constaté APRÈS que l'étiquette a
+ * vérifié, donc sur des valeurs authentiques — c'est un déplacement ÉTABLI, pas soupçonné.
  *
- * Il couvre les deux mêmes menaces que `sceauRefuse`, et pour la même raison : un nonce qui a bougé
- * d'un octet et un bloc lu ailleurs sont indiscernables. Ce qu'il apporte est le CHAMP en désaccord,
- * pas une cause.
+ * Depuis que le nonce est tiré au hasard (ADR 0015), il ne décrit plus rien : un nonce altéré ne se
+ * distingue plus d'un chiffré altéré, et les deux tombent dans `sceauRefuse`. Ce constructeur ne
+ * sert donc plus qu'à la racine, où l'en-tête en clair porte les champs à confronter.
  */
 export function identiteIncoherente(raison, context = {}) {
   return new CryptoError(
     CRYPTO_ERROR_CODES.identityMismatch,
-    `Sceau refusé : ${raison} Le sceau ne se décrit pas comme l'identité sous laquelle il est relu ; la cause — octet altéré ou bloc venu d'ailleurs — n'est pas établie. Aucun clair n'est rendu.`,
-    { menaces: [MENACES.modification, MENACES.deplacement], context },
+    `Racine refusée : ${raison} L'en-tête est authentique — c'est donc bien une racine, mais pas celle de ce volume, de ce format ou de cette taille. Aucune génération n'est ouverte.`,
+    { menaces: [MENACES.deplacement], context },
   );
 }
 
@@ -161,15 +182,16 @@ export function melange(context = {}) {
 }
 
 /**
- * Le nonce se répéterait sous la même clé. Refus AVANT de produire le moindre octet.
+ * L'ordre canonique d'une génération est violé. Refus AVANT de produire le moindre octet.
  *
  * Deux causes, toutes deux hors de portée d'un scellement isolé et donc vérifiées à l'échelle de la
- * génération : deux entrées de même rang, ou une séquence de racine qui ne croît pas strictement.
+ * génération : des rangs qui ne croissent pas strictement, ou une séquence de racine qui ne dépasse
+ * pas la précédente.
  */
-export function nonceReutilise(raison, context = {}) {
+export function ordreInvalide(raison, context = {}) {
   return new CryptoError(
-    CRYPTO_ERROR_CODES.nonceReuse,
-    `Scellement refusé : ${raison} Le nonce se répéterait sous la même clé, ce qui livrerait le XOR des deux clairs ET la clé d'authentification GCM. Aucun octet n'est produit.`,
+    CRYPTO_ERROR_CODES.orderInvalid,
+    `Scellement refusé : ${raison} Une racine scelle une SUITE ordonnée, et deux racines de même séquence rendraient l'autorité ambiguë à la reprise. Aucun octet n'est produit.`,
     { context },
   );
 }
