@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { digestHex } from "../../src/vm/block-fixture.mjs";
+import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import {
   PROBE_REGIONS,
@@ -41,7 +42,8 @@ test("chaque région de la sonde couvre un cas d'accès distinct", () => {
 test("la sonde de persistance est satisfaite sur un support déterministe", async () => {
   const store = createSyncAccessStore();
   const rapport = await observePersistence({
-    openVolume: (options) => openOpfsVolume({ ...options, openHandle: store.openHandle }),
+    openVolume: (options) =>
+      openOpfsVolume({ ...options, cle: CLE_DE_TEST, openHandle: store.openHandle }),
     name: "sonde",
   });
 
@@ -60,7 +62,8 @@ test("la sonde de persistance est satisfaite sur un support déterministe", asyn
 test("le rapport de la sonde traverse postMessage sans perdre sa substance", async () => {
   const store = createSyncAccessStore();
   const rapport = await observePersistence({
-    openVolume: (options) => openOpfsVolume({ ...options, openHandle: store.openHandle }),
+    openVolume: (options) =>
+      openOpfsVolume({ ...options, cle: CLE_DE_TEST, openHandle: store.openHandle }),
     name: "sonde-json",
   });
 
@@ -72,7 +75,8 @@ test("le rapport de la sonde traverse postMessage sans perdre sa substance", asy
 test("l'audit rejette un rapport dont un seul octet a bougé", async () => {
   const store = createSyncAccessStore();
   const rapport = await observePersistence({
-    openVolume: (options) => openOpfsVolume({ ...options, openHandle: store.openHandle }),
+    openVolume: (options) =>
+      openOpfsVolume({ ...options, cle: CLE_DE_TEST, openHandle: store.openHandle }),
     name: "sonde-corrompue",
   });
 
@@ -85,7 +89,8 @@ test("l'audit rejette un rapport dont un seul octet a bougé", async () => {
 test("l'audit rejette un rapport où la relecture hors bornes aurait réussi", async () => {
   const store = createSyncAccessStore();
   const rapport = await observePersistence({
-    openVolume: (options) => openOpfsVolume({ ...options, openHandle: store.openHandle }),
+    openVolume: (options) =>
+      openOpfsVolume({ ...options, cle: CLE_DE_TEST, openHandle: store.openHandle }),
     name: "sonde-hors-bornes",
   });
 

@@ -705,6 +705,7 @@ test("la compatibilité est contrôlée PAR DÉFAUT : un format futur est refus�
     app: { id: "railsbox/reference", version: "3.1.0" },
     volumeSize: contenu.byteLength,
     identity: { algorithm: "sha-256", digest: null },
+    volume: { id: "0123456789abcdef0123456789abcdef", algorithm: "aes-256-gcm" },
   });
   const { archive } = await exportVolumeToBytes({
     source: {

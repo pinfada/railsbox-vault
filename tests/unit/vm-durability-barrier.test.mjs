@@ -7,6 +7,7 @@ import {
   JOURNAL_OPERATIONS,
   auditDurabilityBarriers,
 } from "../../src/vm/block-journal.mjs";
+import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { generationJournalName } from "../../src/vm/opfs-sync-access.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
@@ -64,7 +65,19 @@ class FakeIdeInterface {
 }
 
 /** Laisse la file de microtâches ET de macrotâches se vider : l'adaptateur acquitte en `.then`. */
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+/**
+ * Laisse la boucle d'événements dérouler ce que la commande ATA a lancé.
+ *
+ * PLUSIEURS tours, et non un seul : depuis #18 la validation d'une génération scelle son
+ * enregistrement et sa racine par `crypto.subtle`, dont chaque appel rend une promesse. Un tour
+ * unique observait le journal AVANT que la barrière n'ait rendu la main, et l'épreuve mesurait alors
+ * l'ordonnancement de l'épreuve elle-même plutôt que celui du produit.
+ */
+const tick = async (tours = 8) => {
+  for (let tour = 0; tour < tours; tour += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+};
 
 /** Écriture PIO du guest : `set` copie le tampon et rappelle son callback au succès. */
 function ecrire(adapter, offset, bytes) {
@@ -84,6 +97,7 @@ async function banc({ flushDelay = 0, seuilPointDeControle } = {}) {
     name,
     size: TAILLE,
     journal,
+    cle: CLE_DE_TEST,
     flushDelay,
     openHandle: store.openHandle,
     seuilPointDeControle,
@@ -124,6 +138,7 @@ function seqs(journal, operation) {
 test("l'ordre écriture → flush → acquittement traverse le backend OPFS réel", async () => {
   const banc0 = await banc();
   const { journal, store, name, nomJournal, adapter, master, failures } = banc0;
+  const barrieresALaCreation = store.flushCount(name);
   try {
     await ecrire(adapter, 0, motif(SECTOR_SIZE, 1));
     await ecrire(adapter, 2 * SECTOR_SIZE, motif(SECTOR_SIZE, 2));
@@ -140,7 +155,14 @@ test("l'ordre écriture → flush → acquittement traverse le backend OPFS rée
     // DEUX flush réels du support pour la validation : la charge, puis la racine qui la scelle.
     // L'ouverture d'un journal vierge n'en franchit aucune — elle n'écrit rien.
     assert.equal(store.flushCount(nomJournal), 2, "l'acquittement suit des flush RÉELS du support");
-    assert.equal(store.flushCount(name), 0, "le volume n'est franchi qu'au point de contrôle");
+    // La CRÉATION d'un volume v3 franchit déjà des barrières sur le fichier du volume — l'en-tête,
+    // puis le scellement de tous ses secteurs (ADR 0016). Ce qui est mesuré ici est ce que la
+    // BARRIÈRE DU GUEST y ajoute : rien, jusqu'au point de contrôle.
+    assert.equal(
+      store.flushCount(name),
+      barrieresALaCreation,
+      "le volume n'est franchi qu'au point de contrôle",
+    );
     assert.equal(master.status_reg, ATA.srDrdy | ATA.srDsc, "le guest est acquitté");
     assert.equal(master.irqs, 1);
     assert.deepEqual(failures, [], "aucune erreur de support n'a été absorbée");
