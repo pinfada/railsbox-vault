@@ -136,9 +136,9 @@ test("l'ordre écriture → flush → acquittement traverse le backend OPFS rée
     assert.equal(writes.length, 2);
     assert.ok(Math.max(...writes) < flushSeq, "toute écriture précède la barrière dans le journal");
     assert.ok(flushSeq < ackSeq, "l'acquittement suit la barrière");
-    // Trois flush réels du support : un à l'ouverture, qui rend durable la racine initiale du
-    // journal, puis DEUX pour la validation — la charge, puis la racine qui la scelle.
-    assert.equal(store.flushCount(nomJournal), 3, "l'acquittement suit des flush RÉELS du support");
+    // DEUX flush réels du support pour la validation : la charge, puis la racine qui la scelle.
+    // L'ouverture d'un journal vierge n'en franchit aucune — elle n'écrit rien.
+    assert.equal(store.flushCount(nomJournal), 2, "l'acquittement suit des flush RÉELS du support");
     assert.equal(store.flushCount(name), 0, "le volume n'est franchi qu'au point de contrôle");
     assert.equal(master.status_reg, ATA.srDrdy | ATA.srDsc, "le guest est acquitté");
     assert.equal(master.irqs, 1);
@@ -182,8 +182,9 @@ test("aucune barrière n'est acquittée au guest avant que le flush OPFS ait ren
       "le guest reste BSY tant que le flush n'a pas abouti",
     );
     assert.equal(master.irqs, 0, "aucun acquittement anticipé");
-    // Un seul flush a eu lieu : celui de l'OUVERTURE. La barrière du guest, elle, est toujours en vol.
-    assert.equal(store.flushCount(nomJournal), 1, "le support n'a pas matérialisé cette barrière");
+    // Aucun flush n'a encore eu lieu : la barrière du guest est en vol, et l'ouverture d'un journal
+    // vierge n'en franchit aucune.
+    assert.equal(store.flushCount(nomJournal), 0, "le support n'a pas matérialisé cette barrière");
     assert.equal(
       journal.counts()[JOURNAL_OPERATIONS.flushAck] ?? 0,
       0,
@@ -195,7 +196,7 @@ test("aucune barrière n'est acquittée au guest avant que le flush OPFS ait ren
     store.releaseFlush(nomJournal);
     await tick();
 
-    assert.equal(store.flushCount(nomJournal), 3, "les deux flush de la validation ont eu lieu");
+    assert.equal(store.flushCount(nomJournal), 2, "les deux flush de la validation ont eu lieu");
     assert.equal(master.status_reg, ATA.srDrdy | ATA.srDsc, "le guest est acquitté APRÈS le flush");
     assert.equal(master.irqs, 1);
     assert.equal(journal.counts()[JOURNAL_OPERATIONS.flushAck], 1);
@@ -219,10 +220,10 @@ test("deux flush consécutifs sans écriture intermédiaire restent sûrs et mes
     await tick();
     assert.equal(master.irqs, 2, "seconde barrière acquittée");
 
-    // Une à l'ouverture, deux pour la première validation, puis UNE pour la barrière à vide : rien
-    // n'a été déposé entre les deux, il n'y a donc pas de racine à réécrire — mais le support est
-    // TOUT DE MÊME sollicité, faute de quoi un support devenu incapable d'écrire resterait invisible.
-    assert.equal(store.flushCount(nomJournal), 4, "quatre flush réels du support");
+    // Deux pour la première validation, puis UNE pour la barrière à vide : rien n'a été déposé entre
+    // les deux, il n'y a donc pas de racine à réécrire — mais le support est TOUT DE MÊME sollicité,
+    // faute de quoi un support devenu incapable d'écrire resterait invisible.
+    assert.equal(store.flushCount(nomJournal), 3, "trois flush réels du support");
     assert.equal(journal.counts()[JOURNAL_OPERATIONS.flush], 2);
     assert.equal(journal.counts()[JOURNAL_OPERATIONS.flushAck], 2);
     assert.deepEqual(failures, []);
@@ -259,7 +260,7 @@ test("un échec du support PENDANT la barrière remonte au guest et à la coquil
       0,
       "une barrière en échec n'est jamais acquittée",
     );
-    assert.equal(store.flushCount(nomJournal), 1, "seul le flush d'ouverture a eu lieu");
+    assert.equal(store.flushCount(nomJournal), 0, "aucune barrière n'a été matérialisée");
   } finally {
     await fermer(banc0);
   }

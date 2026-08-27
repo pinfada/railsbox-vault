@@ -6,6 +6,7 @@ import {
   GENERATION_FORMAT,
   RACINES,
   RACINE_ENTETE_OCTETS,
+  PAGE_HOTE_OCTETS,
   RACINE_OCTETS,
   crc32,
   decoderRacine,
@@ -106,7 +107,12 @@ test("les deux racines alternent, et une validation n'écrase jamais celle qui f
   assert.equal(racineDeSequence(1), 1 % RACINES);
   assert.notEqual(racineDeSequence(1), racineDeSequence(2));
   assert.equal(offsetDeRacine(0), 0);
-  assert.equal(offsetDeRacine(1), RACINE_OCTETS);
+  // Une PAGE HÔTE sépare les deux emplacements, pas un secteur : refuser l'atomicité sectorielle
+  // tout en supposant qu'une écriture n'abîme pas le secteur voisin de la même page serait
+  // incohérent. L'hypothèse qui reste — deux pages distinctes ne tombent pas ensemble — est écrite
+  // dans l'ADR 0014.
+  assert.equal(offsetDeRacine(1), PAGE_HOTE_OCTETS);
+  assert.ok(PAGE_HOTE_OCTETS > RACINE_OCTETS);
 });
 
 test("l'en-tête d'un enregistrement porte son offset logique et sa longueur", () => {
