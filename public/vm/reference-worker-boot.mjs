@@ -21,7 +21,11 @@ import {
 } from "/src/vm/runtime-environment.mjs";
 import { decrireBoucle, installerBoucleOrdonnancement } from "/src/vm/scheduling-loop.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
-import { createManifest } from "/src/vm/volume-manifest.mjs";
+import {
+  MANIFEST_FORMAT_VERSION,
+  MIN_VOLUME_FORMAT_VERSION,
+  createManifest,
+} from "/src/vm/volume-manifest.mjs";
 
 /**
  * La boucle d'ordonnancement de v86 est posée À L'ÉVALUATION de ce module — donc au démarrage du
@@ -68,13 +72,20 @@ export function attentesDe(manifest) {
  * scénario de migration doit pouvoir fabriquer un volume au format ANTÉRIEUR, sans quoi il n'aurait
  * rien à migrer. Sans indication, le format courant du runtime s'applique.
  */
-export function manifesteDuDescripteur(manifest, volumeSize) {
+export function manifesteDuDescripteur(manifest, volumeSize, volume) {
+  const formatVersion = Number.isInteger(manifest.formatVersion)
+    ? manifest.formatVersion
+    : MANIFEST_FORMAT_VERSION;
   return createManifest({
-    ...(Number.isInteger(manifest.formatVersion) ? { formatVersion: manifest.formatVersion } : {}),
+    formatVersion,
     runtime: manifest.runtime,
     app: manifest.app,
     volumeSize,
     identity: { algorithm: "sha-256", digest: null },
+    // Le bloc `volume` n'existe qu'à partir du format v3 (ADR 0016), et son identifiant est celui
+    // que le volume PORTE — tiré à sa création et inscrit dans son en-tête. Le réinventer ici
+    // donnerait un manifeste qui décrit un autre volume que celui qui vient d'être écrit.
+    ...(formatVersion >= MIN_VOLUME_FORMAT_VERSION && volume !== undefined ? { volume } : {}),
   });
 }
 

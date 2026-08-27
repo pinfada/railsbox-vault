@@ -11,6 +11,7 @@ import {
   createManifest,
   parseManifest,
   serializeManifest,
+  MIN_WRITER_FORMAT_VERSION,
 } from "../../src/vm/volume-manifest.mjs";
 import {
   MIGRATION_JOURNAL_MAGIC,
@@ -41,9 +42,21 @@ function manifesteV1(surcharge = {}) {
   });
 }
 
-/** Manifeste au format COURANT, tel que la migration doit finir par l'inscrire. */
+/**
+ * Format que la CHAÎNE sait réellement atteindre aujourd'hui.
+ *
+ * Le format COURANT du runtime est v3 (#18), mais l'étape v2 → v3 est DÉCLARÉE sans être
+ * exécutable : elle doit agrandir le fichier et rechiffrer chaque secteur, ce qu'une cible à
+ * géométrie fixe ne sait pas faire. L'épreuve « l'étape v3 est déclarée » le tient ; les
+ * épreuves d'ORDRE et de REPRISE ci-dessous portent, elles, sur le palier atteignable — sans quoi
+ * elles mesureraient le refus au lieu du protocole.
+ */
+const CIBLE = MIN_WRITER_FORMAT_VERSION;
+
+/** Manifeste au palier atteignable, tel que la migration doit finir par l'inscrire. */
 function manifesteCourant(surcharge = {}) {
   return createManifest({
+    formatVersion: CIBLE,
     runtime: { version: "1.4.2", artifact: null, minWriter: "1.0.0" },
     app: APP,
     volumeSize: TAILLE,
@@ -52,9 +65,19 @@ function manifesteCourant(surcharge = {}) {
   });
 }
 
-/** Attentes du runtime en cours : celles que le boot fournit à l'ouverture en écriture. */
+/**
+ * Attentes du runtime en cours : celles que le boot fournit à l'ouverture en écriture.
+ *
+ * `supportedFormat` y borne la cible au palier atteignable, exactement comme un runtime plus ancien
+ * le ferait. Ce n'est pas un contournement : `migrateVolume` prend sa version cible de là.
+ */
 function attentes(surcharge = {}) {
-  return { runtime: { version: "1.4.2", artifact: null }, app: { id: APP.id }, ...surcharge };
+  return {
+    runtime: { version: "1.4.2", artifact: null },
+    app: { id: APP.id },
+    supportedFormat: { current: CIBLE, minReadable: 1 },
+    ...surcharge,
+  };
 }
 
 /** Contenu déterministe d'un volume : la migration ne doit pas en changer un octet. */
@@ -212,7 +235,7 @@ test("la migration inscrit le manifeste cible EN DERNIER, après le journal et l
 
   assert.equal(rapport.migrated, true);
   assert.equal(rapport.fromVersion, 1);
-  assert.equal(rapport.toVersion, MANIFEST_FORMAT_VERSION);
+  assert.equal(rapport.toVersion, CIBLE);
   // L'ordre EST le contrat, et il n'est énoncé qu'à UN endroit : l'ADR 0011 (« Ordre des gestes »),
   // dont l'en-tête de `src/vm/volume-migration.mjs` est la transcription. La liste ci-dessous n'en
   // est pas une seconde définition : c'est la TRACE que cet ordre laisse sur la cible.
@@ -231,7 +254,7 @@ test("la migration inscrit le manifeste cible EN DERNIER, après le journal et l
   ]);
   assert.equal(cible.etat.journalBytes, null, "le journal est retiré en dernier geste");
   const inscrit = parseManifest(cible.etat.manifestBytes);
-  assert.equal(inscrit.formatVersion, MANIFEST_FORMAT_VERSION);
+  assert.equal(inscrit.formatVersion, CIBLE);
   assert.equal(inscrit.app.id, APP.id);
   assert.equal(inscrit.geometry.volumeSize, TAILLE);
 });
@@ -271,7 +294,7 @@ test("migrer un volume DÉJÀ au format courant ne mute rien (idempotence)", asy
     consent: CONSENTEMENT,
   });
   assert.equal(rapport.migrated, false);
-  assert.equal(rapport.fromVersion, MANIFEST_FORMAT_VERSION);
+  assert.equal(rapport.fromVersion, CIBLE);
   assert.deepEqual(cible.gestes, ["inspect", "read-journal", "read-manifest"]);
 });
 
@@ -453,7 +476,7 @@ test("la reprise CONSTATE un manifeste cible déjà inscrit mais jamais relu, et
   );
   assert.equal(
     parseManifest(interrompue.etat.manifestBytes).formatVersion,
-    MANIFEST_FORMAT_VERSION,
+    CIBLE,
     "le manifeste cible EST sur le support",
   );
   assert.ok(!interrompue.gestes.includes("remove-journal"), "le journal n'a pas été retiré");
@@ -465,7 +488,7 @@ test("la reprise CONSTATE un manifeste cible déjà inscrit mais jamais relu, et
   const rapport = await migrateVolume({ target: reprise, expectations: attentes() });
   assert.equal(rapport.migrated, false, "il n'y a plus rien à migrer");
   assert.equal(rapport.resumed, true);
-  assert.equal(rapport.fromVersion, MANIFEST_FORMAT_VERSION);
+  assert.equal(rapport.fromVersion, CIBLE);
   assert.equal(reprise.etat.journalBytes, null, "le dernier geste est franchi");
   assert.equal(reprise.etat.ouvertures, 0, "rien n'est rouvert : aucun octet n'est à muter");
 });
@@ -548,7 +571,7 @@ test("la reprise repart du manifeste SOURCE porté par le journal, sans redemand
   assert.equal(rapport.migrated, true);
   assert.equal(rapport.resumed, true);
   assert.equal(rapport.fromVersion, 1);
-  assert.equal(parseManifest(reprise.etat.manifestBytes).formatVersion, MANIFEST_FORMAT_VERSION);
+  assert.equal(parseManifest(reprise.etat.manifestBytes).formatVersion, CIBLE);
   assert.equal(reprise.etat.journalBytes, null);
 });
 
@@ -588,7 +611,7 @@ test("le journal porte son propre marqueur, sa chaîne et la preuve retenue", as
   const journal = JSON.parse(new TextDecoder().decode(interrompue.etat.journalBytes));
   assert.equal(journal.magic, MIGRATION_JOURNAL_MAGIC);
   assert.equal(journal.from, 1);
-  assert.equal(journal.to, MANIFEST_FORMAT_VERSION);
+  assert.equal(journal.to, CIBLE);
   assert.equal(journal.evidence.kind, "consentement-nomme");
   assert.equal(journal.evidence.acknowledgedBy, CONSENTEMENT.acknowledgedBy);
   assert.equal(parseManifest(journal.sourceManifest).formatVersion, 1);
@@ -603,7 +626,7 @@ test("le journal porte son propre marqueur, sa chaîne et la preuve retenue", as
 // recréation du volume qu'il prétend décrire.
 
 /** Journal FORGÉ, tel qu'un support pourrait en porter un — périmé, contradictoire ou menteur. */
-function journalForge({ from = 1, to = MANIFEST_FORMAT_VERSION, sourceManifest, evidence }) {
+function journalForge({ from = 1, to = CIBLE, sourceManifest, evidence }) {
   return new TextEncoder().encode(
     JSON.stringify({
       magic: MIGRATION_JOURNAL_MAGIC,
@@ -666,7 +689,7 @@ test("un journal dont la cible ne correspond PAS au format porté n'est pas reti
     manifestBytes: serializeManifest(manifesteCourant()),
     journalBytes: journalForge({
       from: 1,
-      to: MANIFEST_FORMAT_VERSION + 3,
+      to: CIBLE + 3,
       sourceManifest: manifesteV1(),
     }),
   });
@@ -675,5 +698,46 @@ test("un journal dont la cible ne correspond PAS au format porté n'est pas reti
     (e) => isMigrationError(e, MIGRATION_ERROR_CODES.journalMalformed),
   );
   assert.notEqual(cible.etat.journalBytes, null);
-  assert.equal(parseManifest(cible.etat.manifestBytes).formatVersion, MANIFEST_FORMAT_VERSION);
+  assert.equal(parseManifest(cible.etat.manifestBytes).formatVersion, CIBLE);
+});
+
+test("l'étape v3 est DÉCLARÉE, et son refus dit ce qui manque au lieu de laisser un trou", async () => {
+  // #18 fait passer le format courant à v3, et la chaîne le sait : `planMigration(1, 3)` rend bien
+  // deux pas. Le second, en revanche, n'est pas exécutable par cette tranche — passer au chiffré
+  // exige d'agrandir le fichier de sa région d'authentification et de rechiffrer chaque secteur,
+  // deux gestes qu'une cible à géométrie FIXE ne sait pas faire (ADR 0016).
+  //
+  // Une étape ABSENTE aurait rendu `VAULT_MIGRATION_NO_PATH` : « personne ne sait aller là », ce qui
+  // est faux — le chemin est décidé. Une étape DÉCLARÉE rend `VAULT_MIGRATION_STEP_UNAVAILABLE` :
+  // « le chemin est connu, l'outil manque ». Les remèdes diffèrent, donc les codes diffèrent.
+  const chaine = planMigration(1, MANIFEST_FORMAT_VERSION);
+  assert.equal(chaine.length, 2, "la chaîne 1 → 3 existe, un pas à la fois");
+  assert.equal(chaine[1].from, 2);
+  assert.equal(chaine[1].to, 3);
+  assert.match(chaine[1].summary, /chiffr/i);
+
+  const octets = contenu();
+  const cible = creerCible({ volume: octets });
+  await assert.rejects(
+    () =>
+      migrateVolume({
+        target: cible,
+        expectations: attentes({
+          supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
+        }),
+        consent: CONSENTEMENT,
+      }),
+    (erreur) => {
+      assert.ok(isMigrationError(erreur, MIGRATION_ERROR_CODES.stepUnavailable), erreur.code);
+      assert.match(erreur.message, /rechiffrer|authentification/i);
+      return true;
+    },
+  );
+
+  // Le refus tombe pendant l'application, donc APRÈS la révocation : le volume reste NON IDENTIFIÉ,
+  // ce que l'ADR 0011 exige d'une migration interrompue — jamais « valide à moitié ». Ses OCTETS,
+  // eux, n'ont pas bougé, et le journal de reprise dit d'où il vient.
+  assert.deepEqual([...octets], [...contenu()], "aucun octet du volume n'a été touché");
+  assert.equal(cible.etat.manifestBytes, null, "le manifeste est révoqué : volume non identifié");
+  assert.notEqual(cible.etat.journalBytes, null, "le journal de reprise porte le manifeste source");
 });

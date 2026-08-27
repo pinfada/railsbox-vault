@@ -62,6 +62,8 @@ function manifeste(volumeSize) {
     app: { id: "railsbox/reference", version: "3.1.0" },
     volumeSize,
     identity: { algorithm: "sha-256", digest: null },
+    // Bloc « volume » du format v3 (#18, ADR 0016) : identifiant opaque et algorithme épinglé.
+    volume: { id: "0123456789abcdef0123456789abcdef", algorithm: "aes-256-gcm" },
   });
 }
 
@@ -291,6 +293,7 @@ test("la compatibilité du manifeste est vérifiée PAR DÉFAUT, sans attente à
     app: { id: "railsbox/reference", version: "3.1.0" },
     volumeSize: source.size,
     identity: { algorithm: "sha-256", digest: null },
+    volume: { id: "0123456789abcdef0123456789abcdef", algorithm: "aes-256-gcm" },
   });
   const { archive } = await exportVolumeToBytes({
     source,
