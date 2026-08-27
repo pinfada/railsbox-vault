@@ -395,18 +395,18 @@ dans l'épreuve elle-même.
    journal de génération n'est protégé que par l'exclusivité du handle.
 3. **Ni chiffrement ni authentification.** Le journal est en clair, comme le manifeste et le journal
    de migration. Un altérateur qui a accès à OPFS peut fabriquer une racine valide.
-4. **La récupération n'est pas bornée en mémoire, et sa durée n'est pas mesurée.** `#relireCharge`
-   lit la charge validée d'un seul tenant : au plafond, une récupération alloue jusqu'à ~128 Mio —
-   la charge entière plus les tranches rejouées. Aucun relevé n'en approche (90 304 octets mesurés
-   de bout en bout), mais rien ne le borne, et le budget « dernière génération valide trouvée en ≤
-   60 s » de `docs/quality-attributes.md` n'est **mesuré nulle part**. Suivi : **issue #91**.
+4. ~~**La récupération n'est pas bornée en mémoire, et sa durée n'est pas mesurée.**~~ **Soldée par
+   #91**, voir l'amendement du 2026-08-27 plus bas. `#relireCharge` lisait la charge validée d'un
+   seul tenant : au plafond d'alors, une récupération allouait jusqu'à ~128 Mio — la charge entière
+   plus les tranches rejouées —, et le budget « dernière génération valide trouvée en ≤ 60 s » de
+   `docs/quality-attributes.md` n'était mesuré nulle part.
 5. **Le plafond de charge est un refus, pas une dégradation.** Un guest qui n'émettrait jamais de
-   barrière verrait ses écritures refusées au-delà de 64 Mio. Le chiffre reste un garde-fou choisi
-   par analogie avec la surmémoire de streaming, **pas un seuil calibré** : le scénario Bout en bout
-   a mesuré **90 304 octets** déposés entre la première barrière acquittée de Rails et la coupure,
-   soit près de trois ordres de grandeur sous le plafond — mais treize écritures d'un boot ne sont
-   pas la plus grande génération que l'image de référence puisse produire, et personne n'a mesuré
-   celle-là. Travail découvert.
+   barrière verrait ses écritures refusées au-delà du plafond. Le chiffre était un garde-fou choisi
+   par analogie avec la surmémoire de streaming ; **#91 l'a calibré** sur le budget de récupération,
+   et l'amendement ci-dessous dit sur quelle mesure. Ce qui reste vrai : le scénario Bout en bout a
+   mesuré **90 304 octets** déposés entre la première barrière acquittée de Rails et la coupure —
+   mais treize écritures d'un boot ne sont pas la plus grande génération que l'image de référence
+   puisse produire, et **personne n'a mesuré celle-là**. Travail découvert.
 6. **Le surcoût d'écriture n'est pas mesuré de bout en bout sur l'image de référence.** Le ×2 est
    mesuré sur le banc ; ce qu'il devient sur un boot Rails complet dépend de la cadence réelle des
    `fsync` du guest, et le bruit de mesure de la machine de développement (~16-17 % d'étendue
@@ -464,3 +464,96 @@ dans l'épreuve elle-même.
 - Si le plafond de charge est atteint sur une charge réelle, le refus est bruyant mais bloquant pour
   le guest. Une mesure de la taille réelle d'une génération de l'image de référence est du travail
   découvert.
+
+## Amendement du 2026-08-27 — la récupération travaille en flux, et le plafond est calibré (#91)
+
+Cet amendement ne révise aucune décision de cet ADR : le format du journal ne change pas d'un octet,
+le protocole des quatre gestes non plus, et les racines alternent comme avant. Il solde la limite 4,
+et il remplace le **chiffre** du plafond de la limite 5 par un chiffre mesuré.
+
+### Ce que la limite 4 disait, et ce qui la solde
+
+`#relireCharge` lisait la charge validée d'un seul tenant, puis en extrayait une tranche par
+enregistrement : au plafond, une récupération allouait jusqu'à ~128 Mio, alors que
+`docs/quality-attributes.md` borne la surmémoire de streaming à 64 Mio et exige explicitement ce
+régime pour l'export et la restauration.
+
+La charge est désormais parcourue **enregistrement par enregistrement**, derrière une **fenêtre
+glissante** d'un Mio rechargée quand elle est épuisée. Le CRC-32 était déjà incrémental : il se
+poursuit tranche par tranche sans rien changer au format. La plus grande allocation d'une
+récupération est donc une CONSTANTE du magasin — mesurée à **1 Mio**, sur le double calibré comme
+sur OPFS réel —, et relever le plafond ne la relèverait pas.
+
+Deux choses méritaient d'être décidées, et le sont ici.
+
+**Le parcours a DEUX passes, et l'ordre est le contrat.** La première vérifie la charge entière —
+structure, compte des enregistrements, somme de contrôle — sans rien écrire ; la seconde seulement
+recopie. Les fusionner ferait payer au volume le prix d'une charge abîmée : les premiers
+enregistrements y seraient déjà quand la somme refuserait le dernier, c'est-à-dire exactement le
+rejeu à moitié que ce magasin interdit. Le prix est une seconde lecture du journal, et il est
+mesuré.
+
+Ce que la seconde passe coûte est publié : sur le banc des trois candidats
+(`tools/mesurer-generations.mjs`, 512 Kio logiques, 128 générations de 32 écritures), les « octets
+relus » de (a) passent de **2 162 688 o à 4 325 376 o**. Le surcoût d'ÉCRITURE, lui, ne bouge pas —
+×2,06 —, ni le nombre de barrières, ni l'espace occupé : la table du relevé du 2026-08-27 plus haut
+reste exacte sur ces trois colonnes, et seule sa dernière double.
+
+**La fenêtre n'est pas une élégance, c'est une mesure.** Le premier rejeu en flux lisait l'en-tête
+puis les octets de chaque enregistrement : quatre appels au support par enregistrement sur les deux
+passes. Un appel OPFS synchrone se paie en centaines de microsecondes, et à la granularité la plus
+fine que le guest puisse produire — un enregistrement de 512 octets, ce qu'une écriture ATA peut
+valoir — une charge de 64 Mio réclamait **201,4 s**, soit 3,4 fois le budget. La fenêtre ramène les
+lectures à deux passes séquentielles quelle que soit la granularité, et la même charge à **40,3 s**
+sur une machine au repos. Ce qui reste à la charge du rejeu est alors la recopie elle-même : une
+écriture du volume par enregistrement, et c'est elle que le plafond borne.
+
+### Le plafond cède, pas le budget
+
+Relevé du **2026-08-27**, `npm run test:vm`, OPFS réel sous Chromium, machine de développement
+(win32 x64). Série complète dans `reports/vm/recuperation-generation.json`.
+
+| Charge rejouée              | Granularité          | Enregistrements |       p50 |           p95 | Échantillons | Étendue relative |
+| --------------------------- | -------------------- | --------------: | --------: | ------------: | -----------: | ---------------: |
+| 16 Mio (plafond)            | 64 Kio               |             255 |    269 ms |        459 ms |            7 |             77 % |
+| 16 Mio (plafond)            | 4 Kio                |           4 080 |  1 978 ms |      2 398 ms |            7 |             39 % |
+| 16 Mio (plafond)            | **512 o** (pire cas) |          31 775 | 11 598 ms | **12 390 ms** |            5 |             20 % |
+| **64 Mio** (ancien plafond) | **512 o**            |         127 100 | 40 342 ms |     41 285 ms |            3 |              5 % |
+
+**Le témoin ne dépasse pas franchement le budget : il l'ENCADRE, et c'est pire.** La même série a
+été mesurée trois fois sur la même machine, à des états de charge différents : **71,1 s**, **53,2
+s**, puis **40,3 s** de médiane machine au repos. Un budget que la mesure franchit dans un sens ou
+dans l'autre selon ce que la machine faisait par ailleurs n'est pas un budget tenu — c'est un budget
+dont la marge est nulle, et l'environnement de référence n'est pas cette machine-ci. À 16 Mio, la
+pire valeur individuelle jamais relevée au pire cas vaut 14,9 s, soit **quatre fois** sous le budget
+; la décision ne dépend plus de l'état de la machine.
+
+Le budget n'est pas révisé pour faire tenir le plafond : c'est le plafond qui cède. **De 64 Mio à 16
+Mio**, et le chiffre cesse d'être une analogie avec la surmémoire de streaming pour devenir la plus
+grande charge dont le rejeu au pire cas tient dans les 60 s **avec de la marge**.
+
+Trois faits bornent ce choix, et aucun n'est une préférence :
+
+1. **16 Mio est deux fois `POINT_DE_CONTROLE_OCTETS`.** Un guest qui émet des barrières n'est donc
+   jamais refusé : sa charge validée est rangée à 8 Mio, bien avant le plafond. Le plafond ne mord
+   que sur un guest qui n'émet AUCUNE barrière, et pour celui-là le refus typé
+   `VAULT_STORAGE_GENERATION_OVERFLOW` reste la conduite retenue.
+2. **16 Mio est près de deux cents fois la seule génération jamais observée** de l'image de
+   référence — 90 304 octets, scénario Bout en bout de #16.
+3. **La surmémoire ne bouge pas avec lui.** Elle vaut 1 Mio à 16 Mio de charge comme à 64.
+
+### Ce que cet amendement ne mesure toujours pas
+
+**La plus grande génération que l'image de référence puisse produire reste inconnue.** Le plafond
+est maintenant calibré sur le budget de RÉCUPÉRATION — c'est une borne réelle, opposable et mesurée
+—, mais pas sur la demande réelle du guest. Le rapport d'ouverture publie désormais `octetsRejoues`,
+si bien que chaque exécution de bout en bout en dit la taille ; établir le MAXIMUM sur un boot
+complet demanderait un relevé de haute eau que `reference-worker-boot.mjs` devrait publier, et cette
+tranche n'y a pas touché. Travail découvert, comme avant — mais l'instrument existe.
+
+**Le banc ne prouve aucune sémantique de coupure.** Sa session de préparation ferme proprement son
+handle au lieu d'être tuée ; il ne mesure qu'une DURÉE. La sémantique reste celle que
+`resilience-arrets.spec.mjs` éprouve sur le même support.
+
+**Le relevé est celui d'une machine et d'un jour.** L'étendue relative est publiée avec chaque série
+pour que le p95 soit lu avec son bruit, et le témoin est rejouable.

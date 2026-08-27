@@ -755,6 +755,41 @@ rend une perte de cache volatil incapable de produire un MÉLANGE — les octets
 le journal voisin, et une charge incomplète est écartée à l'ouverture — mais cette propriété-là
 n'est PAS mesurée ici, et le protocole qui couperait plus bas reste à écrire.
 
+#### Résilience : combien de temps une récupération prend, et ce qu'elle tient en mémoire
+
+`tests/vm/recuperation-generation.spec.mjs` est la preuve de niveau **résilience** de #91. Elle
+existe parce que `docs/quality-attributes.md` demandait depuis toujours que la dernière génération
+valide soit retrouvée en ≤ 60 s, et que **rien ne le chronométrait** : aucune épreuve ne mesurait
+une récupération, et aucune ne la faisait porter sur une charge réaliste.
+
+Le banc est servi à `/vm/recuperation.html` et s'exécute aussi à la main. Son Worker remplit un
+journal de génération sur un volume OPFS réel jusqu'au plafond de charge, valide, **ferme**, rouvre,
+et chronomètre `GenerationStore.ouvrir` — deux passes de relecture du journal, la recopie dans le
+volume, la barrière, le vidage. C'est le chemin qu'un boot à froid emprunte après une coupure.
+
+**Ce qu'il ne mesure pas, et qu'il ne faut pas lui faire dire.** La session de préparation FERME
+proprement son handle au lieu d'être tuée : ce banc ne prouve aucune sémantique de coupure, c'est
+`resilience-arrets.spec.mjs` qui le fait sur le même support. Ici seule la DURÉE compte, et le
+journal laissé derrière est octet pour octet le même. Le temps de boot de la VM, lui, est
+explicitement hors budget.
+
+**Pourquoi plusieurs granularités.** Un rejeu coûte d'autant plus cher que la charge est découpée
+fin : un enregistrement par écriture du guest, au moins une écriture du volume par enregistrement,
+et un appel OPFS synchrone se paie en centaines de microsecondes. Le banc mesure donc la MÊME charge
+en enregistrements de 64 Kio, de 4 Kio et de 512 octets — ce dernier étant le pire cas, un secteur,
+ce qu'une écriture ATA peut valoir. Un profil unique laisserait croire que la durée suit les octets.
+
+**Le témoin hors budget.** Une quatrième série rejoue l'ANCIEN plafond de 64 Mio à la granularité la
+plus fine. C'est le relevé qui a fait bouger le plafond, et le garder mesuré est ce qui distingue
+une décision d'une opinion. Il n'est volontairement pas confronté au budget : l'y confronter ferait
+de cette suite un rouge permanent, et l'en dispenser sans le publier ferait disparaître la raison du
+changement.
+
+**Commande.** `npm run test:vm`, projet `chromium` uniquement — la suite ouvre un volume OPFS, que
+WebKit Playwright n'expose pas. Le relevé est écrit dans `reports/vm/recuperation-generation.json`
+et attaché au rapport Playwright. Compter une vingtaine de minutes : la préparation seule écrit
+plusieurs centaines de Mio sur OPFS.
+
 #### Bout en bout : une coupure pendant une mutation Rails
 
 `tests/e2e/coupure-generation-boot-froid.spec.mjs` est la preuve **Bout en bout** de #16. Une vraie
