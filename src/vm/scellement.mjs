@@ -244,9 +244,20 @@ export class Scellement {
    * classements — rejeu, troncature, mélange — sont posés APRÈS la vérification de l'étiquette, donc
    * sur un en-tête authentique. C'est l'ordre de l'ADR 0015, et il n'est pas négociable.
    */
-  async ouvrirRacine(entete, scelle, entrees, attentes) {
+  async ouvrirRacine(entete, scelle, entrees, attentes = {}) {
+    // Le volume et la version de format sont posés ICI, jamais par l'appelant : ils sont l'identité
+    // que ce scellement porte, et les laisser se répéter à chaque appel serait leur donner une
+    // occasion de diverger. Une racine d'un autre volume ne sera donc pas « comparée » : ses données
+    // associées ne seront simplement pas celles qu'on présente, et l'étiquette refusera.
+    const identite = { volume: this.#volume, formatVersion: this.#formatVersion };
     return traduisant({ volume: this.#volume, sequence: entete.sequence }, () =>
-      ouvrirRacine({ cle: this.#cle, entete, scelle, entrees, attentes }),
+      ouvrirRacine({
+        cle: this.#cle,
+        entete: { ...identite, ...entete },
+        scelle,
+        entrees,
+        attentes: { ...identite, ...attentes },
+      }),
     );
   }
 }

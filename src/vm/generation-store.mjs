@@ -371,6 +371,12 @@ export class GenerationStore {
     );
 
     const position = ZONE_ENREGISTREMENTS + this.#charge.longueurPhysique;
+    this.#ecrireEnregistrement(position, { debut, charge, generation, scelle });
+    this.#inscrireEnregistrement(position, { debut, fin, charge, generation, rang, scelle, ajout });
+  }
+
+  /** Pose les trois morceaux d'un enregistrement sur le support : en-tête, sceau, chiffré. */
+  #ecrireEnregistrement(position, { debut, charge, generation, scelle }) {
     this.#journal.ecrire(
       position,
       encoderEnteteEnregistrement({ offset: debut, longueur: charge.byteLength }),
@@ -380,7 +386,10 @@ export class GenerationStore {
       encoderSceau({ nonce: scelle.nonce, etiquette: scelle.etiquette, generation }),
     );
     this.#journal.ecrire(position + SURCOUT_ENREGISTREMENT, scelle.chiffre);
+  }
 
+  /** Enregistre en mémoire ce que le support porte désormais : entrée, hautes eaux, index, mémo. */
+  #inscrireEnregistrement(position, { debut, fin, charge, generation, rang, scelle, ajout }) {
     this.#charge.entrees.push({
       adresse: debut,
       longueur: charge.byteLength,
@@ -395,7 +404,7 @@ export class GenerationStore {
       this.#chargeMaxDeposee = this.#charge.longueurPhysique;
     }
 
-    this.#dernierOuvert = { position, clair: charge, generation, rang, adresse: debut };
+    this.#dernierOuvert = { position, clair: charge };
     for (let secteur = debut; secteur < fin; secteur += SECTOR_SIZE) {
       this.#index.set(secteur, {
         position,

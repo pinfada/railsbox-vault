@@ -143,8 +143,6 @@ function lirePrefixe(fenetre, position, { volume, racine, tailleVolume, longueur
 function ouvrirLaRacine(scellement, racine, entrees, tailleVolume) {
   return scellement.ouvrirRacine(
     {
-      volume: scellement.volume,
-      formatVersion: scellement.formatVersion,
       sequence: racine.sequence,
       generation: racine.generation,
       tailleVolume: racine.tailleVolume,
@@ -154,12 +152,7 @@ function ouvrirLaRacine(scellement, racine, entrees, tailleVolume) {
     },
     racine.scelle,
     entrees,
-    {
-      volume: scellement.volume,
-      formatVersion: scellement.formatVersion,
-      tailleVolume,
-      sequenceMinimale: null,
-    },
+    { tailleVolume, sequenceMinimale: null },
   );
 }
 

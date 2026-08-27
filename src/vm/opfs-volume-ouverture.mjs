@@ -73,7 +73,7 @@ function lireEnTete(handle, name) {
  * volume d'un format antérieur, qui se lit, s'exporte et se migre — mais qui ne s'ouvre pas ici,
  * faute de région d'authentification où loger le sceau d'un secteur.
  */
-function dispositionExistante({ name, handle, declared, observed }) {
+function dispositionExistante({ name, handle, declared, observed, identifiantVolume }) {
   const lu = decoderEnTeteV3(lireEnTete(handle, name));
   if (!lu.valide) {
     throw geometryMismatch(name, {
@@ -97,7 +97,19 @@ function dispositionExistante({ name, handle, declared, observed }) {
       reason: "Un volume existant n'est jamais retaillé en silence ; exporter puis migrer.",
     });
   }
-  return { disposition, identifiantVolume: identifiantVolumeEnTexte(lu.enTete.identifiantVolume) };
+  const surLeDisque = identifiantVolumeEnTexte(lu.enTete.identifiantVolume);
+  // Deux sources qui divergent ne se départagent pas, elles se refusent. L'en-tête n'est pas
+  // authentifié — c'est un localisateur —, et l'identité qui entrera dans les données associées est
+  // celle que le MANIFESTE déclare. Confronter les deux ici sert au diagnostic : « ce fichier n'est
+  // pas le volume que le manifeste décrit » se corrige autrement qu'un sceau refusé.
+  if (identifiantVolume !== undefined && identifiantVolume !== surLeDisque) {
+    throw new StorageError(
+      STORAGE_ERROR_CODES.identiteVolume,
+      `Volume « ${name} » refusé : son en-tête v3 porte l'identifiant ${surLeDisque}, le manifeste en déclare un autre. Aucun octet n'est lu.`,
+      { volume: name, surLeDisque, declare: identifiantVolume },
+    );
+  }
+  return { disposition, identifiantVolume: surLeDisque };
 }
 
 /** Résout la disposition d'un volume qui NAÎT. Sa taille logique est celle qu'on déclare. */
@@ -166,7 +178,7 @@ async function saisirSupport({ name, size, identifiantVolume, openHandle }) {
   try {
     resolue = naissance
       ? dispositionNeuve({ name, declared: size, identifiantVolume })
-      : dispositionExistante({ name, handle, declared: size, observed });
+      : dispositionExistante({ name, handle, declared: size, observed, identifiantVolume });
   } catch (error) {
     throw abandonHandle(handle, name, error);
   }
@@ -257,6 +269,38 @@ async function ouvrirMagasin({ name, size, backend, scellement, handle, seuilPoi
 }
 
 /**
+ * Scelle ENTIÈREMENT un volume qui vient de naître, secteurs de zéros compris.
+ *
+ * « Un secteur jamais écrit n'existe pas en v3 » (ADR 0015) : si la région d'authentification était
+ * à zéro pour un secteur vierge, il suffirait de la zéroter pour faire lire un secteur comme blanc.
+ * Le coût est un scellement par secteur, mesuré dans `docs/quality-attributes.md`, et il se paie une
+ * fois — à la création.
+ */
+async function scellerLeVolumeNeuf(backend, name) {
+  try {
+    await backend.chiffre.scellerTout(0);
+    await backend.barriereSupportBrute();
+  } catch (cause) {
+    await backend.close().catch(() => {});
+    throw toStorageError(cause, { operation: "seal-volume", volume: name });
+  }
+}
+
+/** Assemble le backend : taille LOGIQUE d'un côté, disposition du support de l'autre. */
+function construireBackend({ name, saisi, scellement, journal, faults, flushDelay }) {
+  return new OpfsBlockBackend({
+    name,
+    handle: saisi.handle,
+    size: saisi.disposition.tailleLogique,
+    disposition: saisi.disposition,
+    scellement,
+    journal,
+    faults,
+    flushDelay,
+  });
+}
+
+/**
  * Ouvre un volume OPFS en exclusivité.
  *
  * @param {{ name?: string, size?: number, cle?: Uint8Array, identifiantVolume?: string,
@@ -298,30 +342,8 @@ export async function openOpfsVolume({
     cleOctets: cle,
     formatVersion: FORMAT_VOLUME_V3,
   });
-
-  const backend = new OpfsBlockBackend({
-    name,
-    handle: saisi.handle,
-    size: saisi.disposition.tailleLogique,
-    disposition: saisi.disposition,
-    scellement,
-    journal,
-    faults,
-    flushDelay,
-  });
-
-  // « Un secteur jamais écrit n'existe pas en v3 » (ADR 0015) : un volume qui naît est scellé
-  // ENTIER, y compris ses secteurs de zéros. Sans cela, il suffirait de zéroter la région
-  // d'authentification pour faire lire un secteur comme blanc.
-  if (saisi.naissance) {
-    try {
-      await backend.chiffre.scellerTout(0);
-      await backend.barriereSupportBrute();
-    } catch (cause) {
-      await backend.close().catch(() => {});
-      throw toStorageError(cause, { operation: "seal-volume", volume: name });
-    }
-  }
+  const backend = construireBackend({ name, saisi, scellement, journal, faults, flushDelay });
+  if (saisi.naissance) await scellerLeVolumeNeuf(backend, name);
 
   if (transactionnel) {
     await installerGenerationOuFermer(backend, {
