@@ -4,9 +4,11 @@ import test from "node:test";
 import { SECTOR_SIZE, V86_BLOCK_SIZE } from "../../src/vm/block-geometry.mjs";
 import { BlockJournal, JOURNAL_OPERATIONS } from "../../src/vm/block-journal.mjs";
 import { FAULT_KINDS, createFaultPlan } from "../../src/vm/fault-plan.mjs";
+import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
+import { tailleSupportV3 } from "../../src/vm/volume-chiffre-format.mjs";
 
 // Tests unitaires du backend de blocs OPFS (#6, `VAULT-PERSIST-001`). Ils utilisent un DOUBLE
 // déterministe de `FileSystemSyncAccessHandle` — lui-même vérifié par
@@ -18,6 +20,13 @@ import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 // support, dans un Worker dédié.
 
 const TAILLE = 64 * SECTOR_SIZE;
+/**
+ * Taille du FICHIER pour cette taille logique : en-tête v3, région d'authentification, charge.
+ *
+ * Les deux ne se confondent jamais (ADR 0016) — `size()` rend la logique, le support porte la
+ * seconde —, et l'écart de 6,64 % est ce que le sceau de chaque secteur coûte.
+ */
+const SUPPORT = tailleSupportV3(TAILLE);
 let compteur = 0;
 
 /**
@@ -32,6 +41,7 @@ async function volume(options = {}) {
   const backend = await openOpfsVolume({
     name: `test-${compteur}`,
     size: TAILLE,
+    cle: CLE_DE_TEST,
     openHandle: store.openHandle,
     ...reste,
     journal,
@@ -54,7 +64,13 @@ test("la géométrie déclarée est stable, alignée secteur et multiple du bloc
   assert.equal(backend.describe().sectorSize, SECTOR_SIZE);
 
   await assert.rejects(
-    () => openOpfsVolume({ name: "biscornu", size: 700, openHandle: store.openHandle }),
+    () =>
+      openOpfsVolume({
+        name: "biscornu",
+        size: 700,
+        cle: CLE_DE_TEST,
+        openHandle: store.openHandle,
+      }),
     RangeError,
   );
   await backend.close();
@@ -63,9 +79,9 @@ test("la géométrie déclarée est stable, alignée secteur et multiple du bloc
 test("le fichier est créé à la géométrie déclarée, pas à la taille des écritures", async () => {
   const { backend, store, name } = await volume();
 
-  assert.equal(store.sizeOf(name), TAILLE, "le volume est alloué à l'ouverture");
+  assert.equal(store.sizeOf(name), SUPPORT, "le volume est alloué à l'ouverture, sceaux compris");
   await backend.write(0, motif(SECTOR_SIZE, 1));
-  assert.equal(store.sizeOf(name), TAILLE, "une écriture ne redimensionne pas le volume");
+  assert.equal(store.sizeOf(name), SUPPORT, "une écriture ne redimensionne pas le volume");
   await backend.close();
 });
 
@@ -136,6 +152,7 @@ test("fermeture puis réouverture : les octets et la géométrie sont identiques
   const premier = await openOpfsVolume({
     name: "persistant",
     size: TAILLE,
+    cle: CLE_DE_TEST,
     openHandle: store.openHandle,
   });
   await premier.write(9 * SECTOR_SIZE + 11, donnees);
@@ -143,7 +160,11 @@ test("fermeture puis réouverture : les octets et la géométrie sont identiques
   await premier.close();
 
   // Réouverture SANS taille déclarée : la géométrie est relue du fichier, pas supposée.
-  const second = await openOpfsVolume({ name: "persistant", openHandle: store.openHandle });
+  const second = await openOpfsVolume({
+    name: "persistant",
+    cle: CLE_DE_TEST,
+    openHandle: store.openHandle,
+  });
   assert.equal(second.size(), TAILLE);
   assert.deepEqual([...(await second.read(9 * SECTOR_SIZE + 11, 3 * SECTOR_SIZE))], [...donnees]);
   await second.close();
@@ -154,15 +175,22 @@ test("réouvrir avec une autre géométrie est une erreur typée, jamais une tro
   const premier = await openOpfsVolume({
     name: "geometrie",
     size: TAILLE,
+    cle: CLE_DE_TEST,
     openHandle: store.openHandle,
   });
   await premier.close();
 
   await assert.rejects(
-    () => openOpfsVolume({ name: "geometrie", size: TAILLE * 2, openHandle: store.openHandle }),
+    () =>
+      openOpfsVolume({
+        name: "geometrie",
+        size: TAILLE * 2,
+        cle: CLE_DE_TEST,
+        openHandle: store.openHandle,
+      }),
     (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.geometryMismatch),
   );
-  assert.equal(store.sizeOf("geometrie"), TAILLE, "le volume existant n'a pas été redimensionné");
+  assert.equal(store.sizeOf("geometrie"), SUPPORT, "le volume existant n'a pas été redimensionné");
 });
 
 test("une géométrie qui change sous le volume ouvert est détectée, pas absorbée", async () => {
@@ -204,7 +232,12 @@ test("une lecture courte du support devient une erreur typée, jamais un tampon 
 });
 
 test("une écriture partielle du support est signalée et n'entame pas le volume", async () => {
-  const { backend } = await volume({ store: { maxWriteBytes: SECTOR_SIZE } });
+  // Le plafond est posé APRÈS la création : depuis #18, créer un volume v3 SCELLE tous ses
+  // secteurs, donc écrit — et un plafond posé dès l'ouverture mesurerait cette création plutôt que
+  // l'écriture du guest.
+  const { backend, store, name } = await volume();
+  store.plafonnerEcriture(SECTOR_SIZE);
+  assert.equal(store.sizeOf(name), SUPPORT);
   const donnees = new Uint8Array(4 * SECTOR_SIZE).fill(0xab);
 
   await assert.rejects(
@@ -230,7 +263,7 @@ test("un dépassement de quota du support est un état distinct, jamais un succ�
   // Le quota laisse juste de quoi ouvrir le volume et son journal de génération, plus une poignée
   // d'octets : l'écriture qui déborde est celle du JOURNAL, puisque c'est là que va désormais une
   // génération en cours. Le code et le remède ne changent pas — libérer de la place.
-  const { backend } = await volume({ store: { quotaBytes: TAILLE + 2048 } });
+  const { backend } = await volume({ store: { quotaBytes: SUPPORT + 2048 } });
 
   let refus = null;
   for (let essai = 0; essai < 8 && refus === null; essai += 1) {
@@ -338,6 +371,10 @@ test("une barrière en échec n'est jamais acquittée et laisse une trace ordonn
 test("la barrière franchie journalise écriture, barrière puis acquittement, dans cet ordre", async () => {
   const journal = new BlockJournal();
   const { backend, store, name } = await volume({ journal });
+  // La CRÉATION d'un volume v3 franchit déjà des barrières : l'en-tête, puis le scellement de tous
+  // les secteurs (ADR 0016). Ce qui est mesuré ici est ce que la BARRIÈRE DU GUEST ajoute, donc le
+  // compte de départ est relevé plutôt que supposé nul.
+  const barrieresALaCreation = store.flushCount(name);
 
   await backend.write(0, new Uint8Array(SECTOR_SIZE).fill(3));
   await backend.flush();
@@ -353,11 +390,15 @@ test("la barrière franchie journalise écriture, barrière puis acquittement, d
   assert.equal(store.flushCount(`${name}.gen`), 2, "deux flush pour la validation");
   assert.equal(
     store.flushCount(name),
-    0,
+    barrieresALaCreation,
     "le volume lui-même n'est franchi qu'au point de contrôle",
   );
   await backend.close();
-  assert.equal(store.flushCount(name), 1, "la fermeture propre range la génération dans le volume");
+  assert.equal(
+    store.flushCount(name),
+    barrieresALaCreation + 1,
+    "la fermeture propre range la génération dans le volume",
+  );
 });
 
 test("l'ouverture est exclusive et la fermeture transfère la propriété du volume", async () => {
@@ -365,16 +406,27 @@ test("l'ouverture est exclusive et la fermeture transfère la propriété du vol
   const premier = await openOpfsVolume({
     name: "exclusif",
     size: TAILLE,
+    cle: CLE_DE_TEST,
     openHandle: store.openHandle,
   });
 
   await assert.rejects(
-    () => openOpfsVolume({ name: "exclusif", size: TAILLE, openHandle: store.openHandle }),
+    () =>
+      openOpfsVolume({
+        name: "exclusif",
+        size: TAILLE,
+        cle: CLE_DE_TEST,
+        openHandle: store.openHandle,
+      }),
     (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.busy),
   );
 
   await premier.close();
-  const second = await openOpfsVolume({ name: "exclusif", openHandle: store.openHandle });
+  const second = await openOpfsVolume({
+    name: "exclusif",
+    cle: CLE_DE_TEST,
+    openHandle: store.openHandle,
+  });
   assert.equal(second.size(), TAILLE);
   await second.close();
 });
@@ -385,7 +437,13 @@ test("l'exclusivité refusée par le support lui-même reste une erreur typée",
   brut.truncate(TAILLE);
 
   await assert.rejects(
-    () => openOpfsVolume({ name: "prisonnier", size: TAILLE, openHandle: store.openHandle }),
+    () =>
+      openOpfsVolume({
+        name: "prisonnier",
+        size: TAILLE,
+        cle: CLE_DE_TEST,
+        openHandle: store.openHandle,
+      }),
     (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.busy),
   );
   brut.close();

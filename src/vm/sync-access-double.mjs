@@ -67,7 +67,7 @@ function creerEnregistrement() {
  * l'enregistrement du fichier, le contrôle de quota, le relâchement de l'exclusivité que `close()`
  * doit opérer — et lui seul, `abandon` s'en charge autrement —, et les deux plafonds d'écriture.
  */
-function makeHandle({ file, assertQuota, relacherExclusivite, maxWriteBytes, writeCostBytes }) {
+function makeHandle({ file, assertQuota, relacherExclusivite, plafond, writeCostBytes }) {
   let closed = false;
 
   const tuer = () => {
@@ -100,7 +100,7 @@ function makeHandle({ file, assertQuota, relacherExclusivite, maxWriteBytes, wri
     write(buffer, { at = 0 } = {}) {
       assertLive();
       const source = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-      const count = Math.min(source.byteLength, maxWriteBytes);
+      const count = Math.min(source.byteLength, plafond.octets);
       const end = at + count;
       assertQuota(Math.max(0, end - file.size) + writeCostBytes);
       file.bytes = grow(file.bytes, end);
@@ -155,6 +155,17 @@ export function createSyncAccessStore({
   maxWriteBytes = Number.POSITIVE_INFINITY,
   writeCostBytes = 0,
 } = {}) {
+  /**
+   * Plafond d'UN appel `write`, MUTABLE.
+   *
+   * Il l'est depuis #18, et pour une raison de format : la création d'un volume v3 SCELLE tous ses
+   * secteurs, donc elle écrit — là où la création v2 se contentait d'un `truncate`. Un plafond posé
+   * dès la construction du double rendrait la création elle-même partielle, et l'épreuve mesurerait
+   * une ouverture ratée au lieu d'une écriture du guest. `plafonnerEcriture` permet de créer le
+   * volume, PUIS de resserrer le support.
+   */
+  const plafond = { octets: maxWriteBytes };
+
   /** @type {Map<string, { bytes: Uint8Array, size: number, lost: boolean, flushes: number, reads: number }>} */
   const files = new Map();
   const open = new Set();
@@ -193,7 +204,7 @@ export function createSyncAccessStore({
         file: fileOf(name),
         assertQuota,
         relacherExclusivite: () => open.delete(name),
-        maxWriteBytes,
+        plafond,
         writeCostBytes,
       });
     },
@@ -250,6 +261,10 @@ export function createSyncAccessStore({
       }
       file.flushes += 1;
       resolve();
+    },
+    /** Resserre le plafond d'un appel `write` APRÈS coup. Voir `plafond` ci-dessus. */
+    plafonnerEcriture(octets) {
+      plafond.octets = octets;
     },
     /** Le support redimensionne le fichier à l'insu du volume ouvert. */
     resize(name, newSize) {
