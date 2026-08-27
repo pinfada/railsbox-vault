@@ -81,19 +81,28 @@ et tester.
   bloc est scellé par AES-256-GCM (étiquette de 128 bits) dont les **données associées portent
   l'identité logique complète** — identifiant de volume, adresse logique, version de format,
   génération, rang de l'entrée, longueur, nom de l'algorithme —, encodée de façon injective (chaque
-  champ de largeur fixe ou préfixé de sa longueur). Le nonce de 96 bits est déterministe et dérivé
-  de (domaine, génération, rang) ; il ne porte **pas** l'adresse, parce que l'ADR 0014 autorise la
-  réécriture d'un même bloc dans une même génération et qu'un nonce répété sous une même clé livre,
-  sous GCM, le XOR des clairs et la clé d'authentification. Ce que la propriété ne garantit pas est
-  écrit dans l'ADR et non résumé ici : rien contre un détenteur de la clé, rien sur la taille du
-  volume ni le motif d'accès, rien sur le **retour arrière d'un secteur** — un secteur ramené à une
-  version antérieure authentique n'est pas détecté, parce que le lecteur lit sa génération dans le
-  nonce, c'est-à-dire au même endroit que le sceau. Modification et déplacement partagent d'ailleurs
-  un seul code de refus (`VAULT_CRYPTO_SCEAU_REFUSE`) : ils sont cryptographiquement indiscernables,
-  et le modèle refuse sans prétendre les distinguer. Preuves :
-  `tests/unit/vm-format-chiffre-*.test.mjs` et les vecteurs figés
-  `tests/vectors/format-chiffre-v1.json`, que #18 devra reproduire octet pour octet. La borne de
-  forgerie est calculée, pas qualifiée : ≈ 2^-122,6 par tentative ;
+  champ de largeur fixe ou préfixé de sa longueur). Le nonce de 96 bits est **tiré de
+  `crypto.getRandomValues`** et conservé avec chaque objet scellé. Il l'est depuis une révision de
+  l'ADR, et le motif vaut d'être retenu : une revue a réfuté PAR EXÉCUTION la version précédente, où
+  il était dérivé de (génération, rang). Le chemin de reprise de `generation-store.mjs` le
+  réémettait — la génération ne progresse qu'à la validation, la récupération la remet à celle de la
+  racine, et une fermeture PROPRE avec un dépôt non validé suffisait à réémettre un nonce. Sous GCM,
+  cela livre le XOR des clairs et la clé d'authentification. La leçon est plus large que le défaut :
+  dans un système conçu pour survivre aux coupures et exposé au retour arrière du support, tout
+  nonce dérivé d'un état DURABLE est réémis dès que cet état recule. Ce que la propriété ne garantit
+  pas est écrit dans l'ADR et non résumé ici : rien contre un détenteur de la clé, rien sur la
+  taille du volume ni le motif d'accès, rien sur le **retour arrière d'un secteur** — un secteur
+  ramené à une version antérieure authentique n'est pas détecté, parce que le lecteur lit sa
+  génération dans la région d'authentification voisine, c'est-à-dire au même endroit que le sceau.
+  Modification et déplacement partagent d'ailleurs un seul code de refus
+  (`VAULT_CRYPTO_SCEAU_REFUSE`) : ils sont cryptographiquement indiscernables, et le modèle refuse
+  sans prétendre les distinguer. Le budget de scellements par clé est fixé à **2^31**, la moitié du
+  plafond du § 8.3 de NIST SP 800-38D, parce que le compteur qui le suit vit dans la racine et
+  RECULE avec un retour arrière du support. Preuves : `tests/unit/vm-format-chiffre-*.test.mjs` —
+  dont `vm-format-chiffre-reprise.test.mjs`, qui rejoue la réfutation ci-dessus sur le magasin RÉEL
+  de l'ADR 0014 — et les vecteurs figés `tests/vectors/format-chiffre-v1.json`, que #18 devra
+  reproduire octet pour octet. La borne de forgerie est calculée, pas qualifiée : ≈ 2^-122,6 par
+  tentative ;
 - `SEC-GEN-001` — rejeu, troncature et mélange de générations sont refusés. **Même statut : spécifié
   par #17, non exercé par le produit, tenu par #19.** L'ADR 0015 le décompose en trois propriétés
   distinctes, chacune avec son refus typé. **Rejeu** : la séquence et la génération sont
@@ -245,8 +254,13 @@ ce qui reste dehors au lieu de le laisser deviner :
   écriture et 64 Mio d'état. Il n'est pas fourni, et c'est une question posée à la revue externe ;
 - **le retour arrière COMPLET du support** entre deux sessions — volume, journal, racine et
   manifeste ramenés ensemble à un état antérieur cohérent — n'est pas détectable par un format. Il
-  exigerait un ancrage monotone hors de portée de l'attaquant, qu'aucune API de navigateur n'offre.
-  Il reste couvert par le seul partitionnement OPFS par origine de l'ADR 0002.
+  exigerait un ancrage monotone hors de portée de l'attaquant. Le seul candidat qu'une API de
+  navigateur expose est `authenticatorData.signCount` de WebAuthn, et il ne suffit pas : CTAP2 le
+  rend facultatif, la plupart des authentificateurs de plateforme rendent zéro, et son emploi
+  supposerait une décision de #21. Une piste best-effort contre le retour arrière PARTIEL est nommée
+  dans l'ADR — garder la dernière séquence connue hors du fichier de volume — sans être exigée. Le
+  retour arrière complet reste donc couvert par le seul partitionnement OPFS par origine de
+  l'ADR 0002.
 
 Ces deux résidus sont **assumés et écrits**, pas résolus. Le gate « données sensibles » reste fermé,
 et le gate « qualification produit » exige de toute façon la revue externe (#20), à laquelle l'ADR

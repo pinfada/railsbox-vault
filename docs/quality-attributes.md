@@ -375,31 +375,38 @@ AES-256-GCM.
 
 | Moteur                   | Sceller un bloc | Ouvrir un bloc | Débit par blocs |    4 Mio en UN appel |
 | ------------------------ | --------------: | -------------: | --------------: | -------------------: |
-| **Chromium 151, Worker** |    **13,73 µs** |   **14,51 µs** |      35,6 Mio/s |   4,1 ms → 976 Mio/s |
-| Node 24.14               |        58,92 µs |       56,46 µs |       8,3 Mio/s | 3,4 ms → 1 177 Mio/s |
+| **Chromium 151, Worker** |    **17,87 µs** |   **13,50 µs** |      27,3 Mio/s |   4,5 ms → 889 Mio/s |
+| Node 24.14               |        50,45 µs |       48,19 µs |       8,1 Mio/s | 3,2 ms → 1 268 Mio/s |
 
 **Le chiffre qui décide n'est pas le débit d'AES, c'est le coût par APPEL.** Les mêmes 4 Mio coûtent
-112,5 ms en 8 192 appels contre 4,1 ms en un seul : un facteur **27** qui n'est pas imputable au
-chiffrement, mais au coût fixe d'un appel à `crypto.subtle` (≈ 13,2 µs, contre ≈ 0,5 µs de calcul
-pour 512 octets). Et **Node est 4,3 fois plus lent par appel que Chromium** : sa mesure ne peut pas
+146,4 ms en 8 192 appels contre 4,5 ms en un seul : un facteur **32,5** qui n'est pas imputable au
+chiffrement, mais au coût fixe d'un appel à `crypto.subtle` (≈ 17,3 µs, contre ≈ 0,5 µs de calcul
+pour 512 octets). Et **Node est 2,8 fois plus lent par appel que Chromium** : sa mesure ne peut pas
 se substituer à celle du navigateur, ce qui justifie d'avoir monté le banc dans un Worker de module
 réel plutôt que sous Node seul.
 
+Le **tirage du nonce** coûte ≈ 4 µs par scellement : c'est l'écart entre les 13,73 µs d'un premier
+relevé, où le nonce était dérivé de la génération et du rang, et les 17,87 µs d'aujourd'hui, où il
+est tiré de `crypto.getRandomValues`. Ce surcoût est le prix d'une **correction**, pas d'un confort
+: l'[ADR 0015](decisions/0015-proprietes-cryptographiques-du-format.md) dit quelle réfutation l'a
+imposé. L'ouverture, elle, ne tire rien et reste à 13,50 µs.
+
 Rapporté aux budgets ci-dessus, avec les chiffres de Chromium :
 
-| Geste                                                            | Scellement |                                                                                           Rapporté à |
-| ---------------------------------------------------------------- | ---------: | ---------------------------------------------------------------------------------------------------: |
-| Boot Rails mesuré par #16 (285 lectures, 13 écritures)           | **4,3 ms** |                                                               ~92 s de boot → **0,005 %**, invisible |
-| Une génération de la taille mesurée par #16 (90 304 o)           | **2,4 ms** |                                                                     s'ajoute à une barrière du guest |
-| Récupération d'une génération au plafond de 64 Mio               |  **1,9 s** | budget « dernière génération valide trouvée en ≤ 60 s » — tenu avec deux ordres de grandeur de marge |
-| Création ou restauration d'un volume de 512 Mio                  | **14,4 s** |                                          tous les secteurs devront être scellés, y compris les zéros |
-| Migration de format v2 → v3 d'un volume de 512 Mio               | **14,4 s** |                                                           boot après migration mesuré à ~105 s (#74) |
-| Lecture du volume entier (export #11, si l'archive est en clair) | **15,2 s** |                                            l'export n'a pas de budget de temps ; il en aurait besoin |
+| Geste                                                            | Scellement |                                                                                               Rapporté à |
+| ---------------------------------------------------------------- | ---------: | -------------------------------------------------------------------------------------------------------: |
+| Boot Rails mesuré par #16 (285 lectures, 13 écritures)           | **4,1 ms** |                                                                   ~92 s de boot → **0,004 %**, invisible |
+| Une génération de la taille mesurée par #16 (90 304 o)           | **3,2 ms** |                                                                         s'ajoute à une barrière du guest |
+| Récupération d'une génération au plafond de 64 Mio               |  **1,8 s** | budget « dernière génération valide trouvée en ≤ 60 s » — tenu avec plus d'un ordre de grandeur de marge |
+| Création ou restauration d'un volume de 512 Mio                  | **18,7 s** |                                              tous les secteurs devront être scellés, y compris les zéros |
+| Migration de format v2 → v3 d'un volume de 512 Mio               | **18,7 s** |                                                               boot après migration mesuré à ~105 s (#74) |
+| Lecture du volume entier (export #11, si l'archive est en clair) | **14,2 s** |                                                l'export n'a pas de budget de temps ; il en aurait besoin |
 
-**En espace** : 28 octets par secteur du volume (nonce 12 + étiquette 16), soit **5,469 %** et 28,00
-Mio sur le volume applicatif de 512 Mio ; 16 octets par enregistrement du journal (**3,125 %**, le
-nonce y étant dérivable) ; et **zéro octet de plus** pour la racine, dont l'en-tête passe de 60 à
-136 octets dans le secteur déjà alloué par l'ADR 0014.
+**En espace** : 34 octets par secteur du volume (nonce 12 + étiquette 16 + génération 6), soit
+**6,641 %** et 34,00 Mio sur le volume applicatif de 512 Mio ; 28 octets par enregistrement du
+journal (**5,469 %** — la génération y est celle de la racine, le rang est la position de
+l'enregistrement) ; et **zéro octet de plus** pour la racine, dont l'en-tête passe de 60 à 136
+octets dans le secteur déjà alloué par l'ADR 0014.
 
 **Aucune ligne n'est ajoutée au tableau des budgets**, et c'est délibéré. La règle posée par #16
 vaut ici : « un seuil posé sans mesure opposable serait une promesse, pas un budget ». Ces valeurs
