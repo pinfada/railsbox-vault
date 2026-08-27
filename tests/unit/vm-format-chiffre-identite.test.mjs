@@ -22,7 +22,7 @@ import { octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
 // Ces épreuves portent sur la seule propriété dont la violation est CATASTROPHIQUE plutôt que
 // simplement gênante : deux scellements distincts sous une même clé ne doivent jamais partager un
 // nonce. Sous AES-GCM, réutiliser un nonce livre le XOR des deux clairs ET la clé d'authentification
-// H, donc la capacité de forger des étiquettes (NIST SP 800-38D, annexe A ; attaque dite « forbidden
+// H, donc la capacité de forger des étiquettes (NIST SP 800-38D § 8.1 ; attaque dite « forbidden
 // attack » de Joux). L'unicité n'est donc pas ici une propriété souhaitable : c'est la condition de
 // toutes les autres.
 //

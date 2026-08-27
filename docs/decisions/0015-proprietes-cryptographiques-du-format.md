@@ -66,11 +66,12 @@ ci-dessous montre que le coût est dominé par l'appel et non par le nombre de t
 que la marge est presque gratuite.
 
 L'étiquette de 128 bits est le **maximum** admis par le § 5.2.1.2 de NIST SP 800-38D. La borne de
-forgerie qui en découle est calculable et vaut la peine d'être écrite plutôt que qualifiée : pour un
-scellement de 512 octets (32 blocs de 128 bits) et des données associées de 122 octets (8 blocs), la
-probabilité qu'une tentative de forgerie aboutisse est majorée par `(n + 1) / 2^128` avec `n = 40`,
-soit **environ 2^-122,6**. Ce n'est pas « nulle », et le mot « jamais » n'apparaît donc nulle part
-dans les propriétés ci-dessous.
+forgerie qui en découle est calculable, et elle vaut la peine d'être écrite plutôt que qualifiée :
+le § 5.2.1.2 et l'annexe B (« Authentication Assurance ») majorent la probabilité qu'une tentative
+de forgerie aboutisse par `(n + 1) / 2^t`, où `t` est la longueur d'étiquette et `n` le nombre de
+blocs de 128 bits de l'entrée. Pour un scellement de 512 octets (32 blocs) et des données associées
+de 122 octets (8 blocs), `n = 40`, d'où **environ 2^-122,6**. Ce n'est pas « nulle », et le mot «
+jamais » n'apparaît donc nulle part dans les propriétés ci-dessous.
 
 **Alternatives écartées, et ce qu'elles auraient apporté.**
 
@@ -101,10 +102,10 @@ plusieurs fois DANS UNE MÊME GÉNÉRATION — c'est ce que l'index en mémoire 
 guest qui ne se relirait pas ne monterait aucun système de fichiers. Un nonce construit sur
 (génération, adresse) se répéterait donc sur des clairs DIFFÉRENTS. Sous GCM, c'est la faute
 catastrophique : la réutilisation d'un nonce livre le XOR des deux clairs **et** la clé
-d'authentification `H`, donc la capacité de forger des étiquettes (SP 800-38D, annexe A ; attaque
-dite « forbidden attack », Joux 2006). Le **rang de l'entrée dans le journal de sa génération**,
-lui, est unique par construction. L'adresse reste dans les données associées, où l'unicité n'est pas
-exigée.
+d'authentification `H`, donc la capacité de forger des étiquettes (SP 800-38D § 8.1, « Uniqueness
+Requirement on IVs and Keys » ; attaque dite « forbidden attack », Joux 2006). Le **rang de l'entrée
+dans le journal de sa génération**, lui, est unique par construction. L'adresse reste dans les
+données associées, où l'unicité n'est pas exigée.
 
 **Le second choix est la dérivation plutôt que le tirage ou le compteur.** Le § 8.2 de SP 800-38D
 admet deux constructions : déterministe (champ fixe ‖ champ d'invocation) et tirée d'un générateur.
