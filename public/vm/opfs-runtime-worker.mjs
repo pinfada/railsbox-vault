@@ -14,6 +14,7 @@ import {
   exposesSyncAccessHandle,
   observePersistence,
 } from "/src/vm/opfs-scenarios.mjs";
+import { cleDeVolumeDuHarnais } from "/src/vm/cle-de-volume.mjs";
 import { openOpfsSyncAccess, removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 
@@ -51,7 +52,7 @@ async function scenarioCapacite() {
 async function scenarioPersistance() {
   const name = "sonde-persistance";
   await removeOpfsVolume(name);
-  return observePersistence({ openVolume: openOpfsVolume, name, support: "opfs" });
+  return observePersistence({ openVolume: ouvrirVolume, name, support: "opfs" });
 }
 
 /** Exclusivité : le registre local ET le support lui-même refusent un second détenteur. */
@@ -59,13 +60,13 @@ async function scenarioExclusivite() {
   const name = "sonde-exclusivite";
   await removeOpfsVolume(name);
 
-  const first = await openOpfsVolume({ name, size: PROBE_VOLUME_BYTES });
+  const first = await ouvrirVolume({ name, size: PROBE_VOLUME_BYTES });
   let secondVolumeCode = null;
   let secondHandleCode = null;
 
   try {
     try {
-      const doublon = await openOpfsVolume({ name, size: PROBE_VOLUME_BYTES });
+      const doublon = await ouvrirVolume({ name, size: PROBE_VOLUME_BYTES });
       await doublon.close();
     } catch (error) {
       secondVolumeCode = codeOf(error);
@@ -83,7 +84,7 @@ async function scenarioExclusivite() {
     await first.close();
   }
 
-  const third = await openOpfsVolume({ name });
+  const third = await ouvrirVolume({ name });
   let afterCloseSize;
   try {
     afterCloseSize = third.size();
@@ -190,7 +191,7 @@ async function exercerAdaptateur({ adapter, backend, attendre, offset, payload }
  * rougir l'exécution suivante sur `VAULT_STORAGE_BUSY`, en masquant la cause réelle.
  */
 async function relireApresReouverture({ name, offset, length, writtenDigest }) {
-  const reopened = await openOpfsVolume({ name });
+  const reopened = await ouvrirVolume({ name });
   try {
     const relu = await reopened.read(offset, length);
     return (await digestHex(relu)) === writtenDigest;
@@ -203,7 +204,7 @@ async function scenarioAdaptateur() {
   const name = "sonde-adaptateur";
   await removeOpfsVolume(name);
 
-  const backend = await openOpfsVolume({ name, size: PROBE_VOLUME_BYTES });
+  const backend = await ouvrirVolume({ name, size: PROBE_VOLUME_BYTES });
   const { adapter, failures, attendre } = brancherAdaptateurMesure(backend);
 
   const offset = 2 * SECTOR_SIZE;
@@ -248,6 +249,20 @@ async function scenarioAdaptateur() {
   };
 }
 
+/**
+ * Clé de volume du BANC, obtenue du harnais SOUS JETON (ADR 0016, décision 6).
+ *
+ * Elle est posée à l'entrée de chaque exécution et remise à `null` ensuite : ce banc mesure le
+ * support, pas la garde, et laisser une clé traîner entre deux scénarios ferait passer pour acquis
+ * ce qui doit être redemandé à chaque fois. Aucun chemin du produit ne transmet ce jeton.
+ */
+let cleDuBanc = null;
+
+/** Ouverture commune à tout ce banc : le support réel, et la clé que le harnais a remise. */
+function ouvrirVolume(options) {
+  return openOpfsVolume({ ...options, cle: cleDuBanc });
+}
+
 const SCENARIOS = new Map([
   ["capacite", scenarioCapacite],
   ["persistance", scenarioPersistance],
@@ -255,10 +270,15 @@ const SCENARIOS = new Map([
   ["adaptateur", scenarioAdaptateur],
 ]);
 
-async function run({ scenario = "persistance" } = {}) {
+async function run({ scenario = "persistance", jeton } = {}) {
   const runner = SCENARIOS.get(scenario);
   if (!runner) throw new Error(`Scénario inconnu : ${scenario}`);
-  return runner();
+  cleDuBanc = cleDeVolumeDuHarnais({ jeton });
+  try {
+    return await runner();
+  } finally {
+    cleDuBanc = null;
+  }
 }
 
 self.addEventListener("message", (event) => {
