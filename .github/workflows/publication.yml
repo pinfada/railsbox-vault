@@ -1,0 +1,173 @@
+name: Publication
+
+# Chaîne de publication des DEUX origines de l'ADR 0002 (#45, ADR 0017).
+#
+# Elle ne DÉPLOIE rien. Elle construit, vérifie, éprouve les en-têtes servis, et dépose les deux
+# arborescences comme artefacts GitHub. Le déploiement réel suppose un hébergement choisi et des
+# secrets ; l'ADR 0017 dit pourquoi #45 s'arrête ici, et ce qu'il faudra pour aller plus loin.
+#
+# `workflow_dispatch` SEULEMENT, et c'est délibéré. Une chaîne de publication qui se déclenche sur
+# `push` publie sans que personne l'ait décidé. `docs/release-policy.md` fait de la publication un
+# acte — changelog, inventaire, rollback testé — et non un effet de bord d'une fusion.
+#
+# Elle n'est pas un contrôle obligatoire de la protection de branche : `npm run check` porte déjà la
+# construction, la vérification et le témoin d'en-têtes sur Chromium (`npm run publier:check`,
+# 4,2 s). Ce workflow ajoute ce que `check` ne peut pas faire dans son budget : les artefacts v86
+# réels, les trois moteurs, et l'épreuve de retour arrière.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "Commit ou étiquette à publier (défaut : le commit courant)"
+        required: false
+        type: string
+      origine-coquille:
+        description: "Origine de confiance servie en production"
+        required: false
+        default: "https://vault.exemple"
+        type: string
+      origine-application:
+        description: "Origine du territoire applicatif"
+        required: false
+        default: "https://app.vault.exemple"
+        type: string
+      rollback-vers:
+        description:
+          "Commit d'une publication antérieure, reconstruit pour éprouver le retour arrière"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publication-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publier:
+    name: Construire, vérifier et éprouver les en-têtes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # `fetch-depth: 0` n'est pas un confort : `--commit <ref>` lit les octets par `git show`, et
+      # le retour arrière reconstruit un commit ANTÉRIEUR. Un clone superficiel ne le contiendrait
+      # pas, et l'épreuve de rollback échouerait pour une raison étrangère à ce qu'elle mesure.
+      - name: Récupération du dépôt
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Installation de Node
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Installation des moteurs de navigateur
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      # Le runtime v86 fait partie de l'artefact publié. Sans cette étape la publication serait
+      # constructible mais INCOMPLÈTE — l'inventaire le dirait (`complet: false`), et l'épreuve
+      # d'épinglage ci-dessous n'aurait rien à vérifier.
+      - name: Récupération vérifiée des artefacts v86
+        run: npm run vm:fetch
+
+      - name: Construction des deux arborescences
+        run: |
+          mkdir -p reports
+          node tools/publier.mjs \
+            --commit "${{ inputs.commit || github.sha }}" \
+            --origine-coquille "${{ inputs.origine-coquille }}" \
+            --origine-application "${{ inputs.origine-application }}" \
+            | tee reports/construction.txt
+
+      # Vérifier ce qu'on vient de construire n'est pas une tautologie : la vérification relit le
+      # DISQUE, recalcule chaque empreinte et refuse un fichier ajouté. Elle attraperait une étape
+      # de la chaîne qui déposerait quelque chose dans l'arbre après la construction.
+      - name: Vérification de l'inventaire des deux arbres
+        run: |
+          node tools/publier.mjs --verifier artifacts/publication/coquille
+          node tools/publier.mjs --verifier artifacts/publication/application
+
+      - name: Empreintes de racine, pour comparaison hors bande
+        run: |
+          for arbre in coquille application; do
+            echo "$arbre $(node -e "process.stdout.write(require('./artifacts/publication/$arbre/inventaire.json').empreinteDeRacine)")" \
+              | tee -a reports/empreintes-de-racine.txt
+          done
+          cat reports/empreintes-de-racine.txt >> "$GITHUB_STEP_SUMMARY"
+
+      # Le témoin exige que la CSP publiée nomme l'origine applicative du témoin : la construction
+      # ci-dessus a nommé l'origine de PRODUCTION. Les arbres sont donc reconstruits pour l'épreuve,
+      # dans un répertoire distinct, et les arbres publiés restent intacts.
+      - name: Témoin d'en-têtes sur les trois moteurs
+        env:
+          VAULT_MOTEURS: chromium,firefox,webkit
+        run: |
+          node tools/publier.mjs --origine-application http://localhost:4194
+          node tools/publier-temoin.mjs
+          node tools/publier-sonde-meta-csp.mjs
+
+      # RETOUR ARRIÈRE. Reconstruire un commit antérieur doit rendre, au bit près, l'empreinte de
+      # racine que sa publication d'alors avait inscrite. Sans cette propriété, « republier la
+      # version précédente » ne serait pas une opération définie.
+      - name: Épreuve de retour arrière
+        if: inputs.rollback-vers != ''
+        run: |
+          node tools/publier.mjs --commit "${{ inputs.rollback-vers }}" --sortie artifacts/rollback-a
+          node tools/publier.mjs --commit "${{ inputs.rollback-vers }}" --sortie artifacts/rollback-b
+          node tools/publier.mjs --verifier artifacts/rollback-a/coquille
+          a=$(node -e "process.stdout.write(require('./artifacts/rollback-a/coquille/inventaire.json').empreinteDeRacine)")
+          b=$(node -e "process.stdout.write(require('./artifacts/rollback-b/coquille/inventaire.json').empreinteDeRacine)")
+          echo "reconstruction A : $a"
+          echo "reconstruction B : $b"
+          test "$a" = "$b"
+
+      # La reconstruction du témoin a laissé les arbres sous une origine de test : on les rebâtit
+      # aux origines de production avant de les déposer, sans quoi l'artefact publié porterait un
+      # `_headers` de banc.
+      - name: Reconstruction aux origines de production
+        run: |
+          node tools/publier.mjs \
+            --commit "${{ inputs.commit || github.sha }}" \
+            --origine-coquille "${{ inputs.origine-coquille }}" \
+            --origine-application "${{ inputs.origine-application }}"
+          node tools/publier.mjs --verifier artifacts/publication/coquille
+          node tools/publier.mjs --verifier artifacts/publication/application
+
+      - name: Arborescence de l'origine de confiance
+        uses: actions/upload-artifact@v4
+        with:
+          name: publication-coquille
+          path: artifacts/publication/coquille/
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Arborescence du territoire applicatif
+        uses: actions/upload-artifact@v4
+        with:
+          name: publication-application
+          path: artifacts/publication/application/
+          if-no-files-found: error
+          retention-days: 90
+
+      # Les inventaires partent AUSSI séparément. C'est la seule chose qui donne une valeur à
+      # l'empreinte de racine : comparée hors bande à un arbre téléchargé, elle détecte une
+      # altération que l'inventaire embarqué — réécrit par le même adversaire — ne détecterait pas.
+      - name: Inventaires et relevés
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: publication-inventaires
+          path: |
+            artifacts/publication/coquille/inventaire.json
+            artifacts/publication/application/inventaire.json
+            reports/
+          if-no-files-found: warn
+          retention-days: 90

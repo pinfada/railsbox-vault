@@ -68,6 +68,12 @@ export default [
       // Artefacts tiers récupérés par `npm run vm:fetch` : ils sont vérifiés par empreinte, pas
       // relus par notre linter. Les modifier reviendrait à casser cette vérification.
       "vendor/v86/artefacts/**",
+      // Sorties de construction, jamais commitées (`.gitignore`) : image de référence (#5) et,
+      // depuis #45, arborescences publiées par `node tools/publier.mjs`. Ce sont des COPIES des
+      // modules déjà analysés à leur place d'origine ; les relire ici les jugerait hors de leur
+      // contexte d'exécution — un module de page copié sous `artifacts/` n'y est plus reconnu comme
+      // tel — et ferait dépendre le lint de la présence d'une construction locale.
+      "artifacts/**",
     ],
   },
   eslint.configs.recommended,
