@@ -81,6 +81,14 @@ n'est faite avant revue externe.
 Ordre : #17 → #18 → #19 → #20. La revue externe publie constats, sévérité et disposition ; elle ne
 simule pas une preuve TDD.
 
+**Entamé le 27 août 2026** — #17 a livré
+l'[ADR 0015](decisions/0015-proprietes-cryptographiques-du-format.md) et une spécification
+exécutable : modèle de référence WebCrypto, vecteurs figés que #18 et #19 devront reproduire octet
+pour octet, un test négatif par menace. Rien n'est chiffré dans le produit avant #18. Le nonce est
+tiré aléatoirement — une revue a démontré qu'un nonce dérivé de l'état durable était réémis sur la
+reprise réelle du magasin — et les questions laissées ouvertes (AES-GCM-SIV, retour arrière d'un
+secteur, ancrage monotone, budget de clé) sont numérotées pour #20.
+
 ## 5 — Déverrouillage et origine de confiance
 
 Une clé de volume aléatoire est enveloppée par une ou plusieurs clés de déverrouillage. Perte,
