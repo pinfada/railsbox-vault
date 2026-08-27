@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import {
   ENTETE_OCTETS,
   GENERATION_FORMAT,
@@ -8,30 +9,51 @@ import {
   RACINE_ENTETE_OCTETS,
   PAGE_HOTE_OCTETS,
   RACINE_OCTETS,
-  crc32,
+  SURCOUT_ENREGISTREMENT,
   decoderRacine,
   encoderEnteteEnregistrement,
   encoderRacine,
+  longueurPhysiqueDeCharge,
   offsetDeRacine,
   racineDeSequence,
 } from "../../src/vm/generation-format.mjs";
+import { Scellement } from "../../src/vm/scellement.mjs";
+import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
+import { identifiantVolumeEnOctets } from "../../src/vm/volume-chiffre-format.mjs";
 
-// Format de l'enregistrement de validation d'une génération (#16, ADR 0014).
+// Format de l'enregistrement de validation d'une génération (#16, ADR 0014 ; #18, ADR 0016).
 //
 // Ces épreuves fixent ce qu'un support doit rendre pour qu'une génération soit VALIDÉE. La règle est
-// stricte dans un seul sens : tout doute est un refus. Un en-tête dont la somme ne tombe pas juste
-// n'est pas « probablement bon » — il n'est pas une racine.
+// stricte dans un seul sens : tout doute est un refus.
+//
+// **Ce que #18 déplace, et qu'il faut lire avant tout le reste.** En v2, `decoderRacine` refusait un
+// octet retourné n'importe où dans l'en-tête, grâce à un CRC-32. En v3 il n'y a plus de CRC : le
+// module de format refuse ce qu'on peut refuser SANS CLÉ — secteur vierge, marqueur absent, format
+// inconnu, autre taille de secteur, autre taille de volume — et rend le sceau à l'appelant. Ce qui
+// refuse un octet retourné dans un champ AUTHENTIFIÉ est l'ÉTIQUETTE, vérifiée par `ouvrirRacine`.
+// Les deux moitiés sont éprouvées ici, l'une après l'autre, parce que croire que la première suffit
+// serait exactement la confusion que l'ADR 0015 refuse : classer avant d'avoir vérifié.
 
 const TAILLE_VOLUME = 16384;
+const IDENTIFIANT = "0123456789abcdef0123456789abcdef";
+
+/** Octets d'un sceau de racine, distincts pour qu'un décalage se voie. */
+function motif(longueur, graine) {
+  return Uint8Array.from({ length: longueur }, (_, index) => (index * 13 + graine) % 256);
+}
 
 function racineValide(surcharge = {}) {
   return {
     sequence: 5,
     generation: 3,
     tailleVolume: TAILLE_VOLUME,
-    enregistrements: 2,
+    nombreEntrees: 2,
     longueurCharge: 1024,
-    sommeCharge: 0x12345678,
+    identifiantVolume: identifiantVolumeEnOctets(IDENTIFIANT),
+    scellementsCumules: 42,
+    nonce: motif(12, 1),
+    chiffre: motif(32, 2),
+    etiquette: motif(16, 3),
     ...surcharge,
   };
 }
@@ -40,25 +62,109 @@ test("une racine encodée tient dans un seul secteur et se relit à l'identique"
   const octets = encoderRacine(racineValide());
   assert.equal(octets.byteLength, RACINE_OCTETS);
   assert.ok(RACINE_OCTETS <= 512, "la commutation doit tenir dans une écriture d'un seul secteur");
+  assert.equal(RACINE_ENTETE_OCTETS, 136, "l'ADR 0016 publie cette taille : elle est un contrat");
 
   const relue = decoderRacine(octets, { tailleVolume: TAILLE_VOLUME });
-  assert.equal(relue.valide, true);
+  assert.equal(relue.valide, true, relue.raison ?? "");
   assert.equal(relue.racine.sequence, 5);
   assert.equal(relue.racine.generation, 3);
-  assert.equal(relue.racine.enregistrements, 2);
+  assert.equal(relue.racine.nombreEntrees, 2);
   assert.equal(relue.racine.longueurCharge, 1024);
-  assert.equal(relue.racine.sommeCharge, 0x12345678);
+  assert.equal(relue.racine.scellementsCumules, 42);
   assert.equal(relue.racine.format, GENERATION_FORMAT);
+  assert.deepEqual(relue.racine.identifiantVolume, identifiantVolumeEnOctets(IDENTIFIANT));
+  assert.deepEqual(relue.racine.scelle.nonce, motif(12, 1));
+  assert.deepEqual(relue.racine.scelle.chiffre, motif(32, 2));
+  assert.deepEqual(relue.racine.scelle.etiquette, motif(16, 3));
 });
 
-test("un seul octet retourné dans l'en-tête invalide la racine au lieu de l'arrondir", () => {
+test("le format du journal vaut 2 : un runtime v2 refuse cette racine sans avoir à la comprendre", () => {
+  assert.equal(GENERATION_FORMAT, 2);
   const octets = encoderRacine(racineValide());
-  for (const position of [0, 8, 16, 24, 32, 40, 47]) {
+  const ancienne = Uint8Array.from(octets);
+  new DataView(ancienne.buffer).setUint32(8, 1, true);
+  const relue = decoderRacine(ancienne, { tailleVolume: TAILLE_VOLUME });
+  assert.equal(relue.valide, false);
+  assert.match(relue.raison, /format/i);
+});
+
+test("un octet retourné dans un champ de LOCALISATION est refusé SANS clé", () => {
+  // Marqueur, format, taille de secteur : ils ne sont pas dans les données associées, et c'est
+  // délibéré — ils localisent, ils n'autorisent pas. Le module doit donc les refuser lui-même.
+  const octets = encoderRacine(racineValide());
+  for (const position of [0, 4, 8, 12]) {
     const abimee = Uint8Array.from(octets);
     abimee[position] ^= 0x01;
     const relue = decoderRacine(abimee, { tailleVolume: TAILLE_VOLUME });
     assert.equal(relue.valide, false, `l'octet ${position} doit invalider la racine`);
     assert.match(relue.raison, /\S/);
+  }
+});
+
+test("un octet retourné dans un champ AUTHENTIFIÉ se décode encore, et c'est l'étiquette qui refuse", async () => {
+  // Le module de format n'a pas la clé : prétendre refuser ici serait deviner. Le refus vient de
+  // `ouvrirRacine`, sur les données associées — et il vient à coup sûr, ce que cette épreuve montre
+  // plutôt qu'elle ne l'affirme.
+  const scellement = await Scellement.ouvrir({
+    volume: IDENTIFIANT,
+    cleOctets: CLE_DE_TEST,
+    formatVersion: 3,
+  });
+  const entrees = [];
+  const scelle = await scellement.scellerRacine(
+    { sequence: 5, generation: 3, tailleVolume: TAILLE_VOLUME },
+    entrees,
+    { sequencePrecedente: null },
+  );
+  const octets = encoderRacine({
+    sequence: 5,
+    generation: 3,
+    tailleVolume: TAILLE_VOLUME,
+    nombreEntrees: scelle.entete.nombreEntrees,
+    longueurCharge: scelle.entete.longueurCharge,
+    identifiantVolume: identifiantVolumeEnOctets(IDENTIFIANT),
+    scellementsCumules: scelle.entete.scellementsCumules,
+    nonce: scelle.nonce,
+    chiffre: scelle.chiffre,
+    etiquette: scelle.etiquette,
+  });
+
+  const ouvrir = (source) => {
+    const relue = decoderRacine(source, { tailleVolume: TAILLE_VOLUME });
+    assert.equal(relue.valide, true, "le champ authentifié se DÉCODE : seule l'étiquette juge");
+    return scellement.ouvrirRacine(
+      {
+        sequence: relue.racine.sequence,
+        generation: relue.racine.generation,
+        tailleVolume: relue.racine.tailleVolume,
+        nombreEntrees: relue.racine.nombreEntrees,
+        longueurCharge: relue.racine.longueurCharge,
+        scellementsCumules: relue.racine.scellementsCumules,
+      },
+      relue.racine.scelle,
+      entrees,
+      { tailleVolume: TAILLE_VOLUME, sequenceMinimale: null },
+    );
+  };
+
+  await ouvrir(octets); // témoin positif : intacte, elle s'ouvre.
+
+  // Séquence, génération, compteur de scellements, nonce, chiffré, étiquette.
+  //
+  // L'IDENTIFIANT DE VOLUME (octet 52) n'est PAS dans cette liste, et c'est une propriété qu'il vaut
+  // mieux écrire que découvrir : la valeur qui entre dans les données associées est celle que le
+  // MANIFESTE déclare, pas celle qu'on lit sur le disque. Retourner la copie sur disque ne change
+  // donc pas l'étiquette. Elle n'est pas crue pour autant : `generation-store.mjs` la CONFRONTE à
+  // l'identité du manifeste et refuse l'écart par `VAULT_STORAGE_IDENTITE_VOLUME`. La copie sur
+  // disque est un localisateur, pas une autorité — exactement comme l'en-tête v3 (ADR 0016).
+  for (const position of [16, 24, 68, 76, 88, 120]) {
+    const abimee = Uint8Array.from(octets);
+    abimee[position] ^= 0x01;
+    await assert.rejects(
+      () => ouvrir(abimee),
+      (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.sceauRefuse),
+      `l'octet ${position} aurait dû être refusé par l'étiquette`,
+    );
   }
 });
 
@@ -68,13 +174,19 @@ test("une racine dont l'en-tête est tronqué par une déchirure n'est jamais un
     const tronquee = new Uint8Array(RACINE_OCTETS);
     tronquee.set(octets.subarray(0, atteints));
     const relue = decoderRacine(tronquee, { tailleVolume: TAILLE_VOLUME });
-    assert.equal(relue.valide, false, `${atteints} octet(s) atteints doivent invalider la racine`);
+    // Une troncature dans un champ authentifié laisse un en-tête DÉCODABLE mais des octets nuls là
+    // où le sceau vivait : l'étiquette ne vérifiera pas. Ce que l'épreuve exige est donc qu'aucune
+    // troncature ne rende une racine à la fois décodable ET munie de son sceau d'origine.
+    const perdu = relue.valide
+      ? relue.racine.scelle.etiquette.some((octet, index) => octet !== octets[120 + index])
+      : true;
+    assert.ok(perdu, `${atteints} octet(s) atteints ne doivent pas rendre une racine complète`);
   }
 });
 
 test("une déchirure AU-DELÀ de l'en-tête ne fait rien perdre, et le format le dit", () => {
   // Le reste du secteur est une réserve de zéros : elle ne porte aucune information. Une racine dont
-  // seuls les soixante premiers octets ont atteint le support est donc COMPLÈTE, et la traiter comme
+  // seuls les 136 premiers octets ont atteint le support est donc COMPLÈTE, et la traiter comme
   // abîmée refuserait une génération parfaitement validée. C'est une propriété du format, pas un
   // trou de la vérification — et elle est écrite ici pour ne pas être découverte en production.
   const octets = encoderRacine(racineValide());
@@ -118,19 +230,26 @@ test("les deux racines alternent, et une validation n'écrase jamais celle qui f
 test("l'en-tête d'un enregistrement porte son offset logique et sa longueur", () => {
   const entete = encoderEnteteEnregistrement({ offset: 4096, longueur: 512 });
   assert.equal(entete.byteLength, ENTETE_OCTETS);
-  assert.notEqual(crc32(entete), 0);
 });
 
-test("la somme de contrôle est incrémentale : crc(A||B) se poursuit depuis crc(A)", () => {
-  const a = Uint8Array.from([1, 2, 3, 4, 5]);
-  const b = Uint8Array.from([9, 8, 7]);
-  const ensemble = Uint8Array.from([...a, ...b]);
-  assert.equal(crc32(b, crc32(a)), crc32(ensemble));
+test("le surcoût d'un enregistrement est FIXE, et la longueur physique s'en déduit", () => {
+  // Deux grandeurs stockées peuvent diverger ; une grandeur dérivée ne le peut pas. C'est la raison
+  // pour laquelle la racine ne stocke que la longueur des CLAIRS (ADR 0016, décision 3).
+  assert.equal(SURCOUT_ENREGISTREMENT, ENTETE_OCTETS + 34);
+  assert.equal(SURCOUT_ENREGISTREMENT, 50);
+  assert.equal(
+    longueurPhysiqueDeCharge({ nombreEntrees: 3, longueurCharge: 1536 }),
+    1536 + 3 * SURCOUT_ENREGISTREMENT,
+  );
+  assert.equal(longueurPhysiqueDeCharge({ nombreEntrees: 0, longueurCharge: 0 }), 0);
 });
 
-test("la somme de contrôle distingue deux charges qui ne diffèrent que par un octet", () => {
-  const a = new Uint8Array(512).fill(7);
-  const b = Uint8Array.from(a);
-  b[300] = 8;
-  assert.notEqual(crc32(a), crc32(b));
+test("un sceau de racine incomplet est refusé À L'ENCODAGE : jamais complété par des zéros", () => {
+  for (const champ of ["nonce", "chiffre", "etiquette", "identifiantVolume"]) {
+    assert.throws(
+      () => encoderRacine(racineValide({ [champ]: new Uint8Array(3) })),
+      RangeError,
+      `« ${champ} » tronqué aurait dû être refusé`,
+    );
+  }
 });
