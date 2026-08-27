@@ -73,13 +73,17 @@ export class VolumeChiffre {
     return this.#scellement;
   }
 
-  #exigerAlignement(adresse, longueur) {
-    if (adresse % SECTOR_SIZE !== 0 || longueur % SECTOR_SIZE !== 0 || longueur <= 0) {
-      throw new StorageError(
-        STORAGE_ERROR_CODES.outOfRange,
-        `Accès chiffré non aligné sur le volume « ${this.#volume} » : ${longueur} octet(s) à l'offset ${adresse}. Un secteur est l'unité du scellement ; compléter exigerait de lire ce que l'appelant n'a pas demandé.`,
-        { volume: this.#volume, offset: adresse, length: longueur },
-      );
+  /**
+   * Rend la plage de SECTEURS qui couvre `[adresse, adresse + longueur)`.
+   *
+   * Le secteur est l'unité indivisible du scellement : une étiquette couvre un secteur entier, et
+   * en ouvrir la moitié n'a pas de sens. Un accès qui déborde est donc élargi aux secteurs qui le
+   * portent, jamais tronqué. C'est la même règle que `deposer` applique déjà côté journal, pour la
+   * même raison.
+   */
+  #couverture(adresse, longueur) {
+    if (!Number.isInteger(adresse) || adresse < 0 || !Number.isInteger(longueur) || longueur <= 0) {
+      throw new RangeError(`Plage invalide : offset=${adresse} length=${longueur}.`);
     }
     if (adresse + longueur > this.#disposition.tailleLogique) {
       throw new StorageError(
@@ -88,6 +92,9 @@ export class VolumeChiffre {
         { volume: this.#volume, offset: adresse, length: longueur },
       );
     }
+    const debut = adresse - (adresse % SECTOR_SIZE);
+    const fin = Math.ceil((adresse + longueur) / SECTOR_SIZE) * SECTOR_SIZE;
+    return { debut, longueur: fin - debut, decalage: adresse - debut };
   }
 
   /**
@@ -98,15 +105,23 @@ export class VolumeChiffre {
    * @returns {Promise<Uint8Array>} tampon neuf, détaché du support
    */
   async lireSecteurs(adresse, longueur) {
-    this.#exigerAlignement(adresse, longueur);
+    const plage = this.#couverture(adresse, longueur);
+    const clair = await this.#lireCouverture(plage);
+    return plage.decalage === 0 && plage.longueur === longueur
+      ? clair
+      : clair.slice(plage.decalage, plage.decalage + longueur);
+  }
+
+  /** Ouvre chaque secteur d'une plage ALIGNÉE. Une seule lecture de sceaux, une seule de charge. */
+  async #lireCouverture({ debut, longueur }) {
     const nombre = longueur / SECTOR_SIZE;
     const sceaux = this.#lireSupport(
-      offsetDeSceau(this.#disposition, adresse),
+      offsetDeSceau(this.#disposition, debut),
       nombre * SCEAU_OCTETS,
     );
-    const charge = this.#lireSupport(offsetDeCharge(this.#disposition, adresse), longueur);
-    this.#exigerCompte(sceaux, nombre * SCEAU_OCTETS, adresse, "sceaux");
-    this.#exigerCompte(charge, longueur, adresse, "charge");
+    const charge = this.#lireSupport(offsetDeCharge(this.#disposition, debut), longueur);
+    this.#exigerCompte(sceaux, nombre * SCEAU_OCTETS, debut, "sceaux");
+    this.#exigerCompte(charge, longueur, debut, "charge");
 
     const clair = new Uint8Array(longueur);
     for (let index = 0; index < nombre; index += 1) {
@@ -115,7 +130,7 @@ export class VolumeChiffre {
         {
           generation: sceau.generation,
           rang: RANG_SECTEUR_DE_VOLUME,
-          adresse: adresse + index * SECTOR_SIZE,
+          adresse: debut + index * SECTOR_SIZE,
           longueur: SECTOR_SIZE,
         },
         {
@@ -152,17 +167,24 @@ export class VolumeChiffre {
    * les premiers octets du chiffré atteignent le support, et les sceaux ne sont pas écrits du tout.
    * C'est ce que #15 injecte, et le résultat est un secteur REFUSÉ à la relecture — jamais un
    * secteur à moitié plausible.
+   *
+   * Une écriture qui ne couvre pas des secteurs entiers est COMPLÉTÉE par relecture. C'est la
+   * lecture-modification-réécriture que l'ADR 0015 réclame de l'appelant de `rescellerEnSecteurs`,
+   * et elle vit ici parce que c'est ici qu'on sait lire. Un demi-secteur scellé n'existe pas : une
+   * étiquette couvre un secteur, et compléter par des zéros écraserait la moitié qu'on n'a pas
+   * reçue.
    */
   async ecrireSecteurs(adresse, octets, generation, { octetsAcceptes = null } = {}) {
-    this.#exigerAlignement(adresse, octets.byteLength);
+    const plage = this.#couverture(adresse, octets.byteLength);
     const acceptes = octetsAcceptes ?? octets.byteLength;
+    const contenu = await this.#completer(plage, octets);
     const { secteurs } = await this.#scellement.rescellerEnSecteurs({
-      adresse,
-      contenu: octets,
+      adresse: plage.debut,
+      contenu,
       generation,
     });
 
-    const charge = new Uint8Array(octets.byteLength);
+    const charge = new Uint8Array(plage.longueur);
     const sceaux = new Uint8Array(secteurs.length * SCEAU_OCTETS);
     for (const [index, secteur] of secteurs.entries()) {
       charge.set(secteur.scelle.chiffre, index * SECTOR_SIZE);
@@ -175,12 +197,21 @@ export class VolumeChiffre {
         index * SCEAU_OCTETS,
       );
     }
-    if (acceptes < charge.byteLength) {
-      this.#ecrireSupport(offsetDeCharge(this.#disposition, adresse), charge.subarray(0, acceptes));
+    const debutCharge = offsetDeCharge(this.#disposition, plage.debut);
+    if (acceptes < octets.byteLength) {
+      this.#ecrireSupport(debutCharge, charge.subarray(0, plage.decalage + acceptes));
       return;
     }
-    this.#ecrireSupport(offsetDeCharge(this.#disposition, adresse), charge);
-    this.#ecrireSupport(offsetDeSceau(this.#disposition, adresse), sceaux);
+    this.#ecrireSupport(debutCharge, charge);
+    this.#ecrireSupport(offsetDeSceau(this.#disposition, plage.debut), sceaux);
+  }
+
+  /** Complète une écriture non alignée par relecture des secteurs qui la portent. */
+  async #completer(plage, octets) {
+    if (plage.decalage === 0 && plage.longueur === octets.byteLength) return octets;
+    const contenu = await this.#lireCouverture(plage);
+    contenu.set(octets, plage.decalage);
+    return contenu;
   }
 
   /**
