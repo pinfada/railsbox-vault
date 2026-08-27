@@ -120,52 +120,61 @@ function creerMinuteries(cible) {
 }
 
 /**
- * Boucle proprement dite. Elle ne connaît que sa cible : `MessageChannel` et `setTimeout` sont pris
- * SUR elle, ce qui la rend éprouvable sous Node avec un faux contexte.
+ * Abonnés aux battements, et la diffusion d'un battement — un par tâche exécutée.
  *
- * @param {{ MessageChannel: Function, setTimeout: Function }} cible
+ * C'est la seule horloge qui avance quand un moteur affame ses minuteries sous une boucle serrée
+ * (mesuré sous WebKit) : sans elle, aucune échéance de ce contexte n'expirerait pendant la plage où
+ * v86 tourne à plein. Elle vit hors de la boucle parce que ce n'est PAS de l'ordonnancement — la
+ * boucle n'en emprunte qu'un geste, `battre` — et parce que la consignation des fautes d'abonnés
+ * n'a rien à voir avec le choix d'une voie de tâche.
+ *
+ * Un abonné fautif ne doit ni emporter l'émulateur, ni disparaître. Sa faute est donc CONSIGNÉE —
+ * les comptes rendus la publient par `decrireBoucle` — et le tour suivant a lieu quand même. La
+ * relancer hors de la boucle en ferait une exception non attrapée par tour, c'est-à-dire un bruit
+ * qui noierait la panne au lieu de la nommer.
  */
-function creerBoucle(cible) {
-  const enAttente = new Map();
-  const canal = new cible.MessageChannel();
+function creerBattements() {
   const abonnes = new Set();
   const incidents = [];
-  const minuteries = creerMinuteries(cible);
-  let sequence = 0;
-  let appels = 0;
 
-  /**
-   * Un battement par tâche exécutée. C'est la seule horloge qui avance quand un moteur affame ses
-   * minuteries sous une boucle serrée (mesuré sous WebKit) : sans elle, aucune échéance de ce
-   * contexte n'expirerait pendant la plage où v86 tourne à plein.
-   *
-   * Un abonné fautif ne doit ni emporter l'émulateur, ni disparaître. Sa faute est donc CONSIGNÉE
-   * — les comptes rendus la publient par `decrireBoucle` — et le tour suivant a lieu quand même.
-   * La relancer hors de la boucle en ferait une exception non attrapée par tour, c'est-à-dire un
-   * bruit qui noierait la panne au lieu de la nommer.
-   */
-  const battre = () => {
-    for (const abonne of [...abonnes]) {
-      try {
-        abonne();
-      } catch (erreur) {
-        if (incidents.length < MAX_INCIDENTS) incidents.push(String(erreur?.message ?? erreur));
+  return {
+    battre() {
+      for (const abonne of [...abonnes]) {
+        try {
+          abonne();
+        } catch (erreur) {
+          if (incidents.length < MAX_INCIDENTS) incidents.push(String(erreur?.message ?? erreur));
+        }
       }
-    }
+    },
+    incidents: () => incidents.slice(),
+    auBattement(rappel) {
+      abonnes.add(rappel);
+      return () => abonnes.delete(rappel);
+    },
+    oublierLesAbonnes() {
+      abonnes.clear();
+    },
   };
+}
 
-  canal.port1.onmessage = (evenement) => {
-    const tache = enAttente.get(evenement.data);
-    enAttente.delete(evenement.data);
-    if (tache) tache();
-    battre();
-  };
-
-  const immediat = (tache) => {
-    sequence += 1;
-    enAttente.set(sequence, tache);
-    canal.port2.postMessage(sequence);
-  };
+/**
+ * Le `postTask` proprement dit, et son compteur de tours.
+ *
+ * Il vit à part de la boucle parce qu'il ne connaît que DEUX voies — l'immédiate et la différée —
+ * et rien du canal, des ports, ni des battements : tout ce qu'il décide, c'est par laquelle une
+ * tâche passe. Le compteur reste ici, collé à la seule ligne qui l'incrémente ; c'est lui qui
+ * distingue « boucle posée » de « boucle empruntée par v86 », que rien d'autre ne sépare dans un
+ * compte rendu.
+ *
+ * Les deux voies sont reçues comme des fonctions, et non comme l'objet qui les porte : le chemin
+ * chaud ne doit pas payer une résolution de propriété par tâche confiée.
+ *
+ * @param {{ immediat: (tache: () => void) => void,
+ *           differer: (tache: () => void, delai: number) => void }} voies
+ */
+function creerVoieDeTaches({ immediat, differer }) {
+  let appels = 0;
 
   const postTask = (rappel, options = {}) =>
     new Promise((resolve, reject) => {
@@ -189,26 +198,58 @@ function creerBoucle(cible) {
         }
       };
       const delai = Number(options.delay ?? 0);
-      if (Number.isFinite(delai) && delai > 0) minuteries.differer(executer, delai);
+      if (Number.isFinite(delai) && delai > 0) differer(executer, delai);
       else immediat(executer);
     });
 
+  return { postTask, appels: () => appels };
+}
+
+/**
+ * Boucle proprement dite. Elle ne connaît que sa cible : `MessageChannel` et `setTimeout` sont pris
+ * SUR elle, ce qui la rend éprouvable sous Node avec un faux contexte.
+ *
+ * @param {{ MessageChannel: Function, setTimeout: Function }} cible
+ */
+function creerBoucle(cible) {
+  const enAttente = new Map();
+  const canal = new cible.MessageChannel();
+  const battements = creerBattements();
+  const minuteries = creerMinuteries(cible);
+  let sequence = 0;
+
+  // Battement pris en LOCAL, pour la même raison que les voies de `creerVoieDeTaches` : il est
+  // appelé à CHAQUE message du canal, c'est-à-dire à chaque tour que v86 confie à la boucle.
+  const { battre } = battements;
+
+  canal.port1.onmessage = (evenement) => {
+    const tache = enAttente.get(evenement.data);
+    enAttente.delete(evenement.data);
+    if (tache) tache();
+    battre();
+  };
+
+  const immediat = (tache) => {
+    sequence += 1;
+    enAttente.set(sequence, tache);
+    canal.port2.postMessage(sequence);
+  };
+
+  const taches = creerVoieDeTaches({ immediat, differer: minuteries.differer });
+
   return {
-    postTask,
-    appels: () => appels,
+    postTask: taches.postTask,
+    appels: taches.appels,
     /** Relevé du chemin `setTimeout` : combien de fois emprunté, et jusqu'à quelle imbrication. */
     minuteries: minuteries.releve,
-    incidents: () => incidents.slice(),
-    auBattement(rappel) {
-      abonnes.add(rappel);
-      return () => abonnes.delete(rappel);
-    },
+    incidents: battements.incidents,
+    auBattement: battements.auBattement,
     fermer() {
       canal.port1.onmessage = null;
       canal.port1.close();
       canal.port2.close();
       enAttente.clear();
-      abonnes.clear();
+      battements.oublierLesAbonnes();
     },
   };
 }

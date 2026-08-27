@@ -89,6 +89,106 @@ export function creerAssembleurLignes(surLigne) {
  */
 
 /**
+ * @typedef {Map<string, { octets: Uint8Array, position: number }>} ReponsesEnCours
+ */
+
+// Les quatre verbes qui touchent à l'état d'assemblage portent chacun leur règle dans une fonction
+// nommée. Le tri des verbes reste ainsi lisible d'un coup d'oeil dans `traiterLigne`, et la table
+// d'assemblage voyage explicitement en paramètre plutôt que de se cacher dans une clôture : chaque
+// règle se relit — et se relierait — sans dérouler tout le codec.
+
+/**
+ * Ouvre une réponse sur la taille BRUTE annoncée par le guest (`RSB`).
+ *
+ * Le tampon est alloué une seule fois, à la taille exacte : c'est ce qui permet à `accumulerTranche`
+ * de décoder au vol et de refuser un débordement plutôt que de tronquer en silence.
+ *
+ * @param {ReponsesEnCours} enCours
+ * @param {string} identifiant
+ * @param {string} tailleAnnoncee
+ * @returns {Evenement}
+ */
+function ouvrirReponse(enCours, identifiant, tailleAnnoncee) {
+  const taille = Number.parseInt(tailleAnnoncee, 10);
+  if (!Number.isInteger(taille) || taille < 0) {
+    return { type: "erreur", id: identifiant, code: 56, libelle: "taille-annoncee-invalide" };
+  }
+  enCours.set(identifiant, { octets: new Uint8Array(taille), position: 0 });
+  return null;
+}
+
+/**
+ * Décode une tranche de réponse dans le tampon déjà ouvert (`DAT`).
+ *
+ * L'entrée est cherchée AVANT le décodage base64 : une tranche sans en-tête se nomme comme telle,
+ * même si son contenu est par ailleurs illisible.
+ *
+ * @param {ReponsesEnCours} enCours
+ * @param {string} identifiant
+ * @param {string} tranche
+ * @returns {Evenement}
+ */
+function accumulerTranche(enCours, identifiant, tranche) {
+  const entree = enCours.get(identifiant);
+  if (entree === undefined) {
+    return { type: "erreur", id: identifiant, code: 56, libelle: "tranche-sans-entete" };
+  }
+  const morceau = octetsDepuisBase64(tranche);
+  if (entree.position + morceau.byteLength > entree.octets.byteLength) {
+    enCours.delete(identifiant);
+    return {
+      type: "erreur",
+      id: identifiant,
+      code: 56,
+      libelle: "reponse-plus-longue-qu-annoncee",
+    };
+  }
+  entree.octets.set(morceau, entree.position);
+  entree.position += morceau.byteLength;
+  return null;
+}
+
+/**
+ * Clôt une réponse et la rend, ou dit pourquoi elle ne tient pas (`END`).
+ *
+ * L'entrée est retirée AVANT tout contrôle : une réponse close est close, y compris quand elle est
+ * tronquée. La laisser en place ferait accepter des tranches après sa fin.
+ *
+ * @param {ReponsesEnCours} enCours
+ * @param {string} identifiant
+ * @returns {Evenement}
+ */
+function cloturerReponse(enCours, identifiant) {
+  const entree = enCours.get(identifiant);
+  enCours.delete(identifiant);
+  if (entree === undefined) {
+    return { type: "erreur", id: identifiant, code: 56, libelle: "fin-sans-entete" };
+  }
+  if (entree.position !== entree.octets.byteLength) {
+    return { type: "erreur", id: identifiant, code: 56, libelle: "reponse-tronquee" };
+  }
+  return { type: "reponse", id: identifiant, octets: entree.octets };
+}
+
+/**
+ * Relaie l'erreur que le guest déclare lui-même (`ERR`), et abandonne l'assemblage en cours.
+ *
+ * @param {ReponsesEnCours} enCours
+ * @param {string} identifiant
+ * @param {string[]} reste
+ * @returns {Evenement}
+ */
+function signalerErreurGuest(enCours, identifiant, reste) {
+  enCours.delete(identifiant);
+  return {
+    type: "erreur",
+    id: identifiant,
+    code: Number.parseInt(reste[0] ?? "0", 10),
+    libelle: reste.slice(1).join(" ") || "sans-libelle",
+  };
+}
+
+/**
  * Réassemble les réponses du guest.
  *
  * Un `RSB` annonce la taille BRUTE de la réponse : le tampon est alloué une
@@ -99,7 +199,7 @@ export function creerAssembleurLignes(surLigne) {
  * @returns {{ traiterLigne: (ligne: string) => Evenement }}
  */
 export function creerAssembleurReponses() {
-  /** @type {Map<string, { octets: Uint8Array, position: number }>} */
+  /** @type {ReponsesEnCours} */
   const enCours = new Map();
 
   return {
@@ -112,58 +212,14 @@ export function creerAssembleurReponses() {
           return { type: "journal", texte: [identifiant, ...reste].join(" ") };
         case "ACK":
           return { type: "ack", id: identifiant };
-        case "RSB": {
-          const taille = Number.parseInt(reste[0] ?? "", 10);
-          if (!Number.isInteger(taille) || taille < 0) {
-            return {
-              type: "erreur",
-              id: identifiant,
-              code: 56,
-              libelle: "taille-annoncee-invalide",
-            };
-          }
-          enCours.set(identifiant, { octets: new Uint8Array(taille), position: 0 });
-          return null;
-        }
-        case "DAT": {
-          const entree = enCours.get(identifiant);
-          if (entree === undefined) {
-            return { type: "erreur", id: identifiant, code: 56, libelle: "tranche-sans-entete" };
-          }
-          const morceau = octetsDepuisBase64(reste[0] ?? "");
-          if (entree.position + morceau.byteLength > entree.octets.byteLength) {
-            enCours.delete(identifiant);
-            return {
-              type: "erreur",
-              id: identifiant,
-              code: 56,
-              libelle: "reponse-plus-longue-qu-annoncee",
-            };
-          }
-          entree.octets.set(morceau, entree.position);
-          entree.position += morceau.byteLength;
-          return null;
-        }
-        case "END": {
-          const entree = enCours.get(identifiant);
-          enCours.delete(identifiant);
-          if (entree === undefined) {
-            return { type: "erreur", id: identifiant, code: 56, libelle: "fin-sans-entete" };
-          }
-          if (entree.position !== entree.octets.byteLength) {
-            return { type: "erreur", id: identifiant, code: 56, libelle: "reponse-tronquee" };
-          }
-          return { type: "reponse", id: identifiant, octets: entree.octets };
-        }
-        case "ERR": {
-          enCours.delete(identifiant);
-          return {
-            type: "erreur",
-            id: identifiant,
-            code: Number.parseInt(reste[0] ?? "0", 10),
-            libelle: reste.slice(1).join(" ") || "sans-libelle",
-          };
-        }
+        case "RSB":
+          return ouvrirReponse(enCours, identifiant, reste[0] ?? "");
+        case "DAT":
+          return accumulerTranche(enCours, identifiant, reste[0] ?? "");
+        case "END":
+          return cloturerReponse(enCours, identifiant);
+        case "ERR":
+          return signalerErreurGuest(enCours, identifiant, reste);
         default:
           return { type: "journal", texte: ligne };
       }

@@ -106,11 +106,15 @@ async function scenarioExclusivite() {
  * si le backend OPFS respectait le contrat « sur le papier » mais pas la sémantique attendue par
  * `ide.js`, c'est ici que cela se verrait.
  */
-async function scenarioAdaptateur() {
-  const name = "sonde-adaptateur";
-  await removeOpfsVolume(name);
-
-  const backend = await openOpfsVolume({ name, size: PROBE_VOLUME_BYTES });
+/**
+ * Branche l'adaptateur de #4 sur `backend` et rend AVEC lui le moyen d'attendre un acquittement.
+ *
+ * Les trois sont indissociables, et c'est pourquoi cette couture les rend d'un bloc : `attendre`
+ * inscrit son `reject` dans le registre des attentes en cours, et `onFatal` est le seul à pouvoir
+ * l'y trouver. Séparer l'un de l'autre rendrait la sonde suspendue pour toujours sur la première
+ * panne — une opération qui échoue n'appelle jamais son callback.
+ */
+function brancherAdaptateurMesure(backend) {
   const failures = [];
   const pending = new Set();
   const adapter = createV86BufferAdapter({
@@ -133,17 +137,81 @@ async function scenarioAdaptateur() {
       });
     });
 
+  return { adapter, failures, attendre };
+}
+
+/**
+ * Exerce l'adaptateur déjà chargé, de la première écriture jusqu'à la lecture de son état, et rend
+ * TOUT ce que la séquence a observé.
+ *
+ * L'ordre des gestes EST la mesure : `set` puis `flush` puis `get` prouvent l'aller-retour dans le
+ * sens où `ide.js` les émet, et `get_state` vient après, une fois le tampon dans un état connu.
+ * Le compte rendu final reste chez l'appelant : plusieurs de ses champs se lisent APRÈS la
+ * fermeture du volume, et les déplacer ici changerait l'instant de leur mesure.
+ */
+async function exercerAdaptateur({ adapter, backend, attendre, offset, payload }) {
+  const setAcknowledged = await attendre((done) => adapter.set(offset, payload, () => done(true)));
+  const flushAcknowledged = await attendre((done) => adapter.flush(() => done(true)));
+  const roundTrip = await attendre((done) =>
+    adapter.get(offset, payload.byteLength, (data) => done(data)),
+  );
+
+  let getStateCode = null;
+  try {
+    adapter.get_state();
+  } catch (error) {
+    getStateCode = codeOf(error);
+  }
+
+  const exposesFileSystemHandle =
+    exposesSyncAccessHandle(backend) || exposesSyncAccessHandle(adapter);
+
+  // L'adaptateur décrémente son compteur d'opérations en vol dans le `finally` de sa promesse,
+  // donc APRÈS avoir appelé le callback de v86. Lire l'état sans céder la main compterait une
+  // opération déjà acquittée ; le tour de boucle ci-dessous rend la mesure exacte.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const status = adapter.status();
+
+  return {
+    setAcknowledged,
+    flushAcknowledged,
+    roundTrip,
+    getStateCode,
+    exposesFileSystemHandle,
+    status,
+  };
+}
+
+/**
+ * Rouvre le volume APRÈS la fermeture du handle et dit si l'empreinte écrite y est encore : ce que
+ * l'adaptateur a écrit doit survivre, sinon la durabilité annoncée par `describe()` est un mensonge.
+ *
+ * Le `finally` referme la réouverture quoi qu'il arrive — un handle exclusif laissé ouvert ferait
+ * rougir l'exécution suivante sur `VAULT_STORAGE_BUSY`, en masquant la cause réelle.
+ */
+async function relireApresReouverture({ name, offset, length, writtenDigest }) {
+  const reopened = await openOpfsVolume({ name });
+  try {
+    const relu = await reopened.read(offset, length);
+    return (await digestHex(relu)) === writtenDigest;
+  } finally {
+    await reopened.close();
+  }
+}
+
+async function scenarioAdaptateur() {
+  const name = "sonde-adaptateur";
+  await removeOpfsVolume(name);
+
+  const backend = await openOpfsVolume({ name, size: PROBE_VOLUME_BYTES });
+  const { adapter, failures, attendre } = brancherAdaptateurMesure(backend);
+
   const offset = 2 * SECTOR_SIZE;
   const payload = await buildBlockFixture(4096);
   const writtenDigest = await digestHex(payload);
 
   let loaded = false;
-  let setAcknowledged;
-  let flushAcknowledged;
-  let roundTrip;
-  let getStateCode = null;
-  let exposesFileSystemHandle;
-  let status;
+  let mesures;
 
   // `attendre` rejette dès que l'adaptateur signale une panne : sans `finally`, ce rejet laisserait
   // le handle exclusif ouvert et l'exécution suivante rougirait sur `VAULT_STORAGE_BUSY`.
@@ -152,52 +220,29 @@ async function scenarioAdaptateur() {
       loaded = true;
     };
     adapter.load();
-
-    setAcknowledged = await attendre((done) => adapter.set(offset, payload, () => done(true)));
-    flushAcknowledged = await attendre((done) => adapter.flush(() => done(true)));
-    roundTrip = await attendre((done) =>
-      adapter.get(offset, payload.byteLength, (data) => done(data)),
-    );
-
-    try {
-      adapter.get_state();
-    } catch (error) {
-      getStateCode = codeOf(error);
-    }
-
-    exposesFileSystemHandle = exposesSyncAccessHandle(backend) || exposesSyncAccessHandle(adapter);
-
-    // L'adaptateur décrémente son compteur d'opérations en vol dans le `finally` de sa promesse,
-    // donc APRÈS avoir appelé le callback de v86. Lire l'état sans céder la main compterait une
-    // opération déjà acquittée ; le tour de boucle ci-dessous rend la mesure exacte.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    status = adapter.status();
+    mesures = await exercerAdaptateur({ adapter, backend, attendre, offset, payload });
   } finally {
     await backend.close();
   }
 
-  // Le volume est rouvert APRÈS la fermeture du handle : ce que l'adaptateur a écrit doit encore
-  // être là, sinon la durabilité annoncée par `describe()` serait un mensonge.
-  const reopened = await openOpfsVolume({ name });
-  let persistedAfterReopen;
-  try {
-    const relu = await reopened.read(offset, payload.byteLength);
-    persistedAfterReopen = (await digestHex(relu)) === writtenDigest;
-  } finally {
-    await reopened.close();
-  }
+  const persistedAfterReopen = await relireApresReouverture({
+    name,
+    offset,
+    length: payload.byteLength,
+    writtenDigest,
+  });
 
   return {
     volume: name,
     byteLength: adapter.byteLength,
     loaded,
-    setAcknowledged,
-    flushAcknowledged,
+    setAcknowledged: mesures.setAcknowledged,
+    flushAcknowledged: mesures.flushAcknowledged,
     writtenDigest,
-    roundTripDigest: await digestHex(roundTrip),
-    getStateCode,
-    exposesFileSystemHandle,
-    status: { fatal: status.fatal, inFlight: status.inFlight },
+    roundTripDigest: await digestHex(mesures.roundTrip),
+    getStateCode: mesures.getStateCode,
+    exposesFileSystemHandle: mesures.exposesFileSystemHandle,
+    status: { fatal: mesures.status.fatal, inFlight: mesures.status.inFlight },
     failures,
     persistedAfterReopen,
   };

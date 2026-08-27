@@ -272,6 +272,37 @@ function classerBloc(bloc, journal, journalConsulte) {
 }
 
 /**
+ * Refuse une demande de classement mal formée, AVANT que le moindre bloc soit classé.
+ *
+ * Séparé de `classerVolume` pour que les quatre refus se lisent d'un bloc, chacun avec l'argument
+ * qui le motive, sans que le travail de l'oracle soit repoussé vingt lignes plus bas. L'ORDRE des
+ * contrôles fait partie du contrat : un appelant qui en viole deux lit toujours le même message, et
+ * l'inverser changerait le diagnostic rendu à scénario identique.
+ *
+ * @param {{ blocs: unknown, journal: unknown, generations: unknown, sansJournal: boolean }} demande
+ */
+function validerDemande({ blocs, journal, generations, sansJournal }) {
+  if (!Array.isArray(blocs) || blocs.length === 0) {
+    throw new RangeError("Aucun bloc à classer : un verdict sur zéro bloc ne mesurerait rien.");
+  }
+  if (sansJournal && journal !== undefined) {
+    throw new Error(
+      "Classer « sansJournal » avec un journal serait ambigu : il faut vouloir l'un ou l'autre.",
+    );
+  }
+  if (!sansJournal && !Array.isArray(journal)) {
+    throw new Error(
+      "L'oracle exige le journal de la session coupée. Sans lui, la règle SEC-DURABLE-001 est inerte et le taux atomique monte sans raison. Poser « sansJournal: true » pour ne classer que des octets, et l'assumer.",
+    );
+  }
+  if (!sansJournal && generations === undefined) {
+    throw new Error(
+      "L'oracle exige la suite des générations attendues du scénario. Sans elle, il ne connaît que les deux extrêmes, et un mécanisme qui acquitte une génération puis la perd rend le MÊME verdict qu'un mécanisme correct.",
+    );
+  }
+}
+
+/**
  * Classe un volume relu après coupure.
  *
  * @param {{ blocs: Array<{ index: number, offset: number, ancien: Uint8Array, nouveau: Uint8Array,
@@ -299,24 +330,7 @@ function classerBloc(bloc, journal, journalConsulte) {
  *                            diagnostic: string | null }> }}
  */
 export function classerVolume({ blocs, journal, generations, sansJournal = false }) {
-  if (!Array.isArray(blocs) || blocs.length === 0) {
-    throw new RangeError("Aucun bloc à classer : un verdict sur zéro bloc ne mesurerait rien.");
-  }
-  if (sansJournal && journal !== undefined) {
-    throw new Error(
-      "Classer « sansJournal » avec un journal serait ambigu : il faut vouloir l'un ou l'autre.",
-    );
-  }
-  if (!sansJournal && !Array.isArray(journal)) {
-    throw new Error(
-      "L'oracle exige le journal de la session coupée. Sans lui, la règle SEC-DURABLE-001 est inerte et le taux atomique monte sans raison. Poser « sansJournal: true » pour ne classer que des octets, et l'assumer.",
-    );
-  }
-  if (!sansJournal && generations === undefined) {
-    throw new Error(
-      "L'oracle exige la suite des générations attendues du scénario. Sans elle, il ne connaît que les deux extrêmes, et un mécanisme qui acquitte une génération puis la perd rend le MÊME verdict qu'un mécanisme correct.",
-    );
-  }
+  validerDemande({ blocs, journal, generations, sansJournal });
 
   const indices = new Set(blocs.map((bloc) => bloc.index));
   // Sans suite fournie — classement d'octets seuls —, les deux extrêmes suffisent : c'est

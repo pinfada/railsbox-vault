@@ -34,6 +34,115 @@ function grow(bytes, minimumLength) {
 }
 
 /**
+ * Enregistrement neuf d'un fichier du double : ses octets, son état contractuel, ses compteurs.
+ *
+ * Séparé de `fileOf` (#93) parce que ce sont deux choses : la FORME d'un fichier — dont la moitié
+ * des champs n'existe que pour armer un état que le vrai OPFS ne produit pas à la demande — et le
+ * rite de mémoïsation qui l'entoure. Les lire d'un bloc chacune vaut mieux que les lire imbriquées.
+ */
+function creerEnregistrement() {
+  return {
+    bytes: new Uint8Array(0),
+    size: 0,
+    lost: false,
+    starved: false,
+    gateArmed: false,
+    gate: null,
+    flushes: 0,
+    reads: 0,
+    // Handles distribués et encore vivants. `abandon` doit pouvoir les invalider SANS passer
+    // par leur `close()`, qui est une fermeture propre — voir plus bas.
+    vivants: new Set(),
+  };
+}
+
+/**
+ * Fabrique le handle exclusif d'un fichier : la surface de `FileSystemSyncAccessHandle`.
+ *
+ * Sorti du corps de `createSyncAccessStore` (#93) : le magasin déclare qui distribue les handles et
+ * qui tient le quota, le handle déclare ce qu'un handle sait faire. Les garder cousus faisait du
+ * magasin un module qui se termine par un contrat, au lieu d'un contrat.
+ *
+ * Les emprunts au magasin passent en argument plutôt que par clôture, ce qui les rend énumérables :
+ * l'enregistrement du fichier, le contrôle de quota, le relâchement de l'exclusivité que `close()`
+ * doit opérer — et lui seul, `abandon` s'en charge autrement —, et les deux plafonds d'écriture.
+ */
+function makeHandle({ file, assertQuota, relacherExclusivite, maxWriteBytes, writeCostBytes }) {
+  let closed = false;
+
+  const tuer = () => {
+    closed = true;
+  };
+  file.vivants.add(tuer);
+
+  const assertLive = () => {
+    if (closed) domExceptionThrow("Handle fermé.");
+    if (file.lost) domExceptionThrow("Le fichier a disparu sous le handle.");
+  };
+  const domExceptionThrow = (message) => {
+    throw domException("InvalidStateError", message);
+  };
+
+  return {
+    getSize() {
+      assertLive();
+      return file.size;
+    },
+    read(buffer, { at = 0 } = {}) {
+      assertLive();
+      file.reads += 1;
+      const available = Math.max(0, file.size - at);
+      const count = Math.min(buffer.byteLength, available);
+      const target = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+      target.set(file.bytes.subarray(at, at + count));
+      return count;
+    },
+    write(buffer, { at = 0 } = {}) {
+      assertLive();
+      const source = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+      const count = Math.min(source.byteLength, maxWriteBytes);
+      const end = at + count;
+      assertQuota(Math.max(0, end - file.size) + writeCostBytes);
+      file.bytes = grow(file.bytes, end);
+      file.bytes.set(source.subarray(0, count), at);
+      file.size = Math.max(file.size, end);
+      return count;
+    },
+    truncate(newSize) {
+      assertLive();
+      assertQuota(Math.max(0, newSize - file.size));
+      file.bytes = grow(file.bytes, newSize);
+      if (newSize < file.size) file.bytes.fill(0, newSize, file.size);
+      file.size = newSize;
+    },
+    flush() {
+      assertLive();
+      // Un vrai `flush()` écrit : il peut donc buter sur le quota comme une écriture.
+      if (file.starved) {
+        throw domException("QuotaExceededError", "Plus de place pour matérialiser la barrière.");
+      }
+      // Barrière RETARDÉE : instrument de latence. Le vrai `flush()` est synchrone ; ce mode rend
+      // une promesse EN VOL jusqu'à `releaseFlush`, uniquement pour éprouver que l'acquittement
+      // du guest attend réellement la résolution de la barrière (`SEC-DURABLE-001`). Il n'est
+      // jamais armé en production : par défaut `flush()` reste synchrone et rend `undefined`.
+      if (file.gateArmed) {
+        file.gateArmed = false;
+        return new Promise((resolve, reject) => {
+          file.gate = { resolve, reject };
+        });
+      }
+      file.flushes += 1;
+      return undefined;
+    },
+    close() {
+      closed = true;
+      file.vivants.delete(tuer);
+      relacherExclusivite();
+    },
+  };
+}
+
+/**
  * Crée un espace de stockage isolé qui distribue des handles.
  *
  * @param {{ quotaBytes?: number, maxWriteBytes?: number, writeCostBytes?: number }} [options]
@@ -53,19 +162,7 @@ export function createSyncAccessStore({
   const fileOf = (name) => {
     let file = files.get(name);
     if (!file) {
-      file = {
-        bytes: new Uint8Array(0),
-        size: 0,
-        lost: false,
-        starved: false,
-        gateArmed: false,
-        gate: null,
-        flushes: 0,
-        reads: 0,
-        // Handles distribués et encore vivants. `abandon` doit pouvoir les invalider SANS passer
-        // par leur `close()`, qui est une fermeture propre — voir plus bas.
-        vivants: new Set(),
-      };
+      file = creerEnregistrement();
       files.set(name, file);
     }
     return file;
@@ -82,82 +179,6 @@ export function createSyncAccessStore({
     }
   };
 
-  function makeHandle(name) {
-    const file = fileOf(name);
-    let closed = false;
-
-    const tuer = () => {
-      closed = true;
-    };
-    file.vivants.add(tuer);
-
-    const assertLive = () => {
-      if (closed) domExceptionThrow("Handle fermé.");
-      if (file.lost) domExceptionThrow("Le fichier a disparu sous le handle.");
-    };
-    const domExceptionThrow = (message) => {
-      throw domException("InvalidStateError", message);
-    };
-
-    return {
-      getSize() {
-        assertLive();
-        return file.size;
-      },
-      read(buffer, { at = 0 } = {}) {
-        assertLive();
-        file.reads += 1;
-        const available = Math.max(0, file.size - at);
-        const count = Math.min(buffer.byteLength, available);
-        const target = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-        target.set(file.bytes.subarray(at, at + count));
-        return count;
-      },
-      write(buffer, { at = 0 } = {}) {
-        assertLive();
-        const source = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-        const count = Math.min(source.byteLength, maxWriteBytes);
-        const end = at + count;
-        assertQuota(Math.max(0, end - file.size) + writeCostBytes);
-        file.bytes = grow(file.bytes, end);
-        file.bytes.set(source.subarray(0, count), at);
-        file.size = Math.max(file.size, end);
-        return count;
-      },
-      truncate(newSize) {
-        assertLive();
-        assertQuota(Math.max(0, newSize - file.size));
-        file.bytes = grow(file.bytes, newSize);
-        if (newSize < file.size) file.bytes.fill(0, newSize, file.size);
-        file.size = newSize;
-      },
-      flush() {
-        assertLive();
-        // Un vrai `flush()` écrit : il peut donc buter sur le quota comme une écriture.
-        if (file.starved) {
-          throw domException("QuotaExceededError", "Plus de place pour matérialiser la barrière.");
-        }
-        // Barrière RETARDÉE : instrument de latence. Le vrai `flush()` est synchrone ; ce mode rend
-        // une promesse EN VOL jusqu'à `releaseFlush`, uniquement pour éprouver que l'acquittement
-        // du guest attend réellement la résolution de la barrière (`SEC-DURABLE-001`). Il n'est
-        // jamais armé en production : par défaut `flush()` reste synchrone et rend `undefined`.
-        if (file.gateArmed) {
-          file.gateArmed = false;
-          return new Promise((resolve, reject) => {
-            file.gate = { resolve, reject };
-          });
-        }
-        file.flushes += 1;
-        return undefined;
-      },
-      close() {
-        closed = true;
-        file.vivants.delete(tuer);
-        open.delete(name);
-      },
-    };
-  }
-
   return Object.freeze({
     /** Ouvre le handle exclusif. Signature et erreurs de `createSyncAccessHandle`. */
     async openHandle(name) {
@@ -168,7 +189,13 @@ export function createSyncAccessStore({
         );
       }
       open.add(name);
-      return makeHandle(name);
+      return makeHandle({
+        file: fileOf(name),
+        assertQuota,
+        relacherExclusivite: () => open.delete(name),
+        maxWriteBytes,
+        writeCostBytes,
+      });
     },
     /** Le fichier disparaît sous les handles ouverts, sans fermeture propre. */
     lose(name) {

@@ -70,6 +70,22 @@ function assertContract({ source, target, blockBytes }) {
 }
 
 /**
+ * Instrumente les lectures d'archive d'un compteur de la plus grande taille demandée. Extrait pour
+ * que la BORNE et son témoin naissent au même endroit : la lecture instrumentée et le compteur
+ * qu'elle alimente ne peuvent plus être branchés l'un sans l'autre.
+ */
+function compteurDeLectures(source) {
+  // Toutes les lectures d'archive passent par ce compteur : la plus grande d'entre elles est la
+  // preuve DÉTERMINISTE que la restauration ne demande jamais l'archive entière d'un coup.
+  const lectures = { max: 0 };
+  const lire = (offset, length) => {
+    lectures.max = Math.max(lectures.max, length);
+    return source.read(offset, length);
+  };
+  return { lectures, lire };
+}
+
+/**
  * Réserve l'espace auprès de la couche budget (#9), AVANT toute mutation. Un espace estimé
  * insuffisant est un refus typé ; une estimation indisponible est un état INCONNU, jamais une
  * capacité nulle — la restauration se poursuit et le diagnostic est rendu à l'appelant.
@@ -144,6 +160,19 @@ function refuserCible(etat, { overwrite, volumeSize }) {
     );
   }
   return occupee;
+}
+
+/**
+ * Étape 2 de l'ADR 0009 : REFUSER tout ce qui doit l'être avant la moindre mutation. Extrait parce
+ * que ces deux refus se tiennent : l'état observé de la cible décide du refus d'écrasement ET du
+ * BESOIN NET soumis au budget. Les séparer inviterait à réclamer un espace brut que l'écrasement
+ * d'un volume de même géométrie ne consomme pas.
+ */
+async function refuserAvantMutation({ target, volumeSize, overwrite, budget }) {
+  const etat = await target.inspect();
+  const occupee = refuserCible(etat, { overwrite, volumeSize });
+  const budgetRapport = await reserverEspace(budget, volumeSize, occupee ? etat.size : 0);
+  return { occupee, budgetRapport };
 }
 
 /**
@@ -279,14 +308,7 @@ export async function importArchive({
   enforceCompatibility = true,
 }) {
   assertContract({ source, target, blockBytes });
-
-  // Toutes les lectures d'archive passent par ce compteur : la plus grande d'entre elles est la
-  // preuve DÉTERMINISTE que la restauration ne demande jamais l'archive entière d'un coup.
-  const lectures = { max: 0 };
-  const lire = (offset, length) => {
-    lectures.max = Math.max(lectures.max, length);
-    return source.read(offset, length);
-  };
+  const { lectures, lire } = compteurDeLectures(source);
 
   // 1. VÉRIFIER — aucune mutation avant ce point. Les refus de #10 et #11 remontent tels quels, et
   //    la compatibilité du manifeste est contrôlée par défaut (`enforceCompatibility`).
@@ -300,9 +322,7 @@ export async function importArchive({
   const volumeSize = verdict.contentLength;
 
   // 2. REFUSER — la cible d'abord : on ne piétine jamais un volume sans consentement explicite.
-  const etat = await target.inspect();
-  const occupee = refuserCible(etat, { overwrite, volumeSize });
-  const budgetRapport = await reserverEspace(budget, volumeSize, occupee ? etat.size : 0);
+  const avantMutation = await refuserAvantMutation({ target, volumeSize, overwrite, budget });
 
   // 3/4/5/6. OUVRIR, RÉVOQUER, RESTAURER puis RE-VÉRIFIER, sous handle exclusif.
   const { recopie, relecture } = await restaurerEtRelire({
@@ -319,12 +339,12 @@ export async function importArchive({
   return rapportDeRestauration({
     verdict,
     volumeSize,
-    occupee,
+    occupee: avantMutation.occupee,
     blockBytes,
     lectures,
     recopie,
     relecture,
-    budgetRapport,
+    budgetRapport: avantMutation.budgetRapport,
   });
 }
 

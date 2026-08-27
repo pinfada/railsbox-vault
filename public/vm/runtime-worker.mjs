@@ -121,30 +121,29 @@ async function loadArtifacts() {
   };
 }
 
-async function run({
-  scenario = "barrier",
-  mode = BRIDGE_MODES.full,
-  volumeBytes = 16 * 1024 * 1024,
-  flushDelay = 5,
-}) {
-  const steps = SCENARIOS[scenario];
-  if (!steps) throw new Error(`Scénario inconnu : ${scenario}`);
-  await exigerContexteExecutable();
-
+/**
+ * Acquiert le runtime v86 : le module de l'émulateur, PUIS ses artefacts.
+ *
+ * Les trois bancs de ce fichier franchissent la même porte dans le même ordre, et cet ordre est
+ * celui que la mesure du transfert suppose : `transferredBytes` ne compte que les artefacts, jamais
+ * le module — que le navigateur peut d'ailleurs servir depuis son cache de modules.
+ */
+async function acquerirRuntimeV86() {
   const { V86 } = await import(`${ARTIFACTS}libv86.mjs`);
   const { artifacts, transferredBytes } = await loadArtifacts();
+  return { V86, artifacts, transferredBytes };
+}
 
-  volumeCounter += 1;
-  const journal = new BlockJournal();
-  const backend = openMemoryVolume({
-    name: `worker-${volumeCounter}`,
-    size: volumeBytes,
-    journal,
-    faults: createFaultPlan(),
-    flushDelay,
-  });
+/**
+ * Arme la session guest AVEC le registre où ses pannes fatales se déposent.
+ *
+ * Les deux sont indissociables, et c'est pourquoi cette couture les rend ensemble : l'adaptateur de
+ * tampon n'existe que pour être remis à la session — aucun banc ne le touche ensuite —, et son seul
+ * autre effet est de pousser dans `failures` les erreurs typées que v86 ne sait pas remonter. Rendre
+ * la session sans son registre laisserait ces pannes sans lecteur.
+ */
+function armerSession({ V86, artifacts, backend, journal, mode }) {
   const failures = [];
-  const observations = [];
   const adapter = createV86BufferAdapter({
     backend,
     onFatal: (error) => failures.push(error.toJSON()),
@@ -157,7 +156,66 @@ async function run({
     mode,
     boucle: boucleOrdonnancement,
   });
+  return { session, failures };
+}
 
+/**
+ * Boote le guest, déroule les étapes, puis referme TOUJOURS la session et le volume.
+ *
+ * Le `finally` n'est pas décoratif : une étape qui échoue laisserait sinon le handle exclusif
+ * ouvert, et l'exécution suivante rougirait sur `VAULT_STORAGE_BUSY` en masquant la cause réelle.
+ * L'appelant assemble donc son compte rendu APRÈS la fermeture — ce que les bancs OPFS veulent,
+ * puisqu'ils relisent ensuite le fichier refermé.
+ */
+async function deroulerSousVolume({ session, backend, observations, steps }) {
+  try {
+    const boot = await booter(session, observations);
+    const results = await runSteps(session, steps);
+    return { boot, results };
+  } finally {
+    session.stop();
+    await backend.close();
+  }
+}
+
+/**
+ * Ouvre un volume EN MÉMOIRE et le journal qui l'observe — le pendant de `ouvrirVolumeNeuf` pour le
+ * banc qui ne touche aucun support durable.
+ *
+ * Le compteur monotone porte tout le poids de l'isolement : sans lui, deux exécutions successives du
+ * Worker se donneraient le même nom, et le registre du module rendrait le volume de la première.
+ */
+function ouvrirVolumeMemoire({ volumeBytes, flushDelay }) {
+  volumeCounter += 1;
+  const journal = new BlockJournal();
+  const backend = openMemoryVolume({
+    name: `worker-${volumeCounter}`,
+    size: volumeBytes,
+    journal,
+    faults: createFaultPlan(),
+    flushDelay,
+  });
+  return { journal, backend };
+}
+
+async function run({
+  scenario = "barrier",
+  mode = BRIDGE_MODES.full,
+  volumeBytes = 16 * 1024 * 1024,
+  flushDelay = 5,
+}) {
+  const steps = SCENARIOS[scenario];
+  if (!steps) throw new Error(`Scénario inconnu : ${scenario}`);
+  await exigerContexteExecutable();
+
+  const { V86, artifacts, transferredBytes } = await acquerirRuntimeV86();
+  const { journal, backend } = ouvrirVolumeMemoire({ volumeBytes, flushDelay });
+
+  const observations = [];
+  const { session, failures } = armerSession({ V86, artifacts, backend, journal, mode });
+
+  // Compte rendu assemblé DANS le `try`, donc avant la fermeture : `counts()` et le verdict portent
+  // sur le journal tel que les étapes l'ont laissé. `deroulerSousVolume` refermerait d'abord.
   try {
     const boot = await booter(session, observations);
     const results = await runSteps(session, steps);
@@ -190,6 +248,80 @@ async function run({
  * Deux directions, parce qu'une seule ne prouverait qu'une moitié : que le guest voie le support
  * n'implique pas que ses écritures y atterrissent, et l'inverse non plus.
  */
+/**
+ * Ouvre un volume OPFS NEUF, le journal qui l'observe et le plan de fautes qui l'instrumente.
+ *
+ * L'ordre des gestes est celui que les bancs comptaient déjà : le fichier existant est effacé AVANT
+ * toute ouverture — sans quoi la géométrie d'une exécution précédente survivrait —, puis le journal
+ * précède le backend, parce que c'est lui qui recevra la toute première opération.
+ *
+ * @param {string|null} [fault] une valeur de `FAULT_KINDS` à faire échouer sur la PREMIÈRE barrière,
+ *                              ou `null` pour un support qui ne ment jamais.
+ */
+async function ouvrirVolumeNeuf({ volume, volumeBytes, flushDelay, fault = null }) {
+  await removeOpfsVolume(volume);
+  const journal = new BlockJournal();
+  const faults = fault
+    ? createFaultPlan([{ kind: fault, operation: "flush", occurrence: 1 }])
+    : createFaultPlan();
+  const backend = await openOpfsVolume({
+    name: volume,
+    size: volumeBytes,
+    journal,
+    faults,
+    flushDelay,
+  });
+  return { journal, faults, backend };
+}
+
+/**
+ * Phase GUEST de la preuve de persistance : marque de l'hôte déposée, guest booté, étapes déroulées,
+ * session et volume refermés.
+ *
+ * Elle est séparée de la phase HÔTE parce que la preuve tient à leur frontière : tant que ce handle
+ * n'est pas refermé, une relecture ne dirait rien du fichier, seulement du tampon qui le surplombe.
+ */
+async function deroulerGuestPersistance({ V86, artifacts, backend, journal, mode }) {
+  // La marque de l'hôte est déposée AVANT le boot : ce que le guest lira vient du fichier OPFS et
+  // d'aucun tampon intermédiaire.
+  await backend.write(HOST_MARKER_OFFSET, encoder.encode(HOST_MARKER));
+  await backend.flush();
+
+  const observations = [];
+  const { session, failures } = armerSession({ V86, artifacts, backend, journal, mode });
+  const { boot, results } = await deroulerSousVolume({
+    session,
+    backend,
+    observations,
+    steps: OPFS_PERSISTENCE_STEPS,
+  });
+  return { boot, results, failures, observations };
+}
+
+/**
+ * Phase HÔTE de la preuve : handle fermé, volume rouvert sans géométrie déclarée, les deux marques
+ * relues. C'est la relecture qui porte sur le FICHIER, et sur rien d'autre.
+ *
+ * Le `finally` n'est pas décoratif : sans lui, une lecture qui échoue laisserait le handle exclusif
+ * ouvert et l'exécution suivante rougirait sur `VAULT_STORAGE_BUSY`, en masquant la cause réelle.
+ */
+async function relireMarquesDansLeFichier(volume) {
+  const reopened = await openOpfsVolume({ name: volume, journal: new BlockJournal() });
+  try {
+    const guestBytes = await reopened.read(GUEST_MARKER_OFFSET, GUEST_MARKER.length);
+    const hostBytes = await reopened.read(HOST_MARKER_OFFSET, HOST_MARKER.length);
+    return {
+      // Relevée APRÈS les deux lectures, comme le banc l'a toujours fait : la taille rendue est
+      // celle du volume tel qu'il vient d'être lu.
+      reopenedSize: reopened.size(),
+      hostReadOfGuestMarker: decoder.decode(guestBytes),
+      hostReadOfHostMarker: decoder.decode(hostBytes),
+    };
+  } finally {
+    await reopened.close();
+  }
+}
+
 async function runOpfsPersistence({
   mode = BRIDGE_MODES.full,
   volumeBytes = 16 * 1024 * 1024,
@@ -198,66 +330,12 @@ async function runOpfsPersistence({
 }) {
   await exigerContexteExecutable();
 
-  const { V86 } = await import(`${ARTIFACTS}libv86.mjs`);
-  const { artifacts, transferredBytes } = await loadArtifacts();
+  const { V86, artifacts, transferredBytes } = await acquerirRuntimeV86();
+  const { journal, backend } = await ouvrirVolumeNeuf({ volume, volumeBytes, flushDelay });
+  const guest = await deroulerGuestPersistance({ V86, artifacts, backend, journal, mode });
+  const relecture = await relireMarquesDansLeFichier(volume);
 
-  await removeOpfsVolume(volume);
-  const journal = new BlockJournal();
-  const backend = await openOpfsVolume({
-    name: volume,
-    size: volumeBytes,
-    journal,
-    faults: createFaultPlan(),
-    flushDelay,
-  });
-
-  // La marque de l'hôte est déposée AVANT le boot : ce que le guest lira vient du fichier OPFS et
-  // d'aucun tampon intermédiaire.
-  await backend.write(HOST_MARKER_OFFSET, encoder.encode(HOST_MARKER));
-  await backend.flush();
-
-  const failures = [];
-  const observations = [];
-  const adapter = createV86BufferAdapter({
-    backend,
-    onFatal: (error) => failures.push(error.toJSON()),
-  });
-  const session = createGuestSession({
-    V86,
-    artifacts,
-    adapter,
-    journal,
-    mode,
-    boucle: boucleOrdonnancement,
-  });
-
-  let boot;
-  let results;
-  try {
-    boot = await booter(session, observations);
-    results = await runSteps(session, OPFS_PERSISTENCE_STEPS);
-  } finally {
-    session.stop();
-    await backend.close();
-  }
-
-  // Handle fermé, volume rouvert sans géométrie déclarée : la relecture porte sur le fichier.
-  // Le `finally` n'est pas décoratif : sans lui, une lecture qui échoue laisserait le handle
-  // exclusif ouvert et l'exécution suivante rougirait sur `VAULT_STORAGE_BUSY`, en masquant la
-  // cause réelle.
-  const reopened = await openOpfsVolume({ name: volume, journal: new BlockJournal() });
-  let guestBytes;
-  let hostBytes;
-  let reopenedSize;
-  try {
-    guestBytes = await reopened.read(GUEST_MARKER_OFFSET, GUEST_MARKER.length);
-    hostBytes = await reopened.read(HOST_MARKER_OFFSET, HOST_MARKER.length);
-    reopenedSize = reopened.size();
-  } finally {
-    await reopened.close();
-  }
-
-  const steps = summariseSteps(journal, results);
+  const steps = summariseSteps(journal, guest.results);
   const stepOutput = (label) => steps.find((step) => step.label === label)?.output ?? null;
 
   return {
@@ -265,10 +343,10 @@ async function runOpfsPersistence({
     mode,
     volume,
     volumeBytes,
-    reopenedSize,
-    bootMilliseconds: boot.bootMilliseconds,
-    rythme: boot.rythme,
-    boucleOrdonnancement: boot.boucleOrdonnancement,
+    reopenedSize: relecture.reopenedSize,
+    bootMilliseconds: guest.boot.bootMilliseconds,
+    rythme: guest.boot.rythme,
+    boucleOrdonnancement: guest.boot.boucleOrdonnancement,
     transferredBytes,
     counts: journal.counts(),
     steps,
@@ -276,10 +354,10 @@ async function runOpfsPersistence({
     expected: { hostMarker: HOST_MARKER, guestMarker: GUEST_MARKER },
     guestReadOfHostMarker: stepOutput("lire-marque-hote"),
     guestReadOfOwnMarker: stepOutput("relire-marque-guest"),
-    hostReadOfGuestMarker: decoder.decode(guestBytes),
-    hostReadOfHostMarker: decoder.decode(hostBytes),
-    failures,
-    observationsRuntime: [...observations, ...lireRejets()],
+    hostReadOfGuestMarker: relecture.hostReadOfGuestMarker,
+    hostReadOfHostMarker: relecture.hostReadOfHostMarker,
+    failures: guest.failures,
+    observationsRuntime: [...guest.observations, ...lireRejets()],
     crossOriginIsolated: globalThis.crossOriginIsolated ?? null,
   };
 }
@@ -305,46 +383,22 @@ async function runOpfsBarrier({
 }) {
   await exigerContexteExecutable();
 
-  const { V86 } = await import(`${ARTIFACTS}libv86.mjs`);
-  const { artifacts, transferredBytes } = await loadArtifacts();
-
-  await removeOpfsVolume(volume);
-  const journal = new BlockJournal();
-  const faults = fault
-    ? createFaultPlan([{ kind: fault, operation: "flush", occurrence: 1 }])
-    : createFaultPlan();
-  const backend = await openOpfsVolume({
-    name: volume,
-    size: volumeBytes,
-    journal,
-    faults,
+  const { V86, artifacts, transferredBytes } = await acquerirRuntimeV86();
+  const { journal, faults, backend } = await ouvrirVolumeNeuf({
+    volume,
+    volumeBytes,
     flushDelay,
+    fault,
   });
 
-  const failures = [];
   const observations = [];
-  const adapter = createV86BufferAdapter({
+  const { session, failures } = armerSession({ V86, artifacts, backend, journal, mode });
+  const { boot, results } = await deroulerSousVolume({
+    session,
     backend,
-    onFatal: (error) => failures.push(error.toJSON()),
+    observations,
+    steps: BARRIER_STEPS,
   });
-  const session = createGuestSession({
-    V86,
-    artifacts,
-    adapter,
-    journal,
-    mode,
-    boucle: boucleOrdonnancement,
-  });
-
-  let boot;
-  let results;
-  try {
-    boot = await booter(session, observations);
-    results = await runSteps(session, BARRIER_STEPS);
-  } finally {
-    session.stop();
-    await backend.close();
-  }
 
   return {
     scenario: "opfs-barrier",
