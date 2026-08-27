@@ -525,8 +525,16 @@ test("la récupération rejoue en FLUX : sa surmémoire de pointe ne suit pas la
     second.rapport.surmemoireMaxOctets <= TAMPON_RELECTURE_OCTETS,
     `surmémoire publiée ${second.rapport.surmemoireMaxOctets} ≤ ${TAMPON_RELECTURE_OCTETS}`,
   );
-  // Le chiffre publié est celui que le SUPPORT a vu : le magasin n'est pas cru sur parole.
-  assert.equal(second.rapport.surmemoireMaxOctets, compte.plusGrandeLecture);
+  // Le chiffre publié est une ALLOCATION, pas une lecture : le magasin alloue le tampon une fois et
+  // le prête à chaque tranche. Il MAJORE donc ce que le support a vu — jamais l'inverse, sans quoi
+  // la récupération tiendrait de la mémoire qu'elle ne déclare pas.
+  assert.ok(
+    second.rapport.surmemoireMaxOctets >= compte.plusGrandeLecture,
+    `surmémoire publiée ${second.rapport.surmemoireMaxOctets} ≥ plus grande lecture ${compte.plusGrandeLecture}`,
+  );
+  // Et la charge validée est publiée avec elle : sans ce chiffre, le rapport dirait combien
+  // d'enregistrements ont été rejoués sans jamais dire combien d'octets ils pesaient (#91, point 4).
+  assert.equal(second.rapport.octetsRejoues, charge);
 
   // Le rejeu est EXACT : chaque enregistrement a retrouvé son offset, octet pour octet.
   for (let rang = 0; rang < ENREGISTREMENTS_BANC; rang += 1) {
@@ -547,7 +555,10 @@ test("le tampon de relecture borne aussi la récupération au PLAFOND de product
   // Cette ligne l'épingle : si le tampon redevenait proportionnel à la charge, elle rougirait avant
   // que la surmémoire ne dépasse le budget de `docs/quality-attributes.md`.
   const budgetSurmemoire = 64 * 1024 * 1024;
-  assert.ok(TAMPON_RELECTURE_OCTETS < PLAFOND_CHARGE_OCTETS, "le tampon est plus petit que la charge");
+  assert.ok(
+    TAMPON_RELECTURE_OCTETS < PLAFOND_CHARGE_OCTETS,
+    "le tampon est plus petit que la charge",
+  );
   assert.ok(TAMPON_RELECTURE_OCTETS <= budgetSurmemoire, "le tampon tient dans le budget");
 });
 
