@@ -24,6 +24,7 @@ import {
   VOLUME_OCTETS,
   blocsAttendus,
   ecrireEtatAncien,
+  generationsAttendues,
   ecrireEtatNouveau,
   profilDuScenario,
   relireBlocs,
@@ -47,7 +48,7 @@ export function creerMachineJetable({ nom = "resilience", taille = VOLUME_OCTETS
 
   return {
     /** Démarre la machine et ouvre le volume. Le plan de fautes est celui du point rejoué. */
-    async demarrer({ faults = createFaultPlan() } = {}) {
+    async demarrer({ faults = createFaultPlan(), muterMagasin = null } = {}) {
       if (backend !== null) {
         throw new Error("La machine tourne déjà : la faire redémarrer masquerait la coupure.");
       }
@@ -67,16 +68,19 @@ export function creerMachineJetable({ nom = "resilience", taille = VOLUME_OCTETS
       // l'est pas. Sans lui, la machine jetable éprouverait un backend qui n'est pas celui du
       // produit, et sa mesure ne dirait plus rien du produit.
       const journalGeneration = await support.openHandle(generationJournalName(nom));
-      backend.installerGeneration(
-        await GenerationStore.ouvrir({
-          volume: nom,
-          handle: journalGeneration,
-          tailleVolume: taille,
-          lireVolume: (offset, longueur) => backend.lireSupportBrut(offset, longueur),
-          ecrireVolume: (offset, octets) => backend.ecrireSupportBrut(offset, octets),
-          barriereVolume: () => backend.barriereSupportBrute(),
-        }),
-      );
+      const magasin = await GenerationStore.ouvrir({
+        volume: nom,
+        handle: journalGeneration,
+        tailleVolume: taille,
+        lireVolume: (offset, longueur) => backend.lireSupportBrut(offset, longueur),
+        ecrireVolume: (offset, octets) => backend.ecrireSupportBrut(offset, octets),
+        barriereVolume: () => backend.barriereSupportBrute(),
+      });
+      // `muterMagasin` n'est PAS un point d'extension du produit : c'est la porte par laquelle une
+      // épreuve remplace le magasin par un MUTANT, pour vérifier que l'oracle sait le voir. Une
+      // mesure qui ne rougirait sur aucun mutant ne mesurerait rien — c'est exactement ce que la
+      // revue de #16 a démontré sur la cadence précédente. `openOpfsVolume` n'expose rien de tel.
+      backend.installerGeneration(muterMagasin === null ? magasin : muterMagasin(magasin));
       return backend;
     },
 
@@ -113,7 +117,7 @@ export function creerMachineJetable({ nom = "resilience", taille = VOLUME_OCTETS
  * @param {import("./crash-plan.mjs").CrashPoint} point
  * @param {{ jeton?: string }} [options]
  */
-export async function rejouerCoupure(point, { jeton } = {}) {
+export async function rejouerCoupure(point, { jeton, muterMagasin = null } = {}) {
   const machine = creerMachineJetable();
 
   const preparation = await machine.demarrer();
@@ -126,7 +130,10 @@ export async function rejouerCoupure(point, { jeton } = {}) {
   await machine.arreterProprement();
 
   const fautes = armerInjecteur(point, { jeton });
-  const coupee = await machine.demarrer({ faults: fautes });
+  // La mutation éventuelle ne porte QUE sur la session coupée. L'appliquer à la préparation
+  // fabriquerait un ancien état incomplet, et l'épreuve mesurerait sa propre mise en place ; à la
+  // relecture, elle empêcherait la récupération de faire son travail.
+  const coupee = await machine.demarrer({ faults: fautes, muterMagasin });
   const ecriture = await ecrireEtatNouveau(coupee);
   const journal = machine.journal.entries();
   machine.arreterBrutalement();
@@ -135,7 +142,11 @@ export async function rejouerCoupure(point, { jeton } = {}) {
   const relecture = await relireBlocs(relue);
   await machine.arreterProprement();
 
-  const rapport = classerVolume({ blocs: blocsAttendus(relecture), journal });
+  const rapport = classerVolume({
+    blocs: blocsAttendus(relecture),
+    journal,
+    generations: generationsAttendues(),
+  });
   return Object.freeze({
     point,
     ...rapport,
@@ -152,17 +163,61 @@ export async function rejouerCoupure(point, { jeton } = {}) {
 }
 
 /**
+ * Rejoue le scénario SANS aucune coupure : l'ancien état, puis le nouveau, jusqu'au bout.
+ *
+ * C'est le TÉMOIN POSITIF de la mesure. La matrice de coupures ne peut pas produire le verdict
+ * `nouveau` — aucun de ses trois genres ne tombe après l'acquittement de la dernière barrière, ce
+ * que `tests/unit/vm-crash-cadence.test.mjs` démontre par le calcul. Sans ce témoin, l'extrême haut
+ * de la suite des générations ne serait jamais exercé, et un oracle devenu incapable de le rendre
+ * passerait inaperçu.
+ *
+ * La machine est arrêtée BRUTALEMENT ici aussi : ce qu'on veut voir, c'est que la dernière
+ * génération validée survit à la mort du détenteur, pas qu'une fermeture propre la range.
+ */
+export async function rejouerSansCoupure() {
+  const machine = creerMachineJetable();
+
+  const preparation = await machine.demarrer();
+  const ancien = await ecrireEtatAncien(preparation);
+  if (ancien.arret !== null) {
+    throw new Error(`La préparation de l'ancien état a échoué (${ancien.arret.code}).`);
+  }
+  await machine.arreterProprement();
+
+  const complete = await machine.demarrer();
+  const ecriture = await ecrireEtatNouveau(complete);
+  const journal = machine.journal.entries();
+  machine.arreterBrutalement();
+
+  const relue = await machine.demarrer();
+  const relecture = await relireBlocs(relue);
+  await machine.arreterProprement();
+
+  const rapport = classerVolume({
+    blocs: blocsAttendus(relecture),
+    journal,
+    generations: generationsAttendues(),
+  });
+  return Object.freeze({
+    ...rapport,
+    ecritures: ecriture.ecritures,
+    barrieres: ecriture.barrieres,
+    arret: ecriture.arret,
+  });
+}
+
+/**
  * Rejoue la matrice d'une graine. Les points sont indépendants : chacun repart d'un support neuf,
  * sans quoi le verdict d'un point dépendrait de celui du précédent.
  *
  * @param {number} graine
  * @param {{ points: number, jeton?: string }} options
  */
-export async function rejouerMatrice(graine, { points, jeton } = {}) {
+export async function rejouerMatrice(graine, { points, jeton, muterMagasin = null } = {}) {
   const suite = planifierCoupures(graine, profilDuScenario(points));
   const resultats = [];
   for (const point of suite) {
-    resultats.push(await rejouerCoupure(point, { jeton }));
+    resultats.push(await rejouerCoupure(point, { jeton, muterMagasin }));
   }
   return resultats;
 }

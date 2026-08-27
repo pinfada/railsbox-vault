@@ -128,8 +128,90 @@ function classerOctets({ ancien, nouveau, observe }) {
   };
 }
 
-/** Verdict de volume à partir du compte par classe. Les cas sévères l'emportent. */
-function verdictDuVolume(classes, total) {
+/**
+ * Nom du verdict d'une génération de rang `rang` sur `dernier` générations attendues.
+ *
+ * Les deux extrêmes gardent les noms de #15 — `ancien` quand rien n'a été publié, `nouveau` quand
+ * tout l'a été — parce que ce sont les mêmes états, et qu'un relevé doit rester comparable.
+ */
+export function verdictDeGeneration(rang, dernier) {
+  if (rang === 0) return VERDICTS.ancien;
+  if (rang === dernier) return VERDICTS.nouveau;
+  return `generation-${rang}`;
+}
+
+/** Vrai si `verdict` nomme une génération validée — donc un volume laissé dans un état admissible. */
+export function estVerdictAtomique(verdict) {
+  return (
+    verdict === VERDICTS.ancien ||
+    verdict === VERDICTS.nouveau ||
+    /^generation-[1-9][0-9]*$/.test(verdict)
+  );
+}
+
+/** Vrai si `verdict` est un verdict que cet oracle sait produire. */
+export function estVerdictConnu(verdict) {
+  return (
+    estVerdictAtomique(verdict) || verdict === VERDICTS.melange || verdict === VERDICTS.corrompu
+  );
+}
+
+function memeEnsemble(observes, attendus) {
+  return observes.size === attendus.length && attendus.every((index) => observes.has(index));
+}
+
+/**
+ * Contrôle la SUITE DE GÉNÉRATIONS attendue, et refuse tout ce qui n'en est pas une.
+ *
+ * C'est le garde-fou de l'oracle contre son propre appelant. Sans lui, la liste des états acceptés
+ * serait un paramètre libre : un scénario pourrait y glisser un état de plus — celui que son
+ * mécanisme produit — et faire passer un mélange pour une génération. La suite doit donc partir de
+ * l'ensemble VIDE, croître STRICTEMENT par inclusion, et finir sur la totalité des blocs suivis.
+ * Ces trois règles n'admettent qu'une seule suite pour un scénario donné, et elle est dérivée du
+ * SCÉNARIO — quels blocs chaque passe touche, où tombent les barrières —, jamais du mécanisme.
+ */
+function validerGenerations(generations, indices) {
+  if (!Array.isArray(generations) || generations.length < 2) {
+    throw new Error(
+      "L'oracle exige la suite des générations attendues : au moins l'état sans aucune génération validée et l'état où toutes le sont.",
+    );
+  }
+  if (generations[0].length !== 0) {
+    throw new Error(
+      "La première génération attendue doit être VIDE : c'est l'état d'un volume dont aucune barrière n'a été acquittée.",
+    );
+  }
+  for (let rang = 1; rang < generations.length; rang += 1) {
+    const precedent = new Set(generations[rang - 1]);
+    const courant = generations[rang];
+    if (
+      courant.length <= precedent.size ||
+      !generations[rang - 1].every((i) => courant.includes(i))
+    ) {
+      throw new Error(
+        `Génération attendue ${rang} : une génération publie tout ce que la précédente publiait, et strictement plus. Une suite qui ne croît pas ferait accepter des états qu'aucune barrière n'a produits.`,
+      );
+    }
+  }
+  const derniere = generations[generations.length - 1];
+  if (!memeEnsemble(indices, derniere)) {
+    throw new Error(
+      `La dernière génération attendue doit couvrir les ${indices.size} bloc(s) suivis, elle en couvre ${derniere.length}.`,
+    );
+  }
+}
+
+/**
+ * Verdict de volume. Les cas sévères l'emportent ; sinon l'ensemble des blocs PUBLIÉS doit
+ * correspondre EXACTEMENT à l'une des générations attendues.
+ *
+ * « Exactement » est le mot qui compte : un bloc de plus ou de moins qu'une génération n'est pas une
+ * génération, c'est un mélange. C'est ce qui distingue cet oracle de celui de #15, qui ne connaissait
+ * que les deux extrêmes et rangeait donc toute génération intermédiaire — pourtant légitime — dans
+ * `melange`, en même temps qu'il aurait accepté n'importe quel sous-ensemble d'un scénario dont les
+ * générations se recouvrent.
+ */
+function verdictDuVolume(classes, detail, generations) {
   if (classes.corrompu > 0) {
     return {
       verdict: VERDICTS.corrompu,
@@ -144,11 +226,16 @@ function verdictDuVolume(classes, total) {
       raison: `${classes.dechire} bloc(s) déchiré(s) : une partie seulement des octets du bloc a atteint le support.`,
     };
   }
-  if (classes.ancien === total) return { verdict: VERDICTS.ancien, raison: null };
-  if (classes.nouveau === total) return { verdict: VERDICTS.nouveau, raison: null };
+  const publies = new Set(
+    detail.filter((bloc) => bloc.classe === CLASSES.nouveau).map((bloc) => bloc.index),
+  );
+  const rang = generations.findIndex((attendus) => memeEnsemble(publies, attendus));
+  if (rang !== -1) {
+    return { verdict: verdictDeGeneration(rang, generations.length - 1), raison: null };
+  }
   return {
     verdict: VERDICTS.melange,
-    raison: `${classes.nouveau} bloc(s) au nouvel état et ${classes.ancien} à l'ancien cohabitent dans le volume.`,
+    raison: `${publies.size} bloc(s) publiés ne forment aucune des ${generations.length} générations attendues : ${[...publies].join(", ") || "aucun"}.`,
   };
 }
 
@@ -189,20 +276,29 @@ function classerBloc(bloc, journal, journalConsulte) {
  *
  * @param {{ blocs: Array<{ index: number, offset: number, ancien: Uint8Array, nouveau: Uint8Array,
  *                          observe: Uint8Array }>,
- *           journal?: readonly object[], sansJournal?: boolean }} entree
+ *           journal?: readonly object[], generations?: readonly (readonly number[])[],
+ *           sansJournal?: boolean }} entree
  *   `journal` est la sortie de `BlockJournal#entries()` de la session COUPÉE, transmise avant sa
  *   mort. Il est OBLIGATOIRE : sans lui la règle `SEC-DURABLE-001` ci-dessus est inerte, et son
  *   absence ferait monter le taux atomique sans que rien ne le dise. Un appelant qui ne veut classer
  *   que des octets — l'épreuve unitaire de l'oracle — doit poser `sansJournal: true`, et le rapport
  *   le republie : « acquitté » et « durable » valent alors `null`, jamais `false`.
+ *
+ *   `generations` est la suite des états qu'une génération VALIDÉE doit avoir publiés, du plus vide
+ *   au plus complet. Elle est OBLIGATOIRE dès que le journal l'est. Un scénario dont les générations
+ *   se recouvrent — même contenu réécrit d'une passe à l'autre — ne produit qu'un seul état
+ *   observable, et un oracle qui ne connaîtrait que les deux extrêmes ne verrait alors AUCUNE
+ *   différence entre un mécanisme qui valide les trois générations et un mécanisme qui perd les deux
+ *   dernières après les avoir acquittées. La suite est dérivée du scénario, jamais du mécanisme, et
+ *   `validerGenerations` refuse toute suite qui ne croît pas strictement.
  * @returns {{ verdict: string, raison: string | null, atomique: boolean,
- *             journalConsulte: boolean, entreesJournal: number,
+ *             journalConsulte: boolean, entreesJournal: number, generationsAttendues: number,
  *             classes: Record<string, number>,
  *             blocs: Array<{ index: number, offset: number, classe: string,
  *                            acquitte: boolean | null, durable: boolean | null,
  *                            diagnostic: string | null }> }}
  */
-export function classerVolume({ blocs, journal, sansJournal = false }) {
+export function classerVolume({ blocs, journal, generations, sansJournal = false }) {
   if (!Array.isArray(blocs) || blocs.length === 0) {
     throw new RangeError("Aucun bloc à classer : un verdict sur zéro bloc ne mesurerait rien.");
   }
@@ -216,6 +312,17 @@ export function classerVolume({ blocs, journal, sansJournal = false }) {
       "L'oracle exige le journal de la session coupée. Sans lui, la règle SEC-DURABLE-001 est inerte et le taux atomique monte sans raison. Poser « sansJournal: true » pour ne classer que des octets, et l'assumer.",
     );
   }
+  if (!sansJournal && generations === undefined) {
+    throw new Error(
+      "L'oracle exige la suite des générations attendues du scénario. Sans elle, il ne connaît que les deux extrêmes, et un mécanisme qui acquitte une génération puis la perd rend le MÊME verdict qu'un mécanisme correct.",
+    );
+  }
+
+  const indices = new Set(blocs.map((bloc) => bloc.index));
+  // Sans suite fournie — classement d'octets seuls —, les deux extrêmes suffisent : c'est
+  // exactement l'oracle de #15, et le rapport publie qu'il n'a jugé que deux états.
+  const attendues = generations ?? [[], [...indices]];
+  validerGenerations(attendues, indices);
 
   const journalConsulte = !sansJournal;
   const entrees = journalConsulte ? journal : [];
@@ -229,15 +336,17 @@ export function classerVolume({ blocs, journal, sansJournal = false }) {
       corrompu: 0,
     }),
   );
-  const { verdict, raison } = verdictDuVolume(classes, detail.length);
+  const { verdict, raison } = verdictDuVolume(classes, detail, attendues);
   return Object.freeze({
     verdict,
     raison,
-    atomique: verdict === VERDICTS.ancien || verdict === VERDICTS.nouveau,
-    // Publiés pour que « la règle SEC-DURABLE a-t-elle seulement pu se déclencher ? » soit une
-    // question à laquelle le compte rendu répond, et non une hypothèse du lecteur.
+    atomique: estVerdictAtomique(verdict),
+    // Publiés pour que « la règle SEC-DURABLE a-t-elle seulement pu se déclencher ? » et « combien
+    // d'états l'oracle savait-il nommer ? » soient des questions auxquelles le compte rendu répond,
+    // et non des hypothèses du lecteur.
     journalConsulte,
     entreesJournal: entrees.length,
+    generationsAttendues: attendues.length,
     classes,
     blocs: Object.freeze(detail),
   });

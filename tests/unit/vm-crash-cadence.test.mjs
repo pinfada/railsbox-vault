@@ -3,104 +3,94 @@ import test from "node:test";
 
 import { planifierCoupures } from "../../src/vm/crash-plan.mjs";
 import {
+  BARRIERES,
   BARRIERE_TOUS_LES,
   BLOCS_SUIVIS,
   BLOC_OCTETS,
   ECRITURES,
-  PASSES,
+  generationsAttendues,
   profilDuScenario,
 } from "../../src/vm/crash-scenario.mjs";
 
-// Pourquoi le scénario de coupure suit huit blocs réécrits trois fois, et non vingt-quatre blocs
-// distincts comme en #15 (#16, ADR 0014).
+// Ce que la MATRICE de coupures peut et ne peut pas produire (#16).
 //
-// Ce fichier ne mesure aucun backend. Il calcule, sur la matrice de coupures RÉELLE, ce qu'un
-// mécanisme de génération PARFAIT laisserait sur le support — un mécanisme qui rendrait visible
-// toute génération dont la barrière est acquittée, et rien d'autre. C'est la borne SUPÉRIEURE de ce
-// que #16 peut atteindre, quel que soit son mécanisme.
+// Ce fichier ne mesure aucun backend : il calcule, sur la matrice RÉELLE, quelle génération chaque
+// point laisse validée. C'est la borne de ce que la mesure peut exercer, et elle doit être connue
+// avant de lire un taux — un relevé qui n'exercerait qu'un seul verdict serait satisfait par un
+// mécanisme dégénéré.
 //
-// Le résultat est net : avec la cadence de #15, cette borne vaut 50 % sur la graine 2026 et 37,5 %
-// sur deux autres. Le « 100 % sur la même matrice » demandé par #16 y était donc INATTEIGNABLE — non
-// par faiblesse du mécanisme, mais parce que `SEC-DURABLE-001` oblige à publier les générations
-// intermédiaires, que l'oracle de #15 ne sait nommer ni « ancien » ni « nouveau ».
-//
-// Ce constat ne change PAS l'oracle : le juge reste identique, et il reste sévère. C'est la charge
-// de travail mesurée qui change, de façon à ce que toute génération validée soit l'un des deux états
-// que l'oracle sait juger. Le profil remis à `planifierCoupures` — vingt-quatre écritures, trois
-// barrières, des blocs de 512 octets — reste le même, et la matrice avec lui.
+// Une contrainte en sort, et elle est structurelle : le verdict `nouveau` — les vingt-quatre blocs
+// publiés — est INATTEIGNABLE par la matrice. La génération 3 n'est validée qu'à l'acquittement de
+// la troisième barrière, qui suit la vingt-quatrième écriture ; or les trois genres de coupure de
+// `crash-plan.mjs` tombent tous AVANT cet acquittement. Ajouter un genre « après barrière »
+// changerait le nombre de genres, donc la suite pseudo-aléatoire, donc la matrice entière — ce que
+// la comparaison avec #15 interdit. L'extrême haut est donc exercé par un TÉMOIN POSITIF, dans
+// `vm-crash-matrice.test.mjs` : le scénario sans aucune faute doit rendre `nouveau`.
 
 const GRAINES = [2026, 7, 424242];
 const POINTS = 8;
 
 /**
- * Ce qu'un mécanisme de génération PARFAIT laisse, pour un point de coupure donné.
- *
- * @param {object} point
- * @param {(rang: number) => number} blocDe bloc touché par la n-ième écriture, à partir de 1
- * @param {number} blocs nombre de blocs suivis
+ * Rang de la dernière génération VALIDÉE quand la coupure tombe sur `point`. Dérivé du seul
+ * scénario : quelles écritures ont eu lieu, quelles barrières ont été acquittées.
  */
-function verdictIdeal(point, blocDe, blocs) {
-  const nouveau = new Array(blocs).fill(false);
-  const enCours = new Set();
-  for (let rang = 1; rang <= ECRITURES; rang += 1) {
-    // Une coupure sur une écriture — brutale ou déchirée — interrompt la génération en cours. Un
-    // mécanisme parfait ne la publie jamais.
-    if (point.operation === "write" && point.occurrence === rang) break;
-    enCours.add(blocDe(rang));
-    if (rang % BARRIERE_TOUS_LES !== 0) continue;
-    // Coupure AVANT l'acquittement : la génération en cours est écartée, elle aussi.
-    if (point.operation === "flush" && point.occurrence === rang / BARRIERE_TOUS_LES) break;
-    for (const bloc of enCours) nouveau[bloc] = true;
-    enCours.clear();
+function generationValidee(point) {
+  let rang = 0;
+  for (let ecriture = 1; ecriture <= ECRITURES; ecriture += 1) {
+    // Une coupure sur une écriture — brutale ou déchirée — interrompt la génération en cours.
+    if (point.operation === "write" && point.occurrence === ecriture) break;
+    if (ecriture % BARRIERE_TOUS_LES !== 0) continue;
+    const barriere = ecriture / BARRIERE_TOUS_LES;
+    // Coupure AVANT l'acquittement : la génération en cours est écartée elle aussi.
+    if (point.operation === "flush" && point.occurrence === barriere) break;
+    rang = barriere;
   }
-  const compte = nouveau.filter(Boolean).length;
-  if (compte === 0) return "ancien";
-  if (compte === blocs) return "nouveau";
-  return "melange";
+  return rang;
 }
 
-function tauxIdeal(graine, blocDe, blocs) {
-  const points = planifierCoupures(graine, profilDuScenario(POINTS));
-  const verdicts = points.map((point) => verdictIdeal(point, blocDe, blocs));
-  return {
-    taux: verdicts.filter((verdict) => verdict !== "melange").length / verdicts.length,
-    verdicts,
-  };
-}
+const rangsDe = (graine, points) =>
+  planifierCoupures(graine, profilDuScenario(points)).map(generationValidee);
 
-const CADENCE_15 = (rang) => rang - 1;
-const CADENCE_16 = (rang) => (rang - 1) % BLOCS_SUIVIS;
-
-test("la cadence de #15 rendait 100 % inatteignable, quel que soit le mécanisme", () => {
-  // Vingt-quatre blocs DISTINCTS, une barrière tous les huit : les générations 1 et 2 ne touchent
-  // qu'un tiers puis deux tiers du volume, et un oracle qui ne connaît que deux états les classe
-  // `melange`. Ces bornes sont un CALCUL, pas une observation : aucun backend n'est en jeu ici.
-  const bornes = Object.fromEntries(
-    GRAINES.map((graine) => [graine, tauxIdeal(graine, CADENCE_15, ECRITURES).taux]),
-  );
-  assert.deepEqual(bornes, { 2026: 0.5, 7: 0.375, 424242: 0.375 });
-  for (const graine of GRAINES) {
-    assert.ok(bornes[graine] < 1, `graine ${graine} : la borne supérieure reste sous 100 %`);
-  }
+test("la suite des générations attendues est celle du scénario, et elle croît strictement", () => {
+  assert.deepEqual(generationsAttendues(), [
+    [],
+    Array.from({ length: 8 }, (_, i) => i),
+    Array.from({ length: 16 }, (_, i) => i),
+    Array.from({ length: 24 }, (_, i) => i),
+  ]);
+  assert.equal(generationsAttendues().length, BARRIERES + 1);
+  assert.equal(BLOCS_SUIVIS, 24);
+  assert.equal(BLOC_OCTETS, 512);
 });
 
-test("la cadence retenue atteint 100 % sur les trois graines, sans jamais rendre le test creux", () => {
+test("la matrice exerce l'extrême bas et DEUX générations intermédiaires, sur les trois graines", () => {
   for (const graine of GRAINES) {
-    const { taux, verdicts } = tauxIdeal(graine, CADENCE_16, BLOCS_SUIVIS);
-    assert.equal(taux, 1, `graine ${graine} : ${verdicts.join(",")}`);
-    // Et surtout : les DEUX issues sont exercées. Une matrice qui ne rendrait que « ancien » serait
-    // satisfaite par un backend qui n'écrit rien du tout — c'est-à-dire par une preuve creuse.
-    assert.ok(verdicts.includes("ancien"), `graine ${graine} : aucun point ne rend l'ancien état`);
+    const rangs = rangsDe(graine, POINTS);
     assert.ok(
-      verdicts.includes("nouveau"),
-      `graine ${graine} : aucun point ne rend le nouvel état`,
+      rangs.includes(0),
+      `graine ${graine} : aucun point ne laisse le volume à l'ancien état`,
     );
+    assert.ok(rangs.includes(1), `graine ${graine} : aucun point ne laisse la génération 1`);
+    assert.ok(rangs.includes(2), `graine ${graine} : aucun point ne laisse la génération 2`);
   }
 });
 
-test("le profil remis au planificateur est identique à celui de #15 : la matrice ne bouge pas", () => {
-  // Les quatre nombres qui décident de la matrice. S'ils changeaient, le relevé de #16 ne serait
-  // plus comparable à celui de #15, et la comparaison avant/après ne vaudrait rien.
+test("le verdict « nouveau » est INATTEIGNABLE par la matrice, et c'est démontré, pas supposé", () => {
+  // Si un jour un genre de coupure postérieur à la dernière barrière était ajouté, cette épreuve
+  // rougirait — et c'est ce qu'on veut : le témoin positif de `vm-crash-matrice.test.mjs` ne serait
+  // alors plus le seul moyen d'exercer l'extrême haut, et le relevé devrait le dire.
+  for (const graine of GRAINES) {
+    for (const points of [8, 12]) {
+      const rangs = rangsDe(graine, points);
+      assert.ok(
+        !rangs.includes(BARRIERES),
+        `graine ${graine}, ${points} points : un point atteint la génération ${BARRIERES} (${rangs.join(",")})`,
+      );
+    }
+  }
+});
+
+test("le profil remis au planificateur est celui de #15 : la matrice ne bouge pas", () => {
   assert.deepEqual(profilDuScenario(POINTS), {
     points: POINTS,
     lectures: 0,
@@ -108,8 +98,6 @@ test("le profil remis au planificateur est identique à celui de #15 : la matric
     barrieres: 3,
     tailleBloc: 512,
   });
-  assert.equal(ECRITURES, BLOCS_SUIVIS * PASSES);
-  assert.equal(BLOC_OCTETS, 512);
 
   const attendue = [
     "ecriture-dechiree/write#8",

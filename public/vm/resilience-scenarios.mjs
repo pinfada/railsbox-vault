@@ -23,6 +23,7 @@ import {
   blocsAttendus,
   ecrireEtatAncien,
   ecrireEtatNouveau,
+  generationsAttendues,
   relireBlocs,
 } from "/src/vm/crash-scenario.mjs";
 import { createFaultPlan } from "/src/vm/fault-plan.mjs";
@@ -154,7 +155,11 @@ export async function runResilienceClasser({ journal, tentatives = 60, attenteMs
   } finally {
     await backend.close();
   }
-  const rapport = classerVolume({ blocs: blocsAttendus(blocs), journal });
+  const rapport = classerVolume({
+    blocs: blocsAttendus(blocs),
+    journal,
+    generations: generationsAttendues(),
+  });
   return {
     scenario: "resilience-classer",
     volume: VOLUME_RESILIENCE,

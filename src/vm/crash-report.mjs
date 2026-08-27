@@ -11,7 +11,7 @@
 // version, pour qu'un relevé collé dans une PR dise de quelle forme il vient. Aucun ADR n'est
 // requis pour cela — la compatibilité persistante du dépôt n'est pas engagée.
 
-import { VERDICTS } from "./crash-oracle.mjs";
+import { estVerdictConnu } from "./crash-oracle.mjs";
 import {
   BARRIERES,
   BARRIERE_TOUS_LES,
@@ -29,9 +29,8 @@ import {
 const PROFIL_MESURE = Object.freeze({
   blocsSuivis: BLOCS_SUIVIS,
   tailleBloc: BLOC_OCTETS,
-  // `ecritures` n'est PAS le nombre de blocs suivis depuis #16 : le scénario réécrit les mêmes blocs
-  // à chaque passe. Les confondre publierait « 8 écritures » sous un relevé qui en émet 24, et le
-  // taux ne serait plus comparable à celui de #15.
+  // `ecritures` est publié à part du nombre de blocs suivis : un scénario à plusieurs passes les
+  // dissocierait, et un taux comparé sans ce chiffre ne dirait plus sur quel travail il porte.
   ecritures: ECRITURES,
   passes: PASSES,
   barrieres: BARRIERES,
@@ -59,6 +58,9 @@ export function resumerMatrice({ graine, resultats, support = null }) {
     throw new RangeError("Aucun point rejoué : un taux sur zéro point ne mesurerait rien.");
   }
 
+  // Les verdicts INTERMÉDIAIRES sont nommés par génération (`generation-1`, `generation-2`…) : le
+  // compte les accueille au fur et à mesure plutôt que sur une liste figée, sans quoi un scénario à
+  // quatre générations publierait un total qui ne retomberait pas sur ses pieds.
   const verdicts = { ancien: 0, nouveau: 0, melange: 0, corrompu: 0 };
   const classes = { ancien: 0, nouveau: 0, dechire: 0, corrompu: 0 };
   let atomiques = 0;
@@ -66,10 +68,10 @@ export function resumerMatrice({ graine, resultats, support = null }) {
   let pointsSansJournal = 0;
 
   for (const resultat of resultats) {
-    if (!Object.values(VERDICTS).includes(resultat.verdict)) {
+    if (!estVerdictConnu(resultat.verdict)) {
       throw new Error(`Verdict inconnu dans la matrice : ${resultat.verdict}`);
     }
-    verdicts[resultat.verdict] += 1;
+    verdicts[resultat.verdict] = (verdicts[resultat.verdict] ?? 0) + 1;
     for (const [classe, compte] of Object.entries(resultat.classes)) classes[classe] += compte;
     if (resultat.atomique) atomiques += 1;
     entreesJournal += resultat.entreesJournal ?? 0;
@@ -93,6 +95,12 @@ export function resumerMatrice({ graine, resultats, support = null }) {
     pointsSansJournal,
     /** Part des points qui laissent « ancien ou nouveau ». C'est la mesure de #16. */
     tauxAtomique: taux(atomiques, resultats.length),
+    /**
+     * Nombre d'états que l'oracle savait NOMMER. Deux ne veut pas dire la même chose que quatre :
+     * un oracle à deux états ne distingue pas un mécanisme correct d'un mécanisme qui acquitte une
+     * génération puis la perd, et un taux publié sans ce chiffre ne dit pas ce qu'il a jugé.
+     */
+    generationsAttendues: resultats[0].generationsAttendues ?? null,
     /** De quoi rejouer chaque point SEUL : sa graine et sa description complète. */
     rejeu: Object.freeze(
       resultats.map((resultat) =>

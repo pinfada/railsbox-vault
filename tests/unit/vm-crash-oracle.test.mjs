@@ -32,6 +32,13 @@ function dechire(index) {
 /** Classement d'octets seuls : le journal n'est pas en jeu, et l'appelant doit le DIRE. */
 const classerOctetsSeuls = (blocs) => classerVolume({ blocs, sansJournal: true });
 
+/**
+ * Suite des générations attendues d'un volume de `n` blocs écrits en UNE génération : rien publié,
+ * puis tout publié. C'est l'oracle de #15, redemandé explicitement — depuis #16 l'appelant DIT ce
+ * que son scénario devait publier, au lieu de laisser l'oracle le supposer.
+ */
+const enUneGeneration = (n = 1) => [[], Array.from({ length: n }, (_, i) => i)];
+
 test("un volume entièrement relu à l'ancien état est classé « ancien », sans raison à donner", () => {
   const rapport = classerOctetsSeuls([bloc(0, ancien(0)), bloc(1, ancien(1))]);
   assert.equal(rapport.verdict, VERDICTS.ancien);
@@ -50,7 +57,7 @@ test("des blocs anciens et nouveaux qui cohabitent donnent « melange », qui n'
   const rapport = classerOctetsSeuls([bloc(0, nouveau(0)), bloc(1, ancien(1))]);
   assert.equal(rapport.verdict, VERDICTS.melange);
   assert.equal(rapport.atomique, false);
-  assert.match(rapport.raison, /cohabitent/);
+  assert.match(rapport.raison, /ne forment aucune des/);
   assert.deepEqual(rapport.classes, { ancien: 1, nouveau: 1, dechire: 0, corrompu: 0 });
 });
 
@@ -83,7 +90,11 @@ test("une écriture acquittée PUIS franchie par une barrière, absente du suppo
     { seq: 1, operation: "flush", barrier: 0 },
     { seq: 2, operation: "flush-ack", barrier: 0 },
   ];
-  const rapport = classerVolume({ blocs: [bloc(0, ancien(0))], journal });
+  const rapport = classerVolume({
+    blocs: [bloc(0, ancien(0))],
+    journal,
+    generations: enUneGeneration(),
+  });
   assert.equal(rapport.blocs[0].acquitte, true);
   assert.equal(rapport.blocs[0].durable, true);
   assert.equal(rapport.blocs[0].classe, CLASSES.corrompu);
@@ -92,7 +103,11 @@ test("une écriture acquittée PUIS franchie par une barrière, absente du suppo
 
 test("une écriture acquittée mais JAMAIS franchie par une barrière peut légitimement être perdue", () => {
   const journal = [{ seq: 0, operation: "write", offset: 0, length: TAILLE }];
-  const rapport = classerVolume({ blocs: [bloc(0, ancien(0))], journal });
+  const rapport = classerVolume({
+    blocs: [bloc(0, ancien(0))],
+    journal,
+    generations: enUneGeneration(),
+  });
   assert.equal(rapport.blocs[0].acquitte, true);
   assert.equal(rapport.blocs[0].durable, false);
   assert.equal(rapport.blocs[0].classe, CLASSES.ancien);
@@ -111,7 +126,11 @@ test("une écriture barriérée reste durable même si une écriture POSTÉRIEUR
     { seq: 2, operation: "flush-ack", barrier: 0 },
     { seq: 3, operation: "write", offset: 0, length: TAILLE },
   ];
-  const rapport = classerVolume({ blocs: [bloc(0, ancien(0))], journal });
+  const rapport = classerVolume({
+    blocs: [bloc(0, ancien(0))],
+    journal,
+    generations: enUneGeneration(),
+  });
   assert.equal(rapport.blocs[0].durable, true, "une barrière franchie ne se dé-franchit pas");
   assert.equal(rapport.blocs[0].classe, CLASSES.corrompu);
   assert.equal(rapport.atomique, false);
@@ -125,7 +144,11 @@ test("une écriture postérieure à la dernière barrière, et elle seule, n'est
     { seq: 1, operation: "flush-ack", barrier: 0 },
     { seq: 2, operation: "write", offset: 0, length: TAILLE },
   ];
-  const rapport = classerVolume({ blocs: [bloc(0, ancien(0))], journal });
+  const rapport = classerVolume({
+    blocs: [bloc(0, ancien(0))],
+    journal,
+    generations: enUneGeneration(),
+  });
   assert.equal(rapport.blocs[0].acquitte, true);
   assert.equal(rapport.blocs[0].durable, false);
   assert.equal(rapport.blocs[0].classe, CLASSES.ancien);
@@ -193,7 +216,11 @@ test("classer sans journal doit être DIT : l'oublier est refusé, pas toléré"
 
 test("le rapport publie s'il a consulté un journal, et combien d'entrées", () => {
   const journal = [{ seq: 0, operation: "write", offset: 0, length: TAILLE }];
-  const avec = classerVolume({ blocs: [bloc(0, nouveau(0))], journal });
+  const avec = classerVolume({
+    blocs: [bloc(0, nouveau(0))],
+    journal,
+    generations: enUneGeneration(),
+  });
   assert.equal(avec.journalConsulte, true);
   assert.equal(avec.entreesJournal, 1);
 
@@ -204,4 +231,57 @@ test("le rapport publie s'il a consulté un journal, et combien d'entrées", () 
   // faux laisserait croire que la question a été posée.
   assert.equal(sans.blocs[0].acquitte, null);
   assert.equal(sans.blocs[0].durable, null);
+});
+
+// --- Générations : ce que #16 ajoute au juge -----------------------------------------------------
+
+test("un état intermédiaire ATTENDU est nommé par sa génération, et il est atomique", () => {
+  // Quatre blocs, deux générations : {0,1} puis {0,1,2,3}. Un volume qui publie exactement {0,1} est
+  // la génération 1 — un état légitime, que l'oracle de #15 rangeait dans `melange` faute de savoir
+  // le nommer.
+  const blocs = [bloc(0, nouveau(0)), bloc(1, nouveau(1)), bloc(2, ancien(2)), bloc(3, ancien(3))];
+  const rapport = classerVolume({
+    blocs,
+    journal: [],
+    generations: [[], [0, 1], [0, 1, 2, 3]],
+  });
+  assert.equal(rapport.verdict, "generation-1");
+  assert.equal(rapport.atomique, true);
+  assert.equal(rapport.generationsAttendues, 3);
+});
+
+test("un état qui n'est EXACTEMENT aucune génération reste un mélange, même s'il en approche", () => {
+  // {0,1,2} : un bloc de plus que la génération 1, un de moins que la génération 2. Une génération
+  // publie tout ce qu'elle doit publier, ou ce n'en est pas une.
+  const blocs = [bloc(0, nouveau(0)), bloc(1, nouveau(1)), bloc(2, nouveau(2)), bloc(3, ancien(3))];
+  const rapport = classerVolume({
+    blocs,
+    journal: [],
+    generations: [[], [0, 1], [0, 1, 2, 3]],
+  });
+  assert.equal(rapport.verdict, VERDICTS.melange);
+  assert.equal(rapport.atomique, false);
+  assert.match(rapport.raison, /0, 1, 2/);
+});
+
+test("l'oracle exige la suite des générations dès qu'il consulte un journal", () => {
+  // Sans elle, il ne connaîtrait que les deux extrêmes — et un mécanisme qui acquitte une génération
+  // puis la perd rendrait le MÊME verdict qu'un mécanisme correct.
+  assert.throws(
+    () => classerVolume({ blocs: [bloc(0, ancien(0))], journal: [] }),
+    /générations attendues/i,
+  );
+});
+
+test("une suite de générations qui ne croît pas strictement est REFUSÉE", () => {
+  // Le garde-fou de l'oracle contre son propre appelant : sans lui, un scénario pourrait ajouter à
+  // la liste l'état que son mécanisme produit, et faire passer un mélange pour une génération.
+  const blocs = [bloc(0, nouveau(0)), bloc(1, ancien(1))];
+  const refuse = (generations) =>
+    assert.throws(() => classerVolume({ blocs, journal: [], generations }));
+
+  refuse([[0], [0, 1]]);
+  refuse([[], [0, 1], [0, 1]]);
+  refuse([[], [1], [0]]);
+  refuse([[], [0]]);
 });
