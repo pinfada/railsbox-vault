@@ -81,13 +81,25 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
     expect(resultat.classes.corrompu, ou).toBe(0);
     expect(resultat.classes.dechire, ou).toBe(0);
 
-    // Le volume rouvert porte l'ancien état ou le nouveau, jamais un mélange.
+    // Le volume rouvert porte EXACTEMENT une génération validée — l'ancien état, la génération 1,
+    // la génération 2 ou le nouveau —, jamais un mélange.
     expect(resultat.atomique, `${ou} — ${resultat.raison ?? "sans raison"}`).toBe(true);
 
-    // Et la RÉCUPÉRATION s'est dite. Une génération écartée ou rejouée en silence serait le succès
-    // muet que `docs/quality-attributes.md` refuse ; le compte rendu la nomme.
+    // Et la RÉCUPÉRATION s'est dite — pas « l'un des trois états possibles », ce qui serait une
+    // tautologie, mais celui que le POINT détermine. Une coupure qui n'a acquitté aucune barrière ne
+    // peut rien laisser à rejouer ; dès qu'une barrière a été acquittée, la génération est encore
+    // dans le journal — la charge du scénario est très en deçà du seuil de rangement — et elle DOIT
+    // être rejouée.
     expect(resultat.recuperation, ou).not.toBeNull();
-    expect(["aucune", "ecartee", "rejouee"], ou).toContain(resultat.recuperation.etat);
+    if (resultat.barrieres === 0) {
+      expect(resultat.recuperation.etat, ou).toBe("ecartee");
+      expect(resultat.recuperation.code, ou).toBe("VAULT_STORAGE_GENERATION_DISCARDED");
+      expect(resultat.recuperation.generation, ou).toBe(0);
+    } else {
+      expect(resultat.recuperation.etat, ou).toBe("rejouee");
+      expect(resultat.recuperation.generation, ou).toBe(resultat.barrieres);
+      expect(resultat.recuperation.enregistrementsRejoues, ou).toBeGreaterThan(0);
+    }
 
     // L'oracle a bien eu le journal de la session morte SOUS LES YEUX. Sans lui, la règle
     // `SEC-DURABLE-001` serait inerte et le taux atomique monterait sans raison.
@@ -118,19 +130,30 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
   const surLaDerniereBarriere = resultats[2];
   expect(surLaDerniereBarriere.point.operation).toBe("flush");
   expect(surLaDerniereBarriere.barrieres).toBe(2);
-  expect(surLaDerniereBarriere.blocs.filter((bloc) => bloc.durable === true).length).toBe(8);
-  expect(surLaDerniereBarriere.verdict).toBe(VERDICTS.nouveau);
+  // SEIZE blocs durables sur vingt-quatre — un chiffre DISCRIMINANT, qui distingue les seize premiers
+  // des huit derniers. Avec un scénario où toutes les générations publieraient les mêmes blocs, ce
+  // témoin ne pourrait plus rougir : c'est exactement le défaut que la revue de #90 a démontré.
+  expect(surLaDerniereBarriere.blocs.filter((bloc) => bloc.durable === true).length).toBe(16);
+  expect(surLaDerniereBarriere.verdict).toBe("generation-2");
+  expect(surLaDerniereBarriere.classes.nouveau).toBe(16);
+  expect(surLaDerniereBarriere.classes.ancien).toBe(8);
 
   // LA MESURE. `docs/quality-attributes.md` demande que 100 % des points de coupure donnent ancien
-  // état, nouvel état ou erreur explicite ; #15 l'a mesurée à 12,5 %, #16 la porte à 100 %.
+  // état, nouvel état ou erreur explicite ; #15 l'a mesurée à 12,5 %, #16 la porte à 100 % — avec un
+  // oracle qui NOMME les états intermédiaires au lieu de les ranger dans « melange ».
   expect(resume.tauxAtomique).toBe(1);
   expect(resume.verdicts.melange + resume.verdicts.corrompu).toBe(0);
   expect(resume.classes.dechire).toBe(0);
   expect(resume.classes.corrompu).toBe(0);
-  // Les DEUX issues sont exercées : une matrice qui ne rendrait que « ancien » serait satisfaite par
-  // un backend qui n'écrirait rien du tout.
+  expect(resume.generationsAttendues).toBe(4);
+  // L'extrême bas ET les deux générations intermédiaires sont exercés. L'extrême haut, lui, est hors
+  // d'atteinte de cette matrice — aucun genre de coupure ne tombe après la troisième barrière
+  // acquittée (`tests/unit/vm-crash-cadence.test.mjs` le démontre) —, et ce zéro l'inscrit noir sur
+  // blanc plutôt que de le laisser deviner. Le témoin positif est au niveau unitaire.
   expect(resume.verdicts.ancien).toBeGreaterThan(0);
-  expect(resume.verdicts.nouveau).toBeGreaterThan(0);
+  expect(resume.verdicts["generation-1"]).toBeGreaterThan(0);
+  expect(resume.verdicts["generation-2"]).toBeGreaterThan(0);
+  expect(resume.verdicts.nouveau).toBe(0);
 
   // Chaque ligne du compte rendu se rejoue seule.
   for (const ligne of resume.rejeu) {

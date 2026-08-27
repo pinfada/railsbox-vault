@@ -162,16 +162,17 @@ test("une coupure pendant une mutation Rails laisse un volume qui reboote et dit
   // Le volume n'a pas été refusé : ni manifeste perdu, ni génération jugée corrompue.
   expect(froid.failures, "aucune panne de support absorbée").toEqual([]);
 
-  // La récupération s'est EXPRIMÉE. C'est le cœur de #16 : l'état retenu est nommé, jamais deviné.
+  // La récupération s'est EXPRIMÉE, et le protocole DÉTERMINE ce qu'elle devait dire. Accepter les
+  // trois états — c'est-à-dire l'intégralité de `GENERATION_ETATS` — serait une tautologie : la
+  // ligne passerait quoi que fasse le mécanisme. Ici la coupure suit au moins une barrière ACQUITTÉE
+  // (contrôlé plus haut) et la charge déposée reste très en deçà du seuil de rangement, si bien que
+  // la dernière génération validée est forcément encore dans le journal : elle doit être REJOUÉE.
   expect(froid.recuperation, "la récupération est publiée").not.toBeNull();
-  expect(["aucune", "ecartee", "rejouee"]).toContain(froid.recuperation.etat);
-  if (froid.recuperation.etat === "ecartee") {
-    expect(froid.recuperation.code).toBe("VAULT_STORAGE_GENERATION_DISCARDED");
-    expect(froid.recuperation.octetsEcartes).toBeGreaterThan(0);
-  }
-  if (froid.recuperation.etat === "rejouee") {
-    expect(froid.recuperation.generation).toBeGreaterThan(0);
-  }
+  expect(froid.recuperation.etat).toBe("rejouee");
+  expect(froid.recuperation.generation).toBeGreaterThanOrEqual(1);
+  expect(froid.recuperation.enregistrementsRejoues).toBeGreaterThan(0);
+  // Et la génération NON validée que la coupure a laissée derrière elle est écartée, comptée.
+  expect(froid.recuperation.octetsEcartes).toBeGreaterThan(0);
 
   // Et l'invariant Rails tient, quel que soit l'état retenu. C'est la promesse de #16 lue par
   // l'application : « ancien ou nouveau », jamais un mélange que SQLite refuserait de monter.
