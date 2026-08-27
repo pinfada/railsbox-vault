@@ -348,6 +348,30 @@ async function deroulerBootEtInvariant({ montage, surMutation, bootTimeoutMs, ti
  * `conforming`, ne fait que rapprocher ce que l'invariant a répondu de ce que le scénario attendait ;
  * il n'ASSERTE rien, l'assertion vivant dans `tests/e2e/`.
  */
+/**
+ * Ce que le GUEST a demandé au journal de génération pendant ce boot (#91).
+ *
+ * `recuperation` dit ce qu'une OUVERTURE a trouvé ; ces deux chiffres-ci disent ce que le guest a
+ * produit, et ils ne mesurent PAS la même chose :
+ *
+ *  - `deposeeMaxOctets` est la grandeur que `PLAFOND_CHARGE_OCTETS` borne — tout ce qui s'est
+ *    accumulé depuis un point de contrôle, barrière ou pas. C'est elle qui calibre le plafond ;
+ *  - `valideeMaxOctets` est la plus grande GÉNÉRATION, c'est-à-dire ce qu'une barrière a scellé.
+ *
+ * L'écart entre les deux dit à quelle fréquence le guest franchit réellement une barrière.
+ *
+ * Les deux se lisent APRÈS la fermeture du backend, et c'est licite : `close()` range la génération
+ * validée puis ferme le handle, mais le magasin reste attaché au backend et ses hautes eaux sont des
+ * compteurs, pas des ressources. Un volume non transactionnel rend `null`, qui se distingue d'un
+ * zéro « aucune écriture ».
+ */
+function releverGeneration(backend) {
+  return {
+    deposeeMaxOctets: backend.generation?.chargeMaxDeposeeOctets ?? null,
+    valideeMaxOctets: backend.generation?.chargeMaxValideeOctets ?? null,
+  };
+}
+
 function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline }) {
   const { invariant, health } = deroule;
   const observed = invariant.verdict.observed ?? {};
@@ -377,15 +401,7 @@ function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline })
     observedAttachmentSha256: observed.attachment?.sha256 ?? null,
     conforming,
     recuperation: montage.recuperation,
-    // Plus grande génération VALIDÉE par le guest pendant ce boot, en octets. `recuperation`, elle,
-    // dit ce qu'une OUVERTURE a trouvé ; ce chiffre-ci dit ce que le GUEST a produit (#91) — la
-    // mesure qui manquait pour calibrer le plafond de charge sur autre chose qu'une analogie.
-    //
-    // Il se lit APRÈS la fermeture du backend, et c'est licite : `close()` range la génération
-    // validée puis ferme le handle, mais le magasin reste attaché au backend et sa haute eau est un
-    // compteur, pas une ressource. Un backend sans magasin — volume non transactionnel — rend `null`,
-    // qui se distingue d'un zéro « aucune barrière acquittée ».
-    generationMaxOctets: montage.backend.generation?.chargeMaxValideeOctets ?? null,
+    generation: releverGeneration(montage.backend),
     counts: montage.journal.counts(),
     failures: montage.failures,
     observationsRuntime: [...deroule.observations, ...lireRejets()],

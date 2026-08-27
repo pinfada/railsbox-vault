@@ -644,6 +644,34 @@ test("la plus grande génération validée est retenue, même après un point de
   magasin.close();
 });
 
+test("la charge DÉPOSÉE a sa propre haute eau, et c'est elle que le plafond borne", async () => {
+  // La distinction qui a manqué de fausser la calibration de #91. `deposer` refuse quand la charge
+  // DÉPOSÉE depuis le dernier point de contrôle dépasse le plafond — barrière ou pas —, alors que la
+  // plus grande GÉNÉRATION ne compte que ce qu'une barrière a scellé.
+  //
+  // Le relevé de bout en bout du 2026-08-27 a mesuré un boot Rails à 68 écritures OPFS pour UNE
+  // barrière : les deux grandeurs y diffèrent d'un facteur vingt. Calibrer le plafond sur la seconde
+  // le calibrerait sur la mauvaise. Cette épreuve reproduit exactement cette forme.
+  const support = creerSupport(VOLUME_BANC);
+  const magasin = await ouvrirMagasin(support, "vol.gen", OPTIONS_BANC);
+
+  // Une seule barrière, TÔT : la génération validée ne vaut qu'un enregistrement.
+  await magasin.deposer(0, buildPattern(ENREGISTREMENT_BANC, 1));
+  await magasin.valider();
+  const uneGeneration = ENREGISTREMENT_BANC + ENTETE_OCTETS;
+  assert.equal(magasin.chargeMaxValideeOctets, uneGeneration);
+
+  // Puis neuf écritures SANS barrière. Rien de plus n'est validé ; le journal, lui, enfle.
+  for (let rang = 1; rang < 10; rang += 1) {
+    await magasin.deposer(rang * ENREGISTREMENT_BANC, buildPattern(ENREGISTREMENT_BANC, rang + 1));
+  }
+  assert.equal(magasin.chargeMaxValideeOctets, uneGeneration, "aucune barrière, aucune génération");
+  assert.equal(magasin.chargeMaxDeposeeOctets, 10 * uneGeneration, "le journal, lui, a enflé");
+  // C'est bien la charge déposée que le plafond regarde.
+  assert.equal(magasin.octetsDeCharge, magasin.chargeMaxDeposeeOctets);
+  magasin.close();
+});
+
 test("une validation REFUSÉE par le support n'entre pas dans la plus grande génération", async () => {
   // La haute eau est posée APRÈS le succès de la racine. La poser avant ferait entrer dans la
   // statistique une charge que le support a refusée — et le plafond serait calibré sur une

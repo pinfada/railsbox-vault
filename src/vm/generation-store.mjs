@@ -191,12 +191,24 @@ export class GenerationStore {
   /**
    * Plus grande charge que ce magasin ait VALIDÉE, en octets. Haute eau, jamais remise à zéro.
    *
-   * Elle existe pour calibrer `PLAFOND_CHARGE_OCTETS` sur la demande réelle d'un guest au lieu d'une
-   * analogie (#91, ADR 0014 § Limites). Le point de contrôle remet `#longueurValidee` à zéro à
-   * chaque rangement : sans ce compteur, la taille de la plus grande génération d'un boot ne serait
-   * lisible nulle part — seule la DERNIÈRE survivrait, dans le rapport de la prochaine ouverture.
+   * C'est la taille de la plus grande GÉNÉRATION — ce qu'un guest fait sceller entre deux barrières.
+   * Le point de contrôle remet `#longueurValidee` à zéro à chaque rangement : sans ce compteur, seule
+   * la DERNIÈRE génération d'un boot serait lisible, dans le rapport de la prochaine ouverture.
    */
   #chargeMaxValidee = 0;
+  /**
+   * Plus grande charge DÉPOSÉE, en octets. Haute eau, jamais remise à zéro.
+   *
+   * **C'est elle, et non la précédente, que `PLAFOND_CHARGE_OCTETS` borne.** `deposer` refuse quand
+   * `#longueurCharge` dépasse le plafond, et `#longueurCharge` compte tout ce qui a été déposé depuis
+   * le dernier POINT DE CONTRÔLE — y compris les écritures qu'aucune barrière n'a encore validées.
+   *
+   * La distinction n'est pas théorique : le relevé de bout en bout du 2026-08-27 a mesuré un boot à
+   * 68 écritures OPFS pour UNE barrière. La plus grande génération validée y valait 4 112 octets,
+   * mais la charge réellement présentée au plafond était près de vingt fois supérieure. Calibrer le
+   * plafond sur la seule charge validée le calibrerait sur la mauvaise grandeur (#91).
+   */
+  #chargeMaxDeposee = 0;
 
   constructor(options) {
     this.#volume = options.volume;
@@ -258,12 +270,21 @@ export class GenerationStore {
    * Plus grande génération que ce magasin ait validée, en octets. Zéro si aucune barrière n'a scellé
    * quoi que ce soit.
    *
-   * C'est la mesure qui calibre le plafond : ce qu'un guest demande RÉELLEMENT entre deux barrières.
-   * Elle ne compte que les générations validées par CETTE session ; celle qu'une ouverture rejoue est
-   * publiée à part, par `rapport.octetsRejoues`.
+   * C'est ce qu'un guest fait sceller entre deux barrières. Elle ne compte que les générations
+   * validées par CETTE session ; celle qu'une ouverture rejoue est publiée à part, par
+   * `rapport.octetsRejoues`.
    */
   get chargeMaxValideeOctets() {
     return this.#chargeMaxValidee;
+  }
+
+  /**
+   * Plus grande charge DÉPOSÉE depuis un point de contrôle, en octets. C'est la grandeur que
+   * `PLAFOND_CHARGE_OCTETS` borne, et donc celle qui le calibre : un guest qui écrit sans franchir de
+   * barrière la fait croître sans rien valider, et c'est elle qui bute la première.
+   */
+  get chargeMaxDeposeeOctets() {
+    return this.#chargeMaxDeposee;
   }
 
   // ---------------------------------------------------------------- support
@@ -581,6 +602,11 @@ export class GenerationStore {
     this.#sommeCharge = crc32(charge, crc32(entete, this.#sommeCharge));
     this.#longueurCharge += ajout;
     this.#enregistrements += 1;
+    // HAUTE EAU de ce que le PLAFOND borne. Posée après l'écriture réussie : une écriture refusée
+    // par le support n'a pas occupé le journal, et la compter gonflerait la mesure qui calibre.
+    if (this.#longueurCharge > this.#chargeMaxDeposee) {
+      this.#chargeMaxDeposee = this.#longueurCharge;
+    }
 
     const positionCharge = position + ENTETE_OCTETS;
     for (let secteur = debut; secteur < fin; secteur += SECTOR_SIZE) {

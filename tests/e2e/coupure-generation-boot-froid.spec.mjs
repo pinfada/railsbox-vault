@@ -187,11 +187,12 @@ test("une coupure pendant une mutation Rails laisse un volume qui reboote et dit
   expect(froid.recuperation.surmemoireMaxOctets).toBeGreaterThan(0);
   expect(froid.recuperation.surmemoireMaxOctets).toBeLessThanOrEqual(TAMPON_RELECTURE_OCTETS);
 
-  // Et ce que le guest a fait valider PENDANT le boot à froid, confronté au plafond. La première
-  // ligne garantit que le relevé a eu lieu : sans elle, un `null` rendrait la seconde vraie sans
-  // rien mesurer.
-  expect(froid.generationMaxOctets, "le relevé de génération a eu lieu").not.toBeNull();
-  expect(froid.generationMaxOctets, "génération sous le plafond").toBeLessThan(
+  // Et ce que le guest a présenté au journal PENDANT le boot à froid, confronté au plafond. C'est la
+  // charge DÉPOSÉE que `PLAFOND_CHARGE_OCTETS` borne — tout ce qui s'accumule depuis un point de
+  // contrôle, barrière ou pas —, et non la seule génération validée. La première ligne garantit que
+  // le relevé a eu lieu : sans elle, un `null` rendrait la seconde vraie sans rien mesurer.
+  expect(froid.generation.deposeeMaxOctets, "relevé effectué").not.toBeNull();
+  expect(froid.generation.deposeeMaxOctets, "charge sous le plafond").toBeLessThan(
     PLAFOND_CHARGE_OCTETS,
   );
 
@@ -205,7 +206,9 @@ test("une coupure pendant une mutation Rails laisse un volume qui reboote et dit
         avantCoupure: { ecritures: mutation.counts.write, barrieres: mutation.counts["flush-ack"] },
         rejoueeAuBootFroid: froid.recuperation.octetsRejoues,
         ecarteeAuBootFroid: froid.recuperation.octetsEcartes,
-        valideePendantLeBootFroid: froid.generationMaxOctets,
+        // Pendant le boot à froid : ce que le plafond borne, puis la plus grande génération scellée.
+        deposeeMaxOctets: froid.generation.deposeeMaxOctets,
+        valideeMaxOctets: froid.generation.valideeMaxOctets,
         surmemoireRecuperationOctets: froid.recuperation.surmemoireMaxOctets,
         plafondOctets: PLAFOND_CHARGE_OCTETS,
       },

@@ -281,16 +281,23 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
 
   // #91 — LA DEMANDE RÉELLE DU GUEST, boot à chaud et reprises à froid.
   //
-  // `generationMaxOctets` est la plus grande charge que Rails ait fait VALIDER entre deux barrières
-  // pendant ce boot. Deux lignes, et elles ne disent pas la même chose : la première mesure que le
-  // relevé a bien eu lieu — un `null` signifierait un volume ouvert sans magasin de génération, et
-  // toute la statistique serait muette sans que rien ne rougisse ; la seconde est la propriété, à
-  // savoir qu'aucun boot de l'image de référence n'approche le plafond. Le jour où elle rougit,
-  // c'est `VAULT_STORAGE_GENERATION_OVERFLOW` qui attend le guest, et le plafond qui doit être revu.
-  const generationsMax = [live, ...reprises].map((r) => r.generationMaxOctets);
-  for (const [rang, octets] of generationsMax.entries()) {
-    expect(octets, `boot ${rang} — le relevé de génération a bien eu lieu`).not.toBeNull();
-    expect(octets, `boot ${rang} — génération sous le plafond`).toBeLessThan(PLAFOND_CHARGE_OCTETS);
+  // C'est `deposeeMaxOctets` qui est confronté au plafond, et pas la plus grande génération validée :
+  // `deposer` refuse quand la charge DÉPOSÉE depuis le dernier point de contrôle dépasse le plafond,
+  // barrière ou pas. La distinction se mesure sur ce boot même — Rails y écrit des dizaines de fois
+  // pour une seule barrière, si bien que la charge présentée au plafond dépasse de loin la plus
+  // grande génération scellée. Asserter la seconde reviendrait à garder la mauvaise grandeur.
+  //
+  // La première ligne vérifie que le relevé a EU LIEU : un `null` — volume ouvert sans magasin de
+  // génération — rendrait la seconde vraie sans rien mesurer.
+  for (const [rang, boot] of [live, ...reprises].entries()) {
+    expect(boot.generation.deposeeMaxOctets, `boot ${rang} — relevé effectué`).not.toBeNull();
+    expect(boot.generation.valideeMaxOctets, `boot ${rang} — relevé effectué`).not.toBeNull();
+    // LA PROPRIÉTÉ : aucun boot de l'image de référence n'approche le plafond. Le jour où cette
+    // ligne rougit, c'est `VAULT_STORAGE_GENERATION_OVERFLOW` qui attend le guest — système de
+    // fichiers en lecture seule — et le plafond qui doit être revu.
+    expect(boot.generation.deposeeMaxOctets, `boot ${rang} — charge sous le plafond`).toBeLessThan(
+      PLAFOND_CHARGE_OCTETS,
+    );
   }
 
   // Mesures publiées (docs/quality-attributes.md : cible reprise p95 ≤ 60 s).
@@ -335,9 +342,18 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
     // LA PLUS GRANDE GÉNÉRATION que l'image de référence produit, en octets — boot à chaud puis
     // chaque reprise à froid. C'est la mesure qui manquait pour calibrer `PLAFOND_CHARGE_OCTETS` sur
     // la demande RÉELLE du guest au lieu du seul budget de récupération (#91, ADR 0014 § Limites).
-    generationMaxOctets: {
-      live: live.generationMaxOctets,
-      reprises: reprises.map((r) => r.generationMaxOctets),
+    generation: {
+      // Ce que le plafond borne : la charge déposée depuis un point de contrôle, barrière ou pas.
+      deposeeMaxOctets: {
+        live: live.generation.deposeeMaxOctets,
+        reprises: reprises.map((r) => r.generation.deposeeMaxOctets),
+      },
+      // La plus grande GÉNÉRATION, c'est-à-dire ce qu'une barrière a scellé. Publiée à côté parce
+      // que l'écart entre les deux dit à quelle fréquence Rails franchit réellement une barrière.
+      valideeMaxOctets: {
+        live: live.generation.valideeMaxOctets,
+        reprises: reprises.map((r) => r.generation.valideeMaxOctets),
+      },
       plafondOctets: PLAFOND_CHARGE_OCTETS,
     },
     cible: { repriseP95Ms: 60_000 },

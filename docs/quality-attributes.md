@@ -466,13 +466,28 @@ fenêtre glissante avec laquelle le journal est relu ; elle est une constante du
 plafond ne la relèverait pas. Elle est **mesurée du côté du support** — la plus grande lecture qu'il
 reçoit — et non déclarée par le code qu'elle contrôle.
 
-**La plus grande génération que l'image de référence produit reste inconnue.** Le seul relevé
-existant est celui du scénario Bout en bout de #16 : **90 304 octets** déposés entre la première
-barrière acquittée de Rails et la coupure — près de trois ordres de grandeur sous le plafond de 16
-Mio. Treize écritures d'un boot ne sont pas la plus grande génération possible, et personne ne l'a
-mesurée. Le rapport d'ouverture publie maintenant `octetsRejoues`, si bien que chaque exécution de
-bout en bout en dit la taille ; le MAXIMUM sur un boot complet demanderait un relevé de haute eau.
-Travail découvert.
+### La plus grande génération que l'image de référence produit
+
+Le plafond ne vaut que confronté à ce qu'un guest demande RÉELLEMENT entre deux barrières. Jusqu'à
+#91 le seul relevé était celui du scénario Bout en bout de #16 — 90 304 octets déposés entre la
+première barrière acquittée de Rails et la coupure —, et ce n'était pas un maximum : le point de
+contrôle remet la charge validée à zéro à chaque rangement, si bien que seule la DERNIÈRE génération
+d'un boot restait lisible.
+
+Le magasin retient désormais une **haute eau** de la charge validée, que chaque boot publie
+(`generationMaxOctets`). Relevé du @DATE_E2E@, `npm run test:e2e`, vrai Rails sur volume OPFS de 512
+Mio :
+
+@TABLEAU_GENERATIONS@
+
+@VERDICT_GENERATIONS@
+
+**Ce que ce relevé ne couvre pas.** `rails db:seed` et les migrations de schéma ne tournent pas au
+boot : l'image de référence les exécute à la CONSTRUCTION, dans Docker, hors du backend de blocs.
+Une application qui sèmerait ou migrerait au démarrage écrirait davantage d'un coup, et personne ne
+l'a mesurée. Le plafond reste donc un garde-fou **révisable**, et le signal qui déclenche sa
+révision est nommé : un seul `VAULT_STORAGE_GENERATION_OVERFLOW` observé en E2E. Les trois scénarios
+de bout en bout l'assertent à chaque exécution — leur rouge précède l'incident d'un utilisateur.
 
 ## Compatibilité
 
