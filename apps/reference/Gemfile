@@ -32,3 +32,15 @@ gem "sqlite3", "= 2.9.6"
 # guest — donc elle n'est pas exploitable, mais une dépendance vulnérable ne se
 # tait pas : elle se corrige. Voir `SECURITY.md`, section « Analyse de secrets ».
 gem "puma", "= 8.0.2"
+
+# Bootsnap ne change ni le comportement ni le code : il met en cache ce que le
+# démarrage recalcule à chaque fois — la résolution du `$LOAD_PATH` et la
+# compilation des fichiers Ruby en `InstructionSequence`. Sur un i386 ÉMULÉ, où
+# l'ADR 0005 mesure ~73 s de boot Puma/Rails pour ~79 % de la reprise, cette
+# recompilation est payée au prix fort. Le cache est en outre PRÉ-CHAUFFÉ à la
+# construction de l'image (`guest.Dockerfile`, cible `disque-app`) : le premier
+# boot chez l'utilisateur lit un cache déjà complet, il ne le remplit pas.
+#
+# `require: false` : le chargement se fait dans `config/boot.rb`, avant Rails,
+# ce qui est le seul endroit où il sert à quelque chose.
+gem "bootsnap", "= 1.25.0", require: false
