@@ -5,118 +5,53 @@ import { CRYPTO_ERROR_CODES, isCryptoError } from "../../src/vm/format-chiffre/c
 import {
   ALGORITHME,
   BUDGET_SCELLEMENTS_PAR_CLE,
-  DOMAINE_BLOC,
-  DOMAINE_RACINE,
   GENERATION_MAX,
+  IDENTIFIANT_VOLUME_OCTETS,
+  LIMITE_NIST_INVOCATIONS,
   NONCE_OCTETS,
   RANG_MAX,
-  construireNonce,
   encoderEnteteRacine,
   encoderIdentiteBloc,
+  identifiantVolumeEnTexte,
+  tirerNonce,
   verifierBudgetDeCle,
+  verifierRangsCroissants,
 } from "../../src/vm/format-chiffre/identite-logique.mjs";
-import { octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
+import { chainePrefixee, concatener, octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
 
-// Construction du NONCE et encodage de l'IDENTITÉ LOGIQUE (#17, ADR 0015).
+// Nonce, identité logique et bornes (#17, ADR 0015).
 //
-// Ces épreuves portent sur la seule propriété dont la violation est CATASTROPHIQUE plutôt que
-// simplement gênante : deux scellements distincts sous une même clé ne doivent jamais partager un
-// nonce. Sous AES-GCM, réutiliser un nonce livre le XOR des deux clairs ET la clé d'authentification
-// H, donc la capacité de forger des étiquettes (NIST SP 800-38D § 8.1 ; attaque dite « forbidden
-// attack » de Joux). L'unicité n'est donc pas ici une propriété souhaitable : c'est la condition de
-// toutes les autres.
-//
-// Le piège propre à ce dépôt est nommé dans l'ADR 0014 : le journal de génération admet qu'un MÊME
-// bloc soit réécrit plusieurs fois DANS UNE MÊME GÉNÉRATION. Un nonce construit sur (génération,
-// adresse) se répéterait donc sur des clairs différents. C'est pourquoi le nonce porte le RANG de
-// l'entrée dans le journal, et non l'adresse — l'adresse, elle, est authentifiée par les données
-// associées, où l'unicité n'est pas exigée.
+// Le nonce est TIRÉ AU HASARD, et c'est une correction imposée par une revue : la version
+// précédente le dérivait de (génération, rang) en affirmant qu'« une reprise ouvre une génération
+// neuve ». `tests/unit/vm-format-chiffre-reprise.test.mjs` rejoue la réfutation sur le magasin réel.
+// Ce fichier-ci éprouve ce qui reste vérifiable SANS état : que le tirage ne dérive de rien, que les
+// bornes sont refusées plutôt que rebouclées, et que l'encodage de l'identité est injectif.
 
-/** Espace énuméré : quatre générations consécutives, 256 entrées chacune. */
-const GENERATIONS = [0, 1, 2, 3];
-const ENTREES_PAR_GENERATION = 256;
+test("le nonce fait douze octets et ne dérive de RIEN", () => {
+  const premier = tirerNonce();
+  assert.equal(premier.byteLength, NONCE_OCTETS);
+  assert.equal(premier instanceof Uint8Array, true);
 
-/** Huit adresses seulement, pour que chaque bloc soit RÉÉCRIT 32 fois dans une même génération. */
-const ADRESSES_DISTINCTES = 8;
-
-function adresseDuRang(rang) {
-  return (rang % ADRESSES_DISTINCTES) * 512;
-}
-
-test("le nonce fait douze octets et sépare les domaines bloc et racine", () => {
-  const bloc = construireNonce({ domaine: DOMAINE_BLOC, generation: 7, rang: 3 });
-  const racine = construireNonce({ domaine: DOMAINE_RACINE, generation: 7, rang: 3 });
-
-  assert.equal(bloc.byteLength, NONCE_OCTETS);
-  assert.equal(racine.byteLength, NONCE_OCTETS);
-  assert.notEqual(octetsEnHex(bloc), octetsEnHex(racine));
-  assert.equal(bloc[0], DOMAINE_BLOC);
-  assert.equal(racine[0], DOMAINE_RACINE);
+  // La propriété qui compte, et celle que la version dérivée n'avait pas : deux tirages successifs
+  // sous des paramètres IDENTIQUES — il n'y a d'ailleurs aucun paramètre — diffèrent.
+  assert.notEqual(octetsEnHex(premier), octetsEnHex(tirerNonce()));
 });
 
-test("aucune collision de nonce sur un espace représentatif de réécritures et de générations", () => {
-  const vus = new Map();
-  let attendus = 0;
-
-  for (const generation of GENERATIONS) {
-    for (let rang = 0; rang < ENTREES_PAR_GENERATION; rang += 1) {
-      // L'adresse VARIE peu et se répète : c'est exactement le cas que l'ADR 0014 autorise.
-      const nonce = octetsEnHex(construireNonce({ domaine: DOMAINE_BLOC, generation, rang }));
-      const cle = `${generation}/${rang}/${adresseDuRang(rang)}`;
-      assert.equal(vus.has(nonce), false, `nonce déjà employé par ${vus.get(nonce)} pour ${cle}`);
-      vus.set(nonce, cle);
-      attendus += 1;
-    }
-    // La racine de chaque génération partage la clé : son nonce doit être hors de l'espace des blocs.
-    const nonceRacine = octetsEnHex(
-      construireNonce({ domaine: DOMAINE_RACINE, generation, rang: generation }),
-    );
-    assert.equal(
-      vus.has(nonceRacine),
-      false,
-      `la racine de la génération ${generation} collisionne`,
-    );
-    vus.set(nonceRacine, `racine/${generation}`);
-    attendus += 1;
-  }
-
-  assert.equal(vus.size, attendus);
-  assert.equal(attendus, GENERATIONS.length * (ENTREES_PAR_GENERATION + 1));
+test("aucune collision de nonce sur un espace représentatif de tirages", () => {
+  // Quatre mille tirages : la probabilité de collision y est majorée par 4096² / 2^97, soit environ
+  // 2^-73. Une collision ici ne serait pas de la malchance, ce serait un générateur cassé.
+  const vus = new Set();
+  for (let index = 0; index < 4096; index += 1) vus.add(octetsEnHex(tirerNonce()));
+  assert.equal(vus.size, 4096);
 });
 
-test("deux adresses voisines au même rang produisent le MÊME nonce : le rang porte l'unicité", () => {
-  // Ce n'est pas un défaut, c'est le contrat, et il doit être visible plutôt que supposé : le nonce
-  // ne dépend PAS de l'adresse. L'unicité repose donc entièrement sur l'unicité du rang au sein
-  // d'une génération — obligation de l'appelant (#18), rendue falsifiable par `scellerRacine`, qui
-  // refuse une liste d'entrées dont les rangs ne croissent pas strictement.
-  const a = construireNonce({ domaine: DOMAINE_BLOC, generation: 4, rang: 11 });
-  const b = construireNonce({ domaine: DOMAINE_BLOC, generation: 4, rang: 11 });
-  assert.equal(octetsEnHex(a), octetsEnHex(b));
-});
-
-test("les bornes des champs du nonce sont refusées avant de reboucler en silence", () => {
-  assert.equal(
-    construireNonce({ domaine: DOMAINE_BLOC, generation: GENERATION_MAX, rang: RANG_MAX })
-      .byteLength,
-    NONCE_OCTETS,
+test("le budget de scellements par clé est PLUS SERRÉ que le plafond de NIST, et dit pourquoi", () => {
+  assert.equal(LIMITE_NIST_INVOCATIONS, 2 ** 32, "le plafond du § 8.3 est publié tel quel");
+  assert.equal(BUDGET_SCELLEMENTS_PAR_CLE, 2 ** 31, "le dépôt retient la moitié");
+  assert.ok(
+    BUDGET_SCELLEMENTS_PAR_CLE < LIMITE_NIST_INVOCATIONS,
+    "le compteur cumulé peut RECULER par retour arrière du support : la marge est délibérée",
   );
-
-  for (const hors of [
-    { domaine: DOMAINE_BLOC, generation: GENERATION_MAX + 1, rang: 0 },
-    { domaine: DOMAINE_BLOC, generation: 0, rang: RANG_MAX + 1 },
-    { domaine: DOMAINE_BLOC, generation: -1, rang: 0 },
-    { domaine: 0x03, generation: 0, rang: 0 },
-  ]) {
-    assert.throws(
-      () => construireNonce(hors),
-      (erreur) => isCryptoError(erreur, CRYPTO_ERROR_CODES.malformed),
-      `${JSON.stringify(hors)} doit être refusé, jamais tronqué`,
-    );
-  }
-});
-
-test("le budget de scellements par clé refuse AVANT la limite de NIST SP 800-38D", () => {
-  assert.equal(BUDGET_SCELLEMENTS_PAR_CLE, 2 ** 32);
   assert.equal(verifierBudgetDeCle(BUDGET_SCELLEMENTS_PAR_CLE - 1), BUDGET_SCELLEMENTS_PAR_CLE - 1);
 
   for (const atteint of [BUDGET_SCELLEMENTS_PAR_CLE, BUDGET_SCELLEMENTS_PAR_CLE + 1]) {
@@ -124,6 +59,33 @@ test("le budget de scellements par clé refuse AVANT la limite de NIST SP 800-38
       () => verifierBudgetDeCle(atteint),
       (erreur) => isCryptoError(erreur, CRYPTO_ERROR_CODES.keyBudget),
       `${atteint} scellements doivent être refusés sous cette clé`,
+    );
+  }
+});
+
+test("les bornes des champs d'identité sont refusées avant de reboucler en silence", () => {
+  const base = {
+    volume: "v",
+    formatVersion: 3,
+    generation: 1,
+    rang: 0,
+    adresse: 0,
+    longueur: 512,
+  };
+  assert.ok(
+    encoderIdentiteBloc({ ...base, generation: GENERATION_MAX, rang: RANG_MAX }).byteLength > 0,
+  );
+
+  for (const hors of [
+    { ...base, generation: GENERATION_MAX + 1 },
+    { ...base, rang: RANG_MAX + 1 },
+    { ...base, generation: -1 },
+    { ...base, volume: "" },
+  ]) {
+    assert.throws(
+      () => encoderIdentiteBloc(hors),
+      (erreur) => isCryptoError(erreur, CRYPTO_ERROR_CODES.malformed),
+      `${JSON.stringify({ generation: hors.generation, rang: hors.rang, volume: hors.volume })} doit être refusé`,
     );
   }
 });
@@ -137,27 +99,43 @@ test("l'encodage de l'identité d'un bloc est injectif : chaque champ déplace l
     adresse: 4096,
     longueur: 512,
   };
-  const reference = octetsEnHex(encoderIdentiteBloc(base));
+  const rendus = new Set([octetsEnHex(encoderIdentiteBloc(base))]);
 
-  const variantes = [
+  for (const variante of [
     { ...base, volume: "volume-b" },
     { ...base, formatVersion: 4 },
     { ...base, generation: 13 },
     { ...base, rang: 6 },
     { ...base, adresse: 4608 },
     { ...base, longueur: 256 },
-  ];
-  const rendus = new Set([reference]);
-  for (const variante of variantes) {
+  ]) {
     const rendu = octetsEnHex(encoderIdentiteBloc(variante));
     assert.equal(rendus.has(rendu), false, `${JSON.stringify(variante)} doit changer les octets`);
     rendus.add(rendu);
   }
 });
 
-test("les champs de longueur variable sont préfixés : aucune ambiguïté de concaténation", () => {
-  // Le piège classique d'une concaténation non préfixée : deux identités distinctes rendant la même
-  // chaîne d'octets. Ici les identifiants « ab » + « c » et « a » + « bc » doivent diverger.
+test("le PRÉFIXE DE LONGUEUR est ce qui rend l'encodage injectif : sans lui, deux identités collisionnent", () => {
+  // Épreuve par MUTATION plutôt que par affirmation. Le même encodage, privé de ses préfixes de
+  // longueur, confond deux identités distinctes : le domaine perd un caractère au profit du volume.
+  // C'est le défaut exact que le préfixe interdit, et le montrer vaut mieux que l'annoncer.
+  const encoder = new TextEncoder();
+  const sansPrefixe = (gauche, droite) =>
+    octetsEnHex(concatener(encoder.encode(gauche), encoder.encode(droite)));
+  const avecPrefixe = (gauche, droite) =>
+    octetsEnHex(concatener(chainePrefixee(gauche), chainePrefixee(droite)));
+
+  assert.equal(
+    sansPrefixe("ab", "c"),
+    sansPrefixe("a", "bc"),
+    "témoin de la mutation : sans préfixe, deux champs distincts rendent les MÊMES octets",
+  );
+  assert.notEqual(
+    avecPrefixe("ab", "c"),
+    avecPrefixe("a", "bc"),
+    "avec préfixe, les deux se séparent — c'est ce que l'encodage réel emploie",
+  );
+
   const gauche = encoderIdentiteBloc({
     volume: "ab",
     formatVersion: 3,
@@ -178,7 +156,7 @@ test("les champs de longueur variable sont préfixés : aucune ambiguïté de co
   assert.notEqual(gauche.byteLength, droite.byteLength);
 });
 
-test("l'étiquette de domaine et l'algorithme sont dans les données associées", () => {
+test("l'étiquette de domaine et l'algorithme sont dans les données associées, jamais dans le nonce", () => {
   const identite = encoderIdentiteBloc({
     volume: "v",
     formatVersion: 3,
@@ -205,4 +183,46 @@ test("l'étiquette de domaine et l'algorithme sont dans les données associées"
   assert.ok(texte.includes("bloc"), "le domaine doit distinguer un bloc d'une racine");
   assert.ok(texteRacine.includes("racine"));
   assert.notEqual(octetsEnHex(identite), octetsEnHex(entete));
+});
+
+test("les rangs d'une génération doivent croître STRICTEMENT : l'ordre est une propriété", () => {
+  const entree = (rang) => ({
+    adresse: rang * 512,
+    longueur: 512,
+    rang,
+    etiquette: new Uint8Array(16),
+  });
+  assert.equal(verifierRangsCroissants([entree(0), entree(1), entree(2)]).length, 3);
+  assert.equal(verifierRangsCroissants([]).length, 0);
+
+  for (const suite of [
+    [entree(0), entree(0)],
+    [entree(1), entree(0)],
+    [entree(0), entree(2), entree(1)],
+  ]) {
+    assert.throws(
+      () => verifierRangsCroissants(suite),
+      (erreur) => isCryptoError(erreur, CRYPTO_ERROR_CODES.orderInvalid),
+      `${suite.map((e) => e.rang).join(",")} doit être refusé`,
+    );
+  }
+});
+
+test("la conversion de l'identifiant de volume est FIXÉE : seize octets vers trente-deux caractères", () => {
+  // Sans cette règle, #18 ne pourrait pas reproduire les vecteurs : le disque porte seize octets
+  // bruts, les données associées portent une chaîne, et deux conventions donneraient deux
+  // étiquettes différentes pour le MÊME volume.
+  const octets = Uint8Array.from({ length: IDENTIFIANT_VOLUME_OCTETS }, (_, index) => index * 17);
+  const texte = identifiantVolumeEnTexte(octets);
+  assert.equal(texte.length, IDENTIFIANT_VOLUME_OCTETS * 2);
+  assert.equal(texte, texte.toLowerCase());
+  assert.equal(texte, "00112233445566778899aabbccddeeff");
+
+  for (const longueur of [0, 8, 15, 17]) {
+    assert.throws(
+      () => identifiantVolumeEnTexte(new Uint8Array(longueur)),
+      (erreur) => isCryptoError(erreur, CRYPTO_ERROR_CODES.malformed),
+      `un identifiant de ${longueur} octets doit être refusé`,
+    );
+  }
 });

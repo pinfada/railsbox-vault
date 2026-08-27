@@ -2,44 +2,42 @@
 //
 // Ce module ne chiffre rien. Il définit les OCTETS que le scellement lie : le nonce, qui doit être
 // unique sous une clé, et les données associées, qui doivent nommer sans ambiguïté l'endroit d'où un
-// bloc vient. Il est pur — aucune clé, aucun état, aucune E/S — pour qu'un relecteur externe (#20)
-// puisse en juger sans exécuter quoi que ce soit.
+// bloc vient. Il est pur — aucune clé, aucun état durable, aucune E/S — pour qu'un relecteur externe
+// (#20) puisse en juger sans exécuter quoi que ce soit.
 //
-// ## Le nonce, et pourquoi il ne porte pas l'adresse
+// ## Le nonce est TIRÉ AU HASARD, et c'est une correction, pas une préférence
 //
-// Douze octets, gros-boutistes :
+// La première version de cet ADR dérivait le nonce de (génération, rang) et justifiait son unicité
+// par « une reprise ouvre une génération NEUVE ». Une revue l'a réfutée PAR EXÉCUTION contre
+// `generation-store.mjs` : la génération n'avance que dans `valider()`, `#recuperer()` la remet à
+// celle de la racine qui fait autorité, `#vider()` incrémente la SÉQUENCE en CONSERVANT la
+// génération, et la branche « racines vierges au-dessus d'une charge » remet les deux à ZÉRO. Les
+// octets étant scellés au DÉPÔT, une génération déposée puis écartée rend son numéro à la tentative
+// suivante. Le pire cas ne demande aucune panne : une FERMETURE PROPRE avec un dépôt non validé
+// suffit. `tests/unit/vm-format-chiffre-reprise.test.mjs` le rejoue sur le magasin réel.
 //
-// ```text
-//   octet 0      domaine     0x01 bloc, 0x02 racine
-//   octets 1-6   génération  48 bits
-//   octets 7-11  rang        40 bits
-// ```
+// La leçon est plus générale que le défaut : **dans un système conçu pour survivre aux coupures et
+// exposé au retour arrière du support, tout nonce déterministe dérivé d'un état DURABLE — génération,
+// séquence, « époque », compteur — est réémis dès que cet état recule.** L'aléa est la seule
+// construction dont l'unicité ne dépend d'aucun état.
 //
-// Le choix qui compte est l'ABSENCE de l'adresse. L'ADR 0014 admet qu'un même bloc soit réécrit
-// plusieurs fois dans une même génération : un nonce construit sur (génération, adresse) se
-// répéterait alors sur des clairs différents, ce qui sous AES-GCM livre le XOR des deux clairs ET la
-// clé d'authentification H — donc la capacité de forger (NIST SP 800-38D § 8.1 ; « forbidden
-// attack », Joux 2006). Le RANG de l'entrée dans le journal de sa génération, lui, est unique par
-// construction. L'adresse reste authentifiée par les données associées, où l'unicité n'est pas
-// exigée.
+// Douze octets de `crypto.getRandomValues`, donc, conformément au § 8.2.2 de NIST SP 800-38D
+// (construction fondée sur un générateur approuvé). Le nonce est STOCKÉ avec chaque objet scellé :
+// il n'est plus dérivable de rien, et c'est le prix de sa correction.
 //
-// Le second choix est la DÉRIVATION plutôt que le tirage. Un compteur global tiré d'un état durable
-// serait la construction déterministe canonique du § 8.2.1 de SP 800-38D ; il exigerait que ce
-// compteur ne recule JAMAIS, y compris après la coupure que tout l'ADR 0014 existe pour survivre. La
-// génération, elle, est monotone et durablement scellée par la racine ; les rangs repartent de zéro
-// dans la génération suivante. Une reprise après coupure ne peut donc pas réémettre un nonce déjà
-// employé, parce qu'elle ouvre une génération neuve. C'est ce que le modèle de crash de ce dépôt
-// rend possible, et c'est la raison de ce choix plutôt qu'un compteur.
+// Le domaine — bloc, racine, liste d'entrées — reste dans les DONNÉES ASSOCIÉES, où il sépare les
+// espaces sans avoir à consommer des bits de nonce.
 //
-// ## Bornes
+// ## Ce qui borne alors la probabilité de collision
 //
-// Les champs sont LARGES — 2^48 générations, 2^40 entrées par génération — parce qu'un champ étroit
-// reboucle en silence, ce qui est précisément la faute contre laquelle tout ce module existe. La
-// borne qui MORD est ailleurs : le § 8.3 de SP 800-38D limite à 2^32 le nombre d'invocations de la
-// fonction de chiffrement authentifié sous une même clé. Elle n'est pas structurelle, elle est
-// COMPTÉE, et son dépassement est un refus typé.
+// Sur 96 bits, `N` tirages entrent en collision avec une probabilité majorée par `N² / 2^97`. Le
+// § 8.3 de SP 800-38D plafonne à 2^32 les invocations sous une clé, ce qui donne 2^-33. Ce dépôt
+// retient un budget **plus conservateur**, et la raison est propre à son modèle de menace : le
+// compteur cumulé vit dans la racine, donc il peut RECULER par retour arrière du support, et le
+// nombre réel d'invocations peut alors dépasser le nombre compté. La moitié du plafond garde un
+// ordre de grandeur de marge.
 
-import { CRYPTO_ERROR_CODES, CryptoError, malforme, nonceReutilise } from "./crypto-errors.mjs";
+import { algorithmeInconnu, budgetDeCle, malforme, ordreInvalide } from "./crypto-errors.mjs";
 import { chainePrefixee, concatener, entierEnOctets } from "./octets.mjs";
 
 /** Nom de l'unique algorithme admis par la v1 de cette spécification. Épinglé, pas devinable. */
@@ -61,26 +59,36 @@ export const ETIQUETTE_BITS = ETIQUETTE_OCTETS * 8;
 /** Empreinte de la liste des entrées d'une génération : SHA-256, comme l'empreinte du manifeste. */
 export const EMPREINTE_OCTETS = 32;
 
-export const DOMAINE_BLOC = 0x01;
-export const DOMAINE_RACINE = 0x02;
+/** Identifiant de volume : seize octets aléatoires, inscrits à la création et jamais modifiés. */
+export const IDENTIFIANT_VOLUME_OCTETS = 16;
 
 const GENERATION_OCTETS = 6;
 const RANG_OCTETS = 5;
 
-/** Plus grande génération représentable par le nonce (2^48 - 1). */
+/** Plus grande génération représentable par le format (2^48 - 1). */
 export const GENERATION_MAX = 2 ** (GENERATION_OCTETS * 8) - 1;
 
-/** Plus grand rang d'entrée représentable par le nonce (2^40 - 1). */
+/** Plus grand rang d'entrée représentable par le format (2^40 - 1). */
 export const RANG_MAX = 2 ** (RANG_OCTETS * 8) - 1;
 
 /**
- * Nombre maximal de scellements sous une même clé de volume.
- *
- * NIST SP 800-38D, § 8.3 : « The total number of invocations of the authenticated encryption
- * function shall not exceed 2^32 […] with the given key. » Ce n'est pas un seuil de confort : c'est
- * la borne du domaine de validité de la primitive telle que sa spécification l'énonce.
+ * Plafond du § 8.3 de NIST SP 800-38D : « The total number of invocations of the authenticated
+ * encryption function shall not exceed 2^32 […] with the given key. » Publié pour que le budget
+ * retenu ci-dessous se lise comme un ÉCART DÉLIBÉRÉ et non comme une valeur tombée du ciel.
  */
-export const BUDGET_SCELLEMENTS_PAR_CLE = 2 ** 32;
+export const LIMITE_NIST_INVOCATIONS = 2 ** 32;
+
+/**
+ * Budget de scellements sous une même clé de volume : la MOITIÉ du plafond NIST.
+ *
+ * Deux raisons de descendre. D'abord la collision : sur 96 bits tirés au hasard, `N² / 2^97` vaut
+ * 2^-33 à 2^32 tirages et **2^-35** à 2^31. Ensuite, et c'est la raison propre à ce dépôt, le
+ * compteur cumulé est authentifié dans la RACINE : un retour arrière du support le fait reculer, et
+ * le nombre réel d'invocations sous la clé peut alors dépasser le nombre compté. Un budget serré
+ * garde un ordre de grandeur de marge devant cet écart, qu'aucune mesure ne borne aujourd'hui.
+ * C'est une question ouverte pour la revue externe (#20).
+ */
+export const BUDGET_SCELLEMENTS_PAR_CLE = 2 ** 31;
 
 /** Étiquette de domaine d'un bloc. Elle entre dans les données associées, jamais dans le nonce. */
 export const ETIQUETTE_DOMAINE_BLOC = "railsbox-vault/format-chiffre/v1/bloc";
@@ -112,34 +120,48 @@ function identifiant(nom, valeur) {
 }
 
 /**
- * Construit le nonce d'un scellement. Déterministe, injectif, et refusé plutôt que tronqué.
+ * Tire un nonce. Aucun état, aucun compteur, aucune dérivation : c'est tout l'intérêt.
  *
- * @param {{ domaine: number, generation: number, rang: number }} champs
+ * `crypto.getRandomValues` est le générateur de l'API Web Cryptography ; la construction relève du
+ * § 8.2.2 de SP 800-38D. Un appelant ne doit JAMAIS réemployer un nonce rendu ici, ni le dériver
+ * d'autre chose : c'est la seule obligation, et elle ne dépend d'aucun état durable.
+ *
  * @returns {Uint8Array} exactement `NONCE_OCTETS` octets
  */
-export function construireNonce({ domaine, generation, rang }) {
-  if (domaine !== DOMAINE_BLOC && domaine !== DOMAINE_RACINE) {
+export function tirerNonce() {
+  return crypto.getRandomValues(new Uint8Array(NONCE_OCTETS));
+}
+
+/**
+ * Rend la forme TEXTUELLE d'un identifiant de volume à partir de ses seize octets.
+ *
+ * La règle de conversion est fixée ici plutôt que laissée à l'usage, parce que sans elle #18 ne
+ * pourrait pas reproduire les vecteurs : le disque porte seize octets bruts, les données associées
+ * portent une CHAÎNE, et deux conventions différentes donneraient deux étiquettes différentes pour
+ * le même volume. La forme retenue est l'hexadécimal MINUSCULE sans séparateur, trente-deux
+ * caractères.
+ */
+export function identifiantVolumeEnTexte(octets) {
+  if (!(octets instanceof Uint8Array) || octets.byteLength !== IDENTIFIANT_VOLUME_OCTETS) {
     throw malforme(
-      `domaine de nonce inconnu : ${domaine}. Seuls ${DOMAINE_BLOC} (bloc) et ${DOMAINE_RACINE} (racine) existent.`,
-      { domaine },
+      `un identifiant de volume fait exactement ${IDENTIFIANT_VOLUME_OCTETS} octets.`,
+      { attendu: IDENTIFIANT_VOLUME_OCTETS },
     );
   }
-  entierBorne("generation", generation, GENERATION_MAX);
-  entierBorne("rang", rang, RANG_MAX);
-  return concatener(
-    Uint8Array.of(domaine),
-    entierEnOctets(generation, GENERATION_OCTETS),
-    entierEnOctets(rang, RANG_OCTETS),
-  );
+  let texte = "";
+  for (const octet of octets) texte += octet.toString(16).padStart(2, "0");
+  return texte;
 }
 
 /**
  * Données associées d'un bloc : l'identité logique COMPLÈTE, encodée sans ambiguïté.
  *
  * Chaque champ est de largeur fixe ou préfixé de sa longueur, si bien que deux identités distinctes
- * ne peuvent pas rendre la même chaîne d'octets. C'est la condition pour que « lier l'identité » veuille
- * dire quelque chose : une concaténation non préfixée permettrait de déplacer un caractère d'un
- * champ à l'autre sans changer les octets, donc de déplacer un bloc sans que l'étiquette bronche.
+ * ne peuvent pas rendre la même chaîne d'octets. C'est la condition pour que « lier l'identité »
+ * veuille dire quelque chose : une concaténation non préfixée permettrait de déplacer un caractère
+ * d'un champ à l'autre sans changer les octets, donc de déplacer un bloc sans que l'étiquette
+ * bronche. `tests/unit/vm-format-chiffre-identite.test.mjs` éprouve ce cas précis en réencodant sans
+ * les préfixes et en montrant la collision que le préfixe évite.
  *
  * @param {{ volume: string, formatVersion: number, generation: number, rang: number,
  *           adresse: number, longueur: number }} identite
@@ -222,10 +244,11 @@ export function encoderEnteteRacine({
  * Chaque entrée y porte son adresse, sa longueur, son rang et l'ÉTIQUETTE de son bloc scellé — pas
  * le chiffré. La raison est bon marché et se dit : sous une même clé, un même nonce et une même
  * identité, deux chiffrés distincts partageant une étiquette constituent une forgerie GCM, bornée
- * par 2^-128. La racine dit donc QUELS blocs composent la génération ; chaque bloc dit qu'il est
- * intact. Aucune des deux vérifications ne remplace l'autre.
+ * par 2^-122,6 (voir l'ADR 0015). La racine dit donc QUELS blocs composent la génération ; chaque
+ * bloc dit qu'il est intact. Aucune des deux vérifications ne remplace l'autre.
  *
- * Le nonce n'y figure pas : il se dérive de (génération, rang), tous deux déjà couverts.
+ * Le nonce n'y figure pas : il est conservé avec l'enregistrement, et l'étiquette le couvre déjà —
+ * une étiquette ne vérifie que sous le nonce qui l'a produite.
  *
  * @param {Array<{ adresse: number, longueur: number, rang: number, etiquette: Uint8Array }>} entrees
  */
@@ -255,23 +278,25 @@ export function encoderEntrees(entrees) {
 }
 
 /**
- * Refuse deux entrées de même rang dans une même génération : leur nonce serait identique.
+ * Exige des rangs STRICTEMENT CROISSANTS dans la liste d'entrées d'une génération.
  *
- * Le modèle ne peut pas vérifier l'unicité d'un rang à l'échelle d'un seul bloc — un scellement
- * isolé ne sait rien des autres. Il le peut à l'échelle de la GÉNÉRATION, quand la racine énumère
- * ses entrées, et c'est là qu'il le fait. L'obligation de l'appelant (#18) devient ainsi
- * falsifiable au lieu de rester une consigne.
+ * Depuis que le nonce est tiré au hasard, le rang ne porte plus l'unicité — mais l'ORDRE, lui, est
+ * devenu une propriété du format : la racine scelle une SUITE, et deux permutations des mêmes
+ * entrées sont deux générations différentes. Exiger la croissance stricte rend l'ordre canonique
+ * plutôt que conventionnel, et refuse du même geste le doublon de rang, qui n'a aucun sens dans un
+ * journal indexé par position.
  */
-export function verifierRangsDistincts(entrees) {
-  const vus = new Set();
+export function verifierRangsCroissants(entrees) {
+  let precedent = null;
   for (const [index, entree] of entrees.entries()) {
-    if (vus.has(entree?.rang)) {
-      throw nonceReutilise(
-        `l'entrée ${index} de cette génération reprend le rang ${entree.rang}, déjà employé.`,
-        { index, rang: entree.rang },
+    const rang = entree?.rang;
+    if (precedent !== null && rang <= precedent) {
+      throw ordreInvalide(
+        `l'entrée ${index} porte le rang ${rang}, qui ne dépasse pas le rang ${precedent} de l'entrée précédente.`,
+        { index, rang, precedent },
       );
     }
-    vus.add(entree?.rang);
+    precedent = rang;
   }
   return entrees;
 }
@@ -279,15 +304,14 @@ export function verifierRangsDistincts(entrees) {
 /**
  * Refuse un scellement au-delà du budget de la clé. Rendu tel quel sous la limite, pour qu'un
  * appelant puisse l'employer comme compteur sans dupliquer la règle.
+ *
+ * Le compteur inclut les RACINES : le § 8.3 compte « all instances of the authenticated encryption
+ * function », et une racine en est une.
  */
 export function verifierBudgetDeCle(scellementsCumules) {
   entierBorne("scellementsCumules", scellementsCumules, Number.MAX_SAFE_INTEGER);
   if (scellementsCumules >= BUDGET_SCELLEMENTS_PAR_CLE) {
-    throw new CryptoError(
-      CRYPTO_ERROR_CODES.keyBudget,
-      `Scellement refusé : ${scellementsCumules} scellements sous cette clé, budget de ${BUDGET_SCELLEMENTS_PAR_CLE} (NIST SP 800-38D, § 8.3). Poursuivre exigerait une clé de volume neuve ; continuer sortirait du domaine de validité de la primitive.`,
-      { context: { scellementsCumules, budget: BUDGET_SCELLEMENTS_PAR_CLE } },
-    );
+    throw budgetDeCle({ scellementsCumules, budget: BUDGET_SCELLEMENTS_PAR_CLE });
   }
   return scellementsCumules;
 }
@@ -295,11 +319,7 @@ export function verifierBudgetDeCle(scellementsCumules) {
 /** Refuse un nom d'algorithme autre que l'unique nom admis. L'agilité passe par une version, pas ici. */
 export function verifierAlgorithme(nom) {
   if (nom !== undefined && nom !== ALGORITHME) {
-    throw new CryptoError(
-      CRYPTO_ERROR_CODES.algorithmUnsupported,
-      `Algorithme refusé : « ${nom} ». Cette version de la spécification n'admet que « ${ALGORITHME} ». Un second algorithme exigera une version de format et un ADR.`,
-      { context: { presente: nom, admis: ALGORITHME } },
-    );
+    throw algorithmeInconnu({ presente: nom, admis: ALGORITHME });
   }
   return ALGORITHME;
 }

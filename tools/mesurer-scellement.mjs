@@ -50,7 +50,10 @@ export async function mesurer({ essais, lotMio, secteur }) {
   const cle = await importerCleDeVolume(Uint8Array.from({ length: 32 }, (_, i) => i));
   const contenu = Uint8Array.from({ length: secteur }, (_, i) => (i * 7 + 13) % 256);
   const gros = new Uint8Array(lotMio * 1024 * 1024);
-  const nonceUnique = new Uint8Array(12);
+  // Nonce NUL, et uniquement pour ce point de mesure : cet appel unique sert à isoler le coût FIXE
+  // d'un appel de \`crypto.subtle\` du coût du chiffrement lui-même, il ne produit rien qui soit
+  // conservé, et il n'a lieu qu'une fois par essai. Aucun chemin du modèle n'emploie de nonce fixe.
+  const nonceDeMesure = new Uint8Array(12);
   const releves = { scellement: [], ouverture: [], appelUnique: [] };
 
   const identite = (rang) => ({
@@ -67,19 +70,29 @@ export async function mesurer({ essais, lotMio, secteur }) {
 
     let debut = performance.now();
     for (let rang = 0; rang < blocs; rang += 1) {
-      scelles[rang] = await scellerBloc({ cle, identite: identite(rang), contenu });
+      scelles[rang] = await scellerBloc({
+        cle,
+        identite: identite(rang),
+        contenu,
+        attentes: { scellementsCumules: rang },
+      });
     }
     releves.scellement.push(performance.now() - debut);
 
     debut = performance.now();
     for (let rang = 0; rang < blocs; rang += 1) {
-      await ouvrirBloc({ cle, identite: identite(rang), scelle: scelles[rang] });
+      await ouvrirBloc({
+        cle,
+        identite: identite(rang),
+        scelle: scelles[rang],
+        attentes: { generationMinimale: null },
+      });
     }
     releves.ouverture.push(performance.now() - debut);
 
     debut = performance.now();
     await crypto.subtle.encrypt(
-      { name: ALGORITHME_WEBCRYPTO, iv: nonceUnique, tagLength: 128 },
+      { name: ALGORITHME_WEBCRYPTO, iv: nonceDeMesure, tagLength: 128 },
       cle,
       gros,
     );
