@@ -102,6 +102,18 @@ async function compteRenduExport({
  *
  * Trois gestes depuis #77, et rien d'autre : préparer la cible, verser le flux, rendre compte.
  */
+/**
+ * Manifeste que l'archive porte. Son identifiant de volume est celui du FICHIER EXPORTÉ, relu de son
+ * en-tête v3 par l'ouverture, jamais tiré à l'export : une archive décrit le volume qu'elle porte,
+ * et un identifiant neuf en décrirait un autre (ADR 0016).
+ */
+function manifesteDeLArchive(manifest, tailleSource, backend) {
+  return manifesteDuDescripteur(manifest, tailleSource, {
+    id: backend.identifiantVolume,
+    algorithm: VOLUME_ALGORITHM,
+  });
+}
+
 export async function phaseExportVolume({
   volume,
   archive,
@@ -121,12 +133,7 @@ export async function phaseExportVolume({
   const stockageAvant = await instantaneStockage();
   let result;
   try {
-    // L'archive décrit le volume QU'ELLE PORTE : son identifiant est celui du fichier exporté,
-    // relu de son en-tête v3, jamais tiré à l'export (ADR 0016).
-    const m = manifesteDuDescripteur(manifest, source.size, {
-      id: backend.identifiantVolume,
-      algorithm: VOLUME_ALGORITHM,
-    });
+    const m = manifesteDeLArchive(manifest, source.size, backend);
     result = await writeArchive({
       source,
       sink,
