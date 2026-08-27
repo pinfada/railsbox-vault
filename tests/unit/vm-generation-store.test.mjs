@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildPattern } from "../../src/vm/block-fixture.mjs";
+import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import {
-  ENTETE_OCTETS,
+  SURCOUT_ENREGISTREMENT,
   ZONE_ENREGISTREMENTS,
-  crc32,
   encoderRacine,
   offsetDeRacine,
 } from "../../src/vm/generation-format.mjs";
@@ -17,16 +17,29 @@ import {
 } from "../../src/vm/generation-store.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { createOpfsMigrationTarget } from "../../src/vm/opfs-migration-target.mjs";
+import { libererVolume } from "../../src/vm/opfs-volume-registry.mjs";
+import { Scellement } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
+import { identifiantVolumeEnOctets } from "../../src/vm/volume-chiffre-format.mjs";
 
-// Machine d'état d'une génération (#16, ADR 0014).
+// Machine d'état d'une génération (#16, ADR 0014 ; #18, ADR 0016).
 //
-// Le magasin ne connaît ni OPFS ni v86 : il reçoit le handle du journal voisin et une fonction qui
-// lit et écrit le VOLUME. C'est ce qui permet d'éprouver ici, sous Node, exactement le code que le
-// Worker exécute sur le vrai support.
+// Le magasin ne connaît ni OPFS ni v86 : il reçoit le handle du journal voisin, un SCELLEMENT, et
+// deux fonctions qui lisent et écrivent le VOLUME. C'est ce qui permet d'éprouver ici, sous Node,
+// exactement le code que le Worker exécute sur le vrai support.
+//
+// Depuis #18, le volume que ces épreuves simulent est le volume DÉCHIFFRÉ : la couche chiffrée vit
+// au-dessus (`volume-chiffre.mjs`, éprouvée par `vm-volume-chiffre.test.mjs`), et ce qui est mesuré
+// ici reste la machine d'état — dépôt, validation, rangement, récupération.
 
 const TAILLE_VOLUME = 32 * 512;
+const IDENTIFIANT = "0123456789abcdef0123456789abcdef";
+
+/** Un scellement neuf sous la clé de TEST. Chaque magasin a le sien, comme en production. */
+function scellementDEpreuve(volume = IDENTIFIANT) {
+  return Scellement.ouvrir({ volume, cleOctets: CLE_DE_TEST, formatVersion: 3 });
+}
 
 /** Support jetable : un volume en mémoire et un handle de journal issu du double calibré. */
 function creerSupport(tailleVolume = TAILLE_VOLUME) {
@@ -40,8 +53,8 @@ function creerSupport(tailleVolume = TAILLE_VOLUME) {
     plusGrandeEcritureVolume: 0,
     /** Armé par un test pour couper le point de contrôle APRÈS la recopie et AVANT le vidage. */
     echouerBarriereVolume: false,
-    lireVolume: (offset, longueur) => volume.slice(offset, offset + longueur),
-    ecrireVolume: (offset, octets) => {
+    lireVolume: async (offset, longueur) => volume.slice(offset, offset + longueur),
+    ecrireVolume: async (offset, octets) => {
       support.plusGrandeEcritureVolume = Math.max(
         support.plusGrandeEcritureVolume,
         octets.byteLength,
@@ -102,6 +115,7 @@ async function ouvrirMagasin(support, nom = "vol.gen", { enveloppe = (h) => h, .
     volume: "vol",
     handle,
     tailleVolume: support.tailleVolume,
+    scellement: await scellementDEpreuve(),
     ...reste,
     lireVolume: support.lireVolume,
     ecrireVolume: support.ecrireVolume,
@@ -131,7 +145,7 @@ test("une écriture déposée n'atteint pas le volume avant la validation, mais 
   // Le VOLUME porte encore l'ancien état : la génération n'est pas validée.
   assert.deepEqual([...support.volume.subarray(0, 512)], [...ancien]);
   // Mais l'écrivain relit ce qu'il vient d'écrire : v86 attend cette cohérence de session.
-  assert.deepEqual([...magasin.lire(0, 512)], [...nouveau]);
+  assert.deepEqual([...(await magasin.lire(0, 512))], [...nouveau]);
 });
 
 test("la validation rend la génération visible, et elle seule", async () => {
@@ -189,19 +203,23 @@ test("une génération validée dont la charge est abîmée est REFUSÉE, jamais
   await premier.valider();
   support.magasin.abandon("vol.gen");
 
-  // Un octet de la charge du journal est retourné : la racine reste valide, la charge non.
+  // Un octet du CHIFFRÉ du premier enregistrement est retourné : la racine reste décodable, son
+  // étiquette aussi — c'est celle de l'enregistrement qui ne vérifie plus. Depuis #18 le refus est
+  // donc `VAULT_STORAGE_SCEAU_REFUSE` et non `GENERATION_CORRUPT` : la cause n'est pas établie, et
+  // le message le dit plutôt que d'inventer un diagnostic (ADR 0015, ADR 0016 décision 9).
   const handle = await support.magasin.openHandle("vol.gen");
   const octet = new Uint8Array(1);
-  handle.read(octet, { at: ZONE_ENREGISTREMENTS + 32 });
+  const cible = ZONE_ENREGISTREMENTS + SURCOUT_ENREGISTREMENT + 32;
+  handle.read(octet, { at: cible });
   octet[0] ^= 0xff;
-  handle.write(octet, { at: ZONE_ENREGISTREMENTS + 32 });
+  handle.write(octet, { at: cible });
   handle.close();
 
   await assert.rejects(
     () => ouvrirMagasin(support),
     (erreur) => {
-      assert.ok(isStorageError(erreur, STORAGE_ERROR_CODES.generationCorrupt));
-      assert.match(erreur.message, /génération/i);
+      assert.ok(isStorageError(erreur, STORAGE_ERROR_CODES.sceauRefuse), erreur.code);
+      assert.match(erreur.message, /aucun clair n'est rendu/i);
       return true;
     },
   );
@@ -240,7 +258,7 @@ test("une écriture non alignée sur le secteur est complétée par relecture, p
   const magasin = await ouvrirMagasin(support);
 
   await magasin.deposer(100, Uint8Array.from([1, 2, 3, 4]));
-  const relu = magasin.lire(0, 512);
+  const relu = await magasin.lire(0, 512);
   assert.deepEqual([...relu.subarray(100, 104)], [1, 2, 3, 4]);
   assert.deepEqual([...relu.subarray(0, 100)], [...ancien.subarray(0, 100)]);
   assert.deepEqual([...relu.subarray(104)], [...ancien.subarray(104)]);
@@ -314,6 +332,7 @@ test("le journal borné refuse la génération démesurée au lieu de la publier
     volume: "vol",
     handle,
     tailleVolume: TAILLE_VOLUME,
+    scellement: await scellementDEpreuve(),
     lireVolume: support.lireVolume,
     ecrireVolume: support.ecrireVolume,
     barriereVolume: support.barriereVolume,
@@ -371,21 +390,35 @@ test("un journal VIERGE et vide n'est pas une avarie, et n'écrit RIEN", async (
 test("entre deux racines VALIDES, la séquence la plus haute fait autorité", async () => {
   // MEDIUM-4 de la revue : la règle était jusqu'ici attrapée par accident, via la longueur de charge.
   // Ici les deux racines sont valides et scellent la MÊME charge ; seule la séquence les départage.
+  //
+  // Les deux racines sont réellement SCELLÉES sous la clé de TEST : une racine forgée à la main
+  // serait refusée par son étiquette avant que la séquence n'ait eu à départager quoi que ce soit,
+  // et l'épreuve mesurerait alors le refus, pas l'autorité.
   const support = creerSupport();
   const handle = await support.magasin.openHandle("vol.gen");
-  const charge = new Uint8Array(0);
-  const racine = (sequence, generation) =>
-    encoderRacine({
+  const scellement = await scellementDEpreuve();
+  const racine = async (sequence, generation) => {
+    const scelle = await scellement.scellerRacine(
+      { sequence, generation, tailleVolume: TAILLE_VOLUME },
+      [],
+      { sequencePrecedente: null },
+    );
+    return encoderRacine({
       sequence,
       generation,
       tailleVolume: TAILLE_VOLUME,
-      enregistrements: 0,
+      nombreEntrees: 0,
       longueurCharge: 0,
-      sommeCharge: crc32(charge),
+      identifiantVolume: identifiantVolumeEnOctets(IDENTIFIANT),
+      scellementsCumules: scelle.entete.scellementsCumules,
+      nonce: scelle.nonce,
+      chiffre: scelle.chiffre,
+      etiquette: scelle.etiquette,
     });
+  };
   handle.truncate(ZONE_ENREGISTREMENTS);
-  handle.write(racine(8, 4), { at: offsetDeRacine(0) });
-  handle.write(racine(9, 5), { at: offsetDeRacine(1) });
+  handle.write(await racine(8, 4), { at: offsetDeRacine(0) });
+  handle.write(await racine(9, 5), { at: offsetDeRacine(1) });
   handle.close();
 
   const magasin = await ouvrirMagasin(support);
@@ -413,38 +446,29 @@ test("la cible de MIGRATION ouvre transactionnellement : une génération en att
   const nom = "vol-migre";
   const octetsVolume = 8 * 512;
   const nouveau = buildPattern(512, 4242);
+  const ouvrirVolume = (options) =>
+    openOpfsVolume({
+      ...options,
+      cle: CLE_DE_TEST,
+      openHandle: magasin.openHandle,
+      // Un seuil hors de portée : la barrière VALIDE la génération sans la ranger, ce qui est
+      // exactement l'état que la migration doit trouver.
+      seuilPointDeControle: 1024 * 1024,
+    });
 
-  // Une session valide une génération puis meurt sans point de contrôle : les octets ne sont que
-  // dans le journal voisin. Le magasin est piloté directement pour que la mort soit RÉELLE — pas de
-  // fermeture propre, donc pas de rangement.
-  const handleVolume = await magasin.openHandle(nom);
-  handleVolume.truncate(octetsVolume);
-  const handleJournal = await magasin.openHandle(`${nom}.gen`);
-  const store = await GenerationStore.ouvrir({
-    volume: nom,
-    handle: handleJournal,
-    tailleVolume: octetsVolume,
-    lireVolume: (offset, longueur) => {
-      const cible = new Uint8Array(longueur);
-      handleVolume.read(cible, { at: offset });
-      return cible;
-    },
-    ecrireVolume: (offset, octets) => handleVolume.write(octets, { at: offset }),
-  });
-  await store.deposer(0, nouveau);
-  await store.valider();
+  // Une session valide une génération puis MEURT sans point de contrôle : les octets ne sont que
+  // dans le journal voisin. Pas de fermeture propre, donc pas de rangement.
+  const premier = await ouvrirVolume({ name: nom, size: octetsVolume });
+  await premier.write(0, nouveau);
+  await premier.flush();
   magasin.abandon(nom);
   magasin.abandon(`${nom}.gen`);
-  assert.notDeepEqual(
-    [...magasin.snapshot(nom).subarray(0, 512)],
-    [...nouveau],
-    "le volume ne porte pas encore la génération : elle n'est que dans le journal",
-  );
+  libererVolume(nom);
 
   // La cible de migration ouvre le volume. La récupération doit rejouer la génération validée.
   const cible = createOpfsMigrationTarget(nom, {
     stat: () => Promise.resolve({ present: true, size: octetsVolume }),
-    openVolume: (options) => openOpfsVolume({ ...options, openHandle: magasin.openHandle }),
+    openVolume: ouvrirVolume,
   });
   const backend = await cible.open({ size: octetsVolume });
   try {
@@ -469,7 +493,9 @@ const VOLUME_BANC = 8 * 1024 * 1024;
 /** Taille d'un enregistrement déposé. Un ordre de grandeur d'écriture de guest. */
 const ENREGISTREMENT_BANC = 64 * 1024;
 /** Nombre d'enregistrements que le plafond du banc laisse déposer. */
-const ENREGISTREMENTS_BANC = Math.floor(PLAFOND_BANC / (ENREGISTREMENT_BANC + ENTETE_OCTETS));
+const ENREGISTREMENTS_BANC = Math.floor(
+  PLAFOND_BANC / (ENREGISTREMENT_BANC + SURCOUT_ENREGISTREMENT),
+);
 
 /** Dépose la charge du banc dans un magasin ouvert. Rend les octets déposés. */
 async function remplirLeBanc(magasin) {
@@ -564,11 +590,24 @@ test("la récupération rejoue en FLUX : sa surmémoire de pointe ne suit pas la
   second.close();
 });
 
-test("un enregistrement PLUS GRAND que le tampon est rejoué par tranches, sans être tenu entier", async () => {
+test("un enregistrement PLUS GRAND que le tampon est LU par tranches, et sa borne a changé", async () => {
   // Le cas que la fenêtre glissante doit tenir : un seul enregistrement dépasse le tampon, si bien
-  // qu'il est relu, sommé et recopié EN PLUSIEURS FOIS. Rien dans le format ne borne la taille d'un
-  // enregistrement — c'est la taille d'une écriture du guest —, et un magasin qui supposerait qu'un
-  // enregistrement tient dans son tampon échouerait sur la première écriture groupée un peu large.
+  // qu'il est relu EN PLUSIEURS FOIS. Rien dans le format ne borne la taille d'un enregistrement —
+  // c'est la taille d'une écriture du guest —, et un magasin qui supposerait qu'un enregistrement
+  // tient dans son tampon échouerait sur la première écriture groupée un peu large.
+  //
+  // **Ce que #18 change, et qu'il faut écrire plutôt que laisser découvrir.** Une étiquette
+  // AES-GCM couvre l'enregistrement ENTIER : on ne peut pas en ouvrir la moitié, et rendre des
+  // octets avant d'avoir vérifié l'étiquette serait exactement le clair partiel que le format
+  // refuse. La LECTURE du journal reste donc bornée par le tampon, mais le CLAIR d'un
+  // enregistrement est tenu entier le temps de son rejeu, et l'écriture du volume l'est aussi. La
+  // borne de la récupération n'est plus « le tampon », elle est « le plus grand ENREGISTREMENT ».
+  //
+  // C'est une limite nommée par l'ADR 0016 (limite 6) et non une régression découverte : au plafond
+  // de charge de 64 Mio, un enregistrement unique de cette taille tiendrait 128 Mio en mémoire
+  // (chiffré et clair), au-delà du budget de surmémoire de `docs/quality-attributes.md`. Le relevé
+  // de bout en bout mesure des écritures de guest de 512 o à 64 Kio ; borner la taille d'un
+  // enregistrement — ou le découper — relève de #91, pas de cette tranche.
   const grand = TAMPON_RELECTURE_OCTETS + 512 * 1024;
   const support = creerSupport(VOLUME_BANC);
   const premier = await ouvrirMagasin(support, "vol.gen", OPTIONS_BANC);
@@ -588,14 +627,20 @@ test("un enregistrement PLUS GRAND que le tampon est rejoué par tranches, sans 
 
   assert.equal(second.rapport.etat, GENERATION_ETATS.rejouee);
   assert.equal(second.rapport.enregistrementsRejoues, 2);
-  assert.ok(
-    support.plusGrandeEcritureVolume <= TAMPON_RELECTURE_OCTETS,
-    `plus grande écriture du volume ${support.plusGrandeEcritureVolume}`,
-  );
+  // La LECTURE du journal reste bornée par le tampon : la fenêtre glissante fait son travail.
   assert.ok(
     compte.plusGrandeLecture <= TAMPON_RELECTURE_OCTETS,
     `plus grande lecture ${compte.plusGrandeLecture}`,
   );
+  // L'ÉCRITURE du volume, elle, est bornée par le plus grand ENREGISTREMENT — pas par la charge.
+  // La distinction compte : la première borne est une constante du magasin, la seconde suit la
+  // demande du guest, et c'est celle-là qu'il faut surveiller (limite 6 de l'ADR 0016).
+  assert.equal(
+    support.plusGrandeEcritureVolume,
+    grand,
+    "le rejeu écrit un enregistrement entier à la fois",
+  );
+  assert.ok(support.plusGrandeEcritureVolume < premier.chargeMaxDeposeeOctets);
   assert.deepEqual([...support.volume.subarray(0, grand)], [...buildPattern(grand, 42)]);
   assert.deepEqual([...support.volume.subarray(VOLUME_BANC - 512)], [...buildPattern(512, 43)]);
   second.close();
@@ -618,7 +663,7 @@ test("la plus grande génération validée est retenue, même après un point de
   await magasin.deposer(ENREGISTREMENT_BANC, buildPattern(ENREGISTREMENT_BANC, 2));
   await magasin.valider();
   const grande = magasin.chargeMaxValideeOctets;
-  assert.equal(grande, 2 * (ENREGISTREMENT_BANC + ENTETE_OCTETS));
+  assert.equal(grande, 2 * (ENREGISTREMENT_BANC + SURCOUT_ENREGISTREMENT));
 
   // Le rangement remet la charge validée à zéro. La haute eau, elle, ne bouge pas.
   await magasin.pointDeControle();
@@ -640,7 +685,7 @@ test("la plus grande génération validée est retenue, même après un point de
     await magasin.deposer(rang * ENREGISTREMENT_BANC, buildPattern(ENREGISTREMENT_BANC, rang + 4));
   }
   await magasin.valider();
-  assert.equal(magasin.chargeMaxValideeOctets, 3 * (ENREGISTREMENT_BANC + ENTETE_OCTETS));
+  assert.equal(magasin.chargeMaxValideeOctets, 3 * (ENREGISTREMENT_BANC + SURCOUT_ENREGISTREMENT));
   magasin.close();
 });
 
@@ -658,7 +703,7 @@ test("la charge DÉPOSÉE a sa propre haute eau, et c'est elle que le plafond bo
   // Une seule barrière, TÔT : la génération validée ne vaut qu'un enregistrement.
   await magasin.deposer(0, buildPattern(ENREGISTREMENT_BANC, 1));
   await magasin.valider();
-  const uneGeneration = ENREGISTREMENT_BANC + ENTETE_OCTETS;
+  const uneGeneration = ENREGISTREMENT_BANC + SURCOUT_ENREGISTREMENT;
   assert.equal(magasin.chargeMaxValideeOctets, uneGeneration);
 
   // Puis neuf écritures SANS barrière. Rien de plus n'est validé ; le journal, lui, enfle.
