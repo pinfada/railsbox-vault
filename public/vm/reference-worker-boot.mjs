@@ -377,6 +377,15 @@ function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline })
     observedAttachmentSha256: observed.attachment?.sha256 ?? null,
     conforming,
     recuperation: montage.recuperation,
+    // Plus grande génération VALIDÉE par le guest pendant ce boot, en octets. `recuperation`, elle,
+    // dit ce qu'une OUVERTURE a trouvé ; ce chiffre-ci dit ce que le GUEST a produit (#91) — la
+    // mesure qui manquait pour calibrer le plafond de charge sur autre chose qu'une analogie.
+    //
+    // Il se lit APRÈS la fermeture du backend, et c'est licite : `close()` range la génération
+    // validée puis ferme le handle, mais le magasin reste attaché au backend et sa haute eau est un
+    // compteur, pas une ressource. Un backend sans magasin — volume non transactionnel — rend `null`,
+    // qui se distingue d'un zéro « aucune barrière acquittée ».
+    generationMaxOctets: montage.backend.generation?.chargeMaxValideeOctets ?? null,
     counts: montage.journal.counts(),
     failures: montage.failures,
     observationsRuntime: [...deroule.observations, ...lireRejets()],

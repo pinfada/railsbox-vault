@@ -15,6 +15,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { PLAFOND_CHARGE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { expect, test } from "./contexte-persistant.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -278,6 +279,20 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
   await session.page.close();
   expect(echecTemoin, "un volume OPFS vide ne doit jamais rendre l'invariant").not.toBeNull();
 
+  // #91 — LA DEMANDE RÉELLE DU GUEST, boot à chaud et reprises à froid.
+  //
+  // `generationMaxOctets` est la plus grande charge que Rails ait fait VALIDER entre deux barrières
+  // pendant ce boot. Deux lignes, et elles ne disent pas la même chose : la première mesure que le
+  // relevé a bien eu lieu — un `null` signifierait un volume ouvert sans magasin de génération, et
+  // toute la statistique serait muette sans que rien ne rougisse ; la seconde est la propriété, à
+  // savoir qu'aucun boot de l'image de référence n'approche le plafond. Le jour où elle rougit,
+  // c'est `VAULT_STORAGE_GENERATION_OVERFLOW` qui attend le guest, et le plafond qui doit être revu.
+  const generationsMax = [live, ...reprises].map((r) => r.generationMaxOctets);
+  for (const [rang, octets] of generationsMax.entries()) {
+    expect(octets, `boot ${rang} — le relevé de génération a bien eu lieu`).not.toBeNull();
+    expect(octets, `boot ${rang} — génération sous le plafond`).toBeLessThan(PLAFOND_CHARGE_OCTETS);
+  }
+
   // Mesures publiées (docs/quality-attributes.md : cible reprise p95 ≤ 60 s).
   const reprisesMs = reprises.map((r) => r.healthMilliseconds);
   const mesures = {
@@ -317,6 +332,14 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
     repriseRythme: reprises.map((r) => r.rythme),
     repriseBoucle: reprises.map((r) => r.boucleOrdonnancement),
     memoireTasJs: derniereMemoire,
+    // LA PLUS GRANDE GÉNÉRATION que l'image de référence produit, en octets — boot à chaud puis
+    // chaque reprise à froid. C'est la mesure qui manquait pour calibrer `PLAFOND_CHARGE_OCTETS` sur
+    // la demande RÉELLE du guest au lieu du seul budget de récupération (#91, ADR 0014 § Limites).
+    generationMaxOctets: {
+      live: live.generationMaxOctets,
+      reprises: reprises.map((r) => r.generationMaxOctets),
+      plafondOctets: PLAFOND_CHARGE_OCTETS,
+    },
     cible: { repriseP95Ms: 60_000 },
   };
   mkdirSync(DOSSIER_RAPPORTS, { recursive: true });

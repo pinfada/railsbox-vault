@@ -188,6 +188,15 @@ export class GenerationStore {
   #rapport = null;
   /** Plus grande allocation que la RÉCUPÉRATION a faite pour elle-même. Publiée, jamais supposée. */
   #surmemoireMax = 0;
+  /**
+   * Plus grande charge que ce magasin ait VALIDÉE, en octets. Haute eau, jamais remise à zéro.
+   *
+   * Elle existe pour calibrer `PLAFOND_CHARGE_OCTETS` sur la demande réelle d'un guest au lieu d'une
+   * analogie (#91, ADR 0014 § Limites). Le point de contrôle remet `#longueurValidee` à zéro à
+   * chaque rangement : sans ce compteur, la taille de la plus grande génération d'un boot ne serait
+   * lisible nulle part — seule la DERNIÈRE survivrait, dans le rapport de la prochaine ouverture.
+   */
+  #chargeMaxValidee = 0;
 
   constructor(options) {
     this.#volume = options.volume;
@@ -243,6 +252,18 @@ export class GenerationStore {
   /** Octets de charge déposés depuis le dernier point de contrôle. */
   get octetsDeCharge() {
     return this.#longueurCharge;
+  }
+
+  /**
+   * Plus grande génération que ce magasin ait validée, en octets. Zéro si aucune barrière n'a scellé
+   * quoi que ce soit.
+   *
+   * C'est la mesure qui calibre le plafond : ce qu'un guest demande RÉELLEMENT entre deux barrières.
+   * Elle ne compte que les générations validées par CETTE session ; celle qu'une ouverture rejoue est
+   * publiée à part, par `rapport.octetsRejoues`.
+   */
+  get chargeMaxValideeOctets() {
+    return this.#chargeMaxValidee;
   }
 
   // ---------------------------------------------------------------- support
@@ -651,6 +672,11 @@ export class GenerationStore {
     this.#longueurValidee = this.#longueurCharge;
     this.#enregistrementsValides = this.#enregistrements;
     this.#sommeValidee = this.#sommeCharge;
+    // HAUTE EAU, posée APRÈS le succès de la racine : seule une génération réellement scellée
+    // compte. La poser avant ferait entrer dans la statistique une charge que le support a refusée.
+    if (this.#longueurValidee > this.#chargeMaxValidee) {
+      this.#chargeMaxValidee = this.#longueurValidee;
+    }
     return this.#generation;
   }
 
