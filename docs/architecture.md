@@ -396,22 +396,27 @@ Quatre gestes, sur des structures en mémoire, dans `src/vm/format-chiffre/` :
 - **`scellerRacine` / `ouvrirRacine`** — l'en-tête de la racine est les données associées, et
   l'empreinte SHA-256 de la **suite ordonnée** des entrées est le clair. Cet ordre décide de ce que
   le modèle a le droit d'affirmer : l'étiquette vérifie d'abord, ce qui rend l'en-tête AUTHENTIQUE,
-  et rejeu, troncature et mélange ne sont classés qu'ensuite. C'est `SEC-GEN-001`.
+  et rejeu, troncature et mélange ne sont classés qu'ensuite. C'est `SEC-GEN-001` ;
+- **`rescellerEnSecteurs`** — ce que le POINT DE CONTRÔLE de l'ADR 0014 exige. Le journal scelle des
+  enregistrements de longueur quelconque, le volume est adressé au secteur : le rangement rescelle
+  donc secteur par secteur, avec un nonce neuf. Un enregistrement non aligné est refusé plutôt que
+  complété.
 
-**Le nonce ne porte pas l'adresse**, et c'est le choix qui commande tout le reste. L'ADR 0014
-autorise la réécriture d'un même bloc dans une même génération ; un nonce construit sur (génération,
-adresse) s'y répéterait, ce qui sous GCM livre le XOR des clairs et la clé d'authentification. Le
-nonce porte donc (domaine, génération, **rang de l'entrée**) sur 96 bits. Le budget de 2^32
-scellements par clé du § 8.3 de NIST SP 800-38D est **compté**, pas supposé lointain : c'est 4 096
-réécritures complètes du volume applicatif, et son dépassement est un refus typé.
+**Le nonce est TIRÉ AU HASARD**, douze octets de `crypto.getRandomValues`, et conservé avec chaque
+objet scellé. Une première version le dérivait de (génération, rang) ; une revue l'a réfutée par
+exécution contre `generation-store.mjs`, où une fermeture PROPRE avec un dépôt non validé suffisait
+à réémettre un nonce. La leçon est écrite dans l'ADR : tout nonce dérivé d'un état DURABLE est
+réémis dès que cet état recule, et un système conçu pour survivre aux coupures en fait reculer. Le
+budget par clé est fixé à **2^31** — la moitié du plafond du § 8.3 de NIST SP 800-38D —, parce que
+le compteur qui le suit vit dans la racine et recule lui aussi ; son dépassement est un refus typé.
 
-**Ce sera un format de volume v3**, annoncé ici et non créé : un secteur du volume coûtera 28 octets
-de plus (nonce 12 + étiquette 16, soit 5,469 %), rangés dans une région d'authentification en tête
-du fichier ; un enregistrement du journal coûtera 16 octets (l'étiquette seule, le nonce y étant
-dérivable) ; la racine ne coûtera **aucun octet de plus** — son en-tête passe de 60 à 136 octets
-dans le secteur déjà alloué, et le CRC-32 disparaît. Le manifeste devra gagner un **identifiant de
-volume**, qui n'existe pas en v2. Les impacts sur les ADR 0007, 0008, 0011 et 0014 sont listés dans
-l'ADR 0015 ; aucun n'est modifié par cette tranche.
+**Ce sera un format de volume v3**, annoncé ici et non créé : un secteur du volume coûtera 34 octets
+de plus (nonce 12 + étiquette 16 + génération 6, soit 6,641 %), rangés dans une région
+d'authentification en tête du fichier ; un enregistrement du journal coûtera 28 octets (nonce et
+étiquette, la génération y étant celle de la racine) ; la racine ne coûtera **aucun octet de plus**
+— son en-tête passe de 60 à 136 octets dans le secteur déjà alloué, et le CRC-32 disparaît. Le
+manifeste devra gagner un **identifiant de volume**, qui n'existe pas en v2. Les impacts sur les ADR
+0007, 0008, 0011 et 0014 sont listés dans l'ADR 0015 ; aucun n'est modifié par cette tranche.
 
 **Ce que le format ne couvre pas est écrit plutôt que déduit** : le retour arrière d'un secteur, et
 le retour arrière complet du support entre deux sessions. Voir `SECURITY.md` et l'ADR 0015.

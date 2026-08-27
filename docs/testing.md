@@ -248,30 +248,37 @@ de #16 — un juge écrit avant, et séparément.
 | spécification testable | `tests/unit/vm-format-chiffre-modele.test.mjs`   | aucun   | `npm run check` |
 | spécification testable | `tests/unit/vm-format-chiffre-vecteurs.test.mjs` | aucun   | `npm run check` |
 
-Vingt-huit épreuves, en quatre familles :
+Trente-huit épreuves, en cinq familles :
 
-1. **Non-réutilisation de nonce, ÉNUMÉRÉE.** L'épreuve ne raisonne pas sur la construction : elle
-   parcourt un espace représentatif de collisions candidates — quatre générations consécutives, 256
-   entrées chacune, **huit adresses seulement** pour que chaque bloc soit réécrit 32 fois dans une
-   même génération (le cas que l'ADR 0014 autorise), plus la racine de chaque génération — et
-   vérifie que les 1 028 nonces sont distincts. Une épreuve jumelle établit le contrat **dans
-   l'autre sens** : deux entrées de même rang produisent le MÊME nonce, ce qui rend visible que
-   l'unicité repose entièrement sur celle du rang, et fait de `scellerRacine` — qui refuse les rangs
-   en double — la pièce falsifiable.
-2. **Bornes.** Champs du nonce refusés plutôt que rebouclés en silence, et budget de 2^32
-   scellements par clé (NIST SP 800-38D § 8.3) refusé **avant** de produire un nonce, du côté du
-   bloc comme du côté de la racine.
+1. **Non-réutilisation de nonce, sur le CHEMIN DE REPRISE RÉEL**
+   (`vm-format-chiffre-reprise.test.mjs`). C'est l'épreuve qui a réfuté la première version de l'ADR
+   0015 : elle monte le vrai `GenerationStore` de l'ADR 0014 sur le double calibré, scelle au dépôt
+   comme #18 le fera, et vérifie qu'aucun nonce n'est réémis à travers deux scénarios de reprise —
+   une **fermeture propre** avec un dépôt non validé, et des racines vierges au-dessus d'une charge.
+   Avec le nonce dérivé, les deux rendaient une collision (`010000000000020000000000`,
+   `010000000000010000000000`) ; l'épreuve mesure aussi le dommage, `C1 ⊕ C2 == P1 ⊕ P2`, plutôt que
+   de l'invoquer.
+2. **Bornes.** Champs d'identité refusés plutôt que rebouclés en silence ; budget de **2^31**
+   scellements par clé refusé **avant** de produire un nonce, du côté du bloc comme du côté de la
+   racine ; racine sans compteur refusée ; séquence de racine qui ne croît pas strictement refusée,
+   message et contexte assertés ; et toute attente OUBLIÉE refusée — `undefined` n'est pas `null`,
+   parce qu'un oubli vaudrait « aucun contrôle », c'est-à-dire une défaillance ouverte.
 3. **Cinq propriétés, cinq témoins positifs, cinq refus.** Modification (un octet retourné dans le
    chiffré, l'étiquette ou le nonce), déplacement (autre adresse, autre volume, autre format, autre
    génération), rejeu (racine ET bloc antérieurs), troncature (entrée retirée ET entrée
    surnuméraire), mélange (entrée authentique d'une autre génération ET simple réordonnancement).
    Chaque refus est doublé d'un **témoin positif** : sans lui, un modèle qui refuserait tout
    passerait pour sûr.
-4. **Vecteurs figés.** `tests/vectors/format-chiffre-v1.json` porte cinq blocs et deux racines,
+4. **Point de contrôle.** Un enregistrement multi-secteurs est rescellé secteur par secteur, avec un
+   nonce NEUF par secteur et le rang épinglé du volume ; un enregistrement non aligné est refusé
+   plutôt que complété.
+5. **Vecteurs figés.** `tests/vectors/format-chiffre-v1.json` porte cinq blocs et deux racines,
    produits par `node tools/figer-vecteurs-scellement.mjs` avec une clé de TEST publique et sans
-   entropie. Le modèle doit les reproduire **octet pour octet** et les rouvrir depuis leurs seuls
-   octets publiés. Le contenu de chaque vecteur est en outre reconstruit depuis sa **règle**
-   publiée, pour qu'un vecteur ne puisse pas être « juste » par recopie de lui-même.
+   entropie. Le modèle doit les reproduire **octet pour octet** — leurs nonces y sont des DONNÉES
+   figées, puisqu'ils sont tirés — et les rouvrir depuis leurs seuls octets publiés. Le contenu de
+   chaque vecteur est en outre reconstruit depuis sa **règle** publiée, pour qu'un vecteur ne puisse
+   pas être « juste » par recopie de lui-même, et deux épreuves vérifient qu'aucun nonce n'apparaît
+   deux fois et que les compteurs de scellements comptent bien les racines.
 
 **Les vecteurs sont un contrat, pas une commodité.** Les régénérer après avoir modifié le modèle ne
 corrige rien : c'est un changement de format persistant, qui exige une version et un ADR. Que
