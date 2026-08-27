@@ -309,16 +309,15 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   expect(bootApresMigration.usedSnapshot, "aucun instantané mémoire").toBe(false);
   expect(bootApresMigration.failures, "aucune panne de support absorbée").toEqual([]);
   expect(bootApresMigration.conforming, "invariant conforme après migration").toBe(true);
-  // #91 — la plus grande génération validée sur le volume migré, relevée puis confrontée au plafond.
-  // La première ligne garantit que le relevé a bien eu lieu : sans elle, un `null` rendrait la
-  // seconde vraie sans rien mesurer.
+  // #91 — la charge que le guest a présentée au journal sur le volume MIGRÉ, confrontée au plafond.
+  // C'est la charge DÉPOSÉE que `PLAFOND_CHARGE_OCTETS` borne, pas la génération validée : `deposer`
+  // refuse dès que ce qui s'est accumulé depuis le dernier point de contrôle dépasse le plafond,
+  // qu'une barrière soit passée ou non. La première ligne garantit que le relevé a eu lieu ; sans
+  // elle, un `null` rendrait la seconde vraie sans rien mesurer.
+  expect(bootApresMigration.generation.deposeeMaxOctets, "relevé effectué").not.toBeNull();
   expect(
-    bootApresMigration.generationMaxOctets,
-    "le relevé de génération a eu lieu",
-  ).not.toBeNull();
-  expect(
-    bootApresMigration.generationMaxOctets,
-    "génération sous le plafond après migration",
+    bootApresMigration.generation.deposeeMaxOctets,
+    "charge sous le plafond après migration",
   ).toBeLessThan(PLAFOND_CHARGE_OCTETS);
   expect(bootApresMigration.observedRecordId).toBe(contrat.record.id);
   expect(bootApresMigration.observedAttachmentSha256).toBe(contrat.attachment.sha256);
@@ -373,11 +372,11 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
       sansInstantane: bootApresMigration.usedSnapshot === false,
       invariant: bootApresMigration.invariantStatus,
     },
-    // #91 — la plus grande génération que le guest ait fait valider sur le volume MIGRÉ. Le scénario
-    // de migration est celui où Rails a le plus à écrire d'un coup, et c'est pour cela qu'il compte
-    // dans la calibration du plafond.
-    generationMaxOctets: {
-      bootApresMigration: bootApresMigration.generationMaxOctets,
+    // #91 — ce que le guest a demandé au journal sur le volume MIGRÉ. `deposee` est la grandeur que
+    // le plafond borne ; `validee` est la plus grande génération scellée par une barrière.
+    generation: {
+      deposeeMaxOctets: bootApresMigration.generation.deposeeMaxOctets,
+      valideeMaxOctets: bootApresMigration.generation.valideeMaxOctets,
       plafondOctets: PLAFOND_CHARGE_OCTETS,
     },
   };

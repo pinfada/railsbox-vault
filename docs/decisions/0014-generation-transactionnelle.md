@@ -542,6 +542,36 @@ Trois faits bornent ce choix, et aucun n'est une préférence :
    référence — 90 304 octets, scénario Bout en bout de #16.
 3. **La surmémoire ne bouge pas avec lui.** Elle vaut 1 Mio à 16 Mio de charge comme à 64.
 
+### Ce que le guest encaisse, et pourquoi 16 Mio ne le met pas en danger
+
+Abaisser le plafond n'est pas gratuit : c'est la frontière au-delà de laquelle une écriture du guest
+est REFUSÉE. Un guest qui déposerait plus de 16 Mio sans jamais franchir de barrière reçoit
+`VAULT_STORAGE_GENERATION_OVERFLOW`, que l'adaptateur v86 traduit en **erreur d'E/S ATA**. Pour
+Linux, c'est un disque qui refuse d'écrire : le système de fichiers passe en lecture seule, et
+SQLite échoue sa transaction. Bruyant, typé, et sans perte silencieuse — mais bloquant.
+
+`SEC-DURABLE-001` n'est **pas** affaibli pour autant, et l'inverse mérite d'être dit clairement :
+cet invariant interdit d'annoncer durable ce qui ne l'est pas, et une écriture refusée n'est
+annoncée durable à personne. Ce qui bouge est la surface du refus, pas la promesse. `SECURITY.md`
+porte la même phrase, pour que la lecture sécurité et la lecture stockage ne divergent pas.
+
+Reste la question qui décide : **Rails et SQLite franchissent-ils des barrières assez souvent ?** Le
+plafond ne mord que sur une génération, c'est-à-dire sur ce qui s'accumule ENTRE deux `fsync`. Le
+relevé du 2026-08-27 y répond par la mesure, pas par le raisonnement — `generationMaxOctets` est
+désormais publié par chaque boot de bout en bout :
+
+@TABLEAU_GENERATIONS@
+
+@VERDICT_GENERATIONS@
+
+**Ce que ce relevé ne couvre pas.** `rails db:seed` et les migrations de schéma ne tournent pas au
+boot : l'image de référence les exécute à la CONSTRUCTION, dans Docker, hors du backend de blocs.
+Une application qui sèmerait ou migrerait au démarrage écrirait davantage d'un coup, et personne ne
+l'a mesurée. Le plafond reste donc un garde-fou **révisable**, et le signal qui déclencherait sa
+révision est nommé : **un seul `VAULT_STORAGE_GENERATION_OVERFLOW` observé en E2E** — les trois
+scénarios l'assertent désormais à chaque exécution, et leur assertion rougira avant qu'un
+utilisateur ne le rencontre.
+
 ### Ce que cet amendement ne mesure toujours pas
 
 **La plus grande génération que l'image de référence puisse produire reste inconnue.** Le plafond

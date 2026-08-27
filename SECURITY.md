@@ -171,6 +171,15 @@ et tester.
   l'authentification des blocs (`SEC-BLOCK-001`, jalon 4) et la reprise complète après fermeture
   (#7) ;
 
+  **#91 abaisse le plafond de charge d'une génération de 64 à 16 Mio, et cet invariant n'en est pas
+  affaibli.** Un guest qui écrirait plus de 16 Mio sans jamais franchir de barrière reçoit
+  `VAULT_STORAGE_GENERATION_OVERFLOW`, qui devient une erreur d'E/S ATA : un REFUS, bruyant et typé.
+  C'est le contraire d'une promesse non tenue — `SEC-DURABLE-001` interdit d'annoncer durable ce qui
+  ne l'est pas, et une écriture refusée n'est annoncée durable à personne. Ce qui change est la
+  SURFACE du refus, pas la promesse ; le plafond est désormais calibré sur le budget de récupération
+  de `docs/quality-attributes.md` et confronté à ce que l'image de référence demande réellement
+  (amendement du 2026-08-27 de l'ADR 0014) ;
+
 - `SEC-UPDATE-001` — runtime et application sont identifiés et vérifiés avant d'ouvrir le volume en
   écriture. #10 en a écrit la règle — `assertVolumeWritable` refuse un volume sans manifeste
   identifiable (`VAULT_MANIFEST_UNIDENTIFIED`) — mais aucun chemin de production ne l'appelait :
