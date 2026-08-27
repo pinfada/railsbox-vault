@@ -45,6 +45,7 @@ import {
   ZONE_ENREGISTREMENTS,
   encoderEnteteEnregistrement,
   encoderRacine,
+  longueurPhysiqueDeCharge,
   offsetDeRacine,
   racineDeSequence,
 } from "./generation-format.mjs";
@@ -114,8 +115,8 @@ export class GenerationStore {
   #scelleDeLaRacine = null;
   #scellementsDeLaRacine = 0;
   /**
-   * Plus grande charge que ce magasin ait VALIDÉE, en octets de clair. Haute eau, jamais remise à
-   * zéro.
+   * Plus grande charge que ce magasin ait VALIDÉE, en octets OCCUPÉS SUR LE SUPPORT — en-têtes et
+   * sceaux compris, comme en v2. Haute eau, jamais remise à zéro.
    *
    * C'est la taille de la plus grande GÉNÉRATION — ce qu'un guest fait sceller entre deux barrières.
    * Le point de contrôle remet la charge validée à zéro à chaque rangement : sans ce compteur, seule
@@ -262,10 +263,14 @@ export class GenerationStore {
     const enregistrements = await this.#rejouerCharge(racine);
     await this.#barriereVolume();
     await this.#vider({ sequence: racine.sequence, generation: racine.generation });
+    // Les deux chiffres publiés comptent les octets OCCUPÉS SUR LE SUPPORT, en-têtes et sceaux
+    // compris : c'est la grandeur que `chargePresente` mesure, et les mélanger avec la longueur des
+    // clairs que la racine authentifie rendrait « écartés » négatif sur une charge complète.
+    const rejoues = longueurPhysiqueDeCharge(racine);
     return this.#rapportDe(GENERATION_ETATS.rejouee, {
-      octetsEcartes: Math.max(0, chargePresente - racine.longueurCharge),
+      octetsEcartes: Math.max(0, chargePresente - rejoues),
       enregistrementsRejoues: enregistrements,
-      octetsRejoues: racine.longueurCharge,
+      octetsRejoues: rejoues,
     });
   }
 
@@ -528,8 +533,8 @@ export class GenerationStore {
     );
     // HAUTE EAU, posée APRÈS le succès de la racine : seule une génération réellement scellée
     // compte. La poser avant ferait entrer dans la statistique une charge que le support a refusée.
-    if (this.#validee.longueurClair > this.#chargeMaxValidee) {
-      this.#chargeMaxValidee = this.#validee.longueurClair;
+    if (this.#validee.longueurPhysique > this.#chargeMaxValidee) {
+      this.#chargeMaxValidee = this.#validee.longueurPhysique;
     }
     return this.#generation;
   }
