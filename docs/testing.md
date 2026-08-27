@@ -556,20 +556,28 @@ correction sert à quelque chose.
 `tests/vm/resilience-arrets.spec.mjs` est la preuve de niveau **résilience** de #15, et depuis #16
 c'est aussi la mesure de la garantie. L'instrument n'a pas changé de nature : il rend observable,
 reproductible et classé ce qu'une coupure laisse sur un volume OPFS réel. Ce qui a changé, c'est le
-résultat — le taux « ancien ou nouveau » y valait 12,5 %, il vaut 100 % sur trois graines.
+résultat — le taux de coupures laissant une génération VALIDÉE y valait 12,5 %, il vaut 100 % sur
+trois graines.
 
 **Le rouge de #16 est dans ce fichier.** Les lignes qui ÉPINGLAIENT les états non atomiques —
 `tauxAtomique < 1`, `classes.dechire === 1`, `verdict === corrompu` — sont désormais leurs
 contraires. C'est la trace, dans le dépôt, du fait que la garantie a été prouvée par un test qui
 échouait sans elle.
 
-**Ce que #16 a changé dans la CHARGE mesurée, et pas dans le juge.** Le scénario suit huit blocs
-réécrits trois fois, là où #15 en suivait vingt-quatre distincts. La raison est calculée, pas
-décrétée : `tests/unit/vm-crash-cadence.test.mjs` établit qu'avec la cadence de #15, un mécanisme
-PARFAITEMENT atomique plafonnait à 50 % (graine 2026) et 37,5 % (graines 7 et 424242), parce que
-`SEC-DURABLE-001` oblige à publier des générations intermédiaires que l'oracle — qui ne connaît que
-deux états de référence — classe `melange`. Le profil remis au planificateur est INCHANGÉ, donc la
-matrice de coupures est identique point pour point, et le même fichier l'épingle.
+**Ce que #16 a changé dans le JUGE, et pas dans la charge.** Le scénario est celui de #15 —
+vingt-quatre blocs distincts, une barrière tous les huit —, et la matrice de coupures est identique
+point pour point. C'est l'oracle qui a été étendu : il reçoit la SUITE DES GÉNÉRATIONS attendues,
+dérivée du scénario, et n'accepte un volume que si les blocs publiés en forment EXACTEMENT une. Sans
+cela, 100 % était hors d'atteinte de tout mécanisme — un oracle à deux états classe `melange` toute
+génération intermédiaire validée, et la borne valait 50 % / 37,5 % / 37,5 %.
+
+**Un détour instructif, conservé dans les tests.** Cette tranche a d'abord appauvri la CHARGE — huit
+blocs réécrits trois fois — pour que toute génération validée soit l'un des deux états que l'oracle
+savait juger. `tests/unit/vm-crash-mutation.test.mjs` montre pourquoi c'était faux : à contenu
+identique d'une passe à l'autre, un magasin qui acquitte les générations 2 et 3 puis les perd laisse
+le même volume qu'un magasin correct. La matrice restait à 100 % et la suite entière restait verte.
+**Une preuve qu'aucun mutant ne fait rougir ne prouve rien**, et ce fichier est là pour que la
+propriété reste vérifiée : le magasin sain rend 100 %, les mutants tombent.
 
 **Commande.** `npm run test:vm`, projet `chromium` uniquement — la suite ouvre un volume OPFS, que
 WebKit Playwright n'expose pas. Le banc est servi à `/vm/resilience.html` et s'exécute aussi à la

@@ -100,17 +100,33 @@ et tester.
   barrière valide la génération en scellant sa charge par une racine d'un seul secteur
   ([ADR 0014](docs/decisions/0014-generation-transactionnelle.md)). L'acquittement au guest reste ce
   qu'il était — il suit un flush réel du support —, mais il porte désormais sur un état complet :
-  une coupure laisse la dernière génération VALIDÉE, jamais un mélange. La récupération d'ouverture
+  une coupure laisse **une génération validée, jamais un mélange**. La récupération d'ouverture
   écarte une génération non validée (`VAULT_STORAGE_GENERATION_DISCARDED`, publié et jamais tu),
-  rejoue une génération validée, et REFUSE une charge scellée devenue incohérente
-  (`VAULT_STORAGE_GENERATION_CORRUPT`) plutôt que de la réparer par devinette. La mesure : le taux
-  de coupures laissant « ancien ou nouveau » passe de 12,5 % (#15) à 100 % sur trois graines, sur
-  OPFS réel (`tests/vm/resilience-arrets.spec.mjs`), avec zéro bloc déchiré et zéro bloc non
-  rattachable. Reste hors de cet invariant la perte d'un cache d'écriture VOLATIL — mort du
-  processus du navigateur, coupure de courant : `Worker.terminate()` ne la produit pas, aucun des
-  deux supports éprouvés ne la produit, et #16 ne la mesure donc pas. Restent également hors
-  périmètre l'authentification des blocs (`SEC-BLOCK-001`, jalon 4) et la reprise complète après
-  fermeture (#7) ;
+  rejoue une génération validée, et REFUSE plutôt que de deviner dans deux cas — une charge scellée
+  devenue incohérente (`VAULT_STORAGE_GENERATION_CORRUPT`) et un journal dont aucune racine n'est
+  lisible alors qu'au moins une est abîmée (`VAULT_STORAGE_GENERATION_ROOT_CORRUPT`), où ce qui a
+  été validé est inconnu. **La formulation exacte compte** : le volume porte la dernière génération
+  validée qu'un CHEMIN D'ÉCRITURE TRANSACTIONNEL a produite ; la préparation d'image et la
+  restauration écrivent un volume entier sans génération, et écartent explicitement le journal du
+  volume écrasé, après avoir révoqué son manifeste (ADR 0014).
+
+  **La mesure, et ce qu'elle a coûté.** Le taux de coupures laissant une génération validée passe de
+  12,5 % (#15) à 100 % sur trois graines, sur OPFS réel (`tests/vm/resilience-arrets.spec.mjs`),
+  avec zéro bloc déchiré et zéro bloc non rattachable. La cadence mesurée est celle de #15 —
+  vingt-quatre blocs distincts, une barrière tous les huit — et la matrice de coupures est identique
+  point pour point. Ce qui a changé pour rendre la comparaison honnête, c'est **l'oracle** : il
+  connaît désormais la suite des générations attendues du scénario et n'accepte un volume que si les
+  blocs publiés en forment EXACTEMENT une, ce qui le rend strictement plus discriminant que celui de
+  #15. Une première version de cette tranche avait appauvri la charge mesurée au lieu d'étendre le
+  juge ; une mutation a montré que la mesure ne mesurait alors plus rien, et
+  `tests/unit/vm-crash-mutation.test.mjs` conserve le contre-exemple.
+
+  Reste hors de cet invariant la perte d'un cache d'écriture VOLATIL — mort du processus du
+  navigateur, coupure de courant : `Worker.terminate()` ne la produit pas, aucun des deux supports
+  éprouvés ne la produit, et #16 ne la mesure donc pas. Restent également hors périmètre
+  l'authentification des blocs (`SEC-BLOCK-001`, jalon 4) et la reprise complète après fermeture
+  (#7) ;
+
 - `SEC-UPDATE-001` — runtime et application sont identifiés et vérifiés avant d'ouvrir le volume en
   écriture. #10 en a écrit la règle — `assertVolumeWritable` refuse un volume sans manifeste
   identifiable (`VAULT_MANIFEST_UNIDENTIFIED`) — mais aucun chemin de production ne l'appelait :
