@@ -19,6 +19,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { TAMPON_RELECTURE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { expect, test } from "./contexte-persistant.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -173,6 +174,18 @@ test("une coupure pendant une mutation Rails laisse un volume qui reboote et dit
   expect(froid.recuperation.enregistrementsRejoues).toBeGreaterThan(0);
   // Et la génération NON validée que la coupure a laissée derrière elle est écartée, comptée.
   expect(froid.recuperation.octetsEcartes).toBeGreaterThan(0);
+
+  // #91 — la RÉCUPÉRATION dit aussi ce qu'elle a coûté, sur un vrai Rails et un vrai OPFS.
+  //
+  // `octetsRejoues` est la taille de la génération que Rails avait validée au moment de la coupure :
+  // c'est le seul chiffre du dépôt qui mesure une génération RÉELLE, et il est publié pour que le
+  // plafond de charge cesse d'être calibré sur une analogie (ADR 0014, § Limites).
+  //
+  // `surmemoireMaxOctets` borne ce que la récupération a tenu en mémoire. Avant #91, elle lisait la
+  // charge d'un seul tenant ; la borne est ici vérifiée là où elle compte — sur le support réel.
+  expect(froid.recuperation.octetsRejoues).toBeGreaterThan(0);
+  expect(froid.recuperation.surmemoireMaxOctets).toBeGreaterThan(0);
+  expect(froid.recuperation.surmemoireMaxOctets).toBeLessThanOrEqual(TAMPON_RELECTURE_OCTETS);
 
   // Et l'invariant Rails tient, quel que soit l'état retenu. C'est la promesse de #16 lue par
   // l'application : « ancien ou nouveau », jamais un mélange que SQLite refuserait de monter.

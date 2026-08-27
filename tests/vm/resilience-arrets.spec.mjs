@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { CRASH_KINDS } from "../../src/vm/crash-plan.mjs";
+import { TAMPON_RELECTURE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { VERDICTS, estVerdictConnu } from "../../src/vm/crash-oracle.mjs";
 import { BARRIERES, BLOCS_SUIVIS } from "../../src/vm/crash-scenario.mjs";
 
@@ -102,7 +103,18 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
       expect(resultat.recuperation.etat, ou).toBe("rejouee");
       expect(resultat.recuperation.generation, ou).toBe(BARRIERES + resultat.barrieres);
       expect(resultat.recuperation.enregistrementsRejoues, ou).toBeGreaterThan(0);
+      // Et la charge rejouée est COMPTÉE, pas seulement dénombrée en enregistrements (#91).
+      expect(resultat.recuperation.octetsRejoues, ou).toBeGreaterThan(0);
     }
+
+    // La SURMÉMOIRE de la récupération est publiée à chaque ouverture, et bornée par le tampon de
+    // relecture. C'est la même propriété que le double calibré épingle en unitaire, vérifiée ici sur
+    // le vrai support : `docs/quality-attributes.md` exige ce régime de flux de l'export et de la
+    // restauration, et la récupération ne le tenait pas avant #91.
+    expect(resultat.recuperation.surmemoireMaxOctets, ou).toBeGreaterThan(0);
+    expect(resultat.recuperation.surmemoireMaxOctets, ou).toBeLessThanOrEqual(
+      TAMPON_RELECTURE_OCTETS,
+    );
 
     // L'oracle a bien eu le journal de la session morte SOUS LES YEUX. Sans lui, la règle
     // `SEC-DURABLE-001` serait inerte et le taux atomique monterait sans raison.
