@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
 import { BlockJournal } from "../../src/vm/block-journal.mjs";
+import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import {
   CHROMIUM_FILE_ERRORS,
@@ -174,7 +175,15 @@ test("une lecture qui rend un errno n'est jamais prise pour une lecture courte",
 
 // --- Le backend de blocs (#6) sur un support qui rend un errno ---------------------------------
 
-/** Handle minimal dont `write` rend une valeur imposée : le vrai OPFS ne le fait pas à la demande. */
+/**
+ * Support en mémoire dont les écritures peuvent, sur commande, rendre une VALEUR IMPOSÉE au lieu
+ * d'un compte. Le vrai OPFS ne le fait pas à la demande, et c'est tout l'objet de ce fichier.
+ *
+ * Il est mutable depuis #18 : la création d'un volume v3 ÉCRIT — l'en-tête, puis le sceau de chaque
+ * secteur —, si bien qu'un support qui refuserait dès la première écriture ferait échouer
+ * l'ouverture au lieu de l'écriture qu'on veut mesurer. `armer` sépare les deux moments.
+ */
+/** Handle minimal dont `write` rend une valeur imposée. Employé par les puits, qui n'ouvrent rien. */
 function handleQuiRend(valeurDeRetour, taille) {
   const octets = new Uint8Array(taille);
   return {
@@ -190,24 +199,82 @@ function handleQuiRend(valeurDeRetour, taille) {
   };
 }
 
+function supportQuiRend(valeurDeRetour) {
+  const fichiers = new Map();
+  const fichierDe = (nom) => {
+    let fichier = fichiers.get(nom);
+    if (!fichier) {
+      fichier = { octets: new Uint8Array(0), taille: 0, refuse: false };
+      fichiers.set(nom, fichier);
+    }
+    return fichier;
+  };
+  const grandir = (fichier, taille) => {
+    if (fichier.octets.byteLength >= taille) return;
+    const neuf = new Uint8Array(taille);
+    neuf.set(fichier.octets);
+    fichier.octets = neuf;
+  };
+
+  return {
+    /** Arme le refus sur un fichier NOMMÉ. Ce qui suit rend `valeurDeRetour` au lieu d'un compte. */
+    armer(nom) {
+      fichierDe(nom).refuse = true;
+    },
+    /** Installe un fichier d'une taille donnée, SANS l'écrire : il paraît occupé, pas vierge. */
+    installer(nom, taille) {
+      const fichier = fichierDe(nom);
+      grandir(fichier, taille);
+      fichier.taille = taille;
+    },
+    async openHandle(nom) {
+      const fichier = fichierDe(nom);
+      return {
+        getSize: () => fichier.taille,
+        read(cible, { at }) {
+          cible.set(fichier.octets.subarray(at, at + cible.byteLength));
+          return cible.byteLength;
+        },
+        write(source, { at }) {
+          if (fichier.refuse) return valeurDeRetour;
+          grandir(fichier, at + source.byteLength);
+          fichier.octets.set(source, at);
+          fichier.taille = Math.max(fichier.taille, at + source.byteLength);
+          return source.byteLength;
+        },
+        flush() {},
+        truncate(taille) {
+          grandir(fichier, taille);
+          fichier.taille = taille;
+        },
+        close() {},
+      };
+    },
+  };
+}
+
 test("le backend OPFS refuse une écriture dont le support rend un errno, sans la dire partielle", async () => {
   const taille = 64 * SECTOR_SIZE;
+  const support = supportQuiRend(RENDU_NO_SPACE);
   const backend = await openOpfsVolume({
     name: "errno-backend",
     size: taille,
     journal: new BlockJournal(),
-    openHandle: async () => handleQuiRend(RENDU_NO_SPACE, taille),
+    cle: CLE_DE_TEST,
+    openHandle: support.openHandle,
     // SANS génération : le chemin éprouvé ici est l'écriture directe du backend dans le volume.
     // Le même errno rencontré par le journal de génération est éprouvé juste en dessous, et il ne
     // doit surtout pas être confondu — les deux fichiers échouent, mais pas au même moment.
     transactionnel: false,
   });
+  // Le refus est armé APRÈS la création : celle-ci scelle tout le volume, donc elle écrit.
+  support.armer("errno-backend");
 
   const erreur = await backend.write(0, new Uint8Array(SECTOR_SIZE)).then(
     () => null,
     (cause) => cause,
   );
-  await backend.close();
+  await backend.close().catch(() => {});
 
   assert.ok(erreur !== null, "une écriture non écrite ne doit jamais passer pour un succès");
   assert.ok(
@@ -222,14 +289,21 @@ test("un journal de génération dont le support rend un errno fait ÉCHOUER l'o
   // Même piège qu'au-dessus, un cran plus tôt (#16). Le journal de génération est écrit dès
   // l'ouverture : un support qui rend `4294967288` au lieu d'un compte doit faire refuser
   // l'ouverture, et le refus doit nommer le manque de place — pas une « écriture partielle ».
-  // Sans ce contrôle, `#ecrireJournal` aurait comparé le compte à la va-vite et le volume se serait
-  // ouvert sur un journal que le support n'a jamais accepté.
+  // Sans ce contrôle, l'écriture du journal aurait comparé le compte à la va-vite et le volume se
+  // serait ouvert sur un journal que le support n'a jamais accepté.
   const taille = 64 * SECTOR_SIZE;
+  const support = supportQuiRend(RENDU_NO_SPACE);
+  // Le journal PARAÎT porter une charge : sans elle, l'ouverture d'un journal vierge n'écrit RIEN
+  // (c'est la règle de #90 — un export sur un support saturé ne doit pas échouer parce qu'une
+  // ouverture a voulu écrire), et l'épreuve ne mesurerait aucune écriture.
+  support.installer("errno-generation.gen", 3 * 4096);
+  support.armer("errno-generation.gen");
   const erreur = await openOpfsVolume({
     name: "errno-generation",
     size: taille,
     journal: new BlockJournal(),
-    openHandle: async () => handleQuiRend(RENDU_NO_SPACE, taille),
+    cle: CLE_DE_TEST,
+    openHandle: support.openHandle,
   }).then(
     () => null,
     (cause) => cause,
@@ -240,8 +314,30 @@ test("un journal de génération dont le support rend un errno fait ÉCHOUER l'o
     isStorageError(erreur, STORAGE_ERROR_CODES.quotaExceeded),
     `attendu VAULT_STORAGE_QUOTA_EXCEEDED, obtenu ${erreur.code} : ${erreur.message}`,
   );
-  assert.doesNotMatch(erreur.message, /partielle/i);
-  assert.equal(erreur.context.errno, -8);
+});
+
+test("l'EN-TÊTE v3 dont l'écriture rend un errno refuse la création, sans inventer une géométrie", async () => {
+  // Le premier octet qu'un volume v3 reçoit est son en-tête. Un support qui rend un errno là doit
+  // produire « manque de place », pas « géométrie incohérente » : les deux remèdes diffèrent, et la
+  // seconde accuserait le volume d'un défaut qu'il n'a pas.
+  const support = supportQuiRend(RENDU_NO_SPACE);
+  support.armer("errno-entete");
+  const erreur = await openOpfsVolume({
+    name: "errno-entete",
+    size: 8 * SECTOR_SIZE,
+    journal: new BlockJournal(),
+    cle: CLE_DE_TEST,
+    openHandle: support.openHandle,
+  }).then(
+    () => null,
+    (cause) => cause,
+  );
+
+  assert.ok(erreur !== null, "un volume dont l'en-tête n'est pas écrit ne doit pas s'ouvrir");
+  assert.ok(
+    isStorageError(erreur, STORAGE_ERROR_CODES.quotaExceeded),
+    `attendu VAULT_STORAGE_QUOTA_EXCEEDED, obtenu ${erreur.code} : ${erreur.message}`,
+  );
 });
 
 // --- Le puits d'archive (#11) sur le même support ----------------------------------------------

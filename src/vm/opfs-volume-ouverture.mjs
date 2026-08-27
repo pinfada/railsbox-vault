@@ -23,7 +23,7 @@ import { exigerCleDeVolume } from "./cle-de-volume.mjs";
 import { createFaultPlan } from "./fault-plan.mjs";
 import { GenerationStore } from "./generation-store.mjs";
 import { OpfsBlockBackend } from "./opfs-block-backend.mjs";
-import { toStorageError } from "./opfs-error-mapping.mjs";
+import { toStorageError, writeCountFailure } from "./opfs-error-mapping.mjs";
 import { generationJournalName, openOpfsSyncAccess } from "./opfs-sync-access.mjs";
 import { assertVolumeLibre, reserverVolume } from "./opfs-volume-registry.mjs";
 import { Scellement } from "./scellement.mjs";
@@ -141,14 +141,16 @@ function poserEnTete(handle, name, disposition, identifiantVolume) {
     tailleLogique: disposition.tailleLogique,
     identifiantVolume,
   });
-  const ecrits = handle.write(entete, { at: 0 });
-  if (ecrits !== EN_TETE_OCTETS) {
-    throw geometryMismatch(name, {
-      observed: ecrits,
-      expected: EN_TETE_OCTETS,
-      reason: "L'en-tête v3 n'a pas été écrit entièrement ; le volume n'est pas créé.",
-    });
-  }
+  // Une valeur de retour est INTERPRÉTÉE, jamais comparée à la va-vite (#73) : un support qui rend
+  // `FILE_ERROR_NO_SPACE` casté en non signé n'a pas écrit un en-tête trop court, il n'a rien
+  // écrit — et « manque de place » n'appelle pas le même remède que « géométrie incohérente ».
+  const echec = writeCountFailure(handle.write(entete, { at: 0 }), {
+    requested: EN_TETE_OCTETS,
+    volume: name,
+    offset: 0,
+    operation: "write-header",
+  });
+  if (echec !== null) throw echec;
   handle.flush();
 }
 
