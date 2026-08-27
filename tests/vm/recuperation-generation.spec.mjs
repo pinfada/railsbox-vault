@@ -61,7 +61,9 @@ const TEMOIN = {
   nom: "TÉMOIN — ancien plafond de 64 Mio, enregistrements de 512 o",
   chargeCible: PLAFOND_AVANT_91,
   enregistrementOctets: 512,
-  repetitions: 1,
+  // Trois répétitions, et pas une : c'est le relevé qui a fait bouger le plafond, et un échantillon
+  // unique ne dirait pas s'il tombe d'un côté ou de l'autre des 60 s. Il tombe des deux.
+  repetitions: 3,
   horsBudget: true,
 };
 

@@ -95,20 +95,21 @@ Trois réserves, à ne pas perdre de vue quand ces chiffres seront comparés à 
 
 ## Budgets prototype
 
-| Attribut               | Seuil de sortie du jalon concerné                                                                                          |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Installation           | `npm ci` + navigateurs reproductibles depuis un clone vierge                                                               |
-| Premier boot de preuve | p95 ≤ 15 min, aucun timeout silencieux                                                                                     |
-| Reprise locale au MVP  | cible p95 ≤ 60 s ; **gate fermé** (mesuré ~94 s), voie de qualification par ADR 0005                                       |
-| Mémoire                | pic navigateur ≤ 1,5 Gio au prototype ; cible MVP ≤ 1,2 Gio                                                                |
-| Artefacts              | ≤ 500 Mio transférés par application au premier usage, inventaire détaillé publié                                          |
-| Écriture acquittée     | RPO 0 après la barrière durable du guest                                                                                   |
-| Récupération           | dernière génération valide trouvée en ≤ 60 s hors temps de boot VM                                                         |
-| Coupures injectées     | 100 % des points donnent ancien état, nouvel état ou erreur explicite — **mesuré à 100 %** (#16, trois graines, OPFS réel) |
-| Export                 | archive ≤ 2× la taille logique utilisée ; surmémoire de streaming ≤ 64 Mio                                                 |
-| Restauration           | empreinte vérifiée avant première mutation ; aucune écriture sur incompatibilité                                           |
-| Multi-onglets          | jamais deux écrivains ; relais ou refus explicite en ≤ 5 s                                                                 |
-| Accessibilité          | parcours coquille conformes WCAG 2.2 AA avant qualification produit                                                        |
+| Attribut                   | Seuil de sortie du jalon concerné                                                                                          |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Installation               | `npm ci` + navigateurs reproductibles depuis un clone vierge                                                               |
+| Premier boot de preuve     | p95 ≤ 15 min, aucun timeout silencieux                                                                                     |
+| Reprise locale au MVP      | cible p95 ≤ 60 s ; **gate fermé** (mesuré ~94 s), voie de qualification par ADR 0005                                       |
+| Mémoire                    | pic navigateur ≤ 1,5 Gio au prototype ; cible MVP ≤ 1,2 Gio                                                                |
+| Artefacts                  | ≤ 500 Mio transférés par application au premier usage, inventaire détaillé publié                                          |
+| Écriture acquittée         | RPO 0 après la barrière durable du guest                                                                                   |
+| Récupération               | dernière génération valide trouvée en ≤ 60 s hors temps de boot VM — **mesurée** (#91, OPFS réel)                          |
+| Surmémoire de récupération | ≤ 64 Mio, comme l'export — **mesurée à 1 Mio**, indépendante de la taille de la charge (#91)                               |
+| Coupures injectées         | 100 % des points donnent ancien état, nouvel état ou erreur explicite — **mesuré à 100 %** (#16, trois graines, OPFS réel) |
+| Export                     | archive ≤ 2× la taille logique utilisée ; surmémoire de streaming ≤ 64 Mio                                                 |
+| Restauration               | empreinte vérifiée avant première mutation ; aucune écriture sur incompatibilité                                           |
+| Multi-onglets              | jamais deux écrivains ; relais ou refus explicite en ≤ 5 s                                                                 |
+| Accessibilité              | parcours coquille conformes WCAG 2.2 AA avant qualification produit                                                        |
 
 Le budget de premier boot accepte temporairement la réalité de l'émulation ; il ne vaut pas
 validation produit. La cible à 60 secondes est un gate : snapshot cohérent, autre stratégie de
@@ -413,6 +414,65 @@ vaut ici : « un seuil posé sans mesure opposable serait une promesse, pas un b
 sont des mesures prises sur une machine qui n'est pas l'environnement de référence, sur un seul
 moteur. Firefox et WebKit ne sont pas mesurés, et l'effet du scellement sur le rythme de l'émulateur
 ne l'est pas non plus — `test:rythme` ne saurait pas plus conclure ici qu'il ne le savait pour #16.
+## Le budget de récupération est mesuré, et le plafond de charge en découle (#91)
+
+Le budget « dernière génération valide trouvée en ≤ 60 s hors temps de boot VM » existait depuis le
+premier jalon et **n'était mesuré nulle part** : aucune épreuve ne chronométrait une récupération,
+et aucune ne la faisait porter sur une charge réaliste. La surmémoire de la récupération, elle,
+n'était pas bornée du tout — la charge validée était lue d'un seul tenant, soit jusqu'à ~128 Mio à
+l'ancien plafond, alors que ce document borne la surmémoire de streaming à 64 Mio et l'exige
+explicitement de l'export et de la restauration.
+
+Relevé du **2026-08-27**, `npm run test:vm` (`tests/vm/recuperation-generation.spec.mjs`), OPFS réel
+sous Chromium, machine de développement — **pas l'environnement de référence**. Série complète dans
+`reports/vm/recuperation-generation.json`.
+
+| Charge rejouée              | Granularité          | Enregistrements |       p50 |           p95 | Échantillons | Étendue relative | Surmémoire de pointe |
+| --------------------------- | -------------------- | --------------: | --------: | ------------: | -----------: | ---------------: | -------------------: |
+| 16 Mio (plafond)            | 64 Kio               |             255 |    269 ms |        459 ms |            7 |             77 % |                1 Mio |
+| 16 Mio (plafond)            | 4 Kio                |           4 080 |  1 978 ms |      2 398 ms |            7 |             39 % |                1 Mio |
+| 16 Mio (plafond)            | **512 o** (pire cas) |          31 775 | 11 598 ms | **12 390 ms** |            5 |             20 % |                1 Mio |
+| **64 Mio** (ancien plafond) | **512 o**            |         127 100 | 40 342 ms |     41 285 ms |            3 |              5 % |                1 Mio |
+
+**La granularité décide, pas les octets.** Un rejeu écrit au moins une fois dans le volume par
+enregistrement, et un appel OPFS synchrone se paie en centaines de microsecondes : à charge égale,
+la même charge coûte **quarante-trois fois** plus cher en enregistrements de 512 octets qu'en
+enregistrements de 64 Kio. Publier un seul profil laisserait croire que la durée suit les octets.
+Elle suit le nombre d'écritures que le guest a émises entre deux barrières.
+
+**L'étendue intra-série est publiée parce qu'elle est grande.** 77 % sur le profil le plus court : à
+270 ms de médiane, quelques dizaines de millisecondes d'ordonnancement pèsent lourd en relatif. Elle
+tombe à 20 % sur le profil qui décide — celui de 512 octets —, où la durée est dominée par le
+travail et non par le bruit. Un p95 sans son étendue laisserait croire à une précision que sept
+répétitions sur une machine de développement n'ont pas.
+
+**Le témoin ne dépasse pas franchement le budget : il l'ENCADRE, et c'est pire.** La série à 64 Mio
+a été mesurée trois fois sur cette machine, à des états de charge différents : **71,1 s**, **53,2
+s**, puis **40,3 s** de médiane machine au repos. Un budget que la mesure franchit dans un sens ou
+dans l'autre selon ce que la machine faisait par ailleurs n'est pas un budget tenu — sa marge est
+nulle, et l'environnement de référence n'est pas cette machine-ci. À 16 Mio, la pire valeur
+individuelle jamais relevée au pire cas vaut 14,9 s : la conclusion ne dépend plus de l'état de la
+machine.
+
+**Le budget n'a pas bougé d'une seconde ; le plafond de charge, si** — de 64 Mio à 16 Mio
+(`PLAFOND_CHARGE_OCTETS`). C'est la règle que #91 s'était donnée : si la mesure ne tient pas, c'est
+le plafond qu'on révise, pas le budget. Le nouveau chiffre est deux fois le seuil de point de
+contrôle — un guest qui émet des barrières n'est jamais refusé — et près de deux cents fois la seule
+génération jamais observée de l'image de référence. Voir l'amendement du 2026-08-27 de
+[ADR 0014](decisions/0014-generation-transactionnelle.md).
+
+**La surmémoire de récupération vaut 1 Mio, et ne suit pas la charge.** C'est la taille de la
+fenêtre glissante avec laquelle le journal est relu ; elle est une constante du magasin. Relever le
+plafond ne la relèverait pas. Elle est **mesurée du côté du support** — la plus grande lecture qu'il
+reçoit — et non déclarée par le code qu'elle contrôle.
+
+**La plus grande génération que l'image de référence produit reste inconnue.** Le seul relevé
+existant est celui du scénario Bout en bout de #16 : **90 304 octets** déposés entre la première
+barrière acquittée de Rails et la coupure — près de trois ordres de grandeur sous le plafond de 16
+Mio. Treize écritures d'un boot ne sont pas la plus grande génération possible, et personne ne l'a
+mesurée. Le rapport d'ouverture publie maintenant `octetsRejoues`, si bien que chaque exécution de
+bout en bout en dit la taille ; le MAXIMUM sur un boot complet demanderait un relevé de haute eau.
+Travail découvert.
 
 ## Compatibilité
 
