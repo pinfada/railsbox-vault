@@ -2,6 +2,8 @@
 // rendu. Elle n'ouvre aucun volume et ne détient aucun handle : c'est précisément ce que
 // `sondePage` vérifie.
 
+import { HARNAIS_CLE_JETON } from "/src/vm/cle-de-volume.mjs";
+
 const etat = document.querySelector("#etat");
 const rapport = document.querySelector("#rapport");
 
@@ -28,7 +30,14 @@ worker.addEventListener("error", (event) => {
   enCours.clear();
 });
 
-/** @param {{ scenario?: string }} payload */
+/**
+ * @param {{ scenario?: string }} payload
+ *
+ * Le JETON DU HARNAIS est ajouté ici, et il n'ouvre qu'une chose : la clé de volume de TEST que ce
+ * banc emploie pour lire et écrire un volume v3 (ADR 0016, décision 6). Ce fichier est un banc, pas
+ * le produit ; aucun chemin du produit ne transmet ce jeton, et un volume ouvert sans clé est refusé
+ * par `VAULT_STORAGE_CLE_REQUISE`.
+ */
 function executer(payload = {}) {
   compteur += 1;
   const id = compteur;
@@ -45,7 +54,11 @@ function executer(payload = {}) {
         reject(erreur);
       },
     });
-    worker.postMessage({ id, type: "run", payload });
+    worker.postMessage({
+      id,
+      type: "run",
+      payload: { ...payload, jeton: HARNAIS_CLE_JETON },
+    });
   });
 }
 
