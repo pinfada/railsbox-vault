@@ -72,6 +72,8 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0010 — la distribution n'impose pas l'isolation multi-origine ; COOP seul reste recommandé](docs/decisions/0010-isolation-multi-origine.md)
 - [ADR 0011 — la migration va d'un format au suivant, exige une preuve et reprend depuis son journal](docs/decisions/0011-migration-de-format-et-reprise.md)
 - [ADR 0012 — les scénarios de bout en bout s'exécutent sur un OPFS adossé au disque](docs/decisions/0012-support-des-scenarios-de-bout-en-bout.md)
+- [ADR 0013 — la CSP de la coquille ne change pas ; v86 bat grâce à une boucle d'ordonnancement fournie par Vault](docs/decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md)
+- [ADR 0014 — une génération est validée par une racine d'un secteur alternée, et un volume rouvert présente la dernière génération validée](docs/decisions/0014-generation-transactionnelle.md)
 - [ADR 0013 — la CSP de la coquille garde `worker-src 'self'` et nomme ce qu'elle refuse](docs/decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md)
 - [Spike #35 — protocole et mesures de la topologie d'origine](docs/spikes/0035-topologie-origine-de-confiance.md)
 - [Spike #4 — protocole et mesures du backend de blocs v86](docs/spikes/0004-backend-de-blocs-v86.md)
