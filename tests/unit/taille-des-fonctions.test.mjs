@@ -155,11 +155,6 @@ const DETTE_ANTERIEURE = [
     fonction: "Function 'auditDurabilityBarriers'",
     lignes: 59,
   },
-  {
-    fichier: "src/vm/generation-store.mjs",
-    fonction: "Private async method #recuperer",
-    lignes: 58,
-  },
   { fichier: "src/vm/volume-import.mjs", fonction: "Async function 'importArchive'", lignes: 58 },
   { fichier: "src/vm/volume-export.mjs", fonction: "Async function 'writeArchive'", lignes: 57 },
   {

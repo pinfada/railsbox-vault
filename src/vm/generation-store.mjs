@@ -339,31 +339,7 @@ export class GenerationStore {
     const chargePresente = Math.max(0, taille - ZONE_ENREGISTREMENTS);
 
     if (racine === null) {
-      // AUCUNE racine valide, mais au moins une abîmée : on ne sait pas ce qui a été validé. Écarter
-      // serait peut-être juste — et peut-être une perte d'écriture acquittée. Le refus est le seul
-      // état qui ne ment pas. C'est la même règle que pour une charge scellée devenue incohérente :
-      // pas de réparation par devinette.
-      if (abimees > 0) {
-        throw generationRootCorrupt(this.#volume, {
-          abimees,
-          octets: chargePresente,
-        });
-      }
-      // Toutes les racines sont VIERGES : rien n'a jamais été validé dans ce journal. Ce qui traîne
-      // est le reliquat d'une génération déposée puis interrompue, et il est ÉCARTÉ — le volume,
-      // lui, est intact.
-      if (chargePresente === 0) {
-        // Journal vierge ET vide : il n'y a RIEN à faire, et surtout rien à écrire. Une ouverture
-        // qui écrirait ici ferait échouer un export sur un support saturé — c'est-à-dire le geste
-        // même par lequel l'utilisateur libère de la place. La racine initiale sera écrite au
-        // premier dépôt, c'est-à-dire quand une écriture aura réellement lieu.
-        this.#rapport = this.#poserRapport(GENERATION_ETATS.aucune, {});
-        return;
-      }
-      await this.#vider({ sequence: 0, generation: 0 });
-      this.#rapport = this.#poserRapport(GENERATION_ETATS.ecartee, {
-        octetsEcartes: chargePresente,
-      });
+      this.#rapport = await this.#recupererSansRacine({ abimees, chargePresente });
       return;
     }
 
@@ -388,6 +364,32 @@ export class GenerationStore {
       enregistrementsRejoues: enregistrements,
       octetsRejoues: racine.longueurCharge,
     });
+  }
+
+  /**
+   * AUCUNE racine ne fait autorité. Trois issues, et le remède dépend de ce qui manque.
+   *
+   * @param {{ abimees: number, chargePresente: number }} constat
+   * @returns {Promise<object>} le rapport à publier
+   */
+  async #recupererSansRacine({ abimees, chargePresente }) {
+    // Au moins une racine ABÎMÉE : on ne sait pas ce qui a été validé. Écarter serait peut-être
+    // juste — et peut-être une perte d'écriture acquittée. Le refus est le seul état qui ne ment
+    // pas. C'est la même règle que pour une charge scellée devenue incohérente : pas de réparation
+    // par devinette.
+    if (abimees > 0) {
+      throw generationRootCorrupt(this.#volume, { abimees, octets: chargePresente });
+    }
+    // Journal VIERGE et vide : il n'y a RIEN à faire, et surtout rien à écrire. Une ouverture qui
+    // écrirait ici ferait échouer un export sur un support saturé — c'est-à-dire le geste même par
+    // lequel l'utilisateur libère de la place. La racine initiale sera écrite au premier dépôt,
+    // c'est-à-dire quand une écriture aura réellement lieu.
+    if (chargePresente === 0) return this.#poserRapport(GENERATION_ETATS.aucune, {});
+    // Racines vierges au-dessus d'octets : rien n'a jamais été validé dans ce journal, et ce qui
+    // traîne est le reliquat d'une génération déposée puis interrompue. Il est ÉCARTÉ — le volume,
+    // lui, est intact.
+    await this.#vider({ sequence: 0, generation: 0 });
+    return this.#poserRapport(GENERATION_ETATS.ecartee, { octetsEcartes: chargePresente });
   }
 
   /** Refus TYPÉ d'une charge scellée devenue incohérente. Un doute est un refus, jamais un remède. */
