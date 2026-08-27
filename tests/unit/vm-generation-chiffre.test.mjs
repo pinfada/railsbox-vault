@@ -211,3 +211,40 @@ test("le compteur de scellements de la racine COMPTE les racines et les enregist
   // d'autres, et c'est justement ce que le § 8.3 de SP 800-38D demande de compter.
   assert.ok(magasin.scellementsCumules >= avant + 2, `${magasin.scellementsCumules} vs ${avant}`);
 });
+
+test("une racine VIDE est authentifiée elle aussi : c'est elle qui fixe la génération", async () => {
+  // Une racine vide n'a aucune charge à confronter, et c'est justement ce qui la rend dangereuse :
+  // elle fixe à elle seule la génération et la séquence de la session à venir. En v2, `decoderRacine`
+  // la validait par un CRC-32 — c'est-à-dire par rien, contre un altérateur qui le recalcule. Une
+  // racine vide FORGÉE, de séquence plus haute, aurait alors fait autorité et écarté la vraie.
+  //
+  // L'épreuve la forge sans clé : un en-tête plausible, un sceau de zéros. Elle doit être refusée.
+  const support = creerSupport();
+  const magasin = await ouvrirMagasin(support);
+  await magasin.deposer(0, buildPattern(512, 800));
+  await magasin.valider();
+  await magasin.pointDeControle();
+  support.magasin.abandon("vol.gen");
+
+  // Témoin positif : la racine vide que le point de contrôle vient d'écrire se rouvre.
+  const relu = await ouvrirMagasin(support);
+  assert.equal(relu.rapport.etat, GENERATION_ETATS.aucune);
+  support.magasin.abandon("vol.gen");
+
+  // Puis la forgerie : même en-tête, séquence relevée, sceau de zéros.
+  const handle = await support.magasin.openHandle("vol.gen");
+  const secteur = new Uint8Array(512);
+  handle.read(secteur, { at: offsetDeRacine(relu.rapport.sequence % 2) });
+  const vue = new DataView(secteur.buffer);
+  vue.setUint32(16, relu.rapport.sequence + 4, true);
+  secteur.fill(0, 76, RACINE_ENTETE_OCTETS);
+  handle.write(secteur, { at: offsetDeRacine((relu.rapport.sequence + 4) % 2) });
+  handle.flush();
+  handle.close();
+
+  await assert.rejects(
+    () => ouvrirMagasin(support),
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.sceauRefuse),
+    "une racine vide forgée ne doit pas faire autorité",
+  );
+});
