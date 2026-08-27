@@ -49,6 +49,27 @@ export const STORAGE_ERROR_CODES = Object.freeze({
    * Le refus est le seul état qui ne ment pas.
    */
   generationRootCorrupt: "VAULT_STORAGE_GENERATION_ROOT_CORRUPT",
+  /**
+   * Le sceau d'un secteur, d'un enregistrement ou d'une racine ne vérifie pas (#18, ADR 0016).
+   *
+   * C'est la traduction de `VAULT_CRYPTO_SCEAU_REFUSE`, et il porte la même réserve : la cause
+   * n'est PAS établie. Un octet altéré, un secteur présenté à une autre adresse, dans un autre
+   * volume, sous un autre format ou une autre génération produisent le même verdict — ils sont
+   * cryptographiquement indiscernables. Aucun clair n'est rendu, et surtout aucun zéro.
+   */
+  sceauRefuse: "VAULT_STORAGE_SCEAU_REFUSE",
+  /**
+   * L'identité de volume PRÉSENTÉE ne correspond pas à celle qui est authentifiée (#18). Distinct du
+   * précédent : ici l'en-tête a vérifié, donc l'écart est ÉTABLI, pas soupçonné.
+   */
+  identiteVolume: "VAULT_STORAGE_IDENTITE_VOLUME",
+  /** Le budget de scellements de la clé de volume est atteint (#18 ; NIST SP 800-38D § 8.3). */
+  budgetDeCle: "VAULT_STORAGE_BUDGET_DE_CLE",
+  /**
+   * Un volume au format v3 a été présenté SANS clé de volume (#18, ADR 0016). Rien n'est lu, rien
+   * n'est deviné, aucune clé n'est fabriquée : le produit n'en fabrique aucune avant #21.
+   */
+  cleRequise: "VAULT_STORAGE_CLE_REQUISE",
 });
 
 const KNOWN_CODES = new Set(Object.values(STORAGE_ERROR_CODES));
