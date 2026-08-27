@@ -52,6 +52,35 @@ async function verserFluxDansVolume(backend, url) {
 }
 
 /**
+ * Ouvre le volume NEUF, y verse le disque, et rend ce que la suite doit savoir : les octets écrits
+ * et l'IDENTIFIANT du volume.
+ *
+ * L'identifiant est relevé ici parce qu'il naît avec le volume — `openOpfsVolume` le tire et
+ * l'inscrit dans l'en-tête v3 (ADR 0016) —, et c'est ce même identifiant que le manifeste devra
+ * déclarer. Le réinventer plus loin décrirait un autre volume que celui qui vient d'être écrit.
+ *
+ * L'ouverture est SANS génération transactionnelle (#16, ADR 0014), pour la même raison qu'à la
+ * restauration : écrire un disque de plusieurs centaines de mébioctets d'un seul tenant n'est pas
+ * une génération du guest, et la création porte déjà son atomicité — le manifeste n'est inscrit
+ * qu'après le disque écrit et flushé.
+ */
+async function verserLeDisque({ volume, appDiskBytes, appDiskUrl, journal }) {
+  const backend = await openOpfsVolume({
+    name: volume,
+    size: appDiskBytes,
+    journal,
+    cle: cleDuBanc(),
+    transactionnel: false,
+  });
+  const identifiantVolume = backend.identifiantVolume;
+  try {
+    return { offset: await verserFluxDansVolume(backend, appDiskUrl), identifiantVolume };
+  } finally {
+    await backend.close();
+  }
+}
+
+/**
  * Écrit le disque applicatif de l'image #5 dans un volume OPFS neuf, en flux : aucun tampon de
  * 512 Mio n'est jamais tenu en mémoire. C'est le point technique dur de #7 — faire pointer le
  * disque `hdb` de v86 vers OPFS en écriture — traité côté données : le disque naît dans OPFS.
@@ -64,29 +93,12 @@ export async function phasePrepare({ volume, appDiskBytes, appDiskUrl, manifest 
   // restauration, appliquée à la création.
   await revokeVolumeManifest(volume);
   const journal = new BlockJournal();
-  // SANS génération transactionnelle (#16, ADR 0014), pour la même raison qu'à la restauration :
-  // écrire un disque applicatif de plusieurs centaines de mébioctets d'un seul tenant n'est pas une
-  // génération du guest, et la création porte déjà son atomicité — le manifeste n'est inscrit
-  // qu'après le disque écrit et flushé, si bien qu'un volume à moitié préparé reste non identifié.
-  const backend = await openOpfsVolume({
-    name: volume,
-    size: appDiskBytes,
+  const { offset, identifiantVolume } = await verserLeDisque({
+    volume,
+    appDiskBytes,
+    appDiskUrl,
     journal,
-    cle: cleDuBanc(),
-    transactionnel: false,
   });
-  // Déclarés hors du `try` pour survivre au `finally` qui ferme le backend ; jamais lus quand le
-  // versement échoue, puisque l'exception traverse alors la fonction. L'IDENTIFIANT est relevé ici
-  // parce qu'il naît avec le volume : `openOpfsVolume` le tire et l'inscrit dans l'en-tête v3, et
-  // c'est ce même identifiant que le manifeste doit déclarer (ADR 0016). Le réinventer plus bas
-  // décrirait un autre volume que celui qui vient d'être écrit.
-  let offset;
-  const identifiantVolume = backend.identifiantVolume;
-  try {
-    offset = await verserFluxDansVolume(backend, appDiskUrl);
-  } finally {
-    await backend.close();
-  }
   if (offset !== appDiskBytes) {
     throw new Error(`Disque applicatif tronqué : ${offset} octets écrits sur ${appDiskBytes}.`);
   }
