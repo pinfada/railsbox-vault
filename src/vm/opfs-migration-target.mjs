@@ -33,6 +33,23 @@ import {
 /**
  * Construit la cible OPFS attendue par `migrateVolume`.
  *
+ * ## Dépassement du plafond de 50 lignes, gardé — décidé par #77
+ *
+ * Cette fabrique compte 75 lignes et le restera. Le plafond du dépôt vise les fonctions qui
+ * ENCHAÎNENT des décisions ; celle-ci n'en prend aucune. Ses 75 lignes sont huit paramètres
+ * injectables, deux calculs de nom, et un objet littéral de neuf méthodes dont chacune tient sur
+ * une ligne de délégation accompagnée de son commentaire. Le seul branchement du corps est le
+ * `try/catch` de `readJournal`, qui traduit un refus de taille en refus TYPÉ de migration.
+ *
+ * La découper reviendrait à répartir un contrat de neuf gestes entre plusieurs fabriques
+ * partielles, puis à le recomposer : le lecteur qui veut savoir ce que `migrateVolume` peut demander
+ * à sa cible devrait rassembler ce qu'un seul écran lui montre aujourd'hui. La métrique s'en
+ * trouverait satisfaite et la lisibilité dégradée — l'inverse de ce que le plafond cherche.
+ *
+ * L'exception est inscrite dans `tests/unit/taille-des-fonctions.test.mjs`, qui la BORNE : la
+ * fabrique ne peut plus grandir sans qu'une revue l'accepte. La question de fond — le plafond
+ * doit-il compter le littéral rendu par une fabrique, idiome dominant du dépôt ? — appartient à #93.
+ *
  * @param {string} volume nom du volume à migrer
  * @param {{ journal?: BlockJournal }} [options] journal du backend, pour publier les compteurs d'E/S
  */
