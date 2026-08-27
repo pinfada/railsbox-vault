@@ -147,18 +147,51 @@ export async function acquerirRuntime(runtime) {
 }
 
 /**
+ * Repères de la décomposition #60 dans le flux série BRUT du guest : exactement les lignes que
+ * `guest-init.sh` imprime sur la console avant que le pont `@VLT1` ne démarre. Déclarés hors de la
+ * fabrique parce qu'ils ne dépendent d'aucun boot : ce sont les repères du guest de référence, les
+ * mêmes d'une exécution à l'autre.
+ */
+const REPERES_SERIE = Object.freeze([
+  ["montageDisqueApp", "[init] montage du disque applicatif"],
+  ["lancementApp", "[init] lancement de l'application"],
+  ["pontSerieActif", "[init] pont serie actif"],
+]);
+
+/**
+ * Décomposition finale des jalons. Les durées sont en millisecondes, arrondies, relatives au jalon
+ * indiqué. `healthMs` reste la mesure publiée (fenêtre de `awaitHealth`) ; les autres l'éclairent.
+ *
+ * Séparée de l'enregistrement des jalons : poser un jalon et calculer un écart sont deux gestes,
+ * le premier au fil du boot, le second une fois pour toutes à la fin.
+ *
+ * @param {Map<string, number>} jalons horodatages posés, un jamais vu restant absent
+ * @param {{ premierOctet: number | null, dmesgDernierSec: number | null, healthMs: number }} vus
+ */
+function decomposerJalons(jalons, { premierOctet, dmesgDernierSec, healthMs }) {
+  const t = (cle) => jalons.get(cle) ?? null;
+  const delta = (a, b) => (a === null || b === null ? null : Number((b - a).toFixed(0)));
+  return {
+    acquisitionRuntimeMs: delta(t("debut"), t("runtimePret")),
+    initEmulateurMs: delta(t("runtimePret"), t("bootRendu")),
+    premierOctetSerieMs: delta(t("bootRendu"), premierOctet),
+    noyauVersMontageMs: delta(premierOctet, t("montageDisqueApp")),
+    montageVersLancementMs: delta(t("montageDisqueApp"), t("lancementApp")),
+    lancementVersPontMs: delta(t("lancementApp"), t("pontSerieActif")),
+    pontVersSanteMs: delta(t("pontSerieActif"), t("santePrete")),
+    healthMs,
+    invariantMs: delta(t("santePrete"), t("invariantRendu")),
+    noyauDmesgDernierSec: dmesgDernierSec,
+  };
+}
+
+/**
  * Enregistreur de décomposition du temps de reprise (#60). Il n'INSTRUMENTE rien du boot : il pose
  * des jalons `performance.now()` que le banc lit déjà, plus quelques jalons repérés dans le flux
  * série BRUT du guest (`onSerial`). Chaque jalon horodate un événement RÉELLEMENT observé ; un jalon
- * jamais vu reste `null` et n'est pas inventé. Les repères série sont exactement les lignes que
- * `guest-init.sh` imprime sur la console avant que le pont `@VLT1` ne démarre.
+ * jamais vu reste `null` et n'est pas inventé.
  */
 function createBootTimeline() {
-  const REPERES_SERIE = [
-    ["montageDisqueApp", "[init] montage du disque applicatif"],
-    ["lancementApp", "[init] lancement de l'application"],
-    ["pontSerieActif", "[init] pont serie actif"],
-  ];
   const jalons = new Map();
   let tampon = "";
   let premierOctet = null;
@@ -188,38 +221,13 @@ function createBootTimeline() {
         if (Number.isFinite(dernier)) dmesgDernierSec = dernier;
       }
     },
-    /**
-     * Décomposition finale. Les durées sont en millisecondes, arrondies, relatives au jalon indiqué.
-     * `healthMs` reste la mesure publiée (fenêtre de `awaitHealth`) ; les autres l'éclairent.
-     */
+    /** Décomposition finale, déléguée à `decomposerJalons`. */
     decomposer({ healthMs }) {
-      const t = (cle) => jalons.get(cle) ?? null;
-      const octet = premierOctet;
-      const delta = (a, b) => (a === null || b === null ? null : Number((b - a).toFixed(0)));
-      return {
-        acquisitionRuntimeMs: delta(t("debut"), t("runtimePret")),
-        initEmulateurMs: delta(t("runtimePret"), t("bootRendu")),
-        premierOctetSerieMs: delta(t("bootRendu"), octet),
-        noyauVersMontageMs: delta(octet, t("montageDisqueApp")),
-        montageVersLancementMs: delta(t("montageDisqueApp"), t("lancementApp")),
-        lancementVersPontMs: delta(t("lancementApp"), t("pontSerieActif")),
-        pontVersSanteMs: delta(t("pontSerieActif"), t("santePrete")),
-        healthMs,
-        invariantMs: delta(t("santePrete"), t("invariantRendu")),
-        noyauDmesgDernierSec: dmesgDernierSec,
-      };
+      return decomposerJalons(jalons, { premierOctet, dmesgDernierSec, healthMs });
     },
   };
 }
 
-/**
- * Ouvre le volume OPFS, boote Rails dessus, attend `/vault/health`, vérifie l'invariant et rend le
- * compte rendu. Le seul boot possible est un boot à froid complet : il n'existe aucun chemin
- * d'instantané mémoire dans ce Worker.
- *
- * `runtimeBundle` permet de fournir un runtime DÉJÀ acquis (reprise hors ligne : l'acquisition a eu
- * lieu en ligne, le boot a lieu réseau coupé).
- */
 /** Écritures du guest exigées avant d'annoncer une mutation. Une seule ne prouverait pas grand-chose. */
 const ECRITURES_AVANT_COUPURE = 8;
 
@@ -243,31 +251,20 @@ function guetterMutation(journal, prevenir) {
   return { arreter: () => clearInterval(minuterie) };
 }
 
-export async function bootEtVerifier({
-  phase,
-  volume,
-  cmdline,
-  memoryBytes,
-  runtime,
-  runtimeBundle = null,
-  manifest,
-  expected,
-  bootTimeoutMs,
-  surMutation = null,
-}) {
-  // `SEC-UPDATE-001` : le volume est ouvert EN ÉCRITURE pour le guest. Son identité et sa
-  // compatibilité sont donc exigées AVANT le premier octet — un volume sans manifeste (restauration
-  // ou migration interrompue, préparation incomplète), d'un format antérieur non migré ou d'un
-  // format plus récent que ce runtime est refusé ici, pas découvert par Rails sur un système de
-  // fichiers tronqué.
-  const attentes = attentesDe(manifest);
-  // La décomposition (#60) pose ses jalons DÈS l'entrée, pour dater aussi l'acquisition du runtime.
-  const timeline = createBootTimeline();
-  timeline.marquer("debut");
-  const { V86, artifacts, transferredBytes } = runtimeBundle ?? (await acquerirRuntime(runtime));
-  timeline.marquer("runtimePret");
-  const onlineAuBoot = navigator.onLine;
-
+/**
+ * MONTAGE : ouvre le volume en écriture et pose la session guest dessus. Rien n'est encore booté au
+ * retour — l'émulateur est construit, pas lancé.
+ *
+ * Le volume est ouvert EN ÉCRITURE pour le guest, mais son identité et sa compatibilité ont déjà
+ * été exigées par `attentesDe` AVANT l'acquisition du runtime : un volume sans manifeste
+ * (restauration ou migration interrompue, préparation incomplète), d'un format antérieur non migré
+ * ou d'un format plus récent que ce runtime est refusé sans qu'un seul octet ait été téléchargé,
+ * pas découvert par Rails sur un système de fichiers tronqué (`SEC-UPDATE-001`).
+ *
+ * @param {{ volume: string, attentes: object, timeline: object,
+ *           guest: { V86: Function, artifacts: object, cmdline: string, memoryBytes: number } }} options
+ */
+async function ouvrirVolumeEtSession({ volume, attentes, timeline, guest }) {
   const journal = new BlockJournal();
   const failures = [];
   const backend = await openVolumeForWrite({ name: volume, journal, expectations: attentes });
@@ -282,12 +279,12 @@ export async function bootEtVerifier({
   });
   const guestLog = [];
   const session = createReferenceGuestSession({
-    V86,
-    artifacts,
+    V86: guest.V86,
+    artifacts: guest.artifacts,
     appAdapter: adapter,
     journal,
-    cmdline,
-    memoryBytes,
+    cmdline: guest.cmdline,
+    memoryBytes: guest.memoryBytes,
     onJournal: (ligne) => {
       if (guestLog.length < 200) guestLog.push(ligne);
     },
@@ -297,7 +294,21 @@ export async function bootEtVerifier({
     // sans jamais rendre de `BootTimeout` (WebKit, mesuré).
     boucle: boucleOrdonnancement,
   });
+  return { journal, backend, failures, recuperation, session, guestLog };
+}
 
+/**
+ * DÉROULÉ : boot sous garde, attente de santé, interrogation de l'invariant, puis fermeture.
+ *
+ * Le `try/finally` est le cœur de cette phase et la raison de sa séparation : quoi qu'il arrive au
+ * boot, le guet s'arrête, la session s'arrête et le backend se ferme. Rien de ce qui précède ni de
+ * ce qui suit ne doit pouvoir s'intercaler dans cette garantie.
+ *
+ * @returns {Promise<{ health: object, invariant: object, rythme: object, boucle: object,
+ *                     observations: object[], started: number }>}
+ */
+async function deroulerBootEtInvariant({ montage, surMutation, bootTimeoutMs, timeline }) {
+  const { session, backend, journal } = montage;
   const started = performance.now();
   // Guet de MUTATION : il prévient l'appelant dès que le guest a réellement muté le volume ET
   // qu'une barrière a été acquittée. C'est le seul instant où couper prouve quelque chose — couper
@@ -328,37 +339,105 @@ export async function bootEtVerifier({
     session.stop();
     await backend.close();
   }
+  return { health, invariant, rythme, boucle, observations, started };
+}
 
+/**
+ * COMPTE RENDU : la trentaine de champs que le banc et les spécifications lisent. C'est de la mise
+ * en forme, pas une phase — aucune E/S, aucune décision de boot. Le seul verdict calculé ici,
+ * `conforming`, ne fait que rapprocher ce que l'invariant a répondu de ce que le scénario attendait ;
+ * il n'ASSERTE rien, l'assertion vivant dans `tests/e2e/`.
+ */
+function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline }) {
+  const { invariant, health } = deroule;
   const observed = invariant.verdict.observed ?? {};
   const conforming =
     invariant.statut === 200 &&
     invariant.verdict.status === "conforming" &&
-    observed.record?.id === expected.recordId &&
-    observed.attachment?.sha256 === expected.attachmentSha256;
+    observed.record?.id === identite.expected.recordId &&
+    observed.attachment?.sha256 === identite.expected.attachmentSha256;
 
   return {
-    phase,
-    volume,
-    volumeBytes: backend.size?.() ?? null,
-    bootMilliseconds: Number((performance.now() - started).toFixed(1)),
+    phase: identite.phase,
+    volume: identite.volume,
+    volumeBytes: montage.backend.size?.() ?? null,
+    bootMilliseconds: Number((performance.now() - deroule.started).toFixed(1)),
     healthMilliseconds: health.durationMs,
-    rythme,
-    boucleOrdonnancement: boucle,
+    rythme: deroule.rythme,
+    boucleOrdonnancement: deroule.boucle,
     timeline: timeline.decomposer({ healthMs: health.durationMs }),
-    transferredBytes,
-    memoryBytes,
+    transferredBytes: mesures.transferredBytes,
+    memoryBytes: mesures.memoryBytes,
     usedSnapshot: false,
-    online: onlineAuBoot,
+    online: mesures.online,
     sante: health.sante,
     invariantStatus: invariant.verdict.status,
     invariantHttpStatus: invariant.statut,
     observedRecordId: observed.record?.id ?? null,
     observedAttachmentSha256: observed.attachment?.sha256 ?? null,
     conforming,
-    recuperation,
-    counts: journal.counts(),
-    failures,
-    observationsRuntime: [...observations, ...lireRejets()],
-    guestLog,
+    recuperation: montage.recuperation,
+    counts: montage.journal.counts(),
+    failures: montage.failures,
+    observationsRuntime: [...deroule.observations, ...lireRejets()],
+    guestLog: montage.guestLog,
   };
+}
+
+/**
+ * Ouvre le volume OPFS, boote Rails dessus, attend `/vault/health`, vérifie l'invariant et rend le
+ * compte rendu. Le seul boot possible est un boot à froid complet : il n'existe aucun chemin
+ * d'instantané mémoire dans ce Worker.
+ *
+ * `runtimeBundle` permet de fournir un runtime DÉJÀ acquis (reprise hors ligne : l'acquisition a eu
+ * lieu en ligne, le boot a lieu réseau coupé).
+ *
+ * La fonction n'est plus qu'un ORDONNANCEMENT depuis #77 : exigence d'identité, acquisition du
+ * runtime, puis les trois gestes qui suivent, chacun dans sa fonction — `ouvrirVolumeEtSession`,
+ * `deroulerBootEtInvariant`, `assemblerCompteRendu`. Les trois premiers sont des phases, le dernier
+ * est de la mise en forme, et les mêler rendait la garantie du `try/finally` difficile à lire.
+ */
+export async function bootEtVerifier({
+  phase,
+  volume,
+  cmdline,
+  memoryBytes,
+  runtime,
+  runtimeBundle = null,
+  manifest,
+  expected,
+  bootTimeoutMs,
+  surMutation = null,
+}) {
+  // Le PREMIER geste, avant même le réseau : `SEC-UPDATE-001` n'admet aucun volume anonyme, et le
+  // refuser ici épargne l'acquisition d'un runtime qui n'aurait servi à rien.
+  const attentes = attentesDe(manifest);
+  // La décomposition (#60) pose ses jalons DÈS l'entrée, pour dater aussi l'acquisition du runtime.
+  const timeline = createBootTimeline();
+  timeline.marquer("debut");
+  const { V86, artifacts, transferredBytes } = runtimeBundle ?? (await acquerirRuntime(runtime));
+  timeline.marquer("runtimePret");
+  const online = navigator.onLine;
+
+  const montage = await ouvrirVolumeEtSession({
+    volume,
+    attentes,
+    timeline,
+    guest: { V86, artifacts, cmdline, memoryBytes },
+  });
+
+  const deroule = await deroulerBootEtInvariant({
+    montage,
+    surMutation,
+    bootTimeoutMs,
+    timeline,
+  });
+
+  return assemblerCompteRendu({
+    identite: { phase, volume, expected },
+    mesures: { transferredBytes, memoryBytes, online },
+    montage,
+    deroule,
+    timeline,
+  });
 }

@@ -63,6 +63,33 @@ import { ARCHIVE_ERROR_CODES, ArchiveError } from "/src/vm/archive-errors.mjs";
 let armed = null;
 
 /**
+ * Verse une réponse HTTP dans le backend, morceau par morceau, et franchit une barrière à la fin.
+ * Aucun morceau n'est conservé : c'est ce qui borne la surmémoire de la préparation, quelle que
+ * soit la taille du disque. Rend le nombre d'octets RÉELLEMENT écrits, que l'appelant confronte à
+ * la taille annoncée — un flux tronqué ne doit pas produire un volume qui se croit complet.
+ *
+ * La fermeture du backend n'est PAS faite ici : elle appartient au `finally` de l'appelant, qui
+ * doit fermer même quand le flux échoue.
+ */
+async function verserFluxDansVolume(backend, url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok || response.body === null) {
+    throw new Error(`Disque applicatif ${url} indisponible (${response.status}).`);
+  }
+  const reader = response.body.getReader();
+  let offset = 0;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (value.byteLength === 0) continue;
+    await backend.write(offset, value);
+    offset += value.byteLength;
+  }
+  await backend.flush();
+  return offset;
+}
+
+/**
  * Écrit le disque applicatif de l'image #5 dans un volume OPFS neuf, en flux : aucun tampon de
  * 512 Mio n'est jamais tenu en mémoire. C'est le point technique dur de #7 — faire pointer le
  * disque `hdb` de v86 vers OPFS en écriture — traité côté données : le disque naît dans OPFS.
@@ -85,21 +112,11 @@ async function phasePrepare({ volume, appDiskBytes, appDiskUrl, manifest }) {
     journal,
     transactionnel: false,
   });
-  let offset = 0;
+  // Déclaré hors du `try` pour survivre au `finally` qui ferme le backend ; jamais lu quand le
+  // versement échoue, puisque l'exception traverse alors la fonction.
+  let offset;
   try {
-    const response = await fetch(appDiskUrl, { cache: "no-store" });
-    if (!response.ok || response.body === null) {
-      throw new Error(`Disque applicatif ${appDiskUrl} indisponible (${response.status}).`);
-    }
-    const reader = response.body.getReader();
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (value.byteLength === 0) continue;
-      await backend.write(offset, value);
-      offset += value.byteLength;
-    }
-    await backend.flush();
+    offset = await verserFluxDansVolume(backend, appDiskUrl);
   } finally {
     await backend.close();
   }
@@ -260,26 +277,72 @@ function sourceMesuree(base, compteur) {
 }
 
 /**
+ * Ouvre le fichier d'archive et le puits qui l'alimente.
+ *
+ * Le puits vit dans `src/vm/opfs-archive-sink.mjs` (#73) : la lecture de la valeur de retour d'un
+ * `write()` est le point où ce banc a longtemps affirmé une « écriture d'archive courte » là où le
+ * support rendait `FILE_ERROR_NO_SPACE` casté en non signé. Un point qui peut mentir doit être
+ * testable sans navigateur ; le budget de stockage n'est mesuré qu'en cas d'échec.
+ *
+ * Le handle est rendu à l'appelant en même temps que le puits : c'est lui qui le referme, dans le
+ * `finally` qui doit s'exécuter même si l'écriture échoue.
+ */
+async function ouvrirPuitsArchive(archive) {
+  const handle = await openOpfsSyncAccess(archive);
+  const sink = createOpfsArchiveSink(handle, {
+    volume: archive,
+    measureStorage: () => instantaneStockage(),
+  });
+  return { handle, sink };
+}
+
+/**
+ * Compte rendu de l'export. La seule mesure prise ici est le second instantané de stockage : il
+ * DATE l'écriture par rapport au quota de l'origine, sans rien conditionner, pour que « il n'y
+ * avait plus de place » cesse d'être une hypothèse (#73). `state: "unknown"` dit que le moteur
+ * n'estime pas, pas que la capacité est nulle.
+ */
+async function compteRenduExport({
+  volume,
+  archive,
+  result,
+  compteur,
+  blockBytes,
+  volumeBytes,
+  stockageAvant,
+}) {
+  return {
+    phase: "export",
+    volume,
+    archive,
+    storage: { avant: stockageAvant, apres: await instantaneStockage() },
+    volumeBytes,
+    archiveLength: result.archiveLength,
+    headerLength: result.headerLength,
+    contentLength: result.contentLength,
+    digest: result.digest,
+    manifestDigest: result.manifest.identity.digest,
+    consistency: result.consistency,
+    maxBlockBytes: compteur.maxLecture,
+    blocs: compteur.blocs,
+    blockBytes,
+  };
+}
+
+/**
  * EXPORTE le volume applicatif OPFS (#11) vers une ARCHIVE OPFS, en flux. La source est lue via le
  * handle exclusif de #6 (aucun autre écrivain dans l'origine) : c'est le point cohérent déclaré. La
  * plus grande lecture est mesurée — un export à surmémoire bornée ne demande jamais tout le volume
  * d'un coup — et l'archive est écrite dans un fichier OPFS distinct, jamais tenue en RAM.
+ *
+ * Trois gestes depuis #77, et rien d'autre : préparer la cible, verser le flux, rendre compte.
  */
 async function phaseExportVolume({ volume, archive, manifest, blockBytes = EXPORT_BLOCK_BYTES }) {
   await removeOpfsVolume(archive);
   const backend = await openOpfsVolume({ name: volume, journal: new BlockJournal() });
   const compteur = { maxLecture: 0, blocs: 0 };
   const source = sourceMesuree(backendSource(backend), compteur);
-
-  const handle = await openOpfsSyncAccess(archive);
-  // Le puits vit dans `src/vm/opfs-archive-sink.mjs` (#73) : la lecture de la valeur de retour d'un
-  // `write()` est le point où ce banc a longtemps affirmé une « écriture d'archive courte » là où le
-  // support rendait `FILE_ERROR_NO_SPACE` casté en non signé. Un point qui peut mentir doit être
-  // testable sans navigateur ; le budget de stockage n'est mesuré qu'en cas d'échec.
-  const sink = createOpfsArchiveSink(handle, {
-    volume: archive,
-    measureStorage: () => instantaneStockage(),
-  });
+  const { handle, sink } = await ouvrirPuitsArchive(archive);
 
   const stockageAvant = await instantaneStockage();
   let result;
@@ -301,25 +364,15 @@ async function phaseExportVolume({ volume, archive, manifest, blockBytes = EXPOR
     await backend.close();
   }
 
-  return {
-    phase: "export",
+  return compteRenduExport({
     volume,
     archive,
-    // Budget de stockage encadrant l'export (#73). Il ne conditionne rien : il DATE l'écriture par
-    // rapport au quota de l'origine, pour que « il n'y avait plus de place » cesse d'être une
-    // hypothèse. `state: "unknown"` dit que le moteur n'estime pas, pas que la capacité est nulle.
-    storage: { avant: stockageAvant, apres: await instantaneStockage() },
-    volumeBytes: source.size,
-    archiveLength: result.archiveLength,
-    headerLength: result.headerLength,
-    contentLength: result.contentLength,
-    digest: result.digest,
-    manifestDigest: result.manifest.identity.digest,
-    consistency: result.consistency,
-    maxBlockBytes: compteur.maxLecture,
-    blocs: compteur.blocs,
+    result,
+    compteur,
     blockBytes,
-  };
+    volumeBytes: source.size,
+    stockageAvant,
+  });
 }
 
 /** Applique une altération sur l'archive AVANT vérification, pour éprouver les refus typés. */
