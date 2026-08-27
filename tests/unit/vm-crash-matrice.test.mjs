@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { HARNAIS_RESILIENCE_ENV, HARNAIS_RESILIENCE_VALEUR } from "../../src/vm/crash-harness.mjs";
-import { rejouerCoupure, rejouerMatrice } from "../../src/vm/crash-machine.mjs";
-import { VERDICTS, classerVolume } from "../../src/vm/crash-oracle.mjs";
+import { rejouerCoupure, rejouerMatrice, rejouerSansCoupure } from "../../src/vm/crash-machine.mjs";
+import { VERDICTS, classerVolume, estVerdictConnu } from "../../src/vm/crash-oracle.mjs";
 import { CRASH_KINDS } from "../../src/vm/crash-plan.mjs";
 import { RESILIENCE_REPORT_VERSION, resumerMatrice } from "../../src/vm/crash-report.mjs";
 import {
@@ -14,6 +14,7 @@ import {
   blocsAttendus,
   contenuAncien,
   contenuNouveau,
+  generationsAttendues,
   offsetDuBloc,
 } from "../../src/vm/crash-scenario.mjs";
 
@@ -54,10 +55,29 @@ test("couper à la toute première écriture laisse le volume à l'ancien état"
   assert.equal(rapport.classes.ancien, BLOCS_SUIVIS);
 });
 
-test("couper à la dernière barrière laisse le volume au nouvel état", async () => {
+test("couper AVANT la dernière barrière laisse exactement la génération précédente", async () => {
+  // `coupure-avant-barriere` coupe avant l'acquittement : les deux premières générations sont
+  // validées, la troisième non. Le volume porte donc les seize premiers blocs, et l'oracle le NOMME
+  // au lieu de le ranger dans « melange » comme le faisait celui de #15.
   const rapport = await rejouerCoupure(point(CRASH_KINDS.beforeBarrier, "flush", BARRIERES));
+  assert.equal(rapport.verdict, "generation-2");
+  assert.equal(rapport.atomique, true);
+  assert.equal(rapport.classes.nouveau, 16);
+  assert.equal(rapport.classes.ancien, BLOCS_SUIVIS - 16);
+});
+
+test("sans aucune faute, le scénario publie les VINGT-QUATRE blocs — témoin positif de « nouveau »", async () => {
+  // L'extrême haut de la suite des générations. La matrice ne peut pas le produire — aucun genre de
+  // coupure ne tombe après la troisième barrière acquittée, ce que `vm-crash-cadence.test.mjs`
+  // démontre —, si bien que sans ce témoin le verdict `nouveau` ne serait jamais exercé et qu'un
+  // oracle incapable de le rendre passerait inaperçu.
+  const rapport = await rejouerSansCoupure();
+  assert.equal(rapport.arret, null, "aucune faute n'est armée : l'écriture doit aboutir");
+  assert.equal(rapport.barrieres, BARRIERES);
   assert.equal(rapport.verdict, VERDICTS.nouveau);
   assert.equal(rapport.atomique, true);
+  assert.equal(rapport.classes.nouveau, BLOCS_SUIVIS);
+  assert.equal(rapport.classes.ancien, 0);
 });
 
 test("couper au milieu d'une génération ne publie AUCUNE de ses écritures", async () => {
@@ -108,6 +128,7 @@ test("la règle SEC-DURABLE se déclenche sur un rapport RÉEL dont le journal e
   const rejuge = classerVolume({
     blocs: blocsAttendus(resultat.relecture),
     journal: journalTrafique,
+    generations: generationsAttendues(),
   });
 
   const bloc = rejuge.blocs.find((candidat) => candidat.index === 3);
@@ -142,25 +163,43 @@ test("une matrice publie son taux « ancien ou nouveau », et il vaut 100 %", as
   assert.equal(resume.version, RESILIENCE_REPORT_VERSION);
   assert.equal(resume.graine, 2026);
   assert.equal(resume.pointsRejoues, 12);
+  // Chaque point reçoit un verdict, et le total retombe sur ses pieds — verdicts intermédiaires
+  // NOMMÉS par leur génération compris. Une somme qui ne retomberait pas dirait qu'un point a été
+  // classé hors des états attendus sans que rien ne le signale.
   assert.equal(
-    resume.verdicts.ancien +
-      resume.verdicts.nouveau +
-      resume.verdicts.melange +
-      resume.verdicts.corrompu,
+    Object.values(resume.verdicts).reduce((somme, compte) => somme + compte, 0),
     12,
   );
-  // C'est la mesure que #16 devait porter à 100 %. Elle y est — et les deux issues sont exercées :
-  // un taux atteint uniquement par des « ancien » serait satisfait par un backend qui n'écrit rien.
+  // C'est la mesure que #16 devait porter à 100 %. Elle y est — et pas seulement par des `ancien` :
+  // un taux atteint uniquement par l'extrême bas serait satisfait par un backend qui n'écrit rien.
   assert.equal(resume.tauxAtomique, 1, `taux mesuré : ${resume.tauxAtomique}`);
   assert.equal(resume.verdicts.melange + resume.verdicts.corrompu, 0);
-  assert.ok(resume.verdicts.ancien > 0 && resume.verdicts.nouveau > 0);
+  assert.ok(resume.verdicts.ancien > 0, "l'extrême bas est exercé");
+  assert.ok(
+    resume.verdicts["generation-1"] > 0 && resume.verdicts["generation-2"] > 0,
+    "les deux générations intermédiaires sont exercées",
+  );
+  // L'extrême HAUT, lui, est hors d'atteinte de la matrice — aucun genre de coupure ne tombe après
+  // l'acquittement de la dernière barrière (`vm-crash-cadence.test.mjs`). Il est exercé par le
+  // témoin positif plus haut, et ce zéro l'inscrit noir sur blanc plutôt que de le laisser deviner.
+  assert.equal(resume.verdicts.nouveau, 0);
 
   // La répartition exacte est figée : la graine est une donnée versionnable, et un changement du
   // générateur qui passerait inaperçu rendrait « même graine, même séquence » invérifiable. Le
   // compte par CLASSE l'est aussi, `dechire: 0` et `corrompu: 0` compris : ces deux zéros sont la
   // garantie de #16, et les laisser flotter la rendrait invérifiable.
-  assert.deepEqual(resume.verdicts, { ancien: 4, nouveau: 8, melange: 0, corrompu: 0 });
-  assert.deepEqual(resume.classes, { ancien: 32, nouveau: 64, dechire: 0, corrompu: 0 });
+  assert.deepEqual(resume.verdicts, {
+    ancien: 4,
+    nouveau: 0,
+    melange: 0,
+    corrompu: 0,
+    "generation-2": 4,
+    "generation-1": 4,
+  });
+  assert.deepEqual(resume.classes, { ancien: 192, nouveau: 96, dechire: 0, corrompu: 0 });
+  // L'oracle savait nommer QUATRE états. Deux ne suffisaient pas : un mécanisme qui acquitte une
+  // génération puis la perd rendrait alors le même verdict qu'un mécanisme correct.
+  assert.equal(resume.generationsAttendues, 4);
 
   // Le PROFIL du scénario voyage avec le taux. Il est INCHANGÉ depuis #15 sur les trois nombres qui
   // décident de la matrice — vingt-quatre écritures, trois barrières, 512 octets par bloc —, et
@@ -169,7 +208,7 @@ test("une matrice publie son taux « ancien ou nouveau », et il vaut 100 %", as
     blocsSuivis: BLOCS_SUIVIS,
     tailleBloc: BLOC_OCTETS,
     ecritures: 24,
-    passes: 3,
+    passes: 1,
     barrieres: 3,
     barriereTousLes: BARRIERE_TOUS_LES,
   });
@@ -178,7 +217,7 @@ test("une matrice publie son taux « ancien ou nouveau », et il vaut 100 %", as
   for (const ligne of resume.rejeu) {
     assert.equal(ligne.graine, 2026);
     assert.ok(Number.isInteger(ligne.point.occurrence));
-    assert.ok(Object.values(VERDICTS).includes(ligne.verdict));
+    assert.ok(estVerdictConnu(ligne.verdict), ligne.verdict);
   }
 });
 
@@ -191,17 +230,27 @@ test("la même graine et le même nombre de points donnent la même répartition
     resultats: await rejouerMatrice(2026, { points: 8 }),
     support: "double calibré (Node)",
   });
-  assert.deepEqual(resume.verdicts, { ancien: 4, nouveau: 4, melange: 0, corrompu: 0 });
+  assert.deepEqual(resume.verdicts, {
+    ancien: 4,
+    nouveau: 0,
+    melange: 0,
+    corrompu: 0,
+    "generation-2": 1,
+    "generation-1": 3,
+  });
   assert.equal(resume.tauxAtomique, 1);
-  assert.deepEqual(resume.classes, { ancien: 32, nouveau: 32, dechire: 0, corrompu: 0 });
+  assert.deepEqual(resume.classes, { ancien: 152, nouveau: 40, dechire: 0, corrompu: 0 });
 });
 
 test("deux autres graines rendent elles aussi 100 %, sans déchirure ni bloc non rattachable", async () => {
   // Une garantie qui ne tiendrait que sur la graine publiée n'en serait pas une. Ces deux graines
   // tirent d'autres genres de coupure à d'autres rangs — la matrice complète est dans l'ADR 0014.
   for (const [graine, attendus] of [
-    [7, { ancien: 3, nouveau: 5, melange: 0, corrompu: 0 }],
-    [424242, { ancien: 3, nouveau: 5, melange: 0, corrompu: 0 }],
+    [7, { ancien: 3, nouveau: 0, melange: 0, corrompu: 0, "generation-2": 2, "generation-1": 3 }],
+    [
+      424242,
+      { ancien: 3, nouveau: 0, melange: 0, corrompu: 0, "generation-1": 3, "generation-2": 2 },
+    ],
   ]) {
     const resume = resumerMatrice({
       graine,

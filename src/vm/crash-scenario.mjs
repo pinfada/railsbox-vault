@@ -17,42 +17,34 @@ import { buildPattern } from "./block-fixture.mjs";
 export const BLOC_OCTETS = SECTOR_SIZE;
 
 /**
- * Nombre de blocs SUIVIS, c'est-à-dire jugés par l'oracle.
+ * Nombre de blocs SUIVIS, c'est-à-dire jugés par l'oracle. Vingt-quatre blocs DISTINCTS, comme #15.
  *
- * ### Pourquoi huit, et non vingt-quatre comme en #15
+ * ### Pourquoi pas huit blocs réécrits trois fois
  *
- * #15 écrivait vingt-quatre blocs DISTINCTS, une barrière tous les huit — donc trois générations
- * dont chacune ne touchait qu'un tiers du volume. Or l'oracle de #15 ne connaît que deux états de
- * référence : « tout l'ancien » et « tout le nouveau ». Une génération intermédiaire validée y est
- * donc, par construction, un `melange`.
+ * Cette tranche a d'abord essayé une cadence où huit blocs étaient réécrits trois fois avec le MÊME
+ * contenu, pour que toute génération validée soit l'un des deux états que l'oracle de #15 savait
+ * juger. La revue l'a réfutée PAR MUTATION, et le contre-exemple est conservé ici parce qu'il vaut
+ * mieux qu'une justification : avec un contenu identique d'une passe à l'autre, les générations 2 et
+ * 3 ne publient RIEN de nouveau. Un magasin muté qui les acquitte au guest puis les perd à la
+ * réouverture laisse donc exactement le même volume qu'un magasin correct — et la matrice restait à
+ * 100 % sur les trois graines. La preuve était creuse.
  *
- * La conséquence n'est pas une opinion, elle se calcule : sur ce profil, un mécanisme PARFAITEMENT
- * atomique — celui que #16 livre — plafonne à 50 % de points « ancien ou nouveau » sur la graine
- * 2026, et à 37,5 % sur les graines 7 et 424242. Le 100 % demandé y est INATTEIGNABLE, non parce
- * que le mécanisme échoue, mais parce que `SEC-DURABLE-001` OBLIGE à publier les générations
- * intermédiaires que l'oracle ne sait pas nommer. `tests/unit/vm-crash-cadence.test.mjs` en fait la
- * démonstration, chiffre par chiffre.
- *
- * Le scénario suit donc HUIT blocs, réécrits `PASSES` fois. Chaque génération porte l'état complet
- * du nouveau contenu, si bien que toute génération validée est exactement l'un des deux états que
- * l'oracle sait juger. Ce qui NE change pas : le nombre d'écritures (24), le nombre de barrières
- * (3), la taille de bloc (512). Le profil remis à `planifierCoupures` est identique à celui de #15,
- * donc **la matrice de coupures est identique, point pour point**.
- *
- * Ce que le nouveau scénario éprouve EN PLUS : la réécriture d'un même bloc d'une génération à
- * l'autre, c'est-à-dire précisément le régime que l'en-tête de `crash-oracle.mjs` désigne comme
- * « le régime même de #16 ».
+ * Le remède n'est pas de fabriquer un scénario que l'oracle sait juger, mais d'apprendre à l'oracle à
+ * juger le scénario. `classerVolume` reçoit désormais la SUITE DES GÉNÉRATIONS attendues — voir
+ * `generationsAttendues` — et refuse tout état qui n'en est pas exactement une. Il est ainsi
+ * strictement PLUS discriminant qu'en #15, et la mutation ci-dessus le fait rougir
+ * (`tests/unit/vm-crash-mutation.test.mjs`).
  */
-export const BLOCS_SUIVIS = 8;
+export const BLOCS_SUIVIS = 24;
 
-/** Nombre de passes d'écriture sur les blocs suivis. Trois passes, donc trois générations. */
-export const PASSES = 3;
+/** Une seule passe : chaque bloc suivi est écrit une fois, avec un contenu qui lui est propre. */
+export const PASSES = 1;
 
 /** Écritures émises par le scénario : c'est ce chiffre qui borne les points de coupure. */
 export const ECRITURES = BLOCS_SUIVIS * PASSES;
 
-/** Une barrière à la fin de chaque passe : le scénario en émet donc trois. */
-export const BARRIERE_TOUS_LES = BLOCS_SUIVIS;
+/** Une barrière tous les huit blocs : le scénario en émet donc trois. */
+export const BARRIERE_TOUS_LES = 8;
 
 /** Taille du volume de résilience. Jetable, et sans rapport avec un volume de produit. */
 export const VOLUME_OCTETS = 32 * BLOC_OCTETS;
@@ -82,6 +74,23 @@ export function contenuNouveau(index) {
 
 /** Nombre de barrières émises par le scénario. */
 export const BARRIERES = Math.ceil(ECRITURES / BARRIERE_TOUS_LES);
+
+/**
+ * Suite des états qu'une génération VALIDÉE de ce scénario doit avoir publiés, du plus vide au plus
+ * complet : `[[], [0..7], [0..15], [0..23]]`.
+ *
+ * Elle est dérivée du SCÉNARIO — quels blocs chaque écriture touche, où tombent les barrières — et
+ * de rien d'autre. Elle ne demande jamais au mécanisme ce qu'il a fait : c'est la liste de ce qu'il
+ * DEVAIT faire, et l'oracle refuse tout état qui n'en est pas exactement un membre.
+ */
+export function generationsAttendues() {
+  const suite = [[]];
+  for (let barriere = 1; barriere <= BARRIERES; barriere += 1) {
+    const jusque = Math.min(barriere * BARRIERE_TOUS_LES, ECRITURES);
+    suite.push(Array.from({ length: jusque }, (_, rang) => rang % BLOCS_SUIVIS));
+  }
+  return Object.freeze(suite.map((etat) => Object.freeze([...new Set(etat)])));
+}
 
 /**
  * Profil que ce scénario émet réellement, à donner à `planifierCoupures`.
