@@ -12,9 +12,11 @@
 //    qu'une racine écrite à moitié est DÉTECTÉE et refusée. C'est une hypothèse écrite, et éprouvée
 //    par `tests/unit/vm-generation-format.test.mjs`, pas une hypothèse subie.
 //  - **Les racines ALTERNENT.** Chaque écriture de racine porte un numéro de SÉQUENCE monotone et
-//    occupe l'emplacement `sequence % RACINES`. Une validation interrompue ne peut donc jamais
-//    détruire la racine qui fait autorité — ce qui serait la perte d'une écriture acquittée,
-//    c'est-à-dire une violation de `SEC-DURABLE-001`.
+//    occupe l'emplacement `sequence % RACINES`. Une validation interrompue ne peut donc PAS détruire
+//    la racine qui fait autorité — ce qui serait la perte d'une écriture acquittée, c'est-à-dire une
+//    violation de `SEC-DURABLE-001`. « Pas », et non « jamais » : la propriété repose sur une
+//    hypothèse, écrite dans l'ADR 0014 — deux PAGES HÔTES distinctes ne sont pas abîmées ensemble.
+//    C'est pourquoi les deux emplacements sont séparés par `PAGE_HOTE_OCTETS`, et non par un secteur.
 //
 // La somme de contrôle est un CRC-32 (polynôme IEEE 802.3 réfléchi). Elle détecte la DÉCHIRURE et
 // l'octet retourné ; elle ne prétend RIEN contre un altérateur volontaire, qui la recalculerait sans
@@ -38,8 +40,25 @@ export const RACINES = 2;
 /** Octets de la racine couverts par la somme de contrôle de l'en-tête. */
 export const RACINE_ENTETE_OCTETS = 60;
 
+/**
+ * ÉCART entre deux emplacements de racine. Une page hôte, pas un secteur.
+ *
+ * La raison est une exigence de cohérence, relevée en revue de #90. Ce format REFUSE de supposer
+ * l'atomicité sectorielle — la racine porte la somme de contrôle de son propre en-tête, précisément
+ * pour qu'une écriture déchirée soit détectée. Placer les deux racines dans la même page de 4 Kio
+ * reviendrait alors à supposer gratuitement une propriété du même ordre : qu'une écriture qui abîme
+ * un secteur ne peut pas abîmer son voisin immédiat. Rien ne le garantit — un support qui réécrit
+ * une page entière pour modifier un secteur les emporte tous les deux.
+ *
+ * Les écarter d'une page ne PROUVE rien non plus : l'hypothèse devient « deux pages distinctes ne
+ * tombent pas ensemble », et elle est ÉCRITE dans l'ADR 0014 au lieu d'être subie. C'est pourquoi
+ * l'alternance des racines se dit « ne peut PAS détruire, sous cette hypothèse » et non « ne peut
+ * JAMAIS détruire ».
+ */
+export const PAGE_HOTE_OCTETS = 4096;
+
 /** Premier octet de la zone des enregistrements, après les deux racines. */
-export const ZONE_ENREGISTREMENTS = RACINES * RACINE_OCTETS;
+export const ZONE_ENREGISTREMENTS = RACINES * PAGE_HOTE_OCTETS;
 
 /** En-tête d'un enregistrement : offset logique sur 64 bits, longueur sur 32, réserve sur 32. */
 export const ENTETE_OCTETS = 16;
@@ -74,9 +93,9 @@ export function crc32(octets, depuis = 0) {
   return (valeur ^ 0xffffffff) >>> 0;
 }
 
-/** Emplacement de la racine de rang `rang`. */
+/** Emplacement de la racine de rang `rang`. Une PAGE HÔTE les sépare, pas un secteur. */
 export function offsetDeRacine(rang) {
-  return rang * RACINE_OCTETS;
+  return rang * PAGE_HOTE_OCTETS;
 }
 
 /** Emplacement qu'occupe la racine de séquence `sequence`. L'alternance protège la précédente. */

@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildPattern } from "../../src/vm/block-fixture.mjs";
+import {
+  ZONE_ENREGISTREMENTS,
+  crc32,
+  encoderRacine,
+  offsetDeRacine,
+} from "../../src/vm/generation-format.mjs";
 import { GENERATION_ETATS, GenerationStore } from "../../src/vm/generation-store.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
@@ -148,9 +154,9 @@ test("une génération validée dont la charge est abîmée est REFUSÉE, jamais
   // Un octet de la charge du journal est retourné : la racine reste valide, la charge non.
   const handle = await support.magasin.openHandle("vol.gen");
   const octet = new Uint8Array(1);
-  handle.read(octet, { at: 1024 + 32 });
+  handle.read(octet, { at: ZONE_ENREGISTREMENTS + 32 });
   octet[0] ^= 0xff;
-  handle.write(octet, { at: 1024 + 32 });
+  handle.write(octet, { at: ZONE_ENREGISTREMENTS + 32 });
   handle.close();
 
   await assert.rejects(
@@ -281,4 +287,81 @@ test("le journal borné refuse la génération démesurée au lieu de la publier
     () => magasin.deposer(512, buildPattern(512, 2001)),
     (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.generationOverflow),
   );
+});
+
+test("deux racines ABÎMÉES au-dessus d'une charge sont un REFUS, pas une mise au rebut", async () => {
+  // Défaut HIGH-1 de la revue de #90. `decoderRacine` distingue le secteur VIERGE — jamais écrit —
+  // du secteur ABÎMÉ, et le magasin jetait cette distinction : deux racines illisibles au-dessus
+  // d'une charge donnaient `ecartee`, présenté comme « l'issue normale d'une coupure ». Or une de
+  // ces racines a pu sceller une génération ACQUITTÉE : ce qui a été validé est inconnu, et
+  // l'écarter perdrait peut-être une écriture durable.
+  const support = creerSupport();
+  const nouveau = buildPattern(512, 2000);
+  const premier = await ouvrirMagasin(support);
+  await premier.deposer(0, nouveau);
+  await premier.valider();
+  support.magasin.abandon("vol.gen");
+
+  // Les DEUX secteurs de racine sont brouillés — ni vierges, ni lisibles.
+  const handle = await support.magasin.openHandle("vol.gen");
+  handle.write(new Uint8Array(64).fill(0xa5), { at: offsetDeRacine(0) });
+  handle.write(new Uint8Array(64).fill(0x5a), { at: offsetDeRacine(1) });
+  handle.close();
+
+  await assert.rejects(
+    () => ouvrirMagasin(support),
+    (erreur) => {
+      assert.ok(isStorageError(erreur, STORAGE_ERROR_CODES.generationRootCorrupt), erreur.code);
+      assert.match(erreur.message, /INCONNU/);
+      return true;
+    },
+  );
+});
+
+test("un journal VIERGE et vide n'est pas une avarie, et n'écrit RIEN", async () => {
+  // Deux propriétés en une. La première : des secteurs jamais écrits ne sont pas des racines
+  // abîmées — sans quoi tout premier volume serait refusé. La seconde (MEDIUM-3 de la revue) : une
+  // ouverture qui n'a rien à récupérer ne doit rien écrire, faute de quoi un EXPORT sur un support
+  // saturé échouerait — c'est-à-dire le geste même par lequel l'utilisateur libère de la place.
+  const support = creerSupport();
+  const magasin = await ouvrirMagasin(support);
+  assert.equal(magasin.rapport.etat, GENERATION_ETATS.aucune);
+  assert.equal(support.magasin.sizeOf("vol.gen"), 0, "aucun octet écrit par l'ouverture");
+  assert.equal(support.magasin.flushCount("vol.gen"), 0, "aucune barrière franchie");
+});
+
+test("entre deux racines VALIDES, la séquence la plus haute fait autorité", async () => {
+  // MEDIUM-4 de la revue : la règle était jusqu'ici attrapée par accident, via la longueur de charge.
+  // Ici les deux racines sont valides et scellent la MÊME charge ; seule la séquence les départage.
+  const support = creerSupport();
+  const handle = await support.magasin.openHandle("vol.gen");
+  const charge = new Uint8Array(0);
+  const racine = (sequence, generation) =>
+    encoderRacine({
+      sequence,
+      generation,
+      tailleVolume: TAILLE_VOLUME,
+      enregistrements: 0,
+      longueurCharge: 0,
+      sommeCharge: crc32(charge),
+    });
+  handle.truncate(ZONE_ENREGISTREMENTS);
+  handle.write(racine(8, 4), { at: offsetDeRacine(0) });
+  handle.write(racine(9, 5), { at: offsetDeRacine(1) });
+  handle.close();
+
+  const magasin = await ouvrirMagasin(support);
+  assert.equal(magasin.generationValidee, 5, "la séquence 9 l'emporte sur la séquence 8");
+});
+
+test("les deux racines ne partagent aucune page de 4 Kio du support", async () => {
+  // Défaut HIGH-2 de la revue de #90. Refuser l'atomicité sectorielle — la racine porte sa propre
+  // somme de contrôle — tout en supposant gratuitement qu'une écriture ne peut pas abîmer un secteur
+  // voisin dans la MÊME page hôte serait incohérent. Les deux emplacements sont donc écartés d'une
+  // page entière. L'hypothèse qui reste — deux pages distinctes tombent indépendamment — est écrite
+  // dans l'ADR 0014, pas supposée en silence.
+  assert.equal(offsetDeRacine(0), 0);
+  assert.ok(offsetDeRacine(1) >= 4096, `écart de ${offsetDeRacine(1)} octets`);
+  assert.equal(offsetDeRacine(1) % 4096, 0);
+  assert.ok(ZONE_ENREGISTREMENTS >= 2 * 4096);
 });

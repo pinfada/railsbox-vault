@@ -216,6 +216,11 @@ async function restaurerEtRelire({ target, read, verdict, volumeSize, blockBytes
     }
     // Première mutation : la cible cesse d'être présentée comme valide AVANT d'être touchée.
     await target.revokeManifest();
+    // Puis, et SEULEMENT ensuite, le journal de génération du volume écrasé est écarté (#16). Il
+    // décrit un volume qui n'existera plus dans un instant ; le laisser ferait rejouer, au premier
+    // boot suivant, des octets qui n'appartiennent pas au volume restauré. L'ordre compte : entre
+    // les deux gestes, le volume est déjà non identifié, donc refusé au boot.
+    await target.discardGeneration();
     const recopie = await recopier({
       read,
       backend,

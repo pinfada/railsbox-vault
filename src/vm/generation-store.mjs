@@ -43,6 +43,7 @@ import {
   StorageError,
   generationCorrupt,
   generationOverflow,
+  generationRootCorrupt,
 } from "./storage-errors.mjs";
 
 /** États dans lesquels une ouverture peut trouver le journal. */
@@ -201,32 +202,67 @@ export class GenerationStore {
 
   // ------------------------------------------------------------ récupération
 
-  /** Relit les deux racines et rend celle qui fait autorité, ou `null`. */
+  /**
+   * Relit les deux racines et rend celle qui fait autorité, en distinguant VIERGE et ABÎMÉE.
+   *
+   * La distinction décide du remède, et `decoderRacine` la fournit déjà : la jeter reviendrait à
+   * traiter un secteur de racine illisible comme un secteur jamais écrit. Une racine abîmée peut
+   * avoir scellé une génération acquittée ; l'écarter en silence, sous l'étiquette « issue normale
+   * d'une coupure », effacerait une écriture durable sans le dire.
+   *
+   * @returns {{ racine: object | null, abimees: number }}
+   */
   #racineFaisantAutorite() {
     let retenue = null;
+    let abimees = 0;
     for (let rang = 0; rang < RACINES; rang += 1) {
       const secteur = this.#lireJournal(offsetDeRacine(rang), RACINE_OCTETS);
       if (secteur.byteLength < RACINE_OCTETS) continue;
       const lue = decoderRacine(secteur, { tailleVolume: this.#tailleVolume });
-      if (!lue.valide) continue;
+      if (!lue.valide) {
+        // Un secteur VIERGE n'a jamais porté de racine : ce n'est pas une avarie, c'est une place
+        // libre — l'état normal du second emplacement tant qu'aucune alternance n'a eu lieu.
+        if (!lue.vierge) abimees += 1;
+        continue;
+      }
       if (retenue === null || lue.racine.sequence > retenue.sequence) retenue = lue.racine;
     }
-    return retenue;
+    return { racine: retenue, abimees };
   }
 
   async #recuperer() {
     const taille = this.#handle.getSize();
-    const racine = taille >= ZONE_ENREGISTREMENTS ? this.#racineFaisantAutorite() : null;
+    const lecture =
+      taille >= ZONE_ENREGISTREMENTS ? this.#racineFaisantAutorite() : { racine: null, abimees: 0 };
+    const { racine, abimees } = lecture;
     const chargePresente = Math.max(0, taille - ZONE_ENREGISTREMENTS);
 
     if (racine === null) {
-      // Aucune racine : rien n'a jamais été validé dans ce journal. Ce qui traîne est le reliquat
-      // d'une génération déposée puis interrompue, et il est ÉCARTÉ — le volume, lui, est intact.
+      // AUCUNE racine valide, mais au moins une abîmée : on ne sait pas ce qui a été validé. Écarter
+      // serait peut-être juste — et peut-être une perte d'écriture acquittée. Le refus est le seul
+      // état qui ne ment pas. C'est la même règle que pour une charge scellée devenue incohérente :
+      // pas de réparation par devinette.
+      if (abimees > 0) {
+        throw generationRootCorrupt(this.#volume, {
+          abimees,
+          octets: chargePresente,
+        });
+      }
+      // Toutes les racines sont VIERGES : rien n'a jamais été validé dans ce journal. Ce qui traîne
+      // est le reliquat d'une génération déposée puis interrompue, et il est ÉCARTÉ — le volume,
+      // lui, est intact.
+      if (chargePresente === 0) {
+        // Journal vierge ET vide : il n'y a RIEN à faire, et surtout rien à écrire. Une ouverture
+        // qui écrirait ici ferait échouer un export sur un support saturé — c'est-à-dire le geste
+        // même par lequel l'utilisateur libère de la place. La racine initiale sera écrite au
+        // premier dépôt, c'est-à-dire quand une écriture aura réellement lieu.
+        this.#rapport = this.#poserRapport(GENERATION_ETATS.aucune, {});
+        return;
+      }
       await this.#vider({ sequence: 0, generation: 0 });
-      this.#rapport = this.#poserRapport(
-        chargePresente > 0 ? GENERATION_ETATS.ecartee : GENERATION_ETATS.aucune,
-        { octetsEcartes: chargePresente },
-      );
+      this.#rapport = this.#poserRapport(GENERATION_ETATS.ecartee, {
+        octetsEcartes: chargePresente,
+      });
       return;
     }
 

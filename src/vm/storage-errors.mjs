@@ -43,6 +43,12 @@ export const STORAGE_ERROR_CODES = Object.freeze({
   generationOverflow: "VAULT_STORAGE_GENERATION_OVERFLOW",
   /** Un geste exigeant une génération validée a été demandé sur une génération en cours (#16). */
   generationPending: "VAULT_STORAGE_GENERATION_PENDING",
+  /**
+   * Aucune racine de génération LISIBLE, alors qu'au moins une est abîmée (#16). On ne sait pas ce
+   * qui a été validé : écarter serait peut-être juste, et peut-être une perte d'écriture acquittée.
+   * Le refus est le seul état qui ne ment pas.
+   */
+  generationRootCorrupt: "VAULT_STORAGE_GENERATION_ROOT_CORRUPT",
 });
 
 const KNOWN_CODES = new Set(Object.values(STORAGE_ERROR_CODES));
@@ -97,6 +103,19 @@ export function generationCorrupt(volume, { generation, reason }) {
     STORAGE_ERROR_CODES.generationCorrupt,
     `Génération ${generation} du volume « ${volume} » refusée : ${reason} Le volume n'est pas modifié ; restaurer une sauvegarde (#12) est le seul remède, deviner n'en est pas un.`,
     { volume, generation, reason },
+  );
+}
+
+/**
+ * Les racines du journal sont illisibles. Distinct de `GENERATION_CORRUPT`, qui décrit une charge
+ * scellée devenue incohérente : ici c'est le SCEAU lui-même qu'on ne sait plus lire, et donc
+ * l'existence même d'une génération validée qui est inconnue.
+ */
+export function generationRootCorrupt(volume, { abimees, octets }) {
+  return new StorageError(
+    STORAGE_ERROR_CODES.generationRootCorrupt,
+    `Journal de génération du volume « ${volume} » refusé : ${abimees} racine(s) abîmée(s) et aucune lisible, au-dessus de ${octets} octet(s) de charge. Ce qui a été validé est INCONNU — l'écarter perdrait peut-être une écriture acquittée. Le volume n'est pas modifié ; restaurer une sauvegarde (#12) est le remède.`,
+    { volume, abimees, octets },
   );
 }
 

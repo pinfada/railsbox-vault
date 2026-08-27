@@ -343,11 +343,11 @@ test("la barrière franchie journalise écriture, barrière puis acquittement, d
     journal.entries().map((entree) => entree.operation),
     [JOURNAL_OPERATIONS.write, JOURNAL_OPERATIONS.flush, JOURNAL_OPERATIONS.flushAck],
   );
-  // Trois barrières RÉELLES du support : une à l'ouverture, qui rend durable la racine initiale du
-  // journal, puis DEUX par validation (#16, ADR 0014) — la charge d'abord, la racine ensuite.
-  // L'ordre est ce qui distingue « validé » de « probablement écrit », et le compte est épinglé pour
-  // qu'un raccourci qui n'en franchirait qu'une soit visible.
-  assert.equal(store.flushCount(`${name}.gen`), 3, "une à l'ouverture, deux pour la validation");
+  // DEUX barrières RÉELLES du support par validation (#16, ADR 0014) : la charge d'abord, la racine
+  // ensuite. L'ordre est ce qui distingue « validé » de « probablement écrit », et le compte est
+  // épinglé pour qu'un raccourci qui n'en franchirait qu'une soit visible. L'ouverture d'un journal
+  // vierge, elle, n'écrit ni ne franchit rien.
+  assert.equal(store.flushCount(`${name}.gen`), 2, "deux flush pour la validation");
   assert.equal(
     store.flushCount(name),
     0,

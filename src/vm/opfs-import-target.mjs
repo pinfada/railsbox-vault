@@ -95,18 +95,34 @@ export function createOpfsImportTarget(
      * écritures d'une archive de plusieurs centaines de mébioctets et buterait sur le plafond de
      * charge, sans rien garantir de plus.
      *
-     * Le journal de génération d'un volume ÉCRASÉ est retiré ici, explicitement. Le laisser ferait
-     * rejouer, au premier boot suivant, une génération du volume d'AVANT par-dessus le volume
-     * restauré — une corruption silencieuse d'un volume pourtant relu et vérifié.
+     * OUVRIR NE MUTE RIEN, et surtout pas le journal de génération. Une version antérieure de cette
+     * tranche le retirait ici, avant même d'acquérir le handle : une ouverture qui échouait pour une
+     * raison étrangère à la restauration — un second onglet détenant le volume (#8), un handle
+     * perdu, un quota — rendait alors un refus PROPRE, manifeste jamais révoqué, volume en apparence
+     * intact… alors que la dernière barrière ACQUITTÉE du guest venait d'être effacée, hors de tout
+     * code `VAULT_STORAGE_GENERATION_*`. Le journal est retiré par `discardGeneration`, au premier
+     * geste mutant.
      */
-    async open({ size }) {
-      await removeSidecar(generationJournalName(volume));
+    open({ size }) {
       return openVolume({ name: volume, size, journal, transactionnel: false });
     },
 
     /** Retire le manifeste : le volume cesse d'être identifié, donc d'être inscriptible. */
     async revokeManifest() {
       await revoke(volume);
+    },
+
+    /**
+     * Retire le journal de génération du volume ÉCRASÉ. Appelé APRÈS `revokeManifest`, jamais avant.
+     *
+     * Le laisser ferait rejouer, au premier boot suivant, une génération du volume d'AVANT par-dessus
+     * le volume restauré — une corruption silencieuse d'un volume pourtant relu et vérifié. Le
+     * retirer trop tôt effacerait une écriture acquittée d'un volume que la restauration n'a pas
+     * encore touché. L'ordre — révoquer, puis écarter — fait qu'une coupure entre les deux laisse un
+     * volume NON IDENTIFIÉ, que le boot refuse : le seul état sûr des deux.
+     */
+    async discardGeneration() {
+      return removeSidecar(generationJournalName(volume));
     },
 
     /**

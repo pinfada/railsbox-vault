@@ -119,6 +119,8 @@ function cibleMemoire({
     ouvertures: 0,
     fermetures: 0,
     revocations: 0,
+    generationsEcartees: 0,
+    gestes: [],
     commits: 0,
     flushes: 0,
     maxEcriture: 0,
@@ -188,12 +190,19 @@ function cibleMemoire({
     },
     revokeManifest() {
       etat.revocations += 1;
+      etat.gestes.push("revoque-manifeste");
       etat.manifestBytes = null;
       return Promise.resolve();
+    },
+    discardGeneration() {
+      etat.generationsEcartees += 1;
+      etat.gestes.push("ecarte-generation");
+      return Promise.resolve(true);
     },
     commitManifest(bytes) {
       if (panneCommit !== null) return Promise.reject(panneCommit);
       etat.commits += 1;
+      etat.gestes.push("inscrit-manifeste");
       etat.manifestBytes = bytes;
       return Promise.resolve();
     },
@@ -744,4 +753,31 @@ test("l'écrasement sur place ne réserve que le besoin NET, jamais la taille to
   assert.deepEqual(demandes, [0], "un volume de même géométrie ne coûte aucun octet de plus");
   assert.equal(rapport.verifiedDigest, digest);
   assert.equal(rapport.budget.requiredBytes, 0);
+});
+
+test("l'ordre des gestes mutants : révoquer, écarter la génération, puis inscrire (#16)", async () => {
+  // Le journal de génération d'un volume écrasé décrit un volume qui n'existera plus. L'écarter est
+  // nécessaire — sans quoi le premier boot suivant rejouerait par-dessus le volume restauré — mais
+  // c'est une MUTATION, et sa place dans la suite décide de ce qu'une coupure laisse :
+  //
+  //  - avant la révocation : le volume est encore IDENTIFIÉ et sa dernière barrière acquittée vient
+  //    de disparaître. Un boot le prendrait pour valide ;
+  //  - après : le volume est déjà non identifié, et le boot le refuse. C'est le seul état sûr.
+  const contenu = contenuVolume(4 * SECTOR_SIZE);
+  const { archive } = await archiveDe(contenu);
+  const cible = cibleMemoire();
+
+  const rapport = await importArchive({
+    source: sourceArchive(archive),
+    target: cible,
+    blockBytes: SECTOR_SIZE,
+  });
+
+  assert.ok(rapport.volumeSize > 0);
+  assert.equal(cible.etat.generationsEcartees, 1, "le journal de génération est écarté une fois");
+  assert.deepEqual(cible.etat.gestes, [
+    "revoque-manifeste",
+    "ecarte-generation",
+    "inscrit-manifeste",
+  ]);
 });
