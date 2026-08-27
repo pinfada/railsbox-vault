@@ -26,6 +26,17 @@ import { AccesSupport } from "./opfs-backend-support.mjs";
 import { readCountFailure, toStorageError, writeCountFailure } from "./opfs-error-mapping.mjs";
 import { libererVolume } from "./opfs-volume-registry.mjs";
 import { STORAGE_ERROR_CODES, StorageError, outOfRange } from "./storage-errors.mjs";
+import { VolumeChiffre } from "./volume-chiffre.mjs";
+
+/**
+ * Génération sous laquelle un volume écrit HORS transaction est scellé.
+ *
+ * La préparation d'une image et la restauration n'ont pas de génération à elles : elles écrivent un
+ * volume entier d'un seul tenant, et leur atomicité est ailleurs (le manifeste n'est inscrit
+ * qu'après). Zéro est donc la génération d'origine du format, celle qu'un volume porte avant sa
+ * première barrière.
+ */
+export const GENERATION_HORS_TRANSACTION = 0;
 
 export { SECTOR_SIZE, V86_BLOCK_SIZE };
 export { openOpfsVolume } from "./opfs-volume-ouverture.mjs";
@@ -36,10 +47,25 @@ function faultBytes(fault, requested) {
   return Math.min(Math.max(0, proposed), requested);
 }
 
+/**
+ * Ramène un compte à des secteurs ENTIERS, vers le bas.
+ *
+ * Employé pour les LECTURES seulement. Une lecture de v3 se fait par secteur — ouvrir la moitié
+ * d'une étiquette n'a aucun sens —, si bien qu'une lecture courte programmée à 300 octets vaut ici
+ * une lecture de zéro secteur. L'ÉCRITURE, elle, garde le compte exact de la faute : une écriture
+ * déchirée à 300 octets est justement ce que #15 mesure, et le chiffré tronqué qu'elle laisse est
+ * refusé à la relecture — ce qui est le comportement voulu, et plus strict qu'en v2.
+ */
+function alignerBasSecteur(octets) {
+  return octets - (octets % SECTOR_SIZE);
+}
+
 export class OpfsBlockBackend {
   #name;
   #acces;
   #size;
+  #disposition;
+  #chiffre;
   #journal;
   #faults;
   #flushDelay;
@@ -49,15 +75,82 @@ export class OpfsBlockBackend {
   #dureeRangementMaxMs = 0;
   #barrier = 0;
 
-  /** Utiliser `openOpfsVolume` : le constructeur ne garantit ni géométrie ni exclusivité. */
-  constructor({ name, handle, size, journal, faults, flushDelay, generation = null }) {
+  /**
+   * Utiliser `openOpfsVolume` : le constructeur ne garantit ni géométrie ni exclusivité, et surtout
+   * pas la clé de volume — sans laquelle aucun octet de v3 ne se lit.
+   *
+   * `size` est la taille LOGIQUE, celle que v86 voit. Le fichier, lui, porte en plus l'en-tête v3 et
+   * la région d'authentification : c'est `disposition.tailleSupport`, et c'est elle que le contrôle
+   * de géométrie confronte au support.
+   */
+  constructor({
+    name,
+    handle,
+    size,
+    disposition,
+    scellement,
+    journal,
+    faults,
+    flushDelay,
+    generation = null,
+  }) {
     this.#name = name;
     this.#acces = new AccesSupport({ volume: name, handle, journal });
     this.#size = size;
+    this.#disposition = disposition;
     this.#journal = journal;
     this.#faults = faults;
     this.#flushDelay = flushDelay;
     this.#generation = generation;
+    this.#chiffre = new VolumeChiffre({
+      volume: name,
+      scellement,
+      disposition,
+      lireSupport: (offset, longueur) => this.#lireOctets(offset, longueur),
+      ecrireSupport: (offset, octets) => this.#ecrireOctets(offset, octets),
+    });
+  }
+
+  /** Disposition v3 du fichier : où vivent l'en-tête, la région et la charge. */
+  get disposition() {
+    return this.#disposition;
+  }
+
+  /** Couche chiffrée du volume. Exposée pour la création, qui doit sceller tous les secteurs. */
+  get chiffre() {
+    return this.#chiffre;
+  }
+
+  /**
+   * Identifiant OPAQUE du volume, en trente-deux hexadécimaux minuscules.
+   *
+   * Publié parce que la CRÉATION en a besoin : un volume naît anonyme, son identifiant est tiré à
+   * l'ouverture et inscrit dans l'en-tête, et c'est ce même identifiant que le manifeste doit
+   * déclarer. Sans ce point de sortie, le créateur devrait relire l'en-tête pour apprendre ce qu'il
+   * vient d'écrire.
+   */
+  get identifiantVolume() {
+    return this.#chiffre.scellement.volume;
+  }
+
+  /** Lecture BRUTE du support, comptes interprétés. Ni faute programmée, ni superposition. */
+  #lireOctets(offset, longueur) {
+    const cible = new Uint8Array(longueur);
+    const obtenus = this.#acces.lire(cible, offset, { offset, length: longueur });
+    const echec = readCountFailure(obtenus, { requested: longueur, volume: this.#name, offset });
+    if (echec !== null) throw echec;
+    return cible;
+  }
+
+  /** Écriture BRUTE du support, comptes interprétés. Un compte inexact reste un échec typé (#73). */
+  #ecrireOctets(offset, octets) {
+    const acceptes = this.#acces.ecrire(octets, offset, { offset, length: octets.byteLength });
+    const echec = writeCountFailure(acceptes, {
+      requested: octets.byteLength,
+      volume: this.#name,
+      offset,
+    });
+    if (echec !== null) throw echec;
   }
 
   /**
@@ -80,30 +173,22 @@ export class OpfsBlockBackend {
   }
 
   /**
-   * Accès BRUT au support, sans faute programmée, sans superposition et sans journal d'E/S. Réservé
-   * au magasin de générations, qui est la seule pièce ayant à écrire le volume lui-même : les fautes
-   * de #15 visent les gestes du GUEST, et les compter deux fois déplacerait les points de coupure.
+   * Accès au volume DÉCHIFFRÉ, sans faute programmée, sans superposition et sans journal d'E/S.
+   * Réservé au magasin de générations, qui est la seule pièce ayant à écrire le volume lui-même :
+   * les fautes de #15 visent les gestes du GUEST, et les compter deux fois déplacerait les points de
+   * coupure.
    */
   lireSupportBrut(offset, longueur) {
-    const cible = new Uint8Array(longueur);
-    const obtenus = this.#acces.lire(cible, offset, { offset, length: longueur });
-    const echec = readCountFailure(obtenus, { requested: longueur, volume: this.#name, offset });
-    if (echec !== null) throw echec;
-    return cible;
+    return this.#chiffre.lireSecteurs(offset, longueur);
   }
 
-  /** Écrit dans le volume au nom du magasin. Un compte inexact reste un échec typé (#73). */
-  ecrireSupportBrut(offset, octets) {
-    const acceptes = this.#acces.ecrire(octets, offset, {
-      offset,
-      length: octets.byteLength,
-    });
-    const echec = writeCountFailure(acceptes, {
-      requested: octets.byteLength,
-      volume: this.#name,
-      offset,
-    });
-    if (echec !== null) throw echec;
+  /**
+   * RESCELLE et écrit dans le volume au nom du magasin — le geste du point de contrôle. La
+   * génération est celle de la racine qui range : c'est elle qui entrera dans les données associées
+   * de chaque secteur, et que le lecteur retrouvera dans la région d'authentification.
+   */
+  ecrireSupportBrut(offset, octets, generation) {
+    return this.#chiffre.ecrireSecteurs(offset, octets, generation);
   }
 
   /** Barrière du volume, franchie par le point de contrôle. Elle n'acquitte rien au guest. */
@@ -175,12 +260,14 @@ export class OpfsBlockBackend {
     const fault = this.#faults.consume("read");
     this.#applyLostHandle(fault, "read", offset, length);
     this.#acces.assertUtilisable();
-    this.#acces.assertGeometrieInchangee("read", this.#size);
+    this.#acces.assertGeometrieInchangee("read", this.#disposition.tailleSupport);
 
     // Une faute programmée ne truque pas le résultat après coup : elle demande RÉELLEMENT moins
     // d'octets au support, et l'erreur qui suit est produite par le même chemin qu'une vraie
-    // lecture courte.
-    const asked = fault?.kind === FAULT_KINDS.shortRead ? faultBytes(fault, length) : length;
+    // lecture courte. En v3 la demande est ramenée à des secteurs entiers, parce que le scellement
+    // n'a pas d'unité plus petite : une demi-étiquette ne vérifie rien.
+    const asked =
+      fault?.kind === FAULT_KINDS.shortRead ? alignerBasSecteur(faultBytes(fault, length)) : length;
     if (asked !== length) {
       this.#journal.record(JOURNAL_OPERATIONS.fault, {
         kind: fault.kind,
@@ -191,11 +278,11 @@ export class OpfsBlockBackend {
     }
 
     const target = new Uint8Array(length);
-    const obtained = this.#acces.lire(target.subarray(0, asked), offset, { offset, length });
+    if (asked > 0) target.set(await this.#chiffre.lireSecteurs(offset, asked));
 
-    // Une valeur de retour est INTERPRÉTÉE, jamais comparée à la va-vite : un support qui rend un
-    // code d'échec casté en non signé (#73) n'a pas fait une lecture courte, il n'a rien lu.
-    const echecDeLecture = readCountFailure(obtained, {
+    // Une lecture écourtée reste un ÉCHEC TYPÉ, jamais un tampon complété : le pilote du guest
+    // interpréterait les octets manquants comme des données valides.
+    const echecDeLecture = readCountFailure(asked, {
       requested: length,
       volume: this.#name,
       offset,
@@ -204,7 +291,7 @@ export class OpfsBlockBackend {
 
     // La génération EN COURS se superpose au volume : l'écrivain se relit. Elle n'est visible que
     // de lui — un lecteur qui rouvrirait le volume ne verrait que la dernière génération validée.
-    if (this.#generation !== null) this.#generation.superposer(offset, target);
+    if (this.#generation !== null) await this.#generation.superposer(offset, target);
 
     this.#journal.record(JOURNAL_OPERATIONS.read, { offset, length });
     return target;
@@ -225,7 +312,7 @@ export class OpfsBlockBackend {
     const fault = this.#faults.consume("write");
     this.#applyLostHandle(fault, "write", offset, bytes.byteLength);
     this.#acces.assertUtilisable();
-    this.#acces.assertGeometrieInchangee("write", this.#size);
+    this.#acces.assertGeometrieInchangee("write", this.#disposition.tailleSupport);
 
     const requested = bytes.byteLength;
     const offered =
@@ -242,7 +329,7 @@ export class OpfsBlockBackend {
     if (this.#generation !== null) {
       await this.#deposerDansGeneration(offset, bytes.subarray(0, offered), requested);
     } else {
-      this.#ecrireDansLeVolume(offset, bytes.subarray(0, offered), requested);
+      await this.#ecrireDansLeVolume(offset, bytes, requested, offered);
     }
     this.#journal.record(JOURNAL_OPERATIONS.write, { offset, length: requested });
   }
@@ -270,17 +357,26 @@ export class OpfsBlockBackend {
   }
 
   /**
-   * Écrit DIRECTEMENT dans le volume, sans génération. Réservé aux chemins qui réécrivent un volume
-   * entier et portent leur propre atomicité — préparation d'image, restauration (ADR 0014).
+   * SCELLE puis écrit DIRECTEMENT dans le volume, sans génération. Réservé aux chemins qui
+   * réécrivent un volume entier et portent leur propre atomicité — préparation d'image,
+   * restauration (ADR 0014).
+   *
+   * La génération employée est celle du magasin s'il y en a un, et ZÉRO sinon : un volume écrit hors
+   * transaction n'a pas de génération à lui, et l'ADR 0016 en fait la génération d'origine. Une
+   * écriture DÉCHIRÉE garde son compte exact : le secteur est scellé entier, mais seuls les
+   * `offerts` premiers octets du chiffré atteignent le support. Le secteur est alors refusé à la
+   * relecture, ce qui est plus strict que la v2 — elle y laissait des octets clairs plausibles.
    */
-  #ecrireDansLeVolume(offset, offerts, requested) {
-    const accepted = this.#acces.ecrire(offerts, offset, { offset, length: requested });
-
-    // Même règle qu'en lecture : `4294967288` n'est pas « plus d'octets qu'on n'en demandait »,
-    // c'est `FILE_ERROR_NO_SPACE` casté en non signé sur 32 bits (#73). L'écriture partielle et le
-    // manque de place ont des remèdes différents ; les confondre les rendrait tous deux inutiles.
-    const echec = writeCountFailure(accepted, { requested, volume: this.#name, offset });
-    if (echec !== null) throw echec;
+  async #ecrireDansLeVolume(offset, bytes, requested, offerts) {
+    await this.#chiffre.ecrireSecteurs(offset, bytes, GENERATION_HORS_TRANSACTION, {
+      octetsAcceptes: offerts,
+    });
+    if (offerts === requested) return;
+    throw new StorageError(
+      STORAGE_ERROR_CODES.partialWrite,
+      `Écriture partielle : ${offerts} octet(s) acceptés sur ${requested} à l'offset ${offset}.`,
+      { volume: this.#name, offset, requested, accepted: offerts },
+    );
   }
 
   /**
@@ -300,7 +396,7 @@ export class OpfsBlockBackend {
     const fault = this.#faults.consume("flush");
     this.#applyLostHandle(fault, "flush", 0, 0);
     this.#acces.assertUtilisable();
-    this.#acces.assertGeometrieInchangee("flush", this.#size);
+    this.#acces.assertGeometrieInchangee("flush", this.#disposition.tailleSupport);
 
     const barrier = this.#barrier++;
     this.#journal.record(JOURNAL_OPERATIONS.flush, { barrier });
