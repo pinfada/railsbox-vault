@@ -19,7 +19,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { TAMPON_RELECTURE_OCTETS } from "../../src/vm/generation-store.mjs";
+import { PLAFOND_CHARGE_OCTETS, TAMPON_RELECTURE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { expect, test } from "./contexte-persistant.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -186,6 +186,34 @@ test("une coupure pendant une mutation Rails laisse un volume qui reboote et dit
   expect(froid.recuperation.octetsRejoues).toBeGreaterThan(0);
   expect(froid.recuperation.surmemoireMaxOctets).toBeGreaterThan(0);
   expect(froid.recuperation.surmemoireMaxOctets).toBeLessThanOrEqual(TAMPON_RELECTURE_OCTETS);
+
+  // Et ce que le guest a fait valider PENDANT le boot à froid, confronté au plafond. La première
+  // ligne garantit que le relevé a eu lieu : sans elle, un `null` rendrait la seconde vraie sans
+  // rien mesurer.
+  expect(froid.generationMaxOctets, "le relevé de génération a eu lieu").not.toBeNull();
+  expect(froid.generationMaxOctets, "génération sous le plafond").toBeLessThan(
+    PLAFOND_CHARGE_OCTETS,
+  );
+
+  // Relevé publié : c'est la seule mesure du dépôt sur ce que l'image de référence demande
+  // RÉELLEMENT entre deux barrières (#91, ADR 0014 § Limites).
+  await testInfo.attach("generation-mesuree.json", {
+    body: JSON.stringify(
+      {
+        mesureLe: new Date().toISOString(),
+        scenario: "coupure pendant une mutation Rails, puis boot à froid",
+        avantCoupure: { ecritures: mutation.counts.write, barrieres: mutation.counts["flush-ack"] },
+        rejoueeAuBootFroid: froid.recuperation.octetsRejoues,
+        ecarteeAuBootFroid: froid.recuperation.octetsEcartes,
+        valideePendantLeBootFroid: froid.generationMaxOctets,
+        surmemoireRecuperationOctets: froid.recuperation.surmemoireMaxOctets,
+        plafondOctets: PLAFOND_CHARGE_OCTETS,
+      },
+      null,
+      2,
+    ),
+    contentType: "application/json",
+  });
 
   // Et l'invariant Rails tient, quel que soit l'état retenu. C'est la promesse de #16 lue par
   // l'application : « ancien ou nouveau », jamais un mélange que SQLite refuserait de monter.

@@ -32,6 +32,7 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "./contexte-persistant.mjs";
 
+import { PLAFOND_CHARGE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { E2E_ORIGIN_A } from "../../playwright.e2e.config.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -308,6 +309,17 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   expect(bootApresMigration.usedSnapshot, "aucun instantané mémoire").toBe(false);
   expect(bootApresMigration.failures, "aucune panne de support absorbée").toEqual([]);
   expect(bootApresMigration.conforming, "invariant conforme après migration").toBe(true);
+  // #91 — la plus grande génération validée sur le volume migré, relevée puis confrontée au plafond.
+  // La première ligne garantit que le relevé a bien eu lieu : sans elle, un `null` rendrait la
+  // seconde vraie sans rien mesurer.
+  expect(
+    bootApresMigration.generationMaxOctets,
+    "le relevé de génération a eu lieu",
+  ).not.toBeNull();
+  expect(
+    bootApresMigration.generationMaxOctets,
+    "génération sous le plafond après migration",
+  ).toBeLessThan(PLAFOND_CHARGE_OCTETS);
   expect(bootApresMigration.observedRecordId).toBe(contrat.record.id);
   expect(bootApresMigration.observedAttachmentSha256).toBe(contrat.attachment.sha256);
 
@@ -360,6 +372,13 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
       horsLigne: bootApresMigration.online === false,
       sansInstantane: bootApresMigration.usedSnapshot === false,
       invariant: bootApresMigration.invariantStatus,
+    },
+    // #91 — la plus grande génération que le guest ait fait valider sur le volume MIGRÉ. Le scénario
+    // de migration est celui où Rails a le plus à écrire d'un coup, et c'est pour cela qu'il compte
+    // dans la calibration du plafond.
+    generationMaxOctets: {
+      bootApresMigration: bootApresMigration.generationMaxOctets,
+      plafondOctets: PLAFOND_CHARGE_OCTETS,
     },
   };
   mkdirSync(DOSSIER_RAPPORTS, { recursive: true });

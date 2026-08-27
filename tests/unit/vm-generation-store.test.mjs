@@ -601,6 +601,62 @@ test("un enregistrement PLUS GRAND que le tampon est rejoué par tranches, sans 
   second.close();
 });
 
+test("la plus grande génération validée est retenue, même après un point de contrôle", async () => {
+  // La HAUTE EAU de #91. Sans elle, la taille de la plus grande génération d'un boot ne serait
+  // lisible nulle part : le point de contrôle remet la charge validée à zéro à chaque rangement, et
+  // seule la DERNIÈRE génération survivrait — dans le rapport de la prochaine ouverture.
+  //
+  // C'est cette mesure qui doit calibrer le plafond sur la demande RÉELLE du guest ; l'épreuve la
+  // fait donc porter sur une suite de générations INÉGALES, dont la plus grande n'est pas la
+  // dernière. Une implémentation qui rendrait « la dernière » passerait un témoin monotone.
+  const support = creerSupport(VOLUME_BANC);
+  const magasin = await ouvrirMagasin(support, "vol.gen", OPTIONS_BANC);
+  assert.equal(magasin.chargeMaxValideeOctets, 0, "rien de validé, rien à déclarer");
+
+  // Génération 1 : deux enregistrements.
+  await magasin.deposer(0, buildPattern(ENREGISTREMENT_BANC, 1));
+  await magasin.deposer(ENREGISTREMENT_BANC, buildPattern(ENREGISTREMENT_BANC, 2));
+  await magasin.valider();
+  const grande = magasin.chargeMaxValideeOctets;
+  assert.equal(grande, 2 * (ENREGISTREMENT_BANC + ENTETE_OCTETS));
+
+  // Le rangement remet la charge validée à zéro. La haute eau, elle, ne bouge pas.
+  await magasin.pointDeControle();
+  assert.equal(magasin.octetsDeCharge, 0, "le journal est vidé");
+  assert.equal(magasin.chargeMaxValideeOctets, grande, "la haute eau survit au point de contrôle");
+
+  // Génération 2, PLUS PETITE : elle ne doit pas faire baisser la mesure.
+  await magasin.deposer(0, buildPattern(ENREGISTREMENT_BANC, 3));
+  await magasin.valider();
+  assert.equal(
+    magasin.chargeMaxValideeOctets,
+    grande,
+    "une génération plus petite ne l'abaisse pas",
+  );
+
+  // Génération 3, PLUS GRANDE : elle, la relève.
+  await magasin.pointDeControle();
+  for (let rang = 0; rang < 3; rang += 1) {
+    await magasin.deposer(rang * ENREGISTREMENT_BANC, buildPattern(ENREGISTREMENT_BANC, rang + 4));
+  }
+  await magasin.valider();
+  assert.equal(magasin.chargeMaxValideeOctets, 3 * (ENREGISTREMENT_BANC + ENTETE_OCTETS));
+  magasin.close();
+});
+
+test("une validation REFUSÉE par le support n'entre pas dans la plus grande génération", async () => {
+  // La haute eau est posée APRÈS le succès de la racine. La poser avant ferait entrer dans la
+  // statistique une charge que le support a refusée — et le plafond serait calibré sur une
+  // génération qui n'a jamais existé.
+  const support = creerSupport(VOLUME_BANC);
+  const magasin = await ouvrirMagasin(support, "vol.gen", OPTIONS_BANC);
+  await magasin.deposer(0, buildPattern(ENREGISTREMENT_BANC, 1));
+  support.magasin.starve("vol.gen");
+
+  await assert.rejects(() => magasin.valider());
+  assert.equal(magasin.chargeMaxValideeOctets, 0, "rien n'a été scellé, rien n'est compté");
+});
+
 test("le tampon de relecture borne aussi la récupération au PLAFOND de production", () => {
   // Le banc ci-dessus tourne à plafond réduit : ce que la borne vaut au plafond réel n'est pas
   // mesuré par lui, il est DÉDUIT — le tampon est une constante du magasin, indépendante du plafond.
