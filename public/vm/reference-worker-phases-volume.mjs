@@ -20,6 +20,7 @@ import {
 import { revokeVolumeManifest, writeVolumeManifest } from "/src/vm/opfs-volume-open.mjs";
 import { createSha256Stream } from "/src/vm/sha256-stream.mjs";
 import { manifestSidecarName } from "/src/vm/volume-import.mjs";
+import { VOLUME_ALGORITHM } from "/src/vm/volume-manifest.mjs";
 import { attentesDe, manifesteDuDescripteur } from "./reference-worker-boot.mjs";
 import { EXPORT_BLOCK_BYTES } from "./reference-worker-mesures.mjs";
 
@@ -74,9 +75,13 @@ export async function phasePrepare({ volume, appDiskBytes, appDiskUrl, manifest 
     cle: cleDuBanc(),
     transactionnel: false,
   });
-  // Déclaré hors du `try` pour survivre au `finally` qui ferme le backend ; jamais lu quand le
-  // versement échoue, puisque l'exception traverse alors la fonction.
+  // Déclarés hors du `try` pour survivre au `finally` qui ferme le backend ; jamais lus quand le
+  // versement échoue, puisque l'exception traverse alors la fonction. L'IDENTIFIANT est relevé ici
+  // parce qu'il naît avec le volume : `openOpfsVolume` le tire et l'inscrit dans l'en-tête v3, et
+  // c'est ce même identifiant que le manifeste doit déclarer (ADR 0016). Le réinventer plus bas
+  // décrirait un autre volume que celui qui vient d'être écrit.
   let offset;
+  const identifiantVolume = backend.identifiantVolume;
   try {
     offset = await verserFluxDansVolume(backend, appDiskUrl);
   } finally {
@@ -88,7 +93,10 @@ export async function phasePrepare({ volume, appDiskBytes, appDiskUrl, manifest 
   // Dernier geste : le volume devient identifié, donc ouvrable en écriture. Le format inscrit est
   // celui que le descripteur demande — un scénario de migration prépare délibérément un volume au
   // format ANTÉRIEUR, sans quoi il n'aurait rien à migrer.
-  const inscrit = manifesteDuDescripteur(manifest, appDiskBytes);
+  const inscrit = manifesteDuDescripteur(manifest, appDiskBytes, {
+    id: identifiantVolume,
+    algorithm: VOLUME_ALGORITHM,
+  });
   await writeVolumeManifest(volume, inscrit);
   return {
     phase: "prepare",
@@ -117,12 +125,19 @@ export async function phasePrepareEmpty({ volume, appDiskBytes, manifest }) {
     journal: new BlockJournal(),
     cle: cleDuBanc(),
   });
+  const identifiantVolume = backend.identifiantVolume;
   await backend.flush();
   await backend.close();
   // Le témoin est IDENTIFIÉ comme n'importe quel volume, mais VIDE. Sans manifeste, il serait
   // refusé pour non-identification (#12) et ne dirait plus rien du CONTENU d'OPFS — qui est
   // précisément ce qu'il doit prouver.
-  await writeVolumeManifest(volume, manifesteDuDescripteur(manifest, appDiskBytes));
+  await writeVolumeManifest(
+    volume,
+    manifesteDuDescripteur(manifest, appDiskBytes, {
+      id: identifiantVolume,
+      algorithm: VOLUME_ALGORITHM,
+    }),
+  );
   return { phase: "prepare-empty", volume, appDiskBytes };
 }
 

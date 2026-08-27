@@ -33,6 +33,7 @@ import {
   writeArchive,
 } from "/src/vm/volume-export.mjs";
 import { ARCHIVE_ERROR_CODES, ArchiveError } from "/src/vm/archive-errors.mjs";
+import { VOLUME_ALGORITHM } from "/src/vm/volume-manifest.mjs";
 import { manifesteDuDescripteur } from "./reference-worker-boot.mjs";
 import {
   EXPORT_BLOCK_BYTES,
@@ -120,7 +121,12 @@ export async function phaseExportVolume({
   const stockageAvant = await instantaneStockage();
   let result;
   try {
-    const m = manifesteDuDescripteur(manifest, source.size);
+    // L'archive décrit le volume QU'ELLE PORTE : son identifiant est celui du fichier exporté,
+    // relu de son en-tête v3, jamais tiré à l'export (ADR 0016).
+    const m = manifesteDuDescripteur(manifest, source.size, {
+      id: backend.identifiantVolume,
+      algorithm: VOLUME_ALGORITHM,
+    });
     result = await writeArchive({
       source,
       sink,
