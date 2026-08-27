@@ -108,6 +108,38 @@ binaire antérieur — la limite est écrite dans l'ADR 0011 et dans `docs/testi
 reste par ailleurs **lisible**, donc exportable, restaurable et migrable : le passage à v2
 n'orpheline aucun volume.
 
+### Le format de volume passe à v3, et il est CHIFFRÉ (#18)
+
+C'est la première version de format qui change la **disposition du fichier**, et non seulement le
+document qui l'accompagne. Un volume v3 porte un en-tête d'un secteur, une région d'authentification
+de 34 octets par secteur logique, puis une charge chiffrée : le fichier fait 6,64 % de plus que la
+taille logique, et son contenu n'est plus lisible sans clé. La décision est
+l'[ADR 0016](decisions/0016-format-de-volume-v3-dispositions.md).
+
+Ce que la matrice de compatibilité doit en retenir :
+
+- **le manifeste passe en v3** et gagne un bloc `volume` obligatoire — identifiant OPAQUE de
+  trente-deux hexadécimaux minuscules, immuable, inscrit à la création, et algorithme épinglé sur
+  `aes-256-gcm`. Un runtime qui ne connaît que v2 refuse un v3 par `VAULT_MANIFEST_FORMAT_TOO_NEW`,
+  ce qui est exactement le comportement voulu : il n'a pas la clé, et il écrirait en clair dans un
+  volume chiffré ;
+- **le format du journal de génération passe de 1 à 2**, indépendamment, et pour la même raison ;
+- **v1 et v2 restent LISIBLES**, donc exportables et migrables. Ils ne sont plus INSCRIPTIBLES, et
+  le refus dit pourquoi plutôt que d'invoquer un numéro : un volume d'avant v3 n'a ni région
+  d'authentification ni nonce, si bien que le sceau d'un secteur n'aurait nulle part où aller ;
+- **la migration v2 → v3 est DÉCLARÉE et non fournie** par cette tranche. `planMigration(1, 3)` rend
+  bien deux pas, et le second refuse par `VAULT_MIGRATION_STEP_UNAVAILABLE` — « le chemin est connu,
+  l'outil manque », un état distinct de `VAULT_MIGRATION_NO_PATH` parce que les remèdes diffèrent.
+  Tant qu'il en est ainsi, **un volume existant n'a pas de chemin vers le format courant** : c'est
+  la raison pour laquelle la tranche (a) de #18 ne se fusionne pas seule ;
+- **l'archive porte le fichier v3 tel quel**, donc chiffré. `content.length` et `identity.digest`
+  décrivent des octets chiffrés : deux exports d'un même contenu logique ne sont plus comparables
+  par empreinte, et une archive restaurée n'est ouvrable qu'avec sa clé. La sauvegarde d'un volume
+  chiffré est donc la sauvegarde de DEUX choses, dont ce dépôt n'en gère qu'une avant #21 ;
+- **aucun volume d'utilisateur n'est concerné** : la série est `0.x` et aucun format n'a été publié.
+  Les « vecteurs de test conservés pour chaque version publiée » restent sans objet pour la même
+  raison, et les vecteurs cryptographiques de #17 tiennent ce rôle pour le format lui-même.
+
 ## Publication
 
 Une version publiable exige :
