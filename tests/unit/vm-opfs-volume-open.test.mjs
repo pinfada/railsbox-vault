@@ -30,6 +30,7 @@ function manifesteValide(surcharge = {}) {
     app: { id: "railsbox-vault-reference", version: "1.0.0" },
     volumeSize: TAILLE,
     identity: { algorithm: "sha-256", digest: null },
+    volume: { id: "0123456789abcdef0123456789abcdef", algorithm: "aes-256-gcm" },
     ...surcharge,
   });
 }

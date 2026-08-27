@@ -202,6 +202,7 @@ export async function revokeVolumeManifest(volume, { removeFile = removeOpfsVolu
 export async function openVolumeForWrite({
   name,
   size,
+  cle,
   journal = new BlockJournal(),
   expectations = {},
   stat = statOpfsVolume,
@@ -211,6 +212,9 @@ export async function openVolumeForWrite({
   const manifestBytes = await readVolumeManifest(name, { stat, readFile });
   // `assertVolumeWritable` refuse un volume sans manifeste, malformé, d'un format futur, d'une autre
   // application ou écrit par un runtime majeur plus récent. Il lève AVANT l'ouverture.
-  assertVolumeWritable({ manifestBytes, expectations });
-  return openVolume({ name, size, journal });
+  const manifest = assertVolumeWritable({ manifestBytes, expectations });
+  // L'identifiant de volume vient du MANIFESTE, jamais du fichier : c'est lui qui entre dans les
+  // données associées de chaque secteur (ADR 0015), et la copie que porte l'en-tête v3 lui est
+  // confrontée, pas substituée. La clé, elle, est reçue en mémoire et n'existe qu'ici (ADR 0016).
+  return openVolume({ name, size, journal, cle, identifiantVolume: manifest.volume?.id });
 }
