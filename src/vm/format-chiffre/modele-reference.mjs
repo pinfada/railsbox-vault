@@ -290,12 +290,27 @@ export async function ouvrirBloc({ cle, identite, scelle, attentes = {} }) {
  * travail d'un module pur. L'appelant (#18) fait cette lecture-modification-réécriture avant
  * d'appeler ici, comme `deposer` le fait déjà côté journal.
  *
+ * **`nonces` est la porte d'injection de ce geste, et elle manquait.** `scellerBlocSousNonce` et
+ * `scellerRacineSousNonce` existent pour que #18 puisse REPRODUIRE les vecteurs figés ; ce
+ * troisième geste n'avait pas son équivalent, si bien que le chemin du POINT DE CONTRÔLE ne pouvait
+ * être confronté à aucun vecteur — c'est-à-dire que la partie du produit qui écrit réellement dans
+ * le volume échappait au contrat. Le manque est signalé par l'ADR 0016 ; il est comblé ICI, sans
+ * qu'un seul octet produit change : par défaut le nonce est TIRÉ, exactement comme avant.
+ *
  * @param {{ cle: CryptoKey, adresse: number, contenu: Uint8Array,
  *           identite: { volume: string, formatVersion: number, generation: number },
- *           attentes: { scellementsCumules: number } }} appel
+ *           attentes: { scellementsCumules: number },
+ *           nonces?: () => Uint8Array }} appel
  * @returns {Promise<{ secteurs: Array<object>, scellementsCumules: number }>}
  */
-export async function rescellerEnSecteurs({ cle, adresse, contenu, identite, attentes = {} }) {
+export async function rescellerEnSecteurs({
+  cle,
+  adresse,
+  contenu,
+  identite,
+  attentes = {},
+  nonces = tirerNonce,
+}) {
   let scellementsCumules = exigerAttente("scellementsCumules", attentes.scellementsCumules);
   if (!(contenu instanceof Uint8Array)) {
     throw malforme("« contenu » doit être une suite d'octets.");
@@ -317,10 +332,11 @@ export async function rescellerEnSecteurs({ cle, adresse, contenu, identite, att
       adresse: adresse + position,
       longueur: SECTEUR_OCTETS,
     };
-    const scelle = await scellerBloc({
+    const scelle = await scellerBlocSousNonce({
       cle,
       identite: identiteSecteur,
       contenu: contenu.subarray(position, position + SECTEUR_OCTETS),
+      nonce: nonces(),
       attentes: { scellementsCumules },
     });
     scellementsCumules += 1;

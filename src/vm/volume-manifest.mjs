@@ -18,6 +18,7 @@
 // la STRUCTURE, sa sérialisation, et la vérification de version/identité AVANT toute écriture.
 
 import { SECTOR_SIZE, V86_BLOCK_SIZE, assertBlockGeometry } from "./block-geometry.mjs";
+import { ALGORITHME } from "./format-chiffre/identite-logique.mjs";
 import { MANIFEST_ERROR_CODES, ManifestError } from "./manifest-errors.mjs";
 
 /** Marqueur figé : distingue un manifeste Vault d'un objet JSON quelconque. Jamais modifié. */
@@ -32,14 +33,34 @@ export const MANIFEST_MAGIC = "railsbox-vault/volume-manifest";
  * revoir (risque n°2) et qui, en série `0.x`, ne peut RIEN refuser : `docs/release-policy.md` y
  * exprime une rupture d'API runtime par un incrément du MINEUR, si bien que les deux majeurs valent
  * 0 et que la comparaison est toujours fausse.
+ *
+ * v3 (#18, ADR 0016) ajoute un bloc OBLIGATOIRE, `volume` : l'identifiant OPAQUE du volume et le nom
+ * de l'algorithme qui scelle ses secteurs. L'ADR 0015 avait constaté l'absence du premier — « aucun
+ * champ ne distingue deux volumes de la même application » —, ce qui laissait la propriété P2
+ * incomplète : deux volumes n'étaient séparés que par leur clé. Le second épingle `aes-256-gcm`,
+ * suivant la règle d'agilité que l'ADR 0011 a posée pour l'empreinte : un second algorithme exigera
+ * une version de format et un ADR, jamais une négociation à l'exécution.
  */
-export const MANIFEST_FORMAT_VERSION = 2;
+export const MANIFEST_FORMAT_VERSION = 3;
 
 /** Plus ancien format que ce runtime sait encore LIRE (donc exporter, restaurer et migrer). */
 export const MIN_READABLE_FORMAT_VERSION = 1;
 
 /** Premier format qui porte `runtime.minWriter`. En deçà, le champ n'existe pas. */
 export const MIN_WRITER_FORMAT_VERSION = 2;
+
+/** Premier format qui porte le bloc `volume`. En deçà, le volume n'a pas d'identité propre. */
+export const MIN_VOLUME_FORMAT_VERSION = 3;
+
+/**
+ * SEUL algorithme de scellement admis par le format v3 — celui de l'ADR 0015, épinglé ici pour que
+ * le manifeste et le modèle ne puissent pas diverger. Un manifeste qui nommerait autre chose serait
+ * un volume affirmant une primitive qu'aucun code n'honore.
+ */
+export const VOLUME_ALGORITHM = ALGORITHME;
+
+/** Forme TEXTUELLE de l'identifiant de volume : trente-deux hexadécimaux minuscules (ADR 0015). */
+const IDENTIFIANT_VOLUME = /^[0-9a-f]{32}$/;
 
 /**
  * SEUL algorithme d'empreinte du format de volume, v1 comme v2. Il est ÉPINGLÉ, et non simplement
@@ -120,6 +141,7 @@ export function createManifest({
   app,
   volumeSize,
   identity = { algorithm: "sha-256", digest: null },
+  volume,
 } = {}) {
   if (!Number.isInteger(formatVersion) || formatVersion < 1) {
     throw new TypeError(`Version de format invalide : ${JSON.stringify(formatVersion)}.`);
@@ -127,6 +149,7 @@ export function createManifest({
   const runtimeNorm = normalizeRuntime(runtime, null, formatVersion);
   const appNorm = normalizeApp(app, TypeError);
   const identityNorm = normalizeIdentity(identity, TypeError);
+  const volumeNorm = normalizeVolume(volume, null, formatVersion);
   assertBlockGeometry(volumeSize);
 
   return deepFreeze({
@@ -136,6 +159,7 @@ export function createManifest({
     app: appNorm,
     geometry: { volumeSize, sectorSize: SECTOR_SIZE, blockSize: V86_BLOCK_SIZE },
     identity: identityNorm,
+    ...(volumeNorm === null ? {} : { volume: volumeNorm }),
   });
 }
 
@@ -170,6 +194,7 @@ export function parseManifest(input) {
   const app = normalizeApp(raw.app, malformedThrower("app"));
   const identity = normalizeIdentity(raw.identity, malformedThrower("identity"));
   const geometry = normalizeGeometry(raw.geometry);
+  const volume = normalizeVolume(raw.volume, malformedThrower("volume"), raw.formatVersion);
 
   return deepFreeze({
     magic: MANIFEST_MAGIC,
@@ -178,6 +203,7 @@ export function parseManifest(input) {
     app,
     geometry,
     identity,
+    ...(volume === null ? {} : { volume }),
   });
 }
 
@@ -347,6 +373,54 @@ function normalizeRuntime(runtime, onError, formatVersion) {
   return { version: runtime.version, artifact, minWriter: runtime.minWriter };
 }
 
+/**
+ * Normalise le bloc `volume`, qui n'existe qu'à partir du format v3 (#18, ADR 0016).
+ *
+ * `id` est l'identifiant OPAQUE du volume : seize octets tirés à la création, rendus par
+ * trente-deux hexadécimaux MINUSCULES. La forme est vérifiée strictement plutôt que normalisée,
+ * parce qu'elle entre TELLE QUELLE dans les données associées de chaque secteur (ADR 0015,
+ * `identifiantVolumeEnTexte`) : une majuscule tolérée ici donnerait une autre étiquette là-bas,
+ * c'est-à-dire un autre volume.
+ *
+ * `algorithm` est épinglé sur l'unique algorithme admis. Accepter une autre étiquette la rendrait
+ * persistante sans qu'aucun code ne l'honore — un volume affirmerait « chacha20-poly1305 » pendant
+ * que la vérification présenterait un AES-GCM.
+ *
+ * @returns {{ id: string, algorithm: string } | null} `null` avant v3, où le bloc n'existe pas
+ */
+function normalizeVolume(volume, onError, formatVersion) {
+  if (formatVersion < MIN_VOLUME_FORMAT_VERSION) {
+    // Avant v3 le bloc n'existe pas. À la CRÉATION, en fournir un est une faute ; à la relecture,
+    // c'est un champ surnuméraire, toléré et ignoré comme les autres.
+    if (volume !== undefined && typeof onError !== "function") {
+      throwWith(
+        onError,
+        `« volume » n'existe qu'à partir du format ${MIN_VOLUME_FORMAT_VERSION} ; ce manifeste déclare le format ${formatVersion}.`,
+        TypeError,
+      );
+    }
+    return null;
+  }
+  if (!volume || typeof volume !== "object") {
+    throwWith(onError, "bloc « volume » absent : le format v3 l'exige.", TypeError);
+  }
+  if (typeof volume.id !== "string" || !IDENTIFIANT_VOLUME.test(volume.id)) {
+    throwWith(
+      onError,
+      `identifiant de volume invalide : ${JSON.stringify(volume.id)}. Trente-deux hexadécimaux minuscules sont exigés — la forme entre telle quelle dans les données associées de chaque secteur.`,
+      TypeError,
+    );
+  }
+  if (volume.algorithm !== VOLUME_ALGORITHM) {
+    throwWith(
+      onError,
+      `algorithme de scellement non pris en charge : ${JSON.stringify(volume.algorithm)}. Cette version de format n'en admet qu'un : ${VOLUME_ALGORITHM}. Un second exigera une version de format et un ADR.`,
+      TypeError,
+    );
+  }
+  return { id: volume.id, algorithm: volume.algorithm };
+}
+
 function normalizeApp(app, onError) {
   if (!app || typeof app !== "object") throwWith(onError, "application absente.", TypeError);
   if (typeof app.id !== "string" || app.id === "") {
@@ -409,7 +483,9 @@ const REFUSAL_MESSAGES = Object.freeze({
   [MANIFEST_ERROR_CODES.formatTooNew]: "format de volume plus récent que ce runtime : refusé.",
   [MANIFEST_ERROR_CODES.formatTooOld]: "format de volume trop ancien pour ce runtime : refusé.",
   [MANIFEST_ERROR_CODES.migrationRequired]:
-    "format antérieur : lecture tolérée, écriture refusée jusqu'à migration.",
+    "format antérieur : lecture tolérée, écriture refusée jusqu'à migration. Le refus n'est pas " +
+    "administratif — un volume d'avant le format v3 n'a ni région d'authentification ni nonce, si " +
+    "bien que le sceau d'un secteur n'aurait nulle part où aller (ADR 0016).",
   [MANIFEST_ERROR_CODES.runtimeDowngrade]:
     "volume écrit par un runtime plus récent : écriture refusée (downgrade dangereux).",
   [MANIFEST_ERROR_CODES.identityMismatch]:
