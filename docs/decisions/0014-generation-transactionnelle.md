@@ -21,46 +21,77 @@ point de validation. Cette tranche doit rendre cette frontière RÉELLE : avant 
 écriture de la génération en cours n'est visible d'un lecteur qui rouvre le volume ; après, toutes
 le sont.
 
-## Ce que la cadence de mesure de #15 rendait impossible
+## L'oracle de #15 ne savait pas nommer une génération intermédiaire
 
-Avant de choisir un mécanisme, il a fallu constater un défaut de la MESURE, et le dire.
+Avant de choisir un mécanisme, il a fallu constater un défaut de la MESURE, et le corriger — mais
+pas là où cette tranche l'a d'abord cru.
 
 Le scénario de #15 écrit vingt-quatre blocs DISTINCTS avec une barrière tous les huit : trois
-générations, dont chacune ne touche qu'un tiers du volume. Or l'oracle ne connaît que deux états de
-référence — « tout l'ancien » et « tout le nouveau ». Une génération intermédiaire VALIDÉE y est
-donc, par construction, un `melange`.
+générations, dont chacune ne touche qu'un tiers du volume. Or l'oracle de #15 ne connaissait que
+deux états de référence — « tout l'ancien » et « tout le nouveau ». Une génération intermédiaire
+VALIDÉE y était donc, par construction, un `melange`, et le « 100 % » demandé était hors d'atteinte
+de TOUT mécanisme : la borne supérieure valait 50 % sur la graine 2026, 37,5 % sur les graines 7
+et 424242.
 
-La conséquence n'est pas une opinion, elle se calcule. `tests/unit/vm-crash-cadence.test.mjs`
-applique à la matrice réelle un mécanisme PARFAIT — un mécanisme qui rendrait visible toute
-génération dont la barrière est acquittée, et rien d'autre — et obtient la borne SUPÉRIEURE de ce
-que #16 pouvait atteindre :
+### La première réponse était fausse, et c'est une mutation qui l'a montré
 
-| Graine | Borne supérieure, cadence de #15 | Borne supérieure, cadence retenue |
-| ------ | -------------------------------: | --------------------------------: |
-| 2026   |                         **50 %** |                         **100 %** |
-| 7      |                       **37,5 %** |                         **100 %** |
-| 424242 |                       **37,5 %** |                         **100 %** |
+Cette tranche a d'abord changé la CHARGE MESURÉE : huit blocs réécrits trois fois avec le MÊME
+contenu, de sorte que toute génération validée soit l'un des deux états que l'oracle savait juger.
+Les trois nombres qui décident de la matrice restaient inchangés, la matrice aussi, et le taux
+montait à 100 % sur les trois graines.
 
-Le « 100 % sur la même matrice » demandé par #16 était donc **inatteignable** avec cette cadence,
-non par faiblesse d'un mécanisme mais parce que `SEC-DURABLE-001` OBLIGE à publier les générations
-intermédiaires — les huit premiers blocs sont acquittés ET franchis par une barrière —, et que
-l'oracle ne sait ni les nommer « ancien » ni les nommer « nouveau ».
+**La revue l'a réfutée par mutation, et le contre-exemple mérite d'être conservé.** À contenu
+identique d'une passe à l'autre, les générations 2 et 3 ne publient RIEN de nouveau : le volume
+final est le même qu'elles aient été validées ou perdues. Un magasin muté qui les acquitte au guest
+— la barrière du support est franchie, le `flush-ack` remonte — puis ne les scelle jamais laisse
+donc exactement le même volume qu'un magasin correct. **La matrice restait à 100 %, et la suite
+unitaire entière restait verte.** La mesure ne mesurait plus rien.
 
-**L'oracle n'est pas modifié.** Le juge reste identique, et il reste sévère : c'est lui qui refuse
-un bloc non rattachable, lui qui classe `corrompu` une écriture acquittée puis barriérée qui aurait
-disparu, lui qui exige le journal de la session morte. Le rendre plus généreux aurait été la seule
-façon de faire mentir la mesure.
+### La bonne réponse : apprendre à l'oracle à juger le scénario
 
-C'est la CHARGE DE TRAVAIL mesurée qui change : le scénario suit désormais **huit blocs réécrits
-trois fois**, de sorte que toute génération validée porte l'état complet, c'est-à-dire l'un des deux
-états que l'oracle sait juger. Les trois nombres qui décident de la matrice de coupures —
-vingt-quatre écritures, trois barrières, blocs de 512 octets — sont **inchangés** : la matrice est
-identique point pour point, et `tests/unit/vm-crash-cadence.test.mjs` l'épingle.
+Le remède n'est pas de fabriquer un scénario que l'oracle sait juger — c'est déplacer la barre —
+mais d'apprendre à l'oracle à juger le scénario. `classerVolume` reçoit désormais la **suite des
+générations attendues** : pour ce scénario, `[∅, {0..7}, {0..15}, {0..23}]`. Un volume relu est
+accepté si, et seulement si, l'ensemble des blocs PUBLIÉS est **exactement** l'un de ces états. Les
+verdicts intermédiaires sont nommés — `generation-1`, `generation-2` — au lieu d'être rangés dans
+`melange`.
 
-La nouvelle cadence est aussi plus exigeante sur un point : elle réécrit le MÊME bloc d'une
-génération à l'autre, c'est-à-dire le régime que l'en-tête de `crash-oracle.mjs` désigne comme « le
-régime même de #16 ». Une génération qui écrit, franchit sa barrière, puis réécrit le même bloc sans
-barrière est précisément le cas où un mécanisme bâclé perdrait une écriture acquittée.
+Trois propriétés en font un juge **strictement plus discriminant** que celui de #15, et non un juge
+plus indulgent :
+
+1. **La suite est dérivée du SCÉNARIO**, jamais du mécanisme : quels blocs chaque écriture touche,
+   où tombent les barrières. Elle ne demande pas au magasin ce qu'il a fait, elle énumère ce qu'il
+   devait faire.
+2. **L'oracle refuse une suite qui ne croît pas strictement** — elle doit partir de l'ensemble vide,
+   croître par inclusion stricte, et finir sur la totalité des blocs suivis. Ces trois règles
+   n'admettent qu'une seule suite par scénario : un appelant ne peut pas y glisser l'état que son
+   mécanisme produit pour faire passer un mélange pour une génération.
+3. **Tout ce que #15 refusait est encore refusé** : bloc non rattachable, bloc déchiré, et surtout
+   écriture acquittée puis franchie par une barrière qui aurait disparu du support.
+
+Le scénario, lui, **revient à vingt-quatre blocs distincts** avec une barrière tous les huit — celui
+de #15, à l'identique.
+
+`tests/unit/vm-crash-mutation.test.mjs` tient la démonstration dans les deux sens : le magasin sain
+rend 100 % sur les trois graines ; le mutant qui perd les générations acquittées tombe à 0,875 /
+0,75 / 0,75, et celui qui les perd toutes à 0,5 / 0,375 / 0,375, avec des blocs `corrompu` nommés
+par la règle `SEC-DURABLE-001`. La borne de l'épreuve est dite aussi : un point coupé avant la
+première barrière n'a rien fait promettre au mutant, et rend le même verdict qu'un magasin correct —
+ce n'est pas un trou de l'oracle, c'est qu'il n'y a rien à trahir.
+
+### Ce que la matrice ne peut pas exercer
+
+Le verdict `nouveau` — les vingt-quatre blocs publiés — est **inatteignable par la matrice**, sur
+les trois graines, à huit comme à douze points. La génération 3 n'est validée qu'à l'acquittement de
+la troisième barrière, qui suit la vingt-quatrième écriture ; or les trois genres de coupure de
+`crash-plan.mjs` tombent tous avant cet acquittement. Ajouter un genre « après barrière » changerait
+le nombre de genres, donc la suite pseudo-aléatoire, donc la matrice entière.
+
+L'extrême haut est donc exercé par un **témoin positif** explicite : le même scénario sans aucune
+faute armée doit rendre `nouveau` sur les vingt-quatre blocs. Sans lui, un oracle devenu incapable
+de rendre ce verdict passerait inaperçu. Le fait est épinglé plutôt que tu :
+`tests/unit/vm-crash-cadence.test.mjs` rougit si un jour un genre de coupure postérieur à la
+dernière barrière est ajouté.
 
 ## Les trois candidats, mesurés
 
@@ -126,8 +157,26 @@ format v3 n'est introduit — ni pour le volume, ni pour le manifeste (voir plus
    avant, que la barrière du guest est acquittée.
 3. **POINT DE CONTRÔLE.** La charge validée est recopiée dans le volume, franchie par une barrière,
    puis le journal est vidé. Ce geste ne valide rien et ne promet rien de neuf — les octets étaient
-   déjà durables. Il est donc APRÈS l'acquittement, jamais sur son chemin, et amorti : il n'a lieu
-   qu'au-delà de 8 Mio de charge, et à la fermeture propre du volume.
+   déjà durables. Il est amorti : il n'a lieu qu'au-delà de 8 Mio de charge, et à la fermeture
+   propre du volume.
+
+   Il est APRÈS l'acquittement, et il n'est **pas attendu**. La nuance vient de la revue de cette
+   PR, qui a relevé qu'une première version disait vrai de la mauvaise chose : le rangement était
+   bien après l'acquittement de la DURABILITÉ, mais il courait dans la promesse de `flush()` — donc
+   avant que `v86-buffer-adapter` ne lève `BSY` et n'émette l'IRQ. Le guest restait bloqué pendant
+   la relecture, la réécriture de plusieurs mébioctets et la barrière du volume. Le rangement est
+   donc lancé et laissé courir ; toute E/S ultérieure l'attend, parce qu'il tronque le journal et
+   vide l'index — deux choses qu'une écriture concurrente ne survivrait pas. Sa durée maximale est
+   mesurée et publiée (`dureeRangementMaxMs`) : un coût que personne ne mesure finit par être
+   supposé nul.
+
+   Son échec, enfin, ne remonte pas au guest : la barrière a abouti, les octets sont durables dans
+   le journal, et la prochaine ouverture les rejouera. Le dire au guest signifierait « ta barrière a
+   échoué » alors qu'elle a réussi — un mensonge dans le sens inverse de celui que `SEC-DURABLE-001`
+   interdit, et qui tuerait la session pour un geste de rangement. L'échec est journalisé, publié
+   par `dernierRangement`, et se signale de lui-même : un journal qui ne se vide plus atteint son
+   plafond.
+
 4. **RÉCUPÉRER**, à l'ouverture. Voir plus bas.
 
 Ce mécanisme se distingue explicitement de l'alternative que l'ADR 0003 avait déjà rejetée — «
@@ -145,9 +194,21 @@ indivisible.** C'est une hypothèse, elle est écrite ici, et elle n'est pas sub
 - la racine porte la somme de contrôle de son propre en-tête. Une racine écrite à moitié est
   DÉTECTÉE et n'est pas une racine ;
 - **les racines alternent.** Chaque écriture de racine porte un numéro de séquence monotone et
-  occupe l'emplacement `sequence % 2`. Valider la génération suivante n'écrase donc jamais la racine
-  qui fait autorité. Une validation interrompue laisse intacte celle qu'elle remplaçait — sans quoi
-  une écriture acquittée pourrait disparaître, c'est-à-dire une violation de `SEC-DURABLE-001` ;
+  occupe l'emplacement `sequence % 2`. Valider la génération suivante n'écrase donc **pas** la
+  racine qui fait autorité, et une validation interrompue laisse intacte celle qu'elle remplaçait —
+  sans quoi une écriture acquittée pourrait disparaître, c'est-à-dire une violation de
+  `SEC-DURABLE-001`.
+
+  **« Pas », et non « jamais ».** La propriété repose sur une HYPOTHÈSE, et la revue a eu raison de
+  refuser qu'elle reste implicite : refuser l'atomicité sectorielle tout en plaçant les deux racines
+  dans la même page hôte de 4 Kio aurait supposé gratuitement qu'une écriture ne peut pas abîmer le
+  secteur voisin de sa propre page — ce que rien ne garantit sur un support qui réécrit une page
+  entière pour modifier un secteur. Les deux emplacements sont donc séparés par **une page hôte**
+  (`PAGE_HOTE_OCTETS`, 4096 octets), et non par un secteur. L'hypothèse qui reste — _deux pages
+  hôtes distinctes ne sont pas abîmées par la même écriture_ — est écrite ici. Ce qui est ÉPROUVÉ,
+  c'est l'écart des emplacements (`tests/unit/vm-generation-store.test.mjs`) ; la propriété du
+  support, elle, ne peut pas l'être depuis JavaScript, et ce format ne prétend pas le contraire ;
+
 - au-delà de l'en-tête, le secteur est une réserve de zéros. Une déchirure qui n'atteint que cette
   réserve ne fait rien perdre, et `tests/unit/vm-generation-format.test.mjs` l'écrit plutôt que de
   le laisser découvrir en production.
@@ -158,22 +219,41 @@ bloc (`SEC-BLOCK-001`, #18) et le refus de rejeu (`SEC-GEN-001`, #19) sont du ja
 leur laisse la place — un enregistrement porte déjà son offset et sa longueur, et la racine porte
 déjà un numéro de génération —, il ne la prend pas.
 
-### La récupération a trois issues, et aucune n'est muette
+### La récupération a quatre issues, et aucune n'est muette
 
 À l'ouverture, la racine valide de plus haute séquence fait autorité.
 
-| Ce qui est trouvé                                 | Ce qui est fait                                           | Ce qui est publié                    |
-| ------------------------------------------------- | --------------------------------------------------------- | ------------------------------------ |
-| Aucune charge en attente                          | rien ; le volume EST la dernière génération validée       | `etat: "aucune"`                     |
-| Une charge que nulle racine ne scelle             | elle est ÉCARTÉE, le volume n'est pas touché              | `VAULT_STORAGE_GENERATION_DISCARDED` |
-| Une charge scellée et concordante                 | elle est REJOUÉE dans le volume, puis le journal est vidé | `etat: "rejouee"`, sa génération     |
-| Une charge scellée dont la somme ne concorde plus | l'ouverture est REFUSÉE                                   | `VAULT_STORAGE_GENERATION_CORRUPT`   |
+| Ce qui est trouvé                                 | Ce qui est fait                                           | Ce qui est publié                       |
+| ------------------------------------------------- | --------------------------------------------------------- | --------------------------------------- |
+| Journal vierge et vide                            | RIEN — pas même une écriture (voir plus bas)              | `etat: "aucune"`                        |
+| Une charge que nulle racine ne scelle             | elle est ÉCARTÉE, le volume n'est pas touché              | `VAULT_STORAGE_GENERATION_DISCARDED`    |
+| Une charge scellée et concordante                 | elle est REJOUÉE dans le volume, puis le journal est vidé | `etat: "rejouee"`, sa génération        |
+| Une charge scellée dont la somme ne concorde plus | l'ouverture est REFUSÉE                                   | `VAULT_STORAGE_GENERATION_CORRUPT`      |
+| Aucune racine LISIBLE, mais au moins une ABÎMÉE   | l'ouverture est REFUSÉE                                   | `VAULT_STORAGE_GENERATION_ROOT_CORRUPT` |
 
-Le dernier cas mérite d'être dit en clair : une génération VALIDÉE dont les octets manquent ou ne
-concordent plus n'est pas réparable par déduction. La rejouer à moitié écrirait dans le volume un
-état que personne ne sait cohérent ; l'ignorer perdrait une écriture acquittée. Le refus nomme le
-volume, la génération et la raison exacte, et renvoie vers la restauration d'une sauvegarde (#12) —
-**pas** vers une réparation devinée.
+La dernière ligne est un ajout de la revue, et elle comble un trou réel : le magasin jetait la
+distinction VIERGE / ABÎMÉE que `decoderRacine` fournit pourtant, si bien que deux racines
+illisibles au-dessus d'une charge donnaient `ecartee` — présenté comme « l'issue normale d'une
+coupure ». Or l'une de ces racines a pu sceller une génération ACQUITTÉE : ce qui a été validé est
+alors **inconnu**, et l'écarter perdrait peut-être une écriture durable. Un secteur jamais écrit,
+lui, n'est pas une avarie : c'est l'état normal du second emplacement tant qu'aucune alternance n'a
+eu lieu.
+
+**Une ouverture qui n'a rien à récupérer n'écrit RIEN**, pas même la racine initiale. Cette
+précision-là n'est pas cosmétique : tout ouvreur passe par la récupération, y compris les chemins
+purement LECTEURS — l'export (#11) et le calcul d'empreinte. Une racine vide écrite à chaque
+ouverture aurait fait échouer un export sur un support saturé, c'est-à-dire le geste même par lequel
+l'utilisateur libère de la place. La racine initiale est écrite au premier dépôt, quand une écriture
+a réellement lieu. Ce que les chemins lecteurs écrivent tout de même, et qu'il faut assumer : une
+génération validée EN ATTENTE est rejouée dans le volume avant toute lecture — c'est précisément ce
+qui fait que l'export porte la dernière génération validée, et cela vaut aussi pour un volume
+anonyme.
+
+Le cas de la charge incohérente mérite d'être dit en clair : une génération VALIDÉE dont les octets
+manquent ou ne concordent plus n'est pas réparable par déduction. La rejouer à moitié écrirait dans
+le volume un état que personne ne sait cohérent ; l'ignorer perdrait une écriture acquittée. Le
+refus nomme le volume, la génération et la raison exacte, et renvoie vers la restauration d'une
+sauvegarde (#12) — **pas** vers une réparation devinée.
 
 Aucune génération validée n'est jamais réécrite sans nouvelle barrière : le rejeu écrit le volume,
 franchit sa barrière, PUIS seulement vide le journal.
@@ -250,12 +330,13 @@ du même nom y rejouerait une génération validée qui ne lui appartient pas.
 
 ## Erreurs ajoutées
 
-| Code                                 | Quand                                                              | Remède                              |
-| ------------------------------------ | ------------------------------------------------------------------ | ----------------------------------- |
-| `VAULT_STORAGE_GENERATION_DISCARDED` | une génération déposée sans validation a été écartée à l'ouverture | aucun : c'est l'issue normale       |
-| `VAULT_STORAGE_GENERATION_CORRUPT`   | une génération validée dont la charge ne concorde plus             | restaurer une sauvegarde (#12)      |
-| `VAULT_STORAGE_GENERATION_OVERFLOW`  | la génération en cours dépasse le plafond du journal               | le guest doit franchir une barrière |
-| `VAULT_STORAGE_GENERATION_PENDING`   | un point de contrôle demandé sur une génération non validée        | faute de programmation              |
+| Code                                    | Quand                                                              | Remède                              |
+| --------------------------------------- | ------------------------------------------------------------------ | ----------------------------------- |
+| `VAULT_STORAGE_GENERATION_DISCARDED`    | une génération déposée sans validation a été écartée à l'ouverture | aucun : c'est l'issue normale       |
+| `VAULT_STORAGE_GENERATION_CORRUPT`      | une génération validée dont la charge ne concorde plus             | restaurer une sauvegarde (#12)      |
+| `VAULT_STORAGE_GENERATION_OVERFLOW`     | la génération en cours dépasse le plafond du journal               | le guest doit franchir une barrière |
+| `VAULT_STORAGE_GENERATION_PENDING`      | un point de contrôle demandé sur une génération non validée        | faute de programmation              |
+| `VAULT_STORAGE_GENERATION_ROOT_CORRUPT` | aucune racine lisible, au moins une abîmée                         | restaurer une sauvegarde (#12)      |
 
 Le premier n'est pas levé : il est PUBLIÉ dans le compte rendu de récupération. Une mise au rebut
 est le résultat normal d'une coupure, pas une panne — mais elle doit être nommée, sans quoi elle
@@ -263,7 +344,10 @@ serait le succès silencieux que `docs/quality-attributes.md` refuse.
 
 ## Mesures
 
-Matrice de #15, avant et après, sur la même graine et le même nombre de points :
+Matrice de #15, avant et après, **sur la même cadence et la même matrice** — vingt-quatre blocs
+distincts, une barrière tous les huit, huit points de coupure. Ce qui change entre les deux colonnes
+n'est pas le travail mesuré mais le mécanisme, et l'ORACLE, qui sait désormais nommer les
+générations intermédiaires au lieu de les ranger dans `melange` :
 
 | Support                              | Avant (#15) | Après (#16) |
 | ------------------------------------ | ----------: | ----------: |
@@ -271,10 +355,34 @@ Matrice de #15, avant et après, sur la même graine et le même nombre de point
 | Double calibré (Node), graine 7      |         n/a |   **100 %** |
 | Double calibré (Node), graine 424242 |         n/a |   **100 %** |
 
-Répartition des verdicts après, huit points : graine 2026 — 4 `ancien`, 4 `nouveau`, 0 `melange`, 0
-`corrompu` ; graines 7 et 424242 — 3 `ancien`, 5 `nouveau`. Aucun bloc déchiré, aucun bloc non
-rattachable, sur aucune des trois graines. Les DEUX issues sont exercées sur chacune : une matrice
-qui ne rendrait que « ancien » serait satisfaite par un backend qui n'écrirait rien du tout.
+Répartition des verdicts après, huit points :
+
+| Graine   | `ancien` | `generation-1` | `generation-2` | `nouveau` | `melange` | `corrompu` |
+| -------- | -------: | -------------: | -------------: | --------: | --------: | ---------: |
+| `2026`   |        4 |              3 |              1 |         0 |         0 |          0 |
+| `7`      |        3 |              3 |              2 |         0 |         0 |          0 |
+| `424242` |        3 |              3 |              2 |         0 |         0 |          0 |
+
+Aucun bloc déchiré, aucun bloc non rattachable, sur aucune des trois graines. L'extrême bas et les
+DEUX générations intermédiaires sont exercés sur chacune ; le zéro de la colonne `nouveau` n'est pas
+un manque du mécanisme mais une propriété de la matrice, démontrée plus haut, et l'extrême haut est
+couvert par un témoin positif.
+
+**Ce que la mesure vaut est établi par mutation**, et c'est le point le plus important de cette
+section. Un taux de 100 % ne prouve rien tant qu'on n'a pas montré qu'il sait descendre :
+
+| Magasin                                         | Graine 2026 | Graine 7 | Graine 424242 |
+| ----------------------------------------------- | ----------: | -------: | ------------: |
+| Sain                                            |       **1** |    **1** |         **1** |
+| Mutant : perd les générations après la première |       0,875 |     0,75 |          0,75 |
+| Mutant : les perd toutes                        |         0,5 |    0,375 |         0,375 |
+
+Les deux mutants acquittent au guest — la barrière du support est franchie, le `flush-ack` remonte —
+puis ne scellent rien. Les points qu'ils trahissent tombent en `corrompu` par la règle
+`SEC-DURABLE-001`, avec les blocs nommés. Les points qu'ils ne trahissent PAS — ceux coupés avant la
+barrière qu'ils honorent encore — rendent le même verdict qu'un magasin sain, et c'est pourquoi le
+taux ne tombe pas à zéro : il n'y a rien à trahir quand rien n'a été promis. Cette borne est écrite
+dans l'épreuve elle-même.
 
 ## Limites
 
@@ -325,10 +433,15 @@ qui ne rendrait que « ancien » serait satisfaite par un backend qui n'écrirai
 - **Inscrire la génération validée dans le manifeste.** Écartée : le manifeste décrit une identité,
   pas une histoire (ADR 0011), et une réécriture par barrière ferait dépendre l'identité du volume
   du chemin le plus chaud.
-- **Rendre l'oracle de #15 conscient des générations.** Écartée sans hésitation. C'était la solution
-  la plus courte, et elle aurait consisté à élargir le juge pour qu'il accepte ce que le mécanisme
-  produit. Changer la charge de travail mesurée, en laissant le juge intact et la matrice identique,
-  est le seul chemin qui ne déplace pas la barre.
+- **Changer la charge de travail mesurée plutôt que l'oracle.** C'est ce que cette tranche a essayé
+  d'abord — huit blocs réécrits trois fois —, et c'est **rejeté**. Le raisonnement paraissait sûr :
+  laisser le juge intact semblait la seule façon de ne pas déplacer la barre. Il était faux, et une
+  mutation l'a montré : à contenu identique d'une passe à l'autre, un magasin qui acquitte les
+  générations 2 et 3 puis les perd laisse le même volume qu'un magasin correct, et la matrice reste
+  à 100 %. Un juge inchangé sur une charge appauvrie ne mesure pas moins qu'un juge élargi — il ne
+  mesure plus rien. L'alternative RETENUE est donc l'inverse : étendre l'oracle à la suite des
+  générations attendues du scénario, en le rendant strictement plus discriminant, et garder les
+  vingt-quatre blocs distincts de #15.
 - **Un `flush` implicite après chaque écriture.** Déjà rejetée par l'ADR 0003 — « coûteux, et faux
   ». Ce mécanisme ne l'introduit pas : le nombre de barrières demandées par le GUEST est inchangé.
 

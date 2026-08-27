@@ -430,15 +430,23 @@ et #14, et le scénario Bout en bout de #16 la couvrant avec un vrai Rails —, 
 écriture non barriérée, qu'aucun des deux supports éprouvés ne produit aujourd'hui. Les deux mesures
 du taux, avant et après #16, sont publiées dans `docs/quality-attributes.md`.
 
-**Ce que #16 a dû changer dans la MESURE, et pourquoi ce n'était pas l'oracle.** La cadence de #15 —
-vingt-quatre blocs distincts, une barrière tous les huit — rendait 100 % inatteignable pour TOUT
-mécanisme : les générations intermédiaires y sont validées mais ne couvrent qu'une fraction du
-volume, et un oracle qui ne connaît que deux états de référence les classe `melange`. La borne est
-calculée par `tests/unit/vm-crash-cadence.test.mjs` : 50 % sur la graine 2026, 37,5 % sur deux
-autres. #16 a donc changé la CHARGE mesurée — huit blocs réécrits trois fois, si bien que toute
-génération validée est l'un des deux états que l'oracle sait juger — en laissant le juge intact et
-le profil remis au planificateur inchangé, donc la matrice de coupures identique point pour point.
-Élargir l'oracle aurait été plus court, et aurait consisté à déplacer la barre.
+**Ce que #16 a changé dans la MESURE : l'oracle, pas la charge.** La cadence de #15 — vingt-quatre
+blocs distincts, une barrière tous les huit — rendait 100 % inatteignable pour TOUT mécanisme : les
+générations intermédiaires y sont validées mais ne couvrent qu'une fraction du volume, et un oracle
+qui ne connaît que deux états de référence les classe `melange`. La borne est calculée : 50 % sur la
+graine 2026, 37,5 % sur les deux autres.
+
+#16 a d'abord essayé de changer la CHARGE mesurée — huit blocs réécrits trois fois — pour que toute
+génération validée soit l'un des deux états que l'oracle savait juger. **C'était faux, et une
+mutation l'a montré** : à contenu identique d'une passe à l'autre, un magasin qui acquitte les
+générations 2 et 3 puis les perd laisse le même volume qu'un magasin correct, et la matrice restait
+à 100 %. Un juge inchangé sur une charge appauvrie ne mesure pas moins qu'un juge élargi — il ne
+mesure plus rien.
+
+L'oracle reçoit donc la **suite des générations attendues** du scénario et n'accepte un état que
+s'il en est exactement une, avec des verdicts nommés (`generation-1`, `generation-2`). Il refuse une
+suite qui ne croît pas strictement : son appelant ne peut pas l'élargir. La charge, elle, revient à
+celle de #15, et `tests/unit/vm-crash-mutation.test.mjs` conserve le contre-exemple.
 
 ## Concurrence et bail d'écriture
 

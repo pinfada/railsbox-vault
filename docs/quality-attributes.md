@@ -259,51 +259,70 @@ partielles et rejeu ».
 
 ## Le taux de coupures atomiques atteint sa cible (#16)
 
-Relevé du 2026-08-27, `npm run test:vm`, projet `chromium`, volume OPFS réel. **La matrice de
-coupures est celle de #15, point pour point** : le profil remis au planificateur — vingt-quatre
-écritures, trois barrières, blocs de 512 octets — est inchangé, et
-`tests/unit/vm-crash-cadence.test.mjs` épingle la suite de points obtenue pour la graine 2026.
+Relevé du 2026-08-27, `npm run test:vm`, projet `chromium`, volume OPFS réel. **La cadence et la
+matrice sont celles de #15** : vingt-quatre blocs distincts, une barrière tous les huit, et une
+suite de points identique point pour point, ce que `tests/unit/vm-crash-cadence.test.mjs` épingle.
 
-Ce qui a changé dans la mesure, et pourquoi il fallait le changer : le scénario suit désormais
-**huit blocs réécrits trois fois** au lieu de vingt-quatre blocs distincts. Avec la cadence de #15,
-un mécanisme PARFAITEMENT atomique plafonnait à 50 % sur la graine 2026 et à 37,5 % sur deux autres
-— non par faiblesse du mécanisme, mais parce que `SEC-DURABLE-001` oblige à publier les générations
-intermédiaires, que l'oracle ne sait nommer ni « ancien » ni « nouveau ». La borne est calculée, pas
-affirmée, par `tests/unit/vm-crash-cadence.test.mjs`. **L'oracle n'a pas été modifié** : il reste le
-juge de #15, avec les mêmes refus. Le détail de ce constat est dans
-[l'ADR 0014](decisions/0014-generation-transactionnelle.md).
+Ce qui a changé pour que la comparaison ait un sens, c'est l'**oracle**. Celui de #15 ne connaissait
+que deux états de référence — « tout l'ancien », « tout le nouveau » — et rangeait donc toute
+génération intermédiaire VALIDÉE dans `melange` : le 100 % demandé était hors d'atteinte de tout
+mécanisme, la borne valant 50 % sur la graine 2026 et 37,5 % sur les deux autres. Il reçoit
+désormais la **suite des générations attendues du scénario** — `[∅, {0..7}, {0..15}, {0..23}]` — et
+n'accepte un volume que si les blocs publiés en forment EXACTEMENT une. Les verdicts intermédiaires
+sont nommés (`generation-1`, `generation-2`).
 
-| Mesure                                       |                           #15 (2026-08-26) |                           #16 (2026-08-27) |
-| -------------------------------------------- | -----------------------------------------: | -----------------------------------------: |
-| Taux « ancien ou nouveau » (**cible 100 %**) |                                     12,5 % |                                  **100 %** |
-| Verdicts de volume, graine 2026              | 0 ancien, 1 nouveau, 4 melange, 3 corrompu | 4 ancien, 4 nouveau, 0 melange, 0 corrompu |
-| Blocs déchirés                               |                                          3 |                                      **0** |
-| Blocs non rattachables                       |                                          0 |                                      **0** |
+C'est un juge **strictement plus discriminant**, pas plus indulgent : la suite est dérivée du
+scénario et non du mécanisme, l'oracle refuse une suite qui ne croît pas strictement — un appelant
+ne peut donc pas y glisser l'état que son mécanisme produit —, et tout ce que #15 refusait est
+encore refusé.
+
+| Mesure                                                             |                                    #15 |                                                #16 |
+| ------------------------------------------------------------------ | -------------------------------------: | -------------------------------------------------: |
+| Taux de coupures laissant une génération validée (**cible 100 %**) |                                 12,5 % |                                          **100 %** |
+| Verdicts, graine 2026                                              | 0 anc., 1 nouv., 4 mélange, 3 corrompu | **4 `ancien`, 3 `generation-1`, 1 `generation-2`** |
+| Blocs déchirés                                                     |                                      3 |                                              **0** |
+| Blocs non rattachables                                             |                                      0 |                                              **0** |
 
 Deux autres graines, jamais employées pour mettre le mécanisme au point, sur le même support :
 
-| Graine   |  Taux | Verdicts                                   |
-| -------- | ----: | ------------------------------------------ |
-| `7`      | **1** | 3 ancien, 5 nouveau, 0 melange, 0 corrompu |
-| `424242` | **1** | 3 ancien, 5 nouveau, 0 melange, 0 corrompu |
+| Graine   |  Taux | Verdicts                                                              |
+| -------- | ----: | --------------------------------------------------------------------- |
+| `7`      | **1** | 3 `ancien`, 3 `generation-1`, 2 `generation-2`, 0 mélange, 0 corrompu |
+| `424242` | **1** | 3 `ancien`, 3 `generation-1`, 2 `generation-2`, 0 mélange, 0 corrompu |
 
 Le **double calibré** de Node rend exactement la même répartition sur les trois graines
 (`tests/unit/vm-crash-matrice.test.mjs`) : les deux supports ne divergent pas.
 
-**Ce que le relevé établit.** Les huit points de chaque graine laissent le volume dans l'état
-d'avant ou dans l'état d'après, et les DEUX issues sont exercées — une matrice qui ne rendrait que «
-ancien » serait satisfaite par un backend qui n'écrirait rien du tout. Chaque coupure s'est traduite
-par une erreur typée du stockage, et chaque réouverture a NOMMÉ ce que la récupération a fait :
-génération écartée (`VAULT_STORAGE_GENERATION_DISCARDED`), rejouée, ou rien en attente. La règle
-`SEC-DURABLE-001` de l'oracle n'est pas devenue inerte au passage : sur le point 2 de la graine
-2026, huit blocs sont acquittés ET franchis par une barrière, et les huit sont sur le support ; le
-témoin négatif qui la fait mordre est conservé.
+**Ce que le relevé établit.** Les huit points de chaque graine laissent le volume dans un état qui
+est exactement l'une des générations attendues, et trois des quatre états possibles sont exercés :
+l'extrême bas et les deux générations intermédiaires. Chaque coupure s'est traduite par une erreur
+typée du stockage, et chaque réouverture a NOMMÉ ce que la récupération a fait — génération écartée,
+rejouée, ou rien en attente —, l'état attendu étant DÉDUIT du point plutôt qu'accepté au hasard.
 
-**Ce qu'il n'établit pas.** La coupure reste un `Worker.terminate()` : ni le processus du navigateur
-ni la machine ne meurent, aucun cache volatil n'est perdu. Ce que #16 change sur ce point est plus
-étroit qu'il n'y paraît — une perte de cache volatil ne peut plus produire un MÉLANGE, puisque les
-octets non validés sont dans le journal et qu'une charge incomplète est écartée ; mais qu'elle ne le
-produise pas n'est pas MESURÉ ici. Le protocole qui coupe plus bas reste à écrire.
+**Ce que la mesure vaut, établi par mutation.** Un taux de 100 % ne prouve rien tant qu'on n'a pas
+montré qu'il sait descendre. Deux magasins mutés acquittent au guest puis ne scellent rien :
+
+| Magasin                                |  2026 |     7 | 424242 |
+| -------------------------------------- | ----: | ----: | -----: |
+| Sain                                   | **1** | **1** |  **1** |
+| Perd les générations après la première | 0,875 |  0,75 |   0,75 |
+| Les perd toutes                        |   0,5 | 0,375 |  0,375 |
+
+Les points trahis tombent en `corrompu` par la règle `SEC-DURABLE-001`. Ceux qui ne le sont pas —
+coupés avant la barrière que le mutant honore encore — rendent le même verdict qu'un magasin sain :
+il n'y a rien à trahir quand rien n'a été promis, et c'est pourquoi le taux ne tombe pas à zéro.
+
+**Ce qu'il n'établit pas.** Le verdict `nouveau` — les vingt-quatre blocs publiés — est
+**inatteignable par la matrice** : la troisième barrière suit la vingt-quatrième écriture, et les
+trois genres de coupure tombent tous avant son acquittement. L'extrême haut est donc exercé par un
+témoin positif au niveau unitaire — le scénario sans faute doit rendre `nouveau` — et le zéro de
+cette colonne est publié plutôt que masqué.
+
+Et la coupure reste un `Worker.terminate()` : ni le processus du navigateur ni la machine ne
+meurent, aucun cache volatil n'est perdu. Ce que #16 change sur ce point est plus étroit qu'il n'y
+paraît — une perte de cache volatil ne peut plus produire un MÉLANGE, puisque les octets non validés
+sont dans le journal et qu'une charge incomplète est écartée ; mais qu'elle ne le produise pas n'est
+pas MESURÉ ici.
 
 **Le surcoût d'écriture n'a pas de budget opposable, et ce relevé n'en fabrique pas.** L'ADR 0014
 mesure ×2,06 sur son banc — chaque octet écrit par le guest entre deux barrières est écrit une fois
