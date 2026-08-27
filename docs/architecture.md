@@ -864,6 +864,54 @@ version le soit. Le témoin de refus par une « ancienne version » simule celle
 déclarées, non par un binaire antérieur : la limite est écrite dans l'ADR 0011 et dans
 `docs/testing.md`.
 
+## Publication : deux arborescences, un inventaire, les mêmes en-têtes (#45)
+
+Le diagramme de contexte commence par « Éditeur ──publie──► Hébergement statique ». Depuis #45, ce
+verbe a un outil et une forme, décidés par l'[ADR 0017](decisions/0017-chaine-de-publication.md).
+
+**Ce qui est publié est double, parce que la frontière l'est.** `node tools/publier.mjs` construit
+deux arborescences indépendantes, une par origine de l'ADR 0002, et jamais un artefact unique :
+
+| Arbre           | Contenu                                                                                            | En-têtes servis                                                                   |
+| --------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| **coquille**    | document de confiance, `main.mjs`, Worker runtime, `src/vm/`, artefacts v86 épinglés, licences     | CSP stricte de l'ADR 0013, `CORP: same-origin`, `nosniff`, **COOP `same-origin`** |
+| **application** | aucun artefact du dépôt — le HTML vient du guest — plus une **place tenante** déclarée comme telle | `CORP: cross-origin`, `nosniff`, **aucune CSP** (ADR 0002)                        |
+
+Trois propriétés de cette construction touchent l'architecture, et pas seulement l'outillage.
+
+**`tools/serve-headers.mjs` est la source de vérité des en-têtes.** La production ne recopie pas la
+politique : elle appelle `securityHeaders()` et rend le fichier de configuration correspondant. La
+raison est de cohérence des preuves — `tests/browser/csp-frontiere.spec.mjs` et les sondes du spike
+#35 mesurent ce que ce module sert, et une politique recopiée ailleurs divergerait sans bruit, en
+laissant deux vérités qui ont l'air vraies. Le seul en-tête que la publication **ajoute** est
+`Cross-Origin-Opener-Policy: same-origin` sur la coquille, application de la recommandation différée
+de l'[ADR 0010](decisions/0010-isolation-multi-origine.md) ; une épreuve unitaire échoue si un
+second apparaît. COEP reste absent.
+
+**Les surfaces de mesure ne sont pas du produit, et c'est désormais mesuré.** `public/csp/`,
+`public/spike/`, `public/vm/`, la sonde de capacités et leurs contrats sous `src/` sont retirés,
+avec motif. `public/spike/origin/` mérite d'être nommé : il contient un document **hostile** et un
+Service Worker qui **intercepte**, écrits pour prouver la frontière ; les servir depuis l'origine de
+confiance publierait l'adversaire. Une épreuve unitaire exige que tout fichier de `public/` ou de
+`src/` soit publié ou exclu — jamais ni l'un ni l'autre.
+
+**L'inventaire porte l'identité des octets, là où le manifeste de volume porte celle des versions.**
+Chaque arbre publié embarque l'empreinte SHA-256 de chacun de ses fichiers et une empreinte de
+racine liée au commit ; les artefacts v86 y sont confrontés à l'épinglage de l'ADR 0003. C'est ce
+qui donne prise à `SEC-UPDATE-001` sur ce qui est **servi**, et non seulement sur ce qui est
+déclaré. La jonction entre les deux — inscrire l'empreinte de la coquille dans le manifeste de
+volume — est une question de **format persistant** que l'ADR 0017 pose et ne tranche pas.
+
+**Changer l'origine de la coquille est une migration.** OPFS est cloisonné par origine : l'ancienne
+devient inatteignable. L'export doit précéder la bascule, la restauration la suivre (ADR 0008, ADR
+0009). L'origine figure dans l'inventaire de chaque arbre, si bien qu'une bascule ne peut pas passer
+pour un redéploiement au vu des artefacts.
+
+Ce que la chaîne ne fait pas : aucun déploiement réel, aucune signature, aucun SBOM. Et elle publie
+`Cache-Control: no-store` parce que le serveur de test le sert — ce qui contredit le mode hors ligne
+à deux Service Workers prévu par l'ADR 0002, conflit nommé comme travail découvert plutôt que résolu
+en silence.
+
 ## Ordre des preuves
 
 1. Persistance locale non chiffrée avec redémarrage complet de la VM.
