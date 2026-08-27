@@ -1,0 +1,204 @@
+{
+  "avertissement": "Vecteurs FIGÉS du format chiffré de RailsBox Vault (#17, ADR 0015). La clé est une clé de TEST publique, sans entropie et sans valeur : elle ne protège rien et ne doit jamais servir ailleurs. Ces octets sont un CONTRAT — #18 et #19 doivent les reproduire à l'identique ; les régénérer change un format persistant et exige une version et un ADR.",
+  "specification": {
+    "algorithme": "aes-256-gcm",
+    "version": 1,
+    "nonceOctets": 12,
+    "etiquetteOctets": 16,
+    "reference": "docs/decisions/0015-proprietes-cryptographiques-du-format.md",
+    "producteur": "node tools/figer-vecteurs-scellement.mjs"
+  },
+  "cle": {
+    "usage": "TEST",
+    "derivation": "octets 0x00 à 0x1f dans l'ordre",
+    "hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+  },
+  "blocs": [
+    {
+      "nom": "secteur ordinaire, première génération",
+      "couvre": ["modification", "deplacement"],
+      "identite": {
+        "volume": "volume-de-vecteur",
+        "formatVersion": 3,
+        "generation": 1,
+        "rang": 0,
+        "adresse": 0,
+        "longueur": 512
+      },
+      "contenu": {
+        "longueur": 512,
+        "graine": 0,
+        "hex": "0d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff06"
+      },
+      "attendu": {
+        "nonce": "010000000000010000000000",
+        "chiffre": "6c3ce76af9c20081cb4aba0475080ac4afd05f41d9533e42c430824bc64462c5ab3194dd454183b7a964c7b888800ed04e06eca58ca0c9bfd5628658a0a672245ddd8d8e5ee7e08d9e2193f47f28857b22847ccdca9c77933f7bddc32f56ee040185d7035a75cd035065551ff11b96f99f7b01076be2bf936b1559bb0e42fe89a24fcfeda4cc362f0fab9f1a2a969671231bffd92fe8a31e3af5e55338d698953a44154c89894b3c9882da60b26c08133c0cc967460f925ad1b8b335e60fb8d91760742af8156e6ae994437ed3dfdb2186d39f8e9d8dac4c0f908f1e1531e349d869a7efc0d43e2c9bbf91fced0fa703b2ee75e4accae3e0fb885874543709bdaa818ebeff9ce34656dee1205afa4bc2a2a274f351f11e83321005c42c473815fde780cd8e14bb922086f4bbf9b15492893d28c4cabf121e5ebe785dd81bc8e6b9ec5f430e8b5a9e1679be9d2f8c15b4623f45dcca9f6818e2c3633d850109101c3170ae717cb109be4500a7084e393422c3fb26a09a60b897f5e17c14f1ffb252a89bb693b51ea973d06bb713918cd6dd61bf7c4535c6e9d1704744791f3115ae837fb3994e318b51e91014275be44b3b4c29a6a94da71fe7c05a7c5194e83174af0a76d79ecdb98f37c8d7deb8b69fe370b74a57fba417fa9ab0ca7f0d00b489f0e6c8b9196f125853f7ed9c48b2a756bdf5227175d4f68d220c082708f587",
+        "etiquette": "0ad51095897b2aa5686e573add79148c"
+      }
+    },
+    {
+      "nom": "MÊME adresse réécrite dans la MÊME génération, rang suivant",
+      "couvre": ["modification"],
+      "identite": {
+        "volume": "volume-de-vecteur",
+        "formatVersion": 3,
+        "generation": 1,
+        "rang": 1,
+        "adresse": 0,
+        "longueur": 512
+      },
+      "contenu": {
+        "longueur": 512,
+        "graine": 1,
+        "hex": "0e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f90007"
+      },
+      "attendu": {
+        "nonce": "010000000000010000000001",
+        "chiffre": "9a50c31a97bc3645d47943688c8a6223cf260048713a1e432248c8dd1792a34c29bf557d8a3485fcd95592daef5e16ef759459b08edbd900498754ee1b377de97e02e38b318a564defac5ebd0aac5cb53d6830d1f9e454e9dbbe9ba1b82991386b9139baf2a0b1a135f58f3c85ca5549cc818f78ece93de813c8832785e2fd6c9f241477d9cbc55b5a88af0b8598c42929b4a51575cfcbda6b15b74375e40231841c198550e60d276628fcf76b0ae548b29c2b6c59ab9d5e9818ed83dc268470159085594ac94ef70585f26cbb0579ba017261825bb30844a3ad709a7eeedd58c8a1472b046abf55174209d25353652f768789abc59b2b9f651cdfa809ea071d92e7998338f0f702f0845570524bce34eedb88088b0152c8c4a2b704ce4ba7836c5133261a2db7494e6bffd02e9b326c30e5582d348a09e4ab93d8985e2742da19921eb65d723770df467826438d8ff9ad3691a32f7aee25a7e2e467410bf82bf65a99d0c4a174150ab1b3a67ea107628a9a1741c50b9b097e336dc410e36030643ec540410e9881109d92d6c699eca4863f417b08a7b0b704c095ab2cce51217eb269f8ee019a017796e90182a33998353645e0727b315d3d27aa513870abf8ffa53b18e3b99b2325b96ac7f727f7af739080bd4ef7b7ef24663970262832e5665ff646ce47496f767365e2419fcbd2ab920f718ac4f4dec38ba89aeaf8dfe5",
+        "etiquette": "f54ed1726846879d5456e7a1be7bbc32"
+      }
+    },
+    {
+      "nom": "adresse voisine, même génération",
+      "couvre": ["deplacement"],
+      "identite": {
+        "volume": "volume-de-vecteur",
+        "formatVersion": 3,
+        "generation": 1,
+        "rang": 2,
+        "adresse": 512,
+        "longueur": 512
+      },
+      "contenu": {
+        "longueur": 512,
+        "graine": 2,
+        "hex": "0f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa0108"
+      },
+      "attendu": {
+        "nonce": "010000000000010000000002",
+        "chiffre": "f600ed0bcc5015f55137ac6ed887fa5dca1e7635b73652b0c19a5c6b8735649686bf06b2c7eb9861caf768302cbb640d1edf7d35fda8d4ccf8a3b2c54cb6052c99013a6165fa10569914a75dac7755afd71e27707ff880ff968772348ae4ef1906e4cce2396f7c540e6b67313c53fe483ae38cd8fbb406a2510af33b54c8c66e0a4fd70b30981f29969e1fc8cdeab31bc1b78175fc947470d4dfa744ffb46e9d15a2782648c1ef6e695d790f230c2181df07726494272ffb174a7c2265118f73f6f49e9d72a2a810a724ef89510e575d108cb57913018c607773de20abe3ecae69009873f1a6239141944e56b6ae3575fa9eb1944d9cf3618e360db9508c1e950424318e0625aa00e2ee604b98ded37d5c8b782c85553ac1027597d8a5b8b8cd6dc2814b237fb1397f6c61f7c7ecc427a5b8b3120c332b1ffec8f1ea795253aeae8ce389736d54df7d08c0dd050f381286f5c2f294c408a911ced964487b57f8dcc03210c2d24c562cda9e5297374e19f516e13f2bc7f1bb7c53324c3451a03ca9ea89c7c847cfa1affc764fedd436fbc804040b63b15a325646f7a2ad67ed083f76e2fa7d48ad350b456ee3809947da40b1408a88fc9998fa1e55fe8a74630e2106d31f847d535af3a841886774898a69f85c68b02132662741fe796ce30e5defb4b2f323ef3a72189dcec41f83ff0c6831fa1448003c6bc2484d5bb791f7a3",
+        "etiquette": "28517825652ef07db8bbd3ef5e8830d9"
+      }
+    },
+    {
+      "nom": "génération suivante, adresse déjà écrite",
+      "couvre": ["deplacement", "rejeu", "melange"],
+      "identite": {
+        "volume": "volume-de-vecteur",
+        "formatVersion": 3,
+        "generation": 2,
+        "rang": 0,
+        "adresse": 0,
+        "longueur": 512
+      },
+      "contenu": {
+        "longueur": 512,
+        "graine": 3,
+        "hex": "10171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d747b828990979ea5acb3bac1c8cfd6dde4ebf2f900070e151c232a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb0209"
+      },
+      "attendu": {
+        "nonce": "010000000000020000000000",
+        "chiffre": "30c6e1a99a7dc546925a64160553d5234b960835f9859b81b68042719965850170a7e59f533df4a247fe1ed689a979bfa67dc3587825c9cdce4b343a53b5a05b117b120c2ce5033b9d9c97a035f96c7c288daa178e1e1c36cf584e175ef9809fea5c300fa2fa3e532c2ac8bee61f890d3a98b493984c1f61dacc2a27924020683f4e52901aa237323b9acf0b7bcb726d680e5477830d53abc0c91b0f2f4f8a583166925e9628393aec63fcc4a6d2c669a1a07d65788702fe32efefdd493e96263309f32d516ae8b6a19dfb99d46c318ec5a538be281021b0ecd7e66cbea723de0bb191e71b32fbf64a1c8c381cd9d0146974faed30d7f18c4ba7ed3e849d160c4adff720b243bb1bd8b2dad4acd4d5584a4542db9a248952b66fb93e31b20a62272569ef7d017d35cb0b8737d8dbe8a018cc981d7632223e40ce8bcc909ecc28ac8e8191259d40f2becaba72d12677fdeab95ebb5c4ff48f1f7997afaba19b4c67005469f23cd1e5b1588831f130287b93cfa907ce16f59cfcce98ef77ad3b6f38b111193bc8d325bb121558ae20d48d3d4bd30f10692b85a7b91c9a87f67fd1b2ac6d8a47bd48860aa548417c0530647de068331307d9447e7ac8e2e3ff7c87d851e2ff9ef2e9a830373c2fb04eafa48bdc2d56665e8c861e51baeec34bf84ce8eb7d08ff8b17e481b5ecb00be35a007d8e6673511ab6d5369684e2ace7fe6b",
+        "etiquette": "a41378a0b6d2e57e6f1b2cf107ce8413"
+      }
+    },
+    {
+      "nom": "écriture courte, non alignée sur un secteur",
+      "couvre": ["modification", "troncature"],
+      "identite": {
+        "volume": "volume-de-vecteur",
+        "formatVersion": 3,
+        "generation": 2,
+        "rang": 1,
+        "adresse": 4096,
+        "longueur": 16
+      },
+      "contenu": {
+        "longueur": 16,
+        "graine": 4,
+        "hex": "11181f262d343b424950575e656c737a"
+      },
+      "attendu": {
+        "nonce": "010000000000020000000001",
+        "chiffre": "77564beeacf77507d2b86198da8e1ad2",
+        "etiquette": "303abc01cf2eb4ea63d3f62197908c6a"
+      }
+    }
+  ],
+  "racines": [
+    {
+      "nom": "génération 1, trois entrées",
+      "couvre": ["troncature", "melange", "rejeu"],
+      "racine": {
+        "volume": "volume-de-vecteur",
+        "formatVersion": 3,
+        "sequence": 1,
+        "generation": 1,
+        "tailleVolume": 1048576,
+        "scellementsCumules": 6
+      },
+      "entrees": [
+        {
+          "adresse": 0,
+          "longueur": 512,
+          "rang": 0,
+          "etiquette": "0ad51095897b2aa5686e573add79148c"
+        },
+        {
+          "adresse": 0,
+          "longueur": 512,
+          "rang": 1,
+          "etiquette": "f54ed1726846879d5456e7a1be7bbc32"
+        },
+        {
+          "adresse": 512,
+          "longueur": 512,
+          "rang": 2,
+          "etiquette": "28517825652ef07db8bbd3ef5e8830d9"
+        }
+      ],
+      "attendu": {
+        "nonce": "020000000000010000000001",
+        "chiffre": "3e1a85de92bae79590c9d12bccb9d3225999a7fb6b8c296ec0acc9e37727564d",
+        "etiquette": "ede4a6ab7d9aebac094757ee3812464e",
+        "empreinteEntrees": "eb88f55407286ef8dfb5a3f5996436dc3b651f41bdfa2a1ec18344489ba3cc92",
+        "nombreEntrees": 3,
+        "longueurCharge": 1536
+      }
+    },
+    {
+      "nom": "génération 2, deux entrées dont une courte",
+      "couvre": ["troncature", "melange"],
+      "racine": {
+        "volume": "volume-de-vecteur",
+        "formatVersion": 3,
+        "sequence": 2,
+        "generation": 2,
+        "tailleVolume": 1048576,
+        "scellementsCumules": 7
+      },
+      "entrees": [
+        {
+          "adresse": 0,
+          "longueur": 512,
+          "rang": 0,
+          "etiquette": "a41378a0b6d2e57e6f1b2cf107ce8413"
+        },
+        {
+          "adresse": 4096,
+          "longueur": 16,
+          "rang": 1,
+          "etiquette": "303abc01cf2eb4ea63d3f62197908c6a"
+        }
+      ],
+      "attendu": {
+        "nonce": "020000000000020000000002",
+        "chiffre": "36243dbae00bc7d7a66b5f1c9886b912b64c6e533330c356c415c799cd7bdb4f",
+        "etiquette": "262c6523b57b265d9017a6431e838b56",
+        "empreinteEntrees": "25758580c4f3eb0913cf8792fc975f8e837708406d8cb8e2fc9152a0d68ac4cb",
+        "nombreEntrees": 2,
+        "longueurCharge": 528
+      }
+    }
+  ]
+}
