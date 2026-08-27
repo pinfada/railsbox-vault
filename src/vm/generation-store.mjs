@@ -75,6 +75,21 @@ export const PLAFOND_CHARGE_OCTETS = 64 * 1024 * 1024;
 /** Au-delà de ce volume de charge, le point de contrôle est déclenché de lui-même. */
 export const POINT_DE_CONTROLE_OCTETS = 8 * 1024 * 1024;
 
+/**
+ * Tampon avec lequel une charge est relue, en octets. C'est la SURMÉMOIRE de la récupération.
+ *
+ * Il est une CONSTANTE, et c'est tout l'intérêt : la plus grande allocation d'une récupération ne
+ * suit pas la taille de la charge, donc pas le plafond. Relever `PLAFOND_CHARGE_OCTETS` ne relève
+ * pas la surmémoire ; `docs/quality-attributes.md` la borne à 64 Mio pour l'export et la
+ * restauration, et la récupération tient désormais le même régime avec deux ordres de grandeur de
+ * marge.
+ *
+ * 1 Mio n'est pas un optimum mesuré : c'est le compromis entre le nombre d'appels au support — un
+ * `read` par tranche — et la mémoire tenue. `tests/vm/recuperation-generation.spec.mjs` mesure ce
+ * que ce choix coûte en temps sur OPFS réel ; le chiffre est publié, pas supposé.
+ */
+export const TAMPON_RELECTURE_OCTETS = 1024 * 1024;
+
 function alignerBas(valeur) {
   return valeur - (valeur % SECTOR_SIZE);
 }

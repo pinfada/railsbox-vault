@@ -3,12 +3,18 @@ import test from "node:test";
 
 import { buildPattern } from "../../src/vm/block-fixture.mjs";
 import {
+  ENTETE_OCTETS,
   ZONE_ENREGISTREMENTS,
   crc32,
   encoderRacine,
   offsetDeRacine,
 } from "../../src/vm/generation-format.mjs";
-import { GENERATION_ETATS, GenerationStore } from "../../src/vm/generation-store.mjs";
+import {
+  GENERATION_ETATS,
+  GenerationStore,
+  PLAFOND_CHARGE_OCTETS,
+  TAMPON_RELECTURE_OCTETS,
+} from "../../src/vm/generation-store.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { createOpfsMigrationTarget } from "../../src/vm/opfs-migration-target.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
@@ -23,16 +29,23 @@ import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 const TAILLE_VOLUME = 32 * 512;
 
 /** Support jetable : un volume en mémoire et un handle de journal issu du double calibré. */
-function creerSupport() {
+function creerSupport(tailleVolume = TAILLE_VOLUME) {
   const magasin = createSyncAccessStore();
-  const volume = new Uint8Array(TAILLE_VOLUME);
+  const volume = new Uint8Array(tailleVolume);
   const support = {
     magasin,
     volume,
+    tailleVolume,
+    /** Plus grande écriture reçue par le VOLUME. Une récupération en flux ne le charge pas d'un coup. */
+    plusGrandeEcritureVolume: 0,
     /** Armé par un test pour couper le point de contrôle APRÈS la recopie et AVANT le vidage. */
     echouerBarriereVolume: false,
     lireVolume: (offset, longueur) => volume.slice(offset, offset + longueur),
     ecrireVolume: (offset, octets) => {
+      support.plusGrandeEcritureVolume = Math.max(
+        support.plusGrandeEcritureVolume,
+        octets.byteLength,
+      );
       volume.set(octets, offset);
       return octets.byteLength;
     },
@@ -61,12 +74,35 @@ function handleRefusant(handle, etat) {
   };
 }
 
-async function ouvrirMagasin(support, nom = "vol.gen", { enveloppe = (h) => h } = {}) {
+/**
+ * Handle qui COMPTE la plus grande lecture demandée au support.
+ *
+ * C'est l'instrument de la surmémoire : `#lireJournal` alloue exactement le tampon qu'il présente à
+ * `read`, si bien que la plus grande lecture EST la plus grande allocation que la récupération fait
+ * pour elle-même. Mesurer ici, du côté du support, évite de croire le magasin sur parole.
+ */
+function handleComptant(handle, compte) {
+  return {
+    getSize: () => handle.getSize(),
+    read(tampon, position) {
+      compte.plusGrandeLecture = Math.max(compte.plusGrandeLecture, tampon.byteLength);
+      compte.lectures += 1;
+      return handle.read(tampon, position);
+    },
+    write: (octets, position) => handle.write(octets, position),
+    truncate: (taille) => handle.truncate(taille),
+    flush: () => handle.flush(),
+    close: () => handle.close(),
+  };
+}
+
+async function ouvrirMagasin(support, nom = "vol.gen", { enveloppe = (h) => h, ...reste } = {}) {
   const handle = enveloppe(await support.magasin.openHandle(nom));
   return GenerationStore.ouvrir({
     volume: "vol",
     handle,
-    tailleVolume: TAILLE_VOLUME,
+    tailleVolume: support.tailleVolume,
+    ...reste,
     lireVolume: support.lireVolume,
     ecrireVolume: support.ecrireVolume,
     barriereVolume: support.barriereVolume,
@@ -422,4 +458,127 @@ test("la cible de MIGRATION ouvre transactionnellement : une génération en att
   } finally {
     await backend.close();
   }
+});
+
+// --------------------------------------------------------- rejeu en FLUX (#91)
+
+/** Plafond réduit du banc de flux : la propriété mesurée ne dépend pas de sa valeur. */
+const PLAFOND_BANC = 4 * 1024 * 1024;
+/** Volume du banc : assez large pour porter la charge à des offsets distincts. */
+const VOLUME_BANC = 8 * 1024 * 1024;
+/** Taille d'un enregistrement déposé. Un ordre de grandeur d'écriture de guest. */
+const ENREGISTREMENT_BANC = 64 * 1024;
+/** Nombre d'enregistrements que le plafond du banc laisse déposer. */
+const ENREGISTREMENTS_BANC = Math.floor(PLAFOND_BANC / (ENREGISTREMENT_BANC + ENTETE_OCTETS));
+
+/** Dépose la charge du banc dans un magasin ouvert. Rend les octets déposés. */
+async function remplirLeBanc(magasin) {
+  for (let rang = 0; rang < ENREGISTREMENTS_BANC; rang += 1) {
+    await magasin.deposer(rang * ENREGISTREMENT_BANC, buildPattern(ENREGISTREMENT_BANC, rang + 1));
+  }
+  return magasin.octetsDeCharge;
+}
+
+/** Options communes du banc : plafond réduit, et aucun rangement automatique. */
+const OPTIONS_BANC = { plafondOctets: PLAFOND_BANC, seuilPointDeControle: PLAFOND_BANC * 2 };
+
+test("la récupération rejoue en FLUX : sa surmémoire de pointe ne suit pas la taille de la charge", async () => {
+  // Défaut MEDIUM-2 de la revue de #90. La récupération lisait la charge validée d'un seul tenant,
+  // puis en extrayait une tranche par enregistrement : au plafond de 64 Mio, elle allouait jusqu'à
+  // ~128 Mio, là où `docs/quality-attributes.md` borne la surmémoire de streaming à 64 Mio et exige
+  // explicitement ce régime pour l'export et la restauration.
+  //
+  // La propriété mesurée ici ne dépend PAS de la valeur du plafond : la plus grande allocation de la
+  // récupération est bornée par une CONSTANTE du magasin, jamais par la charge. C'est pourquoi le
+  // banc tourne à 4 Mio — assez pour que l'ancien code rougisse d'un ordre de grandeur, assez peu
+  // pour que `npm run check` reste tenable.
+  const support = creerSupport(VOLUME_BANC);
+  const premier = await ouvrirMagasin(support, "vol.gen", OPTIONS_BANC);
+  const charge = await remplirLeBanc(premier);
+  await premier.valider();
+  // La session meurt sans point de contrôle : la charge validée est encore dans le journal.
+  support.magasin.abandon("vol.gen");
+  assert.ok(charge > PLAFOND_BANC * 0.9, `charge ${charge} proche du plafond ${PLAFOND_BANC}`);
+
+  const compte = { plusGrandeLecture: 0, lectures: 0 };
+  support.plusGrandeEcritureVolume = 0;
+  const second = await ouvrirMagasin(support, "vol.gen", {
+    ...OPTIONS_BANC,
+    enveloppe: (handle) => handleComptant(handle, compte),
+  });
+
+  assert.equal(second.rapport.etat, GENERATION_ETATS.rejouee);
+  assert.equal(second.rapport.enregistrementsRejoues, ENREGISTREMENTS_BANC);
+
+  // LA BORNE. Ni une lecture du journal, ni une écriture du volume ne tient la charge entière.
+  assert.ok(
+    compte.plusGrandeLecture <= TAMPON_RELECTURE_OCTETS,
+    `plus grande lecture ${compte.plusGrandeLecture} ≤ tampon ${TAMPON_RELECTURE_OCTETS}`,
+  );
+  assert.ok(
+    support.plusGrandeEcritureVolume <= TAMPON_RELECTURE_OCTETS,
+    `plus grande écriture du volume ${support.plusGrandeEcritureVolume}`,
+  );
+  // Et le magasin la PUBLIE, comme l'export et la restauration publient la leur.
+  assert.ok(second.rapport.surmemoireMaxOctets > 0, "la surmémoire de pointe est publiée");
+  assert.ok(
+    second.rapport.surmemoireMaxOctets <= TAMPON_RELECTURE_OCTETS,
+    `surmémoire publiée ${second.rapport.surmemoireMaxOctets} ≤ ${TAMPON_RELECTURE_OCTETS}`,
+  );
+  // Le chiffre publié est celui que le SUPPORT a vu : le magasin n'est pas cru sur parole.
+  assert.equal(second.rapport.surmemoireMaxOctets, compte.plusGrandeLecture);
+
+  // Le rejeu est EXACT : chaque enregistrement a retrouvé son offset, octet pour octet.
+  for (let rang = 0; rang < ENREGISTREMENTS_BANC; rang += 1) {
+    const debut = rang * ENREGISTREMENT_BANC;
+    const attendu = buildPattern(ENREGISTREMENT_BANC, rang + 1);
+    assert.deepEqual(
+      [...support.volume.subarray(debut, debut + ENREGISTREMENT_BANC)],
+      [...attendu],
+      `enregistrement ${rang}`,
+    );
+  }
+  second.close();
+});
+
+test("le tampon de relecture borne aussi la récupération au PLAFOND de production", () => {
+  // Le banc ci-dessus tourne à plafond réduit : ce que la borne vaut au plafond réel n'est pas
+  // mesuré par lui, il est DÉDUIT — le tampon est une constante du magasin, indépendante du plafond.
+  // Cette ligne l'épingle : si le tampon redevenait proportionnel à la charge, elle rougirait avant
+  // que la surmémoire ne dépasse le budget de `docs/quality-attributes.md`.
+  const budgetSurmemoire = 64 * 1024 * 1024;
+  assert.ok(TAMPON_RELECTURE_OCTETS < PLAFOND_CHARGE_OCTETS, "le tampon est plus petit que la charge");
+  assert.ok(TAMPON_RELECTURE_OCTETS <= budgetSurmemoire, "le tampon tient dans le budget");
+});
+
+test("le point de contrôle range la charge en FLUX, lui aussi", async () => {
+  // Le point de contrôle emprunte le MÊME chemin que la récupération : sans borne, il allouerait
+  // autant qu'elle. La mesure est ici prise sur la session vivante, avant toute mort.
+  const support = creerSupport(VOLUME_BANC);
+  const compte = { plusGrandeLecture: 0, lectures: 0 };
+  const magasin = await ouvrirMagasin(support, "vol.gen", {
+    ...OPTIONS_BANC,
+    enveloppe: (handle) => handleComptant(handle, compte),
+  });
+  await remplirLeBanc(magasin);
+  await magasin.valider();
+
+  compte.plusGrandeLecture = 0;
+  support.plusGrandeEcritureVolume = 0;
+  await magasin.pointDeControle();
+
+  assert.ok(
+    compte.plusGrandeLecture <= TAMPON_RELECTURE_OCTETS,
+    `plus grande lecture ${compte.plusGrandeLecture} ≤ tampon ${TAMPON_RELECTURE_OCTETS}`,
+  );
+  assert.ok(
+    support.plusGrandeEcritureVolume <= TAMPON_RELECTURE_OCTETS,
+    `plus grande écriture du volume ${support.plusGrandeEcritureVolume}`,
+  );
+  const dernier = (ENREGISTREMENTS_BANC - 1) * ENREGISTREMENT_BANC;
+  assert.deepEqual(
+    [...support.volume.subarray(dernier, dernier + ENREGISTREMENT_BANC)],
+    [...buildPattern(ENREGISTREMENT_BANC, ENREGISTREMENTS_BANC)],
+  );
+  magasin.close();
 });
