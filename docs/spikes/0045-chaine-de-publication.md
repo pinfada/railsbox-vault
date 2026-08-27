@@ -275,6 +275,39 @@ exactement la relation que COOP gouverne et que `frame-ancestors` ne couvre pas.
 Le témoin ne rejoue **pas** la frontière de CSP : `tests/browser/csp-frontiere.spec.mjs` la mesure
 déjà sur les trois moteurs à chaque `npm run check`, et la dupliquer ferait deux vérités.
 
+## Relevé 5 — la chaîne, rejouée à la main
+
+`.github/workflows/publication.yml` est en `workflow_dispatch`, et GitHub **ne dispatche que les
+workflows présents sur la branche par défaut** : tant que ce spike n'est pas fusionné,
+`gh workflow run publication.yml --ref spike/chaine-de-publication` rend un
+`HTTP 404: workflow publication.yml not found on the default branch`. Le workflow n'a donc **pas**
+de run à montrer, et c'est une limite de la plateforme, pas du travail.
+
+À défaut, sa séquence d'étapes est rejouée à l'identique en local, commandes comprises :
+
+```text
+=== Construction ===
+=== Vérification ===
+Arbre « coquille » — 77 fichiers, commit 47869aa
+Conforme. Empreinte de racine 4592da46ac741b014fb1ea0cb883ab4103053b541afc8abd79c5df8bd6147008
+Arbre « application » — 2 fichiers, commit 47869aa
+Conforme. Empreinte de racine 293a7899cb9417fa54d61f7a70795350e26216844fe3638250b240c1a8c54277
+=== Empreintes de racine ===
+coquille    4592da46ac741b014fb1ea0cb883ab4103053b541afc8abd79c5df8bd6147008
+application 293a7899cb9417fa54d61f7a70795350e26216844fe3638250b240c1a8c54277
+=== Retour arrière (vers 3700177) ===
+reconstruction A : 4592da46ac741b014fb1ea0cb883ab4103053b541afc8abd79c5df8bd6147008
+reconstruction B : 4592da46ac741b014fb1ea0cb883ab4103053b541afc8abd79c5df8bd6147008
+ROLLBACK REPRODUCTIBLE
+```
+
+Une observation à ne pas prendre pour une erreur : le retour arrière vers `3700177` rend **la même**
+empreinte de racine que `47869aa`. C'est correct, et c'est une propriété. Le commit intermédiaire ne
+touche que `docs/`, `.github/` et `eslint.config.mjs` — rien de publié. **Un changement qui ne
+modifie aucun octet servi ne change pas l'arbre publié**, et deux versions du dépôt peuvent donc
+partager une empreinte de racine. Le commit, lui, diffère dans l'inventaire : l'identité de la
+version n'est pas confondue avec celle des octets.
+
 ## Comparatif — mesuré et documentaire
 
 Ce qui est **mesuré** est marqué comme tel ; le reste est documentaire et cité.
@@ -323,3 +356,6 @@ Motifs factuels d'élimination :
    l'inventaire qui l'accompagne. L'empreinte de racine n'a de valeur que **comparée hors bande** —
    d'où son dépôt en artefact séparé par `publication.yml`.
 5. **Une seule machine.** Les témoins tournent sur les trois moteurs, mais sur un seul système.
+6. **Le workflow n'a pas de run à montrer** tant qu'il n'est pas sur la branche par défaut (relevé
+   5). Sa séquence est rejouée localement ; l'exécuter sur un exécutant GitHub — avec `npm ci`,
+   `npm run vm:fetch` et les trois moteurs — reste à faire à la fusion.
