@@ -82,15 +82,9 @@ self.addEventListener("message", (event) => {
     self.postMessage({ id, ok: false, error: { message: `Phase inconnue : ${options.phase}` } });
     return;
   }
-  // La clé du harnais est posée pour la durée de la phase, et relâchée après elle (ADR 0016).
-  // Ce Worker est un BANC : le jeton lui vient de la page, jamais du produit.
-  let relacher;
-  try {
-    relacher = poserCleDuBanc(options.jetonCle);
-  } catch (error) {
-    self.postMessage({ id, ok: false, error: { name: error.name, message: error.message } });
-    return;
-  }
+  // Le jeton du harnais vaut pour la durée de la phase, et pour elle seule (ADR 0016). Ce Worker
+  // est un BANC : il le reçoit de la page, jamais du produit.
+  const relacher = poserCleDuBanc(options.jetonCle);
   runner(options)
     .finally(relacher)
     .then(
