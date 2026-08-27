@@ -414,6 +414,7 @@ vaut ici : « un seuil posé sans mesure opposable serait une promesse, pas un b
 sont des mesures prises sur une machine qui n'est pas l'environnement de référence, sur un seul
 moteur. Firefox et WebKit ne sont pas mesurés, et l'effet du scellement sur le rythme de l'émulateur
 ne l'est pas non plus — `test:rythme` ne saurait pas plus conclure ici qu'il ne le savait pour #16.
+
 ## Le budget de récupération est mesuré, et le plafond de charge en découle (#91)
 
 Le budget « dernière génération valide trouvée en ≤ 60 s hors temps de boot VM » existait depuis le
@@ -474,13 +475,36 @@ première barrière acquittée de Rails et la coupure —, et ce n'était pas un
 contrôle remet la charge validée à zéro à chaque rangement, si bien que seule la DERNIÈRE génération
 d'un boot restait lisible.
 
-Le magasin retient désormais une **haute eau** de la charge validée, que chaque boot publie
-(`generationMaxOctets`). Relevé du @DATE_E2E@, `npm run test:e2e`, vrai Rails sur volume OPFS de 512
-Mio :
+Le magasin retient désormais **deux hautes eaux**, que chaque boot publie, et il a fallu les
+distinguer : `PLAFOND_CHARGE_OCTETS` borne la charge **DÉPOSÉE** depuis le dernier point de contrôle
+— barrière ou pas —, et non la génération validée. Relevé du 2026-08-27, `npm run test:e2e`, vrai
+Rails sur volume OPFS de 512 Mio :
 
-@TABLEAU_GENERATIONS@
+| Scénario                     | Charge DÉPOSÉE max | Plus grande génération scellée |
+| ---------------------------- | -----------------: | -----------------------------: |
+| Boot à chaud, mutation Rails |          992 208 o |                        4 112 o |
+| Reprise à froid, essai 1     |          979 904 o |                        4 112 o |
+| Reprise à froid, essai 2     |        1 008 640 o |                        4 112 o |
+| Reprise à froid, essai 3     |        1 004 512 o |                        4 112 o |
+| Boot après migration         |    **1 012 688 o** |                        4 112 o |
+| **Plafond**                  |   **16 777 216 o** |                              — |
 
-@VERDICT_GENERATIONS@
+**L'écart entre les deux colonnes est le fait le plus instructif du relevé.** La plus grande
+génération SCELLÉE vaut 4 112 octets partout — un bloc de 4 Kio et son en-tête, ce que SQLite écrit
+puis fait suivre d'un `fsync`. La charge DÉPOSÉE, elle, atteint près d'un Mio : un boot de l'image
+de référence produit **soixante et une écritures OPFS pour UNE seule barrière acquittée**. Rails
+écrit beaucoup et barrière peu, si bien que c'est la charge non validée qui approche le plafond.
+
+**Le plafond laisse 16,6× au-dessus de la pire charge observée.** C'est confortable, et ce n'est pas
+immense : une application qui écrirait seize fois plus que l'image de référence entre deux barrières
+serait refusée. Le facteur valait 66 avec l'ancien plafond de 64 Mio — l'abaissement le réduit sans
+l'annuler, et c'est le prix assumé d'un budget de récupération tenu plutôt que supposé.
+
+**Ce qu'un refus coûte au guest**, puisque le plafond refuse au lieu de dégrader : un guest qui
+dépasserait reçoit `VAULT_STORAGE_GENERATION_OVERFLOW`, traduit en erreur d'E/S ATA — pour Linux, un
+disque qui refuse d'écrire, donc système de fichiers en lecture seule et transaction SQLite échouée.
+Bruyant, typé, sans perte silencieuse, mais bloquant. `SEC-DURABLE-001` n'en est pas affaibli : une
+écriture refusée n'est annoncée durable à personne.
 
 **Ce que ce relevé ne couvre pas.** `rails db:seed` et les migrations de schéma ne tournent pas au
 boot : l'image de référence les exécute à la CONSTRUCTION, dans Docker, hors du backend de blocs.

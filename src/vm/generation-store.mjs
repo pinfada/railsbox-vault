@@ -80,8 +80,10 @@ export const GENERATION_ETATS = Object.freeze({
  *
  * Le budget n'est pas révisé pour faire tenir le plafond : c'est le plafond qui cède, comme l'exige
  * la règle de #91. Et 16 Mio reste deux fois `POINT_DE_CONTROLE_OCTETS` — un guest qui émet des
- * barrières n'est jamais refusé — et près de deux cents fois la seule génération jamais observée de
- * l'image de référence (90 304 octets, scénario Bout en bout de #16).
+ * barrières n'est jamais refusé — et **16,6 fois** la plus grande charge que l'image de référence
+ * ait présentée à ce plafond : 1 012 688 octets, boot après migration, relevé de bout en bout du
+ * 2026-08-27. Le facteur valait 66 à 64 Mio ; l'abaissement le réduit sans l'annuler, et c'est le
+ * prix assumé d'un budget de récupération tenu.
  *
  * Ce que ce chiffre n'est TOUJOURS pas : la plus grande génération que l'image de référence peut
  * produire. Personne ne l'a mesurée ; l'ADR 0014 l'inscrit comme travail découvert.
