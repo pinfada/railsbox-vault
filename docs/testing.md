@@ -305,6 +305,51 @@ son verdict dépend de la machine. Son relevé est publié dans
 [`quality-attributes.md`](quality-attributes.md) et dans
 l'[ADR 0015](decisions/0015-proprietes-cryptographiques-du-format.md).
 
+### Format v3 : le niveau « le produit le tient » (#18)
+
+#17 avait livré un juge sans justiciable. #18 lui en donne un : le format v3 chiffre les secteurs du
+volume, les enregistrements du journal et les racines, par le chemin de production. La décision de
+disposition est l'[ADR 0016](decisions/0016-format-de-volume-v3-dispositions.md).
+
+| Niveau     | Fichier                                        | Ce qu'il éprouve                                    | Rattachement      |
+| ---------- | ---------------------------------------------- | --------------------------------------------------- | ----------------- |
+| unitaire   | `tests/unit/vm-volume-chiffre-format.test.mjs` | disposition, offsets, sceau de 34 o, en-tête v3     | `npm run check`   |
+| unitaire   | `tests/unit/vm-volume-chiffre.test.mjs`        | **vecteurs reproduits** et **sept refus**           | `npm run check`   |
+| unitaire   | `tests/unit/vm-generation-chiffre.test.mjs`    | racine v3, journal scellé, correction de l'ADR 0015 | `npm run check`   |
+| unitaire   | `tests/unit/vm-manifest-v3.test.mjs`           | identifiant de volume, algorithme épinglé, refus v2 | `npm run check`   |
+| résilience | `tests/vm/resilience-arrets.spec.mjs`          | matrice de #15 **rejouée sur v3**, OPFS réel        | `npm run test:vm` |
+| résilience | `tests/vm/durability-barrier.spec.mjs`         | `SEC-DURABLE-001` sur des octets **chiffrés**       | `npm run test:vm` |
+| résilience | `tests/vm/recuperation-generation.spec.mjs`    | durée d'une récupération **avec déchiffrement**     | `npm run test:vm` |
+
+**Ce que la suite des vecteurs vaut ici, et qui n'est pas ce que valait celle de #17.**
+`vm-format-chiffre-vecteurs.test.mjs` confronte le MODÈLE aux octets figés ; `vm-volume-chiffre`
+confronte le **chemin de production** aux mêmes octets — le scellement du produit, son compteur de
+scellements et sa traduction des refus. Les deux sont nécessaires : le premier fige la
+spécification, le second interdit à la couche de production d'ajouter, de retirer ou de réordonner
+quoi que ce soit. Le nonce leur est fourni par la porte d'injection que l'ADR 0015 prévoit
+explicitement pour #18 ; aucun chemin du produit ne l'emprunte.
+
+**Les sept refus sont éprouvés sur le chemin de production, pas sur le modèle** : un octet du
+chiffré modifié, un secteur valide déplacé à une autre adresse, relu sous un autre volume, sous un
+autre format, sous une autre génération, un secteur laissé EN CLAIR — il n'y a pas de secteur vierge
+en v3 —, et une racine altérée. Un huitième refus les précède : un volume v3 sans clé
+(`VAULT_STORAGE_CLE_REQUISE`). Un **témoin positif** ouvre la série, sans quoi une couche qui
+refuserait tout passerait pour sûre.
+
+**Les pannes sont injectées à chaque geste du scellement** — écrire la charge, écrire le sceau, lire
+l'une, lire l'autre — et la propriété mesurée est la même à chaque fois : le secteur est REFUSÉ à la
+relecture, jamais rendu à moitié.
+
+**La clé des bancs vient du harnais, sous jeton**, comme l'injecteur d'arrêts de #15
+(`public/vm/cle-du-banc.mjs`). Ce module ne vit que dans `public/vm/` : aucun module de `src/` ne
+l'importe, et c'est ce qui rend vraie la phrase « aucun chemin du produit ne transmet le jeton ».
+
+```bash
+npm run check                                   # les quatre suites unitaires y sont rattachées
+node --test tests/unit/vm-volume-chiffre.test.mjs
+npm run test:vm                                 # la matrice de #15 rejouée sur v3
+```
+
 ### Export vérifiable
 
 L'export portable de `VAULT-PORT-001` (#11) — `src/vm/volume-export.mjs`, son hachage incrémental
