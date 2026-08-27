@@ -72,11 +72,12 @@ export const GENERATION_ETATS = Object.freeze({
  * secteur. Mesuré sur OPFS réel (`reports/vm/recuperation-generation.json`), à la granularité la
  * plus fine que le guest puisse produire — des enregistrements de 512 octets :
  *
- *  - 64 Mio : **entre 39,4 s et 71,1 s** selon l'état de la machine, sur trois exécutions du banc.
- *    La mesure ENCADRE le budget au lieu de tenir dessous : la marge est nulle, et l'environnement
- *    de référence n'est pas la machine qui a relevé ces chiffres ;
- *  - 16 Mio : **p95 12,4 s**, étendue 20 %, pire valeur individuelle 14,9 s — quatre fois sous le
- *    budget, et la conclusion ne dépend plus de l'état de la machine.
+ *  - 64 Mio : **entre 39,4 s et 71,1 s** selon l'état de la machine, sur quatre exécutions du banc.
+ *    Des relevés individuels tombent des DEUX côtés des 60 s : la mesure ENCADRE le budget au lieu
+ *    de tenir dessous, la marge est nulle, et l'environnement de référence n'est pas la machine qui
+ *    a relevé ces chiffres ;
+ *  - 16 Mio : **p95 entre 12,4 et 24,7 s**, pire valeur individuelle 27,7 s — un facteur deux sous
+ *    le budget dans la plus mauvaise exécution, et la conclusion ne dépend plus de la machine.
  *
  * Le budget n'est pas révisé pour faire tenir le plafond : c'est le plafond qui cède, comme l'exige
  * la règle de #91. Et 16 Mio reste deux fois `POINT_DE_CONTROLE_OCTETS` — un guest qui émet des
@@ -125,7 +126,7 @@ function alignerHaut(valeur) {
  * enregistrements de 512 octets réclamait 201,4 s — 3,4 fois le budget de récupération de 60 s de
  * `docs/quality-attributes.md` (relevé dans `reports/vm/recuperation-generation.json`). La fenêtre
  * ramène les lectures à deux passes séquentielles sur la charge, quelle que soit sa granularité, et
- * la même charge à 40,3 s sur une machine au repos.
+ * la même charge entre 39,4 et 71,1 s selon l'état de la machine.
  *
  * Le tampon est PRÊTÉ : chaque tranche rendue vit jusqu'au prochain rechargement, et la retenir
  * serait une faute. C'est le prix d'une surmémoire qui ne suit pas la taille de la charge.

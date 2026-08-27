@@ -504,9 +504,9 @@ puis les octets de chaque enregistrement : quatre appels au support par enregist
 passes. Un appel OPFS synchrone se paie en centaines de microsecondes, et à la granularité la plus
 fine que le guest puisse produire — un enregistrement de 512 octets, ce qu'une écriture ATA peut
 valoir — une charge de 64 Mio réclamait **201,4 s**, soit 3,4 fois le budget. La fenêtre ramène les
-lectures à deux passes séquentielles quelle que soit la granularité, et la même charge à **40,3 s**
-sur une machine au repos. Ce qui reste à la charge du rejeu est alors la recopie elle-même : une
-écriture du volume par enregistrement, et c'est elle que le plafond borne.
+lectures à deux passes séquentielles quelle que soit la granularité, et la même charge **entre 39,4
+et 71,1 s** selon l'état de la machine. Ce qui reste à la charge du rejeu est alors la recopie
+elle-même : une écriture du volume par enregistrement, et c'est elle que le plafond borne.
 
 ### Le plafond cède, pas le budget
 
@@ -515,18 +515,23 @@ Relevé du **2026-08-27**, `npm run test:vm`, OPFS réel sous Chromium, machine 
 
 | Charge rejouée              | Granularité          | Enregistrements |       p50 |           p95 | Échantillons | Étendue relative |
 | --------------------------- | -------------------- | --------------: | --------: | ------------: | -----------: | ---------------: |
-| 16 Mio (plafond)            | 64 Kio               |             255 |    269 ms |        459 ms |            7 |             77 % |
-| 16 Mio (plafond)            | 4 Kio                |           4 080 |  1 978 ms |      2 398 ms |            7 |             39 % |
-| 16 Mio (plafond)            | **512 o** (pire cas) |          31 775 | 11 598 ms | **12 390 ms** |            5 |             20 % |
-| **64 Mio** (ancien plafond) | **512 o**            |         127 100 | 40 342 ms |     41 285 ms |            3 |              5 % |
+| 16 Mio (plafond)            | 64 Kio               |             255 |    282 ms |        453 ms |            7 |             79 % |
+| 16 Mio (plafond)            | 4 Kio                |           4 080 |  1 586 ms |      1 704 ms |            7 |             22 % |
+| 16 Mio (plafond)            | **512 o** (pire cas) |          31 775 | 11 809 ms | **24 714 ms** |            5 |            125 % |
+| **64 Mio** (ancien plafond) | **512 o**            |         127 100 | 51 503 ms |     59 483 ms |            3 |             27 % |
 
-**Le témoin ne dépasse pas franchement le budget : il l'ENCADRE, et c'est pire.** La même série a
-été mesurée trois fois sur la même machine, à des états de charge différents : **71,1 s**, **53,2
-s**, puis **40,3 s** de médiane machine au repos. Un budget que la mesure franchit dans un sens ou
-dans l'autre selon ce que la machine faisait par ailleurs n'est pas un budget tenu — c'est un budget
-dont la marge est nulle, et l'environnement de référence n'est pas cette machine-ci. À 16 Mio, la
-pire valeur individuelle jamais relevée au pire cas vaut 14,9 s, soit **quatre fois** sous le budget
-; la décision ne dépend plus de l'état de la machine.
+**Le témoin ne dépasse pas franchement le budget : il l'ENCADRE, et c'est pire.** La série à 64 Mio
+a été rejouée quatre fois sur cette machine, à des états de charge différents, et ses relevés
+INDIVIDUELS tombent des deux côtés des 60 s : **71,1 s**, **53,2 s**, puis 40,3 / 41,4 / 39,4 s
+machine au repos, puis **60,4** / 46,3 / 51,5 s. Étendue de bout en bout : **39,4 s à 71,1 s**, pour
+la même charge et le même code.
+
+Un budget que la mesure franchit dans un sens ou dans l'autre selon ce que la machine faisait par
+ailleurs n'est pas un budget tenu : c'est un budget sans marge, et l'environnement de référence
+n'est pas cette machine-ci. À 16 Mio la pire valeur individuelle jamais relevée au pire cas vaut
+**27,7 s** — un facteur deux sous le budget dans la plus mauvaise des exécutions, 9,6 s dans la
+meilleure. La décision cesse de dépendre de l'état de la machine, et c'est ce qu'on attend d'une
+marge.
 
 Le budget n'est pas révisé pour faire tenir le plafond : c'est le plafond qui cède. **De 64 Mio à 16
 Mio**, et le chiffre cesse d'être une analogie avec la surmémoire de streaming pour devenir la plus
