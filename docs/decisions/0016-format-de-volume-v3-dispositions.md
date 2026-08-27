@@ -228,6 +228,21 @@ Le troisième point ne coûte rien en pratique : `deposer` aligne déjà toute �
 entiers, en relisant au besoin. C'est la lecture-modification-réécriture que l'ADR 0015 réclame de
 l'appelant, et elle existait avant lui.
 
+### Un manque du modèle de référence, signalé et comblé sans changer un octet
+
+L'ADR 0015 a livré `scellerBlocSousNonce` et `scellerRacineSousNonce` avec une raison écrite : «
+permettre à une implémentation (#18) de REPRODUIRE ces vecteurs ». **Le troisième geste,
+`rescellerEnSecteurs`, n'avait pas son équivalent** — il tirait ses nonces lui-même, sans porte
+d'injection. La conséquence n'est pas cosmétique : le chemin du point de contrôle est celui qui
+écrit réellement dans le volume, et il échappait au contrat des vecteurs. Aucune épreuve n'aurait vu
+une implémentation qui, par exemple, aurait épinglé un autre rang ou une autre longueur.
+
+Le manque est comblé par un paramètre `nonces` **optionnel**, dont le défaut est le tirage — donc
+sans qu'un seul octet produit change. `tests/unit/vm-volume-chiffre.test.mjs` s'en sert pour
+confronter le rescellement au premier vecteur figé, qui est précisément un secteur de volume (rang
+0, adresse 0, 512 octets). C'est un défaut de la spécification, corrigé dans la spécification ; ce
+n'est pas un ajustement du modèle pour faire passer du code.
+
 **Le rescellement compte dans le budget de clé.** `scellementsCumules` est incrémenté par secteur
 rescellé comme par enregistrement déposé et par racine écrite, et `verifierBudgetDeCle` refuse à
 2^31. Le compteur est **authentifié dans la racine** : il traverse donc les sessions, et son recul
