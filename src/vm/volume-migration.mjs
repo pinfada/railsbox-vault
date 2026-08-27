@@ -54,6 +54,7 @@ import { journalMalforme, parseJournal, serialiserJournal } from "./migration-jo
 import { MANIFEST_ERROR_CODES, ManifestError } from "./manifest-errors.mjs";
 import {
   MANIFEST_FORMAT_VERSION,
+  MIN_VOLUME_FORMAT_VERSION,
   MIN_WRITER_FORMAT_VERSION,
   assertReadable,
   createManifest,
@@ -110,6 +111,37 @@ const STEPS = Object.freeze([
         // exactement aussi vrai — ni plus, ni moins.
         identity: manifest.identity,
       });
+    },
+  }),
+  Object.freeze({
+    from: MIN_WRITER_FORMAT_VERSION,
+    to: MIN_VOLUME_FORMAT_VERSION,
+    summary:
+      "v3 : le volume est CHIFFRÉ. Chaque secteur est scellé par AES-256-GCM sous une clé de volume, avec son identité logique en données associées (ADR 0015), et le fichier gagne un en-tête et une région d'authentification de 34 octets par secteur (ADR 0016).",
+    /**
+     * **Étape DÉCLARÉE, exécution NON FOURNIE par cette tranche.**
+     *
+     * Les deux étapes précédentes du dépôt ne touchaient aucun octet du volume : migrer y était
+     * réécrire un manifeste. Celle-ci est d'une autre nature — elle doit AGRANDIR le fichier de
+     * `512 + R × 512` octets, décaler la charge entière, et rechiffrer chaque secteur. Aucun de ces
+     * trois gestes n'est exprimable par la cible de l'ADR 0011, dont le contrat est `read` /
+     * `write` / `flush` sur une géométrie FIXE : un backend ne sait pas faire grandir son propre
+     * fichier, et c'est délibéré depuis #6.
+     *
+     * Le refus est donc typé, il nomme ce qui manque, et il tombe AVANT toute mutation — le
+     * manifeste n'est pas révoqué, le volume reste identifié et lisible. C'est le seul état honnête
+     * tant que la tranche (b) de #18 n'a pas livré la cible qui sait rechiffrer.
+     */
+    apply({ manifest }) {
+      throw new MigrationError(
+        MIGRATION_ERROR_CODES.stepUnavailable,
+        `Migration ${MIN_WRITER_FORMAT_VERSION} → ${MIN_VOLUME_FORMAT_VERSION} refusée : le chemin est connu mais son exécution n'est pas fournie. Passer au format v3 exige d'agrandir le fichier de sa région d'authentification et de rechiffrer chaque secteur — deux gestes qu'une cible de migration à géométrie fixe ne sait pas faire. Le volume n'est pas modifié et reste lisible et exportable.`,
+        {
+          from: MIN_WRITER_FORMAT_VERSION,
+          to: MIN_VOLUME_FORMAT_VERSION,
+          volumeSize: manifest.geometry.volumeSize,
+        },
+      );
     },
   }),
 ]);
