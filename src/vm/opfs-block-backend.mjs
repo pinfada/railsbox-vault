@@ -55,6 +55,8 @@ export class OpfsBlockBackend {
   #flushDelay;
   #generation;
   #rangement = null;
+  #rangementEnCours = null;
+  #dureeRangementMaxMs = 0;
   #closed = false;
   #handleLost = false;
   #barrier = 0;
@@ -251,6 +253,10 @@ export class OpfsBlockBackend {
    */
   async read(offset, length) {
     this.#assertUsable();
+    // Un rangement en cours va tronquer le journal et vider l'index : lire pendant qu'il court
+    // rendrait un tampon superposé à partir de positions sur le point de disparaître.
+    await this.#attendreRangement();
+    this.#assertUsable();
     this.#assertRange(offset, length);
     const fault = this.#faults.consume("read");
     this.#applyLostHandle(fault, "read", offset, length);
@@ -300,6 +306,8 @@ export class OpfsBlockBackend {
    */
   async write(offset, bytes) {
     this.#assertUsable();
+    await this.#attendreRangement();
+    this.#assertUsable();
     if (!(bytes instanceof Uint8Array)) {
       throw new TypeError("Une écriture attend un Uint8Array.");
     }
@@ -321,46 +329,51 @@ export class OpfsBlockBackend {
       });
     }
 
-    // L'écriture va dans la GÉNÉRATION EN COURS, pas dans le volume (#16, ADR 0014). Les octets
-    // atteignent bien le support — le journal voisin est un fichier comme un autre, et une déchirure
-    // y est aussi réelle qu'ailleurs —, mais ils ne deviennent l'état du volume qu'à la validation.
     if (this.#generation !== null) {
-      await this.#awaitSupport(
-        "write",
-        () => this.#generation.deposer(offset, bytes.subarray(0, offered)),
-        {
-          offset,
-          length: requested,
-        },
-      );
-      if (offered !== requested) {
-        throw new StorageError(
-          STORAGE_ERROR_CODES.partialWrite,
-          `Écriture partielle : ${offered} octet(s) acceptés sur ${requested} à l'offset ${offset}.`,
-          { volume: this.#name, offset, requested, accepted: offered },
-        );
-      }
-      this.#journal.record(JOURNAL_OPERATIONS.write, { offset, length: requested });
-      return;
+      await this.#deposerDansGeneration(offset, bytes.subarray(0, offered), requested);
+    } else {
+      this.#ecrireDansLeVolume(offset, bytes.subarray(0, offered), requested);
     }
+    this.#journal.record(JOURNAL_OPERATIONS.write, { offset, length: requested });
+  }
 
-    const accepted = this.#support(
-      "write",
-      () => this.#handle.write(bytes.subarray(0, offered), { at: offset }),
-      { offset, length: requested },
-    );
+  /**
+   * Dépose une écriture dans la GÉNÉRATION EN COURS (#16, ADR 0014).
+   *
+   * Les octets atteignent bien le support — le journal voisin est un fichier comme un autre, et une
+   * déchirure y est aussi réelle qu'ailleurs —, mais ils ne deviennent l'état du volume qu'à la
+   * validation. Une écriture partielle programmée est donc réellement partielle DANS LE JOURNAL, et
+   * l'erreur typée qui suit ferme la génération : elle ne sera jamais validée.
+   */
+  async #deposerDansGeneration(offset, offerts, requested) {
+    await this.#awaitSupport("write", () => this.#generation.deposer(offset, offerts), {
+      offset,
+      length: requested,
+    });
+    if (offerts.byteLength !== requested) {
+      throw new StorageError(
+        STORAGE_ERROR_CODES.partialWrite,
+        `Écriture partielle : ${offerts.byteLength} octet(s) acceptés sur ${requested} à l'offset ${offset}.`,
+        { volume: this.#name, offset, requested, accepted: offerts.byteLength },
+      );
+    }
+  }
+
+  /**
+   * Écrit DIRECTEMENT dans le volume, sans génération. Réservé aux chemins qui réécrivent un volume
+   * entier et portent leur propre atomicité — préparation d'image, restauration (ADR 0014).
+   */
+  #ecrireDansLeVolume(offset, offerts, requested) {
+    const accepted = this.#support("write", () => this.#handle.write(offerts, { at: offset }), {
+      offset,
+      length: requested,
+    });
 
     // Même règle qu'en lecture : `4294967288` n'est pas « plus d'octets qu'on n'en demandait »,
     // c'est `FILE_ERROR_NO_SPACE` casté en non signé sur 32 bits (#73). L'écriture partielle et le
     // manque de place ont des remèdes différents ; les confondre les rendrait tous deux inutiles.
-    const echecDEcriture = writeCountFailure(accepted, {
-      requested,
-      volume: this.#name,
-      offset,
-    });
-    if (echecDEcriture !== null) throw echecDEcriture;
-
-    this.#journal.record(JOURNAL_OPERATIONS.write, { offset, length: requested });
+    const echec = writeCountFailure(accepted, { requested, volume: this.#name, offset });
+    if (echec !== null) throw echec;
   }
 
   /**
@@ -370,6 +383,8 @@ export class OpfsBlockBackend {
    * barrière durable de bout en bout reste l'objet de #14.
    */
   async flush() {
+    this.#assertUsable();
+    await this.#attendreRangement();
     this.#assertUsable();
     const fault = this.#faults.consume("flush");
     this.#applyLostHandle(fault, "flush", 0, 0);
@@ -434,12 +449,31 @@ export class OpfsBlockBackend {
 
     this.#journal.record(JOURNAL_OPERATIONS.flushAck, { barrier });
 
-    // Le POINT DE CONTRÔLE vient APRÈS l'acquittement, et n'en fait pas partie : les octets sont
-    // déjà durables, le ranger ne promet rien de neuf. Il est amorti — une génération sur beaucoup —
-    // parce que recopier à chaque barrière doublerait le coût de chaque `fsync` du guest.
+    // Le POINT DE CONTRÔLE vient APRÈS l'acquittement, et il n'est PAS attendu ici. La nuance est
+    // celle que la revue de #90 a relevée : « après l'acquittement » était vrai de la DURABILITÉ —
+    // les octets étaient déjà sûrs — mais faux de la COMMANDE ATA. Tant que cette promesse n'était
+    // pas résolue, `v86-buffer-adapter` ne levait pas BSY et n'émettait pas l'IRQ : le guest restait
+    // bloqué pendant la relecture, la réécriture de plusieurs mébioctets et la barrière du volume.
+    // Le rangement est donc LANCÉ et laissé courir ; toute E/S ultérieure l'attend, parce qu'il
+    // tronque le journal et vide l'index — deux choses qu'une écriture concurrente ne survivrait pas.
     if (this.#generation !== null && this.#generation.pointDeControleDu) {
-      await this.#rangerApresAcquittement(barrier);
+      this.#rangementEnCours = this.#rangerApresAcquittement(barrier);
     }
+  }
+
+  /**
+   * Attend le rangement en cours, s'il y en a un. Appelé au seuil de chaque E/S.
+   *
+   * C'est la seule sérialisation nécessaire : le rangement recopie la charge validée dans le volume,
+   * PUIS tronque le journal et vide l'index. Une écriture qui se glisserait entre les deux verrait
+   * sa position d'index effacée. L'attente ne coûte donc rien tant qu'aucun rangement ne court —
+   * c'est-à-dire presque toujours, puisqu'il est amorti au-delà de 8 Mio de charge.
+   */
+  async #attendreRangement() {
+    if (this.#rangementEnCours === null) return;
+    const encours = this.#rangementEnCours;
+    this.#rangementEnCours = null;
+    await encours;
   }
 
   /**
@@ -456,10 +490,17 @@ export class OpfsBlockBackend {
    * atteindre son plafond, et `VAULT_STORAGE_GENERATION_OVERFLOW` est levé, lui, à l'écriture.
    */
   async #rangerApresAcquittement(barrier) {
+    const depart = performance.now();
     try {
       await this.#generation.pointDeControle();
       this.#rangement = null;
-      this.#journal.record(JOURNAL_OPERATIONS.mark, { kind: "point-de-controle", barrier });
+      const dureeMs = Number((performance.now() - depart).toFixed(1));
+      this.#dureeRangementMaxMs = Math.max(this.#dureeRangementMaxMs, dureeMs);
+      this.#journal.record(JOURNAL_OPERATIONS.mark, {
+        kind: "point-de-controle",
+        barrier,
+        dureeMs,
+      });
     } catch (cause) {
       const typed = toStorageError(cause, { operation: "checkpoint", volume: this.#name });
       if (typed.code === STORAGE_ERROR_CODES.handleLost) this.#handleLost = true;
@@ -475,6 +516,14 @@ export class OpfsBlockBackend {
   /** Dernier échec de rangement, ou `null`. Publié : un échec toléré n'est pas un échec caché. */
   get dernierRangement() {
     return this.#rangement;
+  }
+
+  /**
+   * Durée du plus long rangement de la session, en millisecondes. Publiée parce qu'un coût que
+   * personne ne mesure finit par être supposé nul.
+   */
+  get dureeRangementMaxMs() {
+    return this.#dureeRangementMaxMs;
   }
 
   /**
@@ -495,6 +544,9 @@ export class OpfsBlockBackend {
     // l'a acquittée, et la prochaine ouverture l'écartera.
     let rangement = null;
     try {
+      // Un rangement encore en vol doit finir avant la fermeture : l'abandonner en cours laisserait
+      // le journal dans un état que la prochaine ouverture devrait rejouer sans raison.
+      await this.#attendreRangement();
       if (this.#generation !== null && this.#generation.rangeable) {
         await this.#generation.pointDeControle();
       }
@@ -578,6 +630,7 @@ export async function openOpfsVolume({
   flushDelay = 0,
   openHandle = openOpfsSyncAccess,
   transactionnel = true,
+  seuilPointDeControle,
 } = {}) {
   if (openVolumes.has(name)) {
     throw new StorageError(
@@ -635,7 +688,13 @@ export async function openOpfsVolume({
   if (transactionnel) {
     try {
       backend.installerGeneration(
-        await ouvrirGeneration({ name, size: geometry.size, backend, openHandle }),
+        await ouvrirGeneration({
+          name,
+          size: geometry.size,
+          backend,
+          openHandle,
+          seuilPointDeControle,
+        }),
       );
     } catch (cause) {
       // Le handle du volume est rendu avant de propager : un refus de génération ne doit pas laisser
@@ -653,7 +712,7 @@ export async function openOpfsVolume({
  * Ouvre le journal de génération voisin et RÉCUPÈRE. C'est ici que se joue la promesse de #16 : au
  * retour, le volume porte la dernière génération VALIDÉE, et rien d'autre.
  */
-async function ouvrirGeneration({ name, size, backend, openHandle }) {
+async function ouvrirGeneration({ name, size, backend, openHandle, seuilPointDeControle }) {
   const nomJournal = generationJournalName(name);
   let handle;
   try {
@@ -662,7 +721,7 @@ async function ouvrirGeneration({ name, size, backend, openHandle }) {
     throw toStorageError(cause, { operation: "open-generation", volume: name });
   }
   try {
-    return await ouvrirMagasin({ name, size, backend, handle });
+    return await ouvrirMagasin({ name, size, backend, handle, seuilPointDeControle });
   } catch (cause) {
     try {
       handle.close();
@@ -673,7 +732,7 @@ async function ouvrirGeneration({ name, size, backend, openHandle }) {
   }
 }
 
-async function ouvrirMagasin({ name, size, backend, handle }) {
+async function ouvrirMagasin({ name, size, backend, handle, seuilPointDeControle }) {
   try {
     return await GenerationStore.ouvrir({
       volume: name,
@@ -682,6 +741,7 @@ async function ouvrirMagasin({ name, size, backend, handle }) {
       lireVolume: (offset, longueur) => backend.lireSupportBrut(offset, longueur),
       ecrireVolume: (offset, octets) => backend.ecrireSupportBrut(offset, octets),
       barriereVolume: () => backend.barriereSupportBrute(),
+      seuilPointDeControle,
     });
   } catch (cause) {
     // Un échec du SUPPORT pendant la récupération — quota, handle perdu — reste un état contractuel

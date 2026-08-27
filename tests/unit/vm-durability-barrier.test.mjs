@@ -75,7 +75,7 @@ function ecrire(adapter, offset, bytes) {
  * Assemble la chaîne complète au-dessus d'un double neuf, sous un nom jamais réutilisé.
  * @returns {Promise<object>} le banc, à refermer par `fermer`.
  */
-async function banc({ flushDelay = 0 } = {}) {
+async function banc({ flushDelay = 0, seuilPointDeControle } = {}) {
   compteur += 1;
   const name = `barriere-${compteur}`;
   const store = createSyncAccessStore();
@@ -86,6 +86,7 @@ async function banc({ flushDelay = 0 } = {}) {
     journal,
     flushDelay,
     openHandle: store.openHandle,
+    seuilPointDeControle,
   });
   const failures = [];
   // Depuis #16 (ADR 0014), la barrière ne franchit plus le fichier du VOLUME : elle scelle la
@@ -287,6 +288,43 @@ test("une barrière refusée immédiatement par le support est typée et jamais 
       0,
       "un refus de barrière n'est jamais acquitté",
     );
+  } finally {
+    await fermer(banc0);
+  }
+});
+
+test("le RANGEMENT d'une génération ne retient pas la commande ATA du guest", async () => {
+  // Défaut MEDIUM-1 de la revue de #90. Le point de contrôle — relecture, réécriture de plusieurs
+  // mébioctets, barrière du volume — s'exécutait DANS la promesse de `flush()`, donc avant que le
+  // pont ne lève BSY et n'émette l'IRQ. « Jamais sur le chemin de l'acquittement » était vrai de la
+  // DURABILITÉ, faux de la commande ATA : le guest restait bloqué pendant tout le rangement.
+  //
+  // Le banc abaisse le seuil de rangement à un seul secteur, pour qu'un rangement ait lieu à chaque
+  // barrière, et retarde la barrière du VOLUME — celle que seul le rangement franchit. Le guest doit
+  // être acquitté malgré ce rangement encore en vol.
+  const banc0 = await banc({ seuilPointDeControle: SECTOR_SIZE });
+  const { journal, store, name, nomJournal, adapter, master, backend } = banc0;
+  try {
+    await ecrire(adapter, 0, motif(SECTOR_SIZE, 11));
+
+    // La barrière du VOLUME reste en vol : le rangement ne peut pas finir.
+    store.blockFlush(name);
+    master.ata_command(ATA.cmdFlushCache);
+    await tick();
+
+    // Le guest est acquitté — la génération est validée, le journal l'a scellée — alors que le
+    // rangement, lui, attend toujours le support.
+    assert.equal(master.status_reg, ATA.srDrdy | ATA.srDsc, "le guest n'attend pas le rangement");
+    assert.equal(master.irqs, 1);
+    assert.equal(journal.counts()[JOURNAL_OPERATIONS.flushAck], 1);
+    assert.equal(store.flushCount(nomJournal), 2, "la validation, elle, a bien eu lieu");
+    assert.ok(store.isFlushPending(name), "le rangement attend encore la barrière du volume");
+
+    // Le rangement aboutit ensuite, sans rien devoir au guest.
+    store.releaseFlush(name);
+    await backend.flush();
+    assert.equal(backend.dernierRangement, null, "le rangement a fini sans échec");
+    assert.ok(backend.dureeRangementMaxMs >= 0, "sa durée est publiée");
   } finally {
     await fermer(banc0);
   }
