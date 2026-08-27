@@ -253,6 +253,13 @@ export class GenerationStore {
     this.#scellement.reprendreDepuis(racine.scellementsCumules + 1);
 
     if (racine.nombreEntrees === 0) {
+      // La racine VIDE est authentifiée elle aussi, et il faut dire pourquoi : c'est elle qui fixe
+      // la génération et la séquence de la session à venir. En v2, `decoderRacine` la validait par
+      // un CRC-32 — c'est-à-dire par rien, contre un altérateur qui le recalcule. En v3, la
+      // décoder ne prouve plus quoi que ce soit : seule l'étiquette le fait. Le parcours d'une
+      // charge de zéro entrée ne lit aucun enregistrement et n'ouvre que la racine, ce qui est
+      // exactement le geste voulu.
+      await this.#parcourirCharge(racine);
       await this.#vider({ sequence: racine.sequence, generation: racine.generation });
       return this.#rapportDe(
         chargePresente > 0 ? GENERATION_ETATS.ecartee : GENERATION_ETATS.aucune,
