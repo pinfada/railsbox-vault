@@ -536,6 +536,21 @@ test("la récupération rejoue en FLUX : sa surmémoire de pointe ne suit pas la
   // d'enregistrements ont été rejoués sans jamais dire combien d'octets ils pesaient (#91, point 4).
   assert.equal(second.rapport.octetsRejoues, charge);
 
+  // LE NOMBRE D'APPELS AU SUPPORT est borné par la TAILLE de la charge, pas par le nombre
+  // d'enregistrements. Ce n'est pas une élégance : la première version en flux lisait l'en-tête puis
+  // les octets de chaque enregistrement séparément, soit quatre appels par enregistrement sur les
+  // deux passes. Mesuré sur OPFS réel, un appel synchrone coûte ~290 µs, et une charge de 64 Mio
+  // découpée en enregistrements de 512 octets demandait 201 s — 3,4 fois le budget de 60 s de
+  // `docs/quality-attributes.md`. La fenêtre glissante ramène les lectures à deux passes sur la
+  // charge, et laisse la recopie du volume seule à croître avec le nombre d'enregistrements.
+  const passes = 2;
+  const marge = 4; // racines relues, tranches à cheval sur une fenêtre.
+  const plafondLectures = passes * (Math.ceil(charge / TAMPON_RELECTURE_OCTETS) + marge);
+  assert.ok(
+    compte.lectures <= plafondLectures,
+    `${compte.lectures} lecture(s) du support ≤ ${plafondLectures} pour ${ENREGISTREMENTS_BANC} enregistrement(s)`,
+  );
+
   // Le rejeu est EXACT : chaque enregistrement a retrouvé son offset, octet pour octet.
   for (let rang = 0; rang < ENREGISTREMENTS_BANC; rang += 1) {
     const debut = rang * ENREGISTREMENT_BANC;
@@ -546,6 +561,43 @@ test("la récupération rejoue en FLUX : sa surmémoire de pointe ne suit pas la
       `enregistrement ${rang}`,
     );
   }
+  second.close();
+});
+
+test("un enregistrement PLUS GRAND que le tampon est rejoué par tranches, sans être tenu entier", async () => {
+  // Le cas que la fenêtre glissante doit tenir : un seul enregistrement dépasse le tampon, si bien
+  // qu'il est relu, sommé et recopié EN PLUSIEURS FOIS. Rien dans le format ne borne la taille d'un
+  // enregistrement — c'est la taille d'une écriture du guest —, et un magasin qui supposerait qu'un
+  // enregistrement tient dans son tampon échouerait sur la première écriture groupée un peu large.
+  const grand = TAMPON_RELECTURE_OCTETS + 512 * 1024;
+  const support = creerSupport(VOLUME_BANC);
+  const premier = await ouvrirMagasin(support, "vol.gen", OPTIONS_BANC);
+  await premier.deposer(0, buildPattern(grand, 42));
+  // Un second enregistrement, petit, DERRIÈRE le grand : il oblige la fenêtre à se recharger sur un
+  // en-tête qui ne commence pas à une frontière de tampon.
+  await premier.deposer(VOLUME_BANC - 512, buildPattern(512, 43));
+  await premier.valider();
+  support.magasin.abandon("vol.gen");
+
+  const compte = { plusGrandeLecture: 0, lectures: 0 };
+  support.plusGrandeEcritureVolume = 0;
+  const second = await ouvrirMagasin(support, "vol.gen", {
+    ...OPTIONS_BANC,
+    enveloppe: (handle) => handleComptant(handle, compte),
+  });
+
+  assert.equal(second.rapport.etat, GENERATION_ETATS.rejouee);
+  assert.equal(second.rapport.enregistrementsRejoues, 2);
+  assert.ok(
+    support.plusGrandeEcritureVolume <= TAMPON_RELECTURE_OCTETS,
+    `plus grande écriture du volume ${support.plusGrandeEcritureVolume}`,
+  );
+  assert.ok(
+    compte.plusGrandeLecture <= TAMPON_RELECTURE_OCTETS,
+    `plus grande lecture ${compte.plusGrandeLecture}`,
+  );
+  assert.deepEqual([...support.volume.subarray(0, grand)], [...buildPattern(grand, 42)]);
+  assert.deepEqual([...support.volume.subarray(VOLUME_BANC - 512)], [...buildPattern(512, 43)]);
   second.close();
 });
 
