@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "generatedAt": "2026-08-27T07:29:02.498Z",
+  "generatedAt": "2026-08-23T18:47:00.936Z",
   "application": {
     "id": "railsbox-vault-reference",
     "version": "1.0.0",
@@ -38,7 +38,7 @@
       "license": "MIT (RailsBox Vault) ; gemmes selon apps/reference/Gemfile.lock",
       "origin": "tools/build-reference-image/guest.Dockerfile (cible disque-app)",
       "byteSize": 536870912,
-      "sha256": "09b7a554fb612680cf4487741b1def9033d6420a32812f9b6059d9f63a679cd1"
+      "sha256": "2731455c2226c564286a6404b8220f9984eb5f8a1b93ff62ac899d5eb6f20526"
     },
     {
       "name": "reference-rootfs-initrd",
@@ -62,7 +62,7 @@
       "license": "Debian bookworm (licences libres diverses) ; Ruby 3.3.12 (Ruby / BSD-2-Clause)",
       "origin": "tools/build-reference-image/guest.Dockerfile (cible rootfs)",
       "byteSize": 403701760,
-      "sha256": "0967d259dbac46f12db208d88b6bf4ce9543159adfd7f1f39bc23b1c5d47d2eb"
+      "sha256": "1c5719dbbd45066c2636703fa74f3090af1e5a2adfa895dba2d36e5e5b906f2b"
     },
     {
       "name": "seabios.bin",
