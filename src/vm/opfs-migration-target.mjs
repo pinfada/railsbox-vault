@@ -33,7 +33,7 @@ import {
 /**
  * Construit la cible OPFS attendue par `migrateVolume`.
  *
- * ## Dépassement du plafond de 50 lignes, gardé — décidé par #77
+ * ## Dépassement du plafond de 50 lignes, gardé — décidé par #77, généralisé par #93
  *
  * Cette fabrique compte 75 lignes et le restera. Le plafond du dépôt vise les fonctions qui
  * ENCHAÎNENT des décisions ; celle-ci n'en prend aucune. Ses 75 lignes sont huit paramètres
@@ -46,9 +46,12 @@ import {
  * à sa cible devrait rassembler ce qu'un seul écran lui montre aujourd'hui. La métrique s'en
  * trouverait satisfaite et la lisibilité dégradée — l'inverse de ce que le plafond cherche.
  *
- * L'exception est inscrite dans `tests/unit/taille-des-fonctions.test.mjs`, qui la BORNE : la
- * fabrique ne peut plus grandir sans qu'une revue l'accepte. La question de fond — le plafond
- * doit-il compter le littéral rendu par une fabrique, idiome dominant du dépôt ? — appartient à #93.
+ * #77 avait inscrit cette exception à la main, en laissant la question de fond ouverte : le plafond
+ * doit-il compter le littéral rendu par une fabrique, idiome dominant du dépôt ? #93 l'a tranchée
+ * et en a fait une MESURE — `estFabriqueDeContrat` dans `tests/unit/mesure-taille-des-fonctions.mjs`.
+ * Cette fabrique n'est donc plus une exception nommée : elle est admise parce que son corps hors du
+ * littéral fait 19 lignes et qu'aucune de ses neuf méthodes n'en fait plus d'une douzaine. Le jour
+ * où l'une de ces deux conditions cède, l'épreuve la redemande — sans qu'une revue ait à y penser.
  *
  * @param {string} volume nom du volume à migrer
  * @param {{ journal?: BlockJournal }} [options] journal du backend, pour publier les compteurs d'E/S
