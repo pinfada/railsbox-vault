@@ -90,11 +90,6 @@ export function outOfRange(offset, length, size) {
 }
 
 /**
- * La géométrie observée sur le support n'est pas celle de la session. Le backend refuse plutôt que
- * d'adopter la nouvelle taille : un volume qui rétrécit sous la VM n'est pas un volume plus petit,
- * c'est un volume corrompu.
- */
-/**
  * Une génération validée dont la charge ne tient plus. Le message porte la raison exacte, parce que
  * « corruption » sans le POURQUOI n'apprend rien à qui doit décider s'il restaure une sauvegarde.
  */
@@ -128,6 +123,11 @@ export function generationOverflow(volume, { pending, requested, limit }) {
   );
 }
 
+/**
+ * La géométrie observée sur le support n'est pas celle de la session. Le backend refuse plutôt que
+ * d'adopter la nouvelle taille : un volume qui rétrécit sous la VM n'est pas un volume plus petit,
+ * c'est un volume corrompu.
+ */
 export function geometryMismatch(volume, { observed, expected, reason }) {
   return new StorageError(
     STORAGE_ERROR_CODES.geometryMismatch,

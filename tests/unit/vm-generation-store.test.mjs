@@ -9,6 +9,8 @@ import {
   offsetDeRacine,
 } from "../../src/vm/generation-format.mjs";
 import { GENERATION_ETATS, GenerationStore } from "../../src/vm/generation-store.mjs";
+import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
+import { createOpfsMigrationTarget } from "../../src/vm/opfs-migration-target.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 
@@ -364,4 +366,60 @@ test("les deux racines ne partagent aucune page de 4 Kio du support", async () =
   assert.ok(offsetDeRacine(1) >= 4096, `écart de ${offsetDeRacine(1)} octets`);
   assert.equal(offsetDeRacine(1) % 4096, 0);
   assert.ok(ZONE_ENREGISTREMENTS >= 2 * 4096);
+});
+
+test("la cible de MIGRATION ouvre transactionnellement : une génération en attente est rejouée", async () => {
+  // Point 10 de la revue. La migration, contrairement à la restauration, CONSERVE le contenu du
+  // volume : une génération validée encore dans le journal doit y être rejouée AVANT toute mutation,
+  // sous peine de perdre une écriture acquittée. C'est pourquoi sa cible ouvre par le chemin
+  // transactionnel, là où la restauration ouvre avec `transactionnel: false`.
+  const magasin = createSyncAccessStore();
+  const nom = "vol-migre";
+  const octetsVolume = 8 * 512;
+  const nouveau = buildPattern(512, 4242);
+
+  // Une session valide une génération puis meurt sans point de contrôle : les octets ne sont que
+  // dans le journal voisin. Le magasin est piloté directement pour que la mort soit RÉELLE — pas de
+  // fermeture propre, donc pas de rangement.
+  const handleVolume = await magasin.openHandle(nom);
+  handleVolume.truncate(octetsVolume);
+  const handleJournal = await magasin.openHandle(`${nom}.gen`);
+  const store = await GenerationStore.ouvrir({
+    volume: nom,
+    handle: handleJournal,
+    tailleVolume: octetsVolume,
+    lireVolume: (offset, longueur) => {
+      const cible = new Uint8Array(longueur);
+      handleVolume.read(cible, { at: offset });
+      return cible;
+    },
+    ecrireVolume: (offset, octets) => handleVolume.write(octets, { at: offset }),
+  });
+  await store.deposer(0, nouveau);
+  await store.valider();
+  magasin.abandon(nom);
+  magasin.abandon(`${nom}.gen`);
+  assert.notDeepEqual(
+    [...magasin.snapshot(nom).subarray(0, 512)],
+    [...nouveau],
+    "le volume ne porte pas encore la génération : elle n'est que dans le journal",
+  );
+
+  // La cible de migration ouvre le volume. La récupération doit rejouer la génération validée.
+  const cible = createOpfsMigrationTarget(nom, {
+    stat: () => Promise.resolve({ present: true, size: octetsVolume }),
+    openVolume: (options) => openOpfsVolume({ ...options, openHandle: magasin.openHandle }),
+  });
+  const backend = await cible.open({ size: octetsVolume });
+  try {
+    assert.equal(
+      backend.describe().transactionnel,
+      true,
+      "la migration ouvre transactionnellement",
+    );
+    assert.equal(backend.generation.rapport.etat, GENERATION_ETATS.rejouee);
+    assert.deepEqual([...(await backend.read(0, 512))], [...nouveau]);
+  } finally {
+    await backend.close();
+  }
 });
