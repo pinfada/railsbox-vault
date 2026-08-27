@@ -254,6 +254,22 @@ confronter le rescellement au premier vecteur figé, qui est précisément un se
 0, adresse 0, 512 octets). C'est un défaut de la spécification, corrigé dans la spécification ; ce
 n'est pas un ajustement du modèle pour faire passer du code.
 
+### Un second défaut du modèle, tombé sur le banc de récupération
+
+`encoderEntrees` assemblait ses morceaux par `concatener(...morceaux)`, et le nombre de morceaux
+suit le **nombre d'entrées** d'une génération. Au plafond de charge de l'ADR 0014 — 64 Mio, soit
+jusqu'à 131 072 enregistrements de 512 octets —, l'étalement fait plus d'un demi-million d'arguments
+et le moteur rend **« Maximum call stack size exceeded »**, au milieu d'une récupération que rien
+n'annonçait comme démesurée. Le défaut est tombé sur `tests/vm/recuperation-generation.spec.mjs`, à
+la première exécution du banc sur le format v3 — pas à la lecture.
+
+L'ADR 0015 le nommait sans le chiffrer : « le modèle n'a aucune borne mémoire […] une implémentation
+qui rejouerait une génération de 64 Mio devra régler ce point elle-même ». Le régler « elle-même »
+n'était pas possible : le débordement est DANS le modèle, pas dans son appelant. L'assemblage passe
+donc par `concatenerListe`, qui n'étale rien ; les octets produits sont identiques, ce que les
+vecteurs figés vérifient, et `tests/unit/vm-format-chiffre-identite.test.mjs` borne désormais la
+propriété par une épreuve au plafond plutôt que par une phrase.
+
 **Le rescellement compte dans le budget de clé.** `scellementsCumules` est incrémenté par secteur
 rescellé comme par enregistrement déposé et par racine écrite, et `verifierBudgetDeCle` refuse à
 2^31. Le compteur est **authentifié dans la racine** : il traverse donc les sessions, et son recul

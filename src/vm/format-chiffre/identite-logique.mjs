@@ -38,7 +38,7 @@
 // ordre de grandeur de marge.
 
 import { algorithmeInconnu, budgetDeCle, malforme, ordreInvalide } from "./crypto-errors.mjs";
-import { chainePrefixee, concatener, entierEnOctets } from "./octets.mjs";
+import { chainePrefixee, concatener, concatenerListe, entierEnOctets } from "./octets.mjs";
 
 /** Nom de l'unique algorithme admis par la v1 de cette spécification. Épinglé, pas devinable. */
 export const ALGORITHME = "aes-256-gcm";
@@ -274,7 +274,11 @@ export function encoderEntrees(entrees) {
       etiquette,
     );
   }
-  return concatener(...morceaux);
+  // `concatenerListe`, et non `concatener(...morceaux)` : le nombre de morceaux suit le nombre
+  // d'entrées, et l'étalement dépasse la pile d'appel au plafond de charge de l'ADR 0014. Le défaut
+  // est tombé par exécution sur `tests/vm/recuperation-generation.spec.mjs` ; les octets produits
+  // sont inchangés, ce que les vecteurs figés vérifient.
+  return concatenerListe(morceaux);
 }
 
 /**
