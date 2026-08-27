@@ -63,9 +63,14 @@ succès silencieux incohérent.
 
 Ordre : #14 → #15 → #16. Le jalon 4 ne fige aucun format chiffré avant #16.
 
-#14 est fermé depuis le jalon 1. Avant d'ouvrir #15, la tranche #52 (servir v86 dans la coquille :
-CSP `wasm-unsafe-eval` et Worker `blob:`), débloquée par l'ADR 0010, est prise en premier : elle
-conditionne le passage du banc de référence à la coquille de production.
+**Clos le 27 août 2026** — #15 a livré l'instrument (injecteur d'arrêts à graine et oracle de
+classement, dont la première mesure donnait 12,5 % de coupures atomiques sur OPFS réel) ; #16 a
+livré la garantie ([ADR 0014](decisions/0014-generation-transactionnelle.md) : journal d'intention
+validé par une racine d'un secteur alternée entre deux pages, récupération nommée à l'ouverture) :
+100 % sur trois graines avec un oracle conscient des générations, et boot à froid Rails après
+coupure. Auparavant, #52 ([ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md)) et #74
+ont fait battre le runtime sur les trois moteurs sans élargir la CSP. Non mesuré, dit : la perte de
+cache volatil (mort de processus) ; suivi #91.
 
 ## 4 — Volume chiffré
 
