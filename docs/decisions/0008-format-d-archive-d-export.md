@@ -4,6 +4,11 @@
 - Date : 2026-08-24
 - Issue : #11 · Invariant : `VAULT-PORT-001` · Jalon 2
 
+> **Amendé le 2026-08-28 par l'[ADR 0016](0016-format-de-volume-v3-dispositions.md) (#18).**
+> L'archive d'un volume v3 porte le fichier CHIFFRÉ tel quel, si bien que `content.length` et
+> `identity.digest` décrivent des octets chiffrés : deux exports d'un même contenu logique ne sont
+> plus comparables par empreinte, et une archive restaurée n'est ouvrable qu'avec sa clé.
+
 ## Contexte
 
 Le manifeste versionné de #10 ([ADR 0007](0007-manifeste-de-volume.md)) lie format, runtime,

@@ -4,6 +4,11 @@
 - Date : 2026-08-24
 - Issue : #10 · Invariants : `VAULT-PORT-001`, `VAULT-COMPAT-001` · Jalon 2
 
+> **Amendé le 2026-08-28 par l'[ADR 0016](0016-format-de-volume-v3-dispositions.md) (#18).** Le
+> format de volume passe à **v3** : le manifeste porte désormais un bloc `volume` obligatoire — un
+> identifiant OPAQUE de trente-deux hexadécimaux minuscules, immuable et inscrit à la création, et
+> le nom de l'algorithme de scellement, épinglé sur `aes-256-gcm`.
+
 ## Contexte
 
 `docs/release-policy.md` pose trois identités indépendantes qu'un coffre doit lier explicitement :

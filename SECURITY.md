@@ -74,9 +74,23 @@ et tester.
   ce qui rend la restauration significative, et le même scénario le vérifie avant d'importer ;
 - `SEC-KEY-001` — une clé de déverrouillage enveloppe une DEK aléatoire sans servir directement au
   chiffrement des blocs ;
-- `SEC-BLOCK-001` — un bloc est authentifié avec volume, adresse, format et génération. **Depuis #17
-  cet invariant a une définition opposable et des vecteurs, mais AUCUN chemin du produit ne
-  l'exerce** : il est spécifié, pas encore tenu, et #18 est la tranche qui le tiendra.
+- `SEC-BLOCK-001` — un bloc est authentifié avec volume, adresse, format et génération. **Depuis #18
+  le PRODUIT l'exerce**, et il faut dire aussitôt sous quelle réserve : le format de volume v3
+  scelle chaque secteur, chaque enregistrement de journal et chaque racine, mais la clé de volume
+  n'est aujourd'hui distribuée que par le HARNAIS, sous jeton — aucun chemin du produit n'en
+  fabrique ni n'en persiste, et un volume v3 présenté sans clé est refusé par
+  `VAULT_STORAGE_CLE_REQUISE` avant toute lecture. L'invariant est donc tenu par le FORMAT et
+  éprouvé de bout en bout, sous une clé de TEST ; la confidentialité en exploitation attend #21. La
+  disposition sur disque est l'[ADR 0016](docs/decisions/0016-format-de-volume-v3-dispositions.md) :
+  en-tête v3 d'un secteur, région d'authentification portant 34 octets par secteur logique — nonce
+  12, étiquette 16, génération 6 —, charge chiffrée, racine de 136 octets sans CRC-32. Les vecteurs
+  figés de #17 sont reproduits OCTET POUR OCTET par le chemin de production
+  (`tests/unit/vm-volume-chiffre.test.mjs`), et sept refus y sont éprouvés sur ce même chemin :
+  modification, déplacement d'adresse, autre volume, autre format, autre génération, secteur en
+  clair, racine altérée — plus le refus sans clé. Deux défauts du modèle de référence ont été
+  trouvés PAR EXÉCUTION en l'implémentant, et l'ADR 0016 les porte : le rescellement du point de
+  contrôle n'avait pas de porte d'injection de nonce, donc échappait aux vecteurs ; et l'encodage
+  canonique des entrées débordait la pile d'appel au plafond de charge de l'ADR 0014.
   L'[ADR 0015](docs/decisions/0015-proprietes-cryptographiques-du-format.md) le définit ainsi : un
   bloc est scellé par AES-256-GCM (étiquette de 128 bits) dont les **données associées portent
   l'identité logique complète** — identifiant de volume, adresse logique, version de format,
@@ -103,18 +117,24 @@ et tester.
   de l'ADR 0014 — et les vecteurs figés `tests/vectors/format-chiffre-v1.json`, que #18 devra
   reproduire octet pour octet. La borne de forgerie est calculée, pas qualifiée : ≈ 2^-122,6 par
   tentative ;
-- `SEC-GEN-001` — rejeu, troncature et mélange de générations sont refusés. **Même statut : spécifié
-  par #17, non exercé par le produit, tenu par #19.** L'ADR 0015 le décompose en trois propriétés
-  distinctes, chacune avec son refus typé. **Rejeu** : la séquence et la génération sont
-  authentifiées dans l'en-tête de la racine, et une racine ou un bloc antérieurs sont refusés
-  (`VAULT_CRYPTO_REJEU`) — mais seulement au regard d'un minimum de séquence que l'appelant
-  présente, et ce minimum ne peut venir, entre deux sessions, que du support lui-même : **le retour
-  arrière complet d'un support cohérent n'est pas détectable** et reste couvert par le seul
-  partitionnement d'origine de l'ADR 0002. **Troncature** : l'en-tête authentifié porte le nombre
-  d'entrées et la longueur de charge, dérivés des entrées au moment de sceller ; une génération
-  incomplète — ou augmentée — est refusée (`VAULT_CRYPTO_TRONCATURE`). **Mélange** : la racine
-  scelle l'empreinte SHA-256 de la **suite ordonnée** de ses entrées (adresse, longueur, rang,
-  étiquette du bloc), si bien qu'une entrée authentique d'une autre génération, ou un simple
+- `SEC-GEN-001` — rejeu, troncature et mélange de générations sont refusés. **Toujours NON EXERCÉ
+  par le produit : spécifié par #17, et tenu par #19.** #18 en a posé la moitié matérielle — la
+  racine v3 authentifie séquence, génération, nombre d'entrées, longueur de charge et empreinte de
+  la suite ordonnée, et une génération dont un enregistrement ne s'ouvre plus est refusée à
+  l'ouverture — mais les contrôles de SÉQUENCE, eux, ne sont présentés par aucun chemin :
+  `generationMinimale` et `sequenceMinimale` valent `null` partout, et l'ADR 0016 dit pourquoi pour
+  le volume (le lecteur lit la génération d'un secteur dans le sceau voisin, donc un minimum qui
+  viendrait de là ne prouverait rien). Ce qui manque est nommé, pas masqué. L'ADR 0015 le décompose
+  en trois propriétés distinctes, chacune avec son refus typé. **Rejeu** : la séquence et la
+  génération sont authentifiées dans l'en-tête de la racine, et une racine ou un bloc antérieurs
+  sont refusés (`VAULT_CRYPTO_REJEU`) — mais seulement au regard d'un minimum de séquence que
+  l'appelant présente, et ce minimum ne peut venir, entre deux sessions, que du support lui-même :
+  **le retour arrière complet d'un support cohérent n'est pas détectable** et reste couvert par le
+  seul partitionnement d'origine de l'ADR 0002. **Troncature** : l'en-tête authentifié porte le
+  nombre d'entrées et la longueur de charge, dérivés des entrées au moment de sceller ; une
+  génération incomplète — ou augmentée — est refusée (`VAULT_CRYPTO_TRONCATURE`). **Mélange** : la
+  racine scelle l'empreinte SHA-256 de la **suite ordonnée** de ses entrées (adresse, longueur,
+  rang, étiquette du bloc), si bien qu'une entrée authentique d'une autre génération, ou un simple
   réordonnancement, est refusé (`VAULT_CRYPTO_MELANGE`). Ces trois classements sont posés **après**
   vérification de l'étiquette, donc sur un en-tête authentique : c'est pourquoi l'en-tête est les
   données associées et l'empreinte le clair. Ce qu'ils ne couvrent pas : le volume au-delà du
@@ -165,11 +185,24 @@ et tester.
   juge ; une mutation a montré que la mesure ne mesurait alors plus rien, et
   `tests/unit/vm-crash-mutation.test.mjs` conserve le contre-exemple.
 
+  **#18 change ce que la barrière rend durable : des octets CHIFFRÉS.** Le journal de génération
+  scelle chaque enregistrement, la racine porte une étiquette au lieu d'un CRC-32, et le point de
+  contrôle rescelle chaque secteur du volume sous un nonce neuf (ADR 0016). L'invariant lui-même
+  n'est pas modifié — l'ordre écriture → flush → acquittement, la validation par racine et la
+  récupération d'ouverture sont ceux de #16 —, et la mesure le confirme : la matrice de coupures de
+  #15 rejouée sur le format v3, sur OPFS réel, rend **100 %** sur trois graines, sans bloc déchiré
+  ni bloc non rattachable (`tests/vm/resilience-arrets.spec.mjs`). L'oracle de #15 n'a pas bougé
+  d'une ligne, et c'est délibéré : il compare l'ancien et le nouveau contenu d'un secteur sur le
+  CLAIR obtenu par le chemin autorisé, jamais sur les octets du support — un oracle qui comparerait
+  du chiffré classerait « autre » chaque réécriture d'un même contenu, puisque le nonce change, et
+  mesurerait le nonce au lieu de la reprise. Ce que #18 ajoute au registre des refus : une écriture
+  DÉCHIRÉE laisse désormais un chiffré tronqué, donc un secteur REFUSÉ à la relecture
+  (`VAULT_STORAGE_SCEAU_REFUSE`) là où la v2 y laissait des octets clairs plausibles.
+
   Reste hors de cet invariant la perte d'un cache d'écriture VOLATIL — mort du processus du
   navigateur, coupure de courant : `Worker.terminate()` ne la produit pas, aucun des deux supports
-  éprouvés ne la produit, et #16 ne la mesure donc pas. Restent également hors périmètre
-  l'authentification des blocs (`SEC-BLOCK-001`, jalon 4) et la reprise complète après fermeture
-  (#7) ;
+  éprouvés ne la produit, et #16 ne la mesure donc pas. Reste également hors périmètre la reprise
+  complète après fermeture (#7) ;
 
   **#91 abaisse le plafond de charge d'une génération de 64 à 16 Mio, et cet invariant n'en est pas
   affaibli.** Un guest qui écrirait plus de 16 Mio sans jamais franchir de barrière reçoit

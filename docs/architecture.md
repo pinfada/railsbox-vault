@@ -379,12 +379,12 @@ la dernière barrière acquittée. Trois chemins ouvrent SANS génération et le
 Mesure : le taux de coupures laissant « ancien ou nouveau » passe de 12,5 % à 100 % sur trois
 graines, sur OPFS réel. Voir [`quality-attributes.md`](quality-attributes.md).
 
-## Le format chiffré : une spécification, pas encore un chemin (#17)
+## Le format chiffré : la spécification, et ce qu'elle a coûté (#17)
 
-**Rien de cette section n'est exercé par le produit.** #17 livre une SPÉCIFICATION EXÉCUTABLE —
-modèle de référence pur et vecteurs figés — que #18 (bloc authentifié) et #19 (rejeu, troncature,
-mélange) devront tenir. Le rapport est celui de l'oracle de #15 au magasin de #16 : le juge est
-écrit avant, et séparément. Décision :
+**#17 n'exerçait rien dans le produit ; #18 l'exerce, et la section suivante dit comment.** #17
+livre une SPÉCIFICATION EXÉCUTABLE — modèle de référence pur et vecteurs figés — que #18 (bloc
+authentifié) et #19 (rejeu, troncature, mélange) devront tenir. Le rapport est celui de l'oracle de
+#15 au magasin de #16 : le juge est écrit avant, et séparément. Décision :
 [ADR 0015](decisions/0015-proprietes-cryptographiques-du-format.md).
 
 Quatre gestes, sur des structures en mémoire, dans `src/vm/format-chiffre/` :
@@ -410,16 +410,52 @@ réémis dès que cet état recule, et un système conçu pour survivre aux coup
 budget par clé est fixé à **2^31** — la moitié du plafond du § 8.3 de NIST SP 800-38D —, parce que
 le compteur qui le suit vit dans la racine et recule lui aussi ; son dépassement est un refus typé.
 
-**Ce sera un format de volume v3**, annoncé ici et non créé : un secteur du volume coûtera 34 octets
-de plus (nonce 12 + étiquette 16 + génération 6, soit 6,641 %), rangés dans une région
-d'authentification en tête du fichier ; un enregistrement du journal coûtera 28 octets (nonce et
-étiquette, la génération y étant celle de la racine) ; la racine ne coûtera **aucun octet de plus**
-— son en-tête passe de 60 à 136 octets dans le secteur déjà alloué, et le CRC-32 disparaît. Le
-manifeste devra gagner un **identifiant de volume**, qui n'existe pas en v2. Les impacts sur les ADR
-0007, 0008, 0011 et 0014 sont listés dans l'ADR 0015 ; aucun n'est modifié par cette tranche.
-
 **Ce que le format ne couvre pas est écrit plutôt que déduit** : le retour arrière d'un secteur, et
 le retour arrière complet du support entre deux sessions. Voir `SECURITY.md` et l'ADR 0015.
+
+## Le format de volume v3 : le chemin, désormais (#18)
+
+#18 branche la spécification ci-dessus sur le produit. La disposition sur disque est décidée par
+l'[ADR 0016](decisions/0016-format-de-volume-v3-dispositions.md), qui ne prend AUCUNE décision
+cryptographique : primitives, nonce, données associées, budget de clé et ordre des vérifications
+restent ceux de l'ADR 0015, et le modèle de référence reste la spécification.
+
+```text
+[ en-tête v3, 1 secteur ][ région d'authentification, 34 o par secteur logique ][ charge chiffrée ]
+```
+
+**Deux tailles, et il ne faut jamais les confondre.** La taille LOGIQUE est celle que v86 voit et
+que le manifeste déclare ; la taille SUPPORT est celle du fichier. `size()` du backend rend la
+première, le contrôle de géométrie confronte la seconde, et le mappage entre elles est confiné à
+`volume-chiffre-format.mjs`. C'est ce qui permet à `block-geometry.mjs`, au contrat de tampon de v86
+et à l'oracle de #15 de n'avoir pas bougé. Pour un volume applicatif de 512 Mio, le fichier fait 572
+523 008 octets — **+6,64 %**.
+
+**Un SEUL sceau, de 34 octets, dans deux endroits** : la région d'authentification du volume et
+l'enregistrement du journal portent la même forme — nonce 12, étiquette 16, génération 6. L'ADR 0015
+n'en annonçait que 28 pour le journal, en supposant que la génération d'un enregistrement était
+celle de sa racine ; l'ADR 0016 montre par exécution que c'est faux — le journal n'est vidé qu'au
+point de contrôle, donc une charge cumule plusieurs générations — et corrige le chiffre.
+
+**L'en-tête v3 et la copie de l'identifiant de volume dans la racine LOCALISENT ; ils n'autorisent
+pas.** L'identité qui entre dans les données associées est celle que le MANIFESTE déclare ; ce que
+le fichier en porte lui est CONFRONTÉ, et l'écart est refusé par `VAULT_STORAGE_IDENTITE_VOLUME`.
+Une altération de ces champs produit donc un refus, jamais une lecture erronée.
+
+**La clé de volume est reçue en mémoire, et le produit n'en fabrique aucune.** Un volume v3 présenté
+sans clé est refusé par `VAULT_STORAGE_CLE_REQUISE` avant toute lecture ; les bancs reçoivent une
+clé de TEST du harnais, sous jeton, comme l'injecteur d'arrêts de #15. Les clés de déverrouillage et
+l'enveloppe sont #21.
+
+**Les refus du format traversent la couche de stockage sans perdre leur cause** :
+`VAULT_CRYPTO_SCEAU_REFUSE` devient `VAULT_STORAGE_SCEAU_REFUSE`, rejeu, troncature et mélange
+retombent sur `VAULT_STORAGE_GENERATION_CORRUPT` — trois façons pour une génération validée de ne
+plus concorder, un seul remède —, et la `CryptoError` d'origine reste dans le contexte.
+
+**Ce que #18 ne fait pas** : la migration v2 → v3 est DÉCLARÉE dans la chaîne et refusée par
+`VAULT_MIGRATION_STEP_UNAVAILABLE`, faute d'une cible capable d'agrandir un fichier et de le
+rechiffrer ; les contrôles de séquence restent #19 ; l'archive porte le fichier v3 tel quel, donc
+son empreinte porte sur du chiffré.
 
 ## Résilience aux coupures : l'instrument, puis la garantie
 
