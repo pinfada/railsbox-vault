@@ -377,22 +377,22 @@ export class OpfsBlockBackend {
   }
 
   /**
-   * Barrière de durabilité. Contrairement au backend mémoire de #4, l'acquittement signifie ici que
-   * `FileSystemSyncAccessHandle.flush()` est revenu : c'est la promesse de `SEC-DURABLE-001` au
-   * niveau du support. Ce que le GUEST en obtient dépend encore du pont de l'ADR 0003, et la
-   * barrière durable de bout en bout reste l'objet de #14.
+   * OUVRE une barrière : contrôles de seuil, panne injectée, numérotation et inscription au
+   * journal. Au retour, la barrière est annoncée mais le support n'a pas encore été sollicité.
+   *
+   * Le contrôle de géométrie a sa raison propre : depuis #16 la barrière ne touche plus le fichier
+   * du VOLUME, elle scelle le journal voisin. Sans lui, un volume disparu sous la session ne serait
+   * découvert qu'au point de contrôle suivant. Le coût est un `getSize()` local, pas une E/S.
+   *
+   * @returns {Promise<number>} numéro de la barrière ouverte
    */
-  async flush() {
+  async #ouvrirBarriere() {
     this.#assertUsable();
     await this.#attendreRangement();
     this.#assertUsable();
     const fault = this.#faults.consume("flush");
     this.#applyLostHandle(fault, "flush", 0, 0);
     this.#assertUsable();
-    // Depuis #16 la barrière ne touche plus le fichier du VOLUME — elle scelle le journal voisin.
-    // Sans ce contrôle, un volume disparu sous la session ne serait plus découvert par la barrière,
-    // et la perte ne se révélerait qu'au point de contrôle suivant. Le coût est un `getSize()`
-    // synchrone et local, pas une E/S.
     this.#assertGeometryUnchanged("flush");
 
     const barrier = this.#barrier++;
@@ -411,6 +411,45 @@ export class OpfsBlockBackend {
       );
     }
 
+    return barrier;
+  }
+
+  /**
+   * Qualifie un refus du support et l'inscrit au journal. Rend l'erreur à jeter plutôt que de la
+   * jeter : le `throw` reste visible à l'endroit où la barrière échoue.
+   *
+   * Un quota atteint pendant la barrière reste un quota, et un handle perdu reste un handle perdu :
+   * les trois états se corrigent différemment — libérer de la place, rouvrir le volume, réessayer —
+   * et les fondre en « échec de barrière » effacerait cette différence.
+   */
+  #echecDeBarriere(typed, barrier) {
+    const preserved =
+      typed.code === STORAGE_ERROR_CODES.quotaExceeded ||
+      typed.code === STORAGE_ERROR_CODES.handleLost;
+    const failure = preserved
+      ? typed
+      : new StorageError(
+          STORAGE_ERROR_CODES.flushFailed,
+          `Barrière de durabilité ${barrier} refusée par le support du volume « ${this.#name} » : ${typed.message}`,
+          { volume: this.#name, barrier, cause: typed.context?.cause ?? typed.code },
+        );
+    this.#journal.record(JOURNAL_OPERATIONS.fault, {
+      kind: FAULT_KINDS.flushFailure,
+      barrier,
+      code: failure.code,
+    });
+    return failure;
+  }
+
+  /**
+   * Barrière de durabilité. Contrairement au backend mémoire de #4, l'acquittement signifie ici que
+   * `FileSystemSyncAccessHandle.flush()` est revenu : c'est la promesse de `SEC-DURABLE-001` au
+   * niveau du support. Ce que le GUEST en obtient dépend encore du pont de l'ADR 0003, et la
+   * barrière durable de bout en bout reste l'objet de #14.
+   */
+  async flush() {
+    const barrier = await this.#ouvrirBarriere();
+
     try {
       // Passer par `#awaitSupport` et non par un `try` local : c'est lui qui pose `#handleLost` et
       // journalise la panne. Un `catch` parallèle laisserait le volume se croire sain après une
@@ -426,25 +465,7 @@ export class OpfsBlockBackend {
         { barrier },
       );
     } catch (typed) {
-      // Un quota atteint pendant la barrière reste un quota, et un handle perdu reste un handle
-      // perdu : les trois états se corrigent différemment — libérer de la place, rouvrir le
-      // volume, réessayer — et les fondre en « échec de barrière » effacerait cette différence.
-      const preserved =
-        typed.code === STORAGE_ERROR_CODES.quotaExceeded ||
-        typed.code === STORAGE_ERROR_CODES.handleLost;
-      const failure = preserved
-        ? typed
-        : new StorageError(
-            STORAGE_ERROR_CODES.flushFailed,
-            `Barrière de durabilité ${barrier} refusée par le support du volume « ${this.#name} » : ${typed.message}`,
-            { volume: this.#name, barrier, cause: typed.context?.cause ?? typed.code },
-          );
-      this.#journal.record(JOURNAL_OPERATIONS.fault, {
-        kind: FAULT_KINDS.flushFailure,
-        barrier,
-        code: failure.code,
-      });
-      throw failure;
+      throw this.#echecDeBarriere(typed, barrier);
     }
 
     this.#journal.record(JOURNAL_OPERATIONS.flushAck, { barrier });
@@ -641,8 +662,38 @@ export async function openOpfsVolume({
   }
   if (size !== undefined) assertBlockGeometry(size);
 
-  // L'ouvreur peut être le vrai OPFS, qui rend déjà des erreurs typées, ou un double qui rend des
-  // `DOMException` brutes comme le ferait le moteur : les deux passent par la même traduction.
+  const { handle, geometry } = await saisirSupport({ name, size, openHandle });
+
+  const backend = new OpfsBlockBackend({
+    name,
+    handle,
+    size: geometry.size,
+    journal,
+    faults,
+    flushDelay,
+  });
+
+  if (transactionnel) {
+    await installerGenerationOuFermer(backend, {
+      name,
+      size: geometry.size,
+      openHandle,
+      seuilPointDeControle,
+    });
+  }
+
+  openVolumes.set(name, backend);
+  return backend;
+}
+
+/**
+ * SAISIT le support : handle exclusif, géométrie relue puis confrontée à celle qui est déclarée,
+ * allocation si le volume naît. L'ouvreur peut être le vrai OPFS, qui rend déjà des erreurs typées,
+ * ou un double qui rend des `DOMException` brutes : les deux passent par la même traduction. Chaque
+ * refus survenant APRÈS l'ouverture rend le handle, sans quoi le fichier resterait verrouillé par
+ * un volume que personne ne détient.
+ */
+async function saisirSupport({ name, size, openHandle }) {
   let handle;
   try {
     handle = await openHandle(name);
@@ -676,36 +727,25 @@ export async function openOpfsVolume({
     }
   }
 
-  const backend = new OpfsBlockBackend({
-    name,
-    handle,
-    size: geometry.size,
-    journal,
-    faults,
-    flushDelay,
-  });
+  return { handle, geometry };
+}
 
-  if (transactionnel) {
-    try {
-      backend.installerGeneration(
-        await ouvrirGeneration({
-          name,
-          size: geometry.size,
-          backend,
-          openHandle,
-          seuilPointDeControle,
-        }),
-      );
-    } catch (cause) {
-      // Le handle du volume est rendu avant de propager : un refus de génération ne doit pas laisser
-      // le nom occupé par un volume que personne ne détient.
-      await backend.close().catch(() => {});
-      throw cause;
-    }
+/**
+ * Installe le magasin de générations sur un backend déjà construit, ou REFERME ce backend : un
+ * refus de génération ne doit pas laisser le nom occupé par un volume que personne ne détient.
+ */
+async function installerGenerationOuFermer(
+  backend,
+  { name, size, openHandle, seuilPointDeControle },
+) {
+  try {
+    backend.installerGeneration(
+      await ouvrirGeneration({ name, size, backend, openHandle, seuilPointDeControle }),
+    );
+  } catch (cause) {
+    await backend.close().catch(() => {});
+    throw cause;
   }
-
-  openVolumes.set(name, backend);
-  return backend;
 }
 
 /**
