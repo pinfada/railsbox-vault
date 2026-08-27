@@ -32,6 +32,17 @@ export const MIGRATION_ERROR_CODES = Object.freeze({
   geometryMismatch: "VAULT_MIGRATION_GEOMETRY_MISMATCH",
   /** Le manifeste relu depuis le support ne rend pas les octets inscrits : volume non identifié. */
   verificationFailed: "VAULT_MIGRATION_VERIFICATION_FAILED",
+  /**
+   * L'étape existe dans la CHAÎNE mais son exécution n'est pas fournie par cette version du
+   * produit (#18).
+   *
+   * Distinct de `noPath`, et la distinction est le tout du diagnostic : `noPath` dit « personne ne
+   * sait aller là », celui-ci dit « le chemin est connu, l'outil manque ». Le premier appelle une
+   * autre version cible ; le second appelle une mise à jour du runtime. Une étape déclarée sans
+   * corps est préférable à une étape absente : elle rend l'incomplétude VISIBLE dans le code et
+   * dans le message, au lieu de la laisser deviner par un trou dans une table.
+   */
+  stepUnavailable: "VAULT_MIGRATION_STEP_UNAVAILABLE",
 });
 
 const KNOWN_CODES = new Set(Object.values(MIGRATION_ERROR_CODES));

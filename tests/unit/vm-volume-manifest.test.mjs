@@ -36,6 +36,10 @@ function champsValides(surcharge = {}) {
     app: { id: "railsbox/reference", version: "3.1.0" },
     volumeSize: SECTOR_SIZE * 8,
     identity: { algorithm: "sha-256", digest: null },
+    // Le bloc `volume` du format v3 (#18, ADR 0016). Ses règles propres — identifiant opaque de
+    // trente-deux hexadécimaux, algorithme épinglé — sont éprouvées par `vm-manifest-v3.test.mjs` ;
+    // il est ici pour que les épreuves de STRUCTURE portent sur un manifeste du format courant.
+    volume: { id: "0123456789abcdef0123456789abcdef", algorithm: "aes-256-gcm" },
     ...surcharge,
   };
 }
@@ -46,6 +50,7 @@ function champsV1(surcharge = {}) {
     ...champsValides(),
     formatVersion: 1,
     runtime: { version: "1.4.2", artifact: "sha256:abcdef" },
+    volume: undefined,
     ...surcharge,
   };
 }
@@ -105,6 +110,7 @@ test("serializeManifest ignore l'ordre d'insertion des clés", () => {
     volumeSize: SECTOR_SIZE * 8,
     app: { version: "3.1.0", id: "railsbox/reference" },
     runtime: { minWriter: "1.0.0", artifact: "sha256:abcdef", version: "1.4.2" },
+    volume: { algorithm: "aes-256-gcm", id: "0123456789abcdef0123456789abcdef" },
     formatVersion: MANIFEST_FORMAT_VERSION,
   });
   assert.deepEqual([...serializeManifest(b)], [...serializeManifest(a)]);
@@ -185,7 +191,7 @@ test("un format trop ANCIEN pour ce runtime est refusé", () => {
 });
 
 test("un format LISIBLE mais antérieur tolère la lecture et refuse l'écriture (migration #13)", () => {
-  const m = createManifest(champsValides({ formatVersion: 2 }));
+  const m = createManifest(champsValides({ formatVersion: 2, volume: undefined }));
   const attentes = attentesCourantes({ supportedFormat: { current: 3, minReadable: 1 } });
   const verdict = evaluateCompatibility(m, attentes);
   assert.equal(verdict.readable, true);
@@ -310,13 +316,15 @@ function champsV2(surcharge = {}) {
     app: { id: "railsbox/reference", version: "3.1.0" },
     volumeSize: SECTOR_SIZE * 8,
     identity: { algorithm: "sha-256", digest: null },
+    // Le bloc `volume` n'existe qu'à partir de v3 : le déclarer ici serait une faute, et
+    // `createManifest` la refuse.
     ...surcharge,
   };
 }
 
-test("le format courant est 2, et le plancher lisible reste 1", () => {
-  assert.equal(MANIFEST_FORMAT_VERSION, 2);
-  assert.equal(DEFAULT_SUPPORTED_FORMAT.current, 2);
+test("le format courant est 3, et le plancher lisible reste 1", () => {
+  assert.equal(MANIFEST_FORMAT_VERSION, 3);
+  assert.equal(DEFAULT_SUPPORTED_FORMAT.current, 3);
   assert.equal(DEFAULT_SUPPORTED_FORMAT.minReadable, 1);
 });
 
@@ -376,12 +384,15 @@ test("un volume ne peut pas exiger un écrivain plus récent que celui qui l'éc
   );
 });
 
-test("le downgrade v2 est jugé sur « minWriter », et non plus sur le seul majeur", () => {
+test("le downgrade est jugé sur « minWriter », et non plus sur le seul majeur", () => {
   // Le cas que la règle v1 laissait passer : en série 0.x, une rupture d'écriture incrémente le
   // MINEUR (docs/release-policy.md). Un volume écrit par 0.2.0 doit refuser l'écriture à 0.1.0 —
   // ce que « majeur du volume > majeur en cours » ne détecte jamais, les deux majeurs valant 0.
+  //
+  // Le manifeste est au format COURANT : un v2 serait refusé plus tôt, pour migration, et le
+  // verdict mesuré ne serait plus celui du downgrade.
   const m = createManifest(
-    champsV2({ runtime: { version: "0.2.0", artifact: null, minWriter: "0.2.0" } }),
+    champsValides({ runtime: { version: "0.2.0", artifact: null, minWriter: "0.2.0" } }),
   );
   const ancien = attentesCourantes({ runtime: { version: "0.1.0", artifact: null } });
   const verdict = evaluateCompatibility(m, ancien);

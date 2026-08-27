@@ -87,7 +87,13 @@ function normalizeConsistency(consistency) {
   return { kind: consistency.kind, detail };
 }
 
-/** Rend un manifeste GELÉ identique à `base`, mais dont `identity.digest` porte l'empreinte donnée. */
+/**
+ * Rend un manifeste GELÉ identique à `base`, mais dont `identity.digest` porte l'empreinte donnée.
+ *
+ * Le bloc `volume` du format v3 est reporté TEL QUEL : l'identifiant d'un volume est immuable, et
+ * l'archive doit décrire le volume qu'elle porte — pas un volume neuf. Il est absent des formats
+ * antérieurs, et `createManifest` refuserait de l'y inscrire.
+ */
 function withContentDigest(base, digest) {
   return createManifest({
     formatVersion: base.formatVersion,
@@ -95,6 +101,7 @@ function withContentDigest(base, digest) {
     app: base.app,
     volumeSize: base.geometry.volumeSize,
     identity: { algorithm: base.identity.algorithm, digest },
+    ...(base.volume === undefined ? {} : { volume: base.volume }),
   });
 }
 
