@@ -16,33 +16,31 @@
 
 import { cleDeVolumeDuHarnais } from "/src/vm/cle-de-volume.mjs";
 
-let cle = null;
+let jetonCourant = null;
 
 /**
- * Pose la clé du harnais pour la durée d'une exécution, et rend une fonction qui la relâche.
+ * Retient le jeton d'une exécution, et rend la fonction qui l'oublie.
+ *
+ * C'est le JETON qui est retenu, pas la clé, et la nuance décide de l'ordre des refus. Un scénario
+ * peut échouer AVANT d'ouvrir le moindre volume — un contexte incapable d'exécuter le runtime est
+ * refusé par `VAULT_RUNTIME_WORKER_REFUSED` (#52), et cette raison-là est la bonne. Fabriquer la
+ * clé à l'entrée du Worker ferait passer un jeton manquant avant ce refus, et le banc accuserait la
+ * clé d'un défaut qui est celui du contexte.
  *
  * @param {string | undefined} jeton le jeton que la page du banc transmet
  * @returns {() => void} à appeler dans un `finally`
  */
 export function poserCleDuBanc(jeton) {
-  cle = cleDeVolumeDuHarnais({ jeton });
+  jetonCourant = jeton;
   return () => {
-    cle = null;
+    jetonCourant = null;
   };
 }
 
 /**
- * Rend la clé posée, ou refuse bruyamment.
- *
- * Bruyamment, et non par `null` : une phase qui recevrait `null` le passerait à `openOpfsVolume`,
- * qui refuserait par `VAULT_STORAGE_CLE_REQUISE` — un refus juste, mais qui accuserait le produit
- * là où c'est le banc qui a oublié de demander sa clé.
+ * Rend la clé du harnais, ou refuse bruyamment — au point d'usage, c'est-à-dire au moment où un
+ * volume est réellement ouvert.
  */
 export function cleDuBanc() {
-  if (cle === null) {
-    throw new Error(
-      "Aucune clé de volume n'a été posée pour cette exécution : la page du banc doit transmettre le jeton du harnais (ADR 0016).",
-    );
-  }
-  return cle;
+  return cleDeVolumeDuHarnais({ jeton: jetonCourant });
 }

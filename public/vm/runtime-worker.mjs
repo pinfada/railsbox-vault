@@ -478,13 +478,7 @@ function repondreAuControle(id) {
 
 /** Exécute un scénario sous la clé du harnais, posée pour sa durée et pour elle seule (ADR 0016). */
 function executerScenario(id, options) {
-  let relacher;
-  try {
-    relacher = poserCleDuBanc(options.jetonCle);
-  } catch (erreur) {
-    self.postMessage({ id, ok: false, error: { name: erreur.name, message: erreur.message } });
-    return;
-  }
+  const relacher = poserCleDuBanc(options.jetonCle);
   const opfsRunner = OPFS_SCENARIOS.get(options.scenario);
   const execute = opfsRunner ? opfsRunner(options) : run(options);
   execute.finally(relacher).then(
