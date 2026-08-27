@@ -171,6 +171,7 @@ export async function runResilienceClasser({ journal, tentatives = 60, attenteMs
     atomique: rapport.atomique,
     journalConsulte: rapport.journalConsulte,
     entreesJournal: rapport.entreesJournal,
+    generationsAttendues: rapport.generationsAttendues,
     classes: rapport.classes,
     blocs: rapport.blocs.map((bloc) => ({ ...bloc })),
   };

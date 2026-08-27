@@ -103,6 +103,8 @@ async function rejouerPoint(atelier, point) {
     // déclencher. Les perdre en route rendrait un taux atomique plus flatteur, sans le dire.
     journalConsulte: classement.journalConsulte,
     entreesJournal: classement.entreesJournal,
+    // Combien d'états l'oracle savait NOMMER. Deux ne dit pas la même chose que quatre.
+    generationsAttendues: classement.generationsAttendues,
     ecritures: coupe.ecritures,
     barrieres: coupe.barrieres,
     arret: coupe.arret,

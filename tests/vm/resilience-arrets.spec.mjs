@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 
 import { CRASH_KINDS } from "../../src/vm/crash-plan.mjs";
-import { VERDICTS } from "../../src/vm/crash-oracle.mjs";
-import { BLOCS_SUIVIS } from "../../src/vm/crash-scenario.mjs";
+import { VERDICTS, estVerdictConnu } from "../../src/vm/crash-oracle.mjs";
+import { BARRIERES, BLOCS_SUIVIS } from "../../src/vm/crash-scenario.mjs";
 
 // Preuve de niveau **résilience** de #15, sur OPFS RÉEL sous Chromium.
 //
@@ -71,7 +71,7 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
     expect(resultat.arret).not.toBeNull();
     expect(resultat.arret.code).toMatch(/^VAULT_STORAGE_/);
     // Chaque bloc suivi est classé : aucun n'est ignoré.
-    expect(Object.values(VERDICTS)).toContain(resultat.verdict);
+    expect(estVerdictConnu(resultat.verdict), ou).toBe(true);
     expect(resultat.blocs.length).toBe(BLOCS_SUIVIS);
     const total = Object.values(resultat.classes).reduce((somme, compte) => somme + compte, 0);
     expect(total).toBe(BLOCS_SUIVIS);
@@ -91,13 +91,16 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
     // dans le journal — la charge du scénario est très en deçà du seuil de rangement — et elle DOIT
     // être rejouée.
     expect(resultat.recuperation, ou).not.toBeNull();
+    // Le numéro de génération est un compteur du VOLUME, pas de la session : la préparation de
+    // l'ancien état en a déjà validé `BARRIERES` avant que la coupure ne commence. Le rang attendu
+    // est donc DÉRIVÉ du protocole, pas deviné.
     if (resultat.barrieres === 0) {
       expect(resultat.recuperation.etat, ou).toBe("ecartee");
       expect(resultat.recuperation.code, ou).toBe("VAULT_STORAGE_GENERATION_DISCARDED");
-      expect(resultat.recuperation.generation, ou).toBe(0);
+      expect(resultat.recuperation.generation, ou).toBe(BARRIERES);
     } else {
       expect(resultat.recuperation.etat, ou).toBe("rejouee");
-      expect(resultat.recuperation.generation, ou).toBe(resultat.barrieres);
+      expect(resultat.recuperation.generation, ou).toBe(BARRIERES + resultat.barrieres);
       expect(resultat.recuperation.enregistrementsRejoues, ou).toBeGreaterThan(0);
     }
 
@@ -185,8 +188,12 @@ test("deux AUTRES graines rendent elles aussi 100 % sur le vrai support", async 
     expect(resume.verdicts.melange + resume.verdicts.corrompu, `graine ${graine}`).toBe(0);
     expect(resume.classes.dechire, `graine ${graine}`).toBe(0);
     expect(resume.classes.corrompu, `graine ${graine}`).toBe(0);
+    // L'extrême bas et les DEUX générations intermédiaires. `nouveau` est hors d'atteinte de la
+    // matrice — voir `tests/unit/vm-crash-cadence.test.mjs` —, et ce zéro est épinglé, pas subi.
     expect(resume.verdicts.ancien, `graine ${graine}`).toBeGreaterThan(0);
-    expect(resume.verdicts.nouveau, `graine ${graine}`).toBeGreaterThan(0);
+    expect(resume.verdicts["generation-1"], `graine ${graine}`).toBeGreaterThan(0);
+    expect(resume.verdicts["generation-2"], `graine ${graine}`).toBeGreaterThan(0);
+    expect(resume.verdicts.nouveau, `graine ${graine}`).toBe(0);
 
     for (const resultat of resultats) {
       const ou = `graine ${graine} — ${JSON.stringify(resultat.point)}`;
