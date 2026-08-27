@@ -18,6 +18,7 @@
 // qui l'interroge.
 
 import { BlockJournal } from "./block-journal.mjs";
+import { CLE_DE_TEST } from "./cle-de-volume.mjs";
 import { classerVolume } from "./crash-oracle.mjs";
 import { armerInjecteur, planifierCoupures } from "./crash-plan.mjs";
 import {
@@ -33,7 +34,59 @@ import { createFaultPlan } from "./fault-plan.mjs";
 import { GenerationStore } from "./generation-store.mjs";
 import { OpfsBlockBackend } from "./opfs-block-backend.mjs";
 import { generationJournalName } from "./opfs-sync-access.mjs";
+import { Scellement } from "./scellement.mjs";
 import { createSyncAccessStore } from "./sync-access-double.mjs";
+import { FORMAT_VOLUME_V3, dispositionV3, encoderEnTeteV3 } from "./volume-chiffre-format.mjs";
+
+/**
+ * Identifiant du volume jetable. FIXE, et c'est la condition de la mesure : il entre dans les
+ * données associées de chaque secteur, si bien qu'un identifiant tiré à chaque démarrage ferait
+ * refuser tout ce que la session précédente a scellé — la machine mesurerait alors sa propre mise
+ * en place au lieu d'une coupure.
+ */
+const IDENTIFIANT_JETABLE = "15c0ffee15c0ffee15c0ffee15c0ffee";
+
+/**
+ * Ouvre — ou fait naître — le volume v3 de la machine jetable, et rend son backend.
+ *
+ * Ce que `openOpfsVolume` fait en production est refait ici À LA MAIN, pour la raison écrite en tête
+ * de ce fichier : la table d'exclusivité vaut pour un contexte, et une machine qui meurt emporte le
+ * sien. Les gestes sont les mêmes — poser l'en-tête, sceller tous les secteurs —, et ils passent par
+ * l'accès BRUT, donc sans consommer de faute programmée : les coupures de #15 visent les gestes du
+ * GUEST, et les compter ici déplacerait les points de mesure.
+ */
+async function ouvrirVolumeJetable({ support, nom, taille, journal, faults }) {
+  const handle = await support.openHandle(nom);
+  const disposition = dispositionV3(taille);
+  const neuf = handle.getSize() === 0;
+  if (neuf) {
+    handle.truncate(disposition.tailleSupport);
+    handle.write(
+      encoderEnTeteV3({ tailleLogique: taille, identifiantVolume: IDENTIFIANT_JETABLE }),
+      { at: 0 },
+    );
+    handle.flush();
+  }
+  const backend = new OpfsBlockBackend({
+    name: nom,
+    handle,
+    size: taille,
+    disposition,
+    scellement: await Scellement.ouvrir({
+      volume: IDENTIFIANT_JETABLE,
+      cleOctets: CLE_DE_TEST,
+      formatVersion: FORMAT_VOLUME_V3,
+    }),
+    journal,
+    faults,
+    flushDelay: 0,
+  });
+  if (neuf) {
+    await backend.chiffre.scellerTout(0);
+    await backend.barriereSupportBrute();
+  }
+  return backend;
+}
 
 /**
  * Crée une machine jetable et son support. Le support survit aux morts de la machine : c'est ce
@@ -52,17 +105,8 @@ export function creerMachineJetable({ nom = "resilience", taille = VOLUME_OCTETS
       if (backend !== null) {
         throw new Error("La machine tourne déjà : la faire redémarrer masquerait la coupure.");
       }
-      const handle = await support.openHandle(nom);
-      if (handle.getSize() === 0) handle.truncate(taille);
       journal = new BlockJournal();
-      backend = new OpfsBlockBackend({
-        name: nom,
-        handle,
-        size: taille,
-        journal,
-        faults,
-        flushDelay: 0,
-      });
+      backend = await ouvrirVolumeJetable({ support, nom, taille, journal, faults });
       // Le journal de génération est ouvert et RÉCUPÉRÉ ici, comme le fait `openOpfsVolume` en
       // production : c'est ce geste qui rejoue la dernière génération validée ou écarte celle qui ne
       // l'est pas. Sans lui, la machine jetable éprouverait un backend qui n'est pas celui du
@@ -72,8 +116,10 @@ export function creerMachineJetable({ nom = "resilience", taille = VOLUME_OCTETS
         volume: nom,
         handle: journalGeneration,
         tailleVolume: taille,
+        scellement: backend.chiffre.scellement,
         lireVolume: (offset, longueur) => backend.lireSupportBrut(offset, longueur),
-        ecrireVolume: (offset, octets) => backend.ecrireSupportBrut(offset, octets),
+        ecrireVolume: (offset, octets, generation) =>
+          backend.ecrireSupportBrut(offset, octets, generation),
         barriereVolume: () => backend.barriereSupportBrute(),
       });
       // `muterMagasin` n'est PAS un point d'extension du produit : c'est la porte par laquelle une
