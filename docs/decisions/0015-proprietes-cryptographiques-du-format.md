@@ -139,6 +139,27 @@ mord n'est pas structurelle, elle est **comptée** : la racine porte un compteur
 avant de produire un nonce lorsque le budget est atteint. Le remède est une clé de volume neuve —
 donc un travail de #21 —, pas une tolérance.
 
+**Le budget est vérifié à l'ouverture d'une génération**, où le compteur est authentifié par la
+racine — et non à chaque scellement de bloc. Le dépassement possible à l'intérieur d'une génération
+est donc borné par le plafond de charge de l'ADR 0014 : 131 072 scellements, soit **0,003 % du
+budget**. Une implémentation qui voudrait la borne exacte présentera le compteur à chaque
+scellement, ce que `scellerBloc` accepte. Une racine **sans** compteur est refusée : le compter pour
+zéro rendrait le budget muet.
+
+**Deux obligations pèsent sur l'appelant, et le modèle les rend falsifiables.** Un scellement isolé
+ne sait rien des autres :
+
+1. **les rangs d'une même génération doivent être distincts.** `scellerRacine` refuse une liste
+   d'entrées portant deux fois le même rang (`VAULT_CRYPTO_NONCE_REUTILISE`). L'obligation devient
+   ainsi vérifiable à l'échelle où elle a un sens ;
+2. **la séquence d'une racine doit croître STRICTEMENT à chaque écriture de racine, reprise après
+   échec comprise.** C'est le piège le moins visible du protocole : réécrire une racine sous la même
+   séquence et la même génération, avec des entrées qui ont changé entre-temps, réutiliserait un
+   nonce. `scellerRacine` refuse une séquence qui ne dépasse pas la `sequencePrecedente` que
+   l'appelant lui présente — et cette vérification ne vaut **que si l'appelant la présente**. C'est
+   une faiblesse nommée, pas une garantie : le modèle est sans état, et #18/#19 devront tenir cette
+   obligation dans leur magasin.
+
 Ce que les 4 096 réécritures complètes veulent dire concrètement mérite d'être dit : la borne n'est
 pas hors d'atteinte sur la vie d'un volume. À la cadence mesurée de bout en bout par #16 — 177
 secteurs par génération —, elle est atteinte après ~24 millions de barrières. Ce n'est pas
@@ -522,7 +543,9 @@ alignée sur un secteur.
 4. **Le compteur de scellements est-il au bon endroit ?** Il est authentifié dans la racine, donc
    protégé contre la falsification mais soumis au retour arrière : un support qui recule ferait
    re-parcourir des rangs déjà employés dans des générations déjà employées. La monotonie de la
-   génération est-elle une protection suffisante, ou le budget doit-il vivre ailleurs ?
+   génération est-elle une protection suffisante, ou le budget doit-il vivre ailleurs ? La même
+   question vaut pour la stricte croissance de la SÉQUENCE d'une racine, que le modèle ne peut
+   vérifier que si l'appelant lui présente la valeur précédente.
 5. **Le lot par appel est-il le bon découpage ?** Sceller 512 octets à la fois coûte 27 fois plus
    cher que sceller 4 Mio d'un coup. Pour le JOURNAL — rejoué d'un seul tenant — un scellement par
    génération serait défendable ; pour le VOLUME, il détruirait l'accès aléatoire et ferait perdre

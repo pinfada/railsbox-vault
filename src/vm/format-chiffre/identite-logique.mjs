@@ -39,7 +39,7 @@
 // fonction de chiffrement authentifié sous une même clé. Elle n'est pas structurelle, elle est
 // COMPTÉE, et son dépassement est un refus typé.
 
-import { CRYPTO_ERROR_CODES, CryptoError, malforme } from "./crypto-errors.mjs";
+import { CRYPTO_ERROR_CODES, CryptoError, malforme, nonceReutilise } from "./crypto-errors.mjs";
 import { chainePrefixee, concatener, entierEnOctets } from "./octets.mjs";
 
 /** Nom de l'unique algorithme admis par la v1 de cette spécification. Épinglé, pas devinable. */
@@ -265,14 +265,13 @@ export function encoderEntrees(entrees) {
 export function verifierRangsDistincts(entrees) {
   const vus = new Set();
   for (const [index, entree] of entrees.entries()) {
-    if (vus.has(entree.rang)) {
-      throw new CryptoError(
-        CRYPTO_ERROR_CODES.nonceReuse,
-        `Scellement refusé : l'entrée ${index} de cette génération reprend le rang ${entree.rang}, déjà employé. Le nonce se répéterait sous la même clé, ce qui livrerait le XOR des deux clairs ET la clé d'authentification GCM. Aucun octet n'est produit.`,
-        { context: { index, rang: entree.rang } },
+    if (vus.has(entree?.rang)) {
+      throw nonceReutilise(
+        `l'entrée ${index} de cette génération reprend le rang ${entree.rang}, déjà employé.`,
+        { index, rang: entree.rang },
       );
     }
-    vus.add(entree.rang);
+    vus.add(entree?.rang);
   }
   return entrees;
 }

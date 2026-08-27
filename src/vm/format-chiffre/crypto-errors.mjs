@@ -160,11 +160,16 @@ export function melange(context = {}) {
   );
 }
 
-/** Deux entrées de même rang : le nonce se répéterait sous la même clé. Refus AVANT de sceller. */
-export function nonceReutilise(context = {}) {
+/**
+ * Le nonce se répéterait sous la même clé. Refus AVANT de produire le moindre octet.
+ *
+ * Deux causes, toutes deux hors de portée d'un scellement isolé et donc vérifiées à l'échelle de la
+ * génération : deux entrées de même rang, ou une séquence de racine qui ne croît pas strictement.
+ */
+export function nonceReutilise(raison, context = {}) {
   return new CryptoError(
     CRYPTO_ERROR_CODES.nonceReuse,
-    "Scellement refusé : deux entrées de cette génération portent le même rang. Le nonce se répéterait sous la même clé, ce qui livrerait le XOR des deux clairs ET la clé d'authentification GCM. Aucun octet n'est produit.",
+    `Scellement refusé : ${raison} Le nonce se répéterait sous la même clé, ce qui livrerait le XOR des deux clairs ET la clé d'authentification GCM. Aucun octet n'est produit.`,
     { context },
   );
 }

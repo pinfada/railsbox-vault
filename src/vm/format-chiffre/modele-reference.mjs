@@ -23,11 +23,24 @@
 //
 // Deux menaces échappent à cette règle et le disent : modification et déplacement ne se distinguent
 // pas. Voir `crypto-errors.mjs`.
+//
+// ## Ce que le modèle ne peut pas vérifier seul, et ce qu'il en fait
+//
+// Deux obligations pèsent sur l'APPELANT, parce qu'un scellement isolé ne sait rien des autres :
+// les rangs d'une même génération doivent être distincts, et la SÉQUENCE d'une racine doit croître
+// STRICTEMENT à chaque écriture de racine — y compris lors d'une reprise après échec. Sceller deux
+// racines différentes sous la même séquence et la même génération réutiliserait un nonce.
+//
+// Le modèle rend ces deux obligations falsifiables au lieu de les laisser en consigne :
+// `scellerRacine` refuse une liste de rangs en double, et refuse une séquence qui ne dépasse pas la
+// `sequencePrecedente` que l'appelant lui présente. La seconde n'est vérifiable que si l'appelant
+// présente cette valeur — c'est une faiblesse nommée, pas une garantie.
 
 import {
   identiteIncoherente,
   malforme,
   melange,
+  nonceReutilise,
   rejeu,
   sceauRefuse,
   troncature,
@@ -82,12 +95,26 @@ function exigerOctets(nom, valeur, longueur) {
   return valeur;
 }
 
+/** Contrôles de forme d'un sceau. `longueurChiffre` à `null` laisse le chiffré de longueur libre. */
+function exigerSceau(scelle, longueurChiffre = null) {
+  exigerOctets("scelle.nonce", scelle?.nonce, NONCE_OCTETS);
+  exigerOctets("scelle.etiquette", scelle?.etiquette, ETIQUETTE_OCTETS);
+  if (longueurChiffre === null) {
+    if (!(scelle.chiffre instanceof Uint8Array)) {
+      throw malforme("« scelle.chiffre » doit être une suite d'octets.");
+    }
+  } else {
+    exigerOctets("scelle.chiffre", scelle.chiffre, longueurChiffre);
+  }
+  return scelle;
+}
+
 function separerEtiquette(brut) {
   const octets = new Uint8Array(brut);
-  return Object.freeze({
+  return {
     chiffre: octets.slice(0, octets.byteLength - ETIQUETTE_OCTETS),
     etiquette: octets.slice(octets.byteLength - ETIQUETTE_OCTETS),
-  });
+  };
 }
 
 function assembler(chiffre, etiquette) {
@@ -99,12 +126,15 @@ function assembler(chiffre, etiquette) {
 
 /** Empreinte SHA-256 de la suite canonique des entrées d'une génération. */
 export async function empreinteDesEntrees(entrees) {
-  const empreinte = await crypto.subtle.digest("SHA-256", encoderEntrees(entrees));
-  return new Uint8Array(empreinte);
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", encoderEntrees(entrees)));
 }
 
 /**
  * Scelle un bloc sous son identité logique.
+ *
+ * `attentes.scellementsCumules` est facultatif ici et OBLIGATOIRE sur la racine : l'ADR 0015 place
+ * la vérification du budget à l'ouverture d'une génération, où le compteur est authentifié. Un
+ * appelant qui veut la borne exacte plutôt que celle-là le présente à chaque scellement.
  *
  * @param {{ cle: CryptoKey, identite: object, contenu: Uint8Array,
  *           attentes?: { scellementsCumules?: number } }} appel
@@ -130,12 +160,11 @@ export async function scellerBloc({ cle, identite, contenu, attentes = {} }) {
     generation: identite.generation,
     rang: identite.rang,
   });
-  const donneesAssociees = encoderIdentiteBloc(identite);
   const brut = await crypto.subtle.encrypt(
     {
       name: ALGORITHME_WEBCRYPTO,
       iv: nonce,
-      additionalData: donneesAssociees,
+      additionalData: encoderIdentiteBloc(identite),
       tagLength: ETIQUETTE_BITS,
     },
     cle,
@@ -158,11 +187,7 @@ export async function scellerBloc({ cle, identite, contenu, attentes = {} }) {
  */
 export async function ouvrirBloc({ cle, identite, scelle, attentes = {} }) {
   verifierAlgorithme(identite?.algorithme);
-  exigerOctets("scelle.nonce", scelle?.nonce, NONCE_OCTETS);
-  exigerOctets("scelle.etiquette", scelle?.etiquette, ETIQUETTE_OCTETS);
-  if (!(scelle.chiffre instanceof Uint8Array)) {
-    throw malforme("« scelle.chiffre » doit être une suite d'octets.");
-  }
+  exigerSceau(scelle);
 
   const attendu = construireNonce({
     domaine: DOMAINE_BLOC,
@@ -176,14 +201,13 @@ export async function ouvrirBloc({ cle, identite, scelle, attentes = {} }) {
     });
   }
 
-  const donneesAssociees = encoderIdentiteBloc(identite);
   let clair;
   try {
     clair = await crypto.subtle.decrypt(
       {
         name: ALGORITHME_WEBCRYPTO,
         iv: scelle.nonce,
-        additionalData: donneesAssociees,
+        additionalData: encoderIdentiteBloc(identite),
         tagLength: ETIQUETTE_BITS,
       },
       cle,
@@ -199,17 +223,36 @@ export async function ouvrirBloc({ cle, identite, scelle, attentes = {} }) {
   }
 
   // À partir d'ici SEULEMENT, la génération est authentique : la classer plus tôt serait deviner.
-  if (
-    attentes.generationMinimale !== undefined &&
-    identite.generation < attentes.generationMinimale
-  ) {
+  const { generationMinimale } = attentes;
+  if (generationMinimale !== undefined && identite.generation < generationMinimale) {
     throw rejeu({
       generation: identite.generation,
-      minimale: attentes.generationMinimale,
+      minimale: generationMinimale,
       adresse: identite.adresse,
     });
   }
   return new Uint8Array(clair);
+}
+
+/** Les deux obligations que l'appelant seul peut tenir, rendues falsifiables ici. */
+function verifierObligationsDeRacine(racine, entrees, attentes) {
+  if (racine?.scellementsCumules === undefined) {
+    throw malforme(
+      "« racine.scellementsCumules » est obligatoire : le budget de la clé se vérifie à l'ouverture d'une génération, et un compteur absent le rendrait muet.",
+    );
+  }
+  verifierBudgetDeCle(racine.scellementsCumules);
+  verifierRangsDistincts(entrees);
+
+  const { sequencePrecedente } = attentes;
+  if (sequencePrecedente !== undefined && racine.sequence <= sequencePrecedente) {
+    throw nonceReutilise({
+      sequence: racine.sequence,
+      sequencePrecedente,
+      raison:
+        "la séquence d'une racine doit croître STRICTEMENT à chaque écriture, reprise après échec comprise.",
+    });
+  }
 }
 
 /**
@@ -219,15 +262,15 @@ export async function ouvrirBloc({ cle, identite, scelle, attentes = {} }) {
  * racine qui annoncerait un compte différent de ce qu'elle scelle serait une troncature signée par
  * le producteur lui-même.
  *
- * @param {{ cle: CryptoKey, racine: object, entrees: Array<object> }} appel
+ * @param {{ cle: CryptoKey, racine: object, entrees: Array<object>,
+ *           attentes?: { sequencePrecedente?: number } }} appel
  */
-export async function scellerRacine({ cle, racine, entrees }) {
+export async function scellerRacine({ cle, racine, entrees, attentes = {} }) {
   verifierAlgorithme(racine?.algorithme);
-  verifierBudgetDeCle(racine?.scellementsCumules ?? 0);
   if (!Array.isArray(entrees)) {
     throw malforme("« entrees » doit être un tableau.");
   }
-  verifierRangsDistincts(entrees);
+  verifierObligationsDeRacine(racine, entrees, attentes);
 
   const entete = Object.freeze({
     volume: racine.volume,
@@ -237,7 +280,7 @@ export async function scellerRacine({ cle, racine, entrees }) {
     tailleVolume: racine.tailleVolume,
     nombreEntrees: entrees.length,
     longueurCharge: entrees.reduce((somme, entree) => somme + (entree?.longueur ?? 0), 0),
-    scellementsCumules: racine.scellementsCumules ?? 0,
+    scellementsCumules: racine.scellementsCumules,
   });
 
   const empreinteEntrees = await empreinteDesEntrees(entrees);
@@ -267,15 +310,49 @@ function verifierIdentiteRacine(entete, attentes) {
     ["tailleVolume", attentes.tailleVolume],
   ].filter(([champ, attendu]) => attendu !== undefined && entete[champ] !== attendu);
 
-  if (ecarts.length > 0) {
-    throw identiteIncoherente(
-      `la racine est authentique mais décrit ${ecarts.map(([champ]) => `un autre « ${champ} »`).join(", ")}.`,
-      {
-        ecarts: Object.fromEntries(
-          ecarts.map(([champ, attendu]) => [champ, { attendu, trouve: entete[champ] }]),
-        ),
-      },
-    );
+  if (ecarts.length === 0) return;
+  throw identiteIncoherente(
+    `la racine est authentique mais décrit ${ecarts.map(([champ]) => `un autre « ${champ} »`).join(", ")}.`,
+    {
+      ecarts: Object.fromEntries(
+        ecarts.map(([champ, attendu]) => [champ, { attendu, trouve: entete[champ] }]),
+      ),
+    },
+  );
+}
+
+/**
+ * Classe la génération trouvée face à un en-tête DÉJÀ authentifié. Chaque verdict est donc établi,
+ * jamais deviné — c'est toute la raison de l'ordre choisi entre données associées et clair.
+ */
+async function classerGeneration(entete, entrees, empreinteAuthentique, attentes) {
+  verifierIdentiteRacine(entete, attentes);
+
+  const { sequenceMinimale } = attentes;
+  if (sequenceMinimale !== undefined && entete.sequence < sequenceMinimale) {
+    throw rejeu({
+      sequence: entete.sequence,
+      minimale: sequenceMinimale,
+      generation: entete.generation,
+    });
+  }
+
+  const longueurTrouvee = entrees.reduce((somme, entree) => somme + (entree?.longueur ?? 0), 0);
+  if (entrees.length !== entete.nombreEntrees || longueurTrouvee !== entete.longueurCharge) {
+    throw troncature({
+      trouvees: entrees.length,
+      authentifiees: entete.nombreEntrees,
+      longueurTrouvee,
+      longueurAuthentifiee: entete.longueurCharge,
+    });
+  }
+
+  if (!egalesEnTempsConstant(await empreinteDesEntrees(entrees), empreinteAuthentique)) {
+    throw melange({
+      generation: entete.generation,
+      sequence: entete.sequence,
+      nombreEntrees: entete.nombreEntrees,
+    });
   }
 }
 
@@ -291,9 +368,7 @@ function verifierIdentiteRacine(entete, attentes) {
  */
 export async function ouvrirRacine({ cle, entete, scelle, entrees, attentes = {} }) {
   verifierAlgorithme(entete?.algorithme);
-  exigerOctets("scelle.nonce", scelle?.nonce, NONCE_OCTETS);
-  exigerOctets("scelle.chiffre", scelle?.chiffre, EMPREINTE_OCTETS);
-  exigerOctets("scelle.etiquette", scelle?.etiquette, ETIQUETTE_OCTETS);
+  exigerSceau(scelle, EMPREINTE_OCTETS);
   if (!Array.isArray(entrees)) {
     throw malforme("« entrees » doit être un tableau.");
   }
@@ -333,35 +408,7 @@ export async function ouvrirRacine({ cle, entete, scelle, entrees, attentes = {}
   }
 
   // L'en-tête est AUTHENTIQUE à partir d'ici. Les trois classements qui suivent sont donc établis.
-  verifierIdentiteRacine(entete, attentes);
-
-  if (attentes.sequenceMinimale !== undefined && entete.sequence < attentes.sequenceMinimale) {
-    throw rejeu({
-      sequence: entete.sequence,
-      minimale: attentes.sequenceMinimale,
-      generation: entete.generation,
-    });
-  }
-
-  const longueurTrouvee = entrees.reduce((somme, entree) => somme + (entree?.longueur ?? 0), 0);
-  if (entrees.length !== entete.nombreEntrees || longueurTrouvee !== entete.longueurCharge) {
-    throw troncature({
-      trouvees: entrees.length,
-      authentifiees: entete.nombreEntrees,
-      longueurTrouvee,
-      longueurAuthentifiee: entete.longueurCharge,
-    });
-  }
-
-  const empreinteTrouvee = await empreinteDesEntrees(entrees);
-  if (!egalesEnTempsConstant(empreinteTrouvee, empreinteAuthentique)) {
-    throw melange({
-      generation: entete.generation,
-      sequence: entete.sequence,
-      nombreEntrees: entete.nombreEntrees,
-    });
-  }
-
+  await classerGeneration(entete, entrees, empreinteAuthentique, attentes);
   return Object.freeze({
     entete: Object.freeze({ ...entete }),
     empreinteEntrees: empreinteAuthentique,
