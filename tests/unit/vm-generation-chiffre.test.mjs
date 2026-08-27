@@ -78,6 +78,7 @@ test("la racine v3 ne porte plus de CRC-32 : l'étiquette a pris sa place", asyn
   const magasin = await ouvrirMagasin(support);
   await magasin.deposer(0, buildPattern(512, 11));
   await magasin.valider();
+  support.magasin.abandon("vol.gen");
 
   const handle = await support.magasin.openHandle("vol.gen");
   const secteur = new Uint8Array(512);
@@ -133,11 +134,13 @@ test("une RACINE altérée refuse la génération, elle ne la répare pas", asyn
   handle.flush();
   handle.close();
 
+  // L'en-tête de la racine se DÉCODE encore : marqueur, format et taille de volume sont intacts, et
+  // rien ne peut les contredire sans la clé. Ce qui refuse est l'ÉTIQUETTE, et le code le dit — la
+  // cause n'est pas établie, parce qu'un octet retourné et une racine d'un autre volume produisent
+  // le même verdict (ADR 0015, ADR 0016 décision 9).
   await assert.rejects(
     () => ouvrirMagasin(support),
-    (erreur) =>
-      isStorageError(erreur, STORAGE_ERROR_CODES.generationRootCorrupt) ||
-      isStorageError(erreur, STORAGE_ERROR_CODES.generationCorrupt),
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.sceauRefuse),
   );
 });
 
@@ -162,7 +165,7 @@ test("un ENREGISTREMENT altéré refuse la génération entière, jamais à moit
 
   await assert.rejects(
     () => ouvrirMagasin(support),
-    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.generationCorrupt),
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.sceauRefuse),
   );
   assert.deepEqual(
     [...support.volume.subarray(0, 512)],
@@ -194,9 +197,7 @@ test("une clé ÉTRANGÈRE ne rouvre pas un journal : le refus est le sceau, pas
         ecrireVolume: support.ecrireVolume,
         barriereVolume: support.barriereVolume,
       }),
-    (erreur) =>
-      isStorageError(erreur, STORAGE_ERROR_CODES.generationRootCorrupt) ||
-      isStorageError(erreur, STORAGE_ERROR_CODES.generationCorrupt),
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.sceauRefuse),
   );
 });
 
