@@ -172,7 +172,7 @@ L'ADR 0015 a chiffré l'en-tête de racine v3 à 136 octets « dans le secteur D
 | 32     |       8 | taille du volume (LOGIQUE)                | oui                          |
 | 40     |       4 | nombre d'entrées                          | oui                          |
 | 44     |       8 | longueur de charge                        | oui                          |
-| 52     |      16 | identifiant de volume                     | oui (converti en 32 hex)     |
+| 52     |      16 | identifiant de volume                     | voir ci-dessous              |
 | 68     |       8 | scellements cumulés                       | oui                          |
 | 76     |      12 | nonce                                     | —                            |
 | 88     |      32 | chiffré : l'empreinte scellée des entrées | —                            |
@@ -181,6 +181,17 @@ L'ADR 0015 a chiffré l'en-tête de racine v3 à 136 octets « dans le secteur D
 Total : **136 octets** sur les 512 du secteur. Le CRC-32 de l'en-tête disparaît : l'étiquette le
 remplace, et elle refuse ce qu'il détectait (déchirure, octet retourné) **plus** ce qu'il ne
 prétendait rien contre (un altérateur volontaire, qui recalculait un CRC sans difficulté).
+
+**L'identifiant de volume de la racine mérite une phrase à part, parce qu'il est le seul champ dont
+la colonne « données associées » se lit de travers.** L'identité qui entre RÉELLEMENT dans les
+données associées est celle que le **manifeste** déclare et que l'ouvreur porte, pas celle qu'on lit
+sur le disque. Retourner la copie sur disque ne change donc pas l'étiquette. Elle n'est pas crue
+pour autant : `generation-store.mjs` la CONFRONTE à l'identité de l'ouvreur et refuse l'écart par
+`VAULT_STORAGE_IDENTITE_VOLUME` avant tout parcours — ce qui distingue « ce journal appartient à un
+autre volume » de « ce journal est abîmé », deux états dont les remèdes n'ont rien de commun. La
+copie sur disque est donc un **localisateur, pas une autorité**, exactement comme l'en-tête v3, et
+`tests/unit/vm-generation-format.test.mjs` l'éprouve en montrant que l'octet 52 ne fait PAS échouer
+l'étiquette.
 
 Le **format du journal passe de 1 à 2**. C'est la barrière de version côté journal : un runtime v2
 qui relit une racine v3 la refuse par « Format de journal de génération inconnu : 2 », comme
