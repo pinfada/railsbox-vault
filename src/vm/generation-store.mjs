@@ -22,92 +22,39 @@
 //
 // Le point de validation est le geste 2 : c'est là que la barrière du guest peut être acquittée sans
 // mentir. Le geste 3 ne déplace aucune promesse — il ne fait que ranger.
+//
+// Trois voisins portent ce que le magasin n'a pas à savoir, et sont réexportés ici pour que les
+// appelants n'aient rien à changer : `generation-plafonds.mjs` les seuils calibrés,
+// `generation-journal.mjs` l'accès au fichier, `generation-charge.mjs` le parcours en flux d'une
+// charge, `generation-recuperation.mjs` le constat d'ouverture et son compte rendu.
 
 import { SECTOR_SIZE } from "./block-geometry.mjs";
+import { parcourirCharge } from "./generation-charge.mjs";
 import {
   ENTETE_OCTETS,
   ZONE_ENREGISTREMENTS,
   crc32,
-  decoderEnteteEnregistrement,
-  decoderRacine,
   encoderEnteteEnregistrement,
   encoderRacine,
   offsetDeRacine,
-  RACINES,
-  RACINE_OCTETS,
   racineDeSequence,
 } from "./generation-format.mjs";
-import { decodeSupportCount, readCountFailure, writeCountFailure } from "./opfs-error-mapping.mjs";
+import { JournalDeGeneration } from "./generation-journal.mjs";
+import { PLAFOND_CHARGE_OCTETS, POINT_DE_CONTROLE_OCTETS } from "./generation-plafonds.mjs";
 import {
-  STORAGE_ERROR_CODES,
-  StorageError,
-  generationCorrupt,
-  generationOverflow,
-  generationRootCorrupt,
-} from "./storage-errors.mjs";
+  GENERATION_ETATS,
+  constaterOuverture,
+  poserRapport,
+  remedeSansRacine,
+} from "./generation-recuperation.mjs";
+import { STORAGE_ERROR_CODES, StorageError, generationOverflow } from "./storage-errors.mjs";
 
-/** États dans lesquels une ouverture peut trouver le journal. */
-export const GENERATION_ETATS = Object.freeze({
-  /** Aucune génération en attente : le volume EST la dernière génération validée. */
-  aucune: "aucune",
-  /** Une génération déposée sans validation a été écartée. Le volume n'a pas bougé. */
-  ecartee: "ecartee",
-  /** Une génération validée manquait au volume : elle a été rejouée. */
-  rejouee: "rejouee",
-});
-
-/**
- * Plafond par défaut de la charge d'un journal, en octets.
- *
- * Il existe parce qu'une génération est bornée par la barrière du GUEST, et que rien n'oblige un
- * guest à en émettre. Sans plafond, un invité qui n'appelle jamais `fsync` ferait grossir le journal
- * jusqu'au quota, et l'échec surviendrait au pire endroit — au milieu d'une validation. Le plafond
- * refuse TÔT, avec un code à lui, plutôt que de publier une génération à moitié.
- *
- * 16 Mio, et ce chiffre est CALIBRÉ depuis #91 — il ne l'était pas. Il valait 64 Mio, « le même
- * ordre de grandeur que la surmémoire de streaming », c'est-à-dire une analogie. Ce qui le fixe
- * désormais est le budget de RÉCUPÉRATION de `docs/quality-attributes.md` : la dernière génération
- * valide doit être retrouvée en ≤ 60 s, et rejouer une charge coûte d'autant plus cher qu'elle est
- * découpée fin — un enregistrement par écriture du guest, et une écriture ATA peut ne faire qu'un
- * secteur. Mesuré sur OPFS réel (`reports/vm/recuperation-generation.json`), à la granularité la
- * plus fine que le guest puisse produire — des enregistrements de 512 octets :
- *
- *  - 64 Mio : **entre 39,4 s et 71,1 s** selon l'état de la machine, sur quatre exécutions du banc.
- *    Des relevés individuels tombent des DEUX côtés des 60 s : la mesure ENCADRE le budget au lieu
- *    de tenir dessous, la marge est nulle, et l'environnement de référence n'est pas la machine qui
- *    a relevé ces chiffres ;
- *  - 16 Mio : **p95 entre 12,4 et 24,7 s**, pire valeur individuelle 27,7 s — un facteur deux sous
- *    le budget dans la plus mauvaise exécution, et la conclusion ne dépend plus de la machine.
- *
- * Le budget n'est pas révisé pour faire tenir le plafond : c'est le plafond qui cède, comme l'exige
- * la règle de #91. Et 16 Mio reste deux fois `POINT_DE_CONTROLE_OCTETS` — un guest qui émet des
- * barrières n'est jamais refusé — et **16,6 fois** la plus grande charge que l'image de référence
- * ait présentée à ce plafond : 1 012 688 octets, boot après migration, relevé de bout en bout du
- * 2026-08-27. Le facteur valait 66 à 64 Mio ; l'abaissement le réduit sans l'annuler, et c'est le
- * prix assumé d'un budget de récupération tenu.
- *
- * Ce que ce chiffre n'est TOUJOURS pas : la plus grande génération que l'image de référence peut
- * produire. Personne ne l'a mesurée ; l'ADR 0014 l'inscrit comme travail découvert.
- */
-export const PLAFOND_CHARGE_OCTETS = 16 * 1024 * 1024;
-
-/** Au-delà de ce volume de charge, le point de contrôle est déclenché de lui-même. */
-export const POINT_DE_CONTROLE_OCTETS = 8 * 1024 * 1024;
-
-/**
- * Tampon avec lequel une charge est relue, en octets. C'est la SURMÉMOIRE de la récupération.
- *
- * Il est une CONSTANTE, et c'est tout l'intérêt : la plus grande allocation d'une récupération ne
- * suit pas la taille de la charge, donc pas le plafond. Relever `PLAFOND_CHARGE_OCTETS` ne relève
- * pas la surmémoire ; `docs/quality-attributes.md` la borne à 64 Mio pour l'export et la
- * restauration, et la récupération tient désormais le même régime avec deux ordres de grandeur de
- * marge.
- *
- * 1 Mio n'est pas un optimum mesuré : c'est le compromis entre le nombre d'appels au support et la
- * mémoire tenue. `tests/vm/recuperation-generation.spec.mjs` mesure ce que ce choix coûte en temps
- * sur OPFS réel ; le chiffre est publié, pas supposé.
- */
-export const TAMPON_RELECTURE_OCTETS = 1024 * 1024;
+export { GENERATION_ETATS };
+export {
+  PLAFOND_CHARGE_OCTETS,
+  POINT_DE_CONTROLE_OCTETS,
+  TAMPON_RELECTURE_OCTETS,
+} from "./generation-plafonds.mjs";
 
 function alignerBas(valeur) {
   return valeur - (valeur % SECTOR_SIZE);
@@ -117,58 +64,9 @@ function alignerHaut(valeur) {
   return alignerBas(valeur + SECTOR_SIZE - 1);
 }
 
-/**
- * FENÊTRE GLISSANTE sur la charge d'un journal. Un seul tampon, rechargé quand il est épuisé.
- *
- * Elle existe pour une raison MESURÉE, pas par élégance. Un parcours qui lirait l'en-tête puis les
- * octets de chaque enregistrement demanderait quatre appels au support par enregistrement sur les
- * deux passes ; sur OPFS réel un appel synchrone coûte ~290 µs, et une charge de 64 Mio découpée en
- * enregistrements de 512 octets réclamait 201,4 s — 3,4 fois le budget de récupération de 60 s de
- * `docs/quality-attributes.md` (relevé dans `reports/vm/recuperation-generation.json`). La fenêtre
- * ramène les lectures à deux passes séquentielles sur la charge, quelle que soit sa granularité, et
- * la même charge entre 39,4 et 71,1 s selon l'état de la machine.
- *
- * Le tampon est PRÊTÉ : chaque tranche rendue vit jusqu'au prochain rechargement, et la retenir
- * serait une faute. C'est le prix d'une surmémoire qui ne suit pas la taille de la charge.
- *
- * @param {{ tampon: Uint8Array, longueurCharge: number,
- *           lire: (cible: Uint8Array, position: number) => number }} options
- */
-function fenetreDeCharge({ tampon, longueurCharge, lire }) {
-  let base = 0;
-  let remplie = 0;
-
-  const disponible = (position) =>
-    position >= base && position < base + remplie ? base + remplie - position : 0;
-
-  return {
-    /** Fin de ce que le journal a réellement rendu. Sert à NOMMER une charge tronquée. */
-    fin: () => base + remplie,
-    /**
-     * Rend jusqu'à `maximum` octets à `position`, en rechargeant la fenêtre s'il en manque.
-     *
-     * `requis` est le minimum INDIVISIBLE : un en-tête d'enregistrement ne se lit pas en deux fois,
-     * là où les octets d'un enregistrement s'accommodent d'une tranche partielle. Une tranche plus
-     * courte que `requis` signifie que le journal ne porte plus ce qu'une racine déclare — c'est à
-     * l'appelant de le refuser.
-     */
-    tranche(position, maximum, requis = 1) {
-      if (disponible(position) < Math.min(requis, longueurCharge - position)) {
-        base = position;
-        remplie = lire(
-          tampon.subarray(0, Math.min(tampon.byteLength, longueurCharge - base)),
-          base,
-        );
-      }
-      const debut = position - base;
-      return tampon.subarray(debut, debut + Math.min(maximum, Math.max(0, remplie - debut)));
-    },
-  };
-}
-
 export class GenerationStore {
   #volume;
-  #handle;
+  #journal;
   #tailleVolume;
   #lireVolume;
   #ecrireVolume;
@@ -189,8 +87,6 @@ export class GenerationStore {
   #generation = 0;
   #sequenceValidee = 0;
   #rapport = null;
-  /** Plus grande allocation que la RÉCUPÉRATION a faite pour elle-même. Publiée, jamais supposée. */
-  #surmemoireMax = 0;
   /**
    * Plus grande charge que ce magasin ait VALIDÉE, en octets. Haute eau, jamais remise à zéro.
    *
@@ -215,7 +111,7 @@ export class GenerationStore {
 
   constructor(options) {
     this.#volume = options.volume;
-    this.#handle = options.handle;
+    this.#journal = new JournalDeGeneration(options.volume, options.handle);
     this.#tailleVolume = options.tailleVolume;
     this.#lireVolume = options.lireVolume;
     this.#ecrireVolume = options.ecrireVolume;
@@ -290,244 +186,73 @@ export class GenerationStore {
     return this.#chargeMaxDeposee;
   }
 
-  // ---------------------------------------------------------------- support
-
-  /**
-   * Lit le journal. Une valeur de retour est INTERPRÉTÉE, jamais comparée à la va-vite (#73) : un
-   * support qui rend un code d'échec casté en non signé n'a pas fait une lecture courte, il n'a rien
-   * lu — et `subarray` bornerait silencieusement le tampon, rendant un secteur de zéros pour une
-   * racine. Une lecture COURTE, elle, est légitime : c'est ce que laisse une génération interrompue.
-   */
-  #lireJournal(offset, longueur) {
-    const cible = this.#allouer(longueur);
-    const lus = this.#lireJournalDans(cible, offset);
-    return lus === longueur ? cible : cible.subarray(0, lus);
-  }
-
-  /**
-   * Lit dans un tampon DÉJÀ alloué et rend le nombre d'octets lus.
-   *
-   * C'est le geste qui rend le rejeu en flux possible : le même tampon sert à toutes les tranches
-   * d'une charge, si bien que la surmémoire de la récupération ne suit pas la taille de la charge.
-   */
-  #lireJournalDans(cible, offset) {
-    const longueur = cible.byteLength;
-    const lus = this.#handle.read(cible, { at: offset });
-    if (decodeSupportCount(lus, longueur).kind === "errno") {
-      throw readCountFailure(lus, {
-        requested: longueur,
-        volume: this.#volume,
-        offset,
-        operation: "read-generation",
-      });
-    }
-    return lus;
-  }
-
-  /** Alloue, et RETIENT la plus grande allocation. La surmémoire est mesurée, pas estimée. */
-  #allouer(octets) {
-    if (octets > this.#surmemoireMax) this.#surmemoireMax = octets;
-    return new Uint8Array(octets);
-  }
-
-  /** Écrit dans le journal. Tout compte qui n'est pas exact est un échec TYPÉ, jamais avalé (#73). */
-  #ecrireJournal(offset, octets) {
-    const echec = writeCountFailure(this.#handle.write(octets, { at: offset }), {
-      requested: octets.byteLength,
-      volume: this.#volume,
-      offset,
-      operation: "write-generation",
-    });
-    if (echec !== null) throw echec;
-  }
-
-  async #barriereJournal() {
-    await this.#handle.flush();
-  }
-
   // ------------------------------------------------------------ récupération
 
-  /**
-   * Relit les deux racines et rend celle qui fait autorité, en distinguant VIERGE et ABÎMÉE.
-   *
-   * La distinction décide du remède, et `decoderRacine` la fournit déjà : la jeter reviendrait à
-   * traiter un secteur de racine illisible comme un secteur jamais écrit. Une racine abîmée peut
-   * avoir scellé une génération acquittée ; l'écarter en silence, sous l'étiquette « issue normale
-   * d'une coupure », effacerait une écriture durable sans le dire.
-   *
-   * @returns {{ racine: object | null, abimees: number }}
-   */
-  #racineFaisantAutorite() {
-    let retenue = null;
-    let abimees = 0;
-    for (let rang = 0; rang < RACINES; rang += 1) {
-      const secteur = this.#lireJournal(offsetDeRacine(rang), RACINE_OCTETS);
-      if (secteur.byteLength < RACINE_OCTETS) continue;
-      const lue = decoderRacine(secteur, { tailleVolume: this.#tailleVolume });
-      if (!lue.valide) {
-        // Un secteur VIERGE n'a jamais porté de racine : ce n'est pas une avarie, c'est une place
-        // libre — l'état normal du second emplacement tant qu'aucune alternance n'a eu lieu.
-        if (!lue.vierge) abimees += 1;
-        continue;
-      }
-      if (retenue === null || lue.racine.sequence > retenue.sequence) retenue = lue.racine;
-    }
-    return { racine: retenue, abimees };
-  }
-
   async #recuperer() {
-    this.#surmemoireMax = 0;
-    const taille = this.#handle.getSize();
-    const lecture =
-      taille >= ZONE_ENREGISTREMENTS ? this.#racineFaisantAutorite() : { racine: null, abimees: 0 };
-    const { racine, abimees } = lecture;
-    const chargePresente = Math.max(0, taille - ZONE_ENREGISTREMENTS);
+    this.#journal.reinitialiserSurmemoire();
+    const constat = constaterOuverture({
+      journal: this.#journal,
+      tailleVolume: this.#tailleVolume,
+    });
 
-    if (racine === null) {
-      this.#rapport = await this.#recupererSansRacine({ abimees, chargePresente });
+    if (constat.racine === null) {
+      this.#rapport = await this.#recupererSansRacine(constat);
       return;
     }
+    this.#rapport = await this.#recupererDepuisRacine(constat);
+  }
 
+  /** AUCUNE racine ne fait autorité : le remède est décidé avant d'écrire quoi que ce soit. */
+  async #recupererSansRacine({ abimees, chargePresente }) {
+    const remede = remedeSansRacine({ volume: this.#volume, abimees, chargePresente });
+    if (remede === "aucune") return this.#rapportDe(GENERATION_ETATS.aucune, {});
+    await this.#vider({ sequence: 0, generation: 0 });
+    return this.#rapportDe(GENERATION_ETATS.ecartee, { octetsEcartes: chargePresente });
+  }
+
+  /** Une racine fait autorité : elle fixe la génération, et ce qui la dépasse est écarté. */
+  async #recupererDepuisRacine({ racine, chargePresente }) {
     this.#sequence = racine.sequence;
     this.#sequenceValidee = racine.sequence;
     this.#generation = racine.generation;
 
     if (racine.longueurCharge === 0) {
       await this.#vider({ sequence: racine.sequence, generation: racine.generation });
-      this.#rapport = this.#poserRapport(
+      return this.#rapportDe(
         chargePresente > 0 ? GENERATION_ETATS.ecartee : GENERATION_ETATS.aucune,
         { octetsEcartes: chargePresente },
       );
-      return;
     }
 
     const enregistrements = this.#rejouerCharge(racine);
     await this.#barriereVolume();
     await this.#vider({ sequence: racine.sequence, generation: racine.generation });
-    this.#rapport = this.#poserRapport(GENERATION_ETATS.rejouee, {
+    return this.#rapportDe(GENERATION_ETATS.rejouee, {
       octetsEcartes: Math.max(0, chargePresente - racine.longueurCharge),
       enregistrementsRejoues: enregistrements,
       octetsRejoues: racine.longueurCharge,
     });
   }
 
-  /**
-   * AUCUNE racine ne fait autorité. Trois issues, et le remède dépend de ce qui manque.
-   *
-   * @param {{ abimees: number, chargePresente: number }} constat
-   * @returns {Promise<object>} le rapport à publier
-   */
-  async #recupererSansRacine({ abimees, chargePresente }) {
-    // Au moins une racine ABÎMÉE : on ne sait pas ce qui a été validé. Écarter serait peut-être
-    // juste — et peut-être une perte d'écriture acquittée. Le refus est le seul état qui ne ment
-    // pas. C'est la même règle que pour une charge scellée devenue incohérente : pas de réparation
-    // par devinette.
-    if (abimees > 0) {
-      throw generationRootCorrupt(this.#volume, { abimees, octets: chargePresente });
-    }
-    // Journal VIERGE et vide : il n'y a RIEN à faire, et surtout rien à écrire. Une ouverture qui
-    // écrirait ici ferait échouer un export sur un support saturé — c'est-à-dire le geste même par
-    // lequel l'utilisateur libère de la place. La racine initiale sera écrite au premier dépôt,
-    // c'est-à-dire quand une écriture aura réellement lieu.
-    if (chargePresente === 0) return this.#poserRapport(GENERATION_ETATS.aucune, {});
-    // Racines vierges au-dessus d'octets : rien n'a jamais été validé dans ce journal, et ce qui
-    // traîne est le reliquat d'une génération déposée puis interrompue. Il est ÉCARTÉ — le volume,
-    // lui, est intact.
-    await this.#vider({ sequence: 0, generation: 0 });
-    return this.#poserRapport(GENERATION_ETATS.ecartee, { octetsEcartes: chargePresente });
-  }
-
-  /** Refus TYPÉ d'une charge scellée devenue incohérente. Un doute est un refus, jamais un remède. */
-  #chargeIncoherente(racine, reason) {
-    return generationCorrupt(this.#volume, { generation: racine.generation, reason });
-  }
-
-  /** Refus TYPÉ d'une charge que le journal ne porte plus entièrement. */
-  #chargeTronquee(racine, disponible) {
-    return this.#chargeIncoherente(
-      racine,
-      `la charge annonce ${racine.longueurCharge} octet(s), le journal n'en rend que ${disponible}.`,
-    );
-  }
-
-  /** Vérifie ce que la racine SCELLE : le compte des enregistrements, puis la somme de contrôle. */
-  #verifierSceau(racine, enregistrements, somme) {
-    if (enregistrements !== racine.enregistrements) {
-      throw this.#chargeIncoherente(
-        racine,
-        `la racine annonce ${racine.enregistrements} enregistrement(s), la charge en porte ${enregistrements}.`,
-      );
-    }
-    if (somme !== racine.sommeCharge) {
-      throw this.#chargeIncoherente(
-        racine,
-        "la somme de contrôle de la charge ne concorde pas avec celle que la racine scelle.",
-      );
-    }
-  }
-
-  /**
-   * Parcourt la charge d'une racine, ENREGISTREMENT PAR ENREGISTREMENT, et la refuse si elle ne
-   * tient pas.
-   *
-   * Le parcours ne tient jamais plus qu'un tampon de `TAMPON_RELECTURE_OCTETS` : la somme de
-   * contrôle est déjà incrémentale, et un enregistrement plus grand que le tampon est lu par
-   * tranches. C'est le même régime que l'export et la restauration (`docs/quality-attributes.md` :
-   * surmémoire de streaming ≤ 64 Mio), que la récupération ne tenait pas — elle lisait la charge
-   * d'un seul tenant, soit ~128 Mio au plafond avec les tranches rejouées (#91).
-   *
-   * Le refus reste ferme : une génération VALIDÉE dont les octets manquent ou ne concordent plus
-   * n'est pas réparable par déduction. La rejouer à moitié écrirait dans le volume des octets dont
-   * personne ne sait s'ils forment un état cohérent ; l'ignorer perdrait une écriture acquittée.
-   * Reste à le dire, avec un code que l'exploitant peut chercher.
-   *
-   * @param {object} racine descripteur scellé de la charge
-   * @param {((offset: number, octets: Uint8Array) => unknown) | null} [emettre] appelé pour chaque
-   *   tranche, avec l'offset du VOLUME où elle va. Le tampon lui est PRÊTÉ : il est réécrit dès la
-   *   tranche suivante, et le retenir serait une faute.
-   * @returns {number} le nombre d'enregistrements parcourus
-   */
-  #parcourirCharge(racine, emettre = null) {
-    const fenetre = fenetreDeCharge({
-      tampon: this.#allouer(this.#tailleTampon(racine)),
-      longueurCharge: racine.longueurCharge,
-      lire: (cible, position) => this.#lireJournalDans(cible, ZONE_ENREGISTREMENTS + position),
+  #rapportDe(etat, details) {
+    return poserRapport({
+      volume: this.#volume,
+      etat,
+      generation: this.#generation,
+      sequence: this.#sequence,
+      surmemoireMax: this.#journal.surmemoireMax,
+      details,
     });
-    let position = 0;
-    let enregistrements = 0;
-    let somme = 0;
-
-    while (position < racine.longueurCharge) {
-      const entete = fenetre.tranche(position, ENTETE_OCTETS, ENTETE_OCTETS);
-      if (entete.byteLength < ENTETE_OCTETS) throw this.#chargeTronquee(racine, fenetre.fin());
-      const decode = decoderEnteteEnregistrement(entete, { tailleVolume: this.#tailleVolume });
-      if (decode === null || position + ENTETE_OCTETS + decode.longueur > racine.longueurCharge) {
-        throw this.#chargeIncoherente(
-          racine,
-          `enregistrement illisible à l'octet ${position} d'une charge pourtant scellée.`,
-        );
-      }
-      // L'en-tête entre dans la somme AVANT qu'un rechargement ne déplace la fenêtre.
-      somme = crc32(entete, somme);
-      position += ENTETE_OCTETS;
-      for (let porte = 0; porte < decode.longueur;) {
-        const tranche = fenetre.tranche(position + porte, decode.longueur - porte);
-        if (tranche.byteLength === 0) throw this.#chargeTronquee(racine, fenetre.fin());
-        somme = crc32(tranche, somme);
-        if (emettre !== null) emettre(decode.offset + porte, tranche);
-        porte += tranche.byteLength;
-      }
-      position += decode.longueur;
-      enregistrements += 1;
-    }
-
-    this.#verifierSceau(racine, enregistrements, somme);
-    return enregistrements;
   }
 
-  /** Un tampon plus grand que la charge ne servirait à rien ; plus petit qu'un en-tête, à rien non plus. */
-  #tailleTampon(racine) {
-    return Math.max(ENTETE_OCTETS, Math.min(racine.longueurCharge, TAMPON_RELECTURE_OCTETS));
+  #parcourirCharge(racine, emettre = null) {
+    return parcourirCharge({
+      journal: this.#journal,
+      volume: this.#volume,
+      tailleVolume: this.#tailleVolume,
+      racine,
+      emettre,
+    });
   }
 
   /**
@@ -545,27 +270,6 @@ export class GenerationStore {
     const enregistrements = this.#parcourirCharge(racine);
     this.#parcourirCharge(racine, (offset, octets) => this.#ecrireVolume(offset, octets));
     return enregistrements;
-  }
-
-  #poserRapport(etat, details) {
-    return Object.freeze({
-      volume: this.#volume,
-      etat,
-      code: etat === GENERATION_ETATS.ecartee ? STORAGE_ERROR_CODES.generationDiscarded : null,
-      generation: this.#generation,
-      sequence: this.#sequence,
-      racineOffset: offsetDeRacine(racineDeSequence(this.#sequence)),
-      prochaineRacineOffset: offsetDeRacine(racineDeSequence(this.#sequence + 1)),
-      octetsEcartes: 0,
-      enregistrementsRejoues: 0,
-      octetsRejoues: 0,
-      // SURMÉMOIRE DE POINTE de la récupération, en octets : la plus grande allocation qu'elle a
-      // faite pour elle-même. Publiée pour la même raison que l'export et la restauration publient
-      // la leur (`docs/quality-attributes.md`) — un budget qu'on ne mesure pas n'est pas tenu, il
-      // est supposé. Elle ne suit PAS la taille de la charge : le tampon de relecture est constant.
-      surmemoireMaxOctets: this.#surmemoireMax,
-      ...details,
-    });
   }
 
   // ----------------------------------------------------------------- gestes
@@ -600,8 +304,8 @@ export class GenerationStore {
 
     const entete = encoderEnteteEnregistrement({ offset: debut, longueur: charge.byteLength });
     const position = ZONE_ENREGISTREMENTS + this.#longueurCharge;
-    this.#ecrireJournal(position, entete);
-    this.#ecrireJournal(position + ENTETE_OCTETS, charge);
+    this.#journal.ecrire(position, entete);
+    this.#journal.ecrire(position + ENTETE_OCTETS, charge);
     this.#sommeCharge = crc32(charge, crc32(entete, this.#sommeCharge));
     this.#longueurCharge += ajout;
     this.#enregistrements += 1;
@@ -628,7 +332,7 @@ export class GenerationStore {
     for (let secteur = debut; secteur < fin; secteur += SECTOR_SIZE) {
       const position = this.#index.get(secteur);
       if (position === undefined) continue;
-      tampon.set(this.#lireJournal(position, SECTOR_SIZE), secteur - debut);
+      tampon.set(this.#journal.lire(position, SECTOR_SIZE), secteur - debut);
     }
     return tampon.subarray(offset - debut, offset - debut + longueur);
   }
@@ -652,7 +356,7 @@ export class GenerationStore {
       if (position === undefined) continue;
       const depuis = Math.max(offset, secteur);
       const jusque = Math.min(fin, secteur + SECTOR_SIZE);
-      const octets = this.#lireJournal(position + (depuis - secteur), jusque - depuis);
+      const octets = this.#journal.lire(position + (depuis - secteur), jusque - depuis);
       tampon.set(octets, depuis - offset);
     }
     return tampon;
@@ -671,13 +375,13 @@ export class GenerationStore {
       // demandé une durabilité, et lui répondre « oui » sans rien demander au support serait
       // exactement l'acquittement anticipé que `SEC-DURABLE-001` refuse — un support qui ne peut plus
       // écrire resterait alors invisible jusqu'à la prochaine écriture.
-      await this.#barriereJournal();
+      await this.#journal.barriere();
       return this.#generation;
     }
     // La charge AVANT la racine : sans cette barrière, un support pourrait rendre la racine durable
     // avant les octets qu'elle scelle, et la relecture refuserait une génération que rien n'obligeait
     // à perdre.
-    await this.#barriereJournal();
+    await this.#journal.barriere();
 
     // La racine est écrite AVANT que la mémoire n'enregistre quoi que ce soit. L'ordre décide d'un
     // cas réel : si le support refuse la racine — quota, handle perdu —, la barrière du guest échoue
@@ -711,8 +415,8 @@ export class GenerationStore {
 
   async #ecrireRacine(descripteur) {
     const racine = encoderRacine({ ...descripteur, tailleVolume: this.#tailleVolume });
-    this.#ecrireJournal(offsetDeRacine(racineDeSequence(descripteur.sequence)), racine);
-    await this.#barriereJournal();
+    this.#journal.ecrire(offsetDeRacine(racineDeSequence(descripteur.sequence)), racine);
+    await this.#journal.barriere();
   }
 
   /** Vrai si la charge validée mérite d'être rangée dans le volume dès maintenant. */
@@ -785,7 +489,7 @@ export class GenerationStore {
       longueurCharge: 0,
       sommeCharge: 0,
     });
-    this.#handle.truncate(ZONE_ENREGISTREMENTS);
+    this.#journal.tronquer(ZONE_ENREGISTREMENTS);
     this.#sequence = suivante;
     this.#generation = generation;
     this.#sequenceValidee = suivante;
@@ -793,6 +497,6 @@ export class GenerationStore {
 
   /** Ferme le journal. La charge validée non rangée reste dans le fichier : elle est durable. */
   close() {
-    this.#handle.close();
+    this.#journal.close();
   }
 }

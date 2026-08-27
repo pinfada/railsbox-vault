@@ -13,32 +13,22 @@
 // Le backend ne connaît pas OPFS : il reçoit un ouvreur de handle. C'est ce qui permet aux tests
 // unitaires de rejouer quota, handle perdu et écriture partielle sur un double déterministe, et au
 // Worker navigateur d'exécuter exactement le même code sur le vrai support.
+//
+// Deux voisins portent ce qui n'est pas une décision d'E/S, et `openOpfsVolume` est réexporté ici
+// pour que les appelants n'aient rien à changer : `opfs-backend-support.mjs` traduit chaque
+// sollicitation du support en état contractuel, `opfs-volume-ouverture.mjs` établit géométrie,
+// exclusivité et génération récupérée.
 
-import {
-  SECTOR_SIZE,
-  V86_BLOCK_SIZE,
-  assertBlockGeometry,
-  isBlockGeometry,
-} from "./block-geometry.mjs";
-import { BlockJournal, JOURNAL_OPERATIONS } from "./block-journal.mjs";
-import { FAULT_KINDS, createFaultPlan } from "./fault-plan.mjs";
+import { SECTOR_SIZE, V86_BLOCK_SIZE } from "./block-geometry.mjs";
+import { JOURNAL_OPERATIONS } from "./block-journal.mjs";
+import { FAULT_KINDS } from "./fault-plan.mjs";
+import { AccesSupport } from "./opfs-backend-support.mjs";
 import { readCountFailure, toStorageError, writeCountFailure } from "./opfs-error-mapping.mjs";
-import { GenerationStore } from "./generation-store.mjs";
-import { generationJournalName, openOpfsSyncAccess } from "./opfs-sync-access.mjs";
-import {
-  STORAGE_ERROR_CODES,
-  StorageError,
-  geometryMismatch,
-  outOfRange,
-} from "./storage-errors.mjs";
+import { libererVolume } from "./opfs-volume-registry.mjs";
+import { STORAGE_ERROR_CODES, StorageError, outOfRange } from "./storage-errors.mjs";
 
 export { SECTOR_SIZE, V86_BLOCK_SIZE };
-
-/**
- * Volumes ouverts dans ce contexte. OPFS refuse déjà un second handle exclusif — la table sert à
- * rendre le refus IMMÉDIAT et nommé, avant d'aller déranger le support.
- */
-const openVolumes = new Map();
+export { openOpfsVolume } from "./opfs-volume-ouverture.mjs";
 
 /** Octets réellement traités par une faute programmée, sans jamais dépasser la demande. */
 function faultBytes(fault, requested) {
@@ -48,7 +38,7 @@ function faultBytes(fault, requested) {
 
 export class OpfsBlockBackend {
   #name;
-  #handle;
+  #acces;
   #size;
   #journal;
   #faults;
@@ -57,14 +47,12 @@ export class OpfsBlockBackend {
   #rangement = null;
   #rangementEnCours = null;
   #dureeRangementMaxMs = 0;
-  #closed = false;
-  #handleLost = false;
   #barrier = 0;
 
   /** Utiliser `openOpfsVolume` : le constructeur ne garantit ni géométrie ni exclusivité. */
   constructor({ name, handle, size, journal, faults, flushDelay, generation = null }) {
     this.#name = name;
-    this.#handle = handle;
+    this.#acces = new AccesSupport({ volume: name, handle, journal });
     this.#size = size;
     this.#journal = journal;
     this.#faults = faults;
@@ -98,10 +86,7 @@ export class OpfsBlockBackend {
    */
   lireSupportBrut(offset, longueur) {
     const cible = new Uint8Array(longueur);
-    const obtenus = this.#support("read", () => this.#handle.read(cible, { at: offset }), {
-      offset,
-      length: longueur,
-    });
+    const obtenus = this.#acces.lire(cible, offset, { offset, length: longueur });
     const echec = readCountFailure(obtenus, { requested: longueur, volume: this.#name, offset });
     if (echec !== null) throw echec;
     return cible;
@@ -109,7 +94,7 @@ export class OpfsBlockBackend {
 
   /** Écrit dans le volume au nom du magasin. Un compte inexact reste un échec typé (#73). */
   ecrireSupportBrut(offset, octets) {
-    const acceptes = this.#support("write", () => this.#handle.write(octets, { at: offset }), {
+    const acceptes = this.#acces.ecrire(octets, offset, {
       offset,
       length: octets.byteLength,
     });
@@ -123,7 +108,7 @@ export class OpfsBlockBackend {
 
   /** Barrière du volume, franchie par le point de contrôle. Elle n'acquitte rien au guest. */
   barriereSupportBrute() {
-    return this.#awaitSupport("flush", () => this.#handle.flush());
+    return this.#acces.barriere();
   }
 
   get name() {
@@ -159,23 +144,6 @@ export class OpfsBlockBackend {
     });
   }
 
-  #assertUsable() {
-    if (this.#closed) {
-      throw new StorageError(
-        STORAGE_ERROR_CODES.closed,
-        `Volume « ${this.#name} » fermé : plus aucune E/S n'est acceptée.`,
-        { volume: this.#name },
-      );
-    }
-    if (this.#handleLost) {
-      throw new StorageError(
-        STORAGE_ERROR_CODES.handleLost,
-        `Handle exclusif du volume « ${this.#name} » perdu : le support ne répond plus.`,
-        { volume: this.#name },
-      );
-    }
-  }
-
   #assertRange(offset, length) {
     if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(length) || length < 0) {
       throw new RangeError(`Plage invalide : offset=${offset} length=${length}.`);
@@ -185,63 +153,9 @@ export class OpfsBlockBackend {
     }
   }
 
-  /** Traduit un échec du support en état contractuel, marque le handle perdu et le journalise. */
-  #mapSupportFailure(cause, operation, details) {
-    const typed = toStorageError(cause, { operation, volume: this.#name, ...details });
-    if (typed.code === STORAGE_ERROR_CODES.handleLost) this.#handleLost = true;
-    this.#journal.record(JOURNAL_OPERATIONS.failure, {
-      code: typed.code,
-      message: typed.message,
-      source: operation,
-    });
-    return typed;
-  }
-
-  /** Appelle le support SYNCHRONE et traduit tout échec en état contractuel. Rien n'est avalé. */
-  #support(operation, action, details = {}) {
-    try {
-      return action();
-    } catch (cause) {
-      throw this.#mapSupportFailure(cause, operation, details);
-    }
-  }
-
-  /**
-   * Appelle le support et ATTEND sa résolution avant de rendre la main. Réservé à la barrière : elle
-   * est la seule opération dont le guest doit attendre l'aboutissement RÉEL, parce que son
-   * acquittement vaut promesse de durabilité (`SEC-DURABLE-001`). Un `FileSystemSyncAccessHandle`
-   * réel rend `undefined` de façon synchrone — `await undefined` ne coûte alors qu'une microtâche —,
-   * mais attendre garantit qu'un support dont la barrière n'a pas encore abouti n'est jamais acquitté
-   * par anticipation.
-   */
-  async #awaitSupport(operation, action, details = {}) {
-    try {
-      return await action();
-    } catch (cause) {
-      throw this.#mapSupportFailure(cause, operation, details);
-    }
-  }
-
-  /**
-   * La géométrie du support est revérifiée avant chaque E/S. Un fichier qui rétrécit sous un volume
-   * ouvert transformerait toutes les lectures suivantes en lectures courtes, sans que rien ne dise
-   * pourquoi ; `size()` ne doit pas non plus se mettre à suivre la nouvelle taille.
-   * `getSize()` est synchrone et local : le coût est celui d'un appel, pas d'une E/S.
-   */
-  #assertGeometryUnchanged(operation) {
-    const observed = this.#support(operation, () => this.#handle.getSize());
-    if (observed !== this.#size) {
-      throw geometryMismatch(this.#name, {
-        observed,
-        expected: this.#size,
-        reason: "La géométrie du support a changé pendant la session.",
-      });
-    }
-  }
-
   #applyLostHandle(fault, source, offset, length) {
     if (fault?.kind !== FAULT_KINDS.lostHandle) return;
-    this.#handleLost = true;
+    this.#acces.marquerPerdu();
     this.#journal.record(JOURNAL_OPERATIONS.fault, { kind: fault.kind, source, offset, length });
   }
 
@@ -252,16 +166,16 @@ export class OpfsBlockBackend {
    * @returns {Promise<Uint8Array>} tampon neuf, détaché du support
    */
   async read(offset, length) {
-    this.#assertUsable();
+    this.#acces.assertUtilisable();
     // Un rangement en cours va tronquer le journal et vider l'index : lire pendant qu'il court
     // rendrait un tampon superposé à partir de positions sur le point de disparaître.
     await this.#attendreRangement();
-    this.#assertUsable();
+    this.#acces.assertUtilisable();
     this.#assertRange(offset, length);
     const fault = this.#faults.consume("read");
     this.#applyLostHandle(fault, "read", offset, length);
-    this.#assertUsable();
-    this.#assertGeometryUnchanged("read");
+    this.#acces.assertUtilisable();
+    this.#acces.assertGeometrieInchangee("read", this.#size);
 
     // Une faute programmée ne truque pas le résultat après coup : elle demande RÉELLEMENT moins
     // d'octets au support, et l'erreur qui suit est produite par le même chemin qu'une vraie
@@ -277,11 +191,7 @@ export class OpfsBlockBackend {
     }
 
     const target = new Uint8Array(length);
-    const obtained = this.#support(
-      "read",
-      () => this.#handle.read(target.subarray(0, asked), { at: offset }),
-      { offset, length },
-    );
+    const obtained = this.#acces.lire(target.subarray(0, asked), offset, { offset, length });
 
     // Une valeur de retour est INTERPRÉTÉE, jamais comparée à la va-vite : un support qui rend un
     // code d'échec casté en non signé (#73) n'a pas fait une lecture courte, il n'a rien lu.
@@ -305,17 +215,17 @@ export class OpfsBlockBackend {
    * laisser « ancien état, nouvel état ou erreur explicite », jamais un mensonge.
    */
   async write(offset, bytes) {
-    this.#assertUsable();
+    this.#acces.assertUtilisable();
     await this.#attendreRangement();
-    this.#assertUsable();
+    this.#acces.assertUtilisable();
     if (!(bytes instanceof Uint8Array)) {
       throw new TypeError("Une écriture attend un Uint8Array.");
     }
     this.#assertRange(offset, bytes.byteLength);
     const fault = this.#faults.consume("write");
     this.#applyLostHandle(fault, "write", offset, bytes.byteLength);
-    this.#assertUsable();
-    this.#assertGeometryUnchanged("write");
+    this.#acces.assertUtilisable();
+    this.#acces.assertGeometrieInchangee("write", this.#size);
 
     const requested = bytes.byteLength;
     const offered =
@@ -346,7 +256,7 @@ export class OpfsBlockBackend {
    * l'erreur typée qui suit ferme la génération : elle ne sera jamais validée.
    */
   async #deposerDansGeneration(offset, offerts, requested) {
-    await this.#awaitSupport("write", () => this.#generation.deposer(offset, offerts), {
+    await this.#acces.attendre("write", () => this.#generation.deposer(offset, offerts), {
       offset,
       length: requested,
     });
@@ -364,10 +274,7 @@ export class OpfsBlockBackend {
    * entier et portent leur propre atomicité — préparation d'image, restauration (ADR 0014).
    */
   #ecrireDansLeVolume(offset, offerts, requested) {
-    const accepted = this.#support("write", () => this.#handle.write(offerts, { at: offset }), {
-      offset,
-      length: requested,
-    });
+    const accepted = this.#acces.ecrire(offerts, offset, { offset, length: requested });
 
     // Même règle qu'en lecture : `4294967288` n'est pas « plus d'octets qu'on n'en demandait »,
     // c'est `FILE_ERROR_NO_SPACE` casté en non signé sur 32 bits (#73). L'écriture partielle et le
@@ -387,13 +294,13 @@ export class OpfsBlockBackend {
    * @returns {Promise<number>} numéro de la barrière ouverte
    */
   async #ouvrirBarriere() {
-    this.#assertUsable();
+    this.#acces.assertUtilisable();
     await this.#attendreRangement();
-    this.#assertUsable();
+    this.#acces.assertUtilisable();
     const fault = this.#faults.consume("flush");
     this.#applyLostHandle(fault, "flush", 0, 0);
-    this.#assertUsable();
-    this.#assertGeometryUnchanged("flush");
+    this.#acces.assertUtilisable();
+    this.#acces.assertGeometrieInchangee("flush", this.#size);
 
     const barrier = this.#barrier++;
     this.#journal.record(JOURNAL_OPERATIONS.flush, { barrier });
@@ -451,19 +358,19 @@ export class OpfsBlockBackend {
     const barrier = await this.#ouvrirBarriere();
 
     try {
-      // Passer par `#awaitSupport` et non par un `try` local : c'est lui qui pose `#handleLost` et
-      // journalise la panne. Un `catch` parallèle laisserait le volume se croire sain après une
-      // perte de support découverte par la barrière. L'ATTENTE est le cœur de #14 : le `flush-ack`
-      // ne sera enregistré qu'APRÈS que la barrière du support a réellement rendu la main.
-      // Avec un magasin de générations, la barrière VALIDE la génération en cours : la charge est
-      // franchie par une barrière, puis la racine est écrite et franchie à son tour. C'est ce geste,
-      // et lui seul, qui autorise l'acquittement — `SEC-DURABLE-001` porte désormais sur une
+      // Passer par l'accès au support et non par un `try` local : c'est lui qui marque le handle
+      // perdu et journalise la panne. Un `catch` parallèle laisserait le volume se croire sain après
+      // une perte de support découverte par la barrière. L'ATTENTE est le cœur de #14 : le
+      // `flush-ack` ne sera enregistré qu'APRÈS que la barrière du support a réellement rendu la
+      // main. Avec un magasin de générations, la barrière VALIDE la génération en cours : la charge
+      // est franchie par une barrière, puis la racine est écrite et franchie à son tour. C'est ce
+      // geste, et lui seul, qui autorise l'acquittement — `SEC-DURABLE-001` porte désormais sur une
       // génération entière, pas sur des écritures isolées.
-      await this.#awaitSupport(
-        "flush",
-        () => (this.#generation === null ? this.#handle.flush() : this.#generation.valider()),
-        { barrier },
-      );
+      if (this.#generation === null) {
+        await this.#acces.barriere({ barrier });
+      } else {
+        await this.#acces.attendre("flush", () => this.#generation.valider(), { barrier });
+      }
     } catch (typed) {
       throw this.#echecDeBarriere(typed, barrier);
     }
@@ -524,7 +431,7 @@ export class OpfsBlockBackend {
       });
     } catch (cause) {
       const typed = toStorageError(cause, { operation: "checkpoint", volume: this.#name });
-      if (typed.code === STORAGE_ERROR_CODES.handleLost) this.#handleLost = true;
+      if (typed.code === STORAGE_ERROR_CODES.handleLost) this.#acces.marquerPerdu();
       this.#rangement = typed.toJSON();
       this.#journal.record(JOURNAL_OPERATIONS.failure, {
         code: typed.code,
@@ -554,9 +461,9 @@ export class OpfsBlockBackend {
    * pour qu'un support récalcitrant ne bloque pas définitivement le nom.
    */
   async close() {
-    if (this.#closed) return;
-    this.#closed = true;
-    openVolumes.delete(this.#name);
+    if (this.#acces.ferme) return;
+    this.#acces.marquerFerme();
+    libererVolume(this.#name);
     this.#journal.record(JOURNAL_OPERATIONS.close, { volume: this.#name });
 
     // Une fermeture PROPRE range la génération validée dans le volume : l'export (#11), la
@@ -577,215 +484,10 @@ export class OpfsBlockBackend {
 
     try {
       this.#generation?.close();
-      this.#handle.close();
+      this.#acces.fermer();
     } catch (cause) {
       throw rangement ?? toStorageError(cause, { operation: "close", volume: this.#name });
     }
     if (rangement !== null) throw rangement;
-  }
-}
-
-/** Ferme un handle après une ouverture ratée, sans jamais masquer l'erreur d'origine. */
-function abandonHandle(handle, name, original) {
-  try {
-    handle.close();
-  } catch (cause) {
-    return new StorageError(
-      STORAGE_ERROR_CODES.supportFailure,
-      `${original.message} La fermeture de secours du volume « ${name} » a elle aussi échoué : ${cause?.name ?? cause}.`,
-      { volume: name, initial: original.code, cause: cause?.name ?? "Error" },
-    );
-  }
-  return original;
-}
-
-/**
- * Résout la géométrie de la session à partir de la taille déclarée et de celle du fichier.
- * Un fichier vide est alloué ; un fichier existant impose sa taille et n'est jamais retaillé.
- */
-function resolveGeometry({ name, declared, observed }) {
-  if (observed === 0) {
-    if (declared === undefined) {
-      throw geometryMismatch(name, {
-        observed,
-        expected: null,
-        reason: "Volume absent ou vide et aucune géométrie déclarée : rien à ouvrir.",
-      });
-    }
-    return { size: declared, allocate: true };
-  }
-  if (declared !== undefined && declared !== observed) {
-    throw geometryMismatch(name, {
-      observed,
-      expected: declared,
-      reason: "Un volume existant n'est jamais retaillé en silence ; exporter puis migrer.",
-    });
-  }
-  if (!isBlockGeometry(observed)) {
-    throw geometryMismatch(name, {
-      observed,
-      expected: null,
-      reason: `Le volume existant n'est pas un multiple de ${SECTOR_SIZE} octets.`,
-    });
-  }
-  return { size: observed, allocate: false };
-}
-
-/**
- * Ouvre un volume OPFS en exclusivité.
- *
- * @param {{ name?: string, size?: number, journal?: BlockJournal,
- *           faults?: import("./fault-plan.mjs").FaultPlan, flushDelay?: number,
- *           openHandle?: (name: string) => Promise<FileSystemSyncAccessHandle> }} options
- *   `size` est facultative : à la réouverture, la géométrie est RELUE du fichier au lieu d'être
- *   supposée. Fournie, elle doit correspondre exactement.
- *   `openHandle` est le point d'injection du support : le vrai OPFS en production, un double
- *   déterministe dans les tests unitaires.
- * @returns {Promise<OpfsBlockBackend>}
- */
-export async function openOpfsVolume({
-  name = "vault",
-  size,
-  journal = new BlockJournal(),
-  faults = createFaultPlan(),
-  flushDelay = 0,
-  openHandle = openOpfsSyncAccess,
-  transactionnel = true,
-  seuilPointDeControle,
-} = {}) {
-  if (openVolumes.has(name)) {
-    throw new StorageError(
-      STORAGE_ERROR_CODES.busy,
-      `Le volume « ${name} » est déjà ouvert en exclusivité dans ce contexte.`,
-      { volume: name },
-    );
-  }
-  if (size !== undefined) assertBlockGeometry(size);
-
-  const { handle, geometry } = await saisirSupport({ name, size, openHandle });
-
-  const backend = new OpfsBlockBackend({
-    name,
-    handle,
-    size: geometry.size,
-    journal,
-    faults,
-    flushDelay,
-  });
-
-  if (transactionnel) {
-    await installerGenerationOuFermer(backend, {
-      name,
-      size: geometry.size,
-      openHandle,
-      seuilPointDeControle,
-    });
-  }
-
-  openVolumes.set(name, backend);
-  return backend;
-}
-
-/**
- * SAISIT le support : handle exclusif, géométrie relue puis confrontée à celle qui est déclarée,
- * allocation si le volume naît. L'ouvreur peut être le vrai OPFS, qui rend déjà des erreurs typées,
- * ou un double qui rend des `DOMException` brutes : les deux passent par la même traduction. Chaque
- * refus survenant APRÈS l'ouverture rend le handle, sans quoi le fichier resterait verrouillé par
- * un volume que personne ne détient.
- */
-async function saisirSupport({ name, size, openHandle }) {
-  let handle;
-  try {
-    handle = await openHandle(name);
-  } catch (cause) {
-    throw toStorageError(cause, { operation: "open", volume: name });
-  }
-
-  let observed;
-  try {
-    observed = handle.getSize();
-  } catch (cause) {
-    throw abandonHandle(handle, name, toStorageError(cause, { operation: "size", volume: name }));
-  }
-
-  let geometry;
-  try {
-    geometry = resolveGeometry({ name, declared: size, observed });
-  } catch (error) {
-    throw abandonHandle(handle, name, error);
-  }
-
-  if (geometry.allocate) {
-    try {
-      handle.truncate(geometry.size);
-    } catch (cause) {
-      throw abandonHandle(
-        handle,
-        name,
-        toStorageError(cause, { operation: "allocate", volume: name, length: geometry.size }),
-      );
-    }
-  }
-
-  return { handle, geometry };
-}
-
-/**
- * Installe le magasin de générations sur un backend déjà construit, ou REFERME ce backend : un
- * refus de génération ne doit pas laisser le nom occupé par un volume que personne ne détient.
- */
-async function installerGenerationOuFermer(
-  backend,
-  { name, size, openHandle, seuilPointDeControle },
-) {
-  try {
-    backend.installerGeneration(
-      await ouvrirGeneration({ name, size, backend, openHandle, seuilPointDeControle }),
-    );
-  } catch (cause) {
-    await backend.close().catch(() => {});
-    throw cause;
-  }
-}
-
-/**
- * Ouvre le journal de génération voisin et RÉCUPÈRE. C'est ici que se joue la promesse de #16 : au
- * retour, le volume porte la dernière génération VALIDÉE, et rien d'autre.
- */
-async function ouvrirGeneration({ name, size, backend, openHandle, seuilPointDeControle }) {
-  const nomJournal = generationJournalName(name);
-  let handle;
-  try {
-    handle = await openHandle(nomJournal);
-  } catch (cause) {
-    throw toStorageError(cause, { operation: "open-generation", volume: name });
-  }
-  try {
-    return await ouvrirMagasin({ name, size, backend, handle, seuilPointDeControle });
-  } catch (cause) {
-    try {
-      handle.close();
-    } catch {
-      // La fermeture de secours ne doit jamais masquer la raison du refus.
-    }
-    throw cause;
-  }
-}
-
-async function ouvrirMagasin({ name, size, backend, handle, seuilPointDeControle }) {
-  try {
-    return await GenerationStore.ouvrir({
-      volume: name,
-      handle,
-      tailleVolume: size,
-      lireVolume: (offset, longueur) => backend.lireSupportBrut(offset, longueur),
-      ecrireVolume: (offset, octets) => backend.ecrireSupportBrut(offset, octets),
-      barriereVolume: () => backend.barriereSupportBrute(),
-      seuilPointDeControle,
-    });
-  } catch (cause) {
-    // Un échec du SUPPORT pendant la récupération — quota, handle perdu — reste un état contractuel
-    // nommé. Les refus propres au journal (`VAULT_STORAGE_GENERATION_*`) traversent tels quels.
-    throw toStorageError(cause, { operation: "recover-generation", volume: name });
   }
 }

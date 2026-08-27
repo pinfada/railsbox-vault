@@ -102,6 +102,11 @@ module privé, ce qui est du travail découvert et non le périmètre de #12.
 | `public/vm/opfs-runtime-worker.mjs` (5 sites) | banc du backend de blocs #6 : aucun volume applicatif              |
 | `public/vm/runtime-worker.mjs` (3 sites)      | bancs de barrière #4/#14 : aucun volume applicatif                 |
 
+Renvoi : #93 a scindé `public/vm/reference-worker.mjs`, arrivé au plafond de 800 lignes du dépôt ;
+`phasePrepare` et `phasePrepareEmpty` vivent désormais dans `reference-worker-phases-volume.mjs`,
+`phaseExportVolume` dans `reference-worker-phases-archive.mjs` et `phaseDigestVolume` dans
+`reference-worker-phases-volume.mjs`. Les appels eux-mêmes sont inchangés.
+
 C'est ce qui donne leur portée aux gestes 4 et 7. Une restauration interrompue — onglet fermé, quota
 atteint, support perdu — laisse une cible sans voisin ; le boot suivant est refusé par
 `VAULT_MANIFEST_UNIDENTIFIED` **avant** que v86 ne démarre et que Rails ne monte un système de
