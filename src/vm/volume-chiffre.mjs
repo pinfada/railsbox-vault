@@ -147,9 +147,15 @@ export class VolumeChiffre {
   /**
    * Scelle une plage de secteurs sous `generation` et l'écrit. La charge d'abord, les sceaux
    * ensuite : voir l'en-tête de ce fichier.
+   *
+   * `octetsAcceptes` modélise une écriture DÉCHIRÉE : les secteurs sont scellés entiers, mais seuls
+   * les premiers octets du chiffré atteignent le support, et les sceaux ne sont pas écrits du tout.
+   * C'est ce que #15 injecte, et le résultat est un secteur REFUSÉ à la relecture — jamais un
+   * secteur à moitié plausible.
    */
-  async ecrireSecteurs(adresse, octets, generation) {
+  async ecrireSecteurs(adresse, octets, generation, { octetsAcceptes = null } = {}) {
     this.#exigerAlignement(adresse, octets.byteLength);
+    const acceptes = octetsAcceptes ?? octets.byteLength;
     const { secteurs } = await this.#scellement.rescellerEnSecteurs({
       adresse,
       contenu: octets,
@@ -168,6 +174,10 @@ export class VolumeChiffre {
         }),
         index * SCEAU_OCTETS,
       );
+    }
+    if (acceptes < charge.byteLength) {
+      this.#ecrireSupport(offsetDeCharge(this.#disposition, adresse), charge.subarray(0, acceptes));
+      return;
     }
     this.#ecrireSupport(offsetDeCharge(this.#disposition, adresse), charge);
     this.#ecrireSupport(offsetDeSceau(this.#disposition, adresse), sceaux);
