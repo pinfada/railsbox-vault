@@ -6,11 +6,13 @@ import {
   ALGORITHME,
   BUDGET_SCELLEMENTS_PAR_CLE,
   GENERATION_MAX,
+  ETIQUETTE_DOMAINE_ENTREES,
   IDENTIFIANT_VOLUME_OCTETS,
   LIMITE_NIST_INVOCATIONS,
   NONCE_OCTETS,
   RANG_MAX,
   encoderEnteteRacine,
+  encoderEntrees,
   encoderIdentiteBloc,
   identifiantVolumeEnTexte,
   tirerNonce,
@@ -225,4 +227,29 @@ test("la conversion de l'identifiant de volume est FIXÉE : seize octets vers tr
       `un identifiant de ${longueur} octets doit être refusé`,
     );
   }
+});
+
+test("l'encodage des entrées tient une génération AU PLAFOND, sans déborder la pile d'appel", () => {
+  // Défaut trouvé par EXÉCUTION, sur `tests/vm/recuperation-generation.spec.mjs` : l'encodage
+  // canonique assemblait ses morceaux par `concatener(...morceaux)`, et le nombre de morceaux suit
+  // le NOMBRE D'ENTRÉES d'une génération. Au plafond de charge de l'ADR 0014 — 64 Mio, soit
+  // jusqu'à 131 072 enregistrements de 512 octets —, l'étalement fait plus d'un demi-million
+  // d'arguments et le moteur rend « Maximum call stack size exceeded » au milieu d'une récupération
+  // que rien n'annonçait comme démesurée.
+  //
+  // C'est une limite du MODÈLE, que l'ADR 0015 nommait sans la chiffrer (« le modèle n'a aucune
+  // borne mémoire »). Elle est ici bornée par une épreuve plutôt que par une phrase. Les octets
+  // produits n'ont pas changé — les vecteurs figés le vérifient de leur côté.
+  const entrees = Array.from({ length: 131072 }, (_, rang) => ({
+    adresse: rang * 512,
+    longueur: 512,
+    rang,
+    etiquette: new Uint8Array(16),
+  }));
+
+  const encode = encoderEntrees(entrees);
+  // Taille attendue, calculée et non relevée : préfixe de domaine (2 + 38), compte (4), puis
+  // 8 + 4 + 8 + 16 par entrée.
+  const domaine = 2 + new TextEncoder().encode(ETIQUETTE_DOMAINE_ENTREES).byteLength;
+  assert.equal(encode.byteLength, domaine + 4 + entrees.length * 36);
 });
