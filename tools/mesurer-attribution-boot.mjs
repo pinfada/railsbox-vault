@@ -14,6 +14,12 @@
 // `200` de `/vault/health`. Un jalon jamais atteint reste `null` — il n'est
 // jamais interpolé, et l'essai le dit.
 //
+// LA CAMPAGNE DOIT TOURNER SEULE. Une construction Docker lancée pendant une
+// campagne fausse les essais qu'elle recouvre — constaté sur le premier relevé
+// de #66, où deux essais ont été mesurés pendant un `npm run app:test` et ont dû
+// être jetés. L'émulateur v86 tient sur un seul fil d'exécution : ce n'est pas
+// le nombre de cœurs qui le protège, c'est l'absence de concurrent.
+//
 // TROIS BIAIS CONNUS, à ne pas oublier en lisant les chiffres :
 //
 //   1. le jalon « Puma prêt » vient de `puma.log`, que le pont série relit
@@ -27,14 +33,20 @@
 //      l'écart est petit — mais ce banc ne mesure pas la même chose que le banc
 //      navigateur, et ses totaux ne s'y substituent pas.
 //
+// PROTOCOLE. Un essai = un PROCESSUS NODE NEUF (voir
+// `mesurerDansUnProcessusNeuf` pour la mesure qui l'a imposé). Le parent
+// enchaîne les essais, agrège, et publie p50, p95, min, max et l'étendue.
+//
 // USAGE
 //   node tools/mesurer-attribution-boot.mjs --essais=5 --etiquette=avant
 //
 // Le rapport est écrit dans `reports/perf/attribution-<etiquette>.json`.
+import { spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { cpus, totalmem } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { validerManifeste } from "./build-reference-image/manifest-contract.mjs";
 import {
@@ -48,6 +60,9 @@ const DOSSIER_RAPPORTS = join(RACINE_DEPOT, "reports", "perf");
 const BUDGET_MS = Number.parseInt(process.env.VAULT_VM_BUDGET_MS ?? "1200000", 10);
 const INTERVALLE_SONDE_MS = 5_000;
 const PAUSE_ENTRE_ESSAIS_MS = 5_000;
+
+/** Préfixe de la ligne par laquelle un essai isolé rend son relevé au parent. */
+const PREFIXE_RELEVE = "@ATTRIBUTION ";
 
 /**
  * Jalons cherchés dans le flux série, dans l'ordre où le guest les produit.
@@ -98,7 +113,12 @@ const JALONS_SERIE = [
  * @type {{ clef: string, de: string | null, a: string, libelle: string }[]}
  */
 const ETAPES = [
-  { clef: "instanciationV86", de: null, a: "instanciationMs", libelle: "instanciation v86 + WASM" },
+  {
+    clef: "instanciationV86",
+    de: null,
+    a: "instanciationMs",
+    libelle: "chargement du module v86, WebAssembly et contrôleur IDE",
+  },
   {
     clef: "bios",
     de: "instanciationMs",
@@ -134,17 +154,19 @@ const ETAPES = [
 
 /**
  * @param {string[]} arguments_
- * @returns {{ essais: number, etiquette: string, journalComplet: boolean }}
+ * @returns {{ essais: number, etiquette: string, journalComplet: boolean, essaiInterne: boolean }}
  */
 function analyserArguments(arguments_) {
   let essais = 5;
   let etiquette = "releve";
   let journalComplet = false;
+  let essaiInterne = false;
 
   for (const argument of arguments_) {
     if (argument.startsWith("--essais=")) essais = Number.parseInt(argument.slice(9), 10);
     else if (argument.startsWith("--etiquette=")) etiquette = argument.slice(12);
     else if (argument === "--journal-complet") journalComplet = true;
+    else if (argument === "--essai-interne") essaiInterne = true;
     else {
       console.error(`option inconnue : ${argument}`);
       process.exit(64);
@@ -158,7 +180,7 @@ function analyserArguments(arguments_) {
     console.error(`étiquette invalide (a-z0-9-) : ${etiquette}`);
     process.exit(64);
   }
-  return { essais, etiquette, journalComplet };
+  return { essais, etiquette, journalComplet, essaiInterne };
 }
 
 /**
@@ -301,6 +323,57 @@ function resumer(valeurs) {
 }
 
 /**
+ * Exécute UN essai dans un processus Node neuf, et en rapporte le relevé.
+ *
+ * POURQUOI UN PROCESSUS PAR ESSAI. Les essais enchaînés dans un même processus
+ * ne sont pas indépendants : `tools/vm/mesurer-boot.mjs` le documente déjà pour
+ * la mémoire — « les essais suivants du même processus héritent de la mémoire
+ * non encore rendue par le ramasse-miettes ; seul le premier essai est propre ».
+ * Un émulateur de 512 Mio par essai rend ce confond difficile à borner. On
+ * l'élimine plutôt que de le supposer négligeable : le prix est un démarrage de
+ * Node par essai, de l'ordre de 50 ms sur un total de ~90 s.
+ *
+ * CE QUE CELA NE CORRIGE PAS, et il faut le dire : le bruit de la MACHINE. Le
+ * premier relevé de #66 (cinq essais dans un même processus, sur une image
+ * inchangée) a rendu 100,7 s, 105,8 s, 128,4 s, 113,5 s et 103,6 s — une étendue
+ * de 27,7 s, soit 26 % du p50, sans dérive monotone. Aucune isolation de
+ * processus ne réduit cela : c'est pourquoi le résumé publie l'étendue à côté des
+ * percentiles, et pourquoi un écart plus petit que l'étendue ne prouve rien.
+ *
+ * @param {number} numero
+ * @param {{ etiquette: string, journalComplet: boolean }} options
+ * @returns {Promise<Record<string, any>>}
+ */
+function mesurerDansUnProcessusNeuf(numero, options) {
+  const arguments_ = ["--essai-interne", `--etiquette=${options.etiquette}`];
+  if (options.journalComplet) arguments_.push("--journal-complet");
+
+  return new Promise((resoudre, rejeter) => {
+    const enfant = spawn(process.execPath, [fileURLToPath(import.meta.url), ...arguments_], {
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+    let sortie = "";
+    enfant.stdout.setEncoding("utf8");
+    enfant.stdout.on("data", (morceau) => {
+      sortie += morceau;
+    });
+    enfant.on("error", rejeter);
+    enfant.on("close", (code) => {
+      if (code !== 0) {
+        rejeter(new Error(`l'essai ${numero} a échoué (code ${code})`));
+        return;
+      }
+      const ligne = sortie.split("\n").find((candidate) => candidate.startsWith(PREFIXE_RELEVE));
+      if (ligne === undefined) {
+        rejeter(new Error(`l'essai ${numero} n'a rendu aucun relevé`));
+        return;
+      }
+      resoudre(JSON.parse(ligne.slice(PREFIXE_RELEVE.length)));
+    });
+  });
+}
+
+/**
  * @param {number | null} millisecondes
  * @returns {string}
  */
@@ -309,29 +382,49 @@ function secondes(millisecondes) {
   return `${(millisecondes / 1000).toFixed(1).padStart(6)} s`;
 }
 
-async function principal() {
-  const options = analyserArguments(process.argv.slice(2));
-
+/**
+ * Charge le manifeste et refuse de mesurer si l'image n'est pas celle décrite.
+ *
+ * @returns {Promise<Record<string, any>>}
+ */
+async function chargerManifeste() {
   const raison = raisonDIndisponibilite();
   if (raison !== null) {
     console.error(`mesure impossible : ${raison}`);
     process.exit(1);
   }
-
   const manifeste = JSON.parse(await readFile(CHEMIN_MANIFESTE, "utf8"));
   const anomalies = validerManifeste(manifeste);
   if (anomalies.length > 0) {
     console.error(`manifeste invalide :\n${anomalies.map((a) => `  · ${a.message}`).join("\n")}`);
     process.exit(1);
   }
+  return manifeste;
+}
 
-  // Le chargement du module v86 est payé une fois, avant le premier essai :
-  // sans cela il s'ajouterait à l'essai 1 et à lui seul.
-  await import("v86");
+/**
+ * Mode enfant : un seul boot, un seul relevé rendu sur la sortie standard.
+ *
+ * @param {{ journalComplet: boolean }} options
+ */
+async function essaiIsole(options) {
+  const manifeste = await chargerManifeste();
+  const releve = await mesurerUnBoot(manifeste, options);
+  process.stdout.write(`${PREFIXE_RELEVE}${JSON.stringify(releve)}\n`);
+}
+
+async function principal() {
+  const options = analyserArguments(process.argv.slice(2));
+  if (options.essaiInterne) {
+    await essaiIsole(options);
+    return;
+  }
+
+  const manifeste = await chargerManifeste();
 
   const essais = [];
   for (let numero = 1; numero <= options.essais; numero += 1) {
-    const releve = await mesurerUnBoot(manifeste, options);
+    const releve = await mesurerDansUnProcessusNeuf(numero, options);
     essais.push({ essai: numero, ...releve });
     console.log(
       `essai ${numero}/${options.essais} : total ${secondes(releve.jalons.santeMs)} · ` +
@@ -350,6 +443,12 @@ async function principal() {
     etiquette: options.etiquette,
     mesureLe: new Date().toISOString(),
     banc: "tools/mesurer-attribution-boot.mjs",
+    protocole: {
+      essaiParProcessusNeuf: true,
+      intervalleSondeMs: INTERVALLE_SONDE_MS,
+      pauseEntreEssaisMs: PAUSE_ENTRE_ESSAIS_MS,
+      disques: "servis depuis la mémoire de Node (pas OPFS)",
+    },
     environnement: {
       node: process.versions.node,
       platform: `${process.platform} ${process.arch}`,
