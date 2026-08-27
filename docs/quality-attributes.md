@@ -567,6 +567,76 @@ fenêtre glissante avec laquelle le journal est relu ; elle est une constante du
 plafond ne la relèverait pas. Elle est **mesurée du côté du support** — la plus grande lecture qu'il
 reçoit — et non déclarée par le code qu'elle contrôle.
 
+## Ce que le format v3 coûte RÉELLEMENT (#18)
+
+L'[ADR 0015](decisions/0015-proprietes-cryptographiques-du-format.md) avait chiffré ce que le
+scellement coûterait, sur le MODÈLE et par extrapolation. #18 le mesure sur le CHEMIN DE PRODUCTION,
+et les deux chiffres ne coïncident pas — c'est précisément pourquoi la mesure valait d'être refaite.
+
+### Le scellement initial d'un volume
+
+« Un secteur jamais écrit n'existe pas en v3 » : la création d'un volume scelle TOUS ses secteurs.
+Relevé du **2026-08-28**, `node tools/mesurer-creation-v3.mjs --mio=512 --essais=2`, machine de
+développement (Windows 11, Intel i7-14700HX, Node 24.14.0). **Support en MÉMOIRE**, pour isoler le
+coût du chiffrement de celui d'OPFS, et **sous Node**, dont l'ADR 0015 a mesuré qu'il est ~2,8 fois
+plus lent par appel à `crypto.subtle` que Chromium.
+
+| Taille logique | Fichier           |     Surcoût | Secteurs scellés | Médiane sur 2 essais | Par secteur |
+| -------------- | ----------------- | ----------: | ---------------: | -------------------: | ----------: |
+| 64 Mio         | 71 565 824 o      |     6,641 % |          131 072 |               13,0 s |     99,2 µs |
+| **512 Mio**    | **572 523 008 o** | **6,641 %** |    **1 048 576** |           **87,6 s** | **83,5 µs** |
+
+**Ce que ce chiffre dit, et ce qu'il ne dit pas.** Il dit que le chemin de production coûte environ
+**1,7 fois** ce que l'ADR 0015 mesurait pour un `scellerBloc` seul sous Node (50,45 µs) : la
+différence est l'encodage du sceau, les copies de tampon et la tenue du compteur, c'est-à-dire tout
+ce qu'un modèle pur n'a pas. Il ne dit PAS ce que Chromium mettra : en appliquant le facteur 2,8 de
+l'ADR 0015 on obtiendrait ~31 s pour 512 Mio, là où l'ADR 0015 estimait 18,7 s — mais un facteur
+appliqué à une extrapolation n'est pas une mesure, et **la création d'un volume de 512 Mio sur OPFS
+réel n'a pas été chronométrée par cette tranche**. C'est un manque nommé, pas un chiffre supposé.
+
+### La récupération d'une génération, avec déchiffrement
+
+Relevé du **2026-08-28**, `npm run test:vm` (`tests/vm/recuperation-generation.spec.mjs`), OPFS réel
+sous Chromium, même machine — **pas l'environnement de référence**. Série complète dans
+`reports/vm/recuperation-generation.json`. Le protocole et les profils sont ceux de #91, à
+l'identique, pour que la comparaison ait un sens.
+
+| Charge rejouée              | Granularité          |  p50 (v2) |  p50 (v3) |  p95 (v2) |      p95 (v3) |
+| --------------------------- | -------------------- | --------: | --------: | --------: | ------------: |
+| 16 Mio (plafond)            | 64 Kio               |    282 ms |    273 ms |    453 ms |        278 ms |
+| 16 Mio (plafond)            | 4 Kio                |  1 586 ms |  2 080 ms |  1 704 ms |      3 096 ms |
+| 16 Mio (plafond)            | **512 o** (pire cas) | 11 809 ms | 13 164 ms | 24 714 ms | **17 125 ms** |
+| **64 Mio** (témoin, ancien) | **512 o**            | 51 503 ms | 68 306 ms | 59 483 ms |     75 925 ms |
+
+**Le budget de 60 s est tenu au plafond, avec plus d'un facteur trois de marge** : 17,1 s de p95 au
+pire cas contre 60 s. La conclusion de #91 — le plafond de charge à 16 Mio — n'est pas remise en
+cause ; elle est confortée, puisque le témoin à 64 Mio s'éloigne encore du budget (75,9 s de p95
+contre 59,5 s en v2, soit **+28 %**).
+
+**Les comparaisons de p95 se lisent avec l'étendue de #91 en tête.** Le p95 v2 du pire cas (24,7 s)
+avait été relevé avec une étendue intra-série de 125 % ; celui de v3 (17,1 s) tombe donc DANS
+l'étendue de la mesure précédente, et conclure « v3 est plus rapide » serait lire du bruit. Ce que
+la série établit est plus modeste et plus sûr : **le déchiffrement ne fait pas franchir le budget**,
+à aucune des trois granularités.
+
+**Le coût du chiffrement se voit là où le nombre d'enregistrements est grand**, ce qui est cohérent
+avec le facteur qui domine depuis #91 : la granularité, pas les octets. À 4 Kio la médiane monte de
+**31 %** (1,59 s → 2,08 s) ; à 512 octets de **11 %** ; à 64 Kio l'écart est dans le bruit. Chaque
+enregistrement est désormais ouvert DEUX fois — une passe de vérification, une passe de rejeu —, et
+c'est le prix de la promesse de l'ADR 0014 : la première passe ne touche pas le volume, si bien
+qu'une charge abîmée n'y laisse rien.
+
+**Une borne de surmémoire a changé de nature, et le chiffre publié ne la voit pas.** Le rapport
+continue d'annoncer 1 Mio, qui est la fenêtre glissante du journal — mesurée, elle, du côté du
+support. Mais une étiquette AES-GCM couvre un enregistrement ENTIER : ouvrir un enregistrement exige
+de tenir son chiffré et son clair en mémoire, et cette allocation-là ne passe pas par le compteur.
+La surmémoire réelle du rejeu est donc « 1 Mio + deux fois le PLUS GRAND ENREGISTREMENT ». Au
+plafond de 16 Mio, un enregistrement unique de cette taille en tiendrait 32 — sous le budget de 64
+Mio, mais plus du tout constant. C'est la limite 6 de
+l'[ADR 0016](decisions/0016-format-de-volume-v3-dispositions.md), et
+`tests/unit/vm-generation-store.test.mjs` la mesure au lieu de l'affirmer. Borner ou découper un
+enregistrement relève de #91, pas de cette tranche.
+
 ### La plus grande génération que l'image de référence produit
 
 Le plafond ne vaut que confronté à ce qu'un guest demande RÉELLEMENT entre deux barrières. Jusqu'à
