@@ -399,6 +399,52 @@ test("BORNE — au budget de scellements de la clé, sceller est refusé avant d
   );
 });
 
+test("BORNE — une séquence de racine qui ne croît pas strictement est refusée", async () => {
+  // La reprise après échec est le cas qui mord : rejouer la MÊME séquence sur une génération dont
+  // les entrées ont changé réutiliserait le nonce de la racine. Le modèle ne peut pas le voir seul —
+  // il est sans état —, mais il le refuse dès que l'appelant lui présente la séquence précédente.
+  const cle = await cleDeTest();
+  const racine = {
+    volume: VOLUME,
+    formatVersion: FORMAT,
+    sequence: 7,
+    generation: 7,
+    tailleVolume: TAILLE_VOLUME,
+    scellementsCumules: 12,
+  };
+
+  // Témoin positif : strictement au-dessus, le scellement passe.
+  await scellerRacine({ cle, racine, entrees: [], attentes: { sequencePrecedente: 6 } });
+
+  for (const sequencePrecedente of [7, 8]) {
+    await assert.rejects(
+      () => scellerRacine({ cle, racine, entrees: [], attentes: { sequencePrecedente } }),
+      (erreur) => isCryptoError(erreur, CRYPTO_ERROR_CODES.nonceReuse),
+      `une séquence 7 après ${sequencePrecedente} doit être refusée`,
+    );
+  }
+});
+
+test("BORNE — une racine sans compteur de scellements est refusée, pas comptée pour zéro", async () => {
+  const cle = await cleDeTest();
+  await assert.rejects(
+    () =>
+      scellerRacine({
+        cle,
+        racine: {
+          volume: VOLUME,
+          formatVersion: FORMAT,
+          sequence: 1,
+          generation: 1,
+          tailleVolume: TAILLE_VOLUME,
+        },
+        entrees: [],
+      }),
+    (erreur) => isCryptoError(erreur, CRYPTO_ERROR_CODES.malformed),
+    "un compteur absent rendrait le budget de clé muet",
+  );
+});
+
 test("BORNE — une clé qui n'a pas la bonne longueur est refusée, jamais complétée", async () => {
   for (const longueur of [0, 16, 31, 33]) {
     await assert.rejects(
