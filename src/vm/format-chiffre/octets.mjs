@@ -33,9 +33,22 @@ export function hexEnOctets(hex) {
   return octets;
 }
 
-/** Concatène des séquences d'octets dans l'ordre reçu. */
-export function concatener(...morceaux) {
-  const total = morceaux.reduce((somme, morceau) => somme + morceau.byteLength, 0);
+/**
+ * Concatène une LISTE de séquences d'octets, dans l'ordre.
+ *
+ * Elle existe à côté de `concatener` pour une raison trouvée par EXÉCUTION, et non par prudence :
+ * `concatener(...morceaux)` étale son argument sur la pile d'appel, et le nombre de morceaux de
+ * l'encodage canonique des entrées suit le NOMBRE D'ENREGISTREMENTS d'une génération. Au plafond de
+ * charge de l'ADR 0014 — 64 Mio, soit jusqu'à 131 072 enregistrements — l'étalement fait plus d'un
+ * demi-million d'arguments et dépasse la pile de tous les moteurs mesurés. Le défaut est tombé sur
+ * `tests/vm/recuperation-generation.spec.mjs` : « Maximum call stack size exceeded », au milieu
+ * d'une récupération que rien n'annonçait comme démesurée.
+ *
+ * Les octets produits sont EXACTEMENT les mêmes ; les vecteurs figés de l'ADR 0015 le prouvent.
+ */
+export function concatenerListe(morceaux) {
+  let total = 0;
+  for (const morceau of morceaux) total += morceau.byteLength;
   const rendu = new Uint8Array(total);
   let curseur = 0;
   for (const morceau of morceaux) {
@@ -43,6 +56,11 @@ export function concatener(...morceaux) {
     curseur += morceau.byteLength;
   }
   return rendu;
+}
+
+/** Concatène des séquences d'octets dans l'ordre reçu. Pour un nombre BORNÉ de morceaux. */
+export function concatener(...morceaux) {
+  return concatenerListe(morceaux);
 }
 
 /**
