@@ -76,6 +76,31 @@ régression de la configuration fait échouer `npm run test:unit`, pas seulement
 épreuve y vise en outre un module réel, `isolation-probe.mjs`, et échoue s'il est rangé sous une
 racine qui lui accorderait plus que l'intersection.
 
+## Taille des unités
+
+Le dépôt borne ses fichiers à **800 lignes** et ses fonctions à **50 lignes**.
+
+Le plafond des fonctions est mesuré par `tests/unit/taille-des-fonctions.test.mjs`, sur tout `src/`
+et `public/vm/`. Il applique `max-lines-per-function` d'ESLint **en surcharge** de
+`eslint.config.mjs`, sans l'y activer : une règle activée dans la configuration ne se tairait qu'au
+prix d'un `eslint-disable` par dépassement, donc d'une justification éparpillée. La liste des
+exceptions vit dans l'épreuve, où elle se lit d'un bloc.
+
+Les lignes se comptent comme la règle les compte : commentaires et lignes vides compris, de
+l'accolade ouvrante à l'accolade fermante.
+
+Un dépassement se traite de deux façons, et d'aucune autre :
+
+- **le découper** en fonctions nommées, à comportement inchangé, la suite existante servant de
+  preuve ;
+- **l'inscrire** dans `JUSTIFIEES`, avec un motif qui tienne devant une revue et l'issue qui l'a
+  tranché, et répéter ce motif en tête du module concerné.
+
+La liste `DETTE_ANTERIEURE` est d'une autre nature : elle date les dépassements que le relevé de #77
+a découverts hors de son périmètre. Ils ne sont pas justifiés, seulement **bornés** — l'épreuve
+échoue si l'un grandit, si un nouveau apparaît, ou si une inscription devient périmée. #93 les
+solde, et cette liste doit finir vide.
+
 ## Navigateur
 
 ```sh
