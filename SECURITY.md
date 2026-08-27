@@ -74,8 +74,43 @@ et tester.
   ce qui rend la restauration significative, et le même scénario le vérifie avant d'importer ;
 - `SEC-KEY-001` — une clé de déverrouillage enveloppe une DEK aléatoire sans servir directement au
   chiffrement des blocs ;
-- `SEC-BLOCK-001` — un bloc est authentifié avec volume, adresse, format et génération ;
-- `SEC-GEN-001` — rejeu, troncature et mélange de générations sont refusés ;
+- `SEC-BLOCK-001` — un bloc est authentifié avec volume, adresse, format et génération. **Depuis #17
+  cet invariant a une définition opposable et des vecteurs, mais AUCUN chemin du produit ne
+  l'exerce** : il est spécifié, pas encore tenu, et #18 est la tranche qui le tiendra.
+  L'[ADR 0015](docs/decisions/0015-proprietes-cryptographiques-du-format.md) le définit ainsi : un
+  bloc est scellé par AES-256-GCM (étiquette de 128 bits) dont les **données associées portent
+  l'identité logique complète** — identifiant de volume, adresse logique, version de format,
+  génération, rang de l'entrée, longueur, nom de l'algorithme —, encodée de façon injective (chaque
+  champ de largeur fixe ou préfixé de sa longueur). Le nonce de 96 bits est déterministe et dérivé
+  de (domaine, génération, rang) ; il ne porte **pas** l'adresse, parce que l'ADR 0014 autorise la
+  réécriture d'un même bloc dans une même génération et qu'un nonce répété sous une même clé livre,
+  sous GCM, le XOR des clairs et la clé d'authentification. Ce que la propriété ne garantit pas est
+  écrit dans l'ADR et non résumé ici : rien contre un détenteur de la clé, rien sur la taille du
+  volume ni le motif d'accès, rien sur le **retour arrière d'un secteur** — un secteur ramené à une
+  version antérieure authentique n'est pas détecté, parce que le lecteur lit sa génération dans le
+  nonce, c'est-à-dire au même endroit que le sceau. Modification et déplacement partagent d'ailleurs
+  un seul code de refus (`VAULT_CRYPTO_SCEAU_REFUSE`) : ils sont cryptographiquement indiscernables,
+  et le modèle refuse sans prétendre les distinguer. Preuves :
+  `tests/unit/vm-format-chiffre-*.test.mjs` et les vecteurs figés
+  `tests/vectors/format-chiffre-v1.json`, que #18 devra reproduire octet pour octet. La borne de
+  forgerie est calculée, pas qualifiée : ≈ 2^-122,6 par tentative ;
+- `SEC-GEN-001` — rejeu, troncature et mélange de générations sont refusés. **Même statut : spécifié
+  par #17, non exercé par le produit, tenu par #19.** L'ADR 0015 le décompose en trois propriétés
+  distinctes, chacune avec son refus typé. **Rejeu** : la séquence et la génération sont
+  authentifiées dans l'en-tête de la racine, et une racine ou un bloc antérieurs sont refusés
+  (`VAULT_CRYPTO_REJEU`) — mais seulement au regard d'un minimum de séquence que l'appelant
+  présente, et ce minimum ne peut venir, entre deux sessions, que du support lui-même : **le retour
+  arrière complet d'un support cohérent n'est pas détectable** et reste couvert par le seul
+  partitionnement d'origine de l'ADR 0002. **Troncature** : l'en-tête authentifié porte le nombre
+  d'entrées et la longueur de charge, dérivés des entrées au moment de sceller ; une génération
+  incomplète — ou augmentée — est refusée (`VAULT_CRYPTO_TRONCATURE`). **Mélange** : la racine
+  scelle l'empreinte SHA-256 de la **suite ordonnée** de ses entrées (adresse, longueur, rang,
+  étiquette du bloc), si bien qu'une entrée authentique d'une autre génération, ou un simple
+  réordonnancement, est refusé (`VAULT_CRYPTO_MELANGE`). Ces trois classements sont posés **après**
+  vérification de l'étiquette, donc sur un en-tête authentique : c'est pourquoi l'en-tête est les
+  données associées et l'empreinte le clair. Ce qu'ils ne couvrent pas : le volume au-delà du
+  journal — après un point de contrôle, un volume porte légitimement des secteurs de générations
+  différentes, et ce n'est pas un mélange ;
 - `SEC-DURABLE-001` — aucune écriture n'est annoncée durable avant le flush effectif. Le spike #4 a
   établi que l'émulateur amont rend cet invariant **inatteignable** : son disque n'annonce pas de
   cache d'écriture, le guest n'émet donc jamais de barrière, et la commande FLUSH CACHE serait de
@@ -197,6 +232,25 @@ Ce que la frontière d'origine ne couvre pas :
 L'authentification indépendante de chaque bloc ne protège pas à elle seule contre le rejeu d'un
 ancien bloc, le déplacement d'un bloc valide, la troncature ou la restauration complète d'une
 ancienne génération. Le format de volume devra fournir une intégrité transactionnelle globale.
+
+Depuis #17, cette phrase a une suite chiffrée plutôt qu'une intention.
+L'[ADR 0015](docs/decisions/0015-proprietes-cryptographiques-du-format.md) montre que la liaison de
+l'identité logique au bloc (`SEC-BLOCK-001`) et l'authentification de la racine d'une génération
+(`SEC-GEN-001`) couvrent **quatre** des cinq menaces et **une partie** de la cinquième — et il nomme
+ce qui reste dehors au lieu de le laisser deviner :
+
+- **le retour arrière d'un SECTEUR** du volume — un secteur authentique ramené à une version
+  antérieure, à la bonne adresse, dans le bon volume — n'est **pas** détecté. Le remède connu est un
+  arbre de Merkle sur les 2^20 secteurs du volume applicatif, chiffré dans l'ADR à 20 hachages par
+  écriture et 64 Mio d'état. Il n'est pas fourni, et c'est une question posée à la revue externe ;
+- **le retour arrière COMPLET du support** entre deux sessions — volume, journal, racine et
+  manifeste ramenés ensemble à un état antérieur cohérent — n'est pas détectable par un format. Il
+  exigerait un ancrage monotone hors de portée de l'attaquant, qu'aucune API de navigateur n'offre.
+  Il reste couvert par le seul partitionnement OPFS par origine de l'ADR 0002.
+
+Ces deux résidus sont **assumés et écrits**, pas résolus. Le gate « données sensibles » reste fermé,
+et le gate « qualification produit » exige de toute façon la revue externe (#20), à laquelle l'ADR
+0015 fournit ses huit questions.
 
 ## Propriétés exigées avant une version utilisable
 

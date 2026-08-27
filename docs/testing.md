@@ -234,6 +234,69 @@ produire : contrairement au backend OPFS (#6), il n'a ni quota, ni handle, ni ho
 calcul de l'empreinte du **contenu** du volume, qui exige de lire un vrai volume, arrive avec
 l'export (#11), décrit ci-dessous.
 
+### Format chiffré : le niveau « spécification testable » (#17)
+
+Ce niveau est **nouveau avec #17**, et il mérite d'être nommé plutôt que rangé dans « unitaire ».
+Une épreuve unitaire prouve qu'un module fait ce qu'il annonce. Ici, le module lui-même **est** ce
+qui est annoncé : `src/vm/format-chiffre/` n'est appelé par aucun chemin du produit, et sa raison
+d'être est de servir de **critère** à #18 et #19. Le rapport est celui de l'oracle de #15 au magasin
+de #16 — un juge écrit avant, et séparément.
+
+| Niveau                 | Fichier                                          | Support | Rattachement    |
+| ---------------------- | ------------------------------------------------ | ------- | --------------- |
+| spécification testable | `tests/unit/vm-format-chiffre-identite.test.mjs` | aucun   | `npm run check` |
+| spécification testable | `tests/unit/vm-format-chiffre-modele.test.mjs`   | aucun   | `npm run check` |
+| spécification testable | `tests/unit/vm-format-chiffre-vecteurs.test.mjs` | aucun   | `npm run check` |
+
+Vingt-huit épreuves, en quatre familles :
+
+1. **Non-réutilisation de nonce, ÉNUMÉRÉE.** L'épreuve ne raisonne pas sur la construction : elle
+   parcourt un espace représentatif de collisions candidates — quatre générations consécutives, 256
+   entrées chacune, **huit adresses seulement** pour que chaque bloc soit réécrit 32 fois dans une
+   même génération (le cas que l'ADR 0014 autorise), plus la racine de chaque génération — et
+   vérifie que les 1 028 nonces sont distincts. Une épreuve jumelle établit le contrat **dans
+   l'autre sens** : deux entrées de même rang produisent le MÊME nonce, ce qui rend visible que
+   l'unicité repose entièrement sur celle du rang, et fait de `scellerRacine` — qui refuse les rangs
+   en double — la pièce falsifiable.
+2. **Bornes.** Champs du nonce refusés plutôt que rebouclés en silence, et budget de 2^32
+   scellements par clé (NIST SP 800-38D § 8.3) refusé **avant** de produire un nonce, du côté du
+   bloc comme du côté de la racine.
+3. **Cinq propriétés, cinq témoins positifs, cinq refus.** Modification (un octet retourné dans le
+   chiffré, l'étiquette ou le nonce), déplacement (autre adresse, autre volume, autre format, autre
+   génération), rejeu (racine ET bloc antérieurs), troncature (entrée retirée ET entrée
+   surnuméraire), mélange (entrée authentique d'une autre génération ET simple réordonnancement).
+   Chaque refus est doublé d'un **témoin positif** : sans lui, un modèle qui refuserait tout
+   passerait pour sûr.
+4. **Vecteurs figés.** `tests/vectors/format-chiffre-v1.json` porte cinq blocs et deux racines,
+   produits par `node tools/figer-vecteurs-scellement.mjs` avec une clé de TEST publique et sans
+   entropie. Le modèle doit les reproduire **octet pour octet** et les rouvrir depuis leurs seuls
+   octets publiés. Le contenu de chaque vecteur est en outre reconstruit depuis sa **règle**
+   publiée, pour qu'un vecteur ne puisse pas être « juste » par recopie de lui-même.
+
+**Les vecteurs sont un contrat, pas une commodité.** Les régénérer après avoir modifié le modèle ne
+corrige rien : c'est un changement de format persistant, qui exige une version et un ADR. Que
+l'épreuve sache rougir a été vérifié par **mutation** — deux mutations du modèle, l'étiquette de
+domaine du bloc puis celle de la liste d'entrées, font tomber deux épreuves sur sept, chacune sur
+une moitié différente du fichier.
+
+Aucun test VM ni Bout en bout n'est ajouté, et c'est délibéré : rien ne change dans le produit. Les
+invariants `SEC-BLOCK-001` et `SEC-GEN-001` restent **non exercés** jusqu'à #18 et #19, ce que
+`SECURITY.md` dit désormais explicitement.
+
+Commandes :
+
+```bash
+npm run check                                        # les 28 épreuves y sont rattachées
+node --test "tests/unit/vm-format-chiffre-*.test.mjs" # les trois fichiers seuls
+node tools/figer-vecteurs-scellement.mjs             # regénère les vecteurs (= change le format)
+node tools/mesurer-scellement.mjs --navigateur       # le banc de coût, Node + Worker Chromium
+```
+
+Le banc de mesure n'est **pas** rattaché à `npm run check` : c'est une mesure, pas une épreuve, et
+son verdict dépend de la machine. Son relevé est publié dans
+[`quality-attributes.md`](quality-attributes.md) et dans
+l'[ADR 0015](decisions/0015-proprietes-cryptographiques-du-format.md).
+
 ### Export vérifiable
 
 L'export portable de `VAULT-PORT-001` (#11) — `src/vm/volume-export.mjs`, son hachage incrémental
