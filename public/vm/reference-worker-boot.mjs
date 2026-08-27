@@ -12,6 +12,7 @@
 
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { openVolumeForWrite } from "/src/vm/opfs-volume-open.mjs";
+import { cleDuBanc } from "./cle-du-banc.mjs";
 import { createReferenceGuestSession } from "/src/vm/reference-guest-session.mjs";
 import {
   consignerRejetsNonTraites,
@@ -278,7 +279,12 @@ function guetterMutation(journal, prevenir) {
 async function ouvrirVolumeEtSession({ volume, attentes, timeline, guest }) {
   const journal = new BlockJournal();
   const failures = [];
-  const backend = await openVolumeForWrite({ name: volume, journal, expectations: attentes });
+  const backend = await openVolumeForWrite({
+    name: volume,
+    journal,
+    cle: cleDuBanc(),
+    expectations: attentes,
+  });
   // Ce que la RÉCUPÉRATION de #16 a trouvé et fait, lu AVANT le premier octet du guest. C'est la
   // seule occasion de le lire : le point de contrôle qui suivra remettra le magasin à zéro. Une
   // génération écartée ou rejouée doit arriver jusqu'au compte rendu, sans quoi un boot qui repart

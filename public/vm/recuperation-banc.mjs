@@ -1,6 +1,8 @@
 // Coquille du banc de récupération (#91). Elle ne détient aucun handle : elle branche le Worker,
 // lui passe un profil, et publie ce qu'il rapporte (ADR 0002).
 
+import { HARNAIS_CLE_JETON } from "/src/vm/cle-de-volume.mjs";
+
 const etat = document.querySelector("#etat");
 const rapport = document.querySelector("#rapport");
 
@@ -34,7 +36,7 @@ function brancher() {
       const id = compteur;
       return new Promise((resolve, reject) => {
         enCours.set(id, { resolve, reject });
-        worker.postMessage({ id, options });
+        worker.postMessage({ id, options: { ...options, jetonCle: HARNAIS_CLE_JETON } });
       });
     },
   };

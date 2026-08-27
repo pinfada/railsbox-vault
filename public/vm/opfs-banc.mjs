@@ -57,7 +57,7 @@ function executer(payload = {}) {
     worker.postMessage({
       id,
       type: "run",
-      payload: { ...payload, jeton: HARNAIS_CLE_JETON },
+      payload: { ...payload, jetonCle: HARNAIS_CLE_JETON },
     });
   });
 }

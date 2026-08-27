@@ -8,6 +8,7 @@
 // recueille des comptes rendus. Le jeton du harnais n'est transmis qu'au Worker qui coupe : ni le
 // Worker qui prépare l'ancien état, ni celui qui relit ne peuvent armer quoi que ce soit.
 
+import { HARNAIS_CLE_JETON } from "/src/vm/cle-de-volume.mjs";
 import { HARNAIS_RESILIENCE_JETON } from "/src/vm/crash-harness.mjs";
 import { planifierCoupures } from "/src/vm/crash-plan.mjs";
 import { resumerMatrice } from "/src/vm/crash-report.mjs";
@@ -52,7 +53,13 @@ function brancher(nom) {
       const id = compteur;
       return new Promise((resolve, reject) => {
         enCours.set(id, { resolve, reject });
-        worker.postMessage({ id, type: "run", payload });
+        worker.postMessage({
+          id,
+          type: "run",
+          // Jeton de la CLÉ DE VOLUME de TEST, distinct de celui du harnais d'arrêts : les deux
+          // gardes protègent des choses différentes et ne se remplacent pas (ADR 0016).
+          payload: { ...payload, jetonCle: HARNAIS_CLE_JETON },
+        });
       });
     },
   };
