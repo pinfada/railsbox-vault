@@ -24,6 +24,8 @@ import {
   PLAFOND_CHARGE_OCTETS,
   TAMPON_RELECTURE_OCTETS,
 } from "/src/vm/generation-store.mjs";
+import { Scellement } from "/src/vm/scellement.mjs";
+import { cleDuBanc, poserCleDuBanc } from "./cle-du-banc.mjs";
 import {
   generationJournalName,
   openOpfsSyncAccess,
@@ -32,6 +34,13 @@ import {
 
 /** Volume jetable du banc. Il est retiré avant et après chaque répétition. */
 const VOLUME = "recuperation-banc";
+
+/**
+ * Identifiant de volume du banc. FIXE : il entre dans les données associées de chaque
+ * enregistrement, et un identifiant tiré à chaque répétition ferait refuser la charge que la
+ * préparation vient de sceller (ADR 0015).
+ */
+const IDENTIFIANT = "1ec0de1ec0de1ec0de1ec0de1ec0de11";
 
 /** Motif déterministe : le contenu n'a pas d'importance, sa reproductibilité si. */
 function motif(octets, graine) {
@@ -54,21 +63,29 @@ async function ouvrirFichiers(tailleVolume) {
   return { volume, journal };
 }
 
-function magasinSur({ volume, journal }, tailleVolume, plafondOctets) {
+async function magasinSur({ volume, journal }, tailleVolume, plafondOctets) {
   return GenerationStore.ouvrir({
     volume: VOLUME,
     handle: journal,
     tailleVolume,
+    // Le scellement du produit, sous la clé de TEST du harnais. Ce banc mesure la DURÉE d'une
+    // récupération : depuis #18 elle comprend l'ouverture de chaque enregistrement, et la mesurer
+    // sans elle ne dirait plus rien du produit.
+    scellement: await Scellement.ouvrir({
+      volume: IDENTIFIANT,
+      cleOctets: cleDuBanc(),
+      formatVersion: 3,
+    }),
     // Le plafond est EXPLICITE : un profil témoin doit pouvoir dépasser celui de production pour
     // mesurer ce qu'il coûtait, sans quoi le chiffre qui a fait bouger le plafond deviendrait
     // irreproductible dès que le plafond bouge.
     plafondOctets,
-    lireVolume(offset, longueur) {
+    async lireVolume(offset, longueur) {
       const cible = new Uint8Array(longueur);
       volume.read(cible, { at: offset });
       return cible;
     },
-    ecrireVolume: (offset, octets) => volume.write(octets, { at: offset }),
+    ecrireVolume: async (offset, octets) => volume.write(octets, { at: offset }),
     barriereVolume: () => volume.flush(),
     // Le rangement automatique est DÉSARMÉ : un point de contrôle viderait le journal, et la
     // réouverture n'aurait plus rien à rejouer — c'est-à-dire plus rien à chronométrer.
@@ -192,7 +209,10 @@ async function mesurer({
 
 self.addEventListener("message", async (event) => {
   const { id, options } = event.data ?? {};
+  let relacher = () => {};
   try {
+    // La clé du harnais vaut pour la durée de la mesure, et pour elle seule (ADR 0016).
+    relacher = poserCleDuBanc(options?.jetonCle);
     self.postMessage({ id, ok: true, rapport: await mesurer(options) });
   } catch (cause) {
     try {
@@ -205,5 +225,7 @@ self.addEventListener("message", async (event) => {
       ok: false,
       error: { code: cause?.code ?? null, message: cause?.message ?? String(cause) },
     });
+  } finally {
+    relacher();
   }
 });

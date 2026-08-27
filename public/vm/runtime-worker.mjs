@@ -19,6 +19,7 @@ import {
 import { createGuestSession } from "/src/vm/guest-session.mjs";
 import { openMemoryVolume } from "/src/vm/memory-block-backend.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
+import { cleDuBanc, poserCleDuBanc } from "./cle-du-banc.mjs";
 import { removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
 import {
   consignerRejetsNonTraites,
@@ -270,6 +271,7 @@ async function ouvrirVolumeNeuf({ volume, volumeBytes, flushDelay, fault = null 
     journal,
     faults,
     flushDelay,
+    cle: cleDuBanc(),
   });
   return { journal, faults, backend };
 }
@@ -306,7 +308,11 @@ async function deroulerGuestPersistance({ V86, artifacts, backend, journal, mode
  * ouvert et l'exécution suivante rougirait sur `VAULT_STORAGE_BUSY`, en masquant la cause réelle.
  */
 async function relireMarquesDansLeFichier(volume) {
-  const reopened = await openOpfsVolume({ name: volume, journal: new BlockJournal() });
+  const reopened = await openOpfsVolume({
+    name: volume,
+    journal: new BlockJournal(),
+    cle: cleDuBanc(),
+  });
   try {
     const guestBytes = await reopened.read(GUEST_MARKER_OFFSET, GUEST_MARKER.length);
     const hostBytes = await reopened.read(HOST_MARKER_OFFSET, HOST_MARKER.length);
@@ -431,52 +437,71 @@ const OPFS_SCENARIOS = new Map([
   ...RESILIENCE_SCENARIOS,
 ]);
 
+/**
+ * Un refus qui traverse le port avec son code ET son contexte (#73).
+ *
+ * Sans eux, un échec de support arrive en CI réduit à une phrase : ni offset, ni quota, ni errno —
+ * c'est-à-dire sans rien de ce qui permet de le diagnostiquer. `toJSON()` est le contrat commun de
+ * `StorageError` et de `RuntimeError`.
+ */
+function refusTransportable(error) {
+  return typeof error.toJSON === "function"
+    ? error.toJSON()
+    : { name: error.name, code: error.code ?? null, message: error.message };
+}
+
+/**
+ * Répond au DIAGNOSTIC : ce que ce contexte sait faire, sans démarrer d'émulateur ni charger un seul
+ * artefact. C'est ce qui permet de l'éprouver sur les trois moteurs dans `npm run check`, qui n'a
+ * pas de préalable réseau — et à une coquille de savoir, avant d'ouvrir un volume, si ce contexte
+ * peut exécuter le runtime.
+ */
+function repondreAuControle(id) {
+  controlerContexteCourant().then(
+    (erreur) =>
+      self.postMessage({
+        id,
+        ok: true,
+        report: {
+          url: location.href,
+          schedulerPostTask: typeof globalThis.scheduler?.postTask === "function",
+          // La boucle réellement en place dans CE contexte. Sans elle, `schedulerPostTask` serait
+          // ambigu : il vaut « vrai » aussi bien pour l'implémentation du moteur que pour la nôtre,
+          // et ce sont deux situations que #74 a mesurées comme opposées sous Firefox.
+          boucleOrdonnancement: decrireBoucle(boucleOrdonnancement),
+          diagnostic: erreur ? erreur.toJSON() : null,
+        },
+      }),
+    (erreur) => self.postMessage({ id, ok: false, error: { message: erreur.message } }),
+  );
+}
+
+/** Exécute un scénario sous la clé du harnais, posée pour sa durée et pour elle seule (ADR 0016). */
+function executerScenario(id, options) {
+  let relacher;
+  try {
+    relacher = poserCleDuBanc(options.jetonCle);
+  } catch (erreur) {
+    self.postMessage({ id, ok: false, error: { name: erreur.name, message: erreur.message } });
+    return;
+  }
+  const opfsRunner = OPFS_SCENARIOS.get(options.scenario);
+  const execute = opfsRunner ? opfsRunner(options) : run(options);
+  execute.finally(relacher).then(
+    (report) => self.postMessage({ id, ok: true, report }),
+    (error) => self.postMessage({ id, ok: false, error: refusTransportable(error) }),
+  );
+}
+
 self.addEventListener("message", (event) => {
   const { id, type, payload } = event.data ?? {};
-  // Le diagnostic est interrogeable SANS démarrer d'émulateur ni charger un seul artefact. C'est ce
-  // qui permet de l'éprouver sur les trois moteurs dans `npm run check`, qui n'a pas de préalable
-  // réseau — et à une coquille de savoir, avant d'ouvrir un volume, si ce contexte peut exécuter le
-  // runtime.
   if (type === "controler") {
-    controlerContexteCourant().then(
-      (erreur) =>
-        self.postMessage({
-          id,
-          ok: true,
-          report: {
-            url: location.href,
-            schedulerPostTask: typeof globalThis.scheduler?.postTask === "function",
-            // La boucle réellement en place dans CE contexte. Sans elle, `schedulerPostTask` serait
-            // ambigu : il vaut « vrai » aussi bien pour l'implémentation du moteur que pour la
-            // nôtre, et ce sont deux situations que #74 a mesurées comme opposées sous Firefox.
-            boucleOrdonnancement: decrireBoucle(boucleOrdonnancement),
-            diagnostic: erreur ? erreur.toJSON() : null,
-          },
-        }),
-      (erreur) => self.postMessage({ id, ok: false, error: { message: erreur.message } }),
-    );
+    repondreAuControle(id);
     return;
   }
   if (type !== "run") {
     self.postMessage({ id, ok: false, error: { message: `Message inattendu : ${type}` } });
     return;
   }
-  const options = payload ?? {};
-  const opfsRunner = OPFS_SCENARIOS.get(options.scenario);
-  const execute = opfsRunner ? opfsRunner(options) : run(options);
-  execute.then(
-    (report) => self.postMessage({ id, ok: true, report }),
-    // Une erreur TYPÉE traverse le port avec son code ET son contexte : la coquille doit pouvoir
-    // distinguer « la CSP refuse WebAssembly » de « le Worker imbriqué est mort » sans lire un
-    // message. `toJSON()` est le contrat commun de `StorageError` et de `RuntimeError`.
-    (error) =>
-      self.postMessage({
-        id,
-        ok: false,
-        error:
-          typeof error.toJSON === "function"
-            ? error.toJSON()
-            : { name: error.name, code: error.code ?? null, message: error.message },
-      }),
-  );
+  executerScenario(id, payload ?? {});
 });

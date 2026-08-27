@@ -28,6 +28,7 @@ import {
 } from "/src/vm/crash-scenario.mjs";
 import { createFaultPlan } from "/src/vm/fault-plan.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
+import { cleDuBanc } from "./cle-du-banc.mjs";
 import { removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "/src/vm/storage-errors.mjs";
 
@@ -54,6 +55,7 @@ async function rouvrirApresCoupure({ tentatives, attenteMs, journal }) {
   for (let essai = 1; essai <= tentatives; essai += 1) {
     try {
       const backend = await openOpfsVolume({
+        cle: cleDuBanc(),
         name: VOLUME_RESILIENCE,
         journal,
         faults: createFaultPlan(),
@@ -77,6 +79,7 @@ export async function runResiliencePreparer() {
   await removeOpfsVolume(VOLUME_RESILIENCE);
   const journal = new BlockJournal();
   const backend = await openOpfsVolume({
+    cle: cleDuBanc(),
     name: VOLUME_RESILIENCE,
     size: VOLUME_OCTETS,
     journal,
@@ -110,6 +113,7 @@ export async function runResilienceCouper({ point, jeton }) {
   const journal = new BlockJournal();
   const fautes = armerInjecteur(point, { jeton });
   const backend = await openOpfsVolume({
+    cle: cleDuBanc(),
     name: VOLUME_RESILIENCE,
     journal,
     faults: fautes,

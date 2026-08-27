@@ -270,10 +270,10 @@ const SCENARIOS = new Map([
   ["adaptateur", scenarioAdaptateur],
 ]);
 
-async function run({ scenario = "persistance", jeton } = {}) {
+async function run({ scenario = "persistance", jetonCle } = {}) {
   const runner = SCENARIOS.get(scenario);
   if (!runner) throw new Error(`Scénario inconnu : ${scenario}`);
-  cleDuBanc = cleDeVolumeDuHarnais({ jeton });
+  cleDuBanc = cleDeVolumeDuHarnais({ jeton: jetonCle });
   try {
     return await runner();
   } finally {
