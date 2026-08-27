@@ -379,6 +379,43 @@ la dernière barrière acquittée. Trois chemins ouvrent SANS génération et le
 Mesure : le taux de coupures laissant « ancien ou nouveau » passe de 12,5 % à 100 % sur trois
 graines, sur OPFS réel. Voir [`quality-attributes.md`](quality-attributes.md).
 
+## Le format chiffré : une spécification, pas encore un chemin (#17)
+
+**Rien de cette section n'est exercé par le produit.** #17 livre une SPÉCIFICATION EXÉCUTABLE —
+modèle de référence pur et vecteurs figés — que #18 (bloc authentifié) et #19 (rejeu, troncature,
+mélange) devront tenir. Le rapport est celui de l'oracle de #15 au magasin de #16 : le juge est
+écrit avant, et séparément. Décision :
+[ADR 0015](decisions/0015-proprietes-cryptographiques-du-format.md).
+
+Quatre gestes, sur des structures en mémoire, dans `src/vm/format-chiffre/` :
+
+- **`scellerBloc` / `ouvrirBloc`** — AES-256-GCM par `crypto.subtle`, étiquette de 128 bits, données
+  associées = l'**identité logique complète** (identifiant de volume, adresse logique, version de
+  format, génération, rang, longueur, algorithme), encodée de façon injective. C'est
+  `SEC-BLOCK-001`.
+- **`scellerRacine` / `ouvrirRacine`** — l'en-tête de la racine est les données associées, et
+  l'empreinte SHA-256 de la **suite ordonnée** des entrées est le clair. Cet ordre décide de ce que
+  le modèle a le droit d'affirmer : l'étiquette vérifie d'abord, ce qui rend l'en-tête AUTHENTIQUE,
+  et rejeu, troncature et mélange ne sont classés qu'ensuite. C'est `SEC-GEN-001`.
+
+**Le nonce ne porte pas l'adresse**, et c'est le choix qui commande tout le reste. L'ADR 0014
+autorise la réécriture d'un même bloc dans une même génération ; un nonce construit sur (génération,
+adresse) s'y répéterait, ce qui sous GCM livre le XOR des clairs et la clé d'authentification. Le
+nonce porte donc (domaine, génération, **rang de l'entrée**) sur 96 bits. Le budget de 2^32
+scellements par clé du § 8.3 de NIST SP 800-38D est **compté**, pas supposé lointain : c'est 4 096
+réécritures complètes du volume applicatif, et son dépassement est un refus typé.
+
+**Ce sera un format de volume v3**, annoncé ici et non créé : un secteur du volume coûtera 28 octets
+de plus (nonce 12 + étiquette 16, soit 5,469 %), rangés dans une région d'authentification en tête
+du fichier ; un enregistrement du journal coûtera 16 octets (l'étiquette seule, le nonce y étant
+dérivable) ; la racine ne coûtera **aucun octet de plus** — son en-tête passe de 60 à 136 octets
+dans le secteur déjà alloué, et le CRC-32 disparaît. Le manifeste devra gagner un **identifiant de
+volume**, qui n'existe pas en v2. Les impacts sur les ADR 0007, 0008, 0011 et 0014 sont listés dans
+l'ADR 0015 ; aucun n'est modifié par cette tranche.
+
+**Ce que le format ne couvre pas est écrit plutôt que déduit** : le retour arrière d'un secteur, et
+le retour arrière complet du support entre deux sessions. Voir `SECURITY.md` et l'ADR 0015.
+
 ## Résilience aux coupures : l'instrument, puis la garantie
 
 L'issue #15 a livré l'**instrument** de mesure des arrêts brutaux ; #16 a livré la **garantie**

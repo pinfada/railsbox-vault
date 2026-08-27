@@ -417,7 +417,10 @@ dans l'épreuve elle-même.
 - Le bloc authentifié (`SEC-BLOCK-001`, #18) et le refus de rejeu (`SEC-GEN-001`, #19), jalon 4. La
   racine porte déjà un numéro de génération monotone ; un enregistrement porte déjà son adresse. Les
   deux invariants du jalon 4 s'y greffent en remplaçant le CRC par une authentification, sans
-  changer le protocole des quatre gestes.
+  changer le protocole des quatre gestes. Cette place est désormais prise par
+  l'[ADR 0015](0015-proprietes-cryptographiques-du-format.md), qui en spécifie les propriétés et les
+  vecteurs sans rien changer au présent format ; il relève au passage que la réécriture d'un même
+  bloc dans une même génération, admise ici, interdit tout nonce construit sur l'adresse.
 - L'instantané de reprise (#65), qui exigera de lier une capture mémoire à une génération nommée :
   `describe().generation` la nomme désormais.
 - La « migration sur une nouvelle génération copy-on-write » de `docs/release-policy.md` reste
