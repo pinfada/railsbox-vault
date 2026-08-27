@@ -538,8 +538,10 @@ Trois faits bornent ce choix, et aucun n'est une préférence :
    jamais refusé : sa charge validée est rangée à 8 Mio, bien avant le plafond. Le plafond ne mord
    que sur un guest qui n'émet AUCUNE barrière, et pour celui-là le refus typé
    `VAULT_STORAGE_GENERATION_OVERFLOW` reste la conduite retenue.
-2. **16 Mio est près de deux cents fois la seule génération jamais observée** de l'image de
-   référence — 90 304 octets, scénario Bout en bout de #16.
+2. **16 Mio est 16,6 fois la plus grande charge que l'image de référence ait présentée à ce
+   plafond** — 1 012 688 octets, boot après migration, relevé du 2026-08-27 ci-dessous. Le facteur
+   valait 66 à 64 Mio : l'abaissement le réduit sans l'annuler, et c'est le prix assumé d'un budget
+   de récupération tenu plutôt que supposé.
 3. **La surmémoire ne bouge pas avec lui.** Elle vaut 1 Mio à 16 Mio de charge comme à 64.
 
 ### Ce que le guest encaisse, et pourquoi 16 Mio ne le met pas en danger
@@ -560,9 +562,26 @@ plafond ne mord que sur une génération, c'est-à-dire sur ce qui s'accumule EN
 relevé du 2026-08-27 y répond par la mesure, pas par le raisonnement — `generationMaxOctets` est
 désormais publié par chaque boot de bout en bout :
 
-@TABLEAU_GENERATIONS@
+| Scénario                     | Charge DÉPOSÉE max | Plus grande génération scellée |
+| ---------------------------- | -----------------: | -----------------------------: |
+| Boot à chaud, mutation Rails |          992 208 o |                        4 112 o |
+| Reprise à froid, essai 1     |          979 904 o |                        4 112 o |
+| Reprise à froid, essai 2     |        1 008 640 o |                        4 112 o |
+| Reprise à froid, essai 3     |        1 004 512 o |                        4 112 o |
+| Boot après migration         |    **1 012 688 o** |                        4 112 o |
+| **Plafond**                  |   **16 777 216 o** |                              — |
 
-@VERDICT_GENERATIONS@
+**Deux colonnes, et l'écart entre elles est le fait le plus intéressant du relevé.** La plus grande
+génération SCELLÉE vaut 4 112 octets partout — un unique bloc de 4 Kio et son en-tête, ce que SQLite
+écrit puis fait suivre d'un `fsync`. Mais la charge DÉPOSÉE atteint près d'un Mio, parce qu'un boot
+de l'image de référence produit **soixante et une écritures OPFS pour UNE seule barrière
+acquittée**. Rails écrit beaucoup et barrière peu ; c'est donc la charge non validée qui approche le
+plafond, pas la génération.
+
+**La réponse à la question posée est donc oui, mais avec un facteur de seize, pas de deux cents.**
+Le plafond de 16 Mio laisse 16,6× au-dessus de la pire charge observée (1 012 688 octets). C'est
+confortable et ce n'est pas immense : une application qui écrirait seize fois plus entre deux
+barrières que l'image de référence serait refusée.
 
 **Ce que ce relevé ne couvre pas.** `rails db:seed` et les migrations de schéma ne tournent pas au
 boot : l'image de référence les exécute à la CONSTRUCTION, dans Docker, hors du backend de blocs.
