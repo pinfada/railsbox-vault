@@ -43,6 +43,110 @@ async function openHandleWithRetry({ openHandle, volume, deadlineAt, now, retryM
 }
 
 /**
+ * Refuse d'emblée ce qui ne peut pas être arbitré du tout.
+ *
+ * Cette couture existe pour que le corps d'`acquireWriteLease` n'ouvre que sur des gestes qui
+ * engagent réellement le bail : un ouvreur absent ou un Web Locks indisponible ne sont pas des états
+ * du bail — aucune transition ne les décrit —, ce sont des défauts de câblage, et ils se rejettent
+ * avant que la moindre horloge ne démarre.
+ */
+function refuserSansPrerequis({ openHandle, locks }) {
+  if (typeof openHandle !== "function") {
+    throw new TypeError("acquireWriteLease exige un ouvreur de handle (openHandle).");
+  }
+  if (!locks || typeof locks.request !== "function") {
+    throw new TypeError(
+      "Web Locks est indisponible : le bail d'écriture ne peut pas être arbitré.",
+    );
+  }
+}
+
+/**
+ * Journal MUTABLE du bail : le dernier état connu, et l'unique geste qui le fait avancer.
+ *
+ * Il vit à part parce que TROIS couches le partagent — le corps tenu sous le verrou, la conclusion
+ * de `settled`, et le contrat rendu à l'appelant — et qu'une variable de clôture ne se passe pas en
+ * paramètre. `detenu` dit si l'octroi a EU LIEU : c'est lui, et lui seul, qui sépare ensuite un
+ * refus d'un échec de support.
+ */
+function creerJournalDuBail({ volume, now, deadlineMs, onState }) {
+  let bail = new WriteLease({ volume, now, deadlineMs });
+  return {
+    get bail() {
+      return bail;
+    },
+    detenu: false,
+    emettre(suivant) {
+      bail = suivant;
+      onState(bail);
+      return bail;
+    },
+  };
+}
+
+/** Promesse résolue par le premier `release()` : l'unique signal d'une fermeture propre. */
+function creerDemandeDeFermeture() {
+  let demander;
+  const attendue = new Promise((resolve) => {
+    demander = resolve;
+  });
+  return { demander, attendue };
+}
+
+/**
+ * Corps tenu SOUS le verrou : ouvrir le handle, se déclarer écrivain, puis attendre la demande de
+ * fermeture.
+ *
+ * Extrait pour que l'ordre qui FONDE le relais — fermer le handle avant de rendre le verrou — se
+ * lise d'un bloc, sans le câblage qui l'entoure. L'enchaînement des gestes et le `finally` sont ceux
+ * d'origine, à la ligne près : c'est la seule chose que cette couture n'a pas le droit de changer.
+ *
+ * Le handle devient LOCAL au passage, et le `handle = null` qui suivait la fermeture disparaît avec
+ * la variable partagée qu'il servait à vider : la référence ne survit plus à cet appel, il n'y a
+ * donc plus rien à relâcher à la main.
+ */
+async function tenirLeHandleSousVerrou({ journal, ouverture, fermetureDemandee }) {
+  // Verrou obtenu. On ouvre le handle exclusif AVANT de se déclarer écrivain : sans handle, il n'y
+  // a pas de bail — seulement un verrou. Le réessai couvre le handle d'un contexte mort.
+  const handle = await openHandleWithRetry(ouverture);
+  journal.detenu = true;
+  journal.emettre(journal.bail.grant());
+  try {
+    await fermetureDemandee;
+  } finally {
+    // Fermeture EFFECTIVE puis retour : le prochain `request` de Web Locks ne s'exécute qu'après
+    // la résolution de cette promesse, donc APRÈS ce close. Le relais est sûr par construction.
+    journal.emettre(journal.bail.release());
+    handle.close();
+    journal.emettre(journal.bail.settle());
+  }
+}
+
+/**
+ * Conclut le bail à partir de l'issue du verrou : relais, refus ou erreur.
+ *
+ * Extraite parce que c'est la SEULE couche qui traduit un échec de plateforme en état de bail, et
+ * qu'elle doit se lire d'un bloc : sans elle sous les yeux, rien ne dit qu'un délai dépassé produit
+ * un refus explicite plutôt qu'un accès concurrent implicite.
+ */
+function conclureLeBail({ inLock, journal, abort, timer }) {
+  return inLock
+    .then(() => ({ outcome: journal.detenu ? "relais" : "libre", lease: journal.bail }))
+    .catch((error) => {
+      // Délai dépassé pendant l'attente : refus explicite, jamais un accès concurrent implicite.
+      if (!journal.detenu && (abort.signal.aborted || error?.name === "AbortError")) {
+        const bail = journal.bail;
+        journal.emettre(bail.isOverdue() ? bail.expire() : bail.deny("delai-depasse"));
+        return { outcome: "refus", lease: journal.bail, reason: "delai-depasse" };
+      }
+      // Échec réel du support avant l'octroi : refus typé, remonté pour affichage « erreur ».
+      if (!journal.detenu) journal.emettre(journal.bail.deny(codeOf(error)));
+      return { outcome: "erreur", lease: journal.bail, error };
+    })
+    .finally(() => clearTimeout(timer));
+}
+
+/**
  * Acquiert le bail d'écriture d'un volume et le tient jusqu'à `release()`.
  *
  * @param {{
@@ -70,77 +174,38 @@ export function acquireWriteLease({
   onState = () => {},
   sleep = defaultSleep,
 }) {
-  if (typeof openHandle !== "function") {
-    throw new TypeError("acquireWriteLease exige un ouvreur de handle (openHandle).");
-  }
-  if (!locks || typeof locks.request !== "function") {
-    throw new TypeError(
-      "Web Locks est indisponible : le bail d'écriture ne peut pas être arbitré.",
-    );
-  }
+  refuserSansPrerequis({ openHandle, locks });
 
   const lockName = lockNameFor(volume);
-  let lease = new WriteLease({ volume, now, deadlineMs });
-  const emit = (next) => {
-    lease = next;
-    onState(lease);
-    return lease;
-  };
+  const journal = creerJournalDuBail({ volume, now, deadlineMs, onState });
 
-  emit(lease.request());
-  const deadlineAt = lease.requestedAt + deadlineMs;
+  journal.emettre(journal.bail.request());
+  const deadlineAt = journal.bail.requestedAt + deadlineMs;
 
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), deadlineMs);
 
-  let releaseAsked;
-  const releaseRequested = new Promise((resolve) => {
-    releaseAsked = resolve;
-  });
-  let held = false;
-  let handle = null;
+  const fermeture = creerDemandeDeFermeture();
 
-  const inLock = locks.request(lockName, { signal: abort.signal }, async () => {
-    // Verrou obtenu. On ouvre le handle exclusif AVANT de se déclarer écrivain : sans handle, il n'y
-    // a pas de bail — seulement un verrou. Le réessai couvre le handle d'un contexte mort.
-    handle = await openHandleWithRetry({ openHandle, volume, deadlineAt, now, retryMs, sleep });
-    held = true;
-    emit(lease.grant());
-    try {
-      await releaseRequested;
-    } finally {
-      // Fermeture EFFECTIVE puis retour : le prochain `request` de Web Locks ne s'exécute qu'après
-      // la résolution de cette promesse, donc APRÈS ce close. Le relais est sûr par construction.
-      emit(lease.release());
-      handle.close();
-      handle = null;
-      emit(lease.settle());
-    }
-  });
+  const inLock = locks.request(lockName, { signal: abort.signal }, () =>
+    tenirLeHandleSousVerrou({
+      journal,
+      ouverture: { openHandle, volume, deadlineAt, now, retryMs, sleep },
+      fermetureDemandee: fermeture.attendue,
+    }),
+  );
 
-  const settled = inLock
-    .then(() => ({ outcome: held ? "relais" : "libre", lease }))
-    .catch((error) => {
-      // Délai dépassé pendant l'attente : refus explicite, jamais un accès concurrent implicite.
-      if (!held && (abort.signal.aborted || error?.name === "AbortError")) {
-        emit(lease.isOverdue() ? lease.expire() : lease.deny("delai-depasse"));
-        return { outcome: "refus", lease, reason: "delai-depasse" };
-      }
-      // Échec réel du support avant l'octroi : refus typé, remonté pour affichage « erreur ».
-      if (!held) emit(lease.deny(codeOf(error)));
-      return { outcome: "erreur", lease, error };
-    })
-    .finally(() => clearTimeout(timer));
+  const settled = conclureLeBail({ inLock, journal, abort, timer });
 
   return {
     get lease() {
-      return lease;
+      return journal.bail;
     },
     lockName,
     settled,
     /** Demande une fermeture propre. Résout `settled` une fois le handle effectivement fermé. */
     release() {
-      releaseAsked();
+      fermeture.demander();
       return settled;
     },
   };

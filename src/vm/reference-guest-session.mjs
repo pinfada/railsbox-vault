@@ -34,6 +34,56 @@ const asArrayBuffer = (source) =>
     : source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength);
 
 /**
+ * Refuse les injections manquantes AVANT de construire quoi que ce soit : une fabrique qui rendrait
+ * son contrat sans elles ne romprait qu'au premier appel, loin de l'appelant fautif. Cousue à part
+ * de la fabrique (#93) pour que le corps de celle-ci reste une suite de gestes, et non un préambule
+ * de contrôles.
+ */
+function verifierLesInjections({ V86, appAdapter, cmdline }) {
+  if (typeof V86 !== "function")
+    throw new TypeError("createReferenceGuestSession exige la classe V86.");
+  if (!appAdapter)
+    throw new TypeError("createReferenceGuestSession exige un adaptateur applicatif.");
+  if (typeof cmdline !== "string" || cmdline.length === 0) {
+    throw new TypeError("createReferenceGuestSession exige une ligne de commande noyau.");
+  }
+}
+
+/**
+ * Attente CADENCÉE : elle avance depuis la minuterie ET depuis les battements de la boucle
+ * d'ordonnancement. Sous un moteur qui affame ses minuteries pendant que la boucle tourne
+ * (WebKit, mesuré le 2026-08-26), une attente scrutée par un `setInterval` ne s'exécuterait pas
+ * pendant la plage qu'elle borne : un boot qui n'aboutit pas resterait suspendu, sans
+ * `BootTimeout` — le silence que #52 combat.
+ *
+ * Cousue hors de la fabrique (#93). Le journal série est donc lu par `lireTranscript`, et non
+ * capturé : il grandit pendant l'attente, et c'est son état À L'INSTANT DU REJET qui doit
+ * accompagner l'erreur.
+ */
+function creerAttenteCadencee({ cadence, lireTranscript }) {
+  return (predicate, timeout, description) =>
+    new Promise((resolve, reject) => {
+      const started = Date.now();
+      let fini = false;
+      let arreter = () => {};
+      const verifier = () => {
+        if (fini) return;
+        if (predicate()) {
+          fini = true;
+          arreter();
+          resolve();
+        } else if (Date.now() - started > timeout) {
+          fini = true;
+          arreter();
+          reject(new BootTimeout(`Délai dépassé : ${description}`, lireTranscript().slice(-4000)));
+        }
+      };
+      arreter = cadence(verifier);
+      if (fini) arreter();
+    });
+}
+
+/**
  * @param {{
  *   V86: Function,
  *   artifacts: { wasm: BufferSource, bios: BufferSource, vgaBios: BufferSource,
@@ -60,13 +110,7 @@ export function createReferenceGuestSession({
   boucle = null,
   cadence = (rappel) => cadencer(rappel, { periodeMs: POLL_INTERVAL_MS, boucle }),
 }) {
-  if (typeof V86 !== "function")
-    throw new TypeError("createReferenceGuestSession exige la classe V86.");
-  if (!appAdapter)
-    throw new TypeError("createReferenceGuestSession exige un adaptateur applicatif.");
-  if (typeof cmdline !== "string" || cmdline.length === 0) {
-    throw new TypeError("createReferenceGuestSession exige une ligne de commande noyau.");
-  }
+  verifierLesInjections({ V86, appAdapter, cmdline });
 
   let emulator = null;
   let bridge = null;
@@ -77,33 +121,7 @@ export function createReferenceGuestSession({
     onLog: (texte) => onJournal(texte),
   });
 
-  /**
-   * Attente CADENCÉE : elle avance depuis la minuterie ET depuis les battements de la boucle
-   * d'ordonnancement. Sous un moteur qui affame ses minuteries pendant que la boucle tourne
-   * (WebKit, mesuré le 2026-08-26), une attente scrutée par un `setInterval` ne s'exécuterait pas
-   * pendant la plage qu'elle borne : un boot qui n'aboutit pas resterait suspendu, sans
-   * `BootTimeout` — le silence que #52 combat.
-   */
-  const wait = (predicate, timeout, description) =>
-    new Promise((resolve, reject) => {
-      const started = Date.now();
-      let fini = false;
-      let arreter = () => {};
-      const verifier = () => {
-        if (fini) return;
-        if (predicate()) {
-          fini = true;
-          arreter();
-          resolve();
-        } else if (Date.now() - started > timeout) {
-          fini = true;
-          arreter();
-          reject(new BootTimeout(`Délai dépassé : ${description}`, transcript.slice(-4000)));
-        }
-      };
-      arreter = cadence(verifier);
-      if (fini) arreter();
-    });
+  const wait = creerAttenteCadencee({ cadence, lireTranscript: () => transcript });
 
   const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

@@ -30,6 +30,40 @@ class GuestTimeout extends Error {
 }
 
 /**
+ * Attente CADENCÉE, et non « scrutée par une minuterie ». La différence porte : sous un moteur qui
+ * affame ses minuteries pendant que la boucle d'ordonnancement tourne (WebKit, mesuré le
+ * 2026-08-26), un `setInterval` ne s'exécuterait pas pendant la plage même que cette attente
+ * borne — et un guest qui n'aboutit pas resterait suspendu sans jamais rendre de `GuestTimeout`.
+ * `cadencer` avance depuis la minuterie ET depuis les battements de la boucle.
+ *
+ * Cousue hors de la fabrique (#93). Le journal série est donc lu par `lireTranscript`, et non
+ * capturé : `shell` le REMET À ZÉRO avant chaque commande et il grandit ensuite pendant l'attente.
+ * C'est son état à l'instant du rejet qui doit accompagner l'erreur, pas celui de la construction.
+ */
+function creerAttenteCadencee({ cadence, lireTranscript }) {
+  return (predicate, timeout, description) =>
+    new Promise((resolve, reject) => {
+      const started = Date.now();
+      let fini = false;
+      let arreter = () => {};
+      const verifier = () => {
+        if (fini) return;
+        if (predicate()) {
+          fini = true;
+          arreter();
+          resolve();
+        } else if (Date.now() - started > timeout) {
+          fini = true;
+          arreter();
+          reject(new GuestTimeout(`Délai dépassé : ${description}`, lireTranscript().slice(-4000)));
+        }
+      };
+      arreter = cadence(verifier);
+      if (fini) arreter();
+    });
+}
+
+/**
  * @param {{ V86: Function, artifacts: { wasm: BufferSource, bios: BufferSource,
  *           vgaBios: BufferSource, cdrom: BufferSource },
  *           adapter: object, journal: import("./block-journal.mjs").BlockJournal,
@@ -57,33 +91,7 @@ export function createGuestSession({
       ? source
       : source.buffer.slice(source.byteOffset, source.byteOffset + source.byteLength);
 
-  /**
-   * Attente CADENCÉE, et non « scrutée par une minuterie ». La différence porte : sous un moteur qui
-   * affame ses minuteries pendant que la boucle d'ordonnancement tourne (WebKit, mesuré le
-   * 2026-08-26), un `setInterval` ne s'exécuterait pas pendant la plage même que cette attente
-   * borne — et un guest qui n'aboutit pas resterait suspendu sans jamais rendre de `GuestTimeout`.
-   * `cadencer` avance depuis la minuterie ET depuis les battements de la boucle.
-   */
-  const wait = (predicate, timeout, description) =>
-    new Promise((resolve, reject) => {
-      const started = Date.now();
-      let fini = false;
-      let arreter = () => {};
-      const verifier = () => {
-        if (fini) return;
-        if (predicate()) {
-          fini = true;
-          arreter();
-          resolve();
-        } else if (Date.now() - started > timeout) {
-          fini = true;
-          arreter();
-          reject(new GuestTimeout(`Délai dépassé : ${description}`, transcript.slice(-4000)));
-        }
-      };
-      arreter = cadence(verifier);
-      if (fini) arreter();
-    });
+  const wait = creerAttenteCadencee({ cadence, lireTranscript: () => transcript });
 
   return {
     /** Démarre la VM et rend la durée du premier boot, en millisecondes. */

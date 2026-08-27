@@ -12,6 +12,24 @@ import { JOURNAL_OPERATIONS } from "./block-journal.mjs";
 import { STORAGE_ERROR_CODES, StorageError } from "./storage-errors.mjs";
 
 /**
+ * Toute défaillance du support devient une `StorageError` avant d'entrer dans le journal ou dans
+ * `onFatal`. La couture est ici, au niveau du module, parce qu'elle ne dépend d'aucun état de
+ * l'adaptateur : elle ne fait que refuser qu'une erreur nue traverse la frontière du contrat.
+ *
+ * @param {unknown} error
+ * @returns {StorageError}
+ */
+function typerEchecDeSupport(error) {
+  return error instanceof StorageError
+    ? error
+    : new StorageError(
+        STORAGE_ERROR_CODES.handleLost,
+        `Échec non typé du support : ${error?.message ?? error}`,
+        {},
+      );
+}
+
+/**
  * @param {{ backend: import("./memory-block-backend.mjs").MemoryBlockBackend,
  *           onFatal: (error: StorageError) => void }} options
  */
@@ -26,15 +44,10 @@ export function createV86BufferAdapter({ backend, onFatal }) {
   let fatal = null;
   let inFlight = 0;
 
+  // Retient la PREMIÈRE erreur, journalise, puis prévient le runtime — dans cet ordre : `onFatal`
+  // peut arrêter la VM, et le journal doit déjà porter la trace quand il le fait.
   const fail = (error, context) => {
-    const typed =
-      error instanceof StorageError
-        ? error
-        : new StorageError(
-            STORAGE_ERROR_CODES.handleLost,
-            `Échec non typé du support : ${error?.message ?? error}`,
-            {},
-          );
+    const typed = typerEchecDeSupport(error);
     if (fatal === null) fatal = typed;
     journal.record(JOURNAL_OPERATIONS.failure, {
       code: typed.code,
@@ -44,7 +57,10 @@ export function createV86BufferAdapter({ backend, onFatal }) {
     onFatal(typed);
   };
 
-  const adapter = {
+  // Le contrat est RENDU directement : l'adaptateur n'a jamais eu besoin de se nommer lui-même, et
+  // le rendre tel quel laisse voir qu'au-delà des quelques gestes ci-dessus, cette fabrique ne fait
+  // que déclarer les neuf membres attendus par `ide.js`.
+  return {
     /** Géométrie lue une seule fois par `ide.js` à la construction. */
     byteLength: backend.size(),
     onload: undefined,
@@ -152,6 +168,4 @@ export function createV86BufferAdapter({ backend, onFatal }) {
       return { fatal, inFlight };
     },
   };
-
-  return adapter;
 }

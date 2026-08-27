@@ -52,42 +52,40 @@ export const BRIDGE_MODES = Object.freeze({
 const KNOWN_MODES = new Set(Object.values(BRIDGE_MODES));
 
 /**
- * Installe l'observation des commandes ATA et, selon le mode, le pont de durabilité.
+ * Traduit le mode en les DEUX drapeaux que les correctifs consomment, et refuse un mode inconnu.
  *
- * À appeler AVANT `emulator.run()` : le noyau lit le paquet IDENTIFY une seule fois au démarrage,
- * et un pont posé après coup n'obtiendrait de barrières qu'après un `rescan` explicite du guest.
+ * Extrait du pont parce que c'est la seule décision qu'il prend sur des données pures : la lire
+ * séparément fait voir que les deux ruptures d'amont se corrigent indépendamment, et que seul
+ * `full` les corrige toutes les deux.
  *
- * @param {{ ideController: object, adapter: object, mode?: string,
- *           journal: import("./block-journal.mjs").BlockJournal }} options
- * @returns {{ uninstall: () => void }}
+ * @param {string} mode une valeur de `BRIDGE_MODES`
+ * @returns {{ announcesWriteCache: boolean, forwardsBarrier: boolean }}
  */
-export function installDurabilityBridge({
-  ideController,
-  adapter,
-  journal,
-  mode = BRIDGE_MODES.full,
-}) {
+function interpreterMode(mode) {
   if (!KNOWN_MODES.has(mode)) {
     throw new Error(
       `Mode de pont inconnu : ${mode}. Valeurs admises : ${[...KNOWN_MODES].join(", ")}.`,
     );
   }
-  const announcesWriteCache = mode !== BRIDGE_MODES.observe;
-  const forwardsBarrier = mode === BRIDGE_MODES.full;
-  const master = ideController?.primary?.master;
-  if (!master) {
-    throw new Error("Contrôleur IDE inattendu : `primary.master` est absent.");
-  }
-  const prototype = Object.getPrototypeOf(master);
-  if (prototype[INSTALLED]) {
-    throw new Error("Le pont de durabilité est déjà installé sur ce prototype IDEInterface.");
-  }
+  return {
+    announcesWriteCache: mode !== BRIDGE_MODES.observe,
+    forwardsBarrier: mode === BRIDGE_MODES.full,
+  };
+}
 
-  const originalAtaCommand = prototype.ata_command;
-  const originalIdentify = prototype.create_identify_packet;
-  const targets = (self) => self.buffer === adapter;
-
-  prototype.create_identify_packet = function patchedIdentify() {
+/**
+ * Fabrique le remplaçant de `create_identify_packet` : la PREMIÈRE des deux ruptures d'amont.
+ *
+ * Sortie du pont pour que celui-ci ne garde que la validation et la pose. Le remplaçant reste une
+ * `function` nommée, jamais une flèche : v86 l'appelle comme méthode d'`IDEInterface`, et c'est ce
+ * `this` qui porte `data`, `is_atapi` et `buffer`.
+ *
+ * @param {Function} originalIdentify l'implémentation amont, toujours appelée en premier
+ * @param {{ announcesWriteCache: boolean, targets: (self: object) => boolean,
+ *           journal: import("./block-journal.mjs").BlockJournal }} couture
+ */
+function correctifIdentify(originalIdentify, { announcesWriteCache, targets, journal }) {
+  return function patchedIdentify() {
     originalIdentify.call(this);
     if (!announcesWriteCache || !targets(this) || this.is_atapi) return;
     for (const word of ATA.identifyWriteCacheWords) {
@@ -95,8 +93,22 @@ export function installDurabilityBridge({
     }
     journal.record(JOURNAL_OPERATIONS.mark, { label: "identify-write-cache" });
   };
+}
 
-  prototype.ata_command = function patchedAtaCommand(command) {
+/**
+ * Fabrique le remplaçant d'`ata_command` : la SECONDE rupture, celle qui acquitte FLUSH CACHE sans
+ * jamais toucher le tampon disque.
+ *
+ * L'ordre des gestes de la barrière est le contrat `SEC-DURABLE-001` et ne se réordonne pas : lever
+ * BSY AVANT d'appeler `adapter.flush`, puis n'acquitter — statut rendu, `push_irq()` — que dans les
+ * rappels, une fois la barrière aboutie ou abandonnée.
+ *
+ * @param {Function} originalAtaCommand l'implémentation amont, seule voie pour tout autre cas
+ * @param {{ forwardsBarrier: boolean, targets: (self: object) => boolean, adapter: object,
+ *           journal: import("./block-journal.mjs").BlockJournal }} couture
+ */
+function correctifAtaCommand(originalAtaCommand, { forwardsBarrier, targets, adapter, journal }) {
+  return function patchedAtaCommand(command) {
     if (!targets(this)) return originalAtaCommand.call(this, command);
 
     journal.record(JOURNAL_OPERATIONS.ata, { command });
@@ -122,6 +134,53 @@ export function installDurabilityBridge({
     );
     return undefined;
   };
+}
+
+/**
+ * Installe l'observation des commandes ATA et, selon le mode, le pont de durabilité.
+ *
+ * À appeler AVANT `emulator.run()` : le noyau lit le paquet IDENTIFY une seule fois au démarrage,
+ * et un pont posé après coup n'obtiendrait de barrières qu'après un `rescan` explicite du guest.
+ *
+ * @param {{ ideController: object, adapter: object, mode?: string,
+ *           journal: import("./block-journal.mjs").BlockJournal }} options
+ * @returns {{ uninstall: () => void }}
+ */
+export function installDurabilityBridge({
+  ideController,
+  adapter,
+  journal,
+  mode = BRIDGE_MODES.full,
+}) {
+  // Le mode est validé AVANT toute inspection du contrôleur : un mode inconnu est une faute d'appel,
+  // et elle doit se voir même sur un contrôleur lui-même inattendu.
+  const { announcesWriteCache, forwardsBarrier } = interpreterMode(mode);
+  const master = ideController?.primary?.master;
+  if (!master) {
+    throw new Error("Contrôleur IDE inattendu : `primary.master` est absent.");
+  }
+  const prototype = Object.getPrototypeOf(master);
+  if (prototype[INSTALLED]) {
+    throw new Error("Le pont de durabilité est déjà installé sur ce prototype IDEInterface.");
+  }
+
+  const originalAtaCommand = prototype.ata_command;
+  const originalIdentify = prototype.create_identify_packet;
+  const targets = (self) => self.buffer === adapter;
+
+  // Les deux correctifs sont posés dans cet ordre-là, mais aucun n'est actif avant `emulator.run()` :
+  // seule la pose du drapeau ci-dessous rend l'installation observable pour une seconde tentative.
+  prototype.create_identify_packet = correctifIdentify(originalIdentify, {
+    announcesWriteCache,
+    targets,
+    journal,
+  });
+  prototype.ata_command = correctifAtaCommand(originalAtaCommand, {
+    forwardsBarrier,
+    targets,
+    adapter,
+    journal,
+  });
 
   prototype[INSTALLED] = true;
 

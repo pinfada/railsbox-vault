@@ -46,18 +46,17 @@ function taux(part, total) {
 }
 
 /**
- * Résume une matrice rejouée.
+ * Dépouille les points rejoués en compteurs, et refuse tout verdict que l'oracle ne sait pas rendre.
  *
- * @param {{ graine: number, resultats: readonly object[], support?: string | null }} entree
- *   `resultats` est la sortie de `rejouerCoupure`, un élément par point.
- *   `support` nomme le support éprouvé — « double calibré » ou « OPFS Chromium » — parce qu'un taux
- *   ne veut rien dire sans lui.
+ * Séparé de `resumerMatrice` pour que le PARCOURS des points se lise indépendamment de la FORME du
+ * compte rendu qu'il alimente : l'un est une accumulation, l'autre une déclaration de champs, et
+ * les mêler faisait dépasser l'unité le plafond du dépôt.
+ *
+ * @param {readonly object[]} resultats
+ * @returns {{ verdicts: Record<string, number>, classes: Record<string, number>,
+ *             atomiques: number, entreesJournal: number, pointsSansJournal: number }}
  */
-export function resumerMatrice({ graine, resultats, support = null }) {
-  if (!Array.isArray(resultats) || resultats.length === 0) {
-    throw new RangeError("Aucun point rejoué : un taux sur zéro point ne mesurerait rien.");
-  }
-
+function compterPoints(resultats) {
   // Les verdicts INTERMÉDIAIRES sont nommés par génération (`generation-1`, `generation-2`…) : le
   // compte les accueille au fur et à mesure plutôt que sur une liste figée, sans quoi un scénario à
   // quatre générations publierait un total qui ne retomberait pas sur ses pieds.
@@ -77,6 +76,49 @@ export function resumerMatrice({ graine, resultats, support = null }) {
     entreesJournal += resultat.entreesJournal ?? 0;
     if (resultat.journalConsulte !== true) pointsSansJournal += 1;
   }
+
+  return { verdicts, classes, atomiques, entreesJournal, pointsSansJournal };
+}
+
+/**
+ * De quoi rejouer chaque point SEUL : sa graine et sa description complète.
+ *
+ * Séparé du compte rendu pour que la liste des champs publiés reste lisible d'un bloc. Le rejeu est
+ * une transformation de la matrice, pas une déclaration : il n'a pas à s'intercaler entre deux
+ * champs commentés.
+ *
+ * @param {number} graine
+ * @param {readonly object[]} resultats
+ */
+function decrireRejeu(graine, resultats) {
+  return Object.freeze(
+    resultats.map((resultat) =>
+      Object.freeze({
+        graine,
+        point: resultat.point,
+        verdict: resultat.verdict,
+        raison: resultat.raison,
+        arret: resultat.arret,
+      }),
+    ),
+  );
+}
+
+/**
+ * Résume une matrice rejouée.
+ *
+ * @param {{ graine: number, resultats: readonly object[], support?: string | null }} entree
+ *   `resultats` est la sortie de `rejouerCoupure`, un élément par point.
+ *   `support` nomme le support éprouvé — « double calibré » ou « OPFS Chromium » — parce qu'un taux
+ *   ne veut rien dire sans lui.
+ */
+export function resumerMatrice({ graine, resultats, support = null }) {
+  if (!Array.isArray(resultats) || resultats.length === 0) {
+    throw new RangeError("Aucun point rejoué : un taux sur zéro point ne mesurerait rien.");
+  }
+
+  const { verdicts, classes, atomiques, entreesJournal, pointsSansJournal } =
+    compterPoints(resultats);
 
   return Object.freeze({
     version: RESILIENCE_REPORT_VERSION,
@@ -102,16 +144,6 @@ export function resumerMatrice({ graine, resultats, support = null }) {
      */
     generationsAttendues: resultats[0].generationsAttendues ?? null,
     /** De quoi rejouer chaque point SEUL : sa graine et sa description complète. */
-    rejeu: Object.freeze(
-      resultats.map((resultat) =>
-        Object.freeze({
-          graine,
-          point: resultat.point,
-          verdict: resultat.verdict,
-          raison: resultat.raison,
-          arret: resultat.arret,
-        }),
-      ),
-    ),
+    rejeu: decrireRejeu(graine, resultats),
   });
 }

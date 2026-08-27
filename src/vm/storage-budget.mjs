@@ -147,164 +147,223 @@ function estimateUnavailableDiagnostic(operation) {
 }
 
 /**
- * Construit une couche budget au-dessus de primitives injectées. Sous Node, ce sont des doubles
- * déterministes ; en production, `bindNavigatorStorage(navigator.storage)`. Chaque primitive peut être
- * absente : la couche le traite en état diagnostiqué, jamais en exception opaque.
+ * Diagnostic d'un moteur qui n'expose ni `persist()` ni `persisted()` : aucune durabilité inventée.
  *
- * @param {{ estimate?: () => Promise<StorageEstimate>, persist?: () => Promise<boolean>, persisted?: () => Promise<boolean> }} primitives
+ * Ce diagnostic et les trois suivants sont assemblés à côté du premier, hors des fonctions
+ * d'opération : celles-ci n'ont plus qu'à DÉCIDER, la formulation du message vit ici.
  */
-export function createStorageBudget({ estimate, persist, persisted } = {}) {
-  async function measure() {
-    if (typeof estimate !== "function") {
-      return unknownMeasure("estimate");
-    }
-    let raw;
-    try {
-      raw = await estimate();
-    } catch {
-      // Un moteur qui refuse d'estimer ne rend pas une capacité : il rend une inconnue.
-      return unknownMeasure("estimate");
-    }
-    if (!isNumericBytes(raw?.quota)) {
-      return unknownMeasure("estimate");
-    }
-    const quota = raw.quota;
-    const usage = isNumericBytes(raw.usage) ? raw.usage : 0;
-    const available = Math.max(0, quota - usage);
-    return { operation: "estimate", state: "known", quota, usage, available, diagnostic: null };
+function persistUnsupportedDiagnostic() {
+  return new BudgetDiagnostic(BUDGET_DIAGNOSTIC_CODES.persistUnsupported, {
+    operation: "persist",
+    severity: BUDGET_SEVERITY.info,
+    message:
+      "La persistance de stockage n'est pas exposée par ce moteur : aucune durabilité ne peut être demandée ni promise.",
+    recovery: RECOVERY_ACTIONS.informUser,
+    context: { state: "unsupported" },
+  });
+}
+
+/** Diagnostic d'un refus de `persist()` : un état qualifié et non durable, jamais une erreur. */
+function persistDeniedDiagnostic() {
+  return new BudgetDiagnostic(BUDGET_DIAGNOSTIC_CODES.persistDenied, {
+    operation: "persist",
+    severity: BUDGET_SEVERITY.warning,
+    message:
+      "La persistance a été refusée : les données peuvent être évincées par le navigateur. Poursuivre reste possible mais SANS garantie de durabilité.",
+    recovery: RECOVERY_ACTIONS.proceedVolatile,
+    context: { state: "denied", durable: false },
+  });
+}
+
+/** Diagnostic d'un espace estimé inférieur au besoin annoncé, émis AVANT toute mutation. */
+function spaceLowDiagnostic(available, requiredBytes) {
+  return new BudgetDiagnostic(BUDGET_DIAGNOSTIC_CODES.spaceLow, {
+    operation: "reserve",
+    severity: BUDGET_SEVERITY.warning,
+    message:
+      "L'espace estimé est inférieur au besoin annoncé. L'avertissement précède toute mutation ; aucune écriture n'est tentée.",
+    recovery: RECOVERY_ACTIONS.exportThenDecide,
+    context: { available, requiredBytes },
+  });
+}
+
+/** Diagnostic d'un quota dépassé pendant l'opération nommée. */
+function quotaExceededDiagnostic(operation) {
+  return new BudgetDiagnostic(BUDGET_DIAGNOSTIC_CODES.quotaExceeded, {
+    operation,
+    severity: BUDGET_SEVERITY.error,
+    message:
+      "Le quota de stockage a été dépassé pendant l'opération. Le volume n'est PAS réinitialisé et les données antérieures valides restent lisibles.",
+    recovery: RECOVERY_ACTIONS.freeSpaceManually,
+    // Contexte volontairement réduit à des drapeaux et au code de cause : jamais le message brut,
+    // jamais un octet de contenu.
+    context: {
+      volumeReset: false,
+      priorDataReadable: true,
+      cause: STORAGE_ERROR_CODES.quotaExceeded,
+    },
+  });
+}
+
+/**
+ * Mesure d'espace. Hors de la fabrique parce qu'elle ne capture RIEN d'autre que la primitive
+ * `estimate` : la clôture ne lui apportait pas d'état, et la règle « inconnu ≠ zéro » se relit mieux
+ * seule que noyée dans une fabrique de cent cinquante lignes.
+ *
+ * @param {(() => Promise<StorageEstimate>) | undefined} estimate
+ */
+async function mesurerEspace(estimate) {
+  if (typeof estimate !== "function") {
+    return unknownMeasure("estimate");
   }
-
-  function unknownMeasure(operation) {
-    return {
-      operation,
-      state: "unknown",
-      quota: null,
-      usage: null,
-      available: null,
-      diagnostic: estimateUnavailableDiagnostic(operation),
-    };
+  let raw;
+  try {
+    raw = await estimate();
+  } catch {
+    // Un moteur qui refuse d'estimer ne rend pas une capacité : il rend une inconnue.
+    return unknownMeasure("estimate");
   }
+  if (!isNumericBytes(raw?.quota)) {
+    return unknownMeasure("estimate");
+  }
+  const quota = raw.quota;
+  const usage = isNumericBytes(raw.usage) ? raw.usage : 0;
+  const available = Math.max(0, quota - usage);
+  return { operation: "estimate", state: "known", quota, usage, available, diagnostic: null };
+}
 
-  async function requestPersistence() {
-    if (typeof persist !== "function" || typeof persisted !== "function") {
-      return {
-        operation: "persist",
-        state: "unsupported",
-        durable: false,
-        diagnostic: new BudgetDiagnostic(BUDGET_DIAGNOSTIC_CODES.persistUnsupported, {
-          operation: "persist",
-          severity: BUDGET_SEVERITY.info,
-          message:
-            "La persistance de stockage n'est pas exposée par ce moteur : aucune durabilité ne peut être demandée ni promise.",
-          recovery: RECOVERY_ACTIONS.informUser,
-          context: { state: "unsupported" },
-        }),
-      };
-    }
+/** Forme « inconnue » de la mesure : capacité inconnue, et surtout pas nulle. */
+function unknownMeasure(operation) {
+  return {
+    operation,
+    state: "unknown",
+    quota: null,
+    usage: null,
+    available: null,
+    diagnostic: estimateUnavailableDiagnostic(operation),
+  };
+}
 
-    if (await persisted()) {
-      return { operation: "persist", state: "already", durable: true, diagnostic: null };
-    }
-
-    let granted;
-    try {
-      granted = (await persist()) === true;
-    } catch {
-      // Firefox laisse parfois la promesse pendante derrière une invite ; un rejet vaut refus.
-      // Un refus n'est pas une erreur : c'est un état qualifié, non durable.
-      granted = false;
-    }
-
-    if (granted) {
-      return { operation: "persist", state: "granted", durable: true, diagnostic: null };
-    }
-
+/**
+ * Demande de persistance. Les deux primitives lui suffisent : rien d'autre n'est capturé, donc rien
+ * ne justifiait de la garder dans la clôture.
+ *
+ * @param {(() => Promise<boolean>) | undefined} persist
+ * @param {(() => Promise<boolean>) | undefined} persisted
+ */
+async function demanderPersistance(persist, persisted) {
+  if (typeof persist !== "function" || typeof persisted !== "function") {
     return {
       operation: "persist",
-      state: "denied",
+      state: "unsupported",
       durable: false,
-      diagnostic: new BudgetDiagnostic(BUDGET_DIAGNOSTIC_CODES.persistDenied, {
-        operation: "persist",
-        severity: BUDGET_SEVERITY.warning,
-        message:
-          "La persistance a été refusée : les données peuvent être évincées par le navigateur. Poursuivre reste possible mais SANS garantie de durabilité.",
-        recovery: RECOVERY_ACTIONS.proceedVolatile,
-        context: { state: "denied", durable: false },
-      }),
+      diagnostic: persistUnsupportedDiagnostic(),
     };
   }
 
-  async function reserve(requiredBytes) {
-    if (!isNumericBytes(requiredBytes)) {
-      throw new TypeError(
-        `Le besoin de réservation doit être un nombre d'octets ≥ 0 : ${requiredBytes}`,
-      );
-    }
-    const mesure = await measure();
-    if (mesure.state === "unknown") {
-      return {
-        operation: "reserve",
-        state: "unknown",
-        requiredBytes,
-        available: null,
-        sufficient: null,
-        diagnostic: estimateUnavailableDiagnostic("reserve"),
-      };
-    }
-    if (mesure.available < requiredBytes) {
-      return {
-        operation: "reserve",
-        state: "known",
-        requiredBytes,
-        available: mesure.available,
-        sufficient: false,
-        diagnostic: new BudgetDiagnostic(BUDGET_DIAGNOSTIC_CODES.spaceLow, {
-          operation: "reserve",
-          severity: BUDGET_SEVERITY.warning,
-          message:
-            "L'espace estimé est inférieur au besoin annoncé. L'avertissement précède toute mutation ; aucune écriture n'est tentée.",
-          recovery: RECOVERY_ACTIONS.exportThenDecide,
-          context: { available: mesure.available, requiredBytes },
-        }),
-      };
-    }
+  if (await persisted()) {
+    return { operation: "persist", state: "already", durable: true, diagnostic: null };
+  }
+
+  let granted;
+  try {
+    granted = (await persist()) === true;
+  } catch {
+    // Firefox laisse parfois la promesse pendante derrière une invite ; un rejet vaut refus.
+    // Un refus n'est pas une erreur : c'est un état qualifié, non durable.
+    granted = false;
+  }
+
+  if (granted) {
+    return { operation: "persist", state: "granted", durable: true, diagnostic: null };
+  }
+
+  return {
+    operation: "persist",
+    state: "denied",
+    durable: false,
+    diagnostic: persistDeniedDiagnostic(),
+  };
+}
+
+/**
+ * Réservation d'espace. La fonction de mesure lui est PASSÉE plutôt que capturée : c'est le seul
+ * lien qu'elle garde avec la fabrique, et le passer explicitement préserve l'ordre des gestes —
+ * validation du besoin d'abord, mesure ensuite, jamais l'inverse.
+ *
+ * @param {() => Promise<object>} mesurer la mesure de la fabrique appelante
+ * @param {number} requiredBytes
+ */
+async function reserverEspace(mesurer, requiredBytes) {
+  if (!isNumericBytes(requiredBytes)) {
+    throw new TypeError(
+      `Le besoin de réservation doit être un nombre d'octets ≥ 0 : ${requiredBytes}`,
+    );
+  }
+  const mesure = await mesurer();
+  if (mesure.state === "unknown") {
+    return {
+      operation: "reserve",
+      state: "unknown",
+      requiredBytes,
+      available: null,
+      sufficient: null,
+      diagnostic: estimateUnavailableDiagnostic("reserve"),
+    };
+  }
+  if (mesure.available < requiredBytes) {
     return {
       operation: "reserve",
       state: "known",
       requiredBytes,
       available: mesure.available,
-      sufficient: true,
-      diagnostic: null,
+      sufficient: false,
+      diagnostic: spaceLowDiagnostic(mesure.available, requiredBytes),
     };
   }
+  return {
+    operation: "reserve",
+    state: "known",
+    requiredBytes,
+    available: mesure.available,
+    sufficient: true,
+    diagnostic: null,
+  };
+}
 
-  function classifyWriteFailure(error, { operation = "write" } = {}) {
-    if (typeof operation !== "string" || operation.length === 0) {
-      throw new Error("classifyWriteFailure doit nommer son opération.");
-    }
-    const isQuota =
-      isStorageError(error, STORAGE_ERROR_CODES.quotaExceeded) ||
-      error?.code === STORAGE_ERROR_CODES.quotaExceeded ||
-      error?.name === "QuotaExceededError";
-    if (!isQuota) {
-      // Les autres états typés appartiennent à #6 : #9 ne les réétiquette pas.
-      return null;
-    }
-    return new BudgetDiagnostic(BUDGET_DIAGNOSTIC_CODES.quotaExceeded, {
-      operation,
-      severity: BUDGET_SEVERITY.error,
-      message:
-        "Le quota de stockage a été dépassé pendant l'opération. Le volume n'est PAS réinitialisé et les données antérieures valides restent lisibles.",
-      recovery: RECOVERY_ACTIONS.freeSpaceManually,
-      // Contexte volontairement réduit à des drapeaux et au code de cause : jamais le message brut,
-      // jamais un octet de contenu.
-      context: {
-        volumeReset: false,
-        priorDataReadable: true,
-        cause: STORAGE_ERROR_CODES.quotaExceeded,
-      },
-    });
+/**
+ * Qualification d'un échec d'écriture. Elle ne capture aucune primitive — elle ne lit que l'erreur
+ * reçue —, donc elle vit au niveau du module et la fabrique se contente de la republier.
+ */
+function classifyWriteFailure(error, { operation = "write" } = {}) {
+  if (typeof operation !== "string" || operation.length === 0) {
+    throw new Error("classifyWriteFailure doit nommer son opération.");
   }
+  const isQuota =
+    isStorageError(error, STORAGE_ERROR_CODES.quotaExceeded) ||
+    error?.code === STORAGE_ERROR_CODES.quotaExceeded ||
+    error?.name === "QuotaExceededError";
+  if (!isQuota) {
+    // Les autres états typés appartiennent à #6 : #9 ne les réétiquette pas.
+    return null;
+  }
+  return quotaExceededDiagnostic(operation);
+}
+
+/**
+ * Construit une couche budget au-dessus de primitives injectées. Sous Node, ce sont des doubles
+ * déterministes ; en production, `bindNavigatorStorage(navigator.storage)`. Chaque primitive peut être
+ * absente : la couche le traite en état diagnostiqué, jamais en exception opaque.
+ *
+ * La fabrique ne fait plus que LIER les primitives aux opérations du module : aucune d'elles n'avait
+ * besoin de la clôture, et les tenir dehors les rend lisibles et mesurables une à une.
+ *
+ * @param {{ estimate?: () => Promise<StorageEstimate>, persist?: () => Promise<boolean>, persisted?: () => Promise<boolean> }} primitives
+ */
+export function createStorageBudget({ estimate, persist, persisted } = {}) {
+  const measure = () => mesurerEspace(estimate);
+  const requestPersistence = () => demanderPersistance(persist, persisted);
+  const reserve = (requiredBytes) => reserverEspace(measure, requiredBytes);
 
   return { measure, requestPersistence, reserve, classifyWriteFailure };
 }

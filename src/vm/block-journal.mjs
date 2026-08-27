@@ -105,17 +105,17 @@ export class BlockJournal {
 }
 
 /**
- * Vérifie la promesse de durabilité : chaque `flush` acquitté est précédé d'au moins une écriture,
- * et son acquittement suit toutes les écritures émises avant lui.
+ * Parcourt le journal une seule fois et APPARIE chaque `flush` à son acquittement, en comptant au
+ * passage les écritures qui le précèdent et celles qui se glissent entre lui et son acquittement.
  *
- * C'est la propriété que `docs/quality-attributes.md` appelle « RPO 0 après la barrière durable du
- * guest ». Elle se lit sur l'ordre du journal, pas sur des totaux.
+ * Ce relevé ne juge de rien : il rend ce qu'il a vu, y compris l'acquittement orphelin qui a
+ * interrompu le parcours. Le verdict est calculé à part, pour que l'ordre des contrôles soit lisible
+ * d'un bloc au lieu d'être dispersé dans la boucle.
  *
- * @param {readonly object[]} entries sortie de `BlockJournal#entries()`
- * @returns {{ satisfied: boolean, barriers: Array<{ flushSeq: number, ackSeq: number,
- *             writesBefore: number, writesBetween: number }>, reason: string | null }}
+ * @param {readonly object[]} entries
+ * @returns {{ barriers: object[], pending: Map<unknown, object>, orphelin: object | null }}
  */
-export function auditDurabilityBarriers(entries) {
+function apparierBarrieres(entries) {
   const barriers = [];
   let writesBefore = 0;
   const pending = new Map();
@@ -133,19 +133,32 @@ export function auditDurabilityBarriers(entries) {
       });
     } else if (entry.operation === JOURNAL_OPERATIONS.flushAck) {
       const barrier = pending.get(entry.barrier);
-      if (!barrier) {
-        return {
-          satisfied: false,
-          barriers,
-          reason: `Acquittement sans barrière correspondante (barrier=${entry.barrier}).`,
-        };
-      }
+      // Le parcours s'ARRÊTE ici : la suite du journal se lirait sur un appariement déjà faux.
+      if (!barrier) return { barriers, pending, orphelin: entry };
       barrier.ackSeq = entry.seq;
       pending.delete(entry.barrier);
       barriers.push(barrier);
     }
   }
+  return { barriers, pending, orphelin: null };
+}
 
+/**
+ * Juge le relevé. L'ORDRE de ces contrôles fait partie du contrat : un journal fautif sur plusieurs
+ * points doit toujours rendre la MÊME raison, sinon deux exécutions du même scénario se
+ * raconteraient différemment. Chaque défaut rend aussi les barrières déjà appariées : un verdict
+ * négatif sans son relevé n'apprendrait rien à qui l'enquête.
+ *
+ * @param {{ barriers: object[], pending: Map<unknown, object>, orphelin: object | null }} releve
+ */
+function verdictDesBarrieres({ barriers, pending, orphelin }) {
+  if (orphelin) {
+    return {
+      satisfied: false,
+      barriers,
+      reason: `Acquittement sans barrière correspondante (barrier=${orphelin.barrier}).`,
+    };
+  }
   if (pending.size > 0) {
     return {
       satisfied: false,
@@ -173,4 +186,19 @@ export function auditDurabilityBarriers(entries) {
     };
   }
   return { satisfied: true, barriers, reason: null };
+}
+
+/**
+ * Vérifie la promesse de durabilité : chaque `flush` acquitté est précédé d'au moins une écriture,
+ * et son acquittement suit toutes les écritures émises avant lui.
+ *
+ * C'est la propriété que `docs/quality-attributes.md` appelle « RPO 0 après la barrière durable du
+ * guest ». Elle se lit sur l'ordre du journal, pas sur des totaux.
+ *
+ * @param {readonly object[]} entries sortie de `BlockJournal#entries()`
+ * @returns {{ satisfied: boolean, barriers: Array<{ flushSeq: number, ackSeq: number,
+ *             writesBefore: number, writesBetween: number }>, reason: string | null }}
+ */
+export function auditDurabilityBarriers(entries) {
+  return verdictDesBarrieres(apparierBarrieres(entries));
 }

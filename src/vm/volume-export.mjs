@@ -141,6 +141,51 @@ async function streamVolume(source, blockBytes, onBlock) {
   }
 }
 
+/** Valide les collaborateurs injectés. Une faute de programmation n'est pas un état de format. */
+function assertContratDExport({ source, sink, blockBytes }) {
+  if (!source || typeof source.read !== "function" || !Number.isInteger(source.size)) {
+    throw new TypeError("writeArchive attend une source { size, read(offset, length) }.");
+  }
+  if (!sink || typeof sink.write !== "function") {
+    throw new TypeError("writeArchive attend un puits { write(bytes) }.");
+  }
+  if (!Number.isInteger(blockBytes) || blockBytes <= 0) {
+    throw new RangeError(`Taille de bloc invalide : ${blockBytes}.`);
+  }
+}
+
+/**
+ * Analyse le manifeste fourni et l'accorde à la source. Séparé des contrôles ci-dessus parce que le
+ * refus qu'il porte est d'une AUTRE NATURE : un manifeste qui décrit un autre volume que celui qu'on
+ * s'apprête à lire est un état de format, refusé par un code typé, et non une faute d'appel.
+ */
+function accorderManifesteEtSource(manifest, source) {
+  // Le manifeste est validé par #10 (objet, octets ou chaîne acceptés) avant tout usage.
+  const base = parseManifest(manifest);
+  if (base.geometry.volumeSize !== source.size) {
+    throw new ArchiveError(
+      ARCHIVE_ERROR_CODES.geometryMismatch,
+      `Export refusé : le manifeste déclare ${base.geometry.volumeSize} octet(s) mais la source en porte ${source.size}.`,
+      { manifestVolumeSize: base.geometry.volumeSize, sourceSize: source.size },
+    );
+  }
+  return base;
+}
+
+/**
+ * Écrit le préambule et l'en-tête vers le puits, et rend le manifeste inscrit avec ses octets.
+ * Extrait parce que cette étape est la CHARNIÈRE des deux passes : elle ne peut exister qu'entre
+ * elles, `identity.digest` n'étant renseignable qu'une fois la première passe achevée.
+ */
+async function ecrireEnTete({ sink, base, digest, contentLength, consistency }) {
+  const manifestWithDigest = withContentDigest(base, digest);
+  const header = buildHeader({ manifest: manifestWithDigest, digest, contentLength, consistency });
+  const headerBytes = encoder.encode(JSON.stringify(header));
+  await sink.write(encodePreamble(headerBytes.byteLength));
+  await sink.write(headerBytes);
+  return { manifestWithDigest, headerBytes };
+}
+
 /**
  * Écrit une archive vers un puits séquentiel, en STREAMING et à surmémoire bornée. Deux passes sur la
  * source : la première empreinte le contenu (pour renseigner `identity.digest` AVANT d'écrire
@@ -162,25 +207,9 @@ export async function writeArchive({
   consistency,
   blockBytes = DEFAULT_BLOCK_BYTES,
 }) {
-  if (!source || typeof source.read !== "function" || !Number.isInteger(source.size)) {
-    throw new TypeError("writeArchive attend une source { size, read(offset, length) }.");
-  }
-  if (!sink || typeof sink.write !== "function") {
-    throw new TypeError("writeArchive attend un puits { write(bytes) }.");
-  }
-  if (!Number.isInteger(blockBytes) || blockBytes <= 0) {
-    throw new RangeError(`Taille de bloc invalide : ${blockBytes}.`);
-  }
+  assertContratDExport({ source, sink, blockBytes });
   const guarantee = normalizeConsistency(consistency);
-  // Le manifeste est validé par #10 (objet, octets ou chaîne acceptés) avant tout usage.
-  const base = parseManifest(manifest);
-  if (base.geometry.volumeSize !== source.size) {
-    throw new ArchiveError(
-      ARCHIVE_ERROR_CODES.geometryMismatch,
-      `Export refusé : le manifeste déclare ${base.geometry.volumeSize} octet(s) mais la source en porte ${source.size}.`,
-      { manifestVolumeSize: base.geometry.volumeSize, sourceSize: source.size },
-    );
-  }
+  const base = accorderManifesteEtSource(manifest, source);
 
   // Passe 1 : empreinte du contenu, en flux.
   const hash = createSha256Stream();
@@ -188,16 +217,13 @@ export async function writeArchive({
   const digest = hash.digestHex();
 
   // En-tête : manifeste avec digest renseigné, puis préambule + en-tête vers le puits.
-  const manifestWithDigest = withContentDigest(base, digest);
-  const header = buildHeader({
-    manifest: manifestWithDigest,
+  const { manifestWithDigest, headerBytes } = await ecrireEnTete({
+    sink,
+    base,
     digest,
     contentLength: source.size,
     consistency: guarantee,
   });
-  const headerBytes = encoder.encode(JSON.stringify(header));
-  await sink.write(encodePreamble(headerBytes.byteLength));
-  await sink.write(headerBytes);
 
   // Passe 2 : recopie du contenu, en flux.
   await streamVolume(source, blockBytes, (bytes) => sink.write(bytes));
@@ -303,6 +329,114 @@ function validateHeaderShape(header) {
 }
 
 /**
+ * Lit le préambule puis l'en-tête JSON, et rend l'en-tête VALIDÉ avec sa longueur. Extrait parce que
+ * la reconnaissance du conteneur est une étape entière et close : marqueur binaire, longueur
+ * plausible, JSON analysable, forme d'en-tête. Elle décide seule si ces octets sont une archive,
+ * avant qu'aucune question de manifeste ou de contenu ne se pose.
+ */
+async function lireEnTete(read, byteLength) {
+  const preamble = await readExact(read, 0, PREAMBLE_BYTES, byteLength);
+  if (!hasArchiveMagic(preamble)) {
+    throw malformed("marqueur binaire absent : ce n'est pas une archive Vault.", {});
+  }
+  const headerLength = new DataView(
+    preamble.buffer,
+    preamble.byteOffset,
+    preamble.byteLength,
+  ).getUint32(ARCHIVE_MAGIC.byteLength, false);
+  if (headerLength === 0 || headerLength > MAX_HEADER_BYTES) {
+    throw malformed(`longueur d'en-tête implausible : ${headerLength}.`, { headerLength });
+  }
+
+  const headerBytes = await readExact(read, PREAMBLE_BYTES, headerLength, byteLength);
+  let header;
+  try {
+    header = JSON.parse(decoder.decode(headerBytes));
+  } catch {
+    throw malformed("en-tête JSON illisible.", {});
+  }
+  validateHeaderShape(header);
+  return { header, headerLength };
+}
+
+/**
+ * Accorde le manifeste porté par l'en-tête avec le descripteur de contenu qui l'accompagne, et rend
+ * le manifeste validé. Extrait parce que ces contrôles répondent à UNE SEULE question — l'archive
+ * dit-elle deux fois la même chose ? — et parce que leur ORDRE est significatif : #10 tranche
+ * d'abord la validité du manifeste, la compatibilité ensuite, la concordance interne en dernier.
+ */
+function accorderManifesteEtContenu(header, { expectations, enforceCompatibility }) {
+  // Manifeste validé par #10 : objet à moitié valide impossible, refus typé propagé.
+  const manifest = parseManifest(header.manifest);
+  // La compatibilité est vérifiée PAR DÉFAUT, avec ou sans attentes fournies : un contrôle qui ne
+  // s'exécute que si l'appelant pense à le demander n'est pas un contrôle. Sans attentes, la plage
+  // de formats de ce runtime (`DEFAULT_SUPPORTED_FORMAT`) s'applique déjà. La dérogation existe pour
+  // un outil de DIAGNOSTIC — lire un conteneur qu'on ne saurait pas ouvrir en écriture —, mais elle
+  // doit être demandée, nommément.
+  if (enforceCompatibility) {
+    assertReadable(manifest, expectations);
+  }
+
+  const contentLength = header.content.length;
+  if (contentLength !== manifest.geometry.volumeSize) {
+    throw new ArchiveError(
+      ARCHIVE_ERROR_CODES.geometryMismatch,
+      `Longueur de contenu (${contentLength}) incohérente avec la géométrie du manifeste (${manifest.geometry.volumeSize}).`,
+      { contentLength, volumeSize: manifest.geometry.volumeSize },
+    );
+  }
+  if (manifest.identity.digest !== header.content.digest) {
+    throw malformed("le digest du manifeste et celui de l'en-tête divergent.", {
+      manifestDigest: manifest.identity.digest,
+      headerDigest: header.content.digest,
+    });
+  }
+  return manifest;
+}
+
+/**
+ * Refuse un contenu plus court que déclaré, puis RECALCULE son empreinte et la confronte à celle
+ * inscrite. Extrait parce que c'est la vérification qui COÛTE : elle relit tout le contenu, et la
+ * borne de surmémoire de la lecture tient dans cette boucle et nulle part ailleurs. La troncature se
+ * mesure avant la première lecture de contenu : inutile d'empreinter ce qu'on sait déjà incomplet.
+ */
+async function verifierEmpreinteDuContenu({
+  read,
+  byteLength,
+  contentOffset,
+  contentLength,
+  declaredLength,
+  blockBytes,
+  digestInscrit,
+}) {
+  if (byteLength < declaredLength) {
+    throw truncated(
+      `contenu incomplet : ${byteLength - contentOffset} octet(s) présents sur ${contentLength} déclarés.`,
+      { present: Math.max(0, byteLength - contentOffset), declared: contentLength },
+    );
+  }
+
+  // Recalcul de l'empreinte EN STREAMING : le contenu n'est jamais tenu entier en mémoire.
+  const hash = createSha256Stream();
+  let offset = contentOffset;
+  while (offset < declaredLength) {
+    const length = Math.min(blockBytes, declaredLength - offset);
+    const bytes = await readExact(read, offset, length, byteLength);
+    hash.update(bytes);
+    offset += length;
+  }
+  const computed = hash.digestHex();
+  if (computed !== digestInscrit) {
+    throw new ArchiveError(
+      ARCHIVE_ERROR_CODES.digestMismatch,
+      `Empreinte non concordante : recalculée ${computed}, inscrite ${digestInscrit}.`,
+      { computed, declared: digestInscrit },
+    );
+  }
+  return computed;
+}
+
+/**
  * Lit et VÉRIFIE une archive en streaming. `read(offset, length)` lit l'archive ; `byteLength` est sa
  * taille totale. La vérification recalcule l'empreinte du contenu et valide le manifeste par #10.
  *
@@ -335,85 +469,26 @@ export async function readArchive({
     );
   }
 
-  const preamble = await readExact(read, 0, PREAMBLE_BYTES, byteLength);
-  if (!hasArchiveMagic(preamble)) {
-    throw malformed("marqueur binaire absent : ce n'est pas une archive Vault.", {});
-  }
-  const headerLength = new DataView(
-    preamble.buffer,
-    preamble.byteOffset,
-    preamble.byteLength,
-  ).getUint32(ARCHIVE_MAGIC.byteLength, false);
-  if (headerLength === 0 || headerLength > MAX_HEADER_BYTES) {
-    throw malformed(`longueur d'en-tête implausible : ${headerLength}.`, { headerLength });
-  }
-
-  const headerBytes = await readExact(read, PREAMBLE_BYTES, headerLength, byteLength);
-  let header;
-  try {
-    header = JSON.parse(decoder.decode(headerBytes));
-  } catch {
-    throw malformed("en-tête JSON illisible.", {});
-  }
-  validateHeaderShape(header);
-
-  // Manifeste validé par #10 : objet à moitié valide impossible, refus typé propagé.
-  const manifest = parseManifest(header.manifest);
-  // La compatibilité est vérifiée PAR DÉFAUT, avec ou sans attentes fournies : un contrôle qui ne
-  // s'exécute que si l'appelant pense à le demander n'est pas un contrôle. Sans attentes, la plage
-  // de formats de ce runtime (`DEFAULT_SUPPORTED_FORMAT`) s'applique déjà. La dérogation existe pour
-  // un outil de DIAGNOSTIC — lire un conteneur qu'on ne saurait pas ouvrir en écriture —, mais elle
-  // doit être demandée, nommément.
-  if (enforceCompatibility) {
-    assertReadable(manifest, expectations);
-  }
+  const { header, headerLength } = await lireEnTete(read, byteLength);
+  const manifest = accorderManifesteEtContenu(header, { expectations, enforceCompatibility });
 
   const contentLength = header.content.length;
-  if (contentLength !== manifest.geometry.volumeSize) {
-    throw new ArchiveError(
-      ARCHIVE_ERROR_CODES.geometryMismatch,
-      `Longueur de contenu (${contentLength}) incohérente avec la géométrie du manifeste (${manifest.geometry.volumeSize}).`,
-      { contentLength, volumeSize: manifest.geometry.volumeSize },
-    );
-  }
-  if (manifest.identity.digest !== header.content.digest) {
-    throw malformed("le digest du manifeste et celui de l'en-tête divergent.", {
-      manifestDigest: manifest.identity.digest,
-      headerDigest: header.content.digest,
-    });
-  }
-
   const contentOffset = PREAMBLE_BYTES + headerLength;
   const declaredLength = contentOffset + contentLength;
-  if (byteLength < declaredLength) {
-    throw truncated(
-      `contenu incomplet : ${byteLength - contentOffset} octet(s) présents sur ${contentLength} déclarés.`,
-      { present: Math.max(0, byteLength - contentOffset), declared: contentLength },
-    );
-  }
 
-  // Recalcul de l'empreinte EN STREAMING : le contenu n'est jamais tenu entier en mémoire.
-  const hash = createSha256Stream();
-  let offset = contentOffset;
-  const end = contentOffset + contentLength;
-  while (offset < end) {
-    const length = Math.min(blockBytes, end - offset);
-    const bytes = await readExact(read, offset, length, byteLength);
-    hash.update(bytes);
-    offset += length;
-  }
-  const computed = hash.digestHex();
-  if (computed !== header.content.digest) {
-    throw new ArchiveError(
-      ARCHIVE_ERROR_CODES.digestMismatch,
-      `Empreinte non concordante : recalculée ${computed}, inscrite ${header.content.digest}.`,
-      { computed, declared: header.content.digest },
-    );
-  }
+  const contentDigest = await verifierEmpreinteDuContenu({
+    read,
+    byteLength,
+    contentOffset,
+    contentLength,
+    declaredLength,
+    blockBytes,
+    digestInscrit: header.content.digest,
+  });
 
   return {
     manifest,
-    contentDigest: computed,
+    contentDigest,
     contentLength,
     // Offset du premier octet de contenu. Il est déductible (`archiveLength - contentLength`), mais
     // la restauration (#12) le relit bloc par bloc : le rendre explicite évite qu'un appelant

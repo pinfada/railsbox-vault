@@ -65,86 +65,18 @@ const JUSTIFIEES = [];
 
 /**
  * Dépassements ANTÉRIEURS à #77 et hors de son périmètre, relevés le 2026-08-27 sur `main`
- * (01f601a). Ils ne sont pas justifiés : ils sont inscrits pour cesser de croître, et #93 les
- * solde. Une entrée ne se met à jour vers le HAUT que si la revue l'accepte explicitement.
+ * (01f601a). Ils n'étaient pas justifiés : ils étaient inscrits pour cesser de croître, en
+ * attendant #93.
+ *
+ * **VIDE depuis #93.** Les vingt-neuf dépassements du relevé sont soldés : vingt-trois par
+ * découpage — extraction de fonctions nommées, à comportement inchangé, la suite existante servant
+ * de preuve — et six par la convention des fabriques de contrat ci-dessus, qui les admet sans
+ * inscription. La liste reste ici, et l'épreuve avec elle : un dépassement futur devra être découpé,
+ * admis par la convention, ou justifié dans `JUSTIFIEES` — jamais daté et repoussé une seconde fois.
+ *
+ * @type {{ fichier: string, fonction: string, lignes: number }[]}
  */
-const DETTE_ANTERIEURE = [
-  {
-    fichier: "src/vm/sync-access-double.mjs",
-    fonction: "Function 'createSyncAccessStore'",
-    lignes: 202,
-  },
-  {
-    fichier: "src/vm/reference-guest-session.mjs",
-    fonction: "Function 'createReferenceGuestSession'",
-    lignes: 179,
-  },
-  { fichier: "src/vm/storage-budget.mjs", fonction: "Function 'createStorageBudget'", lignes: 155 },
-  { fichier: "src/vm/guest-session.mjs", fonction: "Function 'createGuestSession'", lignes: 142 },
-  {
-    fichier: "src/vm/v86-buffer-adapter.mjs",
-    fonction: "Function 'createV86BufferAdapter'",
-    lignes: 140,
-  },
-  {
-    fichier: "src/vm/write-lease-arbiter.mjs",
-    fonction: "Function 'createLeaseArbiter'",
-    lignes: 124,
-  },
-  { fichier: "src/vm/volume-export.mjs", fonction: "Async function 'readArchive'", lignes: 107 },
-  {
-    fichier: "public/vm/opfs-runtime-worker.mjs",
-    fonction: "Async function 'scenarioAdaptateur'",
-    lignes: 96,
-  },
-  {
-    fichier: "public/vm/runtime-worker.mjs",
-    fonction: "Async function 'runOpfsPersistence'",
-    lignes: 93,
-  },
-  { fichier: "src/vm/scheduling-loop.mjs", fonction: "Function 'creerBoucle'", lignes: 87 },
-  {
-    fichier: "src/vm/write-lease-transport.mjs",
-    fonction: "Function 'acquireWriteLease'",
-    lignes: 85,
-  },
-  {
-    fichier: "src/vm/opfs-scenarios.mjs",
-    fonction: "Async function 'observePersistence'",
-    lignes: 84,
-  },
-  {
-    fichier: "src/vm/serial-protocol.mjs",
-    fonction: "Function 'creerAssembleurReponses'",
-    lignes: 72,
-  },
-  {
-    fichier: "src/vm/v86-flush-bridge.mjs",
-    fonction: "Function 'installDurabilityBridge'",
-    lignes: 72,
-  },
-  {
-    fichier: "public/vm/runtime-worker.mjs",
-    fonction: "Async function 'runOpfsBarrier'",
-    lignes: 71,
-  },
-  {
-    fichier: "src/vm/opfs-scenarios.mjs",
-    fonction: "Async function 'auditPersistenceReport'",
-    lignes: 65,
-  },
-  { fichier: "src/vm/serial-protocol.mjs", fonction: "Method 'traiterLigne'", lignes: 65 },
-  { fichier: "src/vm/crash-report.mjs", fonction: "Function 'resumerMatrice'", lignes: 62 },
-  { fichier: "public/vm/runtime-worker.mjs", fonction: "Async function 'run'", lignes: 60 },
-  {
-    fichier: "src/vm/block-journal.mjs",
-    fonction: "Function 'auditDurabilityBarriers'",
-    lignes: 59,
-  },
-  { fichier: "src/vm/volume-import.mjs", fonction: "Async function 'importArchive'", lignes: 58 },
-  { fichier: "src/vm/volume-export.mjs", fonction: "Async function 'writeArchive'", lignes: 57 },
-  { fichier: "src/vm/crash-oracle.mjs", fonction: "Function 'classerVolume'", lignes: 53 },
-];
+const DETTE_ANTERIEURE = [];
 
 const INSCRITES = [...JUSTIFIEES, ...DETTE_ANTERIEURE];
 
@@ -219,14 +151,10 @@ test("aucune exception inscrite n'est périmée", () => {
   );
 });
 
-test("la convention discrimine : elle n'admet ni tout, ni rien", () => {
+test("la convention porte réellement : au moins une fabrique du dépôt en dépend", () => {
   assert.ok(
     fabriques.length > 0,
     "aucune fabrique de contrat admise : le prédicat n'admet rien, la convention est lettre morte",
-  );
-  assert.ok(
-    fabriques.length < releve.length,
-    "toutes les fonctions relevées sont admises : le prédicat n'exclut rien, le plafond est mort",
   );
 });
 
@@ -234,6 +162,13 @@ test("la convention discrimine : elle n'admet ni tout, ni rien", () => {
 //
 // Un prédicat qu'aucun exemple n'éprouve n'est qu'une intention. Chacun de ces fragments isole UNE
 // condition et vérifie qu'elle décide, plutôt que de faire confiance à la lecture du prédicat.
+//
+// C'est ici, et non sur le relevé du dépôt, que le REFUS est éprouvé. Une épreuve qui exigerait du
+// relevé réel qu'il porte encore un dépassement non admis — pour prouver que le prédicat exclut
+// quelque chose — deviendrait rouge le jour où le dépôt serait sain. Elle a existé pendant #93, et
+// c'est exactement ce qui lui est arrivé : le dernier découpage l'a fait échouer. Un instrument
+// s'éprouve sur des exemples qu'il maîtrise, jamais sur l'état d'un code qu'on souhaite voir
+// s'améliorer.
 
 /** Fabrique canonique : quelques gestes, puis un littéral de méthodes courtes. */
 const FABRIQUE_CANONIQUE = `export function creerContrat(options) {

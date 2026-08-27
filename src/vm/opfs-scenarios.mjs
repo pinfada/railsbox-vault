@@ -114,17 +114,16 @@ export async function buildProbeImage() {
 }
 
 /**
- * Exécute la sonde : écrire, franchir la barrière, FERMER le handle, rouvrir sans déclarer de
- * géométrie, tout relire.
+ * Première phase : ouvrir en DÉCLARANT la géométrie, appliquer chaque région dans l'ordre de
+ * `PROBE_REGIONS`, franchir la barrière, puis rendre le handle.
  *
- * @param {{ openVolume: (options: object) => Promise<object>, name: string,
- *           support?: string }} options
- * @returns {Promise<object>} rapport sérialisable
+ * Séparée de la relecture pour que le `finally` qui ferme le volume ne couvre qu'une seule phase :
+ * la fermeture doit avoir lieu même si une écriture échoue, et la suite de la sonde ne doit rien
+ * pouvoir lire tant que ce handle vit encore.
+ *
+ * @returns {Promise<{ opened: object, written: object[] }>}
  */
-export async function observePersistence({ openVolume, name, support = "double" }) {
-  // Chaque phase ferme SON volume dans un `finally`. Une erreur inattendue en cours de sonde
-  // laisserait sinon le handle exclusif ouvert, et l'exécution suivante échouerait sur
-  // `VAULT_STORAGE_BUSY` — un symptôme qui masquerait la cause.
+async function ecrireRegionsPuisFermer(openVolume, name) {
   const first = await openVolume({ name, size: PROBE_VOLUME_BYTES });
   const opened = first.describe();
   const written = [];
@@ -140,51 +139,112 @@ export async function observePersistence({ openVolume, name, support = "double" 
     // pas d'un tampon resté vivant dans le backend.
     await first.close();
   }
+  return { opened, written };
+}
+
+/**
+ * Relit le volume entier par lectures successives de `CHUNK_BYTES`, et rend l'image reconstituée
+ * avec la suite des tailles demandées.
+ *
+ * La suite des tailles est relevée parce qu'elle est une PREUVE : la sonde doit montrer qu'elle a
+ * traversé le backend appel après appel, et non par un unique `read` de la taille du volume.
+ *
+ * @returns {Promise<{ image: Uint8Array, chunks: number[] }>}
+ */
+async function relireVolumeEntier(volume, size) {
+  const image = new Uint8Array(size);
+  const chunks = [];
+  for (let offset = 0; offset < size; offset += CHUNK_BYTES) {
+    const length = Math.min(CHUNK_BYTES, size - offset);
+    const bytes = await volume.read(offset, length);
+    image.set(bytes, offset);
+    chunks.push(length);
+  }
+  return { image, chunks };
+}
+
+/**
+ * Relit chaque région écrite. L'empreinte seule suffirait au verdict ; les octets de tête et de
+ * queue sont relevés en plus pour qu'un écart soit LISIBLE dans le rapport sans réexécuter la sonde.
+ *
+ * @returns {Promise<object[]>}
+ */
+async function relireRegions(volume) {
+  const regions = [];
+  for (const region of PROBE_REGIONS) {
+    const bytes = await volume.read(region.offset, region.length);
+    regions.push({
+      label: region.label,
+      offset: region.offset,
+      length: region.length,
+      digest: await digestHex(bytes),
+      firstBytes: [...bytes.subarray(0, 8)],
+      lastBytes: [...bytes.subarray(-8)],
+    });
+  }
+  return regions;
+}
+
+/**
+ * Relit les plages de bord de `PROBE_BOUNDARIES` : débuts, chevauchements de limites, dernier
+ * octet. C'est là que se logent les fautes d'arithmétique d'un backend, pas au milieu d'un bloc.
+ *
+ * @returns {Promise<object[]>}
+ */
+async function relireLimites(volume) {
+  const boundaries = [];
+  for (const boundary of PROBE_BOUNDARIES) {
+    const bytes = await volume.read(boundary.offset, boundary.length);
+    boundaries.push({ ...boundary, digest: await digestHex(bytes) });
+  }
+  return boundaries;
+}
+
+/**
+ * Demande un octet au-delà du dernier. La seule réponse acceptable est une erreur typée : un succès
+ * ici serait la faute exacte que le contrat interdit — compléter par des zéros.
+ *
+ * L'issue est rendue comme une DONNÉE, jamais propagée : c'est une observation de la sonde, et le
+ * verdict la juge ensuite comme les autres.
+ *
+ * @returns {Promise<{ code: string | null, message: string }>}
+ */
+async function sonderLectureHorsBornes(volume) {
+  try {
+    await volume.read(PROBE_VOLUME_BYTES - 1, 2);
+  } catch (error) {
+    return { code: error.code ?? null, message: error.message };
+  }
+  return { code: null, message: "La lecture hors bornes a réussi." };
+}
+
+/**
+ * Exécute la sonde : écrire, franchir la barrière, FERMER le handle, rouvrir sans déclarer de
+ * géométrie, tout relire.
+ *
+ * @param {{ openVolume: (options: object) => Promise<object>, name: string,
+ *           support?: string }} options
+ * @returns {Promise<object>} rapport sérialisable
+ */
+export async function observePersistence({ openVolume, name, support = "double" }) {
+  // Chaque phase ferme SON volume dans un `finally`. Une erreur inattendue en cours de sonde
+  // laisserait sinon le handle exclusif ouvert, et l'exécution suivante échouerait sur
+  // `VAULT_STORAGE_BUSY` — un symptôme qui masquerait la cause.
+  const { opened, written } = await ecrireRegionsPuisFermer(openVolume, name);
 
   const second = await openVolume({ name });
   const reopened = second.describe();
-  const chunks = [];
-  const regions = [];
-  const boundaries = [];
-  let image;
+  let lecture;
+  let regions;
+  let boundaries;
   let outOfRange;
   let handleExposed;
 
   try {
-    image = new Uint8Array(reopened.size);
-    for (let offset = 0; offset < reopened.size; offset += CHUNK_BYTES) {
-      const length = Math.min(CHUNK_BYTES, reopened.size - offset);
-      const bytes = await second.read(offset, length);
-      image.set(bytes, offset);
-      chunks.push(length);
-    }
-
-    for (const region of PROBE_REGIONS) {
-      const bytes = await second.read(region.offset, region.length);
-      regions.push({
-        label: region.label,
-        offset: region.offset,
-        length: region.length,
-        digest: await digestHex(bytes),
-        firstBytes: [...bytes.subarray(0, 8)],
-        lastBytes: [...bytes.subarray(-8)],
-      });
-    }
-
-    for (const boundary of PROBE_BOUNDARIES) {
-      const bytes = await second.read(boundary.offset, boundary.length);
-      boundaries.push({ ...boundary, digest: await digestHex(bytes) });
-    }
-
-    // Un octet au-delà du dernier : la seule réponse acceptable est une erreur typée. Un succès ici
-    // serait la faute exacte que le contrat interdit — compléter par des zéros.
-    outOfRange = { code: null, message: "La lecture hors bornes a réussi." };
-    try {
-      await second.read(PROBE_VOLUME_BYTES - 1, 2);
-    } catch (error) {
-      outOfRange = { code: error.code ?? null, message: error.message };
-    }
-
+    lecture = await relireVolumeEntier(second, reopened.size);
+    regions = await relireRegions(second);
+    boundaries = await relireLimites(second);
+    outOfRange = await sonderLectureHorsBornes(second);
     handleExposed = exposesSyncAccessHandle(second);
   } finally {
     await second.close();
@@ -197,8 +257,8 @@ export async function observePersistence({ openVolume, name, support = "double" 
     written,
     reopened: { size: reopened.size, durable: reopened.durable, kind: reopened.kind },
     reopenedWithoutDeclaredSize: true,
-    chunks,
-    wholeDigest: await digestHex(image),
+    chunks: lecture.chunks,
+    wholeDigest: await digestHex(lecture.image),
     regions,
     boundaries,
     outOfRange,
@@ -207,16 +267,14 @@ export async function observePersistence({ openVolume, name, support = "double" 
 }
 
 /**
- * Verdict de la sonde. Il reconstruit l'image attendue depuis la règle, puis compare chaque
- * observation. Chaque écart produit une raison nommée : un booléen seul n'aiderait personne.
+ * Écarts de GÉOMÉTRIE. Ces trois-là se lisent sur les seuls `describe()` du rapport, sans
+ * reconstruire l'image attendue : les isoler évite de faire dépendre le premier écart signalé d'un
+ * calcul d'empreinte qui n'a rien à voir avec lui.
  *
- * @param {object} report sortie de `observePersistence`, éventuellement passée par `postMessage`
- * @returns {Promise<{ satisfied: boolean, reasons: string[] }>}
+ * @returns {string[]} raisons, dans l'ordre où le verdict les publie
  */
-export async function auditPersistenceReport(report) {
+function raisonsDeGeometrie(report) {
   const reasons = [];
-  const expected = await buildProbeImage();
-
   if (report?.opened?.size !== PROBE_VOLUME_BYTES) {
     reasons.push(
       `Géométrie à l'ouverture : ${report?.opened?.size} au lieu de ${PROBE_VOLUME_BYTES}.`,
@@ -230,12 +288,18 @@ export async function auditPersistenceReport(report) {
   if (report?.reopened?.durable !== true) {
     reasons.push("Le volume rouvert ne se déclare pas durable.");
   }
+  return reasons;
+}
 
-  const expectedWhole = await digestHex(expected);
-  if (report?.wholeDigest !== expectedWhole) {
-    reasons.push(`Empreinte du volume relu : ${report?.wholeDigest} au lieu de ${expectedWhole}.`);
-  }
-
+/**
+ * Écarts région par région, chaque empreinte observée étant confrontée à celle de la tranche
+ * correspondante de l'image attendue. Une région ABSENTE est une raison à part entière : sans elle,
+ * un rapport tronqué passerait pour conforme.
+ *
+ * @returns {Promise<string[]>}
+ */
+async function raisonsDesRegions(report, expected) {
+  const reasons = [];
   for (const region of PROBE_REGIONS) {
     const observed = report?.regions?.find((candidate) => candidate.label === region.label);
     if (!observed) {
@@ -248,7 +312,17 @@ export async function auditPersistenceReport(report) {
       reasons.push(`Région « ${region.label} » : ${observed.digest} au lieu de ${digest}.`);
     }
   }
+  return reasons;
+}
 
+/**
+ * Écarts sur les plages de bord. Une limite s'identifie par son couple (offset, longueur) et non
+ * par une étiquette : deux plages peuvent partager un début et ne pas dire la même chose.
+ *
+ * @returns {Promise<string[]>}
+ */
+async function raisonsDesLimites(report, expected) {
+  const reasons = [];
   for (const boundary of PROBE_BOUNDARIES) {
     const observed = report?.boundaries?.find(
       (candidate) => candidate.offset === boundary.offset && candidate.length === boundary.length,
@@ -266,7 +340,18 @@ export async function auditPersistenceReport(report) {
       );
     }
   }
+  return reasons;
+}
 
+/**
+ * Écarts sur les deux promesses de CONTRAT que la sonde éprouve en fin de course : le refus typé
+ * hors bornes, et le fait qu'aucun handle du système de fichiers ne soit atteignable depuis le
+ * volume. Elles ne portent sur aucun octet, d'où leur place à part.
+ *
+ * @returns {string[]}
+ */
+function raisonsDuContrat(report) {
+  const reasons = [];
   if (report?.outOfRange?.code !== STORAGE_ERROR_CODES.outOfRange) {
     reasons.push(
       `Lecture hors bornes : code ${report?.outOfRange?.code} au lieu de ${STORAGE_ERROR_CODES.outOfRange}.`,
@@ -275,6 +360,34 @@ export async function auditPersistenceReport(report) {
   if (report?.handleExposed !== false) {
     reasons.push("Le backend expose un objet du système de fichiers à ses appelants.");
   }
+  return reasons;
+}
+
+/**
+ * Verdict de la sonde. Il reconstruit l'image attendue depuis la règle, puis compare chaque
+ * observation. Chaque écart produit une raison nommée : un booléen seul n'aiderait personne.
+ *
+ * L'ordre d'assemblage des raisons est celui de la lecture d'un rapport — géométrie, empreinte
+ * globale, régions, limites, contrat — et il fait partie de ce que les deux supports doivent rendre
+ * à l'identique.
+ *
+ * @param {object} report sortie de `observePersistence`, éventuellement passée par `postMessage`
+ * @returns {Promise<{ satisfied: boolean, reasons: string[] }>}
+ */
+export async function auditPersistenceReport(report) {
+  const reasons = [];
+  const expected = await buildProbeImage();
+
+  reasons.push(...raisonsDeGeometrie(report));
+
+  const expectedWhole = await digestHex(expected);
+  if (report?.wholeDigest !== expectedWhole) {
+    reasons.push(`Empreinte du volume relu : ${report?.wholeDigest} au lieu de ${expectedWhole}.`);
+  }
+
+  reasons.push(...(await raisonsDesRegions(report, expected)));
+  reasons.push(...(await raisonsDesLimites(report, expected)));
+  reasons.push(...raisonsDuContrat(report));
 
   return { satisfied: reasons.length === 0, reasons };
 }

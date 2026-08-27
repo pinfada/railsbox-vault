@@ -15,6 +15,35 @@
 import { RELAY_DEADLINE_MS, WriteLease, assertAtMostOneWriter } from "./write-lease.mjs";
 
 /**
+ * Réinscrit le bail d'un demandeur dans son volume, et le rend.
+ *
+ * Cette couture vit HORS de la fabrique parce qu'elle ne dépend de rien d'elle — ni de l'horloge,
+ * ni du budget. Les transitions du bail étant IMMUABLES, chaque geste produit un nouvel objet qu'il
+ * faut réinscrire : c'est le seul point par lequel la carte des baux d'un volume change, et le
+ * sortir de la clôture le rend lisible comme tel.
+ */
+const inscrireBail = (entry, id, bail) => {
+  entry.leases.set(id, bail);
+  return bail;
+};
+
+/**
+ * Promeut le prochain demandeur si le volume est libre. Un seul détenteur peut sortir de la file :
+ * c'est là que l'exclusivité de Web Locks est modélisée. Le relais n'a lieu qu'une fois le volume
+ * effectivement libéré (détenteur `null`), jamais sur une simple annonce.
+ *
+ * Hors de la fabrique pour la même raison qu'`inscrireBail` : la règle ne lit que le volume qu'on
+ * lui passe. L'y laisser nichée donnait à croire qu'elle consultait l'état de l'arbitre.
+ */
+const promouvoirLeSuivant = (entry) => {
+  if (entry.holder !== null) return;
+  const next = entry.queue.shift();
+  if (next === undefined) return;
+  inscrireBail(entry, next, entry.leases.get(next).grant());
+  entry.holder = next;
+};
+
+/**
  * @param {{ now?: () => number, deadlineMs?: number }} [options]
  *   `now` est l'horloge injectée (millisecondes). `deadlineMs` borne le relais-ou-refus.
  */
@@ -41,24 +70,6 @@ export function createLeaseArbiter({ now = () => 0, deadlineMs = RELAY_DEADLINE_
     return bail;
   };
 
-  const setLease = (entry, id, bail) => {
-    entry.leases.set(id, bail);
-    return bail;
-  };
-
-  /**
-   * Promeut le prochain demandeur si le volume est libre. Un seul détenteur peut sortir de la file :
-   * c'est là que l'exclusivité de Web Locks est modélisée. Le relais n'a lieu qu'une fois le volume
-   * effectivement libéré (détenteur `null`), jamais sur une simple annonce.
-   */
-  const promote = (entry) => {
-    if (entry.holder !== null) return;
-    const next = entry.queue.shift();
-    if (next === undefined) return;
-    setLease(entry, next, entry.leases.get(next).grant());
-    entry.holder = next;
-  };
-
   /** Vérifie l'invariant central sur TOUS les volumes. Appelé après chaque mutation. */
   const checkInvariant = () => {
     for (const entry of volumes.values()) {
@@ -70,9 +81,9 @@ export function createLeaseArbiter({ now = () => 0, deadlineMs = RELAY_DEADLINE_
     /** Demande le bail. Accorde tout de suite si libre, sinon met en file d'attente. */
     request(volume, id) {
       const entry = volumeOf(volume);
-      const bail = setLease(entry, id, leaseOf(volume, id).request());
+      const bail = inscrireBail(entry, id, leaseOf(volume, id).request());
       if (entry.holder === null && entry.queue.length === 0) {
-        setLease(entry, id, bail.grant());
+        inscrireBail(entry, id, bail.grant());
         entry.holder = id;
       } else {
         entry.queue.push(id);
@@ -87,9 +98,9 @@ export function createLeaseArbiter({ now = () => 0, deadlineMs = RELAY_DEADLINE_
       if (entry.holder !== id) {
         throw new Error(`« ${id} » ne détient pas « ${volume} » : rien à relâcher.`);
       }
-      setLease(entry, id, entry.leases.get(id).release().settle());
+      inscrireBail(entry, id, entry.leases.get(id).release().settle());
       entry.holder = null;
-      promote(entry);
+      promouvoirLeSuivant(entry);
       checkInvariant();
     },
 
@@ -101,14 +112,14 @@ export function createLeaseArbiter({ now = () => 0, deadlineMs = RELAY_DEADLINE_
     kill(volume, id) {
       const entry = volumeOf(volume);
       if (entry.holder === id) {
-        setLease(entry, id, entry.leases.get(id).lose("contexte-mort"));
+        inscrireBail(entry, id, entry.leases.get(id).lose("contexte-mort"));
         entry.holder = null;
-        promote(entry);
+        promouvoirLeSuivant(entry);
       } else {
         const index = entry.queue.indexOf(id);
         if (index !== -1) entry.queue.splice(index, 1);
         const bail = entry.leases.get(id);
-        if (bail?.state === "attente") setLease(entry, id, bail.abandon());
+        if (bail?.state === "attente") inscrireBail(entry, id, bail.abandon());
       }
       checkInvariant();
     },
@@ -120,7 +131,7 @@ export function createLeaseArbiter({ now = () => 0, deadlineMs = RELAY_DEADLINE_
         for (const id of entry.queue) {
           const bail = entry.leases.get(id);
           if (bail.isOverdue()) {
-            setLease(entry, id, bail.expire());
+            inscrireBail(entry, id, bail.expire());
           } else {
             survivants.push(id);
           }
