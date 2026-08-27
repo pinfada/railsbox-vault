@@ -106,8 +106,9 @@ exceptions vit dans l'épreuve, où elle se lit d'un bloc.
 Les lignes se comptent comme la règle les compte : commentaires et lignes vides compris, de
 l'accolade ouvrante à l'accolade fermante.
 
-Un dépassement se traite de deux façons, et d'aucune autre :
+Un dépassement se traite de trois façons, et d'aucune autre :
 
+- **la convention des fabriques de contrat** l'admet, sans rien inscrire nulle part ;
 - **le découper** en fonctions nommées, à comportement inchangé, la suite existante servant de
   preuve ;
 - **l'inscrire** dans `JUSTIFIEES`, avec un motif qui tienne devant une revue et l'issue qui l'a
@@ -115,8 +116,36 @@ Un dépassement se traite de deux façons, et d'aucune autre :
 
 La liste `DETTE_ANTERIEURE` est d'une autre nature : elle date les dépassements que le relevé de #77
 a découverts hors de son périmètre. Ils ne sont pas justifiés, seulement **bornés** — l'épreuve
-échoue si l'un grandit, si un nouveau apparaît, ou si une inscription devient périmée. #93 les
-solde, et cette liste doit finir vide.
+échoue si l'un grandit, si un nouveau apparaît, ou si une inscription devient périmée. #93 les a
+soldés, et cette liste est vide.
+
+#### La convention des fabriques de contrat
+
+L'idiome dominant du dépôt est la clôture qui rend un objet littéral de méthodes documentées.
+`max-lines-per-function` compte ce littéral comme du corps de fonction, alors que c'est une
+**déclaration** : elle n'enchaîne aucune décision. Le plafond vise l'enchaînement de décisions, pas
+la déclaration d'un contrat — et #93 en fait une mesure plutôt qu'un jugement de revue.
+
+Une fabrique est **admise** au-delà du plafond si les trois conditions tiennent :
+
+1. elle rend un littéral qui déclare au moins une **méthode** — un littéral de données n'est pas un
+   contrat, et la fonction qui l'assemble fait un travail qui se mesure comme tout autre ;
+2. son **corps hors de ce littéral** tient sous le plafond — au-delà, ce n'est plus une déclaration
+   entourée de quelques gestes, c'est un module qui se termine par un contrat ;
+3. **aucune méthode** du littéral ne dépasse le plafond — sinon c'est la méthode qui se découpe, et
+   l'exemption de la fabrique masquerait sa taille.
+
+« Hors du littéral » se compte ainsi : les lignes de la fonction, moins les lignes **intérieures**
+au ou aux littéraux qu'elle rend. Les accolades restent comptées ; un littéral rendu par une
+fonction imbriquée appartient à cette fonction-là, qui porte sa propre mesure.
+
+Le prédicat vit dans `tests/unit/mesure-taille-des-fonctions.mjs` (`estFabriqueDeContrat`), mesuré
+par une règle ESLint écrite sur place — l'AST qu'ESLint vient de construire, sans dépendance
+nouvelle ni second analyseur. `taille-des-fonctions.test.mjs` l'éprouve sur des fragments : chaque
+condition y décide seule, et une épreuve refuse un prédicat qui admettrait tout ou rien.
+
+Une fabrique admise n'est **pas** inscrite dans `JUSTIFIEES` : la règle la couvre, et le jour où
+elle cesse de la couvrir l'épreuve la redemande sans qu'une revue ait à y penser.
 
 ## Navigateur
 
