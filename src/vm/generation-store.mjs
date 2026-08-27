@@ -64,13 +64,26 @@ export const GENERATION_ETATS = Object.freeze({
  * jusqu'au quota, et l'échec surviendrait au pire endroit — au milieu d'une validation. Le plafond
  * refuse TÔT, avec un code à lui, plutôt que de publier une génération à moitié.
  *
- * 64 Mio : le même ordre de grandeur que la surmémoire de streaming de `docs/quality-attributes.md`.
- * Le seul relevé existant — 90 304 octets déposés par Rails entre une barrière acquittée et une
- * coupure, scénario Bout en bout de #16 — est trois ordres de grandeur en dessous, mais ce n'est PAS
- * une mesure de la plus grande génération possible. Le chiffre reste un garde-fou, pas un seuil
- * calibré, et l'ADR 0014 l'inscrit comme travail découvert.
+ * 16 Mio, et ce chiffre est CALIBRÉ depuis #91 — il ne l'était pas. Il valait 64 Mio, « le même
+ * ordre de grandeur que la surmémoire de streaming », c'est-à-dire une analogie. Ce qui le fixe
+ * désormais est le budget de RÉCUPÉRATION de `docs/quality-attributes.md` : la dernière génération
+ * valide doit être retrouvée en ≤ 60 s, et rejouer une charge coûte d'autant plus cher qu'elle est
+ * découpée fin — un enregistrement par écriture du guest, et une écriture ATA peut ne faire qu'un
+ * secteur. Mesuré sur OPFS réel (`reports/vm/recuperation-generation.json`), à la granularité la
+ * plus fine que le guest puisse produire — des enregistrements de 512 octets :
+ *
+ *  - 64 Mio : **71,1 s**, hors budget de 1,19× ;
+ *  - 16 Mio : voir le relevé, avec la marge que le budget laisse.
+ *
+ * Le budget n'est pas révisé pour faire tenir le plafond : c'est le plafond qui cède, comme l'exige
+ * la règle de #91. Et 16 Mio reste deux fois `POINT_DE_CONTROLE_OCTETS` — un guest qui émet des
+ * barrières n'est jamais refusé — et près de deux cents fois la seule génération jamais observée de
+ * l'image de référence (90 304 octets, scénario Bout en bout de #16).
+ *
+ * Ce que ce chiffre n'est TOUJOURS pas : la plus grande génération que l'image de référence peut
+ * produire. Personne ne l'a mesurée ; l'ADR 0014 l'inscrit comme travail découvert.
  */
-export const PLAFOND_CHARGE_OCTETS = 64 * 1024 * 1024;
+export const PLAFOND_CHARGE_OCTETS = 16 * 1024 * 1024;
 
 /** Au-delà de ce volume de charge, le point de contrôle est déclenché de lui-même. */
 export const POINT_DE_CONTROLE_OCTETS = 8 * 1024 * 1024;
@@ -84,9 +97,9 @@ export const POINT_DE_CONTROLE_OCTETS = 8 * 1024 * 1024;
  * restauration, et la récupération tient désormais le même régime avec deux ordres de grandeur de
  * marge.
  *
- * 1 Mio n'est pas un optimum mesuré : c'est le compromis entre le nombre d'appels au support — un
- * `read` par tranche — et la mémoire tenue. `tests/vm/recuperation-generation.spec.mjs` mesure ce
- * que ce choix coûte en temps sur OPFS réel ; le chiffre est publié, pas supposé.
+ * 1 Mio n'est pas un optimum mesuré : c'est le compromis entre le nombre d'appels au support et la
+ * mémoire tenue. `tests/vm/recuperation-generation.spec.mjs` mesure ce que ce choix coûte en temps
+ * sur OPFS réel ; le chiffre est publié, pas supposé.
  */
 export const TAMPON_RELECTURE_OCTETS = 1024 * 1024;
 
@@ -96,6 +109,54 @@ function alignerBas(valeur) {
 
 function alignerHaut(valeur) {
   return alignerBas(valeur + SECTOR_SIZE - 1);
+}
+
+/**
+ * FENÊTRE GLISSANTE sur la charge d'un journal. Un seul tampon, rechargé quand il est épuisé.
+ *
+ * Elle existe pour une raison MESURÉE, pas par élégance. Un parcours qui lirait l'en-tête puis les
+ * octets de chaque enregistrement demanderait quatre appels au support par enregistrement sur les
+ * deux passes ; sur OPFS réel un appel synchrone coûte ~290 µs, et une charge de 64 Mio découpée en
+ * enregistrements de 512 octets réclamait 201 s — 3,4 fois le budget de récupération de 60 s de
+ * `docs/quality-attributes.md` (relevé dans `reports/vm/recuperation-generation.json`). La fenêtre
+ * ramène les lectures à deux passes séquentielles sur la charge, quelle que soit sa granularité.
+ *
+ * Le tampon est PRÊTÉ : chaque tranche rendue vit jusqu'au prochain rechargement, et la retenir
+ * serait une faute. C'est le prix d'une surmémoire qui ne suit pas la taille de la charge.
+ *
+ * @param {{ tampon: Uint8Array, longueurCharge: number,
+ *           lire: (cible: Uint8Array, position: number) => number }} options
+ */
+function fenetreDeCharge({ tampon, longueurCharge, lire }) {
+  let base = 0;
+  let remplie = 0;
+
+  const disponible = (position) =>
+    position >= base && position < base + remplie ? base + remplie - position : 0;
+
+  return {
+    /** Fin de ce que le journal a réellement rendu. Sert à NOMMER une charge tronquée. */
+    fin: () => base + remplie,
+    /**
+     * Rend jusqu'à `maximum` octets à `position`, en rechargeant la fenêtre s'il en manque.
+     *
+     * `requis` est le minimum INDIVISIBLE : un en-tête d'enregistrement ne se lit pas en deux fois,
+     * là où les octets d'un enregistrement s'accommodent d'une tranche partielle. Une tranche plus
+     * courte que `requis` signifie que le journal ne porte plus ce qu'une racine déclare — c'est à
+     * l'appelant de le refuser.
+     */
+    tranche(position, maximum, requis = 1) {
+      if (disponible(position) < Math.min(requis, longueurCharge - position)) {
+        base = position;
+        remplie = lire(
+          tampon.subarray(0, Math.min(tampon.byteLength, longueurCharge - base)),
+          base,
+        );
+      }
+      const debut = position - base;
+      return tampon.subarray(debut, debut + Math.min(maximum, Math.max(0, remplie - debut)));
+    },
+  };
 }
 
 export class GenerationStore {
@@ -330,17 +391,28 @@ export class GenerationStore {
     return generationCorrupt(this.#volume, { generation: racine.generation, reason });
   }
 
-  /** Lit une tranche de la charge dans le tampon partagé. Une lecture COURTE est une incohérence. */
-  #lireTranche(tampon, racine, position, longueur) {
-    const cible = tampon.subarray(0, longueur);
-    const lus = this.#lireJournalDans(cible, ZONE_ENREGISTREMENTS + position);
-    if (lus !== longueur) {
+  /** Refus TYPÉ d'une charge que le journal ne porte plus entièrement. */
+  #chargeTronquee(racine, disponible) {
+    return this.#chargeIncoherente(
+      racine,
+      `la charge annonce ${racine.longueurCharge} octet(s), le journal n'en rend que ${disponible}.`,
+    );
+  }
+
+  /** Vérifie ce que la racine SCELLE : le compte des enregistrements, puis la somme de contrôle. */
+  #verifierSceau(racine, enregistrements, somme) {
+    if (enregistrements !== racine.enregistrements) {
       throw this.#chargeIncoherente(
         racine,
-        `la charge annonce ${racine.longueurCharge} octet(s), le journal n'en rend que ${position + lus}.`,
+        `la racine annonce ${racine.enregistrements} enregistrement(s), la charge en porte ${enregistrements}.`,
       );
     }
-    return cible;
+    if (somme !== racine.sommeCharge) {
+      throw this.#chargeIncoherente(
+        racine,
+        "la somme de contrôle de la charge ne concorde pas avec celle que la racine scelle.",
+      );
+    }
   }
 
   /**
@@ -365,13 +437,18 @@ export class GenerationStore {
    * @returns {number} le nombre d'enregistrements parcourus
    */
   #parcourirCharge(racine, emettre = null) {
-    const tampon = this.#allouer(Math.min(TAMPON_RELECTURE_OCTETS, this.#tailleTampon(racine)));
+    const fenetre = fenetreDeCharge({
+      tampon: this.#allouer(this.#tailleTampon(racine)),
+      longueurCharge: racine.longueurCharge,
+      lire: (cible, position) => this.#lireJournalDans(cible, ZONE_ENREGISTREMENTS + position),
+    });
     let position = 0;
     let enregistrements = 0;
     let somme = 0;
 
     while (position < racine.longueurCharge) {
-      const entete = this.#lireTranche(tampon, racine, position, ENTETE_OCTETS);
+      const entete = fenetre.tranche(position, ENTETE_OCTETS, ENTETE_OCTETS);
+      if (entete.byteLength < ENTETE_OCTETS) throw this.#chargeTronquee(racine, fenetre.fin());
       const decode = decoderEnteteEnregistrement(entete, { tailleVolume: this.#tailleVolume });
       if (decode === null || position + ENTETE_OCTETS + decode.longueur > racine.longueurCharge) {
         throw this.#chargeIncoherente(
@@ -379,32 +456,21 @@ export class GenerationStore {
           `enregistrement illisible à l'octet ${position} d'une charge pourtant scellée.`,
         );
       }
-      // L'en-tête entre dans la somme AVANT que le tampon ne soit réécrit par ses propres octets.
+      // L'en-tête entre dans la somme AVANT qu'un rechargement ne déplace la fenêtre.
       somme = crc32(entete, somme);
       position += ENTETE_OCTETS;
       for (let porte = 0; porte < decode.longueur;) {
-        const large = Math.min(tampon.byteLength, decode.longueur - porte);
-        const tranche = this.#lireTranche(tampon, racine, position + porte, large);
+        const tranche = fenetre.tranche(position + porte, decode.longueur - porte);
+        if (tranche.byteLength === 0) throw this.#chargeTronquee(racine, fenetre.fin());
         somme = crc32(tranche, somme);
         if (emettre !== null) emettre(decode.offset + porte, tranche);
-        porte += large;
+        porte += tranche.byteLength;
       }
       position += decode.longueur;
       enregistrements += 1;
     }
 
-    if (enregistrements !== racine.enregistrements) {
-      throw this.#chargeIncoherente(
-        racine,
-        `la racine annonce ${racine.enregistrements} enregistrement(s), la charge en porte ${enregistrements}.`,
-      );
-    }
-    if (somme !== racine.sommeCharge) {
-      throw this.#chargeIncoherente(
-        racine,
-        "la somme de contrôle de la charge ne concorde pas avec celle que la racine scelle.",
-      );
-    }
+    this.#verifierSceau(racine, enregistrements, somme);
     return enregistrements;
   }
 
