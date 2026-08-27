@@ -78,7 +78,24 @@ racine qui lui accorderait plus que l'intersection.
 
 ## Taille des unités
 
-Le dépôt borne ses fichiers à **800 lignes** et ses fonctions à **50 lignes**.
+Le dépôt borne ses fichiers à **800 lignes** et ses fonctions à **50 lignes**. Les deux plafonds
+sont mesurés ; aucun ne repose plus sur la vigilance d'une revue.
+
+### Fichiers
+
+`tests/unit/taille-des-fichiers.test.mjs` mesure tout `src/` et `public/vm/`, en comptant les lignes
+comme `wc -l` les compte. Il oppose **deux** seuils, et il en faut deux :
+
+- **800 lignes — plafond**, sans exception ni liste : un fichier qui l'atteint se scinde ;
+- **700 lignes — alerte** : un fichier au-delà est inscrit dans `SOUS_SURVEILLANCE` avec sa taille
+  relevée et la raison pour laquelle il n'est pas encore scindé. L'inscription est un cliquet.
+
+Un plafond seul se découvre trop tard — le jour où il refuse, c'est au milieu de la tranche qui
+avait besoin de place. #93 a trouvé trois fichiers à 789, 791 et 798 lignes : la convention n'avait
+pas été violée, elle avait été **atteinte**, ce qui revient au même à l'évolution suivante. Ils sont
+scindés, et `SOUS_SURVEILLANCE` est vide.
+
+### Fonctions
 
 Le plafond des fonctions est mesuré par `tests/unit/taille-des-fonctions.test.mjs`, sur tout `src/`
 et `public/vm/`. Il applique `max-lines-per-function` d'ESLint **en surcharge** de
