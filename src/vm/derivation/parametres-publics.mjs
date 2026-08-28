@@ -28,8 +28,13 @@
 // déjà avoir déverrouillé pour lire.
 
 import { PARAMETRES_MAX, TYPES_KEK, nomDuTypeKek } from "../enveloppe/identite-enveloppe.mjs";
-import { chainePrefixee, concatenerListe, entierEnOctets } from "../format-chiffre/octets.mjs";
-import { hexEnOctets, octetsEnHex } from "../format-chiffre/octets.mjs";
+import {
+  chainePrefixee,
+  concatenerListe,
+  entierEnOctets,
+  hexEnOctets,
+  octetsEnHex,
+} from "../format-chiffre/octets.mjs";
 import { parametresRefuses, typeInconnu } from "./derivation-errors.mjs";
 
 /** Étiquette de domaine des paramètres d'une phrase. Elle sépare les deux encodages. */
