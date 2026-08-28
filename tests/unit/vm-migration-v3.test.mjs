@@ -34,6 +34,7 @@ import {
   decoderEnTeteV3,
   dispositionV3,
   identifiantVolumeEnTexte,
+  offsetDeCharge,
 } from "../../src/vm/volume-chiffre-format.mjs";
 
 const TAILLE_LOGIQUE = 16 * SECTOR_SIZE;
@@ -161,8 +162,8 @@ test("l'en-tête v3 est écrit, et il décrit le volume qu'on vient de convertir
   assert.equal(identifiantVolumeEnTexte(lu.enTete.identifiantVolume), IDENTIFIANT);
   // La MARQUE de scellement complet, sans laquelle l'ouvreur refuserait le volume qu'on vient de
   // migrer par `VAULT_STORAGE_VOLUME_INCOMPLET` — un refus juste pour une création interrompue, et
-  // absurde pour une migration achevée. Ici l'en-tête est écrit en DERNIER, donc au moment où il
-  // est écrit le scellement est bien complet : la marque et l'en-tête peuvent partir ensemble.
+  // absurde pour une migration achevée. Elle est posée SÉPARÉMENT, en dernier geste : l'en-tête,
+  // lui, part dès la fin du déplacement, pour donner à la reprise un second témoin de l'identifiant.
   assert.equal(lu.enTete.scellementComplet, true);
 });
 
@@ -176,12 +177,21 @@ test("l'étape franchie est MARQUÉE : une reprise doit savoir lequel des deux g
     identifiantVolume: IDENTIFIANT,
     depuis: ETAPES_CONVERSION.deplacement,
     marquerEtape: async (etape) => marques.push(etape),
+    secteursParTour: SECTEURS_PAR_TOUR,
   });
-  assert.equal(marques.at(-1).etape, ETAPES_CONVERSION.scellement);
-  assert.ok(
-    marques.slice(0, -1).every((marque) => marque.etape === ETAPES_CONVERSION.deplacement),
-    "chaque tour de déplacement journalise sa position avant que le scellement ne commence",
+  // Le déplacement journalise sa position tour par tour, puis l'étape bascule sur « scellement » —
+  // et le scellement journalise À SON TOUR sa position, ce qui donne au fail-closed de la reprise
+  // la zone que le journal déclare déjà convertie.
+  const deplacements = marques.filter((m) => m.etape === ETAPES_CONVERSION.deplacement);
+  const scellements = marques.filter((m) => m.etape === ETAPES_CONVERSION.scellement);
+  assert.ok(deplacements.length > 1, "chaque tour de déplacement journalise sa position");
+  assert.ok(scellements.length > 1, "chaque suite scellée journalise la sienne");
+  assert.equal(
+    marques.indexOf(scellements[0]),
+    deplacements.length,
+    "aucun déplacement n'est journalisé après le premier scellement",
   );
+  assert.equal(scellements.at(-1).position, TAILLE_LOGIQUE, "la dernière position est la fin");
 });
 
 test("une coupure PENDANT le déplacement se reprend à la POSITION journalisée", async () => {
@@ -276,10 +286,10 @@ test("une coupure PENDANT le scellement se reprend sans rescéller ce qui l'est 
     coupures += 1;
     avancement.push(marque);
   };
-  // Quatre écritures de déplacement, puis deux par tour de scellement — les sceaux du tour, puis
-  // ses charges. Couper après la sixième laisse le PREMIER tour converti et les trois autres
-  // intacts : la reprise doit donc en sauter quatre et en convertir douze.
-  support.armerCoupure(6);
+  // Quatre écritures de déplacement, puis l'en-tête, puis deux par tour de scellement — les sceaux
+  // du tour, puis ses charges. Couper après la septième laisse le PREMIER tour converti et les trois
+  // autres intacts : la reprise doit donc en sauter quatre et en convertir douze.
+  support.armerCoupure(7);
   const premierScellement = await scellement();
   await assert.rejects(() =>
     convertirEnV3({
@@ -399,4 +409,61 @@ test("une coupure à N'IMPORTE QUELLE écriture se reprend, et le clair d'origin
       `coupure au rang ${rang} : la reprise doit rendre le clair d'origine`,
     );
   }
+});
+
+test("un secteur SOUS la position déjà scellée qui ne s'ouvre pas fait REFUSER la reprise", async () => {
+  // La reprise saute ce qui est déjà converti, et ce saut repose sur `dejaScelle`. Si un secteur que
+  // l'avancement déclare converti ne s'ouvre PAS, deux lectures sont possibles : « il reste du
+  // clair » — et le rescéller est juste — ou « il porte du chiffré qu'on ne sait plus ouvrir » — et
+  // le rescéller le détruit. Rien ne les distingue, donc on refuse. C'est ce que la contre-revue
+  // de #110 appelle le fail-closed, et il attrape aussi l'écriture déchirée d'un secteur de charge,
+  // que l'ordre sceau-puis-charge ne couvre pas.
+  const attendu = contenuV2();
+  const support = supportBrut(attendu);
+  const avancement = [];
+  const scelle = await scellement();
+
+  // Couper au troisième tour de scellement : deux tours sont convertis et journalisés.
+  support.armerCoupure(9);
+  await assert.rejects(() =>
+    convertirEnV3({
+      brut: support,
+      scellement: scelle,
+      tailleLogique: TAILLE_LOGIQUE,
+      identifiantVolume: IDENTIFIANT,
+      depuis: ETAPES_CONVERSION.deplacement,
+      marquerEtape: async (marque) => {
+        avancement.push(marque);
+      },
+      secteursParTour: SECTEURS_PAR_TOUR,
+    }),
+  );
+  const dernier = avancement.at(-1);
+  assert.equal(dernier.etape, ETAPES_CONVERSION.scellement);
+  assert.ok(dernier.position > 0, "des secteurs ont été scellés et la position le dit");
+
+  // Un secteur SOUS cette position est abîmé : il ne s'ouvrira plus.
+  const disposition = dispositionV3(TAILLE_LOGIQUE);
+  support.octets[offsetDeCharge(disposition, 0) + 10] ^= 0x01;
+
+  support.armerCoupure(null);
+  const secondScellement = await scellement();
+  await assert.rejects(
+    () =>
+      convertirEnV3({
+        brut: support,
+        scellement: secondScellement,
+        tailleLogique: TAILLE_LOGIQUE,
+        identifiantVolume: IDENTIFIANT,
+        depuis: dernier.etape,
+        position: dernier.position,
+        marquerEtape: async () => {},
+        secteursParTour: SECTEURS_PAR_TOUR,
+      }),
+    (erreur) => {
+      assert.equal(erreur.code, "VAULT_MIGRATION_CONVERSION_INCOHERENTE", erreur.message);
+      assert.match(erreur.message, /déjà converti/i);
+      return true;
+    },
+  );
 });

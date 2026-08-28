@@ -73,6 +73,7 @@ export {
   MIGRATION_JOURNAL_VERSION,
   migrationJournalName,
   parseJournal,
+  serialiserJournal,
 } from "./migration-journal.mjs";
 export { EVIDENCE_KINDS } from "./migration-backup-proof.mjs";
 // La TABLE DES ÉTAPES vit dans son propre module depuis que l'une d'elles réécrit le volume :

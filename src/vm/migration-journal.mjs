@@ -14,6 +14,7 @@
 import { EVIDENCE_KINDS } from "./migration-backup-proof.mjs";
 import { MIGRATION_ERROR_CODES, MigrationError } from "./migration-errors.mjs";
 import { MIGRATION_JOURNAL_SUFFIX, migrationJournalName } from "./opfs-sync-access.mjs";
+import { createSha256Stream } from "./sha256-stream.mjs";
 import { parseManifest } from "./volume-manifest.mjs";
 
 /** Marqueur du journal de reprise : il n'est jamais confondu avec un manifeste. */
@@ -35,24 +36,52 @@ export const MIGRATION_JOURNAL_VERSION = 2;
 export { MIGRATION_JOURNAL_SUFFIX, migrationJournalName };
 
 /**
+ * CORPS du journal, dans son ordre canonique. Une seule définition, employée pour écrire comme pour
+ * recalculer l'empreinte : deux ordres de champs donneraient deux empreintes du même journal.
+ */
+function corpsDuJournal({ from, to, sourceManifest, evidence, progress = null }) {
+  return {
+    magic: MIGRATION_JOURNAL_MAGIC,
+    journalVersion: MIGRATION_JOURNAL_VERSION,
+    from,
+    to,
+    sourceManifest,
+    evidence,
+    ...(progress === null ? {} : { progress }),
+  };
+}
+
+/** Empreinte SHA-256 du corps sérialisé. Voir `serialiserJournal` pour ce qu'elle protège. */
+function empreinteDuCorps(corps) {
+  const hash = createSha256Stream();
+  hash.update(new TextEncoder().encode(JSON.stringify(corps)));
+  return hash.digestHex();
+}
+
+/**
  * Sérialise le journal de reprise. Déterministe, comme le manifeste.
  *
- * `progress` porte l'avancement d'une conversion qui écrit : `{ etape, position }`. Il est ABSENT
- * tant qu'aucune étape mutante n'a commencé, et c'est une information en soi — une migration qui
- * n'écrit rien, comme v1 → v2, n'en produit jamais.
+ * `progress` porte l'avancement d'une conversion qui écrit : `{ from, to, etape, position,
+ * identifiantVolume }`. Il est ABSENT tant qu'aucune étape mutante n'a commencé, et c'est une
+ * information en soi — une migration qui n'écrit rien, comme v1 → v2, n'en produit jamais.
+ *
+ * ## L'EMPREINTE, et ce qu'elle protège
+ *
+ * Le journal porte une empreinte SHA-256 de son corps, vérifiée à la lecture. Elle est là pour un
+ * champ précis : `progress.identifiantVolume`. Cet identifiant entre dans les données associées de
+ * chaque secteur scellé ; s'il ment — bit retourné, écriture déchirée du voisin —, la reprise ne
+ * reconnaît plus AUCUN secteur déjà converti, les reclasse « encore en clair » et rescelle leur
+ * chiffré. La migration se termine « réussie » et le clair est perdu, sans qu'aucune erreur ne soit
+ * levée. La contre-revue de #110 l'a nommé.
+ *
+ * **Ce qu'elle n'est PAS.** Elle n'est ni signée ni chiffrée : elle détecte l'ALTÉRATION, pas la
+ * FORGERIE. Un journal réécrit d'un bloc — par un outil, ou par un support hostile — serait
+ * cohérent avec lui-même. C'est pourquoi la conversion recoupe l'identifiant avec l'en-tête v3 que
+ * le support porte, et pourquoi la limite résiduelle est nommée dans l'ADR 0016.
  */
-export function serialiserJournal({ from, to, sourceManifest, evidence, progress = null }) {
-  return new TextEncoder().encode(
-    JSON.stringify({
-      magic: MIGRATION_JOURNAL_MAGIC,
-      journalVersion: MIGRATION_JOURNAL_VERSION,
-      from,
-      to,
-      sourceManifest,
-      evidence,
-      ...(progress === null ? {} : { progress }),
-    }),
-  );
+export function serialiserJournal(journal) {
+  const corps = corpsDuJournal(journal);
+  return new TextEncoder().encode(JSON.stringify({ ...corps, digest: empreinteDuCorps(corps) }));
 }
 
 /** Refus TYPÉ portant sur le journal. Un journal n'est ni supprimé, ni deviné : il est refusé. */
@@ -62,6 +91,26 @@ export function journalMalforme(detail, context = {}) {
     `Journal de migration illisible : ${detail} Il n'est ni supprimé, ni deviné : l'écarter est un geste explicite.`,
     context,
   );
+}
+
+/**
+ * EXIGE que l'empreinte du journal corresponde à son corps.
+ *
+ * Un journal sans empreinte est refusé comme un journal dont l'empreinte ne correspond pas : la
+ * distinction n'apporterait rien, puisque les deux disent la même chose — ces octets ne sont pas
+ * ceux qu'une migration de ce runtime a écrits.
+ */
+function assertEmpreinte(brut) {
+  const { digest, ...corps } = brut;
+  if (typeof digest !== "string") {
+    throw journalMalforme("empreinte absente.", { digest: digest ?? null });
+  }
+  const attendue = empreinteDuCorps(corps);
+  if (digest === attendue) return;
+  throw journalMalforme("son empreinte ne correspond pas à son contenu : il a été altéré.", {
+    attendue,
+    portee: digest,
+  });
 }
 
 /**
@@ -134,6 +183,10 @@ export function parseJournal(input) {
       journalVersion: brut.journalVersion ?? null,
     });
   }
+  // L'EMPREINTE, avant tout le reste : les champs qui suivent ne valent d'être analysés que si le
+  // journal est celui qui a été écrit. Voir `serialiserJournal` pour ce qu'elle protège, et pour ce
+  // qu'elle ne protège pas.
+  assertEmpreinte(brut);
   if (!Number.isInteger(brut.from) || !Number.isInteger(brut.to) || brut.to < brut.from) {
     throw journalMalforme("chaîne de versions absente ou incohérente.", {
       from: brut.from ?? null,

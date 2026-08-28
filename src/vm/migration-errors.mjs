@@ -43,6 +43,15 @@ export const MIGRATION_ERROR_CODES = Object.freeze({
    * dans le message, au lieu de la laisser deviner par un trou dans une table.
    */
   stepUnavailable: "VAULT_MIGRATION_STEP_UNAVAILABLE",
+  /**
+   * Le SUPPORT contredit ce que le journal de reprise déclare (#101).
+   *
+   * Distinct de `journalMalformed`, et la distinction est le diagnostic : là, le journal est
+   * illisible ; ici, il se lit parfaitement et le fichier dit autre chose. Une conversion ne se
+   * reprend pas sur deux récits qui divergent — reprendre au récit choisi au hasard écrirait du
+   * clair par-dessus du chiffré, ou l'inverse, sans qu'aucune erreur ne soit levée.
+   */
+  conversionIncoherente: "VAULT_MIGRATION_CONVERSION_INCOHERENTE",
 });
 
 const KNOWN_CODES = new Set(Object.values(MIGRATION_ERROR_CODES));
