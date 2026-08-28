@@ -11,6 +11,7 @@
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { createOpfsMigrationTarget } from "/src/vm/opfs-migration-target.mjs";
 import { openOpfsVolumeFile } from "/src/vm/opfs-sync-access.mjs";
+import { cleDuBanc } from "./cle-du-banc.mjs";
 import { migrateVolume } from "/src/vm/volume-migration.mjs";
 import { attentesDe } from "./reference-worker-boot.mjs";
 import { EXPORT_BLOCK_BYTES } from "./reference-worker-mesures.mjs";
@@ -88,6 +89,11 @@ export async function phaseMigrate({
       expectations: attentes,
       backup,
       consent,
+      // La conversion v2 → v3 SCELLE : elle a besoin de la clé, et le banc la reçoit du harnais
+      // sous jeton, comme tout le reste (ADR 0016, décision 6). Aucun chemin du produit n'en
+      // fabrique une, et une migration qui en inventerait une chiffrerait le volume sous un secret
+      // que personne ne connaît.
+      cle: cleDuBanc(),
       blockBytes,
     });
     return migrationReussie({ volume, rapport, counts: journal.counts(), durationMs: duree() });

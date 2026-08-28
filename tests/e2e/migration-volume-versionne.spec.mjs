@@ -71,18 +71,6 @@ function raisonDIndisponibilite() {
   return null;
 }
 
-/**
- * Ce scénario porte sur la TRANCHE (b) de #18, et il est suspendu tant qu'elle n'a pas livré.
- *
- * la migration v2 vers v3 est DÉCLARÉE et non fournie (VAULT_MIGRATION_STEP_UNAVAILABLE) : elle doit agrandir le fichier de sa région d'authentification et rechiffrer chaque secteur, ce qu'une cible à géométrie fixe ne sait pas faire. Tranche (b) : #101.
- *
- * Le suspendre est une PERTE de couverture, et elle est écrite ici plutôt que dissimulée derrière
- * un test qui constaterait un refus — un tel test mesurerait la conduite du refus, pas le scénario
- * que ce fichier existe pour prouver. Il est rétabli tel quel par #101, sans rien réécrire.
- */
-const TRANCHE_B =
-  "la migration v2 vers v3 est DÉCLARÉE et non fournie (VAULT_MIGRATION_STEP_UNAVAILABLE) : elle doit agrandir le fichier de sa région d'authentification et rechiffrer chaque secteur, ce qu'une cible à géométrie fixe ne sait pas faire. Tranche (b) : #101 — scénario rétabli par #101";
-
 const raison = raisonDIndisponibilite();
 
 /**
@@ -113,7 +101,6 @@ test.afterEach(async ({ context }) => {
 test("un volume d'un format antérieur est migré, sa migration interrompue reprend, et une ancienne version le refuse", async ({
   context,
 }, testInfo) => {
-  test.skip(true, TRANCHE_B);
   test.skip(raison !== null, raison ?? "");
   test.setTimeout(1_500_000);
 
