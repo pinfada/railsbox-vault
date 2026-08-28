@@ -155,6 +155,11 @@ test("l'en-tête v3 est écrit, et il décrit le volume qu'on vient de convertir
   assert.equal(lu.valide, true, lu.raison ?? "");
   assert.equal(lu.enTete.tailleLogique, TAILLE_LOGIQUE);
   assert.equal(identifiantVolumeEnTexte(lu.enTete.identifiantVolume), IDENTIFIANT);
+  // La MARQUE de scellement complet, sans laquelle l'ouvreur refuserait le volume qu'on vient de
+  // migrer par `VAULT_STORAGE_VOLUME_INCOMPLET` — un refus juste pour une création interrompue, et
+  // absurde pour une migration achevée. Ici l'en-tête est écrit en DERNIER, donc au moment où il
+  // est écrit le scellement est bien complet : la marque et l'en-tête peuvent partir ensemble.
+  assert.equal(lu.enTete.scellementComplet, true);
 });
 
 test("l'étape franchie est MARQUÉE : une reprise doit savoir lequel des deux gestes refaire", async () => {
