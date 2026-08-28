@@ -210,13 +210,19 @@ et tester.
   - le **retour arrière complet du support** entre deux sessions. Un témoin de dernière séquence vue
     vit à côté du volume (`<volume>.temoin`, scellé, écrit après la racine et sa barrière) et refuse
     un volume dont la séquence est inférieure : cela ferme le retour arrière **partiel**, celui qui
-    ne l'emporte pas. Le témoin est dans la MÊME ORIGINE que le volume : qui peut reculer l'un peut
-    reculer l'autre. Il ne renforce pas la frontière de l'ADR 0002, il rend visibles les reculs
-    partiels. La détection du recul complet exige une ancre monotone hors du support, renvoyée
-    nommément à #21/#23 ; d'ici là elle reste couverte par le seul partitionnement d'origine de
-    l'ADR 0002. Cette limite est **exécutée** par la dernière assertion de
-    `tests/unit/vm-generation-fraicheur.test.mjs` : le volume, son journal et son témoin reculent
-    ensemble, et le volume rouvre ;
+    ne l'emporte pas. Le témoin est dans la MÊME ORIGINE que le volume ; il ne renforce pas la
+    frontière de l'ADR 0002, il rend visibles les reculs partiels. **L'effort n'est pas symétrique,
+    et il faut le dire** : reculer le volume suppose d'en détenir une copie antérieure cohérente
+    avec son journal, alors que neutraliser le témoin ne suppose rien — **le supprimer ou le
+    tronquer suffit, sans la clé**. Un fichier absent, vide ou trop court n'est pas un témoin,
+    l'ouverture repart sur « première ouverture », et la fenêtre du retour arrière complet est
+    **réarmée** pour qui détient déjà une copie antérieure de volume + journal. Le comportement est
+    délibéré et n'est pas changé — refuser tout volume sans témoin rendrait irouvrable un volume
+    neuf, restauré, ou dont le témoin a été perdu par un incident de support. Ce qui manque est une
+    **ancre monotone hors du support**, renvoyée nommément à **#23** ; d'ici là, le recul complet
+    reste couvert par le seul partitionnement d'origine de l'ADR 0002. Cette limite est **exécutée**
+    par la dernière assertion de `tests/unit/vm-generation-fraicheur.test.mjs` : le volume, son
+    journal et son témoin reculent ensemble, et le volume rouvre ;
   - le contenu du volume **entre deux points de contrôle** : la région ne change qu'au rangement, et
     l'empreinte date cet état-là ;
   - la **version du journal** n'est pas dans les données associées de la racine. Un octet retourné y
