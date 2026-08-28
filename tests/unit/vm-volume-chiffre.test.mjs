@@ -297,6 +297,33 @@ test("REFUS 1 — un octet du chiffré modifié : aucun clair, aucun zéro, une 
   );
 });
 
+test("un sceau À CHEVAL sur deux secteurs du support, à moitié écrit, est refusé", async () => {
+  // Trente-quatre ne divise pas cinq cent douze : le sceau du secteur 15 occupe les octets 510 à
+  // 544 de la région, donc il ENJAMBE la frontière des secteurs du support. Une écriture déchirée
+  // peut n'en matérialiser qu'une moitié — la seule zone du format où cela puisse arriver —, et il
+  // faut que l'autre moitié ne suffise pas à ouvrir le secteur.
+  const { volume, support, disposition } = await volumeDouble();
+  await volume.ecrireSecteurs(14 * SECTOR_SIZE, motif(14), 4);
+  await volume.ecrireSecteurs(15 * SECTOR_SIZE, motif(15), 4);
+
+  const debut = offsetDeSceau(disposition, 15 * SECTOR_SIZE);
+  assert.ok(
+    debut % SECTOR_SIZE > SECTOR_SIZE - SCEAU_OCTETS,
+    "l'épreuve n'a de sens que si ce sceau enjambe bien la frontière",
+  );
+  // Seule la MOITIÉ HAUTE est perdue : le support a matérialisé son premier secteur, pas le second.
+  const frontiere = Math.ceil(debut / SECTOR_SIZE) * SECTOR_SIZE;
+  support.octets.fill(0, frontiere, debut + SCEAU_OCTETS);
+
+  await assert.rejects(
+    () => volume.lireSecteurs(15 * SECTOR_SIZE, SECTOR_SIZE),
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.sceauRefuse),
+  );
+  // Le voisin, dont le sceau tient entier dans le premier secteur, se lit toujours : la déchirure
+  // ne condamne pas la région entière.
+  assert.deepEqual(await volume.lireSecteurs(14 * SECTOR_SIZE, SECTOR_SIZE), motif(14));
+});
+
 test("REFUS 2 — un secteur valide DÉPLACÉ à une autre adresse est refusé", async () => {
   const { volume, support, disposition } = await volumeDouble();
   await volume.ecrireSecteurs(0, motif(2), 4);

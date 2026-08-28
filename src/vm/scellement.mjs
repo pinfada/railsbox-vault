@@ -6,7 +6,12 @@
 //
 //  1. **la clé de volume et l'identité du volume**, tenues une fois pour que chaque appelant n'ait
 //     pas à les répéter — et donc pas à se tromper en les répétant ;
-//  2. **le compteur de scellements**, qui vit dans la racine et traverse les sessions. Le § 8.3 de
+//  2. **le compteur de scellements**, qui vit dans la racine — et qui ne traverse donc les sessions
+//     QUE si une racine a été écrite. Un volume ouvert hors transaction (`transactionnel: false` :
+//     le versement d'une image, une conversion de format) n'en écrit aucune, si bien que ses
+//     scellements ne sont comptés que le temps de la session. Le budget est alors sous-estimé, dans
+//     le sens qui laisse consommer plus que prévu, et le dire vaut mieux que de laisser croire à un
+//     compteur total. Le § 8.3 de
 //     NIST SP 800-38D compte « all instances of the authenticated encryption function » : blocs,
 //     enregistrements, secteurs rescellés ET racines. `verifierBudgetDeCle` du modèle refuse à 2^31 ;
 //  3. **la traduction des refus** `VAULT_CRYPTO_*` en `VAULT_STORAGE_*`, parce qu'un appelant du
