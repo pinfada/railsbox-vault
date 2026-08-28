@@ -503,6 +503,43 @@ l'ADR 0015 on obtiendrait ~31 s pour 512 Mio, là où l'ADR 0015 estimait 18,7 s
 appliqué à une extrapolation n'est pas une mesure, et **la création d'un volume de 512 Mio sur OPFS
 réel n'a pas été chronométrée par cette tranche**. C'est un manque nommé, pas un chiffre supposé.
 
+### Le rythme de l'émulateur, mesuré sur v3
+
+Relevé du **2026-08-28**, `npm run test:rythme`, cinq essais par bras entrelacés, sur l'image de
+référence — même machine que les relevés précédents, **pas l'environnement de référence**. Série
+complète dans `reports/rythme/boucle-ordonnancement.json`. Les DEUX bras tournent sur un volume v3
+chiffré : ce banc compare les boucles d'ordonnancement, et il donne au passage le boot ABSOLU sous
+le nouveau format.
+
+| Bras            |                  p50 |        p95 |         Étendue intra-série |
+| --------------- | -------------------: | ---------: | --------------------------: |
+| Boucle native   |            95 150 ms | 101 261 ms |            8 460 ms (9,1 %) |
+| Boucle de Vault |            97 147 ms |  97 263 ms |            2 114 ms (2,2 %) |
+| **Écart p50**   | **1 997 ms (2,1 %)** |            | **verdict : dans le bruit** |
+
+**Le format v3 n'ajoute rien de mesurable au boot.** Le rapprochement avec le relevé de #74, sur le
+format v2 et la même machine, le montre — avec la réserve qu'il s'agit de deux bancs différents
+(`test:e2e` là-bas, `test:rythme` ici) et que la comparaison est donc indicative, pas opposable :
+
+| Bras            | v2 (#74, 3 essais) | v3 (#18, 5 essais) |  Écart |
+| --------------- | -----------------: | -----------------: | -----: |
+| Boucle native   |          94 870 ms |          95 150 ms | +0,3 % |
+| Boucle de Vault |          97 568 ms |          97 147 ms | −0,4 % |
+
+C'est ce que l'ADR 0015 laissait attendre et que personne n'avait vérifié : le boot mesuré par #16
+émet 285 lectures et 13 écritures, soit **quelques millisecondes** de scellement sur ~97 s de boot.
+Le coût du chiffrement est réel, il est mesuré ailleurs sur cette page, et il ne se voit pas ici.
+
+**Conséquence pour le lot par appel.** La question n° 5 de l'ADR 0015 devait être rouverte « si la
+reprise dégrade au-delà du bruit ». Elle ne dégrade pas : l'écart est de 2,1 % contre un bruit de
+9,1 %, et le verdict que le banc rend lui-même est « dans le bruit de cette machine ». **Le lot par
+appel n'est donc pas activé**, conformément à l'ADR 0016, qui l'instruit, nomme son découpage
+candidat et écrit ce qu'il coûterait en granularité de refus.
+
+**Ce que ce relevé n'établit toujours pas**, et c'est inchangé depuis #74 : le gate de reprise reste
+FERMÉ. La cible est p95 ≤ 60 s, le mesuré reste autour de 97 s, et la voie de qualification retenue
+par l'ADR 0005 est l'instantané de #65. Cette tranche ne l'a ni rapproché ni éloigné.
+
 ### La récupération d'une génération, avec déchiffrement
 
 Relevé du **2026-08-28**, `npm run test:vm` (`tests/vm/recuperation-generation.spec.mjs`), OPFS réel
