@@ -70,6 +70,16 @@ export const STORAGE_ERROR_CODES = Object.freeze({
    * n'est deviné, aucune clé n'est fabriquée : le produit n'en fabrique aucune avant #21.
    */
   cleRequise: "VAULT_STORAGE_CLE_REQUISE",
+  /**
+   * La CRÉATION d'un volume v3 n'est pas allée jusqu'au bout (#18, ADR 0016).
+   *
+   * Distinct de `sceauRefuse`, et le remède n'est pas le même : un sceau refusé peut être une
+   * altération d'un volume qui a servi, et le remède est alors une sauvegarde. Ici, le fichier n'a
+   * jamais fini de naître — il n'a jamais porté de données —, et le remède est de le recréer.
+   * Confondre les deux envoyait l'exploitant restaurer une sauvegarde d'un volume qui n'a jamais
+   * existé.
+   */
+  volumeIncomplet: "VAULT_STORAGE_VOLUME_INCOMPLET",
 });
 
 const KNOWN_CODES = new Set(Object.values(STORAGE_ERROR_CODES));

@@ -31,6 +31,8 @@ import { STORAGE_ERROR_CODES, StorageError, geometryMismatch } from "./storage-e
 import {
   EN_TETE_OCTETS,
   FORMAT_VOLUME_V3,
+  MARQUEUR_SCELLEMENT_COMPLET,
+  SCELLEMENT_COMPLET_OFFSET,
   decoderEnTeteV3,
   dispositionV3,
   encoderEnTeteV3,
@@ -69,9 +71,12 @@ function lireEnTete(handle, name) {
 /**
  * Résout la disposition d'un volume EXISTANT à partir de son en-tête.
  *
- * Un fichier non vide qui ne porte pas d'en-tête v3 est refusé, et le message le dit : c'est un
- * volume d'un format antérieur, qui se lit, s'exporte et se migre — mais qui ne s'ouvre pas ici,
- * faute de région d'authentification où loger le sceau d'un secteur.
+ * Un fichier non vide qui ne porte pas d'en-tête v3 est refusé, et le message dit ce qui est vrai :
+ * son MANIFESTE se lit encore — c'est ce que `MIN_READABLE_FORMAT_VERSION` couvre —, mais le
+ * FICHIER ne s'ouvre pas ici, faute de région d'authentification où loger le sceau d'un secteur.
+ * Le message a longtemps promis trois remèdes de plus — « se lit, s'exporte et se migre » —, dont
+ * aucun n'existait : l'export passe par cet ouvreur, qui refuse, et la migration vers v3 est
+ * l'objet de #101.
  */
 function dispositionExistante({ name, handle, declared, observed, identifiantVolume }) {
   const lu = decoderEnTeteV3(lireEnTete(handle, name));
@@ -79,9 +84,10 @@ function dispositionExistante({ name, handle, declared, observed, identifiantVol
     throw geometryMismatch(name, {
       observed,
       expected: null,
-      reason: `${lu.raison} Un volume antérieur au format v${FORMAT_VOLUME_V3} se lit, s'exporte et se migre, mais ne s'ouvre pas ici : il n'a pas de région d'authentification.`,
+      reason: `${lu.raison} Le manifeste d'un volume antérieur au format v${FORMAT_VOLUME_V3} se lit encore, mais son fichier ne s'ouvre pas ici — il n'a pas de région d'authentification — et il n'a pas de chemin vers v${FORMAT_VOLUME_V3} avant #101.`,
     });
   }
+  if (!lu.enTete.scellementComplet) throw creationInachevee(name, observed);
   const disposition = dispositionV3(lu.enTete.tailleLogique);
   if (observed !== disposition.tailleSupport) {
     throw geometryMismatch(name, {
@@ -110,6 +116,26 @@ function dispositionExistante({ name, handle, declared, observed, identifiantVol
     );
   }
   return { disposition, identifiantVolume: surLeDisque };
+}
+
+/**
+ * Refus d'un volume dont la CRÉATION n'a pas abouti.
+ *
+ * Le remède nommé est le seul qui soit vrai. « Restaurer une sauvegarde » — ce que le refus de
+ * sceau proposait — envoie chercher la sauvegarde d'un volume qui n'a jamais servi.
+ *
+ * **Pourquoi ce volume n'est PAS re-scellé automatiquement**, alors que ce serait sans perte : la
+ * marque vit dans l'en-tête, qui n'est pas authentifié. Un re-scellement automatique donnerait à
+ * quiconque peut effacer huit octets du fichier le moyen de faire écraser tout le volume par des
+ * zéros scellés — c'est-à-dire de le détruire par un geste que rien ne distingue d'une réparation.
+ * Le refus, lui, ne laisse à cet adversaire qu'un déni de service qu'il avait déjà.
+ */
+function creationInachevee(name, observed) {
+  return new StorageError(
+    STORAGE_ERROR_CODES.volumeIncomplet,
+    `Volume « ${name} » refusé : sa création n'est pas allée jusqu'au bout — l'en-tête est posé, mais le scellement initial ne s'est jamais achevé. Ce fichier n'a jamais porté de données : le remède est de le supprimer et de le recréer, pas de restaurer une sauvegarde. Aucun octet n'est lu.`,
+    { volume: name, observed },
+  );
 }
 
 /** Résout la disposition d'un volume qui NAÎT. Sa taille logique est celle qu'on déclare. */
@@ -155,10 +181,54 @@ function poserEnTete(handle, name, disposition, identifiantVolume) {
 }
 
 /**
- * SAISIT le support : handle exclusif, en-tête v3 lu ou posé, géométrie confrontée. L'ouvreur peut
- * être le vrai OPFS, qui rend déjà des erreurs typées, ou un double qui rend des `DOMException`
- * brutes : les deux passent par la même traduction. Chaque refus survenant APRÈS l'ouverture rend le
- * handle, sans quoi le fichier resterait verrouillé par un volume que personne ne détient.
+ * Pose l'en-tête d'un volume qui naît, et REND le handle si la pose échoue.
+ *
+ * C'est le premier geste qui ÉCRIT, et il vient délibérément après le contrôle de la clé : un
+ * volume qu'on ne saura pas sceller ne doit pas laisser derrière lui un fichier alloué à sa taille
+ * support et porteur d'un en-tête.
+ */
+function poserEnTeteOuRendre(handle, name, disposition, identifiantVolume) {
+  try {
+    poserEnTete(handle, name, disposition, identifiantVolume);
+  } catch (cause) {
+    throw abandonHandle(
+      handle,
+      name,
+      toStorageError(cause, { operation: "allocate", volume: name }),
+    );
+  }
+}
+
+/**
+ * Pose la marque de SCELLEMENT COMPLET, et la matérialise.
+ *
+ * Huit octets écrits dans la réserve de l'en-tête déjà allouée, puis une barrière. Ce geste est le
+ * DERNIER de la création, et c'est tout son intérêt : tant qu'il n'a pas eu lieu, le fichier se
+ * relit comme une création inachevée. Une coupure entre le scellement et cette marque refuse un
+ * volume pourtant complet — un faux refus, sans perte, contre un faux succès qui coûtait le volume.
+ */
+function marquerScellementComplet(handle, name) {
+  const echec = writeCountFailure(
+    handle.write(MARQUEUR_SCELLEMENT_COMPLET, { at: SCELLEMENT_COMPLET_OFFSET }),
+    {
+      requested: MARQUEUR_SCELLEMENT_COMPLET.byteLength,
+      volume: name,
+      offset: SCELLEMENT_COMPLET_OFFSET,
+      operation: "write-seal-mark",
+    },
+  );
+  if (echec !== null) throw echec;
+  handle.flush();
+}
+
+/**
+ * SAISIT le support : handle exclusif, en-tête v3 LU, géométrie confrontée. L'ouvreur peut être le
+ * vrai OPFS, qui rend déjà des erreurs typées, ou un double qui rend des `DOMException` brutes : les
+ * deux passent par la même traduction. Chaque refus survenant APRÈS l'ouverture rend le handle, sans
+ * quoi le fichier resterait verrouillé par un volume que personne ne détient.
+ *
+ * Elle n'écrit RIEN, pas même l'en-tête d'un volume qui naît : la pose est faite par l'appelant,
+ * après le contrôle de la clé. Voir `poserEnTeteOuRendre`.
  */
 async function saisirSupport({ name, size, identifiantVolume, openHandle }) {
   let handle;
@@ -183,18 +253,6 @@ async function saisirSupport({ name, size, identifiantVolume, openHandle }) {
       : dispositionExistante({ name, handle, declared: size, observed, identifiantVolume });
   } catch (error) {
     throw abandonHandle(handle, name, error);
-  }
-
-  if (naissance) {
-    try {
-      poserEnTete(handle, name, resolue.disposition, resolue.identifiantVolume);
-    } catch (cause) {
-      throw abandonHandle(
-        handle,
-        name,
-        toStorageError(cause, { operation: "allocate", volume: name }),
-      );
-    }
   }
 
   return { handle, ...resolue, naissance };
@@ -278,14 +336,41 @@ async function ouvrirMagasin({ name, size, backend, scellement, handle, seuilPoi
  * Le coût est un scellement par secteur, mesuré dans `docs/quality-attributes.md`, et il se paie une
  * fois — à la création.
  */
-async function scellerLeVolumeNeuf(backend, name) {
+async function scellerLeVolumeNeuf(backend, name, handle) {
   try {
     await backend.chiffre.scellerTout(0);
     await backend.barriereSupportBrute();
+    // La marque vient APRÈS la barrière : elle atteste que les sceaux sont sur le support, et une
+    // marque posée avant attesterait d'un état qui n'est peut-être jamais arrivé jusqu'au disque.
+    marquerScellementComplet(handle, name);
   } catch (cause) {
     await backend.close().catch(() => {});
     throw toStorageError(cause, { operation: "seal-volume", volume: name });
   }
+}
+
+/**
+ * Saisit le support, EXIGE la clé, puis alloue si le volume naît. L'ordre est le sujet.
+ *
+ * L'en-tête est lu avant que la clé ne soit exigée, et c'est un diagnostic : un fichier d'un format
+ * antérieur n'a pas besoin d'une clé pour qu'on sache qu'il ne s'ouvre pas ici, et lui répondre
+ * « aucune clé de volume n'a été remise » désignait un remède qui n'était pas le sien.
+ *
+ * Rien n'est ÉCRIT tant que la clé n'est pas là : un volume qu'on ne saura pas sceller ne doit pas
+ * laisser derrière lui un fichier alloué et porteur d'un en-tête. Rien n'est rendu de la charge non
+ * plus — seul l'en-tête est lu, et il est un localisateur.
+ */
+async function saisirLireEtAllouer({ name, size, cle, identifiantVolume, openHandle }) {
+  const saisi = await saisirSupport({ name, size, identifiantVolume, openHandle });
+  try {
+    exigerCleDeVolume(name, cle);
+  } catch (refus) {
+    throw abandonHandle(saisi.handle, name, refus);
+  }
+  if (saisi.naissance) {
+    poserEnTeteOuRendre(saisi.handle, name, saisi.disposition, saisi.identifiantVolume);
+  }
+  return saisi;
 }
 
 /** Assemble le backend : taille LOGIQUE d'un côté, disposition du support de l'autre. */
@@ -334,18 +419,15 @@ export async function openOpfsVolume({
 } = {}) {
   assertVolumeLibre(name);
   if (size !== undefined) assertBlockGeometry(size);
-  // Le refus tombe AVANT que le fichier ne soit ouvert : un volume qu'on ne saura pas lire ne doit
-  // pas voir son handle pris, ni sa géométrie allouée.
-  exigerCleDeVolume(name, cle);
 
-  const saisi = await saisirSupport({ name, size, identifiantVolume, openHandle });
+  const saisi = await saisirLireEtAllouer({ name, size, cle, identifiantVolume, openHandle });
   const scellement = await Scellement.ouvrir({
     volume: saisi.identifiantVolume,
     cleOctets: cle,
     formatVersion: FORMAT_VOLUME_V3,
   });
   const backend = construireBackend({ name, saisi, scellement, journal, faults, flushDelay });
-  if (saisi.naissance) await scellerLeVolumeNeuf(backend, name);
+  if (saisi.naissance) await scellerLeVolumeNeuf(backend, name, saisi.handle);
 
   if (transactionnel) {
     await installerGenerationOuFermer(backend, {
