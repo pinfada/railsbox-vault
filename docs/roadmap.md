@@ -89,6 +89,15 @@ tiré aléatoirement — une revue a démontré qu'un nonce dérivé de l'état 
 reprise réelle du magasin — et les questions laissées ouvertes (AES-GCM-SIV, retour arrière d'un
 secteur, ancrage monotone, budget de clé) sont numérotées pour #20.
 
+**#18 livré le 28 août 2026** — le format v3 est dans le produit
+([ADR 0016](decisions/0016-format-de-volume-v3-dispositions.md)) : chaque secteur, chaque
+enregistrement du journal et chaque racine sont scellés sous la clé de volume avec leur identité
+logique en données associées, les vecteurs de l'ADR 0015 sont reproduits octet pour octet par le
+chemin de production, la migration v2 → v3 reprend après une coupure à n'importe quelle écriture,
+l'archive porte le fichier chiffré tel quel et se restaure sans clé. Deux revues bloquantes ont été
+tenues avant la fusion groupée (jamais de `main` à mi-format). Reste #19 (séquence, fraîcheur de la
+région d'authentification, témoin de dernière séquence) puis #20.
+
 ## 5 — Déverrouillage et origine de confiance
 
 Une clé de volume aléatoire est enveloppée par une ou plusieurs clés de déverrouillage. Perte,
