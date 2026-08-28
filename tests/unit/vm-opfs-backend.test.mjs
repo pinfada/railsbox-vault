@@ -479,3 +479,54 @@ test("une plage invalide est refusée avant d'atteindre le support", async () =>
   assert.equal(store.readCount(name), avant, "aucun appel au support pour une plage invalide");
   await backend.close();
 });
+
+// ------------------------------------------------ ce que l'ouvreur répond quand la clé manque
+
+/** Écrit un fichier NON VIDE qui n'est pas un volume v3 : un volume d'un format antérieur. */
+async function poserUnFichierAncien(store, nom, octets) {
+  const handle = await store.openHandle(nom);
+  handle.truncate(octets);
+  handle.write(new Uint8Array(octets).fill(0xa5), { at: 0 });
+  handle.flush();
+  handle.close();
+}
+
+test("un volume d'un format ANTÉRIEUR est diagnostiqué comme tel, même sans clé", async () => {
+  // Le refus de clé tombait avant que l'en-tête ne soit lu, si bien qu'un fichier v2 s'entendait
+  // répondre « le format v3 est chiffré et aucune clé n'a été remise » : un remède qui n'est pas le
+  // sien. Ce qui manque à ce fichier n'est pas une clé, c'est une région d'authentification.
+  const store = createSyncAccessStore();
+  await poserUnFichierAncien(store, "ancien", TAILLE);
+
+  await assert.rejects(
+    () => openOpfsVolume({ name: "ancien", openHandle: store.openHandle }),
+    (erreur) => {
+      assert.equal(erreur.code, STORAGE_ERROR_CODES.geometryMismatch);
+      assert.doesNotMatch(erreur.message, /clé/i, "la clé n'est pas ce qui manque à ce fichier");
+      assert.match(
+        erreur.message,
+        /#101/,
+        "le chemin vers v3 est nommé, et il n'existe pas encore",
+      );
+      return true;
+    },
+  );
+  assert.equal(store.isOpen("ancien"), false, "le handle est rendu, même sur ce chemin-là");
+});
+
+test("un volume v3 SANS clé est refusé par le code de la clé, et n'écrit rien", async () => {
+  const store = createSyncAccessStore();
+  await assert.rejects(
+    () => openOpfsVolume({ name: "neuf-sans-cle", size: TAILLE, openHandle: store.openHandle }),
+    (erreur) => {
+      assert.equal(erreur.code, STORAGE_ERROR_CODES.cleRequise);
+      return true;
+    },
+  );
+  assert.equal(
+    store.sizeOf("neuf-sans-cle"),
+    0,
+    "un volume qu'on ne saura pas sceller ne laisse derrière lui ni fichier alloué ni en-tête",
+  );
+  assert.equal(store.isOpen("neuf-sans-cle"), false, "le handle est rendu");
+});
