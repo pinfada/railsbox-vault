@@ -500,23 +500,30 @@ multiplié par le nombre de secteurs. Les chiffres qui suivent sont des **mesure
 scénarios de bout en bout sur **OPFS réel**, dans Chromium, sur le volume applicatif de **512 Mio**
 de l'image de référence. Elles sont relevées dans `reports/e2e/*.json` à chaque exécution.
 
-| Geste, sur OPFS réel                                  |      Mesuré | Ce que le chiffre couvre                                                           |
-| ----------------------------------------------------- | ----------: | ---------------------------------------------------------------------------------- |
-| **Scellement initial** d'un volume v3 neuf de 512 Mio |  **21,8 s** | l'ouverture d'un volume qui naît : 1 048 576 secteurs scellés, zéros compris       |
-| **Versement** du disque applicatif dans ce volume     |  **21,1 s** | les 512 Mio de l'image écrits par le chemin chiffré, après le scellement           |
-| **Migration** d'un volume de 512 Mio vers v3, REPRISE | **112,7 s** | la chaîne entière rejouée depuis le manifeste source : déplacement puis scellement |
-| **Restauration** d'une archive de 512 Mio             |  **11,4 s** | recopie du fichier chiffré, sans clé — elle ne scelle ni ne déchiffre rien         |
+| Geste, sur OPFS réel                                                  |                    Mesuré | Ce que le chiffre couvre                                                      |
+| --------------------------------------------------------------------- | ------------------------: | ----------------------------------------------------------------------------- |
+| **Scellement initial** d'un volume v3 neuf de 512 Mio                 |                **21,8 s** | l'ouverture d'un volume qui naît : 1 048 576 secteurs scellés, zéros compris  |
+| **Versement** du disque applicatif dans ce volume                     |                **21,1 s** | les 512 Mio de l'image écrits par le chemin chiffré, après le scellement      |
+| **Migration** d'un volume de 512 Mio vers v3, reprise à MI-CONVERSION | **PLACEHOLDER_MIGRATION** | la chaîne rejouée depuis le manifeste source, sur un volume à moitié converti |
+| **Restauration** d'une archive de 512 Mio                             |                **11,4 s** | recopie du fichier chiffré, sans clé — elle ne scelle ni ne déchiffre rien    |
 
 **Le scellement initial mesuré (21,8 s) dépasse l'extrapolation (18,7 s) de 17 %**, et l'écart est
 dans le sens attendu : l'extrapolation ne comptait que `crypto.subtle`, pas les écritures OPFS qui
 l'accompagnent. Elle reste donc un ordre de grandeur juste, et c'est ce qu'on lui demandait.
 
-**La migration coûte cinq fois le scellement initial, et c'est explicable plutôt que surprenant.**
-Elle fait trois choses là où une création n'en fait qu'une : elle **déplace** les 512 Mio de charge
-pour ouvrir la région d'authentification, elle **relit** chaque secteur avant de le sceller — un
-volume qui naît scelle des zéros qu'il n'a pas eu à lire —, et elle rejoue la chaîne v1 → v2 → v3.
-Le chiffre publié est celui d'une migration **reprise après interruption**, c'est-à-dire du cas le
-plus long : la reprise repart du manifeste source plutôt que de deviner un point d'arrêt.
+**La migration coûte plusieurs fois le scellement initial, et c'est explicable plutôt que
+surprenant.** Elle fait trois choses là où une création n'en fait qu'une : elle **déplace** les 512
+Mio de charge pour ouvrir la région d'authentification, elle **relit** chaque secteur avant de le
+sceller — un volume qui naît scelle des zéros qu'il n'a pas eu à lire —, et elle rejoue la chaîne v1
+→ v2 → v3.
+
+**Ce que « REPRISE » qualifie, et ce qu'il qualifiait avant.** Le premier chiffre publié décrivait
+une migration reprise après une coupure qui tombait AVANT que la conversion ne touche un octet : la
+reprise y refaisait une conversion intégrale d'un volume intact, et le mot « reprise » n'apportait
+rien. La revue de #110 l'a relevé. Le scénario coupe désormais **au milieu du scellement** — fichier
+déjà agrandi, charge déplacée, une moitié des secteurs scellée et l'autre en clair —, et le chiffre
+ci-dessus est celui de cette reprise-là : elle relit chaque secteur pour savoir lequel est déjà
+converti, ce qu'une première conversion n'a pas à faire.
 
 **Aucune de ces valeurs n'est un budget**, et la règle de #16 s'applique telle quelle : « un seuil
 posé sans mesure opposable serait une promesse, pas un budget ». Ce sont des relevés sur une machine

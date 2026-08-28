@@ -147,13 +147,16 @@ Ce que la matrice de compatibilité doit en retenir :
 - **l'archive porte le fichier v3 tel quel**, donc chiffré. `content.length` décrit la taille du
   FICHIER — en-tête et région comprises, soit 6,64 % de plus que la taille logique — et
   `identity.digest` l'empreinte du chiffré. Trois conséquences pour cette politique. Deux exports
-  d'un même contenu logique ne sont **plus comparables par empreinte** : les nonces sont tirés.
-  L'export et la restauration ne demandent **aucune clé** — l'archive est copiée telle quelle, et la
-  clé n'est requise qu'à l'ouverture —, si bien que la restauration inter-origine de l'ADR 0009
-  fonctionne inchangée sur un volume chiffré. Et la sauvegarde d'un volume chiffré est la sauvegarde
-  de **DEUX choses**, dont ce dépôt n'en gère qu'une avant #21 : une archive sans sa clé est un
-  fichier que personne n'ouvrira, et « export/restauration de la version précédente démontré » ne
-  vaudra pour un volume chiffré que lorsque la clé aura, elle aussi, un chemin de sauvegarde ;
+  d'un même contenu logique ne sont **plus comparables par empreinte** : les nonces sont tirés. La
+  **restauration** ne demande **aucune clé** — l'archive est copiée telle quelle —, si bien que la
+  restauration inter-origine de l'ADR 0009 fonctionne inchangée sur un volume chiffré. L'**export**,
+  lui, en demande une, et pas pour lire : il doit d'abord RÉCUPÉRER, c'est-à-dire rejouer dans le
+  volume une génération validée qui attend encore dans le journal voisin (ADR 0014). Copier le
+  fichier sans cette étape produirait une archive à laquelle il manque une écriture acquittée. Et la
+  sauvegarde d'un volume chiffré est la sauvegarde de **DEUX choses**, dont ce dépôt n'en gère
+  qu'une avant #21 : une archive sans sa clé est un fichier que personne n'ouvrira, et «
+  export/restauration de la version précédente démontré » ne vaudra pour un volume chiffré que
+  lorsque la clé aura, elle aussi, un chemin de sauvegarde ;
 - **aucun volume d'utilisateur n'est concerné** : la série est `0.x` et aucun format n'a été publié.
   Les « vecteurs de test conservés pour chaque version publiée » restent sans objet pour la même
   raison, et les vecteurs cryptographiques de #17 tiennent ce rôle pour le format lui-même.
