@@ -20,7 +20,12 @@ import {
 import { revokeVolumeManifest, writeVolumeManifest } from "/src/vm/opfs-volume-open.mjs";
 import { createSha256Stream } from "/src/vm/sha256-stream.mjs";
 import { manifestSidecarName } from "/src/vm/volume-import.mjs";
-import { VOLUME_ALGORITHM } from "/src/vm/volume-manifest.mjs";
+import {
+  MANIFEST_FORMAT_VERSION,
+  MIN_VOLUME_FORMAT_VERSION,
+  VOLUME_ALGORITHM,
+} from "/src/vm/volume-manifest.mjs";
+import { ouvrirVolumeBrut } from "/src/vm/opfs-volume-brut.mjs";
 import { attentesDe, manifesteDuDescripteur } from "./reference-worker-boot.mjs";
 import { EXPORT_BLOCK_BYTES } from "./reference-worker-mesures.mjs";
 
@@ -64,7 +69,27 @@ async function verserFluxDansVolume(backend, url) {
  * une génération du guest, et la création porte déjà son atomicité — le manifeste n'est inscrit
  * qu'après le disque écrit et flushé.
  */
-async function verserLeDisque({ volume, appDiskBytes, appDiskUrl, journal }) {
+async function verserLeDisque({ volume, appDiskBytes, appDiskUrl, journal, formatVersion }) {
+  // Un volume au format ANTÉRIEUR est un fichier BRUT : ni en-tête, ni région d'authentification, ni
+  // secteur scellé. Le fabriquer par l'ouvreur chiffré produirait un fichier v3 sous un manifeste
+  // v2 — un volume qui mentirait sur lui-même, et que la migration lirait de travers. C'est ce que
+  // le scénario de migration doit trouver : un vrai v2.
+  if (formatVersion < MIN_VOLUME_FORMAT_VERSION) {
+    const brut = await ouvrirVolumeBrut({ name: volume, size: appDiskBytes });
+    const depart = performance.now();
+    try {
+      const offset = await verserFluxDansVolume(brut, appDiskUrl);
+      return { offset, identifiantVolume: undefined, scellementMs: 0, versementMs: duree(depart) };
+    } finally {
+      await brut.close();
+    }
+  }
+
+  // Le SCELLEMENT INITIAL est chronométré à part : « un secteur jamais écrit n'existe pas en v3 »
+  // (ADR 0015), donc l'ouverture d'un volume neuf scelle TOUS ses secteurs, et ce coût est celui du
+  // format — pas celui du versement. Les confondre publierait un chiffre qui ne dirait ni l'un ni
+  // l'autre.
+  const avantOuverture = performance.now();
   const backend = await openOpfsVolume({
     name: volume,
     size: appDiskBytes,
@@ -72,12 +97,24 @@ async function verserLeDisque({ volume, appDiskBytes, appDiskUrl, journal }) {
     cle: cleDuBanc(),
     transactionnel: false,
   });
+  const scellementMs = duree(avantOuverture);
   const identifiantVolume = backend.identifiantVolume;
+  const avantVersement = performance.now();
   try {
-    return { offset: await verserFluxDansVolume(backend, appDiskUrl), identifiantVolume };
+    return {
+      offset: await verserFluxDansVolume(backend, appDiskUrl),
+      identifiantVolume,
+      scellementMs,
+      versementMs: duree(avantVersement),
+    };
   } finally {
     await backend.close();
   }
+}
+
+/** Durée écoulée depuis `depart`, au dixième de milliseconde. */
+function duree(depart) {
+  return Number((performance.now() - depart).toFixed(1));
 }
 
 /**
@@ -93,12 +130,17 @@ export async function phasePrepare({ volume, appDiskBytes, appDiskUrl, manifest 
   // restauration, appliquée à la création.
   await revokeVolumeManifest(volume);
   const journal = new BlockJournal();
-  const { offset, identifiantVolume } = await verserLeDisque({
+  const formatVersion = Number.isInteger(manifest.formatVersion)
+    ? manifest.formatVersion
+    : MANIFEST_FORMAT_VERSION;
+  const verse = await verserLeDisque({
     volume,
     appDiskBytes,
     appDiskUrl,
     journal,
+    formatVersion,
   });
+  const { offset, identifiantVolume } = verse;
   if (offset !== appDiskBytes) {
     throw new Error(`Disque applicatif tronqué : ${offset} octets écrits sur ${appDiskBytes}.`);
   }
@@ -115,6 +157,10 @@ export async function phasePrepare({ volume, appDiskBytes, appDiskUrl, manifest 
     volume,
     bytesWritten: offset,
     formatVersion: inscrit.formatVersion,
+    // Les DEUX durées, publiées séparément : le scellement initial est le coût du FORMAT, le
+    // versement celui du disque. `docs/quality-attributes.md` les reprend telles quelles.
+    sealMs: verse.scellementMs,
+    fillMs: verse.versementMs,
     counts: journal.counts(),
     identified: identites,
   };
