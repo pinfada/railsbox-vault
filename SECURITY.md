@@ -90,7 +90,13 @@ et tester.
   clair, racine altérée — plus le refus sans clé. Deux défauts du modèle de référence ont été
   trouvés PAR EXÉCUTION en l'implémentant, et l'ADR 0016 les porte : le rescellement du point de
   contrôle n'avait pas de porte d'injection de nonce, donc échappait aux vecteurs ; et l'encodage
-  canonique des entrées débordait la pile d'appel au plafond de charge de l'ADR 0014.
+  canonique des entrées débordait la pile d'appel au plafond de charge de l'ADR 0014. **Un troisième
+  constat porte sur l'ARCHIVE, et il est de sécurité** : le chemin d'export lit le volume par la
+  lecture autorisée, qui déchiffre. Exporter un volume v3 par ce chemin aurait produit une archive
+  **en clair** — le chiffrement au repos annulé dès que le fichier quitte l'appareil, par omission
+  et sans message. L'export et la restauration d'un volume v3 sont donc REFUSÉS
+  (`VAULT_ARCHIVE_VOLUME_CHIFFRE`, `VAULT_IMPORT_VOLUME_CHIFFRE`), avant le premier octet lu et
+  avant le premier geste mutant, jusqu'à ce que la recopie brute existe (#101).
   L'[ADR 0015](docs/decisions/0015-proprietes-cryptographiques-du-format.md) le définit ainsi : un
   bloc est scellé par AES-256-GCM (étiquette de 128 bits) dont les **données associées portent
   l'identité logique complète** — identifiant de volume, adresse logique, version de format,

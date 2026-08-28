@@ -370,6 +370,27 @@ Deux conséquences, à écrire plutôt qu'à découvrir :
 L'alternative — déchiffrer à l'export — a été écartée : elle annulerait le chiffrement au repos dès
 que l'archive quitte l'appareil, ce que l'ADR 0015 nomme déjà comme le mauvais côté de l'échange.
 
+### Cette décision n'est PAS mise en œuvre par cette tranche, et l'export est donc REFUSÉ
+
+Le constat est venu du bout en bout, pas de la lecture. Le chemin d'export lit le volume par la
+lecture AUTORISÉE — celle qui déchiffre —, et le chemin de restauration écrit par la voie autorisée
+— celle qui rechiffre. Livrés tels quels sur un volume v3, ils auraient produit **une archive en
+clair d'un volume chiffré** : le chiffrement au repos annulé dès que le fichier quitte l'appareil,
+sans qu'aucun message ne le dise. C'est exactement l'échange que le paragraphe ci-dessus refuse, et
+il se serait produit par omission.
+
+**Décision : l'export et la restauration d'un volume v3 sont REFUSÉS**, par
+`VAULT_ARCHIVE_VOLUME_CHIFFRE` et `VAULT_IMPORT_VOLUME_CHIFFRE`, jusqu'à ce que la recopie brute
+existe. Les deux refus tombent avant le premier octet lu et avant le premier geste mutant, et ils
+sont **distincts de `VAULT_STORAGE_CLE_REQUISE`** — qui tombait jusqu'ici sur la restauration et
+accusait la clé d'un manque qui est celui du CHEMIN. Une clé n'y changerait rien : c'est la lecture
+et l'écriture BRUTES qui manquent, et elles sont l'objet de la tranche (b), #101.
+
+Ce qu'il faudra pour lever le refus, écrit d'avance : une source d'export qui lise le FICHIER (donc
+`tailleSupport`, pas `tailleLogique`), une cible de restauration qui le RECOPIE sans passer par la
+couche chiffrée, et le réglage de ce que `content.length` et `geometry.volumeSize` désignent alors —
+l'ADR 0008 pose déjà la question, et c'est là qu'elle se referme.
+
 ## Décision 8 — La migration v2 → v3
 
 Par la chaîne de l'[ADR 0011](0011-migration-de-format-et-reprise.md), sans exception à ses règles :
