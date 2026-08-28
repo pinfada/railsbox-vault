@@ -65,6 +65,29 @@ export function cleDeVolumeDuHarnais({ jeton } = {}) {
 }
 
 /**
+ * Clés de DÉVERROUILLAGE de TEST du harnais (#21, ADR 0020).
+ *
+ * Elles vivent ici, dans le module que `tests/unit/harnais-portes.test.mjs` surveille déjà, et pas
+ * dans un banc : c'est ce qui garde EN UN SEUL ENDROIT tout ce que le dépôt tient de matériel de
+ * clé en dur. Elles n'ont pas plus d'entropie que la clé de volume de TEST, et pas davantage de
+ * valeur — 0x80 à 0x9f pour la première, 0xa0 à 0xbf pour la seconde.
+ *
+ * Deux, parce qu'un banc de ROTATION en demande deux : remplacer une clé et montrer que l'ancienne
+ * n'ouvre plus exige une clé neuve, et une clé neuve fabriquée par le banc serait une clé en dur de
+ * plus, hors de portée de la garde.
+ *
+ * @param {{ jeton?: string }} [options] même garde, mot pour mot, que `cleDeVolumeDuHarnais`
+ * @returns {{ initiale: Uint8Array, rotation: Uint8Array }}
+ */
+export function clesDeDeverrouillageDuHarnais({ jeton } = {}) {
+  cleDeVolumeDuHarnais({ jeton });
+  return Object.freeze({
+    initiale: Uint8Array.from({ length: CLE_OCTETS }, (_, index) => (0x80 + index) % 256),
+    rotation: Uint8Array.from({ length: CLE_OCTETS }, (_, index) => (0xa0 + index) % 256),
+  });
+}
+
+/**
  * EXIGE une clé de volume. C'est le refus typé de l'ADR 0016 : il tombe avant toute lecture, il
  * nomme l'issue qui le lèvera, et il ne fabrique rien.
  *

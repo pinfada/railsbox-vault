@@ -35,6 +35,18 @@ const FRONTIERE_CSP = [
  */
 const FRONTIERE_APPLICATIONS = ["**/apps-frontiere.spec.mjs"];
 
+/**
+ * Frontière de l'ENVELOPPE DE CLÉ (#21, ADR 0020). Exécutée sur les trois moteurs pour le motif des
+ * deux précédentes, et pour un motif de plus qui lui est propre : elle mesure ce qui franchit un
+ * `postMessage` depuis le Worker de confiance, et la sérialisation structurée n'est pas identique
+ * d'un moteur à l'autre. Une garantie « aucune clé ne franchit le port » relevée sur un seul moteur
+ * ne serait pas une garantie.
+ *
+ * Elle n'a besoin d'aucun artefact v86 et dure quelques secondes : rien ne justifierait de la
+ * réserver au moteur par défaut.
+ */
+const FRONTIERE_ENVELOPPE = ["**/enveloppe-frontiere.spec.mjs"];
+
 // Le harnais mesure une frontière d'origine : il lui faut DEUX serveurs, donc deux origines
 // réelles. `127.0.0.1` et `localhost` en fournissent sans DNS ni certificat, et restent tous deux
 // des contextes sécurisés.
@@ -95,7 +107,7 @@ export default defineConfig({
     ...moteurs.map((nom) => ({
       name: nom,
       use: { browserName: nom },
-      testIgnore: [...FRONTIERE_CSP, ...FRONTIERE_APPLICATIONS],
+      testIgnore: [...FRONTIERE_CSP, ...FRONTIERE_APPLICATIONS, ...FRONTIERE_ENVELOPPE],
     })),
     // La frontière de CSP (#52) est une frontière de SÉCURITÉ, et une politique ne s'applique pas de
     // la même façon d'un moteur à l'autre : la mesurer sur le seul moteur par défaut publierait une
@@ -111,6 +123,11 @@ export default defineConfig({
       name: `frontiere-applications-${nom}`,
       use: { browserName: nom },
       testMatch: FRONTIERE_APPLICATIONS,
+    })),
+    ...MOTEURS_CONNUS.map((nom) => ({
+      name: `frontiere-enveloppe-${nom}`,
+      use: { browserName: nom },
+      testMatch: FRONTIERE_ENVELOPPE,
     })),
   ],
 });

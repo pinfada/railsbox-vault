@@ -15,7 +15,7 @@ export const TOPOLOGIE_RETENUE = "T2-origine-distincte-sandbox";
 /** Topologie la plus permissive, utilisée comme témoin positif des sondes. */
 export const TOPOLOGIE_TEMOIN = "T1a-meme-origine-sans-sandbox";
 /** Nombre de sondes exécutées par `app-probe.mjs` : un relevé incomplet est un relevé faux. */
-export const NOMBRE_DE_SONDES = 19;
+export const NOMBRE_DE_SONDES = 20;
 
 const CONSTANTES_STOCKAGE = {
   opfsHostile: "hostile.marker",
