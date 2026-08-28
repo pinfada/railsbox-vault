@@ -112,7 +112,10 @@ function creerCible({
   pannes = {},
   apres = {},
   faults = createFaultPlan(),
+  couperEcritureApres = null,
 } = {}) {
+  /** Coupure d'écriture du VOLUME, mutable : l'épreuve coupe, puis désarme pour reprendre. */
+  const coupure = { apres: couperEcritureApres, ecritures: 0 };
   const etat = {
     manifestBytes,
     journalBytes,
@@ -144,6 +147,12 @@ function creerCible({
       return volume.slice(offset, offset + rendus);
     },
     async write(offset, octets) {
+      coupure.ecritures += 1;
+      // Une coupure PENDANT la conversion : le support garde ce qui a été écrit avant, et rien de
+      // plus. C'est ce qu'une mort d'onglet laisse, et le seul état sur lequel une reprise se juge.
+      if (coupure.apres !== null && coupure.ecritures > coupure.apres) {
+        throw new Error(`coupure programmée à la ${coupure.ecritures}e écriture du volume`);
+      }
       volume.set(octets, offset);
     },
     async retailler(taille) {
@@ -165,6 +174,14 @@ function creerCible({
   return {
     gestes,
     etat,
+    /** Écritures du volume acceptées depuis la construction. */
+    get ecrituresVolume() {
+      return coupure.ecritures;
+    },
+    /** Arme ou désarme la coupure d'écriture. `null` désarme, ce que fait une reprise. */
+    armerCoupure(apres) {
+      coupure.apres = apres;
+    },
     async inspect() {
       trace("inspect");
       return { present: true, size: volume.byteLength };
@@ -792,4 +809,63 @@ test("migrer SANS CLÉ est refusé, et le volume reste non identifié plutôt qu
   );
   assert.equal(cible.etat.manifestBytes, null, "le volume reste NON IDENTIFIÉ");
   assert.notEqual(cible.etat.journalBytes, null, "le journal de reprise porte le manifeste source");
+});
+
+test("une migration v1 → v3 COUPÉE pendant la conversion REPREND, et rend le clair d'origine", async () => {
+  // La revue de #110 a trouvé ici un défaut qui rendait toute la machinerie de reprise de
+  // `migration-v3.mjs` inatteignable depuis la production : le contrôle de géométrie comparait la
+  // taille LOGIQUE du manifeste source à la taille du FICHIER, alors que le premier geste de la
+  // conversion agrandit ce fichier de sa région d'authentification. Une migration coupée après la
+  // moindre écriture laissait donc un volume au manifeste révoqué, au journal complet — et REFUSÉ
+  // à la reprise par `VAULT_MIGRATION_GEOMETRY_MISMATCH` : ni v2, ni v3, ni reprenable.
+  //
+  // L'épreuve coupe à CHAQUE rang d'écriture du volume et exige, à chaque fois, que la reprise
+  // aboutisse et rende le clair d'origine.
+  const attendu = contenu();
+  const options = (cible) => ({
+    target: cible,
+    expectations: attentes({
+      supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
+    }),
+    consent: CONSENTEMENT,
+    cle: CLE_DE_TEST,
+  });
+
+  const temoin = creerCible({ volume: contenu() });
+  await migrateVolume(options(temoin));
+  const ecrituresCompletes = temoin.ecrituresVolume;
+  assert.ok(ecrituresCompletes > 2, "une conversion écrit plusieurs fois dans le fichier");
+
+  // Jusqu'à l'AVANT-DERNIÈRE : couper après la dernière écriture n'est pas une coupure.
+  for (let rang = 1; rang < ecrituresCompletes; rang += 1) {
+    const cible = creerCible({ volume: contenu(), couperEcritureApres: rang });
+    await assert.rejects(() => migrateVolume(options(cible)), `coupure au rang ${rang}`);
+    assert.equal(cible.etat.manifestBytes, null, `rang ${rang} : le manifeste est révoqué`);
+    assert.notEqual(cible.etat.journalBytes, null, `rang ${rang} : le journal de reprise subsiste`);
+
+    cible.armerCoupure(null);
+    const rapport = await migrateVolume(options(cible));
+    assert.equal(rapport.resumed, true, `rang ${rang} : la reprise repart du journal`);
+    assert.equal(rapport.toVersion, MANIFEST_FORMAT_VERSION);
+
+    const inscrit = parseManifest(cible.etat.manifestBytes);
+    const volume = new VolumeChiffre({
+      volume: "migre",
+      scellement: await Scellement.ouvrir({
+        volume: inscrit.volume.id,
+        cleOctets: CLE_DE_TEST,
+        formatVersion: 3,
+      }),
+      disposition: dispositionV3(TAILLE),
+      lireSupport: (offset, longueur) => cible.etat.volume.slice(offset, offset + longueur),
+      ecrireSupport: () => {
+        throw new Error("la relecture n'écrit pas");
+      },
+    });
+    assert.deepEqual(
+      [...(await volume.lireSecteurs(0, TAILLE))],
+      [...attendu],
+      `rang ${rang} : la reprise doit rendre le clair d'origine`,
+    );
+  }
 });

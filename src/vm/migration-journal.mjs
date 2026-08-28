@@ -83,7 +83,35 @@ function analyserAvancement(progress) {
       position: progress?.position ?? null,
     });
   }
-  return Object.freeze({ etape: progress.etape, position: progress.position });
+  // À QUEL PAS DE LA CHAÎNE cet avancement se rapporte. Une chaîne compte plusieurs pas — v1 → v2
+  // puis v2 → v3 —, et un avancement qui ne dit pas lequel serait consommé par le premier venu :
+  // la conversion recevrait alors « rien de commencé » et redéplacerait la charge par-dessus une
+  // région déjà scellée. C'est ce que la revue de #110 a trouvé, masqué par un autre défaut.
+  if (!Number.isInteger(progress.from) || !Number.isInteger(progress.to)) {
+    throw journalMalforme("avancement présent mais sans le pas de chaîne qu'il décrit.", {
+      from: progress?.from ?? null,
+      to: progress?.to ?? null,
+    });
+  }
+  // L'IDENTIFIANT du volume en cours de conversion, quand l'étape en a tiré un. Il entre dans les
+  // données associées de chaque secteur scellé : une reprise qui en tirerait un autre ne
+  // reconnaîtrait plus rien de ce qui est déjà converti. Facultatif — une étape qui ne chiffre pas
+  // n'en a aucun —, mais refusé s'il est présent et malformé, comme tout le reste du journal.
+  if (
+    progress.identifiantVolume !== undefined &&
+    !/^[0-9a-f]{32}$/.test(progress.identifiantVolume)
+  ) {
+    throw journalMalforme("avancement présent avec un identifiant de volume inadmissible.", {
+      identifiantVolume: progress.identifiantVolume ?? null,
+    });
+  }
+  return Object.freeze({
+    from: progress.from,
+    to: progress.to,
+    etape: progress.etape,
+    position: progress.position,
+    identifiantVolume: progress.identifiantVolume ?? null,
+  });
 }
 
 /**
