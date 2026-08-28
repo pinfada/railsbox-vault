@@ -88,8 +88,14 @@ function source(octets) {
 test("la longueur d'archive d'un volume v3 est celle du FICHIER, pas du volume logique", () => {
   // Elle est DÉRIVÉE du format et de la géométrie, jamais reçue : deux sources de vérité
   // divergeraient, et c'est l'archive qui deviendrait invérifiable.
-  assert.equal(tailleDeFichier({ formatVersion: 1, tailleLogique: TAILLE_LOGIQUE }), TAILLE_LOGIQUE);
-  assert.equal(tailleDeFichier({ formatVersion: 2, tailleLogique: TAILLE_LOGIQUE }), TAILLE_LOGIQUE);
+  assert.equal(
+    tailleDeFichier({ formatVersion: 1, tailleLogique: TAILLE_LOGIQUE }),
+    TAILLE_LOGIQUE,
+  );
+  assert.equal(
+    tailleDeFichier({ formatVersion: 2, tailleLogique: TAILLE_LOGIQUE }),
+    TAILLE_LOGIQUE,
+  );
   assert.equal(
     tailleDeFichier({ formatVersion: 3, tailleLogique: TAILLE_LOGIQUE }),
     tailleSupportV3(TAILLE_LOGIQUE),
@@ -117,7 +123,10 @@ test("un volume v3 s'exporte TEL QUEL : l'archive porte ses octets chiffrés", a
   );
 
   // Les octets de l'archive sont ceux du fichier, en-tête v3 compris.
-  const contenu = archive.subarray(verdict.contentOffset, verdict.contentOffset + octets.byteLength);
+  const contenu = archive.subarray(
+    verdict.contentOffset,
+    verdict.contentOffset + octets.byteLength,
+  );
   assert.deepEqual([...contenu], [...octets]);
 });
 
