@@ -399,14 +399,7 @@ export async function migrateVolume({
   const chaine = planMigration(source.formatVersion, toVersion);
 
   // 3. EXIGER UNE PREUVE — avant d'ouvrir quoi que ce soit.
-  const consentement = consentementNomme(consent);
-  assertPreuveDisponible({
-    journal,
-    backup,
-    consentement,
-    fromVersion: source.formatVersion,
-    toVersion,
-  });
+  const consentement = exigerUnePreuve({ journal, backup, consent, chaine, source, toVersion });
 
   // 4 à 10. OUVRIR, vérifier, muter, refermer, retirer le journal.
   return executerMigration({
@@ -422,6 +415,25 @@ export async function migrateVolume({
     blockBytes,
     expectations,
   });
+}
+
+/**
+ * GESTE 3 — EXIGER une preuve, et rendre le consentement nommé qu'on a pu en tirer.
+ *
+ * Le contrôle précède toute ouverture : un volume qu'on n'a pas le droit de migrer ne doit pas voir
+ * son handle pris.
+ */
+function exigerUnePreuve({ journal, backup, consent, chaine, source, toVersion }) {
+  const consentement = consentementNomme(consent);
+  assertPreuveDisponible({
+    journal,
+    backup,
+    consentement,
+    chaine,
+    fromVersion: source.formatVersion,
+    toVersion,
+  });
+  return consentement;
 }
 
 /**
