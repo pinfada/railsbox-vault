@@ -97,9 +97,11 @@ secteur ramené en arrière change son sceau, donc la région, donc l'empreinte.
   pour celle d'aujourd'hui. La confrontation présente donc `generationMinimale = racine.generation`,
   et le refus est un `VAULT_CRYPTO_REJEU` établi.
 - **Elle n'est REHACHÉE que si le volume a été écrit** depuis la dernière. Le seul geste qui écrit
-  le volume est le point de contrôle (et le rejeu d'une génération à l'ouverture) ; une session en
-  fait donc une lecture de région à l'ouverture, et une par rangement. Les racines intermédiaires
-  rescellent l'empreinte en cache — un chiffrement de 32 octets, pas un hachage de 34 Mio.
+  le volume est le point de contrôle — le rejeu d'une génération à l'ouverture en est un. Une
+  session paie donc une lecture de région quand une racine fait autorité à l'ouverture, pour la
+  confrontation, puis une par rangement ; sur un volume qui NAÎT, où aucune racine ne fait encore
+  autorité, la première tombe à la première racine écrite. Les racines intermédiaires rescellent
+  l'empreinte en cache — un chiffrement de 32 octets, pas un hachage de 34 Mio.
 
 ### Ce que la décision 2 couvre, et ce qu'elle ne couvre pas
 
