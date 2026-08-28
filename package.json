@@ -21,7 +21,7 @@
     "publier:temoin": "node tools/publier-temoin.mjs",
     "publier:sonde:meta": "node tools/publier-sonde-meta-csp.mjs",
     "publier:sonde:hebergement": "node tools/publier-sonde-hebergement.mjs",
-    "publier:check": "node tools/publier.mjs --origine-application http://localhost:4194 && node tools/publier.mjs --verifier artifacts/publication/coquille && node tools/publier.mjs --verifier artifacts/publication/application && node tools/publier-temoin.mjs",
+    "publier:check": "node tools/publier.mjs --sortie artifacts/publication-check --origine-application http://localhost:4194 --origine-coquille http://127.0.0.1:4193 --tolerer-incomplet && node tools/publier.mjs --verifier artifacts/publication-check/coquille --tolerer-incomplet && node tools/publier.mjs --verifier artifacts/publication-check/application --tolerer-incomplet && node tools/publier-temoin.mjs",
     "test:e2e": "playwright test --config playwright.e2e.config.mjs",
     "test:rythme": "playwright test --config playwright.rythme.config.mjs",
     "test:vm:reference": "node --test \"tests/vm/**/*.test.mjs\"",

@@ -23,6 +23,10 @@
 //   3  usage invalide
 //   4  source obligatoire absente : la publication n'est pas constructible
 //   5  artefact v86 servi qui ne correspond pas à son épinglage (`vendor/v86/MANIFEST.json`)
+//   6  arbre INCOMPLET : une source optionnelle manque (le runtime v86). L'arbre est cohérent et
+//      son inventaire est exact, mais ce n'est pas un artefact publiable. `--tolerer-incomplet`
+//      ramène ce cas à un avertissement, pour les contextes — bancs, `npm run check` — qui n'ont
+//      pas besoin de l'émulateur et ne prétendent pas publier.
 
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
@@ -34,6 +38,7 @@ import {
   ORIGINE_COQUILLE_PAR_DEFAUT,
   cheminsHorsPolitiqueUniforme,
   enTetesDePublication,
+  origineDeLArbre,
   rendreFichierHeaders,
 } from "./publier-en-tetes.mjs";
 import {
@@ -53,6 +58,7 @@ export const CODES = Object.freeze({
   usage: 3,
   sourceAbsente: 4,
   epinglageRompu: 5,
+  incomplet: 6,
 });
 
 const SORTIE_PAR_DEFAUT = "artifacts/publication";
@@ -67,6 +73,23 @@ function lireOption(argv, nom, defaut = null) {
   return valeur;
 }
 
+/**
+ * Un arbre est un BANC dès qu'une de ses deux origines n'est pas `https:`.
+ *
+ * Le critère est volontairement grossier : il n'essaie pas de deviner l'intention, il constate
+ * qu'une origine de production est nécessairement un contexte sécurisé. `http://localhost:4194`,
+ * qu'emploie `npm run publier:check`, tombe donc du bon côté sans qu'aucun drapeau ne soit à poser.
+ */
+export function estUnBanc({ origineCoquille, origineApplication }) {
+  return [origineCoquille, origineApplication].some((origine) => {
+    try {
+      return new URL(origine).protocol !== "https:";
+    } catch {
+      return true;
+    }
+  });
+}
+
 async function ecrireInventaire(destination, inventaire) {
   await writeFile(
     join(destination, FICHIER_INVENTAIRE),
@@ -76,9 +99,9 @@ async function ecrireInventaire(destination, inventaire) {
 }
 
 /** Refuse un arbre dont un chemin recevrait du serveur de test une politique autre que la racine. */
-async function exigerPolitiqueUniforme(arbre, destination, origineApplication) {
+async function exigerPolitiqueUniforme(arbre, destination, options) {
   const chemins = (await relever(destination)).map(({ chemin }) => chemin);
-  const dissidents = cheminsHorsPolitiqueUniforme(arbre.nom, chemins, { origineApplication });
+  const dissidents = cheminsHorsPolitiqueUniforme(arbre.nom, chemins, options);
   if (dissidents.length === 0) return;
   throw new Error(
     `Le fichier ${FICHIER_HEADERS} annoncerait une politique uniforme que ces chemins ne ` +
@@ -102,10 +125,10 @@ async function construireArbre(arbre, options) {
   }
   await writeFile(
     join(destination, FICHIER_HEADERS),
-    rendreFichierHeaders(arbre.nom, { origineApplication: options.origineApplication }),
+    rendreFichierHeaders(arbre.nom, options),
     "utf8",
   );
-  await exigerPolitiqueUniforme(arbre, destination, options.origineApplication);
+  await exigerPolitiqueUniforme(arbre, destination, options);
 
   // L'épinglage ne se vérifie que là où un runtime est publié. L'origine applicative n'en porte
   // aucun (ADR 0002) : lui répondre « manifeste absent » ferait passer une propriété pour un défaut.
@@ -117,11 +140,12 @@ async function construireArbre(arbre, options) {
     arbre: arbre.nom,
     role: arbre.role,
     racine: destination,
-    origine: arbre.nom === "coquille" ? options.origineCoquille : options.origineApplication,
+    origine: origineDeLArbre(arbre.nom, options),
     commit: options.commit,
     complet: absentes.length === 0,
+    banc: options.banc,
     absentes,
-    enTetes: enTetesDePublication(arbre.nom, { origineApplication: options.origineApplication }),
+    enTetes: enTetesDePublication(arbre.nom, options),
     exclusions: arbre.nom === "coquille" ? EXCLUSIONS : [],
   });
   inventaire.epinglageV86 = epinglage;
@@ -137,6 +161,8 @@ function decrireArbre({ destination, inventaire, absentes, epinglage }) {
     `  racine         ${inventaire.empreinteDeRacine}`,
     `  complet        ${inventaire.complet ? "oui" : "NON"}`,
   ];
+  if (inventaire.banc)
+    lignes.push("  banc           oui (origine non https : arbre non publiable)");
   if (epinglage.verifie) {
     lignes.push(
       `  épinglage v86  ${epinglage.ecarts.length === 0 ? "conforme au MANIFEST" : "ROMPU"}`,
@@ -163,6 +189,22 @@ function decrireCommit(commit, reference) {
   return lignes.join("\n");
 }
 
+/** Verdict d'incomplétude, commun à la construction et à la vérification. */
+function verdictIncomplet(tolere) {
+  if (tolere) {
+    process.stdout.write(
+      "\nArbre INCOMPLET (--tolerer-incomplet) : un artefact de runtime manque, l'inventaire le " +
+        "déclare. Ce n'est pas un artefact publiable.\n",
+    );
+    return CODES.conforme;
+  }
+  process.stderr.write(
+    "\nPublication INCOMPLÈTE : un artefact de runtime manque. `npm run vm:fetch` le récupère ; " +
+      "`--tolerer-incomplet` ramène ce refus à un avertissement pour un banc.\n",
+  );
+  return CODES.incomplet;
+}
+
 async function construire(options) {
   const resultats = [];
   for (const arbre of ARBRES) resultats.push(await construireArbre(arbre, options));
@@ -175,12 +217,10 @@ async function construire(options) {
     );
     return CODES.epinglageRompu;
   }
-  const incomplet = resultats.some(({ inventaire }) => !inventaire.complet);
-  process.stdout.write(
-    incomplet
-      ? "\nPublication INCOMPLÈTE : un artefact de runtime manque, l'inventaire le déclare.\n"
-      : "\nPublication complète.\n",
-  );
+  if (resultats.some(({ inventaire }) => !inventaire.complet)) {
+    return verdictIncomplet(options.tolererIncomplet);
+  }
+  process.stdout.write("\nPublication complète.\n");
   return CODES.conforme;
 }
 
@@ -200,7 +240,7 @@ function decrireEcarts(ecarts) {
   return lignes.join("\n");
 }
 
-async function verifier(racine) {
+async function verifier(racine, { tolererIncomplet }) {
   let resultat;
   try {
     resultat = await verifierArbre(racine);
@@ -210,8 +250,9 @@ async function verifier(racine) {
   }
   const { inventaire, ecarts } = resultat;
   process.stdout.write(
-    `Arbre « ${inventaire.arbre} » — ${inventaire.fichiers.length} fichiers, commit ` +
-      `${inventaire.commit.empreinte ?? "inconnu"}\n`,
+    `Arbre « ${inventaire.arbre} » — ${inventaire.fichiers.length} fichiers, origine ` +
+      `${inventaire.origine}, commit ${inventaire.commit.empreinte ?? "inconnu"}` +
+      `${inventaire.banc ? " [BANC]" : ""}\n`,
   );
   if (!ecarts.conforme) {
     process.stderr.write(`ÉCARTS :\n${decrireEcarts(ecarts)}\n`);
@@ -225,13 +266,17 @@ async function verifier(racine) {
     );
     return CODES.epinglageRompu;
   }
-  process.stdout.write(`Conforme. Empreinte de racine ${ecarts.racineMesuree}\n`);
+  process.stdout.write(`Empreintes conformes. Racine ${ecarts.racineMesuree}\n`);
+  // `complet: false` n'est PAS un écart d'empreintes : l'arbre est exactement ce que son inventaire
+  // décrit. C'est en revanche un arbre qu'on ne doit pas déployer, et rendre 0 ici laisserait une
+  // chaîne de publication conclure « conforme » sur un runtime absent.
+  if (inventaire.complet === false) return verdictIncomplet(tolererIncomplet);
   return CODES.conforme;
 }
 
-const AIDE = `node tools/publier.mjs [--commit <ref>] [--sortie <dir>]
+const AIDE = `node tools/publier.mjs [--commit <ref>] [--sortie <dir>] [--tolerer-incomplet]
                       [--origine-coquille <url>] [--origine-application <url>]
-node tools/publier.mjs --verifier <arbre>
+node tools/publier.mjs --verifier <arbre> [--tolerer-incomplet]
 `;
 
 async function principal(argv) {
@@ -240,16 +285,25 @@ async function principal(argv) {
     return CODES.conforme;
   }
 
+  const tolererIncomplet = argv.includes("--tolerer-incomplet");
   const aVerifier = lireOption(argv, "verifier");
-  if (aVerifier !== null) return verifier(resolve(aVerifier));
+  if (aVerifier !== null) return verifier(resolve(aVerifier), { tolererIncomplet });
 
   const reference = lireOption(argv, "commit");
+  const origineCoquille = lireOption(argv, "origine-coquille", ORIGINE_COQUILLE_PAR_DEFAUT);
+  const origineApplication = lireOption(
+    argv,
+    "origine-application",
+    ORIGINE_APPLICATION_PAR_DEFAUT,
+  );
   return construire({
     sortie: resolve(lireOption(argv, "sortie", join(REPOSITORY_ROOT, SORTIE_PAR_DEFAUT))),
     reference,
     commit: identiteDuCommit(REPOSITORY_ROOT, reference ?? "HEAD"),
-    origineCoquille: lireOption(argv, "origine-coquille", ORIGINE_COQUILLE_PAR_DEFAUT),
-    origineApplication: lireOption(argv, "origine-application", ORIGINE_APPLICATION_PAR_DEFAUT),
+    origineCoquille,
+    origineApplication,
+    banc: estUnBanc({ origineCoquille, origineApplication }),
+    tolererIncomplet,
   });
 }
 

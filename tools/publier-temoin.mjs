@@ -39,7 +39,16 @@ export const ORIGINE_COQUILLE = `http://${HOTE_COQUILLE}:${PORTS.coquille}`;
 export const ORIGINE_APPLICATION = `http://${HOTE_APPLICATION}:${PORTS.application}`;
 export const ORIGINE_COQUILLE_SANS_COOP = `http://${HOTE_COQUILLE}:${PORTS.coquilleSansCoop}`;
 
-const RACINE_ARBRES = join(REPOSITORY_ROOT, "artifacts", "publication");
+/**
+ * Le témoin lit les arbres du BANC, pas ceux de la publication.
+ *
+ * Les deux ne peuvent pas être le même répertoire : le témoin exige des origines de test — c'est
+ * ainsi qu'il obtient deux origines réelles sans DNS — et un arbre construit pour lui porte donc un
+ * `frame-src http://localhost:4194` qui n'a rien à faire dans un artefact publiable. Les mélanger
+ * laissait `npm run check` écraser `artifacts/publication/` par un hybride : inventaire d'allure
+ * normale, en-têtes de banc.
+ */
+const RACINE_ARBRES = join(REPOSITORY_ROOT, "artifacts", "publication-check");
 const RAPPORT = join(REPOSITORY_ROOT, "reports", "publication", "temoin-en-tetes.json");
 
 /**
@@ -109,26 +118,31 @@ async function mesurerMoteur(nom) {
   const enTetesApplication = await relevePage(page, `${ORIGINE_APPLICATION}/index.html`);
   await page.close();
 
+  const origines = {
+    origineCoquille: ORIGINE_COQUILLE,
+    origineApplication: ORIGINE_APPLICATION,
+  };
   const mesure = {
     moteur: nom,
     coquille: {
-      ecarts: confronter(
-        enTetesDePublication("coquille", { origineApplication: ORIGINE_APPLICATION }),
-        enTetesCoquille,
-      ),
+      ecarts: confronter(enTetesDePublication("coquille", origines), enTetesCoquille),
       recus: enTetesCoquille,
     },
     application: {
       ecarts: [
-        ...confronter(
-          enTetesDePublication("application", { origineApplication: ORIGINE_APPLICATION }),
-          enTetesApplication,
-        ),
-        ...confronterAbsences(
-          ["Content-Security-Policy", "Cross-Origin-Opener-Policy"],
-          enTetesApplication,
-        ),
+        ...confronter(enTetesDePublication("application", origines), enTetesApplication),
+        // COOP n'a rien à faire sur cette origine ; sa présence serait la marque d'une politique
+        // recopiée d'un arbre à l'autre.
+        ...confronterAbsences(["Cross-Origin-Opener-Policy"], enTetesApplication),
       ],
+      // La CSP de l'origine applicative doit être `frame-ancestors` et RIEN d'autre : l'ADR 0002
+      // interdit d'imposer une politique au CONTENU rendu par le guest, et `frame-ancestors` ne le
+      // fait pas. Une directive de plus — `default-src`, `script-src`, `connect-src` — trahirait
+      // que la politique de la coquille a débordé sur le territoire applicatif.
+      cspApplicativeSolitaire: (enTetesApplication["content-security-policy"] ?? "")
+        .split(";")
+        .map((directive) => directive.trim())
+        .filter(Boolean),
       recus: enTetesApplication,
     },
     demarrage,
@@ -145,6 +159,14 @@ export function verdict(mesure) {
   const motifs = [];
   if (mesure.coquille.ecarts.length > 0) motifs.push("en-têtes de la coquille");
   if (mesure.application.ecarts.length > 0) motifs.push("en-têtes de l'origine applicative");
+  const csp = mesure.application.cspApplicativeSolitaire;
+  if (csp.length !== 1 || !csp[0].startsWith("frame-ancestors ")) {
+    motifs.push(
+      `la CSP de l'origine applicative doit être « frame-ancestors » SEUL (ADR 0002) ; reçu : ${
+        csp.join(" ; ") || "(absente)"
+      }`,
+    );
+  }
   if (mesure.demarrage !== "worker:ready") motifs.push(`démarrage : ${mesure.demarrage}`);
   if (mesure.openerAvecCoop !== true) motifs.push("COOP servi mais `window.opener` a survécu");
   if (mesure.openerSansCoop !== false) {
@@ -158,6 +180,7 @@ function decrire(mesure) {
   const lignes = [
     `[${mesure.moteur}] ${conforme ? "CONFORME" : "ÉCART"}`,
     `  démarrage de la coquille        ${mesure.demarrage}`,
+    `  CSP de l'origine applicative    ${mesure.application.cspApplicativeSolitaire.join(" ; ") || "(absente)"}`,
     `  window.opener avec COOP         ${mesure.openerAvecCoop ? "null (attendu)" : "SURVIT"}`,
     `  window.opener sans COOP         ${mesure.openerSansCoop ? "null (TÉMOIN CASSÉ)" : "survit (attendu)"}`,
   ];
