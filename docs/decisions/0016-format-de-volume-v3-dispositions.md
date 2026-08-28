@@ -386,45 +386,136 @@ Deux conséquences, à écrire plutôt qu'à découvrir :
 L'alternative — déchiffrer à l'export — a été écartée : elle annulerait le chiffrement au repos dès
 que l'archive quitte l'appareil, ce que l'ADR 0015 nomme déjà comme le mauvais côté de l'échange.
 
-### Cette décision n'est PAS mise en œuvre par cette tranche, et l'export est donc REFUSÉ
+### Comment elle est mise en œuvre : par un accès BRUT, et par lui seul
 
-Le constat est venu du bout en bout, pas de la lecture. Le chemin d'export lit le volume par la
-lecture AUTORISÉE — celle qui déchiffre —, et le chemin de restauration écrit par la voie autorisée
-— celle qui rechiffre. Livrés tels quels sur un volume v3, ils auraient produit **une archive en
-clair d'un volume chiffré** : le chiffrement au repos annulé dès que le fichier quitte l'appareil,
-sans qu'aucun message ne le dise. C'est exactement l'échange que le paragraphe ci-dessus refuse, et
-il se serait produit par omission.
+La tranche (a) refusait d'exporter un volume v3, et le refus était juste : son chemin lisait par la
+voie AUTORISÉE, qui déchiffre, si bien qu'il aurait produit une archive **en clair** d'un volume
+chiffré — le chiffrement au repos annulé dès que le fichier quitte l'appareil, par omission et sans
+message. Le refus tombe maintenant que ce qui manquait existe.
 
-**Décision : l'export et la restauration d'un volume v3 sont REFUSÉS**, par
-`VAULT_ARCHIVE_VOLUME_CHIFFRE` et `VAULT_IMPORT_VOLUME_CHIFFRE`, jusqu'à ce que la recopie brute
-existe. Les deux refus tombent avant le premier octet lu et avant le premier geste mutant, et ils
-sont **distincts de `VAULT_STORAGE_CLE_REQUISE`** — qui tombait jusqu'ici sur la restauration et
-accusait la clé d'un manque qui est celui du CHEMIN. Une clé n'y changerait rien : c'est la lecture
-et l'écriture BRUTES qui manquent, et elles sont l'objet de la tranche (b), #101.
+**`src/vm/opfs-volume-brut.mjs` ouvre le FICHIER**, avec l'exclusivité de #6, sa géométrie qui ne se
+retaille jamais en silence, et l'interprétation des comptes du support (#73) — mais sans géométrie
+logique, sans fautes programmées, sans générations et **sans clé**. Il partage le REGISTRE de
+`openOpfsVolume` : un export et un boot ne peuvent pas détenir le même volume sans se voir.
 
-Ce qu'il faudra pour lever le refus, écrit d'avance : une source d'export qui lise le FICHIER (donc
-`tailleSupport`, pas `tailleLogique`), une cible de restauration qui le RECOPIE sans passer par la
-couche chiffrée, et le réglage de ce que `content.length` et `geometry.volumeSize` désignent alors —
-l'ADR 0008 pose déjà la question, et c'est là qu'elle se referme.
+**Ce n'est pas un contournement du chiffrement et il ne peut pas le devenir** : les octets qu'il
+rend SONT ceux du support, donc ceux qui sont chiffrés. Une épreuve le montre plutôt que de
+l'affirmer — le clair d'un secteur connu n'apparaît nulle part dans le fichier.
 
-## Décision 8 — La migration v2 → v3
+La **longueur d'archive** est dérivée du format par `tailleDeFichier`, jamais lue de l'en-tête :
+jusqu'à v2 le fichier coïncidait avec le volume logique, en v3 il porte en plus l'en-tête et la
+région. Une archive dont l'en-tête déclarerait sa propre longueur pourrait s'auto-déclarer
+cohérente. **Un format FUTUR échappe seul à ce contrôle**, et il le faut : la disposition d'un
+format qu'on ne connaît pas ne se devine pas, et lui appliquer la nôtre inventerait une incohérence
+là où il n'y a qu'une ignorance. Seul un outil de diagnostic, par une dérogation nommée, peut
+arriver là.
+
+**Ce que l'empreinte cesse de dire, et ce qu'il a fallu remettre à sa place.** Le banc comparait
+l'archive à l'empreinte du volume relu — c'est-à-dire du CLAIR. Les deux ont cessé de coïncider le
+jour où le volume a été chiffré, et la comparaison serait devenue une tautologie ou un faux échec
+selon le côté choisi. La phase d'empreinte publie donc les **deux** chiffres : celui du fichier, qui
+ne demande aucune clé et que l'archive doit reproduire ; celui du clair, qui exige la clé et prouve
+qu'un volume restauré est LISIBLE — sans quoi une archive de zéros restaurée en zéros passerait pour
+une restauration.
+
+### RÉCUPÉRER d'abord, copier ensuite — et l'export demande donc la clé
+
+Le passage à l'accès brut a emporté avec lui quelque chose que personne n'avait remarqué, et le
+scénario de bout en bout l'a trouvé : le fichier restauré sur l'origine B était byte-exact avec
+celui de A, et **leurs clairs différaient**.
+
+La raison tient à l'ADR 0014. Depuis #16, le fichier ne porte pas tout l'état du volume : une
+génération **validée** vit dans le journal voisin `<volume>.gen` jusqu'à ce qu'une ouverture
+transactionnelle la REJOUE dans le volume. Entre les deux, le guest a reçu son acquittement et le
+fichier ne porte pas encore l'écriture. Le chemin d'export d'avant #101 ouvrait le volume par
+`openOpfsVolume` et **récupérait sans le vouloir** ; l'accès brut, lui, ne récupère rien. Copier le
+fichier tel quel dans cet intervalle produit une archive à laquelle il manque une écriture
+acquittée, dont l'empreinte vérifie, dont la restauration réussit, et dont personne n'apprend jamais
+qu'elle est incomplète. `SEC-DURABLE-001` l'interdit.
+
+`src/vm/export-du-fichier.mjs` tient donc les deux gestes ensemble : **ouvrir transactionnellement
+pour récupérer, refermer, puis ouvrir en brut pour copier.** Ils vivent dans la même fonction parce
+que les séparer est exactement ce qui a produit le défaut. Le rapport de récupération est publié
+avec l'export : une génération rejouée ou écartée change ce que l'archive contient. Et si la
+récupération REFUSE — racine abîmée, sceau rejeté —, le fichier n'est pas même ouvert : on n'exporte
+pas un état dont personne ne peut dire ce qu'il est.
+
+**Conséquence, et elle nuance la décision ci-dessus : l'export d'un volume v3 demande la CLÉ.**
+Rejouer une génération validée exige de déchiffrer ses enregistrements et de resceller des secteurs.
+L'archive produite, elle, n'en porte aucune, et la **restauration n'en demande toujours pas** —
+c'est elle qui rend la restauration inter-origine de l'ADR 0009 possible sur un volume chiffré.
+Exporter sans clé resterait techniquement faisable, en copiant le fichier : ce serait choisir de
+perdre en silence ce qui a été acquitté.
+
+## Décision 8 — La migration v2 → v3, EN PLACE et en deux gestes
 
 Par la chaîne de l'[ADR 0011](0011-migration-de-format-et-reprise.md), sans exception à ses règles :
+sauvegarde exigée avant, manifeste révoqué avant la première mutation, journal de reprise inscrit
+avant la révocation, manifeste v3 inscrit en dernier et relu depuis le support. Une migration
+interrompue laisse un volume **non identifié**, que le boot refuse.
 
-- **sauvegarde exigée avant** (`migration-backup-proof.mjs`) : la migration réécrit le volume
-  entier, et elle est irréversible ;
-- **manifeste révoqué** avant la première écriture, réinscrit après relecture. Une migration
-  interrompue laisse un volume **non identifié**, donc refusé au boot par
-  `VAULT_MANIFEST_UNIDENTIFIED` ;
-- **reprise depuis le journal de migration** `<volume>.migration`, comme les étapes précédentes ;
-- l'étape v2 → v3 **rechiffre le volume entier** : une lecture en clair, un scellement, une écriture
-  de charge et une écriture de sceau par secteur, plus l'agrandissement du fichier de
-  `512 + R × 512` octets. Le temps est mesuré et publié dans `docs/quality-attributes.md`, jamais
-  estimé.
+**C'est la première étape du dépôt qui touche les OCTETS.** Les deux précédentes réécrivaient un
+manifeste ; celle-ci agrandit le fichier de sa région d'authentification, décale la charge entière
+et scelle chaque secteur.
 
-**Un volume v2 n'est pas inscriptible par un runtime v3 sans migration, et la raison n'est pas
-administrative** : il n'a ni région d'authentification ni nonce. Le sceau d'un secteur n'aurait
-nulle part où aller. Le refus est donc `VAULT_MANIFEST_MIGRATION_REQUIRED`, et son message le dit.
+### En place, et non par un fichier voisin
+
+Un voisin serait plus simple à reprendre — le volume ne serait touché qu'à la recopie finale — mais
+il exigerait le **double du quota** au moment précis où l'utilisateur migre un volume de 512 Mio,
+c'est-à-dire là où la place manque le plus souvent. Le surcoût de la conversion en place est celui
+du format lui-même : 6,64 %.
+
+### Deux gestes, et leur ordre est indispensable
+
+1. **DÉPLACER** — la charge est recopiée de `a` vers `chargeOffset + a`, du DERNIER secteur au
+   premier. Aucune écriture d'un même passage n'atteint un octet qui reste à lire.
+2. **SCELLER** — chaque secteur est relu à sa nouvelle place, scellé, réécrit, et son sceau posé
+   dans la région.
+
+L'ordre n'est pas seulement souhaitable : la région d'authentification vit dans
+`[512, chargeOffset)`, c'est-à-dire **dans la zone d'où le déplacement lit**. Sceller avant d'avoir
+fini de déplacer détruirait la source du déplacement. L'étape franchie est donc inscrite dans le
+journal, et une reprise qui se tromperait écrirait du clair par-dessus du chiffré.
+
+### Ce que l'épreuve a corrigé avant que le code ne parte
+
+La première conception tenait le déplacement pour **rejouable depuis le début** : il ne modifie
+jamais la zone d'où il lit, disait-elle. C'est faux, et `tests/unit/vm-migration-v3.test.mjs` l'a
+montré — la zone d'arrivée `[chargeOffset, chargeOffset + L)` **recouvre** la zone de départ
+`[0, L)` dès que `chargeOffset < L`, donc pour tout volume plus grand que sa propre région. Un
+second passage relisait des octets déjà déplacés, et le clair relu n'était plus celui du volume.
+
+La **position atteinte** est donc journalisée après chaque tour. Elle n'a pas besoin d'être exacte,
+seulement conservatrice : quand la position vaut `fin`, tous les octets de `[0, fin)` sont encore
+intacts, puisque les tours déjà faits n'ont écrit qu'au-dessus de `chargeOffset + fin`. Refaire un
+tour déjà fait est sûr ; en sauter un ne le serait pas. Le contre-exemple est **conservé comme
+épreuve** : sans lui, la prochaine simplification ramènerait le défaut sans que rien ne rougisse.
+
+Le **scellement**, lui, est reprenable **sans compteur** : un secteur déjà converti s'ouvre, un
+secteur encore en clair ne s'ouvre pas, et la région est à zéro avant conversion. La probabilité
+qu'un secteur en clair passe pour scellé est celle d'une forgerie GCM — la borne qui fonde tout le
+format.
+
+### Ce que le journal de migration devient
+
+Il passe en **version 2** et porte l'avancement : `{ etape, position }`. Un journal v1 est refusé
+plutôt qu'interprété — il décrit une migration qui n'écrivait rien, et lui prêter un avancement
+serait inventer ce qu'on ignore. Un avancement **présent mais douteux** est refusé aussi : reprendre
+à une position devinée écrirait du clair par-dessus du chiffré.
+
+### L'identifiant, la clé, et ce qui reste refusé
+
+L'**identifiant de volume est TIRÉ à la migration**, puisqu'un v2 n'en a pas : c'est précisément le
+champ que v3 ajoute. Il est immuable ensuite.
+
+La conversion **scelle**, donc elle exige une clé, et le produit n'en fabrique aucune avant #21.
+Migrer sans clé est refusé par `VAULT_STORAGE_CLE_REQUISE`, et le volume reste non identifié plutôt
+qu'à moitié converti — inventer une clé chiffrerait le volume sous un secret que personne ne
+connaît, c'est-à-dire le perdrait.
+
+**Un volume v2 n'est toujours pas inscriptible sans migration, et la raison n'est pas
+administrative** : il n'a ni région d'authentification ni nonce. Le refus reste
+`VAULT_MANIFEST_MIGRATION_REQUIRED`, et son message le dit.
 
 ## Décision 9 — Les refus, et leur traduction
 
@@ -440,6 +531,11 @@ cohérentes, parce qu'un appelant du stockage n'a pas à connaître deux famille
 | `VAULT_CRYPTO_MELANGE`              | `VAULT_STORAGE_GENERATION_CORRUPT` | restaurer une sauvegarde              |
 | `VAULT_CRYPTO_BUDGET_DE_CLE`        | `VAULT_STORAGE_BUDGET_DE_CLE`      | changer de clé de volume (#21)        |
 | `VAULT_CRYPTO_ALGORITHME_INCONNU`   | `VAULT_MANIFEST_MALFORMED`         | le manifeste ment sur son algorithme  |
+
+**Les deux refus provisoires de la tranche (a) — `VAULT_ARCHIVE_VOLUME_CHIFFRE` et
+`VAULT_IMPORT_VOLUME_CHIFFRE` — n'existent plus.** Ils tenaient lieu de ce qui manquait ; ce qui
+manquait est livré, et un refus qui survit à sa cause devient un piège pour l'exploitant, à qui il
+désigne un obstacle qui n'est plus là.
 
 La `CryptoError` d'origine est conservée dans le contexte (`cause`), jamais effacée : un refus de
 sécurité qui perdrait sa cause au passage d'une couche ne serait plus qu'une panne.

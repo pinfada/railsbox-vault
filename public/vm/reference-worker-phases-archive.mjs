@@ -36,7 +36,8 @@ import {
   MIN_VOLUME_FORMAT_VERSION,
   VOLUME_ALGORITHM,
 } from "/src/vm/volume-manifest.mjs";
-import { ouvrirVolumeBrut } from "/src/vm/opfs-volume-brut.mjs";
+import { ouvrirPourExport } from "/src/vm/export-du-fichier.mjs";
+import { cleDuBanc } from "./cle-du-banc.mjs";
 import {
   EN_TETE_OCTETS,
   decoderEnTeteV3,
@@ -83,11 +84,16 @@ async function compteRenduExport({
   blockBytes,
   volumeBytes,
   stockageAvant,
+  recuperation = null,
 }) {
   return {
     phase: "export",
     volume,
     archive,
+    // Ce que la récupération a trouvé AVANT la copie : une génération rejouée ou écartée change ce
+    // que l'archive contient, et le taire ferait d'un export un geste dont l'exploitant ne saurait
+    // pas ce qu'il a emporté.
+    recuperation,
     storage: { avant: stockageAvant, apres: await instantaneStockage() },
     volumeBytes,
     archiveLength: result.archiveLength,
@@ -138,6 +144,28 @@ async function identiteDuFichier(brut, formatVersion) {
   };
 }
 
+/**
+ * Écrit l'archive : le manifeste décrit le volume que le FICHIER porte, puis le flux est versé.
+ *
+ * L'identité vient du fichier lui-même, jamais du descripteur : une archive décrit le volume qu'elle
+ * porte, et un identifiant tiré à l'export décrirait un autre volume que celui qu'on copie.
+ */
+async function verserLArchive({ brut, source, sink, manifest, blockBytes }) {
+  const identite = await identiteDuFichier(brut, manifest.formatVersion ?? MANIFEST_FORMAT_VERSION);
+  const resultat = await writeArchive({
+    source,
+    sink,
+    manifest: manifesteDuDescripteur(manifest, identite.tailleLogique, identite.volume),
+    consistency: {
+      kind: CONSISTENCY_KINDS.exclusiveHandle,
+      detail: "volume lu via le handle OPFS exclusif (#6), aucun autre écrivain dans l'origine",
+    },
+    blockBytes,
+  });
+  sink.flush();
+  return resultat;
+}
+
 export async function phaseExportVolume({
   volume,
   archive,
@@ -145,9 +173,19 @@ export async function phaseExportVolume({
   blockBytes = EXPORT_BLOCK_BYTES,
 }) {
   await removeOpfsVolume(archive);
-  // ACCÈS BRUT, et sans clé : l'archive porte le FICHIER tel quel (ADR 0016, décision 7). Passer
-  // par le backend chiffré produirait une archive EN CLAIR d'un volume chiffré.
-  const brut = await ouvrirVolumeBrut({ name: volume });
+  // RÉCUPÉRER, PUIS copier — et l'ordre est le contrat (`src/vm/export-du-fichier.mjs`). Le fichier
+  // ne porte pas tout l'état : une génération VALIDÉE attend dans le journal voisin qu'une ouverture
+  // transactionnelle la rejoue. Copier le fichier sans cette étape produit une archive à laquelle il
+  // manque une écriture acquittée, et rien ne le signale.
+  //
+  // La copie, elle, passe par l'ACCÈS BRUT et sans clé : l'archive porte le FICHIER tel quel
+  // (ADR 0016, décision 7), et passer par le backend chiffré produirait une archive EN CLAIR d'un
+  // volume chiffré.
+  const { brut, rapport: recuperation } = await ouvrirPourExport({
+    name: volume,
+    cle: cleDuBanc(),
+    formatVersion: manifest.formatVersion ?? MANIFEST_FORMAT_VERSION,
+  });
   const compteur = { maxLecture: 0, blocs: 0 };
   const source = sourceMesuree(backendSource(brut), compteur);
   const { handle, sink } = await ouvrirPuitsArchive(archive);
@@ -155,22 +193,7 @@ export async function phaseExportVolume({
   const stockageAvant = await instantaneStockage();
   let result;
   try {
-    const identite = await identiteDuFichier(
-      brut,
-      manifest.formatVersion ?? MANIFEST_FORMAT_VERSION,
-    );
-    const m = manifesteDuDescripteur(manifest, identite.tailleLogique, identite.volume);
-    result = await writeArchive({
-      source,
-      sink,
-      manifest: m,
-      consistency: {
-        kind: CONSISTENCY_KINDS.exclusiveHandle,
-        detail: "volume lu via le handle OPFS exclusif (#6), aucun autre écrivain dans l'origine",
-      },
-      blockBytes,
-    });
-    sink.flush();
+    result = await verserLArchive({ brut, source, sink, manifest, blockBytes });
   } finally {
     handle.close();
     await brut.close();
@@ -184,6 +207,7 @@ export async function phaseExportVolume({
     blockBytes,
     volumeBytes: source.size,
     stockageAvant,
+    recuperation,
   });
 }
 
