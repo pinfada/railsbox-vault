@@ -179,10 +179,37 @@ export async function materialiser({ racine, reference, sources, destination }) 
  * @param {string} destination racine de l'arbre publié
  * @param {(contenu: Uint8Array) => string} empreinte
  */
-export async function verifierEpinglageV86(destination, empreinte) {
-  const manifeste = join(destination, "vendor", "v86", "MANIFEST.json");
+export function verifierEpinglageV86(destination, empreinte) {
+  return verifierEpinglage(destination, empreinte, {
+    manifeste: ["vendor", "v86", "MANIFEST.json"],
+    artefacts: ["vendor", "v86", "artefacts"],
+  });
+}
+
+/**
+ * Même vérification, sur l'artefact **Argon2id** vendu par #22 (ADR 0021).
+ *
+ * Elle est nécessaire pour la raison qui rend celle de v86 nécessaire, avec un cran de plus : cet
+ * artefact étire un SECRET UTILISATEUR. Un binaire substitué en chemin — dans l'arbre publié, chez
+ * l'hébergeur, dans un cache — pourrait rendre une étiquette prévisible sans que rien ne le dise, et
+ * la phrase de chacun ouvrirait alors un coffre que l'adversaire ouvre aussi.
+ *
+ * Deux vérifications indépendantes couvrent le même octet à deux moments, et aucune ne remplace
+ * l'autre : celle-ci, sur l'arbre publié, avant qu'il ne parte ; et celle de
+ * `src/vm/derivation/argon2-vendu.mjs`, dans le navigateur, avant d'instancier le module.
+ */
+export function verifierEpinglageArgon2(destination, empreinte) {
+  return verifierEpinglage(destination, empreinte, {
+    manifeste: ["vendor", "argon2", "MANIFEST.json"],
+    artefacts: ["vendor", "argon2"],
+  });
+}
+
+/** Le geste commun : relire un manifeste vendu et confronter ses artefacts à leurs empreintes. */
+async function verifierEpinglage(destination, empreinte, { manifeste: chemin, artefacts }) {
+  const manifeste = join(destination, ...chemin);
   if (!(await existe(manifeste))) return { verifie: false, motif: "manifeste absent", ecarts: [] };
-  const dossier = join(destination, "vendor", "v86", "artefacts");
+  const dossier = join(destination, ...artefacts);
   if (!(await existe(dossier))) {
     return { verifie: false, motif: "artefacts absents de l'arbre publié", ecarts: [] };
   }

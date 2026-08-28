@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RailsBox Vault — banc de déverrouillage (#22)</title>
+  </head>
+  <body>
+    <h1>Banc de déverrouillage</h1>
+    <p>
+      Cette page dérive une clé de déverrouillage par passkey —
+      <code>navigator.credentials</code> n'existe que dans un document — et confie tout le reste à
+      un Worker dédié : la phrase secrète y est étirée par Argon2id, l'enveloppe y est ouverte, et
+      le volume y est relu. Ce qui franchit le port dans le sens page → Worker est soit une phrase,
+      soit une <code>CryptoKey</code> non extractible ; dans l'autre sens, jamais une clé (<code
+        >ADR 0002</code
+      >, <code>ADR 0021</code>).
+    </p>
+    <p id="etat">Prêt.</p>
+    <pre id="rapport"></pre>
+    <script type="module" src="./deverrouillage-banc.mjs"></script>
+  </body>
+</html>

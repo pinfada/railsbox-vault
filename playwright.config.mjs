@@ -47,6 +47,19 @@ const FRONTIERE_APPLICATIONS = ["**/apps-frontiere.spec.mjs"];
  */
 const FRONTIERE_ENVELOPPE = ["**/enveloppe-frontiere.spec.mjs"];
 
+/**
+ * Frontière du DÉVERROUILLAGE (#22, ADR 0021). Les trois moteurs, pour les motifs des précédentes
+ * et pour deux qui lui sont propres :
+ *
+ *  - elle mesure une DÉRIVATION dont le coût et la disponibilité diffèrent d'un moteur à l'autre —
+ *    Argon2id compilé en WebAssembly n'a pas le même rendement partout, et l'extension WebAuthn
+ *    « prf » n'est pilotable que sous Chromium. Un relevé mono-moteur publierait une matrice de
+ *    prise en charge que rien n'aurait mesurée ;
+ *  - elle fouille TOUS les stockages de l'origine, et ni IndexedDB, ni Cache Storage, ni l'OPFS ne
+ *    sont offerts par les trois. Ce que la sonde ne peut pas lire, elle le dit.
+ */
+const FRONTIERE_DEVERROUILLAGE = ["**/deverrouillage-frontiere.spec.mjs"];
+
 // Le harnais mesure une frontière d'origine : il lui faut DEUX serveurs, donc deux origines
 // réelles. `127.0.0.1` et `localhost` en fournissent sans DNS ni certificat, et restent tous deux
 // des contextes sécurisés.
@@ -107,7 +120,12 @@ export default defineConfig({
     ...moteurs.map((nom) => ({
       name: nom,
       use: { browserName: nom },
-      testIgnore: [...FRONTIERE_CSP, ...FRONTIERE_APPLICATIONS, ...FRONTIERE_ENVELOPPE],
+      testIgnore: [
+        ...FRONTIERE_CSP,
+        ...FRONTIERE_APPLICATIONS,
+        ...FRONTIERE_ENVELOPPE,
+        ...FRONTIERE_DEVERROUILLAGE,
+      ],
     })),
     // La frontière de CSP (#52) est une frontière de SÉCURITÉ, et une politique ne s'applique pas de
     // la même façon d'un moteur à l'autre : la mesurer sur le seul moteur par défaut publierait une
@@ -128,6 +146,11 @@ export default defineConfig({
       name: `frontiere-enveloppe-${nom}`,
       use: { browserName: nom },
       testMatch: FRONTIERE_ENVELOPPE,
+    })),
+    ...MOTEURS_CONNUS.map((nom) => ({
+      name: `frontiere-deverrouillage-${nom}`,
+      use: { browserName: nom },
+      testMatch: FRONTIERE_DEVERROUILLAGE,
     })),
   ],
 });

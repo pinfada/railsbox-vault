@@ -142,6 +142,28 @@ test("PRF indisponible à l'enregistrement : refus TYPÉ, jamais une dégradatio
   }
 });
 
+test("une annulation à l'ENREGISTREMENT est typée elle aussi, et ne prétend pas connaître sa cause", async () => {
+  // Mesuré sur Firefox par `tests/browser/deverrouillage-frontiere.spec.mjs` : sans
+  // authentificateur, `create` rend `NotAllowedError` au bout du délai. Le laisser remonter brut
+  // ferait sortir une `DOMException` du produit, avec un `code` numérique que rien ne sait lire.
+  const credentials = credentialsDouble({
+    creation: () => {
+      throw notAllowed("Aucun authentificateur n'a répondu.");
+    },
+  });
+  await assert.rejects(
+    () =>
+      enregistrerEmplacementPrf({
+        credentials,
+        rpId: RP_ID,
+        nomUtilisateur: "vault",
+        identifiantUtilisateur: suiteDOctets(0x01, 16),
+      }),
+    (erreur) => isDerivationError(erreur, DERIVATION_ERROR_CODES.annulee),
+  );
+  assert.equal(credentials.journal.length, 1, "une annulation ne se retente pas toute seule");
+});
+
 test("WebAuthn absent du moteur : le même refus typé, et aucun appel tenté", async () => {
   await assert.rejects(
     () =>

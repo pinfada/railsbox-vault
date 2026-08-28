@@ -77,6 +77,22 @@ function estAnnulation(cause) {
   return cause?.name === "NotAllowedError" || cause?.name === "AbortError";
 }
 
+/**
+ * Vrai si l'échec vient du MOTEUR ou de l'authentificateur, et non du code appelant.
+ *
+ * Il en existe plus que `NotAllowedError`, et le relevé des trois moteurs l'a montré plutôt que la
+ * lecture de la spécification : sans authentificateur, Firefox rend `UnknownError` (« The operation
+ * failed for an unknown transient reason ») là où WebKit rend une créance dépourvue de résultat
+ * `prf`. Laisser remonter une `DOMException` brute ferait sortir du produit une erreur dont le
+ * `code` est un entier hérité, que rien dans ce dépôt ne sait lire — et un refus de sécurité qui se
+ * perd en route est un refus qui n'existe pas.
+ */
+function estEchecDePlateforme(cause) {
+  return typeof cause?.name === "string" && typeof DOMException !== "undefined"
+    ? cause instanceof DOMException
+    : false;
+}
+
 /** Rend `navigator.credentials`, ou refuse — un moteur sans WebAuthn n'est pas un moteur lent. */
 function exigerCredentials(credentials) {
   const trouve = credentials ?? globalThis.navigator?.credentials ?? null;
@@ -115,20 +131,66 @@ export async function enregistrerEmplacementPrf({
   defi = crypto.getRandomValues(new Uint8Array(32)),
 }) {
   const api = exigerCredentials(credentials);
-  const creance = await api.create({
-    publicKey: {
-      challenge: defi,
-      rp: { id: rpId, name: "RailsBox Vault" },
-      user: { id: identifiantUtilisateur, name: nomUtilisateur, displayName: nomAffiche },
-      pubKeyCredParams: [...ALGORITHMES],
-      authenticatorSelection: { ...CONDUITE_ENREGISTREMENT },
-      timeout: DELAI_MS,
-      // L'extension est DEMANDÉE ici. Un moteur qui l'ignore rendra `prf` absent des résultats,
-      // et c'est exactement ce que la vérification ci-dessous refuse.
-      extensions: { prf: {} },
-    },
+  const creance = await creerLaCreance(api, {
+    rpId,
+    nomUtilisateur,
+    identifiantUtilisateur,
+    nomAffiche,
+    defi,
   });
+  const identifiantCredential = octetsEnHex(creanceAvecPrf(creance, rpId));
+  return Object.freeze({
+    typeKek: TYPES_KEK["webauthn-prf"],
+    identifiantCredential,
+    parametres: encoderParametresPublics(TYPES_KEK["webauthn-prf"], {
+      rpId,
+      identifiantCredential,
+      sel: octetsEnHex(crypto.getRandomValues(new Uint8Array(SEL_PRF_OCTETS))),
+    }),
+  });
+}
 
+/** Demande la créance à l'authentificateur, et traduit tout échec de plate-forme en refus typé. */
+async function creerLaCreance(
+  api,
+  { rpId, nomUtilisateur, identifiantUtilisateur, nomAffiche, defi },
+) {
+  try {
+    return await api.create({
+      publicKey: {
+        challenge: defi,
+        rp: { id: rpId, name: "RailsBox Vault" },
+        user: { id: identifiantUtilisateur, name: nomUtilisateur, displayName: nomAffiche },
+        pubKeyCredParams: [...ALGORITHMES],
+        authenticatorSelection: { ...CONDUITE_ENREGISTREMENT },
+        timeout: DELAI_MS,
+        // L'extension est DEMANDÉE ici. Un moteur qui l'ignore rendra `prf` absent des résultats,
+        // et c'est exactement ce que `creanceAvecPrf` refuse.
+        extensions: { prf: {} },
+      },
+    });
+  } catch (cause) {
+    // `NotAllowedError` à l'ENREGISTREMENT couvre deux situations que le navigateur ne départage
+    // pas : l'utilisateur a refusé, ou aucun authentificateur n'a répondu dans le délai. Le refus
+    // rendu est donc celui de l'ANNULATION — la cause n'est pas établie, et prétendre le contraire
+    // dirait « votre appareil ne sait pas faire » à quelqu'un qui a simplement fermé la fenêtre.
+    if (estAnnulation(cause)) throw annulee({ rpId, nom: cause.name, geste: "enregistrement" });
+    // Tout autre échec de plate-forme est rendu comme une INDISPONIBILITÉ, en NOMMANT l'erreur du
+    // moteur dans le contexte. Le remède est le même — créer l'emplacement sur un autre moyen —, et
+    // prétendre distinguer davantage reviendrait à inventer une cause que le navigateur ne donne pas.
+    if (estEchecDePlateforme(cause)) {
+      throw prfIndisponible(`le moteur a interrompu la création de la créance (${cause.name}).`, {
+        rpId,
+        nom: cause.name,
+        message: cause.message,
+      });
+    }
+    throw cause;
+  }
+}
+
+/** Exige que l'extension ait été ACTIVÉE, et rend les octets de l'identifiant de créance. */
+function creanceAvecPrf(creance, rpId) {
   const resultats = creance?.getClientExtensionResults?.() ?? {};
   if (resultats.prf?.enabled !== true) {
     throw prfIndisponible(
@@ -138,20 +200,11 @@ export async function enregistrerEmplacementPrf({
       { rpId, resultat: resultats.prf ?? null },
     );
   }
-
   const identifiant = octetsDe(creance.rawId);
   if (identifiant === null || identifiant.byteLength === 0) {
     throw prfIndisponible("l'authentificateur n'a rendu aucun identifiant de créance.");
   }
-  return Object.freeze({
-    typeKek: TYPES_KEK["webauthn-prf"],
-    identifiantCredential: octetsEnHex(identifiant),
-    parametres: encoderParametresPublics(TYPES_KEK["webauthn-prf"], {
-      rpId,
-      identifiantCredential: octetsEnHex(identifiant),
-      sel: octetsEnHex(crypto.getRandomValues(new Uint8Array(SEL_PRF_OCTETS))),
-    }),
-  });
+  return identifiant;
 }
 
 /** Demande l'assertion, en traduisant l'annulation en son propre refus. */
@@ -170,6 +223,15 @@ async function assertion(api, valeurs, geste) {
     });
   } catch (cause) {
     if (estAnnulation(cause)) throw annulee({ rpId: valeurs.rpId, nom: cause.name });
+    // Même règle qu'à l'enregistrement, avec l'autre remède : ici l'emplacement est légitime, et
+    // ce qui manque est la SORTIE de l'extension. Le fait observable est le même dans les deux cas —
+    // aucune sortie PRF n'est revenue —, et c'est ce que le refus dit.
+    if (estEchecDePlateforme(cause)) {
+      throw prfIgnoree(
+        `le moteur a interrompu l'assertion (${cause.name}) et n'a rendu aucune sortie.`,
+        { rpId: valeurs.rpId, nom: cause.name, message: cause.message },
+      );
+    }
     throw cause;
   }
 }
