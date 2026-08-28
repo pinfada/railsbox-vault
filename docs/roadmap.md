@@ -132,6 +132,25 @@ faisait perdre une clé légitime. Reste : #22 (dérivation d'une KEK), #23 (ré
 d'urgence), #24 (interface), et l'ancrage monotone hors du fichier, sans lequel un retour arrière
 complet ressuscite une clé révoquée.
 
+**#22 livré le 28 août 2026** — une clé de déverrouillage se DÉRIVE désormais d'un geste
+([ADR 0021](decisions/0021-derivation-des-cles-de-deverrouillage.md)), et la limite 4 de l'ADR 0020
+(« la KEK n'existe que sous harnais ») est levée. Deux dérivateurs à contrat commun rendent une KEK
+`CryptoKey` **non extractible** : `phrase`, par Argon2id RFC 9106 calculé par un artefact
+WebAssembly VENDU dans le dépôt — empreinte vérifiée avant instanciation ET dans l'inventaire de
+publication, vecteurs de la RFC rejoués sur les trois moteurs, NFC appliquée, plancher de coût égal
+à la deuxième option recommandée par la RFC (64 Mio, 3 passes, 4 voies), vérifié à l'écriture ET à
+la lecture ; et `webauthn-prf`, par l'extension `prf` avec un sel de 32 octets par emplacement,
+`signCount` jamais lu. Les deux étirent leur matériau par HKDF-SHA-256 dont l'info lie volume,
+emplacement et version. Les quatre conduites sont décidées et mesurées — PRF indisponible à
+l'enregistrement, extension ignorée à l'assertion, annulation sans repli ni compteur, type inconnu
+refusé sans toucher au fichier —, l'authentificateur virtuel Chromium rejoue les trois premières, et
+une sonde fouille les six stockages de l'origine et les deux sens du port. **Vingt-trois gardes
+mutées, vingt-trois tuées**, dont cinq seulement après avoir écrit l'épreuve qui manquait.
+**Mesuré** : 364 ms (p50) sur Chromium, 324 ms sur WebKit, **2 136 ms sur Firefox** — près de six
+fois le prix pour le même travail, ce qui appelle un travail d'interface (#24) et non un abaissement
+du coût. Reste : #23 (récupération, second moyen, révocation d'urgence), #24 (interface de
+déverrouillage), #25 (verrouillage), et toujours l'ancrage monotone hors du fichier.
+
 #52 est tranchée par l'[ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md) : la CSP de
 la coquille n'est **pas** élargie — `worker-src` reste `'self'` — parce que la mesure a montré
 qu'une boucle d'ordonnancement fournie par Vault couvre les trois moteurs sans elle. La CSP possède

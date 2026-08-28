@@ -165,6 +165,58 @@ Node 22. La fixture versionnée `tests/fixtures/compat/reference-report.json` se
 rapport de référence pour valider le schéma ; elle n'engage aucun verdict, comme l'explique
 `tests/fixtures/compat/README.md`.
 
+## Déverrouillage : Argon2id et WebAuthn PRF (#22)
+
+Mesures produites par `npm run test:deverrouillage` le **2026-08-28**, sur les trois mêmes moteurs
+et la même machine. Elles portent sur ce dont le déverrouillage dépend, et **rien n'y est promis là
+où rien n'est mesuré**.
+
+| Élément mesuré                                                | Chromium 151 |     Firefox 153     |         WebKit 26.5          |
+| ------------------------------------------------------------- | :----------: | :-----------------: | :--------------------------: |
+| Artefact Argon2 servi depuis `/vendor/`, empreinte conforme   |   conforme   |      conforme       |           conforme           |
+| Vecteurs RFC 9106 § 5.1 et § 5.3 rejoués par le binaire servi |    exacts    |       exacts        |            exacts            |
+| Dérivation `phrase` → ouverture d'un volume réel              |   mesurée    |       mesurée       |     refusé (OPFS absent)     |
+| `navigator.credentials` dans un Worker dédié                  |    absent    |       absent        |            absent            |
+| Authentificateur virtuel PRF pilotable (CDP `hasPrf`)         |     oui      |         non         |             non              |
+| (a) PRF indisponible à l'enregistrement → refus typé          |   mesurée    | mesurée (`ANNULEE`) | mesurée (`PRF_INDISPONIBLE`) |
+| (b) extension ignorée à l'assertion → refus DISTINCT          |   mesurée    |     non mesurée     |         non mesurée          |
+| (c) annulation → `VAULT_DERIVATION_ANNULEE`, sans compteur    |   mesurée    |     non mesurée     |         non mesurée          |
+| Dérivation `phrase` calibrée, p50 (deux exécutions)           | 363 – 364 ms |  2 136 – 2 141 ms   |         324 – 329 ms         |
+
+### Ce que cette matrice ne promet pas
+
+- **PRF n'est mesuré de bout en bout que sous Chromium.** L'authentificateur virtuel se pilote par
+  CDP, protocole propre à ce moteur. Sur Firefox et WebKit, le chemin du produit est exercé JUSQU'À
+  L'APPEL — `navigator.credentials.create` est réellement invoqué — et c'est le **refus typé** qui
+  est vérifié ; les conduites (b) et (c) y sont explicitement ignorées, motif écrit dans le relevé
+  de l'épreuve. Les lignes « non mesurée » ne disent pas « ne fonctionne pas » : elles disent que ce
+  dépôt n'en sait rien ;
+- **aucun authentificateur RÉEL n'est mesuré.** Un authentificateur virtuel répond instantanément et
+  accepte tout ; il ne dit rien de la disponibilité de `prf` sur un Touch ID, une clé USB ou un
+  Android. La ligne « pilotable » mesure l'outillage de test, pas la plate-forme ;
+- **les deux refus de la ligne (a) diffèrent, et c'est une mesure.** Sans authentificateur, Firefox
+  rend `UnknownError` — traduit en `VAULT_DERIVATION_ANNULEE`, puisque le navigateur ne distingue
+  pas « personne n'a répondu » de « l'utilisateur a refusé » — là où WebKit rend une créance
+  dépourvue de résultat `prf`, donc `VAULT_DERIVATION_PRF_INDISPONIBLE`. Les deux sont typés, aucun
+  n'est un plantage, et aucun n'est une dégradation silencieuse ;
+- **WebKit refuse le volume, pas la dérivation.** Son absence d'OPFS synchrone dans un Worker
+  (mesurée depuis #6) empêche l'ouverture d'un volume, pas le calcul d'Argon2id : les vecteurs y
+  sont rejoués comme ailleurs, et le scénario de volume y EXIGE le refus typé
+  `VAULT_STORAGE_UNSUPPORTED` ;
+- **WebAuthn refuse une adresse IP comme `rpId`.** L'origine de confiance du banc est
+  `http://127.0.0.1:4173` ; les trois épreuves PRF joignent donc le même serveur par le nom
+  `localhost`. C'est une contrainte de la spécification WebAuthn, et non un choix de topologie — en
+  production l'origine de confiance porte un vrai domaine.
+
+### Argon2i, mesuré et non servi
+
+L'artefact vendu calcule Argon2**i** JUSTE mais à un coût pathologique : **14,9 s pour m = 32 Kio, t
+= 1, p = 1**, là où Argon2id coûte **2 ms** sur les mêmes paramètres. Le vecteur RFC 9106 § 5.2 ne
+rend pas la main dans un budget d'épreuve. La variante est donc refusée par le produit — un chemin
+qui paraît normal et gèle l'onglet vaut moins qu'un refus —, le vecteur reste dans le document figé
+avec `rejoue: false` et son motif, et le déverrouillage n'emploie qu'Argon2id, que la RFC 9106
+recommande par défaut.
+
 ## Frontière d'origine
 
 Mesures produites par `npm run test:browser:moteurs -- chromium,firefox,webkit` le **2026-08-23**,

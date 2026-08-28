@@ -865,6 +865,48 @@ change. **Amortir, pas relever le seuil.**
   fenêtre : le hachage ne dépend pas de ce que la région contient, seulement de sa taille.
 - **La machine de l'utilisateur.** Le relevé est daté, situé, et publié avec son étendue.
 
+## Ce que la DÉRIVATION d'une clé de déverrouillage coûte (#22)
+
+`VAULT_MESURER_DERIVATION=20 npm run test:deverrouillage`, sur les trois moteurs de la matrice #2,
+Windows 11 sur une machine de développement, Playwright 1.62.1. Vingt dérivations calibrées par
+moteur — Argon2id, **64 Mio, trois passes, quatre voies**, la deuxième option recommandée par la RFC
+9106 § 4 —, **deux exécutions** pour que la dispersion soit visible.
+
+| Moteur       | exéc. 1 — p50 |     p95 | exéc. 2 — p50 |     p95 |
+| ------------ | ------------: | ------: | ------------: | ------: |
+| Chromium 151 |        364 ms |  443 ms |        363 ms |  446 ms |
+| WebKit 26.5  |        329 ms |  458 ms |        324 ms |  418 ms |
+| Firefox 153  |      2 141 ms | 2205 ms |      2 136 ms | 2207 ms |
+
+**La dispersion entre les deux exécutions est inférieure à 2 % partout ; celle entre les MOTEURS ne
+l'est pas**, et c'est le résultat qui compte. Firefox paie près de **six fois** le prix de Chromium
+pour exactement le même travail. Ce n'est ni un défaut de la calibration ni une erreur de mesure :
+c'est le rendement de son moteur WebAssembly sur une boucle qui écrit 64 Mio en mémoire trois fois
+de suite.
+
+**Coût du PRF WebAuthn**, sur Chromium avec un authentificateur virtuel : **p50 1 ms, p95 1 à 2 ms**
+(dix assertions). Ce n'est pas un calcul, c'est un aller-retour vers l'authentificateur suivi d'un
+seul HKDF.
+
+**Ce que ces chiffres décident, et ce qu'ils ne décident pas.**
+
+1. **Ils ne font pas baisser la calibration.** Deux secondes sont à la limite haute de ce qu'un
+   déverrouillage interactif peut demander, et c'est le moteur le plus lent qui fixe la borne — mais
+   abaisser le coût pour Firefox reviendrait à affaiblir le coffre de tous, sous le plancher de la
+   RFC 9106. Ce que la mesure appelle est un travail d'INTERFACE (#24) : annoncer l'attente plutôt
+   que la subir. L'ADR 0021 l'écrit comme une condition d'abandon, pas comme un réglage ;
+2. **le chiffre du PRF n'est pas le coût ressenti.** Sur un authentificateur RÉEL, le coût dominant
+   sera le GESTE HUMAIN — toucher un lecteur, taper un code —, que ce banc ne mesure pas et ne
+   prétend pas mesurer. Ce que 1 ms établit est que la partie logicielle est négligeable ; la
+   comparaison utile n'est donc pas « 1 ms contre 364 ms » mais « instantané contre visible » ;
+3. **elles portent sur une machine, et sur un authentificateur virtuel.** Le matériel d'un
+   utilisateur — surtout un téléphone — n'est pas dans ces nombres, et un authentificateur virtuel
+   répond instantanément là où un vrai ne le fait pas ;
+4. **la dérivation domine tout le reste du déverrouillage.** L'enveloppe de #21 coûte 0,23 ms à
+   l'ouverture et 1,06 ms dans son pire cas (plus haut) : trois ordres de grandeur en dessous. Ce
+   que #21 avait annoncé — « le coût de #22 dominera de plusieurs ordres de grandeur » — est mesuré,
+   et le rapport est de 340 à 2 000 selon le moteur.
+
 ## Compatibilité
 
 La cible produit est les deux dernières versions stables de Chromium, Firefox et Safari sur
