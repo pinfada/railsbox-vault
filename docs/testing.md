@@ -446,6 +446,68 @@ node --test "tests/unit/vm-enveloppe-*.test.mjs"
 node tools/mesurer-enveloppe.mjs                  # le coût d'ouverture, pire cas compris
 ```
 
+### Dérivation des clés de déverrouillage
+
+#22 fournit les deux DÉRIVATEURS qui produisent une KEK à partir d'un geste
+([ADR 0021](decisions/0021-derivation-des-cles-de-deverrouillage.md)). C'est la première tranche où
+un SECRET D'UTILISATEUR entre dans le produit, et la preuve est organisée autour de cette différence
+: ce qui est éprouvé n'est pas seulement « la bonne clé sort », c'est **où le secret existe, ce
+qu'il en reste, et ce que le produit fait quand la plate-forme ne peut pas**.
+
+| Niveau     | Fichier                                           | Ce qu'il établit                                                            | Rattachement    |
+| ---------- | ------------------------------------------------- | --------------------------------------------------------------------------- | --------------- |
+| unitaire   | `tests/unit/vm-derivation-modele.test.mjs`        | info HKDF par **modèle de référence** + vecteurs figés, KEK non extractible | `npm run check` |
+| unitaire   | `tests/unit/vm-derivation-phrase.test.mjs`        | vecteurs RFC 9106 par l'artefact VENDU, empreinte, plancher, NFC            | `npm run check` |
+| unitaire   | `tests/unit/vm-derivation-webauthn-prf.test.mjs`  | les quatre conduites, `signCount` non lu, absence de repli                  | `npm run check` |
+| unitaire   | `tests/unit/vm-derivation-branchement.test.mjs`   | la couche d'ouverture sous dérivateur, type inconnu, harnais intact         | `npm run check` |
+| navigateur | `tests/browser/deverrouillage-frontiere.spec.mjs` | trois moteurs, authentificateur virtuel, sonde de non-persistance           | `npm run check` |
+
+**Le modèle de référence vit sous `tests/`, et c'est un écart assumé** avec celui de l'ADR 0020. Ce
+qu'il transcrit n'est pas un format sur disque mais deux appels de WebCrypto ; le seul service qu'il
+rend est d'être une SECONDE transcription, écrite à la main, entier par entier, sans appeler un seul
+encodeur du produit. L'accord entre les deux se prouve **sans jamais extraire la clé de production**
+: on scelle sous l'une, on ouvre sous l'autre. C'est le seul moyen de comparer deux clés dont l'une
+n'a pas d'octets.
+
+**Ce que l'authentificateur virtuel permet, et ce qu'il ne permet pas.** Sous Chromium, le protocole
+CDP (`WebAuthn.addVirtualAuthenticator` avec `hasPrf`) rejoue les trois conduites pour de vrai :
+extension disponible ; extension IGNORÉE, obtenue en TRANSPLANTANT la créance enregistrée dans un
+authentificateur sans PRF — l'emplacement reste donc parfaitement légitime, ce qui est exactement le
+cas (b) de l'ADR 0021 ; et annulation, obtenue en coupant la simulation de présence, puis répétée,
+puis suivie d'une réussite — ce qui mesure l'absence de compteur d'échec. Sur Firefox et WebKit,
+aucun authentificateur virtuel PRF n'est pilotable : le chemin est exercé JUSQU'À L'APPEL et le
+refus typé est vérifié, les deux autres conduites sont IGNORÉES avec leur motif écrit dans le
+relevé. `docs/compatibility.md` publie la matrice, et n'y promet rien qui ne soit mesuré.
+
+**La sonde de non-persistance est construite comme celle de #21, avec un témoin de plus.** Elle
+fouille `localStorage`, `sessionStorage`, les cookies, IndexedDB, Cache Storage, l'OPFS entier — en
+texte ET en hexadécimal — et les DEUX sens du port. Avant de chercher, elle **dépose un appât** dans
+chacun de ces stockages et exige de le retrouver : une fouille qui ne trouve jamais rien pourrait
+n'être qu'une fouille cassée. Le sens page → Worker est exclu de l'assertion, et pour une raison
+écrite plutôt que tue : la phrase y transite délibérément, parce qu'Argon2id calibré gèlerait
+l'interface s'il tournait sur le fil de la page. C'est une frontière INTERNE à l'origine de
+confiance, pas celle de `SEC-ORIGIN-001`.
+
+**La campagne de mutation a produit cinq survivantes**, toutes converties en épreuves manquantes. La
+plus instructive est la n° 6 : le plancher de coût n'était éprouvé qu'à l'ÉCRITURE des paramètres,
+si bien que retirer sa vérification à la LECTURE ne cassait rien — alors que c'est le côté qui
+compte, puisque ces octets viennent d'un fichier qu'un adversaire peut avoir affaibli. La n° 2 a
+survécu pour une raison qui n'appelait pas de code : un artefact d'une autre taille a de toute façon
+une autre empreinte, et le contrôle de taille n'achète pas de la sécurité mais un DIAGNOSTIC — c'est
+ce diagnostic, contexte compris, qui est désormais mesuré. Le tableau complet est dans l'ADR 0021.
+
+```bash
+npm run check                                          # les quatre suites unitaires + la frontière
+node --test "tests/unit/vm-derivation-*.test.mjs"
+npm run test:deverrouillage                            # la frontière seule, sur les trois moteurs
+VAULT_MESURER_DERIVATION=20 npm run test:deverrouillage # + la mesure du coût, hors `check`
+node tools/figer-vecteurs-derivation.mjs               # refige tests/vectors/derivation-v1.json
+```
+
+La MESURE est délibérément hors de `npm run check` : vingt dérivations à 64 Mio coûtent des secondes
+sur chaque moteur, et un contrôle obligatoire qui les paierait à chaque poussée finirait par être
+contourné. C'est la règle déjà retenue pour le banc de rythme (#16).
+
 ### Export vérifiable
 
 L'export portable de `VAULT-PORT-001` (#11) — `src/vm/volume-export.mjs`, son hachage incrémental
@@ -1492,6 +1554,37 @@ Le versant APPLICATIF de la même frontière vit dans le spike #35 : une vingti�
 (`lecture-enveloppe-coquille`) tente de lire un appât `vault-volume.cles` déposé dans l'OPFS de la
 coquille. Le témoin positif exige qu'elle **aboutisse** en même origine ; la topologie retenue exige
 qu'elle échoue, comme toute sonde visant la coquille.
+
+### Frontière du déverrouillage
+
+`tests/browser/deverrouillage-frontiere.spec.mjs` est la preuve de niveau navigateur de
+l'[ADR 0021](decisions/0021-derivation-des-cles-de-deverrouillage.md) (#22), exécutée sur les trois
+moteurs par les projets `frontiere-deverrouillage-<moteur>` pour le motif des trois frontières
+précédentes, et pour deux qui lui sont propres : le rendement d'Argon2id compilé en WebAssembly
+n'est pas le même partout — Firefox paie six fois le prix de Chromium, mesuré —, et l'extension
+WebAuthn `prf` n'est pilotable que sous un seul moteur.
+
+Elle établit quatre choses que Node ne peut pas montrer :
+
+- **l'artefact Argon2 SERVI calcule juste.** Les vecteurs rejouables de la RFC 9106 sont refaits
+  dans le Worker par le binaire que le serveur a livré depuis `/vendor/`, sous la CSP inchangée de
+  l'ADR 0013 — `'wasm-unsafe-eval'`, qui existait déjà pour v86, et `connect-src 'self'`. Cette
+  épreuve-là est exigée des **trois** moteurs : elle ne demande aucun stockage ;
+- **une phrase ouvre un volume réel**, relit un secteur connu, et une phrase fausse rend le refus de
+  l'ENVELOPPE (`VAULT_ENVELOPPE_CLE_REFUSEE`), jamais un refus du dérivateur ;
+- **les trois conduites WebAuthn** sous authentificateur virtuel Chromium, dont l'extension ignorée
+  obtenue par transplantation de créance et l'annulation obtenue en coupant la présence simulée ;
+- **la sonde de non-persistance**, décrite plus haut, avec son appât.
+
+Deux détails de la suite valent d'être connus avant de la lire. Le premier : le Worker n'expose PAS
+`navigator.credentials`, et une épreuve le MESURE — c'est le fait de plate-forme qui force la
+dérivation par passkey à vivre dans le document. Le second : WebAuthn refuse une adresse IP comme
+`rpId`, si bien que les épreuves PRF joignent le même serveur par le nom `localhost` au lieu de
+`127.0.0.1`. Les deux sont écrits dans la suite, à l'endroit où ils s'appliquent.
+
+Sur WebKit, qui ne porte pas OPFS synchrone dans un Worker, les scénarios de volume EXIGENT
+`VAULT_STORAGE_UNSUPPORTED` — jamais un saut silencieux. Coût mesuré, hors mesure de performance :
+environ 30 s pour les trois moteurs.
 
 ### Démarrage de v86 sous deux CSP : `test:csp`
 

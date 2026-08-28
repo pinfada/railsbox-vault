@@ -85,6 +85,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0019 — la racine date la région d'authentification et un témoin voisin date la séquence : le retour arrière partiel est détecté, le complet reste nommé](docs/decisions/0019-fraicheur-du-volume.md)
 - [Spike #46 — ce que deux applications voient l'une de l'autre selon la topologie d'origine](docs/spikes/0046-isolation-entre-applications.md)
 - [ADR 0020 — l'enveloppe de clé vit hors du volume, en deux pages alternées, et une révocation retire l'emplacement](docs/decisions/0020-enveloppe-de-cle.md)
+- [ADR 0021 — une clé de déverrouillage se dérive d'une phrase Argon2id ou d'un PRF WebAuthn, et rien d'autre ne descend d'elle](docs/decisions/0021-derivation-des-cles-de-deverrouillage.md)
 - [ADR 0022 — la coquille sert `Referrer-Policy` et `Permissions-Policy` ; HSTS est écarté du code et confié à l'exploitant](docs/decisions/0022-entetes-de-durcissement.md)
 - [ADR 0023 — la politique de cache est décidée par nature d'artefact, et une seule dimension varie selon le chemin](docs/decisions/0023-politique-de-cache-par-nature-d-artefact.md)
 

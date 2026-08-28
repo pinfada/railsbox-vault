@@ -425,6 +425,14 @@ mesuré ici. La mesure de #21 porte sur l'enveloppe seule, une KEK étant déjà
 7. **Le CRC-32 ne protège contre aucun adversaire.** Voir plus haut. Il sépare l'accident de
    l'écriture complète.
 
+> **Amendement de l'[ADR 0021](0021-derivation-des-cles-de-deverrouillage.md) (#22, 28 août 2026).**
+> La limite 4 ci-dessus est LEVÉE : deux dérivateurs produisent désormais une KEK à partir d'un
+> geste utilisateur. Deux points de ce format changent avec eux, et pas un de plus — les trois
+> opérations qui créent un emplacement acceptent un `identifiantEmplacement` FOURNI (l'info HKDF de
+> la dérivation lie cet identifiant, qui doit donc exister avant la clé ; un doublon est refusé), et
+> `importerCleDeDeverrouillage` laisse passer une `CryptoKey` VÉRIFIÉE, puisque les octets d'une KEK
+> dérivée n'existent pas dans le tas JavaScript. Les limites 1, 2, 3, 5, 6 et 7 restent entières.
+
 ## Impacts sur les ADR antérieurs
 
 Aucun ADR n'est réécrit ; chacun reçoit un amendement d'une phrase, qui renvoie ici.

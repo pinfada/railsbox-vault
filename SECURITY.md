@@ -82,14 +82,45 @@ et tester.
   `<volume>.cles` et surtout que **rien de ce que le Worker rend par `postMessage` ne contient une
   clé** : tout le relevé des réponses est FOUILLÉ, en hexadécimal et en tableau d'octets, à la
   recherche des clés de TEST. Une frontière qui protégerait les octets chiffrés sans protéger la clé
-  qui les ouvre ne protégerait rien ;
+  qui les ouvre ne protégerait rien. **Depuis #22 la frontière porte aussi sur le SECRET
+  D'UTILISATEUR** — le premier que ce dépôt manipule —, et elle est mesurée dans les deux sens du
+  port : `tests/browser/deverrouillage-frontiere.spec.mjs` fouille, sur les trois moteurs,
+  `localStorage`, `sessionStorage`, les cookies, IndexedDB, Cache Storage, l'**OPFS entier** (en
+  texte et en hexadécimal) et le relevé complet des messages, à la recherche de la phrase employée.
+  La fouille commence par déposer un APPÂT dans chaque stockage et EXIGE de le retrouver : une
+  fouille qui ne trouve jamais rien pourrait n'être qu'une fouille cassée. Deux frontières internes
+  sont assumées et écrites plutôt que découvertes : la phrase franchit le port page → Worker —
+  l'origine de CONFIANCE, pas celle que cet invariant sépare — parce qu'Argon2id calibré gèlerait
+  l'interface s'il tournait sur le fil de la page, et la dérivation WebAuthn a lieu **dans le
+  document** parce que `navigator.credentials` n'existe pas dans un Worker, auquel cas seule la
+  `CryptoKey` non extractible franchit le port et jamais la sortie PRF ;
 - `SEC-KEY-001` — une clé de déverrouillage enveloppe une DEK aléatoire sans servir directement au
-  chiffrement des blocs. **Depuis #21 le PRODUIT l'exerce**, et il faut dire aussitôt sous quelle
-  réserve : l'enveloppe est réelle, ses cinq opérations et ses douze refus le sont, mais les clés de
-  déverrouillage ne sont aujourd'hui distribuées que par le HARNAIS, sous jeton — les dérivateurs
-  (phrase secrète étirée, PRF WebAuthn) sont #22, et la récupération #23. L'invariant est donc tenu
-  par le FORMAT et éprouvé de bout en bout, sous des clés de TEST ; ce qui manque n'est pas le
-  mécanisme, c'est la façon dont un humain obtient sa clé. La disposition est
+  chiffrement des blocs. **Depuis #22 un humain obtient réellement sa clé**, et la réserve que #21
+  portait ici est levée : deux dérivateurs
+  ([ADR 0021](docs/decisions/0021-derivation-des-cles-de-deverrouillage.md)) rendent une KEK
+  `CryptoKey` **non extractible**, dont les octets ne sont atteignables par aucun code de cette
+  origine. `phrase` étire la phrase par **Argon2id (RFC 9106)** calculé par un artefact WebAssembly
+  VENDU dans le dépôt — implémentation de référence `phc-winner-argon2`, version épinglée, empreinte
+  SHA-256 recalculée **avant instanciation** dans le navigateur et vérifiée une seconde fois sur
+  l'arbre publié par `publier:check` ; les vecteurs de la RFC sont rejoués sur les trois moteurs par
+  le binaire réellement servi. Le **plancher de coût est celui de la RFC** — 64 Mio, trois passes,
+  quatre voies — et il est vérifié à l'écriture ET à la lecture des paramètres, parce que
+  l'affaiblissement de ces octets par un adversaire qui garde une copie du volume est exactement
+  l'attaque que l'ADR 0020 avait nommée en les authentifiant. `webauthn-prf` évalue l'extension
+  `prf` sur un sel de trente-deux octets propre à l'emplacement, exige `residentKey` et
+  `userVerification`, et **ne lit pas `signCount`** (facultatif en CTAP2, ADR 0015). Les deux
+  passent par HKDF-SHA-256 dont l'info lie identifiant de volume, identifiant d'emplacement et
+  version — sans quoi une passkey enregistrée pour un emplacement ouvrirait le voisin, sur un autre
+  volume. **Ce qui est décidé et mesuré quand la plate-forme ne peut pas** : PRF absent à
+  l'enregistrement, extension ignorée à l'assertion, annulation — trois codes distincts, aucun repli
+  automatique, **aucun compteur d'échec persisté**, et un type d'emplacement qu'aucun dérivateur ne
+  sert refusé sans qu'un octet du fichier ne bouge. **Ce que JavaScript ne garantit pas est écrit**
+  : les tampons de matériau sont mis à zéro dès que la clé existe — fenêtre refermée, pas garantie,
+  puisque le moteur a pu les copier —, et une phrase est une `string`, donc impossible à effacer ;
+  aucun code JavaScript ne verrouille non plus une page en mémoire contre un fichier d'échange.
+  Vingt-trois gardes ont été RÉELLEMENT mutées, vingt-trois tuées, dont cinq seulement après
+  l'écriture de l'épreuve qui manquait — l'une d'elles a révélé que le plancher de coût n'était
+  éprouvé qu'à l'écriture. La disposition de l'enveloppe est
   l'[ADR 0020](docs/decisions/0020-enveloppe-de-cle.md) : un quatrième voisin de volume
   `<volume>.cles` dans l'origine de CONFIANCE, hors du fichier de volume et hors du manifeste, deux
   pages de 8192 octets alternées, jusqu'à huit emplacements portant chacun l'identifiant
@@ -474,6 +505,31 @@ diffère. Deux limites subsistent, inscrites comme risques dans l'ADR 0003 : l'i
 provient d'un hôte tiers qui ne publie pas d'empreinte de son côté — la nôtre protège de
 l'altération, pas de la disparition — et aucune de ces sources ne fournit encore de provenance de
 build vérifiable.
+
+**Depuis #22 un second artefact tiers est vendu, et il est traité plus sévèrement que le premier.**
+`vendor/argon2/argon2.wasm` — l'implémentation de référence d'Argon2 (`phc-winner-argon2`) compilée
+en WebAssembly, publiée par `argon2-browser@1.18.0` — est **versionné dans le dépôt**, contrairement
+aux artefacts v86 : il fait vingt-cinq kilo-octets et il est chargé à chaque déverrouillage par
+phrase, si bien qu'un artefact récupéré à la construction ferait dépendre l'ouverture d'un coffre
+d'une étape de construction, et un artefact récupéré à l'exécution serait un CDN, que l'ADR 0013
+interdit. `vendor/argon2/MANIFEST.json` en fixe la taille, l'empreinte SHA-256, l'empreinte du
+tarball npm, le commit amont, les licences et jusqu'aux noms minifiés de ses exportations.
+
+Son empreinte est confrontée **deux fois, à deux moments, et aucune ne remplace l'autre** : par
+`publier:check` sur l'arbre publié avant qu'il ne parte, et par `src/vm/derivation/argon2-vendu.mjs`
+dans le navigateur, sur les octets réellement reçus, **avant d'instancier le module**. La raison de
+cette sévérité tient en une phrase : ce binaire étire un secret d'utilisateur, et un binaire
+substitué en chemin pourrait rendre une étiquette prévisible sans que rien ne le dise — la phrase de
+chacun ouvrirait alors un coffre que l'adversaire ouvre aussi.
+
+**Aucune ligne de la colle Emscripten publiée avec ce binaire n'est importée** : le module exige
+deux importations, elles tiennent en quinze lignes écrites ici, et l'artefact tiers se réduit donc à
+un binaire vérifiable par empreinte plutôt qu'à cent pages de code. **Ce qui reste non établi, et
+qui doit être dit** : personne dans ce dépôt n'a recompilé ce binaire depuis ses sources. Ce qui est
+prouvé est qu'il reproduit deux des trois vecteurs de la RFC 9106 à l'octet, sur les trois moteurs ;
+ce n'est pas la même chose qu'un audit de son code. Le troisième vecteur (Argon2i) n'est pas rejoué
+parce que cette variante, juste dans ce binaire, y est **mesurée cinq ordres de grandeur trop
+lente** — elle n'est donc pas servie, et le produit n'emploie qu'Argon2id.
 
 ## La CSP de la coquille est une frontière
 
