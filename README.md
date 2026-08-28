@@ -75,8 +75,6 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0013 — la CSP de la coquille ne change pas ; v86 bat grâce à une boucle d'ordonnancement fournie par Vault](docs/decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md)
 - [ADR 0014 — une génération est validée par une racine d'un secteur alternée, et un volume rouvert présente la dernière génération validée](docs/decisions/0014-generation-transactionnelle.md)
 - [ADR 0015 — cinq menaces, cinq propriétés cryptographiques testables ; AES-256-GCM, nonces aléatoires, racine authentifiée](docs/decisions/0015-proprietes-cryptographiques-du-format.md)
-- [ADR 0017 — la chaîne de publication exige un hébergeur à en-têtes des deux côtés, dérive ses en-têtes du serveur de test et inventorie ses artefacts](docs/decisions/0017-chaine-de-publication.md)
-- [Spike #45 — comparatif mesuré des hébergements et témoin COOP](docs/spikes/0045-chaine-de-publication.md)
 - [Spike #35 — protocole et mesures de la topologie d'origine](docs/spikes/0035-topologie-origine-de-confiance.md)
 - [Spike #4 — protocole et mesures du backend de blocs v86](docs/spikes/0004-backend-de-blocs-v86.md)
 - [ADR 0017 — la chaîne de publication sert les mêmes en-têtes que le serveur de test, et inventorie ce qu'elle publie](docs/decisions/0017-chaine-de-publication.md)
