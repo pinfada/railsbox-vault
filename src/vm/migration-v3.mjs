@@ -166,6 +166,26 @@ async function scellerUnSecteur({ brut, disposition, scellement, adresse, genera
 }
 
 /**
+ * SCELLE toute la charge, secteur par secteur, en sautant ce qui l'est déjà.
+ *
+ * Le saut n'est pas une optimisation, c'est la REPRISE : rescéller un secteur déjà converti
+ * chiffrerait du chiffré, et le volume serait perdu sans qu'aucune erreur ne soit levée.
+ */
+async function scellerLaCharge({ brut, disposition, scellement, generation }) {
+  let secteursScelles = 0;
+  let secteursDejaScelles = 0;
+  for (let adresse = 0; adresse < disposition.tailleLogique; adresse += SECTOR_SIZE) {
+    if (await dejaScelle({ brut, disposition, scellement, adresse, generation })) {
+      secteursDejaScelles += 1;
+      continue;
+    }
+    await scellerUnSecteur({ brut, disposition, scellement, adresse, generation });
+    secteursScelles += 1;
+  }
+  return { secteursScelles, secteursDejaScelles };
+}
+
+/**
  * Convertit un volume v2 en volume v3, sur place.
  *
  * @param {{ brut: object, scellement: import("./scellement.mjs").Scellement,
@@ -210,16 +230,7 @@ export async function convertirEnV3({
     await marquerEtape({ etape: ETAPES_CONVERSION.scellement, position: 0 });
   }
 
-  let secteursScelles = 0;
-  let secteursDejaScelles = 0;
-  for (let adresse = 0; adresse < disposition.tailleLogique; adresse += SECTOR_SIZE) {
-    if (await dejaScelle({ brut, disposition, scellement, adresse, generation })) {
-      secteursDejaScelles += 1;
-      continue;
-    }
-    await scellerUnSecteur({ brut, disposition, scellement, adresse, generation });
-    secteursScelles += 1;
-  }
+  const scelles = await scellerLaCharge({ brut, disposition, scellement, generation });
 
   // L'EN-TÊTE EN DERNIER. Il est le seul octet qui dise « ce fichier est un volume v3 » ; l'écrire
   // avant la fin ferait passer pour v3 un fichier dont la charge est encore en clair, et un lecteur
@@ -229,8 +240,7 @@ export async function convertirEnV3({
 
   return Object.freeze({
     secteursDeplaces,
-    secteursScelles,
-    secteursDejaScelles,
+    ...scelles,
     tailleSupport: disposition.tailleSupport,
   });
 }

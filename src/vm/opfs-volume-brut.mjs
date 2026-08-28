@@ -117,7 +117,8 @@ export async function ouvrirVolumeBrut({ name, size, openHandle = openOpfsSyncAc
  * `flush`, `close` — pour que l'orchestration d'export et de restauration n'ait pas à distinguer les
  * deux, mais il n'en a ni la géométrie logique, ni les fautes programmées, ni les générations.
  */
-function creerAccesBrut({ name, handle, taille }) {
+function creerAccesBrut({ name, handle, taille: tailleInitiale }) {
+  let taille = tailleInitiale;
   let ferme = false;
 
   const exigerUtilisable = () => {
@@ -188,6 +189,27 @@ function creerAccesBrut({ name, handle, taille }) {
       } catch (cause) {
         throw toStorageError(cause, { operation: "flush", volume: name });
       }
+    },
+
+    /**
+     * RETAILLE le fichier. C'est le seul geste de ce module qui change une géométrie, et il n'existe
+     * que pour un appelant : la conversion v2 → v3, qui doit agrandir le fichier de sa région
+     * d'authentification (ADR 0016, décision 8).
+     *
+     * Il est ici et non dans le backend de blocs, et la distinction porte : un backend tient une
+     * géométrie IMMUABLE, parce que v86 raisonne dessus et qu'un volume qui rétrécit sous la VM
+     * n'est pas un volume plus petit, c'est un volume corrompu (#6). Une migration, elle, est le
+     * seul moment où la géométrie du FICHIER change légitimement — sous le manifeste révoqué, donc
+     * sur un volume que plus rien ne présente comme valide.
+     */
+    async retailler(nouvelleTaille) {
+      exigerUtilisable();
+      try {
+        handle.truncate(nouvelleTaille);
+      } catch (cause) {
+        throw toStorageError(cause, { operation: "allocate", volume: name });
+      }
+      taille = nouvelleTaille;
     },
 
     /**

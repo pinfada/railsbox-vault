@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
+import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
+import { Scellement } from "../../src/vm/scellement.mjs";
+import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
+import { VolumeChiffre } from "../../src/vm/volume-chiffre.mjs";
+import { dispositionV3, tailleSupportV3 } from "../../src/vm/volume-chiffre-format.mjs";
 import { createFaultPlan, FAULT_KINDS } from "../../src/vm/fault-plan.mjs";
 import { MANIFEST_ERROR_CODES, isManifestError } from "../../src/vm/manifest-errors.mjs";
 import { MIGRATION_ERROR_CODES, isMigrationError } from "../../src/vm/migration-errors.mjs";
@@ -15,6 +20,7 @@ import {
 } from "../../src/vm/volume-manifest.mjs";
 import {
   MIGRATION_JOURNAL_MAGIC,
+  MIGRATION_JOURNAL_VERSION,
   migrateVolume,
   planMigration,
 } from "../../src/vm/volume-migration.mjs";
@@ -107,7 +113,16 @@ function creerCible({
   apres = {},
   faults = createFaultPlan(),
 } = {}) {
-  const etat = { manifestBytes, journalBytes, ouvertures: 0, fermetures: 0 };
+  const etat = {
+    manifestBytes,
+    journalBytes,
+    ouvertures: 0,
+    fermetures: 0,
+    /** Les octets du volume, tels qu'ils sont MAINTENANT : le retaillage remplace le tampon. */
+    get volume() {
+      return volume;
+    },
+  };
   const gestes = [];
   const trace = (nom) => {
     gestes.push(nom);
@@ -117,12 +132,24 @@ function creerCible({
     if (apres[nom]) throw apres[nom];
   };
 
+  // Le backend rendu par la cible a la forme d'un ACCÈS BRUT (`opfs-volume-brut.mjs`) : une
+  // migration travaille sur le FICHIER, et depuis #101 elle l'écrit et le retaille. Les deux gestes
+  // manquaient tant qu'aucune étape ne touchait un octet.
   const backend = {
+    name: "cible",
     size: () => volume.byteLength,
     async read(offset, length) {
       const faute = faults.consume("read");
       const rendus = faute?.kind === FAULT_KINDS.shortRead ? (faute.bytes ?? 0) : length;
       return volume.slice(offset, offset + rendus);
+    },
+    async write(offset, octets) {
+      volume.set(octets, offset);
+    },
+    async retailler(taille) {
+      const neuf = new Uint8Array(taille);
+      neuf.set(volume.subarray(0, Math.min(taille, volume.byteLength)));
+      volume = neuf;
     },
     async flush() {
       trace("flush");
@@ -630,7 +657,7 @@ function journalForge({ from = 1, to = CIBLE, sourceManifest, evidence }) {
   return new TextEncoder().encode(
     JSON.stringify({
       magic: MIGRATION_JOURNAL_MAGIC,
-      journalVersion: 1,
+      journalVersion: MIGRATION_JOURNAL_VERSION,
       from,
       to,
       sourceManifest,
@@ -701,21 +728,55 @@ test("un journal dont la cible ne correspond PAS au format porté n'est pas reti
   assert.equal(parseManifest(cible.etat.manifestBytes).formatVersion, CIBLE);
 });
 
-test("l'étape v3 est DÉCLARÉE, et son refus dit ce qui manque au lieu de laisser un trou", async () => {
-  // #18 fait passer le format courant à v3, et la chaîne le sait : `planMigration(1, 3)` rend bien
-  // deux pas. Le second, en revanche, n'est pas exécutable par cette tranche — passer au chiffré
-  // exige d'agrandir le fichier de sa région d'authentification et de rechiffrer chaque secteur,
-  // deux gestes qu'une cible à géométrie FIXE ne sait pas faire (ADR 0016).
-  //
-  // Une étape ABSENTE aurait rendu `VAULT_MIGRATION_NO_PATH` : « personne ne sait aller là », ce qui
-  // est faux — le chemin est décidé. Une étape DÉCLARÉE rend `VAULT_MIGRATION_STEP_UNAVAILABLE` :
-  // « le chemin est connu, l'outil manque ». Les remèdes diffèrent, donc les codes diffèrent.
-  const chaine = planMigration(1, MANIFEST_FORMAT_VERSION);
-  assert.equal(chaine.length, 2, "la chaîne 1 → 3 existe, un pas à la fois");
-  assert.equal(chaine[1].from, 2);
-  assert.equal(chaine[1].to, 3);
-  assert.match(chaine[1].summary, /chiffr/i);
+test("la chaîne 1 → 3 aboutit : le volume est CONVERTI et rend le même clair", async () => {
+  // La migration v2 → v3 ne réécrit pas un manifeste, elle réécrit le VOLUME. L'épreuve la fait
+  // porter sur un vrai fichier — celui de la cible en mémoire — et la juge sur ce que le chemin de
+  // production relit ensuite : le clair d'avant, à l'octet près.
+  const octets = contenu();
+  const cible = creerCible({ volume: octets });
+  const rapport = await migrateVolume({
+    target: cible,
+    expectations: attentes({
+      supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
+    }),
+    consent: CONSENTEMENT,
+    cle: CLE_DE_TEST,
+  });
 
+  assert.equal(rapport.migrated, true);
+  assert.equal(rapport.toVersion, MANIFEST_FORMAT_VERSION);
+  assert.equal(rapport.steps.length, 2, "un PAS à la fois : v1 → v2, puis v2 → v3");
+
+  const inscrit = parseManifest(cible.etat.manifestBytes);
+  assert.equal(inscrit.formatVersion, MANIFEST_FORMAT_VERSION);
+  assert.match(inscrit.volume.id, /^[0-9a-f]{32}$/, "l'identifiant est TIRÉ : un v2 n'en a pas");
+  assert.equal(inscrit.geometry.volumeSize, TAILLE, "la géométrie reste LOGIQUE");
+
+  // Le FICHIER, lui, a grandi de sa région d'authentification.
+  assert.equal(cible.etat.volume.byteLength, tailleSupportV3(TAILLE));
+
+  // Et le clair relu par le chemin de production est celui d'avant la migration.
+  const volume = new VolumeChiffre({
+    volume: "migre",
+    scellement: await Scellement.ouvrir({
+      volume: inscrit.volume.id,
+      cleOctets: CLE_DE_TEST,
+      formatVersion: 3,
+    }),
+    disposition: dispositionV3(TAILLE),
+    lireSupport: (offset, longueur) => cible.etat.volume.slice(offset, offset + longueur),
+    ecrireSupport: () => {
+      throw new Error("la relecture n'écrit pas");
+    },
+  });
+  assert.deepEqual([...(await volume.lireSecteurs(0, TAILLE))], [...contenu()]);
+});
+
+test("migrer SANS CLÉ est refusé, et le volume reste non identifié plutôt qu'à moitié converti", async () => {
+  // Le produit ne fabrique aucune clé de volume avant #21 (ADR 0016, décision 6). Une migration qui
+  // en inventerait une chiffrerait le volume sous un secret que personne ne connaît — c'est-à-dire
+  // le perdrait. Le refus est typé, et il tombe pendant l'application : le manifeste est déjà
+  // révoqué, ce que l'ADR 0011 exige d'une migration interrompue.
   const octets = contenu();
   const cible = creerCible({ volume: octets });
   await assert.rejects(
@@ -727,17 +788,8 @@ test("l'étape v3 est DÉCLARÉE, et son refus dit ce qui manque au lieu de lais
         }),
         consent: CONSENTEMENT,
       }),
-    (erreur) => {
-      assert.ok(isMigrationError(erreur, MIGRATION_ERROR_CODES.stepUnavailable), erreur.code);
-      assert.match(erreur.message, /rechiffrer|authentification/i);
-      return true;
-    },
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.cleRequise),
   );
-
-  // Le refus tombe pendant l'application, donc APRÈS la révocation : le volume reste NON IDENTIFIÉ,
-  // ce que l'ADR 0011 exige d'une migration interrompue — jamais « valide à moitié ». Ses OCTETS,
-  // eux, n'ont pas bougé, et le journal de reprise dit d'où il vient.
-  assert.deepEqual([...octets], [...contenu()], "aucun octet du volume n'a été touché");
-  assert.equal(cible.etat.manifestBytes, null, "le manifeste est révoqué : volume non identifié");
+  assert.equal(cible.etat.manifestBytes, null, "le volume reste NON IDENTIFIÉ");
   assert.notEqual(cible.etat.journalBytes, null, "le journal de reprise porte le manifeste source");
 });
