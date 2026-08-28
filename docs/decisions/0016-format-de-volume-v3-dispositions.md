@@ -227,6 +227,29 @@ entrées au moment de sceller, jamais reçu de l'appelant ».
 L'ordre est celui de l'ADR 0015 — vérifier d'abord, classer ensuite — et il conserve les deux passes
 de l'ADR 0014 : la première ne touche pas le volume, si bien qu'une charge refusée n'y laisse rien.
 
+**Chaque enregistrement est ouvert à CHAQUE passe, y compris celle qui n'émet rien.** N'ouvrir qu'à
+l'émission laisserait les premiers enregistrements dans le volume au moment où le dernier serait
+refusé — exactement le rejeu à moitié que l'ADR 0014 interdit. Le prix est un déchiffrement de plus
+par enregistrement, et il tombe sur le geste amorti.
+
+### La racine VIDE est authentifiée comme les autres
+
+Une racine vide n'a aucune charge à confronter, et c'est précisément ce qui la rend dangereuse :
+**elle fixe à elle seule la génération et la séquence** de la session à venir. C'est l'état que
+laisse tout point de contrôle, donc l'état le plus fréquent d'un journal au repos.
+
+En v2, `decoderRacine` la validait par un CRC-32 — c'est-à-dire par rien : l'ADR 0014 écrivait déjà
+que sa somme « ne prétend RIEN contre un altérateur volontaire, qui la recalculerait sans difficulté
+». En v3, la décoder ne prouve plus quoi que ce soit non plus, puisque seule l'étiquette le fait. Un
+journal dont la racine vide serait FORGÉE avec une séquence plus haute ferait donc autorité, et la
+génération réellement validée serait écartée comme « dépassée » — une écriture acquittée perdue,
+sans qu'aucun code ne mente.
+
+**Décision : le parcours est exécuté même pour une charge de zéro entrée.** Il ne lit aucun
+enregistrement et n'ouvre que la racine : le geste voulu, au prix d'un déchiffrement par ouverture.
+`tests/unit/vm-generation-chiffre.test.mjs` forge une racine vide de séquence plus haute et la voit
+refusée ; l'épreuve a été vérifiée ROUGE sans ce parcours, en le retirant.
+
 ## Décision 4 — Le point de contrôle rescelle, et compte
 
 `rescellerEnSecteurs` du modèle est le geste, et il est appelé tel quel : le clair d'un
