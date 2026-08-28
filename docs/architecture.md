@@ -153,8 +153,8 @@ L'hébergement n'a en revanche **aucun en-tête d'isolation à servir**.
 L'[ADR 0010](decisions/0010-isolation-multi-origine.md) établit qu'aucun
 `Cross-Origin-Embedder-Policy` n'est exigé : aucun module de production n'utilise
 `SharedArrayBuffer` ou `Atomics`, et la mémoire WebAssembly de v86 épinglé n'est pas partagée. C'est
-ce qui garde utilisable un hébergement statique incapable d'en-têtes personnalisés — GitHub Pages
-notamment. `Cross-Origin-Resource-Policy` reste servi, il ne dépend pas de cette décision.
+ce qui n'oblige pas l'hébergeur à servir COEP. En revanche l'[ADR 0017](decisions/0017-chaine-de-publication.md) exige un hébergeur capable d'en-têtes personnalisés des deux côtés (CSP, COOP, `frame-ancestors`) : GitHub Pages est écarté par mesure,
+il ne sert aucun en-tête personnalisé. `Cross-Origin-Resource-Policy` reste servi, il ne dépend pas de cette décision.
 
 Le même ADR distingue **COOP de COEP**, et ne les rejette pas ensemble.
 `Cross-Origin-Opener-Policy: same-origin` servi **seul** ne confère pas `crossOriginIsolated`, ne
