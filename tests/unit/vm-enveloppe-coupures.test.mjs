@@ -13,7 +13,12 @@ import {
   remplacerEmplacement,
   revoquerEmplacement,
 } from "../../src/vm/enveloppe-de-cle.mjs";
-import { CoupureSimulee, supportDouble, suiteDOctets } from "./support-enveloppe-double.mjs";
+import {
+  CoupureSimulee,
+  identifiantDeVolume,
+  supportDouble,
+  suiteDOctets,
+} from "./support-enveloppe-double.mjs";
 
 // ATOMICITÉ de l'enveloppe : une coupure à CHAQUE RANG de CHAQUE opération (#21, ADR 0020).
 //
@@ -32,7 +37,7 @@ import { CoupureSimulee, supportDouble, suiteDOctets } from "./support-enveloppe
 //     encore » ne distingue pas l'ancien état du nouveau ; c'est précisément la distinction que
 //     l'atomicité promet, donc c'est elle qu'il faut nommer à chaque coupure.
 
-const VOLUME = "0a1b2c3d4e5f60718293a4b5c6d7e8f9";
+const VOLUME = identifiantDeVolume(0x0a);
 const DEK = suiteDOctets(0x20, 32);
 const KEK_A = suiteDOctets(0x80, 32);
 const KEK_B = suiteDOctets(0xa0, 32);

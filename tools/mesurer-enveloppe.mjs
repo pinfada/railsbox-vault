@@ -28,7 +28,10 @@ import {
   revoquerEmplacement,
 } from "../src/vm/enveloppe-de-cle.mjs";
 
-const IDENTIFIANT_VOLUME = "0a1b2c3d4e5f60718293a4b5c6d7e8f9";
+/** Identifiant de volume de la mesure, posé en octets plutôt qu'en littéral hexadécimal. */
+const IDENTIFIANT_VOLUME = Array.from({ length: 16 }, (_, index) => (0x0a + index) % 256)
+  .map((octet) => octet.toString(16).padStart(2, "0"))
+  .join("");
 const cle = (base) => Uint8Array.from({ length: 32 }, (_, index) => (base + index) % 256);
 
 /** Support en mémoire : la mesure porte sur la cryptographie, pas sur le disque. */

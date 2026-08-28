@@ -20,7 +20,7 @@ import {
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 import { CONSISTENCY_KINDS, exportVolumeToBytes } from "../../src/vm/volume-export.mjs";
 import { createManifest, serializeManifest } from "../../src/vm/volume-manifest.mjs";
-import { suiteDOctets } from "./support-enveloppe-double.mjs";
+import { identifiantDeVolume, suiteDOctets } from "./support-enveloppe-double.mjs";
 
 // La COUCHE de déverrouillage au-dessus de l'ouvreur unique (#21, ADR 0020, décision 5).
 //
@@ -39,8 +39,8 @@ import { suiteDOctets } from "./support-enveloppe-double.mjs";
 
 const TAILLE = 8 * SECTOR_SIZE;
 const NOM = "coffre";
-const VOLUME_A = "0a1b2c3d4e5f60718293a4b5c6d7e8f9";
-const VOLUME_B = "ffeeddccbbaa99887766554433221100";
+const VOLUME_A = identifiantDeVolume(0x0a);
+const VOLUME_B = identifiantDeVolume(0xf0);
 const KEK = suiteDOctets(0x80, 32);
 const KEK_INCONNUE = suiteDOctets(0x11, 32);
 

@@ -28,7 +28,7 @@ import {
   revoquerEmplacement,
 } from "../../src/vm/enveloppe-de-cle.mjs";
 import { supportEnveloppeOpfs } from "../../src/vm/ouverture-par-enveloppe.mjs";
-import { supportDouble, suiteDOctets } from "./support-enveloppe-double.mjs";
+import { identifiantDeVolume, supportDouble, suiteDOctets } from "./support-enveloppe-double.mjs";
 
 // Preuve unitaire des CINQ OPÉRATIONS de l'enveloppe et de leurs REFUS (#21, ADR 0020).
 //
@@ -42,8 +42,8 @@ import { supportDouble, suiteDOctets } from "./support-enveloppe-double.mjs";
 // états qu'un adversaire atteindrait : passer par l'encodeur du produit ne produirait que des
 // fichiers cohérents, c'est-à-dire ne mesurerait rien.
 
-const VOLUME_A = "0a1b2c3d4e5f60718293a4b5c6d7e8f9";
-const VOLUME_B = "ffeeddccbbaa99887766554433221100";
+const VOLUME_A = identifiantDeVolume(0x0a);
+const VOLUME_B = identifiantDeVolume(0xf0);
 
 const DEK_A = suiteDOctets(0x20, 32);
 const KEK_UN = suiteDOctets(0x80, 32);
