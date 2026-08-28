@@ -11,8 +11,6 @@
 //    que le scénario peut attendre, jamais un succès silencieux.
 
 import { BlockJournal } from "/src/vm/block-journal.mjs";
-import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
-import { cleDuBanc } from "./cle-du-banc.mjs";
 import { createOpfsArchiveSink } from "/src/vm/opfs-archive-sink.mjs";
 import { createOpfsImportTarget } from "/src/vm/opfs-import-target.mjs";
 import {
@@ -33,7 +31,17 @@ import {
   writeArchive,
 } from "/src/vm/volume-export.mjs";
 import { ARCHIVE_ERROR_CODES, ArchiveError } from "/src/vm/archive-errors.mjs";
-import { VOLUME_ALGORITHM } from "/src/vm/volume-manifest.mjs";
+import {
+  MANIFEST_FORMAT_VERSION,
+  MIN_VOLUME_FORMAT_VERSION,
+  VOLUME_ALGORITHM,
+} from "/src/vm/volume-manifest.mjs";
+import { ouvrirVolumeBrut } from "/src/vm/opfs-volume-brut.mjs";
+import {
+  EN_TETE_OCTETS,
+  decoderEnTeteV3,
+  identifiantVolumeEnTexte,
+} from "/src/vm/volume-chiffre-format.mjs";
 import { manifesteDuDescripteur } from "./reference-worker-boot.mjs";
 import {
   EXPORT_BLOCK_BYTES,
@@ -103,15 +111,31 @@ async function compteRenduExport({
  * Trois gestes depuis #77, et rien d'autre : préparer la cible, verser le flux, rendre compte.
  */
 /**
- * Manifeste que l'archive porte. Son identifiant de volume est celui du FICHIER EXPORTÉ, relu de son
- * en-tête v3 par l'ouverture, jamais tiré à l'export : une archive décrit le volume qu'elle porte,
- * et un identifiant neuf en décrirait un autre (ADR 0016).
+ * Lit l'IDENTITÉ d'un volume dans son propre fichier : sa taille logique et son identifiant.
+ *
+ * L'archive décrit le volume qu'elle porte, pas un volume neuf : son identifiant est relu de
+ * l'en-tête v3, jamais tiré à l'export (ADR 0016). Avant v3 il n'y a pas d'en-tête, et la taille du
+ * fichier EST la taille logique — c'est précisément ce que le format v3 a cessé d'être vrai.
  */
-function manifesteDeLArchive(manifest, tailleSource, backend) {
-  return manifesteDuDescripteur(manifest, tailleSource, {
-    id: backend.identifiantVolume,
-    algorithm: VOLUME_ALGORITHM,
-  });
+async function identiteDuFichier(brut, formatVersion) {
+  if (formatVersion < MIN_VOLUME_FORMAT_VERSION) {
+    return { tailleLogique: brut.size(), volume: undefined };
+  }
+  const lu = decoderEnTeteV3(await brut.read(0, EN_TETE_OCTETS));
+  if (!lu.valide) {
+    throw new ArchiveError(
+      ARCHIVE_ERROR_CODES.geometryMismatch,
+      `Export refusé : le volume « ${brut.name} » ne porte pas d'en-tête v3 lisible (${lu.raison}). Une archive décrit le volume qu'elle porte ; ici, on ne sait pas lequel.`,
+      { volume: brut.name, raison: lu.raison },
+    );
+  }
+  return {
+    tailleLogique: lu.enTete.tailleLogique,
+    volume: {
+      id: identifiantVolumeEnTexte(lu.enTete.identifiantVolume),
+      algorithm: VOLUME_ALGORITHM,
+    },
+  };
 }
 
 export async function phaseExportVolume({
@@ -121,19 +145,21 @@ export async function phaseExportVolume({
   blockBytes = EXPORT_BLOCK_BYTES,
 }) {
   await removeOpfsVolume(archive);
-  const backend = await openOpfsVolume({
-    name: volume,
-    journal: new BlockJournal(),
-    cle: cleDuBanc(),
-  });
+  // ACCÈS BRUT, et sans clé : l'archive porte le FICHIER tel quel (ADR 0016, décision 7). Passer
+  // par le backend chiffré produirait une archive EN CLAIR d'un volume chiffré.
+  const brut = await ouvrirVolumeBrut({ name: volume });
   const compteur = { maxLecture: 0, blocs: 0 };
-  const source = sourceMesuree(backendSource(backend), compteur);
+  const source = sourceMesuree(backendSource(brut), compteur);
   const { handle, sink } = await ouvrirPuitsArchive(archive);
 
   const stockageAvant = await instantaneStockage();
   let result;
   try {
-    const m = manifesteDeLArchive(manifest, source.size, backend);
+    const identite = await identiteDuFichier(
+      brut,
+      manifest.formatVersion ?? MANIFEST_FORMAT_VERSION,
+    );
+    const m = manifesteDuDescripteur(manifest, identite.tailleLogique, identite.volume);
     result = await writeArchive({
       source,
       sink,
@@ -147,7 +173,7 @@ export async function phaseExportVolume({
     sink.flush();
   } finally {
     handle.close();
-    await backend.close();
+    await brut.close();
   }
 
   return compteRenduExport({
