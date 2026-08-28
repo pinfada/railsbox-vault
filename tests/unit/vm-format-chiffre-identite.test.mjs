@@ -20,6 +20,7 @@ import {
   verifierRangsCroissants,
 } from "../../src/vm/format-chiffre/identite-logique.mjs";
 import { chainePrefixee, concatener, octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
+import { PLAFOND_CHARGE_OCTETS } from "../../src/vm/generation-plafonds.mjs";
 
 // Nonce, identité logique et bornes (#17, ADR 0015).
 //
@@ -229,27 +230,49 @@ test("la conversion de l'identifiant de volume est FIXÉE : seize octets vers tr
   }
 });
 
-test("l'encodage des entrées tient une génération AU PLAFOND, sans déborder la pile d'appel", () => {
-  // Défaut trouvé par EXÉCUTION, sur `tests/vm/recuperation-generation.spec.mjs` : l'encodage
-  // canonique assemblait ses morceaux par `concatener(...morceaux)`, et le nombre de morceaux suit
-  // le NOMBRE D'ENTRÉES d'une génération. Au plafond de charge de l'ADR 0014 — 64 Mio, soit
-  // jusqu'à 131 072 enregistrements de 512 octets —, l'étalement fait plus d'un demi-million
-  // d'arguments et le moteur rend « Maximum call stack size exceeded » au milieu d'une récupération
-  // que rien n'annonçait comme démesurée.
-  //
-  // C'est une limite du MODÈLE, que l'ADR 0015 nommait sans la chiffrer (« le modèle n'a aucune
-  // borne mémoire »). Elle est ici bornée par une épreuve plutôt que par une phrase. Les octets
-  // produits n'ont pas changé — les vecteurs figés le vérifient de leur côté.
-  const entrees = Array.from({ length: 131072 }, (_, rang) => ({
+/** Une génération de `nombre` enregistrements de 512 octets, telle que la récupération l'encode. */
+function entreesDeGeneration(nombre) {
+  return Array.from({ length: nombre }, (_, rang) => ({
     adresse: rang * 512,
     longueur: 512,
     rang,
     etiquette: new Uint8Array(16),
   }));
+}
 
-  const encode = encoderEntrees(entrees);
-  // Taille attendue, calculée et non relevée : préfixe de domaine (2 + 38), compte (4), puis
-  // 8 + 4 + 8 + 16 par entrée.
+/** Taille attendue, CALCULÉE : préfixe de domaine, compte, puis 8 + 4 + 8 + 16 par entrée. */
+function longueurAttendue(nombre) {
   const domaine = 2 + new TextEncoder().encode(ETIQUETTE_DOMAINE_ENTREES).byteLength;
-  assert.equal(encode.byteLength, domaine + 4 + entrees.length * 36);
+  return domaine + 4 + nombre * 36;
+}
+
+test("l'encodage des entrées tient une génération AU PLAFOND, sans déborder la pile d'appel", () => {
+  // Défaut trouvé par EXÉCUTION, sur `tests/vm/recuperation-generation.spec.mjs` : l'encodage
+  // canonique assemblait ses morceaux par `concatener(...morceaux)`, et le nombre de morceaux suit
+  // le NOMBRE D'ENTRÉES d'une génération. L'étalement d'un tel appel dépasse la pile, et le moteur
+  // rend « Maximum call stack size exceeded » au milieu d'une récupération que rien n'annonçait
+  // comme démesurée.
+  //
+  // **Le plafond est 16 Mio depuis #91**, soit 32 768 enregistrements de 512 octets — donc
+  // 131 074 arguments. La première rédaction de cette épreuve parlait encore de 64 Mio et de
+  // 131 072 enregistrements, l'ancien plafond ; la revue de #102 l'a corrigé et a BISSECTÉ le point
+  // de rupture sur `main` : le dernier nombre d'entrées qui passe est 31 170, soit 15,22 Mio. Le
+  // défaut tombait donc SOUS le plafond, pas à quatre fois celui-ci — il était atteignable par une
+  // génération que le produit accepte.
+  //
+  // C'est une limite du MODÈLE, que l'ADR 0015 nommait sans la chiffrer (« le modèle n'a aucune
+  // borne mémoire »). Elle est ici bornée par une épreuve plutôt que par une phrase. Les octets
+  // produits n'ont pas changé — les vecteurs figés le vérifient de leur côté.
+  const auPlafond = entreesDeGeneration(PLAFOND_CHARGE_OCTETS / 512);
+  assert.equal(
+    auPlafond.length,
+    32768,
+    "32 768 enregistrements de 512 o font les 16 Mio du plafond",
+  );
+  assert.equal(encoderEntrees(auPlafond).byteLength, longueurAttendue(auPlafond.length));
+
+  // Et bien au-delà, pour que la propriété ne tienne pas au chiffre exact du plafond du jour :
+  // l'ancien plafond de 64 Mio, quatre fois celui d'aujourd'hui.
+  const ancienPlafond = entreesDeGeneration(131072);
+  assert.equal(encoderEntrees(ancienPlafond).byteLength, longueurAttendue(ancienPlafond.length));
 });
