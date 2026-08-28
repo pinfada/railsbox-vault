@@ -280,11 +280,18 @@ n'est pas un ajustement du modèle pour faire passer du code.
 ### Un second défaut du modèle, tombé sur le banc de récupération
 
 `encoderEntrees` assemblait ses morceaux par `concatener(...morceaux)`, et le nombre de morceaux
-suit le **nombre d'entrées** d'une génération. Au plafond de charge de l'ADR 0014 — 64 Mio, soit
-jusqu'à 131 072 enregistrements de 512 octets —, l'étalement fait plus d'un demi-million d'arguments
-et le moteur rend **« Maximum call stack size exceeded »**, au milieu d'une récupération que rien
+suit le **nombre d'entrées** d'une génération. L'étalement d'un tel appel dépasse la pile, et le
+moteur rend **« Maximum call stack size exceeded »**, au milieu d'une récupération que rien
 n'annonçait comme démesurée. Le défaut est tombé sur `tests/vm/recuperation-generation.spec.mjs`, à
 la première exécution du banc sur le format v3 — pas à la lecture.
+
+**Où tombe exactement la rupture, et pourquoi le chiffre importe.** Cette section a d'abord été
+écrite avec l'ANCIEN plafond de charge : 64 Mio, soit 131 072 enregistrements de 512 octets. Le
+plafond est **16 Mio depuis #91** — 32 768 enregistrements, donc 131 074 arguments. La revue de #102
+a bissecté la rupture sur `main` : le dernier nombre d'entrées qui passe est **31 170, soit 15,22
+Mio**. Le défaut tombait donc **sous le plafond**, et non à quatre fois celui-ci : il était
+atteignable par une génération que le produit accepte, et le présenter comme une limite d'un régime
+extrême aurait sous-estimé ce qui a été corrigé.
 
 L'ADR 0015 le nommait sans le chiffrer : « le modèle n'a aucune borne mémoire […] une implémentation
 qui rejouerait une génération de 64 Mio devra régler ce point elle-même ». Le régler « elle-même »
@@ -319,11 +326,20 @@ par retour arrière du support est la question n° 4 de l'ADR 0015, nommée là-
    0007, inchangé, et c'est ce qui empêche un runtime plus ancien d'écrire en clair dans un volume
    chiffré.
 
-`MIN_READABLE_FORMAT_VERSION` reste **1** : un volume v1 ou v2 se lit, s'exporte et se migre. Il ne
-s'ÉCRIT pas — `VAULT_MANIFEST_MIGRATION_REQUIRED` le refuse déjà, et la raison est désormais plus
-qu'une version : **un volume v2 n'a ni région d'authentification ni nonce**, si bien qu'un runtime
-v3 n'a nulle part où écrire le sceau d'un secteur. Ce n'est pas un refus de politesse, c'est une
-absence de place.
+`MIN_READABLE_FORMAT_VERSION` reste **1**, et il faut dire exactement ce que cela couvre : **le
+MANIFESTE d'un v1 ou d'un v2 se lit ; leur FICHIER ne s'ouvre pas.**
+
+Cette phrase disait « un volume v1 ou v2 se lit, s'exporte et se migre » jusqu'à la revue de #102,
+qui a vérifié les trois remèdes et n'en a trouvé aucun : l'export et l'inspection passent par
+`openOpfsVolume`, qui refuse un fichier sans en-tête v3, et `planMigration(2, 3)` rend
+`VAULT_MIGRATION_STEP_UNAVAILABLE`. `MIN_READABLE_FORMAT_VERSION` porte sur le manifeste — c'est
+tout ce qu'il a jamais porté —, et l'énoncer comme une propriété du volume promettait au lecteur
+trois issues qui n'existaient pas. Un volume d'avant v3 **n'a pas de chemin vers v3 avant #101**.
+
+Il ne s'ÉCRIT pas non plus — `VAULT_MANIFEST_MIGRATION_REQUIRED` le refuse déjà, et la raison est
+désormais plus qu'une version : **un volume v2 n'a ni région d'authentification ni nonce**, si bien
+qu'un runtime v3 n'a nulle part où écrire le sceau d'un secteur. Ce n'est pas un refus de politesse,
+c'est une absence de place.
 
 ## Décision 6 — L'approvisionnement de la clé, et le refus sans clé
 

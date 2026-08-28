@@ -480,12 +480,12 @@ partitionnement OPFS par origine de l'ADR 0002. Le dire est le minimum ; c'est l
 
 ### Espace
 
-| Objet                            |                     Surcoût | Détail                                                                                                                                                                                                  |
-| -------------------------------- | --------------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Secteur du **volume**            | **34 o pour 512 → 6,641 %** | nonce 12 o + étiquette 16 o + **génération 6 o**. Le nonce est tiré donc stocké ; la génération l'est aussi, car le lecteur d'un secteur ne la connaît pas d'avance et les données associées l'exigent. |
-| Enregistrement du **journal**    | **28 o pour 512 → 5,469 %** | nonce 12 o + étiquette 16 o. La génération y est celle de la racine, le rang est la position de l'enregistrement : ni l'une ni l'autre n'est stockée.                                                   |
-| **Racine** de génération         |         **0 octet de plus** | l'en-tête passe de 60 à 136 octets dans le secteur DÉJÀ alloué par l'ADR 0014. Le CRC-32 disparaît, remplacé par l'étiquette.                                                                           |
-| Volume applicatif de **512 Mio** |               **34,00 Mio** | 1 048 576 secteurs × 34 o = 35 651 584 o, soit exactement 69 632 secteurs                                                                                                                               |
+| Objet                            |                                        Surcoût | Détail                                                                                                                                                                                                  |
+| -------------------------------- | ---------------------------------------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Secteur du **volume**            |                    **34 o pour 512 → 6,641 %** | nonce 12 o + étiquette 16 o + **génération 6 o**. Le nonce est tiré donc stocké ; la génération l'est aussi, car le lecteur d'un secteur ne la connaît pas d'avance et les données associées l'exigent. |
+| Enregistrement du **journal**    | ~~28 o pour 512 → 5,469 %~~ **34 o → 6,641 %** | nonce 12 o + étiquette 16 o + **génération 6 o**. Le chiffre de 28 supposait que la génération d'un enregistrement était celle de sa racine ; c'est faux, et l'amendement du 2026-08-28 dit pourquoi.   |
+| **Racine** de génération         |                            **0 octet de plus** | l'en-tête passe de 60 à 136 octets dans le secteur DÉJÀ alloué par l'ADR 0014. Le CRC-32 disparaît, remplacé par l'étiquette.                                                                           |
+| Volume applicatif de **512 Mio** |                                  **34,00 Mio** | 1 048 576 secteurs × 34 o = 35 651 584 o, soit exactement 69 632 secteurs                                                                                                                               |
 
 L'en-tête de racine v3, détaillé, pour montrer qu'il tient : marqueur 8 + format du journal 4 +
 taille de secteur 4 + séquence 8 + génération 8 + taille du volume 8 + nombre d'entrées 4 + longueur
@@ -792,3 +792,34 @@ Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi
 7. `crypto.getRandomValues` se révèle indisponible ou dégradé dans un contexte visé — auquel cas ce
    n'est pas le format qu'il faut réviser, c'est le contexte qu'il faut refuser, comme
    `VAULT_RUNTIME_*` refuse déjà un moteur incapable d'exécuter le runtime.
+
+## Amendement du 2026-08-28 — le sceau d'un enregistrement fait 34 octets, pas 28 (#18)
+
+Cet amendement ne révise aucune décision de cet ADR. Les primitives, les données associées et les
+cinq propriétés sont inchangées, et les vecteurs figés le restent à l'octet. Il corrige **un
+chiffre** du tableau des coûts, et la supposition qui l'avait produit.
+
+Le tableau annonçait **28 octets** de surcoût par enregistrement du journal — nonce 12 + étiquette
+16 —, au motif que « la génération y est celle de la racine […] ni l'une ni l'autre n'est stockée ».
+La mise en œuvre de #18 a montré que c'est faux : **le journal n'est vidé qu'au point de contrôle**,
+si bien qu'une charge validée porte des enregistrements de PLUSIEURS générations. La génération d'un
+enregistrement n'est donc pas déductible de la racine qui le valide ; il faut la lire pour composer
+les données associées, donc la stocker.
+
+Le sceau d'un enregistrement a par conséquent **la même forme que celui d'un secteur du volume** —
+nonce 12 + étiquette 16 + génération 6 = **34 octets**, soit **6,641 %** pour 512 octets et non
+5,469 %. `SCEAU_OCTETS` est unique pour les deux, ce qui vaut mieux que deux formes à un champ près.
+
+**Ce que l'écart coûte réellement.** Il porte sur le JOURNAL, dont la charge est plafonnée à 16 Mio
+depuis #91, et non sur le volume : au plafond, six octets de plus par enregistrement de 512 octets
+font 192 Kio, sur un fichier voisin qui est vidé à chaque point de contrôle. Le surcoût du VOLUME —
+34,00 Mio pour 512 Mio, soit 6,641 % — était juste et ne bouge pas.
+
+**Pourquoi cette correction arrive par un amendement et non par une réécriture.** Le chiffre de 28
+n'était pas une faute de calcul : c'était une conclusion tirée d'une hypothèse sur le cycle de vie
+du journal qui n'avait pas été confrontée à l'ADR 0014. La conserver, barrée, dit à un lecteur futur
+où la spécification et la mise en œuvre ont divergé, et pourquoi — ce qu'un chiffre corrigé en
+silence n'aurait pas dit.
+
+La décision correspondante est celle de l'[ADR 0016](0016-format-de-volume-v3-dispositions.md), et
+`docs/quality-attributes.md` porte le chiffre corrigé.
