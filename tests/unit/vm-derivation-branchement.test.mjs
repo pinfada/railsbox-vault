@@ -26,7 +26,7 @@ import {
 } from "../../src/vm/derivation/derivation-errors.mjs";
 import { catalogueDeDerivateurs } from "../../src/vm/derivation/derivateurs.mjs";
 import { preparerEmplacementDerive } from "../../src/vm/derivation/emplacement-derive.mjs";
-import { creerEnveloppe } from "../../src/vm/enveloppe-de-cle.mjs";
+import { ajouterEmplacement, creerEnveloppe } from "../../src/vm/enveloppe-de-cle.mjs";
 import { TYPES_KEK } from "../../src/vm/enveloppe/identite-enveloppe.mjs";
 import { octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
 import {
@@ -205,6 +205,90 @@ test("le catalogue refuse un type qu'il ne sert pas, et sert celui qu'il connaî
       `le type ${inconnu} aurait dû être refusé`,
     );
   }
+});
+
+test("un identifiant d'emplacement DÉJÀ pris est refusé : deux noms égaux, deux secrets", async () => {
+  // Ajoutée par la campagne de mutation. L'amendement de #22 — un identifiant d'emplacement peut
+  // être FOURNI — ouvre une porte que le tirage de #21 fermait tout seul : deux emplacements de même
+  // nom rendraient `revoquerEmplacement` ambigu et feraient authentifier par la racine une liste
+  // dont deux éléments prétendent au même identifiant.
+  const derivateur = derivateurDEpreuve(TYPES_KEK.phrase);
+  const support = supportDouble();
+  const dek = suiteDOctets(0x40, 32);
+  const kek = suiteDOctets(0x80, 32);
+  const prepare = await preparerEmplacementDerive({
+    identifiantVolume: VOLUME,
+    derivateur,
+    parametres: suiteDOctets(0x11, 24),
+    geste: { mot: "ouvre-toi" },
+  });
+  await creerEnveloppe({
+    support,
+    identifiantVolume: VOLUME,
+    dek,
+    kek,
+    typeKek: derivateur.type,
+    parametres: prepare.parametres,
+    identifiantEmplacement: prepare.identifiantEmplacement,
+  });
+
+  await assert.rejects(
+    () =>
+      ajouterEmplacement({
+        support,
+        identifiantVolume: VOLUME,
+        kek,
+        kekNouvelle: suiteDOctets(0xa0, 32),
+        identifiantEmplacement: prepare.identifiantEmplacement,
+      }),
+    (erreur) => erreur.code === "VAULT_ENVELOPPE_MALFORME",
+  );
+  // Témoin : un identifiant LIBRE passe, sur la même enveloppe et la même clé.
+  const ajoutee = await ajouterEmplacement({
+    support,
+    identifiantVolume: VOLUME,
+    kek,
+    kekNouvelle: suiteDOctets(0xa0, 32),
+    identifiantEmplacement: "0102030405060708",
+  });
+  assert.equal(ajoutee.nombreEmplacements, 2);
+});
+
+test("une CryptoKey qui n'est pas une clé de déverrouillage est refusée, pas essayée", async () => {
+  // Ajoutée par la campagne de mutation. Une clé d'un autre algorithme échouerait de toute façon au
+  // premier appel de WebCrypto — mais AILLEURS, avec un message de moteur, là où le format doit
+  // rendre son propre refus. Le témoin positif est toutes les autres épreuves de ce fichier, qui
+  // passent des KEK dérivées légitimes.
+  const support = supportDouble();
+  const mauvaise = await crypto.subtle.generateKey({ name: "AES-CTR", length: 256 }, false, [
+    "encrypt",
+    "decrypt",
+  ]);
+  await assert.rejects(
+    () =>
+      creerEnveloppe({
+        support,
+        identifiantVolume: VOLUME,
+        dek: suiteDOctets(0x40, 32),
+        kek: mauvaise,
+      }),
+    (erreur) => erreur.code === "VAULT_ENVELOPPE_MALFORME",
+  );
+
+  const trop_courte = await crypto.subtle.generateKey({ name: "AES-GCM", length: 128 }, false, [
+    "encrypt",
+    "decrypt",
+  ]);
+  await assert.rejects(
+    () =>
+      creerEnveloppe({
+        support,
+        identifiantVolume: VOLUME,
+        dek: suiteDOctets(0x40, 32),
+        kek: trop_courte,
+      }),
+    (erreur) => erreur.code === "VAULT_ENVELOPPE_MALFORME",
+  );
 });
 
 test("le chemin HARNAIS de #21 est inchangé : une KEK brute ouvre toujours", async () => {

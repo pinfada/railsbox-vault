@@ -41,6 +41,7 @@ import {
   parametresDePhrase,
 } from "../../src/vm/derivation/derivateur-phrase.mjs";
 import { preparerEmplacementDerive } from "../../src/vm/derivation/emplacement-derive.mjs";
+import { encoderParametresPublics } from "../../src/vm/derivation/parametres-publics.mjs";
 import { creerEnveloppe, ouvrirEnveloppe } from "../../src/vm/enveloppe-de-cle.mjs";
 import {
   ENVELOPPE_ERROR_CODES,
@@ -136,6 +137,22 @@ test("un artefact dont l'empreinte diffère d'un bit est REFUSÉ avant d'être i
   assert.ok(await argon2().hacher(APPEL_MINIMAL));
 });
 
+test("un artefact TRONQUÉ est refusé en NOMMANT la taille, pas seulement l'empreinte", async () => {
+  // Ajoutée par la campagne de mutation : retirer le contrôle de taille ne tuait rien, puisqu'un
+  // artefact plus court a de toute façon une autre empreinte. Ce que ce contrôle achète n'est donc
+  // pas une sécurité de plus — c'est un DIAGNOSTIC : « il en manque des octets » envoie vérifier un
+  // déploiement, « l'empreinte ne correspond pas » envoie soupçonner une substitution.
+  const tronque = ARTEFACT.slice(0, ARTEFACT.byteLength - 16);
+  const moteur = argon2Vendu({ chargerArtefact: async () => tronque });
+  await assert.rejects(
+    () => moteur.hacher(APPEL_MINIMAL),
+    (erreur) =>
+      isDerivationError(erreur, DERIVATION_ERROR_CODES.argon2Indisponible) &&
+      erreur.context.attendu === ARGON2_ARTEFACT_OCTETS &&
+      erreur.context.mesure === tronque.byteLength,
+  );
+});
+
 test("un artefact absent rend un refus TYPÉ, jamais un repli sur une dérivation moins chère", async () => {
   const moteur = argon2Vendu({
     chargerArtefact: async () => {
@@ -179,6 +196,55 @@ test("des paramètres publics sous le plancher sont refusés, les calibrés pass
       `« ${nom} » aurait dû être refusé`,
     );
   }
+});
+
+test("des paramètres AFFAIBLIS lus dans le fichier sont refusés AVANT toute dérivation", async () => {
+  // Ajoutée par la campagne de mutation : le plancher n'était éprouvé qu'à l'ÉCRITURE, si bien que
+  // retirer sa vérification à la LECTURE ne tuait rien. C'est pourtant le côté qui compte : ces
+  // octets viennent d'un fichier, et l'attaque que l'ADR 0020 nomme est exactement celle-là — un
+  // adversaire qui ramène le coût à rien, laisse l'utilisateur taper la même phrase, et garde une
+  // copie du volume qu'il cassera hors ligne pour trois fois rien.
+  const affaiblis = encoderParametresPublics(TYPES_KEK.phrase, {
+    version: 0x13,
+    variante: 2,
+    memoireKio: 8,
+    iterations: 1,
+    parallelisme: 1,
+    sel: SEL,
+  });
+  const derivateur = derivateurPhrase({ argon2: argon2() });
+  const identite = { identifiantVolume: VOLUME, identifiantEmplacement: "7071727374757677" };
+  await assert.rejects(
+    () => derivateur.deriver({ parametres: affaiblis, identite, geste: { phrase: "peu importe" } }),
+    (erreur) => isDerivationError(erreur, DERIVATION_ERROR_CODES.parametresRefuses),
+  );
+  // Témoin : les MÊMES octets, au coût calibré, se dérivent bien. Le refus porte sur le coût, pas
+  // sur l'encodage.
+  assert.ok(
+    await derivateur.deriver({
+      parametres: PARAMETRES(),
+      identite,
+      geste: { phrase: "peu importe" },
+    }),
+  );
+});
+
+test("une variante autre qu'Argon2id, lue dans le fichier, est refusée", async () => {
+  const argon2d = encoderParametresPublics(TYPES_KEK.phrase, {
+    version: 0x13,
+    variante: 0,
+    ...CALIBRATION_PHRASE,
+    sel: SEL,
+  });
+  await assert.rejects(
+    () =>
+      derivateurPhrase({ argon2: argon2() }).deriver({
+        parametres: argon2d,
+        identite: { identifiantVolume: VOLUME, identifiantEmplacement: "7071727374757677" },
+        geste: { phrase: "peu importe" },
+      }),
+    (erreur) => isDerivationError(erreur, DERIVATION_ERROR_CODES.parametresRefuses),
+  );
 });
 
 test("une phrase vide, ou qui n'est pas une chaîne, est refusée par un code distinct", async () => {

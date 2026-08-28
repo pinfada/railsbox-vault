@@ -71,6 +71,29 @@ export const SOURCES_COQUILLE = Object.freeze([
     vers: "vendor/v86/LICENSE-bios.txt",
     role: "Licence LGPL des BIOS redistribués avec l'émulateur.",
   }),
+  Object.freeze({
+    depuis: "vendor/argon2/argon2.wasm",
+    vers: "vendor/argon2/argon2.wasm",
+    role:
+      "Argon2 de référence compilé en WebAssembly (#22, ADR 0021). Contrairement aux artefacts " +
+      "v86 il est VERSIONNÉ : il est chargé à chaque déverrouillage par phrase, et un binaire " +
+      "récupéré à la construction ferait dépendre l'ouverture d'un coffre d'un réseau.",
+  }),
+  Object.freeze({
+    depuis: "vendor/argon2/MANIFEST.json",
+    vers: "vendor/argon2/MANIFEST.json",
+    role: "Épinglage de l'artefact Argon2id : provenance, version et empreinte, vérifiées deux fois.",
+  }),
+  Object.freeze({
+    depuis: "vendor/argon2/LICENSE-argon2-browser.txt",
+    vers: "vendor/argon2/LICENSE-argon2-browser.txt",
+    role: "Licence MIT de l'empaquetage qui publie le binaire.",
+  }),
+  Object.freeze({
+    depuis: "vendor/argon2/LICENSE-phc-winner-argon2.txt",
+    vers: "vendor/argon2/LICENSE-phc-winner-argon2.txt",
+    role: "Licence CC0-1.0 / Apache-2.0 de l'implémentation de référence redistribuée.",
+  }),
 ]);
 
 /**

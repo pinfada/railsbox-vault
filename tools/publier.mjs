@@ -59,6 +59,7 @@ import {
   exigerReferenceResoluble,
   identiteDuCommit,
   materialiser,
+  verifierEpinglageArgon2,
   verifierEpinglageV86,
 } from "./publier-sources.mjs";
 import { REPOSITORY_ROOT } from "./v86-paths.mjs";
@@ -260,7 +261,7 @@ async function construireArbre(arbre, options) {
   // aucun (ADR 0002) : lui répondre « manifeste absent » ferait passer une propriété pour un défaut.
   const porteLeRuntime = arbre.sources.some(({ depuis }) => depuis.startsWith("vendor/v86"));
   const epinglage = porteLeRuntime
-    ? await verifierEpinglageV86(destination, empreinte)
+    ? await fusionnerEpinglages(destination, empreinte)
     : { verifie: false, motif: null, ecarts: [] };
   const inventaire = await construireInventaire({
     arbre: arbre.nom,
@@ -279,6 +280,23 @@ async function construireArbre(arbre, options) {
   return { destination, inventaire, absentes, epinglage };
 }
 
+/**
+ * Les DEUX épinglages de l'arbre publié, fondus en un seul verdict.
+ *
+ * v86 (ADR 0003) et Argon2id (ADR 0021) sont vendus pour des raisons différentes et vérifiés de la
+ * même façon. Les fondre ici plutôt que d'ajouter un second champ à l'inventaire garde une seule
+ * règle de sortie : un écart, quel qu'il soit, rompt l'épinglage.
+ */
+async function fusionnerEpinglages(racine, empreinte) {
+  const v86 = await verifierEpinglageV86(racine, empreinte);
+  const argon2 = await verifierEpinglageArgon2(racine, empreinte);
+  return {
+    verifie: v86.verifie || argon2.verifie,
+    motif: v86.motif ?? argon2.motif,
+    ecarts: [...v86.ecarts, ...argon2.ecarts],
+  };
+}
+
 function decrireArbre({ destination, inventaire, absentes, epinglage }) {
   const lignes = [
     `Arbre « ${inventaire.arbre} » → ${destination}`,
@@ -291,11 +309,11 @@ function decrireArbre({ destination, inventaire, absentes, epinglage }) {
     lignes.push("  banc           oui (origine non https : arbre non publiable)");
   if (epinglage.verifie) {
     lignes.push(
-      `  épinglage v86  ${epinglage.ecarts.length === 0 ? "conforme au MANIFEST" : "ROMPU"}`,
+      `  épinglage      ${epinglage.ecarts.length === 0 ? "conforme aux MANIFEST vendus" : "ROMPU"}`,
     );
     for (const ecart of epinglage.ecarts) lignes.push(`    ${ecart.artefact} : ${ecart.motif}`);
   } else if (epinglage.motif !== null) {
-    lignes.push(`  épinglage v86  non vérifié (${epinglage.motif})`);
+    lignes.push(`  épinglage      non vérifié (${epinglage.motif})`);
   }
   for (const absente of absentes) {
     lignes.push(`  absente        ${absente} (npm run vm:fetch la récupère)`);
@@ -389,7 +407,7 @@ async function verifier(racine, { tolererIncomplet }) {
     return CODES.ecart;
   }
 
-  const epinglage = await verifierEpinglageV86(racine, empreinte);
+  const epinglage = await fusionnerEpinglages(racine, empreinte);
   if (epinglage.ecarts.length > 0) {
     process.stderr.write(
       `ÉPINGLAGE ROMPU :\n${epinglage.ecarts.map((e) => `  ${e.artefact} : ${e.motif}`).join("\n")}\n`,
