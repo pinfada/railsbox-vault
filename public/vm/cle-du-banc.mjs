@@ -38,9 +38,43 @@ export function poserCleDuBanc(jeton) {
 }
 
 /**
- * Rend la clé du harnais, ou refuse bruyamment — au point d'usage, c'est-à-dire au moment où un
- * volume est réellement ouvert.
+ * Clé de volume DÉVELOPPÉE d'une enveloppe (#21, ADR 0020), tenue pour la durée d'une phase.
+ *
+ * Elle existe pour que le scénario de bout en bout puisse booter Rails sur un volume ouvert PAR UNE
+ * CLÉ DE DÉVERROUILLAGE, et non par le jeton du harnais. Sans elle, l'épreuve de bout en bout ne
+ * mesurerait que la même chose qu'avant #21 — un volume ouvert sous une clé remise en clair — et la
+ * rotation de KEK ne serait démontrée nulle part au niveau où elle compte.
+ *
+ * Elle est POSÉE et RELÂCHÉE comme le jeton, et pour la même raison : une clé qui traverserait les
+ * phases ferait passer pour acquis ce qui doit être redemandé à chaque ouverture.
+ */
+let cleDeveloppee = null;
+
+/**
+ * Installe la clé de volume développée d'une enveloppe, et rend la fonction qui l'oublie ET qui
+ * EFFACE le tampon. L'effacement n'est pas une garantie — un moteur peut avoir copié le tampon —,
+ * c'est une fenêtre refermée, et elle est gratuite.
+ *
+ * @param {Uint8Array} dek
+ * @returns {() => void} à appeler dans un `finally`
+ */
+export function poserCleDeveloppee(dek) {
+  cleDeveloppee = dek;
+  return () => {
+    if (cleDeveloppee instanceof Uint8Array) cleDeveloppee.fill(0);
+    cleDeveloppee = null;
+  };
+}
+
+/**
+ * Rend la clé de volume à employer : celle DÉVELOPPÉE d'une enveloppe si une phase en a posé une,
+ * sinon celle du harnais — ou un refus bruyant, au point d'usage.
+ *
+ * L'ordre n'est pas indifférent. Une phase qui a ouvert une enveloppe a une clé ÉTABLIE ; lui
+ * préférer celle du harnais ouvrirait le volume sous un secret que tout le monde connaît, et
+ * l'épreuve passerait quand même — c'est-à-dire ne mesurerait plus rien.
  */
 export function cleDuBanc() {
+  if (cleDeveloppee !== null) return cleDeveloppee;
   return cleDeVolumeDuHarnais({ jeton: jetonCourant });
 }

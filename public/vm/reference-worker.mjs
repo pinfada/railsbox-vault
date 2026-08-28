@@ -11,7 +11,14 @@
 //                                         inspect-volume, digest-volume
 //   reference-worker-phases-archive.mjs   export, verify-export, archive-file, import
 //   reference-worker-phases-migration.mjs migrate
+//   reference-worker-phases-enveloppe.mjs enveloppe-creer, enveloppe-remplacer, enveloppe-ouvrir,
+//                                         enveloppe-retirer (#21, ADR 0020)
 //   reference-worker-mesures.mjs          instantané de stockage, comptage des lectures
+//
+// Une option traverse toutes les phases depuis #21 : `kek`. Quand elle est nommée, l'enveloppe du
+// volume est ouverte AVANT la phase et la clé développée est installée pour sa durée seulement.
+// C'est ce qui permet de booter Rails sur un volume ouvert par une CLÉ DE DÉVERROUILLAGE, et pas
+// par le jeton du harnais.
 //
 // Les phases sont appelées chacune dans un Worker NEUF par le test E2E, pour que « fermer page +
 // Worker + handles » soit réel entre elles.
@@ -20,6 +27,13 @@
 // l'assertion vit dans les spécifications de `tests/e2e/`.
 
 import { poserCleDuBanc } from "./cle-du-banc.mjs";
+import {
+  installerCleParKek,
+  phaseEnveloppeCreer,
+  phaseEnveloppeOuvrir,
+  phaseEnveloppeRemplacer,
+  phaseEnveloppeRetirer,
+} from "./reference-worker-phases-enveloppe.mjs";
 import {
   phaseArchiveFile,
   phaseExportVolume,
@@ -67,8 +81,31 @@ const PHASES = new Map([
   ["archive-file", phaseArchiveFile],
   ["import", phaseImport],
   ["migrate", phaseMigrate],
+  ["enveloppe-creer", phaseEnveloppeCreer],
+  ["enveloppe-remplacer", phaseEnveloppeRemplacer],
+  ["enveloppe-ouvrir", phaseEnveloppeOuvrir],
+  ["enveloppe-retirer", phaseEnveloppeRetirer],
   ["full", phaseFull],
 ]);
+
+/**
+ * Exécute une phase, éventuellement sous une clé de volume DÉVELOPPÉE d'une enveloppe (#21).
+ *
+ * Quand `kek` est nommée, l'enveloppe est ouverte AVANT la phase et la clé développée est installée
+ * pour sa durée seulement, puis effacée. C'est ce qui permet au scénario de bout en bout de booter
+ * Rails sur un volume ouvert par une clé de déverrouillage plutôt que par le jeton du harnais —
+ * sans quoi la rotation de KEK ne serait démontrée à aucun niveau où elle compte.
+ */
+async function executerPhase(runner, options) {
+  if (!options.kek) return runner(options);
+  const installee = await installerCleParKek(options);
+  try {
+    const rapport = await runner(options);
+    return { ...rapport, enveloppe: { kek: options.kek, version: installee.version } };
+  } finally {
+    installee.relacher();
+  }
+}
 
 self.addEventListener("message", (event) => {
   const { id, type, payload } = event.data ?? {};
@@ -85,7 +122,7 @@ self.addEventListener("message", (event) => {
   // Le jeton du harnais vaut pour la durée de la phase, et pour elle seule (ADR 0016). Ce Worker
   // est un BANC : il le reçoit de la page, jamais du produit.
   const relacher = poserCleDuBanc(options.jetonCle);
-  runner(options)
+  executerPhase(runner, options)
     .finally(relacher)
     .then(
       (report) => self.postMessage({ id, ok: true, report }),

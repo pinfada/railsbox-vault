@@ -73,9 +73,50 @@ et tester.
   marqueur `RBVAULT1` est inchangée. Dans l'autre sens, une archive n'entre dans une origine que par
   un champ de fichier ouvert par l'utilisateur : aucun canal inter-origines n'est ajouté et aucune
   directive de CSP n'est assouplie — le cloisonnement OPFS par origine reste ce qui rend la
-  restauration significative, et le même scénario le vérifie avant d'importer ;
+  restauration significative, et le même scénario le vérifie avant d'importer. **Depuis #21 la
+  frontière porte aussi sur l'ENVELOPPE DE CLÉ**, et de deux côtés : une vingtième sonde du spike
+  #35 tente de lire un appât `vault-volume.cles` déposé dans l'OPFS de la coquille — elle ABOUTIT en
+  même origine (le témoin l'exige) et échoue sur la topologie retenue —, et
+  `tests/browser/enveloppe-frontiere.spec.mjs` fait tourner l'enveloppe sur l'OPFS RÉEL dans un
+  Worker dédié sur les **trois moteurs**, en vérifiant que la page n'obtient aucun handle sur
+  `<volume>.cles` et surtout que **rien de ce que le Worker rend par `postMessage` ne contient une
+  clé** : tout le relevé des réponses est FOUILLÉ, en hexadécimal et en tableau d'octets, à la
+  recherche des clés de TEST. Une frontière qui protégerait les octets chiffrés sans protéger la clé
+  qui les ouvre ne protégerait rien ;
 - `SEC-KEY-001` — une clé de déverrouillage enveloppe une DEK aléatoire sans servir directement au
-  chiffrement des blocs ;
+  chiffrement des blocs. **Depuis #21 le PRODUIT l'exerce**, et il faut dire aussitôt sous quelle
+  réserve : l'enveloppe est réelle, ses cinq opérations et ses douze refus le sont, mais les clés de
+  déverrouillage ne sont aujourd'hui distribuées que par le HARNAIS, sous jeton — les dérivateurs
+  (phrase secrète étirée, PRF WebAuthn) sont #22, et la récupération #23. L'invariant est donc tenu
+  par le FORMAT et éprouvé de bout en bout, sous des clés de TEST ; ce qui manque n'est pas le
+  mécanisme, c'est la façon dont un humain obtient sa clé. La disposition est
+  l'[ADR 0020](docs/decisions/0020-enveloppe-de-cle.md) : un quatrième voisin de volume
+  `<volume>.cles` dans l'origine de CONFIANCE, hors du fichier de volume et hors du manifeste, deux
+  pages de 8192 octets alternées, jusqu'à huit emplacements portant chacun l'identifiant
+  d'emplacement, le type de clé, les paramètres publics du dérivateur et la **DEK enveloppée par
+  AES-256-GCM** dont les données associées lient identifiant de volume, identifiant d'emplacement,
+  version de format, type et paramètres — **jamais `AES-KW`**, qui n'authentifie aucune donnée
+  associée et laisserait donc déplacer une DEK d'un emplacement ou d'un volume à l'autre. Le fichier
+  entier porte une **racine authentifiée sous la DEK** — étiquette sur la liste ORDONNÉE des
+  emplacements, compteur de version monotone — vérifiée AVANT que la clé de volume n'atteigne quoi
+  que ce soit d'autre que la vérification. Ce que le produit tient, mesuré et non affirmé : ajouter,
+  remplacer ou révoquer une clé laisse le fichier de volume **identique à l'octet** (empreinte avant
+  et après) ; une coupure à chaque rang de chaque opération, sous quatre sinistres — avant l'effet,
+  après l'effet, et deux points de déchirure —, laisse l'ancien état ou le nouveau, jamais ni l'un
+  ni l'autre ; une clé RÉVOQUÉE et une clé INCONNUE rendent le **même** refus
+  (`VAULT_ENVELOPPE_CLE_REFUSEE`), avec le même message, le même contexte et le même nombre
+  d'invocations AEAD — ce qui est mesuré est ce nombre, **pas le temps d'horloge**, que ce dépôt ne
+  maîtrise pas et ne promet pas ; un volume sans enveloppe est refusé par un code DISTINCT
+  (`VAULT_ENVELOPPE_ABSENTE`), parce que « clé invalide » enverrait chercher une clé qui n'existe
+  pas. Les vecteurs figés `tests/vectors/enveloppe-v1.json` sont reproduits OCTET POUR OCTET par le
+  chemin de production, et l'outil qui les fige pose les octets lui-même au lieu d'appeler
+  l'encodeur du produit. Treize gardes ont été RÉELLEMENT mutées, treize tuées — dont une qui a
+  d'abord survécu et a corrigé le raisonnement de l'ADR plutôt que le code. **Ce que l'enveloppe ne
+  couvre pas** : le retour arrière complet du fichier n'est pas détecté, et effacer la page courante
+  fait retomber sur la précédente, donc ressuscite une clé révoquée — il faut un ancrage monotone
+  hors du fichier, que `versionMinimale` attend et que #23 fournira. **L'archive n'emporte pas
+  l'enveloppe** (décision 6) : la sauvegarde d'un volume chiffré est la sauvegarde de deux choses,
+  et ce dépôt n'en emporte qu'une ;
 - `SEC-BLOCK-001` — un bloc est authentifié avec volume, adresse, format et génération. **Depuis #18
   le PRODUIT l'exerce**, et il faut dire aussitôt sous quelle réserve : le format de volume v3
   scelle chaque secteur, chaque enregistrement de journal et chaque racine, mais la clé de volume
@@ -278,9 +319,19 @@ et tester.
   partitionnement OPFS par origine (ADR 0002). Son suffixe est **réservé**, et il est retiré avec le
   volume qu'il décrit : un journal survivant ferait rejouer, sur un volume homonyme, une génération
   qui ne lui appartient pas. Décision :
-  [ADR 0014](docs/decisions/0014-generation-transactionnelle.md) ;
+  [ADR 0014](docs/decisions/0014-generation-transactionnelle.md) ; Depuis **#21**, un QUATRIÈME
+  voisin persistant existe : l'**enveloppe de clé** `<volume>.cles`, qui porte les DEK enveloppées.
+  Elle est chiffrée et authentifiée, elle — c'est tout son objet — mais elle est aussi le seul
+  chemin vers le volume : sa perte vaut la perte des données tant que #23 n'existe pas, et sa somme
+  de contrôle de page ne protège contre AUCUN adversaire (elle sépare l'accident de l'écriture
+  complète, pas plus). Son suffixe est **réservé**, et il est retiré avec le volume qu'il décrit.
+  Décision : [ADR 0020](docs/decisions/0020-enveloppe-de-cle.md) ;
 - `SEC-RECOVERY-001` — chaque moyen de récupération annoncé possède un test de succès, de révocation
-  et de perte définitive.
+  et de perte définitive. **Toujours NON EXERCÉ.** #21 en pose la moitié mécanique — révoquer un
+  emplacement est éprouvé, et révoquer le DERNIER est refusé, parce qu'un volume sans issue n'est
+  pas un état acceptable — mais aucun moyen de RÉCUPÉRATION n'existe : perdre toutes ses clés de
+  déverrouillage, aujourd'hui, c'est perdre le volume. C'est #23, et la question « l'archive
+  devrait-elle porter une enveloppe de récupération ? » lui est posée plutôt que tranchée.
 
 Chaque invariant devra être relié à un test automatisé ou, pour une revue externe, à un constat
 public et sa disposition.

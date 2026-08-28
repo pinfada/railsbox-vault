@@ -362,6 +362,60 @@ node --test tests/unit/vm-volume-chiffre.test.mjs
 npm run test:vm                                 # la matrice de #15 rejouée sur v3
 ```
 
+### Enveloppe de clé : le niveau « la clé devient récupérable » (#21)
+
+#18 avait mis le volume sous une clé que personne ne savait ranger. #21 la range :
+l'[ADR 0020](decisions/0020-enveloppe-de-cle.md) pose un quatrième voisin `<volume>.cles` qui porte
+la clé de volume ENVELOPPÉE sous une ou plusieurs clés de déverrouillage.
+
+| Niveau       | Fichier                                            | Ce qu'il éprouve                                          | Rattachement       |
+| ------------ | -------------------------------------------------- | --------------------------------------------------------- | ------------------ |
+| unitaire     | `tests/unit/vm-enveloppe-modele.test.mjs`          | données associées injectives, ordre des vérifications     | `npm run check`    |
+| unitaire     | `tests/unit/vm-enveloppe-vecteurs.test.mjs`        | **vecteurs figés reproduits** par le chemin de production | `npm run check`    |
+| unitaire     | `tests/unit/vm-enveloppe-operations.test.mjs`      | cinq opérations, onze refus, identité à l'octet du volume | `npm run check`    |
+| unitaire     | `tests/unit/vm-enveloppe-coupures.test.mjs`        | coupure à **chaque rang**, sous **quatre** sinistres      | `npm run check`    |
+| unitaire     | `tests/unit/vm-enveloppe-ouverture.test.mjs`       | la couche au-dessus de l'ouvreur unique, archive sans clé | `npm run check`    |
+| navigateur   | `tests/browser/enveloppe-frontiere.spec.mjs`       | OPFS réel, trois moteurs, aucune clé au port              | `npm run check`    |
+| bout en bout | `tests/e2e/enveloppe-rotation-boot-froid.spec.mjs` | Rails ouvert par KEK, rotation, boot à froid              | `npm run test:e2e` |
+
+**Ce que les vecteurs valent ici.** L'outil qui les fige (`tools/figer-vecteurs-enveloppe.mjs`)
+**pose les octets lui-même**, champ par champ, au lieu d'appeler `encoderPage`. C'est ce qui en fait
+un second avis sur la DISPOSITION : sans cela, producteur et vérificateur partageraient le même
+encodeur, et un offset faux le serait des deux côtés en même temps. Ils partagent en revanche le
+modèle de référence pour le SCELLEMENT, et cette limite est écrite dans l'ADR plutôt que passée sous
+silence.
+
+**Chaque refus porte son témoin positif dans le même corps.** Le fichier falsifié est refusé ET le
+fichier intact s'ouvre, sur les mêmes octets, à deux lignes de distance. Les octets sont manipulés à
+la main là où il le faut — retirer un emplacement en rectifiant la longueur déclarée et la somme de
+contrôle, mais pas le compte AUTHENTIFIÉ —, parce que passer par l'encodeur du produit ne produirait
+que des fichiers cohérents, c'est-à-dire ne mesurerait rien.
+
+**La matrice de coupures est exhaustive et elle MORD.** Pour chacune des quatre opérations, pour
+chaque geste porté au support, sous quatre sinistres — avant l'effet, après l'effet, et deux points
+de déchirure —, l'état obtenu est CLASSÉ : ancien ou nouveau, jamais « pas une erreur ». Deux
+exigences la rendent honnête : chaque coupure programmée doit avoir LIEU, et une mutation de garde
+vérifie qu'écrire sur la page qui fait autorité serait vu. Le second point de déchirure existe parce
+que le premier ne mordait pas : à mi-page, la liste d'une enveloppe ordinaire est déjà écrite en
+entier, et la déchirure devenait un synonyme de « coupure après ».
+
+**Treize gardes ont été RÉELLEMENT mutées**, et le relevé est dans l'ADR 0020. Treize tuées, dont
+deux qui ont d'abord survécu : l'une a corrigé le raisonnement de l'ADR sans toucher au code — la
+propriété que la boucle sans court-circuit servait n'était pas celle qu'on lui prêtait —, l'autre a
+révélé une mutation mal conçue plutôt qu'une garde absente. Une mutation qui survit doit d'abord
+être soupçonnée elle-même.
+
+**La porte d'aléas de l'enveloppe rejoint les portes mesurées** de `harnais-portes.test.mjs`, avec
+son propre sinistre : deux clés de volume enveloppées sous la même clé de déverrouillage, le même
+identifiant d'emplacement et le même nonce livrent leur ou-exclusif. Les modules qui DÉFINISSENT une
+porte y sont inscrits avec leur motif ; la liste des APPELANTS reste vide, et c'est la propriété.
+
+```bash
+npm run check                                     # les cinq suites unitaires y sont rattachées
+node --test "tests/unit/vm-enveloppe-*.test.mjs"
+node tools/mesurer-enveloppe.mjs                  # le coût d'ouverture, pire cas compris
+```
+
 ### Export vérifiable
 
 L'export portable de `VAULT-PORT-001` (#11) — `src/vm/volume-export.mjs`, son hachage incrémental
@@ -1308,6 +1362,36 @@ Un point de méthode qui a coûté une mesure fausse : sous `worker-src 'self'`,
 **aucune** exception à la construction d'un Worker `blob:` refusé — il rend un objet inerte. Les
 sondes mesurent donc le SIGNE DE VIE (un message reçu dans un délai borné) et le journal des
 événements `securitypolicyviolation`, jamais l'absence d'erreur.
+
+### Frontière de l'enveloppe de clé
+
+`tests/browser/enveloppe-frontiere.spec.mjs` est la preuve de niveau navigateur de
+l'[ADR 0020](decisions/0020-enveloppe-de-cle.md) (#21). Elle est exécutée sur les **trois moteurs**
+par les projets `frontiere-enveloppe-<moteur>`, indépendamment de `VAULT_MOTEURS`, pour le motif des
+deux frontières précédentes et pour un motif de plus qui lui est propre : elle mesure ce qui
+franchit un `postMessage`, et la sérialisation structurée n'est pas identique d'un moteur à l'autre.
+
+Elle fait tourner l'enveloppe sur l'**OPFS réel**, dans un Worker dédié : créer, ouvrir par clé de
+déverrouillage, **relire un secteur connu du volume** sous la clé développée — sans quoi « la clé
+s'ouvre » ne dirait pas qu'elle ouvre le bon volume —, remplacer la clé, rouvrir par la neuve,
+refuser l'ancienne. Trois assertions de frontière l'accompagnent :
+
+- la **page** n'obtient aucun handle sur `<volume>.cles` : elle reçoit `VAULT_STORAGE_UNSUPPORTED`,
+  exactement comme sur le volume depuis #6. Le témoin qui empêche cette épreuve d'être vraie pour de
+  mauvaises raisons est dans le même corps : sur un moteur qui porte OPFS, la page VOIT bien l'API ;
+- un volume sans enveloppe rend `VAULT_ENVELOPPE_ABSENTE`, jamais `VAULT_ENVELOPPE_CLE_REFUSEE` ;
+- **aucune clé ne franchit le port.** Tout ce que le Worker a rendu depuis le chargement de la page
+  est conservé et FOUILLÉ, en hexadécimal et en tableau d'octets, à la recherche des clés de TEST.
+  La fouille porte son propre témoin — le relevé contient bien quelque chose de reconnaissable —,
+  sans quoi une recherche cassée passerait pour une garantie.
+
+Sur un moteur qui ne porte pas OPFS synchrone dans un Worker, la suite n'est pas ignorée : elle
+exige un refus typé `VAULT_STORAGE_UNSUPPORTED`. Coût mesuré : environ 17 s, trois moteurs compris.
+
+Le versant APPLICATIF de la même frontière vit dans le spike #35 : une vingtième sonde
+(`lecture-enveloppe-coquille`) tente de lire un appât `vault-volume.cles` déposé dans l'OPFS de la
+coquille. Le témoin positif exige qu'elle **aboutisse** en même origine ; la topologie retenue exige
+qu'elle échoue, comme toute sonde visant la coquille.
 
 ### Démarrage de v86 sous deux CSP : `test:csp`
 

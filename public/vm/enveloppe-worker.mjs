@@ -86,9 +86,28 @@ async function relireLeVolume(dek) {
 async function scenarioCycle(jeton) {
   await removeOpfsVolume(VOLUME);
   const dek = cleDeVolumeDuHarnais({ jeton });
-  const { initiale, rotation } = clesDeDeverrouillageDuHarnais({ jeton });
+  const cles = clesDeDeverrouillageDuHarnais({ jeton });
   const support = supportEnveloppeOpfs(VOLUME);
 
+  const avant = await creerEtOuvrir(support, dek, cles.initiale);
+  const apres = await tournerLaCle(support, cles, avant.creee.identifiantEmplacement);
+  const inventaire = await inventorierEnveloppe({ support, identifiantVolume: IDENTIFIANT_VOLUME });
+
+  return {
+    nomEnveloppe: enveloppeSidecarName(VOLUME),
+    versionApresCreation: avant.creee.version,
+    ouvertureParKek: avant.parKek.version,
+    volumeRelu: avant.volumeRelu,
+    versionApresRotation: apres.version,
+    relueApresRotation: apres.relue,
+    refusDeLAncienne: apres.refusDeLAncienne,
+    refusAttendu: ENVELOPPE_ERROR_CODES.cleRefusee,
+    emplacements: inventaire.emplacements.length,
+  };
+}
+
+/** Crée l'enveloppe, pose le volume, puis l'ouvre par la clé initiale et relit un secteur connu. */
+async function creerEtOuvrir(support, dek, initiale) {
   const creee = await creerEnveloppe({
     support,
     identifiantVolume: IDENTIFIANT_VOLUME,
@@ -96,28 +115,29 @@ async function scenarioCycle(jeton) {
     kek: initiale,
   });
   await poserLeVolume(dek);
-
   const parKek = await ouvrirEnveloppe({
     support,
     identifiantVolume: IDENTIFIANT_VOLUME,
     kek: initiale,
   });
-  const volumeRelu = await relireLeVolume(parKek.dek);
+  return { creee, parKek, volumeRelu: await relireLeVolume(parKek.dek) };
+}
 
+/** Remplace la clé, rouvre par la neuve, et constate ce que l'ancienne rend désormais. */
+async function tournerLaCle(support, { initiale, rotation }, identifiantEmplacement) {
   await remplacerEmplacement({
     support,
     identifiantVolume: IDENTIFIANT_VOLUME,
     kek: initiale,
-    identifiantEmplacement: creee.identifiantEmplacement,
+    identifiantEmplacement,
     kekNouvelle: rotation,
   });
-
   const parNouvelle = await ouvrirEnveloppe({
     support,
     identifiantVolume: IDENTIFIANT_VOLUME,
     kek: rotation,
   });
-  const relueApresRotation = await relireLeVolume(parNouvelle.dek);
+  const relue = await relireLeVolume(parNouvelle.dek);
 
   let refusDeLAncienne = null;
   try {
@@ -125,19 +145,7 @@ async function scenarioCycle(jeton) {
   } catch (erreur) {
     refusDeLAncienne = isEnveloppeError(erreur) ? erreur.code : codeOf(erreur);
   }
-
-  const inventaire = await inventorierEnveloppe({ support, identifiantVolume: IDENTIFIANT_VOLUME });
-  return {
-    nomEnveloppe: enveloppeSidecarName(VOLUME),
-    versionApresCreation: creee.version,
-    ouvertureParKek: parKek.version,
-    volumeRelu,
-    versionApresRotation: parNouvelle.version,
-    relueApresRotation,
-    refusDeLAncienne,
-    refusAttendu: ENVELOPPE_ERROR_CODES.cleRefusee,
-    emplacements: inventaire.emplacements.length,
-  };
+  return { version: parNouvelle.version, relue, refusDeLAncienne };
 }
 
 /** Un volume sans enveloppe : le refus doit dire « aucune enveloppe », pas « clé invalide ». */
