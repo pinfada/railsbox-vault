@@ -272,3 +272,30 @@ test("la coquille accorde le même port restreint à A et à B : elle ne les dis
   expect(a.coquille.annoncesRefusees).toEqual([]);
   expect(b.coquille.annoncesRefusees).toEqual([]);
 });
+
+test("une seconde origine applicative est refusée par le frame-src de la coquille", async ({
+  page,
+}, info) => {
+  // C'est le coût de l'option « une origine par application », mesuré plutôt qu'annoncé :
+  // `shellContentSecurityPolicy()` rend `frame-src 'self' <UNE origine applicative>`, et
+  // `tools/publier.mjs` n'accepte qu'un seul `--origine-application`. Ajouter une application ne
+  // se réduit donc pas à publier un arbre de plus : la CSP de la COQUILLE change, et la coquille
+  // doit être republiée.
+  const url = new URL(SHELL_PATH, SHELL_ORIGIN);
+  url.searchParams.set("topologie", "T2-origine-distincte-sandbox");
+  url.searchParams.set("documentApplicatif", urlApplication("origine-par-application", "b"));
+  await page.goto(url.toString());
+  await expect(page.locator("html")).toHaveAttribute("data-shell-state", "prete");
+
+  await expect
+    .poll(
+      async () =>
+        JSON.parse(await page.locator("#shell-report").textContent()).violationsCsp.length,
+      { timeout: 10000 },
+    )
+    .toBeGreaterThan(0);
+
+  const coquille = JSON.parse(await page.locator("#shell-report").textContent());
+  await joindre(info, "csp-seconde-origine-applicative", coquille.violationsCsp);
+  expect(coquille.violationsCsp.map((violation) => violation.directive)).toContain("frame-src");
+});
