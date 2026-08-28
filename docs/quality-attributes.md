@@ -485,20 +485,31 @@ imposé. L'ouverture, elle, ne tire rien et reste à 13,50 µs.
 
 Rapporté aux budgets ci-dessus, avec les chiffres de Chromium :
 
-| Geste                                                            | Scellement |                                                                                               Rapporté à |
-| ---------------------------------------------------------------- | ---------: | -------------------------------------------------------------------------------------------------------: |
-| Boot Rails mesuré par #16 (285 lectures, 13 écritures)           | **4,1 ms** |                                                                   ~92 s de boot → **0,004 %**, invisible |
-| Une génération de la taille mesurée par #16 (90 304 o)           | **3,2 ms** |                                                                         s'ajoute à une barrière du guest |
-| Récupération d'une génération au plafond de 64 Mio               |  **1,8 s** | budget « dernière génération valide trouvée en ≤ 60 s » — tenu avec plus d'un ordre de grandeur de marge |
-| Création ou restauration d'un volume de 512 Mio                  | **18,7 s** |                                              tous les secteurs devront être scellés, y compris les zéros |
-| Migration de format v2 → v3 d'un volume de 512 Mio               | **18,7 s** |                                                               boot après migration mesuré à ~105 s (#74) |
-| Lecture du volume entier (export #11, si l'archive est en clair) | **14,2 s** |                                                l'export n'a pas de budget de temps ; il en aurait besoin |
+| Geste                                                            |  Scellement |                                                                                               Rapporté à |
+| ---------------------------------------------------------------- | ----------: | -------------------------------------------------------------------------------------------------------: |
+| Boot Rails mesuré par #16 (285 lectures, 13 écritures)           |  **4,1 ms** |                                                                   ~92 s de boot → **0,004 %**, invisible |
+| Une génération de la taille mesurée par #16 (90 304 o)           |  **3,2 ms** |                                                                         s'ajoute à une barrière du guest |
+| Récupération d'une génération au plafond de 64 Mio               |   **1,8 s** | budget « dernière génération valide trouvée en ≤ 60 s » — tenu avec plus d'un ordre de grandeur de marge |
+| Création ou restauration d'un volume de 512 Mio                  |  **18,7 s** |                                              tous les secteurs devront être scellés, y compris les zéros |
+| Migration de format v2 → v3 d'un volume de 512 Mio               | _à mesurer_ |                 ESTIMATION PÉRIMÉE, voir la note ci-dessous — boot après migration mesuré à ~105 s (#74) |
+| Lecture du volume entier (export #11, si l'archive est en clair) |  **14,2 s** |                                                l'export n'a pas de budget de temps ; il en aurait besoin |
+
+**La ligne de la migration ne porte plus de chiffre, et c'est une correction.** Elle en portait un —
+18,7 s —, hérité de l'estimation de l'ADR 0015 : le coût d'un scellement mesuré sur le modèle,
+multiplié par le nombre de secteurs. Cette estimation décrivait une CRÉATION, où le volume est
+alloué puis scellé. La migration décidée par l'ADR 0016 fait deux choses de plus : elle **déplace**
+la charge entière pour ouvrir la région d'authentification, et elle **relit** chaque secteur avant
+de le sceller. Le chiffre ne peut donc pas être celui de la création, et l'ADR 0016 exige d'ailleurs
+qu'il soit « mesuré, jamais estimé ». Il le sera par #101, sur OPFS réel ; jusque-là cette ligne dit
+qu'elle ne sait pas, ce qui vaut mieux qu'un nombre qui aurait l'air d'une mesure.
 
 **En espace** : 34 octets par secteur du volume (nonce 12 + étiquette 16 + génération 6), soit
-**6,641 %** et 34,00 Mio sur le volume applicatif de 512 Mio ; 28 octets par enregistrement du
-journal (**5,469 %** — la génération y est celle de la racine, le rang est la position de
-l'enregistrement) ; et **zéro octet de plus** pour la racine, dont l'en-tête passe de 60 à 136
-octets dans le secteur déjà alloué par l'ADR 0014.
+**6,641 %** et 34,00 Mio sur le volume applicatif de 512 Mio ; **34 octets par enregistrement du
+journal** aussi (**6,641 %**), et non 28 comme l'ADR 0015 l'annonçait — le journal n'est vidé qu'au
+point de contrôle, si bien qu'une charge validée porte plusieurs générations et que la génération
+d'un enregistrement ne se déduit pas de sa racine (amendement du 2026-08-28 à l'ADR 0015) ; et
+**zéro octet de plus** pour la racine, dont l'en-tête passe de 60 à 136 octets dans le secteur déjà
+alloué par l'ADR 0014.
 
 **Aucune ligne n'est ajoutée au tableau des budgets**, et c'est délibéré. La règle posée par #16
 vaut ici : « un seuil posé sans mesure opposable serait une promesse, pas un budget ». Ces valeurs

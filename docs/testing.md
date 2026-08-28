@@ -368,11 +368,11 @@ L'export portable de `VAULT-PORT-001` (#11) — `src/vm/volume-export.mjs`, son 
 **deux** niveaux. La décision complète est
 l'[ADR 0008](decisions/0008-format-d-archive-d-export.md).
 
-| Niveau       | Fichier                                       | Support                       | Rattachement      |
-| ------------ | --------------------------------------------- | ----------------------------- | ----------------- |
-| unitaire     | `tests/unit/vm-sha256-stream.test.mjs`        | `crypto.subtle` (calibration) | `npm run check`   |
-| unitaire     | `tests/unit/vm-volume-export.test.mjs`        | doubles déterministes         | `npm run check`   |
-| Bout en bout | `tests/e2e/export-volume-verifiable.spec.mjs` | **vrai OPFS** + image #5      | job `Reprise MVP` |
+| Niveau       | Fichier                                       | Support                       | Rattachement                                       |
+| ------------ | --------------------------------------------- | ----------------------------- | -------------------------------------------------- |
+| unitaire     | `tests/unit/vm-sha256-stream.test.mjs`        | `crypto.subtle` (calibration) | `npm run check`                                    |
+| unitaire     | `tests/unit/vm-volume-export.test.mjs`        | doubles déterministes         | `npm run check`                                    |
+| Bout en bout | `tests/e2e/export-volume-verifiable.spec.mjs` | **vrai OPFS** + image #5      | job `Reprise MVP` — **SUSPENDU** (voir ci-dessous) |
 
 **Le niveau unitaire calibre l'instrument puis éprouve le codec.** `sha256-stream` existe parce que
 WebCrypto n'offre aucun hachage incrémental et que `node:crypto` est absent du Worker (ADR 0002) :
@@ -385,6 +385,13 @@ taille logique, le **streaming borné** (aucune lecture ne dépasse le bloc), la
 exigée, et les **refus typés** : contenu altéré (`VAULT_ARCHIVE_DIGEST_MISMATCH`), troncature
 (`VAULT_ARCHIVE_TRUNCATED`), marqueur/en-tête méconnaissable (`VAULT_ARCHIVE_MALFORMED`), et
 incompatibilité de manifeste (`ManifestError` de #10 propagée, jamais reconditionnée).
+
+> **Ce scénario est SUSPENDU depuis la tranche (a) de #18** (`test.skip`), et il faut le lire comme
+> tel : ce qui suit décrit ce qu'il mesure quand il tourne, pas une preuve qui s'exécute
+> aujourd'hui. La raison est écrite dans l'ADR 0016 : le chemin d'export lit par la voie autorisée,
+> qui déchiffre, si bien qu'il produirait l'archive EN CLAIR d'un volume chiffré. La tranche (b)
+> (#101) fournit l'accès brut qui manque et rétablit le scénario tel quel. Les épreuves unitaires du
+> codec, elles, s'exécutent.
 
 **Le niveau Bout en bout mesure le vrai support.** `tests/e2e/export-volume-verifiable.spec.mjs`
 écrit le disque applicatif de l'image #5 (qui porte l'invariant durable créé par
@@ -410,11 +417,15 @@ La restauration de `VAULT-PORT-001` (#12) — `src/vm/volume-import.mjs`, sa cib
 d'erreurs `src/vm/import-errors.mjs` — est prouvée sur **deux** niveaux. La décision complète est
 l'[ADR 0009](decisions/0009-restauration-inter-origine.md).
 
-| Niveau       | Fichier                                         | Support                             | Rattachement      |
-| ------------ | ----------------------------------------------- | ----------------------------------- | ----------------- |
-| unitaire     | `tests/unit/vm-volume-import.test.mjs`          | doubles déterministes               | `npm run check`   |
-| unitaire     | `tests/unit/vm-opfs-volume-open.test.mjs`       | doubles déterministes               | `npm run check`   |
-| Bout en bout | `tests/e2e/restauration-inter-origine.spec.mjs` | **deux origines** + OPFS + image #5 | job `Reprise MVP` |
+| Niveau       | Fichier                                         | Support                             | Rattachement                     |
+| ------------ | ----------------------------------------------- | ----------------------------------- | -------------------------------- |
+| unitaire     | `tests/unit/vm-volume-import.test.mjs`          | doubles déterministes               | `npm run check`                  |
+| unitaire     | `tests/unit/vm-opfs-volume-open.test.mjs`       | doubles déterministes               | `npm run check`                  |
+| Bout en bout | `tests/e2e/restauration-inter-origine.spec.mjs` | **deux origines** + OPFS + image #5 | job `Reprise MVP` — **SUSPENDU** |
+
+> **Le scénario Bout en bout est SUSPENDU depuis la tranche (a) de #18** (`test.skip`) : il exporte
+> avant de restaurer, et l'export d'un volume v3 est refusé tant que #101 n'a pas fourni l'accès
+> brut. Les deux suites unitaires ci-dessus s'exécutent, elles.
 
 **Le niveau unitaire éprouve l'ORDRE des gestes, qui est le contrat.** Une cible en mémoire compte
 chaque geste de l'orchestration — ouvertures, fermetures, révocations, inscriptions —, ce qui permet
@@ -508,11 +519,16 @@ La migration de `VAULT-COMPAT-001` (#13) — `src/vm/volume-migration.mjs`, sa c
 prouvée sur **deux** niveaux. La décision complète est
 l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md).
 
-| Niveau       | Fichier                                         | Support                   | Rattachement      |
-| ------------ | ----------------------------------------------- | ------------------------- | ----------------- |
-| unitaire     | `tests/unit/vm-volume-migration.test.mjs`       | doubles déterministes     | `npm run check`   |
-| unitaire     | `tests/unit/vm-volume-manifest.test.mjs`        | aucun                     | `npm run check`   |
-| Bout en bout | `tests/e2e/migration-volume-versionne.spec.mjs` | **OPFS** + image #5 + v86 | job `Reprise MVP` |
+| Niveau       | Fichier                                         | Support                   | Rattachement                     |
+| ------------ | ----------------------------------------------- | ------------------------- | -------------------------------- |
+| unitaire     | `tests/unit/vm-volume-migration.test.mjs`       | doubles déterministes     | `npm run check`                  |
+| unitaire     | `tests/unit/vm-volume-manifest.test.mjs`        | aucun                     | `npm run check`                  |
+| Bout en bout | `tests/e2e/migration-volume-versionne.spec.mjs` | **OPFS** + image #5 + v86 | job `Reprise MVP` — **SUSPENDU** |
+
+> **Le scénario Bout en bout est SUSPENDU depuis la tranche (a) de #18** (`test.skip`) : le format
+> courant est passé en v3 alors qu'aucune migration vers v3 n'existe encore — `planMigration(2, 3)`
+> rend `VAULT_MIGRATION_STEP_UNAVAILABLE`. #101 fournit la migration et rétablit le scénario tel
+> quel. Les deux suites unitaires ci-dessus s'exécutent.
 
 **Le niveau unitaire éprouve l'ORDRE des gestes, qui est le contrat.** Une cible en mémoire compte
 chaque geste — inspections, ouvertures, fermetures, inscriptions de journal, révocations, commits —,
