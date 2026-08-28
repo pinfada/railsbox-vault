@@ -36,12 +36,24 @@
 //    montre que c'est faux, puisque le journal n'est vidé qu'au point de contrôle et qu'une charge
 //    porte donc plusieurs générations.
 //
+// ## Le format 3 (#19, ADR 0019) : la racine date aussi la RÉGION du volume
+//
+// L'ADR 0015 nommait un résidu que #18 n'a pas fermé : un secteur du volume ramené en arrière —
+// chiffré, nonce, étiquette et génération remis ensemble — est authentique, parce que son sceau et
+// son identité viennent du même endroit. #19 le ferme en ajoutant à la racine l'EMPREINTE SCELLÉE
+// de la région d'authentification. La racine passe de 136 à 202 octets, dans le même secteur, et le
+// format du journal de 2 à 3 — exactement le chemin que l'ADR 0016 avait prévu pour ce cas.
+//
+// Une racine de format 2, laissée par #18, reste LISIBLE : elle ne scelle aucune empreinte, le
+// décodeur le dit par `fraicheur: null`, et la première racine écrite ensuite porte l'empreinte.
+//
 // La **longueur de charge** que la racine authentifie est celle des CLAIRS (ADR 0015,
 // `enteteDeRacine`). La longueur PHYSIQUE de la charge s'en déduit — `longueurCharge +
 // nombreEntrees × SURCOUT_ENREGISTREMENT` — plutôt que d'être stockée : deux grandeurs stockées
 // peuvent diverger, une grandeur dérivée ne le peut pas.
 
 import { SECTOR_SIZE } from "./block-geometry.mjs";
+import { FRAICHEUR_OCTETS } from "./generation-fraicheur.mjs";
 import {
   EMPREINTE_OCTETS,
   ETIQUETTE_OCTETS,
@@ -54,13 +66,41 @@ import { SCEAU_OCTETS } from "./volume-chiffre-format.mjs";
 const MAGIC = Uint8Array.from([0x56, 0x4c, 0x54, 0x47, 0x45, 0x4e, 0x30, 0x31]); // "VLTGEN01"
 
 /**
- * Version du format du journal de génération. Distincte du format du manifeste (#10).
+ * Version du format du journal de génération, ÉCRITE par ce runtime. Distincte du format du
+ * manifeste (#10).
  *
- * **2 depuis #18** : la racine est scellée, plus sommée. Un runtime antérieur la refuse comme un
- * format inconnu, ce qui est exactement le comportement voulu — il n'a pas la clé, et il écrirait en
- * clair dans un volume chiffré.
+ * **2 depuis #18** : la racine est scellée, plus sommée. **3 depuis #19** : elle scelle en outre
+ * l'empreinte de la région d'authentification du volume (ADR 0019). Un runtime antérieur refuse
+ * cette racine comme un format inconnu, ce qui est exactement le comportement voulu — il ne
+ * confronterait pas la région, et il croirait fraîche une version d'hier.
  */
-export const GENERATION_FORMAT = 2;
+export const GENERATION_FORMAT = 3;
+
+/**
+ * Formats de journal que ce runtime sait LIRE. Deux, et l'écart entre lire et écrire est le sujet.
+ *
+ * #19 ajoute à la racine l'empreinte scellée de la région d'authentification (ADR 0019), donc un
+ * champ. L'ADR 0016 avait prévu le cas et nommé sa réserve — « la réserve du secteur de racine
+ * (376 octets libres) l'accueille sous une version de format » —, si bien que le secteur ne change
+ * pas de taille et que seule la version bouge.
+ *
+ * Un volume scellé par #18 porte une racine de format 2, sans ce champ. Il reste OUVRABLE : ce
+ * runtime la décode, constate qu'elle ne scelle aucune empreinte, et ne prétend donc aucune
+ * fraîcheur pour cette ouverture-là. La MIGRATION est immédiate et sans geste d'exploitation — toute
+ * récupération se termine par un vidage, qui écrit une racine neuve, donc de format 3 : la propriété
+ * est acquise dès la première réouverture. Ce que cette fenêtre laisse ouvert, et pour cette
+ * ouverture seulement, est écrit dans l'ADR 0019.
+ *
+ * Ce que ce runtime n'ÉCRIT plus jamais, c'est une racine de format 2. Une racine sans empreinte
+ * serait un désarmement silencieux de la fraîcheur, et le témoin de séquence refuse précisément
+ * cela dès qu'il en a attesté une.
+ */
+export const GENERATION_FORMAT_SANS_FRAICHEUR = 2;
+
+export const GENERATION_FORMATS_LUS = Object.freeze([
+  GENERATION_FORMAT_SANS_FRAICHEUR,
+  GENERATION_FORMAT,
+]);
 
 /** Une racine occupe un secteur entier : c'est l'unité de la commutation. */
 export const RACINE_OCTETS = SECTOR_SIZE;
@@ -69,13 +109,23 @@ export const RACINE_OCTETS = SECTOR_SIZE;
 export const RACINES = 2;
 
 /**
- * Octets qu'occupe une racine v3 dans son secteur : 136 sur 512. Le détail est dans l'ADR 0016.
+ * Octets qu'occupe une racine de format 2 dans son secteur : 136 sur 512. Détail dans l'ADR 0016.
  *
  * marqueur 8 + format 4 + secteur 4 + séquence 8 + génération 8 + taille du volume 8 + nombre
  * d'entrées 4 + longueur de charge 8 + identifiant de volume 16 + scellements cumulés 8 + nonce 12
  * + chiffré 32 + étiquette 16.
  */
-export const RACINE_ENTETE_OCTETS = 136;
+export const RACINE_ENTETE_V2_OCTETS = 136;
+
+/**
+ * Octets qu'occupe une racine v3 de format 3 : 202 sur 512, la réserve restant à zéro.
+ *
+ * Les 136 premiers sont ceux de #18, inchangés. Les 66 suivants sont la FRAÎCHEUR de l'ADR 0019 :
+ * le sceau de l'empreinte de région (nonce 12 + étiquette 16 + génération 6) puis son chiffré (32).
+ * C'est la même forme de sceau que partout ailleurs dans le format — deux encodages du même objet
+ * finissent toujours par diverger.
+ */
+export const RACINE_ENTETE_OCTETS = RACINE_ENTETE_V2_OCTETS + FRAICHEUR_OCTETS;
 
 /** Sceau d'un enregistrement : la MÊME forme que celle de la région du volume (ADR 0016). */
 export const SCEAU_ENREGISTREMENT_OCTETS = SCEAU_OCTETS;
@@ -148,7 +198,10 @@ export function longueurPhysiqueDeCharge({ nombreEntrees, longueurCharge }) {
  *
  * @param {{ sequence: number, generation: number, tailleVolume: number, nombreEntrees: number,
  *           longueurCharge: number, identifiantVolume: Uint8Array, scellementsCumules: number,
- *           nonce: Uint8Array, chiffre: Uint8Array, etiquette: Uint8Array }} racine
+ *           nonce: Uint8Array, chiffre: Uint8Array, etiquette: Uint8Array,
+ *           fraicheur: Uint8Array }} racine
+ *   `fraicheur` est OBLIGATOIRE : une racine sans empreinte de région désarmerait la fraîcheur de
+ *   l'ADR 0019, et un champ facultatif aurait fini par manquer sans que personne le voie.
  * @returns {Uint8Array} exactement `RACINE_OCTETS` octets
  */
 export function encoderRacine({
@@ -162,16 +215,26 @@ export function encoderRacine({
   nonce,
   chiffre,
   etiquette,
+  fraicheur,
 }) {
   exigerOctets("identifiantVolume", identifiantVolume, IDENTIFIANT_VOLUME_OCTETS);
   exigerOctets("nonce", nonce, NONCE_OCTETS);
   exigerOctets("chiffre", chiffre, EMPREINTE_OCTETS);
   exigerOctets("etiquette", etiquette, ETIQUETTE_OCTETS);
+  if (fraicheur === undefined) {
+    throw new RangeError(
+      "« fraicheur » d'une racine est obligatoire : les octets de l'empreinte de région, ou « null » pour déclarer qu'aucune n'est scellée. Un oubli aurait écrit une racine d'avant l'ADR 0019 sans que personne le décide.",
+    );
+  }
+  if (fraicheur !== null) exigerOctets("fraicheur", fraicheur, FRAICHEUR_OCTETS);
 
   const octets = new Uint8Array(RACINE_OCTETS);
   const vue = new DataView(octets.buffer);
   octets.set(MAGIC, 0);
-  vue.setUint32(8, GENERATION_FORMAT, true);
+  // La VERSION suit ce que la racine porte réellement, et non l'inverse : écrire « format 3 » sur
+  // une racine sans empreinte ferait échouer la relecture sur un champ absent, et écrire
+  // « format 2 » sur une racine qui en porte une la rendrait invisible.
+  vue.setUint32(8, fraicheur === null ? GENERATION_FORMAT_SANS_FRAICHEUR : GENERATION_FORMAT, true);
   vue.setUint32(12, SECTOR_SIZE, true);
   ecrireEntier64(vue, 16, sequence);
   ecrireEntier64(vue, 24, generation);
@@ -183,6 +246,7 @@ export function encoderRacine({
   octets.set(nonce, 76);
   octets.set(chiffre, 88);
   octets.set(etiquette, 120);
+  if (fraicheur !== null) octets.set(fraicheur, RACINE_ENTETE_V2_OCTETS);
   return octets;
 }
 
@@ -193,12 +257,30 @@ function exigerOctets(nom, valeur, longueur) {
   return valeur;
 }
 
+/** Vrai si la zone de fraîcheur est entièrement nulle — l'état que laisse une racine de #18. */
+function reserveVierge(octets) {
+  const fin = Math.min(octets.byteLength, RACINE_ENTETE_OCTETS);
+  for (let index = RACINE_ENTETE_V2_OCTETS; index < fin; index += 1) {
+    if (octets[index] !== 0) return false;
+  }
+  return true;
+}
+
 function magicPresent(octets) {
   return MAGIC.every((attendu, position) => octets[position] === attendu);
 }
 
+/**
+ * Vrai si le secteur n'a JAMAIS porté de racine.
+ *
+ * Le contrôle porte sur l'en-tête COMMUN aux deux formats, et non sur les 202 octets d'une racine de
+ * format 3 : une racine de format 2, laissée par #18, a ses 66 derniers octets à zéro, et juger sur
+ * la longueur du format le plus récent aurait rendu « vierge » un secteur portant une racine
+ * parfaitement valide. Un secteur vierge est une place libre ; une racine illisible est une avarie.
+ * Les confondre déciderait du mauvais remède.
+ */
 function secteurVierge(octets) {
-  for (let index = 0; index < RACINE_ENTETE_OCTETS; index += 1) {
+  for (let index = 0; index < RACINE_ENTETE_V2_OCTETS; index += 1) {
     if (octets[index] !== 0) return false;
   }
   return true;
@@ -217,30 +299,62 @@ function secteurVierge(octets) {
  * @param {{ tailleVolume: number }} attentes
  * @returns {{ valide: boolean, vierge: boolean, racine: object | null, raison: string | null }}
  */
-export function decoderRacine(octets, { tailleVolume }) {
-  const refus = (raison, vierge = false) => ({ valide: false, vierge, racine: null, raison });
-  if (!(octets instanceof Uint8Array) || octets.byteLength < RACINE_ENTETE_OCTETS) {
-    return refus("Secteur de racine trop court pour porter un en-tête.");
+function refusDeRacine(raison, vierge = false) {
+  return { valide: false, vierge, racine: null, raison };
+}
+
+/**
+ * Les contrôles qu'on peut faire SANS CLÉ : forme, marqueur, version, géométrie. Rendus séparément
+ * du décodage lui-même pour que chacun tienne d'un regard — et parce que la frontière entre « ce
+ * qu'un module de format peut refuser » et « ce que seule l'étiquette refuse » est la décision
+ * centrale de l'ADR 0015, pas un détail d'organisation.
+ *
+ * @returns {{ valide: false } | { valide: true, format: number, vue: DataView }}
+ */
+function controlerSansCle(octets, { tailleVolume }) {
+  if (!(octets instanceof Uint8Array) || octets.byteLength < RACINE_ENTETE_V2_OCTETS) {
+    return refusDeRacine("Secteur de racine trop court pour porter un en-tête.");
   }
   if (secteurVierge(octets)) {
-    return refus("Secteur vierge : aucune racine n'y a jamais été écrite.", true);
+    return refusDeRacine("Secteur vierge : aucune racine n'y a jamais été écrite.", true);
   }
-  if (!magicPresent(octets)) return refus("Marqueur de racine absent.");
+  if (!magicPresent(octets)) return refusDeRacine("Marqueur de racine absent.");
 
   const vue = new DataView(octets.buffer, octets.byteOffset, octets.byteLength);
   const format = vue.getUint32(8, true);
-  if (format !== GENERATION_FORMAT) {
-    return refus(`Format de journal de génération inconnu : ${format}.`);
+  if (!GENERATION_FORMATS_LUS.includes(format)) {
+    return refusDeRacine(`Format de journal de génération inconnu : ${format}.`);
+  }
+  if (format === GENERATION_FORMAT && octets.byteLength < RACINE_ENTETE_OCTETS) {
+    return refusDeRacine("Secteur de racine trop court pour porter la fraîcheur de sa région.");
+  }
+  // Une racine qui SE DIT d'avant la fraîcheur, au-dessus d'octets de fraîcheur non nuls, ne peut
+  // pas avoir été écrite ainsi : ce runtime n'écrit jamais l'un sans l'autre, et #18 laissait cette
+  // zone vierge. C'est exactement ce que produit un octet retourné dans le champ de format — un
+  // seul bit fait passer 3 pour 2 —, et sans ce contrôle un adversaire désarmerait l'ADR 0019 en
+  // touchant un bit qu'aucune étiquette ne couvre. Le champ reste NON AUTHENTIFIÉ : ce qui le rend
+  // inoffensif est cette cohérence, plus le témoin de séquence quand il en atteste une.
+  if (format === GENERATION_FORMAT_SANS_FRAICHEUR && !reserveVierge(octets)) {
+    return refusDeRacine(
+      `Racine déclarée au format ${GENERATION_FORMAT_SANS_FRAICHEUR} alors que sa réserve porte une fraîcheur de région : un des deux ment.`,
+    );
   }
   if (vue.getUint32(12, true) !== SECTOR_SIZE) {
-    return refus("Racine écrite avec une autre taille de secteur.");
+    return refusDeRacine("Racine écrite avec une autre taille de secteur.");
   }
   const declaree = lireEntier64(vue, 32);
   if (declaree !== tailleVolume) {
-    return refus(
+    return refusDeRacine(
       `Racine écrite pour un volume de ${declaree} octets, présenté avec une taille de ${tailleVolume}.`,
     );
   }
+  return { valide: true, format, vue };
+}
+
+export function decoderRacine(octets, attentes) {
+  const controle = controlerSansCle(octets, attentes);
+  if (!controle.valide) return controle;
+  const { format, vue } = controle;
   return {
     valide: true,
     vierge: false,
@@ -249,7 +363,7 @@ export function decoderRacine(octets, { tailleVolume }) {
       format,
       sequence: lireEntier64(vue, 16),
       generation: lireEntier64(vue, 24),
-      tailleVolume: declaree,
+      tailleVolume: lireEntier64(vue, 32),
       nombreEntrees: vue.getUint32(40, true),
       longueurCharge: lireEntier64(vue, 44),
       identifiantVolume: octets.slice(52, 52 + IDENTIFIANT_VOLUME_OCTETS),
@@ -259,6 +373,12 @@ export function decoderRacine(octets, { tailleVolume }) {
         chiffre: octets.slice(88, 88 + EMPREINTE_OCTETS),
         etiquette: octets.slice(120, 120 + ETIQUETTE_OCTETS),
       }),
+      // `null` DIT qu'aucune empreinte n'est scellée, et l'appelant doit en décider — il ne peut pas
+      // le confondre avec une empreinte de zéros, qui serait une empreinte comme une autre.
+      fraicheur:
+        format === GENERATION_FORMAT
+          ? octets.slice(RACINE_ENTETE_V2_OCTETS, RACINE_ENTETE_OCTETS)
+          : null,
     }),
   };
 }

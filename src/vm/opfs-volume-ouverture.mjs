@@ -21,10 +21,20 @@ import { SECTOR_SIZE, assertBlockGeometry, isBlockGeometry } from "./block-geome
 import { BlockJournal } from "./block-journal.mjs";
 import { exigerCleDeVolume } from "./cle-de-volume.mjs";
 import { createFaultPlan } from "./fault-plan.mjs";
+import { TEMOIN_OCTETS } from "./generation-fraicheur.mjs";
 import { GenerationStore } from "./generation-store.mjs";
 import { OpfsBlockBackend } from "./opfs-block-backend.mjs";
-import { toStorageError, writeCountFailure } from "./opfs-error-mapping.mjs";
-import { generationJournalName, openOpfsSyncAccess } from "./opfs-sync-access.mjs";
+import {
+  decodeSupportCount,
+  readCountFailure,
+  toStorageError,
+  writeCountFailure,
+} from "./opfs-error-mapping.mjs";
+import {
+  generationJournalName,
+  openOpfsSyncAccess,
+  temoinSequenceName,
+} from "./opfs-sync-access.mjs";
 import { assertVolumeLibre, reserverVolume } from "./opfs-volume-registry.mjs";
 import { Scellement } from "./scellement.mjs";
 import { STORAGE_ERROR_CODES, StorageError, geometryMismatch } from "./storage-errors.mjs";
@@ -288,32 +298,127 @@ async function ouvrirGeneration({
   openHandle,
   seuilPointDeControle,
 }) {
-  const nomJournal = generationJournalName(name);
-  let handle;
+  const handle = await saisirVoisin(openHandle, generationJournalName(name), {
+    operation: "open-generation",
+    volume: name,
+  });
+  let temoin;
   try {
-    handle = await openHandle(nomJournal);
+    temoin = await saisirVoisin(openHandle, temoinSequenceName(name), {
+      operation: "open-temoin",
+      volume: name,
+    });
   } catch (cause) {
-    throw toStorageError(cause, { operation: "open-generation", volume: name });
+    rendreSansMasquer(handle);
+    throw cause;
   }
   try {
-    return await ouvrirMagasin({ name, size, backend, scellement, handle, seuilPointDeControle });
+    return await ouvrirMagasin({
+      name,
+      size,
+      backend,
+      scellement,
+      handle,
+      seuilPointDeControle,
+      fraicheur: sourceDeFraicheur({ name, backend, temoin }),
+    });
   } catch (cause) {
-    try {
-      handle.close();
-    } catch {
-      // La fermeture de secours ne doit jamais masquer la raison du refus.
-    }
+    rendreSansMasquer(handle);
+    rendreSansMasquer(temoin);
     throw cause;
   }
 }
 
-async function ouvrirMagasin({ name, size, backend, scellement, handle, seuilPointDeControle }) {
+/** Saisit un voisin de volume, en traduisant l'échec du support en état contractuel. */
+async function saisirVoisin(openHandle, nom, contexte) {
+  try {
+    return await openHandle(nom);
+  } catch (cause) {
+    throw toStorageError(cause, contexte);
+  }
+}
+
+/** Rend un handle sans jamais masquer la raison du refus qui a conduit ici. */
+function rendreSansMasquer(handle) {
+  try {
+    handle.close();
+  } catch {
+    // Une fermeture de secours qui échoue ne doit pas remplacer la cause d'origine.
+  }
+}
+
+/**
+ * SOURCE de fraîcheur du magasin (#19, ADR 0019) : la région d'authentification et le témoin.
+ *
+ * Le handle du témoin est saisi UNE FOIS et tenu pour la session, comme celui du journal. Le rouvrir
+ * à chaque racine coûterait une ouverture OPFS par barrière du guest — un prix payé sur le chemin
+ * même que `SEC-DURABLE-001` rend critique.
+ */
+function sourceDeFraicheur({ name, backend, temoin }) {
+  const nom = temoinSequenceName(name);
+  return {
+    regionOffset: backend.disposition.regionOffset,
+    regionOctets: backend.disposition.regionOctets,
+    lireRegion: (offset, longueur) => backend.lireRegionAuth(offset, longueur),
+    lireTemoin: async () => lireTemoinDuSupport(temoin, nom),
+    ecrireTemoin: async (octets) => ecrireTemoinSurLeSupport(temoin, nom, octets),
+    fermer: () => temoin.close(),
+  };
+}
+
+/**
+ * Lit le témoin, ou rend `null` s'il n'y en a pas encore. Un fichier VIDE est un témoin absent —
+ * c'est ce que `createSyncAccessHandle` laisse d'un voisin qui vient d'être créé pour être lu.
+ *
+ * Une valeur de retour est INTERPRÉTÉE, jamais comparée à la va-vite (#73) : un support qui rend un
+ * code d'échec casté en non signé n'a pas fait une lecture courte, il n'a rien lu — et rendre alors
+ * un tampon de zéros ferait passer un témoin illisible pour un témoin absent, c'est-à-dire
+ * désarmerait le contrôle au moment précis où le support se dérobe.
+ */
+function lireTemoinDuSupport(handle, nom) {
+  if (handle.getSize() === 0) return null;
+  const octets = new Uint8Array(TEMOIN_OCTETS);
+  const lus = handle.read(octets, { at: 0 });
+  if (decodeSupportCount(lus, TEMOIN_OCTETS).kind === "errno") {
+    throw readCountFailure(lus, {
+      requested: TEMOIN_OCTETS,
+      volume: nom,
+      offset: 0,
+      operation: "read-temoin",
+    });
+  }
+  return lus === TEMOIN_OCTETS ? octets : octets.subarray(0, lus);
+}
+
+/** Remplace le témoin et franchit SA barrière : un témoin non durable ne date rien. */
+function ecrireTemoinSurLeSupport(handle, nom, octets) {
+  handle.truncate(0);
+  const echec = writeCountFailure(handle.write(octets, { at: 0 }), {
+    requested: octets.byteLength,
+    volume: nom,
+    offset: 0,
+    operation: "write-temoin",
+  });
+  if (echec !== null) throw echec;
+  handle.flush();
+}
+
+async function ouvrirMagasin({
+  name,
+  size,
+  backend,
+  scellement,
+  handle,
+  seuilPointDeControle,
+  fraicheur,
+}) {
   try {
     return await GenerationStore.ouvrir({
       volume: name,
       handle,
       tailleVolume: size,
       scellement,
+      fraicheur,
       lireVolume: (offset, longueur) => backend.lireSupportBrut(offset, longueur),
       ecrireVolume: (offset, octets, generation) =>
         backend.ecrireSupportBrut(offset, octets, generation),

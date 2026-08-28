@@ -115,6 +115,10 @@ async function ouvrirMagasin(support, nom = "vol.gen", { enveloppe = (h) => h, .
     volume: "vol",
     handle,
     tailleVolume: support.tailleVolume,
+    // La fraîcheur de l'ADR 0019 est DÉCLARÉE absente : ce banc n'ouvre pas un volume v3 complet et
+    // n'a donc ni région d'authentification ni voisin où poser un témoin. Elle est éprouvée sur le
+    // chemin de production par `vm-generation-fraicheur.test.mjs`.
+    fraicheur: null,
     scellement: await scellementDEpreuve(),
     ...reste,
     lireVolume: support.lireVolume,
@@ -333,6 +337,7 @@ test("le journal borné refuse la génération démesurée au lieu de la publier
     handle,
     tailleVolume: TAILLE_VOLUME,
     scellement: await scellementDEpreuve(),
+    fraicheur: null,
     lireVolume: support.lireVolume,
     ecrireVolume: support.ecrireVolume,
     barriereVolume: support.barriereVolume,
@@ -414,6 +419,10 @@ test("entre deux racines VALIDES, la séquence la plus haute fait autorité", as
       nonce: scelle.nonce,
       chiffre: scelle.chiffre,
       etiquette: scelle.etiquette,
+      // Ces racines ne répondent que d'une question — laquelle des deux séquences fait autorité —
+      // et ce banc n'a pas de région d'authentification. Elles n'en scellent donc aucune, et le
+      // DÉCLARENT : `null` est une décision, `undefined` serait un oubli que l'encodeur refuse.
+      fraicheur: null,
     });
   };
   handle.truncate(ZONE_ENREGISTREMENTS);
@@ -463,6 +472,10 @@ test("la cible de MIGRATION ouvre transactionnellement : une génération en att
   await premier.flush();
   magasin.abandon(nom);
   magasin.abandon(`${nom}.gen`);
+  // Le TÉMOIN de séquence (#19) est un voisin de plus, tenu par la session : une machine qui meurt
+  // le relâche comme les deux autres, et l'oublier ici ferait échouer la réouverture sur une
+  // exclusivité que plus personne ne détient.
+  magasin.abandon(`${nom}.temoin`);
   libererVolume(nom);
 
   // La cible de migration ouvre le volume. La récupération doit rejouer la génération validée.

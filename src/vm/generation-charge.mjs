@@ -79,6 +79,24 @@ export function fenetreDeCharge({ tampon, longueurCharge, lire }) {
   };
 }
 
+/**
+ * `undefined` est refusé ; une valeur contrôle, `null` déclare qu'aucun contrôle n'est demandé.
+ *
+ * C'est la règle que le modèle de référence applique déjà à ses attentes (ADR 0015), transposée ici
+ * pour la même raison, et celle-là est mesurée : jusqu'à #19, ce parcours passait `null` en dur au
+ * modèle, si bien que les refus de rejeu de #18 étaient du code mort sans que rien ne le signale.
+ * Un plancher oublié vaudrait de nouveau « aucun contrôle », c'est-à-dire une défaillance OUVERTE et
+ * silencieuse.
+ */
+function exigerPlancher(nom, valeur) {
+  if (valeur === undefined) {
+    throw new TypeError(
+      `« ${nom} » est obligatoire pour parcourir une charge : une valeur pour contrôler, ou « null » pour déclarer qu'aucun contrôle n'est demandé — jamais un oubli.`,
+    );
+  }
+  return valeur;
+}
+
 /** Refus TYPÉ d'une charge scellée devenue incohérente. Un doute est un refus, jamais un remède. */
 export function chargeIncoherente(volume, racine, reason) {
   return generationCorrupt(volume, { generation: racine.generation, reason });
@@ -140,7 +158,7 @@ function lirePrefixe(fenetre, position, { volume, racine, tailleVolume, longueur
 }
 
 /** Confronte la suite d'entrées TROUVÉE à ce que la racine authentifie. Le dernier geste, jamais le premier. */
-function ouvrirLaRacine(scellement, racine, entrees, tailleVolume) {
+function ouvrirLaRacine(scellement, racine, entrees, tailleVolume, sequenceMinimale) {
   return scellement.ouvrirRacine(
     {
       sequence: racine.sequence,
@@ -152,8 +170,26 @@ function ouvrirLaRacine(scellement, racine, entrees, tailleVolume) {
     },
     racine.scelle,
     entrees,
-    { tailleVolume, sequenceMinimale: null },
+    { tailleVolume, sequenceMinimale },
   );
+}
+
+/**
+ * PLANCHER de génération pour l'enregistrement de rang `rang`, dans la charge parcourue.
+ *
+ * La suite des générations d'une charge est CROISSANTE au sens large, et c'est une propriété du
+ * magasin, pas une convention : `deposer` scelle sous `génération validée + 1`, la génération
+ * validée ne recule jamais dans une session, et les enregistrements sont ajoutés dans l'ordre.
+ * Le plancher d'un enregistrement est donc la plus grande génération vue avant lui.
+ *
+ * Ce que cette garde ajoute à l'empreinte de la racine, qui refuserait elle aussi la substitution :
+ * elle la refuse PLUS TÔT — avant que la charge entière ait été relue — et surtout elle la NOMME
+ * `VAULT_CRYPTO_REJEU` au lieu de `VAULT_CRYPTO_MELANGE`. Un enregistrement authentique d'une
+ * génération antérieure est un rejeu ; le classer « mélange » dirait vrai sur l'ensemble et faux sur
+ * la cause.
+ */
+function plancherDeGeneration(vues, plancher) {
+  return vues.length === 0 ? plancher : Math.max(plancher, vues[vues.length - 1]);
 }
 
 /**
@@ -177,8 +213,12 @@ function ouvrirLaRacine(scellement, racine, entrees, tailleVolume) {
  * @param {{ journal: import("./generation-journal.mjs").JournalDeGeneration, volume: string,
  *           tailleVolume: number, racine: object,
  *           scellement: import("./scellement.mjs").Scellement,
+ *           sequenceMinimale: number | null, generationPlancher: number | null,
  *           emettre?: ((offset: number, octets: Uint8Array, generation: number) => unknown)|null }} options
  *   `emettre` reçoit le CLAIR de chaque enregistrement, avec l'offset du VOLUME où il va.
+ *   `sequenceMinimale` et `generationPlancher` sont OBLIGATOIRES, `null` compris : voir
+ *   `exigerPlancher`. Ils sont ce que #19 ajoute, et ce sans quoi les refus de rejeu de #18 ne
+ *   s'exerçaient nulle part.
  * @returns {Promise<number>} le nombre d'enregistrements parcourus
  */
 export async function parcourirCharge({
@@ -187,8 +227,12 @@ export async function parcourirCharge({
   tailleVolume,
   racine,
   scellement,
+  sequenceMinimale,
+  generationPlancher,
   emettre = null,
 }) {
+  exigerPlancher("sequenceMinimale", sequenceMinimale);
+  exigerPlancher("generationPlancher", generationPlancher);
   const longueurPhysique = longueurPhysiqueDeCharge(racine);
   const fenetre = fenetreDeCharge({
     tampon: journal.allouer(tailleTampon(longueurPhysique)),
@@ -196,35 +240,63 @@ export async function parcourirCharge({
     lire: (cible, position) => journal.lireDans(cible, ZONE_ENREGISTREMENTS + position),
   });
   const cadre = { volume, racine, tailleVolume, longueurPhysique };
-  const entrees = [];
-  let position = 0;
+  const etat = {
+    entrees: [],
+    /** Générations des enregistrements déjà ouverts, dans l'ordre. Elle ne peut que croître. */
+    generationsVues: [],
+    position: 0,
+  };
 
-  while (position < longueurPhysique) {
-    const { entete, sceau } = lirePrefixe(fenetre, position, cadre);
-    const rang = entrees.length;
-    entrees.push({
-      adresse: entete.offset,
-      longueur: entete.longueur,
-      rang,
-      etiquette: sceau.etiquette,
+  while (etat.position < longueurPhysique) {
+    await ouvrirUnEnregistrement({
+      fenetre,
+      cadre,
+      etat,
+      scellement,
+      generationPlancher,
+      emettre,
     });
-    position += SURCOUT_ENREGISTREMENT;
-
-    const chiffre = lireChiffre(fenetre, position, entete.longueur, volume, racine);
-    // L'enregistrement est OUVERT à chaque passe, y compris celle qui n'émet rien. C'est ce qui
-    // garde la promesse de l'ADR 0014 : la première passe vérifie la charge ENTIÈRE sans écrire une
-    // ligne dans le volume. Ne l'ouvrir qu'à l'émission laisserait les premiers enregistrements dans
-    // le volume quand le dernier serait refusé — exactement le rejeu à moitié que ce magasin
-    // interdit. Le prix est un déchiffrement de plus par enregistrement, sur le geste amorti.
-    const clair = await scellement.ouvrirBloc(
-      { generation: sceau.generation, rang, adresse: entete.offset, longueur: entete.longueur },
-      { nonce: sceau.nonce, etiquette: sceau.etiquette, chiffre },
-      { generationMinimale: null },
-    );
-    if (emettre !== null) await emettre(entete.offset, clair, sceau.generation);
-    position += entete.longueur;
   }
 
-  await ouvrirLaRacine(scellement, racine, entrees, tailleVolume);
-  return entrees.length;
+  await ouvrirLaRacine(scellement, racine, etat.entrees, tailleVolume, sequenceMinimale);
+  return etat.entrees.length;
+}
+
+/**
+ * Lit UN enregistrement, l'ouvre sous son identité reconstruite, et avance l'état du parcours.
+ *
+ * L'enregistrement est OUVERT à chaque passe, y compris celle qui n'émet rien. C'est ce qui garde la
+ * promesse de l'ADR 0014 : la première passe vérifie la charge ENTIÈRE sans écrire une ligne dans le
+ * volume. Ne l'ouvrir qu'à l'émission laisserait les premiers enregistrements dans le volume quand
+ * le dernier serait refusé — exactement le rejeu à moitié que ce magasin interdit. Le prix est un
+ * déchiffrement de plus par enregistrement, sur le geste amorti.
+ */
+async function ouvrirUnEnregistrement({
+  fenetre,
+  cadre,
+  etat,
+  scellement,
+  generationPlancher,
+  emettre,
+}) {
+  const { volume, racine } = cadre;
+  const { entete, sceau } = lirePrefixe(fenetre, etat.position, cadre);
+  const rang = etat.entrees.length;
+  etat.entrees.push({
+    adresse: entete.offset,
+    longueur: entete.longueur,
+    rang,
+    etiquette: sceau.etiquette,
+  });
+  etat.position += SURCOUT_ENREGISTREMENT;
+
+  const chiffre = lireChiffre(fenetre, etat.position, entete.longueur, volume, racine);
+  const clair = await scellement.ouvrirBloc(
+    { generation: sceau.generation, rang, adresse: entete.offset, longueur: entete.longueur },
+    { nonce: sceau.nonce, etiquette: sceau.etiquette, chiffre },
+    { generationMinimale: plancherDeGeneration(etat.generationsVues, generationPlancher) },
+  );
+  etat.generationsVues.push(sceau.generation);
+  if (emettre !== null) await emettre(entete.offset, clair, sceau.generation);
+  etat.position += entete.longueur;
 }

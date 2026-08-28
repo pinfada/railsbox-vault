@@ -183,6 +183,25 @@ export class OpfsBlockBackend {
   }
 
   /**
+   * Lit la RÉGION D'AUTHENTIFICATION telle qu'elle est sur le support : des sceaux, jamais des
+   * données, et surtout jamais déchiffrés (#19, ADR 0019).
+   *
+   * C'est le seul point du dépôt qui rend des octets bruts de l'intérieur du fichier de volume, et
+   * il est borné à la région : lire au-delà rendrait du chiffré, c'est-à-dire des données sous une
+   * forme que rien n'authentifie. L'empreinte que le magasin en calcule est ce qui rend le retour
+   * arrière d'un secteur DÉTECTABLE — la région est le seul endroit où ce retour arrière laisse une
+   * trace, puisque le sceau et l'identité d'un secteur y vivent côte à côte.
+   */
+  lireRegionAuth(offset, longueur) {
+    const debut = this.#disposition.regionOffset;
+    const fin = debut + this.#disposition.regionOctets;
+    if (!Number.isInteger(offset) || offset < debut || offset + longueur > fin) {
+      throw outOfRange(offset, longueur, fin);
+    }
+    return this.#lireOctets(offset, longueur);
+  }
+
+  /**
    * RESCELLE et écrit dans le volume au nom du magasin — le geste du point de contrôle. La
    * génération est celle de la racine qui range : c'est elle qui entrera dans les données associées
    * de chaque secteur, et que le lecteur retrouvera dans la région d'authentification.

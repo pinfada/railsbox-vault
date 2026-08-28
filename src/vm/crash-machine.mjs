@@ -145,6 +145,10 @@ export function creerMachineJetable({
       // produit, et sa mesure ne dirait plus rien du produit.
       const journalGeneration = await support.openHandle(generationJournalName(nom));
       const magasin = await GenerationStore.ouvrir({
+        // La fraîcheur de l'ADR 0019 est DÉCLARÉE absente ici, jamais oubliée : ce banc n'ouvre pas
+        // un volume v3 complet, il n'a ni région d'authentification ni voisin où poser un témoin. Le
+        // magasin écrit alors des racines sans empreinte, et son rapport le publie.
+        fraicheur: null,
         volume: nom,
         handle: journalGeneration,
         tailleVolume: taille,

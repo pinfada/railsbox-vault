@@ -56,6 +56,10 @@ async function ouvrirMagasin(support, nom = "vol.gen", reste = {}) {
       cleOctets: CLE_DE_TEST,
       formatVersion: 3,
     }),
+    // La fraîcheur de l'ADR 0019 est DÉCLARÉE absente : ce banc n'ouvre pas un volume v3 complet et
+    // n'a donc ni région d'authentification ni voisin où poser un témoin. Elle est éprouvée par
+    // `vm-generation-fraicheur.test.mjs`, sur le chemin de production.
+    fraicheur: null,
     ...reste,
     lireVolume: support.lireVolume,
     ecrireVolume: support.ecrireVolume,
@@ -63,13 +67,16 @@ async function ouvrirMagasin(support, nom = "vol.gen", reste = {}) {
   });
 }
 
-test("le format du journal passe à 2, et sa racine occupe 136 octets", () => {
+test("le format du journal passe à 3, et sa racine occupe 202 octets", () => {
+  // #18 avait porté le format de 1 à 2 et la racine à 136 octets ; #19 la porte à 3 et à 202, en
+  // logeant la fraîcheur de région dans la réserve du même secteur — ce que l'ADR 0016 avait prévu
+  // et nommé (« la réserve du secteur de racine l'accueille sous une version de format »).
   assert.equal(
     GENERATION_FORMAT,
-    2,
-    "un runtime v2 doit refuser cette racine comme format inconnu",
+    3,
+    "un runtime antérieur doit refuser cette racine comme format inconnu",
   );
-  assert.equal(RACINE_ENTETE_OCTETS, 136);
+  assert.equal(RACINE_ENTETE_OCTETS, 202);
   assert.equal(SCEAU_ENREGISTREMENT_OCTETS, 34, "même sceau que la région du volume");
 });
 
@@ -193,6 +200,7 @@ test("une clé ÉTRANGÈRE ne rouvre pas un journal : le refus est le sceau, pas
           cleOctets: autre,
           formatVersion: 3,
         }),
+        fraicheur: null,
         lireVolume: support.lireVolume,
         ecrireVolume: support.ecrireVolume,
         barriereVolume: support.barriereVolume,

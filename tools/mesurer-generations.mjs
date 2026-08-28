@@ -87,6 +87,10 @@ async function mesurerJournal(config) {
   const volume = new Uint8Array(config.blocs * SECTOR_SIZE);
   const handle = handleMesure(await magasin.openHandle("v.gen"), compte);
   const store = await GenerationStore.ouvrir({
+    // La fraîcheur de l'ADR 0019 est DÉCLARÉE absente ici, jamais oubliée : ce banc n'ouvre pas
+    // un volume v3 complet, il n'a ni région d'authentification ni voisin où poser un témoin. Le
+    // magasin écrit alors des racines sans empreinte, et son rapport le publie.
+    fraicheur: null,
     volume: "v",
     handle,
     tailleVolume: volume.byteLength,
