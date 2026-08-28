@@ -80,6 +80,8 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0017 — la chaîne de publication sert les mêmes en-têtes que le serveur de test, et inventorie ce qu'elle publie](docs/decisions/0017-chaine-de-publication.md)
 - [Spike #41 — coût mesuré de l'isolation multi-origine sur le runtime v86](docs/spikes/0041-isolation-coop-coep.md)
 - [Spike #45 — où publier les deux origines, et comment vérifier ce qui est servi](docs/spikes/0045-chaine-de-publication.md)
+- [ADR 0018 — le navigateur ne cloisonne le stockage que par origine : une origine par application dès la seconde, MVP mono-application accepté](docs/decisions/0018-isolation-entre-applications.md)
+- [Spike #46 — ce que deux applications voient l'une de l'autre selon la topologie d'origine](docs/spikes/0046-isolation-entre-applications.md)
 
 ## Licence
 
