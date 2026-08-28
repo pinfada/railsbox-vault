@@ -53,7 +53,7 @@ import { exigerCleDeVolume } from "./cle-de-volume.mjs";
 import { MIGRATION_ERROR_CODES, MigrationError } from "./migration-errors.mjs";
 import { ETAPES_CONVERSION, convertirEnV3 } from "./migration-v3.mjs";
 import { Scellement } from "./scellement.mjs";
-import { nouvelIdentifiantDeVolume } from "./volume-chiffre-format.mjs";
+import { nouvelIdentifiantDeVolume, tailleDeFichier } from "./volume-chiffre-format.mjs";
 import { journalMalforme, parseJournal, serialiserJournal } from "./migration-journal.mjs";
 import { MANIFEST_ERROR_CODES, ManifestError } from "./manifest-errors.mjs";
 import {
@@ -135,9 +135,16 @@ const STEPS = Object.freeze([
      *
      * L'IDENTIFIANT est TIRÉ ici, et il ne peut pas l'être ailleurs : un volume v2 n'en a pas, et
      * c'est précisément le champ que le format v3 ajoute. Il est immuable ensuite.
+     *
+     * **Il est aussi JOURNALISÉ, et il le faut.** Il entre dans les données associées de chaque
+     * secteur scellé : une reprise qui en tirerait un nouveau ne reconnaîtrait plus un seul des
+     * secteurs déjà convertis, les classerait « en clair » et les RECHIFFRERAIT. Le journal est le
+     * seul endroit où il puisse survivre à la coupure, puisque l'en-tête v3 — l'autre endroit où il
+     * vit — n'est écrit qu'en dernier, une fois la conversion finie.
      */
     async apply({ manifest, backend, cle, avancement, marquerAvancement }) {
-      const identifiantVolume = manifest.volume?.id ?? nouvelIdentifiantDeVolume();
+      const identifiantVolume =
+        avancement?.identifiantVolume ?? manifest.volume?.id ?? nouvelIdentifiantDeVolume();
       await convertirEnV3({
         brut: backend,
         scellement: await Scellement.ouvrir({
@@ -149,7 +156,7 @@ const STEPS = Object.freeze([
         identifiantVolume,
         depuis: avancement?.etape ?? ETAPES_CONVERSION.deplacement,
         position: avancement?.position ?? null,
-        marquerEtape: marquerAvancement,
+        marquerEtape: (progress) => marquerAvancement({ ...progress, identifiantVolume }),
       });
       return createManifest({
         formatVersion: MIN_VOLUME_FORMAT_VERSION,
@@ -282,7 +289,7 @@ async function lireEtat(target, expectations) {
  * laisse derrière elle. Toute divergence fait refuser : préférer le journal reviendrait à laisser un
  * voisin réécrire l'identité d'un volume parfaitement sain.
  */
-function manifesteSource({ support, journal, courant }, expectations) {
+function manifesteSource({ support, journal, courant }, expectations, toVersion) {
   if (journal !== null && courant !== null) {
     const attendu = serializeManifest(courant);
     const porte = serializeManifest(journal.sourceManifest);
@@ -305,7 +312,7 @@ function manifesteSource({ support, journal, courant }, expectations) {
     );
   }
   if (journal !== null) assertReadable(source, expectations);
-  assertGeometrieDuSupport(source, support);
+  assertGeometrieDuSupport(source, support, { cible: toVersion, reprise: journal !== null });
   return source;
 }
 
@@ -313,14 +320,72 @@ function manifesteSource({ support, journal, courant }, expectations) {
  * La géométrie déclarée par le manifeste source doit décrire le support RÉEL, sinon la migration
  * inscrirait une taille qui ne correspond à aucun octet présent. Le contrôle précède l'ouverture :
  * un volume dont on ne sait pas la taille ne se retaille pas, il se refuse.
+ *
+ * ## Taille LOGIQUE et taille de FICHIER, et ce qui arrive quand on les confond
+ *
+ * `geometry.volumeSize` est la taille LOGIQUE — ce que le guest voit. Le support, lui, porte un
+ * FICHIER, dont la taille se DÉRIVE du format : jusqu'à v2 les deux coïncidaient, en v3 le fichier
+ * porte en plus l'en-tête et la région d'authentification. Comparer la première au second refusait
+ * tout volume v3, et la revue de #110 a montré ce que cela coûtait : la conversion agrandit le
+ * fichier dès son PREMIER geste, si bien qu'une migration coupée après la moindre écriture laissait
+ * un volume au manifeste révoqué, au journal complet — et refusé à la reprise. Ni v2, ni v3, ni
+ * reprenable, et toute la machinerie de reprise inatteignable depuis la production.
+ *
+ * ## Deux tailles admissibles, et seulement en REPRISE
+ *
+ * Hors reprise, une seule taille est admise : celle du format SOURCE. Un fichier déjà agrandi sans
+ * journal n'est pas une migration en cours, c'est un volume dont personne ne sait ce qu'il est.
+ *
+ * En reprise, le fichier peut être à la taille source — la coupure a précédé le retaillage — ou à
+ * celle de la CIBLE. Les deux sont des états atteignables du même geste, et refuser le second
+ * refuserait précisément la reprise qu'on prétend offrir.
  */
-function assertGeometrieDuSupport(source, support) {
-  if (source.geometry.volumeSize === support.size) return;
+function assertGeometrieDuSupport(source, support, { cible, reprise }) {
+  const logique = source.geometry.volumeSize;
+  const admissibles = [
+    tailleDeFichier({ formatVersion: source.formatVersion, tailleLogique: logique }),
+  ];
+  if (reprise) {
+    admissibles.push(tailleDeFichier({ formatVersion: cible, tailleLogique: logique }));
+  }
+  if (admissibles.includes(support.size)) return;
   throw new MigrationError(
     MIGRATION_ERROR_CODES.geometryMismatch,
-    `Migration refusée : le manifeste de départ décrit un volume de ${source.geometry.volumeSize} octet(s) et le support en porte ${support.size}. Un volume n'est jamais retaillé par une migration, et une géométrie ne se devine pas.`,
-    { manifestVolumeSize: source.geometry.volumeSize, supportSize: support.size ?? null },
+    `Migration refusée : le manifeste de départ décrit un volume LOGIQUE de ${logique} octet(s), dont le fichier devrait en faire ${admissibles.join(" ou ")}, et le support en porte ${support.size}. Un volume n'est jamais retaillé par une migration, et une géométrie ne se devine pas.`,
+    {
+      manifestVolumeSize: logique,
+      expectedFileSizes: admissibles,
+      supportSize: support.size ?? null,
+    },
   );
+}
+
+/**
+ * Applique la chaîne, un PAS à la fois, et route l'avancement vers le pas qu'il décrit.
+ *
+ * L'avancement journalisé porte son `from` et son `to`, et c'est indispensable : le donner au
+ * premier pas de la chaîne — ce que faisait la première version — le faisait consommer par une
+ * étape qui n'en avait pas l'usage, si bien que le pas suivant recevait « rien de commencé » et
+ * redéplaçait la charge par-dessus une région déjà scellée. Chaque pas ne voit donc que son propre
+ * avancement, et ce qu'il journalise est étiqueté de son propre `from`/`to`.
+ */
+async function appliquerLaChaine({ chaine, source, backend, cle, avancement, marquerAvancement }) {
+  let manifest = source;
+  for (const etape of chaine) {
+    const pourCePas =
+      avancement !== null && avancement.from === etape.from && avancement.to === etape.to
+        ? avancement
+        : null;
+    manifest = await etape.apply({
+      manifest,
+      backend,
+      cle,
+      avancement: pourCePas,
+      marquerAvancement: (progress) =>
+        marquerAvancement({ ...progress, from: etape.from, to: etape.to }),
+    });
+  }
+  return manifest;
 }
 
 /**
@@ -354,13 +419,14 @@ async function muter({ target, backend, chaine, source, toVersion, evidence, cle
   await target.revokeManifest();
 
   // 8. APPLIQUER, puis franchir la barrière de durabilité.
-  let manifest = source;
-  for (const etape of chaine) {
-    manifest = await etape.apply({ manifest, backend, cle, avancement, marquerAvancement });
-    // L'avancement ne vaut que pour l'étape qu'il décrit : la suivante repart de son propre début,
-    // et lui passer la position d'une autre la ferait sauter du travail.
-    avancement = null;
-  }
+  const manifest = await appliquerLaChaine({
+    chaine,
+    source,
+    backend,
+    cle,
+    avancement,
+    marquerAvancement,
+  });
   await backend.flush();
 
   // 9. INSCRIRE, puis RELIRE depuis le support : écrire n'est pas persister.
@@ -414,7 +480,7 @@ export async function migrateVolume({
     return rienAMigrer({ target, courant, journal, toVersion });
   }
 
-  const source = manifesteSource(etat, expectations);
+  const source = manifesteSource(etat, expectations, toVersion);
 
   // 2. PLANIFIER. Un PAS à la fois, jamais un saut ; jamais une descente.
   const chaine = planMigration(source.formatVersion, toVersion);
