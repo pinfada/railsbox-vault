@@ -38,6 +38,17 @@ export const MIGRATION_JOURNAL_SUFFIX = ".migration";
 export const GENERATION_JOURNAL_SUFFIX = ".gen";
 
 /**
+ * Suffixe RÉSERVÉ de l'ENVELOPPE DE CLÉ (#21, ADR 0020). Il vit à côté du volume pour la même raison
+ * que les trois précédents, et il est plus court que `.migration` : `MAX_VOLUME_NAME` se déduit du
+ * plus long suffixe réservé, et l'ajouter ne rétrécit donc AUCUN nom de volume déjà admissible.
+ *
+ * Ce fichier porte des clés de volume ENVELOPPÉES ; il ne vit que sur l'origine de CONFIANCE, avec
+ * le volume et son manifeste (ADR 0002), et il n'entre jamais dans une archive d'export (ADR 0020,
+ * décision 6).
+ */
+export const ENVELOPPE_SIDECAR_SUFFIX = ".cles";
+
+/**
  * Tous les suffixes réservés aux voisins d'un volume. Aucun volume ne peut en porter un, sans quoi
  * migrer « donnees » détruirait un volume légitime nommé « donnees.migration ».
  */
@@ -45,6 +56,7 @@ export const RESERVED_SIDECAR_SUFFIXES = Object.freeze([
   MANIFEST_SIDECAR_SUFFIX,
   MIGRATION_JOURNAL_SUFFIX,
   GENERATION_JOURNAL_SUFFIX,
+  ENVELOPPE_SIDECAR_SUFFIX,
 ]);
 
 /** Longueur du plus long voisin à réserver : c'est elle qui borne le nom d'un volume. */
@@ -146,6 +158,16 @@ export function migrationJournalName(volume) {
 export function generationJournalName(volume) {
   assertVolumeName(volume);
   return `${volume}${GENERATION_JOURNAL_SUFFIX}`;
+}
+
+/**
+ * Nom de l'ENVELOPPE DE CLÉ posée à côté du volume (#21, ADR 0020). Même règle de longueur que les
+ * trois autres voisins : un volume créable est toujours un volume déverrouillable.
+ * @param {string} volume
+ */
+export function enveloppeSidecarName(volume) {
+  assertVolumeName(volume);
+  return `${volume}${ENVELOPPE_SIDECAR_SUFFIX}`;
 }
 
 async function volumeDirectory({ create }) {
@@ -262,8 +284,16 @@ export async function removeOpfsVolume(name) {
   // du MÊME NOM y rejouerait une génération validée qui ne lui appartient pas — des octets d'un
   // volume précédent écrits par-dessus un volume neuf. La garde évite la récursion sur les voisins
   // eux-mêmes, qui n'ont pas de journal.
+  //
+  // Depuis #21, l'ENVELOPPE DE CLÉ part avec lui pour un motif symétrique et plus grave : une
+  // enveloppe qui survit à son volume ne protège plus rien, et un volume neuf du MÊME NOM y
+  // trouverait un fichier de clés qui nomme un autre identifiant de volume — refusé, mais
+  // seulement après avoir donné à croire qu'une clé existait.
   const estUnVoisin = RESERVED_SIDECAR_SUFFIXES.some((suffixe) => name.endsWith(suffixe));
-  if (!estUnVoisin) await removeOpfsVolume(`${name}${GENERATION_JOURNAL_SUFFIX}`);
+  if (!estUnVoisin) {
+    await removeOpfsVolume(`${name}${GENERATION_JOURNAL_SUFFIX}`);
+    await removeOpfsVolume(`${name}${ENVELOPPE_SIDECAR_SUFFIX}`);
+  }
 
   try {
     const directory = await volumeDirectory({ create: false });
