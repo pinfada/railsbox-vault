@@ -485,23 +485,45 @@ imposé. L'ouverture, elle, ne tire rien et reste à 13,50 µs.
 
 Rapporté aux budgets ci-dessus, avec les chiffres de Chromium :
 
-| Geste                                                            |  Scellement |                                                                                               Rapporté à |
-| ---------------------------------------------------------------- | ----------: | -------------------------------------------------------------------------------------------------------: |
-| Boot Rails mesuré par #16 (285 lectures, 13 écritures)           |  **4,1 ms** |                                                                   ~92 s de boot → **0,004 %**, invisible |
-| Une génération de la taille mesurée par #16 (90 304 o)           |  **3,2 ms** |                                                                         s'ajoute à une barrière du guest |
-| Récupération d'une génération au plafond de 64 Mio               |   **1,8 s** | budget « dernière génération valide trouvée en ≤ 60 s » — tenu avec plus d'un ordre de grandeur de marge |
-| Création ou restauration d'un volume de 512 Mio                  |  **18,7 s** |                                              tous les secteurs devront être scellés, y compris les zéros |
-| Migration de format v2 → v3 d'un volume de 512 Mio               | _à mesurer_ |                 ESTIMATION PÉRIMÉE, voir la note ci-dessous — boot après migration mesuré à ~105 s (#74) |
-| Lecture du volume entier (export #11, si l'archive est en clair) |  **14,2 s** |                                                l'export n'a pas de budget de temps ; il en aurait besoin |
+| Geste                                                            | Scellement |                                                                                               Rapporté à |
+| ---------------------------------------------------------------- | ---------: | -------------------------------------------------------------------------------------------------------: |
+| Boot Rails mesuré par #16 (285 lectures, 13 écritures)           | **4,1 ms** |                                                                   ~92 s de boot → **0,004 %**, invisible |
+| Une génération de la taille mesurée par #16 (90 304 o)           | **3,2 ms** |                                                                         s'ajoute à une barrière du guest |
+| Récupération d'une génération au plafond de 64 Mio               |  **1,8 s** | budget « dernière génération valide trouvée en ≤ 60 s » — tenu avec plus d'un ordre de grandeur de marge |
+| Scellement initial d'un volume de 512 Mio (extrapolé)            | **18,7 s** |                                              tous les secteurs devront être scellés, y compris les zéros |
+| Lecture du volume entier (export #11, si l'archive est en clair) | **14,2 s** |                                                l'export n'a pas de budget de temps ; il en aurait besoin |
 
-**La ligne de la migration ne porte plus de chiffre, et c'est une correction.** Elle en portait un —
-18,7 s —, hérité de l'estimation de l'ADR 0015 : le coût d'un scellement mesuré sur le modèle,
-multiplié par le nombre de secteurs. Cette estimation décrivait une CRÉATION, où le volume est
-alloué puis scellé. La migration décidée par l'ADR 0016 fait deux choses de plus : elle **déplace**
-la charge entière pour ouvrir la région d'authentification, et elle **relit** chaque secteur avant
-de le sceller. Le chiffre ne peut donc pas être celui de la création, et l'ADR 0016 exige d'ailleurs
-qu'il soit « mesuré, jamais estimé ». Il le sera par #101, sur OPFS réel ; jusque-là cette ligne dit
-qu'elle ne sait pas, ce qui vaut mieux qu'un nombre qui aurait l'air d'une mesure.
+### Ce que le SUPPORT RÉEL a rendu, à 512 Mio (#101)
+
+Les deux lignes ci-dessus sont des extrapolations : un coût par scellement mesuré sur le modèle,
+multiplié par le nombre de secteurs. Les chiffres qui suivent sont des **mesures**, prises par les
+scénarios de bout en bout sur **OPFS réel**, dans Chromium, sur le volume applicatif de **512 Mio**
+de l'image de référence. Elles sont relevées dans `reports/e2e/*.json` à chaque exécution.
+
+| Geste, sur OPFS réel                                  |      Mesuré | Ce que le chiffre couvre                                                           |
+| ----------------------------------------------------- | ----------: | ---------------------------------------------------------------------------------- |
+| **Scellement initial** d'un volume v3 neuf de 512 Mio |  **21,8 s** | l'ouverture d'un volume qui naît : 1 048 576 secteurs scellés, zéros compris       |
+| **Versement** du disque applicatif dans ce volume     |  **21,1 s** | les 512 Mio de l'image écrits par le chemin chiffré, après le scellement           |
+| **Migration** d'un volume de 512 Mio vers v3, REPRISE | **112,7 s** | la chaîne entière rejouée depuis le manifeste source : déplacement puis scellement |
+| **Restauration** d'une archive de 512 Mio             |  **11,4 s** | recopie du fichier chiffré, sans clé — elle ne scelle ni ne déchiffre rien         |
+
+**Le scellement initial mesuré (21,8 s) dépasse l'extrapolation (18,7 s) de 17 %**, et l'écart est
+dans le sens attendu : l'extrapolation ne comptait que `crypto.subtle`, pas les écritures OPFS qui
+l'accompagnent. Elle reste donc un ordre de grandeur juste, et c'est ce qu'on lui demandait.
+
+**La migration coûte cinq fois le scellement initial, et c'est explicable plutôt que surprenant.**
+Elle fait trois choses là où une création n'en fait qu'une : elle **déplace** les 512 Mio de charge
+pour ouvrir la région d'authentification, elle **relit** chaque secteur avant de le sceller — un
+volume qui naît scelle des zéros qu'il n'a pas eu à lire —, et elle rejoue la chaîne v1 → v2 → v3.
+Le chiffre publié est celui d'une migration **reprise après interruption**, c'est-à-dire du cas le
+plus long : la reprise repart du manifeste source plutôt que de deviner un point d'arrêt.
+
+**Aucune de ces valeurs n'est un budget**, et la règle de #16 s'applique telle quelle : « un seuil
+posé sans mesure opposable serait une promesse, pas un budget ». Ce sont des relevés sur une machine
+qui n'est pas l'environnement de référence. Ce qu'ils permettent de dire est plus modeste et plus
+utile : migrer un volume de 512 Mio prend **de l'ordre de deux minutes**, pas de l'ordre de la
+seconde ni de l'heure, et l'interface qui le proposera devra le dire à l'utilisateur avant de
+commencer.
 
 **En espace** : 34 octets par secteur du volume (nonce 12 + étiquette 16 + génération 6), soit
 **6,641 %** et 34,00 Mio sur le volume applicatif de 512 Mio ; **34 octets par enregistrement du
