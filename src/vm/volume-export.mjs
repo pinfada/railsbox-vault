@@ -29,6 +29,7 @@
 
 import {
   DIGEST_ALGORITHM,
+  MIN_VOLUME_FORMAT_VERSION,
   createManifest,
   parseManifest,
   assertReadable,
@@ -166,9 +167,27 @@ function assertContratDExport({ source, sink, blockBytes }) {
  * refus qu'il porte est d'une AUTRE NATURE : un manifeste qui décrit un autre volume que celui qu'on
  * s'apprête à lire est un état de format, refusé par un code typé, et non une faute d'appel.
  */
+/**
+ * Refuse d'exporter un volume CHIFFRÉ par ce chemin (#18, ADR 0016).
+ *
+ * L'ADR 0016 décide que l'archive porte le fichier v3 TEL QUEL. Ce chemin ne sait pas le faire : sa
+ * source lit par le chemin AUTORISÉ, qui déchiffre. Le laisser passer produirait une archive **en
+ * clair** d'un volume chiffré — le chiffrement au repos annulé dès que le fichier quitte l'appareil,
+ * sans que rien ne le dise. Le refus tombe AVANT la première passe, donc avant qu'un seul octet
+ * n'ait été lu.
+ */
+function refuserVolumeChiffre(base) {
+  if (base.formatVersion < MIN_VOLUME_FORMAT_VERSION) return base;
+  throw new ArchiveError(
+    ARCHIVE_ERROR_CODES.encryptedUnsupported,
+    `Export refusé : le volume est au format v${base.formatVersion}, donc CHIFFRÉ, et l'archive doit en porter le fichier TEL QUEL (ADR 0016). Ce chemin lit le volume par la lecture autorisée, qui déchiffre : il produirait une archive en clair, c'est-à-dire annulerait le chiffrement au repos. Une clé n'y changerait rien — c'est la lecture BRUTE qui manque, et elle est l'objet de #101.`,
+    { formatVersion: base.formatVersion, issue: 101 },
+  );
+}
+
 function accorderManifesteEtSource(manifest, source) {
   // Le manifeste est validé par #10 (objet, octets ou chaîne acceptés) avant tout usage.
-  const base = parseManifest(manifest);
+  const base = refuserVolumeChiffre(parseManifest(manifest));
   if (base.geometry.volumeSize !== source.size) {
     throw new ArchiveError(
       ARCHIVE_ERROR_CODES.geometryMismatch,

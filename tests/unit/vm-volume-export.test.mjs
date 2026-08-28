@@ -62,8 +62,12 @@ function manifeste(volumeSize) {
     app: { id: "railsbox/reference", version: "3.1.0" },
     volumeSize,
     identity: { algorithm: "sha-256", digest: null },
-    // Bloc « volume » du format v3 (#18, ADR 0016) : identifiant opaque et algorithme épinglé.
-    volume: { id: "0123456789abcdef0123456789abcdef", algorithm: "aes-256-gcm" },
+    // FORMAT v2, et c'est délibéré (#18, ADR 0016) : ces suites éprouvent le CODEC d'archive, pas le
+    // format de volume. L'archive d'un volume v3 est refusée par ce chemin — elle doit porter le
+    // fichier chiffré TEL QUEL, ce que la tranche (b) livrera —, et
+    // `tests/unit/vm-archive-volume-chiffre.test.mjs` éprouve ce refus. Exporter ici un manifeste v3
+    // ne mesurerait donc plus que lui.
+    formatVersion: 2,
   });
 }
 
@@ -106,7 +110,7 @@ test("aller-retour : l'archive se vérifie et porte l'empreinte du contenu dans 
   // L'empreinte calculée est bien celle du CONTENU, et elle est inscrite dans identity.digest (#10).
   assert.equal(digest, attendu);
   assert.equal(manifest.identity.digest, attendu);
-  assert.equal(manifest.formatVersion, MANIFEST_FORMAT_VERSION);
+  assert.equal(manifest.formatVersion, 2, "les suites d'archive portent sur un manifeste v2");
   assert.equal(archive.byteLength, archiveLength);
 
   const verdict = await verifyArchive(archive);
@@ -287,18 +291,24 @@ test("la compatibilité du manifeste est vérifiée PAR DÉFAUT, sans attente à
   // Un contrôle qui ne s'exécute que si l'appelant pense à le demander n'est pas un contrôle : une
   // archive d'un format que ce runtime ne sait pas lire doit être refusée d'office.
   const source = sourceVolume(SECTOR_SIZE * 4);
-  const futur = createManifest({
-    formatVersion: MANIFEST_FORMAT_VERSION + 1,
-    runtime: { version: "1.4.2", artifact: null, minWriter: "1.0.0" },
-    app: { id: "railsbox/reference", version: "3.1.0" },
-    volumeSize: source.size,
-    identity: { algorithm: "sha-256", digest: null },
-    volume: { id: "0123456789abcdef0123456789abcdef", algorithm: "aes-256-gcm" },
-  });
-  const { archive } = await exportVolumeToBytes({
+  const valide = await exportVolumeToBytes({
     source,
-    manifest: futur,
+    manifest: manifeste(source.size),
     consistency: cohérence,
+  });
+  // FORMAT FUTUR fabriqué APRÈS coup, en réécrivant l'en-tête d'une archive valide. L'export refuse
+  // désormais tout manifeste v3 ou au-delà — un volume chiffré ne s'archive pas par ce chemin
+  // (#18, ADR 0016) —, si bien qu'un manifeste futur passé à l'export mesurerait CE refus-là au lieu
+  // du contrôle de compatibilité. L'`identity` est conservée : l'archive doit rester structurellement
+  // valide, sinon le refus mesuré serait celui d'un en-tête divergent.
+  const archive = archiveAvecEnTete(valide.archive, (entete) => {
+    entete.manifest = {
+      ...entete.manifest,
+      formatVersion: MANIFEST_FORMAT_VERSION + 1,
+      // Un format futur porterait le bloc « volume » comme le format courant : sans lui, le refus
+      // mesuré serait « malformé » et non « format futur ».
+      volume: { id: "0123456789abcdef0123456789abcdef", algorithm: "aes-256-gcm" },
+    };
   });
 
   await assert.rejects(
