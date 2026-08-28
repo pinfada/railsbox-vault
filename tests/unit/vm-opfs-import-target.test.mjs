@@ -180,5 +180,14 @@ test("le journal de génération n'est retiré qu'APRÈS la révocation du manif
   await cible.revokeManifest();
   await cible.discardGeneration();
 
-  assert.deepEqual(gestes, ["ouvre-volume", "revoque-manifeste", "retire:vault-app.gen"]);
+  // Le TÉMOIN de séquence part avec le journal (#19, ADR 0019), et pour une raison symétrique : il
+  // atteste une séquence du volume d'AVANT, que le volume restauré n'a jamais atteinte. Le garder
+  // ferait refuser, au premier boot suivant, un volume que la restauration vient de vérifier — et
+  // le refus désignerait un retour arrière qui n'a pas eu lieu.
+  assert.deepEqual(gestes, [
+    "ouvre-volume",
+    "revoque-manifeste",
+    "retire:vault-app.gen",
+    "retire:vault-app.temoin",
+  ]);
 });
