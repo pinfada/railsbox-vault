@@ -93,10 +93,30 @@ function info({ identifiantVolume, identifiantEmplacement, version }) {
 }
 
 const CAS_INFO = [
-  { nom: "volume A, emplacement A, version 1", identifiantVolume: VOLUME_A, identifiantEmplacement: EMPLACEMENT_A, version: 1 },
-  { nom: "volume A, emplacement B, version 1", identifiantVolume: VOLUME_A, identifiantEmplacement: EMPLACEMENT_B, version: 1 },
-  { nom: "volume B, emplacement A, version 1", identifiantVolume: VOLUME_B, identifiantEmplacement: EMPLACEMENT_A, version: 1 },
-  { nom: "volume A, emplacement A, version 2", identifiantVolume: VOLUME_A, identifiantEmplacement: EMPLACEMENT_A, version: 2 },
+  {
+    nom: "volume A, emplacement A, version 1",
+    identifiantVolume: VOLUME_A,
+    identifiantEmplacement: EMPLACEMENT_A,
+    version: 1,
+  },
+  {
+    nom: "volume A, emplacement B, version 1",
+    identifiantVolume: VOLUME_A,
+    identifiantEmplacement: EMPLACEMENT_B,
+    version: 1,
+  },
+  {
+    nom: "volume B, emplacement A, version 1",
+    identifiantVolume: VOLUME_B,
+    identifiantEmplacement: EMPLACEMENT_A,
+    version: 1,
+  },
+  {
+    nom: "volume A, emplacement A, version 2",
+    identifiantVolume: VOLUME_A,
+    identifiantEmplacement: EMPLACEMENT_A,
+    version: 2,
+  },
 ];
 
 /** Paramètres publics du dérivateur `phrase`, posés à la main. */
@@ -153,9 +173,21 @@ async function okm({ materiau, sel, infoOctets }) {
 }
 
 const CAS_HKDF = [
-  { nom: "matériau 0x5a, sel 0x0e, info du volume A", materiau: suite(0x5a, 32), sel: suite(0x0e, 16) },
-  { nom: "matériau 0xc0, sel 0xa0, info du volume A", materiau: suite(0xc0, 32), sel: suite(0xa0, 32) },
-  { nom: "matériau nul, sel vide, info du volume A", materiau: new Uint8Array(32), sel: new Uint8Array(0) },
+  {
+    nom: "matériau 0x5a, sel 0x0e, info du volume A",
+    materiau: suite(0x5a, 32),
+    sel: suite(0x0e, 16),
+  },
+  {
+    nom: "matériau 0xc0, sel 0xa0, info du volume A",
+    materiau: suite(0xc0, 32),
+    sel: suite(0xa0, 32),
+  },
+  {
+    nom: "matériau nul, sel vide, info du volume A",
+    materiau: new Uint8Array(32),
+    sel: new Uint8Array(0),
+  },
 ];
 
 /**
@@ -222,8 +254,18 @@ async function document() {
     info: infos,
     hkdf,
     parametres: [
-      { nom: "phrase, calibration retenue", type: "phrase", valeurs: VALEURS_PHRASE, octetsHex: hex(parametresPhrase(VALEURS_PHRASE)) },
-      { nom: "webauthn-prf, créance de vingt octets", type: "webauthn-prf", valeurs: VALEURS_PRF, octetsHex: hex(parametresPrf(VALEURS_PRF)) },
+      {
+        nom: "phrase, calibration retenue",
+        type: "phrase",
+        valeurs: VALEURS_PHRASE,
+        octetsHex: hex(parametresPhrase(VALEURS_PHRASE)),
+      },
+      {
+        nom: "webauthn-prf, créance de vingt octets",
+        type: "webauthn-prf",
+        valeurs: VALEURS_PRF,
+        octetsHex: hex(parametresPrf(VALEURS_PRF)),
+      },
     ],
     argon2Rfc9106: ARGON2_RFC9106,
   };

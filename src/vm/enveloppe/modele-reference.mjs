@@ -62,17 +62,26 @@ import {
 export { importerCleDeVolume };
 
 /**
- * Importe une clé de DÉVERROUILLAGE de 32 octets.
+ * Importe une clé de DÉVERROUILLAGE de 32 octets, ou laisse passer une `CryptoKey` déjà dérivée.
  *
  * Elle est importée NON EXTRACTIBLE, comme la clé de volume : une fois entrée dans WebCrypto, aucun
  * code de cette origine ne peut la ressortir en octets. Ce n'est pas une protection contre du code
  * hostile déjà présent dans le Worker — celui-ci s'en sert sans la lire —, c'est une réduction de
  * la surface d'exfiltration accidentelle, et elle est gratuite.
  *
- * @param {Uint8Array} octets exactement `CLE_OCTETS` octets
+ * **Une `CryptoKey` traverse telle quelle, et c'est l'amendement de #22 (ADR 0021).** Un dérivateur
+ * rend une KEK dont les octets N'EXISTENT PAS dans le tas JavaScript : `deriveKey` les garde du
+ * côté du moteur. Exiger ici des octets obligerait à passer par `deriveBits`, c'est-à-dire à
+ * fabriquer exprès la valeur que toute cette tranche s'attache à ne pas fabriquer. La clé reçue est
+ * VÉRIFIÉE — algorithme, largeur, usages —, jamais acceptée sur sa seule nature.
+ *
+ * @param {Uint8Array | CryptoKey} octets exactement `CLE_OCTETS` octets, ou la clé déjà importée
  * @returns {Promise<CryptoKey>}
  */
 export async function importerCleDeDeverrouillage(octets) {
+  if (typeof CryptoKey !== "undefined" && octets instanceof CryptoKey) {
+    return exigerCleAdmissible(octets);
+  }
   if (!(octets instanceof Uint8Array) || octets.byteLength !== CLE_OCTETS) {
     throw malforme(
       `une clé de déverrouillage fait exactement ${CLE_OCTETS} octets, reçu ${octets?.byteLength ?? "autre chose"}.`,
@@ -83,6 +92,32 @@ export async function importerCleDeDeverrouillage(octets) {
     "encrypt",
     "decrypt",
   ]);
+}
+
+/**
+ * Vérifie qu'une `CryptoKey` reçue est bien une clé de déverrouillage de ce format.
+ *
+ * Une clé d'un autre algorithme, d'une autre largeur ou sans l'usage voulu échouerait de toute
+ * façon au premier appel de WebCrypto — mais elle échouerait AILLEURS, avec un message de moteur,
+ * là où le format doit rendre son propre refus. L'extractibilité, elle, n'est PAS exigée : une clé
+ * extractible n'est pas moins juste, elle est seulement moins bien rangée, et ce module n'a pas à
+ * décider de la discipline de son appelant.
+ */
+function exigerCleAdmissible(cle) {
+  if (cle.algorithm?.name !== ALGORITHME_WEBCRYPTO) {
+    throw malforme(
+      `la clé de déverrouillage présentée est une clé ${cle.algorithm?.name ?? "sans algorithme"}, pas une clé ${ALGORITHME_WEBCRYPTO}.`,
+    );
+  }
+  if (cle.algorithm.length !== CLE_OCTETS * 8) {
+    throw malforme(
+      `la clé de déverrouillage présentée fait ${cle.algorithm.length} bits au lieu de ${CLE_OCTETS * 8}.`,
+    );
+  }
+  if (!cle.usages.includes("decrypt")) {
+    throw malforme("la clé de déverrouillage présentée n'a pas l'usage « decrypt ».");
+  }
+  return cle;
 }
 
 /** `undefined` est refusé ; `null` dit « aucun contrôle », et le dit explicitement. */
