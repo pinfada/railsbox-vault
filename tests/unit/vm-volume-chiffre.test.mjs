@@ -21,6 +21,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
+import { BlockJournal } from "../../src/vm/block-journal.mjs";
+import { OpfsBlockBackend } from "../../src/vm/opfs-block-backend.mjs";
+import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 import { hexEnOctets, octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
 import { CRYPTO_ERROR_CODES } from "../../src/vm/format-chiffre/crypto-errors.mjs";
 import { BUDGET_SCELLEMENTS_PAR_CLE } from "../../src/vm/format-chiffre/identite-logique.mjs";
@@ -143,6 +146,68 @@ test("le RESCELLEMENT du point de contrôle reproduit le vecteur d'un secteur de
   assert.equal(rescelle.secteurs[0].identite.rang, 0, "un secteur de volume a le rang épinglé");
   assert.equal(octetsEnHex(rescelle.secteurs[0].scelle.etiquette), vecteur.attendu.etiquette);
   assert.equal(octetsEnHex(rescelle.secteurs[0].scelle.chiffre), vecteur.attendu.chiffre);
+});
+
+test("le BACKEND dépose le vecteur n° 0 aux offsets que la disposition impose", async () => {
+  // Ce que les épreuves précédentes tiennent : les octets scellés sont les bons. Ce qu'aucune ne
+  // tenait : que le backend les pose AU BON ENDROIT du fichier. Un décalage d'un secteur entre la
+  // charge et la région rendrait un volume qui se relit parfaitement — chaque sceau vérifiant son
+  // propre secteur — mais qu'aucune autre implémentation du format ne saurait lire.
+  //
+  // Le backend est construit à la main, comme le fait la machine jetable de #15 : `openOpfsVolume`
+  // scelle tout le volume à la création, ce qui consommerait les nonces figés et déplacerait
+  // l'identité de chaque secteur.
+  const vecteur = VECTEURS.blocs[0];
+  const taille = 8 * SECTOR_SIZE;
+  const disposition = dispositionV3(taille);
+  const store = createSyncAccessStore();
+  const handle = await store.openHandle("vecteur");
+  handle.truncate(disposition.tailleSupport);
+
+  const backend = new OpfsBlockBackend({
+    name: "vecteur",
+    handle,
+    size: taille,
+    disposition,
+    scellement: await scellementDeVecteurs(noncesFiges([vecteur.attendu.nonce])),
+    journal: new BlockJournal(),
+    flushDelay: 0,
+  });
+  await backend.chiffre.ecrireSecteurs(
+    vecteur.identite.adresse,
+    contenuDepuisRegle(vecteur.contenu),
+    vecteur.identite.generation,
+  );
+  await backend.close();
+
+  // Les deux offsets sont ÉCRITS ICI, et non demandés au module qui les calcule : les demander
+  // ferait de l'épreuve une tautologie, où un décalage du calcul décalerait aussi bien la lecture.
+  // Ils se dérivent à la main de l'ADR 0016 pour cette taille : un en-tête d'un secteur, puis une
+  // région de 8 × 34 = 272 octets arrondie au secteur, donc 512. La charge commence à 1 024.
+  const SCEAU_DU_SECTEUR_0 = 512;
+  const CHARGE_DU_SECTEUR_0 = 1024;
+  assert.equal(offsetDeSceau(disposition, 0), SCEAU_DU_SECTEUR_0, "l'ADR 0016 place la région ici");
+  assert.equal(offsetDeCharge(disposition, 0), CHARGE_DU_SECTEUR_0, "et la charge là");
+
+  const fichier = store.snapshot("vecteur");
+  const sceau = fichier.subarray(SCEAU_DU_SECTEUR_0, SCEAU_DU_SECTEUR_0 + SCEAU_OCTETS);
+  assert.equal(octetsEnHex(sceau.subarray(0, 12)), vecteur.attendu.nonce, "nonce, dans la RÉGION");
+  assert.equal(octetsEnHex(sceau.subarray(12, 28)), vecteur.attendu.etiquette, "étiquette");
+  assert.deepEqual(
+    [...sceau.subarray(28)],
+    [vecteur.identite.generation, 0, 0, 0, 0, 0],
+    "génération sur six octets, petit-boutiste",
+  );
+
+  assert.equal(
+    octetsEnHex(fichier.subarray(CHARGE_DU_SECTEUR_0, CHARGE_DU_SECTEUR_0 + SECTOR_SIZE)),
+    vecteur.attendu.chiffre,
+    "le chiffré du vecteur, à l'offset de charge que la disposition impose",
+  );
+
+  // Et le clair du vecteur n'apparaît nulle part dans le fichier : le volume est chiffré au repos.
+  const clair = octetsEnHex(contenuDepuisRegle(vecteur.contenu));
+  assert.equal(octetsEnHex(fichier).includes(clair), false);
 });
 
 test("le scellement du produit reproduit OCTET POUR OCTET les deux racines figées", async () => {
