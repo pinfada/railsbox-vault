@@ -170,7 +170,7 @@ test("une clé de déverrouillage ouvre un volume Rails à froid, sa rotation au
 
   // 2. Boot À CHAUD par la CLÉ DE DÉVERROUILLAGE. Le Worker n'a plus le jeton pour cette phase : il
   //    ouvre l'enveloppe, développe la clé, boote, puis l'efface.
-  const live = await phase({ ...configBoot, phase: "live", kek: "initiale" });
+  const live = await phase({ ...configBoot, phase: "live", deverrouillerPar: "initiale" });
   await testInfo.attach("live-par-kek.json", {
     body: JSON.stringify(live, null, 2),
     contentType: "application/json",
@@ -199,7 +199,7 @@ test("une clé de déverrouillage ouvre un volume Rails à froid, sa rotation au
   expect(remplacee.nombreEmplacements).toBe(1);
 
   // 4. Boot À FROID par la clé NEUVE : la mutation Rails est retrouvée.
-  const resume = await phase({ ...configBoot, phase: "resume", kek: "rotation" });
+  const resume = await phase({ ...configBoot, phase: "resume", deverrouillerPar: "rotation" });
   await testInfo.attach("resume-par-nouvelle-kek.json", {
     body: JSON.stringify(resume, null, 2),
     contentType: "application/json",
