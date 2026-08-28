@@ -124,14 +124,18 @@ export class GenerationStore {
    */
   #sequenceMinimale = null;
   /**
-   * PLANCHER de génération d'un enregistrement relu.
-   *
-   * À la récupération il vaut 1 : `deposer` scelle sous « génération validée + 1 », donc aucun
-   * enregistrement ne peut porter zéro. En session il vaut la génération de reprise plus un, parce
-   * que la récupération se termine toujours par un vidage — le journal ne porte alors plus que ce
-   * que cette session y a mis.
+   * PLANCHER de génération d'un enregistrement relu. À la récupération il vaut 1 : `deposer` scelle
+   * sous « génération validée + 1 », donc aucun enregistrement ne peut porter zéro. En session il
+   * vaut la génération de reprise plus un — la récupération se termine toujours par un vidage, et le
+   * journal ne porte alors plus que ce que cette session y a mis.
    */
   #generationPlancher = 1;
+  /**
+   * Séquence que le TÉMOIN attestait À L'OUVERTURE, ou `null`. Retenue à part plutôt que relue au
+   * moment de publier : le vidage qui clôt la récupération en écrit un NEUF, et le rapport dirait
+   * alors ce que cette session vient d'écrire au lieu de ce qu'elle a trouvé.
+   */
+  #temoinALOuverture = null;
   /** Charge DÉPOSÉE : les entrées, la longueur des clairs, la longueur occupée sur le support. */
   #charge = etatDeCharge();
   /** Charge SCELLÉE par la dernière racine. Ce qui la dépasse n'est pas encore validé. */
@@ -267,7 +271,8 @@ export class GenerationStore {
     // séquence sous lequel aucune racine n'a le droit de faire autorité. Le lire après aurait
     // laissé la première ouverture de racine se faire sans plancher.
     await this.#garde?.lireTemoin();
-    this.#sequenceMinimale = this.#garde?.temoin?.sequence ?? null;
+    this.#temoinALOuverture = this.#garde?.temoin?.sequence ?? null;
+    this.#sequenceMinimale = this.#temoinALOuverture;
     const constat = constaterOuverture({
       journal: this.#journal,
       tailleVolume: this.#tailleVolume,
@@ -372,7 +377,7 @@ export class GenerationStore {
         // être supposé actif. `non-fournie` dit qu'aucune fraîcheur n'est prétendue ; `migree` dit
         // qu'une racine d'avant #19 a été trouvée et que la suivante portera l'empreinte.
         fraicheurRegion: this.#garde?.etat ?? FRAICHEUR_ETATS.nonFournie,
-        temoinSequence: this.#garde?.temoin?.sequence ?? null,
+        temoinSequence: this.#temoinALOuverture,
         ...details,
       },
     });

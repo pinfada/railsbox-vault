@@ -453,11 +453,16 @@ export class GardeDeFraicheur {
     this.#etat = FRAICHEUR_ETATS.verifiee;
   }
 
-  /** Les octets de fraîcheur qu'une racine de génération `generation` doit porter. */
+  /**
+   * Les octets de fraîcheur qu'une racine de génération `generation` doit porter.
+   *
+   * **L'état publié n'est PAS touché ici, et c'est le point.** Écrire une empreinte n'est pas en
+   * vérifier une : le rapport d'ouverture doit dire ce que la CONFRONTATION a trouvé, pas ce que le
+   * vidage a écrit juste après. Le relever ici ferait dire « vérifiée » à l'ouverture qui MIGRE un
+   * volume de #18 — c'est-à-dire précisément à la seule qui n'a rien vérifié.
+   */
   async pourRacine(generation) {
-    const octets = await scellerFraicheur(this.#scellement, generation, await this.empreinte());
-    this.#etat = FRAICHEUR_ETATS.verifiee;
-    return octets;
+    return scellerFraicheur(this.#scellement, generation, await this.empreinte());
   }
 
   /**
