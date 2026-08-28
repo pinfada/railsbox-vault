@@ -17,7 +17,7 @@
 
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { classerVolume } from "/src/vm/crash-oracle.mjs";
-import { armerInjecteur } from "/src/vm/crash-plan.mjs";
+import { armerFraicheur, armerInjecteur } from "/src/vm/crash-plan.mjs";
 import {
   VOLUME_OCTETS,
   blocsAttendus,
@@ -109,27 +109,50 @@ export async function runResiliencePreparer() {
  * franchir de barrière. Le handle exclusif reste ouvert : la page tue ce Worker juste après avoir
  * reçu ce compte rendu, et c'est ce `terminate()` qui est l'arrêt réel.
  */
-export async function runResilienceCouper({ point, jeton }) {
+export async function runResilienceCouper({ point, jeton, fraicheur = [] }) {
   const journal = new BlockJournal();
   const fautes = armerInjecteur(point, { jeton });
-  const backend = await openOpfsVolume({
-    cle: cleDuBanc(),
-    name: VOLUME_RESILIENCE,
-    journal,
-    faults: fautes,
-  });
-  const ecriture = await ecrireEtatNouveau(backend);
-  return {
+  // Plan SÉPARÉ pour les voisins de fraîcheur (#19) : la région d'authentification et le témoin de
+  // séquence. Le mêler au précédent décalerait les occurrences de la matrice de #15.
+  const fautesFraicheur = armerFraicheur(fraicheur, { jeton });
+  const rendre = (ecriture) => ({
     scenario: "resilience-couper",
     volume: VOLUME_RESILIENCE,
     point,
     ...ecriture,
-    // Le journal traverse le port AVANT la mort du Worker : l'oracle en a besoin pour savoir
-    // quelles écritures ont été acquittées et lesquelles une barrière a franchies.
     journal: journal.entries().map((entree) => ({ ...entree })),
     fautesTirees: fautes.fired().map((faute) => ({ ...faute })),
     fautesNonTirees: fautes.unfired().map((faute) => ({ ...faute })),
-  };
+    // Le plan de fraîcheur rend son propre compte : une faute jamais tirée ne prouve rien, et la
+    // confondre avec celles du volume masquerait laquelle des deux a réellement coupé.
+    fraicheurTirees: fautesFraicheur.fired().map((faute) => ({ ...faute })),
+    fraicheurNonTirees: fautesFraicheur.unfired().map((faute) => ({ ...faute })),
+  });
+
+  let backend;
+  try {
+    backend = await openOpfsVolume({
+      cle: cleDuBanc(),
+      name: VOLUME_RESILIENCE,
+      journal,
+      faults: fautes,
+      fautesFraicheur,
+    });
+  } catch (erreur) {
+    // L'OUVERTURE elle-même peut être le point de coupure depuis #19 : la région d'authentification
+    // y est confrontée, et le vidage de fin de récupération y écrit un témoin. Un refus TYPÉ à ce
+    // moment est un résultat de mesure, pas une panne du banc — le volume n'est simplement pas
+    // ouvert, et rien n'est écrit. Toute autre erreur remonte : une faute de programmation ne doit
+    // pas se déguiser en point de coupure.
+    if (!isStorageError(erreur)) throw erreur;
+    return rendre({
+      ecritures: 0,
+      barrieres: 0,
+      arret: { code: erreur.code, message: erreur.message },
+    });
+  }
+  const ecriture = await ecrireEtatNouveau(backend);
+  return rendre(ecriture);
 }
 
 /**

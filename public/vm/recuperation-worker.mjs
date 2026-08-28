@@ -31,6 +31,8 @@ import {
   openOpfsSyncAccess,
   removeOpfsVolume,
 } from "/src/vm/opfs-sync-access.mjs";
+import { TRANCHE_REGION_OCTETS, empreinteDeRegion } from "/src/vm/generation-fraicheur.mjs";
+import { dispositionV3 } from "/src/vm/volume-chiffre-format.mjs";
 
 /** Volume jetable du banc. Il est retiré avant et après chaque répétition. */
 const VOLUME = "recuperation-banc";
@@ -211,13 +213,74 @@ async function mesurer({
   };
 }
 
+/**
+ * Coût de l'EMPREINTE DE RÉGION sur OPFS RÉEL, à l'échelle du volume applicatif (#19, ADR 0019).
+ *
+ * Ce que ce mode mesure : les lectures OPFS de la région, tranche par tranche, et le hachage
+ * incrémental qui les absorbe — c'est-à-dire exactement `empreinteDeRegion`, par le chemin de
+ * production, sur le vrai support.
+ *
+ * Ce qu'il ne fait PAS, et pourquoi : il ne SCELLE pas le volume. Un scellement complet de 512 Mio
+ * coûte 87,6 s (ADR 0016) et ne changerait pas d'une milliseconde le coût mesuré ici — le hachage
+ * ne dépend pas de ce que la région contient, seulement de sa taille. Le fichier est donc alloué à
+ * sa taille support et sa région remplie d'un motif déterministe. Le dire vaut mieux que de laisser
+ * croire à une mesure de bout en bout.
+ */
+async function mesurerFraicheur({ tailleLogique = 512 * 1024 * 1024, repetitions = 3 } = {}) {
+  const disposition = dispositionV3(tailleLogique);
+  await nettoyer();
+  const handle = await openOpfsSyncAccess(VOLUME);
+  const releves = [];
+  try {
+    handle.truncate(disposition.tailleSupport);
+    const tranche = motif(TRANCHE_REGION_OCTETS, 7);
+    for (let ecrit = 0; ecrit < disposition.regionOctets; ecrit += TRANCHE_REGION_OCTETS) {
+      const longueur = Math.min(TRANCHE_REGION_OCTETS, disposition.regionOctets - ecrit);
+      handle.write(tranche.subarray(0, longueur), { at: disposition.regionOffset + ecrit });
+    }
+    handle.flush();
+
+    const lireRegion = async (offset, longueur) => {
+      const cible = new Uint8Array(longueur);
+      const lus = handle.read(cible, { at: offset });
+      return lus === longueur ? cible : cible.subarray(0, lus);
+    };
+    for (let rang = 0; rang < repetitions; rang += 1) {
+      const debut = performance.now();
+      await empreinteDeRegion({
+        lireRegion,
+        volume: VOLUME,
+        regionOffset: disposition.regionOffset,
+        regionOctets: disposition.regionOctets,
+      });
+      releves.push(performance.now() - debut);
+    }
+  } finally {
+    handle.close();
+    await nettoyer();
+  }
+  return {
+    mode: "fraicheur",
+    profil: {
+      tailleLogiqueOctets: tailleLogique,
+      regionOctets: disposition.regionOctets,
+      tailleSupportOctets: disposition.tailleSupport,
+      trancheOctets: TRANCHE_REGION_OCTETS,
+    },
+    empreinte: resumer(releves),
+    releves: releves.map((dureeMs, rang) => ({ rang, dureeMs })),
+  };
+}
+
 self.addEventListener("message", async (event) => {
   const { id, options } = event.data ?? {};
   let relacher = () => {};
   try {
     // La clé du harnais vaut pour la durée de la mesure, et pour elle seule (ADR 0016).
     relacher = poserCleDuBanc(options?.jetonCle);
-    self.postMessage({ id, ok: true, rapport: await mesurer(options) });
+    const rapport =
+      options?.mode === "fraicheur" ? await mesurerFraicheur(options) : await mesurer(options);
+    self.postMessage({ id, ok: true, rapport });
   } catch (cause) {
     try {
       await nettoyer();

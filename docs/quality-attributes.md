@@ -808,6 +808,63 @@ grandeur en dessous : elle ne pèse sur aucun budget de ce document.
    barrière OPFS ne sont pas dans ces nombres ; elles sont du même ordre que celles du manifeste
    voisin, que ce document ne chiffre pas non plus.
 
+## Ce que la FRAÎCHEUR du volume coûte (#19)
+
+L'[ADR 0019](decisions/0019-fraicheur-du-volume.md) ajoute une empreinte de la région
+d'authentification, scellée par la racine de génération et confrontée à l'ouverture avant toute
+lecture de secteur. C'est un coût nouveau sur le chemin que
+l'[ADR 0005](decisions/0005-qualification-de-la-reprise.md) borne à 60 s, et il est mesuré plutôt
+que supposé.
+
+### La grandeur en jeu, d'abord
+
+L'issue #19 annonçait « ≈ 2,3 Mio pour 512 Mio ». **C'est faux**, et la mesure a commencé par le
+corriger : la région d'un volume de 512 Mio fait `1 048 576 × 34 = 35 651 584` octets, soit **34 Mio
+exactement** (ADR 0016). L'estimation de l'issue était quinze fois trop basse ; c'est la vraie
+grandeur qui est chronométrée ci-dessous.
+
+### Le relevé, sur OPFS réel
+
+`npm run test:vm` (`tests/vm/fraicheur-region-cout.spec.mjs`) alloue un fichier à la taille support
+d'un volume de 512 Mio, remplit sa région, et chronomètre `empreinteDeRegion` — les lectures OPFS
+par tranches de 1 Mio et le hachage incrémental qui les absorbe. Chromium, `win32 x64`, Node 24.14,
+2026-08-28, machine de développement :
+
+| exécution | relevés (ms)          | p50   | p95   | étendue relative | part du budget de 60 s |
+| --------- | --------------------- | ----- | ----- | ---------------- | ---------------------- |
+| 1         | 386,5 · 354,1 · 353,3 | 354,1 | 383,3 | 9,1 %            | **0,64 %**             |
+| 2         | 350,8 · 344,8 · 339,4 | 344,8 | 350,2 | 3,3 %            | **0,58 %**             |
+
+**Six échantillons sur deux exécutions, de 339,4 à 386,5 ms** — une étendue de 47 ms, soit 13 % de
+la médiane. La dispersion est publiée parce qu'un chiffre unique laisserait croire à une précision
+que six mesures sur une machine de développement n'ont pas ; ce qu'elle établit tient malgré elle :
+le coût est du même ordre à chaque exécution, et il est **deux ordres de grandeur sous le budget de
+reprise**.
+
+Un banc Node de contrôle isole la part de CPU pur du même chemin — 281,9 à 288,5 ms sur cinq
+exécutions, médiane 282,9 ms, étendue 2,3 %. L'écart avec le support réel, une soixantaine de
+millisecondes, est le prix des 34 lectures OPFS. Il sert à savoir, le jour où un relevé dérive, si
+c'est le disque ou le hachage qui a bougé.
+
+### Le seuil, et ce qu'il engage
+
+L'épreuve épingle **un pour cent du budget de reprise** — 600 ms. Ce n'est pas une observation,
+c'est un engagement : au-delà, la fraîcheur cesserait d'être un coût qu'on peut ignorer dans le
+budget de l'ADR 0005, et l'ADR 0019 dit alors quoi faire — empreinte à un seul coup d'abord,
+puisqu'elle ne change aucun octet de format, empreinte incrémentale par suites ensuite, qui en
+change. **Amortir, pas relever le seuil.**
+
+### Ce que ce relevé ne couvre pas
+
+- **La fréquence, pas seulement le coût unitaire.** L'empreinte n'est rehachée que si le volume a
+  été écrit depuis la dernière : une session en paie une à l'ouverture, et une par point de
+  contrôle. Une application qui rangerait cent fois par boot paierait cent fois 350 ms — personne ne
+  l'a mesurée, et le seuil de rangement de l'ADR 0014 (8 Mio de charge validée) rend ce régime
+  improbable sans l'interdire.
+- **Le scellement du volume**, qui coûte 87,6 s à cette taille (#18) et n'entre pas dans cette
+  fenêtre : le hachage ne dépend pas de ce que la région contient, seulement de sa taille.
+- **La machine de l'utilisateur.** Le relevé est daté, situé, et publié avec son étendue.
+
 ## Compatibilité
 
 La cible produit est les deux dernières versions stables de Chromium, Firefox et Safari sur

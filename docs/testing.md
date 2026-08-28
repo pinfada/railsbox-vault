@@ -321,6 +321,36 @@ disposition est l'[ADR 0016](decisions/0016-format-de-volume-v3-dispositions.md)
 | résilience | `tests/vm/durability-barrier.spec.mjs`         | `SEC-DURABLE-001` sur des octets **chiffrés**       | `npm run test:vm` |
 | résilience | `tests/vm/recuperation-generation.spec.mjs`    | durée d'une récupération **avec déchiffrement**     | `npm run test:vm` |
 
+## La FRAÎCHEUR du volume, et ce qu'elle ne promet pas (#19)
+
+#18 avait armé le format ; #19 arme les CONTRÔLES. Jusqu'à cette tranche, `sequenceMinimale` et
+`generationMinimale` valaient `null` sur tout le chemin de production : les refus de rejeu
+existaient et personne ne les demandait. La décision est
+l'[ADR 0019](decisions/0019-fraicheur-du-volume.md).
+
+| Niveau     | Fichier                                       | Ce qu'il éprouve                                              | Rattachement      |
+| ---------- | --------------------------------------------- | ------------------------------------------------------------- | ----------------- |
+| unitaire   | `tests/unit/vm-generation-sequence.test.mjs`  | planchers présentés : rejeu de racine, rejeu d'enregistrement | `npm run check`   |
+| unitaire   | `tests/unit/vm-generation-fraicheur.test.mjs` | retour arrière d'un secteur, et du support **sous le témoin** | `npm run check`   |
+| résilience | `tests/vm/resilience-fraicheur.spec.mjs`      | coupure pendant l'empreinte, coupure entre racine et témoin   | `npm run test:vm` |
+| résilience | `tests/vm/fraicheur-region-cout.spec.mjs`     | coût de l'empreinte à 512 Mio, sur OPFS réel, avec dispersion | `npm run test:vm` |
+
+**La matrice de #15 n'a pas bougé d'un point**, et c'est une décision : le plan de fautes des
+voisins de fraîcheur — région d'authentification et témoin — est SÉPARÉ de celui qui vise les gestes
+du guest. Les mêler aurait décalé chaque occurrence de `resilience-arrets.spec.mjs`, et les relevés
+de #15, #16 et #19 auraient cessé d'être comparables point pour point.
+
+**Chaque épreuve négative porte son témoin positif dans le MÊME test.** Sans lui, un refus qui
+tomberait pour n'importe quelle raison — une racine illisible, un journal vide, une clé absente —
+passerait pour la preuve de la garde. Et chaque garde a été neutralisée une à une pour vérifier que
+son épreuve rougit ; le relevé de mutation est dans la pull request de #19.
+
+**Ce que ces épreuves NE prouvent pas**, et que `vm-generation-fraicheur.test.mjs` va jusqu'à
+montrer : le retour arrière COMPLET du support — volume, journal et témoin ensemble — n'est pas
+détecté. Sa dernière assertion rouvre un volume ainsi reculé et constate que rien ne s'y oppose. Une
+limite qu'aucune épreuve n'exécute finit par être oubliée ; celle-ci est renvoyée nommément à
+#21/#23.
+
 **Ce que la suite des vecteurs vaut ici, et qui n'est pas ce que valait celle de #17.**
 `vm-format-chiffre-vecteurs.test.mjs` confronte le MODÈLE aux octets figés ; `vm-volume-chiffre`
 confronte le **chemin de production** aux mêmes octets — le scellement du produit, son compteur de

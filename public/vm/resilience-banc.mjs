@@ -72,7 +72,7 @@ function brancher(nom) {
  *   prépare et relit. Il ne reçoit jamais le jeton du harnais.
  * @param {object} point point de coupure planifié
  */
-async function rejouerPoint(atelier, point) {
+async function rejouerPoint(atelier, point, fraicheur = []) {
   await atelier.demander({ scenario: "resilience-preparer" });
 
   const coupeur = brancher("vault-resilience-coupeur");
@@ -81,6 +81,7 @@ async function rejouerPoint(atelier, point) {
     coupe = await coupeur.demander({
       scenario: "resilience-couper",
       point,
+      fraicheur,
       jeton: HARNAIS_RESILIENCE_JETON,
     });
   } finally {
@@ -117,6 +118,8 @@ async function rejouerPoint(atelier, point) {
     arret: coupe.arret,
     fautesTirees: coupe.fautesTirees,
     fautesNonTirees: coupe.fautesNonTirees,
+    fraicheurTirees: coupe.fraicheurTirees,
+    fraicheurNonTirees: coupe.fraicheurNonTirees,
   };
 }
 
@@ -149,11 +152,11 @@ async function executerMatrice({ graine = 2026, points = 8 } = {}) {
  * coupure précis sur le vrai support, là où une matrice ne garantit pas qu'il sera tiré.
  * @param {object} point
  */
-async function executerPoint(point) {
+async function executerPoint(point, fraicheur = []) {
   const atelier = brancher("vault-resilience-atelier");
   try {
     etat.textContent = `Point isolé — ${point.kind} sur ${point.operation}#${point.occurrence}…`;
-    const resultat = await rejouerPoint(atelier, point);
+    const resultat = await rejouerPoint(atelier, point, fraicheur);
     etat.textContent = `Terminé : verdict « ${resultat.verdict} ».`;
     rapport.textContent = JSON.stringify(resultat, null, 2);
     return resultat;

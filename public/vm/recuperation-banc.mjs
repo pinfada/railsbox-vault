@@ -51,7 +51,8 @@ async function mesurer(options = {}) {
   const banc = brancher();
   try {
     const mesure = await banc.mesurer(options);
-    etat.textContent = `Terminé : p50 ${Math.round(mesure.recuperation.p50Ms)} ms, p95 ${Math.round(mesure.recuperation.p95Ms)} ms.`;
+    const resume = mesure.recuperation ?? mesure.empreinte;
+    etat.textContent = `Terminé : p50 ${Math.round(resume.p50Ms)} ms, p95 ${Math.round(resume.p95Ms)} ms.`;
     rapport.textContent = JSON.stringify(mesure, null, 2);
     return mesure;
   } finally {
