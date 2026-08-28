@@ -99,7 +99,7 @@ Trois réserves, à ne pas perdre de vue quand ces chiffres seront comparés à 
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Installation               | `npm ci` + navigateurs reproductibles depuis un clone vierge                                                               |
 | Premier boot de preuve     | p95 ≤ 15 min, aucun timeout silencieux                                                                                     |
-| Reprise locale au MVP      | cible p95 ≤ 60 s ; **gate fermé** (mesuré ~94 s), voie de qualification par ADR 0005                                       |
+| Reprise locale au MVP      | cible p95 ≤ 60 s ; **gate fermé** (mesuré ~94 s, ~91 s après l'atténuation de #66), voie par ADR 0005                      |
 | Mémoire                    | pic navigateur ≤ 1,5 Gio au prototype ; cible MVP ≤ 1,2 Gio                                                                |
 | Artefacts                  | ≤ 500 Mio transférés par application au premier usage, inventaire détaillé publié                                          |
 | Écriture acquittée         | RPO 0 après la barrière durable du guest                                                                                   |
@@ -203,6 +203,97 @@ La mémoire publiée par le relevé (`memoireTasJs`) est le **tas JS de la page*
 la VM : v86 et ses 512 Mio de RAM invitée vivent dans le Worker, que `performance.memory` de la page
 ne mesure pas. Une mesure de l'empreinte réelle du processus navigateur reste à outiller (issue de
 suivi).
+
+### Accélération du boot Rails de l'image de référence (#66)
+
+L'[ADR 0005](decisions/0005-qualification-de-la-reprise.md) a établi que le boot de Puma/Rails pèse
+~79 % de la reprise et poursuivi cette accélération **en atténuation**, pas comme voie de
+qualification. #66 mesure ce que l'atténuation rend, levier par levier.
+
+**Le banc.** `node tools/mesurer-attribution-boot.mjs` reproduit sous Node la décomposition que
+`repriseTimeline` publie côté navigateur, sans toucher au banc du navigateur. Chaque jalon est un
+événement RÉELLEMENT observé — un octet reçu sur le port série, une ligne de `guest-init.sh`, une
+ligne de `puma.log` relayée par le pont, une réponse 200 de `/vault/health` ; un jalon jamais
+atteint reste `null`. Un essai = un **processus Node neuf**, et deux images se comparent par **bras
+entrelacés**, protocole du spike #41 et de #86.
+
+**Ce relevé n'est PAS l'environnement de référence** (Windows 11, Node 24.14.0, 28 threads logiques,
+32 Gio ; cinq paires au lieu de dix essais après échauffement), et les disques y sont servis depuis
+la mémoire de Node, pas depuis OPFS. Les valeurs absolues valent comme ordre de grandeur ; sur la
+machine de référence, plus lente, on attend des durées plus longues.
+
+**L'attribution AVANT toute modification**, cinq boots à froid sur l'image de `main` :
+
+| Étape                                |         p50 |     p95 | Étendue |
+| ------------------------------------ | ----------: | ------: | ------: |
+| Instanciation v86 + WebAssembly      |      ~10 ms |  ~10 ms |       — |
+| BIOS → premier octet série           |       4,1 s |   6,2 s |   2,6 s |
+| Boot noyau → init (montage `/app`)   |      20,9 s |  27,2 s |  11,5 s |
+| Montage `/app` → lancement de l'app  |       0,1 s |   0,1 s |       — |
+| **Boot Puma/Rails jusqu'à « prêt »** |  **82,8 s** |  91,0 s |  17,3 s |
+| Détection par la sonde (pas de 5 s)  |       2,0 s |   4,7 s |   5,1 s |
+| **Total jusqu'à la première 200**    | **110,7 s** | 117,7 s |  22,1 s |
+
+Les proportions de l'ADR 0005 sont reproduites hors navigateur : le boot Rails domine, le montage du
+disque applicatif ne coûte rien. **L'étendue est publiée avec les percentiles parce qu'elle est
+grande** — 22,1 s sur le total, soit 20 % du p50 : sur cette machine, un écart plus petit ne se lit
+pas dans une comparaison marginale, et c'est l'entrelacement par paires qui le rend visible.
+
+Le boot Rails se décompose lui-même en deux moitiés, lues dans le flux série : **19 s** entre le
+lancement de l'application et la bannière de Puma (Bundler, Rack, Puma), puis **~52 s** de
+chargement de l'application jusqu'à `Listening on`.
+
+#### Levier retenu — cache Bootsnap pré-chauffé dans l'image
+
+Bootsnap met en cache la résolution du `$LOAD_PATH` et la compilation des fichiers Ruby en
+`InstructionSequence`. Le cache est rempli **à la construction du disque applicatif** (14 Mio, 1561
+fichiers) et n'est plus effacé : le premier boot chez l'utilisateur lit un cache complet.
+
+Cinq paires entrelacées, brut dans `reports/perf/attribution-bootsnap.json` :
+
+| Étape        |   p50 avant |  p50 après |   Écart p50 | Écart apparié médian | Paires en gain |
+| ------------ | ----------: | ---------: | ----------: | -------------------: | -------------: |
+| BIOS         |       4,1 s |      3,6 s |      −0,5 s |               −0,1 s |            4/5 |
+| noyau + init |      20,9 s |     17,3 s |      −3,6 s |               −3,6 s |            4/5 |
+| boot Rails   |      82,8 s |     66,6 s | **−16,3 s** |          **−16,5 s** |        **5/5** |
+| **total**    | **110,7 s** | **90,9 s** | **−19,8 s** |          **−20,1 s** |        **5/5** |
+
+**Le gain est attribué à l'étape que le levier vise**, et à elle seule : le boot Rails est la seule
+ligne dont les cinq paires vont dans le même sens (le plus faible écart apparié vaut −12,8 s). BIOS
+et noyau restent à 4/5, donc indécis — Bootsnap ne les touche pas, et la mesure ne prétend pas le
+contraire.
+
+**La règle marginale de #86 ne conclut sur aucune ligne**, parce que l'étendue de la campagne
+atteint 25,2 s. C'est le verdict apparié qui sépare, et il repose sur cinq paires : une chance sur
+trente-deux sous le seul hasard de signe. Ce n'est pas une preuve forte ; c'est ce que cinq paires
+permettent d'affirmer, et l'écart de 20 s dépasse largement le plus grand écart apparié de sens
+contraire jamais observé sur cette série (il n'y en a aucun).
+
+**Ce que le levier coûte.** Le disque applicatif ne change pas de taille (512 Mio fixes), mais son
+gzip passe de **43,0 à 48,5 Mio** — +5,5 Mio d'octets transférés, soit ≈ 205 Mio au total, toujours
+sous le budget de 500 Mio. Le rootfs est inchangé (126,8 Mio compressés). Deux gemmes entrent dans
+le verrou, `bootsnap` et `msgpack`.
+
+#### Levier RETIRÉ — lanceur mono-processus, gain non établi
+
+`bundle exec puma` démarre **deux** machines virtuelles Ruby et charge Bundler, Rack et Puma
+**avant** `config/boot.rb`, donc hors de portée de Bootsnap : c'est ce que valent les 19 s de la
+première moitié du boot Rails. Un lanceur `bin/vault-server` a été construit — une seule machine
+virtuelle, Bootsnap activé avant `require "puma/cli"` — et mesuré contre l'image précédente, cinq
+paires entrelacées (`reports/perf/attribution-lanceur.json`).
+
+| Paire     |        1 |         2 |    3 |     4 |     5 |
+| --------- | -------: | --------: | ---: | ----: | ----: |
+| avant (s) |    101,0 |      99,7 | 90,6 |  90,8 | 111,0 |
+| après (s) |     96,1 |      87,2 | 99,6 | 136,2 | 119,3 |
+| écart (s) | **−4,9** | **−12,5** | +8,9 | +45,4 |  +8,3 |
+
+**Deux paires en gain sur cinq, écart apparié médian +8,3 s : le levier est retiré.** La campagne
+est en outre plus bruitée que la précédente — 49,1 s d'étendue intra-série sur le bras candidat
+contre 20,4 s sur le bras de référence, et une paire à 136,2 s qui n'a rien à voir avec le code
+mesuré. Le mécanisme reste plausible (une machine virtuelle Ruby de moins, et Puma sous Bootsnap) ;
+ce relevé ne l'**établit pas**, et un mécanisme plausible non mesuré ne se garde pas. Le refaire
+demanderait le protocole de l'environnement de référence, machine au repos.
 
 ## Première mesure du taux de coupures atomiques (#15)
 
