@@ -16,9 +16,20 @@
 //
 // **La source de nonces est injectable, et c'est le seul point de cette tranche qui le soit.** Elle
 // existe pour une raison écrite par l'ADR 0015 : « permettre à une implémentation (#18) de REPRODUIRE
-// ces vecteurs ». Aucun chemin du produit ne la fournit — le défaut est `tirerNonce`, c'est-à-dire
-// douze octets de `crypto.getRandomValues` à chaque scellement, et
-// `tests/unit/vm-volume-chiffre.test.mjs` est le seul appelant qui la remplace.
+// ces vecteurs ». Le défaut est `tirerNonce`, c'est-à-dire douze octets de `crypto.getRandomValues`
+// à chaque scellement.
+//
+// Elle est GARDÉE PAR UN JETON depuis la revue de #102, qui a relevé que cette porte ouvrait sans
+// rien demander là où la clé, à deux lignes de distance, en exigeait un. La mutation qui a motivé la
+// garde est exécutée par `tests/unit/vm-source-de-nonce.test.mjs` : un nonce constant accepté, deux
+// blocs scellés sous la même clé et la même identité, et c1 ⊕ c2 = p1 ⊕ p2 — le clair de l'un
+// révèle celui de l'autre, sans qu'aucune étiquette n'ait été forgée.
+//
+// **Ce que ce jeton est, et ce qu'il n'est pas.** Contrairement à celui de la clé, il n'a pas de
+// variante d'environnement : une source de nonces est une FONCTION, elle ne traverse aucune
+// frontière de message, et seul un module qui importe déjà celui-ci peut la passer. Le jeton rend
+// donc l'intention EXPLICITE ; ce qui interdit l'usage, c'est l'épreuve d'architecture de
+// `tests/unit/harnais-portes.test.mjs`, qui refuse tout appelant hors des épreuves.
 
 import { CRYPTO_ERROR_CODES, isCryptoError } from "./format-chiffre/crypto-errors.mjs";
 import { tirerNonce } from "./format-chiffre/identite-logique.mjs";
@@ -82,6 +93,20 @@ async function traduisant(contexte, geste) {
 }
 
 /**
+ * Jeton exigé pour REMPLACER la source de nonces. Valeur exacte : une valeur approchante n'ouvre
+ * rien. Seules les épreuves qui confrontent le produit aux vecteurs de l'ADR 0015 ont une raison de
+ * l'importer, et `tests/unit/harnais-portes.test.mjs` tient cette liste.
+ */
+export const HARNAIS_NONCE_JETON = "vault/harnais-source-de-nonce/vecteurs-adr-0015";
+
+const REFUS_NONCE =
+  `La source de nonces d'un scellement ne se remplace que dans le harnais, et l'appel doit ` +
+  `présenter le jeton ${HARNAIS_NONCE_JETON}. Un nonce répété sous une même clé et une même ` +
+  `identité logique rend le clair récupérable par un simple ou-exclusif, sans qu'aucune étiquette ` +
+  `n'ait à être forgée. Aucun chemin du produit ne fournit de source : le défaut tire douze octets ` +
+  `de crypto.getRandomValues.`;
+
+/**
  * Le scellement d'UN volume : sa clé, son identité, son compteur.
  *
  * Une instance est partagée par le magasin de générations et par la couche chiffrée du volume, pour
@@ -108,10 +133,14 @@ export class Scellement {
    * Importe la clé — NON EXTRACTIBLE — et rend un scellement prêt.
    *
    * @param {{ volume: string, cleOctets: Uint8Array, formatVersion?: number,
-   *           scellementsCumules?: number, tirerNonce?: () => Uint8Array }} options
+   *           scellementsCumules?: number, tirerNonce?: () => Uint8Array,
+   *           jetonNonce?: string }} options
    *   `volume` est l'identifiant TEXTUEL du volume (trente-deux hexadécimaux), tel qu'il entre dans
    *   les données associées. La conversion depuis les seize octets du disque est fixée par
    *   l'ADR 0015 et faite par l'ouvreur, pas ici.
+   *   `tirerNonce` ne s'installe que sous `jetonNonce`, dont la valeur exacte est
+   *   `HARNAIS_NONCE_JETON`. Voir l'en-tête de ce fichier : c'est le paramètre par lequel le format
+   *   se perd le plus silencieusement.
    */
   static async ouvrir({
     volume,
@@ -119,7 +148,9 @@ export class Scellement {
     formatVersion,
     scellementsCumules = 0,
     tirerNonce: nonces = tirerNonce,
+    jetonNonce,
   }) {
+    if (nonces !== tirerNonce && jetonNonce !== HARNAIS_NONCE_JETON) throw new Error(REFUS_NONCE);
     return new Scellement({
       volume,
       formatVersion,

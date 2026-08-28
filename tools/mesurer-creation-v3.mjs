@@ -14,9 +14,13 @@
 // Elle n'est pas rattachée à `npm run check` : c'est une mesure, pas une épreuve, et son verdict
 // dépend de la machine. Son relevé est publié dans `docs/quality-attributes.md`.
 //
-//   node tools/mesurer-creation-v3.mjs [--mio=512] [--essais=3]
+// La clé passe par la PORTE DU HARNAIS, comme partout ailleurs : l'outil ne la fabrique pas et ne
+// l'importe pas, il la demande, et le processus doit porter la variable d'environnement. Une
+// cérémonie de plus au lancement, contre un importateur de moins de la clé de TEST.
+//
+//   VAULT_HARNAIS_CLE_DE_VOLUME=cle-de-test node tools/mesurer-creation-v3.mjs [--mio=512] [--essais=3]
 
-import { CLE_DE_TEST } from "../src/vm/cle-de-volume.mjs";
+import { cleDeVolumeDuHarnais } from "../src/vm/cle-de-volume.mjs";
 import { Scellement } from "../src/vm/scellement.mjs";
 import { VolumeChiffre } from "../src/vm/volume-chiffre.mjs";
 import { dispositionV3 } from "../src/vm/volume-chiffre-format.mjs";
@@ -44,7 +48,7 @@ async function mesurerUnEssai(tailleLogique) {
     volume: "mesure",
     scellement: await Scellement.ouvrir({
       volume: IDENTIFIANT,
-      cleOctets: CLE_DE_TEST,
+      cleOctets: cleDeVolumeDuHarnais(),
       formatVersion: 3,
     }),
     disposition,

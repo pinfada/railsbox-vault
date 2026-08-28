@@ -341,8 +341,20 @@ l'une, lire l'autre — et la propriété mesurée est la même à chaque fois :
 relecture, jamais rendu à moitié.
 
 **La clé des bancs vient du harnais, sous jeton**, comme l'injecteur d'arrêts de #15
-(`public/vm/cle-du-banc.mjs`). Ce module ne vit que dans `public/vm/` : aucun module de `src/` ne
-l'importe, et c'est ce qui rend vraie la phrase « aucun chemin du produit ne transmet le jeton ».
+(`public/vm/cle-du-banc.mjs`). Ce module ne vit que dans `public/vm/`, et c'est ce qui rend vraie la
+phrase « aucun chemin du produit ne transmet le jeton ».
+
+**Deux portes du format sont MESURÉES, et non affirmées** — `tests/unit/harnais-portes.test.mjs`. La
+clé de TEST (`CLE_DE_TEST`) et la source de nonces (`tirerNonce`) suffisent chacune, à un seul
+appelant près, à défaire ce que le chiffrement promet : la première chiffrerait le volume sous un
+secret public, la seconde rendrait le clair récupérable par un ou-exclusif. Toutes deux portent une
+garde à l'exécution, mais une garde dit « pas par accident », elle ne dit pas « personne » : c'est
+l'épreuve d'architecture qui le dit, en relevant les fichiers hors `tests/` qui les mentionnent et
+en les confrontant à deux listes motivées. La revue de #102 a trouvé ici la phrase « aucun module de
+`src/` ne l'importe » alors que deux fichiers le faisaient — `src/vm/crash-machine.mjs`, qui reçoit
+désormais la clé de l'épreuve qui le fait tourner, et `tools/mesurer-creation-v3.mjs`, qui passe
+maintenant par `cleDeVolumeDuHarnais` sous variable d'environnement. Une affirmation que rien ne
+relit finit par devenir fausse.
 
 ```bash
 npm run check                                   # les quatre suites unitaires y sont rattachées

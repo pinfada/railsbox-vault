@@ -25,7 +25,7 @@ import { hexEnOctets, octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs
 import { CRYPTO_ERROR_CODES } from "../../src/vm/format-chiffre/crypto-errors.mjs";
 import { BUDGET_SCELLEMENTS_PAR_CLE } from "../../src/vm/format-chiffre/identite-logique.mjs";
 import { exigerCleDeVolume } from "../../src/vm/cle-de-volume.mjs";
-import { Scellement } from "../../src/vm/scellement.mjs";
+import { HARNAIS_NONCE_JETON, Scellement } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { VolumeChiffre } from "../../src/vm/volume-chiffre.mjs";
 import {
@@ -90,7 +90,10 @@ async function scellementDeVecteurs(nonces) {
     cleOctets: CLE,
     formatVersion: 3,
     scellementsCumules: 0,
+    // La source de nonces ne s'installe que sous jeton (revue de #102). Ce fichier est l'usage
+    // pour lequel la porte existe : reproduire les nonces que les vecteurs de l'ADR 0015 figent.
     tirerNonce: nonces,
+    jetonNonce: HARNAIS_NONCE_JETON,
   });
 }
 
