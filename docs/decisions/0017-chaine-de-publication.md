@@ -74,7 +74,7 @@ qui portent la décision :
 
 ## Décision
 
-### 1. L'hébergement doit savoir servir des en-têtes de réponse. GitHub Pages est écarté pour l'origine de confiance
+### 1. Les DEUX origines exigent un hébergeur capable d'en-têtes. GitHub Pages n'est admis nulle part
 
 **L'origine de confiance est publiée chez un hébergeur capable d'en-têtes de réponse
 personnalisés**, et le recommandé est un couple **domaine propre + sous-domaine applicatif** servi
@@ -93,11 +93,30 @@ le même fichier est lu à l'identique par deux hébergeurs indépendants, ce qu
 d'hébergeur peu coûteux. Un reverse proxy sur hébergement statique reste équivalent
 fonctionnellement ; il coûte une exploitation, et l'ADR 0017 ne l'écarte pas — il le classe après.
 
-**Le territoire applicatif** peut vivre chez n'importe qui, y compris GitHub Pages : par décision de
-l'ADR 0002 il ne reçoit **aucune** CSP. Ce qu'il doit servir se réduit à `Cache-Control`,
-`X-Content-Type-Options` et `Cross-Origin-Resource-Policy: cross-origin`. Le publier tout de même
-sur le sous-domaine du domaine propre est recommandé pour la seule raison qu'invoquait déjà l'ADR
-0002 : la relation entre les deux origines reste lisible pour l'utilisateur.
+**Le territoire applicatif obéit à la MÊME règle, et GitHub Pages n'y est pas davantage admis.**
+
+Une première rédaction de cet ADR le laissait vivre « chez n'importe qui, y compris GitHub Pages »,
+au motif qu'il ne reçoit aucune CSP de la coquille. La revue de sécurité a montré que ce motif
+raisonnait sur ce que l'origine applicative ne reçoit **pas**, en oubliant ce qu'elle doit
+**servir**. Elle doit servir trois en-têtes, et le relevé du fait 3 dit que GitHub Pages n'en sert
+aucun :
+
+| En-tête servi par l'origine applicative      | Ce qu'il tient                                                                      | GitHub Pages (mesuré)   |
+| -------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------- |
+| `Cross-Origin-Resource-Policy: cross-origin` | rend ses ressources chargeables par la coquille qui l'encadre                       | absent                  |
+| `X-Content-Type-Options: nosniff`            | empêche le reniflage de type sur du contenu rendu par le guest                      | absent                  |
+| `Content-Security-Policy: frame-ancestors …` | seule la coquille peut l'encadrer (§ 3 bis)                                         | absent, et inexprimable |
+| `Cache-Control: no-store`                    | ce que sert le serveur de test — Pages sert `max-age=600`, donc une AUTRE politique | divergent               |
+
+Le territoire applicatif est donc publié, lui aussi, chez un hébergeur capable d'en-têtes. C'est la
+règle la plus simple, et c'est aussi la seule qui se vérifie : `tools/publier-temoin.mjs` asserte
+ces en-têtes sur les **deux** origines, et une origine incapable de les servir ferait échouer le
+témoin plutôt que de dégrader la publication en silence. Une règle qui vaudrait d'un côté et pas de
+l'autre demanderait une seconde table d'attentes, et cette seconde table serait celle que personne
+ne relit.
+
+**GitHub Pages n'est donc admis nulle part** dans cette chaîne. Le comparatif du spike le dit sur
+les deux lignes.
 
 **Conséquence à écrire, parce qu'elle n'est pas intuitive** (fait 2) : sur un domaine propre les
 deux origines sont le **même site**, et les cookies ne sont donc pas cloisonnés entre elles. Cela ne
@@ -121,22 +140,46 @@ qui est mesurée, et celle qui est servie.
 
 Cet ADR ne modifie pas `tools/serve-headers.mjs`, conformément à ce que l'ADR 0010 avait posé.
 
-### 3. Un seul en-tête est ajouté par la publication : `Cross-Origin-Opener-Policy: same-origin`
+### 3. `Cross-Origin-Opener-Policy: same-origin` sur la coquille
 
-Sur l'**origine de confiance** seulement. C'est l'application de la recommandation différée de l'ADR
-0010, et #45 tranche la première des deux voies qu'elle laissait ouvertes : un hébergement capable
-d'en-têtes, plutôt qu'un Service Worker injecteur.
+C'est l'application de la recommandation différée de l'ADR 0010, et #45 tranche la première des deux
+voies qu'elle laissait ouvertes : un hébergement capable d'en-têtes, plutôt qu'un Service Worker
+injecteur.
 
 Il n'est **pas** posé sur l'origine applicative : un document encadré n'est pas un contexte de
-navigation de plus haut niveau, l'en-tête y serait sans effet, et le poser violerait la règle de
-l'ADR 0002 selon laquelle la coquille n'impose rien au territoire applicatif.
+navigation de plus haut niveau, et l'en-tête y serait sans effet.
 
 `same-origin` est retenu plutôt que `same-origin-allow-popups` : la coquille n'ouvre aujourd'hui
 aucune fenêtre dont elle garderait la référence. Le jour où elle en ouvrirait une, l'ADR 0010 a déjà
 nommé la valeur de repli.
 
-Une épreuve unitaire vérifie que COOP est **le seul** ajout : tout autre en-tête apparu dans la
-publication et absent du serveur de test fait échouer `npm run check`.
+### 3 bis. `Content-Security-Policy: frame-ancestors <origine coquille>` sur l'application
+
+La revue de sécurité de #45 a relevé que l'origine applicative, telle que publiée, était encadrable
+par **n'importe quel site**. Ce n'est pas anodin : cette origine porte les cookies de session Rails,
+son stockage et son Service Worker. Un tiers qui l'encadre obtient une surface de détournement de
+clic sur une application authentifiée.
+
+**L'ADR 0002 n'interdit pas cette directive, et il faut dire précisément pourquoi.** Ce qu'il
+s'interdit est d'imposer une politique au **contenu** rendu par le guest : « lui imposer ici une CSP
+reviendrait à mesurer notre propre politique au lieu de la frontière d'origine ». `frame-ancestors`
+ne fait rien de tel. Elle ne gouverne pas ce que le document **charge** — ni `script-src`, ni
+`connect-src`, ni `default-src` — mais seulement **qui a le droit de l'encadrer**. C'est une
+propriété de l'hébergement de cette origine, comme `Cross-Origin-Resource-Policy` qui y est déjà
+servi, et non une contrainte sur le code applicatif.
+
+Cette distinction ne tient que si la directive reste **seule**. Une politique applicative qui
+gagnerait un `default-src` ou un `script-src` aurait franchi la ligne de l'ADR 0002. Le témoin
+d'en-têtes découpe donc la CSP reçue par l'origine applicative et **échoue** si elle contient autre
+chose que `frame-ancestors`.
+
+### 3 ter. Ces deux en-têtes sont les seuls ajouts, et une épreuve le tient
+
+`tools/serve-headers.mjs` rend une politique par rôle ; la publication y ajoute exactement les deux
+en-têtes ci-dessus, chacun sur une seule origine, chacun avec son ADR et son motif dans
+`EN_TETES_AJOUTES_PAR_LA_PUBLICATION`. Une épreuve unitaire compare cette table à l'écart réellement
+mesuré entre `securityHeaders()` et ce qui est publié, sur les deux arbres : un **troisième**
+en-tête fait échouer `npm run check` tant qu'un ADR ne l'a pas déclaré.
 
 **COEP reste absent.** L'ADR 0010 l'écarte sur mesure ; rien dans #45 ne rouvre la question, et une
 épreuve le vérifie sur les deux arbres.
@@ -177,6 +220,14 @@ L'empreinte de racine porte la **liste** — chemin, taille, empreinte — sous 
 Un renommage la change alors que le contenu total ne bouge pas ; une somme des empreintes ne le
 verrait pas.
 
+**Elle est adressée par contenu, et elle n'est donc pas une identité de version.** Une première
+rédaction la disait « liée au commit », ce qui laissait croire à une bijection : la revue de #45 a
+relevé que les trois commits de la PR rendaient la même racine, parce qu'aucun ne touchait un octet
+publié. C'est correct et c'est même une propriété — une tranche de documentation ne change pas
+l'artefact —, mais cela signifie qu'une empreinte de racine ne **nomme** pas une version. La
+formulation exacte est : l'empreinte de racine est **accompagnée** du commit dans l'inventaire. Les
+deux identités sont indépendantes, et c'est le couple qui décrit une publication.
+
 `node tools/publier.mjs --verifier <arbre>` recalcule tout et rend trois natures d'écart, qui ne se
 diagnostiquent pas de la même façon : **altéré** (publication corrompue ou construction non
 reproductible), **ajouté** (une surface que personne n'a décidée — le cas que `release-policy.md`
@@ -215,9 +266,23 @@ C'est une migration, qui exige, dans cet ordre :
    l'archive entière avant d'écrire un octet et n'identifie le volume qu'après l'avoir relu ;
 5. le maintien en service de l'ancienne origine tant qu'un utilisateur peut n'avoir pas exporté.
 
-La chaîne rend cette règle visible plutôt qu'elle ne l'impose : l'origine de chaque arbre est
-inscrite dans son inventaire, et un changement d'origine change le `_headers`, donc l'empreinte de
-racine. Une bascule d'origine ne peut donc pas passer pour un redéploiement au vu des artefacts.
+**Ce que la chaîne rend visible, et ce qu'elle ne rend pas.** Une première rédaction de cet ADR
+affirmait ici qu'« un changement d'origine change le `_headers`, donc l'empreinte de racine ; une
+bascule d'origine ne peut donc pas passer pour un redéploiement ». La revue de sécurité de #45 l'a
+mesurée **fausse** : le `_headers` de la coquille ne portait l'origine **applicative** — par
+`frame-src` — et sa propre origine ne vivait que dans `inventaire.json`, fichier explicitement hors
+de sa propre empreinte. Deux constructions d'origines de coquille différentes rendaient la même
+empreinte de racine. La bascule la plus dangereuse — celle qui rend l'OPFS de l'ancienne origine
+inatteignable — était précisément celle qui ne se voyait pas.
+
+Le `_headers` porte donc désormais `# origine: <url>` en tête. C'est un commentaire pour
+l'hébergeur, qui l'ignore ; c'est un **octet servi** pour l'empreinte, qui le compte. Deux origines
+rendent maintenant deux racines, sur les deux arbres — celui de l'application aussi, puisque son
+`frame-ancestors` nomme la coquille (§ 3 bis). Quatre épreuves unitaires le tiennent.
+
+L'affirmation corrigée est donc : **une bascule d'origine change l'empreinte de racine, et la
+procédure de retour arrière du § 7 la distingue d'un redéploiement.** Elle reste une aide au
+diagnostic, pas une garantie : rien n'empêche un exploitant de déployer sans comparer.
 
 ### 7. Procédure de retour arrière
 
@@ -228,8 +293,21 @@ node tools/publier.mjs --verifier artifacts/rollback/coquille
 ```
 
 La reconstruction est **reproductible au bit près** (fait 5), et c'est ce qui rend la procédure
-définie. `publication.yml` l'éprouve sous `rollback-vers` : il reconstruit deux fois le même commit
-et exige l'égalité des empreintes de racine.
+définie.
+
+**Deux comparaisons, et elles ne prouvent pas la même chose.** La revue de sécurité de #45 a relevé
+que le workflow promettait la seconde et n'exécutait que la première :
+
+| Comparaison                                                      | Ce qu'elle prouve                                             |
+| ---------------------------------------------------------------- | ------------------------------------------------------------- |
+| deux reconstructions du même commit, dans le même run            | le **déterminisme** de l'outil, rien de plus                  |
+| reconstruction **contre l'empreinte inscrite lors de la sortie** | qu'on republie bien **cette version-là**, et non une homonyme |
+
+`publication.yml` fait la première toujours, et la seconde dès que l'entrée `empreinte-attendue` est
+fournie — l'empreinte qu'avait inscrite la publication d'alors. Sans elle, il **le dit** dans son
+journal (« seul le déterminisme est éprouvé ») plutôt que de laisser croire à la seconde. C'est la
+raison pour laquelle `docs/release-policy.md` demande de conserver cette empreinte à chaque sortie :
+sans elle conservée hors bande, le retour arrière est reproductible mais pas vérifiable.
 
 Deux réserves qui appartiennent à la procédure, pas à l'outil : un retour arrière **ne migre rien à
 l'envers** — un volume écrit par la version retirée reste écrit par elle, et le refus de downgrade
@@ -284,6 +362,24 @@ rien.
 6. **Le domaine propre fait des deux origines un même site** (fait 2). Aucune propriété mesurée n'en
    souffre, mais la contrainte de cookies du § 1 doit être tenue par #24, et rien ne la mesure
    aujourd'hui.
+7. **Aucun en-tête de durcissement générique n'est publié** — ni `Referrer-Policy`, ni
+   `Permissions-Policy`, ni `Strict-Transport-Security`. Ce n'est pas un choix positif : c'est la
+   conséquence mécanique de la règle « rien de plus que ce que sert le serveur de test », qui n'en
+   sert aucun. La règle a une bonne raison — que les épreuves de frontière mesurent ce qui est
+   publié — mais elle transforme ici une absence en décision par défaut. Les ajouter demanderait de
+   les servir d'abord en développement, donc de toucher `tools/serve-headers.mjs`, hors périmètre.
+   **Travail découvert.**
+8. **L'empreinte de racine ne nomme pas une version** (§ 5). Deux tranches dont aucun octet publié
+   ne diffère la partagent. Une procédure qui l'emploierait seule pour identifier « la version
+   déployée » se tromperait ; c'est le couple (empreinte, commit) qui décrit une publication, et
+   l'inventaire porte les deux.
+9. **`inventaire.json` est servi publiquement** avec le reste de l'arbre. C'est assumé : il ne
+   contient que ce qu'un visiteur peut recalculer en téléchargeant les fichiers, plus l'identité du
+   commit — déjà publique, le dépôt étant ouvert. Le publier permet à un tiers de vérifier ce qu'il
+   a reçu sans nous le demander, ce qui est la propriété recherchée.
+10. **Les relevés bruts du spike ne sont pas versionnés.** `reports/` est ignoré par git ; seul
+    `docs/spikes/0045/sonde-hebergement.json` est conservé, parce qu'il date des faits mesurés sur
+    des services tiers qui changeront. Les relevés de navigateur, eux, se rejouent par commande.
 
 ## Conditions de réouverture
 

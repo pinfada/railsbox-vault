@@ -101,6 +101,12 @@ node tools/publier-sonde-hebergement.mjs        # rapport : reports/publication/
 node tools/publier-sonde-hebergement.mjs --hors-ligne
 ```
 
+Le relevé brut est **versionné** dans [`0045/sonde-hebergement.json`](0045/sonde-hebergement.json),
+et c'est le seul du spike à l'être. La raison est asymétrique : les relevés de navigateur se
+rejouent par une commande sur des artefacts épinglés, tandis que celui-ci mesure des services tiers
+qui changeront sans nous prévenir. Le rejouer dans un an ne reproduira pas ces valeurs ; le lire tel
+qu'il a été mesuré, si.
+
 ### En-têtes servis par des sites témoins (2026-08-27)
 
 | Hébergeur (site témoin)                        | CSP                               | COOP   | CORP   | `nosniff` | HSTS    |
@@ -209,6 +215,42 @@ Les trois natures d'écart — altéré, ajouté, manquant — et le cas du **re
 inchangé, empreinte de racine changée) sont éprouvées en unitaire par
 `tests/unit/publication-inventaire.test.mjs`, sur des arbres jetables.
 
+### Une bascule d'origine se voyait-elle ? Non — mesuré, puis corrigé
+
+C'est le constat de la revue de sécurité de #45, et il visait une affirmation de ce spike lui-même.
+La procédure de retour arrière repose sur la comparaison d'empreintes de racine ; encore faut-il que
+l'empreinte bouge quand quelque chose d'important bouge. Première mesure, sur la version initiale de
+l'outil :
+
+```sh
+node tools/publier.mjs --origine-coquille https://AUTRE-ORIGINE.exemple --sortie artifacts/h1
+node tools/publier.mjs --sortie artifacts/h1b   # https://vault.exemple
+```
+
+| Origine de la coquille          | Empreinte de racine, arbre coquille |
+| ------------------------------- | ----------------------------------- |
+| `https://vault.exemple`         | `4592da46…`                         |
+| `https://AUTRE-ORIGINE.exemple` | `4592da46…` — **la même**           |
+
+L'arbre applicatif était invariant dans les deux sens. La cause : le `_headers` de la coquille ne
+porte l'origine **applicative** — par `frame-src` — et sa propre origine ne vivait que dans
+`inventaire.json`, fichier explicitement **hors de sa propre empreinte** (il ne peut pas contenir
+l'empreinte du fichier qu'il est). Conséquence concrète : une migration `vault.exemple` →
+`vault2.exemple`, où l'OPFS de l'ancienne origine devient inatteignable (ADR 0009), ne se
+distinguait pas d'un redéploiement à la comparaison d'empreintes.
+
+Correction : le `_headers` porte `# origine: <url>` en tête. Commentaire inerte pour l'hébergeur —
+le serveur du témoin ne le rend pas comme en-tête, une épreuve le vérifie —, octet compté par
+l'empreinte. Deuxième mesure, après correction :
+
+| Origine de la coquille          | Racine, arbre coquille | Racine, arbre application |
+| ------------------------------- | ---------------------- | ------------------------- |
+| `https://vault.exemple`         | `8d64c2db…`            | `03fc6a11…`               |
+| `https://AUTRE-ORIGINE.exemple` | `5bc8d563…`            | `de17f0d2…`               |
+
+Les **deux** arbres bougent : celui de l'application aussi, puisque son `frame-ancestors` nomme la
+coquille. Quatre épreuves unitaires tiennent désormais cette propriété dans les deux sens.
+
 ### Retour arrière
 
 ```sh
@@ -235,7 +277,10 @@ volume en écriture ». Le manifeste de volume (ADR 0007) nomme déjà les trois
 nomme des **versions**, pas des octets. La publication ajoute deux liens :
 
 - `inventaire.json` porte l'empreinte de **chaque** fichier servi, plus l'empreinte de racine de
-  l'arbre, liée au commit ;
+  l'arbre, **accompagnée** du commit. Le mot compte : l'empreinte est adressée par CONTENU, et le
+  relevé 5 en donne le témoin — deux commits de cette branche rendent la même racine parce qu'aucun
+  ne touche un octet publié. Elle ne nomme donc pas une version ; c'est le couple (empreinte,
+  commit) qui décrit une publication ;
 - la construction relit `vendor/v86/MANIFEST.json` **dans l'arbre publié** et confronte chaque
   artefact v86 copié à son empreinte épinglée (`épinglage v86 conforme au MANIFEST` ci-dessus). Le
   runtime servi au navigateur est donc vérifié comme tel, et pas seulement dans le dépôt.
@@ -248,7 +293,7 @@ construction.
 ## Relevé 4 — témoin d'en-têtes, et COOP
 
 ```sh
-node tools/publier.mjs --origine-application http://localhost:4194
+npm run publier:check    # construit l'arbre de BANC, le verifie, puis joue le temoin
 VAULT_MOTEURS=chromium,firefox,webkit node tools/publier-temoin.mjs
 ```
 
@@ -259,21 +304,32 @@ l'en-tête.
 
 Relevé **identique sur les trois moteurs** :
 
-| Relevé                                           | Chromium 151 | Firefox 153 | WebKit 26.5 |
-| ------------------------------------------------ | ------------ | ----------- | ----------- |
-| en-têtes de la coquille conformes à l'inventaire | oui          | oui         | oui         |
-| en-têtes de l'origine applicative conformes      | oui          | oui         | oui         |
-| CSP absente de l'origine applicative (ADR 0002)  | oui          | oui         | oui         |
-| la coquille démarre (`worker:ready`)             | oui          | oui         | oui         |
-| `window.opener` **avec** COOP                    | **`null`**   | **`null`**  | **`null`**  |
-| `window.opener` **sans** COOP (témoin négatif)   | survit       | survit      | survit      |
+| Relevé                                              | Chromium 151 | Firefox 153 | WebKit 26.5 |
+| --------------------------------------------------- | ------------ | ----------- | ----------- |
+| en-têtes de la coquille conformes à l'inventaire    | oui          | oui         | oui         |
+| en-têtes de l'origine applicative conformes         | oui          | oui         | oui         |
+| CSP applicative = `frame-ancestors` SEUL (ADR 0002) | oui          | oui         | oui         |
+| la coquille démarre (`worker:ready`)                | oui          | oui         | oui         |
+| `window.opener` **avec** COOP                       | **`null`**   | **`null`**  | **`null`**  |
+| `window.opener` **sans** COOP (témoin négatif)      | survit       | survit      | survit      |
 
 La fenêtre est ouverte par `window.open` depuis un document de **l'autre origine** : c'est
 exactement la relation que COOP gouverne et que `frame-ancestors` ne couvre pas. La preuve que l'ADR
 0010 avait nommée est donc produite, et sur les trois moteurs — davantage que ce qu'il demandait.
 
-Le témoin ne rejoue **pas** la frontière de CSP : `tests/browser/csp-frontiere.spec.mjs` la mesure
-déjà sur les trois moteurs à chaque `npm run check`, et la dupliquer ferait deux vérités.
+**La ligne de la CSP applicative a changé de nature après la revue de sécurité de #45.** Elle
+affirmait « CSP absente de l'origine applicative », et présentait comme une propriété ce qui était
+un trou : cette origine porte les cookies de session Rails, son stockage et son Service Worker, et
+elle était **encadrable par n'importe quel site**. Elle sert désormais
+`frame-ancestors <origine coquille>`. La directive ne rouvre pas ce que l'ADR 0002 s'interdit — elle
+ne gouverne pas ce que le document **charge**, seulement qui a le droit de l'**encadrer** — et cette
+distinction ne tient que si elle reste seule. Ce que le témoin vérifie n'est donc plus une absence
+mais une **solitude** : il découpe la politique reçue et échoue si une seconde directive y apparaît.
+Relevé sur les trois moteurs : `frame-ancestors http://127.0.0.1:4193`, une directive, pas deux.
+
+Le témoin ne rejoue **pas** la frontière de CSP de la coquille :
+`tests/browser/csp-frontiere.spec.mjs` la mesure déjà sur les trois moteurs à chaque
+`npm run check`, et la dupliquer ferait deux vérités.
 
 ## Relevé 5 — la chaîne, rejouée à la main
 
@@ -312,19 +368,20 @@ version n'est pas confondue avec celle des octets.
 
 Ce qui est **mesuré** est marqué comme tel ; le reste est documentaire et cité.
 
-| Critère                                            | GitHub Pages                                                | Cloudflare Pages / Netlify (`_headers`)                  | Vercel (`vercel.json`)                    | Hébergeur statique + reverse proxy, domaine propre |
-| -------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------- | -------------------------------------------------- |
-| CSP de l'ADR 0013 servie en en-tête                | **non** (mesuré : aucun en-tête de sécurité sur un 200)     | oui (mesuré : CSP propre au site)                        | oui (mesuré)                              | oui                                                |
-| … par `<meta>` à défaut                            | **non** : `frame-ancestors` ignoré (mesuré, 3 moteurs)      | sans objet                                               | sans objet                                | sans objet                                         |
-| COOP `same-origin` sur la coquille                 | **non** (inexprimable en `<meta>`, mesuré)                  | oui                                                      | oui                                       | oui                                                |
-| CORP par origine                                   | non                                                         | oui                                                      | oui                                       | oui                                                |
-| Deux origines distinctes                           | oui, au prix d'un domaine propre ou d'un second compte      | oui                                                      | oui                                       | oui                                                |
-| Deux **sites** distincts sur le domaine par défaut | oui — `github.io` à la PSL (mesuré)                         | oui — `pages.dev` / `netlify.app` à la PSL (mesuré)      | oui — `vercel.app` à la PSL (mesuré)      | **non** : sous-domaines d'un même site             |
-| Cookies séparés entre les deux origines            | oui (sites distincts)                                       | oui                                                      | oui                                       | **non** : à traiter par #24                        |
-| Coût                                               | gratuit ; domaine propre en sus                             | gratuit en offre de base ; domaine propre en sus         | gratuit en offre de base                  | hébergement + domaine + exploitation du proxy      |
-| Retour arrière                                     | redéployer une branche                                      | redéploiement d'une version antérieure, natif            | idem                                      | redéposer l'arbre + recharger le proxy             |
-| Verrouillage fournisseur                           | faible (fichiers statiques)                                 | faible : `_headers` est une convention partagée par deux | moyen : `vercel.json` est propre à Vercel | nul                                                |
-| Dépendance ajoutée à la frontière de confiance     | **oui si Service Worker injectant les en-têtes** (ADR 0010) | non                                                      | non                                       | non                                                |
+| Critère                                                                          | GitHub Pages                                                           | Cloudflare Pages / Netlify (`_headers`)                  | Vercel (`vercel.json`)                    | Hébergeur statique + reverse proxy, domaine propre |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------- | ----------------------------------------- | -------------------------------------------------- |
+| CSP de l'ADR 0013 servie en en-tête                                              | **non** (mesuré : aucun en-tête de sécurité sur un 200)                | oui (mesuré : CSP propre au site)                        | oui (mesuré)                              | oui                                                |
+| En-têtes de l'ORIGINE APPLICATIVE (CORP, nosniff, `frame-ancestors`, `no-store`) | **non** : aucun servi, et `max-age=600` au lieu de `no-store` (mesuré) | oui                                                      | oui                                       | oui                                                |
+| … par `<meta>` à défaut                                                          | **non** : `frame-ancestors` ignoré (mesuré, 3 moteurs)                 | sans objet                                               | sans objet                                | sans objet                                         |
+| COOP `same-origin` sur la coquille                                               | **non** (inexprimable en `<meta>`, mesuré)                             | oui                                                      | oui                                       | oui                                                |
+| CORP par origine                                                                 | non                                                                    | oui                                                      | oui                                       | oui                                                |
+| Deux origines distinctes                                                         | oui, au prix d'un domaine propre ou d'un second compte                 | oui                                                      | oui                                       | oui                                                |
+| Deux **sites** distincts sur le domaine par défaut                               | oui — `github.io` à la PSL (mesuré)                                    | oui — `pages.dev` / `netlify.app` à la PSL (mesuré)      | oui — `vercel.app` à la PSL (mesuré)      | **non** : sous-domaines d'un même site             |
+| Cookies séparés entre les deux origines                                          | oui (sites distincts)                                                  | oui                                                      | oui                                       | **non** : à traiter par #24                        |
+| Coût                                                                             | gratuit ; domaine propre en sus                                        | gratuit en offre de base ; domaine propre en sus         | gratuit en offre de base                  | hébergement + domaine + exploitation du proxy      |
+| Retour arrière                                                                   | redéployer une branche                                                 | redéploiement d'une version antérieure, natif            | idem                                      | redéposer l'arbre + recharger le proxy             |
+| Verrouillage fournisseur                                                         | faible (fichiers statiques)                                            | faible : `_headers` est une convention partagée par deux | moyen : `vercel.json` est propre à Vercel | nul                                                |
+| Dépendance ajoutée à la frontière de confiance                                   | **oui si Service Worker injectant les en-têtes** (ADR 0010)            | non                                                      | non                                       | non                                                |
 
 Motifs factuels d'élimination :
 
@@ -332,9 +389,18 @@ Motifs factuels d'élimination :
   `frame-ancestors 'none'` (ADR 0013, ADR 0010) et cette directive est **ignorée** dans un `<meta>`
   sur les trois moteurs. Le seul contournement connu, un Service Worker qui réécrit les en-têtes,
   ajoute du code privilégié **dans** la frontière que #24 doit prouver, et n'isole pas le premier
-  chargement. Pages reste en revanche parfaitement viable pour le **territoire applicatif**, qui ne
-  reçoit aucune CSP par décision de l'ADR 0002 — mais y publier l'application ferait perdre le
-  bénéfice de la lisibilité du domaine propre.
+  chargement.
+- **GitHub Pages pour le territoire applicatif** — éliminé aussi, et c'est une correction. Une
+  première lecture de ce comparatif le déclarait viable de ce côté-là, parce que l'origine
+  applicative ne reçoit **aucune CSP de la coquille** (ADR 0002). Le raisonnement portait sur ce
+  qu'elle ne reçoit pas et oubliait ce qu'elle doit **servir** :
+  `Cross-Origin-Resource-Policy: cross-origin`, `X-Content-Type-Options: nosniff`,
+  `Cache-Control: no-store` et — depuis la revue de sécurité de #45 —
+  `frame-ancestors <origine coquille>`, faute de quoi le document qui porte les cookies de session
+  Rails est encadrable par n'importe quel site. Le relevé ci-dessus montre que Pages ne sert
+  **aucun** de ces en-têtes et impose `max-age=600` là où le serveur de test sert `no-store`. Or
+  `tools/publier-temoin.mjs` **asserte** ces en-têtes sur les deux origines : y publier
+  l'application ferait échouer le témoin. La règle retenue est donc la même des deux côtés.
 - **Vercel** — non éliminé, mais classé après : `vercel.json` n'a pas d'équivalent ailleurs, là où
   `_headers` est lu à l'identique par deux hébergeurs indépendants. Un fichier de configuration
   portable est, pour une chaîne de publication, une propriété de retour arrière.

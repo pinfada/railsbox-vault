@@ -147,11 +147,12 @@ porte sa configuration d'en-têtes et une place tenante déclarée comme telle.
 ### Inventaire et empreintes
 
 Chaque arbre porte un `inventaire.json` : l'empreinte SHA-256 et la taille de chaque fichier, une
-**empreinte de racine** calculée sur la liste canonique et liée au commit publié, les en-têtes
-déclarés, les exclusions et leurs motifs, et le verdict d'**épinglage v86** — chaque artefact de
-l'émulateur est confronté, dans l'arbre publié, à l'empreinte que `vendor/v86/MANIFEST.json` lui
-attribue. C'est la moitié « runtime identifié et vérifié » de `SEC-UPDATE-001` portée jusqu'aux
-octets qui partent chez l'hébergeur.
+**empreinte de racine** calculée sur la liste canonique et **accompagnée** du commit publié — elle
+est adressée par contenu, deux versions dont aucun octet publié ne diffère la partagent —, les
+en-têtes déclarés, les exclusions et leurs motifs, et le verdict d'**épinglage v86** — chaque
+artefact de l'émulateur est confronté, dans l'arbre publié, à l'empreinte que
+`vendor/v86/MANIFEST.json` lui attribue. C'est la moitié « runtime identifié et vérifié » de
+`SEC-UPDATE-001` portée jusqu'aux octets qui partent chez l'hébergeur.
 
 `--verifier` distingue trois natures d'écart, parce qu'elles ne se diagnostiquent pas de la même
 façon : **altéré**, **ajouté** — la surface que personne n'a décidée —, **manquant**. Un renommage
@@ -166,27 +167,52 @@ séparé et l'imprime dans son résumé. La signature reste exigible, et reste �
 
 `tools/serve-headers.mjs` est la **source de vérité** : la production sert ce que
 `securityHeaders()` rend, dérivé et non recopié, pour que les épreuves de frontière du dépôt
-mesurent bien ce qui est publié. La publication ajoute **un seul** en-tête, décidé par l'ADR 0017
-sur la recommandation différée de l'[ADR 0010](decisions/0010-isolation-multi-origine.md) :
-`Cross-Origin-Opener-Policy: same-origin`, sur l'origine de confiance uniquement. COEP reste absent.
+mesurent bien ce qui est publié. La publication ajoute **exactement deux** en-têtes, un par origine,
+tous deux décidés par l'ADR 0017 :
 
-L'hébergement doit donc savoir servir des en-têtes de réponse : GitHub Pages est écarté pour
-l'origine de confiance — mesuré, `frame-ancestors` est ignoré dans un `<meta http-equiv>` sur les
-trois moteurs, et COOP n'y est pas exprimable.
+| Origine     | En-tête ajouté                                                | Pourquoi                                                                                      |
+| ----------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| coquille    | `Cross-Origin-Opener-Policy: same-origin`                     | recommandation différée de l'[ADR 0010](decisions/0010-isolation-multi-origine.md)            |
+| application | `Content-Security-Policy: frame-ancestors <origine coquille>` | sans lui, le document qui porte les cookies de session est encadrable par n'importe quel site |
+
+La seconde ne rouvre pas ce que l'ADR 0002 s'interdit : `frame-ancestors` ne gouverne pas ce que le
+document **charge**, seulement qui a le droit de l'**encadrer**. Elle doit rester **seule** dans la
+politique applicative, et le témoin d'en-têtes échoue si une autre directive l'accompagne. Une
+épreuve unitaire échoue si un **troisième** en-tête apparaît dans la publication. COEP reste absent.
+
+L'hébergement doit donc savoir servir des en-têtes de réponse, **des deux côtés** : GitHub Pages est
+écarté partout. Pour la coquille, `frame-ancestors` est ignoré dans un `<meta http-equiv>` sur les
+trois moteurs et COOP n'y est pas exprimable ; pour l'application, le relevé du spike montre que
+Pages ne sert ni CORP, ni `nosniff`, ni `frame-ancestors`, et impose `max-age=600` là où le serveur
+de test sert `no-store`.
+
+Le fichier `_headers` porte en outre `# origine: <url>` en tête. C'est un commentaire pour
+l'hébergeur, et un **octet compté par l'empreinte** : sans lui, deux origines de coquille
+différentes rendaient la même empreinte de racine, et une bascule d'origine — donc une migration —
+passait pour un redéploiement.
 
 ### Retour arrière
 
 ```sh
 node tools/publier.mjs --commit <version-precedente> --sortie artifacts/rollback
 node tools/publier.mjs --verifier artifacts/rollback/coquille
-# comparer l'empreinte de racine à celle publiée lors de la sortie de cette version
+node tools/publier-empreinte.mjs artifacts/rollback/coquille
+# confronter le résultat à l'empreinte inscrite lors de la sortie de cette version
 ```
 
 `--commit` lit les octets par `git show` : deux reconstructions du même commit rendent la même
-empreinte de racine, au bit près. Republier consiste à redéposer cet arbre. Un retour arrière **ne
-migre rien à l'envers** : un volume écrit par la version retirée reste écrit par elle, et c'est le
-refus de downgrade de l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md)
-(`runtime.minWriter`) qui protège l'utilisateur.
+empreinte de racine, au bit près. Republier consiste à redéposer cet arbre.
+
+**Chaque sortie doit conserver son empreinte de racine hors bande.** C'est la condition qui rend le
+retour arrière _vérifiable_ et non seulement _reproductible_ : sans elle, on prouve que l'outil est
+déterministe, pas qu'on republie bien cette version-là. `publication.yml` l'imprime dans son résumé
+et la dépose en artefact séparé, et son entrée `empreinte-attendue` la confronte à la
+reconstruction.
+
+Un retour arrière **ne migre rien à l'envers** : un volume écrit par la version retirée reste écrit
+par elle, et c'est le refus de downgrade de
+l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md) (`runtime.minWriter`) qui protège
+l'utilisateur.
 
 ### Changer l'origine de la coquille est une MIGRATION
 

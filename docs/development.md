@@ -298,10 +298,13 @@ node tools/publier.mjs --verifier artifacts/publication/coquille
 ```
 
 La construction produit, par arbre, un `_headers` **dérivé** de `tools/serve-headers.mjs` — jamais
-recopié — et un `inventaire.json` portant l'empreinte de chaque fichier plus une empreinte de racine
-liée au commit. Ce qui est publié et ce qui est retiré vit dans `tools/publier-arborescences.mjs`,
-chaque ligne avec sa raison ; `tests/unit/publication-arborescences.test.mjs` échoue si un fichier
-de `public/` ou de `src/` n'est ni publié ni exclu. Ajouter un banc demain oblige donc à décider.
+recopié, et portant `# origine:` dans ses octets pour qu'une bascule d'origine change l'empreinte —
+et un `inventaire.json` portant l'empreinte de chaque fichier plus une empreinte de racine
+**accompagnée** du commit (elle est adressée par contenu : deux versions dont aucun octet publié ne
+diffère la partagent). Ce qui est publié et ce qui est retiré vit dans
+`tools/publier-arborescences.mjs`, chaque ligne avec sa raison ;
+`tests/unit/publication-arborescences.test.mjs` échoue si un fichier de `public/` ou de `src/` n'est
+ni publié ni exclu. Ajouter un banc demain oblige donc à décider.
 
 Sans `npm run vm:fetch`, la publication est **constructible mais incomplète**, et son inventaire le
 déclare (`complet: false`). Avec, l'épinglage v86 de l'ADR 0003 est vérifié dans l'arbre publié.

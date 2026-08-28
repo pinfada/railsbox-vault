@@ -1,0 +1,117 @@
+{
+  "mesureLe": "2026-08-27T23:15:12.314Z",
+  "hebergeurs": [
+    {
+      "hebergeur": "GitHub Pages",
+      "url": "https://squidfunk.github.io/mkdocs-material/",
+      "mecanismeDEnTetes": "aucun",
+      "statut": 200,
+      "urlFinale": "https://squidfunk.github.io/mkdocs-material/",
+      "enTetes": {
+        "content-security-policy": null,
+        "cross-origin-opener-policy": null,
+        "cross-origin-embedder-policy": null,
+        "cross-origin-resource-policy": null,
+        "x-content-type-options": null,
+        "strict-transport-security": null,
+        "cache-control": "max-age=600",
+        "server": "GitHub.com"
+      }
+    },
+    {
+      "hebergeur": "GitHub Pages (404 du service)",
+      "url": "https://pinfada.github.io/inexistant-sonde-45/",
+      "mecanismeDEnTetes": "aucun",
+      "statut": 404,
+      "urlFinale": "https://pinfada.github.io/inexistant-sonde-45/",
+      "enTetes": {
+        "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'",
+        "cross-origin-opener-policy": null,
+        "cross-origin-embedder-policy": null,
+        "cross-origin-resource-policy": null,
+        "x-content-type-options": null,
+        "strict-transport-security": null,
+        "cache-control": null,
+        "server": "GitHub.com"
+      }
+    },
+    {
+      "hebergeur": "Netlify",
+      "url": "https://docs.netlify.com/",
+      "mecanismeDEnTetes": "_headers, netlify.toml",
+      "statut": 200,
+      "urlFinale": "https://docs.netlify.com/",
+      "enTetes": {
+        "content-security-policy": null,
+        "cross-origin-opener-policy": null,
+        "cross-origin-embedder-policy": null,
+        "cross-origin-resource-policy": null,
+        "x-content-type-options": null,
+        "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+        "cache-control": "public,max-age=0,must-revalidate",
+        "server": "Netlify"
+      }
+    },
+    {
+      "hebergeur": "Cloudflare Pages",
+      "url": "https://developers.cloudflare.com/pages/configuration/headers/",
+      "mecanismeDEnTetes": "_headers",
+      "statut": 200,
+      "urlFinale": "https://developers.cloudflare.com/pages/configuration/headers/",
+      "enTetes": {
+        "content-security-policy": "form-action 'self'; frame-src 'self' company-target.com *.company-target.com cloudflarestream.com *.cloudflarestream.com youtube-nocookie.com *.youtube-nocookie.com videodelivery.net *.videodelivery.net cloudflare.com *.cloudflare.com; frame-ancestors 'self' cloudflare.com *.cloudflare.com; script-src 'self' cloudflarestream.com *.cloudflarestream.com cloudflareinsights.com *.cloudflareinsights.com cloudflare.com *.cloudflare.com google.com *.google.com demandbase.com *.demandbase.com bizible.com *.bizible.com jsdelivr.net *.jsdelivr.net 'wasm-unsafe-eval' 'unsafe-inline'; report-uri https://csp-reporting.cloudflare.com/cdn-cgi/script_monitor/report?m=ZTZOafnwDZoYJvbY1hY85ToweYm5kXIfSFuaDBAY2JU-1787872509.7073073-1.0.1.1-mnc8DAJAGvW6D9qxZBJRdRdGI7cRc24Z.zZyKR9PPJeaX5wTqyEMWRYNCabjW1EkT.t512U8tQ3ISCDhAz9Lbki4VPjMNGGdI37XqCuWaawNn0xWjUWsqJV1JyxvZ.wDNYhEBJBNFGin97TLzveYf022qREyt8crw.oppY61y5cJBsJLqNJHXW6kHdXquqWGoUH5xeWnWQtJcVzAnTOmhQ; report-to cf-lkfcmzrhkkjcqgxy",
+        "cross-origin-opener-policy": null,
+        "cross-origin-embedder-policy": null,
+        "cross-origin-resource-policy": null,
+        "x-content-type-options": "nosniff",
+        "strict-transport-security": "max-age=15552000; preload",
+        "cache-control": "public, max-age=0, must-revalidate",
+        "server": "cloudflare"
+      }
+    },
+    {
+      "hebergeur": "Vercel",
+      "url": "https://vercel.com/docs/headers",
+      "mecanismeDEnTetes": "vercel.json (headers)",
+      "statut": 200,
+      "urlFinale": "https://vercel.com/docs/headers",
+      "enTetes": {
+        "content-security-policy": "default-src 'self' vercel.com *.vercel.com *.vercel.sh vercel.live wss://*.vercel.com localhost:*;script-src 'self' 'unsafe-eval' 'unsafe-inline' www.google.com www.google-analytics.com www.googleadservices.com www.gstatic.com *.youtube.com *.youtube-nocookie.com *.ytimg.com *.twimg.com cdn.ampproject.org www.googletagmanager.com *.googleapis.com *.fides-cdn.ethyca.com *.ethyca.com cdn.ethyca.com cdn.vercel-insights.com va.vercel-scripts.com app.cal.com *.cr-relay.com blob: vercel.com *.vercel.com *.vercel.sh vercel.live localhost:* chrome-extension://*;child-src *.youtube.com *.youtube-nocookie.com *.stripe.com www.google.com td.doubleclick.net github.com calendly.com vercel.cal.com *.codesandbox.io vercel.com *.vercel.com *.vercel.sh vercel.live wss://*.vercel.com localhost:*;style-src 'self' 'unsafe-inline' *.googleapis.com vercel.com *.vercel.com *.vercel.sh vercel.live wss://*.vercel.com localhost:*;img-src * blob: data: https://images.ctfassets.net;media-src 'self' videos.ctfassets.net user-images.githubusercontent.com replicate.delivery stream.mux.com *.mux.com blob: data: vercel.com *.vercel.com *.vercel.sh vercel.live wss://*.vercel.com localhost:*;connect-src 'self' data: vercel.com *.vercel.com *.vercel.sh vercel.live wss://*.vercel.com www.vercel-status.com cdn.vercel-insights.com va.vercel-scripts.com cdp.vercel.com www.google-analytics.com www.googletagmanager.com *.googleapis.com *.cr-relay.com *.ethyca.com cdn.ethyca.com https://*.contentful.com *.upstash.io vercel.cal.com app.cal.com api.vercel.com *.ingest.sentry.io *.ingest.us.sentry.io stream.mux.com *.mux.com *.codesandbox.io react-tweet.vercel.app;font-src 'self' *.vercel.com *.gstatic.com vercel.live *.vercel.sh;worker-src 'self' *.vercel.com blob:;frame-ancestors  'self'  https://vercel.com  https://app.contentful.com  https://*.contentful.com  https://*.vercel.sh  https://*.vercel.com",
+        "cross-origin-opener-policy": null,
+        "cross-origin-embedder-policy": null,
+        "cross-origin-resource-policy": null,
+        "x-content-type-options": "nosniff",
+        "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
+        "cache-control": "public, max-age=0, must-revalidate",
+        "server": "Vercel"
+      }
+    }
+  ],
+  "suffixes": [
+    {
+      "suffixe": "github.io",
+      "inscritALaPsl": true
+    },
+    {
+      "suffixe": "pages.dev",
+      "inscritALaPsl": true
+    },
+    {
+      "suffixe": "netlify.app",
+      "inscritALaPsl": true
+    },
+    {
+      "suffixe": "vercel.app",
+      "inscritALaPsl": true
+    },
+    {
+      "suffixe": "web.app",
+      "inscritALaPsl": true
+    },
+    {
+      "suffixe": "firebaseapp.com",
+      "inscritALaPsl": true
+    }
+  ],
+  "sourcePsl": "https://publicsuffix.org/list/public_suffix_list.dat"
+}
