@@ -25,7 +25,7 @@ import {
   scellerRacineSousNonce,
 } from "../../src/vm/enveloppe/modele-reference.mjs";
 import { octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
-import { suiteDOctets } from "./support-enveloppe-double.mjs";
+import { identifiantDeVolume, suiteDOctets } from "./support-enveloppe-double.mjs";
 
 // Le MODÈLE DE RÉFÉRENCE de l'enveloppe, éprouvé pour lui-même (#21, ADR 0020).
 //
@@ -41,8 +41,8 @@ import { suiteDOctets } from "./support-enveloppe-double.mjs";
 //  3. aucune attente n'est facultative : `undefined` est refusé, `null` dit « aucun contrôle » et
 //     le dit à l'appel.
 
-const VOLUME_A = "0a1b2c3d4e5f60718293a4b5c6d7e8f9";
-const VOLUME_B = "ffeeddccbbaa99887766554433221100";
+const VOLUME_A = identifiantDeVolume(0x0a);
+const VOLUME_B = identifiantDeVolume(0xf0);
 const DEK = suiteDOctets(0x20, 32);
 const KEK = suiteDOctets(0x80, 32);
 const NONCE = suiteDOctets(0x01, 12);

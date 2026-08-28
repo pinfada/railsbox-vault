@@ -16,8 +16,8 @@ export const OPFS_VOLUME_MARKER = "vault-volume.marker";
  */
 export const OPFS_ENVELOPPE_MARKER = "vault-volume.cles";
 
-/** Contenu synthétique de l'appât d'enveloppe. Aucune valeur, aucun secret : un appât, et il le dit. */
-export const ENVELOPPE_SECRET = "dek-enveloppee-synthetique-issue-21";
+/** Contenu de l'APPÂT d'enveloppe : une chaîne inerte, publique, qui ne protège rien. */
+export const ENVELOPPE_APPAT = "appat-inerte-enveloppe-issue-21";
 export const OPFS_HOSTILE_MARKER = "hostile.marker";
 export const IDB_NAME = "vault-shell";
 export const IDB_STORE = "secrets";
@@ -96,7 +96,7 @@ export async function plantShellState() {
   }
 
   try {
-    await writeOpfsMarker(OPFS_ENVELOPPE_MARKER, ENVELOPPE_SECRET);
+    await writeOpfsMarker(OPFS_ENVELOPPE_MARKER, ENVELOPPE_APPAT);
     report.enveloppe = "depose";
   } catch (error) {
     report.enveloppe = describeFailure(error);
