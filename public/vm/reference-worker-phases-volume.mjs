@@ -13,9 +13,11 @@ import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { cleDuBanc } from "./cle-du-banc.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
 import {
+  generationJournalName,
   migrationJournalName,
   removeOpfsVolume,
   statOpfsVolume,
+  temoinSequenceName,
 } from "/src/vm/opfs-sync-access.mjs";
 import { revokeVolumeManifest, writeVolumeManifest } from "/src/vm/opfs-volume-open.mjs";
 import { STORAGE_ERROR_CODES } from "/src/vm/storage-errors.mjs";
@@ -234,6 +236,12 @@ export async function phaseInspectVolume({ volume }) {
   // Le journal de migration (#13) est observé au même titre : sa présence signale une migration
   // inachevée, et c'est ce que le scénario d'interruption doit pouvoir constater.
   const journalMigration = await statOpfsVolume(migrationJournalName(volume));
+  // Le journal de GÉNÉRATION (#16) et le TÉMOIN de séquence (#19) sont observés eux aussi. Ils ne
+  // servent pas au diagnostic d'une migration : ils servent à ce qu'une épreuve puisse CONSTATER
+  // qu'une restauration les a bien emportés. Sans cette observation, « la restauration écarte le
+  // témoin » resterait une phrase, et un scénario passerait aussi bien avec le correctif que sans.
+  const journalGeneration = await statOpfsVolume(generationJournalName(volume));
+  const temoin = await statOpfsVolume(temoinSequenceName(volume));
   return {
     phase: "inspect-volume",
     volume,
@@ -243,6 +251,10 @@ export async function phaseInspectVolume({ volume }) {
     manifestSize: manifeste.size,
     migrationJournalPresent: journalMigration.present && journalMigration.size > 0,
     migrationJournalSize: journalMigration.size,
+    generationJournalPresent: journalGeneration.present && journalGeneration.size > 0,
+    generationJournalSize: journalGeneration.size,
+    temoinPresent: temoin.present && temoin.size > 0,
+    temoinSize: temoin.size,
   };
 }
 
