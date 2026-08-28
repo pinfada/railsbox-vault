@@ -534,6 +534,12 @@ pour savoir lequel est converti, ce qu'une première conversion n'a pas à faire
 le vérifie : l'empreinte du clair après migration égale celle du fichier avant migration. Sans cette
 vérification, les durées ci-dessus mesureraient la vitesse à laquelle un volume se détruit.
 
+**Deux exécutions de la même suite, sur la même machine, ont rendu 55,9 s / 33,2 s puis 79,4 s /
+44,2 s pour les deux lignes de migration** — quarante pour cent d'écart, selon ce qui tournait à
+côté. Le tableau porte le relevé le plus favorable, et cette phrase est là pour qu'on ne le prenne
+pas pour une garantie : l'ordre de grandeur tient, le chiffre à la seconde près ne veut rien dire
+sur une machine de bureau.
+
 **Aucune de ces valeurs n'est un budget**, et la règle de #16 s'applique telle quelle : « un seuil
 posé sans mesure opposable serait une promesse, pas un budget ». Ce sont des relevés sur une machine
 qui n'est pas l'environnement de référence. Ce qu'ils permettent de dire est plus modeste et plus
