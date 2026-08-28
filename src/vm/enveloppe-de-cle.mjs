@@ -323,10 +323,22 @@ export async function ouvrirEnveloppe({ support, identifiantVolume, kek, version
 }
 
 /** Construit UN emplacement scellé : la DEK enveloppée sous la KEK, avec ses données associées. */
-async function fabriquerEmplacement({ identifiantVolume, dek, kek, typeKek, parametres, aleas }) {
+async function fabriquerEmplacement({
+  identifiantVolume,
+  dek,
+  kek,
+  typeKek,
+  parametres,
+  aleas,
+  identifiantEmplacement: fourni,
+}) {
   exigerTypeKek(typeKek);
   exigerParametres(parametres);
-  const identifiantEmplacement = aleas.tirerIdentifiant();
+  // L'identifiant peut être FOURNI depuis #22 (ADR 0021) : la KEK d'un dérivateur est liée à cet
+  // identifiant par son info HKDF, il faut donc qu'il existe AVANT la dérivation. Le défaut reste
+  // le tirage, et l'unicité reste celle du tirage — `exigerIdentifiantLibre` refuse un doublon.
+  const identifiantEmplacement =
+    fourni === undefined ? aleas.tirerIdentifiant() : identifiantEmplacementFourni(fourni);
   const scelle = await envelopperSousNonce({
     kek: await importerCleDeDeverrouillage(kek),
     emplacement: {
@@ -347,6 +359,37 @@ async function fabriquerEmplacement({ identifiantVolume, dek, kek, typeKek, para
     dekEnveloppee: scelle.chiffre,
     etiquette: scelle.etiquette,
   });
+}
+
+/** Exige la forme d'un identifiant d'emplacement fourni. Une forme approchante n'en est pas un. */
+function identifiantEmplacementFourni(valeur) {
+  if (typeof valeur !== "string" || !/^[0-9a-f]{16}$/.test(valeur)) {
+    throw malforme(
+      `« identifiantEmplacement » doit être seize hexadécimaux minuscules, reçu ${JSON.stringify(valeur)}.`,
+    );
+  }
+  return valeur;
+}
+
+/**
+ * Refuse un identifiant DÉJÀ présent dans la liste.
+ *
+ * La garde n'existait pas tant que #21 tirait seul : deux tirages de huit octets ne se rencontrent
+ * pas. Depuis que #22 peut en fournir un, elle est nécessaire — deux emplacements de même
+ * identifiant rendraient `revoquerEmplacement` ambigu, et la racine authentifierait une liste dont
+ * deux éléments prétendent au même nom.
+ */
+function exigerIdentifiantLibre(emplacements, identifiantEmplacement, identifiantVolume) {
+  if (identifiantEmplacement === undefined) return;
+  const present = emplacements.some(
+    (existant) => existant.identifiantEmplacement === identifiantEmplacement,
+  );
+  if (present) {
+    throw malforme(
+      `l'emplacement « ${identifiantEmplacement} » existe déjà dans cette enveloppe. Deux emplacements de même identifiant rendraient toute révocation ambiguë.`,
+      { volume: identifiantVolume, identifiantEmplacement },
+    );
+  }
 }
 
 /** Scelle la racine sur une liste ordonnée et rend les octets de la page. */
@@ -396,6 +439,7 @@ export async function creerEnveloppe({
   kek,
   typeKek = TYPES_KEK.harnais,
   parametres = new Uint8Array(0),
+  identifiantEmplacement,
   aleas,
 }) {
   const sources = aleasAdmis(aleas);
@@ -405,6 +449,7 @@ export async function creerEnveloppe({
     kek,
     typeKek,
     parametres,
+    identifiantEmplacement,
     aleas: sources,
   });
   const octets = await composerPage({
@@ -451,6 +496,7 @@ export async function ajouterEmplacement({
   kekNouvelle,
   typeKek = TYPES_KEK.harnais,
   parametres = new Uint8Array(0),
+  identifiantEmplacement,
   aleas,
 }) {
   return muter({
@@ -462,12 +508,14 @@ export async function ajouterEmplacement({
       if (etat.page.emplacements.length >= EMPLACEMENTS_MAX) {
         throw enveloppePleine({ plafond: EMPLACEMENTS_MAX, volume: identifiantVolume });
       }
+      exigerIdentifiantLibre(etat.page.emplacements, identifiantEmplacement, identifiantVolume);
       const ajoute = await fabriquerEmplacement({
         identifiantVolume,
         dek: etat.dek,
         kek: kekNouvelle,
         typeKek,
         parametres,
+        identifiantEmplacement,
         aleas: sources,
       });
       return [...etat.page.emplacements, ajoute];
@@ -488,6 +536,7 @@ export async function remplacerEmplacement({
   kekNouvelle,
   typeKek = TYPES_KEK.harnais,
   parametres = new Uint8Array(0),
+  identifiantNouveau,
   aleas,
 }) {
   return muter({
@@ -497,12 +546,14 @@ export async function remplacerEmplacement({
     aleas,
     transformer: async (etat, sources) => {
       const rang = rangDe(etat.page.emplacements, identifiantEmplacement, identifiantVolume);
+      exigerIdentifiantLibre(etat.page.emplacements, identifiantNouveau, identifiantVolume);
       const remplacant = await fabriquerEmplacement({
         identifiantVolume,
         dek: etat.dek,
         kek: kekNouvelle,
         typeKek,
         parametres,
+        identifiantEmplacement: identifiantNouveau,
         aleas: sources,
       });
       return etat.page.emplacements.map((existant, index) =>

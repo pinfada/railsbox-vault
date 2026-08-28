@@ -249,10 +249,14 @@ test("le signCount n'est PAS une fraîcheur : deux assertions décroissantes ouv
   const appel = { parametres: enregistre.parametres, identite: IDENTITE, geste: {} };
 
   const haute = await derivateurWebauthnPrf({
-    credentials: credentialsDouble({ assertion: assertionRendue({ prf: sortiePrf(), signCount: 42 }) }),
+    credentials: credentialsDouble({
+      assertion: assertionRendue({ prf: sortiePrf(), signCount: 42 }),
+    }),
   }).deriver(appel);
   const basse = await derivateurWebauthnPrf({
-    credentials: credentialsDouble({ assertion: assertionRendue({ prf: sortiePrf(), signCount: 0 }) }),
+    credentials: credentialsDouble({
+      assertion: assertionRendue({ prf: sortiePrf(), signCount: 0 }),
+    }),
   }).deriver(appel);
 
   const nonce = suiteDOctets(0x66, 12);
@@ -263,8 +267,7 @@ test("le signCount n'est PAS une fraîcheur : deux assertions décroissantes ouv
 });
 
 test("deux emplacements distincts tirent DEUX KEK distinctes de la même sortie PRF", async () => {
-  const credentials = () =>
-    credentialsDouble({ assertion: assertionRendue({ prf: sortiePrf() }) });
+  const credentials = () => credentialsDouble({ assertion: assertionRendue({ prf: sortiePrf() }) });
   const enregistre = await enregistrer();
   const appel = { parametres: enregistre.parametres, geste: {} };
 

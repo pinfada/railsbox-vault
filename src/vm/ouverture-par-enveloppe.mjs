@@ -27,7 +27,9 @@
 // garanti, lui, est ailleurs : aucune fonction de ce module ne RETOURNE la clé de volume à son
 // appelant, et aucune ne la journalise.
 
-import { ouvrirEnveloppe, creerEnveloppe } from "./enveloppe-de-cle.mjs";
+import { catalogueDeDerivateurs } from "./derivation/derivateurs.mjs";
+import { ouvrirEnveloppe, creerEnveloppe, inventorierEnveloppe } from "./enveloppe-de-cle.mjs";
+import { emplacementInconnu } from "./enveloppe/enveloppe-errors.mjs";
 import { TAILLE_FICHIER_ENVELOPPE } from "./enveloppe/fichier-enveloppe.mjs";
 import { tirerCleDeVolume } from "./enveloppe/identite-enveloppe.mjs";
 import { MANIFEST_ERROR_CODES, ManifestError } from "./manifest-errors.mjs";
@@ -173,6 +175,97 @@ export async function ouvrirVolumeParKek({
 }
 
 /**
+ * Choisit l'emplacement à ouvrir dans l'inventaire PUBLIC, et le dérivateur qui le sert.
+ *
+ * L'inventaire ne demande aucune clé — c'est tout l'intérêt du point 3 des limites de l'ADR 0020 :
+ * le fichier porte en clair le type et les paramètres de chaque emplacement, précisément pour qu'un
+ * dérivateur puisse lire les siens AVANT de dériver quoi que ce soit.
+ *
+ * Un type que le catalogue ne sert pas est refusé par `VAULT_DERIVATION_TYPE_INCONNU`, et rien
+ * n'est écrit : ce chemin ne fait que lire.
+ */
+async function emplacementADeriver({ support, identifiantVolume, catalogue, identifiant }) {
+  const inventaire = await inventorierEnveloppe({ support, identifiantVolume });
+  const vises =
+    identifiant === undefined
+      ? inventaire.emplacements
+      : inventaire.emplacements.filter(
+          (candidat) => candidat.identifiantEmplacement === identifiant,
+        );
+  if (vises.length === 0) {
+    throw emplacementInconnu({ volume: identifiantVolume, identifiantEmplacement: identifiant });
+  }
+  // Le PREMIER emplacement que le catalogue sait servir. Un emplacement d'un type inconnu ne fait
+  // pas échouer une enveloppe qui en porte un autre, servable : c'est la compatibilité que le
+  // point 5 du contrat demande. Le refus ne tombe que si AUCUN n'est servable.
+  let dernierRefus = null;
+  for (const emplacement of vises) {
+    try {
+      return { emplacement, derivateur: catalogue.pour(emplacement.typeKek) };
+    } catch (cause) {
+      dernierRefus = cause;
+    }
+  }
+  throw dernierRefus;
+}
+
+/**
+ * OUVRE un volume par un DÉRIVATEUR, plutôt que par une KEK déjà en main (#22, ADR 0021).
+ *
+ * L'ordre est celui de #21, avec un geste de plus au milieu : le manifeste est lu et son
+ * identifiant retenu, l'INVENTAIRE public de l'enveloppe est lu, le dérivateur qui sert le type de
+ * l'emplacement dérive la KEK sous l'identité de CET emplacement, et seulement alors l'enveloppe
+ * est ouverte et l'ouvreur unique reçoit la clé de volume.
+ *
+ * Un geste faux ne rend jamais un refus du dérivateur : il rend une AUTRE clé, et c'est
+ * `VAULT_ENVELOPPE_CLE_REFUSEE` qui tombe. Un dérivateur ne sait pas qu'une phrase est fausse.
+ *
+ * @param {{ name: string, derivateur?: object, catalogue?: object, geste?: object,
+ *           identifiantEmplacement?: string, size?: number, expectations?: object,
+ *           versionMinimale?: number | null, support?: object, openVolume?: Function }} appel
+ */
+export async function ouvrirVolumeParDerivateur({
+  name,
+  derivateur,
+  catalogue,
+  geste = {},
+  identifiantEmplacement,
+  size,
+  expectations = {},
+  versionMinimale = null,
+  support,
+  openVolume,
+  ...primitives
+}) {
+  const identifiantVolume = await identifiantDeclare(name, primitives);
+  const supportEmploye = support ?? supportEnveloppeOpfs(name);
+  const choisi = await emplacementADeriver({
+    support: supportEmploye,
+    identifiantVolume,
+    catalogue: catalogue ?? catalogueDeDerivateurs({ [derivateur.type]: derivateur }),
+    identifiant: identifiantEmplacement,
+  });
+  const kek = await choisi.derivateur.deriver({
+    parametres: choisi.emplacement.parametres,
+    identite: {
+      identifiantVolume,
+      identifiantEmplacement: choisi.emplacement.identifiantEmplacement,
+    },
+    geste,
+  });
+  return ouvrirVolumeParKek({
+    name,
+    kek,
+    size,
+    expectations,
+    versionMinimale,
+    support: supportEmploye,
+    ...primitives,
+    ...(openVolume === undefined ? {} : { openVolume }),
+  });
+}
+
+/**
  * PRÉPARE un volume neuf : tire sa clé de volume, l'enveloppe sous `kek`, et rend l'identifiant et
  * la clé pour que l'appelant crée le volume.
  *
@@ -194,6 +287,7 @@ export async function preparerEnveloppeDeVolume({
   kek,
   typeKek,
   parametres,
+  identifiantEmplacement,
   support,
 }) {
   const dek = tirerCleDeVolume();
@@ -204,6 +298,7 @@ export async function preparerEnveloppeDeVolume({
     kek,
     ...(typeKek === undefined ? {} : { typeKek }),
     ...(parametres === undefined ? {} : { parametres }),
+    ...(identifiantEmplacement === undefined ? {} : { identifiantEmplacement }),
   });
   return Object.freeze({
     identifiantVolume,

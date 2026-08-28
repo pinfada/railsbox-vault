@@ -49,7 +49,10 @@ const VOLUME = octetsEnHex(Uint8Array.from({ length: 16 }, (_, index) => (0x30 +
 const EMPLACEMENT = octetsEnHex(Uint8Array.from({ length: 8 }, (_, index) => (0x70 + index) % 256));
 
 test("l'info HKDF est celle du modèle de référence, pour chaque cas figé", () => {
-  assert.ok(VECTEURS.info.length >= 3, "les vecteurs d'info sont trop maigres pour prouver quoi que ce soit");
+  assert.ok(
+    VECTEURS.info.length >= 3,
+    "les vecteurs d'info sont trop maigres pour prouver quoi que ce soit",
+  );
   for (const cas of VECTEURS.info) {
     const produit = encoderInfoDerivation(cas.entree);
     assert.equal(octetsEnHex(produit), cas.infoHex, `cas « ${cas.nom} » : octets du produit`);
@@ -127,7 +130,11 @@ test("la KEK rendue est une CryptoKey AES-GCM de 256 bits, NON EXTRACTIBLE", asy
     }),
   });
   assert.equal(kek instanceof CryptoKey, true);
-  assert.equal(kek.extractable, false, "la KEK est extractible : ses octets peuvent quitter WebCrypto");
+  assert.equal(
+    kek.extractable,
+    false,
+    "la KEK est extractible : ses octets peuvent quitter WebCrypto",
+  );
   assert.equal(kek.algorithm.name, "AES-GCM");
   assert.equal(kek.algorithm.length, KEK_OCTETS * 8);
   assert.deepEqual([...kek.usages].sort(), ["decrypt", "encrypt"]);
