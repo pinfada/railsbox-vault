@@ -415,10 +415,17 @@ Une démonstration réussie ne lève jamais seule un gate.
 
 ## Chaîne d'approvisionnement
 
-Les dépendances sont verrouillées. Les workflows ont des permissions minimales et leurs actions
-seront épinglées avant la première publication. Les images VM publiées devront fournir empreinte,
-provenance de build et SBOM. Aucun secret de signature ne réside dans un artefact servi au
-navigateur.
+Les dépendances sont verrouillées. Les workflows ont des permissions minimales et leurs actions sont
+**épinglées par SHA de commit** depuis #105 : une étiquette `vN` est déplaçable par son
+propriétaire, un SHA nomme un contenu. L'exécutant qui rend cet épinglage nécessaire est celui de
+`.github/workflows/publication.yml`, qui calcule et affiche l'empreinte de racine de l'arborescence
+publiée — une action amont substituée y publierait l'arbre de son choix ET l'empreinte qui va avec,
+si bien que la comparaison hors bande de l'ADR 0017 confirmerait l'altération au lieu de la révéler.
+Chaque `uses:` porte l'étiquette figée en commentaire, ce qui donne son mécanisme de mise à jour
+(`.github/dependabot.yml`, lot hebdomadaire relu comme une PR ordinaire) ;
+`tests/unit/workflows-actions-epinglees.test.mjs` refuse toute action qui perdrait l'une des deux
+moitiés. Les images VM publiées devront fournir empreinte, provenance de build et SBOM. Aucun secret
+de signature ne réside dans un artefact servi au navigateur.
 
 Les artefacts de la machine virtuelle ne sont pas versionnés mais **épinglés** :
 `vendor/v86/MANIFEST.json` fixe pour chacun son nom, sa taille, son empreinte SHA-256, sa licence et

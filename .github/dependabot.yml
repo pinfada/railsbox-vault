@@ -1,0 +1,31 @@
+# Mécanisme de mise à jour des actions ÉPINGLÉES PAR SHA (#105).
+#
+# L'épinglage par SHA supprime les montées de version automatiques : un `uses:` figé sur un commit
+# ne bouge plus jamais tout seul, y compris quand la version figée reçoit un correctif de sécurité.
+# L'épinglage sans mécanisme de mise à jour échange donc un risque contre un autre. C'est le couple
+# que l'issue #105 demandait de trancher, pas l'épinglage seul.
+#
+# Dependabot sait lire un `uses: owner/action@<sha> # vX.Y.Z`, proposer le SHA de la version
+# suivante et RÉÉCRIRE le commentaire d'étiquette avec elle. C'est pour cela que le cliquet
+# `tests/unit/workflows-actions-epinglees.test.mjs` exige les deux moitiés de la convention : sans
+# le commentaire, cette mise à jour n'a plus de repère.
+#
+# Une proposition de Dependabot reste une PR ordinaire : elle passe le contrôle « Qualité et tests »
+# et une revue humaine, qui est l'endroit où l'on regarde ce que le nouveau SHA contient.
+
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Un lot hebdomadaire plutôt qu'une PR par action : ces montées se relisent ensemble.
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: chore
+    labels:
+      - area:security
