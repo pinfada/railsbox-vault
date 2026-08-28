@@ -31,9 +31,22 @@
 // séquence inférieure est refusé.
 //
 // Ce qu'il ne fait pas, et qu'aucune formulation de ce dépôt ne doit laisser croire : il ne détecte
-// PAS un retour arrière qui l'emporte lui aussi. Il vit dans la même origine que le volume ; qui
-// peut reculer l'un peut reculer l'autre. La seule barrière contre le retour arrière COMPLET reste
-// le partitionnement d'origine de l'ADR 0002, et l'ancre externe est renvoyée à #21/#23.
+// PAS un retour arrière qui l'emporte lui aussi. Il vit dans la même origine que le volume.
+//
+// **Et l'effort n'est PAS symétrique.** Reculer le volume suppose d'en détenir une copie antérieure,
+// cohérente avec son journal. Neutraliser le témoin ne suppose rien : `ouvrirTemoin` ci-dessous ne
+// juge un fichier que sur son marqueur et sa longueur, si bien que le SUPPRIMER ou simplement le
+// TRONQUER suffit — et sans la clé. L'ouverture repart alors sur « première ouverture », donc sans
+// plancher de séquence, et la fenêtre du retour arrière complet est RÉARMÉE pour qui détient déjà
+// une copie antérieure de volume + journal.
+//
+// Ce comportement est délibéré et ne doit pas changer : refuser tout volume sans témoin rendrait
+// irouvrable un volume neuf, un volume restauré depuis une archive, ou un volume dont le témoin a
+// été perdu par un incident de support — on échangerait une détection qu'on n'a pas contre une perte
+// de données qu'on aurait. Ce qui manque n'est pas une garde de plus ici : c'est une ANCRE MONOTONE
+// hors du support, sans laquelle aucun état local n'a d'autorité sur sa propre fraîcheur. La seule
+// barrière contre le retour arrière COMPLET reste donc le partitionnement d'origine de l'ADR 0002,
+// et l'ancrage est renvoyé nommément à #23.
 //
 // Le témoin est SCELLÉ, et il faut dire ce que cela achète : un témoin forgé — une séquence inventée
 // par qui n'a pas la clé — est refusé au lieu d'être cru. Cela ne rend pas le témoin monotone ; cela

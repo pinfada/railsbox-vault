@@ -185,8 +185,26 @@ seulement qu'un tiers sans clé fabrique un refus permanent en y inscrivant une 
 ### La limite, écrite sans détour
 
 **Un retour arrière qui emporte AUSSI le témoin n'est pas détectable.** Le témoin vit dans la même
-origine que le volume : qui peut reculer l'un peut reculer l'autre. Il ne renforce pas la frontière
-de l'[ADR 0002](0002-topologie-origine-de-confiance.md) ; il rend visibles les reculs **partiels**.
+origine que le volume. Il ne renforce pas la frontière de
+l'[ADR 0002](0002-topologie-origine-de-confiance.md) ; il rend visibles les reculs **partiels**.
+
+**Et l'effort n'est PAS symétrique**, ce qu'une formule du genre « qui peut reculer l'un peut
+reculer l'autre » laisserait croire à tort. Reculer le volume suppose d'en détenir une copie
+antérieure — volume et journal cohérents entre eux. Neutraliser le témoin ne suppose rien de tel :
+**le supprimer, ou simplement le tronquer, suffit — et sans la clé.** `ouvrirTemoin` ne juge un
+fichier témoin que sur son marqueur et sa longueur ; un fichier absent, vide ou trop court n'est pas
+un témoin, et l'ouverture repart alors sur « première ouverture », c'est-à-dire sans plancher de
+séquence. Un adversaire qui détient une copie antérieure de volume + journal n'a donc pas à forger
+quoi que ce soit : il lui suffit d'effacer huit octets pour **réarmer la fenêtre du retour arrière
+complet**.
+
+**Ce comportement n'est pas changé, et il ne doit pas l'être** : « témoin absent = première
+ouverture, jamais une preuve » reste la bonne règle. L'inverse — refuser tout volume sans témoin —
+rendrait irouvrable tout volume neuf, tout volume restauré depuis une archive et tout volume dont le
+témoin a été perdu par un incident de support, c'est-à-dire échangerait une détection qu'on n'a pas
+contre une perte de données qu'on aurait. Ce qui manque n'est pas une garde de plus sur le témoin :
+c'est l'**ancre monotone hors du support**, sans laquelle aucun état local n'a d'autorité sur sa
+propre fraîcheur. **La question de l'ancrage est renvoyée nommément à #23.**
 
 La détection du retour arrière complet exige une **ancre monotone hors du support** — un compteur
 matériel, un témoin distant, un service tiers de fraîcheur. L'ADR 0015 a instruit le seul candidat
@@ -280,6 +298,12 @@ bancs les produisent, et ils ne mesurent pas la même chose :
 
 ### Confronté au budget de l'ADR 0005
 
+Ce coût est **mesuré par un banc dédié sur le support réel, `test:rythme` mesurant le rythme de
+l'émulateur et non ce coût**. La substitution est explicite et acceptée : le banc de rythme boote
+dix fois l'image de référence pour comparer la boucle d'ordonnancement de Vault à celle du moteur,
+ce qui ne dit rien du temps qu'un hachage de région prend. `tests/vm/fraicheur-region-cout.spec.mjs`
+le dit, à la bonne taille et sur le bon support.
+
 L'[ADR 0005](0005-qualification-de-la-reprise.md) borne la reprise à 60 s. L'épreuve de coût épingle
 un seuil d'**un pour cent** de ce budget — 600 ms —, et ce chiffre est un **engagement**, pas une
 observation : au-delà, la fraîcheur cesserait d'être un coût qu'on peut ignorer dans le budget de
@@ -327,7 +351,10 @@ cette tranche : une option non mesurée qui traîne finit par être allumée san
 
 1. **Le retour arrière complet du support n'est pas détecté**, et aucune formulation de ce dépôt ne
    doit laisser croire le contraire. Il exige une ancre hors du support : #21/#23.
-2. **Le témoin est dans la même origine.** Il ne renforce pas la frontière de l'ADR 0002.
+2. **Le témoin est dans la même origine, et le neutraliser ne coûte pas ce que coûte reculer le
+   volume.** Il ne renforce pas la frontière de l'ADR 0002. Le supprimer ou le tronquer suffit à
+   réarmer la fenêtre du retour arrière complet, sans la clé, pour qui détient déjà une copie
+   antérieure de volume + journal. Le comportement est délibéré ; l'ancrage est renvoyé à #23.
 3. **La fenêtre de migration** d'un volume de #18 dure une ouverture, pendant laquelle aucune
    fraîcheur n'est prétendue — et le rapport le publie plutôt que de le taire.
 4. **Le champ de version du journal n'est pas authentifié.** Une garde de cohérence et le témoin le
