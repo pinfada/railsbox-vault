@@ -971,6 +971,43 @@ Sa périodicité est donc la suivante : elle s'exécute à chaque modification d
 protection de branche — sa durée le rendrait bloquant pour des PR qui ne le concernent pas — mais un
 échec y est traité comme un échec de `npm run check`.
 
+#### Le banc d'attribution du boot : `tools/mesurer-attribution-boot.mjs`
+
+`test:vm:reference` répond « l'image boote-t-elle et rend-elle l'invariant ». Elle ne répond pas «
+d'où vient le temps », et l'[ADR 0005](decisions/0005-qualification-de-la-reprise.md) exige
+précisément qu'un gain soit attribuable à une étape « et non à du bruit ». C'est le rôle du banc
+ajouté par #66. **Ce n'est pas une épreuve** : il ne réussit ni n'échoue, il mesure, et il n'est
+rattaché à aucune commande `npm`.
+
+```sh
+# un relevé : cinq boots à froid sur l'image d'artifacts/reference-image/
+node tools/mesurer-attribution-boot.mjs --essais=5 --etiquette=avant
+
+# comparer DEUX images, essais entrelacés ; chaque dossier porte son manifest.json
+node tools/mesurer-attribution-boot.mjs --essais=5 --etiquette=bootsnap \
+  --bras=avant=artifacts/reference-image-avant \
+  --bras=apres=artifacts/reference-image
+
+# rejuger un relevé déjà mesuré, sans rien remesurer
+node tools/mesurer-attribution-boot.mjs --rejuger=reports/perf/attribution-bootsnap.json
+```
+
+Quatre points en gouvernent la lecture :
+
+- **chaque jalon est observé, jamais estimé** — un octet reçu sur le port série, une ligne de
+  `guest-init.sh`, une ligne de `puma.log` relayée par le pont, une réponse 200 de `/vault/health`.
+  Un jalon jamais atteint reste `null` ;
+- **un essai = un processus Node neuf**, pour que la mémoire d'un essai ne pèse pas sur le suivant ;
+- **deux verdicts sont publiés côte à côte**, et aucun ne remplace l'autre : le **marginal** (règle
+  de #86, |Δp50| contre l'étendue intra-série) borne ce que la campagne entière permet d'affirmer,
+  l'**apparié** exploite le fait que l'essai n de chaque bras est joué coup sur coup et n'affirme un
+  gain que si toutes les paires vont dans le même sens ;
+- **la campagne doit tourner seule.** Une construction Docker concurrente fausse les essais qu'elle
+  recouvre ; deux essais du premier relevé de #66 ont dû être jetés pour cette raison.
+
+Les relevés sont écrits dans `reports/perf/` (dossier ignoré par git) et publiés dans
+[`quality-attributes.md`](quality-attributes.md).
+
 ### Reprise d'une mutation Rails : `test:e2e`
 
 `npm run test:e2e` est le test du **niveau le plus élevé** du dépôt et le scénario de **sortie du

@@ -156,6 +156,111 @@ Une version publiable exige :
   `public/compat/` sont des bancs de mesure servis depuis la racine du serveur de développement, pas
   le produit ; la liste des chemins publiés est une décision de publication, tranchée par #45.
 
+## La chaîne de publication (#45, ADR 0017)
+
+Depuis #45, quatre de ces exigences ont un outil et une preuve, et non plus seulement une phrase. La
+décision est dans l'[ADR 0017](decisions/0017-chaine-de-publication.md), les mesures dans
+[`docs/spikes/0045-chaine-de-publication.md`](spikes/0045-chaine-de-publication.md).
+
+```sh
+node tools/publier.mjs --commit <ref>                 construit les deux arborescences
+node tools/publier.mjs --verifier <arborescence>      recalcule les empreintes et compare
+npm run publier:check                                 construction, vérification et témoin d'en-têtes
+```
+
+### Deux arborescences, une par origine
+
+L'[ADR 0002](decisions/0002-topologie-origine-de-confiance.md) impose deux origines ; la chaîne
+produit donc deux arbres, jamais un. L'arbre de la **coquille** porte le document de confiance, son
+Worker runtime, les modules de `src/vm/` et les artefacts v86 épinglés. L'arbre du **territoire
+applicatif** ne porte **aucun artefact du dépôt** — le HTML applicatif vient du guest — mais il
+porte sa configuration d'en-têtes et une place tenante déclarée comme telle.
+
+### Inventaire et empreintes
+
+Chaque arbre porte un `inventaire.json` : l'empreinte SHA-256 et la taille de chaque fichier, une
+**empreinte de racine** calculée sur la liste canonique et **accompagnée** du commit publié — elle
+est adressée par contenu, deux versions dont aucun octet publié ne diffère la partagent —, les
+en-têtes déclarés, les exclusions et leurs motifs, et le verdict d'**épinglage v86** — chaque
+artefact de l'émulateur est confronté, dans l'arbre publié, à l'empreinte que
+`vendor/v86/MANIFEST.json` lui attribue. C'est la moitié « runtime identifié et vérifié » de
+`SEC-UPDATE-001` portée jusqu'aux octets qui partent chez l'hébergeur.
+
+`--verifier` distingue trois natures d'écart, parce qu'elles ne se diagnostiquent pas de la même
+façon : **altéré**, **ajouté** — la surface que personne n'a décidée —, **manquant**. Un renommage
+change l'empreinte de racine, qu'une somme des empreintes ne verrait pas.
+
+L'inventaire n'est **pas une signature**. Un adversaire qui réécrit un fichier réécrit l'inventaire
+qui l'accompagne ; l'empreinte de racine n'a de valeur que **comparée hors bande** à celle publiée
+par la construction, et c'est pourquoi `.github/workflows/publication.yml` la dépose en artefact
+séparé et l'imprime dans son résumé. La signature reste exigible, et reste à faire.
+
+### En-têtes servis
+
+`tools/serve-headers.mjs` est la **source de vérité** : la production sert ce que
+`securityHeaders()` rend, dérivé et non recopié, pour que les épreuves de frontière du dépôt
+mesurent bien ce qui est publié. La publication ajoute **exactement deux** en-têtes, un par origine,
+tous deux décidés par l'ADR 0017 :
+
+| Origine     | En-tête ajouté                                                | Pourquoi                                                                                      |
+| ----------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| coquille    | `Cross-Origin-Opener-Policy: same-origin`                     | recommandation différée de l'[ADR 0010](decisions/0010-isolation-multi-origine.md)            |
+| application | `Content-Security-Policy: frame-ancestors <origine coquille>` | sans lui, le document qui porte les cookies de session est encadrable par n'importe quel site |
+
+La seconde ne rouvre pas ce que l'ADR 0002 s'interdit : `frame-ancestors` ne gouverne pas ce que le
+document **charge**, seulement qui a le droit de l'**encadrer**. Elle doit rester **seule** dans la
+politique applicative, et le témoin d'en-têtes échoue si une autre directive l'accompagne. Une
+épreuve unitaire échoue si un **troisième** en-tête apparaît dans la publication. COEP reste absent.
+
+L'hébergement doit donc savoir servir des en-têtes de réponse, **des deux côtés** : GitHub Pages est
+écarté partout. Pour la coquille, `frame-ancestors` est ignoré dans un `<meta http-equiv>` sur les
+trois moteurs et COOP n'y est pas exprimable ; pour l'application, le relevé du spike montre que
+Pages ne sert ni CORP, ni `nosniff`, ni `frame-ancestors`, et impose `max-age=600` là où le serveur
+de test sert `no-store`.
+
+Le fichier `_headers` porte en outre `# origine: <url>` en tête. C'est un commentaire pour
+l'hébergeur, et un **octet compté par l'empreinte** : sans lui, deux origines de coquille
+différentes rendaient la même empreinte de racine, et une bascule d'origine — donc une migration —
+passait pour un redéploiement.
+
+### Retour arrière
+
+```sh
+node tools/publier.mjs --commit <version-precedente> --sortie artifacts/rollback
+node tools/publier.mjs --verifier artifacts/rollback/coquille
+node tools/publier-empreinte.mjs artifacts/rollback/coquille
+# confronter le résultat à l'empreinte inscrite lors de la sortie de cette version
+```
+
+`--commit` lit les octets par `git show` : deux reconstructions du même commit rendent la même
+empreinte de racine, au bit près. Republier consiste à redéposer cet arbre.
+
+**Chaque sortie doit conserver son empreinte de racine hors bande.** C'est la condition qui rend le
+retour arrière _vérifiable_ et non seulement _reproductible_ : sans elle, on prouve que l'outil est
+déterministe, pas qu'on republie bien cette version-là. `publication.yml` l'imprime dans son résumé
+et la dépose en artefact séparé, et son entrée `empreinte-attendue` la confronte à la
+reconstruction.
+
+Un retour arrière **ne migre rien à l'envers** : un volume écrit par la version retirée reste écrit
+par elle, et c'est le refus de downgrade de
+l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md) (`runtime.minWriter`) qui protège
+l'utilisateur.
+
+### Changer l'origine de la coquille est une MIGRATION
+
+Ce n'est jamais un redéploiement. OPFS est cloisonné par origine : l'ancienne devient inatteignable.
+L'ordre imposé par l'ADR 0017 est : annoncer, **exporter** depuis l'ancienne origine encore servie
+([ADR 0008](decisions/0008-format-d-archive-d-export.md)), publier la nouvelle, **restaurer**
+([ADR 0009](decisions/0009-restauration-inter-origine.md)), et maintenir l'ancienne en service tant
+qu'un utilisateur peut n'avoir pas exporté.
+
+### Ce que la chaîne ne fait pas encore
+
+Aucun déploiement réel, aucune signature, aucun SBOM, aucun Service Worker hors ligne. Et
+`Cache-Control: no-store` est publié tel que le serveur de test le sert, ce qui contredit le mode
+hors ligne à deux Service Workers de l'ADR 0002 : le conflit est nommé dans l'ADR 0017 comme travail
+découvert, pas résolu.
+
 ## Support et retrait
 
 Avant `1.0`, chaque release annonce les versions de volume qu'elle lit, migre et refuse. Après

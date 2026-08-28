@@ -1,8 +1,8 @@
 # ADR 0005 — La reprise se qualifiera par un instantané lié à une génération arrêtée, et le gate reste fermé d'ici là
 
 - Statut : accepté
-- Date : 2026-08-24
-- Issue : #60 · Invariant : `VAULT-PERSIST-001` · Jalon 1
+- Date : 2026-08-24 · amendé le 2026-08-28 (§ « Ce que l'atténuation a rendu (#66) »)
+- Issue : #60, amendé par #66 · Invariant : `VAULT-PERSIST-001` · Jalon 1
 
 ## Contexte
 
@@ -206,6 +206,43 @@ retenue, conditions de sûreté tenues.
 4. **La part Rails reste le coût de fond.** Si l'instantané est indisponible (première ouverture,
    invalidation, incompatibilité de version v86), la reprise **est** un boot à froid de ~94 s. D'où
    l'atténuation par accélération du boot : elle borne le pire cas.
+
+## Ce que l'atténuation a rendu (#66, amendement du 2026-08-28)
+
+Cet ADR annonçait l'accélération du boot comme **atténuation**, avec un plafond de gain estimé à «
+quelques dizaines de pour cent sur la part Rails ». #66 l'a construite et mesurée. Cet amendement
+remplace l'estimation par un chiffre, et ne change **aucune** décision de l'ADR.
+
+**Ce qui a été gagné.** Un cache Bootsnap **pré-chauffé à la construction de l'image** fait passer
+le boot Puma/Rails de **82,8 s à 66,6 s** de p50 (−20 %) et le total de **110,7 s à 90,9 s** (−18
+%), sur cinq paires entrelacées de la machine de développement. Le gain est **attribué** au boot
+Rails : c'est la seule étape dont les cinq paires vont dans le même sens. Le détail, le coût en
+octets transférés et les réserves sont dans `docs/quality-attributes.md`, § « Accélération du boot
+Rails de l'image de référence (#66) ».
+
+**Ce qui n'a pas été gagné, et qui est retiré.** Un lanceur mono-processus, qui supprimait une
+machine virtuelle Ruby et plaçait Puma sous Bootsnap, n'a rendu que **deux paires en gain sur cinq**
+— écart apparié médian **+8,3 s**. Le mécanisme reste plausible ; la mesure ne l'établit pas, et il
+n'est pas conservé.
+
+**Ce que l'atténuation ne change pas, et c'est l'essentiel.** Les trois faits qui portent la
+décision de cet ADR tiennent tous :
+
+1. le boot de Puma/Rails **domine toujours** — 66,6 s sur 90,9 s, soit ~73 % au lieu de ~79 % ;
+2. le backend OPFS n'est toujours pas le goulot ; rien dans #66 ne l'a touché ;
+3. **aucune optimisation de boot à froid n'atteint 60 s à elle seule.** Le seul boot Rails vaut
+   encore 66,6 s, donc plus que la cible entière, sur une machine **plus rapide** que
+   l'environnement de référence. L'écart restant à combler n'est pas de quelques pour cent : il
+   faudrait encore diviser le boot Rails par plus de deux, puis absorber les 24 s de BIOS, noyau,
+   init et détection.
+
+**Le gate de qualification produit reste donc FERMÉ**, pour la raison inchangée : la cible est p95 ≤
+60 s sur l'environnement de référence, et le p95 mesuré vaut 100,8 s sur une machine qui n'est pas
+celui-là. #66 fait ce que cet ADR lui demandait — **borner le pire cas** quand l'instantané est
+indisponible — et rien de plus. Le risque résiduel n° 4 est réduit d'environ un cinquième, pas levé.
+
+La condition d'abandon « l'accélération du boot atteint, seule, un p95 ≤ 60 s sur l'environnement de
+référence » **n'est pas remplie**, et la voie « instantané » reste la voie de qualification.
 
 ## Conditions d'abandon
 

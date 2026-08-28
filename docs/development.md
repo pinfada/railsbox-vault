@@ -286,6 +286,49 @@ résultat. L'inventaire des dépendances à l'isolation, lui, n'a besoin d'aucun
 npm run isolation:inventaire   # → reports/isolation/inventaire.json
 ```
 
+## Publier les deux origines
+
+La chaîne de publication (#45, [ADR 0017](decisions/0017-chaine-de-publication.md)) construit les
+deux arborescences de l'ADR 0002 dans `artifacts/publication/`, dossier ignoré par git :
+
+```sh
+npm run publier                   # depuis l'arbre de travail
+node tools/publier.mjs --commit HEAD           # depuis les OCTETS de ce commit (git show)
+node tools/publier.mjs --verifier artifacts/publication/coquille
+```
+
+La construction produit, par arbre, un `_headers` **dérivé** de `tools/serve-headers.mjs` — jamais
+recopié, et portant `# origine:` dans ses octets pour qu'une bascule d'origine change l'empreinte —
+et un `inventaire.json` portant l'empreinte de chaque fichier plus une empreinte de racine
+**accompagnée** du commit (elle est adressée par contenu : deux versions dont aucun octet publié ne
+diffère la partagent). Ce qui est publié et ce qui est retiré vit dans
+`tools/publier-arborescences.mjs`, chaque ligne avec sa raison ;
+`tests/unit/publication-arborescences.test.mjs` échoue si un fichier de `public/` ou de `src/` n'est
+ni publié ni exclu. Ajouter un banc demain oblige donc à décider.
+
+Sans `npm run vm:fetch`, la publication est **constructible mais incomplète**, et son inventaire le
+déclare (`complet: false`). Avec, l'épinglage v86 de l'ADR 0003 est vérifié dans l'arbre publié.
+
+### Témoin d'en-têtes
+
+`npm run publier:check` — rattaché à `npm run check`, 4 s environ — construit, vérifie, puis sert
+les arbres par un serveur qui **applique leur `_headers`** et confronte les en-têtes reçus à ceux
+déclarés. Il relève aussi `window.opener` sur une fenêtre ouverte depuis l'autre origine, avec son
+témoin négatif : le même arbre servi sans COOP, où `opener` doit survivre.
+
+```sh
+npm run publier:temoin                                    # Chromium
+VAULT_MOTEURS=chromium,firefox,webkit npm run publier:temoin
+npm run publier:sonde:meta                                # ce qu'un <meta http-equiv> CSP applique
+npm run publier:sonde:hebergement                         # en-têtes servis, Public Suffix List (réseau)
+node tools/publier-sonde-hebergement.mjs --hors-ligne     # rejoue le dernier relevé
+```
+
+Les rapports partent dans `reports/publication/`. La chaîne complète — artefacts v86 réels, trois
+moteurs, épreuve de retour arrière, dépôt des arborescences en artefacts GitHub — est
+`.github/workflows/publication.yml`, en `workflow_dispatch` **seulement** : elle ne déploie rien, et
+aucune fusion ne la déclenche.
+
 ## Backend de blocs OPFS
 
 Le banc du backend de persistance vit à `http://127.0.0.1:4173/vm/opfs.html` et n'exige **aucun**

@@ -175,4 +175,24 @@ RUN set -eu; \
     linux32 ruby bin/vault-fixture create; \
     linux32 ruby bin/vault-fixture create; \
     linux32 ruby bin/vault-fixture verify --json > /app/var/invariant-a-la-construction.json; \
-    rm -rf tmp/cache log/*.log
+    rm -rf log/*.log
+
+# Pré-chauffage du cache Bootsnap (`config/boot.rb`). Les étapes ci-dessus l'ont
+# déjà rempli en passant — elles chargent toutes `config/environment` —, mais on
+# ne laisse pas un cache dépendre d'un effet de bord : cette ligne le remplit
+# EXPLICITEMENT, et le `test` échoue si le cache est resté vide. Un cache muet
+# serait le pire des deux mondes : le coût du disque sans le gain du boot.
+#
+# Le cache reste dans l'image (il n'est plus effacé avec les journaux) : c'est
+# tout l'intérêt. Le premier boot chez l'utilisateur LIT un cache complet au lieu
+# de recompiler ~90 gemmes sur un i386 émulé.
+# Ce qui est chauffé est ce que le guest charge SOUS Bootsnap, et rien d'autre :
+# `config.ru` charge `config/boot.rb` puis l'application. Bundler, Rack et Puma
+# sont chargés AVANT par `bundle exec puma`, donc hors de portée du cache — les
+# chauffer ne servirait à rien. Un lanceur mono-processus les y ferait entrer ;
+# #66 l'a construit et mesuré, sans pouvoir établir de gain (voir
+# `docs/quality-attributes.md`, § « Accélération du boot Rails »).
+RUN set -eu; \
+    linux32 ruby -e 'require "./config/environment"'; \
+    test -d tmp/cache/bootsnap; \
+    echo "cache Bootsnap : $(du -sh tmp/cache | cut -f1), $(find tmp/cache -type f | wc -l) fichiers"

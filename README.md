@@ -76,10 +76,11 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0014 — une génération est validée par une racine d'un secteur alternée, et un volume rouvert présente la dernière génération validée](docs/decisions/0014-generation-transactionnelle.md)
 - [ADR 0015 — cinq menaces, cinq propriétés cryptographiques testables ; AES-256-GCM, nonces aléatoires, racine authentifiée](docs/decisions/0015-proprietes-cryptographiques-du-format.md)
 - [ADR 0016 — le format de volume v3 range le sceau hors de la charge : en-tête, région d'authentification, sceau de 34 octets](docs/decisions/0016-format-de-volume-v3-dispositions.md)
-- [ADR 0013 — la CSP de la coquille garde `worker-src 'self'` et nomme ce qu'elle refuse](docs/decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md)
 - [Spike #35 — protocole et mesures de la topologie d'origine](docs/spikes/0035-topologie-origine-de-confiance.md)
 - [Spike #4 — protocole et mesures du backend de blocs v86](docs/spikes/0004-backend-de-blocs-v86.md)
+- [ADR 0017 — la chaîne de publication sert les mêmes en-têtes que le serveur de test, et inventorie ce qu'elle publie](docs/decisions/0017-chaine-de-publication.md)
 - [Spike #41 — coût mesuré de l'isolation multi-origine sur le runtime v86](docs/spikes/0041-isolation-coop-coep.md)
+- [Spike #45 — où publier les deux origines, et comment vérifier ce qui est servi](docs/spikes/0045-chaine-de-publication.md)
 
 ## Licence
 
