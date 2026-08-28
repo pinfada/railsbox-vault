@@ -16,7 +16,7 @@
 // pour un volume valide.
 
 import { BlockJournal } from "./block-journal.mjs";
-import { openOpfsVolume } from "./opfs-block-backend.mjs";
+import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
 import { isManifestError } from "./manifest-errors.mjs";
 import {
   generationJournalName,
@@ -54,7 +54,7 @@ export function createOpfsImportTarget(
     revoke = revokeVolumeManifest,
     writeManifest = writeSidecarBytes,
     removeSidecar = removeOpfsVolume,
-    openVolume = openOpfsVolume,
+    openVolume = ouvrirVolumeBrut,
   } = {},
 ) {
   const sidecar = manifestSidecarName(volume);
@@ -84,10 +84,16 @@ export function createOpfsImportTarget(
     },
 
     /**
-     * Ouvre le volume en exclusivité, à la géométrie de l'archive, et SANS génération
-     * transactionnelle (#16, ADR 0014).
+     * Ouvre le FICHIER du volume en exclusivité, à la taille que l'archive porte, en accès BRUT.
      *
-     * Une restauration réécrit le volume ENTIER, d'un bloc à l'autre, avec une seule barrière à la
+     * **Brut, et c'est la décision 7 de l'ADR 0016 rendue exécutable.** Une archive porte le fichier
+     * d'un volume tel quel ; le restaurer, c'est le RECOPIER. Passer par le backend chiffré ferait
+     * l'inverse de ce qu'on veut : les octets de l'archive — déjà chiffrés pour un volume v3 —
+     * deviendraient la charge en clair d'un volume neuf, et la restauration exigerait une clé pour
+     * un geste qui n'en a pas besoin. La tranche (a) de #18 refusait la restauration d'un v3 faute
+     * de cette porte.
+     *
+     * Une restauration réécrit le fichier ENTIER, d'un bloc à l'autre, avec une seule barrière à la
      * fin. Ce n'est pas une génération du guest : la restauration porte déjà son propre protocole
      * d'atomicité — manifeste révoqué avant la première mutation, volume relu depuis le support,
      * manifeste inscrit en dernier (ADR 0009) —, et une restauration interrompue laisse un volume
@@ -104,7 +110,7 @@ export function createOpfsImportTarget(
      * geste mutant.
      */
     open({ size }) {
-      return openVolume({ name: volume, size, journal, transactionnel: false });
+      return openVolume({ name: volume, size });
     },
 
     /** Retire le manifeste : le volume cesse d'être identifié, donc d'être inscriptible. */

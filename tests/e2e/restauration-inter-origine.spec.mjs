@@ -85,18 +85,6 @@ async function copieAlteree(chemin, cible) {
   }
 }
 
-/**
- * Ce scénario porte sur la TRANCHE (b) de #18, et il est suspendu tant qu'elle n'a pas livré.
- *
- * la restauration d'une archive de volume v3 est REFUSÉE par ce chemin (VAULT_IMPORT_VOLUME_CHIFFRE) : elle doit RECOPIER le fichier chiffré, et ce chemin rechiffrerait ses octets. Recopie brute : #101.
- *
- * Le suspendre est une PERTE de couverture, et elle est écrite ici plutôt que dissimulée derrière
- * un test qui constaterait un refus — un tel test mesurerait la conduite du refus, pas le scénario
- * que ce fichier existe pour prouver. Il est rétabli tel quel par #101, sans rien réécrire.
- */
-const TRANCHE_B =
-  "la restauration d'une archive de volume v3 est REFUSÉE par ce chemin (VAULT_IMPORT_VOLUME_CHIFFRE) : elle doit RECOPIER le fichier chiffré, et ce chemin rechiffrerait ses octets. Recopie brute : #101 — scénario rétabli par #101";
-
 const raison = raisonDIndisponibilite();
 
 /**
@@ -134,7 +122,6 @@ test.afterEach(async ({ context }) => {
 test("un volume exporté depuis une origine est restauré, booté à froid et vérifié par Rails depuis une AUTRE origine", async ({
   context,
 }, testInfo) => {
-  test.skip(true, TRANCHE_B);
   test.skip(raison !== null, raison ?? "");
   test.setTimeout(1_500_000);
 
