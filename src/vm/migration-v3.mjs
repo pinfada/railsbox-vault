@@ -149,39 +149,95 @@ async function dejaScelle({ brut, disposition, scellement, adresse, generation }
   }
 }
 
-/** SCELLE un secteur déplacé : relire le clair à sa nouvelle place, sceller, réécrire. */
-async function scellerUnSecteur({ brut, disposition, scellement, adresse, generation }) {
-  const clair = await brut.read(offsetDeCharge(disposition, adresse), SECTOR_SIZE);
-  const { secteurs } = await scellement.rescellerEnSecteurs({
-    adresse,
-    contenu: clair,
-    generation,
-  });
-  const scelle = secteurs[0].scelle;
-  await brut.write(offsetDeCharge(disposition, adresse), scelle.chiffre);
-  await brut.write(
-    offsetDeSceau(disposition, adresse),
-    encoderSceau({ nonce: scelle.nonce, etiquette: scelle.etiquette, generation }),
-  );
+/**
+ * SCELLE une SUITE CONTIGUË de secteurs encore en clair : les sceaux D'ABORD, puis les charges.
+ *
+ * ## L'ordre est le contrat, et l'ordre inverse perdait le clair
+ *
+ * La première version écrivait la charge chiffrée puis le sceau. Une coupure entre les deux — un
+ * cas sur deux — laissait un secteur CHIFFRÉ sans sceau valide. La reprise le classait alors « pas
+ * encore converti », puisque c'est exactement ce qu'un secteur en clair donne, et le RECHIFFRAIT :
+ * le clair était perdu, aucune erreur n'était levée, la marque de scellement complet était posée et
+ * le manifeste v3 inscrit. Une migration « réussie » sur un volume détruit.
+ *
+ * Le sceau d'abord renverse l'ambiguïté du bon côté : une coupure laisse du CLAIR sous un sceau qui
+ * ne l'ouvre pas, ce que la reprise classe « pas encore converti » — et elle a raison, si bien que
+ * le rescellement produit exactement ce qu'il fallait.
+ *
+ * ## Pourquoi par SUITES, et non secteur par secteur
+ *
+ * Il faut une barrière entre les sceaux et les charges, sans quoi le support peut matérialiser une
+ * charge avant son sceau et l'on retombe sur l'état interdit. Une barrière par secteur ferait un
+ * million de barrières pour 512 Mio — des heures. Les sceaux d'une suite d'adresses sont contigus
+ * dans la région, et les charges le sont dans la charge : une suite se traite donc en deux
+ * écritures et deux barrières, quelle que soit sa longueur.
+ *
+ * Une coupure au milieu de l'écriture des charges laisse les premiers secteurs convertis et les
+ * suivants en clair, tous sous un sceau : `dejaScelle` les distingue un par un.
+ *
+ * **Ce que cet ordre ne couvre pas**, et qui est nommé plutôt que maquillé : une écriture DÉCHIRÉE
+ * à l'intérieur d'un secteur de charge — moitié clair, moitié chiffré — ne se distingue pas d'un
+ * secteur encore en clair, et serait rescellée telle quelle. Le remède est la sauvegarde, que la
+ * chaîne EXIGE et VÉRIFIE avant de convertir (ADR 0011).
+ */
+async function scellerUneSuite({ brut, disposition, scellement, adresse, secteurs, generation }) {
+  const clair = await brut.read(offsetDeCharge(disposition, adresse), secteurs * SECTOR_SIZE);
+  const rescelle = await scellement.rescellerEnSecteurs({ adresse, contenu: clair, generation });
+
+  const charges = new Uint8Array(secteurs * SECTOR_SIZE);
+  const sceaux = new Uint8Array(secteurs * SCEAU_OCTETS);
+  for (const [index, secteur] of rescelle.secteurs.entries()) {
+    charges.set(secteur.scelle.chiffre, index * SECTOR_SIZE);
+    sceaux.set(
+      encoderSceau({
+        nonce: secteur.scelle.nonce,
+        etiquette: secteur.scelle.etiquette,
+        generation,
+      }),
+      index * SCEAU_OCTETS,
+    );
+  }
+
+  await brut.write(offsetDeSceau(disposition, adresse), sceaux);
+  await brut.flush();
+  await brut.write(offsetDeCharge(disposition, adresse), charges);
+  await brut.flush();
 }
 
 /**
- * SCELLE toute la charge, secteur par secteur, en sautant ce qui l'est déjà.
+ * SCELLE toute la charge, en sautant ce qui l'est déjà.
  *
  * Le saut n'est pas une optimisation, c'est la REPRISE : rescéller un secteur déjà converti
- * chiffrerait du chiffré, et le volume serait perdu sans qu'aucune erreur ne soit levée.
+ * chiffrerait du chiffré, et le volume serait perdu sans qu'aucune erreur ne soit levée. Les
+ * secteurs restants sont regroupés en SUITES contiguës — voir `scellerUneSuite`.
  */
-async function scellerLaCharge({ brut, disposition, scellement, generation }) {
+async function scellerLaCharge({ brut, disposition, scellement, generation, secteursParTour }) {
   let secteursScelles = 0;
   let secteursDejaScelles = 0;
+  let debut = null;
+  let secteurs = 0;
+
+  const vider = async () => {
+    if (debut === null) return;
+    await scellerUneSuite({ brut, disposition, scellement, adresse: debut, secteurs, generation });
+    secteursScelles += secteurs;
+    debut = null;
+    secteurs = 0;
+  };
+
   for (let adresse = 0; adresse < disposition.tailleLogique; adresse += SECTOR_SIZE) {
     if (await dejaScelle({ brut, disposition, scellement, adresse, generation })) {
       secteursDejaScelles += 1;
+      await vider();
       continue;
     }
-    await scellerUnSecteur({ brut, disposition, scellement, adresse, generation });
-    secteursScelles += 1;
+    if (debut === null) debut = adresse;
+    secteurs += 1;
+    // La suite est bornée par le lot d'E/S : elle tient en mémoire le temps de deux écritures, et
+    // c'est ce nombre-là qui borne cette mémoire, pas la taille du volume.
+    if (secteurs === secteursParTour) await vider();
   }
+  await vider();
   return { secteursScelles, secteursDejaScelles };
 }
 
@@ -251,7 +307,13 @@ export async function convertirEnV3({
     await marquerEtape({ etape: ETAPES_CONVERSION.scellement, position: 0 });
   }
 
-  const scelles = await scellerLaCharge({ brut, disposition, scellement, generation });
+  const scelles = await scellerLaCharge({
+    brut,
+    disposition,
+    scellement,
+    generation,
+    secteursParTour,
+  });
   await poserLEnTeteEnDernier({ brut, tailleLogique, identifiantVolume });
 
   return Object.freeze({

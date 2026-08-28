@@ -72,6 +72,10 @@ function supportBrut(initial) {
     get octets() {
       return etat.octets;
     },
+    /** Écritures acceptées depuis le dernier armement. L'épreuve des coupures s'en sert de borne. */
+    get ecritures() {
+      return etat.ecritures;
+    },
     armerCoupure(apres) {
       etat.couperApres = apres;
       etat.ecritures = 0;
@@ -272,9 +276,10 @@ test("une coupure PENDANT le scellement se reprend sans rescéller ce qui l'est 
     coupures += 1;
     avancement.push(marque);
   };
-  // Quatre écritures de déplacement, puis huit de scellement : la coupure tombe dans le second
-  // geste, une fois l'étape marquée.
-  support.armerCoupure(12);
+  // Quatre écritures de déplacement, puis deux par tour de scellement — les sceaux du tour, puis
+  // ses charges. Couper après la sixième laisse le PREMIER tour converti et les trois autres
+  // intacts : la reprise doit donc en sauter quatre et en convertir douze.
+  support.armerCoupure(6);
   const premierScellement = await scellement();
   await assert.rejects(() =>
     convertirEnV3({
@@ -314,4 +319,84 @@ test("une coupure PENDANT le scellement se reprend sans rescéller ce qui l'est 
     dispositionV3(TAILLE_LOGIQUE).secteurs,
   );
   assert.deepEqual([...(await relireClair(support))], [...attendu]);
+});
+
+// ------------------------------------- toute coupure, à n'importe quelle écriture, se reprend
+
+/**
+ * REPREND la conversion depuis le dernier avancement journalisé, sans coupure.
+ *
+ * C'est exactement ce que fait `volume-migration.mjs` : il relit `progress` du journal et le passe
+ * à la conversion. L'épreuve ne devine donc rien de l'état du fichier — elle rejoue le contrat.
+ */
+async function reprendre(support, avancement) {
+  support.armerCoupure(null);
+  return convertirEnV3({
+    brut: support,
+    scellement: await scellement(),
+    tailleLogique: TAILLE_LOGIQUE,
+    identifiantVolume: IDENTIFIANT,
+    depuis: avancement?.etape ?? ETAPES_CONVERSION.deplacement,
+    position: avancement?.position ?? null,
+    marquerEtape: async () => {},
+    secteursParTour: SECTEURS_PAR_TOUR,
+  });
+}
+
+test("une coupure à N'IMPORTE QUELLE écriture se reprend, et le clair d'origine est rendu", async () => {
+  // L'épreuve précédente n'armait qu'une coupure : la douzième. C'était le seul motif pour lequel
+  // elle passait — douze écritures tombent sur une frontière de secteur entière. La revue de #110 a
+  // montré que les coupures IMPAIRES perdaient le clair des secteurs déjà chiffrés : le scellement
+  // écrivait la charge chiffrée PUIS le sceau, si bien qu'une coupure entre les deux laissait un
+  // secteur chiffré sans sceau valide — que la reprise classait « pas encore converti » et
+  // RECHIFFRAIT, sans qu'aucune erreur ne soit levée.
+  //
+  // Une épreuve qui choisit ses points de coupure choisit son verdict. Celle-ci les prend TOUS :
+  // pour chaque rang d'écriture, elle coupe, reprend depuis le journal, et exige le clair d'origine.
+  const attendu = contenuV2();
+
+  // Combien d'écritures une conversion complète demande-t-elle ? On le MESURE plutôt que de le
+  // supposer : le nombre change avec la mise en œuvre, et une borne fausse ferait passer l'épreuve
+  // en n'éprouvant rien.
+  const temoin = supportBrut(attendu);
+  await convertirEnV3({
+    brut: temoin,
+    scellement: await scellement(),
+    tailleLogique: TAILLE_LOGIQUE,
+    identifiantVolume: IDENTIFIANT,
+    depuis: ETAPES_CONVERSION.deplacement,
+    marquerEtape: async () => {},
+    secteursParTour: SECTEURS_PAR_TOUR,
+  });
+  const ecrituresCompletes = temoin.ecritures;
+  assert.ok(ecrituresCompletes > 8, `une conversion écrit plus que ${ecrituresCompletes} fois`);
+
+  for (let rang = 1; rang < ecrituresCompletes; rang += 1) {
+    const support = supportBrut(attendu);
+    const avancement = [];
+    const scelle = await scellement();
+    support.armerCoupure(rang);
+    await assert.rejects(
+      () =>
+        convertirEnV3({
+          brut: support,
+          scellement: scelle,
+          tailleLogique: TAILLE_LOGIQUE,
+          identifiantVolume: IDENTIFIANT,
+          depuis: ETAPES_CONVERSION.deplacement,
+          marquerEtape: async (marque) => {
+            avancement.push(marque);
+          },
+          secteursParTour: SECTEURS_PAR_TOUR,
+        }),
+      `la coupure au rang ${rang} devait interrompre la conversion`,
+    );
+
+    await reprendre(support, avancement.at(-1) ?? null);
+    assert.deepEqual(
+      [...(await relireClair(support))],
+      [...attendu],
+      `coupure au rang ${rang} : la reprise doit rendre le clair d'origine`,
+    );
+  }
 });
