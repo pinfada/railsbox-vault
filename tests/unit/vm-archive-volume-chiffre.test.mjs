@@ -85,6 +85,47 @@ function source(octets) {
   };
 }
 
+/** Vrai si `motif` apparaît quelque part dans `octets`. Recherche naïve : l'épreuve est petite. */
+function contient(octets, motif) {
+  for (let debut = 0; debut + motif.byteLength <= octets.byteLength; debut += 1) {
+    let identique = true;
+    for (let index = 0; index < motif.byteLength; index += 1) {
+      if (octets[debut + index] !== motif[index]) {
+        identique = false;
+        break;
+      }
+    }
+    if (identique) return true;
+  }
+  return false;
+}
+
+/** Cible de restauration qui COMPTE ses gestes : ce qu'on veut savoir est ce qui n'a pas eu lieu. */
+function cibleQuiCompte() {
+  const gestes = [];
+  return {
+    gestes,
+    async inspect() {
+      gestes.push("inspect");
+      return { present: false, size: 0 };
+    },
+    async open() {
+      gestes.push("open");
+      throw new Error("la cible ne devait pas être ouverte");
+    },
+    async revokeManifest() {
+      gestes.push("revoke");
+    },
+    async commitManifest() {
+      gestes.push("commit");
+    },
+    async readManifest() {
+      gestes.push("read-manifest");
+      return null;
+    },
+  };
+}
+
 test("la longueur d'archive d'un volume v3 est celle du FICHIER, pas du volume logique", () => {
   // Elle est DÉRIVÉE du format et de la géométrie, jamais reçue : deux sources de vérité
   // divergeraient, et c'est l'archive qui deviendrait invérifiable.
@@ -216,3 +257,93 @@ function cibleBrute() {
     },
   };
 }
+
+test("le CLAIR d'un secteur connu n'apparaît nulle part dans l'archive exportée", async () => {
+  // `SECURITY.md` affirmait qu'une épreuve le montrait. Elle n'existait pas — la revue de #110 l'a
+  // relevé, et le remède n'est pas de retirer la phrase.
+  //
+  // Le motif cherché est un secteur ENTIER, écrit par le chemin de production dans le volume, puis
+  // cherché dans les octets de l'archive. Un motif court se rencontrerait par hasard dans du
+  // chiffré ; cinq cent douze octets consécutifs, non.
+  const motif = Uint8Array.from({ length: SECTOR_SIZE }, (_, index) => (index * 13 + 5) % 256);
+  const disposition = dispositionV3(TAILLE_LOGIQUE);
+  const octets = new Uint8Array(disposition.tailleSupport);
+  octets.set(encoderEnTeteV3({ tailleLogique: TAILLE_LOGIQUE, identifiantVolume: IDENTIFIANT }), 0);
+  const volume = new VolumeChiffre({
+    volume: "eprouve",
+    scellement: await Scellement.ouvrir({
+      volume: IDENTIFIANT,
+      cleOctets: CLE_DE_TEST,
+      formatVersion: 3,
+    }),
+    disposition,
+    lireSupport: (offset, longueur) => octets.slice(offset, offset + longueur),
+    ecrireSupport: (offset, source_) => octets.set(source_, offset),
+  });
+  await volume.scellerTout(0);
+  await volume.ecrireSecteurs(2 * SECTOR_SIZE, motif, 1);
+
+  // Le témoin POSITIF d'abord : le motif est bien dans le volume, par la lecture autorisée. Sans
+  // lui, une épreuve qui ne trouve rien ne prouverait rien.
+  assert.deepEqual(
+    [...(await volume.lireSecteurs(2 * SECTOR_SIZE, SECTOR_SIZE))],
+    [...motif],
+    "le motif est bien le clair de ce secteur",
+  );
+
+  const { archive } = await exportVolumeToBytes({
+    source: source(octets),
+    manifest: manifeste(3),
+    consistency: COHERENCE,
+  });
+
+  assert.equal(
+    contient(archive, motif),
+    false,
+    "le clair d'un secteur connu n'est nulle part dans l'archive",
+  );
+  // Et le témoin NÉGATIF de la méthode : la même recherche TROUVE ce motif dans un fichier qui le
+  // porte en clair. Sans elle, une recherche qui ne trouve jamais rien passerait pour une preuve.
+  const enClair = new Uint8Array(disposition.tailleSupport);
+  enClair.set(motif, 2 * SECTOR_SIZE);
+  assert.equal(contient(enClair, motif), true, "la recherche sait trouver ce qu'elle cherche");
+});
+
+test("une archive dont le MANIFESTE et le FICHIER déclarent des volumes différents est refusée AVANT d'écrire", async () => {
+  // L'ADR 0009 pose la règle : vérifier avant d'écrire. Une telle archive passait toute la
+  // restauration — l'empreinte porte sur les octets, pas sur leur cohérence avec le manifeste —, et
+  // le volume restauré était refusé À L'OUVERTURE par `VAULT_STORAGE_IDENTITE_VOLUME`. Le refus
+  // était juste ; son MOMENT ne l'était pas, puisque la cible avait déjà été écrasée.
+  const { octets } = await fichierV3(3);
+  const autre = "fedcba9876543210fedcba9876543210";
+  const { archive } = await exportVolumeToBytes({
+    source: source(octets),
+    // Le manifeste déclare un AUTRE volume que celui dont l'en-tête est dans le fichier.
+    manifest: createManifest({
+      formatVersion: 3,
+      runtime: { version: "1.4.2", artifact: null, minWriter: "1.0.0" },
+      app: { id: "railsbox/reference", version: "3.1.0" },
+      volumeSize: TAILLE_LOGIQUE,
+      identity: { algorithm: "sha-256", digest: null },
+      volume: { id: autre, algorithm: "aes-256-gcm" },
+    }),
+    consistency: COHERENCE,
+  });
+
+  const cible = cibleQuiCompte();
+  await assert.rejects(
+    () =>
+      importArchive({
+        source: { byteLength: archive.byteLength, read: (o, l) => archive.slice(o, o + l) },
+        target: cible,
+        enforceCompatibility: false,
+      }),
+    (erreur) => {
+      assert.match(erreur.message, /déclare le volume/, erreur.message);
+      assert.match(erreur.message, /Aucun octet n'est écrit/);
+      return true;
+    },
+  );
+  // Le refus tombe même avant l'inspection : la cible n'est pas touchée du tout.
+  assert.deepEqual(cible.gestes, [], "la cible n'est ni inspectée ni ouverte");
+});

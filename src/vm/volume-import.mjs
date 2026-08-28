@@ -39,6 +39,12 @@
 import { createSha256Stream } from "./sha256-stream.mjs";
 import { IMPORT_ERROR_CODES, ImportError } from "./import-errors.mjs";
 import { readArchive } from "./volume-export.mjs";
+import { ARCHIVE_ERROR_CODES, ArchiveError } from "./archive-errors.mjs";
+import {
+  EN_TETE_OCTETS,
+  decoderEnTeteV3,
+  identifiantVolumeEnTexte,
+} from "./volume-chiffre-format.mjs";
 import { MANIFEST_SIDECAR_SUFFIX, manifestSidecarName } from "./opfs-sync-access.mjs";
 import { parseManifest, serializeManifest } from "./volume-manifest.mjs";
 
@@ -312,7 +318,7 @@ export async function importArchive({
 
   // 1. VÉRIFIER — aucune mutation avant ce point. Les refus de #10 et #11 remontent tels quels, et
   //    la compatibilité du manifeste est contrôlée par défaut (`enforceCompatibility`).
-  const verdict = await readArchive({
+  const verdict = await verifierArchiveEtIdentite({
     read: lire,
     byteLength: source.byteLength,
     expectations,
@@ -346,6 +352,57 @@ export async function importArchive({
     relecture,
     budgetRapport: avantMutation.budgetRapport,
   });
+}
+
+/**
+ * GESTE 1 — VÉRIFIER l'archive, puis confronter l'identité qu'elle déclare à celle qu'elle porte.
+ *
+ * Les deux contrôles vont ensemble parce qu'ils ont la même règle : rien n'est écrit tant qu'ils
+ * n'ont pas rendu leur verdict (ADR 0009, « vérifier avant d'écrire »).
+ */
+async function verifierArchiveEtIdentite(options) {
+  const verdict = await readArchive(options);
+  await assertIdentiteDeLArchive({
+    verdict,
+    read: options.read,
+    volumeSize: verdict.contentLength,
+  });
+  return verdict;
+}
+
+/**
+ * CONFRONTE l'identifiant que le manifeste de l'archive DÉCLARE à celui que son fichier PORTE.
+ *
+ * L'ADR 0009 pose la règle : « vérifier avant d'écrire ». Une archive dont le manifeste annonce un
+ * identifiant et dont l'en-tête v3 en porte un autre passait toute la restauration — vérification
+ * d'empreinte comprise, puisque l'empreinte porte sur les octets, pas sur leur cohérence avec le
+ * manifeste. Le volume restauré était alors refusé À L'OUVERTURE par
+ * `VAULT_STORAGE_IDENTITE_VOLUME`, c'est-à-dire après que la cible eut été écrasée. Le refus est
+ * juste ; son MOMENT ne l'était pas.
+ *
+ * Le contrôle ne porte que sur les formats qui ont un en-tête : avant v3 il n'y a rien à confronter.
+ */
+async function assertIdentiteDeLArchive({ verdict, read, volumeSize }) {
+  const declare = verdict.manifest.volume?.id;
+  if (declare === undefined || declare === null) return;
+  if (volumeSize < EN_TETE_OCTETS) return;
+
+  const enTete = await read(verdict.contentOffset, EN_TETE_OCTETS);
+  const lu = decoderEnTeteV3(enTete);
+  if (!lu.valide) {
+    throw new ArchiveError(
+      ARCHIVE_ERROR_CODES.malformed,
+      `Restauration refusée : le manifeste de l'archive déclare un volume chiffré (${declare}) et son contenu ne porte pas d'en-tête v3 lisible (${lu.raison}). Aucun octet n'est écrit sur la cible.`,
+      { declare, raison: lu.raison },
+    );
+  }
+  const porte = identifiantVolumeEnTexte(lu.enTete.identifiantVolume);
+  if (porte === declare) return;
+  throw new ArchiveError(
+    ARCHIVE_ERROR_CODES.malformed,
+    `Restauration refusée : le manifeste de l'archive déclare le volume ${declare} et le fichier qu'elle porte en déclare un autre (${porte}). Restaurer produirait un volume que son propre manifeste ferait refuser à l'ouverture. Aucun octet n'est écrit sur la cible.`,
+    { declare, porte },
+  );
 }
 
 /** Compte rendu d'une restauration réussie. Extrait pour que l'orchestration reste lisible d'un œil. */

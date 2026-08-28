@@ -12,6 +12,8 @@ import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { createOpfsMigrationTarget } from "/src/vm/opfs-migration-target.mjs";
 import { openOpfsVolumeFile } from "/src/vm/opfs-sync-access.mjs";
 import { cleDuBanc } from "./cle-du-banc.mjs";
+import { SECTOR_SIZE } from "/src/vm/block-geometry.mjs";
+import { SECTEURS_PAR_TOUR } from "/src/vm/migration-v3.mjs";
 import { migrateVolume } from "/src/vm/volume-migration.mjs";
 import { attentesDe } from "./reference-worker-boot.mjs";
 import { EXPORT_BLOCK_BYTES } from "./reference-worker-mesures.mjs";
@@ -28,13 +30,28 @@ const POINTS_INTERRUPTION = Object.freeze({
   commit: "commitManifest",
 });
 
+/**
+ * Point d'interruption AU MILIEU DE LA CONVERSION, distinct des trois autres.
+ *
+ * Les trois points nommés ci-dessus coupent AVANT que la conversion ne touche un octet : ce qu'ils
+ * éprouvent est le protocole de l'ADR 0011, pas le geste qui réécrit le volume. La revue de #110 a
+ * relevé que « reprise » qualifiait donc un cas où rien n'était converti — une migration intégrale
+ * d'un volume intact, présentée comme une reprise.
+ *
+ * Celui-ci coupe DANS le scellement, quand la moitié des tours est faite : le fichier est déjà
+ * agrandi, la charge déplacée, une partie des secteurs scellée et le reste en clair. C'est l'état
+ * qu'une mort d'onglet laisse, et le seul sur lequel une reprise se juge.
+ */
+const POINT_CONVERSION = "conversion";
+
 /** Enveloppe la cible pour qu'un geste nommé réussisse puis fasse échouer la migration. */
 function interrompreApres(cible, point) {
   if (point === null || point === undefined) return cible;
+  if (point === POINT_CONVERSION) return interrompreDansLaConversion(cible);
   const membre = POINTS_INTERRUPTION[point];
   if (membre === undefined) {
     throw new Error(
-      `Point d'interruption inconnu : ${point}. Attendu l'un de ${Object.keys(POINTS_INTERRUPTION).join(", ")}.`,
+      `Point d'interruption inconnu : ${point}. Attendu l'un de ${[...Object.keys(POINTS_INTERRUPTION), POINT_CONVERSION].join(", ")}.`,
     );
   }
   const original = cible[membre].bind(cible);
@@ -43,6 +60,45 @@ function interrompreApres(cible, point) {
     async [membre](...args) {
       await original(...args);
       throw new Error(`Migration interrompue après « ${point} » (panne injectée par le scénario).`);
+    },
+  };
+}
+
+/**
+ * Enveloppe la cible pour que la conversion échoue à MI-SCELLEMENT.
+ *
+ * Le budget d'écritures est CALCULÉ depuis la taille du volume source et le lot d'E/S, plutôt que
+ * choisi : un rang fixe tomberait ailleurs selon la taille du disque, et l'épreuve ne saurait plus
+ * ce qu'elle coupe. Une conversion écrit un tour de déplacement, puis deux écritures par tour de
+ * scellement — les sceaux, puis les charges —, puis l'en-tête.
+ */
+function interrompreDansLaConversion(cible) {
+  const ouvrir = cible.open.bind(cible);
+  return {
+    ...cible,
+    async open(...args) {
+      const backend = await ouvrir(...args);
+      const tours = Math.ceil(backend.size() / SECTOR_SIZE / SECTEURS_PAR_TOUR);
+      const budget = tours + Math.max(1, Math.floor(tours / 2)) * 2;
+      let ecritures = 0;
+      const ecrire = backend.write.bind(backend);
+      return {
+        ...backend,
+        size: () => backend.size(),
+        read: (offset, longueur) => backend.read(offset, longueur),
+        flush: () => backend.flush(),
+        close: () => backend.close(),
+        retailler: (taille) => backend.retailler(taille),
+        async write(offset, octets) {
+          ecritures += 1;
+          if (ecritures > budget) {
+            throw new Error(
+              `Migration interrompue à la ${ecritures}e écriture du volume, au milieu du scellement (panne injectée par le scénario).`,
+            );
+          }
+          return ecrire(offset, octets);
+        },
+      };
     },
   };
 }

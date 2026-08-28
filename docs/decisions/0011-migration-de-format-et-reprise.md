@@ -6,10 +6,29 @@
 
 > **Amendé le 2026-08-28 par l'[ADR 0016](0016-format-de-volume-v3-dispositions.md) (#18, #101).**
 > Une étape v2 → v3 rejoint la chaîne, et c'est la première qui touche les OCTETS : elle agrandit le
-> volume de sa région d'authentification, déplace la charge entière, puis scelle chaque secteur. La
-> chaîne ne change pas d'un geste, mais l'**avancement** devient nécessaire — le journal passe en
-> version 2 pour porter `{ etape, position }` —, parce qu'une reprise qui referait le déplacement
-> depuis le début corromprait le volume : la zone d'arrivée recouvre la zone de départ.
+> volume de sa région d'authentification, déplace la charge entière, puis scelle chaque secteur.
+> Trois conséquences pour cet ADR, dont deux sont des durcissements.
+>
+> **L'avancement devient nécessaire**, et le journal passe en version 2 pour le porter —
+> `{ from, to, etape, position, identifiantVolume }`. Une reprise qui referait le déplacement depuis
+> le début corromprait le volume, la zone d'arrivée recouvrant la zone de départ. L'avancement porte
+> le PAS qu'il décrit : le donner au premier pas venu le ferait consommer par une étape qui n'en a
+> pas l'usage. Il porte aussi l'**identifiant de volume** tiré par la conversion, qui entre dans les
+> données associées de chaque secteur : une reprise qui en tirerait un autre ne reconnaîtrait plus
+> rien de ce qui est déjà converti.
+>
+> **Un pas DESTRUCTIF exige une sauvegarde VÉRIFIÉE**, et non plus un consentement nommé. La règle
+> de cet ADR — « une archive vérifiée, ou un exploitant qui assume » — a été écrite pour des pas qui
+> réécrivaient un manifeste : si quelque chose tournait mal, le volume était encore là. Un pas qui
+> réécrit le volume n'offre pas cette porte de sortie, et « j'assume » assume le risque sans le
+> réparer. La distinction est portée par l'étape elle-même (`destructive: true`), pas par un numéro
+> de version. Une REPRISE ne redemande rien : la mutation a commencé, et exiger une sauvegarde de
+> l'état courant n'aurait pas de sens — cet état est justement celui qu'on répare.
+>
+> **Le journal de GÉNÉRATION du volume source est soldé** entre la révocation et la conversion
+> (geste 7 bis) : son contenu validé est reporté dans le volume, puis il est écarté. Sans ce geste,
+> une écriture acquittée était perdue et le volume migré ne s'ouvrait plus — son voisin `.gen`
+> restant au format 1 que le runtime v3 ne lit plus.
 
 ## Contexte
 
