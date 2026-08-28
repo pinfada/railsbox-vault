@@ -20,9 +20,9 @@ import {
 } from "../../src/vm/volume-manifest.mjs";
 import {
   MIGRATION_JOURNAL_MAGIC,
-  MIGRATION_JOURNAL_VERSION,
   migrateVolume,
   planMigration,
+  serialiserJournal,
 } from "../../src/vm/volume-migration.mjs";
 
 // Preuve unitaire des MIGRATIONS DE FORMAT et du REFUS DE DOWNGRADE (#13, `VAULT-COMPAT-001`).
@@ -687,16 +687,16 @@ test("le journal porte son propre marqueur, sa chaîne et la preuve retenue", as
 
 /** Journal FORGÉ, tel qu'un support pourrait en porter un — périmé, contradictoire ou menteur. */
 function journalForge({ from = 1, to = CIBLE, sourceManifest, evidence }) {
-  return new TextEncoder().encode(
-    JSON.stringify({
-      magic: MIGRATION_JOURNAL_MAGIC,
-      journalVersion: MIGRATION_JOURNAL_VERSION,
-      from,
-      to,
-      sourceManifest,
-      evidence: evidence ?? { kind: "sauvegarde-verifiee", contentDigest: "00".repeat(32) },
-    }),
-  );
+  // Le journal porte une EMPREINTE de son corps depuis la contre-revue de #110. Un journal forgé à
+  // la main sans elle serait refusé pour altération, et ces épreuves-ci mesurent autre chose : ce
+  // qu'un journal PARFAITEMENT FORMÉ mais périmé, ou contredisant le support, obtient. Il passe
+  // donc par le sérialiseur du produit, comme un vrai.
+  return serialiserJournal({
+    from,
+    to,
+    sourceManifest,
+    evidence: evidence ?? { kind: "sauvegarde-verifiee", contentDigest: "00".repeat(32) },
+  });
 }
 
 test("un journal qui CONTREDIT le manifeste présent est refusé, jamais préféré à lui", async () => {
@@ -1105,4 +1105,85 @@ test("une migration NON destructive se contente encore d'un consentement nommé"
   });
   assert.equal(rapport.migrated, true);
   assert.equal(rapport.evidence.kind, "consentement-nomme");
+});
+
+// --- L'identifiant journalisé, et ce qui arrive s'il ment ---------------------------------------
+
+/**
+ * Coupe une migration v1 → v3 pendant le SCELLEMENT, et rend la cible dans l'état laissé.
+ *
+ * Le rang de coupure est celui de l'avant-dernière écriture : le déplacement est fait, l'en-tête
+ * posé, une partie des secteurs scellée. C'est l'état où l'identifiant journalisé est la SEULE chose
+ * qui dise sous quelle identité les secteurs déjà convertis ont été scellés.
+ */
+async function coupeePendantLeScellement() {
+  const temoin = creerCible({ volume: contenu() });
+  const sauvegarde = { source: await sauvegardeDe(contenu()) };
+  const options = (cible) => ({
+    target: cible,
+    expectations: attentes({
+      supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
+    }),
+    backup: sauvegarde,
+    cle: CLE_DE_TEST,
+  });
+  await migrateVolume(options(temoin));
+  const total = temoin.ecrituresVolume;
+
+  const cible = creerCible({ volume: contenu(), couperEcritureApres: total - 1 });
+  await assert.rejects(() => migrateVolume(options(cible)));
+  cible.armerCoupure(null);
+  return { cible, options, sauvegarde };
+}
+
+test("un journal de reprise ALTÉRÉ est refusé, et pas un octet du volume ne bouge", async () => {
+  // L'identifiant journalisé entre dans les données associées de chaque secteur scellé. S'il ment —
+  // bit retourné, écriture déchirée du journal —, `dejaScelle` échoue sur TOUS les secteurs déjà
+  // convertis, les reclasse « non convertis », et la conversion rescelle leur CHIFFRÉ comme du
+  // clair. La migration se termine « réussie » et le clair est perdu. Le journal porte donc une
+  // empreinte, vérifiée à la lecture.
+  const { cible, options } = await coupeePendantLeScellement();
+
+  const journal = JSON.parse(new TextDecoder().decode(cible.etat.journalBytes));
+  const avant = Uint8Array.from(cible.etat.volume);
+  const identifiantMenteur = journal.progress.identifiantVolume.replace(/^./, (c) =>
+    c === "0" ? "1" : "0",
+  );
+  assert.notEqual(identifiantMenteur, journal.progress.identifiantVolume);
+  journal.progress.identifiantVolume = identifiantMenteur;
+  cible.etat.journalBytes = new TextEncoder().encode(JSON.stringify(journal));
+
+  await assert.rejects(
+    () => migrateVolume(options(cible)),
+    (erreur) => isMigrationError(erreur, MIGRATION_ERROR_CODES.journalMalformed),
+  );
+  assert.deepEqual([...cible.etat.volume], [...avant], "aucun octet du volume n'a bougé");
+});
+
+test("un journal COHÉRENT dont l'identifiant contredit l'EN-TÊTE du support est refusé", async () => {
+  // L'empreinte du journal ne dit rien de sa VÉRITÉ : elle dit qu'il n'a pas été abîmé. Un journal
+  // réécrit d'un bloc — par un outil, ou par un support hostile — serait cohérent avec lui-même.
+  // Le support, lui, porte l'en-tête v3 dès la fin du déplacement, et cet en-tête porte
+  // l'identifiant sous lequel les secteurs sont scellés. Les deux se recoupent.
+  const { cible, options } = await coupeePendantLeScellement();
+
+  const journal = JSON.parse(new TextDecoder().decode(cible.etat.journalBytes));
+  const avant = Uint8Array.from(cible.etat.volume);
+  cible.etat.journalBytes = serialiserJournal({
+    from: journal.from,
+    to: journal.to,
+    sourceManifest: journal.sourceManifest,
+    evidence: journal.evidence,
+    progress: { ...journal.progress, identifiantVolume: "fedcba9876543210fedcba9876543210" },
+  });
+
+  await assert.rejects(
+    () => migrateVolume(options(cible)),
+    (erreur) => {
+      assert.equal(erreur.code, MIGRATION_ERROR_CODES.conversionIncoherente, erreur.message);
+      assert.match(erreur.message, /en-tête/i);
+      return true;
+    },
+  );
+  assert.deepEqual([...cible.etat.volume], [...avant], "aucun octet du volume n'a bougé");
 });
