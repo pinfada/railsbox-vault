@@ -7,6 +7,7 @@
 | `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                                                                        |                                     secondes |
 | `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontière d'origine sous Chromium                                                       |                                environ 1 min |
 | `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                                                                                    |                                environ 1 min |
+| `npm run test:spike:apps`      | frontière entre deux applications (#46), trois moteurs, seule                                                                    |                                 environ 35 s |
 | `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                                                                        |                                environ 2 min |
 | `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                                                                              |              environ 20 s après installation |
 | `npm run test:vm`              | guest Linux réel sur les backends mémoire et OPFS (Chromium), matrice de coupures, et démarrage du runtime sur les trois moteurs |              environ 1,6 min, **périodique** |
@@ -1142,6 +1143,34 @@ npx playwright show-report
 
 La CI n'archive le rapport qu'en cas d'échec, ce qui suffit à diagnostiquer une régression : les
 mesures de référence du spike sont figées dans `docs/spikes/0035-topologie-origine-de-confiance.md`.
+
+### Frontière entre deux applications
+
+`tests/browser/apps-frontiere.spec.mjs` est la preuve de
+l'[ADR 0018](decisions/0018-isolation-entre-applications.md) (#46). Elle mesure ce que deux «
+applications » voient l'une de l'autre — OPFS, IndexedDB, `localStorage`, cookies, Web Locks,
+`BroadcastChannel`, `Cache Storage`, portée et inscription de Service Worker — dans **trois**
+topologies, et elle exige un **quatrième** et un **cinquième** serveur que `playwright.config.mjs`
+démarre : une seconde origine applicative sur un autre hôte (`127.0.0.2:4175`) et une troisième sur
+le même hôte à un autre port (`localhost:4176`).
+
+Elle est exécutée sur les **trois moteurs** à chaque `npm run check`, par les projets
+`frontiere-applications-<moteur>`, pour le motif qui vaut déjà pour la frontière de CSP — une
+politique de sécurité ne s'applique pas de la même façon partout — et pour un motif de plus : le
+partitionnement du stockage diffère d'un moteur à l'autre, le WebKit mesuré n'exposant pas l'OPFS.
+
+Sa précaution centrale est un **témoin négatif** : sur une même origine avec des préfixes de chemin,
+les lectures croisées doivent **aboutir**. Une table d'attentes déclare le résultat de chaque sonde,
+et un écart dans les **deux** sens fait échouer la mesure. Sans elle, une sonde cassée passerait
+pour une frontière. L'application A est laissée **ouverte** pendant que B sonde : un verrou Web
+Locks se relâche avec le contexte qui le tient, et la fermer fabriquerait deux refus gratuits.
+
+Coût mesuré : **32,8 s** de temps mural, trois moteurs compris. C'est plus que le seuil habituel
+d'une épreuve de `check`, et c'est assumé : une frontière de sécurité que la suite par défaut ne
+vérifie pas est une frontière que personne ne vérifie. `npm run test:spike:apps` l'exécute seule.
+Ses relevés sont **joints** au rapport Playwright (`sondes-…`, `depots-…`, `admission-coquille-…`,
+`csp-seconde-origine-applicative-…`) ; les mesures de référence sont figées dans
+`docs/spikes/0046-isolation-entre-applications.md`.
 
 ### Plusieurs moteurs
 

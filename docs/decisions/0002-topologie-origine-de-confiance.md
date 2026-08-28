@@ -308,6 +308,10 @@ le port qui les relie est un objet transféré, non une adresse devinable.
 1. **Une seule origine applicative pour toutes les applications.** Deux applications Rails publiées
    sur la même origine se lisent mutuellement OPFS, IndexedDB et cookies. Une origine par
    application, ou un partitionnement explicite, reste à décider — travail découvert, suivi par #46.
+   **Tranché depuis** par l'[ADR 0018](0018-isolation-entre-applications.md), qui a mesuré le
+   partitionnement explicite inopérant — le navigateur ne cloisonne que par origine — et retenu une
+   origine par application au-delà de la première. Le risque reste ouvert **tel quel** tant que le
+   MVP ne publie qu'une application : la condition d'exposition n'existe pas encore.
 2. **Le port restreint reste une capacité.** Une fois transféré, il est joignable par tout script du
    document applicatif. Sa surface doit rester minimale et ne jamais transporter de handle.
 3. **Compromission de la coquille elle-même.** La frontière ne protège pas d'une publication
