@@ -20,6 +20,14 @@ export const IMPORT_ERROR_CODES = Object.freeze({
   geometryMismatch: "VAULT_IMPORT_GEOMETRY_MISMATCH",
   /** La relecture du volume restauré ne rend pas l'empreinte de l'archive : jamais déclaré valide. */
   verificationFailed: "VAULT_IMPORT_VERIFICATION_FAILED",
+  /**
+   * L'archive décrit un volume CHIFFRÉ (format v3) et ce chemin ne sait pas le recopier tel quel.
+   *
+   * Distinct de `VAULT_STORAGE_CLE_REQUISE`, qui tombait jusqu'ici et accusait la CLÉ : une clé n'y
+   * changerait rien, puisque le chemin d'écriture RECHIFFRERAIT les octets de l'archive au lieu de
+   * les poser. Le remède n'est pas une clé, c'est la recopie brute — tranche (b), #101.
+   */
+  encryptedUnsupported: "VAULT_IMPORT_VOLUME_CHIFFRE",
 });
 
 const KNOWN_CODES = new Set(Object.values(IMPORT_ERROR_CODES));

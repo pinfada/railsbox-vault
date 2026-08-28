@@ -20,6 +20,16 @@ export const ARCHIVE_ERROR_CODES = Object.freeze({
   digestMismatch: "VAULT_ARCHIVE_DIGEST_MISMATCH",
   /** La longueur du contenu contredit la géométrie du manifeste ou l'en-tête : archive incohérente. */
   geometryMismatch: "VAULT_ARCHIVE_GEOMETRY_MISMATCH",
+  /**
+   * Le volume est CHIFFRÉ (format v3) et ce chemin ne sait pas porter son fichier tel quel (#18).
+   *
+   * Il n'est pas là pour dire « impossible » : l'ADR 0016 décide que l'archive porte le fichier v3
+   * inchangé, et cette tranche ne l'a pas mis en œuvre. Ce qu'il empêche est précis — une archive
+   * produite par le chemin de lecture AUTORISÉ, qui déchiffre, serait une archive EN CLAIR d'un
+   * volume chiffré : le chiffrement au repos annulé dès que le fichier quitte l'appareil, sans que
+   * rien ne le dise. Un refus est le seul état qui ne ment pas ici.
+   */
+  encryptedUnsupported: "VAULT_ARCHIVE_VOLUME_CHIFFRE",
 });
 
 const KNOWN_CODES = new Set(Object.values(ARCHIVE_ERROR_CODES));
