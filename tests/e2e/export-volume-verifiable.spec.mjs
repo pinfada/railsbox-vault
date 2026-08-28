@@ -18,6 +18,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { expect, test } from "./contexte-persistant.mjs";
+import { MANIFEST_FORMAT_VERSION } from "../../src/vm/volume-manifest.mjs";
+import { tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CHEMIN_MANIFESTE = join(RACINE, "tools", "build-reference-image", "manifest.json");
@@ -96,6 +98,11 @@ test("un volume OPFS est exporté en archive vérifiable, et une archive altér�
   const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
   const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
   const appDiskBytes = disqueApp.byteSize;
+  // Taille du FICHIER que ce volume occupe au format courant : c'est elle que l'archive porte.
+  const fichierAttendu = tailleDeFichier({
+    formatVersion: MANIFEST_FORMAT_VERSION,
+    tailleLogique: appDiskBytes,
+  });
   const appDiskUrl = `/artifacts/reference-image/${manifeste.boot.hdb}`;
 
   const manifestDescriptor = {
@@ -148,7 +155,11 @@ test("un volume OPFS est exporté en archive vérifiable, et une archive altér�
   // L'empreinte de contenu est calculée et inscrite dans le manifeste (#10 : identity.digest).
   expect(exporte.digest, "une empreinte de contenu est calculée").toMatch(/^[0-9a-f]{64}$/);
   expect(exporte.manifestDigest, "l'empreinte est inscrite dans le manifeste").toBe(exporte.digest);
-  expect(exporte.contentLength).toBe(appDiskBytes);
+  // Le contenu d'une archive est le FICHIER du volume, pas sa taille logique : en v3 il porte en
+  // plus l'en-tête et la région d'authentification (ADR 0016, décision 7). L'attendu est DÉRIVÉ du
+  // format, jamais relevé de ce que l'export a rendu — sinon l'épreuve se contenterait de répéter
+  // ce que le produit affirme.
+  expect(exporte.contentLength).toBe(fichierAttendu);
   // Point cohérent déclaré : lecture via le handle exclusif de #6.
   expect(exporte.consistency.kind).toBe("handle-exclusif");
   // Archive ≤ 2× la taille logique (docs/quality-attributes.md).
@@ -172,7 +183,7 @@ test("un volume OPFS est exporté en archive vérifiable, et une archive altér�
   // copie est byte-exacte, donc l'invariant écrit par Rails est capturé fidèlement.
   expect(verifie.contentDigest).toBe(exporte.digest);
   expect(verifie.manifestDigest).toBe(exporte.digest);
-  expect(verifie.contentLength).toBe(appDiskBytes);
+  expect(verifie.contentLength).toBe(fichierAttendu);
   expect(verifie.maxBlockBytes, "vérification aussi bornée en mémoire").toBeLessThanOrEqual(
     exporte.blockBytes,
   );

@@ -28,6 +28,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { expect, test } from "./contexte-persistant.mjs";
+import { MANIFEST_FORMAT_VERSION } from "../../src/vm/volume-manifest.mjs";
+import { tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
 
 import { E2E_ORIGIN_A, E2E_ORIGIN_B } from "../../playwright.e2e.config.mjs";
 
@@ -130,6 +132,12 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
   const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
   const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
   const appDiskBytes = disqueApp.byteSize;
+  // Taille du FICHIER que ce volume occupe au format courant : c'est elle que l'archive porte, et
+  // c'est elle que la cible reçoit (ADR 0016, décision 7).
+  const fichierAttendu = tailleDeFichier({
+    formatVersion: MANIFEST_FORMAT_VERSION,
+    tailleLogique: appDiskBytes,
+  });
   const appDiskUrl = `/artifacts/reference-image/${manifeste.boot.hdb}`;
 
   const descripteurManifeste = {
@@ -224,7 +232,14 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
   });
   await session.page.close();
   expect(exporte.digest).toMatch(/^[0-9a-f]{64}$/);
-  expect(digestOrigineA.digest, "l'archive empreinte bien le volume de A").toBe(exporte.digest);
+  // L'archive porte le FICHIER du volume, donc son empreinte est celle du fichier — pour un volume
+  // v3, du CHIFFRÉ (ADR 0016, décision 7). C'est `digest` qu'il faut comparer, pas `digestClair` :
+  // ce dernier porte sur ce que la lecture autorisée rend, et les deux ont cessé de coïncider le
+  // jour où le volume a été chiffré.
+  expect(digestOrigineA.digest, "l'archive empreinte bien le FICHIER de A").toBe(exporte.digest);
+  expect(digestOrigineA.digestClair, "et le volume de A est lisible avec sa clé").toMatch(
+    /^[0-9a-f]{64}$/,
+  );
 
   // 4. TRANSFERT — le fait du test, pas du produit : téléchargement de l'archive vers l'hôte.
   session = await nouvellePage(E2E_ORIGIN_A);
@@ -270,7 +285,7 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
   // Le volume restauré sur B est byte-exact avec celui exporté depuis A.
   expect(importe.contentDigest).toBe(exporte.digest);
   expect(importe.verifiedDigest).toBe(exporte.digest);
-  expect(importe.volumeSize).toBe(appDiskBytes);
+  expect(importe.volumeSize).toBe(fichierAttendu);
   // Surmémoire bornée : aucune lecture ni écriture ne demande tout le volume d'un coup.
   expect(importe.maxSourceReadBytes).toBeLessThanOrEqual(importe.blockBytes);
   expect(importe.maxTargetWriteBytes).toBeLessThanOrEqual(importe.blockBytes);
@@ -285,10 +300,16 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
   const digestOrigineB = await courir(session.page, { phase: "digest-volume", volume: VOLUME_B });
   await session.page.close();
   expect(cibleApres.present).toBe(true);
-  expect(cibleApres.size).toBe(appDiskBytes);
+  // La CIBLE porte le fichier, dont la taille est celle du format — pas celle du disque logique.
+  expect(cibleApres.size).toBe(fichierAttendu);
   expect(cibleApres.manifestPresent, "le volume restauré porte son manifeste").toBe(true);
-  expect(digestOrigineB.digest, "le volume de B est byte-exact avec celui de A").toBe(
+  expect(digestOrigineB.digest, "le FICHIER de B est byte-exact avec celui de A").toBe(
     exporte.digest,
+  );
+  // Et le CLAIR aussi : la recopie a transporté un volume LISIBLE, pas seulement des octets égaux.
+  // Sans cette ligne, une archive de zéros restaurée en zéros passerait pour une restauration.
+  expect(digestOrigineB.digestClair, "et le CLAIR de B est celui de A").toBe(
+    digestOrigineA.digestClair,
   );
 
   // 7. TÉMOIN NÉGATIF — archive altérée : refus typé, et RIEN n'est écrit sur la cible.
