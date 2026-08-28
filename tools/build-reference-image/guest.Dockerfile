@@ -186,6 +186,12 @@ RUN set -eu; \
 # Le cache reste dans l'image (il n'est plus effacé avec les journaux) : c'est
 # tout l'intérêt. Le premier boot chez l'utilisateur LIT un cache complet au lieu
 # de recompiler ~90 gemmes sur un i386 émulé.
+# Ce qui est chauffé est ce que le guest charge SOUS Bootsnap, et rien d'autre :
+# `config.ru` charge `config/boot.rb` puis l'application. Bundler, Rack et Puma
+# sont chargés AVANT par `bundle exec puma`, donc hors de portée du cache — les
+# chauffer ne servirait à rien. Un lanceur mono-processus les y ferait entrer ;
+# #66 l'a construit et mesuré, sans pouvoir établir de gain (voir
+# `docs/quality-attributes.md`, § « Accélération du boot Rails »).
 RUN set -eu; \
     linux32 ruby -e 'require "./config/environment"'; \
     test -d tmp/cache/bootsnap; \
