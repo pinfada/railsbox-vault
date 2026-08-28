@@ -11,6 +11,7 @@
     "test:browser": "playwright test",
     "test:browser:moteurs": "node tools/run-moteurs.mjs",
     "test:spike:origin": "playwright test tests/browser/origin-topology.spec.mjs tests/browser/origin-isolation.spec.mjs",
+    "test:spike:apps": "playwright test tests/browser/apps-frontiere.spec.mjs",
     "test:compat": "playwright test --config playwright.compat.config.mjs",
     "test:vm": "playwright test --config playwright.vm.config.mjs",
     "test:isolation": "playwright test --config playwright.isolation.config.mjs",
