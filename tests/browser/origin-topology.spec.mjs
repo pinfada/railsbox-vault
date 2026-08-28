@@ -84,6 +84,10 @@ test(`témoin positif — ${TOPOLOGIE_TEMOIN} : les tentatives aboutissent réel
   // même origine signifierait que la sonde est cassée.
   for (const nom of [
     "lecture-opfs-coquille",
+    // Ajoutée par #21 : l'ENVELOPPE DE CLÉ est un actif de l'origine de confiance au même titre
+    // que le volume, et le témoin doit montrer qu'elle EST lisible en même origine — sans quoi son
+    // « bloqué » sur la topologie retenue ne prouverait rien.
+    "lecture-enveloppe-coquille",
     "ecriture-opfs-silencieuse",
     "observation-verrous-web",
     "ecoute-canal-controle",

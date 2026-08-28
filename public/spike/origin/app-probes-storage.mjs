@@ -6,6 +6,7 @@ import {
   CONTROL_CHANNEL_NAME,
   IDB_HOSTILE_KEY,
   IDB_SHELL_KEY,
+  OPFS_ENVELOPPE_MARKER,
   OPFS_HOSTILE_MARKER,
   OPFS_VOLUME_MARKER,
   VOLUME_LOCK_NAME,
@@ -36,6 +37,21 @@ const STORAGE_PROBES = [
         return indisponible("navigator.storage.getDirectory absent");
       const contenu = await readOpfsMarker(OPFS_VOLUME_MARKER);
       return { resultat: "reussi", detail: `marqueur lu : ${contenu}` };
+    },
+  },
+  {
+    nom: "lecture-enveloppe-coquille",
+    cible: "coquille",
+    intention: "lire le fichier d'ENVELOPPE DE CLÉ déposé dans l'OPFS de la coquille (#21)",
+    async run() {
+      if (!navigator.storage?.getDirectory)
+        return indisponible("navigator.storage.getDirectory absent");
+      // L'enveloppe est l'actif que #21 ajoute à l'origine de confiance, et il n'est pas le même
+      // que le volume : une frontière qui protégerait les octets chiffrés sans protéger la clé qui
+      // les ouvre ne protégerait rien. La sonde vise le suffixe RÉEL, `.cles`, pour que ce qu'elle
+      // mesure soit ce que le produit dépose.
+      const contenu = await readOpfsMarker(OPFS_ENVELOPPE_MARKER);
+      return { resultat: "reussi", detail: `enveloppe lue : ${contenu}` };
     },
   },
   {

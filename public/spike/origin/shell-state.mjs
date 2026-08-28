@@ -6,6 +6,18 @@
 
 export const SHELL_SECRET = "cle-de-volume-synthetique-spike-35";
 export const OPFS_VOLUME_MARKER = "vault-volume.marker";
+
+/**
+ * Appât de l'ENVELOPPE DE CLÉ (#21, ADR 0020). Il porte le suffixe réel `.cles` et un contenu qui
+ * imite une DEK enveloppée : la sonde applicative correspondante doit échouer à le lire.
+ *
+ * Il est déposé à côté du marqueur de volume et non à sa place : l'enveloppe est un actif DISTINCT,
+ * et une frontière qui protégerait le volume sans protéger ses clés ne protégerait rien.
+ */
+export const OPFS_ENVELOPPE_MARKER = "vault-volume.cles";
+
+/** Contenu synthétique de l'appât d'enveloppe. Aucune valeur, aucun secret : un appât, et il le dit. */
+export const ENVELOPPE_SECRET = "dek-enveloppee-synthetique-issue-21";
 export const OPFS_HOSTILE_MARKER = "hostile.marker";
 export const IDB_NAME = "vault-shell";
 export const IDB_STORE = "secrets";
@@ -81,6 +93,13 @@ export async function plantShellState() {
     report.opfs = "depose";
   } catch (error) {
     report.opfs = describeFailure(error);
+  }
+
+  try {
+    await writeOpfsMarker(OPFS_ENVELOPPE_MARKER, ENVELOPPE_SECRET);
+    report.enveloppe = "depose";
+  } catch (error) {
+    report.enveloppe = describeFailure(error);
   }
 
   try {
