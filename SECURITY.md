@@ -68,13 +68,12 @@ et tester.
   convention de nom** : le Worker lit les huit premiers octets du fichier demandé et exige le
   marqueur d'archive `RBVAULT1` (ADR 0008) avant de remettre quoi que ce soit ; demander le fichier
   d'un VOLUME est refusé par `VAULT_ARCHIVE_MALFORMED`, ce qu'un témoin négatif de
-  `tests/e2e/restauration-inter-origine.spec.mjs` éprouve — **scénario SUSPENDU par la tranche (a)
-  de #18** (`test.skip`), le temps que #101 rende l'export d'un volume chiffré possible : la
-  propriété est décidée et son épreuve écrite, mais elle ne s'exécute pas aujourd'hui. Dans l'autre
-  sens, une archive n'entre dans une origine que par un champ de fichier ouvert par l'utilisateur :
-  aucun canal inter-origines n'est ajouté et aucune directive de CSP n'est assouplie — le
-  cloisonnement OPFS par origine reste ce qui rend la restauration significative, et le même
-  scénario le vérifie avant d'importer ;
+  `tests/e2e/restauration-inter-origine.spec.mjs` éprouve — scénario suspendu par la tranche (a) de
+  #18, **rétabli par #101** : le `File` remis porte désormais un volume CHIFFRÉ, et la borne du
+  marqueur `RBVAULT1` est inchangée. Dans l'autre sens, une archive n'entre dans une origine que par
+  un champ de fichier ouvert par l'utilisateur : aucun canal inter-origines n'est ajouté et aucune
+  directive de CSP n'est assouplie — le cloisonnement OPFS par origine reste ce qui rend la
+  restauration significative, et le même scénario le vérifie avant d'importer ;
 - `SEC-KEY-001` — une clé de déverrouillage enveloppe une DEK aléatoire sans servir directement au
   chiffrement des blocs ;
 - `SEC-BLOCK-001` — un bloc est authentifié avec volume, adresse, format et génération. **Depuis #18
@@ -94,12 +93,16 @@ et tester.
   trouvés PAR EXÉCUTION en l'implémentant, et l'ADR 0016 les porte : le rescellement du point de
   contrôle n'avait pas de porte d'injection de nonce, donc échappait aux vecteurs ; et l'encodage
   canonique des entrées débordait la pile d'appel au plafond de charge de l'ADR 0014. **Un troisième
-  constat porte sur l'ARCHIVE, et il est de sécurité** : le chemin d'export lit le volume par la
+  constat porte sur l'ARCHIVE, et il est de sécurité** : le chemin d'export lisait le volume par la
   lecture autorisée, qui déchiffre. Exporter un volume v3 par ce chemin aurait produit une archive
   **en clair** — le chiffrement au repos annulé dès que le fichier quitte l'appareil, par omission
-  et sans message. L'export et la restauration d'un volume v3 sont donc REFUSÉS
-  (`VAULT_ARCHIVE_VOLUME_CHIFFRE`, `VAULT_IMPORT_VOLUME_CHIFFRE`), avant le premier octet lu et
-  avant le premier geste mutant, jusqu'à ce que la recopie brute existe (#101).
+  et sans message. La tranche (a) l'a REFUSÉ plutôt que rendu ; **depuis #101, l'export passe par un
+  accès BRUT au fichier** (`src/vm/opfs-volume-brut.mjs`), qui n'a ni clé ni géométrie logique et ne
+  rend donc que du chiffré. Une épreuve le montre au lieu de l'affirmer : le clair d'un secteur
+  connu n'apparaît nulle part dans le fichier exporté. **Une archive v3 se restaure sans clé et ne
+  s'OUVRE pas sans elle** : la sauvegarde d'un volume chiffré est la sauvegarde de deux choses, et
+  ce dépôt n'en gère qu'une avant #21 — perdre la clé, c'est perdre l'archive, et il faut le dire à
+  l'utilisateur plutôt que le lui laisser découvrir.
   L'[ADR 0015](docs/decisions/0015-proprietes-cryptographiques-du-format.md) le définit ainsi : un
   bloc est scellé par AES-256-GCM (étiquette de 128 bits) dont les **données associées portent
   l'identité logique complète** — identifiant de volume, adresse logique, version de format,
@@ -235,7 +238,15 @@ et tester.
   mesure n'ouvrent aucun volume applicatif. Les deux moitiés de l'invariant existent donc enfin : la
   restauration (et toute création de volume) **écrit** le manifeste, en dernier geste et après avoir
   relu le volume entier, et le boot **l'exige**. Il n'existe **aucune période de transition** : un
-  volume sans manifeste est refusé, jamais complété par une identité devinée. **Portée exacte du
+  volume sans manifeste est refusé, jamais complété par une identité devinée. **Depuis #18 et #101,
+  cette identité n'est plus seulement déclarée : elle est OPPOSABLE.** Le manifeste v3 porte
+  `volume.id`, un identifiant opaque tiré à la création — ou à la migration, puisqu'un v2 n'en a pas
+  —, immuable ensuite ; l'ouvreur le confronte à celui que l'en-tête du fichier porte et refuse
+  l'écart par `VAULT_STORAGE_IDENTITE_VOLUME`. Et il entre dans les **données associées** de chaque
+  secteur : présenter un autre fichier sous le même manifeste ne produit donc pas une lecture
+  plausible, mais un sceau refusé. Avant v3, deux volumes de la même application n'étaient séparés
+  par rien. La portée du contrôle, elle, ne change pas : l'en-tête n'est **pas** authentifié — c'est
+  un localisateur —, et ce qui est opposable est le sceau, pas l'en-tête. **Portée exacte du
   contrôle** : `openOpfsVolume` reste appelable directement, et treize sites de production le font
   encore (énumérés et justifiés dans
   [l'ADR 0009](docs/decisions/0009-restauration-inter-origine.md)). Rien dans l'outillage n'empêche
@@ -243,11 +254,10 @@ et tester.
   une contrainte du code**. Fermer `openOpfsVolume` derrière un module privé reste du travail
   découvert. Preuves : `tests/unit/vm-opfs-volume-open.test.mjs` (le refus précède l'ouverture) et
   un témoin Bout en bout où le manifeste d'un volume restauré est retiré, puis le boot refusé
-  (`tests/e2e/restauration-inter-origine.spec.mjs` — **suspendu par la tranche (a) de #18**, voir
-  ci-dessus ; seule l'épreuve unitaire s'exécute aujourd'hui). **Depuis #13**, un troisième état est
-  couvert par le même contrôle : un volume dont la **migration de format** a été interrompue. La
-  migration révoque le manifeste avant de muter et ne le réinscrit qu'après l'avoir relu depuis le
-  support ; entre les deux, le volume est **non identifié** et le boot le refuse par
+  (`tests/e2e/restauration-inter-origine.spec.mjs`, rétabli par #101). **Depuis #13**, un troisième
+  état est couvert par le même contrôle : un volume dont la **migration de format** a été
+  interrompue. La migration révoque le manifeste avant de muter et ne le réinscrit qu'après l'avoir
+  relu depuis le support ; entre les deux, le volume est **non identifié** et le boot le refuse par
   `VAULT_MANIFEST_UNIDENTIFIED` avant même que v86 ne soit construit — une migration inachevée ne
   peut pas se faire passer pour un volume valide. Le **journal de reprise** `<volume>.migration`,
   nouveau voisin persistant, porte le manifeste source et la preuve de sauvegarde retenue ; il n'est
@@ -257,9 +267,8 @@ et tester.
   peut le porter — pour que migrer un volume ne puisse jamais détruire un volume légitime homonyme.
   Preuves : `tests/unit/vm-volume-migration.test.mjs` (cinq points de rupture, volume jamais valide
   à moitié) et un témoin Bout en bout où la migration est coupée après la révocation, puis le boot
-  refusé (`tests/e2e/migration-volume-versionne.spec.mjs` — **suspendu par la tranche (a) de #18**,
-  qui a fait passer le format courant en v3 alors qu'aucune migration vers v3 n'existe encore ; #101
-  la fournit et rétablit le scénario). Décision :
+  refusé (`tests/e2e/migration-volume-versionne.spec.mjs`, rétabli par #101, qui fournit la
+  migration v2 → v3 dont la tranche (a) n'avait déclaré que le chemin). Décision :
   [ADR 0011](docs/decisions/0011-migration-de-format-et-reprise.md). **Depuis #16**, un TROISIÈME
   voisin persistant existe : le **journal de génération** `<volume>.gen`, qui porte les écritures
   d'une génération en cours et la racine qui la valide. Il n'est **ni chiffré ni authentifié** — sa

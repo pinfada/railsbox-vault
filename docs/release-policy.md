@@ -124,26 +124,36 @@ Ce que la matrice de compatibilité doit en retenir :
   ce qui est exactement le comportement voulu : il n'a pas la clé, et il écrirait en clair dans un
   volume chiffré ;
 - **le format du journal de génération passe de 1 à 2**, indépendamment, et pour la même raison ;
-- **le MANIFESTE d'un v1 ou d'un v2 reste lisible ; leur FICHIER, non.** La distinction a été écrite
-  de travers jusqu'à la revue de #102, qui a relevé que « v1 et v2 restent LISIBLES, donc
-  exportables et migrables » promettait trois remèdes dont aucun n'existait : `MIN_READABLE` porte
-  sur le manifeste, tandis que l'export et l'inspection passent tous deux par `openOpfsVolume`, qui
-  refuse un fichier sans en-tête v3. Un volume d'avant v3 n'a ni région d'authentification ni nonce,
-  si bien que le sceau d'un secteur n'aurait nulle part où aller — c'est ce que le refus dit, et il
-  ne promet plus rien d'autre ;
-- **la migration v2 → v3 est DÉCLARÉE et non fournie** par cette tranche. `planMigration(1, 3)` rend
-  bien deux pas, et le second refuse par `VAULT_MIGRATION_STEP_UNAVAILABLE` — « le chemin est connu,
-  l'outil manque », un état distinct de `VAULT_MIGRATION_NO_PATH` parce que les remèdes diffèrent.
-  Tant qu'il en est ainsi, **un volume existant n'a pas de chemin vers le format courant** : c'est
-  la raison pour laquelle la tranche (a) de #18 ne se fusionne pas seule ;
-- **l'export d'un volume v3 est REFUSÉ par cette tranche**, et non silencieusement rendu en clair.
-  Le chemin d'export lit par la voie autorisée, qui déchiffre ; il aurait donc produit l'archive en
-  clair d'un volume chiffré, c'est-à-dire annulé le chiffrement au repos dès la sortie de l'appareil
-  et sans message. `VAULT_ARCHIVE_VOLUME_CHIFFRE` et `VAULT_IMPORT_VOLUME_CHIFFRE` nomment ce qui
-  manque. #101 fournit l'accès brut qui les lève, et l'archive portera alors le fichier v3 tel quel
-  : `content.length` et `identity.digest` décriront des octets chiffrés, deux exports d'un même
-  contenu logique cesseront d'être comparables par empreinte, et la sauvegarde d'un volume chiffré
-  sera la sauvegarde de DEUX choses, dont ce dépôt n'en gère qu'une avant #21 ;
+- **le MANIFESTE d'un v1 ou d'un v2 reste lisible ; leur FICHIER ne s'ouvre pas.** La distinction a
+  été écrite de travers jusqu'à la revue de #102, qui a relevé que « v1 et v2 restent LISIBLES, donc
+  exportables et migrables » promettait trois remèdes dont aucun n'existait alors : `MIN_READABLE`
+  porte sur le manifeste, tandis que l'export et l'inspection passent tous deux par
+  `openOpfsVolume`, qui refuse un fichier sans en-tête v3. Un volume d'avant v3 n'a ni région
+  d'authentification ni nonce, si bien que le sceau d'un secteur n'aurait nulle part où aller. Ce
+  qu'il a désormais, c'est un **chemin vers v3** — le point suivant —, et c'est par là qu'il
+  redevient lisible ;
+- **la migration v2 → v3 est FOURNIE depuis #101**, et c'est la première du dépôt qui touche les
+  octets. Elle passe par la chaîne de l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md)
+  sans exception : sauvegarde exigée avant, manifeste révoqué avant la première mutation, journal de
+  reprise inscrit avant la révocation, manifeste v3 inscrit en dernier et relu depuis le support.
+  Elle convertit **EN PLACE** — un fichier voisin aurait exigé le double du quota au moment précis
+  où l'utilisateur migre 512 Mio —, en deux gestes dont l'ordre est un contrat : déplacer la charge,
+  puis sceller. Le **journal de migration passe en version 2** pour porter l'avancement
+  (`{ etape, position }`) ; un journal v1 est refusé plutôt qu'interprété, puisqu'il décrit une
+  migration qui n'écrivait rien. L'**identifiant de volume est tiré à la migration**, un v2 n'en
+  ayant pas. La conversion scelle, donc elle exige une clé : migrer sans clé est refusé par
+  `VAULT_STORAGE_CLE_REQUISE` et laisse le volume **non identifié**, que le boot refuse — jamais à
+  moitié converti ;
+- **l'archive porte le fichier v3 tel quel**, donc chiffré. `content.length` décrit la taille du
+  FICHIER — en-tête et région comprises, soit 6,64 % de plus que la taille logique — et
+  `identity.digest` l'empreinte du chiffré. Trois conséquences pour cette politique. Deux exports
+  d'un même contenu logique ne sont **plus comparables par empreinte** : les nonces sont tirés.
+  L'export et la restauration ne demandent **aucune clé** — l'archive est copiée telle quelle, et la
+  clé n'est requise qu'à l'ouverture —, si bien que la restauration inter-origine de l'ADR 0009
+  fonctionne inchangée sur un volume chiffré. Et la sauvegarde d'un volume chiffré est la sauvegarde
+  de **DEUX choses**, dont ce dépôt n'en gère qu'une avant #21 : une archive sans sa clé est un
+  fichier que personne n'ouvrira, et « export/restauration de la version précédente démontré » ne
+  vaudra pour un volume chiffré que lorsque la clé aura, elle aussi, un chemin de sauvegarde ;
 - **aucun volume d'utilisateur n'est concerné** : la série est `0.x` et aucun format n'a été publié.
   Les « vecteurs de test conservés pour chaque version publiée » restent sans objet pour la même
   raison, et les vecteurs cryptographiques de #17 tiennent ce rôle pour le format lui-même.

@@ -368,11 +368,11 @@ L'export portable de `VAULT-PORT-001` (#11) — `src/vm/volume-export.mjs`, son 
 **deux** niveaux. La décision complète est
 l'[ADR 0008](decisions/0008-format-d-archive-d-export.md).
 
-| Niveau       | Fichier                                       | Support                       | Rattachement                                       |
-| ------------ | --------------------------------------------- | ----------------------------- | -------------------------------------------------- |
-| unitaire     | `tests/unit/vm-sha256-stream.test.mjs`        | `crypto.subtle` (calibration) | `npm run check`                                    |
-| unitaire     | `tests/unit/vm-volume-export.test.mjs`        | doubles déterministes         | `npm run check`                                    |
-| Bout en bout | `tests/e2e/export-volume-verifiable.spec.mjs` | **vrai OPFS** + image #5      | job `Reprise MVP` — **SUSPENDU** (voir ci-dessous) |
+| Niveau       | Fichier                                       | Support                       | Rattachement      |
+| ------------ | --------------------------------------------- | ----------------------------- | ----------------- |
+| unitaire     | `tests/unit/vm-sha256-stream.test.mjs`        | `crypto.subtle` (calibration) | `npm run check`   |
+| unitaire     | `tests/unit/vm-volume-export.test.mjs`        | doubles déterministes         | `npm run check`   |
+| Bout en bout | `tests/e2e/export-volume-verifiable.spec.mjs` | **vrai OPFS** + image #5      | job `Reprise MVP` |
 
 **Le niveau unitaire calibre l'instrument puis éprouve le codec.** `sha256-stream` existe parce que
 WebCrypto n'offre aucun hachage incrémental et que `node:crypto` est absent du Worker (ADR 0002) :
@@ -386,12 +386,17 @@ exigée, et les **refus typés** : contenu altéré (`VAULT_ARCHIVE_DIGEST_MISMA
 (`VAULT_ARCHIVE_TRUNCATED`), marqueur/en-tête méconnaissable (`VAULT_ARCHIVE_MALFORMED`), et
 incompatibilité de manifeste (`ManifestError` de #10 propagée, jamais reconditionnée).
 
-> **Ce scénario est SUSPENDU depuis la tranche (a) de #18** (`test.skip`), et il faut le lire comme
-> tel : ce qui suit décrit ce qu'il mesure quand il tourne, pas une preuve qui s'exécute
-> aujourd'hui. La raison est écrite dans l'ADR 0016 : le chemin d'export lit par la voie autorisée,
-> qui déchiffre, si bien qu'il produirait l'archive EN CLAIR d'un volume chiffré. La tranche (b)
-> (#101) fournit l'accès brut qui manque et rétablit le scénario tel quel. Les épreuves unitaires du
-> codec, elles, s'exécutent.
+> **Ce scénario a été SUSPENDU par la tranche (a) de #18, et il est rétabli TEL QUEL par #101.**
+> L'export lisait par la voie autorisée, qui déchiffre : il aurait produit l'archive EN CLAIR d'un
+> volume chiffré. Il passe désormais par l'accès BRUT de `src/vm/opfs-volume-brut.mjs`, et ce qu'il
+> compare a changé de nature — le FICHIER, chiffré, dont la longueur est DÉRIVÉE du format par
+> `tailleDeFichier` au lieu d'être relevée de ce que l'export a rendu.
+>
+> L'export **RÉCUPÈRE avant de copier** (`src/vm/export-du-fichier.mjs`), et c'est le scénario de
+> restauration qui l'a exigé : une génération validée qui attend dans le journal voisin doit être
+> rejouée dans le volume, faute de quoi l'archive omet une écriture acquittée sans que rien ne le
+> dise. `tests/unit/vm-export-du-fichier.test.mjs` fige l'ORDRE de ces deux gestes — dont le fait
+> qu'une récupération refusée n'ouvre pas le fichier.
 
 **Le niveau Bout en bout mesure le vrai support.** `tests/e2e/export-volume-verifiable.spec.mjs`
 écrit le disque applicatif de l'image #5 (qui porte l'invariant durable créé par
@@ -417,15 +422,17 @@ La restauration de `VAULT-PORT-001` (#12) — `src/vm/volume-import.mjs`, sa cib
 d'erreurs `src/vm/import-errors.mjs` — est prouvée sur **deux** niveaux. La décision complète est
 l'[ADR 0009](decisions/0009-restauration-inter-origine.md).
 
-| Niveau       | Fichier                                         | Support                             | Rattachement                     |
-| ------------ | ----------------------------------------------- | ----------------------------------- | -------------------------------- |
-| unitaire     | `tests/unit/vm-volume-import.test.mjs`          | doubles déterministes               | `npm run check`                  |
-| unitaire     | `tests/unit/vm-opfs-volume-open.test.mjs`       | doubles déterministes               | `npm run check`                  |
-| Bout en bout | `tests/e2e/restauration-inter-origine.spec.mjs` | **deux origines** + OPFS + image #5 | job `Reprise MVP` — **SUSPENDU** |
+| Niveau       | Fichier                                         | Support                             | Rattachement      |
+| ------------ | ----------------------------------------------- | ----------------------------------- | ----------------- |
+| unitaire     | `tests/unit/vm-volume-import.test.mjs`          | doubles déterministes               | `npm run check`   |
+| unitaire     | `tests/unit/vm-opfs-volume-open.test.mjs`       | doubles déterministes               | `npm run check`   |
+| Bout en bout | `tests/e2e/restauration-inter-origine.spec.mjs` | **deux origines** + OPFS + image #5 | job `Reprise MVP` |
 
-> **Le scénario Bout en bout est SUSPENDU depuis la tranche (a) de #18** (`test.skip`) : il exporte
-> avant de restaurer, et l'export d'un volume v3 est refusé tant que #101 n'a pas fourni l'accès
-> brut. Les deux suites unitaires ci-dessus s'exécutent, elles.
+> **Rétabli par #101**, et il vérifie maintenant DEUX empreintes là où il n'en vérifiait qu'une : le
+> FICHIER de l'origine B est byte-exact avec celui de A — c'est ce qu'une archive porte, et cela ne
+> demande aucune clé —, ET son CLAIR l'est aussi. Sans la seconde, une archive de zéros restaurée en
+> zéros passerait pour une restauration ; sans la première, la comparaison porterait sur des octets
+> que l'archive ne contient pas.
 
 **Le niveau unitaire éprouve l'ORDRE des gestes, qui est le contrat.** Une cible en mémoire compte
 chaque geste de l'orchestration — ouvertures, fermetures, révocations, inscriptions —, ce qui permet
@@ -519,16 +526,18 @@ La migration de `VAULT-COMPAT-001` (#13) — `src/vm/volume-migration.mjs`, sa c
 prouvée sur **deux** niveaux. La décision complète est
 l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md).
 
-| Niveau       | Fichier                                         | Support                   | Rattachement                     |
-| ------------ | ----------------------------------------------- | ------------------------- | -------------------------------- |
-| unitaire     | `tests/unit/vm-volume-migration.test.mjs`       | doubles déterministes     | `npm run check`                  |
-| unitaire     | `tests/unit/vm-volume-manifest.test.mjs`        | aucun                     | `npm run check`                  |
-| Bout en bout | `tests/e2e/migration-volume-versionne.spec.mjs` | **OPFS** + image #5 + v86 | job `Reprise MVP` — **SUSPENDU** |
+| Niveau       | Fichier                                         | Support                   | Rattachement      |
+| ------------ | ----------------------------------------------- | ------------------------- | ----------------- |
+| unitaire     | `tests/unit/vm-volume-migration.test.mjs`       | doubles déterministes     | `npm run check`   |
+| unitaire     | `tests/unit/vm-volume-manifest.test.mjs`        | aucun                     | `npm run check`   |
+| Bout en bout | `tests/e2e/migration-volume-versionne.spec.mjs` | **OPFS** + image #5 + v86 | job `Reprise MVP` |
 
-> **Le scénario Bout en bout est SUSPENDU depuis la tranche (a) de #18** (`test.skip`) : le format
-> courant est passé en v3 alors qu'aucune migration vers v3 n'existe encore — `planMigration(2, 3)`
-> rend `VAULT_MIGRATION_STEP_UNAVAILABLE`. #101 fournit la migration et rétablit le scénario tel
-> quel. Les deux suites unitaires ci-dessus s'exécutent.
+> **Rétabli par #101**, et ce qu'il affirme a changé de nature. Les migrations v1 → v2 réécrivaient
+> un manifeste, et le scénario pouvait dire « aucun octet du volume n'a bougé ». La migration v2 →
+> v3 réécrit TOUT : le fichier grandit de sa région d'authentification et chaque secteur est scellé.
+> Ce qui doit être conservé n'est donc plus le fichier, c'est le CLAIR — le scénario exige que le
+> fichier ait changé, que sa taille soit celle que le format impose, et que le clair relu après
+> migration soit celui d'avant, à l'octet. C'est une preuve plus forte, pas plus faible.
 
 **Le niveau unitaire éprouve l'ORDRE des gestes, qui est le contrat.** Une cible en mémoire compte
 chaque geste — inspections, ouvertures, fermetures, inscriptions de journal, révocations, commits —,

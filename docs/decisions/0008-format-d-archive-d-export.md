@@ -4,10 +4,18 @@
 - Date : 2026-08-24
 - Issue : #11 · Invariant : `VAULT-PORT-001` · Jalon 2
 
-> **Amendé le 2026-08-28 par l'[ADR 0016](0016-format-de-volume-v3-dispositions.md) (#18).**
-> L'archive d'un volume v3 porte le fichier CHIFFRÉ tel quel, si bien que `content.length` et
-> `identity.digest` décrivent des octets chiffrés : deux exports d'un même contenu logique ne sont
-> plus comparables par empreinte, et une archive restaurée n'est ouvrable qu'avec sa clé.
+> **Amendé le 2026-08-28 par l'[ADR 0016](0016-format-de-volume-v3-dispositions.md) (#18, #101).**
+> L'archive d'un volume v3 porte le fichier CHIFFRÉ tel quel, si bien que `content.length` décrit la
+> taille du FICHIER — en-tête et région comprises — et `identity.digest` l'empreinte du chiffré :
+> deux exports d'un même contenu logique ne sont plus comparables par empreinte, les nonces étant
+> tirés. Le format d'archive lui-même **ne change pas d'un octet** et `verifyArchive` est inchangé :
+> ce qui change est la nature de ce qui est copié. La **restauration** ne demande aucune clé — c'est
+> ce qui rend la restauration inter-origine possible sur un volume chiffré —, et une archive
+> restaurée n'est donc ouvrable qu'avec elle. L'**export**, lui, en demande une, et pas pour lire :
+> il doit d'abord RÉCUPÉRER, c'est-à-dire rejouer dans le volume une génération validée qui attend
+> encore dans le journal voisin (ADR 0014). Copier le fichier sans cette étape produirait une
+> archive à laquelle il manque une écriture acquittée — l'ADR 0016 dit comment ce défaut a été
+> trouvé.
 
 ## Contexte
 
