@@ -529,6 +529,47 @@ connaît, c'est-à-dire le perdrait.
 administrative** : il n'a ni région d'authentification ni nonce. Le refus reste
 `VAULT_MANIFEST_MIGRATION_REQUIRED`, et son message le dit.
 
+### L'IDENTIFIANT d'une conversion reprise, et les trois choses qui le tiennent
+
+L'identifiant du volume est tiré par la conversion — un v2 n'en a pas — et il entre dans les données
+associées de **chaque secteur scellé**. Une reprise qui n'aurait pas le bon ne reconnaîtrait plus un
+seul secteur déjà converti : elle les classerait « encore en clair » et rescellerait leur chiffré.
+La migration se terminerait « réussie », et le clair serait perdu sans qu'aucune erreur ne soit
+levée. La contre-revue de #110 a nommé ce chemin ; trois gardes le ferment, et aucune ne suffit
+seule.
+
+**1. Le journal porte une empreinte SHA-256 de son corps**, vérifiée avant l'analyse de ses champs.
+Elle détecte l'ALTÉRATION — bit retourné, écriture déchirée du voisin —, pas la FORGERIE : elle
+n'est ni signée ni chiffrée, et un journal réécrit d'un bloc serait cohérent avec lui-même.
+
+**2. L'en-tête v3 est posé dès la fin du déplacement**, avant le premier sceau, et la reprise
+recoupe les deux récits. Il ne pouvait pas l'être plus tôt : le déplacement lit le premier secteur
+EN DERNIER, et y écrire détruirait la source de son propre geste. L'annoncer « v3 » avant d'avoir
+scellé est sûr parce que la **marque de scellement complet** reste, elle, le dernier geste — et
+qu'un fichier v3 sans cette marque est refusé par l'ouvreur (`VAULT_STORAGE_VOLUME_INCOMPLET`,
+décision 2).
+
+**La fenêtre où l'en-tête n'existe pas encore est celle du déplacement, et elle est sûre** : aucun
+secteur n'y est scellé. Un identifiant altéré pendant cette fenêtre ne coûte donc rien — la reprise
+scellera tout sous celui du journal et écrira l'en-tête avec lui, cohérent de bout en bout. Le
+volume portera une identité que personne n'a choisie, et rien de plus.
+
+**3. Le scellement journalise sa position**, après la barrière de chaque suite, et la reprise
+applique un **fail-closed** : sous cette position, tout secteur doit s'ouvrir. Qu'il ne s'ouvre pas
+admet deux lectures que rien ne distingue — « il reste du clair », et le rescéller est juste ; « il
+porte du chiffré qu'on ne sait plus ouvrir », et le rescéller le détruit. On refuse. Cette garde
+n'est pas redondante avec les deux premières : elle attrape l'écriture **déchirée** d'un secteur de
+charge, moitié clair moitié chiffré, que l'ordre sceau-puis-charge ne couvre pas.
+
+**La limite résiduelle, nommée.** Un support capable d'écrire de façon COHÉRENTE le journal ET
+l'en-tête du fichier ferait reprendre la conversion sous une identité de son choix, et les trois
+gardes passeraient. Ce n'est pas un oubli : c'est le modèle de menace de l'ADR 0002, où la confiance
+repose sur le partitionnement OPFS par origine. Ni le journal ni l'en-tête ne sont authentifiés —
+seuls les secteurs le sont —, et les authentifier suppose une clé disponible avant d'ouvrir le
+volume, c'est-à-dire #21. Ce qui reste vrai malgré cette limite : un tel support obtient une
+DESTRUCTION, jamais une lecture — il ne peut pas déchiffrer, et le clair d'un volume dont il aurait
+fait rescéller les secteurs n'apparaît nulle part.
+
 ## Décision 9 — Les refus, et leur traduction
 
 Le modèle lève des `CryptoError` (`VAULT_CRYPTO_*`). Le backend les propage en `StorageError`

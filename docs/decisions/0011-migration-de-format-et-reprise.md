@@ -10,12 +10,16 @@
 > Trois conséquences pour cet ADR, dont deux sont des durcissements.
 >
 > **L'avancement devient nécessaire**, et le journal passe en version 2 pour le porter —
-> `{ from, to, etape, position, identifiantVolume }`. Une reprise qui referait le déplacement depuis
-> le début corromprait le volume, la zone d'arrivée recouvrant la zone de départ. L'avancement porte
-> le PAS qu'il décrit : le donner au premier pas venu le ferait consommer par une étape qui n'en a
-> pas l'usage. Il porte aussi l'**identifiant de volume** tiré par la conversion, qui entre dans les
-> données associées de chaque secteur : une reprise qui en tirerait un autre ne reconnaîtrait plus
-> rien de ce qui est déjà converti.
+> `{ from, to, etape, position, identifiantVolume }`. Le journal porte aussi une **empreinte SHA-256
+> de son corps**, vérifiée à la lecture : l'identifiant qu'il transporte entre dans les données
+> associées de chaque secteur scellé, et un identifiant altéré ferait rescéller du chiffré comme du
+> clair. L'empreinte détecte l'altération, pas la forgerie ; l'ADR 0016 dit ce qui la complète et ce
+> qui reste hors de portée. Une reprise qui referait le déplacement depuis le début corromprait le
+> volume, la zone d'arrivée recouvrant la zone de départ. L'avancement porte le PAS qu'il décrit :
+> le donner au premier pas venu le ferait consommer par une étape qui n'en a pas l'usage. Il porte
+> aussi l'**identifiant de volume** tiré par la conversion, qui entre dans les données associées de
+> chaque secteur : une reprise qui en tirerait un autre ne reconnaîtrait plus rien de ce qui est
+> déjà converti.
 >
 > **Un pas DESTRUCTIF exige une sauvegarde VÉRIFIÉE**, et non plus un consentement nommé. La règle
 > de cet ADR — « une archive vérifiée, ou un exploitant qui assume » — a été écrite pour des pas qui
