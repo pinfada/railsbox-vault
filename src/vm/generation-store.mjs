@@ -1,4 +1,4 @@
-// Machine d'état d'une génération transactionnelle (#16, ADR 0014 ; #18, ADR 0016).
+// Machine d'état d'une génération transactionnelle (#16, ADR 0014 ; #18, ADR 0016 ; #19, ADR 0019).
 //
 // Le magasin ne connaît ni OPFS, ni v86, ni le backend de blocs. Il reçoit le handle du journal
 // voisin `<volume>.gen`, la taille logique du volume, un SCELLEMENT, et deux fonctions pour lire et
@@ -31,10 +31,21 @@
 // génération est stockée avec l'enregistrement parce qu'une charge en cumule PLUSIEURS tant qu'aucun
 // point de contrôle ne l'a vidée — c'est la correction que l'ADR 0016 apporte à l'ADR 0015.
 //
-// Trois voisins portent ce que le magasin n'a pas à savoir, et sont réexportés ici pour que les
+// ## Ce que #19 ajoute : le magasin PRÉSENTE des planchers, et date le volume
+//
+// Le protocole est INTACT là encore. Ce qui change est que le magasin ne se contente plus d'ouvrir
+// ce qu'il trouve : il présente à chaque vérification un PLANCHER de séquence et un PLANCHER de
+// génération, sans quoi les refus de rejeu du format n'étaient demandés par personne. Et il tient
+// une GARDE DE FRAÎCHEUR — l'empreinte de la région d'authentification, scellée par la racine, et le
+// témoin de dernière séquence vue — qui rend détectable ce que l'ADR 0015 nommait sans le détecter :
+// le retour arrière d'un secteur, et le retour arrière partiel du support. Le retour arrière COMPLET
+// reste hors de portée, et l'ADR 0019 le dit sans le maquiller.
+//
+// Cinq voisins portent ce que le magasin n'a pas à savoir, et sont réexportés ici pour que les
 // appelants n'aient rien à changer : `generation-plafonds.mjs` les seuils calibrés,
 // `generation-journal.mjs` l'accès au fichier, `generation-charge.mjs` le parcours en flux d'une
-// charge, `generation-recuperation.mjs` le constat d'ouverture et son compte rendu.
+// charge, `generation-recuperation.mjs` le constat d'ouverture et son compte rendu,
+// `generation-relecture.mjs` l'index des secteurs déposés, `generation-fraicheur.mjs` la garde.
 
 import { SECTOR_SIZE } from "./block-geometry.mjs";
 import { parcourirCharge } from "./generation-charge.mjs";
@@ -187,7 +198,11 @@ export class GenerationStore {
    *           scellement: import("./scellement.mjs").Scellement,
    *           lireVolume: (offset: number, longueur: number) => Promise<Uint8Array>,
    *           ecrireVolume: (offset: number, octets: Uint8Array, generation: number) => unknown,
+   *           fraicheur: object | null,
    *           plafondOctets?: number, seuilPointDeControle?: number }} options
+   *   `fraicheur` est OBLIGATOIRE, `null` compris : la source de région et de témoin de l'ADR 0019,
+   *   ou `null` pour DÉCLARER qu'aucune fraîcheur n'est tenue. Voir `construireGarde` — un oubli
+   *   produirait un volume sans empreinte de région ni témoin, sans que personne l'ait décidé.
    * @returns {Promise<GenerationStore>}
    */
   static async ouvrir(options) {
