@@ -38,9 +38,18 @@ export const MIGRATION_JOURNAL_SUFFIX = ".migration";
 export const GENERATION_JOURNAL_SUFFIX = ".gen";
 
 /**
+ * Suffixe RÉSERVÉ du TÉMOIN DE SÉQUENCE (#19, ADR 0019).
+ *
+ * Il vit hors du fichier de volume — c'est toute sa raison d'être : un témoin logé dans le volume
+ * reculerait avec lui — mais dans la MÊME ORIGINE, et l'ADR 0019 dit ce que cela vaut et ce que cela
+ * ne vaut pas. Il est court, comme les trois précédents, pour ne pas rétrécir `MAX_VOLUME_NAME`.
+ */
+export const TEMOIN_SEQUENCE_SUFFIX = ".temoin";
+
+/**
  * Suffixe RÉSERVÉ de l'ENVELOPPE DE CLÉ (#21, ADR 0020). Il vit à côté du volume pour la même raison
- * que les trois précédents, et il est plus court que `.migration` : `MAX_VOLUME_NAME` se déduit du
- * plus long suffixe réservé, et l'ajouter ne rétrécit donc AUCUN nom de volume déjà admissible.
+ * que les précédents, et il est plus court que `.migration` : `MAX_VOLUME_NAME` se déduit du plus
+ * long suffixe réservé, et l'ajouter ne rétrécit donc AUCUN nom de volume déjà admissible.
  *
  * Ce fichier porte des clés de volume ENVELOPPÉES ; il ne vit que sur l'origine de CONFIANCE, avec
  * le volume et son manifeste (ADR 0002), et il n'entre jamais dans une archive d'export (ADR 0020,
@@ -56,6 +65,7 @@ export const RESERVED_SIDECAR_SUFFIXES = Object.freeze([
   MANIFEST_SIDECAR_SUFFIX,
   MIGRATION_JOURNAL_SUFFIX,
   GENERATION_JOURNAL_SUFFIX,
+  TEMOIN_SEQUENCE_SUFFIX,
   ENVELOPPE_SIDECAR_SUFFIX,
 ]);
 
@@ -161,8 +171,18 @@ export function generationJournalName(volume) {
 }
 
 /**
+ * Nom du TÉMOIN DE SÉQUENCE posé à côté du volume (#19). Même règle de longueur que ses voisins :
+ * un volume créable est toujours un volume dont on peut dater la dernière séquence.
+ * @param {string} volume
+ */
+export function temoinSequenceName(volume) {
+  assertVolumeName(volume);
+  return `${volume}${TEMOIN_SEQUENCE_SUFFIX}`;
+}
+
+/**
  * Nom de l'ENVELOPPE DE CLÉ posée à côté du volume (#21, ADR 0020). Même règle de longueur que les
- * trois autres voisins : un volume créable est toujours un volume déverrouillable.
+ * autres voisins : un volume créable est toujours un volume déverrouillable.
  * @param {string} volume
  */
 export function enveloppeSidecarName(volume) {
@@ -292,6 +312,10 @@ export async function removeOpfsVolume(name) {
   const estUnVoisin = RESERVED_SIDECAR_SUFFIXES.some((suffixe) => name.endsWith(suffixe));
   if (!estUnVoisin) {
     await removeOpfsVolume(`${name}${GENERATION_JOURNAL_SUFFIX}`);
+    // Et son TÉMOIN (#19). Un témoin survivant attesterait, pour un volume HOMONYME créé ensuite,
+    // une séquence que celui-ci n'a jamais atteinte : la prochaine ouverture refuserait un volume
+    // neuf et intact. C'est la même raison qui emporte déjà le journal de génération.
+    await removeOpfsVolume(`${name}${TEMOIN_SEQUENCE_SUFFIX}`);
     await removeOpfsVolume(`${name}${ENVELOPPE_SIDECAR_SUFFIX}`);
   }
 

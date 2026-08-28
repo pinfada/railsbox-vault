@@ -93,6 +93,9 @@ async function ouvrirMagasin(support, releve) {
     handle: await support.magasin.openHandle(`${VOLUME}.gen`),
     tailleVolume: TAILLE_VOLUME,
     scellement: scellementObserve(reel, releve),
+    // Cette épreuve compte les NONCES émis ; une fraîcheur de région en émettrait d'autres, et le
+    // relevé ne mesurerait plus la reprise. Elle est donc déclarée absente, jamais oubliée.
+    fraicheur: null,
     lireVolume: support.lireVolume,
     ecrireVolume: support.ecrireVolume,
     barriereVolume: support.barriereVolume,

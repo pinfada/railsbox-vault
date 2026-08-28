@@ -174,6 +174,9 @@ test("un ENREGISTREMENT authentique d'une génération antérieure est refusé d
   }
   cible.close();
   support.magasin.abandon("cib2.gen");
+  // L'état du journal AVANT toute réouverture : une réouverture rejoue puis VIDE, et il n'y aurait
+  // alors plus de charge où substituer quoi que ce soit.
+  const complet = support.magasin.snapshot("cib2.gen");
 
   // TÉMOIN POSITIF : la cible intacte se rejoue, ses trois enregistrements compris.
   const intact = await ouvrirMagasin(support, "cib2.gen");
@@ -188,6 +191,8 @@ test("un ENREGISTREMENT authentique d'une génération antérieure est refusé d
   const position = ZONE_ENREGISTREMENTS + 2 * enregistrement;
   const octets = support.magasin.snapshot("don2.gen").slice(position, position + enregistrement);
   const handle = await support.magasin.openHandle("cib2.gen");
+  handle.truncate(0);
+  handle.write(complet, { at: 0 });
   handle.write(octets, { at: position });
   handle.flush();
   handle.close();

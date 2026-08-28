@@ -5,6 +5,8 @@ import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import {
   ENTETE_OCTETS,
   GENERATION_FORMAT,
+  GENERATION_FORMAT_SANS_FRAICHEUR,
+  RACINE_ENTETE_V2_OCTETS,
   RACINES,
   RACINE_ENTETE_OCTETS,
   PAGE_HOTE_OCTETS,
@@ -17,6 +19,7 @@ import {
   offsetDeRacine,
   racineDeSequence,
 } from "../../src/vm/generation-format.mjs";
+import { FRAICHEUR_OCTETS } from "../../src/vm/generation-fraicheur.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { identifiantVolumeEnOctets } from "../../src/vm/volume-chiffre-format.mjs";
@@ -54,6 +57,9 @@ function racineValide(surcharge = {}) {
     nonce: motif(12, 1),
     chiffre: motif(32, 2),
     etiquette: motif(16, 3),
+    // La FRAÎCHEUR de l'ADR 0019 : le sceau de l'empreinte de région, puis son chiffré. Elle est
+    // obligatoire — `null` pour dire qu'aucune n'est scellée —, jamais facultative.
+    fraicheur: motif(FRAICHEUR_OCTETS, 4),
     ...surcharge,
   };
 }
@@ -62,7 +68,11 @@ test("une racine encodée tient dans un seul secteur et se relit à l'identique"
   const octets = encoderRacine(racineValide());
   assert.equal(octets.byteLength, RACINE_OCTETS);
   assert.ok(RACINE_OCTETS <= 512, "la commutation doit tenir dans une écriture d'un seul secteur");
-  assert.equal(RACINE_ENTETE_OCTETS, 136, "l'ADR 0016 publie cette taille : elle est un contrat");
+  assert.equal(
+    RACINE_ENTETE_OCTETS,
+    202,
+    "136 octets de l'ADR 0016, plus les 66 de la fraîcheur de l'ADR 0019 : c'est un contrat",
+  );
 
   const relue = decoderRacine(octets, { tailleVolume: TAILLE_VOLUME });
   assert.equal(relue.valide, true, relue.raison ?? "");
@@ -76,10 +86,36 @@ test("une racine encodée tient dans un seul secteur et se relit à l'identique"
   assert.deepEqual(relue.racine.scelle.nonce, motif(12, 1));
   assert.deepEqual(relue.racine.scelle.chiffre, motif(32, 2));
   assert.deepEqual(relue.racine.scelle.etiquette, motif(16, 3));
+  assert.deepEqual(relue.racine.fraicheur, motif(FRAICHEUR_OCTETS, 4));
 });
 
-test("le format du journal vaut 2 : un runtime v2 refuse cette racine sans avoir à la comprendre", () => {
-  assert.equal(GENERATION_FORMAT, 2);
+test("une racine SANS fraîcheur reste lisible, et se relit pour ce qu'elle est", () => {
+  // C'est la compatibilité que l'ADR 0019 décide : un volume scellé par #18 porte une racine de
+  // format 2, et il doit rester OUVRABLE. Le décodeur la rend avec `fraicheur: null` — jamais une
+  // empreinte de zéros, qui serait une empreinte comme une autre et ferait refuser le volume.
+  const octets = encoderRacine(racineValide({ fraicheur: null }));
+  assert.deepEqual(
+    [...octets.subarray(RACINE_ENTETE_V2_OCTETS)],
+    [...new Uint8Array(RACINE_OCTETS - RACINE_ENTETE_V2_OCTETS)],
+    "une racine sans fraîcheur ne pose rien dans la réserve",
+  );
+  const relue = decoderRacine(octets, { tailleVolume: TAILLE_VOLUME });
+  assert.equal(relue.valide, true, relue.raison ?? "");
+  assert.equal(relue.racine.format, GENERATION_FORMAT_SANS_FRAICHEUR);
+  assert.equal(relue.racine.fraicheur, null);
+});
+
+test("une racine dont la fraîcheur est OUBLIÉE est refusée à l'encodage", () => {
+  // `null` déclare l'absence, `undefined` est un oubli — et un oubli aurait écrit une racine
+  // d'avant l'ADR 0019 sans que personne le décide. C'est la règle des attentes de l'ADR 0015,
+  // appliquée au champ que #19 ajoute.
+  const { fraicheur, ...sansLeChamp } = racineValide();
+  assert.equal(fraicheur.byteLength, FRAICHEUR_OCTETS);
+  assert.throws(() => encoderRacine(sansLeChamp), /obligatoire/);
+});
+
+test("le format du journal vaut 3 : un runtime antérieur refuse cette racine sans la comprendre", () => {
+  assert.equal(GENERATION_FORMAT, 3);
   const octets = encoderRacine(racineValide());
   const ancienne = Uint8Array.from(octets);
   new DataView(ancienne.buffer).setUint32(8, 1, true);
@@ -127,6 +163,9 @@ test("un octet retourné dans un champ AUTHENTIFIÉ se décode encore, et c'est 
     nonce: scelle.nonce,
     chiffre: scelle.chiffre,
     etiquette: scelle.etiquette,
+    // Cette épreuve porte sur les champs AUTHENTIFIÉS de l'en-tête, pas sur la fraîcheur : elle
+    // déclare donc n'en sceller aucune plutôt que d'en fabriquer une qui brouillerait le verdict.
+    fraicheur: null,
   });
 
   const ouvrir = (source) => {
@@ -176,10 +215,17 @@ test("une racine dont l'en-tête est tronqué par une déchirure n'est jamais un
     const relue = decoderRacine(tronquee, { tailleVolume: TAILLE_VOLUME });
     // Une troncature dans un champ authentifié laisse un en-tête DÉCODABLE mais des octets nuls là
     // où le sceau vivait : l'étiquette ne vérifiera pas. Ce que l'épreuve exige est donc qu'aucune
-    // troncature ne rende une racine à la fois décodable ET munie de son sceau d'origine.
-    const perdu = relue.valide
-      ? relue.racine.scelle.etiquette.some((octet, index) => octet !== octets[120 + index])
-      : true;
+    // troncature ne rende une racine à la fois décodable ET munie de ses deux sceaux d'origine —
+    // celui de l'en-tête, et celui de la fraîcheur de région que #19 ajoute derrière lui. Une
+    // déchirure à 201 octets laisse l'étiquette intacte et ampute la fraîcheur : c'est la
+    // confrontation de région qui refuse alors, et le format doit le rendre visible.
+    const ampute = (depuis, longueur) =>
+      relue.valide &&
+      Array.from({ length: longueur }).some(
+        (_, index) => tronquee[depuis + index] !== octets[depuis + index],
+      );
+    const perdu =
+      !relue.valide || ampute(120, 16) || ampute(RACINE_ENTETE_V2_OCTETS, FRAICHEUR_OCTETS);
     assert.ok(perdu, `${atteints} octet(s) atteints ne doivent pas rendre une racine complète`);
   }
 });

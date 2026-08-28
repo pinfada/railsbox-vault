@@ -40,7 +40,6 @@ import { SECTOR_SIZE } from "./block-geometry.mjs";
 import { parcourirCharge } from "./generation-charge.mjs";
 import {
   ENTETE_OCTETS,
-  SCEAU_ENREGISTREMENT_OCTETS,
   SURCOUT_ENREGISTREMENT,
   ZONE_ENREGISTREMENTS,
   encoderEnteteEnregistrement,
@@ -49,7 +48,9 @@ import {
   offsetDeRacine,
   racineDeSequence,
 } from "./generation-format.mjs";
+import { FRAICHEUR_ETATS, construireGarde } from "./generation-fraicheur.mjs";
 import { JournalDeGeneration } from "./generation-journal.mjs";
+import { RelectureDeCharge } from "./generation-relecture.mjs";
 import { PLAFOND_CHARGE_OCTETS, POINT_DE_CONTROLE_OCTETS } from "./generation-plafonds.mjs";
 import {
   GENERATION_ETATS,
@@ -58,7 +59,7 @@ import {
   remedeSansRacine,
 } from "./generation-recuperation.mjs";
 import { STORAGE_ERROR_CODES, StorageError, generationOverflow } from "./storage-errors.mjs";
-import { decoderSceau, encoderSceau, identifiantVolumeEnOctets } from "./volume-chiffre-format.mjs";
+import { encoderSceau, identifiantVolumeEnOctets } from "./volume-chiffre-format.mjs";
 
 export { GENERATION_ETATS };
 export {
@@ -91,8 +92,35 @@ export class GenerationStore {
   #plafond;
   #seuilPointDeControle;
 
-  /** Secteur logique → l'enregistrement du journal qui le remplace, et son décalage dedans. */
-  #index = new Map();
+  /** RELECTURE de la charge en cours : l'index des secteurs déposés et leur ouverture. */
+  #relecture;
+  /**
+   * GARDE de fraîcheur (#19, ADR 0019), ou `null` quand l'appelant l'a DÉCLARÉE absente.
+   *
+   * L'absence n'est jamais déduite d'un oubli : le constructeur refuse `undefined`. C'est la règle
+   * que l'ADR 0015 impose déjà aux attentes du modèle, et elle vaut ici pour la même raison —
+   * jusqu'à #19, une dépendance oubliée valait « aucun contrôle », c'est-à-dire une défaillance
+   * ouverte et silencieuse.
+   */
+  #garde;
+  /**
+   * PLANCHER de séquence présenté à chaque ouverture de racine.
+   *
+   * À la récupération, il vient du TÉMOIN — la dernière séquence vue dans cette origine — et vaut
+   * `null` s'il n'y en a pas, c'est-à-dire à la première ouverture. Ensuite il vaut la séquence que
+   * cette session a elle-même validée : un support qui échangerait des fichiers sous une session
+   * ouverte est alors refusé (ADR 0015, P3).
+   */
+  #sequenceMinimale = null;
+  /**
+   * PLANCHER de génération d'un enregistrement relu.
+   *
+   * À la récupération il vaut 1 : `deposer` scelle sous « génération validée + 1 », donc aucun
+   * enregistrement ne peut porter zéro. En session il vaut la génération de reprise plus un, parce
+   * que la récupération se termine toujours par un vidage — le journal ne porte alors plus que ce
+   * que cette session y a mis.
+   */
+  #generationPlancher = 1;
   /** Charge DÉPOSÉE : les entrées, la longueur des clairs, la longueur occupée sur le support. */
   #charge = etatDeCharge();
   /** Charge SCELLÉE par la dernière racine. Ce qui la dépasse n'est pas encore validé. */
@@ -101,16 +129,6 @@ export class GenerationStore {
   #generation = 0;
   #sequenceValidee = 0;
   #rapport = null;
-  /**
-   * CLAIR du dernier enregistrement ouvert, et sa position. Un seul, et c'est délibéré.
-   *
-   * Un secteur relu du journal vit à l'intérieur d'un enregistrement CHIFFRÉ : le rendre exige
-   * d'ouvrir l'enregistrement entier, puisqu'une étiquette couvre tout l'enregistrement et pas
-   * chacun de ses secteurs. Sans mémo, une relecture séquentielle de dix secteurs d'un même
-   * enregistrement l'ouvrirait dix fois. Le mémo est vidé dès que la charge bouge, parce qu'un
-   * enregistrement réécrit au même endroit n'est plus le même.
-   */
-  #dernierOuvert = null;
   /** Sceau et compteur de la dernière racine écrite. Conservés pour le parcours du rangement. */
   #scelleDeLaRacine = null;
   #scellementsDeLaRacine = 0;
@@ -143,7 +161,20 @@ export class GenerationStore {
     this.#tailleVolume = options.tailleVolume;
     this.#scellement = options.scellement;
     this.#lireVolume = options.lireVolume;
-    this.#ecrireVolume = options.ecrireVolume;
+    // Toute écriture du volume change la RÉGION d'authentification, donc l'empreinte que la
+    // prochaine racine devra sceller. L'interception vit ici plutôt que dans chaque appelant :
+    // deux endroits qui écrivent le volume — le rejeu et le point de contrôle — et un seul qui s'en
+    // souvienne, c'est une occasion d'oubli de moins.
+    this.#ecrireVolume = async (offset, octets, generation) => {
+      this.#garde?.marquerRegionSale();
+      return options.ecrireVolume(offset, octets, generation);
+    };
+    this.#garde = construireGarde(options);
+    this.#relecture = new RelectureDeCharge({
+      journal: this.#journal,
+      scellement: this.#scellement,
+      lireVolume: this.#lireVolume,
+    });
     this.#barriereVolume = options.barriereVolume ?? (async () => {});
     this.#plafond = options.plafondOctets ?? PLAFOND_CHARGE_OCTETS;
     this.#seuilPointDeControle = options.seuilPointDeControle ?? POINT_DE_CONTROLE_OCTETS;
@@ -217,16 +248,31 @@ export class GenerationStore {
 
   async #recuperer() {
     this.#journal.reinitialiserSurmemoire();
+    // Le TÉMOIN est lu AVANT le journal, et c'est l'ordre qui compte : il fixe le plancher de
+    // séquence sous lequel aucune racine n'a le droit de faire autorité. Le lire après aurait
+    // laissé la première ouverture de racine se faire sans plancher.
+    await this.#garde?.lireTemoin();
+    this.#sequenceMinimale = this.#garde?.temoin?.sequence ?? null;
     const constat = constaterOuverture({
       journal: this.#journal,
       tailleVolume: this.#tailleVolume,
     });
+    // L'identité DÉCLARÉE d'abord : « ce journal appartient à un autre volume » se corrige
+    // autrement qu'un sceau refusé, et confronter la région avant priverait l'exploitant de ce
+    // diagnostic. Puis la FRAÎCHEUR, avant que le moindre secteur ne soit lu ou écrit — un volume
+    // dont la région ne concorde plus ne doit rendre aucun clair, fût-il authentique.
+    if (constat.racine !== null) this.#exigerIdentiteDeVolume(constat.racine);
+    await this.#garde?.confronter(constat.racine);
 
-    if (constat.racine === null) {
-      this.#rapport = await this.#recupererSansRacine(constat);
-      return;
-    }
-    this.#rapport = await this.#recupererDepuisRacine(constat);
+    this.#rapport =
+      constat.racine === null
+        ? await this.#recupererSansRacine(constat)
+        : await this.#recupererDepuisRacine(constat);
+    // À partir d'ici la session fait foi : le plancher de séquence est celui qu'elle a validé, et
+    // le plancher de génération celui qu'un dépôt de cette session peut porter au plus bas.
+    this.#sequenceMinimale = this.#sequenceValidee;
+    this.#generationPlancher = this.#generation + 1;
+    this.#relecture.poserPlancher(this.#generationPlancher);
   }
 
   /** AUCUNE racine ne fait autorité : le remède est décidé avant d'écrire quoi que ce soit. */
@@ -246,7 +292,6 @@ export class GenerationStore {
    * le parcours de la charge —, mais il faut bien le poser avant de sceller quoi que ce soit.
    */
   async #recupererDepuisRacine({ racine, chargePresente }) {
-    this.#exigerIdentiteDeVolume(racine);
     this.#sequence = racine.sequence;
     this.#sequenceValidee = racine.sequence;
     this.#generation = racine.generation;
@@ -307,7 +352,14 @@ export class GenerationStore {
       generation: this.#generation,
       sequence: this.#sequence,
       surmemoireMax: this.#journal.surmemoireMax,
-      details,
+      details: {
+        // Publiés pour la même raison que la surmémoire : un contrôle qu'on ne publie pas finit par
+        // être supposé actif. `non-fournie` dit qu'aucune fraîcheur n'est prétendue ; `migree` dit
+        // qu'une racine d'avant #19 a été trouvée et que la suivante portera l'empreinte.
+        fraicheurRegion: this.#garde?.etat ?? FRAICHEUR_ETATS.nonFournie,
+        temoinSequence: this.#garde?.temoin?.sequence ?? null,
+        ...details,
+      },
     });
   }
 
@@ -318,6 +370,8 @@ export class GenerationStore {
       tailleVolume: this.#tailleVolume,
       racine,
       scellement: this.#scellement,
+      sequenceMinimale: this.#sequenceMinimale,
+      generationPlancher: this.#generationPlancher,
       emettre,
     });
   }
@@ -416,87 +470,17 @@ export class GenerationStore {
       this.#chargeMaxDeposee = this.#charge.longueurPhysique;
     }
 
-    this.#dernierOuvert = { position, clair: charge };
-    for (let secteur = debut; secteur < fin; secteur += SECTOR_SIZE) {
-      this.#index.set(secteur, {
-        position,
-        decalage: secteur - debut,
-        rang,
-        adresse: debut,
-        longueur: charge.byteLength,
-        generation,
-      });
-    }
+    this.#relecture.inscrire(position, { debut, fin, charge, generation, rang });
   }
 
-  /**
-   * Rend le CLAIR de l'enregistrement `entree`, en ouvrant le moins souvent possible.
-   *
-   * Une étiquette couvre l'enregistrement ENTIER : il n'y a pas de moyen d'ouvrir un seul de ses
-   * secteurs, et prétendre le contraire reviendrait à rendre des octets que rien n'authentifie. Le
-   * mémo d'un seul enregistrement suffit à rendre une relecture séquentielle linéaire.
-   */
-  async #ouvrirEnregistrement(entree) {
-    if (this.#dernierOuvert?.position === entree.position) return this.#dernierOuvert.clair;
-    const chiffre = this.#journal.lire(entree.position + SURCOUT_ENREGISTREMENT, entree.longueur);
-    const sceau = decoderSceau(
-      this.#journal.lire(entree.position + ENTETE_OCTETS, SCEAU_ENREGISTREMENT_OCTETS),
-    );
-    const clair = await this.#scellement.ouvrirBloc(
-      {
-        generation: entree.generation,
-        rang: entree.rang,
-        adresse: entree.adresse,
-        longueur: entree.longueur,
-      },
-      { nonce: sceau.nonce, etiquette: sceau.etiquette, chiffre },
-      { generationMinimale: null },
-    );
-    this.#dernierOuvert = { position: entree.position, clair };
-    return clair;
+  /** Relit ce que l'écrivain de cette session voit : le journal d'abord, le volume ensuite. */
+  lire(offset, longueur) {
+    return this.#relecture.lire(offset, longueur);
   }
 
-  /**
-   * Relit `longueur` octets tels que l'écrivain de cette session les voit : le journal d'abord, le
-   * volume pour tout ce que le journal ne couvre pas.
-   */
-  async lire(offset, longueur) {
-    const debut = alignerBas(offset);
-    const fin = alignerHaut(offset + longueur);
-    const tampon = await this.#lireVolume(debut, fin - debut);
-    for (let secteur = debut; secteur < fin; secteur += SECTOR_SIZE) {
-      const entree = this.#index.get(secteur);
-      if (entree === undefined) continue;
-      const clair = await this.#ouvrirEnregistrement(entree);
-      tampon.set(clair.subarray(entree.decalage, entree.decalage + SECTOR_SIZE), secteur - debut);
-    }
-    return tampon.subarray(offset - debut, offset - debut + longueur);
-  }
-
-  /**
-   * SUPERPOSE la génération en cours à un tampon déjà relu du volume, en place.
-   *
-   * Le backend garde ainsi son chemin de lecture — bornes, faute programmée, contrôle de géométrie,
-   * traduction des échecs du support — et n'y ajoute qu'un recouvrement. Sans lui, un guest ne se
-   * relirait pas : il écrirait un secteur, le relirait avant la barrière, et retrouverait l'état
-   * d'avant. Aucun système de fichiers ne survit à cela.
-   *
-   * @param {number} offset offset logique du premier octet de `tampon`
-   * @param {Uint8Array} tampon modifié en place, puis rendu
-   */
-  async superposer(offset, tampon) {
-    if (this.#index.size === 0) return tampon;
-    const fin = offset + tampon.byteLength;
-    for (let secteur = alignerBas(offset); secteur < fin; secteur += SECTOR_SIZE) {
-      const entree = this.#index.get(secteur);
-      if (entree === undefined) continue;
-      const clair = await this.#ouvrirEnregistrement(entree);
-      const depuis = Math.max(offset, secteur);
-      const jusque = Math.min(fin, secteur + SECTOR_SIZE);
-      const dans = entree.decalage + (depuis - secteur);
-      tampon.set(clair.subarray(dans, dans + (jusque - depuis)), depuis - offset);
-    }
-    return tampon;
+  /** SUPERPOSE la génération en cours à un tampon déjà relu du volume, en place. */
+  superposer(offset, tampon) {
+    return this.#relecture.superposer(offset, tampon);
   }
 
   /**
@@ -543,6 +527,11 @@ export class GenerationStore {
     if (this.#validee.longueurPhysique > this.#chargeMaxValidee) {
       this.#chargeMaxValidee = this.#validee.longueurPhysique;
     }
+    // Le plancher de SÉQUENCE suit la validation ; celui de GÉNÉRATION ne bouge pas, parce que la
+    // charge porte toujours les enregistrements des générations antérieures tant qu'aucun point de
+    // contrôle ne l'a vidée (ADR 0016, décision 2). Le relever ici refuserait des enregistrements
+    // que ce magasin vient lui-même d'écrire.
+    this.#sequenceMinimale = this.#sequenceValidee;
     return this.#generation;
   }
 
@@ -552,12 +541,18 @@ export class GenerationStore {
    * rendraient l'autorité ambiguë à la reprise (ADR 0015).
    */
   async #ecrireRacine({ sequence, generation, entrees }) {
+    // L'empreinte de région est RESCELLÉE sous la génération de CETTE racine, jamais recopiée d'une
+    // racine antérieure : une empreinte authentique mais scellée sous une génération plus ancienne,
+    // épissée dans une racine récente, ferait passer la région d'hier pour celle d'aujourd'hui.
+    // Le hachage, lui, n'est refait que si le volume a été écrit depuis le dernier (`marquerRegionSale`).
+    const fraicheur = this.#garde === null ? null : await this.#garde.pourRacine(generation);
     const scelle = await this.#scellement.scellerRacine(
       { sequence, generation, tailleVolume: this.#tailleVolume },
       entrees,
       { sequencePrecedente: this.#sequence },
     );
     const racine = encoderRacine({
+      fraicheur,
       sequence,
       generation,
       tailleVolume: this.#tailleVolume,
@@ -571,6 +566,10 @@ export class GenerationStore {
     });
     this.#journal.ecrire(offsetDeRacine(racineDeSequence(sequence)), racine);
     await this.#journal.barriere();
+    // Le TÉMOIN vient APRÈS la barrière de la racine, et l'ordre est le contrat. Une coupure entre
+    // les deux laisse un témoin EN RETARD : un plancher en retard sous-détecte, il ne refuse jamais
+    // à tort. L'ordre inverse laisserait un témoin en AVANCE, c'est-à-dire un volume intact refusé.
+    await this.#garde?.ecrireTemoin({ sequence, generation });
     this.#scelleDeLaRacine = Object.freeze({
       nonce: scelle.nonce,
       chiffre: scelle.chiffre,
@@ -647,8 +646,7 @@ export class GenerationStore {
    *    charge est bornée par ce que sa racine déclare, pas par la taille du fichier.
    */
   async #vider({ sequence, generation }) {
-    this.#index.clear();
-    this.#dernierOuvert = null;
+    this.#relecture.vider();
     this.#charge = etatDeCharge();
     this.#validee = etatDeCharge();
     const suivante = sequence + 1;
@@ -658,10 +656,24 @@ export class GenerationStore {
     this.#sequence = suivante;
     this.#generation = generation;
     this.#sequenceValidee = suivante;
+    this.#sequenceMinimale = suivante;
+    // Le journal ne porte plus rien : le plancher de génération peut enfin monter. Il ne monte
+    // JAMAIS à la validation — la charge y garde les enregistrements des générations antérieures
+    // tant qu'aucun point de contrôle ne l'a vidée (ADR 0016, décision 2).
+    this.#generationPlancher = generation + 1;
+    this.#relecture.poserPlancher(this.#generationPlancher);
   }
 
-  /** Ferme le journal. La charge validée non rangée reste dans le fichier : elle est durable. */
+  /**
+   * Ferme le journal ET le témoin. La charge validée non rangée reste dans le fichier : elle est
+   * durable.
+   *
+   * Le témoin est rendu APRÈS le journal, et l'ordre est sans conséquence ici — les deux sont déjà
+   * durables. Ce qui compte est qu'il soit rendu : un handle non relâché laisserait le voisin
+   * verrouillé par un volume que personne ne détient, exactement comme pour le journal.
+   */
   close() {
     this.#journal.close();
+    this.#garde?.fermer();
   }
 }
