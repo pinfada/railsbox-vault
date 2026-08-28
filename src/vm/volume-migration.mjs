@@ -49,20 +49,14 @@ import {
   consentementNomme,
   retenirPreuve,
 } from "./migration-backup-proof.mjs";
-import { exigerCleDeVolume } from "./cle-de-volume.mjs";
 import { MIGRATION_ERROR_CODES, MigrationError } from "./migration-errors.mjs";
-import { ETAPES_CONVERSION, convertirEnV3 } from "./migration-v3.mjs";
-import { Scellement } from "./scellement.mjs";
-import { nouvelIdentifiantDeVolume, tailleDeFichier } from "./volume-chiffre-format.mjs";
+import { ecrituresARejouerV1 } from "./generation-v1-rejeu.mjs";
+import { tailleDeFichier } from "./volume-chiffre-format.mjs";
 import { journalMalforme, parseJournal, serialiserJournal } from "./migration-journal.mjs";
 import { MANIFEST_ERROR_CODES, ManifestError } from "./manifest-errors.mjs";
 import {
   MANIFEST_FORMAT_VERSION,
-  MIN_VOLUME_FORMAT_VERSION,
-  MIN_WRITER_FORMAT_VERSION,
-  VOLUME_ALGORITHM,
   assertReadable,
-  createManifest,
   parseManifest,
   serializeManifest,
 } from "./volume-manifest.mjs";
@@ -81,152 +75,10 @@ export {
   parseJournal,
 } from "./migration-journal.mjs";
 export { EVIDENCE_KINDS } from "./migration-backup-proof.mjs";
-
-/**
- * ÉTAPES ENREGISTRÉES, une par PAS de version. Il n'existe aucun chemin direct d'un format vers un
- * format lointain : migrer, c'est traverser chaque format intermédiaire, dans l'ordre, avec un
- * manifeste valide à chaque palier. C'est ce qui rend la chaîne vérifiable au lieu d'être crue.
- *
- * `apply` reçoit le manifeste du palier courant et rend celui du palier suivant. Il reçoit aussi le
- * backend ouvert : aucune étape enregistrée n'écrit aujourd'hui dans le volume, mais l'ordre des
- * gestes ci-dessus est celui de #12 précisément pour qu'une étape future qui en écrirait n'ait pas
- * à réinventer sa sûreté.
- */
-const STEPS = Object.freeze([
-  Object.freeze({
-    from: 1,
-    to: MIN_WRITER_FORMAT_VERSION,
-    summary:
-      "v2 : le volume DÉCLARE `runtime.minWriter`, le plus ancien runtime autorisé à l'écrire, au lieu que chaque ouverture le devine à partir du seul majeur SemVer.",
-    apply({ manifest }) {
-      return createManifest({
-        formatVersion: MIN_WRITER_FORMAT_VERSION,
-        runtime: {
-          version: manifest.runtime.version,
-          artifact: manifest.runtime.artifact,
-          // Traduction EXACTE de la règle v1 — « un runtime de majeur inférieur est refusé » —, et
-          // non une valeur inventée : le plus ancien écrivain qu'elle admettait était le plancher
-          // du majeur du runtime qui a écrit le volume.
-          minWriter: plancherDuMajeur(manifest.runtime.version),
-        },
-        app: manifest.app,
-        volumeSize: manifest.geometry.volumeSize,
-        // `identity` est reconduite telle quelle : la migration ne touche aucun octet du volume,
-        // donc ce que le digest attestait (l'état au moment de son inscription, ADR 0009) reste
-        // exactement aussi vrai — ni plus, ni moins.
-        identity: manifest.identity,
-      });
-    },
-  }),
-  Object.freeze({
-    from: MIN_WRITER_FORMAT_VERSION,
-    to: MIN_VOLUME_FORMAT_VERSION,
-    summary:
-      "v3 : le volume est CHIFFRÉ. Chaque secteur est scellé par AES-256-GCM sous une clé de volume, avec son identité logique en données associées (ADR 0015), et le fichier gagne un en-tête et une région d'authentification de 34 octets par secteur (ADR 0016).",
-    /**
-     * **La première étape du dépôt qui touche les OCTETS.** Les deux précédentes réécrivaient un
-     * manifeste ; celle-ci agrandit le fichier de sa région d'authentification, décale la charge et
-     * scelle chaque secteur — sur place, pour ne pas exiger le double du quota au moment où
-     * l'utilisateur migre un volume de 512 Mio.
-     *
-     * Le geste lui-même vit dans `migration-v3.mjs`, avec sa reprise et son contre-exemple. Ici ne
-     * reste que ce qui appartient à la CHAÎNE : d'où vient l'identité du volume converti, et ce que
-     * le manifeste cible déclare.
-     *
-     * L'IDENTIFIANT est TIRÉ ici, et il ne peut pas l'être ailleurs : un volume v2 n'en a pas, et
-     * c'est précisément le champ que le format v3 ajoute. Il est immuable ensuite.
-     *
-     * **Il est aussi JOURNALISÉ, et il le faut.** Il entre dans les données associées de chaque
-     * secteur scellé : une reprise qui en tirerait un nouveau ne reconnaîtrait plus un seul des
-     * secteurs déjà convertis, les classerait « en clair » et les RECHIFFRERAIT. Le journal est le
-     * seul endroit où il puisse survivre à la coupure, puisque l'en-tête v3 — l'autre endroit où il
-     * vit — n'est écrit qu'en dernier, une fois la conversion finie.
-     */
-    async apply({ manifest, backend, cle, avancement, marquerAvancement }) {
-      const identifiantVolume =
-        avancement?.identifiantVolume ?? manifest.volume?.id ?? nouvelIdentifiantDeVolume();
-      await convertirEnV3({
-        brut: backend,
-        scellement: await Scellement.ouvrir({
-          volume: identifiantVolume,
-          cleOctets: exigerCleDeVolume(backend.name ?? "volume", cle),
-          formatVersion: MIN_VOLUME_FORMAT_VERSION,
-        }),
-        tailleLogique: manifest.geometry.volumeSize,
-        identifiantVolume,
-        depuis: avancement?.etape ?? ETAPES_CONVERSION.deplacement,
-        position: avancement?.position ?? null,
-        marquerEtape: (progress) => marquerAvancement({ ...progress, identifiantVolume }),
-      });
-      return createManifest({
-        formatVersion: MIN_VOLUME_FORMAT_VERSION,
-        runtime: manifest.runtime,
-        app: manifest.app,
-        volumeSize: manifest.geometry.volumeSize,
-        // `identity` est reconduite telle quelle. Ce qu'elle atteste — l'état au moment de son
-        // inscription (ADR 0009) — porte désormais sur des octets CHIFFRÉS, et l'ADR 0016 en tire
-        // la conséquence : deux exports d'un même contenu logique ne sont plus comparables par
-        // empreinte. La reconduire n'est donc pas la rendre fausse, c'est la laisser dire ce
-        // qu'elle disait — ni plus, ni moins.
-        identity: manifest.identity,
-        volume: { id: identifiantVolume, algorithm: VOLUME_ALGORITHM },
-      });
-    },
-  }),
-]);
-
-for (const etape of STEPS) {
-  if (etape.to !== etape.from + 1) {
-    throw new Error(`Étape de migration non contiguë : ${etape.from} → ${etape.to}.`);
-  }
-}
-
-/** Plancher SemVer du majeur d'une version déjà validée : « 2.7.3 » → « 2.0.0 ». */
-function plancherDuMajeur(version) {
-  const majeur = /^(\d+)\./.exec(version);
-  if (majeur === null) throw new TypeError(`Version de runtime inattendue : ${version}.`);
-  return `${majeur[1]}.0.0`;
-}
-
-/** Les étapes enregistrées, pour la documentation et les vecteurs de test par version. */
-export function migrationSteps() {
-  return STEPS;
-}
-
-/**
- * Chaîne d'étapes menant de `from` à `to`, un PAS à la fois. Rend une liste vide si le volume est
- * déjà au format visé.
- *
- * @throws {MigrationError} `VAULT_MIGRATION_DOWNGRADE_REFUSED` si `to` précède `from`,
- *   `VAULT_MIGRATION_NO_PATH` si une étape manque à la chaîne.
- */
-export function planMigration(from, to) {
-  if (!Number.isInteger(from) || from < 1 || !Number.isInteger(to) || to < 1) {
-    throw new TypeError(`Versions de format invalides : ${JSON.stringify({ from, to })}.`);
-  }
-  if (to < from) {
-    throw new MigrationError(
-      MIGRATION_ERROR_CODES.downgradeRefused,
-      `Migration refusée : le volume est au format ${from} et ${to} lui est antérieur. Une migration ne descend jamais ; revenir en arrière suppose de restaurer une sauvegarde.`,
-      { from, to },
-    );
-  }
-  const chaine = [];
-  let courant = from;
-  while (courant < to) {
-    const etape = STEPS.find((candidate) => candidate.from === courant);
-    if (etape === undefined) {
-      throw new MigrationError(
-        MIGRATION_ERROR_CODES.noPath,
-        `Migration refusée : aucune étape enregistrée ne part du format ${courant} vers ${courant + 1}. La chaîne ${from} → ${to} est interrompue et ne sera pas devinée.`,
-        { from, to, missingFrom: courant },
-      );
-    }
-    chaine.push(etape);
-    courant = etape.to;
-  }
-  return chaine;
-}
+// La TABLE DES ÉTAPES vit dans son propre module depuis que l'une d'elles réécrit le volume :
+// ce qu'un pas fait et l'ordre dans lequel les gestes l'entourent sont deux sujets distincts.
+export { migrationSteps, planMigration } from "./migration-etapes.mjs";
+import { planMigration } from "./migration-etapes.mjs";
 
 // --- Orchestration -------------------------------------------------------------------------------
 
@@ -361,6 +213,55 @@ function assertGeometrieDuSupport(source, support, { cible, reprise }) {
 }
 
 /**
+ * REPORTE dans le volume la dernière génération validée du journal SOURCE, puis ÉCARTE ce journal.
+ *
+ * ## Pourquoi ce geste existe, et pourquoi il est ici
+ *
+ * Depuis #16 le fichier du volume ne porte pas tout son état : une génération VALIDÉE vit dans le
+ * voisin `<volume>.gen` jusqu'à ce qu'une ouverture la reporte. Une migration qui l'ignore fait deux
+ * dégâts, tous deux nommés par la revue de #110 : elle PERD une écriture acquittée, et elle laisse
+ * derrière elle un journal d'un format que le volume migré ne sait plus lire — si bien que le volume
+ * tout juste migré ne s'ouvre plus, sous un code qui envoie restaurer une sauvegarde alors que les
+ * données sont intactes.
+ *
+ * ## L'ordre, qui est le contrat
+ *
+ * Le report ÉCRIT dans le volume : il vient donc après la révocation du manifeste (geste 7), comme
+ * toute mutation. Il vient avant la conversion, et il le faut : le report vise des adresses du
+ * volume V2, que la conversion déplace. Le journal est écarté ensuite, et une coupure entre les deux
+ * est sans conséquence — reporter deux fois les mêmes octets aux mêmes adresses ne change rien.
+ *
+ * ## Ce qui protège de reporter APRÈS la conversion
+ *
+ * Le geste ne s'exécute que si le fichier est encore à sa taille SOURCE. Une reprise qui trouve un
+ * fichier déjà agrandi sait que la conversion a commencé, donc que le journal a déjà été soldé.
+ */
+async function solderLeJournalDeGeneration({ target, backend, source }) {
+  if (typeof target.readGenerationJournal !== "function") return null;
+  const tailleSource = tailleDeFichier({
+    formatVersion: source.formatVersion,
+    tailleLogique: source.geometry.volumeSize,
+  });
+  if (backend.size() !== tailleSource) return null;
+
+  const octets = await target.readGenerationJournal();
+  // Pas de voisin : rien à reporter et rien à écarter. On ne demande pas au support un retrait qui
+  // n'a pas lieu d'être — un geste inutile dans la trace est un geste qu'une revue doit expliquer.
+  if (octets === null || octets === undefined) return null;
+
+  const { generation, ecritures } = ecrituresARejouerV1({
+    octets,
+    tailleVolume: source.geometry.volumeSize,
+  });
+  for (const ecriture of ecritures) await backend.write(ecriture.offset, ecriture.octets);
+  // La barrière AVANT le retrait : écarter un journal dont le report n'est pas durable perdrait
+  // exactement ce qu'on cherchait à sauver.
+  if (ecritures.length > 0) await backend.flush();
+  await target.removeGenerationJournal();
+  return Object.freeze({ generation, ecritures: ecritures.length });
+}
+
+/**
  * Applique la chaîne, un PAS à la fois, et route l'avancement vers le pas qu'il décrit.
  *
  * L'avancement journalisé porte son `from` et son `to`, et c'est indispensable : le donner au
@@ -418,6 +319,9 @@ async function muter({ target, backend, chaine, source, toVersion, evidence, cle
   // 7. RÉVOQUER — à partir d'ici, `openVolumeForWrite` refuse le volume.
   await target.revokeManifest();
 
+  // 7 bis. REPORTER puis ÉCARTER le journal de génération du volume SOURCE.
+  await solderLeJournalDeGeneration({ target, backend, source });
+
   // 8. APPLIQUER, puis franchir la barrière de durabilité.
   const manifest = await appliquerLaChaine({
     chaine,
@@ -430,18 +334,27 @@ async function muter({ target, backend, chaine, source, toVersion, evidence, cle
   await backend.flush();
 
   // 9. INSCRIRE, puis RELIRE depuis le support : écrire n'est pas persister.
+  await inscrireEtRelire(target, manifest);
+  return manifest;
+}
+
+/**
+ * INSCRIT le manifeste cible et le RELIT depuis le support. Écrire n'est pas persister.
+ *
+ * Une relecture divergente le RETIRE : le volume reste non identifié plutôt que présenté comme
+ * migré, et le journal de reprise subsiste pour qu'une seconde tentative sache d'où repartir.
+ */
+async function inscrireEtRelire(target, manifest) {
   const octets = serializeManifest(manifest);
   await target.commitManifest(octets);
   const relu = await target.readManifest();
-  if (!memesOctets(relu, octets)) {
-    await target.revokeManifest();
-    throw new MigrationError(
-      MIGRATION_ERROR_CODES.verificationFailed,
-      `Migration refusée : le manifeste relu depuis le support ne rend pas les octets inscrits. Le volume reste NON IDENTIFIÉ plutôt que présenté comme migré ; le journal de reprise subsiste.`,
-      { expectedBytes: octets.byteLength, observedBytes: relu?.byteLength ?? null },
-    );
-  }
-  return manifest;
+  if (memesOctets(relu, octets)) return;
+  await target.revokeManifest();
+  throw new MigrationError(
+    MIGRATION_ERROR_CODES.verificationFailed,
+    `Migration refusée : le manifeste relu depuis le support ne rend pas les octets inscrits. Le volume reste NON IDENTIFIÉ plutôt que présenté comme migré ; le journal de reprise subsiste.`,
+    { expectedBytes: octets.byteLength, observedBytes: relu?.byteLength ?? null },
+  );
 }
 
 /**
