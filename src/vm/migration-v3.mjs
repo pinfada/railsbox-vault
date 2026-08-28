@@ -199,6 +199,27 @@ async function scellerLaCharge({ brut, disposition, scellement, generation }) {
  * @returns {Promise<{ secteursDeplaces: number, secteursScelles: number,
  *                     secteursDejaScelles: number, tailleSupport: number }>}
  */
+/**
+ * Écrit l'en-tête v3, EN DERNIER, et le rend durable.
+ *
+ * Il est le seul octet qui dise « ce fichier est un volume v3 » ; l'écrire avant la fin ferait
+ * passer pour v3 un fichier dont la charge est encore en clair, et un lecteur le croirait sur parole
+ * jusqu'à ce qu'un sceau le détrompe.
+ *
+ * Il porte la MARQUE de scellement complet, et ici les deux partent ensemble. À la CRÉATION, elles
+ * ne le peuvent pas : l'en-tête doit précéder le scellement — il faut connaître la disposition pour
+ * savoir où écrire les sceaux —, si bien que la marque vient après, seule. La conversion, elle,
+ * écrit l'en-tête quand tout est déjà scellé. Sans cette marque, l'ouvreur refuserait par
+ * `VAULT_STORAGE_VOLUME_INCOMPLET` le volume qu'on vient de migrer.
+ */
+async function poserLEnTeteEnDernier({ brut, tailleLogique, identifiantVolume }) {
+  await brut.write(
+    0,
+    encoderEnTeteV3({ tailleLogique, identifiantVolume, scellementComplet: true }),
+  );
+  await brut.flush();
+}
+
 export async function convertirEnV3({
   brut,
   scellement,
@@ -231,12 +252,7 @@ export async function convertirEnV3({
   }
 
   const scelles = await scellerLaCharge({ brut, disposition, scellement, generation });
-
-  // L'EN-TÊTE EN DERNIER. Il est le seul octet qui dise « ce fichier est un volume v3 » ; l'écrire
-  // avant la fin ferait passer pour v3 un fichier dont la charge est encore en clair, et un lecteur
-  // le croirait sur parole jusqu'à ce qu'un sceau le détrompe.
-  await brut.write(0, encoderEnTeteV3({ tailleLogique, identifiantVolume }));
-  await brut.flush();
+  await poserLEnTeteEnDernier({ brut, tailleLogique, identifiantVolume });
 
   return Object.freeze({
     secteursDeplaces,
