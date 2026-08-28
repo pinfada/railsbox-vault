@@ -180,7 +180,13 @@ async function start() {
   // iframe inter-origine qui n'a PAS opté pour COEP : le cas se produit dès qu'une origine
   // applicative n'est pas maîtrisée par l'éditeur de la coquille.
   const isolationCadre = parameters.get("isolationCadre") === "aucune" ? null : isolation;
-  frame.src = appDocumentUrl(topologyId, { isolation: isolationCadre });
+  // `?documentApplicatif=` remplace le document encadré sans rien changer d'autre : ni l'origine
+  // attendue, ni la sandbox, ni la liste d'admission. Le spike #46 s'en sert pour encadrer, tour à
+  // tour, DEUX applications servies par la même origine applicative, et mesurer si la coquille les
+  // distingue. Si elle ne les distingue pas, la liste d'admission du port restreint est par
+  // ORIGINE, jamais par application — c'est le fait que l'issue #46 doit établir.
+  const documentApplicatif = parameters.get("documentApplicatif");
+  frame.src = documentApplicatif ?? appDocumentUrl(topologyId, { isolation: isolationCadre });
   frame.addEventListener("load", () => {
     diagnostics.cadreApplicatif = "charge";
     publishDiagnostics();
