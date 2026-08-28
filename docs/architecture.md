@@ -3,7 +3,7 @@
 Cette architecture organise les questions à prouver ; elle ne fige pas encore une implémentation.
 
 ```text
-Publication statique — DEUX origines (ADR 0002)
+Publication statique — DEUX origines (ADR 0002), UNE PAR APPLICATION au-delà de la première (ADR 0018)
 ├── origine de confiance : coquille + runtime RailsBox Vault versionné
 └── origine applicative  : documents et assets de l'application Rails versionnée
             │
@@ -116,10 +116,17 @@ erreurs que le guest sait représenter. Ses migrations métier restent distincte
 format Vault.
 
 Son document vit sur l'origine applicative. Elle y dispose pleinement de son propre stockage —
-cookies de session, IndexedDB, cache, Service Worker hors ligne — et de rien d'autre. Une
-conséquence reste à trancher : sur une origine applicative partagée, deux applications se lisent
-mutuellement. Origine par application ou partitionnement explicite est un travail découvert du spike
-#35.
+cookies de session, IndexedDB, cache, Service Worker hors ligne — et de rien d'autre.
+
+La conséquence que le spike #35 avait laissée ouverte est tranchée par
+l'[ADR 0018](decisions/0018-isolation-entre-applications.md) : sur une origine applicative partagée,
+deux applications se lisent **et s'effacent** mutuellement, et aucun partitionnement par chemin ne
+l'empêche. **Le navigateur ne cloisonne que par origine.** La règle est donc **une origine par
+application** — un sous-domaine du domaine propre exigé par l'ADR 0017, jamais un port, qui ne
+cloisonne pas les cookies —, et elle s'applique **dès qu'il y a plus d'une application**. Le MVP
+n'en publie qu'une : la limite y est acceptée explicitement, faute de seconde application à lire. La
+seule borne réelle par chemin est la portée d'un Service Worker ; elle protège l'interception réseau
+et aucun stockage.
 
 ### Services optionnels
 
@@ -132,6 +139,15 @@ projet en étant des chemins ; les options mesurées — domaine propre avec sou
 compte, ou hébergeur distinct pour une origine — sont comparées dans l'ADR 0002 et le choix
 appartient à la publication #45. Un changement d'origine rend l'OPFS de l'ancienne inatteignable :
 il se traite comme une migration exigeant un export préalable, pas comme un détail de déploiement.
+
+**Deux est un plancher, pas un plafond.**
+L'[ADR 0018](decisions/0018-isolation-entre-applications.md) fait de l'isolation entre applications
+une frontière d'origine : au-delà de la première application, chacune prend son sous-domaine, donc
+son enregistrement DNS, son certificat et son arbre publié. Ce coût n'est pas seulement celui de
+l'hébergeur : `shellContentSecurityPolicy()` rend `frame-src 'self' <origine applicative>`, mesuré
+appliqué sur les trois moteurs, si bien qu'**ajouter une application oblige à republier la
+coquille**. Un joker de sous-domaine dans `frame-src` est refusé par le même ADR. Le MVP ne publie
+qu'une application et ne paie donc rien de tout cela.
 
 L'hébergement n'a en revanche **aucun en-tête d'isolation à servir**.
 L'[ADR 0010](decisions/0010-isolation-multi-origine.md) établit qu'aucun

@@ -242,8 +242,18 @@ ci-dessous reste donc fermé.
 Ce que la frontière d'origine ne couvre pas :
 
 - une publication compromise de la coquille elle-même (`SEC-UPDATE-001`, #45) ;
-- deux applications partageant l'origine applicative, qui se lisent mutuellement tant qu'une origine
-  par application ou un partitionnement explicite n'est pas décidé ;
+- deux applications partageant l'origine applicative, qui se lisent — et s'effacent — mutuellement.
+  Le point est désormais **mesuré et tranché** par
+  l'[ADR 0018](docs/decisions/0018-isolation-entre-applications.md) : sur une même origine, quatorze
+  sondes sur dix-sept aboutissent d'une application à l'autre sur les trois moteurs, y compris
+  l'effacement du répertoire OPFS et la désinscription du Service Worker. Aucun partitionnement par
+  chemin, par nom de répertoire OPFS ou par nom de base IndexedDB n'y change quoi que ce soit : **le
+  navigateur ne cloisonne que par origine**. La règle décidée est donc **une origine par
+  application** — un sous-domaine, jamais un port ni un chemin — et le MVP accepte explicitement la
+  limite parce qu'il ne publie **qu'une** application, donc sans victime possible. **Condition de
+  réouverture : une seconde application publiée.** La seule borne réelle par chemin est la portée
+  d'un Service Worker, elle ne couvre que le réseau, et elle ne doit jamais être citée comme une
+  isolation de stockage ;
 - le port restreint une fois transféré : il est joignable par tout script du document applicatif, et
   sa liste d'admission doit rester minimale.
 
