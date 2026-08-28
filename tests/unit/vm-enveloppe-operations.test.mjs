@@ -330,6 +330,47 @@ test("les deux refus font EXACTEMENT le même nombre d'appels AEAD", async () =>
   assert.ok(comptes[0] > 0, "aucun appel : la mesure ne mesure rien");
 });
 
+test("une ouverture RÉUSSIE ne dit pas QUEL emplacement a répondu", async () => {
+  // La campagne de mutation de #21 a établi que l'absence de court-circuit ne sert PAS à rendre les
+  // deux échecs indiscernables — un échec parcourt la liste entière de toute façon. Ce qu'elle sert
+  // est ici : sans elle, une ouverture qui aboutit au premier emplacement coûterait un appel AEAD
+  // et une qui aboutit au dernier en coûterait huit, si bien que le TEMPS d'un succès désignerait
+  // la clé employée. La garde est donc réelle, mais pas là où on la croyait, et c'est la mutation
+  // qui l'a dit.
+  const { support, kek } = await enveloppeNeuve();
+  const derniere = suiteDOctets(0x44, 32);
+  for (let rang = 1; rang < EMPLACEMENTS_MAX; rang += 1) {
+    await ajouterEmplacement({
+      support,
+      identifiantVolume: VOLUME_A,
+      kek,
+      kekNouvelle: rang === EMPLACEMENTS_MAX - 1 ? derniere : suiteDOctets(rang, 32),
+    });
+  }
+
+  const comptes = [];
+  const vrai = SubtleCrypto.prototype.decrypt;
+  for (const essai of [kek, derniere]) {
+    let appels = 0;
+    SubtleCrypto.prototype.decrypt = function compter(...args) {
+      appels += 1;
+      return vrai.apply(this, args);
+    };
+    try {
+      await ouvrirEnveloppe({ support, identifiantVolume: VOLUME_A, kek: essai });
+    } finally {
+      SubtleCrypto.prototype.decrypt = vrai;
+    }
+    comptes.push(appels);
+  }
+  assert.equal(
+    comptes[0],
+    comptes[1],
+    "le coût d'un succès dépend du RANG de l'emplacement : il désigne la clé employée",
+  );
+  assert.ok(comptes[0] >= EMPLACEMENTS_MAX, "la liste entière doit être parcourue");
+});
+
 test("emplacement d'un AUTRE volume glissé dans la liste : mélange, avant toute clé de volume rendue", async () => {
   const cible = await enveloppeADeux();
   const etranger = await enveloppeNeuve({

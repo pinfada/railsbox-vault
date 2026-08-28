@@ -317,16 +317,63 @@ valable ».
 
 ### Ce qui est mesuré de l'indiscernabilité, et ce qui ne l'est pas
 
-**Mesuré** : le nombre d'invocations de `SubtleCrypto.decrypt`. L'ouverture essaie TOUS les
-emplacements sans court-circuit, si bien qu'une clé révoquée et une clé inconnue font exactement le
-même nombre d'appels sur le même fichier. `vm-enveloppe-operations.test.mjs` les compte, et
-l'égalité est l'assertion.
+**Mesuré** : le nombre d'invocations de `SubtleCrypto.decrypt`. Une clé révoquée et une clé inconnue
+font exactement le même nombre d'appels sur le même fichier, et `vm-enveloppe-operations.test.mjs`
+les compte — l'égalité est l'assertion.
+
+**Une correction due à la MUTATION, et elle porte sur le raisonnement, pas sur le code.** Cet ADR
+attribuait d'abord cette indiscernabilité à l'ABSENCE DE COURT-CIRCUIT dans la boucle d'essai. La
+campagne de mutation l'a réfutée : rétablir le court-circuit ne cassait aucune épreuve de refus, et
+la raison est évidente une fois dite — **un échec parcourt la liste entière de toute façon**,
+puisqu'il n'y a jamais de correspondance. Les deux refus sont indiscernables sans que le
+court-circuit y soit pour quoi que ce soit.
+
+Ce que l'absence de court-circuit achète est réel, mais ailleurs : **une ouverture qui RÉUSSIT coûte
+le même nombre d'appels, que la clé occupe le premier ou le dernier emplacement.** Avec
+court-circuit, un succès au premier coûterait un appel et un succès au huitième en coûterait huit —
+le temps d'un déverrouillage désignerait alors la clé employée, sur un fichier dont le nombre
+d'emplacements est public. Une épreuve mesure désormais cela, et elle tue la mutation ; le
+commentaire du code dit la bonne raison plutôt que l'ancienne.
 
 **Non mesuré, et non promis** : le temps d'horloge. Ce dépôt ne maîtrise ni l'implémentation de
 WebCrypto, ni les effets de cache, ni l'ordonnancement du moteur. La mesure ci-dessous montre
 d'ailleurs qu'un SUCCÈS et un REFUS ne prennent pas le même temps — le succès ajoute la vérification
 de la racine —, et cela n'a pas à être caché : réussir ou échouer est déjà connu de celui qui
 présente la clé. Ce qui doit rester indiscernable, ce sont les deux ÉCHECS entre eux.
+
+## La campagne de mutation
+
+Chaque garde a été RÉELLEMENT retirée ou affaiblie, la suite relancée, et le résultat écrit. Une
+garde qu'aucune épreuve ne tue n'est pas une garde — c'est la leçon que l'ADR 0014 a payée sur un
+oracle devenu décoratif. Treize mutations, treize tuées, mais pas du premier coup : deux ont survécu
+au premier passage, et ce sont elles qui ont le plus appris.
+
+| #   | Garde mutée                                                | Verdict | Ce qui la tue                                                    |
+| --- | ---------------------------------------------------------- | ------- | ---------------------------------------------------------------- |
+| 1   | boucle d'essai sans court-circuit                          | tuée\*  | « une ouverture RÉUSSIE ne dit pas QUEL emplacement a répondu »  |
+| 2   | pas de repli quand la clé est refusée sur la page courante | tuée    | 6 épreuves, dont la révocation et la rotation                    |
+| 3   | somme de contrôle de page                                  | tuée    | 4 épreuves de la matrice de coupures                             |
+| 4   | compte authentifié des emplacements                        | tuée    | « liste TRONQUÉE avec longueur rectifiée »                       |
+| 5   | empreinte de la suite ordonnée                             | tuée    | « emplacement d'un AUTRE volume », « liste RÉORDONNÉE »          |
+| 6   | identité de volume authentifiée                            | tuée    | 3 épreuves, du modèle jusqu'à la couche d'ouverture              |
+| 7   | refus de révoquer le dernier emplacement                   | tuée    | « révoquer le DERNIER emplacement est refusé »                   |
+| 8   | page écrite ENTIÈRE (remplissage compris)                  | tuée\*  | « une révocation ne laisse AUCUN octet de l'emplacement retiré » |
+| 9   | identifiant d'emplacement dans les données associées       | tuée    | 3 épreuves, dont les vecteurs figés                              |
+| 10  | écriture sur la page LIBRE                                 | tuée    | 4 épreuves, dont les trois de la matrice de coupures             |
+| 11  | vérification de la racine avant de rendre la clé           | tuée    | 6 épreuves de refus                                              |
+| 12  | code distinct pour « aucune enveloppe »                    | tuée    | 2 épreuves, unitaire et couche d'ouverture                       |
+| 13  | effacement du tampon de clé après ouverture                | tuée    | « l'ouvreur unique reçoit la clé, et rien d'autre ne la voit »   |
+
+**\* Les deux qui ont survécu au premier passage, et ce qu'elles ont corrigé.**
+
+- **n° 1** a survécu parce que la propriété que le code prétendait servir n'était pas celle qu'il
+  servait. Voir la section précédente : l'épreuve manquante a été écrite, et le raisonnement de cet
+  ADR corrigé avec elle. C'est la mutation qui a le plus rapporté, et elle n'a rien changé au code ;
+- **n° 8** a survécu parce que la MUTATION était mal conçue, pas la garde : elle injectait un résidu
+  qui n'existait jamais, donc ne mutait rien. Refaite comme le sinistre réel — n'écrire que le
+  préfixe utile de la page, laissant la queue de la version précédente sur le disque —, elle meurt
+  sur l'épreuve qui cherche les octets de l'emplacement révoqué. Une mutation qui survit doit
+  d'abord être soupçonnée elle-même.
 
 ## Mesures
 

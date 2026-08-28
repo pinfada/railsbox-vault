@@ -108,6 +108,22 @@ La décision #35 est prise (ADR 0002 : origine distincte pour le document applic
 interfaces persistantes ; #24 en réalise la version complète avant toute levée du gate « données
 sensibles ». Ordre des clés : #21 → #22 → #23, avec #25 avant qualification produit.
 
+**#21 livré le 28 août 2026** — l'enveloppe de clé est dans le produit
+([ADR 0020](decisions/0020-enveloppe-de-cle.md)) : un quatrième voisin `<volume>.cles` dans
+l'origine de confiance, deux pages alternées, jusqu'à huit emplacements portant chacun la clé de
+volume enveloppée sous AES-256-GCM avec identifiant de volume, identifiant d'emplacement, version de
+format, type et paramètres du dérivateur en données associées — jamais `AES-KW`. Créer, ouvrir,
+ajouter, remplacer et révoquer sont atomiques à chaque rang et sous quatre sinistres ; le fichier de
+volume reste identique à l'octet après chaque rotation ; une clé révoquée et une clé inconnue
+rendent le même refus, au même nombre d'appels AEAD près ; un volume sans enveloppe est refusé par
+un code distinct. Les vecteurs figés sont reproduits octet pour octet par le chemin de production,
+la frontière tourne sur les trois moteurs, et treize gardes ont été mutées puis tuées — dont une qui
+a corrigé le raisonnement de l'ADR au lieu du code. **Deux défauts trouvés par exécution** :
+l'alternance de pages laissait une clé révoquée rouvrir l'état précédent, et une écriture déchirée
+faisait perdre une clé légitime. Reste : #22 (dérivation d'une KEK), #23 (récupération et révocation
+d'urgence), #24 (interface), et l'ancrage monotone hors du fichier, sans lequel un retour arrière
+complet ressuscite une clé révoquée.
+
 #52 est tranchée par l'[ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md) : la CSP de
 la coquille n'est **pas** élargie — `worker-src` reste `'self'` — parce que la mesure a montré
 qu'une boucle d'ordonnancement fournie par Vault couvre les trois moteurs sans elle. La CSP possède

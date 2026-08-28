@@ -150,11 +150,20 @@ async function lireFichier(support, contexte) {
 /**
  * Essaie TOUS les emplacements d'une page, sans court-circuit, et rend la DEK du premier qui ouvre.
  *
- * L'absence de court-circuit est la propriété : une clé RÉVOQUÉE et une clé INCONNUE parcourent
- * exactement le même nombre d'emplacements, donc font exactement le même nombre d'appels AEAD. Ce
- * qui est mesuré est ce nombre (`vm-enveloppe-operations.test.mjs` compte les appels à
- * `SubtleCrypto.decrypt`) ; ce qui ne l'est pas est le temps interne de WebCrypto, que ce dépôt ne
- * prétend pas maîtriser — l'ADR 0020 le dit plutôt que de laisser croire à une garantie de temps.
+ * **Ce que l'absence de court-circuit achète, et ce qu'elle n'achète pas.** Elle n'achète PAS
+ * l'indiscernabilité des deux refus : un échec parcourt la liste entière de toute façon, puisqu'il
+ * n'y a jamais de correspondance. La campagne de mutation de l'ADR 0020 l'a établi en rétablissant
+ * le court-circuit sans qu'aucune épreuve de refus ne bronche — la première rédaction de ce
+ * commentaire se trompait.
+ *
+ * Elle achète ceci, qui est réel : **une ouverture qui RÉUSSIT coûte le même nombre d'appels, que
+ * la clé occupe le premier ou le dernier emplacement.** Avec court-circuit, un succès au premier
+ * coûterait un appel et un succès au huitième en coûterait huit ; le temps d'un déverrouillage
+ * désignerait la clé employée, sur un fichier dont le nombre d'emplacements est public.
+ *
+ * Ce qui est mesuré est ce nombre d'appels (`vm-enveloppe-operations.test.mjs` compte les
+ * invocations de `SubtleCrypto.decrypt`, à l'échec comme au succès) ; ce qui ne l'est pas est le
+ * temps interne de WebCrypto, que ce dépôt ne prétend pas maîtriser.
  */
 async function developperDansLaPage(page, kek) {
   let trouve = null;

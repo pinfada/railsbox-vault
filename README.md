@@ -83,6 +83,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [Spike #45 — où publier les deux origines, et comment vérifier ce qui est servi](docs/spikes/0045-chaine-de-publication.md)
 - [ADR 0018 — le navigateur ne cloisonne le stockage que par origine : une origine par application dès la seconde, MVP mono-application accepté](docs/decisions/0018-isolation-entre-applications.md)
 - [Spike #46 — ce que deux applications voient l'une de l'autre selon la topologie d'origine](docs/spikes/0046-isolation-entre-applications.md)
+- [ADR 0020 — l'enveloppe de clé vit hors du volume, en deux pages alternées, et une révocation retire l'emplacement](docs/decisions/0020-enveloppe-de-cle.md)
 
 ## Licence
 
