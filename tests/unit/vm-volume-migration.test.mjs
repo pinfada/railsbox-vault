@@ -772,7 +772,9 @@ test("la chaîne 1 → 3 aboutit : le volume est CONVERTI et rend le même clair
     expectations: attentes({
       supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
     }),
-    consent: CONSENTEMENT,
+    // Une étape DESTRUCTIVE exige une sauvegarde VÉRIFIÉE : un consentement nommé assume le
+    // risque, il ne le répare pas.
+    backup: { source: await sauvegardeDe(contenu()) },
     cle: CLE_DE_TEST,
   });
 
@@ -812,6 +814,7 @@ test("migrer SANS CLÉ est refusé, et le volume reste non identifié plutôt qu
   // révoqué, ce que l'ADR 0011 exige d'une migration interrompue.
   const octets = contenu();
   const cible = creerCible({ volume: octets });
+  const sauvegarde = { source: await sauvegardeDe(contenu()) };
   await assert.rejects(
     () =>
       migrateVolume({
@@ -819,7 +822,7 @@ test("migrer SANS CLÉ est refusé, et le volume reste non identifié plutôt qu
         expectations: attentes({
           supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
         }),
-        consent: CONSENTEMENT,
+        backup: sauvegarde,
       }),
     (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.cleRequise),
   );
@@ -838,12 +841,16 @@ test("une migration v1 → v3 COUPÉE pendant la conversion REPREND, et rend le 
   // L'épreuve coupe à CHAQUE rang d'écriture du volume et exige, à chaque fois, que la reprise
   // aboutisse et rende le clair d'origine.
   const attendu = contenu();
+  // Une étape DESTRUCTIVE exige une sauvegarde VÉRIFIÉE : un consentement nommé assume le risque,
+  // il ne le répare pas. La même archive sert à chaque tentative — elle décrit l'état de DÉPART,
+  // qui est le même à chaque fois.
+  const sauvegarde = { source: await sauvegardeDe(contenu()) };
   const options = (cible) => ({
     target: cible,
     expectations: attentes({
       supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
     }),
-    consent: CONSENTEMENT,
+    backup: sauvegarde,
     cle: CLE_DE_TEST,
   });
 
@@ -975,7 +982,9 @@ test("une écriture ACQUITTÉE restée dans le journal v1 est REPORTÉE avant la
     expectations: attentes({
       supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
     }),
-    consent: CONSENTEMENT,
+    // Une étape DESTRUCTIVE exige une sauvegarde VÉRIFIÉE : un consentement nommé assume le
+    // risque, il ne le répare pas.
+    backup: { source: await sauvegardeDe(contenu()) },
     cle: CLE_DE_TEST,
   });
   assert.equal(rapport.migrated, true);
@@ -1024,7 +1033,32 @@ test("un journal de génération ILLISIBLE fait REFUSER la migration, volume int
   abime[57] ^= 0x01;
   const octets = contenu();
   const cible = creerCible({ volume: octets, generationBytes: abime });
+  const sauvegarde = { source: await sauvegardeDe(contenu()) };
 
+  await assert.rejects(
+    () =>
+      migrateVolume({
+        target: cible,
+        expectations: attentes({
+          supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
+        }),
+        backup: sauvegarde,
+        cle: CLE_DE_TEST,
+      }),
+    (erreur) => isMigrationError(erreur, MIGRATION_ERROR_CODES.journalMalformed),
+  );
+  assert.deepEqual([...cible.etat.volume], [...contenu()], "aucun octet du volume n'a bougé");
+  assert.notEqual(cible.etat.generationBytes, null, "le journal n'est pas écarté non plus");
+});
+
+test("une étape DESTRUCTIVE n'accepte pas un simple consentement : il faut une sauvegarde vérifiée", async () => {
+  // Les migrations v1 → v2 réécrivaient un manifeste : un exploitant nommé pouvait raisonnablement
+  // en assumer le risque, puisqu'aucun octet du volume ne bougeait. La migration v2 → v3 déplace la
+  // charge entière et la rechiffre — une écriture déchirée pendant la conversion n'est réparable
+  // que par la sauvegarde. « J'assume » ne répare rien, et la revue de #110 a relevé qu'une chaîne
+  // quelconque dans `acknowledgedBy` suffisait à engager ce geste-là.
+  const octets = contenu();
+  const cible = creerCible({ volume: octets });
   await assert.rejects(
     () =>
       migrateVolume({
@@ -1035,8 +1069,40 @@ test("un journal de génération ILLISIBLE fait REFUSER la migration, volume int
         consent: CONSENTEMENT,
         cle: CLE_DE_TEST,
       }),
-    (erreur) => isMigrationError(erreur, MIGRATION_ERROR_CODES.journalMalformed),
+    (erreur) => {
+      assert.ok(isMigrationError(erreur, MIGRATION_ERROR_CODES.backupRequired), erreur.message);
+      assert.match(erreur.message, /rechiffre|réécrit/i, "le refus dit ce que l'étape fait");
+      return true;
+    },
   );
-  assert.deepEqual([...cible.etat.volume], [...contenu()], "aucun octet du volume n'a bougé");
-  assert.notEqual(cible.etat.generationBytes, null, "le journal n'est pas écarté non plus");
+  assert.deepEqual([...cible.etat.volume], [...contenu()], "aucun octet n'a bougé");
+  assert.deepEqual(cible.gestes, ["inspect", "read-journal", "read-manifest"], "rien n'est ouvert");
+});
+
+test("la même chaîne aboutit avec une SAUVEGARDE VÉRIFIÉE", async () => {
+  const octets = contenu();
+  const cible = creerCible({ volume: octets });
+  const rapport = await migrateVolume({
+    target: cible,
+    expectations: attentes({
+      supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
+    }),
+    backup: { source: await sauvegardeDe(contenu()) },
+    cle: CLE_DE_TEST,
+  });
+  assert.equal(rapport.migrated, true);
+  assert.equal(rapport.evidence.kind, "sauvegarde-verifiee");
+});
+
+test("une migration NON destructive se contente encore d'un consentement nommé", async () => {
+  // Le durcissement porte sur ce qui réécrit le volume, pas sur tout. Une v1 → v2 ne touche aucun
+  // octet : exiger d'elle une sauvegarde vérifiée serait une cérémonie sans objet.
+  const cible = creerCible();
+  const rapport = await migrateVolume({
+    target: cible,
+    expectations: attentes(),
+    consent: CONSENTEMENT,
+  });
+  assert.equal(rapport.migrated, true);
+  assert.equal(rapport.evidence.kind, "consentement-nomme");
 });

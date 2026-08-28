@@ -61,6 +61,15 @@ const STEPS = Object.freeze([
   Object.freeze({
     from: MIN_WRITER_FORMAT_VERSION,
     to: MIN_VOLUME_FORMAT_VERSION,
+    /**
+     * DESTRUCTIVE : ce pas réécrit le volume au lieu de réécrire un manifeste.
+     *
+     * La distinction commande la PREUVE exigée avant d'engager la migration. Un pas qui ne touche
+     * aucun octet peut être assumé par un exploitant nommé : si quelque chose tourne mal, le volume
+     * est encore là. Celui-ci déplace la charge entière et la rechiffre ; une écriture déchirée
+     * pendant la conversion n'est réparable que par la sauvegarde, et « j'assume » ne répare rien.
+     */
+    destructive: true,
     summary:
       "v3 : le volume est CHIFFRÉ. Chaque secteur est scellé par AES-256-GCM sous une clé de volume, avec son identité logique en données associées (ADR 0015), et le fichier gagne un en-tête et une région d'authentification de 34 octets par secteur (ADR 0016).",
     /**

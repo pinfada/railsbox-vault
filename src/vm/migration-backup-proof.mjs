@@ -119,8 +119,31 @@ async function verifierSauvegarde({ backend, backup, manifest, blockBytes, expec
  * preuve déjà retenue et inscrite dans le journal : redemander une archive au moment de la reprise
  * transformerait une interruption en impasse.
  */
-export function assertPreuveDisponible({ journal, backup, consentement, fromVersion, toVersion }) {
-  if (journal !== null || backup !== null || consentement !== null) return;
+export function assertPreuveDisponible({
+  journal,
+  backup,
+  consentement,
+  fromVersion,
+  toVersion,
+  chaine = [],
+}) {
+  // Une REPRISE se fonde sur la preuve déjà retenue : la mutation a commencé, et redemander une
+  // sauvegarde de l'état COURANT n'aurait pas de sens — cet état est justement celui qu'on répare.
+  if (journal !== null) return;
+
+  // Un pas DESTRUCTIF réécrit le volume : seule une sauvegarde VÉRIFIÉE peut en réparer les dégâts,
+  // et un consentement nommé ne le peut pas. La revue de #110 a relevé que n'importe quelle chaîne
+  // dans `acknowledgedBy` suffisait à engager ce geste-là.
+  const destructifs = chaine.filter((etape) => etape.destructive === true);
+  if (destructifs.length > 0 && backup === null) {
+    throw new MigrationError(
+      MIGRATION_ERROR_CODES.backupRequired,
+      `Migration refusée : l'étape ${destructifs[0].from} → ${destructifs[0].to} RÉÉCRIT le volume — elle en déplace la charge et la rechiffre —, et une sauvegarde VÉRIFIÉE est le seul remède si elle tourne mal. Un consentement nommé n'en est pas un : il assume le risque, il ne le répare pas. Fournir une archive de sauvegarde à vérifier. Aucune ouverture n'est tentée.`,
+      { fromVersion, toVersion, destructiveFrom: destructifs[0].from },
+    );
+  }
+
+  if (backup !== null || consentement !== null) return;
   throw new MigrationError(
     MIGRATION_ERROR_CODES.backupRequired,
     `Migration refusée : « export de sauvegarde obligatoire avant migration irréversible » (docs/release-policy.md). Fournir une archive de sauvegarde à vérifier, ou un consentement explicite nommé. Aucune ouverture n'est tentée.`,
