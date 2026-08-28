@@ -170,29 +170,63 @@ et tester.
   de l'ADR 0014 — et les vecteurs figés `tests/vectors/format-chiffre-v1.json`, que #18 devra
   reproduire octet pour octet. La borne de forgerie est calculée, pas qualifiée : ≈ 2^-122,6 par
   tentative ;
-- `SEC-GEN-001` — rejeu, troncature et mélange de générations sont refusés. **Toujours NON EXERCÉ
-  par le produit : spécifié par #17, et tenu par #19.** #18 en a posé la moitié matérielle — la
-  racine v3 authentifie séquence, génération, nombre d'entrées, longueur de charge et empreinte de
-  la suite ordonnée, et une génération dont un enregistrement ne s'ouvre plus est refusée à
-  l'ouverture — mais les contrôles de SÉQUENCE, eux, ne sont présentés par aucun chemin :
-  `generationMinimale` et `sequenceMinimale` valent `null` partout, et l'ADR 0016 dit pourquoi pour
-  le volume (le lecteur lit la génération d'un secteur dans le sceau voisin, donc un minimum qui
-  viendrait de là ne prouverait rien). Ce qui manque est nommé, pas masqué. L'ADR 0015 le décompose
-  en trois propriétés distinctes, chacune avec son refus typé. **Rejeu** : la séquence et la
-  génération sont authentifiées dans l'en-tête de la racine, et une racine ou un bloc antérieurs
-  sont refusés (`VAULT_CRYPTO_REJEU`) — mais seulement au regard d'un minimum de séquence que
-  l'appelant présente, et ce minimum ne peut venir, entre deux sessions, que du support lui-même :
-  **le retour arrière complet d'un support cohérent n'est pas détectable** et reste couvert par le
-  seul partitionnement d'origine de l'ADR 0002. **Troncature** : l'en-tête authentifié porte le
-  nombre d'entrées et la longueur de charge, dérivés des entrées au moment de sceller ; une
-  génération incomplète — ou augmentée — est refusée (`VAULT_CRYPTO_TRONCATURE`). **Mélange** : la
-  racine scelle l'empreinte SHA-256 de la **suite ordonnée** de ses entrées (adresse, longueur,
-  rang, étiquette du bloc), si bien qu'une entrée authentique d'une autre génération, ou un simple
-  réordonnancement, est refusé (`VAULT_CRYPTO_MELANGE`). Ces trois classements sont posés **après**
-  vérification de l'étiquette, donc sur un en-tête authentique : c'est pourquoi l'en-tête est les
-  données associées et l'empreinte le clair. Ce qu'ils ne couvrent pas : le volume au-delà du
-  journal — après un point de contrôle, un volume porte légitimement des secteurs de générations
-  différentes, et ce n'est pas un mélange ;
+- `SEC-GEN-001` — rejeu, troncature et mélange de générations sont refusés. **EXERCÉ par le produit
+  depuis #19** ([ADR 0019](docs/decisions/0019-fraicheur-du-volume.md)), pour ce qui peut l'être —
+  et ce qui ne le peut pas est nommé plus bas, pas masqué. #18 en avait posé la moitié matérielle :
+  la racine v3 authentifie séquence, génération, nombre d'entrées, longueur de charge et empreinte
+  de la suite ordonnée. Ce qui manquait était l'autre moitié, et elle manquait en silence — les
+  contrôles de SÉQUENCE n'étaient présentés par AUCUN chemin, `generationMinimale` et
+  `sequenceMinimale` valant `null` partout, si bien que les refus de rejeu étaient du code mort. #19
+  les arme. Quatre propriétés, chacune avec son refus typé :
+
+  **Rejeu, en session.** L'ouvreur unique lit la dernière racine validée et PRÉSENTE le plancher de
+  séquence à chaque vérification de racine, ainsi qu'un plancher de génération à chaque
+  enregistrement relu. Une racine ou un enregistrement authentiques mais antérieurs sont refusés
+  (`VAULT_CRYPTO_REJEU`), après vérification de l'étiquette, donc sur des valeurs authentiques.
+  Aucun chemin de production ne passe plus `null` pour une racine ni pour un enregistrement ; le
+  seul `null` restant — l'ouverture du témoin lui-même — est justifié dans l'ADR 0019 plutôt que
+  remplacé par un contrôle décoratif. Preuve : `tests/unit/vm-generation-sequence.test.mjs`, avec
+  témoin positif et mutation de chaque garde.
+
+  **Troncature et augmentation.** L'en-tête authentifié porte le nombre d'entrées et la longueur de
+  charge, dérivés des entrées au moment de sceller ; une génération incomplète — ou augmentée — est
+  refusée (`VAULT_CRYPTO_TRONCATURE`), et le refus traverse la couche de stockage avec sa cause.
+
+  **Mélange.** La racine scelle l'empreinte SHA-256 de la **suite ordonnée** de ses entrées
+  (adresse, longueur, rang, étiquette du bloc), si bien qu'une entrée authentique d'une autre
+  génération, ou un simple réordonnancement, est refusé (`VAULT_CRYPTO_MELANGE`).
+
+  **Fraîcheur de la région d'authentification.** La racine scelle en outre, depuis #19, une
+  empreinte de la région d'authentification du volume, rescellée sous sa propre génération à chaque
+  écriture de racine. À l'ouverture, la région relue est confrontée à cette empreinte **avant toute
+  lecture de secteur**. Un secteur ramené à une version antérieure — quadruplet complet remis en
+  place, donc authentique, ce que l'ADR 0015 nommait comme non détecté — est désormais refusé.
+  Preuve : `tests/unit/vm-generation-fraicheur.test.mjs`, qui montre les deux moitiés du fait — le
+  secteur s'ouvre encore par le chemin non transactionnel, et l'ouverture transactionnelle le
+  refuse.
+
+  **Ce qui reste NON DÉTECTÉ, et qu'aucune formulation ne doit laisser croire couvert :**
+
+  - le **retour arrière complet du support** entre deux sessions. Un témoin de dernière séquence vue
+    vit à côté du volume (`<volume>.temoin`, scellé, écrit après la racine et sa barrière) et refuse
+    un volume dont la séquence est inférieure : cela ferme le retour arrière **partiel**, celui qui
+    ne l'emporte pas. Le témoin est dans la MÊME ORIGINE que le volume : qui peut reculer l'un peut
+    reculer l'autre. Il ne renforce pas la frontière de l'ADR 0002, il rend visibles les reculs
+    partiels. La détection du recul complet exige une ancre monotone hors du support, renvoyée
+    nommément à #21/#23 ; d'ici là elle reste couverte par le seul partitionnement d'origine de
+    l'ADR 0002. Cette limite est **exécutée** par la dernière assertion de
+    `tests/unit/vm-generation-fraicheur.test.mjs` : le volume, son journal et son témoin reculent
+    ensemble, et le volume rouvre ;
+  - le contenu du volume **entre deux points de contrôle** : la région ne change qu'au rangement, et
+    l'empreinte date cet état-là ;
+  - la **version du journal** n'est pas dans les données associées de la racine. Un octet retourné y
+    ferait passer une racine porteuse d'empreinte pour une racine d'avant #19 ; le décodeur refuse
+    ce cas par cohérence (réserve non vierge sous un format qui la dit vide) et le témoin ferme le
+    reste, mais c'est une garde, pas une authentification ;
+  - un volume scellé par #18 s'ouvre **une fois** sans fraîcheur, le temps que sa première racine
+    neuve la pose. Le rapport d'ouverture publie cet état (`fraicheurRegion: "migree"`) au lieu de
+    le taire ;
+
 - `SEC-DURABLE-001` — aucune écriture n'est annoncée durable avant le flush effectif. Le spike #4 a
   établi que l'émulateur amont rend cet invariant **inatteignable** : son disque n'annonce pas de
   cache d'écriture, le guest n'émet donc jamais de barrière, et la commande FLUSH CACHE serait de

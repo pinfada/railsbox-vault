@@ -95,8 +95,16 @@ enregistrement du journal et chaque racine sont scellés sous la clé de volume 
 logique en données associées, les vecteurs de l'ADR 0015 sont reproduits octet pour octet par le
 chemin de production, la migration v2 → v3 reprend après une coupure à n'importe quelle écriture,
 l'archive porte le fichier chiffré tel quel et se restaure sans clé. Deux revues bloquantes ont été
-tenues avant la fusion groupée (jamais de `main` à mi-format). Reste #19 (séquence, fraîcheur de la
-région d'authentification, témoin de dernière séquence) puis #20.
+tenues avant la fusion groupée (jamais de `main` à mi-format).
+
+**#19 livré** — [ADR 0019](decisions/0019-fraicheur-du-volume.md) : `SEC-GEN-001` passe de NON
+EXERCÉ à **exercé**. Les planchers de séquence et de génération sont désormais PRÉSENTÉS par le
+chemin de production — jusque-là les refus de rejeu de #18 étaient du code mort —, la racine scelle
+une empreinte de la région d'authentification qui rend détectable le retour arrière d'un SECTEUR, et
+un témoin voisin (`<volume>.temoin`) rend détectable le retour arrière PARTIEL du support. Coût
+mesuré sur OPFS réel : 339 à 387 ms pour 512 Mio, soit 0,6 % du budget de reprise de l'ADR 0005. Le
+retour arrière COMPLET reste **nommé non détecté** — il exige une ancre hors du support, renvoyée à
+#23 — et une épreuve le montre plutôt que de l'écrire seulement. Reste : #20, la revue externe.
 
 ## 5 — Déverrouillage et origine de confiance
 

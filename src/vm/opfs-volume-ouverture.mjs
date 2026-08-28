@@ -20,7 +20,7 @@
 import { SECTOR_SIZE, assertBlockGeometry, isBlockGeometry } from "./block-geometry.mjs";
 import { BlockJournal } from "./block-journal.mjs";
 import { exigerCleDeVolume } from "./cle-de-volume.mjs";
-import { createFaultPlan } from "./fault-plan.mjs";
+import { FAULT_KINDS, createFaultPlan } from "./fault-plan.mjs";
 import { TEMOIN_OCTETS } from "./generation-fraicheur.mjs";
 import { GenerationStore } from "./generation-store.mjs";
 import { OpfsBlockBackend } from "./opfs-block-backend.mjs";
@@ -274,11 +274,19 @@ async function saisirSupport({ name, size, identifiantVolume, openHandle }) {
  */
 async function installerGenerationOuFermer(
   backend,
-  { name, size, scellement, openHandle, seuilPointDeControle },
+  { name, size, scellement, openHandle, seuilPointDeControle, fautesFraicheur },
 ) {
   try {
     backend.installerGeneration(
-      await ouvrirGeneration({ name, size, backend, scellement, openHandle, seuilPointDeControle }),
+      await ouvrirGeneration({
+        name,
+        size,
+        backend,
+        scellement,
+        openHandle,
+        seuilPointDeControle,
+        fautesFraicheur,
+      }),
     );
   } catch (cause) {
     await backend.close().catch(() => {});
@@ -297,6 +305,7 @@ async function ouvrirGeneration({
   scellement,
   openHandle,
   seuilPointDeControle,
+  fautesFraicheur,
 }) {
   const handle = await saisirVoisin(openHandle, generationJournalName(name), {
     operation: "open-generation",
@@ -320,7 +329,7 @@ async function ouvrirGeneration({
       scellement,
       handle,
       seuilPointDeControle,
-      fraicheur: sourceDeFraicheur({ name, backend, temoin }),
+      fraicheur: sourceDeFraicheur({ name, backend, temoin, fautes: fautesFraicheur }),
     });
   } catch (cause) {
     rendreSansMasquer(handle);
@@ -354,16 +363,51 @@ function rendreSansMasquer(handle) {
  * à chaque racine coûterait une ouverture OPFS par barrière du guest — un prix payé sur le chemin
  * même que `SEC-DURABLE-001` rend critique.
  */
-function sourceDeFraicheur({ name, backend, temoin }) {
+function sourceDeFraicheur({ name, backend, temoin, fautes }) {
   const nom = temoinSequenceName(name);
   return {
     regionOffset: backend.disposition.regionOffset,
     regionOctets: backend.disposition.regionOctets,
-    lireRegion: (offset, longueur) => backend.lireRegionAuth(offset, longueur),
+    lireRegion: async (offset, longueur) => {
+      const courte = fauteDeFraicheur(fautes, "read", { volume: nom, offset, longueur });
+      const octets = await backend.lireRegionAuth(offset, longueur);
+      // Une lecture COURTE programmée est rendue telle quelle : c'est `empreinteDeRegion` qui doit
+      // la refuser, et l'éprouver ici vérifie sa garde plutôt que de la contourner.
+      return courte === null ? octets : octets.subarray(0, Math.min(courte, octets.byteLength));
+    },
     lireTemoin: async () => lireTemoinDuSupport(temoin, nom),
-    ecrireTemoin: async (octets) => ecrireTemoinSurLeSupport(temoin, nom, octets),
+    ecrireTemoin: async (octets) => {
+      fauteDeFraicheur(fautes, "write", { volume: nom, offset: 0, longueur: octets.byteLength });
+      return ecrireTemoinSurLeSupport(temoin, nom, octets);
+    },
     fermer: () => temoin.close(),
   };
+}
+
+/**
+ * Consomme le plan de fautes des VOISINS DE FRAÎCHEUR, et traduit ce qu'il programme.
+ *
+ * Rend le nombre d'octets d'une lecture COURTE — que l'appelant applique lui-même —, ou lève l'état
+ * contractuel que la faute décrit. Aucun genre de faute n'est ignoré en silence : une faute
+ * programmée qui ne ferait rien rendrait une mesure creuse.
+ */
+function fauteDeFraicheur(fautes, operation, { volume, offset, longueur }) {
+  const faute = fautes.consume(operation);
+  if (faute === null) return null;
+  if (faute.kind === FAULT_KINDS.shortRead) return faute.bytes ?? Math.floor(longueur / 2);
+  if (faute.kind === FAULT_KINDS.partialWrite) {
+    throw writeCountFailure(faute.bytes ?? 0, {
+      requested: longueur,
+      volume,
+      offset,
+      operation: "write-temoin",
+    });
+  }
+  throw new StorageError(
+    STORAGE_ERROR_CODES.handleLost,
+    `Le voisin de fraîcheur « ${volume} » a disparu sous la session : faute programmée ${faute.kind}.`,
+    { volume, offset, operation, kind: faute.kind },
+  );
 }
 
 /**
@@ -508,6 +552,9 @@ function construireBackend({ name, saisi, scellement, journal, faults, flushDela
  *   dans l'en-tête ; à la réouverture il est confronté à celui du fichier.
  *   `openHandle` est le point d'injection du support : le vrai OPFS en production, un double
  *   déterministe dans les tests unitaires.
+ *   `fautesFraicheur` vise les VOISINS de fraîcheur (#19) — la région d'authentification et le
+ *   témoin — et il est SÉPARÉ de `faults`, qui vise les gestes du guest : mêler les deux décalerait
+ *   les occurrences de la matrice de coupures de #15.
  * @returns {Promise<OpfsBlockBackend>}
  */
 export async function openOpfsVolume({
@@ -517,6 +564,7 @@ export async function openOpfsVolume({
   identifiantVolume,
   journal = new BlockJournal(),
   faults = createFaultPlan(),
+  fautesFraicheur = createFaultPlan(),
   flushDelay = 0,
   openHandle = openOpfsSyncAccess,
   transactionnel = true,
@@ -541,6 +589,7 @@ export async function openOpfsVolume({
       scellement,
       openHandle,
       seuilPointDeControle,
+      fautesFraicheur,
     });
   }
 

@@ -177,6 +177,26 @@ export function armerInjecteur(point, { jeton } = {}) {
   return createFaultPlan(pointEnFautes(point));
 }
 
+/**
+ * Arme un plan de fautes visant les VOISINS DE FRAÎCHEUR d'un volume (#19, ADR 0019) : la lecture
+ * de la région d'authentification et l'écriture du témoin de séquence.
+ *
+ * Il est SÉPARÉ du plan qui vise le volume, et ce n'est pas une commodité. Les occurrences du plan
+ * du volume comptent les gestes du GUEST ; y mêler les lectures de région et les écritures de témoin
+ * décalerait chaque point de la matrice de #15, et les relevés de #15, #16 et #19 cesseraient d'être
+ * comparables point pour point. Deux plans, deux compteurs, une matrice inchangée.
+ *
+ * La garde est celle de l'injecteur d'arrêts, mot pour mot : ces fautes fabriquent des pannes, et un
+ * instrument de mesure ne doit jamais pouvoir s'armer hors de son harnais.
+ *
+ * @param {readonly import("./fault-plan.mjs").FaultSpec[]} specs
+ * @param {{ jeton?: string }} [options]
+ */
+export function armerFraicheur(specs, { jeton } = {}) {
+  exigerHarnaisResilience({ jeton });
+  return createFaultPlan(specs);
+}
+
 /** Description courte et stable d'un point, pour un compte rendu ou un message d'échec. */
 export function decrirePoint(point) {
   const octets =
