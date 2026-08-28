@@ -4,10 +4,12 @@
 - Date : 2026-08-25
 - Issue : #13 · Invariant : `VAULT-COMPAT-001` · Jalon 2
 
-> **Amendé le 2026-08-28 par l'[ADR 0016](0016-format-de-volume-v3-dispositions.md) (#18).** Une
-> étape v2 → v3 rejoint la chaîne : elle rechiffre le volume entier et l'agrandit de sa région
-> d'authentification — deux gestes qu'une cible à géométrie fixe ne sait pas faire, si bien qu'elle
-> est aujourd'hui DÉCLARÉE et refusée par `VAULT_MIGRATION_STEP_UNAVAILABLE`.
+> **Amendé le 2026-08-28 par l'[ADR 0016](0016-format-de-volume-v3-dispositions.md) (#18, #101).**
+> Une étape v2 → v3 rejoint la chaîne, et c'est la première qui touche les OCTETS : elle agrandit le
+> volume de sa région d'authentification, déplace la charge entière, puis scelle chaque secteur. La
+> chaîne ne change pas d'un geste, mais l'**avancement** devient nécessaire — le journal passe en
+> version 2 pour porter `{ etape, position }` —, parce qu'une reprise qui referait le déplacement
+> depuis le début corromprait le volume : la zone d'arrivée recouvre la zone de départ.
 
 ## Contexte
 
