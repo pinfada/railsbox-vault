@@ -105,9 +105,24 @@ export function dispositionV3(tailleLogique) {
   });
 }
 
-/** Taille du FICHIER qu'un volume logique occupe en v3. Publiée pour l'ouverture et le quota. */
+/** Taille du FICHIER qu'un volume logique occupe en v3. Publiee pour l'ouverture et le quota. */
 export function tailleSupportV3(tailleLogique) {
   return dispositionV3(tailleLogique).tailleSupport;
+}
+
+/**
+ * Taille du FICHIER d'un volume, selon son format.
+ *
+ * Elle existe parce que l'ARCHIVE porte un fichier, pas un volume logique (ADR 0016, decision 7) :
+ * jusqu'a v2 les deux coincidaient et personne n'avait a les distinguer ; en v3 le fichier porte en
+ * plus l'en-tete et la region d'authentification. La fonction est DERIVEE du format et de la
+ * geometrie, jamais recue d'un appelant : deux sources de verite divergeraient, et c'est l'archive
+ * qui deviendrait invérifiable.
+ *
+ * @param {{ formatVersion: number, tailleLogique: number }} volume
+ */
+export function tailleDeFichier({ formatVersion, tailleLogique }) {
+  return formatVersion < FORMAT_VOLUME_V3 ? tailleLogique : tailleSupportV3(tailleLogique);
 }
 
 function exigerAdresse(disposition, adresse) {

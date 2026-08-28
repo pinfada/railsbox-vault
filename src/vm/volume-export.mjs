@@ -29,12 +29,13 @@
 
 import {
   DIGEST_ALGORITHM,
-  MIN_VOLUME_FORMAT_VERSION,
+  MANIFEST_FORMAT_VERSION,
   createManifest,
   parseManifest,
   assertReadable,
 } from "./volume-manifest.mjs";
 import { createSha256Stream } from "./sha256-stream.mjs";
+import { tailleDeFichier } from "./volume-chiffre-format.mjs";
 import { ARCHIVE_ERROR_CODES, ArchiveError } from "./archive-errors.mjs";
 
 /** Marqueur binaire de tête : 8 octets ASCII, jamais modifiés. Reconnaît une archive avant tout. */
@@ -167,32 +168,28 @@ function assertContratDExport({ source, sink, blockBytes }) {
  * refus qu'il porte est d'une AUTRE NATURE : un manifeste qui décrit un autre volume que celui qu'on
  * s'apprête à lire est un état de format, refusé par un code typé, et non une faute d'appel.
  */
-/**
- * Refuse d'exporter un volume CHIFFRÉ par ce chemin (#18, ADR 0016).
- *
- * L'ADR 0016 décide que l'archive porte le fichier v3 TEL QUEL. Ce chemin ne sait pas le faire : sa
- * source lit par le chemin AUTORISÉ, qui déchiffre. Le laisser passer produirait une archive **en
- * clair** d'un volume chiffré — le chiffrement au repos annulé dès que le fichier quitte l'appareil,
- * sans que rien ne le dise. Le refus tombe AVANT la première passe, donc avant qu'un seul octet
- * n'ait été lu.
- */
-function refuserVolumeChiffre(base) {
-  if (base.formatVersion < MIN_VOLUME_FORMAT_VERSION) return base;
-  throw new ArchiveError(
-    ARCHIVE_ERROR_CODES.encryptedUnsupported,
-    `Export refusé : le volume est au format v${base.formatVersion}, donc CHIFFRÉ, et l'archive doit en porter le fichier TEL QUEL (ADR 0016). Ce chemin lit le volume par la lecture autorisée, qui déchiffre : il produirait une archive en clair, c'est-à-dire annulerait le chiffrement au repos. Une clé n'y changerait rien — c'est la lecture BRUTE qui manque, et elle est l'objet de #101.`,
-    { formatVersion: base.formatVersion, issue: 101 },
-  );
-}
-
 function accorderManifesteEtSource(manifest, source) {
   // Le manifeste est validé par #10 (objet, octets ou chaîne acceptés) avant tout usage.
-  const base = refuserVolumeChiffre(parseManifest(manifest));
-  if (base.geometry.volumeSize !== source.size) {
+  const base = parseManifest(manifest);
+  // La source porte le FICHIER, et le manifeste déclare la géométrie LOGIQUE. Jusqu'à v2 les deux
+  // coïncidaient ; en v3 le fichier porte en plus l'en-tête et la région d'authentification, et
+  // c'est `tailleDeFichier` qui fait le pont (ADR 0016, décision 7). Comparer la source à la
+  // géométrie logique refuserait tout volume chiffré ; ne rien comparer laisserait passer une
+  // archive dont le contenu ne correspond à aucun volume descriptible.
+  const attendue = tailleDeFichier({
+    formatVersion: base.formatVersion,
+    tailleLogique: base.geometry.volumeSize,
+  });
+  if (attendue !== source.size) {
     throw new ArchiveError(
       ARCHIVE_ERROR_CODES.geometryMismatch,
-      `Export refusé : le manifeste déclare ${base.geometry.volumeSize} octet(s) mais la source en porte ${source.size}.`,
-      { manifestVolumeSize: base.geometry.volumeSize, sourceSize: source.size },
+      `Export refusé : le manifeste décrit un volume de ${base.geometry.volumeSize} octet(s) au format v${base.formatVersion}, dont le fichier fait ${attendue} octet(s), mais la source en porte ${source.size}.`,
+      {
+        manifestVolumeSize: base.geometry.volumeSize,
+        formatVersion: base.formatVersion,
+        expectedFileSize: attendue,
+        sourceSize: source.size,
+      },
     );
   }
   return base;
@@ -404,11 +401,33 @@ function accorderManifesteEtContenu(header, { expectations, enforceCompatibility
   }
 
   const contentLength = header.content.length;
-  if (contentLength !== manifest.geometry.volumeSize) {
+  // Le contenu d'une archive est un FICHIER de volume : jusqu'à v2 il coïncidait avec la géométrie
+  // logique, en v3 il porte en plus l'en-tête et la région d'authentification (ADR 0016). La
+  // longueur attendue est donc DÉRIVÉE du format déclaré, jamais lue de l'en-tête — sans quoi une
+  // archive pourrait s'auto-déclarer cohérente.
+  //
+  // **Un format FUTUR échappe à ce contrôle, et il le faut.** La disposition d'un format qu'on ne
+  // connaît pas ne se devine pas : lui appliquer la règle du nôtre inventerait une incohérence là
+  // où il n'y a qu'une ignorance, et l'outil de DIAGNOSTIC — seul à pouvoir arriver ici, par une
+  // dérogation nommée — recevrait « archive incohérente » au lieu de « format que je ne sais pas
+  // lire ». Sans la dérogation, `assertReadable` a déjà refusé plus haut.
+  const attendue =
+    manifest.formatVersion > MANIFEST_FORMAT_VERSION
+      ? contentLength
+      : tailleDeFichier({
+          formatVersion: manifest.formatVersion,
+          tailleLogique: manifest.geometry.volumeSize,
+        });
+  if (contentLength !== attendue) {
     throw new ArchiveError(
       ARCHIVE_ERROR_CODES.geometryMismatch,
-      `Longueur de contenu (${contentLength}) incohérente avec la géométrie du manifeste (${manifest.geometry.volumeSize}).`,
-      { contentLength, volumeSize: manifest.geometry.volumeSize },
+      `Longueur de contenu (${contentLength}) incohérente avec la géométrie du manifeste : un volume de ${manifest.geometry.volumeSize} octet(s) au format v${manifest.formatVersion} occupe un fichier de ${attendue} octet(s).`,
+      {
+        contentLength,
+        volumeSize: manifest.geometry.volumeSize,
+        formatVersion: manifest.formatVersion,
+        expectedFileSize: attendue,
+      },
     );
   }
   if (manifest.identity.digest !== header.content.digest) {
