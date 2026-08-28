@@ -35,9 +35,17 @@
 //
 // PROTOCOLE. Un essai = un PROCESSUS NODE NEUF (voir
 // `mesurerDansUnProcessusNeuf`). Avec deux BRAS, les essais sont ENTRELACÉS
-// (avant, après, avant, après…) et le verdict applique la règle du gabarit de
-// #86 : un écart de p50 ne compte que s'il dépasse la plus grande étendue
-// intra-série. C'est ce qui distingue un gain d'un déplacement de bruit.
+// (avant, après, avant, après…) et DEUX verdicts sont publiés côte à côte :
+//
+//   · le verdict MARGINAL, règle du gabarit de #86 — un écart de p50 ne compte
+//     que s'il dépasse la plus grande étendue intra-série ;
+//   · le verdict APPARIÉ — l'essai n de chaque bras est joué coup sur coup, la
+//     dérive de la machine s'annule donc à l'intérieur d'une paire, et un gain
+//     n'est affirmé que si TOUTES les paires vont dans le même sens.
+//
+// Les deux sont publiés parce qu'ils ne disent pas la même chose et qu'aucun
+// des deux ne remplace l'autre : le marginal borne ce que la campagne entière
+// permet d'affirmer, l'apparié voit un effet que l'étendue globale noierait.
 //
 // USAGE
 //   # un seul relevé, sur l'image construite dans artifacts/reference-image/
@@ -47,6 +55,9 @@
 //   node tools/mesurer-attribution-boot.mjs --essais=5 --etiquette=bootsnap \
 //     --bras=avant=artifacts/reference-image-avant \
 //     --bras=apres=artifacts/reference-image
+//
+//   # rejuger un relevé déjà mesuré, sans rien remesurer
+//   node tools/mesurer-attribution-boot.mjs --rejuger=reports/perf/attribution-bootsnap.json
 //
 // Le rapport est écrit dans `reports/perf/attribution-<etiquette>.json`.
 import { spawn } from "node:child_process";
@@ -391,7 +402,9 @@ function resumer(valeurs) {
  * inchangée) a rendu 100,7 s, 105,8 s, 128,4 s, 113,5 s et 103,6 s — une étendue
  * de 27,7 s, soit 26 % du p50, sans dérive monotone. Aucune isolation de
  * processus ne réduit cela : c'est pourquoi le résumé publie l'étendue à côté des
- * percentiles, et pourquoi un écart plus petit que l'étendue ne prouve rien.
+ * percentiles, pourquoi la règle MARGINALE refuse de conclure en deçà, et
+ * pourquoi le verdict APPARIÉ existe — c'est l'entrelacement, non l'isolation,
+ * qui rend un écart lisible sous cette étendue-là.
  *
  * @param {number} numero
  * @param {Bras} bras
