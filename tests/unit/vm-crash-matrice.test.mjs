@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { HARNAIS_RESILIENCE_ENV, HARNAIS_RESILIENCE_VALEUR } from "../../src/vm/crash-harness.mjs";
-import { rejouerCoupure, rejouerMatrice, rejouerSansCoupure } from "../../src/vm/crash-machine.mjs";
+import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
+import {
+  rejouerCoupure as rejouerCoupureSousCle,
+  rejouerMatrice as rejouerMatriceSousCle,
+  rejouerSansCoupure as rejouerSansCoupureSousCle,
+} from "../../src/vm/crash-machine.mjs";
 import { VERDICTS, classerVolume, estVerdictConnu } from "../../src/vm/crash-oracle.mjs";
 import { CRASH_KINDS } from "../../src/vm/crash-plan.mjs";
 import { RESILIENCE_REPORT_VERSION, resumerMatrice } from "../../src/vm/crash-report.mjs";
@@ -25,6 +30,16 @@ process.env[HARNAIS_RESILIENCE_ENV] = HARNAIS_RESILIENCE_VALEUR;
 
 const point = (kind, operation, occurrence, bytes = null) =>
   Object.freeze({ graine: 0, index: 0, kind, operation, occurrence, bytes });
+
+// La CLÉ de volume vient de l'ÉPREUVE, jamais de la machine : `crash-machine.mjs` vit dans `src/`,
+// qui est servi au navigateur, et un module servi ne tient pas de clé en dur. Les trois enveloppes
+// ci-dessous la fournissent une fois pour toutes, sans toucher aux appels qui suivent.
+const rejouerCoupure = (unPoint, options = {}) =>
+  rejouerCoupureSousCle(unPoint, { ...options, cleOctets: CLE_DE_TEST });
+const rejouerMatrice = (graine, options = {}) =>
+  rejouerMatriceSousCle(graine, { ...options, cleOctets: CLE_DE_TEST });
+const rejouerSansCoupure = (options = {}) =>
+  rejouerSansCoupureSousCle({ ...options, cleOctets: CLE_DE_TEST });
 
 test("l'ancien et le nouveau contenu d'un bloc diffèrent OCTET PAR OCTET", () => {
   // Sans cela, un octet resté à l'ancien état pourrait coïncider avec le nouveau, et l'oracle
