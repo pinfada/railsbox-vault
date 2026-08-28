@@ -49,14 +49,20 @@
 // un scellement, ce qui permet de l'éprouver sous Node exactement tel que le Worker l'exécute.
 
 import { SECTOR_SIZE } from "./block-geometry.mjs";
+import { MIGRATION_ERROR_CODES, MigrationError } from "./migration-errors.mjs";
 import { isStorageError, STORAGE_ERROR_CODES } from "./storage-errors.mjs";
 import { RANG_SECTEUR_DE_VOLUME } from "./scellement.mjs";
 import {
   SCEAU_OCTETS,
   decoderSceau,
   dispositionV3,
+  EN_TETE_OCTETS,
+  MARQUEUR_SCELLEMENT_COMPLET,
+  SCELLEMENT_COMPLET_OFFSET,
+  decoderEnTeteV3,
   encoderEnTeteV3,
   encoderSceau,
+  identifiantVolumeEnTexte,
   offsetDeCharge,
   offsetDeSceau,
 } from "./volume-chiffre-format.mjs";
@@ -215,33 +221,62 @@ async function scellerUneSuite({ brut, disposition, scellement, adresse, secteur
  * chiffrerait du chiffré, et le volume serait perdu sans qu'aucune erreur ne soit levée. Les
  * secteurs restants sont regroupés en SUITES contiguës — voir `scellerUneSuite`.
  */
-async function scellerLaCharge({ brut, disposition, scellement, generation, secteursParTour }) {
+/**
+ * FAIL-CLOSED : sous la position journalisée, tout secteur DOIT s'ouvrir.
+ *
+ * Qu'il ne s'ouvre pas admet deux lectures — « il reste du clair », et le rescéller est juste ;
+ * « il porte du chiffré qu'on ne sait plus ouvrir », et le rescéller le détruit — que rien ne
+ * distingue. On refuse donc, et ce garde attrape ce que l'ordre sceau-puis-charge ne couvre pas :
+ * l'écriture DÉCHIRÉE d'un secteur de charge, moitié clair moitié chiffré.
+ */
+function assertSecteurNonDeclareConverti(adresse, dejaTraiteJusqua) {
+  if (adresse >= dejaTraiteJusqua) return;
+  throw new MigrationError(
+    MIGRATION_ERROR_CODES.conversionIncoherente,
+    `Reprise refusée : le secteur d'adresse ${adresse} est déclaré déjà converti par le journal et ne s'ouvre pas. Le rescéller le détruirait s'il portait du chiffré, et rien ne permet de trancher. Le remède est la sauvegarde exigée avant la migration.`,
+    { adresse, dejaTraiteJusqua },
+  );
+}
+
+async function scellerLaCharge({
+  brut,
+  disposition,
+  scellement,
+  generation,
+  secteursParTour,
+  dejaTraiteJusqua = 0,
+  marquerEtape,
+}) {
   let secteursScelles = 0;
   let secteursDejaScelles = 0;
   let debut = null;
   let secteurs = 0;
 
-  const vider = async () => {
+  const vider = async (jusqua) => {
     if (debut === null) return;
     await scellerUneSuite({ brut, disposition, scellement, adresse: debut, secteurs, generation });
     secteursScelles += secteurs;
     debut = null;
     secteurs = 0;
+    // La POSITION est journalisée après la barrière de la suite : elle ne déclare donc jamais plus
+    // que ce que le support porte. C'est elle que le fail-closed ci-dessous relit à la reprise.
+    await marquerEtape({ etape: ETAPES_CONVERSION.scellement, position: jusqua });
   };
 
   for (let adresse = 0; adresse < disposition.tailleLogique; adresse += SECTOR_SIZE) {
     if (await dejaScelle({ brut, disposition, scellement, adresse, generation })) {
       secteursDejaScelles += 1;
-      await vider();
+      await vider(adresse);
       continue;
     }
+    assertSecteurNonDeclareConverti(adresse, dejaTraiteJusqua);
     if (debut === null) debut = adresse;
     secteurs += 1;
     // La suite est bornée par le lot d'E/S : elle tient en mémoire le temps de deux écritures, et
     // c'est ce nombre-là qui borne cette mémoire, pas la taille du volume.
-    if (secteurs === secteursParTour) await vider();
+    if (secteurs === secteursParTour) await vider(adresse + SECTOR_SIZE);
   }
-  await vider();
+  await vider(disposition.tailleLogique);
   return { secteursScelles, secteursDejaScelles };
 }
 
@@ -260,24 +295,104 @@ async function scellerLaCharge({ brut, disposition, scellement, generation, sect
  *                     secteursDejaScelles: number, tailleSupport: number }>}
  */
 /**
- * Écrit l'en-tête v3, EN DERNIER, et le rend durable.
+ * Écrit l'en-tête v3 — SANS la marque de scellement complet — dès que le déplacement est fini.
  *
- * Il est le seul octet qui dise « ce fichier est un volume v3 » ; l'écrire avant la fin ferait
- * passer pour v3 un fichier dont la charge est encore en clair, et un lecteur le croirait sur parole
- * jusqu'à ce qu'un sceau le détrompe.
+ * ## Pourquoi pas plus tôt, et pourquoi pas plus tard
  *
- * Il porte la MARQUE de scellement complet, et ici les deux partent ensemble. À la CRÉATION, elles
- * ne le peuvent pas : l'en-tête doit précéder le scellement — il faut connaître la disposition pour
- * savoir où écrire les sceaux —, si bien que la marque vient après, seule. La conversion, elle,
- * écrit l'en-tête quand tout est déjà scellé. Sans cette marque, l'ouvreur refuserait par
- * `VAULT_STORAGE_VOLUME_INCOMPLET` le volume qu'on vient de migrer.
+ * **Pas plus tôt** : l'en-tête occupe le premier secteur, que le déplacement lit EN DERNIER (il
+ * remonte du dernier secteur au premier). L'écrire avant la fin du déplacement détruirait la source
+ * de son propre geste.
+ *
+ * **Pas plus tard** : l'en-tête porte l'identifiant du volume, celui-là même qui entre dans les
+ * données associées de chaque secteur scellé. Tant qu'il n'est pas sur le disque, le journal de
+ * migration est la SEULE chose qui dise sous quelle identité on scelle — et un journal qui ment
+ * fait rescéller du chiffré comme du clair. En le posant avant le premier sceau, on donne à la
+ * reprise un second témoin, sur le support lui-même.
+ *
+ * ## Pourquoi c'est sûr d'annoncer « v3 » avant d'avoir scellé
+ *
+ * Parce que l'en-tête ne porte PAS encore la marque de scellement complet, et qu'un fichier v3 sans
+ * cette marque est refusé par l'ouvreur (`VAULT_STORAGE_VOLUME_INCOMPLET`, tranche (a) de #18). Le
+ * fichier ne peut donc pas passer pour un volume utilisable ; il dit exactement ce qu'il est : une
+ * conversion en cours.
  */
-async function poserLEnTeteEnDernier({ brut, tailleLogique, identifiantVolume }) {
-  await brut.write(
-    0,
-    encoderEnTeteV3({ tailleLogique, identifiantVolume, scellementComplet: true }),
-  );
+async function poserLEnTete({ brut, tailleLogique, identifiantVolume }) {
+  await brut.write(0, encoderEnTeteV3({ tailleLogique, identifiantVolume }));
   await brut.flush();
+}
+
+/** Pose la MARQUE de scellement complet — huit octets — et la rend durable. Dernier geste. */
+async function marquerScellementComplet(brut) {
+  await brut.write(SCELLEMENT_COMPLET_OFFSET, MARQUEUR_SCELLEMENT_COMPLET);
+  await brut.flush();
+}
+
+/**
+ * RECOUPE l'identifiant du journal avec celui que le support porte, avant de sceller quoi que ce
+ * soit.
+ *
+ * L'empreinte du journal dit qu'il n'a pas été abîmé ; elle ne dit rien de sa VÉRITÉ. Un journal
+ * réécrit d'un bloc serait cohérent avec lui-même. L'en-tête v3, lui, a été écrit par la conversion
+ * elle-même, à la fin du déplacement et avant le premier sceau : les deux récits doivent coïncider.
+ *
+ * Deux divergences, un seul verdict — le refus. On ne reprend pas une conversion sur deux récits qui
+ * se contredisent : reprendre au récit choisi au hasard rescellerait du chiffré comme du clair.
+ */
+async function recouperLIdentifiant({ brut, identifiantVolume }) {
+  const lu = decoderEnTeteV3(await brut.read(0, EN_TETE_OCTETS));
+  if (!lu.valide) {
+    throw new MigrationError(
+      MIGRATION_ERROR_CODES.conversionIncoherente,
+      `Reprise refusée : le journal déclare une conversion au stade du scellement, et le support ne porte pas d'en-tête v3 lisible (${lu.raison}). La conversion pose cet en-tête avant le premier sceau : son absence contredit le journal. Aucun octet n'est écrit.`,
+      { raison: lu.raison },
+    );
+  }
+  const porte = identifiantVolumeEnTexte(lu.enTete.identifiantVolume);
+  if (porte === identifiantVolume) return;
+  throw new MigrationError(
+    MIGRATION_ERROR_CODES.conversionIncoherente,
+    `Reprise refusée : le journal déclare l'identifiant de volume ${identifiantVolume} et l'en-tête v3 du support en porte un autre (${porte}). Les secteurs déjà scellés le sont sous celui du support ; reprendre sous celui du journal les rescellerait comme s'ils étaient en clair. Aucun octet n'est écrit.`,
+    { journal: identifiantVolume, support: porte },
+  );
+}
+
+/**
+ * PREMIER GESTE : allouer, déplacer la charge, poser l'en-tête, puis déclarer le geste franchi.
+ *
+ * L'ordre des trois barrières est le contrat : le déplacement est durable avant que l'en-tête ne
+ * soit posé, et l'en-tête est durable avant que le journal ne déclare qu'on entre dans le
+ * scellement. Une reprise qui trouve « scellement » trouve donc toujours l'en-tête.
+ */
+async function deplacerPuisAnnoncerV3({
+  brut,
+  disposition,
+  secteursParTour,
+  position,
+  tailleLogique,
+  identifiantVolume,
+  marquerEtape,
+}) {
+  if (brut.size() !== disposition.tailleSupport) await brut.retailler(disposition.tailleSupport);
+  const secteursDeplaces = await deplacerLaCharge({
+    brut,
+    disposition,
+    secteursParTour,
+    depuisPosition: position ?? disposition.tailleLogique,
+    marquer: marquerEtape,
+  });
+  await brut.flush();
+  await poserLEnTete({ brut, tailleLogique, identifiantVolume });
+  // Une reprise qui referait le déplacement après un scellement partiel lirait la RÉGION — déjà
+  // écrite — et l'écrirait par-dessus la charge. Les barrières ci-dessus rendent le déplacement ET
+  // l'en-tête durables avant qu'on ne déclare le geste fait.
+  await marquerEtape({ etape: ETAPES_CONVERSION.scellement, position: 0 });
+  return secteursDeplaces;
+}
+
+/** REPRISE au scellement : rien à déplacer, mais les deux récits doivent d'abord se recouper. */
+async function reprendreAuScellement({ brut, identifiantVolume }) {
+  await recouperLIdentifiant({ brut, identifiantVolume });
+  return 0;
 }
 
 export async function convertirEnV3({
@@ -293,23 +408,18 @@ export async function convertirEnV3({
 }) {
   const disposition = dispositionV3(tailleLogique);
 
-  let secteursDeplaces = 0;
-  if (depuis === ETAPES_CONVERSION.deplacement) {
-    if (brut.size() !== disposition.tailleSupport) await brut.retailler(disposition.tailleSupport);
-    secteursDeplaces = await deplacerLaCharge({
-      brut,
-      disposition,
-      secteursParTour,
-      depuisPosition: position ?? disposition.tailleLogique,
-      marquer: marquerEtape,
-    });
-    await brut.flush();
-    // La marque précède le premier sceau, et c'est tout l'enjeu : une reprise qui referait le
-    // déplacement après un scellement partiel lirait la RÉGION — déjà écrite — et l'écrirait
-    // par-dessus la charge. La barrière ci-dessus rend le déplacement durable avant qu'on ne le
-    // déclare fait.
-    await marquerEtape({ etape: ETAPES_CONVERSION.scellement, position: 0 });
-  }
+  const secteursDeplaces =
+    depuis === ETAPES_CONVERSION.deplacement
+      ? await deplacerPuisAnnoncerV3({
+          brut,
+          disposition,
+          secteursParTour,
+          position,
+          tailleLogique,
+          identifiantVolume,
+          marquerEtape,
+        })
+      : await reprendreAuScellement({ brut, identifiantVolume });
 
   const scelles = await scellerLaCharge({
     brut,
@@ -317,8 +427,10 @@ export async function convertirEnV3({
     scellement,
     generation,
     secteursParTour,
+    dejaTraiteJusqua: depuis === ETAPES_CONVERSION.scellement ? (position ?? 0) : 0,
+    marquerEtape,
   });
-  await poserLEnTeteEnDernier({ brut, tailleLogique, identifiantVolume });
+  await marquerScellementComplet(brut);
 
   return Object.freeze({
     secteursDeplaces,
