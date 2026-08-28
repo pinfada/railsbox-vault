@@ -52,8 +52,12 @@ function manifeste(volumeSize) {
     app: { id: "railsbox/reference", version: "3.1.0" },
     volumeSize,
     identity: { algorithm: "sha-256", digest: null },
-    // Bloc « volume » du format v3 (#18, ADR 0016) : identifiant opaque et algorithme épinglé.
-    volume: { id: "0123456789abcdef0123456789abcdef", algorithm: "aes-256-gcm" },
+    // FORMAT v2, et c'est délibéré (#18, ADR 0016) : ces suites éprouvent le CODEC d'archive, pas le
+    // format de volume. L'archive d'un volume v3 est refusée par ce chemin — elle doit porter le
+    // fichier chiffré TEL QUEL, ce que la tranche (b) livrera —, et
+    // `tests/unit/vm-archive-volume-chiffre.test.mjs` éprouve ce refus. Exporter ici un manifeste v3
+    // ne mesurerait donc plus que lui.
+    formatVersion: 2,
   });
 }
 
@@ -699,22 +703,20 @@ test("un voisin qui n'est pas un manifeste analysable est REFUSÉ, jamais suppri
 
 test("la compatibilité est contrôlée PAR DÉFAUT : un format futur est refusé sans rien demander", async () => {
   const contenu = contenuVolume(4 * SECTOR_SIZE);
-  const futur = createManifest({
-    formatVersion: MANIFEST_FORMAT_VERSION + 1,
-    runtime: { version: "1.4.2", artifact: null, minWriter: "1.0.0" },
-    app: { id: "railsbox/reference", version: "3.1.0" },
-    volumeSize: contenu.byteLength,
-    identity: { algorithm: "sha-256", digest: null },
-    volume: { id: "0123456789abcdef0123456789abcdef", algorithm: "aes-256-gcm" },
-  });
-  const { archive } = await exportVolumeToBytes({
+  const valide = await exportVolumeToBytes({
     source: {
       size: contenu.byteLength,
       read: (offset, length) => Promise.resolve(contenu.slice(offset, offset + length)),
     },
-    manifest: futur,
+    manifest: manifeste(contenu.byteLength),
     consistency: cohérence,
   });
+  // FORMAT FUTUR fabriqué APRÈS coup, en réécrivant l'en-tête d'une archive valide. L'export refuse
+  // désormais tout manifeste v3 ou au-delà — un volume chiffré ne s'archive pas par ce chemin
+  // (#18, ADR 0016) —, si bien qu'un manifeste futur passé à l'export mesurerait CE refus-là au lieu
+  // du contrôle de compatibilité. L'`identity` est conservée : l'archive doit rester structurellement
+  // valide, sinon le refus mesuré serait celui d'un en-tête divergent.
+  const archive = archiveAvecManifesteFutur(valide.archive);
   const cible = cibleMemoire();
 
   // Aucune `expectations` n'est fournie : le contrôle ne doit PAS être facultatif pour autant.
@@ -784,3 +786,33 @@ test("l'ordre des gestes mutants : révoquer, écarter la génération, puis ins
     "inscrit-manifeste",
   ]);
 });
+
+/**
+ * Réécrit l'en-tête JSON d'une archive pour y déclarer un format FUTUR, préambule recalculé.
+ *
+ * Fabriquer l'archive avec un tel manifeste ne marche plus : l'export refuse tout format v3 ou
+ * au-delà, un volume chiffré ne s'archivant pas par ce chemin (#18, ADR 0016). L'`identity` est
+ * conservée, sinon le refus mesuré serait celui d'un en-tête divergent.
+ */
+function archiveAvecManifesteFutur(archive) {
+  const vue = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+  const marqueur = 8;
+  const longueur = vue.getUint32(marqueur, false);
+  const debut = marqueur + 4;
+  const entete = JSON.parse(new TextDecoder().decode(archive.subarray(debut, debut + longueur)));
+  entete.manifest = {
+    ...entete.manifest,
+    formatVersion: MANIFEST_FORMAT_VERSION + 1,
+    // Un format futur porterait le bloc « volume » comme le format courant : sans lui, le refus
+    // mesuré serait « malformé » et non « format futur ».
+    volume: { id: "0123456789abcdef0123456789abcdef", algorithm: "aes-256-gcm" },
+  };
+  const octets = new TextEncoder().encode(JSON.stringify(entete));
+  const contenu = archive.subarray(debut + longueur);
+  const refaite = new Uint8Array(debut + octets.byteLength + contenu.byteLength);
+  refaite.set(archive.subarray(0, marqueur), 0);
+  new DataView(refaite.buffer).setUint32(marqueur, octets.byteLength, false);
+  refaite.set(octets, debut);
+  refaite.set(contenu, debut + octets.byteLength);
+  return refaite;
+}

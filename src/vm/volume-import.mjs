@@ -40,7 +40,7 @@ import { createSha256Stream } from "./sha256-stream.mjs";
 import { IMPORT_ERROR_CODES, ImportError } from "./import-errors.mjs";
 import { readArchive } from "./volume-export.mjs";
 import { MANIFEST_SIDECAR_SUFFIX, manifestSidecarName } from "./opfs-sync-access.mjs";
-import { parseManifest, serializeManifest } from "./volume-manifest.mjs";
+import { MIN_VOLUME_FORMAT_VERSION, parseManifest, serializeManifest } from "./volume-manifest.mjs";
 
 /** Bloc de streaming par défaut : identique à celui de l'export, très en deçà du budget de 64 Mio. */
 export const DEFAULT_IMPORT_BLOCK_BYTES = 4 * 1024 * 1024;
@@ -298,6 +298,26 @@ async function restaurerEtRelire({ target, read, verdict, volumeSize, blockBytes
  * @throws {import("./manifest-errors.mjs").ManifestError} manifeste incompatible (propagée de #10)
  * @throws {ImportError} cible occupée, espace insuffisant, géométrie, re-vérification
  */
+/**
+ * Refuse de restaurer une archive décrivant un volume CHIFFRÉ par ce chemin (#18, ADR 0016).
+ *
+ * L'ADR 0016 décide que l'archive porte le fichier v3 TEL QUEL, donc qu'une restauration le RECOPIE
+ * sans clé. Ce chemin ne sait pas le faire : il écrit par la voie autorisée, qui RECHIFFRE — les
+ * octets de l'archive deviendraient la charge en clair d'un volume neuf, ce qui n'a aucun sens.
+ *
+ * Le refus tombe APRÈS la vérification de l'archive et AVANT le premier geste mutant : la cible
+ * n'est ni ouverte, ni révoquée. Il est distinct de `VAULT_STORAGE_CLE_REQUISE`, qui tombait
+ * jusqu'ici et accusait la clé d'un manque qui est celui du chemin.
+ */
+function refuserVolumeChiffre(manifest) {
+  if (manifest.formatVersion < MIN_VOLUME_FORMAT_VERSION) return;
+  throw new ImportError(
+    IMPORT_ERROR_CODES.encryptedUnsupported,
+    `Restauration refusée : l'archive décrit un volume au format v${manifest.formatVersion}, donc CHIFFRÉ, dont le fichier doit être recopié TEL QUEL (ADR 0016). Ce chemin écrit par la voie autorisée, qui rechiffre : les octets de l'archive deviendraient la charge en clair d'un volume neuf. Une clé n'y changerait rien — c'est la recopie BRUTE qui manque, et elle est l'objet de #101. Rien n'a été touché sur la cible.`,
+    { formatVersion: manifest.formatVersion, issue: 101 },
+  );
+}
+
 export async function importArchive({
   source,
   target,
@@ -320,6 +340,7 @@ export async function importArchive({
     enforceCompatibility,
   });
   const volumeSize = verdict.contentLength;
+  refuserVolumeChiffre(verdict.manifest);
 
   // 2. REFUSER — la cible d'abord : on ne piétine jamais un volume sans consentement explicite.
   const avantMutation = await refuserAvantMutation({ target, volumeSize, overwrite, budget });
