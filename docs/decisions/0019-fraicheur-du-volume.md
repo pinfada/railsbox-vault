@@ -160,9 +160,13 @@ la clé du volume**, et il est :
   à tort. L'ordre inverse laisserait un témoin **en avance**, c'est-à-dire un volume intact refusé.
   `tests/vm/resilience-fraicheur.spec.mjs` coupe dans cette fenêtre exacte, sur OPFS réel, et le
   verdict est écrit d'avance ;
-- **retiré avec le volume**, comme le journal de génération. Un témoin survivant attesterait, pour
-  un volume homonyme créé ensuite, une séquence que celui-ci n'a jamais atteinte : la prochaine
-  ouverture refuserait un volume neuf et intact ;
+- **retiré avec le volume**, comme le journal de génération — et retiré aussi par tout geste qui
+  RÉÉCRIT le volume entier : la restauration (#12) et la migration (#13). Un témoin survivant
+  attesterait, pour un volume homonyme créé ensuite ou pour un volume réécrit depuis une archive,
+  une séquence que celui-ci n'a jamais atteinte : la prochaine ouverture refuserait un volume sain,
+  et le message désignerait un retour arrière qui n'a pas eu lieu. Le défaut a été trouvé en revue
+  de cette tranche, sur des chemins que rien n'obligeait à y penser ; la règle est donc écrite ici
+  plutôt que laissée à la vigilance — **un témoin ne date que le volume qu'il accompagne** ;
 - **absent = première ouverture, jamais une preuve.** C'est le point où la nuance se perd le plus
   facilement, et il est écrit dans le code au même endroit que la valeur de retour.
 
