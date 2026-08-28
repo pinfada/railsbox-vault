@@ -35,6 +35,25 @@ const AUTORISES_ARMEMENT = new Set([
   "public/vm/resilience-scenarios.mjs",
 ]);
 
+/**
+ * Les DEUX armements du dépôt, et qui a le droit de les nommer.
+ *
+ * `armerFraicheur` (#19, ADR 0019) est arrivé après `armerInjecteur` et fabrique les mêmes pannes —
+ * lecture courte sur la région d'authentification, handle perdu sur le témoin de séquence — sur des
+ * voisins que le produit ouvre à chaque volume. Il est gardé par le MÊME jeton, et il doit donc être
+ * surveillé par la MÊME inspection : sans cette table, un chemin servi pourrait se mettre à l'appeler
+ * sans que rien ne le dise, et `SECURITY.md` continuerait d'affirmer qu'aucun chemin du produit
+ * n'arme quoi que ce soit.
+ *
+ * `armerFraicheur` n'est PAS ouvert à `crash-machine.mjs` : cette machine jetable n'ouvre pas de
+ * volume v3 complet et déclare n'avoir aucune fraîcheur. Un jour où elle en aurait besoin, c'est
+ * cette ligne qu'il faudra changer — donc décider.
+ */
+const AUTORISES_PAR_ARMEMENT = new Map([
+  ["armerInjecteur", AUTORISES_ARMEMENT],
+  ["armerFraicheur", new Set(["src/vm/crash-plan.mjs", "public/vm/resilience-scenarios.mjs"])],
+]);
+
 function parcourir(repertoire, trouves = []) {
   for (const entree of readdirSync(repertoire)) {
     const chemin = join(repertoire, entree);
@@ -82,15 +101,20 @@ test("la valeur de la variable d'environnement du harnais n'apparaît que dans l
   assert.deepEqual(nommants, ["src/vm/crash-harness.mjs"]);
 });
 
-test("l'armement n'est appelé que par la machine jetable et par le Worker qui coupe", () => {
-  const nommants = nommant("armerInjecteur");
-  // Non vide : un contrôle qui passerait parce que PERSONNE n'arme ne vérifierait rien.
-  assert.ok(nommants.length >= 2, `armerInjecteur devrait être nommé, trouvé : ${nommants}`);
-  for (const fichier of nommants) {
-    assert.ok(
-      AUTORISES_ARMEMENT.has(fichier),
-      `${fichier} appelle armerInjecteur : aucun autre chemin servi ne doit pouvoir injecter une panne.`,
-    );
+test("aucun armement n'est appelé hors de la machine jetable et du Worker qui coupe", () => {
+  // La boucle porte sur les DEUX armements : celui des arrêts (#15) et celui des voisins de
+  // fraîcheur (#19). Les traiter séparément aurait laissé le second sans surveillance le jour de son
+  // ajout — ce qui est exactement ce qui est arrivé, et ce que cette table corrige.
+  for (const [armement, autorises] of AUTORISES_PAR_ARMEMENT) {
+    const nommants = nommant(armement);
+    // Non vide : un contrôle qui passerait parce que PERSONNE n'arme ne vérifierait rien.
+    assert.ok(nommants.length >= 2, `${armement} devrait être nommé, trouvé : ${nommants}`);
+    for (const fichier of nommants) {
+      assert.ok(
+        autorises.has(fichier),
+        `${fichier} appelle ${armement} : aucun autre chemin servi ne doit pouvoir injecter une panne.`,
+      );
+    }
   }
 });
 
@@ -101,6 +125,9 @@ test("la coquille du produit ignore tout de la résilience", () => {
   const banc = readFileSync(join(RACINE, "public", "vm", "banc.mjs"), "utf8");
   assert.equal(banc.includes("HARNAIS_RESILIENCE"), false);
   assert.equal(banc.includes("resilience"), false);
+  for (const armement of AUTORISES_PAR_ARMEMENT.keys()) {
+    assert.equal(banc.includes(armement), false, `la page du produit ne nomme pas ${armement}`);
+  }
 });
 
 test("le Worker runtime lui-même n'arme jamais : l'armement vit dans un module à part", () => {
@@ -110,11 +137,18 @@ test("le Worker runtime lui-même n'arme jamais : l'armement vit dans un module 
   // qu'un `indexOf` sur des noms de fonctions.
   const worker = readFileSync(join(RACINE, "public", "vm", "runtime-worker.mjs"), "utf8");
   assert.equal(worker.includes("armerInjecteur"), false);
+  assert.equal(worker.includes("armerFraicheur"), false);
   assert.equal(worker.includes("crash-plan"), false);
 
   const scenarios = readFileSync(join(RACINE, "public", "vm", "resilience-scenarios.mjs"), "utf8");
-  const appels = scenarios.match(/armerInjecteur\(/g) ?? [];
-  assert.equal(appels.length, 1, "un second armement dans les scénarios doit être remarqué");
+  for (const armement of AUTORISES_PAR_ARMEMENT.keys()) {
+    const appels = scenarios.match(new RegExp(`${armement}\\(`, "g")) ?? [];
+    assert.equal(
+      appels.length,
+      1,
+      `un second appel à ${armement} dans les scénarios doit être remarqué`,
+    );
+  }
 });
 
 test("le volume de résilience est FIGÉ : aucun appelant ne choisit ce qui sera effacé", () => {
