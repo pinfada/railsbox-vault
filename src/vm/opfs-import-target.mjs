@@ -23,6 +23,7 @@ import {
   manifestSidecarName,
   migrationJournalName,
   removeOpfsVolume,
+  temoinSequenceName,
   statOpfsVolume,
 } from "./opfs-sync-access.mjs";
 import {
@@ -119,16 +120,24 @@ export function createOpfsImportTarget(
     },
 
     /**
-     * Retire le journal de génération du volume ÉCRASÉ. Appelé APRÈS `revokeManifest`, jamais avant.
+     * Retire le journal de génération du volume ÉCRASÉ, ET son témoin de séquence. Appelé APRÈS
+     * `revokeManifest`, jamais avant.
      *
-     * Le laisser ferait rejouer, au premier boot suivant, une génération du volume d'AVANT par-dessus
-     * le volume restauré — une corruption silencieuse d'un volume pourtant relu et vérifié. Le
-     * retirer trop tôt effacerait une écriture acquittée d'un volume que la restauration n'a pas
-     * encore touché. L'ordre — révoquer, puis écarter — fait qu'une coupure entre les deux laisse un
-     * volume NON IDENTIFIÉ, que le boot refuse : le seul état sûr des deux.
+     * Laisser le JOURNAL ferait rejouer, au premier boot suivant, une génération du volume d'AVANT
+     * par-dessus le volume restauré — une corruption silencieuse d'un volume pourtant relu et
+     * vérifié. Le retirer trop tôt effacerait une écriture acquittée d'un volume que la restauration
+     * n'a pas encore touché. L'ordre — révoquer, puis écarter — fait qu'une coupure entre les deux
+     * laisse un volume NON IDENTIFIÉ, que le boot refuse : le seul état sûr des deux.
+     *
+     * Laisser le TÉMOIN (#19, ADR 0019) coûterait l'inverse, et c'est aussi grave : il atteste une
+     * séquence du volume d'AVANT, que le volume restauré n'a jamais atteinte. Le boot suivant
+     * refuserait alors un volume parfaitement sain, et le message désignerait un retour arrière qui
+     * n'a pas eu lieu. Un témoin ne date QUE le volume qu'il accompagne ; réécrire le volume
+     * entièrement le prive de son objet, exactement comme le journal.
      */
     async discardGeneration() {
-      return removeSidecar(generationJournalName(volume));
+      await removeSidecar(generationJournalName(volume));
+      return removeSidecar(temoinSequenceName(volume));
     },
 
     /**

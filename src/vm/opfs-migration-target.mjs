@@ -23,6 +23,7 @@ import {
   migrationJournalName,
   removeOpfsVolume,
   statOpfsVolume,
+  temoinSequenceName,
 } from "./opfs-sync-access.mjs";
 import {
   readSidecarBytes,
@@ -85,8 +86,18 @@ export function createOpfsMigrationTarget(
     journal,
     /** Les octets du journal de GÉNÉRATION du volume source, ou `null` s'il n'y en a pas. */
     readGenerationJournal: () => readSidecar(generationVoisine),
-    /** ÉCARTE ce journal. Idempotent : une reprise le retrouve déjà retiré. */
-    removeGenerationJournal: () => removeSidecar(generationVoisine),
+    /**
+     * ÉCARTE ce journal, ET le témoin de séquence qui l'accompagne (#19). Idempotent : une reprise
+     * les retrouve déjà retirés.
+     *
+     * Le témoin part avec le journal pour la même raison que sur la restauration : il atteste une
+     * séquence du volume d'AVANT la migration, et le volume migré ne l'a jamais atteinte. Le garder
+     * ferait refuser, au premier boot suivant, un volume que la migration vient de vérifier.
+     */
+    removeGenerationJournal: async () => {
+      await removeSidecar(generationVoisine);
+      return removeSidecar(temoinSequenceName(volume));
+    },
 
     /** Observe le volume SANS le créer : poser une question ne doit rien fabriquer sur le support. */
     inspect() {

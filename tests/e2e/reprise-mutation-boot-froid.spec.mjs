@@ -300,6 +300,33 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
     );
   }
 
+  // #19 — LA FRAÎCHEUR, de bout en bout (ADR 0019).
+  //
+  // Chaque REPRISE à froid rouvre un volume qu'un point de contrôle a rangé, donc un volume dont la
+  // dernière racine scelle une empreinte de sa région d'authentification. Cette empreinte est
+  // confrontée à la région relue AVANT que le moindre secteur ne soit lu — avant que Rails ne monte
+  // quoi que ce soit. Ces deux lignes établissent que le contrôle a bien EU LIEU sur le vrai
+  // support, avec une vraie application : `verifiee` n'est pas `migree`, et surtout pas
+  // `non-fournie`.
+  //
+  // Le boot À CHAUD est exclu, et il faut dire pourquoi : le volume vient d'être versé depuis
+  // l'image de référence par le chemin NON transactionnel, si bien qu'aucune racine ne fait encore
+  // autorité à son ouverture. Il n'y a alors rien à confronter, et le rapport le dit
+  // (`sans-racine`) au lieu de prétendre une vérification.
+  for (const [rang, boot] of reprises.entries()) {
+    expect(boot.recuperation, `reprise ${rang} — rapport d'ouverture publié`).not.toBeNull();
+    expect(boot.recuperation.fraicheurRegion, `reprise ${rang} — région confrontée`).toBe(
+      "verifiee",
+    );
+    // Et le TÉMOIN a bien été écrit par le boot précédent puis relu par celui-ci : sans lui, le
+    // plancher de séquence d'une reprise à froid serait `null`, et le rejeu ne serait plus refusé
+    // qu'à l'intérieur d'une session.
+    expect(
+      boot.recuperation.temoinSequence,
+      `reprise ${rang} — témoin de séquence relu`,
+    ).toBeGreaterThan(0);
+  }
+
   // Mesures publiées (docs/quality-attributes.md : cible reprise p95 ≤ 60 s).
   const reprisesMs = reprises.map((r) => r.healthMilliseconds);
   const mesures = {
