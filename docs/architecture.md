@@ -875,7 +875,7 @@ deux arborescences indépendantes, une par origine de l'ADR 0002, et jamais un a
 | Arbre           | Contenu                                                                                            | En-têtes servis                                                                   |
 | --------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | **coquille**    | document de confiance, `main.mjs`, Worker runtime, `src/vm/`, artefacts v86 épinglés, licences     | CSP stricte de l'ADR 0013, `CORP: same-origin`, `nosniff`, **COOP `same-origin`** |
-| **application** | aucun artefact du dépôt — le HTML vient du guest — plus une **place tenante** déclarée comme telle | `CORP: cross-origin`, `nosniff`, **aucune CSP** (ADR 0002)                        |
+| **application** | aucun artefact du dépôt — le HTML vient du guest — plus une **place tenante** déclarée comme telle | `CORP: cross-origin`, `nosniff`, **`frame-ancestors <coquille>` SEUL**            |
 
 Trois propriétés de cette construction touchent l'architecture, et pas seulement l'outillage.
 
@@ -883,10 +883,14 @@ Trois propriétés de cette construction touchent l'architecture, et pas seuleme
 politique : elle appelle `securityHeaders()` et rend le fichier de configuration correspondant. La
 raison est de cohérence des preuves — `tests/browser/csp-frontiere.spec.mjs` et les sondes du spike
 #35 mesurent ce que ce module sert, et une politique recopiée ailleurs divergerait sans bruit, en
-laissant deux vérités qui ont l'air vraies. Le seul en-tête que la publication **ajoute** est
-`Cross-Origin-Opener-Policy: same-origin` sur la coquille, application de la recommandation différée
-de l'[ADR 0010](decisions/0010-isolation-multi-origine.md) ; une épreuve unitaire échoue si un
-second apparaît. COEP reste absent.
+laissant deux vérités qui ont l'air vraies. La publication **ajoute exactement deux** en-têtes, un
+par origine : `Cross-Origin-Opener-Policy: same-origin` sur la coquille — recommandation différée de
+l'[ADR 0010](decisions/0010-isolation-multi-origine.md) —, et
+`Content-Security-Policy: frame-ancestors <origine coquille>` sur l'application, sans quoi le
+document qui porte les cookies de session est encadrable par n'importe quel site. Cette seconde
+directive ne contraint rien de ce que le guest rend : elle ne gouverne pas ce que le document
+charge, seulement qui peut l'encadrer, et l'ADR 0002 ne s'interdit que la première de ces deux
+choses. Une épreuve unitaire échoue si un **troisième** en-tête apparaît. COEP reste absent.
 
 **Les surfaces de mesure ne sont pas du produit, et c'est désormais mesuré.** `public/csp/`,
 `public/spike/`, `public/vm/`, la sonde de capacités et leurs contrats sous `src/` sont retirés,
@@ -897,10 +901,12 @@ confiance publierait l'adversaire. Une épreuve unitaire exige que tout fichier 
 
 **L'inventaire porte l'identité des octets, là où le manifeste de volume porte celle des versions.**
 Chaque arbre publié embarque l'empreinte SHA-256 de chacun de ses fichiers et une empreinte de
-racine liée au commit ; les artefacts v86 y sont confrontés à l'épinglage de l'ADR 0003. C'est ce
-qui donne prise à `SEC-UPDATE-001` sur ce qui est **servi**, et non seulement sur ce qui est
-déclaré. La jonction entre les deux — inscrire l'empreinte de la coquille dans le manifeste de
-volume — est une question de **format persistant** que l'ADR 0017 pose et ne tranche pas.
+racine **accompagnée** du commit — adressée par contenu, elle ne nomme pas une version : deux
+tranches dont aucun octet publié ne diffère la partagent. Les artefacts v86 y sont confrontés à
+l'épinglage de l'ADR 0003. C'est ce qui donne prise à `SEC-UPDATE-001` sur ce qui est **servi**, et
+non seulement sur ce qui est déclaré. La jonction entre les deux — inscrire l'empreinte de la
+coquille dans le manifeste de volume — est une question de **format persistant** que l'ADR 0017 pose
+et ne tranche pas.
 
 **Changer l'origine de la coquille est une migration.** OPFS est cloisonné par origine : l'ancienne
 devient inatteignable. L'export doit précéder la bascule, la restauration la suivre (ADR 0008, ADR

@@ -124,7 +124,22 @@ export async function demarrer(options) {
     }
   });
 
-  await new Promise((tenu) => serveur.listen(options.port, options.host, tenu));
+  // Un port déjà pris est le mode de panne le plus banal du témoin — un run précédent interrompu,
+  // deux suites lancées en parallèle — et le laisser remonter en trace de `net:` ferait chercher un
+  // défaut de publication là où il n'y a qu'un socket. Le diagnostic est donc nommé.
+  await new Promise((tenu, echoue) => {
+    serveur.once("error", (erreur) => {
+      echoue(
+        erreur.code === "EADDRINUSE"
+          ? new Error(
+              `Le port ${options.port} (${options.host}) est déjà pris : un serveur du témoin ` +
+                "tourne encore. Arrêtez-le, ou attendez la fin du run précédent.",
+            )
+          : erreur,
+      );
+    });
+    serveur.listen(options.port, options.host, tenu);
+  });
   return {
     origine: `http://${options.host}:${options.port}`,
     arreter: () => new Promise((tenu) => serveur.close(tenu)),
