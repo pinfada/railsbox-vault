@@ -49,13 +49,18 @@ import {
   consentementNomme,
   retenirPreuve,
 } from "./migration-backup-proof.mjs";
+import { exigerCleDeVolume } from "./cle-de-volume.mjs";
 import { MIGRATION_ERROR_CODES, MigrationError } from "./migration-errors.mjs";
+import { ETAPES_CONVERSION, convertirEnV3 } from "./migration-v3.mjs";
+import { Scellement } from "./scellement.mjs";
+import { nouvelIdentifiantDeVolume } from "./volume-chiffre-format.mjs";
 import { journalMalforme, parseJournal, serialiserJournal } from "./migration-journal.mjs";
 import { MANIFEST_ERROR_CODES, ManifestError } from "./manifest-errors.mjs";
 import {
   MANIFEST_FORMAT_VERSION,
   MIN_VOLUME_FORMAT_VERSION,
   MIN_WRITER_FORMAT_VERSION,
+  VOLUME_ALGORITHM,
   assertReadable,
   createManifest,
   parseManifest,
@@ -119,29 +124,46 @@ const STEPS = Object.freeze([
     summary:
       "v3 : le volume est CHIFFRÉ. Chaque secteur est scellé par AES-256-GCM sous une clé de volume, avec son identité logique en données associées (ADR 0015), et le fichier gagne un en-tête et une région d'authentification de 34 octets par secteur (ADR 0016).",
     /**
-     * **Étape DÉCLARÉE, exécution NON FOURNIE par cette tranche.**
+     * **La première étape du dépôt qui touche les OCTETS.** Les deux précédentes réécrivaient un
+     * manifeste ; celle-ci agrandit le fichier de sa région d'authentification, décale la charge et
+     * scelle chaque secteur — sur place, pour ne pas exiger le double du quota au moment où
+     * l'utilisateur migre un volume de 512 Mio.
      *
-     * Les deux étapes précédentes du dépôt ne touchaient aucun octet du volume : migrer y était
-     * réécrire un manifeste. Celle-ci est d'une autre nature — elle doit AGRANDIR le fichier de
-     * `512 + R × 512` octets, décaler la charge entière, et rechiffrer chaque secteur. Aucun de ces
-     * trois gestes n'est exprimable par la cible de l'ADR 0011, dont le contrat est `read` /
-     * `write` / `flush` sur une géométrie FIXE : un backend ne sait pas faire grandir son propre
-     * fichier, et c'est délibéré depuis #6.
+     * Le geste lui-même vit dans `migration-v3.mjs`, avec sa reprise et son contre-exemple. Ici ne
+     * reste que ce qui appartient à la CHAÎNE : d'où vient l'identité du volume converti, et ce que
+     * le manifeste cible déclare.
      *
-     * Le refus est donc typé, il nomme ce qui manque, et il tombe AVANT toute mutation — le
-     * manifeste n'est pas révoqué, le volume reste identifié et lisible. C'est le seul état honnête
-     * tant que la tranche (b) de #18 n'a pas livré la cible qui sait rechiffrer.
+     * L'IDENTIFIANT est TIRÉ ici, et il ne peut pas l'être ailleurs : un volume v2 n'en a pas, et
+     * c'est précisément le champ que le format v3 ajoute. Il est immuable ensuite.
      */
-    apply({ manifest }) {
-      throw new MigrationError(
-        MIGRATION_ERROR_CODES.stepUnavailable,
-        `Migration ${MIN_WRITER_FORMAT_VERSION} → ${MIN_VOLUME_FORMAT_VERSION} refusée : le chemin est connu mais son exécution n'est pas fournie. Passer au format v3 exige d'agrandir le fichier de sa région d'authentification et de rechiffrer chaque secteur — deux gestes qu'une cible de migration à géométrie fixe ne sait pas faire. Le volume n'est pas modifié et reste lisible et exportable.`,
-        {
-          from: MIN_WRITER_FORMAT_VERSION,
-          to: MIN_VOLUME_FORMAT_VERSION,
-          volumeSize: manifest.geometry.volumeSize,
-        },
-      );
+    async apply({ manifest, backend, cle, avancement, marquerAvancement }) {
+      const identifiantVolume = manifest.volume?.id ?? nouvelIdentifiantDeVolume();
+      await convertirEnV3({
+        brut: backend,
+        scellement: await Scellement.ouvrir({
+          volume: identifiantVolume,
+          cleOctets: exigerCleDeVolume(backend.name ?? "volume", cle),
+          formatVersion: MIN_VOLUME_FORMAT_VERSION,
+        }),
+        tailleLogique: manifest.geometry.volumeSize,
+        identifiantVolume,
+        depuis: avancement?.etape ?? ETAPES_CONVERSION.deplacement,
+        position: avancement?.position ?? null,
+        marquerEtape: marquerAvancement,
+      });
+      return createManifest({
+        formatVersion: MIN_VOLUME_FORMAT_VERSION,
+        runtime: manifest.runtime,
+        app: manifest.app,
+        volumeSize: manifest.geometry.volumeSize,
+        // `identity` est reconduite telle quelle. Ce qu'elle atteste — l'état au moment de son
+        // inscription (ADR 0009) — porte désormais sur des octets CHIFFRÉS, et l'ADR 0016 en tire
+        // la conséquence : deux exports d'un même contenu logique ne sont plus comparables par
+        // empreinte. La reconduire n'est donc pas la rendre fausse, c'est la laisser dire ce
+        // qu'elle disait — ni plus, ni moins.
+        identity: manifest.identity,
+        volume: { id: identifiantVolume, algorithm: VOLUME_ALGORITHM },
+      });
     },
   }),
 ]);
@@ -306,23 +328,39 @@ function assertGeometrieDuSupport(source, support) {
  * appliquer, franchir la barrière, inscrire, relire. Une relecture divergente retire le manifeste
  * inscrit : le volume reste NON IDENTIFIÉ plutôt que présenté comme migré.
  */
-async function muter({ target, backend, chaine, source, toVersion, evidence }) {
+async function muter({ target, backend, chaine, source, toVersion, evidence, cle, avancement }) {
+  /**
+   * Réécrit le journal avec l'AVANCEMENT d'une étape qui écrit.
+   *
+   * Il est réécrit ENTIER, et non modifié : le journal est un petit fichier remplacé d'un bloc, si
+   * bien qu'une coupure y laisse l'ancien contenu ou le nouveau, jamais un mélange. C'est la même
+   * propriété que l'ADR 0011 exige déjà du manifeste.
+   */
+  const marquerAvancement = (progress) =>
+    target.writeJournal(
+      serialiserJournal({
+        from: source.formatVersion,
+        to: toVersion,
+        sourceManifest: source,
+        evidence,
+        progress,
+      }),
+    );
+
   // 6. JOURNALISER — avant la révocation, sinon la reprise n'aurait plus de point de départ.
-  await target.writeJournal(
-    serialiserJournal({
-      from: source.formatVersion,
-      to: toVersion,
-      sourceManifest: source,
-      evidence,
-    }),
-  );
+  await marquerAvancement(avancement);
 
   // 7. RÉVOQUER — à partir d'ici, `openVolumeForWrite` refuse le volume.
   await target.revokeManifest();
 
   // 8. APPLIQUER, puis franchir la barrière de durabilité.
   let manifest = source;
-  for (const etape of chaine) manifest = etape.apply({ manifest, backend });
+  for (const etape of chaine) {
+    manifest = await etape.apply({ manifest, backend, cle, avancement, marquerAvancement });
+    // L'avancement ne vaut que pour l'étape qu'il décrit : la suivante repart de son propre début,
+    // et lui passer la position d'une autre la ferait sauter du travail.
+    avancement = null;
+  }
   await backend.flush();
 
   // 9. INSCRIRE, puis RELIRE depuis le support : écrire n'est pas persister.
@@ -362,6 +400,7 @@ export async function migrateVolume({
   toVersion = expectations.supportedFormat?.current ?? MANIFEST_FORMAT_VERSION,
   backup = null,
   consent = null,
+  cle = null,
   blockBytes = DEFAULT_MIGRATION_BLOCK_BYTES,
 }) {
   assertContract(target, blockBytes);
@@ -400,6 +439,7 @@ export async function migrateVolume({
     toVersion,
     backup,
     consentement,
+    cle,
     blockBytes,
     expectations,
   });
@@ -445,7 +485,7 @@ async function rienAMigrer({ target, courant, journal, toVersion }) {
  *   champs dont dépend la preuve.
  */
 async function executerMigration(plan) {
-  const { target, support, journal, source, chaine, toVersion } = plan;
+  const { target, support, journal, source, chaine, toVersion, cle } = plan;
 
   // 4. OUVRIR. Comme à la restauration, l'ouverture précède la révocation : une ouverture ratée ne
   //    doit pas rendre inutilisable un volume parfaitement intact.
@@ -457,7 +497,18 @@ async function executerMigration(plan) {
     const evidence = await retenirPreuve({ ...plan, backend });
 
     // 6 à 9. JOURNALISER, RÉVOQUER, APPLIQUER, INSCRIRE puis RELIRE.
-    const manifest = await muter({ target, backend, chaine, source, toVersion, evidence });
+    const manifest = await muter({
+      target,
+      backend,
+      chaine,
+      source,
+      toVersion,
+      evidence,
+      cle,
+      // L'AVANCEMENT vient du journal trouvé sur le support, jamais de l'état du fichier : la taille
+      // d'un fichier dit qu'une conversion a commencé, jamais où elle en était.
+      avancement: journal?.progress ?? null,
+    });
 
     migre = rapport({
       migrated: true,

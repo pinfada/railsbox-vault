@@ -16,7 +16,7 @@
 
 import { BlockJournal } from "./block-journal.mjs";
 import { MIGRATION_ERROR_CODES, MigrationError } from "./migration-errors.mjs";
-import { openOpfsVolume } from "./opfs-block-backend.mjs";
+import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
 import {
   manifestSidecarName,
   migrationJournalName,
@@ -66,7 +66,7 @@ export function createOpfsMigrationTarget(
     revoke = revokeVolumeManifest,
     writeSidecar = writeSidecarBytes,
     removeSidecar = removeOpfsVolume,
-    openVolume = openOpfsVolume,
+    openVolume = ouvrirVolumeBrut,
   } = {},
 ) {
   const manifeste = manifestSidecarName(volume);
@@ -105,9 +105,18 @@ export function createOpfsMigrationTarget(
       }
     },
 
-    /** Ouvre le volume en exclusivité, à sa géométrie actuelle. Un volume n'est jamais retaillé. */
+    /**
+     * Ouvre le FICHIER du volume en exclusivité et en accès BRUT, à sa taille actuelle.
+     *
+     * Brut depuis #101 : la migration v2 → v3 réécrit les OCTETS — elle agrandit le fichier, décale
+     * la charge et scelle chaque secteur. Passer par le backend chiffré serait circulaire : il
+     * exigerait un en-tête v3 que la migration a justement pour objet d'écrire.
+     *
+     * La taille passée est celle qu'on a OBSERVÉE, jamais une taille visée : un volume n'est
+     * retaillé que par la conversion elle-même, sous le manifeste déjà révoqué.
+     */
     open({ size }) {
-      return openVolume({ name: volume, size, journal });
+      return openVolume({ name: volume, size });
     },
 
     /** Inscrit le journal de reprise. Il précède la révocation, et lui seul rend la reprise possible. */

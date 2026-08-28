@@ -19,15 +19,29 @@ import { parseManifest } from "./volume-manifest.mjs";
 /** Marqueur du journal de reprise : il n'est jamais confondu avec un manifeste. */
 export const MIGRATION_JOURNAL_MAGIC = "railsbox-vault/volume-migration";
 
-/** Version du format du JOURNAL. Comme les autres formats persistants, un entier indépendant. */
-export const MIGRATION_JOURNAL_VERSION = 1;
+/**
+ * Version du format du JOURNAL. Comme les autres formats persistants, un entier indépendant.
+ *
+ * **2 depuis #101.** Le journal porte désormais l'AVANCEMENT de la migration en cours — l'étape
+ * franchie et la position atteinte —, parce que la conversion v2 → v3 est la première qui touche
+ * les octets et que sa reprise ne peut pas se déduire de l'état du fichier. Un journal v1 lu par ce
+ * runtime est refusé plutôt qu'interprété : il décrit une migration qui n'écrivait rien, et lui
+ * prêter un avancement serait inventer ce qu'on ignore.
+ */
+export const MIGRATION_JOURNAL_VERSION = 2;
 
 // Le nom du journal appartient à la frontière de nommage du support : il est défini une fois, dans
 // `opfs-sync-access.mjs`, et réexporté ici pour les appelants de la migration.
 export { MIGRATION_JOURNAL_SUFFIX, migrationJournalName };
 
-/** Sérialise le journal de reprise. Déterministe, comme le manifeste. */
-export function serialiserJournal({ from, to, sourceManifest, evidence }) {
+/**
+ * Sérialise le journal de reprise. Déterministe, comme le manifeste.
+ *
+ * `progress` porte l'avancement d'une conversion qui écrit : `{ etape, position }`. Il est ABSENT
+ * tant qu'aucune étape mutante n'a commencé, et c'est une information en soi — une migration qui
+ * n'écrit rien, comme v1 → v2, n'en produit jamais.
+ */
+export function serialiserJournal({ from, to, sourceManifest, evidence, progress = null }) {
   return new TextEncoder().encode(
     JSON.stringify({
       magic: MIGRATION_JOURNAL_MAGIC,
@@ -36,6 +50,7 @@ export function serialiserJournal({ from, to, sourceManifest, evidence }) {
       to,
       sourceManifest,
       evidence,
+      ...(progress === null ? {} : { progress }),
     }),
   );
 }
@@ -47,6 +62,28 @@ export function journalMalforme(detail, context = {}) {
     `Journal de migration illisible : ${detail} Il n'est ni supprimé, ni deviné : l'écarter est un geste explicite.`,
     context,
   );
+}
+
+/**
+ * Analyse l'AVANCEMENT porté par un journal, ou `null` s'il n'y en a pas.
+ *
+ * Un avancement à moitié lisible est REFUSÉ, jamais complété : reprendre une conversion à une
+ * position devinée écrirait du clair par-dessus du chiffré, ou l'inverse. « Absent » est un état
+ * légitime — aucune étape mutante n'a commencé — ; « présent et douteux » ne l'est pas.
+ */
+function analyserAvancement(progress) {
+  if (progress === undefined || progress === null) return null;
+  if (typeof progress !== "object" || typeof progress.etape !== "string") {
+    throw journalMalforme("avancement présent mais sans étape nommée.", {
+      etape: progress?.etape ?? null,
+    });
+  }
+  if (!Number.isInteger(progress.position) || progress.position < 0) {
+    throw journalMalforme("avancement présent mais sans position entière.", {
+      position: progress?.position ?? null,
+    });
+  }
+  return Object.freeze({ etape: progress.etape, position: progress.position });
 }
 
 /**
@@ -91,5 +128,6 @@ export function parseJournal(input) {
     to: brut.to,
     sourceManifest,
     evidence: Object.freeze({ ...brut.evidence }),
+    progress: analyserAvancement(brut.progress),
   });
 }
