@@ -31,6 +31,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { expect, test } from "./contexte-persistant.mjs";
+import { MANIFEST_FORMAT_VERSION } from "../../src/vm/volume-manifest.mjs";
+import { tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
 
 import { PLAFOND_CHARGE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { E2E_ORIGIN_A } from "../../playwright.e2e.config.mjs";
@@ -270,7 +272,8 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   expect(reprise.migrated).toBe(true);
   expect(reprise.resumed, "la reprise repart du journal, pas de zéro").toBe(true);
   expect(reprise.fromVersion).toBe(1);
-  expect(reprise.toVersion).toBe(2);
+  expect(reprise.toVersion).toBe(MANIFEST_FORMAT_VERSION);
+  expect(reprise.steps.length, "un PAS à la fois : v1 → v2, puis v2 → v3").toBe(2);
   expect(reprise.evidence.kind, "la preuve retenue est la sauvegarde vérifiée").toBe(
     "sauvegarde-verifiee",
   );
@@ -278,7 +281,18 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   expect(apresReprise.migrationJournalPresent, "le journal est retiré en dernier geste").toBe(
     false,
   );
-  expect(apresMigration.digest, "la migration n'a touché aucun octet du volume").toBe(
+  // **Ce que la migration v2 → v3 change, et que les deux précédentes ne changeaient pas.** Elles
+  // réécrivaient un manifeste, et l'épreuve pouvait affirmer « aucun octet du volume n'a bougé ».
+  // Celle-ci réécrit TOUT : le fichier grandit de sa région d'authentification et chaque secteur est
+  // scellé. Ce qui doit être conservé n'est donc plus le fichier, c'est le CLAIR — et le dire ainsi
+  // est une preuve plus forte, pas plus faible.
+  expect(apresMigration.size, "le fichier a grandi de sa région d'authentification").toBe(
+    tailleDeFichier({ formatVersion: MANIFEST_FORMAT_VERSION, tailleLogique: appDiskBytes }),
+  );
+  expect(apresMigration.digest, "le FICHIER a changé : il est désormais chiffré").not.toBe(
+    avantMigration.digest,
+  );
+  expect(apresMigration.digestClair, "et le CLAIR est celui d'avant la migration, à l'octet").toBe(
     avantMigration.digest,
   );
 

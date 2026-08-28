@@ -246,32 +246,67 @@ export async function phaseInspectVolume({ volume }) {
 }
 
 /**
- * Empreinte SHA-256 du CONTENU d'un volume OPFS, relue en flux depuis le support. Elle ne sert pas
- * la restauration elle-même : elle donne au test un moyen INDÉPENDANT de comparer octet pour octet
- * le volume de l'origine d'export et celui de l'origine de restauration.
+ * Empreinte SHA-256 d'un volume OPFS, relue en flux depuis le support.
+ *
+ * Elle rend DEUX empreintes, et la distinction est le cœur de la décision 7 de l'ADR 0016 :
+ *
+ *  - `digest` porte sur le FICHIER, octets tels qu'ils sont sur le support. C'est ce qu'une archive
+ *    contient, et c'est donc ce qui doit correspondre à `content.digest` — pour un volume v3, du
+ *    chiffré. Elle ne demande aucune clé ;
+ *  - `digestClair` porte sur le CLAIR obtenu par la lecture autorisée. Elle exige la clé, et elle
+ *    dit quelque chose que la première ne dit plus : deux volumes portant le même contenu ont des
+ *    fichiers DIFFÉRENTS — les nonces sont tirés — mais le même clair.
+ *
+ * Publier les deux évite le piège que ce banc a failli tendre : comparer une archive à l'empreinte
+ * du clair, c'est-à-dire comparer deux choses qui n'ont plus de raison d'être égales.
  */
 export async function phaseDigestVolume({ volume, blockBytes = EXPORT_BLOCK_BYTES }) {
-  const backend = await openOpfsVolume({
-    name: volume,
-    journal: new BlockJournal(),
-    cle: cleDuBanc(),
-  });
-  const hash = createSha256Stream();
+  const brut = await ouvrirVolumeBrut({ name: volume });
   let maxLecture = 0;
+  let taille;
+  let digest;
   try {
-    const taille = backend.size();
+    taille = brut.size();
+    const hash = createSha256Stream();
     for (let offset = 0; offset < taille; offset += blockBytes) {
       const length = Math.min(blockBytes, taille - offset);
       maxLecture = Math.max(maxLecture, length);
-      hash.update(await backend.read(offset, length));
+      hash.update(await brut.read(offset, length));
     }
-    return {
-      phase: "digest-volume",
-      volume,
-      size: taille,
-      digest: hash.digestHex(),
-      maxBlockBytes: maxLecture,
-    };
+    digest = hash.digestHex();
+  } finally {
+    await brut.close();
+  }
+
+  return {
+    phase: "digest-volume",
+    volume,
+    size: taille,
+    digest,
+    digestClair: await empreinteDuClair(volume, blockBytes),
+    maxBlockBytes: maxLecture,
+  };
+}
+
+/**
+ * Empreinte du CLAIR, par la lecture autorisée. Rend `null` si le volume n'est pas un v3 lisible —
+ * un volume d'un format antérieur n'a pas de clair distinct de son fichier, et le dire par `null`
+ * vaut mieux que de recopier l'autre empreinte sous un second nom.
+ */
+async function empreinteDuClair(volume, blockBytes) {
+  let backend;
+  try {
+    backend = await openOpfsVolume({ name: volume, journal: new BlockJournal(), cle: cleDuBanc() });
+  } catch {
+    return null;
+  }
+  try {
+    const hash = createSha256Stream();
+    const taille = backend.size();
+    for (let offset = 0; offset < taille; offset += blockBytes) {
+      hash.update(await backend.read(offset, Math.min(blockBytes, taille - offset)));
+    }
+    return hash.digestHex();
   } finally {
     await backend.close();
   }
