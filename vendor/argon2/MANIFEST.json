@@ -1,0 +1,43 @@
+{
+  "contract": {
+    "id": "railsbox-vault-vendor-argon2",
+    "version": 1
+  },
+  "note": "Empreintes mesurées le 2026-08-28 (#22, ADR 0021). Contrairement aux artefacts v86, ce binaire EST versionné : il fait 25 725 octets, il est chargé à chaque déverrouillage par une phrase secrète, et un dépôt qui le téléchargerait à la construction ferait dépendre le déverrouillage d'un réseau. Le loader `src/vm/derivation/argon2-vendu.mjs` recalcule cette empreinte AVANT d'instancier le module et refuse tout écart.",
+  "pins": {
+    "npmPackage": "argon2-browser@1.18.0",
+    "npmTarball": "https://registry.npmjs.org/argon2-browser/-/argon2-browser-1.18.0.tgz",
+    "npmTarballSha256": "cdb11795a4971bde095fe6b836aa424de50c4558ed4b9505bc74111eee7f6d35",
+    "npmIntegrity": "sha512-ImVAGIItnFnvET1exhsQB7apRztcoC5TnlSqernMJDUjbc/DLq3UEYeXFrLPrlaIl8cVfwnXb6wX2KpFf2zxHw==",
+    "upstreamCommit": "63cda65cd2182e39a139aa074e2306332ddd4417",
+    "upstreamRepository": "https://github.com/antelle/argon2-browser",
+    "implementationUpstream": "https://github.com/P-H-C/phc-winner-argon2 (implémentation de référence, RFC 9106)"
+  },
+  "artifacts": [
+    {
+      "name": "argon2.wasm",
+      "bytes": 25725,
+      "sha256": "0c2149886c13e4eae4a6ca25ee71d47423c5c8740a874cf04ff816d1b2c901d7",
+      "license": "MIT (empaquetage) / CC0-1.0 ou Apache-2.0 (implémentation de référence)",
+      "licenseFile": "vendor/argon2/LICENSE-argon2-browser.txt",
+      "source": {
+        "kind": "npm-tarball-entry",
+        "url": "https://registry.npmjs.org/argon2-browser/-/argon2-browser-1.18.0.tgz",
+        "entry": "package/dist/argon2.wasm"
+      },
+      "role": "Implémentation de référence d'Argon2 (d, i, id) compilée en WebAssembly, variante SANS SIMD — celle des trois moteurs, pas seulement du plus récent. Le dépôt n'emporte ni la variante SIMD ni la colle Emscripten : il écrit sa propre instanciation (deux importations, une croissance de tas), ce qui laisse l'artefact tiers réduit à un binaire vérifiable par empreinte.",
+      "exports": {
+        "c": "memory",
+        "d": "__wasm_call_ctors",
+        "f": "malloc",
+        "g": "free",
+        "j": "argon2_encodedlen",
+        "l": "argon2_hash_ext"
+      },
+      "imports": {
+        "a.a": "emscripten_memcpy_big(dest, src, n)",
+        "a.b": "emscripten_resize_heap(octets)"
+      }
+    }
+  ]
+}

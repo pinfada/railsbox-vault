@@ -1,0 +1,140 @@
+{
+  "contrat": {
+    "id": "railsbox-vault-derivation",
+    "version": 1
+  },
+  "note": "Vecteurs figés de l'ADR 0021. Les encodages sont POSÉS par tools/figer-vecteurs-derivation.mjs, sans appeler les encodeurs du produit ; les trois étiquettes Argon2 sont recopiées de la RFC 9106.",
+  "info": [
+    {
+      "nom": "volume A, emplacement A, version 1",
+      "entree": {
+        "identifiantVolume": "303132333435363738393a3b3c3d3e3f",
+        "identifiantEmplacement": "7071727374757677",
+        "version": 1
+      },
+      "infoHex": "00207261696c73626f782d7661756c742f64657269766174696f6e2f76312f6b656b0020333033313332333333343335333633373338333933613362336333643365336600103730373137323733373437353736373700000001"
+    },
+    {
+      "nom": "volume A, emplacement B, version 1",
+      "entree": {
+        "identifiantVolume": "303132333435363738393a3b3c3d3e3f",
+        "identifiantEmplacement": "7172737475767778",
+        "version": 1
+      },
+      "infoHex": "00207261696c73626f782d7661756c742f64657269766174696f6e2f76312f6b656b0020333033313332333333343335333633373338333933613362336333643365336600103731373237333734373537363737373800000001"
+    },
+    {
+      "nom": "volume B, emplacement A, version 1",
+      "entree": {
+        "identifiantVolume": "3132333435363738393a3b3c3d3e3f40",
+        "identifiantEmplacement": "7071727374757677",
+        "version": 1
+      },
+      "infoHex": "00207261696c73626f782d7661756c742f64657269766174696f6e2f76312f6b656b0020333133323333333433353336333733383339336133623363336433653366343000103730373137323733373437353736373700000001"
+    },
+    {
+      "nom": "volume A, emplacement A, version 2",
+      "entree": {
+        "identifiantVolume": "303132333435363738393a3b3c3d3e3f",
+        "identifiantEmplacement": "7071727374757677",
+        "version": 2
+      },
+      "infoHex": "00207261696c73626f782d7661756c742f64657269766174696f6e2f76312f6b656b0020333033313332333333343335333633373338333933613362336333643365336600103730373137323733373437353736373700000002"
+    }
+  ],
+  "hkdf": [
+    {
+      "nom": "matériau 0x5a, sel 0x0e, info du volume A",
+      "materiauHex": "5a5b5c5d5e5f606162636465666768696a6b6c6d6e6f70717273747576777879",
+      "selHex": "0e0f101112131415161718191a1b1c1d",
+      "infoHex": "00207261696c73626f782d7661756c742f64657269766174696f6e2f76312f6b656b0020333033313332333333343335333633373338333933613362336333643365336600103730373137323733373437353736373700000001",
+      "okmHex": "b27d981ce8902d0bf4ddd1fea2f8fd013ec9a2dc0d46304dce2e8e89dec97e70"
+    },
+    {
+      "nom": "matériau 0xc0, sel 0xa0, info du volume A",
+      "materiauHex": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedf",
+      "selHex": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "infoHex": "00207261696c73626f782d7661756c742f64657269766174696f6e2f76312f6b656b0020333033313332333333343335333633373338333933613362336333643365336600103730373137323733373437353736373700000001",
+      "okmHex": "39619d41bb9b9b40160018356b86e6abe04b61a060ee93df69e16a020043aca7"
+    },
+    {
+      "nom": "matériau nul, sel vide, info du volume A",
+      "materiauHex": "0000000000000000000000000000000000000000000000000000000000000000",
+      "selHex": "",
+      "infoHex": "00207261696c73626f782d7661756c742f64657269766174696f6e2f76312f6b656b0020333033313332333333343335333633373338333933613362336333643365336600103730373137323733373437353736373700000001",
+      "okmHex": "0882c72b278a5ce3d1f11a2b5d59cea230dcf378a0f02c48273902d3398a2e5a"
+    }
+  ],
+  "parametres": [
+    {
+      "nom": "phrase, calibration retenue",
+      "type": "phrase",
+      "valeurs": {
+        "version": 19,
+        "variante": 2,
+        "memoireKio": 65536,
+        "iterations": 3,
+        "parallelisme": 4,
+        "sel": "0e0f101112131415161718191a1b1c1d"
+      },
+      "octetsHex": "00237261696c73626f782d7661756c742f64657269766174696f6e2f76312f706872617365130200010000000000030000000400100e0f101112131415161718191a1b1c1d"
+    },
+    {
+      "nom": "webauthn-prf, créance de vingt octets",
+      "type": "webauthn-prf",
+      "valeurs": {
+        "rpId": "localhost",
+        "identifiantCredential": "909192939495969798999a9b9c9d9e9fa0a1a2a3",
+        "sel": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf"
+      },
+      "octetsHex": "00297261696c73626f782d7661756c742f64657269766174696f6e2f76312f776562617574686e2d70726600096c6f63616c686f73740014909192939495969798999a9b9c9d9e9fa0a1a2a30020a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf"
+    }
+  ],
+  "argon2Rfc9106": [
+    {
+      "section": "5.1",
+      "variante": "d",
+      "rejoue": true,
+      "motif": null,
+      "empreinteHex": "512b391b6f1162975371d30919734294f868e3be3984f3c1a13a4db9fabe4acb",
+      "motDePasseHex": "0101010101010101010101010101010101010101010101010101010101010101",
+      "selHex": "02020202020202020202020202020202",
+      "secretHex": "0303030303030303",
+      "donneesAssocieesHex": "040404040404040404040404",
+      "memoireKio": 32,
+      "iterations": 3,
+      "parallelisme": 4,
+      "longueur": 32
+    },
+    {
+      "section": "5.2",
+      "variante": "i",
+      "rejoue": false,
+      "motif": "L'artefact vendu calcule Argon2i JUSTE mais à un coût pathologique : 14,9 s mesurées pour m = 32 Kio, t = 1, p = 1, là où Argon2id coûte 2 ms sur les mêmes paramètres. Le vecteur de la RFC (t = 3, p = 4) ne rend pas la main dans un budget d'épreuve. La variante n'est pas servie par src/vm/derivation/argon2-vendu.mjs, et le produit n'emploie qu'Argon2id.",
+      "empreinteHex": "c814d9d1dc7f37aa13f0d77f2494bda1c8de6b016dd388d29952a4c4672b6ce8",
+      "motDePasseHex": "0101010101010101010101010101010101010101010101010101010101010101",
+      "selHex": "02020202020202020202020202020202",
+      "secretHex": "0303030303030303",
+      "donneesAssocieesHex": "040404040404040404040404",
+      "memoireKio": 32,
+      "iterations": 3,
+      "parallelisme": 4,
+      "longueur": 32
+    },
+    {
+      "section": "5.3",
+      "variante": "id",
+      "rejoue": true,
+      "motif": null,
+      "empreinteHex": "0d640df58d78766c08c037a34a8b53c9d01ef0452d75b65eb52520e96b01e659",
+      "motDePasseHex": "0101010101010101010101010101010101010101010101010101010101010101",
+      "selHex": "02020202020202020202020202020202",
+      "secretHex": "0303030303030303",
+      "donneesAssocieesHex": "040404040404040404040404",
+      "memoireKio": 32,
+      "iterations": 3,
+      "parallelisme": 4,
+      "longueur": 32
+    }
+  ]
+}
