@@ -44,6 +44,33 @@ export const EN_TETE_OCTETS = SECTOR_SIZE;
 /** Marqueur de l'en-tête v3. Huit octets, jamais modifiés. */
 export const MARQUEUR_V3 = Uint8Array.from([0x56, 0x4c, 0x54, 0x56, 0x4f, 0x4c, 0x30, 0x33]); // "VLTVOL03"
 
+/**
+ * Où loge la marque de SCELLEMENT COMPLET, dans la réserve de l'en-tête.
+ *
+ * L'en-tête est posé et flushé AVANT que le volume ne soit scellé — il faut bien connaître la
+ * disposition pour savoir où écrire les sceaux. Entre les deux s'ouvre une fenêtre qui dure le
+ * temps de sceller tout le volume (87,6 s pour 512 Mio), et une coupure qui y tombe laisse un
+ * fichier qui a l'exacte apparence d'un volume. La marque referme cette fenêtre : elle n'est posée
+ * qu'après le dernier secteur, et son absence dit « cette création n'a pas abouti ».
+ */
+export const SCELLEMENT_COMPLET_OFFSET = 64;
+
+/**
+ * Marque de scellement complet. HUIT octets d'un motif fixe, et non un bit.
+ *
+ * Un bit, ou un octet non nul, serait posé par accident : une page jamais écrite que le support
+ * rend en `0xff`, un octet retourné, un reliquat d'un autre format suffiraient à faire passer un
+ * volume inachevé pour un volume complet — et le seul état qu'on veut interdire est précisément
+ * celui-là. Huit octets d'un motif choisi ne se rencontrent pas par hasard.
+ *
+ * Elle n'est PAS authentifiée, comme le reste de l'en-tête : c'est un localisateur, pas une preuve.
+ * Ce qu'elle protège est une erreur d'exploitation — une création interrompue —, pas un adversaire,
+ * et le paragraphe correspondant de l'ADR 0016 le dit sans le maquiller.
+ */
+export const MARQUEUR_SCELLEMENT_COMPLET = Uint8Array.from([
+  0x56, 0x4c, 0x54, 0x53, 0x45, 0x41, 0x4c, 0x31,
+]); // "VLTSEAL1"
+
 /** Plus grande génération représentable dans un sceau (2^48 − 1). */
 export const GENERATION_MAX = 2 ** (GENERATION_OCTETS * 8) - 1;
 
@@ -195,9 +222,14 @@ export function decoderSceau(octets) {
  * Encode l'en-tête v3 dans un secteur complet. La réserve reste à ZÉRO : elle est réservée, pas
  * remplie de reliquats.
  *
- * @param {{ tailleLogique: number, identifiantVolume: Uint8Array | string }} entete
+ * `scellementComplet` vaut FAUX par défaut, et ce défaut est le bon : l'en-tête est écrit avant que
+ * le volume ne soit scellé, donc au moment où il est écrit la création n'a pas abouti. Poser la
+ * marque ici, « puisqu'on va sceller juste après », rendrait le contrôle décoratif.
+ *
+ * @param {{ tailleLogique: number, identifiantVolume: Uint8Array | string,
+ *           scellementComplet?: boolean }} entete
  */
-export function encoderEnTeteV3({ tailleLogique, identifiantVolume }) {
+export function encoderEnTeteV3({ tailleLogique, identifiantVolume, scellementComplet = false }) {
   const disposition = dispositionV3(tailleLogique);
   const identifiant =
     typeof identifiantVolume === "string"
@@ -220,11 +252,19 @@ export function encoderEnTeteV3({ tailleLogique, identifiantVolume }) {
   ecrireEntier(vue, 32, disposition.regionOctets, 8);
   ecrireEntier(vue, 40, disposition.chargeOffset, 8);
   octets.set(identifiant, 48);
+  if (scellementComplet) octets.set(MARQUEUR_SCELLEMENT_COMPLET, SCELLEMENT_COMPLET_OFFSET);
   return octets;
 }
 
 function marqueurPresent(octets) {
   return MARQUEUR_V3.every((attendu, position) => octets[position] === attendu);
+}
+
+/** Vrai si la marque de scellement complet est présente, à l'octet près. */
+export function scellementCompletMarque(octets) {
+  return MARQUEUR_SCELLEMENT_COMPLET.every(
+    (attendu, position) => octets[SCELLEMENT_COMPLET_OFFSET + position] === attendu,
+  );
 }
 
 /**
@@ -276,6 +316,9 @@ export function decoderEnTeteV3(octets) {
       regionOctets: disposition.regionOctets,
       chargeOffset: disposition.chargeOffset,
       identifiantVolume: octets.slice(48, 48 + IDENTIFIANT_VOLUME_OCTETS),
+      // Un en-tête VALIDE dont la marque manque décrit un volume dont la création n'a pas abouti.
+      // Le décodeur ne tranche pas : il rapporte, et c'est l'ouvreur qui refuse.
+      scellementComplet: scellementCompletMarque(octets),
     }),
   };
 }

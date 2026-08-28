@@ -36,7 +36,13 @@ import { OpfsBlockBackend } from "./opfs-block-backend.mjs";
 import { generationJournalName } from "./opfs-sync-access.mjs";
 import { Scellement } from "./scellement.mjs";
 import { createSyncAccessStore } from "./sync-access-double.mjs";
-import { FORMAT_VOLUME_V3, dispositionV3, encoderEnTeteV3 } from "./volume-chiffre-format.mjs";
+import {
+  FORMAT_VOLUME_V3,
+  MARQUEUR_SCELLEMENT_COMPLET,
+  SCELLEMENT_COMPLET_OFFSET,
+  dispositionV3,
+  encoderEnTeteV3,
+} from "./volume-chiffre-format.mjs";
 
 /**
  * Identifiant du volume jetable. FIXE, et c'est la condition de la mesure : il entre dans les
@@ -84,6 +90,11 @@ async function ouvrirVolumeJetable({ support, nom, taille, journal, faults }) {
   if (neuf) {
     await backend.chiffre.scellerTout(0);
     await backend.barriereSupportBrute();
+    // La MARQUE de scellement complet, posée en dernier comme l'ouvreur la pose. Cette machine ne
+    // la relit pas — elle rouvre son volume à la main —, mais reproduire les gestes de l'ouvreur
+    // sans reproduire celui-là ferait diverger le fichier de #15 de celui du produit.
+    handle.write(MARQUEUR_SCELLEMENT_COMPLET, { at: SCELLEMENT_COMPLET_OFFSET });
+    handle.flush();
   }
   return backend;
 }
