@@ -15,10 +15,10 @@
 //                                         enveloppe-retirer (#21, ADR 0020)
 //   reference-worker-mesures.mjs          instantané de stockage, comptage des lectures
 //
-// Une option traverse toutes les phases depuis #21 : `kek`. Quand elle est nommée, l'enveloppe du
-// volume est ouverte AVANT la phase et la clé développée est installée pour sa durée seulement.
-// C'est ce qui permet de booter Rails sur un volume ouvert par une CLÉ DE DÉVERROUILLAGE, et pas
-// par le jeton du harnais.
+// Une option traverse toutes les phases depuis #21 : `deverrouillerPar`. Quand elle nomme une clé,
+// l'enveloppe du volume est ouverte AVANT la phase et la clé développée est installée pour sa durée
+// seulement. C'est ce qui permet de booter Rails sur un volume ouvert par une CLÉ DE
+// DÉVERROUILLAGE, et pas par le jeton du harnais.
 //
 // Les phases sont appelées chacune dans un Worker NEUF par le test E2E, pour que « fermer page +
 // Worker + handles » soit réel entre elles.
@@ -91,17 +91,24 @@ const PHASES = new Map([
 /**
  * Exécute une phase, éventuellement sous une clé de volume DÉVELOPPÉE d'une enveloppe (#21).
  *
- * Quand `kek` est nommée, l'enveloppe est ouverte AVANT la phase et la clé développée est installée
- * pour sa durée seulement, puis effacée. C'est ce qui permet au scénario de bout en bout de booter
- * Rails sur un volume ouvert par une clé de déverrouillage plutôt que par le jeton du harnais —
- * sans quoi la rotation de KEK ne serait démontrée à aucun niveau où elle compte.
+ * Quand `deverrouillerPar` nomme une clé, l'enveloppe est ouverte AVANT la phase et la clé
+ * développée est installée pour sa durée seulement, puis effacée. C'est ce qui permet au scénario de
+ * bout en bout de booter Rails sur un volume ouvert par une clé de déverrouillage plutôt que par le
+ * jeton du harnais — sans quoi la rotation ne serait démontrée à aucun niveau où elle compte.
+ *
+ * **L'option ne s'appelle PAS `kek`, et ce n'est pas un détail de nom.** Elle l'a été, et le
+ * scénario de bout en bout l'a réfuté : `enveloppe-ouvrir` prend elle aussi une `kek` — celle
+ * qu'elle doit ESSAYER, y compris quand on attend un refus. Un préambule qui ouvrait l'enveloppe
+ * sous cette même clé faisait échouer la phase AVANT qu'elle ne s'exécute, si bien que l'épreuve du
+ * refus de l'ancienne clé ne pouvait pas être écrite. Deux intentions distinctes méritent deux noms
+ * distincts.
  */
 async function executerPhase(runner, options) {
-  if (!options.kek) return runner(options);
-  const installee = await installerCleParKek(options);
+  if (!options.deverrouillerPar) return runner(options);
+  const installee = await installerCleParKek({ ...options, kek: options.deverrouillerPar });
   try {
     const rapport = await runner(options);
-    return { ...rapport, enveloppe: { kek: options.kek, version: installee.version } };
+    return { ...rapport, enveloppe: { kek: options.deverrouillerPar, version: installee.version } };
   } finally {
     installee.relacher();
   }

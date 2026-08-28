@@ -20,7 +20,12 @@ import {
   ouvrirEnveloppe,
   remplacerEmplacement,
 } from "/src/vm/enveloppe-de-cle.mjs";
-import { enveloppeSidecarName, removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
+import {
+  enveloppeSidecarName,
+  manifestSidecarName,
+  removeOpfsVolume,
+  statOpfsVolume,
+} from "/src/vm/opfs-sync-access.mjs";
 import { supportEnveloppeOpfs } from "/src/vm/ouverture-par-enveloppe.mjs";
 import { readVolumeManifest } from "/src/vm/opfs-volume-open.mjs";
 import { parseManifest } from "/src/vm/volume-manifest.mjs";
@@ -40,11 +45,21 @@ function kekNommee(nom, jeton) {
   throw new Error(`Clé de déverrouillage inconnue du banc : ${nom}`);
 }
 
-/** Identifiant de volume DÉCLARÉ par le manifeste voisin. Jamais celui de l'enveloppe (ADR 0016). */
+/**
+ * Identifiant de volume DÉCLARÉ par le manifeste voisin. Jamais celui de l'enveloppe (ADR 0016).
+ *
+ * Le refus DIT ce qu'il a observé — présence et taille du voisin —, et pas seulement « absent ». Un
+ * banc qui ne rapporte que son verdict oblige à rejouer un scénario de vingt minutes pour apprendre
+ * ce qu'une ligne aurait dit.
+ */
 async function identifiantDeclare(volume) {
   const octets = await readVolumeManifest(volume);
-  if (octets === null)
-    throw new Error(`Volume « ${volume} » sans manifeste : rien ne l'identifie.`);
+  if (octets === null) {
+    const observe = await statOpfsVolume(manifestSidecarName(volume));
+    throw new Error(
+      `Volume « ${volume} » sans manifeste : rien ne l'identifie. Voisin « ${manifestSidecarName(volume)} » : présent=${observe.present}, taille=${observe.size}.`,
+    );
+  }
   return parseManifest(octets).volume?.id;
 }
 

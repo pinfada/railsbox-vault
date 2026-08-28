@@ -775,6 +775,39 @@ l'a mesurée. Le plafond reste donc un garde-fou **révisable**, et le signal qu
 révision est nommé : un seul `VAULT_STORAGE_GENERATION_OVERFLOW` observé en E2E. Les trois scénarios
 de bout en bout l'assertent à chaque exécution — leur rouge précède l'incident d'un utilisateur.
 
+## Ce que l'ENVELOPPE DE CLÉ coûte (#21)
+
+`node tools/mesurer-enveloppe.mjs`, Node v24.14.0, win32 x64, 200 tours, support **en mémoire** — la
+mesure porte sur la cryptographie, pas sur le disque. Le pire cas est mesuré exprès : une enveloppe
+PLEINE (huit emplacements) dont la clé présentée occupe le DERNIER, puisque l'ouverture les essaie
+tous sans court-circuit ([ADR 0020](decisions/0020-enveloppe-de-cle.md)).
+
+| Geste                                   | médiane |     p95 |     max |
+| --------------------------------------- | ------: | ------: | ------: |
+| ouvrir — un seul emplacement            | 0,23 ms | 0,52 ms | 0,95 ms |
+| ouvrir — 8 emplacements, clé au dernier | 1,06 ms | 1,75 ms | 2,86 ms |
+| refus — 8 emplacements, clé inconnue    | 0,58 ms | 1,10 ms | 1,68 ms |
+| créer                                   | 0,27 ms | 0,59 ms | 0,93 ms |
+| ajouter puis révoquer (deux mutations)  | 2,39 ms | 3,20 ms | 4,73 ms |
+
+**« Négligeable » est justifié plutôt qu'affirmé.** Le boot à froid de l'application de référence se
+compte en dizaines de secondes (p95 mesuré à 162 s, ADR 0005) et le scellement d'un volume neuf de
+512 Mio en 87,6 s (#18, plus haut). Une milliseconde de déverrouillage est quatre à cinq ordres de
+grandeur en dessous : elle ne pèse sur aucun budget de ce document.
+
+**Ce que ces chiffres ne disent PAS.** Trois choses, et chacune compte davantage que le nombre :
+
+1. **le coût de #22.** Dériver une clé de déverrouillage d'une phrase secrète par Argon2id est
+   DÉLIBÉRÉMENT coûteux, et dominera de plusieurs ordres de grandeur tout ce qui est relevé ici. La
+   mesure de #21 porte sur l'enveloppe seule, une clé étant déjà en main ;
+2. **le temps d'un refus par rapport à celui d'un succès.** Ils diffèrent — le succès ajoute la
+   vérification de la racine — et cela n'a pas à être caché : réussir ou échouer est déjà connu de
+   celui qui présente la clé. Ce qui doit rester indiscernable, ce sont les deux ÉCHECS entre eux,
+   et ce qui en est mesuré est le NOMBRE d'invocations AEAD, pas le temps d'horloge ;
+3. **le disque.** Le support est en mémoire. L'écriture réelle d'une page de 8192 octets et sa
+   barrière OPFS ne sont pas dans ces nombres ; elles sont du même ordre que celles du manifeste
+   voisin, que ce document ne chiffre pas non plus.
+
 ## Compatibilité
 
 La cible produit est les deux dernières versions stables de Chromium, Firefox et Safari sur
