@@ -2,9 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { HARNAIS_RESILIENCE_ENV, HARNAIS_RESILIENCE_VALEUR } from "../../src/vm/crash-harness.mjs";
-import { rejouerMatrice } from "../../src/vm/crash-machine.mjs";
+import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
+import { rejouerMatrice as rejouerMatriceSousCle } from "../../src/vm/crash-machine.mjs";
 import { VERDICTS } from "../../src/vm/crash-oracle.mjs";
 import { resumerMatrice } from "../../src/vm/crash-report.mjs";
+
+// La CLÉ de volume vient de l'ÉPREUVE : voir `vm-crash-matrice.test.mjs`, même raison.
+const rejouerMatrice = (graine, options = {}) =>
+  rejouerMatriceSousCle(graine, { ...options, cleOctets: CLE_DE_TEST });
 
 // ÉPREUVE DE MUTATION de la mesure de #16.
 //

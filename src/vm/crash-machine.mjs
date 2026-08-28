@@ -18,7 +18,6 @@
 // qui l'interroge.
 
 import { BlockJournal } from "./block-journal.mjs";
-import { CLE_DE_TEST } from "./cle-de-volume.mjs";
 import { classerVolume } from "./crash-oracle.mjs";
 import { armerInjecteur, planifierCoupures } from "./crash-plan.mjs";
 import {
@@ -61,7 +60,7 @@ const IDENTIFIANT_JETABLE = "15c0ffee15c0ffee15c0ffee15c0ffee";
  * l'accès BRUT, donc sans consommer de faute programmée : les coupures de #15 visent les gestes du
  * GUEST, et les compter ici déplacerait les points de mesure.
  */
-async function ouvrirVolumeJetable({ support, nom, taille, journal, faults }) {
+async function ouvrirVolumeJetable({ support, nom, taille, journal, faults, cleOctets }) {
   const handle = await support.openHandle(nom);
   const disposition = dispositionV3(taille);
   const neuf = handle.getSize() === 0;
@@ -80,7 +79,7 @@ async function ouvrirVolumeJetable({ support, nom, taille, journal, faults }) {
     disposition,
     scellement: await Scellement.ouvrir({
       volume: IDENTIFIANT_JETABLE,
-      cleOctets: CLE_DE_TEST,
+      cleOctets,
       formatVersion: FORMAT_VOLUME_V3,
     }),
     journal,
@@ -100,12 +99,34 @@ async function ouvrirVolumeJetable({ support, nom, taille, journal, faults }) {
 }
 
 /**
+ * EXIGE que l'épreuve fournisse la clé sous laquelle la machine scellera.
+ *
+ * Ce module vit dans `src/`, qui est servi au navigateur ; il importait la clé de TEST, si bien
+ * qu'un module de production tenait une clé en dur — et que la phrase de `docs/testing.md` qui
+ * affirmait le contraire était fausse. La clé vient désormais de l'appelant, et l'appelant est une
+ * épreuve. `tests/unit/harnais-portes.test.mjs` mesure qu'aucun module ne revient en arrière.
+ */
+function exigerUneCleDEpreuve(cleOctets) {
+  if (cleOctets instanceof Uint8Array) return;
+  throw new Error(
+    "La machine jetable de #15 ne fabrique aucune clé de volume : l'épreuve qui la fait tourner " +
+      "doit lui remettre `cleOctets`. Une clé fabriquée ici serait une clé en dur dans du code servi.",
+  );
+}
+
+/**
  * Crée une machine jetable et son support. Le support survit aux morts de la machine : c'est ce
  * qui permet de relire après coupure.
  *
- * @param {{ nom?: string, taille?: number }} [options]
+ * @param {{ nom?: string, taille?: number, cleOctets: Uint8Array }} options
+ *   `cleOctets` est OBLIGATOIRE : voir `exigerUneCleDEpreuve`.
  */
-export function creerMachineJetable({ nom = "resilience", taille = VOLUME_OCTETS } = {}) {
+export function creerMachineJetable({
+  nom = "resilience",
+  taille = VOLUME_OCTETS,
+  cleOctets,
+} = {}) {
+  exigerUneCleDEpreuve(cleOctets);
   const support = createSyncAccessStore();
   let backend = null;
   let journal = null;
@@ -117,7 +138,7 @@ export function creerMachineJetable({ nom = "resilience", taille = VOLUME_OCTETS
         throw new Error("La machine tourne déjà : la faire redémarrer masquerait la coupure.");
       }
       journal = new BlockJournal();
-      backend = await ouvrirVolumeJetable({ support, nom, taille, journal, faults });
+      backend = await ouvrirVolumeJetable({ support, nom, taille, journal, faults, cleOctets });
       // Le journal de génération est ouvert et RÉCUPÉRÉ ici, comme le fait `openOpfsVolume` en
       // production : c'est ce geste qui rejoue la dernière génération validée ou écarte celle qui ne
       // l'est pas. Sans lui, la machine jetable éprouverait un backend qui n'est pas celui du
@@ -174,8 +195,8 @@ export function creerMachineJetable({ nom = "resilience", taille = VOLUME_OCTETS
  * @param {import("./crash-plan.mjs").CrashPoint} point
  * @param {{ jeton?: string }} [options]
  */
-export async function rejouerCoupure(point, { jeton, muterMagasin = null } = {}) {
-  const machine = creerMachineJetable();
+export async function rejouerCoupure(point, { jeton, muterMagasin = null, cleOctets } = {}) {
+  const machine = creerMachineJetable({ cleOctets });
 
   const preparation = await machine.demarrer();
   const ancien = await ecrireEtatAncien(preparation);
@@ -231,8 +252,8 @@ export async function rejouerCoupure(point, { jeton, muterMagasin = null } = {})
  * La machine est arrêtée BRUTALEMENT ici aussi : ce qu'on veut voir, c'est que la dernière
  * génération validée survit à la mort du détenteur, pas qu'une fermeture propre la range.
  */
-export async function rejouerSansCoupure() {
-  const machine = creerMachineJetable();
+export async function rejouerSansCoupure({ cleOctets } = {}) {
+  const machine = creerMachineJetable({ cleOctets });
 
   const preparation = await machine.demarrer();
   const ancien = await ecrireEtatAncien(preparation);
@@ -270,11 +291,14 @@ export async function rejouerSansCoupure() {
  * @param {number} graine
  * @param {{ points: number, jeton?: string }} options
  */
-export async function rejouerMatrice(graine, { points, jeton, muterMagasin = null } = {}) {
+export async function rejouerMatrice(
+  graine,
+  { points, jeton, muterMagasin = null, cleOctets } = {},
+) {
   const suite = planifierCoupures(graine, profilDuScenario(points));
   const resultats = [];
   for (const point of suite) {
-    resultats.push(await rejouerCoupure(point, { jeton, muterMagasin }));
+    resultats.push(await rejouerCoupure(point, { jeton, muterMagasin, cleOctets }));
   }
   return resultats;
 }
