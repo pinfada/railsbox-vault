@@ -227,6 +227,16 @@ test("un volume OPFS est exporté en archive vérifiable, et une archive altér�
       node: process.versions.node,
     },
     volumeOctets: appDiskBytes,
+    // CRÉATION du volume v3, sur OPFS RÉEL et à 512 Mio. Les deux durées sont séparées parce
+    // qu'elles ne disent pas la même chose : le scellement initial est le coût du FORMAT — « un
+    // secteur jamais écrit n'existe pas en v3 », donc l'ouverture d'un volume neuf scelle tous ses
+    // secteurs —, le versement est celui du disque. `docs/quality-attributes.md` les reprend telles
+    // quelles. Ce ne sont pas des assertions : un seuil posé sans mesure opposable serait une
+    // promesse, pas un budget.
+    creation: {
+      scellementMs: prepare.sealMs ?? null,
+      versementMs: prepare.fillMs ?? null,
+    },
     // Budget de stockage encadrant l'export (#73). Il n'est pas une assertion : il est la mesure qui
     // permet de dire, après coup, s'il restait de la place — au lieu de le supposer.
     stockage: exporte.storage,

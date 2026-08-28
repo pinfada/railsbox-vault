@@ -363,10 +363,12 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
       node: process.versions.node,
     },
     volumeOctets: appDiskBytes,
-    formats: { avant: 1, apres: 2 },
+    formats: { avant: 1, apres: MANIFEST_FORMAT_VERSION },
     empreinteVolume: {
+      // Le FICHIER change — la migration v2 → v3 réécrit tout —, et c'est le CLAIR qui est conservé.
       avantMigration: avantMigration.digest,
       apresMigration: apresMigration.digest,
+      clairApresMigration: apresMigration.digestClair,
     },
     sauvegarde: { octets: sauvegarde.archiveLength, digest: sauvegarde.digest },
     migration: {
