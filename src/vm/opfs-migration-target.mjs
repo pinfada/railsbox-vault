@@ -18,6 +18,7 @@ import { BlockJournal } from "./block-journal.mjs";
 import { MIGRATION_ERROR_CODES, MigrationError } from "./migration-errors.mjs";
 import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
 import {
+  generationJournalName,
   manifestSidecarName,
   migrationJournalName,
   removeOpfsVolume,
@@ -71,12 +72,21 @@ export function createOpfsMigrationTarget(
 ) {
   const manifeste = manifestSidecarName(volume);
   const journalVoisin = migrationJournalName(volume);
+  // Le TROISIÈME voisin (#16) : le journal de GÉNÉRATION du volume source. La migration doit le
+  // solder — reporter ce qu'il a validé, puis l'écarter —, sans quoi le volume migré porterait un
+  // journal d'un format qu'il ne sait plus lire.
+  const generationVoisine = generationJournalName(volume);
 
   return {
     volume,
     sidecar: manifeste,
     journalSidecar: journalVoisin,
+    generationSidecar: generationVoisine,
     journal,
+    /** Les octets du journal de GÉNÉRATION du volume source, ou `null` s'il n'y en a pas. */
+    readGenerationJournal: () => readSidecar(generationVoisine),
+    /** ÉCARTE ce journal. Idempotent : une reprise le retrouve déjà retiré. */
+    removeGenerationJournal: () => removeSidecar(generationVoisine),
 
     /** Observe le volume SANS le créer : poser une question ne doit rien fabriquer sur le support. */
     inspect() {

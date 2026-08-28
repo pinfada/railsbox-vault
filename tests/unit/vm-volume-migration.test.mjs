@@ -109,6 +109,7 @@ function creerCible({
   volume = contenu(),
   manifestBytes = serializeManifest(manifesteV1()),
   journalBytes = null,
+  generationBytes = null,
   pannes = {},
   apres = {},
   faults = createFaultPlan(),
@@ -119,6 +120,7 @@ function creerCible({
   const etat = {
     manifestBytes,
     journalBytes,
+    generationBytes,
     ouvertures: 0,
     fermetures: 0,
     /** Les octets du volume, tels qu'ils sont MAINTENANT : le retaillage remplace le tampon. */
@@ -174,6 +176,16 @@ function creerCible({
   return {
     gestes,
     etat,
+    /** Le journal de GÉNÉRATION du volume source (#16), troisième voisin persistant. */
+    async readGenerationJournal() {
+      trace("read-generation");
+      return etat.generationBytes;
+    },
+    /** ÉCARTE ce journal. Idempotent : une reprise le retrouve déjà retiré. */
+    async removeGenerationJournal() {
+      trace("remove-generation");
+      etat.generationBytes = null;
+    },
     /** Écritures du volume acceptées depuis la construction. */
     get ecrituresVolume() {
       return coupure.ecritures;
@@ -290,6 +302,10 @@ test("la migration inscrit le manifeste cible EN DERNIER, après le journal et l
     "open",
     "write-journal",
     "revoke",
+    // Le TROISIÈME voisin (#16) est SOLDÉ juste après la révocation : son contenu est reporté dans
+    // le volume, puis il est écarté. Le report est une mutation comme une autre, donc il suit la
+    // révocation ; ici le volume n'en porte pas, si bien que seule la lecture apparaît.
+    "read-generation",
     "flush",
     "commit",
     "read-manifest",
@@ -868,4 +884,159 @@ test("une migration v1 → v3 COUPÉE pendant la conversion REPREND, et rend le 
       `rang ${rang} : la reprise doit rendre le clair d'origine`,
     );
   }
+});
+
+// --- Le TROISIÈME voisin : le journal de génération du volume source ---------------------------
+
+const PAGE_HOTE = 4096;
+
+const TABLE_CRC = (() => {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < 256; index += 1) {
+    let valeur = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      valeur = valeur & 1 ? (0xedb88320 ^ (valeur >>> 1)) >>> 0 : valeur >>> 1;
+    }
+    table[index] = valeur >>> 0;
+  }
+  return table;
+})();
+
+function crc32V1(octets, depuis = 0) {
+  let valeur = (depuis ^ 0xffffffff) >>> 0;
+  for (let index = 0; index < octets.byteLength; index += 1) {
+    valeur = (TABLE_CRC[(valeur ^ octets[index]) & 0xff] ^ (valeur >>> 8)) >>> 0;
+  }
+  return (valeur ^ 0xffffffff) >>> 0;
+}
+
+function ecrire64(vue, position, valeur) {
+  vue.setUint32(position, valeur >>> 0, true);
+  vue.setUint32(position + 4, Math.floor(valeur / 2 ** 32), true);
+}
+
+/**
+ * Journal de génération au FORMAT 1, tel qu'un volume v2 qui a servi en porte un.
+ *
+ * Construit à la main d'après le format figé de la version 1 : il est déjà sur le disque de
+ * quelqu'un, et le reconstituer avec l'encodeur COURANT reviendrait à éprouver le mauvais format.
+ */
+function journalDeGenerationV1(ecritures) {
+  const morceaux = [];
+  let somme = 0;
+  for (const ecriture of ecritures) {
+    const entete = new Uint8Array(16);
+    const vueEntete = new DataView(entete.buffer);
+    ecrire64(vueEntete, 0, ecriture.offset);
+    vueEntete.setUint32(8, ecriture.octets.byteLength, true);
+    somme = crc32V1(entete, somme);
+    somme = crc32V1(ecriture.octets, somme);
+    morceaux.push(entete, ecriture.octets);
+  }
+  const longueurCharge = morceaux.reduce((total, m) => total + m.byteLength, 0);
+  const fichier = new Uint8Array(2 * PAGE_HOTE + longueurCharge);
+  let position = 2 * PAGE_HOTE;
+  for (const morceau of morceaux) {
+    fichier.set(morceau, position);
+    position += morceau.byteLength;
+  }
+
+  const racine = new Uint8Array(SECTOR_SIZE);
+  const vue = new DataView(racine.buffer);
+  racine.set([0x56, 0x4c, 0x54, 0x47, 0x45, 0x4e, 0x30, 0x31], 0); // « VLTGEN01 »
+  vue.setUint32(8, 1, true);
+  vue.setUint32(12, SECTOR_SIZE, true);
+  ecrire64(vue, 16, 4);
+  ecrire64(vue, 24, 9);
+  ecrire64(vue, 32, TAILLE);
+  vue.setUint32(40, ecritures.length, true);
+  ecrire64(vue, 44, longueurCharge);
+  vue.setUint32(52, somme, true);
+  vue.setUint32(56, crc32V1(racine.subarray(0, 56)), true);
+  fichier.set(racine, 0);
+  return fichier;
+}
+
+test("une écriture ACQUITTÉE restée dans le journal v1 est REPORTÉE avant la conversion", async () => {
+  // Depuis #16, le fichier du volume ne porte pas tout son état : une génération VALIDÉE vit dans
+  // le voisin `<volume>.gen` jusqu'à ce qu'une ouverture la reporte. La migration l'ignorait —
+  // l'en-tête de `migration-v3.mjs` affirmait pourtant qu'elle l'écartait, et aucun code ne le
+  // faisait. Deux dégâts, tous deux trouvés par la revue de #110 : l'écriture acquittée était
+  // PERDUE, et le journal survivait à la migration, si bien que le volume migré ne s'ouvrait plus
+  // (`decoderRacine` y voyait un format 1 là où il attend un format 2).
+  const acquitte = Uint8Array.from({ length: SECTOR_SIZE }, (_, i) => (i * 5 + 200) % 256);
+  const cible = creerCible({
+    volume: contenu(),
+    generationBytes: journalDeGenerationV1([{ offset: 2 * SECTOR_SIZE, octets: acquitte }]),
+  });
+
+  const rapport = await migrateVolume({
+    target: cible,
+    expectations: attentes({
+      supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
+    }),
+    consent: CONSENTEMENT,
+    cle: CLE_DE_TEST,
+  });
+  assert.equal(rapport.migrated, true);
+
+  // Le journal est ÉCARTÉ : sans cela, le volume migré ne s'ouvrirait plus.
+  assert.equal(cible.etat.generationBytes, null, "le journal de génération v1 ne survit pas");
+  // Et il est écarté APRÈS la révocation du manifeste : c'est une mutation comme une autre.
+  assert.ok(
+    cible.gestes.indexOf("remove-generation") > cible.gestes.indexOf("revoke"),
+    "le report et le retrait sont des mutations : ils suivent la révocation",
+  );
+
+  // L'écriture acquittée est dans le CLAIR du volume migré, à son adresse.
+  const inscrit = parseManifest(cible.etat.manifestBytes);
+  const volume = new VolumeChiffre({
+    volume: "migre",
+    scellement: await Scellement.ouvrir({
+      volume: inscrit.volume.id,
+      cleOctets: CLE_DE_TEST,
+      formatVersion: 3,
+    }),
+    disposition: dispositionV3(TAILLE),
+    lireSupport: (offset, longueur) => cible.etat.volume.slice(offset, offset + longueur),
+    ecrireSupport: () => {
+      throw new Error("la relecture n'écrit pas");
+    },
+  });
+  const clair = await volume.lireSecteurs(0, TAILLE);
+  assert.deepEqual(
+    [...clair.subarray(2 * SECTOR_SIZE, 3 * SECTOR_SIZE)],
+    [...acquitte],
+    "l'écriture acquittée survit à la migration",
+  );
+  // Et le reste du volume est inchangé.
+  const attendu = contenu();
+  attendu.set(acquitte, 2 * SECTOR_SIZE);
+  assert.deepEqual([...clair], [...attendu]);
+});
+
+test("un journal de génération ILLISIBLE fait REFUSER la migration, volume intact", async () => {
+  // On ne sait pas ce qu'il a validé. Migrer quand même perdrait peut-être une écriture acquittée
+  // sans jamais le dire — et c'est précisément ce que le refus interdit.
+  const abime = journalDeGenerationV1([
+    { offset: 0, octets: Uint8Array.from({ length: SECTOR_SIZE }, () => 7) },
+  ]);
+  abime[57] ^= 0x01;
+  const octets = contenu();
+  const cible = creerCible({ volume: octets, generationBytes: abime });
+
+  await assert.rejects(
+    () =>
+      migrateVolume({
+        target: cible,
+        expectations: attentes({
+          supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
+        }),
+        consent: CONSENTEMENT,
+        cle: CLE_DE_TEST,
+      }),
+    (erreur) => isMigrationError(erreur, MIGRATION_ERROR_CODES.journalMalformed),
+  );
+  assert.deepEqual([...cible.etat.volume], [...contenu()], "aucun octet du volume n'a bougé");
+  assert.notEqual(cible.etat.generationBytes, null, "le journal n'est pas écarté non plus");
 });

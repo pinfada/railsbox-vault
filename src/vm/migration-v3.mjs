@@ -85,8 +85,12 @@ export const SECTEURS_PAR_TOUR = 512;
  * Génération sous laquelle les secteurs d'un volume MIGRÉ sont scellés.
  *
  * Zéro, comme un volume qui naît : la migration ne rejoue aucune génération du guest, elle convertit
- * un état déjà rangé. Le journal de génération du volume source est écarté par l'orchestration avant
- * la conversion, précisément pour que cet état-là soit le seul.
+ * un état déjà rangé.
+ *
+ * Cet état-là est bien le seul parce que l'orchestration SOLDE le journal de génération du volume
+ * source avant la conversion — elle reporte dans le volume ce qu'il avait validé, puis l'écarte
+ * (`volume-migration.mjs`, geste 7 bis). Cette phrase a longtemps été écrite ici alors qu'aucun
+ * code ne la tenait ; la revue de #110 l'a relevé, et deux épreuves la tiennent maintenant.
  */
 export const GENERATION_DE_CONVERSION = 0;
 
