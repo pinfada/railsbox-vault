@@ -30,7 +30,9 @@ import {
   empreinte,
   empreinteDeRacine,
   relever,
+  verifierArbre,
 } from "../../tools/publier-inventaire.mjs";
+import { lireEmpreinteDeRacine } from "../../tools/publier-empreinte.mjs";
 
 const COMMIT = Object.freeze({
   empreinte: "0".repeat(40),
@@ -49,7 +51,7 @@ async function arbreJetable(fichiers) {
   return racine;
 }
 
-async function inventaireDe(racine) {
+async function inventaireDe(racine, surcharges = {}) {
   const inventaire = await construireInventaire({
     arbre: "coquille",
     role: "épreuve",
@@ -57,9 +59,11 @@ async function inventaireDe(racine) {
     origine: "https://vault.exemple",
     commit: COMMIT,
     complet: true,
+    banc: false,
     absentes: [],
     enTetes: { "X-Content-Type-Options": "nosniff" },
     exclusions: [{ prefixe: "public/vm/", motif: "banc" }],
+    ...surcharges,
   });
   await writeFile(
     join(racine, FICHIER_INVENTAIRE),
@@ -211,5 +215,131 @@ test("l'empreinte de racine distingue deux arbres de mêmes empreintes mais de t
   assert.notEqual(
     empreinteDeRacine([{ chemin: "a", octets: 1, sha256: "aa" }]),
     empreinteDeRacine([{ chemin: "a", octets: 2, sha256: "aa" }]),
+  );
+});
+
+// --- `verifierArbre` : ce qu'elle REFUSE de relire ---------------------------------------------
+//
+// Un vérificateur qui accepte n'importe quel JSON n'est pas un vérificateur. Ces épreuves fixent
+// les trois refus qui séparent « inventaire absent ou étranger » (code 2) d'un « écart
+// d'empreintes » (code 1) : les deux se diagnostiquent différemment, et les confondre ferait
+// chercher une altération là où il n'y a qu'un fichier manquant.
+
+test("un arbre sans inventaire est refusé, pas traité comme un arbre vide", async (t) => {
+  const racine = await arbreJetable(ARBRE_TEMOIN);
+  t.after(() => rm(racine, { recursive: true, force: true }));
+
+  await assert.rejects(() => verifierArbre(racine), { code: "ENOENT" });
+});
+
+test("un inventaire d'un AUTRE contrat est refusé en nommant le contrat trouvé", async (t) => {
+  const racine = await arbreJetable(ARBRE_TEMOIN);
+  t.after(() => rm(racine, { recursive: true, force: true }));
+  await writeFile(
+    join(racine, FICHIER_INVENTAIRE),
+    JSON.stringify({ contrat: { id: "railsbox-vault-vendor-v86", version: 1 }, fichiers: [] }),
+    "utf8",
+  );
+
+  await assert.rejects(() => verifierArbre(racine), /railsbox-vault-vendor-v86/u);
+});
+
+test("un inventaire SANS contrat est refusé, et le dit", async (t) => {
+  const racine = await arbreJetable(ARBRE_TEMOIN);
+  t.after(() => rm(racine, { recursive: true, force: true }));
+  await writeFile(join(racine, FICHIER_INVENTAIRE), JSON.stringify({ fichiers: [] }), "utf8");
+
+  await assert.rejects(() => verifierArbre(racine), /aucun/u);
+});
+
+test("une VERSION d'inventaire non gérée est refusée plutôt que relue au petit bonheur", async (t) => {
+  const racine = await arbreJetable(ARBRE_TEMOIN);
+  t.after(() => rm(racine, { recursive: true, force: true }));
+  const inventaire = await inventaireDe(racine);
+  await writeFile(
+    join(racine, FICHIER_INVENTAIRE),
+    JSON.stringify({
+      ...inventaire,
+      contrat: { ...CONTRAT_INVENTAIRE, version: CONTRAT_INVENTAIRE.version + 1 },
+    }),
+    "utf8",
+  );
+
+  await assert.rejects(() => verifierArbre(racine), /Version d'inventaire non gérée/u);
+});
+
+test("un inventaire illisible — JSON tronqué — est refusé, pas ignoré", async (t) => {
+  const racine = await arbreJetable(ARBRE_TEMOIN);
+  t.after(() => rm(racine, { recursive: true, force: true }));
+  await writeFile(join(racine, FICHIER_INVENTAIRE), '{"contrat": {"id":', "utf8");
+
+  await assert.rejects(() => verifierArbre(racine), SyntaxError);
+});
+
+test("`verifierArbre` rend l'inventaire relu ET les écarts mesurés", async (t) => {
+  const racine = await arbreJetable(ARBRE_TEMOIN);
+  t.after(() => rm(racine, { recursive: true, force: true }));
+  await inventaireDe(racine);
+
+  const { inventaire, ecarts } = await verifierArbre(racine);
+  assert.equal(inventaire.arbre, "coquille");
+  assert.equal(ecarts.conforme, true);
+});
+
+// --- Complétude : un arbre exact n'est pas pour autant publiable -------------------------------
+
+test("un arbre INCOMPLET porte sa complétude et ses sources absentes dans l'inventaire", async (t) => {
+  const racine = await arbreJetable(ARBRE_TEMOIN);
+  t.after(() => rm(racine, { recursive: true, force: true }));
+
+  const inventaire = await inventaireDe(racine, {
+    complet: false,
+    absentes: ["vendor/v86/artefacts"],
+  });
+
+  assert.equal(inventaire.complet, false);
+  assert.deepEqual(inventaire.absentes, ["vendor/v86/artefacts"]);
+});
+
+test("un arbre incomplet reste CONFORME aux empreintes : les deux verdicts sont distincts", async (t) => {
+  const racine = await arbreJetable(ARBRE_TEMOIN);
+  t.after(() => rm(racine, { recursive: true, force: true }));
+  await inventaireDe(racine, { complet: false, absentes: ["vendor/v86/artefacts"] });
+
+  const { inventaire, ecarts } = await verifierArbre(racine);
+  assert.equal(ecarts.conforme, true, "l'arbre est exactement ce que son inventaire décrit");
+  assert.equal(inventaire.complet, false, "et il n'est pourtant pas publiable");
+});
+
+test("un arbre de BANC se déclare comme tel, pour ne pas être pris pour une publication", async (t) => {
+  const racine = await arbreJetable(ARBRE_TEMOIN);
+  t.after(() => rm(racine, { recursive: true, force: true }));
+
+  assert.equal((await inventaireDe(racine, { banc: true })).banc, true);
+  assert.equal((await inventaireDe(racine)).banc, false);
+});
+
+// --- `publier-empreinte.mjs` : le lecteur employé par le workflow ------------------------------
+
+test("l'empreinte de racine se relit depuis l'inventaire sans interpoler de code", async (t) => {
+  const racine = await arbreJetable(ARBRE_TEMOIN);
+  t.after(() => rm(racine, { recursive: true, force: true }));
+  const inventaire = await inventaireDe(racine);
+
+  const brut = JSON.stringify(inventaire);
+  assert.equal(lireEmpreinteDeRacine(brut), inventaire.empreinteDeRacine);
+});
+
+test("le lecteur d'empreinte refuse un inventaire étranger ou une empreinte mal formée", () => {
+  assert.throws(
+    () => lireEmpreinteDeRacine(JSON.stringify({ contrat: { id: "autre" } })),
+    /autre/u,
+  );
+  assert.throws(
+    () =>
+      lireEmpreinteDeRacine(
+        JSON.stringify({ contrat: CONTRAT_INVENTAIRE, empreinteDeRacine: "trop-court" }),
+      ),
+    /empreinte de racine/u,
   );
 });

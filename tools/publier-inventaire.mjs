@@ -99,6 +99,11 @@ export async function construireInventaire(description) {
     origine: description.origine,
     commit: description.commit,
     complet: description.complet,
+    // Un arbre construit pour un BANC — origines de test, `http:` — n'est pas un artefact
+    // publiable, et il ne doit pas pouvoir être pris pour tel. `npm run publier:check` en produit
+    // un à chaque exécution ; sans cette marque, un `artifacts/` traîné d'une session à l'autre
+    // ressemblerait trait pour trait à une publication.
+    banc: description.banc,
     absentes: [...description.absentes],
     enTetes: description.enTetes,
     horsInventaire: [...HORS_INVENTAIRE],
