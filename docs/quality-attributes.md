@@ -500,16 +500,18 @@ multiplié par le nombre de secteurs. Les chiffres qui suivent sont des **mesure
 scénarios de bout en bout sur **OPFS réel**, dans Chromium, sur le volume applicatif de **512 Mio**
 de l'image de référence. Elles sont relevées dans `reports/e2e/*.json` à chaque exécution.
 
-| Geste, sur OPFS réel                                                  |                    Mesuré | Ce que le chiffre couvre                                                      |
-| --------------------------------------------------------------------- | ------------------------: | ----------------------------------------------------------------------------- |
-| **Scellement initial** d'un volume v3 neuf de 512 Mio                 |                **21,8 s** | l'ouverture d'un volume qui naît : 1 048 576 secteurs scellés, zéros compris  |
-| **Versement** du disque applicatif dans ce volume                     |                **21,1 s** | les 512 Mio de l'image écrits par le chemin chiffré, après le scellement      |
-| **Migration** d'un volume de 512 Mio vers v3, reprise à MI-CONVERSION | **PLACEHOLDER_MIGRATION** | la chaîne rejouée depuis le manifeste source, sur un volume à moitié converti |
-| **Restauration** d'une archive de 512 Mio                             |                **11,4 s** | recopie du fichier chiffré, sans clé — elle ne scelle ni ne déchiffre rien    |
+| Geste, sur OPFS réel                                               |     Mesuré | Ce que le chiffre couvre                                                     |
+| ------------------------------------------------------------------ | ---------: | ---------------------------------------------------------------------------- |
+| **Scellement initial** d'un volume v3 neuf de 512 Mio              | **19,1 s** | l'ouverture d'un volume qui naît : 1 048 576 secteurs scellés, zéros compris |
+| **Versement** du disque applicatif dans ce volume                  | **18,9 s** | les 512 Mio de l'image écrits par le chemin chiffré, après le scellement     |
+| **Migration** v1 → v3 d'un volume de 512 Mio, jusqu'à la coupure   | **55,9 s** | déplacement de la charge entière, puis scellement de la moitié des secteurs  |
+| **Reprise** de cette migration, depuis un volume à moitié converti | **33,2 s** | relecture de chaque secteur pour savoir lequel est converti, puis le reste   |
+| **Restauration** d'une archive de 512 Mio                          | **11,1 s** | recopie du fichier chiffré, sans clé — elle ne scelle ni ne déchiffre rien   |
 
-**Le scellement initial mesuré (21,8 s) dépasse l'extrapolation (18,7 s) de 17 %**, et l'écart est
-dans le sens attendu : l'extrapolation ne comptait que `crypto.subtle`, pas les écritures OPFS qui
-l'accompagnent. Elle reste donc un ordre de grandeur juste, et c'est ce qu'on lui demandait.
+**Le scellement initial mesuré (19,1 s) dépasse l'extrapolation (18,7 s) de 2 %**, ce qui est
+au-dessous du bruit d'une machine de bureau : l'extrapolation ne comptait que `crypto.subtle`, pas
+les écritures OPFS qui l'accompagnent, et les deux se rejoignent. Elle était un ordre de grandeur
+juste, et c'est ce qu'on lui demandait.
 
 **La migration coûte plusieurs fois le scellement initial, et c'est explicable plutôt que
 surprenant.** Elle fait trois choses là où une création n'en fait qu'une : elle **déplace** les 512
@@ -517,18 +519,25 @@ Mio de charge pour ouvrir la région d'authentification, elle **relit** chaque s
 sceller — un volume qui naît scelle des zéros qu'il n'a pas eu à lire —, et elle rejoue la chaîne v1
 → v2 → v3.
 
-**Ce que « REPRISE » qualifie, et ce qu'il qualifiait avant.** Le premier chiffre publié décrivait
-une migration reprise après une coupure qui tombait AVANT que la conversion ne touche un octet : la
-reprise y refaisait une conversion intégrale d'un volume intact, et le mot « reprise » n'apportait
-rien. La revue de #110 l'a relevé. Le scénario coupe désormais **au milieu du scellement** — fichier
-déjà agrandi, charge déplacée, une moitié des secteurs scellée et l'autre en clair —, et le chiffre
-ci-dessus est celui de cette reprise-là : elle relit chaque secteur pour savoir lequel est déjà
-converti, ce qu'une première conversion n'a pas à faire.
+**Ce que « REPRISE » qualifie, et ce qu'il qualifiait avant.** Le premier chiffre publié — 112,7 s —
+décrivait une migration reprise après une coupure qui tombait AVANT que la conversion ne touche un
+octet : la reprise y refaisait une conversion intégrale d'un volume intact, et le mot « reprise »
+n'apportait rien. La revue de #110 l'a relevé. Le scénario coupe désormais **au milieu du
+scellement** — fichier déjà agrandi, charge déplacée, une moitié des secteurs scellée et l'autre en
+clair —, et les deux lignes ci-dessus décrivent les deux moitiés réelles : **55,9 s** jusqu'à la
+coupure, **33,2 s** pour la reprise. Leur somme, 89,1 s, est ce que coûte une migration de 512 Mio
+interrompue une fois — moins qu'une migration d'un trait mesurée à 112,7 s, parce que la reprise ne
+redéplace pas la charge et ne rescelle pas ce qui l'est déjà. Elle relit en revanche chaque secteur
+pour savoir lequel est converti, ce qu'une première conversion n'a pas à faire.
+
+**Le clair est CONSERVÉ à l'octet à travers l'interruption et la reprise**, et c'est le scénario qui
+le vérifie : l'empreinte du clair après migration égale celle du fichier avant migration. Sans cette
+vérification, les durées ci-dessus mesureraient la vitesse à laquelle un volume se détruit.
 
 **Aucune de ces valeurs n'est un budget**, et la règle de #16 s'applique telle quelle : « un seuil
 posé sans mesure opposable serait une promesse, pas un budget ». Ce sont des relevés sur une machine
 qui n'est pas l'environnement de référence. Ce qu'ils permettent de dire est plus modeste et plus
-utile : migrer un volume de 512 Mio prend **de l'ordre de deux minutes**, pas de l'ordre de la
+utile : migrer un volume de 512 Mio prend **de l'ordre de la minute et demie**, pas de l'ordre de la
 seconde ni de l'heure, et l'interface qui le proposera devra le dire à l'utilisateur avant de
 commencer.
 
