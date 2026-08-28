@@ -18,6 +18,7 @@ import {
   statOpfsVolume,
 } from "/src/vm/opfs-sync-access.mjs";
 import { revokeVolumeManifest, writeVolumeManifest } from "/src/vm/opfs-volume-open.mjs";
+import { STORAGE_ERROR_CODES } from "/src/vm/storage-errors.mjs";
 import { createSha256Stream } from "/src/vm/sha256-stream.mjs";
 import { manifestSidecarName } from "/src/vm/volume-import.mjs";
 import {
@@ -297,8 +298,14 @@ async function empreinteDuClair(volume, blockBytes) {
   let backend;
   try {
     backend = await openOpfsVolume({ name: volume, journal: new BlockJournal(), cle: cleDuBanc() });
-  } catch {
-    return null;
+  } catch (cause) {
+    // Un volume d'un format ANTÉRIEUR n'a pas de clair distinct de son fichier : `null` le dit, et
+    // c'est le seul refus qu'on avale. Tout le reste — racine abîmée, sceau rejeté, support en
+    // panne — est un DIAGNOSTIC, et l'avaler coûtait cher : la revue de #110 a relevé qu'un
+    // scénario de bout en bout rougissait sur « reçu null » sans jamais dire
+    // `VAULT_STORAGE_GENERATION_ROOT_CORRUPT`, c'est-à-dire sans dire ce qui n'allait pas.
+    if (cause?.code === STORAGE_ERROR_CODES.geometryMismatch) return null;
+    throw cause;
   }
   try {
     const hash = createSha256Stream();

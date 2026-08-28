@@ -254,7 +254,35 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
     "une migration interrompue ne passe jamais pour un volume valide",
   ).toMatch(/VAULT_MANIFEST_UNIDENTIFIED/);
 
-  // 7. REPRISE — sans preuve de sauvegarde : le journal porte celle qui a été retenue.
+  // 6 bis. SECONDE INTERRUPTION, celle-ci AU MILIEU DE LA CONVERSION.
+  //
+  //    Les points d'interruption précédents coupent avant que la conversion ne touche un octet :
+  //    ils éprouvent le protocole de l'ADR 0011, pas le geste qui réécrit le volume. La revue de
+  //    #110 a relevé que « reprise » qualifiait donc un cas où rien n'était converti — une
+  //    migration intégrale d'un volume intact, présentée comme une reprise. Ici le fichier est déjà
+  //    agrandi, la charge déplacée, une partie des secteurs scellée et le reste en clair.
+  session = await nouvellePage();
+  const coupeeEnConversion = await courir(session.page, {
+    phase: "migrate",
+    volume: VOLUME,
+    manifest: descripteurCourant,
+    interruptAfter: "conversion",
+  });
+  const apresConversionCoupee = await courir(session.page, {
+    phase: "inspect-volume",
+    volume: VOLUME,
+  });
+  await session.page.close();
+  expect(coupeeEnConversion.ok, "une conversion coupée ne se déclare jamais réussie").toBe(false);
+  expect(apresConversionCoupee.manifestPresent, "le volume reste non identifié").toBe(false);
+  expect(apresConversionCoupee.migrationJournalPresent, "le journal subsiste").toBe(true);
+  expect(
+    apresConversionCoupee.size,
+    "le FICHIER est déjà agrandi de sa région : la conversion avait bien commencé",
+  ).toBe(tailleDeFichier({ formatVersion: MANIFEST_FORMAT_VERSION, tailleLogique: appDiskBytes }));
+
+  // 7. REPRISE — sans preuve de sauvegarde : le journal porte celle qui a été retenue. Elle repart
+  //    donc d'une conversion RÉELLEMENT commencée, et non d'un volume intact.
   session = await nouvellePage();
   const reprise = await courir(session.page, {
     phase: "migrate",
@@ -374,6 +402,10 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
     migration: {
       reprise: reprise.resumed,
       preuve: reprise.evidence,
+      // DEUX durées, parce qu'elles ne disent pas la même chose : la tentative coupée à
+      // mi-conversion a déplacé la charge et scellé la moitié des secteurs ; la reprise relit chaque
+      // secteur pour savoir lequel est déjà converti, puis finit le reste.
+      dureeCoupeeMs: coupeeEnConversion.durationMs ?? null,
       dureeMs: reprise.durationMs ?? null,
     },
     refus: {

@@ -440,6 +440,18 @@ avec l'export : une génération rejouée ou écartée change ce que l'archive c
 récupération REFUSE — racine abîmée, sceau rejeté —, le fichier n'est pas même ouvert : on n'exporte
 pas un état dont personne ne peut dire ce qu'il est.
 
+**Le BAIL exclusif est rompu entre les deux ouvertures, et le dire vaut mieux que le taire.**
+`close()` rend le handle ; l'ouverture brute en reprend un. Entre les deux, le fichier n'est tenu
+par personne. L'archive déclare pourtant `handle-exclusif` — « aucun autre contexte n'écrit dans
+l'origine ». On ne peut pas tenir le bail : `createSyncAccessHandle` est exclusif par fichier et le
+rendre est la seule façon d'en laisser prendre un autre ; il n'existe pas de passation. Ce qui est
+fait à la place est de RE-CONSTATER, après la reprise du bail, que le fichier est bien celui qu'on
+vient de récupérer — sa taille et l'identifiant de son en-tête —, et de refuser sinon. Ce contrôle
+n'est pas une preuve d'exclusivité et ne prétend pas l'être : il attrape le remplacement et le
+retaillage, pas une écriture au milieu du fichier. La topologie de l'ADR 0002 — un seul Worker de
+confiance par origine — est ce qui rend l'intervalle inoffensif en pratique ; le contrôle est ce qui
+rend son franchissement VISIBLE plutôt que silencieux.
+
 **Conséquence, et elle nuance la décision ci-dessus : l'export d'un volume v3 demande la CLÉ.**
 Rejouer une génération validée exige de déchiffrer ses enregistrements et de resceller des secteurs.
 L'archive produite, elle, n'en porte aucune, et la **restauration n'en demande toujours pas** —

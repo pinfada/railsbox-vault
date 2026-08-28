@@ -113,10 +113,10 @@ export function tailleSupportV3(tailleLogique) {
 /**
  * Taille du FICHIER d'un volume, selon son format.
  *
- * Elle existe parce que l'ARCHIVE porte un fichier, pas un volume logique (ADR 0016, decision 7) :
- * jusqu'a v2 les deux coincidaient et personne n'avait a les distinguer ; en v3 le fichier porte en
- * plus l'en-tete et la region d'authentification. La fonction est DERIVEE du format et de la
- * geometrie, jamais recue d'un appelant : deux sources de verite divergeraient, et c'est l'archive
+ * Elle existe parce que l'ARCHIVE porte un fichier, pas un volume logique (ADR 0016, décision 7) :
+ * jusqu'à v2 les deux coïncidaient et personne n'avait à les distinguer ; en v3 le fichier porte en
+ * plus l'en-tête et la région d'authentification. La fonction est DÉRIVÉE du format et de la
+ * géométrie, jamais reçue d'un appelant : deux sources de vérité divergeraient, et c'est l'archive
  * qui deviendrait invérifiable.
  *
  * @param {{ formatVersion: number, tailleLogique: number }} volume

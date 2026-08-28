@@ -22,7 +22,15 @@ import { ouvrirPourExport } from "../../src/vm/export-du-fichier.mjs";
 /** Journalise les gestes dans l'ordre où ils arrivent, et rien d'autre. */
 function bancDeGestes({ rapport = null, echouerALaRecuperation = null } = {}) {
   const gestes = [];
-  const brut = { name: "app", ferme: false };
+  // Le fichier d'épreuve : un en-tête v3 nul (donc sans identifiant lisible) et une taille stable.
+  // Le CONSTAT qui suit la reprise du bail porte sur ces deux grandeurs — voir `ouvrirPourExport`.
+  const TAILLE = 512 + 512 + 4096;
+  const brut = {
+    name: "app",
+    ferme: false,
+    size: () => TAILLE,
+    read: async (offset, longueur) => new Uint8Array(longueur),
+  };
   return {
     gestes,
     brut,
@@ -31,6 +39,8 @@ function bancDeGestes({ rapport = null, echouerALaRecuperation = null } = {}) {
       if (echouerALaRecuperation) throw echouerALaRecuperation;
       return {
         generation: { rapport },
+        size: () => 4096,
+        lireSupportBrut: async (offset, longueur) => new Uint8Array(longueur),
         close: async () => {
           gestes.push("fermer");
         },
@@ -95,4 +105,31 @@ test("une récupération qui ÉCHOUE n'ouvre pas le fichier : on n'exporte pas u
     (erreur) => erreur === refus,
   );
   assert.deepEqual(banc.gestes, ["recuperer:app:avec-cle"], "le fichier n'a même pas été ouvert");
+});
+
+test("un fichier qui a CHANGÉ entre la récupération et la copie fait refuser l'export", async () => {
+  // Le bail exclusif est rompu entre `close()` et l'ouverture brute : `createSyncAccessHandle` est
+  // exclusif par fichier, et le rendre est la seule façon d'en laisser prendre un autre. L'archive
+  // déclare pourtant `handle-exclusif`. On ne peut pas tenir le bail ; ce qu'on peut, c'est
+  // CONSTATER que le fichier repris est bien celui qu'on vient de refermer — et le refuser sinon.
+  //
+  // Ce contrôle attrape le remplacement et le retaillage, pas une écriture au milieu du fichier :
+  // il rend le franchissement de l'intervalle VISIBLE, il ne le rend pas impossible.
+  const banc = bancDeGestes();
+  const retaille = {
+    ...banc,
+    ouvrirBrut: async ({ name }) => {
+      banc.gestes.push(`brut:${name}`);
+      return { ...banc.brut, size: () => 12345 };
+    },
+  };
+
+  await assert.rejects(
+    () => ouvrirPourExport({ name: "app", cle: CLE_DE_TEST, ...retaille }),
+    (erreur) => {
+      assert.equal(erreur.code, "VAULT_STORAGE_IDENTITE_VOLUME");
+      assert.match(erreur.message, /a changé entre la récupération et la copie/);
+      return true;
+    },
+  );
 });
