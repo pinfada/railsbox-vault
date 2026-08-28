@@ -309,3 +309,51 @@ test("une RÉGION qui change sous une racine inchangée est refusée, empreinte 
       String(erreur.context.cause).includes("FRAICHEUR"),
   );
 });
+
+test("un journal SANS racine sous un témoin présent est refusé : c'est un recul, pas un volume neuf", async () => {
+  // C'est le TÉMOIN NÉGATIF du retrait de témoin que la restauration (#12) et la migration (#13)
+  // opèrent. Un témoin ne s'écrit qu'APRÈS une racine et sa barrière : son existence prouve qu'une
+  // racine a été durable, et son absence du journal est donc un recul — pas une première ouverture.
+  //
+  // C'est aussi, exactement, ce qui arriverait si un volume était réécrit depuis une archive sans
+  // que son témoin parte avec son journal : le boot suivant refuserait un volume sain, et le
+  // message désignerait un retour arrière qui n'a pas eu lieu.
+  const banc = bancDeMigration();
+  const source = () => sourceEnMemoire(banc.region, banc.boite);
+
+  const premier = await banc.ouvrir(source());
+  await premier.deposer(0, buildPattern(SECTOR_SIZE, 111));
+  await premier.valider();
+  await premier.pointDeControle();
+  premier.close();
+  banc.magasin.abandon("vol.gen");
+  assert.ok(banc.boite.octets.byteLength > 0, "le témoin atteste une racine durable");
+
+  // TÉMOIN POSITIF : journal et témoin cohérents, le volume rouvre.
+  const intact = await banc.ouvrir(source());
+  assert.equal(intact.rapport.fraicheurRegion, "verifiee");
+  assert.ok(intact.rapport.temoinSequence > 0);
+  intact.close();
+  banc.magasin.abandon("vol.gen");
+
+  // Le journal disparaît — c'est ce que laisse une réécriture intégrale du volume — et le témoin
+  // reste. Le refus doit NOMMER le témoin, et non se contenter de constater un journal vierge.
+  await restaurer(banc.magasin, "vol.gen", new Uint8Array(0));
+  await assert.rejects(
+    () => banc.ouvrir(source()),
+    (erreur) =>
+      isStorageError(erreur, STORAGE_ERROR_CODES.generationCorrupt) &&
+      String(erreur.context.cause).includes("TEMOIN"),
+  );
+  // Le magasin construit à la main tient son handle : c'est l'ouvreur du produit qui le rend sur
+  // refus, pas le magasin. Ce banc doit donc le relâcher lui-même avant de rouvrir.
+  banc.magasin.abandon("vol.gen");
+
+  // Et le remède est bien le RETRAIT du témoin, pas une tolérance : une fois retiré, le même
+  // journal vide rouvre comme une première ouverture — ce que ce volume est réellement devenu.
+  banc.boite.octets = null;
+  const apresRetrait = await banc.ouvrir(source());
+  assert.equal(apresRetrait.rapport.temoinSequence, null);
+  apresRetrait.close();
+  banc.magasin.abandon("vol.gen");
+});

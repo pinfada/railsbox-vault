@@ -384,7 +384,78 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
   expect(reprise.observedRecordId).toBe(contrat.record.id);
   expect(reprise.observedAttachmentSha256).toBe(contrat.attachment.sha256);
 
-  // 10. TÉMOIN — le manifeste voisin n'est pas décoratif : il CONDITIONNE l'ouverture en écriture.
+  // 10. RESTAURATION SUR UNE CIBLE DÉJÀ BOOTÉE — la seule qui porte un vrai TÉMOIN de séquence.
+  //
+  //     Les deux imports précédents ne l'exerçaient pas, et il faut le dire : le premier visait une
+  //     cible qui n'avait JAMAIS existé sur B, le second était refusé avant toute mutation
+  //     (`VAULT_IMPORT_TARGET_NOT_EMPTY`). Ni l'un ni l'autre n'atteignait donc `discardGeneration`
+  //     sur une cible portant le témoin de l'ADR 0019 — ils passaient identiquement avec ou sans le
+  //     retrait de ce témoin.
+  //
+  //     Ici, VOLUME_B vient de BOOTER : Rails y a validé des générations, donc son témoin existe et
+  //     atteste une séquence non nulle. L'écraser depuis l'archive doit l'emporter avec le journal
+  //     de génération — sans quoi le boot suivant serait refusé par `VAULT_TEMOIN_SEQUENCE`, un
+  //     témoin attestant une séquence que le volume restauré n'a jamais atteinte. Le refus
+  //     lui-même — journal sans racine sous un témoin — est le témoin NÉGATIF, exercé au niveau
+  //     unitaire par `tests/unit/vm-generation-fraicheur.test.mjs`, où il se fabrique sans un boot
+  //     Rails de plus.
+  session = await nouvellePage(E2E_ORIGIN_B);
+  const avantEcrasement = await courir(session.page, {
+    phase: "inspect-volume",
+    volume: VOLUME_B,
+  });
+  await session.page.close();
+  // La PRÉCONDITION, vérifiée et pas supposée : sans témoin sur la cible, l'écrasement ci-dessous
+  // ne prouverait rien de plus que les deux imports précédents.
+  expect(avantEcrasement.temoinPresent, "un volume booté porte un témoin de séquence").toBe(true);
+  expect(avantEcrasement.temoinSize, "et ce témoin n'est pas un fichier vide").toBeGreaterThan(0);
+  expect(
+    avantEcrasement.generationJournalPresent,
+    "un volume booté porte aussi son journal de génération",
+  ).toBe(true);
+
+  session = await nouvellePage(E2E_ORIGIN_B);
+  const ecrase = await importer(session.page, cheminArchive, {
+    phase: "import",
+    volume: VOLUME_B,
+    expectations: attentes,
+    overwrite: true,
+  });
+  const apresEcrasement = await courir(session.page, {
+    phase: "inspect-volume",
+    volume: VOLUME_B,
+  });
+  await session.page.close();
+  expect(ecrase.ok, `écrasement en échec : ${ecrase.error?.message ?? ""}`).toBe(true);
+  expect(ecrase.restored).toBe(true);
+  expect(
+    apresEcrasement.temoinPresent,
+    "la restauration a EMPORTÉ le témoin de la cible écrasée",
+  ).toBe(false);
+  expect(apresEcrasement.generationJournalPresent, "et le journal de génération avec lui").toBe(
+    false,
+  );
+  expect(apresEcrasement.manifestPresent, "le manifeste de l'archive est réinscrit").toBe(true);
+
+  // Et le BOOT réussit. C'est la ligne qui rougirait sans le retrait du témoin : le journal a
+  // disparu avec la restauration, un témoin survivant attesterait une séquence que ce volume n'a
+  // jamais atteinte, et l'ouverture refuserait un volume pourtant relu et vérifié octet pour octet.
+  session = await nouvellePage(E2E_ORIGIN_B);
+  const repriseEcrasee = await courir(session.page, {
+    ...configBoot,
+    phase: "resume",
+    volume: VOLUME_B,
+  });
+  await session.page.close();
+  await testInfo.attach("reprise-apres-ecrasement.json", {
+    body: JSON.stringify(repriseEcrasee, null, 2),
+    contentType: "application/json",
+  });
+  expect(repriseEcrasee.failures, "aucune panne de support après écrasement").toEqual([]);
+  expect(repriseEcrasee.conforming, "invariant conforme après écrasement de la cible").toBe(true);
+  expect(repriseEcrasee.observedRecordId).toBe(contrat.record.id);
+
+  // 11. TÉMOIN — le manifeste voisin n'est pas décoratif : il CONDITIONNE l'ouverture en écriture.
   //     On le retire du volume restauré (ce que laisserait une restauration interrompue), et le
   //     boot suivant doit être refusé par `VAULT_MANIFEST_UNIDENTIFIED` avant même de démarrer v86.
   session = await nouvellePage(E2E_ORIGIN_B);
@@ -405,7 +476,7 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
     "un volume sans manifeste ne doit jamais être ouvert en écriture",
   ).toMatch(/VAULT_MANIFEST_UNIDENTIFIED/);
 
-  // 11. TÉMOIN — l'extraction d'un `File` est bornée à une ARCHIVE (SEC-ORIGIN-001). Demander le
+  // 12. TÉMOIN — l'extraction d'un `File` est bornée à une ARCHIVE (SEC-ORIGIN-001). Demander le
   //     fichier d'un VOLUME est refusé : la coquille n'obtient jamais de vue sur un volume.
   session = await nouvellePage(E2E_ORIGIN_B);
   let refusFichierVolume = null;
