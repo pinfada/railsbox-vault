@@ -225,6 +225,62 @@ test("aucun COEP n'est publié : l'ADR 0010 l'écarte, l'ADR 0017 ne le rouvre p
   }
 });
 
+// --- En-têtes de durcissement générique (#104, ADR 0022) ---------------------------------------
+//
+// Le risque résiduel n°7 de l'ADR 0017 relevait qu'aucun n'était publié, et que cette absence
+// n'était pas une décision mais la conséquence mécanique de la règle « rien de plus que ce que sert
+// le serveur de test ». L'ADR 0022 les décide DANS la source de vérité ; ces épreuves vérifient que
+// la publication les en DÉRIVE, et qu'elle n'en a pas fait un troisième ajout à sa propre table.
+
+test("les en-têtes de durcissement publiés sont CEUX du serveur de test, pas une copie", () => {
+  const servis = securityHeaders({
+    role: "shell",
+    pathname: "/index.html",
+    isolation: null,
+    appOrigin: ORIGINES.origineApplication,
+  });
+  const publies = enTetesDePublication("coquille", ORIGINES);
+  assert.equal(publies["Referrer-Policy"], servis["Referrer-Policy"]);
+  assert.equal(publies["Permissions-Policy"], servis["Permissions-Policy"]);
+  // La valeur elle-même est éprouvée par `tests/unit/entetes-de-durcissement.test.mjs` ; ici, ce
+  // qui est éprouvé est qu'elle TRAVERSE la publication sans être réécrite.
+  assert.equal(publies["Referrer-Policy"], "no-referrer");
+  assert.equal(publies["Permissions-Policy"], "camera=(), microphone=(), geolocation=()");
+});
+
+test("le durcissement n'est PAS un ajout de la publication : il vient de la source de vérité", () => {
+  // Si ces en-têtes figuraient dans `EN_TETES_AJOUTES_PAR_LA_PUBLICATION`, ils seraient servis en
+  // production sans l'être en développement — la divergence exacte que l'ADR 0017 § 2 évite, et
+  // qui rendrait muettes les épreuves de frontière qui mesurent `tools/serve-headers.mjs`.
+  const ajoutes = EN_TETES_AJOUTES_PAR_LA_PUBLICATION.map(({ nom }) => nom);
+  assert.ok(!ajoutes.includes("Referrer-Policy"));
+  assert.ok(!ajoutes.includes("Permissions-Policy"));
+});
+
+test("l'origine applicative ne publie ni `Referrer-Policy` ni `Permissions-Policy` (ADR 0022)", () => {
+  const application = enTetesDePublication("application", ORIGINES);
+  assert.equal(application["Referrer-Policy"], undefined);
+  assert.equal(application["Permissions-Policy"], undefined);
+});
+
+test("aucun HSTS n'est publié : l'ADR 0022 l'écarte, et c'est une obligation d'exploitant", () => {
+  for (const arbre of ["coquille", "application"]) {
+    assert.equal(enTetesDePublication(arbre, ORIGINES)["Strict-Transport-Security"], undefined);
+  }
+});
+
+test("une valeur d'en-tête portant des virgules survit à l'aller-retour du `_headers`", () => {
+  // `Permissions-Policy: camera=(), microphone=(), geolocation=()` est la première valeur publiée
+  // qui contient des virgules et des parenthèses. Le format `_headers` n'est pas un standard : la
+  // relire par l'analyseur qui la sert est la seule façon de savoir qu'elle traverse.
+  const relu = enTetesPour(
+    analyserHeaders(rendreFichierHeaders("coquille", ORIGINES)),
+    "/index.html",
+  );
+  assert.equal(relu["Permissions-Policy"], "camera=(), microphone=(), geolocation=()");
+  assert.equal(relu["Referrer-Policy"], "no-referrer");
+});
+
 test("un arbre inconnu est refusé plutôt que servi sans politique", () => {
   assert.throws(() => enTetesDePublication("banc"), /Arbre inconnu/u);
 });
