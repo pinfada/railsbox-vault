@@ -78,6 +78,9 @@ const SORTIE_PAR_DEFAUT = "artifacts/publication";
 /** Répertoires que la construction écrit sous `--sortie` — et donc EFFACE avant de les réécrire. */
 const NOMS_DARBRES = Object.freeze(ARBRES.map(({ nom }) => nom));
 
+/** Ce que la construction efface, tel qu'un refus doit le nommer à l'opérateur. */
+const EFFACES = NOMS_DARBRES.map((nom) => `<sortie>/${nom}`).join(" et ");
+
 /**
  * Ce que `--sortie` a le droit de faire effacer.
  *
@@ -108,11 +111,18 @@ const NOMS_DARBRES = Object.freeze(ARBRES.map(({ nom }) => nom));
  */
 export async function exigerSortieUtilisable(sortie, racine = REPOSITORY_ROOT) {
   const interne = relative(racine, sortie);
-  if (interne === "" || interne.startsWith("..") || isAbsolute(interne)) {
+  if (interne === "") {
     throw new Error(
-      `Sortie refusée : ${sortie} n'est pas strictement sous la racine du dépôt (${racine}). La ` +
-        `construction efface ${NOMS_DARBRES.map((nom) => `<sortie>/${nom}`).join(" et ")} avant ` +
-        `de les réécrire, et ne le fait que là où git rend le dommage visible.`,
+      `Sortie refusée : ${sortie} est la racine du dépôt elle-même. La construction y sèmerait les ` +
+        `répertoires ${NOMS_DARBRES.join(" et ")} au milieu des sources ; visez un répertoire qui ` +
+        `lui soit dédié, sous ${SORTIE_PAR_DEFAUT.split("/")[0]}/.`,
+    );
+  }
+  if (interne.startsWith("..") || isAbsolute(interne)) {
+    throw new Error(
+      `Sortie refusée : ${sortie} est hors de la racine du dépôt (${racine}). La construction ` +
+        `efface ${EFFACES} avant de les réécrire, et ne le fait que là où git rend le dommage ` +
+        `visible.`,
     );
   }
 
