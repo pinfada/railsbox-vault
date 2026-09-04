@@ -5,6 +5,9 @@
 //   live          Rails boote sur le disque OPFS en écriture ; l'invariant est vérifié à chaud.
 //   resume        BOOT À FROID depuis le même volume OPFS (aucun snapshot), invariant revérifié.
 //   live-couper   comme `live`, mais ANNONCE l'instant où le guest a muté et acquitté une barrière.
+//   live-capturer comme `live`, mais CAPTURE un instantané au point de contrôle qui clôt le boot.
+//   resume-instantane  reprise PAR INSTANTANÉ : l'instantané est ouvert avant le boot, restauré s'il
+//                 est utilisable, écarté et retiré sinon — et le boot à froid s'exécute alors.
 //   resume-arm/   reprise hors ligne en deux temps : `arm` acquiert le runtime EN LIGNE, le test
 //   resume-fire   coupe le réseau, puis `fire` boote à froid et vérifie SANS aucun accès réseau.
 //
@@ -26,6 +29,26 @@ export async function phaseLive(options) {
 
 export async function phaseResume(options) {
   return bootEtVerifier({ ...options, phase: "resume" });
+}
+
+/**
+ * Boot à chaud qui CAPTURE un instantané (#65, ADR 0024).
+ *
+ * La capture a lieu au point de contrôle qui clôt le boot, après que l'invariant a été vérifié :
+ * capturer avant lierait l'instantané à un état dont personne n'a encore constaté qu'il vaut
+ * quelque chose.
+ */
+export async function phaseLiveCapturer(options) {
+  return bootEtVerifier({ ...options, phase: "live-capturer", capturerInstantane: true });
+}
+
+/**
+ * REPRISE PAR INSTANTANÉ. Elle ne se déclare jamais réussie : elle rend `usedSnapshot` et, quand
+ * l'instantané a été écarté, le MOTIF du rejet. Un banc qui dirait « repris » sans distinguer les
+ * deux chemins passerait aussi bien avec l'instantané que sans.
+ */
+export async function phaseResumeInstantane(options) {
+  return bootEtVerifier({ ...options, phase: "resume-instantane", reprendreParInstantane: true });
 }
 
 /**

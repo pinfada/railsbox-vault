@@ -6,7 +6,8 @@
 // deçà du plafond de 800 lignes du dépôt et laisse chaque famille se lire d'un bloc :
 //
 //   reference-worker-boot.mjs             acquisition du runtime et boot vérifié
-//   reference-worker-phases-boot.mjs      live, resume, live-couper, resume-arm, resume-fire
+//   reference-worker-phases-boot.mjs      live, resume, live-couper, live-capturer,
+//                                         resume-instantane, resume-arm, resume-fire
 //   reference-worker-phases-volume.mjs    prepare, prepare-empty, cleanup, revoke-manifest,
 //                                         inspect-volume, digest-volume
 //   reference-worker-phases-archive.mjs   export, verify-export, archive-file, import
@@ -42,10 +43,12 @@ import {
 } from "./reference-worker-phases-archive.mjs";
 import {
   phaseLive,
+  phaseLiveCapturer,
   phaseLiveCouper,
   phaseResume,
   phaseResumeArm,
   phaseResumeFire,
+  phaseResumeInstantane,
 } from "./reference-worker-phases-boot.mjs";
 import { phaseMigrate } from "./reference-worker-phases-migration.mjs";
 import {
@@ -70,6 +73,8 @@ const PHASES = new Map([
   ["cleanup", phaseCleanup],
   ["live", phaseLive],
   ["live-couper", phaseLiveCouper],
+  ["live-capturer", phaseLiveCapturer],
+  ["resume-instantane", phaseResumeInstantane],
   ["resume", phaseResume],
   ["resume-arm", phaseResumeArm],
   ["resume-fire", phaseResumeFire],

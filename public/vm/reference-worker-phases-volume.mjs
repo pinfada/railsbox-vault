@@ -17,6 +17,7 @@ import {
   migrationJournalName,
   removeOpfsVolume,
   statOpfsVolume,
+  instantaneSidecarName,
   temoinSequenceName,
 } from "/src/vm/opfs-sync-access.mjs";
 import { revokeVolumeManifest, writeVolumeManifest } from "/src/vm/opfs-volume-open.mjs";
@@ -242,6 +243,10 @@ export async function phaseInspectVolume({ volume }) {
   // témoin » resterait une phrase, et un scénario passerait aussi bien avec le correctif que sans.
   const journalGeneration = await statOpfsVolume(generationJournalName(volume));
   const temoin = await statOpfsVolume(temoinSequenceName(volume));
+  // Et l'INSTANTANÉ (#65, ADR 0024) : sans cette observation, « l'ouverture écarte et RETIRE un
+  // instantané périmé » resterait une phrase, et un scénario passerait aussi bien avec le retrait
+  // que sans.
+  const instantane = await statOpfsVolume(instantaneSidecarName(volume));
   return {
     phase: "inspect-volume",
     volume,
@@ -255,6 +260,8 @@ export async function phaseInspectVolume({ volume }) {
     generationJournalSize: journalGeneration.size,
     temoinPresent: temoin.present && temoin.size > 0,
     temoinSize: temoin.size,
+    instantanePresent: instantane.present && instantane.size > 0,
+    instantaneSize: instantane.size,
   };
 }
 
