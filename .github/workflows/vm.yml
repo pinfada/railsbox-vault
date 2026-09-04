@@ -19,7 +19,10 @@ jobs:
   vm:
     name: Barrière de durabilité du guest
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Budget mesuré : la suite VM dure 19 à 22 min et le protocole de mesure 7 min ; les
+    # dépendances peuvent en coûter 7 sans cache. À 30 min, le protocole était tué (SIGTERM,
+    # code 143) alors que les épreuves avaient réussi. 45 laisse la marge d'un run sans cache.
+    timeout-minutes: 45
     steps:
       - name: Récupération du dépôt
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
