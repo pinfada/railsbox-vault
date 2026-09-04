@@ -460,6 +460,10 @@ function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline })
     recuperation: montage.recuperation,
     generation: releverGeneration(montage.backend),
     counts: montage.journal.counts(),
+    // Ce que la FERMETURE du volume a dû attendre (#132) : les E/S que le guest avait encore en
+    // vol quand elle a commencé. Sans ce chiffre, « la course n'arrive plus » ne se distingue
+    // pas de « la course n'est pas tombée cette fois ».
+    fermetureEnVol: montage.backend.enVolALaFermeture,
     failures: montage.failures,
     observationsRuntime: [...deroule.observations, ...lireRejets()],
     guestLog: montage.guestLog,

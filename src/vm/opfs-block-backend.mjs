@@ -81,6 +81,12 @@ export class OpfsBlockBackend {
    * lâché, c'est la session qui a fermé sous sa propre écriture.
    */
   #enVol = new Set();
+  /**
+   * Nombre d'E/S que la fermeture a dû ATTENDRE. Publié parce qu'un créneau que personne ne
+   * mesure finit par être supposé vide : c'est ce chiffre, et lui seul, qui dit si une session
+   * ferme réellement sous une E/S en vol (#132).
+   */
+  #enVolALaFermeture = 0;
 
   /**
    * Utiliser `openOpfsVolume` : le constructeur ne garantit ni géométrie ni exclusivité, et surtout
@@ -613,6 +619,11 @@ export class OpfsBlockBackend {
     return this.#dureeRangementMaxMs;
   }
 
+  /** Ce que la dernière fermeture a attendu, en nombre d'E/S. Zéro tant qu'aucune n'a eu lieu. */
+  get enVolALaFermeture() {
+    return this.#enVolALaFermeture;
+  }
+
   /**
    * Fermeture exclusive. Elle rend le handle au support ET libère le nom : c'est le transfert de
    * propriété du volume, et c'est ce qui rend la réouverture possible dans la même session.
@@ -621,6 +632,7 @@ export class OpfsBlockBackend {
    */
   async close() {
     if (this.#acces.ferme) return;
+    this.#enVolALaFermeture = this.#enVol.size;
     // Les E/S DÉJÀ ACCEPTÉES rendent la main avant que la fermeture ne commence (#132). Ni la marque
     // de fermeture — qui les refuserait par `VAULT_STORAGE_CLOSED` — ni le retrait des handles ne
     // doit passer sous une écriture en vol : le guest verrait une panne du support là où la session
