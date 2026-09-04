@@ -12,6 +12,7 @@
 // ouvrir de handle, ce qui le garde vérifiable sans réseau ni support.
 
 import { JOURNAL_OPERATIONS } from "./block-journal.mjs";
+import { creerTamponRootfs } from "./instantane/tampon-rootfs.mjs";
 import { cadencer } from "./scheduling-loop.mjs";
 import { createSerialHttpClient } from "./serial-http-client.mjs";
 import { BRIDGE_MODES, installDurabilityBridge } from "./v86-flush-bridge.mjs";
@@ -114,6 +115,12 @@ export function createReferenceGuestSession({
 
   let emulator = null;
   let bridge = null;
+  /**
+   * Tampon du ROOTFS, à état DIFFÉRENTIEL (#65). Il remplace le `{ buffer }` que v86 transformait en
+   * `SyncBuffer` — dont l'état capturé était le disque ENTIER, 385 Mio par instantané. Il est
+   * construit au boot et retenu ici : la capture et la restauration passent par lui.
+   */
+  let rootfs = null;
   let transcript = "";
   const decoder = new TextDecoder("utf-8", { fatal: false });
   const client = createSerialHttpClient({
@@ -130,8 +137,15 @@ export function createReferenceGuestSession({
      * Démarre la VM. Le pont de durabilité est posé AVANT `run()` : le noyau lit le paquet IDENTIFY
      * une seule fois au démarrage, et un pont posé après coup n'obtiendrait aucune barrière.
      */
-    async boot({ ideTimeoutMs = DEFAULT_IDE_TIMEOUT_MS } = {}) {
+    async boot({ ideTimeoutMs = DEFAULT_IDE_TIMEOUT_MS, etatARestaurer = null } = {}) {
       const wasm = asArrayBuffer(artifacts.wasm);
+      // Les octets du rootfs sont ADOPTÉS, non recopiés : le Worker vient de les télécharger et n'en
+      // garde pas d'autre référence. Les recopier coûterait 385 Mio pour rien.
+      rootfs = creerTamponRootfs(
+        artifacts.rootfs instanceof Uint8Array
+          ? artifacts.rootfs
+          : new Uint8Array(asArrayBuffer(artifacts.rootfs)),
+      );
       emulator = new V86({
         wasm_fn: async (env) => (await WebAssembly.instantiate(wasm, env)).instance.exports,
         bios: { buffer: asArrayBuffer(artifacts.bios) },
@@ -141,7 +155,7 @@ export function createReferenceGuestSession({
         cmdline,
         // hda = rootfs en lecture/écriture éphémère (les écritures du guest y restent en RAM) ;
         // hdb = disque applicatif adossé à OPFS, où atterrissent SQLite et la pièce jointe.
-        hda: { buffer: asArrayBuffer(artifacts.rootfs) },
+        hda: rootfs,
         hdb: appAdapter,
         memory_size: memoryBytes,
         vga_memory_size: 2 * 1024 * 1024,
@@ -176,8 +190,40 @@ export function createReferenceGuestSession({
         mode,
       });
 
+      // La RESTAURATION vient APRÈS le pont et AVANT `run()`, et l'ordre est le contrat (#65) :
+      //
+      //  - après le pont, parce que `restore_state` rend au guest un paquet IDENTIFY déjà lu — le
+      //    guest capturé savait son disque en « write back », et un pont posé ensuite n'aurait plus
+      //    d'IDENTIFY à corriger ;
+      //  - avant `run()`, parce qu'un guest lancé à froid puis écrasé par une restauration aurait
+      //    battu pour rien, et la mesure porterait sur deux boots au lieu d'un.
+      //
+      // `set_state` de l'adaptateur confronte alors la liaison au volume réellement ouvert, avant
+      // que la moindre instruction n'ait été exécutée.
+      if (etatARestaurer !== null) {
+        await emulator.restore_state(etatARestaurer.buffer ?? etatARestaurer);
+        journal.record(JOURNAL_OPERATIONS.mark, { label: "instantane-restaure" });
+      }
+
       journal.record(JOURNAL_OPERATIONS.mark, { label: "boot-start" });
       emulator.run();
+    },
+
+    /**
+     * CAPTURE l'état v86. L'émulateur est ARRÊTÉ d'abord : capturer une machine qui bat donnerait un
+     * état que rien ne décrit, et c'est la quiescence de l'ADR 0024 obtenue par l'arrêt lui-même.
+     *
+     * Le pont N'EST PAS retiré : il ne vit que sur le prototype de `IDEInterface`, et le retirer ici
+     * priverait une capture ratée de son retour au service.
+     */
+    async capturer() {
+      emulator.stop();
+      return new Uint8Array(await emulator.save_state());
+    },
+
+    /** Ce que le delta du rootfs pèse. Publié : la taille d'un instantané se mesure. */
+    deltaRootfsOctets() {
+      return rootfs === null ? null : rootfs.deltaOctets();
     },
 
     /**

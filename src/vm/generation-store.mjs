@@ -215,6 +215,15 @@ export class GenerationStore {
     return magasin;
   }
 
+  /**
+   * SÉQUENCE de la racine qui fait autorité. Elle croît strictement à chaque écriture de racine,
+   * vidage compris (#65) : c'est ce qui rend un instantané périmé DÉTECTABLE dès qu'une génération
+   * a été validée après sa capture.
+   */
+  get sequenceValidee() {
+    return this.#sequenceValidee;
+  }
+
   /** Numéro de la dernière génération VALIDÉE. Zéro tant qu'aucune barrière n'a été acquittée. */
   get generationValidee() {
     return this.#generation;
@@ -233,6 +242,30 @@ export class GenerationStore {
   /** Vrai si des octets déposés attendent leur validation. */
   get enAttente() {
     return this.#sequenceValidee < this.#sequence || this.#charge.longueurPhysique > 0;
+  }
+
+  /**
+   * La RACINE VALIDÉE, en lecture seule (#65, ADR 0024) : sa séquence, sa génération, et
+   * l'empreinte de la région d'authentification qu'elle scelle.
+   *
+   * C'est la LIAISON d'un instantané de reprise, et rien d'autre : ce magasin ne sait pas ce qu'un
+   * instantané est, il rend seulement l'état que la racine authentifie. L'accesseur est asynchrone
+   * parce que l'empreinte peut devoir être recalculée — le point de contrôle qui précède une
+   * capture a écrit le volume, donc sali la région —, et ce coût appartient à la capture, qui le
+   * publie.
+   *
+   * `empreinteRegion` vaut `null` quand le magasin a été ouvert SANS fraîcheur, ce qu'un banc
+   * déclare (`fraicheur: null`). Rendre trente-deux zéros aurait été une empreinte comme une autre,
+   * et un instantané s'y serait lié comme à une vraie.
+   *
+   * @returns {Promise<{ sequence: number, generation: number, empreinteRegion: Uint8Array | null }>}
+   */
+  async racineValidee() {
+    return Object.freeze({
+      sequence: this.#sequenceValidee,
+      generation: this.#generation,
+      empreinteRegion: this.#garde === null ? null : await this.#garde.empreinte(),
+    });
   }
 
   /** Emplacement de la racine qui fait autorité en ce moment. */
@@ -632,13 +665,13 @@ export class GenerationStore {
         { volume: this.#volume, generation: this.#generation },
       );
     }
-    await this.#rejouerCharge(this.#racineValidee());
+    await this.#rejouerCharge(this.#descripteurDeRacineValidee());
     await this.#barriereVolume();
     await this.#vider({ sequence: this.#sequence, generation: this.#generation });
   }
 
   /** Le descripteur de la racine qui fait autorité, tel que le parcours l'attend. */
-  #racineValidee() {
+  #descripteurDeRacineValidee() {
     return {
       sequence: this.#sequenceValidee,
       generation: this.#generation,

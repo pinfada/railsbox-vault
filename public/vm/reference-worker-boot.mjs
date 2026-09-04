@@ -23,6 +23,10 @@ import {
 import { decrireBoucle, installerBoucleOrdonnancement } from "/src/vm/scheduling-loop.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import {
+  capturerApresPointDeControle,
+  ouvrirInstantanePourReprise,
+} from "./reference-worker-instantane.mjs";
+import {
   MANIFEST_FORMAT_VERSION,
   MIN_VOLUME_FORMAT_VERSION,
   createManifest,
@@ -102,11 +106,11 @@ export function manifesteDuDescripteur(manifest, volumeSize, volume) {
  * accuse le GUEST — exactement la cause fausse que #52 combat. La garde couvre donc le boot ET
  * l'attente de santé, et rend le compte rendu de cette dernière.
  */
-function booterEtAttendreSante(session, { bootTimeoutMs, timeline, observations }) {
+function booterEtAttendreSante(session, { bootTimeoutMs, timeline, observations, etatARestaurer }) {
   return executerSousGarde(
     () => session.ticks(),
     async () => {
-      await session.boot();
+      await session.boot({ etatARestaurer });
       timeline.marquer("bootRendu");
       return session.awaitHealth({ totalTimeoutMs: bootTimeoutMs });
     },
@@ -293,6 +297,15 @@ async function ouvrirVolumeEtSession({ volume, attentes, timeline, guest }) {
   const adapter = createV86BufferAdapter({
     backend,
     onFatal: (error) => failures.push(error.toJSON()),
+    // La LIAISON que `get_state` rendra pendant une capture, et que `set_state` confrontera pendant
+    // une restauration (#65, ADR 0024). Elle est lue à CHAQUE appel, jamais capturée à la
+    // construction : la séquence avance à chaque racine écrite, et une liaison figée décrirait un
+    // état que le volume a déjà quitté.
+    liaisonDeVolume: () => ({
+      volume: backend.identifiantVolume,
+      sequence: backend.generation?.sequenceValidee ?? 0,
+      generation: backend.generation?.generationValidee ?? 0,
+    }),
   });
   const guestLog = [];
   const session = createReferenceGuestSession({
@@ -311,7 +324,7 @@ async function ouvrirVolumeEtSession({ volume, attentes, timeline, guest }) {
     // sans jamais rendre de `BootTimeout` (WebKit, mesuré).
     boucle: boucleOrdonnancement,
   });
-  return { journal, backend, failures, recuperation, session, guestLog };
+  return { journal, backend, failures, recuperation, session, guestLog, adapter };
 }
 
 /**
@@ -324,7 +337,14 @@ async function ouvrirVolumeEtSession({ volume, attentes, timeline, guest }) {
  * @returns {Promise<{ health: object, invariant: object, rythme: object, boucle: object,
  *                     observations: object[], started: number }>}
  */
-async function deroulerBootEtInvariant({ montage, surMutation, bootTimeoutMs, timeline }) {
+async function deroulerBootEtInvariant({
+  montage,
+  surMutation,
+  bootTimeoutMs,
+  timeline,
+  etatARestaurer = null,
+  capturerApres = null,
+}) {
   const { session, backend, journal } = montage;
   const started = performance.now();
   // Guet de MUTATION : il prévient l'appelant dès que le guest a réellement muté le volume ET
@@ -337,8 +357,14 @@ async function deroulerBootEtInvariant({ montage, surMutation, bootTimeoutMs, ti
   let invariant;
   let rythme;
   let boucle;
+  let capture = null;
   try {
-    health = await booterEtAttendreSante(session, { bootTimeoutMs, timeline, observations });
+    health = await booterEtAttendreSante(session, {
+      bootTimeoutMs,
+      timeline,
+      observations,
+      etatARestaurer,
+    });
     timeline.marquer("santePrete");
     // Rythme de la boucle sur la fenêtre boot → santé de Rails. C'est l'instrument qui rend
     // comparables deux exécutions de l'IMAGE DE RÉFÉRENCE avec des boucles d'ordonnancement
@@ -351,12 +377,17 @@ async function deroulerBootEtInvariant({ montage, surMutation, bootTimeoutMs, ti
       statut: reponse.statut,
       verdict: JSON.parse(new TextDecoder().decode(reponse.corps)),
     };
+    // La CAPTURE vient après l'invariant et AVANT la fermeture, et l'ordre est le protocole de
+    // l'ADR 0024 : point de contrôle, liaison lue ensuite, arrêt, quiescence, scellement. La faire
+    // après `backend.close()` serait impossible — le volume n'est plus ouvert — et la faire avant
+    // l'invariant capturerait un état dont personne n'a encore vérifié qu'il vaut quelque chose.
+    if (capturerApres !== null) capture = await capturerApres();
   } finally {
     guet?.arreter();
     session.stop();
     await backend.close();
   }
-  return { health, invariant, rythme, boucle, observations, started };
+  return { health, invariant, rythme, boucle, observations, started, capture };
 }
 
 /**
@@ -409,7 +440,11 @@ function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline })
     timeline: timeline.decomposer({ healthMs: health.durationMs }),
     transferredBytes: mesures.transferredBytes,
     memoryBytes: mesures.memoryBytes,
-    usedSnapshot: false,
+    // `usedSnapshot` dit ce que CE BOOT a fait, jamais ce qu'il aurait pu faire : un boot qui a
+    // écarté un instantané le publie à `false`, avec son motif dans `instantane`.
+    usedSnapshot: mesures.instantane?.utilise === true,
+    instantane: mesures.instantane,
+    capture: deroule.capture,
     online: mesures.online,
     sante: health.sante,
     invariantStatus: invariant.verdict.status,
@@ -450,6 +485,8 @@ export async function bootEtVerifier({
   expected,
   bootTimeoutMs,
   surMutation = null,
+  capturerInstantane = false,
+  reprendreParInstantane = false,
 }) {
   // Le PREMIER geste, avant même le réseau : `SEC-UPDATE-001` n'admet aucun volume anonyme, et le
   // refuser ici épargne l'acquisition d'un runtime qui n'aurait servi à rien.
@@ -468,16 +505,42 @@ export async function bootEtVerifier({
     guest: { V86, artifacts, cmdline, memoryBytes },
   });
 
+  // L'instantané est OUVERT avant le boot, et son état n'est restauré que s'il est utilisable. Un
+  // instantané écarté ne fait donc rien d'autre que retarder le boot du temps de sa lecture — et ce
+  // temps est publié, comme le motif de son rejet.
+  const instantane = reprendreParInstantane
+    ? await ouvrirInstantanePourReprise({ backend: montage.backend, volume, artifacts })
+    : null;
+  timeline.marquer("instantaneOuvert");
+
   const deroule = await deroulerBootEtInvariant({
     montage,
     surMutation,
     bootTimeoutMs,
     timeline,
+    etatARestaurer: instantane?.utilise ? instantane.etat : null,
+    capturerApres: capturerInstantane
+      ? () =>
+          capturerApresPointDeControle({
+            backend: montage.backend,
+            session: montage.session,
+            adapter: montage.adapter,
+            volume,
+            artifacts,
+          })
+      : null,
   });
 
   return assemblerCompteRendu({
     identite: { phase, volume, expected },
-    mesures: { transferredBytes, memoryBytes, online },
+    mesures: {
+      transferredBytes,
+      memoryBytes,
+      online,
+      // L'état v86 est RETIRÉ du compte rendu : il pèse 250 Mio et n'a rien à faire dans un message
+      // structuré que la page lit. Ce qui reste est ce qu'une épreuve doit pouvoir asserter.
+      instantane: instantane === null ? null : { ...instantane, etat: undefined },
+    },
     montage,
     deroule,
     timeline,

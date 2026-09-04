@@ -73,16 +73,23 @@ export async function empreintesObservees(manifeste, dossierArtefacts = DOSSIER_
 /**
  * Démarre la VM et rend un client HTTP série.
  *
+ * `autostart` vaut `false` pour la REPRISE PAR INSTANTANÉ (#65) : l'émulateur doit être construit,
+ * puis attendu prêt, puis restauré, et seulement ensuite lancé. Le lancer d'abord ferait battre un
+ * guest à froid que la restauration écraserait aussitôt — la mesure porterait alors sur deux boots
+ * au lieu d'un.
+ *
  * @param {{
  *   manifeste: Record<string, any>,
  *   dossierArtefacts?: string,
  *   surJournal?: (ligne: string) => void,
+ *   autostart?: boolean,
  * }} options
  */
 export async function demarrerVm({
   manifeste,
   dossierArtefacts = DOSSIER_ARTEFACTS,
   surJournal = () => {},
+  autostart = true,
 }) {
   const { V86 } = await import("v86");
   const chemin = (nom) => join(dossierArtefacts, nom);
@@ -99,7 +106,7 @@ export async function demarrerVm({
     cmdline: manifeste.boot.cmdline,
     hda: disque(manifeste.boot.hda),
     hdb: disque(manifeste.boot.hdb),
-    autostart: true,
+    autostart,
     disable_speaker: true,
     disable_keyboard: true,
     disable_mouse: true,
@@ -226,7 +233,42 @@ export async function demarrerVm({
     else emulateur.stop();
   }
 
-  return { emulateur, requete, attendreSante, arreter };
+  /**
+   * Attend que l'émulateur soit CONSTRUIT. Il n'a alors rien exécuté : c'est l'instant où un état
+   * peut être restauré sans qu'un guest à froid ait déjà battu.
+   *
+   * L'attente est bornée : sans borne, un `emulator-ready` jamais émis suspendrait la mesure sans
+   * dire pourquoi — le silence que #52 combat.
+   */
+  function attendrePret({ delaiMs = 60_000 } = {}) {
+    return new Promise((resoudre, rejeter) => {
+      const minuterie = setTimeout(
+        () => rejeter(new Error(`l'émulateur n'a pas été prêt en ${delaiMs} ms`)),
+        delaiMs,
+      );
+      emulateur.add_listener("emulator-ready", () => {
+        clearTimeout(minuterie);
+        resoudre();
+      });
+    });
+  }
+
+  /**
+   * Capture l'état v86. À n'appeler que sur un émulateur ARRÊTÉ : l'ADR 0024 exige la quiescence, et
+   * capturer un émulateur qui bat donnerait un état que rien ne décrit.
+   */
+  async function capturerEtat() {
+    emulateur.stop();
+    return new Uint8Array(await emulateur.save_state());
+  }
+
+  /** RESTAURE un état, puis lance la boucle. L'ordre est le contrat : restaurer, puis battre. */
+  async function restaurerEtat(etat) {
+    await emulateur.restore_state(etat.buffer ?? etat);
+    emulateur.run();
+  }
+
+  return { emulateur, requete, attendreSante, arreter, attendrePret, capturerEtat, restaurerEtat };
 }
 
 /**
