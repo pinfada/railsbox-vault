@@ -1,6 +1,7 @@
 // Worker runtime du spike #4 : v86 et son backend de blocs vivent ici, conformément à l'ADR 0002.
 // Le document n'obtient jamais l'émulateur ni le backend — il reçoit un compte rendu.
 
+import { creerScenariosInstantane } from "/vm/instantane-guest-scenarios.mjs";
 import { RESILIENCE_SCENARIOS } from "/vm/resilience-scenarios.mjs";
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { createFaultPlan } from "/src/vm/fault-plan.mjs";
@@ -75,10 +76,10 @@ const decoder = new TextDecoder();
  * @param {Record<string, unknown>[]} observations recueille les observations non fatales de la garde
  * @returns {Promise<{ bootMilliseconds: number, rythme: Record<string, number | null> }>}
  */
-async function booter(session, observations) {
+async function booter(session, observations, etatARestaurer = null) {
   const ecouleMs = await executerSousGarde(
     () => session.ticks(),
-    () => session.boot(),
+    () => session.boot({ etatARestaurer }),
     {
       onObservation: (observation) => observations.push(observation),
       decrireBoucle: () => decrireBoucle(boucleOrdonnancement),
@@ -435,6 +436,25 @@ const OPFS_SCENARIOS = new Map([
   ["opfs-persistence", runOpfsPersistence],
   ["opfs-barrier", runOpfsBarrier],
   ...RESILIENCE_SCENARIOS,
+  // Les scénarios d'INSTANTANÉ (#65) reçoivent les primitives de ce Worker plutôt que de les
+  // refabriquer : la boucle d'ordonnancement est posée UNE fois, à l'évaluation de ce module, et
+  // une seconde installée ailleurs ferait battre l'émulateur sur une boucle que le produit ne pose
+  // pas. `booter` leur est passé avec son état à restaurer — c'est la seule différence entre un
+  // boot à froid et une reprise, et elle traverse la même garde.
+  ...creerScenariosInstantane({
+    acquerirRuntime: acquerirRuntimeV86,
+    creerSession: ({ V86, artifacts, adapter, journal }) =>
+      createGuestSession({
+        V86,
+        artifacts,
+        adapter,
+        journal,
+        mode: BRIDGE_MODES.full,
+        boucle: boucleOrdonnancement,
+      }),
+    booter: (session, etatARestaurer = null, observations = []) =>
+      booter(session, observations, etatARestaurer),
+  }),
 ]);
 
 /**
