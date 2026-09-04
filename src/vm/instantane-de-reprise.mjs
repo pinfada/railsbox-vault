@@ -187,10 +187,11 @@ function confronterLiaison(declaree, presente, volume) {
 /**
  * LIT un instantané et rend l'état v86, ou refuse par un état typé.
  *
- * Elle ne retire rien : le retrait est la CONDUITE, et la séparer de la lecture permet d'éprouver
- * chaque refus sans avoir à observer un effet de bord.
+ * Elle ne retire rien : le retrait est la CONDUITE, et les séparer garde la lecture lisible d'un
+ * bloc. Elle n'est PAS exportée — offrir un chemin qui lit sans écarter serait offrir le moyen de
+ * garder un instantané que la liaison vient de refuser.
  */
-export async function lireInstantane({ scellement, volume, etatPresent, support }) {
+async function lireInstantane({ scellement, volume, etatPresent, support }) {
   const { present, taille } = await support.etat();
   if (!present || taille === 0) return null;
   if (taille < EN_TETE_OCTETS + MARQUE_OCTETS) {
@@ -289,9 +290,4 @@ export async function ouvrirInstantaneDeReprise({ scellement, volume, etatPresen
       message: refus?.message ?? null,
     });
   }
-}
-
-/** RETIRE l'instantané d'un volume. Employé par la suppression, la restauration et la migration. */
-export async function retirerInstantane(support) {
-  return support.retirer();
 }
