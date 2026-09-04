@@ -189,5 +189,6 @@ test("le journal de génération n'est retiré qu'APRÈS la révocation du manif
     "revoque-manifeste",
     "retire:vault-app.gen",
     "retire:vault-app.temoin",
+    "retire:vault-app.instantane",
   ]);
 });
