@@ -399,17 +399,19 @@ qui porte l'état v86 chiffré sous la DEK et lié à une génération validée.
 tiennent est d'abord un ensemble de REFUS** : un instantané n'est utilisé que s'il décrit exactement
 l'état présent, et il est écarté ET RETIRÉ sinon.
 
-Cinq fichiers unitaires, et chacun a un rôle qui ne recouvre pas les autres :
+Neuf fichiers unitaires, et chacun a un rôle qui ne recouvre pas les autres :
 
-| Fichier                             | Ce qu'il tient                                                           |
-| ----------------------------------- | ------------------------------------------------------------------------ |
-| `vm-instantane-modele.test.mjs`     | la spécification : chaque axe de la liaison fait échouer l'étiquette     |
-| `vm-instantane-fichier.test.mjs`    | la disposition : la table d'offsets de l'ADR est celle du code           |
-| `vm-instantane-vecteurs.test.mjs`   | le format PERSISTANT, figé octet pour octet                              |
-| `vm-instantane-conduite.test.mjs`   | la conduite : écarter, retirer, publier le motif — avec témoins positifs |
-| `vm-instantane-voisin.test.mjs`     | le suffixe réservé, la borne de nommage, le retrait avec le volume       |
-| `vm-adaptateur-quiescence.test.mjs` | la quiescence, et l'amendement de l'ADR 0003 sur deux gestes             |
-| `vm-instantane-mutation.test.mjs`   | la campagne de mutation : chaque garde retirée fait rougir sa preuve     |
+| Fichier                                | Ce qu'il tient                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------ |
+| `vm-instantane-modele.test.mjs`        | la spécification : chaque axe de la liaison fait échouer l'étiquette     |
+| `vm-instantane-fichier.test.mjs`       | la disposition : la table d'offsets de l'ADR est celle du code           |
+| `vm-instantane-vecteurs.test.mjs`      | le format PERSISTANT, figé octet pour octet                              |
+| `vm-instantane-conduite.test.mjs`      | la conduite : écarter, retirer, publier le motif — avec témoins positifs |
+| `vm-instantane-voisin.test.mjs`        | le suffixe réservé, la borne de nommage, le retrait avec le volume       |
+| `vm-instantane-solde.test.mjs`         | le solde du journal d'un guest arrêté, qui décide si l'on peut capturer  |
+| `vm-guest-session-instantane.test.mjs` | capturer et restaurer côté session à shell, dans l'ordre imposé          |
+| `vm-adaptateur-quiescence.test.mjs`    | la quiescence, et l'amendement de l'ADR 0003 sur deux gestes             |
+| `vm-instantane-mutation.test.mjs`      | la campagne de mutation : chaque garde retirée fait rougir sa preuve     |
 
 **Chaque garde est éprouvée avec son TÉMOIN POSITIF.** Sans témoin, une garde qui refuserait TOUT
 passerait pour une garde qui refuse ce qu'il faut : l'épreuve de conduite rouvre donc, à chaque
@@ -441,11 +443,33 @@ contrôle « la taille du fichier vaut celle que l'en-tête déclare » de `lire
 distinguait de la marque de complétude. C'est le second service d'une campagne de mutation, et il
 est plus rare que le premier : elle dit parfois « il y a une garde de trop ».
 
+**Au-dessus de l'unitaire, deux niveaux, et ils ne mesurent pas la même chose.**
+
+| Niveau       | Fichier                                               | Ce qu'il éprouve                                                         | Rattachement       |
+| ------------ | ----------------------------------------------------- | ------------------------------------------------------------------------ | ------------------ |
+| intégration  | `tests/vm/instantane-ecriture-apres-reprise.spec.mjs` | une session REPRISE écrit, et son écriture survit à un boot à froid      | `npm run test:vm`  |
+| bout en bout | `tests/e2e/instantane-reprise.spec.mjs`               | Rails repris en une fraction du boot, instantané périmé écarté et retiré | `npm run test:e2e` |
+
+La suite d'intégration existe parce que le scénario de bout en bout ne PEUT pas faire écrire une
+session reprise : l'application de référence n'a que deux routes, toutes deux en lecture (ADR 0004),
+et le pont série ne relaie que du HTTP. Elle emprunte donc le guest de la matrice #2, qui rend un
+SHELL sur le port série, et enchaîne trois exécutions sur OPFS réel — capture après une écriture
+validée, reprise qui relit puis ÉCRIT, boot à froid qui écarte l'instantané périmé et retrouve les
+DEUX marques. Elle ne dit rien de Rails ni des durées de l'image applicative, et c'est écrit en tête
+du fichier.
+
 ```bash
-npm run check                                    # les sept fichiers y sont rattachés
+npm run check                                    # les neuf fichiers unitaires y sont rattachés
 node tools/muter-gardes-instantane.mjs           # la campagne, seule, avec son tableau
 node tools/figer-vecteurs-instantane.mjs         # RE-FIGE les vecteurs : un changement de format
+npm run mesurer:boot -- --reprise                # le relevé Node, p95 et verdict du gate
 ```
+
+**Un fichier temporaire de 250 Mio pendant la mesure.** `npm run mesurer:boot -- --reprise` écrit
+son instantané dans `reports/vm/releve.instantane` — de la RAM invitée, chiffrée sous la clé du
+harnais. Il est RETIRÉ dans un `finally`, y compris quand la mesure échoue, et `reports/` est ignoré
+par git ; l'espace disque, lui, doit être là. Le mentionner ici évite qu'un relevé interrompu à la
+main laisse un quart de gibioctet sans que personne sache d'où il vient.
 
 ### Enveloppe de clé : le niveau « la clé devient récupérable » (#21)
 
