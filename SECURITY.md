@@ -115,12 +115,16 @@ et tester.
   l'enregistrement, extension ignorée à l'assertion, annulation — trois codes distincts, aucun repli
   automatique, **aucun compteur d'échec persisté**, et un type d'emplacement qu'aucun dérivateur ne
   sert refusé sans qu'un octet du fichier ne bouge. **Ce que JavaScript ne garantit pas est écrit**
-  : les tampons de matériau sont mis à zéro dès que la clé existe — fenêtre refermée, pas garantie,
-  puisque le moteur a pu les copier —, et une phrase est une `string`, donc impossible à effacer ;
-  aucun code JavaScript ne verrouille non plus une page en mémoire contre un fichier d'échange.
-  Vingt-trois gardes ont été RÉELLEMENT mutées, vingt-trois tuées, dont cinq seulement après
-  l'écriture de l'épreuve qui manquait — l'une d'elles a révélé que le plancher de coût n'était
-  éprouvé qu'à l'écriture. La disposition de l'enveloppe est
+  : les tampons de matériau sont mis à zéro dès que la clé existe, du côté JavaScript comme dans le
+  tas WebAssembly — fenêtre refermée, pas garantie, puisque le moteur a pu les copier —, la chaîne
+  PHC d'Argon2, qui porterait le matériau en base64, n'est **pas demandée du tout** plutôt que
+  demandée puis effacée, et une phrase est une `string`, donc impossible à effacer ; aucun code
+  JavaScript ne verrouille non plus une page en mémoire contre un fichier d'échange. Le coût est
+  borné des DEUX côtés : sous le plancher un volume volé serait cassable, au-delà du plafond un
+  adversaire qui écrit le fichier ferait calculer le Worker de confiance pendant des heures à chaque
+  tentative. Vingt-trois gardes ont été RÉELLEMENT mutées, vingt-trois tuées, dont cinq seulement
+  après l'écriture de l'épreuve qui manquait — l'une d'elles a révélé que le plancher de coût
+  n'était éprouvé qu'à l'écriture. La disposition de l'enveloppe est
   l'[ADR 0020](docs/decisions/0020-enveloppe-de-cle.md) : un quatrième voisin de volume
   `<volume>.cles` dans l'origine de CONFIANCE, hors du fichier de volume et hors du manifeste, deux
   pages de 8192 octets alternées, jusqu'à huit emplacements portant chacun l'identifiant

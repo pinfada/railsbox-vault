@@ -481,7 +481,10 @@ test("une identité malformée refuse AVANT de payer un étirement de phrase", a
   await assert.rejects(() =>
     derivateurPhrase({ argon2: argon2Double }).deriver({
       parametres: PARAMETRES(),
-      identite: { identifiantVolume: "pas-un-identifiant", identifiantEmplacement: "7071727374757677" },
+      identite: {
+        identifiantVolume: "pas-un-identifiant",
+        identifiantEmplacement: "7071727374757677",
+      },
       geste: { phrase: "peu importe" },
     }),
   );

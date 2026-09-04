@@ -144,6 +144,20 @@ rendre une étiquette prévisible sans que rien ne le dise, et la phrase de chac
 coffre que l'adversaire ouvre aussi. C'est la raison pour laquelle cette vérification-ci compte plus
 que celle de v86.
 
+**Ce que la vérification du NAVIGATEUR ne couvre pas, et il faut le nommer.** L'empreinte attendue
+est un littéral d'un module servi par la MÊME origine, depuis le MÊME arbre. Un hébergeur compromis
+— ou quiconque peut réécrire l'arbre servi — remplace le binaire ET le littéral du même geste, et la
+vérification passe sans rien dire. Elle n'est donc **pas** une défense contre l'hébergeur : celle-là
+est l'autre, celle de `publier:check`, faite sur un arbre construit à partir d'un commit avant qu'il
+ne parte, et elle ne vaut que si l'exploitant compare l'arbre déployé à l'arbre publié.
+
+Ce que la vérification du navigateur couvre est un chemin ISOLÉ : un cache qui garde une version du
+binaire à côté d'un module d'une autre, un proxy ou un intermédiaire qui touche le `.wasm` sans
+toucher au `.mjs`, un déploiement partiel qui n'a poussé qu'une moitié de l'arbre. Ce sont les
+incidents qu'on rencontre, et elle les transforme en refus visible plutôt qu'en étiquette
+silencieusement fausse. C'est utile ; ce n'est pas ce qu'un lecteur pressé lirait dans « vérifiée
+deux fois », et le dire ici est la moitié du travail.
+
 ### La calibration EST le plancher, et le plancher est celui de la RFC
 
 La RFC 9106 § 4 publie deux jeux recommandés. **Le second — m = 64 Mio, t = 3, p = 4 — est retenu
@@ -165,6 +179,38 @@ Le plancher est vérifié à DEUX moments, et le second est celui qui compte :
   de mutation a montré que seul le premier était éprouvé** (mutation n° 6, § « La campagne de
   mutation »), et l'épreuve manquante a été écrite.
 
+### Il y a aussi un PLAFOND, et il ferme l'autre moitié de la même porte
+
+Le plancher regarde vers le bas. Rien ne regardait vers le HAUT, et c'est une porte laissée ouverte
+: le même adversaire qui écrit `<volume>.cles` y écrit `memoireKio = 1048576`,
+`iterations = 100000`, `parallelisme = 255` — soixante-neuf octets encodés, très en dessous du
+plafond de 512 de l'ADR 0020 —, et le Worker de confiance repart calculer pendant des heures à
+CHAQUE tentative de déverrouillage. Un déni de service durable, inscrit dans le fichier, que
+l'utilisateur ne peut ni voir ni annuler ; et sur le chemin de la LECTURE, c'est-à-dire là où le
+coût vient d'octets qu'on n'a pas écrits.
+
+**Les bornes retenues sont 1 Gio de mémoire, 10 passes et 16 voies**, vérifiées par la MÊME garde
+que le plancher, aux deux mêmes moments, et sous le même refus `VAULT_DERIVATION_PARAMETRES_REFUSES`
+: c'est la même question — « ces paramètres décrivent-ils une dérivation admissible ? » — et le même
+remède. Elles sont mesurées, pas devinées :
+
+| Ce qui est mesuré                      | Valeur                                                                                                           |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Coût d'Argon2 en fonction de m × t     | LINÉAIRE — 64 Mio×3 → 369 ms, 128 Mio×3 → 730 ms, 64 Mio×6 → 707 ms, 256 Mio×3 → 1 561 ms (Node, artefact vendu) |
+| Calibration sur le moteur le plus lent | 2 141 ms (Firefox 153, § « Mesures »)                                                                            |
+| Pire cas ADMISSIBLE, 1 Gio × 10 passes | 53,3 × la calibration, soit **≈ 114 s sur Firefox**                                                              |
+| Pire cas REFUSÉ, 64 Mio × 100 000      | ≈ 20 heures                                                                                                      |
+
+Les voies ne coûtent pas — elles découpent la même mémoire —, et seize est la largeur au-delà de
+laquelle aucun moteur de la matrice n'a de parallélisme à offrir. **Le plafond ne rend pas le pire
+cas agréable : il le rend BORNÉ.** Deux minutes sur le moteur le plus lent restent une attente
+absurde, mais c'est une attente qui finit, que l'utilisateur peut abandonner en fermant l'onglet, et
+qui n'est plus le levier qu'une ligne du fichier suffisait à armer.
+
+Le format, lui, garde sa plage propre : `parametres-publics.mjs` accepte à l'encodage tout entier de
+1 à 2³²−1, parce que c'est la largeur du champ et non une décision de coût. Ce que le dépôt juge
+ADMISSIBLE est décidé ici, une seule fois, et vérifié des deux côtés.
+
 ### La NFC est appliquée, et le dire est la moitié du travail
 
 « é » s'écrit de deux façons qu'aucun clavier ne distingue à l'œil. Sans normalisation, une phrase
@@ -176,6 +222,16 @@ l'utilisateur ne peut pas prévoir.
 Ce qui n'est PAS fait, et qui est hors périmètre par le contrat : aucune espace n'est rognée, aucune
 casse n'est modifiée, et la « force » de la phrase n'est pas évaluée. Rogner une espace finale
 changerait le secret sans le dire ; l'évaluer est l'affaire de l'interface (#24).
+
+**Un VECTEUR FIGÉ dit laquelle des quatre formes est appliquée**, et il a fallu une revue pour
+s'apercevoir qu'aucun ne le disait. L'épreuve d'origine — « deux écritures Unicode de la même phrase
+rendent la même KEK » — passe à l'identique sous NFC, NFD, NFKC et NFKD : les quatre font converger
+les deux écritures d'un « é ». Elle mesure donc qu'une normalisation a lieu, pas laquelle. Le
+vecteur porte une ligature (U+FB01 « ﬁ ») et un caractère pleine chasse (U+FF21 « Ａ »), que seules
+les formes de COMPATIBILITÉ défont : passer à NFKC transformerait une phrase en une AUTRE phrase, et
+un coffre fermé avant ce changement ne se rouvrirait plus. `tests/vectors/derivation-v1.json` porte
+les points de code saisis, les points de code attendus en NFC, les octets UTF-8 et leur empreinte,
+tous POSÉS à la main par `tools/figer-vecteurs-derivation.mjs` sans appeler `normalize`.
 
 ### Argon2i n'est pas servi, et c'est MESURÉ
 
@@ -309,10 +365,20 @@ trouve jamais rien pourrait n'être qu'une fouille cassée.
 - **GARANTI** — les octets d'une `CryptoKey` non extractible ne sont pas atteignables depuis le
   langage. `exportKey` rejette, et il n'existe aucune autre voie normative ;
 - **FAIT, mais non garanti** — les tampons de matériau (`Uint8Array`) sont remplis de zéros dès que
-  la clé existe, et le tampon d'étiquette d'Argon2 est mis à zéro dans le tas WebAssembly avant
-  d'être rendu à l'allocateur. Le moteur a pu en copier le contenu lors d'un `importKey`, d'une
-  promotion de génération ou d'un déplacement de tas. **C'est une fenêtre refermée, pas une
-  garantie** ;
+  la clé existe, du côté JavaScript comme dans le tas WebAssembly : l'étiquette d'Argon2 et le
+  tampon du mot de passe sont mis à zéro avant d'être rendus à l'allocateur, et le tampon de sortie
+  PRF que le moteur remet est effacé après sa copie. Le moteur a pu en copier le contenu lors d'un
+  `importKey`, d'une promotion de génération ou d'un déplacement de tas. **C'est une fenêtre
+  refermée, pas une garantie** ;
+- **ÉVITÉ plutôt qu'effacé, et c'est mieux** — la chaîne PHC d'Argon2 n'est plus demandée du tout.
+  `argon2_hash_ext` sait l'écrire dans un tampon fourni par l'appelant, et cette chaîne porte
+  l'étiquette — le matériau remis à HKDF — en base64. Le tampon était fourni parce que l'API le
+  proposait ; il n'était pas mis à zéro, seulement rendu à `free`, et la base64 du matériau restait
+  donc dans le tas du module. Le moteur est un singleton : cette mémoire vit aussi longtemps que le
+  Worker. L'implémentation de référence teste `if (encoded && encodedlen)`, et un pointeur NUL lui
+  fait sauter tout l'encodage ; le produit n'a jamais eu l'emploi de cette chaîne, puisqu'il relit
+  ses paramètres dans les octets publics de l'emplacement. **Une épreuve sonde le tas du module
+  après un hachage et exige l'absence de cette base64** — elle a été écrite rouge, sur le défaut ;
 - **IMPOSSIBLE** — effacer la phrase. C'est une `string` JavaScript : immuable, copiée par le
   moteur, ramassée quand il le décide, impossible à écraser. Rien dans le langage ne permet de faire
   mieux ;
@@ -448,7 +514,18 @@ toucher un lecteur, taper un code — que ce banc ne mesure pas et ne prétend p
 8. **L'artefact Argon2 est un binaire tiers.** Son empreinte est vérifiée deux fois et sa provenance
    est publiée, mais **personne dans ce dépôt ne l'a recompilé depuis les sources**. Ce qui est
    établi est qu'il reproduit deux vecteurs de la RFC 9106 à l'octet ; ce n'est pas la même chose
-   qu'un audit de son code.
+   qu'un audit de son code ;
+9. **La vérification d'empreinte du navigateur ne couvre pas un hébergeur compromis.** Le hash
+   attendu est un littéral servi par la même origine et le même arbre que le binaire : qui réécrit
+   l'un réécrit l'autre. Elle couvre un chemin ISOLÉ — cache, proxy, déploiement partiel —, et la
+   défense contre l'hébergeur est ailleurs (§ « L'empreinte est vérifiée AVANT instanciation »). Une
+   intégrité vraiment indépendante demanderait une empreinte servie par une AUTRE autorité que celle
+   qui sert le binaire, ce que ce dépôt n'a pas ;
+10. **Le plafond de coût borne le pire cas, il ne le rend pas confortable.** 1 Gio × 10 passes vaut
+    environ deux minutes sur le moteur le plus lent de la matrice. Un adversaire qui écrit le
+    fichier peut donc encore rendre chaque tentative de déverrouillage très longue ; ce qu'il ne
+    peut plus faire est la rendre interminable. Rien dans ce dépôt n'ANNONCE encore cette attente à
+    l'utilisateur avant qu'il ne la subisse — c'est un travail d'interface (#24).
 
 ## Impacts sur les ADR antérieurs
 
