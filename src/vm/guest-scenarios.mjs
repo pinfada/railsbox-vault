@@ -90,6 +90,50 @@ export const OPFS_PERSISTENCE_STEPS = Object.freeze([
   },
 ]);
 
+/**
+ * Marques de la preuve d'ÉCRITURE APRÈS REPRISE (#65, ADR 0024).
+ *
+ * Deux marques, et il en faut exactement deux : celle qu'une session ordinaire écrit AVANT la
+ * capture, et celle qu'une session RESTAURÉE écrit ensuite. Un boot à froid doit retrouver les deux
+ * — la première dit que la reprise n'a rien perdu, la seconde qu'elle n'a rien fait perdre.
+ *
+ * Elles vivent ici, avec les marques de la preuve de persistance, parce qu'elles sont lues des DEUX
+ * côtés : le scénario de banc les écrit dans le guest, la spécification les confronte sous Node.
+ * Deux définitions finiraient par se contredire, et l'épreuve passerait alors en ne mesurant rien.
+ *
+ * Leurs adresses sont éloignées l'une de l'autre et des structures que le noyau examine à
+ * l'amorçage ; elles tiennent dans les 16 Mio du volume de ce banc.
+ */
+export const INSTANTANE_MARQUE_AVANT = "VAULT-AVANT-CAPTURE-0123456789AB";
+export const INSTANTANE_MARQUE_APRES = "VAULT-APRES-REPRISE-0123456789AB";
+export const INSTANTANE_OFFSET_AVANT = 6144 * 512;
+export const INSTANTANE_OFFSET_APRES = 8192 * 512;
+
+/**
+ * Étapes d'ÉCRITURE d'une marque, barrière comprise.
+ *
+ * `conv=fsync` n'est pas une précaution de style : le spike #4 a mesuré que `sync` seul ne fait pas
+ * émettre de FLUSH CACHE au guest sur ce noyau. Sans lui, rien ne validerait la génération, la
+ * fermeture écarterait le dépôt, et l'épreuve prouverait l'inverse de ce qu'elle cherche.
+ */
+export function etapesEcritureMarque({ marque, offset, etiquette }) {
+  return Object.freeze([
+    { label: `preparer-${etiquette}`, command: `printf ${marque} > /tmp/i; echo rc=$?` },
+    {
+      label: `ecrire-${etiquette}`,
+      command: `dd if=/tmp/i of=/dev/sda bs=1 seek=${offset} conv=fsync 2>/dev/null; echo rc=$?`,
+    },
+  ]);
+}
+
+/** Étape de RELECTURE d'une marque. Le `echo` final la sépare du jeton de fin de commande. */
+export function etapeLectureMarque({ marque, offset, etiquette }) {
+  return Object.freeze({
+    label: `relire-${etiquette}`,
+    command: `dd if=/dev/sda bs=1 skip=${offset} count=${marque.length} 2>/dev/null; echo`,
+  });
+}
+
 /** Exécute une liste d'étapes sur une session ouverte. */
 export async function runSteps(session, steps) {
   const results = [];
