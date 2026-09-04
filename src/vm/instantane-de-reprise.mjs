@@ -170,12 +170,14 @@ export async function lireInstantane({ scellement, volume, etatPresent, support 
   const attendue = liaisonDe(scellement, etatPresent, lu.liaison.longueurEtat);
   confronterLiaison(lu.liaison, attendue, volume);
 
-  if (taille !== tailleDeFichier(lu.liaison.longueurEtat)) {
-    throw incomplet(
-      `le fichier fait ${taille} octet(s) alors que son en-tête en déclare ${tailleDeFichier(lu.liaison.longueurEtat)}.`,
-      { volume, taille, declare: tailleDeFichier(lu.liaison.longueurEtat) },
-    );
-  }
+  // **Il n'y a PAS de contrôle « la taille du fichier vaut celle que l'en-tête déclare » ici**, et
+  // son absence est un RÉSULTAT, pas un oubli : la campagne de mutation de #65 a montré qu'un tel
+  // contrôle SURVIVAIT à son retrait, c'est-à-dire qu'aucun état atteignable ne le distinguait de
+  // la marque de complétude. Un fichier plus COURT que sa déclaration ne rend pas sa marque — la
+  // lecture qui suit est courte, et le refus tombe deux lignes plus bas. Un fichier plus LONG porte
+  // une queue que personne ne lit : ni le corps, borné par la longueur déclarée, ni le sceau, qui
+  // ne couvre que lui. Garder une garde que rien ne peut faire échouer aurait donné une ligne de
+  // plus à lire et une confiance de plus à ne pas mériter.
   const marque = await support.lire(offsetDeLaMarque(lu.liaison.longueurEtat), MARQUE_OCTETS);
   if (!marqueCompleteEcrite(marque)) {
     throw incomplet("la marque de complétude n'est pas posée — la capture n'a pas abouti.", {

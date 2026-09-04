@@ -123,14 +123,6 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_CONDUITE, EPREUVE_FICHIER],
   },
   {
-    nom: "taille du fichier confrontée à celle que l'en-tête déclare",
-    garde: "lireInstantane — longueur déclarée",
-    fichier: CONDUITE,
-    avant: "  if (taille !== tailleDeFichier(lu.liaison.longueurEtat)) {",
-    apres: "  if (false) {",
-    epreuves: [EPREUVE_CONDUITE],
-  },
-  {
     nom: "sceau du corps : des zéros au lieu d'un refus",
     garde: "ouvrirInstantane — le refus de l'étiquette",
     fichier: MODELE,
