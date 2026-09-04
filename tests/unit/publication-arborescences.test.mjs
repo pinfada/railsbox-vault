@@ -38,6 +38,7 @@ import {
   enTetesDePublication,
   origineDeLArbre,
   rendreFichierHeaders,
+  signatureDeComparaison,
 } from "../../tools/publier-en-tetes.mjs";
 import { empreinte } from "../../tools/publier-inventaire.mjs";
 import { analyserHeaders, enTetesPour } from "../../tools/publier-servir.mjs";
@@ -485,6 +486,25 @@ test("la dimension non uniforme est UNE, nommée, et ce n'est aucun en-tête de 
   ]) {
     assert.ok(compares.includes(nom), `${nom} est sorti de la comparaison du cliquet`);
   }
+});
+
+test("la comparaison du cliquet bouge si l'on altère N'IMPORTE LEQUEL des en-têtes gardés", () => {
+  // Relevé par la campagne de mutation de #103 : sortir la SEULE CSP de la comparaison survivait à
+  // toute la suite, parce que le seul chemin dissident du dépôt — `compat.html` — diverge sur trois
+  // en-têtes à la fois. Un affaiblissement par en-tête passait donc inaperçu. Ici, chaque en-tête
+  // est altéré SEUL, et la signature doit bouger pour chacun.
+  const base = enTetesDePublication("coquille", ORIGINES);
+  const reference = signatureDeComparaison(base);
+  for (const nom of Object.keys(base)) {
+    if (nom === DIMENSION_NON_UNIFORME) continue;
+    assert.notEqual(
+      signatureDeComparaison({ ...base, [nom]: "altéré" }),
+      reference,
+      `${nom} est sorti de la comparaison du cliquet : une divergence sur lui passerait`,
+    );
+  }
+  // Et l'inverse, sans quoi la dimension déclarée non uniforme ne le serait pas vraiment.
+  assert.equal(signatureDeComparaison({ ...base, [DIMENSION_NON_UNIFORME]: "altéré" }), reference);
 });
 
 test("le cliquet d'uniformité MORD ENCORE sur les en-têtes de sécurité", () => {
