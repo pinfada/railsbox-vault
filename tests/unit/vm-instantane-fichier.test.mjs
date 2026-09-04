@@ -115,6 +115,21 @@ test("un en-tête tronqué est refusé plutôt que complété de zéros", () => 
   assert.match(lu.raison, /octets/i);
 });
 
+test("une RÉSERVE non nulle est refusée : elle n'est couverte par rien", () => {
+  // Les quatre octets de réserve n'entrent PAS dans les données associées — ils ne sont donc pas
+  // authentifiés. Un fichier qui y porte quoi que ce soit a été écrit par autre chose que ce
+  // runtime, ou a été retouché. Les accepter en silence offrirait quatre octets de canal libre
+  // sous un en-tête qui se présente comme scellé.
+  const octets = enTete();
+  octets[150] = 1;
+  const lu = decoderEnTete(octets);
+  assert.equal(lu.valide, false);
+  assert.match(lu.raison, /réserve/i);
+  // TÉMOIN POSITIF : la même réserve à zéro s'ouvre.
+  octets[150] = 0;
+  assert.equal(decoderEnTete(octets).valide, true);
+});
+
 test("la marque de complétude n'est reconnue qu'au motif exact", () => {
   assert.equal(marqueCompleteEcrite(MARQUEUR_COMPLET), true);
   assert.equal(marqueCompleteEcrite(new Uint8Array(MARQUE_OCTETS)), false);
