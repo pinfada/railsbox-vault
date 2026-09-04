@@ -823,3 +823,13 @@ silence n'aurait pas dit.
 
 La décision correspondante est celle de l'[ADR 0016](0016-format-de-volume-v3-dispositions.md), et
 `docs/quality-attributes.md` porte le chiffre corrigé.
+
+## Amendement du 2026-09-05 — la spécification autonome du dossier de revue (#20)
+
+Aucune décision de cet ADR n'est révisée. `docs/format-de-volume-v3.md` rassemble, pour la revue
+externe, ce que cet ADR décide, ce que les ADR 0016 et 0019 en font sur le disque, et les écarts
+relevés entre ces textes et le code du jour — dont deux qui portent sur cet ADR : la marque de
+scellement complet, qu'aucune décision numérotée ne porte, et le coût du scellement initial d'un
+volume de 512 Mio, extrapolé ici à 18,7 s (14,4 s dans la section « Risques ») et mesuré à 87,6 s
+dans `docs/quality-attributes.md`. Les neuf questions ouvertes ci-dessus y sont reprises avec la
+position du dépôt et ce qui la ferait changer.

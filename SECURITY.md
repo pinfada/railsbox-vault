@@ -411,6 +411,30 @@ et tester.
 Chaque invariant devra être relié à un test automatisé ou, pour une revue externe, à un constat
 public et sa disposition.
 
+### Table des statuts, au 5 septembre 2026
+
+Le vocabulaire est FERMÉ — **exercé**, **exercé sous réserve**, **non exercé** — et il porte sur le
+CODE du jour, pas sur l'intention. « Exercé sous réserve » veut dire : un chemin de production
+l'exerce, et une condition écrite en limite la portée. Aucun invariant « à venir » n'est présenté
+comme tenu. La table est relue par `tests/unit/dossier-de-revue.test.mjs`, qui exige une ligne par
+invariant, un statut du vocabulaire, et une épreuve qui existe.
+
+| Invariant          | Statut                  | Réserve, quand il y en a une                                                                                         | Épreuve                                       |
+| ------------------ | ----------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `SEC-ORIGIN-001`   | **exercé**              | —                                                                                                                    | `tests/browser/origin-topology.spec.mjs`      |
+| `SEC-KEY-001`      | **exercé**              | —                                                                                                                    | `tests/browser/enveloppe-frontiere.spec.mjs`  |
+| `SEC-BLOCK-001`    | **exercé sous réserve** | le format scelle tout, de bout en bout — mais la clé du chemin de BOOT vient encore du harnais, sous jeton           | `tests/unit/vm-volume-chiffre.test.mjs`       |
+| `SEC-GEN-001`      | **exercé sous réserve** | rejeu, troncature, mélange et retour arrière d'un secteur sont refusés ; le retour arrière COMPLET ne l'est pas      | `tests/unit/vm-generation-fraicheur.test.mjs` |
+| `SEC-DURABLE-001`  | **exercé**              | hors périmètre : la perte d'un cache d'écriture VOLATIL, qu'aucun support éprouvé ne produit                         | `tests/vm/opfs-barrier.spec.mjs`              |
+| `SEC-UPDATE-001`   | **exercé sous réserve** | l'ouvreur unique est une discipline de revue, pas une contrainte du code : l'ouverture de bas niveau reste appelable | `tests/unit/vm-opfs-volume-open.test.mjs`     |
+| `SEC-RECOVERY-001` | **non exercé**          | révoquer un emplacement est éprouvé, et révoquer le DERNIER est refusé ; aucun moyen de RÉCUPÉRATION n'existe (#23)  | `tests/unit/vm-enveloppe-operations.test.mjs` |
+
+Les deux « sous réserve » du format de volume, la conduite de chaque refus et ce que le format ne
+protège pas sont détaillés dans [`docs/format-de-volume-v3.md`](docs/format-de-volume-v3.md), la
+spécification autonome soumise à la revue externe (#20). Le registre de cette revue
+([`docs/revue-externe/registre.md`](docs/revue-externe/registre.md)) est **vide** : aucun tiers n'a
+été sollicité, et le gate « données sensibles » ci-dessous reste fermé.
+
 ## Ce que le chiffrement au repos ne résout pas
 
 Le chiffrement d'un volume ne protège pas les données déjà déverrouillées contre du code exécuté
