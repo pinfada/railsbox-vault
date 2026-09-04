@@ -4,6 +4,7 @@ import { CRASH_KINDS } from "../../src/vm/crash-plan.mjs";
 import { FAULT_KINDS } from "../../src/vm/fault-plan.mjs";
 import { VERDICTS } from "../../src/vm/crash-oracle.mjs";
 import { BARRIERES } from "../../src/vm/crash-scenario.mjs";
+import { exigerReouvertureDansLeBudget } from "./budget-reouverture.mjs";
 
 // Preuve de niveau **résilience** de #19 (ADR 0019), sur OPFS RÉEL sous Chromium.
 //
@@ -101,7 +102,10 @@ test("une coupure PENDANT l'empreinte de région refuse et ne coûte rien : le v
   // irouvrable ensuite serait pire que la panne qu'il signale.
   expect(resultat.recuperation.etat).toBe("aucune");
   expect(resultat.recuperation.fraicheurRegion).toBe("verifiee");
-  expect(resultat.reouverture.essais).toBe(1);
+  // Et elle a abouti DANS LA BORNE. Le nombre d'essais n'est pas figé : il dépend du délai que le
+  // moteur met à rendre les trois handles d'une session v3 (#129), pas de ce plan de panne. Son coût
+  // voyage dans le relevé joint ci-dessus, `reouverture` du compte rendu.
+  exigerReouvertureDansLeBudget(resultat.reouverture, "coupure pendant l'empreinte de région");
 });
 
 test("une coupure ENTRE la racine et le témoin laisse un témoin en retard, jamais un refus", async ({
@@ -152,4 +156,5 @@ test("une coupure ENTRE la racine et le témoin laisse un témoin en retard, jam
   // refuse jamais un volume que rien n'a fait reculer. Sans cette ligne, l'ordre des deux écritures
   // pourrait s'inverser sans que rien ne le voie.
   expect(resultat.recuperation.fraicheurRegion).toBe("verifiee");
+  exigerReouvertureDansLeBudget(resultat.reouverture, "coupure entre la racine et le témoin");
 });
