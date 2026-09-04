@@ -84,6 +84,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0018 — le navigateur ne cloisonne le stockage que par origine : une origine par application dès la seconde, MVP mono-application accepté](docs/decisions/0018-isolation-entre-applications.md)
 - [Spike #46 — ce que deux applications voient l'une de l'autre selon la topologie d'origine](docs/spikes/0046-isolation-entre-applications.md)
 - [ADR 0020 — l'enveloppe de clé vit hors du volume, en deux pages alternées, et une révocation retire l'emplacement](docs/decisions/0020-enveloppe-de-cle.md)
+- [ADR 0022 — la coquille sert `Referrer-Policy` et `Permissions-Policy` ; HSTS est écarté du code et confié à l'exploitant](docs/decisions/0022-entetes-de-durcissement.md)
 
 ## Licence
 

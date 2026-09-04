@@ -221,7 +221,8 @@ séparé et l'imprime dans son résumé. La signature reste exigible, et reste �
 `tools/serve-headers.mjs` est la **source de vérité** : la production sert ce que
 `securityHeaders()` rend, dérivé et non recopié, pour que les épreuves de frontière du dépôt
 mesurent bien ce qui est publié. La publication ajoute **exactement deux** en-têtes, un par origine,
-tous deux décidés par l'ADR 0017 :
+tous deux décidés par l'ADR 0017 — l'ADR 0022 n'en a pas ajouté de troisième, il a servi les siens
+depuis la source de vérité :
 
 | Origine     | En-tête ajouté                                                | Pourquoi                                                                                      |
 | ----------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -238,6 +239,40 @@ L'hébergement doit donc savoir servir des en-têtes de réponse, **des deux cô
 trois moteurs et COOP n'y est pas exprimable ; pour l'application, le relevé du spike montre que
 Pages ne sert ni CORP, ni `nosniff`, ni `frame-ancestors`, et impose `max-age=600` là où le serveur
 de test sert `no-store`.
+
+Depuis l'[ADR 0022](decisions/0022-entetes-de-durcissement.md), la source de vérité sert en outre
+**deux en-têtes de durcissement générique aux documents de la COQUILLE**, et à eux seuls :
+`Referrer-Policy: no-referrer` et `Permissions-Policy: camera=(), microphone=(), geolocation=()`.
+Ils ne sont pas des ajouts de la publication — ils viennent de `tools/serve-headers.mjs`, donc ils
+sont servis en développement et mesurés là — et ils ne sont pas posés sur l'origine applicative :
+ils gouvernent ce que le document émet et ce qu'il peut, c'est-à-dire le contenu rendu par le guest,
+que l'ADR 0002 s'interdit de contraindre. Le témoin d'en-têtes relève leur présence sur la coquille
+et leur **absence** sur l'origine applicative.
+
+### HSTS est une obligation d'EXPLOITANT, pas un en-tête de la chaîne
+
+`Strict-Transport-Security` n'est servi par aucun outil de ce dépôt, et une épreuve garde cette
+absence sur les deux arbres. Le motif est écrit dans l'ADR 0022 : tout ce que ce dépôt sait servir
+est en `http:`, où RFC 6797 § 7.2 exige du navigateur qu'il **ignore** l'en-tête ; et HSTS engage un
+**domaine** pour des mois, quand la chaîne de publication ne produit que des arborescences.
+
+**Ce que l'exploitant doit donc faire, à la mise en service et à chaque changement d'hébergeur** :
+
+- vérifier que **les deux** origines servent `Strict-Transport-Security` en HTTPS, et le relever —
+  ce n'est pas parce qu'un hébergeur le sert par défaut sur son propre domaine qu'il le sert sur un
+  domaine propre ; le relevé du spike #45 porte sur des sites tiers et prouve le choix de leur
+  propriétaire, pas la capacité de l'hébergeur ;
+- valeur recommandée : `max-age=63072000` (deux ans), après une période d'observation à `max-age`
+  court ;
+- **`includeSubDomains` engage aussi le sous-domaine applicatif** sur un déploiement à domaine
+  propre, où les deux origines sont le même site (ADR 0017, fait 2). Ne le poser qu'après s'être
+  assuré que toute l'arborescence de noms est servie en HTTPS ;
+- **`preload` est irréversible en pratique** : le retirer demande une désinscription auprès des
+  navigateurs, et sa propagation se compte en versions. Il n'est pas recommandé avant qu'une origine
+  réelle soit stabilisée.
+
+Rien dans la chaîne ne peut vérifier cette obligation : elle porte sur un domaine que le dépôt ne
+connaît pas. C'est le risque résiduel n°3 de l'ADR 0022.
 
 Le fichier `_headers` porte en outre `# origine: <url>` en tête. C'est un commentaire pour
 l'hébergeur, et un **octet compté par l'empreinte** : sans lui, deux origines de coquille

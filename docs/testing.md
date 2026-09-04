@@ -1363,6 +1363,34 @@ Un point de méthode qui a coûté une mesure fausse : sous `worker-src 'self'`,
 sondes mesurent donc le SIGNE DE VIE (un message reçu dans un délai borné) et le journal des
 événements `securitypolicyviolation`, jamais l'absence d'erreur.
 
+### En-têtes de durcissement de la coquille
+
+`tests/browser/entetes-durcissement.spec.mjs` est la preuve de niveau navigateur de
+l'[ADR 0022](decisions/0022-entetes-de-durcissement.md) (#104). Elle relève trois choses :
+
+- les en-têtes **réellement servis** par les deux origines — la coquille porte `Referrer-Policy` et
+  `Permissions-Policy`, l'origine applicative ne les porte pas, et aucune des deux ne porte HSTS ;
+- l'**effet** de `Referrer-Policy: no-referrer` sur la seule requête inter-origine que la CSP de la
+  coquille laisse sortir : le cadre du territoire applicatif ne porte plus l'origine de la coquille.
+  Avant #104, il portait `Referer: http://127.0.0.1:4173/` ;
+- son **témoin négatif** : la même manipulation émise depuis un document servi par le rôle `app`,
+  qui ne reçoit pas de `Referrer-Policy`, où le `Referer` doit SURVIVRE. Sans lui, une absence ne
+  prouverait rien — elle pourrait venir d'une sonde cassée ou d'un moteur qui n'en émet jamais dans
+  ces conditions.
+
+Elle est rattachée aux projets **par défaut** de `playwright.config.mjs`, et non à des projets
+dédiés à trois moteurs comme les trois frontières précédentes. Ce n'est pas une décision de principe
+: #104 n'a pu exécuter que Chromium, et rattacher l'épreuve à trois moteurs aurait publié une
+garantie sur deux d'entre eux sans l'avoir mesurée une seule fois. `VAULT_MOTEURS` l'exécute sur les
+trois ; l'étendre par défaut demande d'abord un relevé, en particulier sur le témoin négatif, dont
+le comportement dépend de la politique de référent par défaut de chaque moteur. **Travail
+découvert.**
+
+L'effet de `Permissions-Policy` n'est PAS mesuré : ce qui est éprouvé est qu'elle est servie, sur la
+bonne origine et avec la bonne valeur. Le motif est dans l'ADR — caméra et micro échouent de toute
+façon sous un navigateur sans tête, si bien qu'une sonde verrait « refusé » avec ou sans l'en-tête
+et ne prouverait rien.
+
 ### Frontière de l'enveloppe de clé
 
 `tests/browser/enveloppe-frontiere.spec.mjs` est la preuve de niveau navigateur de
