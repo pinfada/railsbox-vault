@@ -984,6 +984,45 @@ rend une perte de cache volatil incapable de produire un MÉLANGE — les octets
 le journal voisin, et une charge incomplète est écartée à l'ouverture — mais cette propriété-là
 n'est PAS mesurée ici, et le protocole qui couperait plus bas reste à écrire.
 
+#### Résilience : ce que la RÉOUVERTURE après coupure mesure, et ce qu'elle tolère (#129)
+
+Entre la mort du Worker qui tenait le volume et la réouverture par le suivant, il y a une fenêtre
+que personne ne contrôle : le moteur reprend l'exclusivité des fichiers **à son rythme**.
+`rouvrirApresCoupure`, dans `public/vm/resilience-scenarios.mjs`, la traverse selon trois règles qui
+sont le contrat du harnais :
+
+- **un refus `VAULT_STORAGE_BUSY` est TOLÉRÉ**, et lui seul — toute autre erreur remonte telle
+  quelle. Un banc qui réessaierait sur n'importe quoi finirait par masquer une panne réelle ;
+- **l'attente est BORNÉE** : soixante essais espacés de 50 ms, soit trois secondes. Ce n'est pas un
+  budget, c'est un garde-fou — il empêche une réouverture impossible de bloquer la suite ;
+- **le coût est PUBLIÉ** : `essais` et `attenteMs` voyagent dans le compte rendu, jusque dans les
+  relevés joints. Une réussite tardive qui ne se dirait pas serait un succès muet.
+
+**Ce que la suite exige — et ce qu'elle n'exige plus.** Elle exigeait `reouverture.essais === 1`.
+C'était vrai par chance, et ça a cessé de l'être : `tests/unit/vm-reouverture-handles.test.mjs`
+mesure qu'une session de volume v3 tient **TROIS** handles exclusifs, saisis dans cet ordre et
+gardés jusqu'à la fermeture — le volume, son journal de génération `<volume>.gen` (#16), son témoin
+de séquence `<volume>.temoin` (#19). Un seul des trois encore tenu suffit à rendre `busy` : la
+réouverture n'aboutit donc que lorsque le **plus lent des trois** a été rendu, là où un volume à un
+handle ne dépendait que d'un délai. Le run nocturne rougissait deux nuits sur trois avec
+`Received: 2` — sur un harnais qui faisait exactement ce pour quoi il est écrit.
+
+L'enveloppe de clé `<volume>.cles` (#21), elle, n'en fait **pas** partie : `supportEnveloppeOpfs`
+ouvre et referme son handle à chaque geste, et le banc de résilience ne passe pas par elle.
+
+**Le budget.** `tests/vm/budget-reouverture.mjs` porte `ESSAIS_MAX_REOUVERTURE = 3` — un essai perdu
+par handle — et le partage entre `resilience-arrets.spec.mjs` (deux tests, vingt-quatre points sur
+trois graines) et `resilience-fraicheur.spec.mjs` (deux plans de panne). Son motif est dans
+`docs/quality-attributes.md` : c'est un engagement sur le moteur, pas l'observation d'une nuit. Au
+delà, le remède est d'espacer les essais ou de réduire le nombre de voisins tenus, **pas de relever
+le plafond**.
+
+**Ce qui est mesuré où.** Le nombre de handles et leur ordre d'acquisition sont une propriété de
+l'ouvreur, et se mesurent sous Node sur le double calibré — celui-ci rend l'exclusivité sur-le-champ
+dans `abandon()`, et ne peut donc rien dire du délai. Le DÉLAI, lui, ne s'observe que sur le vrai
+support : c'est le relevé `vm-resilience-reouverture.json` de la suite VM qui le publie, point par
+point, avec l'attente réellement subie — `(essais - 1) × attenteMs`.
+
 #### Résilience : combien de temps une récupération prend, et ce qu'elle tient en mémoire
 
 `tests/vm/recuperation-generation.spec.mjs` est la preuve de niveau **résilience** de #91. Elle
