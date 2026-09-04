@@ -44,6 +44,58 @@ export function identiteDuCommit(racine, reference) {
   }
 }
 
+/**
+ * Refuse une référence git que le dépôt ne résout pas, en la NOMMANT.
+ *
+ * Sans ce refus, la première commande à buter dessus est `git ls-tree`, et son échec remonte sous
+ * la forme d'un `Command failed: git ls-tree -r --name-only -z <ref> -- <chemin>` suivi du texte de
+ * git. Le lecteur y voit un défaut de l'outil là où il n'a qu'une faute de frappe.
+ *
+ * C'est un USAGE invalide — code 3 —, pas une source absente — code 4. La distinction n'est pas
+ * bureaucratique : rien ne manque, c'est la DEMANDE qui est illisible, et le geste attendu est de
+ * corriger la ligne de commande, pas de chercher un fichier sur un disque.
+ *
+ * @throws {Error & { referenceInvalide: true }}
+ */
+export function exigerReferenceResoluble(racine, reference) {
+  try {
+    git(racine, "rev-parse", "--verify", "--quiet", `${reference}^{commit}`);
+  } catch {
+    const erreur = new Error(
+      `Référence git inconnue : « ${reference} ». Le dépôt ne la résout pas — vérifiez le nom de ` +
+        `commit, de branche ou d'étiquette demandé à --commit.`,
+    );
+    erreur.referenceInvalide = true;
+    throw erreur;
+  }
+}
+
+/**
+ * Deux absences, deux gestes opposés, et l'outil doit dire laquelle il constate.
+ *
+ * Une source absente de l'ARBRE DE TRAVAIL est un fichier à replacer sur le disque. Une source
+ * absente AU COMMIT est autre chose : la référence est valide, son arbre est lisible, et ce qui
+ * manque n'a jamais existé à cet endroit de l'histoire. Aucun fichier ne la ramènera ; c'est la
+ * publication de cette version-là qui n'est pas constructible par la liste de sources
+ * d'aujourd'hui. Le code de sortie reste 4 dans les deux cas — la publication n'est pas
+ * constructible —, seule la cause change, et c'est elle qui décide de la suite.
+ */
+function sourceObligatoireAbsente(source, reference) {
+  const erreur = new Error(
+    reference === null
+      ? `Source obligatoire absente de l'ARBRE DE TRAVAIL : ${source.depuis}. Le chemin n'existe ` +
+          `pas sur le disque.`
+      : `Source obligatoire absente au commit ${reference} : ${source.depuis}. La référence est ` +
+          `valide et son arbre est lisible : cette source n'existait pas encore à ce commit, ou ` +
+          `elle y portait un autre chemin. Rien ne manque sur le disque — c'est cette version-là ` +
+          `qui n'est pas constructible par les sources décidées aujourd'hui ` +
+          `(tools/publier-arborescences.mjs).`,
+  );
+  erreur.sourceAbsente = true;
+  erreur.motif = reference === null ? "absenteDeLArbreDeTravail" : "absenteAuCommit";
+  return erreur;
+}
+
 async function existe(chemin) {
   try {
     await stat(chemin);
@@ -92,11 +144,16 @@ async function depuisCommit(racine, reference, source, destination) {
 /**
  * Matérialise les sources d'un arbre et rend la liste des sources OPTIONNELLES absentes.
  *
+ * La référence est résolue AVANT toute copie : une référence illisible est un refus, jamais un
+ * arbre tronqué (#106).
+ *
  * @param {{ racine: string, reference: string | null, sources: readonly object[],
  *           destination: string }} demande
- * @throws {Error & { codeDeSortie: number }} si une source obligatoire manque
+ * @throws {Error & { referenceInvalide: true }} si la référence n'est pas résoluble
+ * @throws {Error & { sourceAbsente: true, motif: string }} si une source obligatoire manque
  */
 export async function materialiser({ racine, reference, sources, destination }) {
+  if (reference !== null) exigerReferenceResoluble(racine, reference);
   const absentes = [];
   for (const source of sources) {
     const versionne = reference !== null && !HORS_GIT.includes(source.depuis);
@@ -104,13 +161,7 @@ export async function materialiser({ racine, reference, sources, destination }) 
       ? await depuisCommit(racine, reference, source, destination)
       : await depuisArbreDeTravail(racine, source, destination);
     if (trouvee) continue;
-    if (!source.optionnel) {
-      const erreur = new Error(
-        `Source obligatoire absente${reference ? ` au commit ${reference}` : ""} : ${source.depuis}.`,
-      );
-      erreur.sourceAbsente = true;
-      throw erreur;
-    }
+    if (!source.optionnel) throw sourceObligatoireAbsente(source, versionne ? reference : null);
     absentes.push(source.depuis);
   }
   return absentes;
