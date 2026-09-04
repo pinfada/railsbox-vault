@@ -35,6 +35,21 @@
 // 72 ms et ne montrait rien. Doubler à chaque fois, comme le fait la colle d'Emscripten, ramène la
 // dérivation calibrée à quelques centaines de millisecondes.
 //
+// ## La chaîne PHC n'est PAS demandée, et c'est une propriété de sécurité
+//
+// `argon2_hash_ext` sait écrire, en plus de l'étiquette brute, la chaîne PHC qui la porte —
+// « $argon2id$v=19$m=…$<sel>$<étiquette> ». Cette étiquette-là EST le matériau remis à HKDF, et la
+// chaîne la donne en base64. Une première version fournissait le tampon parce que l'API le
+// proposait ; le tampon n'était rendu à `free` qu'à la fin, jamais mis à zéro, et la base64 du
+// matériau restait donc dans le tas du module — un singleton dont la mémoire vit aussi longtemps
+// que le Worker — jusqu'à ce qu'un allocataire suivant repasse dessus. Une épreuve SONDE le tas
+// après `hacher` et exige son absence.
+//
+// Le remède n'est pas de l'effacer mieux : c'est de ne pas la demander. L'implémentation de
+// référence teste `if (encoded && encodedlen)`, et un pointeur NUL lui fait sauter tout l'encodage.
+// Le produit n'a jamais eu l'emploi de cette chaîne — il relit ses paramètres dans les octets
+// publics de l'emplacement (ADR 0020), pas dans une chaîne PHC.
+//
 // ## Argon2i n'est pas servi, et c'est MESURÉ
 //
 // Le binaire calcule Argon2d et Argon2id à la vitesse attendue et reproduit leurs vecteurs RFC 9106
@@ -212,23 +227,18 @@ async function hacher(moteur, appel) {
     secret: secret.byteLength === 0 ? 0 : poser(etat, exports, secret),
     associees: associees.byteLength === 0 ? 0 : poser(etat, exports, associees),
     empreinte: exports.f(appel.longueur),
+    // NUL, délibérément : voir l'en-tête de ce fichier. Aucune chaîne PHC n'est demandée, donc
+    // aucune base64 de l'étiquette n'est écrite dans le tas.
+    encode: 0,
   };
-  const encodeLongueur = exports.j(
-    appel.iterations,
-    appel.memoireKio,
-    appel.parallelisme,
-    appel.sel.byteLength,
-    appel.longueur,
-    VARIANTES[appel.variante],
-  );
-  adresses.encode = exports.f(encodeLongueur + 1);
 
   try {
-    return lireEmpreinte(etat, exports, appel, adresses, encodeLongueur);
+    return lireEmpreinte(etat, exports, appel, adresses);
   } finally {
-    // Le tampon d'étiquette est mis à zéro AVANT d'être rendu au module : `free` ne l'efface pas,
-    // et les octets d'un étirement de phrase resteraient sinon dans le tas jusqu'au prochain
-    // allocataire. Fenêtre refermée, pas garantie — le tas est une `ArrayBuffer` ordinaire.
+    // Les deux tampons qui portent un secret sont mis à zéro AVANT d'être rendus au module : `free`
+    // ne les efface pas, et les octets d'un étirement de phrase resteraient sinon dans le tas
+    // jusqu'au prochain allocataire. Fenêtre refermée, pas garantie — le tas est une `ArrayBuffer`
+    // ordinaire, et le moteur a pu la déplacer.
     etat.vue.fill(0, adresses.empreinte, adresses.empreinte + appel.longueur);
     etat.vue.fill(0, adresses.mot, adresses.mot + appel.mot.byteLength);
     for (const adresse of Object.values(adresses)) if (adresse !== 0) exports.g(adresse);
@@ -236,7 +246,7 @@ async function hacher(moteur, appel) {
 }
 
 /** Appelle `argon2_hash_ext` et relit l'étiquette produite, ou refuse sur le code rendu. */
-function lireEmpreinte(etat, exports, appel, adresses, encodeLongueur) {
+function lireEmpreinte(etat, exports, appel, adresses) {
   const code = exports.l(
     appel.iterations,
     appel.memoireKio,
@@ -248,7 +258,7 @@ function lireEmpreinte(etat, exports, appel, adresses, encodeLongueur) {
     adresses.empreinte,
     appel.longueur,
     adresses.encode,
-    encodeLongueur,
+    0, // `encodedlen` : nul avec un pointeur nul, ce qui fait sauter l'encodage PHC en entier.
     VARIANTES[appel.variante],
     adresses.secret,
     appel.secret?.byteLength ?? 0,
