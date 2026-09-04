@@ -80,6 +80,15 @@ export const STORAGE_ERROR_CODES = Object.freeze({
    * existé.
    */
   volumeIncomplet: "VAULT_STORAGE_VOLUME_INCOMPLET",
+  /**
+   * L'adaptateur est QUIESCÉ : une capture d'instantané est en cours (#65, ADR 0024, décision 5).
+   *
+   * Ce code couvre les deux faces du même état, et c'est délibéré : le refus d'ÉTABLIR la
+   * quiescence — E/S en vol, adaptateur déjà en panne — et le refus d'une E/S PENDANT la
+   * quiescence. Les séparer aurait donné deux codes pour une seule invariance, « on ne capture pas
+   * au-dessus d'une E/S », et c'est le contexte qui dit de quel côté on se trouve.
+   */
+  quiesce: "VAULT_STORAGE_QUIESCE",
 });
 
 const KNOWN_CODES = new Set(Object.values(STORAGE_ERROR_CODES));
