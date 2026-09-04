@@ -27,9 +27,16 @@
 //      son inventaire est exact, mais ce n'est pas un artefact publiable. `--tolerer-incomplet`
 //      ramène ce cas à un avertissement, pour les contextes — bancs, `npm run check` — qui n'ont
 //      pas besoin de l'émulateur et ne prétendent pas publier.
+//
+// #106 n'ajoute AUCUN code à ce contrat, et deux entrées mal formées y sont rangées explicitement :
+// une `--sortie` refusée et une `--commit <ref>` non résoluble sont des USAGES invalides (3). Un
+// arbre construit depuis un arbre de travail SALE reste, lui, CONFORME (0) : `--verifier` l'annonce
+// par un avertissement et n'en fait pas un écart. Rendre 1 confondrait « altéré après publication »
+// avec « construit depuis un disque non versionné » — la première est une atteinte à l'intégrité,
+// la seconde une lacune de PROVENANCE — et refuserait au passage tout arbre de développement.
 
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 
 import { ARBRES, EXCLUSIONS } from "./publier-arborescences.mjs";
 import {
@@ -48,7 +55,12 @@ import {
   relever,
   verifierArbre,
 } from "./publier-inventaire.mjs";
-import { identiteDuCommit, materialiser, verifierEpinglageV86 } from "./publier-sources.mjs";
+import {
+  exigerReferenceResoluble,
+  identiteDuCommit,
+  materialiser,
+  verifierEpinglageV86,
+} from "./publier-sources.mjs";
 import { REPOSITORY_ROOT } from "./v86-paths.mjs";
 
 export const CODES = Object.freeze({
@@ -62,6 +74,110 @@ export const CODES = Object.freeze({
 });
 
 const SORTIE_PAR_DEFAUT = "artifacts/publication";
+
+/** Répertoires que la construction écrit sous `--sortie` — et donc EFFACE avant de les réécrire. */
+const NOMS_DARBRES = Object.freeze(ARBRES.map(({ nom }) => nom));
+
+/**
+ * Ce que `--sortie` a le droit de faire effacer.
+ *
+ * `construireArbre` commence par `rm(<sortie>/<arbre>, { recursive: true, force: true })`. Le rayon
+ * réel de ce geste est étroit — il ne vise que des répertoires nommés `coquille` et `application` —
+ * mais il est dirigé par une chaîne de la ligne de commande, et rien ne le bornait (#106, L2).
+ *
+ * Deux gardes, et chacune répond à une question différente :
+ *
+ *  1. **OÙ** — la sortie doit être STRICTEMENT sous la racine du dépôt. L'outil produit un artefact
+ *     de construction de ce dépôt ; tous ses usages documentés visent `artifacts/`, que
+ *     `.gitignore` couvre. Effacer ailleurs, c'est effacer là où ni git ni la revue ne verront le
+ *     dommage. Un opérateur qui veut déposer l'arbre ailleurs le COPIE après coup : c'est un geste
+ *     qui laisse une trace, contrairement à un `rm -rf` implicite.
+ *  2. **QUOI** — le répertoire doit être absent, vide, ou ne contenir que des arbres de
+ *     publication. La garde ne cherche pas à reconnaître une publication PRÉCÉDENTE au fichier
+ *     `inventaire.json` près : une construction interrompue en laisse un arbre partiel qui n'en a
+ *     pas encore, et refuser de le réécrire ferait d'un échec passager un échec collant. Ce qu'elle
+ *     établit est plus simple et suffit : ce répertoire n'appartient qu'à la publication.
+ *
+ * Ce n'est pas une frontière de confiance du produit — l'outil s'exécute déjà avec les droits de
+ * qui le lance, et `SECURITY.md` n'a rien à en dire. C'est une garde d'ERGONOMIE contre la faute de
+ * frappe, au même titre que le refus d'une référence git illisible.
+ *
+ * @param {string} sortie chemin absolu déjà résolu
+ * @param {string} [racine] racine du dépôt
+ * @throws {Error} usage invalide (code 3)
+ */
+export async function exigerSortieUtilisable(sortie, racine = REPOSITORY_ROOT) {
+  const interne = relative(racine, sortie);
+  if (interne === "" || interne.startsWith("..") || isAbsolute(interne)) {
+    throw new Error(
+      `Sortie refusée : ${sortie} n'est pas strictement sous la racine du dépôt (${racine}). La ` +
+        `construction efface ${NOMS_DARBRES.map((nom) => `<sortie>/${nom}`).join(" et ")} avant ` +
+        `de les réécrire, et ne le fait que là où git rend le dommage visible.`,
+    );
+  }
+
+  let entrees;
+  try {
+    entrees = await readdir(sortie);
+  } catch (erreur) {
+    if (erreur.code === "ENOENT") return;
+    throw new Error(
+      `Sortie refusée : ${sortie} n'est pas un répertoire lisible (${erreur.code}).`,
+      {
+        cause: erreur,
+      },
+    );
+  }
+  const intrus = entrees.filter((entree) => !NOMS_DARBRES.includes(entree));
+  if (intrus.length > 0) {
+    throw new Error(
+      `Sortie refusée : ${sortie} contient des entrées que la publication n'a pas produites — ` +
+        `${intrus.join(", ")}. Visez un répertoire vide, absent, ou celui d'une publication ` +
+        `précédente.`,
+    );
+  }
+}
+
+/**
+ * Ce que l'inventaire dit de la PROVENANCE de ses octets — et pourquoi ce n'est pas un écart.
+ *
+ * `construireInventaire` inscrit `commit.arbreDeTravailPropre`, et `--verifier` ne le relisait pas
+ * (#106, L3) : un arbre bâti depuis un disque modifié était déclaré conforme sans que rien ne le
+ * signale, alors que l'inventaire portait l'information.
+ *
+ * L'avertissement vaut aussi sous `--commit`, et ce n'est pas un excès de zèle : même quand les
+ * octets des sources viennent de `git show`, deux choses viennent toujours du disque — les sources
+ * hors git (`vendor/v86/artefacts`, épinglées par empreinte) et les OUTILS qui rendent l'arbre,
+ * `tools/publier-en-tetes.mjs` en tête. Un `_headers` produit par un outil modifié et non versionné
+ * est exactement ce qu'un vérificateur doit refuser de taire.
+ *
+ * @param {{ commit?: { empreinte?: string | null, arbreDeTravailPropre?: boolean } }} inventaire
+ * @returns {{ avertissement: boolean, ligne: string }}
+ */
+export function provenanceDeLInventaire(inventaire) {
+  const commit = inventaire.commit ?? {};
+  if (commit.arbreDeTravailPropre === true) {
+    return { avertissement: false, ligne: "Arbre de travail propre à la construction." };
+  }
+  if (commit.empreinte === null || commit.empreinte === undefined) {
+    return {
+      avertissement: true,
+      ligne:
+        "AVERTISSEMENT : provenance INCONNUE. L'inventaire ne porte aucune empreinte de commit — " +
+        "l'arbre a été construit hors d'un dépôt git. Ses empreintes sont exactes ; l'origine de " +
+        "ses octets n'est établie par rien.",
+    };
+  }
+  return {
+    avertissement: true,
+    ligne:
+      "AVERTISSEMENT : arbre construit depuis un dépôt dont l'ARBRE DE TRAVAIL n'était pas propre. " +
+      "Les empreintes sont conformes — l'arbre est bien ce que son inventaire décrit — mais des " +
+      "modifications non versionnées ont pu entrer dans ses octets : les sources hors git et les " +
+      "outils qui l'ont rendu viennent du disque, y compris sous --commit. Ce n'est pas un écart : " +
+      "le code de sortie reste 0.",
+  };
+}
 
 function lireOption(argv, nom, defaut = null) {
   const index = argv.indexOf(`--${nom}`);
@@ -254,6 +370,10 @@ async function verifier(racine, { tolererIncomplet }) {
       `${inventaire.origine}, commit ${inventaire.commit.empreinte ?? "inconnu"}` +
       `${inventaire.banc ? " [BANC]" : ""}\n`,
   );
+  const provenance = provenanceDeLInventaire(inventaire);
+  // L'avertissement part sur la sortie d'ERREUR : c'est un diagnostic, pas un résultat, et il doit
+  // survivre à un `> journal.txt` qui ne garde que le verdict.
+  (provenance.avertissement ? process.stderr : process.stdout).write(`${provenance.ligne}\n`);
   if (!ecarts.conforme) {
     process.stderr.write(`ÉCARTS :\n${decrireEcarts(ecarts)}\n`);
     return CODES.ecart;
@@ -289,7 +409,13 @@ async function principal(argv) {
   const aVerifier = lireOption(argv, "verifier");
   if (aVerifier !== null) return verifier(resolve(aVerifier), { tolererIncomplet });
 
+  // Les deux entrées destructrices sont validées AVANT que quoi que ce soit ne soit effacé : une
+  // référence illisible ne doit pas emporter la publication précédente au passage (#106).
+  const sortie = resolve(lireOption(argv, "sortie", join(REPOSITORY_ROOT, SORTIE_PAR_DEFAUT)));
+  await exigerSortieUtilisable(sortie);
   const reference = lireOption(argv, "commit");
+  if (reference !== null) exigerReferenceResoluble(REPOSITORY_ROOT, reference);
+
   const origineCoquille = lireOption(argv, "origine-coquille", ORIGINE_COQUILLE_PAR_DEFAUT);
   const origineApplication = lireOption(
     argv,
@@ -297,7 +423,7 @@ async function principal(argv) {
     ORIGINE_APPLICATION_PAR_DEFAUT,
   );
   return construire({
-    sortie: resolve(lireOption(argv, "sortie", join(REPOSITORY_ROOT, SORTIE_PAR_DEFAUT))),
+    sortie,
     reference,
     commit: identiteDuCommit(REPOSITORY_ROOT, reference ?? "HEAD"),
     origineCoquille,

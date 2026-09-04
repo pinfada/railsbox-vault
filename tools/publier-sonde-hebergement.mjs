@@ -7,8 +7,10 @@
 //
 // Deux relevés, tous deux issus du réseau et non d'une lecture de documentation :
 //
-//  1. EN-TÊTES SERVIS — une requête `HEAD` sur un site témoin de chaque hébergeur, et la liste des
-//     en-têtes de sécurité présents dans la réponse. Ce que cela établit est étroit et il faut le
+//  1. EN-TÊTES SERVIS — une requête `GET` sur un site témoin de chaque hébergeur, et la liste des
+//     en-têtes de sécurité présents dans la réponse. Ce commentaire a longtemps annoncé `HEAD` là
+//     où le code émettait `GET` : #106 a tranché le désaccord en faveur de `GET`, dont le motif est
+//     écrit à `METHODE_SONDE`. Ce que le relevé établit est étroit et il faut le
 //     dire : qu'un site témoin ne serve pas COOP prouve que son propriétaire ne l'a pas configuré,
 //     pas que l'hébergeur en soit incapable. La conclusion pour GitHub Pages ne repose donc PAS sur
 //     ce relevé seul, mais sur le fait que Pages ne propose aucun mécanisme de configuration
@@ -97,9 +99,37 @@ export function suffixeInscrit(liste, suffixe) {
   return liste.split("\n").some((ligne) => ligne.trim() === suffixe);
 }
 
-async function interroger(temoin) {
+/**
+ * La sonde interroge en **GET**, et c'est une décision tenue, pas un reste (#106, L4).
+ *
+ * La revue de sécurité de #45 a relevé qu'un `HEAD` suffirait à lire des en-têtes. Le motif de
+ * garder `GET` est écrit ici pour qu'une bascule future ait à le contredire explicitement, et
+ * `tests/unit/publication-robustesse.test.mjs` mesure la méthode réellement émise.
+ */
+export const METHODE_SONDE = Object.freeze({
+  methode: "GET",
+  motif:
+    "La sonde mesure ce que le PUBLIC reçoit, et le public reçoit un GET. Plusieurs hébergeurs et " +
+    "CDN ne traitent pas HEAD comme GET : certains répondent 405, d'autres omettent les en-têtes " +
+    "qu'une couche applicative ajoute au corps servi. Une réponse HEAD dégradée serait enregistrée " +
+    "ici comme « en-tête absent » — un FAUX NÉGATIF sur un en-tête de sécurité, c'est-à-dire " +
+    "l'erreur coûteuse dans le sens qui compte pour cette sonde, puisque ses conclusions " +
+    "d'hébergement en dépendent. Le prix payé est cinq documents téléchargés une fois, à la main, " +
+    "à côté d'une Public Suffix List qui pèse déjà davantage et qu'aucun HEAD ne remplacerait.",
+});
+
+/**
+ * Interroge un site témoin et relève ses en-têtes suivis.
+ *
+ * @param {{ hebergeur: string, url: string, mecanismeDEnTetes: string }} temoin
+ * @param {typeof fetch} [requete] injectable : l'épreuve mesure la méthode réellement émise
+ */
+export async function interroger(temoin, requete = fetch) {
   try {
-    const reponse = await fetch(temoin.url, { method: "GET", redirect: "follow" });
+    const reponse = await requete(temoin.url, {
+      method: METHODE_SONDE.methode,
+      redirect: "follow",
+    });
     const enTetes = {};
     for (const nom of EN_TETES_SUIVIS) enTetes[nom] = reponse.headers.get(nom);
     return { ...temoin, statut: reponse.status, urlFinale: reponse.url, enTetes };
