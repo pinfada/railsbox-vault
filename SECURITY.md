@@ -729,6 +729,42 @@ jetables et nommés à part. L'instrument MESURE le budget « coupures injectée
 bloc acquitté, franchi par une barrière et pourtant absent du support serait classé `corrompu`, et
 un témoin négatif vérifie que cette règle sait se déclencher.
 
+## L'instantané de reprise contient la RAM invitée (#65)
+
+L'[ADR 0024](docs/decisions/0024-instantane-de-reprise.md) ajoute un sixième voisin de volume,
+`<volume>.instantane`, et il faut dire sans détour ce qu'il porte : **l'état v86 complet, donc la
+mémoire du guest** — des pages de la base SQLite en cache, des tampons de Puma, et potentiellement
+du matériel de session. C'est l'objet le plus sensible que ce dépôt écrive après le volume lui-même,
+et les quatre règles qui suivent découlent de ce seul fait.
+
+- **Il est CHIFFRÉ sous la DEK**, la même clé que le volume, développée par l'enveloppe de
+  l'ADR 0020. Un instantané en clair à côté d'un volume chiffré serait un contournement complet du
+  jalon 4 : il suffirait de le lire pour lire le volume. Un seul scellement AES-256-GCM par capture,
+  dont les données associées sont la liaison entière — identifiant de volume, séquence, génération,
+  empreinte de région, empreinte d'image, longueur.
+- **Il ne sort JAMAIS de l'origine de confiance.** Il n'entre dans aucune archive d'export (ADR
+  0008, ADR 0024 § 1) : l'archive reste sans clé et sans état mémoire. Il ne traverse aucun port,
+  aucun `postMessage` et aucune frontière d'origine ; seul le Worker runtime le lit et l'écrit, par
+  la même porte OPFS que le volume.
+- **Il est RETIRÉ dès qu'il ne décrit plus l'état présent** : suppression du volume, restauration
+  (#12), migration (#13), et toute ouverture qui l'écarte. Position par défaut écrite pour #25 : un
+  **verrouillage le retire aussi**, parce qu'un instantané qui survivrait laisserait sur le support
+  la RAM invitée chiffrée sous une clé que l'utilisateur vient de mettre hors d'atteinte — ce n'est
+  pas une fuite, mais ce n'est pas ce que « verrouiller » promet.
+- **`SEC-DURABLE-001` est INCHANGÉ.** L'instantané n'est jamais une source de vérité et ne porte
+  aucune promesse de durabilité : celle-ci est tenue par le journal de génération, comme depuis #14.
+  Un instantané perdu, refusé ou retiré ne perd aucune donnée — il coûte un boot à froid. La
+  quiescence de l'adaptateur va dans le même sens : pendant une capture, aucune E/S n'est acquittée,
+  parce qu'un acquittement pendant une capture serait exactement le mensonge que cet invariant
+  interdit.
+
+**Ce que l'instantané NE protège pas, et il faut l'écrire.** Son en-tête est en clair : il révèle
+l'identifiant du volume, la séquence, la génération et deux empreintes. C'est le canal auxiliaire
+que l'ADR 0015 assume déjà pour la racine, à ceci près que la séquence d'un instantané date la
+dernière FERMETURE. Et un retour arrière complet du support — volume, journal, témoin et instantané
+ensemble — reste hors de portée exactement comme l'ADR 0019 l'écrit : la liaison de l'instantané est
+dérivée du même support, elle n'ajoute ni ne retire rien à cette limite.
+
 ## Analyse de secrets
 
 Chaque pull request est analysée par GuardRails (statut de commit `guardrails/scan`). L'analyse

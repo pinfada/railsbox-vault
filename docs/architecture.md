@@ -476,6 +476,60 @@ plus concorder, un seul remède —, et la `CryptoError` d'origine reste dans le
 rechiffrer ; les contrôles de séquence restent #19 ; l'archive porte le fichier v3 tel quel, donc
 son empreinte porte sur du chiffré.
 
+## L'instantané de reprise : une accélération vérifiée, jamais une source de vérité (#65)
+
+L'[ADR 0005](decisions/0005-qualification-de-la-reprise.md) avait tranché la voie sans pouvoir dire
+**à quoi** un instantané mémoire se lie. Les générations transactionnelles (#16), le format v3 (#18)
+et la fraîcheur (#19) l'ont livré ; l'[ADR 0024](decisions/0024-instantane-de-reprise.md) pose le
+format, la politique de capture et le cycle de vie.
+
+**La phrase qui gouverne tout le reste : le volume est la seule source de vérité.** Un instantané
+qui ne décrit pas exactement l'état présent est ÉCARTÉ — retiré du support — et le boot à froid
+s'exécute. Aucun message ne laisse croire à une reprise, et aucune promesse de durabilité ne bouge :
+`SEC-DURABLE-001` est tenu par le journal de génération, pas par l'instantané. **Un instantané perdu
+ne perd aucune donnée : il coûte un boot.**
+
+Un sixième voisin, `<volume>.instantane`, rejoint le manifeste (#10), le journal de migration (#13),
+le journal de génération (#16), le témoin de séquence (#19) et l'enveloppe de clé (#21). C'est le
+plus long suffixe réservé du dépôt : `MAX_VOLUME_NAME` passe de 54 à 53 caractères, et la
+rétroactivité est écrite dans l'ADR plutôt que subie.
+
+Cinq pièces, dans `src/vm/instantane/` et `src/vm/` :
+
+- **`instantane/identite-instantane.mjs`** — la LIAISON : identifiant de volume, versions de format,
+  séquence et génération de la racine validée, empreinte de la région d'authentification (ADR 0019),
+  empreinte de l'image de référence (ADR 0007), longueur de l'état. Encodage canonique, champs
+  préfixés ou de largeur fixe, pour la raison exacte de l'ADR 0015 ;
+- **`instantane/modele-reference.mjs`** — la spécification exécutable : **UN seul scellement par
+  capture**, AES-256-GCM sous la DEK, clair = l'état v86, **données associées = la liaison**. C'est
+  ce que « en-tête scellé » veut dire ici : l'en-tête est en clair sur le disque — il faut pouvoir
+  le lire avant de traverser 250 Mio — et il est AUTHENTIFIÉ, si bien qu'un champ modifié fait
+  échouer l'étiquette ;
+- **`instantane/fichier-instantane.mjs`** — la disposition : en-tête de 152 octets, corps chiffré,
+  **marque de complétude posée à la FIN**, après le corps et après une barrière. Un fichier tronqué
+  par une coupure n'a pas de marque ;
+- **`instantane-de-reprise.mjs`** — la conduite : capturer, relire, ÉCARTER. L'ouverture rend un
+  RAPPORT et ne lève pas, parce que tous les refus mènent au même geste et que l'appelant a besoin
+  du MOTIF pour le publier ;
+- **`v86-buffer-adapter.mjs`** — la QUIESCENCE, qui amende l'ADR 0003 sur deux gestes exactement.
+
+**La quiescence est le filet de la capture, pas une preuve d'arrêt.** Elle refuse de s'établir tant
+qu'une E/S est en vol ou qu'une faute est retenue ; pendant qu'elle dure, `get`, `set` et `flush`
+sont refusés, le backend n'est pas touché et **le rappel d'acquittement de v86 n'est pas appelé** —
+un acquittement pendant une capture serait exactement le mensonge que `SEC-DURABLE-001` interdit ;
+`reprendre()` publie le nombre de violations, et une capture qui en a vu une échoue proprement, sans
+produire de fichier. Ce qu'elle ne dit PAS : que le guest soit logiquement au repos. C'est l'arrêt
+de l'émulateur qui fait le repos ; l'adaptateur ne voit que les E/S qui lui arrivent.
+
+**`get_state` ne rend que la liaison, et rien du disque.** v86 appelle ce geste sur le tampon du
+disque pendant `save_state` ; rendre les octets du volume en ferait une seconde copie, capable de le
+contredire. `set_state` confronte la liaison reçue au volume réellement ouvert, avant que le guest
+n'ait battu une seule fois. `get_buffer` reste refusé, pour la raison inchangée de l'ADR 0003.
+
+**Ce que #65 ne fait pas** : il n'ouvre pas le gate « reprise p95 ≤ 60 s ». Le gate demande une
+mesure ET une preuve d'équivalence byte-à-byte, publiées dans
+[`quality-attributes.md`](quality-attributes.md).
+
 ## Résilience aux coupures : l'instrument, puis la garantie
 
 L'issue #15 a livré l'**instrument** de mesure des arrêts brutaux ; #16 a livré la **garantie**
