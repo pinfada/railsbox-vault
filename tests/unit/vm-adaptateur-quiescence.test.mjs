@@ -249,3 +249,30 @@ test("un adaptateur DÉJÀ en panne refuse de quiescer : on ne capture pas au-de
     "capturer au-dessus d'une faute donnerait un instantané d'un état que personne ne tient",
   );
 });
+
+test("après une E/S refusée, la session n'a plus DROIT à une seconde capture", async () => {
+  // Le refus d'une E/S passe par le même chemin qu'une panne de support : il pose la faute FATALE
+  // de l'adaptateur, et celle-ci ne se lève jamais. La conséquence est écrite dans le module, et
+  // elle est ici EXÉCUTÉE — sans quoi elle serait une intention que le premier remaniement
+  // effacerait sans que rien ne rougisse.
+  //
+  // C'est voulu : une E/S refusée pendant une capture veut dire que le guest attend une réponse que
+  // personne ne lui donnera. Lui proposer une seconde capture reviendrait à capturer une mémoire en
+  // attente d'un acquittement qui n'arrivera pas.
+  const { adapte } = adaptateur();
+  adapte.quiescer();
+  adapte.set(0, new Uint8Array(512), () => {});
+  await Promise.resolve();
+  const rendu = adapte.reprendre();
+  assert.equal(rendu.violations, 1, "la première capture a bien vu une violation");
+
+  assert.throws(
+    () => adapte.quiescer(),
+    (erreur) => {
+      assert.ok(isStorageError(erreur, STORAGE_ERROR_CODES.quiesce));
+      assert.match(erreur.message, /porte déjà la faute/);
+      return true;
+    },
+    "une seconde capture est refusée : l'adaptateur porte la faute du refus précédent",
+  );
+});

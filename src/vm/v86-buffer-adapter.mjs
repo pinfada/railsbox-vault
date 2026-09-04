@@ -116,6 +116,14 @@ function creerQuiescence(fail) {
      * n'est PAS appelé et le backend n'est PAS touché. C'est la seule conduite qui ne mente ni au
      * guest ni au support : le guest atteindra son délai de garde ATA, ce que l'ADR 0003 a déjà
      * retenu pour une panne de support, et la capture apprendra qu'elle doit échouer.
+     *
+     * **Ce refus passe par `fail`, donc il pose la faute FATALE de l'adaptateur, et celle-ci ne se
+     * lève jamais.** La conséquence est à connaître avant d'y toucher : une seconde capture dans la
+     * MÊME session est refusée d'emblée par `etablir`, au motif que l'adaptateur porte déjà une
+     * faute. C'est voulu. Une E/S refusée pendant une capture veut dire que le guest a demandé
+     * quelque chose que personne n'a acquitté ; le laisser continuer comme si de rien n'était, puis
+     * lui proposer une seconde capture, reviendrait à capturer une mémoire qui attend une réponse
+     * qu'elle n'aura pas. La session en cours est finie ; la suivante repart d'un adaptateur neuf.
      */
     refuser(source, contexte) {
       if (!actif) return false;
