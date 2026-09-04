@@ -27,6 +27,7 @@ import { capturerInstantane, ouvrirInstantaneDeReprise } from "/src/vm/instantan
 import { supportInstantaneOpfs } from "/src/vm/instantane/support-opfs.mjs";
 import { octetsEnHex } from "/src/vm/format-chiffre/octets.mjs";
 import { createSha256Stream } from "/src/vm/sha256-stream.mjs";
+import { bindNavigatorStorage, createStorageBudget } from "/src/vm/storage-budget.mjs";
 
 /** Ordre CANONIQUE des artefacts dans l'empreinte d'image. Deux ordres donneraient deux empreintes. */
 const ARTEFACTS_DE_L_IMAGE = Object.freeze([
@@ -153,6 +154,10 @@ async function sousQuiescence({ adapter, session, backend, volume, etatPresent, 
       etatPresent,
       etat,
       support,
+      // Le QUOTA est demandé avant que `allouer` ne réserve un quart de gibioctet d'un seul
+      // `truncate` (#9). Un moteur sans `estimate()` rend l'état « inconnu », que la conduite
+      // laisse passer : l'inconnu n'est pas une capacité nulle.
+      budget: createStorageBudget(bindNavigatorStorage(navigator.storage)),
     });
     return { capture, violations: adapter.status().violations };
   } finally {

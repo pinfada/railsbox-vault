@@ -334,3 +334,107 @@ test("la capture consomme EXACTEMENT un scellement du budget de clé", async () 
   });
   assert.equal(scelle.scellementsCumules, avant + 1, "un scellement par capture, ADR 0024 § 3");
 });
+
+// LE QUOTA, DEMANDÉ AVANT DE RÉSERVER (#65, revue de la PR #133).
+//
+// `allouer` réserve la taille entière du fichier — 253 Mo sur l'image de référence — d'un seul
+// `truncate`. Sans question préalable, la capture découvrait le quota épuisé EN COURS d'écriture :
+// le fichier restait alors sur le support, alloué et sans marque, c'est-à-dire une place prise pour
+// un instantané que la prochaine ouverture écartera de toute façon. Et le scellement, lui, avait
+// déjà été consommé.
+//
+// La question passe par la couche budget de #9 : elle a déjà les états `known` / `unknown` et les
+// diagnostics. Une estimation INDISPONIBLE n'est pas une capacité nulle — la capture passe.
+
+/** Couche budget réduite au geste que la capture utilise, avec la réponse qu'on veut éprouver. */
+function budgetQuiRepond(reponse) {
+  let demande = null;
+  return {
+    get demande() {
+      return demande;
+    },
+    reserve: async (requiredBytes) => {
+      demande = requiredBytes;
+      return { ...reponse, requiredBytes };
+    },
+  };
+}
+
+test("une capture est REFUSÉE quand l'espace estimé ne la couvre pas", async () => {
+  const support = supportInstantaneDouble();
+  const scelle = await scellement();
+  const avant = scelle.scellementsCumules;
+  const budget = budgetQuiRepond({
+    operation: "reserve",
+    state: "known",
+    available: 1024,
+    sufficient: false,
+    diagnostic: { code: "VAULT_BUDGET_SPACE_LOW" },
+  });
+
+  await assert.rejects(
+    capturerInstantane({
+      scellement: scelle,
+      volume: "donnees",
+      etatPresent: etatPresent(),
+      etat: ETAT,
+      support,
+      budget,
+    }),
+    (erreur) => {
+      assert.equal(erreur.code, INSTANTANE_ERROR_CODES.captureRefusee);
+      assert.equal(erreur.context.diagnostic, "VAULT_BUDGET_SPACE_LOW");
+      assert.equal(erreur.context.disponible, 1024);
+      return true;
+    },
+  );
+
+  assert.equal(budget.demande, tailleDeFichier(ETAT.byteLength), "on demande la taille du FICHIER");
+  assert.deepEqual(support.journal, [], "pas un geste sur le support : rien n'est alloué");
+  assert.equal(scelle.scellementsCumules, avant, "et pas un scellement consommé");
+});
+
+test("une estimation INDISPONIBLE ne bloque pas la capture : l'inconnu n'est pas zéro", async () => {
+  const support = supportInstantaneDouble();
+  const budget = budgetQuiRepond({
+    operation: "reserve",
+    state: "unknown",
+    available: null,
+    sufficient: null,
+    diagnostic: { code: "VAULT_BUDGET_ESTIMATE_UNAVAILABLE" },
+  });
+
+  const capture = await capturerInstantane({
+    scellement: await scellement(),
+    volume: "donnees",
+    etatPresent: etatPresent(),
+    etat: ETAT,
+    support,
+    budget,
+  });
+  assert.equal(capture.octets, tailleDeFichier(ETAT.byteLength));
+});
+
+test("un espace SUFFISANT laisse la capture aboutir, et le fichier se relit", async () => {
+  const support = supportInstantaneDouble();
+  const budget = budgetQuiRepond({
+    operation: "reserve",
+    state: "known",
+    available: 1024 * 1024,
+    sufficient: true,
+    diagnostic: null,
+  });
+
+  await capturerInstantane({
+    scellement: await scellement(),
+    volume: "donnees",
+    etatPresent: etatPresent(),
+    etat: ETAT,
+    support,
+    budget,
+  });
+
+  const rapport = await ouvrir(support);
+  assert.equal(rapport.utilise, true);
+  assert.deepEqual(rapport.etat, ETAT);
+});
