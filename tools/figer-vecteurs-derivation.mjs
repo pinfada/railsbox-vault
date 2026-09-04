@@ -233,6 +233,51 @@ const ARGON2_RFC9106 = [
   longueur: 32,
 }));
 
+/**
+ * Le vecteur de NORMALISATION, posé POINT DE CODE PAR POINT DE CODE.
+ *
+ * Sans lui, rien ne fige la forme choisie. L'épreuve existante — « deux écritures Unicode rendent
+ * la même KEK » — passe à l'identique sous NFC, NFD, NFKC et NFKD : toutes quatre font converger
+ * les deux écritures d'un « é ». Ce qui les SÉPARE est ailleurs, et il faut des caractères qui le
+ * montrent :
+ *
+ *  - `é` en deux points de code (U+0065 U+0301) à la SAISIE, un seul (U+00E9) en NFC : c'est ce
+ *    que la normalisation doit faire, et les quatre formes le font ;
+ *  - `ﬁ` (U+FB01, ligature de compatibilité) : NFC et NFD la LAISSENT, NFKC et NFKD la défont en
+ *    « fi » — c'est-à-dire qu'elles changent le secret ;
+ *  - `Ａ` (U+FF21, pleine chasse) : même chose, NFKC et NFKD le ramènent à « A ».
+ *
+ * Choisir NFKC transformerait donc une phrase en une AUTRE phrase, sans le dire, et un coffre
+ * fermé avant le changement ne se rouvrirait plus. Les deux suites de points ci-dessous sont
+ * écrites à la main ; aucune n'est obtenue en appelant `normalize`, faute de quoi le vecteur
+ * suivrait le produit au lieu de le contraindre.
+ */
+const PHRASE_NFC = Object.freeze({
+  nom: "« café ﬁn Ａlpha » : é décomposé à la saisie, ligature et pleine chasse préservées",
+  // c a f e ◌́ ␣ ﬁ n ␣ Ａ l p h a
+  pointsSaisis: Object.freeze([
+    0x63, 0x61, 0x66, 0x65, 0x0301, 0x20, 0xfb01, 0x6e, 0x20, 0xff21, 0x6c, 0x70, 0x68, 0x61,
+  ]),
+  // c a f é ␣ ﬁ n ␣ Ａ l p h a
+  pointsNfc: Object.freeze([
+    0x63, 0x61, 0x66, 0x00e9, 0x20, 0xfb01, 0x6e, 0x20, 0xff21, 0x6c, 0x70, 0x68, 0x61,
+  ]),
+});
+
+/** Les octets UTF-8 d'une suite de points de code, et leur empreinte SHA-256. */
+async function vecteurDeNormalisation({ nom, pointsSaisis, pointsNfc }) {
+  const octets = new TextEncoder().encode(String.fromCodePoint(...pointsNfc));
+  const empreinte = new Uint8Array(await crypto.subtle.digest("SHA-256", octets));
+  return {
+    nom,
+    forme: "NFC",
+    pointsSaisis: [...pointsSaisis],
+    pointsNfc: [...pointsNfc],
+    phraseNfcHex: hex(octets),
+    empreinteHex: hex(empreinte),
+  };
+}
+
 async function document() {
   const infos = CAS_INFO.map(({ nom, ...entree }) => ({ nom, entree, infoHex: hex(info(entree)) }));
   const infoDuVolumeA = info(CAS_INFO[0]);
@@ -267,6 +312,7 @@ async function document() {
         octetsHex: hex(parametresPrf(VALEURS_PRF)),
       },
     ],
+    nfc: await vecteurDeNormalisation(PHRASE_NFC),
     argon2Rfc9106: ARGON2_RFC9106,
   };
 }

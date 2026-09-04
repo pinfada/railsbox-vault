@@ -8,10 +8,13 @@
  *    cela, tout le reste mesurerait la conformité d'une fonction inconnue à elle-même ;
  *  2. **l'empreinte de l'artefact est vérifiée AVANT instanciation** — un octet retourné dans le
  *    binaire fait tomber un refus typé, jamais un hachage silencieusement différent ;
- *  3. **le plancher de coût ne descend jamais sous la RFC** — des paramètres publics moins chers
- *    sont refusés, y compris quand ils viennent du fichier d'enveloppes ;
+ *  3. **le coût reste entre le plancher de la RFC et le plafond** — des paramètres publics moins
+ *    chers, comme des paramètres démesurés, sont refusés, y compris quand ils viennent du fichier
+ *    d'enveloppes, et CHAMP PAR CHAMP ;
  *  4. **la phrase est normalisée en NFC, et c'est écrit** — deux écritures Unicode de la même
- *    phrase rendent la même KEK ;
+ *    phrase rendent la même KEK, et un vecteur FIGÉ dit laquelle des quatre formes est appliquée ;
+ *  4 bis. **rien du secret ne survit là où on peut le regarder** — le tas du module WebAssembly est
+ *    sondé après un hachage, et la base64 de l'étiquette Argon2id doit en être absente ;
  *  5. **la dérivation ouvre une enveloppe RÉELLE**, et une mauvaise phrase rend
  *    `VAULT_ENVELOPPE_CLE_REFUSEE` — le refus de l'ENVELOPPE, pas un refus du dérivateur : un
  *    dérivateur ne sait pas, et ne peut pas savoir, qu'une phrase est fausse.
@@ -421,4 +424,66 @@ test("une phrase juste ouvre l'enveloppe, une fausse rend VAULT_ENVELOPPE_CLE_RE
     (erreur) => isEnveloppeError(erreur, ENVELOPPE_ERROR_CODES.cleRefusee),
     "une mauvaise phrase doit rendre le refus de l'ENVELOPPE, pas un refus du dérivateur",
   );
+});
+
+/** Un double d'Argon2 qui JOURNALISE ses appels : ce qui se mesure ici est l'ordre, pas le calcul. */
+function argon2Journalise() {
+  const journal = [];
+  return {
+    journal,
+    hacher: async (appel) => {
+      // La copie est prise ici : `derivateurPhrase` efface `appel.mot` dès que la clé existe.
+      journal.push({ ...appel, mot: Uint8Array.from(appel.mot) });
+      return new Uint8Array(32);
+    },
+  };
+}
+
+test("le vecteur NFC est REJOUÉ : la phrase normalisée est celle qui est FIGÉE", async () => {
+  // L'épreuve voisine — « deux écritures Unicode rendent la même KEK » — passe à l'identique sous
+  // NFC, NFD, NFKC et NFKD : les quatre font converger deux écritures d'un « é ». Elle ne fige donc
+  // AUCUNE forme. Ce vecteur-ci en fige une, sur une phrase portant une ligature (U+FB01) et un
+  // caractère pleine chasse (U+FF21) : NFKC et NFKD les défont, c'est-à-dire qu'elles changent le
+  // secret, et un coffre fermé avant un tel changement ne se rouvrirait plus.
+  const cas = VECTEURS.nfc;
+  const saisie = String.fromCodePoint(...cas.pointsSaisis);
+  const argon2Double = argon2Journalise();
+  const identite = { identifiantVolume: VOLUME, identifiantEmplacement: "7071727374757677" };
+
+  await derivateurPhrase({ argon2: argon2Double }).deriver({
+    parametres: PARAMETRES(),
+    identite,
+    geste: { phrase: saisie },
+  });
+
+  const mot = argon2Double.journal[0].mot;
+  assert.equal(octetsEnHex(mot), cas.phraseNfcHex, "les octets étirés ne sont pas la forme figée");
+  const empreinte = new Uint8Array(await crypto.subtle.digest("SHA-256", mot));
+  assert.equal(octetsEnHex(empreinte), cas.empreinteHex);
+  assert.equal(saisie.normalize("NFC"), String.fromCodePoint(...cas.pointsNfc));
+
+  // Ce qui rend le vecteur DISCRIMINANT : une compatibilité rendrait d'autres octets. Sans cette
+  // ligne, un vecteur figé sur une phrase ASCII ne contraindrait rien.
+  for (const forme of ["NFKC", "NFKD"]) {
+    assert.notEqual(
+      octetsEnHex(new TextEncoder().encode(saisie.normalize(forme))),
+      cas.phraseNfcHex,
+      `${forme} rend les mêmes octets que NFC : ce vecteur ne fige aucune forme`,
+    );
+  }
+});
+
+test("une identité malformée refuse AVANT de payer un étirement de phrase", async () => {
+  // L'identifiant vient du MANIFESTE, donc d'un fichier. Tant que son refus tombait après Argon2,
+  // il tombait sur un étirement déjà calculé — et que personne n'effaçait ensuite, puisque le
+  // `finally` du dérivateur ne couvre que la phrase.
+  const argon2Double = argon2Journalise();
+  await assert.rejects(() =>
+    derivateurPhrase({ argon2: argon2Double }).deriver({
+      parametres: PARAMETRES(),
+      identite: { identifiantVolume: "pas-un-identifiant", identifiantEmplacement: "7071727374757677" },
+      geste: { phrase: "peu importe" },
+    }),
+  );
+  assert.deepEqual(argon2Double.journal, [], "un étirement a été payé pour rien");
 });
