@@ -1,4 +1,8 @@
-node_modules/
+# Sans barre : couvre aussi node_modules quand un worktree l'adosse par lien symbolique à
+# l'installation d'un autre arbre de travail (#127) — la barre ne filtre que les répertoires.
+# La contrepartie est acceptée : un fichier portant ce nom n'a pas d'usage légitime ici. Les
+# autres entrées gardent leur barre, la décision n'est actée que pour celle-ci.
+node_modules
 coverage/
 dist/
 playwright-report/
