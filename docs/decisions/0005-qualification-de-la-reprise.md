@@ -1,8 +1,9 @@
 # ADR 0005 — La reprise se qualifiera par un instantané lié à une génération arrêtée, et le gate reste fermé d'ici là
 
 - Statut : accepté
-- Date : 2026-08-24 · amendé le 2026-08-28 (§ « Ce que l'atténuation a rendu (#66) »)
-- Issue : #60, amendé par #66 · Invariant : `VAULT-PERSIST-001` · Jalon 1
+- Date : 2026-08-24 · amendé le 2026-08-28 (§ « Ce que l'atténuation a rendu (#66) ») · amendé le
+  2026-09-04 (§ « Le gate est ouvert (#65) »)
+- Issue : #60, amendé par #66 et #65 · Invariant : `VAULT-PERSIST-001` · Jalon 1
 
 ## Contexte
 
@@ -272,3 +273,24 @@ La voie « instantané » est abandonnée, et le budget rouvert à la révision,
 - **Précharger un instantané fabriqué à la construction de l'image** (comme un rootfs pré-booté) —
   ce serait un instantané **non lié à la génération de l'utilisateur**, exactement ce que
   `docs/architecture.md` refuse : il masquerait l'état réel du volume.
+
+## Amendement du 2026-09-04 — Le gate est ouvert (#65)
+
+La voie retenue par cet ADR est construite ([ADR 0024](0024-instantane-de-reprise.md), PR #133) et
+mesurée sur l'environnement de référence, par le workflow manuel `Mesure de la reprise`
+(`.github/workflows/mesure-reprise.yml`) sur un exécutant GitHub à **4 vCPU et 16 Go** : dix essais
+après un échauffement, reprise par instantané **p95 0,84 s**, invariant applicatif identique 10/10,
+boot à froid p95 125,9 s. Le chemin réel du produit — OPFS, journal, région d'authentification — a
+été rejoué dans Chromium sur le même exécutant par `Reprise MVP` : 0,27 s de santé, clair du volume
+identique. Le relevé complet est dans `docs/quality-attributes.md`.
+
+**Le gate « reprise ≤ 60 s » est donc OUVERT**, pour la reprise par instantané d'un volume fermé
+proprement. Les conditions de sûreté de la décision sont tenues : l'instantané est lié à une
+génération validée, chiffré sous la DEK, écarté et retiré dès qu'un écart apparaît.
+
+**Ce que cet amendement ne change pas.** Le boot à froid reste hors budget — 125,9 s p95 sur cet
+environnement — et son budget n'est pas abaissé : un premier boot, ou une réouverture dont
+l'instantané a été écarté, coûte deux minutes, et le produit devra le dire à l'utilisateur plutôt
+que le lui laisser découvrir. Le plan de mesure demandait quatre cœurs physiques et un réseau à 100
+Mbit/s pour le premier chargement ; l'exécutant offre quatre vCPU, plus lents, et la reprise ne
+télécharge rien. Les deux écarts vont dans le sens de la prudence et sont écrits à côté du relevé.
