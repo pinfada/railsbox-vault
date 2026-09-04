@@ -64,7 +64,10 @@ Son interface de stockage expose au minimum :
 - `write(offset, bytes)` avec détection des écritures partielles ;
 - `flush()` dont l'acquittement signifie durabilité au niveau OPFS ;
 - `size()` et géométrie immuable pendant une session ;
-- fermeture exclusive et transfert explicite de propriété ;
+- fermeture exclusive et transfert explicite de propriété. Elle ATTEND les E/S déjà acceptées :
+  retirer le handle sous une écriture en vol la ferait échouer sur un handle « déjà fermé »,
+  c'est-à-dire présenter au guest comme une panne du support une fermeture décidée par la session
+  elle-même (#132) ;
 - injection déterministe d'erreurs pour les tests de résilience.
 
 Le spike #4 a confirmé ce contrat et l'a éprouvé contre un vrai guest Linux
