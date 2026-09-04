@@ -247,16 +247,17 @@ function motifsDePolitiqueDeCache(releves) {
       ({ nature, chemin, attendu, recu }) =>
         `politique de cache « ${nature} » sur ${chemin} : attendu ${attendu}, reçu ${recu ?? "(absent)"}`,
     );
-  if (new Set(releves.map(({ nature }) => nature)).size < 2) {
+  // UNE garde, et pas deux. La campagne de mutation de #103 a relevé qu'une garde « au moins deux
+  // natures » posée à côté de celle-ci ne pouvait JAMAIS échouer seule — un relevé mono-nature porte
+  // par construction une seule politique — et qu'aucune épreuve ne pouvait donc la tuer. C'était du
+  // code mort qui donnait l'apparence de deux protections.
+  const politiques = new Set(releves.map(({ attendu }) => attendu));
+  if (politiques.size < 2) {
     motifs.push(
-      "le témoin doit relever la politique de cache sur au moins DEUX natures d'artefact : une " +
-        "seule ne mesurerait pas ce que l'ADR 0023 décide",
-    );
-  }
-  if (new Set(releves.map(({ attendu }) => attendu)).size < 2) {
-    motifs.push(
-      "toutes les natures relevées portent la MÊME politique attendue : la décision « par nature » " +
-        "serait décorative",
+      `le témoin a relevé ${releves.length} nature(s) d'artefact pour ${politiques.size} ` +
+        "politique(s) de cache distincte(s) : il en faut au moins DEUX natures portant DEUX " +
+        "politiques différentes, sans quoi une décision « par nature » serait déclarée conforme " +
+        "sans avoir jamais été mesurée",
     );
   }
   return motifs;

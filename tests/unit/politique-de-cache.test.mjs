@@ -227,7 +227,7 @@ test("un témoin qui ne relèverait qu'une seule nature est REFUSÉ, pas conform
   const { conforme, motifs } = verdict(mesure);
   assert.equal(conforme, false);
   assert.ok(
-    motifs.some((motif) => motif.includes("nature")),
+    motifs.some((motif) => motif.includes("au moins DEUX natures")),
     "le motif doit nommer ce qui manque : une nature d'artefact de plus",
   );
 });
@@ -241,5 +241,7 @@ test("un témoin dont toutes les natures porteraient la MÊME valeur est refusé
     attendu: "no-store",
     recu: "no-store",
   }));
-  assert.equal(verdict(mesure).conforme, false);
+  const { conforme, motifs } = verdict(mesure);
+  assert.equal(conforme, false);
+  assert.ok(motifs.some((motif) => motif.includes("politique(s) de cache distincte(s)")));
 });
