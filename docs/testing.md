@@ -1391,6 +1391,48 @@ bonne origine et avec la bonne valeur. Le motif est dans l'ADR — caméra et mi
 façon sous un navigateur sans tête, si bien qu'une sonde verrait « refusé » avec ou sans l'en-tête
 et ne prouverait rien.
 
+### Politique de cache de la publication
+
+C'est la preuve la moins spectaculaire de cette page, et elle illustre bien la règle du **niveau le
+plus bas capable de prouver le résultat**. La décision de
+l'[ADR 0023](decisions/0023-politique-de-cache-par-nature-d-artefact.md) (#103) est une règle pure —
+quelle valeur pour quel chemin — et deux niveaux suffisent à la tenir.
+
+**Unitaire.** `tests/unit/politique-de-cache.test.mjs` tient la décision là où elle est prise :
+trois natures d'artefact, trois politiques **distinctes**, la nature décidée par le chemin et le
+rôle et non par l'origine, l'absence d'`immutable`, et le manifeste d'épinglage qui relève de la
+même règle que les octets qu'il décrit. L'épreuve qui compte le plus est celle qui garde l'ADR 0022
+: pour un rôle donné, deux chemins de nature différente ne diffèrent **que** par `Cache-Control` —
+la CSP, COOP, `Referrer-Policy` et `Permissions-Policy` traversent intactes.
+
+`tests/unit/publication-arborescences.test.mjs` tient la traduction en fichier `_headers` :
+plusieurs blocs, chacun **complet**, la règle la plus précise qui l'emporte à la relecture par
+l'analyseur qui la sert, et **deux cliquets** là où il n'y en avait qu'un. Le premier — l'uniformité
+hors la dimension déclarée — refuse encore `compat.html`, dont seule la CSP et le durcissement
+divergent ; le second — la fidélité du fichier produit — refuse un `_headers` amputé de son bloc
+épinglé, et son texte lui est **injecté** pour que ce refus soit montrable.
+
+Une épreuve mérite d'être lue pour ce qu'elle a coûté : « la comparaison du cliquet bouge si l'on
+altère N'IMPORTE LEQUEL des en-têtes gardés ». La campagne de mutation de #103 a relevé que sortir
+la **seule** CSP de la comparaison survivait à toute la suite, parce que le seul chemin dissident
+que le dépôt sache produire diverge sur trois en-têtes à la fois. L'épreuve altère donc chaque
+en-tête seul.
+
+**Chaîne de publication.** `npm run publier:check` en est la preuve haute :
+`tools/publier-temoin.mjs` relève la politique **réellement reçue** sur les **deux** origines et les
+**trois** natures, par un `fetch` émis depuis la page — donc par la pile réseau du moteur, et non
+par le client HTTP du harnais. La nature « épinglage v86 » est relevée sur
+`vendor/v86/MANIFEST.json`, versionné et publié même quand `npm run vm:fetch` n'a pas tourné ; sans
+lui, la seule nature dont la règle dépend du chemin ne serait jamais mesurée sur du HTTP réel. Le
+verdict refuse en outre un relevé qui ne porterait pas au moins deux politiques **distinctes**,
+faute de quoi un témoin vert pourrait n'avoir jamais mesuré ce que la décision a de propre.
+
+**Ce qui n'est PAS mesuré**, et qui est écrit dans l'ADR : aucun effet de cache dans un navigateur —
+qu'un moteur garde effectivement l'épinglage v86 vingt-quatre heures demanderait deux visites
+séparées et un témoin négatif, un banc que #103 n'a pas construit. Et aucun hébergement réel : un
+hébergeur qui réécrit `Cache-Control`, comme GitHub Pages le fait, rendrait la décision inopérante
+sans qu'aucun cliquet puisse le voir.
+
 ### Frontière de l'enveloppe de clé
 
 `tests/browser/enveloppe-frontiere.spec.mjs` est la preuve de niveau navigateur de
