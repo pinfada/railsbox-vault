@@ -30,8 +30,8 @@
 // confiance à personne. Un attaquant capable de forger une assertion sans l'authentificateur
 // n'obtiendrait pas pour autant la sortie PRF, qui est la seule chose dont la clé dépend.
 
-import { deriverKekPourEmplacement } from "./derivateur.mjs";
-import { annulee, prfIgnoree, prfIndisponible } from "./derivation-errors.mjs";
+import { deriverKek, infoDeLEmplacement } from "./derivateur.mjs";
+import { annulee, parametresRefuses, prfIgnoree, prfIndisponible } from "./derivation-errors.mjs";
 import {
   SEL_PRF_OCTETS,
   decoderParametresPublics,
@@ -197,7 +197,11 @@ function creanceAvecPrf(creance, rpId) {
       resultats.prf === undefined
         ? "l'authentificateur n'a rendu aucun résultat pour l'extension « prf » : elle n'est pas prise en charge ici."
         : "l'authentificateur a rendu « prf » sans l'activer (« enabled » n'est pas vrai).",
-      { rpId, resultat: resultats.prf ?? null },
+      // Le contexte ne porte que la FORME du résultat, jamais le résultat. Un objet `prf` rendu
+      // par un authentificateur peut contenir des octets de sortie, et un contexte d'erreur voyage
+      // — journal, port, `toJSON`. Ce que le diagnostic demande est « qu'est-ce qui est arrivé ? »,
+      // et `typeof` y répond.
+      { rpId, forme: typeof resultats.prf },
     );
   }
   const identifiant = octetsDe(creance.rawId);
@@ -223,6 +227,18 @@ async function assertion(api, valeurs, geste) {
     });
   } catch (cause) {
     if (estAnnulation(cause)) throw annulee({ rpId: valeurs.rpId, nom: cause.name });
+    // `SecurityError` ne dit PAS « l'extension n'a rien rendu » : elle dit que le moteur refuse
+    // `rpId` comme domaine relié de cette origine. Or ce `rpId` vient des PARAMÈTRES PUBLICS,
+    // c'est-à-dire du fichier — un adversaire qui écrit `<volume>.cles` y met le domaine qu'il
+    // veut. Le rendre en `PRF_IGNOREE`, dont le message affirme « l'emplacement est légitime »,
+    // dirait à l'utilisateur de changer d'authentificateur pour un emplacement qu'il faut au
+    // contraire regarder. Le refus est donc celui des paramètres, et il NOMME l'erreur du moteur.
+    if (cause?.name === "SecurityError") {
+      throw parametresRefuses(
+        `le moteur refuse « ${valeurs.rpId} » comme domaine relié de cette origine (SecurityError). Ce domaine est lu dans les paramètres publics de l'emplacement, donc dans le fichier.`,
+        { champ: "rpId", rpId: valeurs.rpId, nom: cause.name },
+      );
+    }
     // Même règle qu'à l'enregistrement, avec l'autre remède : ici l'emplacement est légitime, et
     // ce qui manque est la SORTIE de l'extension. Le fait observable est le même dans les deux cas —
     // aucune sortie PRF n'est revenue —, et c'est ce que le refus dit.
@@ -243,7 +259,9 @@ function sortiePrf(resultat, rpId) {
   if (premier === null) {
     throw prfIgnoree(
       "l'extension « prf » a été demandée et l'assertion n'en rend aucune sortie. C'est un authentificateur ou un moteur qui ne la sert pas, et non une clé fausse.",
-      { rpId, resultat: resultats.prf ?? null },
+      // La FORME, jamais le résultat : voir `creanceAvecPrf`. Ici la raison est plus forte encore,
+      // puisque `resultats.prf.results` est exactement l'endroit où la sortie PRF se trouverait.
+      { rpId, forme: typeof resultats.prf },
     );
   }
   if (premier.byteLength !== 32) {
@@ -252,7 +270,12 @@ function sortiePrf(resultat, rpId) {
       { rpId, longueur: premier.byteLength },
     );
   }
-  return Uint8Array.from(premier);
+  // Le tampon que le moteur a rendu est mis à zéro après la copie. C'est la même règle que pour le
+  // matériau d'Argon2 : une fenêtre refermée, pas une garantie — le moteur a pu le copier avant de
+  // nous le remettre, et rien dans le langage ne l'en empêche.
+  const copie = Uint8Array.from(premier);
+  premier.fill(0);
+  return copie;
 }
 
 /**
@@ -267,12 +290,16 @@ export function derivateurWebauthnPrf({ credentials } = {}) {
     deriver: async ({ parametres, identite, geste }) => {
       const valeurs = decoderParametresPublics(TYPES_KEK["webauthn-prf"], parametres);
       const api = exigerCredentials(credentials);
+      // L'info AVANT le geste : un identifiant malformé, venu du manifeste, doit faire tomber le
+      // refus avant qu'une sortie PRF n'existe — et avant, ici, qu'on ne dérange l'utilisateur
+      // pour un geste dont on sait déjà qu'il ne servira à rien. Voir `infoDeLEmplacement`.
+      const info = infoDeLEmplacement(identite);
       const resultat = await assertion(api, valeurs, geste);
       // `resultat.response.signCount` n'est PAS lu. Voir l'en-tête de ce fichier.
-      return deriverKekPourEmplacement({
+      return deriverKek({
         materiau: sortiePrf(resultat, valeurs.rpId),
         sel: hexEnOctets(valeurs.sel),
-        identite,
+        info,
       });
     },
   });

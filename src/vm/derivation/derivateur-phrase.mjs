@@ -39,7 +39,7 @@
 // rognée, aucune casse n'est modifiée, et la « force » de la phrase n'est pas évaluée. Rogner une
 // espace finale changerait le secret sans le dire ; l'évaluer est l'affaire de l'interface (#24).
 
-import { effacer, deriverKekPourEmplacement } from "./derivateur.mjs";
+import { deriverKek, effacer, infoDeLEmplacement } from "./derivateur.mjs";
 import { parametresRefuses, phraseRefusee } from "./derivation-errors.mjs";
 import { ARGON2_VERSION, argon2Vendu } from "./argon2-vendu.mjs";
 import {
@@ -176,6 +176,9 @@ export function derivateurPhrase({ argon2 = argon2Vendu() } = {}) {
     type: TYPES_KEK.phrase,
     deriver: async ({ parametres, identite, geste }) => {
       const valeurs = exigerLesBornes(decoderParametresPublics(TYPES_KEK.phrase, parametres));
+      // L'info AVANT le matériau : un identifiant malformé, venu du manifeste, doit faire tomber
+      // le refus avant qu'un étirement de phrase n'existe. Voir `infoDeLEmplacement`.
+      const info = infoDeLEmplacement(identite);
       const mot = exigerLaPhrase(geste?.phrase);
       try {
         const materiau = await argon2.hacher({
@@ -189,11 +192,7 @@ export function derivateurPhrase({ argon2 = argon2Vendu() } = {}) {
         });
         // Le SEL public sert aussi de sel HKDF : il est déjà propre à l'emplacement, et en tirer
         // un second n'ajouterait aucune entropie tout en ajoutant un champ à authentifier.
-        return await deriverKekPourEmplacement({
-          materiau,
-          sel: hexEnOctets(valeurs.sel),
-          identite,
-        });
+        return await deriverKek({ materiau, sel: hexEnOctets(valeurs.sel), info });
       } finally {
         effacer(mot);
       }

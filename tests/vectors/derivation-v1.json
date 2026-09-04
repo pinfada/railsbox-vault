@@ -90,6 +90,43 @@
       "octetsHex": "00297261696c73626f782d7661756c742f64657269766174696f6e2f76312f776562617574686e2d70726600096c6f63616c686f73740014909192939495969798999a9b9c9d9e9fa0a1a2a30020a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf"
     }
   ],
+  "nfc": {
+    "nom": "« café ﬁn Ａlpha » : é décomposé à la saisie, ligature et pleine chasse préservées",
+    "forme": "NFC",
+    "pointsSaisis": [
+      99,
+      97,
+      102,
+      101,
+      769,
+      32,
+      64257,
+      110,
+      32,
+      65313,
+      108,
+      112,
+      104,
+      97
+    ],
+    "pointsNfc": [
+      99,
+      97,
+      102,
+      233,
+      32,
+      64257,
+      110,
+      32,
+      65313,
+      108,
+      112,
+      104,
+      97
+    ],
+    "phraseNfcHex": "636166c3a920efac816e20efbca16c706861",
+    "empreinteHex": "c3d6575ef8526a1d125160a5109b64e7a29181a9502a41d7c2226d33f570970d"
+  },
   "argon2Rfc9106": [
     {
       "section": "5.1",

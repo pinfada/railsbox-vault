@@ -120,8 +120,10 @@ export async function deriverKek({ materiau, sel, info }) {
       { attendu: MATERIAU_OCTETS },
     );
   }
-  const base = await crypto.subtle.importKey("raw", materiau, "HKDF", false, ["deriveKey"]);
+  // `importKey` est DANS le try : il peut échouer — matériau d'une largeur que le moteur refuse,
+  // contexte sans WebCrypto —, et un échec hors du try laisserait le matériau intact dans le tas.
   try {
+    const base = await crypto.subtle.importKey("raw", materiau, "HKDF", false, ["deriveKey"]);
     return await crypto.subtle.deriveKey(
       { name: "HKDF", hash: "SHA-256", salt: sel, info },
       base,
@@ -135,17 +137,19 @@ export async function deriverKek({ materiau, sel, info }) {
 }
 
 /**
- * Le geste complet d'un dérivateur : étirer un matériau en KEK sous l'identité d'un emplacement.
+ * L'INFO d'un emplacement, calculée AVANT qu'un matériau n'existe.
  *
- * Les deux dérivateurs l'appellent, et c'est ce qui garantit qu'ils n'ont pas deux façons
- * d'assembler la même chose.
+ * C'est l'ordre qui compte, et c'est pour cela que ce geste est séparé. L'info est tirée du
+ * MANIFESTE, c'est-à-dire d'un fichier : un `volume.id` malformé la fait refuser. Tant que ce
+ * refus tombait APRÈS l'appel à Argon2 ou à l'authentificateur, il tombait sur un matériau déjà
+ * calculé, que personne n'effaçait ensuite — un fichier touché par un adversaire suffisait donc à
+ * laisser un étirement de phrase dans le tas. Le refus tombe désormais avant qu'il n'existe.
  *
- * @param {{ materiau: Uint8Array, sel: Uint8Array, identite: object }} appel
+ * Les deux dérivateurs appellent cette fonction puis `deriverKek`, dans cet ordre : c'est ce qui
+ * garantit qu'ils n'ont pas deux façons d'assembler la même chose.
+ *
+ * @param {{ identifiantVolume: string, identifiantEmplacement: string }} identite
  */
-export function deriverKekPourEmplacement({ materiau, sel, identite }) {
-  return deriverKek({
-    materiau,
-    sel,
-    info: encoderInfoDerivation({ ...identite, version: DERIVATION_VERSION }),
-  });
+export function infoDeLEmplacement(identite) {
+  return encoderInfoDerivation({ ...identite, version: DERIVATION_VERSION });
 }

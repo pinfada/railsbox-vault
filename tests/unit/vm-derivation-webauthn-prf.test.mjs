@@ -313,3 +313,107 @@ test("deux emplacements distincts tirent DEUX KEK distinctes de la même sortie 
     "l'info HKDF ne lie pas l'emplacement : la même passkey ouvrirait tous les emplacements",
   );
 });
+
+test("un rpId que le moteur refuse rend le refus des PARAMÈTRES, pas « PRF ignorée »", async () => {
+  // Le `rpId` est lu dans les paramètres publics, donc dans le fichier : un adversaire qui écrit
+  // `<volume>.cles` y met le domaine qu'il veut. `SecurityError` dit que le moteur refuse ce
+  // domaine pour cette origine — elle ne dit PAS que l'extension n'a rien rendu. La traduire en
+  // `VAULT_DERIVATION_PRF_IGNOREE`, dont le message affirme « l'emplacement est légitime »,
+  // enverrait changer d'authentificateur pour un emplacement qu'il faut au contraire regarder.
+  const enregistre = await enregistrer();
+  const credentials = credentialsDouble({
+    assertion: () => {
+      throw new DOMException("The relying party ID is not a registrable domain.", "SecurityError");
+    },
+  });
+  await assert.rejects(
+    () =>
+      derivateurWebauthnPrf({ credentials }).deriver({
+        parametres: enregistre.parametres,
+        identite: IDENTITE,
+        geste: {},
+      }),
+    (erreur) =>
+      isDerivationError(erreur, DERIVATION_ERROR_CODES.parametresRefuses) &&
+      erreur.context.rpId === RP_ID &&
+      erreur.context.nom === "SecurityError",
+  );
+});
+
+test("aucun refus ne transporte la sortie PRF dans son contexte : la FORME, jamais le résultat", async () => {
+  // Un contexte d'erreur voyage — journal, port, `toJSON`. Y poser `resultats.prf` entier ferait
+  // sortir du dérivateur l'objet même où la sortie PRF se trouve, sur le seul chemin où on est sûr
+  // que quelque chose s'est mal passé.
+  const enregistre = await enregistrer();
+  const appel = { parametres: enregistre.parametres, identite: IDENTITE, geste: {} };
+  const sortie = octetsEnHex(SORTIE_PRF);
+
+  const refusDAssertion = await derivateurWebauthnPrf({
+    credentials: credentialsDouble({
+      // Une sortie de mauvaise LARGEUR : le refus tombe, et la sortie existe bel et bien.
+      assertion: assertionRendue({ prf: { results: { first: SORTIE_PRF.slice(0, 16) } } }),
+    }),
+  })
+    .deriver(appel)
+    .then(
+      () => null,
+      (erreur) => erreur,
+    );
+  assert.ok(isDerivationError(refusDAssertion, DERIVATION_ERROR_CODES.prfIgnoree));
+  assert.equal(refusDAssertion.context.rpId, RP_ID);
+
+  const refusDEnregistrement = await enregistrerEmplacementPrf({
+    credentials: credentialsDouble({ creation: creanceCreee({ enabled: false, autre: SORTIE_PRF }) }),
+    rpId: RP_ID,
+    nomUtilisateur: "vault",
+    identifiantUtilisateur: suiteDOctets(0x01, 16),
+  }).then(
+    () => null,
+    (erreur) => erreur,
+  );
+  assert.ok(isDerivationError(refusDEnregistrement, DERIVATION_ERROR_CODES.prfIndisponible));
+  assert.equal(refusDEnregistrement.context.forme, "object");
+
+  for (const refus of [refusDAssertion, refusDEnregistrement]) {
+    const transporte = JSON.stringify(refus.toJSON());
+    assert.equal(
+      transporte.includes(sortie.slice(0, 32)),
+      false,
+      "un refus transporte des octets de la sortie PRF dans son contexte",
+    );
+    assert.equal(Object.hasOwn(refus.context, "resultat"), false);
+  }
+});
+
+test("le tampon de sortie PRF rendu par le moteur est mis à zéro après la copie", async () => {
+  const enregistre = await enregistrer();
+  const tampon = SORTIE_PRF.slice();
+  assert.ok(tampon.some((octet) => octet !== 0), "le tampon est déjà nul : rien à mesurer");
+
+  const kek = await derivateurWebauthnPrf({
+    credentials: credentialsDouble({ assertion: assertionRendue({ prf: { results: { first: tampon } } }) }),
+  }).deriver({ parametres: enregistre.parametres, identite: IDENTITE, geste: {} });
+
+  assert.ok(kek, "la KEK doit exister : c'est l'effacement qui est mesuré, pas un échec");
+  assert.deepEqual(
+    tampon,
+    new Uint8Array(32),
+    "le tampon rendu par le moteur garde la sortie PRF après la dérivation",
+  );
+});
+
+test("une identité malformée refuse AVANT de déranger l'authentificateur", async () => {
+  // L'identifiant vient du MANIFESTE, donc d'un fichier. Tant que son refus tombait après
+  // l'assertion, il tombait sur une sortie PRF déjà obtenue — et sur un geste humain déjà demandé
+  // pour rien. L'info est désormais calculée avant que quoi que ce soit n'existe.
+  const enregistre = await enregistrer();
+  const credentials = credentialsDouble({ assertion: assertionRendue({ prf: sortiePrf() }) });
+  await assert.rejects(() =>
+    derivateurWebauthnPrf({ credentials }).deriver({
+      parametres: enregistre.parametres,
+      identite: { ...IDENTITE, identifiantVolume: "pas-un-identifiant" },
+      geste: {},
+    }),
+  );
+  assert.deepEqual(credentials.journal, [], "l'authentificateur a été appelé pour rien");
+});
