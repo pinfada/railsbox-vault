@@ -90,6 +90,35 @@ export function isCapabilityProbe(pathname) {
 }
 
 /**
+ * Un document de la COQUILLE elle-même : ni territoire applicatif, ni sonde de capacités.
+ *
+ * Les deux exemptions existaient déjà pour la CSP, chacune avec sa raison, et ces raisons valent
+ * mot pour mot pour les politiques ajoutées par l'ADR 0022 — l'une gouverne ce que le document
+ * ÉMET, l'autre ce qu'il PEUT, donc toutes deux son contenu. Les nommer une fois évite qu'une
+ * troisième politique soit posée demain sur le territoire du guest par simple oubli de la condition.
+ */
+export function isShellDocument(pathname) {
+  return !isApplicationTerritory(pathname) && !isCapabilityProbe(pathname);
+}
+
+/**
+ * Capacités que la coquille refuse EXPLICITEMENT (#104, ADR 0022).
+ *
+ * La liste est courte, et c'est délibéré. Le risque de cet en-tête n'est pas d'en refuser trop peu,
+ * c'est d'en refuser trop : `Permissions-Policy` gouverne aussi les documents ENCADRÉS, et un refus
+ * en bloc (`*=()`, ou une liste recopiée d'un guide) fermerait des capacités que ce dépôt n'a
+ * jamais mesurées — plein écran de la console VM, presse-papiers vers le guest, sortie audio de
+ * v86. Ces trois-là sont refusées parce qu'aucune ligne du produit, du serveur de test ni des bancs
+ * ne les appelle : la coquille courtise le déverrouillage et le consentement, elle ne capte rien.
+ */
+const CAPACITES_REFUSEES_PAR_LA_COQUILLE = Object.freeze(["camera", "microphone", "geolocation"]);
+
+/** `<capacité>=()` est la liste d'autorisation VIDE : personne, pas même `self`. */
+function shellPermissionsPolicy() {
+  return CAPACITES_REFUSEES_PAR_LA_COQUILLE.map((capacite) => `${capacite}=()`).join(", ");
+}
+
+/**
  * @param {{ role: string, pathname: string, isolation: string | null, appOrigin: string,
  *           requestOrigin?: string | null, workerSrcBlob?: boolean }} request
  * @returns {Record<string, string>}
@@ -117,8 +146,15 @@ export function securityHeaders({
     "Cross-Origin-Resource-Policy": role === "app" ? "cross-origin" : "same-origin",
   };
 
-  if (role === "shell" && !isApplicationTerritory(pathname) && !isCapabilityProbe(pathname)) {
+  if (role === "shell" && isShellDocument(pathname)) {
     headers["Content-Security-Policy"] = shellContentSecurityPolicy(appOrigin, { workerSrcBlob });
+    // La seule requête inter-origine que la CSP ci-dessus laisse sortir est le CADRE du territoire
+    // applicatif : `connect-src 'self'` et `img-src 'self'` ferment les autres. Sous la politique
+    // par défaut des moteurs, cette requête porte l'origine de la coquille jusqu'à une origine dont
+    // le contenu vient du guest (ADR 0002). `no-referrer` la retire, et
+    // `tests/browser/entetes-durcissement.spec.mjs` le relève avec son témoin négatif. ADR 0022.
+    headers["Referrer-Policy"] = "no-referrer";
+    headers["Permissions-Policy"] = shellPermissionsPolicy();
   }
 
   // Un document d'origine OPAQUE récupère ses modules ES en mode CORS avec « Origin: null » :
@@ -138,6 +174,12 @@ export function securityHeaders({
 
   // `Service-Worker-Allowed` est délibérément absent : le spike mesure la portée maximale qu'un
   // Service Worker applicatif obtient sans complaisance du serveur.
+  //
+  // `Strict-Transport-Security` est délibérément absent lui aussi, et l'ADR 0022 en porte le motif :
+  // tout ce que ce dépôt sait servir est en `http:`, où RFC 6797 § 7.2 exige du navigateur qu'il
+  // IGNORE l'en-tête. Le poser ici mettrait dans la source de vérité une politique inerte partout
+  // où elle est mesurée — et HSTS engage un DOMAINE pour des mois, pas une arborescence. C'est une
+  // obligation d'exploitant, écrite dans `docs/release-policy.md`, pas un en-tête de ce module.
   return headers;
 }
 

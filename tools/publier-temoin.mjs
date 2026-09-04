@@ -7,7 +7,9 @@
 // Il répond à trois questions, sur les ARBRES PUBLIÉS et non sur le dépôt :
 //
 //  1. l'hébergement sert-il exactement les en-têtes que `tools/serve-headers.mjs` définit, plus le
-//     COOP ajouté par l'ADR 0017 ? Comparaison littérale, en-tête par en-tête, par origine ;
+//     COOP ajouté par l'ADR 0017 ? Comparaison littérale, en-tête par en-tête, par origine. Depuis
+//     l'ADR 0022 la comparaison porte aussi sur les DEUX MOITIÉS des en-têtes de durcissement : les
+//     valeurs servies à la coquille, et l'absence décidée sur l'origine applicative et pour HSTS ;
 //  2. ce COOP a-t-il l'effet qu'on lui prête ? L'ADR 0010 a nommé la preuve attendue : « un témoin
 //     `window.opener === null`, relevé depuis une fenêtre ouverte par un document d'une autre
 //     origine ». C'est ce qui est relevé ici, avec son TÉMOIN NÉGATIF — la même manipulation sur un
@@ -125,15 +127,36 @@ async function mesurerMoteur(nom) {
   const mesure = {
     moteur: nom,
     coquille: {
-      ecarts: confronter(enTetesDePublication("coquille", origines), enTetesCoquille),
+      ecarts: [
+        ...confronter(enTetesDePublication("coquille", origines), enTetesCoquille),
+        // HSTS est ÉCARTÉ par l'ADR 0022, et une décision d'écarter que rien ne relève redevient un
+        // oubli. Le témoin sert en `http:`, là où l'en-tête serait de toute façon ignoré : ce qui
+        // est vérifié ici n'est donc pas son effet, c'est qu'aucun maillon de la chaîne — table
+        // d'ajouts, `_headers`, serveur de l'artefact — ne l'a réintroduit en route.
+        ...confronterAbsences(["Strict-Transport-Security"], enTetesCoquille),
+      ],
       recus: enTetesCoquille,
     },
     application: {
       ecarts: [
         ...confronter(enTetesDePublication("application", origines), enTetesApplication),
-        // COOP n'a rien à faire sur cette origine ; sa présence serait la marque d'une politique
-        // recopiée d'un arbre à l'autre.
-        ...confronterAbsences(["Cross-Origin-Opener-Policy"], enTetesApplication),
+        // Quatre en-têtes n'ont rien à faire sur cette origine, et leur présence serait la marque
+        // d'une politique recopiée d'un arbre à l'autre. COOP y serait sans effet — un document
+        // encadré n'est pas un contexte de navigation de plus haut niveau (ADR 0017 § 3).
+        // `Referrer-Policy` et `Permissions-Policy` y seraient pires que sans effet : ils
+        // gouvernent ce que le document ÉMET et ce qu'il PEUT, donc le contenu rendu par le guest,
+        // que l'ADR 0002 s'interdit de contraindre. HSTS est écarté des deux côtés. L'ADR 0022
+        // décide les trois par RÔLE ; c'est ici que la moitié « écartée » de cette décision est
+        // relevée, sur l'origine où elle s'applique.
+        ...confronterAbsences(
+          [
+            "Cross-Origin-Opener-Policy",
+            "Referrer-Policy",
+            "Permissions-Policy",
+            "Strict-Transport-Security",
+          ],
+          enTetesApplication,
+        ),
       ],
       // La CSP de l'origine applicative doit être `frame-ancestors` et RIEN d'autre : l'ADR 0002
       // interdit d'imposer une politique au CONTENU rendu par le guest, et `frame-ancestors` ne le
