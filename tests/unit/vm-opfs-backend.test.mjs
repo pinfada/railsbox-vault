@@ -530,3 +530,62 @@ test("un volume v3 SANS clé est refusé par le code de la clé, et n'écrit rie
   );
   assert.equal(store.isOpen("neuf-sans-cle"), false, "le handle est rendu");
 });
+
+// --- FERMETURE SOUS UNE E/S EN VOL (#132) --------------------------------------------------------
+//
+// Le job « Reprise MVP » a vu un boot à froid absorber un `VAULT_STORAGE_HANDLE_LOST` — « the access
+// handle was already closed » — sur une écriture du guest de 4 096 o. Le compte rendu de ce boot
+// porte `close: 1` et AUCUNE entrée `failure` au journal, alors que toute traduction d'un échec du
+// support en inscrit une : la panne est donc survenue APRÈS le relevé du journal, c'est-à-dire après
+// la fermeture. Ce n'est pas le support qui a lâché, c'est la session qui a retiré le handle sous une
+// écriture qu'elle avait déjà acceptée.
+
+/** Rend la main quelques tours, le temps qu'une E/S entre dans son scellement (asynchrone). */
+async function rendreLaMain(tours = 8) {
+  for (let index = 0; index < tours; index += 1) await Promise.resolve();
+}
+
+/** Récupère le refus d'une E/S sans laisser passer un rejet non traité pendant l'attente. */
+function issue(promesse) {
+  return promesse.then(
+    () => null,
+    (erreur) => erreur,
+  );
+}
+
+test("la fermeture attend l'écriture qu'elle a déjà acceptée au lieu de la refuser", async () => {
+  const { backend } = await volume();
+
+  const enVol = issue(backend.write(4 * SECTOR_SIZE, motif(8 * SECTOR_SIZE, 11)));
+  await backend.close();
+
+  assert.equal(
+    await enVol,
+    null,
+    "une écriture acceptée avant la fermeture doit aboutir : la refuser ferait passer pour une panne du support un handle que la session a elle-même retiré",
+  );
+});
+
+test("hors transaction non plus, le handle n'est pas retiré sous une écriture en vol", async () => {
+  // Sans magasin, l'écriture est scellée puis posée DIRECTEMENT dans le volume. Le scellement est
+  // asynchrone : `rendreLaMain` laisse l'écriture y entrer, si bien que la fermeture retire le handle
+  // pendant qu'elle attend — exactement la fenêtre observée en CI, et le même refus,
+  // `VAULT_STORAGE_HANDLE_LOST` sur « write ».
+  const { backend } = await volume({ transactionnel: false });
+
+  const enVol = issue(backend.write(0, motif(SECTOR_SIZE, 3)));
+  await rendreLaMain();
+  await backend.close();
+
+  assert.equal(await enVol, null, "l'écriture entrée dans son scellement doit aboutir");
+});
+
+test("la fermeture attend aussi une LECTURE en vol", async () => {
+  const { backend } = await volume();
+  await backend.write(0, motif(SECTOR_SIZE, 5));
+
+  const enVol = issue(backend.read(0, SECTOR_SIZE));
+  await backend.close();
+
+  assert.equal(await enVol, null, "une lecture acceptée avant la fermeture doit aboutir");
+});
