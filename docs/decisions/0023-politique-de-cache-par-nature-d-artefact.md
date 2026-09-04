@@ -22,7 +22,8 @@ la source de vérité de l'ADR 0017 § 2, donc servie d'abord en développement 
 
 Il diffère de l'ADR 0022 sur un point, et c'est tout son intérêt : `Referrer-Policy` et
 `Permissions-Policy` se décidaient **par rôle**, et l'arborescence pouvait rester sous une politique
-unique. Une politique de cache, non : le même arbre porte 2,4 Mio d'émulateur épinglé et 40 Kio de
+unique. Une politique de cache, non : le même arbre porte 9,9 Mio d'ensemble v86 épinglé — les cinq
+artefacts de `vendor/v86/MANIFEST.json`, `linux4.iso` compris, soit 10 351 229 octets — et 40 Kio de
 coquille qui change à chaque version. La décider par rôle serait la décider une fois de trop.
 
 ## Ce qui a été établi, et comment
@@ -43,9 +44,16 @@ coquille qui change à chaque version. La décider par rôle serait la décider 
 
 3. **L'épinglage v86 change d'un bloc.** Les octets, le manifeste qui les épingle et les licences du
    code redistribué proviennent tous de la même montée de version : `npm run vm:fetch` les remplace
-   ensemble et `npm run vm:check` échoue si l'un ne correspond plus. Ils ne peuvent donc pas relever
-   de deux fenêtres de fraîcheur différentes sans qu'un navigateur puisse tenir un manifeste frais
-   devant des octets d'hier.
+   ensemble et `npm run vm:check` échoue si l'un ne correspond plus. Leur donner deux fenêtres de
+   fraîcheur différentes reviendrait à autoriser un écart d'âge **arbitrairement grand** entre le
+   manifeste et les octets qu'il décrit ; une seule fenêtre le borne à la durée de cette fenêtre.
+
+   Elle ne fait que le **borner**, et la nuance est celle que HTTP impose : la fraîcheur se calcule
+   par réponse, à partir de la date à laquelle CETTE réponse a été reçue. Un même `max-age` donne la
+   même DURÉE de fraîcheur, jamais une expiration commune. Manifeste chargé à T0, émulateur demandé
+   plus tard, montée de version à T0 + 1 h : le navigateur tient alors des octets frais devant un
+   manifeste d'hier, et cela jusqu'à T0 + 24 h. Ce que la cohérence manifeste ↔ octets demande
+   vraiment, c'est une vérification d'**empreinte au chargement** — travail découvert, **#123**.
 
 4. **Le format `_headers` n'est pas un standard, et sa sémantique de fusion n'est garantie par
    personne.** Cloudflare Pages et Netlify cumulent les règles qui correspondent, la dernière
@@ -64,7 +72,8 @@ coquille qui change à chaque version. La décider par rôle serait la décider 
    - il est lu comme une **déclaration d'intention** par des tiers que ce dépôt ne contrôle pas —
      hébergeur, CDN, proxy d'entreprise. Publier `_headers` pour un hébergeur statique, c'est
      précisément parler à ces tiers-là ;
-   - il fait re-télécharger 2,4 Mio d'émulateur à chaque visite, y compris quand rien n'a changé.
+   - il fait re-télécharger l'ensemble épinglé à chaque visite, y compris quand rien n'a changé :
+     2,4 Mio pour le seul émulateur, et jusqu'à 9,9 Mio si l'image de référence est demandée.
 
    Ce point est **lu dans les spécifications, non mesuré ici** : voir « Ce que cette décision ne
    prouve pas ».
@@ -91,9 +100,27 @@ sans avoir demandé si elle vaut encore.
 ### 2. Le préfixe de l'épinglage est `/vendor/v86/`, et pas `/vendor/v86/artefacts/`
 
 Le manifeste et les licences relèvent de la même règle que les octets qu'ils décrivent (fait 3). Un
-manifeste revalidé devant des artefacts vieux d'un jour décrirait un runtime que le navigateur
-n'exécute pas — et l'ADR 0003 fait de ce manifeste la pièce qui rend la provenance **vérifiable**.
-Une seule fenêtre pour tout le sous-arbre garde le manifeste et les octets cohérents entre eux.
+manifeste revalidé toutes les heures devant des artefacts vieux d'un jour décrirait un runtime que
+le navigateur n'exécute pas — et l'ADR 0003 fait de ce manifeste la pièce qui rend la provenance
+**vérifiable**. Une seule fenêtre pour tout le sous-arbre leur donne la **même durée de fraîcheur**,
+ce qui **borne l'écart à vingt-quatre heures**.
+
+C'est une borne, pas une cohérence : HTTP calcule la fraîcheur par réponse, à partir de sa propre
+date de réception, si bien que deux réponses portant le même `max-age` n'expirent pas ensemble (fait
+3). La cohérence manifeste ↔ octets, elle, sera tenue par une vérification d'empreinte au chargement
+— **#123**. Aucun code navigateur de ce dépôt ne lit `vendor/v86/MANIFEST.json` aujourd'hui : la
+portée de cet écart est nulle tant qu'il en est ainsi, et c'est précisément pourquoi la phrase est
+requalifiée maintenant, avant qu'un Service Worker ne s'en réclame.
+
+Accorder la classe par EMPLACEMENT a un revers, relevé par la revue de cet ADR et fermé depuis.
+`tools/publier-arborescences.mjs` copie `vendor/v86/artefacts/` en bloc, et ce répertoire est ignoré
+par git : tout fichier qui y traîne — une trace de débogage sur le poste qui publie — partait chez
+l'hébergeur avec vingt-quatre heures de cache **partagé** et sans révocation, là où il recevait
+`no-store` avant cette décision. `verifierEpinglageV86` confronte désormais le manifeste et le
+disque dans les **deux** sens : un fichier présent que `vendor/v86/MANIFEST.json` ne déclare pas est
+un écart d'épinglage — code 5, publication refusée. L'ADR 0003 dit ce qui a le droit d'être là, et
+le refus est bruyant plutôt que silencieux, parce que ce qui traîne sur le disque du poste qui
+publie est précisément ce qu'un exploitant doit voir.
 
 Ce choix a un effet secondaire mesuré et voulu : le manifeste est **publié dans tous les cas**,
 alors que `vendor/v86/artefacts/` est absent d'un clone vierge. C'est ce qui permet au témoin
@@ -115,7 +142,7 @@ gouvernera le mode hors ligne ; aligner dessus les artefacts les plus lourds tie
 une seule fenêtre, au lieu d'en inventer une.
 
 Le cache long et immuable reste **souhaitable** ; il est conditionné à des URL qui nomment leur
-empreinte. C'est du travail découvert, écrit ci-dessous.
+empreinte. C'est du travail découvert, écrit ci-dessous et suivi par **#123**.
 
 ### 4. `no-store` reste sur l'origine applicative, mais comme une DÉCISION
 
@@ -183,7 +210,8 @@ de l'origine applicative sert les documents de l'application. Aucun des deux n'e
   façon pas gouverné par les directives HTTP (fait 5) ;
 - **précharger l'épinglage v86 une fois** et le garder. Le cache HTTP en garde aussi une copie
   jusqu'à vingt-quatre heures, si bien qu'une seconde visite antérieure à l'installation du Service
-  Worker ne re-télécharge pas 2,4 Mio ;
+  Worker ne re-télécharge pas ce qu'elle a déjà — 2,4 Mio pour l'émulateur seul, jusqu'à 9,9 Mio
+  avec l'image de référence ;
 - **revalider à bas coût**. Un `fetch` de mise à jour sur la coquille part au réseau et revient en
   `304` si rien n'a changé : la stratégie « réseau d'abord, magasin en secours » ne coûte pas un
   téléchargement complet par visite ;
@@ -198,8 +226,10 @@ de l'origine applicative sert les documents de l'application. Aucun des deux n'e
   par le cache HTTP. Cette politique rend le mode hors ligne **possible** ; elle ne le réalise pas ;
 - **il ne doit pas traiter les URL de `/vendor/v86/` comme immuables**. Elles ne nomment pas leur
   empreinte (fait 2). Une stratégie « magasin d'abord » sur ce préfixe doit prévoir une invalidation
-  explicite à la montée de version — et l'ADR 0003 lui donne de quoi la décider : le manifeste, qui
-  vieillit dans la même fenêtre que les octets ;
+  explicite à la montée de version — et l'ADR 0003 lui donne de quoi la décider : le manifeste, dont
+  la fenêtre de fraîcheur a la même DURÉE que celle des octets, ce qui borne leur écart d'âge à
+  vingt-quatre heures sans les faire expirer ensemble. Un Service Worker qui voudrait la cohérence
+  elle-même doit **vérifier l'empreinte au chargement** plutôt que se fier à cette borne (#123) ;
 - **il ne doit pas s'en remettre à la fenêtre de vingt-quatre heures pour se rafraîchir**. Le cache
   HTTP revalide après 86 400 s ; le magasin d'un Service Worker, lui, n'expire pas. L'éviction à la
   montée de version est son travail, pas celui de cet en-tête.
@@ -223,36 +253,46 @@ de l'origine applicative sert les documents de l'application. Aucun des deux n'e
   `no-store` dans un `Cache` pour vérifier qu'un moteur l'accepte. La décision n'en dépend pas —
   elle tient par les trois raisons qui suivent le fait —, mais l'affirmation, elle, est **non
   mesurée**. C'est du travail découvert, qui appartient à la tranche qui livrera les Service
-  Workers.
+  Workers, et il est suivi par **#125**.
 - **La borne de 86 400 s est citée, pas mesurée.** Elle vient de l'algorithme de mise à jour du
-  Service Worker ; ce dépôt n'a pas d'épreuve qui l'observe, faute de Service Worker.
+  Service Worker ; ce dépôt n'a pas d'épreuve qui l'observe, faute de Service Worker (**#125**).
 - **Aucun effet de cache n'est mesuré dans un navigateur.** Ce qui est éprouvé est que la politique
   est **servie**, par nature, sur les deux origines et par la pile réseau du moteur — pas qu'un
   moteur garde effectivement l'épinglage v86 vingt-quatre heures. Une sonde honnête demanderait deux
-  visites séparées et un témoin négatif ; c'est un banc que cette tranche n'a pas construit.
+  visites séparées et un témoin négatif ; c'est un banc que cette tranche n'a pas construit
+  (**#125**).
+- **La cohérence entre le manifeste et les octets n'est tenue par aucun code.** Une même fenêtre
+  BORNE leur écart d'âge à vingt-quatre heures (décision 2) ; elle ne les fait pas expirer ensemble,
+  puisque HTTP calcule la fraîcheur par réponse à partir de sa propre date de réception. Rien dans
+  le dépôt ne relit le manifeste au chargement du runtime, si bien que la portée de cet écart est
+  aujourd'hui nulle. La propriété qui la tiendra est une vérification d'empreinte, suivie par
+  **#123**.
 - **Mesuré sous Chromium seulement, et sous la version 141.** Firefox et WebKit n'étaient pas
   installables dans l'environnement où #103 a été conduit (politique réseau bloquant le CDN de
   Playwright). **Non exécuté : moteur indisponible.** La CI du dépôt installe les trois.
 - **Aucun hébergement réel n'a été mesuré.** Le risque résiduel n°4 de l'ADR 0017 vaut ici sans
   changement, et il est aggravé sur ce point précis : le spike #45 a relevé que GitHub Pages impose
   `max-age=600` quoi qu'on écrive. Un hébergeur qui réécrit `Cache-Control` rendrait cette décision
-  inopérante, et rien dans la chaîne ne peut le détecter avant une mise en service.
+  inopérante, et rien dans la chaîne ne peut le détecter avant une mise en service (**#124**).
 
 ## Risques résiduels
 
 1. **Le cache long sur des URL non adressées par contenu laisse une fenêtre de vingt-quatre
-   heures.** Un navigateur peut exécuter un émulateur d'hier avec un manifeste d'hier — cohérents
-   entre eux (décision 2), mais en retard d'une version. Pour une mise à jour de **sécurité** du
-   runtime, ce retard est réel et il est le prix payé pour ne pas re-télécharger 2,4 Mio à chaque
-   visite. Le fermer demande des URL qui nomment leur empreinte : **travail découvert**.
+   heures.** Un navigateur peut exécuter un émulateur d'hier avec un manifeste d'hier, en retard
+   d'une version — et, la fraîcheur se calculant par réponse, les deux ne sont pas nécessairement du
+   même hier : la fenêtre commune BORNE leur écart à vingt-quatre heures, elle ne les aligne pas
+   (décision 2). Pour une mise à jour de **sécurité** du runtime, ce retard est réel et il est le
+   prix payé pour ne pas re-télécharger l'ensemble épinglé — jusqu'à 9,9 Mio — à chaque visite. Le
+   fermer demande des URL qui nomment leur empreinte : **travail découvert**, suivi par **#123**.
 2. **Un hébergeur peut réécrire `Cache-Control`.** GitHub Pages le fait (`max-age=600`), et l'ADR
    0017 l'écarte déjà pour d'autres en-têtes. La sonde d'hébergement existante relève ce que des
    sites tiers servent, ce qui prouve le choix de leur propriétaire et non la capacité de
-   l'hébergeur. Aucune origine de ce projet n'existe encore.
+   l'hébergeur ; elle ne suit d'ailleurs pas encore `Cache-Control`. Aucune origine de ce projet
+   n'existe encore. Suivi par **#124**.
 3. **Le mode hors ligne n'existe pas.** Cette décision lève l'obstacle que `no-store` posait ; elle
    ne construit rien. La section « ce qu'elle permet et interdit » est un cadre écrit à l'avance, et
    un cadre écrit à l'avance peut se révéler faux — c'est la tranche des Service Workers qui le
-   dira.
+   dira, éclairée par les relevés de **#125**.
 4. **Une seconde dimension non uniforme demanderait un ADR, et rien ne l'empêche d'être ajoutée par
    inadvertance ailleurs.** Le cliquet la refuserait à la publication, mais un en-tête qui varierait
    par chemin dans `securityHeaders()` sans être servi par la publication — sur un banc, par exemple
@@ -267,15 +307,17 @@ de l'origine applicative sert les documents de l'application. Aucun des deux n'e
 
 Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi :
 
-- **les URL des artefacts épinglés nomment leur empreinte** — par un chemin ou un paramètre dérivé
-  du SHA-256 de `vendor/v86/MANIFEST.json`. `immutable` et un `max-age` d'un an deviennent alors
-  corrects, et la décision 3 doit être reprise ;
+- **les URL des artefacts épinglés nomment leur empreinte** (**#123**) — par un chemin ou un
+  paramètre dérivé du SHA-256 de `vendor/v86/MANIFEST.json`. `immutable` et un `max-age` d'un an
+  deviennent alors corrects, et la décision 3 doit être reprise ;
 - les Service Workers de l'ADR 0002 sont livrés, et l'un d'eux a besoin d'une politique que celle-ci
   ne lui laisse pas — auquel cas la section « ce qu'elle permet et interdit » cesse d'être un cadre
   pour devenir un relevé ;
-- une origine réelle est mise en service et son hébergeur réécrit `Cache-Control` : il faudra alors
-  dire si la chaîne refuse cet hébergeur, comme elle refuse déjà GitHub Pages pour les en-têtes de
-  l'ADR 0017 ;
+- **l'effet du cache est mesuré dans un navigateur** (**#125**) et contredit l'un des deux faits de
+  plate-forme que cet ADR cite sans les mesurer ;
+- une origine réelle est mise en service et son hébergeur réécrit `Cache-Control` (**#124**) : il
+  faudra alors dire si la chaîne refuse cet hébergeur, comme elle refuse déjà GitHub Pages pour les
+  en-têtes de l'ADR 0017 ;
 - un besoin de cache apparaît sur l'origine applicative pour ce que **nous** y servons — ce qui
   n'arrivera pas tant qu'elle ne sert qu'une place tenante ;
 - une **seconde** dimension d'en-tête doit varier selon le chemin : le cliquet est écrit pour une,
@@ -287,7 +329,7 @@ Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi
 | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `public, max-age=31536000, immutable` sur les artefacts v86            | Promesse fausse : l'URL ne nomme pas l'empreinte (fait 2). Un navigateur refuserait de revalider et exécuterait un émulateur périmé, en désaccord avec le manifeste de l'ADR 0003 |
 | Garder `no-store` partout et laisser les Service Workers s'en arranger | Ferme le cache HTTP, seule couche qui travaille avant l'installation d'un Service Worker et quand il est cassé ; et parle en « ne pas conserver » à des tiers non contrôlés       |
-| Une politique par ORIGINE, comme l'ADR 0022 a décidé le durcissement   | Le même arbre porte 2,4 Mio d'émulateur épinglé et une coquille qui change à chaque version : décider par origine, c'est décider une fois de trop                                 |
+| Une politique par ORIGINE, comme l'ADR 0022 a décidé le durcissement   | Le même arbre porte 9,9 Mio d'ensemble v86 épinglé et une coquille qui change à chaque version : décider par origine, c'est décider une fois de trop                              |
 | Un préfixe `/vendor/v86/artefacts/` plutôt que `/vendor/v86/`          | Séparerait le manifeste des octets qu'il épingle, donc leurs fenêtres de fraîcheur ; et la nature ne serait mesurable qu'après `npm run vm:fetch`                                 |
 | Un bloc précis ne portant que `Cache-Control`                          | Dépendrait d'une sémantique de fusion que le format `_headers` ne spécifie pas (fait 4), et retirerait la CSP aux artefacts v86 chez un hébergeur qui ne l'appliquerait pas       |
 | Retirer le cliquet « politique uniforme » plutôt que le remplacer      | Il tenait une propriété réelle — ce qui est annoncé est ce qui est servi. Le retirer aurait payé la politique par nature du prix d'une garantie de sécurité                       |
