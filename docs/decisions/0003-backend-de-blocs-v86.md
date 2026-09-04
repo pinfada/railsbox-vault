@@ -122,6 +122,12 @@ Conséquences immédiates :
 - les instantanés mémoire, refusés explicitement par l'adaptateur (`get_state`, `set_state`,
   `get_buffer` lèvent `VAULT_STORAGE_UNSUPPORTED`).
 
+> **Amendement de l'[ADR 0024](0024-instantane-de-reprise.md) (#65, 4 septembre 2026).** La dernière
+> ligne ci-dessus est amendée : `get_state` et `set_state` ne lèvent plus, ils portent la LIAISON du
+> volume — identité, séquence, génération — et seulement pendant la quiescence, hors de laquelle ils
+> refusent toujours. `get_buffer` reste refusé pour la raison inchangée : un volume Vault ne se
+> recopie pas en un `ArrayBuffer` unique.
+
 ## Coût de mise à jour de v86
 
 Monter de version demande : mettre à jour les cinq entrées de `MANIFEST.json`, exécuter

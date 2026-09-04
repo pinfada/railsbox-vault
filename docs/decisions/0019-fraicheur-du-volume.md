@@ -219,6 +219,13 @@ Cette limite n'est pas seulement écrite : elle est **exécutée**. La dernière
 antérieur, rouvre, et constate que le volume s'ouvre — et que la seconde écriture a disparu sans que
 personne puisse le voir. Une limite qu'aucune épreuve ne montre finit par être oubliée.
 
+> **Amendement de l'[ADR 0024](0024-instantane-de-reprise.md) (#65, 4 septembre 2026).** La règle «
+> un témoin ne date que le volume qu'il accompagne » est ÉTENDUE au voisin `.instantane` : il part
+> avec le témoin et le journal — au retrait du volume, à la restauration et à la migration — parce
+> qu'il date lui aussi une session que le volume réécrit n'a jamais vécue. L'empreinte de région de
+> la décision 2 devient de surcroît une LIAISON d'instantané : elle est ce qui rend un instantané
+> périmé détectable dès qu'un secteur a été rescellé.
+
 ## Décision 4 — Les refus, leur propagation et leur conduite
 
 Le tableau de l'ADR 0016 (décision 9) est étendu, et sa règle est conservée : trois façons pour une

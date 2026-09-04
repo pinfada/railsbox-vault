@@ -617,3 +617,35 @@ handle au lieu d'être tuée ; il ne mesure qu'une DURÉE. La sémantique reste 
 
 **Le relevé est celui d'une machine et d'un jour.** L'étendue relative est publiée avec chaque série
 pour que le p95 soit lu avec son bruit, et le témoin est rejouable.
+
+## Amendement du 2026-09-04 — valider les dépôts d'un guest ARRÊTÉ, avant une capture (#65)
+
+Cet amendement ne révise aucune décision de cet ADR : le format du journal, le protocole des quatre
+gestes et l'alternance des racines sont inchangés. Il nomme un geste que
+l'[ADR 0024](0024-instantane-de-reprise.md) introduit et que la règle de `close()` — « une
+génération non validée n'est PAS rangée : personne ne l'a acquittée » — pourrait sembler interdire.
+
+**Avant de capturer un instantané, et seulement là, les dépôts d'un guest ARRÊTÉ sont validés puis
+rangés par un point de contrôle.** Le solde vit dans `src/vm/instantane/solde-du-journal.mjs` et
+`tests/unit/vm-instantane-solde.test.mjs` l'exerce geste par geste.
+
+**Pourquoi ce n'est pas une licence, mais la condition de la correction.** Les octets déposés ont
+atteint le périphérique : la mémoire qu'on s'apprête à capturer les tient pour écrits — propres dans
+son cache de pages — et ne les relira jamais depuis le disque. Les laisser non validés les ferait
+ÉCARTER à la prochaine ouverture, et le guest restauré lirait alors, à la première éviction de
+cache, un secteur d'avant : une divergence SILENCIEUSE entre la mémoire et le disque.
+
+**Pourquoi la règle de `close()` reste entière.** Elle protège la sémantique d'une COUPURE, où
+ressusciter des écritures non acquittées serait inventer un état. Ici il n'y a pas de coupure : le
+guest est arrêté proprement, et l'on rend le volume ÉGAL à la mémoire qu'on capture plutôt que d'en
+capturer une qui le dépasse. Une charge que la barrière n'a pas validée n'est d'ailleurs jamais
+rangée de force : `rangeable` est alors faux, et la capture est REFUSÉE — pas forcée.
+
+**`SEC-DURABLE-001` est intact** : rien n'est annoncé durable à personne — le guest est arrêté et ne
+recevra aucun acquittement —, et la barrière du support est franchie avant la racine, comme partout
+ailleurs.
+
+**La vérification finale fait partie du geste.** Ce qui resterait dans le journal serait rejoué à la
+prochaine ouverture : la région d'authentification changerait, la génération non, et l'instantané
+serait écarté au motif `ECART_REGION` sur un volume que personne d'autre n'aurait touché. Le
+scénario de bout en bout de #65 l'a mesuré avant que ce solde n'existe.

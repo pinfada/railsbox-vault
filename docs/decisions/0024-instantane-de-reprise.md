@@ -54,9 +54,19 @@ sans quoi supprimer « donnees » détruirait un volume légitime nommé « donn
 **Ce suffixe est le plus long du dépôt (11 caractères)** et il rétrécit donc `MAX_VOLUME_NAME` de 54
 à 53 caractères. C'est un changement de frontière de nommage, et il est écrit ici plutôt que subi :
 la règle du dépôt est qu'un volume créable doit toujours rester restaurable, migrable et — désormais
-— capturable. Un volume de 54 caractères créé par un runtime antérieur reste ouvrable ; il ne
-pourrait simplement pas recevoir d'instantané. Aucun volume de ce dépôt, aucune fixture et aucun
-banc n'approche cette longueur.
+— capturable.
+
+**Ce que cela coûte, dit sans l'adoucir** : un volume de 54 caractères créé par un runtime antérieur
+ne s'ouvre PLUS. La première version de cette ADR affirmait qu'il « reste ouvrable » et ne perdrait
+que la capture ; la revue de la PR #133 a montré que c'était faux, et le code le dit sans ambiguïté
+— toute ouverture nomme le manifeste voisin (`manifestName`), qui passe par `assertVolumeName`,
+lequel refuse au-delà de `MAX_VOLUME_NAME`. Le refus est typé et explicite, jamais silencieux, mais
+c'est un refus d'ouverture, pas une capacité en moins.
+
+Ce qui rend le coût acceptable est un FAIT, pas une intention : **aucun volume de 54 caractères
+n'existe**. Ce dépôt n'en crée aucun, aucune fixture ni aucun banc n'approche cette longueur, et le
+produit n'a jamais été distribué. Si un tel volume devait exister un jour, le remède serait une
+migration de nom — pas une frontière rétablie, qui rendrait un volume créable non capturable.
 
 **Il ne vit pas dans le fichier de volume**, pour la raison qui a déjà exilé les cinq autres : les
 octets du volume sont servis tels quels à v86, et y réserver une aire décalerait le système de
@@ -317,6 +327,24 @@ n'est pas un poste de ce budget ; elle y est comptée parce que le § 8.3 de NIS
 all instances of the authenticated encryption function », et l'omettre aurait fait un compteur faux
 plutôt qu'un budget économisé.
 
+**Ce scellement-là n'entre dans AUCUNE racine, et il faut le dire.** Le compteur ne traverse les
+sessions que par la racine qui le scelle (`scellement.mjs`, § 2), et la capture a lieu APRÈS le
+point de contrôle qui écrit la dernière racine — c'est l'ordre imposé par la décision 5, et il n'est
+pas négociable : une racine écrite après la capture périmerait l'instantané que la capture vient
+d'écrire, puisque la liaison porte la séquence. Le compteur repris à la session suivante SOUS-COMPTE
+donc d'exactement une unité par capture.
+
+C'est le même sous-comptage que celui qu'un volume ouvert hors transaction produit déjà, et il est
+**borné et connu** : au plus un par fermeture, soit dix par jour dans l'usage décrit plus haut, soit
+3 650 par an sur un budget de 2 147 483 648. Il faudrait 588 000 ans de fermetures pour que ce seul
+écart consomme le budget. Ce n'est PAS le sens sûr de l'erreur — sous-compter laisse consommer plus
+que prévu, jamais moins —, et c'est précisément pourquoi il est écrit ici plutôt que laissé à
+découvrir : un compteur qu'on croit total est plus dangereux qu'un compteur qu'on sait minorant.
+
+**Le corriger coûterait plus qu'il ne rapporte.** Persister ce +1 demanderait une racine
+supplémentaire APRÈS la capture — donc un scellement de plus, et un instantané périmé à l'instant
+même où il est écrit.
+
 ## Décision 7 — Pas de compression, et voici les chiffres qui le décident
 
 La question était ouverte et devait être tranchée **sur mesure**. Relevé du **2026-09-04**, harnais
@@ -500,11 +528,25 @@ C'est la section qui doit être lue avant toute autre.
    pas vue. Le spike #4 a mesuré que le chemin PIO acquitte en interne ; c'est un résidu connu, il
    est nommé, il n'est pas fermé.
 6. **Aucune frontière d'origine ne bouge**, et `SEC-DURABLE-001` est inchangé.
-7. **Une session REPRISE ne mute presque rien**, et c'est une propriété, pas un manque. Rails n'y
-   redémarre pas : il répond. Le scénario de bout en bout doit donc faire booter le volume une fois
-   de plus pour périmer l'instantané, et il le dit — l'application de référence n'a que deux routes,
-   toutes deux en lecture (ADR 0004), et la seule mutation Rails que cette fixture sache produire
-   est celle qu'un démarrage écrit.
+7. **Une session Rails REPRISE ne mute presque rien**, et c'est une propriété de la FIXTURE, pas de
+   la reprise. L'application de référence n'expose que deux routes, toutes deux en lecture (ADR
+   0004), et le pont série ne relaie que du HTTP : il n'existe aucun moyen, dans cette image, de
+   demander à un Rails repris d'écrire. Le scénario de bout en bout doit donc faire booter le volume
+   une fois de plus pour périmer l'instantané, et il le dit.
+
+   **L'écriture par une session reprise est néanmoins PROUVÉE**, et il fallait la prouver : c'est là
+   que se joue le risque d'une mémoire restaurée dont le cache de pages contredirait le disque. La
+   preuve vit dans `tests/vm/instantane-ecriture-apres-reprise.spec.mjs`, sur le guest de la matrice
+   #2 — celui qui rend un SHELL sur le port série, donc celui où l'on peut demander une écriture.
+   Trois exécutions, chacune ouvrant et refermant le volume sur OPFS réel : une marque écrite et
+   validée puis capturée ; une reprise PAR INSTANTANÉ qui relit cette marque et en écrit une SECONDE
+   avec sa propre barrière ; un boot À FROID qui écarte l'instantané périmé et relit **les deux**
+   marques. Relevé du 4 septembre : capture 54 450 152 octets en 260,9 ms, reprise
+   `usedSnapshot: true` en 117,2 ms avec une écriture et une barrière acquittée, rejet
+   `VAULT_INSTANTANE_ECART_GENERATION`, deux marques retrouvées.
+
+   Ce que cette preuve ne dit pas : rien sur Rails, rien sur les durées de l'image applicative. Le
+   guest y est celui de la matrice de compatibilité.
 
 ## Impacts sur les ADR antérieurs
 
@@ -515,6 +557,9 @@ C'est la section qui doit être lue avant toute autre.
 - **ADR 0005** voit sa voie construite. Ses conditions d'abandon sont vérifiées à la décision 7 et
   dans `docs/quality-attributes.md` ; le gate reste géré par la mesure, pas par cet ADR.
 - **ADR 0008** est confirmé sans changement : l'archive n'emporte pas l'instantané.
+- **ADR 0014** est amendé (amendement du 2026-09-04) : valider puis ranger les dépôts d'un guest
+  ARRÊTÉ, avant une capture, est nommé et justifié là-bas. La règle de `close()` reste entière — une
+  charge que la barrière n'a pas validée fait REFUSER la capture, elle n'est jamais rangée de force.
 - **ADR 0019** voit sa règle « un témoin ne date que le volume qu'il accompagne » étendue à
   l'instantané, à la décision 8.
 

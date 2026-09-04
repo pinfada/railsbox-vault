@@ -758,6 +758,16 @@ et les quatre règles qui suivent découlent de ce seul fait.
   parce qu'un acquittement pendant une capture serait exactement le mensonge que cet invariant
   interdit.
 
+**Le TRANSCRIT SÉRIE sort du Worker, et c'est le seul canal par lequel du contenu du guest le
+fait.** Quand un boot dépasse son délai de garde, l'erreur emporte la fin du journal série — quatre
+mille caractères — pour que la panne soit diagnosticable : sans elle, un boot qui n'aboutit pas
+arrive en CI réduit à « délai dépassé ». Ce transcrit est la sortie console du guest, donc
+potentiellement des lignes de journal de l'application. Trois bornes l'encadrent : il ne part que
+sur un ÉCHEC, il est tronqué, et il ne quitte jamais l'origine — il va au banc, qui l'attache à un
+artefact de test. Il n'entre dans aucun instantané, dans aucune archive et dans aucune télémétrie,
+puisqu'il n'y en a pas. Une conduite produit qui exposerait ce transcrit à un utilisateur devrait le
+décider explicitement ; ce dépôt ne le fait qu'en banc.
+
 **Ce que l'instantané NE protège pas, et il faut l'écrire.** Son en-tête est en clair : il révèle
 l'identifiant du volume, la séquence, la génération et deux empreintes. C'est le canal auxiliaire
 que l'ADR 0015 assume déjà pour la racine, à ceci près que la séquence d'un instantané date la
