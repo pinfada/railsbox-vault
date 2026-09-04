@@ -47,6 +47,10 @@ import {
   scellerBlocSousNonce,
   scellerRacineSousNonce,
 } from "./format-chiffre/modele-reference.mjs";
+import {
+  ouvrirInstantane as ouvrirInstantaneDuModele,
+  scellerInstantane as scellerInstantaneDuModele,
+} from "./instantane/modele-reference.mjs";
 import { STORAGE_ERROR_CODES, StorageError } from "./storage-errors.mjs";
 
 export { RANG_SECTEUR_DE_VOLUME };
@@ -273,6 +277,34 @@ export class Scellement {
     );
     this.#scellementsCumules += 1;
     return scelle;
+  }
+
+  /**
+   * Scelle un INSTANTANÉ DE REPRISE et consomme UN scellement (#65, ADR 0024, décision 3).
+   *
+   * Il passe par ce scellement-ci, et non par une clé recopiée, pour la raison qui a fait exister
+   * cette classe : le compteur de scellements doit être UN. Une capture qui aurait sa propre clé
+   * importée aurait aussi son propre compteur, et c'est le budget de la clé qui serait faux.
+   *
+   * La liaison porte déjà le volume et la version de format : contrairement aux blocs et aux
+   * racines, elle n'est PAS complétée ici. C'est voulu — un instantané peut nommer une version de
+   * format de volume distincte de celle de la session, et c'est précisément l'écart que l'ADR 0024
+   * demande de refuser plutôt que de gommer.
+   */
+  async scellerInstantane(liaison, etat) {
+    const scelle = await scellerInstantaneDuModele({
+      cle: this.#cle,
+      liaison,
+      etat,
+      attentes: { scellementsCumules: this.#scellementsCumules },
+    });
+    this.#scellementsCumules += 1;
+    return scelle;
+  }
+
+  /** Ouvre un instantané. AUCUN scellement consommé : une ouverture ne chiffre rien. */
+  async ouvrirInstantane(liaison, scelle) {
+    return ouvrirInstantaneDuModele({ cle: this.#cle, liaison, scelle });
   }
 
   /**
