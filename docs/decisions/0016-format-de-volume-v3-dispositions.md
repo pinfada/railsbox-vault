@@ -712,3 +712,14 @@ Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi
    la réserve du secteur de racine (376 octets libres) l'accueille sous une version de format ;
 5. la revue externe (#20) tranche la question n° 2 (arbre de Merkle sur le volume) par
    l'affirmative, auquel cas la région d'authentification devient le support naturel de son état.
+
+## Amendement du 2026-09-05 — la spécification autonome du dossier de revue (#20)
+
+Aucune décision de cet ADR n'est révisée. `docs/format-de-volume-v3.md` en donne la disposition
+champ par champ pour un relecteur qui n'a pas le code, et écrit trois écarts entre ce texte et le
+code du jour : la **marque de scellement complet** occupe les huit premiers octets de la réserve de
+l'en-tête v3 (offset 64) sans qu'aucune décision numérotée la porte — le renvoi « décision 2 » de la
+décision 8 ne désigne rien de tel ; les deux refus `VAULT_ARCHIVE_VOLUME_CHIFFRE` et
+`VAULT_IMPORT_VOLUME_CHIFFRE`, que la décision 9 déclare retirés, sont encore déclarés dans le code
+et ne sont plus levés nulle part ; et le « format du journal (2 en v3) » de la décision 3 vaut **3**
+depuis l'ADR 0019.

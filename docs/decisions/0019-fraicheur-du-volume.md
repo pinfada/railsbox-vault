@@ -420,3 +420,12 @@ Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi
 5. la mesure montre que l'écriture du témoin à chaque barrière pèse sur `SEC-DURABLE-001` — auquel
    cas le témoin est amorti au point de contrôle, avec la perte de sensibilité que cela coûte,
    chiffrée.
+
+## Amendement du 2026-09-05 — la spécification autonome du dossier de revue (#20)
+
+Aucune décision de cet ADR n'est révisée. `docs/format-de-volume-v3.md` décrit l'empreinte de région
+et le témoin champ par champ — y compris la disposition du fichier témoin, que cet ADR nommait sans
+la chiffrer —, et reprend la question n° 2 (arbre de Merkle) avec ce que la décision 2 en a refermé
+et ce qu'elle laisse ouvert. Les vecteurs figés correspondants sont
+`tests/vectors/disposition-v3.json`, vérifiables sans le produit par
+`node tools/verifier-vecteurs.mjs`.
