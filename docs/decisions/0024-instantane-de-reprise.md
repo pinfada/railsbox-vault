@@ -365,6 +365,14 @@ décision, pas les millisecondes.
 La compression divise la taille par **2,89**. Elle coûte **2,6 s à la capture** et **0,8 s à la
 restauration**.
 
+**Ces chiffres viennent du BANC DE COMPRESSION, et pas de la série de p95.** Les deux relevés sont
+publiés par `docs/quality-attributes.md`, et leurs tailles d'état diffèrent — 262 501 556 o ici, 264
+586 184 o là — pour une raison qui n'est pas du bruit de mesure : l'état v86 embarque le DELTA du
+rootfs (décision 9), c'est-à-dire les blocs que le guest a réellement écrits pendant CE boot. Deux
+boots de la même image n'en écrivent pas exactement le même nombre. Un état d'instantané n'a donc
+pas de taille canonique, il a une taille par capture, et rapprocher deux relevés d'exécutions
+différentes sans le dire ferait passer cet écart pour une incohérence.
+
 **Décision : pas de compression en v1.** Trois raisons, dans l'ordre où elles pèsent :
 
 1. **2,6 s à la capture se paient à la fermeture**, c'est-à-dire pendant que l'utilisateur attend

@@ -1009,6 +1009,12 @@ fichiers avec les écritures du guest en mémoire, pas depuis OPFS.
 | État v86 brut                 | 264 586 184 o (252,3 Mio) |
 | Fichier `<volume>.instantane` | 264 586 344 o (+ 160 o)   |
 
+**Cette taille n'est pas celle du banc de compression** de l'ADR 0024, décision 7 (262 501 556 o),
+et ce n'est pas une incohérence : ce sont deux EXÉCUTIONS. L'état v86 embarque le delta du rootfs —
+les blocs que le guest a réellement écrits pendant ce boot-là —, et deux boots de la même image n'en
+écrivent pas exactement le même nombre. Un instantané n'a pas de taille canonique ; il a une taille
+par capture, et chaque relevé de ce document nomme la sienne.
+
 **L'ÉQUIVALENCE est verte 4/4.** Le corps de la réponse de `/vault/invariant` — l'invariant SQLite
 de l'[ADR 0004](decisions/0004-sqlite-pour-l-application-de-reference.md), qui porte l'identifiant
 de l'enregistrement et le SHA-256 de la pièce jointe de 4096 octets — est **identique octet pour
@@ -1050,6 +1056,29 @@ porté le disque entier — 385 Mio — au lieu de 23,5.
    barrière, la réouverture suivante rejette l'instantané au motif
    `VAULT_INSTANTANE_ECART_GENERATION`, supprime le fichier, et boote à froid en 78,0 s avec
    l'invariant intact.
+
+### Ce qu'une session REPRISE écrit, mesuré ailleurs
+
+Le scénario ci-dessus constate qu'une session Rails reprise n'écrit **rien**, et c'est une propriété
+de la fixture : l'application de référence n'a que deux routes, toutes deux en lecture (ADR 0004),
+et le pont série ne relaie que du HTTP. La question qui compte pour la sûreté — **une mémoire
+restaurée peut-elle encore écrire, et son écriture survit-elle ?** — est donc mesurée sur le guest
+de la matrice #2, qui rend un shell sur le port série :
+`tests/vm/instantane-ecriture-apres-reprise.spec.mjs`, Chromium, OPFS réel, volume de 16 Mio.
+
+| Grandeur                                     | Valeur                              |
+| -------------------------------------------- | ----------------------------------- |
+| Fichier `<volume>.instantane`                | 54 450 152 o (51,9 Mio)             |
+| Capture (solde, quiescence, sceau, écriture) | 260,9 ms                            |
+| Ouverture de l'instantané                    | 117,2 ms                            |
+| Écritures de la session REPRISE              | 1, avec 1 barrière acquittée        |
+| Réouverture suivante                         | `VAULT_INSTANTANE_ECART_GENERATION` |
+| Marques retrouvées par le boot à froid       | 2 sur 2                             |
+
+L'instantané y est cinq fois plus petit que celui de l'image applicative : le guest a 128 Mio de RAM
+au lieu de 512. Ce relevé ne dit rien des durées de l'image Rails ; il dit qu'une écriture faite par
+une mémoire restaurée est durable au même titre qu'une autre, et que l'instantané qu'elle périme est
+écarté avec son motif.
 
 ### Les conditions d'abandon de l'ADR 0005, vérifiées
 
