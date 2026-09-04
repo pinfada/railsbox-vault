@@ -427,16 +427,29 @@ export class GardeDeFraicheur {
     return this.#temoin;
   }
 
-  /** Empreinte de la région, recalculée seulement si le volume a été écrit depuis la dernière. */
+  /**
+   * Empreinte de la région, recalculée seulement si le volume a été écrit depuis la dernière.
+   *
+   * **La marque est levée AVANT l'attente, jamais après**, et ce n'est pas un détail de style. Le
+   * hachage lit la région EN FLUX — 34 Mio pour le volume applicatif —, et un point de contrôle
+   * peut écrire pendant ce temps : `marquerRegionSale` tombe alors AU MILIEU du hachage. La lever
+   * après aurait écrasé cette marque, et l'empreinte en cache aurait décrit une région d'avant —
+   * que la racine suivante aurait scellée telle quelle, c'est-à-dire qu'elle aurait scellé le
+   * mauvais état. La fenêtre est réelle ; la correction tient en une ligne déplacée.
+   *
+   * Le prix est un hachage de trop quand une écriture survient pendant le précédent. C'est le bon
+   * sens de l'erreur : rehacher coûte du temps, sceller la mauvaise empreinte coûte un volume qui
+   * ne rouvre plus.
+   */
   async empreinte() {
     if (!this.#sale && this.#empreinte !== null) return this.#empreinte;
+    this.#sale = false;
     this.#empreinte = await empreinteDeRegion({
       lireRegion: this.#source.lireRegion,
       volume: this.#volume,
       regionOffset: this.#source.regionOffset,
       regionOctets: this.#source.regionOctets,
     });
-    this.#sale = false;
     return this.#empreinte;
   }
 
