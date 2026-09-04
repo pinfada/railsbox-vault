@@ -138,9 +138,15 @@ function effacer(octets) {
  * volume. Un volume dont l'enveloppe manque est refusé par `VAULT_ENVELOPPE_ABSENTE` — un code
  * DISTINCT de `VAULT_ENVELOPPE_CLE_REFUSEE`, parce que les deux remèdes n'ont rien de commun.
  *
+ * `identifiantVolume` peut être FOURNI par un appelant qui vient de lire le manifeste — c'est le
+ * cas de `ouvrirVolumeParDerivateur`, qui en a besoin pour dériver sous l'identité du volume. Le
+ * relire serait relire le même fichier deux fois dans le même geste, et surtout ouvrir une fenêtre
+ * pendant laquelle il peut changer : la clé aurait alors été dérivée sous un identifiant et
+ * l'enveloppe vérifiée sous un autre. Absent, il est lu ici, comme #21 le faisait.
+ *
  * @param {{ name: string, kek: Uint8Array, size?: number, expectations?: object,
  *           versionMinimale?: number | null, support?: object, openVolume?: Function,
- *           stat?: Function, readFile?: Function }} appel
+ *           identifiantVolume?: string, stat?: Function, readFile?: Function }} appel
  * @returns {Promise<import("./opfs-block-backend.mjs").OpfsBlockBackend>}
  */
 export async function ouvrirVolumeParKek({
@@ -151,9 +157,10 @@ export async function ouvrirVolumeParKek({
   versionMinimale = null,
   support,
   openVolume,
+  identifiantVolume: identifiantFourni,
   ...primitives
 }) {
-  const identifiantVolume = await identifiantDeclare(name, primitives);
+  const identifiantVolume = identifiantFourni ?? (await identifiantDeclare(name, primitives));
   const ouverte = await ouvrirEnveloppe({
     support: support ?? supportEnveloppeOpfs(name),
     identifiantVolume,
@@ -260,6 +267,9 @@ export async function ouvrirVolumeParDerivateur({
     expectations,
     versionMinimale,
     support: supportEmploye,
+    // Le manifeste vient d'être lu, et la KEK a été dérivée sous CET identifiant : le relire
+    // laisserait dériver sous l'un et vérifier sous l'autre.
+    identifiantVolume,
     ...primitives,
     ...(openVolume === undefined ? {} : { openVolume }),
   });

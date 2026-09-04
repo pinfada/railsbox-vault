@@ -197,6 +197,18 @@ export function verifierEpinglageV86(destination, empreinte) {
  * Deux vérifications indépendantes couvrent le même octet à deux moments, et aucune ne remplace
  * l'autre : celle-ci, sur l'arbre publié, avant qu'il ne parte ; et celle de
  * `src/vm/derivation/argon2-vendu.mjs`, dans le navigateur, avant d'instancier le module.
+ *
+ * **CE QUE LA SECONDE NE COUVRE PAS, et il faut le nommer.** L'empreinte attendue par le navigateur
+ * est un littéral d'un module servi par la MÊME origine, depuis le MÊME arbre. Un hébergeur
+ * compromis — ou quiconque peut réécrire l'arbre servi — remplace le binaire ET le littéral du même
+ * geste, et la vérification passe. Elle n'est donc pas une défense contre l'hébergeur : celle-là
+ * est ici, sur l'arbre construit à partir d'un commit, avant qu'il ne parte.
+ *
+ * Ce que la vérification du navigateur couvre est un chemin ISOLÉ : un cache qui garde une version
+ * d'un binaire à côté d'un module d'une autre, un proxy ou un intermédiaire qui touche le `.wasm`
+ * sans toucher au `.mjs`, un déploiement partiel qui n'a poussé qu'une moitié de l'arbre. Ce sont
+ * les incidents qu'on rencontre, et elle les transforme en refus visible plutôt qu'en étiquette
+ * silencieusement fausse.
  */
 export function verifierEpinglageArgon2(destination, empreinte) {
   return verifierEpinglage(destination, empreinte, {
@@ -205,13 +217,41 @@ export function verifierEpinglageArgon2(destination, empreinte) {
   });
 }
 
+/**
+ * Les trois issues d'une vérification d'épinglage, et elles ne se diagnostiquent PAS pareil.
+ *
+ * Un manifeste absent est un DÉFAUT : les deux manifestes vendus sont versionnés, et leur absence
+ * de l'arbre publié veut dire que la décision de publication et l'arbre ne parlent plus du même
+ * dépôt. Des artefacts absents sont une INCOMPLÉTUDE : ceux de v86 ne sont pas versionnés
+ * (`npm run vm:fetch` les récupère), et l'inventaire porte déjà ce verdict-là. Les confondre
+ * ferait passer l'un des deux pour l'autre — un défaut toléré par `--tolerer-incomplet`, ou un
+ * clone vierge refusé comme une substitution.
+ */
+export const SITUATIONS_EPINGLAGE = Object.freeze({
+  verifie: "verifie",
+  manifesteAbsent: "manifeste-absent",
+  artefactsAbsents: "artefacts-absents",
+});
+
 /** Le geste commun : relire un manifeste vendu et confronter ses artefacts à leurs empreintes. */
 async function verifierEpinglage(destination, empreinte, { manifeste: chemin, artefacts }) {
   const manifeste = join(destination, ...chemin);
-  if (!(await existe(manifeste))) return { verifie: false, motif: "manifeste absent", ecarts: [] };
+  if (!(await existe(manifeste))) {
+    return {
+      verifie: false,
+      situation: SITUATIONS_EPINGLAGE.manifesteAbsent,
+      motif: "manifeste absent",
+      ecarts: [],
+    };
+  }
   const dossier = join(destination, ...artefacts);
   if (!(await existe(dossier))) {
-    return { verifie: false, motif: "artefacts absents de l'arbre publié", ecarts: [] };
+    return {
+      verifie: false,
+      situation: SITUATIONS_EPINGLAGE.artefactsAbsents,
+      motif: "artefacts absents de l'arbre publié",
+      ecarts: [],
+    };
   }
 
   const declares = JSON.parse(await readFile(manifeste, "utf8")).artifacts;
@@ -232,5 +272,5 @@ async function verifierEpinglage(destination, empreinte, { manifeste: chemin, ar
       });
     }
   }
-  return { verifie: true, motif: null, ecarts };
+  return { verifie: true, situation: SITUATIONS_EPINGLAGE.verifie, motif: null, ecarts };
 }
