@@ -36,6 +36,7 @@ import {
 } from "../../src/vm/derivation/derivation-errors.mjs";
 import {
   CALIBRATION_PHRASE,
+  PLAFOND_ADMISSIBLE,
   PLANCHER_RFC9106,
   derivateurPhrase,
   parametresDePhrase,
@@ -125,6 +126,64 @@ test("le vecteur NON rejoué porte son motif, et sa variante est refusée par le
   );
 });
 
+/**
+ * Capture l'instance WebAssembly que le moteur instancie, pour pouvoir SONDER son tas.
+ *
+ * Le moteur ne rend que `hacher` — c'est délibéré, son tas n'est l'affaire de personne. La sonde
+ * passe donc par le seul point de passage obligé, `WebAssembly.instantiate`, et le rend intact.
+ */
+async function avecTasCapture(geste) {
+  const original = WebAssembly.instantiate;
+  let instance = null;
+  WebAssembly.instantiate = async (...parametres) => {
+    const produit = await original.apply(WebAssembly, parametres);
+    instance = produit.instance ?? produit;
+    return produit;
+  };
+  try {
+    const rendu = await geste();
+    return { rendu, tas: new Uint8Array(instance.exports.c.buffer) };
+  } finally {
+    WebAssembly.instantiate = original;
+  }
+}
+
+/** Cherche une suite d'octets ASCII dans un tas. `Buffer.indexOf` évite un balayage en JavaScript. */
+function contientTexte(octets, texte) {
+  const vue = Buffer.from(octets.buffer, octets.byteOffset, octets.byteLength);
+  return vue.indexOf(texte, 0, "latin1") !== -1;
+}
+
+/** La base64 sans remplissage, celle qu'`argon2_encode_string` écrit dans la chaîne PHC. */
+function base64SansRemplissage(octets) {
+  return btoa(String.fromCharCode(...octets)).replace(/=+$/, "");
+}
+
+test("l'étiquette Argon2 n'est jamais ENCODÉE : sa base64 ne survit pas dans le tas WebAssembly", async () => {
+  // Ce que cette épreuve mesure est une SURVIE, pas une propriété d'algorithme. Le module de
+  // référence sait écrire une chaîne PHC — « $argon2id$v=19$m=…$<sel>$<étiquette> » — dans un
+  // tampon que l'appelant lui fournit, et cette étiquette-là EST le matériau remis à HKDF, en
+  // base64. Ce tampon n'était pas mis à zéro : la base64 restait dans le tas du module, qui est un
+  // singleton dont la mémoire vit aussi longtemps que le Worker, jusqu'à ce qu'un allocataire
+  // suivant repasse dessus. Le remède n'est pas de l'effacer mieux, c'est de ne PAS le demander :
+  // l'implémentation de référence teste `if (encoded && encodedlen)`, et un pointeur NUL lui fait
+  // sauter tout l'encodage. Le produit n'a jamais eu l'emploi de cette chaîne.
+  const moteur = argon2();
+  const { rendu, tas } = await avecTasCapture(() => moteur.hacher(APPEL_MINIMAL));
+  const base64 = base64SansRemplissage(rendu);
+
+  // TÉMOIN : la sonde sait trouver ce qu'elle cherche. Une sonde cassée passerait sans lui.
+  assert.ok(
+    contientTexte(new TextEncoder().encode(`préfixe${base64}suffixe`), base64),
+    "la sonde ne retrouve pas la base64 dans un tampon qui la contient : elle ne prouve rien",
+  );
+  assert.equal(
+    contientTexte(tas, base64),
+    false,
+    "la base64 de l'étiquette Argon2id — le matériau remis à HKDF — est restée dans le tas du module",
+  );
+});
+
 test("un artefact dont l'empreinte diffère d'un bit est REFUSÉ avant d'être instancié", async () => {
   const altere = ARTEFACT.slice();
   altere[altere.byteLength - 1] ^= 0x01;
@@ -182,12 +241,41 @@ test("la calibration retenue ne descend jamais sous le plancher de la RFC 9106",
   );
 });
 
-test("des paramètres publics sous le plancher sont refusés, les calibrés passent (témoin)", () => {
+/**
+ * Les mutations de COÛT qu'aucun des deux côtés ne doit accepter, prises UNE À LA FOIS.
+ *
+ * Une à la fois, et c'est le sujet. L'épreuve de lecture mettait les trois champs hors bornes d'un
+ * seul coup : retirer `parallelisme` ou `iterations` de la liste que parcourt la garde la laissait
+ * verte, puisque `memoireKio` suffisait à faire tomber le refus. Chaque champ porte donc sa propre
+ * mutation, des deux côtés, et le plafond comme le plancher.
+ */
+const COUTS_HORS_BORNES = Object.freeze([
+  ["moins de mémoire", { memoireKio: PLANCHER_RFC9106.memoireKio - 1024 }],
+  ["moins d'itérations", { iterations: PLANCHER_RFC9106.iterations - 1 }],
+  ["moins de voies", { parallelisme: PLANCHER_RFC9106.parallelisme - 1 }],
+  ["plus de mémoire que le plafond", { memoireKio: PLAFOND_ADMISSIBLE.memoireKio + 1024 }],
+  ["plus d'itérations que le plafond", { iterations: PLAFOND_ADMISSIBLE.iterations + 1 }],
+  ["plus de voies que le plafond", { parallelisme: PLAFOND_ADMISSIBLE.parallelisme + 1 }],
+]);
+
+/**
+ * Les paramètres calibrés, avec un SEL de huit octets — un encodage que l'écriture refuse de
+ * produire, et qu'il faut donc poser à la main pour éprouver le côté LECTURE.
+ */
+function parametresAuSelCourt() {
+  const complets = PARAMETRES();
+  const fin = complets.byteLength;
+  const court = new Uint8Array(fin - 8);
+  court.set(complets.subarray(0, fin - 18), 0);
+  court.set(Uint8Array.of(0, 8), fin - 18);
+  court.set(complets.subarray(fin - 16, fin - 8), fin - 16);
+  return court;
+}
+
+test("des paramètres publics hors des bornes sont refusés à l'ÉCRITURE, les calibrés passent", () => {
   assert.ok(PARAMETRES() instanceof Uint8Array);
   for (const [nom, mutation] of [
-    ["moins de mémoire", { memoireKio: PLANCHER_RFC9106.memoireKio - 1024 }],
-    ["moins d'itérations", { iterations: PLANCHER_RFC9106.iterations - 1 }],
-    ["moins de voies", { parallelisme: PLANCHER_RFC9106.parallelisme - 1 }],
+    ...COUTS_HORS_BORNES,
     ["sel trop court", { sel: octetsEnHex(suiteDOctets(0x0e, 8)) }],
   ]) {
     assert.throws(
@@ -198,35 +286,40 @@ test("des paramètres publics sous le plancher sont refusés, les calibrés pass
   }
 });
 
-test("des paramètres AFFAIBLIS lus dans le fichier sont refusés AVANT toute dérivation", async () => {
+test("des paramètres hors des bornes lus dans le fichier sont refusés AVANT toute dérivation", async () => {
   // Ajoutée par la campagne de mutation : le plancher n'était éprouvé qu'à l'ÉCRITURE, si bien que
   // retirer sa vérification à la LECTURE ne tuait rien. C'est pourtant le côté qui compte : ces
   // octets viennent d'un fichier, et l'attaque que l'ADR 0020 nomme est exactement celle-là — un
   // adversaire qui ramène le coût à rien, laisse l'utilisateur taper la même phrase, et garde une
-  // copie du volume qu'il cassera hors ligne pour trois fois rien.
-  const affaiblis = encoderParametresPublics(TYPES_KEK.phrase, {
-    version: 0x13,
-    variante: 2,
-    memoireKio: 8,
-    iterations: 1,
-    parallelisme: 1,
-    sel: SEL,
-  });
+  // copie du volume qu'il cassera hors ligne pour trois fois rien. Le PLAFOND ferme l'attaque
+  // symétrique, qui n'était pas fermée : le même adversaire écrit un coût démesuré et le Worker de
+  // confiance part calculer pendant des heures à chaque tentative de déverrouillage.
   const derivateur = derivateurPhrase({ argon2: argon2() });
   const identite = { identifiantVolume: VOLUME, identifiantEmplacement: "7071727374757677" };
-  await assert.rejects(
-    () => derivateur.deriver({ parametres: affaiblis, identite, geste: { phrase: "peu importe" } }),
-    (erreur) => isDerivationError(erreur, DERIVATION_ERROR_CODES.parametresRefuses),
-  );
+  const geste = { phrase: "peu importe" };
+  const mutes = [
+    ...COUTS_HORS_BORNES.map(([nom, mutation]) => [
+      nom,
+      encoderParametresPublics(TYPES_KEK.phrase, {
+        version: 0x13,
+        variante: 2,
+        ...CALIBRATION_PHRASE,
+        ...mutation,
+        sel: SEL,
+      }),
+    ]),
+    ["sel trop court", parametresAuSelCourt()],
+  ];
+  for (const [nom, parametres] of mutes) {
+    await assert.rejects(
+      () => derivateur.deriver({ parametres, identite, geste }),
+      (erreur) => isDerivationError(erreur, DERIVATION_ERROR_CODES.parametresRefuses),
+      `« ${nom} », lu dans le fichier, aurait dû être refusé`,
+    );
+  }
   // Témoin : les MÊMES octets, au coût calibré, se dérivent bien. Le refus porte sur le coût, pas
   // sur l'encodage.
-  assert.ok(
-    await derivateur.deriver({
-      parametres: PARAMETRES(),
-      identite,
-      geste: { phrase: "peu importe" },
-    }),
-  );
+  assert.ok(await derivateur.deriver({ parametres: PARAMETRES(), identite, geste }));
 });
 
 test("une variante autre qu'Argon2id, lue dans le fichier, est refusée", async () => {
