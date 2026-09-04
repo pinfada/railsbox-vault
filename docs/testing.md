@@ -1359,6 +1359,54 @@ npm run vm:fetch       # artefacts v86 vérifiés par empreinte
 npm run test:e2e       # scénario complet sous Chromium
 ```
 
+#### Reprise PAR INSTANTANÉ : `tests/e2e/instantane-reprise.spec.mjs` (#65)
+
+Le second scénario de bout en bout de la reprise. Là où le précédent prouve qu'un **boot à froid**
+retrouve les données, celui-ci prouve qu'une **reprise par instantané** rend la même application,
+beaucoup plus vite, **et qu'elle s'efface d'elle-même dès qu'elle ne décrit plus l'état présent**.
+
+Six étapes, chacune dans une page NEUVE — fermer la page ferme son Worker et rend le handle OPFS :
+
+1. `prepare` — volume neuf, disque applicatif de #5 écrit dans OPFS en flux ;
+2. `live-capturer` — Rails boote, l'invariant est vérifié, puis l'instantané est CAPTURÉ selon le
+   protocole de l'ADR 0024 : suspendre, attendre le repos, solder le journal, vérifier qu'il est
+   vide, lire la liaison, quiescer, sceller, écrire, rendre le service ;
+3. `inspect-volume` + `digest-volume` — le voisin est là, à la taille annoncée, et le clair du
+   volume est empreint ;
+4. `resume-instantane` — l'instantané est ouvert, restauré, et Rails répond ;
+5. `live` — un boot COMPLET écrit et franchit une barrière : l'instantané devient périmé ;
+6. `resume-instantane` de nouveau — l'instantané est ÉCARTÉ, RETIRÉ, et le boot à froid s'exécute.
+
+**Trois propriétés sont ASSERTÉES, pas seulement publiées :**
+
+- **l'invariant applicatif est identique** — le verdict ENTIER de `/vault/invariant`, comparé en
+  profondeur, pas son seul statut — entre le boot qui capture, la reprise, et le boot à froid ;
+- **le clair du volume est identique avant et après la reprise**, et le fichier lui-même n'a pas
+  bougé. L'égalité vaut parce qu'elle est **encadrée** : le scénario constate d'abord que la session
+  reprise n'a écrit AUCUN bloc. Restaurer un état mémoire ne touche pas le volume ;
+- **un instantané périmé est écarté ET retiré**, avec son motif nommé.
+
+**Ce que le scénario ne compare PAS, et pourquoi.** Le clair du volume entre deux BOOTS COMPLETS. Un
+boot Rails réel écrit ses journaux, ses fichiers temporaires et son journal SQLite à chaque
+démarrage : deux boots partant du même volume en laissent deux états différents, sans que
+l'instantané y soit pour rien. Une assertion qui les comparerait ne mesurerait pas l'instantané —
+elle mesurerait le déterminisme de Rails.
+
+**Pourquoi l'étape 5 est un BOOT et non une requête.** L'application de référence a exactement deux
+routes, `health` et `invariant`, toutes deux en lecture (ADR 0004). La seule mutation Rails que
+cette fixture sache produire est celle qu'un démarrage écrit. Et une session reprise, elle, ne
+redémarre pas Rails : elle ne mute presque rien — ce qui est une PROPRIÉTÉ de la reprise, mesurée
+par le scénario (`counts.write === 0`), et non un manque.
+
+Le relevé est publié dans `reports/e2e/instantane-reprise.json` et repris dans
+[`quality-attributes.md`](quality-attributes.md).
+
+**Sous Windows, ce scénario exige un chemin de sortie COURT.** Le profil de navigateur persistant
+vit sous `test-results/`, et Chromium y crée une arborescence profonde : depuis un dépôt cloné dans
+un répertoire déjà long, `MAX_PATH` est franchi et OPFS rend `InvalidStateError` sur le premier
+`removeEntry`. Le symptôme désigne le stockage ; la cause est le chemin. Le remède est
+`npm run test:e2e -- --output=<chemin court>`.
+
 #### Le support des scénarios : un profil de navigateur PERSISTANT
 
 Les quatre scénarios de `tests/e2e/` tirent leur contexte de
