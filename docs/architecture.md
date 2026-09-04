@@ -927,10 +927,10 @@ verbe a un outil et une forme, décidés par l'[ADR 0017](decisions/0017-chaine-
 **Ce qui est publié est double, parce que la frontière l'est.** `node tools/publier.mjs` construit
 deux arborescences indépendantes, une par origine de l'ADR 0002, et jamais un artefact unique :
 
-| Arbre           | Contenu                                                                                            | En-têtes servis                                                                   |
-| --------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| **coquille**    | document de confiance, `main.mjs`, Worker runtime, `src/vm/`, artefacts v86 épinglés, licences     | CSP stricte de l'ADR 0013, `CORP: same-origin`, `nosniff`, **COOP `same-origin`** |
-| **application** | aucun artefact du dépôt — le HTML vient du guest — plus une **place tenante** déclarée comme telle | `CORP: cross-origin`, `nosniff`, **`frame-ancestors <coquille>` SEUL**            |
+| Arbre           | Contenu                                                                                            | En-têtes servis                                                                                                                                      |
+| --------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **coquille**    | document de confiance, `main.mjs`, Worker runtime, `src/vm/`, artefacts v86 épinglés, licences     | CSP stricte de l'ADR 0013, `CORP: same-origin`, `nosniff`, **COOP `same-origin`**, `Referrer-Policy: no-referrer` et `Permissions-Policy` (ADR 0022) |
+| **application** | aucun artefact du dépôt — le HTML vient du guest — plus une **place tenante** déclarée comme telle | `CORP: cross-origin`, `nosniff`, **`frame-ancestors <coquille>` SEUL**                                                                               |
 
 Trois propriétés de cette construction touchent l'architecture, et pas seulement l'outillage.
 
@@ -946,6 +946,15 @@ document qui porte les cookies de session est encadrable par n'importe quel site
 directive ne contraint rien de ce que le guest rend : elle ne gouverne pas ce que le document
 charge, seulement qui peut l'encadrer, et l'ADR 0002 ne s'interdit que la première de ces deux
 choses. Une épreuve unitaire échoue si un **troisième** en-tête apparaît. COEP reste absent.
+
+L'[ADR 0022](decisions/0022-entetes-de-durcissement.md) a ajouté deux en-têtes de **durcissement
+générique** sans toucher cette table de deux : ils sont posés dans la source de vérité, donc servis
+en développement et mesurés là, puis dérivés par la publication. Ils s'arrêtent aux documents de la
+coquille — pas le territoire applicatif, pas la sonde de capacités — et ne sont pas posés sur
+l'origine applicative, parce que `Referrer-Policy` et `Permissions-Policy` gouvernent ce qu'un
+document ÉMET et ce qu'il PEUT, c'est-à-dire le contenu que le guest rend.
+`Strict-Transport-Security` est écarté et son absence gardée : il serait ignoré sur le `http:` de
+tout ce que ce dépôt sait mesurer, et il engage un domaine plutôt qu'une arborescence.
 
 **Les surfaces de mesure ne sont pas du produit, et c'est désormais mesuré.** `public/csp/`,
 `public/spike/`, `public/vm/`, la sonde de capacités et leurs contrats sous `src/` sont retirés,
