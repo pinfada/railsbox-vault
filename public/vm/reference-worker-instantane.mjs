@@ -12,8 +12,8 @@
 //  2. **Attendre le REPOS de l'adaptateur** : aucune E/S en vol. Une écriture partie n'est pas
 //     encore chez le support, et la mémoire capturée l'aurait pourtant vue.
 //  3. **SOLDER le journal** — valider ce qui est déposé, ranger par un point de contrôle —, puis
-//     VÉRIFIER qu'il ne porte plus rien. Voir `solderLeJournal` : c'est le geste le plus discuté de
-//     cette tranche, et celui que le scénario de bout en bout a imposé.
+//     VÉRIFIER qu'il ne porte plus rien. Voir `src/vm/instantane/solde-du-journal.mjs` : c'est le
+//     geste le plus discuté de cette tranche, et celui que le scénario de bout en bout a imposé.
 //  4. **Lire la LIAISON**, après le solde. C'est le seul instant où elle décrit ce que le volume
 //     porte réellement — le vidage qui clôt un point de contrôle rescelle l'empreinte de région.
 //  5. **QUIESCER**, capturer, sceller, écrire par le chemin de production.
@@ -24,6 +24,7 @@
 // avant le premier battement du guest. Voir `empreinteDeLImage`.
 
 import { capturerInstantane, ouvrirInstantaneDeReprise } from "/src/vm/instantane-de-reprise.mjs";
+import { solderLeJournal } from "/src/vm/instantane/solde-du-journal.mjs";
 import { supportInstantaneOpfs } from "/src/vm/instantane/support-opfs.mjs";
 import { octetsEnHex } from "/src/vm/format-chiffre/octets.mjs";
 import { createSha256Stream } from "/src/vm/sha256-stream.mjs";
@@ -91,42 +92,6 @@ export async function etatPresentDuVolume(backend, empreinteImage) {
     empreinteRegion: racine.empreinteRegion,
     empreinteImage,
   };
-}
-
-/**
- * SOLDE le journal d'un guest ARRÊTÉ : valider ce qu'il a déposé, ranger, puis VÉRIFIER.
- *
- * Rend `null` quand le journal ne porte plus rien — la seule situation où une capture a un sens — ou
- * le détail de ce qui reste.
- *
- * **Valider les dépôts d'un guest ARRÊTÉ n'est pas une licence : c'est la condition de la
- * correction.** Les octets déposés ont atteint le périphérique. La mémoire qu'on s'apprête à
- * capturer les tient donc pour écrits — propres dans son cache de pages — et ne les relira jamais
- * depuis le disque. Les laisser non validés les ferait ÉCARTER à la prochaine ouverture, et le guest
- * restauré lirait alors, à la première éviction de cache, un secteur d'avant : une divergence
- * SILENCIEUSE entre la mémoire et le disque, exactement ce que l'ADR 0024 refuse.
- *
- * **Ce geste ne contredit pas la règle de `close()`** — « une génération non validée n'est PAS
- * rangée : personne ne l'a acquittée ». Cette règle protège la sémantique d'une COUPURE, où
- * ressusciter des écritures non acquittées serait inventer un état. Ici il n'y a pas de coupure : le
- * guest est arrêté proprement, et l'on rend le volume ÉGAL à la mémoire qu'on capture plutôt que
- * d'en capturer une qui le dépasse.
- *
- * **`SEC-DURABLE-001` est intact** : rien n'est annoncé durable à personne — le guest est arrêté et
- * ne recevra aucun acquittement —, et la barrière du support est franchie avant la racine, comme
- * partout ailleurs.
- *
- * La VÉRIFICATION finale n'est pas une politesse : ce qui resterait dans le journal serait rejoué
- * dans le volume à la prochaine ouverture. La région d'authentification changerait, la génération
- * non, et l'instantané serait écarté au motif `ECART_REGION` sur un volume que personne d'autre
- * n'aurait touché. Le scénario de bout en bout de cette tranche l'a mesuré avant que ce solde
- * n'existe.
- */
-async function solderLeJournal(backend) {
-  if (backend.generation.enAttente) await backend.generation.valider();
-  if (backend.generation.rangeable) await backend.generation.pointDeControle();
-  if (!backend.generation.enAttente) return null;
-  return { octetsDeCharge: backend.generation.octetsDeCharge };
 }
 
 /** Attend que l'adaptateur n'ait plus d'E/S en vol. Rend le compte observé, borné dans le temps. */
@@ -220,7 +185,7 @@ export async function capturerApresPointDeControle({
     const enVol = await attendreLeRepos(adapter);
     if (enVol > 0) return captureRefusee("eS-en-vol", { enVol });
 
-    const ouverte = await solderLeJournal(backend);
+    const ouverte = await solderLeJournal(backend.generation);
     if (ouverte !== null) return captureRefusee("generation-ouverte", ouverte);
 
     const etatPresent = await etatPresentDuVolume(backend, empreinteImage);
