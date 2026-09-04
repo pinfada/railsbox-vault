@@ -108,6 +108,11 @@ aucun :
 | `Content-Security-Policy: frame-ancestors …` | seule la coquille peut l'encadrer (§ 3 bis)                                         | absent, et inexprimable |
 | `Cache-Control: no-store`                    | ce que sert le serveur de test — Pages sert `max-age=600`, donc une AUTRE politique | divergent               |
 
+Depuis l'[ADR 0023](0023-politique-de-cache-par-nature-d-artefact.md), la dernière ligne de ce
+tableau se lit autrement : `no-store` reste servi sur l'origine applicative, mais parce que ce
+qu'elle sert porte les cookies de session du guest — non plus parce que le serveur de test le sert.
+La divergence relevée sur GitHub Pages, elle, ne change pas.
+
 Le territoire applicatif est donc publié, lui aussi, chez un hébergeur capable d'en-têtes. C'est la
 règle la plus simple, et c'est aussi la seule qui se vérifie : `tools/publier-temoin.mjs` asserte
 ces en-têtes sur les **deux** origines, et une origine incapable de les servir ferait échouer le
@@ -346,7 +351,16 @@ rien.
    hors ligne. Le conflit est nommé ici plutôt que résolu en douce ; le résoudre demande de décider
    une politique de cache par nature d'artefact — immuable pour le runtime épinglé, volatile pour la
    coquille — ce qui touche `tools/serve-headers.mjs`, hors périmètre de ce spike. **Travail
-   découvert.**
+   découvert — traité par #103 et l'[ADR 0023](0023-politique-de-cache-par-nature-d-artefact.md)**,
+   qui a suivi l'ordre de l'ADR 0022 : la politique est décidée dans la source de vérité et la
+   publication l'en dérive. Trois natures — `no-cache` pour la coquille, `public, max-age=86400`
+   pour l'épinglage v86, `no-store` conservé mais DÉCIDÉ pour le territoire applicatif —, donc un
+   fichier `_headers` à plusieurs blocs. Deux corrections à ce qui est écrit ci-dessus : `immutable`
+   est **refusé** tant qu'aucune URL publiée ne nomme son empreinte, et « `no-store` interdit toute
+   mise en cache » est trop fort — il ferme le cache HTTP, pas le magasin d'un Service Worker. Le
+   cliquet de « politique uniforme » du § 4 n'est pas retiré : il devient « uniforme **hors** la
+   dimension déclarée non uniforme », et une divergence de CSP, de COOP, de `Referrer-Policy` ou de
+   `Permissions-Policy` entre deux chemins d'un même arbre est refusée comme avant.
 2. **L'inventaire n'authentifie rien.** Voir ci-dessus. Tant que la signature n'existe pas, la seule
    défense contre une publication altérée est la comparaison hors bande d'une empreinte de racine.
 3. **Les deux publications doivent coïncider** — risque n°4 de l'ADR 0002. La chaîne construit les
@@ -395,8 +409,9 @@ Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi
   d'une façon qui casse un usage du produit ;
 - l'ADR 0010 est révisée et l'isolation devient exigée : COEP `require-corp` demanderait alors un
   en-tête au **territoire applicatif**, ce que la présente décision n'a pas prévu ;
-- le produit acquiert un besoin de cache qui rend `no-store` intenable, auquel cas la politique de
-  cache doit être décidée explicitement plutôt qu'héritée du serveur de test ;
+- ~~le produit acquiert un besoin de cache qui rend `no-store` intenable, auquel cas la politique de
+  cache doit être décidée explicitement plutôt qu'héritée du serveur de test~~ — **advenu** :
+  l'[ADR 0023](0023-politique-de-cache-par-nature-d-artefact.md) la décide par nature d'artefact ;
 - la signature des artefacts est livrée : la relation entre inventaire, empreinte de racine et
   signature doit alors être écrite, et l'inventaire cesse d'être la seule preuve d'intégrité.
 

@@ -85,6 +85,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [Spike #46 — ce que deux applications voient l'une de l'autre selon la topologie d'origine](docs/spikes/0046-isolation-entre-applications.md)
 - [ADR 0020 — l'enveloppe de clé vit hors du volume, en deux pages alternées, et une révocation retire l'emplacement](docs/decisions/0020-enveloppe-de-cle.md)
 - [ADR 0022 — la coquille sert `Referrer-Policy` et `Permissions-Policy` ; HSTS est écarté du code et confié à l'exploitant](docs/decisions/0022-entetes-de-durcissement.md)
+- [ADR 0023 — la politique de cache est décidée par nature d'artefact, et une seule dimension varie selon le chemin](docs/decisions/0023-politique-de-cache-par-nature-d-artefact.md)
 
 ## Licence
 
