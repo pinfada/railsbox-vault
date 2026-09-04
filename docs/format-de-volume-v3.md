@@ -96,8 +96,11 @@ demanderait une dépendance tierce et son audit. C'est la **question n° 1** de 
 **Borne de forgerie, calculée et non qualifiée.** SP 800-38D § 5.2.1.2 et son annexe B majorent la
 probabilité qu'une tentative de forgerie aboutisse par `(n + 1) / 2^t`, où `t` est la longueur
 d'étiquette en bits et `n` le nombre de blocs de 128 bits de l'entrée. Pour un secteur de 512 octets
-(32 blocs) et des données associées de 122 octets (8 blocs), `n = 40`, d'où **≈ 2^-122,6** par
-tentative. Le mot « jamais » n'apparaît donc nulle part dans les propriétés de la § 8.
+(32 blocs) et des données associées de 118 octets — soit 8 blocs, la fin étant complétée —,
+`n = 40`, d'où **≈ 2^-122,6** par tentative. Le mot « jamais » n'apparaît donc nulle part dans les
+propriétés de la § 8. _(L'ADR 0015 écrit « 122 octets » pour la même grandeur ; le compte exact des
+champs de la § 5.1 en donne 118, et `n` ne change pas — 118 comme 122 tiennent en huit blocs de 128
+bits.)_
 
 **Le nom de l'algorithme entre dans les données associées.** Sous une future version, un chiffré
 produit par un algorithme ne pourra pas être réinterprété par un autre. Un nom autre que
@@ -252,7 +255,8 @@ c'est ce qui permet une seule fonction d'encodage.
 | 7     | Adresse logique             | 8 octets      | entier gros-boutiste                                                                 |
 | 8     | Longueur du clair           | 4 octets      | entier gros-boutiste                                                                 |
 
-Total pour un volume v3 : **122 octets**.
+Total pour un volume v3, dont l'identifiant fait trente-deux caractères : **118 octets** (39 + 13 +
+4 + 34 + 8 + 8 + 8 + 4).
 
 **Chaque champ est de largeur fixe ou préfixé de sa longueur, et ce n'est pas une élégance.** Une
 concaténation non préfixée permettrait de déplacer un caractère d'un champ à l'autre sans changer
@@ -287,7 +291,9 @@ avant de reboucler en silence ».
 | 9     | Longueur de charge          | 8 octets      | gros-boutiste — somme des CLAIRS, **dérivée** |
 | 10    | Scellements cumulés         | 8 octets      | gros-boutiste                                 |
 
-Total : **126 octets**.
+Total : **136 octets** (41 + 13 + 4 + 34 + 8 + 8 + 8 + 4 + 8 + 8) — à ne pas confondre avec les 136
+octets qu'une racine de format 2 occupait dans son secteur (§ 6.7) : les deux nombres sont égaux par
+coïncidence et ne mesurent pas la même chose.
 
 **Le CLAIR que la racine scelle est l'empreinte SHA-256 de la suite ordonnée de ses entrées** (§
 5.3), 32 octets — et rien d'autre.
@@ -731,13 +737,13 @@ de cohérence : une racine qui se déclare de format 2 au-dessus d'octets de fra
 refusée — un des deux ment. C'est une garde, pas une authentification, et la nuance est écrite
 plutôt que gommée.
 
-**Coût mesuré.** Empreinte d'une région de 34 Mio sur OPFS réel : p50 de **345 à 354 ms**, p95 de
-350 à 383 ms sur deux exécutions, soit **0,58 % et 0,64 %** du budget de reprise de 60 s. Le seuil
-épinglé par l'épreuve est **un pour cent** de ce budget, et c'est un **engagement**, pas une
-observation : `tests/vm/fraicheur-region-cout.spec.mjs` › « l'empreinte de région d'un volume de 512
-Mio reste sous le pour-cent du budget de reprise ». Ce que la mesure ne borne pas : la
-**fréquence**. Une session paie une empreinte à l'ouverture et une par point de contrôle ; rien
-n'interdit qu'une application en paie beaucoup, et personne ne l'a mesuré.
+**Coût mesuré.** Empreinte d'une région de 34 Mio sur OPFS réel : p50 de **344,8 et 354,1 ms**, p95
+de 350,2 et 383,3 ms sur deux exécutions de trois relevés, soit **0,58 % et 0,64 %** du budget de
+reprise de 60 s. Le seuil épinglé par l'épreuve est **un pour cent** de ce budget, et c'est un
+**engagement**, pas une observation : `tests/vm/fraicheur-region-cout.spec.mjs` › « l'empreinte de
+région d'un volume de 512 Mio reste sous le pour-cent du budget de reprise ». Ce que la mesure ne
+borne pas : la **fréquence**. Une session paie une empreinte à l'ouverture et une par point de
+contrôle ; rien n'interdit qu'une application en paie beaucoup, et personne ne l'a mesuré.
 
 **Compatibilité : lire deux formats, n'écrire que le plus récent.** Un volume scellé avant l'ADR
 0019 porte une racine de format 2, sans empreinte. Ce runtime la décode, la rend explicitement comme
