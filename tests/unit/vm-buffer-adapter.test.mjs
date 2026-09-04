@@ -125,6 +125,13 @@ test("flush n'acquitte qu'après la barrière, et prévient son appelant en cas 
 
 test("les capacités absentes sont refusées, jamais simulées", () => {
   const { adapter } = banc();
+  // `get_buffer` reste refusé sans condition : un volume Vault ne se recopie pas en un ArrayBuffer
+  // unique, et l'ADR 0024 n'a rien changé à cela.
+  //
+  // `get_state` et `set_state` sont refusés ICI parce que ce banc ne tient AUCUNE liaison de volume
+  // (`liaisonDeVolume` absent). C'est l'amendement de l'ADR 0003 par l'ADR 0024 : ils ne sont plus
+  // refusés en tant que tels, ils le sont faute de ce à quoi un instantané se lierait. La
+  // quiescence et les deux gestes sont éprouvés par `vm-adaptateur-quiescence.test.mjs`.
   for (const methode of ["get_buffer", "get_state", "set_state"]) {
     assert.throws(
       () => adapter[methode](),

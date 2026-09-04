@@ -54,6 +54,21 @@ function adaptateur({ liaisonDeVolume } = {}) {
   return { adapte, backend, journal, fatales };
 }
 
+/**
+ * Attend que l'adaptateur n'ait plus d'E/S en vol, et rend le compte observé.
+ *
+ * L'attente est nécessaire, et elle dit quelque chose du contrat : `inFlight` est décrémenté APRÈS
+ * l'acquittement rendu au guest. Entre les deux, la quiescence est refusée alors que l'E/S est
+ * logiquement finie. C'est le sens conservateur — refuser une capture de trop plutôt qu'en accepter
+ * une de trop — et l'épreuve le constate au lieu de le contourner par un `await` bien placé.
+ */
+async function auRepos(adapte) {
+  for (let essai = 0; essai < 200 && adapte.status().inFlight > 0; essai += 1) {
+    await new Promise((resoudre) => setTimeout(resoudre, 1));
+  }
+  return adapte.status().inFlight;
+}
+
 /** Un `set` du contrat de v86, rendu attendable : `fn` est le seul acquittement du chemin PIO. */
 function ecrire(adapte, offset, octets) {
   return new Promise((resoudre) => adapte.set(offset, octets, () => resoudre("acquitté")));
@@ -85,6 +100,7 @@ test("quiescer REFUSE tant qu'une E/S est en vol", async () => {
     "capturer au-dessus d'une E/S en vol donnerait une mémoire qui a vu ce que le support n'a pas reçu",
   );
   await enVol;
+  assert.equal(await auRepos(adapte), 0, "l'E/S est rendue");
   assert.equal(
     adapte.quiescer().quiesce,
     true,
