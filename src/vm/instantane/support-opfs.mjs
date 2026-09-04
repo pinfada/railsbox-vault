@@ -78,6 +78,19 @@ export function supportInstantaneOpfs(
      */
     async lire(offset, longueur) {
       const cible = new Uint8Array(longueur);
+      const lus = await this.lireDans(cible, offset);
+      return lus === longueur ? cible : cible.subarray(0, lus);
+    },
+
+    /**
+     * Lit DANS un tampon déjà alloué, et rend le nombre d'octets lus.
+     *
+     * C'est le geste qui borne la mémoire d'une reprise : l'appelant alloue UN tampon de
+     * `longueurEtat + 16` et y fait tomber le corps, là où un `lire` lui aurait rendu un second
+     * tampon de 253 Mo à recopier. Même contrat, même raison que `JournalDeGeneration.lireDans`.
+     */
+    async lireDans(cible, offset) {
+      const longueur = cible.byteLength;
       const lus = (await saisir()).read(cible, { at: offset });
       if (decodeSupportCount(lus, longueur).kind === "errno") {
         throw readCountFailure(lus, {
@@ -87,7 +100,7 @@ export function supportInstantaneOpfs(
           operation: "read-instantane",
         });
       }
-      return lus === longueur ? cible : cible.subarray(0, lus);
+      return lus;
     },
 
     /**
@@ -99,7 +112,15 @@ export function supportInstantaneOpfs(
      * captures.
      */
     async allouer(taille) {
-      (await saisir()).truncate(taille);
+      // L'échec est TYPÉ comme ceux de la lecture et de l'écriture : c'est le geste qui RÉSERVE la
+      // place d'un quart de gibioctet, et c'est donc le premier à rencontrer un quota épuisé. Le
+      // laisser remonter le `name` brut du moteur aurait rendu « QuotaExceededError » là où le
+      // dépôt promet un état contractuel nommé.
+      try {
+        (await saisir()).truncate(taille);
+      } catch (cause) {
+        throw toStorageError(cause, { operation: "allocate-instantane", volume: nom, taille });
+      }
     },
 
     /** Écrit. Tout compte qui n'est pas exact est un échec TYPÉ, jamais avalé (#73). */
@@ -116,7 +137,11 @@ export function supportInstantaneOpfs(
 
     /** Barrière du voisin. Son retour vaut durabilité de ce qui a été écrit avant elle. */
     async barriere() {
-      (await saisir()).flush();
+      try {
+        (await saisir()).flush();
+      } catch (cause) {
+        throw toStorageError(cause, { operation: "flush-instantane", volume: nom });
+      }
     },
 
     /** FERME puis SUPPRIME. L'ordre est imposé par OPFS, et il est écrit en tête de ce module. */

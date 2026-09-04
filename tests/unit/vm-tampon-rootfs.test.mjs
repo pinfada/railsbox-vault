@@ -121,6 +121,37 @@ test("un tampon restauré publie le MÊME delta : une seconde capture ne perd ri
   );
 });
 
+test("un delta reposé sur un tampon DÉJÀ SALI est REFUSÉ", () => {
+  // Le défaut que la revue a trouvé par sonde : `set_state` vidait l'index des blocs salis puis
+  // posait le delta, SANS remettre à pristine les blocs salis qui n'étaient pas dans le delta. Le
+  // disque restauré n'était donc pas celui de la capture — il portait, en plus, les écritures du
+  // tampon d'accueil. Le tampon ADOPTE son image et n'en garde aucune copie : il ne PEUT pas
+  // revenir à pristine. Il refuse donc, plutôt que de rendre un disque à moitié faux.
+  const capture = creerTamponRootfs(imagePristine());
+  ecrire(capture, 0, Uint8Array.from([1, 2, 3]));
+  const etat = capture.get_state();
+
+  const sali = creerTamponRootfs(imagePristine());
+  ecrire(sali, 5 * BLOC_OCTETS, Uint8Array.from([9]));
+  assert.throws(() => sali.set_state(etat), /sali|refusé/i);
+
+  // TÉMOIN POSITIF : un tampon neuf accepte le même delta.
+  const neuf = creerTamponRootfs(imagePristine());
+  neuf.set_state(etat);
+  assert.equal(octetsEnHex(lire(neuf, 0, 3)), "010203");
+});
+
+test("une image DÉJÀ adoptée ne peut pas l'être une seconde fois", () => {
+  // L'empreinte de l'image est prise à l'ACQUISITION (ADR 0024). Réemployer le même paquet
+  // d'artefacts pour un second boot rendrait cette empreinte fausse : le rootfs aurait été écrit
+  // par le premier. Le tampon marque donc l'image qu'il adopte, et refuse la seconde adoption.
+  const image = imagePristine();
+  creerTamponRootfs(image);
+  assert.throws(() => creerTamponRootfs(image), /adoptée/i);
+  // TÉMOIN POSITIF : une autre image s'adopte.
+  creerTamponRootfs(imagePristine());
+});
+
 test("un delta d'une AUTRE géométrie est REFUSÉ, jamais reposé au hasard", () => {
   const tampon = creerTamponRootfs(imagePristine());
   assert.throws(() => tampon.set_state([TAILLE + BLOC_OCTETS, BLOC_OCTETS, []]), /refusé/i);

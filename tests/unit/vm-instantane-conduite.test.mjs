@@ -101,6 +101,25 @@ test("TÉMOIN POSITIF : l'instantané capturé se rouvre et rend l'état v86", a
   assert.equal((await support.etat()).present, true, "un instantané valide n'est PAS retiré");
 });
 
+test("le CORPS est lu dans UN SEUL tampon, étiquette comprise", async () => {
+  // Correction de revue : la lecture allouait un tampon de `longueurEtat` pour le corps, puis
+  // `assembler` en allouait un second de `longueurEtat + 16` pour y recopier corps ET étiquette.
+  // Sur 253 Mo, c'était une copie entière de plus, au moment précis où la RAM invitée et le tampon
+  // de rootfs sont déjà en mémoire. L'appelant alloue désormais UN tampon et y fait tomber le corps.
+  const { support } = await supportAvecInstantane();
+  const avant = support.journal.length;
+  const rapport = await ouvrir(support);
+  assert.equal(rapport.utilise, true, rapport.message ?? "");
+
+  const lectures = support.journal.slice(avant).filter((e) => e.geste.startsWith("lire"));
+  const duCorps = lectures.filter((e) => e.longueur >= ETAT.byteLength);
+  assert.deepEqual(
+    duCorps.map((e) => ({ geste: e.geste, longueur: e.longueur })),
+    [{ geste: "lireDans", longueur: ETAT.byteLength }],
+    "une seule lecture porte le corps, et elle se fait DANS un tampon déjà alloué — jamais par un « lire » qui en allouerait un second",
+  );
+});
+
 test("un support vide n'est pas un refus : c'est l'absence, et elle se dit", async () => {
   const support = supportInstantaneDouble();
   const rapport = await ouvrir(support);
@@ -214,6 +233,54 @@ test("une coupure AVANT la marque laisse un instantané INCOMPLET, écarté et r
   assert.equal(rapport.utilise, false);
   assert.equal(rapport.motif, INSTANTANE_ERROR_CODES.incomplet);
   assert.equal((await coupe.etat()).present, false, "un instantané incomplet est RETIRÉ");
+});
+
+test("une capture PLUS GRANDE coupée avant sa marque ne se sert pas de celle de la précédente", async () => {
+  // `allouer` est un TRUNCATE : agrandir un fichier conserve son préfixe. Une seconde capture plus
+  // grande laisse donc en place, quelque part au milieu, la marque de complétude de la première.
+  // Si la seconde est coupée avant d'écrire la sienne, le fichier porte une marque VALIDE — à la
+  // mauvaise place. C'est le mélange de deux captures que l'ADR 0024 nomme, et la marque doit être
+  // cherchée à l'offset que l'EN-TÊTE déclare, jamais « quelque part ».
+  const petit = ETAT.subarray(0, 1024);
+  const support = supportInstantaneDouble();
+  await capturerInstantane({
+    scellement: await scellement(),
+    volume: "donnees",
+    etatPresent: etatPresent(),
+    etat: petit,
+    support,
+  });
+  const marqueDeLAncienne = support.contenu.slice(EN_TETE_OCTETS + petit.byteLength);
+  assert.equal(octetsEnHex(marqueDeLAncienne), octetsEnHex(MARQUEUR_COMPLET));
+
+  // Seconde capture, PLUS GRANDE, coupée avant l'écriture de son CORPS (geste 3 : allouer, en-tête,
+  // corps). Le fichier porte alors l'en-tête NEUF — qui déclare 8192 octets d'état — au-dessus des
+  // octets de l'ANCIENNE capture, marque de complétude comprise, à l'ancien offset.
+  support.couperAvant(3);
+  await assert.rejects(
+    capturerInstantane({
+      scellement: await scellement(),
+      volume: "donnees",
+      etatPresent: etatPresent(),
+      etat: ETAT,
+      support,
+    }),
+    (erreur) => erreur instanceof CoupureDeCapture,
+  );
+  assert.equal(
+    octetsEnHex(
+      support.contenu.subarray(
+        EN_TETE_OCTETS + petit.byteLength,
+        EN_TETE_OCTETS + petit.byteLength + 8,
+      ),
+    ),
+    octetsEnHex(MARQUEUR_COMPLET),
+    "la marque de la PREMIÈRE capture est toujours là, au milieu du corps de la seconde",
+  );
+
+  const rapport = await ouvrir(support);
+  assert.equal(rapport.utilise, false);
+  assert.equal(rapport.motif, INSTANTANE_ERROR_CODES.incomplet);
 });
 
 test("un octet du corps retourné refuse le sceau, et l'instantané est retiré", async () => {

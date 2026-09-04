@@ -302,9 +302,15 @@ export class Scellement {
     return scelle;
   }
 
-  /** Ouvre un instantané. AUCUN scellement consommé : une ouverture ne chiffre rien. */
-  async ouvrirInstantane(liaison, scelle) {
-    return ouvrirInstantaneDuModele({ cle: this.#cle, liaison, scelle });
+  /**
+   * Ouvre un instantané. AUCUN scellement consommé : une ouverture ne chiffre rien.
+   *
+   * `corps` est le tampon UNIQUE — chiffré puis étiquette — que l'appelant a lu d'un trait. Le
+   * recevoir ainsi évite une copie de 253 Mo au moment où la mémoire est déjà la plus tendue : voir
+   * `vuesDuCorps` dans le modèle.
+   */
+  async ouvrirInstantane(liaison, nonce, corps) {
+    return ouvrirInstantaneDuModele({ cle: this.#cle, liaison, nonce, corps });
   }
 
   /**

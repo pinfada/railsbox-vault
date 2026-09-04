@@ -58,19 +58,25 @@ function exigerBudget(scellementsCumules) {
   return scellementsCumules;
 }
 
-function separerEtiquette(brut) {
-  const octets = new Uint8Array(brut);
+/**
+ * Le CORPS SCELLÉ, tel que GCM le produit et le consomme : chiffré puis étiquette, dans UN tampon.
+ *
+ * `chiffre` et `etiquette` en sont des VUES, jamais des copies, et c'est une correction de revue :
+ * un état de 253 Mo, la sortie de `encrypt` (253 Mo + 16) et une copie du chiffré faisaient TROIS
+ * fois l'état. Avec la RAM invitée (512 Mio) et le tampon de rootfs (385 Mio), le pic dépassait le
+ * budget publié de 1,5 Gio de `docs/quality-attributes.md`.
+ *
+ * Le corps est aussi ce que l'ouverture reçoit — un seul tampon, lu d'un trait, étiquette à la
+ * queue. Il n'y a donc plus de `assembler` : reconstituer chiffré‖étiquette côté lecture coûtait la
+ * même copie, dans l'autre sens.
+ */
+function vuesDuCorps(brut) {
+  const corps = brut instanceof Uint8Array ? brut : new Uint8Array(brut);
   return {
-    chiffre: octets.slice(0, octets.byteLength - ETIQUETTE_OCTETS),
-    etiquette: octets.slice(octets.byteLength - ETIQUETTE_OCTETS),
+    corps,
+    chiffre: corps.subarray(0, corps.byteLength - ETIQUETTE_OCTETS),
+    etiquette: corps.subarray(corps.byteLength - ETIQUETTE_OCTETS),
   };
-}
-
-function assembler(chiffre, etiquette) {
-  const brut = new Uint8Array(chiffre.byteLength + etiquette.byteLength);
-  brut.set(chiffre, 0);
-  brut.set(etiquette, chiffre.byteLength);
-  return brut;
 }
 
 /**
@@ -82,7 +88,8 @@ function assembler(chiffre, etiquette) {
  *
  * @param {{ cle: CryptoKey, liaison: object, etat: Uint8Array, nonce: Uint8Array,
  *           attentes: { scellementsCumules: number } }} appel
- * @returns {Promise<{ nonce: Uint8Array, chiffre: Uint8Array, etiquette: Uint8Array }>}
+ * @returns {Promise<{ nonce: Uint8Array, corps: Uint8Array, chiffre: Uint8Array,
+ *                     etiquette: Uint8Array }>} `chiffre` et `etiquette` sont des VUES de `corps`
  */
 export async function scellerInstantaneSousNonce({ cle, liaison, etat, nonce, attentes = {} }) {
   verifierAlgorithme(liaison?.algorithme);
@@ -109,7 +116,7 @@ export async function scellerInstantaneSousNonce({ cle, liaison, etat, nonce, at
     cle,
     etat,
   );
-  return Object.freeze({ nonce, ...separerEtiquette(brut) });
+  return Object.freeze({ nonce, ...vuesDuCorps(brut) });
 }
 
 /** Scelle un instantané avec un nonce TIRÉ. C'est le chemin normal. */
@@ -126,17 +133,19 @@ export async function scellerInstantane({ cle, liaison, etat, attentes = {} }) {
  * forgé, un corps déplacé ou une autre clé sont indiscernables. Les écarts que le chemin de
  * production sait nommer, il les nomme AVANT, sur l'en-tête en clair (ADR 0024, décision 4).
  *
- * @param {{ cle: CryptoKey, liaison: object,
- *           scelle: { nonce: Uint8Array, chiffre: Uint8Array, etiquette: Uint8Array } }} appel
+ * @param {{ cle: CryptoKey, liaison: object, nonce: Uint8Array, corps: Uint8Array }} appel
+ *   `corps` est le tampon UNIQUE que la capture a produit : chiffré puis étiquette. Le recevoir
+ *   d'un seul tenant évite la recopie que sa reconstitution coûterait, sur un objet de 253 Mo.
  * @returns {Promise<Uint8Array>} l'état v86, ou un refus
  */
-export async function ouvrirInstantane({ cle, liaison, scelle }) {
+export async function ouvrirInstantane({ cle, liaison, nonce, corps }) {
   verifierAlgorithme(liaison?.algorithme);
   const exigee = exigerLiaison(liaison);
-  exigerOctets("scelle.nonce", scelle?.nonce, NONCE_OCTETS);
-  exigerOctets("scelle.etiquette", scelle?.etiquette, ETIQUETTE_OCTETS);
-  if (!(scelle.chiffre instanceof Uint8Array)) {
-    throw malforme("« scelle.chiffre » doit être une suite d'octets.");
+  exigerOctets("nonce", nonce, NONCE_OCTETS);
+  if (!(corps instanceof Uint8Array) || corps.byteLength < ETIQUETTE_OCTETS) {
+    throw malforme(
+      `« corps » doit porter le chiffré ET son étiquette, soit au moins ${ETIQUETTE_OCTETS} octets.`,
+    );
   }
 
   try {
@@ -144,12 +153,12 @@ export async function ouvrirInstantane({ cle, liaison, scelle }) {
       await crypto.subtle.decrypt(
         {
           name: ALGORITHME_WEBCRYPTO,
-          iv: scelle.nonce,
+          iv: nonce,
           additionalData: encoderLiaison(exigee),
           tagLength: ETIQUETTE_BITS,
         },
         cle,
-        assembler(scelle.chiffre, scelle.etiquette),
+        corps,
       ),
     );
   } catch (erreur) {
