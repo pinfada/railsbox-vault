@@ -4,6 +4,7 @@ import { CRASH_KINDS } from "../../src/vm/crash-plan.mjs";
 import { TAMPON_RELECTURE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { VERDICTS, estVerdictConnu } from "../../src/vm/crash-oracle.mjs";
 import { BARRIERES, BLOCS_SUIVIS } from "../../src/vm/crash-scenario.mjs";
+import { exigerReouvertureDansLeBudget, releveDeReouverture } from "./budget-reouverture.mjs";
 
 // Preuve de niveau **résilience** de #15, sur OPFS RÉEL sous Chromium.
 //
@@ -59,6 +60,23 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
   });
 
   const { resume, resultats } = compteRendu;
+
+  // Le COÛT de la réouverture, joint AVANT toute assertion : c'est la mesure qui remplace l'ancienne
+  // valeur figée, et une exécution qui rougirait plus bas doit tout de même la publier.
+  await testInfo.attach("vm-resilience-reouverture.json", {
+    body: JSON.stringify(
+      releveDeReouverture(
+        resultats.map((resultat) => ({
+          ou: JSON.stringify(resultat.point),
+          reouverture: resultat.reouverture,
+        })),
+      ),
+      null,
+      2,
+    ),
+    contentType: "application/json",
+  });
+
   expect(resume.graine).toBe(GRAINE);
   expect(resume.pointsRejoues).toBe(POINTS);
   expect(resume.support).toBe("OPFS réel (Chromium)");
@@ -131,11 +149,12 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
       ).toBeGreaterThan(0);
     }
 
-    // Le volume a bien été rouvert après la mort du Worker. Un seul essai suffit : Chromium rend
-    // l'exclusivité avec le Worker terminé, avant que la page n'ait démarré le suivant. La reprise
-    // borne l'attente jusqu'à soixante essais, mais mesurer qu'elle n'en consomme qu'un est ce qui
-    // rend le relevé comparable d'une exécution à l'autre.
-    expect(resultat.reouverture.essais, ou).toBe(1);
+    // Le volume a bien été rouvert après la mort du Worker, DANS LA BORNE. Le nombre d'essais n'est
+    // pas figé : une session v3 tient trois handles exclusifs (#16, #19), un seul encore tenu suffit
+    // à rendre `busy`, et c'est le moteur qui décide quand il les rend. Ce qui est exigé, c'est que
+    // la réouverture aboutisse dans le budget et que son coût soit publié — voir le relevé joint
+    // `vm-resilience-reouverture.json` et `tests/unit/vm-reouverture-handles.test.mjs`.
+    exigerReouvertureDansLeBudget(resultat.reouverture, ou);
   }
 
   // Le point 2 de cette graine est une coupure sur la TROISIÈME barrière : les vingt-quatre
@@ -195,6 +214,24 @@ test("deux AUTRES graines rendent elles aussi 100 % sur le vrai support", async 
     releves.push(compteRendu.resume);
 
     const { resume, resultats } = compteRendu;
+
+    // Le coût de la réouverture est publié pour CHAQUE graine, et joint avant les assertions : seize
+    // points de plus que la graine publiée, c'est-à-dire de quoi voir si le moteur traîne sur une
+    // séquence de coupures particulière ou sur toutes.
+    await testInfo.attach(`vm-resilience-reouverture-graine-${graine}.json`, {
+      body: JSON.stringify(
+        releveDeReouverture(
+          resultats.map((resultat) => ({
+            ou: `graine ${graine} — ${JSON.stringify(resultat.point)}`,
+            reouverture: resultat.reouverture,
+          })),
+        ),
+        null,
+        2,
+      ),
+      contentType: "application/json",
+    });
+
     expect(resume.graine, `graine ${graine}`).toBe(graine);
     expect(resume.tauxAtomique, `graine ${graine}`).toBe(1);
     expect(resume.verdicts.melange + resume.verdicts.corrompu, `graine ${graine}`).toBe(0);
@@ -215,6 +252,10 @@ test("deux AUTRES graines rendent elles aussi 100 % sur le vrai support", async 
       expect(resultat.arret.code, ou).toMatch(/^VAULT_STORAGE_/);
       expect(resultat.journalConsulte, ou).toBe(true);
       expect(resultat.recuperation, ou).not.toBeNull();
+      // La réouverture aboutit dans le budget ici AUSSI. Le premier point de la matrice n'a rien de
+      // particulier : ces deux graines coupent ailleurs, et le moteur y rend l'exclusivité de la
+      // même façon.
+      exigerReouvertureDansLeBudget(resultat.reouverture, ou);
     }
   }
 

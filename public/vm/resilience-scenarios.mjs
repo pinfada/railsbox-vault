@@ -50,6 +50,34 @@ const attendre = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * Rouvre un volume dont le détenteur précédent est mort sans fermer son handle. Le moteur reprend
  * l'exclusivité quand le Worker disparaît, mais pas forcément AVANT que la page ait démarré le
  * suivant : l'attente est bornée et son coût est PUBLIÉ, jamais masqué par une réussite tardive.
+ *
+ * ## Ce qui rend `busy`, et combien de fois — mesuré, pas supposé (#129)
+ *
+ * `tests/unit/vm-reouverture-handles.test.mjs` mesure ce que la suite VM tenait pour acquis. Une
+ * session de volume v3 tient **TROIS** handles exclusifs, saisis dans cet ordre et gardés jusqu'à
+ * la fermeture : le volume, son journal de génération `<volume>.gen` (#16), son témoin de séquence
+ * `<volume>.temoin` (#19, ADR 0019). L'enveloppe de clé `<volume>.cles` (#21, ADR 0020) n'en fait
+ * PAS partie — `supportEnveloppeOpfs` ouvre et referme son handle à chaque geste, et ce banc-ci ne
+ * passe pas par elle : il reçoit la clé du harnais.
+ *
+ * Trois conséquences, toutes mesurées :
+ *
+ *  1. **un seul des trois encore tenu suffit à rendre `busy`.** La réouverture n'aboutit donc que
+ *     lorsque le PLUS LENT des trois a été rendu, pas le premier. Là où un volume à un handle
+ *     dépendait d'un seul délai de restitution, il en attend trois — et la probabilité qu'au moins
+ *     un traîne au-delà du premier essai est d'autant plus grande. C'est ce qui a fait rougir
+ *     `essais === 1` deux nuits sur trois après #19, et jamais avant ;
+ *  2. **l'ordre d'acquisition n'allonge pas l'attente.** Les trois fichiers sont indépendants et le
+ *     moteur les rend indépendamment ; l'ordre décide seulement lequel des trois NOMME le refus. Le
+ *     réordonner ne gagnerait rien — il n'y a pas ici de handle repris avant qu'un autre soit rendu ;
+ *  3. **un essai perdu ne laisse rien derrière lui.** Un refus sur le témoin — le dernier saisi — a
+ *     déjà saisi PUIS RENDU le volume et son journal (`installerGenerationOuFermer` referme). Chaque
+ *     essai repart donc d'un support propre, et deux essais ne se gênent jamais l'un l'autre.
+ *
+ * Ce que ce module publie — `essais` et `attenteMs` — est donc la seule mesure du délai réel de
+ * restitution du moteur ; le banc unitaire, lui, ne mesure que le nombre et l'ordre des handles,
+ * puisque son double rend l'exclusivité sur-le-champ. Ne pas retirer cette publication : sans elle,
+ * une dérive du moteur se cacherait derrière une réussite tardive.
  */
 async function rouvrirApresCoupure({ tentatives, attenteMs, journal }) {
   for (let essai = 1; essai <= tentatives; essai += 1) {
