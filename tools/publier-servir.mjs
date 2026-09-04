@@ -21,7 +21,15 @@ import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
 
-import { FICHIER_HEADERS } from "./publier-en-tetes.mjs";
+import { FICHIER_HEADERS, analyserHeaders, enTetesPour } from "./publier-en-tetes.mjs";
+
+// L'analyseur du format `_headers` et l'application de ses règles vivent désormais dans le module
+// qui ÉCRIT le fichier (#103, ADR 0023) : depuis que la politique de cache varie par nature
+// d'artefact, la publication doit vérifier elle-même l'aller-retour — que le fichier produit rende
+// à chaque chemin ce que la source de vérité y sert — et elle ne peut pas le faire en important le
+// serveur, qui l'importe déjà. Ils sont réexportés ici pour leurs appelants historiques, et ce
+// serveur en reste l'unique consommateur en production.
+export { analyserHeaders, enTetesPour };
 
 const TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -33,50 +41,6 @@ const TYPES = new Map([
   [".bin", "application/octet-stream"],
   [".iso", "application/octet-stream"],
 ]);
-
-/**
- * Analyse le format `_headers` de Cloudflare Pages et de Netlify : une ligne de motif commençant
- * par `/`, puis des lignes indentées `Nom: valeur`. Les lignes vides et les `#` sont des
- * commentaires.
- *
- * @param {string} texte
- * @returns {{ motif: string, enTetes: [string, string][] }[]}
- */
-export function analyserHeaders(texte) {
-  const regles = [];
-  for (const ligne of texte.split("\n")) {
-    const nue = ligne.trim();
-    if (nue === "" || nue.startsWith("#")) continue;
-    if (!ligne.startsWith(" ") && !ligne.startsWith("\t")) {
-      regles.push({ motif: nue, enTetes: [] });
-      continue;
-    }
-    const separateur = nue.indexOf(":");
-    if (separateur < 0 || regles.length === 0) continue;
-    regles.at(-1).enTetes.push([nue.slice(0, separateur).trim(), nue.slice(separateur + 1).trim()]);
-  }
-  return regles;
-}
-
-/**
- * @param {{ motif: string, enTetes: [string, string][] }[]} regles
- * @param {string} chemin
- * @param {readonly string[]} retires
- */
-export function enTetesPour(regles, chemin, retires = []) {
-  const exclus = new Set(retires.map((nom) => nom.toLowerCase()));
-  const resultat = {};
-  for (const { motif, enTetes } of regles) {
-    const correspond = motif.endsWith("/*")
-      ? chemin.startsWith(motif.slice(0, -1))
-      : motif === chemin;
-    if (!correspond) continue;
-    for (const [nom, valeur] of enTetes) {
-      if (!exclus.has(nom.toLowerCase())) resultat[nom] = valeur;
-    }
-  }
-  return resultat;
-}
 
 function lireOption(argv, nom, defaut = null) {
   const index = argv.indexOf(`--${nom}`);

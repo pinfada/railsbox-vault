@@ -28,6 +28,7 @@ import { chromium, firefox, webkit } from "@playwright/test";
 
 import { enTetesDePublication } from "./publier-en-tetes.mjs";
 import { demarrer } from "./publier-servir.mjs";
+import { POLITIQUES_DE_CACHE, PREFIXE_EPINGLAGE_V86 } from "./serve-headers.mjs";
 import { REPOSITORY_ROOT } from "./v86-paths.mjs";
 
 const MOTEURS = { chromium, firefox, webkit };
@@ -69,6 +70,32 @@ export function confronter(attendus, recus) {
   return ecarts;
 }
 
+/**
+ * Natures d'artefact dont le témoin relève la politique de cache RÉELLEMENT servie (#103, ADR 0023).
+ *
+ * Trois relevés, sur les DEUX arbres, et sur des chemins qui existent dans tout arbre publié — y
+ * compris quand `vendor/v86/artefacts/` est absent, ce qui est le cas ordinaire d'un clone vierge.
+ * C'est pourquoi la nature « épinglage v86 » est relevée sur son MANIFESTE : il est versionné, il
+ * relève du même préfixe donc de la même règle, et il est publié dans tous les cas. Sans lui, la
+ * seule nature dont la valeur est particulière ne serait jamais mesurée là où elle est servie, et
+ * le critère « `npm run publier:check` vérifie la politique sur les deux origines » serait décoratif.
+ *
+ * @type {readonly { nature: string, arbre: string, chemin: string }[]}
+ */
+export const NATURES_RELEVEES_PAR_LE_TEMOIN = Object.freeze([
+  Object.freeze({ nature: "coquille", arbre: "coquille", chemin: "/index.html" }),
+  Object.freeze({
+    nature: "epinglage-v86",
+    arbre: "coquille",
+    chemin: `${PREFIXE_EPINGLAGE_V86}MANIFEST.json`,
+  }),
+  Object.freeze({
+    nature: "territoire-applicatif",
+    arbre: "application",
+    chemin: "/index.html",
+  }),
+]);
+
 /** Un en-tête qui ne doit PAS être servi. L'origine applicative n'en reçoit aucune CSP (ADR 0002). */
 export function confronterAbsences(absents, recus) {
   return absents
@@ -101,6 +128,29 @@ async function releverOpener(contexte, urlCoquille) {
   return openerEstNul;
 }
 
+/**
+ * Relève la politique de cache RÉELLEMENT reçue, pour chaque nature servie par l'arbre courant.
+ *
+ * Le relevé passe par un `fetch` émis DEPUIS la page, c'est-à-dire par la pile réseau du moteur, et
+ * non par le client HTTP du harnais : c'est ce qui distingue « l'hébergeur envoie cet en-tête » de
+ * « le navigateur le reçoit ». `cache: "no-store"` sur le fetch lui-même empêche qu'une réponse
+ * déjà gardée par le moteur — désormais possible, c'est tout l'objet de l'ADR 0023 — masque ce que
+ * le serveur envoie.
+ */
+async function releverPolitiqueDeCache(page, arbre) {
+  const releves = [];
+  for (const releve of NATURES_RELEVEES_PAR_LE_TEMOIN.filter(
+    (candidat) => candidat.arbre === arbre,
+  )) {
+    const recu = await page.evaluate(async (chemin) => {
+      const reponse = await fetch(chemin, { cache: "no-store" });
+      return reponse.headers.get("cache-control");
+    }, releve.chemin);
+    releves.push({ ...releve, attendu: POLITIQUES_DE_CACHE[releve.nature], recu });
+  }
+  return releves;
+}
+
 async function releverDemarrage(page) {
   await page.waitForFunction(
     () => globalThis.document.documentElement.dataset.vaultReady === "true",
@@ -117,7 +167,9 @@ async function mesurerMoteur(nom) {
 
   const enTetesCoquille = await relevePage(page, `${ORIGINE_COQUILLE}/index.html`);
   const demarrage = await releverDemarrage(page);
+  const cacheCoquille = await releverPolitiqueDeCache(page, "coquille");
   const enTetesApplication = await relevePage(page, `${ORIGINE_APPLICATION}/index.html`);
+  const cacheApplication = await releverPolitiqueDeCache(page, "application");
   await page.close();
 
   const origines = {
@@ -168,6 +220,9 @@ async function mesurerMoteur(nom) {
         .filter(Boolean),
       recus: enTetesApplication,
     },
+    // La politique de cache est la SEULE dimension que l'ADR 0023 autorise à varier selon le
+    // chemin : elle est donc relevée par nature d'artefact, et pas une fois par origine.
+    politiqueDeCache: [...cacheCoquille, ...cacheApplication],
     demarrage,
     openerAvecCoop: await releverOpener(contexte, `${ORIGINE_COQUILLE}/index.html`),
     openerSansCoop: await releverOpener(contexte, `${ORIGINE_COQUILLE_SANS_COOP}/index.html`),
@@ -177,9 +232,39 @@ async function mesurerMoteur(nom) {
   return mesure;
 }
 
+/**
+ * Motifs de refus tirés du relevé de politique de cache (#103, ADR 0023).
+ *
+ * Trois conditions, et les deux dernières sont là pour que le relevé ne puisse pas être vert sans
+ * avoir mesuré ce que la décision a de propre : qu'elle DISTINGUE. Un témoin qui ne relèverait
+ * qu'une nature, ou trois natures portant la même valeur, dirait « conforme » d'une politique
+ * uniforme — exactement l'état que cette tranche corrige.
+ */
+function motifsDePolitiqueDeCache(releves) {
+  const motifs = releves
+    .filter(({ recu, attendu }) => recu !== attendu)
+    .map(
+      ({ nature, chemin, attendu, recu }) =>
+        `politique de cache « ${nature} » sur ${chemin} : attendu ${attendu}, reçu ${recu ?? "(absent)"}`,
+    );
+  if (new Set(releves.map(({ nature }) => nature)).size < 2) {
+    motifs.push(
+      "le témoin doit relever la politique de cache sur au moins DEUX natures d'artefact : une " +
+        "seule ne mesurerait pas ce que l'ADR 0023 décide",
+    );
+  }
+  if (new Set(releves.map(({ attendu }) => attendu)).size < 2) {
+    motifs.push(
+      "toutes les natures relevées portent la MÊME politique attendue : la décision « par nature » " +
+        "serait décorative",
+    );
+  }
+  return motifs;
+}
+
 /** Un moteur passe si les en-têtes sont conformes, que la coquille démarre, et que COOP agit. */
 export function verdict(mesure) {
-  const motifs = [];
+  const motifs = [...motifsDePolitiqueDeCache(mesure.politiqueDeCache ?? [])];
   if (mesure.coquille.ecarts.length > 0) motifs.push("en-têtes de la coquille");
   if (mesure.application.ecarts.length > 0) motifs.push("en-têtes de l'origine applicative");
   const csp = mesure.application.cspApplicativeSolitaire;
@@ -207,6 +292,11 @@ function decrire(mesure) {
     `  window.opener avec COOP         ${mesure.openerAvecCoop ? "null (attendu)" : "SURVIT"}`,
     `  window.opener sans COOP         ${mesure.openerSansCoop ? "null (TÉMOIN CASSÉ)" : "survit (attendu)"}`,
   ];
+  for (const releve of mesure.politiqueDeCache ?? []) {
+    lignes.push(
+      `  cache ${releve.nature.padEnd(24)} ${releve.recu ?? "(absent)"}   ${releve.chemin}`,
+    );
+  }
   for (const ecart of [...mesure.coquille.ecarts, ...mesure.application.ecarts]) {
     lignes.push(`  ÉCART ${ecart.enTete}`);
     lignes.push(`        attendu ${ecart.attendu ?? "(absent)"}`);
