@@ -102,6 +102,73 @@ export function isShellDocument(pathname) {
 }
 
 /**
+ * Préfixe de l'ÉPINGLAGE v86 de l'ADR 0003 : les octets épinglés par empreinte, le manifeste qui
+ * les épingle, et les licences du code redistribué. Le sous-arbre entier ne change QU'ENSEMBLE, à
+ * la montée de version de l'émulateur — c'est ce qui en fait une seule nature d'artefact, et c'est
+ * pourquoi le manifeste vieillit avec les octets qu'il décrit plutôt que devant eux.
+ */
+export const PREFIXE_EPINGLAGE_V86 = "/vendor/v86/";
+
+/**
+ * Fenêtre de fraîcheur de l'épinglage v86, en secondes.
+ *
+ * 86 400 n'est pas un chiffre de confort : c'est la borne que la plate-forme s'impose déjà au SCRIPT
+ * d'un Service Worker, dont l'algorithme de mise à jour ignore le cache au-delà de vingt-quatre
+ * heures. C'est donc la plus longue péremption que le navigateur tolère pour le code qui gouvernera
+ * le mode hors ligne de l'ADR 0002 ; aligner dessus les artefacts les plus lourds garde une seule
+ * fenêtre pour tout l'arbre. (Fait de plate-forme cité de la spécification, non mesuré par ce
+ * dépôt — voir l'ADR 0023, « Ce que cette décision ne prouve pas ».)
+ */
+export const DUREE_EPINGLAGE_V86_SECONDES = 86400;
+
+/** @param {string} pathname */
+export function estEpinglageV86(pathname) {
+  return pathname.startsWith(PREFIXE_EPINGLAGE_V86);
+}
+
+/**
+ * Les trois NATURES D'ARTEFACT que l'ADR 0023 distingue. Ce ne sont pas des origines : le territoire
+ * applicatif reste le territoire du guest même servi par le rôle `shell`, comme le fait le banc du
+ * spike #35.
+ */
+export const NATURES_DARTEFACT = Object.freeze({
+  coquille: "coquille",
+  epinglageV86: "epinglage-v86",
+  territoireApplicatif: "territoire-applicatif",
+});
+
+/**
+ * Politique de cache de chaque nature (ADR 0023). Les motifs sont dans l'ADR ; en une ligne chacun :
+ *
+ * - `coquille` — elle change à chaque version, et son URL ne nomme pas sa version : elle doit être
+ *   REVALIDÉE avant réemploi. `no-cache` autorise le stockage, il n'autorise pas le réemploi muet ;
+ * - `epinglage-v86` — 2,4 Mio d'octets qui ne changent qu'à la montée de version de l'émulateur.
+ *   PAS d'`immutable` : l'ADR 0003 épingle par empreinte dans le manifeste, pas dans l'URL, et
+ *   `immutable` interdirait au navigateur de jamais s'apercevoir d'un ré-épinglage ;
+ * - `territoire-applicatif` — ce que cette origine sert en production porte les cookies de session
+ *   Rails. `no-store` y est désormais une DÉCISION et non plus un héritage.
+ */
+export const POLITIQUES_DE_CACHE = Object.freeze({
+  [NATURES_DARTEFACT.coquille]: "no-cache",
+  [NATURES_DARTEFACT.epinglageV86]: `public, max-age=${DUREE_EPINGLAGE_V86_SECONDES}`,
+  [NATURES_DARTEFACT.territoireApplicatif]: "no-store",
+});
+
+/** @param {{ role: string, pathname: string }} requete */
+export function natureDArtefact({ role, pathname }) {
+  if (role === "app" || isApplicationTerritory(pathname)) {
+    return NATURES_DARTEFACT.territoireApplicatif;
+  }
+  if (estEpinglageV86(pathname)) return NATURES_DARTEFACT.epinglageV86;
+  return NATURES_DARTEFACT.coquille;
+}
+
+/** @param {{ role: string, pathname: string }} requete */
+export function politiqueDeCache(requete) {
+  return POLITIQUES_DE_CACHE[natureDArtefact(requete)];
+}
+
+/**
  * Capacités que la coquille refuse EXPLICITEMENT (#104, ADR 0022).
  *
  * La liste est courte, et c'est délibéré. Le risque de cet en-tête n'est pas d'en refuser trop peu,
@@ -136,7 +203,10 @@ export function securityHeaders({
   }
 
   const headers = {
-    "Cache-Control": "no-store",
+    // SEUL en-tête de ce module dont la valeur dépend du CHEMIN et non du seul rôle (ADR 0023).
+    // La publication en tire plusieurs blocs de `_headers`, et son cliquet refuse qu'une SECONDE
+    // dimension se mette à varier : voir `cheminsHorsUniformite` dans `tools/publier-en-tetes.mjs`.
+    "Cache-Control": politiqueDeCache({ role, pathname }),
     "X-Content-Type-Options": "nosniff",
     // CORP gouverne les récupérations de SOUS-RESSOURCES en mode `no-cors` : il empêche une autre
     // origine de charger les ressources de la coquille, et laisse celles du territoire applicatif

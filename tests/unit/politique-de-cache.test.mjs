@@ -204,7 +204,10 @@ test("le témoin est CONFORME quand chaque nature reçoit la politique de sa nat
 test("un écart de politique de cache sur UNE nature suffit à faire échouer le témoin", () => {
   for (let index = 0; index < NATURES_RELEVEES_PAR_LE_TEMOIN.length; index += 1) {
     const mesure = mesureConforme();
-    mesure.politiqueDeCache[index].recu = "no-store";
+    // `max-age=600` n'est pas une valeur inventée : c'est celle que le spike #45 a mesurée sur
+    // GitHub Pages, hébergeur qui impose sa propre politique de cache. C'est le mode de panne réel
+    // que ce relevé doit attraper — pas une valeur absurde qu'aucun hébergeur ne servirait.
+    mesure.politiqueDeCache[index].recu = "max-age=600";
     const { conforme, motifs } = verdict(mesure);
     assert.equal(conforme, false, `l'écart sur la nature ${index} passe inaperçu`);
     assert.ok(motifs.some((motif) => motif.includes(mesure.politiqueDeCache[index].chemin)));
