@@ -29,9 +29,10 @@ qualifier la persistance.
 
 **Clos le 24 août 2026** — la reprise à froid hors ligne est prouvée de bout en bout (#7), l'accès
 concurrent (#8) et le budget de stockage (#9) sont fermés. Deux décisions encadrent ce qui n'est pas
-encore atteint : l'[ADR 0005](decisions/0005-qualification-de-la-reprise.md) maintient le gate de
-reprise (60 s) fermé — p95 mesuré 162 s, voie retenue #65 — et
-l'[ADR 0006](decisions/0006-conduite-refus-persistance.md) fixe la conduite quand `persist()` est
+encore atteint : l'[ADR 0005](decisions/0005-qualification-de-la-reprise.md) a maintenu le gate de
+reprise (60 s) fermé — p95 mesuré 162 s — jusqu'à ce que la voie retenue, #65, soit mesurée sur
+l'environnement de référence (gate ouvert le 4 septembre 2026, boot à froid toujours hors budget) ;
+et l'[ADR 0006](decisions/0006-conduite-refus-persistance.md) fixe la conduite quand `persist()` est
 refusé (#42).
 
 ## 2 — Portabilité
@@ -72,16 +73,19 @@ coupure. Auparavant, #52 ([ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle
 ont fait battre le runtime sur les trois moteurs sans élargir la CSP. Non mesuré, dit : la perte de
 cache volatil (mort de processus) ; suivi #91.
 
-**#65 — l'instantané de reprise, construit et mesuré ; le gate reste fermé.**
+**#65 — l'instantané de reprise, construit et mesuré ; le gate est OUVERT.**
 L'[ADR 0024](decisions/0024-instantane-de-reprise.md) pose le voisin `<volume>.instantane` : l'état
 v86 chiffré sous la DEK, lié à une génération validée par un unique scellement dont les données
 associées sont l'en-tête. Sept refus typés, chacun avec son témoin positif ; une campagne de
 mutation qui retire réellement chaque garde, la relance et constate. Mesuré sur le harnais Node :
 boot à froid p95 **85,8 s**, reprise par instantané p95 **1,53 s**, instantané **252,3 Mio**,
-équivalence de l'invariant applicatif verte **4/4**. **Le gate « reprise ≤ 60 s » reste FERMÉ** : le
-relevé ne vient pas de l'environnement de référence, et ce document n'a jamais ouvert un gate sur
-une mesure qui ne remplit pas son propre protocole. Ce qui manque est nommé dans
-[`quality-attributes.md`](quality-attributes.md).
+équivalence de l'invariant applicatif verte **4/4**. Ce relevé n'a PAS ouvert le gate : il ne venait
+pas de l'environnement de référence. **Le gate « reprise ≤ 60 s » est ouvert depuis le 4 septembre
+2026** sur le relevé du workflow `Mesure de la reprise`, joué sur un exécutant à 4 vCPU et 16 Go —
+dix essais après échauffement, reprise p95 **0,84 s**, invariant identique 10/10 —, et sur le
+scénario navigateur rejoué par `Reprise MVP` sur le même exécutant (0,27 s de santé, OPFS réel). Il
+s'ouvre pour la reprise par instantané seulement : le boot à froid y coûte **125,9 s** p95 et reste
+hors budget, ce que [`quality-attributes.md`](quality-attributes.md) écrit à côté du relevé.
 
 ## 4 — Volume chiffré
 

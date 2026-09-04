@@ -95,32 +95,33 @@ Trois réserves, à ne pas perdre de vue quand ces chiffres seront comparés à 
 
 ## Budgets prototype
 
-| Attribut                   | Seuil de sortie du jalon concerné                                                                                                                                                      |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Installation               | `npm ci` + navigateurs reproductibles depuis un clone vierge                                                                                                                           |
-| Premier boot de preuve     | p95 ≤ 15 min, aucun timeout silencieux                                                                                                                                                 |
-| Reprise locale au MVP      | cible p95 ≤ 60 s ; **gate fermé** — boot à froid ~86 s, reprise PAR INSTANTANÉ mesurée **p95 1,53 s** avec équivalence verte 4/4, mais hors environnement de référence (#65, ADR 0024) |
-| Mémoire                    | pic navigateur ≤ 1,5 Gio au prototype ; cible MVP ≤ 1,2 Gio                                                                                                                            |
-| Artefacts                  | ≤ 500 Mio transférés par application au premier usage, inventaire détaillé publié                                                                                                      |
-| Écriture acquittée         | RPO 0 après la barrière durable du guest                                                                                                                                               |
-| Récupération               | dernière génération valide trouvée en ≤ 60 s hors temps de boot VM — **mesurée** (#91, OPFS réel)                                                                                      |
-| Surmémoire de récupération | ≤ 64 Mio, comme l'export — **mesurée à 1 Mio**, indépendante de la taille de la charge (#91)                                                                                           |
-| Coupures injectées         | 100 % des points donnent ancien état, nouvel état ou erreur explicite — **mesuré à 100 %** (#16, trois graines, OPFS réel)                                                             |
-| Export                     | archive ≤ 2× la taille logique utilisée ; surmémoire de streaming ≤ 64 Mio                                                                                                             |
-| Restauration               | empreinte vérifiée avant première mutation ; aucune écriture sur incompatibilité                                                                                                       |
-| Multi-onglets              | jamais deux écrivains ; relais ou refus explicite en ≤ 5 s                                                                                                                             |
-| Accessibilité              | parcours coquille conformes WCAG 2.2 AA avant qualification produit                                                                                                                    |
+| Attribut                   | Seuil de sortie du jalon concerné                                                                                                                                                                                                                                                                                      |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Installation               | `npm ci` + navigateurs reproductibles depuis un clone vierge                                                                                                                                                                                                                                                           |
+| Premier boot de preuve     | p95 ≤ 15 min, aucun timeout silencieux                                                                                                                                                                                                                                                                                 |
+| Reprise locale au MVP      | cible p95 ≤ 60 s ; **gate OUVERT le 2026-09-04** pour la reprise PAR INSTANTANÉ — p95 **0,84 s** sur la géométrie de l'environnement de référence (4 vCPU, 16 Go, dix essais après échauffement), équivalence verte 10/10 ; le boot à FROID reste hors budget (p95 125,9 s) et le dit (#65, ADR 0005 amendé, ADR 0024) |
+| Mémoire                    | pic navigateur ≤ 1,5 Gio au prototype ; cible MVP ≤ 1,2 Gio                                                                                                                                                                                                                                                            |
+| Artefacts                  | ≤ 500 Mio transférés par application au premier usage, inventaire détaillé publié                                                                                                                                                                                                                                      |
+| Écriture acquittée         | RPO 0 après la barrière durable du guest                                                                                                                                                                                                                                                                               |
+| Récupération               | dernière génération valide trouvée en ≤ 60 s hors temps de boot VM — **mesurée** (#91, OPFS réel)                                                                                                                                                                                                                      |
+| Surmémoire de récupération | ≤ 64 Mio, comme l'export — **mesurée à 1 Mio**, indépendante de la taille de la charge (#91)                                                                                                                                                                                                                           |
+| Coupures injectées         | 100 % des points donnent ancien état, nouvel état ou erreur explicite — **mesuré à 100 %** (#16, trois graines, OPFS réel)                                                                                                                                                                                             |
+| Export                     | archive ≤ 2× la taille logique utilisée ; surmémoire de streaming ≤ 64 Mio                                                                                                                                                                                                                                             |
+| Restauration               | empreinte vérifiée avant première mutation ; aucune écriture sur incompatibilité                                                                                                                                                                                                                                       |
+| Multi-onglets              | jamais deux écrivains ; relais ou refus explicite en ≤ 5 s                                                                                                                                                                                                                                                             |
+| Accessibilité              | parcours coquille conformes WCAG 2.2 AA avant qualification produit                                                                                                                                                                                                                                                    |
 
 Le budget de premier boot accepte temporairement la réalité de l'émulation ; il ne vaut pas
 validation produit. La cible à 60 secondes est un gate : snapshot cohérent, autre stratégie de
 reprise ou changement de runtime devront être évalués plutôt que d'abaisser silencieusement
 l'exigence. Cette évaluation est faite dans
 [ADR 0005](decisions/0005-qualification-de-la-reprise.md) : la voie retenue est l'instantané lié à
-une génération arrêtée, la cible reste 60 s, et le gate **reste fermé** jusqu'à sa mesure sur
-l'environnement de référence. Cette voie est CONSTRUITE depuis #65
-([ADR 0024](decisions/0024-instantane-de-reprise.md)) et son coût est mesuré plus bas — mais sur une
-machine qui n'est pas celle du protocole, ce qui laisse le gate fermé pour la raison qui l'a
-toujours tenu fermé.
+une génération arrêtée, et la cible reste 60 s. Cette voie est CONSTRUITE depuis #65
+([ADR 0024](decisions/0024-instantane-de-reprise.md)), mesurée plus bas sur la géométrie de
+l'environnement de référence, et **le gate est OUVERT depuis le 4 septembre 2026** — pour la reprise
+par instantané seulement. Le boot à froid, lui, reste hors budget, et le budget ne lui est pas
+abaissé : un premier boot, ou une réouverture dont l'instantané a été écarté, coûte deux minutes sur
+cet environnement, et c'est écrit là où le gate est ouvert.
 
 Le premier boot mesuré sur la fixture de #5 tient largement sous ce budget, mais il le doit à une
 image dépouillée — un seul service, aucune base serveur, aucun processus de fond — et à un disque
@@ -980,11 +981,11 @@ plus qu'« aujourd'hui, ici », et elle rougit ailleurs.
 - **La mort du PROCESSUS.** La coupure reste un `Worker.terminate()` : c'est la limite de #15, et
   elle vaut ici aussi.
 
-## Ce que la REPRISE PAR INSTANTANÉ rend, et ce que le gate exige encore (#65)
+## Ce que la REPRISE PAR INSTANTANÉ rend, et ce qui a ouvert le gate (#65)
 
 L'[ADR 0024](decisions/0024-instantane-de-reprise.md) construit la voie que l'ADR 0005 avait
-retenue. Cette section publie ce qu'elle coûte, ce qu'elle rend, et **pourquoi le gate n'est pas
-ouvert ici**.
+retenue. Cette section publie ce qu'elle coûte, ce qu'elle rend, pourquoi le gate n'a PAS été ouvert
+sur les deux premiers relevés, et **sur quel relevé il l'a été**.
 
 ### Le relevé, sur le harnais Node
 
@@ -1092,31 +1093,79 @@ une mémoire restaurée est durable au même titre qu'une autre, et que l'instan
   0024, décision 7 : gzip niveau 1 divise la taille par **2,89** (252,3 → 86,7 Mio) pour 2,6 s à la
   capture et 0,8 s à la restauration. Il n'est pas tiré tant que le quota n'est pas contraignant.
 
-### Le gate « reprise ≤ 60 s » n'est PAS ouvert par ce relevé
+### Le gate « reprise ≤ 60 s » n'a PAS été ouvert par les deux relevés ci-dessus
 
-Les deux conditions **mesurables** sont réunies, avec une marge de facteur 39 sur le budget. Trois
-choses manquent encore, et les nommer vaut mieux que d'ouvrir un gate sur une mesure qui ne remplit
-pas son propre protocole :
+Les deux conditions **mesurables** y étaient réunies, avec une marge de facteur 39. Trois choses
+manquaient, et les nommer valait mieux que d'ouvrir un gate sur une mesure qui ne remplit pas son
+propre protocole :
 
-1. **l'environnement de référence.** Ce relevé vient d'une machine à 28 threads et 31,7 Gio ; le
-   protocole en exige quatre cœurs et 16 Gio, dix essais après échauffement. Toutes les mesures de
-   reprise publiées ici depuis #7 portent la même réserve, et le gate est resté fermé pour cette
-   raison-là aussi ;
+1. **l'environnement de référence.** Les deux relevés viennent d'une machine à 28 threads et 31,7
+   Gio ; le protocole exige quatre cœurs et 16 Gio, dix essais après échauffement. Toutes les
+   mesures de reprise publiées ici depuis #7 portaient la même réserve ;
 2. **le chemin du produit.** Le harnais Node n'a ni volume OPFS, ni journal de génération, ni région
    d'authentification : la LIAISON de l'instantané y est déclarée inerte — séquence et génération à
    zéro, empreinte de région nulle —, seule l'empreinte d'image étant réelle. Ce que la liaison
    refuse est éprouvé par la suite unitaire et par la campagne de mutation ; ce que la voie coûte
-   est éprouvé ici. Les deux ne se remplacent pas ;
+   est éprouvé par le harnais. Les deux ne se remplacent pas ;
 3. **le navigateur.** L'outil lui-même refuse de conclure : il publie `conditionsMesurablesReunies`
    et écrit que l'environnement de référence n'est pas attesté par lui. Un programme ne sait pas
    s'il tourne sur la machine du protocole — il lit le nombre de cœurs, pas l'intention de celui qui
    l'a lancé.
 
-**Ce qui reste à faire pour ouvrir le gate est donc précis** : rejouer `--reprise` sur
-l'environnement de référence, dix essais après échauffement, et publier le p95 avec l'équivalence.
-Rien dans ces chiffres ne laisse penser qu'une machine quatre fois plus lente porterait 1,5 s
-au-delà de 60 s — mais « rien ne laisse penser » n'est pas une mesure, et ce document ne publie que
-des mesures.
+### Le gate « reprise ≤ 60 s » est OUVERT depuis le 4 septembre 2026, et voici sur quoi
+
+**Le relevé qui compte** vient du workflow manuel `Mesure de la reprise`
+(`.github/workflows/mesure-reprise.yml`, run 33894145816), sur un exécutant GitHub `ubuntu-latest`
+dont la géométrie est celle du protocole : **4 vCPU, 16 Go** (AMD EPYC 7763, Linux x64, Node
+22.23.2). Un échauffement complet hors série, puis **dix essais**, chacun enchaînant un boot à
+froid, une capture et une reprise dans un émulateur neuf, avec confrontation des deux invariants
+applicatifs. Artefact : `mesures-reprise-environnement-de-reference`.
+
+| Grandeur                                     |         p50 |         p95 | Étendue relative |
+| -------------------------------------------- | ----------: | ----------: | ---------------: |
+| Boot à FROID jusqu'à `/vault/health`         |     124,1 s |     125,9 s |            0,058 |
+| **REPRISE par instantané**, même mesure      | **0,808 s** | **0,839 s** |            0,080 |
+| Capture (point de contrôle, sceau, écriture) |     0,848 s |     0,920 s |            0,179 |
+| Ouverture de l'instantané (lecture + sceau)  |     0,171 s |     0,179 s |            0,059 |
+
+Instantané 264 679 096 o (252,4 Mio). **Invariant identique 10/10.** L'échauffement, publié à part
+(`echauffement-reprise.json`), donne 125,1 s et 0,801 s : il ne diffère pas de la série, ce qui dit
+que les caches froids de l'exécutant ne pèsent pas ici.
+
+**Le chemin du produit, sur le même exécutant.** Le job `Reprise MVP` (`reprise.yml`, run
+33877729348, sur la tête de la PR #133) a joué `tests/e2e/instantane-reprise.spec.mjs` dans
+Chromium, profil neuf, OPFS réel, liaison RÉELLE (séquence 3, génération 2, empreinte de région
+confrontée) : reprise **0,267 s** de santé et **0,92 s** de boot complet contre **110,8 s** de boot
+à froid, capture 1,03 s, ouverture 0,137 s, invariant conforme sur les trois boots, clair du volume
+identique avant et après. C'est **un** essai, pas dix ; il ne porte pas le p95, il porte la preuve
+que le chemin réel du produit — OPFS, journal, région — rend le même ordre de grandeur que le
+harnais.
+
+**Ce que les trois réserves sont devenues.** La première est levée : la géométrie est celle du
+protocole, dix essais après échauffement. La deuxième est levée par le relevé du navigateur
+ci-dessus, sur le même exécutant. La troisième reste vraie et le restera : l'outil n'atteste
+toujours pas l'environnement, c'est **ce document** qui l'atteste, à la lecture du modèle de CPU et
+de la mémoire que le relevé publie.
+
+**Ce que ce relevé ne dit PAS, et ce qui reste écrit.**
+
+- **Le boot à froid est hors budget, et de loin** : 125,9 s p95 sur cet environnement, contre 86 s
+  sur la machine de développement. Un premier boot, ou une réouverture dont l'instantané a été
+  écarté — volume écrit par un autre chemin, restauration, migration, coupure pendant la capture —
+  coûte deux minutes. Le gate s'ouvre pour la reprise **ordinaire**, celle d'un volume fermé
+  proprement ; il ne s'ouvre pas pour le boot à froid, et le budget de premier boot (p95 ≤ 15 min)
+  reste le seul qui le couvre.
+- **4 vCPU ne sont pas 4 cœurs physiques** : un vCPU d'exécutant partagé est un fil d'exécution d'un
+  cœur serveur, plus lent qu'un cœur de poste de bureau, pas plus rapide. L'écart va dans le sens de
+  la prudence, et le boot à froid le montre (125,9 s ici contre 86 s sur 28 threads).
+- **Le réseau à 100 Mbit/s du protocole ne s'applique pas** : une reprise ne télécharge rien —
+  l'instantané est dans OPFS, le runtime dans le cache — et le harnais Node lit l'image sur disque.
+- **Le modèle de CPU d'un exécutant varie d'un run à l'autre.** Le relevé le publie ; une conclusion
+  se prend sur un run nommé, jamais sur « la CI ». Rejouer : `Mesure de la reprise`, déclenchement
+  manuel, dix essais par défaut.
+- **L'acquisition du runtime depuis le cache HTTP**, que le plan de mesure de l'ADR 0005 demandait
+  d'inclure, n'est mesurée que par le scénario navigateur (elle est dans ses 0,92 s de boot
+  complet), pas par la série de dix.
 
 ## Compatibilité
 
