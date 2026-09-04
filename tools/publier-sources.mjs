@@ -198,6 +198,9 @@ export function verifierEpinglageV86(destination, empreinte) {
   return verifierEpinglage(destination, empreinte, {
     manifeste: ["vendor", "v86", "MANIFEST.json"],
     artefacts: ["vendor", "v86", "artefacts"],
+    // Le répertoire ne doit contenir QUE les artefacts déclarés : c'est lui que la règle de cache
+    // `/vendor/v86/*` sert 24 h à tout venant (ADR 0023).
+    exhaustif: "servi sous la règle /vendor/v86/*, donc avec un cache partagé de 24 h",
   });
 }
 
@@ -229,6 +232,9 @@ export function verifierEpinglageArgon2(destination, empreinte) {
   return verifierEpinglage(destination, empreinte, {
     manifeste: ["vendor", "argon2", "MANIFEST.json"],
     artefacts: ["vendor", "argon2"],
+    // Pas d'exhaustivité ici : le répertoire est la racine vendue elle-même, qui porte le manifeste
+    // et les licences par construction, et il relève de la classe `coquille` (`no-cache`), pas de
+    // la règle de cache longue. Ce qui est épinglé est le binaire ; ce qui l'entoure est lisible.
   });
 }
 
@@ -249,7 +255,11 @@ export const SITUATIONS_EPINGLAGE = Object.freeze({
 });
 
 /** Le geste commun : relire un manifeste vendu et confronter ses artefacts à leurs empreintes. */
-async function verifierEpinglage(destination, empreinte, { manifeste: chemin, artefacts }) {
+async function verifierEpinglage(
+  destination,
+  empreinte,
+  { manifeste: chemin, artefacts, exhaustif },
+) {
   const manifeste = join(destination, ...chemin);
   if (!(await existe(manifeste))) {
     return {
@@ -273,7 +283,7 @@ async function verifierEpinglage(destination, empreinte, { manifeste: chemin, ar
   const presents = await readdir(dossier);
   const ecarts = [
     ...(await ecartsDesDeclares(declares, dossier, new Set(presents), empreinte)),
-    ...ecartsDesNonDeclares(declares, presents),
+    ...(exhaustif ? ecartsDesNonDeclares(declares, presents, chemin.join("/"), exhaustif) : []),
   ];
   return { verifie: true, situation: SITUATIONS_EPINGLAGE.verifie, motif: null, ecarts };
 }
@@ -299,15 +309,17 @@ async function ecartsDesDeclares(declares, dossier, presents, empreinte) {
   return ecarts;
 }
 
-/** Chaque fichier PUBLIÉ sous `artefacts/` est-il déclaré ? Sinon, il est servi sans épinglage. */
-function ecartsDesNonDeclares(declares, presents) {
+/**
+ * Chaque fichier PUBLIÉ dans le répertoire d'artefacts est-il déclaré ? Sinon, il est servi sans
+ * épinglage — et, pour v86, sous la règle de cache longue. Ne vaut que pour un répertoire déclaré
+ * `exhaustif` par son descripteur ; le motif dit ce qui rend l'intrus dangereux là.
+ */
+function ecartsDesNonDeclares(declares, presents, manifeste, consequence) {
   const noms = new Set(declares.map(({ name }) => name));
   return presents
     .filter((present) => !noms.has(present))
     .map((present) => ({
       artefact: present,
-      motif:
-        "non déclaré dans vendor/v86/MANIFEST.json — servi sous la règle /vendor/v86/*, donc avec " +
-        "un cache partagé de 24 h, sans empreinte épinglée (ADR 0003, ADR 0023)",
+      motif: `non déclaré dans ${manifeste} — ${consequence}, sans empreinte épinglée (ADR 0003, ADR 0023)`,
     }));
 }
