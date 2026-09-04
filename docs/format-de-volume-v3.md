@@ -56,15 +56,15 @@ Un volume est **un fichier** et **quatre voisins**, dans le système de fichiers
 (OPFS). Le partitionnement par origine du navigateur est la seule frontière extérieure du modèle
 ([ADR 0002](decisions/0002-topologie-origine-de-confiance.md)).
 
-| Objet                 | Fichier                | Chiffré ? | Authentifié ?          | Dans le périmètre de cette revue   |
-| --------------------- | ---------------------- | --------- | ---------------------- | ---------------------------------- |
-| Volume                | `<volume>`             | oui       | oui, secteur à secteur | **oui**                            |
-| Journal de génération | `<volume>.gen`         | oui       | oui, par racine        | **oui**                            |
-| Témoin de séquence    | `<volume>.temoin`      | oui       | oui                    | **oui**                            |
-| Manifeste             | `<volume>` voisin JSON | non       | **non**                | **oui** (ce qu'il déclare)         |
-| Enveloppe de clé      | `<volume>.cles`        | oui       | oui                    | non — § 11                         |
-| Instantané de reprise | `<volume>.instantane`  | oui       | oui                    | non — § 11                         |
-| Journal de migration  | `<volume>.migration`   | non       | **non**                | non — § 11, mais sa limite est ici |
+| Objet                 | Fichier               | Chiffré ? | Authentifié ?          | Dans le périmètre de cette revue   |
+| --------------------- | --------------------- | --------- | ---------------------- | ---------------------------------- |
+| Volume                | `<volume>`            | oui       | oui, secteur à secteur | **oui**                            |
+| Journal de génération | `<volume>.gen`        | oui       | oui, par racine        | **oui**                            |
+| Témoin de séquence    | `<volume>.temoin`     | oui       | oui                    | **oui**                            |
+| Manifeste             | `<volume>.manifest`   | non       | **non**                | **oui** (ce qu'il déclare)         |
+| Enveloppe de clé      | `<volume>.cles`       | oui       | oui                    | non — § 11                         |
+| Instantané de reprise | `<volume>.instantane` | oui       | oui                    | non — § 11                         |
+| Journal de migration  | `<volume>.migration`  | non       | **non**                | non — § 11, mais sa limite est ici |
 
 Le format sépare trois choses qu'il ne faut pas confondre :
 
@@ -97,10 +97,14 @@ demanderait une dépendance tierce et son audit. C'est la **question n° 1** de 
 probabilité qu'une tentative de forgerie aboutisse par `(n + 1) / 2^t`, où `t` est la longueur
 d'étiquette en bits et `n` le nombre de blocs de 128 bits de l'entrée. Pour un secteur de 512 octets
 (32 blocs) et des données associées de 118 octets — soit 8 blocs, la fin étant complétée —,
-`n = 40`, d'où **≈ 2^-122,6** par tentative. Le mot « jamais » n'apparaît donc nulle part dans les
-propriétés de la § 8. _(L'ADR 0015 écrit « 122 octets » pour la même grandeur ; le compte exact des
-champs de la § 5.1 en donne 118, et `n` ne change pas — 118 comme 122 tiennent en huit blocs de 128
-bits.)_
+`n = 40`, d'où **≈ 2^-122,6** par tentative — le PLUS PETIT objet du format. **Ce n'est pas la borne
+la plus large que le format admette** : un enregistrement de journal porte le clair de l'écriture du
+guest, jusqu'au plafond de charge de 16 Mio (§ 6.6), pas 512 octets ; à ce plafond, `n ≈ 2^20` et la
+borne vaut **≈ 2^-107** — quinze bits de moins, sans conséquence pratique, mais c'est le pire cas
+qui majore réellement une forgerie sur ce format, pas le meilleur. Le mot « jamais » n'apparaît donc
+nulle part dans les propriétés de la § 8. _(L'ADR 0015 écrit « 122 octets » pour la même grandeur ;
+le compte exact des champs de la § 5.1 en donne 118, et `n` ne change pas — 118 comme 122 tiennent
+en huit blocs de 128 bits.)_
 
 **Le nom de l'algorithme entre dans les données associées.** Sous une future version, un chiffré
 produit par un algorithme ne pourra pas être réinterprété par un autre. Un nom autre que
@@ -155,7 +159,9 @@ Deux emplois, tous deux SHA-256 sur 32 octets :
 
 1. **l'empreinte de la suite ordonnée des entrées** d'une génération, qui est le CLAIR que la racine
    scelle (§ 5.3) ;
-2. **l'empreinte de la région d'authentification** du volume, scellée dans la racine (§ 6.8).
+2. **l'empreinte de la région d'authentification** du volume, scellée dans la racine (§ 6.8) : les
+   `R × 512` octets de la région TELLE QU'ALIGNÉE (§ 6.1), **rembourrage compris** — pas les seuls
+   octets utiles (`N × 34`) qu'elle porte avant alignement.
 
 La seconde est calculée **en flux**, par tranches de 1 Mio, si bien que la surmémoire vaut une
 tranche et non la taille de la région (34 Mio pour un volume de 512 Mio). L'implémentation
@@ -217,6 +223,14 @@ image de référence, conversion de format — n'écrit aucune racine, donc ses 
 comptés que le temps de la session. L'erreur va dans le sens qui laisse consommer plus que prévu, et
 elle est écrite ici plutôt que découverte.
 
+**Le compteur est REPRIS de la racine qui fait autorité, sans contrôle de croissance.** À
+l'ouverture, la session reprend le compteur à `scellementsCumules + 1` de cette racine, sans le
+comparer au témoin, à la racine voisine ni à quoi que ce soit d'autre : il ne peut que **suivre**
+les reculs de cette racine, jamais les corriger. Ce n'est pas seulement la conséquence d'un retour
+arrière du support (question n° 4) : il suffit qu'une racine plus ancienne fasse autorité pour une
+autre raison — voir § 9.6, constat [#144](https://github.com/pinfada/railsbox-vault/issues/144) —
+pour que le compteur recule avec elle, sans qu'aucun refus ne le signale.
+
 **Conduite au plafond.** À 2^31, tout scellement est refusé **avant de produire le moindre octet**,
 par `VAULT_CRYPTO_BUDGET_DE_CLE`, traduit en `VAULT_STORAGE_BUDGET_DE_CLE`. Le refus n'est pas
 franchissable : le remède est une **clé de volume neuve**, donc le rechiffrement du volume entier,
@@ -244,19 +258,29 @@ Un « bloc » est indifféremment un **secteur du volume**, un **enregistrement 
 **empreinte de région** ou un **témoin** : une seule forme de données associées les couvre tous, et
 c'est ce qui permet une seule fonction d'encodage.
 
-| Ordre | Champ                       | Longueur      | Encodage                                                                             |
-| ----- | --------------------------- | ------------- | ------------------------------------------------------------------------------------ |
-| 1     | Étiquette de domaine        | 2 + 37 octets | longueur gros-boutiste sur 2 o, puis UTF-8 : `railsbox-vault/format-chiffre/v1/bloc` |
-| 2     | Nom de l'algorithme         | 2 + 11 octets | idem : `aes-256-gcm`                                                                 |
-| 3     | Version du format de volume | 4 octets      | entier gros-boutiste — **3**                                                         |
-| 4     | Identifiant de volume       | 2 + 32 octets | idem : **32 caractères hexadécimaux minuscules**                                     |
-| 5     | Génération                  | 8 octets      | entier gros-boutiste                                                                 |
-| 6     | Rang de l'entrée            | 8 octets      | entier gros-boutiste                                                                 |
-| 7     | Adresse logique             | 8 octets      | entier gros-boutiste                                                                 |
-| 8     | Longueur du clair           | 4 octets      | entier gros-boutiste                                                                 |
+| Ordre | Champ                       | Longueur      | Encodage                                                                               |
+| ----- | --------------------------- | ------------- | -------------------------------------------------------------------------------------- |
+| 1     | Étiquette de domaine        | 2 + 37 octets | longueur gros-boutiste sur 2 o, puis UTF-8 : `railsbox-vault/format-chiffre/v1/bloc`   |
+| 2     | Nom de l'algorithme         | 2 + 11 octets | idem : `aes-256-gcm`                                                                   |
+| 3     | Version du format de volume | 4 octets      | entier gros-boutiste — **3**                                                           |
+| 4     | Identifiant de volume       | 2 + n octets  | idem : chaîne quelconque ; **32 caractères hexadécimaux minuscules** pour un volume v3 |
+| 5     | Génération                  | 8 octets      | entier gros-boutiste                                                                   |
+| 6     | Rang de l'entrée            | 8 octets      | entier gros-boutiste                                                                   |
+| 7     | Adresse logique             | 8 octets      | entier gros-boutiste                                                                   |
+| 8     | Longueur du clair           | 4 octets      | entier gros-boutiste                                                                   |
 
 Total pour un volume v3, dont l'identifiant fait trente-deux caractères : **118 octets** (39 + 13 +
 4 + 34 + 8 + 8 + 8 + 4).
+
+**Où la forme 32-hex est réellement imposée, et où elle ne l'est pas.** L'encodage lui-même
+(`encoderIdentiteBloc`) accepte une chaîne de longueur QUELCONQUE pour le champ 4 — 118 octets n'est
+donc le total que **pour un identifiant de trente-deux caractères**. La forme 32-hex minuscule est
+imposée un étage plus haut : par `identifiantVolumeEnOctets` (§ 6.2, l'en-tête v3) et par le
+manifeste (§ 6.10), pas par l'encodage d'identité. `tests/vectors/format-chiffre-v1.json` en tire
+parti pour son propre confort de lecture : son identifiant de vecteur, `volume-de-vecteur` (dix-sept
+caractères), donne des données associées de **103 octets** (39 + 13 + 4 + 19 + 8 + 8 + 8 + 4) et non
+118 — un relecteur qui recalcule ce vecteur à la lettre de ce tableau échoue avant d'avoir rien
+attaqué s'il suppose 118 octets partout.
 
 **Chaque champ est de largeur fixe ou préfixé de sa longueur, et ce n'est pas une élégance.** Une
 concaténation non préfixée permettrait de déplacer un caractère d'un champ à l'autre sans changer
@@ -278,22 +302,24 @@ avant de reboucler en silence ».
 
 ### 5.2 Données associées d'une racine
 
-| Ordre | Champ                       | Longueur      | Encodage                                      |
-| ----- | --------------------------- | ------------- | --------------------------------------------- |
-| 1     | Étiquette de domaine        | 2 + 39 octets | `railsbox-vault/format-chiffre/v1/racine`     |
-| 2     | Nom de l'algorithme         | 2 + 11 octets | `aes-256-gcm`                                 |
-| 3     | Version du format de volume | 4 octets      | gros-boutiste — **3**                         |
-| 4     | Identifiant de volume       | 2 + 32 octets | 32 hexadécimaux minuscules                    |
-| 5     | Séquence                    | 8 octets      | gros-boutiste                                 |
-| 6     | Génération                  | 8 octets      | gros-boutiste                                 |
-| 7     | Taille LOGIQUE du volume    | 8 octets      | gros-boutiste                                 |
-| 8     | Nombre d'entrées            | 4 octets      | gros-boutiste — **dérivé**, jamais reçu       |
-| 9     | Longueur de charge          | 8 octets      | gros-boutiste — somme des CLAIRS, **dérivée** |
-| 10    | Scellements cumulés         | 8 octets      | gros-boutiste                                 |
+| Ordre | Champ                       | Longueur      | Encodage                                                         |
+| ----- | --------------------------- | ------------- | ---------------------------------------------------------------- |
+| 1     | Étiquette de domaine        | 2 + 39 octets | `railsbox-vault/format-chiffre/v1/racine`                        |
+| 2     | Nom de l'algorithme         | 2 + 11 octets | `aes-256-gcm`                                                    |
+| 3     | Version du format de volume | 4 octets      | gros-boutiste — **3**                                            |
+| 4     | Identifiant de volume       | 2 + n octets  | chaîne quelconque ; 32 hexadécimaux minuscules pour un volume v3 |
+| 5     | Séquence                    | 8 octets      | gros-boutiste                                                    |
+| 6     | Génération                  | 8 octets      | gros-boutiste                                                    |
+| 7     | Taille LOGIQUE du volume    | 8 octets      | gros-boutiste                                                    |
+| 8     | Nombre d'entrées            | 4 octets      | gros-boutiste — **dérivé**, jamais reçu                          |
+| 9     | Longueur de charge          | 8 octets      | gros-boutiste — somme des CLAIRS, **dérivée**                    |
+| 10    | Scellements cumulés         | 8 octets      | gros-boutiste                                                    |
 
-Total : **136 octets** (41 + 13 + 4 + 34 + 8 + 8 + 8 + 4 + 8 + 8) — à ne pas confondre avec les 136
-octets qu'une racine de format 2 occupait dans son secteur (§ 6.7) : les deux nombres sont égaux par
-coïncidence et ne mesurent pas la même chose.
+Total : **136 octets** (41 + 13 + 4 + 34 + 8 + 8 + 8 + 4 + 8 + 8) pour un identifiant de trente-deux
+caractères — voir § 5.1 pour ce que devient ce total sous un identifiant d'une autre longueur, ce
+que `encoderEnteteRacine` accepte tout autant. À ne pas confondre avec les 136 octets qu'une racine
+de format 2 occupait dans son secteur (§ 6.7) : les deux nombres sont égaux par coïncidence et ne
+mesurent pas la même chose.
 
 **Le CLAIR que la racine scelle est l'empreinte SHA-256 de la suite ordonnée de ses entrées** (§
 5.3), 32 octets — et rien d'autre.
@@ -532,9 +558,9 @@ vit dans la région. Le chiffré d'AES-GCM a exactement la longueur du clair.
 
 **Un secteur « jamais écrit » ne peut pas exister en v3.** Si la région était à zéro pour un secteur
 vierge, un adversaire n'aurait qu'à zéroter ces 34 octets pour faire lire un secteur comme blanc. La
-**création** d'un volume et la **restauration** scellent donc TOUS les secteurs, y compris ceux qui
-ne portent que des zéros. Épreuves : `tests/unit/vm-volume-chiffre.test.mjs` › « REFUS 5 — un
-secteur EN CLAIR, jamais scellé, est refusé : pas de secteur vierge en v3 » et
+**création** d'un volume et la **migration** scellent donc TOUS les secteurs, y compris ceux qui ne
+portent que des zéros. Épreuves : `tests/unit/vm-volume-chiffre.test.mjs` › « REFUS 5 — un secteur
+EN CLAIR, jamais scellé, est refusé : pas de secteur vierge en v3 » et
 `tests/unit/vm-volume-chiffre.test.mjs` › « sceller un volume ENTIER ne laisse aucun secteur sans
 sceau ».
 
@@ -543,9 +569,9 @@ sceau ».
 aucune. La charge est écrite en premier, si bien qu'une coupure entre les deux laisse « charge
 neuve, sceau ancien » — refusé. L'ordre inverse laisserait « sceau neuf, charge ancienne » — refusé
 aussi. La protection contre la **perte** est ailleurs : dans le journal (§ 6.6), dont le point de
-contrôle est le seul geste qui écrive le volume et dont l'échec ne valide rien. Épreuve sur support
-réel : `tests/vm/resilience-arrets.spec.mjs` › « sur OPFS réel, une écriture déchirée n'entame plus
-le volume ».
+contrôle — et le rejeu de reprise (§ 6.8, § 7.3) — sont les deux gestes qui écrivent le volume, et
+dont l'échec ne valide rien. Épreuve sur support réel : `tests/vm/resilience-arrets.spec.mjs` › «
+sur OPFS réel, une écriture déchirée n'entame plus le volume ».
 
 **Une lecture ne rend jamais de zéros.** Un sceau qui ne vérifie pas est un refus typé, et le
 secteur n'est pas rendu du tout — ni partiellement, ni complété. Le pilote du guest interpréterait
@@ -612,10 +638,18 @@ tableau des coûts).
 
 #### Les plafonds du journal
 
-| Grandeur                            | Valeur | Ce qu'elle décide                                 |
-| ----------------------------------- | -----: | ------------------------------------------------- |
-| Point de contrôle amorti au-delà de |  8 Mio | quand le journal est rangé dans le volume et vidé |
-| Plafond de charge d'une génération  | 16 Mio | au-delà, l'écriture est REFUSÉE, jamais acquittée |
+| Grandeur                                                         | Valeur | Ce qu'elle décide                                 |
+| ---------------------------------------------------------------- | -----: | ------------------------------------------------- |
+| Point de contrôle amorti au-delà de                              |  8 Mio | quand le journal est rangé dans le volume et vidé |
+| Plafond de la charge déposée depuis le dernier point de contrôle | 16 Mio | au-delà, l'écriture est REFUSÉE, jamais acquittée |
+
+**Ce que ce plafond borne, précisément.** `deposer` refuse quand la charge **déposée depuis le
+dernier point de contrôle** dépasse ce plafond — et non la charge d'« une génération » : entre deux
+points de contrôle, plusieurs validations (donc plusieurs générations) se succèdent sur la même
+charge cumulée (voir plus bas), si bien que la grandeur bornée est plus grande que ce qu'une seule
+génération a pu déposer. Un boot mesuré le 2026-08-27 a compté 68 écritures OPFS pour une seule
+barrière. Le § 5.3 nomme correctement cette grandeur (« plafond de charge du **journal** ») ; c'est
+la seule des trois occurrences du chiffre à le faire.
 
 Un guest qui écrirait plus de 16 Mio sans franchir de barrière reçoit
 `VAULT_STORAGE_GENERATION_OVERFLOW`, qui devient une erreur d'E/S ATA : un refus bruyant et typé,
@@ -696,7 +730,10 @@ secteur l'accepterait. Le tirage du nonce n'y change rien : il garantit l'unicit
 ; un sceau authentique d'hier reste authentique aujourd'hui.
 
 **La parade : sceller AILLEURS une empreinte de la région entière.** « Ailleurs » veut dire : dans
-la racine de génération, dont l'autorité vient du journal et pas du volume.
+la racine de génération, dont l'autorité vient du journal et pas du volume. **Entière** veut dire :
+l'empreinte SHA-256 des `R × 512` octets de la région alignée (§ 6.1), **rembourrage compris** — le
+rembourrage entre bien dans l'empreinte, ce que la seule lecture du § 4.3 et du présent paragraphe
+ne tranchait pas.
 
 Les 66 octets à l'offset 136 de la racine :
 
@@ -713,13 +750,14 @@ une empreinte authentique mais scellée sous une génération antérieure pourra
 racine récente, et la région d'hier passerait pour celle d'aujourd'hui. La confrontation présente
 donc `generationMinimale = generation de la racine porteuse`, et le refus est un rejeu **établi**.
 
-**Elle n'est REHACHÉE que si le volume a été écrit** depuis la dernière : le seul geste qui écrive
-le volume est le point de contrôle. Les racines intermédiaires rescellent l'empreinte tenue en cache
-— un chiffrement de 32 octets, pas un hachage de 34 Mio. La marque « région salie » est levée
-**avant** l'attente du hachage et jamais après : un point de contrôle peut écrire pendant le
-hachage, et lever la marque après aurait scellé l'état d'avant. Épreuve :
-`tests/unit/vm-generation-fraicheur.test.mjs` › « une région salie PENDANT le hachage n'est pas
-oubliée ».
+**Elle n'est REHACHÉE que si le volume a été écrit** depuis la dernière. **Deux gestes écrivent le
+volume : le rejeu de reprise et le point de contrôle** ; les deux marquent la région salie
+(`marquerRegionSale`). Les racines intermédiaires — celles où aucun des deux gestes n'a eu lieu
+depuis la dernière — rescellent l'empreinte tenue en cache — un chiffrement de 32 octets, pas un
+hachage de 34 Mio. La marque « région salie » est levée **avant** l'attente du hachage et jamais
+après : un point de contrôle peut écrire pendant le hachage, et lever la marque après aurait scellé
+l'état d'avant. Épreuve : `tests/unit/vm-generation-fraicheur.test.mjs` › « une région salie PENDANT
+le hachage n'est pas oubliée ».
 
 **À l'ouverture, la région relue est confrontée à cette empreinte AVANT toute lecture de secteur.**
 Un volume dont la région ne concorde plus ne rend aucun clair, fût-il authentique. Épreuve :
@@ -732,10 +770,15 @@ inchangée est refusée, empreinte à l'appui ».
 **Ce que la présence de l'empreinte n'établit pas, et qui est le prix payé.** L'empreinte n'est pas
 dans les DONNÉES ASSOCIÉES de la racine : y ajouter un champ aurait imposé une version de
 spécification cryptographique et invalidé les vecteurs figés de l'ADR 0015. Seule sa **valeur** est
-authentique ; sa **présence** ne l'est pas. Ce qui ferme ce reste est le témoin (§ 6.9) et une garde
-de cohérence : une racine qui se déclare de format 2 au-dessus d'octets de fraîcheur non nuls est
-refusée — un des deux ment. C'est une garde, pas une authentification, et la nuance est écrite
-plutôt que gommée.
+authentique ; sa **présence** ne l'est pas. Ce qui RÉDUIT ce reste — il n'est pas fermé, seulement
+réduit — est le témoin (§ 6.9) et une garde de cohérence : une racine qui se déclare de format 2
+au-dessus d'octets de fraîcheur non nuls est refusée — un des deux ment. **Le cas symétrique est
+couvert aussi, et sans ambiguïté** : une racine de format 3 porte TOUJOURS une fraîcheur ; le
+décodeur ne rend `fraicheur = null` que pour un format 2, jamais pour un format 3, si bien que des
+octets de fraîcheur nuls sous un format 3 ne se lisent jamais comme une absence — ce sont un sceau
+qui ne vérifie pas, donc un refus à la confrontation (`ouvrirBloc` refuse un sceau de zéros), jamais
+un repli sur « aucune empreinte scellée ». C'est une garde, pas une authentification, et la nuance
+est écrite plutôt que gommée.
 
 **Coût mesuré.** Empreinte d'une région de 34 Mio sur OPFS réel : p50 de **344,8 et 354,1 ms**, p95
 de 350,2 et 383,3 ms sur deux exécutions de trois relevés, soit **0,58 % et 0,64 %** du budget de
@@ -786,6 +829,13 @@ Le **clair** de seize octets, scellé sous le rang réservé `2^40 − 2`, gén�
 | 8      |       6 | génération de cette séquence                          |
 | 14     |       1 | la racine correspondante portait-elle une empreinte ? |
 | 15     |       1 | réserve, à zéro                                       |
+
+**Le champ « génération » n'oppose aucun plancher : il est écrit pour le DIAGNOSTIC, pas comme
+contrôle.** Contrairement à la séquence, dont l'ouvreur retient la valeur pour la présenter comme
+plancher à chaque vérification de racine (§ 7.3), aucun chemin de production ne relit ce champ. Un
+relecteur qui le suppose symétrique de la séquence — un plancher de génération — bâtirait sur une
+propriété que le format n'offre pas ; le champ existe déjà, et lui faire opposer un plancher serait
+un durcissement réel, pas un ajout de format.
 
 **Il est écrit APRÈS la racine et sa barrière, jamais avant. L'ordre est le contrat.** Une coupure
 entre les deux laisse un témoin **en retard** : un plancher en retard sous-détecte, il ne refuse
@@ -933,6 +983,9 @@ L'ordre suivant n'est pas une commodité ; changer un seul de ses pas rendrait u
 7. **Confronter la région** à l'empreinte que la racine scelle — **avant toute lecture de secteur**.
 8. **Rejouer** : seconde passe, chaque enregistrement ouvert sous l'identité reconstruite (volume,
    format 3, génération **du sceau**, rang, adresse, longueur), puis rescellé vers le volume.
+   **Cette étape écrit le volume et salit donc la région d'authentification (§ 6.8), au même titre
+   que le point de contrôle** — c'est ce qui empêche l'étape 9 de sceller l'empreinte d'avant le
+   rejeu.
 9. **Vider** le journal par une racine neuve, et écrire le témoin.
 
 **Chaque enregistrement est ouvert à CHAQUE passe, y compris celle qui n'émet rien.** N'ouvrir qu'à
@@ -1051,9 +1104,10 @@ Un sceau ne rend un clair que si l'étiquette AES-256-GCM vérifie sur `(chiffr�
 sous la clé et le nonce. Toute altération d'un bit du chiffré, de l'étiquette ou du nonce est
 refusée.
 
-- **Garantit** qu'une altération non détectée exige une forgerie GCM, majorée par ≈ 2^-122,6 par
-  tentative. C'est une intégrité **authentifiée**, non une somme de contrôle : le recalcul exige la
-  clé.
+- **Garantit** qu'une altération non détectée exige une forgerie GCM, majorée par ≈ 2^-122,6 pour un
+  secteur de 512 octets et par ≈ 2^-107 pour le plus grand enregistrement de journal que le plafond
+  de charge admette (16 Mio, § 4.1) — le pire cas, pas le meilleur. C'est une intégrité
+  **authentifiée**, non une somme de contrôle : le recalcul exige la clé.
 - **Ne garantit pas** : rien contre un détenteur de la clé ; rien sur la **disponibilité** — effacer
   reste possible et n'est pas une modification détectable, c'est une perte ; rien sur les **canaux
   auxiliaires** ; rien sur la correction de l'implémentation WebCrypto du moteur, que ce dépôt ne
@@ -1192,11 +1246,11 @@ confiance repose ici encore sur le partitionnement d'origine. Ce qu'un tel suppo
 Le format ne suppose **aucune atomicité** : ni sectorielle, ni entre la charge et son sceau, ni
 entre les 34 octets d'un enregistrement de région à cheval sur deux secteurs du support. Ce qu'il
 promet partout est un **refus**, pas une lecture. Ce qui protège contre la **perte** est la
-transaction : le point de contrôle est le seul geste qui écrive le volume, son échec ne valide rien,
-et la génération reste dans le journal pour être rejouée. Épreuves :
-`tests/unit/vm-generation-format.test.mjs` › « une racine dont l'en-tête est tronqué par une
-déchirure n'est jamais une racine » et `tests/unit/vm-generation-store.test.mjs` › « une génération
-validée est REJOUÉE à la réouverture même si le point de contrôle a manqué ».
+transaction : le point de contrôle et le rejeu de reprise sont les deux gestes qui écrivent le
+volume (§ 6.8), leur échec ne valide rien, et la génération reste dans le journal pour être rejouée.
+Épreuves : `tests/unit/vm-generation-format.test.mjs` › « une racine dont l'en-tête est tronqué par
+une déchirure n'est jamais une racine » et `tests/unit/vm-generation-store.test.mjs` › « une
+génération validée est REJOUÉE à la réouverture même si le point de contrôle a manqué ».
 
 Reste hors de tout ce document la perte d'un cache d'écriture **volatil** — mort du processus du
 navigateur, coupure de courant : aucun des supports éprouvés ne la produit, et rien ici ne la
@@ -1229,6 +1283,63 @@ lui-même, et laisse au moteur la responsabilité de sa propre vérification d'�
 - **La confidentialité en exploitation** : la clé de volume n'est distribuée que par le harnais (§
   11), et le format prouve donc le FORMAT, sous une clé de test publique.
 - **Le manifeste**, ni chiffré ni authentifié.
+
+### 9.6 Constats ouverts de la pré-revue interne, 5 septembre 2026
+
+Quatre constats de la pré-revue adverse interne (#20, moitié 1, point 5) décrivent un défaut RÉEL du
+format ou de sa mise en œuvre — pas un défaut de ce document. Ils ne sont **pas corrigés ici** : ce
+document les NOMME, et leur traitement relève des issues qui les portent, pas de cette PR. Chacun
+contredit une phrase que ce document écrit ailleurs ; cette phrase n'est pas modifiée à son
+emplacement d'origine, et l'état réel est celui qui suit.
+
+**[#142](https://github.com/pinfada/railsbox-vault/issues/142) — Un témoin authentique rejoué rend
+un volume sain définitivement irouvrable.** Le § 6.9 affirme, à tort, que le scellement du témoin «
+évite seulement qu'un tiers sans clé fabrique un refus permanent en y inscrivant une séquence
+démesurée » — cette phrase confond forgerie et rejeu. État réel : le scellement empêche la
+**forgerie** d'une séquence inventée ; il n'empêche PAS le **rejeu** d'une copie antérieure et
+authentique du témoin. Une restauration d'archive retire le témoin et le journal sans en reposer
+tant qu'aucun point de contrôle n'a eu lieu ; réinstaller ensuite la copie d'un témoin antérieur
+fait échouer la confrontation de fraîcheur (`journalSousLeTemoin`) et rend un volume par ailleurs
+sain irouvrable, sous un message qui recommande une restauration — le remède qu'il vient de
+recevoir. Aucun geste de sortie n'est nommé dans ce document pour cet état.
+
+**[#143](https://github.com/pinfada/railsbox-vault/issues/143) — L'identité logique ne sépare pas un
+enregistrement de journal d'un secteur de volume.** Le § 5.4 affirme, à tort, que « le rang sépare
+des identités qui partageraient tout le reste » et présente le rang 0 comme identifiant sans
+ambiguïté « un secteur du volume » : le premier enregistrement déposé dans une charge de journal
+porte lui aussi le rang 0, sous une identité par ailleurs identique dans le cas nominal d'une
+écriture alignée sur 512 octets (même génération, même adresse, même longueur). État réel : ce n'est
+PAS le rang qui sépare les deux magasins, c'est l'empreinte de région (§ 6.8), qui refuse toute
+région modifiée avant la première lecture de secteur — et cette confrontation est absente des trois
+états `non-fournie`, `sans-racine` et `migree` (§ 6.8), qui restent donc exposés à une substitution
+du contenu d'un secteur par celui, différent, que le journal détient pour la même adresse et la même
+génération.
+
+**[#144](https://github.com/pinfada/railsbox-vault/issues/144) — Le retour arrière d'une génération
+ne demande aucune copie antérieure, et une racine abîmée à côté d'une racine lisible est ignorée.**
+Le § 6.9 et le § 9.1 affirment, à tort, que « reculer le volume suppose d'en détenir une copie
+antérieure, cohérente avec son journal ». État réel : l'alternance des racines (§ 6.6) conserve sur
+le support la racine `s − 1`, authentique et lisible, à l'emplacement `(s − 1) mod 2` — il n'y a
+donc rien à détenir pour revenir d'une génération. Écrire des octets quelconques sur l'emplacement
+de la racine `s`, tant qu'aucun point de contrôle n'a eu lieu depuis `s − 1`, suffit à rendre
+`s − 1` de nouveau autorité ; aucun refus n'est posé pour la racine `s` abîmée à côté d'elle, et les
+enregistrements de la génération `s` déjà écrits dans le journal sont écartés en silence, sous un
+rapport d'ouverture qui déclare la fraîcheur `verifiee`. Le compteur de scellements cumulés (§ 4.5)
+recule avec cette racine, sans qu'aucun contrôle ne le signale.
+
+**[#145](https://github.com/pinfada/railsbox-vault/issues/145) — « Supprimer et recréer » ne retire
+aucun voisin, et le volume recréé est refusé.** Le § 6.3 et le § 10.2 affirment, à tort, que le
+message de `VAULT_STORAGE_VOLUME_INCOMPLET` nomme « le seul remède vrai : supprimer et recréer ».
+État réel : ce geste n'existe nulle part dans `src/` et ce document ne dit pas ce qu'il faut
+supprimer. Un exploitant qui supprime seulement le fichier `<volume>` puis en recrée un du même nom
+laisse `<volume>.temoin` en place ; le volume neuf est scellé sous un identifiant neuf, et sa
+première ouverture échoue sur le sceau du témoin, qui porte l'ancien identifiant
+(`VAULT_STORAGE_SCEAU_REFUSE`). Le volume qui vient de naître est irouvrable. Voir aussi § 11, qui
+nomme désormais ce geste parmi ceux qui n'existent pas.
+
+`docs/revue-externe/registre.md` reste **vide** : ces quatre constats sont traités comme des
+constats externes par leurs issues propres, pas par le registre de la revue externe, dont la moitié
+2 de #20 n'a pas encore eu lieu.
 
 ## 10. Les codes de refus, et la conduite
 
@@ -1283,9 +1394,10 @@ en erreur de stockage ferait croire à un support abîmé là où c'est un bogue
 **Quatre causes tombent sur un seul code, et c'est une décision** : la conduite dépend du
 **remède**, pas du diagnostic, et six causes qui appellent toutes « restaurer une sauvegarde » ne
 justifient pas six conduites. Deux causes supplémentaires, portées dans le contexte et non par un
-code : `VAULT_FRAICHEUR_REGION` (région relue ≠ empreinte scellée ; racine sans empreinte sous un
-témoin actif) et `VAULT_TEMOIN_SEQUENCE` (journal sans racine sous un témoin ; témoin de format
-inconnu).
+code — **ce ne sont PAS des codes**, malgré la forme : ce sont les valeurs des constantes
+`CAUSE_FRAICHEUR_REGION` et `CAUSE_TEMOIN` — : `VAULT_FRAICHEUR_REGION` (région relue ≠ empreinte
+scellée ; racine sans empreinte sous un témoin actif) et `VAULT_TEMOIN_SEQUENCE` (journal sans
+racine sous un témoin ; témoin de format inconnu).
 
 Le reste de la famille, avec sa conduite :
 
@@ -1299,7 +1411,7 @@ Le reste de la famille, avec sa conduite :
 | `VAULT_STORAGE_GENERATION_CORRUPT`      | une génération VALIDÉE ne concorde plus (rejeu, troncature, mélange, fraîcheur)                                           | restaurer une sauvegarde                         |
 | `VAULT_STORAGE_GENERATION_ROOT_CORRUPT` | aucune racine lisible alors qu'au moins une est abîmée : ce qui a été validé est INCONNU                                  | restaurer une sauvegarde                         |
 | `VAULT_STORAGE_GENERATION_DISCARDED`    | une génération déposée sans validation a été écartée. **Ce n'est pas une panne** : c'est le résultat normal d'une coupure | rien — publié, jamais tu                         |
-| `VAULT_STORAGE_GENERATION_OVERFLOW`     | la génération en cours dépasse le plafond de 16 Mio                                                                       | le guest doit franchir une barrière              |
+| `VAULT_STORAGE_GENERATION_OVERFLOW`     | la charge déposée depuis le dernier point de contrôle dépasse le plafond de 16 Mio                                        | le guest doit franchir une barrière              |
 | `VAULT_STORAGE_GENERATION_PENDING`      | un geste exigeant une génération validée a été demandé sur une génération en cours                                        | franchir la barrière d'abord                     |
 | `VAULT_STORAGE_GEOMETRY_MISMATCH`       | la géométrie du support diffère de celle de la session                                                                    | exporter puis migrer — jamais retailler          |
 | `VAULT_STORAGE_QUOTA_EXCEEDED`          | le quota de stockage de l'origine est épuisé                                                                              | libérer de la place, puis réessayer              |
@@ -1341,6 +1453,60 @@ Argon2id vérifié à l'écriture ET à la lecture), `VAULT_DERIVATION_PHRASE_RE
 
 Aucun repli automatique entre ces refus, et aucun compteur d'échec persisté.
 
+### 10.4 Les refus de la migration, de l'export/restauration et du manifeste
+
+Ces trois gestes sont, contrairement aux deux familles du § 10.3, **dans le périmètre** de cette
+revue (§ 3, § 6.10, § 7.4, § 7.5) : ils n'ont pas leur place au § 10.3, et le § 10 ne peut pas les
+laisser sans code sans se contredire lui-même.
+
+**La migration (§ 7.4).** Famille `VAULT_MIGRATION_*`, distincte du stockage : le remède dépend de
+ce qui a échoué, pas d'un état générique du support.
+
+| Code                                     | Ce qu'il constate                                                                                                                                   | Conduite                                       |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `VAULT_MIGRATION_NO_PATH`                | aucune étape enregistrée ne relie le format du volume au format demandé                                                                             | migrer vers un format intermédiaire connu      |
+| `VAULT_MIGRATION_DOWNGRADE_REFUSED`      | le format demandé est ANTÉRIEUR à celui du volume                                                                                                   | une migration ne descend jamais                |
+| `VAULT_MIGRATION_BACKUP_REQUIRED`        | ni sauvegarde vérifiée, ni consentement nommé                                                                                                       | fournir une sauvegarde vérifiée                |
+| `VAULT_MIGRATION_BACKUP_MISMATCH`        | l'archive présentée comme sauvegarde ne décrit pas ce volume dans son état courant                                                                  | fournir la bonne sauvegarde                    |
+| `VAULT_MIGRATION_JOURNAL_MALFORMED`      | le journal de reprise existe mais ne fait pas autorité (illisible, ou incohérent avec le manifeste, ou visant un format que le volume ne porte pas) | ne pas deviner : restaurer une sauvegarde      |
+| `VAULT_MIGRATION_GEOMETRY_MISMATCH`      | le manifeste dont part la migration ne décrit pas la géométrie réelle du support                                                                    | corriger la cible ou repartir d'une sauvegarde |
+| `VAULT_MIGRATION_VERIFICATION_FAILED`    | le manifeste relu depuis le support ne rend pas les octets inscrits                                                                                 | restaurer une sauvegarde                       |
+| `VAULT_MIGRATION_STEP_UNAVAILABLE`       | l'étape existe dans la chaîne, mais son exécution n'est pas fournie par cette version du runtime                                                    | mettre à jour le runtime                       |
+| `VAULT_MIGRATION_CONVERSION_INCOHERENTE` | le support contredit ce que le journal de reprise déclare                                                                                           | ne pas deviner : restaurer une sauvegarde      |
+
+Les refus de compatibilité du manifeste (`VAULT_MANIFEST_FORMAT_TOO_NEW`, `_IDENTITY_MISMATCH`,
+`_UNIDENTIFIED`) ne sont **pas** reconditionnés dans cette famille : ils remontent tels quels.
+
+**L'export et la restauration (§ 7.5).** Deux familles distinctes, l'une pour l'INTÉGRITÉ d'une
+archive, l'autre pour l'écriture de sa cible.
+
+| Code                               | Ce qu'il constate                                                                       | Conduite                             |
+| ---------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------ |
+| `VAULT_ARCHIVE_MALFORMED`          | l'entrée n'est pas structurellement une archive v1 : marqueur absent, en-tête illisible | l'archive est inexploitable          |
+| `VAULT_ARCHIVE_TRUNCATED`          | l'archive est plus courte que ce que son en-tête déclare                                | l'archive est inexploitable          |
+| `VAULT_ARCHIVE_DIGEST_MISMATCH`    | l'empreinte recalculée du contenu diffère de celle inscrite                             | l'archive est inexploitable          |
+| `VAULT_ARCHIVE_GEOMETRY_MISMATCH`  | la longueur du contenu contredit la géométrie du manifeste ou de l'en-tête              | l'archive est inexploitable          |
+| `VAULT_IMPORT_TARGET_NOT_EMPTY`    | la cible porte déjà un volume, jamais écrasée sans consentement explicite               | choisir une autre cible ou consentir |
+| `VAULT_IMPORT_SPACE_INSUFFICIENT`  | l'espace estimé est inférieur au volume à restaurer, refusé AVANT toute mutation        | libérer de la place                  |
+| `VAULT_IMPORT_GEOMETRY_MISMATCH`   | la cible ouverte n'a pas la taille du volume de l'archive                               | choisir une cible de la bonne taille |
+| `VAULT_IMPORT_VERIFICATION_FAILED` | la relecture du volume restauré ne rend pas l'empreinte de l'archive                    | réexporter la source                 |
+
+`VAULT_ARCHIVE_VOLUME_CHIFFRE` et `VAULT_IMPORT_VOLUME_CHIFFRE` sont déclarés mais **retirés** —
+voir § 10.2 et § 12, écart 2 — et n'apparaissent donc pas dans ces deux tables.
+
+**Le manifeste (§ 6.10).** Famille `VAULT_MANIFEST_*`, une propriété de compatibilité de format,
+distincte du stockage.
+
+| Code                                | Ce qu'il constate                                                                    | Conduite                                    |
+| ----------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------- |
+| `VAULT_MANIFEST_MALFORMED`          | le manifeste lu n'est pas structurellement un manifeste v1                           | corriger ou recréer le manifeste            |
+| `VAULT_MANIFEST_FORMAT_TOO_NEW`     | version de format supérieure à ce que ce runtime connaît                             | mettre à jour le runtime                    |
+| `VAULT_MANIFEST_FORMAT_TOO_OLD`     | version de format sous le plancher lisible de ce runtime                             | migrer le volume, ou un runtime plus ancien |
+| `VAULT_MANIFEST_MIGRATION_REQUIRED` | format lisible mais antérieur au format courant : écriture refusée jusqu'à migration | migrer le volume (§ 7.4)                    |
+| `VAULT_MANIFEST_RUNTIME_DOWNGRADE`  | volume écrit par un runtime majeur plus récent : écriture refusée                    | mettre à jour le runtime                    |
+| `VAULT_MANIFEST_IDENTITY_MISMATCH`  | l'application en cours ne correspond pas à celle qui possède le volume               | ouvrir depuis la bonne application          |
+| `VAULT_MANIFEST_UNIDENTIFIED`       | ouverture en écriture d'un volume sans manifeste connu                               | jamais autorisée (`SEC-UPDATE-001`)         |
+
 ## 11. Les voisins hors périmètre de la revue
 
 Un relecteur en voit la **place**, pas l'implémentation. Ils sont nommés ici avec leur statut pour
@@ -1353,10 +1519,13 @@ qu'aucune absence ne se lise comme un oubli.
 | `<volume>.instantane` | [ADR 0024](decisions/0024-instantane-de-reprise.md)                 | **livré.** Il part avec le témoin et le journal à tout geste qui réécrit le volume, pour la raison de la § 6.9. L'empreinte de région de la § 6.8 lui sert de **liaison** : elle rend un instantané périmé détectable dès qu'un secteur a été rescellé (`VAULT_INSTANTANE_ECART_REGION`). |
 | `<volume>.migration`  | [ADR 0011](decisions/0011-migration-de-format-et-reprise.md)        | **livré, ni chiffré ni authentifié.** Sa limite est dans le périmètre : § 9.2.                                                                                                                                                                                                            |
 
-**Et une chose qui n'existe pas** : le **changement de clé de volume**. Le refus au budget (§ 4.5)
-et la révocation d'un emplacement d'enveloppe nomment tous deux ce remède ; aucun chemin du produit
-ne rechiffre un volume sous une clé neuve. C'est écrit ici pour qu'un relecteur ne suppose pas qu'un
-remède nommé est un remède disponible.
+**Et deux choses qui n'existent pas.** Le **changement de clé de volume** : le refus au budget (§
+4.5) et la révocation d'un emplacement d'enveloppe nomment tous deux ce remède ; aucun chemin du
+produit ne rechiffre un volume sous une clé neuve. Et **« supprimer et recréer »** (§ 6.3, § 10.2),
+la conduite nommée par `VAULT_STORAGE_VOLUME_INCOMPLET` : aucune fonction de suppression de volume
+n'existe dans `src/`, et rien n'outille ce geste — voir § 9.6, constat
+[#145](https://github.com/pinfada/railsbox-vault/issues/145). C'est écrit ici pour qu'un relecteur
+ne suppose pas qu'un remède nommé est un remède disponible.
 
 **La clé de volume, en exploitation.** Le produit ne fabrique ni ne persiste aucune clé de volume
 par lui-même en dehors de l'enveloppe ; les bancs et les épreuves reçoivent une **clé de TEST
@@ -1463,9 +1632,12 @@ falsification mais soumis au retour arrière : un support qui recule fait re-par
 scellements déjà comptés, et le nombre réel d'invocations sous la clé dépasse alors le nombre compté
 d'un écart qu'aucune mesure ne borne. La moitié du plafond NIST est une marge **choisie**, pas
 calculée. Le témoin borne désormais ce recul pour tout ce qui n'est pas un retour arrière complet —
-l'écart est réduit, pas annulé. S'y ajoute la sous-estimation hors transaction de la § 4.5. La même
-question vaut pour la stricte croissance de la **séquence**, que le format ne peut vérifier que si
-l'appelant lui présente la valeur précédente.
+l'écart est réduit, pas annulé. S'y ajoute la sous-estimation hors transaction de la § 4.5, et le
+fait que le compteur est **repris tel quel** de la racine qui fait autorité, sans aucun contrôle de
+croissance (§ 4.5) : il suit passivement les reculs de cette racine, y compris ceux du constat
+[#144](https://github.com/pinfada/railsbox-vault/issues/144), qui ne demandent pas un retour arrière
+du SUPPORT. La même question vaut pour la stricte croissance de la **séquence**, que le format ne
+peut vérifier que si l'appelant lui présente la valeur précédente.
 
 **Ce qui la ferait changer.** Une mesure ou un argument bornant l'écart entre le compteur et le
 nombre réel d'invocations, ce qui permettrait de fixer le budget **par le calcul** plutôt que par
@@ -1501,10 +1673,10 @@ exigence de sauvegarde qui rendrait inacceptable qu'une archive et sa clé voyag
 
 ### Question n° 7 — Un lecteur peut-il distinguer un secteur jamais écrit d'un secteur effacé ?
 
-**Position du dépôt.** Il n'y a **pas** de secteur jamais écrit en v3 : la création et la
-restauration scellent tous les secteurs, zéros compris (§ 6.5). Le prix est de **87,6 s** de
-scellement à la création d'un volume de 512 Mio (§ 12, écart 4), et la fenêtre que cela ouvre est
-refermée par la marque de scellement complet.
+**Position du dépôt.** Il n'y a **pas** de secteur jamais écrit en v3 : la création et la migration
+scellent tous les secteurs, zéros compris (§ 6.5). Le prix est de **87,6 s** de scellement à la
+création d'un volume de 512 Mio (§ 12, écart 4), et la fenêtre que cela ouvre est refermée par la
+marque de scellement complet.
 
 **Ce qui la ferait changer.** Un marquage **authentifié** des plages non initialisées qui coûterait
 moins que le scellement complet sans rouvrir la porte du secteur zéroté lu comme blanc.
