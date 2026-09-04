@@ -304,8 +304,11 @@ test("la migration inscrit le manifeste cible EN DERNIER, après le journal et l
     "revoke",
     // Le TROISIÈME voisin (#16) est SOLDÉ juste après la révocation : son contenu est reporté dans
     // le volume, puis il est écarté. Le report est une mutation comme une autre, donc il suit la
-    // révocation ; ici le volume n'en porte pas, si bien que seule la lecture apparaît.
+    // révocation ; ici le volume n'en porte pas, si bien que la lecture ne trouve rien — et le
+    // retrait a lieu QUAND MÊME, parce qu'il emporte aussi le témoin (#19) et l'instantané (#65),
+    // qui existent précisément quand le journal, lui, est absent.
     "read-generation",
+    "remove-generation",
     "flush",
     "commit",
     "read-manifest",
@@ -1186,4 +1189,36 @@ test("un journal COHÉRENT dont l'identifiant contredit l'EN-TÊTE du support es
     },
   );
   assert.deepEqual([...cible.etat.volume], [...avant], "aucun octet du volume n'a bougé");
+});
+
+test("SANS journal de génération, la migration écarte quand même les voisins", async () => {
+  // Le retrait ne concerne pas que `<volume>.gen` : le même geste emporte le témoin de séquence
+  // (#19) et l'instantané de reprise (#65). Or `solderLeJournalDeGeneration` sortait avant de le
+  // demander dès que le journal était absent — le cas ORDINAIRE, puisqu'un volume proprement
+  // fermé n'en a pas. Un instantané survivait donc à la migration qui vient de récrire chaque
+  // secteur sous un autre format.
+  //
+  // La liaison le refuserait (elle porte la version de format), mais compter là-dessus revient à
+  // laisser sur le support la RAM invitée d'une session d'avant la migration et à espérer que
+  // personne ne sache la lire. Le retrait est INCONDITIONNEL.
+  const cible = creerCible({ volume: contenu(), generationBytes: null });
+
+  const rapport = await migrateVolume({
+    target: cible,
+    expectations: attentes({
+      supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
+    }),
+    backup: { source: await sauvegardeDe(contenu()) },
+    cle: CLE_DE_TEST,
+  });
+  assert.equal(rapport.migrated, true);
+
+  assert.ok(
+    cible.gestes.includes("remove-generation"),
+    "les voisins sont écartés même quand il n'y a rien à reporter",
+  );
+  assert.ok(
+    cible.gestes.indexOf("remove-generation") > cible.gestes.indexOf("revoke"),
+    "et toujours après la révocation : c'est une mutation",
+  );
 });

@@ -52,7 +52,7 @@ const RACINES = ["src", "public/vm"];
 const SOUS_SURVEILLANCE = [
   {
     fichier: "src/vm/generation-store.mjs",
-    lignes: 732,
+    lignes: 738,
     motif:
       "#65 y ajoute DEUX accesseurs en lecture — `sequenceValidee` et `racineValidee` — parce que " +
       "la liaison d'un instantané (ADR 0024) est exactement ce que la racine authentifie, et que " +
@@ -60,7 +60,7 @@ const SOUS_SURVEILLANCE = [
       "sur ce fichier à « l'exposition en lecture de la racine validée » : le scinder pour trente " +
       "lignes aurait dépassé ce mandat, et scinder une machine à états pour la faire tenir sous " +
       "un seuil est le genre de découpage qui rend un protocole illisible. Le fichier reste à " +
-      "68 lignes du plafond ; la prochaine tranche qui y touchera devra le scinder.",
+      "62 lignes du plafond ; la prochaine tranche qui y touchera devra le scinder.",
   },
 ];
 
