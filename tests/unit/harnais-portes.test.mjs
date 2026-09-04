@@ -61,6 +61,13 @@ const PORTEURS_DE_LA_CLE = [
       "mêmes trente-deux octets y sont d'ailleurs publiés en hexadécimal. Il n'ouvre aucun volume.",
   },
   {
+    fichier: "tools/figer-vecteurs-disposition.mjs",
+    motif:
+      "il FIGE les vecteurs de DISPOSITION du dossier de revue (#20, ADR 0016 et 0019) : la même " +
+      "clé publique que les vecteurs de l'ADR 0015, sans quoi les deux documents ne parleraient " +
+      "pas du même volume. Il n'ouvre aucun volume et n'écrit que sous tests/vectors/.",
+  },
+  {
     fichier: "tools/figer-vecteurs-instantane.mjs",
     motif:
       "il FIGE les vecteurs de l'ADR 0024, et pour la raison exacte du précédent : la clé " +
