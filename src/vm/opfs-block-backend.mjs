@@ -74,6 +74,13 @@ export class OpfsBlockBackend {
   #rangementEnCours = null;
   #dureeRangementMaxMs = 0;
   #barrier = 0;
+  /**
+   * E/S ACCEPTÉES et pas encore rendues (#132). `close()` les attend avant de retirer quoi que ce
+   * soit : une écriture dont le handle disparaît en cours de route rend un
+   * `VAULT_STORAGE_HANDLE_LOST`, c'est-à-dire une panne du support — alors que le support n'a rien
+   * lâché, c'est la session qui a fermé sous sa propre écriture.
+   */
+  #enVol = new Set();
 
   /**
    * Utiliser `openOpfsVolume` : le constructeur ne garantit ni géométrie ni exclusivité, et surtout
@@ -269,7 +276,11 @@ export class OpfsBlockBackend {
    *
    * @returns {Promise<Uint8Array>} tampon neuf, détaché du support
    */
-  async read(offset, length) {
+  read(offset, length) {
+    return this.#suivre(this.#servirLecture(offset, length));
+  }
+
+  async #servirLecture(offset, length) {
     this.#acces.assertUtilisable();
     // Un rangement en cours va tronquer le journal et vider l'index : lire pendant qu'il court
     // rendrait un tampon superposé à partir de positions sur le point de disparaître.
@@ -320,7 +331,11 @@ export class OpfsBlockBackend {
    * Écriture complète ou erreur. Les octets réellement acceptés restent écrits : une coupure doit
    * laisser « ancien état, nouvel état ou erreur explicite », jamais un mensonge.
    */
-  async write(offset, bytes) {
+  write(offset, bytes) {
+    return this.#suivre(this.#servirEcriture(offset, bytes));
+  }
+
+  async #servirEcriture(offset, bytes) {
     this.#acces.assertUtilisable();
     await this.#attendreRangement();
     this.#acces.assertUtilisable();
@@ -469,7 +484,11 @@ export class OpfsBlockBackend {
    * niveau du support. Ce que le GUEST en obtient dépend encore du pont de l'ADR 0003, et la
    * barrière durable de bout en bout reste l'objet de #14.
    */
-  async flush() {
+  flush() {
+    return this.#suivre(this.#servirBarriere());
+  }
+
+  async #servirBarriere() {
     const barrier = await this.#ouvrirBarriere();
 
     try {
@@ -501,6 +520,31 @@ export class OpfsBlockBackend {
     // tronque le journal et vide l'index — deux choses qu'une écriture concurrente ne survivrait pas.
     if (this.#generation !== null && this.#generation.pointDeControleDu) {
       this.#rangementEnCours = this.#rangerApresAcquittement(barrier);
+    }
+  }
+
+  /**
+   * INSCRIT une E/S au registre de vol, et l'en retire quand elle a rendu la main — qu'elle
+   * aboutisse ou qu'elle échoue. C'est la seule chose qui distingue une E/S acceptée d'une E/S
+   * terminée, et `close()` n'a pas d'autre moyen de savoir laquelle il retire.
+   */
+  #suivre(travail) {
+    const suivi = travail.finally(() => this.#enVol.delete(suivi));
+    this.#enVol.add(suivi);
+    return suivi;
+  }
+
+  /**
+   * Attend que toute E/S ACCEPTÉE ait rendu la main. Les refus ne sont pas relancés ici : chacun a
+   * déjà été rendu à qui avait demandé l'E/S, et la fermeture n'a pas à le redire.
+   *
+   * La boucle couvre l'E/S qui en engendre une autre pendant l'attente. Elle suppose que l'appelant
+   * a déjà arrêté ce qui émet — le guest, pour un boot : fermer un volume qu'une machine sollicite
+   * encore n'a pas de fin, et ce n'est pas à la fermeture de trancher à sa place.
+   */
+  async #attendreEnVol() {
+    while (this.#enVol.size > 0) {
+      await Promise.allSettled([...this.#enVol]);
     }
   }
 
@@ -576,6 +620,12 @@ export class OpfsBlockBackend {
    * pour qu'un support récalcitrant ne bloque pas définitivement le nom.
    */
   async close() {
+    if (this.#acces.ferme) return;
+    // Les E/S DÉJÀ ACCEPTÉES rendent la main avant que la fermeture ne commence (#132). Ni la marque
+    // de fermeture — qui les refuserait par `VAULT_STORAGE_CLOSED` — ni le retrait des handles ne
+    // doit passer sous une écriture en vol : le guest verrait une panne du support là où la session
+    // a simplement fermé trop tôt.
+    await this.#attendreEnVol();
     if (this.#acces.ferme) return;
     this.#acces.marquerFerme();
     libererVolume(this.#name);
