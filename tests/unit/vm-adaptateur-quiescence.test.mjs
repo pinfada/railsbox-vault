@@ -202,10 +202,16 @@ test("set_state confronte la liaison au volume RÉELLEMENT ouvert, et refuse tou
   // TÉMOIN POSITIF d'abord : la liaison du volume ouvert est acceptée.
   adapte.set_state([LIAISON.volume, LIAISON.sequence, LIAISON.generation]);
 
+  // Et une SÉQUENCE plus ancienne que celle du volume ouvert passe elle aussi : toute ouverture en
+  // écrit une racine vide, donc la séquence avance sans que le volume ait changé (ADR 0024, § 4).
+  adapte.set_state([LIAISON.volume, LIAISON.sequence - 2, LIAISON.generation]);
+
   for (const ecart of [
     ["fedcba9876543210fedcba9876543210", LIAISON.sequence, LIAISON.generation],
+    // Une séquence PLUS RÉCENTE que celle du volume ouvert décrit un journal ramené en arrière.
     [LIAISON.volume, LIAISON.sequence + 1, LIAISON.generation],
     [LIAISON.volume, LIAISON.sequence, LIAISON.generation + 1],
+    [LIAISON.volume, LIAISON.sequence, LIAISON.generation - 1],
   ]) {
     assert.throws(
       () => adapte.set_state(ecart),

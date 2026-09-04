@@ -43,13 +43,26 @@ const RACINES = ["src", "public/vm"];
  * Fichiers entre l'alerte et le plafond, EXAMINÉS et gardés en l'état. Ajouter une ligne ici demande
  * un motif qui tienne devant une revue, et la taille relevée le jour de l'inscription.
  *
- * La liste est VIDE depuis #93, qui a scindé les trois fichiers qui approchaient du plafond :
- * `src/vm/generation-store.mjs` (798), `src/vm/opfs-block-backend.mjs` (791) et
+ * Elle est restée VIDE de #93 à #65. #93 avait scindé les trois fichiers qui approchaient du
+ * plafond : `src/vm/generation-store.mjs` (798), `src/vm/opfs-block-backend.mjs` (791) et
  * `public/vm/reference-worker.mjs` (789).
  *
  * @type {{ fichier: string, lignes: number, motif: string }[]}
  */
-const SOUS_SURVEILLANCE = [];
+const SOUS_SURVEILLANCE = [
+  {
+    fichier: "src/vm/generation-store.mjs",
+    lignes: 732,
+    motif:
+      "#65 y ajoute DEUX accesseurs en lecture — `sequenceValidee` et `racineValidee` — parce que " +
+      "la liaison d'un instantané (ADR 0024) est exactement ce que la racine authentifie, et que " +
+      "seul le magasin le sait. La Definition of Ready de #65 borne explicitement l'intervention " +
+      "sur ce fichier à « l'exposition en lecture de la racine validée » : le scinder pour trente " +
+      "lignes aurait dépassé ce mandat, et scinder une machine à états pour la faire tenir sous " +
+      "un seuil est le genre de découpage qui rend un protocole illisible. Le fichier reste à " +
+      "68 lignes du plafond ; la prochaine tranche qui y touchera devra le scinder.",
+  },
+];
 
 /** Nombre de lignes d'un contenu, tel que `wc -l` le compte. */
 function compterLignes(contenu) {

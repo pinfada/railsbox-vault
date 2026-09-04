@@ -39,7 +39,14 @@ function erreurDuWorker(error) {
   const message = error?.message ?? "Échec du Worker runtime";
   const prefixe = error?.code ? `[${error.code}] ` : "";
   const contexte = decrireContexte(error?.context);
-  return new Error(`${prefixe}${message}${contexte}`);
+  // Le TRANSCRIPT SÉRIE, quand le Worker en a joint un (délai de boot dépassé). Il vient EN DERNIER
+  // et sur ses propres lignes : il est long, et le message doit rester lisible sans lui.
+  const serie = error?.transcript
+    ? `
+--- série du guest (fin) ---
+${error.transcript}`
+    : "";
+  return new Error(`${prefixe}${message}${contexte}${serie}`);
 }
 
 /** Sérialise le contexte d'une erreur typée, ou rend une chaîne vide s'il n'y en a pas. */

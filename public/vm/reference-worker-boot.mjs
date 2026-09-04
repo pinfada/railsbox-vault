@@ -24,6 +24,7 @@ import { decrireBoucle, installerBoucleOrdonnancement } from "/src/vm/scheduling
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import {
   capturerApresPointDeControle,
+  empreinteDeLImage,
   ouvrirInstantanePourReprise,
 } from "./reference-worker-instantane.mjs";
 import {
@@ -159,7 +160,11 @@ export async function acquerirRuntime(runtime) {
   await exigerContexteExecutable();
   const V86 = await importV86(runtime.lib);
   const { artifacts, transferredBytes } = await loadRuntime(runtime);
-  return { V86, artifacts, transferredBytes };
+  // L'EMPREINTE DE L'IMAGE est prise ICI, sur les octets tout juste acquis, et jamais plus tard.
+  // Le rootfs est un tampon que le guest ÉCRIT (#65) : le hacher après un boot donnerait l'empreinte
+  // d'une session, pas celle d'une image. Le défaut est tombé sur le scénario de bout en bout de
+  // #65 — la reprise écartait l'instantané au motif ECART_IMAGE, sur la même image exactement.
+  return { V86, artifacts, transferredBytes, empreinteImage: await empreinteDeLImage(artifacts) };
 }
 
 /**
@@ -371,12 +376,8 @@ async function deroulerBootEtInvariant({
     // différentes (#74) : `healthMilliseconds` seul ne dirait pas si l'émulateur a battu plus vite.
     rythme = mesurerRythme({ ticks: session.ticks(), fenetreMs: performance.now() - started });
     boucle = decrireBoucle(boucleOrdonnancement);
-    const reponse = await session.request("GET", "/vault/invariant");
+    invariant = await lireInvariant(session);
     timeline.marquer("invariantRendu");
-    invariant = {
-      statut: reponse.statut,
-      verdict: JSON.parse(new TextDecoder().decode(reponse.corps)),
-    };
     // La CAPTURE vient après l'invariant et AVANT la fermeture, et l'ordre est le protocole de
     // l'ADR 0024 : point de contrôle, liaison lue ensuite, arrêt, quiescence, scellement. La faire
     // après `backend.close()` serait impossible — le volume n'est plus ouvert — et la faire avant
@@ -449,6 +450,10 @@ function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline })
     sante: health.sante,
     invariantStatus: invariant.verdict.status,
     invariantHttpStatus: invariant.statut,
+    // Le VERDICT ENTIER, et pas seulement son statut : c'est l'objet que deux chemins de boot
+    // doivent rendre IDENTIQUE pour que « équivalence » veuille dire quelque chose (#65, ADR 0024).
+    // Un statut seul serait « conforme des deux côtés », ce qui ne dit rien de ce qui a été relu.
+    invariantVerdict: invariant.verdict,
     observedRecordId: observed.record?.id ?? null,
     observedAttachmentSha256: observed.attachment?.sha256 ?? null,
     conforming,
@@ -459,6 +464,91 @@ function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline })
     observationsRuntime: [...deroule.observations, ...lireRejets()],
     guestLog: montage.guestLog,
   };
+}
+
+/**
+ * Interroge l'invariant applicatif et rend ce que Rails a répondu, statut compris.
+ *
+ * Extraite du déroulé (#65) pour que son `try/finally` — la seule garantie que le guet s'arrête, que
+ * la session s'arrête et que le backend se ferme — reste lisible d'un bloc.
+ */
+async function lireInvariant(session) {
+  const reponse = await session.request("GET", "/vault/invariant");
+  return {
+    statut: reponse.statut,
+    verdict: JSON.parse(new TextDecoder().decode(reponse.corps)),
+  };
+}
+
+/**
+ * MONTE le volume et la session, puis OUVRE l'instantané si le banc en demande un.
+ *
+ * Les deux gestes vont ensemble parce que le second a besoin du premier : l'instantané se lie à la
+ * racine validée du volume, et il n'y a pas de racine avant l'ouverture.
+ */
+async function monterEtOuvrirLInstantane({
+  volume,
+  attentes,
+  timeline,
+  guest,
+  empreinteImage,
+  reprendreParInstantane,
+}) {
+  const montage = await ouvrirVolumeEtSession({ volume, attentes, timeline, guest });
+  // L'instantané est OUVERT avant le boot, et son état n'est restauré que s'il est utilisable. Un
+  // instantané écarté ne fait donc rien d'autre que retarder le boot du temps de sa lecture — et ce
+  // temps est publié, comme le motif de son rejet.
+  const instantane = reprendreParInstantane
+    ? await ouvrirInstantanePourReprise({ backend: montage.backend, volume, empreinteImage })
+    : null;
+  timeline.marquer("instantaneOuvert");
+  return { montage, instantane };
+}
+
+/**
+ * Rend la fonction de CAPTURE que le déroulé appellera après l'invariant, ou `null`.
+ *
+ * `null` n'est pas un défaut silencieux : c'est « ce boot ne capture pas », et le déroulé le lit
+ * comme tel. Une capture demandée sans être possible se serait vue par une exception ; une capture
+ * non demandée doit se voir par une absence.
+ */
+function captureDemandee({ capturerInstantane, montage, volume, empreinteImage }) {
+  if (!capturerInstantane) return null;
+  return () =>
+    capturerApresPointDeControle({
+      backend: montage.backend,
+      session: montage.session,
+      adapter: montage.adapter,
+      volume,
+      empreinteImage,
+    });
+}
+
+/**
+ * PRÉAMBULE d'un boot : exiger l'identité, poser la décomposition, acquérir le runtime.
+ *
+ * L'identité est exigée EN PREMIER, avant même le réseau : `SEC-UPDATE-001` n'admet aucun volume
+ * anonyme, et le refuser ici épargne l'acquisition d'un runtime qui n'aurait servi à rien. La
+ * décomposition (#60) pose ses jalons DÈS l'entrée, pour dater aussi cette acquisition.
+ */
+async function preparerLeBoot({ manifest, runtime, runtimeBundle }) {
+  const attentes = attentesDe(manifest);
+  const timeline = createBootTimeline();
+  timeline.marquer("debut");
+  const acquis = runtimeBundle ?? (await acquerirRuntime(runtime));
+  timeline.marquer("runtimePret");
+  return { attentes, timeline, ...acquis, online: navigator.onLine };
+}
+
+/**
+ * Le compte rendu d'instantané, SANS l'état v86.
+ *
+ * Il pèse 250 Mio et n'a rien à faire dans un message structuré que la page lit : `postMessage` le
+ * recopierait, et la trace de Playwright le garderait. Ce qui reste est ce qu'une épreuve doit
+ * pouvoir asserter — `utilise`, le motif, la durée d'ouverture.
+ */
+function sansLEtat(instantane) {
+  return instantane === null ? null : { ...instantane, etat: undefined };
 }
 
 /**
@@ -488,30 +578,17 @@ export async function bootEtVerifier({
   capturerInstantane = false,
   reprendreParInstantane = false,
 }) {
-  // Le PREMIER geste, avant même le réseau : `SEC-UPDATE-001` n'admet aucun volume anonyme, et le
-  // refuser ici épargne l'acquisition d'un runtime qui n'aurait servi à rien.
-  const attentes = attentesDe(manifest);
-  // La décomposition (#60) pose ses jalons DÈS l'entrée, pour dater aussi l'acquisition du runtime.
-  const timeline = createBootTimeline();
-  timeline.marquer("debut");
-  const { V86, artifacts, transferredBytes } = runtimeBundle ?? (await acquerirRuntime(runtime));
-  timeline.marquer("runtimePret");
-  const online = navigator.onLine;
+  const { attentes, timeline, V86, artifacts, transferredBytes, online, empreinteImage } =
+    await preparerLeBoot({ manifest, runtime, runtimeBundle });
 
-  const montage = await ouvrirVolumeEtSession({
+  const { montage, instantane } = await monterEtOuvrirLInstantane({
     volume,
     attentes,
     timeline,
     guest: { V86, artifacts, cmdline, memoryBytes },
+    empreinteImage,
+    reprendreParInstantane,
   });
-
-  // L'instantané est OUVERT avant le boot, et son état n'est restauré que s'il est utilisable. Un
-  // instantané écarté ne fait donc rien d'autre que retarder le boot du temps de sa lecture — et ce
-  // temps est publié, comme le motif de son rejet.
-  const instantane = reprendreParInstantane
-    ? await ouvrirInstantanePourReprise({ backend: montage.backend, volume, artifacts })
-    : null;
-  timeline.marquer("instantaneOuvert");
 
   const deroule = await deroulerBootEtInvariant({
     montage,
@@ -519,28 +596,16 @@ export async function bootEtVerifier({
     bootTimeoutMs,
     timeline,
     etatARestaurer: instantane?.utilise ? instantane.etat : null,
-    capturerApres: capturerInstantane
-      ? () =>
-          capturerApresPointDeControle({
-            backend: montage.backend,
-            session: montage.session,
-            adapter: montage.adapter,
-            volume,
-            artifacts,
-          })
-      : null,
+    capturerApres: captureDemandee({ capturerInstantane, montage, volume, empreinteImage }),
   });
+  // L'état v86 est LÂCHÉ dès que la restauration a eu lieu : il pèse 250 Mio, et le boot qui suit
+  // tient déjà la mémoire du guest (512 Mio), le rootfs (385 Mio) et les artefacts du runtime. Le
+  // budget navigateur de `docs/quality-attributes.md` est de 1,5 Gio.
+  if (instantane !== null) instantane.etat = null;
 
   return assemblerCompteRendu({
     identite: { phase, volume, expected },
-    mesures: {
-      transferredBytes,
-      memoryBytes,
-      online,
-      // L'état v86 est RETIRÉ du compte rendu : il pèse 250 Mio et n'a rien à faire dans un message
-      // structuré que la page lit. Ce qui reste est ce qu'une épreuve doit pouvoir asserter.
-      instantane: instantane === null ? null : { ...instantane, etat: undefined },
-    },
+    mesures: { transferredBytes, memoryBytes, online, instantane: sansLEtat(instantane) },
     montage,
     deroule,
     timeline,

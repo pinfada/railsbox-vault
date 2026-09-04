@@ -141,7 +141,20 @@ function liaisonOuRefus(liaisonDeVolume) {
   return liaisonDeVolume();
 }
 
-/** Confronte une liaison PRÉSENTÉE à celle du volume RÉELLEMENT ouvert, ou refuse. */
+/**
+ * Confronte une liaison PRÉSENTÉE à celle du volume RÉELLEMENT ouvert, ou refuse.
+ *
+ * **La SÉQUENCE se compare par un RECUL, pas par une égalité**, exactement comme dans
+ * `instantane-de-reprise.mjs`, et pour la même raison mesurée : le vidage qui clôt toute
+ * récupération écrit une racine neuve (ADR 0014), si bien que la séquence avance à CHAQUE
+ * ouverture du volume — y compris celles qui ne font que le relire. Le scénario de bout en bout de
+ * #65 l'a montré en trois chiffres : instantané capturé en séquence 3, volume rouvert deux fois
+ * pour être inspecté, séquence 5, et une garde d'égalité refusait une restauration parfaitement
+ * saine.
+ *
+ * Le VOLUME et la GÉNÉRATION, eux, restent comparés par ÉGALITÉ : ce sont eux qui disent que la
+ * mémoire décrit bien ce disque-ci, dans cet état-là.
+ */
 function confronterLiaisonPresentee(etat, liaison) {
   if (!Array.isArray(etat) || etat.length !== 3) {
     throw new StorageError(
@@ -152,7 +165,7 @@ function confronterLiaisonPresentee(etat, liaison) {
   const [volume, sequence, generation] = etat;
   if (
     volume === liaison.volume &&
-    sequence === liaison.sequence &&
+    liaison.sequence >= sequence &&
     generation === liaison.generation
   ) {
     return;
@@ -160,7 +173,7 @@ function confronterLiaisonPresentee(etat, liaison) {
   throw new StorageError(
     STORAGE_ERROR_CODES.identiteVolume,
     `Restauration refusée : l'instantané est lié au volume ${volume} en séquence ${sequence} et génération ${generation}, le volume ouvert est ${liaison.volume} en séquence ${liaison.sequence} et génération ${liaison.generation}. Aucune instruction n'a encore été exécutée ; le boot à froid ne perd rien.`,
-    { attendu: liaison, presente: { volume, sequence, generation } },
+    { ouvert: liaison, instantane: { volume, sequence, generation } },
   );
 }
 

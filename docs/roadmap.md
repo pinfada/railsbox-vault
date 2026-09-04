@@ -72,6 +72,17 @@ coupure. Auparavant, #52 ([ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle
 ont fait battre le runtime sur les trois moteurs sans élargir la CSP. Non mesuré, dit : la perte de
 cache volatil (mort de processus) ; suivi #91.
 
+**#65 — l'instantané de reprise, construit et mesuré ; le gate reste fermé.**
+L'[ADR 0024](decisions/0024-instantane-de-reprise.md) pose le voisin `<volume>.instantane` : l'état
+v86 chiffré sous la DEK, lié à une génération validée par un unique scellement dont les données
+associées sont l'en-tête. Sept refus typés, chacun avec son témoin positif ; une campagne de
+mutation qui retire réellement chaque garde, la relance et constate. Mesuré sur le harnais Node :
+boot à froid p95 **85,8 s**, reprise par instantané p95 **1,53 s**, instantané **252,3 Mio**,
+équivalence de l'invariant applicatif verte **4/4**. **Le gate « reprise ≤ 60 s » reste FERMÉ** : le
+relevé ne vient pas de l'environnement de référence, et ce document n'a jamais ouvert un gate sur
+une mesure qui ne remplit pas son propre protocole. Ce qui manque est nommé dans
+[`quality-attributes.md`](quality-attributes.md).
+
 ## 4 — Volume chiffré
 
 Le format assure confidentialité, authenticité des blocs et intégrité globale des générations. Il

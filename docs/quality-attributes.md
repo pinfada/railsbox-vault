@@ -95,21 +95,21 @@ Trois réserves, à ne pas perdre de vue quand ces chiffres seront comparés à 
 
 ## Budgets prototype
 
-| Attribut                   | Seuil de sortie du jalon concerné                                                                                          |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Installation               | `npm ci` + navigateurs reproductibles depuis un clone vierge                                                               |
-| Premier boot de preuve     | p95 ≤ 15 min, aucun timeout silencieux                                                                                     |
-| Reprise locale au MVP      | cible p95 ≤ 60 s ; **gate fermé** (mesuré ~94 s, ~91 s après l'atténuation de #66), voie par ADR 0005                      |
-| Mémoire                    | pic navigateur ≤ 1,5 Gio au prototype ; cible MVP ≤ 1,2 Gio                                                                |
-| Artefacts                  | ≤ 500 Mio transférés par application au premier usage, inventaire détaillé publié                                          |
-| Écriture acquittée         | RPO 0 après la barrière durable du guest                                                                                   |
-| Récupération               | dernière génération valide trouvée en ≤ 60 s hors temps de boot VM — **mesurée** (#91, OPFS réel)                          |
-| Surmémoire de récupération | ≤ 64 Mio, comme l'export — **mesurée à 1 Mio**, indépendante de la taille de la charge (#91)                               |
-| Coupures injectées         | 100 % des points donnent ancien état, nouvel état ou erreur explicite — **mesuré à 100 %** (#16, trois graines, OPFS réel) |
-| Export                     | archive ≤ 2× la taille logique utilisée ; surmémoire de streaming ≤ 64 Mio                                                 |
-| Restauration               | empreinte vérifiée avant première mutation ; aucune écriture sur incompatibilité                                           |
-| Multi-onglets              | jamais deux écrivains ; relais ou refus explicite en ≤ 5 s                                                                 |
-| Accessibilité              | parcours coquille conformes WCAG 2.2 AA avant qualification produit                                                        |
+| Attribut                   | Seuil de sortie du jalon concerné                                                                                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Installation               | `npm ci` + navigateurs reproductibles depuis un clone vierge                                                                                                                           |
+| Premier boot de preuve     | p95 ≤ 15 min, aucun timeout silencieux                                                                                                                                                 |
+| Reprise locale au MVP      | cible p95 ≤ 60 s ; **gate fermé** — boot à froid ~86 s, reprise PAR INSTANTANÉ mesurée **p95 1,53 s** avec équivalence verte 4/4, mais hors environnement de référence (#65, ADR 0024) |
+| Mémoire                    | pic navigateur ≤ 1,5 Gio au prototype ; cible MVP ≤ 1,2 Gio                                                                                                                            |
+| Artefacts                  | ≤ 500 Mio transférés par application au premier usage, inventaire détaillé publié                                                                                                      |
+| Écriture acquittée         | RPO 0 après la barrière durable du guest                                                                                                                                               |
+| Récupération               | dernière génération valide trouvée en ≤ 60 s hors temps de boot VM — **mesurée** (#91, OPFS réel)                                                                                      |
+| Surmémoire de récupération | ≤ 64 Mio, comme l'export — **mesurée à 1 Mio**, indépendante de la taille de la charge (#91)                                                                                           |
+| Coupures injectées         | 100 % des points donnent ancien état, nouvel état ou erreur explicite — **mesuré à 100 %** (#16, trois graines, OPFS réel)                                                             |
+| Export                     | archive ≤ 2× la taille logique utilisée ; surmémoire de streaming ≤ 64 Mio                                                                                                             |
+| Restauration               | empreinte vérifiée avant première mutation ; aucune écriture sur incompatibilité                                                                                                       |
+| Multi-onglets              | jamais deux écrivains ; relais ou refus explicite en ≤ 5 s                                                                                                                             |
+| Accessibilité              | parcours coquille conformes WCAG 2.2 AA avant qualification produit                                                                                                                    |
 
 Le budget de premier boot accepte temporairement la réalité de l'émulation ; il ne vaut pas
 validation produit. La cible à 60 secondes est un gate : snapshot cohérent, autre stratégie de
@@ -117,7 +117,10 @@ reprise ou changement de runtime devront être évalués plutôt que d'abaisser 
 l'exigence. Cette évaluation est faite dans
 [ADR 0005](decisions/0005-qualification-de-la-reprise.md) : la voie retenue est l'instantané lié à
 une génération arrêtée, la cible reste 60 s, et le gate **reste fermé** jusqu'à sa mesure sur
-l'environnement de référence.
+l'environnement de référence. Cette voie est CONSTRUITE depuis #65
+([ADR 0024](decisions/0024-instantane-de-reprise.md)) et son coût est mesuré plus bas — mais sur une
+machine qui n'est pas celle du protocole, ce qui laisse le gate fermé pour la raison qui l'a
+toujours tenu fermé.
 
 Le premier boot mesuré sur la fixture de #5 tient largement sous ce budget, mais il le doit à une
 image dépouillée — un seul service, aucune base serveur, aucun processus de fond — et à un disque
@@ -976,6 +979,115 @@ plus qu'« aujourd'hui, ici », et elle rougit ailleurs.
 - **Les autres moteurs.** OPFS impose Chromium à cette suite (`docs/testing.md`).
 - **La mort du PROCESSUS.** La coupure reste un `Worker.terminate()` : c'est la limite de #15, et
   elle vaut ici aussi.
+
+## Ce que la REPRISE PAR INSTANTANÉ rend, et ce que le gate exige encore (#65)
+
+L'[ADR 0024](decisions/0024-instantane-de-reprise.md) construit la voie que l'ADR 0005 avait
+retenue. Cette section publie ce qu'elle coûte, ce qu'elle rend, et **pourquoi le gate n'est pas
+ouvert ici**.
+
+### Le relevé, sur le harnais Node
+
+`VAULT_HARNAIS_CLE_DE_VOLUME=cle-de-test node tools/vm/mesurer-boot.mjs --reprise --essais=4`.
+Chaque essai enchaîne un boot à froid complet, la capture d'un instantané, puis une reprise dans un
+émulateur NEUF — et confronte les deux invariants applicatifs.
+
+**Ce relevé n'est PAS l'environnement de référence**, et c'est la première chose à lire : Windows
+11, Node 24.14.0, i7-14700HX, **28 threads logiques, 31,7 Gio**, quatre essais au lieu de dix après
+échauffement. Le protocole exige quatre cœurs et 16 Gio. Les disques y sont servis depuis des
+fichiers avec les écritures du guest en mémoire, pas depuis OPFS.
+
+| Grandeur                                     |        p50 |        p95 | Étendue relative |
+| -------------------------------------------- | ---------: | ---------: | ---------------: |
+| Boot à FROID jusqu'à `/vault/health`         |     85,7 s |     85,8 s |            0,001 |
+| **REPRISE par instantané**, même mesure      | **1,44 s** | **1,53 s** |            0,093 |
+| Capture (point de contrôle, sceau, écriture) |     0,88 s |     0,98 s |            0,126 |
+| Ouverture de l'instantané (lecture + sceau)  |     0,53 s |     0,55 s |            0,046 |
+
+| Taille                        | Valeur                    |
+| ----------------------------- | ------------------------- |
+| État v86 brut                 | 264 586 184 o (252,3 Mio) |
+| Fichier `<volume>.instantane` | 264 586 344 o (+ 160 o)   |
+
+**L'ÉQUIVALENCE est verte 4/4.** Le corps de la réponse de `/vault/invariant` — l'invariant SQLite
+de l'[ADR 0004](decisions/0004-sqlite-pour-l-application-de-reference.md), qui porte l'identifiant
+de l'enregistrement et le SHA-256 de la pièce jointe de 4096 octets — est **identique octet pour
+octet** entre le boot à froid et la reprise, sur les quatre essais : `3b02a2e9aa449652…` des deux
+côtés à chaque fois. Ce n'est pas un statut « conforme » comparé à un statut « conforme » : ce sont
+les mêmes octets.
+
+### Le relevé du NAVIGATEUR, sur OPFS réel
+
+Le relevé Node mesure le coût de la voie ; celui-ci mesure **le chemin du produit**. Scénario
+`tests/e2e/instantane-reprise.spec.mjs`, Chromium sous Playwright, profil PERSISTANT adossé au
+disque (ADR 0012), volume applicatif de 512 Mio dans OPFS, un seul essai — **ce n'est pas non plus
+l'environnement de référence**.
+
+| Grandeur                                                | Valeur                    |
+| ------------------------------------------------------- | ------------------------- |
+| Boot à FROID jusqu'à `/vault/health`                    | 76,1 s puis 78,0 s        |
+| **REPRISE par instantané**, même mesure                 | **0,214 s**               |
+| Boot complet de la reprise (runtime acquis compris)     | 0,82 s                    |
+| Capture (solde du journal, quiescence, sceau, écriture) | 1,33 s                    |
+| Ouverture de l'instantané (lecture, sceau, liaison)     | 0,39 s                    |
+| Fichier `<volume>.instantane`                           | 256 387 300 o (244,5 Mio) |
+| dont DELTA du rootfs éphémère                           | 24 657 920 o (23,5 Mio)   |
+
+**Le rapport est de 354 pour 1** entre le boot à froid et la reprise, sur le support du produit. Le
+delta du rootfs justifie à lui seul la décision 9 de l'ADR 0024 : sans lui, l'état capturé aurait
+porté le disque entier — 385 Mio — au lieu de 23,5.
+
+**Trois propriétés sont ASSERTÉES par ce scénario, pas seulement publiées** :
+
+1. **l'invariant applicatif est identique** — le verdict ENTIER, pas son statut — entre le boot qui
+   capture, la reprise, et le boot à froid qui suit le rejet ;
+2. **le clair du volume est identique avant et après la reprise**,
+   `cc87935d9dd16d3a79900322ed7fc0227858794bf8be5ad180271148e90c0175` des deux côtés, et le fichier
+   lui-même n'a pas bougé. L'égalité est **encadrée** : le scénario constate d'abord que la session
+   reprise n'a écrit **aucun** bloc dans le volume. Restaurer un état mémoire ne touche pas le
+   volume ;
+3. **un instantané périmé est écarté ET retiré.** Après un boot complet qui écrit et franchit une
+   barrière, la réouverture suivante rejette l'instantané au motif
+   `VAULT_INSTANTANE_ECART_GENERATION`, supprime le fichier, et boote à froid en 78,0 s avec
+   l'invariant intact.
+
+### Les conditions d'abandon de l'ADR 0005, vérifiées
+
+- **« coût capture + restauration ≈ boot à froid évité »** — non réalisée, et de loin. Capture 0,98
+  s plus reprise 1,53 s font **2,5 s** contre **85,8 s** de boot évité : un rapport de 1 à 34. Même
+  en supposant la capture entièrement sur le chemin critique — ce qu'elle n'est pas, elle a lieu à
+  la fermeture — la voie reste profitable de plus d'un ordre de grandeur ;
+- **« taille d'instantané rognant le gain »** — non réalisée, et à surveiller. 252,3 Mio à côté d'un
+  volume applicatif de 547 Mio (512 de charge, 34 de région, un secteur d'en-tête) portent
+  l'empreinte OPFS à **~799 Mio**, soit **+46 %**. Le premier levier est écrit et mesuré dans l'ADR
+  0024, décision 7 : gzip niveau 1 divise la taille par **2,89** (252,3 → 86,7 Mio) pour 2,6 s à la
+  capture et 0,8 s à la restauration. Il n'est pas tiré tant que le quota n'est pas contraignant.
+
+### Le gate « reprise ≤ 60 s » n'est PAS ouvert par ce relevé
+
+Les deux conditions **mesurables** sont réunies, avec une marge de facteur 39 sur le budget. Trois
+choses manquent encore, et les nommer vaut mieux que d'ouvrir un gate sur une mesure qui ne remplit
+pas son propre protocole :
+
+1. **l'environnement de référence.** Ce relevé vient d'une machine à 28 threads et 31,7 Gio ; le
+   protocole en exige quatre cœurs et 16 Gio, dix essais après échauffement. Toutes les mesures de
+   reprise publiées ici depuis #7 portent la même réserve, et le gate est resté fermé pour cette
+   raison-là aussi ;
+2. **le chemin du produit.** Le harnais Node n'a ni volume OPFS, ni journal de génération, ni région
+   d'authentification : la LIAISON de l'instantané y est déclarée inerte — séquence et génération à
+   zéro, empreinte de région nulle —, seule l'empreinte d'image étant réelle. Ce que la liaison
+   refuse est éprouvé par la suite unitaire et par la campagne de mutation ; ce que la voie coûte
+   est éprouvé ici. Les deux ne se remplacent pas ;
+3. **le navigateur.** L'outil lui-même refuse de conclure : il publie `conditionsMesurablesReunies`
+   et écrit que l'environnement de référence n'est pas attesté par lui. Un programme ne sait pas
+   s'il tourne sur la machine du protocole — il lit le nombre de cœurs, pas l'intention de celui qui
+   l'a lancé.
+
+**Ce qui reste à faire pour ouvrir le gate est donc précis** : rejouer `--reprise` sur
+l'environnement de référence, dix essais après échauffement, et publier le p95 avec l'équivalence.
+Rien dans ces chiffres ne laisse penser qu'une machine quatre fois plus lente porterait 1,5 s
+au-delà de 60 s — mais « rien ne laisse penser » n'est pas une mesure, et ce document ne publie que
+des mesures.
 
 ## Compatibilité
 

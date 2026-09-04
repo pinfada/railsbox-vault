@@ -32,7 +32,7 @@
 // même remède, la nuance ne coûte aucune sûreté, et elle épargne de déchiffrer 250 Mio pour
 // apprendre ce que douze octets disaient déjà.
 
-import { egalesEnTempsConstant } from "./format-chiffre/octets.mjs";
+import { egalesEnTempsConstant, octetsEnHex } from "./format-chiffre/octets.mjs";
 import {
   EN_TETE_OCTETS,
   MARQUEUR_COMPLET,
@@ -173,7 +173,14 @@ function confronterLiaison(declaree, presente, volume) {
   ];
   for (const [champ, declare, present] of empreintes) {
     if (egalesEnTempsConstant(declare, present)) continue;
-    throw ecartDeLiaison(champ, { declare: "une autre empreinte", present: "celle-ci", volume });
+    // Les DEUX empreintes sont publiées en hexadécimal, et ce n'est pas une fuite : une empreinte
+    // SHA-256 est déjà ce que la racine du volume porte en clair chiffré, et sans les deux valeurs
+    // un « les empreintes diffèrent » n'apprend rien à qui doit décider POURQUOI.
+    throw ecartDeLiaison(champ, {
+      declare: octetsEnHex(declare),
+      present: octetsEnHex(present),
+      volume,
+    });
   }
 }
 
