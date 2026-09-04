@@ -23,6 +23,7 @@ import {
   manifestSidecarName,
   migrationJournalName,
   removeOpfsVolume,
+  instantaneSidecarName,
   temoinSequenceName,
   statOpfsVolume,
 } from "./opfs-sync-access.mjs";
@@ -137,7 +138,12 @@ export function createOpfsImportTarget(
      */
     async discardGeneration() {
       await removeSidecar(generationJournalName(volume));
-      return removeSidecar(temoinSequenceName(volume));
+      await removeSidecar(temoinSequenceName(volume));
+      // Et l'INSTANTANÉ (#65, ADR 0024, décision 8), pour la raison du témoin, portée d'un cran :
+      // il décrit un état MÉMOIRE lié à une génération que le volume restauré n'a jamais portée.
+      // Sa liaison le ferait écarter de toute façon ; le retirer ici évite qu'un volume restauré
+      // traîne, entre deux ouvertures, 250 Mio de RAM invitée d'une session étrangère.
+      return removeSidecar(instantaneSidecarName(volume));
     },
 
     /**

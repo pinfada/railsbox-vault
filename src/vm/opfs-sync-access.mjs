@@ -58,6 +58,22 @@ export const TEMOIN_SEQUENCE_SUFFIX = ".temoin";
 export const ENVELOPPE_SIDECAR_SUFFIX = ".cles";
 
 /**
+ * Suffixe RÉSERVÉ de l'INSTANTANÉ DE REPRISE (#65, ADR 0024).
+ *
+ * Il vit à côté du volume pour la raison qui a déjà exilé les cinq autres : les octets du volume
+ * sont servis tels quels à v86, et y réserver une aire décalerait le système de fichiers du guest.
+ *
+ * **C'est le plus long suffixe du dépôt, et il rétrécit donc `MAX_VOLUME_NAME` d'un caractère.**
+ * L'ADR 0024, décision 1, l'écrit plutôt que de le subir : la règle du dépôt est qu'un volume
+ * créable reste restaurable, migrable et — désormais — capturable. Un volume plus long serait
+ * créable puis privé d'instantané, une impasse découverte trop tard.
+ *
+ * Le fichier porte la RAM invitée chiffrée sous la DEK : il ne vit que sur l'origine de CONFIANCE
+ * et n'entre jamais dans une archive d'export (ADR 0024, décision 1).
+ */
+export const INSTANTANE_SIDECAR_SUFFIX = ".instantane";
+
+/**
  * Tous les suffixes réservés aux voisins d'un volume. Aucun volume ne peut en porter un, sans quoi
  * migrer « donnees » détruirait un volume légitime nommé « donnees.migration ».
  */
@@ -67,6 +83,7 @@ export const RESERVED_SIDECAR_SUFFIXES = Object.freeze([
   GENERATION_JOURNAL_SUFFIX,
   TEMOIN_SEQUENCE_SUFFIX,
   ENVELOPPE_SIDECAR_SUFFIX,
+  INSTANTANE_SIDECAR_SUFFIX,
 ]);
 
 /** Longueur du plus long voisin à réserver : c'est elle qui borne le nom d'un volume. */
@@ -190,6 +207,43 @@ export function enveloppeSidecarName(volume) {
   return `${volume}${ENVELOPPE_SIDECAR_SUFFIX}`;
 }
 
+/**
+ * Nom de l'INSTANTANÉ DE REPRISE posé à côté du volume (#65, ADR 0024). Même règle de longueur que
+ * les autres voisins : un volume créable est toujours un volume capturable.
+ * @param {string} volume
+ */
+export function instantaneSidecarName(volume) {
+  assertVolumeName(volume);
+  return `${volume}${INSTANTANE_SIDECAR_SUFFIX}`;
+}
+
+/**
+ * Les voisins qui PARTENT AVEC le volume, nommés en UN SEUL endroit.
+ *
+ * La liste vivait en double — dans `removeOpfsVolume`, dans la cible de restauration et dans celle
+ * de migration — et #65 en aurait fait un triple. Un voisin oublié dans l'une des trois copies est
+ * exactement le défaut que l'ADR 0019 a trouvé en revue pour le témoin : le retrait est correct
+ * partout sauf à un endroit, et personne ne le voit.
+ *
+ * Le MANIFESTE n'y figure pas, et ce n'est pas un oubli : il est révoqué par un geste PROPRE, avant
+ * tout le reste (ADR 0009), parce que sa disparition est ce qui rend un volume non identifié donc
+ * non inscriptible. Le JOURNAL DE MIGRATION non plus : il est retiré par le geste qui inscrit le
+ * manifeste restauré, et l'ordre est le sujet là-bas.
+ *
+ * @param {string} nom nom de volume, ou nom d'un voisin — auquel cas la liste est VIDE
+ * @returns {string[]} les voisins à retirer, dans l'ordre
+ */
+export function voisinsDunVolume(nom) {
+  // Un voisin n'a pas de voisins : c'est ce qui arrête la récursion du retrait.
+  if (RESERVED_SIDECAR_SUFFIXES.some((suffixe) => nom.endsWith(suffixe))) return [];
+  return [
+    GENERATION_JOURNAL_SUFFIX,
+    TEMOIN_SEQUENCE_SUFFIX,
+    ENVELOPPE_SIDECAR_SUFFIX,
+    INSTANTANE_SIDECAR_SUFFIX,
+  ].map((suffixe) => `${nom}${suffixe}`);
+}
+
 async function volumeDirectory({ create }) {
   const storage = globalThis.navigator?.storage;
   if (typeof storage?.getDirectory !== "function") {
@@ -309,15 +363,12 @@ export async function removeOpfsVolume(name) {
   // enveloppe qui survit à son volume ne protège plus rien, et un volume neuf du MÊME NOM y
   // trouverait un fichier de clés qui nomme un autre identifiant de volume — refusé, mais
   // seulement après avoir donné à croire qu'une clé existait.
-  const estUnVoisin = RESERVED_SIDECAR_SUFFIXES.some((suffixe) => name.endsWith(suffixe));
-  if (!estUnVoisin) {
-    await removeOpfsVolume(`${name}${GENERATION_JOURNAL_SUFFIX}`);
-    // Et son TÉMOIN (#19). Un témoin survivant attesterait, pour un volume HOMONYME créé ensuite,
-    // une séquence que celui-ci n'a jamais atteinte : la prochaine ouverture refuserait un volume
-    // neuf et intact. C'est la même raison qui emporte déjà le journal de génération.
-    await removeOpfsVolume(`${name}${TEMOIN_SEQUENCE_SUFFIX}`);
-    await removeOpfsVolume(`${name}${ENVELOPPE_SIDECAR_SUFFIX}`);
-  }
+  // Et son TÉMOIN (#19). Un témoin survivant attesterait, pour un volume HOMONYME créé ensuite, une
+  // séquence que celui-ci n'a jamais atteinte : la prochaine ouverture refuserait un volume neuf et
+  // intact. Et son INSTANTANÉ (#65) : un instantané survivant porterait, à côté d'un volume qui
+  // n'existe plus, la RAM invitée d'une session révolue — et il serait de toute façon écarté par sa
+  // liaison. La liste vit dans `voisinsDunVolume`, en un seul endroit.
+  for (const voisin of voisinsDunVolume(name)) await removeOpfsVolume(voisin);
 
   try {
     const directory = await volumeDirectory({ create: false });

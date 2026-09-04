@@ -23,6 +23,7 @@ import {
   migrationJournalName,
   removeOpfsVolume,
   statOpfsVolume,
+  instantaneSidecarName,
   temoinSequenceName,
 } from "./opfs-sync-access.mjs";
 import {
@@ -96,7 +97,11 @@ export function createOpfsMigrationTarget(
      */
     removeGenerationJournal: async () => {
       await removeSidecar(generationVoisine);
-      return removeSidecar(temoinSequenceName(volume));
+      await removeSidecar(temoinSequenceName(volume));
+      // Et l'INSTANTANÉ (#65, ADR 0024, décision 8). Sa liaison porte la version de format du
+      // volume : après une migration, elle serait fausse en plus d'être périmée. Le retirer ici
+      // évite qu'un volume migré traîne la RAM invitée d'une session d'avant la migration.
+      return removeSidecar(instantaneSidecarName(volume));
     },
 
     /** Observe le volume SANS le créer : poser une question ne doit rien fabriquer sur le support. */

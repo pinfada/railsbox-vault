@@ -7,6 +7,7 @@ import { STORAGE_ERROR_CODES, StorageError } from "../../src/vm/storage-errors.m
 import {
   MAX_STORAGE_NAME,
   MAX_VOLUME_NAME,
+  instantaneSidecarName,
   assertVolumeName,
   migrationJournalName,
 } from "../../src/vm/opfs-sync-access.mjs";
@@ -489,24 +490,26 @@ test("le nom du manifeste dérive du volume et tient toujours dans la frontière
   assert.equal(manifestSidecarName("vault-app"), "vault-app.manifest");
   assert.throws(() => manifestSidecarName("Vault-App"), TypeError);
   // Le nom le plus long ADMIS porte encore TOUS ses voisins, y compris le plus long d'entre eux
-  // (le journal de migration, #13) : plus aucun volume n'est créable puis irrestaurable ou
-  // immigrable faute de place.
+  // (l'instantané de reprise, #65) : plus aucun volume n'est créable puis irrestaurable, immigrable
+  // ou incapturable faute de place.
   const limite = "v".repeat(MAX_VOLUME_NAME);
   assert.equal(manifestSidecarName(limite).length <= MAX_STORAGE_NAME, true);
-  assert.equal(migrationJournalName(limite).length, MAX_STORAGE_NAME);
+  assert.equal(migrationJournalName(limite).length <= MAX_STORAGE_NAME, true);
+  assert.equal(instantaneSidecarName(limite).length, MAX_STORAGE_NAME);
   assert.throws(() => manifestSidecarName("v".repeat(MAX_VOLUME_NAME + 1)), TypeError);
 });
 
-test("la borne d'un nom de volume vaut 54 : 54 est admis, 55 est refusé", () => {
-  // La valeur est ÉPINGLÉE, pas seulement dérivée : elle est passée de 55 à 54 quand le journal de
-  // migration (#13) est devenu le plus long des voisins réservés. C'est une RÉTROACTIVITÉ — un nom
-  // de 55 caractères créable hier ne l'est plus (ADR 0011) —, et une rétroactivité qu'aucun test
-  // n'épingle finit par se reperdre au premier suffixe ajouté.
-  assert.equal(MAX_VOLUME_NAME, 54);
-  const admis = "v".repeat(54);
+test("la borne d'un nom de volume vaut 53 : 53 est admis, 54 est refusé", () => {
+  // La valeur est ÉPINGLÉE, pas seulement dérivée : 55 avec le journal de migration (#13), 54
+  // ensuite, et 53 depuis que l'instantané de reprise (#65, ADR 0024) est devenu le plus long des
+  // voisins réservés. C'est une RÉTROACTIVITÉ — un nom de 54 caractères créable hier ne l'est plus
+  // (ADR 0011) —, et une rétroactivité qu'aucun test n'épingle finit par se reperdre au premier
+  // suffixe ajouté. Elle est écrite dans l'ADR 0024, décision 1.
+  assert.equal(MAX_VOLUME_NAME, 53);
+  const admis = "v".repeat(53);
   assert.equal(assertVolumeName(admis), admis);
-  assert.equal(migrationJournalName(admis).length, MAX_STORAGE_NAME);
-  assert.throws(() => assertVolumeName("v".repeat(55)), TypeError);
+  assert.equal(instantaneSidecarName(admis).length, MAX_STORAGE_NAME);
+  assert.throws(() => assertVolumeName("v".repeat(54)), TypeError);
 });
 
 test("les suffixes des voisins sont RÉSERVÉS : aucun volume ne peut les porter", () => {
