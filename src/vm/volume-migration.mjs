@@ -234,10 +234,33 @@ function assertGeometrieDuSupport(source, support, { cible, reprise }) {
  *
  * ## Ce qui protège de reporter APRÈS la conversion
  *
- * Le geste ne s'exécute que si le fichier est encore à sa taille SOURCE. Une reprise qui trouve un
+ * Le REPORT ne s'exécute que si le fichier est encore à sa taille SOURCE. Une reprise qui trouve un
  * fichier déjà agrandi sait que la conversion a commencé, donc que le journal a déjà été soldé.
+ *
+ * ## Le RETRAIT, lui, est INCONDITIONNEL (#65)
+ *
+ * La première version sortait avant de le demander dès qu'il n'y avait rien à reporter. C'était
+ * raisonner sur le seul `<volume>.gen`, alors que le même geste emporte le témoin de séquence (#19)
+ * et l'instantané de reprise (#65, ADR 0024, décision 8) — deux voisins qui, eux, existent
+ * précisément quand le journal est absent, c'est-à-dire après une fermeture PROPRE. Un instantané
+ * survivait donc à la migration qui vient de récrire chaque secteur sous un autre format.
+ *
+ * Sa liaison l'aurait fait refuser, puisqu'elle porte la version de format du volume. Mais s'en
+ * remettre à cela revient à laisser sur le support la RAM invitée d'une session d'avant la
+ * migration en pariant que personne ne saura la lire. Le geste est idempotent : le demander pour
+ * rien coûte un appel, ne pas le demander laisse un fichier qui n'aurait pas dû survivre.
  */
 async function solderLeJournalDeGeneration({ target, backend, source }) {
+  if (typeof target.removeGenerationJournal !== "function") return null;
+  // Le REPORT d'abord : il peut refuser (journal altéré), et ce refus doit remonter AVANT tout
+  // retrait — écarter les voisins d'une migration qu'on s'apprête à interrompre les perdrait.
+  const reporte = await reporterLeJournalDeGeneration({ target, backend, source });
+  await target.removeGenerationJournal();
+  return reporte;
+}
+
+/** Rejoue dans le volume la dernière génération validée du journal SOURCE, s'il y en a une. */
+async function reporterLeJournalDeGeneration({ target, backend, source }) {
   if (typeof target.readGenerationJournal !== "function") return null;
   const tailleSource = tailleDeFichier({
     formatVersion: source.formatVersion,
@@ -246,8 +269,6 @@ async function solderLeJournalDeGeneration({ target, backend, source }) {
   if (backend.size() !== tailleSource) return null;
 
   const octets = await target.readGenerationJournal();
-  // Pas de voisin : rien à reporter et rien à écarter. On ne demande pas au support un retrait qui
-  // n'a pas lieu d'être — un geste inutile dans la trace est un geste qu'une revue doit expliquer.
   if (octets === null || octets === undefined) return null;
 
   const { generation, ecritures } = ecrituresARejouerV1({
@@ -258,7 +279,6 @@ async function solderLeJournalDeGeneration({ target, backend, source }) {
   // La barrière AVANT le retrait : écarter un journal dont le report n'est pas durable perdrait
   // exactement ce qu'on cherchait à sauver.
   if (ecritures.length > 0) await backend.flush();
-  await target.removeGenerationJournal();
   return Object.freeze({ generation, ecritures: ecritures.length });
 }
 
