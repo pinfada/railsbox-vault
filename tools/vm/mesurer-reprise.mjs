@@ -67,10 +67,13 @@ export function supportInstantaneFichier(chemin) {
       return { present: taille > 0, taille };
     },
     async lire(offset, longueur) {
-      const cible = Buffer.alloc(longueur);
+      const cible = new Uint8Array(longueur);
       const lus = readSync(saisir(), cible, 0, longueur, offset);
-      const octets = new Uint8Array(cible.buffer, cible.byteOffset, lus);
-      return lus === longueur ? octets : octets.subarray(0, lus);
+      return lus === longueur ? cible : cible.subarray(0, lus);
+    },
+    /** Lit DANS un tampon déjà alloué : le corps d'un instantané ne se recopie pas (#65). */
+    async lireDans(cible, offset) {
+      return readSync(saisir(), cible, 0, cible.byteLength, offset);
     },
     async allouer(taille) {
       ftruncateSync(saisir(), taille);

@@ -29,6 +29,20 @@
 export const BLOC_OCTETS = 4096;
 
 /**
+ * Images DÉJÀ adoptées. Un tampon écrit DANS son image — il n'en garde aucune copie —, si bien
+ * qu'une image réemployée pour un second boot ne serait plus pristine.
+ *
+ * Ce n'est pas une précaution abstraite : l'empreinte de l'image d'un instantané est prise à
+ * l'ACQUISITION du runtime (ADR 0024), avant le premier battement du guest. Réemployer le paquet
+ * d'artefacts d'un boot pour un autre rendrait cette empreinte fausse — elle décrirait une image
+ * que le rootfs n'est plus. La réadoption est donc REFUSÉE, plutôt que laissée à la vigilance de
+ * l'appelant.
+ *
+ * Un `WeakSet` : la marque disparaît avec l'image, et ne retient rien.
+ */
+const ADOPTEES = new WeakSet();
+
+/**
  * Construit le tampon de rootfs éphémère.
  *
  * @param {Uint8Array} image les octets PRISTINE du rootfs. Ils sont adoptés, non recopiés : le
@@ -36,6 +50,12 @@ export const BLOC_OCTETS = 4096;
  * @param {{ blocOctets?: number }} [options]
  */
 export function creerTamponRootfs(image, { blocOctets = BLOC_OCTETS } = {}) {
+  if (ADOPTEES.has(image)) {
+    throw new Error(
+      "Image de rootfs déjà adoptée par un tampon : elle a été écrite par un guest, elle n'est plus pristine, et l'empreinte d'image prise à l'acquisition ne la décrirait plus. Acquérir le runtime une seconde fois est le geste correct.",
+    );
+  }
+  ADOPTEES.add(image);
   const memoire = image;
   /** Index des blocs écrits DEPUIS le chargement. C'est tout l'état que ce tampon publie. */
   const salis = new Set();
@@ -105,7 +125,16 @@ export function creerTamponRootfs(image, { blocOctets = BLOC_OCTETS } = {}) {
           `Delta de rootfs refusé : il décrit ${longueur} octets par blocs de ${granularite}, ce tampon en porte ${memoire.byteLength} par blocs de ${blocOctets}.`,
         );
       }
-      salis.clear();
+      // Le tampon d'accueil doit être PRISTINE, et ce refus est une correction : reposer un delta
+      // sur un tampon déjà sali laissait en place les blocs salis que le delta ne recouvre pas. Le
+      // disque restauré portait alors, EN PLUS de la capture, les écritures du tampon d'accueil —
+      // un disque à moitié faux, que rien ne signalait. Le tampon ADOPTE son image et n'en garde
+      // aucune copie : il ne peut pas revenir à pristine, il ne peut que refuser.
+      if (salis.size > 0) {
+        throw new Error(
+          `Delta de rootfs refusé : ce tampon porte déjà ${salis.size} bloc(s) écrit(s). Un delta reposé par-dessus laisserait en place ceux que le delta ne recouvre pas, et le disque restauré ne serait pas celui de la capture.`,
+        );
+      }
       for (const [bloc, octets] of blocs) {
         memoire.set(octets, bloc * blocOctets);
         salis.add(bloc);

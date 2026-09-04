@@ -105,6 +105,19 @@ test("une liaison incomplète est REFUSÉE, jamais complétée", () => {
   }
 });
 
+test("le scellement ne RECOPIE pas le corps : chiffré et étiquette sont des VUES", async () => {
+  // L'empreinte mémoire d'une capture est le sujet, et la revue l'a chiffrée : un état de 253 Mo,
+  // la sortie de `encrypt` (253 Mo + 16), puis une COPIE du chiffré faisaient trois fois l'état.
+  // Avec la RAM invitée et le tampon de rootfs, le pic dépassait le budget publié de 1,5 Gio.
+  // Le corps scellé est donc UN seul tampon, dont le chiffré et l'étiquette sont des vues.
+  const scelle = await scelleDeReference();
+  assert.equal(scelle.corps.byteLength, ETAT.byteLength + 16);
+  assert.equal(scelle.chiffre.buffer, scelle.corps.buffer, "le chiffré est une VUE du corps");
+  assert.equal(scelle.etiquette.buffer, scelle.corps.buffer, "l'étiquette aussi");
+  assert.equal(scelle.chiffre.byteOffset, scelle.corps.byteOffset);
+  assert.equal(scelle.etiquette.byteOffset, scelle.corps.byteOffset + ETAT.byteLength);
+});
+
 test("le scellement rend le clair sous la MÊME liaison — témoin positif", async () => {
   const scelle = await scelleDeReference();
   assert.equal(scelle.nonce.byteLength, 12);
@@ -114,7 +127,8 @@ test("le scellement rend le clair sous la MÊME liaison — témoin positif", as
   const rendu = await ouvrirInstantane({
     cle: await cle(),
     liaison: liaisonDeReference(),
-    scelle,
+    nonce: scelle.nonce,
+    corps: scelle.corps,
   });
   assert.equal(octetsEnHex(rendu), octetsEnHex(ETAT));
 });
@@ -136,7 +150,8 @@ test("chaque axe de la liaison fait ÉCHOUER l'étiquette, et aucun clair n'est 
       ouvrirInstantane({
         cle: await cle(),
         liaison: liaisonDeReference({ [champ]: valeur }),
-        scelle,
+        nonce: scelle.nonce,
+        corps: scelle.corps,
       }),
       (erreur) => isInstantaneError(erreur, INSTANTANE_ERROR_CODES.sceauRefuse),
       `un écart de « ${champ} » doit refuser le sceau`,
@@ -146,12 +161,15 @@ test("chaque axe de la liaison fait ÉCHOUER l'étiquette, et aucun clair n'est 
 
 test("un octet du corps retourné refuse le sceau", async () => {
   const scelle = await scelleDeReference();
-  const altere = {
-    ...scelle,
-    chiffre: Uint8Array.from(scelle.chiffre, (octet, index) => (index === 100 ? octet ^ 1 : octet)),
-  };
+  const altere = Uint8Array.from(scelle.corps);
+  altere[100] ^= 1;
   await assert.rejects(
-    ouvrirInstantane({ cle: await cle(), liaison: liaisonDeReference(), scelle: altere }),
+    ouvrirInstantane({
+      cle: await cle(),
+      liaison: liaisonDeReference(),
+      nonce: scelle.nonce,
+      corps: altere,
+    }),
     (erreur) => isInstantaneError(erreur, INSTANTANE_ERROR_CODES.sceauRefuse),
   );
 });
@@ -160,7 +178,12 @@ test("une autre clé n'ouvre pas l'instantané", async () => {
   const scelle = await scelleDeReference();
   const autre = await importerCleDeVolume(Uint8Array.from(CLE_DE_TEST, (octet) => octet ^ 0xff));
   await assert.rejects(
-    ouvrirInstantane({ cle: autre, liaison: liaisonDeReference(), scelle }),
+    ouvrirInstantane({
+      cle: autre,
+      liaison: liaisonDeReference(),
+      nonce: scelle.nonce,
+      corps: scelle.corps,
+    }),
     (erreur) => isInstantaneError(erreur, INSTANTANE_ERROR_CODES.sceauRefuse),
   );
 });

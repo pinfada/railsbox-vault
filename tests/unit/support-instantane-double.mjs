@@ -36,11 +36,12 @@ export function supportInstantaneDouble({
   let contenu = octets === null ? null : Uint8Array.from(octets);
   const journal = [];
   let rang = 0;
+  let coupureAvant = couperAvant;
 
   const avant = (geste) => {
     rang += 1;
     journal.push({ rang, geste });
-    if (couperAvant === rang) throw new CoupureDeCapture(rang, geste, "avant");
+    if (coupureAvant === rang) throw new CoupureDeCapture(rang, geste, "avant");
     return rang;
   };
   const apres = (courant, geste) => {
@@ -58,15 +59,52 @@ export function supportInstantaneDouble({
     },
     etat: async () => ({ present: contenu !== null, taille: contenu?.byteLength ?? 0 }),
     lire: async (offset, longueur) => {
+      journal.push({ rang: rang, geste: "lire", longueur });
       if (contenu === null) throw new RangeError("Instantané absent : rien à lire.");
       const fin = Math.min(offset + longueur, contenu.byteLength);
       // Une lecture COURTE est rendue telle quelle : c'est à l'appelant de la refuser, et l'éprouver
       // ici vérifie sa garde plutôt que de la contourner.
       return contenu.slice(offset, Math.max(offset, fin));
     },
+    /**
+     * Lit DANS un tampon déjà alloué, et rend le nombre d'octets lus.
+     *
+     * C'est le geste qui rend la lecture du corps bornée en mémoire : l'appelant alloue UN tampon
+     * de `longueurEtat + 16` et y fait tomber le corps, plutôt que de recevoir un second tampon de
+     * 253 Mo qu'il faudrait ensuite recopier.
+     */
+    lireDans: async (cible, offset) => {
+      journal.push({ rang: rang, geste: "lireDans", longueur: cible.byteLength });
+      if (contenu === null) throw new RangeError("Instantané absent : rien à lire.");
+      const lus = Math.max(0, Math.min(cible.byteLength, contenu.byteLength - offset));
+      cible.set(contenu.subarray(offset, offset + lus));
+      return lus;
+    },
+    /**
+     * ARME une coupure sur le geste de rang `n`, en repartant du geste COURANT.
+     *
+     * Elle existe pour les scénarios en deux temps — une capture réussie, puis une seconde coupée —
+     * que le constructeur seul ne sait pas décrire : son `couperAvant` compte depuis le premier
+     * geste du support, pas depuis le premier geste de la seconde capture.
+     */
+    couperAvant(rangRelatif) {
+      coupureAvant = rang + rangRelatif;
+    },
+
+    /**
+     * TRONQUE le fichier à `taille`, comme un vrai support.
+     *
+     * Agrandir CONSERVE le préfixe, et ce n'est pas un détail de fidélité : c'est ce qui laisse en
+     * place, au milieu du corps d'une capture plus grande, la marque de complétude de la
+     * précédente. Une version antérieure de ce double rendait un tampon neuf de zéros, et le
+     * scénario du mélange de deux captures n'était alors pas descriptible — le double était plus
+     * clément que le support qu'il imite.
+     */
     allouer: async (taille) => {
       const courant = avant("allouer");
-      contenu = new Uint8Array(taille);
+      const neuf = new Uint8Array(taille);
+      if (contenu !== null) neuf.set(contenu.subarray(0, Math.min(taille, contenu.byteLength)));
+      contenu = neuf;
       apres(courant, "allouer");
     },
     ecrire: async (offset, aEcrire) => {

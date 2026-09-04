@@ -91,7 +91,12 @@ test("le scellement du chemin de production rend le chiffré et l'étiquette du 
     assert.equal(octetsEnHex(scelle.chiffre), cas.chiffre, `« ${cas.nom} » : chiffré`);
     assert.equal(octetsEnHex(scelle.etiquette), cas.etiquette, `« ${cas.nom} » : étiquette`);
 
-    const rendu = await ouvrirInstantane({ cle, liaison, scelle });
+    const rendu = await ouvrirInstantane({
+      cle,
+      liaison,
+      nonce: scelle.nonce,
+      corps: scelle.corps,
+    });
     assert.equal(octetsEnHex(rendu), cas.etat, `« ${cas.nom} » : le clair relu`);
   }
 });

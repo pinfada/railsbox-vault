@@ -33,6 +33,7 @@
 // apprendre ce que douze octets disaient déjà.
 
 import { egalesEnTempsConstant, octetsEnHex } from "./format-chiffre/octets.mjs";
+import { ETIQUETTE_OCTETS } from "./format-chiffre/identite-logique.mjs";
 import {
   EN_TETE_OCTETS,
   MARQUEUR_COMPLET,
@@ -101,12 +102,39 @@ export async function capturerInstantane({ scellement, volume, etatPresent, etat
     0,
     encoderEnTete({ liaison, nonce: scelle.nonce, etiquette: scelle.etiquette }),
   );
+  // Le CHIFFRÉ seul, sans son étiquette : celle-ci vit déjà dans l'en-tête, et l'écrire deux fois
+  // ferait deux sources pour un même objet. `scelle.chiffre` est une VUE du corps, pas une copie.
   await support.ecrire(offsetDuCorps(), scelle.chiffre);
   await support.barriere();
   await support.ecrire(offsetDeLaMarque(etat.byteLength), MARQUEUR_COMPLET);
   await support.barriere();
 
   return Object.freeze({ octets: total, liaison });
+}
+
+/**
+ * Lit le CORPS dans UN SEUL tampon, étiquette comprise.
+ *
+ * GCM consomme chiffré‖étiquette d'un tenant. Allouer le chiffré puis reconstituer le tout aurait
+ * coûté une copie entière — 253 Mo sur l'image de référence — au moment précis où la RAM invitée
+ * (512 Mio) et le tampon de rootfs (385 Mio) sont déjà en mémoire, et le budget de
+ * `docs/quality-attributes.md` est de 1,5 Gio de pic. Le corps tombe donc DANS un tampon déjà
+ * alloué, par `lireDans`, et l'étiquette — qui vient de l'EN-TÊTE, pas du corps — est recopiée à la
+ * queue.
+ */
+async function lireLeCorps(support, lu, volume) {
+  const longueur = lu.liaison.longueurEtat;
+  const corps = new Uint8Array(longueur + ETIQUETTE_OCTETS);
+  const lus = await support.lireDans(corps.subarray(0, longueur), offsetDuCorps());
+  if (lus !== longueur) {
+    throw incomplet(`corps de l'instantané : ${lus} octet(s) rendus sur ${longueur} demandés.`, {
+      volume,
+      lus,
+      demande: longueur,
+    });
+  }
+  corps.set(lu.etiquette, longueur);
+  return corps;
 }
 
 /** Lit exactement `longueur` octets, ou refuse. Une lecture courte n'est jamais complétée de zéros. */
@@ -234,22 +262,15 @@ async function lireInstantane({ scellement, volume, etatPresent, support }) {
     });
   }
 
-  const chiffre = await lireExactement(
-    support,
-    offsetDuCorps(),
-    lu.liaison.longueurEtat,
-    "corps de l'instantané",
+  const corps = await lireLeCorps(support, lu, volume);
+  return scellement.ouvrirInstantane(lu.liaison, lu.nonce, corps).then(
+    (etat) => Object.freeze({ etat, liaison: lu.liaison }),
+    (cause) => {
+      // Le modèle rend déjà un `SCEAU_REFUSE` typé ; les autres causes sont des fautes de
+      // programmation ou des pannes, et les habiller en refus effacerait un bogue.
+      throw cause?.code === undefined ? sceauRefuse({ volume }) : cause;
+    },
   );
-  return scellement
-    .ouvrirInstantane(lu.liaison, { nonce: lu.nonce, etiquette: lu.etiquette, chiffre })
-    .then(
-      (etat) => Object.freeze({ etat, liaison: lu.liaison }),
-      (cause) => {
-        // Le modèle rend déjà un `SCEAU_REFUSE` typé ; les autres causes sont des fautes de
-        // programmation ou des pannes, et les habiller en refus effacerait un bogue.
-        throw cause?.code === undefined ? sceauRefuse({ volume }) : cause;
-      },
-    );
 }
 
 /** Retire l'instantané sans jamais masquer la raison qui a conduit là. */
