@@ -37,8 +37,8 @@
 // avec « construit depuis un disque non versionné » — la première est une atteinte à l'intégrité,
 // la seconde une lacune de PROVENANCE — et refuserait au passage tout arbre de développement.
 
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { mkdir, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { ARBRES, EXCLUSIONS } from "./publier-arborescences.mjs";
 import {
@@ -86,6 +86,68 @@ const NOMS_DARBRES = Object.freeze(ARBRES.map(({ nom }) => nom));
 const EFFACES = NOMS_DARBRES.map((nom) => `<sortie>/${nom}`).join(" et ");
 
 /**
+ * Chemin RÉEL d'un chemin qui n'existe pas encore : le premier ancêtre existant est résolu par
+ * `realpath`, et ce qui le suit lui est raccroché tel quel.
+ *
+ * `realpath` refuse un chemin absent, et une sortie de publication est le plus souvent absente —
+ * c'est même le cas nominal. Résoudre l'ancêtre suffit : ce qui décide de l'endroit où le `rm -rf`
+ * frappera, ce sont les liens déjà posés sur le disque, pas les répertoires qu'il créera lui-même.
+ */
+async function cheminReel(chemin) {
+  let ancetre = chemin;
+  for (;;) {
+    try {
+      return join(await realpath(ancetre), relative(ancetre, chemin));
+    } catch (erreur) {
+      if (erreur.code !== "ENOENT") throw erreur;
+      const parent = dirname(ancetre);
+      // Une racine de volume qui n'existe pas : rien à résoudre, le chemin demandé fait foi.
+      if (parent === ancetre) return chemin;
+      ancetre = parent;
+    }
+  }
+}
+
+/**
+ * **OÙ** la sortie a le droit d'être : STRICTEMENT sous la racine du dépôt, chemin RÉEL à l'appui.
+ *
+ * L'outil produit un artefact de construction de ce dépôt ; tous ses usages documentés visent
+ * `artifacts/`, que `.gitignore` couvre. Effacer ailleurs, c'est effacer là où ni git ni la revue
+ * ne verront le dommage. Un opérateur qui veut déposer l'arbre ailleurs le COPIE après coup : c'est
+ * un geste qui laisse une trace, contrairement à un `rm -rf` implicite.
+ *
+ * La comparaison porte sur les chemins réels des DEUX côtés, et c'est le correctif de la revue de
+ * #106 : `relative()` est purement lexical, si bien qu'une jonction — ou un lien symbolique —
+ * posée sous `artifacts/` et pointant hors du dépôt lui paraissait interne. Le `rm -rf` qui suit,
+ * lui, traverse le lien : le message « ne le fait que là où git rend le dommage visible » était
+ * alors faux, et c'est cette phrase que la garde doit rendre vraie. Le cadrage ne change pas pour
+ * autant — voir `exigerSortieUtilisable`.
+ *
+ * @param {string} sortie chemin absolu déjà résolu
+ * @param {string} racine racine du dépôt
+ * @throws {Error} usage invalide (code 3)
+ */
+async function exigerSortieSousLaRacine(sortie, racine) {
+  const interne = relative(await cheminReel(racine), await cheminReel(sortie));
+  if (interne === "") {
+    throw new Error(
+      `Sortie refusée : ${sortie} est la racine du dépôt elle-même. La construction y sèmerait les ` +
+        `répertoires ${NOMS_DARBRES.join(" et ")} au milieu des sources ; visez un répertoire qui ` +
+        `lui soit dédié, sous ${SORTIE_PAR_DEFAUT.split("/")[0]}/.`,
+    );
+  }
+  // `startsWith("..")` refusait `..donnees`, qui est un répertoire du dépôt, avec un message
+  // affirmant le contraire. Seul un SEGMENT `..` sort de la racine.
+  if (interne === ".." || interne.startsWith(`..${sep}`) || isAbsolute(interne)) {
+    throw new Error(
+      `Sortie refusée : ${sortie} est hors de la racine du dépôt (${racine}) — chemin réel, liens ` +
+        `de répertoire résolus. La construction efface ${EFFACES} avant de les réécrire, et ne le ` +
+        `fait que là où git rend le dommage visible.`,
+    );
+  }
+}
+
+/**
  * Ce que `--sortie` a le droit de faire effacer.
  *
  * `construireArbre` commence par `rm(<sortie>/<arbre>, { recursive: true, force: true })`. Le rayon
@@ -94,11 +156,7 @@ const EFFACES = NOMS_DARBRES.map((nom) => `<sortie>/${nom}`).join(" et ");
  *
  * Deux gardes, et chacune répond à une question différente :
  *
- *  1. **OÙ** — la sortie doit être STRICTEMENT sous la racine du dépôt. L'outil produit un artefact
- *     de construction de ce dépôt ; tous ses usages documentés visent `artifacts/`, que
- *     `.gitignore` couvre. Effacer ailleurs, c'est effacer là où ni git ni la revue ne verront le
- *     dommage. Un opérateur qui veut déposer l'arbre ailleurs le COPIE après coup : c'est un geste
- *     qui laisse une trace, contrairement à un `rm -rf` implicite.
+ *  1. **OÙ** — `exigerSortieSousLaRacine`, ci-dessus ;
  *  2. **QUOI** — le répertoire doit être absent, vide, ou ne contenir que des arbres de
  *     publication. La garde ne cherche pas à reconnaître une publication PRÉCÉDENTE au fichier
  *     `inventaire.json` près : une construction interrompue en laisse un arbre partiel qui n'en a
@@ -107,28 +165,17 @@ const EFFACES = NOMS_DARBRES.map((nom) => `<sortie>/${nom}`).join(" et ");
  *
  * Ce n'est pas une frontière de confiance du produit — l'outil s'exécute déjà avec les droits de
  * qui le lance, et `SECURITY.md` n'a rien à en dire. C'est une garde d'ERGONOMIE contre la faute de
- * frappe, au même titre que le refus d'une référence git illisible.
+ * frappe, au même titre que le refus d'une référence git illisible. Résoudre le chemin réel ne
+ * l'élève pas au rang de frontière de confiance : elle ne résiste pas à un lien posé ENTRE la
+ * vérification et l'effacement, et elle n'a pas à le faire. Elle rend seulement vrai ce que son
+ * refus affirme.
  *
  * @param {string} sortie chemin absolu déjà résolu
  * @param {string} [racine] racine du dépôt
  * @throws {Error} usage invalide (code 3)
  */
 export async function exigerSortieUtilisable(sortie, racine = REPOSITORY_ROOT) {
-  const interne = relative(racine, sortie);
-  if (interne === "") {
-    throw new Error(
-      `Sortie refusée : ${sortie} est la racine du dépôt elle-même. La construction y sèmerait les ` +
-        `répertoires ${NOMS_DARBRES.join(" et ")} au milieu des sources ; visez un répertoire qui ` +
-        `lui soit dédié, sous ${SORTIE_PAR_DEFAUT.split("/")[0]}/.`,
-    );
-  }
-  if (interne.startsWith("..") || isAbsolute(interne)) {
-    throw new Error(
-      `Sortie refusée : ${sortie} est hors de la racine du dépôt (${racine}). La construction ` +
-        `efface ${EFFACES} avant de les réécrire, et ne le fait que là où git rend le dommage ` +
-        `visible.`,
-    );
-  }
+  await exigerSortieSousLaRacine(sortie, racine);
 
   let entrees;
   try {
