@@ -15,6 +15,11 @@
  *    reste 0 : le contrat 0/1/2/3/4/5/6 documenté en tête de `tools/publier.mjs` n'est pas modifié.
  *  - **L4 — ce que la sonde DEMANDE.** `GET` est CONSERVÉ, et l'épreuve le fixe pour qu'une bascule
  *    vers `HEAD` ne se fasse pas en silence, sans revenir sur le motif écrit.
+ *  - **L5 — ce que l'arbre publié CONTIENT sous `vendor/v86/artefacts/`** (#103, revue de l'ADR
+ *    0023). Ce répertoire est ignoré par git et peuplé par `npm run vm:fetch` ; la copie de
+ *    publication le prend en bloc, et la règle de cache `/vendor/v86/*` accorde 24 h de cache
+ *    PARTAGÉ à tout ce qui s'y trouve. Un fichier qui n'est pas dans `vendor/v86/MANIFEST.json`
+ *    n'a donc rien à y faire : les épreuves exigent qu'il soit un ÉCART, pas un artefact publié.
  *
  * Deux niveaux, comme `tests/unit/v86-garde-memoire.test.mjs` : les fonctions de garde sur des
  * données fabriquées, et la COMMANDE elle-même sur des arbres jetables — une garde correcte que
@@ -27,13 +32,27 @@
 
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  rmdir,
+  stat,
+  symlink,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { construireInventaire, FICHIER_INVENTAIRE } from "../../tools/publier-inventaire.mjs";
+import {
+  construireInventaire,
+  empreinte,
+  FICHIER_INVENTAIRE,
+} from "../../tools/publier-inventaire.mjs";
 import * as sondeHebergement from "../../tools/publier-sonde-hebergement.mjs";
 import * as sources from "../../tools/publier-sources.mjs";
 import * as publier from "../../tools/publier.mjs";
@@ -325,6 +344,89 @@ test("L2 — la commande refuse une sortie hors du dépôt en code 3, sans rien 
   }
 });
 
+/**
+ * Un lien de répertoire, du type que la plate-forme sait poser sans privilège.
+ *
+ * Sous Windows, un lien symbolique de répertoire exige `SeCreateSymbolicLinkPrivilege` ; une
+ * JONCTION, non — et elle traverse aussi bien. C'est donc elle que l'attaque emploierait, et elle
+ * que l'épreuve pose.
+ */
+const TYPE_DE_LIEN = process.platform === "win32" ? "junction" : "dir";
+
+/** Retire un lien de répertoire SANS suivre ce qu'il désigne. */
+async function retirerLien(lien) {
+  try {
+    await unlink(lien);
+  } catch {
+    await rmdir(lien);
+  }
+}
+
+test("L2 — un lien de répertoire qui SORT du dépôt est refusé, chemin réel à l'appui", async () => {
+  // `relative()` est lexical : `<racine>/lien/publication` lui paraît interne quoi que `lien`
+  // désigne. Le `rm -rf` qui suit, lui, TRAVERSE le lien. La garde doit donc parler du chemin
+  // RÉEL, pas de la chaîne demandée.
+  const dehors = await repertoireJetable();
+  const racine = await repertoireJetable();
+  const lien = join(racine, "artifacts-lie");
+  try {
+    await symlink(dehors, lien, TYPE_DE_LIEN);
+    await assert.rejects(
+      () => publier.exigerSortieUtilisable(join(lien, "publication"), racine),
+      (erreur) => {
+        assert.match(erreur.message, /racine du dépôt/i);
+        return true;
+      },
+    );
+  } finally {
+    await retirerLien(lien);
+    await rm(racine, { recursive: true, force: true });
+    await rm(dehors, { recursive: true, force: true });
+  }
+});
+
+test("L2 — la commande refuse une sortie liée hors du dépôt, et n'efface RIEN dehors", async () => {
+  // L'épreuve de bout en bout : la jonction est posée sous `artifacts/`, que `.gitignore` couvre et
+  // où la garde d'ergonomie croyait être chez elle. Sans correctif, `rm -rf <sortie>/coquille`
+  // traverse le lien et emporte le témoin, hors du dépôt, sans que git n'en montre rien.
+  const dehors = await repertoireJetable();
+  const temoin = join(dehors, "coquille", "hors-depot.txt");
+  const lien = join(RACINE_DEPOT, "artifacts", `epreuve-106-jonction-${process.pid}`);
+  try {
+    await mkdir(join(dehors, "coquille"), { recursive: true });
+    await writeFile(temoin, "ce fichier n'appartient pas au dépôt\n", "utf8");
+    await mkdir(join(RACINE_DEPOT, "artifacts"), { recursive: true });
+    await symlink(dehors, lien, TYPE_DE_LIEN);
+
+    const refus = await lancerPublier(["--sortie", lien, "--tolerer-incomplet"]);
+    assert.equal(
+      await existe(temoin),
+      true,
+      "le `rm -rf` a traversé le lien et effacé hors du dépôt",
+    );
+    assert.equal(refus.code, 3, `attendu 3 (usage), obtenu ${refus.code} — ${refus.stderr}`);
+    assert.match(refus.stderr, /racine du dépôt/i);
+  } finally {
+    await retirerLien(lien);
+    await rm(dehors, { recursive: true, force: true });
+  }
+});
+
+test("L2 — un répertoire dont le nom COMMENCE par deux points n'est pas « hors du dépôt »", async () => {
+  // `interne.startsWith("..")` refusait `..donnees` avec un message qui affirmait un fait faux :
+  // ce chemin est sous la racine. Seul un segment `..` en sort.
+  const racine = await repertoireJetable();
+  try {
+    await publier.exigerSortieUtilisable(join(racine, "..donnees"), racine);
+    await publier.exigerSortieUtilisable(join(racine, "..", "vraiment-dehors"), racine).then(
+      () => assert.fail("un segment `..` sort bel et bien de la racine"),
+      (erreur) => assert.match(erreur.message, /racine du dépôt/i),
+    );
+  } finally {
+    await rm(racine, { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------------------------
 // L3 — la provenance est DITE, sans changer le contrat des codes de sortie
 // ---------------------------------------------------------------------------------------------
@@ -407,4 +509,90 @@ test("L4 — le choix de GET porte son motif écrit, qui nomme HEAD", () => {
     sondeHebergement.METHODE_SONDE.motif.length > 80,
     "un motif accepté doit être écrit, pas déclaré",
   );
+});
+
+// ---------------------------------------------------------------------------------------------
+// L5 — ce que l'arbre publié contient sous `vendor/v86/artefacts/` (#103)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Arbre publié minimal portant un épinglage v86 : un manifeste, et le répertoire d'artefacts qu'il
+ * décrit. `presents` peut contenir plus que `declares` — c'est exactement le cas à refuser.
+ *
+ * @param {{ declares: Record<string, string>, presents?: Record<string, string> }} contenu
+ */
+async function arbreEpingle({ declares, presents = {} }) {
+  const racine = await repertoireJetable();
+  const dossier = join(racine, "vendor", "v86", "artefacts");
+  await mkdir(dossier, { recursive: true });
+  const artifacts = [];
+  for (const [nom, octets] of Object.entries(declares)) {
+    await writeFile(join(dossier, nom), octets, "utf8");
+    artifacts.push({ name: nom, sha256: empreinte(Buffer.from(octets, "utf8")) });
+  }
+  for (const [nom, octets] of Object.entries(presents)) {
+    await writeFile(join(dossier, nom), octets, "utf8");
+  }
+  await writeFile(
+    join(racine, "vendor", "v86", "MANIFEST.json"),
+    `${JSON.stringify({ artifacts }, null, 2)}\n`,
+    "utf8",
+  );
+  return racine;
+}
+
+test("L5 — un arbre dont chaque artefact présent est déclaré et conforme ne porte AUCUN écart", async () => {
+  const racine = await arbreEpingle({ declares: { "v86.wasm": "octets de l'émulateur" } });
+  try {
+    const epinglage = await sources.verifierEpinglageV86(racine, empreinte);
+    assert.equal(epinglage.verifie, true);
+    assert.deepEqual(epinglage.ecarts, []);
+  } finally {
+    await rm(racine, { recursive: true, force: true });
+  }
+});
+
+test("L5 — un fichier PRÉSENT mais non déclaré au manifeste est un écart, pas un artefact publié", async () => {
+  // La classe de cache `epinglage-v86` est accordée par EMPLACEMENT : `/vendor/v86/*` vaut
+  // `public, max-age=86400`. Un intrus déposé dans `vendor/v86/artefacts/` — répertoire ignoré par
+  // git — partait donc chez l'hébergeur avec 24 h de cache PARTAGÉ et sans révocation possible,
+  // là où il recevait `no-store` avant l'ADR 0023. Le manifeste est la seule liste de ce qui a le
+  // droit d'être là (ADR 0003) : ce qui n'y est pas est un écart.
+  const racine = await arbreEpingle({
+    declares: { "v86.wasm": "octets de l'émulateur" },
+    presents: { "dump-de-debug.bin": "trace d'un poste de développement" },
+  });
+  try {
+    const epinglage = await sources.verifierEpinglageV86(racine, empreinte);
+    assert.equal(epinglage.verifie, true);
+    assert.equal(epinglage.ecarts.length, 1, "l'intrus doit être relevé, une fois");
+    assert.equal(epinglage.ecarts[0].artefact, "dump-de-debug.bin");
+    assert.match(epinglage.ecarts[0].motif, /non déclaré/i);
+  } finally {
+    await rm(racine, { recursive: true, force: true });
+  }
+});
+
+test("L5 — l'écart « non déclaré » se cumule avec les deux autres, sans les masquer", async () => {
+  const racine = await arbreEpingle({
+    declares: { "v86.wasm": "octets de l'émulateur", "seabios.bin": "octets du BIOS" },
+    presents: { "dump-de-debug.bin": "trace" },
+  });
+  try {
+    await writeFile(
+      join(racine, "vendor", "v86", "artefacts", "v86.wasm"),
+      "autres octets",
+      "utf8",
+    );
+    await rm(join(racine, "vendor", "v86", "artefacts", "seabios.bin"));
+    const motifs = (await sources.verifierEpinglageV86(racine, empreinte)).ecarts.map(
+      ({ artefact, motif }) => `${artefact} : ${motif}`,
+    );
+    assert.equal(motifs.length, 3, motifs.join(" / "));
+    assert.ok(motifs.some((ligne) => /v86\.wasm : empreinte/.test(ligne)));
+    assert.ok(motifs.some((ligne) => /seabios\.bin : absent/.test(ligne)));
+    assert.ok(motifs.some((ligne) => /dump-de-debug\.bin : non déclaré/.test(ligne)));
+  } finally {
+    await rm(racine, { recursive: true, force: true });
+  }
 });

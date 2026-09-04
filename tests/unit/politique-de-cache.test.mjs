@@ -36,6 +36,8 @@ const ARTEFACT_EPINGLE = "/vendor/v86/artefacts/v86.wasm";
 const MANIFESTE_EPINGLAGE = "/vendor/v86/MANIFEST.json";
 const TERRITOIRE_APPLICATIF = "/spike/origin/app-inter.html";
 const SONDE_DE_CAPACITES = "/compat.html";
+/** Un chemin qu'aucune règle ne nomme : la nature qu'il reçoit est celle du DÉFAUT. */
+const CHEMIN_INCONNU = "/inconnu/futur.bin";
 
 function enTetes(role, pathname) {
   return securityHeaders({ role, pathname, isolation: null, appOrigin: ORIGINE_APPLICATIVE });
@@ -52,6 +54,20 @@ test("trois natures d'artefact sont nommées, et elles rendent trois politiques 
     "deux natures qui reçoivent la même valeur ne sont pas deux natures : la table serait décorative",
   );
   for (const valeur of valeurs) assert.ok(typeof valeur === "string" && valeur.length > 0);
+});
+
+test("un chemin qu'aucune règle ne nomme tombe dans le SÛR, pas dans le permissif", () => {
+  // La table est une liste de cas particuliers autour d'un défaut, et c'est le défaut qui décide du
+  // sort de tout ce qui sera ajouté au dépôt demain sans que personne y pense. `no-cache` autorise
+  // le stockage mais interdit le réemploi muet : un chemin non classé est revalidé, jamais servi
+  // vingt-quatre heures depuis un cache partagé. Une table dont le défaut serait `epinglage-v86`
+  // aurait le comportement inverse, et rien ne le dirait.
+  assert.equal(
+    natureDArtefact({ role: "shell", pathname: CHEMIN_INCONNU }),
+    NATURES_DARTEFACT.coquille,
+  );
+  assert.equal(politiqueDeCache({ role: "shell", pathname: CHEMIN_INCONNU }), "no-cache");
+  assert.equal(politiqueDeCache({ role: "app", pathname: CHEMIN_INCONNU }), "no-store");
 });
 
 test("la nature est décidée par le CHEMIN et le rôle, pas par l'origine seule", () => {
