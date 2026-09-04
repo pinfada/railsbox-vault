@@ -1,0 +1,96 @@
+name: Mesure de la reprise
+
+# Relevé du gate « reprise ≤ 60 s » (ADR 0005, ADR 0024, #65) sur l'ENVIRONNEMENT DE RÉFÉRENCE de
+# `docs/quality-attributes.md` : 4 cœurs, 16 Gio, dix essais après un échauffement, p50 et p95.
+#
+# Un exécutant GitHub `ubuntu-latest` a exactement cette géométrie (4 vCPU, 16 Go), là où la machine
+# de développement — 28 threads, 32 Gio — ne peut produire qu'un relevé « hors référence ». Le job ne
+# décide rien : il PUBLIE le relevé (`mesures-reprise.json`, avec le modèle de CPU et la mémoire de
+# l'exécutant) et son verdict mesurable ; ouvrir ou non le gate reste un geste de documentation, pris
+# à la lecture du relevé.
+#
+# Il construit l'image de référence (≈ 20 min) puis boote onze fois un Rails i386 sous le harnais
+# Node — un échauffement, puis la série. Il est manuel, coûteux, et n'est PAS un contrôle de PR.
+
+on:
+  workflow_dispatch:
+    inputs:
+      essais:
+        description: "Nombre d'essais de la série, après l'échauffement"
+        required: false
+        default: "10"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mesure-reprise-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mesure:
+    name: Reprise par instantané sur 4 cœurs et 16 Gio
+    runs-on: ubuntu-latest
+    # Image ≈ 20 min sans cache ; chaque essai enchaîne un boot à froid (≈ 90 s ici), une capture et
+    # une reprise, soit ≈ 2 min ; onze essais ≈ 25 min. La marge couvre un exécutant lent.
+    timeout-minutes: 120
+    env:
+      # Clé de TEST du harnais Node (trente-deux octets publics, sans entropie) : sans elle le mode
+      # « reprise » refuse de sceller. Voir `src/vm/cle-de-volume.mjs`.
+      VAULT_HARNAIS_CLE_DE_VOLUME: cle-de-test
+      # L'entrée du dispatch passe par `env:`, jamais interpolée dans un `run:` (cliquet
+      # `workflows-sans-interpolation`).
+      ESSAIS: ${{ inputs.essais }}
+
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installation de Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Épinglage de la chaîne de construction
+        run: node tools/build-reference-image/verify-pinning.mjs
+
+      - name: Géométrie de l'exécutant
+        run: |
+          nproc
+          free -g
+          df -h .
+
+      - name: Construction de l'image de référence
+        run: npm run image:build
+
+      - name: Récupération vérifiée des artefacts v86
+        run: npm run vm:fetch
+
+      # L'ÉCHAUFFEMENT est un essai complet, exclu de la série : le protocole le demande, et le
+      # premier boot paie les caches froids de l'exécutant. Son relevé est conservé à part, jamais
+      # confondu avec la série.
+      - name: Échauffement (un essai, hors série)
+        run: |
+          node tools/vm/mesurer-boot.mjs --reprise --essais=1
+          mv reports/vm/mesures-reprise.json reports/vm/echauffement-reprise.json
+
+      - name: Série de mesures
+        run: |
+          case "$ESSAIS" in
+            ''|*[!0-9]*) echo "essais invalide : « $ESSAIS »" >&2; exit 2 ;;
+          esac
+          node tools/vm/mesurer-boot.mjs --reprise --essais="$ESSAIS"
+
+      - name: Relevé
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mesures-reprise-environnement-de-reference
+          path: reports/vm/
+          if-no-files-found: warn
+          retention-days: 90

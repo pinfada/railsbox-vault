@@ -465,6 +465,13 @@ node tools/figer-vecteurs-instantane.mjs         # RE-FIGE les vecteurs : un cha
 npm run mesurer:boot -- --reprise                # le relevé Node, p95 et verdict du gate
 ```
 
+**Le relevé qui compte pour le gate vient d'un exécutant GitHub**, pas de la machine de
+développement : `.github/workflows/mesure-reprise.yml` (manuel, « Mesure de la reprise ») construit
+l'image, puis joue un échauffement et dix essais sur `ubuntu-latest` — 4 vCPU, 16 Go, la géométrie
+de l'environnement de référence de `docs/quality-attributes.md`. Il publie `mesures-reprise.json`
+avec le modèle de CPU de l'exécutant ; ouvrir le gate reste un geste de documentation, pris à la
+lecture de ce relevé.
+
 **Un fichier temporaire de 250 Mio pendant la mesure.** `npm run mesurer:boot -- --reprise` écrit
 son instantané dans `reports/vm/releve.instantane` — de la RAM invitée, chiffrée sous la clé du
 harnais. Il est RETIRÉ dans un `finally`, y compris quand la mesure échoue, et `reports/` est ignoré
