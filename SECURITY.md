@@ -511,6 +511,36 @@ bruyamment au lieu de servir la politique élargie en silence, et une épreuve u
 ; et deux épreuves — une unitaire sur la chaîne produite, une de navigateur sur l'en-tête réellement
 servi — vérifient que la politique par défaut ne contient aucune occurrence de `blob:`.
 
+## Le durcissement générique de la coquille, et ce qu'il n'est pas (#104)
+
+L'[ADR 0022](docs/decisions/0022-entetes-de-durcissement.md) ajoute deux en-têtes à ce que
+`tools/serve-headers.mjs` sert aux documents de la **coquille**, et en écarte un troisième. La
+décision est prise **par rôle**, et la raison tient en une phrase : `frame-ancestors` est une
+propriété de l'hébergement — qui a le droit d'encadrer ce document —, alors que `Referrer-Policy` et
+`Permissions-Policy` gouvernent ce que le document **émet** et ce qu'il **peut**. Ce sont des
+politiques de contenu, et le contenu du territoire applicatif vient du guest (ADR 0002).
+
+- **`Referrer-Policy: no-referrer`** ferme une fuite réelle, relevée et non déduite : la seule
+  requête inter-origine que la CSP ci-dessus laisse sortir est le **cadre** du territoire
+  applicatif, et sous la politique par défaut des moteurs elle portait l'origine de la coquille
+  jusqu'à une origine dont le contenu vient du guest. `tests/browser/entetes-durcissement.spec.mjs`
+  le mesure, avec son témoin négatif — la même manipulation depuis un document du rôle `app`, où le
+  `Referer` survit. **Mesuré sous Chromium seulement** dans la tranche qui l'a livré ;
+- **`Permissions-Policy: camera=(), microphone=(), geolocation=()`** refuse trois capacités que
+  personne n'appelle dans ce dépôt, à liste d'autorisation vide — `()` ne désigne personne, pas même
+  `self`. Elle est délibérément **courte** : un refus en bloc fermerait des capacités jamais
+  mesurées, et la panne serait silencieuse et dans le guest. Ce qui est éprouvé est qu'elle est
+  **servie** ; son effet sur un moteur ne l'est pas, et l'ADR le dit ;
+- **`Strict-Transport-Security` est écarté du code**, et gardé absent par des épreuves sur les deux
+  rôles et les deux arbres. Tout ce que ce dépôt sait servir est en `http:`, où RFC 6797 § 7.2 exige
+  du navigateur qu'il l'ignore ; et HSTS engage un **domaine**, y compris le sous-domaine applicatif
+  si `includeSubDomains` est posé sur un domaine propre. C'est une obligation d'exploitant, inscrite
+  dans [`docs/release-policy.md`](docs/release-policy.md) — donc tenue par un humain, pas par un
+  cliquet.
+
+Aucune de ces trois décisions n'est posée sur l'origine applicative : `tools/publier-temoin.mjs`
+relève leur **absence** sur cette origine, comme il relève leur présence sur la coquille.
+
 ## Injecteur d'arrêts et d'écritures partielles (#15)
 
 L'issue #15 ajoute au dépôt un instrument qui FABRIQUE des pannes de stockage : handle perdu,

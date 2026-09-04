@@ -368,7 +368,11 @@ rien.
    sert aucun. La règle a une bonne raison — que les épreuves de frontière mesurent ce qui est
    publié — mais elle transforme ici une absence en décision par défaut. Les ajouter demanderait de
    les servir d'abord en développement, donc de toucher `tools/serve-headers.mjs`, hors périmètre.
-   **Travail découvert.**
+   **Travail découvert — traité par #104 et l'[ADR 0022](0022-entetes-de-durcissement.md)**, qui a
+   suivi cet ordre : `Referrer-Policy` et `Permissions-Policy` sont posés dans la source de vérité
+   et la publication les en dérive, sans entrer dans la table du § 3 ter ;
+   `Strict-Transport-Security` est explicitement écarté et son absence gardée, parce qu'il serait
+   ignoré sur le `http:` de tout ce que ce dépôt sait mesurer.
 8. **L'empreinte de racine ne nomme pas une version** (§ 5). Deux tranches dont aucun octet publié
    ne diffère la partagent. Une procédure qui l'emploierait seule pour identifier « la version
    déployée » se tromperait ; c'est le couple (empreinte, commit) qui décrit une publication, et
