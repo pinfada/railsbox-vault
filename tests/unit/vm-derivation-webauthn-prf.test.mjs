@@ -363,7 +363,9 @@ test("aucun refus ne transporte la sortie PRF dans son contexte : la FORME, jama
   assert.equal(refusDAssertion.context.rpId, RP_ID);
 
   const refusDEnregistrement = await enregistrerEmplacementPrf({
-    credentials: credentialsDouble({ creation: creanceCreee({ enabled: false, autre: SORTIE_PRF }) }),
+    credentials: credentialsDouble({
+      creation: creanceCreee({ enabled: false, autre: SORTIE_PRF }),
+    }),
     rpId: RP_ID,
     nomUtilisateur: "vault",
     identifiantUtilisateur: suiteDOctets(0x01, 16),
@@ -388,10 +390,15 @@ test("aucun refus ne transporte la sortie PRF dans son contexte : la FORME, jama
 test("le tampon de sortie PRF rendu par le moteur est mis à zéro après la copie", async () => {
   const enregistre = await enregistrer();
   const tampon = SORTIE_PRF.slice();
-  assert.ok(tampon.some((octet) => octet !== 0), "le tampon est déjà nul : rien à mesurer");
+  assert.ok(
+    tampon.some((octet) => octet !== 0),
+    "le tampon est déjà nul : rien à mesurer",
+  );
 
   const kek = await derivateurWebauthnPrf({
-    credentials: credentialsDouble({ assertion: assertionRendue({ prf: { results: { first: tampon } } }) }),
+    credentials: credentialsDouble({
+      assertion: assertionRendue({ prf: { results: { first: tampon } } }),
+    }),
   }).deriver({ parametres: enregistre.parametres, identite: IDENTITE, geste: {} });
 
   assert.ok(kek, "la KEK doit exister : c'est l'effacement qui est mesuré, pas un échec");
