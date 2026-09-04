@@ -21,6 +21,7 @@ import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
 import { buildPattern } from "../../src/vm/block-fixture.mjs";
 import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import { CRYPTO_ERROR_CODES } from "../../src/vm/format-chiffre/crypto-errors.mjs";
+import { GardeDeFraicheur } from "../../src/vm/generation-fraicheur.mjs";
 import { GenerationStore } from "../../src/vm/generation-store.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
@@ -356,4 +357,48 @@ test("un journal SANS racine sous un témoin présent est refusé : c'est un rec
   assert.equal(apresRetrait.rapport.temoinSequence, null);
   apresRetrait.close();
   banc.magasin.abandon("vol.gen");
+});
+
+// COURSE sur le cache d'empreinte de région (relevé en revue de #65).
+//
+// `empreinte()` hache la région EN FLUX : entre le premier et le dernier octet lu, une écriture du
+// volume peut survenir et appeler `marquerRegionSale`. Poser `#sale = false` APRÈS l'attente
+// écrasait cette marque : l'empreinte en cache décrivait alors une région d'avant, et la racine
+// suivante la scellait telle quelle — c'est-à-dire qu'elle scellait le mauvais état.
+//
+// La correction tient en une ligne déplacée, et la fenêtre est réelle : sur le volume applicatif de
+// 512 Mio, le hachage porte sur 34 Mio et le point de contrôle écrit pendant ce temps.
+test("une région salie PENDANT le hachage n'est pas oubliée", async () => {
+  let lectures = 0;
+  let garde = null;
+  garde = new GardeDeFraicheur({
+    volume: "course",
+    scellement: null,
+    source: {
+      regionOffset: 0,
+      regionOctets: 64,
+      lireRegion: async (offset, longueur) => {
+        lectures += 1;
+        // Le volume est écrit PENDANT la lecture de la région : c'est ce que fait un point de
+        // contrôle, et c'est exactement la fenêtre que la garde doit couvrir.
+        if (lectures === 1) garde.marquerRegionSale();
+        return new Uint8Array(longueur);
+      },
+      lireTemoin: async () => null,
+      ecrireTemoin: async () => {},
+    },
+  });
+
+  await garde.empreinte();
+  await garde.empreinte();
+  assert.equal(
+    lectures,
+    2,
+    "la seconde empreinte doit RELIRE : la région a changé pendant la première",
+  );
+
+  // TÉMOIN POSITIF : la seconde lecture, elle, n'a rien sali — le cache sert, et il ne relit plus.
+  await garde.empreinte();
+  await garde.empreinte();
+  assert.equal(lectures, 2, "sans écriture pendant le hachage, le cache sert");
 });

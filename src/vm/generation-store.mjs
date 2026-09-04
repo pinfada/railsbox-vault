@@ -245,8 +245,14 @@ export class GenerationStore {
   }
 
   /**
-   * La RACINE VALIDÉE, en lecture seule (#65, ADR 0024) : sa séquence, sa génération, et
-   * l'empreinte de la région d'authentification qu'elle scelle.
+   * La RACINE VALIDÉE (#65, ADR 0024) : sa séquence, sa génération, et l'empreinte de la région
+   * d'authentification qu'elle scelle.
+   *
+   * **Ce geste n'est pas sans effet, et le dire ici évite de le redécouvrir en revue.** Il ne
+   * touche NI le volume NI le journal — rien n'est écrit sur le support —, mais il peut faire
+   * relire 34 Mio à la garde de fraîcheur et remplir son cache d'empreinte. Un appelant qui le
+   * croirait gratuit le placerait dans une boucle ; il appartient à la capture, qui l'appelle une
+   * fois et en publie le coût.
    *
    * C'est la LIAISON d'un instantané de reprise, et rien d'autre : ce magasin ne sait pas ce qu'un
    * instantané est, il rend seulement l'état que la racine authentifie. L'accesseur est asynchrone
