@@ -105,12 +105,21 @@ const COMMIT_PROPRE = Object.freeze({
   arbreDeTravailPropre: true,
 });
 
-/** Arbre publié minimal, cohérent avec son inventaire, prêt pour `--verifier`. */
+/**
+ * Arbre publié minimal, cohérent avec son inventaire, prêt pour `--verifier`.
+ *
+ * Il se nomme « épreuve » et non « coquille », et c'est délibéré depuis #22 : `--verifier` déduit
+ * de la décision de publication les épinglages qu'un arbre DOIT porter, et un arbre qui se
+ * réclamerait de la coquille sans porter les manifestes vendus est un arbre ROMPU. Ce que ces
+ * épreuves-ci mesurent est la PROVENANCE et le contrat des codes de sortie ; leur faire porter en
+ * plus deux manifestes d'artefacts tiers les rendrait dépendantes d'une décision qu'elles
+ * n'éprouvent pas.
+ */
 async function arbrePublie(commit) {
   const racine = await repertoireJetable();
   await writeFile(join(racine, "index.html"), "<!doctype html>\n", "utf8");
   const inventaire = await construireInventaire({
-    arbre: "coquille",
+    arbre: "épreuve",
     role: "épreuve",
     racine,
     origine: "https://coquille.epreuve",
