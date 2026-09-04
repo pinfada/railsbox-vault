@@ -105,7 +105,13 @@ export function isShellDocument(pathname) {
  * Préfixe de l'ÉPINGLAGE v86 de l'ADR 0003 : les octets épinglés par empreinte, le manifeste qui
  * les épingle, et les licences du code redistribué. Le sous-arbre entier ne change QU'ENSEMBLE, à
  * la montée de version de l'émulateur — c'est ce qui en fait une seule nature d'artefact, et c'est
- * pourquoi le manifeste vieillit avec les octets qu'il décrit plutôt que devant eux.
+ * pourquoi le manifeste reçoit la même DURÉE de fraîcheur que les octets qu'il décrit.
+ *
+ * Même durée n'est pas même expiration, et l'ADR 0023 (décision 2) le dit désormais ainsi : HTTP
+ * calcule la fraîcheur par réponse, à partir de la date à laquelle CETTE réponse a été reçue. La
+ * fenêtre commune BORNE l'écart d'âge entre le manifeste et les octets à vingt-quatre heures ; elle
+ * ne les aligne pas. La cohérence, elle, viendra d'une vérification d'empreinte au chargement
+ * (#123).
  */
 export const PREFIXE_EPINGLAGE_V86 = "/vendor/v86/";
 
@@ -142,8 +148,9 @@ export const NATURES_DARTEFACT = Object.freeze({
  *
  * - `coquille` — elle change à chaque version, et son URL ne nomme pas sa version : elle doit être
  *   REVALIDÉE avant réemploi. `no-cache` autorise le stockage, il n'autorise pas le réemploi muet ;
- * - `epinglage-v86` — 2,4 Mio d'octets qui ne changent qu'à la montée de version de l'émulateur.
- *   PAS d'`immutable` : l'ADR 0003 épingle par empreinte dans le manifeste, pas dans l'URL, et
+ * - `epinglage-v86` — 9,9 Mio d'octets (les cinq artefacts de `vendor/v86/MANIFEST.json`, image de
+ *   référence comprise) qui ne changent qu'à la montée de version de l'émulateur. PAS
+ *   d'`immutable` : l'ADR 0003 épingle par empreinte dans le manifeste, pas dans l'URL, et
  *   `immutable` interdirait au navigateur de jamais s'apercevoir d'un ré-épinglage ;
  * - `territoire-applicatif` — ce que cette origine sert en production porte les cookies de session
  *   Rails. `no-store` y est désormais une DÉCISION et non plus un héritage.

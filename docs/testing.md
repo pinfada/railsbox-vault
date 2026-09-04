@@ -1471,12 +1471,12 @@ l'[ADR 0022](decisions/0022-entetes-de-durcissement.md) (#104). Elle relève tro
   ces conditions.
 
 Elle est rattachée aux projets **par défaut** de `playwright.config.mjs`, et non à des projets
-dédiés à trois moteurs comme les trois frontières précédentes. Ce n'est pas une décision de principe
-: #104 n'a pu exécuter que Chromium, et rattacher l'épreuve à trois moteurs aurait publié une
-garantie sur deux d'entre eux sans l'avoir mesurée une seule fois. `VAULT_MOTEURS` l'exécute sur les
-trois ; l'étendre par défaut demande d'abord un relevé, en particulier sur le témoin négatif, dont
-le comportement dépend de la politique de référent par défaut de chaque moteur. **Travail
-découvert.**
+dédiés à trois moteurs comme les trois frontières précédentes. Ce rattachement n'est pas une
+décision de principe, mais la conséquence d'un relevé partiel. #104 n'a pu exécuter que Chromium, et
+rattacher l'épreuve à trois moteurs aurait publié une garantie sur deux d'entre eux sans l'avoir
+mesurée une seule fois. `VAULT_MOTEURS` l'exécute sur les trois ; l'étendre par défaut demande
+d'abord un relevé, en particulier sur le témoin négatif, dont le comportement dépend de la politique
+de référent par défaut de chaque moteur. **Travail découvert.**
 
 L'effet de `Permissions-Policy` n'est PAS mesuré : ce qui est éprouvé est qu'elle est servie, sur la
 bonne origine et avec la bonne valeur. Le motif est dans l'ADR — caméra et micro échouent de toute
@@ -1492,10 +1492,13 @@ quelle valeur pour quel chemin — et deux niveaux suffisent à la tenir.
 
 **Unitaire.** `tests/unit/politique-de-cache.test.mjs` tient la décision là où elle est prise :
 trois natures d'artefact, trois politiques **distinctes**, la nature décidée par le chemin et le
-rôle et non par l'origine, l'absence d'`immutable`, et le manifeste d'épinglage qui relève de la
-même règle que les octets qu'il décrit. L'épreuve qui compte le plus est celle qui garde l'ADR 0022
-: pour un rôle donné, deux chemins de nature différente ne diffèrent **que** par `Cache-Control` —
-la CSP, COOP, `Referrer-Policy` et `Permissions-Policy` traversent intactes.
+rôle et non par l'origine, l'absence d'`immutable`, le manifeste d'épinglage qui relève de la même
+règle que les octets qu'il décrit, et un chemin délibérément inconnu (`/inconnu/futur.bin`) qui
+retombe sur `no-cache` — la table est une liste de cas particuliers autour d'un DÉFAUT, et c'est ce
+défaut qui décidera du sort de ce qui sera ajouté au dépôt demain. L'épreuve qui compte le plus est
+celle qui garde l'ADR 0022. Pour un rôle donné, deux chemins de nature différente ne diffèrent
+**que** par `Cache-Control` — la CSP, COOP, `Referrer-Policy` et `Permissions-Policy` traversent
+intactes.
 
 `tests/unit/publication-arborescences.test.mjs` tient la traduction en fichier `_headers` :
 plusieurs blocs, chacun **complet**, la règle la plus précise qui l'emporte à la relecture par
@@ -1521,9 +1524,16 @@ faute de quoi un témoin vert pourrait n'avoir jamais mesuré ce que la décisio
 
 **Ce qui n'est PAS mesuré**, et qui est écrit dans l'ADR : aucun effet de cache dans un navigateur —
 qu'un moteur garde effectivement l'épinglage v86 vingt-quatre heures demanderait deux visites
-séparées et un témoin négatif, un banc que #103 n'a pas construit. Et aucun hébergement réel : un
-hébergeur qui réécrit `Cache-Control`, comme GitHub Pages le fait, rendrait la décision inopérante
-sans qu'aucun cliquet puisse le voir.
+séparées et un témoin négatif, un banc que #103 n'a pas construit (**#125**). Et aucun hébergement
+réel : un hébergeur qui réécrit `Cache-Control`, comme GitHub Pages le fait, rendrait la décision
+inopérante sans qu'aucun cliquet puisse le voir (**#124**).
+
+**Robustesse de la chaîne.** `tests/unit/publication-robustesse.test.mjs` porte, en section L5, le
+revers de cette politique : la classe `epinglage-v86` est accordée par **emplacement**, si bien que
+tout fichier présent sous `vendor/v86/artefacts/` — répertoire ignoré par git, peuplé par
+`npm run vm:fetch` — partirait chez l'hébergeur avec vingt-quatre heures de cache partagé.
+`verifierEpinglageV86` confronte donc le manifeste et le disque dans les **deux** sens, et un
+fichier non déclaré est un écart d'épinglage (code 5), pas un artefact publié.
 
 ### Frontière de l'enveloppe de clé
 

@@ -124,9 +124,14 @@ test("aucune nature ne reçoit `immutable` : aucune URL publiée ne nomme son em
   }
 });
 
-test("le manifeste d'épinglage vieillit AVEC les octets qu'il décrit, pas séparément", () => {
-  // Un manifeste frais devant des octets d'hier décrirait un runtime que le navigateur n'exécute
-  // pas. Les deux relèvent du même préfixe, donc de la même règle, donc de la même fenêtre.
+test("le manifeste d'épinglage reçoit la même DURÉE de fraîcheur que les octets qu'il décrit", () => {
+  // Ce que cette égalité donne est une BORNE, et rien de plus : les deux chemins relèvent du même
+  // préfixe, donc de la même règle, donc de la même durée — ce qui limite à vingt-quatre heures
+  // l'écart d'âge entre le manifeste et les octets. Ce n'est PAS une expiration commune : HTTP
+  // calcule la fraîcheur par réponse, à partir de sa propre date de réception, et deux réponses
+  // portant le même `max-age` reçues à une heure d'intervalle expirent à une heure d'intervalle.
+  // La cohérence manifeste ↔ octets viendra d'une vérification d'empreinte au chargement (#123) ;
+  // aucun code navigateur de ce dépôt ne lit le manifeste aujourd'hui.
   assert.ok(MANIFESTE_EPINGLAGE.startsWith(PREFIXE_EPINGLAGE_V86));
   assert.ok(ARTEFACT_EPINGLE.startsWith(PREFIXE_EPINGLAGE_V86));
   assert.equal(

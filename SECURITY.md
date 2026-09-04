@@ -662,10 +662,21 @@ de mise à jour.
 - **`immutable` est refusé, et c'est une propriété de mise à jour.** Aucune URL publiée ne nomme son
   empreinte : l'ADR 0003 épingle par SHA-256 dans `vendor/v86/MANIFEST.json`, pas dans le chemin.
   Servir `immutable` interdirait au navigateur de s'apercevoir d'un ré-épinglage, y compris pour une
-  mise à jour de **sécurité** du runtime. La fenêtre retenue est de vingt-quatre heures, la même
-  pour le manifeste et pour les octets qu'il décrit, si bien qu'un navigateur ne peut pas tenir un
-  manifeste frais devant un émulateur périmé. Le retard d'une version pendant cette fenêtre est un
-  risque résiduel écrit dans l'ADR.
+  mise à jour de **sécurité** du runtime. La fenêtre retenue est de vingt-quatre heures, de même
+  **durée** pour le manifeste et pour les octets qu'il décrit, ce qui **borne à vingt-quatre heures
+  l'écart d'âge** entre les deux. Ce n'est pas une expiration commune : HTTP calcule la fraîcheur
+  par réponse, à partir de la date de réception de cette réponse, si bien qu'un manifeste chargé tôt
+  peut se retrouver devant des octets plus récents jusqu'à la fin de sa propre fenêtre. La cohérence
+  manifeste ↔ octets sera tenue par une vérification d'**empreinte au chargement** (#123) ; aucun
+  code navigateur de ce dépôt ne lit le manifeste aujourd'hui. Le retard d'une version pendant cette
+  fenêtre est un risque résiduel écrit dans l'ADR ;
+- **la classe de cache longue est accordée par EMPLACEMENT, et la publication borne cet
+  emplacement.** Tout ce qui relève de `/vendor/v86/` reçoit vingt-quatre heures de cache
+  **partagé** ; or `vendor/v86/artefacts/` est ignoré par git et peuplé par `npm run vm:fetch`. Un
+  fichier qui y traînerait sur le poste qui publie serait donc distribué sous cette politique, sans
+  empreinte épinglée et sans révocation. `verifierEpinglageV86` confronte le manifeste et le disque
+  dans les **deux** sens : un fichier présent que `vendor/v86/MANIFEST.json` ne déclare pas est un
+  écart d'épinglage, et la publication est refusée (code 5).
 
 Une seule dimension d'en-tête varie selon le chemin, et le cliquet de publication refuse qu'une
 seconde s'y ajoute : une divergence de CSP, de COOP, de `Referrer-Policy` ou de `Permissions-Policy`

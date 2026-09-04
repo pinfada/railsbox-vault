@@ -168,7 +168,10 @@ coquille par comparaison littérale, et l'absence décidée sur l'origine applic
   `getUserMedia` sous elle. Une sonde honnête demanderait un témoin négatif que le sans-tête ne
   fournit pas : caméra et micro échouent de toute façon dans ce contexte, et une sonde qui verrait «
   refusé » des deux côtés ne prouverait rien. `document.featurePolicy` n'existe que sur un moteur.
-  C'est du **travail découvert**, pas une propriété acquise.
+  C'est du **travail découvert**, suivi par **#126**, pas une propriété acquise. Ce que #126 vise en
+  premier n'est d'ailleurs pas « la caméra est refusée à la coquille » — la coquille n'appelle rien,
+  et un balayage le vérifie — mais le risque résiduel n°1 ci-dessous : la non-réoctroyabilité par
+  `allow=` au cadre applicatif, qui n'est aujourd'hui qu'une lecture de la spécification.
 - **Le balayage du fait 2 porte sur le dépôt, pas sur le v86 épinglé.** `vendor/v86/artefacts/`
   n'est pas versionné et était absent ici : `libv86.mjs` n'a pas été relu à la recherche d'API de
   capture. L'ADR 0010 l'a inspecté pour `SharedArrayBuffer`, pas pour celles-ci. Ce que #104 a
@@ -182,7 +185,9 @@ coquille par comparaison littérale, et l'absence décidée sur l'origine applic
 1. **La `Permissions-Policy` de la coquille ferme une porte qu'un `allow=` ne rouvrira plus** (fait
    3). Aucune capacité n'est perdue aujourd'hui ; le jour où le produit voudra accorder l'une des
    trois au cadre applicatif, il faudra rouvrir cet ADR plutôt que poser un `allow=` qui resterait
-   sans effet — et le mode de panne serait silencieux.
+   sans effet — et le mode de panne serait silencieux. Cette phrase est une lecture de la
+   spécification, non une mesure : **#126** porte le protocole qui la vérifierait, témoin positif
+   compris.
 2. **Le durcissement générique s'arrête à trois en-têtes.** `X-Frame-Options` (redondant avec
    `frame-ancestors`), `Cross-Origin-Embedder-Policy` (écarté sur mesure par l'ADR 0010, hors
    périmètre de #104) et `Clear-Site-Data` ne sont pas examinés ici.
