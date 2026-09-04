@@ -166,6 +166,13 @@ export function decoderEnTete(octets) {
       `version d'instantané ${formatInstantane} inconnue de ce runtime, qui écrit et lit la version ${INSTANTANE_FORMAT}.`,
     );
   }
+  // La RÉSERVE doit être NULLE. Elle n'entre pas dans les données associées — elle n'est donc pas
+  // authentifiée —, et l'accepter non nulle offrirait quatre octets de canal libre sous un en-tête
+  // qui se présente comme scellé. Un fichier qui y porte quoi que ce soit vient d'un autre
+  // producteur, ou a été retouché ; dans les deux cas il n'est pas de ce runtime.
+  if (octets.subarray(OFFSET.reserve, EN_TETE_OCTETS).some((octet) => octet !== 0)) {
+    return refus("la réserve de l'en-tête n'est pas nulle : ce fichier n'a pas été écrit ici.");
+  }
 
   try {
     return Object.freeze({

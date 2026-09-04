@@ -82,6 +82,22 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_CONDUITE],
   },
   {
+    nom: "écart de version de FORMAT DE VOLUME",
+    garde: "confronterLiaison — champ « formatVolume »",
+    fichier: CONDUITE,
+    avant: "  if (declaree.formatVolume !== presente.formatVolume) {",
+    apres: "  if (false) {",
+    epreuves: [EPREUVE_CONDUITE],
+  },
+  {
+    nom: "réserve de l'en-tête : quatre octets de canal libre",
+    garde: "decoderEnTete — la réserve est nulle",
+    fichier: FICHIER,
+    avant: "  if (octets.subarray(OFFSET.reserve, EN_TETE_OCTETS).some((octet) => octet !== 0)) {",
+    apres: "  if (false) {",
+    epreuves: [EPREUVE_FICHIER],
+  },
+  {
     nom: "séquence : un RECUL du journal passerait",
     garde: "confronterLiaison — la séquence ne recule pas",
     fichier: CONDUITE,
@@ -179,10 +195,15 @@ function copierLeDepot() {
 }
 
 /**
- * Rejoue les épreuves d'une mutation DANS l'atelier. Rend vrai si au moins une a rougi.
+ * Rejoue des épreuves DANS l'atelier, et rend le CODE DE SORTIE observé.
  *
  * `NODE_TEST_CONTEXT` est retiré de l'environnement de l'enfant : hérité, il ferait sortir un
  * `node --test` avec le code 0 quoi qu'il arrive, et un mutant vivant passerait pour mort.
+ *
+ * Le code est rendu tel quel — jamais réduit à un booléen — parce qu'il porte trois états et non
+ * deux : `0` (l'épreuve passe), un entier non nul (elle rougit), et `null` (l'enfant a été tué par
+ * un signal, ou n'a pas démarré). Confondre le troisième avec le deuxième ferait passer une panne
+ * de campagne pour un mutant tué.
  */
 function rejouer(atelier, epreuves) {
   const environnement = { ...process.env };
@@ -192,42 +213,65 @@ function rejouer(atelier, epreuves) {
     encoding: "utf8",
     env: environnement,
   });
-  return resultat.status !== 0;
+  return resultat.status;
 }
 
-/** Applique une mutation dans l'atelier, rejoue, remet le fichier d'origine. */
+/**
+ * Applique une mutation dans l'atelier, rejoue, remet le fichier d'origine.
+ *
+ * **L'épreuve est d'abord jouée SANS mutation**, et c'est la garde que la revue a exigée : sans
+ * elle, la campagne comptait TUÉ tout code de sortie non nul, y compris celui d'un `node --test` à
+ * qui l'on donne un fichier qui n'existe pas. Une table qui se périme — un fichier renommé, une
+ * épreuve déplacée — se serait donc mise à rendre « tous tués » en ne mesurant plus rien. Un mutant
+ * n'est tué que si l'épreuve **passait** avant qu'on le pose.
+ */
 function eprouver(atelier, mutation) {
   const chemin = join(atelier, mutation.fichier);
   const original = readFileSync(chemin, "utf8");
+  const identite = { nom: mutation.nom, garde: mutation.garde };
   const occurrences = original.split(mutation.avant).length - 1;
   if (occurrences !== 1) {
     return {
-      nom: mutation.nom,
-      garde: mutation.garde,
+      ...identite,
       applicable: false,
       tue: false,
       raison: `le texte à retirer apparaît ${occurrences} fois dans ${mutation.fichier} — la mutation ne décrit pas ce qu'elle croit décrire.`,
     };
   }
+
+  const base = rejouer(atelier, mutation.epreuves);
+  if (base !== 0) {
+    return {
+      ...identite,
+      applicable: false,
+      tue: false,
+      raison: `l'épreuve ne passe pas AVANT la mutation (code ${base === null ? "null — enfant tué ou non démarré" : base}) : elle ne peut rien mesurer.`,
+    };
+  }
+
   try {
     writeFileSync(chemin, original.replace(mutation.avant, mutation.apres), "utf8");
-    return {
-      nom: mutation.nom,
-      garde: mutation.garde,
-      applicable: true,
-      tue: rejouer(atelier, mutation.epreuves),
-      raison: null,
-    };
+    const mute = rejouer(atelier, mutation.epreuves);
+    if (mute === null) {
+      return {
+        ...identite,
+        applicable: true,
+        tue: false,
+        raison:
+          "l'enfant a été tué ou n'a pas démarré sous mutation : la campagne n'a rien mesuré.",
+      };
+    }
+    return { ...identite, applicable: true, tue: mute !== 0, raison: null };
   } finally {
     writeFileSync(chemin, original, "utf8");
   }
 }
 
 /** Rejoue toute la campagne. Exportée pour que l'épreuve la fasse tourner sans dupliquer la table. */
-export function campagneDeMutation() {
+export function campagneDeMutation({ mutations = MUTATIONS } = {}) {
   const atelier = copierLeDepot();
   try {
-    return { resultats: MUTATIONS.map((mutation) => eprouver(atelier, mutation)) };
+    return { resultats: mutations.map((mutation) => eprouver(atelier, mutation)) };
   } finally {
     rmSync(atelier, { recursive: true, force: true });
   }

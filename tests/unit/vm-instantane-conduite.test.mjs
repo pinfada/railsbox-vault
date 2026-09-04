@@ -153,6 +153,25 @@ test("chaque ÉCART de liaison écarte l'instantané, le RETIRE, et nomme son mo
   }
 });
 
+test("un instantané d'un AUTRE FORMAT DE VOLUME est écarté et retiré", async () => {
+  // La version de format entre dans les données associées (ADR 0024, décision 3), et `scellement.mjs`
+  // promet depuis #18 qu'un objet scellé sous une autre version ne s'ouvre pas. Sans confrontation
+  // AVANT le sceau, ce refus existait dans les octets et jamais dans un message : un instantané d'un
+  // volume v3 présenté à une session v2 tombait sur un SCEAU_REFUSE, qui ne nomme pas la cause.
+  const { support } = await supportAvecInstantane();
+  const rapport = await ouvrir(support, { formatVolume: 4 });
+  assert.equal(rapport.utilise, false);
+  assert.equal(rapport.motif, INSTANTANE_ERROR_CODES.ecartFormat);
+  assert.equal((await support.etat()).present, false, "il est RETIRÉ comme les autres écarts");
+});
+
+test("TÉMOIN POSITIF du format : la version qui a scellé ouvre", async () => {
+  const { support } = await supportAvecInstantane();
+  const rapport = await ouvrir(support, { formatVolume: 3 });
+  assert.equal(rapport.motif, null, rapport.message ?? "");
+  assert.equal(rapport.utilise, true);
+});
+
 test("un instantané d'un AUTRE volume est écarté et retiré", async () => {
   const { support } = await supportAvecInstantane();
   const autre = await Scellement.ouvrir({

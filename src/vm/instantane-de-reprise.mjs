@@ -153,6 +153,18 @@ function confronterLiaison(declaree, presente, volume) {
       volume,
     });
   }
+  // La VERSION DE FORMAT DE VOLUME, confrontée par ÉGALITÉ. Elle entre dans les données associées,
+  // donc le sceau la refuserait de toute façon — mais par un `SCEAU_REFUSE`, qui ne nomme pas la
+  // cause et n'arrive qu'après avoir traversé le corps entier. Un instantané d'un volume migré
+  // depuis la capture décrit une mémoire qui a vu une autre disposition : le dire coûte quatre
+  // octets de comparaison.
+  if (declaree.formatVolume !== presente.formatVolume) {
+    throw ecartDeLiaison("formatVolume", {
+      declare: declaree.formatVolume,
+      present: presente.formatVolume,
+      volume,
+    });
+  }
   if (presente.sequence < declaree.sequence) {
     throw ecartDeLiaison("sequence", {
       declare: `au moins ${declaree.sequence}`,

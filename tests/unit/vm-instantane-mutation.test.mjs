@@ -42,12 +42,26 @@ test("AUCUN mutant ne survit : chaque garde retirée fait rougir sa preuve", () 
   );
 });
 
+test("une épreuve ABSENTE ne passe pas pour un mutant tué", () => {
+  // Le défaut que la revue a trouvé : la campagne comptait TUÉ tout code de sortie non nul, y
+  // compris celui d'un « node --test » à qui l'on donne un fichier qui n'existe pas. Une table qui
+  // se périme — un fichier renommé, une épreuve déplacée — se serait donc mise à rendre 11/11 en ne
+  // mesurant plus rien. Un mutant n'est tué que si l'épreuve PASSAIT avant la mutation.
+  const { resultats } = campagneDeMutation({
+    mutations: [{ ...MUTATIONS[0], epreuves: ["tests/unit/epreuve-qui-nexiste-pas.test.mjs"] }],
+  });
+  assert.equal(resultats[0].tue, false, "une épreuve absente ne tue rien");
+  assert.match(resultats[0].raison ?? "", /base|absente|avant la mutation/i);
+});
+
 test("la table couvre les gardes que l'ADR 0024 nomme, et les deux de la quiescence", () => {
   const noms = MUTATIONS.map((mutation) => mutation.nom).join(" | ");
   for (const attendu of [
     "identifiant de volume",
     "séquence",
     "génération",
+    "FORMAT DE VOLUME",
+    "réserve de l'en-tête",
     "empreinte de région",
     "empreinte d'image",
     "marque de complétude",

@@ -19,6 +19,14 @@ export const INSTANTANE_ERROR_CODES = Object.freeze({
   incomplet: "VAULT_INSTANTANE_INCOMPLET",
   /** L'en-tête DÉCLARE un autre identifiant de volume. */
   ecartVolume: "VAULT_INSTANTANE_ECART_VOLUME",
+  /**
+   * L'en-tête DÉCLARE une autre version de FORMAT DE VOLUME.
+   *
+   * La version entre dans les données associées depuis l'ADR 0015, et le sceau la refuserait donc
+   * de toute façon — mais par un `SCEAU_REFUSE`, qui ne nomme pas la cause. Ce code-ci la nomme, et
+   * il tombe AVANT que 250 Mio soient déchiffrés pour apprendre ce que quatre octets disaient.
+   */
+  ecartFormat: "VAULT_INSTANTANE_ECART_FORMAT",
   /** L'en-tête DÉCLARE une autre séquence validée : le volume a été écrit depuis la capture. */
   ecartSequence: "VAULT_INSTANTANE_ECART_SEQUENCE",
   /** L'en-tête DÉCLARE une autre génération validée. */
@@ -92,6 +100,7 @@ export function incomplet(raison, contexte = {}) {
 /** Les cinq écarts de liaison, par le champ qui diverge. Chaque champ a son code. */
 const CODE_PAR_CHAMP = Object.freeze({
   volume: INSTANTANE_ERROR_CODES.ecartVolume,
+  formatVolume: INSTANTANE_ERROR_CODES.ecartFormat,
   sequence: INSTANTANE_ERROR_CODES.ecartSequence,
   generation: INSTANTANE_ERROR_CODES.ecartGeneration,
   empreinteRegion: INSTANTANE_ERROR_CODES.ecartRegion,
