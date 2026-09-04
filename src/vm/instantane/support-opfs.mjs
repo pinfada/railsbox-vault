@@ -26,18 +26,19 @@ import {
   instantaneSidecarName,
   openOpfsSyncAccess,
   removeOpfsVolume,
+  statOpfsVolume,
 } from "../opfs-sync-access.mjs";
 
 /**
  * Construit le support OPFS d'un instantané. Rien n'est ouvert avant le premier geste.
  *
  * @param {string} volume nom du volume — le nom du voisin en est DÉRIVÉ, jamais reçu
- * @param {{ openHandle?: Function, supprimer?: Function }} [injections] points d'injection du
- *   support : le vrai OPFS en production, un double déterministe ailleurs
+ * @param {{ openHandle?: Function, supprimer?: Function, observer?: Function }} [injections] points
+ *   d'injection du support : le vrai OPFS en production, un double déterministe ailleurs
  */
 export function supportInstantaneOpfs(
   volume,
-  { openHandle = openOpfsSyncAccess, supprimer = removeOpfsVolume } = {},
+  { openHandle = openOpfsSyncAccess, supprimer = removeOpfsVolume, observer = statOpfsVolume } = {},
 ) {
   const nom = instantaneSidecarName(volume);
   let handle = null;
@@ -64,9 +65,25 @@ export function supportInstantaneOpfs(
   return {
     nom,
 
-    /** Présence et taille. Un fichier VIDE est un instantané absent, jamais un instantané nul. */
+    /**
+     * Présence et taille. Un fichier VIDE est un instantané absent, jamais un instantané nul.
+     *
+     * **Tant qu'aucun handle n'est saisi, la question passe par l'OBSERVATION** — `statOpfsVolume`,
+     * qui ouvre avec `create: false` de bout en bout. `openOpfsSyncAccess`, lui, CRÉE : poser la
+     * question par une saisie fabriquait un `<volume>.instantane` vide sur tout support qui n'en
+     * avait pas, prenait au passage un verrou exclusif dont personne n'avait l'usage, et laissait
+     * derrière elle un fichier de zéro octet que rien ne vient jamais retirer. Or la question est
+     * posée à CHAQUE ouverture de volume : c'était donc un fichier de plus par volume, toujours.
+     *
+     * Une fois le handle saisi — après une allocation, une écriture —, l'état vient de LUI : c'est
+     * la source la plus fraîche, et l'observation décrirait le fichier d'avant la troncature.
+     */
     async etat() {
-      const taille = (await saisir()).getSize();
+      if (handle === null) {
+        const { present, size } = await observer(nom);
+        return { present: present && size > 0, taille: size };
+      }
+      const taille = handle.getSize();
       return { present: taille > 0, taille };
     },
 

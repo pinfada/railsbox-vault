@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { supportInstantaneOpfs } from "../../src/vm/instantane/support-opfs.mjs";
 import { createOpfsImportTarget } from "../../src/vm/opfs-import-target.mjs";
 import { createOpfsMigrationTarget } from "../../src/vm/opfs-migration-target.mjs";
 import {
@@ -82,4 +83,61 @@ test("la MIGRATION retire l'instantané avec le journal et le témoin", async ()
   const cible = createOpfsMigrationTarget("donnees", { removeSidecar: espion.removeSidecar });
   await cible.removeGenerationJournal();
   assert.deepEqual(espion.retires, ["donnees.gen", "donnees.temoin", "donnees.instantane"]);
+});
+
+// OBSERVER NE FABRIQUE RIEN (#65, revue de la PR #133).
+//
+// `openOpfsSyncAccess` ouvre avec `create: true` — c'est ce qu'il faut pour capturer, et c'est
+// exactement ce qu'il ne faut pas pour DEMANDER s'il y a quelque chose. Chaque ouverture de volume
+// pose la question ; la poser en saisissant un handle créait un `<volume>.instantane` vide sur tout
+// support qui n'en avait pas, prenait un verrou exclusif pour rien, et laissait derrière elle un
+// fichier de zéro octet que rien ne vient jamais retirer.
+
+test("demander l'état d'un instantané ABSENT ne le crée pas", async () => {
+  let saisies = 0;
+  const support = supportInstantaneOpfs("donnees", {
+    openHandle: async () => {
+      saisies += 1;
+      return { getSize: () => 0 };
+    },
+    observer: async (nom) => {
+      assert.equal(nom, "donnees.instantane", "on observe le VOISIN, pas le volume");
+      return { present: false, size: 0 };
+    },
+  });
+
+  assert.deepEqual(await support.etat(), { present: false, taille: 0 });
+  assert.equal(saisies, 0, "aucun handle saisi : `openOpfsSyncAccess` aurait CRÉÉ le fichier");
+});
+
+test("l'observation rend la taille d'un instantané PRÉSENT, toujours sans le saisir", async () => {
+  let saisies = 0;
+  const support = supportInstantaneOpfs("donnees", {
+    openHandle: async () => {
+      saisies += 1;
+      return { getSize: () => 0 };
+    },
+    observer: async () => ({ present: true, size: 4096 }),
+  });
+
+  assert.deepEqual(await support.etat(), { present: true, taille: 4096 });
+  assert.equal(saisies, 0);
+});
+
+test("une fois le handle SAISI, l'état vient de lui : c'est la source la plus fraîche", async () => {
+  // Après une capture, la taille inscrite dans le handle est celle qui vaut : l'observation, elle,
+  // interroge le support et peut décrire un fichier d'avant la troncature.
+  let taille = 0;
+  const support = supportInstantaneOpfs("donnees", {
+    openHandle: async () => ({
+      getSize: () => taille,
+      truncate: (t) => {
+        taille = t;
+      },
+    }),
+    observer: async () => ({ present: false, size: 0 }),
+  });
+
+  await support.allouer(8192);
+  assert.deepEqual(await support.etat(), { present: true, taille: 8192 });
 });
