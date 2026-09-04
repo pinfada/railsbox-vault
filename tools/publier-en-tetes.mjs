@@ -242,8 +242,18 @@ export function enTetesPour(regles, chemin, retires = []) {
   return resultat;
 }
 
-/** Signature d'un jeu d'en-têtes, hors la seule dimension déclarée non uniforme. */
-function signatureHorsDimension(enTetes) {
+/**
+ * Signature d'un jeu d'en-têtes, hors la seule dimension déclarée non uniforme.
+ *
+ * Elle est EXPORTÉE, et ce n'est pas pour la commodité des épreuves : c'est la frontière exacte du
+ * cliquet d'uniformité, et une frontière qu'on ne peut pas interroger ne peut pas être défendue. La
+ * campagne de mutation de #103 a relevé qu'un affaiblissement par en-tête — sortir la seule CSP de
+ * la comparaison — survivait à toute la suite, parce que le seul chemin dissident du dépôt
+ * (`compat.html`) diverge sur TROIS en-têtes à la fois.
+ * `tests/unit/publication-arborescences.test.mjs` altère désormais chaque en-tête l'un après
+ * l'autre et exige que la signature bouge.
+ */
+export function signatureDeComparaison(enTetes) {
   const compares = Object.entries(enTetes).filter(([nom]) => nom !== DIMENSION_NON_UNIFORME);
   return JSON.stringify(Object.fromEntries(compares));
 }
@@ -264,10 +274,10 @@ function signatureHorsDimension(enTetes) {
  * @returns {readonly string[]}
  */
 export function cheminsHorsUniformite(arbre, chemins, options = {}) {
-  const reference = signatureHorsDimension(enTetesDePublication(arbre, options));
+  const reference = signatureDeComparaison(enTetesDePublication(arbre, options));
   return chemins.filter(
     (chemin) =>
-      signatureHorsDimension(enTetesDePublication(arbre, options, `/${chemin}`)) !== reference,
+      signatureDeComparaison(enTetesDePublication(arbre, options, `/${chemin}`)) !== reference,
   );
 }
 
