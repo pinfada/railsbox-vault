@@ -124,19 +124,48 @@ async function lireExactement(support, offset, longueur, quoi) {
 /**
  * Confronte la liaison DÉCLARÉE par l'en-tête à l'état présent, champ par champ.
  *
- * L'ordre des champs est celui du coût croissant du remède, pas celui de la table du format : un
- * écart de VOLUME dit « cet instantané n'est pas celui de ce volume », un écart de SÉQUENCE dit
- * « le volume a été écrit depuis », et les deux ne se lisent pas de la même façon dans un compte
- * rendu.
+ * ## La SÉQUENCE se compare par un RECUL, pas par une égalité — et c'est une correction
+ *
+ * La première version de cette garde exigeait l'égalité stricte, et l'exécution l'a réfutée : la
+ * SÉQUENCE compte les écritures de RACINE, **y compris la racine vide que toute récupération
+ * écrit** (ADR 0014 — « le vidage qui clôt une récupération écrit une racine neuve »). Elle avance
+ * donc d'un cran à CHAQUE OUVERTURE, avant même que le guest ait battu. Un instantané lié à
+ * l'égalité de séquence était périmé à la première réouverture : il n'aurait jamais servi une seule
+ * fois.
+ *
+ * Ce qu'un instantané doit détecter est une ÉCRITURE du volume, et deux champs la mesurent
+ * exactement : la GÉNÉRATION VALIDÉE, qui n'avance qu'à une barrière acquittée du guest, et
+ * l'EMPREINTE DE RÉGION, qui change dès qu'un secteur est rescellé. Ils restent comparés par
+ * ÉGALITÉ.
+ *
+ * La séquence garde alors la propriété qu'elle est seule à porter : elle ne RECULE pas. Une
+ * séquence présente inférieure à celle que l'instantané déclare décrit un journal ramené en arrière
+ * — le cas que l'ADR 0019 nomme —, et l'instantané est écarté. C'est une garde de moins que
+ * l'égalité, et une garde de plus que rien.
+ *
+ * L'ordre des champs est celui du coût croissant du remède, pas celui de la table du format.
  */
 function confronterLiaison(declaree, presente, volume) {
-  const scalaires = [
-    ["volume", declaree.volume, presente.volume],
-    ["sequence", declaree.sequence, presente.sequence],
-    ["generation", declaree.generation, presente.generation],
-  ];
-  for (const [champ, declare, present] of scalaires) {
-    if (declare !== present) throw ecartDeLiaison(champ, { declare, present, volume });
+  if (declaree.volume !== presente.volume) {
+    throw ecartDeLiaison("volume", {
+      declare: declaree.volume,
+      present: presente.volume,
+      volume,
+    });
+  }
+  if (presente.sequence < declaree.sequence) {
+    throw ecartDeLiaison("sequence", {
+      declare: `au moins ${declaree.sequence}`,
+      present: presente.sequence,
+      volume,
+    });
+  }
+  if (declaree.generation !== presente.generation) {
+    throw ecartDeLiaison("generation", {
+      declare: declaree.generation,
+      present: presente.generation,
+      volume,
+    });
   }
   const empreintes = [
     ["empreinteRegion", declaree.empreinteRegion, presente.empreinteRegion],

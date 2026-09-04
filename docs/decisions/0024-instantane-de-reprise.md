@@ -160,7 +160,7 @@ présent. Sept états le refusent, chacun **typé et nommé** :
 | `VAULT_INSTANTANE_MALFORME`         | marqueur absent, version inconnue, fichier plus court que son en-tête     | le même fichier intact s'ouvre         |
 | `VAULT_INSTANTANE_INCOMPLET`        | marque de complétude absente ou corps plus court que la longueur déclarée | le même fichier, marque posée, s'ouvre |
 | `VAULT_INSTANTANE_ECART_VOLUME`     | l'identifiant de volume diffère                                           | l'identifiant attendu ouvre            |
-| `VAULT_INSTANTANE_ECART_SEQUENCE`   | la séquence validée a avancé depuis la capture                            | la séquence de la capture ouvre        |
+| `VAULT_INSTANTANE_ECART_SEQUENCE`   | la séquence a RECULÉ depuis la capture (ci-dessous)                       | une séquence égale ou supérieure ouvre |
 | `VAULT_INSTANTANE_ECART_GENERATION` | la génération validée diffère                                             | la génération de la capture ouvre      |
 | `VAULT_INSTANTANE_ECART_REGION`     | l'empreinte de la région d'authentification diffère                       | l'empreinte de la capture ouvre        |
 | `VAULT_INSTANTANE_ECART_IMAGE`      | l'empreinte de l'image de référence diffère                               | l'empreinte de la capture ouvre        |
@@ -169,6 +169,37 @@ présent. Sept états le refusent, chacun **typé et nommé** :
 Le tableau compte huit lignes pour « sept gardes » parce que `MALFORME` et `INCOMPLET` répondent
 d'un même geste — reconnaître un fichier — et de deux causes distinctes dont les remèdes se lisent
 différemment dans un compte rendu.
+
+### La SÉQUENCE se compare par un RECUL, et c'est une CORRECTION du raffinement de #65
+
+Le raffinement de l'issue demandait qu'« une écriture validée après la capture (séquence supérieure)
+l'invalide », et la première version de cette garde exigeait donc l'égalité stricte. **L'exécution
+l'a réfutée.** La séquence compte les écritures de RACINE, et l'ADR 0014 en écrit une que personne
+ne remarque tant qu'on ne s'y lie pas : **le vidage qui clôt toute récupération écrit une racine
+neuve**, donc la séquence avance d'un cran à CHAQUE OUVERTURE, avant même que le guest ait battu.
+
+Un instantané lié à l'égalité de séquence est donc périmé à sa première réouverture — c'est-à-dire
+qu'il n'aurait **jamais servi une seule fois**. Le défaut est tombé sur le scénario de bout en bout
+de cette tranche, pas en revue : capture, fermeture, réouverture, et l'instantané écarté au motif
+`ECART_SEQUENCE` par un volume que rien n'avait touché.
+
+**Ce que l'intention du raffinement demandait est tenu, et par deux champs plutôt qu'un** :
+
+- la **GÉNÉRATION VALIDÉE** n'avance qu'à une barrière ACQUITTÉE du guest, c'est-à-dire exactement à
+  une « écriture validée ». Elle est comparée par ÉGALITÉ, et c'est elle qui porte la garde que le
+  raffinement décrit ;
+- l'**EMPREINTE DE RÉGION** change dès qu'un secteur est rescellé — donc dès qu'un point de contrôle
+  a rangé quoi que ce soit. Elle est comparée par ÉGALITÉ elle aussi, et elle attrape ce qu'une
+  génération inchangée laisserait passer.
+
+La séquence garde alors la seule propriété qu'elle est seule à porter : **elle ne recule pas**. Une
+séquence présente inférieure à celle que l'instantané déclare décrit un journal ramené en arrière —
+le cas que l'ADR 0019 nomme —, et l'instantané est écarté. C'est une garde de moins que l'égalité,
+et une garde de plus que rien.
+
+Les deux épreuves vivent côte à côte dans `tests/unit/vm-instantane-conduite.test.mjs` : « une
+séquence qui AVANCE n'écarte rien » et « une séquence qui RECULE écarte l'instantané ». La première
+est le témoin qui manquait ; sans elle, la garde d'égalité serait revenue au premier remaniement.
 
 **Le remède est UN, et c'est le point de la décision :** l'instantané est **retiré du support**, et
 le **boot à froid** s'exécute. Aucun message ne laisse croire à une reprise ; le compte rendu publie
@@ -185,9 +216,9 @@ qu'il affirme.
 tous **avant** le sceau, tous comme **diagnostics** sur des champs non authentifiés, et le sceau en
 dernier sur le corps entier. C'est l'inverse de l'ordre de l'ADR 0015 (« authentifier d'abord,
 classer ensuite ») et la différence doit être écrite : ici le classement ne prétend pas être établi.
-Un `ECART_SEQUENCE` dit « l'en-tête DÉCLARE une autre séquence », pas « un adversaire a reculé le
-volume ». Comme tous les écarts mènent au même remède — écarter — la nuance ne coûte aucune sûreté,
-et elle épargne de déchiffrer 250 Mio pour apprendre ce que douze octets disaient déjà.
+Un `ECART_GENERATION` dit « l'en-tête DÉCLARE une autre génération », pas « un adversaire a reculé
+le volume ». Comme tous les écarts mènent au même remède — écarter — la nuance ne coûte aucune
+sûreté, et elle épargne de déchiffrer 250 Mio pour apprendre ce que douze octets disaient déjà.
 
 ## Décision 5 — La QUIESCENCE : un nouvel état de l'adaptateur (ADR 0003 amendé)
 
