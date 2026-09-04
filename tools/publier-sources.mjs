@@ -176,6 +176,21 @@ export async function materialiser({ racine, reference, sources, destination }) 
  * runtime servis au navigateur sont bien ceux que l'ADR 0003 a épinglés. La vérification est faite
  * ici, sur l'arbre publié, et non dans le dépôt — c'est l'arbre qui part chez l'hébergeur.
  *
+ * La confrontation va dans les DEUX SENS, et le second est le correctif de la revue de #103. Le
+ * premier — chaque artefact déclaré est là, et à la bonne empreinte — ne dit rien de ce qui est là
+ * SANS être déclaré. Or `vendor/v86/artefacts/` est ignoré par git et peuplé par
+ * `npm run vm:fetch` ; `tools/publier-arborescences.mjs` le copie en bloc ; et depuis l'ADR 0023 la
+ * classe de cache `epinglage-v86` est accordée par EMPLACEMENT — tout ce qui relève de
+ * `/vendor/v86/` reçoit `public, max-age=86400`. Un fichier oublié là par un poste de
+ * développement partait donc chez l'hébergeur avec vingt-quatre heures de cache PARTAGÉ et sans
+ * révocation possible, là où il recevait `no-store` avant #103.
+ *
+ * L'ADR 0003 dit ce qui a le droit d'être dans ce répertoire : les artefacts du manifeste, et rien
+ * d'autre. Ce qui n'y est pas déclaré est donc un ÉCART — code 5, publication refusée — et non un
+ * fichier discrètement écarté de la copie : un retrait silencieux ferait disparaître la trace de
+ * ce qui traînait sur le disque du poste qui publie, quand c'est précisément ce qu'un exploitant
+ * doit voir.
+ *
  * @param {string} destination racine de l'arbre publié
  * @param {(contenu: Uint8Array) => string} empreinte
  */
@@ -255,7 +270,16 @@ async function verifierEpinglage(destination, empreinte, { manifeste: chemin, ar
   }
 
   const declares = JSON.parse(await readFile(manifeste, "utf8")).artifacts;
-  const presents = new Set(await readdir(dossier));
+  const presents = await readdir(dossier);
+  const ecarts = [
+    ...(await ecartsDesDeclares(declares, dossier, new Set(presents), empreinte)),
+    ...ecartsDesNonDeclares(declares, presents),
+  ];
+  return { verifie: true, situation: SITUATIONS_EPINGLAGE.verifie, motif: null, ecarts };
+}
+
+/** Chaque artefact DÉCLARÉ est-il publié, et à l'empreinte que l'ADR 0003 lui épingle ? */
+async function ecartsDesDeclares(declares, dossier, presents, empreinte) {
   const ecarts = [];
   for (const artefact of declares) {
     if (!presents.has(artefact.name)) {
@@ -272,5 +296,18 @@ async function verifierEpinglage(destination, empreinte, { manifeste: chemin, ar
       });
     }
   }
-  return { verifie: true, situation: SITUATIONS_EPINGLAGE.verifie, motif: null, ecarts };
+  return ecarts;
+}
+
+/** Chaque fichier PUBLIÉ sous `artefacts/` est-il déclaré ? Sinon, il est servi sans épinglage. */
+function ecartsDesNonDeclares(declares, presents) {
+  const noms = new Set(declares.map(({ name }) => name));
+  return presents
+    .filter((present) => !noms.has(present))
+    .map((present) => ({
+      artefact: present,
+      motif:
+        "non déclaré dans vendor/v86/MANIFEST.json — servi sous la règle /vendor/v86/*, donc avec " +
+        "un cache partagé de 24 h, sans empreinte épinglée (ADR 0003, ADR 0023)",
+    }));
 }
