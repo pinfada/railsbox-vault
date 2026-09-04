@@ -256,7 +256,7 @@ visible un arrêt qui n'aurait pas eu lieu. La distinction importe, parce qu'un 
 « quiescé » comme « le guest est au repos », ce qui serait une garantie que l'adaptateur ne peut pas
 donner : il ne voit que les E/S qui lui arrivent.
 
-## Décision 6 — Quand capturer : au point de contrôle, jamais pendant une génération ouverte
+## Décision 6 — Quand capturer : sur un guest arrêté, journal SOLDÉ
 
 La capture est un **protocole en six gestes, et leur ordre est le contrat** :
 
@@ -359,22 +359,40 @@ d'abandon de cette décision-ci, pas de l'ADR entier.
 L'instantané **part avec le volume**, et il part aussi avec tout geste qui **réécrit** le volume ou
 change qui l'écrit. La règle est celle de l'ADR 0019 pour le témoin, étendue :
 
-| Geste                                 | Retire l'instantané | Pourquoi                                                              |
-| ------------------------------------- | ------------------- | --------------------------------------------------------------------- |
-| suppression du volume                 | **oui**             | un instantané survivant décrirait un volume qui n'existe plus         |
-| restauration depuis une archive (#12) | **oui**             | le volume est réécrit entièrement ; la liaison ne décrit plus rien    |
-| migration de format (#13)             | **oui**             | idem — et la version de format de la liaison serait fausse            |
-| changement de bail d'écriture (#79)   | **oui**             | un autre détenteur va écrire ; l'instantané ne date plus que le passé |
-| verrouillage (#25)                    | **oui**             | position par défaut, ci-dessous                                       |
-| ouverture qui écarte l'instantané     | **oui**             | décision 4                                                            |
-| point de contrôle sans capture        | non                 | la séquence avance ; l'écart sera constaté à la prochaine ouverture   |
+| Geste                                 | Retiré PAR UN GESTE  | Pourquoi                                                           |
+| ------------------------------------- | -------------------- | ------------------------------------------------------------------ |
+| suppression du volume                 | **oui**              | un instantané survivant décrirait un volume qui n'existe plus      |
+| restauration depuis une archive (#12) | **oui**              | le volume est réécrit entièrement ; la liaison ne décrit plus rien |
+| migration de format (#13)             | **oui**              | idem — et la version de format de la liaison serait fausse         |
+| ouverture qui écarte l'instantané     | **oui**              | décision 4 : écarter et retirer sont un seul geste                 |
+| verrouillage (#25)                    | **oui**              | position par défaut, ci-dessous                                    |
+| changement de bail d'écriture (#79)   | non — par la LIAISON | ci-dessous                                                         |
+| écriture validée pendant la session   | non — par la LIAISON | l'écart est constaté à la prochaine ouverture                      |
 
-La dernière ligne mérite son explication : un instantané qu'une écriture validée rend périmé n'est
-**pas** retiré au moment où il le devient. Le retirer exigerait de tenir un handle sur le voisin
-pendant toute la session — un handle exclusif de plus sur le chemin critique de chaque barrière —
-pour un fichier qui sera de toute façon refusé et retiré à la prochaine ouverture. Le prix est un
-fichier périmé qui occupe le quota entre deux sessions ; le bénéfice est un chemin d'écriture qui ne
-gagne aucun voisin. **Ce que ce choix laisse ouvert est écrit au § « Limites ».**
+**Les deux dernières lignes ne sont pas des trous : ce sont deux façons de tenir la même règle.** Un
+instantané qu'une écriture validée rend périmé n'est pas retiré à l'instant où il le devient. Le
+retirer exigerait de tenir un handle exclusif sur le voisin pendant toute la session — un handle de
+plus sur le chemin critique de chaque barrière — pour un fichier que la prochaine ouverture refusera
+et retirera de toute façon. Le prix est un fichier périmé qui occupe le quota entre deux sessions ;
+le bénéfice est un chemin d'écriture qui ne gagne aucun voisin.
+
+### Le bail d'écriture (#79) : la liaison suffit, et un retrait serait FAUX
+
+Le raffinement de #65 rangeait le changement de bail parmi les gestes qui retirent l'instantané.
+**L'implémentation a montré que ce serait à la fois inutile et nuisible**, et il vaut mieux l'écrire
+que le taire.
+
+Inutile : un instantané est lié à un ÉTAT DU VOLUME, pas à un écrivain. Si le contexte qui reprend
+le bail écrit et valide, la génération avance et l'instantané est écarté — la liaison fait le
+travail. S'il n'écrit pas, l'instantané décrit toujours l'état présent, et le refuser coûterait un
+boot à froid pour rien.
+
+Nuisible : la machine à bail (`write-lease.mjs`) est pure et ne touche aucun support ; le seul point
+où un retrait pourrait s'accrocher est la fermeture propre du détenteur — c'est-à-dire **exactement
+l'instant où l'instantané vient d'être capturé**. Un retrait posé là supprimerait à chaque fermeture
+l'instantané que cette même fermeture vient d'écrire.
+
+C'est un écart assumé au raffinement de l'issue, et il est signalé comme tel.
 
 ### Le verrouillage (#25) : oui, l'instantané ne survit pas
 
@@ -385,6 +403,24 @@ invitée chiffrée sous une clé que l'utilisateur vient précisément de mettre
 n'est pas une fuite, mais qui n'est pas non plus ce que « verrouiller » promet. Le coût du retrait
 est un boot à froid au déverrouillage suivant. Il est assumé, et #25 peut le rouvrir avec un
 argument, pas par omission.
+
+## Décision 9 — Le rootfs éphémère publie son DELTA, pas son disque
+
+Le rootfs du guest de référence vit en RAM : les écritures y restent, rien n'est écrit sur le réseau
+ni sur OPFS. Remis à v86 tel quel — `{ buffer }` —, il en fait un `SyncBuffer` dont l'état capturé
+est **le disque entier** : 385 Mio par instantané, à côté de 250 Mio d'état v86. L'instantané
+pèserait plus que le volume qu'il accélère.
+
+`src/vm/instantane/tampon-rootfs.mjs` tient le même contrat de lecture et d'écriture, à la vitesse
+près d'un `SyncBuffer` — la mémoire est la même, les vues rendues sont les mêmes —, et ne publie
+dans son état que les **blocs réellement écrits** depuis le chargement, par blocs de 4096 octets —
+la page du guest et l'unité d'écriture d'ext4.
+
+**Ce n'est pas une optimisation qu'on pourrait perdre sans dommage.** Sans le delta, restaurer un
+instantané sur un rootfs pristine ferait diverger la mémoire du guest — qui croit tenir ses
+écritures en cache de page — et le disque qu'elle relira à la première éviction. Le tampon rend donc
+obligatoirement l'un des deux : le disque entier, ou le disque pristine PLUS la trace exacte de ce
+qui a été écrit. Il rend la seconde, parce que la première ne tient pas dans le budget.
 
 ## Les trois corrections trouvées par EXÉCUTION
 
@@ -427,24 +463,6 @@ L'empreinte est donc prise **une fois, à l'acquisition du runtime**, sur les oc
 reçus, avant le premier battement du guest — et transportée telle quelle jusqu'à la capture et
 jusqu'à l'ouverture. Le bénéfice second n'est pas négligeable : le hachage de 435 Mio quitte le
 chemin critique de la reprise.
-
-## Décision 9 — Le rootfs éphémère publie son DELTA, pas son disque
-
-Le rootfs du guest de référence vit en RAM : les écritures y restent, rien n'est écrit sur le réseau
-ni sur OPFS. Remis à v86 tel quel — `{ buffer }` —, il en fait un `SyncBuffer` dont l'état capturé
-est **le disque entier** : 385 Mio par instantané, à côté de 250 Mio d'état v86. L'instantané
-pèserait plus que le volume qu'il accélère.
-
-`src/vm/instantane/tampon-rootfs.mjs` tient le même contrat de lecture et d'écriture, à la vitesse
-près d'un `SyncBuffer` — la mémoire est la même, les vues rendues sont les mêmes —, et ne publie
-dans son état que les **blocs réellement écrits** depuis le chargement, par blocs de 4096 octets —
-la page du guest et l'unité d'écriture d'ext4.
-
-**Ce n'est pas une optimisation qu'on pourrait perdre sans dommage.** Sans le delta, restaurer un
-instantané sur un rootfs pristine ferait diverger la mémoire du guest — qui croit tenir ses
-écritures en cache de page — et le disque qu'elle relira à la première éviction. Le tampon rend donc
-obligatoirement l'un des deux : le disque entier, ou le disque pristine PLUS la trace exacte de ce
-qui a été écrit. Il rend la seconde, parce que la première ne tient pas dans le budget.
 
 ## Ce que cette tranche ne prouve PAS
 
