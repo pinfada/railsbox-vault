@@ -22,7 +22,9 @@
 //   2  inventaire absent, illisible, ou d'un contrat que cette version ne sait pas relire
 //   3  usage invalide
 //   4  source obligatoire absente : la publication n'est pas constructible
-//   5  artefact v86 servi qui ne correspond pas à son épinglage (`vendor/v86/MANIFEST.json`)
+//   5  ÉPINGLAGE ROMPU : un manifeste vendu absent de l'arbre, ou un artefact servi qui ne
+//      correspond pas à ce qu'il épingle. Les DEUX manifestes sont vérifiés — `vendor/v86` (ADR
+//      0003) et `vendor/argon2` (ADR 0021) —, et chacun doit l'être là où son artefact est publié.
 //   6  arbre INCOMPLET : une source optionnelle manque (le runtime v86). L'arbre est cohérent et
 //      son inventaire est exact, mais ce n'est pas un artefact publiable. `--tolerer-incomplet`
 //      ramène ce cas à un avertissement, pour les contextes — bancs, `npm run check` — qui n'ont
@@ -56,6 +58,7 @@ import {
   verifierArbre,
 } from "./publier-inventaire.mjs";
 import {
+  SITUATIONS_EPINGLAGE,
   exigerReferenceResoluble,
   identiteDuCommit,
   materialiser,
@@ -257,12 +260,7 @@ async function construireArbre(arbre, options) {
   );
   await exigerPolitiqueUniforme(arbre, destination, options);
 
-  // L'épinglage ne se vérifie que là où un runtime est publié. L'origine applicative n'en porte
-  // aucun (ADR 0002) : lui répondre « manifeste absent » ferait passer une propriété pour un défaut.
-  const porteLeRuntime = arbre.sources.some(({ depuis }) => depuis.startsWith("vendor/v86"));
-  const epinglage = porteLeRuntime
-    ? await fusionnerEpinglages(destination, empreinte)
-    : { verifie: false, motif: null, ecarts: [] };
+  const epinglage = await fusionnerEpinglages(destination, empreinte, epinglagesAttendus(arbre));
   const inventaire = await construireInventaire({
     arbre: arbre.nom,
     role: arbre.role,
@@ -275,25 +273,63 @@ async function construireArbre(arbre, options) {
     enTetes: enTetesDePublication(arbre.nom, options),
     exclusions: arbre.nom === "coquille" ? EXCLUSIONS : [],
   });
-  inventaire.epinglageV86 = epinglage;
+  // Le champ portait le nom `epinglageV86` quand un seul artefact était vendu. Deux le sont depuis
+  // #22, et un nom qui n'en désigne qu'un enverrait chercher le défaut au mauvais endroit.
+  inventaire.epinglage = epinglage;
   await ecrireInventaire(destination, inventaire);
   return { destination, inventaire, absentes, epinglage };
 }
 
 /**
- * Les DEUX épinglages de l'arbre publié, fondus en un seul verdict.
+ * Les épinglages qu'un arbre DOIT porter, déduits de ses sources — un par artefact vendu.
+ *
+ * Un épinglage ne se vérifie que là où son artefact est publié. L'origine applicative n'en porte
+ * aucun (ADR 0002) : lui répondre « manifeste absent » ferait passer une propriété pour un défaut.
+ * La déduction est faite artefact par artefact, et c'est le sujet : elle était faite sur la seule
+ * présence de `vendor/v86`, si bien que l'épinglage d'Argon2id ne serait pas vérifié du tout sur un
+ * arbre qui le porterait sans porter v86.
+ */
+export function epinglagesAttendus(arbre) {
+  return {
+    v86: arbre.sources.some(({ depuis }) => depuis.startsWith("vendor/v86")),
+    argon2: arbre.sources.some(({ depuis }) => depuis.startsWith("vendor/argon2")),
+  };
+}
+
+/**
+ * Les épinglages ATTENDUS d'un arbre publié, fondus en un seul verdict.
  *
  * v86 (ADR 0003) et Argon2id (ADR 0021) sont vendus pour des raisons différentes et vérifiés de la
- * même façon. Les fondre ici plutôt que d'ajouter un second champ à l'inventaire garde une seule
- * règle de sortie : un écart, quel qu'il soit, rompt l'épinglage.
+ * même façon. Les fondre ici plutôt que d'ajouter un champ par artefact à l'inventaire garde une
+ * seule règle de sortie — mais la fusion doit être une CONJONCTION, et elle ne l'était pas :
+ * `v86.verifie || argon2.verifie` laissait un manifeste Argon2 absent passer pour « épinglage
+ * conforme » dès que celui de v86 était vérifié, et `v86.motif ?? argon2.motif` perdait le second
+ * motif en route. Chaque épinglage attendu doit être vérifié, et chaque motif est remonté.
+ *
+ * `rupture` sépare les deux natures d'échec. Un manifeste absent ou une empreinte qui ne correspond
+ * pas est une RUPTURE, et l'arbre est refusé. Des artefacts absents sont une INCOMPLÉTUDE — ceux de
+ * v86 ne sont pas versionnés —, et c'est le verdict de l'inventaire qui la porte, avec sa
+ * tolérance. Voir `SITUATIONS_EPINGLAGE`.
  */
-async function fusionnerEpinglages(racine, empreinte) {
-  const v86 = await verifierEpinglageV86(racine, empreinte);
-  const argon2 = await verifierEpinglageArgon2(racine, empreinte);
+export async function fusionnerEpinglages(racine, empreinte, attendus) {
+  const verdicts = [];
+  if (attendus.v86) verdicts.push(["v86", await verifierEpinglageV86(racine, empreinte)]);
+  if (attendus.argon2) verdicts.push(["argon2", await verifierEpinglageArgon2(racine, empreinte)]);
+  const manquants = verdicts.filter(([, verdict]) => !verdict.verifie);
+  const ecarts = verdicts.flatMap(([nom, verdict]) =>
+    verdict.ecarts.map((ecart) => ({ ...ecart, epinglage: nom })),
+  );
   return {
-    verifie: v86.verifie || argon2.verifie,
-    motif: v86.motif ?? argon2.motif,
-    ecarts: [...v86.ecarts, ...argon2.ecarts],
+    attendus: verdicts.length,
+    verifie: verdicts.length > 0 && manquants.length === 0,
+    motif:
+      manquants.length === 0
+        ? null
+        : manquants.map(([nom, verdict]) => `${nom} : ${verdict.motif}`).join(" ; "),
+    ecarts,
+    rupture:
+      ecarts.length > 0 ||
+      manquants.some(([, verdict]) => verdict.situation !== SITUATIONS_EPINGLAGE.artefactsAbsents),
   };
 }
 
@@ -308,12 +344,14 @@ function decrireArbre({ destination, inventaire, absentes, epinglage }) {
   if (inventaire.banc)
     lignes.push("  banc           oui (origine non https : arbre non publiable)");
   if (epinglage.verifie) {
+    lignes.push("  épinglage      conforme aux MANIFEST vendus");
+  } else if (epinglage.attendus > 0) {
     lignes.push(
-      `  épinglage      ${epinglage.ecarts.length === 0 ? "conforme aux MANIFEST vendus" : "ROMPU"}`,
+      `  épinglage      ${epinglage.rupture ? "ROMPU" : "non vérifié"} (${epinglage.motif ?? "écarts"})`,
     );
-    for (const ecart of epinglage.ecarts) lignes.push(`    ${ecart.artefact} : ${ecart.motif}`);
-  } else if (epinglage.motif !== null) {
-    lignes.push(`  épinglage      non vérifié (${epinglage.motif})`);
+  }
+  for (const ecart of epinglage.ecarts) {
+    lignes.push(`    ${ecart.epinglage}/${ecart.artefact} : ${ecart.motif}`);
   }
   for (const absente of absentes) {
     lignes.push(`  absente        ${absente} (npm run vm:fetch la récupère)`);
@@ -349,16 +387,32 @@ function verdictIncomplet(tolere) {
   return CODES.incomplet;
 }
 
+/**
+ * Décrit une rupture d'épinglage en NOMMANT l'arbre, l'artefact vendu et le motif.
+ *
+ * « un artefact v86 servi ne correspond pas à son manifeste » était le seul message rendu, alors
+ * que deux artefacts sont vendus depuis #22 : il envoyait chercher le défaut au mauvais endroit.
+ */
+function decrireRuptures(resultats) {
+  const lignes = [];
+  for (const { inventaire, epinglage } of resultats) {
+    if (epinglage.motif !== null) lignes.push(`  ${inventaire.arbre} : ${epinglage.motif}`);
+    for (const ecart of epinglage.ecarts) {
+      lignes.push(`  ${inventaire.arbre} — ${ecart.epinglage}/${ecart.artefact} : ${ecart.motif}`);
+    }
+  }
+  return lignes.join("\n");
+}
+
 async function construire(options) {
   const resultats = [];
   for (const arbre of ARBRES) resultats.push(await construireArbre(arbre, options));
   process.stdout.write(`${decrireCommit(options.commit, options.reference)}\n`);
   for (const resultat of resultats) process.stdout.write(`${decrireArbre(resultat)}\n`);
 
-  if (resultats.some(({ epinglage }) => epinglage.ecarts.length > 0)) {
-    process.stderr.write(
-      "\nÉPINGLAGE ROMPU : un artefact v86 servi ne correspond pas à `vendor/v86/MANIFEST.json`.\n",
-    );
+  const rompus = resultats.filter(({ epinglage }) => epinglage.rupture);
+  if (rompus.length > 0) {
+    process.stderr.write(`\nÉPINGLAGE ROMPU :\n${decrireRuptures(rompus)}\n`);
     return CODES.epinglageRompu;
   }
   if (resultats.some(({ inventaire }) => !inventaire.complet)) {
@@ -407,11 +461,17 @@ async function verifier(racine, { tolererIncomplet }) {
     return CODES.ecart;
   }
 
-  const epinglage = await fusionnerEpinglages(racine, empreinte);
-  if (epinglage.ecarts.length > 0) {
-    process.stderr.write(
-      `ÉPINGLAGE ROMPU :\n${epinglage.ecarts.map((e) => `  ${e.artefact} : ${e.motif}`).join("\n")}\n`,
-    );
+  // L'arbre vérifié dit son nom ; la décision de publication dit quels épinglages ce nom doit
+  // porter. Un nom que cette version ne connaît pas n'en attend aucun : elle ne sait pas de quoi
+  // cet arbre est fait, et l'inventer serait pire que se taire.
+  const decide = ARBRES.find(({ nom }) => nom === inventaire.arbre);
+  const epinglage = await fusionnerEpinglages(
+    racine,
+    empreinte,
+    decide === undefined ? { v86: false, argon2: false } : epinglagesAttendus(decide),
+  );
+  if (epinglage.rupture) {
+    process.stderr.write(`ÉPINGLAGE ROMPU :\n${decrireRuptures([{ inventaire, epinglage }])}\n`);
     return CODES.epinglageRompu;
   }
   process.stdout.write(`Empreintes conformes. Racine ${ecarts.racineMesuree}\n`);
