@@ -183,16 +183,23 @@ function mesureConforme() {
   };
 }
 
-test("le témoin relève la politique de cache sur DEUX arbres au moins, et sur deux natures", () => {
+test("le témoin relève CHAQUE nature décidée, sur les deux arbres, dont une hors de la racine", () => {
   const arbres = new Set(NATURES_RELEVEES_PAR_LE_TEMOIN.map(({ arbre }) => arbre));
   const natures = new Set(NATURES_RELEVEES_PAR_LE_TEMOIN.map(({ nature }) => nature));
   assert.deepEqual([...arbres].sort(), ["application", "coquille"]);
-  assert.ok(
-    natures.size >= 2,
-    "un témoin mono-nature ne mesurerait pas ce que la décision a de propre",
+  // Relevé par la campagne de mutation de #103 : retirer le relevé de l'épinglage v86 survivait,
+  // parce que les deux natures restantes suffisaient au verdict. Or c'est la SEULE dont la règle
+  // dépend du chemin — sans elle, rien de ce que l'ADR 0023 apporte n'est mesuré sur HTTP réel.
+  assert.deepEqual(
+    [...natures].sort(),
+    Object.keys(POLITIQUES_DE_CACHE).sort(),
+    "une nature décidée que le témoin ne relève pas n'est publiée que sur parole",
   );
-  for (const { nature, chemin } of NATURES_RELEVEES_PAR_LE_TEMOIN) {
-    assert.ok(nature in POLITIQUES_DE_CACHE, `nature inconnue relevée par le témoin : ${nature}`);
+  assert.ok(
+    NATURES_RELEVEES_PAR_LE_TEMOIN.some(({ chemin }) => chemin !== "/index.html"),
+    "sans un chemin autre que la racine, le témoin ne mesurerait jamais la règle la plus précise",
+  );
+  for (const { chemin } of NATURES_RELEVEES_PAR_LE_TEMOIN) {
     assert.ok(chemin.startsWith("/"), "le témoin relève un CHEMIN servi, pas une intention");
   }
 });
