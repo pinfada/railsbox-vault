@@ -29,9 +29,12 @@ import {
   motifDExclusion,
 } from "../../tools/publier-arborescences.mjs";
 import {
+  DIMENSION_NON_UNIFORME,
   EN_TETES_AJOUTES_PAR_LA_PUBLICATION,
   MARQUE_ORIGINE,
+  cheminsHorsFideliteDuFichier,
   cheminsHorsPolitiqueUniforme,
+  cheminsHorsUniformite,
   enTetesDePublication,
   origineDeLArbre,
   rendreFichierHeaders,
@@ -39,7 +42,11 @@ import {
 import { empreinte } from "../../tools/publier-inventaire.mjs";
 import { analyserHeaders, enTetesPour } from "../../tools/publier-servir.mjs";
 import { estUnBanc } from "../../tools/publier.mjs";
-import { securityHeaders, shellContentSecurityPolicy } from "../../tools/serve-headers.mjs";
+import {
+  PREFIXE_EPINGLAGE_V86,
+  securityHeaders,
+  shellContentSecurityPolicy,
+} from "../../tools/serve-headers.mjs";
 
 /** Origines de démonstration, distinctes des valeurs par défaut : le test ne doit pas passer par
  *  accident parce qu'il compare deux fois la même constante. */
@@ -388,4 +395,143 @@ test("aucun chemin publiable ne reçoit du serveur de test une politique différ
 
 test("un chemin de banc, s'il se glissait dans l'arbre, briserait l'uniformité annoncée", () => {
   assert.deepEqual(cheminsHorsPolitiqueUniforme("coquille", ["compat.html"]), ["compat.html"]);
+});
+
+// --- Politique de cache par nature d'artefact (#103, ADR 0023) ----------------------------------
+//
+// Le risque résiduel n°1 de l'ADR 0017 relevait que `Cache-Control: no-store` partait en production
+// par conséquence mécanique, non par décision. L'ADR 0023 la décide par NATURE D'ARTEFACT, dans la
+// source de vérité — donc le fichier `_headers` doit désormais porter PLUSIEURS blocs. Ces épreuves
+// vérifient trois choses : que le fichier les porte, que le serveur qui l'applique en tire la règle
+// la plus précise, et que la seule dimension autorisée à varier est bien la seule qui varie.
+
+/** Ne garde que le PREMIER bloc de motif d'un fichier `_headers`, en jetant les suivants. */
+function garderLePremierBloc(texte) {
+  const lignes = texte.split("\n");
+  const debuts = lignes.reduce(
+    (indices, ligne, index) => (ligne.startsWith("/") ? [...indices, index] : indices),
+    [],
+  );
+  assert.ok(debuts.length >= 2, "le fichier n'a qu'un bloc : l'amputation ne prouverait rien");
+  return `${lignes.slice(0, debuts[1]).join("\n")}\n`;
+}
+
+test("le fichier `_headers` de la coquille porte PLUSIEURS blocs, dont celui de l'épinglage", () => {
+  const motifs = analyserHeaders(rendreFichierHeaders("coquille", ORIGINES)).map(
+    ({ motif }) => motif,
+  );
+  assert.deepEqual(motifs, ["/*", `${PREFIXE_EPINGLAGE_V86}*`]);
+  // L'arbre applicatif n'a qu'une nature à servir : un second bloc y serait une politique recopiée
+  // d'un arbre à l'autre.
+  assert.deepEqual(
+    analyserHeaders(rendreFichierHeaders("application", ORIGINES)).map(({ motif }) => motif),
+    ["/*"],
+  );
+});
+
+test("chaque bloc du `_headers` est COMPLET : aucune sémantique de fusion n'est supposée", () => {
+  // Le format `_headers` n'est pas un standard. Cloudflare Pages et Netlify cumulent les règles qui
+  // correspondent, la dernière l'emportant ; rien ne garantit qu'un troisième hébergeur le fasse.
+  // Un bloc précis qui ne porterait que `Cache-Control` retirerait alors la CSP aux artefacts v86
+  // chez cet hébergeur-là. Chaque bloc porte donc TOUS les en-têtes, et le fichier rend le même
+  // résultat sous les deux sémantiques.
+  const attendus = Object.keys(enTetesDePublication("coquille", ORIGINES)).sort();
+  for (const { motif, enTetes } of analyserHeaders(rendreFichierHeaders("coquille", ORIGINES))) {
+    assert.deepEqual(
+      enTetes.map(([nom]) => nom).sort(),
+      attendus,
+      `le bloc « ${motif} » est incomplet : il dépendrait de la fusion pour être correct`,
+    );
+  }
+});
+
+test("le serveur qui applique le fichier retient la règle la PLUS PRÉCISE", () => {
+  const regles = analyserHeaders(rendreFichierHeaders("coquille", ORIGINES));
+  assert.equal(enTetesPour(regles, "/index.html")["Cache-Control"], "no-cache");
+  assert.equal(
+    enTetesPour(regles, "/vendor/v86/MANIFEST.json")["Cache-Control"],
+    "public, max-age=86400",
+  );
+  assert.equal(
+    enTetesPour(regles, "/vendor/v86/artefacts/v86.wasm")["Cache-Control"],
+    "public, max-age=86400",
+  );
+  // Un chemin qui commence par la même chaîne SANS être sous le préfixe ne doit pas l'attraper.
+  assert.equal(enTetesPour(regles, "/vendor/v86-autre/x.mjs")["Cache-Control"], "no-cache");
+});
+
+test("les DEUX origines publient une politique de cache, et ce n'est pas la même", () => {
+  const coquille = analyserHeaders(rendreFichierHeaders("coquille", ORIGINES));
+  const application = analyserHeaders(rendreFichierHeaders("application", ORIGINES));
+  assert.equal(enTetesPour(application, "/index.html")["Cache-Control"], "no-store");
+  assert.notEqual(
+    enTetesPour(coquille, "/index.html")["Cache-Control"],
+    enTetesPour(application, "/index.html")["Cache-Control"],
+  );
+});
+
+test("la dimension non uniforme est UNE, nommée, et ce n'est aucun en-tête de sécurité", () => {
+  assert.equal(DIMENSION_NON_UNIFORME, "Cache-Control");
+  const compares = Object.keys(enTetesDePublication("coquille", ORIGINES)).filter(
+    (nom) => nom !== DIMENSION_NON_UNIFORME,
+  );
+  for (const nom of [
+    "Content-Security-Policy",
+    "Cross-Origin-Opener-Policy",
+    "Referrer-Policy",
+    "Permissions-Policy",
+    "Cross-Origin-Resource-Policy",
+    "X-Content-Type-Options",
+  ]) {
+    assert.ok(compares.includes(nom), `${nom} est sorti de la comparaison du cliquet`);
+  }
+});
+
+test("le cliquet d'uniformité MORD ENCORE sur les en-têtes de sécurité", () => {
+  // `compat.html` est exempté de la CSP, de `Referrer-Policy` et de `Permissions-Policy` par
+  // `isShellDocument` (ADR 0022) et reçoit la MÊME politique de cache que la racine : si le cliquet
+  // avait été affaibli en laissant passer toute divergence, ce chemin passerait.
+  assert.deepEqual(cheminsHorsUniformite("coquille", ["compat.html"]), ["compat.html"]);
+  assert.equal(
+    securityHeaders({
+      role: "shell",
+      pathname: "/compat.html",
+      isolation: null,
+      appOrigin: ORIGINES.origineApplication,
+    })["Cache-Control"],
+    "no-cache",
+    "si la politique de cache de `compat.html` différait, l'épreuve ci-dessus ne prouverait plus " +
+      "que le cliquet mord sur les en-têtes de sécurité",
+  );
+});
+
+test("le cliquet d'uniformité NE MORD PLUS sur la seule dimension déclarée non uniforme", () => {
+  assert.deepEqual(cheminsHorsUniformite("coquille", ["vendor/v86/MANIFEST.json"]), []);
+});
+
+test("le cliquet de fidélité refuse un `_headers` qui ne rendrait pas ce que sert la source", () => {
+  const complet = rendreFichierHeaders("coquille", ORIGINES);
+  const ampute = garderLePremierBloc(complet);
+  assert.deepEqual(
+    cheminsHorsFideliteDuFichier("coquille", ["vendor/v86/MANIFEST.json"], ORIGINES, ampute),
+    ["vendor/v86/MANIFEST.json"],
+    "un fichier amputé de son bloc épinglé annoncerait `no-cache` là où le serveur sert un cache " +
+      "long : la publication mentirait sur ce que l'hébergeur doit servir",
+  );
+  assert.deepEqual(
+    cheminsHorsFideliteDuFichier("coquille", ["vendor/v86/MANIFEST.json"], ORIGINES, complet),
+    [],
+  );
+});
+
+test("le refus de publication réunit les deux cliquets", () => {
+  assert.deepEqual(cheminsHorsPolitiqueUniforme("coquille", ["compat.html"]), ["compat.html"]);
+  assert.deepEqual(
+    cheminsHorsPolitiqueUniforme("coquille", [
+      "index.html",
+      "vendor/v86/MANIFEST.json",
+      "vendor/v86/artefacts/v86.wasm",
+    ]),
+    [],
+  );
 });

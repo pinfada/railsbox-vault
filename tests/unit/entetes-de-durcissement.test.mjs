@@ -117,7 +117,11 @@ test("le durcissement ne touche ni la CSP, ni CORP, ni la politique de cache", (
   const coquille = enTetes("shell", DOCUMENT_DE_COQUILLE);
   assert.match(coquille["Content-Security-Policy"], /worker-src 'self';/);
   assert.equal(coquille["Cross-Origin-Resource-Policy"], "same-origin");
-  assert.equal(coquille["Cache-Control"], "no-store");
+  // La valeur elle-même est décidée par l'ADR 0023 et éprouvée par
+  // `tests/unit/politique-de-cache.test.mjs` ; ce qui est éprouvé ICI est que le durcissement de
+  // l'ADR 0022 ne la déplace pas — un durcissement qui reposerait la politique de cache au passage
+  // ferait deux vérités.
+  assert.equal(coquille["Cache-Control"], "no-cache");
   assert.equal(coquille["X-Content-Type-Options"], "nosniff");
   assert.equal(
     enTetes("app", DOCUMENT_DE_COQUILLE)["Cross-Origin-Resource-Policy"],
