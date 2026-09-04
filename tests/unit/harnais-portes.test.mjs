@@ -60,6 +60,13 @@ const PORTEURS_DE_LA_CLE = [
       "il FIGE les vecteurs de l'ADR 0015, dont la clé publique est une donnée du contrat : les " +
       "mêmes trente-deux octets y sont d'ailleurs publiés en hexadécimal. Il n'ouvre aucun volume.",
   },
+  {
+    fichier: "tools/figer-vecteurs-instantane.mjs",
+    motif:
+      "il FIGE les vecteurs de l'ADR 0024, et pour la raison exacte du précédent : la clé " +
+      "publique est une donnée du contrat, publiée en hexadécimal dans le document figé. Il " +
+      "n'ouvre aucun volume, ne déverrouille aucune enveloppe et n'écrit que sous tests/vectors/.",
+  },
 ];
 
 /**
