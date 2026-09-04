@@ -109,10 +109,30 @@ test("un support vide n'est pas un refus : c'est l'absence, et elle se dit", asy
   assert.equal(rapport.etat, null);
 });
 
+test("une séquence qui AVANCE n'écarte rien : toute ouverture en écrit une racine vide", async () => {
+  // C'est la correction que l'exécution a imposée (ADR 0024, décision 4) : la séquence compte les
+  // écritures de RACINE, vidage de récupération compris. Elle avance donc à chaque ouverture, avant
+  // que le guest ait battu. Une garde d'égalité aurait périmé l'instantané à sa première
+  // réouverture — c'est-à-dire qu'il n'aurait jamais servi une seule fois.
+  const { support } = await supportAvecInstantane();
+  const rapport = await ouvrir(support, { sequence: 43 });
+  assert.equal(rapport.motif, null, rapport.message ?? "");
+  assert.equal(rapport.utilise, true);
+  assert.equal((await support.etat()).present, true, "il n'est pas retiré non plus");
+});
+
+test("une séquence qui RECULE écarte l'instantané : le journal a été ramené en arrière", async () => {
+  const { support } = await supportAvecInstantane();
+  const rapport = await ouvrir(support, { sequence: 41 });
+  assert.equal(rapport.utilise, false);
+  assert.equal(rapport.motif, INSTANTANE_ERROR_CODES.ecartSequence);
+  assert.equal((await support.etat()).present, false);
+});
+
 test("chaque ÉCART de liaison écarte l'instantané, le RETIRE, et nomme son motif", async () => {
   const ecarts = [
-    [{ sequence: 43 }, INSTANTANE_ERROR_CODES.ecartSequence],
     [{ generation: 18 }, INSTANTANE_ERROR_CODES.ecartGeneration],
+    [{ generation: 16 }, INSTANTANE_ERROR_CODES.ecartGeneration],
     [
       { empreinteRegion: Uint8Array.from(REGION, (octet) => octet ^ 1) },
       INSTANTANE_ERROR_CODES.ecartRegion,
