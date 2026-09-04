@@ -160,70 +160,93 @@ async function releverDemarrage(page) {
   return page.textContent("#worker-status");
 }
 
-async function mesurerMoteur(nom) {
-  const navigateur = await MOTEURS[nom].launch();
-  const contexte = await navigateur.newContext();
-  const page = await contexte.newPage();
+/** Les origines du TÉMOIN, telles que la table d'en-têtes attendus doit les lire. */
+const ORIGINES_DU_TEMOIN = Object.freeze({
+  origineCoquille: ORIGINE_COQUILLE,
+  origineApplication: ORIGINE_APPLICATION,
+});
 
+/**
+ * Une visite de chaque origine, dans l'ordre où elles se mesurent.
+ *
+ * L'ordre n'est pas indifférent : le démarrage de la coquille est relevé pendant que sa page est
+ * encore chargée, et la politique de cache d'un arbre par un `fetch` émis DEPUIS un document de cet
+ * arbre — c'est ce qui en fait un relevé de même origine, sans CORS entre le témoin et sa mesure.
+ */
+async function releverLesDeuxOrigines(page) {
   const enTetesCoquille = await relevePage(page, `${ORIGINE_COQUILLE}/index.html`);
   const demarrage = await releverDemarrage(page);
   const cacheCoquille = await releverPolitiqueDeCache(page, "coquille");
   const enTetesApplication = await relevePage(page, `${ORIGINE_APPLICATION}/index.html`);
   const cacheApplication = await releverPolitiqueDeCache(page, "application");
+  return { enTetesCoquille, demarrage, cacheCoquille, enTetesApplication, cacheApplication };
+}
+
+/** Ce que la COQUILLE doit servir, et le seul en-tête dont l'ABSENCE y est une décision. */
+function mesureDeLaCoquille(enTetes) {
+  return {
+    ecarts: [
+      ...confronter(enTetesDePublication("coquille", ORIGINES_DU_TEMOIN), enTetes),
+      // HSTS est ÉCARTÉ par l'ADR 0022, et une décision d'écarter que rien ne relève redevient un
+      // oubli. Le témoin sert en `http:`, là où l'en-tête serait de toute façon ignoré : ce qui
+      // est vérifié ici n'est donc pas son effet, c'est qu'aucun maillon de la chaîne — table
+      // d'ajouts, `_headers`, serveur de l'artefact — ne l'a réintroduit en route.
+      ...confronterAbsences(["Strict-Transport-Security"], enTetes),
+    ],
+    recus: enTetes,
+  };
+}
+
+/** Ce que l'origine APPLICATIVE doit servir, et surtout les quatre en-têtes qu'elle ne doit pas. */
+function mesureDeLApplication(enTetes) {
+  return {
+    ecarts: [
+      ...confronter(enTetesDePublication("application", ORIGINES_DU_TEMOIN), enTetes),
+      // Quatre en-têtes n'ont rien à faire sur cette origine, et leur présence serait la marque
+      // d'une politique recopiée d'un arbre à l'autre. COOP y serait sans effet — un document
+      // encadré n'est pas un contexte de navigation de plus haut niveau (ADR 0017 § 3).
+      // `Referrer-Policy` et `Permissions-Policy` y seraient pires que sans effet : ils
+      // gouvernent ce que le document ÉMET et ce qu'il PEUT, donc le contenu rendu par le guest,
+      // que l'ADR 0002 s'interdit de contraindre. HSTS est écarté des deux côtés. L'ADR 0022
+      // décide les trois par RÔLE ; c'est ici que la moitié « écartée » de cette décision est
+      // relevée, sur l'origine où elle s'applique.
+      ...confronterAbsences(
+        [
+          "Cross-Origin-Opener-Policy",
+          "Referrer-Policy",
+          "Permissions-Policy",
+          "Strict-Transport-Security",
+        ],
+        enTetes,
+      ),
+    ],
+    // La CSP de l'origine applicative doit être `frame-ancestors` et RIEN d'autre : l'ADR 0002
+    // interdit d'imposer une politique au CONTENU rendu par le guest, et `frame-ancestors` ne le
+    // fait pas. Une directive de plus — `default-src`, `script-src`, `connect-src` — trahirait
+    // que la politique de la coquille a débordé sur le territoire applicatif.
+    cspApplicativeSolitaire: (enTetes["content-security-policy"] ?? "")
+      .split(";")
+      .map((directive) => directive.trim())
+      .filter(Boolean),
+    recus: enTetes,
+  };
+}
+
+async function mesurerMoteur(nom) {
+  const navigateur = await MOTEURS[nom].launch();
+  const contexte = await navigateur.newContext();
+  const page = await contexte.newPage();
+  const releves = await releverLesDeuxOrigines(page);
   await page.close();
 
-  const origines = {
-    origineCoquille: ORIGINE_COQUILLE,
-    origineApplication: ORIGINE_APPLICATION,
-  };
   const mesure = {
     moteur: nom,
-    coquille: {
-      ecarts: [
-        ...confronter(enTetesDePublication("coquille", origines), enTetesCoquille),
-        // HSTS est ÉCARTÉ par l'ADR 0022, et une décision d'écarter que rien ne relève redevient un
-        // oubli. Le témoin sert en `http:`, là où l'en-tête serait de toute façon ignoré : ce qui
-        // est vérifié ici n'est donc pas son effet, c'est qu'aucun maillon de la chaîne — table
-        // d'ajouts, `_headers`, serveur de l'artefact — ne l'a réintroduit en route.
-        ...confronterAbsences(["Strict-Transport-Security"], enTetesCoquille),
-      ],
-      recus: enTetesCoquille,
-    },
-    application: {
-      ecarts: [
-        ...confronter(enTetesDePublication("application", origines), enTetesApplication),
-        // Quatre en-têtes n'ont rien à faire sur cette origine, et leur présence serait la marque
-        // d'une politique recopiée d'un arbre à l'autre. COOP y serait sans effet — un document
-        // encadré n'est pas un contexte de navigation de plus haut niveau (ADR 0017 § 3).
-        // `Referrer-Policy` et `Permissions-Policy` y seraient pires que sans effet : ils
-        // gouvernent ce que le document ÉMET et ce qu'il PEUT, donc le contenu rendu par le guest,
-        // que l'ADR 0002 s'interdit de contraindre. HSTS est écarté des deux côtés. L'ADR 0022
-        // décide les trois par RÔLE ; c'est ici que la moitié « écartée » de cette décision est
-        // relevée, sur l'origine où elle s'applique.
-        ...confronterAbsences(
-          [
-            "Cross-Origin-Opener-Policy",
-            "Referrer-Policy",
-            "Permissions-Policy",
-            "Strict-Transport-Security",
-          ],
-          enTetesApplication,
-        ),
-      ],
-      // La CSP de l'origine applicative doit être `frame-ancestors` et RIEN d'autre : l'ADR 0002
-      // interdit d'imposer une politique au CONTENU rendu par le guest, et `frame-ancestors` ne le
-      // fait pas. Une directive de plus — `default-src`, `script-src`, `connect-src` — trahirait
-      // que la politique de la coquille a débordé sur le territoire applicatif.
-      cspApplicativeSolitaire: (enTetesApplication["content-security-policy"] ?? "")
-        .split(";")
-        .map((directive) => directive.trim())
-        .filter(Boolean),
-      recus: enTetesApplication,
-    },
+    coquille: mesureDeLaCoquille(releves.enTetesCoquille),
+    application: mesureDeLApplication(releves.enTetesApplication),
     // La politique de cache est la SEULE dimension que l'ADR 0023 autorise à varier selon le
     // chemin : elle est donc relevée par nature d'artefact, et pas une fois par origine.
-    politiqueDeCache: [...cacheCoquille, ...cacheApplication],
-    demarrage,
+    politiqueDeCache: [...releves.cacheCoquille, ...releves.cacheApplication],
+    demarrage: releves.demarrage,
     openerAvecCoop: await releverOpener(contexte, `${ORIGINE_COQUILLE}/index.html`),
     openerSansCoop: await releverOpener(contexte, `${ORIGINE_COQUILLE_SANS_COOP}/index.html`),
   };
