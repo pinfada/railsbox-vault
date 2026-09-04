@@ -230,15 +230,15 @@ export function verdictDuGate({ repriseP95Ms, equivalences, essais }) {
   };
 }
 
-async function mesurerReprise(manifeste, essais) {
-  const scellement = await Scellement.ouvrir({
-    volume: VOLUME_DU_RELEVE,
-    cleOctets: cleDeVolumeDuHarnais(),
-    formatVersion: FORMAT_VOLUME_V3,
-  });
+/**
+ * Déroule la SÉRIE d'essais, et retire le fichier d'instantané quoi qu'il arrive.
+ *
+ * Le `finally` n'est pas décoratif : le fichier pèse un quart de gibioctet, et une mesure
+ * interrompue le laisserait dans `reports/` sans que personne sache d'où il vient.
+ */
+async function serieDeReprises({ manifeste, scellement, essais }) {
   mkdirSync(DOSSIER_RAPPORTS, { recursive: true });
   const support = supportInstantaneFichier(join(DOSSIER_RAPPORTS, "releve.instantane"));
-
   const releves = [];
   try {
     for (let essai = 1; essai <= essais; essai += 1) {
@@ -262,6 +262,39 @@ async function mesurerReprise(manifeste, essais) {
   } finally {
     await support.retirer();
   }
+  return releves;
+}
+
+/** Publie le relevé sur la sortie standard. Aucune décision ici : le verdict est déjà calculé. */
+function publierLeReleve(rapport, chemin) {
+  const reprises = rapport.resume.reprise;
+  console.log(
+    `\nboot à froid p95 ${(rapport.resume.bootFroid.p95 / 1000).toFixed(1)} s · ` +
+      `reprise p95 ${(reprises.p95 / 1000).toFixed(1)} s ` +
+      `(étendue relative ${reprises.etendueRelative})`,
+  );
+  console.log(
+    `capture p95 ${(rapport.resume.capture.p95 / 1000).toFixed(1)} s · ` +
+      `instantané ${(rapport.resume.instantaneOctets / 1048576).toFixed(1)} Mio · ` +
+      `invariant identique sur ${rapport.resume.invariantIdentiqueSur}`,
+  );
+  console.log(
+    `conditions mesurables du gate « reprise ≤ 60 s » : ` +
+      `${rapport.gate.conditionsMesurablesReunies ? "RÉUNIES" : "NON RÉUNIES"} — ${rapport.gate.raison}`,
+  );
+  console.log(
+    "l'ouverture du gate ne se décide pas ici : elle exige l'environnement de référence de docs/quality-attributes.md",
+  );
+  console.log(`rapport : ${chemin}`);
+}
+
+async function mesurerReprise(manifeste, essais) {
+  const scellement = await Scellement.ouvrir({
+    volume: VOLUME_DU_RELEVE,
+    cleOctets: cleDeVolumeDuHarnais(),
+    formatVersion: FORMAT_VOLUME_V3,
+  });
+  const releves = await serieDeReprises({ manifeste, scellement, essais });
 
   const equivalences = releves.filter((releve) => releve.invariantIdentique).length;
   const reprises = resumer(releves.map((releve) => releve.repriseMs));
@@ -293,26 +326,7 @@ async function mesurerReprise(manifeste, essais) {
     },
     gate: verdictDuGate({ repriseP95Ms: reprises.p95, equivalences, essais: releves.length }),
   };
-  const chemin = ecrireRapport("mesures-reprise.json", rapport);
-
-  console.log(
-    `\nboot à froid p95 ${(rapport.resume.bootFroid.p95 / 1000).toFixed(1)} s · ` +
-      `reprise p95 ${(reprises.p95 / 1000).toFixed(1)} s ` +
-      `(étendue relative ${reprises.etendueRelative})`,
-  );
-  console.log(
-    `capture p95 ${(rapport.resume.capture.p95 / 1000).toFixed(1)} s · ` +
-      `instantané ${(rapport.resume.instantaneOctets / 1048576).toFixed(1)} Mio · ` +
-      `invariant identique sur ${rapport.resume.invariantIdentiqueSur}`,
-  );
-  console.log(
-    `conditions mesurables du gate « reprise ≤ 60 s » : ` +
-      `${rapport.gate.conditionsMesurablesReunies ? "RÉUNIES" : "NON RÉUNIES"} — ${rapport.gate.raison}`,
-  );
-  console.log(
-    "l'ouverture du gate ne se décide pas ici : elle exige l'environnement de référence de docs/quality-attributes.md",
-  );
-  console.log(`rapport : ${chemin}`);
+  publierLeReleve(rapport, ecrireRapport("mesures-reprise.json", rapport));
 }
 
 async function principal() {

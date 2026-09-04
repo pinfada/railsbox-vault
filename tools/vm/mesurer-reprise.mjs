@@ -94,13 +94,27 @@ export function supportInstantaneFichier(chemin) {
 }
 
 /**
- * Empreinte de l'IMAGE DE RÉFÉRENCE : SHA-256 de la suite des empreintes que le manifeste publie.
+ * Empreinte de l'IMAGE DE RÉFÉRENCE SELON LE MANIFESTE : SHA-256 de la suite des empreintes qu'il
+ * publie.
  *
  * Elle est dérivée du manifeste, jamais recalculée sur les fichiers : le manifeste EST le contrat
  * d'identité de l'image (ADR 0007), et recalculer donnerait une seconde source de vérité qui
  * finirait par diverger.
+ *
+ * **Elle ne rend PAS la même valeur que `empreinteDeLImage` du Worker**, et le nom le dit désormais.
+ * Le Worker hache les OCTETS RÉELLEMENT ACQUIS, dans un ordre canonique qui lui est propre, parce
+ * qu'aucun manifeste ne lui parvient et qu'une empreinte déclarée par celui qui la présente ne
+ * prouverait rien. Ici, le harnais Node lit le manifeste depuis le disque : le contrat d'identité
+ * est à sa portée, et le recalculer serait la seconde source de vérité que l'ADR 0007 refuse.
+ *
+ * Les deux ne se rencontrent JAMAIS, et c'est ce qui rend la divergence sans conséquence : un
+ * instantané écrit par le harnais Node vit dans un fichier local, celui du navigateur dans OPFS. Ni
+ * l'un ni l'autre ne lit l'instantané de l'autre — il faudrait le recopier à la main entre deux
+ * supports que rien ne relie. Si cela devait changer, l'une des deux fonctions devrait disparaître,
+ * pas les deux se rapprocher : deux empreintes « presque égales » seraient pires que deux
+ * empreintes franchement différentes.
  */
-export function empreinteDeLImage(manifeste) {
+export function empreinteDeLImageSelonLeManifeste(manifeste) {
   const empreinte = createHash("sha256");
   for (const artefact of manifeste.artifacts) {
     empreinte.update(`${artefact.name}:${artefact.sha256}\n`);
@@ -122,7 +136,7 @@ export function etatPresentDuReleve(manifeste) {
     sequence: 0,
     generation: 0,
     empreinteRegion: new Uint8Array(32),
-    empreinteImage: empreinteDeLImage(manifeste),
+    empreinteImage: empreinteDeLImageSelonLeManifeste(manifeste),
   };
 }
 
@@ -147,16 +161,20 @@ async function lireInvariant(vm) {
  *     seulement alors la boucle est lancée ;
  *  6. invariant relu sur la reprise, et comparé octet pour octet à celui du boot à froid.
  */
-export async function essaiDeReprise({
+/**
+ * Le BOOT À FROID de l'essai : santé, invariant, capture. Rend ce que la reprise devra égaler.
+ *
+ * Le `finally` arrête la VM quoi qu'il arrive : un essai qui échoue en laissant un émulateur vivant
+ * ferait échouer les suivants pour une raison étrangère à ce qu'ils mesurent.
+ */
+async function bootFroidPuisCapture({
   manifeste,
   demarrerVm,
   scellement,
   support,
+  etatPresent,
   budgetMs,
-  essai,
 }) {
-  const etatPresent = etatPresentDuReleve(manifeste);
-
   const froid = await demarrerVm({ manifeste });
   let invariantFroid;
   let capture;
@@ -178,7 +196,23 @@ export async function essaiDeReprise({
   } finally {
     await froid.arreter();
   }
+  return { invariantFroid, capture, captureMs, bootFroidMs };
+}
 
+/**
+ * La REPRISE de l'essai : ouvrir l'instantané, le restaurer, attendre la santé, relire l'invariant.
+ *
+ * Un instantané ÉCARTÉ fait échouer l'essai plutôt que de le laisser mesurer un boot à froid
+ * déguisé : c'est le seul endroit du relevé où un refus vaut une exception.
+ */
+async function reprendreParInstantane({
+  manifeste,
+  demarrerVm,
+  scellement,
+  support,
+  etatPresent,
+  budgetMs,
+}) {
   const debutReprise = performance.now();
   const chaud = await demarrerVm({ manifeste, autostart: false });
   let invariantChaud;
@@ -207,6 +241,21 @@ export async function essaiDeReprise({
   } finally {
     await chaud.arreter();
   }
+  return { invariantChaud, repriseMs, ouvertureMs, rapport };
+}
+
+export async function essaiDeReprise({
+  manifeste,
+  demarrerVm,
+  scellement,
+  support,
+  budgetMs,
+  essai,
+}) {
+  const etatPresent = etatPresentDuReleve(manifeste);
+  const parties = { manifeste, demarrerVm, scellement, support, etatPresent, budgetMs };
+  const { invariantFroid, capture, captureMs, bootFroidMs } = await bootFroidPuisCapture(parties);
+  const { invariantChaud, repriseMs, ouvertureMs } = await reprendreParInstantane(parties);
 
   return {
     essai,

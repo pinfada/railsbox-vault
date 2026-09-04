@@ -55,6 +55,11 @@ const ARTEFACTS_DE_L_IMAGE = Object.freeze([
  *
  * L'ordre des artefacts est FIXE : deux ordres donneraient deux empreintes pour la même image, et
  * un instantané parfaitement valide serait alors écarté sans raison.
+ *
+ * **Elle ne rend pas la même valeur que `empreinteDeLImageSelonLeManifeste` du harnais Node**
+ * (`tools/vm/mesurer-reprise.mjs`), qui hache les empreintes PUBLIÉES par le manifeste. Les deux ne
+ * se rencontrent jamais — un instantané écrit sous Node vit dans un fichier local, celui-ci dans
+ * OPFS —, et l'en-tête de l'autre fonction dit ce qu'il faudrait faire si cela changeait.
  */
 export async function empreinteDeLImage(artifacts) {
   const flux = createSha256Stream();
