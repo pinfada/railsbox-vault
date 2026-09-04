@@ -94,8 +94,25 @@ export function createGuestSession({
   const wait = creerAttenteCadencee({ cadence, lireTranscript: () => transcript });
 
   return {
-    /** Démarre la VM et rend la durée du premier boot, en millisecondes. */
-    async boot({ timeout = DEFAULT_BOOT_TIMEOUT_MS } = {}) {
+    /**
+     * Démarre la VM et rend la durée du premier boot, en millisecondes.
+     *
+     * `etatARestaurer` fait de ce démarrage une REPRISE (#65, ADR 0024) : l'état v86 est rendu à
+     * l'émulateur APRÈS la pose du pont de durabilité et AVANT `run()`, et l'invite du guest n'est
+     * pas attendue. Chacun de ces trois points a sa raison :
+     *
+     *  - APRÈS le pont, parce que `restore_state` rend au guest un paquet IDENTIFY déjà lu : le
+     *    guest capturé savait son disque en « write back », et un pont posé ensuite n'aurait plus
+     *    d'IDENTIFY à corriger ;
+     *  - AVANT `run()`, parce qu'un guest lancé à froid puis écrasé par une restauration aurait
+     *    battu pour rien ;
+     *  - sans attendre l'invite, parce qu'elle a été imprimée AVANT la capture. Le transcrit
+     *    repart vide à la reprise, et l'attendre ferait expirer un boot parfaitement sain.
+     *
+     * C'est `set_state` de l'adaptateur qui confronte alors la liaison au volume réellement ouvert,
+     * avant que la moindre instruction n'ait été exécutée.
+     */
+    async boot({ timeout = DEFAULT_BOOT_TIMEOUT_MS, etatARestaurer = null } = {}) {
       const wasm = asArrayBuffer(artifacts.wasm);
       emulator = new V86({
         wasm_fn: async (env) => (await WebAssembly.instantiate(wasm, env)).instance.exports,
@@ -132,11 +149,45 @@ export function createGuestSession({
 
       const started = performance.now();
       journal.record(JOURNAL_OPERATIONS.mark, { label: "boot-start" });
+      if (etatARestaurer !== null) {
+        await emulator.restore_state(etatARestaurer.buffer ?? etatARestaurer);
+        journal.record(JOURNAL_OPERATIONS.mark, { label: "instantane-restaure" });
+      }
       emulator.run();
-      await wait(() => transcript.includes(GUEST_PROMPT), timeout, "invite du guest");
+      if (etatARestaurer === null) {
+        await wait(() => transcript.includes(GUEST_PROMPT), timeout, "invite du guest");
+      }
       const elapsed = performance.now() - started;
       journal.record(JOURNAL_OPERATIONS.mark, { label: "boot-ready", milliseconds: elapsed });
       return elapsed;
+    },
+
+    /**
+     * SUSPEND le guest sans rien sérialiser : la quiescence de l'ADR 0024 obtenue par l'arrêt.
+     *
+     * Le pont N'EST PAS retiré, contrairement à `stop()` : une capture refusée doit pouvoir rendre
+     * le service au guest, et un pont déposé ne se repose pas sur le même prototype.
+     */
+    suspendre() {
+      if (emulator) emulator.stop();
+    },
+
+    /**
+     * CAPTURE l'état v86. L'émulateur est ARRÊTÉ d'abord : capturer une machine qui bat donnerait un
+     * état que rien ne décrit.
+     */
+    async capturer() {
+      emulator.stop();
+      return new Uint8Array(await emulator.save_state());
+    },
+
+    /**
+     * Cette session monte l'unique disque du guest sur l'adaptateur : elle n'a pas de rootfs à part,
+     * donc pas de delta à publier. Le membre existe pour que la conduite de capture — écrite pour la
+     * session de référence — n'ait pas à savoir à laquelle des deux elle parle.
+     */
+    deltaRootfsOctets() {
+      return null;
     },
 
     /**
