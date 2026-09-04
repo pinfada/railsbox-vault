@@ -392,6 +392,61 @@ node --test tests/unit/vm-volume-chiffre.test.mjs
 npm run test:vm                                 # la matrice de #15 rejouée sur v3
 ```
 
+### L'instantané de reprise : le niveau « une accélération qui se prouve » (#65)
+
+L'[ADR 0024](decisions/0024-instantane-de-reprise.md) pose un sixième voisin, `<volume>.instantane`,
+qui porte l'état v86 chiffré sous la DEK et lié à une génération validée. **Ce que ces épreuves
+tiennent est d'abord un ensemble de REFUS** : un instantané n'est utilisé que s'il décrit exactement
+l'état présent, et il est écarté ET RETIRÉ sinon.
+
+Cinq fichiers unitaires, et chacun a un rôle qui ne recouvre pas les autres :
+
+| Fichier                             | Ce qu'il tient                                                           |
+| ----------------------------------- | ------------------------------------------------------------------------ |
+| `vm-instantane-modele.test.mjs`     | la spécification : chaque axe de la liaison fait échouer l'étiquette     |
+| `vm-instantane-fichier.test.mjs`    | la disposition : la table d'offsets de l'ADR est celle du code           |
+| `vm-instantane-vecteurs.test.mjs`   | le format PERSISTANT, figé octet pour octet                              |
+| `vm-instantane-conduite.test.mjs`   | la conduite : écarter, retirer, publier le motif — avec témoins positifs |
+| `vm-instantane-voisin.test.mjs`     | le suffixe réservé, la borne de nommage, le retrait avec le volume       |
+| `vm-adaptateur-quiescence.test.mjs` | la quiescence, et l'amendement de l'ADR 0003 sur deux gestes             |
+| `vm-instantane-mutation.test.mjs`   | la campagne de mutation : chaque garde retirée fait rougir sa preuve     |
+
+**Chaque garde est éprouvée avec son TÉMOIN POSITIF.** Sans témoin, une garde qui refuserait TOUT
+passerait pour une garde qui refuse ce qu'il faut : l'épreuve de conduite rouvre donc, à chaque
+fois, le même instantané sous l'état qui l'a produit et vérifie qu'il rend l'état v86.
+
+**Les vecteurs sont produits par un tiers.** `tools/figer-vecteurs-instantane.mjs` pose les octets
+de l'en-tête ET des données associées lui-même, depuis la table de l'ADR, sans appeler
+`encoderEnTete` ni `encoderLiaison`. Producteur et vérificateur ne partagent pas leur encodeur ; ils
+partagent WebCrypto, et cette limite est écrite dans le fichier de vecteurs plutôt que passée sous
+silence.
+
+**La campagne de mutation ne simule rien.** `tools/muter-gardes-instantane.mjs` RETIRE réellement
+chaque garde du texte source, relance l'épreuve qui devrait la couvrir, et constate. La mutation par
+mandataire de #16 ne convenait pas ici : les gardes de #65 sont des conditions à l'intérieur de
+fonctions pures, qu'aucun `Proxy` n'atteint. Deux points méritent d'être connus avant d'y toucher :
+
+- **elle travaille sur une COPIE temporaire du dépôt**, jamais dans `src/`. Les fichiers d'épreuve
+  de `npm run test:unit` s'exécutent en parallèle, chacun dans son processus : une garde retirée
+  dans le dépôt serait vue par les épreuves voisines qui importent le même module au même instant ;
+- **elle retire `NODE_TEST_CONTEXT` de l'environnement de l'enfant.** Un `node --test` qui en hérite
+  se croit sous-processus d'un lanceur et sort avec le code 0 quoi qu'il arrive.
+
+Les deux défauts ont été trouvés par exécution : la campagne rendait « 11/11 tués » lancée seule et
+« 11 survivants » sous `test:unit`.
+
+**Ce que la campagne a changé dans le produit.** Un mutant a survécu au premier passage — le
+contrôle « la taille du fichier vaut celle que l'en-tête déclare » de `lireInstantane`. Il n'a pas
+été couvert par une épreuve de plus : il a été SUPPRIMÉ, parce qu'aucun état atteignable ne le
+distinguait de la marque de complétude. C'est le second service d'une campagne de mutation, et il
+est plus rare que le premier : elle dit parfois « il y a une garde de trop ».
+
+```bash
+npm run check                                    # les sept fichiers y sont rattachés
+node tools/muter-gardes-instantane.mjs           # la campagne, seule, avec son tableau
+node tools/figer-vecteurs-instantane.mjs         # RE-FIGE les vecteurs : un changement de format
+```
+
 ### Enveloppe de clé : le niveau « la clé devient récupérable » (#21)
 
 #18 avait mis le volume sous une clé que personne ne savait ranger. #21 la range :
