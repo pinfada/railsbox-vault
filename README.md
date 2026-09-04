@@ -88,6 +88,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0021 — une clé de déverrouillage se dérive d'une phrase Argon2id ou d'un PRF WebAuthn, et rien d'autre ne descend d'elle](docs/decisions/0021-derivation-des-cles-de-deverrouillage.md)
 - [ADR 0022 — la coquille sert `Referrer-Policy` et `Permissions-Policy` ; HSTS est écarté du code et confié à l'exploitant](docs/decisions/0022-entetes-de-durcissement.md)
 - [ADR 0023 — la politique de cache est décidée par nature d'artefact, et une seule dimension varie selon le chemin](docs/decisions/0023-politique-de-cache-par-nature-d-artefact.md)
+- [ADR 0024 — l'instantané de reprise est un voisin chiffré lié à une génération validée, et il n'est jamais une source de vérité](docs/decisions/0024-instantane-de-reprise.md)
 
 ## Licence
 
