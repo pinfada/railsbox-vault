@@ -249,6 +249,27 @@ ils gouvernent ce que le document émet et ce qu'il peut, c'est-à-dire le conte
 que l'ADR 0002 s'interdit de contraindre. Le témoin d'en-têtes relève leur présence sur la coquille
 et leur **absence** sur l'origine applicative.
 
+### Politique de cache, par nature d'artefact (ADR 0023)
+
+Depuis l'[ADR 0023](decisions/0023-politique-de-cache-par-nature-d-artefact.md) (#103),
+`Cache-Control` est le SEUL en-tête dont la valeur dépend du chemin, et le fichier `_headers` porte
+donc plusieurs blocs — chacun **complet**, pour ne dépendre d'aucune sémantique de fusion que le
+format ne spécifie pas.
+
+| Arbre       | Motif `_headers` | Nature d'artefact        | `Cache-Control`         |
+| ----------- | ---------------- | ------------------------ | ----------------------- |
+| coquille    | `/*`             | coquille et ses modules  | `no-cache`              |
+| coquille    | `/vendor/v86/*`  | épinglage v86 (ADR 0003) | `public, max-age=86400` |
+| application | `/*`             | territoire applicatif    | `no-store`              |
+
+`immutable` est **refusé** : aucune URL publiée ne nomme son empreinte, si bien qu'il interdirait au
+navigateur de s'apercevoir d'un ré-épinglage. Le manifeste d'épinglage relève de la même règle que
+les octets qu'il décrit, afin qu'ils vieillissent ensemble.
+
+**Obligation d'exploitant.** L'hébergeur retenu doit servir ces valeurs telles quelles. Un hébergeur
+qui réécrit `Cache-Control` — GitHub Pages impose `max-age=600`, mesuré par le spike #45 — rend la
+décision inopérante sans qu'aucun cliquet de la chaîne puisse le voir avant la mise en service.
+
 ### HSTS est une obligation d'EXPLOITANT, pas un en-tête de la chaîne
 
 `Strict-Transport-Security` n'est servi par aucun outil de ce dépôt, et une épreuve garde cette
@@ -343,10 +364,12 @@ est écrit dans le module et fixé par une épreuve.
 
 ### Ce que la chaîne ne fait pas encore
 
-Aucun déploiement réel, aucune signature, aucun SBOM, aucun Service Worker hors ligne. Et
-`Cache-Control: no-store` est publié tel que le serveur de test le sert, ce qui contredit le mode
-hors ligne à deux Service Workers de l'ADR 0002 : le conflit est nommé dans l'ADR 0017 comme travail
-découvert, pas résolu.
+Aucun déploiement réel, aucune signature, aucun SBOM, aucun Service Worker hors ligne. La politique
+de cache, en revanche, n'est plus héritée :
+l'[ADR 0023](decisions/0023-politique-de-cache-par-nature-d-artefact.md) la décide par nature
+d'artefact (voir ci-dessus). Ce qui reste ouvert de ce côté est l'**effet** — aucune épreuve de ce
+dépôt ne mesure qu'un moteur garde effectivement l'épinglage v86 vingt-quatre heures, ni qu'un
+hébergeur réel ne réécrit pas `Cache-Control` comme GitHub Pages le fait.
 
 ## Support et retrait
 

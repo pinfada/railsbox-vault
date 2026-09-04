@@ -541,6 +541,36 @@ politiques de contenu, et le contenu du territoire applicatif vient du guest (AD
 Aucune de ces trois décisions n'est posée sur l'origine applicative : `tools/publier-temoin.mjs`
 relève leur **absence** sur cette origine, comme il relève leur présence sur la coquille.
 
+## La politique de cache est décidée par nature d'artefact (#103)
+
+L'[ADR 0023](docs/decisions/0023-politique-de-cache-par-nature-d-artefact.md) remplace le
+`Cache-Control: no-store` uniforme par trois politiques, décidées dans `tools/serve-headers.mjs` et
+dérivées par la publication. Deux points touchent le modèle de menace, et un troisième une propriété
+de mise à jour.
+
+- **Les octets de la coquille deviennent conservables sur le disque de l'utilisateur.** `no-cache`
+  autorise le stockage et impose la revalidation ; `no-store` l'interdisait. Ce qui est ainsi
+  conservé est du **logiciel public** — la coquille, ses modules, l'émulateur épinglé —, jamais un
+  volume, jamais une clé : le volume vit dans OPFS et l'enveloppe de clé hors du volume (ADR 0020),
+  ni l'un ni l'autre ne passant par le cache HTTP. L'adversaire qui lit le cache HTTP d'un poste
+  partagé y apprend que Vault a été ouvert, ce que l'historique de navigation lui disait déjà ;
+- **`no-store` est CONSERVÉ sur l'origine applicative, et c'est maintenant une décision.** Ce que
+  cette origine sert en production porte les cookies de session Rails et vient du guest : ni la
+  place tenante ni un document de session n'ont à s'attarder dans un cache partagé. Le corollaire
+  est la ligne de l'ADR 0002 : ce que le **guest** sert de sa propre origine reste gouverné par ses
+  propres en-têtes, et cette décision ne prétend pas le gouverner ;
+- **`immutable` est refusé, et c'est une propriété de mise à jour.** Aucune URL publiée ne nomme son
+  empreinte : l'ADR 0003 épingle par SHA-256 dans `vendor/v86/MANIFEST.json`, pas dans le chemin.
+  Servir `immutable` interdirait au navigateur de s'apercevoir d'un ré-épinglage, y compris pour une
+  mise à jour de **sécurité** du runtime. La fenêtre retenue est de vingt-quatre heures, la même
+  pour le manifeste et pour les octets qu'il décrit, si bien qu'un navigateur ne peut pas tenir un
+  manifeste frais devant un émulateur périmé. Le retard d'une version pendant cette fenêtre est un
+  risque résiduel écrit dans l'ADR.
+
+Une seule dimension d'en-tête varie selon le chemin, et le cliquet de publication refuse qu'une
+seconde s'y ajoute : une divergence de CSP, de COOP, de `Referrer-Policy` ou de `Permissions-Policy`
+entre deux chemins d'un même arbre reste refusée comme elle l'était avant #103.
+
 ## Injecteur d'arrêts et d'écritures partielles (#15)
 
 L'issue #15 ajoute au dépôt un instrument qui FABRIQUE des pannes de stockage : handle perdu,
