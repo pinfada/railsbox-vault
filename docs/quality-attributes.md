@@ -907,6 +907,76 @@ seul HKDF.
    que #21 avait annoncé — « le coût de #22 dominera de plusieurs ordres de grandeur » — est mesuré,
    et le rapport est de 340 à 2 000 selon le moteur.
 
+## Ce que la RÉOUVERTURE après coupure coûte, et son budget (#129)
+
+Entre la mort du Worker qui tenait un volume et sa réouverture par le suivant, le moteur reprend
+l'exclusivité des fichiers à son rythme. `rouvrirApresCoupure`
+(`public/vm/resilience-scenarios.mjs`) tolère un refus `VAULT_STORAGE_BUSY`, borne l'attente à
+soixante essais espacés de 50 ms, et PUBLIE ce que la réouverture a coûté. Ce coût n'avait jamais
+été budgété : la suite VM exigeait `reouverture.essais === 1`, une valeur figée qui a fini par
+rougir deux nuits sur trois.
+
+### La grandeur en jeu, d'abord
+
+`tests/unit/vm-reouverture-handles.test.mjs` mesure ce que la suite tenait pour acquis. Une session
+de volume v3 tient **trois** handles exclusifs, et non un :
+
+| handle            | depuis | rendu par                               |
+| ----------------- | ------ | --------------------------------------- |
+| `<volume>`        | #6     | `OpfsBlockBackend#close`                |
+| `<volume>.gen`    | #16    | `GenerationStore#close`, via le backend |
+| `<volume>.temoin` | #19    | la source de fraîcheur, via le magasin  |
+
+`<volume>.cles` (#21) n'y figure PAS : `supportEnveloppeOpfs` ouvre et referme son handle à chaque
+geste. La mesure établit trois choses : **un seul des trois encore tenu suffit à rendre `busy`** ;
+**l'ordre d'acquisition n'allonge pas l'attente** — les trois fichiers sont indépendants, et l'ordre
+décide seulement lequel NOMME le refus ; **un essai perdu ne laisse rien derrière lui** — un refus
+sur le témoin a déjà saisi puis rendu les deux premiers. La réouverture aboutit donc quand le PLUS
+LENT des trois est rendu, là où un volume à un handle ne dépendait que d'un délai.
+
+### Le budget, et ce qu'il engage
+
+**`ESSAIS_MAX_REOUVERTURE = 3`** (`tests/vm/budget-reouverture.mjs`) : un essai perdu par handle
+tenu, soit au plus deux intervalles d'attente — 100 ms — entre le premier essai et le dernier admis.
+Ce n'est pas une observation, c'est un engagement sur le moteur : au delà, ce n'est plus le nombre
+de voisins qui explique le retard, c'est Chromium qui met à rendre l'exclusivité plus longtemps que
+l'ouverture ne le suppose. **Le remède est alors d'espacer les essais ou de réduire le nombre de
+voisins tenus, pas de relever le plafond.**
+
+La borne DURE du harnais — soixante essais, trois secondes — reste ce qu'elle est : un garde-fou
+contre une réouverture impossible, pas un budget.
+
+### Le relevé, sur OPFS réel
+
+`npm run test:vm` publie `vm-resilience-reouverture.json` (et un fichier par graine de contrôle) :
+pour chaque point de coupure, `essais`, `attenteMs` et l'attente réellement subie
+`(essais - 1) × attenteMs`. Chromium, `win32 x64`, Node 24.14, 2026-09-04, machine de développement.
+Vingt-quatre points de coupure par exécution — trois graines de huit —, plus la déchirure nommée et
+les deux plans de panne de fraîcheur, soit **vingt-sept relevés par exécution** :
+
+| exécution                                    | relevés | `essais` observés | `essaisMax` | attente subie max |
+| -------------------------------------------- | ------- | ----------------- | ----------- | ----------------- |
+| 1 (`npm run test:vm`, 19 tests, 14,1 min)    | 27      | tous à 1          | 1           | 0 ms              |
+| 2 (`npm run test:vm`, 19 tests, 14,1 min)    | 27      | tous à 1          | 1           | 0 ms              |
+| 3 (les deux specs seules, `--repeat-each=3`) | 81      | tous à 1          | 1           | 0 ms              |
+
+`attenteMs` vaut 50 ms partout : c'est l'espacement que `runResilienceClasser` impose, et il est
+publié pour que `essais` se convertisse en durée.
+
+**Sur cette machine, le moteur rend les trois handles avant le premier essai.** La CI, elle, a
+mesuré `2` deux nuits sur trois — c'est cette dispersion-là que le budget couvre, et c'est
+exactement pourquoi le relevé est **publié plutôt qu'épinglé** : une valeur figée à 1 ne dit rien de
+plus qu'« aujourd'hui, ici », et elle rougit ailleurs.
+
+### Ce que ce relevé ne couvre pas
+
+- **Le délai de restitution du moteur en lui-même.** Il n'est pas isolé : `essais` le mesure au
+  grain de `attenteMs`, pas à la milliseconde. Un relevé plus fin demanderait un banc dédié, et rien
+  ne le demande tant que le budget tient.
+- **Les autres moteurs.** OPFS impose Chromium à cette suite (`docs/testing.md`).
+- **La mort du PROCESSUS.** La coupure reste un `Worker.terminate()` : c'est la limite de #15, et
+  elle vaut ici aussi.
+
 ## Compatibilité
 
 La cible produit est les deux dernières versions stables de Chromium, Firefox et Safari sur
