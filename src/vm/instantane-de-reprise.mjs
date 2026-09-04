@@ -47,6 +47,7 @@ import {
 } from "./instantane/fichier-instantane.mjs";
 import { INSTANTANE_FORMAT, exigerLiaison } from "./instantane/identite-instantane.mjs";
 import {
+  captureRefusee,
   ecartDeLiaison,
   incomplet,
   malforme,
@@ -71,6 +72,38 @@ function liaisonDe(scellement, etatPresent, longueurEtat) {
 }
 
 /**
+ * DEMANDE la place AVANT de la prendre (#9, #65).
+ *
+ * `allouer` réserve la taille entière du fichier — 253 Mo sur l'image de référence — d'un seul
+ * `truncate`. Sans cette question, la capture découvrait le quota épuisé EN COURS d'écriture, et
+ * laissait derrière elle un fichier alloué et sans marque : de la place prise pour un instantané
+ * que la prochaine ouverture écarte de toute façon. Le scellement, lui, avait déjà été consommé —
+ * une clé du budget dépensée pour rien. La question vient donc AVANT les deux.
+ *
+ * Une estimation INDISPONIBLE (`state: "unknown"`) laisse passer, et c'est l'invariant de la couche
+ * budget : l'inconnu n'est pas une capacité nulle, sans quoi une coquille parfaitement saine dont
+ * le moteur n'expose pas `estimate()` ne capturerait jamais. Le pire coût de ce laissez-passer est
+ * l'échec typé de `allouer`, que le support rend déjà.
+ *
+ * Un appel SANS budget capture aussi : la couche est une injection, et les bancs qui éprouvent
+ * l'ordre des gestes n'ont pas à monter un `StorageManager`.
+ */
+async function exigerLaPlace(budget, total, volume) {
+  if (typeof budget?.reserve !== "function") return null;
+  const reserve = await budget.reserve(total);
+  if (reserve.sufficient !== false) return reserve;
+  throw captureRefusee(
+    `l'espace estimé (${reserve.available} octet(s)) ne couvre pas les ${total} octets du fichier.`,
+    {
+      volume,
+      requis: total,
+      disponible: reserve.available,
+      diagnostic: reserve.diagnostic?.code ?? null,
+    },
+  );
+}
+
+/**
  * CAPTURE un instantané, et l'ordre des gestes est le contrat.
  *
  * Allouer, écrire l'en-tête, écrire le corps, **barrière**, écrire la marque, **barrière**. La
@@ -84,13 +117,22 @@ function liaisonDe(scellement, etatPresent, longueurEtat) {
  * nouvelle — un fichier qui se lirait comme complet alors qu'il est un mélange de deux captures.
  *
  * @param {{ scellement: import("./scellement.mjs").Scellement, volume: string,
- *           etatPresent: object, etat: Uint8Array, support: object }} appel
+ *           etatPresent: object, etat: Uint8Array, support: object,
+ *           budget?: { reserve: (octets: number) => Promise<object> } | null }} appel
  * @returns {Promise<{ octets: number, liaison: object }>}
  */
-export async function capturerInstantane({ scellement, volume, etatPresent, etat, support }) {
+export async function capturerInstantane({
+  scellement,
+  volume,
+  etatPresent,
+  etat,
+  support,
+  budget = null,
+}) {
   if (!(etat instanceof Uint8Array)) {
     throw malforme("l'état v86 à capturer doit être une suite d'octets.", { volume });
   }
+  await exigerLaPlace(budget, tailleDeFichier(etat.byteLength), volume);
   const liaison = liaisonDe(scellement, etatPresent, etat.byteLength);
   // Le SCELLEMENT du volume porte la clé et le compteur : la capture passe par lui, jamais par une
   // clé recopiée. C'est ce qui garde le budget de clé en UN seul endroit (ADR 0016, décision 6).
