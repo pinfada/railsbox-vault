@@ -150,6 +150,11 @@ self.addEventListener("message", (event) => {
             code: error.code ?? null,
             message: error.message,
             context: error.context ?? null,
+            // Le TRANSCRIPT SÉRIE d'un `BootTimeout`, quand il y en a un. Sans lui, « Rails n'a pas
+            // répondu » arrive côté test sans une ligne de ce que le guest a dit — c'est-à-dire
+            // exactement le silence que #52 combat, déplacé d'un cran. Il ne porte que la sortie
+            // console du guest de référence, publique et déterministe.
+            transcript: typeof error.transcript === "string" ? error.transcript : null,
           },
         }),
     );

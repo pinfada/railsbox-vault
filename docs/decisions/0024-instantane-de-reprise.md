@@ -258,22 +258,54 @@ donner : il ne voit que les E/S qui lui arrivent.
 
 ## Décision 6 — Quand capturer : au point de contrôle, jamais pendant une génération ouverte
 
-La capture a lieu **au point de contrôle**, après quiescence, et à ces conditions cumulatives :
+La capture est un **protocole en six gestes, et leur ordre est le contrat** :
 
-1. la dernière génération est **validée** — racine écrite, barrière franchie, témoin écrit ;
-2. le journal a été **vidé** par un point de contrôle : rien n'attend d'être rangé ;
-3. l'adaptateur ne porte **aucune E/S en vol** ni aucune faute ;
-4. l'émulateur est **arrêté**.
+1. **SUSPENDRE** l'émulateur. Tant que le guest bat, il dépose, valide et fait ranger — donc il
+   change la région d'authentification **après** que la liaison a été lue ;
+2. attendre que l'adaptateur ne porte **aucune E/S en vol**, et qu'il ne porte aucune faute ;
+3. **SOLDER le journal** : valider ce qui est déposé, puis ranger par un point de contrôle ;
+4. **VÉRIFIER** que le journal ne porte plus rien, et refuser la capture sinon ;
+5. lire la **LIAISON** — après le solde, jamais avant ;
+6. **QUIESCER**, capturer, sceller, écrire, puis rendre le service.
 
-En pratique, deux moments les réunissent : la **fermeture propre** de la session, et une
-**inactivité mesurée** au-delà d'un seuil. Cette tranche n'implante que la première ; la seconde est
-nommée ici pour que le format ne la ferme pas, et elle attend une interface (#24) qui puisse la
-justifier à l'utilisateur.
+En pratique, deux moments s'y prêtent : la **fermeture propre** de la session, et une **inactivité
+mesurée** au-delà d'un seuil. Cette tranche n'implante que la première ; la seconde est nommée ici
+pour que le format ne la ferme pas, et elle attend une interface (#24) qui puisse la justifier à
+l'utilisateur.
 
-**Jamais pendant une génération ouverte.** Une charge déposée non validée sera écartée à la
-prochaine ouverture ; un instantané capturé au-dessus d'elle décrirait une mémoire qui a vu des
-écritures que le volume n'aura pas. La capture le refuse — c'est la condition 2 — plutôt que de
-capturer un état qu'il faudrait ensuite refuser à la restauration.
+### Valider les dépôts d'un guest ARRÊTÉ, et pourquoi c'est la condition de la correction
+
+C'est le geste 3, et c'est le point de cette décision que l'exécution a imposé. Le raffinement de
+#65 disait « jamais pendant une génération ouverte », ce qui laissait entendre qu'il suffirait
+d'ATTENDRE une génération fermée. **Il n'y en a presque jamais.** Un guest écrit ses journaux entre
+deux `fsync` : à un instant quelconque, le journal de génération porte toujours des dépôts que
+personne n'a validés. Une capture qui les attendrait n'aurait jamais lieu.
+
+Et les IGNORER serait pire. Les octets déposés **ont atteint le périphérique** : la mémoire qu'on
+s'apprête à capturer les tient pour écrits — propres dans son cache de pages — et ne les relira
+jamais depuis le disque. Les laisser non validés les ferait **écarter** à la prochaine ouverture, et
+le guest restauré lirait alors, à la première éviction de cache, un secteur d'avant. C'est une
+divergence **silencieuse** entre la mémoire et le disque — exactement ce que cet ADR existe pour
+interdire.
+
+**La décision est donc de VALIDER, sur un guest arrêté, ce qu'il a déposé, puis de le ranger.** Le
+volume devient égal à la mémoire qu'on capture, plutôt que la mémoire ne le dépasse.
+
+**Ce geste ne contredit pas la règle de `close()`** — « une génération non validée n'est PAS rangée
+: personne ne l'a acquittée » (ADR 0014). Cette règle protège la sémantique d'une COUPURE, où
+ressusciter des écritures non acquittées reviendrait à inventer un état. Ici il n'y a pas de coupure
+: le guest est arrêté proprement, et l'on choisit lequel des deux — le volume ou la mémoire —
+s'aligne sur l'autre.
+
+**`SEC-DURABLE-001` est intact.** Rien n'est annoncé durable à personne : le guest est arrêté et ne
+recevra aucun acquittement, et la barrière du support est franchie avant la racine, comme partout
+ailleurs.
+
+**La vérification du geste 4 n'est pas une politesse.** Ce qui resterait dans le journal serait
+rejoué dans le volume à la prochaine ouverture : la région d'authentification changerait, la
+génération non, et l'instantané serait écarté au motif `ECART_REGION` sur un volume que personne
+d'autre n'aurait touché. C'est ce que le scénario de bout en bout a mesuré avant que le solde
+n'existe, et c'est pourquoi le refus est explicite plutôt que déduit.
 
 ### Coût sur le budget de clé
 
@@ -354,6 +386,66 @@ n'est pas une fuite, mais qui n'est pas non plus ce que « verrouiller » promet
 est un boot à froid au déverrouillage suivant. Il est assumé, et #25 peut le rouvrir avec un
 argument, pas par omission.
 
+## Les trois corrections trouvées par EXÉCUTION
+
+Aucune des trois n'a été vue en revue. Toutes les trois ont été trouvées par le scénario de bout en
+bout, l'une après l'autre, chacune démasquée par la correction de la précédente. Elles sont écrites
+ici parce qu'un ADR qui ne raconterait que la version finale laisserait croire qu'elle a été trouvée
+du premier coup — et parce que la même erreur guette la prochaine tranche qui liera quelque chose à
+l'état du volume.
+
+### 1. La SÉQUENCE avance à chaque ouverture
+
+Détail complet à la décision 4. En un mot : le vidage qui clôt toute récupération écrit une racine
+neuve, donc la séquence avance avant que le guest ait battu. Un instantané lié à son ÉGALITÉ était
+périmé à sa première réouverture — il n'aurait jamais servi une seule fois. La garde est devenue un
+RECUL, et la propriété que le raffinement visait est portée par la génération et l'empreinte de
+région.
+
+**Elle a dû être corrigée DEUX fois, à deux endroits**, et cela mérite d'être dit : la conduite de
+l'ouverture (`instantane-de-reprise.mjs`) d'abord, puis le `set_state` de l'adaptateur, qui
+confronte la même liaison au moment où v86 restaure. La seconde n'est apparue qu'une fois la
+première corrigée, et sur trois chiffres du scénario de bout en bout : instantané capturé en
+séquence 3, volume rouvert deux fois pour être inspecté entre-temps, séquence 5. **Deux gardes qui
+disent la même chose doivent la dire de la même façon** — et rien, dans le code, ne l'imposait.
+
+### 2. La RÉGION change à la première ouverture si le journal n'est pas soldé
+
+Détail complet à la décision 6. En un mot : un journal qui porte encore une charge validée mais non
+rangée la fait REJOUER dans le volume à la prochaine ouverture. La région d'authentification change,
+la génération non — et l'instantané est écarté au motif `ECART_REGION` sur un volume que personne
+d'autre n'a touché. Le remède n'est pas d'attendre un journal vide, qui n'arrive presque jamais :
+c'est de le SOLDER, guest arrêté, avant de lire la liaison.
+
+### 3. L'EMPREINTE D'IMAGE se prend à l'acquisition, pas après le boot
+
+Le rootfs du guest est un tampon que celui-ci ÉCRIT (décision 9 ci-dessous). Le hacher après un boot
+rend l'empreinte d'une SESSION, pas celle d'une image : la capture et la reprise en calculaient deux
+différentes, et l'instantané était écarté au motif `ECART_IMAGE` sur exactement la même image.
+
+L'empreinte est donc prise **une fois, à l'acquisition du runtime**, sur les octets tout juste
+reçus, avant le premier battement du guest — et transportée telle quelle jusqu'à la capture et
+jusqu'à l'ouverture. Le bénéfice second n'est pas négligeable : le hachage de 435 Mio quitte le
+chemin critique de la reprise.
+
+## Décision 9 — Le rootfs éphémère publie son DELTA, pas son disque
+
+Le rootfs du guest de référence vit en RAM : les écritures y restent, rien n'est écrit sur le réseau
+ni sur OPFS. Remis à v86 tel quel — `{ buffer }` —, il en fait un `SyncBuffer` dont l'état capturé
+est **le disque entier** : 385 Mio par instantané, à côté de 250 Mio d'état v86. L'instantané
+pèserait plus que le volume qu'il accélère.
+
+`src/vm/instantane/tampon-rootfs.mjs` tient le même contrat de lecture et d'écriture, à la vitesse
+près d'un `SyncBuffer` — la mémoire est la même, les vues rendues sont les mêmes —, et ne publie
+dans son état que les **blocs réellement écrits** depuis le chargement, par blocs de 4096 octets —
+la page du guest et l'unité d'écriture d'ext4.
+
+**Ce n'est pas une optimisation qu'on pourrait perdre sans dommage.** Sans le delta, restaurer un
+instantané sur un rootfs pristine ferait diverger la mémoire du guest — qui croit tenir ses
+écritures en cache de page — et le disque qu'elle relira à la première éviction. Le tampon rend donc
+obligatoirement l'un des deux : le disque entier, ou le disque pristine PLUS la trace exacte de ce
+qui a été écrit. Il rend la seconde, parce que la première ne tient pas dans le budget.
+
 ## Ce que cette tranche ne prouve PAS
 
 C'est la section qui doit être lue avant toute autre.
@@ -361,17 +453,40 @@ C'est la section qui doit être lue avant toute autre.
 1. **Le gate « reprise p95 ≤ 60 s » n'est pas ouvert par cet ADR.** Il ne s'ouvre que si le p95
    mesuré sur ≥ 4 essais est ≤ 60 s **ET** que la preuve d'équivalence byte-à-byte est verte. Le
    relevé et le verdict vivent dans `docs/quality-attributes.md`, pas ici.
-2. **L'équivalence n'est prouvée que pour l'image de référence.** Elle compare l'invariant SQLite
-   (ADR 0004) et le clair du volume obtenus par restauration d'instantané et par boot à froid. Elle
-   ne dit rien d'une autre application, d'un autre noyau ni d'une autre version de v86.
-3. **Rien ici ne borne la dérive d'horloge du guest.** Un instantané restauré rend au guest une
+2. **L'équivalence du CLAIR DU VOLUME est prouvée, mais dans un cadre qu'il faut énoncer.** Le
+   raffinement de #65 demandait une équivalence byte-à-byte « de l'invariant SQLite (ADR 0004)
+   **et** du clair du volume ». Les deux sont tenues, et pas de la même façon :
+
+   - **l'invariant** : le corps entier de la réponse de `/vault/invariant` est identique octet pour
+     octet entre le boot à froid et la reprise, en Node (4 essais sur 4) comme au navigateur (trois
+     boots du même scénario) ;
+   - **le clair du volume** : identique octet pour octet AVANT et APRÈS une reprise par instantané —
+     `cc87935d9dd1…` des deux côtés au relevé du 4 septembre. L'égalité vaut parce qu'elle est
+     **encadrée** : une session reprise ne redémarre pas Rails, donc n'écrit rien, et le scénario le
+     CONSTATE (`counts.write === 0`) au lieu de le supposer. Restaurer un état mémoire ne touche pas
+     le volume.
+
+   **Ce qui n'est PAS comparable, et pourquoi** : le clair du volume entre deux BOOTS COMPLETS. Un
+   boot Rails réel écrit ses journaux, ses fichiers temporaires et son journal SQLite à chaque
+   démarrage ; deux boots partant du même volume en laissent deux états différents, sans que
+   l'instantané y soit pour rien. Une assertion qui les comparerait ne mesurerait pas l'instantané —
+   elle mesurerait le déterminisme de Rails.
+
+3. **L'équivalence n'est prouvée que pour l'image de référence.** Elle ne dit rien d'une autre
+   application, d'un autre noyau ni d'une autre version de v86.
+4. **Rien ici ne borne la dérive d'horloge du guest.** Un instantané restauré rend au guest une
    horloge arrêtée au moment de la capture ; v86 la rattrape depuis le CMOS de l'hôte, et ce que
    cela fait aux minuteries de Puma n'est pas mesuré par cette tranche.
-4. **La quiescence n'est éprouvée que sur l'adaptateur**, pas sur le contrôleur IDE de v86. Une E/S
+5. **La quiescence n'est éprouvée que sur l'adaptateur**, pas sur le contrôleur IDE de v86. Une E/S
    que `ide.js` retiendrait dans ses propres tampons sans jamais atteindre l'adaptateur ne serait
    pas vue. Le spike #4 a mesuré que le chemin PIO acquitte en interne ; c'est un résidu connu, il
    est nommé, il n'est pas fermé.
-5. **Aucune frontière d'origine ne bouge**, et `SEC-DURABLE-001` est inchangé.
+6. **Aucune frontière d'origine ne bouge**, et `SEC-DURABLE-001` est inchangé.
+7. **Une session REPRISE ne mute presque rien**, et c'est une propriété, pas un manque. Rails n'y
+   redémarre pas : il répond. Le scénario de bout en bout doit donc faire booter le volume une fois
+   de plus pour périmer l'instantané, et il le dit — l'application de référence n'a que deux routes,
+   toutes deux en lecture (ADR 0004), et la seule mutation Rails que cette fixture sache produire
+   est celle qu'un démarrage écrit.
 
 ## Impacts sur les ADR antérieurs
 

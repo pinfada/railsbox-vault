@@ -51,6 +51,71 @@ function verifierLesInjections({ V86, appAdapter, cmdline }) {
 }
 
 /**
+ * CONSTRUIT l'émulateur. Extrait de `boot` (#65) : la déclaration d'une machine — six artefacts,
+ * deux disques, quatre périphériques désactivés — n'est pas un enchaînement de décisions, et la
+ * mêler au protocole de démarrage rendait `boot` illisible autant que trop longue.
+ *
+ * `autostart` reste FAUX : la boucle est lancée par `boot`, après le pont et après l'éventuelle
+ * restauration. C'est l'ordre qui fait la correction, et le garder ici le rendrait invisible.
+ */
+function construireEmulateur({ V86, artifacts, wasm, rootfs, appAdapter, cmdline, memoryBytes }) {
+  return new V86({
+    wasm_fn: async (env) => (await WebAssembly.instantiate(wasm, env)).instance.exports,
+    bios: { buffer: asArrayBuffer(artifacts.bios) },
+    vga_bios: { buffer: asArrayBuffer(artifacts.vgaBios) },
+    bzimage: { buffer: asArrayBuffer(artifacts.kernel) },
+    initrd: { buffer: asArrayBuffer(artifacts.initrd) },
+    cmdline,
+    // hda = rootfs en lecture/écriture éphémère (les écritures du guest y restent en RAM, et le
+    // tampon n'en publie que le DELTA dans un instantané) ; hdb = disque applicatif adossé à OPFS,
+    // où atterrissent SQLite et la pièce jointe.
+    hda: rootfs,
+    hdb: appAdapter,
+    memory_size: memoryBytes,
+    vga_memory_size: 2 * 1024 * 1024,
+    autostart: false,
+    disable_speaker: true,
+    disable_keyboard: true,
+    disable_mouse: true,
+  });
+}
+
+/**
+ * Branche le flux série BRUT du guest : le transcript, le repérage des jalons, et le pont `@VLT1`.
+ *
+ * `onSerial` reçoit les octets tels qu'ils sortent du guest — BIOS, noyau, init —, avant que le
+ * pont ne démarre. C'est ce que `onJournal` ne peut pas donner : il ne voit que les lignes
+ * applicatives relayées par le pont. Le banc de reprise s'en sert pour horodater les jalons de boot
+ * et décomposer le temps de reprise. Aucun effet sur le démarrage.
+ */
+function brancherLaSerie(emulator, { decoder, onSerial, client, ajouterAuTranscript }) {
+  emulator.add_listener("serial0-output-byte", (byte) => {
+    const fragment = decoder.decode(new Uint8Array([byte]), { stream: true });
+    ajouterAuTranscript(fragment);
+    onSerial(fragment);
+    client.ingest(fragment);
+  });
+}
+
+/**
+ * RESTAURE un instantané, s'il y en a un à restaurer. Appelée APRÈS le pont et AVANT `run()`.
+ *
+ *  - après le pont, parce que `restore_state` rend au guest un paquet IDENTIFY déjà lu : le guest
+ *    capturé savait son disque en « write back », et un pont posé ensuite n'aurait plus d'IDENTIFY
+ *    à corriger ;
+ *  - avant `run()`, parce qu'un guest lancé à froid puis écrasé par une restauration aurait battu
+ *    pour rien, et la mesure porterait sur deux boots au lieu d'un.
+ *
+ * `set_state` de l'adaptateur confronte alors la liaison au volume réellement ouvert, avant que la
+ * moindre instruction n'ait été exécutée.
+ */
+async function restaurerSiDemande(emulator, journal, etat) {
+  if (etat === null) return;
+  await emulator.restore_state(etat.buffer ?? etat);
+  journal.record(JOURNAL_OPERATIONS.mark, { label: "instantane-restaure" });
+}
+
+/**
  * Attente CADENCÉE : elle avance depuis la minuterie ET depuis les battements de la boucle
  * d'ordonnancement. Sous un moteur qui affame ses minuteries pendant que la boucle tourne
  * (WebKit, mesuré le 2026-08-26), une attente scrutée par un `setInterval` ne s'exécuterait pas
@@ -138,7 +203,6 @@ export function createReferenceGuestSession({
      * une seule fois au démarrage, et un pont posé après coup n'obtiendrait aucune barrière.
      */
     async boot({ ideTimeoutMs = DEFAULT_IDE_TIMEOUT_MS, etatARestaurer = null } = {}) {
-      const wasm = asArrayBuffer(artifacts.wasm);
       // Les octets du rootfs sont ADOPTÉS, non recopiés : le Worker vient de les télécharger et n'en
       // garde pas d'autre référence. Les recopier coûterait 385 Mio pour rien.
       rootfs = creerTamponRootfs(
@@ -146,35 +210,23 @@ export function createReferenceGuestSession({
           ? artifacts.rootfs
           : new Uint8Array(asArrayBuffer(artifacts.rootfs)),
       );
-      emulator = new V86({
-        wasm_fn: async (env) => (await WebAssembly.instantiate(wasm, env)).instance.exports,
-        bios: { buffer: asArrayBuffer(artifacts.bios) },
-        vga_bios: { buffer: asArrayBuffer(artifacts.vgaBios) },
-        bzimage: { buffer: asArrayBuffer(artifacts.kernel) },
-        initrd: { buffer: asArrayBuffer(artifacts.initrd) },
+      emulator = construireEmulateur({
+        V86,
+        artifacts,
+        wasm: asArrayBuffer(artifacts.wasm),
+        rootfs,
+        appAdapter,
         cmdline,
-        // hda = rootfs en lecture/écriture éphémère (les écritures du guest y restent en RAM) ;
-        // hdb = disque applicatif adossé à OPFS, où atterrissent SQLite et la pièce jointe.
-        hda: rootfs,
-        hdb: appAdapter,
-        memory_size: memoryBytes,
-        vga_memory_size: 2 * 1024 * 1024,
-        autostart: false,
-        disable_speaker: true,
-        disable_keyboard: true,
-        disable_mouse: true,
+        memoryBytes,
       });
 
-      emulator.add_listener("serial0-output-byte", (byte) => {
-        const fragment = decoder.decode(new Uint8Array([byte]), { stream: true });
-        transcript += fragment;
-        // `onSerial` reçoit le flux série BRUT (BIOS, noyau, init) tel qu'il sort du guest, avant
-        // le pont `@VLT1`. C'est ce que `onJournal` ne peut pas donner : `onJournal` ne voit que
-        // les lignes applicatives relayées par le pont, une fois celui-ci démarré. Le banc de
-        // reprise s'en sert pour horodater les jalons de boot (montage /dev/sdb, lancement de Puma,
-        // pont série actif) et décomposer le temps de reprise. Aucun effet sur le démarrage.
-        onSerial(fragment);
-        client.ingest(fragment);
+      brancherLaSerie(emulator, {
+        decoder,
+        onSerial,
+        client,
+        ajouterAuTranscript: (fragment) => {
+          transcript += fragment;
+        },
       });
 
       await wait(
@@ -190,23 +242,22 @@ export function createReferenceGuestSession({
         mode,
       });
 
-      // La RESTAURATION vient APRÈS le pont et AVANT `run()`, et l'ordre est le contrat (#65) :
-      //
-      //  - après le pont, parce que `restore_state` rend au guest un paquet IDENTIFY déjà lu — le
-      //    guest capturé savait son disque en « write back », et un pont posé ensuite n'aurait plus
-      //    d'IDENTIFY à corriger ;
-      //  - avant `run()`, parce qu'un guest lancé à froid puis écrasé par une restauration aurait
-      //    battu pour rien, et la mesure porterait sur deux boots au lieu d'un.
-      //
-      // `set_state` de l'adaptateur confronte alors la liaison au volume réellement ouvert, avant
-      // que la moindre instruction n'ait été exécutée.
-      if (etatARestaurer !== null) {
-        await emulator.restore_state(etatARestaurer.buffer ?? etatARestaurer);
-        journal.record(JOURNAL_OPERATIONS.mark, { label: "instantane-restaure" });
-      }
+      await restaurerSiDemande(emulator, journal, etatARestaurer);
 
       journal.record(JOURNAL_OPERATIONS.mark, { label: "boot-start" });
       emulator.run();
+    },
+
+    /**
+     * SUSPEND la boucle du guest, sans retirer le pont ni fermer quoi que ce soit.
+     *
+     * C'est le PREMIER geste d'une capture (ADR 0024, décision 6), et il vient avant le point de
+     * contrôle : tant que le guest bat, il peut déposer, valider et faire ranger une génération —
+     * c'est-à-dire changer la région d'authentification APRÈS que la liaison a été lue. La capture
+     * serait alors scellée sur un état que le volume a déjà quitté.
+     */
+    suspendre() {
+      emulator.stop();
     },
 
     /**
