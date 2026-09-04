@@ -275,6 +275,37 @@ L'ordre imposé par l'ADR 0017 est : annoncer, **exporter** depuis l'ancienne or
 ([ADR 0009](decisions/0009-restauration-inter-origine.md)), et maintenir l'ancienne en service tant
 qu'un utilisateur peut n'avoir pas exporté.
 
+### Ce que l'outil refuse, et ce dont il se contente d'avertir (#106)
+
+Trois entrées sont refusées en **usage invalide** (code 3), et elles le sont **avant** que quoi que
+ce soit ne soit effacé — une faute de frappe ne doit pas emporter la publication précédente :
+
+- une `--commit <ref>` que `git rev-parse` ne résout pas. Elle est nommée dans le refus, au lieu de
+  remonter sous la forme d'un échec de `git ls-tree` ;
+- une `--sortie` qui n'est pas **strictement sous la racine du dépôt**. La construction efface
+  `<sortie>/coquille` et `<sortie>/application` avant de les réécrire, et ne le fait que là où git
+  rend le dommage visible. Déposer l'arbre ailleurs est une **copie**, faite après coup ;
+- une `--sortie` qui contient autre chose que ces deux arbres. Le répertoire visé doit être absent,
+  vide, ou celui d'une publication précédente.
+
+Une source obligatoire absente reste un code 4, mais l'outil dit désormais **laquelle des deux
+absences** il constate : absente de l'arbre de travail — un fichier à replacer —, ou absente **au
+commit** demandé, c'est-à-dire jamais présente à cet endroit de l'histoire. Le second cas ne se
+répare pas sur le disque : c'est cette version-là qui n'est pas constructible par les sources
+décidées aujourd'hui.
+
+`--verifier` **avertit** enfin quand l'inventaire déclare un arbre de travail sale à la
+construction, ou qu'il ne porte aucune empreinte de commit. Le code de sortie **reste 0** : les
+empreintes sont exactes, l'arbre est bien ce que son inventaire décrit, et ce qui manque est une
+_provenance_, pas une _intégrité_. Rendre 1 confondrait « altéré après publication » avec «
+construit depuis un disque non versionné ». L'avertissement vaut aussi sous `--commit`, parce que
+les sources hors git et les outils qui rendent `_headers` viennent toujours du disque.
+
+`tools/publier-sonde-hebergement.mjs` conserve `GET` là où `HEAD` suffirait à lire des en-têtes :
+elle mesure ce que le **public** reçoit, et un hébergeur qui dégrade `HEAD` lui ferait enregistrer «
+en-tête absent » là où l'en-tête est servi — un faux négatif sur un en-tête de sécurité. Le motif
+est écrit dans le module et fixé par une épreuve.
+
 ### Ce que la chaîne ne fait pas encore
 
 Aucun déploiement réel, aucune signature, aucun SBOM, aucun Service Worker hors ligne. Et
