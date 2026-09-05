@@ -123,7 +123,9 @@ Ce que la matrice de compatibilité doit en retenir :
   `aes-256-gcm`. Un runtime qui ne connaît que v2 refuse un v3 par `VAULT_MANIFEST_FORMAT_TOO_NEW`,
   ce qui est exactement le comportement voulu : il n'a pas la clé, et il écrirait en clair dans un
   volume chiffré ;
-- **le format du journal de génération passe de 1 à 2**, indépendamment, et pour la même raison ;
+- **le format du journal de génération passe de 1 à 2**, indépendamment, et pour la même raison —
+  puis à **3** avec l'ADR 0019 et à **4** avec le constat #143, chaque fois parce que les octets
+  d'un journal changent et jamais parce que le volume change ;
 - **le MANIFESTE d'un v1 ou d'un v2 reste lisible ; leur FICHIER ne s'ouvre pas.** La distinction a
   été écrite de travers jusqu'à la revue de #102, qui a relevé que « v1 et v2 restent LISIBLES, donc
   exportables et migrables » promettait trois remèdes dont aucun n'existait alors : `MIN_READABLE`
