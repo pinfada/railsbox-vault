@@ -213,7 +213,8 @@ function residu(symboles) {
  */
 export function sommeDeControle(donnees) {
   exigerLesSymboles(donnees, SYMBOLES_DONNEES);
-  const decale = (residu(donnees) * ALPHABET_CROCKFORD.length ** SYMBOLES_CONTROLE) % MODULE_CONTROLE;
+  const decale =
+    (residu(donnees) * ALPHABET_CROCKFORD.length ** SYMBOLES_CONTROLE) % MODULE_CONTROLE;
   const controle = (MODULE_CONTROLE + 1 - decale) % MODULE_CONTROLE;
   return [Math.floor(controle / ALPHABET_CROCKFORD.length), controle % ALPHABET_CROCKFORD.length];
 }

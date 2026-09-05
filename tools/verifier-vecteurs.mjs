@@ -7,11 +7,14 @@
 //
 // ## Ce qu'il est, et pourquoi il ne ressemble à rien d'autre dans ce dépôt
 //
-// Ce fichier RÉIMPLÉMENTE, à partir de `docs/format-de-volume-v3.md` et de rien d'autre, les
+// Ce fichier RÉIMPLÉMENTE, à partir de `docs/format-de-volume-v3.md`, de
+// `docs/decisions/0025-moyen-de-recuperation.md` et de rien d'autre, les
 // encodages que le format emploie : les données associées d'un bloc du volume, celles d'un
 // ENREGISTREMENT du journal — distinctes depuis le constat #143 —, celles d'une racine, l'encodage
 // canonique de la suite des entrées, le sceau de 34 octets, l'en-tête v3, la racine sur disque, le
-// témoin. Il les confronte ensuite aux octets FIGÉS de `tests/vectors/`.
+// témoin — et, depuis #147, le CODE DE RÉCUPÉRATION : sa forme base 32, sa somme de contrôle et ses
+// deux propriétés, sa relecture, son matériau et sa KEK. Il les confronte ensuite aux octets FIGÉS
+// de `tests/vectors/`.
 //
 // **Il n'importe RIEN de `src/`, et c'est toute sa valeur.** Un vérificateur qui appellerait le
 // modèle de référence emprunterait précisément les encodages qu'il prétend contrôler : il
@@ -726,16 +729,328 @@ async function verifierDisposition() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// 3. Le MOYEN DE RÉCUPÉRATION (ADR 0025) : le code, sa somme de contrôle, son matériau, sa KEK.
+// ---------------------------------------------------------------------------------------------
+//
+// Cette section est réécrite depuis le SEUL texte de `docs/decisions/0025-moyen-de-recuperation.md`,
+// comme les deux précédentes le sont depuis `docs/format-de-volume-v3.md`. Elle n'importe rien du
+// produit, et c'est toute sa valeur : elle mesure que la SPÉCIFICATION suffit à reproduire les
+// octets, pas que le code est d'accord avec lui-même.
+//
+// Les constantes ci-dessous sont ÉPINGLÉES ici plutôt que lues dans les vecteurs. Un vérificateur
+// qui croirait le document qu'il vérifie ne vérifierait rien : l'alphabet, le module de la somme de
+// contrôle, les largeurs et l'étiquette de domaine viennent de l'ADR, pas du JSON.
+
+/** L'alphabet base 32 de Crockford, tel que l'ADR 0025 le fixe : sans I, L, O ni U. */
+const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/** Le module PREMIER de la somme de contrôle : le plus grand sous 32². */
+const MODULE_RECUPERATION = 1021;
+
+/** Vingt-six symboles de données, deux de contrôle, seize octets tirés. */
+const SYMBOLES_DONNEES_RECUPERATION = 26;
+const SYMBOLES_TOTAL_RECUPERATION = 28;
+const CODE_OCTETS_RECUPERATION = 16;
+
+/** L'étiquette de domaine des paramètres publics du type 4, et la largeur de son sel. */
+const DOMAINE_RECUPERATION = "railsbox-vault/derivation/v1/recuperation";
+const SEL_RECUPERATION_OCTETS = 32;
+
+/** L'étiquette de domaine de l'info HKDF, celle de l'ADR 0021 — le type 4 ne la change pas. */
+const DOMAINE_DERIVATION = "railsbox-vault/derivation/v1/kek";
+
+/** Les symboles de seize octets : cinq bits à la fois, deux bits de bourrage nuls pour finir. */
+function symbolesDeRecuperation(octets) {
+  let bits = "";
+  for (const octet of octets) bits += octet.toString(2).padStart(8, "0");
+  bits += "00";
+  const symboles = [];
+  for (let debut = 0; debut < bits.length; debut += 5) {
+    symboles.push(Number.parseInt(bits.slice(debut, debut + 5), 2));
+  }
+  return symboles;
+}
+
+/** Les seize octets de vingt-six symboles, ou `null` si le bourrage n'est pas nul. */
+function octetsDeRecuperation(symboles) {
+  let bits = "";
+  for (const symbole of symboles) bits += symbole.toString(2).padStart(5, "0");
+  if (bits.slice(-2) !== "00") return null;
+  const octets = new Uint8Array(CODE_OCTETS_RECUPERATION);
+  for (let index = 0; index < octets.length; index += 1) {
+    octets[index] = Number.parseInt(bits.slice(index * 8, index * 8 + 8), 2);
+  }
+  return octets;
+}
+
+/** Le résidu modulo 1021 d'une suite de symboles lue en base 32. */
+function residuDeRecuperation(symboles) {
+  let reste = 0;
+  for (const symbole of symboles) reste = (reste * 32 + symbole) % MODULE_RECUPERATION;
+  return reste;
+}
+
+/** Les deux symboles de contrôle : système pur de l'ISO 7064, M = 1021, r = 32. */
+function controleDeRecuperation(donnees) {
+  const decale = (residuDeRecuperation(donnees) * 1024) % MODULE_RECUPERATION;
+  const controle = (MODULE_RECUPERATION + 1 - decale) % MODULE_RECUPERATION;
+  return [Math.floor(controle / 32), controle % 32];
+}
+
+/** La chaîne rendue : vingt-huit symboles en sept groupes de quatre. */
+function chaineDeRecuperation(symboles) {
+  const lettres = symboles.map((symbole) => CROCKFORD[symbole]).join("");
+  return (lettres.match(/.{4}/g) ?? []).join("-");
+}
+
+/** Points de code que la saisie retire, tels que l'ADR 0025 les énumère. */
+const SEPARATEURS_RECUPERATION = new Set([
+  0x2d, 0x2013, 0x2014, 0x20, 0xa0, 0x202f, 0x09, 0x0a, 0x0d,
+]);
+
+/** Les replis de Crockford : les signes écartés sont ramenés sur celui qu'ils imitent. */
+const REPLIS_RECUPERATION = new Map([
+  ["O", "0"],
+  ["I", "1"],
+  ["L", "1"],
+]);
+
+/**
+ * RELIT une saisie : NFC, majuscule, retrait des séparateurs, repli, somme de contrôle, bourrage.
+ *
+ * Rend les seize octets, ou `null` pour tout refus. La distinction entre les motifs de refus n'est
+ * pas l'affaire de ce vérificateur : ce qu'il mesure est qu'une forme est acceptée ou ne l'est pas.
+ */
+function relireSaisieDeRecuperation(texte) {
+  const symboles = [];
+  for (const signe of texte.normalize("NFC")) {
+    if (SEPARATEURS_RECUPERATION.has(signe.codePointAt(0))) continue;
+    const majuscule = signe.toUpperCase();
+    const replie = REPLIS_RECUPERATION.get(majuscule) ?? majuscule;
+    const valeur = replie.length === 1 ? CROCKFORD.indexOf(replie) : -1;
+    if (valeur === -1) return null;
+    symboles.push(valeur);
+  }
+  if (symboles.length !== SYMBOLES_TOTAL_RECUPERATION) return null;
+  if (residuDeRecuperation(symboles) !== 1) return null;
+  return octetsDeRecuperation(symboles.slice(0, SYMBOLES_DONNEES_RECUPERATION));
+}
+
+/** HKDF-SHA-256 tel que la RFC 5869 le définit, par `node:crypto`. */
+async function hkdf(materiau, sel, infoOctets) {
+  const base = await webcrypto.subtle.importKey("raw", materiau, "HKDF", false, ["deriveBits"]);
+  return new Uint8Array(
+    await webcrypto.subtle.deriveBits(
+      { name: "HKDF", hash: "SHA-256", salt: sel, info: infoOctets },
+      base,
+      256,
+    ),
+  );
+}
+
+async function verifierRecuperation() {
+  const vecteurs = lire("tests/vectors/derivation-v1.json");
+  const moyen = vecteurs.recuperation;
+  verifier(
+    "récupération : l'alphabet publié est celui de Crockford, sans I, L, O ni U",
+    moyen.alphabet === CROCKFORD,
+    `publié ${moyen.alphabet}`,
+  );
+  verifier(
+    "récupération : le module de la somme de contrôle est le premier que l'ADR fixe",
+    moyen.moduleDeControle === MODULE_RECUPERATION,
+    `publié ${moyen.moduleDeControle}`,
+  );
+
+  await verifierLesCodes(moyen);
+  verifierLesProprietesDeControle(moyen);
+  verifierLesSaisies(moyen);
+  await verifierLaDerivationDeRecuperation(moyen);
+  verifierLesParametresDeRecuperation(vecteurs);
+}
+
+/** Chaque code figé : symboles, bourrage, somme de contrôle, chaîne rendue, matériau. */
+async function verifierLesCodes(moyen) {
+  for (const cas of moyen.codes) {
+    const octets = hexEnOctets(cas.octetsHex);
+    verifier(
+      `récupération : « ${cas.nom} » porte exactement ${CODE_OCTETS_RECUPERATION} octets`,
+      octets.byteLength === CODE_OCTETS_RECUPERATION,
+      `${octets.byteLength} octets`,
+    );
+    const donnees = symbolesDeRecuperation(octets);
+    verifier(
+      `récupération : « ${cas.nom} » — les vingt-six symboles sont ceux de la spécification`,
+      JSON.stringify(donnees) === JSON.stringify(cas.symboles),
+      `${JSON.stringify(donnees)} attendu ${JSON.stringify(cas.symboles)}`,
+    );
+    verifier(
+      `récupération : « ${cas.nom} » — les deux bits de bourrage sont NULS`,
+      donnees[SYMBOLES_DONNEES_RECUPERATION - 1] % 4 === 0,
+    );
+    const controle = controleDeRecuperation(donnees);
+    verifier(
+      `récupération : « ${cas.nom} » — la somme de contrôle est celle de la spécification`,
+      JSON.stringify(controle) === JSON.stringify(cas.sommeDeControle),
+      `${JSON.stringify(controle)} attendu ${JSON.stringify(cas.sommeDeControle)}`,
+    );
+    verifier(
+      `récupération : « ${cas.nom} » — la chaîne rendue fait sept groupes de quatre`,
+      chaineDeRecuperation([...donnees, ...controle]) === cas.codeRendu,
+      `obtenu ${chaineDeRecuperation([...donnees, ...controle])}, figé ${cas.codeRendu}`,
+    );
+    verifier(
+      `récupération : « ${cas.nom} » — la chaîne se relit en ses seize octets`,
+      octetsEnHex(relireSaisieDeRecuperation(cas.codeRendu) ?? new Uint8Array(0)) === cas.octetsHex,
+    );
+    memesOctets(
+      `récupération : « ${cas.nom} » — le matériau HKDF est le SHA-256 des seize octets`,
+      await empreinte(octets),
+      cas.materiauHex,
+    );
+  }
+}
+
+/**
+ * Les DEUX propriétés que l'ADR 0025 promet de la somme de contrôle, refaites ici EXHAUSTIVEMENT.
+ *
+ * C'est le contrôle qui vaut le plus dans cette section : il ne compare pas des octets figés, il
+ * refait la démonstration. Un relecteur qui doute de la construction n'a pas à la croire.
+ */
+function verifierLesProprietesDeControle(moyen) {
+  let substitutions = 0;
+  let transpositions = 0;
+  let ratees = 0;
+  for (const cas of moyen.codes) {
+    const donnees = symbolesDeRecuperation(hexEnOctets(cas.octetsHex));
+    const symboles = [...donnees, ...controleDeRecuperation(donnees)];
+    for (let rang = 0; rang < SYMBOLES_TOTAL_RECUPERATION; rang += 1) {
+      for (let valeur = 0; valeur < 32; valeur += 1) {
+        if (valeur === symboles[rang]) continue;
+        const mute = [...symboles];
+        mute[rang] = valeur;
+        if (residuDeRecuperation(mute) === 1) ratees += 1;
+        substitutions += 1;
+      }
+    }
+    for (let rang = 0; rang < SYMBOLES_TOTAL_RECUPERATION - 1; rang += 1) {
+      if (symboles[rang] === symboles[rang + 1]) continue;
+      const mute = [...symboles];
+      [mute[rang], mute[rang + 1]] = [mute[rang + 1], mute[rang]];
+      if (residuDeRecuperation(mute) === 1) ratees += 1;
+      transpositions += 1;
+    }
+  }
+  verifier(
+    "récupération : TOUTE substitution d'un symbole est détectée, exhaustivement",
+    ratees === 0 && substitutions === moyen.codes.length * SYMBOLES_TOTAL_RECUPERATION * 31,
+    `${ratees} non détectée(s) sur ${substitutions} substitutions`,
+  );
+  verifier(
+    "récupération : TOUTE transposition de deux symboles adjacents est détectée",
+    ratees === 0 && transpositions >= 25,
+    `${transpositions} transpositions mesurées`,
+  );
+}
+
+/** Les formes de saisie : les acceptées rendent les mêmes octets, les refusées sont refusées. */
+function verifierLesSaisies(moyen) {
+  const saisies = moyen.saisies;
+  verifier(
+    "récupération : la forme de normalisation FIGÉE est NFC, jamais une forme de compatibilité",
+    saisies.forme === "NFC",
+    `figée ${saisies.forme}`,
+  );
+  for (const forme of saisies.acceptees) {
+    const texte = String.fromCodePoint(...forme.pointsSaisis);
+    const octets = relireSaisieDeRecuperation(texte);
+    verifier(
+      `récupération : la saisie « ${forme.nom} » rend les mêmes seize octets`,
+      octets !== null && octetsEnHex(octets) === saisies.octetsHex,
+      octets === null ? "refusée" : octetsEnHex(octets),
+    );
+  }
+  for (const forme of saisies.refusees) {
+    const texte = String.fromCodePoint(...forme.pointsSaisis);
+    verifier(
+      `récupération : la saisie « ${forme.nom} » est REFUSÉE`,
+      relireSaisieDeRecuperation(texte) === null,
+    );
+  }
+  // Le témoin de la garde : si `relireSaisieDeRecuperation` refusait tout, les contrôles ci-dessus
+  // seraient à moitié vides. Les acceptées viennent de le démentir ; celui-ci le dit à voix haute.
+  verifier(
+    "récupération : la relecture de la saisie ACCEPTE au moins trois formes distinctes",
+    saisies.acceptees.length >= 3,
+    `${saisies.acceptees.length} formes acceptées`,
+  );
+}
+
+/** L'info HKDF et l'OKM : le type 4 emploie l'encodage de l'ADR 0021, sans le changer. */
+async function verifierLaDerivationDeRecuperation(moyen) {
+  const cas = moyen.derivation;
+  const info = concat(
+    chainePrefixee(DOMAINE_DERIVATION),
+    chainePrefixee(cas.identifiantVolume),
+    chainePrefixee(cas.identifiantEmplacement),
+    be(cas.version, 4),
+  );
+  memesOctets("récupération : l'info HKDF est celle de l'ADR 0021, inchangée", info, cas.infoHex);
+  const materiau = hexEnOctets(cas.materiauHex);
+  verifier(
+    "récupération : le matériau remis à HKDF fait trente-deux octets",
+    materiau.byteLength === 32,
+    `${materiau.byteLength} octets`,
+  );
+  memesOctets(
+    "récupération : l'OKM est HKDF-SHA-256(SHA-256(code), sel de l'emplacement, info)",
+    await hkdf(materiau, hexEnOctets(cas.sel), info),
+    cas.okmHex,
+  );
+}
+
+/** Les paramètres publics du type 4 : étiquette, version, sel de trente-deux octets. */
+function verifierLesParametresDeRecuperation(vecteurs) {
+  const cas = vecteurs.parametres.find((entree) => entree.type === "recuperation");
+  if (
+    !verifier(
+      "récupération : les vecteurs portent les paramètres publics du type 4",
+      cas !== undefined,
+    )
+  ) {
+    return;
+  }
+  const sel = hexEnOctets(cas.valeurs.sel);
+  verifier(
+    "récupération : le sel HKDF de l'emplacement fait trente-deux octets",
+    sel.byteLength === SEL_RECUPERATION_OCTETS,
+    `${sel.byteLength} octets`,
+  );
+  memesOctets(
+    "récupération : les paramètres publics sont étiquette ‖ version ‖ longueur ‖ sel",
+    concat(
+      chainePrefixee(DOMAINE_RECUPERATION),
+      be(cas.valeurs.version, 1),
+      be(sel.byteLength, 2),
+      sel,
+    ),
+    cas.octetsHex,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
 
 async function main() {
   await verifierModele();
   await verifierDisposition();
+  await verifierRecuperation();
 
   const total = vertes + rouges.length;
   if (rouges.length === 0) {
     process.stdout.write(
       `VERT — ${vertes} vérifications vertes sur ${total}, sans importer une ligne du produit.\n` +
-        `Les octets figés de tests/vectors/ sont ceux que docs/format-de-volume-v3.md décrit.\n`,
+        `Les octets figés de tests/vectors/ sont ceux que docs/format-de-volume-v3.md et\n` +
+        `docs/decisions/0025-moyen-de-recuperation.md décrivent.\n`,
     );
     return;
   }
