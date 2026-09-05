@@ -21,10 +21,10 @@ colonnes, et chaque ligne est OPPOSABLE » exige de CHAQUE ligne, **hors ligne**
   [`SECURITY.md`](../../SECURITY.md). Ce recoupement est **interne** : il établit que le registre et
   le dossier parlent des mêmes numéros, **pas** qu'un tiers a envoyé le constat ;
 - une **sévérité** et une **disposition** du vocabulaire fermé décrit plus bas ;
-- une **preuve qui existe vraiment** : chaque empreinte citée doit être un commit de ce dépôt
-  (`git cat-file -e`), chaque ADR cité un fichier de `docs/decisions/`, et une disposition « corrigé
-  » doit citer au moins un commit. C'est le seul de ces contrôles que rien de rédactionnel ne peut
-  satisfaire.
+- une **preuve opposable** : une disposition « corrigé » cite la **PR** qui corrige, dont le numéro
+  est repris par le dossier ; chaque ADR cité est un fichier de `docs/decisions/` ; et une empreinte
+  de commit, si elle est citée, doit exister (`git cat-file -e`) — elle s'ajoute à la PR, elle ne la
+  remplace jamais. C'est le seul de ces contrôles que rien de rédactionnel ne peut satisfaire.
 
 La garde est éprouvée **dans les deux sens** : « la garde du registre MORD : une ligne inventée est
 refusée sur chacun de ses défauts » rejoue la ligne exacte qu'une revue a fait passer au vert
@@ -37,9 +37,9 @@ Le dossier soumis à la revue est décrit par
 
 ## Constats
 
-| Constat                                                                                                                                             | Sévérité | Disposition | Commit ou ADR                                                |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------- | ------------------------------------------------------------ |
-| [#143](https://github.com/pinfada/railsbox-vault/issues/143) — l'identité logique ne sépare pas un enregistrement de journal d'un secteur de volume | HIGH     | corrigé     | `51ba8e0` ; ADR 0016 et ADR 0019 amendés le 5 septembre 2026 |
+| Constat                                                                                                                                             | Sévérité | Disposition | Preuve                                                                                                           |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------- | ---------------------------------------------------------------------------------------------------------------- |
+| [#143](https://github.com/pinfada/railsbox-vault/issues/143) — l'identité logique ne sépare pas un enregistrement de journal d'un secteur de volume | HIGH     | corrigé     | [PR #146](https://github.com/pinfada/railsbox-vault/pull/146) ; ADR 0016 et ADR 0019 amendés le 5 septembre 2026 |
 
 ## Comment une ligne se remplit
 
@@ -49,8 +49,12 @@ Le dossier soumis à la revue est décrit par
 - **Disposition** — `corrigé`, `accepté` ou `réfuté`. `accepté` exige un amendement daté de l'ADR
   concerné ; `réfuté` exige une reproduction qui échoue, publiée dans l'issue. Rien n'est « fermé
   sans suite ».
-- **Commit ou ADR** — l'empreinte du commit qui corrige, ou l'ADR et la date de l'amendement qui
-  accepte. Une disposition sans preuve opposable n'est pas une disposition.
+- **Preuve** — la **PR** qui corrige, ou l'ADR et la date de l'amendement qui accepte. Une
+  disposition sans preuve opposable n'est pas une disposition, et une disposition `corrigé` exige
+  une PR. Une empreinte de commit peut s'ajouter, jamais remplacer : ce dépôt fusionne par « rebase
+  and merge », et GitHub RÉÉCRIT alors les empreintes en les portant sur `main`, si bien qu'une
+  preuve adossée à une empreinte se périme à la fusion — c'est arrivé une fois ici, à un simple
+  rebasage. Un numéro de PR, lui, ne bouge pas. Si une empreinte est citée, elle doit exister.
 
 ## Ce que ce registre n'établit pas
 

@@ -156,8 +156,9 @@ et tester.
   Le dernier mot est une correction, pas une précision : jusqu'au format de journal 4, un
   enregistrement du journal et un secteur du volume à la même adresse sous la même génération
   partageaient leur étiquette de domaine, si bien que le sceau de l'un s'ouvrait à la place de
-  l'autre — constat HIGH [#143](https://github.com/pinfada/railsbox-vault/issues/143), corrigé, et
-  ce que la correction laisse ouvert pour les journaux déjà écrits est nommé au § 9.6 de
+  l'autre — constat HIGH [#143](https://github.com/pinfada/railsbox-vault/issues/143), corrigé par
+  la [PR #146](https://github.com/pinfada/railsbox-vault/pull/146), et ce que la correction laisse
+  ouvert pour les journaux déjà écrits est nommé au § 9.6 de
   [`docs/format-de-volume-v3.md`](docs/format-de-volume-v3.md). **Depuis #18 le PRODUIT l'exerce**,
   et il faut dire aussitôt sous quelle réserve : le format de volume v3 scelle chaque secteur,
   chaque enregistrement de journal et chaque racine, mais la clé de volume n'est aujourd'hui
