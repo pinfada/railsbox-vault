@@ -121,6 +121,24 @@ mesuré sur OPFS réel : 339 à 387 ms pour 512 Mio, soit 0,6 % du budget de rep
 retour arrière COMPLET reste **nommé non détecté** — il exige une ancre hors du support, renvoyée à
 #23 — et une épreuve le montre plutôt que de l'écrire seulement. Reste : #20, la revue externe.
 
+**#20, moitié 1, livrée le 5 septembre 2026** — le dossier de revue existe avant le relecteur :
+[`format-de-volume-v3.md`](format-de-volume-v3.md) décrit le format champ par champ, avec ses codes
+de refus et ce qu'il ne protège pas ; les vecteurs de disposition sont figés par le chemin de
+production et rejoués par un vérificateur indépendant (`node tools/verifier-vecteurs.mjs`,
+`node:crypto` seul) ; les questions au relecteur sont numérotées ; `SECURITY.md` est statué au
+vocabulaire fermé ; le gabarit de constat et [le registre](revue-externe/registre.md) reçoivent
+chaque constat avec sa sévérité, sa disposition et sa preuve — le numéro de la PR, jamais une
+empreinte seule. Une **pré-revue adverse interne**, menée depuis le seul dossier puis confrontée au
+code, a rendu trois défauts réels du format, chacun contredisant une phrase de la spécification :
+#143 (un enregistrement du journal et un secteur partageaient rang et étiquette de domaine) est
+corrigé par la PR #146 — étiquette par magasin, journal de génération au format 4 avec rejeu unique
+du 3, aucun octet du volume ne bouge ; #142 (un témoin authentique rejoué fabrique un refus
+permanent) et #144 (l'alternance des racines garde le point de recul d'une génération sur le
+support) sont traités par la PR #153 — #144 corrigé par une règle de conjonction (racine abîmée à
+côté d'une racine retenue, sans témoin : refus ; témoin concordant : ouverture et code publié), #142
+accepté comme limite écrite, sans changement de format. La moitié 2 — solliciter un tiers — n'a pas
+eu lieu, et le registre le dit.
+
 ## 5 — Déverrouillage et origine de confiance
 
 Une clé de volume aléatoire est enveloppée par une ou plusieurs clés de déverrouillage. Perte,
@@ -165,6 +183,16 @@ mutées, vingt-trois tuées**, dont cinq seulement après avoir écrit l'épreuv
 fois le prix pour le même travail, ce qui appelle un travail d'interface (#24) et non un abaissement
 du coût. Reste : #23 (récupération, second moyen, révocation d'urgence), #24 (interface de
 déverrouillage), #25 (verrouillage), et toujours l'ancrage monotone hors du fichier.
+
+**#23 raffiné le 5 septembre 2026** et scindé en trois tranches ordonnées : #147 (un moyen de
+récupération — un code généré, rendu une seule fois, qui ouvre un volume dont aucun autre moyen ne
+subsiste), #148 (la révocation d'urgence — retirer tous les emplacements sauf le sien, en une
+version et une barrière), #149 (transporter la capacité d'ouvrir — une enveloppe de récupération
+seule dans l'archive, par ADR de révision de la décision 6 de l'ADR 0020, et une ancre de fraîcheur
+tenue par l'utilisateur). Constat de fond relevé par cette Definition of Ready : une archive v3
+restaurée sur un autre appareil donne aujourd'hui un volume que personne n'ouvre, parce qu'aucun
+module d'export ou d'import ne connaît `.cles` — le gate « portabilité » est prouvé pour un volume
+v2 seulement, jusqu'à #149.
 
 #52 est tranchée par l'[ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md) : la CSP de
 la coquille n'est **pas** élargie — `worker-src` reste `'self'` — parce que la mesure a montré
