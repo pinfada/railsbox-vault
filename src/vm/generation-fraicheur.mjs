@@ -33,25 +33,36 @@
 // Ce qu'il ne fait pas, et qu'aucune formulation de ce dépôt ne doit laisser croire : il ne détecte
 // PAS un retour arrière qui l'emporte lui aussi. Il vit dans la même origine que le volume.
 //
-// **Et l'effort n'est PAS symétrique.** Reculer le volume suppose d'en détenir une copie antérieure,
-// cohérente avec son journal. Neutraliser le témoin ne suppose rien : `ouvrirTemoin` ci-dessous ne
-// juge un fichier que sur son marqueur et sa longueur, si bien que le SUPPRIMER ou simplement le
-// TRONQUER suffit — et sans la clé. L'ouverture repart alors sur « première ouverture », donc sans
-// plancher de séquence, et la fenêtre du retour arrière complet est RÉARMÉE pour qui détient déjà
-// une copie antérieure de volume + journal.
+// **Et l'effort n'est PAS symétrique.** Reculer le volume d'UNE génération ne suppose rien de plus
+// que d'abîmer 512 octets : l'alternance des racines garde `s − 1` lisible sur le support, et le
+// point de recul est donc dans le fichier par construction (#144). Reculer AU-DELÀ, lui, suppose une
+// copie antérieure de volume + journal, cohérente. Neutraliser le témoin ne suppose rien non plus :
+// `ouvrirTemoin` ci-dessous ne juge un fichier que sur son marqueur et sa longueur, si bien que le
+// SUPPRIMER ou simplement le TRONQUER suffit — et sans la clé. L'ouverture repart alors sur
+// « première ouverture », donc sans plancher de séquence, et la fenêtre du retour arrière complet
+// est RÉARMÉE pour qui détient déjà cette copie.
 //
 // Ce comportement est délibéré et ne doit pas changer : refuser tout volume sans témoin rendrait
 // irouvrable un volume neuf, un volume restauré depuis une archive, ou un volume dont le témoin a
 // été perdu par un incident de support — on échangerait une détection qu'on n'a pas contre une perte
-// de données qu'on aurait. Ce qui manque n'est pas une garde de plus ici : c'est une ANCRE MONOTONE
-// hors du support, sans laquelle aucun état local n'a d'autorité sur sa propre fraîcheur. La seule
-// barrière contre le retour arrière COMPLET reste donc le partitionnement d'origine de l'ADR 0002,
-// et l'ancrage est renvoyé nommément à #23.
+// de données qu'on aurait. Le seul refus que #144 ajoute est une CONJONCTION, et pas cette règle
+// générale : sans témoin, une racine ABÎMÉE à côté d'une racine RETENUE (voir
+// `exigerTemoinDevantUneRacineAbimee`). Aucun de ces trois états ne la produit.
 //
-// Le témoin est SCELLÉ, et il faut dire ce que cela achète : un témoin forgé — une séquence inventée
-// par qui n'a pas la clé — est refusé au lieu d'être cru. Cela ne rend pas le témoin monotone ; cela
-// évite seulement qu'un tiers sans clé fabrique un refus permanent en y inscrivant une séquence
-// démesurée.
+// Ce qui manque n'est pas une garde de plus ici : c'est une ANCRE MONOTONE hors du support, sans
+// laquelle aucun état local n'a d'autorité sur sa propre fraîcheur. La seule barrière contre le
+// retour arrière COMPLET reste donc le partitionnement d'origine de l'ADR 0002, et l'ancrage est
+// renvoyé nommément à #23.
+//
+// Le témoin est SCELLÉ, et il faut dire ce que cela achète — sans confondre forgerie et rejeu, ce
+// que la formulation d'origine faisait (#142). Un témoin FORGÉ — une séquence inventée par qui n'a
+// pas la clé, ou une séquence que ce volume n'a jamais atteinte sous cette clé — est refusé au lieu
+// d'être cru. Un témoin AUTHENTIQUE, lui, est FONGIBLE : sa séquence vit dans le clair, ses données
+// associées sont constantes pour un volume donné, et une copie prise à la séquence S vaut n'importe
+// quel autre témoin de ce volume. La REJOUER après une restauration d'archive — laquelle retire
+// journal et témoin en gardant l'identifiant et la clé — fabrique donc un refus permanent d'un
+// volume SAIN. Le geste qui en sort est nommé dans le message de `journalSousLeTemoin`, avec sa
+// condition ; ce qui fermerait le rejeu est l'ancre monotone ci-dessus, et elle n'existe pas.
 
 import {
   EMPREINTE_OCTETS,

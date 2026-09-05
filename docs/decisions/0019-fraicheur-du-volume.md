@@ -190,10 +190,12 @@ l'[ADR 0002](0002-topologie-origine-de-confiance.md) ; il rend visibles les recu
 
 **Et l'effort n'est PAS symétrique**, ce qu'une formule du genre « qui peut reculer l'un peut
 reculer l'autre » laisserait croire à tort. Reculer le volume suppose d'en détenir une copie
-antérieure — volume et journal cohérents entre eux. Neutraliser le témoin ne suppose rien de tel :
-**le supprimer, ou simplement le tronquer, suffit — et sans la clé.** `ouvrirTemoin` ne juge un
-fichier témoin que sur son marqueur et sa longueur ; un fichier absent, vide ou trop court n'est pas
-un témoin, et l'ouverture repart alors sur « première ouverture », c'est-à-dire sans plancher de
+antérieure — volume et journal cohérents entre eux. [**Corrigé le 2026-09-05 (#144)** : c'est faux
+d'**une** génération — l'alternance garde `s − 1` lisible sur le support, et il n'y a rien à
+détenir. Voir l'amendement en fin d'ADR.] Neutraliser le témoin ne suppose rien de tel : **le
+supprimer, ou simplement le tronquer, suffit — et sans la clé.** `ouvrirTemoin` ne juge un fichier
+témoin que sur son marqueur et sa longueur ; un fichier absent, vide ou trop court n'est pas un
+témoin, et l'ouverture repart alors sur « première ouverture », c'est-à-dire sans plancher de
 séquence. Un adversaire qui détient une copie antérieure de volume + journal n'a donc pas à forger
 quoi que ce soit : il lui suffit d'effacer huit octets pour **réarmer la fenêtre du retour arrière
 complet**.
@@ -508,3 +510,111 @@ instantané de reprise y survit ».
 
 Correction portée par la [PR #146](https://github.com/pinfada/railsbox-vault/pull/146). Épreuves :
 `tests/unit/vm-journal-format-4.test.mjs`.
+
+## Amendement du 2026-09-05 — ce que le témoin achète, et ce que l'alternance conserve (#142, #144)
+
+Deux constats de la pré-revue adverse de [#20](https://github.com/pinfada/railsbox-vault/issues/20)
+portent sur le même endroit : ce qu'une ouverture a le droit de conclure de l'état où elle trouve
+les deux racines et le témoin. Ils sont traités ensemble, et la
+[PR #153](https://github.com/pinfada/railsbox-vault/pull/153) les porte. Aucun octet de format ne
+change : ni le témoin, ni la racine, ni le journal, ni un vecteur.
+
+### Le sceau du témoin achète la non-forgerie, PAS la non-fongibilité (#142, accepté)
+
+La décision 3 écrivait que le scellement « évite seulement qu'un tiers sans clé fabrique un refus
+permanent en y inscrivant une séquence démesurée ». La phrase confondait **forgerie** et **rejeu**.
+
+Ce que le sceau refuse est une séquence que ce volume n'a **jamais atteinte sous cette clé**. Il ne
+rend le témoin ni monotone ni **unique** : sa séquence vit dans le clair, ses données associées sont
+constantes pour un volume donné (rang `2^40 − 2`, génération 0, adresse 0, longueur 16), et deux
+témoins successifs du même volume sont aussi authentiques l'un que l'autre. Un témoin **fongible**
+se **rejoue** : conservé à la séquence S, puis remis en place après une restauration d'archive — qui
+retire journal et témoin en gardant l'identifiant de volume et la clé (§ 7.5) —, il fabrique un
+**refus permanent d'un volume sain**, et le message d'alors conseillait « restaurer une sauvegarde
+», c'est-à-dire le geste qui **réarme la boucle**.
+
+**Le rejeu est une LIMITE ÉCRITE, pas un défaut corrigé, et il faut dire pourquoi.** Le fermer
+demande une **ancre monotone hors du support** — la même que la limite ci-dessus renvoie à #21 et
+#23 —, et elle n'existe pas. Faire entrer la séquence dans les données associées du témoin ne la
+fabrique pas : le témoin rejoué serait authentique sous cette identité-là aussi, et le coût serait
+une version du format de témoin et l'invalidation d'un vecteur figé, pour une propriété non acquise.
+**Cette voie est donc rejetée**, et l'ancre monotone n'est pas décidée ici.
+
+**Sévérité révisée HIGH → MEDIUM.** La capacité requise — écrire dans l'OPFS de l'origine de
+confiance — permet déjà de **détruire le volume lui-même**. Le témoin n'a jamais défendu contre cet
+adversaire, et cet ADR écrit depuis #19 que le neutraliser est gratuit. Ce que le constat révèle de
+neuf n'est donc pas une capacité, ce sont deux défauts de **conduite** : une phrase fausse, et un
+message qui envoyait l'exploitant dans une boucle sans issue nommée. Les deux sévérités figurent au
+registre de la revue externe, et le motif est écrit dans l'issue.
+
+**Ce qui est corrigé est donc la CONDUITE.** Le § 6.9 dit maintenant ce que le sceau achète et ce
+qu'il n'achète pas, et le message de `journalSousLeTemoin` nomme les **deux lectures** que rien ne
+distingue — volume ramené sous le témoin, ou témoin réinstallé après une restauration — et le
+**geste avec sa CONDITION** : après une restauration d'archive **délibérée**, retirer le témoin ;
+sans restauration, **ne pas** le retirer, car il est alors la seule trace du recul. Enseigner ce
+geste sans sa condition désarmerait la détection du recul réel, et c'est la raison pour laquelle les
+deux sont inséparables dans le message.
+
+### L'alternance conserve un point de recul, et le témoin décide (#144, corrigé)
+
+La décision 3 et le § 9.1 écrivaient que « reculer le volume suppose d'en détenir une copie
+antérieure, cohérente avec son journal ». C'est faux **d'une génération** : l'alternance des racines
+(§ 6.6) garde `s − 1` lisible sur le support, si bien que le point de recul est dans le fichier par
+construction. Abîmer les 512 octets de l'emplacement `s mod 2` suffit — sans la clé, sans copie
+antérieure, sans copie du journal — à faire de `s − 1` l'autorité et à faire disparaître les
+écritures acquittées de la génération `s`. Au-delà d'une génération, la copie antérieure redevient
+nécessaire : `s − 2` a été écrasée par `s`.
+
+**La règle retenue s'appuie sur l'ORDRE D'ÉCRITURE que cet ADR fixe déjà** — le témoin vient après
+la racine et sa barrière :
+
+| État trouvé                         | Lecture                                                                  | Conduite                                           |
+| ----------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------- |
+| racine `s` abîmée, témoin à `s − 1` | coupure pendant l'écriture de `s`                                        | **ouvrir**, et PUBLIER la mise au rebut            |
+| racine `s` abîmée, témoin à `s`     | volume ramené sous le témoin                                             | refus existant, plancher de séquence               |
+| racine `s` abîmée, **aucun témoin** | coupure + témoin perdu, ou racine détruite pour reculer — indiscernables | **REFUS**, `VAULT_STORAGE_GENERATION_ROOT_CORRUPT` |
+
+**Pourquoi PAS le fail-closed général.** Refuser dès qu'une racine abîmée côtoie une racine lisible
+— la proposition n° 1 de l'issue — refuserait le cas **normal** que l'alternance existe précisément
+pour absorber : une racine déchirée par une coupure pendant sa propre écriture. Le coût serait «
+restaurer une sauvegarde » à chaque coupure au mauvais instant, c'est-à-dire une perte de données
+réelle échangée contre une détection que le témoin donne déjà.
+`tests/vm/resilience-fraicheur.spec.mjs` › « une coupure ENTRE la racine et le témoin laisse un
+témoin en retard, jamais un refus » est la mesure de ce coût, et elle doit rester verte.
+
+**Pourquoi le TÉMOIN ABSENT décide.** Pour que `s − 1` soit acceptée sous un témoin à `s`,
+l'adversaire doit d'abord neutraliser le témoin ; cet ADR écrit que cela ne lui coûte rien. Son
+absence est donc le seul signal qui reste, et elle est ambiguë : une coupure a pu l'emporter aussi.
+Refuser un état ambigu est la règle que `remedeSansRacine` applique déjà — « ce qui a été validé est
+INCONNU » —, et c'est pourquoi le **même code** le porte plutôt qu'un code neuf : la conduite est la
+même, et le § 10.2 nomme désormais ses deux états.
+
+**Ce refus ne contredit pas « refuser tout volume sans témoin ne doit pas changer ».** Il ne porte
+que sur la **conjonction** « aucun témoin ET une racine abîmée ET une racine retenue ». Aucun des
+trois états que cette règle protège ne la produit : un volume **neuf** n'a aucune racine abîmée ; un
+volume **restauré** n'a pas de `.gen`, `discardGeneration` le retirant avec le témoin ; un **premier
+point de contrôle** laisse le second emplacement vierge, et un secteur vierge n'est pas une racine
+abîmée. Le carve-out est écrit au § 6.9, à l'endroit exact de la règle générale.
+
+**Le contrôle vit dans la GARDE de fraîcheur, et non dans le magasin.** La responsabilité que cet
+ADR lui donne est « décider de ce qu'un support a le droit de PRÉTENDRE », par opposition au magasin
+qui décide de l'état d'une génération. « Sans témoin, une racine abîmée à côté d'une racine retenue
+» en est exactement une. Le placer là rend en outre **structurel** un fait qui serait autrement une
+exception à écrire : un magasin sans source de fraîcheur, qui ne tient aucun témoin, n'oppose pas un
+refus dont le témoin est la prémisse.
+
+**La mise au rebut porte enfin son code.** Le § 10.2 promettait `VAULT_STORAGE_GENERATION_DISCARDED`
+« publié, jamais tu », et le rapport ne le posait que dans l'état `ecartee` ; l'état `rejouee`
+écartait les octets déposés au-delà de ce que la racine retenue authentifie **sans un mot** — c'est
+le chemin même qu'une racine `s` abîmée produit. Le code suit désormais les **octets écartés**, quel
+que soit l'état. L'état `ecartee` n'y perd rien : il n'existe que lorsqu'il y en a.
+
+**Le compteur de scellements (§ 4.5) recule avec la racine retenue, et ce n'est pas une
+réutilisation de nonce.** Les nonces sont **tirés** (§ 4.2) ; reculer le compteur n'en réémet aucun.
+Ce que le recul dégrade est la **fidélité de la mesure** — un compteur de conduite, pas un contrôle
+cryptographique —, et c'est pour cet écart que la moitié du plafond NIST est prise comme marge.
+**Aucun contrôle n'est ajouté** sur ce point.
+
+Épreuves : `tests/unit/vm-recul-generation.test.mjs` — quatre, dont trois étaient rouges avant cette
+correction et une fixe la borne. Ce que cet amendement ne prouve pas : le **rejeu du témoin reste
+possible** (#142 est accepté, pas corrigé), et l'ancre monotone n'existe toujours pas.

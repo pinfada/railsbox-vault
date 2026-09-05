@@ -20,11 +20,15 @@ colonnes, et chaque ligne est OPPOSABLE » exige de CHAQUE ligne, **hors ligne**
   [`docs/format-de-volume-v3.md`](../format-de-volume-v3.md) ou par
   [`SECURITY.md`](../../SECURITY.md). Ce recoupement est **interne** : il établit que le registre et
   le dossier parlent des mêmes numéros, **pas** qu'un tiers a envoyé le constat ;
-- une **sévérité** et une **disposition** du vocabulaire fermé décrit plus bas ;
+- une **sévérité** et une **disposition** du vocabulaire fermé décrit plus bas. Une sévérité
+  **révisée** s'écrit `PROPOSÉE → RETENUE`, et les deux termes appartiennent au même vocabulaire :
+  la garde admet cette forme et **elle seule**, si bien qu'une révision ne peut pas glisser un mot
+  hors vocabulaire d'un côté de la flèche ;
 - une **preuve opposable** : une disposition « corrigé » cite la **PR** qui corrige, dont le numéro
-  est repris par le dossier ; chaque ADR cité est un fichier de `docs/decisions/` ; et une empreinte
-  de commit, si elle est citée, doit exister (`git cat-file -e`) — elle s'ajoute à la PR, elle ne la
-  remplace jamais. C'est le seul de ces contrôles que rien de rédactionnel ne peut satisfaire.
+  est repris par le dossier ; une disposition « accepté » cite l'**ADR** amendé ; chaque ADR cité
+  est un fichier de `docs/decisions/` ; et une empreinte de commit, si elle est citée, doit exister
+  (`git cat-file -e`) — elle s'ajoute, elle ne remplace jamais. C'est le seul de ces contrôles que
+  rien de rédactionnel ne peut satisfaire.
 
 La garde est éprouvée **dans les deux sens** : « la garde du registre MORD : une ligne inventée est
 refusée sur chacun de ses défauts » rejoue la ligne exacte qu'une revue a fait passer au vert
@@ -37,9 +41,11 @@ Le dossier soumis à la revue est décrit par
 
 ## Constats
 
-| Constat                                                                                                                                             | Sévérité | Disposition | Preuve                                                                                                           |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------- | ---------------------------------------------------------------------------------------------------------------- |
-| [#143](https://github.com/pinfada/railsbox-vault/issues/143) — l'identité logique ne sépare pas un enregistrement de journal d'un secteur de volume | HIGH     | corrigé     | [PR #146](https://github.com/pinfada/railsbox-vault/pull/146) ; ADR 0016 et ADR 0019 amendés le 5 septembre 2026 |
+| Constat                                                                                                                                                                                   | Sévérité      | Disposition | Preuve                                                                                                           |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ----------- | ---------------------------------------------------------------------------------------------------------------- |
+| [#142](https://github.com/pinfada/railsbox-vault/issues/142) — un témoin authentique rejoué rend un volume sain irouvrable                                                                | HIGH → MEDIUM | accepté     | ADR 0019 amendé le 5 septembre 2026 ; [PR #153](https://github.com/pinfada/railsbox-vault/pull/153)              |
+| [#143](https://github.com/pinfada/railsbox-vault/issues/143) — l'identité logique ne sépare pas un enregistrement de journal d'un secteur de volume                                       | HIGH          | corrigé     | [PR #146](https://github.com/pinfada/railsbox-vault/pull/146) ; ADR 0016 et ADR 0019 amendés le 5 septembre 2026 |
+| [#144](https://github.com/pinfada/railsbox-vault/issues/144) — le recul d'une génération ne demande aucune copie antérieure, et une racine abîmée à côté d'une racine lisible est ignorée | HIGH          | corrigé     | [PR #153](https://github.com/pinfada/railsbox-vault/pull/153) ; ADR 0019 amendé le 5 septembre 2026              |
 
 ## Comment une ligne se remplit
 

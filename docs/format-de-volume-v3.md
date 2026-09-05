@@ -231,6 +231,16 @@ arrière du support (question n° 4) : il suffit qu'une racine plus ancienne fas
 autre raison — voir § 9.6, constat [#144](https://github.com/pinfada/railsbox-vault/issues/144) —
 pour que le compteur recule avec elle, sans qu'aucun refus ne le signale.
 
+**Le budget est celui de la racine qui fait AUTORITÉ, et un recul d'une génération le rend d'autant.
+Ce n'est PAS une réutilisation de nonce.** Les nonces sont **tirés**, jamais dérivés d'un compteur
+(§ 4.2) : reculer le compteur ne fait donc réémettre aucun nonce déjà employé, et la probabilité de
+collision reste celle du § 4.2 pour le nombre **réel** d'invocations. Ce que le recul dégrade est la
+**fidélité de la mesure** — le compteur sous-estime alors ce qui a été consommé sous la clé, et le
+plafond de 2^31 est atteint plus tard qu'il ne devrait l'être. C'est un compteur de **conduite**,
+pas un contrôle cryptographique, et c'est pour cet écart-là que la moitié du plafond NIST est prise
+comme marge. Aucun contrôle n'est ajouté ici : le refus que #144 apporte porte sur la racine, pas
+sur le compteur.
+
 **Conduite au plafond.** À 2^31, tout scellement est refusé **avant de produire le moindre octet**,
 par `VAULT_CRYPTO_BUDGET_DE_CLE`, traduit en `VAULT_STORAGE_BUDGET_DE_CLE`. Le refus n'est pas
 franchissable : le remède est une **clé de volume neuve**, donc le rechiffrement du volume entier,
@@ -636,6 +646,16 @@ alterne : une validation déchirée ne détruit pas la génération qu'elle remp
 
 **La racine qui fait autorité est celle de séquence la plus haute** parmi celles qui sont lisibles.
 
+**L'alternance fait DEUX choses, et la seconde a longtemps été tue.** Elle protège une validation
+déchirée — c'est ce qui précède — **et** elle conserve, sur le support, un **point de recul d'une
+génération** : l'emplacement `(s − 1) mod 2` porte encore la racine `s − 1`, authentique et lisible.
+Ce point de recul est donc à portée d'un adversaire qui n'a **rien archivé** : abîmer les 512 octets
+de l'emplacement `s mod 2` suffit à faire de `s − 1` l'autorité, et les écritures acquittées de la
+génération `s` disparaissent ([#144](https://github.com/pinfada/railsbox-vault/issues/144)). Les
+deux faces sont vraies ensemble, et la seconde est ce qui rend le témoin décisif : c'est lui, et lui
+seul, qui distingue une racine `s` déchirée par une coupure d'une racine `s` détruite pour reculer.
+La règle est écrite au § 6.9, avec ses trois cas et le refus qu'elle ajoute.
+
 #### La disposition d'un enregistrement
 
 ```text
@@ -983,10 +1003,38 @@ volume qu'il accompagne**.
 **Absent = première ouverture, jamais une preuve.** C'est le point où la nuance se perd le plus
 facilement.
 
-**Ce que le scellement du témoin achète, exactement** : un témoin **forgé** — une séquence inventée
-par qui n'a pas la clé — est refusé au lieu d'être cru. Cela ne rend pas le témoin monotone ; cela
-évite seulement qu'un tiers sans clé fabrique un refus permanent en y inscrivant une séquence
-démesurée.
+**Ce que le scellement du témoin achète, exactement — et ce qu'il n'achète pas.** Le sceau refuse un
+témoin dont la séquence n'a **jamais été atteinte par ce volume sous cette clé** : c'est la
+**forgerie**, et elle est fermée. Il ne rend pas le témoin **monotone**, et il ne le rend pas non
+plus **unique** : la séquence vit dans le clair et les données associées sont **constantes pour un
+volume donné** (rang `2^40 − 2`, génération 0, adresse 0, longueur 16), si bien que deux témoins
+successifs du même volume sont **aussi authentiques l'un que l'autre**. Un témoin qui a été
+légitimement écrit peut donc être **REJOUÉ**, et il fabrique alors un **refus permanent d'un volume
+sain**. La formulation antérieure — « cela évite seulement qu'un tiers sans clé fabrique un refus
+permanent » — confondait forgerie et rejeu ;
+[#142](https://github.com/pinfada/railsbox-vault/issues/142) l'a relevé, et la
+[PR #153](https://github.com/pinfada/railsbox-vault/pull/153) la corrige ici.
+
+Le chemin est celui qu'une **restauration d'archive** ouvre : `discardGeneration` retire le journal
+**et** le témoin, et l'archive porte le fichier v3 tel quel — donc le même identifiant de volume et
+la même clé (§ 7.5). Qui peut écrire dans l'OPFS de l'origine n'a qu'à conserver une copie du témoin
+et la **remettre** après la restauration : l'ouverture suivante ne trouve aucune racine sous un
+témoin présent, et refuse (`VAULT_STORAGE_GENERATION_CORRUPT`, cause `VAULT_TEMOIN_SEQUENCE`).
+
+**Le geste qui en sort, et sa CONDITION — les deux, jamais l'un sans l'autre.** Après une
+restauration d'archive **délibérée**, un témoin présent ne peut être qu'une copie réinstallée : le
+**retirer** rouvre le volume en première ouverture, sans perdre un octet. **Sans restauration, ne
+pas le retirer** : c'est le volume qui a reculé, et retirer le témoin effacerait la seule trace qui
+en reste. Un message qui enseignerait « retirer le témoin » sans sa condition désarmerait la
+détection du recul réel ; celui de ce refus porte les deux lectures et la condition. Épreuve :
+`tests/unit/vm-recul-generation.test.mjs` › « un témoin REJOUÉ après une restauration nomme les DEUX
+lectures et le geste CONDITIONNEL ».
+
+Ce que le rejeu **n'obtient pas** reste vrai : aucun clair, aucune forgerie, aucun octet perdu sur
+le volume. Et la capacité qu'il exige — écrire dans l'OPFS de l'origine — permet déjà de détruire le
+volume lui-même : le témoin n'a jamais défendu contre cet adversaire, et ce même paragraphe dit plus
+bas que le neutraliser est gratuit. Ce qui **fermerait** le rejeu est une **ancre monotone hors du
+support** (§ 9.1, § 13 question n° 3) ; elle n'existe pas, et rien ici ne la remplace.
 
 **Deux refus que le témoin ajoute, et qui n'existaient pas :**
 
@@ -999,16 +1047,54 @@ démesurée.
   `tests/unit/vm-generation-fraicheur.test.mjs` › « une fois la fraîcheur acquise, un retour à une
   racine SANS empreinte est refusé ».
 
-**Sa limite, sans détour, et l'effort n'est PAS symétrique.** Reculer le volume suppose d'en détenir
-une copie antérieure, cohérente avec son journal. **Neutraliser le témoin ne suppose rien : le
-supprimer, ou simplement le tronquer, suffit — et sans la clé.** Un fichier absent, vide ou trop
-court n'est pas un témoin ; l'ouverture repart sur « première ouverture », donc sans plancher, et la
-fenêtre du retour arrière complet est **réarmée** pour qui détient déjà une copie antérieure de
-volume + journal. Ce comportement est délibéré et ne doit pas changer : refuser tout volume sans
-témoin rendrait irouvrable un volume neuf, un volume restauré depuis une archive, ou un volume dont
-le témoin a été perdu par un incident de support — on échangerait une détection qu'on n'a pas contre
-une perte de données qu'on aurait. Ce qui manque n'est pas une garde de plus : c'est une **ancre
-monotone hors du support** (§ 9, § 13 question n° 3).
+**Sa limite, sans détour, et l'effort n'est PAS symétrique.** Reculer le volume d'**une** génération
+ne suppose **aucune copie antérieure** : l'alternance des racines (§ 6.6) garde `s − 1` lisible sur
+le support, et le point de recul est donc dans le fichier par construction. Abîmer les 512 octets de
+l'emplacement `s mod 2` suffit à le ramener là. Reculer **au-delà d'une génération** suppose, lui,
+une copie antérieure de volume et de journal, cohérente : la racine `s − 2` a été écrasée par `s`.
+La formulation antérieure — « reculer le volume suppose d'en détenir une copie antérieure » —
+promettait donc à l'adversaire un coût qu'il n'a pas à payer ;
+[#144](https://github.com/pinfada/railsbox-vault/issues/144) l'a relevé, et la
+[PR #153](https://github.com/pinfada/railsbox-vault/pull/153) la corrige ici comme au § 9.1.
+
+**Ce qui décide devant un recul d'une génération est le TÉMOIN**, et l'ordre d'écriture ci-dessus
+est ce qui le permet — le témoin vient **après** la racine et sa barrière :
+
+- **témoin concordant** avec la racine retenue (à sa séquence, ou en retard sur elle) : c'est une
+  coupure pendant l'écriture de `s`, le cas normal que l'alternance existe pour absorber. Le volume
+  **ouvre**, et les octets déposés au-delà de ce que la racine retenue authentifie sont écartés sous
+  `VAULT_STORAGE_GENERATION_DISCARDED` (§ 10.2). Refuser ici enverrait « restaurer une sauvegarde »
+  à chaque coupure au mauvais instant ;
+- **témoin en avance** sur la racine retenue : c'est le recul que ce témoin ferme déjà, et le
+  plancher de séquence refuse sans qu'aucune règle nouvelle soit nécessaire ;
+- **témoin absent** : pour que `s − 1` soit acceptée sous un témoin à `s`, l'adversaire doit d'abord
+  neutraliser le témoin — ce qui, comme dit plus bas, ne lui coûte rien. Une coupure a pu l'emporter
+  aussi. **Rien ne distingue les deux**, et l'état est **REFUSÉ** :
+  `VAULT_STORAGE_GENERATION_ROOT_CORRUPT`, dont le message porte les deux lectures.
+
+**Neutraliser le témoin ne suppose rien : le supprimer, ou simplement le tronquer, suffit — et sans
+la clé.** Un fichier absent, vide ou trop court n'est pas un témoin ; l'ouverture repart sur «
+première ouverture », donc sans plancher, et la fenêtre du retour arrière complet est **réarmée**
+pour qui détient déjà une copie antérieure de volume + journal. Ce comportement est délibéré et ne
+doit pas changer : refuser tout volume sans témoin rendrait irouvrable un volume neuf, un volume
+restauré depuis une archive, ou un volume dont le témoin a été perdu par un incident de support — on
+échangerait une détection qu'on n'a pas contre une perte de données qu'on aurait.
+
+**Le refus que #144 ajoute ne contredit pas la phrase précédente, et il faut dire exactement
+pourquoi.** Il ne porte que sur la **conjonction** « aucun témoin **ET** une racine abîmée **ET**
+une racine retenue ». Aucun des trois états que le paragraphe protège ne la produit : un volume
+**neuf** n'a aucune racine abîmée ; un volume **restauré** n'a pas de `.gen` du tout,
+`discardGeneration` le retirant avec le témoin ; un **premier point de contrôle** écrit une racine
+et laisse l'autre emplacement vierge — et un secteur vierge n'est pas une racine abîmée (§ 6.6). Un
+volume dont le témoin a été perdu par un incident de support rouvre donc comme avant, **sauf** si
+une racine est abîmée en même temps — et dans ce cas précis, ce qui a été validé est réellement
+inconnu. Épreuves : `tests/unit/vm-recul-generation.test.mjs` › « une racine abîmée à côté d'une
+racine lisible, SANS témoin, est REFUSÉE : rien ne la distingue d'un recul », « une coupure qui
+déchire la racine `s` laisse le témoin à `s − 1` : le volume ROUVRE, et la mise au rebut est PUBLIÉE
+» et « une racine abîmée sous un témoin EN AVANCE reste un recul : le plancher de séquence refuse ».
+
+Ce qui manque n'est pas une garde de plus : c'est une **ancre monotone hors du support** (§ 9, § 13
+question n° 3).
 
 En revanche, un fichier qui **ressemble** à un témoin mais dont le sceau ne vérifie pas est REFUSÉ,
 jamais ignoré : l'ignorer offrirait à quiconque peut écrire dans l'origine le moyen de désarmer le
@@ -1369,6 +1455,16 @@ montre finit par être oubliée.
 **L'effort n'est pas symétrique** (§ 6.9) : neutraliser le témoin coûte huit octets effacés, sans la
 clé.
 
+**Ce paragraphe ne décrit QUE le retour arrière complet, et un recul d'UNE génération n'en est pas
+un.** Il ne demande ni copie antérieure ni journal : l'alternance des racines (§ 6.6) garde `s − 1`
+lisible sur le support, et abîmer les 512 octets de `s` suffit. Ce recul-là, lui, **n'est pas
+indétectable** : le témoin le tranche, et son absence devant une racine abîmée est refusée (§ 6.9,
+`VAULT_STORAGE_GENERATION_ROOT_CORRUPT`). Ce qui reste indétectable est bien le retour arrière
+**complet**, décrit ci-dessus. [#144](https://github.com/pinfada/railsbox-vault/issues/144) avait
+relevé que ce paragraphe et le § 6.9 promettaient tous deux « une copie antérieure » pour un recul
+d'une génération ; la [PR #153](https://github.com/pinfada/railsbox-vault/pull/153) corrige les
+deux.
+
 ### 9.2 Le journal de migration n'est ni chiffré ni authentifié
 
 `<volume>.migration` porte le manifeste source, la preuve de sauvegarde retenue, l'étape franchie et
@@ -1427,21 +1523,50 @@ lui-même, et laisse au moteur la responsabilité de sa propre vérification d'�
 
 Quatre constats de la pré-revue adverse interne (#20, moitié 1, point 5) décrivent un défaut RÉEL du
 format ou de sa mise en œuvre — pas un défaut de ce document. Chacun contredit une phrase que ce
-document écrivait ailleurs. **Un est corrigé** (#143) : sa phrase d'origine a été récrite là où elle
-vivait, et la disposition est inscrite au registre de la revue externe. **Trois restent ouverts** :
-ce document les NOMME, leur traitement relève des issues qui les portent, et leurs phrases d'origine
-ne sont pas modifiées.
+document écrivait ailleurs. **Deux sont corrigés** (#143, #144) : leurs phrases d'origine ont été
+récrites là où elles vivaient. **Un est accepté** (#142) : sa limite est écrite, l'ADR 0019 est
+amendé, et sa sévérité est révisée. **Un reste ouvert** (#145) : ce document le NOMME, son
+traitement relève de l'issue qui le porte, et sa phrase d'origine n'est pas modifiée. Les
+dispositions sont inscrites au registre de la revue externe.
 
 **[#142](https://github.com/pinfada/railsbox-vault/issues/142) — Un témoin authentique rejoué rend
-un volume sain définitivement irouvrable.** Le § 6.9 affirme, à tort, que le scellement du témoin «
-évite seulement qu'un tiers sans clé fabrique un refus permanent en y inscrivant une séquence
-démesurée » — cette phrase confond forgerie et rejeu. État réel : le scellement empêche la
-**forgerie** d'une séquence inventée ; il n'empêche PAS le **rejeu** d'une copie antérieure et
-authentique du témoin. Une restauration d'archive retire le témoin et le journal sans en reposer
-tant qu'aucun point de contrôle n'a eu lieu ; réinstaller ensuite la copie d'un témoin antérieur
-fait échouer la confrontation de fraîcheur (`journalSousLeTemoin`) et rend un volume par ailleurs
-sain irouvrable, sous un message qui recommande une restauration — le remède qu'il vient de
-recevoir. Aucun geste de sortie n'est nommé dans ce document pour cet état.
+un volume sain définitivement irouvrable. ACCEPTÉ, sévérité révisée HIGH → MEDIUM, ADR 0019 amendé
+le 5 septembre 2026 ; documenté et le message corrigé par la
+[PR #153](https://github.com/pinfada/railsbox-vault/pull/153).** Le § 6.9 affirmait, à tort, que le
+scellement du témoin « évite seulement qu'un tiers sans clé fabrique un refus permanent en y
+inscrivant une séquence démesurée » — cette phrase confondait forgerie et rejeu. État réel : le
+scellement empêche la **forgerie** d'une séquence inventée ; il n'empêche PAS le **rejeu** d'une
+copie antérieure et authentique du témoin, qui est **fongible** pour un volume donné. Une
+restauration d'archive retire le témoin et le journal sans en reposer tant qu'aucun point de
+contrôle n'a eu lieu ; réinstaller ensuite la copie d'un témoin antérieur fait échouer la
+confrontation de fraîcheur (`journalSousLeTemoin`) et rend un volume par ailleurs sain irouvrable.
+
+**Pourquoi ACCEPTÉ, et non corrigé.** Rendre le rejeu détectable demanderait une **ancre monotone
+hors du support** (§ 13, question n° 3), et elle n'existe pas. Faire entrer la séquence dans les
+données associées du témoin — la seconde proposition de l'issue — ne la fabriquerait pas : un témoin
+rejoué resterait **authentique** sous cette identité aussi, et le coût serait une version du format
+de témoin et l'invalidation d'un vecteur figé, pour une propriété qui ne serait pas acquise.
+
+**Pourquoi la sévérité est révisée en MEDIUM.** La capacité requise — écrire dans l'OPFS de
+l'origine de confiance — permet déjà de **détruire le volume lui-même** ; le témoin n'a jamais
+défendu contre cet adversaire, et le § 6.9 écrit depuis #19 que le neutraliser est gratuit. Ce que
+le constat révèle de neuf n'est donc pas une capacité, ce sont deux **défauts de conduite** : une
+phrase fausse, et un message qui envoyait l'exploitant dans une boucle sans issue nommée — «
+restaurer une sauvegarde », geste qui retire le témoin que l'adversaire n'a qu'à remettre. Les deux
+sévérités figurent au registre, et le motif est écrit dans l'issue.
+
+**Ce que la disposition change.** Le § 6.9 dit désormais ce que le sceau achète (la non-forgerie) et
+ce qu'il n'achète pas (la non-fongibilité, donc pas la résistance au rejeu), et il nomme le **geste
+de sortie avec sa CONDITION** : après une restauration d'archive **délibérée**, retirer le témoin ;
+sans restauration, ne pas le retirer, car il est alors la seule trace du recul. Le message du refus
+porte les deux lectures et la même condition — l'enseigner sans elle désarmerait la détection du
+recul réel. Épreuve : `tests/unit/vm-recul-generation.test.mjs` › « un témoin REJOUÉ après une
+restauration nomme les DEUX lectures et le geste CONDITIONNEL ».
+
+**Ce que la disposition NE change pas, et c'est le résidu.** Le rejeu reste **possible** : un
+adversaire qui peut écrire dans l'OPFS peut toujours refabriquer ce refus après chaque restauration.
+Aucun octet de format ne bouge, aucun vecteur ne change, et l'ancre monotone n'est pas décidée
+(#23).
 
 **[#143](https://github.com/pinfada/railsbox-vault/issues/143) — L'identité logique ne sépare pas un
 enregistrement de journal d'un secteur de volume. CORRIGÉ par la
@@ -1482,16 +1607,44 @@ Ce qui est fermé, et c'est l'essentiel du modèle de menace, est l'attaque **co
 du produit : un adversaire qui lit l'OPFS n'y trouve plus d'enregistrement épissable.
 
 **[#144](https://github.com/pinfada/railsbox-vault/issues/144) — Le retour arrière d'une génération
-ne demande aucune copie antérieure, et une racine abîmée à côté d'une racine lisible est ignorée.**
-Le § 6.9 et le § 9.1 affirment, à tort, que « reculer le volume suppose d'en détenir une copie
-antérieure, cohérente avec son journal ». État réel : l'alternance des racines (§ 6.6) conserve sur
-le support la racine `s − 1`, authentique et lisible, à l'emplacement `(s − 1) mod 2` — il n'y a
-donc rien à détenir pour revenir d'une génération. Écrire des octets quelconques sur l'emplacement
-de la racine `s`, tant qu'aucun point de contrôle n'a eu lieu depuis `s − 1`, suffit à rendre
-`s − 1` de nouveau autorité ; aucun refus n'est posé pour la racine `s` abîmée à côté d'elle, et les
-enregistrements de la génération `s` déjà écrits dans le journal sont écartés en silence, sous un
-rapport d'ouverture qui déclare la fraîcheur `verifiee`. Le compteur de scellements cumulés (§ 4.5)
-recule avec cette racine, sans qu'aucun contrôle ne le signale.
+ne demande aucune copie antérieure, et une racine abîmée à côté d'une racine lisible est ignorée.
+CORRIGÉ par la [PR #153](https://github.com/pinfada/railsbox-vault/pull/153).** Le § 6.9 et le § 9.1
+affirmaient, à tort, que « reculer le volume suppose d'en détenir une copie antérieure, cohérente
+avec son journal ». État réel : l'alternance des racines (§ 6.6) conserve sur le support la racine
+`s − 1`, authentique et lisible, à l'emplacement `(s − 1) mod 2` — il n'y a donc rien à détenir pour
+revenir d'une génération. Écrire des octets quelconques sur l'emplacement de la racine `s`, tant
+qu'aucun point de contrôle n'a eu lieu depuis `s − 1`, suffit à rendre `s − 1` de nouveau autorité ;
+aucun refus n'était posé pour la racine `s` abîmée à côté d'elle, et les enregistrements de la
+génération `s` déjà écrits dans le journal étaient écartés en silence, sous un rapport d'ouverture
+qui déclare la fraîcheur `verifiee`.
+
+**Ce que la correction ferme.** Le **témoin décide**, et l'ordre d'écriture du § 6.9 le permet — il
+vient après la racine et sa barrière. Un témoin **concordant** avec la racine retenue est une
+coupure, et le volume ouvre. Un témoin **absent** devant une racine abîmée à côté d'une racine
+retenue est un état **ambigu que rien ne distingue d'un recul**, et il est désormais **REFUSÉ** sous
+`VAULT_STORAGE_GENERATION_ROOT_CORRUPT` (§ 10.2), avec un message qui porte les deux lectures. Le
+refus ne porte que sur cette **conjonction** : ni un volume neuf, ni un volume restauré, ni un
+premier point de contrôle ne la produisent, si bien que le « refuser tout volume sans témoin ne doit
+pas changer » du § 6.9 reste vrai. Et la mise au rebut des octets de la génération `s` porte
+maintenant son code — `VAULT_STORAGE_GENERATION_DISCARDED` est publié **dès qu'un octet est
+écarté**, y compris dans le chemin `rejouee` où il ne l'était pas, ce qui rend vraie la promesse du
+§ 10.2. Épreuves : `tests/unit/vm-recul-generation.test.mjs`.
+
+**La proposition n° 1 de l'issue est REFUSÉE, et il faut dire pourquoi.** Refuser dès qu'une racine
+abîmée côtoie une racine lisible, sans regarder le témoin, refuserait le cas **normal** que
+l'alternance existe pour absorber : une racine déchirée par une coupure pendant sa propre écriture.
+Le coût serait « restaurer une sauvegarde » à chaque coupure au mauvais instant — c'est-à-dire une
+perte de données réelle échangée contre une détection que le témoin donne déjà.
+
+**Ce que la correction NE ferme pas.** Un adversaire qui abîme la racine `s` **et** laisse le témoin
+à `s − 1` — ce qu'il obtient en abîmant `s` avant que le témoin de `s` ne soit écrit, dans la
+fenêtre que le § 6.9 décrit — reste dans le cas « coupure », et le volume ouvre sur `s − 1`. La
+différence est qu'il ne le fait plus en **silence** : la mise au rebut est publiée. Le compteur de
+scellements cumulés (§ 4.5) recule toujours avec la racine retenue ; ce n'est pas une réutilisation
+de nonce — les nonces sont tirés (§ 4.2) —, et le § 4.5 le dit désormais plutôt que de le laisser
+deviner. Enfin, la phrase de l'issue « l'état publié est `verifiee` » n'est vraie que dans le chemin
+**sans témoin** ; avec un témoin resté à `s`, le plancher de séquence refusait déjà, et rien n'est
+publié — la correction est portée dans l'issue.
 
 **[#145](https://github.com/pinfada/railsbox-vault/issues/145) — « Supprimer et recréer » ne retire
 aucun voisin, et le volume recréé est refusé.** Le § 6.3 et le § 10.2 affirment, à tort, que le
@@ -1503,10 +1656,11 @@ première ouverture échoue sur le sceau du témoin, qui porte l'ancien identifi
 (`VAULT_STORAGE_SCEAU_REFUSE`). Le volume qui vient de naître est irouvrable. Voir aussi § 11, qui
 nomme désormais ce geste parmi ceux qui n'existent pas.
 
-`docs/revue-externe/registre.md` porte désormais **une ligne** : celle du constat #143, disposé «
-corrigé ». Les trois autres y entreront quand ils seront disposés. La moitié 2 de #20 — la revue par
-un tiers — n'a pas encore eu lieu pour autant : le registre porte ce que le dépôt a reçu et ce qu'il
-en a fait, et ces quatre constats viennent d'une pré-revue INTERNE traitée comme externe.
+`docs/revue-externe/registre.md` porte désormais **trois lignes** : #143 et #144 disposés « corrigé
+», #142 disposé « accepté » avec sa sévérité révisée. #145 y entrera quand il sera disposé. La
+moitié 2 de #20 — la revue par un tiers — n'a pas encore eu lieu pour autant : le registre porte ce
+que le dépôt a reçu et ce qu'il en a fait, et ces quatre constats viennent d'une pré-revue INTERNE
+traitée comme externe.
 
 ## 10. Les codes de refus, et la conduite
 
@@ -1568,30 +1722,43 @@ racine sous un témoin ; témoin de format inconnu).
 
 Le reste de la famille, avec sa conduite :
 
-| Code                                    | Ce qu'il constate                                                                                                         | Conduite                                         |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| `VAULT_STORAGE_SCEAU_REFUSE`            | un sceau de secteur, d'enregistrement ou de racine ne vérifie pas                                                         | restaurer une sauvegarde                         |
-| `VAULT_STORAGE_IDENTITE_VOLUME`         | l'identité présentée ne correspond pas à celle qui est authentifiée                                                       | ouvrir le bon volume, ou la bonne clé            |
-| `VAULT_STORAGE_BUDGET_DE_CLE`           | budget de scellements de la clé atteint                                                                                   | changer de clé de volume                         |
-| `VAULT_STORAGE_CLE_REQUISE`             | volume v3 présenté SANS clé, ou clé de longueur inadmissible                                                              | fournir la clé — le produit n'en fabrique aucune |
-| `VAULT_STORAGE_VOLUME_INCOMPLET`        | création ou conversion interrompue : la marque de scellement manque                                                       | **supprimer et recréer**, pas restaurer          |
-| `VAULT_STORAGE_GENERATION_CORRUPT`      | une génération VALIDÉE ne concorde plus (rejeu, troncature, mélange, fraîcheur)                                           | restaurer une sauvegarde                         |
-| `VAULT_STORAGE_GENERATION_ROOT_CORRUPT` | aucune racine lisible alors qu'au moins une est abîmée : ce qui a été validé est INCONNU                                  | restaurer une sauvegarde                         |
-| `VAULT_STORAGE_GENERATION_DISCARDED`    | une génération déposée sans validation a été écartée. **Ce n'est pas une panne** : c'est le résultat normal d'une coupure | rien — publié, jamais tu                         |
-| `VAULT_STORAGE_GENERATION_OVERFLOW`     | la charge déposée depuis le dernier point de contrôle dépasse le plafond de 16 Mio                                        | le guest doit franchir une barrière              |
-| `VAULT_STORAGE_GENERATION_PENDING`      | un geste exigeant une génération validée a été demandé sur une génération en cours                                        | franchir la barrière d'abord                     |
-| `VAULT_STORAGE_GEOMETRY_MISMATCH`       | la géométrie du support diffère de celle de la session                                                                    | exporter puis migrer — jamais retailler          |
-| `VAULT_STORAGE_QUOTA_EXCEEDED`          | le quota de stockage de l'origine est épuisé                                                                              | libérer de la place, puis réessayer              |
-| `VAULT_STORAGE_QUIESCE`                 | l'adaptateur est quiescé : une capture d'instantané est en cours                                                          | réessayer après la capture                       |
-| `VAULT_STORAGE_OUT_OF_RANGE`            | lecture ou écriture hors de la géométrie déclarée                                                                         | corriger l'appelant                              |
-| `VAULT_STORAGE_SHORT_READ`              | le support a rendu moins d'octets que demandé                                                                             | réessayer, puis diagnostiquer le support         |
-| `VAULT_STORAGE_PARTIAL_WRITE`           | le support a accepté moins d'octets que demandé                                                                           | réessayer, puis diagnostiquer le support         |
-| `VAULT_STORAGE_FLUSH_FAILED`            | la barrière de durabilité n'a pas abouti — **rien n'est acquitté**                                                        | réessayer ; ne rien annoncer durable             |
-| `VAULT_STORAGE_HANDLE_LOST`             | le handle exclusif a disparu sous le volume ouvert                                                                        | rouvrir le volume                                |
-| `VAULT_STORAGE_CLOSED`                  | opération demandée après fermeture du volume                                                                              | corriger l'appelant                              |
-| `VAULT_STORAGE_BUSY`                    | un autre détenteur possède déjà l'exclusivité                                                                             | fermer l'autre onglet ou attendre                |
-| `VAULT_STORAGE_UNSUPPORTED`             | capacité absente du moteur — **jamais remplacée par un repli silencieux**                                                 | changer de moteur                                |
-| `VAULT_STORAGE_SUPPORT_FAILURE`         | échec du support non classable ci-dessus — nommé, jamais deviné                                                           | diagnostiquer le support                         |
+| Code                                    | Ce qu'il constate                                                                                                                                                  | Conduite                                         |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| `VAULT_STORAGE_SCEAU_REFUSE`            | un sceau de secteur, d'enregistrement ou de racine ne vérifie pas                                                                                                  | restaurer une sauvegarde                         |
+| `VAULT_STORAGE_IDENTITE_VOLUME`         | l'identité présentée ne correspond pas à celle qui est authentifiée                                                                                                | ouvrir le bon volume, ou la bonne clé            |
+| `VAULT_STORAGE_BUDGET_DE_CLE`           | budget de scellements de la clé atteint                                                                                                                            | changer de clé de volume                         |
+| `VAULT_STORAGE_CLE_REQUISE`             | volume v3 présenté SANS clé, ou clé de longueur inadmissible                                                                                                       | fournir la clé — le produit n'en fabrique aucune |
+| `VAULT_STORAGE_VOLUME_INCOMPLET`        | création ou conversion interrompue : la marque de scellement manque                                                                                                | **supprimer et recréer**, pas restaurer          |
+| `VAULT_STORAGE_GENERATION_CORRUPT`      | une génération VALIDÉE ne concorde plus (rejeu, troncature, mélange, fraîcheur)                                                                                    | restaurer une sauvegarde                         |
+| `VAULT_STORAGE_GENERATION_ROOT_CORRUPT` | une racine abîmée dont rien ne dit ce qu'elle validait : soit aucune n'est lisible, soit une racine est retenue mais AUCUN témoin ne dit laquelle faisait autorité | restaurer une sauvegarde                         |
+| `VAULT_STORAGE_GENERATION_DISCARDED`    | des octets déposés au-delà de ce que la racine retenue authentifie ont été écartés. **Ce n'est pas une panne** : c'est le résultat normal d'une coupure            | rien — publié, jamais tu                         |
+| `VAULT_STORAGE_GENERATION_OVERFLOW`     | la charge déposée depuis le dernier point de contrôle dépasse le plafond de 16 Mio                                                                                 | le guest doit franchir une barrière              |
+| `VAULT_STORAGE_GENERATION_PENDING`      | un geste exigeant une génération validée a été demandé sur une génération en cours                                                                                 | franchir la barrière d'abord                     |
+| `VAULT_STORAGE_GEOMETRY_MISMATCH`       | la géométrie du support diffère de celle de la session                                                                                                             | exporter puis migrer — jamais retailler          |
+| `VAULT_STORAGE_QUOTA_EXCEEDED`          | le quota de stockage de l'origine est épuisé                                                                                                                       | libérer de la place, puis réessayer              |
+| `VAULT_STORAGE_QUIESCE`                 | l'adaptateur est quiescé : une capture d'instantané est en cours                                                                                                   | réessayer après la capture                       |
+| `VAULT_STORAGE_OUT_OF_RANGE`            | lecture ou écriture hors de la géométrie déclarée                                                                                                                  | corriger l'appelant                              |
+| `VAULT_STORAGE_SHORT_READ`              | le support a rendu moins d'octets que demandé                                                                                                                      | réessayer, puis diagnostiquer le support         |
+| `VAULT_STORAGE_PARTIAL_WRITE`           | le support a accepté moins d'octets que demandé                                                                                                                    | réessayer, puis diagnostiquer le support         |
+| `VAULT_STORAGE_FLUSH_FAILED`            | la barrière de durabilité n'a pas abouti — **rien n'est acquitté**                                                                                                 | réessayer ; ne rien annoncer durable             |
+| `VAULT_STORAGE_HANDLE_LOST`             | le handle exclusif a disparu sous le volume ouvert                                                                                                                 | rouvrir le volume                                |
+| `VAULT_STORAGE_CLOSED`                  | opération demandée après fermeture du volume                                                                                                                       | corriger l'appelant                              |
+| `VAULT_STORAGE_BUSY`                    | un autre détenteur possède déjà l'exclusivité                                                                                                                      | fermer l'autre onglet ou attendre                |
+| `VAULT_STORAGE_UNSUPPORTED`             | capacité absente du moteur — **jamais remplacée par un repli silencieux**                                                                                          | changer de moteur                                |
+| `VAULT_STORAGE_SUPPORT_FAILURE`         | échec du support non classable ci-dessus — nommé, jamais deviné                                                                                                    | diagnostiquer le support                         |
+
+**Deux codes que #144 a précisés, et ce qui a changé.** `VAULT_STORAGE_GENERATION_ROOT_CORRUPT`
+couvrait le seul état « aucune racine lisible ». Il en couvre un second, de même nature — une racine
+abîmée dont on ne sait pas ce qu'elle validait —, et c'est le refus que le § 6.9 décrit : sans
+témoin, une racine abîmée à côté d'une racine retenue ne se distingue pas d'un recul d'une
+génération. Le code n'est pas dédoublé parce que la conduite est la même, et le § 10.2 le dit ici
+plutôt que de le laisser deviner. `VAULT_STORAGE_GENERATION_DISCARDED` était promis « publié, jamais
+tu » et ne l'était que dans l'état `ecartee` : l'état `rejouee` écarte aussi les octets déposés
+au-delà de ce que la racine retenue authentifie, et il les écartait **sans un mot**. Le rapport
+d'ouverture porte désormais ce code **dès qu'un octet est écarté**, quel que soit l'état. Aucun code
+n'est retiré, et aucun n'est ajouté. Épreuve : `tests/unit/vm-recul-generation.test.mjs` › « une
+coupure qui déchire la racine `s` laisse le témoin à `s − 1` : le volume ROUVRE, et la mise au rebut
+est PUBLIÉE ».
 
 **Deux refus provisoires survivent à leur cause** : `VAULT_ARCHIVE_VOLUME_CHIFFRE` et
 `VAULT_IMPORT_VOLUME_CHIFFRE` sont encore **déclarés** dans le code et ne sont plus levés nulle
