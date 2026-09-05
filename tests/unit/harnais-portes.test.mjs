@@ -175,6 +175,96 @@ async function fichiersQuiMentionnent(motif, exclus) {
   return coupables;
 }
 
+/**
+ * Fichiers autorisés à ouvrir un magasin de générations SANS fraîcheur.
+ *
+ * **Aucun n'est dans `src/`, et c'est la propriété** — la seconde épreuve ci-dessous l'exige
+ * séparément, pour qu'une inscription future ne puisse pas l'éroder en silence. Depuis le constat
+ * #143, le format du journal qu'une session écrit suit sa source de fraîcheur : une session sans
+ * source écrit le journal de #18, donc scelle ses enregistrements sous l'étiquette de domaine d'un
+ * BLOC DU VOLUME, donc REPRODUIT #143 pour les octets qu'elle écrit aujourd'hui. Le couplage est
+ * décidé et écrit (ADR 0019 amendé) ; ce qui le rend sûr est que le chemin du produit ne le franchit
+ * pas — et cela se MESURE ici plutôt que de se lire dans une phrase.
+ *
+ * `src/vm/crash-machine.mjs` est sorti de cette liste à la faveur du constat : la machine jetable de
+ * #15 fournit désormais une source de fraîcheur, si bien que sa matrice mesure de nouveau le chemin
+ * de scellement que le produit emprunte. Une revue avait relevé qu'elle ne le mesurait plus.
+ *
+ * Les deux qui restent sont des BANCS DE MESURE. Ils ne produisent aucun volume que quiconque
+ * rouvre : ils chronomètrent une récupération puis jettent leurs fichiers. Leur donner une source de
+ * fraîcheur ajouterait à la mesure le hachage de la région, c'est-à-dire déplacerait la grandeur
+ * mesurée sans que le relevé le dise — et les chiffres publiés par `docs/quality-attributes.md`
+ * cesseraient d'être comparables aux précédents.
+ *
+ * @type {{ fichier: string, motif: string }[]}
+ */
+const OUVREURS_SANS_FRAICHEUR = [
+  {
+    fichier: "public/vm/recuperation-worker.mjs",
+    motif:
+      "banc de MESURE de la durée d'une récupération, dans un Worker. Il ne rouvre jamais ce qu'il " +
+      "écrit et ne sert aucun volume ; lui donner une fraîcheur ajouterait le hachage de la région " +
+      "au temps mesuré et romprait la comparabilité des relevés.",
+  },
+  {
+    fichier: "tools/mesurer-generations.mjs",
+    motif: "même banc, hors navigateur, et pour la même grandeur. Même motif.",
+  },
+];
+
+test("aucun OUVREUR SANS FRAÎCHEUR n'est un module de src/", async () => {
+  // La liste ci-dessus peut accueillir un banc ; elle ne doit jamais accueillir un module de `src/`.
+  // C'est là que vit le chemin du produit, et un magasin sans fraîcheur y rouvrirait le constat #143
+  // pour les octets qu'il écrit. La distinction est portée par une épreuve à part, et non par la
+  // prudence de qui ajoute une ligne.
+  const dansSrc = OUVREURS_SANS_FRAICHEUR.filter(({ fichier }) => fichier.startsWith("src/"));
+  assert.deepEqual(
+    dansSrc.map(({ fichier }) => fichier),
+    [],
+    "Un module de src/ ouvre un magasin sans fraîcheur : il écrit le journal de #18, et scelle ses enregistrements dans l'espace d'identités du volume.",
+  );
+});
+
+test("seuls des BANCS DE MESURE ouvrent un magasin sans fraîcheur, et ils sont inscrits", async () => {
+  // Le motif vise l'ARGUMENT tel qu'il s'écrit à l'appel — `fraicheur: null` —, pas la mention : les
+  // modules du format expliquent longuement ce que `fraicheur: null` veut dire dans une racine
+  // décodée, et leur interdire le mot rendrait la garde impossible à documenter. C'est pourquoi le
+  // motif exige la virgule ou l'accolade qui suit un argument réel.
+  const autorises = OUVREURS_SANS_FRAICHEUR.map((entree) => entree.fichier);
+  const coupables = await fichiersQuiMentionnent(/\bfraicheur\s*:\s*null\s*[,}]/, autorises);
+  assert.deepEqual(
+    coupables,
+    [],
+    "Un magasin sans fraîcheur écrit le journal de #18 : ses enregistrements repassent sous l'étiquette de domaine d'un secteur de volume, et le constat #143 est rouvert pour ce qu'il écrit. Si un banc en a vraiment besoin, il faut un motif écrit.",
+  );
+});
+
+test("les autorisations d'ouverture sans fraîcheur sont à jour : aucune inscription périmée", async () => {
+  for (const { fichier } of OUVREURS_SANS_FRAICHEUR) {
+    const contenu = await readFile(path.join(REPO_ROOT, fichier), "utf8");
+    assert.match(
+      contenu,
+      /\bfraicheur\s*:\s*null\s*[,}]/,
+      `${fichier} est inscrit comme ouvreur sans fraîcheur, et n'en ouvre plus.`,
+    );
+  }
+});
+
+test("le balayage de la fraîcheur MORD : un appel sans source est relevé", async () => {
+  // Un balayage à vide passe toujours. Celui-ci est donc confronté au texte qu'il doit refuser et
+  // à celui qu'il doit laisser passer — la PROSE des modules de format, qui parle abondamment de
+  // `fraicheur: null` sans jamais ouvrir quoi que ce soit.
+  const motif = /\bfraicheur\s*:\s*null\s*[,}]/;
+  assert.ok(motif.test("GenerationStore.ouvrir({ volume, fraicheur: null, handle });"));
+  assert.ok(motif.test("await ouvrir({\n  fraicheur: null,\n  volume,\n});"));
+  assert.ok(
+    !motif.test(
+      "// le décodeur le dit par `fraicheur: null`, et la racine suivante en portera une",
+    ),
+    "la PROSE qui cite l'argument ne doit pas être prise pour un appel",
+  );
+});
+
 test("aucun module hors des épreuves ne tient la clé de TEST", async () => {
   const autorises = PORTEURS_DE_LA_CLE.map((entree) => entree.fichier);
   const coupables = await fichiersQuiMentionnent(/\bCLE_DE_TEST\b/, autorises);

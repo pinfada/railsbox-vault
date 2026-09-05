@@ -764,19 +764,45 @@ retourné dans un champ AUTHENTIFIÉ se décode encore, et c'est l'étiquette qu
 
 Deux grandeurs stockées peuvent diverger ; une grandeur dérivée ne le peut pas.
 
-**Le format du journal fait barrière de version.** Ce runtime **lit** les formats 2, 3 et 4, et
-**n'écrit** que le 4. Un runtime plus ancien refuse une racine de format 4 par « Format de journal
-de génération inconnu : 4 », ce qui est exactement le comportement voulu : il ouvrirait les
-enregistrements sous l'étiquette de domaine du VOLUME (§ 5.4), et un runtime d'avant le format 3 ne
-confronterait pas non plus la région. Épreuve : `tests/unit/vm-generation-format.test.mjs` › « le
+**Le format du journal fait barrière de version.** Ce runtime **lit** les formats 2, 3 et 4.
+
+**Ce qu'il ÉCRIT dépend d'une condition, et la condition doit être dite** : une session qui tient
+une source de fraîcheur — la région d'authentification et le témoin (§ 6.8) — écrit le format **4**
+; une session ouverte **sans** source écrit le format **2**, c'est-à-dire le journal de #18, et
+scelle donc ses enregistrements sous l'étiquette de domaine d'un **bloc du volume**. Une phrase
+antérieure de ce document disait « n'écrit que le 4 » sans réserve ; une revue l'a réfutée en une
+commande, et la borne réelle n'est pas temporelle mais **conditionnelle**.
+
+**Aucun chemin du produit n'ouvre sans source.** `openOpfsVolume` en fournit toujours une ; les
+seuls appelants qui déclarent l'absence sont deux **bancs de mesure**, qui chronomètrent une
+récupération et ne rouvrent jamais ce qu'ils écrivent. Cela ne se lit pas, cela se mesure :
+`tests/unit/harnais-portes.test.mjs` › « aucun OUVREUR SANS FRAÎCHEUR n'est un module de src/ »
+tient la liste des franchissements et refuse tout module du chemin de production, et
+`tests/unit/vm-journal-format-4.test.mjs` › « l'OUVREUR DU PRODUIT écrit un journal de format 4, et
+ses enregistrements ne sont pas des blocs » épingle le résultat par le chemin d'ouverture réel.
+
+Un runtime plus ancien refuse une racine de format 4 : il ouvrirait les enregistrements sous
+l'étiquette de domaine du VOLUME (§ 5.4), et un runtime d'avant le format 3 ne confronterait pas non
+plus la région. **Ce qu'il refuse EXACTEMENT n'est pas ce que ce document a longtemps annoncé**, et
+il vaut mieux décrire ce qu'un exploitant lit que ce qu'un module lève : le refus « Format de
+journal de génération inconnu : 4 » est produit par le décodeur, mais il est **agrégé** avant
+d'atteindre la surface — la racine illisible est comptée parmi les racines abîmées, et l'exploitant
+reçoit `VAULT_STORAGE_GENERATION_ROOT_CORRUPT` (« ce qui a été validé est INCONNU… restaurer une
+sauvegarde »), ou `VAULT_STORAGE_GENERATION_CORRUPT` par le témoin lorsqu'il y en a un. **Le refus
+est typé, il précède toute écriture, et aucune génération validée n'est écartée en silence** — c'est
+la propriété qui compte, et elle tient. Mais le diagnostic est faux dans ce cas précis : le volume
+est intact, et le remède exact — mettre à jour le runtime — n'est nommé nulle part. C'est écrit ici
+plutôt que corrigé dans le code : distinguer « racine illisible » de « racine d'un format plus
+récent » touche `remedeSansRacine`, donc la conduite d'une récupération, et cela ne se décide pas
+dans une correction d'identité logique. Épreuve : `tests/unit/vm-generation-format.test.mjs` › « le
 format du journal vaut 4 : un runtime antérieur refuse cette racine sans la comprendre ».
 
 **Un numéro de format dit DEUX choses ensemble** : ce que porte la racine, et sous quelle étiquette
 de domaine les enregistrements de sa charge sont scellés. **2** = pas d'empreinte de région,
-enregistrements sous l'identité d'un bloc (ce qu'écrivait #18) ; **3** = empreinte de région,
-enregistrements sous l'identité d'un bloc (#19) ; **4** = empreinte de région, enregistrements sous
-leur propre identité (#143). Les découpler aurait demandé un champ de plus dans la racine pour un
-état qu'aucun volume de production n'atteint.
+enregistrements sous l'identité d'un bloc (ce qu'écrivait #18, et ce qu'écrit une session sans
+source) ; **3** = empreinte de région, enregistrements sous l'identité d'un bloc (#19) ; **4** =
+empreinte de région, enregistrements sous leur propre identité (#143). Les découpler aurait demandé
+un champ de plus dans la racine pour un état qu'aucun volume de production n'atteint.
 
 **Les formats 3 et 4 ont EXACTEMENT la même disposition**, et il faut dire ce que cela laisse : le
 champ de format n'est pas authentifié, et aucune garde de cohérence ne peut les distinguer comme
@@ -1412,14 +1438,26 @@ volume ne change ; `tests/vectors/format-chiffre-v1.json` reste valide. Les troi
 refusent maintenant un enregistrement épissé — `tests/unit/vm-identite-magasin.test.mjs` › « un
 ENREGISTREMENT de journal épissé dans la région et la charge du volume est REFUSÉ ».
 
-**Ce que la correction NE ferme pas, et ce résidu est nommé plutôt que tu** : des octets
-d'enregistrement capturés sur un journal **antérieur** au format 4 restent scellés sous l'étiquette
-d'un bloc. Qui détient une telle copie peut encore les épisser dans la région et la charge du volume
-correspondant, dans les trois mêmes états. Aucune clé ne permet de les resceller, et fermer ce reste
-aurait exigé de changer aussi l'étiquette des SECTEURS — c'est-à-dire d'invalider les vecteurs de
-l'ADR 0015 et d'imposer un rescellement complet de chaque volume existant. Ce qui est fermé est
-l'attaque continue : un adversaire qui lit l'OPFS après la migration n'y trouve plus
-d'enregistrement épissable, et la migration a lieu à la première réouverture.
+**Ce que la correction NE ferme pas, et ce résidu est nommé plutôt que tu.** Des octets
+d'enregistrement scellés sous l'étiquette d'un **bloc** restent épissables dans la région et la
+charge du volume correspondant, dans les trois mêmes états. Aucune clé ne permet de les resceller,
+et fermer ce reste aurait exigé de changer aussi l'étiquette des SECTEURS — c'est-à-dire d'invalider
+les vecteurs de l'ADR 0015 et d'imposer un rescellement complet de chaque volume existant.
+
+**Deux façons d'obtenir de tels octets, et la seconde n'est pas temporelle** — une revue a corrigé
+ce document sur ce point :
+
+- un journal écrit **avant** le format 4. La migration a lieu à la première réouverture, et le
+  vidage qui la termine tronque la charge : après elle, l'OPFS n'en porte plus. Il faut donc en
+  détenir une copie prise avant ;
+- un journal écrit **aujourd'hui par une session sans source de fraîcheur** (§ 6.7), qui écrit le
+  format 2. La borne est donc **conditionnelle**, pas seulement temporelle. Aucun chemin du produit
+  n'ouvre ainsi — seuls deux bancs de mesure le font, et `tests/unit/harnais-portes.test.mjs` › «
+  aucun OUVREUR SANS FRAÎCHEUR n'est un module de src/ » le tient par inspection de source plutôt
+  que par cette phrase.
+
+Ce qui est fermé, et c'est l'essentiel du modèle de menace, est l'attaque **continue** sur un volume
+du produit : un adversaire qui lit l'OPFS n'y trouve plus d'enregistrement épissable.
 
 **[#144](https://github.com/pinfada/railsbox-vault/issues/144) — Le retour arrière d'une génération
 ne demande aucune copie antérieure, et une racine abîmée à côté d'une racine lisible est ignorée.**
