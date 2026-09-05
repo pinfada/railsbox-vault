@@ -1039,14 +1039,15 @@ Ce que la chaîne ne fait pas : aucun déploiement réel, aucune signature, aucu
 **La politique de cache, elle, est décidée** depuis
 l'[ADR 0023](decisions/0023-politique-de-cache-par-nature-d-artefact.md) (#103) — par NATURE
 D'ARTEFACT, dans la source de vérité, et non plus héritée du serveur de test : `no-cache` pour la
-coquille et ses modules, qui changent à chaque version ; `public, max-age=86400` pour l'épinglage
-v86 de l'ADR 0003, dont les octets, le manifeste et les licences ne changent qu'ensemble ;
-`no-store` conservé sur le territoire applicatif, parce que ce qu'il sert porte les cookies de
-session du guest. Le fichier `_headers` porte donc plusieurs blocs, chacun complet, et
-`Cache-Control` est le seul en-tête dont la valeur dépend du chemin — le cliquet de publication
-refuse qu'une seconde dimension se mette à varier. Le mode hors ligne à deux Service Workers de
-l'ADR 0002 n'est pas construit pour autant : ce que cette politique lui permet et lui interdit est
-écrit dans l'ADR 0023.
+coquille, ses modules, et le manifeste d'épinglage v86, qui changent à chaque version ;
+`public, max-age=31536000, immutable` pour les artefacts v86 de l'ADR 0003, depuis que #123 fait
+nommer à leur URL leur empreinte (`libv86-<empreinte>.mjs`) — un ré-épinglage les DÉPLACE, si bien
+qu'un artefact périmé n'est plus jamais demandé ; `no-store` conservé sur le territoire applicatif,
+parce que ce qu'il sert porte les cookies de session du guest. Le fichier `_headers` porte donc
+plusieurs blocs, chacun complet, et `Cache-Control` est le seul en-tête dont la valeur dépend du
+chemin — le cliquet de publication refuse qu'une seconde dimension se mette à varier. Le mode hors
+ligne à deux Service Workers de l'ADR 0002 n'est pas construit pour autant : ce que cette politique
+lui permet et lui interdit est écrit dans l'ADR 0023.
 
 ## Ordre des preuves
 

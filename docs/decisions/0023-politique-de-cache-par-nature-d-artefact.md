@@ -303,13 +303,129 @@ de l'origine applicative sert les documents de l'application. Aucun des deux n'e
    édité à la main, il le pourrait — et le fichier porte l'avertissement « ne pas éditer à la main
    ».
 
+## Amendement du 2026-09-05 — l'adressage par empreinte, et `immutable` (#123)
+
+La première condition de réouverture est remplie : **les URL des artefacts épinglés nomment leur
+empreinte**. La décision 3 est donc reprise, et avec elle la décision 2. Le reste de cet ADR — les
+trois natures, la dimension unique non uniforme, les deux cliquets, les blocs complets — tient sans
+changement.
+
+### La mesure qui autorise `immutable`
+
+`immutable` promet « ces octets ne changeront jamais à cette URL ». Le fait 2 la rendait fausse,
+parce que la publication copiait `vendor/v86/artefacts/` tel quel. Elle est désormais TENUE par
+l'adresse : `src/v86-adresses.mjs` dérive `<base>-<sha256 tronqué à 16 hex>.<ext>` du manifeste, et
+un ré-épinglage DÉPLACE l'artefact — un navigateur qui garderait l'ancienne adresse pour toujours ne
+la demanderait plus jamais.
+
+Ce n'est pas une intention : `verifierEpinglageV86` le MESURE sur l'arbre publié, avant qu'il ne
+parte, et un écart y est un code 5. Trois passes, dont chacune ferme un mode de panne :
+
+1. **chaque adresse dérivée du manifeste est servie** — sinon l'hébergeur rendrait un 404 ;
+2. **chaque octet servi sous le préfixe est DÉCLARÉ** — c'est le cliquet de la revue de #103, dont
+   l'enjeu monte d'un cran : un fichier oublié là partirait pour un an de cache partagé sans
+   révocation, au lieu de vingt-quatre heures ;
+3. **chaque empreinte est RECALCULÉE sur les octets**, puis confrontée à celle que le manifeste
+   épingle — donc à celle que le nom annonce. Un fichier renommé pour porter l'adresse d'un autre
+   est refusé.
+
+`tests/unit/v86-reepinglage.test.mjs` déroule en outre un ré-épinglage complet sur des arbres réels
+: l'ancienne adresse n'est plus servie, la nouvelle l'est, l'artefact INCHANGÉ garde la sienne,
+l'empreinte de racine de l'ADR 0017 change, et le retour arrière la retrouve au bit près.
+
+### Ce qui change dans la table
+
+| Nature                                                      | Motif `_headers`          | `Cache-Control`                       |
+| ----------------------------------------------------------- | ------------------------- | ------------------------------------- |
+| Coquille, ses modules, **le manifeste et les licences v86** | `/*` (coquille)           | `no-cache`                            |
+| **Artefacts v86 adressés par empreinte**                    | `/vendor/v86/artefacts/*` | `public, max-age=31536000, immutable` |
+| Territoire applicatif                                       | `/*` (application)        | `no-store`                            |
+
+### Le préfixe se resserre, et le manifeste SORT de la classe épinglée
+
+La décision 2 accordait la classe à `/vendor/v86/` pour donner au manifeste la MÊME durée de
+fraîcheur que les octets, et borner ainsi leur écart d'âge à vingt-quatre heures. Cette borne n'a
+plus d'objet : la cohérence est dans l'adresse. Le manifeste ne peut d'ailleurs PAS être immuable —
+il est l'**indirection** par laquelle un chargeur apprend les adresses, et une copie périmée en
+désignerait qui ne sont plus servies. Le mode de panne serait un 404 franc plutôt qu'une exécution
+périmée ; il n'en reste pas moins un mode de panne, et `no-cache` l'écarte pour le prix d'un
+aller-retour de cinq kibioctets par visite, au lieu des 9,9 Mio que ce manifeste décrit.
+
+Le resserrement conserve la propriété que la décision 2 défendait vraiment : **le défaut de la table
+reste le SÛR.** Un fichier qui apparaîtrait demain sous `/vendor/v86/` reçoit `no-cache`, et non un
+an de cache partagé. C'est l'inverse qui aurait été vrai d'un préfixe large corrigé par des règles
+d'exception — lesquelles auraient en outre reposé sur une sémantique de fusion que le format
+`_headers` ne spécifie pas (fait 4).
+
+L'alternative « un préfixe `/vendor/v86/artefacts/` » est donc RETENUE, contre ce que le tableau des
+alternatives rejetées disait de son second motif : « la nature ne serait mesurable qu'après
+`npm run vm:fetch` ». Ce motif était juste, et il fallait le refermer autrement. La publication
+dépose désormais sous ce préfixe la **copie du manifeste adressée par sa propre empreinte**
+(`MANIFEST-<empreinte>.json`). Elle dérive d'un fichier versionné, donc elle est présente dans TOUT
+arbre publié, y compris construit depuis un clone vierge ; le témoin d'en-têtes relève donc
+`immutable` sur du HTTP réel à chaque `npm run publier:check`, à une adresse DÉRIVÉE du manifeste
+servi — si bien que ce relevé mesure aussi la dérivation.
+
+Cette copie a une raison d'être qui ne doit rien au témoin. Une adresse d'artefact dit quels octets
+elle sert ; elle ne dit pas QUEL épinglage les a nommés. `vendor/v86/MANIFEST.json` répond « ce qui
+est épinglé aujourd'hui » — c'est son rôle d'indirection. La copie répond « l'épinglage qui a
+produit ces adresses-là », à une adresse qui ne bougera plus, et le retour arrière de l'ADR 0017 a
+besoin du manifeste d'hier au bit près.
+
+### 31 536 000 s, et pourquoi la durée cesse d'être le sujet
+
+La borne de 86 400 s était empruntée à l'algorithme de mise à jour du Service Worker. Elle reste
+celle de la coquille, où elle est sans objet puisque la coquille est `no-cache`. Sous `immutable`,
+la durée ne décide plus de rien d'important : l'adresse d'un artefact périmé n'est plus jamais
+demandée. Un an est la valeur conventionnelle, et la borne supérieure que RFC 9111 § 1.2.2
+recommande.
+
+### La vérification d'empreinte AU CHARGEMENT n'entre PAS dans cette tranche
+
+Cet ADR confiait à #123 « la cohérence manifeste ↔ octets par une vérification à la lecture ». Cette
+cohérence est tenue, mais autrement : par l'adresse, structurellement, et sans calcul. Un manifeste
+périmé désigne les adresses que CE manifeste a épinglées ; manifeste et octets ne peuvent plus être
+en désaccord, seulement vieux ensemble.
+
+**Le coût n'est pas l'argument, et la mesure ne le soutiendrait pas** : hacher les 9,9 Mio de
+l'ensemble épinglé coûte **9,2 ms** sous Chromium 141 — `crypto.subtle.digest`, meilleure de deux
+passes après échauffement, contexte de page servi par `tools/serve.mjs` ; 1,9 ms pour `v86.wasm`
+seul, 7,0 ms pour `linux4.iso`. L'argument est ailleurs, et il tient en deux points :
+
+- **ce qu'elle attraperait encore, elle ne l'attrape pas.** L'empreinte attendue viendrait du
+  manifeste servi par la MÊME origine : un hébergeur qui ment à une adresse adressée par contenu
+  ment aussi au manifeste, du même geste. C'est le raisonnement que `tools/publier-sources.mjs`
+  tient déjà pour Argon2id. La défense contre l'hébergeur est la vérification de PUBLICATION, sur
+  l'arbre construit à partir d'un commit — celle que cet amendement renforce ;
+- **il reste un cas, et il appartient à une autre tranche.** Le magasin d'un Service Worker est géré
+  par le développeur et n'est PAS gouverné par l'URL (fait 5) : un Service Worker qui rangerait un
+  artefact sous une clé de requête et le rendrait pour une autre briserait la garantie que l'adresse
+  porte. C'est le seul consommateur qui garde des artefacts d'une version à l'autre hors de la
+  gouvernance de l'adresse, et c'est donc à lui de porter cette vérification. Suivi par **#151**.
+
+### Ce que cet amendement ne prouve toujours pas
+
+Les réserves de la section « Ce que cette décision ne prouve pas » valent sans changement. Deux se
+déplacent d'un cran :
+
+- **aucun effet de cache n'est mesuré dans un navigateur** (#125). Ce qui est éprouvé reste que la
+  politique est SERVIE, par nature, sur les deux origines et par la pile réseau du moteur. Qu'un
+  moteur garde effectivement un artefact un an, et ne redemande jamais une adresse retirée, n'est
+  pas mesuré ici — et l'enjeu de cette lacune monte, puisque la fenêtre passe de vingt-quatre heures
+  à un an ;
+- **aucun hébergement réel n'a été mesuré** (#124). Un hébergeur qui réécrit `Cache-Control` —
+  GitHub Pages impose `max-age=600` — rend cette décision inopérante, comme il rendait la précédente
+  inopérante.
+
+Une réserve TOMBE : la cohérence manifeste ↔ octets n'est plus « tenue par aucun code ». Elle est
+tenue par l'adresse, et mesurée par `verifierEpinglageV86` avant que l'arbre ne parte.
+
 ## Conditions de réouverture
 
 Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi :
 
-- **les URL des artefacts épinglés nomment leur empreinte** (**#123**) — par un chemin ou un
-  paramètre dérivé du SHA-256 de `vendor/v86/MANIFEST.json`. `immutable` et un `max-age` d'un an
-  deviennent alors corrects, et la décision 3 doit être reprise ;
+- ~~**les URL des artefacts épinglés nomment leur empreinte** (**#123**)~~ — **REMPLIE le
+  2026-09-05**, voir l'amendement ci-dessus, qui reprend les décisions 2 et 3 ;
 - les Service Workers de l'ADR 0002 sont livrés, et l'un d'eux a besoin d'une politique que celle-ci
   ne lui laisse pas — auquel cas la section « ce qu'elle permet et interdit » cesse d'être un cadre
   pour devenir un relevé ;

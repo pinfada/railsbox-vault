@@ -256,15 +256,18 @@ Depuis l'[ADR 0023](decisions/0023-politique-de-cache-par-nature-d-artefact.md) 
 donc plusieurs blocs — chacun **complet**, pour ne dépendre d'aucune sémantique de fusion que le
 format ne spécifie pas.
 
-| Arbre       | Motif `_headers` | Nature d'artefact        | `Cache-Control`         |
-| ----------- | ---------------- | ------------------------ | ----------------------- |
-| coquille    | `/*`             | coquille et ses modules  | `no-cache`              |
-| coquille    | `/vendor/v86/*`  | épinglage v86 (ADR 0003) | `public, max-age=86400` |
-| application | `/*`             | territoire applicatif    | `no-store`              |
+| Arbre       | Motif `_headers`          | Nature d'artefact                    | `Cache-Control`                       |
+| ----------- | ------------------------- | ------------------------------------ | ------------------------------------- |
+| coquille    | `/*`                      | coquille, ses modules, manifeste v86 | `no-cache`                            |
+| coquille    | `/vendor/v86/artefacts/*` | artefacts v86 adressés par empreinte | `public, max-age=31536000, immutable` |
+| application | `/*`                      | territoire applicatif                | `no-store`                            |
 
-`immutable` est **refusé** : aucune URL publiée ne nomme son empreinte, si bien qu'il interdirait au
-navigateur de s'apercevoir d'un ré-épinglage. Le manifeste d'épinglage relève de la même règle que
-les octets qu'il décrit, afin qu'ils vieillissent ensemble.
+`immutable` est **servi** depuis #123, et ce qui l'autorise est l'adresse : chaque artefact v86 est
+publié sous `<base>-<sha256 tronqué>.<ext>`, si bien qu'un ré-épinglage le DÉPLACE et qu'un artefact
+périmé n'est plus jamais demandé. `node tools/publier.mjs` le mesure avant que l'arbre ne parte —
+chaque adresse dérivée est servie, chaque octet servi est déclaré, chaque empreinte est recalculée —
+et refuse en code 5 sinon. Le MANIFESTE, lui, reste `no-cache` : il est l'indirection par laquelle
+un chargeur apprend les adresses, et une copie périmée en désignerait qui ne sont plus servies.
 
 **Obligation d'exploitant.** L'hébergeur retenu doit servir ces valeurs telles quelles. Un hébergeur
 qui réécrit `Cache-Control` — GitHub Pages impose `max-age=600`, mesuré par le spike #45 — rend la
