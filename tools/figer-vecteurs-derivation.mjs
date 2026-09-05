@@ -2,8 +2,12 @@
 // FIGE les vecteurs de la dérivation des clés de déverrouillage (#22, ADR 0021).
 //
 //     node tools/figer-vecteurs-derivation.mjs
+//     npx prettier --write tests/vectors/derivation-v1.json
 //
-// Il écrit `tests/vectors/derivation-v1.json`, que `tests/unit/vm-derivation-*.test.mjs` relit.
+// Il écrit `tests/vectors/derivation-v1.json`, que `tests/unit/vm-derivation-*.test.mjs` relit. La
+// seconde commande n'est pas une coquetterie : `format:check` couvre `tests/vectors/`, et la sortie
+// de `JSON.stringify` ne replie pas les tableaux courts comme Prettier le fait. Les OCTETS ne
+// changent pas d'un pas à l'autre — seule la mise en page change.
 //
 // ## Il POSE les octets, il ne les demande pas au produit
 //
@@ -327,7 +331,9 @@ function residuDeControle(symboles) {
 
 /** Les DEUX symboles de contrôle : la construction du système pur de l'ISO 7064, M = 1021, r = 32. */
 function sommeDeControleDe(donnees) {
-  const controle = (MODULE_CONTROLE + 1 - (residuDeControle(donnees) * 1024) % MODULE_CONTROLE) % MODULE_CONTROLE;
+  const controle =
+    (MODULE_CONTROLE + 1 - ((residuDeControle(donnees) * 1024) % MODULE_CONTROLE)) %
+    MODULE_CONTROLE;
   return [Math.floor(controle / 32), controle % 32];
 }
 
@@ -449,7 +455,11 @@ async function documentDeRecuperation() {
     moduleDeControle: MODULE_CONTROLE,
     version: RECUPERATION_DERIVATION.version,
     codes,
-    saisies: { octetsHex: codes[0].octetsHex, codeRendu: codes[0].codeRendu, ...saisiesDe(codes[0].codeRendu) },
+    saisies: {
+      octetsHex: codes[0].octetsHex,
+      codeRendu: codes[0].codeRendu,
+      ...saisiesDe(codes[0].codeRendu),
+    },
     derivation: {
       nom: "le code 0x20…0x2f, sous le sel 0xd0 et l'identité du volume A",
       ...RECUPERATION_DERIVATION,
