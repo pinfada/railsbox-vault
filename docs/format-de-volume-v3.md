@@ -1082,16 +1082,51 @@ restauré depuis une archive, ou un volume dont le témoin a été perdu par un 
 
 **Le refus que #144 ajoute ne contredit pas la phrase précédente, et il faut dire exactement
 pourquoi.** Il ne porte que sur la **conjonction** « aucun témoin **ET** une racine abîmée **ET**
-une racine retenue ». Aucun des trois états que le paragraphe protège ne la produit : un volume
-**neuf** n'a aucune racine abîmée ; un volume **restauré** n'a pas de `.gen` du tout,
-`discardGeneration` le retirant avec le témoin ; un **premier point de contrôle** écrit une racine
-et laisse l'autre emplacement vierge — et un secteur vierge n'est pas une racine abîmée (§ 6.6). Un
-volume dont le témoin a été perdu par un incident de support rouvre donc comme avant, **sauf** si
+une racine retenue **portant une empreinte de région** ». **Quatre** états ne la produisent pas :
+
+- un volume **neuf** n'a aucune racine abîmée ;
+- un volume **restauré** n'a pas de `.gen` du tout, `discardGeneration` le retirant avec le témoin ;
+- un **premier point de contrôle** écrit une racine et laisse l'autre emplacement vierge — et un
+  secteur vierge n'est pas une racine abîmée (§ 6.6) ;
+- un volume scellé **avant #19**, dont la racine ne porte aucune empreinte de région (§ 6.8). Un
+  magasin d'alors n'écrivait aucun témoin : son absence ne prétend rien, elle n'a **jamais pu** être
+  autrement. Exiger un témoin ici rendrait irouvrable **pour toujours** un volume que la migration
+  devait ouvrir — le refus tombant avant toute écriture, le vidage ne réparerait jamais
+  l'emplacement déchiré. La fenêtre dure **exactement une ouverture**, et la porte qu'elle pourrait
+  laisser reste gardée par un contrôle qui ne bouge pas : une racine sans empreinte **sous un témoin
+  qui en atteste une** est refusée. Ce quatrième état a été relevé en revue. Épreuve :
+  `tests/unit/vm-recul-generation.test.mjs` › « un volume scellé par #18, dont une racine est
+  déchirée, reste OUVRABLE : il n'a jamais pu avoir de témoin ».
+
+Un volume dont le témoin a été perdu par un incident de support rouvre donc comme avant, **sauf** si
 une racine est abîmée en même temps — et dans ce cas précis, ce qui a été validé est réellement
-inconnu. Épreuves : `tests/unit/vm-recul-generation.test.mjs` › « une racine abîmée à côté d'une
-racine lisible, SANS témoin, est REFUSÉE : rien ne la distingue d'un recul », « une coupure qui
-déchire la racine `s` laisse le témoin à `s − 1` : le volume ROUVRE, et la mise au rebut est PUBLIÉE
-» et « une racine abîmée sous un témoin EN AVANCE reste un recul : le plancher de séquence refuse ».
+inconnu.
+
+**Ce que ce refus SUR-DÉTECTE, et pourquoi rien ne le corrige.** Le compte des racines abîmées
+**compte**, il ne **situe** pas : une racine illisible n'a plus de séquence lisible, et prétendre la
+situer reviendrait à croire un en-tête que rien n'authentifie. Abîmer la racine la plus **ancienne**
+— celle qui ne fait pas autorité, dont la perte ne coûte rien — produit donc le même refus, alors
+que rien n'a reculé. Le message nomme les **deux** lectures que cela laisse — la racine abîmée
+portait la séquence d'avant celle retenue (une avarie sans conséquence, typiquement une coupure
+pendant sa propre écriture), ou celle d'après (et le volume a reculé) — plutôt que d'en inventer une
+troisième. C'est le prix de la règle, relevé en revue, et il est éprouvé :
+`tests/unit/vm-recul-generation.test.mjs` › « la racine ABÎMÉE n'est pas située : abîmer l'ancienne
+refuse comme abîmer la récente, et c'est le prix ».
+
+**Ce que ce refus NE ferme PAS, et c'est la limite de la règle.** Il tient contre l'adversaire qui
+**neutralise** le témoin — celui-là obtient un refus, pas un recul. Il ne tient **pas** contre celui
+qui le **rejoue**, c'est-à-dire l'adversaire de #142, accepté dans la même correction : archiver le
+témoin à `s − 1` (62 octets), abîmer la racine `s`, puis **remettre** la copie fait concorder le
+témoin avec la racine retenue. L'ouverture conclut « coupure », le volume ouvre sur `s − 1`, et une
+génération **acquittée** disparaît sous un rapport qui déclare la fraîcheur `verifiee` — le seul
+signal étant `VAULT_STORAGE_GENERATION_DISCARDED`, qui dit « coupure normale ». Ce n'est **pas** une
+course : le témoin n'est pas perdu au bon instant, il est archivé à l'avance. Épreuve :
+`tests/unit/vm-recul-generation.test.mjs` › « #142 COMPOSÉ à #144 : un témoin ARCHIVÉ puis rejoué
+fait perdre une génération acquittée sous « verifiee » ». Épreuves du refus lui-même :
+`tests/unit/vm-recul-generation.test.mjs` › « une racine abîmée à côté d'une racine lisible, SANS
+témoin, est REFUSÉE : rien ne la distingue d'un recul », « une coupure qui déchire la racine `s`
+laisse le témoin à `s − 1` : le volume ROUVRE, et la mise au rebut est PUBLIÉE » et « une racine
+abîmée sous un témoin EN AVANCE reste un recul : le plancher de séquence refuse ».
 
 Ce qui manque n'est pas une garde de plus : c'est une **ancre monotone hors du support** (§ 9, § 13
 question n° 3).
@@ -1457,13 +1492,25 @@ clé.
 
 **Ce paragraphe ne décrit QUE le retour arrière complet, et un recul d'UNE génération n'en est pas
 un.** Il ne demande ni copie antérieure ni journal : l'alternance des racines (§ 6.6) garde `s − 1`
-lisible sur le support, et abîmer les 512 octets de `s` suffit. Ce recul-là, lui, **n'est pas
-indétectable** : le témoin le tranche, et son absence devant une racine abîmée est refusée (§ 6.9,
-`VAULT_STORAGE_GENERATION_ROOT_CORRUPT`). Ce qui reste indétectable est bien le retour arrière
-**complet**, décrit ci-dessus. [#144](https://github.com/pinfada/railsbox-vault/issues/144) avait
-relevé que ce paragraphe et le § 6.9 promettaient tous deux « une copie antérieure » pour un recul
-d'une génération ; la [PR #153](https://github.com/pinfada/railsbox-vault/pull/153) corrige les
-deux.
+lisible sur le support, et abîmer les 512 octets de `s` suffit. **Le témoin tranche ce recul-là,
+SAUF contre un adversaire qui en détient une copie antérieure** — celui de
+[#142](https://github.com/pinfada/railsbox-vault/issues/142) :
+
+- contre qui **neutralise** le témoin, le recul est refusé (§ 6.9,
+  `VAULT_STORAGE_GENERATION_ROOT_CORRUPT`) ;
+- contre qui le **rejoue** — un témoin de `s − 1` archivé, la racine `s` abîmée, la copie remise —,
+  il ne l'est pas : le témoin **concorde** avec la racine retenue, l'ouverture conclut « coupure »,
+  et une génération **acquittée** disparaît sous un rapport qui déclare la fraîcheur `verifiee`.
+  C'est le retour arrière décrit ci-dessus, **obtenu à moindre coût** — 62 octets archivés à
+  l'avance au lieu d'une copie cohérente du volume et du journal. Il reste **indétectable**, et
+  cette phrase le dit plutôt que de laisser croire que le témoin ferme ce recul en toutes
+  circonstances. Épreuve : `tests/unit/vm-recul-generation.test.mjs` › « #142 COMPOSÉ à #144 ».
+
+[#144](https://github.com/pinfada/railsbox-vault/issues/144) avait relevé que ce paragraphe et le §
+6.9 promettaient tous deux « une copie antérieure » pour un recul d'une génération ; la
+[PR #153](https://github.com/pinfada/railsbox-vault/pull/153) corrige les deux, et une revue de
+cette PR a corrigé la correction — la première rédaction affirmait que « le témoin le tranche »,
+sans sa réserve.
 
 ### 9.2 Le journal de migration n'est ni chiffré ni authentifié
 
@@ -1547,13 +1594,19 @@ données associées du témoin — la seconde proposition de l'issue — ne la f
 rejoué resterait **authentique** sous cette identité aussi, et le coût serait une version du format
 de témoin et l'invalidation d'un vecteur figé, pour une propriété qui ne serait pas acquise.
 
-**Pourquoi la sévérité est révisée en MEDIUM.** La capacité requise — écrire dans l'OPFS de
-l'origine de confiance — permet déjà de **détruire le volume lui-même** ; le témoin n'a jamais
-défendu contre cet adversaire, et le § 6.9 écrit depuis #19 que le neutraliser est gratuit. Ce que
-le constat révèle de neuf n'est donc pas une capacité, ce sont deux **défauts de conduite** : une
-phrase fausse, et un message qui envoyait l'exploitant dans une boucle sans issue nommée — «
-restaurer une sauvegarde », geste qui retire le témoin que l'adversaire n'a qu'à remettre. Les deux
-sévérités figurent au registre, et le motif est écrit dans l'issue.
+**Pourquoi la sévérité est révisée en MEDIUM — et ce que ce motif ne dit PAS.** L'adversaire requis
+écrit dans l'OPFS de l'origine de confiance, ce contre quoi le témoin n'a **jamais** défendu : le §
+6.9 écrit depuis #19 que le neutraliser est gratuit sous cette même capacité. Ce que le rejeu
+obtient **seul** est un refus permanent d'un volume sain — un déni de service, sans perte d'octet ni
+clair. Ce qu'il obtient **en composition avec #144** est davantage, et il faut l'écrire plutôt que
+de l'omettre : un retour arrière d'**une génération** sous un rapport `verifiee`, c'est-à-dire le
+retour arrière complet du § 9.1, **déjà accepté comme indétectable**, obtenu à moindre coût — 62
+octets archivés au lieu d'une copie cohérente du volume et du journal. La sévérité reste révisée
+parce que ni la capacité ni la propriété perdue ne sont neuves ; ce qui l'est, ce sont deux défauts
+de **conduite** — une phrase fausse, et un message qui envoyait l'exploitant dans une boucle sans
+issue nommée (« restaurer une sauvegarde », geste qui retire le témoin que l'adversaire n'a qu'à
+remettre). Une revue de la PR a fait retirer de ce motif l'argument « aucune perte d'octets », qui
+était faux en composition. Les deux sévérités figurent au registre, et le motif est dans l'issue.
 
 **Ce que la disposition change.** Le § 6.9 dit désormais ce que le sceau achète (la non-forgerie) et
 ce qu'il n'achète pas (la non-fongibilité, donc pas la résistance au rejeu), et il nomme le **geste
@@ -1636,15 +1689,36 @@ l'alternance existe pour absorber : une racine déchirée par une coupure pendan
 Le coût serait « restaurer une sauvegarde » à chaque coupure au mauvais instant — c'est-à-dire une
 perte de données réelle échangée contre une détection que le témoin donne déjà.
 
-**Ce que la correction NE ferme pas.** Un adversaire qui abîme la racine `s` **et** laisse le témoin
-à `s − 1` — ce qu'il obtient en abîmant `s` avant que le témoin de `s` ne soit écrit, dans la
-fenêtre que le § 6.9 décrit — reste dans le cas « coupure », et le volume ouvre sur `s − 1`. La
-différence est qu'il ne le fait plus en **silence** : la mise au rebut est publiée. Le compteur de
-scellements cumulés (§ 4.5) recule toujours avec la racine retenue ; ce n'est pas une réutilisation
-de nonce — les nonces sont tirés (§ 4.2) —, et le § 4.5 le dit désormais plutôt que de le laisser
-deviner. Enfin, la phrase de l'issue « l'état publié est `verifiee` » n'est vraie que dans le chemin
-**sans témoin** ; avec un témoin resté à `s`, le plancher de séquence refusait déjà, et rien n'est
-publié — la correction est portée dans l'issue.
+**Ce que la correction NE ferme pas, et une revue de la PR l'a établi par reproduction.** La règle
+fait décider le témoin : elle tient contre l'adversaire qui le **neutralise**, et **pas** contre
+celui qui le **rejoue** — c'est-à-dire contre #142, accepté dans la même correction. La composition
+des deux constats se reproduit ainsi, sans la clé :
+
+1. archiver `<volume>.temoin` à la séquence `s − 1` : **62 octets**, pris longtemps à l'avance ;
+2. laisser la génération `s` être validée et **acquittée** au guest ;
+3. écrire 512 octets quelconques sur l'emplacement `s mod 2`, puis **remettre** l'archive.
+
+Le témoin **concorde** alors avec la racine retenue, l'ouverture conclut « coupure », le rapport
+publie `etat: rejouee`, `fraicheurRegion: verifiee`, `code: VAULT_STORAGE_GENERATION_DISCARDED`, et
+les écritures acquittées de la génération `s` **ont disparu du volume** après le rangement — sans
+qu'aucun refus ne soit levé. **Ce n'est pas une course** : le témoin n'est pas perdu au bon instant,
+il est archivé à l'avance. C'est le **retour arrière complet du § 9.1**, déjà accepté comme
+indétectable, obtenu à moindre coût — 62 octets au lieu d'une copie cohérente du volume et du
+journal. Épreuve : `tests/unit/vm-recul-generation.test.mjs` › « #142 COMPOSÉ à #144 : un témoin
+ARCHIVÉ puis rejoué fait perdre une génération acquittée sous « verifiee » ».
+
+Le refus **sur-détecte** par ailleurs : abîmer la racine la plus ancienne, celle qui ne fait pas
+autorité, produit le même refus, parce qu'une racine illisible n'a plus de séquence lisible (§ 6.9).
+
+Le compteur de scellements cumulés (§ 4.5) recule toujours avec la racine retenue ; ce n'est pas une
+réutilisation de nonce — les nonces sont tirés (§ 4.2) —, et le § 4.5 le dit désormais plutôt que de
+le laisser deviner.
+
+Enfin, la phrase de l'issue « l'état publié est `verifiee` » est **exacte**, et la première
+rédaction de cette correction la restreignait à tort au chemin « sans témoin » : `verifiee` est
+publié aussi **avec** un témoin à `s − 1`, dans la reproduction ci-dessus. Ce qui est vrai est plus
+étroit — avec un témoin resté à `s`, le plancher de séquence refuse et rien n'est publié. La
+correction est portée dans l'issue.
 
 **[#145](https://github.com/pinfada/railsbox-vault/issues/145) — « Supprimer et recréer » ne retire
 aucun voisin, et le volume recréé est refusé.** Le § 6.3 et le § 10.2 affirment, à tort, que le

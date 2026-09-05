@@ -260,14 +260,20 @@ et tester.
     plus, et ce dossier l'a longtemps nié
     ([#144](https://github.com/pinfada/railsbox-vault/issues/144), corrigé par la
     [PR #153](https://github.com/pinfada/railsbox-vault/pull/153)) : l'alternance des racines garde
-    `s − 1` lisible sur le support. Ce recul-là **n'est pas** dans la liste des non-détectés — le
-    témoin le tranche, et son absence devant une racine abîmée est refusée
-    (`VAULT_STORAGE_GENERATION_ROOT_CORRUPT`, `docs/format-de-volume-v3.md` § 6.9). Le **rejeu**
-    d'un témoin authentique, lui, reste possible et n'est pas détecté : le sceau achète la
-    non-forgerie, pas la non-fongibilité
-    ([#142](https://github.com/pinfada/railsbox-vault/issues/142), accepté, ADR 0019 amendé le 5
-    septembre 2026) ; il ne fait perdre aucun octet, il fabrique un refus, et le message du refus
-    nomme le geste qui en sort avec sa condition. Un fichier absent, vide ou trop court n'est pas un
+    `s − 1` lisible sur le support. **Le témoin tranche ce recul-là, SAUF contre un adversaire qui
+    en détient une copie antérieure** — celui de
+    [#142](https://github.com/pinfada/railsbox-vault/issues/142) : contre qui **neutralise** le
+    témoin, le recul est refusé (`VAULT_STORAGE_GENERATION_ROOT_CORRUPT`,
+    `docs/format-de-volume-v3.md` § 6.9) ; contre qui le **rejoue**, il ne l'est pas. Le **rejeu**
+    d'un témoin authentique reste possible et n'est pas détecté — le sceau achète la non-forgerie,
+    pas la non-fongibilité (#142, accepté, ADR 0019 amendé le 5 septembre 2026) —, et **en
+    composition avec #144 il fait perdre des octets** : un témoin de `s − 1` archivé à l'avance (62
+    octets), la racine `s` abîmée, la copie remise, et les écritures **acquittées** de la génération
+    `s` disparaissent sous un rapport déclarant la fraîcheur `verifiee`, **sans qu'aucun refus ne
+    soit levé**. C'est le retour arrière complet de ce paragraphe, obtenu à moindre coût. Seul, le
+    rejeu ne fait perdre aucun octet : il fabrique un refus permanent d'un volume sain, et le
+    message de ce refus nomme le geste qui en sort avec sa condition. Épreuve :
+    `tests/unit/vm-recul-generation.test.mjs`. Un fichier absent, vide ou trop court n'est pas un
     témoin, l'ouverture repart sur « première ouverture », et la fenêtre du retour arrière complet
     est **réarmée** pour qui détient déjà une copie antérieure de volume + journal. Le comportement
     est délibéré et n'est pas changé — refuser tout volume sans témoin rendrait irouvrable un volume

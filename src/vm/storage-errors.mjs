@@ -175,11 +175,16 @@ export function generationRootCorrupt(volume, { abimees, octets }) {
  *
  * Les DEUX lectures sont nommées, parce que rien ici ne les distingue et qu'un message qui n'en
  * nommerait qu'une enseignerait la mauvaise conduite dans l'autre moitié des cas.
+ *
+ * **Et une racine illisible n'a plus de SÉQUENCE lisible** : le message ne dit donc pas laquelle
+ * des deux a été abîmée, parce que rien ne le sait. Prétendre la situer reviendrait à croire un
+ * en-tête que rien n'authentifie. Relevé en revue : le refus tombe aussi quand c'est la racine
+ * ANCIENNE qui a été abîmée — une avarie sans conséquence —, et c'est le prix de la règle.
  */
 export function racineAbimeeSansTemoin(volume, { abimees, sequenceRetenue }) {
   return new StorageError(
     STORAGE_ERROR_CODES.generationRootCorrupt,
-    `Journal de génération du volume « ${volume} » refusé : ${abimees} racine(s) abîmée(s) à côté de la racine de séquence ${sequenceRetenue}, qui reste lisible, et AUCUN témoin ne dit laquelle faisait autorité. Deux lectures, que rien ici ne distingue : une coupure pendant l'écriture de la racine, dont le témoin a été perdu ensuite, ou une racine détruite pour faire reculer le volume d'une génération. Continuer sur la racine lisible perdrait peut-être une écriture acquittée. Le volume n'est pas modifié ; restaurer une sauvegarde (#12) est le remède.`,
+    `Journal de génération du volume « ${volume} » refusé : ${abimees} racine(s) abîmée(s) à côté de la racine de séquence ${sequenceRetenue}, qui reste lisible, et AUCUN témoin ne dit laquelle faisait autorité. Une racine illisible n'a plus de séquence lisible : elle portait ${sequenceRetenue - 1} — une avarie sans conséquence, typiquement une coupure pendant sa propre écriture — ou ${sequenceRetenue + 1}, et le volume a alors RECULÉ d'une génération. Rien ici ne dit laquelle, et continuer sur la racine lisible perdrait peut-être une écriture acquittée. Le volume n'est pas modifié ; restaurer une sauvegarde (#12) est le remède.`,
     { volume, abimees, sequenceRetenue },
   );
 }
