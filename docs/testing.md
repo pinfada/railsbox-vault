@@ -356,6 +356,30 @@ la racine de #18, `scellerFraicheur` y pose l'empreinte de #19 — puis rejoué 
 montre d'abord que le volume ne porte RIEN de cette génération, et il est pris sans ouvrir de
 magasin, puisqu'en ouvrir un rejouerait justement ce qu'il doit trouver absent.
 
+**Le champ de format est éprouvé dans les DEUX sens, et une revue a montré pourquoi il le fallait.**
+L'énoncé de la spécification était symétrique — « le retourner fait ouvrir les enregistrements sous
+l'autre étiquette » — et sa preuve ne l'était pas : seul 3 → 4 était joué, c'est-à-dire le sens
+qu'un volume de production ne rencontre jamais. Le sens 4 → 3 est désormais joué sur un journal que
+le produit vient d'écrire, et le cas de la racine VIDE l'est aussi — il montre que le retournement y
+est sans effet sur la sûreté mais pas sur ce que le rapport ANNONCE, ce qui est la réserve que le §
+6.8 porte maintenant sur `journalFormatAnnonce`.
+
+**La matrice de #15 mesure de nouveau le chemin de scellement du PRODUIT.** Le couplage entre le
+format du journal et la source de fraîcheur avait un effet que personne n'avait vu : la machine
+jetable de `src/vm/crash-machine.mjs` déclarait n'avoir aucune fraîcheur, donc écrivait le journal
+de #18, donc scellait ses enregistrements sous l'ancienne étiquette. `vm-crash-matrice.test.mjs`,
+`vm-crash-mutation.test.mjs` et `vm-crash-armement.test.mjs` — vingt-trois épreuves — cessaient
+ainsi de mesurer ce qu'elles prétendaient mesurer. La machine fournit désormais une source de
+fraîcheur ; le taux « ancien ou nouveau » reste à 100 % et la répartition reste celle de la VM, ce
+qui était la condition pour que le relevé de #15, #16 et #19 reste comparable point pour point.
+
+**Ce qui tient la borne, et qui n'est pas une phrase.** Le format qu'une session écrit suit sa
+source de fraîcheur ; une session sans source écrit le journal de #18, enregistrements compris.
+`tests/unit/harnais-portes.test.mjs` › « aucun OUVREUR SANS FRAÎCHEUR n'est un module de src/ »
+tient la liste des franchissements et refuse tout module du chemin de production ; les deux entrées
+restantes sont des bancs de mesure, avec leur motif écrit. Le balayage est lui-même mordu dans les
+deux sens, pour qu'il ne prenne pas la prose des modules de format pour un appel.
+
 ## La FRAÎCHEUR du volume, et ce qu'elle ne promet pas (#19)
 
 #18 avait armé le format ; #19 arme les CONTRÔLES. Jusqu'à cette tranche, `sequenceMinimale` et
