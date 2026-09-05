@@ -321,6 +321,41 @@ disposition est l'[ADR 0016](decisions/0016-format-de-volume-v3-dispositions.md)
 | résilience | `tests/vm/durability-barrier.spec.mjs`         | `SEC-DURABLE-001` sur des octets **chiffrés**       | `npm run test:vm` |
 | résilience | `tests/vm/recuperation-generation.spec.mjs`    | durée d'une récupération **avec déchiffrement**     | `npm run test:vm` |
 
+## L'identité d'un ENREGISTREMENT, et le format de journal 4 (#143)
+
+Le constat HIGH [#143](https://github.com/pinfada/railsbox-vault/issues/143), venu de la pré-revue
+adverse de #20, a montré qu'un enregistrement du journal et un secteur du volume à la même adresse,
+même génération, rang 0 — le cas NOMINAL — portaient des données associées identiques octet pour
+octet. Les décisions sont les amendements du 5 septembre 2026 à
+l'[ADR 0016](decisions/0016-format-de-volume-v3-dispositions.md) et à
+l'[ADR 0019](decisions/0019-fraicheur-du-volume.md).
+
+| Niveau   | Fichier                                   | Ce qu'il éprouve                                              | Rattachement    |
+| -------- | ----------------------------------------- | ------------------------------------------------------------- | --------------- |
+| unitaire | `tests/unit/vm-identite-magasin.test.mjs` | l'épissage d'un enregistrement dans la région et la charge    | `npm run check` |
+| unitaire | `tests/unit/vm-journal-format-4.test.mjs` | le format 4, et le rejeu transitoire d'un journal de format 3 | `npm run check` |
+
+**L'épreuve d'épissage part des OCTETS DU PRODUIT, pas d'une maquette.** La région
+d'authentification et la charge sont écrites par `VolumeChiffre`, le journal par `GenerationStore`,
+et les deux partagent un scellement — exactement la topologie que l'ouvreur assemble. Ce qui est
+épissé est le premier enregistrement d'une charge qui en porte deux à la même adresse : le point de
+contrôle range le second, si bien que le volume et le journal détiennent, pour la même adresse et la
+MÊME génération, deux clairs différents.
+
+**Les trois états sont joués un par un**, et chacun est atteint par le chemin normal puis VÉRIFIÉ
+dans le rapport d'ouverture : `non-fournie` (magasin sans source de région), `sans-racine` (journal
+retiré, comme après une restauration d'archive), `migree` (racine sans empreinte). Les résumer par
+un seul cas aurait laissé croire que la garde tient là où elle n'avait pas été exercée.
+
+**Le témoin positif est dans le même fichier** : sans épissage, le secteur rangé par le point de
+contrôle se relit. Sans lui, un lecteur qui refuserait tout passerait pour corrigé.
+
+**La compatibilité est éprouvée comme une PERTE POSSIBLE, pas comme une case à cocher.** Le journal
+de format 3 est fabriqué par deux gestes du produit — un magasin sans fraîcheur écrit la charge et
+la racine de #18, `scellerFraicheur` y pose l'empreinte de #19 — puis rejoué : le témoin négatif
+montre d'abord que le volume ne porte RIEN de cette génération, et il est pris sans ouvrir de
+magasin, puisqu'en ouvrir un rejouerait justement ce qu'il doit trouver absent.
+
 ## La FRAÎCHEUR du volume, et ce qu'elle ne promet pas (#19)
 
 #18 avait armé le format ; #19 arme les CONTRÔLES. Jusqu'à cette tranche, `sequenceMinimale` et
