@@ -397,6 +397,12 @@ export function fraicheurDesarmee(volume, temoin) {
  * volume neuf ne produit pas (aucune racine abîmée), qu'un volume restauré ne produit pas (aucun
  * `.gen` après `discardGeneration`), et qu'un premier point de contrôle ne produit pas non plus.
  *
+ * **Cette garde-ci ne compare AUCUNE séquence, et c'est délibéré** : elle ne juge que la PRÉSENCE
+ * d'un témoin. Départager « concordant » de « en avance » demande d'ouvrir la racine, donc de
+ * vérifier son étiquette, et c'est le travail de `ouvrirRacine` sous le plancher de séquence — un
+ * refus établi plutôt qu'une comparaison sur des octets non authentifiés. Les deux cas se
+ * distinguent donc plus loin, et non ici.
+ *
  * Il vit dans la GARDE, et non dans le magasin, pour la raison que la garde porte déjà : le magasin
  * décide de l'état d'une génération, la garde décide de ce qu'un support a le droit de PRÉTENDRE.
  * C'en est exactement une — et cela rend structurel le fait qu'un magasin sans fraîcheur, qui ne
