@@ -330,7 +330,7 @@ export class GenerationStore {
     // diagnostic. Puis la FRAÎCHEUR, avant que le moindre secteur ne soit lu ou écrit — un volume
     // dont la région ne concorde plus ne doit rendre aucun clair, fût-il authentique.
     exigerIdentiteDeVolume(this.#volume, this.#scellement.volume, constat.racine);
-    await this.#garde?.confronter(constat.racine);
+    await this.#garde?.confronter(constat.racine, constat.abimees);
 
     // Le format du journal TROUVÉ, avant que le vidage n'écrive une racine neuve (#143).
     this.#formatAnnonceTrouve = constat.racine?.format ?? null;
