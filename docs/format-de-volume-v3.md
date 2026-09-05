@@ -1444,11 +1444,12 @@ sain irouvrable, sous un message qui recommande une restauration — le remède 
 recevoir. Aucun geste de sortie n'est nommé dans ce document pour cet état.
 
 **[#143](https://github.com/pinfada/railsbox-vault/issues/143) — L'identité logique ne sépare pas un
-enregistrement de journal d'un secteur de volume. CORRIGÉ, commit `51ba8e0`.** Le § 5.4 affirmait, à
-tort, que « le rang sépare des identités qui partageraient tout le reste » et présentait le rang 0
-comme identifiant sans ambiguïté « un secteur du volume » : le premier enregistrement déposé dans
-une charge de journal porte lui aussi le rang 0, sous une identité par ailleurs identique dans le
-cas nominal d'une écriture alignée sur 512 octets. Ce n'était donc pas le rang qui séparait les deux
+enregistrement de journal d'un secteur de volume. CORRIGÉ par la
+[PR #146](https://github.com/pinfada/railsbox-vault/pull/146).** Le § 5.4 affirmait, à tort, que «
+le rang sépare des identités qui partageraient tout le reste » et présentait le rang 0 comme
+identifiant sans ambiguïté « un secteur du volume » : le premier enregistrement déposé dans une
+charge de journal porte lui aussi le rang 0, sous une identité par ailleurs identique dans le cas
+nominal d'une écriture alignée sur 512 octets. Ce n'était donc pas le rang qui séparait les deux
 magasins, mais l'empreinte de région (§ 6.8) — absente des trois états `non-fournie`, `sans-racine`
 et `migree`, qui restaient exposés à la substitution du contenu d'un secteur par celui, différent,
 que le journal détient pour la même adresse et la même génération.

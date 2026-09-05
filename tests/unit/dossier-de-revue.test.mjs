@@ -52,6 +52,12 @@ const COMMIT_TEMOIN =
 /** Une empreinte qui n'est PAS un commit : celle que la revue a employée pour montrer le défaut. */
 const DEADBEE = "`deadbee`";
 
+/** La PR de cette correction, telle que le registre la cite. Le dossier la reprend. */
+const PR_REELLE = "[PR #146](https://github.com/pinfada/railsbox-vault/pull/146)";
+
+/** Une PR que le dossier ne cite nulle part : la garde doit la refuser. */
+const PR_INVENTEE = "[PR #999999](https://github.com/pinfada/railsbox-vault/pull/999999)";
+
 /**
  * Les quatre familles de refus que la spécification doit couvrir, code par code : format chiffré,
  * stockage, enveloppe de clé, dérivation des clés de déverrouillage. Les autres familles
@@ -303,10 +309,16 @@ test("les vecteurs de disposition annoncent le format que le code écrit", async
  *    par `SECURITY.md`. Le recoupement est INTERNE, et il faut le dire : il ne prouve pas qu'un
  *    tiers a envoyé le constat, il prouve que le registre et le dossier parlent des mêmes numéros ;
  *  - la SÉVÉRITÉ et la DISPOSITION appartiennent au vocabulaire fermé du gabarit ;
- *  - la PREUVE existe VRAIMENT : chaque empreinte citée doit être un commit de ce dépôt — c'est le
- *    seul contrôle que rien de rédactionnel ne peut satisfaire —, et chaque ADR cité doit être un
- *    fichier de `docs/decisions/`. Une disposition « corrigé » exige au moins un commit : une
- *    correction sans commit n'est pas une correction.
+ *  - la PREUVE d'une disposition « corrigé » est le NUMÉRO DE PR, et son numéro doit être repris par
+ *    le dossier. Ce n'est pas l'empreinte d'un commit, et c'est une correction : ce dépôt fusionne
+ *    par « rebase and merge », si bien que GitHub RÉÉCRIT les empreintes en les portant sur `main`.
+ *    Une garde adossée à une empreinte rougirait donc dans un clone frais dès la fusion — la
+ *    première rédaction de cette garde citait déjà une empreinte périmée par un simple rebasage.
+ *    Un numéro de PR, lui, ne bouge pas ;
+ *  - une EMPREINTE reste ADMISE en plus, jamais requise : si une ligne en cite une, elle doit être un
+ *    commit de ce dépôt. Ce contrôle-là est le seul que rien de rédactionnel ne puisse satisfaire, et
+ *    il garde toute sa valeur tant que l'empreinte citée existe encore ;
+ *  - chaque ADR cité doit être un fichier de `docs/decisions/`.
  *
  * Tout est HORS LIGNE : `git cat-file` lit le dépôt local, aucune requête réseau n'est faite. Une
  * garde qui appellerait GitHub ne serait pas rejouable par un relecteur hors ligne, et rougirait
@@ -317,7 +329,7 @@ test("les vecteurs de disposition annoncent le format que le code écrit", async
  *           numerosDuDossier: Set<string> }} monde
  * @returns {string[]} un défaut par manquement, vide si le registre est opposable
  */
-function defautsDuRegistre(registre, { commitExiste, adrExiste, numerosDuDossier }) {
+function defautsDuRegistre(registre, { commitExiste, adrExiste, numerosDuDossier, prsDuDossier }) {
   const defauts = [];
   const lignes = registre
     .split("\n")
@@ -351,17 +363,26 @@ function defautsDuRegistre(registre, { commitExiste, adrExiste, numerosDuDossier
 
     const empreintes = [...preuve.matchAll(/`([0-9a-f]{7,40})`/g)].map((trouve) => trouve[1]);
     const adrs = [...preuve.matchAll(/ADR\s*(\d{4})/g)].map((trouve) => trouve[1]);
+    const prs = [...preuve.matchAll(/pinfada\/railsbox-vault\/pull\/(\d+)/g)].map(
+      (trouve) => trouve[1],
+    );
+    // Une empreinte est ADMISE, jamais requise — mais si elle est là, elle doit désigner un commit.
     for (const sha of empreintes) {
       if (!commitExiste(sha)) defauts.push(`« ${sha} » n'est pas un commit de ce dépôt`);
     }
     for (const numero of adrs) {
       if (!adrExiste(numero)) defauts.push(`l'ADR ${numero} n'existe pas dans docs/decisions/`);
     }
-    if (empreintes.length === 0 && adrs.length === 0) {
+    for (const numero of prs) {
+      if (!prsDuDossier.has(numero)) {
+        defauts.push(`PR #${numero} absente du dossier (spécification § 9.6 ou SECURITY.md)`);
+      }
+    }
+    if (empreintes.length === 0 && adrs.length === 0 && prs.length === 0) {
       defauts.push(`preuve absente : « ${preuve} »`);
     }
-    if (disposition === "corrigé" && empreintes.length === 0) {
-      defauts.push("une disposition « corrigé » doit citer le commit qui corrige");
+    if (disposition === "corrigé" && prs.length === 0) {
+      defauts.push("une disposition « corrigé » doit citer la PR qui corrige");
     }
   }
   return defauts;
@@ -387,43 +408,56 @@ function adrExiste(numero) {
   );
 }
 
-/** Les numéros d'issue que le DOSSIER porte : la spécification (§ 9.6) et `SECURITY.md`. */
-async function numerosDuDossier() {
+/**
+ * Ce que le DOSSIER — la spécification et `SECURITY.md` — cite comme issues et comme PR.
+ *
+ * Les deux recoupements sont INTERNES et de même nature : ils établissent que le registre et le
+ * dossier parlent des mêmes numéros, pas qu'un tiers a envoyé le constat. Ils sont construits
+ * ensemble pour que la règle reste une, et rendus au monde de la garde plutôt que lus par elle : une
+ * fonction pure se MORD, une fonction qui lit des fichiers se contourne.
+ */
+async function dossier() {
   const texte = `${await lire(SPEC)}\n${await lire(SECURITY)}`;
-  return new Set(
-    [...texte.matchAll(/pinfada\/railsbox-vault\/issues\/(\d+)/g)].map(
-      (occurrence) => occurrence[1],
-    ),
-  );
+  const numeros = (quoi) =>
+    new Set(
+      [...texte.matchAll(new RegExp(`pinfada/railsbox-vault/${quoi}/(\\d+)`, "g"))].map(
+        (occurrence) => occurrence[1],
+      ),
+    );
+  return {
+    commitExiste,
+    adrExiste,
+    numerosDuDossier: numeros("issues"),
+    prsDuDossier: numeros("pull"),
+  };
 }
 
 test("le registre porte ses quatre colonnes, et chaque ligne est OPPOSABLE", async () => {
   const registre = await lire("docs/revue-externe/registre.md");
-  for (const colonne of ["constat", "sévérité", "disposition", "commit"]) {
+  for (const colonne of ["constat", "sévérité", "disposition", "preuve"]) {
     assert.match(
       registre.toLowerCase(),
       new RegExp(`\\|[^\\n]*${colonne}`, "i"),
       `le registre doit porter une colonne « ${colonne} ».`,
     );
   }
-  const defauts = defautsDuRegistre(registre, {
-    commitExiste,
-    adrExiste,
-    numerosDuDossier: await numerosDuDossier(),
-  });
+  const defauts = defautsDuRegistre(registre, await dossier());
   assert.deepEqual(defauts, [], "Ces lignes du registre ne sont pas opposables.");
 });
 
 test("la garde du registre MORD : une ligne inventée est refusée sur chacun de ses défauts", async () => {
   // C'est l'épreuve que la revue du format persistant réclamait, et elle rejoue SA reproduction :
-  // une issue qui n'existe pas, une empreinte qui n'est pas un commit. La garde précédente rendait
-  // VERT sur cette ligne-là. Sans ce contrôle négatif, rien ne dirait que la nouvelle mord — un
-  // balayage à vide passe toujours.
-  const monde = { commitExiste, adrExiste, numerosDuDossier: await numerosDuDossier() };
+  // une issue qui n'existe pas, une empreinte qui n'est pas un commit — et, depuis que la preuve
+  // d'une correction est un numéro de PR, une PR que le dossier ne cite nulle part. La garde
+  // d'origine rendait VERT sur cette ligne-là. Sans ce contrôle négatif, rien ne dirait que la
+  // nouvelle mord : un balayage à vide passe toujours.
+  const monde = await dossier();
   const inventee = [
-    "| Constat | Sévérité | Disposition | Commit ou ADR |",
-    "| ------- | -------- | ----------- | ------------- |",
+    "| Constat | Sévérité | Disposition | Preuve |",
+    "| ------- | -------- | ----------- | ------ |",
     "| [#999999](https://github.com/pinfada/railsbox-vault/issues/999999) — inventé | CRITICAL | corrigé | " +
+      PR_INVENTEE +
+      " ; " +
       DEADBEE +
       " |",
   ].join("\n");
@@ -434,8 +468,12 @@ test("la garde du registre MORD : une ligne inventée est refusée sur chacun de
     `l'empreinte inventée doit être refusée : ${JSON.stringify(defauts)}`,
   );
   assert.ok(
-    defauts.some((defaut) => defaut.includes("#999999")),
+    defauts.some((defaut) => defaut.includes("issue #999999")),
     `l'issue inventée doit être refusée : ${JSON.stringify(defauts)}`,
+  );
+  assert.ok(
+    defauts.some((defaut) => defaut.includes("PR #999999")),
+    `la PR inventée doit être refusée : ${JSON.stringify(defauts)}`,
   );
 
   // TÉMOIN POSITIF de la garde elle-même, sur le MÊME chemin de code : le registre réel passe. Une
@@ -447,10 +485,10 @@ test("la garde du registre MORD : une ligne inventée est refusée sur chacun de
 test("la garde du registre refuse une sévérité, une disposition ou une preuve hors règle", async () => {
   // Chaque branche du vocabulaire fermé est mordue une fois : sans cela, une seule d'entre elles
   // pourrait cesser de mordre sans que rien ne le dise.
-  const monde = { commitExiste, adrExiste, numerosDuDossier: await numerosDuDossier() };
+  const monde = await dossier();
   const entete = [
-    "| Constat | Sévérité | Disposition | Commit ou ADR |",
-    "| ------- | -------- | ----------- | ------------- |",
+    "| Constat | Sévérité | Disposition | Preuve |",
+    "| ------- | -------- | ----------- | ------ |",
   ];
   const ligne = (severite, disposition, preuve) =>
     defautsDuRegistre(
@@ -461,15 +499,21 @@ test("la garde du registre refuse une sévérité, une disposition ou une preuve
       monde,
     );
 
-  assert.ok(ligne("GRAVE", "corrigé", COMMIT_TEMOIN).some((d) => d.includes("sévérité")));
-  assert.ok(ligne("HIGH", "classé", COMMIT_TEMOIN).some((d) => d.includes("disposition")));
+  assert.ok(ligne("GRAVE", "corrigé", PR_REELLE).some((d) => d.includes("sévérité")));
+  assert.ok(ligne("HIGH", "classé", PR_REELLE).some((d) => d.includes("disposition")));
   assert.ok(ligne("HIGH", "accepté", "aucune").some((d) => d.includes("preuve absente")));
   assert.ok(ligne("HIGH", "accepté", "ADR 9999").some((d) => d.includes("ADR 9999")));
   assert.ok(
-    ligne("HIGH", "corrigé", "ADR 0016").some((d) => d.includes("doit citer le commit")),
-    "une correction sans commit doit être refusée",
+    ligne("HIGH", "corrigé", "ADR 0016").some((d) => d.includes("doit citer la PR")),
+    "une correction sans PR doit être refusée",
   );
-  assert.deepEqual(ligne("HIGH", "corrigé", COMMIT_TEMOIN), []);
+  // Une EMPREINTE est admise en plus d'une PR, jamais à sa place — et elle doit exister.
+  assert.deepEqual(ligne("HIGH", "corrigé", `${PR_REELLE} ; ${COMMIT_TEMOIN}`), []);
+  assert.ok(
+    ligne("HIGH", "corrigé", `${PR_REELLE} ; ${DEADBEE}`).some((d) => d.includes("deadbee")),
+    "une empreinte citée doit exister, même quand elle n'est pas requise",
+  );
+  assert.deepEqual(ligne("HIGH", "corrigé", PR_REELLE), []);
 });
 
 test("SECURITY.md statue sur CHAQUE invariant, et la preuve citée existe", async () => {

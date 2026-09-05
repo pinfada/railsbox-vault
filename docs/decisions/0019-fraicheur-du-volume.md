@@ -506,4 +506,5 @@ comportement : la migration ne change ni le volume ni la RAM invitée. Épreuve 
 `tests/unit/vm-journal-format-4.test.mjs` › « la migration 3 → 4 n'écrit AUCUN octet du volume : un
 instantané de reprise y survit ».
 
-Correction portée par le commit `51ba8e0`. Épreuves : `tests/unit/vm-journal-format-4.test.mjs`.
+Correction portée par la [PR #146](https://github.com/pinfada/railsbox-vault/pull/146). Épreuves :
+`tests/unit/vm-journal-format-4.test.mjs`.

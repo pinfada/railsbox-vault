@@ -783,4 +783,5 @@ du produit n'ouvre sans source, et c'est mesuré plutôt qu'affirmé :
 Ce qui est fermé est l'attaque **continue** sur un volume du produit : un adversaire qui lit l'OPFS
 n'y trouve plus d'enregistrement épissable.
 
-Correction portée par le commit `51ba8e0`. Épreuves : `tests/unit/vm-identite-magasin.test.mjs`.
+Correction portée par la [PR #146](https://github.com/pinfada/railsbox-vault/pull/146). Épreuves :
+`tests/unit/vm-identite-magasin.test.mjs`.
