@@ -22,6 +22,28 @@
 // exige une version et un ADR. `tests/unit/dossier-de-revue.test.mjs` et
 // `tools/verifier-vecteurs.mjs` sont là pour que ce changement se voie.
 //
+// ## LE DIFF DE CE FICHIER N'EST PAS LA PREUVE, et il faut le dire
+//
+// Une revue l'a mesuré : sur les 155 champs feuilles du document, **37 bougent à chaque
+// régénération** — tous les nonces, donc tous les chiffrés, toutes les étiquettes, l'empreinte de
+// région, le témoin et la racine. Un changement de FOND — l'étiquette de domaine d'un enregistrement,
+// par exemple — y est donc indiscernable du bruit, et un relecteur qui lirait le diff pour vérifier
+// que les secteurs du volume n'ont pas bougé ne le verrait pas.
+//
+// **Ce qui prouve, c'est `node tools/verifier-vecteurs.mjs`** : il réimplémente les encodages depuis
+// `docs/format-de-volume-v3.md`, sans importer une ligne du produit, épingle en dur le format de
+// journal attendu, exige que les données associées d'un enregistrement diffèrent de celles du
+// secteur homologue, et rejoue le constat #143 en contrôle vert. Et `format-chiffre-v1.json` — les
+// vecteurs du MODÈLE, qui portent les blocs et les racines — n'est pas régénéré par ce script : son
+// intégrité se lit, elle, directement au diff.
+//
+// **Pourquoi pas une source de nonces déterministe ici**, qui rendrait le diff lisible : parce que
+// `src/vm/scellement.mjs` garde cette porte par un jeton, et que `tests/unit/harnais-portes.test.mjs`
+// tient la liste de ses APPELANTS VIDE — c'est la propriété elle-même, pas une commodité. Inscrire un
+// outil dans cette liste échangerait une propriété de sécurité contre un confort de relecture, pour
+// un gain que la revue elle-même a qualifié de faible puisque la preuve est ailleurs. Un relecteur
+// qui veut voir le seul changement de fond compare les DONNÉES ASSOCIÉES, que le vérificateur
+// recalcule, et non les chiffrés.
 // La clé employée est PUBLIQUE et volontairement sans entropie (0x00 à 0x1f) : c'est celle du
 // harnais et celle des vecteurs de l'ADR 0015, sans quoi les deux documents ne parleraient pas du
 // même volume.

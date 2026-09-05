@@ -461,9 +461,9 @@ qui termine toute récupération écrit ensuite une racine de format 4 ; la fen�
 une ouverture**, comme celle du format 2 que la décision 2 décrit déjà. Aucun refus n'est ajouté, et
 aucun n'est retiré.
 
-**Le rapport d'ouverture publie `journalFormat`** : le format TROUVÉ, avant que le vidage n'écrive
-une racine neuve, ou `null` si aucune racine ne faisait autorité. Un contrôle qu'on ne publie pas
-finit par être supposé actif ; il en va de même d'une migration.
+**Le rapport d'ouverture publie `journalFormatAnnonce`** : le format TROUVÉ, avant que le vidage
+n'écrive une racine neuve, ou `null` si aucune racine ne faisait autorité. Un contrôle qu'on ne
+publie pas finit par être supposé actif ; il en va de même d'une migration.
 
 **Ce que le champ de format laisse ouvert, et qui ne change pas.** Il n'est pas authentifié — il
 localise, il n'autorise pas (décision 2) — et les formats 3 et 4 ayant la même disposition, aucune
@@ -473,5 +473,37 @@ jamais un clair ; sur une racine VIDE — l'état d'un journal au repos — il n
 interdit de rejouer un vrai journal de format 3 à côté d'un volume plus récent reste ce qui
 l'interdisait déjà : le plancher de séquence du témoin et l'empreinte de région que sa racine
 scelle.
+
+**Ce que ce bond ne déplace PAS : `minWriter`.** Un format de journal ne touche pas le plancher
+d'écriture du manifeste, et la question mérite d'être tranchée plutôt que laissée en suspens — une
+revue a relevé qu'aucun document ne prononçait le mot. La décision est **non**, pour trois raisons
+qui tiennent ensemble : le manifeste v3 ne change pas d'un champ ; le journal est **transitoire** et
+ne porte aucun octet du volume, alors que le contrat de compatibilité de l'ADR 0011 porte sur le
+format de VOLUME ; et le refus a lieu de toute façon, mais **au journal, pas au manifeste**. Un
+runtime antérieur ouvre donc le manifeste, atteint le journal, et refuse — de manière typée, avant
+toute écriture, sans écarter la moindre génération validée. Ce qu'il ne fait pas est nommer le bon
+remède ; ce point est écrit au § 6.7 de `docs/format-de-volume-v3.md`. **La génération validée qui
+reste dans le journal n'est pas perdue** : elle se récupère en relançant un runtime récent, qui la
+rejoue. Hausser `minWriter` aurait déplacé le refus plus tôt sans rien sauver de plus, au prix d'un
+plancher que le format de volume ne justifie pas.
+
+**Le rapport publie `journalFormatAnnonce`, et son nom porte sa réserve.** Il s'appelait
+`journalFormat` : le format TROUVÉ à l'ouverture, avant que le vidage n'écrive une racine neuve, ou
+`null` si aucune racine ne faisait autorité. Une revue a montré qu'il est lu à l'offset 8 de la
+racine, champ que la décision 2 laisse **non authentifié** — un adversaire le choisit, dans les deux
+sens, et un volume entièrement migré peut donc s'annoncer au format 3. Le renommer était le geste
+juste : un contrôle qu'on ne publie pas finit par être supposé actif, et un contrôle publié dont la
+valeur est choisie par l'adversaire finit par être cru. Ce qui reste ÉTABLI est le refus : sur une
+charge non vide, le retournement fait ouvrir les enregistrements sous l'autre étiquette, qui ne
+vérifie pas — dans les **deux** sens, désormais éprouvés tous les deux.
+
+**Un instantané de reprise (#65, ADR 0024) SURVIT à la migration 3 → 4.** La question était posée et
+sans réponse écrite. `confronterLiaison` compare l'identifiant de volume, la version de format du
+VOLUME, la génération, les deux empreintes, et la séquence par « ≥ » — jamais le format du journal.
+Or un instantané n'existe qu'au-dessus d'un journal AU REPOS, et migrer une racine vide n'écrit
+aucun octet du volume et n'avance que la séquence. L'instantané reste donc valide, ce qui est le bon
+comportement : la migration ne change ni le volume ni la RAM invitée. Épreuve :
+`tests/unit/vm-journal-format-4.test.mjs` › « la migration 3 → 4 n'écrit AUCUN octet du volume : un
+instantané de reprise y survit ».
 
 Correction portée par le commit `51ba8e0`. Épreuves : `tests/unit/vm-journal-format-4.test.mjs`.

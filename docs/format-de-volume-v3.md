@@ -671,8 +671,8 @@ donc par `VAULT_STORAGE_GENERATION_CORRUPT` — « restaurer une sauvegarde » �
 C'est le défaut que la revue de #110 avait relevé sur le format 1
 (`src/vm/generation-v1-rejeu.mjs`). Le vidage qui termine **toute** récupération écrit ensuite une
 racine de format 4 : la fenêtre dure exactement une ouverture, et le rapport d'ouverture la publie
-sous `journalFormat`. Épreuves : `tests/unit/vm-journal-format-4.test.mjs` › « un journal de format
-3 portant une génération VALIDÉE est rejoué sans perte » et
+sous `journalFormatAnnonce`. Épreuves : `tests/unit/vm-journal-format-4.test.mjs` › « un journal de
+format 3 portant une génération VALIDÉE est rejoué sans perte » et
 `tests/unit/vm-journal-format-4.test.mjs` › « après le rejeu, l'ouverture suivante trouve un journal
 de format 4 et ne rejoue rien ».
 
@@ -912,9 +912,30 @@ supposé actif :
 | `migree`      | la racine trouvée est d'avant l'ADR 0019 ; la prochaine portera l'empreinte     |
 | `verifiee`    | la région relue concorde avec l'empreinte que la dernière racine validée scelle |
 
-Le rapport publie aussi `journalFormat` : le format du journal **trouvé** à l'ouverture, avant que
-le vidage n'écrive une racine neuve, ou `null` si aucune racine ne faisait autorité. C'est lui qui
-dit d'un volume s'il a franchi le format 4 ou s'il attend encore de le faire (§ 6.6).
+Le rapport publie aussi `journalFormatAnnonce` : le format que la racine trouvée **déclare** à
+l'ouverture, avant que le vidage n'écrive une racine neuve, ou `null` si aucune racine ne faisait
+autorité.
+
+**Son nom porte sa réserve, et c'est une correction.** Ce champ s'appelait `journalFormat` et ce
+document lui donnait un sens d'exploitation — « il dit d'un volume s'il a franchi le format 4 ». Il
+est lu à l'offset 8 de la racine, qui **n'est pas authentifié** (§ 6.7) : un adversaire le choisit,
+dans les deux sens. Une revue l'a montré sur un journal AU REPOS, entièrement migré, dont le champ
+retourné 4 → 3 fait publier « format 3 » à une ouverture dont la fraîcheur est par ailleurs
+`verifiee`. La doctrine de ce dépôt étant qu'« un contrôle qu'on ne publie pas finit par être
+supposé actif », un contrôle publié dont la valeur est choisie par l'adversaire mérite la même
+franchise : le champ vaut comme état de migration **sur un journal que rien n'a touché**, et pas
+au-delà.
+
+Ce qui est ÉTABLI, en revanche, est ce que la récupération a fait : une charge non vide rejouée sous
+l'ancienne étiquette de domaine ne s'ouvre que si ses enregistrements y étaient réellement scellés
+(§ 6.6). Le retournement du champ sur une charge non vide est donc un **refus**, jamais un clair —
+dans les deux sens, et les deux sont éprouvés : `tests/unit/vm-journal-format-4.test.mjs` › « un
+journal de format 3 dont le NUMÉRO est retourné en 4 est refusé, jamais ouvert de travers » et
+`tests/unit/vm-journal-format-4.test.mjs` › « un journal de format 4 dont le NUMÉRO est retourné en
+3 est refusé : c'est le sens qu'un volume de production rencontre ». Sur une racine VIDE, aucun
+enregistrement n'est ouvert et le retournement ne change que ce que le rapport annonce :
+`tests/unit/vm-journal-format-4.test.mjs` › « sur une racine VIDE, le format retourné ne change que
+ce qui est ANNONCÉ ».
 
 ### 6.9 Le témoin `<volume>.temoin`
 
