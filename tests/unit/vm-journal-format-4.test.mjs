@@ -16,7 +16,7 @@
 //
 // Ce runtime le REJOUE donc une fois, sous l'ancien encodage, puis écrit du format 4 : le vidage qui
 // termine toute récupération s'en charge. La fenêtre dure exactement une ouverture, et le rapport la
-// PUBLIE (`journalFormat`) — un contrôle qu'on ne publie pas finit par être supposé actif.
+// PUBLIE (`journalFormatAnnonce`) — un contrôle qu'on ne publie pas finit par être supposé actif.
 //
 // ## Comment un journal de format 3 est fabriqué ici
 //
@@ -304,7 +304,7 @@ test("un journal de format 3 portant une génération VALIDÉE est rejoué sans 
   const ouverte = await session(cadre, fraicheurDuBanc(cadre));
   assert.equal(ouverte.magasin.rapport.etat, "rejouee", "la génération validée doit être REJOUÉE");
   assert.equal(
-    ouverte.magasin.rapport.journalFormat,
+    ouverte.magasin.rapport.journalFormatAnnonce,
     GENERATION_FORMAT_IDENTITE_DE_BLOC,
     "le rapport doit DIRE que le journal trouvé portait l'ancienne identité d'enregistrement.",
   );
@@ -327,11 +327,11 @@ test("après le rejeu, l'ouverture suivante trouve un journal de format 4 et ne 
   await journalDeFormat3(cadre, [[0, motif]]);
 
   const migrante = await session(cadre, fraicheurDuBanc(cadre));
-  assert.equal(migrante.magasin.rapport.journalFormat, GENERATION_FORMAT_IDENTITE_DE_BLOC);
+  assert.equal(migrante.magasin.rapport.journalFormatAnnonce, GENERATION_FORMAT_IDENTITE_DE_BLOC);
   fermer(cadre, migrante);
 
   const suivante = await session(cadre, fraicheurDuBanc(cadre));
-  assert.equal(suivante.magasin.rapport.journalFormat, GENERATION_FORMAT);
+  assert.equal(suivante.magasin.rapport.journalFormatAnnonce, GENERATION_FORMAT);
   assert.equal(suivante.magasin.rapport.etat, "aucune", "il n'y a plus rien à rejouer");
   assert.equal(suivante.magasin.rapport.enregistrementsRejoues, 0);
   // Et les octets rejoués une fois sont toujours là : le rejeu n'a pas été défait par la suite.
@@ -355,6 +355,123 @@ test("un journal de format 3 ABÎMÉ rend le même refus qu'avant, jamais un cla
   );
 });
 
+/** Retourne le NUMÉRO de format de la racine qui fait autorité, sans toucher à rien d'autre. */
+async function retournerLeFormat(cadre, sequence, format) {
+  const version = new Uint8Array(4);
+  new DataView(version.buffer).setUint32(0, format, true);
+  await ecrireDansLeJournal(cadre, offsetDeRacine(racineDeSequence(sequence)) + 8, version);
+}
+
+test("un journal de format 4 dont le NUMÉRO est retourné en 3 est refusé : c'est le sens qu'un volume de production rencontre", async () => {
+  // L'épreuve symétrique ne joue que 3 → 4, c'est-à-dire le sens qu'un volume de production ne
+  // rencontre PAS : ses journaux sont en 4. Une revue l'a relevé — l'énoncé du § 6.7 est symétrique,
+  // sa preuve ne l'était pas, et c'était justement la moitié qui protège les volumes déjà écrits.
+  const cadre = banc();
+  await (await volumeSeul(cadre)).scellerTout(0);
+
+  const ouverte = await session(cadre, fraicheurDuBanc(cadre));
+  await ouverte.magasin.deposer(0, buildPattern(SECTOR_SIZE, 81));
+  const sequence = await ouverte.magasin.valider();
+  fermer(cadre, ouverte);
+
+  const racine = racineDuJournal(cadre);
+  assert.equal(racine.format, GENERATION_FORMAT, "le produit écrit du format 4");
+  assert.equal(
+    racine.nombreEntrees,
+    1,
+    "la charge n'est pas vide : c'est ce qui donne son prix au refus",
+  );
+  assert.ok(sequence > 0);
+
+  await retournerLeFormat(cadre, racine.sequence, GENERATION_FORMAT_IDENTITE_DE_BLOC);
+  await assert.rejects(
+    () => session(cadre, fraicheurDuBanc(cadre)),
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.sceauRefuse),
+    "les enregistrements seraient ouverts sous l'étiquette d'un bloc, qui ne vérifie pas.",
+  );
+});
+
+test("sur une racine VIDE, le format retourné ne change que ce qui est ANNONCÉ", async () => {
+  // Le § 6.7 affirme que le retournement « ne change rien » sur une racine vide, puisque aucun
+  // enregistrement n'est ouvert. C'est vrai de la SÛRETÉ et faux du RAPPORT : une revue a montré
+  // qu'un volume entièrement migré publie alors « format 3 ». Le champ est une DÉCLARATION, et
+  // l'épreuve le tient plutôt que de laisser le § 6.8 l'affirmer seul.
+  const cadre = banc();
+  await (await volumeSeul(cadre)).scellerTout(0);
+
+  const ouverte = await session(cadre, fraicheurDuBanc(cadre));
+  await ouverte.magasin.deposer(0, buildPattern(SECTOR_SIZE, 82));
+  await ouverte.magasin.valider();
+  await ouverte.magasin.pointDeControle();
+  fermer(cadre, ouverte);
+
+  const auRepos = racineDuJournal(cadre);
+  assert.equal(auRepos.format, GENERATION_FORMAT);
+  assert.equal(auRepos.nombreEntrees, 0, "un point de contrôle laisse une racine VIDE");
+
+  await retournerLeFormat(cadre, auRepos.sequence, GENERATION_FORMAT_IDENTITE_DE_BLOC);
+
+  const apres = await session(cadre, fraicheurDuBanc(cadre));
+  assert.equal(apres.magasin.rapport.etat, "aucune", "rien n'est rejoué, rien n'est écarté");
+  assert.equal(
+    apres.magasin.rapport.journalFormatAnnonce,
+    GENERATION_FORMAT_IDENTITE_DE_BLOC,
+    "le rapport ANNONCE ce que la racine déclare, et c'est précisément la réserve du § 6.8.",
+  );
+  assert.equal(
+    apres.magasin.rapport.fraicheurRegion,
+    "verifiee",
+    "la fraîcheur, elle, est authentifiée : elle ne suit pas le champ retourné.",
+  );
+  // Et le vidage qui clôt la récupération remet du format 4 : l'annonce fausse ne survit pas.
+  assert.equal(racineDuJournal(cadre).format, GENERATION_FORMAT);
+  fermer(cadre, apres);
+});
+
+test("la migration 3 → 4 n'écrit AUCUN octet du volume : un instantané de reprise y survit", async () => {
+  // Question posée par le brief et laissée sans réponse jusqu'à la revue du format persistant. La
+  // réponse est « il survit », et c'est le bon choix : `confronterLiaison` (#65, ADR 0024) compare
+  // l'identifiant de volume, la version de format du VOLUME, la génération, les deux empreintes, et
+  // la séquence par « ≥ » — jamais le format du journal. Or la migration d'un journal AU REPOS —
+  // l'état d'un volume fermé proprement, donc le seul où un instantané existe — n'avance que la
+  // séquence. L'épreuve tient les deux moitiés du fait : le volume ne bouge pas d'un octet, et la
+  // génération non plus.
+  const cadre = banc();
+  await (await volumeSeul(cadre)).scellerTout(0);
+  await journalDeFormat3(cadre, [[0, buildPattern(SECTOR_SIZE, 83)]]);
+
+  // Le journal est ramené AU REPOS sous le format 3 : une session le rejoue, puis on refabrique un
+  // format 3 vide pour se placer dans l'état qu'un instantané accompagne réellement.
+  // Le rejeu se termine par un vidage, qui laisse déjà le journal AU REPOS : aucun point de
+  // contrôle n'est demandé ici. En avaler l'échec aurait masqué la seule chose qui compte.
+  const rejeu = await session(cadre, fraicheurDuBanc(cadre));
+  assert.equal(rejeu.magasin.rapport.etat, "rejouee");
+  fermer(cadre, rejeu);
+  const auRepos = racineDuJournal(cadre);
+  await retournerLeFormat(cadre, auRepos.sequence, GENERATION_FORMAT_IDENTITE_DE_BLOC);
+
+  const avant = {
+    volume: octetsEnHex(cadre.support),
+    racine: racineDuJournal(cadre),
+  };
+  assert.equal(avant.racine.format, GENERATION_FORMAT_IDENTITE_DE_BLOC);
+  assert.equal(avant.racine.nombreEntrees, 0, "au REPOS : la charge est vide");
+
+  const migrante = await session(cadre, fraicheurDuBanc(cadre));
+  const apres = racineDuJournal(cadre);
+  assert.equal(
+    octetsEnHex(cadre.support),
+    avant.volume,
+    "la migration 3 → 4 ne doit écrire AUCUN octet du volume : c'est ce qui laisse un instantané valide.",
+  );
+  assert.equal(apres.generation, avant.racine.generation, "la génération ne bouge pas");
+  assert.ok(
+    apres.sequence > avant.racine.sequence,
+    "seule la séquence avance, et la liaison la compare par ≥",
+  );
+  assert.equal(apres.format, GENERATION_FORMAT);
+  fermer(cadre, migrante);
+});
 test("un journal de format 3 dont le NUMÉRO est retourné en 4 est refusé, jamais ouvert de travers", async () => {
   // Le champ de format n'est pas authentifié, et les formats 3 et 4 ont la même disposition : aucune
   // garde de cohérence ne peut les distinguer comme celle qui distingue 2 de 3. Ce que le retournement

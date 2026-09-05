@@ -140,7 +140,7 @@ export class GenerationStore {
    */
   #temoinALOuverture = null;
   /** Format du journal TROUVÉ à l'ouverture, ou `null` : retenu à part comme la séquence du témoin. */
-  #journalFormatTrouve = null;
+  #formatAnnonceTrouve = null;
   /** Format que cette session ÉCRIT ; il fixe l'étiquette de ses enregistrements (#143). */
   #formatEcrit;
   /** Charge DÉPOSÉE : les entrées, la longueur des clairs, la longueur occupée sur le support. */
@@ -333,7 +333,7 @@ export class GenerationStore {
     await this.#garde?.confronter(constat.racine);
 
     // Le format du journal TROUVÉ, avant que le vidage n'écrive une racine neuve (#143).
-    this.#journalFormatTrouve = constat.racine?.format ?? null;
+    this.#formatAnnonceTrouve = constat.racine?.format ?? null;
     this.#rapport =
       constat.racine === null
         ? await this.#recupererSansRacine(constat)
@@ -408,8 +408,10 @@ export class GenerationStore {
         // être supposé actif. `non-fournie` dit qu'aucune fraîcheur n'est prétendue ; `migree` dit
         // qu'une racine d'avant #19 a été trouvée et que la suivante portera l'empreinte.
         fraicheurRegion: this.#garde?.etat ?? FRAICHEUR_ETATS.nonFournie,
-        // Un journal de format 3, rejoué sous l'ancienne étiquette de domaine, se voit ici (#143).
-        journalFormat: this.#journalFormatTrouve,
+        // Format que la racine trouvée DÉCLARE, et le nom le dit : le champ n'est pas authentifié
+        // (§ 6.7), un adversaire le choisit, et il ne vaut comme état de migration que sur un
+        // journal que rien n'a touché. C'est une DÉCLARATION, pas un constat (#143).
+        journalFormatAnnonce: this.#formatAnnonceTrouve,
         temoinSequence: this.#temoinALOuverture,
         ...details,
       },

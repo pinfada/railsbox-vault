@@ -167,24 +167,24 @@ et tester.
   ; la confidentialité en exploitation attend #21. La disposition sur disque est
   l'[ADR 0016](docs/decisions/0016-format-de-volume-v3-dispositions.md) : en-tête v3 d'un secteur,
   région d'authentification portant 34 octets par secteur logique — nonce 12, étiquette 16,
-  génération 6 —, charge chiffrée, racine de 136 octets sans CRC-32. Les vecteurs figés de #17 sont
-  reproduits OCTET POUR OCTET par le chemin de production (`tests/unit/vm-volume-chiffre.test.mjs`),
-  et sept refus y sont éprouvés sur ce même chemin : modification, déplacement d'adresse, autre
-  volume, autre format, autre génération, secteur en clair, racine altérée — plus le refus sans clé.
-  Deux défauts du modèle de référence ont été trouvés PAR EXÉCUTION en l'implémentant, et l'ADR 0016
-  les porte : le rescellement du point de contrôle n'avait pas de porte d'injection de nonce, donc
-  échappait aux vecteurs ; et l'encodage canonique des entrées débordait la pile d'appel au plafond
-  de charge de l'ADR 0014. **Un troisième constat porte sur l'ARCHIVE, et il est de sécurité** : le
-  chemin d'export lisait le volume par la lecture autorisée, qui déchiffre. Exporter un volume v3
-  par ce chemin aurait produit une archive **en clair** — le chiffrement au repos annulé dès que le
-  fichier quitte l'appareil, par omission et sans message. La tranche (a) l'a REFUSÉ plutôt que
-  rendu ; **depuis #101, l'export passe par un accès BRUT au fichier**
-  (`src/vm/opfs-volume-brut.mjs`), qui n'a ni clé ni géométrie logique et ne rend donc que du
-  chiffré. Une épreuve le montre au lieu de l'affirmer : le clair d'un secteur connu n'apparaît
-  nulle part dans le fichier exporté. **Une archive v3 se restaure sans clé et ne s'OUVRE pas sans
-  elle** : la sauvegarde d'un volume chiffré est la sauvegarde de deux choses, et ce dépôt n'en gère
-  qu'une avant #21 — perdre la clé, c'est perdre l'archive, et il faut le dire à l'utilisateur
-  plutôt que le lui laisser découvrir.
+  génération 6 —, charge chiffrée, racine de 202 octets sans CRC-32 (136 au format de journal 2 ;
+  voir le § 6.7 de la spécification, qui fait foi). Les vecteurs figés de #17 sont reproduits OCTET
+  POUR OCTET par le chemin de production (`tests/unit/vm-volume-chiffre.test.mjs`), et sept refus y
+  sont éprouvés sur ce même chemin : modification, déplacement d'adresse, autre volume, autre
+  format, autre génération, secteur en clair, racine altérée — plus le refus sans clé. Deux défauts
+  du modèle de référence ont été trouvés PAR EXÉCUTION en l'implémentant, et l'ADR 0016 les porte :
+  le rescellement du point de contrôle n'avait pas de porte d'injection de nonce, donc échappait aux
+  vecteurs ; et l'encodage canonique des entrées débordait la pile d'appel au plafond de charge de
+  l'ADR 0014. **Un troisième constat porte sur l'ARCHIVE, et il est de sécurité** : le chemin
+  d'export lisait le volume par la lecture autorisée, qui déchiffre. Exporter un volume v3 par ce
+  chemin aurait produit une archive **en clair** — le chiffrement au repos annulé dès que le fichier
+  quitte l'appareil, par omission et sans message. La tranche (a) l'a REFUSÉ plutôt que rendu ;
+  **depuis #101, l'export passe par un accès BRUT au fichier** (`src/vm/opfs-volume-brut.mjs`), qui
+  n'a ni clé ni géométrie logique et ne rend donc que du chiffré. Une épreuve le montre au lieu de
+  l'affirmer : le clair d'un secteur connu n'apparaît nulle part dans le fichier exporté. **Une
+  archive v3 se restaure sans clé et ne s'OUVRE pas sans elle** : la sauvegarde d'un volume chiffré
+  est la sauvegarde de deux choses, et ce dépôt n'en gère qu'une avant #21 — perdre la clé, c'est
+  perdre l'archive, et il faut le dire à l'utilisateur plutôt que le lui laisser découvrir.
   L'[ADR 0015](docs/decisions/0015-proprietes-cryptographiques-du-format.md) le définit ainsi : un
   bloc est scellé par AES-256-GCM (étiquette de 128 bits) dont les **données associées portent
   l'identité logique complète** — identifiant de volume, adresse logique, version de format,

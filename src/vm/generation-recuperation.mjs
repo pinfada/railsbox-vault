@@ -147,7 +147,7 @@ export function poserRapport({ volume, etat, generation, sequence, surmemoireMax
     // Il est déclaré ici comme les autres champs du rapport : un champ que seul l'appelant fournit
     // finit par manquer un jour, et personne ne le voit — le rapport est justement ce qui empêche un
     // contrôle d'être supposé actif.
-    journalFormat: null,
+    journalFormatAnnonce: null,
     // SURMÉMOIRE DE POINTE de la récupération, en octets : la plus grande allocation qu'elle a
     // faite pour elle-même. Publiée pour la même raison que l'export et la restauration publient
     // la leur (`docs/quality-attributes.md`) — un budget qu'on ne mesure pas n'est pas tenu, il
