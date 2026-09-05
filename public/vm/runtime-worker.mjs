@@ -32,7 +32,7 @@ import {
 import { decrireBoucle, installerBoucleOrdonnancement } from "/src/vm/scheduling-loop.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { BRIDGE_MODES } from "/src/vm/v86-flush-bridge.mjs";
-import { chargerAdressesV86, exigerAdresse } from "/src/v86-adresses.mjs";
+import { chargerAdressesV86, exigerAdresse, recupererArtefactV86 } from "/src/v86-adresses.mjs";
 
 /**
  * La boucle d'ordonnancement de v86 est posée À L'ÉVALUATION de ce module, donc avant tout import
@@ -51,18 +51,40 @@ const boucleOrdonnancement = installerBoucleOrdonnancement();
 const lireRejets = consignerRejetsNonTraites();
 
 /**
- * Adresses des artefacts v86, DÉRIVÉES de `vendor/v86/MANIFEST.json` (#123).
+ * Épinglage v86, DÉRIVÉ de `vendor/v86/MANIFEST.json` (#123).
  *
  * Aucun chemin d'artefact n'est écrit ici : depuis que l'adresse nomme l'empreinte, un chemin en
  * dur ne survivrait pas à une montée de version — il rendrait un 404 franc. Le manifeste est lu une
- * fois par exécution de ce Worker et la carte est mémorisée : c'est une indirection, pas une
- * requête de plus par artefact.
+ * fois par exécution de ce Worker et l'épinglage mémorisé : c'est une indirection, pas une requête
+ * de plus par artefact.
+ *
+ * Le manifeste est gardé avec les adresses, et pas seulement elles : c'est lui qui porte les 256
+ * bits que `recupererArtefactV86` confronte aux octets reçus. L'adresse n'en nomme que seize
+ * caractères ; sous un cache d'un an, ce qui est corrompu une fois est gardé un an.
  */
-let adressesV86 = null;
+let epinglageV86 = null;
 
-async function adresseDeLArtefact(nom) {
-  adressesV86 ??= (await chargerAdressesV86()).adresses;
-  return exigerAdresse(adressesV86, nom);
+async function epinglage() {
+  epinglageV86 ??= await chargerAdressesV86();
+  return epinglageV86;
+}
+
+/**
+ * Adresse du module de l'émulateur, ses octets AYANT ÉTÉ VÉRIFIÉS.
+ *
+ * `import()` ne rend pas d'octets : le chargeur de modules va les chercher lui-même, et rien ne
+ * permet de hacher ce qu'il a obtenu. La vérification passe donc par une récupération préalable à la
+ * même adresse — la seconde demande est servie par le cache HTTP, que #123 rend précisément long et
+ * immuable pour cette adresse-là.
+ *
+ * Ce que cela laisse ouvert, et il faut le nommer : entre la vérification et l'import, une origine
+ * HOSTILE pourrait servir d'autres octets. Cette vérification ne défend pas contre l'origine — elle
+ * défend contre l'ACCIDENT, et un accident ne change pas de réponse entre deux requêtes.
+ */
+async function adresseVerifieeDeLEmulateur() {
+  const { manifeste, adresses } = await epinglage();
+  await recupererArtefactV86("libv86.mjs", { manifeste, adresses });
+  return exigerAdresse(adresses, "libv86.mjs");
 }
 const SCENARIOS = { barrier: BARRIER_STEPS, filesystem: FILESYSTEM_STEPS };
 const encoder = new TextEncoder();
@@ -118,13 +140,11 @@ async function fetchBytes(name) {
   // `no-store` reste posé : ce banc MESURE des transferts, et une réponse servie depuis le cache
   // — désormais possible et voulue en production (#123) — fausserait `transferredBytes` et les
   // durées de boot. Ce que ce drapeau écarte est l'instrument, pas la politique.
-  const response = await fetch(await adresseDeLArtefact(name), { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(
-      `Artefact ${name} indisponible (${response.status}). Exécuter « npm run vm:fetch ».`,
-    );
-  }
-  return new Uint8Array(await response.arrayBuffer());
+  //
+  // L'empreinte est confrontée aux 256 bits du manifeste AVANT que les octets ne servent à
+  // quoi que ce soit : un refus typé y vaut mieux qu'un émulateur qui part sur des octets d'une
+  // autre version, dont la panne se déguiserait ensuite en guest lent.
+  return recupererArtefactV86(name, { ...(await epinglage()), requete: { cache: "no-store" } });
 }
 
 async function loadArtifacts() {
@@ -148,7 +168,7 @@ async function loadArtifacts() {
  * le module — que le navigateur peut d'ailleurs servir depuis son cache de modules.
  */
 async function acquerirRuntimeV86() {
-  const { V86 } = await import(await adresseDeLArtefact("libv86.mjs"));
+  const { V86 } = await import(await adresseVerifieeDeLEmulateur());
   const { artifacts, transferredBytes } = await loadArtifacts();
   return { V86, artifacts, transferredBytes };
 }

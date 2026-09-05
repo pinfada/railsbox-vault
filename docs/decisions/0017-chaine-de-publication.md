@@ -350,13 +350,23 @@ empreinte de racine reste celle de cette liste sous forme canonique triée (§ 5
 le contenu de la colonne `chemin` sous `vendor/v86/artefacts/`, et cela vaut d'être écrit ici parce
 que cela touche deux propriétés que cet ADR défend.
 
-**Le retour arrière (§ 7) gagne, et rien n'y est à reprendre.** Un ré-épinglage de l'émulateur
-déplaçait déjà l'empreinte de racine — l'empreinte du fichier changeait dans la liste. Il déplace
-désormais aussi le CHEMIN, si bien qu'une comparaison de deux inventaires montre l'ancienne et la
-nouvelle adresse sur deux lignes voisines, et non un même chemin portant deux empreintes. C'est un
-des critères qui a fait retenir la forme SUFFIXE — `libv86-<empreinte>.mjs` — plutôt qu'un
-répertoire `<empreinte>/` : la liste est triée par chemin, et un répertoire d'empreinte aurait
-dispersé les artefacts au hasard de leurs SHA-256.
+**Le retour arrière (§ 7) gagne en lisibilité, et sa PROCÉDURE change.** Un ré-épinglage de
+l'émulateur déplaçait déjà l'empreinte de racine — l'empreinte du fichier changeait dans la liste.
+Il déplace désormais aussi le CHEMIN, si bien qu'une comparaison de deux inventaires montre
+l'ancienne et la nouvelle adresse sur deux lignes voisines, et non un même chemin portant deux
+empreintes.
+
+Mais la première commande de la procédure documentée ne s'exécute plus telle qu'elle était écrite,
+et la revue de sécurité de #123 l'a relevé : depuis un poste à jour, un
+`node tools/publier.mjs --commit <ancien>` rend un **code 5** — les artefacts déclarés par le
+manifeste d'alors sont absents, ceux d'aujourd'hui sont présents et non déclarés. Le refus est
+CORRECT, et c'est même la propriété revendiquée au paragraphe suivant ; ce qui manquait est le
+REMÈDE. Il tient en deux commandes, désormais écrites dans `docs/release-policy.md` § « Retour
+arrière » et imprimées par l'outil lui-même quand la forme des écarts le désigne :
+`git checkout <ref> -- vendor/v86/MANIFEST.json`, puis `npm run vm:fetch`. C'est un des critères qui
+a fait retenir la forme SUFFIXE — `libv86-<empreinte>.mjs` — plutôt qu'un répertoire `<empreinte>/`
+: la liste est triée par chemin, et un répertoire d'empreinte aurait dispersé les artefacts au
+hasard de leurs SHA-256.
 
 **La règle « les artefacts v86 viennent de l'ARBRE DE TRAVAIL même sous `--commit` » devient
 autovérifiante.** Cette exception était nommée et bornée, et elle reposait sur la vérification

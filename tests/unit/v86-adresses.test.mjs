@@ -163,8 +163,25 @@ test("la copie du manifeste adressée par son empreinte relève du préfixe immu
 
 // --- Aucune adresse écrite en dur hors de la dérivation (critère 2 de #123) -----------------------
 
-/** Tout le code du dépôt : une adresse écrite en dur nuit d'où qu'elle vienne. */
-const RACINES = ["src", "public", "tools", "tests"];
+/**
+ * Tout ce que le dépôt EXÉCUTE ou SERT : une adresse écrite en dur nuit d'où qu'elle vienne.
+ *
+ * `.github` en fait partie depuis le constat 5 de la revue de sécurité : une étape de CI qui
+ * demanderait une adresse en dur rendrait un 404 au premier ré-épinglage, et la classe d'un an en
+ * allonge la traîne. Ce qui reste dehors est `docs/` — la prose a le droit de citer une adresse,
+ * c'est même ainsi que les ADR s'expliquent.
+ */
+const RACINES = ["src", "public", "tools", "tests", ".github"];
+
+/**
+ * Extensions balayées.
+ *
+ * Le cliquet ne retenait que `.mjs` et `.js`, alors qu'un `<link rel="preload">`, un `<script src>`
+ * ou une étape de workflow suffisent à figer une adresse — et aucun d'eux n'est du JavaScript
+ * (constat 5). Le dépouillement des commentaires ne vaut que pour le JavaScript ; pour les autres
+ * formats, la seule PRÉSENCE du préfixe interdit, ce qui est plus strict et c'est voulu.
+ */
+const EXTENSIONS = [".mjs", ".js", ".html", ".yml", ".yaml", ".json"];
 
 /**
  * Fichiers autorisés à écrire le préfixe d'adresses, avec leur motif.
@@ -197,11 +214,11 @@ async function parcourir(repertoire, trouves) {
   for (const entree of await readdir(repertoire, { withFileTypes: true })) {
     const complet = path.join(repertoire, entree.name);
     if (entree.isDirectory()) {
-      if (entree.name === "node_modules") continue;
+      if (entree.name === "node_modules" || entree.name === "artefacts") continue;
       await parcourir(complet, trouves);
       continue;
     }
-    if (entree.name.endsWith(".mjs") || entree.name.endsWith(".js")) trouves.push(complet);
+    if (EXTENSIONS.some((extension) => entree.name.endsWith(extension))) trouves.push(complet);
   }
 }
 
@@ -218,7 +235,8 @@ async function modules() {
  * dépend pour être lisible. Ce qui est refusé est de la CONSTRUIRE. Sans ce dépouillement,
  * l'épreuve pousserait à retirer les explications plutôt que les chemins.
  */
-function codeSeul(texte) {
+function codeSeul(texte, fichier) {
+  if (!fichier.endsWith(".mjs") && !fichier.endsWith(".js")) return texte;
   return texte.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/(^|[^:])\/\/.*$/gm, "$1");
 }
 
@@ -227,7 +245,7 @@ test("aucun module n'écrit en dur une adresse d'artefact v86", async () => {
   const coupables = [];
   for (const fichier of await modules()) {
     if (autorises.has(fichier)) continue;
-    const code = codeSeul(await readFile(path.join(REPO_ROOT, fichier), "utf8"));
+    const code = codeSeul(await readFile(path.join(REPO_ROOT, fichier), "utf8"), fichier);
     if (code.includes(PREFIXE_ADRESSES_V86)) coupables.push(fichier);
   }
   assert.deepEqual(
@@ -251,10 +269,29 @@ test("les autorisations sont à jour : aucune inscription périmée", async () =
 
 test("chaque chargeur de v86 lit le manifeste plutôt qu'un chemin", async () => {
   for (const fichier of CHARGEURS_DE_V86) {
-    const code = codeSeul(await readFile(path.join(REPO_ROOT, fichier), "utf8"));
+    const code = codeSeul(await readFile(path.join(REPO_ROOT, fichier), "utf8"), fichier);
     assert.ok(
       code.includes("v86-adresses.mjs"),
       `${fichier} charge le runtime v86 sans dériver son adresse du manifeste d'épinglage.`,
+    );
+  }
+});
+
+test("le balayage couvre RÉELLEMENT les documents servis et les workflows", async () => {
+  // Le cliquet ci-dessus déclare balayer « tout ce que le dépôt exécute ou sert ». Cette
+  // épreuve-ci le MESURE, parce que le constat 5 de la revue de sécurité est né exactement là :
+  // la déclaration disait « tout le code du dépôt » et le balayage ne voyait ni `.github/` ni les
+  // fichiers non-JavaScript. Deux adresses injectées — l'une dans un document servi, l'autre dans
+  // un workflow — passaient sans que rien ne bronche.
+  const balayes = await modules();
+  const attendus = [
+    { echantillon: "public/vm/reference.html", quoi: "un document SERVI" },
+    { echantillon: ".github/workflows/publication.yml", quoi: "une étape de CI" },
+  ];
+  for (const { echantillon, quoi } of attendus) {
+    assert.ok(
+      balayes.includes(echantillon),
+      `${echantillon} n'est pas balayé : ${quoi} pourrait figer une adresse sans être vu.`,
     );
   }
 });

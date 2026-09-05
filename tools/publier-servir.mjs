@@ -22,6 +22,7 @@ import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
 
 import { FICHIER_HEADERS, analyserHeaders, enTetesPour } from "./publier-en-tetes.mjs";
+import { enTetesDAbsence } from "./serve-headers.mjs";
 
 // L'analyseur du format `_headers` et l'application de ses règles vivent désormais dans le module
 // qui ÉCRIT le fichier (#103, ADR 0023) : depuis que la politique de cache varie par nature
@@ -84,7 +85,15 @@ export async function demarrer(options) {
       });
       createReadStream(candidat).pipe(reponse);
     } catch {
-      reponse.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("Not found");
+      // Le `_headers` de l'arbre annonce sa politique pour un CHEMIN ; ce serveur sert une
+      // RÉPONSE, et une absence n'est jamais cachable (constat 1 de la revue de #123). Sans cela,
+      // un 404 sous `/vendor/v86/artefacts/*` partirait avec un an d'`immutable`.
+      reponse
+        .writeHead(404, {
+          "Content-Type": "text/plain; charset=utf-8",
+          ...enTetesDAbsence(),
+        })
+        .end("Not found");
     }
   });
 

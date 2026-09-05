@@ -16,14 +16,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { NATURES_RELEVEES_PAR_LE_TEMOIN, verdict } from "../../tools/publier-temoin.mjs";
+import {
+  ADRESSE_ABSENTE_DU_TEMOIN,
+  NATURES_RELEVEES_PAR_LE_TEMOIN,
+  verdict,
+} from "../../tools/publier-temoin.mjs";
 import { ADRESSE_MANIFESTE_V86, adresseDe } from "../../src/v86-adresses.mjs";
 import {
   DUREE_EPINGLAGE_V86_SECONDES,
+  POLITIQUE_DABSENCE,
   NATURES_DARTEFACT,
   POLITIQUES_DE_CACHE,
   PREFIXE_EPINGLAGE_V86,
   natureDArtefact,
+  enTetesDAbsence,
   politiqueDeCache,
   securityHeaders,
 } from "../../tools/serve-headers.mjs";
@@ -207,6 +213,7 @@ function mesureConforme() {
     demarrage: "worker:ready",
     openerAvecCoop: true,
     openerSansCoop: false,
+    absence: { chemin: ADRESSE_ABSENTE_DU_TEMOIN, statut: 404, recu: "no-store" },
     politiqueDeCache: NATURES_RELEVEES_PAR_LE_TEMOIN.map((releve) => ({
       ...releve,
       attendu: POLITIQUES_DE_CACHE[releve.nature],
@@ -276,4 +283,52 @@ test("un témoin dont toutes les natures porteraient la MÊME valeur est refusé
   const { conforme, motifs } = verdict(mesure);
   assert.equal(conforme, false);
   assert.ok(motifs.some((motif) => motif.includes("politique(s) de cache distincte(s)")));
+});
+
+// --- Une ADRESSE ABSENTE sous le préfixe immuable (constat 1 de la revue de sécurité) -------------
+
+test("une absence n'est JAMAIS cachable, quel que soit le chemin", () => {
+  // `Cache-Control` gouverne une RÉPONSE ; le format `_headers` associe des en-têtes à un CHEMIN.
+  // Sous le préfixe immuable, un chemin qui n'existe pas encore relève donc de la règle d'un an
+  // comme s'il existait — et un 404 est stockable par défaut, qu'un `max-age` rend frais et
+  // qu'`immutable` dispense de revalider jusqu'au rechargement forcé. Les serveurs du dépôt
+  // refusent de rendre une absence cachable, sur TOUS les chemins.
+  assert.equal(POLITIQUE_DABSENCE, "no-store");
+  assert.deepEqual(enTetesDAbsence(), { "Cache-Control": "no-store" });
+  // Elle rejoint celle du territoire applicatif, et c'est cohérent : dans les deux cas, rien de ce
+  // qui est rendu ne doit s'attarder. Ce dont elle doit se distinguer est la politique IMMUABLE,
+  // celle du chemin sous lequel l'absence est servie — sans quoi ce refus ne refuserait rien.
+  assert.notEqual(POLITIQUE_DABSENCE, POLITIQUES_DE_CACHE[NATURES_DARTEFACT.epinglageV86]);
+  assert.ok(!POLITIQUE_DABSENCE.includes("immutable"));
+});
+
+test("le témoin RELÈVE l'absence, et un 404 cachable le fait échouer", () => {
+  const conforme = mesureConforme();
+  assert.ok(conforme.absence.chemin.startsWith(PREFIXE_EPINGLAGE_V86));
+  assert.equal(verdict(conforme).conforme, true);
+
+  // Le mode de panne exact : l'hébergeur applique la règle du chemin avant de constater l'absence.
+  const cachable = mesureConforme();
+  cachable.absence.recu = "public, max-age=31536000, immutable";
+  const refus = verdict(cachable);
+  assert.equal(refus.conforme, false);
+  assert.ok(refus.motifs.some((motif) => motif.includes("récupération côté client")));
+});
+
+test("un témoin qui ne relèverait PAS l'absence est refusé, pas conforme", () => {
+  // Sans cette garde, retirer le relevé rendrait le témoin vert sans avoir mesuré ce que le
+  // constat 1 a coûté à écrire.
+  const mesure = mesureConforme();
+  delete mesure.absence;
+  const { conforme, motifs } = verdict(mesure);
+  assert.equal(conforme, false);
+  assert.ok(motifs.some((motif) => motif.includes("aucun relevé d'adresse absente")));
+});
+
+test("une adresse « absente » qui rendrait 200 est refusée : elle ne mesurerait rien", () => {
+  const mesure = mesureConforme();
+  mesure.absence.statut = 200;
+  const { conforme, motifs } = verdict(mesure);
+  assert.equal(conforme, false);
+  assert.ok(motifs.some((motif) => motif.includes("devait être ABSENTE")));
 });

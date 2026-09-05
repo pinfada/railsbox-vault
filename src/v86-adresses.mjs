@@ -160,3 +160,132 @@ export function exigerAdresse(adresses, nom) {
   }
   return adresse;
 }
+
+// --- Vérification d'empreinte AU CHARGEMENT (#123, constat 2 de la revue de sécurité) -------------
+//
+// L'adresse porte SEIZE caractères hexadécimaux ; le manifeste en épingle SOIXANTE-QUATRE. Vérifier
+// à la lecture, c'est confronter les octets reçus aux 256 bits — ce que l'adresse seule ne fait pas.
+//
+// Ce que cette vérification attrape, et que celle de la PUBLICATION n'attrape pas, c'est
+// l'ACCIDENT : un cache qui garde une version d'un artefact à côté d'un manifeste d'une autre, un
+// intermédiaire qui touche le `.wasm` sans toucher au `.mjs`, un dépôt partiel qui n'a poussé
+// qu'une moitié de l'arbre, un octet retourné en chemin. Un cache d'un an rend ces accidents PLUS
+// probables, pas moins : ce qui est corrompu une fois est gardé pour un an, sans revalidation, et
+// `immutable` supprime jusqu'au rechargement forcé comme geste de récupération.
+//
+// Ce qu'elle n'attrape PAS, et il faut le dire : l'empreinte attendue vient du manifeste servi par
+// la MÊME origine. Une origine qui ment aux deux du même geste passe. Ce n'est pas une défense
+// contre l'hébergeur — celle-là est `verifierEpinglageV86`, sur l'arbre construit à partir d'un
+// commit, avant qu'il ne parte. C'est le raisonnement que `verifierEpinglageArgon2` tient déjà pour
+// l'artefact voisin, et le code du dépôt le suit là-bas depuis #22 : les deux vérifications
+// couvrent le même octet à deux moments, et aucune ne remplace l'autre.
+
+/** Code du refus typé, sur le modèle de `src/vm/runtime-errors.mjs`. */
+export const CODE_EMPREINTE_V86 = "VAULT_V86_EMPREINTE";
+
+/**
+ * Refus typé : un code stable, un message français, un contexte sérialisable.
+ *
+ * Il est défini ICI plutôt qu'ajouté à `RUNTIME_ERROR_CODES`, pour la raison qui a fait définir
+ * `argon2Indisponible` dans son propre module : c'est une erreur de PROVENANCE d'artefact vendu, pas
+ * une erreur du runtime — elle se produit avant qu'il existe, et elle survit à sa réécriture.
+ */
+export class ErreurEmpreinteV86 extends Error {
+  constructor(message, contexte) {
+    super(message);
+    this.name = "ErreurEmpreinteV86";
+    this.code = CODE_EMPREINTE_V86;
+    this.contexte = Object.freeze({ ...contexte });
+  }
+
+  toJSON() {
+    return { code: this.code, message: this.message, contexte: this.contexte };
+  }
+}
+
+/** Empreinte SHA-256 hexadécimale d'octets, par la primitive du moteur. */
+export async function empreinteSha256Hex(octets) {
+  const condensat = new Uint8Array(await crypto.subtle.digest("SHA-256", octets));
+  let hexadecimal = "";
+  for (const octet of condensat) hexadecimal += octet.toString(16).padStart(2, "0");
+  return hexadecimal;
+}
+
+/**
+ * Confronte des octets reçus au descripteur que l'ADR 0003 épingle, ou REFUSE.
+ *
+ * La taille est vérifiée d'abord, et ce n'est pas une optimisation : une réponse tronquée est le
+ * mode de panne le plus banal d'un réseau, et son diagnostic — « 1 048 576 octets au lieu de
+ * 2 096 474 » — est immédiatement actionnable là où une empreinte qui ne correspond pas ne dit pas
+ * POURQUOI. Elle est ensuite redondante avec l'empreinte, et c'est très bien.
+ *
+ * @param {Uint8Array} octets
+ * @param {{ name: string, bytes: number, sha256: string }} artefact descripteur du manifeste
+ * @param {string} adresse adresse à laquelle ces octets ont été reçus, pour le diagnostic
+ * @throws {ErreurEmpreinteV86}
+ */
+export async function verifierOctetsV86(octets, artefact, adresse) {
+  if (typeof artefact?.bytes === "number" && octets.byteLength !== artefact.bytes) {
+    throw new ErreurEmpreinteV86(
+      `L'artefact ${artefact.name} reçu à ${adresse} fait ${octets.byteLength} octets au lieu des ` +
+        `${artefact.bytes} qu'épingle vendor/v86/MANIFEST.json : réponse tronquée, ou octets d'une ` +
+        `autre version.`,
+      { artefact: artefact.name, adresse, attendu: artefact.bytes, mesure: octets.byteLength },
+    );
+  }
+  const mesure = await empreinteSha256Hex(octets);
+  if (mesure !== artefact.sha256) {
+    throw new ErreurEmpreinteV86(
+      `L'artefact ${artefact.name} reçu à ${adresse} n'a pas l'empreinte SHA-256 qu'épingle ` +
+        `vendor/v86/MANIFEST.json. L'adresse en nomme les seize premiers caractères ; ce sont les ` +
+        `soixante-quatre qui font foi.`,
+      { artefact: artefact.name, adresse, attendu: artefact.sha256, mesure },
+    );
+  }
+  return octets;
+}
+
+/**
+ * Le descripteur que le manifeste sert à une ADRESSE, ou `null` si l'adresse n'en relève pas.
+ *
+ * Le sens inverse de la dérivation, et il a un usage précis : un chargeur qui reçoit des URL toutes
+ * faites — le banc de l'image de référence en reçoit sept, dont deux seulement sont des artefacts
+ * v86 — doit pouvoir dire lesquelles il sait vérifier, sans deviner. Ce qui ne relève pas de ce
+ * manifeste n'est pas vérifié ici, et ce n'est pas un silence : c'est un autre épinglage.
+ */
+export function artefactALAdresse(manifeste, adresse) {
+  return (
+    manifeste.artifacts.find((artefact) => adresseDe(artefact.name, artefact.sha256) === adresse) ??
+    null
+  );
+}
+
+/**
+ * Récupère un artefact v86 À SON ADRESSE et refuse si ses 256 bits ne sont pas ceux du manifeste.
+ *
+ * C'est la porte unique du chargement : les trois chargeurs de bancs l'empruntent, et l'épreuve
+ * d'inspection de source exige qu'ils le fassent. Aucun `options.cache` n'est imposé — un banc qui
+ * MESURE des transferts pose `no-store`, un chargeur de production ne pose rien et laisse le cache
+ * d'un an travailler.
+ *
+ * @param {string} nom nom d'artefact de l'ADR 0003, « v86.wasm » par exemple
+ * @param {{ manifeste: object, adresses: Map<string, string>, fetch?: typeof globalThis.fetch,
+ *           requete?: RequestInit }} contexte
+ */
+export async function recupererArtefactV86(
+  nom,
+  { manifeste, adresses, fetch: recuperer = globalThis.fetch, requete = {} },
+) {
+  const adresse = exigerAdresse(adresses, nom);
+  const reponse = await recuperer(adresse, requete);
+  if (!reponse.ok) {
+    throw new ErreurEmpreinteV86(
+      `L'artefact ${nom} est indisponible à ${adresse} (${reponse.status}). Exécuter ` +
+        `« npm run vm:fetch », ou vérifier que l'arbre publié porte bien cette adresse.`,
+      { artefact: nom, adresse, statut: reponse.status },
+    );
+  }
+  const octets = new Uint8Array(await reponse.arrayBuffer());
+  const artefact = manifeste.artifacts.find((candidat) => candidat.name === nom);
+  return verifierOctetsV86(octets, artefact, adresse);
+}

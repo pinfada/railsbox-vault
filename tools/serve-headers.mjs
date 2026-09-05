@@ -188,6 +188,39 @@ export function politiqueDeCache(requete) {
 }
 
 /**
+ * Politique de cache d'une réponse d'ABSENCE — un 404, quel que soit le chemin.
+ *
+ * Elle est décidée à part des trois natures, et c'est le correctif du constat 1 de la revue de
+ * sécurité de #123. `Cache-Control` s'applique à une RÉPONSE ; le format `_headers`, lui, associe
+ * des en-têtes à un CHEMIN. Sous `/vendor/v86/artefacts/*`, un chemin qui n'existe PAS encore — ou
+ * qui n'existe plus — relève donc de la règle immuable comme s'il existait. Or un 404 est stockable
+ * par défaut (RFC 9111 § 3), un `max-age` explicite le rend frais, et `immutable` (RFC 8246)
+ * supprime la revalidation Y COMPRIS au rechargement : un client qui demanderait une adresse
+ * pendant la fenêtre où elle n'est pas encore déposée garderait un 404 pendant UN AN, sans geste de
+ * récupération de son côté.
+ *
+ * Les serveurs de ce dépôt refusent donc de rendre une absence cachable, et sur TOUS les chemins et
+ * non sous ce seul préfixe : il n'existe aucun cas où garder l'absence d'un octet nous serve, et une
+ * règle conditionnelle serait une occasion de plus de se tromper de condition.
+ *
+ * Ce que cela NE règle PAS : le comportement d'un hébergeur réel, qui applique son `_headers` sans
+ * consulter ce module. C'est une obligation d'exploitant — dépôt atomique, ou artefacts déposés
+ * AVANT le manifeste qui les nomme — écrite dans l'amendement de l'ADR 0023 et mesurable seulement
+ * sur une origine réelle (#124).
+ */
+export const POLITIQUE_DABSENCE = "no-store";
+
+/**
+ * En-têtes d'une réponse d'absence.
+ *
+ * Elle ne prend AUCUN argument, et c'est délibéré : faire dépendre du chemin la cachabilité d'une
+ * absence rouvrirait la question que ce refus ferme. Un 404 ne se garde pas, où qu'il soit.
+ */
+export function enTetesDAbsence() {
+  return { "Cache-Control": POLITIQUE_DABSENCE };
+}
+
+/**
  * Capacités que la coquille refuse EXPLICITEMENT (#104, ADR 0022).
  *
  * La liste est courte, et c'est délibéré. Le risque de cet en-tête n'est pas d'en refuser trop peu,

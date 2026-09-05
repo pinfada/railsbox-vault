@@ -396,7 +396,10 @@ function decrireArbre({ destination, inventaire, absentes, epinglage }) {
   ];
   if (inventaire.banc)
     lignes.push("  banc           oui (origine non https : arbre non publiable)");
-  if (epinglage.verifie) {
+  // `verifie` dit que chaque épinglage attendu a PU être vérifié ; `rupture` dit qu'un écart a été
+  // trouvé. Les confondre faisait imprimer « conforme » juste au-dessus de la liste des écarts —
+  // et c'est cette ligne-là que lit un opérateur qui parcourt un journal (constat 7 de la revue).
+  if (epinglage.verifie && !epinglage.rupture) {
     lignes.push("  épinglage      conforme aux MANIFEST vendus");
   } else if (epinglage.attendus > 0) {
     lignes.push(
@@ -452,9 +455,43 @@ function decrireRuptures(resultats) {
     if (epinglage.motif !== null) lignes.push(`  ${inventaire.arbre} : ${epinglage.motif}`);
     for (const ecart of epinglage.ecarts) {
       lignes.push(`  ${inventaire.arbre} — ${ecart.epinglage}/${ecart.artefact} : ${ecart.motif}`);
+      // Le mot « empreinte » seul ne distingue pas une substitution d'un téléchargement
+      // interrompu ; les deux valeurs le font en une ligne, et l'écart les PORTE déjà — c'était
+      // `decrireEcarts` qui savait les rendre, pas celui-ci (constat 8 de la revue de sécurité).
+      if (ecart.attendu !== undefined) lignes.push(`      attendu ${ecart.attendu}`);
+      if (ecart.mesure !== undefined) lignes.push(`      mesuré  ${ecart.mesure}`);
     }
+    lignes.push(...remedeProbable(epinglage));
   }
   return lignes.join("\n");
+}
+
+/**
+ * Le geste qui débloque, quand la forme des écarts le désigne sans ambiguïté (constat 3).
+ *
+ * TOUS les artefacts déclarés absents ET des non-déclarés présents : c'est la signature d'un disque
+ * resté sur un AUTRE épinglage — le cas ordinaire d'un `--commit <ancien>` lancé depuis un poste à
+ * jour, puisque `vendor/v86/artefacts/` vient toujours de l'arbre de travail alors que le manifeste
+ * est lu au commit demandé. Le refus est CORRECT, et c'est même la propriété que l'amendement de
+ * l'ADR 0017 revendique ; ce qui manquait est le remède, qu'un exploitant en incident ne doit pas
+ * avoir à déduire d'une liste d'écarts.
+ */
+function remedeProbable(epinglage) {
+  const absents = epinglage.ecarts.filter(({ motif }) => motif.startsWith("absent"));
+  const intrus = epinglage.ecarts.filter(({ motif }) => motif.startsWith("non déclaré"));
+  if (absents.length === 0 || intrus.length === 0) return [];
+  return [
+    "",
+    "  Cause probable : le disque est resté sur un AUTRE épinglage. `vendor/v86/artefacts/` n'est",
+    "  pas versionné et vient toujours de l'arbre de travail, y compris sous --commit ; le",
+    "  manifeste, lui, est lu au commit demandé. Remède, dans cet ordre :",
+    "",
+    "    git checkout <ref> -- vendor/v86/MANIFEST.json",
+    "    npm run vm:fetch          # récupère les adresses de <ref>, élague celles d'aujourd'hui",
+    "    node tools/publier.mjs --commit <ref> --sortie <dir>",
+    "",
+    "  La procédure complète est dans docs/release-policy.md, § « Retour arrière ».",
+  ];
 }
 
 async function construire(options) {

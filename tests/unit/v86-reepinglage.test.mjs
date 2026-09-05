@@ -324,3 +324,49 @@ test("deux octets qui réclameraient la MÊME adresse sont refusés", async () =
     await rm(racine, { recursive: true, force: true });
   }
 });
+
+test("la copie épinglée du manifeste SUPPRIMÉE est un écart, pas un silence", async () => {
+  // Constat 6 de la revue de sécurité. `verifierEpinglageV86` défendait l'ALTÉRATION de cette copie
+  // et pas son ABSENCE : la table des manquants était calculée sur les seuls artefacts. Or c'est ce
+  // membre-là qui donne à la classe immuable un octet présent dans tout arbre publié — le pilier
+  // sur lequel l'amendement de l'ADR 0023 referme le motif qui avait fait rejeter ce préfixe.
+  const racine = await nouvelleRacine();
+  try {
+    await ecrireArbre(racine, "v1");
+    const dossier = join(racine, "vendor", "v86", "artefacts");
+    const nom = (await readdir(dossier)).find((entree) => entree.startsWith("MANIFEST-"));
+    await rm(join(dossier, nom));
+
+    const verdict = await verifierEpinglageV86(racine, empreinte);
+    assert.deepEqual(
+      verdict.ecarts.map(({ artefact, motif }) => ({ artefact, motif })),
+      [{ artefact: nom, motif: "absent de l'arbre publié" }],
+    );
+  } finally {
+    await rm(racine, { recursive: true, force: true });
+  }
+});
+
+test("un clone vierge reste une INCOMPLÉTUDE même si la copie du manifeste est là", async () => {
+  // Le corollaire du constat 6, et la raison pour laquelle le test de clone vierge continue de se
+  // faire sur les seuls ARTEFACTS : la copie du manifeste est publiée même quand le runtime manque,
+  // et la compter ferait passer un clone vierge pour un arbre partiellement peuplé — donc rompu.
+  const racine = await nouvelleRacine();
+  try {
+    const manifeste = manifestePour("v1");
+    await mkdir(join(racine, "vendor", "v86", "artefacts"), { recursive: true });
+    await writeFile(
+      join(racine, "vendor", "v86", "MANIFEST.json"),
+      `${JSON.stringify(manifeste, null, 2)}
+`,
+      "utf8",
+    );
+    await ecrireManifesteEpingle(racine, empreinte);
+
+    const verdict = await verifierEpinglageV86(racine, empreinte);
+    assert.equal(verdict.situation, SITUATIONS_EPINGLAGE.artefactsAbsents);
+    assert.deepEqual(verdict.ecarts, []);
+  } finally {
+    await rm(racine, { recursive: true, force: true });
+  }
+});

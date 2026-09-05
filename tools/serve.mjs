@@ -3,7 +3,12 @@ import { stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
 
-import { ISOLATION_REQUIRE_CORP, parseServerOptions, securityHeaders } from "./serve-headers.mjs";
+import {
+  ISOLATION_REQUIRE_CORP,
+  enTetesDAbsence,
+  parseServerOptions,
+  securityHeaders,
+} from "./serve-headers.mjs";
 
 const publicRoot = resolve("public");
 const sourceRoot = resolve("src");
@@ -71,7 +76,15 @@ createServer(async (request, response) => {
     });
     createReadStream(candidate).pipe(response);
   } catch {
-    response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("Not found");
+    // Une ABSENCE n'est jamais cachable. Sous `/vendor/v86/artefacts/*` le `_headers` publié
+    // annonce un an d'`immutable` pour le CHEMIN, et un 404 gardé un an n'aurait aucun geste de
+    // récupération côté client (constat 1 de la revue de #123).
+    response
+      .writeHead(404, {
+        "Content-Type": "text/plain; charset=utf-8",
+        ...enTetesDAbsence(),
+      })
+      .end("Not found");
   }
 }).listen(options.port, options.host, () => {
   process.stdout.write(
