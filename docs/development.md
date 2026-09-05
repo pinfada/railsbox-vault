@@ -194,13 +194,24 @@ Les artefacts v86 et l'image de guest ne sont pas versionnés. Ils sont décrits
 `vendor/v86/MANIFEST.json` — nom, taille, empreinte SHA-256, licence, URL source — et récupérés dans
 `vendor/v86/artefacts/`, dossier ignoré par git :
 
+Depuis #123, le NOM du fichier récupéré porte son empreinte : `v86.wasm` est déposé sous
+`v86-8a969d64cf8f64b8.wasm`, et c'est cette adresse-là que `tools/serve.mjs` sert, que la
+publication recopie et que le navigateur demande. Un seul nom, du disque au navigateur : il n'y a
+pas de correspondance à tenir en double entre le serveur de développement et la publication. Un
+outil qui a besoin d'un artefact demande son nom d'ADR 0003 — « v86.wasm » — à
+`cheminsDesArtefacts()` ou `adressesServiesV86()` de `tools/v86-paths.mjs`, et
+`tests/unit/v86-adresses.test.mjs` refuse tout chemin d'artefact écrit en dur.
+
 ```sh
 npm run vm:fetch      # télécharge ce qui manque, vérifie toutes les empreintes
 npm run vm:check      # vérifie seulement, sans réseau
 ```
 
 `vm:check` échoue si un artefact manque ou si son empreinte diffère : une mesure de VM ne provient
-jamais d'un binaire non identifié. Environ 9,9 Mio sont transférés au premier appel.
+jamais d'un binaire non identifié. Environ 9,9 Mio sont transférés au premier appel. `vm:fetch`
+ÉLAGUE en outre ce que le manifeste ne déclare plus : puisque le nom porte l'empreinte, une montée
+de version n'écrase plus les octets d'hier, elle écrit à côté — et ce qui traîne partirait chez
+l'hébergeur pour un an de cache immuable. Chaque retrait est nommé sur la sortie.
 
 Le **contrôle de mémoire partagée fait partie de `vm:check`** (#75). C'est une vérification
 distincte de l'empreinte : elle lit la section « memory » de `v86.wasm` et refuse un module qui
@@ -214,14 +225,20 @@ pas un de mémoire, ni l'inverse.
 
 1. mettre à jour `vendor/v86/MANIFEST.json` : version npm, empreinte de l'archive, commit amont,
    puis taille et SHA-256 de chaque artefact ;
-2. vider `vendor/v86/artefacts/` et exécuter `npm run vm:fetch`, qui refuse tout octet étranger au
-   manifeste **et** tout `v86.wasm` réclamant une mémoire partagée ;
+2. exécuter `npm run vm:fetch`, qui télécharge les nouvelles adresses, ÉLAGUE les anciennes, et
+   refuse tout octet étranger au manifeste **et** tout `v86.wasm` réclamant une mémoire partagée.
+   Vider `vendor/v86/artefacts/` au préalable n'est plus nécessaire — l'élagage s'en charge —, mais
+   reste sans danger ;
 3. si le contrôle de mémoire partagée échoue, ne pas le contourner : l'ADR 0010 doit être rouvert
    par un nouvel ADR (#76) avant que la montée de version soit prise ;
 4. rejouer `npm run test:vm` puis `npm run vm:protocol` — une empreinte dit la provenance, pas le
    comportement ;
 5. inscrire dans la pull request la version amont, le commit épinglé et la date de mesure des
-   empreintes.
+   empreintes ;
+6. relever, dans l'inventaire de publication, que les ADRESSES ont changé : c'est ce qui rend le
+   ré-épinglage visible chez le navigateur, et ce qui autorise le cache immuable (ADR 0023,
+   amendement du 2026-09-05). Une adresse qui n'aurait pas bougé signalerait une empreinte non mise
+   à jour dans le manifeste.
 
 Le coût d'adaptation à une montée de version — les quatre noms conservés par la compilation Closure
 dont le dépôt dépend — est décrit par [l'ADR 0003](decisions/0003-backend-de-blocs-v86.md). Trois

@@ -343,6 +343,36 @@ rien.
   ni pour le mode hors ligne que l'ADR 0002 prévoit en deux exemplaires.
 - **Aucune décision sur le manifeste de volume** (voir § 5).
 
+## Amendement du 2026-09-05 — les chemins de l'inventaire nomment leur empreinte (#123)
+
+L'inventaire ne change pas de FORME : il reste une liste `chemin`, `octets`, `sha256`, et son
+empreinte de racine reste celle de cette liste sous forme canonique triée (§ 5). Ce qui change est
+le contenu de la colonne `chemin` sous `vendor/v86/artefacts/`, et cela vaut d'être écrit ici parce
+que cela touche deux propriétés que cet ADR défend.
+
+**Le retour arrière (§ 7) gagne, et rien n'y est à reprendre.** Un ré-épinglage de l'émulateur
+déplaçait déjà l'empreinte de racine — l'empreinte du fichier changeait dans la liste. Il déplace
+désormais aussi le CHEMIN, si bien qu'une comparaison de deux inventaires montre l'ancienne et la
+nouvelle adresse sur deux lignes voisines, et non un même chemin portant deux empreintes. C'est un
+des critères qui a fait retenir la forme SUFFIXE — `libv86-<empreinte>.mjs` — plutôt qu'un
+répertoire `<empreinte>/` : la liste est triée par chemin, et un répertoire d'empreinte aurait
+dispersé les artefacts au hasard de leurs SHA-256.
+
+**La règle « les artefacts v86 viennent de l'ARBRE DE TRAVAIL même sous `--commit` » devient
+autovérifiante.** Cette exception était nommée et bornée, et elle reposait sur la vérification
+d'empreinte. Elle repose désormais aussi sur le nom : reconstruire un commit ANTÉRIEUR avec les
+octets d'aujourd'hui sur le disque produit un arbre dont les adresses ne sont pas celles que le
+manifeste de ce commit épingle, et `verifierEpinglageV86` le refuse en code 5 — au lieu de le
+détecter par la seule comparaison d'empreintes.
+
+**Un fichier de plus dans chaque arbre.** La publication dépose
+`vendor/v86/artefacts/MANIFEST-<empreinte>.json`, copie du manifeste adressée par sa propre
+empreinte. Elle entre dans l'inventaire comme tout autre octet servi, donc dans l'empreinte de
+racine. Son motif est écrit dans l'amendement de
+l'[ADR 0023](0023-politique-de-cache-par-nature-d-artefact.md) : elle rend l'épinglage remontable
+depuis une adresse d'artefact, et elle donne à la classe de cache immuable un membre présent dans
+tout arbre publié.
+
 ## Risques résiduels
 
 1. **`Cache-Control: no-store` est publié tel que le serveur de test le sert.** C'est la conséquence
@@ -353,14 +383,18 @@ rien.
    coquille — ce qui touche `tools/serve-headers.mjs`, hors périmètre de ce spike. **Travail
    découvert — traité par #103 et l'[ADR 0023](0023-politique-de-cache-par-nature-d-artefact.md)**,
    qui a suivi l'ordre de l'ADR 0022 : la politique est décidée dans la source de vérité et la
-   publication l'en dérive. Trois natures — `no-cache` pour la coquille, `public, max-age=86400`
-   pour l'épinglage v86, `no-store` conservé mais DÉCIDÉ pour le territoire applicatif —, donc un
-   fichier `_headers` à plusieurs blocs. Deux corrections à ce qui est écrit ci-dessus : `immutable`
-   est **refusé** tant qu'aucune URL publiée ne nomme son empreinte, et « `no-store` interdit toute
-   mise en cache » est trop fort — il ferme le cache HTTP, pas le magasin d'un Service Worker. Le
-   cliquet de « politique uniforme » du § 4 n'est pas retiré : il devient « uniforme **hors** la
-   dimension déclarée non uniforme », et une divergence de CSP, de COOP, de `Referrer-Policy` ou de
-   `Permissions-Policy` entre deux chemins d'un même arbre est refusée comme avant.
+   publication l'en dérive. Trois natures — `no-cache` pour la coquille, un cache long pour
+   l'épinglage v86, `no-store` conservé mais DÉCIDÉ pour le territoire applicatif —, donc un fichier
+   `_headers` à plusieurs blocs. Depuis #123 ce cache long vaut
+   `public, max-age=31536000, immutable` sur `/vendor/v86/artefacts/*`, dont chaque adresse nomme
+   son empreinte ; le manifeste et les licences, eux, relèvent de `no-cache`. Deux corrections à ce
+   qui est écrit ci-dessus : `immutable` a été **refusé** tant qu'aucune URL publiée ne nommait son
+   empreinte — #123 a levé cette condition, voir l'amendement de l'ADR 0023 —, et « `no-store`
+   interdit toute mise en cache » est trop fort — il ferme le cache HTTP, pas le magasin d'un
+   Service Worker. Le cliquet de « politique uniforme » du § 4 n'est pas retiré : il devient «
+   uniforme **hors** la dimension déclarée non uniforme », et une divergence de CSP, de COOP, de
+   `Referrer-Policy` ou de `Permissions-Policy` entre deux chemins d'un même arbre est refusée comme
+   avant.
 2. **L'inventaire n'authentifie rien.** Voir ci-dessus. Tant que la signature n'existe pas, la seule
    défense contre une publication altérée est la comparaison hors bande d'une empreinte de racine.
 3. **Les deux publications doivent coïncider** — risque n°4 de l'ADR 0002. La chaîne construit les
