@@ -254,12 +254,23 @@ et tester.
     un volume dont la séquence est inférieure : cela ferme le retour arrière **partiel**, celui qui
     ne l'emporte pas. Le témoin est dans la MÊME ORIGINE que le volume ; il ne renforce pas la
     frontière de l'ADR 0002, il rend visibles les reculs partiels. **L'effort n'est pas symétrique,
-    et il faut le dire** : reculer le volume suppose d'en détenir une copie antérieure cohérente
-    avec son journal, alors que neutraliser le témoin ne suppose rien — **le supprimer ou le
-    tronquer suffit, sans la clé**. Un fichier absent, vide ou trop court n'est pas un témoin,
-    l'ouverture repart sur « première ouverture », et la fenêtre du retour arrière complet est
-    **réarmée** pour qui détient déjà une copie antérieure de volume + journal. Le comportement est
-    délibéré et n'est pas changé — refuser tout volume sans témoin rendrait irouvrable un volume
+    et il faut le dire** : reculer le volume AU-DELÀ d'une génération suppose d'en détenir une copie
+    antérieure cohérente avec son journal, alors que neutraliser le témoin ne suppose rien — **le
+    supprimer ou le tronquer suffit, sans la clé**. Reculer d'**une** génération ne suppose rien non
+    plus, et ce dossier l'a longtemps nié
+    ([#144](https://github.com/pinfada/railsbox-vault/issues/144), corrigé par la
+    [PR #153](https://github.com/pinfada/railsbox-vault/pull/153)) : l'alternance des racines garde
+    `s − 1` lisible sur le support. Ce recul-là **n'est pas** dans la liste des non-détectés — le
+    témoin le tranche, et son absence devant une racine abîmée est refusée
+    (`VAULT_STORAGE_GENERATION_ROOT_CORRUPT`, `docs/format-de-volume-v3.md` § 6.9). Le **rejeu**
+    d'un témoin authentique, lui, reste possible et n'est pas détecté : le sceau achète la
+    non-forgerie, pas la non-fongibilité
+    ([#142](https://github.com/pinfada/railsbox-vault/issues/142), accepté, ADR 0019 amendé le 5
+    septembre 2026) ; il ne fait perdre aucun octet, il fabrique un refus, et le message du refus
+    nomme le geste qui en sort avec sa condition. Un fichier absent, vide ou trop court n'est pas un
+    témoin, l'ouverture repart sur « première ouverture », et la fenêtre du retour arrière complet
+    est **réarmée** pour qui détient déjà une copie antérieure de volume + journal. Le comportement
+    est délibéré et n'est pas changé — refuser tout volume sans témoin rendrait irouvrable un volume
     neuf, restauré, ou dont le témoin a été perdu par un incident de support. Ce qui manque est une
     **ancre monotone hors du support**, renvoyée nommément à **#23** ; d'ici là, le recul complet
     reste couvert par le seul partitionnement d'origine de l'ADR 0002. Cette limite est **exécutée**

@@ -354,7 +354,11 @@ function defautsDuRegistre(registre, { commitExiste, adrExiste, numerosDuDossier
       defauts.push(`issue #${issue[1]} absente du dossier (spécification § 9.6 ou SECURITY.md)`);
     }
 
-    if (!/^(CRITICAL|HIGH|MEDIUM|LOW)$/.test(severite)) {
+    // Une sévérité RÉVISÉE porte les deux termes, « proposée → retenue » — le registre l'exige en
+    // toutes lettres depuis l'origine, et la garde ne le vérifiait pas : elle refusait la forme, si
+    // bien qu'une révision devait s'écrire ailleurs que dans sa colonne. Les DEUX côtés de la
+    // flèche restent dans le vocabulaire fermé ; c'est un contrôle de plus, pas un de moins.
+    if (!/^(CRITICAL|HIGH|MEDIUM|LOW)( → (CRITICAL|HIGH|MEDIUM|LOW))?$/.test(severite)) {
       defauts.push(`sévérité hors vocabulaire : « ${severite} »`);
     }
     if (!/^(corrigé|accepté|réfuté)$/.test(disposition)) {
@@ -383,6 +387,12 @@ function defautsDuRegistre(registre, { commitExiste, adrExiste, numerosDuDossier
     }
     if (disposition === "corrigé" && prs.length === 0) {
       defauts.push("une disposition « corrigé » doit citer la PR qui corrige");
+    }
+    // Symétrique de la précédente, et le registre l'écrivait déjà sans que rien ne le tienne :
+    // « accepté » exige un amendement daté de l'ADR concerné. Une acceptation adossée à une seule
+    // empreinte de commit ne dit pas ce que le dépôt a décidé, ni où c'est écrit.
+    if (disposition === "accepté" && adrs.length === 0) {
+      defauts.push("une disposition « accepté » doit citer l'ADR amendé");
     }
   }
   return defauts;
@@ -503,6 +513,20 @@ test("la garde du registre refuse une sévérité, une disposition ou une preuve
   assert.ok(ligne("HIGH", "classé", PR_REELLE).some((d) => d.includes("disposition")));
   assert.ok(ligne("HIGH", "accepté", "aucune").some((d) => d.includes("preuve absente")));
   assert.ok(ligne("HIGH", "accepté", "ADR 9999").some((d) => d.includes("ADR 9999")));
+  assert.ok(
+    ligne("HIGH", "accepté", PR_REELLE).some((d) => d.includes("doit citer l'ADR")),
+    "une acceptation sans ADR amendé doit être refusée",
+  );
+  // Une sévérité RÉVISÉE : la forme est admise, et les DEUX côtés restent dans le vocabulaire.
+  assert.deepEqual(ligne("HIGH → MEDIUM", "accepté", "ADR 0019"), []);
+  assert.ok(
+    ligne("HIGH → ÉNORME", "accepté", "ADR 0019").some((d) => d.includes("sévérité")),
+    "une révision vers un mot hors vocabulaire doit être refusée",
+  );
+  assert.ok(
+    ligne("GRAVE → MEDIUM", "accepté", "ADR 0019").some((d) => d.includes("sévérité")),
+    "une révision DEPUIS un mot hors vocabulaire doit l'être aussi",
+  );
   assert.ok(
     ligne("HIGH", "corrigé", "ADR 0016").some((d) => d.includes("doit citer la PR")),
     "une correction sans PR doit être refusée",
