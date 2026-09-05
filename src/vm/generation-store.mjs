@@ -55,6 +55,8 @@ import {
   ZONE_ENREGISTREMENTS,
   encoderEnteteEnregistrement,
   encoderRacine,
+  enregistrementsSousIdentiteDeBloc,
+  formatEcritSousFraicheur,
   longueurPhysiqueDeCharge,
   offsetDeRacine,
   racineDeSequence,
@@ -66,6 +68,7 @@ import { PLAFOND_CHARGE_OCTETS, POINT_DE_CONTROLE_OCTETS } from "./generation-pl
 import {
   GENERATION_ETATS,
   constaterOuverture,
+  exigerIdentiteDeVolume,
   poserRapport,
   remedeSansRacine,
 } from "./generation-recuperation.mjs";
@@ -136,6 +139,10 @@ export class GenerationStore {
    * alors ce que cette session vient d'écrire au lieu de ce qu'elle a trouvé.
    */
   #temoinALOuverture = null;
+  /** Format du journal TROUVÉ à l'ouverture, ou `null` : retenu à part comme la séquence du témoin. */
+  #journalFormatTrouve = null;
+  /** Format que cette session ÉCRIT ; il fixe l'étiquette de ses enregistrements (#143). */
+  #formatEcrit;
   /** Charge DÉPOSÉE : les entrées, la longueur des clairs, la longueur occupée sur le support. */
   #charge = etatDeCharge();
   /** Charge SCELLÉE par la dernière racine. Ce qui la dépasse n'est pas encore validé. */
@@ -185,10 +192,12 @@ export class GenerationStore {
       return options.ecrireVolume(offset, octets, generation);
     };
     this.#garde = construireGarde(options);
+    this.#formatEcrit = formatEcritSousFraicheur(this.#garde !== null);
     this.#relecture = new RelectureDeCharge({
       journal: this.#journal,
       scellement: this.#scellement,
       lireVolume: this.#lireVolume,
+      formatJournal: this.#formatEcrit,
     });
     this.#barriereVolume = options.barriereVolume ?? (async () => {});
     this.#plafond = options.plafondOctets ?? PLAFOND_CHARGE_OCTETS;
@@ -320,9 +329,11 @@ export class GenerationStore {
     // autrement qu'un sceau refusé, et confronter la région avant priverait l'exploitant de ce
     // diagnostic. Puis la FRAÎCHEUR, avant que le moindre secteur ne soit lu ou écrit — un volume
     // dont la région ne concorde plus ne doit rendre aucun clair, fût-il authentique.
-    if (constat.racine !== null) this.#exigerIdentiteDeVolume(constat.racine);
+    exigerIdentiteDeVolume(this.#volume, this.#scellement.volume, constat.racine);
     await this.#garde?.confronter(constat.racine);
 
+    // Le format du journal TROUVÉ, avant que le vidage n'écrive une racine neuve (#143).
+    this.#journalFormatTrouve = constat.racine?.format ?? null;
     this.#rapport =
       constat.racine === null
         ? await this.#recupererSansRacine(constat)
@@ -385,25 +396,6 @@ export class GenerationStore {
     });
   }
 
-  /**
-   * Refuse une racine qui DÉCLARE un autre volume, avant même de vérifier son étiquette.
-   *
-   * L'identifiant lu ici n'est pas encore authentifié — il ne le sera que par `ouvrirRacine` — et le
-   * refus qui suivrait serait de toute façon un `SCEAU_REFUSE`, puisque les données associées
-   * porteraient un autre identifiant. Le contrôle sert donc au DIAGNOSTIC, pas à la sécurité : il
-   * distingue « ce journal appartient à un autre volume » de « ce journal est abîmé », deux états
-   * dont les remèdes n'ont rien de commun.
-   */
-  #exigerIdentiteDeVolume(racine) {
-    const attendu = identifiantVolumeEnOctets(this.#scellement.volume);
-    if (racine.identifiantVolume.every((octet, index) => octet === attendu[index])) return;
-    throw new StorageError(
-      STORAGE_ERROR_CODES.identiteVolume,
-      `Journal de génération du volume « ${this.#volume} » refusé : sa racine DÉCLARE un autre identifiant de volume que celui du manifeste. La valeur n'est pas authentifiée à ce point — elle est seulement déclarée —, mais l'écart suffit à savoir que ce journal n'est pas celui de ce volume.`,
-      { volume: this.#volume, attendu: this.#scellement.volume },
-    );
-  }
-
   #rapportDe(etat, details) {
     return poserRapport({
       volume: this.#volume,
@@ -416,6 +408,8 @@ export class GenerationStore {
         // être supposé actif. `non-fournie` dit qu'aucune fraîcheur n'est prétendue ; `migree` dit
         // qu'une racine d'avant #19 a été trouvée et que la suivante portera l'empreinte.
         fraicheurRegion: this.#garde?.etat ?? FRAICHEUR_ETATS.nonFournie,
+        // Un journal de format 3, rejoué sous l'ancienne étiquette de domaine, se voit ici (#143).
+        journalFormat: this.#journalFormatTrouve,
         temoinSequence: this.#temoinALOuverture,
         ...details,
       },
@@ -490,10 +484,12 @@ export class GenerationStore {
     // une. Elle est stockée avec lui : voir l'ADR 0016, décision 2.
     const generation = this.#generation + 1;
     const rang = this.#charge.entrees.length;
-    const scelle = await this.#scellement.scellerBloc(
-      { generation, rang, adresse: debut, longueur: charge.byteLength },
-      charge,
-    );
+    // `scellerEnregistrement`, et non `scellerBloc` : les deux magasins ne partagent plus leur
+    // étiquette de domaine (#143). La branche héritée fabrique le journal de #18 ENTIER.
+    const identite = { generation, rang, adresse: debut, longueur: charge.byteLength };
+    const scelle = enregistrementsSousIdentiteDeBloc(this.#formatEcrit)
+      ? await this.#scellement.scellerBloc(identite, charge)
+      : await this.#scellement.scellerEnregistrement(identite, charge);
 
     const position = ZONE_ENREGISTREMENTS + this.#charge.longueurPhysique;
     this.#ecrireEnregistrement(position, { debut, charge, generation, scelle });
@@ -679,6 +675,8 @@ export class GenerationStore {
   /** Le descripteur de la racine qui fait autorité, tel que le parcours l'attend. */
   #descripteurDeRacineValidee() {
     return {
+      // POSÉ : il dit au parcours sous quelle étiquette cette charge a été scellée (#143).
+      format: this.#formatEcrit,
       sequence: this.#sequenceValidee,
       generation: this.#generation,
       tailleVolume: this.#tailleVolume,

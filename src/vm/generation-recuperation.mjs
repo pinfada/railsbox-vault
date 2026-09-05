@@ -17,7 +17,8 @@ import {
   RACINE_OCTETS,
   racineDeSequence,
 } from "./generation-format.mjs";
-import { STORAGE_ERROR_CODES, generationRootCorrupt } from "./storage-errors.mjs";
+import { STORAGE_ERROR_CODES, StorageError, generationRootCorrupt } from "./storage-errors.mjs";
+import { identifiantVolumeEnOctets } from "./volume-chiffre-format.mjs";
 
 /** États dans lesquels une ouverture peut trouver le journal. */
 export const GENERATION_ETATS = Object.freeze({
@@ -74,6 +75,34 @@ export function constaterOuverture({ journal, tailleVolume }) {
 }
 
 /**
+ * Refuse une racine qui DÉCLARE un autre volume, avant même de vérifier son étiquette.
+ *
+ * L'identifiant lu ici n'est pas encore authentifié — il ne le sera que par `ouvrirRacine` — et le
+ * refus qui suivrait serait de toute façon un `SCEAU_REFUSE`, puisque les données associées
+ * porteraient un autre identifiant. Le contrôle sert donc au DIAGNOSTIC, pas à la sécurité : il
+ * distingue « ce journal appartient à un autre volume » de « ce journal est abîmé », deux états dont
+ * les remèdes n'ont rien de commun.
+ *
+ * Il vit ici, avec le CONSTAT, plutôt que dans le magasin : c'est un jugement porté sur ce que
+ * l'ouverture a trouvé, et il ne touche à aucun état. Une racine ABSENTE ne déclare rien, et le dire
+ * ici plutôt qu'à l'appel évite qu'un appelant l'oublie.
+ *
+ * @param {string} volume nom du volume, tel que l'exploitant le lit
+ * @param {string} identifiantAttendu les trente-deux hexadécimaux que le manifeste déclare
+ * @param {object | null} racine la racine qui fait autorité, ou `null` s'il n'y en a aucune
+ */
+export function exigerIdentiteDeVolume(volume, identifiantAttendu, racine) {
+  if (racine === null) return;
+  const attendu = identifiantVolumeEnOctets(identifiantAttendu);
+  if (racine.identifiantVolume.every((octet, index) => octet === attendu[index])) return;
+  throw new StorageError(
+    STORAGE_ERROR_CODES.identiteVolume,
+    `Journal de génération du volume « ${volume} » refusé : sa racine DÉCLARE un autre identifiant de volume que celui du manifeste. La valeur n'est pas authentifiée à ce point — elle est seulement déclarée —, mais l'écart suffit à savoir que ce journal n'est pas celui de ce volume.`,
+    { volume, attendu: identifiantAttendu },
+  );
+}
+
+/**
  * AUCUNE racine ne fait autorité. Trois issues, et le remède dépend de ce qui manque.
  *
  * @param {{ volume: string, abimees: number, chargePresente: number }} constat
@@ -114,6 +143,11 @@ export function poserRapport({ volume, etat, generation, sequence, surmemoireMax
     octetsEcartes: 0,
     enregistrementsRejoues: 0,
     octetsRejoues: 0,
+    // FORMAT du journal trouvé à l'ouverture (#143). `null` tant qu'aucune racine ne fait autorité.
+    // Il est déclaré ici comme les autres champs du rapport : un champ que seul l'appelant fournit
+    // finit par manquer un jour, et personne ne le voit — le rapport est justement ce qui empêche un
+    // contrôle d'être supposé actif.
+    journalFormat: null,
     // SURMÉMOIRE DE POINTE de la récupération, en octets : la plus grande allocation qu'elle a
     // faite pour elle-même. Publiée pour la même raison que l'export et la restauration publient
     // la leur (`docs/quality-attributes.md`) — un budget qu'on ne mesure pas n'est pas tenu, il

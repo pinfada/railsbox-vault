@@ -42,9 +42,11 @@ import {
   RANG_SECTEUR_DE_VOLUME,
   importerCleDeVolume,
   ouvrirBloc,
+  ouvrirEnregistrement,
   ouvrirRacine,
   rescellerEnSecteurs,
   scellerBlocSousNonce,
+  scellerEnregistrementSousNonce,
   scellerRacineSousNonce,
 } from "./format-chiffre/modele-reference.mjs";
 import {
@@ -203,7 +205,13 @@ export class Scellement {
     };
   }
 
-  /** Scelle un bloc — un enregistrement de journal ou un secteur — et consomme un scellement. */
+  /**
+   * Scelle un BLOC DU VOLUME — un secteur de la charge, l'empreinte de région, le témoin — et
+   * consomme un scellement.
+   *
+   * Un enregistrement du journal passe par `scellerEnregistrement`, et pas par ici : depuis le
+   * constat #143 les deux magasins ne partagent plus leur étiquette de domaine.
+   */
   async scellerBloc(identite, contenu) {
     const scelle = await traduisant({ volume: this.#volume, adresse: identite.adresse }, () =>
       scellerBlocSousNonce({
@@ -219,12 +227,46 @@ export class Scellement {
   }
 
   /**
-   * Ouvre un bloc sous l'identité présentée. Un écart quelconque est un REFUS : aucun clair partiel,
-   * aucun zéro, aucun diagnostic inventé sur la cause.
+   * Ouvre un bloc du volume sous l'identité présentée. Un écart quelconque est un REFUS : aucun
+   * clair partiel, aucun zéro, aucun diagnostic inventé sur la cause.
    */
   async ouvrirBloc(identite, scelle, { generationMinimale = null } = {}) {
     return traduisant({ volume: this.#volume, adresse: identite.adresse }, () =>
       ouvrirBloc({
+        cle: this.#cle,
+        identite: this.#identite(identite),
+        scelle,
+        attentes: { generationMinimale },
+      }),
+    );
+  }
+
+  /** Scelle un ENREGISTREMENT du journal de génération et consomme un scellement (#143). */
+  async scellerEnregistrement(identite, contenu) {
+    const scelle = await traduisant({ volume: this.#volume, adresse: identite.adresse }, () =>
+      scellerEnregistrementSousNonce({
+        cle: this.#cle,
+        identite: this.#identite(identite),
+        contenu,
+        nonce: this.#tirerNonce(),
+        attentes: { scellementsCumules: this.#scellementsCumules },
+      }),
+    );
+    this.#scellementsCumules += 1;
+    return scelle;
+  }
+
+  /**
+   * Ouvre un ENREGISTREMENT du journal de génération (#143).
+   *
+   * Un enregistrement d'un journal ANTÉRIEUR au format 4 ne s'ouvre PAS ici : il a été scellé sous
+   * l'étiquette d'un bloc du volume, et c'est `ouvrirBloc` qui le rend. Le choix appartient au
+   * lecteur de charge, qui seul connaît le format de la racine ; le cacher derrière un paramètre de
+   * ce module aurait mis une décision de format dans la couche qui n'en connaît aucun.
+   */
+  async ouvrirEnregistrement(identite, scelle, { generationMinimale = null } = {}) {
+    return traduisant({ volume: this.#volume, adresse: identite.adresse }, () =>
+      ouvrirEnregistrement({
         cle: this.#cle,
         identite: this.#identite(identite),
         scelle,

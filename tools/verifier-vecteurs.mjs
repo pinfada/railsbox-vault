@@ -8,7 +8,8 @@
 // ## Ce qu'il est, et pourquoi il ne ressemble à rien d'autre dans ce dépôt
 //
 // Ce fichier RÉIMPLÉMENTE, à partir de `docs/format-de-volume-v3.md` et de rien d'autre, les
-// encodages que le format emploie : les données associées d'un bloc et d'une racine, l'encodage
+// encodages que le format emploie : les données associées d'un bloc du volume, celles d'un
+// ENREGISTREMENT du journal — distinctes depuis le constat #143 —, celles d'une racine, l'encodage
 // canonique de la suite des entrées, le sceau de 34 octets, l'en-tête v3, la racine sur disque, le
 // témoin. Il les confronte ensuite aux octets FIGÉS de `tests/vectors/`.
 //
@@ -37,6 +38,8 @@ const RACINE = fileURLToPath(new URL("../", import.meta.url));
 
 /** Les étiquettes de domaine, telles que la spécification les fixe. Aucune n'est devinable. */
 const DOMAINE_BLOC = "railsbox-vault/format-chiffre/v1/bloc";
+/** Celle d'un ENREGISTREMENT du journal, distincte de celle d'un bloc du volume depuis #143. */
+const DOMAINE_ENREGISTREMENT = "railsbox-vault/format-chiffre/v1/enregistrement";
 const DOMAINE_RACINE = "railsbox-vault/format-chiffre/v1/racine";
 const DOMAINE_ENTREES = "railsbox-vault/format-chiffre/v1/entrees";
 const ALGORITHME = "aes-256-gcm";
@@ -47,6 +50,12 @@ const GENERATION_OCTETS = 6;
 const SCEAU_OCTETS = NONCE_OCTETS + ETIQUETTE_OCTETS + GENERATION_OCTETS;
 const EMPREINTE_OCTETS = 32;
 const SECTEUR = 512;
+
+/**
+ * Format du journal de génération que la spécification décrit (§ 6.7). Épinglé ICI plutôt que lu
+ * dans les vecteurs : un vérificateur qui croirait le document qu'il vérifie ne vérifierait rien.
+ */
+const FORMAT_JOURNAL = 4;
 
 /** Rangs réservés de la fraîcheur (ADR 0019) : les deux plus grands rangs représentables, 2^40 − 1. */
 const RANG_MAX = 2 ** 40 - 1;
@@ -132,10 +141,20 @@ function texteAscii(valeur) {
 // Les encodages du format, réécrits depuis la spécification.
 // ---------------------------------------------------------------------------------------------
 
-/** Données associées d'un bloc : l'identité logique complète, chaque champ fixe ou préfixé. */
-function donneesAssocieesDeBloc({ volume, formatVersion, generation, rang, adresse, longueur }) {
+/**
+ * Données associées d'un objet ADRESSÉ, sous l'étiquette de domaine de SON magasin : l'identité
+ * logique complète, chaque champ fixe ou préfixé.
+ *
+ * L'étiquette est le premier champ, et c'est elle qui sépare les magasins depuis le constat #143 :
+ * un secteur du volume et le premier enregistrement d'une charge partagent les six champs suivants
+ * dans le cas nominal, et ne rendent pourtant pas la même chaîne.
+ */
+function donneesAssocieesAdressees(
+  domaine,
+  { volume, formatVersion, generation, rang, adresse, longueur },
+) {
   return concat(
-    chainePrefixee(DOMAINE_BLOC),
+    chainePrefixee(domaine),
     chainePrefixee(ALGORITHME),
     be(formatVersion, 4),
     chainePrefixee(volume),
@@ -144,6 +163,16 @@ function donneesAssocieesDeBloc({ volume, formatVersion, generation, rang, adres
     be(adresse, 8),
     be(longueur, 4),
   );
+}
+
+/** Données associées d'un BLOC DU VOLUME : secteur de la charge, empreinte de région, témoin. */
+function donneesAssocieesDeBloc(identite) {
+  return donneesAssocieesAdressees(DOMAINE_BLOC, identite);
+}
+
+/** Données associées d'un ENREGISTREMENT du journal de génération (#143). */
+function donneesAssocieesDEnregistrement(identite) {
+  return donneesAssocieesAdressees(DOMAINE_ENREGISTREMENT, identite);
 }
 
 /** Données associées d'une racine : son en-tête, dans l'ordre que la spécification fixe. */
@@ -405,6 +434,11 @@ async function verifierDisposition() {
     "disposition : un sceau fait 34 octets",
     vecteurs.specification.sceauOctets === SCEAU_OCTETS,
   );
+  verifier(
+    `disposition : le journal est annoncé au format ${FORMAT_JOURNAL}`,
+    vecteurs.specification.formatJournal === FORMAT_JOURNAL,
+    `annoncé ${vecteurs.specification.formatJournal}`,
+  );
 
   // La disposition se DÉDUIT de la taille logique : rien n'est cru sur parole.
   const secteurs = vecteurs.volume.tailleLogique / SECTEUR;
@@ -459,7 +493,14 @@ async function verifierDisposition() {
       entete,
       enregistrement.attendu.enteteHex,
     );
-    const aad = donneesAssocieesDeBloc(identite);
+    // L'étiquette de domaine d'un ENREGISTREMENT, et non celle d'un bloc du volume : c'est ce que
+    // le constat #143 a imposé, et c'est ce que ce contrôle rend opposable.
+    const aad = donneesAssocieesDEnregistrement(identite);
+    verifier(
+      `enregistrement « ${nom} » : ses données associées ne sont PAS celles du secteur homologue`,
+      octetsEnHex(aad) !== octetsEnHex(donneesAssocieesDeBloc(identite)),
+      "les deux magasins partagent encore leur étiquette de domaine.",
+    );
     const nonce = hexEnOctets(enregistrement.attendu.nonce);
     const scelle = await sceller(cle, nonce, aad, hexEnOctets(enregistrement.clair.hex));
     memesOctets(
@@ -486,6 +527,22 @@ async function verifierDisposition() {
       `enregistrement « ${nom} » : les octets complets — en-tête, sceau, chiffré`,
       concat(entete, sceau, scelle.chiffre),
       enregistrement.attendu.octetsHex,
+    );
+    // LA REPRODUCTION DU CONSTAT #143, retournée en contrôle vert. Ces octets-là sont exactement
+    // ceux qu'un adversaire épisserait dans la région et la charge du volume : les présenter sous
+    // l'identité d'un SECTEUR doit ne rien rendre. Le contrôle ne coûte qu'un déchiffrement, et il
+    // dit la propriété que la seule inégalité des chaînes ne dit pas — que le refus est celui du
+    // moteur, pas celui d'une comparaison de ce script.
+    verifier(
+      `enregistrement « ${nom} » : présenté comme un SECTEUR du volume, il ne s'ouvre pas`,
+      (await ouvrir(
+        cle,
+        nonce,
+        donneesAssocieesDeBloc(identite),
+        hexEnOctets(enregistrement.attendu.chiffre),
+        hexEnOctets(enregistrement.attendu.etiquette),
+      )) === null,
+      "un enregistrement du journal s'ouvre encore dans l'espace d'identités du volume.",
     );
   }
 

@@ -16,8 +16,10 @@
 import { SECTOR_SIZE } from "./block-geometry.mjs";
 import {
   ENTETE_OCTETS,
+  GENERATION_FORMATS_LUS,
   SCEAU_ENREGISTREMENT_OCTETS,
   SURCOUT_ENREGISTREMENT,
+  enregistrementsSousIdentiteDeBloc,
 } from "./generation-format.mjs";
 import { decoderSceau } from "./volume-chiffre-format.mjs";
 
@@ -55,14 +57,31 @@ export class RelectureDeCharge {
   #generationPlancher = 1;
 
   /**
+   * ÉTIQUETTE DE DOMAINE des enregistrements que cet index recouvre (#143).
+   *
+   * Elle ne varie pas : cet index ne porte QUE des enregistrements déposés par la session en cours,
+   * puisque le journal est vidé à la fin de toute récupération. Le FORMAT est donc reçu une fois du
+   * magasin, qui seul sait lequel il écrit — le déduire ici aurait été une seconde source de vérité
+   * pour une question qui n'en admet qu'une.
+   */
+  #identiteHeritee;
+
+  /**
    * @param {{ journal: import("./generation-journal.mjs").JournalDeGeneration,
    *           scellement: import("./scellement.mjs").Scellement,
-   *           lireVolume: (offset: number, longueur: number) => Promise<Uint8Array> }} options
+   *           lireVolume: (offset: number, longueur: number) => Promise<Uint8Array>,
+   *           formatJournal: number }} options
    */
-  constructor({ journal, scellement, lireVolume }) {
+  constructor({ journal, scellement, lireVolume, formatJournal }) {
     this.#journal = journal;
     this.#scellement = scellement;
     this.#lireVolume = lireVolume;
+    if (!GENERATION_FORMATS_LUS.includes(formatJournal)) {
+      throw new TypeError(
+        `La relecture d'une charge exige le FORMAT du journal que la session écrit, parmi ${GENERATION_FORMATS_LUS.join(", ")} : c'est lui qui dit sous quelle étiquette de domaine ses enregistrements sont scellés. Reçu ${formatJournal}.`,
+      );
+    }
+    this.#identiteHeritee = enregistrementsSousIdentiteDeBloc(formatJournal);
   }
 
   /** Nombre de secteurs que la charge en cours recouvre. Zéro veut dire « le volume suffit ». */
@@ -144,16 +163,19 @@ export class RelectureDeCharge {
     const sceau = decoderSceau(
       this.#journal.lire(entree.position + ENTETE_OCTETS, SCEAU_ENREGISTREMENT_OCTETS),
     );
-    const clair = await this.#scellement.ouvrirBloc(
-      {
-        generation: entree.generation,
-        rang: entree.rang,
-        adresse: entree.adresse,
-        longueur: entree.longueur,
-      },
-      { nonce: sceau.nonce, etiquette: sceau.etiquette, chiffre },
-      { generationMinimale: this.#generationPlancher },
-    );
+    const identite = {
+      generation: entree.generation,
+      rang: entree.rang,
+      adresse: entree.adresse,
+      longueur: entree.longueur,
+    };
+    const scelle = { nonce: sceau.nonce, etiquette: sceau.etiquette, chiffre };
+    const attentes = { generationMinimale: this.#generationPlancher };
+    // Même choix qu'au parcours d'une charge, et pour la même raison : dans un journal d'avant le
+    // format 4, un enregistrement porte l'identité d'un BLOC du volume (#143).
+    const clair = this.#identiteHeritee
+      ? await this.#scellement.ouvrirBloc(identite, scelle, attentes)
+      : await this.#scellement.ouvrirEnregistrement(identite, scelle, attentes);
     this.#dernierOuvert = { position: entree.position, clair };
     return clair;
   }

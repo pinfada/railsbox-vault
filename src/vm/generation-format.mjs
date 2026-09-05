@@ -47,6 +47,31 @@
 // Une racine de format 2, laissée par #18, reste LISIBLE : elle ne scelle aucune empreinte, le
 // décodeur le dit par `fraicheur: null`, et la première racine écrite ensuite porte l'empreinte.
 //
+// ## Le format 4 (#143) : un enregistrement n'est plus un bloc du volume
+//
+// La pré-revue adverse de #20 a montré qu'un enregistrement du journal et un secteur du volume à la
+// même adresse, même génération, rang 0 — le cas NOMINAL — portaient des données associées
+// identiques octet pour octet. La correction est une étiquette de domaine PAR MAGASIN
+// (`identite-logique.mjs`), et elle change ce que la charge d'un journal porte : le format passe
+// donc de 3 à 4, exactement comme l'ADR 0019 l'a fait passer de 2 à 3.
+//
+// **Aucun octet de la RACINE ne bouge**, et aucun octet du VOLUME non plus : les données associées
+// d'un secteur, d'une racine, de l'empreinte de région et du témoin sont inchangées, et les vecteurs
+// de l'ADR 0015 restent valides. Ce qui change est le seul magasin dont l'ADR 0016 décrit la charge.
+//
+// **Un journal de format 3 est REJOUÉ une fois**, sous l'ancien encodage — une génération validée y
+// vit jusqu'à ce qu'une ouverture la reporte dans le volume, et la refuser perdrait une écriture
+// acquittée. Le vidage qui termine toute récupération écrit ensuite une racine de format 4.
+//
+// **Le champ de format n'est pas authentifié, et il faut dire ce que cela laisse.** Les formats 3 et
+// 4 ont la même disposition : aucune garde de cohérence ne peut les distinguer comme celle qui
+// distingue 2 de 3. Retourner ce champ fait donc ouvrir les enregistrements sous l'autre étiquette,
+// qui ne vérifie pas : le résultat est un REFUS (`VAULT_STORAGE_GENERATION_CORRUPT`), jamais un
+// clair. Sur une racine VIDE — l'état d'un journal au repos —, le retournement ne change rien,
+// puisque aucun enregistrement n'est ouvert. Ce qui interdit de rejouer un VRAI journal de format 3
+// à côté d'un volume plus récent reste ce qui l'interdisait déjà : le plancher de séquence du témoin
+// et l'empreinte de région que sa racine scelle.
+//
 // La **longueur de charge** que la racine authentifie est celle des CLAIRS (ADR 0015,
 // `enteteDeRacine`). La longueur PHYSIQUE de la charge s'en déduit — `longueurCharge +
 // nombreEntrees × SURCOUT_ENREGISTREMENT` — plutôt que d'être stockée : deux grandeurs stockées
@@ -67,17 +92,19 @@ const MAGIC = Uint8Array.from([0x56, 0x4c, 0x54, 0x47, 0x45, 0x4e, 0x30, 0x31]);
 
 /**
  * Version du format du journal de génération, ÉCRITE par ce runtime. Distincte du format du
- * manifeste (#10).
+ * manifeste (#10) et de celui du VOLUME, qui reste v3.
  *
  * **2 depuis #18** : la racine est scellée, plus sommée. **3 depuis #19** : elle scelle en outre
- * l'empreinte de la région d'authentification du volume (ADR 0019). Un runtime antérieur refuse
- * cette racine comme un format inconnu, ce qui est exactement le comportement voulu — il ne
- * confronterait pas la région, et il croirait fraîche une version d'hier.
+ * l'empreinte de la région d'authentification du volume (ADR 0019). **4 depuis #143** : les
+ * ENREGISTREMENTS de la charge sont scellés sous leur propre étiquette de domaine, distincte de
+ * celle des secteurs du volume. Un runtime antérieur refuse cette racine comme un format inconnu, ce
+ * qui est exactement le comportement voulu — il ouvrirait les enregistrements sous l'ancienne
+ * étiquette, c'est-à-dire dans l'espace d'identités du volume.
  */
-export const GENERATION_FORMAT = 3;
+export const GENERATION_FORMAT = 4;
 
 /**
- * Formats de journal que ce runtime sait LIRE. Deux, et l'écart entre lire et écrire est le sujet.
+ * Formats de journal que ce runtime sait LIRE. Trois, et l'écart entre lire et écrire est le sujet.
  *
  * #19 ajoute à la racine l'empreinte scellée de la région d'authentification (ADR 0019), donc un
  * champ. L'ADR 0016 avait prévu le cas et nommé sa réserve — « la réserve du secteur de racine
@@ -87,20 +114,74 @@ export const GENERATION_FORMAT = 3;
  * Un volume scellé par #18 porte une racine de format 2, sans ce champ. Il reste OUVRABLE : ce
  * runtime la décode, constate qu'elle ne scelle aucune empreinte, et ne prétend donc aucune
  * fraîcheur pour cette ouverture-là. La MIGRATION est immédiate et sans geste d'exploitation — toute
- * récupération se termine par un vidage, qui écrit une racine neuve, donc de format 3 : la propriété
- * est acquise dès la première réouverture. Ce que cette fenêtre laisse ouvert, et pour cette
- * ouverture seulement, est écrit dans l'ADR 0019.
+ * récupération se termine par un vidage, qui écrit une racine neuve : la propriété est acquise dès la
+ * première réouverture. Ce que cette fenêtre laisse ouvert, et pour cette ouverture seulement, est
+ * écrit dans l'ADR 0019.
  *
- * Ce que ce runtime n'ÉCRIT plus jamais, c'est une racine de format 2. Une racine sans empreinte
- * serait un désarmement silencieux de la fraîcheur, et le témoin de séquence refuse précisément
- * cela dès qu'il en a attesté une.
+ * Ce que ce runtime n'ÉCRIT plus jamais, c'est une racine de format 2 ou 3. Une racine sans
+ * empreinte serait un désarmement silencieux de la fraîcheur, et le témoin de séquence refuse
+ * précisément cela dès qu'il en a attesté une ; une racine de format 3 remettrait les
+ * enregistrements dans l'espace d'identités du volume (#143).
  */
 export const GENERATION_FORMAT_SANS_FRAICHEUR = 2;
 
+/**
+ * Dernier format dont les ENREGISTREMENTS portent l'identité d'un BLOC DU VOLUME (#143).
+ *
+ * Un journal de format 3 est LU et REJOUÉ une fois, sous l'ancien encodage, puis remplacé par le
+ * format 4 au vidage qui termine toute récupération. Le refuser aurait perdu une écriture acquittée
+ * — une génération validée vit dans le journal jusqu'à ce qu'une ouverture la reporte dans le volume
+ * —, et le lire sous le NOUVEL encodage l'aurait refusée par « sceau refusé », donc par
+ * `VAULT_STORAGE_GENERATION_CORRUPT` : « restaurer une sauvegarde » pour un volume intact. C'est le
+ * défaut que la revue de #110 a nommé sur le format 1, et `generation-v1-rejeu.mjs` en est le
+ * précédent.
+ */
+export const GENERATION_FORMAT_IDENTITE_DE_BLOC = 3;
+
 export const GENERATION_FORMATS_LUS = Object.freeze([
   GENERATION_FORMAT_SANS_FRAICHEUR,
+  GENERATION_FORMAT_IDENTITE_DE_BLOC,
   GENERATION_FORMAT,
 ]);
+
+/**
+ * Vrai si les enregistrements d'un journal de ce format portent l'identité d'un BLOC DU VOLUME.
+ *
+ * La règle vit ICI, dans le module du format, et nulle part ailleurs : le lecteur de charge la
+ * consulte, il ne la rejoue pas. Deux endroits qui décideraient de la même chose finiraient par
+ * décider deux choses différentes.
+ */
+export function enregistrementsSousIdentiteDeBloc(format) {
+  return format <= GENERATION_FORMAT_IDENTITE_DE_BLOC;
+}
+
+/** Formats dont la racine porte l'empreinte de région de l'ADR 0019. */
+function racinePorteFraicheur(format) {
+  return format > GENERATION_FORMAT_SANS_FRAICHEUR;
+}
+
+/**
+ * Format de journal qu'ÉCRIT une session, selon qu'elle tient une fraîcheur de région ou non.
+ *
+ * **Un numéro de format dit DEUX choses ensemble** : ce que porte la racine, et sous quelle
+ * étiquette de domaine les enregistrements de sa charge sont scellés. Elles vont ensemble parce que
+ * ce runtime n'écrit qu'une seule combinaison en production — 4 —, et parce que la seule autre qu'il
+ * sache écrire, 2, existe pour une raison unique : fabriquer le journal de #18, celui que le chemin
+ * de compatibilité doit savoir relire. Les découpler aurait demandé un champ de plus dans la racine
+ * pour un état qu'aucun volume de production n'atteint.
+ *
+ * L'ouvreur du produit fournit TOUJOURS une source de fraîcheur (`opfs-volume-ouverture.mjs`), donc
+ * écrit toujours du 4 ; seuls des bancs et des outils de mesure déclarent `fraicheur: null`. C'est
+ * ce que `tests/unit/vm-journal-format-4.test.mjs` épingle par le chemin d'ouverture réel, pour que
+ * la propriété ne dépende pas de la lecture de cette phrase.
+ *
+ * Le format qu'une session écrit ne change JAMAIS en cours de session : toute récupération se
+ * termine par un vidage, qui réécrit la racine et tronque la charge. Un journal MIXTE — des
+ * enregistrements sous deux étiquettes de domaine — n'existe donc à aucun instant.
+ */
+export function formatEcritSousFraicheur(fraicheurTenue) {
+  return fraicheurTenue ? GENERATION_FORMAT : GENERATION_FORMAT_SANS_FRAICHEUR;
+}
 
 /** Une racine occupe un secteur entier : c'est l'unité de la commutation. */
 export const RACINE_OCTETS = SECTOR_SIZE;
@@ -118,7 +199,10 @@ export const RACINES = 2;
 export const RACINE_ENTETE_V2_OCTETS = 136;
 
 /**
- * Octets qu'occupe une racine v3 de format 3 : 202 sur 512, la réserve restant à zéro.
+ * Octets qu'occupe une racine v3 de format 3 ou 4 : 202 sur 512, la réserve restant à zéro.
+ *
+ * Les formats 3 et 4 ont EXACTEMENT la même disposition : #143 ne change aucun octet de la racine,
+ * seulement l'étiquette de domaine sous laquelle les enregistrements de la charge sont scellés.
  *
  * Les 136 premiers sont ceux de #18, inchangés. Les 66 suivants sont la FRAÎCHEUR de l'ADR 0019 :
  * le sceau de l'empreinte de région (nonce 12 + étiquette 16 + génération 6) puis son chiffré (32).
@@ -234,7 +318,7 @@ export function encoderRacine({
   // La VERSION suit ce que la racine porte réellement, et non l'inverse : écrire « format 3 » sur
   // une racine sans empreinte ferait échouer la relecture sur un champ absent, et écrire
   // « format 2 » sur une racine qui en porte une la rendrait invisible.
-  vue.setUint32(8, fraicheur === null ? GENERATION_FORMAT_SANS_FRAICHEUR : GENERATION_FORMAT, true);
+  vue.setUint32(8, formatEcritSousFraicheur(fraicheur !== null), true);
   vue.setUint32(12, SECTOR_SIZE, true);
   ecrireEntier64(vue, 16, sequence);
   ecrireEntier64(vue, 24, generation);
@@ -325,7 +409,7 @@ function controlerSansCle(octets, { tailleVolume }) {
   if (!GENERATION_FORMATS_LUS.includes(format)) {
     return refusDeRacine(`Format de journal de génération inconnu : ${format}.`);
   }
-  if (format === GENERATION_FORMAT && octets.byteLength < RACINE_ENTETE_OCTETS) {
+  if (racinePorteFraicheur(format) && octets.byteLength < RACINE_ENTETE_OCTETS) {
     return refusDeRacine("Secteur de racine trop court pour porter la fraîcheur de sa région.");
   }
   // Une racine qui SE DIT d'avant la fraîcheur, au-dessus d'octets de fraîcheur non nuls, ne peut
@@ -375,10 +459,9 @@ export function decoderRacine(octets, attentes) {
       }),
       // `null` DIT qu'aucune empreinte n'est scellée, et l'appelant doit en décider — il ne peut pas
       // le confondre avec une empreinte de zéros, qui serait une empreinte comme une autre.
-      fraicheur:
-        format === GENERATION_FORMAT
-          ? octets.slice(RACINE_ENTETE_V2_OCTETS, RACINE_ENTETE_OCTETS)
-          : null,
+      fraicheur: racinePorteFraicheur(format)
+        ? octets.slice(RACINE_ENTETE_V2_OCTETS, RACINE_ENTETE_OCTETS)
+        : null,
     }),
   };
 }
