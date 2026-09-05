@@ -312,7 +312,8 @@ test("chaque ligne du registre cite une issue `revue-externe` qui existe", async
     if (!/^(CRITICAL|HIGH|MEDIUM|LOW)$/.test(severite)) {
       defauts.push(`sévérité hors vocabulaire : ${severite}`);
     }
-    if (!dispositions.test(disposition)) defauts.push(`disposition hors vocabulaire : ${disposition}`);
+    if (!dispositions.test(disposition))
+      defauts.push(`disposition hors vocabulaire : ${disposition}`);
     // Une disposition sans preuve opposable n'est pas une disposition : un commit ou un ADR.
     if (!/`[0-9a-f]{7,40}`|ADR\s*\d{4}/.test(preuve)) defauts.push(`preuve absente : ${preuve}`);
   }
@@ -325,9 +326,9 @@ test("les issues que le registre cite sont celles que la spécification dit disp
   // en est la mise en forme opposable.
   const registre = await lire("docs/revue-externe/registre.md");
   const spec = await lire(SPEC);
-  const citees = [
-    ...registre.matchAll(/github\.com\/pinfada\/railsbox-vault\/issues\/(\d+)/g),
-  ].map((occurrence) => occurrence[1]);
+  const citees = [...registre.matchAll(/github\.com\/pinfada\/railsbox-vault\/issues\/(\d+)/g)].map(
+    (occurrence) => occurrence[1],
+  );
   assert.ok(citees.length > 0, "le registre ne cite aucune issue : la recherche est cassée.");
   const absentes = citees.filter((numero) => !spec.includes(`issues/${numero}`));
   assert.deepEqual(
