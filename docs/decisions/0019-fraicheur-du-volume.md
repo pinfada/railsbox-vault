@@ -474,4 +474,4 @@ interdit de rejouer un vrai journal de format 3 à côté d'un volume plus réce
 l'interdisait déjà : le plancher de séquence du témoin et l'empreinte de région que sa racine
 scelle.
 
-Correction portée par le commit `7f106fb`. Épreuves : `tests/unit/vm-journal-format-4.test.mjs`.
+Correction portée par le commit `51ba8e0`. Épreuves : `tests/unit/vm-journal-format-4.test.mjs`.

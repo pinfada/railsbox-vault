@@ -9,10 +9,27 @@ vide de CRITICAL et de HIGH **ouverts**.
 **Ce qu'il porte, et ce qu'il ne dit pas.** La moitié 2 — la sollicitation d'un tiers — n'a pas eu
 lieu. Les lignes ci-dessous viennent de la **pré-revue adverse interne** de la moitié 1, traitée
 comme une revue externe : chaque constat porte son issue `revue-externe`, et le registre dit ce que
-le dépôt en a fait. Un registre pré-rempli d'exemples ferait croire à une revue qui n'existe pas ;
-`tests/unit/dossier-de-revue.test.mjs` › « chaque ligne du registre cite une issue `revue-externe`
-qui existe » exige donc que chaque ligne renvoie à une issue réelle et porte une disposition du
-vocabulaire fermé, et rougira sur une ligne inventée.
+le dépôt en a fait.
+
+**Ce que la garde vérifie, mot pour mot, et rien de plus.** Un registre pré-rempli d'exemples ferait
+croire à une revue qui n'existe pas, et une garde qui promettrait plus qu'elle ne tient serait pire
+qu'une garde absente. `tests/unit/dossier-de-revue.test.mjs` › « le registre porte ses quatre
+colonnes, et chaque ligne est OPPOSABLE » exige de CHAQUE ligne, **hors ligne** :
+
+- qu'elle cite une **issue de ce dépôt**, dont le numéro est repris par le § 9.6 de
+  [`docs/format-de-volume-v3.md`](../format-de-volume-v3.md) ou par
+  [`SECURITY.md`](../../SECURITY.md). Ce recoupement est **interne** : il établit que le registre et
+  le dossier parlent des mêmes numéros, **pas** qu'un tiers a envoyé le constat ;
+- une **sévérité** et une **disposition** du vocabulaire fermé décrit plus bas ;
+- une **preuve qui existe vraiment** : chaque empreinte citée doit être un commit de ce dépôt
+  (`git cat-file -e`), chaque ADR cité un fichier de `docs/decisions/`, et une disposition « corrigé
+  » doit citer au moins un commit. C'est le seul de ces contrôles que rien de rédactionnel ne peut
+  satisfaire.
+
+La garde est éprouvée **dans les deux sens** : « la garde du registre MORD : une ligne inventée est
+refusée sur chacun de ses défauts » rejoue la ligne exacte qu'une revue a fait passer au vert
+lorsque la garde ne contrôlait que la forme d'une URL. Ce qu'elle ne peut PAS établir est écrit plus
+bas, sous « Ce que ce registre n'établit pas ».
 
 Le dossier soumis à la revue est décrit par
 [`docs/format-de-volume-v3.md`](../format-de-volume-v3.md) ; le format de réponse attendu est
@@ -22,7 +39,7 @@ Le dossier soumis à la revue est décrit par
 
 | Constat                                                                                                                                             | Sévérité | Disposition | Commit ou ADR                                                |
 | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------- | ------------------------------------------------------------ |
-| [#143](https://github.com/pinfada/railsbox-vault/issues/143) — l'identité logique ne sépare pas un enregistrement de journal d'un secteur de volume | HIGH     | corrigé     | `7f106fb` ; ADR 0016 et ADR 0019 amendés le 5 septembre 2026 |
+| [#143](https://github.com/pinfada/railsbox-vault/issues/143) — l'identité logique ne sépare pas un enregistrement de journal d'un secteur de volume | HIGH     | corrigé     | `51ba8e0` ; ADR 0016 et ADR 0019 amendés le 5 septembre 2026 |
 
 ## Comment une ligne se remplit
 
@@ -38,5 +55,12 @@ Le dossier soumis à la revue est décrit par
 ## Ce que ce registre n'établit pas
 
 Il ne dit pas que le format a été **audité**, ni qu'il est **sûr**. Il dit ce qui a été signalé et
-ce que le dépôt en a fait. Toute mention d'un audit devra nommer qui, quand, et sur quelle version —
-l'empreinte du commit revu —, faute de quoi elle ne serait pas vérifiable.
+ce que le dépôt en a fait.
+
+Il n'établit pas non plus qu'un **tiers** a envoyé les constats qu'il porte : la garde recoupe le
+registre avec le dossier du même dépôt, et une issue de ce dépôt peut être ouverte par ce dépôt.
+C'est exactement le cas des lignes présentes, qui viennent d'une pré-revue **interne** traitée comme
+externe, et le registre le dit plus haut plutôt que de le laisser deviner. Une empreinte citée,
+elle, est vérifiable sans nous : `git cat-file -e` la trouve ou ne la trouve pas. Toute mention d'un
+audit devra nommer qui, quand, et sur quelle version — l'empreinte du commit revu —, faute de quoi
+elle ne serait pas vérifiable.

@@ -1397,7 +1397,7 @@ sain irouvrable, sous un message qui recommande une restauration — le remède 
 recevoir. Aucun geste de sortie n'est nommé dans ce document pour cet état.
 
 **[#143](https://github.com/pinfada/railsbox-vault/issues/143) — L'identité logique ne sépare pas un
-enregistrement de journal d'un secteur de volume. CORRIGÉ, commit `7f106fb`.** Le § 5.4 affirmait, à
+enregistrement de journal d'un secteur de volume. CORRIGÉ, commit `51ba8e0`.** Le § 5.4 affirmait, à
 tort, que « le rang sépare des identités qui partageraient tout le reste » et présentait le rang 0
 comme identifiant sans ambiguïté « un secteur du volume » : le premier enregistrement déposé dans
 une charge de journal porte lui aussi le rang 0, sous une identité par ailleurs identique dans le
