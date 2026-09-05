@@ -279,7 +279,10 @@ export async function verifierEpinglageV86(destination, empreinte) {
   const presents = await readdir(dossier);
   // Les octets SERVIS sont confrontés dans tous les cas, y compris quand le runtime manque : un
   // fichier qui traîne sous le préfixe immuable est un écart même dans un arbre incomplet.
-  const ecarts = await ecartsDesOctetsServis(dossier, presents, attendus, empreinte);
+  const ecarts = [
+    ...ecartsDeCollisionDAdresse(declares, attendus),
+    ...(await ecartsDesOctetsServis(dossier, presents, attendus, empreinte)),
+  ];
   const manquants = ecartsDesAdressesAttendues(adressesDesArtefacts, presents);
 
   // AUCUN artefact déclaré n'est là : c'est le clone vierge, pas une publication rompue.
@@ -303,6 +306,33 @@ export async function verifierEpinglageV86(destination, empreinte) {
     motif: null,
     ecarts: [...manquants, ...ecarts],
   };
+}
+
+/**
+ * Passe 0 — DEUX octets différents réclament-ils la même adresse ?
+ *
+ * La vérification est indexée par ADRESSE : deux entrées qui en rendraient une seule s'écraseraient
+ * l'une l'autre dans la table des attendus, et l'artefact perdu ne serait plus exigé de personne —
+ * un fichier manquant deviendrait invisible, sous une classe de cache d'un an.
+ *
+ * Le cas est improbable — il faut soit une collision sur 64 bits de SHA-256, soit un manifeste qui
+ * déclare deux fois le même nom, soit un artefact nommé comme la copie épinglée du manifeste — mais
+ * il est exactement du genre que la troncature invite à ne pas regarder. Le compte des adresses est
+ * confronté au compte des déclarations, ce qui coûte une soustraction et referme les trois cas d'un
+ * coup.
+ */
+function ecartsDeCollisionDAdresse(declares, attendus) {
+  const attendues = declares.length + 1;
+  if (attendus.size === attendues) return [];
+  return [
+    {
+      artefact: "vendor/v86/MANIFEST.json",
+      motif:
+        `${attendues} octets déclarés pour ${attendus.size} adresses distinctes : deux d'entre eux ` +
+        `réclament la même adresse. L'un serait servi à la place de l'autre, et sa propre absence ` +
+        `ne serait exigée de personne (ADR 0003, ADR 0023 amendé par #123)`,
+    },
+  ];
 }
 
 /** Passe 1 — chaque adresse dérivée du manifeste est-elle servie ? */

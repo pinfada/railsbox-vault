@@ -288,3 +288,39 @@ test("un intrus est refusé MÊME dans un arbre incomplet", async () => {
     await rm(racine, { recursive: true, force: true });
   }
 });
+
+test("deux octets qui réclameraient la MÊME adresse sont refusés", async () => {
+  // La table des attendus est indexée par ADRESSE : sans ce refus, la seconde entrée écraserait la
+  // première, et l'artefact perdu ne serait plus exigé de personne — son absence deviendrait
+  // invisible, sous une classe de cache d'un an. Le cas est improbable (collision sur 64 bits, ou
+  // manifeste qui déclare deux fois le même nom) et c'est exactement pour cela qu'il se mesure : la
+  // troncature invite à ne pas le regarder.
+  const racine = await nouvelleRacine();
+  try {
+    const contenu = "des octets";
+    const sha256 = empreinte(encodeur.encode(contenu));
+    const manifeste = {
+      artifacts: [
+        { name: "v86.wasm", bytes: contenu.length, sha256 },
+        { name: "v86.wasm", bytes: contenu.length, sha256 },
+      ],
+    };
+    const dossier = join(racine, "vendor", "v86", "artefacts");
+    await mkdir(dossier, { recursive: true });
+    await writeFile(join(dossier, nomAdresse("v86.wasm", sha256)), contenu, "utf8");
+    await writeFile(
+      join(racine, "vendor", "v86", "MANIFEST.json"),
+      `${JSON.stringify(manifeste, null, 2)}\n`,
+      "utf8",
+    );
+    await ecrireManifesteEpingle(racine, empreinte);
+
+    const verdict = await verifierEpinglageV86(racine, empreinte);
+    assert.ok(
+      verdict.ecarts.some(({ motif }) => motif.includes("la même adresse")),
+      `la collision d'adresse doit être refusée : ${JSON.stringify(verdict.ecarts)}`,
+    );
+  } finally {
+    await rm(racine, { recursive: true, force: true });
+  }
+});

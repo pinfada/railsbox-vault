@@ -28,11 +28,6 @@ export function cheminDeLArtefact(artefact) {
   return join(ARTIFACT_DIRECTORY, nomDeFichier(artefact));
 }
 
-/** Noms de fichiers attendus dans `vendor/v86/artefacts/`, indexés par nom d'artefact. */
-export function nomsDeFichiers(manifeste) {
-  return new Map(manifeste.artifacts.map((artefact) => [artefact.name, nomDeFichier(artefact)]));
-}
-
 /**
  * Le manifeste d'épinglage du dépôt.
  *
