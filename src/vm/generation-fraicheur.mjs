@@ -46,8 +46,11 @@
 // irouvrable un volume neuf, un volume restauré depuis une archive, ou un volume dont le témoin a
 // été perdu par un incident de support — on échangerait une détection qu'on n'a pas contre une perte
 // de données qu'on aurait. Le seul refus que #144 ajoute est une CONJONCTION, et pas cette règle
-// générale : sans témoin, une racine ABÎMÉE à côté d'une racine RETENUE (voir
-// `exigerTemoinDevantUneRacineAbimee`). Aucun de ces trois états ne la produit.
+// générale : sans témoin, une racine ABÎMÉE à côté d'une racine RETENUE PORTANT UNE EMPREINTE (voir
+// `exigerTemoinDevantUneRacineAbimee`, qui énumère les QUATRE états qui ne la produisent pas — le
+// quatrième, un volume d'avant #19, a été relevé en revue). Un volume dont le témoin a été perdu par
+// un incident de support rouvre donc comme avant, SAUF si une racine est abîmée en même temps ; ce
+// cas-là est le prix de la règle, et il est écrit plutôt que tu.
 //
 // Ce qui manque n'est pas une garde de plus ici : c'est une ANCRE MONOTONE hors du support, sans
 // laquelle aucun état local n'a d'autorité sur sa propre fraîcheur. La seule barrière contre le
@@ -393,9 +396,23 @@ export function fraicheurDesarmee(volume, temoin) {
  *    aussi. Rien ne distingue les deux : c'est un état AMBIGU, et il est REFUSÉ.
  *
  * **Ce refus ne contredit pas « refuser tout volume sans témoin ne doit pas changer » (§ 6.9).** Il
- * ne porte QUE sur la conjonction « sans témoin ET une racine abîmée ET une racine retenue », qu'un
- * volume neuf ne produit pas (aucune racine abîmée), qu'un volume restauré ne produit pas (aucun
- * `.gen` après `discardGeneration`), et qu'un premier point de contrôle ne produit pas non plus.
+ * ne porte QUE sur la conjonction « sans témoin ET une racine abîmée ET une racine retenue PORTANT
+ * UNE EMPREINTE ». QUATRE états ne la produisent pas : un volume neuf (aucune racine abîmée) ; un
+ * volume restauré (aucun `.gen` après `discardGeneration`) ; un premier point de contrôle (l'autre
+ * emplacement est vierge, et un secteur vierge n'est pas une racine abîmée) ; et un volume scellé
+ * AVANT #19, dont la racine ne porte pas d'empreinte — le quatrième, relevé en revue.
+ *
+ * **Ce que ce refus SUR-DÉTECTE, et qui n'est pas réparable ici.** `abimees` compte, il ne situe
+ * pas : abîmer la racine la plus ANCIENNE — celle qui ne fait pas autorité, dont la perte ne coûte
+ * rien — produit le même refus. Une racine illisible n'a plus de séquence lisible, et prétendre la
+ * situer reviendrait à croire un en-tête que rien n'authentifie. Le message nomme donc les deux
+ * lectures plutôt que d'en inventer une troisième.
+ *
+ * **Ce que ce refus NE ferme PAS**, et c'est la limite de la règle : l'adversaire de #142, qui
+ * détient une COPIE ANTÉRIEURE du témoin. Il l'archive à `s − 1`, abîme la racine `s`, remet sa
+ * copie — le témoin CONCORDE alors, l'ouverture conclut « coupure », et une génération acquittée
+ * disparaît sous un rapport `verifiee`. La règle tient contre qui neutralise le témoin, pas contre
+ * qui le rejoue. Épreuve : `tests/unit/vm-recul-generation.test.mjs` › « #142 COMPOSÉ à #144 ».
  *
  * **Cette garde-ci ne compare AUCUNE séquence, et c'est délibéré** : elle ne juge que la PRÉSENCE
  * d'un témoin. Départager « concordant » de « en avance » demande d'ouvrir la racine, donc de
@@ -410,6 +427,13 @@ export function fraicheurDesarmee(volume, temoin) {
  */
 function exigerTemoinDevantUneRacineAbimee(volume, { racine, abimees, temoin }) {
   if (abimees === 0 || racine === null || temoin !== null) return;
+  // Une racine SANS empreinte de région est d'avant #19 (§ 6.8), et un magasin d'alors n'écrivait
+  // aucun témoin : « absent » ne veut donc rien dire ici, il n'a JAMAIS pu exister. Exiger sa
+  // présence rendrait irouvrable POUR TOUJOURS un volume que la migration devait ouvrir — le refus
+  // tombant avant toute écriture, le vidage ne répare jamais l'emplacement déchiré. La fenêtre dure
+  // exactement une ouverture, et la porte que ce cas pourrait ouvrir est déjà gardée par
+  // `fraicheurDesarmee` : une racine sans empreinte SOUS un témoin qui en atteste une est refusée.
+  if (racine.fraicheur === null) return;
   throw racineAbimeeSansTemoin(volume, { abimees, sequenceRetenue: racine.sequence });
 }
 
@@ -527,8 +551,19 @@ export class GardeDeFraicheur {
    * une prétention du support sur sa propre fraîcheur, et que c'est le sujet de cette garde (#144).
    * Le contrôle vient AVANT le hachage de la région : le refus est certain, et rehacher 34 Mio pour
    * l'annoncer ensuite ne dirait rien de plus.
+   *
+   * **Il est OBLIGATOIRE, et il n'a pas de valeur par défaut.** Une valeur par défaut aurait désarmé
+   * la garde EN SILENCE pour tout appelant futur : c'est le défaut même que la décision 1 de
+   * l'ADR 0019 a corrigé sur les planchers de séquence — un `null` par défaut, et non décidé, avait
+   * laissé `SEC-GEN-001` inerte pendant toute la durée de #18 — et c'est la règle que
+   * `construireGarde` applique quinze lignes plus bas à `fraicheur === undefined`. Relevé en revue.
    */
-  async confronter(racine, abimees = 0) {
+  async confronter(racine, abimees) {
+    if (!Number.isInteger(abimees) || abimees < 0) {
+      throw new TypeError(
+        `Confrontation de fraîcheur du volume « ${this.#volume} » : « abimees » est obligatoire et doit être un entier positif ou nul — le nombre de racines illisibles que le constat a comptées, reçu « ${abimees} ». Un défaut aurait désarmé en silence le refus d'une racine abîmée sans témoin (#144).`,
+      );
+    }
     exigerTemoinDevantUneRacineAbimee(this.#volume, { racine, abimees, temoin: this.#temoin });
     if (racine === null) {
       if (this.#temoin !== null) throw journalSousLeTemoin(this.#volume, this.#temoin);

@@ -35,6 +35,8 @@ import {
   decoderRacine,
   offsetDeRacine,
 } from "../../src/vm/generation-format.mjs";
+import { GardeDeFraicheur } from "../../src/vm/generation-fraicheur.mjs";
+import { GENERATION_ETATS, poserRapport } from "../../src/vm/generation-recuperation.mjs";
 import { GenerationStore } from "../../src/vm/generation-store.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
@@ -65,7 +67,9 @@ function banc() {
       boite.octets = octets;
     },
   });
-  const ouvrir = async () =>
+  // `fraicheur` est explicite plutôt que par défaut : les épreuves de COMPATIBILITÉ ouvrent avec
+  // `null` — c'est-à-dire comme #18 le faisait, sans témoin ni empreinte de région.
+  const ouvrir = async (fraicheur = source()) =>
     GenerationStore.ouvrir({
       volume: "vol",
       handle: await magasin.openHandle(JOURNAL),
@@ -75,7 +79,7 @@ function banc() {
         cleOctets: CLE_DE_TEST,
         formatVersion: 3,
       }),
-      fraicheur: source(),
+      fraicheur,
       lireVolume: async (offset, longueur) => volume.slice(offset, offset + longueur),
       ecrireVolume: async (offset, octets) => {
         volume.set(octets, offset);
@@ -311,4 +315,192 @@ test("un témoin REJOUÉ après une restauration nomme les DEUX lectures et le g
   );
   apres.close();
   rendre(b.magasin);
+});
+
+test("un volume scellé par #18, dont une racine est déchirée, reste OUVRABLE : il n'a jamais pu avoir de témoin", async () => {
+  // CONTRE-CAS de la règle précédente, relevé en revue (#153). Un volume scellé AVANT l'ADR 0019
+  // n'écrit ni empreinte de région ni témoin — `tests/unit/vm-generation-fraicheur.test.mjs` › « un
+  // magasin sans fraîcheur n'écrit aucun témoin » l'établit. Son témoin n'est donc pas « absent »
+  // au sens de la règle : il n'a JAMAIS pu exister, et exiger sa présence rendrait irouvrable, pour
+  // toujours, un volume que la migration devait ouvrir — le refus tombant avant toute écriture, le
+  // vidage ne répare jamais l'emplacement déchiré.
+  //
+  // Ce que la racine DIT ici est vérifiable sans le témoin : une racine sans empreinte de région est
+  // d'avant #19 (§ 6.8), et la fenêtre dure exactement une ouverture — le vidage qui clôt la
+  // récupération écrit une racine à empreinte et pose un témoin. Le contrôle qui garde CETTE porte
+  // existe déjà et ne bouge pas : `fraicheurDesarmee` refuse une racine sans empreinte sous un
+  // témoin qui en atteste une.
+  const b = banc();
+
+  const avant19 = await b.ouvrir(null);
+  await avant19.deposer(0, buildPattern(SECTOR_SIZE, 141));
+  await avant19.valider();
+  await avant19.deposer(SECTOR_SIZE, buildPattern(SECTOR_SIZE, 142));
+  await avant19.valider();
+  avant19.close();
+  rendre(b.magasin);
+  assert.equal(b.boite.octets, null, "un magasin sans fraîcheur n'écrit aucun témoin");
+
+  const haute = racineLaPlusHaute(b.magasin);
+  await abimerRacine(b.magasin, haute.rang);
+
+  // TÉMOIN POSITIF de la lecture : la racine retenue est bien d'avant #19, donc sans empreinte.
+  const migrant = await b.ouvrir();
+  assert.equal(migrant.rapport.fraicheurRegion, "migree");
+  assert.equal(migrant.rapport.temoinSequence, null);
+  migrant.close();
+  rendre(b.magasin);
+
+  // Et la fenêtre dure UNE ouverture : le vidage a posé une racine à empreinte et un témoin.
+  assert.notEqual(b.boite.octets, null, "le vidage de la migration a posé un témoin");
+  const migre = await b.ouvrir();
+  assert.equal(migre.rapport.fraicheurRegion, "verifiee");
+  migre.close();
+  rendre(b.magasin);
+});
+
+test("la racine ABÎMÉE n'est pas située : abîmer l'ancienne refuse comme abîmer la récente, et c'est le prix", async () => {
+  // Relevé en revue (#153). `abimees` COMPTE les racines illisibles, il ne dit pas LAQUELLE : une
+  // racine qu'on ne sait plus décoder n'a plus de séquence lisible, et prétendre la situer
+  // reviendrait à croire un en-tête que rien n'authentifie. Abîmer la racine la plus ANCIENNE —
+  // celle qui ne fait pas autorité, dont la perte ne coûte rien — produit donc le même refus,
+  // alors que rien n'a reculé et qu'aucun octet n'est perdu.
+  //
+  // C'est une SUR-DÉTECTION, et elle est éprouvée plutôt qu'écrite seulement : le prix de la règle
+  // doit être visible: une coupure au mauvais instant, sous un témoin déjà perdu, coûte une
+  // restauration. Le témoin, lui, la couvre entièrement — c'est l'épreuve du dessus.
+  const { banc: b, haute } = await deuxValidations();
+  const ancienne = (haute.rang + 1) % RACINES;
+  await abimerRacine(b.magasin, ancienne);
+  b.boite.octets = null;
+
+  await assert.rejects(
+    () => b.ouvrir(),
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.generationRootCorrupt),
+    "la racine la plus haute est intacte, et pourtant le refus tombe : la garde ne situe pas l'avarie",
+  );
+  rendre(b.magasin);
+});
+
+test("un état « ecartee » sans octet écarté est REFUSÉ : le code ne peut pas se perdre en silence", async () => {
+  // Relevé en revue (#153). Depuis que `code` suit les OCTETS ÉCARTÉS et non l'état, l'invariant
+  // « ecartee ⇒ DISCARDED » ne tient plus que par la discipline des appelants — et `poserRapport`
+  // publie `octetsEcartes: 0` par défaut, si bien qu'un appelant qui oublierait le détail rendrait
+  // un rapport `ecartee` muet, sans qu'aucune épreuve ne le voie. Le rapport est justement ce qui
+  // empêche un contrôle d'être supposé actif : il refuse donc l'incohérence au lieu de la publier.
+  assert.throws(
+    () =>
+      poserRapport({
+        volume: "vol",
+        etat: GENERATION_ETATS.ecartee,
+        generation: 1,
+        sequence: 1,
+        surmemoireMax: 0,
+        details: {},
+      }),
+    /ecartee/,
+  );
+
+  // TÉMOIN POSITIF, sur le MÊME chemin : l'état cohérent passe, et il porte son code.
+  const rapport = poserRapport({
+    volume: "vol",
+    etat: GENERATION_ETATS.ecartee,
+    generation: 1,
+    sequence: 1,
+    surmemoireMax: 0,
+    details: { octetsEcartes: 50 },
+  });
+  assert.equal(rapport.code, STORAGE_ERROR_CODES.generationDiscarded);
+
+  // Et un état SANS octet écarté reste muet, comme il doit l'être.
+  const aucune = poserRapport({
+    volume: "vol",
+    etat: GENERATION_ETATS.aucune,
+    generation: 1,
+    sequence: 1,
+    surmemoireMax: 0,
+    details: {},
+  });
+  assert.equal(aucune.code, null);
+});
+
+test("`confronter` EXIGE le compte des racines abîmées : un oubli est refusé, jamais suivi", async () => {
+  // Relevé en revue (#153). Une valeur par défaut aurait désarmé la garde EN SILENCE pour tout
+  // appelant futur — exactement le défaut que l'ADR 0019 a corrigé sur les planchers de séquence,
+  // et que `construireGarde` refuse quinze lignes plus bas pour « fraicheur === undefined ». Un
+  // `null` (ou un oubli) par défaut, et non décidé, avait déjà laissé SEC-GEN-001 inerte pendant
+  // toute la durée de #18.
+  const garde = new GardeDeFraicheur({
+    volume: "vol",
+    scellement: null,
+    source: {
+      regionOffset: 0,
+      regionOctets: 0,
+      lireRegion: async () => new Uint8Array(0),
+      lireTemoin: async () => null,
+      ecrireTemoin: async () => {},
+    },
+  });
+  await assert.rejects(() => garde.confronter(null), TypeError);
+});
+
+test("#142 COMPOSÉ à #144 : un témoin ARCHIVÉ puis rejoué fait perdre une génération acquittée sous « verifiee »", async () => {
+  // LA LIMITE de la règle de #144, relevée en revue (#153) et éprouvée plutôt qu'écrite seulement.
+  //
+  // La règle fait décider le TÉMOIN. Elle tient contre l'adversaire qui neutralise le témoin — il
+  // obtient un refus, pas un recul. Elle NE TIENT PAS contre l'adversaire de #142, accepté dans la
+  // même PR : celui qui en détient une COPIE ANTÉRIEURE. Il archive 62 octets à la séquence `s − 1`,
+  // abîme la racine `s`, puis REMET sa copie. Le témoin CONCORDE alors avec la racine retenue,
+  // l'ouverture conclut « coupure », et le volume ouvre sur `s − 1`.
+  //
+  // Ce n'est pas une course : le témoin n'est pas perdu au bon instant, il est archivé À L'AVANCE.
+  // C'est le retour arrière du § 9.1 — indétectable, et déjà accepté comme tel — obtenu à moindre
+  // coût : 62 octets au lieu d'une copie du volume ET du journal. Le rapport publie `verifiee`, et
+  // le seul signal est `DISCARDED`, qui dit « coupure normale ».
+  const b = banc();
+
+  const magasin = await b.ouvrir();
+  await magasin.deposer(0, buildPattern(SECTOR_SIZE, 151));
+  await magasin.valider();
+  // 1. L'ARCHIVE : le témoin à `s − 1`, 62 octets, pris longtemps avant l'attaque.
+  const archive = b.boite.octets;
+  // 2. Une écriture ACQUITTÉE de la génération `s` : le guest a reçu son « oui ».
+  await magasin.deposer(SECTOR_SIZE, buildPattern(SECTOR_SIZE, 152));
+  await magasin.valider();
+  magasin.close();
+  rendre(b.magasin);
+
+  // 3. L'ATTAQUE : abîmer la racine `s`, et REMETTRE l'archive.
+  const haute = racineLaPlusHaute(b.magasin);
+  await abimerRacine(b.magasin, haute.rang);
+  b.boite.octets = archive;
+
+  const apres = await b.ouvrir();
+  assert.equal(apres.rapport.etat, "rejouee");
+  assert.equal(
+    apres.rapport.fraicheurRegion,
+    "verifiee",
+    "le rapport déclare la fraîcheur VÉRIFIÉE : rien n'annonce le recul",
+  );
+  assert.equal(
+    apres.rapport.code,
+    STORAGE_ERROR_CODES.generationDiscarded,
+    "le seul signal est celui d'une coupure normale",
+  );
+  assert.ok(apres.rapport.octetsEcartes > 0);
+  // Le rangement porte dans le volume ce que la racine `s − 1` authentifie, et rien de plus.
+  await apres.pointDeControle();
+  apres.close();
+  rendre(b.magasin);
+
+  assert.deepEqual(
+    [...b.volume.slice(0, SECTOR_SIZE)],
+    [...buildPattern(SECTOR_SIZE, 151)],
+    "l'écriture de la génération `s − 1` est là",
+  );
+  assert.deepEqual(
+    [...b.volume.slice(SECTOR_SIZE, 2 * SECTOR_SIZE)],
+    [...new Uint8Array(SECTOR_SIZE)],
+    "l'écriture ACQUITTÉE de la génération `s` a disparu, sans qu'aucun refus ne le dise",
+  );
 });

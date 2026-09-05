@@ -137,13 +137,23 @@ export function remedeSansRacine({ volume, abimees, chargePresente }) {
  * règle, et elle se lit d'un trait : des octets écartés portent leur code, quel que soit l'état.
  *
  * L'état `ecartee` n'en perd rien : il n'existe que lorsque `chargePresente > 0`, donc il porte
- * toujours des octets écartés.
+ * toujours des octets écartés. **Et cela est désormais EXIGÉ plutôt que supposé** : depuis que le
+ * code suit un champ que l'APPELANT fournit, l'invariant « ecartee ⇒ DISCARDED » ne tenait plus que
+ * par la discipline de deux appelants, et un oubli aurait rendu un rapport `ecartee` muet — sans
+ * qu'aucune épreuve le voie, `octetsEcartes` valant zéro par défaut. Un rapport est justement ce qui
+ * empêche un contrôle d'être supposé actif : il refuse l'incohérence au lieu de la publier. Relevé
+ * en revue.
  *
  * @param {{ volume: string, etat: string, generation: number, sequence: number,
  *           surmemoireMax: number, details: object }} etatFinal
  */
 export function poserRapport({ volume, etat, generation, sequence, surmemoireMax, details }) {
   const octetsEcartes = details.octetsEcartes ?? 0;
+  if (etat === GENERATION_ETATS.ecartee && octetsEcartes <= 0) {
+    throw new TypeError(
+      `Rapport d'ouverture du volume « ${volume} » : l'état « ecartee » déclare une mise au rebut et ne porte aucun octet écarté. Publier ce rapport rendrait « code: null » sur une génération écartée, ce que le § 10.2 interdit — le code est publié, jamais tu.`,
+    );
+  }
   return Object.freeze({
     volume,
     etat,

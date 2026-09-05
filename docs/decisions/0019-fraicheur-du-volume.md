@@ -568,11 +568,22 @@ nécessaire : `s − 2` a été écrasée par `s`.
 **La règle retenue s'appuie sur l'ORDRE D'ÉCRITURE que cet ADR fixe déjà** — le témoin vient après
 la racine et sa barrière :
 
-| État trouvé                         | Lecture                                                                  | Conduite                                           |
-| ----------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------- |
-| racine `s` abîmée, témoin à `s − 1` | coupure pendant l'écriture de `s`                                        | **ouvrir**, et PUBLIER la mise au rebut            |
-| racine `s` abîmée, témoin à `s`     | volume ramené sous le témoin                                             | refus existant, plancher de séquence               |
-| racine `s` abîmée, **aucun témoin** | coupure + témoin perdu, ou racine détruite pour reculer — indiscernables | **REFUS**, `VAULT_STORAGE_GENERATION_ROOT_CORRUPT` |
+| État trouvé                         | Lecture                                                                                      | Conduite                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| racine `s` abîmée, témoin à `s − 1` | coupure pendant l'écriture de `s`, **ou** un témoin antérieur REJOUÉ (#142) — indiscernables | **ouvrir**, et PUBLIER la mise au rebut            |
+| racine `s` abîmée, témoin à `s`     | volume ramené sous le témoin                                                                 | refus existant, plancher de séquence               |
+| racine `s` abîmée, **aucun témoin** | coupure + témoin perdu, ou racine détruite pour reculer — indiscernables                     | **REFUS**, `VAULT_STORAGE_GENERATION_ROOT_CORRUPT` |
+
+**La première ligne porte DEUX lectures, et c'est la limite de la règle** — une revue de la
+[PR #153](https://github.com/pinfada/railsbox-vault/pull/153) l'a relevée, la première rédaction
+n'en donnant qu'une. La règle fait décider le témoin ; elle tient donc contre l'adversaire qui le
+**neutralise**, et pas contre celui qui le **rejoue**. Archiver 62 octets à `s − 1`, abîmer la
+racine `s`, remettre la copie : le témoin CONCORDE, l'ouverture conclut « coupure », et une
+génération **acquittée** disparaît sous un rapport `verifiee`. Ce n'est pas une course — le témoin
+n'est pas perdu au bon instant, il est archivé à l'avance —, c'est le retour arrière complet du §
+9.1, déjà accepté comme indétectable, obtenu à moindre coût : 62 octets au lieu d'une copie
+cohérente du volume et du journal. Épreuve : `tests/unit/vm-recul-generation.test.mjs` › « #142
+COMPOSÉ à #144 ».
 
 **Pourquoi PAS le fail-closed général.** Refuser dès qu'une racine abîmée côtoie une racine lisible
 — la proposition n° 1 de l'issue — refuserait le cas **normal** que l'alternance existe précisément
@@ -594,7 +605,19 @@ que sur la **conjonction** « aucun témoin ET une racine abîmée ET une racine
 trois états que cette règle protège ne la produit : un volume **neuf** n'a aucune racine abîmée ; un
 volume **restauré** n'a pas de `.gen`, `discardGeneration` le retirant avec le témoin ; un **premier
 point de contrôle** laisse le second emplacement vierge, et un secteur vierge n'est pas une racine
-abîmée. Le carve-out est écrit au § 6.9, à l'endroit exact de la règle générale.
+abîmée. **Un quatrième**, relevé en revue : un volume scellé AVANT #19, dont la racine ne porte
+aucune empreinte de région (décision 2). Un magasin d'alors n'écrivait aucun témoin — son absence ne
+prétend rien, elle n'a jamais pu être autrement —, et exiger un témoin là rendrait irouvrable **pour
+toujours** un volume que la compatibilité de cet ADR promet d'ouvrir : le refus tombant avant toute
+écriture, le vidage ne réparerait jamais l'emplacement déchiré. La fenêtre dure **exactement une
+ouverture**, comme celle que la décision 2 décrit déjà, et la porte reste gardée par
+`fraicheurDesarmee` — une racine sans empreinte SOUS un témoin qui en atteste une est refusée. Le
+carve-out est écrit au § 6.9, à l'endroit exact de la règle générale.
+
+**Ce que la règle SUR-DÉTECTE.** Le compte des racines abîmées compte, il ne **situe** pas : une
+racine illisible n'a plus de séquence lisible. Abîmer la racine la plus ANCIENNE — dont la perte ne
+coûte rien — produit donc le même refus. Le message nomme les deux lectures que cela laisse plutôt
+que d'en inventer une troisième, et c'est le prix de la règle.
 
 **Le contrôle vit dans la GARDE de fraîcheur, et non dans le magasin.** La responsabilité que cet
 ADR lui donne est « décider de ce qu'un support a le droit de PRÉTENDRE », par opposition au magasin
