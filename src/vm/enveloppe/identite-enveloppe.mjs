@@ -88,13 +88,25 @@ export const EMPLACEMENTS_MAX = 8;
 export const PARAMETRES_MAX = 512;
 
 /**
- * Types de clé de déverrouillage. Les valeurs sont RÉSERVÉES ici et servies par #22 ; `harnais` est
- * le seul que cette tranche produise, et il est nommé pour ce qu'il est.
+ * Types de clé de déverrouillage. Les trois premiers sont RÉSERVÉS par #21 et servis par #22 ;
+ * `harnais` est le seul que #21 produisait, et il est nommé pour ce qu'il est.
+ *
+ * **`recuperation` est ajouté par #147 (ADR 0025), et ce n'est PAS un changement de format.** Le
+ * champ existe depuis #21, sur un octet, et l'ADR 0020 a réservé avec lui le plafond de 512 octets
+ * des paramètres publics ; une valeur de plus dans une énumération est une ENTRÉE de ce format, pas
+ * une version nouvelle. Un lecteur plus ancien la rencontrera et la refusera par
+ * `VAULT_DERIVATION_TYPE_INCONNU`, ce que le point 5 du contrat de #22 prévoit déjà.
+ *
+ * Pourquoi un type distinct plutôt qu'une `phrase` : un code de récupération doit être
+ * DISCERNABLE — l'archive qui ne portera que lui (tranche 3 de #23), la révocation de tout sauf
+ * celui qu'on tient (#148) et l'annonce du moyen (#24) le demandent chacun —, et il n'a rien à
+ * compenser qui justifierait l'étirement d'Argon2id. L'ADR 0025 écrit les deux motifs.
  */
 export const TYPES_KEK = Object.freeze({
   phrase: 1,
   "webauthn-prf": 2,
   harnais: 3,
+  recuperation: 4,
 });
 
 const TYPES_PAR_VALEUR = Object.freeze(

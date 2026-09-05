@@ -74,6 +74,26 @@ export const DERIVATION_ERROR_CODES = Object.freeze({
    * état, et deux annulations de suite sont exactement la première, répétée.
    */
   annulee: "VAULT_DERIVATION_ANNULEE",
+  /**
+   * #147 (ADR 0025) : la SAISIE ne décrit pas un code de récupération de ce produit — absente,
+   * d'une autre longueur, portant un signe étranger à l'alphabet base 32 de Crockford, d'une somme
+   * de contrôle qui ne vérifie pas, ou d'un bourrage non nul.
+   *
+   * Ce n'est PAS « mauvais code », qui n'existe pas plus ici que « mauvaise phrase » : un code
+   * bien formé mais étranger dérive une AUTRE clé, et c'est l'enveloppe qui tranche par
+   * `VAULT_ENVELOPPE_CLE_REFUSEE`, indiscernable d'une clé révoquée. Ce refus-ci ne dépend que de
+   * la saisie — ni du volume, ni de l'enveloppe —, il ne dit donc rien de ce qu'il faudrait
+   * essayer ensuite, et son remède est de relire le code sur la feuille où il est écrit.
+   */
+  codeMalRecopie: "VAULT_DERIVATION_CODE_MAL_RECOPIE",
+  /**
+   * #147 (ADR 0025) : le code de récupération a DÉJÀ été rendu, et il ne l'est qu'une fois.
+   *
+   * Le produit ne le conserve pas et ne sait pas le régénérer : un second rendu supposerait qu'il
+   * l'ait gardé quelque part, ce qui est exactement ce que ce moyen refuse de faire. Le remède est
+   * d'en créer un AUTRE et de révoquer celui-ci, jamais de redemander celui-là.
+   */
+  codeDejaRendu: "VAULT_DERIVATION_CODE_DEJA_RENDU",
 });
 
 const CODES_CONNUS = new Set(Object.values(DERIVATION_ERROR_CODES));
@@ -166,6 +186,29 @@ export function prfIgnoree(raison, context = {}) {
     DERIVATION_ERROR_CODES.prfIgnoree,
     `Déverrouillage WebAuthn refusé : ${raison} L'emplacement est légitime — c'est l'authentificateur ou le moteur qui n'a pas rendu la sortie de l'extension. Aucun repli n'est tenté, et aucune clé approchante n'est fabriquée.`,
     { situations: [SITUATIONS.capaciteAbsente], context },
+  );
+}
+
+/**
+ * La saisie ne décrit pas un code de récupération. Ce n'est jamais « mauvais code ».
+ *
+ * Le message porte la distinction, parce que c'est elle qui décide du geste suivant : relire la
+ * feuille, ou constater que ce code n'est pas celui de ce coffre.
+ */
+export function codeMalRecopie(raison, context = {}) {
+  return new DerivationError(
+    DERIVATION_ERROR_CODES.codeMalRecopie,
+    `Code de récupération refusé : ${raison} Ce n'est PAS le refus d'un code étranger — celui-là serait le refus de l'ENVELOPPE, indiscernable d'une clé révoquée. Ce refus-ci ne dépend que de ce qui a été saisi : ni le volume ni l'enveloppe n'ont été consultés, et rien n'a été dérivé.`,
+    { context },
+  );
+}
+
+/** Le code a déjà été rendu. Le produit ne l'a pas gardé, et ne sait pas le refaire. */
+export function codeDejaRendu(context = {}) {
+  return new DerivationError(
+    DERIVATION_ERROR_CODES.codeDejaRendu,
+    "Code de récupération déjà rendu : il ne l'est qu'une fois, et ce produit ne le conserve nulle part. Le redemander supposerait qu'il ait été gardé quelque part, ce qui est exactement ce que ce moyen refuse de faire. Si le code a été perdu avant d'être noté, créez-en un AUTRE et révoquez celui-ci.",
+    { context },
   );
 }
 

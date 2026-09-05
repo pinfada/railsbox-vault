@@ -224,7 +224,10 @@ test("le décodeur des paramètres publics REFUSE plutôt que de compléter", ()
 });
 
 test("un type de clé de déverrouillage inconnu est refusé par un code typé, jamais deviné", () => {
-  for (const typeInconnu of [0, 4, 7, 255]) {
+  // Le type 4 était dans cette liste jusqu'à #147 : il est désormais SERVI (`recuperation`,
+  // ADR 0025), et le 5 prend sa place — la propriété mesurée est « un type que ce module ne sert
+  // pas », pas « le type 4 ».
+  for (const typeInconnu of [0, 5, 7, 255]) {
     assert.throws(
       () => encoderParametresPublics(typeInconnu, {}),
       (erreur) => isDerivationError(erreur, DERIVATION_ERROR_CODES.typeInconnu),
