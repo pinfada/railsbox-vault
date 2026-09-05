@@ -108,13 +108,17 @@ export const REGLES_DE_CACHE = Object.freeze([
   Object.freeze({
     arbre: "coquille",
     motif: `${PREFIXE_EPINGLAGE_V86}*`,
-    cheminRepresentatif: `${PREFIXE_EPINGLAGE_V86}MANIFEST.json`,
-    nature: "Épinglage v86 (ADR 0003)",
+    // La nature est décidée par le seul PRÉFIXE : ce chemin n'a pas à exister, il a à être
+    // classé. Nommer ici une adresse d'artefact ferait dépendre la table d'en-têtes du contenu du
+    // manifeste, que #123 confie à `src/v86-adresses.mjs` et à lui seul.
+    cheminRepresentatif: PREFIXE_EPINGLAGE_V86,
+    nature: "Artefacts v86 adressés par empreinte (ADR 0003)",
     justification:
-      "Les octets épinglés par empreinte, le manifeste qui les épingle et les licences du code " +
-      "redistribué ne changent QU'ENSEMBLE, à la montée de version de l'émulateur. Une seule " +
-      "règle les tient donc dans une seule fenêtre de fraîcheur, ce qui interdit qu'un manifeste " +
-      "frais décrive des octets d'hier.",
+      "Chaque octet servi sous ce préfixe est à une adresse qui NOMME son empreinte (#123) : un " +
+      "ré-épinglage déplace l'artefact, si bien qu'un navigateur qui garderait l'ancienne adresse " +
+      "pour toujours ne la demanderait plus jamais. C'est ce qui rend `immutable` tenable, et " +
+      "c'est ce que la vérification d'épinglage de la publication MESURE avant que l'arbre ne " +
+      "parte. Le manifeste n'est PAS sous ce préfixe : il est l'indirection, il reste revalidé.",
   }),
   Object.freeze({
     arbre: "application",

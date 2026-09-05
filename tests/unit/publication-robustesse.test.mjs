@@ -53,6 +53,7 @@ import {
   empreinte,
   FICHIER_INVENTAIRE,
 } from "../../tools/publier-inventaire.mjs";
+import { nomAdresse } from "../../src/v86-adresses.mjs";
 import * as sondeHebergement from "../../tools/publier-sonde-hebergement.mjs";
 import * as sources from "../../tools/publier-sources.mjs";
 import * as publier from "../../tools/publier.mjs";
@@ -526,9 +527,13 @@ async function arbreEpingle({ declares, presents = {} }) {
   const dossier = join(racine, "vendor", "v86", "artefacts");
   await mkdir(dossier, { recursive: true });
   const artifacts = [];
+  const adresses = new Map();
   for (const [nom, octets] of Object.entries(declares)) {
-    await writeFile(join(dossier, nom), octets, "utf8");
-    artifacts.push({ name: nom, sha256: empreinte(Buffer.from(octets, "utf8")) });
+    const sha256 = empreinte(Buffer.from(octets, "utf8"));
+    // Le fichier est déposé à l'ADRESSE que son empreinte dicte (#123), pas sous son nom nu.
+    adresses.set(nom, nomAdresse(nom, sha256));
+    await writeFile(join(dossier, adresses.get(nom)), octets, "utf8");
+    artifacts.push({ name: nom, sha256 });
   }
   for (const [nom, octets] of Object.entries(presents)) {
     await writeFile(join(dossier, nom), octets, "utf8");
@@ -538,11 +543,14 @@ async function arbreEpingle({ declares, presents = {} }) {
     `${JSON.stringify({ artifacts }, null, 2)}\n`,
     "utf8",
   );
-  return racine;
+  // La copie du manifeste adressée par sa propre empreinte fait partie de tout arbre publié
+  // depuis #123 : sans elle, la vérification la déclarerait absente.
+  await sources.ecrireManifesteEpingle(racine, empreinte);
+  return { racine, adresses };
 }
 
 test("L5 — un arbre dont chaque artefact présent est déclaré et conforme ne porte AUCUN écart", async () => {
-  const racine = await arbreEpingle({ declares: { "v86.wasm": "octets de l'émulateur" } });
+  const { racine } = await arbreEpingle({ declares: { "v86.wasm": "octets de l'émulateur" } });
   try {
     const epinglage = await sources.verifierEpinglageV86(racine, empreinte);
     assert.equal(epinglage.verifie, true);
@@ -553,12 +561,13 @@ test("L5 — un arbre dont chaque artefact présent est déclaré et conforme ne
 });
 
 test("L5 — un fichier PRÉSENT mais non déclaré au manifeste est un écart, pas un artefact publié", async () => {
-  // La classe de cache `epinglage-v86` est accordée par EMPLACEMENT : `/vendor/v86/*` vaut
-  // `public, max-age=86400`. Un intrus déposé dans `vendor/v86/artefacts/` — répertoire ignoré par
-  // git — partait donc chez l'hébergeur avec 24 h de cache PARTAGÉ et sans révocation possible,
-  // là où il recevait `no-store` avant l'ADR 0023. Le manifeste est la seule liste de ce qui a le
-  // droit d'être là (ADR 0003) : ce qui n'y est pas est un écart.
-  const racine = await arbreEpingle({
+  // La classe de cache `epinglage-v86` est accordée par EMPLACEMENT, et #123 en a relevé l'enjeu
+  // d'un cran : le préfixe `/vendor/v86/artefacts/*` vaut désormais UN AN de cache partagé et
+  // `immutable`, là où l'ADR 0023 accordait vingt-quatre heures et où `no-store` régnait avant
+  // elle. Un intrus déposé dans ce répertoire — ignoré par git — partirait donc chez l'hébergeur
+  // sans révocation possible. Le manifeste est la seule liste de ce qui a le droit d'être là
+  // (ADR 0003) : ce qui n'y est pas est un écart.
+  const { racine } = await arbreEpingle({
     declares: { "v86.wasm": "octets de l'émulateur" },
     presents: { "dump-de-debug.bin": "trace d'un poste de développement" },
   });
@@ -574,23 +583,23 @@ test("L5 — un fichier PRÉSENT mais non déclaré au manifeste est un écart, 
 });
 
 test("L5 — l'écart « non déclaré » se cumule avec les deux autres, sans les masquer", async () => {
-  const racine = await arbreEpingle({
+  const { racine, adresses } = await arbreEpingle({
     declares: { "v86.wasm": "octets de l'émulateur", "seabios.bin": "octets du BIOS" },
     presents: { "dump-de-debug.bin": "trace" },
   });
   try {
     await writeFile(
-      join(racine, "vendor", "v86", "artefacts", "v86.wasm"),
+      join(racine, "vendor", "v86", "artefacts", adresses.get("v86.wasm")),
       "autres octets",
       "utf8",
     );
-    await rm(join(racine, "vendor", "v86", "artefacts", "seabios.bin"));
+    await rm(join(racine, "vendor", "v86", "artefacts", adresses.get("seabios.bin")));
     const motifs = (await sources.verifierEpinglageV86(racine, empreinte)).ecarts.map(
       ({ artefact, motif }) => `${artefact} : ${motif}`,
     );
     assert.equal(motifs.length, 3, motifs.join(" / "));
-    assert.ok(motifs.some((ligne) => /v86\.wasm : empreinte/.test(ligne)));
-    assert.ok(motifs.some((ligne) => /seabios\.bin : absent/.test(ligne)));
+    assert.ok(motifs.some((ligne) => /^v86-[0-9a-f]{16}\.wasm : empreinte/.test(ligne)));
+    assert.ok(motifs.some((ligne) => /^seabios-[0-9a-f]{16}\.bin : absent/.test(ligne)));
     assert.ok(motifs.some((ligne) => /dump-de-debug\.bin : non déclaré/.test(ligne)));
   } finally {
     await rm(racine, { recursive: true, force: true });

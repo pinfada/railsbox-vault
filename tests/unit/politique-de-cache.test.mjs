@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { NATURES_RELEVEES_PAR_LE_TEMOIN, verdict } from "../../tools/publier-temoin.mjs";
+import { ADRESSE_MANIFESTE_V86, adresseDe } from "../../src/v86-adresses.mjs";
 import {
   DUREE_EPINGLAGE_V86_SECONDES,
   NATURES_DARTEFACT,
@@ -32,8 +33,9 @@ const ORIGINE_APPLICATIVE = "http://localhost:4174";
 /** Un chemin de chaque nature, nommé une fois pour que les épreuves parlent de la même chose. */
 const DOCUMENT_DE_COQUILLE = "/index.html";
 const MODULE_DE_COQUILLE = "/src/vm/volume-manifest.mjs";
-const ARTEFACT_EPINGLE = "/vendor/v86/artefacts/v86.wasm";
-const MANIFESTE_EPINGLAGE = "/vendor/v86/MANIFEST.json";
+const ARTEFACT_EPINGLE = adresseDe("v86.wasm", "8a".repeat(32));
+const MANIFESTE_EPINGLAGE = ADRESSE_MANIFESTE_V86;
+const LICENCE_V86 = "/vendor/v86/LICENSE-v86.txt";
 const TERRITOIRE_APPLICATIF = "/spike/origin/app-inter.html";
 const SONDE_DE_CAPACITES = "/compat.html";
 /** Un chemin qu'aucune règle ne nomme : la nature qu'il reçoit est celle du DÉFAUT. */
@@ -107,34 +109,43 @@ test("la coquille et ses modules sont revalidés, jamais interdits de stockage",
 
 // --- Épinglage v86 : cachable longtemps, mais jamais `immutable` ---------------------------------
 
-test("l'épinglage v86 est cachable, borné par la borne que la plate-forme s'impose déjà", () => {
-  assert.equal(DUREE_EPINGLAGE_V86_SECONDES, 86400);
-  for (const chemin of [ARTEFACT_EPINGLE, MANIFESTE_EPINGLAGE, "/vendor/v86/LICENSE-v86.txt"]) {
-    assert.equal(enTetes("shell", chemin)["Cache-Control"], `public, max-age=86400`);
-  }
-});
-
-test("aucune nature ne reçoit `immutable` : aucune URL publiée ne nomme son empreinte", () => {
-  // L'ADR 0003 épingle les artefacts v86 par SHA-256 dans `vendor/v86/MANIFEST.json`, pas dans leur
-  // URL. `/vendor/v86/artefacts/v86.wasm` rend d'autres octets après une montée de version, à la
-  // MÊME adresse : `immutable` y interdirait au navigateur de jamais s'en apercevoir. La condition
-  // de réouverture est écrite dans l'ADR 0023.
-  for (const valeur of Object.values(POLITIQUES_DE_CACHE)) {
-    assert.ok(!valeur.includes("immutable"), `« ${valeur} » promet une immuabilité non tenue`);
-  }
-});
-
-test("le manifeste d'épinglage reçoit la même DURÉE de fraîcheur que les octets qu'il décrit", () => {
-  // Ce que cette égalité donne est une BORNE, et rien de plus : les deux chemins relèvent du même
-  // préfixe, donc de la même règle, donc de la même durée — ce qui limite à vingt-quatre heures
-  // l'écart d'âge entre le manifeste et les octets. Ce n'est PAS une expiration commune : HTTP
-  // calcule la fraîcheur par réponse, à partir de sa propre date de réception, et deux réponses
-  // portant le même `max-age` reçues à une heure d'intervalle expirent à une heure d'intervalle.
-  // La cohérence manifeste ↔ octets viendra d'une vérification d'empreinte au chargement (#123) ;
-  // aucun code navigateur de ce dépôt ne lit le manifeste aujourd'hui.
-  assert.ok(MANIFESTE_EPINGLAGE.startsWith(PREFIXE_EPINGLAGE_V86));
-  assert.ok(ARTEFACT_EPINGLE.startsWith(PREFIXE_EPINGLAGE_V86));
+test("les artefacts adressés par empreinte sont IMMUABLES, et pour un an", () => {
+  // C'est le renversement de #123, et il ne tient qu'à une chose : l'adresse nomme l'empreinte.
+  // Un ré-épinglage DÉPLACE l'artefact, si bien qu'un navigateur qui garderait l'ancienne adresse
+  // pour toujours ne la demanderait plus jamais. `tests/unit/v86-reepinglage.test.mjs` déroule
+  // cette séquence, et `verifierEpinglageV86` la mesure sur l'arbre publié avant qu'il ne parte.
+  assert.equal(DUREE_EPINGLAGE_V86_SECONDES, 31536000);
   assert.equal(
+    enTetes("shell", ARTEFACT_EPINGLE)["Cache-Control"],
+    "public, max-age=31536000, immutable",
+  );
+});
+
+test("`immutable` n'est servi QUE sous le préfixe dont chaque adresse nomme son empreinte", () => {
+  // La moitié dangereuse de la décision. `immutable` promet qu'aucune revalidation n'aura jamais
+  // lieu : servi à une adresse stable, il interdirait au navigateur de s'apercevoir d'une mise à
+  // jour, y compris de sécurité. Une seule nature a le droit de le porter.
+  const immuables = Object.entries(POLITIQUES_DE_CACHE).filter(([, valeur]) =>
+    valeur.includes("immutable"),
+  );
+  assert.deepEqual(
+    immuables.map(([nature]) => nature),
+    [NATURES_DARTEFACT.epinglageV86],
+  );
+  assert.ok(ARTEFACT_EPINGLE.startsWith(PREFIXE_EPINGLAGE_V86));
+});
+
+test("le MANIFESTE et les licences ne sont PAS immuables : ils sont revalidés", () => {
+  // Le manifeste est l'INDIRECTION par laquelle un chargeur apprend les adresses. Une copie gardée
+  // désignerait des adresses qui ne sont plus servies — un 404 franc, pas une exécution périmée —,
+  // et c'est ce qui l'exclut du préfixe immuable. `no-cache` autorise le stockage et impose la
+  // revalidation : le coût d'une montée de version est un aller-retour de cinq kibioctets, pas le
+  // re-téléchargement des 9,9 Mio qu'il décrit.
+  for (const chemin of [MANIFESTE_EPINGLAGE, LICENCE_V86]) {
+    assert.ok(!chemin.startsWith(PREFIXE_EPINGLAGE_V86));
+    assert.equal(enTetes("shell", chemin)["Cache-Control"], "no-cache");
+  }
+  assert.notEqual(
     politiqueDeCache({ role: "shell", pathname: MANIFESTE_EPINGLAGE }),
     politiqueDeCache({ role: "shell", pathname: ARTEFACT_EPINGLE }),
   );

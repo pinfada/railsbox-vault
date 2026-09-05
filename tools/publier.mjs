@@ -59,6 +59,7 @@ import {
 } from "./publier-inventaire.mjs";
 import {
   SITUATIONS_EPINGLAGE,
+  ecrireManifesteEpingle,
   exigerReferenceResoluble,
   identiteDuCommit,
   materialiser,
@@ -300,6 +301,11 @@ async function construireArbre(arbre, options) {
   if (arbre.placeTenante) {
     await writeFile(join(destination, arbre.placeTenante.vers), arbre.placeTenante.contenu, "utf8");
   }
+  // La copie du manifeste ADRESSÉE PAR SON EMPREINTE, écrite avant l'inventaire pour y entrer
+  // comme tout autre octet servi (#123). Elle donne à la classe immuable un membre présent dans
+  // TOUT arbre publié, y compris quand `vendor/v86/artefacts/` est absent d'un clone vierge, et
+  // elle rend l'épinglage remontable depuis une adresse d'artefact. Voir `ecrireManifesteEpingle`.
+  await ecrireManifesteEpingle(destination, empreinte);
   await writeFile(
     join(destination, FICHIER_HEADERS),
     rendreFichierHeaders(arbre.nom, options),

@@ -1,10 +1,7 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-
 import { expect, test } from "@playwright/test";
 
 import { GUEST_MARKER, HOST_MARKER } from "../../src/vm/guest-scenarios.mjs";
-import { ARTIFACT_DIRECTORY } from "../../tools/v86-paths.mjs";
+import { artefactsV86Absents } from "../../tools/v86-paths.mjs";
 
 // Preuve « intégration VM » du backend OPFS (#6, `VAULT-PERSIST-001`). Un vrai guest Linux i386
 // démarre sur un disque IDE dont le tampon est le backend OPFS de Vault, et la mesure porte sur les
@@ -20,9 +17,13 @@ import { ARTIFACT_DIRECTORY } from "../../tools/v86-paths.mjs";
 // d'une application Rails après fermeture complète, qui est #7.
 
 test.beforeAll(() => {
-  const missing = ["libv86.mjs", "v86.wasm", "seabios.bin", "vgabios.bin", "linux4.iso"].filter(
-    (name) => !existsSync(join(ARTIFACT_DIRECTORY, name)),
-  );
+  const missing = artefactsV86Absents([
+    "libv86.mjs",
+    "v86.wasm",
+    "seabios.bin",
+    "vgabios.bin",
+    "linux4.iso",
+  ]);
   if (missing.length > 0) {
     throw new Error(
       `Artefacts v86 absents (${missing.join(", ")}). Exécuter « npm run vm:fetch » avant « npm run test:vm ».`,

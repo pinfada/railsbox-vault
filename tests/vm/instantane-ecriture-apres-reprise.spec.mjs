@@ -1,12 +1,11 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
 import { INSTANTANE_MARQUE_APRES, INSTANTANE_MARQUE_AVANT } from "../../src/vm/guest-scenarios.mjs";
 import { INSTANTANE_ERROR_CODES } from "../../src/vm/instantane/instantane-errors.mjs";
-import { ARTIFACT_DIRECTORY, REPOSITORY_ROOT } from "../../tools/v86-paths.mjs";
+import { REPOSITORY_ROOT, artefactsV86Absents } from "../../tools/v86-paths.mjs";
 
 // UNE SESSION REPRISE ÉCRIT, ET SON ÉCRITURE SURVIT À UN BOOT À FROID (#65, ADR 0024).
 //
@@ -40,7 +39,7 @@ const ARTEFACTS = ["libv86.mjs", "v86.wasm", "seabios.bin", "vgabios.bin", "linu
 const VOLUME = "vault-instantane-ecriture-vm";
 
 test.beforeAll(() => {
-  const absents = ARTEFACTS.filter((nom) => !existsSync(join(ARTIFACT_DIRECTORY, nom)));
+  const absents = artefactsV86Absents(ARTEFACTS);
   if (absents.length > 0) {
     throw new Error(
       `Artefacts v86 absents (${absents.join(", ")}). Exécuter « npm run vm:fetch » avant « npm run test:vm ».`,

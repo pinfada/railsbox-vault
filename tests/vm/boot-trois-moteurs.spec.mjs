@@ -15,18 +15,17 @@
 // Un moteur qui échoue ici produit un rapport et fait rougir la suite : c'est un fait de
 // compatibilité qu'il faut voir, pas un écart à consigner en silence.
 
-import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-import { ARTIFACT_DIRECTORY, REPOSITORY_ROOT } from "../../tools/v86-paths.mjs";
+import { REPOSITORY_ROOT, artefactsV86Absents } from "../../tools/v86-paths.mjs";
 
 const ARTEFACTS = ["libv86.mjs", "v86.wasm", "seabios.bin", "vgabios.bin", "linux4.iso"];
 
 test.beforeAll(() => {
-  const absents = ARTEFACTS.filter((nom) => !existsSync(join(ARTIFACT_DIRECTORY, nom)));
+  const absents = artefactsV86Absents(ARTEFACTS);
   if (absents.length > 0) {
     throw new Error(
       `Artefacts v86 absents (${absents.join(", ")}). Exécuter « npm run vm:fetch » avant « npm run test:vm ».`,
