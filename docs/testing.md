@@ -1665,13 +1665,11 @@ quelle valeur pour quel chemin — et deux niveaux suffisent à la tenir.
 
 **Unitaire.** `tests/unit/politique-de-cache.test.mjs` tient la décision là où elle est prise :
 trois natures d'artefact, trois politiques **distinctes**, la nature décidée par le chemin et le
-rôle et non par l'origine, l'absence d'`immutable`, le manifeste d'épinglage qui relève de la même
-règle que les octets qu'il décrit, et un chemin délibérément inconnu (`/inconnu/futur.bin`) qui
-retombe sur `no-cache` — la table est une liste de cas particuliers autour d'un DÉFAUT, et c'est ce
-défaut qui décidera du sort de ce qui sera ajouté au dépôt demain. L'épreuve qui compte le plus est
-celle qui garde l'ADR 0022. Pour un rôle donné, deux chemins de nature différente ne diffèrent
-**que** par `Cache-Control` — la CSP, COOP, `Referrer-Policy` et `Permissions-Policy` traversent
-intactes.
+rôle et non par l'origine, et un chemin délibérément inconnu (`/inconnu/futur.bin`) qui retombe sur
+`no-cache` — la table est une liste de cas particuliers autour d'un DÉFAUT, et c'est ce défaut qui
+décidera du sort de ce qui sera ajouté au dépôt demain. L'épreuve qui compte le plus est celle qui
+garde l'ADR 0022. Pour un rôle donné, deux chemins de nature différente ne diffèrent **que** par
+`Cache-Control` — la CSP, COOP, `Referrer-Policy` et `Permissions-Policy` traversent intactes.
 
 `tests/unit/publication-arborescences.test.mjs` tient la traduction en fichier `_headers` :
 plusieurs blocs, chacun **complet**, la règle la plus précise qui l'emporte à la relecture par
@@ -1689,17 +1687,37 @@ en-tête seul.
 **Chaîne de publication.** `npm run publier:check` en est la preuve haute :
 `tools/publier-temoin.mjs` relève la politique **réellement reçue** sur les **deux** origines et les
 **trois** natures, par un `fetch` émis depuis la page — donc par la pile réseau du moteur, et non
-par le client HTTP du harnais. La nature « épinglage v86 » est relevée sur
-`vendor/v86/MANIFEST.json`, versionné et publié même quand `npm run vm:fetch` n'a pas tourné ; sans
-lui, la seule nature dont la règle dépend du chemin ne serait jamais mesurée sur du HTTP réel. Le
-verdict refuse en outre un relevé qui ne porterait pas au moins deux politiques **distinctes**,
-faute de quoi un témoin vert pourrait n'avoir jamais mesuré ce que la décision a de propre.
+par le client HTTP du harnais. La nature « épinglage v86 » est relevée sur la COPIE du manifeste
+adressée par son empreinte (`vendor/v86/artefacts/MANIFEST-<empreinte>.json`, #123) : elle dérive
+d'un fichier versionné, donc elle est publiée même quand `npm run vm:fetch` n'a pas tourné, et son
+adresse est **dérivée du manifeste servi** plutôt qu'écrite dans le témoin — si bien que ce relevé
+mesure aussi la dérivation. Sans lui, la seule nature dont la règle dépend du chemin ne serait
+jamais mesurée sur du HTTP réel. Le verdict refuse en outre un relevé qui ne porterait pas au moins
+deux politiques **distinctes**, faute de quoi un témoin vert pourrait n'avoir jamais mesuré ce que
+la décision a de propre.
+
+**L'adressage par empreinte a sa propre paire d'épreuves**, depuis #123.
+`tests/unit/v86-adresses.test.mjs` tient la forme d'adresse et ses DEUX moitiés — deux contenus
+différents ne partagent jamais une adresse, et un contenu inchangé GARDE la sienne à travers une
+montée de version. La seconde moitié n'est pas décorative : une adresse dérivée de l'empreinte du
+manifeste entier satisferait la première tout en faisant re-télécharger 9,9 Mio pour un octet
+changé. Le même fichier refuse, par inspection de source et commentaires dépouillés, tout chemin
+d'artefact écrit en dur — sur le modèle de `harnais-portes.test.mjs` —, et exige que chaque chargeur
+de v86 importe la dérivation.
+
+`tests/unit/v86-reepinglage.test.mjs` déroule un ré-épinglage complet sur des arbres réels, avec la
+vérification d'épinglage et l'inventaire de la PUBLICATION plutôt qu'une réimplémentation :
+l'ancienne adresse cesse d'être servie, la nouvelle l'est, l'empreinte de racine de l'ADR 0017
+change et le retour arrière la retrouve au bit près. Ses épreuves négatives comptent autant : un
+ré-épinglage inachevé, un fichier dont le nom ne correspond pas à ses octets, une collision
+d'adresse, un intrus dans un arbre incomplet — et un clone vierge, qui doit rester une INCOMPLÉTUDE
+et non une rupture d'épinglage.
 
 **Ce qui n'est PAS mesuré**, et qui est écrit dans l'ADR : aucun effet de cache dans un navigateur —
-qu'un moteur garde effectivement l'épinglage v86 vingt-quatre heures demanderait deux visites
-séparées et un témoin négatif, un banc que #103 n'a pas construit (**#125**). Et aucun hébergement
-réel : un hébergeur qui réécrit `Cache-Control`, comme GitHub Pages le fait, rendrait la décision
-inopérante sans qu'aucun cliquet puisse le voir (**#124**).
+qu'un moteur garde effectivement un artefact v86 un an, et ne redemande jamais une adresse retirée,
+demanderait deux visites séparées et un témoin négatif, un banc que ni #103 ni #123 n'ont construit
+(**#125**). Et aucun hébergement réel : un hébergeur qui réécrit `Cache-Control`, comme GitHub Pages
+le fait, rendrait la décision inopérante sans qu'aucun cliquet puisse le voir (**#124**).
 
 **Robustesse de la chaîne.** `tests/unit/publication-robustesse.test.mjs` porte, en section L5, le
 revers de cette politique : la classe `epinglage-v86` est accordée par **emplacement**, si bien que

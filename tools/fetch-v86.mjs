@@ -127,7 +127,9 @@ async function elaguer(manifest) {
     throw error;
   }
   const perimes = presents.filter((nom) => !attendus.has(nom));
-  for (const nom of perimes) await rm(join(ARTIFACT_DIRECTORY, nom), { force: true });
+  for (const nom of perimes) {
+    await rm(join(ARTIFACT_DIRECTORY, nom), { force: true, recursive: true });
+  }
   return perimes;
 }
 
