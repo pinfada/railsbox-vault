@@ -61,7 +61,7 @@ import {
 } from "./format-chiffre/identite-logique.mjs";
 import { egalesEnTempsConstant } from "./format-chiffre/octets.mjs";
 import { createSha256Stream } from "./sha256-stream.mjs";
-import { STORAGE_ERROR_CODES, StorageError } from "./storage-errors.mjs";
+import { STORAGE_ERROR_CODES, StorageError, racineAbimeeSansTemoin } from "./storage-errors.mjs";
 import { SCEAU_OCTETS, decoderSceau, encoderSceau } from "./volume-chiffre-format.mjs";
 
 /** Empreinte SHA-256 de la région : la même largeur que celle de la suite des entrées. */
@@ -324,11 +324,24 @@ export async function ouvrirTemoin(scellement, volume, octets) {
  *
  * Ce cas est distinct du rejeu : il n'y a AUCUNE racine à confronter. Le témoin, lui, ne s'écrit
  * qu'après une racine et sa barrière — son existence prouve donc qu'une racine a été durable.
+ *
+ * **Le message nomme DEUX lectures, et c'est #144 qui l'a rendu nécessaire.** Le témoin est FONGIBLE
+ * pour un volume donné (§ 6.9) : sa séquence vit dans le clair, ses données associées sont
+ * constantes, et une copie authentique réinstallée après une restauration d'archive — laquelle
+ * retire journal et témoin en gardant l'identifiant et la clé — produit exactement cet état à partir
+ * d'un volume SAIN. Rien ici ne distingue les deux lectures, et le message d'origine ne nommait que
+ * l'une d'elles en concluant « restaurer une sauvegarde » : c'est-à-dire le geste qui REARME la
+ * boucle, puisque la restauration retire le témoin que l'adversaire n'a qu'à remettre.
+ *
+ * **Le geste qui en sort porte sa CONDITION, et jamais sans elle.** « Retirer le témoin » enseigné
+ * sans condition désarmerait la détection du recul réel : dans l'autre lecture, le témoin est la
+ * seule trace qu'il en reste. Ce qui fermerait le rejeu est une ancre monotone hors du support
+ * (§ 13, question n° 3) ; elle n'existe pas, et cette limite est écrite plutôt que niée.
  */
 export function journalSousLeTemoin(volume, temoin) {
   return new StorageError(
     STORAGE_ERROR_CODES.generationCorrupt,
-    `Volume « ${volume} » refusé : le témoin atteste la séquence ${temoin.sequence}, durable après une barrière, et le journal de génération n'en porte plus aucune. Ce n'est pas un volume neuf — un volume neuf n'a pas de témoin. Aucun octet n'est écrit ; le remède est de restaurer une sauvegarde.`,
+    `Volume « ${volume} » refusé : le témoin atteste la séquence ${temoin.sequence}, durable après une barrière, et le journal de génération n'en porte plus aucune. Deux lectures, que rien ici ne distingue : ou le volume a été ramené sous le témoin — un recul —, ou le témoin est une copie réinstallée après une restauration d'archive, qui l'avait retiré avec le journal. Aucun octet n'est écrit. Si une restauration d'archive vient d'avoir lieu DÉLIBÉRÉMENT, un témoin présent ne peut être qu'une copie réinstallée : retirer « ${volume}.temoin » rouvre le volume en première ouverture. Sinon, ne pas le retirer — c'est le volume qui a reculé, et retirer le témoin effacerait la seule trace ; le remède est alors de restaurer une sauvegarde.`,
     { volume, sequence: temoin.sequence, cause: CAUSE_TEMOIN },
   );
 }
@@ -347,6 +360,40 @@ export function fraicheurDesarmee(volume, temoin) {
     `Volume « ${volume} » refusé : sa dernière racine ne scelle aucune empreinte de région, alors que le témoin en atteste une à la séquence ${temoin.sequence}. Une propriété acquise ne se reperd pas ; ce que cet état décrit est un retour à une racine d'avant la fraîcheur. Le remède est de restaurer une sauvegarde.`,
     { volume, sequence: temoin.sequence, cause: CAUSE_FRAICHEUR_REGION },
   );
+}
+
+/**
+ * EXIGE un témoin devant une racine ABÎMÉE qui côtoie une racine retenue (#144).
+ *
+ * L'alternance des racines (§ 6.6) garde `s − 1` LISIBLE sur le support : le point de recul est
+ * dans le fichier, par construction. Abîmer les 512 octets de `s` suffit donc à reculer le volume
+ * d'une génération, sans la clé et sans copie antérieure — ce que le § 6.9 et le § 9.1 niaient.
+ *
+ * **Ce qui décide n'est pas la racine abîmée, c'est le témoin**, et l'ordre d'écriture du § 6.9 le
+ * permet : le témoin est écrit APRÈS la racine et sa barrière.
+ *
+ *  - témoin CONCORDANT (à la séquence retenue, ou en retard sur elle) — c'est une coupure pendant
+ *    l'écriture de `s`, le cas normal que l'alternance existe pour absorber. On ouvre, et les
+ *    octets non validés sont écartés sous leur code. Refuser ici enverrait « restaurer une
+ *    sauvegarde » à chaque coupure au mauvais instant ;
+ *  - témoin EN AVANCE — le plancher de séquence refuse déjà, et rien n'est ajouté ici ;
+ *  - témoin ABSENT — pour que `s − 1` soit acceptée sous un témoin à `s`, l'adversaire doit
+ *    neutraliser le témoin, et le § 6.9 dit que cela ne lui coûte rien. Une coupure a pu l'emporter
+ *    aussi. Rien ne distingue les deux : c'est un état AMBIGU, et il est REFUSÉ.
+ *
+ * **Ce refus ne contredit pas « refuser tout volume sans témoin ne doit pas changer » (§ 6.9).** Il
+ * ne porte QUE sur la conjonction « sans témoin ET une racine abîmée ET une racine retenue », qu'un
+ * volume neuf ne produit pas (aucune racine abîmée), qu'un volume restauré ne produit pas (aucun
+ * `.gen` après `discardGeneration`), et qu'un premier point de contrôle ne produit pas non plus.
+ *
+ * Il vit dans la GARDE, et non dans le magasin, pour la raison que la garde porte déjà : le magasin
+ * décide de l'état d'une génération, la garde décide de ce qu'un support a le droit de PRÉTENDRE.
+ * C'en est exactement une — et cela rend structurel le fait qu'un magasin sans fraîcheur, qui ne
+ * tient aucun témoin, n'oppose pas un refus dont le témoin est la prémisse.
+ */
+function exigerTemoinDevantUneRacineAbimee(volume, { racine, abimees, temoin }) {
+  if (abimees === 0 || racine === null || temoin !== null) return;
+  throw racineAbimeeSansTemoin(volume, { abimees, sequenceRetenue: racine.sequence });
 }
 
 /**
@@ -457,8 +504,15 @@ export class GardeDeFraicheur {
    * CONFRONTE la région à ce que la racine qui fait autorité scelle. À faire AVANT toute lecture de
    * secteur : un volume dont la région ne concorde plus ne doit rendre aucun clair, fût-il
    * authentique.
+   *
+   * `abimees` est le nombre de racines ILLISIBLES que le constat a comptées à côté de celle-ci. Il
+   * est présenté ici parce que la conjonction « racine abîmée, racine retenue, aucun témoin » est
+   * une prétention du support sur sa propre fraîcheur, et que c'est le sujet de cette garde (#144).
+   * Le contrôle vient AVANT le hachage de la région : le refus est certain, et rehacher 34 Mio pour
+   * l'annoncer ensuite ne dirait rien de plus.
    */
-  async confronter(racine) {
+  async confronter(racine, abimees = 0) {
+    exigerTemoinDevantUneRacineAbimee(this.#volume, { racine, abimees, temoin: this.#temoin });
     if (racine === null) {
       if (this.#temoin !== null) throw journalSousLeTemoin(this.#volume, this.#temoin);
       this.#etat = FRAICHEUR_ETATS.sansRacine;

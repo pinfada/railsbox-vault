@@ -44,8 +44,16 @@ export const STORAGE_ERROR_CODES = Object.freeze({
   /** Un geste exigeant une génération validée a été demandé sur une génération en cours (#16). */
   generationPending: "VAULT_STORAGE_GENERATION_PENDING",
   /**
-   * Aucune racine de génération LISIBLE, alors qu'au moins une est abîmée (#16). On ne sait pas ce
-   * qui a été validé : écarter serait peut-être juste, et peut-être une perte d'écriture acquittée.
+   * Une racine de génération est ABÎMÉE et rien ne dit ce qu'elle validait (#16 ; #144).
+   *
+   * Deux états le produisent, et le second a été ajouté par #144 :
+   *
+   *  - aucune racine LISIBLE alors qu'au moins une est abîmée. On ne sait pas ce qui a été validé ;
+   *  - une racine abîmée à côté d'une racine RETENUE, sans témoin pour dire laquelle faisait
+   *    autorité. L'alternance (§ 6.6) garde `s − 1` lisible : abîmer `s` fait reculer le volume
+   *    d'une génération, et sans témoin rien ne distingue ce recul d'une validation déchirée.
+   *
+   * Dans les deux cas, écarter serait peut-être juste, et peut-être une perte d'écriture acquittée.
    * Le refus est le seul état qui ne ment pas.
    */
   generationRootCorrupt: "VAULT_STORAGE_GENERATION_ROOT_CORRUPT",
@@ -151,6 +159,28 @@ export function generationRootCorrupt(volume, { abimees, octets }) {
     STORAGE_ERROR_CODES.generationRootCorrupt,
     `Journal de génération du volume « ${volume} » refusé : ${abimees} racine(s) abîmée(s) et aucune lisible, au-dessus de ${octets} octet(s) de charge. Ce qui a été validé est INCONNU — l'écarter perdrait peut-être une écriture acquittée. Le volume n'est pas modifié ; restaurer une sauvegarde (#12) est le remède.`,
     { volume, abimees, octets },
+  );
+}
+
+/**
+ * Une racine ABÎMÉE à côté d'une racine RETENUE, et AUCUN témoin pour dire laquelle faisait
+ * autorité (#144).
+ *
+ * Ce refus est le second état du même code, et le message doit dire pourquoi il n'est pas le
+ * précédent : ici une racine survit, et l'ouverture pourrait continuer. Ce qui l'en empêche est
+ * l'AMBIGUÏTÉ, et elle est réelle — l'alternance du § 6.6 garde `s − 1` lisible sur le support,
+ * si bien qu'abîmer les 512 octets de `s` suffit à faire reculer le volume d'une génération, sans
+ * clé et sans copie antérieure. Le témoin est ce qui trancherait ; son absence est justement ce que
+ * l'adversaire doit obtenir, et le § 6.9 dit que cela ne lui coûte rien.
+ *
+ * Les DEUX lectures sont nommées, parce que rien ici ne les distingue et qu'un message qui n'en
+ * nommerait qu'une enseignerait la mauvaise conduite dans l'autre moitié des cas.
+ */
+export function racineAbimeeSansTemoin(volume, { abimees, sequenceRetenue }) {
+  return new StorageError(
+    STORAGE_ERROR_CODES.generationRootCorrupt,
+    `Journal de génération du volume « ${volume} » refusé : ${abimees} racine(s) abîmée(s) à côté de la racine de séquence ${sequenceRetenue}, qui reste lisible, et AUCUN témoin ne dit laquelle faisait autorité. Deux lectures, que rien ici ne distingue : une coupure pendant l'écriture de la racine, dont le témoin a été perdu ensuite, ou une racine détruite pour faire reculer le volume d'une génération. Continuer sur la racine lisible perdrait peut-être une écriture acquittée. Le volume n'est pas modifié ; restaurer une sauvegarde (#12) est le remède.`,
+    { volume, abimees, sequenceRetenue },
   );
 }
 

@@ -128,14 +128,26 @@ export function remedeSansRacine({ volume, abimees, chargePresente }) {
 /**
  * Met en forme le rapport d'ouverture. Il est publié, jamais tu : une mise au rebut est une nouvelle.
  *
+ * **Le code suit les OCTETS ÉCARTÉS, plus l'état (#144).** Il suivait l'état `ecartee`, et le § 10.2
+ * promettait pourtant `VAULT_STORAGE_GENERATION_DISCARDED` « publié, jamais tu » pour toute mise au
+ * rebut. Or l'état `rejouee` en écarte aussi : la racine qui fait autorité authentifie une longueur
+ * de charge, et ce qui la dépasse dans le fichier n'a été validé par personne. C'est justement le
+ * chemin qu'une racine `s` abîmée produit — le témoin étant resté à `s − 1`, l'ouverture est
+ * légitime, mais les octets de la génération `s` disparaissaient alors SANS un mot. Il n'y a qu'une
+ * règle, et elle se lit d'un trait : des octets écartés portent leur code, quel que soit l'état.
+ *
+ * L'état `ecartee` n'en perd rien : il n'existe que lorsque `chargePresente > 0`, donc il porte
+ * toujours des octets écartés.
+ *
  * @param {{ volume: string, etat: string, generation: number, sequence: number,
  *           surmemoireMax: number, details: object }} etatFinal
  */
 export function poserRapport({ volume, etat, generation, sequence, surmemoireMax, details }) {
+  const octetsEcartes = details.octetsEcartes ?? 0;
   return Object.freeze({
     volume,
     etat,
-    code: etat === GENERATION_ETATS.ecartee ? STORAGE_ERROR_CODES.generationDiscarded : null,
+    code: octetsEcartes > 0 ? STORAGE_ERROR_CODES.generationDiscarded : null,
     generation,
     sequence,
     racineOffset: offsetDeRacine(racineDeSequence(sequence)),
