@@ -776,4 +776,4 @@ trois états où l'empreinte de région ne confronte rien (`non-fournie`, `sans-
 qui est fermé est l'attaque **continue** — un adversaire qui lit l'OPFS après la migration n'y
 trouve plus d'enregistrement épissable, et la migration a lieu à la première réouverture.
 
-Correction portée par le commit `7f106fb`. Épreuves : `tests/unit/vm-identite-magasin.test.mjs`.
+Correction portée par le commit `51ba8e0`. Épreuves : `tests/unit/vm-identite-magasin.test.mjs`.

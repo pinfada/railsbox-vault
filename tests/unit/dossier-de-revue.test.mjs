@@ -25,6 +25,7 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -35,6 +36,21 @@ const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const SPEC = "docs/format-de-volume-v3.md";
 const VERIFICATEUR = "tools/verifier-vecteurs.mjs";
 const SECURITY = "SECURITY.md";
+
+/**
+ * Empreinte d'un commit RÉEL de ce dépôt, relue de `.git`. Les témoins POSITIFS de la garde du
+ * registre en ont besoin ; l'écrire en dur la ferait périmer au premier rebase.
+ */
+const COMMIT_TEMOIN =
+  "`" +
+  execFileSync("git", ["rev-parse", "--short=7", "HEAD"], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+  }).trim() +
+  "`";
+
+/** Une empreinte qui n'est PAS un commit : celle que la revue a employée pour montrer le défaut. */
+const DEADBEE = "`deadbee`";
 
 /**
  * Les quatre familles de refus que la spécification doit couvrir, code par code : format chiffré,
@@ -272,13 +288,116 @@ test("les vecteurs de disposition annoncent le format que le code écrit", async
   assert.equal(vecteurs.specification.temoinOctets, TEMOIN_OCTETS);
 });
 
-test("chaque ligne du registre cite une issue `revue-externe` qui existe", async () => {
-  // Le registre a été VIDE tant qu'aucun constat n'avait été reçu, et l'épreuve exigeait alors qu'il
-  // ne porte que sa ligne d'en-tête. Il ne l'est plus : la pré-revue adverse interne de la moitié 1
-  // a produit des constats traités comme externes. Ce qui protège le registre d'un remplissage
-  // décoratif n'est donc plus le comptage des lignes mais leur CONTENU — chaque ligne doit renvoyer
-  // à une issue réelle du dépôt et porter une disposition du vocabulaire fermé. Une ligne inventée
-  // n'a plus d'issue à citer.
+/**
+ * DÉFAUTS d'un registre de constats, ligne par ligne. Pure, pour que l'épreuve puisse la MORDRE.
+ *
+ * La revue du format persistant a montré que la garde précédente ne faisait pas ce que le registre
+ * disait d'elle : elle contrôlait la FORME d'une URL, si bien qu'une ligne entièrement inventée —
+ * une issue qui n'existe pas, une empreinte qui n'est pas un commit — passait au vert. Une garde qui
+ * ne tient pas sa promesse est pire qu'une garde absente, parce que le document s'appuie dessus par
+ * écrit.
+ *
+ * Ce qui est exigé désormais, et rien de plus — le registre le dit dans les mêmes termes :
+ *
+ *  - le CONSTAT cite une issue de CE dépôt, et son numéro est repris par la spécification (§ 9.6) ou
+ *    par `SECURITY.md`. Le recoupement est INTERNE, et il faut le dire : il ne prouve pas qu'un
+ *    tiers a envoyé le constat, il prouve que le registre et le dossier parlent des mêmes numéros ;
+ *  - la SÉVÉRITÉ et la DISPOSITION appartiennent au vocabulaire fermé du gabarit ;
+ *  - la PREUVE existe VRAIMENT : chaque empreinte citée doit être un commit de ce dépôt — c'est le
+ *    seul contrôle que rien de rédactionnel ne peut satisfaire —, et chaque ADR cité doit être un
+ *    fichier de `docs/decisions/`. Une disposition « corrigé » exige au moins un commit : une
+ *    correction sans commit n'est pas une correction.
+ *
+ * Tout est HORS LIGNE : `git cat-file` lit le dépôt local, aucune requête réseau n'est faite. Une
+ * garde qui appellerait GitHub ne serait pas rejouable par un relecteur hors ligne, et rougirait
+ * pour une raison étrangère au registre.
+ *
+ * @param {string} registre le texte de `docs/revue-externe/registre.md`
+ * @param {{ commitExiste: (sha: string) => boolean, adrExiste: (numero: string) => boolean,
+ *           numerosDuDossier: Set<string> }} monde
+ * @returns {string[]} un défaut par manquement, vide si le registre est opposable
+ */
+function defautsDuRegistre(registre, { commitExiste, adrExiste, numerosDuDossier }) {
+  const defauts = [];
+  const lignes = registre
+    .split("\n")
+    .filter((ligne) => ligne.trimStart().startsWith("|") && !/^\s*\|[\s|:-]+\|\s*$/.test(ligne))
+    .slice(1);
+
+  for (const ligne of lignes) {
+    const cellules = ligne
+      .split("|")
+      .slice(1, -1)
+      .map((cellule) => cellule.trim());
+    if (cellules.length !== 4) {
+      defauts.push(`${cellules.length} colonne(s) au lieu de 4 : ${ligne.trim()}`);
+      continue;
+    }
+    const [constat, severite, disposition, preuve] = cellules;
+
+    const issue = constat.match(/github\.com\/pinfada\/railsbox-vault\/issues\/(\d+)/);
+    if (issue === null) {
+      defauts.push(`aucune issue de ce dépôt citée : ${constat}`);
+    } else if (!numerosDuDossier.has(issue[1])) {
+      defauts.push(`issue #${issue[1]} absente du dossier (spécification § 9.6 ou SECURITY.md)`);
+    }
+
+    if (!/^(CRITICAL|HIGH|MEDIUM|LOW)$/.test(severite)) {
+      defauts.push(`sévérité hors vocabulaire : « ${severite} »`);
+    }
+    if (!/^(corrigé|accepté|réfuté)$/.test(disposition)) {
+      defauts.push(`disposition hors vocabulaire : « ${disposition} »`);
+    }
+
+    const empreintes = [...preuve.matchAll(/`([0-9a-f]{7,40})`/g)].map((trouve) => trouve[1]);
+    const adrs = [...preuve.matchAll(/ADR\s*(\d{4})/g)].map((trouve) => trouve[1]);
+    for (const sha of empreintes) {
+      if (!commitExiste(sha)) defauts.push(`« ${sha} » n'est pas un commit de ce dépôt`);
+    }
+    for (const numero of adrs) {
+      if (!adrExiste(numero)) defauts.push(`l'ADR ${numero} n'existe pas dans docs/decisions/`);
+    }
+    if (empreintes.length === 0 && adrs.length === 0) {
+      defauts.push(`preuve absente : « ${preuve} »`);
+    }
+    if (disposition === "corrigé" && empreintes.length === 0) {
+      defauts.push("une disposition « corrigé » doit citer le commit qui corrige");
+    }
+  }
+  return defauts;
+}
+
+/** Vrai si `sha` désigne un COMMIT de ce dépôt. Hors ligne : `git cat-file` lit `.git`. */
+function commitExiste(sha) {
+  try {
+    execFileSync("git", ["cat-file", "-e", `${sha}^{commit}`], {
+      cwd: REPO_ROOT,
+      stdio: "ignore",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Vrai si un fichier de `docs/decisions/` porte ce numéro d'ADR. */
+function adrExiste(numero) {
+  return readdirSync(path.join(REPO_ROOT, "docs", "decisions")).some((nom) =>
+    nom.startsWith(`${numero}-`),
+  );
+}
+
+/** Les numéros d'issue que le DOSSIER porte : la spécification (§ 9.6) et `SECURITY.md`. */
+async function numerosDuDossier() {
+  const texte = `${await lire(SPEC)}\n${await lire(SECURITY)}`;
+  return new Set(
+    [...texte.matchAll(/pinfada\/railsbox-vault\/issues\/(\d+)/g)].map(
+      (occurrence) => occurrence[1],
+    ),
+  );
+}
+
+test("le registre porte ses quatre colonnes, et chaque ligne est OPPOSABLE", async () => {
   const registre = await lire("docs/revue-externe/registre.md");
   for (const colonne of ["constat", "sévérité", "disposition", "commit"]) {
     assert.match(
@@ -287,55 +406,70 @@ test("chaque ligne du registre cite une issue `revue-externe` qui existe", async
       `le registre doit porter une colonne « ${colonne} ».`,
     );
   }
-
-  const lignes = registre
-    .split("\n")
-    .filter((ligne) => ligne.trimStart().startsWith("|") && !/^\s*\|[\s|:-]+\|\s*$/.test(ligne))
-    .slice(1);
-
-  const dispositions = /^(corrigé|accepté|réfuté)$/;
-  const defauts = [];
-  for (const ligne of lignes) {
-    const cellules = ligne
-      .split("|")
-      .slice(1, -1)
-      .map((cellule) => cellule.trim());
-    if (cellules.length !== 4) {
-      defauts.push(`${cellules.length} colonne(s) : ${ligne.trim()}`);
-      continue;
-    }
-    const [constat, severite, disposition, preuve] = cellules;
-    // L'ISSUE d'abord : c'est elle qui rend la ligne opposable. Le motif exige le dépôt lui-même,
-    // pas une URL quelconque — un lien vers ailleurs ne prouverait pas qu'un constat a été reçu ici.
-    const issue = constat.match(/github\.com\/pinfada\/railsbox-vault\/issues\/(\d+)/);
-    if (issue === null) defauts.push(`aucune issue citée : ${constat}`);
-    if (!/^(CRITICAL|HIGH|MEDIUM|LOW)$/.test(severite)) {
-      defauts.push(`sévérité hors vocabulaire : ${severite}`);
-    }
-    if (!dispositions.test(disposition))
-      defauts.push(`disposition hors vocabulaire : ${disposition}`);
-    // Une disposition sans preuve opposable n'est pas une disposition : un commit ou un ADR.
-    if (!/`[0-9a-f]{7,40}`|ADR\s*\d{4}/.test(preuve)) defauts.push(`preuve absente : ${preuve}`);
-  }
+  const defauts = defautsDuRegistre(registre, {
+    commitExiste,
+    adrExiste,
+    numerosDuDossier: await numerosDuDossier(),
+  });
   assert.deepEqual(defauts, [], "Ces lignes du registre ne sont pas opposables.");
 });
 
-test("les issues que le registre cite sont celles que la spécification dit disposées", async () => {
-  // Les deux documents peuvent diverger, et la divergence serait invisible : la spécification dirait
-  // « corrigé » là où le registre resterait muet, ou l'inverse. Le § 9.6 est la source ; le registre
-  // en est la mise en forme opposable.
-  const registre = await lire("docs/revue-externe/registre.md");
-  const spec = await lire(SPEC);
-  const citees = [...registre.matchAll(/github\.com\/pinfada\/railsbox-vault\/issues\/(\d+)/g)].map(
-    (occurrence) => occurrence[1],
+test("la garde du registre MORD : une ligne inventée est refusée sur chacun de ses défauts", async () => {
+  // C'est l'épreuve que la revue du format persistant réclamait, et elle rejoue SA reproduction :
+  // une issue qui n'existe pas, une empreinte qui n'est pas un commit. La garde précédente rendait
+  // VERT sur cette ligne-là. Sans ce contrôle négatif, rien ne dirait que la nouvelle mord — un
+  // balayage à vide passe toujours.
+  const monde = { commitExiste, adrExiste, numerosDuDossier: await numerosDuDossier() };
+  const inventee = [
+    "| Constat | Sévérité | Disposition | Commit ou ADR |",
+    "| ------- | -------- | ----------- | ------------- |",
+    "| [#999999](https://github.com/pinfada/railsbox-vault/issues/999999) — inventé | CRITICAL | corrigé | " +
+      DEADBEE +
+      " |",
+  ].join("\n");
+
+  const defauts = defautsDuRegistre(inventee, monde);
+  assert.ok(
+    defauts.some((defaut) => defaut.includes("deadbee")),
+    `l'empreinte inventée doit être refusée : ${JSON.stringify(defauts)}`,
   );
-  assert.ok(citees.length > 0, "le registre ne cite aucune issue : la recherche est cassée.");
-  const absentes = citees.filter((numero) => !spec.includes(`issues/${numero}`));
-  assert.deepEqual(
-    absentes,
-    [],
-    `Ces constats sont au registre et ne figurent pas dans ${SPEC} § 9.6.`,
+  assert.ok(
+    defauts.some((defaut) => defaut.includes("#999999")),
+    `l'issue inventée doit être refusée : ${JSON.stringify(defauts)}`,
   );
+
+  // TÉMOIN POSITIF de la garde elle-même, sur le MÊME chemin de code : le registre réel passe. Une
+  // garde qui refuserait tout serait aussi inutile qu'une garde qui accepte tout.
+  const reelle = await lire("docs/revue-externe/registre.md");
+  assert.deepEqual(defautsDuRegistre(reelle, monde), []);
+});
+
+test("la garde du registre refuse une sévérité, une disposition ou une preuve hors règle", async () => {
+  // Chaque branche du vocabulaire fermé est mordue une fois : sans cela, une seule d'entre elles
+  // pourrait cesser de mordre sans que rien ne le dise.
+  const monde = { commitExiste, adrExiste, numerosDuDossier: await numerosDuDossier() };
+  const entete = [
+    "| Constat | Sévérité | Disposition | Commit ou ADR |",
+    "| ------- | -------- | ----------- | ------------- |",
+  ];
+  const ligne = (severite, disposition, preuve) =>
+    defautsDuRegistre(
+      [
+        ...entete,
+        `| [#143](https://github.com/pinfada/railsbox-vault/issues/143) — x | ${severite} | ${disposition} | ${preuve} |`,
+      ].join("\n"),
+      monde,
+    );
+
+  assert.ok(ligne("GRAVE", "corrigé", COMMIT_TEMOIN).some((d) => d.includes("sévérité")));
+  assert.ok(ligne("HIGH", "classé", COMMIT_TEMOIN).some((d) => d.includes("disposition")));
+  assert.ok(ligne("HIGH", "accepté", "aucune").some((d) => d.includes("preuve absente")));
+  assert.ok(ligne("HIGH", "accepté", "ADR 9999").some((d) => d.includes("ADR 9999")));
+  assert.ok(
+    ligne("HIGH", "corrigé", "ADR 0016").some((d) => d.includes("doit citer le commit")),
+    "une correction sans commit doit être refusée",
+  );
+  assert.deepEqual(ligne("HIGH", "corrigé", COMMIT_TEMOIN), []);
 });
 
 test("SECURITY.md statue sur CHAQUE invariant, et la preuve citée existe", async () => {
