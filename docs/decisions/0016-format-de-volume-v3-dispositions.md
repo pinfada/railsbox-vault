@@ -723,3 +723,57 @@ décision 8 ne désigne rien de tel ; les deux refus `VAULT_ARCHIVE_VOLUME_CHIFF
 `VAULT_IMPORT_VOLUME_CHIFFRE`, que la décision 9 déclare retirés, sont encore déclarés dans le code
 et ne sont plus levés nulle part ; et le « format du journal (2 en v3) » de la décision 3 vaut **3**
 depuis l'ADR 0019.
+
+## Amendement du 2026-09-05 — une étiquette de domaine PAR MAGASIN (#143)
+
+**Ce que cet amendement révise.** La décision 2 de cet ADR range les enregistrements du journal et
+les secteurs du volume sous la même forme de données associées — celle de l'ADR 0015, § « données
+associées d'un bloc » —, et compte sur le RANG pour les séparer. Cette phrase est **fausse**, et la
+pré-revue adverse de #20 l'a réfutée par exécution sur les vecteurs livrés
+([#143](https://github.com/pinfada/railsbox-vault/issues/143), sévérité HIGH).
+
+**Pourquoi le rang ne sépare pas.** Le rang d'un enregistrement est sa **position dans la charge** :
+le premier enregistrement de chaque charge porte donc le rang 0. Le rang d'un secteur du volume est
+**épinglé à zéro** par le format (`RANG_SECTEUR_DE_VOLUME`). Dans le cas NOMINAL — une écriture du
+guest alignée sur un secteur, que la décision 2 garantit elle-même par la relecture de complétion —
+les deux objets partagent volume, version de format, génération, rang, adresse et longueur. Leurs
+données associées sont identiques octet pour octet, au-dessus de deux clairs différents : épisser le
+sceau et le chiffré de l'enregistrement dans la région d'authentification et la charge du volume
+fait rendre au lecteur de volume le clair du journal, **sans aucune clé**.
+
+Une place ne sépare que ce qui vit dans le même espace. La leçon est plus générale que le cas :
+**une identité logique doit nommer le MAGASIN d'où elle vient, pas seulement la place qu'elle y
+occupe.**
+
+**Ce qui est décidé.** Une étiquette de domaine par magasin. `railsbox-vault/format-chiffre/v1/bloc`
+reste celle des objets du VOLUME — secteur de la charge, empreinte de la région, témoin de séquence
+; les enregistrements du journal reçoivent `railsbox-vault/format-chiffre/v1/enregistrement`. Même
+forme, mêmes champs, mêmes largeurs, même ordre : seul le champ 1 change. Le modèle de référence de
+l'ADR 0015 reçoit la paire `scellerEnregistrement` / `ouvrirEnregistrement`, distincte de
+`scellerBloc` / `ouvrirBloc` ; les fusionner sous un paramètre « magasin » aurait rendu la
+séparation facultative à l'appel, c'est-à-dire oubliable.
+
+**Ce qui n'est PAS décidé, et pourquoi.** _Décaler les rangs d'enregistrement de un_ aurait fermé le
+cas observé sans fermer la classe : deux magasins seraient restés dans le même espace d'identités,
+séparés par une convention implicite que rien n'aurait relue — et c'eût été de toute façon un
+changement de format persistant. _Changer aussi l'étiquette des SECTEURS_ aurait invalidé les
+vecteurs figés de l'ADR 0015 et imposé un rescellement complet de chaque volume existant, pour une
+propriété que l'étiquette du journal suffit à tenir.
+
+**Ce que cela coûte au format.** **Aucun octet du volume.** Les données associées d'un secteur,
+d'une racine, de l'empreinte de région et du témoin sont inchangées ;
+`tests/vectors/format-chiffre-v1.json` reste valide ; un volume déjà scellé se relit sans migration.
+`SPECIFICATION_VERSION` reste **1** : la version d'une spécification cryptographique nomme la FORME
+de ses encodages — champs, largeurs, ordre, préfixes —, et ajouter un domaine à côté des trois qui
+existaient n'invalide aucun octet déjà scellé sous les autres. Ce qui change de version est le
+**format du journal**, seul magasin dont les octets bougent : voir l'amendement du même jour à
+l'ADR 0019.
+
+**Le résidu, nommé.** Des octets d'enregistrement capturés sur un journal **antérieur** à ce
+changement restent scellés sous l'étiquette d'un bloc, et rien ne permet de les resceller sans la
+clé : qui détient une telle copie peut encore les épisser dans le volume correspondant, dans les
+trois états où l'empreinte de région ne confronte rien (`non-fournie`, `sans-racine`, `migree`). Ce
+qui est fermé est l'attaque **continue** — un adversaire qui lit l'OPFS après la migration n'y
+trouve plus d'enregistrement épissable, et la migration a lieu à la première réouverture.
+
+Correction portée par le commit `7f106fb`. Épreuves : `tests/unit/vm-identite-magasin.test.mjs`.
