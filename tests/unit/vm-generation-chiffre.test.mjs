@@ -67,13 +67,14 @@ async function ouvrirMagasin(support, nom = "vol.gen", reste = {}) {
   });
 }
 
-test("le format du journal passe à 3, et sa racine occupe 202 octets", () => {
-  // #18 avait porté le format de 1 à 2 et la racine à 136 octets ; #19 la porte à 3 et à 202, en
-  // logeant la fraîcheur de région dans la réserve du même secteur — ce que l'ADR 0016 avait prévu
-  // et nommé (« la réserve du secteur de racine l'accueille sous une version de format »).
+test("le format du journal passe à 4, et sa racine occupe toujours 202 octets", () => {
+  // #18 avait porté le format de 1 à 2 et la racine à 136 octets ; #19 l'a porté à 3 et la racine à
+  // 202, en logeant la fraîcheur de région dans la réserve du même secteur — ce que l'ADR 0016 avait
+  // prévu et nommé. #143 le porte à 4 SANS toucher un octet de la racine : ce qui change est
+  // l'étiquette de domaine des enregistrements de la charge, et le numéro qui l'annonce.
   assert.equal(
     GENERATION_FORMAT,
-    3,
+    4,
     "un runtime antérieur doit refuser cette racine comme format inconnu",
   );
   assert.equal(RACINE_ENTETE_OCTETS, 202);

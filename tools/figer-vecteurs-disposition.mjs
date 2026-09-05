@@ -136,7 +136,9 @@ async function main() {
       adresse: modele.offset,
       longueur: modele.longueur,
     };
-    const scelle = await scellement.scellerBloc(identite, clair);
+    // `scellerEnregistrement`, et non `scellerBloc` : un enregistrement du journal porte sa propre
+    // étiquette de domaine depuis le constat #143, et c'est exactement ce que ces vecteurs figent.
+    const scelle = await scellement.scellerEnregistrement(identite, clair);
     const entete = encoderEnteteEnregistrement({
       offset: modele.offset,
       longueur: modele.longueur,

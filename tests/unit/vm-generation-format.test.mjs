@@ -114,8 +114,12 @@ test("une racine dont la fraîcheur est OUBLIÉE est refusée à l'encodage", ()
   assert.throws(() => encoderRacine(sansLeChamp), /obligatoire/);
 });
 
-test("le format du journal vaut 3 : un runtime antérieur refuse cette racine sans la comprendre", () => {
-  assert.equal(GENERATION_FORMAT, 3);
+test("le format du journal vaut 4 : un runtime antérieur refuse cette racine sans la comprendre", () => {
+  // #18 l'avait porté de 1 à 2, #19 de 2 à 3, et #143 de 3 à 4 — la charge du journal change, parce
+  // qu'un enregistrement porte désormais sa propre étiquette de domaine. Un runtime plus ancien
+  // refuse cette racine comme un format inconnu, ce qui est le comportement voulu : il ouvrirait les
+  // enregistrements dans l'espace d'identités du VOLUME.
+  assert.equal(GENERATION_FORMAT, 4);
   const octets = encoderRacine(racineValide());
   const ancienne = Uint8Array.from(octets);
   new DataView(ancienne.buffer).setUint32(8, 1, true);

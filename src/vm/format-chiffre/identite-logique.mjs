@@ -25,8 +25,20 @@
 // (construction fondée sur un générateur approuvé). Le nonce est STOCKÉ avec chaque objet scellé :
 // il n'est plus dérivable de rien, et c'est le prix de sa correction.
 //
-// Le domaine — bloc, racine, liste d'entrées — reste dans les DONNÉES ASSOCIÉES, où il sépare les
-// espaces sans avoir à consommer des bits de nonce.
+// Le domaine — bloc du volume, enregistrement du journal, racine, liste d'entrées — reste dans les
+// DONNÉES ASSOCIÉES, où il sépare les espaces sans avoir à consommer des bits de nonce.
+//
+// ## Un domaine PAR MAGASIN, et pourquoi le rang ne suffisait pas (#143)
+//
+// La première version de ce module donnait la même étiquette — « bloc » — à un secteur du volume et
+// à un enregistrement du journal, et comptait sur le RANG pour les séparer. Une pré-revue adverse
+// l'a réfutée sur les vecteurs livrés : le format épingle le rang 0 pour un secteur du volume, et le
+// premier enregistrement de chaque charge porte le rang 0 puisque son rang est sa position dans la
+// charge. Deux objets de magasins différents portaient donc, dans le cas NOMINAL, les mêmes données
+// associées au-dessus de deux clairs différents.
+//
+// La leçon vaut au-delà du cas : **une identité logique doit nommer le MAGASIN d'où elle vient, pas
+// seulement la place qu'elle y occupe.** Une place ne sépare que ce qui vit dans le même espace.
 //
 // ## Ce qui borne alors la probabilité de collision
 //
@@ -90,8 +102,38 @@ export const LIMITE_NIST_INVOCATIONS = 2 ** 32;
  */
 export const BUDGET_SCELLEMENTS_PAR_CLE = 2 ** 31;
 
-/** Étiquette de domaine d'un bloc. Elle entre dans les données associées, jamais dans le nonce. */
+/**
+ * Étiquette de domaine d'un BLOC du volume. Elle entre dans les données associées, jamais dans le
+ * nonce.
+ *
+ * Un « bloc » est ici un objet du magasin VOLUME : un secteur de la charge, l'empreinte de la
+ * région d'authentification, le témoin de séquence. Un enregistrement du journal n'en est PAS un —
+ * voir `ETIQUETTE_DOMAINE_ENREGISTREMENT` et le constat #143 qui l'a imposé.
+ */
 export const ETIQUETTE_DOMAINE_BLOC = "railsbox-vault/format-chiffre/v1/bloc";
+
+/**
+ * Étiquette de domaine d'un ENREGISTREMENT du journal de génération (#143).
+ *
+ * **Pourquoi une étiquette par magasin, et non un rang réservé.** Le rang ne sépare rien : le format
+ * épingle le rang 0 pour un secteur du volume, et le premier enregistrement de chaque charge porte
+ * le rang 0 parce que son rang EST sa position dans la charge. Dans le cas nominal d'une écriture
+ * alignée sur un secteur, les deux objets partagent alors volume, version de format, génération,
+ * rang, adresse et longueur — donc des données associées identiques octet pour octet, au-dessus de
+ * deux clairs différents. Épisser dans la région et la charge du volume le sceau et le chiffré d'un
+ * enregistrement faisait rendre au lecteur de volume le clair du journal, sans aucune clé.
+ *
+ * Décaler les rangs d'enregistrement de un aurait fermé le cas observé sans fermer la classe : deux
+ * magasins seraient restés dans le même espace d'identités, séparés par une convention que rien
+ * n'aurait relue. L'étiquette, elle, sépare les espaces par construction et à tout rang.
+ *
+ * L'espace de noms reste `v1` : la version d'une spécification nomme la FORME de ses encodages —
+ * champs, largeurs, ordre, préfixes —, et celle-ci ne bouge pas. Ajouter un domaine à côté des trois
+ * qui existaient n'invalide aucun octet déjà scellé sous les autres, et `SPECIFICATION_VERSION` reste
+ * donc 1. Ce qui change de version est le format du JOURNAL, seul magasin dont les octets bougent
+ * (ADR 0019 amendé).
+ */
+export const ETIQUETTE_DOMAINE_ENREGISTREMENT = "railsbox-vault/format-chiffre/v1/enregistrement";
 
 /** Étiquette de domaine d'une racine de génération. */
 export const ETIQUETTE_DOMAINE_RACINE = "railsbox-vault/format-chiffre/v1/racine";
@@ -154,7 +196,7 @@ export function identifiantVolumeEnTexte(octets) {
 }
 
 /**
- * Données associées d'un bloc : l'identité logique COMPLÈTE, encodée sans ambiguïté.
+ * Données associées d'un objet ADRESSÉ, sous l'étiquette de domaine de SON magasin.
  *
  * Chaque champ est de largeur fixe ou préfixé de sa longueur, si bien que deux identités distinctes
  * ne peuvent pas rendre la même chaîne d'octets. C'est la condition pour que « lier l'identité »
@@ -163,17 +205,14 @@ export function identifiantVolumeEnTexte(octets) {
  * bronche. `tests/unit/vm-format-chiffre-identite.test.mjs` éprouve ce cas précis en réencodant sans
  * les préfixes et en montrant la collision que le préfixe évite.
  *
- * @param {{ volume: string, formatVersion: number, generation: number, rang: number,
- *           adresse: number, longueur: number }} identite
+ * L'étiquette est le PREMIER champ, et c'est ce qui sépare les magasins : deux objets qui
+ * partageraient les six champs suivants — le cas nominal d'un secteur du volume et du premier
+ * enregistrement de sa charge — ne rendent tout de même pas la même chaîne (#143).
  */
-export function encoderIdentiteBloc({
-  volume,
-  formatVersion,
-  generation,
-  rang,
-  adresse,
-  longueur,
-}) {
+function encoderIdentiteAdressee(
+  etiquetteDeDomaine,
+  { volume, formatVersion, generation, rang, adresse, longueur },
+) {
   identifiant("volume", volume);
   entierBorne("formatVersion", formatVersion, 0xffffffff);
   entierBorne("generation", generation, GENERATION_MAX);
@@ -182,7 +221,7 @@ export function encoderIdentiteBloc({
   entierBorne("longueur", longueur, 0xffffffff);
 
   return concatener(
-    chainePrefixee(ETIQUETTE_DOMAINE_BLOC),
+    chainePrefixee(etiquetteDeDomaine),
     chainePrefixee(ALGORITHME),
     entierEnOctets(formatVersion, 4),
     chainePrefixee(volume),
@@ -191,6 +230,36 @@ export function encoderIdentiteBloc({
     entierEnOctets(adresse, 8),
     entierEnOctets(longueur, 4),
   );
+}
+
+/**
+ * Données associées d'un BLOC DU VOLUME : l'identité logique COMPLÈTE, encodée sans ambiguïté.
+ *
+ * Un bloc est un secteur de la charge, l'empreinte de la région d'authentification ou le témoin de
+ * séquence. Ces octets-là n'ont pas changé depuis l'ADR 0015, et c'est délibéré :
+ * `tests/vectors/format-chiffre-v1.json` reste valide, et un volume déjà scellé se relit sans
+ * migration (#143).
+ *
+ * @param {{ volume: string, formatVersion: number, generation: number, rang: number,
+ *           adresse: number, longueur: number }} identite
+ */
+export function encoderIdentiteBloc(identite) {
+  return encoderIdentiteAdressee(ETIQUETTE_DOMAINE_BLOC, identite);
+}
+
+/**
+ * Données associées d'un ENREGISTREMENT du journal de génération (#143).
+ *
+ * Même forme que celle d'un bloc, à l'étiquette de domaine près — et c'est tout l'objet : la forme
+ * commune garde une seule règle d'encodage à relire, l'étiquette distincte garde les deux magasins
+ * dans deux espaces d'identités disjoints. Le rang y reste la POSITION de l'enregistrement dans sa
+ * charge, en base zéro : il ordonne, il ne sépare plus rien.
+ *
+ * @param {{ volume: string, formatVersion: number, generation: number, rang: number,
+ *           adresse: number, longueur: number }} identite
+ */
+export function encoderIdentiteEnregistrement(identite) {
+  return encoderIdentiteAdressee(ETIQUETTE_DOMAINE_ENREGISTREMENT, identite);
 }
 
 /**

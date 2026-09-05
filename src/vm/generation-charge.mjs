@@ -21,10 +21,12 @@
 import { decoderSceau } from "./volume-chiffre-format.mjs";
 import {
   ENTETE_OCTETS,
+  GENERATION_FORMATS_LUS,
   SCEAU_ENREGISTREMENT_OCTETS,
   SURCOUT_ENREGISTREMENT,
   ZONE_ENREGISTREMENTS,
   decoderEnteteEnregistrement,
+  enregistrementsSousIdentiteDeBloc,
   longueurPhysiqueDeCharge,
 } from "./generation-format.mjs";
 import { TAMPON_RELECTURE_OCTETS } from "./generation-plafonds.mjs";
@@ -95,6 +97,23 @@ function exigerPlancher(nom, valeur) {
     );
   }
   return valeur;
+}
+
+/**
+ * Exige que la racine DISE son format de journal, et qu'il soit un de ceux que ce runtime lit.
+ *
+ * C'est la règle d'`exigerPlancher`, appliquée au champ dont dépend l'étiquette de domaine des
+ * enregistrements (#143). Un descripteur de racine sans format viendrait d'un appelant qui a oublié
+ * de le poser, et l'oubli aurait choisi un encodage à sa place — silencieusement.
+ */
+function exigerFormatDeJournal(racine) {
+  const format = racine?.format;
+  if (!GENERATION_FORMATS_LUS.includes(format)) {
+    throw new TypeError(
+      `Parcourir une charge exige le FORMAT de sa racine, parmi ${GENERATION_FORMATS_LUS.join(", ")} : c'est lui qui dit sous quelle étiquette de domaine ses enregistrements ont été scellés. Reçu ${format}.`,
+    );
+  }
+  return format;
 }
 
 /** Refus TYPÉ d'une charge scellée devenue incohérente. Un doute est un refus, jamais un remède. */
@@ -202,7 +221,8 @@ function plancherDeGeneration(vues, plancher) {
  *     authentifie : adresse, longueur, rang (sa position dans la charge), étiquette ;
  *  2. l'OUVRIR sous l'identité reconstruite, si l'appelant veut le clair. La génération vient du
  *     SCEAU, jamais de la racine : une charge cumule plusieurs générations tant qu'aucun point de
- *     contrôle ne l'a vidée, et l'ADR 0016 corrige l'ADR 0015 sur ce point précis ;
+ *     contrôle ne l'a vidée, et l'ADR 0016 corrige l'ADR 0015 sur ce point précis. L'ÉTIQUETTE DE
+ *     DOMAINE, elle, vient du FORMAT de la racine : celui du journal, pas celui du volume (#143) ;
  *  3. OUVRIR la racine avec la suite trouvée. C'est là, et seulement là, que troncature et mélange
  *     sont ÉTABLIS — sur un en-tête que l'étiquette a authentifié.
  *
@@ -239,7 +259,17 @@ export async function parcourirCharge({
     longueurCharge: longueurPhysique,
     lire: (cible, position) => journal.lireDans(cible, ZONE_ENREGISTREMENTS + position),
   });
-  const cadre = { volume, racine, tailleVolume, longueurPhysique };
+  const cadre = {
+    volume,
+    racine,
+    tailleVolume,
+    longueurPhysique,
+    // Sous QUELLE étiquette de domaine les enregistrements de cette charge ont été scellés (#143).
+    // Le format de la racine le décide, et il est EXIGÉ : un défaut aurait tranché pour l'un des
+    // deux encodages, et se serait trompé sur l'autre — soit en refusant une génération validée,
+    // soit en rouvrant l'espace d'identités que ce constat referme.
+    identiteHeritee: enregistrementsSousIdentiteDeBloc(exigerFormatDeJournal(racine)),
+  };
   const etat = {
     entrees: [],
     /** Générations des enregistrements déjà ouverts, dans l'ordre. Elle ne peut que croître. */
@@ -291,11 +321,24 @@ async function ouvrirUnEnregistrement({
   etat.position += SURCOUT_ENREGISTREMENT;
 
   const chiffre = lireChiffre(fenetre, etat.position, entete.longueur, volume, racine);
-  const clair = await scellement.ouvrirBloc(
-    { generation: sceau.generation, rang, adresse: entete.offset, longueur: entete.longueur },
-    { nonce: sceau.nonce, etiquette: sceau.etiquette, chiffre },
-    { generationMinimale: plancherDeGeneration(etat.generationsVues, generationPlancher) },
-  );
+  const identite = {
+    generation: sceau.generation,
+    rang,
+    adresse: entete.offset,
+    longueur: entete.longueur,
+  };
+  const scelle = { nonce: sceau.nonce, etiquette: sceau.etiquette, chiffre };
+  const attentes = {
+    generationMinimale: plancherDeGeneration(etat.generationsVues, generationPlancher),
+  };
+  // L'ÉTIQUETTE DE DOMAINE vient du format de la racine, et le choix est écrit ici plutôt que caché
+  // dans le scellement : dans un journal d'avant le format 4, un enregistrement EST un bloc du
+  // volume — c'est précisément le défaut que le constat #143 a exploité, et c'est pourquoi ces
+  // octets-là ne se relisent que sous l'ancien encodage. Après le vidage qui clôt toute
+  // récupération, il n'en reste aucun.
+  const clair = cadre.identiteHeritee
+    ? await scellement.ouvrirBloc(identite, scelle, attentes)
+    : await scellement.ouvrirEnregistrement(identite, scelle, attentes);
   etat.generationsVues.push(sceau.generation);
   if (emettre !== null) await emettre(entete.offset, clair, sceau.generation);
   etat.position += entete.longueur;

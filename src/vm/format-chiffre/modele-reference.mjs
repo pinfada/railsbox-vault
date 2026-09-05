@@ -6,10 +6,21 @@
 // #19 devront reproduire octet pour octet. Le rapport est celui de l'oracle de #15 à
 // l'implémentation de #16 : le juge est écrit avant, et séparément.
 //
-// Cinq gestes : `scellerBloc`, `ouvrirBloc`, `scellerRacine`, `ouvrirRacine`, et
-// `rescellerEnSecteurs` — que le POINT DE CONTRÔLE de l'ADR 0014 exige et qu'une revue a relevé
-// manquant. La clé de volume est REÇUE, jamais dérivée ni conservée : l'enveloppe DEK/KEK, le
-// déverrouillage et la récupération sont l'objet de #21 (jalon 5).
+// Sept gestes, en trois paires et un solitaire : `scellerBloc` / `ouvrirBloc` pour un objet du
+// VOLUME, `scellerEnregistrement` / `ouvrirEnregistrement` pour un objet du JOURNAL,
+// `scellerRacine` / `ouvrirRacine`, et `rescellerEnSecteurs` — que le POINT DE CONTRÔLE de
+// l'ADR 0014 exige et qu'une revue a relevé manquant. La clé de volume est REÇUE, jamais dérivée ni
+// conservée : l'enveloppe DEK/KEK, le déverrouillage et la récupération sont l'objet de #21
+// (jalon 5).
+//
+// ## Deux paires plutôt qu'une, et ce que la séparation achète (#143)
+//
+// Jusqu'au constat #143, un enregistrement du journal se scellait par `scellerBloc` : les deux
+// magasins partageaient une étiquette de domaine, et le RANG devait les séparer. Il ne le faisait
+// pas — voir `identite-logique.mjs`. La paire dédiée n'ajoute aucun champ et ne change aucune
+// largeur : elle change l'étiquette de domaine, donc l'espace d'identités. `rescellerEnSecteurs`,
+// lui, part du journal et arrive dans le VOLUME : il scelle donc des BLOCS, et c'est ce passage
+// d'un magasin à l'autre qui est tout l'objet du point de contrôle.
 //
 // ## Le nonce est tiré, et rien ne le dérive
 //
@@ -54,6 +65,7 @@ import {
   encoderEnteteRacine,
   encoderEntrees,
   encoderIdentiteBloc,
+  encoderIdentiteEnregistrement,
   tirerNonce,
   verifierAlgorithme,
   verifierBudgetDeCle,
@@ -204,48 +216,18 @@ function exigerContenu(contenu, identite) {
   return contenu;
 }
 
-/**
- * Scelle un bloc SOUS UN NONCE DONNÉ.
- *
- * **Le chemin normal est `scellerBloc`, qui tire son nonce.** Cette variante existe pour deux usages
- * et deux seulement : figer des vecteurs reproductibles, et permettre à une implémentation (#18) de
- * REPRODUIRE ces vecteurs. Un appelant de production qui fournirait deux fois le même nonce sous la
- * même clé perdrait tout : c'est exactement la faute que le tirage supprime.
- */
-export async function scellerBlocSousNonce({ cle, identite, contenu, nonce, attentes = {} }) {
+/** Scelle sous l'encodeur d'identité du magasin dont l'objet vient. Aucun défaut : il est reçu. */
+async function scellerSousNonce(encoderIdentite, { cle, identite, contenu, nonce, attentes }) {
   verifierAlgorithme(identite?.algorithme);
   verifierBudgetDeCle(exigerAttente("scellementsCumules", attentes.scellementsCumules));
   exigerOctets("nonce", nonce, NONCE_OCTETS);
   exigerContenu(contenu, identite);
-  const chiffre = await chiffrer(cle, nonce, encoderIdentiteBloc(identite), contenu);
+  const chiffre = await chiffrer(cle, nonce, encoderIdentite(identite), contenu);
   return Object.freeze({ nonce, ...chiffre });
 }
 
-/**
- * Scelle un bloc sous son identité logique, avec un nonce TIRÉ.
- *
- * @param {{ cle: CryptoKey, identite: object, contenu: Uint8Array,
- *           attentes: { scellementsCumules: number } }} appel
- * @returns {Promise<{ nonce: Uint8Array, chiffre: Uint8Array, etiquette: Uint8Array }>}
- */
-export async function scellerBloc({ cle, identite, contenu, attentes = {} }) {
-  return scellerBlocSousNonce({ cle, identite, contenu, nonce: tirerNonce(), attentes });
-}
-
-/**
- * Ouvre un bloc sous l'identité logique que l'appelant présente. Tout écart est un refus typé.
- *
- * `attentes.generationMinimale` est le seul moyen de refuser un bloc AUTHENTIQUE mais ancien. D'où
- * ce minimum vient décide de ce que la propriété vaut : la racine de la génération en cours pour le
- * journal, et RIEN pour un secteur relu du volume — l'ADR 0015 nomme ce résidu et ne le masque pas.
- * `null` dit « je n'en présente pas », et c'est alors écrit à l'appel plutôt que déduit d'un oubli.
- *
- * @param {{ cle: CryptoKey, identite: object,
- *           scelle: { nonce: Uint8Array, chiffre: Uint8Array, etiquette: Uint8Array },
- *           attentes: { generationMinimale: number | null } }} appel
- * @returns {Promise<Uint8Array>} le clair, ou un refus
- */
-export async function ouvrirBloc({ cle, identite, scelle, attentes = {} }) {
+/** Ouvre sous l'encodeur d'identité du magasin dont l'objet vient, ou refuse. Voir `ouvrirBloc`. */
+async function ouvrir(encoderIdentite, { cle, identite, scelle, attentes }) {
   verifierAlgorithme(identite?.algorithme);
   const generationMinimale = exigerAttente("generationMinimale", attentes.generationMinimale);
   exigerSceau(scelle);
@@ -253,7 +235,7 @@ export async function ouvrirBloc({ cle, identite, scelle, attentes = {} }) {
   const clair = await dechiffrer(
     cle,
     scelle.nonce,
-    encoderIdentiteBloc(identite),
+    encoderIdentite(identite),
     assembler(scelle.chiffre, scelle.etiquette),
   );
   if (clair === null) {
@@ -274,6 +256,89 @@ export async function ouvrirBloc({ cle, identite, scelle, attentes = {} }) {
     });
   }
   return clair;
+}
+
+/**
+ * Scelle un BLOC DU VOLUME SOUS UN NONCE DONNÉ.
+ *
+ * **Le chemin normal est `scellerBloc`, qui tire son nonce.** Cette variante existe pour deux usages
+ * et deux seulement : figer des vecteurs reproductibles, et permettre à une implémentation (#18) de
+ * REPRODUIRE ces vecteurs. Un appelant de production qui fournirait deux fois le même nonce sous la
+ * même clé perdrait tout : c'est exactement la faute que le tirage supprime.
+ */
+export async function scellerBlocSousNonce({ cle, identite, contenu, nonce, attentes = {} }) {
+  return scellerSousNonce(encoderIdentiteBloc, { cle, identite, contenu, nonce, attentes });
+}
+
+/**
+ * Scelle un bloc du volume sous son identité logique, avec un nonce TIRÉ.
+ *
+ * @param {{ cle: CryptoKey, identite: object, contenu: Uint8Array,
+ *           attentes: { scellementsCumules: number } }} appel
+ * @returns {Promise<{ nonce: Uint8Array, chiffre: Uint8Array, etiquette: Uint8Array }>}
+ */
+export async function scellerBloc({ cle, identite, contenu, attentes = {} }) {
+  return scellerBlocSousNonce({ cle, identite, contenu, nonce: tirerNonce(), attentes });
+}
+
+/**
+ * Ouvre un bloc du volume sous l'identité logique que l'appelant présente. Tout écart est un refus
+ * typé.
+ *
+ * `attentes.generationMinimale` est le seul moyen de refuser un bloc AUTHENTIQUE mais ancien. D'où
+ * ce minimum vient décide de ce que la propriété vaut : la racine de la génération en cours pour le
+ * journal, et RIEN pour un secteur relu du volume — l'ADR 0015 nomme ce résidu et ne le masque pas.
+ * `null` dit « je n'en présente pas », et c'est alors écrit à l'appel plutôt que déduit d'un oubli.
+ *
+ * @param {{ cle: CryptoKey, identite: object,
+ *           scelle: { nonce: Uint8Array, chiffre: Uint8Array, etiquette: Uint8Array },
+ *           attentes: { generationMinimale: number | null } }} appel
+ * @returns {Promise<Uint8Array>} le clair, ou un refus
+ */
+export async function ouvrirBloc({ cle, identite, scelle, attentes = {} }) {
+  return ouvrir(encoderIdentiteBloc, { cle, identite, scelle, attentes });
+}
+
+/**
+ * Scelle un ENREGISTREMENT DU JOURNAL sous un nonce donné (#143). Même avertissement que
+ * `scellerBlocSousNonce` : le chemin normal est `scellerEnregistrement`, qui tire son nonce.
+ */
+export async function scellerEnregistrementSousNonce({
+  cle,
+  identite,
+  contenu,
+  nonce,
+  attentes = {},
+}) {
+  return scellerSousNonce(encoderIdentiteEnregistrement, {
+    cle,
+    identite,
+    contenu,
+    nonce,
+    attentes,
+  });
+}
+
+/**
+ * Scelle un enregistrement du journal de génération, avec un nonce TIRÉ (#143).
+ *
+ * Ce geste est le JUMEAU de `scellerBloc`, et il est séparé pour une seule raison : l'étiquette de
+ * domaine de son identité. Les fusionner sous un paramètre « magasin » aurait rendu la séparation
+ * facultative à l'appel, c'est-à-dire oubliable — et c'est exactement l'oubli que le constat #143 a
+ * exploité.
+ */
+export async function scellerEnregistrement({ cle, identite, contenu, attentes = {} }) {
+  return scellerEnregistrementSousNonce({ cle, identite, contenu, nonce: tirerNonce(), attentes });
+}
+
+/**
+ * Ouvre un enregistrement du journal de génération (#143).
+ *
+ * Un sceau de SECTEUR DU VOLUME présenté ici ne s'ouvre pas, et réciproquement : les deux étiquettes
+ * de domaine mettent les deux magasins dans deux espaces d'identités disjoints, à tout rang.
+ */
+export async function ouvrirEnregistrement({ cle, identite, scelle, attentes = {} }) {
+  return ouvrir(encoderIdentiteEnregistrement, { cle, identite, scelle, attentes });
 }
 
 /**
