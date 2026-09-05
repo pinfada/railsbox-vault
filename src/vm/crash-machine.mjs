@@ -32,7 +32,7 @@ import {
 import { createFaultPlan } from "./fault-plan.mjs";
 import { GenerationStore } from "./generation-store.mjs";
 import { OpfsBlockBackend } from "./opfs-block-backend.mjs";
-import { generationJournalName } from "./opfs-sync-access.mjs";
+import { generationJournalName, temoinSequenceName } from "./opfs-sync-access.mjs";
 import { Scellement } from "./scellement.mjs";
 import { createSyncAccessStore } from "./sync-access-double.mjs";
 import {
@@ -50,6 +50,53 @@ import {
  * en place au lieu d'une coupure.
  */
 const IDENTIFIANT_JETABLE = "15c0ffee15c0ffee15c0ffee15c0ffee";
+
+/**
+ * SOURCE de fraîcheur de la machine jetable : la région d'authentification du volume qu'elle vient
+ * d'ouvrir, et un témoin dans un voisin du double.
+ *
+ * Elle reproduit `sourceDeFraicheur` de `opfs-volume-ouverture.mjs`, à une chose près qu'il faut
+ * dire : les lectures et écritures passent par l'accès BRUT du double, sans consommer de faute
+ * programmée. C'est la règle que ce fichier applique déjà à la mise en place du volume — les
+ * coupures de #15 visent les gestes du GUEST, et en compter d'autres déplacerait les points de
+ * mesure sans que le relevé le signale.
+ *
+ * Le handle du témoin est saisi à chaque écriture plutôt que tenu pour la session : une machine qui
+ * MEURT n'appelle ni `close()` ni `fermer()`, et un handle retenu resterait pris par un détenteur
+ * qui n'existe plus — c'est exactement la raison pour laquelle cette machine n'emprunte pas
+ * `openOpfsVolume`.
+ */
+function fraicheurJetable(support, backend, nom) {
+  const voisin = temoinSequenceName(nom);
+  const avecHandle = async (geste) => {
+    const handle = await support.openHandle(voisin);
+    try {
+      return geste(handle);
+    } finally {
+      handle.close();
+      support.abandon(voisin);
+    }
+  };
+  return {
+    regionOffset: backend.disposition.regionOffset,
+    regionOctets: backend.disposition.regionOctets,
+    lireRegion: async (offset, longueur) => backend.lireRegionAuth(offset, longueur),
+    lireTemoin: async () =>
+      avecHandle((handle) => {
+        const taille = handle.getSize();
+        if (taille === 0) return null;
+        const octets = new Uint8Array(taille);
+        handle.read(octets, { at: 0 });
+        return octets;
+      }),
+    ecrireTemoin: async (octets) =>
+      avecHandle((handle) => {
+        handle.truncate(0);
+        handle.write(octets, { at: 0 });
+        handle.flush();
+      }),
+  };
+}
 
 /**
  * Ouvre — ou fait naître — le volume v3 de la machine jetable, et rend son backend.
@@ -145,10 +192,14 @@ export function creerMachineJetable({
       // produit, et sa mesure ne dirait plus rien du produit.
       const journalGeneration = await support.openHandle(generationJournalName(nom));
       const magasin = await GenerationStore.ouvrir({
-        // La fraîcheur de l'ADR 0019 est DÉCLARÉE absente ici, jamais oubliée : ce banc n'ouvre pas
-        // un volume v3 complet, il n'a ni région d'authentification ni voisin où poser un témoin. Le
-        // magasin écrit alors des racines sans empreinte, et son rapport le publie.
-        fraicheur: null,
+        // La fraîcheur de l'ADR 0019 est FOURNIE, et c'est une correction (#143). Ce banc l'a
+        // longtemps déclarée absente au motif qu'il « n'ouvre pas un volume v3 complet » — c'était
+        // faux : `ouvrirVolumeJetable` pose un en-tête v3 et scelle tous les secteurs, donc la
+        // région d'authentification existe. Le motif est devenu coûteux quand le format du journal
+        // s'est mis à dépendre de la fraîcheur : un magasin sans source écrit le journal de #18, et
+        // la matrice de #15 cessait alors de mesurer le chemin de scellement que le PRODUIT
+        // emprunte. Une revue l'a relevé ; la machine ouvre désormais comme l'ouvreur ouvre.
+        fraicheur: fraicheurJetable(support, backend, nom),
         volume: nom,
         handle: journalGeneration,
         tailleVolume: taille,

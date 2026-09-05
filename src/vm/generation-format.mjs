@@ -118,10 +118,16 @@ export const GENERATION_FORMAT = 4;
  * première réouverture. Ce que cette fenêtre laisse ouvert, et pour cette ouverture seulement, est
  * écrit dans l'ADR 0019.
  *
- * Ce que ce runtime n'ÉCRIT plus jamais, c'est une racine de format 2 ou 3. Une racine sans
- * empreinte serait un désarmement silencieux de la fraîcheur, et le témoin de séquence refuse
- * précisément cela dès qu'il en a attesté une ; une racine de format 3 remettrait les
- * enregistrements dans l'espace d'identités du volume (#143).
+ * Ce que ce runtime n'écrit JAMAIS est une racine de format 3 : elle porterait une empreinte de
+ * région tout en remettant les enregistrements dans l'espace d'identités du volume (#143), et cette
+ * combinaison-là n'a aucune raison d'exister.
+ *
+ * Il écrit ENCORE le format 2, et il faut le dire au lieu de l'affirmer disparu — une revue a relevé
+ * qu'une phrase antérieure de ce fichier prétendait le contraire deux lignes au-dessus de la
+ * fonction qui l'écrit. Une session qui ne tient AUCUNE source de fraîcheur écrit le journal de #18,
+ * enregistrements compris : voir `formatEcritSousFraicheur`. Aucun chemin du produit n'ouvre ainsi,
+ * et ce n'est pas cette phrase qui le garantit mais
+ * `tests/unit/harnais-portes.test.mjs` › « aucun OUVREUR SANS FRAÎCHEUR n'est un module de src/ ».
  */
 export const GENERATION_FORMAT_SANS_FRAICHEUR = 2;
 

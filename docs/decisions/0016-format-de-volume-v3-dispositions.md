@@ -769,11 +769,18 @@ existaient n'invalide aucun octet déjà scellé sous les autres. Ce qui change 
 **format du journal**, seul magasin dont les octets bougent : voir l'amendement du même jour à
 l'ADR 0019.
 
-**Le résidu, nommé.** Des octets d'enregistrement capturés sur un journal **antérieur** à ce
-changement restent scellés sous l'étiquette d'un bloc, et rien ne permet de les resceller sans la
-clé : qui détient une telle copie peut encore les épisser dans le volume correspondant, dans les
-trois états où l'empreinte de région ne confronte rien (`non-fournie`, `sans-racine`, `migree`). Ce
-qui est fermé est l'attaque **continue** — un adversaire qui lit l'OPFS après la migration n'y
-trouve plus d'enregistrement épissable, et la migration a lieu à la première réouverture.
+**Le résidu, nommé, et sa borne n'est pas seulement temporelle.** Des octets d'enregistrement
+scellés sous l'étiquette d'un bloc restent épissables dans le volume correspondant, dans les trois
+états où l'empreinte de région ne confronte rien (`non-fournie`, `sans-racine`, `migree`), et rien
+ne permet de les resceller sans la clé. On en obtient de deux façons : d'une **copie** d'un journal
+prise avant ce changement — la migration a lieu à la première réouverture et le vidage tronque la
+charge, si bien qu'après elle l'OPFS n'en porte plus —, ou d'une session ouverte **sans source de
+fraîcheur**, qui écrit encore le journal de #18 (voir l'amendement du même jour à l'ADR 0019). Une
+revue a relevé que la première rédaction de ce paragraphe ne nommait que la première. Aucun chemin
+du produit n'ouvre sans source, et c'est mesuré plutôt qu'affirmé :
+`tests/unit/harnais-portes.test.mjs` › « aucun OUVREUR SANS FRAÎCHEUR n'est un module de src/ ».
+
+Ce qui est fermé est l'attaque **continue** sur un volume du produit : un adversaire qui lit l'OPFS
+n'y trouve plus d'enregistrement épissable.
 
 Correction portée par le commit `51ba8e0`. Épreuves : `tests/unit/vm-identite-magasin.test.mjs`.
