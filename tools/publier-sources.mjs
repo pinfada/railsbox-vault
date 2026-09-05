@@ -16,6 +16,8 @@ import { execFileSync } from "node:child_process";
 import { cp, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 
+import { empreinteDeLAdresse, nomAdresse, nomAdresseDuManifeste } from "../src/v86-adresses.mjs";
+
 /** Sources non versionnées, toujours lues dans l'arbre de travail même sous `--commit`. */
 export const HORS_GIT = Object.freeze(["vendor/v86/artefacts"]);
 
@@ -167,41 +169,191 @@ export async function materialiser({ racine, reference, sources, destination }) 
   return absentes;
 }
 
+/** Emplacement, dans un arbre publié, du manifeste d'épinglage v86 et des octets qu'il nomme. */
+const MANIFESTE_V86 = ["vendor", "v86", "MANIFEST.json"];
+const ARTEFACTS_V86 = ["vendor", "v86", "artefacts"];
+
 /**
- * Relit `vendor/v86/MANIFEST.json` dans l'arbre publié et confronte les artefacts copiés à leurs
- * empreintes épinglées.
+ * Écrit la copie du manifeste ADRESSÉE PAR SA PROPRE EMPREINTE, à côté des octets qu'elle nomme.
+ *
+ * Deux raisons, et la première n'est pas une commodité d'épreuve (#123).
+ *
+ * **Elle rend l'épinglage remontable depuis une adresse.** Une adresse d'artefact dit quels octets
+ * elle sert ; elle ne dit pas QUEL épinglage les a nommés. `vendor/v86/MANIFEST.json` répond « ce
+ * qui est épinglé aujourd'hui » — c'est son rôle d'indirection, et c'est pourquoi il est revalidé.
+ * Cette copie-ci répond « l'épinglage qui a produit ces adresses-là », à une adresse qui ne bougera
+ * plus : le retour arrière de l'ADR 0017 compare des arbres d'hier, et un arbre d'hier doit porter
+ * le manifeste d'hier au bit près.
+ *
+ * **Elle donne à la classe immuable un octet présent dans TOUT arbre publié.** L'ADR 0023 tenait
+ * cette propriété par son préfixe `/vendor/v86/`, qui embarquait le manifeste versionné ; l'amendement
+ * de #123 déplace le préfixe sous `artefacts/`, absent d'un clone vierge. Sans cette copie, le
+ * témoin d'en-têtes ne relèverait plus la politique immuable sur du HTTP réel à chaque
+ * `npm run publier:check`, et le critère « la politique est vérifiée sur les deux origines »
+ * redeviendrait déclaratif.
+ *
+ * @param {string} destination racine de l'arbre publié
+ * @param {(contenu: Uint8Array) => string} empreinte
+ * @returns {Promise<string | null>} nom du fichier écrit, ou `null` si le manifeste est absent
+ */
+export async function ecrireManifesteEpingle(destination, empreinte) {
+  const manifeste = join(destination, ...MANIFESTE_V86);
+  if (!(await existe(manifeste))) return null;
+  const octets = await readFile(manifeste);
+  const nom = nomAdresseDuManifeste(empreinte(octets));
+  const dossier = join(destination, ...ARTEFACTS_V86);
+  await mkdir(dossier, { recursive: true });
+  await writeFile(join(dossier, nom), octets);
+  return nom;
+}
+
+/**
+ * Relit `vendor/v86/MANIFEST.json` dans l'arbre publié et confronte les octets servis sous le
+ * préfixe IMMUABLE à ce qu'il épingle.
  *
  * C'est la moitié « runtime identifié et vérifié » de `SEC-UPDATE-001` appliquée à la PUBLICATION :
  * l'invariant l'exige avant d'ouvrir un volume en écriture, et il n'a de sens que si les octets du
  * runtime servis au navigateur sont bien ceux que l'ADR 0003 a épinglés. La vérification est faite
  * ici, sur l'arbre publié, et non dans le dépôt — c'est l'arbre qui part chez l'hébergeur.
  *
- * La confrontation va dans les DEUX SENS, et le second est le correctif de la revue de #103. Le
- * premier — chaque artefact déclaré est là, et à la bonne empreinte — ne dit rien de ce qui est là
- * SANS être déclaré. Or `vendor/v86/artefacts/` est ignoré par git et peuplé par
- * `npm run vm:fetch` ; `tools/publier-arborescences.mjs` le copie en bloc ; et depuis l'ADR 0023 la
- * classe de cache `epinglage-v86` est accordée par EMPLACEMENT — tout ce qui relève de
- * `/vendor/v86/` reçoit `public, max-age=86400`. Un fichier oublié là par un poste de
- * développement partait donc chez l'hébergeur avec vingt-quatre heures de cache PARTAGÉ et sans
- * révocation possible, là où il recevait `no-store` avant #103.
+ * ## Ce que #123 y ajoute, et pourquoi c'est ce qui autorise `immutable`
  *
- * L'ADR 0003 dit ce qui a le droit d'être dans ce répertoire : les artefacts du manifeste, et rien
- * d'autre. Ce qui n'y est pas déclaré est donc un ÉCART — code 5, publication refusée — et non un
- * fichier discrètement écarté de la copie : un retrait silencieux ferait disparaître la trace de
- * ce qui traînait sur le disque du poste qui publie, quand c'est précisément ce qu'un exploitant
- * doit voir.
+ * Depuis l'amendement de l'ADR 0023, `/vendor/v86/artefacts/*` est servi
+ * `public, max-age=31536000, immutable` : « ces octets ne changeront jamais à cette URL ». Une
+ * promesse d'un an SANS révocation ne se tient pas sur une intention, elle se MESURE, et elle se
+ * mesure ici, sur l'arbre qui part. Trois passes, dont chacune ferme un mode de panne distinct :
+ *
+ *  1. **chaque artefact DÉCLARÉ est servi à son adresse dérivée, et à son empreinte PLEINE.** Un
+ *     artefact manquant est un 404 chez l'hébergeur ; une empreinte qui ne correspond pas est une
+ *     substitution ;
+ *  2. **chaque fichier PRÉSENT nomme sa propre empreinte**, recalculée sur ses octets. C'est le
+ *     cliquet propre à `immutable` : un fichier renommé pour porter l'adresse d'un autre — main
+ *     humaine, déploiement partiel, copie interrompue — serait servi un an sous une adresse qui ne
+ *     le décrit pas. La vérification est faite dans le sens qui compte : des OCTETS vers le nom ;
+ *  3. **rien n'est là sans être déclaré.** C'est le correctif de la revue de #103, et #123 le durcit
+ *     plutôt qu'il ne l'assouplit : `vendor/v86/artefacts/` est ignoré par git et peuplé par
+ *     `npm run vm:fetch`, et un fichier oublié là par un poste de développement partirait
+ *     désormais chez l'hébergeur pour UN AN de cache partagé sans révocation, au lieu de
+ *     vingt-quatre heures. Le seul fichier admis en plus des artefacts est la copie du manifeste
+ *     adressée par son empreinte, écrite par `ecrireManifesteEpingle` et confrontée au manifeste
+ *     servi à l'adresse stable.
+ *
+ * Ce qui n'y est pas déclaré est un ÉCART — code 5, publication refusée — et non un fichier
+ * discrètement écarté de la copie : un retrait silencieux ferait disparaître la trace de ce qui
+ * traînait sur le disque du poste qui publie, quand c'est précisément ce qu'un exploitant doit voir.
  *
  * @param {string} destination racine de l'arbre publié
  * @param {(contenu: Uint8Array) => string} empreinte
  */
-export function verifierEpinglageV86(destination, empreinte) {
-  return verifierEpinglage(destination, empreinte, {
-    manifeste: ["vendor", "v86", "MANIFEST.json"],
-    artefacts: ["vendor", "v86", "artefacts"],
-    // Le répertoire ne doit contenir QUE les artefacts déclarés : c'est lui que la règle de cache
-    // `/vendor/v86/*` sert 24 h à tout venant (ADR 0023).
-    exhaustif: "servi sous la règle /vendor/v86/*, donc avec un cache partagé de 24 h",
-  });
+export async function verifierEpinglageV86(destination, empreinte) {
+  const manifeste = join(destination, ...MANIFESTE_V86);
+  if (!(await existe(manifeste))) {
+    return {
+      verifie: false,
+      situation: SITUATIONS_EPINGLAGE.manifesteAbsent,
+      motif: "manifeste absent",
+      ecarts: [],
+    };
+  }
+  const dossier = join(destination, ...ARTEFACTS_V86);
+  if (!(await existe(dossier))) {
+    return {
+      verifie: false,
+      situation: SITUATIONS_EPINGLAGE.artefactsAbsents,
+      motif: "artefacts absents de l'arbre publié",
+      ecarts: [],
+    };
+  }
+
+  const octetsDuManifeste = await readFile(manifeste);
+  const declares = JSON.parse(octetsDuManifeste.toString("utf8")).artifacts;
+  const adressesDesArtefacts = new Map(
+    declares.map((artefact) => [nomAdresse(artefact.name, artefact.sha256), artefact.sha256]),
+  );
+  const empreinteDuManifeste = empreinte(octetsDuManifeste);
+  const attendus = new Map(adressesDesArtefacts).set(
+    nomAdresseDuManifeste(empreinteDuManifeste),
+    empreinteDuManifeste,
+  );
+
+  const presents = await readdir(dossier);
+  // Les octets SERVIS sont confrontés dans tous les cas, y compris quand le runtime manque : un
+  // fichier qui traîne sous le préfixe immuable est un écart même dans un arbre incomplet.
+  const ecarts = await ecartsDesOctetsServis(dossier, presents, attendus, empreinte);
+  const manquants = ecartsDesAdressesAttendues(adressesDesArtefacts, presents);
+
+  // AUCUN artefact déclaré n'est là : c'est le clone vierge, pas une publication rompue.
+  //
+  // Le répertoire, lui, existe désormais toujours — `ecrireManifesteEpingle` y dépose la copie du
+  // manifeste (#123) —, si bien que « le répertoire n'existe pas » a cessé d'être le signe de
+  // l'incomplétude. C'est le CONTENU qui le dit maintenant. Confondre les deux ferait rendre le
+  // code 5 « épinglage rompu » à tout `npm run check` lancé sans `npm run vm:fetch`, là où
+  // l'inventaire porte déjà le verdict d'incomplétude et sa tolérance.
+  if (manquants.length === declares.length && declares.length > 0) {
+    return {
+      verifie: false,
+      situation: SITUATIONS_EPINGLAGE.artefactsAbsents,
+      motif: "artefacts absents de l'arbre publié",
+      ecarts,
+    };
+  }
+  return {
+    verifie: true,
+    situation: SITUATIONS_EPINGLAGE.verifie,
+    motif: null,
+    ecarts: [...manquants, ...ecarts],
+  };
+}
+
+/** Passe 1 — chaque adresse dérivée du manifeste est-elle servie ? */
+function ecartsDesAdressesAttendues(attendus, presents) {
+  const servis = new Set(presents);
+  return [...attendus.keys()]
+    .filter((nom) => !servis.has(nom))
+    .map((nom) => ({ artefact: nom, motif: "absent de l'arbre publié" }));
+}
+
+/**
+ * Passes 2 et 3 — chaque octet servi sous le préfixe immuable est-il DÉCLARÉ, et ses octets
+ * correspondent-ils à l'empreinte que son adresse annonce ?
+ *
+ * L'ordre des deux questions n'est pas indifférent. « Déclaré » vient d'abord parce que c'est la
+ * propriété de l'ADR 0003 : le manifeste est la seule liste de ce qui a le droit d'être là, et un
+ * intrus doit être NOMMÉ comme tel, pas diagnostiqué par un défaut de forme de son nom. La forme du
+ * nom entre tout de même dans le motif quand elle manque : elle dit ce qui rend l'intrus dangereux
+ * ici, à savoir qu'il serait servi un an sans que son adresse décrive ses octets.
+ *
+ * Vient ensuite l'empreinte, RECALCULÉE sur les octets. Pour un fichier déclaré, son nom dérive de
+ * l'empreinte épinglée : la comparaison tient donc les deux promesses à la fois — celle
+ * d'`immutable`, « ces octets-là à cette adresse-là », et celle de l'ADR 0003, « ces octets-là et
+ * pas d'autres ».
+ */
+async function ecartsDesOctetsServis(dossier, presents, attendus, empreinte) {
+  const ecarts = [];
+  for (const nom of presents) {
+    const epinglee = attendus.get(nom);
+    if (epinglee === undefined) {
+      ecarts.push({ artefact: nom, motif: motifDeLIntrus(nom) });
+      continue;
+    }
+    const mesure = empreinte(await readFile(join(dossier, nom)));
+    if (mesure !== epinglee) {
+      ecarts.push({ artefact: nom, motif: "empreinte", attendu: epinglee, mesure });
+    }
+  }
+  return ecarts;
+}
+
+/** Ce qui rend un fichier non déclaré dangereux SOUS CE PRÉFIXE-LÀ, et pas ailleurs. */
+function motifDeLIntrus(nom) {
+  const consequence =
+    "servi sous la règle /vendor/v86/artefacts/*, donc avec un cache partagé d'un an et " +
+    "`immutable` — sans révocation possible";
+  return empreinteDeLAdresse(nom) === null
+    ? `non déclaré dans vendor/v86/MANIFEST.json et ne nommant même pas son empreinte — ${consequence} ` +
+        `sur une adresse qui ne décrit pas ses octets (ADR 0003, ADR 0023 amendé par #123)`
+    : `non déclaré dans vendor/v86/MANIFEST.json — ${consequence}, sans empreinte épinglée ` +
+        `(ADR 0003, ADR 0023 amendé par #123)`;
 }
 
 /**
@@ -232,9 +384,12 @@ export function verifierEpinglageArgon2(destination, empreinte) {
   return verifierEpinglage(destination, empreinte, {
     manifeste: ["vendor", "argon2", "MANIFEST.json"],
     artefacts: ["vendor", "argon2"],
-    // Pas d'exhaustivité ici : le répertoire est la racine vendue elle-même, qui porte le manifeste
-    // et les licences par construction, et il relève de la classe `coquille` (`no-cache`), pas de
-    // la règle de cache longue. Ce qui est épinglé est le binaire ; ce qui l'entoure est lisible.
+    // Pas d'exhaustivité ici, et c'est le pendant de ce que #123 durcit sur v86 : ce répertoire est
+    // la racine vendue elle-même, qui porte le manifeste et les licences par construction, et il
+    // relève de la classe `coquille` (`no-cache`). Ce qui est épinglé est le binaire ; ce qui
+    // l'entoure est lisible, revalidé, et révocable. Argon2id N'EST PAS adressé par empreinte : il
+    // est chargé à chaque déverrouillage par un module de `src/vm/` qui nomme son empreinte en
+    // dur, et le déplacer demanderait de rouvrir l'ADR 0021 — hors du périmètre de #123.
   });
 }
 
@@ -255,11 +410,7 @@ export const SITUATIONS_EPINGLAGE = Object.freeze({
 });
 
 /** Le geste commun : relire un manifeste vendu et confronter ses artefacts à leurs empreintes. */
-async function verifierEpinglage(
-  destination,
-  empreinte,
-  { manifeste: chemin, artefacts, exhaustif },
-) {
+async function verifierEpinglage(destination, empreinte, { manifeste: chemin, artefacts }) {
   const manifeste = join(destination, ...chemin);
   if (!(await existe(manifeste))) {
     return {
@@ -281,10 +432,7 @@ async function verifierEpinglage(
 
   const declares = JSON.parse(await readFile(manifeste, "utf8")).artifacts;
   const presents = await readdir(dossier);
-  const ecarts = [
-    ...(await ecartsDesDeclares(declares, dossier, new Set(presents), empreinte)),
-    ...(exhaustif ? ecartsDesNonDeclares(declares, presents, chemin.join("/"), exhaustif) : []),
-  ];
+  const ecarts = await ecartsDesDeclares(declares, dossier, new Set(presents), empreinte);
   return { verifie: true, situation: SITUATIONS_EPINGLAGE.verifie, motif: null, ecarts };
 }
 
@@ -307,19 +455,4 @@ async function ecartsDesDeclares(declares, dossier, presents, empreinte) {
     }
   }
   return ecarts;
-}
-
-/**
- * Chaque fichier PUBLIÉ dans le répertoire d'artefacts est-il déclaré ? Sinon, il est servi sans
- * épinglage — et, pour v86, sous la règle de cache longue. Ne vaut que pour un répertoire déclaré
- * `exhaustif` par son descripteur ; le motif dit ce qui rend l'intrus dangereux là.
- */
-function ecartsDesNonDeclares(declares, presents, manifeste, consequence) {
-  const noms = new Set(declares.map(({ name }) => name));
-  return presents
-    .filter((present) => !noms.has(present))
-    .map((present) => ({
-      artefact: present,
-      motif: `non déclaré dans ${manifeste} — ${consequence}, sans empreinte épinglée (ADR 0003, ADR 0023)`,
-    }));
 }

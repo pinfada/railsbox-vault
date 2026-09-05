@@ -1,10 +1,7 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-
 import { expect, test } from "@playwright/test";
 
 import { auditDurabilityBarriers } from "../../src/vm/block-journal.mjs";
-import { ARTIFACT_DIRECTORY } from "../../tools/v86-paths.mjs";
+import { artefactsV86Absents } from "../../tools/v86-paths.mjs";
 
 // Preuve « intégration VM » du spike #4 : un vrai guest Linux i386 écrit sur un disque IDE dont le
 // backend est celui de Vault, puis franchit une barrière de durabilité. La suite affirme deux
@@ -19,9 +16,13 @@ import { ARTIFACT_DIRECTORY } from "../../tools/v86-paths.mjs";
 const CACHE_TYPE_STEP = "cache-type";
 
 test.beforeAll(() => {
-  const missing = ["libv86.mjs", "v86.wasm", "seabios.bin", "vgabios.bin", "linux4.iso"].filter(
-    (name) => !existsSync(join(ARTIFACT_DIRECTORY, name)),
-  );
+  const missing = artefactsV86Absents([
+    "libv86.mjs",
+    "v86.wasm",
+    "seabios.bin",
+    "vgabios.bin",
+    "linux4.iso",
+  ]);
   if (missing.length > 0) {
     throw new Error(
       `Artefacts v86 absents (${missing.join(", ")}). Exécuter « npm run vm:fetch » avant « npm run test:vm ».`,

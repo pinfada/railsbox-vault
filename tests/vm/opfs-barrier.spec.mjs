@@ -1,10 +1,7 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-
 import { expect, test } from "@playwright/test";
 
 import { FAULT_KINDS } from "../../src/vm/fault-plan.mjs";
-import { ARTIFACT_DIRECTORY } from "../../tools/v86-paths.mjs";
+import { artefactsV86Absents } from "../../tools/v86-paths.mjs";
 
 // Preuve « intégration VM » de la barrière durable de bout en bout (#14, `SEC-DURABLE-001`,
 // `VAULT-PERSIST-001`). Un vrai guest Linux i386 écrit puis `fsync` sur un disque IDE adossé au
@@ -26,9 +23,13 @@ const CACHE_TYPE_STEP = "cache-type";
 const BARRIER_STEP = "write-then-flush";
 
 test.beforeAll(() => {
-  const missing = ["libv86.mjs", "v86.wasm", "seabios.bin", "vgabios.bin", "linux4.iso"].filter(
-    (name) => !existsSync(join(ARTIFACT_DIRECTORY, name)),
-  );
+  const missing = artefactsV86Absents([
+    "libv86.mjs",
+    "v86.wasm",
+    "seabios.bin",
+    "vgabios.bin",
+    "linux4.iso",
+  ]);
   if (missing.length > 0) {
     throw new Error(
       `Artefacts v86 absents (${missing.join(", ")}). Exécuter « npm run vm:fetch » avant « npm run test:vm ».`,

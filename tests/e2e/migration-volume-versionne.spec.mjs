@@ -36,13 +36,21 @@ import { tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
 
 import { PLAFOND_CHARGE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { E2E_ORIGIN_A } from "../../playwright.e2e.config.mjs";
+import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+/**
+ * Adresses HTTP des artefacts v86, DÉRIVÉES de leur manifeste (#123).
+ *
+ * Elles nomment leur empreinte : un chemin écrit en dur ici rendrait un 404 dès la
+ * prochaine montée de version de l'émulateur, et l'épreuve accuserait le banc.
+ */
+const ADRESSES_V86 = adressesServiesV86();
 const CHEMIN_MANIFESTE = join(RACINE, "tools", "build-reference-image", "manifest.json");
 const CHEMIN_CONTRAT = join(RACINE, "apps", "reference", "vault-invariant.json");
 const CHEMIN_PACKAGE = join(RACINE, "package.json");
 const DOSSIER_IMAGE = join(RACINE, "artifacts", "reference-image");
-const DOSSIER_V86 = join(RACINE, "vendor", "v86", "artefacts");
 const DOSSIER_RAPPORTS = join(RACINE, "reports", "e2e");
 
 /** Volume et archive de sauvegarde, nommés pour ne heurter aucune autre suite. */
@@ -64,9 +72,7 @@ function raisonDIndisponibilite() {
   if (absentsImage.length > 0) {
     return `artefacts de l'image #5 absents (${absentsImage.join(", ")}) : « npm run image:build »`;
   }
-  const absentsV86 = ["libv86.mjs", "v86.wasm"].filter(
-    (nom) => !existsSync(join(DOSSIER_V86, nom)),
-  );
+  const absentsV86 = artefactsV86Absents(["libv86.mjs", "v86.wasm"]);
   if (absentsV86.length > 0) {
     return `artefacts v86 absents (${absentsV86.join(", ")}) : « npm run vm:fetch »`;
   }
@@ -126,8 +132,8 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   };
 
   const runtime = {
-    lib: "/vendor/v86/artefacts/libv86.mjs",
-    wasm: "/vendor/v86/artefacts/v86.wasm",
+    lib: ADRESSES_V86.get("libv86.mjs"),
+    wasm: ADRESSES_V86.get("v86.wasm"),
     bios: `/artifacts/reference-image/${manifeste.boot.bios}`,
     vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
     kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,

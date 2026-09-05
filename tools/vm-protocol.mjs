@@ -18,7 +18,7 @@ import { createGuestSession } from "../src/vm/guest-session.mjs";
 import { openMemoryVolume } from "../src/vm/memory-block-backend.mjs";
 import { createV86BufferAdapter } from "../src/vm/v86-buffer-adapter.mjs";
 import { BRIDGE_MODES } from "../src/vm/v86-flush-bridge.mjs";
-import { ARTIFACT_DIRECTORY, MANIFEST_PATH, REPOSITORY_ROOT } from "./v86-paths.mjs";
+import { MANIFEST_PATH, REPOSITORY_ROOT, cheminsDesArtefacts } from "./v86-paths.mjs";
 
 const REPORT_PATH = join(REPOSITORY_ROOT, "reports", "vm", "protocole.json");
 const VOLUME_BYTES = 16 * 1024 * 1024;
@@ -33,7 +33,8 @@ function readOption(name, fallback) {
 }
 
 async function loadArtifacts() {
-  const read = async (name) => new Uint8Array(await readFile(join(ARTIFACT_DIRECTORY, name)));
+  const chemins = cheminsDesArtefacts();
+  const read = async (name) => new Uint8Array(await readFile(chemins.get(name)));
   return {
     wasm: await read("v86.wasm"),
     bios: await read("seabios.bin"),
@@ -201,7 +202,7 @@ async function main() {
   const attempts = readOption("boots", 5);
   const skipBoots = process.argv.includes("--skip-boots");
 
-  const { V86 } = await import(pathToFileURL(join(ARTIFACT_DIRECTORY, "libv86.mjs")).href);
+  const { V86 } = await import(pathToFileURL(cheminsDesArtefacts().get("libv86.mjs")).href);
   const artifacts = await loadArtifacts();
   const manifest = JSON.parse(await readFile(MANIFEST_PATH, "utf8"));
 

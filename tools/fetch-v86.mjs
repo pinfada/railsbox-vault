@@ -19,7 +19,7 @@
 // La garde ne masque pas la vérification d'empreinte et ne s'y substitue pas : les deux verdicts
 // sont imprimés à chaque exécution, la première qui échoue n'avalant pas l'autre.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { CODES_DE_SORTIE, verdictGardeMemoire } from "./isolation-analyse-wasm.mjs";
@@ -30,7 +30,12 @@ import {
   sha256,
   verifyArtifact,
 } from "./v86-manifest.mjs";
-import { ARTIFACT_DIRECTORY, MANIFEST_PATH } from "./v86-paths.mjs";
+import {
+  ARTIFACT_DIRECTORY,
+  MANIFEST_PATH,
+  cheminDeLArtefact,
+  nomDeFichier,
+} from "./v86-paths.mjs";
 
 /** Nom de l'artefact que la garde de l'ADR 0010 doit lire. */
 const WASM_ARTIFACT_NAME = "v86.wasm";
@@ -63,7 +68,7 @@ async function download(url) {
 async function readAll(manifest) {
   const entries = [];
   for (const artifact of manifest.artifacts) {
-    const content = await readIfPresent(join(ARTIFACT_DIRECTORY, artifact.name));
+    const content = await readIfPresent(cheminDeLArtefact(artifact));
     entries.push({ artifact, content, verdict: verifyArtifact(artifact, content) });
   }
   return entries;
@@ -90,14 +95,40 @@ async function fetchMissing(manifest, verdicts) {
     }
     const entries = extractTgzEntries(archive, new Set(group.map((a) => a.source.entry)));
     for (const artifact of group) {
-      await writeFile(join(ARTIFACT_DIRECTORY, artifact.name), entries.get(artifact.source.entry));
+      await writeFile(cheminDeLArtefact(artifact), entries.get(artifact.source.entry));
     }
   }
 
   for (const artifact of direct) {
     process.stdout.write(`Téléchargement de ${artifact.source.url}\n`);
-    await writeFile(join(ARTIFACT_DIRECTORY, artifact.name), await download(artifact.source.url));
+    await writeFile(cheminDeLArtefact(artifact), await download(artifact.source.url));
   }
+}
+
+/**
+ * Retire de `vendor/v86/artefacts/` ce que le manifeste ne déclare plus.
+ *
+ * C'est la moitié « l'ancienne adresse cesse d'exister » d'un ré-épinglage (#123). Depuis que le
+ * nom de fichier porte l'empreinte, une montée de version n'ÉCRASE plus les octets d'hier : elle
+ * écrit à côté. Sans élagage, `vendor/v86/artefacts/` accumulerait les versions, et la publication
+ * les emporterait — la vérification d'épinglage les refuse (code 5), ce qui est le bon refus mais
+ * pas le bon geste : le poste qui publie doit être NETTOYÉ, pas seulement grondé.
+ *
+ * L'élagage est bruyant et borné : il ne touche que ce répertoire, ignoré par git et peuplé par ce
+ * script seul, et il nomme chaque fichier retiré. `--check` n'élague rien — il ne modifie rien.
+ */
+async function elaguer(manifest) {
+  const attendus = new Set(manifest.artifacts.map((artifact) => nomDeFichier(artifact)));
+  let presents;
+  try {
+    presents = await readdir(ARTIFACT_DIRECTORY);
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  const perimes = presents.filter((nom) => !attendus.has(nom));
+  for (const nom of perimes) await rm(join(ARTIFACT_DIRECTORY, nom), { force: true });
+  return perimes;
 }
 
 /**
@@ -140,6 +171,10 @@ async function main() {
       entries.map(({ verdict }) => verdict),
     );
     entries = await readAll(manifest);
+    for (const perime of await elaguer(manifest)) {
+      process.stdout.write(`Retiré (adresse plus épinglée) : ${perime}
+`);
+    }
   }
 
   for (const { verdict } of entries) {

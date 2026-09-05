@@ -51,15 +51,30 @@ export const SOURCES_COQUILLE = Object.freeze([
     role: "Modules du runtime de volume : blocs, journal, manifeste, export, import, migration.",
   }),
   Object.freeze({
+    depuis: "src/v86-adresses.mjs",
+    vers: "src/v86-adresses.mjs",
+    role:
+      "Dérivation des ADRESSES des artefacts v86 depuis leur manifeste (#123). Publiée parce " +
+      "qu'un chargeur servi par cette origine doit pouvoir dériver l'adresse sans emporter un " +
+      "outil du dépôt : c'est ce qui permet qu'aucun chemin d'artefact ne soit écrit en dur.",
+  }),
+  Object.freeze({
     depuis: "vendor/v86/artefacts",
     vers: "vendor/v86/artefacts",
     optionnel: true,
-    role: "Émulateur v86 épinglé par l'ADR 0003. Non versionné : `npm run vm:fetch` le récupère.",
+    role:
+      "Émulateur v86 épinglé par l'ADR 0003, à des adresses qui nomment leur empreinte (#123). " +
+      "Non versionné : `npm run vm:fetch` le récupère, DÉJÀ nommé par son empreinte — la copie " +
+      "reste une copie, et le nom servi est celui du disque, du serveur de test et de la " +
+      "publication à la fois.",
   }),
   Object.freeze({
     depuis: "vendor/v86/MANIFEST.json",
     vers: "vendor/v86/MANIFEST.json",
-    role: "Épinglage des artefacts v86 : c'est lui qui rend leur provenance vérifiable.",
+    role:
+      "Épinglage des artefacts v86 : c'est lui qui rend leur provenance vérifiable, et c'est " +
+      "l'INDIRECTION par laquelle un chargeur apprend les adresses (#123). Il ne relève donc pas " +
+      "de la règle de cache immuable — voir `tools/serve-headers.mjs`.",
   }),
   Object.freeze({
     depuis: "vendor/v86/LICENSE-v86.txt",

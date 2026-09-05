@@ -40,6 +40,7 @@ import {
   rendreFichierHeaders,
   signatureDeComparaison,
 } from "../../tools/publier-en-tetes.mjs";
+import { adresseDe } from "../../src/v86-adresses.mjs";
 import { empreinte } from "../../tools/publier-inventaire.mjs";
 import { analyserHeaders, enTetesPour } from "../../tools/publier-servir.mjs";
 import { estUnBanc } from "../../tools/publier.mjs";
@@ -51,6 +52,13 @@ import {
 
 /** Origines de démonstration, distinctes des valeurs par défaut : le test ne doit pas passer par
  *  accident parce qu'il compare deux fois la même constante. */
+/**
+ * Une adresse d'artefact v86 telle que #123 la dérive : elle NOMME son empreinte, et c'est ce qui
+ * la fait relever de la règle immuable. Elle est construite par la dérivation, jamais recopiée —
+ * `tests/unit/v86-adresses.test.mjs` refuse qu'un chemin d'artefact soit écrit en dur.
+ */
+const ADRESSE_EPINGLEE = adresseDe("v86.wasm", "8a".repeat(32));
+
 const ORIGINES = Object.freeze({
   origineCoquille: "https://coquille.epreuve",
   origineApplication: "https://app.epreuve",
@@ -389,7 +397,7 @@ test("aucun chemin publiable ne reçoit du serveur de test une politique différ
     "main.mjs",
     "runtime-worker.mjs",
     "src/vm/volume-manifest.mjs",
-    "vendor/v86/artefacts/v86.wasm",
+    ADRESSE_EPINGLEE.slice(1),
   ];
   assert.deepEqual(cheminsHorsPolitiqueUniforme("coquille", cheminsCoquille), []);
 });
@@ -450,15 +458,18 @@ test("le serveur qui applique le fichier retient la règle la PLUS PRÉCISE", ()
   const regles = analyserHeaders(rendreFichierHeaders("coquille", ORIGINES));
   assert.equal(enTetesPour(regles, "/index.html")["Cache-Control"], "no-cache");
   assert.equal(
-    enTetesPour(regles, "/vendor/v86/MANIFEST.json")["Cache-Control"],
-    "public, max-age=86400",
+    enTetesPour(regles, ADRESSE_EPINGLEE)["Cache-Control"],
+    "public, max-age=31536000, immutable",
   );
-  assert.equal(
-    enTetesPour(regles, "/vendor/v86/artefacts/v86.wasm")["Cache-Control"],
-    "public, max-age=86400",
-  );
+  // Le MANIFESTE n'est pas sous le préfixe immuable, et c'est la décision de #123 : il est
+  // l'indirection par laquelle un chargeur apprend les adresses, donc il doit être revalidé.
+  assert.equal(enTetesPour(regles, "/vendor/v86/MANIFEST.json")["Cache-Control"], "no-cache");
+  assert.equal(enTetesPour(regles, "/vendor/v86/LICENSE-v86.txt")["Cache-Control"], "no-cache");
   // Un chemin qui commence par la même chaîne SANS être sous le préfixe ne doit pas l'attraper.
-  assert.equal(enTetesPour(regles, "/vendor/v86-autre/x.mjs")["Cache-Control"], "no-cache");
+  assert.equal(
+    enTetesPour(regles, "/vendor/v86/artefacts-autre/x.mjs")["Cache-Control"],
+    "no-cache",
+  );
 });
 
 test("les DEUX origines publient une politique de cache, et ce n'est pas la même", () => {
@@ -526,22 +537,20 @@ test("le cliquet d'uniformité MORD ENCORE sur les en-têtes de sécurité", () 
 });
 
 test("le cliquet d'uniformité NE MORD PLUS sur la seule dimension déclarée non uniforme", () => {
-  assert.deepEqual(cheminsHorsUniformite("coquille", ["vendor/v86/MANIFEST.json"]), []);
+  assert.deepEqual(cheminsHorsUniformite("coquille", [ADRESSE_EPINGLEE.slice(1)]), []);
 });
 
 test("le cliquet de fidélité refuse un `_headers` qui ne rendrait pas ce que sert la source", () => {
   const complet = rendreFichierHeaders("coquille", ORIGINES);
   const ampute = garderLePremierBloc(complet);
+  const epingle = [ADRESSE_EPINGLEE.slice(1)];
   assert.deepEqual(
-    cheminsHorsFideliteDuFichier("coquille", ["vendor/v86/MANIFEST.json"], ORIGINES, ampute),
-    ["vendor/v86/MANIFEST.json"],
+    cheminsHorsFideliteDuFichier("coquille", epingle, ORIGINES, ampute),
+    epingle,
     "un fichier amputé de son bloc épinglé annoncerait `no-cache` là où le serveur sert un cache " +
-      "long : la publication mentirait sur ce que l'hébergeur doit servir",
+      "d'un an et immuable : la publication mentirait sur ce que l'hébergeur doit servir",
   );
-  assert.deepEqual(
-    cheminsHorsFideliteDuFichier("coquille", ["vendor/v86/MANIFEST.json"], ORIGINES, complet),
-    [],
-  );
+  assert.deepEqual(cheminsHorsFideliteDuFichier("coquille", epingle, ORIGINES, complet), []);
 });
 
 test("le refus de publication réunit les deux cliquets", () => {
@@ -550,7 +559,7 @@ test("le refus de publication réunit les deux cliquets", () => {
     cheminsHorsPolitiqueUniforme("coquille", [
       "index.html",
       "vendor/v86/MANIFEST.json",
-      "vendor/v86/artefacts/v86.wasm",
+      ADRESSE_EPINGLEE.slice(1),
     ]),
     [],
   );

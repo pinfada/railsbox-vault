@@ -32,6 +32,7 @@ import {
 import { decrireBoucle, installerBoucleOrdonnancement } from "/src/vm/scheduling-loop.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { BRIDGE_MODES } from "/src/vm/v86-flush-bridge.mjs";
+import { chargerAdressesV86, exigerAdresse } from "/src/v86-adresses.mjs";
 
 /**
  * La boucle d'ordonnancement de v86 est posée À L'ÉVALUATION de ce module, donc avant tout import
@@ -49,7 +50,20 @@ const boucleOrdonnancement = installerBoucleOrdonnancement();
  */
 const lireRejets = consignerRejetsNonTraites();
 
-const ARTIFACTS = "/vendor/v86/artefacts/";
+/**
+ * Adresses des artefacts v86, DÉRIVÉES de `vendor/v86/MANIFEST.json` (#123).
+ *
+ * Aucun chemin d'artefact n'est écrit ici : depuis que l'adresse nomme l'empreinte, un chemin en
+ * dur ne survivrait pas à une montée de version — il rendrait un 404 franc. Le manifeste est lu une
+ * fois par exécution de ce Worker et la carte est mémorisée : c'est une indirection, pas une
+ * requête de plus par artefact.
+ */
+let adressesV86 = null;
+
+async function adresseDeLArtefact(nom) {
+  adressesV86 ??= (await chargerAdressesV86()).adresses;
+  return exigerAdresse(adressesV86, nom);
+}
 const SCENARIOS = { barrier: BARRIER_STEPS, filesystem: FILESYSTEM_STEPS };
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -101,7 +115,10 @@ async function booter(session, observations, etatARestaurer = null) {
 let volumeCounter = 0;
 
 async function fetchBytes(name) {
-  const response = await fetch(`${ARTIFACTS}${name}`, { cache: "no-store" });
+  // `no-store` reste posé : ce banc MESURE des transferts, et une réponse servie depuis le cache
+  // — désormais possible et voulue en production (#123) — fausserait `transferredBytes` et les
+  // durées de boot. Ce que ce drapeau écarte est l'instrument, pas la politique.
+  const response = await fetch(await adresseDeLArtefact(name), { cache: "no-store" });
   if (!response.ok) {
     throw new Error(
       `Artefact ${name} indisponible (${response.status}). Exécuter « npm run vm:fetch ».`,
@@ -131,7 +148,7 @@ async function loadArtifacts() {
  * le module — que le navigateur peut d'ailleurs servir depuis son cache de modules.
  */
 async function acquerirRuntimeV86() {
-  const { V86 } = await import(`${ARTIFACTS}libv86.mjs`);
+  const { V86 } = await import(await adresseDeLArtefact("libv86.mjs"));
   const { artifacts, transferredBytes } = await loadArtifacts();
   return { V86, artifacts, transferredBytes };
 }

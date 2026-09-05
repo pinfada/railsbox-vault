@@ -24,23 +24,34 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { nomAdresse } from "../../src/v86-adresses.mjs";
 import { ARBRES } from "../../tools/publier-arborescences.mjs";
 import { empreinte } from "../../tools/publier-inventaire.mjs";
+import { ecrireManifesteEpingle } from "../../tools/publier-sources.mjs";
 import { epinglagesAttendus, fusionnerEpinglages } from "../../tools/publier.mjs";
 
 const OCTETS_V86 = new TextEncoder().encode("des octets d'émulateur");
 const OCTETS_ARGON2 = new TextEncoder().encode("des octets d'Argon2id");
 
-/** Écrit un manifeste vendu et l'artefact qu'il épingle, à leurs places dans un arbre publié. */
+/**
+ * Écrit un manifeste vendu et l'artefact qu'il épingle, à leurs places dans un arbre publié.
+ *
+ * Les deux épinglages ne posent pas leur artefact au même NOM, et c'est la décision de #123 : v86
+ * est adressé par empreinte — le fichier porte son SHA-256 tronqué —, Argon2id ne l'est pas.
+ */
 async function poserEpinglage(racine, { dossier, sousDossier, nom, octets }) {
   const cible = join(racine, "vendor", dossier, ...(sousDossier === null ? [] : [sousDossier]));
+  const adresse = dossier === "v86";
   await mkdir(cible, { recursive: true });
-  await writeFile(join(cible, nom), octets);
+  await writeFile(join(cible, adresse ? nomAdresse(nom, empreinte(octets)) : nom), octets);
   await writeFile(
     join(racine, "vendor", dossier, "MANIFEST.json"),
     JSON.stringify({ artifacts: [{ name: nom, sha256: empreinte(octets) }] }),
     "utf8",
   );
+  // La copie du manifeste adressée par sa propre empreinte fait partie de l'arbre publié depuis
+  // #123 : sans elle, la vérification la déclarerait absente.
+  if (adresse) await ecrireManifesteEpingle(racine, empreinte);
 }
 
 /**

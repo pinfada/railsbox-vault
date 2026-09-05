@@ -29,7 +29,7 @@ import {
   analyserWasm,
   codeDeSortie,
 } from "./isolation-analyse-wasm.mjs";
-import { ARTIFACT_DIRECTORY, REPOSITORY_ROOT } from "./v86-paths.mjs";
+import { REPOSITORY_ROOT, cheminsDesArtefacts } from "./v86-paths.mjs";
 
 /** Jetons cherchés. Chacun est une manière distincte de dépendre de l'isolation. */
 const JETONS = Object.freeze([
@@ -110,8 +110,11 @@ async function inventorierCode() {
 }
 
 async function inventorierV86() {
-  const cheminJs = join(ARTIFACT_DIRECTORY, "libv86.mjs");
-  const cheminWasm = join(ARTIFACT_DIRECTORY, "v86.wasm");
+  // Les chemins sont DÉRIVÉS du manifeste : depuis #123 le nom de fichier porte l'empreinte, et
+  // un chemin en dur ne survivrait pas à une montée de version de l'émulateur.
+  const chemins = cheminsDesArtefacts();
+  const cheminJs = chemins.get("libv86.mjs");
+  const cheminWasm = chemins.get("v86.wasm");
   let source;
   let binaire;
   try {

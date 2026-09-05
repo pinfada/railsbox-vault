@@ -14,8 +14,22 @@ import { createGuestSession } from "/src/vm/guest-session.mjs";
 import { openMemoryVolume } from "/src/vm/memory-block-backend.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import { BRIDGE_MODES } from "/src/vm/v86-flush-bridge.mjs";
+import { chargerAdressesV86, exigerAdresse } from "/src/v86-adresses.mjs";
 
-const ARTIFACTS = "/vendor/v86/artefacts/";
+/**
+ * Adresses des artefacts v86, DÉRIVÉES de `vendor/v86/MANIFEST.json` (#123).
+ *
+ * Aucun chemin d'artefact n'est écrit ici : depuis que l'adresse nomme l'empreinte, un chemin en
+ * dur ne survivrait pas à une montée de version — il rendrait un 404 franc. Le manifeste est lu une
+ * fois par exécution de ce Worker et la carte est mémorisée : c'est une indirection, pas une
+ * requête de plus par artefact.
+ */
+let adressesV86 = null;
+
+async function adresseDeLArtefact(nom) {
+  adressesV86 ??= (await chargerAdressesV86()).adresses;
+  return exigerAdresse(adressesV86, nom);
+}
 const MIO = 1024 * 1024;
 
 /**
@@ -97,7 +111,7 @@ function raisonDeNonMesurabilite() {
 }
 
 async function lireArtefact(nom) {
-  const reponse = await fetch(`${ARTIFACTS}${nom}`, { cache: "no-store" });
+  const reponse = await fetch(await adresseDeLArtefact(nom), { cache: "no-store" });
   if (!reponse.ok) {
     throw new Error(
       `Artefact ${nom} indisponible (${reponse.status}). Exécuter « npm run vm:fetch ».`,
@@ -150,7 +164,7 @@ async function mesurer({ volumeBytes = 16 * MIO, mode = BRIDGE_MODES.full } = {}
     throw erreur;
   }
 
-  const { V86 } = await import(`${ARTIFACTS}libv86.mjs`);
+  const { V86 } = await import(await adresseDeLArtefact("libv86.mjs"));
   const { artifacts, octetsTransferes, chargementMs } = await chargerArtefacts();
 
   compteurVolume += 1;

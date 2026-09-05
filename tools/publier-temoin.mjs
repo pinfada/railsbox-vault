@@ -21,12 +21,14 @@
 // Ce témoin ne rejoue PAS la frontière de CSP : `tests/browser/csp-frontiere.spec.mjs` la mesure
 // déjà sur les trois moteurs, à chaque `npm run check`, et la dupliquer ici ferait deux vérités.
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { chromium, firefox, webkit } from "@playwright/test";
 
+import { adresseDuManifesteEpingle } from "../src/v86-adresses.mjs";
 import { enTetesDePublication } from "./publier-en-tetes.mjs";
+import { empreinte } from "./publier-inventaire.mjs";
 import { demarrer } from "./publier-servir.mjs";
 import { POLITIQUES_DE_CACHE, PREFIXE_EPINGLAGE_V86 } from "./serve-headers.mjs";
 import { REPOSITORY_ROOT } from "./v86-paths.mjs";
@@ -71,30 +73,59 @@ export function confronter(attendus, recus) {
 }
 
 /**
- * Natures d'artefact dont le témoin relève la politique de cache RÉELLEMENT servie (#103, ADR 0023).
+ * Natures d'artefact dont le témoin relève la politique de cache RÉELLEMENT servie (#103, ADR 0023,
+ * amendée par #123).
  *
- * Trois relevés, sur les DEUX arbres, et sur des chemins qui existent dans tout arbre publié — y
- * compris quand `vendor/v86/artefacts/` est absent, ce qui est le cas ordinaire d'un clone vierge.
- * C'est pourquoi la nature « épinglage v86 » est relevée sur son MANIFESTE : il est versionné, il
- * relève du même préfixe donc de la même règle, et il est publié dans tous les cas. Sans lui, la
- * seule nature dont la valeur est particulière ne serait jamais mesurée là où elle est servie, et
- * le critère « `npm run publier:check` vérifie la politique sur les deux origines » serait décoratif.
+ * Trois relevés, sur les DEUX arbres, et sur des chemins qui existent dans TOUT arbre publié — y
+ * compris quand `vendor/v86/artefacts/` est absent, ce qui est le cas ordinaire d'un clone vierge
+ * et celui de `npm run check` en intégration continue.
  *
- * @type {readonly { nature: string, arbre: string, chemin: string }[]}
+ * C'est ce dernier point que #123 a dû reconstruire. L'ADR 0023 relevait la nature épinglée sur le
+ * MANIFESTE, versionné donc toujours publié, parce que le préfixe `/vendor/v86/` l'englobait.
+ * Depuis que le préfixe immuable est `/vendor/v86/artefacts/`, le manifeste n'en relève plus — il
+ * est l'indirection, et il doit être revalidé. Le relevé porte donc sur la COPIE du manifeste
+ * adressée par son empreinte, écrite par `ecrireManifesteEpingle` dans tout arbre publié : elle est
+ * sous le préfixe immuable, elle nomme son empreinte, et son adresse est DÉRIVÉE du manifeste servi
+ * plutôt qu'écrite ici — si bien que ce relevé mesure aussi la dérivation.
+ *
+ * Sans lui, la seule nature dont la valeur est particulière ne serait jamais mesurée là où elle est
+ * servie, et le critère « `npm run publier:check` vérifie la politique sur les deux origines »
+ * serait décoratif.
+ *
+ * @param {string} adresseEpinglee adresse, dans l'arbre publié, de la copie épinglée du manifeste
+ * @returns {readonly { nature: string, arbre: string, chemin: string }[]}
  */
-export const NATURES_RELEVEES_PAR_LE_TEMOIN = Object.freeze([
-  Object.freeze({ nature: "coquille", arbre: "coquille", chemin: "/index.html" }),
-  Object.freeze({
-    nature: "epinglage-v86",
-    arbre: "coquille",
-    chemin: `${PREFIXE_EPINGLAGE_V86}MANIFEST.json`,
-  }),
-  Object.freeze({
-    nature: "territoire-applicatif",
-    arbre: "application",
-    chemin: "/index.html",
-  }),
-]);
+export function naturesRelevees(adresseEpinglee) {
+  return Object.freeze([
+    Object.freeze({ nature: "coquille", arbre: "coquille", chemin: "/index.html" }),
+    Object.freeze({ nature: "epinglage-v86", arbre: "coquille", chemin: adresseEpinglee }),
+    Object.freeze({
+      nature: "territoire-applicatif",
+      arbre: "application",
+      chemin: "/index.html",
+    }),
+  ]);
+}
+
+/**
+ * Adresse épinglée de l'arbre de la coquille, lue dans l'arbre PUBLIÉ et non dans le dépôt.
+ *
+ * C'est l'arbre servi qui décide : un témoin qui dériverait l'adresse du manifeste du dépôt
+ * pourrait relever une politique sur un chemin que l'arbre ne porte pas.
+ */
+export async function adresseEpingleeDeLArbre(arbreCoquille) {
+  const octets = await readFile(join(arbreCoquille, "vendor", "v86", "MANIFEST.json"));
+  return adresseDuManifesteEpingle(empreinte(octets));
+}
+
+/**
+ * Le jeu de relevés du témoin, tel que les épreuves unitaires le lisent sans arbre publié sous la
+ * main. L'adresse épinglée y est celle d'un manifeste FICTIF : ce que ces épreuves tiennent est la
+ * forme du relevé — quelles natures, sur quels arbres —, pas l'octet servi.
+ */
+export const NATURES_RELEVEES_PAR_LE_TEMOIN = naturesRelevees(
+  `${PREFIXE_EPINGLAGE_V86}MANIFEST-0000000000000000.json`,
+);
 
 /** Un en-tête qui ne doit PAS être servi. L'origine applicative n'en reçoit aucune CSP (ADR 0002). */
 export function confronterAbsences(absents, recus) {
@@ -137,11 +168,9 @@ async function releverOpener(contexte, urlCoquille) {
  * déjà gardée par le moteur — désormais possible, c'est tout l'objet de l'ADR 0023 — masque ce que
  * le serveur envoie.
  */
-async function releverPolitiqueDeCache(page, arbre) {
+async function releverPolitiqueDeCache(page, arbre, natures) {
   const releves = [];
-  for (const releve of NATURES_RELEVEES_PAR_LE_TEMOIN.filter(
-    (candidat) => candidat.arbre === arbre,
-  )) {
+  for (const releve of natures.filter((candidat) => candidat.arbre === arbre)) {
     const recu = await page.evaluate(async (chemin) => {
       const reponse = await fetch(chemin, { cache: "no-store" });
       return reponse.headers.get("cache-control");
@@ -173,12 +202,12 @@ const ORIGINES_DU_TEMOIN = Object.freeze({
  * encore chargée, et la politique de cache d'un arbre par un `fetch` émis DEPUIS un document de cet
  * arbre — c'est ce qui en fait un relevé de même origine, sans CORS entre le témoin et sa mesure.
  */
-async function releverLesDeuxOrigines(page) {
+async function releverLesDeuxOrigines(page, natures) {
   const enTetesCoquille = await relevePage(page, `${ORIGINE_COQUILLE}/index.html`);
   const demarrage = await releverDemarrage(page);
-  const cacheCoquille = await releverPolitiqueDeCache(page, "coquille");
+  const cacheCoquille = await releverPolitiqueDeCache(page, "coquille", natures);
   const enTetesApplication = await relevePage(page, `${ORIGINE_APPLICATION}/index.html`);
-  const cacheApplication = await releverPolitiqueDeCache(page, "application");
+  const cacheApplication = await releverPolitiqueDeCache(page, "application", natures);
   return { enTetesCoquille, demarrage, cacheCoquille, enTetesApplication, cacheApplication };
 }
 
@@ -232,11 +261,11 @@ function mesureDeLApplication(enTetes) {
   };
 }
 
-async function mesurerMoteur(nom) {
+async function mesurerMoteur(nom, natures) {
   const navigateur = await MOTEURS[nom].launch();
   const contexte = await navigateur.newContext();
   const page = await contexte.newPage();
-  const releves = await releverLesDeuxOrigines(page);
+  const releves = await releverLesDeuxOrigines(page, natures);
   await page.close();
 
   const mesure = {
@@ -343,6 +372,8 @@ async function principal() {
     }
   }
 
+  const natures = naturesRelevees(await adresseEpingleeDeLArbre(join(RACINE_ARBRES, "coquille")));
+
   const serveurs = await Promise.all([
     demarrer({
       arbre: join(RACINE_ARBRES, "coquille"),
@@ -367,7 +398,7 @@ async function principal() {
 
   const mesures = [];
   try {
-    for (const moteur of moteurs) mesures.push(await mesurerMoteur(moteur));
+    for (const moteur of moteurs) mesures.push(await mesurerMoteur(moteur, natures));
   } finally {
     await Promise.all(serveurs.map(({ arreter }) => arreter()));
   }

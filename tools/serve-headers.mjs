@@ -2,6 +2,7 @@
 // `serve.mjs` pour être vérifiable sous Node sans démarrer de socket : la CSP de la coquille et
 // la frontière « territoire applicatif » sont des règles de sécurité, pas de la plomberie HTTP.
 
+import { PREFIXE_ADRESSES_V86 } from "../src/v86-adresses.mjs";
 import {
   APPLICATION_TERRITORY_PREFIX,
   APP_HOST,
@@ -102,30 +103,40 @@ export function isShellDocument(pathname) {
 }
 
 /**
- * Préfixe de l'ÉPINGLAGE v86 de l'ADR 0003 : les octets épinglés par empreinte, le manifeste qui
- * les épingle, et les licences du code redistribué. Le sous-arbre entier ne change QU'ENSEMBLE, à
- * la montée de version de l'émulateur — c'est ce qui en fait une seule nature d'artefact, et c'est
- * pourquoi le manifeste reçoit la même DURÉE de fraîcheur que les octets qu'il décrit.
+ * Préfixe des artefacts v86 ADRESSÉS PAR EMPREINTE (#123, ADR 0003, ADR 0023 amendé).
  *
- * Même durée n'est pas même expiration, et l'ADR 0023 (décision 2) le dit désormais ainsi : HTTP
- * calcule la fraîcheur par réponse, à partir de la date à laquelle CETTE réponse a été reçue. La
- * fenêtre commune BORNE l'écart d'âge entre le manifeste et les octets à vingt-quatre heures ; elle
- * ne les aligne pas. La cohérence, elle, viendra d'une vérification d'empreinte au chargement
- * (#123).
+ * Il vaut `/vendor/v86/artefacts/` et non plus `/vendor/v86/`, et le déplacement est LA décision
+ * de #123 côté en-têtes. Ce qui vit sous ce préfixe nomme son empreinte dans son URL : l'adresse
+ * change dès que les octets changent, un artefact périmé n'est donc plus jamais DEMANDÉ, et
+ * `immutable` — « ces octets ne changeront jamais à cette URL » — cesse d'être une promesse fausse.
+ *
+ * Ce qui reste à `/vendor/v86/` sans être sous ce préfixe — le manifeste, les licences — relève de
+ * la nature `coquille`, donc de `no-cache`. Ce n'est pas un oubli, c'est la condition de tout le
+ * reste : le manifeste est l'INDIRECTION par laquelle un chargeur apprend les adresses, et une
+ * copie périmée en désignerait qui ne sont plus servies — un 404 franc, pas une exécution périmée.
+ * Il doit donc être revalidé avant réemploi. L'ADR 0023 avait retenu le préfixe large précisément
+ * pour donner au manifeste la MÊME fenêtre que les octets ; l'adressage par empreinte rend cette
+ * fenêtre commune inutile, puisque la cohérence est désormais dans l'adresse elle-même.
+ *
+ * Le défaut de la table reste le SÛR : un chemin qu'aucune règle ne nomme reçoit `no-cache`, et un
+ * fichier qui apparaîtrait demain sous `/vendor/v86/` n'hériterait pas d'un an de cache partagé.
  */
-export const PREFIXE_EPINGLAGE_V86 = "/vendor/v86/";
+export const PREFIXE_EPINGLAGE_V86 = PREFIXE_ADRESSES_V86;
 
 /**
- * Fenêtre de fraîcheur de l'épinglage v86, en secondes.
+ * Fenêtre de fraîcheur des artefacts adressés par empreinte, en secondes — un an.
  *
- * 86 400 n'est pas un chiffre de confort : c'est la borne que la plate-forme s'impose déjà au SCRIPT
- * d'un Service Worker, dont l'algorithme de mise à jour ignore le cache au-delà de vingt-quatre
- * heures. C'est donc la plus longue péremption que le navigateur tolère pour le code qui gouvernera
- * le mode hors ligne de l'ADR 0002 ; aligner dessus les artefacts les plus lourds garde une seule
- * fenêtre pour tout l'arbre. (Fait de plate-forme cité de la spécification, non mesuré par ce
- * dépôt — voir l'ADR 0023, « Ce que cette décision ne prouve pas ».)
+ * 31 536 000 s est la valeur conventionnelle du cache long, et c'est la borne supérieure que
+ * RFC 9111 § 1.2.2 recommande de ne pas dépasser. Elle n'est pas choisie pour sa durée : sous
+ * `immutable`, la durée ne décide plus de rien d'important, puisque l'adresse d'un artefact périmé
+ * n'est plus jamais demandée. Ce que la valeur borne, c'est le seul cas résiduel — un artefact
+ * dont l'adresse serait redemandée après avoir été retirée de l'arbre.
+ *
+ * La borne de 86 400 s que l'ADR 0023 avait empruntée à l'algorithme de mise à jour du Service
+ * Worker reste celle de la COQUILLE, qui est `no-cache` : elle y est sans objet. Voir l'amendement
+ * de l'ADR 0023 daté du 2026-09-05.
  */
-export const DUREE_EPINGLAGE_V86_SECONDES = 86400;
+export const DUREE_EPINGLAGE_V86_SECONDES = 31536000;
 
 /** @param {string} pathname */
 export function estEpinglageV86(pathname) {
@@ -149,15 +160,16 @@ export const NATURES_DARTEFACT = Object.freeze({
  * - `coquille` — elle change à chaque version, et son URL ne nomme pas sa version : elle doit être
  *   REVALIDÉE avant réemploi. `no-cache` autorise le stockage, il n'autorise pas le réemploi muet ;
  * - `epinglage-v86` — 9,9 Mio d'octets (les cinq artefacts de `vendor/v86/MANIFEST.json`, image de
- *   référence comprise) qui ne changent qu'à la montée de version de l'émulateur. PAS
- *   d'`immutable` : l'ADR 0003 épingle par empreinte dans le manifeste, pas dans l'URL, et
- *   `immutable` interdirait au navigateur de jamais s'apercevoir d'un ré-épinglage ;
+ *   référence comprise) servis à des adresses qui NOMMENT leur empreinte (#123). `immutable` y est
+ *   désormais tenable, et c'est l'adresse qui le tient : un ré-épinglage déplace l'artefact, si
+ *   bien qu'un navigateur qui garderait l'ancienne adresse pour toujours ne la demanderait plus
+ *   jamais. Le manifeste, lui, n'est PAS sous ce préfixe — voir `PREFIXE_EPINGLAGE_V86` ;
  * - `territoire-applicatif` — ce que cette origine sert en production porte les cookies de session
  *   Rails. `no-store` y est désormais une DÉCISION et non plus un héritage.
  */
 export const POLITIQUES_DE_CACHE = Object.freeze({
   [NATURES_DARTEFACT.coquille]: "no-cache",
-  [NATURES_DARTEFACT.epinglageV86]: `public, max-age=${DUREE_EPINGLAGE_V86_SECONDES}`,
+  [NATURES_DARTEFACT.epinglageV86]: `public, max-age=${DUREE_EPINGLAGE_V86_SECONDES}, immutable`,
   [NATURES_DARTEFACT.territoireApplicatif]: "no-store",
 });
 

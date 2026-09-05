@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { nomAdresse } from "../../src/v86-adresses.mjs";
 import { CODES_DE_SORTIE, verdictGardeMemoire } from "../../tools/isolation-analyse-wasm.mjs";
 import {
   LIMITES_PARTAGEES,
@@ -47,6 +48,13 @@ const OUTILS = Object.freeze([
   "v86-paths.mjs",
 ]);
 
+/**
+ * Modules de `src/` dont les outils dépendent. Depuis #123, `v86-paths.mjs` importe la DÉRIVATION
+ * d'adresses : le dépôt fictif doit la porter, sans quoi ce qui échouerait serait un import et non
+ * la garde que ces épreuves mesurent.
+ */
+const MODULES_SOURCE = Object.freeze(["v86-adresses.mjs"]);
+
 const dossiersTemporaires = [];
 
 test.after(async () => {
@@ -60,11 +68,19 @@ async function depotFictif(octetsWasm, { empreinte, nom = "v86.wasm" } = {}) {
   const racine = await mkdtemp(join(tmpdir(), "vault-garde-"));
   dossiersTemporaires.push(racine);
   await mkdir(join(racine, "tools"), { recursive: true });
+  await mkdir(join(racine, "src"), { recursive: true });
   await mkdir(join(racine, "vendor", "v86", "artefacts"), { recursive: true });
   for (const outil of OUTILS) {
     await cp(join(RACINE_DEPOT, "tools", outil), join(racine, "tools", outil));
   }
-  await writeFile(join(racine, "vendor", "v86", "artefacts", nom), octetsWasm);
+  for (const module of MODULES_SOURCE) {
+    await cp(join(RACINE_DEPOT, "src", module), join(racine, "src", module));
+  }
+  const sha256 = empreinte ?? createHash("sha256").update(octetsWasm).digest("hex");
+  // L'artefact est déposé à l'ADRESSE que le manifeste lui dicte (#123) : c'est là que
+  // `fetch-v86.mjs` va le chercher, et un dépôt fictif qui le nommerait autrement mesurerait une
+  // absence plutôt que la garde de mémoire partagée.
+  await writeFile(join(racine, "vendor", "v86", "artefacts", nomAdresse(nom, sha256)), octetsWasm);
   const manifeste = {
     contract: { id: "railsbox-vault-vendor-v86", version: 1 },
     pins: { npmPackage: "v86@0.5.999-fictif" },
@@ -72,7 +88,7 @@ async function depotFictif(octetsWasm, { empreinte, nom = "v86.wasm" } = {}) {
       {
         name: nom,
         bytes: octetsWasm.length,
-        sha256: empreinte ?? createHash("sha256").update(octetsWasm).digest("hex"),
+        sha256,
         license: "BSD-2-Clause",
         source: {
           kind: "npm-tarball-entry",
