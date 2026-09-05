@@ -337,3 +337,31 @@ test("SECURITY.md statue sur CHAQUE invariant, et la preuve citée existe", asyn
     "La table des statuts cite des épreuves qui n'existent pas.",
   );
 });
+
+test("SECURITY.md cite LITTÉRALEMENT la politique de cache qu'il décrit", async () => {
+  // Le constat 4 de la revue de sécurité de #123 : `docs/release-policy.md`, l'ADR 0017 et l'ADR
+  // 0023 avaient tous trois été amendés sur la politique de cache, et le document où le dépôt
+  // STATUE sur sa posture était le seul resté en arrière — il affirmait encore que `immutable` est
+  // refusé, sur un préfixe qui n'existait plus. Le cliquet « statue sur chaque invariant » ne mord
+  // pas sur la VÉRACITÉ du récit ; celui-ci le fait, sur les deux valeurs qui sont réellement
+  // servies, en les faisant venir de la source de vérité plutôt que d'une copie.
+  const security = await lire(SECURITY);
+  const { NATURES_DARTEFACT, POLITIQUES_DE_CACHE, POLITIQUE_DABSENCE, PREFIXE_EPINGLAGE_V86 } =
+    await import("../../tools/serve-headers.mjs");
+
+  const attendus = [
+    [PREFIXE_EPINGLAGE_V86, "le préfixe sous lequel le cache long est servi"],
+    [
+      POLITIQUES_DE_CACHE[NATURES_DARTEFACT.epinglageV86],
+      "la politique de cache des artefacts v86",
+    ],
+    [POLITIQUE_DABSENCE, "la politique servie pour une ABSENCE"],
+  ];
+  for (const [valeur, quoi] of attendus) {
+    assert.ok(
+      security.includes(valeur),
+      `SECURITY.md ne cite pas « ${valeur} » (${quoi}) : son récit de cache a divergé de ce que ` +
+        "`tools/serve-headers.mjs` sert réellement.",
+    );
+  }
+});

@@ -21,6 +21,7 @@ import {
   mesurerRythme,
 } from "/src/vm/runtime-environment.mjs";
 import { decrireBoucle, installerBoucleOrdonnancement } from "/src/vm/scheduling-loop.mjs";
+import { verifierEmpreintesV86, verifierLeModuleV86 } from "./reference-worker-empreintes.mjs";
 import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
 import {
   capturerApresPointDeControle,
@@ -146,11 +147,13 @@ async function loadRuntime(runtime) {
   ]);
   const artifacts = { wasm, bios, vgaBios, kernel, initrd, rootfs };
   const transferredBytes = Object.values(artifacts).reduce((total, a) => total + a.byteLength, 0);
-  return { artifacts, transferredBytes };
+  const empreintesV86Ms = await verifierEmpreintesV86(runtime, artifacts);
+  return { artifacts, transferredBytes, empreintesV86Ms };
 }
 
-/** Importe la classe V86 depuis l'artefact vendor déjà vérifié par empreinte. */
+/** Importe la classe V86, ses octets AYANT ÉTÉ confrontés au manifeste (#123). */
 async function importV86(libUrl) {
+  await verifierLeModuleV86(libUrl, fetchBytes);
   const module = await import(libUrl);
   return module.V86;
 }
@@ -159,12 +162,18 @@ async function importV86(libUrl) {
 export async function acquerirRuntime(runtime) {
   await exigerContexteExecutable();
   const V86 = await importV86(runtime.lib);
-  const { artifacts, transferredBytes } = await loadRuntime(runtime);
+  const { artifacts, transferredBytes, empreintesV86Ms } = await loadRuntime(runtime);
   // L'EMPREINTE DE L'IMAGE est prise ICI, sur les octets tout juste acquis, et jamais plus tard.
   // Le rootfs est un tampon que le guest ÉCRIT (#65) : le hacher après un boot donnerait l'empreinte
   // d'une session, pas celle d'une image. Le défaut est tombé sur le scénario de bout en bout de
   // #65 — la reprise écartait l'instantané au motif ECART_IMAGE, sur la même image exactement.
-  return { V86, artifacts, transferredBytes, empreinteImage: await empreinteDeLImage(artifacts) };
+  return {
+    V86,
+    artifacts,
+    transferredBytes,
+    empreintesV86Ms,
+    empreinteImage: await empreinteDeLImage(artifacts),
+  };
 }
 
 /**
@@ -189,11 +198,16 @@ const REPERES_SERIE = Object.freeze([
  * @param {Map<string, number>} jalons horodatages posés, un jamais vu restant absent
  * @param {{ premierOctet: number | null, dmesgDernierSec: number | null, healthMs: number }} vus
  */
-function decomposerJalons(jalons, { premierOctet, dmesgDernierSec, healthMs }) {
+function decomposerJalons(jalons, { premierOctet, dmesgDernierSec, healthMs, empreintesV86Ms }) {
   const t = (cle) => jalons.get(cle) ?? null;
   const delta = (a, b) => (a === null || b === null ? null : Number((b - a).toFixed(0)));
   return {
     acquisitionRuntimeMs: delta(t("debut"), t("runtimePret")),
+    // Part de l'acquisition passée à CONFRONTER les octets reçus aux 256 bits du manifeste (#123).
+    // Elle est publiée à part parce qu'elle est le prix d'une garantie, et qu'un prix qu'on ne
+    // relève pas ne se discute pas : la revue de sécurité l'a exigée sur le chemin de boot réel,
+    // et non en contexte de page comme la première estimation de la PR.
+    empreintesV86Ms: empreintesV86Ms ?? null,
     initEmulateurMs: delta(t("runtimePret"), t("bootRendu")),
     premierOctetSerieMs: delta(t("bootRendu"), premierOctet),
     noyauVersMontageMs: delta(premierOctet, t("montageDisqueApp")),
@@ -243,8 +257,13 @@ function createBootTimeline() {
       }
     },
     /** Décomposition finale, déléguée à `decomposerJalons`. */
-    decomposer({ healthMs }) {
-      return decomposerJalons(jalons, { premierOctet, dmesgDernierSec, healthMs });
+    decomposer({ healthMs, empreintesV86Ms = null }) {
+      return decomposerJalons(jalons, {
+        premierOctet,
+        dmesgDernierSec,
+        healthMs,
+        empreintesV86Ms,
+      });
     },
   };
 }
@@ -421,6 +440,17 @@ function releverGeneration(backend) {
   };
 }
 
+/**
+ * Décomposition du temps de reprise (#60), à laquelle #123 ajoute le prix des vérifications
+ * d'empreinte. Extraite pour que `assemblerCompteRendu` reste sous le plafond de la convention.
+ */
+function decomposition({ timeline, mesures, health }) {
+  return timeline.decomposer({
+    healthMs: health.durationMs,
+    empreintesV86Ms: mesures.empreintesV86Ms,
+  });
+}
+
 function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline }) {
   const { invariant, health } = deroule;
   const observed = invariant.verdict.observed ?? {};
@@ -438,7 +468,7 @@ function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline })
     healthMilliseconds: health.durationMs,
     rythme: deroule.rythme,
     boucleOrdonnancement: deroule.boucle,
-    timeline: timeline.decomposer({ healthMs: health.durationMs }),
+    timeline: decomposition({ timeline, mesures, health }),
     transferredBytes: mesures.transferredBytes,
     memoryBytes: mesures.memoryBytes,
     // `usedSnapshot` dit ce que CE BOOT a fait, jamais ce qu'il aurait pu faire : un boot qui a
@@ -582,7 +612,7 @@ export async function bootEtVerifier({
   capturerInstantane = false,
   reprendreParInstantane = false,
 }) {
-  const { attentes, timeline, V86, artifacts, transferredBytes, online, empreinteImage } =
+  const { attentes, timeline, V86, artifacts, empreinteImage, ...mesuresDAcquisition } =
     await preparerLeBoot({ manifest, runtime, runtimeBundle });
 
   const { montage, instantane } = await monterEtOuvrirLInstantane({
@@ -609,7 +639,7 @@ export async function bootEtVerifier({
 
   return assemblerCompteRendu({
     identite: { phase, volume, expected },
-    mesures: { transferredBytes, memoryBytes, online, instantane: sansLEtat(instantane) },
+    mesures: { ...mesuresDAcquisition, memoryBytes, instantane: sansLEtat(instantane) },
     montage,
     deroule,
     timeline,

@@ -283,7 +283,16 @@ export async function verifierEpinglageV86(destination, empreinte) {
     ...ecartsDeCollisionDAdresse(declares, attendus),
     ...(await ecartsDesOctetsServis(dossier, presents, attendus, empreinte)),
   ];
-  const manquants = ecartsDesAdressesAttendues(adressesDesArtefacts, presents);
+  // Les MANQUANTS sont calculés sur `attendus`, copie épinglée du manifeste COMPRISE : la docstring
+  // ci-dessus promet que « le seul fichier admis en plus des artefacts est la copie du manifeste »,
+  // et une promesse dont on ne défend qu'une moitié — l'altération, pas l'absence — n'en est pas
+  // une. C'est justement ce membre qui donne à la classe immuable un octet présent dans TOUT arbre
+  // publié (constat 6 de la revue de sécurité).
+  const manquants = ecartsDesAdressesAttendues(attendus, presents);
+  // Le CLONE VIERGE, lui, se reconnaît aux seuls ARTEFACTS : la copie du manifeste est publiée même
+  // quand le runtime manque, si bien que la compter ici ferait passer un clone vierge pour un arbre
+  // partiellement peuplé.
+  const artefactsManquants = ecartsDesAdressesAttendues(adressesDesArtefacts, presents);
 
   // AUCUN artefact déclaré n'est là : c'est le clone vierge, pas une publication rompue.
   //
@@ -292,7 +301,7 @@ export async function verifierEpinglageV86(destination, empreinte) {
   // l'incomplétude. C'est le CONTENU qui le dit maintenant. Confondre les deux ferait rendre le
   // code 5 « épinglage rompu » à tout `npm run check` lancé sans `npm run vm:fetch`, là où
   // l'inventaire porte déjà le verdict d'incomplétude et sa tolérance.
-  if (manquants.length === declares.length && declares.length > 0) {
+  if (artefactsManquants.length === declares.length && declares.length > 0) {
     return {
       verifie: false,
       situation: SITUATIONS_EPINGLAGE.artefactsAbsents,

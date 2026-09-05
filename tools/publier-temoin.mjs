@@ -30,7 +30,11 @@ import { adresseDuManifesteEpingle } from "../src/v86-adresses.mjs";
 import { enTetesDePublication } from "./publier-en-tetes.mjs";
 import { empreinte } from "./publier-inventaire.mjs";
 import { demarrer } from "./publier-servir.mjs";
-import { POLITIQUES_DE_CACHE, PREFIXE_EPINGLAGE_V86 } from "./serve-headers.mjs";
+import {
+  POLITIQUES_DE_CACHE,
+  POLITIQUE_DABSENCE,
+  PREFIXE_EPINGLAGE_V86,
+} from "./serve-headers.mjs";
 import { REPOSITORY_ROOT } from "./v86-paths.mjs";
 
 const MOTEURS = { chromium, firefox, webkit };
@@ -127,6 +131,25 @@ export const NATURES_RELEVEES_PAR_LE_TEMOIN = naturesRelevees(
   `${PREFIXE_EPINGLAGE_V86}MANIFEST-0000000000000000.json`,
 );
 
+/**
+ * Adresse ABSENTE sous le préfixe immuable, relevée par le témoin (constat 1 de la revue de #123).
+ *
+ * L'empreinte est nulle et le nom délibérément parlant : aucun ré-épinglage ne produira jamais
+ * cette adresse, et un lecteur de journal doit comprendre du premier coup d'œil que le 404 est
+ * ATTENDU. Ce qui est mesuré est que l'absence n'est pas cachable — sans quoi un client qui
+ * demanderait une adresse pendant la fenêtre où elle n'est pas encore déposée garderait son 404 un
+ * an, `immutable` supprimant jusqu'au rechargement forcé comme geste de récupération.
+ */
+export const ADRESSE_ABSENTE_DU_TEMOIN = `${PREFIXE_EPINGLAGE_V86}jamais-deploye-0000000000000000.wasm`;
+
+/** Relève ce qu'une origine sert pour une adresse qui n'existe pas sous le préfixe immuable. */
+async function releverLAbsence(page) {
+  return page.evaluate(async (chemin) => {
+    const reponse = await fetch(chemin, { cache: "no-store" });
+    return { chemin, statut: reponse.status, recu: reponse.headers.get("cache-control") };
+  }, ADRESSE_ABSENTE_DU_TEMOIN);
+}
+
 /** Un en-tête qui ne doit PAS être servi. L'origine applicative n'en reçoit aucune CSP (ADR 0002). */
 export function confronterAbsences(absents, recus) {
   return absents
@@ -206,9 +229,17 @@ async function releverLesDeuxOrigines(page, natures) {
   const enTetesCoquille = await relevePage(page, `${ORIGINE_COQUILLE}/index.html`);
   const demarrage = await releverDemarrage(page);
   const cacheCoquille = await releverPolitiqueDeCache(page, "coquille", natures);
+  const absence = await releverLAbsence(page);
   const enTetesApplication = await relevePage(page, `${ORIGINE_APPLICATION}/index.html`);
   const cacheApplication = await releverPolitiqueDeCache(page, "application", natures);
-  return { enTetesCoquille, demarrage, cacheCoquille, enTetesApplication, cacheApplication };
+  return {
+    enTetesCoquille,
+    demarrage,
+    cacheCoquille,
+    absence,
+    enTetesApplication,
+    cacheApplication,
+  };
 }
 
 /** Ce que la COQUILLE doit servir, et le seul en-tête dont l'ABSENCE y est une décision. */
@@ -275,6 +306,9 @@ async function mesurerMoteur(nom, natures) {
     // La politique de cache est la SEULE dimension que l'ADR 0023 autorise à varier selon le
     // chemin : elle est donc relevée par nature d'artefact, et pas une fois par origine.
     politiqueDeCache: [...releves.cacheCoquille, ...releves.cacheApplication],
+    // Une ADRESSE ABSENTE sous le préfixe immuable : ce que `_headers` annonce pour un CHEMIN
+    // n'est pas ce qu'un serveur doit servir pour une RÉPONSE d'absence (constat 1, revue de #123).
+    absence: releves.absence,
     demarrage: releves.demarrage,
     openerAvecCoop: await releverOpener(contexte, `${ORIGINE_COQUILLE}/index.html`),
     openerSansCoop: await releverOpener(contexte, `${ORIGINE_COQUILLE_SANS_COOP}/index.html`),
@@ -315,9 +349,37 @@ function motifsDePolitiqueDeCache(releves) {
   return motifs;
 }
 
+/**
+ * Motifs de refus tirés du relevé d'ABSENCE (constat 1 de la revue de #123).
+ *
+ * Deux conditions, et la seconde tient la première par le bas : une adresse qui rendrait 200 ne
+ * serait pas une absence, et le relevé mesurerait alors la politique d'un octet servi.
+ */
+function motifsDeLAbsence(absence) {
+  if (absence === undefined || absence === null) {
+    return ["aucun relevé d'adresse absente : la cachabilité d'un 404 n'a pas été mesurée"];
+  }
+  const motifs = [];
+  if (absence.statut !== 404) {
+    motifs.push(
+      `l'adresse ${absence.chemin} devait être ABSENTE et rend ${absence.statut} : le relevé ` +
+        "mesure la politique d'un octet servi, pas celle d'une absence",
+    );
+  }
+  if (absence.recu !== POLITIQUE_DABSENCE) {
+    motifs.push(
+      `absence sous le préfixe immuable sur ${absence.chemin} : attendu ${POLITIQUE_DABSENCE}, ` +
+        `reçu ${absence.recu ?? "(absent)"}. Un 404 gardé sous \`immutable\` n'a aucun geste de ` +
+        "récupération côté client",
+    );
+  }
+  return motifs;
+}
+
 /** Un moteur passe si les en-têtes sont conformes, que la coquille démarre, et que COOP agit. */
 export function verdict(mesure) {
   const motifs = [...motifsDePolitiqueDeCache(mesure.politiqueDeCache ?? [])];
+  motifs.push(...motifsDeLAbsence(mesure.absence));
   if (mesure.coquille.ecarts.length > 0) motifs.push("en-têtes de la coquille");
   if (mesure.application.ecarts.length > 0) motifs.push("en-têtes de l'origine applicative");
   const csp = mesure.application.cspApplicativeSolitaire;
@@ -345,6 +407,12 @@ function decrire(mesure) {
     `  window.opener avec COOP         ${mesure.openerAvecCoop ? "null (attendu)" : "SURVIT"}`,
     `  window.opener sans COOP         ${mesure.openerSansCoop ? "null (TÉMOIN CASSÉ)" : "survit (attendu)"}`,
   ];
+  if (mesure.absence !== undefined) {
+    lignes.push(
+      `  absence (${String(mesure.absence.statut).padEnd(3)})                 ` +
+        `${mesure.absence.recu ?? "(absent)"}   ${mesure.absence.chemin}`,
+    );
+  }
   for (const releve of mesure.politiqueDeCache ?? []) {
     lignes.push(
       `  cache ${releve.nature.padEnd(24)} ${releve.recu ?? "(absent)"}   ${releve.chemin}`,

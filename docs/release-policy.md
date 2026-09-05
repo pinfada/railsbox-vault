@@ -306,14 +306,40 @@ passait pour un redéploiement.
 ### Retour arrière
 
 ```sh
+# 1. RAMENER LE DISQUE SUR L'ÉPINGLAGE DE CETTE VERSION-LÀ.
+#    `vendor/v86/artefacts/` n'est pas versionné : il vient TOUJOURS de l'arbre de travail, y
+#    compris sous --commit. Le manifeste, lui, est lu au commit demandé. Sauter cette étape depuis
+#    un poste à jour donne un code 5 — artefacts déclarés absents, artefacts d'aujourd'hui non
+#    déclarés — et l'outil imprime alors ces deux commandes.
+git checkout <version-precedente> -- vendor/v86/MANIFEST.json
+npm run vm:fetch     # récupère les adresses de cette version, élague celles d'aujourd'hui
+
+# 2. RECONSTRUIRE, VÉRIFIER, CONFRONTER.
 node tools/publier.mjs --commit <version-precedente> --sortie artifacts/rollback
 node tools/publier.mjs --verifier artifacts/rollback/coquille
 node tools/publier-empreinte.mjs artifacts/rollback/coquille
 # confronter le résultat à l'empreinte inscrite lors de la sortie de cette version
+
+# 3. REVENIR AU PRÉSENT, une fois l'arbre déposé — sans quoi le poste reste sur l'épinglage d'hier.
+git checkout HEAD -- vendor/v86/MANIFEST.json && npm run vm:fetch
 ```
 
 `--commit` lit les octets par `git show` : deux reconstructions du même commit rendent la même
 empreinte de racine, au bit près. Republier consiste à redéposer cet arbre.
+
+**Pourquoi l'étape 1 est nécessaire, et pourquoi c'est une bonne nouvelle.** Depuis #123 les
+artefacts v86 sont déposés à des adresses qui NOMMENT leur empreinte. Un disque resté sur
+l'épinglage d'aujourd'hui ne peut donc plus produire, en silence, un arbre étiqueté d'hier portant
+les octets du jour : les adresses ne correspondent pas, et la publication refuse en code 5. Le refus
+remplace un risque par une étape — c'est le sens de l'amendement de
+l'[ADR 0017](decisions/0017-chaine-de-publication.md) du 2026-09-05.
+
+**Le dépôt de l'arbre doit être ATOMIQUE**, ou déposer les artefacts AVANT le manifeste qui les
+nomme. Sous `/vendor/v86/artefacts/*` la production annonce `immutable` pour un CHEMIN, et un
+hébergeur qui applique cette règle avant de constater une absence renverrait un 404 marqué frais
+pour un an. L'ordre inverse — manifeste d'abord — ouvre précisément cette fenêtre. Voir l'amendement
+de l'[ADR 0023](decisions/0023-politique-de-cache-par-nature-d-artefact.md) ; aucune origine réelle
+n'a été mesurée (#124).
 
 **Chaque sortie doit conserver son empreinte de racine hors bande.** C'est la condition qui rend le
 retour arrière _vérifiable_ et non seulement _reproductible_ : sans elle, on prouve que l'outil est

@@ -380,28 +380,68 @@ la durée ne décide plus de rien d'important : l'adresse d'un artefact périmé
 demandée. Un an est la valeur conventionnelle, et la borne supérieure que RFC 9111 § 1.2.2
 recommande.
 
-### La vérification d'empreinte AU CHARGEMENT n'entre PAS dans cette tranche
+### La vérification d'empreinte AU CHARGEMENT est LIVRÉE par cette tranche
 
-Cet ADR confiait à #123 « la cohérence manifeste ↔ octets par une vérification à la lecture ». Cette
-cohérence est tenue, mais autrement : par l'adresse, structurellement, et sans calcul. Un manifeste
-périmé désigne les adresses que CE manifeste a épinglées ; manifeste et octets ne peuvent plus être
-en désaccord, seulement vieux ensemble.
+**Cette section a été écrite une première fois pour REPORTER cette vérification, et la revue de
+sécurité de #123 a montré que l'argument était faux.** Il disait : « ce qu'elle attraperait encore,
+elle ne l'attrape pas, puisque l'empreinte attendue vient du manifeste servi par la même origine —
+c'est le raisonnement que `tools/publier-sources.mjs` tient déjà pour Argon2id ». Or ce module tient
+le raisonnement INVERSE, à la docstring de `verifierEpinglageArgon2` : « deux vérifications
+indépendantes couvrent le même octet à deux moments, et **aucune ne remplace l'autre** […] ce que la
+vérification du navigateur couvre est un chemin ISOLÉ : un cache qui garde une version d'un binaire
+à côté d'un module d'une autre, un déploiement partiel qui n'a poussé qu'une moitié de l'arbre. **Ce
+sont les incidents qu'on rencontre.** » Et le code suit ce raisonnement-là depuis #22.
 
-**Le coût n'est pas l'argument, et la mesure ne le soutiendrait pas** : hacher les 9,9 Mio de
-l'ensemble épinglé coûte **9,2 ms** sous Chromium 141 — `crypto.subtle.digest`, meilleure de deux
-passes après échauffement, contexte de page servi par `tools/serve.mjs` ; 1,9 ms pour `v86.wasm`
-seul, 7,0 ms pour `linux4.iso`. L'argument est ailleurs, et il tient en deux points :
+Ce que la vérification au chargement attrape n'est pas le MENSONGE, c'est l'**accident** — et un
+cache d'un an le rend plus probable, pas moins : ce qui est corrompu une fois est gardé un an, sans
+revalidation, `immutable` supprimant jusqu'au rechargement forcé comme geste de récupération. La
+décision est donc reprise : **elle est livrée ici.**
 
-- **ce qu'elle attraperait encore, elle ne l'attrape pas.** L'empreinte attendue viendrait du
-  manifeste servi par la MÊME origine : un hébergeur qui ment à une adresse adressée par contenu
-  ment aussi au manifeste, du même geste. C'est le raisonnement que `tools/publier-sources.mjs`
-  tient déjà pour Argon2id. La défense contre l'hébergeur est la vérification de PUBLICATION, sur
-  l'arbre construit à partir d'un commit — celle que cet amendement renforce ;
-- **il reste un cas, et il appartient à une autre tranche.** Le magasin d'un Service Worker est géré
-  par le développeur et n'est PAS gouverné par l'URL (fait 5) : un Service Worker qui rangerait un
-  artefact sous une clé de requête et le rendrait pour une autre briserait la garantie que l'adresse
-  porte. C'est le seul consommateur qui garde des artefacts d'une version à l'autre hors de la
-  gouvernance de l'adresse, et c'est donc à lui de porter cette vérification. Suivi par **#151**.
+- `src/v86-adresses.mjs` confronte les octets reçus aux **256 bits** du manifeste — l'adresse n'en
+  nomme que seize caractères — et refuse par une erreur typée, `VAULT_V86_EMPREINTE`, sérialisable
+  comme celles de `src/vm/runtime-errors.mjs` ;
+- les chargeurs du dépôt passent tous par cette porte, et une épreuve d'inspection de source exige
+  qu'ils le fassent. Le module de l'émulateur est vérifié avant d'être importé — `import()` ne rend
+  pas d'octets, la vérification passe donc par une récupération préalable à la même adresse, servie
+  par le cache ;
+- **le coût est mesuré sur le chemin de boot réel** et publié dans la décomposition (#60) sous
+  `empreintesV86Ms`. Un prix qu'on ne relève pas ne se discute pas. La première estimation de la PR
+  — 9,2 ms pour 9,9 Mio sous Chromium 141 — était prise en contexte de page, et elle ne justifiait
+  déjà pas le report.
+
+**Ce qu'elle ne couvre toujours pas, et qui reste ouvert.** Une origine qui ment aux deux du même
+geste : l'empreinte attendue vient du manifeste servi par cette même origine. Cette défense-là est
+`verifierEpinglageV86`, sur l'arbre construit à partir d'un commit. Et entre la vérification du
+module et son `import()`, une origine hostile pourrait servir d'autres octets — un accident, lui, ne
+change pas de réponse entre deux requêtes. Enfin, le magasin d'un Service Worker est géré par le
+développeur et n'est PAS gouverné par l'URL (fait 5) : un Service Worker qui rangerait un artefact
+sous une clé de requête et le rendrait pour une autre briserait la garantie que l'adresse porte.
+C'est ce cas résiduel, et lui seul, que **#151** garde ouvert.
+
+### Une ADRESSE QUI N'EXISTE PAS relève elle aussi de la règle immuable
+
+C'est le bord neuf de la promesse, relevé par la revue de sécurité, et il ne se confond avec aucune
+des réserves déjà écrites. `Cache-Control` gouverne une **réponse** ; le format `_headers` associe
+des en-têtes à un **chemin**. Sous `/vendor/v86/artefacts/*`, une adresse qui n'existe pas encore —
+ou qui n'existe plus — reçoit donc l'annonce d'un an d'`immutable` comme si elle existait. Or un 404
+est stockable par défaut (RFC 9111 § 3), un `max-age` explicite le rend frais, et `immutable`
+(RFC 8246) supprime la revalidation **y compris au rechargement**. Un client qui demanderait une
+adresse pendant la fenêtre où elle n'est pas encore déposée garderait son 404 pendant un an, sans
+geste de récupération de son côté. Le passage de vingt-quatre heures à un an aggrave ce cas d'un
+facteur 365.
+
+Deux réponses, et la seconde n'est pas de notre ressort :
+
+- **les serveurs de ce dépôt rendent toute absence en `no-store`**, sur tous les chemins et pas sous
+  ce seul préfixe — il n'existe aucun cas où garder l'absence d'un octet nous serve, et une règle
+  conditionnelle serait une occasion de plus de se tromper de condition. Le témoin d'en-têtes relève
+  cette politique sur du HTTP réel, à une adresse délibérément absente, et refuse un 404 cachable
+  comme il refuse une nature mal servie ;
+- **chez un hébergeur, c'est une obligation d'exploitant**, au même titre que celle de ne pas
+  réécrire `Cache-Control` : **le dépôt d'un arbre doit être atomique, ou déposer les artefacts
+  AVANT le manifeste qui les nomme.** L'ordre inverse ouvre précisément cette fenêtre. L'ADR 0017
+  écrit « republier consiste à redéposer cet arbre », et un redépôt n'est pas nécessairement
+  atomique. Aucune origine réelle n'a été mesurée : **#124**, et cette obligation y est ajoutée.
 
 ### Ce que cet amendement ne prouve toujours pas
 
@@ -415,10 +455,13 @@ déplacent d'un cran :
   à un an ;
 - **aucun hébergement réel n'a été mesuré** (#124). Un hébergeur qui réécrit `Cache-Control` —
   GitHub Pages impose `max-age=600` — rend cette décision inopérante, comme il rendait la précédente
-  inopérante.
+  inopérante. S'y ajoute désormais l'obligation d'**atomicité du dépôt** écrite ci-dessus : ce que
+  fait un hébergeur d'une réponse d'absence sous un chemin annoncé `immutable` n'est ni mesuré ni
+  mesurable par ce dépôt, dont les deux serveurs rendent l'absence en `no-store`.
 
-Une réserve TOMBE : la cohérence manifeste ↔ octets n'est plus « tenue par aucun code ». Elle est
-tenue par l'adresse, et mesurée par `verifierEpinglageV86` avant que l'arbre ne parte.
+Une réserve TOMBE, et deux fois plutôt qu'une : la cohérence manifeste ↔ octets n'est plus « tenue
+par aucun code ». Elle est tenue par l'adresse, mesurée par `verifierEpinglageV86` avant que l'arbre
+ne parte, et confrontée aux 256 bits **au chargement** par `src/v86-adresses.mjs`.
 
 ## Conditions de réouverture
 

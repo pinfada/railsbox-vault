@@ -683,24 +683,39 @@ de mise à jour.
   place tenante ni un document de session n'ont à s'attarder dans un cache partagé. Le corollaire
   est la ligne de l'ADR 0002 : ce que le **guest** sert de sa propre origine reste gouverné par ses
   propres en-têtes, et cette décision ne prétend pas le gouverner ;
-- **`immutable` est refusé, et c'est une propriété de mise à jour.** Aucune URL publiée ne nomme son
-  empreinte : l'ADR 0003 épingle par SHA-256 dans `vendor/v86/MANIFEST.json`, pas dans le chemin.
-  Servir `immutable` interdirait au navigateur de s'apercevoir d'un ré-épinglage, y compris pour une
-  mise à jour de **sécurité** du runtime. La fenêtre retenue est de vingt-quatre heures, de même
-  **durée** pour le manifeste et pour les octets qu'il décrit, ce qui **borne à vingt-quatre heures
-  l'écart d'âge** entre les deux. Ce n'est pas une expiration commune : HTTP calcule la fraîcheur
-  par réponse, à partir de la date de réception de cette réponse, si bien qu'un manifeste chargé tôt
-  peut se retrouver devant des octets plus récents jusqu'à la fin de sa propre fenêtre. La cohérence
-  manifeste ↔ octets sera tenue par une vérification d'**empreinte au chargement** (#123) ; aucun
-  code navigateur de ce dépôt ne lit le manifeste aujourd'hui. Le retard d'une version pendant cette
-  fenêtre est un risque résiduel écrit dans l'ADR ;
+- **`immutable` est SERVI, et ce qui l'autorise est l'adresse (#123).** Chaque artefact v86 est
+  publié à une URL qui NOMME son empreinte — `libv86-<empreinte>.mjs` —, si bien qu'un ré-épinglage
+  le DÉPLACE : un navigateur qui garderait l'ancienne adresse pour toujours ne la demanderait plus
+  jamais, et une mise à jour de **sécurité** du runtime n'est plus retardée par le cache. La
+  politique est `public, max-age=31536000, immutable` sur `/vendor/v86/artefacts/*`, et sur ce
+  préfixe seulement. Ce n'est pas une intention : `verifierEpinglageV86` le mesure sur l'arbre
+  publié avant qu'il ne parte — chaque adresse dérivée est servie, chaque octet servi est déclaré,
+  chaque empreinte est recalculée sur les octets — et refuse en code 5 sinon ;
+- **le MANIFESTE n'est pas immuable, et c'est la condition de tout le reste.** Il reste `no-cache`,
+  hors du préfixe épinglé, parce qu'il est l'**indirection** par laquelle un chargeur apprend les
+  adresses : une copie périmée en désignerait qui ne sont plus servies. Le coût d'une montée de
+  version est un aller-retour de cinq kibioctets par visite, au lieu des 9,9 Mio qu'il décrit ;
+- **les octets reçus sont confrontés aux 256 bits du manifeste AU CHARGEMENT.** L'adresse n'en nomme
+  que seize caractères hexadécimaux. `src/v86-adresses.mjs` est publié et lu par les chargeurs du
+  dépôt ; il refuse par une erreur typée (`VAULT_V86_EMPREINTE`) des octets dont l'empreinte pleine
+  ne correspond pas. Ce que cette vérification attrape est l'**accident** — un cache qui garde un
+  artefact à côté d'un manifeste d'une autre version, un dépôt partiel, un octet retourné en chemin
+  —, que le cache d'un an rend plus probable et non moins. Ce qu'elle n'attrape pas est une origine
+  qui ment aux deux du même geste : cette défense-là est la vérification de publication, sur l'arbre
+  construit à partir d'un commit ;
 - **la classe de cache longue est accordée par EMPLACEMENT, et la publication borne cet
-  emplacement.** Tout ce qui relève de `/vendor/v86/` reçoit vingt-quatre heures de cache
-  **partagé** ; or `vendor/v86/artefacts/` est ignoré par git et peuplé par `npm run vm:fetch`. Un
-  fichier qui y traînerait sur le poste qui publie serait donc distribué sous cette politique, sans
+  emplacement.** Tout ce qui relève de `/vendor/v86/artefacts/` reçoit un an de cache **partagé** et
+  non revalidable ; or ce répertoire est ignoré par git et peuplé par `npm run vm:fetch`. Un fichier
+  qui y traînerait sur le poste qui publie serait donc distribué sous cette politique, sans
   empreinte épinglée et sans révocation. `verifierEpinglageV86` confronte le manifeste et le disque
   dans les **deux** sens : un fichier présent que `vendor/v86/MANIFEST.json` ne déclare pas est un
-  écart d'épinglage, et la publication est refusée (code 5).
+  écart d'épinglage, et la publication est refusée (code 5) ;
+- **une ABSENCE n'est jamais cachable.** `Cache-Control` gouverne une réponse ; le format `_headers`
+  associe des en-têtes à un CHEMIN. Sous le préfixe immuable, une adresse qui n'existe pas encore
+  relève donc de la règle d'un an comme si elle existait, et un 404 est stockable par défaut. Les
+  serveurs de ce dépôt rendent toute absence en `no-store`, sur tous les chemins. Chez un hébergeur
+  réel, cela reste une **obligation d'exploitant** : dépôt atomique, ou artefacts déposés AVANT le
+  manifeste qui les nomme. Non mesuré ici (#124).
 
 Une seule dimension d'en-tête varie selon le chemin, et le cliquet de publication refuse qu'une
 seconde s'y ajoute : une divergence de CSP, de COOP, de `Referrer-Policy` ou de `Permissions-Policy`
