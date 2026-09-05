@@ -46,12 +46,20 @@ import {
 } from "../../src/vm/generation-format.mjs";
 import { empreinteDeRegion, scellerFraicheur } from "../../src/vm/generation-fraicheur.mjs";
 import { GenerationStore } from "../../src/vm/generation-store.mjs";
+import { CRYPTO_ERROR_CODES } from "../../src/vm/format-chiffre/crypto-errors.mjs";
+import { octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
+import { RANG_SECTEUR_DE_VOLUME } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 import { VolumeChiffre } from "../../src/vm/volume-chiffre.mjs";
-import { FORMAT_VOLUME_V3, dispositionV3 } from "../../src/vm/volume-chiffre-format.mjs";
+import {
+  FORMAT_VOLUME_V3,
+  SCEAU_OCTETS,
+  decoderSceau,
+  dispositionV3,
+} from "../../src/vm/volume-chiffre-format.mjs";
 
 const TAILLE = 8 * SECTOR_SIZE;
 const DISPOSITION = dispositionV3(TAILLE);
@@ -212,17 +220,21 @@ test("l'OUVREUR DU PRODUIT écrit un journal de format 4, et ses enregistrements
   // format 4. Sans elle, un appelant qui déclarerait `fraicheur: null` en production reproduirait le
   // défaut #143 sans que rien ne le signale.
   const magasin = createSyncAccessStore();
+  const clair = buildPattern(SECTOR_SIZE, 61);
   const backend = await openOpfsVolume({
     name: "produit",
     size: TAILLE,
     cle: CLE_DE_TEST,
     openHandle: magasin.openHandle,
   });
-  await backend.write(0, buildPattern(SECTOR_SIZE, 61));
+  await backend.write(0, clair);
+  // La barrière VALIDE la génération sans la ranger — le seuil de point de contrôle est à 8 Mio, et
+  // ce dépôt fait 512 octets. Le journal est donc relevé ICI, avant que la fermeture ne le vide.
   await backend.flush();
+  const journal = magasin.snapshot("produit.gen");
+  const enTete = magasin.snapshot("produit").slice(48, 64);
   await backend.close();
 
-  const journal = magasin.snapshot("produit.gen");
   let formatTrouve = null;
   for (const rang of [0, 1]) {
     const lue = decoderRacine(
@@ -235,6 +247,42 @@ test("l'OUVREUR DU PRODUIT écrit un journal de format 4, et ses enregistrements
     formatTrouve,
     GENERATION_FORMAT,
     "l'ouvreur du produit doit écrire le format 4 : c'est lui qui met les enregistrements hors de l'espace d'identités du volume.",
+  );
+
+  // Le NUMÉRO ne suffit pas : ce qui compte est que les octets déposés soient hors de l'espace
+  // d'identités du volume. L'enregistrement est donc relu ici et présenté DEUX FOIS — sous son
+  // identité d'enregistrement, où il s'ouvre, et sous celle du secteur homologue, où il ne s'ouvre
+  // pas. L'identifiant de volume vient de l'en-tête v3 sur le disque : l'ouvreur le tire au hasard.
+  const debut = ZONE_ENREGISTREMENTS + 16;
+  const sceau = decoderSceau(journal.slice(debut, debut + SCEAU_OCTETS));
+  const chiffre = journal.slice(debut + SCEAU_OCTETS, debut + SCEAU_OCTETS + SECTOR_SIZE);
+  const scellement = await Scellement.ouvrir({
+    volume: octetsEnHex(enTete),
+    cleOctets: CLE_DE_TEST,
+    formatVersion: FORMAT_VOLUME_V3,
+  });
+  const identite = {
+    generation: sceau.generation,
+    rang: 0,
+    adresse: 0,
+    longueur: SECTOR_SIZE,
+  };
+  const scelle = { nonce: sceau.nonce, etiquette: sceau.etiquette, chiffre };
+
+  // TÉMOIN POSITIF : sous SON identité, l'enregistrement rend exactement ce que le guest a écrit.
+  assert.deepEqual(
+    [...(await scellement.ouvrirEnregistrement(identite, scelle, { generationMinimale: null }))],
+    [...clair],
+    "l'enregistrement déposé par l'ouvreur doit s'ouvrir sous l'identité d'un ENREGISTREMENT.",
+  );
+
+  assert.equal(identite.rang, RANG_SECTEUR_DE_VOLUME, "le rang déposé est bien celui du constat");
+  await assert.rejects(
+    () => scellement.ouvrirBloc(identite, scelle, { generationMinimale: null }),
+    (erreur) =>
+      isStorageError(erreur, STORAGE_ERROR_CODES.sceauRefuse) &&
+      erreur.context.cause === CRYPTO_ERROR_CODES.sealRejected,
+    "présenté comme un SECTEUR du volume, l'enregistrement du produit ne doit pas s'ouvrir.",
   );
 });
 
