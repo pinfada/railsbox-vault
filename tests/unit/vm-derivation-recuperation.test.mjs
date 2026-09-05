@@ -263,19 +263,26 @@ test("la somme de contrôle détecte TOUTE substitution d'un symbole, exhaustive
 });
 
 test("la somme de contrôle détecte TOUTE transposition de deux symboles adjacents", () => {
+  let mesurees = 0;
   for (const cas of VECTEURS.recuperation.codes) {
     const symboles = symbolesComplets(hexEnOctets(cas.octetsHex));
-    let mesurees = 0;
     for (let rang = 0; rang < SYMBOLES_TOTAL - 1; rang += 1) {
-      // Deux symboles ÉGAUX échangés ne sont pas une erreur : la chaîne ne change pas.
+      // Deux symboles ÉGAUX échangés ne sont pas une erreur : la chaîne ne change pas, il n'y a
+      // donc rien à détecter. Les vecteurs « seize octets nuls » et « seize octets à 0xff » sont
+      // là pour cela : leurs symboles de données sont tous égaux, et ils montrent que le cas
+      // dégénéré est écarté plutôt qu'ignoré.
       if (symboles[rang] === symboles[rang + 1]) continue;
       const mute = [...symboles];
       [mute[rang], mute[rang + 1]] = [mute[rang + 1], mute[rang]];
-      assert.ok(!sommeDeControleValide(mute), `transposition non détectée au rang ${rang}.`);
+      assert.ok(
+        !sommeDeControleValide(mute),
+        `transposition non détectée au rang ${rang} du vecteur « ${cas.nom} ».`,
+      );
       mesurees += 1;
     }
-    assert.ok(mesurees > 20, `seulement ${mesurees} transpositions mesurées sur ce vecteur.`);
   }
+  // Un balayage à vide passerait toujours : le compte est ce qui dit que l'épreuve a mordu.
+  assert.ok(mesurees >= 25, `seulement ${mesurees} transpositions mesurées sur tous les vecteurs.`);
 });
 
 test("le module de la somme de contrôle est PUR : il ne connaît ni volume ni enveloppe", async () => {
@@ -763,17 +770,19 @@ test("le code est rendu UNE fois : un second appel rend un refus typé, jamais l
 
 test("l'enveloppe est écrite et sa BARRIÈRE franchie avant que le code ne soit rendu", async () => {
   const depart = await enveloppeSousPhrase();
+  const avant = depart.support.gestes;
   const moyen = await creerMoyenDeRecuperation({
     support: depart.support,
     identifiantVolume: VOLUME,
     kek: await depart.rouvrirLaPhrase(),
   });
-  // La version a été incrémentée et la barrière franchie AVANT que `rendre` n'existe : c'est
-  // l'ordre qui décide. L'inverse laisserait un code qui n'ouvre rien — le sinistre.
+  // DEUX gestes durables ont eu lieu — l'écriture de la page libre, puis la barrière qui la publie
+  // (ADR 0020) — et ils ont eu lieu AVANT que `rendre` n'existe : le porteur du code est fabriqué à
+  // partir de ce que l'ajout a rendu, il ne peut donc pas exister avant lui. L'ordre inverse
+  // donnerait un code qui n'ouvre rien, et c'est le sinistre que cette tranche doit empêcher.
+  assert.equal(depart.support.gestes - avant, 2, "une écriture, puis une barrière.");
   assert.equal(moyen.version, 2);
   assert.equal(moyen.typeKek, TYPES_KEK.recuperation);
-  const journal = depart.support.journal.map((geste) => geste.geste);
-  assert.equal(journal.at(-1), "barriere", "le dernier geste avant le rendu est la barrière.");
   const inventaire = await inventorierEnveloppe({
     support: depart.support,
     identifiantVolume: VOLUME,
@@ -786,7 +795,9 @@ test("l'enveloppe est écrite et sa BARRIÈRE franchie avant que le code ne soit
 test("une coupure AVANT la barrière ne rend aucun code, et laisse l'enveloppe d'origine", async () => {
   const depart = await enveloppeSousPhrase();
   const octets = await depart.support.lire(0, (await depart.support.etat()).taille);
-  const coupe = supportDouble({ octets, couperAvant: 3 });
+  // Le geste 1 est l'écriture de la page libre, le geste 2 est la barrière : couper avant celle-ci
+  // est exactement la coupure que la décision 3 de l'ADR 0025 nomme.
+  const coupe = supportDouble({ octets, couperAvant: 2 });
   await assert.rejects(
     async () =>
       creerMoyenDeRecuperation({
@@ -794,7 +805,7 @@ test("une coupure AVANT la barrière ne rend aucun code, et laisse l'enveloppe d
         identifiantVolume: VOLUME,
         kek: await depart.rouvrirLaPhrase(),
       }),
-    /Coupure simulée|VAULT_/,
+    /Coupure simulée/,
     "une coupure doit interrompre le geste, jamais rendre un code à moitié posé.",
   );
   // L'enveloppe d'origine reste ouvrable par la phrase : une coupure ne perd rien.

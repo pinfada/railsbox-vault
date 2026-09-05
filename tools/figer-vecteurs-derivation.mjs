@@ -133,6 +133,16 @@ function parametresPhrase({ version, variante, memoireKio, iterations, paralleli
   ]);
 }
 
+/** Paramètres publics du dérivateur `recuperation` (#147, ADR 0025), posés à la main. */
+function parametresRecuperation({ version, sel }) {
+  return coller([
+    prefixee("railsbox-vault/derivation/v1/recuperation"),
+    entier(version, 1),
+    entier(sel.length / 2, 2),
+    octetsDeHex(sel),
+  ]);
+}
+
 /** Paramètres publics du dérivateur `webauthn-prf`, posés à la main. */
 function parametresPrf({ rpId, identifiantCredential, sel }) {
   return coller([
@@ -152,6 +162,11 @@ const VALEURS_PHRASE = Object.freeze({
   iterations: 3,
   parallelisme: 4,
   sel: hex(suite(0x0e, 16)),
+});
+
+const VALEURS_RECUPERATION = Object.freeze({
+  version: 1,
+  sel: hex(suite(0xd0, 32)),
 });
 
 const VALEURS_PRF = Object.freeze({
@@ -278,6 +293,179 @@ async function vecteurDeNormalisation({ nom, pointsSaisis, pointsNfc }) {
   };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Le MOYEN DE RÉCUPÉRATION (#147, ADR 0025), posé symbole par symbole.
+// ---------------------------------------------------------------------------------------------
+
+/** L'alphabet base32 de Crockford, RECOPIÉ. Il n'est pas demandé au produit. */
+const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+/** Le module premier de la somme de contrôle, tel que l'ADR 0025 le fixe. */
+const MODULE_CONTROLE = 1021;
+
+/**
+ * Les vingt-six symboles de seize octets, écrits à la main : cinq bits à la fois, du poids fort au
+ * poids faible, deux bits de bourrage nuls pour finir.
+ */
+function symbolesDeSeizeOctets(octets) {
+  let bits = "";
+  for (const octet of octets) bits += octet.toString(2).padStart(8, "0");
+  bits += "00";
+  const symboles = [];
+  for (let debut = 0; debut < bits.length; debut += 5) {
+    symboles.push(Number.parseInt(bits.slice(debut, debut + 5), 2));
+  }
+  return symboles;
+}
+
+/** Le résidu modulo 1021 d'une suite de symboles lue en base 32. */
+function residuDeControle(symboles) {
+  let reste = 0;
+  for (const symbole of symboles) reste = (reste * 32 + symbole) % MODULE_CONTROLE;
+  return reste;
+}
+
+/** Les DEUX symboles de contrôle : la construction du système pur de l'ISO 7064, M = 1021, r = 32. */
+function sommeDeControleDe(donnees) {
+  const controle = (MODULE_CONTROLE + 1 - (residuDeControle(donnees) * 1024) % MODULE_CONTROLE) % MODULE_CONTROLE;
+  return [Math.floor(controle / 32), controle % 32];
+}
+
+/** La chaîne rendue : vingt-huit symboles en sept groupes de quatre. */
+function codeRenduDe(symboles) {
+  const lettres = symboles.map((symbole) => CROCKFORD[symbole]).join("");
+  return (lettres.match(/.{4}/g) ?? []).join("-");
+}
+
+/** Les points de code d'une chaîne, pour que le vecteur dise la SAISIE et non son apparence. */
+function pointsDe(texte) {
+  return [...texte].map((signe) => signe.codePointAt(0));
+}
+
+async function empreinteHex(octets) {
+  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", octets)));
+}
+
+/** Trois codes figés : le premier porte à la fois un « 0 » et un « 1 », que les replis visent. */
+const CODES_RECUPERATION = [
+  { nom: "seize octets 0x20…0x2f", octets: suite(0x20, 16) },
+  { nom: "seize octets nuls", octets: new Uint8Array(16) },
+  { nom: "seize octets à 0xff", octets: new Uint8Array(16).fill(0xff) },
+];
+
+/** Le sel HKDF figé d'un emplacement de récupération, et l'identité sous laquelle il dérive. */
+const RECUPERATION_DERIVATION = Object.freeze({
+  sel: hex(suite(0xd0, 32)),
+  identifiantVolume: VOLUME_A,
+  identifiantEmplacement: EMPLACEMENT_A,
+  version: 1,
+});
+
+/**
+ * Les formes de SAISIE, posées en points de code.
+ *
+ * Les acceptées disent ce que la normalisation fait : majuscule, retrait des séparateurs, replis de
+ * Crockford (`o` → `0`, `i` et `l` → `1`). Les refusées disent ce qu'elle NE fait PAS, et c'est ce
+ * qui fige la forme : un chiffre et une lettre PLEINE CHASSE traversent NFC et NFD inchangés — donc
+ * refusés — là où NFKC et NFKD les ramèneraient à leurs équivalents ASCII, c'est-à-dire
+ * accepteraient un code que celui-ci refuse.
+ */
+function saisiesDe(codeRendu) {
+  const minusculesEspaces = codeRendu.toLowerCase().replaceAll("-", " ");
+  const replie = minusculesEspaces.replaceAll("0", "o").replaceAll("1", "l");
+  return {
+    forme: "NFC",
+    acceptees: [
+      { nom: "la forme rendue, telle quelle", pointsSaisis: pointsDe(codeRendu) },
+      { nom: "sans aucun séparateur", pointsSaisis: pointsDe(codeRendu.replaceAll("-", "")) },
+      {
+        nom: "minuscules, et des espaces au lieu des tirets",
+        pointsSaisis: pointsDe(minusculesEspaces),
+      },
+      {
+        nom: "les replis de Crockford : « o » pour 0, « l » pour 1",
+        pointsSaisis: pointsDe(replie),
+      },
+      {
+        nom: "une espace insécable et une tabulation entre les groupes",
+        pointsSaisis: pointsDe(codeRendu.replaceAll("-", " ").replace(" ", "\t")),
+      },
+    ],
+    refusees: [
+      {
+        nom: "un chiffre PLEINE CHASSE (U+FF10), que NFC ne replie pas",
+        motif:
+          "NFC et NFD laissent U+FF10 tel quel ; seules les formes de COMPATIBILITÉ le ramènent " +
+          "à « 0 ». L'accepter voudrait dire que le produit normalise en NFKC, et un code refusé " +
+          "aujourd'hui serait accepté demain.",
+        pointsSaisis: pointsDe(codeRendu).map((point, rang) =>
+          rang === codeRendu.indexOf("0") ? 0xff10 : point,
+        ),
+      },
+      {
+        nom: "une lettre PLEINE CHASSE (U+FF21), même motif",
+        motif: "Même raison que la précédente, sur une lettre plutôt que sur un chiffre.",
+        pointsSaisis: pointsDe(codeRendu).map((point, rang) => (rang === 1 ? 0xff21 : point)),
+      },
+      {
+        nom: "un « U », que l'alphabet de Crockford écarte",
+        motif:
+          "Crockford écarte I, L, O et U. Les trois premières ont un REPLI vers le signe qu'elles " +
+          "imitent ; U n'en a aucun, et un code qui en porte un n'est pas un code de ce produit.",
+        pointsSaisis: pointsDe(`${codeRendu.slice(0, -1)}U`),
+      },
+      {
+        nom: "un symbole de moins",
+        motif: "Vingt-sept symboles ne sont pas vingt-huit, et rien n'est complété.",
+        pointsSaisis: pointsDe(codeRendu.slice(0, -1)),
+      },
+    ],
+  };
+}
+
+/** Le document du moyen de récupération, entièrement posé. */
+async function documentDeRecuperation() {
+  const codes = [];
+  for (const cas of CODES_RECUPERATION) {
+    const donnees = symbolesDeSeizeOctets(cas.octets);
+    const controle = sommeDeControleDe(donnees);
+    codes.push({
+      nom: cas.nom,
+      octetsHex: hex(cas.octets),
+      symboles: donnees,
+      sommeDeControle: controle,
+      codeRendu: codeRenduDe([...donnees, ...controle]),
+      materiauHex: await empreinteHex(cas.octets),
+    });
+  }
+  const materiau = octetsDeHex(codes[0].materiauHex);
+  const infoOctets = info(RECUPERATION_DERIVATION);
+  return {
+    note:
+      "Moyen de récupération de l'ADR 0025 : cent vingt-huit bits tirés, base 32 de Crockford, " +
+      "deux symboles de somme de contrôle (système pur de l'ISO 7064, M = 1021, r = 32), " +
+      "matériau HKDF = SHA-256 des seize octets. Tout est POSÉ ici, sans appeler le produit.",
+    alphabet: CROCKFORD,
+    moduleDeControle: MODULE_CONTROLE,
+    version: RECUPERATION_DERIVATION.version,
+    codes,
+    saisies: { octetsHex: codes[0].octetsHex, codeRendu: codes[0].codeRendu, ...saisiesDe(codes[0].codeRendu) },
+    derivation: {
+      nom: "le code 0x20…0x2f, sous le sel 0xd0 et l'identité du volume A",
+      ...RECUPERATION_DERIVATION,
+      infoHex: hex(infoOctets),
+      materiauHex: codes[0].materiauHex,
+      okmHex: hex(
+        await okm({
+          materiau,
+          sel: octetsDeHex(RECUPERATION_DERIVATION.sel),
+          infoOctets,
+        }),
+      ),
+    },
+  };
+}
+
 async function document() {
   const infos = CAS_INFO.map(({ nom, ...entree }) => ({ nom, entree, infoHex: hex(info(entree)) }));
   const infoDuVolumeA = info(CAS_INFO[0]);
@@ -311,9 +499,16 @@ async function document() {
         valeurs: VALEURS_PRF,
         octetsHex: hex(parametresPrf(VALEURS_PRF)),
       },
+      {
+        nom: "recuperation, version 1 et sel HKDF de trente-deux octets",
+        type: "recuperation",
+        valeurs: VALEURS_RECUPERATION,
+        octetsHex: hex(parametresRecuperation(VALEURS_RECUPERATION)),
+      },
     ],
     nfc: await vecteurDeNormalisation(PHRASE_NFC),
     argon2Rfc9106: ARGON2_RFC9106,
+    recuperation: await documentDeRecuperation(),
   };
 }
 

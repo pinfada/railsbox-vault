@@ -43,11 +43,24 @@ export const ETIQUETTE_PHRASE = "railsbox-vault/derivation/v1/phrase";
 /** Étiquette de domaine des paramètres d'une passkey. */
 export const ETIQUETTE_PRF = "railsbox-vault/derivation/v1/webauthn-prf";
 
+/** Étiquette de domaine des paramètres d'un moyen de récupération (#147, ADR 0025). */
+export const ETIQUETTE_RECUPERATION = "railsbox-vault/derivation/v1/recuperation";
+
 /** Sel d'un emplacement `phrase` : seize octets, la largeur que la RFC 9106 recommande. */
 export const SEL_PHRASE_OCTETS = 16;
 
 /** Sel d'un emplacement `webauthn-prf` : trente-deux octets, l'entrée `first` de l'extension. */
 export const SEL_PRF_OCTETS = 32;
+
+/**
+ * Sel d'un emplacement `recuperation` : trente-deux octets, TIRÉS par emplacement.
+ *
+ * C'est la largeur du sel de la passkey et non celle de la phrase, pour une raison qui n'est pas
+ * l'esthétique : le sel d'une phrase est celui d'Argon2id, que la RFC 9106 fixe à seize octets ;
+ * ici il n'y a pas d'étirement, et le sel est celui d'HKDF, dont la RFC 5869 dit qu'il vaut mieux
+ * qu'il fasse la largeur de la fonction de hachage.
+ */
+export const SEL_RECUPERATION_OCTETS = 32;
 
 /** Lit un hexadécimal minuscule de longueur libre mais paire, et refuse le reste. */
 function octetsDeHex(nom, valeur, largeurAttendue = null) {
@@ -126,6 +139,27 @@ function encoderPrf({ rpId, identifiantCredential, sel }) {
 }
 
 /**
+ * Encode les paramètres d'un emplacement `recuperation` (#147, ADR 0025).
+ *
+ * Trois champs et pas un de plus : l'étiquette de domaine, la VERSION du moyen, et le sel HKDF.
+ * Il n'y a rien d'autre à écrire — pas de coût, puisqu'il n'y a pas d'étirement ; pas
+ * d'identifiant d'appareil, puisque le code ne dépend d'aucun appareil. Ce que ces octets
+ * RÉVÈLENT est assumé par écrit dans l'ADR 0025 : quiconque lit `<volume>.cles` apprend qu'un code
+ * de récupération EXISTE pour ce volume. Il n'en apprend jamais la valeur.
+ */
+function encoderRecuperation({ version, sel }) {
+  const octetsDuSel = octetsDeHex("sel", sel, SEL_RECUPERATION_OCTETS);
+  return sousLePlafond(
+    concatenerListe([
+      chainePrefixee(ETIQUETTE_RECUPERATION),
+      entierEnOctets(entierBorne("version", version, 0, 0xff), 1),
+      entierEnOctets(octetsDuSel.byteLength, 2),
+      octetsDuSel,
+    ]),
+  );
+}
+
+/**
  * ENCODE les paramètres publics d'un dérivateur. Un type non servi est refusé, jamais deviné.
  *
  * @param {number} typeKek une valeur de `TYPES_KEK`
@@ -135,6 +169,7 @@ function encoderPrf({ rpId, identifiantCredential, sel }) {
 export function encoderParametresPublics(typeKek, valeurs) {
   if (typeKek === TYPES_KEK.phrase) return encoderPhrase(valeurs);
   if (typeKek === TYPES_KEK["webauthn-prf"]) return encoderPrf(valeurs);
+  if (typeKek === TYPES_KEK.recuperation) return encoderRecuperation(valeurs);
   throw typeInconnu({ typeKek, nom: nomDuTypeKek(typeKek) });
 }
 
@@ -217,6 +252,20 @@ function decoderPrf(octets) {
   return { rpId, identifiantCredential, sel };
 }
 
+/** Relit les paramètres d'un emplacement `recuperation`. */
+function decoderRecuperation(octets) {
+  const lu = lecteur(octets);
+  exigerEtiquette(lu, ETIQUETTE_RECUPERATION);
+  const version = lu.entier(1, "version");
+  const largeur = lu.entier(2, "sel (longueur)");
+  const sel = octetsEnHex(lu.octets(largeur, "sel"));
+  lu.fin();
+  if (largeur !== SEL_RECUPERATION_OCTETS) {
+    throw parametresRefuses(`le sel fait ${largeur} octets au lieu de ${SEL_RECUPERATION_OCTETS}.`);
+  }
+  return { version, sel };
+}
+
 /**
  * RELIT les paramètres publics d'un emplacement. Un type non servi est refusé, jamais deviné.
  *
@@ -229,5 +278,6 @@ export function decoderParametresPublics(typeKek, octets) {
   }
   if (typeKek === TYPES_KEK.phrase) return decoderPhrase(octets);
   if (typeKek === TYPES_KEK["webauthn-prf"]) return decoderPrf(octets);
+  if (typeKek === TYPES_KEK.recuperation) return decoderRecuperation(octets);
   throw typeInconnu({ typeKek, nom: nomDuTypeKek(typeKek) });
 }

@@ -1854,10 +1854,18 @@ refusé — un volume sans issue n'est pas un état acceptable), `VAULT_ENVELOPP
 `VAULT_ENVELOPPE_REJEU`, `VAULT_ENVELOPPE_TRONCATURE`.
 
 **Dérivation des clés de déverrouillage** : `VAULT_DERIVATION_ANNULEE`,
-`VAULT_DERIVATION_ARGON2_INDISPONIBLE`, `VAULT_DERIVATION_PARAMETRES_REFUSES` (plancher de coût
-Argon2id vérifié à l'écriture ET à la lecture), `VAULT_DERIVATION_PHRASE_REFUSEE`,
+`VAULT_DERIVATION_ARGON2_INDISPONIBLE`, `VAULT_DERIVATION_CODE_DEJA_RENDU` (un code de récupération
+n'est rendu qu'une fois, et le produit ne le conserve nulle part — ADR 0025),
+`VAULT_DERIVATION_CODE_MAL_RECOPIE` (la saisie n'est pas un code de ce produit : longueur, symbole
+étranger, somme de contrôle, bourrage — un refus qui ne dépend QUE de la saisie, jamais du volume ni
+de l'enveloppe, et qui n'est donc pas un oracle), `VAULT_DERIVATION_PARAMETRES_REFUSES` (plancher de
+coût Argon2id vérifié à l'écriture ET à la lecture), `VAULT_DERIVATION_PHRASE_REFUSEE`,
 `VAULT_DERIVATION_PRF_IGNOREE`, `VAULT_DERIVATION_PRF_INDISPONIBLE`,
 `VAULT_DERIVATION_TYPE_INCONNU`.
+
+Un code de récupération ÉTRANGER — bien formé, somme de contrôle juste — ne relève d'aucun de ces
+refus : il dérive une autre clé, et c'est `VAULT_ENVELOPPE_CLE_REFUSEE` qui tombe, indiscernable
+d'une clé révoquée.
 
 Aucun repli automatique entre ces refus, et aucun compteur d'échec persisté.
 
