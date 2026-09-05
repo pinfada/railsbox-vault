@@ -429,3 +429,49 @@ la chiffrer —, et reprend la question n° 2 (arbre de Merkle) avec ce que la d
 et ce qu'elle laisse ouvert. Les vecteurs figés correspondants sont
 `tests/vectors/disposition-v3.json`, vérifiables sans le produit par
 `node tools/verifier-vecteurs.mjs`.
+
+## Amendement du 2026-09-05 — le format du journal passe à 4, et le 3 est rejoué une fois (#143)
+
+**Aucune décision de cet ADR n'est révisée.** L'empreinte de région, le témoin et les planchers
+restent ce que les décisions 1 à 3 fixent. Ce qui change est le NUMÉRO du format de journal, et pour
+la même raison qui l'avait fait passer de 2 à 3 : la charge du journal ne porte plus les mêmes
+octets. L'ADR 0016 amendé le même jour dit pourquoi — les enregistrements portent désormais leur
+propre étiquette de domaine ([#143](https://github.com/pinfada/railsbox-vault/issues/143)).
+
+**Un numéro de format dit deux choses ensemble** : ce que porte la racine, et sous quelle étiquette
+de domaine les enregistrements de sa charge sont scellés.
+
+| Format | Racine         | Enregistrements                     | Écrit par   |
+| ------ | -------------- | ----------------------------------- | ----------- |
+| 2      | sans empreinte | sous l'identité d'un bloc du volume | #18         |
+| 3      | avec empreinte | sous l'identité d'un bloc du volume | #19         |
+| 4      | avec empreinte | sous leur propre identité           | depuis #143 |
+
+Les découpler aurait demandé un champ de plus dans la racine pour un état qu'aucun volume de
+production n'atteint. **La racine ne change pas d'un octet** : les formats 3 et 4 ont exactement la
+même disposition, 202 octets sur 512.
+
+**Un journal de format 3 est LU et REJOUÉ une fois, sous l'ancienne étiquette.** Les deux autres
+issues sont mauvaises, et la revue de #110 les avait déjà nommées sur le format 1
+(`src/vm/generation-v1-rejeu.mjs`) : **refuser** le vieux journal perdrait une écriture ACQUITTÉE —
+une génération validée y vit jusqu'à ce qu'une ouverture la reporte dans le volume —, et **le lire
+sous le nouvel encodage** le refuserait par « sceau refusé », donc par
+`VAULT_STORAGE_GENERATION_CORRUPT` : « restaurer une sauvegarde » pour un volume intact. Le vidage
+qui termine toute récupération écrit ensuite une racine de format 4 ; la fenêtre dure **exactement
+une ouverture**, comme celle du format 2 que la décision 2 décrit déjà. Aucun refus n'est ajouté, et
+aucun n'est retiré.
+
+**Le rapport d'ouverture publie `journalFormat`** : le format TROUVÉ, avant que le vidage n'écrive
+une racine neuve, ou `null` si aucune racine ne faisait autorité. Un contrôle qu'on ne publie pas
+finit par être supposé actif ; il en va de même d'une migration.
+
+**Ce que le champ de format laisse ouvert, et qui ne change pas.** Il n'est pas authentifié — il
+localise, il n'autorise pas (décision 2) — et les formats 3 et 4 ayant la même disposition, aucune
+garde de cohérence ne peut les distinguer comme celle qui distingue 2 de 3. Le retourner fait ouvrir
+les enregistrements sous l'autre étiquette, qui ne vérifie pas : le résultat est un **refus**,
+jamais un clair ; sur une racine VIDE — l'état d'un journal au repos — il ne change rien. Ce qui
+interdit de rejouer un vrai journal de format 3 à côté d'un volume plus récent reste ce qui
+l'interdisait déjà : le plancher de séquence du témoin et l'empreinte de région que sa racine
+scelle.
+
+Correction portée par le commit `7f106fb`. Épreuves : `tests/unit/vm-journal-format-4.test.mjs`.

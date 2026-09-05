@@ -272,7 +272,13 @@ test("les vecteurs de disposition annoncent le format que le code écrit", async
   assert.equal(vecteurs.specification.temoinOctets, TEMOIN_OCTETS);
 });
 
-test("le registre porte ses quatre colonnes, et il est VIDE tant qu'aucun constat n'est reçu", async () => {
+test("chaque ligne du registre cite une issue `revue-externe` qui existe", async () => {
+  // Le registre a été VIDE tant qu'aucun constat n'avait été reçu, et l'épreuve exigeait alors qu'il
+  // ne porte que sa ligne d'en-tête. Il ne l'est plus : la pré-revue adverse interne de la moitié 1
+  // a produit des constats traités comme externes. Ce qui protège le registre d'un remplissage
+  // décoratif n'est donc plus le comptage des lignes mais leur CONTENU — chaque ligne doit renvoyer
+  // à une issue réelle du dépôt et porter une disposition du vocabulaire fermé. Une ligne inventée
+  // n'a plus d'issue à citer.
   const registre = await lire("docs/revue-externe/registre.md");
   for (const colonne of ["constat", "sévérité", "disposition", "commit"]) {
     assert.match(
@@ -281,13 +287,53 @@ test("le registre porte ses quatre colonnes, et il est VIDE tant qu'aucun consta
       `le registre doit porter une colonne « ${colonne} ».`,
     );
   }
+
   const lignes = registre
     .split("\n")
-    .filter((ligne) => ligne.trimStart().startsWith("|") && !/^\s*\|[\s|:-]+\|\s*$/.test(ligne));
-  assert.equal(
-    lignes.length,
-    1,
-    "Le registre doit ne porter que sa ligne d'en-tête : la moitié 2 de #20 n'a pas eu lieu, et un registre pré-rempli mentirait.",
+    .filter((ligne) => ligne.trimStart().startsWith("|") && !/^\s*\|[\s|:-]+\|\s*$/.test(ligne))
+    .slice(1);
+
+  const dispositions = /^(corrigé|accepté|réfuté)$/;
+  const defauts = [];
+  for (const ligne of lignes) {
+    const cellules = ligne
+      .split("|")
+      .slice(1, -1)
+      .map((cellule) => cellule.trim());
+    if (cellules.length !== 4) {
+      defauts.push(`${cellules.length} colonne(s) : ${ligne.trim()}`);
+      continue;
+    }
+    const [constat, severite, disposition, preuve] = cellules;
+    // L'ISSUE d'abord : c'est elle qui rend la ligne opposable. Le motif exige le dépôt lui-même,
+    // pas une URL quelconque — un lien vers ailleurs ne prouverait pas qu'un constat a été reçu ici.
+    const issue = constat.match(/github\.com\/pinfada\/railsbox-vault\/issues\/(\d+)/);
+    if (issue === null) defauts.push(`aucune issue citée : ${constat}`);
+    if (!/^(CRITICAL|HIGH|MEDIUM|LOW)$/.test(severite)) {
+      defauts.push(`sévérité hors vocabulaire : ${severite}`);
+    }
+    if (!dispositions.test(disposition)) defauts.push(`disposition hors vocabulaire : ${disposition}`);
+    // Une disposition sans preuve opposable n'est pas une disposition : un commit ou un ADR.
+    if (!/`[0-9a-f]{7,40}`|ADR\s*\d{4}/.test(preuve)) defauts.push(`preuve absente : ${preuve}`);
+  }
+  assert.deepEqual(defauts, [], "Ces lignes du registre ne sont pas opposables.");
+});
+
+test("les issues que le registre cite sont celles que la spécification dit disposées", async () => {
+  // Les deux documents peuvent diverger, et la divergence serait invisible : la spécification dirait
+  // « corrigé » là où le registre resterait muet, ou l'inverse. Le § 9.6 est la source ; le registre
+  // en est la mise en forme opposable.
+  const registre = await lire("docs/revue-externe/registre.md");
+  const spec = await lire(SPEC);
+  const citees = [
+    ...registre.matchAll(/github\.com\/pinfada\/railsbox-vault\/issues\/(\d+)/g),
+  ].map((occurrence) => occurrence[1]);
+  assert.ok(citees.length > 0, "le registre ne cite aucune issue : la recherche est cassée.");
+  const absentes = citees.filter((numero) => !spec.includes(`issues/${numero}`));
+  assert.deepEqual(
+    absentes,
+    [],
+    `Ces constats sont au registre et ne figurent pas dans ${SPEC} § 9.6.`,
   );
 });
 

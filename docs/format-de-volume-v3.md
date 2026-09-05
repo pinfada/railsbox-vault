@@ -252,11 +252,12 @@ document :**
 - **les en-têtes sur disque sont PETIT-BOUTISTES** (§ 6), par la convention de `DataView` qu'emploie
   le reste du dépôt.
 
-### 5.1 Données associées d'un bloc
+### 5.1 Données associées d'un bloc du volume
 
-Un « bloc » est indifféremment un **secteur du volume**, un **enregistrement du journal**, une
-**empreinte de région** ou un **témoin** : une seule forme de données associées les couvre tous, et
-c'est ce qui permet une seule fonction d'encodage.
+Un « bloc » est un objet du magasin **VOLUME** : un **secteur** de la charge, l'**empreinte de la
+région** d'authentification, ou le **témoin** de séquence. Un **enregistrement du journal** n'en est
+pas un — il a sa propre étiquette de domaine depuis le format de journal 4 (§ 5.1 bis), et le § 5.4
+dit pourquoi le rang ne suffisait pas à les séparer.
 
 | Ordre | Champ                       | Longueur      | Encodage                                                                               |
 | ----- | --------------------------- | ------------- | -------------------------------------------------------------------------------------- |
@@ -299,6 +300,29 @@ le disque, § 6.4), rang ≤ 2^40 − 1, version de format ≤ 2^32 − 1, longu
 2^53 − 1. Une valeur hors bornes est refusée par `VAULT_CRYPTO_MALFORME` :
 `tests/unit/vm-format-chiffre-identite.test.mjs` › « les bornes des champs d'identité sont refusées
 avant de reboucler en silence ».
+
+### 5.1 bis Données associées d'un enregistrement du journal
+
+**Même forme, autre étiquette de domaine.** Les huit champs, leurs largeurs, leur ordre et leurs
+préfixes sont ceux du § 5.1 ; seul le champ 1 change :
+
+| Ordre | Champ                | Longueur      | Encodage                                                                                       |
+| ----- | -------------------- | ------------- | ---------------------------------------------------------------------------------------------- |
+| 1     | Étiquette de domaine | 2 + 47 octets | longueur gros-boutiste sur 2 o, puis UTF-8 : `railsbox-vault/format-chiffre/v1/enregistrement` |
+
+Total pour un volume v3, dont l'identifiant fait trente-deux caractères : **128 octets** (49 + 13 +
+4 + 34 + 8 + 8 + 8 + 4), soit dix de plus que les 118 d'un bloc — la longueur de l'étiquette, et
+rien d'autre. Les bornes des champs 3 à 8 sont celles du § 5.1, refusées de la même façon.
+
+**Le rang y est la POSITION de l'enregistrement dans sa charge**, en base zéro. Il ordonne ; il ne
+sépare plus rien (§ 5.4).
+
+Cette étiquette est apparue avec le **format de journal 4** (§ 6.7). Un journal de format 2 ou 3
+porte des enregistrements scellés sous l'étiquette d'un **bloc** : le § 6.6 dit ce que ce runtime en
+fait. Épreuves : `tests/unit/vm-identite-magasin.test.mjs` › « les données associées d'un
+enregistrement de journal ne sont JAMAIS celles du secteur homologue » et
+`tests/unit/vm-identite-magasin.test.mjs` › « un ENREGISTREMENT de journal épissé dans la région et
+la charge du volume est REFUSÉ ».
 
 ### 5.2 Données associées d'une racine
 
@@ -380,8 +404,18 @@ génération AU PLAFOND, sans déborder la pile d'appel ».
 
 ### 5.4 Les rangs, et les trois rangs réservés
 
-Le rang sépare des identités qui partageraient tout le reste. Trois valeurs sont **épinglées par le
-format** :
+**Le rang ne sépare PAS les deux magasins, et c'est une correction.** Ce document a affirmé le
+contraire — « le rang sépare des identités qui partageraient tout le reste » — au-dessus d'une table
+qui épingle le rang 0 pour un secteur du volume. La pré-revue adverse de #20 l'a réfutée sur les
+vecteurs livrés ([#143](https://github.com/pinfada/railsbox-vault/issues/143)) : le rang d'un
+enregistrement est sa **position dans la charge**, donc le premier enregistrement de chaque charge
+porte lui aussi le rang 0, et une écriture du guest alignée sur un secteur — le cas nominal du § 7.2
+— donnait deux objets de magasins différents sous des données associées identiques octet pour octet.
+
+**Ce qui sépare les magasins est l'ÉTIQUETTE DE DOMAINE** (§ 5.1 et § 5.1 bis), et elle les sépare à
+**tout rang**. Le rang, lui, sépare des identités **à l'intérieur d'un magasin** : trois valeurs
+sont **épinglées par le format** pour le magasin du volume, et le rang d'un enregistrement ordonne
+la charge du journal.
 
 | Rang       | Valeur              | Ce qu'il identifie                                          |
 | ---------- | ------------------- | ----------------------------------------------------------- |
@@ -393,7 +427,10 @@ Les rangs qu'un volume emploie réellement partent de zéro et la charge est pla
 au plus quelques dizaines de milliers d'entrées : prendre les deux plus grands rangs représentables
 met ces identités hors d'atteinte de toute collision **sans coûter un octet de format**.
 
-Un enregistrement de journal, lui, porte sa **position dans la charge**, en base zéro.
+Un enregistrement de journal, lui, porte sa **position dans la charge**, en base zéro — et il vit
+dans l'autre espace d'identités, celui du § 5.1 bis. Un rang décalé aurait fermé le cas observé sans
+fermer la classe : deux magasins seraient restés dans le même espace, séparés par une convention que
+rien n'aurait relue.
 
 ## 6. La disposition sur disque
 
@@ -622,6 +659,28 @@ L'en-tête n'est **pas authentifié** ; les mêmes champs le sont dans les donn�
 si bien qu'un en-tête falsifié conduit à un refus de sceau, jamais à un clair. Sa plausibilité
 (`offset + longueur ≤ tailleVolume`) reste le premier filtre d'un parcours.
 
+**L'identité logique d'un enregistrement est celle du § 5.1 bis**, sous l'étiquette de domaine du
+JOURNAL : depuis le format 4, un enregistrement et le secteur du volume qui porte la même adresse
+sous la même génération ne vivent plus dans le même espace d'identités. Le § 5.4 dit pourquoi le
+rang n'y suffisait pas.
+
+**Un journal de format 2 ou 3 est REJOUÉ une fois, sous l'ancienne étiquette.** Une charge validée
+vit dans le journal jusqu'à ce qu'une ouverture la reporte dans le volume : la refuser perdrait une
+écriture **acquittée**, et la lire sous la nouvelle étiquette la refuserait par « sceau refusé »,
+donc par `VAULT_STORAGE_GENERATION_CORRUPT` — « restaurer une sauvegarde » — pour un volume intact.
+C'est le défaut que la revue de #110 avait relevé sur le format 1
+(`src/vm/generation-v1-rejeu.mjs`). Le vidage qui termine **toute** récupération écrit ensuite une
+racine de format 4 : la fenêtre dure exactement une ouverture, et le rapport d'ouverture la publie
+sous `journalFormat`. Épreuves : `tests/unit/vm-journal-format-4.test.mjs` › « un journal de format
+3 portant une génération VALIDÉE est rejoué sans perte » et
+`tests/unit/vm-journal-format-4.test.mjs` › « après le rejeu, l'ouverture suivante trouve un journal
+de format 4 et ne rejoue rien ».
+
+Le chemin de compatibilité n'est pas une porte : un enregistrement de format 3 dont le chiffré a
+changé d'un octet reste refusé, sous le même code qu'un journal de format courant —
+`tests/unit/vm-journal-format-4.test.mjs` › « un journal de format 3 ABÎMÉ rend le même refus
+qu'avant, jamais un clair ».
+
 #### Un enregistrement porte SA génération, et c'est une correction
 
 Une charge de journal **n'appartient pas à une seule génération** : la validation incrémente la
@@ -664,7 +723,7 @@ Un secteur, **petit-boutiste**. **202 octets** utilisés sur 512 ; le reste est 
 | Offset | Largeur | Champ                                     | Dans les données associées ?     |
 | ------ | ------: | ----------------------------------------- | -------------------------------- |
 | 0      |       8 | marqueur `VLTGEN01` (ASCII)               | non — il localise                |
-| 8      |       4 | format du journal — **3**                 | non — il localise                |
+| 8      |       4 | format du journal — **4**                 | non — il localise                |
 | 12     |       4 | taille de secteur — **512**               | non — il localise                |
 | 16     |       8 | séquence                                  | **oui**                          |
 | 24     |       8 | génération                                | **oui**                          |
@@ -682,9 +741,9 @@ Un secteur, **petit-boutiste**. **202 octets** utilisés sur 512 ; le reste est 
 **Le CRC-32 de l'ancien format a disparu**, remplacé par l'étiquette : elle refuse ce qu'un CRC
 détectait (déchirure, octet retourné) **plus** ce contre quoi il ne prétendait rien — un altérateur
 volontaire, qui recalculait un CRC sans difficulté. Épreuves :
-`tests/unit/vm-generation-chiffre.test.mjs` › « le format du journal passe à 3, et sa racine occupe
-202 octets » et `tests/unit/vm-generation-chiffre.test.mjs` › « la racine v3 ne porte plus de CRC-32
-: l'étiquette a pris sa place ».
+`tests/unit/vm-generation-chiffre.test.mjs` › « le format du journal passe à 4, et sa racine occupe
+toujours 202 octets » et `tests/unit/vm-generation-chiffre.test.mjs` › « la racine v3 ne porte plus
+de CRC-32 : l'étiquette a pris sa place ».
 
 **L'identifiant de volume de la racine est le seul champ dont la colonne se lit de travers.**
 L'identité qui entre RÉELLEMENT dans les données associées est celle que le **manifeste** déclare et
@@ -705,10 +764,29 @@ retourné dans un champ AUTHENTIFIÉ se décode encore, et c'est l'étiquette qu
 
 Deux grandeurs stockées peuvent diverger ; une grandeur dérivée ne le peut pas.
 
-**Le format du journal fait barrière de version.** Ce runtime **lit** les formats 2 et 3 et
-**n'écrit jamais** un format 2. Un runtime plus ancien refuse une racine de format 3 par « Format de
-journal de génération inconnu : 3 », ce qui est exactement le comportement voulu : il ne
-confronterait pas la région et croirait fraîche une version d'hier.
+**Le format du journal fait barrière de version.** Ce runtime **lit** les formats 2, 3 et 4, et
+**n'écrit** que le 4. Un runtime plus ancien refuse une racine de format 4 par « Format de journal
+de génération inconnu : 4 », ce qui est exactement le comportement voulu : il ouvrirait les
+enregistrements sous l'étiquette de domaine du VOLUME (§ 5.4), et un runtime d'avant le format 3 ne
+confronterait pas non plus la région. Épreuve : `tests/unit/vm-generation-format.test.mjs` › « le
+format du journal vaut 4 : un runtime antérieur refuse cette racine sans la comprendre ».
+
+**Un numéro de format dit DEUX choses ensemble** : ce que porte la racine, et sous quelle étiquette
+de domaine les enregistrements de sa charge sont scellés. **2** = pas d'empreinte de région,
+enregistrements sous l'identité d'un bloc (ce qu'écrivait #18) ; **3** = empreinte de région,
+enregistrements sous l'identité d'un bloc (#19) ; **4** = empreinte de région, enregistrements sous
+leur propre identité (#143). Les découpler aurait demandé un champ de plus dans la racine pour un
+état qu'aucun volume de production n'atteint.
+
+**Les formats 3 et 4 ont EXACTEMENT la même disposition**, et il faut dire ce que cela laisse : le
+champ de format n'est pas authentifié, et aucune garde de cohérence ne peut les distinguer comme
+celle qui distingue 2 de 3 (§ 6.8). Le retourner fait ouvrir les enregistrements sous l'autre
+étiquette, qui ne vérifie pas : le résultat est un **refus**, jamais un clair, et sur une racine
+VIDE — l'état d'un journal au repos — il ne change rien, puisque aucun enregistrement n'est ouvert.
+Ce qui interdit de rejouer un vrai journal de format 3 à côté d'un volume plus récent reste ce qui
+l'interdisait déjà : le plancher de séquence du témoin (§ 6.9) et l'empreinte de région que sa
+racine scelle (§ 6.8). Épreuve : `tests/unit/vm-journal-format-4.test.mjs` › « un journal de format
+3 dont le NUMÉRO est retourné en 4 est refusé, jamais ouvert de travers ».
 
 **Une racine VIDE est authentifiée comme les autres, et c'est ce qui la rend sûre.** Elle n'a aucune
 charge à confronter, et **elle fixe à elle seule la génération et la séquence** de la session à
@@ -807,6 +885,10 @@ supposé actif :
 | `sans-racine` | aucune racine ne faisait autorité : il n'y avait rien à confronter              |
 | `migree`      | la racine trouvée est d'avant l'ADR 0019 ; la prochaine portera l'empreinte     |
 | `verifiee`    | la région relue concorde avec l'empreinte que la dernière racine validée scelle |
+
+Le rapport publie aussi `journalFormat` : le format du journal **trouvé** à l'ouverture, avant que
+le vidage n'écrive une racine neuve, ou `null` si aucune racine ne faisait autorité. C'est lui qui
+dit d'un volume s'il a franchi le format 4 ou s'il attend encore de le faire (§ 6.6).
 
 ### 6.9 Le témoin `<volume>.temoin`
 
@@ -1120,8 +1202,16 @@ refusée.
 
 ### P2 — Déplacement
 
-Les données associées portent l'identité logique **complète**. Un bloc valide relu à une autre
-adresse, dans un autre volume, sous une autre version de format ou une autre génération est refusé.
+Les données associées portent l'identité logique **complète**, **magasin compris** : un bloc valide
+relu à une autre adresse, dans un autre volume, sous une autre version de format, une autre
+génération — ou **dans l'autre magasin** — est refusé.
+
+Le « magasin compris » est une correction, pas une reformulation. Jusqu'au format de journal 4, un
+enregistrement du journal et un secteur du volume partageaient leur étiquette de domaine, et cette
+propriété était **fausse** dans le cas nominal du § 5.4 : les deux se déplaçaient l'un vers l'autre
+sans qu'aucune étiquette bronche. Le constat est
+[#143](https://github.com/pinfada/railsbox-vault/issues/143) ; la § 9.6 dit ce qui reste ouvert pour
+les volumes déjà écrits.
 
 - **Garantit** que le déplacement exige la même forgerie que P1, l'encodage étant injectif.
 - **Ne garantit pas** de dire **de quoi** le refus vient : modification et déplacement sont
@@ -1131,8 +1221,10 @@ adresse, dans un autre volume, sous une autre version de format ou une autre gé
 - **Hypothèses** : l'identifiant de volume est unique et immuable ; les clés de deux volumes sont
   distinctes.
 - Épreuves : `tests/unit/vm-format-chiffre-modele.test.mjs` › « P2 positif — le même chiffré s'ouvre
-  sous SON identité logique, et sous elle seule » et `tests/unit/vm-volume-chiffre.test.mjs` › «
-  REFUS 2 — un secteur valide DÉPLACÉ à une autre adresse est refusé ».
+  sous SON identité logique, et sous elle seule », `tests/unit/vm-volume-chiffre.test.mjs` › « REFUS
+  2 — un secteur valide DÉPLACÉ à une autre adresse est refusé » et, pour la séparation des
+  magasins, `tests/unit/vm-identite-magasin.test.mjs` › « un ENREGISTREMENT de journal épissé dans
+  la région et la charge du volume est REFUSÉ ».
 
 ### P3 — Rejeu
 
@@ -1284,13 +1376,14 @@ lui-même, et laisse au moteur la responsabilité de sa propre vérification d'�
   11), et le format prouve donc le FORMAT, sous une clé de test publique.
 - **Le manifeste**, ni chiffré ni authentifié.
 
-### 9.6 Constats ouverts de la pré-revue interne, 5 septembre 2026
+### 9.6 Constats de la pré-revue interne, 5 septembre 2026
 
 Quatre constats de la pré-revue adverse interne (#20, moitié 1, point 5) décrivent un défaut RÉEL du
-format ou de sa mise en œuvre — pas un défaut de ce document. Ils ne sont **pas corrigés ici** : ce
-document les NOMME, et leur traitement relève des issues qui les portent, pas de cette PR. Chacun
-contredit une phrase que ce document écrit ailleurs ; cette phrase n'est pas modifiée à son
-emplacement d'origine, et l'état réel est celui qui suit.
+format ou de sa mise en œuvre — pas un défaut de ce document. Chacun contredit une phrase que ce
+document écrivait ailleurs. **Un est corrigé** (#143) : sa phrase d'origine a été récrite là où elle
+vivait, et la disposition est inscrite au registre de la revue externe. **Trois restent ouverts** :
+ce document les NOMME, leur traitement relève des issues qui les portent, et leurs phrases d'origine
+ne sont pas modifiées.
 
 **[#142](https://github.com/pinfada/railsbox-vault/issues/142) — Un témoin authentique rejoué rend
 un volume sain définitivement irouvrable.** Le § 6.9 affirme, à tort, que le scellement du témoin «
@@ -1304,16 +1397,29 @@ sain irouvrable, sous un message qui recommande une restauration — le remède 
 recevoir. Aucun geste de sortie n'est nommé dans ce document pour cet état.
 
 **[#143](https://github.com/pinfada/railsbox-vault/issues/143) — L'identité logique ne sépare pas un
-enregistrement de journal d'un secteur de volume.** Le § 5.4 affirme, à tort, que « le rang sépare
-des identités qui partageraient tout le reste » et présente le rang 0 comme identifiant sans
-ambiguïté « un secteur du volume » : le premier enregistrement déposé dans une charge de journal
-porte lui aussi le rang 0, sous une identité par ailleurs identique dans le cas nominal d'une
-écriture alignée sur 512 octets (même génération, même adresse, même longueur). État réel : ce n'est
-PAS le rang qui sépare les deux magasins, c'est l'empreinte de région (§ 6.8), qui refuse toute
-région modifiée avant la première lecture de secteur — et cette confrontation est absente des trois
-états `non-fournie`, `sans-racine` et `migree` (§ 6.8), qui restent donc exposés à une substitution
-du contenu d'un secteur par celui, différent, que le journal détient pour la même adresse et la même
-génération.
+enregistrement de journal d'un secteur de volume. CORRIGÉ, commit `7f106fb`.** Le § 5.4 affirmait, à
+tort, que « le rang sépare des identités qui partageraient tout le reste » et présentait le rang 0
+comme identifiant sans ambiguïté « un secteur du volume » : le premier enregistrement déposé dans
+une charge de journal porte lui aussi le rang 0, sous une identité par ailleurs identique dans le
+cas nominal d'une écriture alignée sur 512 octets. Ce n'était donc pas le rang qui séparait les deux
+magasins, mais l'empreinte de région (§ 6.8) — absente des trois états `non-fournie`, `sans-racine`
+et `migree`, qui restaient exposés à la substitution du contenu d'un secteur par celui, différent,
+que le journal détient pour la même adresse et la même génération.
+
+**Ce que la correction ferme** : les enregistrements du journal portent désormais leur propre
+étiquette de domaine (§ 5.1 bis), et le format du journal passe de 3 à 4 (§ 6.7). Aucun octet du
+volume ne change ; `tests/vectors/format-chiffre-v1.json` reste valide. Les trois états exposés
+refusent maintenant un enregistrement épissé — `tests/unit/vm-identite-magasin.test.mjs` › « un
+ENREGISTREMENT de journal épissé dans la région et la charge du volume est REFUSÉ ».
+
+**Ce que la correction NE ferme pas, et ce résidu est nommé plutôt que tu** : des octets
+d'enregistrement capturés sur un journal **antérieur** au format 4 restent scellés sous l'étiquette
+d'un bloc. Qui détient une telle copie peut encore les épisser dans la région et la charge du volume
+correspondant, dans les trois mêmes états. Aucune clé ne permet de les resceller, et fermer ce reste
+aurait exigé de changer aussi l'étiquette des SECTEURS — c'est-à-dire d'invalider les vecteurs de
+l'ADR 0015 et d'imposer un rescellement complet de chaque volume existant. Ce qui est fermé est
+l'attaque continue : un adversaire qui lit l'OPFS après la migration n'y trouve plus
+d'enregistrement épissable, et la migration a lieu à la première réouverture.
 
 **[#144](https://github.com/pinfada/railsbox-vault/issues/144) — Le retour arrière d'une génération
 ne demande aucune copie antérieure, et une racine abîmée à côté d'une racine lisible est ignorée.**
@@ -1337,9 +1443,10 @@ première ouverture échoue sur le sceau du témoin, qui porte l'ancien identifi
 (`VAULT_STORAGE_SCEAU_REFUSE`). Le volume qui vient de naître est irouvrable. Voir aussi § 11, qui
 nomme désormais ce geste parmi ceux qui n'existent pas.
 
-`docs/revue-externe/registre.md` reste **vide** : ces quatre constats sont traités comme des
-constats externes par leurs issues propres, pas par le registre de la revue externe, dont la moitié
-2 de #20 n'a pas encore eu lieu.
+`docs/revue-externe/registre.md` porte désormais **une ligne** : celle du constat #143, disposé «
+corrigé ». Les trois autres y entreront quand ils seront disposés. La moitié 2 de #20 — la revue par
+un tiers — n'a pas encore eu lieu pour autant : le registre porte ce que le dépôt a reçu et ce qu'il
+en a fait, et ces quatre constats viennent d'une pré-revue INTERNE traitée comme externe.
 
 ## 10. Les codes de refus, et la conduite
 
@@ -1553,9 +1660,10 @@ et ne sont **plus levés nulle part**. C'est du code mort et non un piège actif
 les rencontre —, mais l'ADR affirme une suppression qui n'a pas eu lieu.
 
 **Écart 3 — la version du journal annoncée par l'ADR 0016 est périmée.** Sa décision 3 donne «
-format du journal (**2** en v3) ». Le code écrit **3** depuis l'ADR 0019, qui le dit explicitement.
-La table de l'ADR 0016 n'a pas reçu d'amendement ; les deux ADR lus ensemble sont cohérents, la
-table seule ne l'est pas.
+format du journal (**2** en v3) ». Le code écrit **4** depuis le constat #143 — 3 depuis l'ADR 0019,
+qui le disait explicitement. La table de l'ADR 0016 n'a pas reçu d'amendement sur ce champ ; ses
+amendements datés et celui de l'ADR 0019 donnent la version courante, la table seule ne la donne
+pas.
 
 **Écart 4 — le coût du scellement initial : 18,7 s annoncés, 87,6 s mesurés.** L'ADR 0015 chiffre la
 création d'un volume de 512 Mio à **18,7 s** par extrapolation, et sa section « Risques » cite «

@@ -6,12 +6,13 @@ le commit ou l'ADR qui la porte. Il est la sortie de la moitié 2 de
 données sensibles » de `docs/readiness-assessment.md` : celui-ci ne bouge que si le registre est
 vide de CRITICAL et de HIGH **ouverts**.
 
-**Il est VIDE, et cela veut dire quelque chose de précis : la moitié 2 n'a pas eu lieu.** Aucun
-tiers n'a été sollicité, aucun constat n'a été reçu, aucun n'a été écarté. Un registre pré-rempli
-d'exemples ferait croire à une revue qui n'existe pas ; `tests/unit/dossier-de-revue.test.mjs` › «
-le registre porte ses quatre colonnes, et il est VIDE tant qu'aucun constat n'est reçu » exige donc
-qu'il ne porte que sa ligne d'en-tête, et rougira à la première ligne ajoutée sans que l'épreuve
-soit mise à jour avec elle.
+**Ce qu'il porte, et ce qu'il ne dit pas.** La moitié 2 — la sollicitation d'un tiers — n'a pas eu
+lieu. Les lignes ci-dessous viennent de la **pré-revue adverse interne** de la moitié 1, traitée
+comme une revue externe : chaque constat porte son issue `revue-externe`, et le registre dit ce que
+le dépôt en a fait. Un registre pré-rempli d'exemples ferait croire à une revue qui n'existe pas ;
+`tests/unit/dossier-de-revue.test.mjs` › « chaque ligne du registre cite une issue `revue-externe`
+qui existe » exige donc que chaque ligne renvoie à une issue réelle et porte une disposition du
+vocabulaire fermé, et rougira sur une ligne inventée.
 
 Le dossier soumis à la revue est décrit par
 [`docs/format-de-volume-v3.md`](../format-de-volume-v3.md) ; le format de réponse attendu est
@@ -19,8 +20,9 @@ Le dossier soumis à la revue est décrit par
 
 ## Constats
 
-| Constat | Sévérité | Disposition | Commit ou ADR |
-| ------- | -------- | ----------- | ------------- |
+| Constat                                                                                                                                             | Sévérité | Disposition | Commit ou ADR                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ----------- | ------------------------------------------------------------ |
+| [#143](https://github.com/pinfada/railsbox-vault/issues/143) — l'identité logique ne sépare pas un enregistrement de journal d'un secteur de volume | HIGH     | corrigé     | `7f106fb` ; ADR 0016 et ADR 0019 amendés le 5 septembre 2026 |
 
 ## Comment une ligne se remplit
 
