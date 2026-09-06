@@ -587,6 +587,48 @@ test("SECURITY.md statue sur CHAQUE invariant, et la preuve citée existe", asyn
   );
 });
 
+test("SECURITY.md dit ce que le moyen de récupération COUVRE et ce qu'il ne couvre pas", async () => {
+  // #147 : une liste à DEUX entrées, au même niveau. Sans ce cliquet, la seconde moitié — celle qui
+  // dit ce que le produit ne promet pas — est exactement celle qui se perd à la relecture suivante,
+  // parce que personne n'aime la relire. Le contrôle porte sur la PRÉSENCE des huit entrées et sur
+  // le vocabulaire qui les sépare, à la manière dont la table des statuts est relue plus haut.
+  const security = await lire(SECURITY);
+  const section = security.slice(
+    security.indexOf("### Ce que le moyen de récupération COUVRE"),
+    security.indexOf("Chaque invariant devra être relié"),
+  );
+  assert.ok(section.length > 0, "la section « ce que le moyen couvre » a disparu de SECURITY.md.");
+
+  for (const [quoi, entrees] of [
+    ["couvert", ["Passkey perdue", "Appareil perdu", "Phrase oubliée", "Emplacement compromis"]],
+    [
+      "non couvert",
+      [
+        "Tous les moyens perdus",
+        "Archive perdue",
+        "Copie du code prise avant la révocation",
+        "Retour arrière COMPLET du support",
+      ],
+    ],
+  ]) {
+    for (const entree of entrees) {
+      assert.ok(section.includes(entree), `l'entrée « ${entree} » (${quoi}) manque à la liste.`);
+    }
+  }
+
+  // Le vocabulaire qui rend la seconde liste opposable : sans séquestre, et DÉLIBÉRÉ. Une liste qui
+  // dirait seulement « pas encore » promettrait un travail à venir là où il y a une décision.
+  assert.match(section, /\*\*Couvert\.\*\*/);
+  assert.match(section, /\*\*Non couvert\.\*\*/);
+  assert.match(section, /aucun séquestre/i, "l'absence de séquestre doit être écrite.");
+  assert.match(section, /délibéré/i, "elle doit être présentée comme une DÉCISION, pas un manque.");
+  assert.match(
+    section,
+    /n'emporte PAS `<volume>\.cles`/,
+    "la réserve sur l'archive doit être écrite plutôt que maquillée.",
+  );
+});
+
 test("SECURITY.md cite LITTÉRALEMENT la politique de cache qu'il décrit", async () => {
   // Le constat 4 de la revue de sécurité de #123 : `docs/release-policy.md`, l'ADR 0017 et l'ADR
   // 0023 avaient tous trois été amendés sur la politique de cache, et le document où le dépôt
