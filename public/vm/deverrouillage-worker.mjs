@@ -27,12 +27,27 @@ import {
   CALIBRATION_PHRASE,
   derivateurPhrase,
   parametresDePhrase,
+  tirerSelDePhrase,
 } from "/src/vm/derivation/derivateur-phrase.mjs";
+import { encoderCode, tirerCodeDeRecuperation } from "/src/vm/derivation/code-de-recuperation.mjs";
+import {
+  derivateurRecuperation,
+  parametresDeRecuperation,
+  tirerSelDeRecuperation,
+} from "/src/vm/derivation/derivateur-recuperation.mjs";
+import { catalogueDeDerivateurs } from "/src/vm/derivation/derivateurs.mjs";
 import { preparerEmplacementDerive } from "/src/vm/derivation/emplacement-derive.mjs";
-import { creerEnveloppe, ouvrirEnveloppe } from "/src/vm/enveloppe-de-cle.mjs";
+import {
+  ajouterEmplacement,
+  creerEnveloppe,
+  inventorierEnveloppe,
+  ouvrirEnveloppe,
+  revoquerEmplacement,
+} from "/src/vm/enveloppe-de-cle.mjs";
 import { isEnveloppeError } from "/src/vm/enveloppe/enveloppe-errors.mjs";
 import { TYPES_KEK } from "/src/vm/enveloppe/identite-enveloppe.mjs";
 import { octetsEnHex, hexEnOctets } from "/src/vm/format-chiffre/octets.mjs";
+import { creerMoyenDeRecuperation } from "/src/vm/moyen-de-recuperation.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
 import { removeOpfsVolume } from "/src/vm/opfs-sync-access.mjs";
 import { supportEnveloppeOpfs } from "/src/vm/ouverture-par-enveloppe.mjs";
@@ -49,6 +64,21 @@ const IDENTIFIANT_VOLUME = octetsEnHex(
 const SEL = octetsEnHex(Uint8Array.from({ length: 16 }, (_, index) => (0x0e + index) % 256));
 
 const argon2 = argon2Vendu();
+
+/**
+ * Le CATALOGUE que ce Worker de confiance pose : les types qu'il sait servir, et rien d'autre.
+ *
+ * `webauthn-prf` n'y est pas, et ce n'est pas un oubli : `navigator.credentials` n'existe pas dans
+ * un Worker (ADR 0021, décision 5), et cette dérivation-là se fait dans la page. Ce catalogue dit
+ * donc ce que le WORKER sert, ce qui est exactement la question que `catalogue.pour` pose.
+ *
+ * Un type absent rend `VAULT_DERIVATION_TYPE_INCONNU` — jamais une tentative sous un dérivateur
+ * approchant, point 5 du contrat de #22.
+ */
+const CATALOGUE = catalogueDeDerivateurs({
+  [TYPES_KEK.phrase]: derivateurPhrase({ argon2 }),
+  [TYPES_KEK.recuperation]: derivateurRecuperation(),
+});
 
 function codeOf(error) {
   return typeof error?.code === "string" ? error.code : null;
@@ -165,7 +195,7 @@ async function refusDUneFausse(support, derivateur, parametres, identite, phrase
 /** Un cycle complet sous une phrase : créer, ouvrir, relire, puis refuser une phrase fausse. */
 async function scenarioPhrase({ phrase }) {
   await removeOpfsVolume(VOLUME);
-  const derivateur = derivateurPhrase({ argon2 });
+  const derivateur = CATALOGUE.pour(TYPES_KEK.phrase);
   const support = supportEnveloppeOpfs(VOLUME);
   const parametres = parametresDePhrase({ sel: SEL, ...CALIBRATION_PHRASE });
   const pose = await poserSousPhrase(support, derivateur, parametres, phrase);
@@ -196,6 +226,192 @@ async function scenarioPhrase({ phrase }) {
       `${phrase} pas`,
     ),
     coutDerivationMs: Math.round(coutDerivationMs),
+  };
+}
+
+/**
+ * Le CYCLE COMPLET du moyen de récupération, sur l'OPFS réel (#147, ADR 0025).
+ *
+ * C'est le scénario que `SEC-RECOVERY-001` demande, joué de bout en bout : créer sous une phrase,
+ * ajouter le moyen de récupération, RÉVOQUER la phrase — il ne reste alors plus rien d'autre —,
+ * rouvrir le volume par le code saisi sous une forme humaine, recréer un emplacement `phrase` sous
+ * une phrase NEUVE, et rouvrir sous celle-là.
+ *
+ * Le code est fabriqué ICI, dans le Worker de confiance, et il passe UNE fois vers la page de la
+ * même origine : c'est le CANAL DE RENDU, symétrique de la phrase qui passe en sens inverse
+ * (ADR 0021, limite 4). La sonde de l'épreuve vérifie qu'il ne se dépose nulle part ailleurs, et que
+ * ni les seize octets ni leur SHA-256 n'apparaissent où que ce soit.
+ */
+async function scenarioRecuperation({ phrase, nouvellePhrase }) {
+  await removeOpfsVolume(VOLUME);
+  const support = supportEnveloppeOpfs(VOLUME);
+  const derivateur = CATALOGUE.pour(TYPES_KEK.phrase);
+  const parametres = parametresDePhrase({ sel: SEL, ...CALIBRATION_PHRASE });
+  const pose = await poserSousPhrase(support, derivateur, parametres, phrase);
+  const kekDeLaPhrase = () =>
+    derivateur.deriver({ parametres, identite: pose.identite, geste: { phrase } });
+
+  const moyen = await creerMoyenDeRecuperation({
+    support,
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    kek: await kekDeLaPhrase(),
+  });
+  const code = moyen.rendre();
+  let secondRendu = null;
+  try {
+    moyen.rendre();
+  } catch (erreur) {
+    secondRendu = codeOf(erreur);
+  }
+
+  await revoquerEmplacement({
+    support,
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    kek: await kekDeLaPhrase(),
+    identifiantEmplacement: pose.identite.identifiantEmplacement,
+  });
+  const seul = await inventorierEnveloppe({ support, identifiantVolume: IDENTIFIANT_VOLUME });
+
+  const ouvert = await ouvrirParLeCode(support, seul.emplacements[0], code);
+  const neuf = await recreerUnePhrase(support, ouvert.kek, nouvellePhrase);
+
+  return {
+    code,
+    secondRendu,
+    typeKek: seul.emplacements[0].typeKek,
+    emplacementsApresRevocation: seul.emplacements.length,
+    versionApresRevocation: seul.version,
+    volumeReluParLeCode: ouvert.volumeRelu,
+    coutCodeMs: Math.round(ouvert.coutMs),
+    refusDunCodeEtranger: await refusDunCodeEtranger(support, seul.emplacements[0]),
+    refusDunCodeMalRecopie: await refusDunCodeMalRecopie(seul.emplacements[0], code),
+    volumeReluParLaNouvellePhrase: neuf.volumeRelu,
+    versionFinale: neuf.version,
+  };
+}
+
+/** Ouvre le volume par le code, saisi sous une forme HUMAINE, et chronomètre la dérivation. */
+async function ouvrirParLeCode(support, emplacement, code) {
+  // Minuscules, espaces au lieu des tirets, « o » et « l » pour les chiffres qu'ils imitent : ce
+  // qu'un utilisateur retape d'une feuille de papier, et non ce que le produit a rendu.
+  const humain = code.toLowerCase().replaceAll("-", " ").replaceAll("0", "o").replaceAll("1", "l");
+  const debut = performance.now();
+  const kek = await CATALOGUE.pour(TYPES_KEK.recuperation).deriver({
+    parametres: emplacement.parametres,
+    identite: {
+      identifiantVolume: IDENTIFIANT_VOLUME,
+      identifiantEmplacement: emplacement.identifiantEmplacement,
+    },
+    geste: { code: humain },
+  });
+  const coutMs = performance.now() - debut;
+  const ouverte = await ouvrirEnveloppe({ support, identifiantVolume: IDENTIFIANT_VOLUME, kek });
+  const volumeRelu = await relireLeVolume(ouverte.dek);
+  ouverte.dek.fill(0);
+  return { kek, volumeRelu, coutMs };
+}
+
+/** Recrée un emplacement `phrase` sous une phrase NEUVE, en présentant la KEK du code. */
+async function recreerUnePhrase(support, kekDuCode, nouvellePhrase) {
+  const derivateur = CATALOGUE.pour(TYPES_KEK.phrase);
+  const parametres = parametresDePhrase({ sel: tirerSelDePhrase(), ...CALIBRATION_PHRASE });
+  const prepare = await preparerEmplacementDerive({
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    derivateur,
+    parametres,
+    geste: { phrase: nouvellePhrase },
+  });
+  const ajoute = await ajouterEmplacement({
+    support,
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    kek: kekDuCode,
+    kekNouvelle: prepare.kek,
+    typeKek: TYPES_KEK.phrase,
+    parametres,
+    identifiantEmplacement: prepare.identifiantEmplacement,
+  });
+  const refaite = await derivateur.deriver({
+    parametres,
+    identite: {
+      identifiantVolume: IDENTIFIANT_VOLUME,
+      identifiantEmplacement: prepare.identifiantEmplacement,
+    },
+    geste: { phrase: nouvellePhrase },
+  });
+  const ouverte = await ouvrirEnveloppe({
+    support,
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    kek: refaite,
+  });
+  const volumeRelu = await relireLeVolume(ouverte.dek);
+  ouverte.dek.fill(0);
+  return { volumeRelu, version: ajoute.version };
+}
+
+/** Le refus d'un AUTRE code, bien formé : celui de l'enveloppe, jamais celui du dérivateur. */
+async function refusDunCodeEtranger(support, emplacement) {
+  const kek = await CATALOGUE.pour(TYPES_KEK.recuperation).deriver({
+    parametres: emplacement.parametres,
+    identite: {
+      identifiantVolume: IDENTIFIANT_VOLUME,
+      identifiantEmplacement: emplacement.identifiantEmplacement,
+    },
+    geste: { code: encoderCode(tirerCodeDeRecuperation()) },
+  });
+  try {
+    await ouvrirEnveloppe({ support, identifiantVolume: IDENTIFIANT_VOLUME, kek });
+  } catch (erreur) {
+    return isEnveloppeError(erreur) ? erreur.code : codeOf(erreur);
+  }
+  return null;
+}
+
+/** Le refus d'un code MAL RECOPIÉ : un symbole changé, donc une somme de contrôle fausse. */
+async function refusDunCodeMalRecopie(emplacement, code) {
+  const dernier = code.at(-1) === "0" ? "1" : "0";
+  try {
+    await CATALOGUE.pour(TYPES_KEK.recuperation).deriver({
+      parametres: emplacement.parametres,
+      identite: {
+        identifiantVolume: IDENTIFIANT_VOLUME,
+        identifiantEmplacement: emplacement.identifiantEmplacement,
+      },
+      geste: { code: `${code.slice(0, -1)}${dernier}` },
+    });
+  } catch (erreur) {
+    return codeOf(erreur);
+  }
+  return null;
+}
+
+/** Chronomètre la dérivation par CODE, sans étirement. Elle doit coûter l'ordre du PRF. */
+async function scenarioMesureCode({ tours }) {
+  const derivateur = CATALOGUE.pour(TYPES_KEK.recuperation);
+  const parametres = parametresDeRecuperation({ sel: tirerSelDeRecuperation() });
+  const identite = {
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    identifiantEmplacement: "0102030405060708",
+  };
+  const code = encoderCode(tirerCodeDeRecuperation());
+  const echantillons = [];
+  for (let tour = 0; tour < tours; tour += 1) {
+    const debut = performance.now();
+    await derivateur.deriver({ parametres, identite, geste: { code } });
+    echantillons.push(performance.now() - debut);
+  }
+  return { tours, ...quantiles(echantillons) };
+}
+
+/** Les quantiles d'un échantillon, arrondis à un dixième de milliseconde. */
+function quantiles(echantillons) {
+  const tries = [...echantillons].sort((gauche, droite) => gauche - droite);
+  const rang = (part) => tries[Math.min(tries.length - 1, Math.floor(part * tries.length))];
+  const dixieme = (valeur) => Math.round(valeur * 10) / 10;
+  return {
+    p50Ms: dixieme(rang(0.5)),
+    p95Ms: dixieme(rang(0.95)),
+    maxMs: dixieme(tries.at(-1)),
+    minMs: dixieme(tries[0]),
   };
 }
 
@@ -237,7 +453,7 @@ async function scenarioPrfOuvrir({ kek }) {
 
 /** Chronomètre la dérivation calibrée. Le coût est le sujet, pas un effet de bord. */
 async function scenarioMesure({ phrase, tours }) {
-  const derivateur = derivateurPhrase({ argon2 });
+  const derivateur = CATALOGUE.pour(TYPES_KEK.phrase);
   const parametres = parametresDePhrase({ sel: SEL, ...CALIBRATION_PHRASE });
   const identite = {
     identifiantVolume: IDENTIFIANT_VOLUME,
@@ -302,6 +518,8 @@ const SCENARIOS = {
   vecteurs: scenarioVecteurs,
   phrase: scenarioPhrase,
   mesure: scenarioMesure,
+  recuperation: scenarioRecuperation,
+  "mesure-code": scenarioMesureCode,
   "prf-creer": scenarioPrfCreer,
   "prf-ouvrir": scenarioPrfOuvrir,
 };

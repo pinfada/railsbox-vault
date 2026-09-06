@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { expect, test } from "@playwright/test";
 
+import { decoderCode } from "../../src/vm/derivation/code-de-recuperation.mjs";
 import { DERIVATION_ERROR_CODES } from "../../src/vm/derivation/derivation-errors.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
 import { SHELL_PORT } from "../../src/spike/origin-topology.mjs";
@@ -394,6 +396,15 @@ test("MESURE — coût d'une dérivation Argon2id calibrée", async ({ page }, t
     `MESURE ${testInfo.project.name} : phrase p50 ${mesure.p50Ms} ms, p95 ${mesure.p95Ms} ms, max ${mesure.maxMs} ms (${mesure.tours} tours, ${mesure.memoireKio} Kio, t=${mesure.iterations}, p=${mesure.parallelisme})\n`,
   );
 
+  // Le coût du CODE de récupération, sur le même moteur et dans le même Worker. C'est la CONDITION
+  // écrite de la décision 1 de l'ADR 0025 : sans étirement, le déverrouillage par code doit coûter
+  // l'ordre de grandeur d'un PRF — des millisecondes — et non celui d'Argon2id. Une mesure qui
+  // dirait le contraire serait un BLOCAGE, pas une surprise à arrondir.
+  const codeMesure = await executer(page, { scenario: "mesure-code", tours });
+  process.stdout.write(
+    `MESURE ${testInfo.project.name} : code p50 ${codeMesure.p50Ms} ms, p95 ${codeMesure.p95Ms} ms, min ${codeMesure.minMs} ms, max ${codeMesure.maxMs} ms (${codeMesure.tours} tours, HKDF seul)\n`,
+  );
+
   // Le coût du PRF, là où un authentificateur est pilotable. Il est d'une autre nature : ce n'est
   // pas un calcul, c'est un aller-retour vers l'authentificateur, suivi d'un seul HKDF. La
   // comparer à la phrase est tout l'intérêt — c'est ce que l'utilisateur ressentira.
@@ -418,8 +429,141 @@ test("MESURE — coût d'une dérivation Argon2id calibrée", async ({ page }, t
     }
   }
 
-  await attacher(testInfo, "mesure", { moteur: testInfo.project.name, phrase: mesure, prf });
+  await attacher(testInfo, "mesure", {
+    moteur: testInfo.project.name,
+    phrase: mesure,
+    code: codeMesure,
+    prf,
+  });
   expect(mesure.p50Ms).toBeGreaterThan(0);
+  // La CONDITION de la décision 1, mesurée plutôt que supposée : le code coûte au moins un ordre de
+  // grandeur de moins que la phrase calibrée, sur CE moteur. Le seuil est large exprès — ce qui est
+  // affirmé est « ce n'est pas un étirement », pas une valeur.
+  expect(
+    codeMesure.p95Ms * 10,
+    "le déverrouillage par code coûte l'ordre d'Argon2id : la décision 1 ne tient plus",
+  ).toBeLessThan(mesure.p50Ms);
+});
+
+/**
+ * `SEC-RECOVERY-001`, de bout en bout sur l'OPFS RÉEL (#147, ADR 0025).
+ *
+ * Le scénario est celui que l'invariant demande, et il ne triche sur aucune étape : un volume est
+ * créé sous une phrase, un moyen de récupération y est ajouté, la phrase est RÉVOQUÉE — il ne reste
+ * alors plus rien d'autre —, le volume est rouvert par le code saisi sous une forme HUMAINE, un
+ * emplacement `phrase` est recréé sous une phrase neuve, et le volume est rouvert sous celle-là.
+ *
+ * Trois refus sont mesurés au passage, et ils ne se confondent pas : un second rendu du code
+ * (`VAULT_DERIVATION_CODE_DEJA_RENDU`), un code ÉTRANGER bien formé (le refus de l'ENVELOPPE,
+ * indiscernable d'une clé révoquée), un code MAL RECOPIÉ (`VAULT_DERIVATION_CODE_MAL_RECOPIE`,
+ * qui ne consulte ni le volume ni l'enveloppe).
+ */
+test("le code ouvre un volume dont plus AUCUN autre moyen ne subsiste, et une phrase se recrée", async ({
+  page,
+}, testInfo) => {
+  const { porte } = await contexte(page, testInfo);
+  const { report, code } = await executerOuRefus(page, {
+    scenario: "recuperation",
+    phrase: PHRASE,
+    nouvellePhrase: `${PHRASE}-la-seconde`,
+  });
+  await testInfo.attach(`deverrouillage-recuperation-${testInfo.project.name}.json`, {
+    // Le CODE lui-même n'est pas attaché : un relevé de test finit dans un artefact de CI, et un
+    // secret rendu une fois n'a rien à y faire. Sa LONGUEUR et sa forme suffisent à juger.
+    body: JSON.stringify(
+      { porte, code, report: report === null ? null : { ...report, code: undefined } },
+      null,
+      2,
+    ),
+    contentType: "application/json",
+  });
+
+  if (!porte) {
+    expect(code).toBe(STORAGE_ERROR_CODES.unsupported);
+    return;
+  }
+  expect(report.code, "le code rendu doit faire vingt-huit symboles en sept groupes").toMatch(
+    /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){6}$/,
+  );
+  expect(report.secondRendu, "un second rendu doit être un refus typé, jamais la chaîne").toBe(
+    DERIVATION_ERROR_CODES.codeDejaRendu,
+  );
+  expect(report.emplacementsApresRevocation).toBe(1);
+  expect(report.typeKek, "le seul emplacement restant est de type `recuperation`").toBe(4);
+  expect(
+    report.volumeReluParLeCode,
+    "le code n'a pas rouvert le volume qu'il est censé secourir",
+  ).toBe(true);
+  expect(report.refusDunCodeEtranger).toBe(ENVELOPPE_ERROR_CODES.cleRefusee);
+  expect(report.refusDunCodeMalRecopie).toBe(DERIVATION_ERROR_CODES.codeMalRecopie);
+  expect(
+    report.volumeReluParLaNouvellePhrase,
+    "la phrase recréée sous le code ne rouvre pas le volume",
+  ).toBe(true);
+  expect(report.versionFinale).toBe(report.versionApresRevocation + 1);
+});
+
+test("AUCUN octet du code de récupération ne se dépose, hors son unique canal de rendu", async ({
+  page,
+}, testInfo) => {
+  const { porte } = await contexte(page, testInfo);
+  const { report } = await executerOuRefus(page, {
+    scenario: "recuperation",
+    phrase: PHRASE,
+    nouvellePhrase: `${PHRASE}-la-seconde`,
+  });
+  test.skip(!porte, "Sans OPFS synchrone dans un Worker, aucun code n'a été fabriqué ici.");
+
+  const code = report.code;
+  const octets = decoderCode(code);
+  const octetsHex = Buffer.from(octets).toString("hex");
+  const materiauHex = createHash("sha256").update(octets).digest("hex");
+
+  const morceaux = await page.evaluate(
+    (appat) => globalThis.bancDeverrouillage.sondeStockages({ appat }),
+    APPAT,
+  );
+  await testInfo.attach(`deverrouillage-sonde-code-${testInfo.project.name}.json`, {
+    body: JSON.stringify(
+      morceaux.map(({ ou, texte }) => ({
+        ou,
+        caracteres: texte.length,
+        porteLeCode: texte.includes(code),
+      })),
+      null,
+      2,
+    ),
+    contentType: "application/json",
+  });
+
+  // TÉMOIN de la fouille, comme pour la phrase : sans appât retrouvé, une absence ne prouve rien.
+  const trouves = morceaux.filter(({ texte }) => texte.includes(APPAT)).map(({ ou }) => ou);
+  expect(trouves).toContain("localStorage");
+  expect(trouves).toContain("opfs");
+
+  // Le CANAL DE RENDU, nommé plutôt que subi : le code passe du Worker de confiance à la page de la
+  // MÊME origine, une fois. C'est le symétrique de la phrase qui passe en sens inverse (ADR 0021,
+  // limite 4), et l'affirmer positivement est ce qui donne un sens à toutes les absences suivantes.
+  const port = morceaux.find(({ ou }) => ou === "port").texte;
+  expect(
+    port.includes(code),
+    "le code n'a pas emprunté son canal de rendu : la fouille est vide",
+  ).toBe(true);
+
+  const sansTirets = code.replaceAll("-", "");
+  for (const { ou, texte } of morceaux) {
+    if (ou !== "port") {
+      expect(texte.includes(code), `le code se retrouve dans « ${ou} »`).toBe(false);
+    }
+    expect(texte.includes(sansTirets), `le code sans tirets se retrouve dans « ${ou} »`).toBe(
+      false,
+    );
+    expect(texte.includes(octetsHex), `les seize octets du code sont dans « ${ou} »`).toBe(false);
+    expect(texte.includes(materiauHex), `le matériau HKDF du code est dans « ${ou} »`).toBe(false);
+  }
+  // Et l'autre sens du port : la page n'a jamais renvoyé le code au Worker dans ce scénario.
+  const envois = morceaux.find(({ ou }) => ou === "envois").texte;
+  expect(envois.includes(code)).toBe(false);
 });
 
 test("la PAGE n'obtient aucun handle sur le fichier d'enveloppes", async ({ page }, testInfo) => {
