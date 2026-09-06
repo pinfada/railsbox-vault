@@ -328,6 +328,11 @@ enveloppe qui porte un emplacement d'un type inconnu ET un emplacement servable 
 second : le refus ne tombe que si aucun n'est servable. C'est la compatibilité que #23 exigera quand
 il ajoutera des codes de secours.
 
+> **Note du 6 septembre 2026 (#147).** Le catalogue sert un QUATRIÈME type depuis
+> l'[ADR 0025](0025-moyen-de-recuperation.md) : `recuperation` = 4, dérivé par HKDF seul, sans
+> étirement — la contrainte de la décision 3 est honorée avec son chiffre là-bas, et non contournée.
+> Rien de cet ADR n'est réécrit.
+
 **Le repli vers `phrase` n'est jamais automatique.** Ce n'est pas une règle de code, c'est une
 propriété de structure : un dérivateur ne connaît que son type, et la couche d'ouverture ne dérive
 que l'emplacement qu'elle a choisi. Il n'existe aucun chemin qui essaierait un second moyen — et

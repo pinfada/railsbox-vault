@@ -605,6 +605,8 @@ qu'il en reste, et ce que le produit fait quand la plate-forme ne peut pas**.
 | unitaire   | `tests/unit/vm-derivation-phrase.test.mjs`        | vecteurs RFC 9106 par l'artefact VENDU, empreinte, plancher, NFC            | `npm run check` |
 | unitaire   | `tests/unit/vm-derivation-webauthn-prf.test.mjs`  | les quatre conduites, `signCount` non lu, absence de repli                  | `npm run check` |
 | unitaire   | `tests/unit/vm-derivation-branchement.test.mjs`   | la couche d'ouverture sous dérivateur, type inconnu, harnais intact         | `npm run check` |
+| unitaire   | `tests/unit/vm-derivation-recuperation.test.mjs`  | le code de récupération : forme, somme de contrôle, `SEC-RECOVERY-001`      | `npm run check` |
+| unitaire   | `tests/unit/vm-recuperation-mutation.test.mjs`    | les quatorze gardes du moyen de récupération, retirées une à une            | `npm run check` |
 | navigateur | `tests/browser/deverrouillage-frontiere.spec.mjs` | trois moteurs, authentificateur virtuel, sonde de non-persistance           | `npm run check` |
 
 **Le modèle de référence vit sous `tests/`, et c'est un écart assumé** avec celui de l'ADR 0020. Ce
@@ -641,17 +643,50 @@ survécu pour une raison qui n'appelait pas de code : un artefact d'une autre ta
 une autre empreinte, et le contrôle de taille n'achète pas de la sécurité mais un DIAGNOSTIC — c'est
 ce diagnostic, contexte compris, qui est désormais mesuré. Le tableau complet est dans l'ADR 0021.
 
+### Le moyen de récupération (#147)
+
+#147 ajoute un quatrième type de clé, `recuperation`
+([ADR 0025](decisions/0025-moyen-de-recuperation.md)) : un code GÉNÉRÉ par le produit, cent
+vingt-huit bits tirés, vingt-huit symboles base 32 de Crockford, rendu **une seule fois**. Ce qui
+est éprouvé n'est pas seulement « le code ouvre » — c'est aussi ce que le produit REFUSE et ce qu'il
+ne conserve pas.
+
+`tests/unit/vm-derivation-recuperation.test.mjs` (trente et une épreuves, **≈ 0,3 s**) porte les
+trois que `SEC-RECOVERY-001` exige — succès, révocation, perte définitive —, la somme de contrôle
+mesurée **exhaustivement** (toutes les substitutions des vingt-huit rangs, toutes les transpositions
+adjacentes), les formes de saisie humaine sous NFC, et deux inspections de source : le module de la
+somme de contrôle n'importe rien d'autre que ses refus, et le module du code n'est importé que par
+trois fichiers nommés.
+
+`tests/unit/vm-recuperation-mutation.test.mjs` (**≈ 11 s**) fait tourner
+`tools/muter-gardes-recuperation.mjs` : quatorze gardes retirées une à une du texte source, quatorze
+mutantes tuées. La NFC a survécu au premier passage — l'alphabet base 32 ne porte aucun caractère
+composable —, et c'est le vecteur du signe KELVIN (U+212A) qui la rend mesurable.
+
+Le bout en bout vit dans la frontière de déverrouillage : le cycle complet sur l'OPFS réel — créer
+sous une phrase, ajouter le code, révoquer la phrase, rouvrir par le code saisi sous une forme
+humaine, recréer une phrase, rouvrir sous elle — et la sonde étendue au code, à sa forme sans
+tirets, à ses seize octets et à leur SHA-256. Le canal de RENDU y est affirmé positivement avant
+toute absence : le code passe du Worker de confiance à la page de la même origine, une fois.
+
 ```bash
-npm run check                                          # les quatre suites unitaires + la frontière
+npm run check                                          # les six suites unitaires + la frontière
 node --test "tests/unit/vm-derivation-*.test.mjs"
+node --test tests/unit/vm-recuperation-mutation.test.mjs # la campagne de mutation, ≈ 11 s
+node tools/muter-gardes-recuperation.mjs               # la même, avec le verdict garde par garde
 npm run test:deverrouillage                            # la frontière seule, sur les trois moteurs
 VAULT_MESURER_DERIVATION=20 npm run test:deverrouillage # + la mesure du coût, hors `check`
 node tools/figer-vecteurs-derivation.mjs               # refige tests/vectors/derivation-v1.json
+npx prettier --write tests/vectors/derivation-v1.json  # `format:check` couvre tests/vectors/
 ```
 
 La MESURE est délibérément hors de `npm run check` : vingt dérivations à 64 Mio coûtent des secondes
 sur chaque moteur, et un contrôle obligatoire qui les paierait à chaque poussée finirait par être
-contourné. C'est la règle déjà retenue pour le banc de rythme (#16).
+contourné. C'est la règle déjà retenue pour le banc de rythme (#16). Elle mesure **deux** coûts
+depuis #147 — la phrase et le code —, et porte une assertion qui MORD : le p95 du code multiplié par
+dix doit rester sous le p50 de la phrase, faute de quoi la décision 1 de l'ADR 0025 ne tient plus.
+Le relevé des deux exécutions est publié dans l'ADR 0025 ; l'ordre de grandeur est **0 à 2 ms pour
+le code contre 310 à 2 098 ms pour la phrase**, selon le moteur.
 
 ### Export vérifiable
 
@@ -1836,6 +1871,25 @@ Elle établit quatre choses que Node ne peut pas montrer :
   obtenue par transplantation de créance et l'annulation obtenue en coupant la présence simulée ;
 - **la sonde de non-persistance**, décrite plus haut, avec son appât.
 
+**Depuis #147, elle en établit deux de plus, sur le moyen de récupération**
+([ADR 0025](decisions/0025-moyen-de-recuperation.md)) :
+
+- **le cycle complet de `SEC-RECOVERY-001`** — créer sous une phrase, ajouter le code, révoquer la
+  phrase pour qu'il ne reste plus rien d'autre, rouvrir le volume par le code saisi sous une forme
+  HUMAINE (minuscules, espaces, `o` pour `0`), recréer un emplacement `phrase` sous une phrase
+  neuve, rouvrir sous celle-là. Trois refus y sont mesurés et ne se confondent pas : un second rendu
+  du code, un code ÉTRANGER bien formé (le refus de l'enveloppe, indiscernable d'une clé révoquée)
+  et un code MAL RECOPIÉ ;
+- **la sonde étendue au code.** Elle AFFIRME d'abord le canal de RENDU — le code passe du Worker de
+  confiance à la page de la même origine, une fois — puis cherche partout ailleurs quatre formes :
+  la chaîne rendue, la même sans tirets, l'hexadécimal des seize octets, l'hexadécimal de leur
+  SHA-256. Affirmer le canal avant de mesurer les absences est ce qui empêche l'épreuve d'être verte
+  parce que rien n'a été fabriqué.
+
+Le Worker de confiance du banc pose désormais un **catalogue** de dérivateurs (`phrase`,
+`recuperation`) plutôt qu'un dérivateur nu ; `webauthn-prf` n'y est pas, parce que
+`navigator.credentials` n'existe pas dans un Worker.
+
 Deux détails de la suite valent d'être connus avant de la lire. Le premier : le Worker n'expose PAS
 `navigator.credentials`, et une épreuve le MESURE — c'est le fait de plate-forme qui force la
 dérivation par passkey à vivre dans le document. Le second : WebAuthn refuse une adresse IP comme
@@ -1844,7 +1898,8 @@ dérivation par passkey à vivre dans le document. Le second : WebAuthn refuse u
 
 Sur WebKit, qui ne porte pas OPFS synchrone dans un Worker, les scénarios de volume EXIGENT
 `VAULT_STORAGE_UNSUPPORTED` — jamais un saut silencieux. Coût mesuré, hors mesure de performance :
-environ 30 s pour les trois moteurs.
+environ 55 s pour les trois moteurs depuis #147 (30 s avant), la moitié de l'écart tenant aux cinq
+dérivations Argon2id que le cycle de récupération paie sur Firefox.
 
 ### Démarrage de v86 sous deux CSP : `test:csp`
 
