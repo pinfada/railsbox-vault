@@ -14,12 +14,19 @@
 //   reference-worker-phases-migration.mjs migrate
 //   reference-worker-phases-enveloppe.mjs enveloppe-creer, enveloppe-remplacer, enveloppe-ouvrir,
 //                                         enveloppe-retirer (#21, ADR 0020)
+//   reference-worker-phases-recuperation.mjs recuperation-creer, recuperation-ouvrir,
+//                                         recuperation-ajouter-phrase (#147/#149, ADR 0025/0027)
 //   reference-worker-mesures.mjs          instantané de stockage, comptage des lectures
 //
 // Une option traverse toutes les phases depuis #21 : `deverrouillerPar`. Quand elle nomme une clé,
 // l'enveloppe du volume est ouverte AVANT la phase et la clé développée est installée pour sa durée
 // seulement. C'est ce qui permet de booter Rails sur un volume ouvert par une CLÉ DE
 // DÉVERROUILLAGE, et pas par le jeton du harnais.
+//
+// Depuis #149 (ADR 0027), une SECONDE porte la double : `deverrouillerParCode`. Elle ouvre par le
+// CODE de récupération, et c'est elle qui permet de booter Rails sur un volume RESTAURÉ depuis une
+// archive, sur une origine qui n'a jamais vu la clé de harnais — le résultat que la tranche 3 de
+// #23 doit livrer.
 //
 // Les phases sont appelées chacune dans un Worker NEUF par le test E2E, pour que « fermer page +
 // Worker + handles » soit réel entre elles.
@@ -35,6 +42,13 @@ import {
   phaseEnveloppeRemplacer,
   phaseEnveloppeRetirer,
 } from "./reference-worker-phases-enveloppe.mjs";
+import {
+  installerCleParCode,
+  phaseRecuperationAjouterPhrase,
+  phaseRecuperationCreer,
+  phaseRecuperationOuvrir,
+  phaseSondeDuCode,
+} from "./reference-worker-phases-recuperation.mjs";
 import {
   phaseArchiveFile,
   phaseExportVolume,
@@ -90,6 +104,10 @@ const PHASES = new Map([
   ["enveloppe-remplacer", phaseEnveloppeRemplacer],
   ["enveloppe-ouvrir", phaseEnveloppeOuvrir],
   ["enveloppe-retirer", phaseEnveloppeRetirer],
+  ["recuperation-creer", phaseRecuperationCreer],
+  ["recuperation-ouvrir", phaseRecuperationOuvrir],
+  ["recuperation-ajouter-phrase", phaseRecuperationAjouterPhrase],
+  ["sonde-du-code", phaseSondeDuCode],
   ["full", phaseFull],
 ]);
 
@@ -109,14 +127,42 @@ const PHASES = new Map([
  * distincts.
  */
 async function executerPhase(runner, options) {
-  if (!options.deverrouillerPar) return runner(options);
-  const installee = await installerCleParKek({ ...options, kek: options.deverrouillerPar });
+  const installer = preambuleDeDeverrouillage(options);
+  if (installer === null) return runner(options);
+  const installee = await installer();
   try {
     const rapport = await runner(options);
-    return { ...rapport, enveloppe: { kek: options.deverrouillerPar, version: installee.version } };
+    return {
+      ...rapport,
+      enveloppe: {
+        kek: options.deverrouillerPar ?? "code-de-recuperation",
+        version: installee.version,
+      },
+    };
   } finally {
     installee.relacher();
   }
+}
+
+/**
+ * Choisit le PRÉAMBULE de déverrouillage d'une phase, ou `null` quand elle n'en demande aucun.
+ *
+ * Deux portes, et pas une de plus : une clé de HARNAIS nommée (#21) ou un CODE de récupération
+ * (#149, ADR 0027). Elles sont exclusives — présenter les deux serait demander sous laquelle le
+ * volume a réellement été ouvert, ce qu'un rapport ne saurait plus dire — et le refus est immédiat
+ * plutôt qu'arbitré en silence.
+ */
+function preambuleDeDeverrouillage(options) {
+  const parKek = Boolean(options.deverrouillerPar);
+  const parCode = typeof options.deverrouillerParCode === "string";
+  if (parKek && parCode) {
+    throw new Error(
+      "Une phase se déverrouille par une clé de harnais OU par un code de récupération, jamais par les deux.",
+    );
+  }
+  if (parKek) return () => installerCleParKek({ ...options, kek: options.deverrouillerPar });
+  if (parCode) return () => installerCleParCode({ ...options, code: options.deverrouillerParCode });
+  return null;
 }
 
 self.addEventListener("message", (event) => {

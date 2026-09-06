@@ -9,6 +9,10 @@
 //    marqueur `RBVAULT1` (`SEC-ORIGIN-001`) ;
 //  - **un refus est typé** — une archive tronquée, altérée, ou un espace insuffisant rendent un code
 //    que le scénario peut attendre, jamais un succès silencieux.
+//
+// Depuis #149 (ADR 0027), une archive peut EMPORTER une enveloppe de récupération. Ces phases n'en
+// construisent aucune : `enveloppeDeRecuperationPourExport` vit dans les phases de récupération,
+// parce que sa construction exige la clé de volume. Ici, on reçoit des octets et une empreinte.
 
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { createOpfsArchiveSink } from "/src/vm/opfs-archive-sink.mjs";
@@ -44,6 +48,7 @@ import {
   identifiantVolumeEnTexte,
 } from "/src/vm/volume-chiffre-format.mjs";
 import { manifesteDuDescripteur } from "./reference-worker-boot.mjs";
+import { enveloppeDeRecuperationPourExport } from "./reference-worker-phases-recuperation.mjs";
 import {
   EXPORT_BLOCK_BYTES,
   instantaneStockage,
@@ -85,11 +90,15 @@ async function compteRenduExport({
   volumeBytes,
   stockageAvant,
   recuperation = null,
+  enveloppe = null,
 }) {
   return {
     phase: "export",
     volume,
     archive,
+    // L'enveloppe de récupération EMPORTÉE, ou `null` — et `null` est un fait à dire : cette archive
+    // ne s'ouvrira nulle part ailleurs (ADR 0027, décision 2).
+    enveloppe,
     // Ce que la récupération a trouvé AVANT la copie : une génération rejouée ou écartée change ce
     // que l'archive contient, et le taire ferait d'un export un geste dont l'exploitant ne saurait
     // pas ce qu'il a emporté.
@@ -150,7 +159,7 @@ async function identiteDuFichier(brut, formatVersion) {
  * L'identité vient du fichier lui-même, jamais du descripteur : une archive décrit le volume qu'elle
  * porte, et un identifiant tiré à l'export décrirait un autre volume que celui qu'on copie.
  */
-async function verserLArchive({ brut, source, sink, manifest, blockBytes }) {
+async function verserLArchive({ brut, source, sink, manifest, recovery, blockBytes }) {
   const identite = await identiteDuFichier(brut, manifest.formatVersion ?? MANIFEST_FORMAT_VERSION);
   const resultat = await writeArchive({
     source,
@@ -160,6 +169,7 @@ async function verserLArchive({ brut, source, sink, manifest, blockBytes }) {
       kind: CONSISTENCY_KINDS.exclusiveHandle,
       detail: "volume lu via le handle OPFS exclusif (#6), aucun autre écrivain dans l'origine",
     },
+    recovery,
     blockBytes,
   });
   sink.flush();
@@ -170,22 +180,13 @@ export async function phaseExportVolume({
   volume,
   archive,
   manifest,
+  jetonCle,
+  emporterLaRecuperation = false,
   blockBytes = EXPORT_BLOCK_BYTES,
 }) {
   await removeOpfsVolume(archive);
-  // RÉCUPÉRER, PUIS copier — et l'ordre est le contrat (`src/vm/export-du-fichier.mjs`). Le fichier
-  // ne porte pas tout l'état : une génération VALIDÉE attend dans le journal voisin qu'une ouverture
-  // transactionnelle la rejoue. Copier le fichier sans cette étape produit une archive à laquelle il
-  // manque une écriture acquittée, et rien ne le signale.
-  //
-  // La copie, elle, passe par l'ACCÈS BRUT et sans clé : l'archive porte le FICHIER tel quel
-  // (ADR 0016, décision 7), et passer par le backend chiffré produirait une archive EN CLAIR d'un
-  // volume chiffré.
-  const { brut, rapport: recuperation } = await ouvrirPourExport({
-    name: volume,
-    cle: cleDuBanc(),
-    formatVersion: manifest.formatVersion ?? MANIFEST_FORMAT_VERSION,
-  });
+  const recovery = await enveloppeAEmporter({ volume, jetonCle, emporterLaRecuperation });
+  const { brut, rapport: recuperation } = await recupererPuisOuvrirBrut({ volume, manifest });
   const compteur = { maxLecture: 0, blocs: 0 };
   const source = sourceMesuree(backendSource(brut), compteur);
   const { handle, sink } = await ouvrirPuitsArchive(archive);
@@ -193,7 +194,7 @@ export async function phaseExportVolume({
   const stockageAvant = await instantaneStockage();
   let result;
   try {
-    result = await verserLArchive({ brut, source, sink, manifest, blockBytes });
+    result = await verserLArchive({ brut, source, sink, manifest, recovery, blockBytes });
   } finally {
     handle.close();
     await brut.close();
@@ -208,6 +209,38 @@ export async function phaseExportVolume({
     volumeBytes: source.size,
     stockageAvant,
     recuperation,
+    enveloppe: result.recovery,
+  });
+}
+
+/**
+ * L'enveloppe de récupération à emporter, ou `null`.
+ *
+ * Elle est construite AVANT que le volume ne soit ouvert pour l'export : elle exige l'ENVELOPPE,
+ * pas le volume, et la fabriquer pendant qu'un handle brut est tenu ne ferait qu'allonger la
+ * fenêtre d'exclusivité pour rien.
+ */
+async function enveloppeAEmporter({ volume, jetonCle, emporterLaRecuperation }) {
+  if (!emporterLaRecuperation) return null;
+  return enveloppeDeRecuperationPourExport({ volume, jetonCle });
+}
+
+/**
+ * RÉCUPÉRER, PUIS copier — et l'ordre est le contrat (`src/vm/export-du-fichier.mjs`).
+ *
+ * Le fichier ne porte pas tout l'état : une génération VALIDÉE attend dans le journal voisin qu'une
+ * ouverture transactionnelle la rejoue. Copier le fichier sans cette étape produit une archive à
+ * laquelle il manque une écriture acquittée, et rien ne le signale.
+ *
+ * La copie, elle, passe par l'ACCÈS BRUT et sans clé : l'archive porte le FICHIER tel quel
+ * (ADR 0016, décision 7), et passer par le backend chiffré produirait une archive EN CLAIR d'un
+ * volume chiffré.
+ */
+function recupererPuisOuvrirBrut({ volume, manifest }) {
+  return ouvrirPourExport({
+    name: volume,
+    cle: cleDuBanc(),
+    formatVersion: manifest.formatVersion ?? MANIFEST_FORMAT_VERSION,
   });
 }
 
@@ -333,19 +366,11 @@ export async function phaseImport({
   archiveFile,
   expectations = {},
   overwrite = false,
+  versionMinimale = null,
+  consent = null,
   blockBytes = EXPORT_BLOCK_BYTES,
 }) {
-  if (!archiveFile || typeof archiveFile.slice !== "function") {
-    throw new Error("Aucune archive n'a été remise à cette origine.");
-  }
-  const compteur = { maxLecture: 0 };
-  const source = {
-    byteLength: archiveFile.size,
-    async read(offset, length) {
-      compteur.maxLecture = Math.max(compteur.maxLecture, length);
-      return new Uint8Array(await archiveFile.slice(offset, offset + length).arrayBuffer());
-    },
-  };
+  const { compteur, source } = sourceDuFichierRemis(archiveFile);
   const journal = new BlockJournal();
   const target = createOpfsImportTarget(volume, { journal });
   const budget = createStorageBudget(bindNavigatorStorage(navigator.storage));
@@ -358,6 +383,10 @@ export async function phaseImport({
       target,
       expectations,
       overwrite,
+      // L'ANCRE (#149, ADR 0027, décision 3) : la version que l'utilisateur tient sur sa feuille, et
+      // le consentement nommé qui assume une sauvegarde plus ancienne qu'elle.
+      versionMinimale,
+      consent,
       blockBytes,
       budget,
     });
@@ -379,6 +408,29 @@ export async function phaseImport({
   }
 }
 
+/**
+ * La SOURCE d'archive tirée du `File` que l'utilisateur a remis à cette origine, et son compteur.
+ *
+ * L'archive est lue PAR TRANCHES, jamais chargée en entier : la plus grande lecture émise est
+ * publiée dans le rapport, et c'est la preuve déterministe de la borne de surmémoire.
+ */
+function sourceDuFichierRemis(archiveFile) {
+  if (!archiveFile || typeof archiveFile.slice !== "function") {
+    throw new Error("Aucune archive n'a été remise à cette origine.");
+  }
+  const compteur = { maxLecture: 0 };
+  return {
+    compteur,
+    source: {
+      byteLength: archiveFile.size,
+      async read(offset, length) {
+        compteur.maxLecture = Math.max(compteur.maxLecture, length);
+        return new Uint8Array(await archiveFile.slice(offset, offset + length).arrayBuffer());
+      },
+    },
+  };
+}
+
 /** Compte rendu JSON d'une restauration réussie, tel que la coquille le reçoit. */
 function rapportImport({ volume, rapport, compteur, journal, durationMs }) {
   return {
@@ -391,6 +443,10 @@ function rapportImport({ volume, rapport, compteur, journal, durationMs }) {
     volumeSize: rapport.volumeSize,
     contentDigest: rapport.contentDigest,
     verifiedDigest: rapport.verifiedDigest,
+    // L'enveloppe POSÉE et la version que la feuille doit désormais porter (ADR 0027).
+    enveloppe: rapport.recovery,
+    nouvelleReference: rapport.nouvelleReference,
+    consentement: rapport.consentement,
     manifestDigest: rapport.manifest.identity.digest,
     manifestApp: rapport.manifest.app,
     archiveConsistency: rapport.archiveConsistency,
