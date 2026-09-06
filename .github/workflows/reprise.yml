@@ -32,9 +32,14 @@ jobs:
   reprise:
     name: Reprise d'une mutation Rails après boot à froid
     runs-on: ubuntu-latest
-    # Construction de l'image environ 20 min sans cache, puis préparation OPFS et quatre boots à
+    # Construction de l'image environ 20 min sans cache, puis préparation OPFS et plusieurs boots à
     # froid d'un Rails i386. La marge couvre un exécutant GitHub plus lent que la machine de dev.
-    timeout-minutes: 120
+    #
+    # Portée à 150 min le 6 septembre 2026 (#149) : le scénario
+    # `archive-recuperation-inter-origine.spec.mjs` ajoute deux boots Rails et une dérivation
+    # Argon2id à la suite, et les scénarios s'exécutent en SÉQUENCE (`workers: 1`). Une marge qui
+    # devient juste finit par faire échouer la recette pour une raison qui n'est pas la sienne.
+    timeout-minutes: 150
 
     steps:
       - name: Récupération du dépôt
