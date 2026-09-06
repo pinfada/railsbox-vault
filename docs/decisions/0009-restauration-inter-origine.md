@@ -200,6 +200,15 @@ Worker lit les huit premiers octets du fichier demandé et exige le marqueur `RB
 avant de remettre quoi que ce soit. Un nom peut mentir ; un marqueur de contenu, non. Demander le
 fichier d'un volume est refusé par `VAULT_ARCHIVE_MALFORMED`.
 
+## Note du 6 septembre 2026 — un HUITIÈME geste, avant le manifeste (#149, ADR 0027)
+
+L'ordre décidé ici prend un rang de plus, et il s'insère AVANT l'inscription du manifeste : **poser
+l'enveloppe de récupération que l'archive emporte, ou retirer celle que la cible portait**. Le motif
+est celui de cette décision, prolongé d'un cran : le manifeste est ce qui DÉCLARE le volume complet,
+et un volume déclaré complet sans son enveloppe serait un volume que personne n'ouvre. Une coupure
+entre les deux laisse un volume NON IDENTIFIÉ, que le boot refuse — le seul état sûr des deux. Voir
+l'[ADR 0027](0027-archive-et-ancre-de-version.md), décision 2.
+
 ## Ce que le manifeste inscrit atteste — et ce qu'il n'atteste pas
 
 Le manifeste écrit au geste 7 porte, dans `identity.digest`, l'empreinte du contenu **tel qu'il

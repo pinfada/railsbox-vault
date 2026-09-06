@@ -230,6 +230,10 @@ une clé qui n'existe pas au lieu d'en créer une.
 
 ## Décision 6 — L'archive n'emporte pas l'enveloppe
 
+> **RÉVISÉE le 6 septembre 2026 par l'[ADR 0027](0027-archive-et-ancre-de-version.md) (#149, tranche
+> 3 de #23) : l'archive emporte désormais une enveloppe de RÉCUPÉRATION SEULE. Rien de ce qui suit
+> n'est réécrit — le motif reste juste, et l'ADR 0027 dit ce qu'il conserve et ce qu'il change.**
+
 L'archive d'export (#12, ADR 0008/0016) porte le fichier de VOLUME tel quel. Elle ne porte **ni le
 manifeste de clés, ni une DEK enveloppée, ni un octet du fichier `.cles`**. Deux épreuves le
 tiennent : l'une exporte réellement et cherche le marqueur `VLTKEY01` et des octets d'emplacement
@@ -445,7 +449,7 @@ Aucun ADR n'est réécrit ; chacun reçoit un amendement d'une phrase, qui renvo
 | ADR      | Ce que l'enveloppe lui impose                                                                                                                            |
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **0002** | un quatrième voisin de volume vit sur l'origine de CONFIANCE, et n'est jamais atteignable depuis l'origine applicative.                                  |
-| **0008** | l'archive ne porte PAS l'enveloppe (décision 6) ; restaurer une archive ne restaure pas la capacité de l'ouvrir.                                         |
+| **0008** | l'archive ne porte PAS l'enveloppe (décision 6) ; restaurer une archive ne restaure pas la capacité de l'ouvrir. **Révisé par l'ADR 0027 le 6/09/2026.** |
 | **0014** | l'alternance de deux pages validée par une barrière est reprise telle quelle, pour un autre objet que la racine de génération.                           |
 | **0015** | l'enveloppe emploie les mêmes primitives et le même ordre de vérification ; `AES-KW`, écarté en une ligne, l'est ici pour une raison qui décide.         |
 | **0016** | la clé de volume cesse d'être uniquement « reçue en mémoire » : elle est désormais RÉCUPÉRABLE par une KEK, sans que le produit ne la persiste en clair. |
@@ -478,8 +482,9 @@ Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi
    KEK demande un champ que l'emplacement ne porte pas ;
 2. #23 livre un ancrage monotone hors du fichier, auquel cas `versionMinimale` cesse d'être une
    attente facultative et devient une exigence ;
-3. #23 tranche que l'archive doit porter une enveloppe de récupération, auquel cas la décision 6 est
-   amendée avec le format de cette enveloppe et ce qu'elle suppose des codes de secours ;
+3. **DÉCLENCHÉE le 6 septembre 2026.** #23 tranche que l'archive doit porter une enveloppe de
+   récupération, auquel cas la décision 6 est amendée avec le format de cette enveloppe et ce
+   qu'elle suppose des codes de secours — c'est l'[ADR 0027](0027-archive-et-ancre-de-version.md) ;
 4. un moteur de la matrice #2 sert un renommage atomique sur OPFS, auquel cas l'alternance de pages
    peut être réexaminée — sans urgence, puisqu'elle fonctionne ;
 5. le plafond de huit emplacements devient une gêne mesurée, auquel cas il monte sous une version de

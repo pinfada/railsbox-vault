@@ -63,6 +63,15 @@ silencieux.**
   `taille de l'archive = 12 + H + N`. Le surcoût se limite au préambule et à l'en-tête (quelques
   centaines d'octets) : l'archive tient donc très en deçà de 2× la taille logique.
 
+> **AMENDÉ le 6 septembre 2026 par l'[ADR 0027](0027-archive-et-ancre-de-version.md) (#149) : le
+> format d'archive passe à la VERSION 2.** Une section facultative de récupération suit le contenu —
+> `[ … ][ contenu N o ][ récupération R o ]` —, l'en-tête déclare
+> `recovery: { length, digest, envelopeVersion, slots } | null`, et
+> `taille de l'archive = 12 + H + N + R`. **L'offset du contenu ne change pas** (`12 + H`), et une
+> archive v1 reste LUE telle quelle ; elle n'est plus écrite. Ce que la section contient — une page
+> d'enveloppe ne portant que des emplacements de type 4 — et pourquoi elle n'annule pas le
+> chiffrement au repos sont dans l'ADR 0027.
+
 L'empreinte est inscrite **deux fois et croisée** : dans `manifest.identity.digest` (l'emplacement
 versionné de #10) et dans `content.digest` (le descripteur d'archive). Une divergence entre les deux
 est une archive malformée.
