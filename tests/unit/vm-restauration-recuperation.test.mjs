@@ -224,6 +224,46 @@ test("une page embarquée portant un emplacement d'un autre type est refusée av
   assert.deepEqual(gestes, []);
 });
 
+test("un en-tête qui MENT sur la version de l'enveloppe embarquée est refusé", async () => {
+  // Le mensonge est celui qui compte : déclarer une version PLUS RÉCENTE que celle que la page
+  // porte ferait passer une sauvegarde antérieure à la feuille sans consentement (ADR 0027,
+  // décision 3). L'en-tête est donc confronté à la page, jamais cru.
+  const { archive, recuperation } = await archiveExportee();
+  const menteuse = await reecrireLEnTete(archive, (entete) => ({
+    ...entete,
+    recovery: { ...entete.recovery, envelopeVersion: recuperation.version + 5 },
+  }));
+
+  const destination = magasin();
+  const { cible, gestes } = cibleDe(destination, CIBLE);
+  await assert.rejects(
+    importArchive({ source: sourceDArchive(menteuse), target: cible, expectations: ATTENTES }),
+    (erreur) => {
+      assert.ok(isArchiveError(erreur, ARCHIVE_ERROR_CODES.recuperationRefusee));
+      assert.equal(erreur.context.porte.envelopeVersion, recuperation.version);
+      return true;
+    },
+  );
+  assert.deepEqual(gestes, []);
+});
+
+/** Réécrit l'en-tête d'une archive, contenu et section de récupération inchangés. */
+async function reecrireLEnTete(archive, transformer) {
+  const vue = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
+  const longueur = vue.getUint32(8, false);
+  const entete = transformer(
+    JSON.parse(new TextDecoder().decode(archive.subarray(12, 12 + longueur))),
+  );
+  const octets = new TextEncoder().encode(JSON.stringify(entete));
+  const suite = archive.subarray(12 + longueur);
+  const forge = new Uint8Array(12 + octets.byteLength + suite.byteLength);
+  forge.set(archive.subarray(0, 12), 0);
+  new DataView(forge.buffer).setUint32(8, octets.byteLength, false);
+  forge.set(octets, 12);
+  forge.set(suite, 12 + octets.byteLength);
+  return forge;
+}
+
 /** Remplace la section de récupération d'une archive et remet l'en-tête d'accord avec elle. */
 async function reforger(archive, page) {
   const vue = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
