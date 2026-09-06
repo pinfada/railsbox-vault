@@ -1737,16 +1737,17 @@ publié aussi **avec** un témoin à `s − 1`, dans la reproduction ci-dessus. 
 correction est portée dans l'issue.
 
 **[#145](https://github.com/pinfada/railsbox-vault/issues/145) — « Supprimer et recréer » ne retire
-aucun voisin, et le volume recréé est refusé. CORRIGÉ par PR #<n>.** Le § 6.3 et le § 10.2
-affirmaient, à tort, que le message de `VAULT_STORAGE_VOLUME_INCOMPLET` nomme « le seul remède vrai
-: supprimer et recréer » sans que ce geste existe dans `src/` ni que ce document dise ce qu'il faut
-supprimer. Le point 1 du constat était PÉRIMÉ : `removeOpfsVolume(name)`
-(`src/vm/opfs-sync-access.mjs`) existe en production et retire déjà les voisins d'un volume
-explicitement supprimé — `.gen`, `.temoin`, `.cles`, `.instantane`. Ce qui restait vrai, et qui est
-corrigé ici : un exploitant qui supprime seulement le fichier `<volume>` à la main, sans passer par
-`removeOpfsVolume`, puis en recrée un du même nom, laissait `<volume>.temoin` en place ; le volume
-neuf était scellé sous un identifiant neuf, et sa première ouverture échouait sur le sceau du
-témoin, qui porte l'ancien identifiant (`VAULT_STORAGE_SCEAU_REFUSE`).
+aucun voisin, et le volume recréé est refusé. CORRIGÉ par la
+[PR #157](https://github.com/pinfada/railsbox-vault/pull/157).** Le § 6.3 et le § 10.2 affirmaient,
+à tort, que le message de `VAULT_STORAGE_VOLUME_INCOMPLET` nomme « le seul remède vrai : supprimer
+et recréer » sans que ce geste existe dans `src/` ni que ce document dise ce qu'il faut supprimer.
+Le point 1 du constat était PÉRIMÉ : `removeOpfsVolume(name)` (`src/vm/opfs-sync-access.mjs`) existe
+en production et retire déjà les voisins d'un volume explicitement supprimé — `.gen`, `.temoin`,
+`.cles`, `.instantane`. Ce qui restait vrai, et qui est corrigé ici : un exploitant qui supprime
+seulement le fichier `<volume>` à la main, sans passer par `removeOpfsVolume`, puis en recrée un du
+même nom, laissait `<volume>.temoin` en place ; le volume neuf était scellé sous un identifiant
+neuf, et sa première ouverture échouait sur le sceau du témoin, qui porte l'ancien identifiant
+(`VAULT_STORAGE_SCEAU_REFUSE`).
 
 **Ce que la correction ferme.** La NAISSANCE d'un volume (`naissance === true`,
 `src/vm/opfs-volume-ouverture.mjs`) retire elle-même ses voisins orphelins — `.gen`, `.temoin`,
@@ -1992,7 +1993,7 @@ renvoie une fois, en parlant d'un « fichier v3 sans cette marque refusé par l'
 (`VAULT_STORAGE_VOLUME_INCOMPLET`, décision 2) » — or sa décision 2 traite de la génération d'un
 enregistrement de journal et ne mentionne ni la marque ni ce code. **La marque existe dans le code
 et dans les épreuves, sans décision numérotée nulle part.** Ce document est le premier à la
-spécifier. **Statut au 6 septembre 2026 : corrigé, PR #<n>** — décision 10 de l'amendement du même
+spécifier. **Statut au 6 septembre 2026 : corrigé, PR #157** — décision 10 de l'amendement du même
 jour à l'[ADR 0016](decisions/0016-format-de-volume-v3-dispositions.md).
 
 **Écart 2 — deux refus déclarés « retirés » existent encore.** L'ADR 0016 (décision 9) écrit que
@@ -2000,14 +2001,14 @@ jour à l'[ADR 0016](decisions/0016-format-de-volume-v3-dispositions.md).
 survit à sa cause devient un piège pour l'exploitant ». Ils sont toujours **déclarés** dans le code
 et ne sont **plus levés nulle part**. C'est du code mort et non un piège actif — aucun exploitant ne
 les rencontre —, mais l'ADR affirme une suppression qui n'a pas eu lieu. **Statut au 6 septembre
-2026 : corrigé, PR #<n>** — les deux entrées sont retirées de `src/vm/archive-errors.mjs` et
+2026 : corrigé, PR #157** — les deux entrées sont retirées de `src/vm/archive-errors.mjs` et
 `src/vm/import-errors.mjs`.
 
 **Écart 3 — la version du journal annoncée par l'ADR 0016 est périmée.** Sa décision 3 donne «
 format du journal (**2** en v3) ». Le code écrit **4** depuis le constat #143 — 3 depuis l'ADR 0019,
 qui le disait explicitement. La table de l'ADR 0016 n'a pas reçu d'amendement sur ce champ ; ses
 amendements datés et celui de l'ADR 0019 donnent la version courante, la table seule ne la donne
-pas. **Statut au 6 septembre 2026 : corrigé, PR #<n>** — la chaîne 2 → 3 → 4 est écrite dans
+pas. **Statut au 6 septembre 2026 : corrigé, PR #157** — la chaîne 2 → 3 → 4 est écrite dans
 l'amendement du même jour à l'ADR 0016, avec ses deux renvois.
 
 **Écart 4 — le coût du scellement initial : 18,7 s annoncés, 87,6 s mesurés.** L'ADR 0015 chiffre la
@@ -2016,7 +2017,7 @@ création d'un volume de 512 Mio à **18,7 s** par extrapolation, et sa section 
 La mesure réelle sur OPFS, publiée dans `docs/quality-attributes.md`, donne **87,6 s** (83,5 µs par
 secteur), soit un facteur 4,7 sur l'extrapolation. Le chiffre de ce document est le chiffre
 **mesuré**. La fenêtre que la marque de scellement complet ferme (§ 6.3) est donc quatre fois plus
-longue que l'ADR ne le laissait croire. **Statut au 6 septembre 2026 : corrigé, PR #<n>** — l'ADR
+longue que l'ADR ne le laissait croire. **Statut au 6 septembre 2026 : corrigé, PR #157** — l'ADR
 0015 est amendé le même jour : la mesure fait foi, et les trois chiffres restent lisibles avec leur
 statut.
 
@@ -2027,7 +2028,7 @@ l'identité présentée. Établi AVANT tout calcul cryptographique : le nonce se
 constructeur situé quinze lignes plus bas dit exactement le contraire, et il est juste : le nonce ne
 décrit plus rien, et ce refus ne sert plus qu'à la racine, après vérification de l'étiquette. C'est
 un défaut de documentation dans le code, sans effet sur les octets. **Statut au 6 septembre 2026 :
-corrigé, PR #<n>** — le commentaire dit désormais ce que le constructeur fait.
+corrigé, PR #157** — le commentaire dit désormais ce que le constructeur fait.
 
 Aucun de ces cinq écarts ne change un octet du format. Les quatre premiers sont des documents en
 retard sur le code ; le cinquième est un commentaire en retard sur son propre fichier.
