@@ -229,6 +229,14 @@
             52, 48, 71, 74, 9, 52, 56, 83, 52, 160, 52, 77, 75, 50, 160, 69, 65, 49, 57, 160, 53,
             56, 78, 74, 160, 82, 66, 57, 69, 160, 53, 87, 57, 72
           ]
+        },
+        {
+          "nom": "le signe KELVIN (U+212A) à la place du K, que la NFC ramène à « K »",
+          "motif": "C'est le vecteur qui FIGE la normalisation plutôt que de l'affirmer. U+212A a une décomposition canonique SINGLETON vers U+004B : les quatre formes le ramènent à « K », et une saisie qui ne normaliserait pas du tout le refuserait. Sans lui, retirer la normalisation ne changerait rien d'observable, puisque l'alphabet base 32 ne porte aucun caractère composable.",
+          "pointsSaisis": [
+            52, 48, 71, 74, 45, 52, 56, 83, 52, 45, 52, 77, 8490, 50, 45, 69, 65, 49, 57, 45, 53,
+            56, 78, 74, 45, 82, 66, 57, 69, 45, 53, 87, 57, 72
+          ]
         }
       ],
       "refusees": [
@@ -246,6 +254,14 @@
           "pointsSaisis": [
             52, 65313, 71, 74, 45, 52, 56, 83, 52, 45, 52, 77, 75, 50, 45, 69, 65, 49, 57, 45, 53,
             56, 78, 74, 45, 82, 66, 57, 69, 45, 53, 87, 57, 72
+          ]
+        },
+        {
+          "nom": "un « é » à la place du premier 0 : aucun repli ne le ramène dans l'alphabet",
+          "motif": "Un signe hors alphabet est REFUSÉ, jamais ignoré ni ramené sur une valeur par défaut : replié sur 0, celui-ci rendrait exactement le code valide, somme de contrôle comprise. Il double le vecteur du chiffre pleine chasse sur cette propriété-là, et s'en distingue sur une autre : « é » n'a AUCUNE correspondance Unicode vers un symbole de l'alphabet, quand U+FF10 n'est refusé que parce que la forme appliquée est NFC et non NFKC.",
+          "pointsSaisis": [
+            52, 233, 71, 74, 45, 52, 56, 83, 52, 45, 52, 77, 75, 50, 45, 69, 65, 49, 57, 45, 53, 56,
+            78, 74, 45, 82, 66, 57, 69, 45, 53, 87, 57, 72
           ]
         },
         {

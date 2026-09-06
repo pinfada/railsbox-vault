@@ -438,7 +438,40 @@ test("un sel de mauvaise largeur, ou une version inconnue, est refusé à la LEC
     (erreur) => isDerivationError(erreur, DERIVATION_ERROR_CODES.parametresRefuses),
     "un sel de seize octets n'est pas le sel de trente-deux que ce type exige.",
   );
+  // Et à la LECTURE, ce qui est le côté qui compte : ces octets viennent d'un fichier, et
+  // l'encodeur du produit ne peut pas les fabriquer. Ils sont donc POSÉS à la main, comme le fait
+  // `vm-derivation-phrase.test.mjs` pour son sel court. Sans cette épreuve, un adversaire qui écrit
+  // `<volume>.cles` y mettrait un sel de seize octets et la garde ne dirait rien.
+  await assert.rejects(
+    () =>
+      derivateurRecuperation().deriver({
+        parametres: parametresAuSelCourt(),
+        identite,
+        geste,
+      }),
+    (erreur) => isDerivationError(erreur, DERIVATION_ERROR_CODES.parametresRefuses),
+    "un sel court LU DANS LE FICHIER aurait dû être refusé",
+  );
 });
+
+/**
+ * Les paramètres publics d'un emplacement de récupération dont le SEL ne fait que seize octets.
+ *
+ * Ils sont écrits à la main : étiquette de domaine préfixée de sa longueur, version sur un octet,
+ * longueur du sel sur deux, puis le sel. Le produit refuse de les encoder, et c'est le point.
+ */
+function parametresAuSelCourt() {
+  const etiquette = new TextEncoder().encode("railsbox-vault/derivation/v1/recuperation");
+  const sel = suiteDOctets(0xd0, 16);
+  const octets = new Uint8Array(2 + etiquette.byteLength + 1 + 2 + sel.byteLength);
+  const vue = new DataView(octets.buffer);
+  vue.setUint16(0, etiquette.byteLength, false);
+  octets.set(etiquette, 2);
+  octets[2 + etiquette.byteLength] = RECUPERATION_VERSION;
+  vue.setUint16(3 + etiquette.byteLength, sel.byteLength, false);
+  octets.set(sel, 5 + etiquette.byteLength);
+  return octets;
+}
 
 test("le matériau remis à HKDF est le SHA-256 des seize octets, et les octets sont effacés", async () => {
   const octets = OCTETS_TEMOIN();
