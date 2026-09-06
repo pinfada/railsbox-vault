@@ -203,13 +203,27 @@ async function releverPolitiqueDeCache(page, arbre, natures) {
   return releves;
 }
 
+/**
+ * Relève l'état ATTEINT par la coquille de produit sur l'arbre publié (#161, ADR 0028).
+ *
+ * Deux issues sont conformes, et il faut les distinguer plutôt que d'attendre la seule « prête » :
+ *
+ *  - `prete` — la règle d'origine a conclu, et le cadre applicatif a été créé ;
+ *  - `sans-cadre` — la règle n'a pas su traduire l'origine servie en origine applicative. C'est le
+ *    cas d'un arbre de BANC servi sur `127.0.0.1`, où le témoin sert les deux origines sur des ports
+ *    que la règle locale ne relie pas. La coquille n'invente alors aucun cadre, et c'est la conduite
+ *    voulue : encadrer une origine devinée reviendrait à choisir soi-même celui qu'on va croire.
+ *
+ * Ce que le témoin refuse, c'est `erreur` et `refusee` — et l'absence d'état, c'est-à-dire une
+ * coquille qui n'a pas démarré du tout.
+ */
 async function releverDemarrage(page) {
   await page.waitForFunction(
-    () => globalThis.document.documentElement.dataset.vaultReady === "true",
+    () => ["prete", "sans-cadre"].includes(globalThis.document.documentElement.dataset.coquille),
     undefined,
     { timeout: 15000 },
   );
-  return page.textContent("#worker-status");
+  return page.getAttribute("html", "data-coquille");
 }
 
 /** Les origines du TÉMOIN, telles que la table d'en-têtes attendus doit les lire. */
@@ -390,7 +404,9 @@ export function verdict(mesure) {
       }`,
     );
   }
-  if (mesure.demarrage !== "worker:ready") motifs.push(`démarrage : ${mesure.demarrage}`);
+  if (!["prete", "sans-cadre"].includes(mesure.demarrage)) {
+    motifs.push(`démarrage de la coquille : ${mesure.demarrage}`);
+  }
   if (mesure.openerAvecCoop !== true) motifs.push("COOP servi mais `window.opener` a survécu");
   if (mesure.openerSansCoop !== false) {
     motifs.push("témoin négatif cassé : `window.opener` est nul SANS COOP");

@@ -82,7 +82,23 @@ const rapport = {
   requetesRefusees: [],
   etat: ETATS_DU_VOLUME.demarrage,
   barrieres: 0,
+  // Ce que l'assemblage COÛTE, en millisecondes depuis l'évaluation de ce module. Deux grandeurs,
+  // publiées plutôt que promises : l'établissement du canal privilégié — création du Worker de
+  // confiance, transfert du port, premier aller-retour — et le chargement du cadre applicatif.
+  // Elles diffèrent d'un moteur à l'autre, et l'ADR 0028 publie les trois relevés.
+  // `deverrouillageMs` est publié à part parce qu'il ne relève PAS de la coquille : c'est le prix
+  // d'Argon2id, de l'OPFS et du moteur, mesuré ailleurs par les ADR 0021 et 0025. Le confondre avec
+  // le coût du cadre ferait porter à l'assemblage une attente qui n'est pas la sienne.
+  mesures: { canalPrivilegieMs: null, deverrouillageMs: null, cadreApplicatifMs: null },
 };
+
+/** Origine des mesures : l'évaluation de ce module, c'est-à-dire le premier instant de la coquille. */
+const depart = performance.now();
+
+/** @param {string} nom */
+function mesurer(nom) {
+  rapport.mesures[nom] = Math.round((performance.now() - depart) * 10) / 10;
+}
 
 function publier() {
   noeudRapport.textContent = JSON.stringify(rapport, null, 2);
@@ -241,6 +257,7 @@ function creerLeCadre(url) {
   element.src = url;
   element.addEventListener("load", () => {
     rapport.cadreApplicatif = "charge";
+    mesurer("cadreApplicatifMs");
     publier();
   });
   cadre = element;
@@ -259,10 +276,12 @@ async function demarrer() {
   await demanderLEtat();
   rapport.canalPrivilegie = "etabli";
   rapport.journal.push("canal-privilegie-etabli");
+  mesurer("canalPrivilegieMs");
   publier();
 
   const jeton = parametres.get(PARAMETRE_HARNAIS);
   if (jeton) await deverrouillerParLeHarnais(jeton);
+  mesurer("deverrouillageMs");
 
   if (cible === null) return terminer("sans-cadre", "coquille:origine-applicative-indeterminee");
   creerLeCadre(cible.url);

@@ -139,6 +139,31 @@ test("le document applicatif LOYAL obtient son port et l'état : la coquille SER
   expect(Object.keys(rapport).sort()).toEqual(["barrieres", "etat", "portRecu", "refus"]);
 });
 
+test("l'assemblage publie ce qu'il COÛTE : canal privilégié, puis cadre applicatif", async ({
+  page,
+}, info) => {
+  // Une MESURE, pas une assertion de performance : rien ici ne rougit sur un seuil. L'ADR 0028
+  // publie les trois relevés, et un seuil posé sur un exécutant partagé mesurerait la machine.
+  const releve = await ouvrirLaCoquille(page);
+  // « Prête » dit que le cadre est CRÉÉ ; sa mesure n'existe qu'une fois qu'il est CHARGÉ. Attendre
+  // l'attribut plutôt que la clé : la clé est là dès le départ, avec la valeur `null`.
+  await expect
+    .poll(async () => (await relevéDeLaCoquille(page)).mesures.cadreApplicatifMs, {
+      timeout: 30000,
+    })
+    .not.toBeNull();
+  const apres = await relevéDeLaCoquille(page);
+  await info.attach(`mesures-${info.project.name}.json`, {
+    body: JSON.stringify({ moteur: info.project.name, ...apres.mesures }, null, 2),
+    contentType: "application/json",
+  });
+
+  expect(releve.mesures.canalPrivilegieMs).toBeGreaterThanOrEqual(0);
+  // L'ORDRE se lit aussi dans les mesures : le cadre ne peut pas être chargé avant que le canal
+  // soit établi, puisqu'il n'est même pas créé avant.
+  expect(apres.mesures.cadreApplicatifMs).toBeGreaterThanOrEqual(apres.mesures.canalPrivilegieMs);
+});
+
 // --- L'application malveillante --------------------------------------------------------------------
 
 test("l'application malveillante reçoit un refus TYPÉ sur chacun des dix gestes interdits", async ({

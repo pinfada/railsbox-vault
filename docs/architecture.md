@@ -50,8 +50,19 @@ encadré par `sandbox="allow-scripts allow-same-origin"`. La partition d'origine
 IndexedDB, Web Locks, `BroadcastChannel`, stockage clé-valeur, cookies et portée des Service
 Workers. La coquille n'accorde qu'un `MessagePort` transféré, restreint à une liste d'admission.
 
-Les formes exactes de ces ports restent ouvertes : l'ADR 0002 énumère les interfaces à ne pas figer
-avant l'implémentation complète #24.
+Depuis #161 ([ADR 0028](decisions/0028-coquille-de-produit-et-frontiere.md)), cette frontière est
+**du produit et non plus un banc**. Ce qui a changé, et ce qui n'a pas changé :
+
+| Ce qui est désormais PRODUIT                                                                                                                  | Ce qui reste un BANC                                                                        |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `public/index.html`, `public/main.mjs` — la coquille : canal privilégié avant tout document, cadre encadré, port restreint transféré une fois | `public/spike/origin/*` — la coquille du spike #35, inchangée, témoin des QUATRE topologies |
+| `public/runtime-worker.mjs` — le Worker de confiance : handle exclusif, clé de volume, aucune des deux ne franchissant un `postMessage`       | `public/vm/*` — les bancs de la VM, du bail, de l'enveloppe et du déverrouillage            |
+| `src/coquille/` — contrat versionné, liste d'admission dérivée, dix refus typés, dérivation de l'origine applicative                          | `public/coquille-epreuve/` — l'application malveillante, jamais publiée                     |
+
+Les formes de ces ports ne sont donc plus toutes ouvertes. L'ADR 0028 § « Impacts » dit, interface
+par interface, laquelle des six réserves de l'ADR 0002 reçoit sa décision et laquelle reste réservée
+— la stratégie de reprise après perte du cadre ou du Worker se tranche AVEC #25, à l'ouverture de la
+tranche 3 (#163).
 
 ### Runtime générique
 
@@ -190,6 +201,23 @@ pas le servir : c'est un critère de plus pour #45, pas un couperet.
    et relâche les clés au mieux de JavaScript.
 8. La reprise part d'un boot à froid tant qu'un snapshot lié à une génération exacte n'est pas
    démontré.
+
+**Où en est cet assemblage, au 7 septembre 2026.** Il n'est pas assemblé, et il faut le dire étape
+par étape plutôt que globalement :
+
+| Étape | État                                                                                                                                                                                                                               |
+| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | sonde de capacités `public/compat.html`, **hors coquille** et exemptée de sa CSP (#2)                                                                                                                                              |
+| 2     | **PRODUIT depuis #161** — le canal privilégié est établi avant tout document, et l'ordre est TENU par une garde (`VAULT_COQUILLE_CANAL_ABSENT`), non par une convention. L'exclusivité du volume, elle, reste le banc du bail (#8) |
+| 3     | banc — le Worker de confiance ouvre le backend OPFS ; la VM n'est pas dans la coquille                                                                                                                                             |
+| 4     | **PRODUIT depuis #161** — cadre sur l'origine distincte, port transféré une fois après vérification de l'ordre, du type, de l'origine et de la fenêtre émettrice                                                                   |
+| 5     | banc — le flush et son acquittement sont éprouvés hors coquille ; ce que la coquille en publie est le COMPTE de barrières, poussé à l'application                                                                                  |
+| 6     | banc — export et migration vivent dans `public/vm/`                                                                                                                                                                                |
+| 7     | #25, non ouvert                                                                                                                                                                                                                    |
+| 8     | banc — l'instantané de reprise (#65, ADR 0024)                                                                                                                                                                                     |
+
+La tranche 3 (#163) assemble le reste. Ce qui manque le plus visiblement : aucun scénario de
+`tests/e2e/` ne tourne encore sur la coquille réelle — ils partent tous de `/vm/reference.html`.
 
 ## Erreurs contractuelles
 
@@ -1057,8 +1085,12 @@ lui permet et lui interdit est écrit dans l'ADR 0023.
 4. Format de volume authentifié et transactionnel.
 5. Déverrouillage, récupération et rotation des clés.
 6. Implémentation complète (#24) de la séparation d'origine décidée par l'ADR 0002 ; sa preuve de
-   frontière existe déjà (`tests/browser/origin-topology.spec.mjs`) et devra être rejouée sur les
-   ports réels.
+   frontière existait déjà (`tests/browser/origin-topology.spec.mjs`) et devait être rejouée sur les
+   ports réels. **Fait pour la tranche 1 (#161)** : `tests/browser/coquille-frontiere.spec.mjs`
+   rejoue la question sur les ports réels de la coquille de produit, contre une application
+   malveillante servie par l'origine applicative, sur les trois moteurs, avec témoin positif en même
+   origine. Restent la tranche 2 (déverrouillage offert, #162) et la tranche 3 (cycle assemblé,
+   COOP, #163).
 7. Échanges chiffrés optionnels entre utilisateurs.
 
 La restauration d'un instantané mémoire pré-calculé sur un disque mutable est écartée du premier
