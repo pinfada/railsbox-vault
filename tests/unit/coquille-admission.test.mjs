@@ -75,7 +75,8 @@ test("chaque usage cité désigne un fichier qui existe, à une ligne qui existe
       try {
         const contenu = await readFile(path.join(REPO_ROOT, chemin), "utf8");
         const lignes = contenu.split("\n").length;
-        if (Number(ligne) > lignes) manquants.push(`${chemin}:${ligne} — le fichier fait ${lignes} lignes`);
+        if (Number(ligne) > lignes)
+          manquants.push(`${chemin}:${ligne} — le fichier fait ${lignes} lignes`);
       } catch {
         manquants.push(`${chemin} — fichier absent`);
       }
@@ -123,7 +124,11 @@ test("aucun champ du contrat ne nomme une application : l'origine EST l'identit�
 test("les DIX gestes de la liste de refus de #24 sont là, chacun avec son propre code", () => {
   assert.equal(GESTES_REFUSES.length, 10);
   const codes = GESTES_REFUSES.map(({ code }) => code);
-  assert.equal(new Set(codes).size, 10, "deux gestes refusés partagent un code : ils deviennent indiscernables.");
+  assert.equal(
+    new Set(codes).size,
+    10,
+    "deux gestes refusés partagent un code : ils deviennent indiscernables.",
+  );
   const gestes = GESTES_REFUSES.map(({ geste }) => geste).join(" | ");
   for (const attendu of [
     /KEK/,
@@ -160,7 +165,9 @@ test("le refus ne dépend QUE du type : ce n'est pas un oracle", () => {
 });
 
 test("un type du canal PRIVILÉGIÉ posé sur le port restreint est refusé comme tel", () => {
-  const verdict = evaluerRequete(enveloppeDeMessage(TYPES_PRIVILEGIES.deverrouiller, { jeton: "x" }));
+  const verdict = evaluerRequete(
+    enveloppeDeMessage(TYPES_PRIVILEGIES.deverrouiller, { jeton: "x" }),
+  );
   assert.equal(verdict.admise, false);
   assert.equal(verdict.code, CODES_REFUS_COQUILLE.portPrivilegie);
 });
@@ -242,7 +249,10 @@ test("une origine attendue absente ne laisse RIEN passer", () => {
 
 test("l'origine applicative se dérive de celle de la coquille, jamais d'un message", () => {
   assert.equal(origineApplicativeDe("https://vault.exemple"), "https://app.vault.exemple");
-  assert.equal(origineApplicativeDe("https://coffre.exemple:8443"), "https://app.coffre.exemple:8443");
+  assert.equal(
+    origineApplicativeDe("https://coffre.exemple:8443"),
+    "https://app.coffre.exemple:8443",
+  );
 });
 
 test("l'exception LOCALE reprend le couple du spike : `localhost` sur le port suivant", () => {

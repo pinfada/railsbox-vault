@@ -54,14 +54,20 @@ test("les deux canaux ne partagent AUCUN type : un type privilégié n'est pas u
 });
 
 test("un message enveloppé porte le contrat, sa version et son type, et il est gelé", () => {
-  const message = enveloppeDeMessage(TYPES_APPLICATIFS.etatReponse, { etat: "ouvert", barrieres: 1 });
-  assert.deepEqual({ ...message }, {
-    contrat: "railsbox-vault-coquille",
-    version: 1,
-    type: TYPES_APPLICATIFS.etatReponse,
+  const message = enveloppeDeMessage(TYPES_APPLICATIFS.etatReponse, {
     etat: "ouvert",
     barrieres: 1,
   });
+  assert.deepEqual(
+    { ...message },
+    {
+      contrat: "railsbox-vault-coquille",
+      version: 1,
+      type: TYPES_APPLICATIFS.etatReponse,
+      etat: "ouvert",
+      barrieres: 1,
+    },
+  );
   assert.ok(Object.isFrozen(message));
 });
 
@@ -71,6 +77,19 @@ test("le décodeur refuse ce qui n'est pas un objet, et le dit par un code", () 
     assert.equal(verdict.ok, false, `${JSON.stringify(valeur) ?? "undefined"} a été décodé`);
     assert.equal(verdict.code, CODES_REFUS_COQUILLE.messageMalforme);
   }
+});
+
+test("le décodeur refuse un AUTRE contrat, même quand la version est la nôtre", () => {
+  // La version JUSTE est ce qui rend cette épreuve utile : avec une version étrangère, retirer la
+  // comparaison d'identifiant laisserait le refus tomber sur la version, sous le même code — et la
+  // campagne de mutation a trouvé exactement ce mutant vivant.
+  const verdict = decoderMessage({
+    contrat: "autre-logiciel",
+    version: CONTRAT_COQUILLE.version,
+    type: TYPES_APPLICATIFS.etat,
+  });
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.code, CODES_REFUS_COQUILLE.contratRefuse);
 });
 
 test("le décodeur refuse un AUTRE contrat avant de regarder la version", () => {

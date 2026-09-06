@@ -69,34 +69,37 @@ async function releverLaFixture(portee) {
 
 /** Lit, DEPUIS l'origine de la coquille, ce que la fixture a cru persister. */
 function contaminationDeLaCoquille(page) {
-  return page.evaluate(async (noms) => {
-    const releve = {};
-    try {
-      const racine = await navigator.storage.getDirectory();
-      const handle = await racine.getFileHandle(noms.opfs);
-      releve.opfs = await (await handle.getFile()).text();
-    } catch (error) {
-      releve.opfs = `absent (${error?.name ?? "Error"})`;
-    }
-    try {
-      releve.indexedDb = await new Promise((rendre, refuser) => {
-        const requete = indexedDB.open(noms.base, 1);
-        requete.onupgradeneeded = () => requete.result.createObjectStore(noms.magasin);
-        requete.onerror = () => refuser(requete.error ?? new Error("ouverture refusée"));
-        requete.onsuccess = () => {
-          const lecture = requete.result
-            .transaction(noms.magasin, "readonly")
-            .objectStore(noms.magasin)
-            .get(noms.cle);
-          lecture.onsuccess = () => rendre(lecture.result ?? "absent");
-          lecture.onerror = () => refuser(lecture.error ?? new Error("lecture refusée"));
-        };
-      });
-    } catch (error) {
-      releve.indexedDb = `absent (${error?.name ?? "Error"})`;
-    }
-    return releve;
-  }, { opfs: MARQUEUR_OPFS, base: BASE_IDB, magasin: MAGASIN_IDB, cle: CLE_IDB_HOSTILE });
+  return page.evaluate(
+    async (noms) => {
+      const releve = {};
+      try {
+        const racine = await navigator.storage.getDirectory();
+        const handle = await racine.getFileHandle(noms.opfs);
+        releve.opfs = await (await handle.getFile()).text();
+      } catch (error) {
+        releve.opfs = `absent (${error?.name ?? "Error"})`;
+      }
+      try {
+        releve.indexedDb = await new Promise((rendre, refuser) => {
+          const requete = indexedDB.open(noms.base, 1);
+          requete.onupgradeneeded = () => requete.result.createObjectStore(noms.magasin);
+          requete.onerror = () => refuser(requete.error ?? new Error("ouverture refusée"));
+          requete.onsuccess = () => {
+            const lecture = requete.result
+              .transaction(noms.magasin, "readonly")
+              .objectStore(noms.magasin)
+              .get(noms.cle);
+            lecture.onsuccess = () => rendre(lecture.result ?? "absent");
+            lecture.onerror = () => refuser(lecture.error ?? new Error("lecture refusée"));
+          };
+        });
+      } catch (error) {
+        releve.indexedDb = `absent (${error?.name ?? "Error"})`;
+      }
+      return releve;
+    },
+    { opfs: MARQUEUR_OPFS, base: BASE_IDB, magasin: MAGASIN_IDB, cle: CLE_IDB_HOSTILE },
+  );
 }
 
 /** Lit la ressource témoin depuis un client NEUF : seul un client neuf traverse un SW fraîchement inscrit. */
@@ -286,7 +289,10 @@ test("témoin de sonde : sur SON origine, la fixture obtient bien une portée de
 
 // --- Aucun cookie ---------------------------------------------------------------------------------
 
-test("la coquille ne pose AUCUN cookie, sur aucune des deux origines", async ({ page, context }) => {
+test("la coquille ne pose AUCUN cookie, sur aucune des deux origines", async ({
+  page,
+  context,
+}) => {
   const reponses = [];
   page.on("response", (reponse) => reponses.push(reponse));
 
@@ -332,8 +338,6 @@ test("les documents NEUFS de la coquille portent la CSP et le durcissement, sans
     expect(entetes["content-security-policy"], chemin).toContain("frame-ancestors 'none'");
     expect(entetes["content-security-policy"], chemin).toContain(`frame-src 'self' ${APP_ORIGIN}`);
     expect(entetes["referrer-policy"], chemin).toBe("no-referrer");
-    expect(entetes["permissions-policy"], chemin).toBe(
-      "camera=(), microphone=(), geolocation=()",
-    );
+    expect(entetes["permissions-policy"], chemin).toBe("camera=(), microphone=(), geolocation=()");
   }
 });

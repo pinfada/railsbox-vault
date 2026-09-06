@@ -67,21 +67,26 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
 /** Les messages en français, un par code. Ils décrivent le REFUS, jamais l'état de l'appareil. */
 const MESSAGES = Object.freeze({
   [CODES_REFUS_COQUILLE.messageMalforme]: "Message illisible : la coquille attend un objet typé.",
-  [CODES_REFUS_COQUILLE.contratRefuse]: "Contrat inconnu : cette coquille ne parle pas ce dialecte.",
+  [CODES_REFUS_COQUILLE.contratRefuse]:
+    "Contrat inconnu : cette coquille ne parle pas ce dialecte.",
   [CODES_REFUS_COQUILLE.typeInconnu]: "Requête hors de la liste d'admission de la coquille.",
   [CODES_REFUS_COQUILLE.kek]: "La clé de déverrouillage ne quitte jamais la coquille.",
   [CODES_REFUS_COQUILLE.dek]: "La clé de volume ne quitte jamais le Worker de confiance.",
-  [CODES_REFUS_COQUILLE.exportation]: "L'export est un geste de l'utilisateur, pas de l'application.",
-  [CODES_REFUS_COQUILLE.revocation]: "La révocation est un geste de l'utilisateur, pas de l'application.",
+  [CODES_REFUS_COQUILLE.exportation]:
+    "L'export est un geste de l'utilisateur, pas de l'application.",
+  [CODES_REFUS_COQUILLE.revocation]:
+    "La révocation est un geste de l'utilisateur, pas de l'application.",
   [CODES_REFUS_COQUILLE.emplacement]:
     "Ajouter un emplacement de déverrouillage est un geste de l'utilisateur.",
   [CODES_REFUS_COQUILLE.recuperation]:
     "Créer un moyen de récupération est un geste de l'utilisateur.",
   [CODES_REFUS_COQUILLE.volume]: "L'application ne choisit pas le volume qu'elle habite.",
-  [CODES_REFUS_COQUILLE.enveloppe]: "Le fichier d'enveloppes et son inventaire ne sont pas lisibles ici.",
+  [CODES_REFUS_COQUILLE.enveloppe]:
+    "Le fichier d'enveloppes et son inventaire ne sont pas lisibles ici.",
   [CODES_REFUS_COQUILLE.portPrivilegie]:
     "Le canal privilégié coquille ↔ Worker n'est atteignable par aucun message.",
-  [CODES_REFUS_COQUILLE.handle]: "Aucun handle, descripteur ou capacité ne franchit le port restreint.",
+  [CODES_REFUS_COQUILLE.handle]:
+    "Aucun handle, descripteur ou capacité ne franchit le port restreint.",
   [CODES_REFUS_COQUILLE.canalAbsent]:
     "Annonce refusée : le canal privilégié n'est pas établi ; aucun port n'est octroyé avant lui.",
   [CODES_REFUS_COQUILLE.annonceType]: "Annonce refusée : type inattendu.",
