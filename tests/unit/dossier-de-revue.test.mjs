@@ -614,8 +614,12 @@ test("le README indexe TOUS les ADR de docs/decisions/, sans trou ni ligne inven
 test("SECURITY.md dit ce que le moyen de récupération COUVRE et ce qu'il ne couvre pas", async () => {
   // #147 : une liste à DEUX entrées, au même niveau. Sans ce cliquet, la seconde moitié — celle qui
   // dit ce que le produit ne promet pas — est exactement celle qui se perd à la relecture suivante,
-  // parce que personne n'aime la relire. Le contrôle porte sur la PRÉSENCE des huit entrées et sur
+  // parce que personne n'aime la relire. Le contrôle porte sur la PRÉSENCE des DIX entrées et sur
   // le vocabulaire qui les sépare, à la manière dont la table des statuts est relue plus haut.
+  //
+  // Elles étaient huit jusqu'à #148 : les deux dernières entrées « non couvert » sont nées de la
+  // révocation d'urgence, et elles disent ce qui reste hors de portée du produit une fois la page
+  // libre effacée — le SUPPORT, et le fait qu'une révocation ne rechiffre rien.
   const security = await lire(SECURITY);
   const section = security.slice(
     security.indexOf("### Ce que le moyen de récupération COUVRE"),
@@ -632,6 +636,8 @@ test("SECURITY.md dit ce que le moyen de récupération COUVRE et ce qu'il ne co
         "Archive perdue",
         "Copie du code prise avant la révocation",
         "Retour arrière COMPLET du support",
+        "Ce que le SUPPORT garde de l'emplacement retiré",
+        "révoquer ne RECHIFFRE PAS",
       ],
     ],
   ]) {
@@ -650,6 +656,19 @@ test("SECURITY.md dit ce que le moyen de récupération COUVRE et ce qu'il ne co
     section,
     /n'emporte PAS `<volume>\.cles`/,
     "la réserve sur l'archive doit être écrite plutôt que maquillée.",
+  );
+  // #148 : ce que l'effacement de la page libre promet, et ce qu'il ne promet pas. Sans ce cliquet,
+  // « aucun octet ne subsiste » se relirait comme une promesse sur le disque, qu'aucune ligne de ce
+  // dépôt ne peut tenir.
+  assert.match(
+    section,
+    /fait, non garanti/i,
+    "l'effacement de la page libre porte sur le FICHIER, pas sur le support : le dire est la moitié de la promesse.",
+  );
+  assert.match(
+    section,
+    /rotation de la clé de volume/i,
+    "la seule parade à une copie déjà prise doit être nommée, même hors périmètre.",
   );
 });
 

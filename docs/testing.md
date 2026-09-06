@@ -543,15 +543,17 @@ main laisse un quart de gibioctet sans que personne sache d'où il vient.
 l'[ADR 0020](decisions/0020-enveloppe-de-cle.md) pose un quatrième voisin `<volume>.cles` qui porte
 la clé de volume ENVELOPPÉE sous une ou plusieurs clés de déverrouillage.
 
-| Niveau       | Fichier                                            | Ce qu'il éprouve                                          | Rattachement       |
-| ------------ | -------------------------------------------------- | --------------------------------------------------------- | ------------------ |
-| unitaire     | `tests/unit/vm-enveloppe-modele.test.mjs`          | données associées injectives, ordre des vérifications     | `npm run check`    |
-| unitaire     | `tests/unit/vm-enveloppe-vecteurs.test.mjs`        | **vecteurs figés reproduits** par le chemin de production | `npm run check`    |
-| unitaire     | `tests/unit/vm-enveloppe-operations.test.mjs`      | cinq opérations, onze refus, identité à l'octet du volume | `npm run check`    |
-| unitaire     | `tests/unit/vm-enveloppe-coupures.test.mjs`        | coupure à **chaque rang**, sous **quatre** sinistres      | `npm run check`    |
-| unitaire     | `tests/unit/vm-enveloppe-ouverture.test.mjs`       | la couche au-dessus de l'ouvreur unique, archive sans clé | `npm run check`    |
-| navigateur   | `tests/browser/enveloppe-frontiere.spec.mjs`       | OPFS réel, trois moteurs, aucune clé au port              | `npm run check`    |
-| bout en bout | `tests/e2e/enveloppe-rotation-boot-froid.spec.mjs` | Rails ouvert par KEK, rotation, boot à froid              | `npm run test:e2e` |
+| Niveau       | Fichier                                               | Ce qu'il éprouve                                                | Rattachement       |
+| ------------ | ----------------------------------------------------- | --------------------------------------------------------------- | ------------------ |
+| unitaire     | `tests/unit/vm-enveloppe-modele.test.mjs`             | données associées injectives, ordre des vérifications           | `npm run check`    |
+| unitaire     | `tests/unit/vm-enveloppe-vecteurs.test.mjs`           | **vecteurs figés reproduits** par le chemin de production       | `npm run check`    |
+| unitaire     | `tests/unit/vm-enveloppe-operations.test.mjs`         | cinq opérations, onze refus, identité à l'octet du volume       | `npm run check`    |
+| unitaire     | `tests/unit/vm-enveloppe-coupures.test.mjs`           | coupure à **chaque rang**, sous **quatre** sinistres            | `npm run check`    |
+| unitaire     | `tests/unit/vm-enveloppe-ouverture.test.mjs`          | la couche au-dessus de l'ouvreur unique, archive sans clé       | `npm run check`    |
+| unitaire     | `tests/unit/vm-enveloppe-revocation-urgence.test.mjs` | la sixième opération, et **zéro octet résiduel** sur les 16 384 | `npm run check`    |
+| unitaire     | `tests/unit/vm-revocation-urgence-mutation.test.mjs`  | la campagne de mutation de #148 : huit gardes, huit tuées       | `npm run check`    |
+| navigateur   | `tests/browser/enveloppe-frontiere.spec.mjs`          | OPFS réel, trois moteurs, aucune clé au port                    | `npm run check`    |
+| bout en bout | `tests/e2e/enveloppe-rotation-boot-froid.spec.mjs`    | Rails ouvert par KEK, rotation, boot à froid                    | `npm run test:e2e` |
 
 **Ce que les vecteurs valent ici.** L'outil qui les fige (`tools/figer-vecteurs-enveloppe.mjs`)
 **pose les octets lui-même**, champ par champ, au lieu d'appeler `encoderPage`. C'est ce qui en fait
@@ -566,13 +568,14 @@ la main là où il le faut — retirer un emplacement en rectifiant la longueur 
 contrôle, mais pas le compte AUTHENTIFIÉ —, parce que passer par l'encodeur du produit ne produirait
 que des fichiers cohérents, c'est-à-dire ne mesurerait rien.
 
-**La matrice de coupures est exhaustive et elle MORD.** Pour chacune des quatre opérations, pour
-chaque geste porté au support, sous quatre sinistres — avant l'effet, après l'effet, et deux points
-de déchirure —, l'état obtenu est CLASSÉ : ancien ou nouveau, jamais « pas une erreur ». Deux
-exigences la rendent honnête : chaque coupure programmée doit avoir LIEU, et une mutation de garde
-vérifie qu'écrire sur la page qui fait autorité serait vu. Le second point de déchirure existe parce
-que le premier ne mordait pas : à mi-page, la liste d'une enveloppe ordinaire est déjà écrite en
-entier, et la déchirure devenait un synonyme de « coupure après ».
+**La matrice de coupures est exhaustive et elle MORD.** Pour chacune des CINQ mutations — la
+révocation d'urgence de #148 comprise —, pour chaque geste porté au support, sous quatre sinistres —
+avant l'effet, après l'effet, et deux points de déchirure —, l'état obtenu est CLASSÉ : ancien ou
+nouveau, jamais « pas une erreur ». Deux exigences la rendent honnête : chaque coupure programmée
+doit avoir LIEU, et une mutation de garde vérifie qu'écrire sur la page qui fait autorité serait vu.
+Le second point de déchirure existe parce que le premier ne mordait pas : à mi-page, la liste d'une
+enveloppe ordinaire est déjà écrite en entier, et la déchirure devenait un synonyme de « coupure
+après ».
 
 **Treize gardes ont été RÉELLEMENT mutées**, et le relevé est dans l'ADR 0020. Treize tuées, dont
 deux qui ont d'abord survécu : l'une a corrigé le raisonnement de l'ADR sans toucher au code — la
@@ -580,15 +583,30 @@ propriété que la boucle sans court-circuit servait n'était pas celle qu'on lu
 révélé une mutation mal conçue plutôt qu'une garde absente. Une mutation qui survit doit d'abord
 être soupçonnée elle-même.
 
+**#148 ajoute huit gardes à muter, toutes tuées du premier passage**
+(`tools/muter-gardes-revocation-urgence.mjs`, relevé dans
+l'[ADR 0026](decisions/0026-revocation-d-urgence-et-page-libre.md)). L'une d'elles a demandé une
+épreuve qu'aucune assertion d'état ne pouvait porter : « la seconde barrière est franchie » ne
+change pas un octet du fichier, parce que le double de support modélise la VISIBILITÉ des écritures
+et non leur durabilité. Ce qui la tue est le COMPTE DES GESTES relevé par la matrice — une
+révocation en porte exactement quatre. Le moteur de campagne vit désormais dans
+`tools/moteur-de-mutation.mjs`, partagé plutôt que recopié une troisième fois.
+
+**Le coût de l'effacement de la page libre est MESURÉ sur l'OPFS réel**, dans le Worker du banc, et
+publié plutôt que gardé : Chromium 2,4-2,5 ms au p50, Firefox 32-33 ms, sur 30 tours et deux
+exécutions. Aucun seuil n'est imposé — un plafond relevé sur la machine d'un contributeur ferait
+rougir la CI d'un autre sans rien dire du produit.
+
 **La porte d'aléas de l'enveloppe rejoint les portes mesurées** de `harnais-portes.test.mjs`, avec
 son propre sinistre : deux clés de volume enveloppées sous la même clé de déverrouillage, le même
 identifiant d'emplacement et le même nonce livrent leur ou-exclusif. Les modules qui DÉFINISSENT une
 porte y sont inscrits avec leur motif ; la liste des APPELANTS reste vide, et c'est la propriété.
 
 ```bash
-npm run check                                     # les cinq suites unitaires y sont rattachées
+npm run check                                          # les suites unitaires y sont rattachées
 node --test "tests/unit/vm-enveloppe-*.test.mjs"
-node tools/mesurer-enveloppe.mjs                  # le coût d'ouverture, pire cas compris
+node tools/mesurer-enveloppe.mjs                       # le coût d'ouverture, pire cas compris
+node tools/muter-gardes-revocation-urgence.mjs         # la campagne de #148, seule, avec son tableau
 ```
 
 ### Dérivation des clés de déverrouillage

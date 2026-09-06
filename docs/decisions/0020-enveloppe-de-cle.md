@@ -169,6 +169,11 @@ l'autre.
 
 ## Décision 4 — Les cinq opérations, et leur atomicité
 
+> **Note du 6 septembre 2026 (#148, [ADR 0026](0026-revocation-d-urgence-et-page-libre.md)).** Elles
+> sont **SIX** : `revoquerToutSauf(kek)` retire tous les emplacements sauf celui que la KEK ouvre,
+> en une version et une barrière ; et la règle de remplissage ci-dessous s'étend à la page LIBÉRÉE,
+> que toute mutation qui RETIRE une clé efface après la barrière qui publie.
+
 `creer(dek, kek0)`, `ouvrir(kek) → dek`, `ajouter(kekNouvelle)`,
 `remplacer(emplacement, kekNouvelle)`, `revoquer(emplacement)`.
 

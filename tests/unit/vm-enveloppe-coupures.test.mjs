@@ -21,13 +21,20 @@ import {
   suiteDOctets,
 } from "./support-enveloppe-double.mjs";
 
-// ATOMICITÉ de l'enveloppe : une coupure à CHAQUE RANG de CHAQUE opération (#21, ADR 0020).
+// ATOMICITÉ de l'enveloppe : une coupure à CHAQUE RANG de CHAQUE opération (#21, ADR 0020 ; #148,
+// ADR 0026).
 //
 // La promesse à tenir est celle de l'ADR 0014, transposée aux clés : « une coupure à n'importe quel
 // geste laisse l'ancien état valide ou le nouveau, jamais ni l'un ni l'autre ». Ce fichier
-// l'éprouve exhaustivement plutôt que sur un cas heureux : pour chacune des quatre opérations, pour
-// chacun des gestes qu'elle porte au support, et sous les TROIS sinistres que le double sait
-// produire — coupure avant l'effet, coupure après l'effet, et écriture DÉCHIRÉE à mi-page.
+// l'éprouve exhaustivement plutôt que sur un cas heureux : pour chacune des CINQ mutations — la
+// révocation d'urgence de #148 comprise —, pour chacun des gestes qu'elle porte au support, et sous
+// les QUATRE sinistres que le double sait produire — coupure avant l'effet, coupure après l'effet,
+// et deux points de déchirure.
+//
+// Depuis #148, une mutation qui RETIRE une clé porte QUATRE gestes et non deux : écrire la page
+// neuve, barrière, effacer la page libérée, barrière. Les deux derniers sont éprouvés à part, parce
+// qu'ils ne posent pas la même question — après la barrière qui publie, une coupure ne peut plus
+// rien retirer, et c'est exactement ce que l'ordre de l'ADR 0026 achète.
 //
 // Deux exigences rendent la matrice honnête, et sans elles elle serait décorative :
 //

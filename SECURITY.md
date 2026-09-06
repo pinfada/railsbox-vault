@@ -441,10 +441,18 @@ et tester.
   [ADR 0025](docs/decisions/0025-moyen-de-recuperation.md). Les trois épreuves que l'invariant exige
   sont nommées : succès, révocation et perte définitive dans
   `tests/unit/vm-derivation-recuperation.test.mjs`, et le cycle complet sur l'OPFS réel des trois
-  moteurs dans `tests/browser/deverrouillage-frontiere.spec.mjs`. **Réserve, écrite une fois et
-  valable pour tout ce paragraphe** : le mécanisme existe et il est éprouvé, mais aucun chemin de
-  production ne l'OFFRE encore — le seul appelant hors épreuves est le banc de déverrouillage, et
-  l'interface est #24.
+  moteurs dans `tests/browser/deverrouillage-frontiere.spec.mjs`. **Depuis #148, la RÉVOCATION
+  D'URGENCE est éprouvée elle aussi** : « retirer tous les emplacements sauf celui que la clé
+  présentée ouvre » tient en une version et une barrière, la matrice de coupures le classe à chaque
+  rang (tous les emplacements, ou le seul retenu, jamais un sous-ensemble), et plus AUCUN octet d'un
+  emplacement retiré ne subsiste dans les 16 384 du fichier —
+  `tests/unit/vm-enveloppe-revocation-urgence.test.mjs`,
+  `tests/unit/vm-enveloppe-coupures.test.mjs`, et le geste sur l'OPFS réel dans
+  `tests/browser/enveloppe-frontiere.spec.mjs`. Ce que cela ne rattrape pas est l'entrée 10 de la
+  liste « non couvert » : révoquer ne rechiffre pas. **Réserve, écrite une fois et valable pour tout
+  ce paragraphe** : le mécanisme existe et il est éprouvé, mais aucun chemin de production ne
+  l'OFFRE encore — le seul appelant hors épreuves est le banc de déverrouillage, et l'interface est
+  #24.
 
 ### Ce que le moyen de récupération COUVRE, et ce qu'il ne couvre pas
 
@@ -464,8 +472,12 @@ que le produit ne promet pas. `tests/unit/dossier-de-revue.test.mjs` relit leurs
 3. **Phrase oubliée** — le code ouvre, et une phrase neuve se recrée sous lui. C'est exactement le
    cycle que le bout en bout des trois moteurs joue.
 4. **Emplacement compromis** — il se **révoque**, et un adversaire qui en tenait la clé retrouve le
-   refus d'une clé inconnue, indiscernable. Le geste composé « révoquer tout sauf celui que je tiens
-   » est #148 ; aujourd'hui, c'est une révocation par emplacement.
+   refus d'une clé inconnue, indiscernable. **Depuis #148**, le geste composé existe : « révoquer
+   tout sauf celui que je tiens » retire tous les emplacements en UNE version et UNE barrière, et
+   l'emplacement conservé est celui que la clé présentée OUVRE — jamais un identifiant fourni, qu'un
+   inventaire public livre à qui le demande. Décision :
+   [ADR 0026](docs/decisions/0026-revocation-d-urgence-et-page-libre.md). **Réserve, et elle porte
+   sur toutes les révocations** : révoquer NE RECHIFFRE PAS — voir l'entrée 10.
 
 **Non couvert.**
 
@@ -481,16 +493,30 @@ que le produit ne promet pas. `tests/unit/dossier-de-revue.test.mjs` relit leurs
    volume et de son enveloppe ramène un emplacement révoqué. C'est la limite que
    [l'ADR 0020](docs/decisions/0020-enveloppe-de-cle.md) nomme, et le code de récupération ne la
    ferme pas.
-9. **Copie du FICHIER prise entre une révocation et la mutation d'enveloppe suivante** —
-   `<volume>.cles` porte DEUX pages en alternance, et une révocation n'en réécrit qu'une. Les octets
-   de l'emplacement retiré subsistent donc dans l'autre jusqu'au geste d'enveloppe suivant, qui
-   l'écrase. Ce qu'ils ne permettent PAS est d'ouvrir : `ouvrirEnveloppe` juge l'état COURANT et
-   refuse sans replier sur la page précédente — c'est mesuré. Ce qu'ils permettent est de rejouer le
-   retour arrière de l'entrée 8 à moindres frais, sur un fichier qu'on a copié au bon moment. C'est
-   l'alternance de pages de l'[ADR 0020](docs/decisions/0020-enveloppe-de-cle.md), identique pour
-   tous les types de clé et donc pas une propriété du code de récupération ; la question est posée
-   par #156 et se décide dans #148, où « aucun octet des emplacements retirés » est la promesse
-   centrale.
+9. **Ce que le SUPPORT garde de l'emplacement retiré, entre les deux barrières d'une révocation** —
+   `<volume>.cles` porte DEUX pages en alternance, et une révocation n'en réécrivait qu'une : les
+   octets de l'emplacement retiré — identifiant, paramètres publics, sel, **DEK enveloppée et
+   étiquette** — subsistaient dans l'autre jusqu'au geste d'enveloppe suivant. C'est le constat
+   [#156](https://github.com/pinfada/railsbox-vault/issues/156), et **#148 le corrige** : toute
+   mutation qui RETIRE une clé écrit 8192 zéros sur la page libérée, après la barrière qui publie
+   ([ADR 0026](docs/decisions/0026-revocation-d-urgence-et-page-libre.md)).
+
+   **Ce qui reste non couvert est le support, et le mot est choisi.** La promesse porte sur le
+   FICHIER tel que le produit le relit, jamais sur les blocs sous-jacents : un système de fichiers à
+   copie sur écriture, un SSD qui remappe, un instantané pris entre les deux barrières peuvent
+   conserver les anciens octets, et le produit ne peut ni l'empêcher ni l'observer. La fenêtre n'est
+   donc plus « jusqu'à la mutation suivante » : c'est **entre les deux barrières, plus ce que le
+   support conserve**. C'est un « fait, non garanti », dans les termes de la décision 7 de
+   [l'ADR 0021](docs/decisions/0021-derivation-des-cles-de-deverrouillage.md).
+
+10. **Toute copie prise AVANT une révocation, code ou fichier** — **révoquer ne RECHIFFRE PAS.** Une
+    révocation retire une clé de déverrouillage ; elle ne change pas la clé de volume. Qui détient
+    `<volume>` et une page ANTÉRIEURE de `<volume>.cles` développe toujours la même DEK et lit
+    toujours le volume tel qu'il était. La révocation protège le fichier À VENIR, pas la copie déjà
+    prise. La seule parade est la **rotation de la clé de volume**, hors périmètre : rechiffrer 512
+    Mio coûte 87,6 s ([ADR 0015](docs/decisions/0015-proprietes-cryptographiques-du-format.md),
+    [ADR 0016](docs/decisions/0016-format-de-volume-v3-dispositions.md)), et aucun chemin du produit
+    ne l'offre.
 
 **Ce qui sort de l'appareil sort du périmètre.** Un code imprimé passe par un spouleur, parfois par
 un fichier PDF intermédiaire, parfois par le disque d'une imprimante réseau. Vault ne maîtrise aucun
