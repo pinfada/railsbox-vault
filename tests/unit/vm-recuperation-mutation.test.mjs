@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { MUTATIONS, campagneDeMutation } from "../../tools/muter-gardes-recuperation.mjs";
+import { campagneDeMutation } from "../../tools/moteur-de-mutation.mjs";
+import { MUTATIONS } from "../../tools/muter-gardes-recuperation.mjs";
 
 // ÉPREUVE DE MUTATION des gardes du moyen de récupération (#147, ADR 0025).
 //
@@ -15,7 +16,7 @@ import { MUTATIONS, campagneDeMutation } from "../../tools/muter-gardes-recupera
 // que #65 a trouvée par exécution : les fichiers d'épreuve de `npm run test:unit` s'exécutent en
 // parallèle, et une garde retirée dans le dépôt serait vue par les épreuves voisines.
 
-const campagne = campagneDeMutation();
+const campagne = campagneDeMutation({ mutations: MUTATIONS, etiquette: "recuperation" });
 
 test("chaque mutation décrit une garde qui existe VRAIMENT dans le source", () => {
   const inapplicables = campagne.resultats
@@ -45,6 +46,7 @@ test("une épreuve ABSENTE ne passe pas pour un mutant tué", () => {
   // pas. Un mutant n'est tué que si l'épreuve PASSAIT avant qu'on le pose.
   const { resultats } = campagneDeMutation({
     mutations: [{ ...MUTATIONS[0], epreuves: ["tests/unit/epreuve-qui-nexiste-pas.test.mjs"] }],
+    etiquette: "temoin-epreuve-absente",
   });
   assert.equal(resultats[0].tue, false, "une épreuve absente ne tue rien");
   assert.match(resultats[0].raison ?? "", /avant la mutation/i);

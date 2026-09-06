@@ -70,20 +70,24 @@ export function cleDeVolumeDuHarnais({ jeton } = {}) {
  * Elles vivent ici, dans le module que `tests/unit/harnais-portes.test.mjs` surveille déjà, et pas
  * dans un banc : c'est ce qui garde EN UN SEUL ENDROIT tout ce que le dépôt tient de matériel de
  * clé en dur. Elles n'ont pas plus d'entropie que la clé de volume de TEST, et pas davantage de
- * valeur — 0x80 à 0x9f pour la première, 0xa0 à 0xbf pour la seconde.
+ * valeur — 0x80 à 0x9f pour la première, 0xa0 à 0xbf pour la deuxième, 0xc0 à 0xdf pour la
+ * troisième.
  *
- * Deux, parce qu'un banc de ROTATION en demande deux : remplacer une clé et montrer que l'ancienne
- * n'ouvre plus exige une clé neuve, et une clé neuve fabriquée par le banc serait une clé en dur de
- * plus, hors de portée de la garde.
+ * Deux d'abord, parce qu'un banc de ROTATION en demande deux : remplacer une clé et montrer que
+ * l'ancienne n'ouvre plus exige une clé neuve, et une clé neuve fabriquée par le banc serait une clé
+ * en dur de plus, hors de portée de la garde. **Une troisième depuis #148**, pour la même raison
+ * exactement : la révocation d'urgence ne prouve rien sur une enveloppe à deux emplacements — il en
+ * faut au moins TROIS pour que « tous sauf un » diffère de « celui-là ».
  *
  * @param {{ jeton?: string }} [options] même garde, mot pour mot, que `cleDeVolumeDuHarnais`
- * @returns {{ initiale: Uint8Array, rotation: Uint8Array }}
+ * @returns {{ initiale: Uint8Array, rotation: Uint8Array, tierce: Uint8Array }}
  */
 export function clesDeDeverrouillageDuHarnais({ jeton } = {}) {
   cleDeVolumeDuHarnais({ jeton });
   return Object.freeze({
     initiale: Uint8Array.from({ length: CLE_OCTETS }, (_, index) => (0x80 + index) % 256),
     rotation: Uint8Array.from({ length: CLE_OCTETS }, (_, index) => (0xa0 + index) % 256),
+    tierce: Uint8Array.from({ length: CLE_OCTETS }, (_, index) => (0xc0 + index) % 256),
   });
 }
 
