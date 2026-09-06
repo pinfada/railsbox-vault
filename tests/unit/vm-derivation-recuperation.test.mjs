@@ -719,8 +719,13 @@ test("PERTE DÉFINITIVE : aucun module du produit ne conserve le code ni ne sait
     }
   }
 
-  // Qui IMPORTE le module du code ? Exactement les deux modules attendus. Un importateur de plus
+  // Qui IMPORTE le module du code ? Exactement les trois modules attendus. Un importateur de plus
   // est un endroit de plus où le code pourrait vivre, et cette épreuve le NOMME avant la revue.
+  //
+  // Le troisième est le BANC de déverrouillage, et il est là pour ce qu'il est : il fabrique un
+  // code afin de l'éprouver de bout en bout sur l'OPFS réel. Il ne l'écrit nulle part, et c'est la
+  // sonde de `tests/browser/deverrouillage-frontiere.spec.mjs` qui le mesure plutôt que cette
+  // liste. La liste, elle, dit qu'aucun QUATRIÈME endroit n'est apparu en silence.
   const importateurs = [];
   const parcourir = async (repertoire) => {
     for (const entree of await readdir(repertoire, { withFileTypes: true })) {
@@ -739,6 +744,7 @@ test("PERTE DÉFINITIVE : aucun module du produit ne conserve le code ni ne sait
   await parcourir(path.join(REPO_ROOT, "src"));
   await parcourir(path.join(REPO_ROOT, "public", "vm"));
   assert.deepEqual(importateurs.sort(), [
+    "public/vm/deverrouillage-worker.mjs",
     "src/vm/derivation/derivateur-recuperation.mjs",
     "src/vm/moyen-de-recuperation.mjs",
   ]);
