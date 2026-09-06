@@ -561,6 +561,14 @@ nomme le seul remède vrai : supprimer et recréer. Épreuves :
 abouti est REFUSÉ à la réouverture » et `tests/unit/vm-volume-neuf-incomplet.test.mjs` › « la marque
 de scellement complet n'est posée qu'APRÈS le dernier secteur ».
 
+**« Supprimer et recréer », outillé.** `removeOpfsVolume(name)` (`src/vm/opfs-sync-access.mjs`)
+retire le volume ET ses voisins — journal de génération (`.gen`), témoin de séquence (`.temoin`),
+enveloppe de clé (`.cles`), instantané de reprise (`.instantane`) — pour que le nom redevienne
+disponible sans rien laisser derrière lui. La NAISSANCE d'un volume du même nom retire elle-même ces
+orphelins, à l'exception de l'enveloppe de clé (§ 6.9), pour l'exploitant qui a retiré le seul
+fichier de volume à la main : voir § 6.9 et § 9.6, constat
+[#145](https://github.com/pinfada/railsbox-vault/issues/145).
+
 **Pourquoi un tel volume n'est PAS rescellé automatiquement**, alors que ce serait sans perte : la
 marque vit dans l'en-tête, qui n'est pas authentifié. Un rescellement automatique donnerait à
 quiconque peut effacer huit octets le moyen de faire écraser tout le volume par des zéros scellés —
@@ -994,11 +1002,21 @@ refusé. Épreuve sur support réel, coupant dans cette fenêtre exacte :
 témoin en retard, jamais un refus ».
 
 **Il est retiré avec le volume**, et aussi par tout geste qui RÉÉCRIT le volume entier : la
-restauration et la migration. Un témoin survivant attesterait, pour un volume homonyme créé ensuite
-ou pour un volume réécrit depuis une archive, une séquence que celui-ci n'a jamais atteinte : la
-prochaine ouverture refuserait un volume sain, et le message désignerait un retour arrière qui n'a
-pas eu lieu. La règle est donc écrite plutôt que laissée à la vigilance — **un témoin ne date que le
-volume qu'il accompagne**.
+restauration et la migration. Un témoin survivant attesterait, pour un volume réécrit depuis une
+archive, une séquence que celui-ci n'a jamais atteinte : la prochaine ouverture refuserait un volume
+sain, et le message désignerait un retour arrière qui n'a pas eu lieu. La règle est donc écrite
+plutôt que laissée à la vigilance — **un témoin ne date que le volume qu'il accompagne**.
+
+**Deux cas distincts, et un seul de retrait outillé côté naissance (#145).** Un témoin survivant à
+côté d'un fichier de volume ABSENT n'est pas un cas de recul : **un témoin sans volume ne date
+rien**, puisque le volume qu'il décrivait n'existe plus. C'est le cas de l'exploitant qui a supprimé
+le seul fichier de volume, à la main, sans passer par `removeOpfsVolume` (§ 6.3, § 10.2) : la
+NAISSANCE du volume homonyme qui suit retire elle-même ce témoin orphelin, avant même que la
+récupération de sa génération ne le lise, et ce retrait ne désarme rien — la détection du recul
+porte sur un volume PRÉSENT, pas sur un volume qui vient de naître. Un témoin survivant à côté d'un
+fichier de volume PRÉSENT, en revanche, reste un écart de séquence réel : c'est ce volume-là qui a
+reculé, et retirer le témoin effacerait la seule trace qui en reste — voir « le geste qui en sort »
+plus bas.
 
 **Absent = première ouverture, jamais une preuve.** C'est le point où la nuance se perd le plus
 facilement.
@@ -1570,11 +1588,9 @@ lui-même, et laisse au moteur la responsabilité de sa propre vérification d'�
 
 Quatre constats de la pré-revue adverse interne (#20, moitié 1, point 5) décrivent un défaut RÉEL du
 format ou de sa mise en œuvre — pas un défaut de ce document. Chacun contredit une phrase que ce
-document écrivait ailleurs. **Deux sont corrigés** (#143, #144) : leurs phrases d'origine ont été
-récrites là où elles vivaient. **Un est accepté** (#142) : sa limite est écrite, l'ADR 0019 est
-amendé, et sa sévérité est révisée. **Un reste ouvert** (#145) : ce document le NOMME, son
-traitement relève de l'issue qui le porte, et sa phrase d'origine n'est pas modifiée. Les
-dispositions sont inscrites au registre de la revue externe.
+document écrivait ailleurs. **Trois sont corrigés** (#143, #144, #145) : leurs phrases d'origine ont
+été récrites là où elles vivaient. **Un est accepté** (#142) : sa limite est écrite, l'ADR 0019 est
+amendé, et sa sévérité est révisée. Les dispositions sont inscrites au registre de la revue externe.
 
 **[#142](https://github.com/pinfada/railsbox-vault/issues/142) — Un témoin authentique rejoué rend
 un volume sain définitivement irouvrable. ACCEPTÉ, sévérité révisée HIGH → MEDIUM, ADR 0019 amendé
@@ -1721,20 +1737,32 @@ publié aussi **avec** un témoin à `s − 1`, dans la reproduction ci-dessus. 
 correction est portée dans l'issue.
 
 **[#145](https://github.com/pinfada/railsbox-vault/issues/145) — « Supprimer et recréer » ne retire
-aucun voisin, et le volume recréé est refusé.** Le § 6.3 et le § 10.2 affirment, à tort, que le
-message de `VAULT_STORAGE_VOLUME_INCOMPLET` nomme « le seul remède vrai : supprimer et recréer ».
-État réel : ce geste n'existe nulle part dans `src/` et ce document ne dit pas ce qu'il faut
-supprimer. Un exploitant qui supprime seulement le fichier `<volume>` puis en recrée un du même nom
-laisse `<volume>.temoin` en place ; le volume neuf est scellé sous un identifiant neuf, et sa
-première ouverture échoue sur le sceau du témoin, qui porte l'ancien identifiant
-(`VAULT_STORAGE_SCEAU_REFUSE`). Le volume qui vient de naître est irouvrable. Voir aussi § 11, qui
-nomme désormais ce geste parmi ceux qui n'existent pas.
+aucun voisin, et le volume recréé est refusé. CORRIGÉ par PR #<n>.** Le § 6.3 et le § 10.2
+affirmaient, à tort, que le message de `VAULT_STORAGE_VOLUME_INCOMPLET` nomme « le seul remède vrai
+: supprimer et recréer » sans que ce geste existe dans `src/` ni que ce document dise ce qu'il faut
+supprimer. Le point 1 du constat était PÉRIMÉ : `removeOpfsVolume(name)`
+(`src/vm/opfs-sync-access.mjs`) existe en production et retire déjà les voisins d'un volume
+explicitement supprimé — `.gen`, `.temoin`, `.cles`, `.instantane`. Ce qui restait vrai, et qui est
+corrigé ici : un exploitant qui supprime seulement le fichier `<volume>` à la main, sans passer par
+`removeOpfsVolume`, puis en recrée un du même nom, laissait `<volume>.temoin` en place ; le volume
+neuf était scellé sous un identifiant neuf, et sa première ouverture échouait sur le sceau du
+témoin, qui porte l'ancien identifiant (`VAULT_STORAGE_SCEAU_REFUSE`).
 
-`docs/revue-externe/registre.md` porte désormais **trois lignes** : #143 et #144 disposés « corrigé
-», #142 disposé « accepté » avec sa sévérité révisée. #145 y entrera quand il sera disposé. La
-moitié 2 de #20 — la revue par un tiers — n'a pas encore eu lieu pour autant : le registre porte ce
-que le dépôt a reçu et ce qu'il en a fait, et ces quatre constats viennent d'une pré-revue INTERNE
-traitée comme externe.
+**Ce que la correction ferme.** La NAISSANCE d'un volume (`naissance === true`,
+`src/vm/opfs-volume-ouverture.mjs`) retire elle-même ses voisins orphelins — `.gen`, `.temoin`,
+`.instantane`, `.migration` — AVANT que la récupération de sa génération ne les lise, en EXCLUANT
+l'enveloppe de clé `.cles` (§ 6.9, § 11, ADR 0020 : une naissance qui la retirerait détruirait
+l'enveloppe qu'un chemin de création chiffrée vient de poser pour ce même volume). Le retrait est
+publié dans `describe().voisinsRetires`, jamais en silence. Épreuves :
+`tests/unit/vm-naissance-voisins-orphelins.test.mjs` › « la naissance retire les voisins orphelins
+.gen, .temoin et .instantane, et rouvre sans refus » et « la naissance NE retire PAS l'enveloppe de
+clé, écrite avant elle (ADR 0020) ». Le cas « volume neuf homonyme » du constat disparaît (§ 6.9) ;
+le § 11 ne compte plus « supprimer et recréer » parmi les remèdes non outillés.
+
+`docs/revue-externe/registre.md` porte désormais **quatre lignes** : #143, #144 et #145 disposés «
+corrigé », #142 disposé « accepté » avec sa sévérité révisée. La moitié 2 de #20 — la revue par un
+tiers — n'a pas encore eu lieu pour autant : le registre porte ce que le dépôt a reçu et ce qu'il en
+a fait, et ces quatre constats viennent d'une pré-revue INTERNE traitée comme externe.
 
 ## 10. Les codes de refus, et la conduite
 
@@ -1834,9 +1862,13 @@ n'est retiré, et aucun n'est ajouté. Épreuve : `tests/unit/vm-recul-generatio
 coupure qui déchire la racine `s` laisse le témoin à `s − 1` : le volume ROUVRE, et la mise au rebut
 est PUBLIÉE ».
 
-**Deux refus provisoires survivent à leur cause** : `VAULT_ARCHIVE_VOLUME_CHIFFRE` et
-`VAULT_IMPORT_VOLUME_CHIFFRE` sont encore **déclarés** dans le code et ne sont plus levés nulle
-part. Voir § 12, écart 2.
+**« Supprimer et recréer », le remède de `VAULT_STORAGE_VOLUME_INCOMPLET`, est OUTILLÉ (#145) : voir
+§ 6.3.** `removeOpfsVolume(name)` retire le volume et ses voisins ; une naissance sur un nom dont
+seul le fichier de volume a été supprimé à la main retire elle-même ces mêmes orphelins, hors
+enveloppe de clé — § 6.9 en donne la distinction avec un écart de séquence réel.
+
+**Deux refus retirés le 6 septembre 2026 (#139)** : `VAULT_ARCHIVE_VOLUME_CHIFFRE` et
+`VAULT_IMPORT_VOLUME_CHIFFRE` n'existent plus. Voir § 12, écart 2.
 
 ### 10.3 Les refus des voisins hors périmètre
 
@@ -1907,8 +1939,9 @@ archive, l'autre pour l'écriture de sa cible.
 | `VAULT_IMPORT_GEOMETRY_MISMATCH`   | la cible ouverte n'a pas la taille du volume de l'archive                               | choisir une cible de la bonne taille |
 | `VAULT_IMPORT_VERIFICATION_FAILED` | la relecture du volume restauré ne rend pas l'empreinte de l'archive                    | réexporter la source                 |
 
-`VAULT_ARCHIVE_VOLUME_CHIFFRE` et `VAULT_IMPORT_VOLUME_CHIFFRE` sont déclarés mais **retirés** —
-voir § 10.2 et § 12, écart 2 — et n'apparaissent donc pas dans ces deux tables.
+`VAULT_ARCHIVE_VOLUME_CHIFFRE` et `VAULT_IMPORT_VOLUME_CHIFFRE` ont existé et sont **retirés depuis
+le 6 septembre 2026** (#139) — voir § 10.2 et § 12, écart 2 — et n'apparaissent donc pas dans ces
+deux tables.
 
 **Le manifeste (§ 6.10).** Famille `VAULT_MANIFEST_*`, une propriété de compatibilité de format,
 distincte du stockage.
@@ -1935,13 +1968,12 @@ qu'aucune absence ne se lise comme un oubli.
 | `<volume>.instantane` | [ADR 0024](decisions/0024-instantane-de-reprise.md)                 | **livré.** Il part avec le témoin et le journal à tout geste qui réécrit le volume, pour la raison de la § 6.9. L'empreinte de région de la § 6.8 lui sert de **liaison** : elle rend un instantané périmé détectable dès qu'un secteur a été rescellé (`VAULT_INSTANTANE_ECART_REGION`). |
 | `<volume>.migration`  | [ADR 0011](decisions/0011-migration-de-format-et-reprise.md)        | **livré, ni chiffré ni authentifié.** Sa limite est dans le périmètre : § 9.2.                                                                                                                                                                                                            |
 
-**Et deux choses qui n'existent pas.** Le **changement de clé de volume** : le refus au budget (§
-4.5) et la révocation d'un emplacement d'enveloppe nomment tous deux ce remède ; aucun chemin du
-produit ne rechiffre un volume sous une clé neuve. Et **« supprimer et recréer »** (§ 6.3, § 10.2),
-la conduite nommée par `VAULT_STORAGE_VOLUME_INCOMPLET` : aucune fonction de suppression de volume
-n'existe dans `src/`, et rien n'outille ce geste — voir § 9.6, constat
-[#145](https://github.com/pinfada/railsbox-vault/issues/145). C'est écrit ici pour qu'un relecteur
-ne suppose pas qu'un remède nommé est un remède disponible.
+**Et une chose qui n'existe pas.** Le **changement de clé de volume** : le refus au budget (§ 4.5)
+et la révocation d'un emplacement d'enveloppe nomment tous deux ce remède ; aucun chemin du produit
+ne rechiffre un volume sous une clé neuve. **« Supprimer et recréer »** (§ 6.3, § 10.2), la conduite
+nommée par `VAULT_STORAGE_VOLUME_INCOMPLET`, N'EN FAIT PLUS PARTIE depuis le 6 septembre 2026 :
+`removeOpfsVolume` l'outille, et la naissance retire elle-même les orphelins d'un volume supprimé à
+la main — voir § 9.6, constat [#145](https://github.com/pinfada/railsbox-vault/issues/145).
 
 **La clé de volume, en exploitation.** Le produit ne fabrique ni ne persiste aucune clé de volume
 par lui-même en dehors de l'enveloppe ; les bancs et les épreuves reçoivent une **clé de TEST
@@ -1960,19 +1992,23 @@ renvoie une fois, en parlant d'un « fichier v3 sans cette marque refusé par l'
 (`VAULT_STORAGE_VOLUME_INCOMPLET`, décision 2) » — or sa décision 2 traite de la génération d'un
 enregistrement de journal et ne mentionne ni la marque ni ce code. **La marque existe dans le code
 et dans les épreuves, sans décision numérotée nulle part.** Ce document est le premier à la
-spécifier.
+spécifier. **Statut au 6 septembre 2026 : corrigé, PR #<n>** — décision 10 de l'amendement du même
+jour à l'[ADR 0016](decisions/0016-format-de-volume-v3-dispositions.md).
 
 **Écart 2 — deux refus déclarés « retirés » existent encore.** L'ADR 0016 (décision 9) écrit que
 `VAULT_ARCHIVE_VOLUME_CHIFFRE` et `VAULT_IMPORT_VOLUME_CHIFFRE` « n'existent plus » : « un refus qui
 survit à sa cause devient un piège pour l'exploitant ». Ils sont toujours **déclarés** dans le code
 et ne sont **plus levés nulle part**. C'est du code mort et non un piège actif — aucun exploitant ne
-les rencontre —, mais l'ADR affirme une suppression qui n'a pas eu lieu.
+les rencontre —, mais l'ADR affirme une suppression qui n'a pas eu lieu. **Statut au 6 septembre
+2026 : corrigé, PR #<n>** — les deux entrées sont retirées de `src/vm/archive-errors.mjs` et
+`src/vm/import-errors.mjs`.
 
 **Écart 3 — la version du journal annoncée par l'ADR 0016 est périmée.** Sa décision 3 donne «
 format du journal (**2** en v3) ». Le code écrit **4** depuis le constat #143 — 3 depuis l'ADR 0019,
 qui le disait explicitement. La table de l'ADR 0016 n'a pas reçu d'amendement sur ce champ ; ses
 amendements datés et celui de l'ADR 0019 donnent la version courante, la table seule ne la donne
-pas.
+pas. **Statut au 6 septembre 2026 : corrigé, PR #<n>** — la chaîne 2 → 3 → 4 est écrite dans
+l'amendement du même jour à l'ADR 0016, avec ses deux renvois.
 
 **Écart 4 — le coût du scellement initial : 18,7 s annoncés, 87,6 s mesurés.** L'ADR 0015 chiffre la
 création d'un volume de 512 Mio à **18,7 s** par extrapolation, et sa section « Risques » cite «
@@ -1980,7 +2016,9 @@ création d'un volume de 512 Mio à **18,7 s** par extrapolation, et sa section 
 La mesure réelle sur OPFS, publiée dans `docs/quality-attributes.md`, donne **87,6 s** (83,5 µs par
 secteur), soit un facteur 4,7 sur l'extrapolation. Le chiffre de ce document est le chiffre
 **mesuré**. La fenêtre que la marque de scellement complet ferme (§ 6.3) est donc quatre fois plus
-longue que l'ADR ne le laissait croire.
+longue que l'ADR ne le laissait croire. **Statut au 6 septembre 2026 : corrigé, PR #<n>** — l'ADR
+0015 est amendé le même jour : la mesure fait foi, et les trois chiffres restent lisibles avec leur
+statut.
 
 **Écart 5 — un commentaire du code décrit un mécanisme qui n'existe plus.** La déclaration de
 `VAULT_CRYPTO_IDENTITE_INCOHERENTE` porte encore, dans son commentaire, la description de l'époque
@@ -1988,7 +2026,8 @@ du nonce dérivé : « le nonce conservé avec le sceau n'encode pas la généra
 l'identité présentée. Établi AVANT tout calcul cryptographique : le nonce se décrit lui-même. » Le
 constructeur situé quinze lignes plus bas dit exactement le contraire, et il est juste : le nonce ne
 décrit plus rien, et ce refus ne sert plus qu'à la racine, après vérification de l'étiquette. C'est
-un défaut de documentation dans le code, sans effet sur les octets.
+un défaut de documentation dans le code, sans effet sur les octets. **Statut au 6 septembre 2026 :
+corrigé, PR #<n>** — le commentaire dit désormais ce que le constructeur fait.
 
 Aucun de ces cinq écarts ne change un octet du format. Les quatre premiers sont des documents en
 retard sur le code ; le cinquième est un commentaire en retard sur son propre fichier.

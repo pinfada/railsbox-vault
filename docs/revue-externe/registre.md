@@ -46,6 +46,7 @@ Le dossier soumis à la revue est décrit par
 | [#142](https://github.com/pinfada/railsbox-vault/issues/142) — un témoin authentique rejoué rend un volume sain irouvrable, et rejoué contre une racine abîmée fait reculer d'une génération | HIGH → MEDIUM | accepté     | ADR 0019 amendé le 5 septembre 2026 ; [PR #153](https://github.com/pinfada/railsbox-vault/pull/153)              |
 | [#143](https://github.com/pinfada/railsbox-vault/issues/143) — l'identité logique ne sépare pas un enregistrement de journal d'un secteur de volume                                          | HIGH          | corrigé     | [PR #146](https://github.com/pinfada/railsbox-vault/pull/146) ; ADR 0016 et ADR 0019 amendés le 5 septembre 2026 |
 | [#144](https://github.com/pinfada/railsbox-vault/issues/144) — le recul d'une génération ne demande aucune copie antérieure, et une racine abîmée à côté d'une racine lisible est ignorée    | HIGH          | corrigé     | [PR #153](https://github.com/pinfada/railsbox-vault/pull/153) ; ADR 0019 amendé le 5 septembre 2026              |
+| [#145](https://github.com/pinfada/railsbox-vault/issues/145) — « supprimer et recréer » ne retire aucun voisin, et le volume recréé est refusé                                               | MEDIUM        | corrigé     | [PR #<n>](https://github.com/pinfada/railsbox-vault/pull/<n>)                                                    |
 
 ## Comment une ligne se remplit
 
