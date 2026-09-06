@@ -37,12 +37,14 @@ import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { ouvrirVolumeParDerivateur } from "../../src/vm/ouverture-par-enveloppe.mjs";
 import { exportVolumeToBytes } from "../../src/vm/archive-en-memoire.mjs";
 import { importArchive } from "../../src/vm/volume-import.mjs";
+import { createManifest } from "../../src/vm/volume-manifest.mjs";
 import {
   ATTENTES,
   DEK,
   KEK,
   TAILLE,
   VOLUME_A,
+  VOLUME_B,
   cibleDe,
   descripteurDeManifeste,
   magasin,
@@ -55,17 +57,17 @@ import {
 const CIBLE = "restaure";
 
 /** Exporte un volume neuf, et rend l'archive avec ce qu'il faut pour la comparer ensuite. */
-async function archiveExportee({ avecRecuperation = true } = {}) {
+async function archiveExportee({ avecRecuperation = true, identifiantVolume = VOLUME_A } = {}) {
   const origine = magasin();
-  const pose = await poserVolume(origine, { avecRecuperation });
+  const pose = await poserVolume(origine, { avecRecuperation, identifiantVolume });
   const recuperation = await construireEnveloppeDeRecuperation({
     support: pose.support,
-    identifiantVolume: VOLUME_A,
+    identifiantVolume,
     kek: KEK,
   });
   const ecrite = await exportVolumeToBytes({
     source: sourceDuVolume(origine, pose.nom),
-    manifest: descripteurDeManifeste(),
+    manifest: descripteurDeManifeste(identifiantVolume),
     consistency: { kind: "handle-exclusif", detail: "volume fermé pour l'épreuve" },
     recovery: recuperation,
   });
@@ -220,6 +222,77 @@ test("une page embarquée portant un emplacement d'un autre type est refusée av
   await assert.rejects(
     importArchive({ source: sourceDArchive(forge), target: cible, expectations: ATTENTES }),
     (erreur) => isArchiveError(erreur, ARCHIVE_ERROR_CODES.recuperationRefusee),
+  );
+  assert.deepEqual(gestes, []);
+});
+
+test("une section de récupération d'un AUTRE volume est refusée avant toute mutation", async () => {
+  // Constat HIGH-1 de la revue de crypto de la PR #160. La section était confrontée à l'en-tête
+  // — version, nombre d'emplacements — et à rien d'autre : la page d'enveloppe du volume A greffée
+  // dans l'archive du volume B passait toute la vérification, et le geste 7 posait `<B>.cles` avec
+  // l'identité de A. Le volume B restauré devenait inouvrable par `VAULT_ENVELOPPE_IDENTITE`, sa
+  // propre enveloppe écrasée — un diagnostic exact pour une cause fabriquée par la restauration
+  // elle-même. C'est exactement ce que `assertIdentiteDeLArchive` referme pour le manifeste, et il
+  // manquait pour l'enveloppe.
+  const surA = await archiveExportee();
+  const surB = await archiveExportee({ identifiantVolume: VOLUME_B });
+  const pageDeA = surA.recuperation.octets;
+  const greffee = await reforger(surB.archive, pageDeA);
+
+  const destination = magasin();
+  const { cible, gestes } = cibleDe(destination, CIBLE);
+  await assert.rejects(
+    importArchive({ source: sourceDArchive(greffee), target: cible, expectations: ATTENTES }),
+    (erreur) => {
+      assert.ok(isArchiveError(erreur, ARCHIVE_ERROR_CODES.recuperationRefusee));
+      assert.equal(erreur.context.declare, VOLUME_B);
+      assert.equal(erreur.context.porte, VOLUME_A);
+      return true;
+    },
+  );
+  assert.deepEqual(gestes, [], "rien n'est mué : le refus précède l'ouverture de la cible");
+  assert.equal(destination.lire(`${CIBLE}.cles`), null);
+});
+
+test("une archive qui emporte une enveloppe sans DÉCLARER de volume est refusée", async () => {
+  // L'autre bord du même contrôle : une enveloppe n'existe que pour un volume v3, qui déclare
+  // toujours son identifiant (ADR 0016). Une archive d'un format antérieur qui porterait malgré tout
+  // une section de récupération ne dit pas à QUEL volume elle appartient — et le voisin `.cles` doit
+  // être posé sous une identité, jamais sous « on verra bien ».
+  const { recuperation } = await archiveExportee();
+  const contenu = Uint8Array.from({ length: TAILLE }, (_, index) => (index * 5 + 3) % 256);
+  const { archive } = await exportVolumeToBytes({
+    source: {
+      size: contenu.byteLength,
+      read: async (offset, longueur) => contenu.slice(offset, offset + longueur),
+    },
+    // Un manifeste de format 2 : il ne porte pas de bloc `volume`, donc pas d'identifiant.
+    manifest: createManifest({
+      formatVersion: 2,
+      runtime: { version: "0.1.0", artifact: null, minWriter: "0.1.0" },
+      app: { id: "railsbox-vault-reference", version: "1.0.0" },
+      volumeSize: TAILLE,
+      identity: { algorithm: "sha-256", digest: null },
+    }),
+    consistency: { kind: "handle-exclusif" },
+    recovery: recuperation,
+  });
+
+  const destination = magasin();
+  const { cible, gestes } = cibleDe(destination, CIBLE);
+  await assert.rejects(
+    // La dérogation de DIAGNOSTIC est nommée : sans elle, #10 refuserait le format antérieur avant
+    // que la garde de cette tranche n'ait la parole, et l'épreuve mesurerait le mauvais refus.
+    importArchive({
+      source: sourceDArchive(archive),
+      target: cible,
+      enforceCompatibility: false,
+    }),
+    (erreur) => {
+      assert.ok(isArchiveError(erreur, ARCHIVE_ERROR_CODES.recuperationRefusee));
+      assert.match(erreur.message, /ne déclare aucun identifiant de volume/);
+      return true;
+    },
   );
   assert.deepEqual(gestes, []);
 });

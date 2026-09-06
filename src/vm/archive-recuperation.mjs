@@ -1,12 +1,25 @@
 // La SECTION DE RÉCUPÉRATION d'une archive v2 : des octets OPAQUES et leur empreinte (#149, ADR 0027).
 //
 // Ce module tient la moitié « conteneur » de ce que l'ADR 0027 ajoute à l'archive de l'ADR 0008 :
-// la forme du descripteur que l'en-tête déclare, la normalisation de ce que l'export reçoit, et la
-// vérification de l'empreinte à la relecture. Il ne sait RIEN de ce que ces octets contiennent —
-// ni page, ni emplacement, ni type de clé, ni voisin d'enveloppe. C'est délibéré, et c'est la moitié de
-// la propriété que l'ADR 0027 conserve de l'ADR 0020 décision 6 : la construction de l'enveloppe
-// vit dans UN module qui tient la clé de volume (`enveloppe-de-recuperation.mjs`), et le chemin
-// d'archive reste aveugle.
+// la forme du descripteur que l'en-tête déclare, la normalisation de ce que l'export reçoit, la
+// vérification de l'empreinte à la relecture, et — depuis la revue de format de la PR #160 — la
+// GARDE DE FORME de la section, dans les DEUX sens.
+//
+// ## Un seul validateur, appelé aux trois portes
+//
+// La première rédaction ne gardait la forme qu'à l'IMPORT : `writeArchive` acceptait d'écrire
+// n'importe quels octets sous l'étiquette « enveloppe de récupération », et `verifyArchive` rendait
+// un verdict vert sur une section de cent octets de bourrage. Une archive ainsi produite se
+// vérifiait, se transportait, et n'était refusée qu'au moment de restaurer — c'est-à-dire au pire
+// endroit et au pire moment. `exigerEnveloppeDeRecuperationSeule` est donc appelée ICI, à
+// l'écriture comme à la lecture, et l'import n'ajoute plus que les CONFRONTATIONS qu'il est seul à
+// pouvoir faire — l'en-tête contre la page, et l'identité du manifeste contre celle que la racine
+// authentifie.
+//
+// Ce que ce module ne sait toujours pas : le voisin d'enveloppe, où il vit, comment il s'écrit. Il
+// valide une FORME et rend des octets ; la construction, elle, vit dans UN module qui tient la clé
+// de volume (`enveloppe-de-recuperation.mjs`), et c'est la moitié de l'ADR 0020 décision 6 que
+// l'ADR 0027 conserve.
 //
 // La disposition d'une archive v2 est celle de la v1 avec une section de plus, en queue :
 //
@@ -22,13 +35,19 @@
 // taire ni un refus à opposer — refuser exporterait moins que ce que l'utilisateur possède.
 
 import { ARCHIVE_ERROR_CODES, ArchiveError } from "./archive-errors.mjs";
+import { exigerEnveloppeDeRecuperationSeule } from "./enveloppe-de-recuperation.mjs";
 import { createSha256Stream } from "./sha256-stream.mjs";
 
 /**
- * Plafond de la section, en octets. Il est posé ICI, sans importer la taille d'une page
- * d'enveloppe : ce module reste aveugle au contenu, et une borne empruntée au format d'enveloppe
- * lui ferait connaître ce qu'il transporte. 64 kio laissent huit fois la place d'une page, et
- * bornent une allocation faite avant toute vérification.
+ * Plafond de la section, en octets. **Ce n'est pas la taille admissible d'une section**, c'est la
+ * borne d'une ALLOCATION faite avant toute vérification.
+ *
+ * Les deux étages sont distincts et c'est voulu. Ici, on décide combien d'octets on accepte de
+ * LIRE sur la foi d'un nombre que l'archive a choisi — 64 kio, huit fois la place d'une page, et
+ * rien qu'un lecteur ne puisse tenir. Ensuite, `exigerEnveloppeDeRecuperationSeule` exige la
+ * taille EXACTE d'une page et refuse tout le reste. Confondre les deux ferait dépendre la borne
+ * d'allocation du format d'enveloppe, c'est-à-dire ferait bouger un plafond de lecture le jour où
+ * une page changerait de taille.
  */
 export const MAX_RECOVERY_BYTES = 64 * 1024;
 
@@ -83,6 +102,14 @@ export function normaliserRecuperation(recovery) {
   }
   entierPositif("version", recovery.version);
   entierPositif("emplacements", recovery.emplacements);
+  // La FORME, à l'écriture comme à la lecture. Une archive ne doit pas pouvoir naître avec une
+  // section que la restauration refusera : le défaut serait alors découvert au moment de
+  // restaurer, sur un utilisateur qui croit tenir une sauvegarde ouvrable.
+  const page = exigerEnveloppeDeRecuperationSeule(octets);
+  accorderLeDescripteurEtLaPage(page, {
+    envelopeVersion: recovery.version,
+    slots: recovery.emplacements,
+  });
 
   const digest = empreinteDeSection(octets);
   if (typeof recovery.digest === "string" && recovery.digest !== digest) {
@@ -171,7 +198,7 @@ export function validerDescripteurDeRecuperation(recovery) {
  * pas d'un nombre que l'archive a choisi. Le contenu du volume, lui, reste lu par blocs.
  *
  * @param {{ read: Function, byteLength: number, offset: number, descripteur: object }} appel
- * @returns {Promise<Uint8Array>}
+ * @returns {Promise<{ octets: Uint8Array, page: object }>}
  */
 export async function lireEtVerifierLaRecuperation({ read, byteLength, offset, descripteur }) {
   const fin = offset + descripteur.length;
@@ -197,5 +224,30 @@ export async function lireEtVerifierLaRecuperation({ read, byteLength, offset, d
       declared: descripteur.digest,
     });
   }
-  return octets;
+  // L'empreinte D'ABORD, la forme ENSUITE, et l'ordre est significatif : une section abîmée en
+  // transport et une section FORGÉE n'appellent pas le même remède — réexporter dans un cas,
+  // se méfier de la provenance dans l'autre. Juger la forme la première ferait rendre
+  // « refusée » à ce qui n'est qu'« altérée ».
+  const page = exigerEnveloppeDeRecuperationSeule(octets);
+  accorderLeDescripteurEtLaPage(page, descripteur);
+  return { octets, page };
+}
+
+/**
+ * ACCORDE ce que l'en-tête déclare de la section et ce que la page en porte réellement.
+ *
+ * Une archive qui déclarerait une version d'enveloppe plus récente que celle qu'elle porte
+ * tromperait l'ancre de la décision 3 de l'ADR 0027 : elle ferait accepter sans consentement une
+ * sauvegarde antérieure à la feuille de récupération. Le nombre d'emplacements suit la même règle,
+ * pour la même raison : l'en-tête est une DÉCLARATION, jamais une source.
+ */
+function accorderLeDescripteurEtLaPage(page, descripteur) {
+  const porte = { envelopeVersion: page.version, slots: page.emplacements };
+  if (descripteur.envelopeVersion === porte.envelopeVersion && descripteur.slots === porte.slots) {
+    return;
+  }
+  throw refusee(
+    `le descripteur annonce une enveloppe en version ${descripteur.envelopeVersion} portant ${descripteur.slots} emplacement(s), et la page en porte ${porte.slots} en version ${porte.envelopeVersion}.`,
+    { declare: { ...descripteur }, porte },
+  );
 }
