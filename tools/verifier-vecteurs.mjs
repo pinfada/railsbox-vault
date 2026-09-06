@@ -8,13 +8,16 @@
 // ## Ce qu'il est, et pourquoi il ne ressemble à rien d'autre dans ce dépôt
 //
 // Ce fichier RÉIMPLÉMENTE, à partir de `docs/format-de-volume-v3.md`, de
-// `docs/decisions/0025-moyen-de-recuperation.md` et de rien d'autre, les
+// `docs/decisions/0025-moyen-de-recuperation.md`, de
+// `docs/decisions/0027-archive-et-ancre-de-version.md` et de rien d'autre, les
 // encodages que le format emploie : les données associées d'un bloc du volume, celles d'un
 // ENREGISTREMENT du journal — distinctes depuis le constat #143 —, celles d'une racine, l'encodage
 // canonique de la suite des entrées, le sceau de 34 octets, l'en-tête v3, la racine sur disque, le
 // témoin — et, depuis #147, le CODE DE RÉCUPÉRATION : sa forme base 32, sa somme de contrôle et ses
-// deux propriétés, sa relecture, son matériau et sa KEK. Il les confronte ensuite aux octets FIGÉS
-// de `tests/vectors/`.
+// deux propriétés, sa relecture, son matériau et sa KEK —, et, depuis #149, la DISPOSITION D'UNE
+// ARCHIVE V2 : son préambule, son en-tête, l'arithmétique de ses sections, ses deux empreintes, et
+// la propriété qui donne son sens à la tranche — la page embarquée ne porte que des emplacements de
+// type 4. Il les confronte ensuite aux octets FIGÉS de `tests/vectors/`.
 //
 // **Il n'importe RIEN de `src/`, et c'est toute sa valeur.** Un vérificateur qui appellerait le
 // modèle de référence emprunterait précisément les encodages qu'il prétend contrôler : il
@@ -1081,18 +1084,213 @@ function verifierLesParametresDeRecuperation(vecteurs) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// L'ARCHIVE V2 et son enveloppe de récupération (#149, ADR 0027).
+//
+// Ce que ce bloc établit, depuis le seul texte de l'ADR 0027 et de l'ADR 0008 amendé : la
+// disposition `[RBVAULT1][longueur d'en-tête][en-tête JSON][contenu N][récupération R]`, son
+// arithmétique `12 + H + N + R`, les deux empreintes que l'en-tête déclare, et la propriété qui
+// donne son sens à toute la tranche — la page embarquée ne porte QUE des emplacements de type 4.
+//
+// Il ne vérifie AUCUNE étiquette AES-GCM de l'enveloppe : la racine d'une page n'est vérifiable que
+// sous la clé de volume, qui ne se trouve nulle part dans un fichier. Les vecteurs de l'ADR 0020
+// tiennent cette part-là ; celui-ci tient le CONTENEUR, et le dit.
+// ---------------------------------------------------------------------------------------------
+
+/** La disposition de l'archive, transcrite depuis l'ADR 0027 § « Format d'archive ». */
+const ARCHIVE_MARQUEUR = "RBVAULT1";
+const ARCHIVE_PREAMBULE_OCTETS = 12;
+const ARCHIVE_VERSION = 2;
+const ARCHIVE_EN_TETE_MARQUEUR = "railsbox-vault/volume-archive";
+
+/** La disposition d'une PAGE d'enveloppe, transcrite depuis l'ADR 0020 § « Décision 2 ». */
+const ENVELOPPE_MARQUEUR = "VLTKEY01";
+const ENVELOPPE_PAGE_OCTETS = 8192;
+const ENVELOPPE_ENTETE_PAGE_OCTETS = 108;
+const ENVELOPPE_CRC_OFFSET = 104;
+const ENVELOPPE_EMPLACEMENT_FIXE_OCTETS = 72;
+
+/** Le seul type de clé de déverrouillage qu'une archive emporte (ADR 0027, décision 2). */
+const TYPE_KEK_RECUPERATION = 4;
+
+/** CRC-32 (polynôme 0xedb88320), transcrit ici comme le reste de la disposition. */
+function crc32(octets) {
+  let valeur = 0xffffffff;
+  for (const octet of octets) {
+    let terme = (valeur ^ octet) & 0xff;
+    for (let bit = 0; bit < 8; bit += 1) {
+      terme = terme & 1 ? (0xedb88320 ^ (terme >>> 1)) >>> 0 : terme >>> 1;
+    }
+    valeur = (terme ^ (valeur >>> 8)) >>> 0;
+  }
+  return (valeur ^ 0xffffffff) >>> 0;
+}
+
+/** Entier non signé GROS-BOUTISTE relu depuis des octets : la convention du préambule d'archive. */
+function lireBe(octets, position, longueur) {
+  let valeur = 0;
+  for (let index = 0; index < longueur; index += 1) {
+    valeur = valeur * 256 + octets[position + index];
+  }
+  return valeur;
+}
+
+/**
+ * Relit la LISTE d'emplacements d'une page et rend le type de chacun, ou `null` si la liste ne se
+ * décompose pas exactement sur sa fin déclarée. Rien n'est complété ni arrondi.
+ */
+function typesDesEmplacements(page, longueurListe) {
+  const fin = ENVELOPPE_ENTETE_PAGE_OCTETS + longueurListe;
+  const types = [];
+  let curseur = ENVELOPPE_ENTETE_PAGE_OCTETS;
+  while (curseur < fin) {
+    if (fin - curseur < ENVELOPPE_EMPLACEMENT_FIXE_OCTETS) return null;
+    const longueurParametres = lireLe(page, curseur + 10, 2);
+    const total = ENVELOPPE_EMPLACEMENT_FIXE_OCTETS + longueurParametres;
+    if (fin - curseur < total) return null;
+    types.push(page[curseur + 8]);
+    curseur += total;
+  }
+  return curseur === fin ? types : null;
+}
+
+/** La page EMBARQUÉE : marqueur, somme de contrôle, version, et types de ses emplacements. */
+function verifierLaPageEmbarquee(page, declare) {
+  memesOctets(
+    "archive : la section de récupération commence par le marqueur d'enveloppe",
+    texteAscii(ENVELOPPE_MARQUEUR),
+    octetsEnHex(page.subarray(0, 8)),
+  );
+  verifier(
+    "archive : la section de récupération fait exactement une page",
+    page.byteLength === ENVELOPPE_PAGE_OCTETS,
+    `${page.byteLength} octets`,
+  );
+  const nombre = lireLe(page, 12, 2);
+  const version = lireLe(page, 16, 8);
+  const longueurListe = lireLe(page, 40, 4);
+
+  const utiles = page.slice(0, ENVELOPPE_ENTETE_PAGE_OCTETS + longueurListe);
+  utiles.fill(0, ENVELOPPE_CRC_OFFSET, ENVELOPPE_CRC_OFFSET + 4);
+  verifier(
+    "archive : la somme de contrôle de la page embarquée vérifie",
+    crc32(utiles) === lireLe(page, ENVELOPPE_CRC_OFFSET, 4),
+  );
+
+  const types = typesDesEmplacements(page, longueurListe);
+  if (
+    !verifier("archive : la liste de la page embarquée se décompose exactement", types !== null)
+  ) {
+    return;
+  }
+  verifier(
+    "archive : le compte authentifié de la page est celui de sa liste",
+    types.length === nombre,
+    `${types.length} trouvés, ${nombre} déclarés`,
+  );
+  // LA propriété de l'ADR 0027 : le coffre et sa clé ne voyagent pas ensemble. Un emplacement de
+  // type 1 (phrase) ou 2 (passkey) dans une archive serait une phrase secrète sortie de l'appareil.
+  verifier(
+    "archive : TOUS les emplacements embarqués sont de type 4 — ni phrase, ni passkey, ni harnais",
+    types.every((type) => type === TYPE_KEK_RECUPERATION),
+    `types trouvés : ${[...new Set(types)].join(", ")}`,
+  );
+  verifier(
+    "archive : l'en-tête dit de la page la vérité — version et nombre d'emplacements",
+    declare.envelopeVersion === version && declare.slots === types.length,
+    `déclaré v${declare.envelopeVersion}/${declare.slots}, porté v${version}/${types.length}`,
+  );
+}
+
+/** L'archive v2 entière : préambule, en-tête, arithmétique des sections, empreintes. */
+async function verifierArchive() {
+  const vecteurs = lire("tests/vectors/archive-v2.json");
+  const archive = hexEnOctets(vecteurs.archive.hex);
+
+  memesOctets(
+    "archive : les huit octets de tête sont le marqueur RBVAULT1",
+    texteAscii(ARCHIVE_MARQUEUR),
+    octetsEnHex(archive.subarray(0, 8)),
+  );
+  const longueurEnTete = lireBe(archive, 8, 4);
+  verifier(
+    "archive : la longueur d'en-tête est un uint32 GROS-BOUTISTE, à l'offset 8",
+    longueurEnTete === vecteurs.archive.longueurEnTete,
+    `${longueurEnTete} lu, ${vecteurs.archive.longueurEnTete} publié`,
+  );
+
+  const enTete = JSON.parse(
+    new TextDecoder().decode(
+      archive.subarray(ARCHIVE_PREAMBULE_OCTETS, ARCHIVE_PREAMBULE_OCTETS + longueurEnTete),
+    ),
+  );
+  verifier(
+    "archive : l'en-tête porte le marqueur textuel",
+    enTete.magic === ARCHIVE_EN_TETE_MARQUEUR,
+  );
+  verifier(
+    "archive : la version de format d'archive est 2",
+    enTete.archiveFormatVersion === ARCHIVE_VERSION,
+    `${enTete.archiveFormatVersion}`,
+  );
+
+  const offsetContenu = ARCHIVE_PREAMBULE_OCTETS + longueurEnTete;
+  const offsetRecuperation = offsetContenu + enTete.content.length;
+  verifier(
+    "archive : offset du contenu = 12 + H",
+    offsetContenu === vecteurs.archive.offsetDuContenu,
+  );
+  verifier(
+    "archive : offset de la récupération = 12 + H + N",
+    offsetRecuperation === vecteurs.archive.offsetDeLaRecuperation,
+  );
+  verifier(
+    "archive : taille de l'archive = 12 + H + N + R",
+    archive.byteLength === offsetRecuperation + enTete.recovery.length,
+    `${archive.byteLength} octets pour ${offsetRecuperation} + ${enTete.recovery.length}`,
+  );
+
+  const contenu = archive.subarray(offsetContenu, offsetRecuperation);
+  memesOctets(
+    "archive : l'empreinte inscrite est le SHA-256 du contenu",
+    await empreinte(contenu),
+    enTete.content.digest,
+  );
+  verifier(
+    "archive : le manifeste et l'en-tête portent la MÊME empreinte de contenu",
+    enTete.manifest.identity.digest === enTete.content.digest,
+  );
+
+  const page = archive.subarray(offsetRecuperation);
+  memesOctets(
+    "archive : l'empreinte de la section de récupération est le SHA-256 de ses octets",
+    await empreinte(page),
+    enTete.recovery.digest,
+  );
+  verifierLaPageEmbarquee(page.slice(), enTete.recovery);
+
+  // Et le CONTENU n'est pas une enveloppe : le marqueur ne doit apparaître qu'à l'offset déclaré.
+  const marqueur = octetsEnHex(texteAscii(ENVELOPPE_MARQUEUR));
+  verifier(
+    "archive : le marqueur d'enveloppe n'apparaît qu'à l'offset de la section de récupération",
+    octetsEnHex(contenu).includes(marqueur) === false,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
 
 async function main() {
   await verifierModele();
   await verifierDisposition();
   await verifierRecuperation();
+  await verifierArchive();
 
   const total = vertes + rouges.length;
   if (rouges.length === 0) {
     process.stdout.write(
       `VERT — ${vertes} vérifications vertes sur ${total}, sans importer une ligne du produit.\n` +
-        `Les octets figés de tests/vectors/ sont ceux que docs/format-de-volume-v3.md et\n` +
-        `docs/decisions/0025-moyen-de-recuperation.md décrivent.\n`,
+        `Les octets figés de tests/vectors/ sont ceux que docs/format-de-volume-v3.md,\n` +
+        `docs/decisions/0025-moyen-de-recuperation.md et\n` +
+        `docs/decisions/0027-archive-et-ancre-de-version.md décrivent.\n`,
     );
     return;
   }
