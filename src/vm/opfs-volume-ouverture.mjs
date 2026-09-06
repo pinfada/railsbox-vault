@@ -31,9 +31,12 @@ import {
   writeCountFailure,
 } from "./opfs-error-mapping.mjs";
 import {
+  ENVELOPPE_SIDECAR_SUFFIX,
   generationJournalName,
+  migrationJournalName,
   openOpfsSyncAccess,
   temoinSequenceName,
+  voisinsDunVolume,
 } from "./opfs-sync-access.mjs";
 import { assertVolumeLibre, reserverVolume } from "./opfs-volume-registry.mjs";
 import { Scellement } from "./scellement.mjs";
@@ -207,6 +210,66 @@ function poserEnTeteOuRendre(handle, name, disposition, identifiantVolume) {
       toStorageError(cause, { operation: "allocate", volume: name }),
     );
   }
+}
+
+/**
+ * Les voisins ORPHELINS qu'une NAISSANCE retire (#145), dérivés de `voisinsDunVolume` — jamais
+ * recopiés — pour rester la MÊME liste que `removeOpfsVolume`, à deux différences près :
+ *
+ *  - l'ENVELOPPE DE CLÉ (`.cles`) est EXCLUE. La création d'un volume chiffré l'écrit AVANT le
+ *    volume (`preparerEnveloppeDeVolume`, ADR 0020 : « une coupure laisse au pire une enveloppe
+ *    orpheline, jamais un volume qu'aucune clé n'ouvre »), et une naissance qui la retirerait
+ *    détruirait l'enveloppe qu'on vient de poser pour CE volume ;
+ *  - le JOURNAL DE MIGRATION est AJOUTÉ. Il n'est pas dans `voisinsDunVolume` — c'est le geste qui
+ *    inscrit le manifeste restauré ou créé (`writeVolumeManifest`) qui le retire d'ordinaire —, mais
+ *    un volume qui NAÎT n'a hérité d'aucune migration en cours.
+ */
+function voisinsOrphelinsALaNaissance(name) {
+  return [
+    ...voisinsDunVolume(name).filter((voisin) => !voisin.endsWith(ENVELOPPE_SIDECAR_SUFFIX)),
+    migrationJournalName(name),
+  ];
+}
+
+/**
+ * RETIRE, à la naissance, chaque voisin orphelin qui porte encore des octets — un témoin, un journal
+ * de génération, un instantané ou un journal de migration laissés par un volume du MÊME NOM,
+ * supprimé sans passer par `removeOpfsVolume` (#145). Sans ce retrait, un témoin périmé fait refuser
+ * le volume neuf par `VAULT_STORAGE_SCEAU_REFUSE` dès la récupération de sa génération, puisqu'il
+ * atteste une identité que ce volume-ci n'a jamais portée.
+ *
+ * Un voisin déjà VIDE n'est pas ÉCRIT : c'est ce qu'un voisin qui n'a jamais existé laisse dans ce
+ * même support (`lireTemoinDuSupport`), et une naissance sans aucun orphelin — le cas le plus
+ * fréquent, de loin — ne doit tronquer et barrer aucun fichier pour rien.
+ *
+ * Rend la liste des voisins RÉELLEMENT retirés — jamais celle des voisins visés — pour que le compte
+ * rendu de l'ouverture ne publie qu'un retrait qui a eu lieu.
+ */
+async function retirerVoisinsOrphelins(name, openHandle) {
+  const retires = [];
+  for (const voisin of voisinsOrphelinsALaNaissance(name)) {
+    let handle;
+    try {
+      handle = await openHandle(voisin);
+    } catch (cause) {
+      throw toStorageError(cause, { operation: "open-orphelin", volume: voisin });
+    }
+    try {
+      if (handle.getSize() > 0) {
+        handle.truncate(0);
+        handle.flush();
+        retires.push(voisin);
+      }
+    } catch (cause) {
+      throw abandonHandle(
+        handle,
+        voisin,
+        toStorageError(cause, { operation: "retirer-orphelin", volume: voisin }),
+      );
+    }
+    handle.close();
+  }
+  return Object.freeze(retires);
 }
 
 /**
@@ -508,6 +571,10 @@ async function scellerLeVolumeNeuf(backend, name, handle) {
  * Rien n'est ÉCRIT tant que la clé n'est pas là : un volume qu'on ne saura pas sceller ne doit pas
  * laisser derrière lui un fichier alloué et porteur d'un en-tête. Rien n'est rendu de la charge non
  * plus — seul l'en-tête est lu, et il est un localisateur.
+ *
+ * À la naissance, les voisins ORPHELINS sont retirés ici, AVANT tout le reste (#145) : c'est avant
+ * ce point que `installerGenerationOuFermer` ouvrirait `.gen` et `.temoin`, et un témoin périmé lu
+ * après ce point ferait refuser un volume qui vient de naître.
  */
 async function saisirLireEtAllouer({ name, size, cle, identifiantVolume, openHandle }) {
   const saisi = await saisirSupport({ name, size, identifiantVolume, openHandle });
@@ -516,14 +583,22 @@ async function saisirLireEtAllouer({ name, size, cle, identifiantVolume, openHan
   } catch (refus) {
     throw abandonHandle(saisi.handle, name, refus);
   }
-  if (saisi.naissance) {
-    poserEnTeteOuRendre(saisi.handle, name, saisi.disposition, saisi.identifiantVolume);
-  }
-  return saisi;
+  if (!saisi.naissance) return { ...saisi, voisinsRetires: Object.freeze([]) };
+  poserEnTeteOuRendre(saisi.handle, name, saisi.disposition, saisi.identifiantVolume);
+  const voisinsRetires = await retirerVoisinsOrphelins(name, openHandle);
+  return { ...saisi, voisinsRetires };
 }
 
 /** Assemble le backend : taille LOGIQUE d'un côté, disposition du support de l'autre. */
-function construireBackend({ name, saisi, scellement, journal, faults, flushDelay }) {
+function construireBackend({
+  name,
+  saisi,
+  scellement,
+  journal,
+  faults,
+  flushDelay,
+  voisinsRetires,
+}) {
   return new OpfsBlockBackend({
     name,
     handle: saisi.handle,
@@ -533,6 +608,7 @@ function construireBackend({ name, saisi, scellement, journal, faults, flushDela
     journal,
     faults,
     flushDelay,
+    voisinsRetires,
   });
 }
 
@@ -579,7 +655,15 @@ export async function openOpfsVolume({
     cleOctets: cle,
     formatVersion: FORMAT_VOLUME_V3,
   });
-  const backend = construireBackend({ name, saisi, scellement, journal, faults, flushDelay });
+  const backend = construireBackend({
+    name,
+    saisi,
+    scellement,
+    journal,
+    faults,
+    flushDelay,
+    voisinsRetires: saisi.voisinsRetires,
+  });
   if (saisi.naissance) await scellerLeVolumeNeuf(backend, name, saisi.handle);
 
   if (transactionnel) {

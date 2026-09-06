@@ -87,6 +87,13 @@ export class OpfsBlockBackend {
    * ferme réellement sous une E/S en vol (#132).
    */
   #enVolALaFermeture = 0;
+  /**
+   * Voisins ORPHELINS retirés à la naissance (#145) : témoin, journal de génération, instantané ou
+   * journal de migration d'un volume du MÊME NOM, supprimé sans passer par `removeOpfsVolume`. Publié
+   * pour qu'un retrait ne se fasse jamais en silence — vide hors naissance, ou quand rien n'était à
+   * retirer.
+   */
+  #voisinsRetires;
 
   /**
    * Utiliser `openOpfsVolume` : le constructeur ne garantit ni géométrie ni exclusivité, et surtout
@@ -106,6 +113,7 @@ export class OpfsBlockBackend {
     faults,
     flushDelay,
     generation = null,
+    voisinsRetires = [],
   }) {
     this.#name = name;
     this.#acces = new AccesSupport({ volume: name, handle, journal });
@@ -115,6 +123,7 @@ export class OpfsBlockBackend {
     this.#faults = faults;
     this.#flushDelay = flushDelay;
     this.#generation = generation;
+    this.#voisinsRetires = Object.freeze([...voisinsRetires]);
     this.#chiffre = new VolumeChiffre({
       volume: name,
       scellement,
@@ -175,6 +184,14 @@ export class OpfsBlockBackend {
    */
   get generation() {
     return this.#generation;
+  }
+
+  /**
+   * Voisins ORPHELINS retirés à la naissance de ce volume (#145). Vide hors naissance, ou quand la
+   * naissance n'a trouvé aucun orphelin à retirer.
+   */
+  get voisinsRetires() {
+    return this.#voisinsRetires;
   }
 
   /** Installe le magasin après l'ouverture : il a besoin du backend pour lire et écrire le volume. */
@@ -258,6 +275,9 @@ export class OpfsBlockBackend {
       // construit le backend sans magasin, et qui ne doit pas pouvoir se croire transactionnel.
       transactionnel: this.#generation !== null,
       generation: this.#generation?.generationValidee ?? null,
+      // Un retrait ne se fait jamais en silence (#145) : le compte rendu d'ouverture le publie,
+      // même vide.
+      voisinsRetires: this.#voisinsRetires,
     });
   }
 
