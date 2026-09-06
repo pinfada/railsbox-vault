@@ -821,7 +821,7 @@ reprise avec.
 
 La tranche 3 de #23 — `src/vm/enveloppe-de-recuperation.mjs`, `src/vm/archive-recuperation.mjs`, la
 version 2 de `src/vm/volume-export.mjs` et le huitième geste de `src/vm/volume-import.mjs` — est
-prouvée sur **quatre** niveaux, et aucun ne remplace les autres.
+prouvée sur **six** niveaux, et aucun ne remplace les autres.
 
 | Niveau            | Fichier                                                 | Ce qu'il établit                                                                                                         |
 | ----------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -829,7 +829,7 @@ prouvée sur **quatre** niveaux, et aucun ne remplace les autres.
 | unitaire — cycle  | `tests/unit/vm-restauration-recuperation.test.mjs`      | export → restauration → **ouverture PAR LE CODE** → lecture du clair ; l'ordre sous coupure ; le consentement nommé      |
 | unitaire — ancre  | `tests/unit/vm-enveloppe-ancre-version.test.mjs`        | une page antérieure refusée sous la feuille, **et l'aveu à la ligne suivante** ; la feuille traversant les deux ouvreurs |
 | vecteurs          | `tests/unit/vm-archive-vecteurs.test.mjs`               | le chemin de production reproduit `tests/vectors/archive-v2.json` OCTET POUR OCTET                                       |
-| mutation          | `tests/unit/vm-archive-mutation.test.mjs` (**≈ 10 s**)  | dix gardes retirées une à une du texte source, dix mutants tués                                                          |
+| mutation          | `tests/unit/vm-archive-mutation.test.mjs` (**≈ 15 s**)  | quinze gardes retirées une à une du texte source, quinze mutants tués                                                    |
 | Bout en bout      | `tests/e2e/archive-recuperation-inter-origine.spec.mjs` | **deux origines réelles**, volume chiffré, boot Rails sur le volume restauré ouvert par le code                          |
 
 **Ce que l'épreuve de l'ADR 0020 est devenue.** La décision 6 était tenue par deux épreuves — « le

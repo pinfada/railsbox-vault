@@ -108,9 +108,30 @@ page doit donc être **rescellée**, ce qui exige la clé de volume, donc une en
 **seul module** du dépôt la construit — `src/vm/enveloppe-de-recuperation.mjs` —, et il reçoit une
 KEK valable de son appelant : le Worker de confiance, qui tient déjà l'enveloppe ouverte.
 
-`volume-export.mjs` reçoit des **OCTETS OPAQUES et leur empreinte**. Il ne sait pas ce qu'ils sont,
-il ne nomme pas le voisin d'enveloppe, et l'épreuve de la décision 6 le relit — transformée, voir
-plus bas.
+`volume-export.mjs` ne nomme pas le voisin d'enveloppe et n'a rien à en savoir : il écrit une
+section et déclare son empreinte. L'épreuve de la décision 6 le relit — transformée, voir plus bas.
+
+### La GARDE DE FORME est un seul validateur, appelé aux trois portes
+
+> **Corrigé le 6 septembre 2026, sur la revue de format de la PR #160.** La première rédaction ne
+> gardait la forme qu'à l'IMPORT, au motif que le chemin d'archive devait rester aveugle. Le prix
+> était trop élevé : `writeArchive` acceptait d'écrire n'importe quels octets sous l'étiquette «
+> enveloppe de récupération », `verifyArchive` rendait un verdict VERT sur une section de cent
+> octets de bourrage, et l'utilisateur n'apprenait le défaut qu'au moment de restaurer — au pire
+> endroit et au pire moment.
+
+`exigerEnveloppeDeRecuperationSeule` est appelée par `archive-recuperation.mjs`, **à l'écriture
+comme à la lecture** : page lisible, taille exacte d'une page, emplacements de type 4 seulement, et
+accord avec le descripteur de l'en-tête. Une archive fautive ne naît donc plus, et une archive
+fautive reçue est refusée par la VÉRIFICATION, sans qu'aucun import soit tenté.
+
+Ce que l'aveuglement conserve, et qui était le vrai enjeu : `volume-export.mjs` ne connaît ni le
+voisin d'enveloppe, ni où il vit, ni comment il s'écrit ; et la CONSTRUCTION reste le fait du seul
+module qui tient la clé de volume. La frontière s'est déplacée d'un cran — d'« aveugle au format » à
+« aveugle au SUPPORT » — et c'est la bonne, parce que c'est celle que le vol d'une archive met à
+l'épreuve.
+
+L'IMPORT n'ajoute plus que ce qu'il est seul à pouvoir faire : confronter la page au MANIFESTE.
 
 ### Le format d'archive passe à la version 2
 
@@ -162,7 +183,25 @@ où il faut d'abord savoir lequel des deux on a perdu.
 
 **L'en-tête est CONFRONTÉ à la page, jamais cru** : une archive qui déclarerait une version
 d'enveloppe plus récente que celle qu'elle porte tromperait l'ancre de la décision 3, c'est-à-dire
-ferait accepter sans consentement une sauvegarde antérieure à la feuille.
+ferait accepter sans consentement une sauvegarde antérieure à la feuille. **Un en-tête de version 2
+déclare TOUJOURS le champ `recovery`** — objet, ou `null` explicite : un champ absent accepté comme
+`null` suffisait à faire de huit kilo-octets d'enveloppe une queue que personne ne lit, et la
+capacité d'ouvrir disparaissait en silence. **Rien ne suit une archive** : des octets au-delà de la
+fin déclarée sont refusés, faute de quoi une section greffée derrière une archive `recovery: null`
+passerait inaperçue.
+
+**L'ENVELOPPE DÉCRIT LE MÊME VOLUME QUE LE MANIFESTE**, et c'est le correctif du constat commun aux
+deux revues de la PR #160. La page authentifie un identifiant de volume dans les données associées
+de sa racine ; il était décodé et jeté. Greffer dans l'archive du volume B la page d'enveloppe du
+volume A — empreinte et descripteur recalculés — passait toute la vérification, et le geste 7 posait
+le voisin d'enveloppe de B sous l'identité de A : le volume restauré devenait inouvrable, et
+l'enveloppe qu'il portait avait été écrasée pour cela. Aucune perte de confidentialité — la page de
+A n'ouvre rien de B —, mais **une destruction assortie d'un diagnostic que la restauration
+fabriquait elle-même**. C'est le pendant, pour l'enveloppe, de ce que l'ADR 0009 referme pour le
+manifeste : les deux contrôles accordent le manifeste à l'en-tête v3 du fichier d'un côté, à la
+racine authentifiée de la page de l'autre. Une archive dont les trois sources s'accordent décrit un
+seul volume. Une archive qui emporte une enveloppe **sans déclarer d'identifiant** — un format
+antérieur à v3 — est refusée : un voisin se pose sous une identité, jamais sous « on verra bien ».
 
 ### À la restauration : l'ordre, et pourquoi il n'est pas négociable
 
@@ -230,6 +269,13 @@ Ici, pas d'interface : le **Worker de confiance** et les bancs acceptent `versio
 appelant et le passent aux ouvreurs (`ouvrirVolumeParDerivateur`, `ouvrirVolumeParKek`,
 `ouvrirEnveloppe`). C'est le chemin de production par lequel l'ancre est alimentée, et il n'y en a
 pas d'autre tant que #24 n'existe pas.
+
+**L'ancre est une SAISIE de l'utilisateur dans la coquille, jamais une valeur lue d'un stockage de
+l'appareil.** La règle est écrite ici avant que quiconque ait à l'implémenter, parce qu'elle est le
+seul point qui distingue une ancre d'une redondance : une version rangée à côté du fichier qu'elle
+protège est ramenée en arrière par le même geste que lui, et une version fournie par l'origine
+applicative rouvre le déni de service écarté ci-dessous. #24 la porte, et sa Definition of Ready la
+reprend.
 
 ### Restauration et ancre : le consentement NOMMÉ
 
@@ -301,21 +347,28 @@ S'y ajoutent : le code de récupération n'apparaît dans l'archive sous **aucun
 ## La campagne de mutation
 
 Chaque garde neuve a été RÉELLEMENT retirée du texte source par
-`tools/muter-gardes-archive-recuperation.mjs`, l'épreuve relancée, puis le fichier restauré. **Dix
-mutations, dix tuées.**
+`tools/muter-gardes-archive-recuperation.mjs`, l'épreuve relancée, puis le fichier restauré.
+**Quinze mutations, quinze tuées** — dix à la première rédaction, cinq ajoutées par les revues de la
+PR #160, et quatre de ces cinq ont d'abord SURVÉCU : les gardes qu'elles décrivent existaient, et
+aucune épreuve ne les tenait.
 
-| #   | Garde mutée                                                | Verdict | Ce qui la tue                                             |
-| --- | ---------------------------------------------------------- | ------- | --------------------------------------------------------- |
-| 1   | le filtre de construction sur `typeKek === 4`              | TUÉ     | `vm-archive-recuperation`, `vm-archive-vecteurs`          |
-| 2   | la relecture des types à l'import                          | TUÉ     | `vm-archive-recuperation`, `vm-restauration-recuperation` |
-| 3   | la page 1 du voisin restauré est à ZÉRO                    | TUÉ     | `vm-restauration-recuperation`                            |
-| 4   | l'empreinte de la section confrontée à l'en-tête           | TUÉ     | `vm-archive-recuperation`, `vm-restauration-recuperation` |
-| 5   | une archive v1 reste LUE                                   | TUÉ     | `vm-archive-recuperation`                                 |
-| 6   | l'en-tête est confronté à la page, jamais cru              | TUÉ     | `vm-restauration-recuperation`                            |
-| 7   | l'ordre contenu → enveloppe → manifeste                    | TUÉ     | `vm-restauration-recuperation`, `vm-volume-import`        |
-| 8   | le consentement exigé sous une feuille plus récente        | TUÉ     | `vm-restauration-recuperation`                            |
-| 9   | `versionMinimale` transmis par `ouvrirVolumeParKek`        | TUÉ     | `vm-enveloppe-ancre-version`                              |
-| 10  | `versionMinimale` transmis par `ouvrirVolumeParDerivateur` | TUÉ     | `vm-enveloppe-ancre-version`                              |
+| #   | Garde mutée                                                  | Verdict | Ce qui la tue                                             |
+| --- | ------------------------------------------------------------ | ------- | --------------------------------------------------------- |
+| 1   | le filtre de construction sur `typeKek === 4`                | TUÉ     | `vm-archive-recuperation`, `vm-archive-vecteurs`          |
+| 2   | la relecture des types à l'import                            | TUÉ     | `vm-archive-recuperation`, `vm-restauration-recuperation` |
+| 3   | la page 1 du voisin restauré est à ZÉRO                      | TUÉ     | `vm-restauration-recuperation`                            |
+| 4   | l'empreinte de la section confrontée à l'en-tête             | TUÉ     | `vm-archive-recuperation`, `vm-restauration-recuperation` |
+| 5   | une archive v1 reste LUE                                     | TUÉ     | `vm-archive-recuperation`                                 |
+| 6   | l'en-tête est confronté à la page, jamais cru                | TUÉ     | `vm-restauration-recuperation`                            |
+| 7   | l'ordre contenu → enveloppe → manifeste                      | TUÉ     | `vm-restauration-recuperation`, `vm-volume-import`        |
+| 8   | le consentement exigé sous une feuille plus récente          | TUÉ     | `vm-restauration-recuperation`                            |
+| 9   | `versionMinimale` transmis par `ouvrirVolumeParKek`          | TUÉ     | `vm-enveloppe-ancre-version`                              |
+| 10  | `versionMinimale` transmis par `ouvrirVolumeParDerivateur`   | TUÉ     | `vm-enveloppe-ancre-version`                              |
+| 11  | l'enveloppe embarquée décrit le MÊME volume que le manifeste | TUÉ     | `vm-restauration-recuperation`                            |
+| 12  | une archive qui emporte une enveloppe DÉCLARE son volume     | TUÉ     | `vm-restauration-recuperation`                            |
+| 13  | un en-tête v2 déclare toujours `recovery`, fût-ce à `null`   | TUÉ     | `vm-archive-recuperation`                                 |
+| 14  | rien ne suit une archive : la queue est refusée              | TUÉ     | `vm-archive-recuperation`                                 |
+| 15  | la FORME de la section est gardée À L'ÉCRITURE aussi         | TUÉ     | `vm-archive-recuperation`                                 |
 
 Ce que la campagne ne peut PAS mesurer : que la page embarquée s'ouvre réellement sous le code une
 fois restaurée sur un vrai support. C'est le scénario de bout en bout
@@ -354,13 +407,42 @@ huit kio autorisent, si, et c'est la décision 1 qui y répond.
 4. **L'ancre n'est tenue par personne d'autre que l'utilisateur.** Une feuille perdue, non notée ou
    mal recopiée ne protège de rien, et le produit n'a aucun moyen de le savoir. C'est le prix d'une
    ancre hors du fichier sans témoin distant ; l'alternative est le jalon 6.
+
+   Une version recopiée TROP HAUT refuse une enveloppe saine, et le refus doit dire quoi faire : le
+   message de `VAULT_ENVELOPPE_REJEU` nomme le repli — relire la feuille, et à défaut ouvrir SANS
+   plancher, ce qui n'est pas un contournement caché mais l'aveu de la décision 3, énoncé au moment
+   où il se paie.
+
 5. **Le retour arrière COMPLET du support n'est toujours pas détecté** — volume, enveloppe et
    voisins remis en place ensemble. `versionMinimale` ferme le retour arrière du SEUL fichier
    d'enveloppes sous une feuille tenue à jour ; il ne ferme rien d'autre, et l'ADR 0019 garde la
    phrase.
 6. **`recovery: null` reste possible, et se voit mal.** Un volume sans moyen de récupération produit
-   une archive qui ne s'ouvrira nulle part ailleurs. Le compte rendu de l'export le porte ; c'est à
-   l'interface de #24 de le DIRE, et rien ici ne l'y oblige.
+   une archive qui ne s'ouvrira nulle part ailleurs. Le compte rendu de l'export ET celui de la
+   vérification le portent ; c'est à l'interface de #24 de le DIRE, et rien ici ne l'y oblige.
+7. **Chaque archive fait voyager une SECONDE page d'enveloppe authentique, à version ÉGALE** —
+   constat de la revue de crypto de la PR #160, accepté comme limite. La page embarquée est signée
+   sous la clé du volume et porte la version du jour de l'export. Un adversaire qui peut ÉCRIRE dans
+   l'OPFS de l'origine de confiance — le même que celui de l'ADR 0019, qui détruit déjà le volume
+   s'il le veut — peut l'installer à la place de l'enveloppe vivante : les phrases et les passkeys
+   cessent d'ouvrir, sans qu'aucune révocation ait eu lieu.
+
+   **L'effet est un DÉNI, pas une exposition** : rien n'est lu, rien n'est perdu, le code ouvre
+   encore. **`versionMinimale` ne le voit pas, par construction** — les deux pages portent la même
+   version, et une ancre qui compare des rangs ne distingue pas deux pages authentiques de même
+   rang. Ce que cette tranche change n'est pas la capacité de l'adversaire mais la PROVENANCE de la
+   page : elle ne réside plus seulement sur l'appareil, elle est dans chaque archive.
+
+   Ce qui le fermerait est nommé et **non décidé** : une marque « page d'archive » dans les données
+   associées de la racine, refusée comme page vivante. Elle n'empêcherait pas l'installation — elle
+   n'achèterait qu'un diagnostic —, et elle invaliderait les vecteurs figés de l'ADR 0020. Le prix
+   dépasse le gain tant qu'aucune mesure ne montre le contraire.
+
+8. **Le plafond de lecture de la section est 64 kio, et ce n'est pas sa taille admissible.** Les
+   deux étages sont distincts : `MAX_RECOVERY_BYTES` borne ce qu'un lecteur accepte d'ALLOUER sur la
+   foi d'un nombre que l'archive a choisi, avant toute vérification ; la taille EXACTE d'une page
+   est ensuite exigée par la garde de forme. Les confondre ferait dépendre une borne d'allocation du
+   format d'enveloppe, c'est-à-dire la ferait bouger le jour où une page changerait de taille.
 
 ## Impacts sur les ADR antérieurs
 

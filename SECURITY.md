@@ -455,7 +455,7 @@ et tester.
   emplacement retiré ne subsiste dans les 16 384 du fichier —
   `tests/unit/vm-enveloppe-revocation-urgence.test.mjs`,
   `tests/unit/vm-enveloppe-coupures.test.mjs`, et le geste sur l'OPFS réel dans
-  `tests/browser/enveloppe-frontiere.spec.mjs`. Ce que cela ne rattrape pas est l'entrée 11 de la
+  `tests/browser/enveloppe-frontiere.spec.mjs`. Ce que cela ne rattrape pas est l'entrée 12 de la
   liste « non couvert » : révoquer ne rechiffre pas. **Depuis #149, la tranche 3 ferme le
   transport** : une archive emporte une enveloppe de RÉCUPÉRATION SEULE, et un volume chiffré
   restauré sur une autre origine **s'ouvre par le code** — le cycle est mesuré au niveau unitaire
@@ -498,7 +498,7 @@ que le produit ne promet pas. `tests/unit/dossier-de-revue.test.mjs` relit leurs
    l'emplacement conservé est celui que la clé présentée OUVRE — jamais un identifiant fourni, qu'un
    inventaire public livre à qui le demande. Décision :
    [ADR 0026](docs/decisions/0026-revocation-d-urgence-et-page-libre.md). **Réserve, et elle porte
-   sur toutes les révocations** : révoquer NE RECHIFFRE PAS — voir l'entrée 11.
+   sur toutes les révocations** : révoquer NE RECHIFFRE PAS — voir l'entrée 12.
 
 5. **Une archive porte l'enveloppe de récupération** — qui détient **l'archive ET le code** ouvre le
    volume, où qu'il soit ; **l'archive seule n'ouvre rien**, et le code seul n'ouvre rien non plus
@@ -517,11 +517,31 @@ que le produit ne promet pas. `tests/unit/dossier-de-revue.test.mjs` relit leurs
 8. **Copie du code prise avant la révocation** — qui a photographié la feuille tient la clé jusqu'à
    la révocation, et rien ne dit qu'une copie a été prise. La révocation est le seul remède, et elle
    n'est pas rétroactive.
-9. **Retour arrière COMPLET du support** — remettre en place une copie entière et cohérente du
-   volume et de son enveloppe ramène un emplacement révoqué. C'est la limite que
-   [l'ADR 0020](docs/decisions/0020-enveloppe-de-cle.md) nomme, et le code de récupération ne la
-   ferme pas.
-10. **Ce que le SUPPORT garde de l'emplacement retiré, entre les deux barrières d'une révocation** —
+9. **La SUBSTITUTION de la page embarquée d'une archive à l'enveloppe vivante, à version ÉGALE** —
+   depuis #149, chaque archive porte une page d'enveloppe AUTHENTIQUE du volume, signée sous sa clé
+   et portant sa version du jour de l'export. Un adversaire qui peut ÉCRIRE dans l'OPFS de l'origine
+   de confiance — le même que celui de l'ADR 0019 § 6.9, qui détruit déjà le volume s'il le veut —
+   peut l'installer à la place de `<volume>.cles`. Les phrases et les passkeys cessent alors
+   d'ouvrir, sans qu'aucune révocation ait eu lieu.
+
+   **L'effet est un DÉNI, pas une exposition** : rien n'est lu, rien n'est perdu, et le code ouvre
+   encore — c'est même la seule chose qui ouvre. **`versionMinimale` ne le voit pas, par
+   construction** : la page substituée porte la MÊME version que la vivante, et une ancre qui
+   compare des versions ne distingue pas deux pages authentiques de même rang. Ce que #149 change
+   n'est pas la capacité de l'adversaire mais la PROVENANCE de la page : elle ne réside plus
+   seulement sur l'appareil, elle est dans chaque archive.
+
+   Ce qui le fermerait est nommé, et **non décidé** : une marque « page d'archive » dans les données
+   associées de la racine, refusée comme page vivante. Elle n'empêcherait pas l'installation — elle
+   n'achèterait qu'un diagnostic —, et elle invaliderait les vecteurs figés
+   `tests/vectors/enveloppe-v1.json`. Le prix dépasse le gain tant qu'aucune mesure ne montre le
+   contraire.
+
+10. **Retour arrière COMPLET du support** — remettre en place une copie entière et cohérente du
+    volume et de son enveloppe ramène un emplacement révoqué. C'est la limite que
+    [l'ADR 0020](docs/decisions/0020-enveloppe-de-cle.md) nomme, et le code de récupération ne la
+    ferme pas.
+11. **Ce que le SUPPORT garde de l'emplacement retiré, entre les deux barrières d'une révocation** —
     `<volume>.cles` porte DEUX pages en alternance, et une révocation n'en réécrivait qu'une : les
     octets de l'emplacement retiré — identifiant, paramètres publics, sel, **DEK enveloppée et
     étiquette** — subsistaient dans l'autre jusqu'au geste d'enveloppe suivant. C'est le constat
@@ -529,20 +549,21 @@ que le produit ne promet pas. `tests/unit/dossier-de-revue.test.mjs` relit leurs
     mutation qui RETIRE une clé écrit 8192 zéros sur la page libérée, après la barrière qui publie
     ([ADR 0026](docs/decisions/0026-revocation-d-urgence-et-page-libre.md)).
 
-**La promesse exacte, et elle est bornée en deux endroits.** La page libre est effacée après chaque
-retrait ; **si une coupure survient entre la barrière qui publie et la seconde, la page ancienne
-reste lisible JUSQU'À LA MUTATION SUIVANTE, qui la réécrit ; aucune réparation n'est jouée à
-l'ouverture** — ouvrir une enveloppe est une lecture, et un ouvreur qui écrirait déplacerait la
-fenêtre sans la fermer, puisque la réparation elle-même peut être coupée. Ce que la coupure ne
-touche pas est la SERRURE : aucune clé retirée n'ouvre, et c'est mesuré.
+    **La promesse exacte, et elle est bornée en deux endroits.** La page libre est effacée après
+    chaque retrait ; **si une coupure survient entre la barrière qui publie et la seconde, la page
+    ancienne reste lisible JUSQU'À LA MUTATION SUIVANTE, qui la réécrit ; aucune réparation n'est
+    jouée à l'ouverture** — ouvrir une enveloppe est une lecture, et un ouvreur qui écrirait
+    déplacerait la fenêtre sans la fermer, puisque la réparation elle-même peut être coupée. Ce que
+    la coupure ne touche pas est la SERRURE : aucune clé retirée n'ouvre, et c'est mesuré.
 
-**Et le support, dans tous les cas.** La promesse porte sur le FICHIER tel que le produit le relit,
-jamais sur les blocs sous-jacents : un système de fichiers à copie sur écriture, un SSD qui remappe,
-un instantané pris entre les deux barrières peuvent conserver les anciens octets, et le produit ne
-peut ni l'empêcher ni l'observer. C'est un « fait, non garanti », dans les termes de la décision 7
-de [l'ADR 0021](docs/decisions/0021-derivation-des-cles-de-deverrouillage.md).
+    **Et le support, dans tous les cas.** La promesse porte sur le FICHIER tel que le produit le
+    relit, jamais sur les blocs sous-jacents : un système de fichiers à copie sur écriture, un SSD
+    qui remappe, un instantané pris entre les deux barrières peuvent conserver les anciens octets,
+    et le produit ne peut ni l'empêcher ni l'observer. C'est un « fait, non garanti », dans les
+    termes de la décision 7 de
+    [l'ADR 0021](docs/decisions/0021-derivation-des-cles-de-deverrouillage.md).
 
-11. **Toute copie prise AVANT une révocation, code ou fichier** — **révoquer ne RECHIFFRE PAS.** Une
+12. **Toute copie prise AVANT une révocation, code ou fichier** — **révoquer ne RECHIFFRE PAS.** Une
     révocation retire une clé de déverrouillage ; elle ne change pas la clé de volume. Qui détient
     `<volume>` et une page ANTÉRIEURE de `<volume>.cles` développe toujours la même DEK et lit
     toujours le volume tel qu'il était. La révocation protège le fichier À VENIR, pas la copie déjà
