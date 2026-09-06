@@ -193,6 +193,19 @@ async function poserTroisEmplacements(support, dek, { initiale, rotation, tierce
   return inventorierEnveloppe({ support, identifiantVolume: IDENTIFIANT_VOLUME });
 }
 
+/**
+ * Combien de pages du fichier RÉEL portent encore un octet non nul.
+ *
+ * C'est #156 mesuré là où le système de fichiers est celui du moteur et non un double : après un
+ * retrait, il n'en reste qu'UNE — la neuve.
+ */
+async function pagesNonNullesDuFichier(support) {
+  const fichier = await support.lire(0, TAILLE_FICHIER_ENVELOPPE);
+  return [0, 1].filter((index) =>
+    fichier.subarray(index * PAGE_OCTETS, (index + 1) * PAGE_OCTETS).some((octet) => octet !== 0),
+  ).length;
+}
+
 /** Constate ce que chaque clé retirée rend désormais. Un `null` voudrait dire qu'elle ouvre encore. */
 async function refusDesRetirees(support, retirees) {
   const refus = [];
@@ -229,13 +242,6 @@ async function scenarioRevocationUrgence(jeton) {
 
   const refus = await refusDesRetirees(support, [rotation, tierce]);
 
-  // La page LIBÉRÉE, mesurée sur le fichier réel : elle ne doit plus porter un octet non nul. C'est
-  // #156, éprouvé là où le système de fichiers est celui du moteur et non un double.
-  const fichier = await support.lire(0, TAILLE_FICHIER_ENVELOPPE);
-  const pagesNonNulles = [0, 1].filter((index) =>
-    fichier.subarray(index * PAGE_OCTETS, (index + 1) * PAGE_OCTETS).some((octet) => octet !== 0),
-  ).length;
-
   return {
     emplacementsAvant: avant.emplacements.length,
     typesAvant: avant.emplacements.map((emplacement) => emplacement.typeKek).sort(),
@@ -245,12 +251,19 @@ async function scenarioRevocationUrgence(jeton) {
     // UNE version de plus, pas deux : c'est ce que le geste composé achète.
     versionsConsommees: geste.version - avant.version,
     conserveeOuvre: conservee.version === geste.version,
-    conserveeEstCelleQuiOuvre:
-      conservee.identifiantEmplacement === apres.emplacements[0].identifiantEmplacement,
+    // Comparé à l'inventaire d'AVANT le geste, et non à celui d'après : après, il ne reste qu'un
+    // emplacement, et « la clé ouvre celui qui reste » est vrai par construction. C'est le constat de
+    // la revue de la PR #158 — l'assertion ne pouvait pas rougir. Ce qui se mesure est que le
+    // survivant est bien le PREMIER des trois, celui que la clé initiale avait posé.
+    conserveeEstLePremierDAvant:
+      apres.emplacements[0].identifiantEmplacement === avant.emplacements[0].identifiantEmplacement,
+    conserveeEstUnDesTrois: avant.emplacements
+      .map((emplacement) => emplacement.identifiantEmplacement)
+      .includes(conservee.identifiantEmplacement),
     volumeRelu: await relireLeVolume(conservee.dek),
     refusDesRetirees: refus,
     refusAttendu: ENVELOPPE_ERROR_CODES.cleRefusee,
-    pagesNonNulles,
+    pagesNonNulles: await pagesNonNullesDuFichier(support),
   };
 }
 

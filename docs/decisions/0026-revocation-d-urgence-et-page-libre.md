@@ -54,6 +54,13 @@ est littéral, et la signature le rend indépassable.
 `lireEtat` rendait déjà l'emplacement qui a ouvert (`identifiantEmplacement`, depuis #21) ; `muter`
 le passe à `transformer`. Aucun champ nouveau, aucune lecture supplémentaire.
 
+**Si DEUX emplacements partagent la même KEK, celui de plus bas rang est conservé.** C'est
+déterministe — `developperDansLaPage` retient le premier qui ouvre, en parcourant la liste entière
+sans court-circuit — et inatteignable en production, où l'info HKDF d'un dérivateur lie
+l'identifiant d'emplacement (ADR 0021), si bien que deux emplacements ne partagent jamais une KEK.
+C'est atteignable au HARNAIS, qui pose la KEK telle quelle : le comportement est donc écrit et
+éprouvé plutôt que laissé à découvrir. _Constat de la revue de la PR #158._
+
 **Un seul `muter` : une page écrite, une barrière.** L'atomicité est celle de l'ADR 0020, sans rien
 de neuf. L'état après est : version + 1, un seul emplacement, page réécrite entière avec son
 remplissage à zéro.
@@ -101,6 +108,40 @@ et une barrière pour rien, et retireraient au geste SUIVANT le point de reprise
 offre. `remplacer`, lui, retire bien une clé — laisser l'ancien scellement dans la page libre ferait
 de la rotation d'une clé compromise un geste qui ne retire rien pendant une mutation entière.
 
+**« Créer ne retire rien » se lit dans son cas nominal, et pas au-delà.** `creerEnveloppe` sur un
+fichier `.cles` DÉJÀ présent laisse la seconde page intacte : `allouer` est un `truncate`, sans
+effet à taille égale. L'enveloppe d'un volume précédent y survit donc, avec ses DEK enveloppées. Le
+fait précède #148 et n'est pas corrigé ici — aucun chemin du produit ne crée une enveloppe
+par-dessus une autre, puisqu'un volume est retiré avec ses voisins (ADR 0020, décision 1) — mais il
+est nommé pour que la règle ne se relise pas plus large qu'elle n'est. _Constat de la revue de la PR
+#158 ; l'inventaire qui ne confronte pas l'identifiant de volume est suivi dans l'issue #159._
+
+### Ce qu'une coupure ENTRE les deux barrières laisse, et qu'aucune réparation ne rejoue
+
+L'effacement n'est **pas atomique avec la publication**, et il n'a pas à l'être : la page ancienne
+n'est plus un point de reprise. Mais si la session s'arrête entre la barrière qui publie et
+l'écriture des zéros, **rien ne rejoue l'effacement**.
+
+La promesse exacte est donc celle-ci, et non « entre les deux barrières » : **la page libre est
+effacée après chaque retrait ; si une coupure survient entre la barrière qui publie et la seconde,
+la page ancienne reste lisible JUSQU'À LA MUTATION SUIVANTE, qui la réécrit ; aucune réparation
+n'est jouée à l'ouverture.**
+
+**Pourquoi aucune réparation à l'ouverture.** Ouvrir une enveloppe est une LECTURE. Y ajouter une
+écriture ferait écrire tout ouvreur, y compris celui qui n'a qu'à lire — et **déplacerait la fenêtre
+sans la fermer**, puisque la réparation elle-même peut être coupée. Une réparation au début de
+`muter` ne servirait à rien non plus : `publier` réécrit déjà la page libre ENTIÈRE, remplissage
+compris, et c'est précisément ce qui referme la fenêtre.
+
+Ce que la coupure ne touche PAS, et c'est mesuré : la **serrure**. Aucune clé retirée n'ouvre — la
+page neuve fait autorité, et `lireEtat` ne replie pas sur la précédente quand la clé y est refusée.
+Ce qui subsiste est de la matière pour le retour arrière de support de la limite 5, pas une clé qui
+fonctionne. L'épreuve `vm-enveloppe-revocation-urgence.test.mjs` › « LIMITE : une coupure ENTRE les
+deux barrières… » fixe les trois faits dans cet ordre : la serrure tient, les octets restent, la
+mutation suivante les emporte.
+
+_Constat de la revue de la PR #158, le 6 septembre 2026._
+
 ### Ce que l'effacement ne promet PAS : « fait, non garanti »
 
 La promesse porte sur le **FICHIER tel que le produit le relit**, pas sur le support. Un système de
@@ -108,8 +149,8 @@ fichiers à copie sur écriture, un SSD qui remappe ses blocs, un instantané de
 deux barrières peuvent conserver les anciens octets sans que rien ici ne puisse l'empêcher ni même
 l'observer. C'est un « fait, non garanti », dans les termes de la décision 7 de
 l'[ADR 0021](0021-derivation-des-cles-de-deverrouillage.md), et `SECURITY.md` le porte sous cette
-forme dans sa liste « non couvert » — l'entrée 9 est RÉÉCRITE, pas retirée : la fenêtre n'est plus «
-jusqu'à la mutation suivante », c'est « entre les deux barrières, plus ce que le support conserve ».
+forme dans sa liste « non couvert » — l'entrée 9 est RÉÉCRITE, pas retirée : la fenêtre est celle de
+la section précédente, plus ce que le support conserve.
 
 ## Décision 3 — Révoquer ne RECHIFFRE pas, et c'est écrit là où on le lira
 
@@ -142,7 +183,8 @@ barrière est franchie » (voir ci-dessous).
 
 ## La campagne de mutation
 
-`node tools/muter-gardes-revocation-urgence.mjs`. Huit gardes, huit tuées, **du premier passage**.
+`node tools/muter-gardes-revocation-urgence.mjs`. Huit gardes, huit tuées — **mais pas du premier
+passage, et c'est le n° 5 qui l'a appris.**
 
 | #   | Garde mutée                                   | Verdict | Ce qui la tue                                                        |
 | --- | --------------------------------------------- | ------- | -------------------------------------------------------------------- |
@@ -154,6 +196,22 @@ barrière est franchie » (voir ci-dessous).
 | 6   | une RÉVOCATION efface la page libérée         | tuée    | 2 épreuves, dont celle du type 4 de l'ADR 0025                       |
 | 7   | un REMPLACEMENT efface la page libérée        | tuée    | « l'ancien emplacement RETIRÉ ne laisse pas ses octets »             |
 | 8   | un AJOUT n'efface RIEN                        | tuée    | « AJOUTER n'efface RIEN : il ne retire aucune clé »                  |
+
+**La n° 5 était comptée tuée sans mesurer sa garde.** Son remplacement ouvrait une accolade sans la
+fermer : le fichier muté ne se LISAIT plus, et le moteur — qui compte tout code de sortie non nul
+pour une mise à mort — le déclarait mort quelle que soit l'épreuve rejouée, y compris une qui
+n'approche pas la garde. Le score annoncé au premier passage, « 8/8 », valait **7/8**. La revue de
+la PR #158 l'a démonté par un `node --check` sur chaque fichier muté ; le mutant réécrit meurt
+réellement, sur `VAULT_ENVELOPPE_DERNIER_EMPLACEMENT` levé depuis `muter`.
+
+C'est la leçon de la mutation n° 8 de l'ADR 0020, dans l'autre sens : là-bas, une mutation qui
+SURVIT devait d'abord être soupçonnée elle-même ; ici, une mutation qui TUE trop vite. Les deux
+moitiés se rejoignent — **un verdict de mutation ne dit quelque chose de la garde que si la mutation
+décrit encore un programme.** `tools/moteur-de-mutation.mjs` porte désormais cette troisième garde à
+côté des deux qu'il avait déjà (« l'épreuve passait-elle AVANT ? », « l'enfant a-t-il rendu un
+verdict ? ») : un mutant qui ne se lit plus est NON APPLICABLE, jamais tué, et une épreuve du moteur
+le prouve sur un mutant volontairement cassé. Les deux campagnes antérieures ont été rejouées sous
+le moteur corrigé sans perdre un mutant : récupération 16/16, instantané 13/13.
 
 **La n° 4 a demandé une épreuve qu'aucune assertion d'état ne pouvait porter.** Le double de support
 modélise la VISIBILITÉ des écritures, pas leur DURABILITÉ : sa barrière est un geste sans effet, et
@@ -197,17 +255,21 @@ contributeur ferait rougir la CI d'un autre sans rien dire du produit.
    et elle est structurelle : aucune révocation d'enveloppe ne peut atteindre une copie déjà prise ;
 2. **L'effacement est « fait, non garanti ».** Voir la décision 2. Le support peut conserver les
    anciens blocs, et le produit ne l'observe pas ;
-3. **La durabilité de la seconde barrière n'est pas éprouvée.** Aucune épreuve de ce dépôt ne coupe
+3. **Une coupure entre les deux barrières laisse la page ancienne lisible jusqu'à la mutation
+   suivante.** Voir la décision 2. Aucune réparation n'est jouée à l'ouverture, et c'est délibéré :
+   une ouverture est une lecture. La limite 2 de l'ADR 0025 est donc **RÉDUITE**, pas levée — le
+   chemin nominal ne laisse plus rien, le chemin coupé laisse la page jusqu'au geste suivant ;
+4. **La durabilité de la seconde barrière n'est pas éprouvée.** Aucune épreuve de ce dépôt ne coupe
    le courant. Ce que le produit tient est ce que le moteur promet de
    `FileSystemSyncAccessHandle.flush` ; les épreuves mesurent l'ORDRE des gestes, pas leur effet sur
    un disque débranché ;
-4. **Le retour arrière COMPLET du support n'est pas détecté** — limite 1 de l'ADR 0020, inchangée.
+5. **Le retour arrière COMPLET du support n'est pas détecté** — limite 1 de l'ADR 0020, inchangée.
    L'effacement de la page libre rend le retour arrière PARTIEL impossible ; il ne fait rien contre
    qui remet en place une copie entière et cohérente du fichier. `versionMinimale` reste le point où
    un ancrage monotone se branchera ;
-5. **Aucune interface n'offre ce geste.** Comme les cinq autres opérations : le seul appelant hors
+6. **Aucune interface n'offre ce geste.** Comme les cinq autres opérations : le seul appelant hors
    épreuves est le banc. C'est #24 ;
-6. **La mesure porte sur deux moteurs et une machine.** WebKit ne sert pas OPFS synchrone dans un
+7. **La mesure porte sur deux moteurs et une machine.** WebKit ne sert pas OPFS synchrone dans un
    Worker (`docs/compatibility.md`), et l'épreuve y exige un refus typé au lieu d'un chiffre.
 
 ## Impacts sur les ADR antérieurs
@@ -218,7 +280,7 @@ Aucun ADR n'est réécrit ; chacun reçoit une note datée qui renvoie ici.
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **0020** | la décision 4 compte désormais **six** opérations, pas cinq ; et la règle de remplissage (« une révocation réécrit la page entière ») s'étend à la page LIBÉRÉE, pas seulement à la publiée. |
 | **0021** | rien de nouveau : la formule « fait, non garanti » de sa décision 7 est reprise telle quelle pour l'effacement.                                                                              |
-| **0025** | sa limite 2 (« la page LIBRE garde la version précédente ») est LEVÉE ; sa limite 6 (« le geste composé n'existe pas ») est LEVÉE.                                                           |
+| **0025** | sa limite 2 (« la page LIBRE garde la version précédente ») est RÉDUITE au seul chemin coupé, pas levée ; sa limite 6 (« le geste composé n'existe pas ») est LEVÉE.                         |
 
 ## Alternatives rejetées
 

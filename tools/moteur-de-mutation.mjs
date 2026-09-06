@@ -23,7 +23,7 @@
 // la déplacer sans que sa tranche y touche ferait porter à #148 un remaniement qu'aucune épreuve de
 // #148 ne couvre.
 
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -111,6 +111,14 @@ function eprouver(atelier, mutation) {
 
   try {
     writeFileSync(chemin, original.replace(mutation.avant, mutation.apres), "utf8");
+    if (!seLit(chemin)) {
+      return {
+        ...identite,
+        applicable: false,
+        tue: false,
+        raison: `le fichier muté NE SE LIT PLUS (erreur de syntaxe) : n'importe quelle épreuve le tuerait, et la garde ne serait pas mesurée pour autant.`,
+      };
+    }
     const mute = rejouer(atelier, mutation.epreuves);
     // NON CONCLUANT, et jamais « tuée ». Un enfant terminé par un SIGNAL, non démarré, ou qui a
     // épuisé son tas n'a pas rendu de verdict : il s'est arrêté. Compter cela pour une mise à mort
@@ -128,6 +136,27 @@ function eprouver(atelier, mutation) {
     return { ...identite, applicable: true, tue: mute.status !== 0, raison: null };
   } finally {
     writeFileSync(chemin, original, "utf8");
+  }
+}
+
+/**
+ * Le fichier muté SE LIT-IL encore ? Un `node --check`, avant de rejouer quoi que ce soit.
+ *
+ * La garde vient de la revue de #148, qui a trouvé une mutation dont le remplacement ouvrait une
+ * accolade sans la fermer. Le moteur compte tout code de sortie non nul pour une mise à mort : ce
+ * mutant-là était donc tué par N'IMPORTE QUELLE épreuve, y compris une qui n'approche pas la garde,
+ * et la campagne le comptait dans son score. C'est le pendant exact des deux gardes déjà écrites
+ * plus haut — « l'épreuve passait-elle AVANT ? », « l'enfant a-t-il rendu un verdict ? » — sur un
+ * troisième bord : **la mutation décrit-elle encore un programme ?**
+ *
+ * Le verdict est « non applicable », comme un texte-ancre absent, et jamais « tuée ».
+ */
+function seLit(chemin) {
+  try {
+    execFileSync(process.execPath, ["--check", chemin], { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
   }
 }
 

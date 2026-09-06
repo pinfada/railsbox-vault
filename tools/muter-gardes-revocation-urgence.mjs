@@ -22,6 +22,20 @@
 // mutation : elle ne dit pas seulement « il manque une épreuve », elle dit parfois « la seule
 // épreuve possible n'est pas celle que vous alliez écrire ».
 //
+// ## Une mutation qui « tue » trop vite doit être soupçonnée elle-même
+//
+// Au premier passage, huit mutants sur huit étaient comptés morts. La revue de la PR #158 en a
+// démonté un : le remplacement du n° 5 ouvrait une accolade sans la fermer, et le fichier muté ne se
+// LISAIT plus. Le moteur comptant tout code de sortie non nul pour une mise à mort, ce mutant-là
+// était tué par n'importe quelle épreuve — y compris une qui n'approche pas la garde. Le score réel
+// était sept sur huit, et la garde n'était pas mesurée.
+//
+// C'est la leçon que l'ADR 0020 avait déjà payée sur sa mutation n° 8, dans l'autre sens : une
+// mutation qui SURVIT doit d'abord être soupçonnée elle-même. Les deux moitiés se rejoignent — un
+// verdict de mutation ne dit quelque chose de la garde que si la mutation décrit ce qu'elle croit
+// décrire. `tools/moteur-de-mutation.mjs` passe désormais `node --check` sur chaque fichier muté
+// avant de rejouer quoi que ce soit, et un mutant qui ne se lit plus est NON APPLICABLE.
+//
 // ## Ce que la campagne ne peut PAS mesurer, et il faut le dire
 //
 // Que la barrière franchie fasse réellement DURER les octets sur le disque. Aucune épreuve de ce
@@ -93,13 +107,20 @@ export const MUTATIONS = Object.freeze([
     nom: "un SEUL emplacement est ADMIS, jamais refusé",
     garde: "revoquerToutSauf — l'absence de refus sur une enveloppe déjà réduite",
     fichier: ENVELOPPE,
-    avant: "    transformer: async (etat) =>\n      etat.page.emplacements.filter(",
+    avant:
+      "    transformer: async (etat) =>\n" +
+      "      etat.page.emplacements.filter(\n" +
+      "        (existant) => existant.identifiantEmplacement === etat.identifiantEmplacement,\n" +
+      "      ),",
     apres:
       "    transformer: async (etat) => {\n" +
       "      if (etat.page.emplacements.length === 1) {\n" +
       "        throw dernierEmplacement({ volume: identifiantVolume });\n" +
       "      }\n" +
-      "      return etat.page.emplacements.filter(",
+      "      return etat.page.emplacements.filter(\n" +
+      "        (existant) => existant.identifiantEmplacement === etat.identifiantEmplacement,\n" +
+      "      );\n" +
+      "    },",
     epreuves: [EPREUVE],
   },
   {
