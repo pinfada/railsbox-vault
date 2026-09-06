@@ -266,9 +266,14 @@ export function normaliserSaisie(texte) {
     const replie = REPLIS.get(majuscule) ?? majuscule;
     const valeur = replie.length === 1 ? ALPHABET_CROCKFORD.indexOf(replie) : -1;
     if (valeur === -1) {
+      // Le signe est NOMMÉ dans le message, et rien d'autre de la saisie ne l'est. C'est le même
+      // arbitrage que celui de l'ADR 0021 sur le contexte d'un refus PRF — « la forme, jamais le
+      // résultat » —, tranché ici dans l'autre sens pour une raison qui tient : ce signe est par
+      // construction ABSENT de l'alphabet et de ses replis, il ne porte donc aucun bit d'un code
+      // valide, et le montrer est exactement ce qui dit à l'utilisateur quoi corriger. Le contexte,
+      // lui, ne le reprend pas : un message se lit une fois, un contexte voyage.
       throw codeMalRecopie(
         `le signe « ${signe} » n'appartient pas à l'alphabet base 32 de Crockford, et aucun repli ne l'y ramène.`,
-        { signe: signe.codePointAt(0) },
       );
     }
     symboles.push(valeur);

@@ -412,9 +412,15 @@ système, aucun téléphone. La limite est celle de l'ADR 0021, inchangée.
 8. **Un seul code par appel, et le plafond de huit emplacements est partagé.** Rien n'empêche d'en
    créer plusieurs, rien ne les compte, et rien n'avertit avant que `VAULT_ENVELOPPE_PLEINE` ne
    tombe. C'est un travail d'interface (#24) ;
-9. **`crypto.getRandomValues` est cru sur parole.** Le produit demande seize octets au moteur et ne
-   juge pas ce qu'il reçoit. Aucun test statistique n'est fait, et il n'en existe pas qui vaudrait
-   sur seize octets. La qualité de ce tirage est celle du moteur, et le dépôt ne peut pas mieux.
+9. **Le BANC garde le code en mémoire, et le produit n'a pas cet endroit-là.** La coquille de
+   `deverrouillage.html` conserve toutes les réponses du Worker pour que la sonde puisse les
+   fouiller ; le code y séjourne donc dans un tableau JavaScript, pour la durée de la page. C'est un
+   artefact d'ÉPREUVE, nécessaire au témoin de la fouille, et il n'existe dans aucun chemin de
+   production — il est nommé ici pour qu'un relecteur qui lit le banc ne le prenne pas pour une
+   conduite du produit ;
+10. **`crypto.getRandomValues` est cru sur parole.** Le produit demande seize octets au moteur et ne
+    juge pas ce qu'il reçoit. Aucun test statistique n'est fait, et il n'en existe pas qui vaudrait
+    sur seize octets. La qualité de ce tirage est celle du moteur, et le dépôt ne peut pas mieux.
 
 ## Impacts sur les ADR antérieurs
 
