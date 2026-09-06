@@ -131,6 +131,14 @@ const FIGEURS_DE_VECTEURS = [
       "il publie les identifiants et les nonces des vecteurs de l'ADR 0020 sous les clés « aleas » " +
       "et « nonces » du document figé. Ce sont des DONNÉES du contrat, pas une source injectée.",
   },
+  {
+    fichier: "tools/figer-vecteurs-archive.mjs",
+    motif:
+      "même chose pour l'ADR 0027 (#149) : il publie les identifiants, les nonces et les " +
+      "paramètres publics de l'archive v2 sous la clé « aleas » du document figé. Il n'ouvre " +
+      "aucune enveloppe et ne DÉVELOPPE aucune DEK — il scelle sous des nonces publiés, et écrit " +
+      "un fichier JSON sous tests/vectors/.",
+  },
 ];
 
 const CHEMINS_DE_FIGEUR = FIGEURS_DE_VECTEURS.map((entree) => entree.fichier);
