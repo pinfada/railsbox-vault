@@ -587,6 +587,30 @@ test("SECURITY.md statue sur CHAQUE invariant, et la preuve citée existe", asyn
   );
 });
 
+test("le README indexe TOUS les ADR de docs/decisions/, sans trou ni ligne inventée", async () => {
+  // La revue de format de #155 a relevé que l'ADR 0025 manquait à l'index, et surtout qu'aucune
+  // épreuve ne relisait cet index : il pouvait donc se périmer indéfiniment. Le contrôle porte dans
+  // les DEUX sens, comme celui des codes de refus — un ADR non indexé est invisible, un lien vers un
+  // ADR qui n'existe pas est pire.
+  const readme = await lire("README.md");
+  const surDisque = readdirSync(path.join(REPO_ROOT, "docs", "decisions"))
+    .filter((nom) => /^\d{4}-.*\.md$/.test(nom))
+    .sort();
+  const indexes = [...readme.matchAll(/docs\/decisions\/(\d{4}-[\w-]+\.md)/g)]
+    .map((occurrence) => occurrence[1])
+    .sort();
+  assert.deepEqual(
+    surDisque.filter((nom) => !indexes.includes(nom)),
+    [],
+    "Ces ADR existent et ne sont pas dans l'index du README.",
+  );
+  assert.deepEqual(
+    indexes.filter((nom) => !surDisque.includes(nom)),
+    [],
+    "Le README indexe des ADR qui n'existent pas.",
+  );
+});
+
 test("SECURITY.md dit ce que le moyen de récupération COUVRE et ce qu'il ne couvre pas", async () => {
   // #147 : une liste à DEUX entrées, au même niveau. Sans ce cliquet, la seconde moitié — celle qui
   // dit ce que le produit ne promet pas — est exactement celle qui se perd à la relecture suivante,

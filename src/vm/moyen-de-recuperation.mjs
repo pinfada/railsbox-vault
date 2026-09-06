@@ -51,7 +51,6 @@ import {
 import { codeDejaRendu } from "./derivation/derivation-errors.mjs";
 import { preparerEmplacementDerive } from "./derivation/emplacement-derive.mjs";
 import { ajouterEmplacement } from "./enveloppe-de-cle.mjs";
-import { TYPES_KEK } from "./enveloppe/identite-enveloppe.mjs";
 
 /**
  * Le porteur du code : il le livre UNE fois, puis ne le livre plus.
@@ -116,7 +115,8 @@ export async function creerMoyenDeRecuperation({
     identifiantVolume,
     kek,
     kekNouvelle: prepare.kek,
-    typeKek: TYPES_KEK.recuperation,
+    // Le type vient du DÉRIVATEUR, jamais d'un littéral répété : les deux ne peuvent pas diverger.
+    typeKek: prepare.typeKek,
     parametres,
     identifiantEmplacement: prepare.identifiantEmplacement,
     ...(aleas === undefined ? {} : { aleas }),
@@ -127,7 +127,7 @@ export async function creerMoyenDeRecuperation({
   return porteurDuCode(
     {
       identifiantEmplacement: prepare.identifiantEmplacement,
-      typeKek: TYPES_KEK.recuperation,
+      typeKek: prepare.typeKek,
       version: pose.version,
     },
     chaine,

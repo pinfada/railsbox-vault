@@ -424,21 +424,27 @@ et tester.
   chemin vers le volume : **sa perte vaut la perte des données**, et sa somme de contrôle de page ne
   protège contre AUCUN adversaire (elle sépare l'accident de l'écriture complète, pas plus). Son
   suffixe est **réservé**, et il est retiré avec le volume qu'il décrit. Décision :
-  [ADR 0020](docs/decisions/0020-enveloppe-de-cle.md). **Depuis #147**, la perte des CLÉS n'est plus
-  la perte du volume — un code de récupération ouvre encore ; la perte du FICHIER, elle, l'est
-  toujours, puisque l'archive ne l'emporte pas (tranche 3 de #23) ;
+  [ADR 0020](docs/decisions/0020-enveloppe-de-cle.md). **Depuis #147**, un MÉCANISME existe pour que
+  la perte des clés ne soit plus la perte du volume — un code de récupération, s'il a été créé
+  AVANT, ouvre encore. Deux réserves, et aucune n'est un détail : aucun chemin de production n'offre
+  ce code aujourd'hui (c'est #24), et un volume dont le propriétaire n'a jamais créé de moyen de
+  récupération se perd toujours avec ses clés. La perte du FICHIER, elle, reste la perte du volume
+  dans tous les cas, puisque l'archive ne l'emporte pas (tranche 3 de #23) ;
 - `SEC-RECOVERY-001` — chaque moyen de récupération annoncé possède un test de succès, de révocation
-  et de perte définitive. **EXERCÉ depuis #147.** #21 en avait posé la moitié mécanique — révoquer
-  un emplacement est éprouvé, et révoquer le DERNIER est refusé, parce qu'un volume sans issue n'est
-  pas un état acceptable — mais aucun moyen de RÉCUPÉRATION n'existait : perdre toutes ses clés de
-  déverrouillage revenait à perdre le volume. #147 (tranche 1 de #23) pose le premier : un **code de
-  récupération GÉNÉRÉ par le produit**, cent vingt-huit bits tirés de `crypto.getRandomValues`,
-  rendu en vingt-huit symboles base 32 de Crockford avec une somme de contrôle, **rendu une seule
-  fois** et persisté nulle part. Décision :
+  et de perte définitive. **EXERCÉ SOUS RÉSERVE depuis #147.** #21 en avait posé la moitié mécanique
+  — révoquer un emplacement est éprouvé, et révoquer le DERNIER est refusé, parce qu'un volume sans
+  issue n'est pas un état acceptable — mais aucun moyen de RÉCUPÉRATION n'existait : perdre toutes
+  ses clés de déverrouillage revenait à perdre le volume. #147 (tranche 1 de #23) pose le premier :
+  un **code de récupération GÉNÉRÉ par le produit**, cent vingt-huit bits tirés de
+  `crypto.getRandomValues`, rendu en vingt-huit symboles base 32 de Crockford avec une somme de
+  contrôle, **rendu une seule fois** et persisté nulle part. Décision :
   [ADR 0025](docs/decisions/0025-moyen-de-recuperation.md). Les trois épreuves que l'invariant exige
   sont nommées : succès, révocation et perte définitive dans
   `tests/unit/vm-derivation-recuperation.test.mjs`, et le cycle complet sur l'OPFS réel des trois
-  moteurs dans `tests/browser/deverrouillage-frontiere.spec.mjs`.
+  moteurs dans `tests/browser/deverrouillage-frontiere.spec.mjs`. **Réserve, écrite une fois et
+  valable pour tout ce paragraphe** : le mécanisme existe et il est éprouvé, mais aucun chemin de
+  production ne l'OFFRE encore — le seul appelant hors épreuves est le banc de déverrouillage, et
+  l'interface est #24.
 
 ### Ce que le moyen de récupération COUVRE, et ce qu'il ne couvre pas
 
@@ -475,6 +481,16 @@ que le produit ne promet pas. `tests/unit/dossier-de-revue.test.mjs` relit leurs
    volume et de son enveloppe ramène un emplacement révoqué. C'est la limite que
    [l'ADR 0020](docs/decisions/0020-enveloppe-de-cle.md) nomme, et le code de récupération ne la
    ferme pas.
+9. **Copie du FICHIER prise entre une révocation et la mutation d'enveloppe suivante** —
+   `<volume>.cles` porte DEUX pages en alternance, et une révocation n'en réécrit qu'une. Les octets
+   de l'emplacement retiré subsistent donc dans l'autre jusqu'au geste d'enveloppe suivant, qui
+   l'écrase. Ce qu'ils ne permettent PAS est d'ouvrir : `ouvrirEnveloppe` juge l'état COURANT et
+   refuse sans replier sur la page précédente — c'est mesuré. Ce qu'ils permettent est de rejouer le
+   retour arrière de l'entrée 8 à moindres frais, sur un fichier qu'on a copié au bon moment. C'est
+   l'alternance de pages de l'[ADR 0020](docs/decisions/0020-enveloppe-de-cle.md), identique pour
+   tous les types de clé et donc pas une propriété du code de récupération ; la question est posée
+   par #156 et se décide dans #148, où « aucun octet des emplacements retirés » est la promesse
+   centrale.
 
 **Ce qui sort de l'appareil sort du périmètre.** Un code imprimé passe par un spouleur, parfois par
 un fichier PDF intermédiaire, parfois par le disque d'une imprimante réseau. Vault ne maîtrise aucun
@@ -491,15 +507,15 @@ l'exerce, et une condition écrite en limite la portée. Aucun invariant « à v
 comme tenu. La table est relue par `tests/unit/dossier-de-revue.test.mjs`, qui exige une ligne par
 invariant, un statut du vocabulaire, et une épreuve qui existe.
 
-| Invariant          | Statut                  | Réserve, quand il y en a une                                                                                         | Épreuve                                                                                                                                                                                                                                                                         |
-| ------------------ | ----------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SEC-ORIGIN-001`   | **exercé**              | —                                                                                                                    | `tests/browser/origin-topology.spec.mjs`                                                                                                                                                                                                                                        |
-| `SEC-KEY-001`      | **exercé**              | —                                                                                                                    | `tests/browser/enveloppe-frontiere.spec.mjs`                                                                                                                                                                                                                                    |
-| `SEC-BLOCK-001`    | **exercé sous réserve** | le format scelle tout, de bout en bout — mais la clé du chemin de BOOT vient encore du harnais, sous jeton           | `tests/unit/vm-volume-chiffre.test.mjs`                                                                                                                                                                                                                                         |
-| `SEC-GEN-001`      | **exercé sous réserve** | rejeu, troncature, mélange et retour arrière d'un secteur sont refusés ; le retour arrière COMPLET ne l'est pas      | `tests/unit/vm-generation-sequence.test.mjs` (rejeu, troncature), `tests/unit/vm-format-chiffre-modele.test.mjs` (troncature, mélange), `tests/unit/vm-generation-fraicheur.test.mjs` (retour arrière d'un secteur, témoin)                                                     |
-| `SEC-DURABLE-001`  | **exercé**              | hors périmètre : la perte d'un cache d'écriture VOLATIL, qu'aucun support éprouvé ne produit                         | `tests/vm/opfs-barrier.spec.mjs`                                                                                                                                                                                                                                                |
-| `SEC-UPDATE-001`   | **exercé sous réserve** | l'ouvreur unique est une discipline de revue, pas une contrainte du code : l'ouverture de bas niveau reste appelable | `tests/unit/vm-opfs-volume-open.test.mjs`                                                                                                                                                                                                                                       |
-| `SEC-RECOVERY-001` | **exercé**              | —                                                                                                                    | `tests/unit/vm-derivation-recuperation.test.mjs` (succès, révocation, perte définitive), `tests/browser/deverrouillage-frontiere.spec.mjs` (le cycle complet sur l'OPFS réel des trois moteurs), `tests/unit/vm-enveloppe-operations.test.mjs` (révoquer le DERNIER est refusé) |
+| Invariant          | Statut                  | Réserve, quand il y en a une                                                                                                                               | Épreuve                                                                                                                                                                                                                                                                         |
+| ------------------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SEC-ORIGIN-001`   | **exercé**              | —                                                                                                                                                          | `tests/browser/origin-topology.spec.mjs`                                                                                                                                                                                                                                        |
+| `SEC-KEY-001`      | **exercé**              | —                                                                                                                                                          | `tests/browser/enveloppe-frontiere.spec.mjs`                                                                                                                                                                                                                                    |
+| `SEC-BLOCK-001`    | **exercé sous réserve** | le format scelle tout, de bout en bout — mais la clé du chemin de BOOT vient encore du harnais, sous jeton                                                 | `tests/unit/vm-volume-chiffre.test.mjs`                                                                                                                                                                                                                                         |
+| `SEC-GEN-001`      | **exercé sous réserve** | rejeu, troncature, mélange et retour arrière d'un secteur sont refusés ; le retour arrière COMPLET ne l'est pas                                            | `tests/unit/vm-generation-sequence.test.mjs` (rejeu, troncature), `tests/unit/vm-format-chiffre-modele.test.mjs` (troncature, mélange), `tests/unit/vm-generation-fraicheur.test.mjs` (retour arrière d'un secteur, témoin)                                                     |
+| `SEC-DURABLE-001`  | **exercé**              | hors périmètre : la perte d'un cache d'écriture VOLATIL, qu'aucun support éprouvé ne produit                                                               | `tests/vm/opfs-barrier.spec.mjs`                                                                                                                                                                                                                                                |
+| `SEC-UPDATE-001`   | **exercé sous réserve** | l'ouvreur unique est une discipline de revue, pas une contrainte du code : l'ouverture de bas niveau reste appelable                                       | `tests/unit/vm-opfs-volume-open.test.mjs`                                                                                                                                                                                                                                       |
+| `SEC-RECOVERY-001` | **exercé sous réserve** | le mécanisme est éprouvé de bout en bout, mais aucun chemin de production ne l'offre encore (#24), et l'archive n'emporte pas l'enveloppe (#23, tranche 3) | `tests/unit/vm-derivation-recuperation.test.mjs` (succès, révocation, perte définitive), `tests/browser/deverrouillage-frontiere.spec.mjs` (le cycle complet sur l'OPFS réel des trois moteurs), `tests/unit/vm-enveloppe-operations.test.mjs` (révoquer le DERNIER est refusé) |
 
 Les deux « sous réserve » du format de volume, la conduite de chaque refus et ce que le format ne
 protège pas sont détaillés dans [`docs/format-de-volume-v3.md`](docs/format-de-volume-v3.md), la

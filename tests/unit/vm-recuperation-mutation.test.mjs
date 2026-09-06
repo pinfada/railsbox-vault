@@ -63,6 +63,8 @@ test("la table couvre les gardes que l'ADR 0025 nomme, une par une", () => {
     "séparateurs",
     "version du moyen",
     "sel HKDF",
+    "materiauDuCode",
+    "type de clé INCONNU",
     "effacés dès que le MATÉRIAU",
     "effacés dès que la KEK",
     "barrière franchie AVANT le rendu",

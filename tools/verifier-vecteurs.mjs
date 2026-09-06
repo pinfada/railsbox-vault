@@ -808,12 +808,35 @@ const SEPARATEURS_RECUPERATION = new Set([
   0x2d, 0x2013, 0x2014, 0x20, 0xa0, 0x202f, 0x09, 0x0a, 0x0d,
 ]);
 
-/** Les replis de Crockford : les signes écartés sont ramenés sur celui qu'ils imitent. */
-const REPLIS_RECUPERATION = new Map([
-  ["O", "0"],
-  ["I", "1"],
-  ["L", "1"],
-]);
+/**
+ * La TABLE CLOSE des signes acceptés, construite depuis le § « La saisie » de l'ADR 0025 : les
+ * trente-deux symboles, leur minuscule ASCII, et les six formes des trois replis.
+ *
+ * Elle est écrite en boucle sur des BORNES ASCII plutôt qu'en appelant `toLowerCase` ou
+ * `toUpperCase`, et ce n'est pas un détail de style. La revue de crypto de #155 a relevé que la
+ * première rédaction de cette section transcrivait la boucle du produit ligne pour ligne : elle
+ * rendait donc vert sur un défaut que le produit avait — `ſ` et `ı` acceptés par la mise en
+ * majuscule d'Unicode — au lieu de le voir. Une réimplémentation qui recopie ne vérifie rien.
+ */
+const SIGNES_RECUPERATION = (() => {
+  const table = new Map();
+  const minuscule = (point) => (point >= 0x41 && point <= 0x5a ? point + 0x20 : point);
+  for (let valeur = 0; valeur < CROCKFORD.length; valeur += 1) {
+    const point = CROCKFORD.codePointAt(valeur);
+    table.set(point, valeur);
+    table.set(minuscule(point), valeur);
+  }
+  for (const [ecarte, imite] of [
+    [0x4f, "0"],
+    [0x49, "1"],
+    [0x4c, "1"],
+  ]) {
+    const valeur = CROCKFORD.indexOf(imite);
+    table.set(ecarte, valeur);
+    table.set(minuscule(ecarte), valeur);
+  }
+  return table;
+})();
 
 /**
  * RELIT une saisie : NFC, majuscule, retrait des séparateurs, repli, somme de contrôle, bourrage.
@@ -824,11 +847,10 @@ const REPLIS_RECUPERATION = new Map([
 function relireSaisieDeRecuperation(texte) {
   const symboles = [];
   for (const signe of texte.normalize("NFC")) {
-    if (SEPARATEURS_RECUPERATION.has(signe.codePointAt(0))) continue;
-    const majuscule = signe.toUpperCase();
-    const replie = REPLIS_RECUPERATION.get(majuscule) ?? majuscule;
-    const valeur = replie.length === 1 ? CROCKFORD.indexOf(replie) : -1;
-    if (valeur === -1) return null;
+    const point = signe.codePointAt(0);
+    if (SEPARATEURS_RECUPERATION.has(point)) continue;
+    const valeur = SIGNES_RECUPERATION.get(point);
+    if (valeur === undefined) return null;
     symboles.push(valeur);
   }
   if (symboles.length !== SYMBOLES_TOTAL_RECUPERATION) return null;
@@ -983,6 +1005,26 @@ function verifierLesSaisies(moyen) {
     "récupération : la relecture de la saisie ACCEPTE au moins trois formes distinctes",
     saisies.acceptees.length >= 3,
     `${saisies.acceptees.length} formes acceptées`,
+  );
+  // La table est CLOSE, et le vérificateur le mesure plutôt que de le croire : sur tout le plan de
+  // base, seuls les soixante signes déclarés — et U+212A, que la NFC ramène à « K » — passent.
+  const declares = new Set([...SIGNES_RECUPERATION.keys(), 0x212a]);
+  const admis = [];
+  for (let point = 0; point <= 0xffff; point += 1) {
+    if (point >= 0xd800 && point <= 0xdfff) continue;
+    const normalise = String.fromCodePoint(point).normalize("NFC");
+    if (normalise.length === 1 && SIGNES_RECUPERATION.has(normalise.codePointAt(0))) {
+      admis.push(point);
+    }
+  }
+  verifier(
+    "récupération : la table des signes acceptés est CLOSE sur tout le plan de base",
+    admis.length === declares.size && admis.every((point) => declares.has(point)),
+    `${admis.length} points admis, ${declares.size} déclarés`,
+  );
+  verifier(
+    "récupération : « ſ » (U+017F) et « ı » (U+0131) sont REFUSÉS — la mise en majuscule d'Unicode n'est pas un filtre",
+    !admis.includes(0x017f) && !admis.includes(0x0131),
   );
 }
 

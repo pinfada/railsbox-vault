@@ -73,7 +73,7 @@ import {
   VERSION_MAX,
   exigerOctets,
   exigerParametres,
-  exigerTypeKek,
+  exigerOctetDeTypeKek,
 } from "./identite-enveloppe.mjs";
 
 /** Marqueur du fichier d'enveloppes. Huit octets, jamais modifiés. */
@@ -166,7 +166,7 @@ function lireEntier(vue, position, octets) {
 function encoderEmplacement(emplacement) {
   const { identifiantEmplacement, typeKek, parametres, nonce, dekEnveloppee, etiquette } =
     emplacement;
-  exigerTypeKek(typeKek);
+  exigerOctetDeTypeKek(typeKek);
   exigerParametres(parametres);
   exigerOctets("nonce", nonce, NONCE_OCTETS);
   exigerOctets("dekEnveloppee", dekEnveloppee, CLE_OCTETS);

@@ -76,6 +76,11 @@ import {
   ENVELOPPE_ERROR_CODES,
   isEnveloppeError,
 } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
+import {
+  PAGE_OCTETS,
+  decoderPage,
+  offsetDePage,
+} from "../../src/vm/enveloppe/fichier-enveloppe.mjs";
 import { TYPES_KEK, nomDuTypeKek } from "../../src/vm/enveloppe/identite-enveloppe.mjs";
 import { hexEnOctets, octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
 import { creerMoyenDeRecuperation } from "../../src/vm/moyen-de-recuperation.mjs";
@@ -369,6 +374,55 @@ test("un chiffre pleine chasse, que la NFC ne replie pas, est REFUSÉ", () => {
   assert.equal(VECTEURS.recuperation.saisies.forme, "NFC");
 });
 
+test("la table des signes acceptés est CLOSE : soixante et un points de code sur tout le plan de base", () => {
+  // L'épreuve que la revue de crypto de #155 réclamait, et elle balaie plutôt qu'elle n'échantillonne.
+  // La première rédaction passait chaque signe par `toUpperCase()` : deux points de code entraient
+  // alors dans l'alphabet sans avoir été déclarés — `ſ` (U+017F) devenait `S`, et `ı` (U+0131)
+  // devenait `I` puis, par le repli de Crockford, `1`. Aucune épreuve ne pouvait le voir, parce
+  // qu'aucune ne demandait CE QUI EST ACCEPTÉ ; elles demandaient toutes si un cas connu l'était.
+  const code = encoderCode(OCTETS_TEMOIN());
+  const prefixe = code.replaceAll("-", "").slice(0, SYMBOLES_TOTAL - 1);
+  const acceptes = [];
+  for (let point = 0; point <= 0xffff; point += 1) {
+    // Les demi-zones de substitution ne sont pas des caractères : elles ne se saisissent pas.
+    if (point >= 0xd800 && point <= 0xdfff) continue;
+    try {
+      normaliserSaisie(prefixe + String.fromCodePoint(point));
+      acceptes.push(point);
+    } catch {
+      /* refusé : c'est le cas attendu pour l'immense majorité du plan */
+    }
+  }
+
+  const attendus = new Set();
+  for (const signe of ALPHABET_CROCKFORD) {
+    attendus.add(signe.codePointAt(0));
+    attendus.add(signe.toLowerCase().codePointAt(0));
+  }
+  for (const ecarte of "OILoil") attendus.add(ecarte.codePointAt(0));
+  // Le SEUL point de code accepté qui ne soit pas dans la table : U+212A, que la NFC ramène à « K ».
+  // Il est ici parce que la normalisation le ramène, pas parce que la table l'accueille — et c'est
+  // exactement ce que le vecteur figé du signe KELVIN fige.
+  attendus.add(0x212a);
+
+  assert.deepEqual(
+    acceptes.map((point) => point.toString(16)).sort(),
+    [...attendus].map((point) => point.toString(16)).sort(),
+    "un point de code du plan de base est accepté sans avoir été déclaré, ou un signe déclaré est refusé.",
+  );
+  assert.equal(
+    acceptes.length,
+    61,
+    "trente-deux symboles, leurs minuscules, six replis, et U+212A.",
+  );
+  for (const intrus of [0x017f, 0x0131]) {
+    assert.ok(
+      !acceptes.includes(intrus),
+      `U+${intrus.toString(16).toUpperCase()} est accepté : « toUpperCase » est revenu.`,
+    );
+  }
+});
+
 test("normaliserSaisie rend les valeurs de symbole, et refuse tout signe étranger", () => {
   const symboles = normaliserSaisie(encoderCode(OCTETS_TEMOIN()));
   assert.equal(symboles.length, SYMBOLES_TOTAL);
@@ -421,7 +475,7 @@ test("le décodeur des paramètres de récupération REFUSE plutôt que de compl
   }
 });
 
-test("un sel de mauvaise largeur, ou une version inconnue, est refusé à la LECTURE", async () => {
+test("un sel de mauvaise largeur, ou une version inconnue, est JUGÉ avant toute dérivation", async () => {
   const identite = { identifiantVolume: VOLUME, identifiantEmplacement: "7071727374757677" };
   const geste = { code: encoderCode(OCTETS_TEMOIN()) };
   const versionInconnue = encoderParametresPublics(TYPES_KEK.recuperation, {
@@ -483,6 +537,26 @@ test("le matériau remis à HKDF est le SHA-256 des seize octets, et les octets 
     octets.every((octet) => octet === 0),
     "les seize octets du code doivent être effacés dès que le matériau existe.",
   );
+});
+
+test("materiauDuCode EXIGE seize octets : une autre largeur est refusée, jamais élargie", async () => {
+  // La garde survivait à sa mutation : aucune épreuve ne la tenait, et la revue de crypto de #155
+  // l'a relevée. Elle compte pourtant — sans elle, un tampon d'une autre largeur passerait par
+  // SHA-256 sans broncher et rendrait trente-deux octets parfaitement bien formés, c'est-à-dire une
+  // KEK tirée d'un secret plus court que celui que le produit annonce.
+  for (const largeur of [0, 8, 15, 17, 32]) {
+    await assert.rejects(
+      () => materiauDuCode(suiteDOctets(0x20, largeur)),
+      (erreur) => isDerivationError(erreur, DERIVATION_ERROR_CODES.parametresRefuses),
+      `${largeur} octets auraient dû être refusés`,
+    );
+  }
+  await assert.rejects(
+    () => materiauDuCode("pas des octets"),
+    (erreur) => isDerivationError(erreur, DERIVATION_ERROR_CODES.parametresRefuses),
+  );
+  // Témoin : la largeur juste passe, et rend bien trente-deux octets.
+  assert.equal((await materiauDuCode(OCTETS_TEMOIN())).byteLength, 32);
 });
 
 test("la KEK du code est celle du modèle : scellée sous l'une, ouverte sous l'autre", async () => {
@@ -639,14 +713,14 @@ test("RÉVOCATION : l'emplacement de récupération révoqué rend le MÊME refu
   assert.equal(refusRevoquee.message, refusInconnue.message);
 });
 
-test("RÉVOCATION : aucun octet de l'emplacement de récupération retiré ne subsiste", async () => {
+test("RÉVOCATION : la page qui FAIT AUTORITÉ ne porte plus un octet de l'emplacement retiré", async () => {
   const depart = await enveloppeSousPhrase();
   const moyen = await creerMoyenDeRecuperation({
     support: depart.support,
     identifiantVolume: VOLUME,
     kek: await depart.rouvrirLaPhrase(),
   });
-  moyen.rendre();
+  const code = moyen.rendre();
   const pose = await emplacementDeRecuperation(depart.support);
   const empreinteDesParametres = octetsEnHex(pose.parametres);
 
@@ -658,18 +732,47 @@ test("RÉVOCATION : aucun octet de l'emplacement de récupération retiré ne su
   });
 
   // La règle de remplissage de l'ADR 0020 porte sur la page PUBLIÉE : elle est réécrite entière,
-  // remplissage à zéro compris. L'épreuve la rejoue sur le type 4.
+  // remplissage à zéro compris. L'épreuve la rejoue sur le type 4, et elle lit les OCTETS BRUTS —
+  // la première rédaction interrogeait `inventorierEnveloppe`, ce qui promettait plus que ce
+  // qu'elle mesurait, et la revue de crypto de #155 l'a relevé.
   const courante = await inventorierEnveloppe({
     support: depart.support,
     identifiantVolume: VOLUME,
   });
   assert.equal(courante.emplacements.length, 1);
   assert.equal(courante.emplacements[0].typeKek, TYPES_KEK.phrase);
+
+  const taille = (await depart.support.etat()).taille;
+  const fichier = await depart.support.lire(0, taille);
+  const pages = [0, 1].map((index) => ({
+    index,
+    octets: fichier.subarray(offsetDePage(index), offsetDePage(index) + PAGE_OCTETS),
+  }));
+  const autorite = pages
+    .map(({ index, octets }) => ({ index, lue: decoderPage(octets), octets }))
+    .filter(({ lue }) => lue.valide)
+    .reduce((haute, basse) => (basse.lue.page.version > haute.lue.page.version ? basse : haute));
+  assert.equal(autorite.lue.page.version, courante.version);
   assert.ok(
-    !courante.emplacements.some(
-      (emplacement) => octetsEnHex(emplacement.parametres) === empreinteDesParametres,
-    ),
-    "les paramètres de l'emplacement retiré subsistent dans la page courante.",
+    !octetsEnHex(autorite.octets).includes(empreinteDesParametres),
+    "les paramètres de l'emplacement retiré subsistent dans la page qui fait autorité.",
+  );
+
+  // Et ce que la révocation NE fait PAS, mesuré plutôt que tu : l'AUTRE page garde l'état
+  // antérieur — c'est l'alternance de pages de l'ADR 0020, identique pour tous les types. Une copie
+  // du fichier prise avant la mutation suivante porte donc encore l'emplacement révoqué. Ce qu'elle
+  // ne permet PAS, en revanche, est de l'ouvrir : `ouvrirEnveloppe` juge l'état COURANT et refuse
+  // sans replier sur la page précédente. C'est écrit dans SECURITY.md et dans l'ADR 0025.
+  const ancienne = pages.find(({ index }) => index !== autorite.index);
+  assert.ok(
+    octetsEnHex(ancienne.octets).includes(empreinteDesParametres),
+    "l'épreuve croit mesurer l'alternance de pages et ne la mesure pas.",
+  );
+  const kek = await kekDuCode(code, pose.parametres, pose.identifiantEmplacement);
+  await assert.rejects(
+    () => ouvrirEnveloppe({ support: depart.support, identifiantVolume: VOLUME, kek }),
+    (erreur) => isEnveloppeError(erreur, ENVELOPPE_ERROR_CODES.cleRefusee),
+    "un code révoqué ouvre encore par la page libre : la révocation ne serait pas une révocation.",
   );
 });
 
@@ -831,30 +934,61 @@ test("l'enveloppe est écrite et sa BARRIÈRE franchie avant que le code ne soit
   assert.equal(typeof moyen.rendre(), "string");
 });
 
-test("une coupure AVANT la barrière ne rend aucun code, et laisse l'enveloppe d'origine", async () => {
+test("MATRICE de coupures : aucune ne rend un code, et aucune ne perd l'enveloppe d'origine", async () => {
+  // La matrice de l'ADR 0020, rejouée sur le type 4 — c'est ce que la revue de format de #155
+  // réclamait, et à raison : une seule coupure ne dit rien des deux autres sinistres. Le geste 1 est
+  // l'écriture de la page libre, le geste 2 la barrière qui la publie.
+  //
+  // Les TROIS sinistres ne décrivent pas le même événement : `couperAvant` est l'onglet fermé entre
+  // deux appels, `couperApres` juste après un appel qui a rendu, `dechirerA` une écriture qui n'a
+  // porté qu'une partie de ses octets. La déchirure coupe DANS l'en-tête de page — ailleurs, elle
+  // écrirait la page neuve en entier et deviendrait un synonyme de « coupure après ».
   const depart = await enveloppeSousPhrase();
   const octets = await depart.support.lire(0, (await depart.support.etat()).taille);
-  // Le geste 1 est l'écriture de la page libre, le geste 2 est la barrière : couper avant celle-ci
-  // est exactement la coupure que la décision 3 de l'ADR 0025 nomme.
-  const coupe = supportDouble({ octets, couperAvant: 2 });
-  await assert.rejects(
-    async () =>
-      creerMoyenDeRecuperation({
+  const sinistres = [
+    ["coupure AVANT", 1, { couperAvant: 1 }],
+    ["coupure AVANT", 2, { couperAvant: 2 }],
+    ["coupure APRÈS", 1, { couperApres: 1 }],
+    ["coupure APRÈS", 2, { couperApres: 2 }],
+    // La déchirure n'a de sens qu'à l'ÉCRITURE : une barrière ne porte aucun octet, et prétendre
+    // la déchirer mesurerait un geste qui ne s'est pas produit.
+    ["DÉCHIRURE", 1, { dechirerA: 1, octetsDeDechirure: 40 }],
+  ];
+  let mesurees = 0;
+  {
+    for (const [nom, rang, options] of sinistres) {
+      const coupe = supportDouble({ octets, ...options });
+      const rendu = await creerMoyenDeRecuperation({
         support: coupe,
         identifiantVolume: VOLUME,
         kek: await depart.rouvrirLaPhrase(),
-      }),
-    /Coupure simulée/,
-    "une coupure doit interrompre le geste, jamais rendre un code à moitié posé.",
-  );
-  // L'enveloppe d'origine reste ouvrable par la phrase : une coupure ne perd rien.
-  const intacte = supportDouble({ octets });
-  const ouverte = await ouvrirEnveloppe({
-    support: intacte,
-    identifiantVolume: VOLUME,
-    kek: await depart.rouvrirLaPhrase(),
-  });
-  assert.deepEqual(ouverte.dek, depart.dek);
+      }).then(
+        (moyen) => moyen,
+        () => null,
+      );
+      // AUCUNE des six ne rend un code. C'est l'ordre de la décision 3, et il est asymétrique par
+      // construction : le porteur du code est fabriqué à partir de ce que l'ajout a rendu, donc une
+      // coupure — même APRÈS la barrière, où l'enveloppe porte désormais l'emplacement — laisse au
+      // pire un emplacement dont personne ne tient le code. Inoffensif : il n'ouvre rien, il occupe
+      // une place sur huit, il se révoque. Le sinistre serait l'inverse, et il n'est pas atteignable.
+      assert.equal(
+        rendu,
+        null,
+        `« ${nom} » au geste ${rang} a rendu un code alors que le geste ne s'est pas achevé.`,
+      );
+      // Dans TOUS les cas, l'enveloppe reste ouvrable par la phrase : aucune coupure ne perd le
+      // volume, et c'est la propriété que l'ADR 0020 tient par l'alternance de pages.
+      const ouverte = await ouvrirEnveloppe({
+        support: coupe,
+        identifiantVolume: VOLUME,
+        kek: await depart.rouvrirLaPhrase(),
+      });
+      assert.deepEqual(ouverte.dek, depart.dek, `« ${nom} » au geste ${rang} a perdu la clé.`);
+      mesurees += 1;
+    }
+  }
+  assert.equal(mesurees, sinistres.length, "la matrice n'a pas joué tous ses sinistres.");
+  assert.equal(mesurees, 5, "deux coupures avant, deux après, une déchirure à l'écriture.");
 });
 
 test("les seize octets tirés sont EFFACÉS dès que la KEK existe", async () => {

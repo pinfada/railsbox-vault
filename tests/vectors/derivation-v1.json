@@ -265,6 +265,22 @@
           ]
         },
         {
+          "nom": "un « ſ » (U+017F, s long) là où le code porte un S",
+          "motif": "Trouvé par la revue de crypto de #155. `toUpperCase()` en fait un « S » : la mise en majuscule d'Unicode est une transformation LINGUISTIQUE, pas un filtre, et elle faisait entrer dans l'alphabet un signe que personne n'avait déclaré. La table close des signes acceptés le refuse. Aucune force n'était perdue — l'espace reste 2^128 — mais une garde qui accepte ce que sa spécification refuse est une garde fausse.",
+          "pointsSaisis": [
+            52, 48, 71, 74, 45, 52, 56, 383, 52, 45, 52, 77, 75, 50, 45, 69, 65, 49, 57, 45, 53, 56,
+            78, 74, 45, 82, 66, 57, 69, 45, 53, 87, 57, 72
+          ]
+        },
+        {
+          "nom": "un « ı » (U+0131, i sans point) là où le code porte un 1",
+          "motif": "Le second signe que `toUpperCase()` laissait passer, et le pire des deux : il devenait « I », que le repli de Crockford ramenait ensuite sur « 1 ». Un DOUBLE repli, dont aucun des deux maillons n'était déclaré.",
+          "pointsSaisis": [
+            52, 48, 71, 74, 45, 52, 56, 83, 52, 45, 52, 77, 75, 50, 45, 69, 65, 305, 57, 45, 53, 56,
+            78, 74, 45, 82, 66, 57, 69, 45, 53, 87, 57, 72
+          ]
+        },
+        {
           "nom": "un « U », que l'alphabet de Crockford écarte",
           "motif": "Crockford écarte I, L, O et U. Les trois premières ont un REPLI vers le signe qu'elles imitent ; U n'en a aucun, et un code qui en porte un n'est pas un code de ce produit.",
           "pointsSaisis": [

@@ -30,11 +30,23 @@ tiré par emplacement —, son dérivateur (`src/vm/derivation/derivateur-recupe
 entre dans le catalogue que le Worker de confiance pose. Un catalogue qui ne sert pas un type le
 refuse déjà par `VAULT_DERIVATION_TYPE_INCONNU` (ADR 0021, décision 6) : rien n'est deviné.
 
-**Ce n'est pas un changement de format.** Le champ `typeKek` existe depuis #21, sur un octet, et
+**La DISPOSITION des octets ne change pas.** Le champ `typeKek` existe depuis #21, sur un octet, et
 l'ADR 0020 a réservé avec lui le plafond de 512 octets des paramètres publics — les paramètres du
-type 4 en occupent 78. Une valeur de plus dans une énumération est une ENTRÉE de ce format, pas une
-version nouvelle ; un lecteur plus ancien la rencontre et la refuse par le refus que le point 5 du
-contrat de #22 prévoyait exactement pour ce jour-là.
+type 4 en occupent 78. Une valeur de plus dans une énumération n'ajoute ni champ, ni longueur, ni
+version de format.
+
+**Ce qui change, en revanche, est ce qu'un lecteur ANTÉRIEUR en fait, et la première rédaction de
+cet ADR l'affirmait à tort.** Elle écrivait qu'un tel lecteur « refuse par
+`VAULT_DERIVATION_TYPE_INCONNU`, ce que le point 5 du contrat de #22 prévoit déjà ». La revue de
+format de la PR #155 l'a MESURÉ, et c'est faux : jusqu'à #147, `exigerTypeKek` gardait aussi la
+LECTURE, si bien qu'un lecteur rencontrant un type qu'il ne réserve pas levait
+`VAULT_ENVELOPPE_MALFORME` depuis l'encodage canonique de la liste — et repliait sur l'autre page,
+dont une écriture ultérieure écrasait la neuve sans faire avancer le compteur. Voir § Limites, point
+1, et § Impacts.
+
+Cette tranche relâche donc la LECTURE (`exigerOctetDeTypeKek` : la borne est celle du CHAMP, un
+octet) et garde le contrôle STRICT à l'ÉCRITURE — on n'écrit jamais un moyen qu'on ne sait pas
+servir. Le refus tombe désormais au CHOIX du dérivateur, où l'ADR 0021 l'a toujours placé.
 
 ### Pourquoi un type DISTINCT, et non un emplacement `phrase`
 
@@ -177,16 +189,36 @@ Le deuxième est le refus UN de l'ADR 0020 : **indiscernable d'une clé inconnue
 révoquée**, message compris. Le premier ne consulte ni le volume ni l'enveloppe, et son remède est
 de relire la feuille.
 
-### La saisie : NFC, majuscule, séparateurs, repli
+### La saisie : la spécification COMPLÈTE, parce qu'un vérificateur doit pouvoir la refaire
 
 Dans cet ordre, et l'ordre compte :
 
-1. **NFC** — la normalisation de l'ADR 0021, la même que pour la phrase ;
-2. **majuscule** ;
-3. **retrait des séparateurs** — tiret, tirets longs, espace, espace insécable, espace fine
-   insécable, tabulation, fins de ligne ;
-4. **repli de Crockford** — `O` → `0`, `I` et `L` → `1` ;
-5. **tout autre signe est REFUSÉ**, jamais ignoré ni ramené sur une valeur par défaut.
+1. **NFC**, et rien d'autre — la normalisation de l'ADR 0021, la même que pour la phrase ;
+2. **retrait des SÉPARATEURS**, par point de code, et voici les neuf, sans autre : `U+002D` (tiret
+   du rendu), `U+2013` et `U+2014` (les deux tirets longs qu'un traitement de texte substitue au
+   premier), `U+0020` (espace), `U+00A0` (espace insécable), `U+202F` (espace fine insécable),
+   `U+0009` (tabulation), `U+000A` et `U+000D` (les deux fins de ligne) ;
+3. **résolution par une TABLE CLOSE**, qui contient exactement soixante entrées et pas une de plus :
+   - les trente-deux symboles de l'alphabet, en MAJUSCULE ;
+   - leurs minuscules **ASCII** — `a`–`z`, obtenues en ajoutant `0x20` aux points `U+0041`–`U+005A`,
+     et non par une mise en majuscule d'Unicode ;
+   - les trois replis de Crockford, dans leurs deux casses : `O` et `o` → `0` ; `I`, `i`, `L` et `l`
+     → `1` ;
+4. **tout autre point de code est REFUSÉ**, jamais ignoré ni ramené sur une valeur par défaut.
+
+**La règle de casse est une TABLE, et pas `toUpperCase()`.** C'est un constat de la revue de crypto
+de la PR #155, trouvé par exécution : la mise en majuscule d'Unicode est une transformation
+LINGUISTIQUE, pas un filtre. Elle faisait entrer dans l'alphabet deux points de code que personne
+n'avait déclarés — `ſ` (U+017F, s long) devenait `S`, et `ı` (U+0131, i sans point) devenait `I`
+puis, par le repli, `1`. Deux saisies visuellement distinctes rendaient donc les mêmes seize octets,
+alors que le point 4 ci-dessus dit le contraire. Aucune force n'était perdue — l'espace reste 2¹²⁸,
+et l'encodeur ne produit jamais ces signes — mais une garde qui accepte ce que sa spécification
+refuse est une garde fausse, et l'écart aurait grandi à chaque révision d'Unicode. Une table close
+ne bouge que lorsqu'on l'édite.
+
+Un seul point de code hors de la table est malgré tout accepté, et c'est la NORMALISATION qui le
+veut : `U+212A` (signe KELVIN), dont la décomposition canonique est un singleton vers `K`. Il est
+figé comme tel, et c'est lui qui rend la NFC mesurable (§ Campagne de mutation).
 
 Les vecteurs figés NOMMENT la forme plutôt que de la supposer. Sont ACCEPTÉES : la chaîne rendue
 telle quelle, sans séparateurs, en minuscules avec des espaces, avec les replis (`o` pour `0`, `l`
@@ -318,26 +350,31 @@ de cette tranche n'ancre quoi que ce soit — mais écrit pour que la question n
 ## La campagne de mutation
 
 Chaque garde neuve a été RÉELLEMENT retirée du texte source par
-`tools/muter-gardes-recuperation.mjs`, l'épreuve relancée, puis le fichier restauré. **Quatorze
-mutations, quatorze tuées** — mais une seulement au second passage, et c'est elle qui a le plus
-appris.
+`tools/muter-gardes-recuperation.mjs`, l'épreuve relancée, puis le fichier restauré. **Seize
+mutations, seize tuées** — mais une seulement au second passage, et c'est elle qui a le plus appris.
 
-| #   | Garde mutée                                          | Verdict | Ce qui la tue                                                         |
-| --- | ---------------------------------------------------- | ------- | --------------------------------------------------------------------- |
-| 1   | seize octets réellement TIRÉS                        | tuée    | « chacun des seize octets varie » sur 64 tirages                      |
-| 2   | les deux bits de bourrage sont RELUS                 | tuée    | « un bourrage non nul est refusé »                                    |
-| 3   | somme de contrôle vérifiée AVANT toute dérivation    | tuée    | « mal recopié ≠ mauvais code », et le refus typé du dérivateur        |
-| 4   | l'alphabet écarte `I`, `L`, `O` et `U`               | tuée    | « vingt-huit symboles Crockford, sept groupes de quatre »             |
-| 5   | le repli `O` → `0`                                   | tuée    | « la saisie humaine rend le MÊME code »                               |
-| 6   | la NFC appliquée à la saisie                         | tuée\*  | le vecteur du signe KELVIN (U+212A)                                   |
-| 7   | un signe étranger REFUSÉ, jamais replié par défaut   | tuée    | les vecteurs de saisie refusés (pleine chasse, `é`)                   |
-| 8   | les séparateurs retirés, tiret compris               | tuée    | « aller-retour : encoder puis décoder rend les mêmes octets »         |
-| 9   | la version du moyen relue STRICTEMENT                | tuée    | « une version inconnue est refusée à la LECTURE »                     |
-| 10  | la largeur du sel HKDF relue DANS LE FICHIER         | tuée    | des paramètres au sel court, posés à la main                          |
-| 11  | seize octets effacés dès que le MATÉRIAU existe      | tuée    | « le matériau est le SHA-256, et les octets sont effacés »            |
-| 12  | seize octets TIRÉS effacés dès que la KEK existe     | tuée    | « les seize octets tirés sont EFFACÉS »                               |
-| 13  | enveloppe écrite et barrière franchie AVANT le rendu | tuée    | 2 épreuves, dont « une coupure avant la barrière ne rend aucun code » |
-| 14  | le code n'est rendu QU'UNE fois                      | tuée    | « un second appel rend un refus typé, jamais la chaîne »              |
+Les deux dernières viennent des revues de la PR #155 : la largeur exigée par `materiauDuCode`
+SURVIVAIT faute d'épreuve et ne figurait même pas dans cette table, et la garde de lecture relâchée
+(§ Impacts) devait être tenue par la sienne.
+
+| #   | Garde mutée                                          | Verdict  | Ce qui la tue                                                         |
+| --- | ---------------------------------------------------- | -------- | --------------------------------------------------------------------- |
+| 1   | seize octets réellement TIRÉS                        | tuée     | « chacun des seize octets varie » sur 64 tirages                      |
+| 2   | les deux bits de bourrage sont RELUS                 | tuée     | « un bourrage non nul est refusé »                                    |
+| 3   | somme de contrôle vérifiée AVANT toute dérivation    | tuée     | « mal recopié ≠ mauvais code », et le refus typé du dérivateur        |
+| 4   | l'alphabet écarte `I`, `L`, `O` et `U`               | tuée     | « vingt-huit symboles Crockford, sept groupes de quatre »             |
+| 5   | le repli `O` → `0`                                   | tuée     | « la saisie humaine rend le MÊME code »                               |
+| 6   | la NFC appliquée à la saisie                         | tuée\*   | le vecteur du signe KELVIN (U+212A)                                   |
+| 7   | un signe étranger REFUSÉ, jamais replié par défaut   | tuée     | les vecteurs de saisie refusés (pleine chasse, `é`)                   |
+| 8   | les séparateurs retirés, tiret compris               | tuée     | « aller-retour : encoder puis décoder rend les mêmes octets »         |
+| 9   | la version du moyen relue STRICTEMENT                | tuée     | « une version inconnue est refusée à la LECTURE »                     |
+| 10  | la largeur du sel HKDF relue DANS LE FICHIER         | tuée     | des paramètres au sel court, posés à la main                          |
+| 11  | seize octets effacés dès que le MATÉRIAU existe      | tuée     | « le matériau est le SHA-256, et les octets sont effacés »            |
+| 12  | seize octets TIRÉS effacés dès que la KEK existe     | tuée     | « les seize octets tirés sont EFFACÉS »                               |
+| 13  | enveloppe écrite et barrière franchie AVANT le rendu | tuée     | 2 épreuves, dont « une coupure avant la barrière ne rend aucun code » |
+| 14  | le code n'est rendu QU'UNE fois                      | tuée     | « un second appel rend un refus typé, jamais la chaîne »              |
+| 15  | largeur des seize octets exigée par `materiauDuCode` | tuée\*\* | « materiauDuCode EXIGE seize octets »                                 |
+| 16  | un type de clé INCONNU reste LISIBLE                 | tuée     | 7 épreuves, dont « aucun repli silencieux »                           |
 
 **\* La seule qui a survécu au premier passage, et ce qu'elle a appris.** La NFC ne change RIEN pour
 un alphabet base 32 : il ne porte aucun caractère composable, donc normaliser ou non ne modifiait
@@ -346,9 +383,15 @@ aucune saisie que le dépôt éprouvait. Ce n'était pas une garde inutile — c
 C'est le second service d'une campagne de mutation, celui que l'ADR 0024 avait déjà nommé : elle dit
 parfois « l'épreuve que vous avez écrite ne touche pas la garde ».
 
-Deux gardes ont exigé une épreuve NEUVE pour être atteintes, et les deux valaient d'être écrites :
-la largeur du sel relue dans le FICHIER (n° 10), et le refus d'un signe étranger dans le cas où un
-repli par défaut rendrait le code valide (n° 7).
+**\*\* La n° 15 a SURVÉCU jusqu'à la revue de crypto de la PR #155**, qui l'a relevée en rejouant la
+mutation contre la suite unitaire entière : la garde existait, aucune épreuve ne la touchait, et
+elle ne figurait même pas dans cette table. Elle compte pourtant — sans elle, un tampon d'une autre
+largeur passerait par SHA-256 sans broncher et rendrait trente-deux octets parfaitement bien formés,
+c'est-à-dire une KEK tirée d'un secret plus court que celui que le produit annonce.
+
+Trois gardes ont exigé une épreuve NEUVE pour être atteintes, et les trois valaient d'être écrites :
+la largeur du sel relue dans le FICHIER (n° 10), le refus d'un signe étranger dans le cas où un
+repli par défaut rendrait le code valide (n° 7), et la largeur du code élargi (n° 15).
 
 **Ce que la campagne ne couvre PAS** : la garde du catalogue elle-même, qui est celle de l'ADR 0021
 (mutation n° 19 de sa campagne) et n'est pas rejouée ici ; et l'inscription du type 4 dans le
@@ -369,9 +412,18 @@ Windows 11, machine de développement. Vingt dérivations par moteur, **deux ex�
 **La CONDITION de la décision 1 est tenue, et elle est mesurée plutôt que supposée.** Le
 déverrouillage par code coûte l'ordre de grandeur du PRF WebAuthn — « instantané » plutôt que «
 visible », pour reprendre les mots de l'ADR 0021 —, soit **de deux à plus de trois ordres de
-grandeur de moins que la phrase calibrée sur le même moteur**. L'épreuve de mesure porte l'assertion
-: le p95 du code multiplié par dix doit rester sous le p50 de la phrase, faute de quoi la décision 1
-ne tient plus.
+grandeur de moins que la phrase calibrée sur le même moteur**. DEUX gardes la tiennent, et la
+seconde est celle qui compte au quotidien :
+
+- **sous `VAULT_MESURER_DERIVATION`** — le p95 du code multiplié par dix doit rester sous le p50 de
+  la phrase. Le code est échantillonné CINQ FOIS plus que la phrase, et ce n'est pas un caprice : à
+  vingt tours, `rang(0.95)` retombe sur le MAXIMUM, si bien que l'assertion porterait sur un seul
+  hoquet de ramasse-miettes. C'est un constat de la revue de crypto de la PR #155 ;
+- **à CHAQUE exécution de la suite de navigateur** — le cycle complet chronomètre le déverrouillage
+  par code et exige qu'il reste sous cinquante millisecondes. La borne est large parce qu'elle
+  affirme « ce n'est pas un étirement », pas une valeur ; ce qu'elle achète est de ne dépendre
+  d'AUCUNE variable d'environnement. La première rédaction ne gardait la condition que sous la
+  mesure, c'est-à-dire nulle part dans `npm run check` : elle documentait au lieu de garder.
 
 **La dispersion entre les deux exécutions est inférieure à 7 % pour la phrase**, et le code est en
 dessous de ce que ce banc sait mesurer : `performance.now` est bridé à la milliseconde sur WebKit et
@@ -383,42 +435,70 @@ système, aucun téléphone. La limite est celle de l'ADR 0021, inchangée.
 
 ## Limites
 
-1. **Rien ne garde le code une fois qu'il a quitté l'appareil.** C'est le sujet de ce moyen, et sa
+1. **Un lecteur ANTÉRIEUR à cette tranche ne lit pas une enveloppe qui porte le type 4** — constat
+   de la revue de format de la PR #155, le 6 septembre 2026, mesuré et non déduit. Sa version
+   d'`exigerTypeKek` gardait aussi la lecture : il rend `VAULT_ENVELOPPE_MALFORME` depuis l'encodage
+   canonique de la liste, et non le refus de dérivation que l'ADR 0021 promet. Deux formes, et la
+   seconde est la grave — une seule page portant le type 4 le fait replier silencieusement sur
+   l'état d'AVANT, puis écraser la page neuve sans faire avancer le compteur ; les deux pages le
+   portant, plus aucun moyen n'ouvre, la phrase comprise.
+
+   **Ce n'est pas un incident d'exploitation** : aucune version n'a jamais été publiée
+   (`docs/release-policy.md`), aucun tag n'existe, et aucun lecteur antérieur n'est en service. Le
+   relâchement de la lecture décidé ici ne rattrape évidemment pas les lecteurs déjà écrits — il
+   rend le type 5 inoffensif pour ceux d'aujourd'hui, ce qui est tout ce qu'un format peut faire. Si
+   une version avait été publiée, cette tranche aurait exigé une conduite de migration, et ce serait
+   écrit ici comme telle ;
+
+2. **La page LIBRE garde la version précédente jusqu'à la mutation d'enveloppe suivante** — constat
+   de la revue de crypto de la PR #155, accepté comme limite et non corrigé ici. Après la révocation
+   d'un emplacement, ses octets — paramètres, sel, identifiant — subsistent VERBATIM dans l'autre
+   page de `<volume>.cles`, et une copie du fichier prise avant le geste suivant les porte encore.
+   C'est l'alternance de pages de l'ADR 0020, identique pour tous les types de clé, et pas une
+   propriété du code de récupération.
+
+   Ce qu'elle ne permet PAS, et c'est mesuré : ouvrir. `ouvrirEnveloppe` juge l'état COURANT et
+   refuse une clé révoquée sans replier sur la page précédente. Ce qu'elle permet est de rejouer le
+   retour arrière de support à moindres frais. Le sort de la page libre à la révocation est posé par
+   #156 et se décide dans #148, où « aucun octet des emplacements retirés » est la promesse centrale
+   ;
+
+3. **Rien ne garde le code une fois qu'il a quitté l'appareil.** C'est le sujet de ce moyen, et sa
    faiblesse : un code écrit sur une feuille se photographie. Le produit ne peut ni le savoir, ni
    l'empêcher, ni le détecter. Ce qu'il offre en regard est la RÉVOCATION, et l'ADR 0020 la rend
    indiscernable d'une clé inconnue ;
-2. **L'IMPRESSION n'est pas maîtrisée.** Voir la décision 3. Aucune ligne de ce dépôt ne touche au
+4. **L'IMPRESSION n'est pas maîtrisée.** Voir la décision 3. Aucune ligne de ce dépôt ne touche au
    chemin d'impression, et aucune ne le promet ;
-3. **L'archive n'emporte pas l'enveloppe.** La décision 6 de l'ADR 0020 tient : `<volume>.cles`
+5. **L'archive n'emporte pas l'enveloppe.** La décision 6 de l'ADR 0020 tient : `<volume>.cles`
    n'est pas dans l'archive d'export. Un appareil perdu avec son archive n'est donc pas encore
    récupérable par le seul code — c'est la tranche 3 de #23, et `SECURITY.md` le dit sans l'arrondir
    ;
-4. **Le geste composé n'existe pas.** « Révoquer tout sauf celui que je tiens » demande plusieurs
+6. **Le geste composé n'existe pas.** « Révoquer tout sauf celui que je tiens » demande plusieurs
    opérations, chacune sous une KEK valable, et une coupure entre deux laisse un état intermédiaire.
    C'est #148 ;
-5. **Aucune interface.** Rien n'AFFICHE le code, rien n'aide à le noter, rien n'annonce l'attente
+7. **Aucune interface.** Rien n'AFFICHE le code, rien n'aide à le noter, rien n'annonce l'attente
    d'un déverrouillage. C'est #24. Un code rendu par une fonction qu'aucune interface n'appelle est
    un mécanisme, pas encore un produit ;
-6. **La sonde de non-persistance ne mesure pas d'origine APPLICATIVE.** Le banc de déverrouillage
+8. **La sonde de non-persistance ne mesure pas d'origine APPLICATIVE.** Le banc de déverrouillage
    n'en a pas : il vit entièrement dans l'origine de confiance. Ce qui est mesuré est donc les six
    stockages de cette origine, l'OPFS entier, et les deux sens du port page ↔ Worker. La frontière
    que `SEC-ORIGIN-001` protège est éprouvée ailleurs (`tests/browser/apps-frontiere.spec.mjs`), et
    aucun code de récupération ne l'approche aujourd'hui, faute d'interface ;
-7. **Le dépôt ne mesure pas le temps d'horloge d'un refus.** Comme l'ADR 0020 et l'ADR 0021 : deux
+9. **Le dépôt ne mesure pas le temps d'horloge d'un refus.** Comme l'ADR 0020 et l'ADR 0021 : deux
    échecs restent indiscernables par le nombre d'invocations AEAD, pas par la durée. Le refus « mal
    recopié » tombe en revanche BEAUCOUP plus tôt qu'un refus d'enveloppe, et c'est visible à
    l'horloge — ce n'est pas un oracle pour autant, puisqu'il ne dépend que de la saisie et qu'un
    adversaire le calcule lui-même hors ligne ;
-8. **Un seul code par appel, et le plafond de huit emplacements est partagé.** Rien n'empêche d'en
-   créer plusieurs, rien ne les compte, et rien n'avertit avant que `VAULT_ENVELOPPE_PLEINE` ne
-   tombe. C'est un travail d'interface (#24) ;
-9. **Le BANC garde le code en mémoire, et le produit n'a pas cet endroit-là.** La coquille de
-   `deverrouillage.html` conserve toutes les réponses du Worker pour que la sonde puisse les
-   fouiller ; le code y séjourne donc dans un tableau JavaScript, pour la durée de la page. C'est un
-   artefact d'ÉPREUVE, nécessaire au témoin de la fouille, et il n'existe dans aucun chemin de
-   production — il est nommé ici pour qu'un relecteur qui lit le banc ne le prenne pas pour une
-   conduite du produit ;
-10. **`crypto.getRandomValues` est cru sur parole.** Le produit demande seize octets au moteur et ne
+10. **Un seul code par appel, et le plafond de huit emplacements est partagé.** Rien n'empêche d'en
+    créer plusieurs, rien ne les compte, et rien n'avertit avant que `VAULT_ENVELOPPE_PLEINE` ne
+    tombe. C'est un travail d'interface (#24) ;
+11. **Le BANC garde le code en mémoire, et le produit n'a pas cet endroit-là.** La coquille de
+    `deverrouillage.html` conserve toutes les réponses du Worker pour que la sonde puisse les
+    fouiller ; le code y séjourne donc dans un tableau JavaScript, pour la durée de la page. C'est
+    un artefact d'ÉPREUVE, nécessaire au témoin de la fouille, et il n'existe dans aucun chemin de
+    production — il est nommé ici pour qu'un relecteur qui lit le banc ne le prenne pas pour une
+    conduite du produit ;
+12. **`crypto.getRandomValues` est cru sur parole.** Le produit demande seize octets au moteur et ne
     juge pas ce qu'il reçoit. Aucun test statistique n'est fait, et il n'en existe pas qui vaudrait
     sur seize octets. La qualité de ce tirage est celle du moteur, et le dépôt ne peut pas mieux.
 
@@ -426,10 +506,21 @@ système, aucun téléphone. La limite est celle de l'ADR 0021, inchangée.
 
 Aucun ADR n'est réécrit.
 
-- **[ADR 0020](0020-enveloppe-de-cle.md)** — inchangée. Le type 4 est une ENTRÉE du format qu'elle a
-  posé, pas un changement : le champ `typeKek` et le plafond de 512 octets étaient réservés. Son
-  canal auxiliaire est RÉ-ASSUMÉ ici d'un cran plus large (décision 1). Sa décision 6 — l'archive
-  n'emporte pas l'enveloppe — n'est pas touchée, et la limite 3 ci-dessus la nomme ;
+- **[ADR 0020](0020-enveloppe-de-cle.md)** — **AMENDÉE d'une ligne**, et la disposition des octets
+  n'y change rien : `exigerTypeKek` gardait l'écriture ET la lecture ; elle ne garde plus que
+  l'ÉCRITURE. À la LECTURE, un type de clé est un OCTET (`exigerOctetDeTypeKek`), porté opaque,
+  inventorié avec son numéro et un nom `null`. Le motif est la limite 1 ci-dessus, et la promesse
+  que cela rend vraie est celle de l'ADR 0021 : « une enveloppe qui porte un emplacement d'un type
+  inconnu ET un emplacement servable s'ouvre par le second ». Sept épreuves la tiennent
+  (`tests/unit/vm-enveloppe-type-inconnu.test.mjs`), dont celle qui mesure l'absence de repli
+  silencieux, et une mutation de la campagne la retire pour vérifier qu'elles rougissent.
+
+  Le reste de l'ADR 0020 est inchangé : le type 4 est une ENTRÉE du format qu'elle a posé — le champ
+  `typeKek` et le plafond de 512 octets étaient réservés. Son canal auxiliaire est RÉ-ASSUMÉ ici
+  d'un cran plus large (décision 1). Sa décision 6 — l'archive n'emporte pas l'enveloppe — n'est pas
+  touchée, et la limite 5 ci-dessus la nomme ; l'alternance de pages qu'elle décrit est la limite 2
+  ;
+
 - **[ADR 0021](0021-derivation-des-cles-de-deverrouillage.md)** — étendue, non modifiée : le
   catalogue de sa décision 6 sert un quatrième type, et la contrainte d'entropie de sa décision 3
   est honorée avec son chiffre (décision 1 ci-dessus). Une note datée d'une ligne est ajoutée à son

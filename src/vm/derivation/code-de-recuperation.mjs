@@ -97,11 +97,46 @@ const BITS_PAR_SYMBOLE = 5;
  * l'œil sont ramenés sur celui qu'ils imitent. C'est une tolérance de LECTURE, pas un élargissement
  * de l'alphabet : le code rendu ne porte jamais ces signes.
  */
-const REPLIS = new Map([
+const REPLIS = Object.freeze([
   ["O", "0"],
   ["I", "1"],
   ["L", "1"],
 ]);
+
+/**
+ * La TABLE des signes acceptés, close et énumérée : point de code → valeur de symbole.
+ *
+ * ## Pourquoi une table, et pas `toUpperCase()`
+ *
+ * La première rédaction passait chaque signe par `toUpperCase()` avant de chercher sa place dans
+ * l'alphabet. C'était une erreur, et la revue de crypto de #155 l'a trouvée par exécution : la mise
+ * en majuscule d'Unicode est une TRANSFORMATION LINGUISTIQUE, pas un filtre. Elle fait entrer dans
+ * l'alphabet des signes que personne n'a déclarés — `ſ` (U+017F, s long) devient `S`, et `ı`
+ * (U+0131, i sans point) devient `I`, que le repli de Crockford ramène ensuite sur `1`. Deux codes
+ * visuellement différents rendaient donc les mêmes seize octets, alors que la décision 2 de
+ * l'ADR 0025 écrit « tout autre signe est REFUSÉ ».
+ *
+ * Aucune force n'était perdue — l'espace reste 2¹²⁸, et ces signes ne sont pas produits par
+ * l'encodeur — mais une garde qui accepte ce que sa spécification refuse est une garde fausse, et
+ * l'écart aurait grandi silencieusement à chaque révision d'Unicode. Une table CLOSE ne bouge que
+ * lorsqu'on l'édite.
+ *
+ * Ce qu'elle contient, et rien d'autre : les trente-deux symboles de l'alphabet, leur minuscule
+ * ASCII, et les six formes des trois replis. Soixante-dix entrées, énumérables d'un regard.
+ */
+const SIGNES_ACCEPTES = new Map(
+  (function* () {
+    for (const [valeur, signe] of [...ALPHABET_CROCKFORD].entries()) {
+      yield [signe.codePointAt(0), valeur];
+      yield [signe.toLowerCase().codePointAt(0), valeur];
+    }
+    for (const [ecarte, imite] of REPLIS) {
+      const valeur = ALPHABET_CROCKFORD.indexOf(imite);
+      yield [ecarte.codePointAt(0), valeur];
+      yield [ecarte.toLowerCase().codePointAt(0), valeur];
+    }
+  })(),
+);
 
 /**
  * Ce qui SÉPARE les groupes, par point de code, et que la saisie retire : le tiret du rendu, les
@@ -174,7 +209,9 @@ export function octetsDesSymboles(symboles) {
   if ((tampon & 0b11) !== 0) {
     throw codeMalRecopie(
       "ses deux derniers bits ne sont pas nuls. Un code de ce produit porte cent vingt-huit bits dans vingt-six symboles, et le bourrage y vaut zéro : ces symboles décrivent autre chose.",
-      { bourrage: tampon & 0b11 },
+      // Pas de contexte : les deux bits du bourrage VIENNENT de la saisie. La règle du dépôt est
+      // celle de l'ADR 0021 — un contexte porte la forme, jamais le contenu — et deux bits sont du
+      // contenu, si peu que ce soit.
     );
   }
   return octets;
@@ -245,10 +282,16 @@ export function encoderCode(octets) {
 /**
  * NORMALISE une saisie humaine et rend ses vingt-huit valeurs de symbole.
  *
- * Dans cet ordre, et l'ordre compte : NFC (ADR 0021, même discipline que la phrase), majuscule,
- * retrait des séparateurs, repli de Crockford. Tout autre signe est REFUSÉ — pas ignoré : un
- * signe ignoré ferait accepter deux saisies différentes pour un même code, et le produit
- * accepterait alors quelque chose qu'il n'a jamais écrit.
+ * Dans cet ordre, et l'ordre compte : NFC (ADR 0021, même discipline que la phrase), retrait des
+ * séparateurs, puis la TABLE CLOSE des signes acceptés — les trente-deux symboles, leur minuscule
+ * ASCII, et les six formes des trois replis. Tout autre signe est REFUSÉ, jamais ignoré : un signe
+ * ignoré ferait accepter deux saisies différentes pour un même code, et le produit accepterait alors
+ * quelque chose qu'il n'a jamais écrit.
+ *
+ * **La table remplace un `toUpperCase()` qui laissait passer deux signes non déclarés** — voir
+ * `SIGNES_ACCEPTES`. La leçon est celle qu'un relecteur doit pouvoir vérifier d'un regard : ce qui
+ * est accepté s'ÉNUMÈRE, il ne se calcule pas par une fonction dont la table vit ailleurs et change
+ * avec les versions d'Unicode.
  *
  * Un chiffre PLEINE CHASSE (`０`, U+FF10) est le cas qui distingue les quatre formes de
  * normalisation : NFC et NFD le LAISSENT — il est donc refusé —, là où NFKC et NFKD le ramèneraient
@@ -261,17 +304,16 @@ export function normaliserSaisie(texte) {
   }
   const symboles = [];
   for (const signe of texte.normalize("NFC")) {
-    if (SEPARATEURS.has(signe.codePointAt(0))) continue;
-    const majuscule = signe.toUpperCase();
-    const replie = REPLIS.get(majuscule) ?? majuscule;
-    const valeur = replie.length === 1 ? ALPHABET_CROCKFORD.indexOf(replie) : -1;
-    if (valeur === -1) {
+    const point = signe.codePointAt(0);
+    if (SEPARATEURS.has(point)) continue;
+    const valeur = SIGNES_ACCEPTES.get(point);
+    if (valeur === undefined) {
       // Le signe est NOMMÉ dans le message, et rien d'autre de la saisie ne l'est. C'est le même
       // arbitrage que celui de l'ADR 0021 sur le contexte d'un refus PRF — « la forme, jamais le
       // résultat » —, tranché ici dans l'autre sens pour une raison qui tient : ce signe est par
-      // construction ABSENT de l'alphabet et de ses replis, il ne porte donc aucun bit d'un code
-      // valide, et le montrer est exactement ce qui dit à l'utilisateur quoi corriger. Le contexte,
-      // lui, ne le reprend pas : un message se lit une fois, un contexte voyage.
+      // construction ABSENT de la table, il ne porte donc aucun bit d'un code valide, et le montrer
+      // est exactement ce qui dit à l'utilisateur quoi corriger. Le contexte, lui, ne le reprend
+      // pas : un message se lit une fois, un contexte voyage.
       throw codeMalRecopie(
         `le signe « ${signe} » n'appartient pas à l'alphabet base 32 de Crockford, et aucun repli ne l'y ramène.`,
       );

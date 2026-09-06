@@ -44,8 +44,10 @@ const CODE = "src/vm/derivation/code-de-recuperation.mjs";
 const DERIVATEUR = "src/vm/derivation/derivateur-recuperation.mjs";
 const MOYEN = "src/vm/moyen-de-recuperation.mjs";
 const PARAMETRES = "src/vm/derivation/parametres-publics.mjs";
+const IDENTITE = "src/vm/enveloppe/identite-enveloppe.mjs";
 
 const EPREUVE = "tests/unit/vm-derivation-recuperation.test.mjs";
+const EPREUVE_TYPE = "tests/unit/vm-enveloppe-type-inconnu.test.mjs";
 
 /**
  * Les gardes, et la façon exacte de les retirer.
@@ -84,7 +86,7 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "l'alphabet écarte I, L, O et U",
-    garde: "ALPHABET_CROCKFORD",
+    garde: "ALPHABET_CROCKFORD, et la table close qui en dérive",
     fichier: CODE,
     avant: 'export const ALPHABET_CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";',
     apres: 'export const ALPHABET_CROCKFORD = "0123456789ABCDEFGHIJKMNPQRSTVWXY";',
@@ -110,10 +112,8 @@ export const MUTATIONS = Object.freeze([
     nom: "un signe étranger est REFUSÉ, jamais replié par défaut",
     garde: "normaliserSaisie — le refus d'un signe hors alphabet",
     fichier: CODE,
-    avant: "    const valeur = replie.length === 1 ? ALPHABET_CROCKFORD.indexOf(replie) : -1;",
-    apres:
-      "    const valeur =\n" +
-      "      replie.length === 1 ? Math.max(0, ALPHABET_CROCKFORD.indexOf(replie)) : 0;",
+    avant: "    const valeur = SIGNES_ACCEPTES.get(point);",
+    apres: "    const valeur = SIGNES_ACCEPTES.get(point) ?? 0;",
     epreuves: [EPREUVE],
   },
   {
@@ -126,7 +126,7 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE],
   },
   {
-    nom: "la version du moyen est relue STRICTEMENT",
+    nom: "la version du moyen est JUGÉE avant toute dérivation",
     garde: "exigerLaVersion",
     fichier: DERIVATEUR,
     avant: "  if (version !== RECUPERATION_VERSION) {",
@@ -163,6 +163,22 @@ export const MUTATIONS = Object.freeze([
     fichier: MOYEN,
     avant: "  const pose = await ajouterEmplacement({",
     apres: "  const pose = { version: 2 };\n  void ajouterEmplacement({",
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "un type de clé INCONNU reste lisible (garde de lecture, pas d'écriture)",
+    garde: "exigerOctetDeTypeKek — la borne du CHAMP, et non la liste des types réservés",
+    fichier: IDENTITE,
+    avant: "  if (!Number.isSafeInteger(typeKek) || typeKek < 0 || typeKek > 0xff) {",
+    apres: "  if (nomDuTypeKek(typeKek) === null) {",
+    epreuves: [EPREUVE_TYPE],
+  },
+  {
+    nom: "la largeur des seize octets est exigée par materiauDuCode",
+    garde: "materiauDuCode — la largeur du code élargi",
+    fichier: DERIVATEUR,
+    avant: "  if (!(octets instanceof Uint8Array) || octets.byteLength !== CODE_OCTETS) {",
+    apres: "  if (false) {",
     epreuves: [EPREUVE],
   },
   {

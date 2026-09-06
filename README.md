@@ -89,6 +89,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0022 — la coquille sert `Referrer-Policy` et `Permissions-Policy` ; HSTS est écarté du code et confié à l'exploitant](docs/decisions/0022-entetes-de-durcissement.md)
 - [ADR 0023 — la politique de cache est décidée par nature d'artefact, et une seule dimension varie selon le chemin](docs/decisions/0023-politique-de-cache-par-nature-d-artefact.md)
 - [ADR 0024 — l'instantané de reprise est un voisin chiffré lié à une génération validée, et il n'est jamais une source de vérité](docs/decisions/0024-instantane-de-reprise.md)
+- [ADR 0025 — un code de récupération est GÉNÉRÉ, rendu une fois, et rien du produit ne le retrouve](docs/decisions/0025-moyen-de-recuperation.md)
 
 ## Licence
 
