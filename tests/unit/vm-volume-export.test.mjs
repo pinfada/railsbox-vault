@@ -10,12 +10,11 @@ import {
   ARCHIVE_MAGIC,
   CONSISTENCY_KINDS,
   PREAMBLE_BYTES,
-  exportVolumeToBytes,
   hasArchiveMagic,
   readArchive,
-  verifyArchive,
   writeArchive,
 } from "../../src/vm/volume-export.mjs";
+import { exportVolumeToBytes, verifyArchive } from "../../src/vm/archive-en-memoire.mjs";
 
 // Preuve unitaire de l'EXPORT VÉRIFIABLE (#11, `VAULT-PORT-001`) sur des doubles déterministes.
 // Elle éprouve le codec d'archive, l'empreinte de contenu inscrite dans le manifeste, le streaming à

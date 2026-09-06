@@ -10,7 +10,8 @@ import { dispositionV3, tailleSupportV3 } from "../../src/vm/volume-chiffre-form
 import { createFaultPlan, FAULT_KINDS } from "../../src/vm/fault-plan.mjs";
 import { MANIFEST_ERROR_CODES, isManifestError } from "../../src/vm/manifest-errors.mjs";
 import { MIGRATION_ERROR_CODES, isMigrationError } from "../../src/vm/migration-errors.mjs";
-import { CONSISTENCY_KINDS, exportVolumeToBytes } from "../../src/vm/volume-export.mjs";
+import { exportVolumeToBytes } from "../../src/vm/archive-en-memoire.mjs";
+import { CONSISTENCY_KINDS } from "../../src/vm/volume-export.mjs";
 import {
   MANIFEST_FORMAT_VERSION,
   createManifest,

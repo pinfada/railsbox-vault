@@ -18,7 +18,8 @@ import {
   supportEnveloppeOpfs,
 } from "../../src/vm/ouverture-par-enveloppe.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
-import { CONSISTENCY_KINDS, exportVolumeToBytes } from "../../src/vm/volume-export.mjs";
+import { exportVolumeToBytes } from "../../src/vm/archive-en-memoire.mjs";
+import { CONSISTENCY_KINDS } from "../../src/vm/volume-export.mjs";
 import { createManifest, serializeManifest } from "../../src/vm/volume-manifest.mjs";
 import { identifiantDeVolume, suiteDOctets } from "./support-enveloppe-double.mjs";
 

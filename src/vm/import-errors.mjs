@@ -20,6 +20,17 @@ export const IMPORT_ERROR_CODES = Object.freeze({
   geometryMismatch: "VAULT_IMPORT_GEOMETRY_MISMATCH",
   /** La relecture du volume restauré ne rend pas l'empreinte de l'archive : jamais déclaré valide. */
   verificationFailed: "VAULT_IMPORT_VERIFICATION_FAILED",
+  /**
+   * L'archive est ANTÉRIEURE à la version d'enveloppe que l'utilisateur tient sur sa feuille de
+   * récupération, et aucun consentement nommé ne l'assume (#149, ADR 0027, décision 3).
+   *
+   * Une archive est par nature antérieure. La restaurer telle quelle est légitime — c'est même ce
+   * qu'on attend d'une sauvegarde —, mais elle rétablit l'enveloppe telle qu'elle était : une clé
+   * révoquée DEPUIS peut y être encore valable. Le refus n'interdit pas le geste, il exige qu'un
+   * exploitant identifié dise qu'il l'accepte, exactement comme l'ADR 0011 le fait d'une migration
+   * sans sauvegarde.
+   */
+  consentementRequis: "VAULT_IMPORT_CONSENTEMENT_REQUIS",
   // `encryptedUnsupported` (`VAULT_IMPORT_VOLUME_CHIFFRE`) a existé jusqu'au 6 septembre 2026 (#139),
   // retiré parce que jamais levé : la recopie brute qui lui manquait est livrée depuis (#101). L'ADR
   // 0016 décision 9 est devenue vraie ce jour-là. Nommé ici pour qu'un relecteur ne le cherche pas.

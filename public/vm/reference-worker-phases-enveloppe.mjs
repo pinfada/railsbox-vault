@@ -9,6 +9,10 @@
 // gèrent l'enveloppe. La jonction se fait par `poserCleDeveloppee`, qui installe pour la durée d'une
 // phase la clé développée — et l'efface à la sortie.
 //
+// Depuis #149 (ADR 0027), toutes les ouvertures d'enveloppe de ce module acceptent `versionMinimale`
+// et la transmettent : c'est l'ANCRE de la décision 3, et un Worker qui l'avalerait la rendrait
+// inatteignable. `tests/unit/vm-enveloppe-ancre-version.test.mjs` relit ce fichier pour cela.
+//
 // Aucune phase ne se déclare « réussie » d'elle-même : elle rend ce qu'elle a observé, et
 // l'assertion vit dans `tests/e2e/enveloppe-rotation-boot-froid.spec.mjs`.
 
@@ -107,13 +111,19 @@ export async function phaseEnveloppeRemplacer({ volume, emplacement, jetonCle })
  * C'est la phase qui répond à « l'ancienne clé est-elle refusée ? ». Elle rend un CODE, jamais un
  * octet de clé : le port ne transporte que des données JSON (ADR 0002).
  */
-export async function phaseEnveloppeOuvrir({ volume, kek = "initiale", jetonCle }) {
+export async function phaseEnveloppeOuvrir({
+  volume,
+  kek = "initiale",
+  jetonCle,
+  versionMinimale = null,
+}) {
   const identifiantVolume = await identifiantDeclare(volume);
   try {
     const ouverte = await ouvrirEnveloppe({
       support: supportEnveloppeOpfs(volume),
       identifiantVolume,
       kek: kekNommee(kek, jetonCle),
+      versionMinimale,
     });
     const inventaire = await inventorierEnveloppe({
       support: supportEnveloppeOpfs(volume),
@@ -127,6 +137,7 @@ export async function phaseEnveloppeOuvrir({ volume, kek = "initiale", jetonCle 
       kek,
       ouverte: true,
       code: null,
+      versionMinimale,
       version: ouverte.version,
       identifiantEmplacement: ouverte.identifiantEmplacement,
       emplacements: inventaire.emplacements.length,
@@ -138,7 +149,9 @@ export async function phaseEnveloppeOuvrir({ volume, kek = "initiale", jetonCle 
       kek,
       ouverte: false,
       code: isEnveloppeError(erreur) ? erreur.code : (erreur.code ?? null),
+      versionMinimale,
       refusDeCle: isEnveloppeError(erreur, ENVELOPPE_ERROR_CODES.cleRefusee),
+      refusDeRejeu: isEnveloppeError(erreur, ENVELOPPE_ERROR_CODES.rejeu),
     };
   }
 }
@@ -149,14 +162,20 @@ export async function phaseEnveloppeOuvrir({ volume, kek = "initiale", jetonCle 
  * C'est la jonction entre l'enveloppe et le boot : l'aiguillage du Worker l'appelle AVANT la phase
  * quand `kek` est nommée, et relâche APRÈS. Elle rend la fonction de relâchement, jamais la clé.
  *
+ * `versionMinimale` est la version que l'utilisateur tient sur sa FEUILLE de récupération (#149,
+ * ADR 0027, décision 3). Le banc la reçoit de son appelant et la passe telle quelle : c'est le
+ * chemin de production par lequel l'ancre est enfin alimentée, et il n'y en a pas d'autre tant que
+ * l'interface de #24 n'existe pas.
+ *
  * @returns {Promise<{ relacher: () => void, version: number }>}
  */
-export async function installerCleParKek({ volume, kek, jetonCle }) {
+export async function installerCleParKek({ volume, kek, jetonCle, versionMinimale = null }) {
   const identifiantVolume = await identifiantDeclare(volume);
   const ouverte = await ouvrirEnveloppe({
     support: supportEnveloppeOpfs(volume),
     identifiantVolume,
     kek: kekNommee(kek, jetonCle),
+    versionMinimale,
   });
   return { relacher: poserCleDeveloppee(ouverte.dek), version: ouverte.version };
 }

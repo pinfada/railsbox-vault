@@ -19,13 +19,23 @@
 //    #10. Une archive tronquée, une empreinte non concordante ou un manifeste incompatible produit un
 //    ÉCHEC TYPÉ (`archive-errors.mjs` ou `ManifestError` de #10), jamais un succès silencieux.
 //
-// Disposition binaire de l'archive v1 (append-only, donc streamable) :
+// Disposition binaire de l'archive (append-only, donc streamable) :
 //
-//   [ marqueur 8 o ][ longueur d'en-tête uint32 BE 4 o ][ en-tête JSON H o ][ contenu N o ]
+//   v1  [ marqueur 8 o ][ longueur d'en-tête uint32 BE 4 o ][ en-tête JSON H o ][ contenu N o ]
+//   v2  … la même, suivie de [ enveloppe de récupération R o ]
 //
 // Le marqueur distingue une archive de bruit ; la longueur délimite l'en-tête sans le scanner ;
 // l'en-tête JSON porte le manifeste (digest renseigné) et le descripteur de contenu ; le contenu est
-// le volume octet pour octet. `offset du contenu = 12 + H` ; `taille de l'archive = 12 + H + N`.
+// le volume octet pour octet. `offset du contenu = 12 + H` ; `taille de l'archive = 12 + H + N + R`,
+// avec `R = 0` pour une archive v1 ou une archive v2 sans moyen de récupération.
+//
+// ## La version 2 (#149, ADR 0027)
+//
+// Une archive v2 peut emporter une ENVELOPPE DE RÉCUPÉRATION : la capacité d'ouvrir le volume
+// restauré ailleurs, par le code que l'utilisateur détient. Ce module n'en sait rien de plus — il
+// reçoit des OCTETS OPAQUES, les écrit en queue, déclare leur empreinte et la vérifie à la
+// relecture ; ce qu'ils sont vit dans `enveloppe-de-recuperation.mjs` (ADR 0027). Une archive v1
+// reste LUE telle quelle ; elle n'est plus écrite.
 
 import {
   DIGEST_ALGORITHM,
@@ -37,6 +47,11 @@ import {
 import { createSha256Stream } from "./sha256-stream.mjs";
 import { tailleDeFichier } from "./volume-chiffre-format.mjs";
 import { ARCHIVE_ERROR_CODES, ArchiveError } from "./archive-errors.mjs";
+import {
+  lireEtVerifierLaRecuperation,
+  normaliserRecuperation,
+  validerDescripteurDeRecuperation,
+} from "./archive-recuperation.mjs";
 
 /** Marqueur binaire de tête : 8 octets ASCII, jamais modifiés. Reconnaît une archive avant tout. */
 export const ARCHIVE_MAGIC = new Uint8Array([0x52, 0x42, 0x56, 0x41, 0x55, 0x4c, 0x54, 0x31]); // "RBVAULT1"
@@ -44,8 +59,18 @@ export const ARCHIVE_MAGIC = new Uint8Array([0x52, 0x42, 0x56, 0x41, 0x55, 0x4c,
 /** Marqueur textuel porté par l'en-tête JSON : distingue l'en-tête d'un objet JSON quelconque. */
 export const ARCHIVE_HEADER_MAGIC = "railsbox-vault/volume-archive";
 
-/** Version entière du format d'archive. Comme le format de volume, jamais dérivée de la version npm. */
-export const ARCHIVE_FORMAT_VERSION = 1;
+/** Version entière du format d'archive ÉCRITE. Comme le format de volume, jamais dérivée de npm. */
+export const ARCHIVE_FORMAT_VERSION = 2;
+
+/**
+ * Versions d'archive que ce runtime sait LIRE. La v1 y reste, et c'est la compatibilité que
+ * l'ADR 0027 promet : une archive écrite avant cette tranche se restaure sans conversion, avec la
+ * conséquence qu'elle a toujours eue — elle n'emporte aucune capacité d'ouvrir.
+ */
+export const ARCHIVE_FORMAT_VERSIONS_LUES = Object.freeze([1, 2]);
+
+/** Première version à porter une section de récupération. En deçà, la déclarer est une malformation. */
+const PREMIERE_VERSION_AVEC_RECUPERATION = 2;
 
 /** Taille du préambule binaire : marqueur (8) + longueur d'en-tête (4). */
 export const PREAMBLE_BYTES = ARCHIVE_MAGIC.byteLength + 4;
@@ -115,8 +140,16 @@ function encodePreamble(headerLength) {
   return preamble;
 }
 
-/** Construit l'objet d'en-tête : manifeste (digest renseigné) + descripteur de contenu. */
-function buildHeader({ manifest, digest, contentLength, consistency }) {
+/**
+ * Construit l'objet d'en-tête : manifeste (digest renseigné), descripteur de contenu, descripteur de
+ * récupération.
+ *
+ * `recovery` est TOUJOURS présent dans une v2, à `null` quand le volume n'a pas de moyen de
+ * récupération. Un champ absent et un champ nul ne disent pas la même chose : le premier laisserait
+ * croire à un lecteur qu'il a affaire à un en-tête d'une autre version, le second dit « ce volume
+ * n'en a pas », ce qui est précisément ce que l'exploitant doit apprendre.
+ */
+function buildHeader({ manifest, digest, contentLength, consistency, recovery }) {
   return {
     magic: ARCHIVE_HEADER_MAGIC,
     archiveFormatVersion: ARCHIVE_FORMAT_VERSION,
@@ -126,6 +159,7 @@ function buildHeader({ manifest, digest, contentLength, consistency }) {
       length: contentLength,
       consistency,
     },
+    recovery: recovery === null ? null : recovery.descripteur,
     manifest,
   };
 }
@@ -200,9 +234,15 @@ function accorderManifesteEtSource(manifest, source) {
  * Extrait parce que cette étape est la CHARNIÈRE des deux passes : elle ne peut exister qu'entre
  * elles, `identity.digest` n'étant renseignable qu'une fois la première passe achevée.
  */
-async function ecrireEnTete({ sink, base, digest, contentLength, consistency }) {
+async function ecrireEnTete({ sink, base, digest, contentLength, consistency, recovery }) {
   const manifestWithDigest = withContentDigest(base, digest);
-  const header = buildHeader({ manifest: manifestWithDigest, digest, contentLength, consistency });
+  const header = buildHeader({
+    manifest: manifestWithDigest,
+    digest,
+    contentLength,
+    consistency,
+    recovery,
+  });
   const headerBytes = encoder.encode(JSON.stringify(header));
   await sink.write(encodePreamble(headerBytes.byteLength));
   await sink.write(headerBytes);
@@ -215,24 +255,36 @@ async function ecrireEnTete({ sink, base, digest, contentLength, consistency }) 
  * l'en-tête) ; la seconde recopie le contenu. La source doit donc être relisible — c'est le cas d'un
  * volume OPFS (#6). Le puits n'a besoin que d'un `write(bytes)` séquentiel.
  *
+ * `recovery` est l'ENVELOPPE DE RÉCUPÉRATION à emporter, ou `null` (#149, ADR 0027). Elle est écrite
+ * EN QUEUE, après le contenu : la queue laisse l'offset du contenu inchangé, donc l'export en un
+ * seul passage et la lecture d'une v1 exactement où elles étaient.
+ *
  * @param {{ source: { size: number, read: (offset: number, length: number) => Promise<Uint8Array> },
  *           sink: { write: (bytes: Uint8Array) => (void | Promise<void>) },
  *           manifest: object | Uint8Array | string,
  *           consistency: { kind: string, detail?: string },
+ *           recovery?: { octets: Uint8Array, digest?: string, version: number,
+ *                        emplacements: number } | null,
  *           blockBytes?: number }} args
  * @returns {Promise<{ digest: string, contentLength: number, headerLength: number,
- *                     archiveLength: number, manifest: object, consistency: object }>}
+ *                     archiveLength: number, manifest: object, consistency: object,
+ *                     recovery: object | null }>}
  */
 export async function writeArchive({
   source,
   sink,
   manifest,
   consistency,
+  recovery = null,
   blockBytes = DEFAULT_BLOCK_BYTES,
 }) {
   assertContratDExport({ source, sink, blockBytes });
   const guarantee = normalizeConsistency(consistency);
   const base = accorderManifesteEtSource(manifest, source);
+  // L'empreinte de la section est calculée AVANT d'écrire l'en-tête : elle y est déclarée, et une
+  // archive dont l'en-tête annoncerait une empreinte qu'on n'a pas encore vue ne serait vérifiable
+  // par personne.
+  const section = normaliserRecuperation(recovery);
 
   // Passe 1 : empreinte du contenu, en flux.
   const hash = createSha256Stream();
@@ -246,12 +298,16 @@ export async function writeArchive({
     digest,
     contentLength: source.size,
     consistency: guarantee,
+    recovery: section,
   });
 
   // Passe 2 : recopie du contenu, en flux.
   await streamVolume(source, blockBytes, (bytes) => sink.write(bytes));
+  // Passe 3 : la section de récupération, en queue. Quelques kio, écrits d'un bloc.
+  if (section !== null) await sink.write(section.octets);
 
-  const archiveLength = PREAMBLE_BYTES + headerBytes.byteLength + source.size;
+  const recoveryLength = section === null ? 0 : section.octets.byteLength;
+  const archiveLength = PREAMBLE_BYTES + headerBytes.byteLength + source.size + recoveryLength;
   return {
     digest,
     contentLength: source.size,
@@ -259,6 +315,7 @@ export async function writeArchive({
     archiveLength,
     manifest: manifestWithDigest,
     consistency: guarantee,
+    recovery: section === null ? null : section.descripteur,
   };
 }
 
@@ -325,10 +382,24 @@ function validateHeaderShape(header) {
   if (header.magic !== ARCHIVE_HEADER_MAGIC) {
     throw malformed("marqueur d'en-tête absent ou inconnu.", { magic: header.magic ?? null });
   }
-  if (header.archiveFormatVersion !== ARCHIVE_FORMAT_VERSION) {
+  if (!ARCHIVE_FORMAT_VERSIONS_LUES.includes(header.archiveFormatVersion)) {
     throw malformed("version de format d'archive non prise en charge.", {
       archiveFormatVersion: header.archiveFormatVersion ?? null,
+      supported: [...ARCHIVE_FORMAT_VERSIONS_LUES],
     });
+  }
+  // Une archive ANTÉRIEURE à la v2 n'a pas de section de récupération, et un en-tête v1 qui en
+  // déclarerait une décrirait une disposition que sa propre version dit inexistante. La refuser
+  // n'est pas une politesse de format : sans cela, `taille = 12 + H + N + R` et `taille = 12 + H + N`
+  // se contrediraient, et le lecteur choisirait laquelle croire.
+  if (
+    header.archiveFormatVersion < PREMIERE_VERSION_AVEC_RECUPERATION &&
+    header.recovery !== undefined
+  ) {
+    throw malformed(
+      `une archive v${header.archiveFormatVersion} ne porte pas de section de récupération, et son en-tête en déclare une.`,
+      { archiveFormatVersion: header.archiveFormatVersion },
+    );
   }
   const content = header.content;
   if (!content || typeof content !== "object") {
@@ -490,10 +561,13 @@ async function verifierEmpreinteDuContenu({
  *  - archive plus courte que déclarée → `VAULT_ARCHIVE_TRUNCATED` ;
  *  - longueur de contenu contredisant la géométrie du manifeste → `VAULT_ARCHIVE_GEOMETRY_MISMATCH` ;
  *  - empreinte recalculée ≠ empreinte inscrite → `VAULT_ARCHIVE_DIGEST_MISMATCH` ;
+ *  - section de récupération altérée → `VAULT_ARCHIVE_RECUPERATION_ALTEREE` ;
+ *  - descripteur de récupération inadmissible → `VAULT_ARCHIVE_RECUPERATION_REFUSEE` ;
  *  - manifeste malformé/incompatible → `ManifestError` de #10 (propagée telle quelle).
  *
  * @returns {Promise<{ manifest: object, contentDigest: string, contentLength: number,
- *                     consistency: object|null, archiveLength: number }>}
+ *                     consistency: object|null, archiveLength: number,
+ *                     recovery: object|null }>}
  */
 export async function readArchive({
   read,
@@ -502,17 +576,7 @@ export async function readArchive({
   expectations = {},
   enforceCompatibility = true,
 }) {
-  if (typeof read !== "function" || !Number.isInteger(byteLength) || byteLength < 0) {
-    throw new TypeError("readArchive attend { read(offset, length), byteLength }.");
-  }
-  if (byteLength < PREAMBLE_BYTES) {
-    throw truncated(
-      `${byteLength} octet(s) : trop court même pour le préambule (${PREAMBLE_BYTES}).`,
-      {
-        byteLength,
-      },
-    );
-  }
+  assertContratDeLecture(read, byteLength);
 
   const { header, headerLength } = await lireEnTete(read, byteLength);
   const manifest = accorderManifesteEtContenu(header, { expectations, enforceCompatibility });
@@ -531,6 +595,13 @@ export async function readArchive({
     digestInscrit: header.content.digest,
   });
 
+  const recovery = await verifierLaRecuperation({
+    header,
+    read,
+    byteLength,
+    offset: declaredLength,
+  });
+
   return {
     manifest,
     contentDigest,
@@ -540,56 +611,46 @@ export async function readArchive({
     // refasse l'arithmétique de la disposition d'archive à sa façon.
     contentOffset,
     consistency: header.content.consistency ?? null,
-    archiveLength: declaredLength,
+    // Les octets de la section accompagnent son descripteur : ils sont bornés à quelques kio, ils
+    // viennent d'être lus et vérifiés, et les relire au moment de les écrire rouvrirait entre la
+    // vérification et l'écriture une fenêtre que rien ne surveille.
+    recovery,
+    archiveLength: declaredLength + (recovery === null ? 0 : recovery.length),
   };
 }
 
 /**
- * Exporte un volume vers une archive EN MÉMOIRE. Commodité pour les petits volumes (tests, doubles
- * déterministes) : pour un vrai volume, préférer `writeArchive` vers un puits qui n'accumule pas tout
- * en RAM. Le contenu source, lui, reste toujours lu en streaming.
+ * Valide les arguments de lecture, et refuse une entrée trop courte pour porter un préambule. Une
+ * faute d'appel est un `TypeError` ; une entrée trop courte est un état de format, donc une
+ * troncature typée — les deux se distinguent, et c'est ce que cette fonction tient.
  */
-export async function exportVolumeToBytes({ source, manifest, consistency, blockBytes }) {
-  const chunks = [];
-  let total = 0;
-  const sink = {
-    write(bytes) {
-      const copy = bytes.slice();
-      chunks.push(copy);
-      total += copy.byteLength;
-    },
-  };
-  const result = await writeArchive({ source, sink, manifest, consistency, blockBytes });
-  const archive = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    archive.set(chunk, offset);
-    offset += chunk.byteLength;
+function assertContratDeLecture(read, byteLength) {
+  if (typeof read !== "function" || !Number.isInteger(byteLength) || byteLength < 0) {
+    throw new TypeError("readArchive attend { read(offset, length), byteLength }.");
   }
-  return { archive, ...result };
+  if (byteLength < PREAMBLE_BYTES) {
+    throw truncated(
+      `${byteLength} octet(s) : trop court même pour le préambule (${PREAMBLE_BYTES}).`,
+      {
+        byteLength,
+      },
+    );
+  }
 }
 
 /**
- * Vérifie une archive tenue EN MÉMOIRE. Recalcule l'empreinte et valide le manifeste ; rend le
- * verdict ou lève un échec typé. Pour une grande archive, préférer `readArchive` sur un lecteur qui
- * ne la tient pas entière en RAM.
+ * Valide le descripteur de récupération, lit la section et confronte son empreinte. Rend `null`
+ * quand l'archive n'en déclare pas.
  *
- * @param {Uint8Array} bytes
- * @param {{ expectations?: object, blockBytes?: number }} [options]
+ * Extrait de `readArchive` parce que c'est un GESTE entier : l'en-tête déclare, la section est lue,
+ * l'empreinte tranche. Il se lit d'un bloc, et il vit dans la même phase que la vérification du
+ * contenu — rien n'est rendu tant que les DEUX empreintes ne concordent pas. C'est ce qui fait que
+ * la restauration, qui appelle `readArchive` en premier, ne peut pas écrire une enveloppe altérée :
+ * elle n'a même pas encore ouvert la cible.
  */
-export async function verifyArchive(
-  bytes,
-  { expectations = {}, blockBytes, enforceCompatibility = true } = {},
-) {
-  if (!(bytes instanceof Uint8Array)) {
-    throw new TypeError("verifyArchive attend un Uint8Array.");
-  }
-  const read = (offset, length) => bytes.subarray(offset, offset + length);
-  return readArchive({
-    read,
-    byteLength: bytes.byteLength,
-    expectations,
-    blockBytes,
-    enforceCompatibility,
-  });
+async function verifierLaRecuperation({ header, read, byteLength, offset }) {
+  const descripteur = validerDescripteurDeRecuperation(header.recovery);
+  if (descripteur === null) return null;
+  const octets = await lireEtVerifierLaRecuperation({ read, byteLength, offset, descripteur });
+  return { ...descripteur, offset, octets };
 }

@@ -192,7 +192,11 @@ test("le Worker de confiance ACCEPTE la feuille de son appelant et la passe aux 
   const appels = contenu.match(/ouvrirEnveloppe\(\{[^}]*\}\)/gs) ?? [];
   assert.ok(appels.length > 0, "le Worker n'ouvre plus aucune enveloppe : l'épreuve est caduque");
   for (const appel of appels) {
-    assert.match(appel, /versionMinimale/, `un appel du Worker perd la feuille en route : ${appel}`);
+    assert.match(
+      appel,
+      /versionMinimale/,
+      `un appel du Worker perd la feuille en route : ${appel}`,
+    );
   }
   assert.match(
     contenu,
