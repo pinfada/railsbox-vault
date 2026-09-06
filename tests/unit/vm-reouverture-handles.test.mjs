@@ -27,6 +27,18 @@ const TAILLE = 64 * SECTOR_SIZE;
 const HANDLES_DE_SESSION = ["mesure", "mesure.gen", "mesure.temoin"];
 
 /**
+ * Les voisins que la NAISSANCE sonde et referme aussitôt (#145), avant de saisir les trois de la
+ * session — ils ne sont jamais TENUS. `.cles` n'en fait pas partie, pour la même raison qu'il ne
+ * fait pas partie de `HANDLES_DE_SESSION` : ni l'un ni l'autre n'ouvre l'enveloppe de clé ici.
+ */
+const PREAMBULE_NAISSANCE = [
+  "mesure.gen",
+  "mesure.temoin",
+  "mesure.instantane",
+  "mesure.migration",
+];
+
+/**
  * Support instrumenté : le double, plus le JOURNAL des saisies et des restitutions de handles.
  *
  * C'est la seule chose que ce banc ajoute au double, et c'est celle qui manquait : `isOpen` dit
@@ -73,14 +85,28 @@ test("MESURE — une session de volume v3 tient TROIS handles, saisis dans un or
 
   const backend = await ouvrir(openHandle, { size: TAILLE });
 
-  // Le volume, son journal de génération (#16), son témoin de séquence (#19). L'enveloppe de clé
-  // (#21) n'en fait PAS partie : `supportEnveloppeOpfs` ouvre et referme son handle à chaque geste,
-  // et le banc de résilience ne passe pas par elle — il reçoit la clé du harnais.
-  assert.deepEqual(noms("saisi"), HANDLES_DE_SESSION);
-  assert.deepEqual(noms("rendu"), [], "les trois sont TENUS, aucun n'est rendu en cours de route");
+  // À la NAISSANCE, quatre voisins sont d'abord SONDÉS et refermés aussitôt — le retrait des
+  // orphelins de #145 —, puis le volume, son journal de génération (#16) et son témoin de
+  // séquence (#19) sont saisis pour de bon et TENUS toute la session. L'enveloppe de clé (#21)
+  // n'en fait PAS partie : `supportEnveloppeOpfs` ouvre et referme son handle à chaque geste, et le
+  // banc de résilience ne passe pas par elle — il reçoit la clé du harnais.
+  assert.deepEqual(noms("saisi"), [
+    "mesure",
+    ...PREAMBULE_NAISSANCE,
+    "mesure.gen",
+    "mesure.temoin",
+  ]);
+  assert.deepEqual(
+    noms("rendu"),
+    PREAMBULE_NAISSANCE,
+    "seul le préambule de naissance est rendu en cours de route ; les trois de la session ne le sont pas",
+  );
 
   await backend.close();
-  assert.deepEqual(new Set(noms("rendu")), new Set(HANDLES_DE_SESSION));
+  assert.deepEqual(
+    new Set(noms("rendu")),
+    new Set([...HANDLES_DE_SESSION, "mesure.instantane", "mesure.migration"]),
+  );
 });
 
 test("MESURE — un SEUL des trois handles encore tenu suffit à rendre « busy »", async () => {

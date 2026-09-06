@@ -14,6 +14,11 @@ import {
 import { createOpfsArchiveSink } from "../../src/vm/opfs-archive-sink.mjs";
 import { ecrireHandleEntier, lireTeteDeHandle } from "../../src/vm/opfs-volume-open.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
+import {
+  dispositionV3,
+  encoderEnTeteV3,
+  nouvelIdentifiantDeVolume,
+} from "../../src/vm/volume-chiffre-format.mjs";
 
 // Ce que `FileSystemSyncAccessHandle.write()` rend quand il N'A PAS écrit (#73).
 //
@@ -293,6 +298,19 @@ test("un journal de génération dont le support rend un errno fait ÉCHOUER l'o
   // serait ouvert sur un journal que le support n'a jamais accepté.
   const taille = 64 * SECTOR_SIZE;
   const support = supportQuiRend(RENDU_NO_SPACE);
+  // Le volume est déjà SCELLÉ (une NAISSANCE aurait fait retirer ce `.gen` orphelin avant même que
+  // la récupération ne le voie — #145) : on lui donne un en-tête v3 complet plutôt que de le
+  // laisser naître, pour rester sur le chemin de RÉOUVERTURE que ce test éprouve depuis l'origine.
+  const disposition = dispositionV3(taille);
+  const entete = encoderEnTeteV3({
+    tailleLogique: taille,
+    identifiantVolume: nouvelIdentifiantDeVolume(),
+    scellementComplet: true,
+  });
+  const principal = await support.openHandle("errno-generation");
+  principal.truncate(disposition.tailleSupport);
+  principal.write(entete, { at: 0 });
+  principal.close();
   // Le journal PARAÎT porter une charge : sans elle, l'ouverture d'un journal vierge n'écrit RIEN
   // (c'est la règle de #90 — un export sur un support saturé ne doit pas échouer parce qu'une
   // ouverture a voulu écrire), et l'épreuve ne mesurerait aucune écriture.
@@ -300,7 +318,6 @@ test("un journal de génération dont le support rend un errno fait ÉCHOUER l'o
   support.armer("errno-generation.gen");
   const erreur = await openOpfsVolume({
     name: "errno-generation",
-    size: taille,
     journal: new BlockJournal(),
     cle: CLE_DE_TEST,
     openHandle: support.openHandle,
