@@ -24,7 +24,10 @@
 //    n'ouvre ;
 //  - la TRANSMISSION de `versionMinimale` par l'ouvreur de production, sans quoi l'ancre resterait
 //    ce qu'elle était avant cette tranche : un paramètre que personne ne passe ;
-//  - le CONSENTEMENT nommé, et la LECTURE d'une archive v1, qui est la compatibilité promise.
+//  - le CONSENTEMENT nommé, et la LECTURE d'une archive v1, qui est la compatibilité promise ;
+//  - depuis les revues de la PR #160 : l'IDENTITÉ du volume que la page authentifie confrontée à
+//    celle du manifeste, la PRÉSENCE du champ `recovery` dans un en-tête v2, le refus d'une queue
+//    au-delà de l'archive, et la garde de forme À L'ÉCRITURE — la moitié qui manquait.
 //
 // ## Ce que la campagne ne peut PAS mesurer
 //
@@ -107,12 +110,59 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "l'en-tête est CONFRONTÉ à la page, jamais cru",
-    garde: "assertEnveloppeEmbarquee — la comparaison version/emplacements",
-    fichier: IMPORT,
+    garde: "accorderLeDescripteurEtLaPage — la comparaison version/emplacements",
+    fichier: SECTION,
     avant:
-      "  if (declare.envelopeVersion === porte.envelopeVersion && declare.slots === porte.slots) return;",
+      "  if (descripteur.envelopeVersion === porte.envelopeVersion && descripteur.slots === porte.slots) {\n" +
+      "    return;\n" +
+      "  }",
     apres: "  return;",
+    epreuves: [ARCHIVE, RESTAURATION],
+  },
+  {
+    nom: "l'enveloppe embarquée décrit LE MÊME VOLUME que le manifeste",
+    garde: "assertEnveloppeDuMemeVolume — la confrontation des deux identifiants",
+    fichier: IMPORT,
+    avant: "  if (page.identifiantVolume === declare) return;",
+    apres: "  if (page.identifiantVolume !== null) return;",
     epreuves: [RESTAURATION],
+  },
+  {
+    nom: "une archive qui emporte une enveloppe DÉCLARE son volume",
+    garde: "assertEnveloppeDuMemeVolume — le refus d'un manifeste sans identifiant",
+    fichier: IMPORT,
+    avant: "  const declare = verdict.manifest.volume?.id ?? null;\n  if (declare === null) {",
+    apres: "  const declare = verdict.manifest.volume?.id ?? null;\n  if (false) {",
+    epreuves: [RESTAURATION],
+  },
+  {
+    nom: "un en-tête v2 DÉCLARE toujours « recovery », fût-ce à null",
+    garde: "assertChampDeRecuperation — la présence du champ suit la version",
+    fichier: EXPORT,
+    avant: "  if (porteLeChamp === attenduAvecChamp) return;",
+    apres: "  if (porteLeChamp === attenduAvecChamp || attenduAvecChamp) return;",
+    epreuves: [ARCHIVE],
+  },
+  {
+    nom: "rien ne suit une archive : la queue est refusée",
+    garde: "assertRienEnQueue — la longueur totale confrontée à la disposition",
+    fichier: EXPORT,
+    avant: "  if (byteLength === archiveLength) return;",
+    apres: "  return;",
+    epreuves: [ARCHIVE],
+  },
+  {
+    nom: "la FORME de la section est gardée À L'ÉCRITURE aussi",
+    garde: "normaliserRecuperation — la garde partagée, côté export",
+    fichier: SECTION,
+    avant:
+      "  const page = exigerEnveloppeDeRecuperationSeule(octets);\n" +
+      "  accorderLeDescripteurEtLaPage(page, {\n" +
+      "    envelopeVersion: recovery.version,\n" +
+      "    slots: recovery.emplacements,\n" +
+      "  });",
+    apres: "",
+    epreuves: [ARCHIVE],
   },
   {
     nom: "l'ORDRE est contenu, puis enveloppe, puis manifeste",

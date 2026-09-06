@@ -284,6 +284,109 @@ test("une archive v1 qui DÉCLARE une récupération est malformée : la version
   );
 });
 
+test("un en-tête v2 SANS champ « recovery » est malformé : absent ne vaut pas null", async () => {
+  // Constat HIGH 2 de la revue de format. `buildHeader` écrivait la règle — « un champ absent et un
+  // champ nul ne disent pas la même chose » — et rien ne la relisait : retirer le champ d'un en-tête
+  // faisait passer huit kilo-octets d'enveloppe pour une queue que personne ne lit, l'archive se
+  // vérifiait, et la capacité d'ouvrir disparaissait en silence.
+  const { archive } = await archiveDUnVolume();
+  const sansChamp = reecrireLEnTete(archive, (entete) => {
+    const copie = { ...entete };
+    delete copie.recovery;
+    return copie;
+  });
+
+  await assert.rejects(verifyArchive(sansChamp, { expectations: ATTENTES }), (erreur) => {
+    assert.ok(isArchiveError(erreur, ARCHIVE_ERROR_CODES.malformed));
+    assert.match(erreur.message, /déclare toujours « recovery »/);
+    return true;
+  });
+
+  // Et la règle vaut dans l'autre sens, déjà : une v1 qui déclare le champ est refusée elle aussi.
+  const v1 = reecrireLEnTete(archive, (entete) => ({ ...entete, archiveFormatVersion: 1 }));
+  await assert.rejects(verifyArchive(v1, { expectations: ATTENTES }), (erreur) =>
+    isArchiveError(erreur, ARCHIVE_ERROR_CODES.malformed),
+  );
+});
+
+test("des octets APRÈS la fin déclarée sont refusés, jamais ignorés", async () => {
+  // Constat MEDIUM de la revue de format. La longueur totale n'était confrontée à rien : une
+  // section greffée derrière une archive `recovery: null` passait inaperçue, et `archiveLength`
+  // désignait une partie du fichier sans que rien ne dise que le reste existait.
+  const { archive } = await archiveDUnVolume();
+  const suivie = new Uint8Array(archive.byteLength + 8192);
+  suivie.set(archive, 0);
+  suivie.fill(0x2a, archive.byteLength);
+
+  await assert.rejects(verifyArchive(suivie, { expectations: ATTENTES }), (erreur) => {
+    assert.ok(isArchiveError(erreur, ARCHIVE_ERROR_CODES.malformed));
+    assert.equal(erreur.context.byteLength, suivie.byteLength);
+    assert.equal(erreur.context.archiveLength, archive.byteLength);
+    return true;
+  });
+});
+
+test("la FORME de la section est gardée À L'ÉCRITURE : une archive fautive ne naît pas", async () => {
+  // Constat MEDIUM de la revue de format : la garde n'existait qu'à l'import. `writeArchive`
+  // acceptait d'écrire n'importe quels octets sous l'étiquette « enveloppe de récupération », et
+  // l'utilisateur n'apprenait le défaut qu'au moment de restaurer — au pire endroit, au pire moment.
+  const banc = magasin();
+  const pose = await poserVolume(banc);
+  const source = sourceDuVolume(banc, pose.nom);
+
+  for (const [quoi, octets] of [
+    ["du bourrage", Uint8Array.from({ length: 100 }, () => 0x2a)],
+    ["une page à zéro", new Uint8Array(PAGE_OCTETS)],
+  ]) {
+    await assert.rejects(
+      exportVolumeToBytes({
+        source,
+        manifest: descripteurDeManifeste(),
+        consistency: { kind: "handle-exclusif" },
+        recovery: { octets, version: 2, emplacements: 1 },
+      }),
+      (erreur) => isArchiveError(erreur, ARCHIVE_ERROR_CODES.recuperationRefusee),
+      `${quoi} est parti dans une archive`,
+    );
+  }
+
+  // Et une page VALIDE dont le descripteur ment est refusée à l'écriture aussi : l'en-tête d'une
+  // archive naissante ne doit pas pouvoir annoncer autre chose que ce que la page porte.
+  const vraie = await construireEnveloppeDeRecuperation({
+    support: pose.support,
+    identifiantVolume: VOLUME_A,
+    kek: KEK,
+  });
+  await assert.rejects(
+    exportVolumeToBytes({
+      source,
+      manifest: descripteurDeManifeste(),
+      consistency: { kind: "handle-exclusif" },
+      recovery: { ...vraie, version: vraie.version + 1 },
+    }),
+    (erreur) => isArchiveError(erreur, ARCHIVE_ERROR_CODES.recuperationRefusee),
+  );
+});
+
+/** Réécrit l'en-tête d'une archive, contenu et section de récupération inchangés. */
+function reecrireLEnTete(archive, transformer) {
+  const longueur = new DataView(archive.buffer, archive.byteOffset, archive.byteLength).getUint32(
+    8,
+    false,
+  );
+  const entete = transformer(
+    JSON.parse(decodeur.decode(archive.subarray(PREAMBLE_BYTES, PREAMBLE_BYTES + longueur))),
+  );
+  const octets = new TextEncoder().encode(JSON.stringify(entete));
+  const suite = archive.subarray(PREAMBLE_BYTES + longueur);
+  const forge = new Uint8Array(PREAMBLE_BYTES + octets.byteLength + suite.byteLength);
+  forge.set(archive.subarray(0, PREAMBLE_BYTES), 0);
+  new DataView(forge.buffer).setUint32(8, octets.byteLength, false);
+  forge.set(octets, PREAMBLE_BYTES);
+  forge.set(suite, PREAMBLE_BYTES + octets.byteLength);
+  return forge;
+}
+
 test("un module d'ARCHIVE ne connaît toujours pas le voisin d'enveloppe, et UN SEUL la construit", async () => {
   // L'épreuve de l'ADR 0020 décision 6, TRANSFORMÉE par l'ADR 0027. Ce qui est mesuré a changé de
   // nature : ce n'est plus « aucun module ne connaît `.cles` » — un module doit désormais l'écrire —

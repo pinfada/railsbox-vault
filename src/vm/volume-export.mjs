@@ -32,10 +32,9 @@
 // ## La version 2 (#149, ADR 0027)
 //
 // Une archive v2 peut emporter une ENVELOPPE DE RÉCUPÉRATION : la capacité d'ouvrir le volume
-// restauré ailleurs, par le code que l'utilisateur détient. Ce module n'en sait rien de plus — il
-// reçoit des OCTETS OPAQUES, les écrit en queue, déclare leur empreinte et la vérifie à la
-// relecture ; ce qu'ils sont vit dans `enveloppe-de-recuperation.mjs` (ADR 0027). Une archive v1
-// reste LUE telle quelle ; elle n'est plus écrite.
+// restauré ailleurs, par le code que l'utilisateur détient. Ce module l'écrit en queue et déclare
+// son empreinte ; sa FORME est jugée par `archive-recuperation.mjs`, à l'écriture comme à la
+// lecture (ADR 0027). Une archive v1 reste LUE telle quelle ; elle n'est plus écrite.
 
 import {
   DIGEST_ALGORITHM,
@@ -388,19 +387,7 @@ function validateHeaderShape(header) {
       supported: [...ARCHIVE_FORMAT_VERSIONS_LUES],
     });
   }
-  // Une archive ANTÉRIEURE à la v2 n'a pas de section de récupération, et un en-tête v1 qui en
-  // déclarerait une décrirait une disposition que sa propre version dit inexistante. La refuser
-  // n'est pas une politesse de format : sans cela, `taille = 12 + H + N + R` et `taille = 12 + H + N`
-  // se contrediraient, et le lecteur choisirait laquelle croire.
-  if (
-    header.archiveFormatVersion < PREMIERE_VERSION_AVEC_RECUPERATION &&
-    header.recovery !== undefined
-  ) {
-    throw malformed(
-      `une archive v${header.archiveFormatVersion} ne porte pas de section de récupération, et son en-tête en déclare une.`,
-      { archiveFormatVersion: header.archiveFormatVersion },
-    );
-  }
+  assertChampDeRecuperation(header);
   const content = header.content;
   if (!content || typeof content !== "object") {
     throw malformed("descripteur de contenu absent.", {});
@@ -420,6 +407,32 @@ function validateHeaderShape(header) {
       expected: DIGEST_ALGORITHM,
     });
   }
+}
+
+/**
+ * EXIGE que la PRÉSENCE du champ `recovery` suive la version d'archive déclarée.
+ *
+ * La règle vaut DANS LES DEUX SENS, et la première rédaction ne la tenait que dans un — constat de
+ * la revue de format de la PR #160.
+ *
+ * Une archive ANTÉRIEURE à la v2 n'a pas de section, et un en-tête v1 qui en déclarerait une
+ * décrirait une disposition que sa propre version dit inexistante. Une archive de v2, elle, DOIT
+ * porter le champ — objet, ou `null` EXPLICITE. Un champ absent était accepté comme `null`, si bien
+ * qu'il suffisait de le retirer d'un en-tête pour que huit kilo-octets d'enveloppe deviennent une
+ * queue que personne ne lit : l'archive se vérifiait, `archiveLength` était faux, et la capacité
+ * d'ouvrir disparaissait en silence. `buildHeader` écrivait déjà la règle — « un champ absent et un
+ * champ nul ne disent pas la même chose » — sans que rien ne la relise.
+ */
+function assertChampDeRecuperation(header) {
+  const porteLeChamp = Object.hasOwn(header, "recovery");
+  const attenduAvecChamp = header.archiveFormatVersion >= PREMIERE_VERSION_AVEC_RECUPERATION;
+  if (porteLeChamp === attenduAvecChamp) return;
+  throw malformed(
+    attenduAvecChamp
+      ? `une archive v${header.archiveFormatVersion} déclare toujours « recovery » — un objet, ou « null » explicite quand le volume n'a pas de moyen de récupération. Le champ est absent.`
+      : `une archive v${header.archiveFormatVersion} ne porte pas de section de récupération, et son en-tête en déclare une.`,
+    { archiveFormatVersion: header.archiveFormatVersion, recoveryDeclare: porteLeChamp },
+  );
 }
 
 /**
@@ -581,9 +594,7 @@ export async function readArchive({
   const { header, headerLength } = await lireEnTete(read, byteLength);
   const manifest = accorderManifesteEtContenu(header, { expectations, enforceCompatibility });
 
-  const contentLength = header.content.length;
-  const contentOffset = PREAMBLE_BYTES + headerLength;
-  const declaredLength = contentOffset + contentLength;
+  const { contentLength, contentOffset, declaredLength } = disposition(header, headerLength);
 
   const contentDigest = await verifierEmpreinteDuContenu({
     read,
@@ -601,6 +612,8 @@ export async function readArchive({
     byteLength,
     offset: declaredLength,
   });
+  const archiveLength = declaredLength + (recovery === null ? 0 : recovery.length);
+  assertRienEnQueue(byteLength, archiveLength);
 
   return {
     manifest,
@@ -615,8 +628,36 @@ export async function readArchive({
     // viennent d'être lus et vérifiés, et les relire au moment de les écrire rouvrirait entre la
     // vérification et l'écriture une fenêtre que rien ne surveille.
     recovery,
-    archiveLength: declaredLength + (recovery === null ? 0 : recovery.length),
+    archiveLength,
   };
+}
+
+/**
+ * L'ARITHMÉTIQUE de la disposition, en un endroit : `offset du contenu = 12 + H`, et la fin du
+ * contenu, qui sert d'offset à la section de récupération. Les recalculer à la main est ce qu'un
+ * lecteur d'archive ne doit jamais avoir à faire deux fois.
+ */
+function disposition(header, headerLength) {
+  const contentLength = header.content.length;
+  const contentOffset = PREAMBLE_BYTES + headerLength;
+  return { contentLength, contentOffset, declaredLength: contentOffset + contentLength };
+}
+
+/**
+ * REFUSE des octets AU-DELÀ de ce que l'archive déclare — constat de la revue de format de #160.
+ *
+ * La longueur totale n'était confrontée à rien : une archive suivie de n'importe quoi se vérifiait,
+ * et `archiveLength` désignait une partie du fichier sans que rien ne dise que le reste existait.
+ * C'était sans effet tant que la queue n'avait pas de sens ; depuis la v2 elle en a un, et une
+ * section greffée derrière une archive `recovery: null` passait inaperçue. Un fichier plus COURT
+ * reste une troncature, jugée plus haut, et son refus garde son code.
+ */
+function assertRienEnQueue(byteLength, archiveLength) {
+  if (byteLength === archiveLength) return;
+  throw malformed(
+    `l'archive décrit ${archiveLength} octet(s) et le fichier en porte ${byteLength}. Ce qui suit une archive n'appartient à aucune de ses sections, et rien ne dit ce que c'est.`,
+    { archiveLength, byteLength },
+  );
 }
 
 /**
@@ -651,6 +692,9 @@ function assertContratDeLecture(read, byteLength) {
 async function verifierLaRecuperation({ header, read, byteLength, offset }) {
   const descripteur = validerDescripteurDeRecuperation(header.recovery);
   if (descripteur === null) return null;
-  const octets = await lireEtVerifierLaRecuperation({ read, byteLength, offset, descripteur });
-  return { ...descripteur, offset, octets };
+  const lue = await lireEtVerifierLaRecuperation({ read, byteLength, offset, descripteur });
+  // La page DÉCODÉE accompagne les octets : la restauration a besoin de l'identifiant de volume
+  // qu'elle authentifie, et le redécoder plus loin rouvrirait entre les deux une fenêtre où les
+  // octets jugés ne seraient plus tout à fait ceux qu'on écrit.
+  return { ...descripteur, offset, octets: lue.octets, page: lue.page };
 }

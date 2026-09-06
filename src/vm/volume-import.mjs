@@ -44,7 +44,6 @@
 import { createSha256Stream } from "./sha256-stream.mjs";
 import { IMPORT_ERROR_CODES, ImportError } from "./import-errors.mjs";
 import { consentementNomme } from "./migration-backup-proof.mjs";
-import { exigerEnveloppeDeRecuperationSeule } from "./enveloppe-de-recuperation.mjs";
 import { readArchive } from "./volume-export.mjs";
 import { ARCHIVE_ERROR_CODES, ArchiveError } from "./archive-errors.mjs";
 import {
@@ -443,12 +442,16 @@ async function poserLEnveloppePuisLeManifeste(target, verdict) {
  */
 function exigerLAncre({ verdict, versionMinimale, consent }) {
   const consentement = consentementNomme(consent);
-  if (versionMinimale === null || verdict.recovery === null) return consentement;
-  if (!Number.isInteger(versionMinimale) || versionMinimale < 1) {
+  // Le contrôle de TYPE précède la sortie anticipée, et c'est un correctif de revue : placé après,
+  // il ne parlait que sur les archives qui portent une enveloppe. Un appelant qui passe `0`, `"3"`
+  // ou `NaN` recevait donc un silence sur une archive sans moyen de récupération, et un refus sur la
+  // suivante — c'est-à-dire un diagnostic qui dépend de l'archive plutôt que de l'appel.
+  if (versionMinimale !== null && (!Number.isInteger(versionMinimale) || versionMinimale < 1)) {
     throw new TypeError(
       `« versionMinimale » est la version notée sur la feuille de récupération : un entier ≥ 1, reçu ${JSON.stringify(versionMinimale)}.`,
     );
   }
+  if (versionMinimale === null || verdict.recovery === null) return consentement;
   const embarquee = verdict.recovery.envelopeVersion;
   if (embarquee >= versionMinimale || consentement !== null) return consentement;
   throw refus(
@@ -476,30 +479,67 @@ async function verifierArchiveEtIdentite(options) {
 }
 
 /**
- * EXIGE que la section de récupération soit une enveloppe de RÉCUPÉRATION SEULE, et que l'en-tête
- * dise d'elle la vérité (#149, ADR 0027).
+ * EXIGE que la section de récupération décrive LE MÊME VOLUME que le manifeste de l'archive
+ * (#149, ADR 0027).
  *
- * Le contrôle vit ICI, dans le geste de vérification, et non au moment d'écrire le voisin : l'ADR
- * 0009 pose « vérifier avant d'écrire », et une archive dont la page embarquée porterait une phrase
- * secrète doit être refusée alors que la cible n'a pas même été ouverte.
+ * La FORME de la section — page lisible, taille exacte, emplacements de type 4 seulement, accord
+ * avec le descripteur de l'en-tête — est déjà jugée par `archive-recuperation.mjs`, à l'écriture
+ * comme à la lecture. Ce qui reste ici est ce que ce module est SEUL à pouvoir faire : confronter la
+ * page au MANIFESTE, que le format de la section ne connaît pas.
  *
- * L'en-tête est CONFRONTÉ à la page, pas cru : une archive qui déclarerait une version d'enveloppe
- * plus récente que celle qu'elle porte tromperait l'ancre de la décision 3, c'est-à-dire ferait
- * accepter sans consentement une sauvegarde antérieure à la feuille.
+ * Le contrôle vit dans le geste de VÉRIFICATION, et non au moment d'écrire le voisin : l'ADR 0009
+ * pose « vérifier avant d'écrire », et une archive dont l'enveloppe décrirait un autre volume doit
+ * être refusée alors que la cible n'a pas même été ouverte.
  */
 function assertEnveloppeEmbarquee(verdict) {
   if (verdict.recovery === null) return;
-  const page = exigerEnveloppeDeRecuperationSeule(verdict.recovery.octets);
-  const declare = {
-    envelopeVersion: verdict.recovery.envelopeVersion,
-    slots: verdict.recovery.slots,
-  };
-  const porte = { envelopeVersion: page.version, slots: page.emplacements };
-  if (declare.envelopeVersion === porte.envelopeVersion && declare.slots === porte.slots) return;
+  assertEnveloppeDuMemeVolume(verdict, verdict.recovery.page);
+}
+
+/**
+ * CONFRONTE l'identifiant de volume que la page embarquée AUTHENTIFIE à celui que le manifeste de
+ * l'archive DÉCLARE — constat HIGH-1 de la revue de crypto de #149.
+ *
+ * ## Ce que son absence laissait passer, et pourquoi c'est un défaut de restauration
+ *
+ * La section n'était confrontée qu'à l'en-tête : version et nombre d'emplacements. Greffer dans
+ * l'archive du volume B la page d'enveloppe du volume A — empreinte et descripteur recalculés —
+ * passait donc toute la vérification, et le geste 7 posait le voisin d'enveloppe de B sous l'identité de A. Le
+ * volume B restauré devenait inouvrable (`VAULT_ENVELOPPE_IDENTITE`), et l'enveloppe qu'il portait
+ * avait été écrasée : **un diagnostic exact pour une cause que la restauration fabriquait
+ * elle-même.** Il n'y a là aucune perte de confidentialité — la page de A n'ouvre rien de B — mais
+ * une destruction, et l'ADR 0009 interdit exactement cela : détruire sans consentement des octets
+ * qu'on ne comprend pas.
+ *
+ * C'est le pendant, pour l'enveloppe, de ce que `assertIdentiteDeLArchive` referme pour le
+ * manifeste. Les deux contrôles se tiennent : celui-là accorde le manifeste et l'EN-TÊTE V3 du
+ * fichier, celui-ci accorde le manifeste et la RACINE AUTHENTIFIÉE de la page. Une archive dont les
+ * trois sources s'accordent décrit un seul volume.
+ *
+ * ## Une enveloppe SANS identifiant déclaré est refusée, et non « admise faute de mieux »
+ *
+ * Une enveloppe n'existe que pour un volume v3, qui déclare toujours son identifiant (ADR 0016).
+ * Une archive d'un format antérieur portant malgré tout une section ne dit pas à quel volume elle
+ * appartient, et le voisin d'enveloppe se pose sous une identité — jamais sous « on verra bien ».
+ */
+function assertEnveloppeDuMemeVolume(verdict, page) {
+  const declare = verdict.manifest.volume?.id ?? null;
+  if (declare === null) {
+    throw new ArchiveError(
+      ARCHIVE_ERROR_CODES.recuperationRefusee,
+      `Restauration refusée : l'archive emporte une enveloppe de récupération et son manifeste ne déclare aucun identifiant de volume (format v${verdict.manifest.formatVersion}). Une enveloppe appartient à UN volume ; rien ne dit auquel. Aucun octet n'est écrit sur la cible.`,
+      {
+        declare: null,
+        porte: page.identifiantVolume,
+        formatVersion: verdict.manifest.formatVersion,
+      },
+    );
+  }
+  if (page.identifiantVolume === declare) return;
   throw new ArchiveError(
     ARCHIVE_ERROR_CODES.recuperationRefusee,
-    `Restauration refusée : l'en-tête déclare une enveloppe en version ${declare.envelopeVersion} portant ${declare.slots} emplacement(s), et la page embarquée en porte ${porte.slots} en version ${porte.envelopeVersion}. Aucun octet n'est écrit sur la cible.`,
-    { declare, porte },
+    `Restauration refusée : le manifeste de l'archive déclare le volume ${declare} et l'enveloppe qu'elle emporte en authentifie un autre (${page.identifiantVolume}). La poser ferait d'un volume restauré intact un volume que personne n'ouvre, et écraserait l'enveloppe de la cible pour le faire. Aucun octet n'est écrit sur la cible.`,
+    { declare, porte: page.identifiantVolume },
   );
 }
 
