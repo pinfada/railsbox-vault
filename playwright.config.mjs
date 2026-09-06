@@ -60,6 +60,18 @@ const FRONTIERE_ENVELOPPE = ["**/enveloppe-frontiere.spec.mjs"];
  */
 const FRONTIERE_DEVERROUILLAGE = ["**/deverrouillage-frontiere.spec.mjs"];
 
+/**
+ * Frontière de la COQUILLE DE PRODUIT (#161, tranche 1 de #24, ADR 0028). Les trois moteurs, pour
+ * les motifs des précédentes et pour un qui lui est propre : elle mesure une frontière d'ORIGINE
+ * mise à l'épreuve par une application malveillante, et l'issue #24 exige les trois moteurs
+ * nommément — « l'application malveillante tente la liste complète des refus sur les trois moteurs ».
+ * Un relevé mono-moteur publierait une frontière que les deux autres ne tiendraient peut-être pas.
+ *
+ * Elle n'a besoin d'aucun artefact v86 : le Worker de confiance ouvre un volume de trente-deux
+ * secteurs, et rien de plus.
+ */
+const FRONTIERE_COQUILLE = ["**/coquille-frontiere.spec.mjs"];
+
 // Le harnais mesure une frontière d'origine : il lui faut DEUX serveurs, donc deux origines
 // réelles. `127.0.0.1` et `localhost` en fournissent sans DNS ni certificat, et restent tous deux
 // des contextes sécurisés.
@@ -125,6 +137,7 @@ export default defineConfig({
         ...FRONTIERE_APPLICATIONS,
         ...FRONTIERE_ENVELOPPE,
         ...FRONTIERE_DEVERROUILLAGE,
+        ...FRONTIERE_COQUILLE,
       ],
     })),
     // La frontière de CSP (#52) est une frontière de SÉCURITÉ, et une politique ne s'applique pas de
@@ -151,6 +164,11 @@ export default defineConfig({
       name: `frontiere-deverrouillage-${nom}`,
       use: { browserName: nom },
       testMatch: FRONTIERE_DEVERROUILLAGE,
+    })),
+    ...MOTEURS_CONNUS.map((nom) => ({
+      name: `frontiere-coquille-${nom}`,
+      use: { browserName: nom },
+      testMatch: FRONTIERE_COQUILLE,
     })),
   ],
 });
