@@ -41,6 +41,34 @@ test("AUCUN mutant ne survit : chaque garde retirée fait rougir sa preuve", () 
   );
 });
 
+test("un mutant qui NE SE LIT PLUS est non applicable, jamais un mutant tué", () => {
+  // Le constat de la revue de la PR #158, rejoué. Le moteur compte tout code de sortie non nul pour
+  // une mise à mort ; un remplacement qui casse la syntaxe est donc tué par N'IMPORTE QUELLE
+  // épreuve, y compris une qui n'approche pas la garde. Le n° 5 de la table était dans ce cas, et la
+  // campagne annonçait 8/8 là où elle valait 7/8.
+  //
+  // C'est le pendant exact des deux gardes du moteur — « l'épreuve passait-elle AVANT ? » et
+  // « l'enfant a-t-il rendu un verdict ? » — sur un troisième bord : la mutation décrit-elle encore
+  // un programme ? Le témoin casse délibérément la syntaxe, et exige « non applicable ».
+  const { resultats } = campagneDeMutation({
+    mutations: [
+      {
+        ...MUTATIONS[0],
+        nom: "témoin : un remplacement qui ne se lit plus",
+        apres: "      etat.page.emplacements.slice(0, 1", // parenthèse jamais refermée
+      },
+    ],
+    etiquette: "temoin-mutant-illisible",
+  });
+  assert.equal(
+    resultats[0].tue,
+    false,
+    "un mutant qui ne compile pas a été compté pour un mutant tué : la campagne gonfle son score.",
+  );
+  assert.equal(resultats[0].applicable, false);
+  assert.match(resultats[0].raison ?? "", /NE SE LIT PLUS/);
+});
+
 test("la table couvre les décisions que l'ADR 0026 nomme, une par une", () => {
   // Le cliquet : une décision écrite dans l'ADR sans garde mutée est une décision que rien ne tient.
   const noms = MUTATIONS.map((mutation) => mutation.nom).join(" | ");

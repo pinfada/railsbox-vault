@@ -149,8 +149,12 @@ test("la révocation d'urgence réduit trois emplacements à UN sur l'OPFS réel
     true,
   );
   expect(
-    report.conserveeEstCelleQuiOuvre,
-    "l'emplacement conservé n'est pas celui que la clé présentée ouvre",
+    report.conserveeEstLePremierDAvant,
+    "l'emplacement conservé n'est pas celui que la clé initiale avait posé",
+  ).toBe(true);
+  expect(
+    report.conserveeEstUnDesTrois,
+    "la clé présentée ouvre un emplacement qui n'était pas dans l'enveloppe d'avant",
   ).toBe(true);
   expect(report.volumeRelu, "la clé développée n'ouvre plus le volume qu'elle protège").toBe(true);
   expect(report.refusDesRetirees).toEqual([report.refusAttendu, report.refusAttendu]);

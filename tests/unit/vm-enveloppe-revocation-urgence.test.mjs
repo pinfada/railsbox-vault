@@ -23,7 +23,12 @@ import {
   revoquerEmplacement,
   revoquerToutSauf,
 } from "../../src/vm/enveloppe-de-cle.mjs";
-import { identifiantDeVolume, supportDouble, suiteDOctets } from "./support-enveloppe-double.mjs";
+import {
+  CoupureSimulee,
+  identifiantDeVolume,
+  supportDouble,
+  suiteDOctets,
+} from "./support-enveloppe-double.mjs";
 
 // LA RÉVOCATION D'URGENCE, et l'EFFACEMENT DE LA PAGE LIBRE (#148, #156, ADR 0026).
 //
@@ -65,6 +70,11 @@ const PARAMETRES_D = suiteDOctets(0x30, 24);
  * Les quatre types comptent : #156 a été mesuré sur le type 4, et sa conclusion valait pour tous,
  * puisque c'est l'alternance de pages qui la produit. Une épreuve qui n'éprouverait que le type 4
  * laisserait croire le contraire.
+ *
+ * L'emplacement CONSERVÉ par `revoquerToutSauf` est ici celui du harnais (type 3), et les types
+ * RETIRÉS puis fouillés sont donc 1, 2 et 4. « Le type 4 comme les types 1/2/3 » se lirait de
+ * travers : c'est l'épreuve du conservé — « l'emplacement conservé est celui que la KEK a OUVERT » —
+ * qui fait retirer le type 3, sous KEK_C.
  */
 async function enveloppeAQuatre() {
   const support = supportDouble();
@@ -237,18 +247,40 @@ test("RÉVOQUER TOUT SAUF : un SEUL emplacement présent est ADMIS, et la versio
   const relue = await etatSous(support, KEK_A);
   assert.ok(relue.ouvre);
   assert.equal(relue.version, 2);
+
+  // Et l'effacement a bien eu lieu : c'est la SEULE raison d'admettre le geste quand il n'y a rien à
+  // retirer. Sans cette assertion, l'épreuve accepterait un geste qui ne ferait qu'avancer un
+  // compteur.
+  const valides = pagesValides(support.contenu);
+  assert.equal(valides.length, 1, "les deux pages font état : la libérée n'a pas été effacée.");
+  const liberee = PAGES - 1 - valides[0].index;
+  assert.equal(
+    support.contenu
+      .subarray(offsetDePage(liberee), offsetDePage(liberee) + PAGE_OCTETS)
+      .reduce((somme, octet) => somme + octet, 0),
+    0,
+  );
 });
 
 test("RÉVOQUER TOUT SAUF : une KEK fausse est refusée comme toute mutation, sans code nouveau", async () => {
   const { support } = await enveloppeAQuatre();
+  // Ce qui est mesuré est le FICHIER, pas l'inventaire : deux entiers d'une page ne disent rien de
+  // l'effacement, et c'est justement l'effacement qu'un refus ne doit pas déclencher. La revue de la
+  // PR #158 a relevé que la première rédaction promettait plus que ce qu'elle regardait.
+  const avant = await fichierEnHex(support);
+  const gestesAvant = support.gestes;
+
   await assert.rejects(
     () => revoquerToutSauf({ support, identifiantVolume: VOLUME, kek: suiteDOctets(0x11, 32) }),
     (erreur) => isEnveloppeError(erreur, ENVELOPPE_ERROR_CODES.cleRefusee),
   );
-  // Et le fichier n'a pas bougé : un refus n'écrit rien, pas même l'effacement.
-  const inventaire = await inventorierEnveloppe({ support, identifiantVolume: VOLUME });
-  assert.equal(inventaire.version, 4);
-  assert.equal(inventaire.emplacements.length, 4);
+
+  assert.equal(await fichierEnHex(support), avant, "un refus a écrit dans le fichier.");
+  assert.equal(
+    support.gestes - gestesAvant,
+    0,
+    "un refus a porté un geste au support : ni écriture, ni barrière ne doivent partir.",
+  );
 });
 
 // --- L'effacement de la page libre (#156) -------------------------------------------------------
@@ -308,7 +340,17 @@ test("AJOUTER n'efface RIEN : il ne retire aucune clé", async () => {
   // page libre paierait une écriture et une barrière pour rien, et retirerait au passage le point de
   // reprise que l'alternance offre au geste SUIVANT.
   const { support } = await enveloppeAQuatre();
-  const avant = emplacementsDeLAutorite(support.contenu)[2];
+  // La page qui va être LIBÉRÉE par l'ajout, et le scellement de sa racine : cette empreinte-là
+  // n'existe QUE dans cette page — la page neuve rescellera la sienne sous un autre nonce. Chercher
+  // un emplacement n'aurait rien mesuré, puisque la page neuve le porte aussi : la revue de la
+  // PR #158 a relevé que la première rédaction ne pouvait pas rougir.
+  const libereePar = (octets) => {
+    const valides = pagesValides(octets);
+    const autorite = valides.reduce((a, b) => (b.page.version > a.page.version ? b : a));
+    return octetsEnHex(autorite.page.racine.etiquette);
+  };
+  const etiquetteQuiSeraLiberee = libereePar(support.contenu);
+
   await ajouterEmplacement({
     support,
     identifiantVolume: VOLUME,
@@ -317,9 +359,14 @@ test("AJOUTER n'efface RIEN : il ne retire aucune clé", async () => {
   });
 
   const apres = await fichierEnHex(support);
+  assert.notEqual(
+    libereePar(support.contenu),
+    etiquetteQuiSeraLiberee,
+    "l'ajout n'a pas publié de page neuve : l'épreuve ne mesure pas ce qu'elle croit.",
+  );
   assert.ok(
-    apres.includes(octetsEnHex(avant.dekEnveloppee)),
-    "l'ajout a effacé la page libre : il n'avait rien à retirer.",
+    apres.includes(etiquetteQuiSeraLiberee),
+    "l'ajout a effacé la page libérée : il n'avait rien à retirer.",
   );
   assert.deepEqual(
     pagesValides(support.contenu).map(({ index }) => index),
@@ -345,4 +392,95 @@ test("EFFACEMENT : la page libérée est mise à ZÉRO en ENTIER, pas seulement 
     0,
     "la page libérée porte encore des octets non nuls.",
   );
+});
+
+test("DEUX emplacements sous la MÊME KEK : le geste conserve celui de plus BAS RANG, et il est déterministe", async () => {
+  // Inatteignable en production — l'info HKDF d'un dérivateur lie l'identifiant d'emplacement
+  // (ADR 0021), donc deux emplacements ne partagent jamais une KEK —, mais atteignable au harnais,
+  // qui pose la KEK telle quelle. Le comportement est donc ÉCRIT plutôt que laissé à découvrir :
+  // `developperDansLaPage` retient le PREMIER emplacement qui ouvre, sans court-circuit, et le
+  // filtre suit. Constat de la revue de la PR #158.
+  const support = supportDouble();
+  await creerEnveloppe({ support, identifiantVolume: VOLUME, dek: DEK, kek: KEK_A });
+  await ajouterEmplacement({
+    support,
+    identifiantVolume: VOLUME,
+    kek: KEK_A,
+    kekNouvelle: KEK_A, // la MÊME clé, un second emplacement
+    typeKek: TYPES_KEK.phrase,
+    parametres: PARAMETRES_B,
+  });
+  const rangs = emplacementsDeLAutorite(support.contenu).map(
+    (emplacement) => emplacement.identifiantEmplacement,
+  );
+  assert.equal(rangs.length, 2);
+
+  await revoquerToutSauf({ support, identifiantVolume: VOLUME, kek: KEK_A });
+  const inventaire = await inventorierEnveloppe({ support, identifiantVolume: VOLUME });
+  assert.equal(inventaire.emplacements.length, 1);
+  assert.equal(
+    inventaire.emplacements[0].identifiantEmplacement,
+    rangs[0],
+    "le geste n'a pas conservé l'emplacement de plus bas rang : le résultat dépendrait de l'ordre de lecture.",
+  );
+  assert.equal(inventaire.emplacements[0].typeKek, TYPES_KEK.harnais);
+});
+
+test("LIMITE : une coupure ENTRE les deux barrières laisse la page ancienne lisible jusqu'à la mutation SUIVANTE", async () => {
+  // La limite que la revue de la PR #158 a trouvée, et que l'ADR 0026 écrit plutôt que de la laisser
+  // découvrir. L'effacement n'est pas atomique avec la publication — il ne peut pas l'être, et il
+  // n'a pas à l'être : la page ancienne n'est plus un point de reprise. Mais si la session s'arrête
+  // entre la barrière qui publie et l'écriture des zéros, RIEN ne rejoue l'effacement. Aucune
+  // réparation n'est jouée à l'ouverture : ouvrir une enveloppe est une LECTURE, et un ouvreur qui
+  // écrirait déplacerait la fenêtre sans la fermer, puisque la réparation elle-même peut être coupée.
+  //
+  // Les trois assertions sont donc, dans l'ordre : la serrure tient, les octets restent, la mutation
+  // suivante les emporte. La deuxième est POSITIVE — c'est une limite qu'on fixe, pas un défaut
+  // qu'on tolère en silence.
+  const { support: pose } = await enveloppeAQuatre();
+  const initial = pose.contenu;
+  const retires = emplacementsDeLAutorite(initial).slice(1).map(empreintesDe);
+
+  // Rang 3 : le premier geste de l'effacement. Les deux premiers — écrire la page neuve, barrière —
+  // ont porté ; la page neuve est publiée.
+  const coupe = supportDouble({ octets: initial, couperAvant: 3 });
+  await assert.rejects(
+    () => revoquerToutSauf({ support: coupe, identifiantVolume: VOLUME, kek: KEK_A }),
+    (cause) => cause instanceof CoupureSimulee,
+  );
+
+  const support = supportDouble({ octets: coupe.contenu });
+  const conservee = await etatSous(support, KEK_A);
+  assert.ok(conservee.ouvre, "la coupure a emporté l'état publié.");
+  assert.equal(conservee.version, 5, "la révocation a reculé.");
+  for (const kek of [KEK_B, KEK_C, KEK_D]) {
+    const retiree = await etatSous(support, kek);
+    assert.equal(
+      retiree.ouvre,
+      false,
+      "une clé retirée ouvre encore : la SERRURE serait en défaut.",
+    );
+    assert.equal(retiree.code, ENVELOPPE_ERROR_CODES.cleRefusee);
+  }
+
+  // La limite elle-même, mesurée : la page ancienne porte encore les cinq champs de chaque
+  // emplacement retiré. Une réouverture ne les efface pas — elle ne lit rien d'autre que l'état.
+  const apresCoupure = await fichierEnHex(support);
+  for (const retire of retires) {
+    for (const [champ, empreinte] of Object.entries(retire)) {
+      assert.ok(
+        apresCoupure.includes(empreinte),
+        `« ${champ} » a disparu : quelque chose rejoue l'effacement, et l'ADR 0026 décrit une limite qui n'existe plus.`,
+      );
+    }
+  }
+
+  // Et ce qui la referme : la mutation SUIVANTE, quelle qu'elle soit, réécrit cette page entière.
+  await ajouterEmplacement({
+    support,
+    identifiantVolume: VOLUME,
+    kek: KEK_A,
+    kekNouvelle: suiteDOctets(0x07, 32),
+  });
+  await exigerAucunOctetResiduel(support, retires, "la mutation qui suit une coupure");
 });

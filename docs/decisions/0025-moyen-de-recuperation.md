@@ -474,11 +474,14 @@ système, aucun téléphone. La limite est celle de l'ADR 0021, inchangée.
    refuse une clé révoquée sans replier sur la page précédente. Ce qu'elle permet est de rejouer le
    retour arrière de support à moindres frais.
 
-   > **LEVÉE le 6 septembre 2026 (#148, #156,
+   > **RÉDUITE — et non levée — le 6 septembre 2026 (#148, #156,
    > [ADR 0026](0026-revocation-d-urgence-et-page-libre.md)).** Toute mutation qui RETIRE une clé
-   > efface désormais la page libérée — 8192 zéros et une barrière, APRÈS la barrière qui publie. Ce
-   > qui subsiste de la limite est ce que le SUPPORT conserve, hors de portée du produit : « fait,
-   > non garanti ». `SECURITY.md` entrée 9 le porte sous cette forme ;
+   > efface désormais la page libérée — 8192 zéros et une barrière, APRÈS la barrière qui publie :
+   > le chemin NOMINAL ne laisse plus rien. Deux bornes subsistent. Si une coupure survient entre
+   > les deux barrières, la page ancienne reste lisible **jusqu'à la mutation suivante**, qui la
+   > réécrit — aucune réparation n'est jouée à l'ouverture, qui est une lecture. Et ce que le
+   > SUPPORT conserve reste hors de portée du produit : « fait, non garanti ». `SECURITY.md` entrée
+   > 9 porte les deux ;
 
 3. **Rien ne garde le code une fois qu'il a quitté l'appareil.** C'est le sujet de ce moyen, et sa
    faiblesse : un code écrit sur une feuille se photographie. Le produit ne peut ni le savoir, ni

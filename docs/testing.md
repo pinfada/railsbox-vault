@@ -583,14 +583,25 @@ propriété que la boucle sans court-circuit servait n'était pas celle qu'on lu
 révélé une mutation mal conçue plutôt qu'une garde absente. Une mutation qui survit doit d'abord
 être soupçonnée elle-même.
 
-**#148 ajoute huit gardes à muter, toutes tuées du premier passage**
+**#148 ajoute huit gardes à muter, toutes tuées — mais pas du premier passage**
 (`tools/muter-gardes-revocation-urgence.mjs`, relevé dans
 l'[ADR 0026](decisions/0026-revocation-d-urgence-et-page-libre.md)). L'une d'elles a demandé une
 épreuve qu'aucune assertion d'état ne pouvait porter : « la seconde barrière est franchie » ne
 change pas un octet du fichier, parce que le double de support modélise la VISIBILITÉ des écritures
 et non leur durabilité. Ce qui la tue est le COMPTE DES GESTES relevé par la matrice — une
-révocation en porte exactement quatre. Le moteur de campagne vit désormais dans
-`tools/moteur-de-mutation.mjs`, partagé plutôt que recopié une troisième fois.
+révocation en porte exactement quatre.
+
+**Une garde était comptée tuée sans être mesurée, et c'est la revue de la PR #158 qui l'a démonté.**
+Le remplacement de la mutation n° 5 ouvrait une accolade sans la fermer : le fichier muté ne se
+LISAIT plus, et le moteur — qui compte tout code de sortie non nul pour une mise à mort — le
+déclarait mort quelle que soit l'épreuve rejouée. « 8/8 » valait 7/8. C'est la leçon de la mutation
+n° 8 de l'ADR 0020 dans l'autre sens : là-bas, une mutation qui SURVIT devait être soupçonnée
+elle-même ; ici, une mutation qui TUE trop vite. `tools/moteur-de-mutation.mjs` porte donc une
+TROISIÈME garde à côté des deux qu'il avait — « l'épreuve passait-elle AVANT ? », « l'enfant a-t-il
+rendu un verdict ? » : `node --check` sur chaque fichier muté, et un mutant qui ne se lit plus est
+NON APPLICABLE, jamais tué. Une épreuve du moteur le prouve sur un mutant volontairement cassé, et
+les deux campagnes antérieures ont été rejouées sous le moteur corrigé sans perdre un mutant
+(récupération 16/16, instantané 13/13). Le moteur est partagé plutôt que recopié une troisième fois.
 
 **Le coût de l'effacement de la page libre est MESURÉ sur l'OPFS réel**, dans le Worker du banc, et
 publié plutôt que gardé : Chromium 2,4-2,5 ms au p50, Firefox 32-33 ms, sur 30 tours et deux
