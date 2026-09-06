@@ -734,7 +734,7 @@ test("RÉVOCATION : l'emplacement de récupération révoqué rend le MÊME refu
   assert.equal(refusRevoquee.message, refusInconnue.message);
 });
 
-test("RÉVOCATION : la page qui FAIT AUTORITÉ ne porte plus un octet de l'emplacement retiré", async () => {
+test("RÉVOCATION : AUCUNE des deux pages ne porte plus un octet de l'emplacement retiré", async () => {
   const depart = await enveloppeSousPhrase();
   const moyen = await creerMoyenDeRecuperation({
     support: depart.support,
@@ -779,15 +779,20 @@ test("RÉVOCATION : la page qui FAIT AUTORITÉ ne porte plus un octet de l'empla
     "les paramètres de l'emplacement retiré subsistent dans la page qui fait autorité.",
   );
 
-  // Et ce que la révocation NE fait PAS, mesuré plutôt que tu : l'AUTRE page garde l'état
-  // antérieur — c'est l'alternance de pages de l'ADR 0020, identique pour tous les types. Une copie
-  // du fichier prise avant la mutation suivante porte donc encore l'emplacement révoqué. Ce qu'elle
-  // ne permet PAS, en revanche, est de l'ouvrir : `ouvrirEnveloppe` juge l'état COURANT et refuse
-  // sans replier sur la page précédente. C'est écrit dans SECURITY.md et dans l'ADR 0025.
+  // Et l'AUTRE page, celle que la publication vient de libérer : depuis #148 (ADR 0026), elle est
+  // EFFACÉE après la barrière. Jusque-là, elle gardait l'état antérieur — donc les octets de
+  // l'emplacement révoqué — jusqu'à la mutation d'enveloppe suivante, et une copie du fichier prise
+  // au bon moment les portait encore. C'est le constat de #156, et c'est ce que cette ligne mesure
+  // à l'envers de ce qu'elle mesurait : la page libérée ne porte plus RIEN.
   const ancienne = pages.find(({ index }) => index !== autorite.index);
   assert.ok(
-    octetsEnHex(ancienne.octets).includes(empreinteDesParametres),
-    "l'épreuve croit mesurer l'alternance de pages et ne la mesure pas.",
+    !octetsEnHex(ancienne.octets).includes(empreinteDesParametres),
+    "la page libérée porte encore les paramètres de l'emplacement retiré : #156 n'est pas fermé.",
+  );
+  assert.equal(
+    ancienne.octets.reduce((somme, octet) => somme + octet, 0),
+    0,
+    "la page libérée n'est pas à zéro : l'effacement ne porte pas sur la page entière.",
   );
   const kek = await kekDuCode(code, pose.parametres, pose.identifiantEmplacement);
   await assert.rejects(

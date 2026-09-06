@@ -12,6 +12,7 @@ import {
   ouvrirEnveloppe,
   remplacerEmplacement,
   revoquerEmplacement,
+  revoquerToutSauf,
 } from "../../src/vm/enveloppe-de-cle.mjs";
 import {
   CoupureSimulee,
@@ -42,6 +43,7 @@ const DEK = suiteDOctets(0x20, 32);
 const KEK_A = suiteDOctets(0x80, 32);
 const KEK_B = suiteDOctets(0xa0, 32);
 const KEK_C = suiteDOctets(0xc0, 32);
+const KEK_D = suiteDOctets(0x40, 32);
 
 /**
  * Les QUATRE sinistres, nommés, chacun avec la façon dont il arme le double.
@@ -126,6 +128,16 @@ async function initialDeux() {
     kek: KEK_A,
     kekNouvelle: KEK_B,
   });
+  return { octets: support.contenu, ...creee };
+}
+
+/** Enveloppe à QUATRE emplacements (KEK_A, puis B, C, D), version 4. */
+async function initialQuatre() {
+  const support = supportDouble();
+  const creee = await creerEnveloppe({ support, identifiantVolume: VOLUME, dek: DEK, kek: KEK_A });
+  for (const kekNouvelle of [KEK_B, KEK_C, KEK_D]) {
+    await ajouterEmplacement({ support, identifiantVolume: VOLUME, kek: KEK_A, kekNouvelle });
+  }
   return { octets: support.contenu, ...creee };
 }
 
@@ -244,6 +256,95 @@ test("RÉVOQUER : la clé conservée ouvre toujours, la révoquée ouvre ou non 
     },
   });
   assert.ok(produites >= 4, `seulement ${produites} coupure(s) produites sur la révocation`);
+});
+
+test("RÉVOQUER TOUT SAUF : à chaque rang, la clé conservée ouvre ; les autres ouvrent TOUTES ou AUCUNE, jamais un sous-ensemble", async () => {
+  // Le geste composé de #148 tient en UNE version et UNE barrière, et c'est précisément ce que la
+  // matrice mesure : trois révocations enchaînées offriraient trois rangs où DEUX clés sur trois
+  // sont retirées — l'état partiel que l'urgence ne peut pas se permettre.
+  const { octets: initial } = await initialQuatre();
+  const produites = await balayer({
+    initial,
+    operation: (support) => revoquerToutSauf({ support, identifiantVolume: VOLUME, kek: KEK_A }),
+    juger: async ({ octets, rang, sinistre }) => {
+      const conservee = await etatSous(octets, KEK_A);
+      assert.ok(
+        conservee.ouvre,
+        `${sinistre}@${rang} : la clé conservée n'ouvre plus (${conservee.code})`,
+      );
+      const autres = [];
+      for (const kek of [KEK_B, KEK_C, KEK_D]) autres.push((await etatSous(octets, kek)).ouvre);
+      assert.equal(
+        new Set(autres).size,
+        1,
+        `${sinistre}@${rang} : un SOUS-ENSEMBLE des clés a été retiré (${autres.join(", ")})`,
+      );
+      assert.equal(
+        conservee.version,
+        autres[0] ? 4 : 5,
+        `${sinistre}@${rang} : la version ne dit pas le même état que les clés`,
+      );
+    },
+  });
+  assert.ok(
+    produites >= 4,
+    `seulement ${produites} coupure(s) produites sur la révocation d'urgence`,
+  );
+});
+
+test("EFFACEMENT : une coupure PENDANT l'effacement de la page libérée n'empêche jamais l'ouverture par la clé conservée", async () => {
+  // L'effacement de #156 vient APRÈS la barrière qui publie, et cette épreuve mesure ce que cela
+  // achète : aux rangs de l'effacement, la page neuve est déjà complète et durable, donc une coupure
+  // ne peut plus rien retirer. Elle laisse au pire une page déchirée que `lireEtat` écarte.
+  const { octets: initial } = await initialDeux();
+  const support = supportDouble({ octets: initial });
+  const cible = (await inventorierEnveloppe({ support, identifiantVolume: VOLUME })).emplacements[1]
+    .identifiantEmplacement;
+
+  const revoquer = (courant) =>
+    revoquerEmplacement({
+      support: courant,
+      identifiantVolume: VOLUME,
+      kek: KEK_A,
+      identifiantEmplacement: cible,
+    });
+
+  // Le nombre de gestes est MESURÉ, pas supposé : sans lui, les rangs de l'effacement seraient une
+  // convention que le premier remaniement démentirait en silence.
+  const entier = supportDouble({ octets: initial });
+  await revoquer(entier);
+  assert.equal(
+    entier.gestes,
+    4,
+    "une révocation porte quatre gestes : écrire la page neuve, barrière, effacer l'ancienne, barrière",
+  );
+
+  let produites = 0;
+  for (const sinistre of SINISTRES) {
+    for (const rang of [3, 4]) {
+      const { coupee, octets } = await couper({
+        octets: initial,
+        rang,
+        sinistre,
+        operation: revoquer,
+      });
+      if (!coupee) continue;
+      produites += 1;
+      const conservee = await etatSous(octets, KEK_A);
+      const revoquee = await etatSous(octets, KEK_B);
+      assert.ok(
+        conservee.ouvre,
+        `${sinistre.nom}@${rang} : l'effacement a emporté l'état publié (${conservee.code})`,
+      );
+      assert.equal(conservee.version, 3, `${sinistre.nom}@${rang} : la révocation a reculé`);
+      assert.equal(
+        revoquee.ouvre,
+        false,
+        `${sinistre.nom}@${rang} : la clé révoquée ouvre encore après la barrière qui publie`,
+      );
+    }
+  }
+  assert.ok(produites >= 4, `seulement ${produites} coupure(s) produites sur l'effacement`);
 });
 
 test("une coupure ne réduit ni n'agrandit JAMAIS le fichier", async () => {
