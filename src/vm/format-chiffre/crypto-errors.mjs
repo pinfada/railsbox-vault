@@ -23,8 +23,8 @@
  * Les cinq menaces nommées par l'ADR 0015.
  *
  * **Tous les refus n'en citent pas.** Ceux qui répondent d'une menace la nomment — sceau refusé,
- * identité incohérente, rejeu, troncature, mélange. Les quatre autres — entrée malformée, nonce
- * réutilisé, budget de clé, algorithme inconnu — répondent d'une VIOLATION DE CONTRAT par
+ * identité incohérente, rejeu, troncature, mélange. Les quatre autres — entrée malformée, ordre
+ * invalide, budget de clé, algorithme inconnu — répondent d'une VIOLATION DE CONTRAT par
  * l'appelant, en amont de toute menace, et leur `menaces` est vide. Confondre les deux ferait croire
  * qu'un adversaire est à l'œuvre là où c'est une faute de programmation, et l'inverse.
  */
@@ -43,8 +43,12 @@ export const CRYPTO_ERROR_CODES = Object.freeze({
    */
   sealRejected: "VAULT_CRYPTO_SCEAU_REFUSE",
   /**
-   * Le nonce conservé avec le sceau n'encode pas la génération et le rang de l'identité présentée.
-   * Établi AVANT tout calcul cryptographique : le nonce se décrit lui-même.
+   * L'en-tête EN CLAIR d'une racine AUTHENTIFIÉE ne décrit pas le volume que l'appelant croit
+   * ouvrir : autre identifiant, autre version de format, autre taille. Un écart ÉTABLI, constaté
+   * APRÈS que l'étiquette a vérifié — jamais soupçonné.
+   *
+   * Depuis que le nonce est tiré au hasard (ADR 0015), c'est le SEUL usage restant de ce code : un
+   * nonce altéré ne se distingue plus d'un chiffré altéré, et les deux tombent dans `sceauRefuse`.
    */
   identityMismatch: "VAULT_CRYPTO_IDENTITE_INCOHERENTE",
   /** Séquence ou génération authentifiée inférieure au minimum exigé par l'appelant. */
