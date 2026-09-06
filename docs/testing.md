@@ -817,6 +817,55 @@ rendu, que le manifeste reste **absent** et qu'aucun commit n'ait eu lieu. Un ca
 restauration interrompue suit : refusée sans consentement (le refus porte `identified: false`),
 reprise avec.
 
+### L'archive emporte la capacité d'ouvrir (#149, ADR 0027)
+
+La tranche 3 de #23 — `src/vm/enveloppe-de-recuperation.mjs`, `src/vm/archive-recuperation.mjs`, la
+version 2 de `src/vm/volume-export.mjs` et le huitième geste de `src/vm/volume-import.mjs` — est
+prouvée sur **quatre** niveaux, et aucun ne remplace les autres.
+
+| Niveau            | Fichier                                                 | Ce qu'il établit                                                                                                         |
+| ----------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| unitaire — format | `tests/unit/vm-archive-recuperation.test.mjs`           | la disposition v2 (12 + H + N + R), la page embarquée de type 4 SEUL, les refus avant écriture, la v1 encore lue         |
+| unitaire — cycle  | `tests/unit/vm-restauration-recuperation.test.mjs`      | export → restauration → **ouverture PAR LE CODE** → lecture du clair ; l'ordre sous coupure ; le consentement nommé      |
+| unitaire — ancre  | `tests/unit/vm-enveloppe-ancre-version.test.mjs`        | une page antérieure refusée sous la feuille, **et l'aveu à la ligne suivante** ; la feuille traversant les deux ouvreurs |
+| vecteurs          | `tests/unit/vm-archive-vecteurs.test.mjs`               | le chemin de production reproduit `tests/vectors/archive-v2.json` OCTET POUR OCTET                                       |
+| mutation          | `tests/unit/vm-archive-mutation.test.mjs` (**≈ 10 s**)  | dix gardes retirées une à une du texte source, dix mutants tués                                                          |
+| Bout en bout      | `tests/e2e/archive-recuperation-inter-origine.spec.mjs` | **deux origines réelles**, volume chiffré, boot Rails sur le volume restauré ouvert par le code                          |
+
+**Ce que l'épreuve de l'ADR 0020 est devenue.** La décision 6 était tenue par deux épreuves — « le
+marqueur `VLTKEY01` n'est pas dans l'archive » et « aucun module d'export/import ne connaît `.cles`
+». Elles n'ont pas disparu, elles ont changé de nature : le marqueur est présent **exactement une
+fois**, à l'offset déclaré, la page décodée ne porte **que** des emplacements de type 4, et la
+construction vit dans **un seul module nommé** pendant que les modules d'archive restent aveugles.
+Une décision qu'aucune épreuve ne relit se défait toute seule ; celle-ci est relue là où elle se
+déferait.
+
+**Ce que les vecteurs valent ici.** `tools/figer-vecteurs-archive.mjs` pose lui-même le préambule,
+l'en-tête et les offsets, et transcrit la table de page de l'ADR 0020 — il n'appelle ni
+`writeArchive` ni `encoderPage`. `tools/verifier-vecteurs.mjs` les relit **sans importer une ligne
+du produit**, depuis le seul texte des ADR : marqueur, arithmétique des sections, deux empreintes,
+somme de contrôle de la page, et le fait que tous ses emplacements sont de type 4.
+
+**Le bout en bout est le seul niveau qui prouve la phrase de la tranche.** Il joue le cycle de la
+Definition of Ready : volume chiffré avec moyen de récupération sur l'origine A, mutation Rails,
+export qui emporte l'enveloppe, transfert par le système de fichiers de l'hôte, refus sous une
+feuille plus récente, restauration sur B, ouverture par le code, phrase recréée, boot Rails et
+invariant retrouvé. Deux sondes l'accompagnent : le code n'apparaît dans l'archive téléchargée sous
+aucune de ses trois formes, et il ne s'est déposé dans aucun fichier de l'origine B. Il vit dans le
+job **non bloquant** `Reprise MVP` (`.github/workflows/reprise.yml`), et il exige l'image #5 et les
+artefacts v86 — sans eux il se déclare `skipped` avec la commande à lancer.
+
+```bash
+node --test tests/unit/vm-archive-recuperation.test.mjs
+node --test tests/unit/vm-restauration-recuperation.test.mjs
+node --test tests/unit/vm-enveloppe-ancre-version.test.mjs
+node tools/muter-gardes-archive-recuperation.mjs       # la campagne, avec le verdict garde par garde
+node tools/verifier-vecteurs.mjs                       # les vecteurs, sans importer le produit
+node tools/figer-vecteurs-archive.mjs                  # RE-FIGE : un changement de format persistant
+npx prettier --write tests/vectors/archive-v2.json     # `format:check` couvre tests/vectors/
+npm run test:e2e                                       # le bout en bout, image #5 + v86 requis
+```
+
 `tests/unit/vm-opfs-volume-open.test.mjs` éprouve l'autre moitié de `SEC-UPDATE-001` : un volume
 sans manifeste voisin, appartenant à une autre application, ou dont le voisin est illisible ou
 démesuré, n'est **jamais** ouvert en écriture. Le double compte les ouvertures réellement tentées,

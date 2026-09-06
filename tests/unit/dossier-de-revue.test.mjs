@@ -620,6 +620,12 @@ test("SECURITY.md dit ce que le moyen de récupération COUVRE et ce qu'il ne co
   // Elles étaient huit jusqu'à #148 : les deux dernières entrées « non couvert » sont nées de la
   // révocation d'urgence, et elles disent ce qui reste hors de portée du produit une fois la page
   // libre effacée — le SUPPORT, et le fait qu'une révocation ne rechiffre rien.
+  //
+  // Elles sont ONZE depuis #149 (ADR 0027) : l'archive emporte la capacité d'ouvrir, ce qui ajoute
+  // une entrée « couvert » — et ce qui CHANGE la nature du cliquet. Jusque-là, il exigeait que la
+  // réserve « l'archive n'emporte PAS `<volume>.cles` » soit écrite ; désormais il exige que le
+  // service ET SON PRIX le soient, dans la même section. Un service rendu dont le coût n'est pas
+  // relu est exactement ce qui se met à paraître gratuit.
   const security = await lire(SECURITY);
   const section = security.slice(
     security.indexOf("### Ce que le moyen de récupération COUVRE"),
@@ -628,7 +634,16 @@ test("SECURITY.md dit ce que le moyen de récupération COUVRE et ce qu'il ne co
   assert.ok(section.length > 0, "la section « ce que le moyen couvre » a disparu de SECURITY.md.");
 
   for (const [quoi, entrees] of [
-    ["couvert", ["Passkey perdue", "Appareil perdu", "Phrase oubliée", "Emplacement compromis"]],
+    [
+      "couvert",
+      [
+        "Passkey perdue",
+        "Appareil perdu",
+        "Phrase oubliée",
+        "Emplacement compromis",
+        "Une archive porte l'enveloppe de récupération",
+      ],
+    ],
     [
       "non couvert",
       [
@@ -652,10 +667,22 @@ test("SECURITY.md dit ce que le moyen de récupération COUVRE et ce qu'il ne co
   assert.match(section, /\*\*Non couvert\.\*\*/);
   assert.match(section, /aucun séquestre/i, "l'absence de séquestre doit être écrite.");
   assert.match(section, /délibéré/i, "elle doit être présentée comme une DÉCISION, pas un manque.");
+  // #149 : ce que l'archive emporte, et ce que cela coûte. Les deux dans la même section, sans quoi
+  // le service se relirait seul, comme un gain sans contrepartie.
   assert.match(
     section,
-    /n'emporte PAS `<volume>\.cles`/,
-    "la réserve sur l'archive doit être écrite plutôt que maquillée.",
+    /l'archive seule n'ouvre rien/i,
+    "ce que l'archive emporte doit être dit avec sa borne : elle seule n'ouvre rien.",
+  );
+  assert.match(
+    section,
+    /jamais\*\* un emplacement `phrase` ni `webauthn-prf`/,
+    "ce que l'archive n'emporte JAMAIS doit être écrit : une phrase secrète ne voyage pas.",
+  );
+  assert.match(
+    section,
+    /cible hors ligne/i,
+    "le prix du transport — une archive volée offre au code une cible hors ligne — doit être écrit.",
   );
   // #148 : ce que l'effacement de la page libre promet, et ce qu'il ne promet pas. Sans ce cliquet,
   // « aucun octet ne subsiste » se relirait comme une promesse sur le disque, qu'aucune ligne de ce

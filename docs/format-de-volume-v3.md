@@ -1339,7 +1339,27 @@ Deux conséquences à écrire :
    atteste qu'une archive n'a pas été abîmée, pas que deux volumes portent le même état ;
 2. **une archive restaurée sans sa clé est INERTE.** Elle se vérifie, se recopie, s'identifie ; elle
    ne s'ouvre pas. La sauvegarde d'un volume chiffré est la sauvegarde de **deux** choses, dont ce
-   dépôt n'en gère qu'une (§ 11). Perdre la clé, c'est perdre l'archive.
+   dépôt n'en gérait qu'une (§ 11). Perdre la clé, c'était perdre l'archive.
+
+> **AMENDÉ le 6 septembre 2026 (#149, [ADR 0027](decisions/0027-archive-et-ancre-de-version.md)) :
+> le format d'archive passe à la VERSION 2, et la seconde chose peut voyager.**
+>
+> ```text
+> [ RBVAULT1 8 o ][ longueur d'en-tête 4 o ][ en-tête JSON H o ][ contenu N o ][ récupération R o ]
+> ```
+>
+> L'en-tête déclare `recovery: { length, digest, envelopeVersion, slots } | null` ;
+> `offset du contenu = 12 + H` (INCHANGÉ) ; `taille de l'archive = 12 + H + N + R`. La section,
+> quand elle existe, est **une page d'enveloppe de 8 192 octets ne portant que des emplacements de
+> type 4** — un moyen de récupération, jamais une phrase ni une passkey, et **jamais le code**, qui
+> reste sur une feuille chez l'utilisateur. À la restauration, `<volume>.cles` est écrit à partir de
+> cette page (page 0 = la page embarquée, page 1 à zéro), **après** le contenu relu et **avant** le
+> manifeste.
+>
+> Une archive v1 reste LUE ; elle n'est plus écrite. Une archive v2 dont `recovery` vaut `null`
+> décrit un volume sans moyen de récupération, et le compte rendu de l'export le DIT : elle ne
+> s'ouvrira nulle part ailleurs. Vecteurs figés : `tests/vectors/archive-v2.json`, vérifiés par
+> `node tools/verifier-vecteurs.mjs` depuis le seul texte des ADR.
 
 **L'export passe par un accès BRUT au fichier**, sans clé et sans géométrie logique : par la voie
 autorisée, qui déchiffre, il aurait produit une archive **en clair** d'un volume chiffré — le

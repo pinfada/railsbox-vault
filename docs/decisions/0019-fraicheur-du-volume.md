@@ -374,6 +374,18 @@ cette tranche : une option non mesurée qui traîne finit par être allumée san
 6. **Le coût est mesuré sur une machine et un moteur.** Le relevé porte son environnement ; il ne
    remplace pas une mesure de référence.
 
+## Note du 6 septembre 2026 — l'ancre de l'ADR 0027 ne touche pas à celle-ci (#149)
+
+L'[ADR 0027](0027-archive-et-ancre-de-version.md) pose une ancre TENUE PAR L'UTILISATEUR : la
+version d'enveloppe notée sur la feuille de récupération, passée à `versionMinimale`. Elle ferme le
+retour arrière du SEUL fichier `<volume>.cles`, sous une feuille tenue à jour.
+
+**Elle ne ferme rien de ce que cet ADR laisse ouvert.** Le retour arrière COMPLET du support —
+volume, journal, racine, témoin et enveloppe remis en place ENSEMBLE — reste non détecté, et la
+phrase de la section « Limites » ci-dessus vaut telle quelle. Si une ancre externe voit le jour au
+jalon 6, elle portera les DEUX compteurs — celui du volume et celui de l'enveloppe —, jamais deux
+ancres : c'est la note de l'[ADR 0025](0025-moyen-de-recuperation.md), inchangée.
+
 ## Alternatives rejetées
 
 - **Un arbre de Merkle sur les 2^20 secteurs du volume** (question n° 2 de l'ADR 0015 pour #20).

@@ -331,6 +331,13 @@ La conduite de la décision 7 de l'ADR 0021, appliquée mot pour mot :
 l'archive : aujourd'hui l'archive n'emporte PAS l'enveloppe, décision 6 de l'ADR 0020, et cela n'est
 pas maquillé) ; phrase oubliée ; emplacement compromis, par révocation (#148 pour le geste composé).
 
+> **La réserve est LEVÉE le 6 septembre 2026 (#149,
+> [ADR 0027](0027-archive-et-ancre-de-version.md)).** L'archive emporte désormais une enveloppe de
+> RÉCUPÉRATION SEULE — jamais une phrase, jamais une passkey, jamais le code —, et « appareil perdu
+> avec l'archive et le code » est vrai de bout en bout. Le prix est écrit dans l'ADR 0027 : une
+> archive volée offre au code une cible hors ligne, ce que 128 bits TIRÉS rendent acceptable et ce
+> qu'une phrase secrète ne rendrait pas — d'où le filtrage.
+
 **Non couvert** : tous les moyens perdus, code compris — **aucun séquestre, et c'est délibéré** ;
 archive perdue ; copie du code prise avant révocation ; retour arrière complet du support.
 
