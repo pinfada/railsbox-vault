@@ -376,6 +376,19 @@ SURVIVAIT faute d'épreuve et ne figurait même pas dans cette table, et la gard
 | 15  | largeur des seize octets exigée par `materiauDuCode` | tuée\*\* | « materiauDuCode EXIGE seize octets »                                 |
 | 16  | un type de clé INCONNU reste LISIBLE                 | tuée     | 7 épreuves, dont « aucun repli silencieux »                           |
 
+**Ce que « tuée » veut dire, depuis que la CI l'a corrigé.** Un mutant n'est tué que par une épreuve
+qui ROUGIT — pas par un enfant qui s'arrête. L'outil borne donc le tas de chaque enfant à 512 Mo, et
+rend NON CONCLUANT (jamais « tuée ») tout enfant terminé par un signal, non démarré, ou qui a épuisé
+son tas ; une épreuve de l'outil le mord, en faisant délibérément exploser un enfant.
+
+Le défaut était réel et il ne se voyait pas d'ici : sous la mutation n° 7, l'épreuve de balayage
+acceptait les 65 536 points du plan de base, et `assert.deepEqual` sur deux tableaux de cette taille
+allouait **14,4 Go en 35 s** pour construire son diff — assez pour faire tuer le runner de la CI
+avant qu'aucune assertion n'ait rendu son verdict. La même épreuve, réécrite pour comparer des
+ENSEMBLES et n'en citer qu'un écart borné, coûte **54 Mo en 0,6 s** et tue le mutant par
+l'assertion. C'est le pendant exact de la garde de #65 — « un mutant n'est tué que si l'épreuve
+PASSAIT avant qu'on le pose » — sur l'autre bord, et c'est la CI qui l'a trouvé.
+
 **\* La seule qui a survécu au premier passage, et ce qu'elle a appris.** La NFC ne change RIEN pour
 un alphabet base 32 : il ne porte aucun caractère composable, donc normaliser ou non ne modifiait
 aucune saisie que le dépôt éprouvait. Ce n'était pas une garde inutile — c'était une garde qu'aucune

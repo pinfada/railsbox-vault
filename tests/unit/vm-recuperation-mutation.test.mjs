@@ -50,6 +50,40 @@ test("une épreuve ABSENTE ne passe pas pour un mutant tué", () => {
   assert.match(resultats[0].raison ?? "", /avant la mutation/i);
 });
 
+test("un enfant qui S'ARRÊTE sans verdict est NON CONCLUANT, jamais un mutant tué", () => {
+  // La faute que la CI a trouvée, et qu'aucune relecture n'avait vue. Sous un mutant, une épreuve
+  // confrontait deux tableaux de 65 536 entrées : la construction du diff par `assert` atteignait
+  // 4,2 Go et faisait tuer le processus — et la campagne comptait le mutant « tué », alors qu'AUCUNE
+  // assertion n'avait rendu de verdict. C'est le pendant exact de la garde de #65 (« un mutant n'est
+  // tué que si l'épreuve PASSAIT avant qu'on le pose »), sur l'autre bord.
+  //
+  // Le témoin rejoue le MÉCANISME exact plutôt qu'un arrêt quelconque : l'enfant épuise son tas
+  // avant qu'aucune assertion n'ait rendu son verdict. Un `process.kill` ferait l'affaire sur un
+  // système à signaux, mais Windows n'en a pas — il rendrait un code de sortie ordinaire, et
+  // l'épreuve mesurerait alors la plate-forme plutôt que la garde.
+  const { resultats } = campagneDeMutation({
+    mutations: [
+      {
+        nom: "témoin : un enfant qui épuise son tas sans juger",
+        garde: "aucune — cette mutation existe pour mordre la campagne elle-même",
+        fichier: "tests/unit/vm-derivation-recuperation.test.mjs",
+        avant: 'import assert from "node:assert/strict";',
+        apres:
+          'import assert from "node:assert/strict";\n' +
+          "const gouffre = [];\n" +
+          "for (;;) gouffre.push(new Array(1e6).fill(gouffre.length));",
+        epreuves: [MUTATIONS[0].epreuves[0]],
+      },
+    ],
+  });
+  assert.equal(
+    resultats[0].tue,
+    false,
+    "un enfant arrêté sans verdict a été compté pour un mutant tué : la campagne ne mesure plus rien.",
+  );
+  assert.match(resultats[0].raison ?? "", /NON CONCLUANT/);
+});
+
 test("la table couvre les gardes que l'ADR 0025 nomme, une par une", () => {
   const noms = MUTATIONS.map((mutation) => mutation.nom).join(" | ");
   for (const attendu of [

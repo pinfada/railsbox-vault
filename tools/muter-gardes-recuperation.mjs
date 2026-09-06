@@ -212,13 +212,32 @@ function copierLeDepot() {
 function rejouer(atelier, epreuves) {
   const environnement = { ...process.env };
   delete environnement.NODE_TEST_CONTEXT;
-  const resultat = spawnSync(process.execPath, ["--test", "--test-timeout=60000", ...epreuves], {
-    cwd: atelier,
-    encoding: "utf8",
-    env: environnement,
-  });
-  return resultat.status;
+  const resultat = spawnSync(
+    process.execPath,
+    [`--max-old-space-size=${TAS_MAXIMAL_MO}`, "--test", "--test-timeout=60000", ...epreuves],
+    { cwd: atelier, encoding: "utf8", env: environnement },
+  );
+  const sortie = `${resultat.stdout ?? ""}${resultat.stderr ?? ""}`;
+  return {
+    status: resultat.status,
+    signal: resultat.signal,
+    memoireEpuisee: /heap out of memory|Allocation failed|FATAL ERROR/i.test(sortie),
+  };
 }
+
+/**
+ * Plafond du TAS d'un enfant, en mégaoctets.
+ *
+ * Il existe parce que la CI a trouvé ce que la campagne ne pouvait pas voir : sous un mutant, une
+ * épreuve confrontait deux tableaux de 65 536 entrées, et la construction du diff par `assert`
+ * atteignait 4,2 Go — assez pour faire tuer le runner entier. Le mutant était alors compté « tué »
+ * par un plantage mémoire, pas par une assertion.
+ *
+ * 512 Mo est plus du double de ce que la plus grosse des suites de ce dépôt consomme (234 Mo
+ * relevés), et deux ordres de grandeur sous ce qu'un emballement atteint. La borne ne rend donc
+ * aucune épreuve légitime plus fragile ; elle transforme un emballement en fait OBSERVABLE.
+ */
+const TAS_MAXIMAL_MO = 512;
 
 /**
  * Applique une mutation dans l'atelier, rejoue, remet le fichier d'origine.
@@ -241,30 +260,43 @@ function eprouver(atelier, mutation) {
   }
 
   const base = rejouer(atelier, mutation.epreuves);
-  if (base !== 0) {
+  if (base.status !== 0) {
     return {
       ...identite,
       applicable: false,
       tue: false,
-      raison: `l'épreuve ne passe pas AVANT la mutation (code ${base === null ? "null — enfant tué ou non démarré" : base}) : elle ne peut rien mesurer.`,
+      raison: `l'épreuve ne passe pas AVANT la mutation (${decrire(base)}) : elle ne peut rien mesurer.`,
     };
   }
 
   try {
     writeFileSync(chemin, original.replace(mutation.avant, mutation.apres), "utf8");
     const mute = rejouer(atelier, mutation.epreuves);
-    if (mute === null) {
+    // NON CONCLUANT, et jamais « tuée ». Un enfant terminé par un SIGNAL, non démarré, ou qui a
+    // épuisé son tas n'a pas rendu de verdict : il s'est arrêté. Compter cela pour une mise à mort
+    // reviendrait à croire qu'une garde est éprouvée parce que la retirer fait planter le
+    // processus — c'est la faute que la garde de #65 visait (« un mutant n'est tué que si l'épreuve
+    // PASSAIT avant qu'on le pose »), sous une autre forme, et la CI l'a trouvée avant nous.
+    if (mute.status === null || mute.signal !== null || mute.memoireEpuisee) {
       return {
         ...identite,
         applicable: true,
         tue: false,
-        raison: "l'enfant a été tué ou n'a pas démarré sous mutation : rien n'a été mesuré.",
+        raison: `NON CONCLUANT : l'enfant s'est arrêté sans rendre de verdict (${decrire(mute)}). Un mutant n'est tué que par une épreuve qui ROUGIT.`,
       };
     }
-    return { ...identite, applicable: true, tue: mute !== 0, raison: null };
+    return { ...identite, applicable: true, tue: mute.status !== 0, raison: null };
   } finally {
     writeFileSync(chemin, original, "utf8");
   }
+}
+
+/** Dit en clair COMMENT un enfant s'est terminé. Trois états, et les confondre coûte cher. */
+function decrire({ status, signal, memoireEpuisee }) {
+  if (memoireEpuisee) return `tas de ${TAS_MAXIMAL_MO} Mo épuisé`;
+  if (signal !== null && signal !== undefined) return `tué par le signal ${signal}`;
+  if (status === null) return "enfant non démarré";
+  return `code ${status}`;
 }
 
 /** Rejoue toute la campagne. Exportée pour que l'épreuve la fasse tourner sans dupliquer la table. */

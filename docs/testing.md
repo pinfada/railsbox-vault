@@ -2,23 +2,23 @@
 
 ## Suites disponibles
 
-| Commande                       | Portée                                                                                                                           |                                 Coût attendu |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------: |
-| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                                                                        |                                     secondes |
-| `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontière d'origine sous Chromium                                                       |                                environ 1 min |
-| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                                                                                    |                                environ 1 min |
-| `npm run test:spike:apps`      | frontière entre deux applications (#46), trois moteurs, seule                                                                    |                                 environ 35 s |
-| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                                                                        |                                environ 2 min |
-| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                                                                              |              environ 20 s après installation |
-| `npm run test:vm`              | guest Linux réel sur les backends mémoire et OPFS (Chromium), matrice de coupures, et démarrage du runtime sur les trois moteurs |               environ 18 min, **périodique** |
-| `npm run test:isolation`       | coût de l'isolation multi-origine sur le runtime v86, trois moteurs                                                              |              environ 8 min, **à la demande** |
-| `npm run test:csp`             | démarrage de v86 sous deux CSP, quatre configurations, trois moteurs                                                             |             environ 25 min, **à la demande** |
-| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker                                                                    | environ 1 min après la première construction |
-| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                                                                               |   plus de 10 min, Docker et artefacts requis |
-| `npm run test:e2e`             | reprise, coupure pendant une mutation, export vérifiable, restauration inter-origine et migration                                |   environ 36 min, Docker et artefacts requis |
-| `npm run test:rythme`          | coût de la boucle d'ordonnancement, dix boots entrelacés de l'image de référence                                                 |             environ 18 min, **à la demande** |
-| `npm test`                     | suites unitaire et navigateur                                                                                                    |                                     secondes |
-| `npm run check`                | lint, format et toutes les suites actuelles                                                                                      |             moins de 2 min hors installation |
+| Commande                       | Portée                                                                                                                           |                                                                   Coût attendu |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -----------------------------------------------------------------------------: |
+| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                                                                        |                                                                       secondes |
+| `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontière d'origine sous Chromium                                                       |                                                                  environ 1 min |
+| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                                                                                    |                                                                  environ 1 min |
+| `npm run test:spike:apps`      | frontière entre deux applications (#46), trois moteurs, seule                                                                    |                                                                   environ 35 s |
+| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                                                                        |                                                                  environ 2 min |
+| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                                                                              |                                                environ 20 s après installation |
+| `npm run test:vm`              | guest Linux réel sur les backends mémoire et OPFS (Chromium), matrice de coupures, et démarrage du runtime sur les trois moteurs |                                                 environ 18 min, **périodique** |
+| `npm run test:isolation`       | coût de l'isolation multi-origine sur le runtime v86, trois moteurs                                                              |                                                environ 8 min, **à la demande** |
+| `npm run test:csp`             | démarrage de v86 sous deux CSP, quatre configurations, trois moteurs                                                             |                                               environ 25 min, **à la demande** |
+| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker                                                                    |                                   environ 1 min après la première construction |
+| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                                                                               |                                     plus de 10 min, Docker et artefacts requis |
+| `npm run test:e2e`             | reprise, coupure pendant une mutation, export vérifiable, restauration inter-origine et migration                                |                                     environ 36 min, Docker et artefacts requis |
+| `npm run test:rythme`          | coût de la boucle d'ordonnancement, dix boots entrelacés de l'image de référence                                                 |                                               environ 18 min, **à la demande** |
+| `npm test`                     | suites unitaire et navigateur                                                                                                    |                                                                       secondes |
+| `npm run check`                | lint, format et toutes les suites actuelles                                                                                      | environ 3 min hors installation (#147 : la campagne de mutation en prend 50 s) |
 
 La suite `test:e2e` porte depuis #7 le scénario de sortie du MVP (voir plus bas), auquel se sont
 ajoutés l'export vérifiable (#11), la restauration inter-origine (#12) et la migration de format
@@ -659,10 +659,10 @@ adjacentes), les formes de saisie humaine sous NFC, et deux inspections de sourc
 somme de contrôle n'importe rien d'autre que ses refus, et le module du code n'est importé que par
 trois fichiers nommés.
 
-`tests/unit/vm-recuperation-mutation.test.mjs` (**≈ 11 s**) fait tourner
-`tools/muter-gardes-recuperation.mjs` : quatorze gardes retirées une à une du texte source, quatorze
-mutantes tuées. La NFC a survécu au premier passage — l'alphabet base 32 ne porte aucun caractère
-composable —, et c'est le vecteur du signe KELVIN (U+212A) qui la rend mesurable.
+`tests/unit/vm-recuperation-mutation.test.mjs` (**≈ 50 s** : trente-six processus `node --test`)
+fait tourner `tools/muter-gardes-recuperation.mjs` : quatorze gardes retirées une à une du texte
+source, quatorze mutantes tuées. La NFC a survécu au premier passage — l'alphabet base 32 ne porte
+aucun caractère composable —, et c'est le vecteur du signe KELVIN (U+212A) qui la rend mesurable.
 
 Le bout en bout vit dans la frontière de déverrouillage : le cycle complet sur l'OPFS réel — créer
 sous une phrase, ajouter le code, révoquer la phrase, rouvrir par le code saisi sous une forme
@@ -673,7 +673,7 @@ toute absence : le code passe du Worker de confiance à la page de la même orig
 ```bash
 npm run check                                          # les six suites unitaires + la frontière
 node --test "tests/unit/vm-derivation-*.test.mjs"
-node --test tests/unit/vm-recuperation-mutation.test.mjs # la campagne de mutation, ≈ 11 s
+node --test tests/unit/vm-recuperation-mutation.test.mjs # la campagne de mutation, ≈ 50 s
 node tools/muter-gardes-recuperation.mjs               # la même, avec le verdict garde par garde
 npm run test:deverrouillage                            # la frontière seule, sur les trois moteurs
 VAULT_MESURER_DERIVATION=20 npm run test:deverrouillage # + la mesure du coût, hors `check`
