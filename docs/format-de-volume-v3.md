@@ -1990,6 +1990,74 @@ distincte du stockage.
 | `VAULT_MANIFEST_IDENTITY_MISMATCH`  | l'application en cours ne correspond pas à celle qui possède le volume               | ouvrir depuis la bonne application          |
 | `VAULT_MANIFEST_UNIDENTIFIED`       | ouverture en écriture d'un volume sans manifeste connu                               | jamais autorisée (`SEC-UPDATE-001`)         |
 
+### 10.5 La famille de la COQUILLE, et ce qu'elle refuse au document applicatif
+
+Elle décrit une propriété de **frontière**, et non de support : ces refus ne parlent ni d'octets, ni
+de volume, ni de clé. Ils disent ce que la coquille de produit refuse au document applicatif servi
+par l'origine applicative (#161, [ADR 0028](decisions/0028-coquille-de-produit-et-frontiere.md),
+`SEC-ORIGIN-001`). Un relecteur externe les rencontrera dès qu'il ouvrira la coquille : ils sont
+donc listés **exhaustivement**, et `tests/unit/dossier-de-revue.test.mjs` échoue sur un code que le
+produit rendrait sans que cette table le nomme.
+
+Deux traits gouvernent toute la famille :
+
+- **un refus est TYPÉ, jamais un silence.** C'est l'exigence de l'issue #24, et c'est ce qui permet
+  à l'épreuve de l'application malveillante de distinguer « la coquille refuse ce geste-là » de « la
+  coquille n'a pas compris le message ». Un relevé tout vert obtenu par incompréhension ne
+  prouverait rien ;
+- **le code ne dépend QUE du type reçu.** Il est calculé avant que la coquille ait consulté un état
+  — volume, enveloppe, présence d'une clé —, et deux appareils dans des états différents rendent le
+  même code pour le même type. Ce n'est donc pas un oracle : un adversaire qui lit
+  `VAULT_COQUILLE_KEK_REFUSEE` apprend qu'il a demandé une KEK, ce qu'il savait en l'écrivant.
+
+**L'encodage du contrat** (`src/coquille/contrat-de-messages.mjs`) :
+
+| Code                              | Ce qu'il constate                                                       | Conduite                                  |
+| --------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------- |
+| `VAULT_COQUILLE_MESSAGE_MALFORME` | le message n'est pas un objet, ou ne porte pas de type : rien à décoder | corriger l'appel                          |
+| `VAULT_COQUILLE_CONTRAT_REFUSE`   | identifiant ou version du contrat étrangers à cette coquille            | parler la version publiée par la coquille |
+| `VAULT_COQUILLE_TYPE_INCONNU`     | type bien formé, ni admis ni nommé par la liste de refus                | s'en tenir à la liste d'admission         |
+
+**Les dix gestes de la liste de refus** (issue #24, décision 2 ;
+`src/coquille/admission-applicative.mjs`). La liste n'est pas dérivée et ne se négocie pas : chacun
+de ces gestes appartient à l'utilisateur, jamais à l'application.
+
+| Code                                    | Geste tenté                                                                          |
+| --------------------------------------- | ------------------------------------------------------------------------------------ |
+| `VAULT_COQUILLE_KEK_REFUSEE`            | obtenir une clé de déverrouillage (KEK)                                              |
+| `VAULT_COQUILLE_DEK_REFUSEE`            | obtenir la clé de volume (DEK)                                                       |
+| `VAULT_COQUILLE_EXPORT_REFUSE`          | exporter le volume                                                                   |
+| `VAULT_COQUILLE_REVOCATION_REFUSEE`     | `revoquerEmplacement`, `revoquerToutSauf`, `remplacerEmplacement`                    |
+| `VAULT_COQUILLE_EMPLACEMENT_REFUSE`     | ajouter un emplacement de déverrouillage                                             |
+| `VAULT_COQUILLE_RECUPERATION_REFUSEE`   | créer un moyen de récupération                                                       |
+| `VAULT_COQUILLE_VOLUME_REFUSE`          | changer d'emplacement de volume                                                      |
+| `VAULT_COQUILLE_ENVELOPPE_REFUSEE`      | lire `<volume>.cles` ou son inventaire                                               |
+| `VAULT_COQUILLE_PORT_PRIVILEGIE_REFUSE` | obtenir le port privilégié coquille ↔ Worker, ou y poster un type qui lui appartient |
+| `VAULT_COQUILLE_HANDLE_REFUSE`          | obtenir un handle de fichier                                                         |
+
+**L'annonce reçue sur `window`, et l'ordre du cycle de vie.** Cinq conditions, contrôlées dans cet
+ordre, chacune nécessaire :
+
+| Code                             | Ce qu'il constate                                                                      |
+| -------------------------------- | -------------------------------------------------------------------------------------- |
+| `VAULT_COQUILLE_CANAL_ABSENT`    | le canal privilégié n'est pas établi : aucun port n'est octroyé avant lui              |
+| `VAULT_COQUILLE_ANNONCE_TYPE`    | type inattendu — il ne prouve rien seul, tout document le connaît                      |
+| `VAULT_COQUILLE_ANNONCE_ORIGINE` | origine inattendue                                                                     |
+| `VAULT_COQUILLE_ANNONCE_FENETRE` | fenêtre émettrice inattendue : une iframe imbriquée porte la MÊME origine que le cadre |
+| `VAULT_COQUILLE_ANNONCE_UNIQUE`  | le port restreint a déjà été transféré ; il ne l'est qu'une fois                       |
+
+**Ce qui ne franchit jamais le port** : `VAULT_COQUILLE_CAPACITE_DANS_UN_MESSAGE` est levé par la
+coquille **contre elle-même** — il constate qu'une réponse allait transporter autre chose que des
+données (un port, un tampon, une `CryptoKey`, un handle, une fonction). Il ne parvient donc jamais
+au document applicatif : c'est un défaut de programmation de la coquille, pas une entrée hostile.
+`tests/unit/coquille-contrat.test.mjs` › « `sansCapacite` laisse passer des données et REFUSE tout
+ce qui est une capacité » le mesure, et `tools/muter-gardes-coquille.mjs` montre que la garde sait
+rougir.
+
+Épreuves : `tests/unit/coquille-admission.test.mjs`, `tests/unit/coquille-contrat.test.mjs` et
+`tests/browser/coquille-frontiere.spec.mjs` (trois moteurs, application malveillante, témoin positif
+en même origine).
+
 ## 11. Les voisins hors périmètre de la revue
 
 Un relecteur en voit la **place**, pas l'implémentation. Ils sont nommés ici avec leur statut pour

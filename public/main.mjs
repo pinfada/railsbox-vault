@@ -213,7 +213,9 @@ function surRequeteApplicative(port, donnee) {
     return;
   }
   demanderLEtat().then((charge) => {
-    port.postMessage(enveloppeDeMessage(TYPES_APPLICATIFS.etatReponse, sansCapacite({ ...charge })));
+    port.postMessage(
+      enveloppeDeMessage(TYPES_APPLICATIFS.etatReponse, sansCapacite({ ...charge })),
+    );
   });
 }
 

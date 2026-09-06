@@ -204,7 +204,10 @@ async function tenterEnregistrement(options) {
     const inscription = await navigator.serviceWorker.register(SERVICE_WORKER_HOSTILE, options);
     return { portee: inscription.scope, erreur: null };
   } catch (error) {
-    return { portee: null, erreur: `${error?.name ?? "Error"}: ${error?.message ?? String(error)}` };
+    return {
+      portee: null,
+      erreur: `${error?.name ?? "Error"}: ${error?.message ?? String(error)}`,
+    };
   }
 }
 

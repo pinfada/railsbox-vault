@@ -83,7 +83,9 @@ self.addEventListener("message", (event) => {
   // serait servie avant que le déverrouillage ait fini, et rendrait `verrouille` sur un volume qui
   // s'ouvre. Le sérialiser n'est pas une optimisation, c'est ce qui rend l'état lisible.
   port.addEventListener("message", (message) => {
-    chaine = chaine.then(() => surMessagePrivilegie(message)).catch((erreur) => repondreRefus(erreur));
+    chaine = chaine
+      .then(() => surMessagePrivilegie(message))
+      .catch((erreur) => repondreRefus(erreur));
   });
   port.start();
 });

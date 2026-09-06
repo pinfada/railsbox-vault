@@ -22,11 +22,7 @@
 // le type. Inventer un identifiant reviendrait à créer un critère dont #46 a mesuré qu'il ne sépare
 // rien tant que l'origine ne sépare pas — et qui serait redondant dès qu'elle sépare.
 
-import {
-  TYPES_APPLICATIFS,
-  decoderMessage,
-  estTypePrivilegie,
-} from "./contrat-de-messages.mjs";
+import { TYPES_APPLICATIFS, decoderMessage, estTypePrivilegie } from "./contrat-de-messages.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 
 /**
@@ -129,7 +125,8 @@ export const GESTES_REFUSES = Object.freeze([
   }),
   Object.freeze({
     type: "vault.coquille.revoquer",
-    geste: "révoquer un emplacement (`revoquerEmplacement`, `revoquerToutSauf`, `remplacerEmplacement`)",
+    geste:
+      "révoquer un emplacement (`revoquerEmplacement`, `revoquerToutSauf`, `remplacerEmplacement`)",
     code: CODES_REFUS_COQUILLE.revocation,
   }),
   Object.freeze({

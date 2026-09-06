@@ -42,7 +42,9 @@ const ETATS_CONNUS = Object.freeze(new Set(Object.values(ETATS_DU_VOLUME)));
  */
 export function chargeUtileDEtat({ etat, barrieres }) {
   if (!ETATS_CONNUS.has(etat)) {
-    throw new Error(`État de volume inconnu : ${etat}. La coquille ne publie que ses quatre états.`);
+    throw new Error(
+      `État de volume inconnu : ${etat}. La coquille ne publie que ses quatre états.`,
+    );
   }
   if (!Number.isInteger(barrieres) || barrieres < 0) {
     throw new Error("Le compte de barrières est un entier positif ou nul.");

@@ -59,9 +59,9 @@ const PR_REELLE = "[PR #146](https://github.com/pinfada/railsbox-vault/pull/146)
 const PR_INVENTEE = "[PR #999999](https://github.com/pinfada/railsbox-vault/pull/999999)";
 
 /**
- * Les SIX familles de refus que la spécification doit couvrir, code par code : format chiffré,
- * stockage, enveloppe de clé, dérivation des clés de déverrouillage, et — depuis #149 — ARCHIVE et
- * IMPORT. Les autres familles (`VAULT_MANIFEST_*`, `VAULT_MIGRATION_*`, causes de fraîcheur et de
+ * Les SEPT familles de refus que la spécification doit couvrir, code par code : format chiffré,
+ * stockage, enveloppe de clé, dérivation des clés de déverrouillage, ARCHIVE et IMPORT depuis #149,
+ * et la COQUILLE depuis #161. Les autres familles (`VAULT_MANIFEST_*`, `VAULT_MIGRATION_*`, causes de fraîcheur et de
  * témoin) sont citées dans la spécification sans relever de cette obligation d'exhaustivité —
  * l'épreuve symétrique ci-dessous les contrôle autrement : tout code cité doit exister.
  *
@@ -72,12 +72,17 @@ const PR_INVENTEE = "[PR #999999](https://github.com/pinfada/railsbox-vault/pull
  * constat de la revue de format de la PR #160, et l'élargissement est sa correction : la
  * spécification autonome de #20 doit décrire TOUS les refus qu'un relecteur externe rencontrera.
  *
+ * **COQUILLE y entre pour la raison symétrique** : #161 pose la première famille de refus qui ne
+ * parle pas du support mais de la FRONTIÈRE — ce que la coquille de produit refuse au document
+ * applicatif. Un relecteur qui ouvre la coquille les rencontre avant même d'ouvrir un volume ; les
+ * laisser hors du cliquet aurait reproduit exactement le défaut que #149 avait payé.
+ *
  * Le motif exige que le jeton FINISSE par une lettre ou un chiffre : une mention de famille avec son
  * astérisque (`VAULT_STORAGE_GENERATION_*`) ou une préfixe tronqué n'est pas un code, et le prendre
  * pour tel ferait rougir l'épreuve sur de la prose.
  */
 const FAMILLES =
-  /\bVAULT_(?:CRYPTO|STORAGE|ENVELOPPE|DERIVATION|ARCHIVE|IMPORT)_[A-Z0-9][A-Z0-9_]*[A-Z0-9]\b/g;
+  /\bVAULT_(?:CRYPTO|STORAGE|ENVELOPPE|DERIVATION|ARCHIVE|IMPORT|COQUILLE)_[A-Z0-9][A-Z0-9_]*[A-Z0-9]\b/g;
 
 /** Tout code de refus du dépôt, toutes familles confondues. Même règle de fin de jeton. */
 const TOUS_LES_CODES = /\bVAULT_[A-Z][A-Z0-9_]*[A-Z0-9]\b/g;
@@ -172,7 +177,7 @@ test("le vérificateur de vecteurs tourne VERT en une commande, sans le produit"
   assert.match(sortie, /vertes?/, "le vérificateur doit compter ses vérifications vertes.");
 });
 
-test("CHAQUE code de refus des SIX familles du format apparaît dans la spécification", async () => {
+test("CHAQUE code de refus des SEPT familles du format apparaît dans la spécification", async () => {
   const spec = await lire(SPEC);
   const attendus = await codesDuCode(FAMILLES);
   assert.ok(attendus.length > 0, "aucun code relevé : la recherche elle-même est cassée.");
@@ -565,12 +570,41 @@ test("SECURITY.md statue sur CHAQUE invariant, et la preuve citée existe", asyn
     "SEC-UPDATE-001",
   ]);
 
-  // La table des statuts : une ligne par invariant, un statut dans un vocabulaire fermé, une preuve.
+  // La table des statuts : au moins une ligne par invariant, un statut dans un vocabulaire fermé,
+  // une preuve.
+  //
+  // « Au moins », et non « exactement », depuis #161. Un invariant peut être exercé contre DEUX
+  // choses qui ne sont pas la même — `SEC-ORIGIN-001` l'est contre la coquille du spike et contre
+  // celle du produit —, et un statut unique aurait alors couvert une coquille que personne n'avait
+  // écrite. Ce que la garde exige en échange est plus fort qu'un compte : quand un invariant porte
+  // plusieurs lignes, chacune doit se QUALIFIER, faute de quoi deux statuts contradictoires
+  // vaudraient pour la même chose.
   const table = security.split("\n").filter((ligne) => /^\|\s*`?SEC-[A-Z]+-\d+/.test(ligne));
-  assert.equal(
-    table.length,
-    invariants.length,
+  const lignesPar = new Map(invariants.map((nom) => [nom, []]));
+  for (const ligne of table) {
+    const [nom] = ligne.match(/SEC-[A-Z]+-\d+/) ?? [];
+    lignesPar.get(nom)?.push(ligne);
+  }
+  assert.deepEqual(
+    invariants.filter((nom) => lignesPar.get(nom).length === 0),
+    [],
     "chaque invariant doit porter sa ligne de statut dans la table dédiée.",
+  );
+
+  // Une qualification est ce qui suit le nom de l'invariant dans la première cellule, avant le
+  // séparateur : « — coquille du SPIKE », « — coquille de PRODUIT ».
+  const nonQualifies = [];
+  for (const [nom, lignes] of lignesPar) {
+    if (lignes.length < 2) continue;
+    for (const ligne of lignes) {
+      const [, premiereCellule] = ligne.split("|");
+      if (!/—\s*\S/.test(premiereCellule)) nonQualifies.push(`${nom} : ${ligne.trim()}`);
+    }
+  }
+  assert.deepEqual(
+    nonQualifies,
+    [],
+    "Un invariant à plusieurs lignes doit dire, sur chacune, CONTRE QUOI il est exercé.",
   );
 
   const statutsAdmis = /exercé sous réserve|exercé|non exercé/i;
