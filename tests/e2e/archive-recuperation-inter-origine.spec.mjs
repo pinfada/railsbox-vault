@@ -172,14 +172,18 @@ test("un volume chiffré exporté avec son moyen de récupération s'OUVRE PAR L
   const enveloppe = await courir(page, { phase: "enveloppe-creer", volume: VOLUME_A });
   const moyen = await courir(page, { phase: "recuperation-creer", volume: VOLUME_A });
   await page.close();
-  expect(prepare.bytesWritten, "le disque applicatif entier est écrit dans OPFS").toBe(appDiskBytes);
+  expect(prepare.bytesWritten, "le disque applicatif entier est écrit dans OPFS").toBe(
+    appDiskBytes,
+  );
   expect(enveloppe.version).toBe(1);
   expect(moyen.typeKek, "le moyen de récupération est bien un emplacement de type 4").toBe(
     TYPES_KEK.recuperation,
   );
   expect(moyen.version, "la pose du moyen fait avancer la version de l'enveloppe").toBe(2);
   const CODE = moyen.code;
-  expect(CODE, "le banc rend le code une fois, comme le produit").toMatch(/^[0-9A-Z]{4}(-[0-9A-Z]{4}){6}$/);
+  expect(CODE, "le banc rend le code une fois, comme le produit").toMatch(
+    /^[0-9A-Z]{4}(-[0-9A-Z]{4}){6}$/,
+  );
 
   // 2. MUTATION RAILS sur A, sur un volume ouvert PAR L'ENVELOPPE — pas par le jeton du harnais.
   page = await nouvellePage(E2E_ORIGIN_A);
@@ -214,10 +218,9 @@ test("un volume chiffré exporté avec son moyen de récupération s'OUVRE PAR L
     moyen.version,
   );
   // La MESURE que la tranche annonce : une archive v2 coûte exactement une page de plus.
-  expect(
-    exporte.archiveLength,
-    "taille de l'archive = 12 + H + N + R, avec R = 8192",
-  ).toBe(12 + exporte.headerLength + exporte.contentLength + PAGE_OCTETS);
+  expect(exporte.archiveLength, "taille de l'archive = 12 + H + N + R, avec R = 8192").toBe(
+    12 + exporte.headerLength + exporte.contentLength + PAGE_OCTETS,
+  );
 
   // 4. TRANSFERT — le fait du test, pas du produit : l'archive descend sur le disque de l'hôte.
   page = await nouvellePage(E2E_ORIGIN_A);
