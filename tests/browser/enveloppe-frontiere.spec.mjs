@@ -32,6 +32,7 @@ const CLES_DE_TEST = {
   volume: octetsEnHex(suite(0x00)),
   deverrouillageInitiale: octetsEnHex(suite(0x80)),
   deverrouillageRotation: octetsEnHex(suite(0xa0)),
+  deverrouillageTierce: octetsEnHex(suite(0xc0)),
 };
 
 function suite(base) {
@@ -121,6 +122,67 @@ test("le cycle complet d'une enveloppe tient sur l'OPFS réel, ou le moteur le r
   );
   expect(report.refusDeLAncienne).toBe(ENVELOPPE_ERROR_CODES.cleRefusee);
   expect(report.emplacements).toBe(1);
+});
+
+test("la révocation d'urgence réduit trois emplacements à UN sur l'OPFS réel, ou le moteur le refuse typé", async ({
+  page,
+}, testInfo) => {
+  const { porte } = await contexte(page, testInfo);
+  const { report, code } = await executerOuRefus(page, { scenario: "revocation-urgence" });
+  await testInfo.attach(`enveloppe-revocation-urgence-${testInfo.project.name}.json`, {
+    body: JSON.stringify({ porte, report, code }, null, 2),
+    contentType: "application/json",
+  });
+
+  if (!porte) {
+    expect(code).toBe(STORAGE_ERROR_CODES.unsupported);
+    return;
+  }
+
+  expect(report.emplacementsAvant).toBe(3);
+  expect(report.typesAvant).toEqual([1, 3, 4]);
+  expect(report.emplacementsApres).toBe(1);
+  // UNE version consommée pour DEUX emplacements retirés : c'est la promesse de #148, et deux
+  // révocations successives en auraient consommé deux.
+  expect(report.versionsConsommees).toBe(1);
+  expect(report.conserveeOuvre, "la clé que l'on tient n'ouvre plus l'enveloppe réduite").toBe(
+    true,
+  );
+  expect(
+    report.conserveeEstCelleQuiOuvre,
+    "l'emplacement conservé n'est pas celui que la clé présentée ouvre",
+  ).toBe(true);
+  expect(report.volumeRelu, "la clé développée n'ouvre plus le volume qu'elle protège").toBe(true);
+  expect(report.refusDesRetirees).toEqual([report.refusAttendu, report.refusAttendu]);
+  // #156 sur le système de fichiers du moteur : la page libérée est effacée, une seule page porte
+  // encore des octets.
+  expect(report.pagesNonNulles, "la page libérée porte encore des octets").toBe(1);
+});
+
+test("le coût de l'effacement de la page libre est MESURÉ sur l'OPFS réel, pas estimé", async ({
+  page,
+}, testInfo) => {
+  // Le surcoût de #156 est une écriture de 8192 octets et une barrière par révocation. L'ADR 0026 le
+  // publie, et il est relevé ici plutôt que déduit d'un banc en mémoire : c'est le disque qui décide.
+  const { porte } = await contexte(page, testInfo);
+  const { report, code } = await executerOuRefus(page, { scenario: "cout-effacement" });
+  await testInfo.attach(`enveloppe-cout-effacement-${testInfo.project.name}.json`, {
+    body: JSON.stringify({ porte, report, code }, null, 2),
+    contentType: "application/json",
+  });
+
+  if (!porte) {
+    expect(code).toBe(STORAGE_ERROR_CODES.unsupported);
+    return;
+  }
+
+  expect(report.tours).toBeGreaterThanOrEqual(30);
+  expect(report.octetsParTour).toBe(8192);
+  expect(report.enveloppeIntacte, "le banc a écrit sur la page qui faisait autorité").toBe(true);
+  expect(report.p50).toBeGreaterThan(0);
+  expect(report.p95).toBeGreaterThanOrEqual(report.p50);
+  // Aucun seuil de performance n'est imposé : le chiffre est PUBLIÉ, pas gardé. Un plafond mesuré
+  // sur la machine d'un contributeur ferait rougir la CI d'un autre sans rien dire du produit.
 });
 
 test("un volume sans enveloppe est refusé par « aucune enveloppe », pas par « clé invalide »", async ({
