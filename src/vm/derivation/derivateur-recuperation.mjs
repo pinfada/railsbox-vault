@@ -70,6 +70,10 @@ export function tirerSelDeRecuperation() {
  * qu'on n'a pas encore jugés admissibles. Une version qu'on ne sait pas lire n'est jamais devinée.
  */
 function exigerLaVersion(version) {
+  // Le DÉCODEUR, lui, lit la version sans la juger : il rend la structure, et c'est ici qu'on décide
+  // si elle est admissible. La séparation est celle de `decoderPhrase` et `exigerLesBornes`
+  // (ADR 0021) — un décodeur relit, une garde tranche — et trois formulations de la première
+  // rédaction laissaient croire le contraire. La revue de format de la PR #155 les a relevées.
   if (version !== RECUPERATION_VERSION) {
     throw parametresRefuses(
       `la version du moyen de récupération vaut ${version} au lieu de ${RECUPERATION_VERSION}, la seule que ce Vault sait lire. Une version plus récente vient d'un produit plus récent, jamais d'un code faux.`,

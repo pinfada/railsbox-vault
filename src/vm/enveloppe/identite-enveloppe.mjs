@@ -91,11 +91,23 @@ export const PARAMETRES_MAX = 512;
  * Types de clé de déverrouillage. Les trois premiers sont RÉSERVÉS par #21 et servis par #22 ;
  * `harnais` est le seul que #21 produisait, et il est nommé pour ce qu'il est.
  *
- * **`recuperation` est ajouté par #147 (ADR 0025), et ce n'est PAS un changement de format.** Le
- * champ existe depuis #21, sur un octet, et l'ADR 0020 a réservé avec lui le plafond de 512 octets
- * des paramètres publics ; une valeur de plus dans une énumération est une ENTRÉE de ce format, pas
- * une version nouvelle. Un lecteur plus ancien la rencontrera et la refusera par
- * `VAULT_DERIVATION_TYPE_INCONNU`, ce que le point 5 du contrat de #22 prévoit déjà.
+ * **`recuperation` est ajouté par #147 (ADR 0025).** Le champ existe depuis #21, sur un octet, et
+ * l'ADR 0020 a réservé avec lui le plafond de 512 octets des paramètres publics : la DISPOSITION
+ * des octets ne change pas.
+ *
+ * **Ce qui change, en revanche, et la revue de format de #155 l'a mesuré plutôt que supposé : un
+ * lecteur ANTÉRIEUR à #147 ne lit pas cette enveloppe.** Sa version d'`exigerTypeKek` gardait aussi
+ * la LECTURE, si bien qu'un type qu'il ne réserve pas lui faisait rendre `VAULT_ENVELOPPE_MALFORME`
+ * depuis l'encodage canonique de la liste — pas « je ne sais pas servir ce moyen », mais « ce
+ * fichier est malformé » —, et l'y faisait replier sur la page antérieure, qu'une écriture
+ * ultérieure écrasait sans faire avancer le compteur. `exigerOctetDeTypeKek` ferme cela POUR LA
+ * SUITE : un type inconnu est désormais une entrée valide à la lecture, et le refus tombe au choix
+ * du dérivateur, par `VAULT_DERIVATION_TYPE_INCONNU`, comme l'ADR 0021 le promet.
+ *
+ * Le relâchement ne rattrape évidemment pas les lecteurs déjà écrits : il rend seulement le type 5
+ * inoffensif pour ceux d'aujourd'hui. Aucune version n'ayant jamais été publiée
+ * (`docs/release-policy.md`), aucun lecteur antérieur n'est en service, et l'ADR 0025 l'inscrit
+ * comme une limite DATÉE plutôt que comme une propriété du format.
  *
  * Pourquoi un type distinct plutôt qu'une `phrase` : un code de récupération doit être
  * DISCERNABLE — l'archive qui ne portera que lui (tranche 3 de #23), la révocation de tout sauf
@@ -167,11 +179,55 @@ export function exigerParametres(parametres) {
   return parametres;
 }
 
-/** Exige un type de clé de déverrouillage RÉSERVÉ. Un type inconnu n'est jamais deviné. */
+/**
+ * Exige un type de clé de déverrouillage RÉSERVÉ. C'est la garde de l'ÉCRITURE, et d'elle seule.
+ *
+ * On n'écrit jamais un emplacement d'un type qu'on ne sert pas : le produit ne sait pas quels
+ * paramètres publics il faudrait y mettre, ni quelle KEK y enveloppera la DEK.
+ */
 export function exigerTypeKek(typeKek) {
   if (nomDuTypeKek(typeKek) === null) {
     throw malforme(
       `« typeKek » vaut ${typeKek}, qui ne désigne aucun type réservé (${Object.keys(TYPES_KEK).join(", ")}).`,
+      { typeKek },
+    );
+  }
+  return typeKek;
+}
+
+/**
+ * Exige un OCTET de type de clé de déverrouillage. C'est la garde de la LECTURE, et elle est
+ * délibérément plus large que celle de l'écriture (#147, amendement à l'ADR 0020).
+ *
+ * ## Le défaut que cette distinction corrige, mesuré plutôt que supposé
+ *
+ * Jusqu'à #147, `exigerTypeKek` gardait les DEUX chemins. Un lecteur rencontrant un type qu'il ne
+ * réserve pas — exactement ce qui arrive à un lecteur d'avant #147 devant un emplacement
+ * `recuperation` — levait donc `VAULT_ENVELOPPE_MALFORME` depuis l'encodage canonique de la liste,
+ * c'est-à-dire AVANT d'avoir pu ouvrir quoi que ce soit. Deux conséquences, et la seconde est la
+ * grave :
+ *
+ *  - **plus aucun moyen n'ouvrait**, la phrase comprise, dès que les deux pages portaient le type
+ *    inconnu. Le refus ne disait pas « je ne sais pas servir ce moyen », il disait « ce fichier est
+ *    malformé » ;
+ *  - **le repli sur l'autre page devenait silencieux.** `lireEtat` traite un `MALFORME` comme un
+ *    refus de page et essaie la suivante ; le lecteur rendait donc l'état d'AVANT, et une écriture
+ *    ultérieure écrasait la page qui portait le type inconnu — sans erreur, et sans faire avancer
+ *    le compteur de version.
+ *
+ * L'ADR 0021 promet le contraire, en toutes lettres : « une enveloppe qui porte un emplacement d'un
+ * type inconnu ET un emplacement servable s'ouvre par le second ». C'est cette promesse que la
+ * lecture relâchée rend vraie. Un type inconnu est désormais une ENTRÉE VALIDE, portée opaque et
+ * inventoriée avec son numéro ; le refus tombe au CHOIX du dérivateur, par
+ * `VAULT_DERIVATION_TYPE_INCONNU`, où il nomme le bon remède — mettre à jour, jamais essayer une clé.
+ *
+ * La borne qui reste est celle du CHAMP : un octet. Elle n'est pas une politique, c'est la largeur
+ * que l'ADR 0020 a fixée.
+ */
+export function exigerOctetDeTypeKek(typeKek) {
+  if (!Number.isSafeInteger(typeKek) || typeKek < 0 || typeKek > 0xff) {
+    throw malforme(
+      `« typeKek » vaut ${typeKek}, qui ne tient pas sur l'octet que le format lui réserve.`,
       { typeKek },
     );
   }
@@ -199,7 +255,7 @@ export function encoderAssociationEmplacement({
   hexadecimal("identifiantVolume", identifiantVolume, 16);
   hexadecimal("identifiantEmplacement", identifiantEmplacement, IDENTIFIANT_EMPLACEMENT_OCTETS);
   entierBorne("formatVersion", formatVersion, 0xffffffff);
-  exigerTypeKek(typeKek);
+  exigerOctetDeTypeKek(typeKek);
   exigerParametres(parametres);
 
   return concatenerListe([
@@ -290,7 +346,7 @@ function morceauxDUnEmplacement(
     identifiantEmplacement,
     IDENTIFIANT_EMPLACEMENT_OCTETS,
   );
-  exigerTypeKek(typeKek);
+  exigerOctetDeTypeKek(typeKek);
   exigerParametres(parametres);
   exigerOctets(`emplacements[${index}].nonce`, nonce, NONCE_OCTETS);
   exigerOctets(`emplacements[${index}].etiquette`, etiquette, ETIQUETTE_OCTETS);

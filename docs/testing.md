@@ -599,15 +599,16 @@ un SECRET D'UTILISATEUR entre dans le produit, et la preuve est organisée autou
 : ce qui est éprouvé n'est pas seulement « la bonne clé sort », c'est **où le secret existe, ce
 qu'il en reste, et ce que le produit fait quand la plate-forme ne peut pas**.
 
-| Niveau     | Fichier                                           | Ce qu'il établit                                                            | Rattachement    |
-| ---------- | ------------------------------------------------- | --------------------------------------------------------------------------- | --------------- |
-| unitaire   | `tests/unit/vm-derivation-modele.test.mjs`        | info HKDF par **modèle de référence** + vecteurs figés, KEK non extractible | `npm run check` |
-| unitaire   | `tests/unit/vm-derivation-phrase.test.mjs`        | vecteurs RFC 9106 par l'artefact VENDU, empreinte, plancher, NFC            | `npm run check` |
-| unitaire   | `tests/unit/vm-derivation-webauthn-prf.test.mjs`  | les quatre conduites, `signCount` non lu, absence de repli                  | `npm run check` |
-| unitaire   | `tests/unit/vm-derivation-branchement.test.mjs`   | la couche d'ouverture sous dérivateur, type inconnu, harnais intact         | `npm run check` |
-| unitaire   | `tests/unit/vm-derivation-recuperation.test.mjs`  | le code de récupération : forme, somme de contrôle, `SEC-RECOVERY-001`      | `npm run check` |
-| unitaire   | `tests/unit/vm-recuperation-mutation.test.mjs`    | les quatorze gardes du moyen de récupération, retirées une à une            | `npm run check` |
-| navigateur | `tests/browser/deverrouillage-frontiere.spec.mjs` | trois moteurs, authentificateur virtuel, sonde de non-persistance           | `npm run check` |
+| Niveau     | Fichier                                           | Ce qu'il établit                                                              | Rattachement    |
+| ---------- | ------------------------------------------------- | ----------------------------------------------------------------------------- | --------------- |
+| unitaire   | `tests/unit/vm-derivation-modele.test.mjs`        | info HKDF par **modèle de référence** + vecteurs figés, KEK non extractible   | `npm run check` |
+| unitaire   | `tests/unit/vm-derivation-phrase.test.mjs`        | vecteurs RFC 9106 par l'artefact VENDU, empreinte, plancher, NFC              | `npm run check` |
+| unitaire   | `tests/unit/vm-derivation-webauthn-prf.test.mjs`  | les quatre conduites, `signCount` non lu, absence de repli                    | `npm run check` |
+| unitaire   | `tests/unit/vm-derivation-branchement.test.mjs`   | la couche d'ouverture sous dérivateur, type inconnu, harnais intact           | `npm run check` |
+| unitaire   | `tests/unit/vm-derivation-recuperation.test.mjs`  | le code de récupération : forme, somme de contrôle, `SEC-RECOVERY-001`        | `npm run check` |
+| unitaire   | `tests/unit/vm-enveloppe-type-inconnu.test.mjs`   | un type de clé inconnu se lit, s'inventorie et se révoque ; il ne s'écrit pas | `npm run check` |
+| unitaire   | `tests/unit/vm-recuperation-mutation.test.mjs`    | les seize gardes du moyen de récupération, retirées une à une                 | `npm run check` |
+| navigateur | `tests/browser/deverrouillage-frontiere.spec.mjs` | trois moteurs, authentificateur virtuel, sonde de non-persistance             | `npm run check` |
 
 **Le modèle de référence vit sous `tests/`, et c'est un écart assumé** avec celui de l'ADR 0020. Ce
 qu'il transcrit n'est pas un format sur disque mais deux appels de WebCrypto ; le seul service qu'il

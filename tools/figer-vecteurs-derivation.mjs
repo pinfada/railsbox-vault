@@ -384,9 +384,11 @@ function saisiesDe(codeRendu) {
   // silence : le figeur refuse plutôt que de les poser à vide.
   const rangDuZero = codeRendu.indexOf("0");
   const rangDuK = codeRendu.indexOf("K");
-  if (rangDuZero === -1 || rangDuK === -1) {
+  const rangDuS = codeRendu.indexOf("S");
+  const rangDuUn = codeRendu.indexOf("1");
+  if (rangDuZero === -1 || rangDuK === -1 || rangDuS === -1 || rangDuUn === -1) {
     throw new Error(
-      `Le code figé « ${codeRendu} » doit porter un « 0 » et un « K » : les vecteurs de saisie s'appuient dessus.`,
+      `Le code figé « ${codeRendu} » doit porter un « 0 », un « 1 », un « K » et un « S » : les vecteurs de saisie s'appuient dessus.`,
     );
   }
   return {
@@ -443,6 +445,26 @@ function saisiesDe(codeRendu) {
           "quand U+FF10 n'est refusé que parce que la forme appliquée est NFC et non NFKC.",
         pointsSaisis: pointsDe(codeRendu).map((point, rang) =>
           rang === rangDuZero ? 0x00e9 : point,
+        ),
+      },
+      {
+        nom: "un « ſ » (U+017F, s long) là où le code porte un S",
+        motif:
+          "Trouvé par la revue de crypto de #155. `toUpperCase()` en fait un « S » : la mise en " +
+          "majuscule d'Unicode est une transformation LINGUISTIQUE, pas un filtre, et elle faisait " +
+          "entrer dans l'alphabet un signe que personne n'avait déclaré. La table close des signes " +
+          "acceptés le refuse. Aucune force n'était perdue — l'espace reste 2^128 — mais une garde " +
+          "qui accepte ce que sa spécification refuse est une garde fausse.",
+        pointsSaisis: pointsDe(codeRendu).map((point, rang) => (rang === rangDuS ? 0x017f : point)),
+      },
+      {
+        nom: "un « ı » (U+0131, i sans point) là où le code porte un 1",
+        motif:
+          "Le second signe que `toUpperCase()` laissait passer, et le pire des deux : il devenait " +
+          "« I », que le repli de Crockford ramenait ensuite sur « 1 ». Un DOUBLE repli, dont " +
+          "aucun des deux maillons n'était déclaré.",
+        pointsSaisis: pointsDe(codeRendu).map((point, rang) =>
+          rang === rangDuUn ? 0x0131 : point,
         ),
       },
       {

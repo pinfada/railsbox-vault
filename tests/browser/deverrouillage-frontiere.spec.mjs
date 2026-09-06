@@ -400,7 +400,11 @@ test("MESURE — coût d'une dérivation Argon2id calibrée", async ({ page }, t
   // écrite de la décision 1 de l'ADR 0025 : sans étirement, le déverrouillage par code doit coûter
   // l'ordre de grandeur d'un PRF — des millisecondes — et non celui d'Argon2id. Une mesure qui
   // dirait le contraire serait un BLOCAGE, pas une surprise à arrondir.
-  const codeMesure = await executer(page, { scenario: "mesure-code", tours });
+  // CINQ fois plus d'échantillons que la phrase, et ce n'est pas un caprice : à vingt tours,
+  // `rang(0.95)` retombe sur le MAXIMUM, si bien que l'assertion ci-dessous porterait sur un seul
+  // hoquet de ramasse-miettes. Le code coûte des dixièmes de milliseconde — cent tours restent
+  // gratuits devant les vingt dérivations Argon2id qui précèdent.
+  const codeMesure = await executer(page, { scenario: "mesure-code", tours: tours * 5 });
   process.stdout.write(
     `MESURE ${testInfo.project.name} : code p50 ${codeMesure.p50Ms} ms, p95 ${codeMesure.p95Ms} ms, min ${codeMesure.minMs} ms, max ${codeMesure.maxMs} ms (${codeMesure.tours} tours, HKDF seul)\n`,
   );
@@ -501,6 +505,16 @@ test("le code ouvre un volume dont plus AUCUN autre moyen ne subsiste, et une ph
     "la phrase recréée sous le code ne rouvre pas le volume",
   ).toBe(true);
   expect(report.versionFinale).toBe(report.versionApresRevocation + 1);
+
+  // La CONDITION de la décision 1, gardée à CHAQUE exécution et non seulement sous
+  // `VAULT_MESURER_DERIVATION`. La mesure publiée dans l'ADR 0025 documente l'ordre de grandeur ;
+  // celle-ci empêche qu'un étirement se glisse un jour dans ce chemin sans que personne ne le voie.
+  // La borne est LARGE — cinquante millisecondes, là où la mesure donne zéro à deux — parce qu'elle
+  // affirme « ce n'est pas Argon2id », pas une valeur.
+  expect(
+    report.coutCodeMs,
+    "le déverrouillage par code coûte l'ordre d'un étirement : la décision 1 ne tient plus",
+  ).toBeLessThan(50);
 });
 
 test("AUCUN octet du code de récupération ne se dépose, hors son unique canal de rendu", async ({
@@ -551,6 +565,15 @@ test("AUCUN octet du code de récupération ne se dépose, hors son unique canal
   ).toBe(true);
 
   const sansTirets = code.replaceAll("-", "");
+  // La forme HUMAINE que le banc fabrique pour rouvrir — minuscules, espaces, « o » et « l » — est
+  // un autre visage du même secret, et elle passe par `geste.code`. Elle est cherchée partout, sans
+  // exception : contrairement à la chaîne rendue, elle n'a AUCUN canal légitime.
+  const humaine = code.toLowerCase().replaceAll("-", " ").replaceAll("0", "o").replaceAll("1", "l");
+  for (const { ou, texte } of morceaux) {
+    expect(texte.includes(humaine), `la forme humaine du code se retrouve dans « ${ou} »`).toBe(
+      false,
+    );
+  }
   for (const { ou, texte } of morceaux) {
     if (ou !== "port") {
       expect(texte.includes(code), `le code se retrouve dans « ${ou} »`).toBe(false);
