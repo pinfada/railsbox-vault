@@ -1,0 +1,184 @@
+#!/usr/bin/env node
+// CAMPAGNE DE MUTATION des gardes de l'archive v2 et de l'ancre de version (#149, ADR 0027).
+//
+//     node tools/muter-gardes-archive-recuperation.mjs [--json]
+//
+// Le moteur est celui de `tools/moteur-de-mutation.mjs` : recopie du dépôt dans un atelier
+// temporaire, `NODE_TEST_CONTEXT` retiré de l'enfant, `node --check` sur chaque fichier muté,
+// épreuve jouée SANS mutation d'abord, arrêt sans verdict compté NON CONCLUANT. Ce fichier ne tient
+// que sa TABLE.
+//
+// ## Ce que la campagne mesure ici, et pourquoi ces gardes-là
+//
+// L'ADR 0027 révise une décision de sécurité : l'archive emporte désormais la capacité d'ouvrir le
+// volume. Ce qui la sépare d'un renoncement tient en quelques lignes de code, et une campagne de
+// mutation est la seule façon de savoir si ces lignes sont réellement TENUES par une épreuve — ou
+// si elles pourraient disparaître sans qu'aucune suite ne rougisse :
+//
+//  - le FILTRE de la construction et sa RELECTURE à l'import (types 1, 2, 3 refusés). Sans eux,
+//    une phrase secrète voyagerait dans l'archive ;
+//  - l'empreinte de la section, vérifiée AVANT toute écriture ;
+//  - la CONFRONTATION de l'en-tête à la page : un en-tête qui ment sur la version ferait passer
+//    une sauvegarde antérieure à la feuille sans consentement ;
+//  - l'ORDRE contenu → enveloppe → manifeste, qui interdit un volume déclaré complet que personne
+//    n'ouvre ;
+//  - la TRANSMISSION de `versionMinimale` par l'ouvreur de production, sans quoi l'ancre resterait
+//    ce qu'elle était avant cette tranche : un paramètre que personne ne passe ;
+//  - le CONSENTEMENT nommé, et la LECTURE d'une archive v1, qui est la compatibilité promise.
+//
+// ## Ce que la campagne ne peut PAS mesurer
+//
+// Que la page embarquée s'ouvre réellement sous le code une fois restaurée sur un vrai support :
+// c'est le scénario de bout en bout `tests/e2e/archive-recuperation-inter-origine.spec.mjs` qui
+// l'établit, et aucune mutation jouée sous Node ne le remplace.
+
+import { fileURLToPath } from "node:url";
+
+import { campagneDeMutation } from "./moteur-de-mutation.mjs";
+
+const RECUPERATION = "src/vm/enveloppe-de-recuperation.mjs";
+const SECTION = "src/vm/archive-recuperation.mjs";
+const EXPORT = "src/vm/volume-export.mjs";
+const IMPORT = "src/vm/volume-import.mjs";
+const OUVERTURE = "src/vm/ouverture-par-enveloppe.mjs";
+
+const ARCHIVE = "tests/unit/vm-archive-recuperation.test.mjs";
+const RESTAURATION = "tests/unit/vm-restauration-recuperation.test.mjs";
+const ANCRE = "tests/unit/vm-enveloppe-ancre-version.test.mjs";
+const VECTEURS = "tests/unit/vm-archive-vecteurs.test.mjs";
+const IMPORT_EPREUVE = "tests/unit/vm-volume-import.test.mjs";
+
+/**
+ * Les gardes de #149, et la façon exacte de les retirer.
+ *
+ * `avant` doit apparaître EXACTEMENT UNE FOIS dans le fichier : deux occurrences voudraient dire que
+ * la mutation ne décrit pas ce qu'elle croit décrire, et l'outil refuse plutôt que d'en muter une au
+ * hasard.
+ */
+export const MUTATIONS = Object.freeze([
+  {
+    nom: "la construction FILTRE aux seuls emplacements de type 4",
+    garde: "construireEnveloppeDeRecuperation — le filtre sur `typeKek`",
+    fichier: RECUPERATION,
+    avant:
+      "  const emplacements = etat.page.emplacements.filter(\n" +
+      "    (emplacement) => emplacement.typeKek === TYPE_EMBARQUE,\n" +
+      "  );",
+    apres: "  const emplacements = etat.page.emplacements;",
+    epreuves: [ARCHIVE, VECTEURS],
+  },
+  {
+    nom: "la page embarquée est RELUE, et un type étranger la fait refuser",
+    garde: "exigerEnveloppeDeRecuperationSeule — le relevé des emplacements étrangers",
+    fichier: RECUPERATION,
+    avant:
+      "  const etrangers = lue.page.emplacements.filter(\n" +
+      "    (emplacement) => emplacement.typeKek !== TYPE_EMBARQUE,\n" +
+      "  );",
+    apres: "  const etrangers = [];",
+    epreuves: [ARCHIVE, RESTAURATION],
+  },
+  {
+    nom: "la page 1 du voisin restauré est à ZÉRO",
+    garde: "fichierDEnveloppeDepuisLaPage — l'absence de seconde copie",
+    fichier: RECUPERATION,
+    avant: "  const fichier = new Uint8Array(PAGE_OCTETS * PAGES);\n  fichier.set(page, 0);",
+    apres:
+      "  const fichier = new Uint8Array(PAGE_OCTETS * PAGES);\n" +
+      "  fichier.set(page, 0);\n" +
+      "  fichier.set(page, PAGE_OCTETS);",
+    epreuves: [RESTAURATION],
+  },
+  {
+    nom: "l'empreinte de la section est CONFRONTÉE à celle que l'en-tête déclare",
+    garde: "lireEtVerifierLaRecuperation — la comparaison des deux empreintes",
+    fichier: SECTION,
+    avant: "  if (calculee !== descripteur.digest) {",
+    apres: "  if (calculee === null) {",
+    epreuves: [ARCHIVE, RESTAURATION],
+  },
+  {
+    nom: "une archive de version 1 reste LUE",
+    garde: "ARCHIVE_FORMAT_VERSIONS_LUES — la compatibilité promise par l'ADR 0027",
+    fichier: EXPORT,
+    avant: "export const ARCHIVE_FORMAT_VERSIONS_LUES = Object.freeze([1, 2]);",
+    apres: "export const ARCHIVE_FORMAT_VERSIONS_LUES = Object.freeze([2]);",
+    epreuves: [ARCHIVE],
+  },
+  {
+    nom: "l'en-tête est CONFRONTÉ à la page, jamais cru",
+    garde: "assertEnveloppeEmbarquee — la comparaison version/emplacements",
+    fichier: IMPORT,
+    avant:
+      "  if (declare.envelopeVersion === porte.envelopeVersion && declare.slots === porte.slots) return;",
+    apres: "  return;",
+    epreuves: [RESTAURATION],
+  },
+  {
+    nom: "l'ORDRE est contenu, puis enveloppe, puis manifeste",
+    garde: "poserLEnveloppePuisLeManifeste — l'ordre des deux derniers gestes",
+    fichier: IMPORT,
+    avant:
+      "  await target.commitRecoveryEnvelope(verdict.recovery === null ? null : verdict.recovery.octets);\n" +
+      "  await target.commitManifest(serializeManifest(verdict.manifest));",
+    apres:
+      "  await target.commitManifest(serializeManifest(verdict.manifest));\n" +
+      "  await target.commitRecoveryEnvelope(verdict.recovery === null ? null : verdict.recovery.octets);",
+    epreuves: [RESTAURATION, IMPORT_EPREUVE],
+  },
+  {
+    nom: "une archive plus ANCIENNE que la feuille exige un consentement",
+    garde: "exigerLAncre — le refus quand la version embarquée est en deçà",
+    fichier: IMPORT,
+    avant: "  if (embarquee >= versionMinimale || consentement !== null) return consentement;",
+    apres: "  return consentement;",
+    epreuves: [RESTAURATION],
+  },
+  {
+    nom: "`versionMinimale` traverse l'ouvreur de production sans se perdre",
+    garde: "ouvrirVolumeParKek — la feuille passée à `ouvrirEnveloppe`",
+    fichier: OUVERTURE,
+    avant:
+      "  const ouverte = await ouvrirEnveloppe({\n" +
+      "    support: support ?? supportEnveloppeOpfs(name),\n" +
+      "    identifiantVolume,\n" +
+      "    kek,\n" +
+      "    versionMinimale,\n" +
+      "  });",
+    apres:
+      "  const ouverte = await ouvrirEnveloppe({\n" +
+      "    support: support ?? supportEnveloppeOpfs(name),\n" +
+      "    identifiantVolume,\n" +
+      "    kek,\n" +
+      "  });",
+    epreuves: [ANCRE],
+  },
+  {
+    nom: "`ouvrirVolumeParDerivateur` transmet la feuille à `ouvrirVolumeParKek`",
+    garde: "ouvrirVolumeParDerivateur — la feuille passée d'un ouvreur à l'autre",
+    fichier: OUVERTURE,
+    avant: "    size,\n    expectations,\n    versionMinimale,\n    support: supportEmploye,",
+    apres: "    size,\n    expectations,\n    support: supportEmploye,",
+    epreuves: [ANCRE],
+  },
+]);
+
+function principal() {
+  const { resultats } = campagneDeMutation({
+    mutations: MUTATIONS,
+    etiquette: "archive-recuperation",
+  });
+  if (process.argv.includes("--json")) {
+    console.log(JSON.stringify({ resultats }, null, 2));
+  } else {
+    for (const resultat of resultats) {
+      console.log(`${resultat.tue ? "TUÉ    " : "SURVIT "} ${resultat.nom} — ${resultat.garde}`);
+      if (resultat.raison !== null) console.log(`         ${resultat.raison}`);
+    }
+    const survivants = resultats.filter((resultat) => !resultat.tue).length;
+    console.log(`\n${resultats.length - survivants}/${resultats.length} mutants tués.`);
+  }
+  process.exit(resultats.some((resultat) => !resultat.tue) ? 1 : 0);
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) principal();
