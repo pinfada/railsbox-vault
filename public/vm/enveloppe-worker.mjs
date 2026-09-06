@@ -174,12 +174,7 @@ async function tournerLaCle(support, { initiale, rotation }, identifiantEmplacem
  * Le rapport rend des booléens, des comptes et des codes. Jamais une clé, jamais un octet du fichier
  * d'enveloppes : c'est ce que l'épreuve fouille.
  */
-async function scenarioRevocationUrgence(jeton) {
-  await removeOpfsVolume(VOLUME);
-  const dek = cleDeVolumeDuHarnais({ jeton });
-  const { initiale, rotation, tierce } = clesDeDeverrouillageDuHarnais({ jeton });
-  const support = supportEnveloppeOpfs(VOLUME);
-
+async function poserTroisEmplacements(support, dek, { initiale, rotation, tierce }) {
   await creerEnveloppe({ support, identifiantVolume: IDENTIFIANT_VOLUME, dek, kek: initiale });
   await poserLeVolume(dek);
   for (const [kekNouvelle, typeKek, graine] of [
@@ -195,7 +190,30 @@ async function scenarioRevocationUrgence(jeton) {
       parametres: Uint8Array.from({ length: 24 }, (_, index) => (graine + index) % 256),
     });
   }
-  const avant = await inventorierEnveloppe({ support, identifiantVolume: IDENTIFIANT_VOLUME });
+  return inventorierEnveloppe({ support, identifiantVolume: IDENTIFIANT_VOLUME });
+}
+
+/** Constate ce que chaque clé retirée rend désormais. Un `null` voudrait dire qu'elle ouvre encore. */
+async function refusDesRetirees(support, retirees) {
+  const refus = [];
+  for (const retiree of retirees) {
+    try {
+      await ouvrirEnveloppe({ support, identifiantVolume: IDENTIFIANT_VOLUME, kek: retiree });
+      refus.push(null);
+    } catch (erreur) {
+      refus.push(isEnveloppeError(erreur) ? erreur.code : codeOf(erreur));
+    }
+  }
+  return refus;
+}
+
+async function scenarioRevocationUrgence(jeton) {
+  await removeOpfsVolume(VOLUME);
+  const dek = cleDeVolumeDuHarnais({ jeton });
+  const cles = clesDeDeverrouillageDuHarnais({ jeton });
+  const support = supportEnveloppeOpfs(VOLUME);
+  const avant = await poserTroisEmplacements(support, dek, cles);
+  const { initiale, rotation, tierce } = cles;
 
   const geste = await revoquerToutSauf({
     support,
@@ -209,15 +227,7 @@ async function scenarioRevocationUrgence(jeton) {
     kek: initiale,
   });
 
-  const refus = [];
-  for (const retiree of [rotation, tierce]) {
-    try {
-      await ouvrirEnveloppe({ support, identifiantVolume: IDENTIFIANT_VOLUME, kek: retiree });
-      refus.push(null);
-    } catch (erreur) {
-      refus.push(isEnveloppeError(erreur) ? erreur.code : codeOf(erreur));
-    }
-  }
+  const refus = await refusDesRetirees(support, [rotation, tierce]);
 
   // La page LIBÉRÉE, mesurée sur le fichier réel : elle ne doit plus porter un octet non nul. C'est
   // #156, éprouvé là où le système de fichiers est celui du moteur et non un double.

@@ -1881,7 +1881,9 @@ pas « clé invalide »), `VAULT_ENVELOPPE_CLE_REFUSEE` (clé de déverrouillage
 le même refus pour les deux, indiscernable, et **le même nombre d'appels AEAD** :
 `tests/unit/vm-enveloppe-operations.test.mjs` › « clé RÉVOQUÉE et clé INCONNUE rendent le même
 refus, indiscernable »), `VAULT_ENVELOPPE_DERNIER_EMPLACEMENT` (révoquer le dernier emplacement est
-refusé — un volume sans issue n'est pas un état acceptable), `VAULT_ENVELOPPE_EMPLACEMENT_INCONNU`,
+refusé — un volume sans issue n'est pas un état acceptable ; il ne s'applique PAS à la révocation
+d'urgence de l'[ADR 0026](decisions/0026-revocation-d-urgence-et-page-libre.md), qui laisse toujours
+exactement un emplacement et n'a donc aucun refus propre), `VAULT_ENVELOPPE_EMPLACEMENT_INCONNU`,
 `VAULT_ENVELOPPE_IDENTITE`, `VAULT_ENVELOPPE_ILLISIBLE`, `VAULT_ENVELOPPE_MALFORME`,
 `VAULT_ENVELOPPE_MELANGE`, `VAULT_ENVELOPPE_PLEINE`, `VAULT_ENVELOPPE_RACINE_REFUSEE`,
 `VAULT_ENVELOPPE_REJEU`, `VAULT_ENVELOPPE_TRONCATURE`.
@@ -1962,17 +1964,21 @@ distincte du stockage.
 Un relecteur en voit la **place**, pas l'implémentation. Ils sont nommés ici avec leur statut pour
 qu'aucune absence ne se lise comme un oubli.
 
-| Voisin                | Décision                                                            | Statut au 5 septembre 2026                                                                                                                                                                                                                                                                |
-| --------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `<volume>.cles`       | [ADR 0020](decisions/0020-enveloppe-de-cle.md)                      | **livré.** Chiffré et authentifié. Il est le seul chemin vers le volume : sa perte vaut la perte des données. **L'archive ne l'emporte pas.**                                                                                                                                             |
-| Dérivation            | [ADR 0021](decisions/0021-derivation-des-cles-de-deverrouillage.md) | **livré.** Argon2id (RFC 9106) au plancher de la RFC, ou WebAuthn PRF. Le compteur `signCount` **n'est pas lu**.                                                                                                                                                                          |
-| `<volume>.instantane` | [ADR 0024](decisions/0024-instantane-de-reprise.md)                 | **livré.** Il part avec le témoin et le journal à tout geste qui réécrit le volume, pour la raison de la § 6.9. L'empreinte de région de la § 6.8 lui sert de **liaison** : elle rend un instantané périmé détectable dès qu'un secteur a été rescellé (`VAULT_INSTANTANE_ECART_REGION`). |
-| `<volume>.migration`  | [ADR 0011](decisions/0011-migration-de-format-et-reprise.md)        | **livré, ni chiffré ni authentifié.** Sa limite est dans le périmètre : § 9.2.                                                                                                                                                                                                            |
+| Voisin                | Décision                                                                                                         | Statut au 5 septembre 2026                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<volume>.cles`       | [ADR 0020](decisions/0020-enveloppe-de-cle.md), [ADR 0026](decisions/0026-revocation-d-urgence-et-page-libre.md) | **livré.** Chiffré et authentifié. Il est le seul chemin vers le volume : sa perte vaut la perte des données. **L'archive ne l'emporte pas.** **SIX** opérations depuis le 6 septembre 2026 : la révocation d'urgence retire tous les emplacements sauf celui que la clé présentée OUVRE, en une version et une barrière, et toute mutation qui RETIRE une clé efface ensuite la page libérée (8192 zéros, seconde barrière). |
+| Dérivation            | [ADR 0021](decisions/0021-derivation-des-cles-de-deverrouillage.md)                                              | **livré.** Argon2id (RFC 9106) au plancher de la RFC, ou WebAuthn PRF. Le compteur `signCount` **n'est pas lu**.                                                                                                                                                                                                                                                                                                              |
+| `<volume>.instantane` | [ADR 0024](decisions/0024-instantane-de-reprise.md)                                                              | **livré.** Il part avec le témoin et le journal à tout geste qui réécrit le volume, pour la raison de la § 6.9. L'empreinte de région de la § 6.8 lui sert de **liaison** : elle rend un instantané périmé détectable dès qu'un secteur a été rescellé (`VAULT_INSTANTANE_ECART_REGION`).                                                                                                                                     |
+| `<volume>.migration`  | [ADR 0011](decisions/0011-migration-de-format-et-reprise.md)                                                     | **livré, ni chiffré ni authentifié.** Sa limite est dans le périmètre : § 9.2.                                                                                                                                                                                                                                                                                                                                                |
 
 **Et une chose qui n'existe pas.** Le **changement de clé de volume** : le refus au budget (§ 4.5)
 et la révocation d'un emplacement d'enveloppe nomment tous deux ce remède ; aucun chemin du produit
-ne rechiffre un volume sous une clé neuve. **« Supprimer et recréer »** (§ 6.3, § 10.2), la conduite
-nommée par `VAULT_STORAGE_VOLUME_INCOMPLET`, N'EN FAIT PLUS PARTIE depuis le 6 septembre 2026 :
+ne rechiffre un volume sous une clé neuve. C'est la limite que l'ADR 0026 écrit sans l'arrondir :
+**révoquer ne rechiffre pas.** Qui détient `<volume>` et une page ANTÉRIEURE de `<volume>.cles`
+développe toujours la même clé de volume ; une révocation protège le fichier À VENIR, jamais la
+copie déjà prise, et l'effacement de la page libre ne change rien à cela — il ferme la fenêtre du
+fichier, pas celle du support. **« Supprimer et recréer »** (§ 6.3, § 10.2), la conduite nommée par
+`VAULT_STORAGE_VOLUME_INCOMPLET`, N'EN FAIT PLUS PARTIE depuis le 6 septembre 2026 :
 `removeOpfsVolume` l'outille, et la naissance retire elle-même les orphelins d'un volume supprimé à
 la main — voir § 9.6, constat [#145](https://github.com/pinfada/railsbox-vault/issues/145).
 
