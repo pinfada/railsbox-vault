@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr" data-vault-ready="false">
+<html lang="fr" data-coquille="demarrage">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,7 +8,14 @@
   <body>
     <main>
       <h1>RailsBox Vault</h1>
-      <p id="worker-status" role="status">worker:starting</p>
+      <p id="coquille-etat" role="status">coquille:demarrage</p>
+      <!--
+        Le relevé de la coquille : ce qu'elle a refusé, et dans quel ordre elle a agi. Il ne porte
+        aucune donnée du volume — ni nom, ni taille, ni clé — et sert aux épreuves de frontière comme
+        à quiconque veut voir ce que la coquille a fait sans ouvrir la console.
+      -->
+      <pre id="coquille-rapport">{}</pre>
+      <div id="cadre-applicatif"></div>
     </main>
     <script type="module" src="/main.mjs"></script>
   </body>

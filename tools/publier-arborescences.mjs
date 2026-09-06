@@ -33,17 +33,25 @@ export const SOURCES_COQUILLE = Object.freeze([
   Object.freeze({
     depuis: "public/main.mjs",
     vers: "main.mjs",
-    role: "Script de page de la coquille : il crée le Worker runtime et n'a aucun accès au volume.",
+    role:
+      "Script de page de la coquille (#161) : il établit le canal privilégié vers le Worker de " +
+      "confiance AVANT tout document applicatif, encadre l'origine applicative et courtie le port " +
+      "restreint. Il n'a aucun accès au volume.",
   }),
   Object.freeze({
     depuis: "public/runtime-worker.mjs",
     vers: "runtime-worker.mjs",
-    role: "Worker runtime. Il détiendra le handle OPFS exclusif et la clé de session (ADR 0002).",
+    role:
+      "Worker de CONFIANCE (#161, ADR 0028). Il détient le handle OPFS exclusif et la clé de " +
+      "volume développée ; ni l'une ni l'autre ne franchit un `postMessage` (ADR 0002).",
   }),
   Object.freeze({
-    depuis: "src/runtime-contract.mjs",
-    vers: "src/runtime-contract.mjs",
-    role: "Contrat page ↔ Worker, chargé tel quel par les deux (le serveur expose `/src/`).",
+    depuis: "src/coquille",
+    vers: "src/coquille",
+    role:
+      "Contrat de messages, liste d'admission, liste de refus et dérivation de l'origine " +
+      "applicative (#161). Chargés tels quels par la page ET par le Worker : le serveur expose " +
+      "`/src/`, et les deux côtés de la frontière raisonnent ainsi sur la même table.",
   }),
   Object.freeze({
     depuis: "src/vm",
@@ -189,6 +197,25 @@ export const EXCLUSIONS = Object.freeze([
   Object.freeze({
     prefixe: "src/compat/",
     motif: "Contrat et vecteurs de la sonde de capacités #2 : rien du produit ne les importe.",
+  }),
+  Object.freeze({
+    prefixe: "public/coquille-epreuve/",
+    motif:
+      "Fixture de l'épreuve de frontière #161 : une APPLICATION MALVEILLANTE qui tente la liste " +
+      "complète des gestes interdits, et son Service Worker qui répond à la place du serveur. La " +
+      "publier reviendrait à servir l'adversaire depuis l'origine qu'il attaque.",
+  }),
+  Object.freeze({
+    prefixe: "public/document-applicatif.html",
+    motif:
+      "Document applicatif de DÉVELOPPEMENT (#161). L'ADR 0002 le dit des deux côtés : en " +
+      "production le HTML applicatif vient du guest et est relayé par le proxy, si bien que le " +
+      "publier sur l'origine de confiance y poserait un document applicatif, et sur l'origine " +
+      "applicative un artefact de ce dépôt. Le cycle assemblé est la tranche 3 (#163).",
+  }),
+  Object.freeze({
+    prefixe: "public/document-applicatif.mjs",
+    motif: "Script de page du document applicatif de développement (#161). Même motif.",
   }),
   Object.freeze({
     prefixe: "src/spike/",

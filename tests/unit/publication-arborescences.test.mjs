@@ -121,6 +121,11 @@ test("les bancs de mesure nommés par `release-policy.md` sont exclus, avec leur
     "public/spike/origin/app.html",
     "public/vm/index.html",
     "public/compat.html",
+    // #161 : la fixture malveillante et le document applicatif de développement. Le premier est
+    // l'adversaire, le second est le territoire du guest ; ni l'un ni l'autre n'est un artefact
+    // que ce dépôt a le droit de servir depuis l'une ou l'autre des deux origines de l'ADR 0002.
+    "public/coquille-epreuve/hostile.html",
+    "public/document-applicatif.html",
   ]) {
     const motif = motifDExclusion(banc);
     assert.ok(motif !== null, `${banc} n'est retiré par aucun motif`);
@@ -129,12 +134,13 @@ test("les bancs de mesure nommés par `release-policy.md` sont exclus, avec leur
   }
 });
 
-test("le runtime et le contrat page ↔ Worker sont publiés, eux", () => {
+test("le runtime et le contrat de la coquille sont publiés, eux", () => {
   for (const artefact of [
     "public/index.html",
     "public/main.mjs",
     "public/runtime-worker.mjs",
-    "src/runtime-contract.mjs",
+    "src/coquille/contrat-de-messages.mjs",
+    "src/coquille/admission-applicative.mjs",
     "src/vm/volume-manifest.mjs",
   ]) {
     assert.equal(estPublie(artefact), true, `${artefact} n'est publié par aucune source`);
