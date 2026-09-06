@@ -379,6 +379,16 @@ const RECUPERATION_DERIVATION = Object.freeze({
 function saisiesDe(codeRendu) {
   const minusculesEspaces = codeRendu.toLowerCase().replaceAll("-", " ");
   const replie = minusculesEspaces.replaceAll("0", "o").replaceAll("1", "l");
+  // Les deux vecteurs qui MORDENT ont besoin d'un « 0 » et d'un « K » dans la chaîne rendue. Si un
+  // jour le code figé n'en portait plus, ces vecteurs cesseraient de mesurer quoi que ce soit en
+  // silence : le figeur refuse plutôt que de les poser à vide.
+  const rangDuZero = codeRendu.indexOf("0");
+  const rangDuK = codeRendu.indexOf("K");
+  if (rangDuZero === -1 || rangDuK === -1) {
+    throw new Error(
+      `Le code figé « ${codeRendu} » doit porter un « 0 » et un « K » : les vecteurs de saisie s'appuient dessus.`,
+    );
+  }
   return {
     forme: "NFC",
     acceptees: [
@@ -396,6 +406,16 @@ function saisiesDe(codeRendu) {
         nom: "une espace insécable et une tabulation entre les groupes",
         pointsSaisis: pointsDe(codeRendu.replaceAll("-", " ").replace(" ", "\t")),
       },
+      {
+        nom: "le signe KELVIN (U+212A) à la place du K, que la NFC ramène à « K »",
+        motif:
+          "C'est le vecteur qui FIGE la normalisation plutôt que de l'affirmer. U+212A a une " +
+          "décomposition canonique SINGLETON vers U+004B : les quatre formes le ramènent à « K », " +
+          "et une saisie qui ne normaliserait pas du tout le refuserait. Sans lui, retirer la " +
+          "normalisation ne changerait rien d'observable, puisque l'alphabet base 32 ne porte " +
+          "aucun caractère composable.",
+        pointsSaisis: pointsDe(codeRendu).map((point, rang) => (rang === rangDuK ? 0x212a : point)),
+      },
     ],
     refusees: [
       {
@@ -412,6 +432,18 @@ function saisiesDe(codeRendu) {
         nom: "une lettre PLEINE CHASSE (U+FF21), même motif",
         motif: "Même raison que la précédente, sur une lettre plutôt que sur un chiffre.",
         pointsSaisis: pointsDe(codeRendu).map((point, rang) => (rang === 1 ? 0xff21 : point)),
+      },
+      {
+        nom: "un « é » à la place du premier 0 : aucun repli ne le ramène dans l'alphabet",
+        motif:
+          "Un signe hors alphabet est REFUSÉ, jamais ignoré ni ramené sur une valeur par défaut : " +
+          "replié sur 0, celui-ci rendrait exactement le code valide, somme de contrôle comprise. " +
+          "Il double le vecteur du chiffre pleine chasse sur cette propriété-là, et s'en distingue " +
+          "sur une autre : « é » n'a AUCUNE correspondance Unicode vers un symbole de l'alphabet, " +
+          "quand U+FF10 n'est refusé que parce que la forme appliquée est NFC et non NFKC.",
+        pointsSaisis: pointsDe(codeRendu).map((point, rang) =>
+          rang === rangDuZero ? 0x00e9 : point,
+        ),
       },
       {
         nom: "un « U », que l'alphabet de Crockford écarte",
