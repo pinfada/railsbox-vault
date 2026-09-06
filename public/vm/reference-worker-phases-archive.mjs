@@ -324,6 +324,19 @@ export async function phaseVerifyExport({
     ok: verdict !== null,
     contentDigest: verdict?.contentDigest ?? null,
     contentLength: verdict?.contentLength ?? null,
+    // Ce que l'archive emporte, ou `null` — et `null` est la chose à DIRE : cette archive ne
+    // s'ouvrira nulle part ailleurs (ADR 0027, limite 6). Une vérification qui rendrait « ok » sans
+    // un mot de l'enveloppe laisserait l'exploitant croire qu'il a vérifié la sauvegarde entière.
+    // Les OCTETS de la section n'y sont pas : le port ne transporte que des données JSON (ADR 0002).
+    enveloppe:
+      verdict?.recovery == null
+        ? null
+        : {
+            length: verdict.recovery.length,
+            digest: verdict.recovery.digest,
+            envelopeVersion: verdict.recovery.envelopeVersion,
+            slots: verdict.recovery.slots,
+          },
     consistency: verdict?.consistency ?? null,
     manifestDigest: verdict?.manifest?.identity?.digest ?? null,
     maxBlockBytes: compteur.maxLecture,

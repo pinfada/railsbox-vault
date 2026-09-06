@@ -59,17 +59,25 @@ const PR_REELLE = "[PR #146](https://github.com/pinfada/railsbox-vault/pull/146)
 const PR_INVENTEE = "[PR #999999](https://github.com/pinfada/railsbox-vault/pull/999999)";
 
 /**
- * Les quatre familles de refus que la spécification doit couvrir, code par code : format chiffré,
- * stockage, enveloppe de clé, dérivation des clés de déverrouillage. Les autres familles
- * (`VAULT_MANIFEST_*`, `VAULT_MIGRATION_*`, causes de fraîcheur et de témoin) sont citées dans la
- * spécification sans relever de cette obligation d'exhaustivité — l'épreuve symétrique ci-dessous
- * les contrôle autrement : tout code cité doit exister.
+ * Les SIX familles de refus que la spécification doit couvrir, code par code : format chiffré,
+ * stockage, enveloppe de clé, dérivation des clés de déverrouillage, et — depuis #149 — ARCHIVE et
+ * IMPORT. Les autres familles (`VAULT_MANIFEST_*`, `VAULT_MIGRATION_*`, causes de fraîcheur et de
+ * témoin) sont citées dans la spécification sans relever de cette obligation d'exhaustivité —
+ * l'épreuve symétrique ci-dessous les contrôle autrement : tout code cité doit exister.
+ *
+ * **ARCHIVE et IMPORT y entrent parce que #149 les a fait grandir sans que rien ne le remarque.**
+ * La tranche a ajouté trois codes — deux à l'archive, un à la restauration — et le § 10 de la
+ * spécification est resté en arrière : aucun cliquet ne mordait sur ces deux familles, si bien que
+ * la table décrivait encore « une archive v1 » pendant que le produit en lisait deux. C'est le
+ * constat de la revue de format de la PR #160, et l'élargissement est sa correction : la
+ * spécification autonome de #20 doit décrire TOUS les refus qu'un relecteur externe rencontrera.
  *
  * Le motif exige que le jeton FINISSE par une lettre ou un chiffre : une mention de famille avec son
  * astérisque (`VAULT_STORAGE_GENERATION_*`) ou une préfixe tronqué n'est pas un code, et le prendre
  * pour tel ferait rougir l'épreuve sur de la prose.
  */
-const FAMILLES = /\bVAULT_(?:CRYPTO|STORAGE|ENVELOPPE|DERIVATION)_[A-Z0-9][A-Z0-9_]*[A-Z0-9]\b/g;
+const FAMILLES =
+  /\bVAULT_(?:CRYPTO|STORAGE|ENVELOPPE|DERIVATION|ARCHIVE|IMPORT)_[A-Z0-9][A-Z0-9_]*[A-Z0-9]\b/g;
 
 /** Tout code de refus du dépôt, toutes familles confondues. Même règle de fin de jeton. */
 const TOUS_LES_CODES = /\bVAULT_[A-Z][A-Z0-9_]*[A-Z0-9]\b/g;
@@ -164,7 +172,7 @@ test("le vérificateur de vecteurs tourne VERT en une commande, sans le produit"
   assert.match(sortie, /vertes?/, "le vérificateur doit compter ses vérifications vertes.");
 });
 
-test("CHAQUE code de refus des quatre familles du format apparaît dans la spécification", async () => {
+test("CHAQUE code de refus des SIX familles du format apparaît dans la spécification", async () => {
   const spec = await lire(SPEC);
   const attendus = await codesDuCode(FAMILLES);
   assert.ok(attendus.length > 0, "aucun code relevé : la recherche elle-même est cassée.");
@@ -265,6 +273,7 @@ test("le dossier remis au relecteur est complet : spec, vecteurs, script, gabari
     "tests/vectors/disposition-v3.json",
     "tests/vectors/enveloppe-v1.json",
     "tests/vectors/derivation-v1.json",
+    "tests/vectors/archive-v2.json",
     "tools/verifier-vecteurs.mjs",
   ];
   const manquants = [];

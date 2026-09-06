@@ -1951,20 +1951,31 @@ Les refus de compatibilité du manifeste (`VAULT_MANIFEST_FORMAT_TOO_NEW`, `_IDE
 **L'export et la restauration (§ 7.5).** Deux familles distinctes, l'une pour l'INTÉGRITÉ d'une
 archive, l'autre pour l'écriture de sa cible.
 
-| Code                               | Ce qu'il constate                                                                       | Conduite                             |
-| ---------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------ |
-| `VAULT_ARCHIVE_MALFORMED`          | l'entrée n'est pas structurellement une archive v1 : marqueur absent, en-tête illisible | l'archive est inexploitable          |
-| `VAULT_ARCHIVE_TRUNCATED`          | l'archive est plus courte que ce que son en-tête déclare                                | l'archive est inexploitable          |
-| `VAULT_ARCHIVE_DIGEST_MISMATCH`    | l'empreinte recalculée du contenu diffère de celle inscrite                             | l'archive est inexploitable          |
-| `VAULT_ARCHIVE_GEOMETRY_MISMATCH`  | la longueur du contenu contredit la géométrie du manifeste ou de l'en-tête              | l'archive est inexploitable          |
-| `VAULT_IMPORT_TARGET_NOT_EMPTY`    | la cible porte déjà un volume, jamais écrasée sans consentement explicite               | choisir une autre cible ou consentir |
-| `VAULT_IMPORT_SPACE_INSUFFICIENT`  | l'espace estimé est inférieur au volume à restaurer, refusé AVANT toute mutation        | libérer de la place                  |
-| `VAULT_IMPORT_GEOMETRY_MISMATCH`   | la cible ouverte n'a pas la taille du volume de l'archive                               | choisir une cible de la bonne taille |
-| `VAULT_IMPORT_VERIFICATION_FAILED` | la relecture du volume restauré ne rend pas l'empreinte de l'archive                    | réexporter la source                 |
+| Code                                 | Ce qu'il constate                                                                                                                                                                                            | Conduite                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `VAULT_ARCHIVE_MALFORMED`            | l'entrée n'est pas structurellement une archive : marqueur absent, en-tête illisible, version non prise en charge, champ `recovery` absent d'une v2 ou déclaré par une v1, octets au-delà de la fin déclarée | l'archive est inexploitable                                |
+| `VAULT_ARCHIVE_TRUNCATED`            | l'archive est plus courte que ce que son en-tête déclare                                                                                                                                                     | l'archive est inexploitable                                |
+| `VAULT_ARCHIVE_DIGEST_MISMATCH`      | l'empreinte recalculée du CONTENU diffère de celle inscrite                                                                                                                                                  | l'archive est inexploitable                                |
+| `VAULT_ARCHIVE_GEOMETRY_MISMATCH`    | la longueur du contenu contredit la géométrie du manifeste ou de l'en-tête                                                                                                                                   | l'archive est inexploitable                                |
+| `VAULT_ARCHIVE_RECUPERATION_ALTEREE` | l'empreinte recalculée de la SECTION DE RÉCUPÉRATION diffère de celle inscrite (#149)                                                                                                                        | réexporter : les données, elles, sont peut-être intactes   |
+| `VAULT_ARCHIVE_RECUPERATION_REFUSEE` | la section n'est pas une enveloppe de récupération SEULE — illisible, mauvaise taille, emplacement d'un autre type que 4, descripteur ou identité de volume qui ne s'accordent pas avec la page (#149)       | ne pas restaurer : la provenance de l'archive est en cause |
+| `VAULT_IMPORT_TARGET_NOT_EMPTY`      | la cible porte déjà un volume, jamais écrasée sans consentement explicite                                                                                                                                    | choisir une autre cible ou consentir                       |
+| `VAULT_IMPORT_SPACE_INSUFFICIENT`    | l'espace estimé est inférieur au volume à restaurer, refusé AVANT toute mutation                                                                                                                             | libérer de la place                                        |
+| `VAULT_IMPORT_GEOMETRY_MISMATCH`     | la cible ouverte n'a pas la taille du volume de l'archive                                                                                                                                                    | choisir une cible de la bonne taille                       |
+| `VAULT_IMPORT_VERIFICATION_FAILED`   | la relecture du volume restauré ne rend pas l'empreinte de l'archive                                                                                                                                         | réexporter la source                                       |
+| `VAULT_IMPORT_CONSENTEMENT_REQUIS`   | l'archive est ANTÉRIEURE à la version d'enveloppe notée sur la feuille de récupération (#149)                                                                                                                | relire la feuille ; à défaut, consentir NOMMÉMENT          |
 
 `VAULT_ARCHIVE_VOLUME_CHIFFRE` et `VAULT_IMPORT_VOLUME_CHIFFRE` ont existé et sont **retirés depuis
 le 6 septembre 2026** (#139) — voir § 10.2 et § 12, écart 2 — et n'apparaissent donc pas dans ces
 deux tables.
+
+**Une PRÉCÉDENCE, et elle se lit dans la table.** Sur une archive v2 dont la section de récupération
+est abîmée, `VAULT_ARCHIVE_DIGEST_MISMATCH` tombe AVANT `VAULT_ARCHIVE_RECUPERATION_ALTEREE` quand
+le contenu est abîmé lui aussi : la vérification empreinte le contenu d'abord. C'est voulu — le
+contenu est ce que l'archive existe pour porter, et une archive dont le contenu est perdu n'a pas de
+récupération à discuter. Et sur la section seule, `ALTEREE` précède `REFUSEE` : une section abîmée
+en transport et une section FORGÉE n'appellent pas le même remède — réexporter dans un cas, se
+méfier de la provenance dans l'autre.
 
 **Le manifeste (§ 6.10).** Famille `VAULT_MANIFEST_*`, une propriété de compatibilité de format,
 distincte du stockage.

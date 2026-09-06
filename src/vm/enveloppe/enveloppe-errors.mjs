@@ -205,7 +205,7 @@ export function melange(context = {}) {
 export function rejeu(context = {}) {
   return new EnveloppeError(
     ENVELOPPE_ERROR_CODES.rejeu,
-    "Enveloppe refusée : sa version est authentique mais ANTÉRIEURE au minimum exigé. C'est un rejeu. Le refus vaut ce que vaut le minimum présenté — l'ADR 0020 dit d'où il peut venir, et qu'aucun ancrage monotone hors du fichier n'existe avant #23.",
+    "Enveloppe refusée : sa version est authentique mais ANTÉRIEURE au minimum exigé. C'est un rejeu. Le refus vaut ce que vaut le minimum présenté : relisez la version notée sur votre feuille de récupération, car une version recopiée trop haut refuse une enveloppe saine. À défaut, ouvrir SANS plancher reste possible et n'est pas un contournement caché — c'est l'aveu de l'ADR 0027 : sans ancre, un retour arrière du fichier n'est pas détecté.",
     { situations: [SITUATIONS.rejeu], context },
   );
 }

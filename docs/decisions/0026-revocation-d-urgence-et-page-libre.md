@@ -149,7 +149,7 @@ fichiers à copie sur écriture, un SSD qui remappe ses blocs, un instantané de
 deux barrières peuvent conserver les anciens octets sans que rien ici ne puisse l'empêcher ni même
 l'observer. C'est un « fait, non garanti », dans les termes de la décision 7 de
 l'[ADR 0021](0021-derivation-des-cles-de-deverrouillage.md), et `SECURITY.md` le porte sous cette
-forme dans sa liste « non couvert » — l'entrée 10 (9 jusqu'à #149) est RÉÉCRITE, pas retirée : la
+forme dans sa liste « non couvert » — l'entrée 11 (9 jusqu'à #149) est RÉÉCRITE, pas retirée : la
 fenêtre est celle de la section précédente, plus ce que le support conserve.
 
 ## Décision 3 — Révoquer ne RECHIFFRE pas, et c'est écrit là où on le lira
