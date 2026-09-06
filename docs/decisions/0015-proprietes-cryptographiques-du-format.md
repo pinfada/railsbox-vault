@@ -833,3 +833,31 @@ scellement complet, qu'aucune décision numérotée ne porte, et le coût du sce
 volume de 512 Mio, extrapolé ici à 18,7 s (14,4 s dans la section « Risques ») et mesuré à 87,6 s
 dans `docs/quality-attributes.md`. Les neuf questions ouvertes ci-dessus y sont reprises avec la
 position du dépôt et ce qui la ferait changer.
+
+## Amendement du 2026-09-06 — les trois chiffres du scellement initial, rapprochés (#141)
+
+Aucune décision n'est révisée : ce document donnait, pour la même grandeur, **18,7 s** dans le
+tableau de « Coût » (ci-dessus) et **14,4 s** dans « Risques et conditions d'abandon » (point 3),
+deux extrapolations qui ne s'accordaient déjà pas entre elles. `docs/quality-attributes.md` la
+**mesure** depuis à **87,6 s** (83,5 µs par secteur, sur le volume applicatif de 512 Mio). Les trois
+restent lisibles ici, avec leur statut : aucun n'est effacé.
+
+**Le chiffre qui fait foi est la mesure, 87,6 s.** Les deux autres sont des EXTRAPOLATIONS du coût
+de scellement seul (17,87 µs par bloc en Worker Chromium, § « Calcul, mesuré » ci-dessus), pas des
+relevés du geste que la création exécute réellement.
+
+**Pourquoi l'extrapolation était basse.** Elle ne comptait que le coût fixe d'un appel à
+`crypto.subtle` par secteur — celui-là même que ce document nomme comme le facteur qui domine le
+débit d'AES, avec son facteur 32,5 mesuré entre un seul appel et 8 192 (§ « Calcul, mesuré »). La
+création d'un volume ne se contente pas de sceller : chaque secteur scellé est aussi ÉCRIT sur le
+support par un appel `FileSystemSyncAccessHandle.write`, et cet appel porte son propre coût fixe,
+distinct de celui de `crypto.subtle` et non mesuré par le banc isolé qui a produit 18,7 s et 14,4 s.
+83,5 µs par secteur contre 17,87 µs de scellement seul est donc la même loi que celle de la section
+« Calcul, mesuré » — le coût par APPEL domine le débit —, appliquée à un second appel que
+l'extrapolation n'avait pas compté.
+
+**Ce que cela change.** La fenêtre que la marque de scellement complet referme — décision 10 de
+l'amendement du même jour à l'[ADR 0016](0016-format-de-volume-v3-dispositions.md) — est celle que
+87,6 s mesure, pas celle que 18,7 s ou 14,4 s laissaient croire : quatre à six fois plus longue.
+Rien d'autre ne bouge : le point 3 de « Risques et conditions d'abandon » reste un risque nommé, sur
+un chiffre désormais à jour.

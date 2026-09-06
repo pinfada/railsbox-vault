@@ -312,9 +312,9 @@ async function scellerLaCharge({
  * ## Pourquoi c'est sûr d'annoncer « v3 » avant d'avoir scellé
  *
  * Parce que l'en-tête ne porte PAS encore la marque de scellement complet, et qu'un fichier v3 sans
- * cette marque est refusé par l'ouvreur (`VAULT_STORAGE_VOLUME_INCOMPLET`, tranche (a) de #18). Le
- * fichier ne peut donc pas passer pour un volume utilisable ; il dit exactement ce qu'il est : une
- * conversion en cours.
+ * cette marque est refusé par l'ouvreur (`VAULT_STORAGE_VOLUME_INCOMPLET`, ADR 0016, décision 10).
+ * Le fichier ne peut donc pas passer pour un volume utilisable ; il dit exactement ce qu'il est :
+ * une conversion en cours.
  */
 async function poserLEnTete({ brut, tailleLogique, identifiantVolume }) {
   await brut.write(0, encoderEnTeteV3({ tailleLogique, identifiantVolume }));

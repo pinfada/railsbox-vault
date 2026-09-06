@@ -547,7 +547,7 @@ recoupe les deux récits. Il ne pouvait pas l'être plus tôt : le déplacement 
 EN DERNIER, et y écrire détruirait la source de son propre geste. L'annoncer « v3 » avant d'avoir
 scellé est sûr parce que la **marque de scellement complet** reste, elle, le dernier geste — et
 qu'un fichier v3 sans cette marque est refusé par l'ouvreur (`VAULT_STORAGE_VOLUME_INCOMPLET`,
-décision 2).
+décision 10, amendement du 6 septembre 2026).
 
 **La fenêtre où l'en-tête n'existe pas encore est celle du déplacement, et elle est sûre** : aucun
 secteur n'y est scellé. Un identifiant altéré pendant cette fenêtre ne coûte donc rien — la reprise
@@ -785,3 +785,51 @@ n'y trouve plus d'enregistrement épissable.
 
 Correction portée par la [PR #146](https://github.com/pinfada/railsbox-vault/pull/146). Épreuves :
 `tests/unit/vm-identite-magasin.test.mjs`.
+
+## Amendement du 2026-09-06 — la marque de scellement complet reçoit sa décision (#141)
+
+Aucune décision de cet ADR n'est révisée : les trois écarts que l'amendement du 5 septembre 2026
+constatait sans les fermer sont fermés ici, chacun par une précision qui renvoie à ce qui existait
+déjà dans le code et les épreuves.
+
+**Décision 10 — la marque de scellement complet.** Huit octets, à l'offset **64** de l'en-tête v3,
+motif fixe `VLTSEAL1` (`MARQUEUR_SCELLEMENT_COMPLET`, `src/vm/volume-chiffre-format.mjs`). Posée en
+**dernier geste** d'une création ou d'une conversion — après le dernier secteur scellé, jamais
+avant. Son absence refuse le volume par `VAULT_STORAGE_VOLUME_INCOMPLET` à l'ouverture, avant toute
+lecture de charge : un fichier qui a l'en-tête et la taille d'un volume mais pas cette marque n'a
+jamais fini de naître, et le remède est de le recréer, pas de restaurer une sauvegarde.
+
+**Motif.** La fenêtre que cette marque referme n'est pas celle que l'ADR 0015 avait chiffrée : la
+création d'un volume de 512 Mio scelle CHAQUE secteur, y compris ceux qui ne portent que des zéros
+(décision 1, § « Aucun secteur jamais écrit »), et cette fenêtre est **mesurée à 87,6 s**
+(`docs/quality-attributes.md`, 83,5 µs par secteur) — voir l'amendement du même jour à l'ADR 0015,
+qui rapproche ce chiffre des deux qu'elle avait initialement donnés. Une coupure qui tombe dans une
+fenêtre de cette durée est un événement ordinaire, pas un cas limite ; la marque est ce qui rend
+l'état qu'elle laisse **détectable** plutôt que silencieux.
+
+**La table de l'en-tête v3 de la décision 1, corrigée.** La ligne unique « 64, 448, réserve, à zéro
+» ne rendait pas ce que le code écrit depuis l'origine de #18. Elle se lit en deux lignes :
+
+| offset | largeur | champ                                     |
+| ------ | ------: | ----------------------------------------- |
+| 64     |       8 | marque de scellement complet (`VLTSEAL1`) |
+| 72     |     440 | réserve, à zéro                           |
+
+Aucun octet ne bouge : la décision 1 disait déjà que le code tranche, et le code a toujours écrit
+ici huit octets non nuls en fin de création — la table, elle, ne les décrivait pas.
+
+**Le renvoi de la décision 8.** « Un fichier v3 sans cette marque est refusé par l'ouvreur
+(`VAULT_STORAGE_VOLUME_INCOMPLET`, décision 2) » renvoyait à la décision qui traite de la génération
+d'un enregistrement de journal, laquelle ne mentionne ni la marque ni ce code. Le renvoi est corrigé
+vers la décision 10 ci-dessus.
+
+**La chaîne du format de journal, 2 → 3 → 4.** La décision 3 donne « format du journal (**2** en v3)
+». L'amendement du 5 septembre 2026 notait déjà qu'il valait **3** depuis l'ADR 0019. Il vaut **4**
+depuis l'amendement du même jour à l'[ADR 0019](0019-fraicheur-du-volume.md), lui-même porté par le
+constat [#143](https://github.com/pinfada/railsbox-vault/issues/143) et la
+[PR #146](https://github.com/pinfada/railsbox-vault/pull/146) — voir « une étiquette de domaine par
+magasin » ci-dessus. L'issue [#141](https://github.com/pinfada/railsbox-vault/issues/141), qui
+demandait de relever ce champ à 3, date d'avant #143 : la chaîne complète, avec ses deux renvois,
+est 2 (cet ADR, décision 3) → 3 (ADR 0019) → 4 (ADR 0019, amendement du 5 septembre 2026, #143).
+
+Épreuves : `tests/unit/vm-volume-neuf-incomplet.test.mjs`.
