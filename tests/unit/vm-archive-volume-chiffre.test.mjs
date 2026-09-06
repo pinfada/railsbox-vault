@@ -20,11 +20,8 @@ import test from "node:test";
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
 import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
-import {
-  CONSISTENCY_KINDS,
-  exportVolumeToBytes,
-  verifyArchive,
-} from "../../src/vm/volume-export.mjs";
+import { exportVolumeToBytes, verifyArchive } from "../../src/vm/archive-en-memoire.mjs";
+import { CONSISTENCY_KINDS } from "../../src/vm/volume-export.mjs";
 import { importArchive } from "../../src/vm/volume-import.mjs";
 import { createManifest } from "../../src/vm/volume-manifest.mjs";
 import { VolumeChiffre } from "../../src/vm/volume-chiffre.mjs";
@@ -115,6 +112,9 @@ function cibleQuiCompte() {
     },
     async revokeManifest() {
       gestes.push("revoke");
+    },
+    async commitRecoveryEnvelope() {
+      gestes.push("enveloppe");
     },
     async commitManifest() {
       gestes.push("commit");
@@ -252,6 +252,9 @@ function cibleBrute() {
     },
     async revokeManifest() {},
     async discardGeneration() {},
+    async commitRecoveryEnvelope(octets) {
+      etat.enveloppe = octets;
+    },
     async commitManifest(bytes) {
       etat.manifestBytes = bytes;
     },

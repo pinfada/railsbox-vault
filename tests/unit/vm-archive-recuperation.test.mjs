@@ -37,12 +37,8 @@ import {
   decoderPage,
 } from "../../src/vm/enveloppe/fichier-enveloppe.mjs";
 import { TYPES_KEK } from "../../src/vm/enveloppe/identite-enveloppe.mjs";
-import {
-  ARCHIVE_FORMAT_VERSION,
-  PREAMBLE_BYTES,
-  exportVolumeToBytes,
-  verifyArchive,
-} from "../../src/vm/volume-export.mjs";
+import { exportVolumeToBytes, verifyArchive } from "../../src/vm/archive-en-memoire.mjs";
+import { ARCHIVE_FORMAT_VERSION, PREAMBLE_BYTES } from "../../src/vm/volume-export.mjs";
 import {
   ATTENTES,
   DEK,
@@ -221,18 +217,15 @@ test("une empreinte de section de récupération altérée est refusée à la V�
   const altere = Uint8Array.from(archive);
   altere[altere.byteLength - 40] ^= 0x01;
 
-  await assert.rejects(
-    verifyArchive(altere, { expectations: ATTENTES }),
-    (erreur) => {
-      assert.ok(isArchiveError(erreur, ARCHIVE_ERROR_CODES.recuperationAlteree));
-      assert.notEqual(
-        erreur.code,
-        ARCHIVE_ERROR_CODES.digestMismatch,
-        "une section de récupération altérée n'est pas un contenu altéré : les remèdes diffèrent",
-      );
-      return true;
-    },
-  );
+  await assert.rejects(verifyArchive(altere, { expectations: ATTENTES }), (erreur) => {
+    assert.ok(isArchiveError(erreur, ARCHIVE_ERROR_CODES.recuperationAlteree));
+    assert.notEqual(
+      erreur.code,
+      ARCHIVE_ERROR_CODES.digestMismatch,
+      "une section de récupération altérée n'est pas un contenu altéré : les remèdes diffèrent",
+    );
+    return true;
+  });
 });
 
 test("une archive v2 tronquée dans sa section de récupération est refusée, pas complétée", async () => {
@@ -274,7 +267,9 @@ test("une archive v1 qui DÉCLARE une récupération est malformée : la version
   entete.objet.archiveFormatVersion = 1;
   const octetsEnTete = new TextEncoder().encode(JSON.stringify(entete.objet));
   const forge = new Uint8Array(
-    PREAMBLE_BYTES + octetsEnTete.byteLength + (archive.byteLength - PREAMBLE_BYTES - entete.longueur),
+    PREAMBLE_BYTES +
+      octetsEnTete.byteLength +
+      (archive.byteLength - PREAMBLE_BYTES - entete.longueur),
   );
   forge.set(archive.subarray(0, PREAMBLE_BYTES), 0);
   new DataView(forge.buffer).setUint32(8, octetsEnTete.byteLength, false);
@@ -284,9 +279,8 @@ test("une archive v1 qui DÉCLARE une récupération est malformée : la version
     PREAMBLE_BYTES + octetsEnTete.byteLength,
   );
 
-  await assert.rejects(
-    verifyArchive(forge, { expectations: ATTENTES }),
-    (erreur) => isArchiveError(erreur, ARCHIVE_ERROR_CODES.malformed),
+  await assert.rejects(verifyArchive(forge, { expectations: ATTENTES }), (erreur) =>
+    isArchiveError(erreur, ARCHIVE_ERROR_CODES.malformed),
   );
 });
 

@@ -14,11 +14,18 @@
 // identifié — `openVolumeForWrite` refuse alors de l'ouvrir en écriture, par
 // `VAULT_MANIFEST_UNIDENTIFIED` (#10). Une restauration interrompue ne peut donc pas se faire passer
 // pour un volume valide.
+//
+// Depuis #149 (ADR 0027), la cible pose un SIXIÈME voisin : le fichier d'enveloppes `<volume>.cles`,
+// reconstruit depuis la page que l'archive emporte. Il est écrit APRÈS le contenu relu et AVANT le
+// manifeste, pour que l'ordre ci-dessus tienne sa promesse d'un cran plus loin : un volume déclaré
+// complet porte toujours de quoi être ouvert.
 
 import { BlockJournal } from "./block-journal.mjs";
+import { fichierDEnveloppeDepuisLaPage } from "./enveloppe-de-recuperation.mjs";
 import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
 import { isManifestError } from "./manifest-errors.mjs";
 import {
+  enveloppeSidecarName,
   generationJournalName,
   manifestSidecarName,
   migrationJournalName,
@@ -153,6 +160,41 @@ export function createOpfsImportTarget(
      * octet présent. Le garder le ferait FAIRE AUTORITÉ sur le format de départ à la prochaine
      * migration, et rendrait le volume restauré non migrable jusqu'à un nettoyage manuel.
      */
+    /**
+     * POSE l'enveloppe de récupération que l'archive emportait, ou RETIRE celle de la cible écrasée
+     * (#149, ADR 0027). Appelée APRÈS la relecture du contenu, AVANT le manifeste.
+     *
+     * ## Ce module est le seul du chemin d'import à nommer le voisin `.cles`, et c'est voulu
+     *
+     * `volume-import.mjs` orchestre et ne connaît aucun nom de fichier ; c'est ici que vivent tous
+     * les voisins d'un volume — manifeste, journaux, témoin, instantané —, et l'enveloppe en est un
+     * cinquième. L'épreuve de l'ADR 0020 décision 6, transformée par l'ADR 0027, relit exactement
+     * cela.
+     *
+     * ## Retirer est aussi important que poser
+     *
+     * `bytes === null` couvre deux cas, et le second est le dangereux : une archive v1, ou une
+     * archive v2 d'un volume sans moyen de récupération, écrasant une cible qui portait SA propre
+     * enveloppe. Cette enveloppe décrit un volume qui n'existe plus : ses emplacements enveloppent
+     * une DEK que le volume restauré n'emploie pas, et sa racine authentifie un AUTRE identifiant de
+     * volume. La laisser ferait répondre `VAULT_ENVELOPPE_IDENTITE` à qui essaie sa clé — un
+     * diagnostic exact pour une cause qu'on aurait fabriquée soi-même. Le volume restauré se
+     * retrouve alors sans enveloppe, ce qui est l'état vrai : `VAULT_ENVELOPPE_ABSENTE` envoie en
+     * créer une, et c'est le bon remède.
+     */
+    async commitRecoveryEnvelope(bytes) {
+      const voisin = enveloppeSidecarName(volume);
+      if (bytes === null) {
+        await removeSidecar(voisin);
+        return;
+      }
+      // La page est RE-VALIDÉE ici, au moment d'écrire : `fichierDEnveloppeDepuisLaPage` refuse une
+      // page qui ne serait pas une enveloppe de récupération seule. La vérification a déjà eu lieu
+      // dans `volume-import.mjs`, avant toute mutation ; celle-ci est la garde du module qui écrit,
+      // et elle tient même si un appelant futur venait par un autre chemin.
+      await writeManifest(voisin, fichierDEnveloppeDepuisLaPage(bytes));
+    },
+
     async commitManifest(bytes) {
       await writeManifest(sidecar, bytes);
       await removeSidecar(migrationJournalName(volume));

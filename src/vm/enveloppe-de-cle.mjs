@@ -97,9 +97,14 @@ const ALEAS_REELS = Object.freeze({
 /**
  * Vérifie la porte des aléas et rend la source à employer.
  *
+ * EXPORTÉE depuis #149 : `enveloppe-de-recuperation.mjs` scelle une racine, donc tire un nonce, donc
+ * franchit la même porte. Lui faire réécrire la garde en aurait fait une SECONDE garde, qu'une
+ * correction de l'une laisserait diverger de l'autre ; la partager laisse la porte à un seul
+ * endroit, avec un seul jeton.
+ *
  * @param {{ tirerNonce?: () => Uint8Array, tirerIdentifiant?: () => string, jeton?: string }} aleas
  */
-function aleasAdmis(aleas) {
+export function exigerAleasAdmis(aleas) {
   if (aleas === undefined) return ALEAS_REELS;
   if (aleas.jeton !== HARNAIS_ALEAS_JETON) throw new Error(REFUS_ALEAS);
   return Object.freeze({
@@ -235,7 +240,7 @@ export async function creerEnveloppe({
   identifiantEmplacement,
   aleas,
 }) {
-  const sources = aleasAdmis(aleas);
+  const sources = exigerAleasAdmis(aleas);
   const emplacement = await fabriquerEmplacement({
     identifiantVolume,
     dek,
@@ -270,7 +275,7 @@ export async function creerEnveloppe({
  * rien, et retirerait au geste SUIVANT le point de reprise que l'alternance lui offre.
  */
 async function muter({ support, identifiantVolume, kek, aleas, transformer, retire = false }) {
-  const sources = aleasAdmis(aleas);
+  const sources = exigerAleasAdmis(aleas);
   const cleKek = await importerCleDeDeverrouillage(kek);
   const etat = await lireEtat({ support, identifiantVolume, kek: cleKek });
   const emplacements = await transformer(etat, sources);

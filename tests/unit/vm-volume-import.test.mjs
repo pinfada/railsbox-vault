@@ -16,7 +16,8 @@ import { ARCHIVE_ERROR_CODES, isArchiveError } from "../../src/vm/archive-errors
 import { IMPORT_ERROR_CODES, isImportError } from "../../src/vm/import-errors.mjs";
 import { BUDGET_DIAGNOSTIC_CODES } from "../../src/vm/storage-budget.mjs";
 import { createSha256Stream } from "../../src/vm/sha256-stream.mjs";
-import { CONSISTENCY_KINDS, exportVolumeToBytes } from "../../src/vm/volume-export.mjs";
+import { exportVolumeToBytes } from "../../src/vm/archive-en-memoire.mjs";
+import { CONSISTENCY_KINDS } from "../../src/vm/volume-export.mjs";
 import {
   MANIFEST_FORMAT_VERSION,
   createManifest,
@@ -129,6 +130,7 @@ function cibleMemoire({
     generationsEcartees: 0,
     gestes: [],
     commits: 0,
+    enveloppe: null,
     flushes: 0,
     maxEcriture: 0,
     maxLecture: 0,
@@ -205,6 +207,16 @@ function cibleMemoire({
       etat.generationsEcartees += 1;
       etat.gestes.push("ecarte-generation");
       return Promise.resolve(true);
+    },
+    /**
+     * Pose ou retire l'enveloppe de récupération (#149, ADR 0027). Le double la RETIENT plutôt que
+     * de l'ignorer : son ordre par rapport au manifeste est ce que l'ADR décide, et un double qui
+     * l'avalerait ne mesurerait plus l'ordre qu'il est censé garder.
+     */
+    commitRecoveryEnvelope(bytes) {
+      etat.gestes.push(bytes === null ? "retire-enveloppe" : "pose-enveloppe");
+      etat.enveloppe = bytes;
+      return Promise.resolve();
     },
     commitManifest(bytes) {
       if (panneCommit !== null) return Promise.reject(panneCommit);
@@ -783,9 +795,12 @@ test("l'ordre des gestes mutants : révoquer, écarter la génération, puis ins
 
   assert.ok(rapport.volumeSize > 0);
   assert.equal(cible.etat.generationsEcartees, 1, "le journal de génération est écarté une fois");
+  // L'ordre porte désormais un rang de plus (#149, ADR 0027) : l'enveloppe de récupération est
+  // posée — ici RETIRÉE, l'archive n'en emportant aucune — entre le contenu relu et le manifeste.
   assert.deepEqual(cible.etat.gestes, [
     "revoque-manifeste",
     "ecarte-generation",
+    "retire-enveloppe",
     "inscrit-manifeste",
   ]);
 });

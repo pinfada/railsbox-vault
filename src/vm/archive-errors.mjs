@@ -20,6 +20,23 @@ export const ARCHIVE_ERROR_CODES = Object.freeze({
   digestMismatch: "VAULT_ARCHIVE_DIGEST_MISMATCH",
   /** La longueur du contenu contredit la géométrie du manifeste ou l'en-tête : archive incohérente. */
   geometryMismatch: "VAULT_ARCHIVE_GEOMETRY_MISMATCH",
+  /**
+   * L'empreinte recalculée de la SECTION DE RÉCUPÉRATION diffère de celle inscrite (#149, ADR 0027).
+   *
+   * Distinct de `digestMismatch` parce que le remède l'est : un contenu altéré rend l'archive
+   * inutilisable, une enveloppe altérée rend le volume restauré INOUVRABLE ailleurs alors que ses
+   * données sont intactes. Confondre les deux enverrait réexporter là où il faut d'abord savoir
+   * lequel des deux on a perdu.
+   */
+  recuperationAlteree: "VAULT_ARCHIVE_RECUPERATION_ALTEREE",
+  /**
+   * La section de récupération n'est pas une page d'enveloppe de récupération SEULE : illisible, de
+   * mauvaise taille, ou portant un emplacement d'un autre type que 4 (#149, ADR 0027).
+   *
+   * C'est la garde qui tient la propriété « le coffre et sa clé ne voyagent pas ensemble » sur une
+   * archive que n'importe qui a pu écrire.
+   */
+  recuperationRefusee: "VAULT_ARCHIVE_RECUPERATION_REFUSEE",
   // `encryptedUnsupported` (`VAULT_ARCHIVE_VOLUME_CHIFFRE`) a existé jusqu'au 6 septembre 2026 (#139),
   // retiré parce que jamais levé : il tenait lieu de ce que l'ADR 0016 décision 7 livre depuis —
   // l'archive porte le fichier v3 tel quel. L'ADR 0016 décision 9 est devenue vraie ce jour-là. Nommé

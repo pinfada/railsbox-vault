@@ -35,12 +35,13 @@ import { TYPES_KEK } from "../../src/vm/enveloppe/identite-enveloppe.mjs";
 import { IMPORT_ERROR_CODES, isImportError } from "../../src/vm/import-errors.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { ouvrirVolumeParDerivateur } from "../../src/vm/ouverture-par-enveloppe.mjs";
-import { exportVolumeToBytes } from "../../src/vm/volume-export.mjs";
+import { exportVolumeToBytes } from "../../src/vm/archive-en-memoire.mjs";
 import { importArchive } from "../../src/vm/volume-import.mjs";
 import {
   ATTENTES,
   DEK,
   KEK,
+  TAILLE,
   VOLUME_A,
   cibleDe,
   descripteurDeManifeste,
@@ -75,7 +76,7 @@ async function archiveExportee({ avecRecuperation = true } = {}) {
 async function clairDuSecteur(banc, nom, cle, rang = 0) {
   const backend = await openOpfsVolume({
     name: nom,
-    size: null,
+    size: TAILLE,
     cle,
     identifiantVolume: VOLUME_A,
     openHandle: banc.store.openHandle,
@@ -227,12 +228,10 @@ test("une page embarquée portant un emplacement d'un autre type est refusée av
 async function reforger(archive, page) {
   const vue = new DataView(archive.buffer, archive.byteOffset, archive.byteLength);
   const longueurEnTete = vue.getUint32(8, false);
-  const entete = JSON.parse(
-    new TextDecoder().decode(archive.subarray(12, 12 + longueurEnTete)),
+  const entete = JSON.parse(new TextDecoder().decode(archive.subarray(12, 12 + longueurEnTete)));
+  const empreinte = Buffer.from(await crypto.subtle.digest("SHA-256", page.slice())).toString(
+    "hex",
   );
-  const empreinte = Buffer.from(
-    await crypto.subtle.digest("SHA-256", page.slice()),
-  ).toString("hex");
   entete.recovery = { ...entete.recovery, digest: empreinte };
   const octetsEnTete = new TextEncoder().encode(JSON.stringify(entete));
   const contenu = archive.subarray(
@@ -281,7 +280,11 @@ test("coupée avant l'enveloppe : le volume n'est PAS déclaré complet", async 
     }),
     /Coupure simulée/,
   );
-  assert.equal(destination.lire(`${CIBLE}.manifest`), null, "aucun manifeste : volume non identifié");
+  assert.equal(
+    destination.lire(`${CIBLE}.manifest`),
+    null,
+    "aucun manifeste : volume non identifié",
+  );
   assert.equal(destination.lire(`${CIBLE}.cles`), null);
 });
 

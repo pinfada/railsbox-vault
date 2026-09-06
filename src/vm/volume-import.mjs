@@ -25,7 +25,12 @@
 //      barrière de durabilité ;
 //   6. RE-VÉRIFIER le volume restauré en le RELISANT depuis le support : l'empreinte recalculée doit
 //      égaler celle de l'archive. Écrire n'est pas persister ; relire, si ;
-//   7. INSCRIRE le manifeste. Seule cette dernière étape rend le volume présentable comme valide.
+//   7. POSER L'ENVELOPPE DE RÉCUPÉRATION que l'archive emporte (#149, ADR 0027), ou RETIRER celle
+//      que la cible portait. Elle vient APRÈS le contenu et AVANT le manifeste, et cet ordre est une
+//      décision : le manifeste est ce qui DÉCLARE le volume complet, et un volume déclaré complet
+//      sans son enveloppe serait un volume que personne n'ouvre — le sinistre même que la tranche
+//      referme. Une coupure entre 6 et 7 laisse un volume non identifié, que le boot refuse ;
+//   8. INSCRIRE le manifeste. Seule cette dernière étape rend le volume présentable comme valide.
 //
 // Il n'existe donc pas de restauration partielle silencieuse : soit le volume est complet, relu et
 // identifié, soit l'échec est typé et le volume reste non identifié.
@@ -38,6 +43,8 @@
 
 import { createSha256Stream } from "./sha256-stream.mjs";
 import { IMPORT_ERROR_CODES, ImportError } from "./import-errors.mjs";
+import { consentementNomme } from "./migration-backup-proof.mjs";
+import { exigerEnveloppeDeRecuperationSeule } from "./enveloppe-de-recuperation.mjs";
 import { readArchive } from "./volume-export.mjs";
 import { ARCHIVE_ERROR_CODES, ArchiveError } from "./archive-errors.mjs";
 import {
@@ -65,7 +72,13 @@ function assertContract({ source, target, blockBytes }) {
   if (!source || typeof source.read !== "function" || !Number.isInteger(source.byteLength)) {
     throw new TypeError("importArchive attend une source { byteLength, read(offset, length) }.");
   }
-  for (const membre of ["inspect", "open", "revokeManifest", "commitManifest"]) {
+  for (const membre of [
+    "inspect",
+    "open",
+    "revokeManifest",
+    "commitRecoveryEnvelope",
+    "commitManifest",
+  ]) {
     if (typeof target?.[membre] !== "function") {
       throw new TypeError(`importArchive attend une cible exposant « ${membre} ».`);
     }
@@ -288,14 +301,20 @@ async function restaurerEtRelire({ target, read, verdict, volumeSize, blockBytes
  *     inspect: () => Promise<{ present: boolean, size: number, manifestBytes?: Uint8Array|null }>,
  *     open: (geometry: { size: number }) => Promise<object>,
  *     revokeManifest: () => Promise<void>,
+ *     commitRecoveryEnvelope: (bytes: Uint8Array|null) => Promise<void>,
  *     commitManifest: (bytes: Uint8Array) => Promise<void>,
  *   },
  *   expectations?: object,
  *   blockBytes?: number,
  *   overwrite?: boolean,
+ *   versionMinimale?: number | null,
+ *   consent?: { acknowledgedBy: string, reason?: string } | null,
  *   budget?: { reserve: (bytes: number) => Promise<object> } | null,
  *   enforceCompatibility?: boolean,
  * }} args
+ *   `versionMinimale` est la version d'enveloppe que l'utilisateur tient sur sa FEUILLE de
+ *   recuperation (#149, ADR 0027, decision 3). Une archive dont l'enveloppe est anterieure exige
+ *   alors un `consent` NOMME ; sans feuille, rien n'est exige et rien n'est promis.
  *   `enforceCompatibility` vaut `true` par défaut : la compatibilité du manifeste est contrôlée même
  *   sans `expectations`. Le passer à `false` est une DÉROGATION explicite, réservée au diagnostic —
  *   lire un conteneur qu'on ne saurait pas ouvrir en écriture.
@@ -310,48 +329,133 @@ export async function importArchive({
   expectations = {},
   blockBytes = DEFAULT_IMPORT_BLOCK_BYTES,
   overwrite = false,
+  versionMinimale = null,
+  consent = null,
   budget = null,
   enforceCompatibility = true,
 }) {
   assertContract({ source, target, blockBytes });
   const { lectures, lire } = compteurDeLectures(source);
 
-  // 1. VÉRIFIER — aucune mutation avant ce point. Les refus de #10 et #11 remontent tels quels, et
-  //    la compatibilité du manifeste est contrôlée par défaut (`enforceCompatibility`).
-  const verdict = await verifierArchiveEtIdentite({
+  // 1 et 2. VÉRIFIER, puis REFUSER. Aucune mutation avant ce point.
+  const { verdict, volumeSize, avantMutation, consentement } = await verifierPuisRefuser({
+    source,
+    target,
     read: lire,
+    expectations,
+    blockBytes,
+    overwrite,
+    versionMinimale,
+    consent,
+    budget,
+    enforceCompatibility,
+  });
+
+  // 3/4/5/6. OUVRIR, RÉVOQUER, RESTAURER puis RE-VÉRIFIER, sous handle exclusif.
+  const mesures = await restaurerEtRelire({ target, read: lire, verdict, volumeSize, blockBytes });
+
+  // 7/8. POSER l'enveloppe, puis INSCRIRE le manifeste. Dans cet ordre, et pas l'autre.
+  await poserLEnveloppePuisLeManifeste(target, verdict);
+
+  return rapportDeRestauration({
+    verdict,
+    volumeSize,
+    blockBytes,
+    lectures,
+    mesures,
+    avantMutation,
+    consentement,
+  });
+}
+
+/**
+ * GESTES 1 et 2 — VÉRIFIER l'archive entière, puis REFUSER tout ce qui doit l'être avant la moindre
+ * mutation : cible occupée sans consentement, géométrie inconciliable, espace insuffisant, et —
+ * depuis #149 — archive antérieure à la feuille de récupération sans consentement nommé.
+ *
+ * Les deux gestes vivent ensemble parce qu'ils partagent une seule règle, celle de l'ADR 0009 :
+ * rien n'est écrit tant qu'ils n'ont pas rendu leur verdict. Après cette fonction, la restauration
+ * mute ; avant elle, elle n'a rien fait.
+ */
+async function verifierPuisRefuser({
+  source,
+  target,
+  read,
+  expectations,
+  blockBytes,
+  overwrite,
+  versionMinimale,
+  consent,
+  budget,
+  enforceCompatibility,
+}) {
+  // Les refus de #10 et #11 remontent tels quels, et la compatibilité du manifeste est contrôlée
+  // par défaut (`enforceCompatibility`).
+  const verdict = await verifierArchiveEtIdentite({
+    read,
     byteLength: source.byteLength,
     expectations,
     blockBytes,
     enforceCompatibility,
   });
   const volumeSize = verdict.contentLength;
-
-  // 2. REFUSER — la cible d'abord : on ne piétine jamais un volume sans consentement explicite.
+  // La CIBLE d'abord : on ne piétine jamais un volume sans consentement explicite. L'ANCRE ensuite.
   const avantMutation = await refuserAvantMutation({ target, volumeSize, overwrite, budget });
+  const consentement = exigerLAncre({ verdict, versionMinimale, consent });
+  return { verdict, volumeSize, avantMutation, consentement };
+}
 
-  // 3/4/5/6. OUVRIR, RÉVOQUER, RESTAURER puis RE-VÉRIFIER, sous handle exclusif.
-  const { recopie, relecture } = await restaurerEtRelire({
-    target,
-    read: lire,
-    verdict,
-    volumeSize,
-    blockBytes,
-  });
-
-  // 7. INSCRIRE — dernier geste, et seul à rendre le volume présentable comme valide.
+/**
+ * GESTES 7 et 8 — POSER l'enveloppe de récupération (ou retirer celle de la cible écrasée), PUIS
+ * inscrire le manifeste.
+ *
+ * Les deux vivent dans la même fonction parce que c'est leur ORDRE qui est la décision, et qu'un
+ * ordre ne se garde pas quand ses deux moitiés sont appelées de loin. Le manifeste est ce qui
+ * DÉCLARE le volume complet ; l'enveloppe est ce qui le rend OUVRABLE. Les inverser laisserait,
+ * pendant une coupure, un volume présenté comme valide que personne n'ouvre — le sinistre même que
+ * l'ADR 0027 referme. Coupé entre les deux, le volume est non identifié, donc refusé au boot : le
+ * seul état sûr des deux.
+ */
+async function poserLEnveloppePuisLeManifeste(target, verdict) {
+  await target.commitRecoveryEnvelope(verdict.recovery === null ? null : verdict.recovery.octets);
   await target.commitManifest(serializeManifest(verdict.manifest));
+}
 
-  return rapportDeRestauration({
-    verdict,
-    volumeSize,
-    occupee: avantMutation.occupee,
-    blockBytes,
-    lectures,
-    recopie,
-    relecture,
-    budgetRapport: avantMutation.budgetRapport,
-  });
+/**
+ * L'ANCRE : confronte la version de l'enveloppe embarquée à celle que porte la FEUILLE de
+ * récupération, et exige un CONSENTEMENT NOMMÉ quand l'archive est antérieure (ADR 0027, décision 3).
+ *
+ * ## Pourquoi un consentement, et pas un refus
+ *
+ * Une archive est ANTÉRIEURE par nature — c'est ce qu'on attend d'une sauvegarde. La refuser rendrait
+ * inutilisable toute sauvegarde prise avant la dernière révocation, c'est-à-dire à peu près toutes.
+ * L'accepter en silence rétablirait une enveloppe où une clé révoquée depuis peut être encore
+ * valable, sans que personne ne l'ait dit. Le consentement nommé de l'ADR 0011 est exactement
+ * l'instrument de ce choix-là : il n'interdit rien, il exige qu'un exploitant identifié assume, et
+ * le rapport le porte.
+ *
+ * ## Sans feuille, rien n'est exigé — et rien n'est promis
+ *
+ * `versionMinimale: null` est le cas de qui n'a pas noté la version. La restauration passe, et
+ * l'aveu est écrit ici comme dans l'ADR : sans ancre tenue hors du fichier, un retour arrière n'est
+ * pas détecté. Une archive SANS enveloppe échappe elle aussi à la règle — elle ne rétablit aucune
+ * clé, donc elle ne ressuscite rien.
+ */
+function exigerLAncre({ verdict, versionMinimale, consent }) {
+  const consentement = consentementNomme(consent);
+  if (versionMinimale === null || verdict.recovery === null) return consentement;
+  if (!Number.isInteger(versionMinimale) || versionMinimale < 1) {
+    throw new TypeError(
+      `« versionMinimale » est la version notée sur la feuille de récupération : un entier ≥ 1, reçu ${JSON.stringify(versionMinimale)}.`,
+    );
+  }
+  const embarquee = verdict.recovery.envelopeVersion;
+  if (embarquee >= versionMinimale || consentement !== null) return consentement;
+  throw refus(
+    IMPORT_ERROR_CODES.consentementRequis,
+    `Restauration refusée : cette sauvegarde porte l'enveloppe en version ${embarquee}, et votre feuille de récupération en note ${versionMinimale}. Elle date donc d'AVANT votre dernière révocation : une clé révoquée depuis pourrait y être encore valable. Restaurer reste possible, et demande un consentement nommé ; après quoi la version ${embarquee} devient la nouvelle référence, et la feuille est à re-noter.`,
+    { envelopeVersion: embarquee, versionMinimale },
+  );
 }
 
 /**
@@ -367,7 +471,36 @@ async function verifierArchiveEtIdentite(options) {
     read: options.read,
     volumeSize: verdict.contentLength,
   });
+  assertEnveloppeEmbarquee(verdict);
   return verdict;
+}
+
+/**
+ * EXIGE que la section de récupération soit une enveloppe de RÉCUPÉRATION SEULE, et que l'en-tête
+ * dise d'elle la vérité (#149, ADR 0027).
+ *
+ * Le contrôle vit ICI, dans le geste de vérification, et non au moment d'écrire le voisin : l'ADR
+ * 0009 pose « vérifier avant d'écrire », et une archive dont la page embarquée porterait une phrase
+ * secrète doit être refusée alors que la cible n'a pas même été ouverte.
+ *
+ * L'en-tête est CONFRONTÉ à la page, pas cru : une archive qui déclarerait une version d'enveloppe
+ * plus récente que celle qu'elle porte tromperait l'ancre de la décision 3, c'est-à-dire ferait
+ * accepter sans consentement une sauvegarde antérieure à la feuille.
+ */
+function assertEnveloppeEmbarquee(verdict) {
+  if (verdict.recovery === null) return;
+  const page = exigerEnveloppeDeRecuperationSeule(verdict.recovery.octets);
+  const declare = {
+    envelopeVersion: verdict.recovery.envelopeVersion,
+    slots: verdict.recovery.slots,
+  };
+  const porte = { envelopeVersion: page.version, slots: page.emplacements };
+  if (declare.envelopeVersion === porte.envelopeVersion && declare.slots === porte.slots) return;
+  throw new ArchiveError(
+    ARCHIVE_ERROR_CODES.recuperationRefusee,
+    `Restauration refusée : l'en-tête déclare une enveloppe en version ${declare.envelopeVersion} portant ${declare.slots} emplacement(s), et la page embarquée en porte ${porte.slots} en version ${porte.envelopeVersion}. Aucun octet n'est écrit sur la cible.`,
+    { declare, porte },
+  );
 }
 
 /**
@@ -409,18 +542,32 @@ async function assertIdentiteDeLArchive({ verdict, read, volumeSize }) {
 function rapportDeRestauration({
   verdict,
   volumeSize,
-  occupee,
   blockBytes,
   lectures,
-  recopie,
-  relecture,
-  budgetRapport,
+  mesures,
+  avantMutation,
+  consentement,
 }) {
+  const { recopie, relecture } = mesures;
   return {
     restored: true,
-    overwritten: occupee,
+    overwritten: avantMutation.occupee,
     volumeSize,
     contentDigest: verdict.contentDigest,
+    // L'enveloppe posée, SANS ses octets : le rapport franchit `postMessage` et va dans un journal.
+    recovery:
+      verdict.recovery === null
+        ? null
+        : {
+            length: verdict.recovery.length,
+            digest: verdict.recovery.digest,
+            envelopeVersion: verdict.recovery.envelopeVersion,
+            slots: verdict.recovery.slots,
+          },
+    // La version que la feuille de récupération doit désormais porter. `null` quand l'archive
+    // n'emporte aucune enveloppe : il n'y a alors rien à noter, et rien à ouvrir ailleurs.
+    nouvelleReference: verdict.recovery === null ? null : verdict.recovery.envelopeVersion,
+    consentement,
     verifiedDigest: relecture.digest,
     manifest: verdict.manifest,
     archiveConsistency: verdict.consistency,
@@ -430,6 +577,6 @@ function rapportDeRestauration({
     maxTargetWriteBytes: recopie.maxWrite,
     maxTargetReadBytes: relecture.maxRead,
     blocks: recopie.blocs,
-    budget: budgetRapport,
+    budget: avantMutation.budgetRapport,
   };
 }
