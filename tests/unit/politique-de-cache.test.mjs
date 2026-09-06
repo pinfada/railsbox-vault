@@ -210,7 +210,10 @@ function mesureConforme() {
     moteur: "chromium",
     coquille: { ecarts: [], recus: {} },
     application: { ecarts: [], cspApplicativeSolitaire: ["frame-ancestors http://x"], recus: {} },
-    demarrage: "worker:ready",
+    // Depuis #161, le témoin relève l'ÉTAT atteint par la coquille de produit, et non le texte d'un
+    // statut de Worker : `prete` (le cadre applicatif est créé) ou `sans-cadre` (la règle d'origine
+    // n'a pas su conclure, et la coquille n'invente aucun cadre) sont les deux issues conformes.
+    demarrage: "prete",
     openerAvecCoop: true,
     openerSansCoop: false,
     absence: { chemin: ADRESSE_ABSENTE_DU_TEMOIN, statut: 404, recu: "no-store" },

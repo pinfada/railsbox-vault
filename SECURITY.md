@@ -724,7 +724,14 @@ et le gate « qualification produit » exige de toute façon la revue externe (#
 1. **Données synthétiques uniquement** jusqu'à la persistance transactionnelle,
    l'export/restauration et le refus d'incompatibilité.
 2. **Données sensibles interdites** jusqu'à l'implémentation de la séparation d'origine, du
-   verrouillage, de la récupération et du format chiffré.
+   verrouillage, de la récupération et du format chiffré. **Où en sont les quatre, au 7 septembre
+   2026** : le format chiffré est livré (#18, ADR 0015 et 0016) ; la séparation d'origine est
+   **implémentée depuis #161** — une coquille de produit, un Worker de confiance, un port restreint
+   éprouvé contre une application malveillante sur les trois moteurs ; la récupération est
+   MÉCANIQUEMENT livrée (#147, #148, #149) mais **aucun chemin de production ne l'OFFRE encore** —
+   c'est la réserve écrite de `SEC-RECOVERY-001`, et le travail de la tranche 2 (#162) ; le
+   verrouillage après inactivité (#25) n'est pas ouvert. Le gate reste donc **fermé**, et il le
+   restera tant que deux des quatre manqueront.
 3. **Qualification produit interdite** jusqu'à la revue externe, la résolution des constats
    critiques et élevés et la publication de la matrice navigateur.
 
