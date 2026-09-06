@@ -405,10 +405,31 @@ test("la table des signes acceptés est CLOSE : soixante et un points de code su
   // exactement ce que le vecteur figé du signe KELVIN fige.
   attendus.add(0x212a);
 
-  assert.deepEqual(
-    acceptes.map((point) => point.toString(16)).sort(),
-    [...attendus].map((point) => point.toString(16)).sort(),
-    "un point de code du plan de base est accepté sans avoir été déclaré, ou un signe déclaré est refusé.",
+  // La comparaison porte sur des ENSEMBLES, et le rapport d'écart est BORNÉ. La première rédaction
+  // confrontait deux TABLEAUX par `deepEqual` : sous un mutant qui fait tout accepter, celui des
+  // acceptés passe de 61 à 65 536 entrées, et c'est la construction du DIFF par `assert` qui alloue
+  // des giga-octets — assez pour faire tuer le processus avant qu'aucune assertion n'ait rendu son
+  // verdict. La campagne de mutation comptait alors ce mutant « tué » par un plantage mémoire, ce
+  // qui n'est pas la même chose qu'une épreuve qui rougit. C'est la CI qui l'a trouvé, pas une
+  // relecture, et cela vaut d'être écrit ici plutôt que corrigé en silence.
+  const ecart = (gauche, droite) => [...gauche].filter((point) => !droite.has(point));
+  const enTrop = ecart(new Set(acceptes), attendus);
+  const manquants = ecart(attendus, new Set(acceptes));
+  const nommer = (points) =>
+    `${points
+      .slice(0, 8)
+      .map((point) => `U+${point.toString(16).toUpperCase().padStart(4, "0")}`)
+      .join(", ")}${points.length > 8 ? ` … (${points.length} au total)` : ""}`;
+
+  assert.equal(
+    enTrop.length,
+    0,
+    `points de code acceptés sans avoir été déclarés : ${nommer(enTrop)}`,
+  );
+  assert.equal(
+    manquants.length,
+    0,
+    `points de code déclarés et pourtant refusés : ${nommer(manquants)}`,
   );
   assert.equal(
     acceptes.length,
