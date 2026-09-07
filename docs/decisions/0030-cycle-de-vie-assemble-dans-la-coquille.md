@@ -224,11 +224,11 @@ volontairement l'état que la mort du Worker atteint par accident.** Un seul ét
 
 **Détection — trois causes, et pas une quatrième :**
 
-| Cause         | Ce qui la livre                                                         |
-| ------------- | ----------------------------------------------------------------------- |
-| `erreur`      | `error` ou `messageerror` sur le Worker : il a jeté                     |
-| `silence`     | aucune réponse sous `DELAI_WORKER_MORT_MS` (trente secondes)            |
-| `terminaison` | `terminate()` appelé par la coquille — le chemin de la fermeture propre |
+| Cause         | Ce qui la livre                                                           |
+| ------------- | ------------------------------------------------------------------------- |
+| `erreur`      | `error` ou `messageerror` sur le Worker : il a jeté                       |
+| `silence`     | aucun SIGNE DE VIE sous `DELAI_WORKER_MORT_MS` — ni réponse, ni battement |
+| `terminaison` | `terminate()` appelé par la coquille — le chemin de la fermeture propre   |
 
 Une cause hors table est **refusée** plutôt que rangée dans la plus proche : constater une mort par
 défaut ferait verrouiller un coffre vivant.

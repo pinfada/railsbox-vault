@@ -351,11 +351,40 @@ export function ouvreurSousLEnveloppe({ cleDeVolume }) {
 export const DELAI_BOOT_MS = 300_000;
 
 /**
- * Ce que le démarrage PUBLIE sur le canal privilégié. Une liste FERMÉE, et c'est la leçon du relevé
- * borné de la revue de la PR #166 : le compte rendu de boot porte une trentaine de champs, dont le
- * journal du guest et les observations du runtime, et les reposter en bloc ferait grossir un message
- * de la base de confiance au rythme de ce que le guest imprime. Ce qui repart est ce qu'une épreuve
- * doit pouvoir asserter, rien de plus.
+ * Copie SUPERFICIELLE d'un objet, ne gardant que ses valeurs SIMPLES.
+ *
+ * C'est le cœur de la liste fermée, et la première rédaction l'avait manqué : elle nommait les
+ * champs publiés mais les recopiait TELS QUELS, si bien que la profondeur et la nature de leur
+ * contenu échappaient à la coquille. Le scénario de bout en bout l'a montré à la réouverture —
+ * `sansCapacite` a refusé la réponse sous `VAULT_COQUILLE_CAPACITE_DANS_UN_MESSAGE`, sur un compte
+ * rendu de boot qui portait, quelque part, autre chose qu'une donnée simple.
+ *
+ * Ce que cette fonction garantit, et que « nommer les champs » ne garantissait pas : ce qui repart a
+ * une profondeur de DEUX, et ne contient que des nombres, des chaînes, des booléens et des `null`.
+ * Un tampon, une vue, une fonction ou un objet imbriqué sont laissés derrière — silencieusement, et
+ * c'est voulu : ce n'est pas un refus, c'est une projection.
+ */
+function valeursSimples(objet) {
+  if (objet === null || objet === undefined || typeof objet !== "object") return null;
+  const rendu = {};
+  for (const [cle, valeur] of Object.entries(objet)) {
+    const nature = typeof valeur;
+    if (valeur === null || nature === "number" || nature === "string" || nature === "boolean") {
+      rendu[cle] = valeur;
+    }
+  }
+  return rendu;
+}
+
+/**
+ * Ce que le démarrage PUBLIE sur le canal privilégié. Une liste FERMÉE en largeur ET en profondeur.
+ *
+ * C'est la leçon du relevé borné de la revue de la PR #166 : le compte rendu de boot porte une
+ * trentaine de champs, dont le journal du guest et les observations du runtime, et les reposter en
+ * bloc ferait grossir un message de la base de confiance au rythme de ce que le guest imprime. Ce
+ * qui repart est ce qu'une épreuve doit pouvoir asserter, rien de plus — et chaque champ composé
+ * passe par `valeursSimples`, de sorte qu'aucune structure venue du support ne franchisse le canal
+ * avec une forme que personne n'a décidée.
  */
 export function compteRenduPublie(rendu) {
   return {
@@ -364,17 +393,20 @@ export function compteRenduPublie(rendu) {
     bootMs: rendu.bootMilliseconds,
     santeMs: rendu.healthMilliseconds,
     instantaneUtilise: rendu.usedSnapshot,
-    instantane: rendu.instantane,
-    decomposition: rendu.timeline,
-    counts: rendu.counts,
-    generation: rendu.generation,
-    recuperation: rendu.recuperation,
+    instantane: valeursSimples(rendu.instantane),
+    decomposition: valeursSimples(rendu.timeline),
+    counts: valeursSimples(rendu.counts),
+    generation: valeursSimples(rendu.generation),
+    recuperation: valeursSimples(rendu.recuperation),
     invariantStatut: rendu.invariantHttpStatus,
-    invariantVerdict: rendu.invariantVerdict,
+    // Le STATUT du verdict, et non le verdict entier : ce que deux boots doivent rendre identique
+    // est déjà publié à côté, sous `enregistrementObserve` et `pieceJointeObservee`, et un verdict
+    // rendu par Rails est une structure dont la forme appartient au guest.
+    invariantVerdict: valeursSimples(rendu.invariantVerdict),
     enregistrementObserve: rendu.observedRecordId,
     pieceJointeObservee: rendu.observedAttachmentSha256,
-    boucleOrdonnancement: rendu.boucleOrdonnancement,
-    rythme: rendu.rythme,
+    boucleOrdonnancement: valeursSimples(rendu.boucleOrdonnancement),
+    rythme: valeursSimples(rendu.rythme),
     // Un COMPTE, pas la liste : une panne de support absorbée doit se voir ; son contenu appartient
     // au diagnostic du Worker, pas au relevé.
     pannes: rendu.failures.length,

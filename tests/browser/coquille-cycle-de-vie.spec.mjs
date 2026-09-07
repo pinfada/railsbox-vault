@@ -48,7 +48,11 @@ async function ouvrirLaCoquille(page) {
  * L'interception est du côté du RÉSEAU, où le produit n'a rien à dire.
  */
 async function substituerLeWorker(page, corps) {
-  await page.context().route("**/runtime-worker.mjs", (route) =>
+  // Le motif porte une étoile finale : le Worker de confiance est chargé avec
+  // `?use-scheduling-api` (v86 choisit sa boucle en inspectant `location.href`), et un motif sans
+  // elle n'intercepterait plus rien — l'épreuve mesurerait alors le vrai Worker en croyant mesurer
+  // un mort.
+  await page.context().route("**/runtime-worker.mjs*", (route) =>
     route.fulfill({
       status: 200,
       contentType: "text/javascript; charset=utf-8",
