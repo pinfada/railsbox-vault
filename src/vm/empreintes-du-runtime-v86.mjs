@@ -10,7 +10,7 @@
 // Ce qu'elles n'attrapent pas est une origine qui ment aux deux du même geste : cette défense-là est
 // `verifierEpinglageV86`, sur l'arbre construit à partir d'un commit, avant qu'il ne parte.
 
-import { artefactALAdresse, chargerAdressesV86, verifierOctetsV86 } from "/src/v86-adresses.mjs";
+import { artefactALAdresse, chargerAdressesV86, verifierOctetsV86 } from "../v86-adresses.mjs";
 
 /**
  * Les artefacts que ce banc reçoit, dans l'ordre où `loadRuntime` les rend.

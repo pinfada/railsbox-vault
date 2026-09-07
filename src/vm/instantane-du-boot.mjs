@@ -23,12 +23,12 @@
 // L'empreinte de l'IMAGE, elle, ne se prend pas ici : elle est prise à l'ACQUISITION du runtime,
 // avant le premier battement du guest. Voir `empreinteDeLImage`.
 
-import { capturerInstantane, ouvrirInstantaneDeReprise } from "/src/vm/instantane-de-reprise.mjs";
-import { solderLeJournal } from "/src/vm/instantane/solde-du-journal.mjs";
-import { supportInstantaneOpfs } from "/src/vm/instantane/support-opfs.mjs";
-import { octetsEnHex } from "/src/vm/format-chiffre/octets.mjs";
-import { createSha256Stream } from "/src/vm/sha256-stream.mjs";
-import { bindNavigatorStorage, createStorageBudget } from "/src/vm/storage-budget.mjs";
+import { capturerInstantane, ouvrirInstantaneDeReprise } from "./instantane-de-reprise.mjs";
+import { solderLeJournal } from "./instantane/solde-du-journal.mjs";
+import { supportInstantaneOpfs } from "./instantane/support-opfs.mjs";
+import { octetsEnHex } from "./format-chiffre/octets.mjs";
+import { createSha256Stream } from "./sha256-stream.mjs";
+import { bindNavigatorStorage, createStorageBudget } from "./storage-budget.mjs";
 
 /** Ordre CANONIQUE des artefacts dans l'empreinte d'image. Deux ordres donneraient deux empreintes. */
 const ARTEFACTS_DE_L_IMAGE = Object.freeze([

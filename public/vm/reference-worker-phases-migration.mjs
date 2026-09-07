@@ -15,7 +15,7 @@ import { cleDuBanc } from "./cle-du-banc.mjs";
 import { SECTOR_SIZE } from "/src/vm/block-geometry.mjs";
 import { SECTEURS_PAR_TOUR } from "/src/vm/migration-v3.mjs";
 import { migrateVolume } from "/src/vm/volume-migration.mjs";
-import { attentesDe } from "./reference-worker-boot.mjs";
+import { attentesDe } from "/src/vm/boot-de-reference.mjs";
 import { EXPORT_BLOCK_BYTES } from "./reference-worker-mesures.mjs";
 
 /**

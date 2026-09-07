@@ -100,7 +100,7 @@ const decoder = new TextDecoder();
  *
  * Ici, `session.boot()` de `guest-session.mjs` attend l'INVITE du guest : la garde couvre donc
  * toute l'attente utile. Sur le chemin de l'image de référence, où `boot()` rend la main bien plus
- * tôt, la garde couvre une phase plus large — voir `reference-worker-boot.mjs`.
+ * tôt, la garde couvre une phase plus large — voir `/src/vm/boot-de-reference.mjs`.
  *
  * Il rend AUSSI le rythme observé de la boucle sur la fenêtre du boot. C'est la mesure qui permet
  * de comparer deux exécutions de l'émulateur (#74) : une durée de boot seule ne dirait pas si

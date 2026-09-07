@@ -100,6 +100,42 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * du message et sans qu'aucun état ne soit consulté.
    */
   volumeVerrouille: "VAULT_COQUILLE_VOLUME_VERROUILLE",
+
+  // --- Le CYCLE DE VIE assemblé, et sa conduite (#163, ADR 0030) ------------------------------
+  /**
+   * Le WORKER DE CONFIANCE ne répond plus : il a jeté, il a été terminé, ou il s'est tu au-delà de
+   * `DELAI_WORKER_MORT_MS`.
+   *
+   * Ce code est NEUF, et son absence était un défaut relevé par la Definition of Ready de #25 :
+   * la borne de mort rejetait sous `typeInconnu`, dont le message dit « Requête hors de la liste
+   * d'admission de la coquille » — c'est-à-dire tout autre chose que ce qui s'est produit. Un refus
+   * qui décrit un autre événement que le sien est un refus qu'on finit par mal lire.
+   *
+   * Ce qu'il ne dit PAS : ce que « verrouillé » veut dire, quand cela arrive, ni sous quel délai.
+   * L'état et la règle appartiennent à #25 ; #163 constate et conduit (ADR 0030, décision 3).
+   */
+  workerMort: "VAULT_COQUILLE_WORKER_MORT",
+  /**
+   * Une étape du cycle de vie a été demandée avant celle dont elle dépend.
+   *
+   * C'est la garde d'ORDRE de `cycle-de-vie.mjs`, et elle est de la même nature que
+   * `canalAbsent` : l'ordre des huit étapes de `docs/architecture.md` n'est pas une convention de
+   * lecture, c'est une condition contrôlée qui rougit quand on l'inverse.
+   */
+  etapeHorsOrdre: "VAULT_COQUILLE_ETAPE_HORS_ORDRE",
+  /**
+   * Aucune application n'est servie par cette origine : il n'y a rien à démarrer.
+   *
+   * Ce n'est pas un échec du geste — c'est l'absence de son objet, comme `indisponible` est
+   * l'absence d'un moteur capable plutôt qu'un déverrouillage raté. Un `npm run check` tourne sans
+   * les artefacts de l'image de référence, et la coquille doit le DIRE plutôt que d'échouer.
+   */
+  applicationAbsente: "VAULT_COQUILLE_APPLICATION_ABSENTE",
+  /**
+   * Une capacité EXIGÉE manque au moteur qui exécute la coquille, mesurée dans son propre document
+   * et sous la CSP servie — sans l'exemption dont jouit la sonde `public/compat.html` (#2).
+   */
+  capaciteManquante: "VAULT_COQUILLE_CAPACITE_MANQUANTE",
 });
 
 /** Les messages en français, un par code. Ils décrivent le REFUS, jamais l'état de l'appareil. */
@@ -141,6 +177,14 @@ const MESSAGES = Object.freeze({
     "Message retenu : il transportait autre chose que des données.",
   [CODES_REFUS_COQUILLE.volumeVerrouille]:
     "Ce geste demande un volume OUVERT : créer un moyen de récupération exige de détenir déjà une clé qui ouvre ce coffre.",
+  [CODES_REFUS_COQUILLE.workerMort]:
+    "Le Worker de confiance ne répond plus : la coquille ne sert plus rien tant qu'un geste ne l'a pas rouverte.",
+  [CODES_REFUS_COQUILLE.etapeHorsOrdre]:
+    "Étape du cycle de vie demandée avant celle dont elle dépend : l'ordre n'est pas une convention.",
+  [CODES_REFUS_COQUILLE.applicationAbsente]:
+    "Aucune application n'est servie par cette origine : il n'y a rien à démarrer ici.",
+  [CODES_REFUS_COQUILLE.capaciteManquante]:
+    "Une capacité exigée manque à ce navigateur : la coquille le dit plutôt que de l'inventer.",
 });
 
 /** Tous les codes, triés. Sert au cliquet d'exhaustivité et aux épreuves. */

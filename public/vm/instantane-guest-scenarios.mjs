@@ -38,7 +38,7 @@ import { cleDuBanc } from "./cle-du-banc.mjs";
 import {
   capturerApresPointDeControle,
   ouvrirInstantanePourReprise,
-} from "./reference-worker-instantane.mjs";
+} from "/src/vm/instantane-du-boot.mjs";
 
 /** Taille du volume. Assez pour deux marques éloignées, assez peu pour que l'épreuve reste courte. */
 const VOLUME_OCTETS = 16 * 1024 * 1024;
@@ -73,7 +73,7 @@ async function relireLaMarque(session, marque) {
  * EMPREINTE de l'image de ce guest : les artefacts réellement acquis, dans un ordre fixe.
  *
  * Le rootfs de l'image Rails n'existe pas ici — le système vient du cédérom —, si bien que la liste
- * canonique de `reference-worker-instantane.mjs` ne s'applique pas. C'est la seule différence : le
+ * canonique de `instantane-du-boot.mjs` ne s'applique pas. C'est la seule différence : le
  * procédé est le même, et l'empreinte est prise sur les OCTETS ACQUIS, jamais sur un manifeste que
  * celui qui la présente aurait écrit.
  */

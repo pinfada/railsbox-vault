@@ -1,38 +1,51 @@
-// Acquisition du runtime et BOOT VÉRIFIÉ du guest, extraits de `reference-worker.mjs` (#13).
+// ACQUISITION du runtime et BOOT VÉRIFIÉ du guest.
 //
 // Ce module ne connaît que le boot : acquérir ce qui vient du réseau, ouvrir le volume EN ÉCRITURE
 // par le seul chemin qui exige son identité (`SEC-UPDATE-001`), faire démarrer Rails, l'interroger,
 // et rendre ce qui a été observé. Il ne décide rien : aucune phase ne se déclare « réussie »
 // d'elle-même, l'assertion vit dans les spécifications de `tests/e2e/`.
 //
-// Il vit à part parce que le Worker de référence porte désormais quatre familles de phases —
-// préparation, boot, export/restauration, migration — et que le dépôt tient ses fichiers sous
-// 800 lignes. Son nom contient « worker » : la configuration ESLint en déduit le contexte
-// d'exécution et ne lui accorde aucun global de page (voir `eslint.config.mjs`).
+// ## Pourquoi il vit dans `src/` depuis #163
+//
+// Il a été écrit pour le banc de reprise (#7, #13) et a vécu sous `public/vm/reference-worker-boot.mjs`
+// tant que le boot était un banc. La tranche 3 de #24 l'amène DANS le produit : le Worker de
+// confiance de la coquille boote la même image, sur le même volume OPFS, par le même chemin — c'est
+// l'étape 3 du cycle de vie de `docs/architecture.md`, « le Worker ouvre le backend, puis seulement
+// la VM ». Le laisser sous `public/vm/` aurait fait importer un banc par un chemin de production ;
+// le recopier en aurait fait deux versions qui divergent au premier correctif.
+//
+// **Ce qui a changé en le déplaçant, et rien d'autre** : `ouvrirLeVolumeDuGuest` est désormais
+// INJECTÉ. Le banc l'ouvre sous le jeton du harnais (`cle-du-banc.mjs`), la coquille sous la clé
+// développée de son enveloppe (ADR 0020) — deux provenances de clé, un seul chemin de boot. Sans
+// cette injection, ce module aurait gardé un import vers un banc, c'est-à-dire l'inverse du
+// déplacement.
+//
+// Son nom ne contient plus « worker » : la configuration ESLint en déduisait un contexte de Worker,
+// et il est désormais partagé — le banc l'exécute dans un Worker, la coquille aussi, mais rien ici
+// n'appelle un global qui manque à la page (voir `eslint.config.mjs`).
 
-import { BlockJournal } from "/src/vm/block-journal.mjs";
-import { openVolumeForWrite } from "/src/vm/opfs-volume-open.mjs";
-import { cleDuBanc } from "./cle-du-banc.mjs";
-import { createReferenceGuestSession } from "/src/vm/reference-guest-session.mjs";
+import { BlockJournal } from "./block-journal.mjs";
+import { openVolumeForWrite } from "./opfs-volume-open.mjs";
+import { createReferenceGuestSession } from "./reference-guest-session.mjs";
 import {
   consignerRejetsNonTraites,
   executerSousGarde,
   exigerContexteExecutable,
   mesurerRythme,
-} from "/src/vm/runtime-environment.mjs";
-import { decrireBoucle, installerBoucleOrdonnancement } from "/src/vm/scheduling-loop.mjs";
-import { verifierEmpreintesV86, verifierLeModuleV86 } from "./reference-worker-empreintes.mjs";
-import { createV86BufferAdapter } from "/src/vm/v86-buffer-adapter.mjs";
+} from "./runtime-environment.mjs";
+import { decrireBoucle, installerBoucleOrdonnancement } from "./scheduling-loop.mjs";
+import { verifierEmpreintesV86, verifierLeModuleV86 } from "./empreintes-du-runtime-v86.mjs";
+import { createV86BufferAdapter } from "./v86-buffer-adapter.mjs";
 import {
   capturerApresPointDeControle,
   empreinteDeLImage,
   ouvrirInstantanePourReprise,
-} from "./reference-worker-instantane.mjs";
+} from "./instantane-du-boot.mjs";
 import {
   MANIFEST_FORMAT_VERSION,
   MIN_VOLUME_FORMAT_VERSION,
   createManifest,
-} from "/src/vm/volume-manifest.mjs";
+} from "./volume-manifest.mjs";
 
 /**
  * La boucle d'ordonnancement de v86 est posée À L'ÉVALUATION de ce module — donc au démarrage du
@@ -301,16 +314,15 @@ function guetterMutation(journal, prevenir) {
  * ou d'un format plus récent que ce runtime est refusé sans qu'un seul octet ait été téléchargé,
  * pas découvert par Rails sur un système de fichiers tronqué (`SEC-UPDATE-001`).
  *
- * @param {{ volume: string, attentes: object, timeline: object,
+ * @param {{ volume: string, attentes: object, timeline: object, ouvrirLeVolumeDuGuest: Function,
  *           guest: { V86: Function, artifacts: object, cmdline: string, memoryBytes: number } }} options
  */
-async function ouvrirVolumeEtSession({ volume, attentes, timeline, guest }) {
+async function ouvrirVolumeEtSession({ volume, attentes, timeline, guest, ouvrirLeVolumeDuGuest }) {
   const journal = new BlockJournal();
   const failures = [];
-  const backend = await openVolumeForWrite({
+  const backend = await ouvrirLeVolumeDuGuest({
     name: volume,
     journal,
-    cle: cleDuBanc(),
     expectations: attentes,
   });
   // Ce que la RÉCUPÉRATION de #16 a trouvé et fait, lu AVANT le premier octet du guest. C'est la
@@ -527,8 +539,15 @@ async function monterEtOuvrirLInstantane({
   guest,
   empreinteImage,
   reprendreParInstantane,
+  ouvrirLeVolumeDuGuest,
 }) {
-  const montage = await ouvrirVolumeEtSession({ volume, attentes, timeline, guest });
+  const montage = await ouvrirVolumeEtSession({
+    volume,
+    attentes,
+    timeline,
+    guest,
+    ouvrirLeVolumeDuGuest,
+  });
   // L'instantané est OUVERT avant le boot, et son état n'est restauré que s'il est utilisable. Un
   // instantané écarté ne fait donc rien d'autre que retarder le boot du temps de sa lecture — et ce
   // temps est publié, comme le motif de son rejet.
@@ -586,6 +605,25 @@ function sansLEtat(instantane) {
 }
 
 /**
+ * L'OUVREUR par défaut : celui qui exige une clé de volume déjà en mémoire.
+ *
+ * Il n'en fabrique aucune, et c'est le point : `openVolumeForWrite` refuse un volume sans manifeste
+ * compatible AVANT d'ouvrir quoi que ce soit (`SEC-UPDATE-001`), puis passe la clé qu'on lui donne.
+ * D'où elle vient est la seule chose qui distingue le banc du produit — jeton de harnais d'un côté,
+ * enveloppe de clé de l'autre —, et c'est pour cela que ce paramètre existe.
+ *
+ * @param {{ name: string, journal: object, expectations: object, cle?: Uint8Array }} options
+ */
+function ouvrirSousLeManifeste({ name, journal, expectations, cle }) {
+  if (!(cle instanceof Uint8Array)) {
+    throw new Error(
+      "Aucune clé de volume : `bootEtVerifier` n'en fabrique pas. Injectez `ouvrirLeVolumeDuGuest`.",
+    );
+  }
+  return openVolumeForWrite({ name, journal, cle, expectations });
+}
+
+/**
  * Ouvre le volume OPFS, boote Rails dessus, attend `/vault/health`, vérifie l'invariant et rend le
  * compte rendu. Le seul boot possible est un boot à froid complet : il n'existe aucun chemin
  * d'instantané mémoire dans ce Worker.
@@ -611,6 +649,7 @@ export async function bootEtVerifier({
   surMutation = null,
   capturerInstantane = false,
   reprendreParInstantane = false,
+  ouvrirLeVolumeDuGuest = ouvrirSousLeManifeste,
 }) {
   const { attentes, timeline, V86, artifacts, empreinteImage, ...mesuresDAcquisition } =
     await preparerLeBoot({ manifest, runtime, runtimeBundle });
@@ -622,6 +661,7 @@ export async function bootEtVerifier({
     guest: { V86, artifacts, cmdline, memoryBytes },
     empreinteImage,
     reprendreParInstantane,
+    ouvrirLeVolumeDuGuest,
   });
 
   const deroule = await deroulerBootEtInvariant({
