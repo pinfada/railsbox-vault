@@ -3,7 +3,7 @@
 // boucle de Vault en la comparant à celle qu'elle remplace, sur le MÊME code et le MÊME volume.
 //
 // Il ne duplique rien : il importe le Worker runtime du produit, en entier, phases comprises. Le
-// seul écart est trois lignes plus bas — la boucle posée à l'évaluation de `reference-worker-boot`
+// seul écart est trois lignes plus bas — la boucle posée à l'évaluation de `boot-de-reference`
 // est RETIRÉE avant que quoi que ce soit ne l'emprunte. L'ordre le permet et n'a rien de fortuit :
 //
 //   1. les imports statiques s'évaluent d'abord ; c'est là que la boucle est posée ;
@@ -16,7 +16,7 @@
 // dénoncer : son compte rendu porte `boucleOrdonnancement: null`, et
 // `tests/e2e/reprise-mutation-boot-froid.spec.mjs` EXIGE une boucle de Vault sur ce chemin.
 
-import { boucleOrdonnancement } from "./reference-worker-boot.mjs";
+import { boucleOrdonnancement } from "/src/vm/boot-de-reference.mjs";
 import "./reference-worker.mjs";
 
 boucleOrdonnancement.retirer();

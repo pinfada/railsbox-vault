@@ -5,7 +5,7 @@
 // qu'elles rendent. Les phases elles-mêmes vivent par familles, ce qui borne chaque module bien en
 // deçà du plafond de 800 lignes du dépôt et laisse chaque famille se lire d'un bloc :
 //
-//   reference-worker-boot.mjs             acquisition du runtime et boot vérifié
+//   /src/vm/boot-de-reference.mjs         acquisition du runtime et boot vérifié (passé en PRODUIT avec #163 : la coquille boote la même image par le même chemin)
 //   reference-worker-phases-boot.mjs      live, resume, live-couper, live-capturer,
 //                                         resume-instantane, resume-arm, resume-fire
 //   reference-worker-phases-volume.mjs    prepare, prepare-empty, cleanup, revoke-manifest,

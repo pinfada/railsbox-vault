@@ -14,7 +14,27 @@
 // Aucune ne se déclare « réussie » d'elle-même : elle rend ce qu'elle a observé, et l'assertion vit
 // dans les spécifications de `tests/e2e/`.
 
-import { acquerirRuntime, bootEtVerifier } from "./reference-worker-boot.mjs";
+import { acquerirRuntime, bootEtVerifier } from "/src/vm/boot-de-reference.mjs";
+import { openVolumeForWrite } from "/src/vm/opfs-volume-open.mjs";
+import { cleDuBanc } from "./cle-du-banc.mjs";
+
+/**
+ * L'ouvreur du BANC : le volume du guest s'ouvre sous le jeton du harnais (ADR 0016).
+ *
+ * Il est passé à chaque boot depuis #163, parce que `boot-de-reference.mjs` a quitté `public/vm/`
+ * pour `src/vm/` : le chemin de boot est désormais partagé avec le Worker de confiance de la
+ * coquille, qui ouvre le MÊME volume sous la clé développée de son enveloppe. Deux provenances de
+ * clé, un seul boot — et le banc garde la sienne, sous le jeton que
+ * `tests/unit/harnais-portes.test.mjs` surveille.
+ */
+function ouvrirLeVolumeDuBanc({ name, journal, expectations }) {
+  return openVolumeForWrite({ name, journal, cle: cleDuBanc(), expectations });
+}
+
+/** Ce que toute phase de ce fichier ajoute à ses options : l'ouvreur du banc. */
+function sousLeJetonDuBanc(options) {
+  return { ...options, ouvrirLeVolumeDuGuest: ouvrirLeVolumeDuBanc };
+}
 
 /**
  * État armé de la reprise hors ligne. La reprise se joue en deux temps pour prouver que le RÉSEAU
@@ -24,11 +44,11 @@ import { acquerirRuntime, bootEtVerifier } from "./reference-worker-boot.mjs";
 let armed = null;
 
 export async function phaseLive(options) {
-  return bootEtVerifier({ ...options, phase: "live" });
+  return bootEtVerifier(sousLeJetonDuBanc({ ...options, phase: "live" }));
 }
 
 export async function phaseResume(options) {
-  return bootEtVerifier({ ...options, phase: "resume" });
+  return bootEtVerifier(sousLeJetonDuBanc({ ...options, phase: "resume" }));
 }
 
 /**
@@ -39,7 +59,9 @@ export async function phaseResume(options) {
  * quelque chose.
  */
 export async function phaseLiveCapturer(options) {
-  return bootEtVerifier({ ...options, phase: "live-capturer", capturerInstantane: true });
+  return bootEtVerifier(
+    sousLeJetonDuBanc({ ...options, phase: "live-capturer", capturerInstantane: true }),
+  );
 }
 
 /**
@@ -48,7 +70,9 @@ export async function phaseLiveCapturer(options) {
  * deux chemins passerait aussi bien avec l'instantané que sans.
  */
 export async function phaseResumeInstantane(options) {
-  return bootEtVerifier({ ...options, phase: "resume-instantane", reprendreParInstantane: true });
+  return bootEtVerifier(
+    sousLeJetonDuBanc({ ...options, phase: "resume-instantane", reprendreParInstantane: true }),
+  );
 }
 
 /**
@@ -62,11 +86,13 @@ export async function phaseResumeInstantane(options) {
  * exactement ce qu'on veut mesurer.
  */
 export async function phaseLiveCouper(options) {
-  return bootEtVerifier({
-    ...options,
-    phase: "live-couper",
-    surMutation: (etat) => self.postMessage({ type: "mutation", ...etat }),
-  });
+  return bootEtVerifier(
+    sousLeJetonDuBanc({
+      ...options,
+      phase: "live-couper",
+      surMutation: (etat) => self.postMessage({ type: "mutation", ...etat }),
+    }),
+  );
 }
 
 /** Arme la reprise hors ligne : acquiert le runtime PENDANT que la page est en ligne. */
@@ -88,10 +114,12 @@ export async function phaseResumeFire(options) {
   }
   const { bundle, options: armedOptions } = armed;
   armed = null;
-  return bootEtVerifier({
-    ...armedOptions,
-    ...options,
-    phase: "resume",
-    runtimeBundle: bundle,
-  });
+  return bootEtVerifier(
+    sousLeJetonDuBanc({
+      ...armedOptions,
+      ...options,
+      phase: "resume",
+      runtimeBundle: bundle,
+    }),
+  );
 }

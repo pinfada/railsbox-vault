@@ -47,7 +47,7 @@ import {
   decoderEnTeteV3,
   identifiantVolumeEnTexte,
 } from "/src/vm/volume-chiffre-format.mjs";
-import { manifesteDuDescripteur } from "./reference-worker-boot.mjs";
+import { manifesteDuDescripteur } from "/src/vm/boot-de-reference.mjs";
 import { enveloppeDeRecuperationPourExport } from "./reference-worker-phases-recuperation.mjs";
 import {
   EXPORT_BLOCK_BYTES,

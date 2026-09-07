@@ -30,7 +30,7 @@ import {
   VOLUME_ALGORITHM,
 } from "/src/vm/volume-manifest.mjs";
 import { ouvrirVolumeBrut } from "/src/vm/opfs-volume-brut.mjs";
-import { attentesDe, manifesteDuDescripteur } from "./reference-worker-boot.mjs";
+import { attentesDe, manifesteDuDescripteur } from "/src/vm/boot-de-reference.mjs";
 import { EXPORT_BLOCK_BYTES } from "./reference-worker-mesures.mjs";
 
 /**
