@@ -172,8 +172,17 @@ test("le document applicatif LOYAL obtient son port et l'état : la coquille SER
   const rapport = JSON.parse(await cadre.locator("#document-applicatif-rapport").textContent());
   expect(rapport.portRecu).toBe(true);
   expect(Object.values(ETATS_DU_VOLUME)).toContain(rapport.etat);
-  // Et rien d'autre : la réponse ne porte que l'état et le compte de barrières.
-  expect(Object.keys(rapport).sort()).toEqual(["barrieres", "etat", "portRecu", "refus"]);
+  // Et rien d'autre : de la coquille, le document n'a REÇU que l'état et le compte de barrières.
+  // `portRecu`, `refus` et `questions` sont ce que le document sait de LUI-MÊME — un booléen, une
+  // liste de codes qu'il a reçus, et depuis #163 le compte de ses propres questions, le geste-requête
+  // étant devenu rejouable. Aucun des trois ne vient d'un message de la coquille.
+  expect(Object.keys(rapport).sort()).toEqual([
+    "barrieres",
+    "etat",
+    "portRecu",
+    "questions",
+    "refus",
+  ]);
 });
 
 test("l'assemblage publie ce qu'il COÛTE : canal privilégié, puis cadre applicatif", async ({

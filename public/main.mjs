@@ -102,6 +102,8 @@ const rapport = {
   workerMort: null,
   /** Ce que le démarrage de l'application a rendu. Ni octet du volume, ni clé, ni handle. */
   application: null,
+  /** Ce que la fermeture propre a rendu : le compte rendu de capture, et rien de l'instantané. */
+  fermeture: null,
   // Les refus sont COMPTÉS par code, jamais recopiés.
   //
   // Ils l'étaient : chaque refus poussait dans un tableau non borné le type reçu, et le relevé
