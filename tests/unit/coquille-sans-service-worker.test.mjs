@@ -188,8 +188,10 @@ test("le DESCRIPTEUR d'application est déclaré dans l'arbre publié, et il ne 
   // tolère l'arbre incomplet. Le relecteur l'a relevé à côté du vert par vacuité de la CI.
   const declares = SOURCES_COQUILLE.map(({ depuis }) => depuis);
   assert.ok(declares.includes("artifacts/application.json"), "le descripteur est publié");
-  assert.ok(
-    declares.includes("artifacts/reference-image"),
-    "les artefacts que le descripteur NOMME sont publiés avec lui : servir l'un sans l'autre promet une application qu'on ne peut pas installer",
-  );
+  // Ce qu'il NOMME n'y est PAS, et c'est écrit : 926 Mio d'artefacts feraient passer `npm run check`
+  // de deux minutes à des dizaines, puisque la chaîne recopie et hache tout ce qu'elle émet. Les
+  // déposer sur l'origine de confiance est une obligation d'exploitant (#124–#126), et la
+  // conséquence — une coquille publiée qui échoue à l'installation plutôt qu'à la lecture — est
+  // nommée dans l'ADR 0030 § Limites.
+  assert.ok(!declares.includes("artifacts/reference-image"));
 });

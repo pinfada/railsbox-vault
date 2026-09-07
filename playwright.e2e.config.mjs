@@ -82,7 +82,12 @@ export default defineConfig({
     // Le couple de la COQUILLE DE PRODUIT : origine de confiance et origine applicative, chacune
     // avec les en-têtes de son rôle. C'est la topologie de l'ADR 0002, servie pour de bon.
     {
-      command: `node tools/serve.mjs --role shell --host ${E2E_HOST} --port ${E2E_COQUILLE_PORT}`,
+      // `--app-origin` est OBLIGATOIRE ici, et son absence est la première chose que le scénario a
+      // trouvée : la CSP de la coquille porte `frame-src 'self' <origine applicative>`, et sans ce
+      // drapeau elle nomme l'origine par défaut du dépôt (`localhost:4174`) — le cadre vers
+      // `localhost:4180` est alors refusé par la politique, et le document applicatif ne se charge
+      // jamais. La frontière fonctionnait ; c'est le serveur qui ne servait pas la bonne.
+      command: `node tools/serve.mjs --role shell --host ${E2E_HOST} --port ${E2E_COQUILLE_PORT} --app-origin ${E2E_ORIGIN_COQUILLE_APP}`,
       url: `${E2E_ORIGIN_COQUILLE}/index.html`,
       reuseExistingServer: false,
     },
