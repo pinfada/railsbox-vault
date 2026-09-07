@@ -20,7 +20,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PLAFOND_CHARGE_OCTETS, TAMPON_RELECTURE_OCTETS } from "../../src/vm/generation-store.mjs";
-import { expect, test } from "./contexte-persistant.mjs";
+import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -84,7 +84,7 @@ test.afterEach(async ({ context }) => {
 test("une coupure pendant une mutation Rails laisse un volume qui reboote et dit d'où il repart", async ({
   context,
 }, testInfo) => {
-  test.skip(raison !== null, raison ?? "");
+  exigerLesPrealables(raison, "coupure-generation-boot-froid.spec.mjs");
   test.setTimeout(1_500_000);
 
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));

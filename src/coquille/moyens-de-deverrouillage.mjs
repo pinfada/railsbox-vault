@@ -109,6 +109,19 @@ export const DELAI_PASSKEY_MS = 30000;
  */
 export const DELAI_WORKER_MORT_MS = 30000;
 
+/**
+ * La CADENCE du battement que le Worker de confiance émet pendant un geste long (#163, ADR 0030).
+ *
+ * Elle est un ordre de grandeur SOUS `DELAI_WORKER_MORT_MS`, et c'est tout ce qui la justifie : la
+ * borne ne doit pas expirer sur une hésitation d'ordonnancement, et il faut plusieurs battements
+ * manqués — six ici — avant qu'un Worker vivant soit pris pour mort. Une cadence proche de la borne
+ * ferait dépendre le verdict d'un seul battement, donc du hasard d'un tour de boucle.
+ *
+ * Ce qu'elle ne rend pas plus lent : rien. Un battement est un message vide sur un canal qui n'en
+ * porte aucun autre pendant ce temps-là.
+ */
+export const DELAI_BATTEMENT_MS = 5000;
+
 /** Les noms des moyens servis, pour qu'un appelant n'ait pas à parcourir la table. */
 export const NOMS_SERVIS = Object.freeze(
   Object.values(MOYENS_SERVIS)

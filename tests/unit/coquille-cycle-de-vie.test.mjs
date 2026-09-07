@@ -140,6 +140,51 @@ test("un moteur qui ne sait pas atteindre un volume ne démarre aucune VM non pl
   assert.equal(erreur.code, CODES_REFUS_COQUILLE.etapeHorsOrdre);
 });
 
+// --- La RÉVISION d'un « pas encore » ---------------------------------------------------------------
+
+test("une étape conclue `differee` peut être RÉVISÉE une fois, et le journal garde les deux", () => {
+  const journal = journalDuCycle({ maintenant: horlogeFeinte() });
+  journal.conclure("identites", ISSUES_DETAPE.franchie);
+  journal.conclure("exclusiviteEtCanal", ISSUES_DETAPE.franchie);
+  journal.conclure("backendPuisVm", ISSUES_DETAPE.differee, "volume-verrouille");
+  journal.conclure("backendPuisVm", ISSUES_DETAPE.franchie, "application");
+
+  assert.equal(journal.issueDe("backendPuisVm"), ISSUES_DETAPE.franchie);
+  const inscrites = journal.releve().filter(({ etape }) => etape === "backendPuisVm");
+  // Le journal GARDE les deux : la révision se lit, elle ne remplace pas. Un journal qui écraserait
+  // cacherait exactement ce qu'il doit montrer — que l'étape a bougé, et quand.
+  assert.equal(inscrites.length, 2);
+  assert.equal(inscrites[0].revision, false);
+  assert.equal(inscrites[1].revision, true);
+});
+
+test("une issue FINALE ne se révise pas : franchie, indisponible et banc tiennent", () => {
+  for (const finale of [ISSUES_DETAPE.franchie, ISSUES_DETAPE.indisponible, ISSUES_DETAPE.banc]) {
+    const journal = journalDuCycle({ maintenant: horlogeFeinte() });
+    journal.conclure("identites", finale);
+    const erreur = refusDe(() => journal.conclure("identites", ISSUES_DETAPE.franchie));
+    assert.equal(erreur.code, CODES_REFUS_COQUILLE.etapeHorsOrdre);
+  }
+});
+
+test("une SECONDE révision est refusée : la première a posé une issue FINALE", () => {
+  // Aucune ligne ne la nomme, et c'est voulu : la première révision remplace `differee` par une
+  // issue finale, et la finalité refuse la suivante. Une garde de moins pour une propriété de plus,
+  // et une garde inatteignable est une garde qu'aucune mutation ne peut tuer.
+  const journal = journalDuCycle({ maintenant: horlogeFeinte() });
+  journal.conclure("identites", ISSUES_DETAPE.differee);
+  journal.conclure("identites", ISSUES_DETAPE.franchie);
+  const erreur = refusDe(() => journal.conclure("identites", ISSUES_DETAPE.indisponible));
+  assert.equal(erreur.code, CODES_REFUS_COQUILLE.etapeHorsOrdre);
+});
+
+test("une révision LÈVE un « pas encore » : elle ne le repose pas", () => {
+  const journal = journalDuCycle({ maintenant: horlogeFeinte() });
+  journal.conclure("identites", ISSUES_DETAPE.differee);
+  const erreur = refusDe(() => journal.conclure("identites", ISSUES_DETAPE.differee));
+  assert.equal(erreur.code, CODES_REFUS_COQUILLE.etapeHorsOrdre);
+});
+
 // --- Les CAPACITÉS, mesurées dans le document de la coquille --------------------------------------
 
 /** Une portée qui possède tout ce que la coquille exige. Les épreuves en retirent une chose. */

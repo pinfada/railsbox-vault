@@ -99,6 +99,19 @@ export const LIMITE_NIST_INVOCATIONS = 2 ** 32;
  * le nombre réel d'invocations sous la clé peut alors dépasser le nombre compté. Un budget serré
  * garde un ordre de grandeur de marge devant cet écart, qu'aucune mesure ne borne aujourd'hui.
  * C'est une question ouverte pour la revue externe (#20).
+ *
+ * **Le nom dit « PAR CLÉ », le compteur compte PAR VOLUME, et l'écart est assumé depuis #163.**
+ * `scellementsCumules` est authentifié dans la racine d'UN volume ; la coquille de produit ouvre
+ * désormais DEUX volumes sous la même clé développée — celui de la coquille et celui de
+ * l'application (ADR 0030) —, si bien que le total sous la clé peut atteindre 2 × 2^31 = 2^32,
+ * c'est-à-dire exactement le plafond NIST que ce budget divisait par deux. Ce que la marge devient
+ * alors : `N² / 2^97` vaut 2^-33 à 2^32 tirages — sous le plafond, mais sans la marge d'un ordre de
+ * grandeur que le paragraphe ci-dessus revendique.
+ *
+ * Ce n'est pas corrigé ici, et c'est écrit plutôt que tu : vérifier le budget sur la SOMME des
+ * compteurs des volumes ouverts sous une clé demande de faire remonter une grandeur d'un volume à
+ * l'autre, ce qui touche la racine authentifiée. La décision est dans l'ADR 0030 § Impacts, et la
+ * question est portée à la revue externe (#20).
  */
 export const BUDGET_SCELLEMENTS_PAR_CLE = 2 ** 31;
 

@@ -2150,8 +2150,27 @@ ignoré, jamais par défaut.
 Argon2id de plus, en séquence (`workers: 1`), sur une recette qui en dure soixante à soixante-dix.
 La marge du job (120 min) les couvre.
 
-**Campagne de mutation** — `node tools/muter-gardes-cycle-de-vie.mjs` : dix-sept gardes, dix-sept
-mutants tués, table et survivant dans l'ADR 0030.
+**Campagne de mutation** — `node tools/muter-gardes-cycle-de-vie.mjs` : vingt-sept gardes,
+vingt-sept mutants tués, table et survivant dans l'ADR 0030.
+
+### Le VERT PAR VACUITÉ, et ce qui le ferme
+
+`reprise.yml` a rendu « 8 passed, 1 skipped » sur la première rédaction de #163 : le scénario ignoré
+était celui que la tranche livrait, et rien dans le journal ne disait lequel ni pourquoi. Deux
+défauts d'un coup, corrigés au même endroit (`tests/e2e/contexte-persistant.mjs`,
+`exigerLesPrealables`) :
+
+- la RAISON d'un scénario ignoré est **imprimée** sur la sortie standard, toujours, avec le nom du
+  fichier. Un « 1 skipped » sans nom est ce qui a caché le défaut pendant une recette de deux heures
+  ;
+- sous **`VAULT_E2E_EXIGER=1`**, que `reprise.yml` pose, un scénario ignoré devient un **échec**
+  avec la raison en clair. Cette recette construit l'image de référence et récupère les artefacts
+  v86 : elle n'a aucune raison de voir un scénario s'ignorer, et un scénario ignoré y est un défaut
+  de RECETTE. En local, sans la variable, le `skip` explicite reste — un développeur sans Docker
+  doit pouvoir jouer le reste de la suite.
+
+Les NEUF scénarios de `tests/e2e/` passent par cette porte, et pas seulement le nouveau : ils
+avaient tous la même condition d'ignorance, donc tous la même exposition.
 
 ## Preuve rouge
 

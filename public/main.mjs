@@ -290,6 +290,7 @@ function constaterLaMort(cause) {
     attente.refuser(refusDeMort());
   }
   remonterLInterface();
+  offrirLaReouverture();
   publier();
   terminer("worker-mort", `coquille:worker-mort:${cause}`);
   return mortDuWorker;
@@ -351,6 +352,13 @@ function surMessagePrivilegie(donnee) {
     rapport.barrieres = decode.message.barrieres;
     publier();
   }
+  if (decode.type === TYPES_PRIVILEGIES.battement) {
+    // Un SIGNE DE VIE, et rien d'autre : il ne règle aucune promesse, il repousse la borne de
+    // l'attente qu'il nomme. Un battement dont la corrélation n'est pas en vol est ignoré — il ne
+    // doit prolonger que ce qu'il accompagne.
+    demandesEnVol.get(decode.message.correlation)?.repousser();
+    return;
+  }
   if (decode.type === TYPES_PRIVILEGIES.barriere) {
     rapport.barrieres = decode.message.barrieres;
     publier();
@@ -401,22 +409,39 @@ function demanderAuWorker(nomDuType, corps = {}) {
     // `finally` de `surRequeteApplicative` ne se déclenche pas, les trente-deux emplacements se
     // remplissent, et le port restreint se ferme pour de bon. Le refus est TYPÉ, comme tous les
     // autres, et il porte le code de la coquille — jamais un code du Worker, qui n'a rien dit.
-    const minuterie = setTimeout(() => {
-      demandesEnVol.delete(correlation);
-      // Le SILENCE est l'une des trois causes de mort, et il porte désormais SON code.
-      //
-      // Il portait `typeInconnu`, dont le message est « Requête hors de la liste d'admission de la
-      // coquille » — c'est-à-dire tout autre chose que ce qui s'était produit. Le défaut a été
-      // relevé par la Definition of Ready de #25, et il est de la classe qu'on ne voit qu'une fois
-      // qu'autre chose a déjà échoué : un refus qui décrit un autre événement que le sien.
-      constaterLaMort(CAUSES_DE_MORT.silence);
-      refuser(refusDeMort());
-    }, DELAI_WORKER_MORT_MS);
+    // La borne est REPOUSSABLE : ce qu'elle mesure est l'absence de SIGNE DE VIE, et non l'absence
+    // de réponse. Un Worker qui boote une machine virtuelle met des dizaines de secondes à
+    // répondre — p95 = 125,9 s au dossier — et bat pendant tout ce temps ; sans cette distinction,
+    // la coquille déclarerait mort un Worker vivant exactement pendant le geste le plus long
+    // qu'elle porte, et la fermeture propre deviendrait inatteignable dans le cas même pour lequel
+    // elle est écrite (constat 1 de la revue de sécurité de la PR #171).
+    let minuterie = null;
+    const armer = () => {
+      minuterie = setTimeout(() => {
+        demandesEnVol.delete(correlation);
+        // Le SILENCE est l'une des trois causes de mort, et il porte désormais SON code.
+        //
+        // Il portait `typeInconnu`, dont le message est « Requête hors de la liste d'admission de
+        // la coquille » — c'est-à-dire tout autre chose que ce qui s'était produit. Le défaut a été
+        // relevé par la Definition of Ready de #25, et il est de la classe qu'on ne voit qu'une
+        // fois qu'autre chose a déjà échoué : un refus qui décrit un autre événement que le sien.
+        constaterLaMort(CAUSES_DE_MORT.silence);
+        refuser(refusDeMort());
+      }, DELAI_WORKER_MORT_MS);
+    };
+    armer();
     const clore = (geste) => (valeur) => {
       clearTimeout(minuterie);
       geste(valeur);
     };
-    demandesEnVol.set(correlation, { rendre: clore(rendre), refuser: clore(refuser) });
+    demandesEnVol.set(correlation, {
+      rendre: clore(rendre),
+      refuser: clore(refuser),
+      repousser: () => {
+        clearTimeout(minuterie);
+        armer();
+      },
+    });
     privilegie.port1.postMessage(
       enveloppePrivilegiee(TYPES_PRIVILEGIES[nomDuType], { ...corps, correlation }),
     );
@@ -727,6 +752,28 @@ async function demanderLEtatPrivilegie() {
   } catch {
     return rapportDEtat();
   }
+}
+
+/**
+ * OFFRE le geste qui ROUVRE : un bouton, révélé par la mort, qui RECHARGE la coquille.
+ *
+ * « Refuser tout service jusqu'à un geste explicite » n'était pas tenu tant qu'aucun geste ne
+ * rouvrait : la coquille refusait, et rien ne la relevait (constat 5 de la revue de la PR #171).
+ *
+ * Le geste RECHARGE plutôt qu'il ne ressuscite, et c'est une décision : un Worker recréé en place
+ * hériterait d'un cadre applicatif dont le port est mort et d'un relevé qui décrit une session
+ * finie. Le rechargement rejoue le cycle depuis l'étape 1 — capacités, exclusivité, canal, cadre —
+ * et c'est le même chemin que la Definition of Ready de #25 retient pour retirer le cadre au
+ * verrouillage : un seul chemin pour deux conduites.
+ *
+ * Il n'est JAMAIS automatique. Redemander le geste à la place de l'utilisateur est l'autre option
+ * de la Definition of Ready de #24, et l'ADR 0030 la range dans les alternatives rejetées.
+ */
+function offrirLaReouverture() {
+  const bouton = document.querySelector("#rouvrir-la-coquille");
+  if (bouton === null) return;
+  bouton.hidden = false;
+  bouton.addEventListener("click", () => location.reload(), { once: true });
 }
 
 /**

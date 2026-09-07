@@ -58,6 +58,88 @@ export const ADRESSE_DESCRIPTEUR = "/artifacts/application.json";
 /** Version de descripteur que ce module sait lire. Une autre est refusée, jamais devinée. */
 export const DESCRIPTEUR_VERSION_ATTENDUE = 1;
 
+/**
+ * Le NOM d'un artefact servi : une lettre ou un chiffre, puis des caractères de nom de fichier.
+ *
+ * Il entre dans une URL que le Worker de confiance va chercher. La CSP `connect-src 'self'` est la
+ * SECONDE barrière — elle refuserait une origine étrangère —, mais une garde qui n'existe que dans
+ * l'en-tête n'est pas une garde du produit : un nom porteur de `..` ou d'une barre oblique ferait
+ * sortir la requête de son préfixe sans que la politique y voie quoi que ce soit.
+ */
+const NOM_DARTEFACT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/** Le PRÉFIXE servi : un chemin absolu, sans remontée, sans schéma, sans autorité. */
+const PREFIXE_SERVI = /^\/[A-Za-z0-9][A-Za-z0-9._/-]{0,127}\/$/;
+
+/**
+ * La LIGNE DE COMMANDE du guest, sur un alphabet clos et bornée.
+ *
+ * Elle est passée telle quelle à l'émulateur, qui la donne au noyau. Elle ne peut donc pas être
+ * libre : ce qu'un descripteur y glisserait, c'est un `init=` de son choix.
+ */
+const LIGNE_DE_COMMANDE = /^[A-Za-z0-9 ._:/=,+-]{1,512}$/;
+
+/** Bornes des deux grandeurs. Elles sont larges, et leur seul rôle est de refuser l'absurde. */
+const TAILLE_DISQUE_MAX = 8 * 1024 * 1024 * 1024;
+const MEMOIRE_MAX = 4 * 1024 * 1024 * 1024;
+
+/** @param {unknown} valeur @param {number} plafond */
+function entierBorne(valeur, plafond) {
+  return Number.isInteger(valeur) && valeur > 0 && valeur <= plafond;
+}
+
+/**
+ * CONTRÔLE la forme d'un descripteur, champ par champ.
+ *
+ * La version seule ne suffit pas, et c'est le constat 11 de la revue de sécurité de la PR #171 : un
+ * descripteur d'une version connue mais aux champs libres fournit six URL, une ligne de commande de
+ * noyau et deux grandeurs d'allocation au Worker de confiance. Le descripteur est servi par
+ * l'origine de confiance elle-même — ce n'est pas l'adversaire de `SEC-ORIGIN-001` — mais une
+ * donnée qui traverse une frontière se contrôle à l'entrée, pas à la source.
+ *
+ * Rend un MOTIF plutôt qu'un booléen : l'appelant le publie, et « descripteur refusé » sans dire
+ * quel champ enverrait chercher au mauvais endroit.
+ *
+ * @param {unknown} descripteur
+ * @returns {{ valide: boolean, motif: string | null }}
+ */
+export function formeDuDescripteur(descripteur) {
+  const refus = (motif) => ({ valide: false, motif });
+  if (typeof descripteur !== "object" || descripteur === null)
+    return refus("descripteur illisible");
+  if (descripteur.descripteurVersion !== DESCRIPTEUR_VERSION_ATTENDUE) {
+    return refus(`version de descripteur inconnue : ${String(descripteur.descripteurVersion)}`);
+  }
+  if (typeof descripteur.application?.id !== "string" || descripteur.application.id.length === 0) {
+    return refus("identité d'application absente");
+  }
+  if (typeof descripteur.runtime?.version !== "string") return refus("version de runtime absente");
+  if (!PREFIXE_SERVI.test(String(descripteur.prefixeDesArtefacts ?? ""))) {
+    return refus("préfixe d'artefacts hors du chemin servi");
+  }
+  if (String(descripteur.prefixeDesArtefacts).includes("..")) {
+    return refus("préfixe d'artefacts porteur d'une remontée");
+  }
+  if (!NOM_DARTEFACT.test(String(descripteur.disque?.nom ?? ""))) {
+    return refus("nom de disque applicatif refusé");
+  }
+  if (!entierBorne(descripteur.disque?.octets, TAILLE_DISQUE_MAX)) {
+    return refus("taille de disque applicatif hors bornes");
+  }
+  if (!entierBorne(descripteur.boot?.memoireOctets, MEMOIRE_MAX)) {
+    return refus("mémoire du guest hors bornes");
+  }
+  if (!LIGNE_DE_COMMANDE.test(String(descripteur.boot?.cmdline ?? ""))) {
+    return refus("ligne de commande du guest refusée");
+  }
+  for (const cle of ["kernel", "initrd", "rootfs", "bios", "vgaBios"]) {
+    if (!NOM_DARTEFACT.test(String(descripteur.boot?.[cle] ?? ""))) {
+      return refus(`nom d'artefact refusé : ${cle}`);
+    }
+  }
+  return { valide: true, motif: null };
+}
+
 /** Nom du volume qui porte le disque de l'application. Voir l'en-tête : ce n'est pas `coquille`. */
 export const NOM_DU_VOLUME_APPLICATIF = "application";
 
@@ -92,12 +174,8 @@ export async function lireLeDescripteur({ recuperer = globalThis.fetch } = {}) {
   } catch {
     return { present: false, motif: "descripteur illisible" };
   }
-  if (descripteur?.descripteurVersion !== DESCRIPTEUR_VERSION_ATTENDUE) {
-    return {
-      present: false,
-      motif: `version de descripteur inconnue : ${String(descripteur?.descripteurVersion)}`,
-    };
-  }
+  const forme = formeDuDescripteur(descripteur);
+  if (!forme.valide) return { present: false, motif: forme.motif };
   return { present: true, descripteur };
 }
 
@@ -149,52 +227,97 @@ export async function adressesDuRuntime(descripteur, { recuperer = globalThis.fe
  * laisse un volume non identifié, donc non ouvrable en écriture. Un demi-disque qui se croirait
  * complet serait bien pire qu'une installation à refaire.
  *
- * Rend `{ installee: false }` quand le volume porte déjà son manifeste : réinstaller effacerait ce
- * que le guest a écrit depuis, ce qu'aucun geste de démarrage n'a le droit de faire.
+ * **Trois issues, et pas une de plus :**
  *
- * @param {{ descripteur: object, cleDeVolume: () => Promise<Uint8Array> }} options
+ *  - le manifeste voisin est là → `{ installee: false }`. Réinstaller effacerait ce que le guest a
+ *    écrit depuis, ce qu'aucun geste de démarrage n'a le droit de faire ;
+ *  - rien n'existe → le disque est versé, puis le volume devient identifié ;
+ *  - **le fichier de volume existe SANS manifeste → REFUS**, `VAULT_COQUILLE_VOLUME_APPLICATIF_SANS_MANIFESTE`.
+ *    C'est le cas que la première rédaction traitait comme un volume neuf : elle versait le disque
+ *    par-dessus, sans un geste et sans un mot. Un volume anonyme est soit une installation
+ *    interrompue, soit autre chose ; dans les deux cas, l'écraser est une décision que la coquille
+ *    n'a pas à prendre seule. Ce qu'il faudra pour l'identifier ou le réparer est une question
+ *    ouverte, et elle est nommée dans l'ADR 0030 plutôt que tranchée ici.
+ *
+ * Les quatre primitives du support sont INJECTÉES, comme celles de `exclusivite-du-volume.mjs` :
+ * sans elles, cette fonction ne serait mesurable que par un navigateur portant un demi-gibioctet
+ * d'artefacts, donc jamais par une campagne de mutation.
+ *
+ * @param {{ descripteur: object, cleDeVolume: () => Promise<Uint8Array>, observer?: Function,
+ *           ouvrir?: Function, verser?: Function, revoquer?: Function, inscrire?: Function }} options
  */
-export async function installerSiNecessaire({ descripteur, cleDeVolume }) {
+export async function installerSiNecessaire({
+  descripteur,
+  cleDeVolume,
+  observer = statOpfsVolume,
+  ouvrir = openOpfsVolume,
+  verser = verserFluxDansVolume,
+  revoquer = revokeVolumeManifest,
+  inscrire = writeVolumeManifest,
+}) {
   const nom = NOM_DU_VOLUME_APPLICATIF;
   const octets = descripteur.disque.octets;
-  const manifesteExistant = await statOpfsVolume(manifestSidecarName(nom));
+  const manifesteExistant = await observer(manifestSidecarName(nom));
   if (manifesteExistant.present) return { installee: false, volume: nom, octets };
 
-  // Un volume à demi versé lors d'une tentative précédente porte des octets sans manifeste : il est
-  // repris de zéro, et son manifeste est révoqué d'abord pour que rien ne l'ouvre entre-temps.
-  await revokeVolumeManifest(nom);
-  const cle = await cleDeVolume();
-  let identifiantVolume;
-  let ecrits;
-  const backend = await openOpfsVolume({ name: nom, size: octets, cle, transactionnel: false });
-  cle.fill(0);
-  try {
-    identifiantVolume = backend.identifiantVolume;
-    ecrits = await verserFluxDansVolume(
-      backend,
-      `${descripteur.prefixeDesArtefacts}${descripteur.disque.nom}`,
+  const volumeExistant = await observer(nom);
+  if (volumeExistant.present) {
+    throw refus(
+      CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste,
+      `Le volume « ${nom} » existe sans manifeste : la coquille ne l'écrase pas pour installer.`,
     );
-  } finally {
-    await backend.close();
   }
-  if (ecrits !== octets) {
+
+  // Rien n'existe : le manifeste est révoqué d'abord, pour que rien ne puisse ouvrir un volume à
+  // demi versé entre-temps.
+  await revoquer(nom);
+  const verse = await verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, octets });
+  if (verse.ecrits !== octets) {
     throw refus(
       CODES_REFUS_COQUILLE.applicationAbsente,
-      `Disque applicatif tronqué : ${ecrits} octets écrits sur ${octets}.`,
+      `Disque applicatif tronqué : ${verse.ecrits} octets écrits sur ${octets}.`,
     );
   }
+  // DERNIER geste : le volume devient identifié, donc ouvrable en écriture. Tout ce qui précède
+  // laisse un volume ANONYME, et c'est ce qui rend une installation interrompue reconnaissable.
   const descripteurManifeste = descripteurDeManifeste(descripteur);
-  await writeVolumeManifest(
+  await inscrire(
     nom,
     createManifest({
       runtime: descripteurManifeste.runtime,
       app: descripteurManifeste.app,
       volumeSize: octets,
       identity: { algorithm: "sha-256", digest: null },
-      volume: { id: identifiantVolume, algorithm: VOLUME_ALGORITHM },
+      volume: { id: verse.identifiantVolume, algorithm: VOLUME_ALGORITHM },
     }),
   );
-  return { installee: true, volume: nom, octets, ecrits };
+  return { installee: true, volume: nom, octets, ecrits: verse.ecrits };
+}
+
+/**
+ * OUVRE le volume NEUF et y verse le disque, en flux. Rend les octets écrits et l'IDENTIFIANT que
+ * l'ouvreur a tiré : c'est lui, et non un identifiant réinventé, que le manifeste devra déclarer.
+ */
+async function verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, octets }) {
+  const cle = await cleDeVolume();
+  // La clé est effacée QUOI QU'IL ARRIVE à l'ouverture. Elle ne l'était que sur le chemin du
+  // succès, si bien qu'un `VAULT_STORAGE_BUSY` laissait ses octets en clair dans le tas du Worker :
+  // c'est le constat 5 de la revue de la PR #167, dont la correction manquait ici (constat 9 de la
+  // revue de la PR #171).
+  let backend;
+  try {
+    backend = await ouvrir({ name: nom, size: octets, cle, transactionnel: false });
+  } finally {
+    cle.fill(0);
+  }
+  try {
+    return {
+      identifiantVolume: backend.identifiantVolume,
+      ecrits: await verser(backend, `${descripteur.prefixeDesArtefacts}${descripteur.disque.nom}`),
+    };
+  } finally {
+    await backend.close();
+  }
 }
 
 /**

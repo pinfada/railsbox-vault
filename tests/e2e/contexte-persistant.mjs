@@ -64,3 +64,41 @@ export const test = base.extend({
     await context.close();
   },
 });
+
+/**
+ * Variable par laquelle une RECETTE déclare qu'elle a construit tous les préalables (#163).
+ *
+ * `reprise.yml` la pose : elle construit l'image de référence, récupère les artefacts v86, et n'a
+ * donc AUCUNE raison de voir un scénario s'ignorer. En local, sans elle, le `skip` explicite reste —
+ * un développeur sans Docker doit pouvoir jouer le reste de la suite.
+ */
+export const EXIGER = "VAULT_E2E_EXIGER";
+
+/**
+ * IGNORE un scénario faute de préalable — ou ÉCHOUE, quand la recette a déclaré les avoir tous.
+ *
+ * C'est la correction d'un vert par vacuité mesuré sur la PR #171 : `reprise.yml` a rendu
+ * « 8 passed, 1 skipped » alors que le scénario ignoré était celui que la tranche livrait, et rien
+ * dans le journal ne disait lequel ni pourquoi. Deux défauts d'un coup — l'ignorance silencieuse et
+ * l'absence de motif —, et ils se corrigent au même endroit :
+ *
+ *  - la RAISON est imprimée sur la sortie standard, toujours. Un « 1 skipped » sans nom est ce qui a
+ *    caché le défaut pendant une recette de deux heures ;
+ *  - sous `VAULT_E2E_EXIGER=1`, l'ignorance devient un ÉCHEC avec la raison en clair. Une recette
+ *    qui construit ses préalables et voit un scénario s'ignorer a un défaut de recette, pas un
+ *    scénario indisponible.
+ *
+ * @param {string | null} raison ce qui manque, ou `null` si tout est là
+ * @param {string} scenario le nom du fichier, pour que le journal dise LEQUEL
+ */
+export function exigerLesPrealables(raison, scenario) {
+  if (raison === null) return;
+  process.stdout.write(`[e2e] ${scenario} : préalable absent — ${raison}\n`);
+  if (process.env[EXIGER] === "1") {
+    throw new Error(
+      `${scenario} s'ignore alors que ${EXIGER}=1 : ${raison}. La recette a déclaré avoir ` +
+        `construit ses préalables ; un scénario ignoré est donc un défaut de recette.`,
+    );
+  }
+  base.skip(true, raison);
+}

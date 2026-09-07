@@ -31,6 +31,22 @@
         <p id="deverrouillage-etat" role="status"></p>
         <p id="deverrouillage-refus" role="alert"></p>
 
+        <!--
+          Le GESTE QUI ROUVRE, après la mort du Worker de confiance (#163, ADR 0030, décision 3).
+
+          Il est caché tant qu'aucune mort n'a été constatée, et il RECHARGE la coquille — il ne
+          ressuscite rien. Un Worker recréé en place hériterait d'un cadre applicatif dont le port
+          est mort, et d'un relevé qui décrit une session finie ; le rechargement rejoue le cycle
+          depuis l'étape 1 et refait le cadre. C'est aussi le chemin que la Definition of Ready de
+          #25 retient pour retirer le cadre au verrouillage : un seul chemin pour deux conduites.
+
+          Il est un BOUTON, jamais un rechargement automatique : « refuser tout service jusqu'à un
+          geste explicite » veut dire que c'est l'utilisateur qui décide de repayer la dérivation.
+        -->
+        <p>
+          <button id="rouvrir-la-coquille" type="button" hidden>Rouvrir le coffre</button>
+        </p>
+
         <h3>Version notée sur la feuille</h3>
         <p>
           <label for="ancre-version">Version d'enveloppe (facultatif)</label>

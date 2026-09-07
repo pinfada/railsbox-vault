@@ -128,27 +128,58 @@ Le disque de l'application est un **autre** volume, `application`, et ce n'est p
 L'identifiant du volume applicatif n'est pas une constante : il est tiré à sa création et inscrit
 dans son manifeste voisin, qui en est ensuite la source (ADR 0016).
 
-### Le boot déplacé, et non recopié
+### Le boot déplacé, et non recopié — DEUX points de variation
 
 `public/vm/reference-worker-boot.mjs` devient `src/vm/boot-de-reference.mjs`. Le laisser sous
 `public/vm/` aurait fait importer un **banc** par un chemin de production ; le recopier en aurait
-fait deux versions qui divergent au premier correctif. **Une seule chose a changé en le déplaçant**
-: `ouvrirLeVolumeDuGuest` est désormais injecté — le banc ouvre sous le jeton du harnais
-(`cle-du-banc.mjs`), la coquille sous la clé développée de son enveloppe. Deux provenances de clé,
-un seul chemin de boot.
+fait deux versions qui divergent au premier correctif. **Deux choses ont changé en le déplaçant**,
+et il faut les nommer toutes les deux :
+
+- `ouvrirLeVolumeDuGuest` est INJECTÉ — le banc ouvre sous le jeton du harnais (`cle-du-banc.mjs`),
+  la coquille sous la clé développée de son enveloppe. Deux provenances de clé, un seul chemin de
+  boot ;
+- `garderLaSessionOuverte` est une BRANCHE NEUVE, et c'est celle du produit : la coquille garde la
+  session vivante entre le démarrage et la fermeture propre, là où le banc bootait, vérifiait et
+  fermait d'un trait. Le chemin d'échec ferme toujours, et le `try/finally` d'origine reste ce qu'il
+  était ; ce qui change est le chemin du succès.
+
+Le banc emprunte désormais **la même branche** : `phaseLive` garde la session ouverte puis la ferme
+par la poignée que le boot rend. Le coût est nul — le boot se termine de la même façon, une ligne
+plus loin — et sans cela la branche du produit ne serait exercée que par la seule suite qui exige
+Docker (constat 12 de la revue de sécurité de la PR #171).
 
 Le module de boot est importé **dynamiquement**, au premier démarrage d'application : il pose la
 boucle d'ordonnancement de v86 à son évaluation (ADR 0013), et une coquille qui ne démarre aucune
 application n'a aucune raison de la porter.
 
-### Le descripteur d'application, et pourquoi il est servi
+### Le descripteur d'application, d'où il vient et d'où il est servi
 
 La coquille ne peut lire que ce que son origine sert. Le manifeste de l'image de référence vit dans
 `tools/`, que rien ne sert ; sans un descripteur servi, la coquille ne saurait ni la taille du
 disque à installer, ni la ligne de commande du guest, ni l'identité que le manifeste du volume doit
 déclarer — elle devrait les recevoir d'un **harnais**, c'est-à-dire du chemin que #162 a précisément
-fermé. `tools/build-reference-image/manifest.mjs` écrit donc `artifacts/application.json`, dérivé du
-manifeste et ne portant que du public : des noms d'artefacts, des tailles, une ligne de commande.
+fermée. `ecrireManifeste` écrit donc `artifacts/application.json` **du même geste** que le manifeste
+d'image, dérivé de lui et ne portant que du public : des noms d'artefacts, des tailles, une ligne de
+commande.
+
+**Du même geste, et c'est la décision.** Un descripteur écrit par un outil DE PLUS serait un outil
+que la recette d'intégration continue peut oublier d'appeler — et elle l'a oublié : la première
+rédaction de cette tranche définissait `descripteurApplicatif` sans que personne ne l'appelle, si
+bien que `reprise.yml` a **sauté** le scénario de la coquille et rendu « 8 passed, 1 skipped ». Un
+vert par vacuité, sur le scénario même que la tranche livrait. Deux fichiers dérivés du même
+manifeste naissent désormais ensemble.
+
+**D'où il est servi en production** : de l'arbre publié `coquille`, où `SOURCES_COQUILLE` le déclare
+avec les artefacts de l'image qu'il NOMME. Servir l'un sans l'autre promettrait une application
+qu'on ne peut pas installer ; les deux sont `optionnel`, comme les artefacts v86, et leur absence
+rend l'arbre **incomplet** — ce que l'inventaire déclare au lieu de le taire.
+
+**Sa FORME est contrôlée à la lecture**, champ par champ (`formeDuDescripteur`) : préfixe absolu
+sans remontée, noms d'artefacts sur un alphabet clos, ligne de commande bornée, taille et mémoire
+dans une plage nommée. La version seule ne suffisait pas : un descripteur d'une version connue
+fournit six URL, une ligne de commande de noyau et deux grandeurs d'allocation au Worker de
+confiance. `connect-src 'self'` est la **seconde** barrière — elle refuserait une origine étrangère
+—, et une garde qui n'existe que dans un en-tête n'est pas une garde du produit.
 
 ## Décision 2 — Un scénario de bout en bout sur la coquille RÉELLE
 
@@ -201,6 +232,26 @@ volontairement l'état que la mort du Worker atteint par accident.** Un seul ét
 
 Une cause hors table est **refusée** plutôt que rangée dans la plus proche : constater une mort par
 défaut ferait verrouiller un coffre vivant.
+
+**Le geste qui rouvre, nommément.** « Refuser tout service jusqu'à un geste explicite » n'était pas
+tenu tant qu'aucun geste ne relevait la coquille : elle refusait, et rien ne la rouvrait (constat 5
+de la revue de sécurité de la PR #171). Le geste est un **bouton**, « Rouvrir le coffre », que la
+mort révèle dans l'interface remontée et qui **recharge** la coquille. Il ne ressuscite rien, et
+c'est une décision : un Worker recréé en place hériterait d'un cadre applicatif dont le port est
+mort et d'un relevé qui décrit une session finie. Le rechargement rejoue le cycle depuis l'étape 1 —
+et c'est déjà le chemin que la Definition of Ready de #25 retient pour retirer le cadre au
+verrouillage : **un seul chemin pour deux conduites**.
+
+**Un Worker qui BAT n'est jamais déclaré mort.** La borne de trente secondes mesurait l'absence de
+RÉPONSE, et le dossier publie p95 = 125,9 s pour un boot Rails : un Worker parfaitement vivant était
+donc déclaré mort exactement pendant le geste le plus long que la coquille porte, et la fermeture
+propre devenait inatteignable dans le cas même pour lequel elle est écrite (constat 1 de la même
+revue). Allonger la borne à la durée du plus long geste aurait rendu la détection **aveugle**
+pendant le boot, c'est-à-dire quand elle sert. Le Worker émet donc un **battement**
+(`vault.coquille.battement-prive`, cadence `DELAI_BATTEMENT_MS` = 5 s) pendant tout geste long ; la
+borne ne bouge pas, et ce qu'elle mesure devient l'absence de **signe de vie**. Il faut six
+battements manqués pour qu'une mort soit constatée. Le battement ne franchit que le canal privilégié
+: le port restreint n'en reçoit jamais un.
 
 **Conduite — refuser tout service jusqu'à un geste explicite.** Des deux options de la DoR de #24,
 c'est la seconde. Elles ne diffèrent que par un point, et il faut le nommer : **remonter l'interface
@@ -337,6 +388,19 @@ jeton du harnais d'un côté, enveloppe de clé de l'autre — et rien de plus.
   écarté, inchangé ;
 - **[ADR 0017](0017-chaine-de-publication.md)** — COOP quitte la table des en-têtes ajoutés par la
   publication pour la source unique. La publication continue de le poser, sans le recopier ;
+- **[ADR 0015](0015-proprietes-cryptographiques-du-format.md)** — le budget de scellements est un
+  budget **par VOLUME**, et son nom disait « par clé ». `BUDGET_SCELLEMENTS_PAR_CLE` vaut 2^31, la
+  moitié du plafond NIST de 2^32 ; `scellementsCumules` est authentifié dans la racine d'UN volume.
+  La coquille ouvre désormais DEUX volumes sous la même clé développée — le sien et celui de
+  l'application —, si bien que le total sous la clé peut atteindre 2^32 : le plafond, sans la marge
+  d'un ordre de grandeur que l'ADR 0015 revendique. À deux volumes, `N² / 2^97` vaut **2^-33**, donc
+  sous le plafond, et c'est ce qui rend l'écart tolérable **pour l'instant**. Sous N volumes, la
+  marge est divisée par N. **Ce n'est pas corrigé dans cette tranche** : vérifier le budget sur la
+  SOMME des compteurs des volumes ouverts sous une clé demande de faire remonter une grandeur d'un
+  volume à l'autre, ce qui touche la racine authentifiée. La question est ouverte
+  ([#172](https://github.com/pinfada/railsbox-vault/issues/172)) et portée à la revue externe (#20)
+  ; le commentaire de la constante dit désormais la vérité nouvelle. Relevé par la revue de sécurité
+  de la PR #171 ;
 - **[ADR 0024](0024-instantane-de-reprise.md)** — la capture au **point de contrôle** est réemployée
   telle quelle par la fermeture propre, dans l'ordre de sa décision 6. La décision 8 (« le
   verrouillage retire l'instantané ») n'est **pas** rouverte ici : elle appartient à #25 ;
@@ -350,14 +414,16 @@ jeton du harnais d'un côté, enveloppe de clé de l'autre — et rien de plus.
 
 ## Campagne de mutation
 
-Dix-sept gardes, chacune retirée du source dans un atelier temporaire, l'épreuve rejouée
-(`tools/muter-gardes-cycle-de-vie.mjs`, moteur partagé).
+Vingt-sept gardes, chacune retirée du source dans un atelier temporaire, l'épreuve rejouée
+(`tools/muter-gardes-cycle-de-vie.mjs`, moteur partagé). Dix de plus que la première rédaction : ce
+sont celles que la revue de sécurité de la PR #171 a demandées, et elles portent sur du code que
+rien n'exécutait — l'installation, la forme du descripteur, le compte rendu publié.
 
 | #   | Garde retirée                                                               | Verdict |
 | --- | --------------------------------------------------------------------------- | ------- |
 | 1   | `exigerLOrdre` — la table des étapes connues                                | TUÉ     |
 | 2   | `exigerLOrdre` — la table des issues                                        | TUÉ     |
-| 3   | `exigerLOrdre` — l'unicité d'une étape                                      | TUÉ     |
+| 3   | `exigerLOrdre` — l'aiguillage vers la garde de révision                     | TUÉ     |
 | 4   | `exigerLOrdre` — la boucle sur les étapes antérieures, c'est-à-dire l'ORDRE | TUÉ     |
 | 5   | `exigerLeBackend` — l'exigence d'un volume OUVERT                           | TUÉ     |
 | 6   | `peutEncadrer` — la condition sur l'étape 3                                 | TUÉ     |
@@ -370,26 +436,52 @@ Dix-sept gardes, chacune retirée du source dans un atelier temporaire, l'épreu
 | 13  | `constaterLExclusivite` — le constat « sans-volume » avant toute ouverture  | TUÉ     |
 | 14  | `constaterLExclusivite` — la fermeture du handle                            | TUÉ     |
 | 15  | `constaterLExclusivite` — le court-circuit sur `peutOuvrir`                 | TUÉ     |
-| 16  | `lireLeDescripteur` — le contrôle de version                                | TUÉ     |
+| 16  | `formeDuDescripteur` — le contrôle de version                               | TUÉ     |
 | 17  | `lireLeDescripteur` — le contrôle du statut HTTP                            | TUÉ     |
+| 18  | `exigerUneRevisionAdmise` — le refus d'une issue finale                     | TUÉ     |
+| 19  | `exigerUneRevisionAdmise` — le refus d'une révision qui rediffère           | TUÉ     |
+| 20  | `installerSiNecessaire` — le court-circuit sur le manifeste existant        | TUÉ     |
+| 21  | `installerSiNecessaire` — le refus d'écraser un volume anonyme              | TUÉ     |
+| 22  | `installerSiNecessaire` — la confrontation des octets écrits à la taille    | TUÉ     |
+| 23  | `verserLeDisque` — le `finally` qui efface la clé                           | TUÉ     |
+| 24  | `formeDuDescripteur` — le contrôle du préfixe                               | TUÉ     |
+| 25  | `formeDuDescripteur` — le contrôle de la ligne de commande                  | TUÉ     |
+| 26  | `formeDuDescripteur` — le contrôle des cinq noms du boot                    | TUÉ     |
+| 27  | `compteRenduPublie` — le COMPTE des pannes, jamais leur liste               | TUÉ     |
 
-**17/17.** Un mutant a **survécu** avant d'être tué, et c'est le service que la campagne rend : le
+**27/27.** Un mutant a **survécu** avant d'être tué, et c'est le service que la campagne rend : le
 n° 12 — retirer le `try/catch` de la sonde de capacités laissait l'épreuve verte, parce que le
 chaînage optionnel (`portee?.crypto?.subtle`) ne lève sur aucune portée amputée. Ce qui lève, c'est
 un **accesseur** — et un moteur peut en poser un qui refuse : `navigator.storage` en est un, et un
 navigateur qui bloque le stockage du site peut y jeter `SecurityError`. L'épreuve confronte
 désormais une portée dont un accesseur jette.
 
+Une garde a été **retirée** au lieu d'être mutée, et il faut le dire : « une seconde révision est
+refusée » ne peut pas être atteinte, puisque la première révision remplace `differee` par une issue
+finale et que la finalité refuse la suivante. Une garde inatteignable est une garde qu'aucune
+mutation ne peut tuer, donc une garde qu'on croit sur parole ; la propriété tient sans elle, et le
+commentaire le dit.
+
 Ce que la campagne ne peut pas mesurer se dit au même endroit : qu'un Worker qui jette livre bien un
-événement `error`, qu'une borne de trente secondes expire, que COOP coupe une relation d'ouverture,
-que Rails boote sur un volume OPFS. Cela relève du navigateur, sur les trois moteurs, et du scénario
-de bout en bout.
+événement `error`, qu'un battement repousse une borne, qu'un rechargement rejoue le cycle, que COOP
+coupe une relation d'ouverture, que Rails boote sur un volume OPFS. Cela relève du navigateur, sur
+les trois moteurs, et du scénario de bout en bout.
 
 ## Alternatives rejetées
 
 - **Un Service Worker injectant COOP sur l'origine de confiance** — voir décision 4. Il mettrait du
   code privilégié à la place de l'hébergeur, et ne résoudrait rien qu'un hébergeur à en-têtes ne
   résolve déjà.
+- **Allonger la borne de mort à la durée du plus long geste** — trois cents secondes couvriraient un
+  boot Rails, et rendraient la détection **aveugle** pendant tout ce temps, c'est-à-dire exactement
+  quand elle sert. Le battement garde la borne et change ce qu'elle mesure.
+- **Réinstaller le disque applicatif par-dessus un volume sans manifeste** — c'est ce que la
+  première rédaction faisait, et sans un geste ni un mot. Un volume anonyme est soit une
+  installation interrompue, soit autre chose ; l'écraser est une décision que la coquille n'a pas à
+  prendre seule ([#173](https://github.com/pinfada/railsbox-vault/issues/173)).
+- **Recréer le Worker en place après une mort** — il hériterait d'un cadre applicatif dont le port
+  est mort et d'un relevé qui décrit une session finie. Le rechargement rejoue le cycle entier, et
+  c'est déjà le chemin que #25 retient pour retirer le cadre.
 - **Redemander automatiquement le geste de déverrouillage à la mort du Worker** — c'est l'autre
   option de la DoR de #24. Elle paie exactement le même prix — deux secondes d'Argon2id — mais le
   paie **sans que personne l'ait demandé**, et sur un événement que l'utilisateur n'a pas provoqué.

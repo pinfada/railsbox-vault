@@ -98,12 +98,8 @@ function exigerLOrdre(parEtape, etape, issue) {
       `Issue inconnue pour l'étape « ${etape} » : ${String(issue)}.`,
     );
   }
-  if (parEtape.has(etape)) {
-    throw refus(
-      CODES_REFUS_COQUILLE.etapeHorsOrdre,
-      `L'étape « ${etape} » est déjà conclue : le journal est une suite, pas un état.`,
-    );
-  }
+  const conclue = parEtape.get(etape);
+  if (conclue !== undefined) return exigerUneRevisionAdmise(etape, conclue, issue);
   // La garde porte sur TOUTES les étapes précédentes et non sur la seule qui précède
   // immédiatement : une étape sautée puis une autre franchie ferait deux fautes dont une seule
   // serait vue.
@@ -113,6 +109,44 @@ function exigerLOrdre(parEtape, etape, issue) {
     throw refus(
       CODES_REFUS_COQUILLE.etapeHorsOrdre,
       `L'étape « ${etape} » a été demandée avant « ${attendue} », dont elle dépend.`,
+    );
+  }
+}
+
+/**
+ * EXIGE qu'une seconde conclusion soit une RÉVISION admise, et une seule.
+ *
+ * `differee` veut dire « pas encore », et c'est la seule issue qu'un geste ultérieur peut lever :
+ * l'étape 3 est conclue `differee` au démarrage — le volume est verrouillé —, et le geste qui démarre
+ * l'application la révise en `franchie` ou en `indisponible`. Sans cette révision, le relevé
+ * affirmait pour toujours ce qui n'était vrai qu'au démarrage, alors que la table d'avancement de
+ * `docs/architecture.md` classe l'étape PRODUIT (constat 2 de la revue de la PR #171).
+ *
+ * Trois refus, et chacun ferme une façon de mentir :
+ *
+ *  - `franchie`, `indisponible` et `banc` sont FINALES. Réviser une étape franchie reviendrait à
+ *    défaire ce qui a eu lieu ;
+ *  - une révision ne conclut pas `differee` : elle LÈVE un « pas encore », elle ne le repose pas.
+ *
+ * Une SECONDE révision est donc refusée sans qu'aucune ligne n'ait à la nommer : la première a
+ * remplacé `differee` par une issue finale, et la finalité la refuse. C'est une garde de MOINS pour
+ * une propriété de plus, et il vaut mieux le dire que d'écrire une condition que rien ne peut
+ * atteindre — une garde inatteignable est une garde qu'aucune mutation ne peut tuer.
+ *
+ * Le journal garde les DEUX inscriptions, avec leurs instants : la révision se lit, elle ne remplace
+ * pas. Un journal qui écraserait cacherait exactement ce qu'il doit montrer.
+ */
+function exigerUneRevisionAdmise(etape, conclue, issue) {
+  if (conclue.issue !== ISSUES_DETAPE.differee) {
+    throw refus(
+      CODES_REFUS_COQUILLE.etapeHorsOrdre,
+      `L'étape « ${etape} » est conclue « ${conclue.issue} », et cette issue est finale.`,
+    );
+  }
+  if (issue === ISSUES_DETAPE.differee) {
+    throw refus(
+      CODES_REFUS_COQUILLE.etapeHorsOrdre,
+      `Une révision LÈVE un « pas encore » : elle ne le repose pas sur « ${etape} ».`,
     );
   }
 }
@@ -154,7 +188,15 @@ export function journalDuCycle({ maintenant = () => 0 } = {}) {
      */
     conclure(etape, issue, motif = null) {
       exigerLOrdre(parEtape, etape, issue);
-      const inscrite = { etape, issue, instantMs: maintenant(), motif };
+      const inscrite = {
+        etape,
+        issue,
+        instantMs: maintenant(),
+        motif,
+        // Une inscription qui LÈVE un « pas encore » se déclare comme telle : c'est ce qui permet
+        // au journal de refuser la seconde, et à un relecteur de voir que l'étape a bougé.
+        revision: parEtape.has(etape),
+      };
       inscrites.push(inscrite);
       parEtape.set(etape, inscrite);
     },
