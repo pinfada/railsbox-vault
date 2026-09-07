@@ -276,4 +276,18 @@ test("la FERMETURE PROPRE est la troisième cause, et la coquille se la donne à
   expect(parEtape.get("fermeture").instantMs).toBeGreaterThanOrEqual(
     parEtape.get("cadreEtPort").instantMs,
   );
+
+  // LE CADRE LIT L'ÉTAT PAR SON GESTE-REQUÊTE, et il lit `verrouille`. C'est la moitié de la
+  // conduite que le document applicatif peut observer : il ne reçoit ni refus nouveau, ni silence —
+  // le geste ADMIS reste admis et rend l'état, parce que répondre par un refus là où l'état existe
+  // ferait perdre au cadre la seule chose qu'il ait le droit de savoir.
+  const cadre = page.frameLocator("#document-applicatif");
+  await cadre.locator("#document-applicatif-demander").click();
+  await expect
+    .poll(
+      async () =>
+        JSON.parse(await cadre.locator("#document-applicatif-rapport").textContent()).etat,
+      { timeout: DELAI },
+    )
+    .toBe(ETATS_DU_VOLUME.verrouille);
 });

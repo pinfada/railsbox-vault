@@ -300,9 +300,10 @@ export async function demarrerLaVm({
     expected: {},
     bootTimeoutMs,
     reprendreParInstantane,
-    // La capture n'a PAS lieu au boot : elle a lieu à la FERMETURE, dans l'ordre de l'ADR 0024
-    // décision 6. Capturer ici lierait l'instantané à l'état du démarrage plutôt qu'à celui de la
-    // session que l'utilisateur vient de finir.
+    // Ce drapeau ARME la capture ; il ne la déclenche pas. Sous `garderLaSessionOuverte`, la
+    // fonction construite n'est appelée que par `fermer()` — donc à la FERMETURE, dans l'ordre de
+    // l'ADR 0024 décision 6. Capturer au boot lierait l'instantané à l'état du démarrage plutôt
+    // qu'à celui de la session que l'utilisateur vient de finir.
     capturerInstantane: true,
     garderLaSessionOuverte: true,
     ouvrirLeVolumeDuGuest: ouvreurSousLEnveloppe({ cleDeVolume }),

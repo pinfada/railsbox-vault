@@ -15,6 +15,14 @@
         reçoit un port restreint, demande l'état, et écoute les barrières.
       </p>
       <p id="document-applicatif-etat" role="status">application:demarrage</p>
+      <!--
+        Le geste-requête, REJOUABLE. L'état d'un coffre change — il s'ouvre, il se referme, son
+        Worker meurt —, et un document qui ne demanderait qu'une fois afficherait pour toujours ce
+        qu'il a appris au démarrage.
+      -->
+      <p>
+        <button id="document-applicatif-demander" type="button">Demander l'état du coffre</button>
+      </p>
       <pre id="document-applicatif-rapport">{}</pre>
     </main>
     <script type="module" src="/document-applicatif.mjs"></script>
