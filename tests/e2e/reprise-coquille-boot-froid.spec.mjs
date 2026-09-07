@@ -135,6 +135,15 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et ret
 
   // --- 1. La coquille se monte, et encadre le document applicatif sur l'AUTRE origine -------------
   let session = await ouvrirLaCoquille(context);
+  // « Prête » dit que le cadre est CRÉÉ. Ce qui suit — le chargement du document, son annonce, le
+  // port transféré, la première réponse d'état — est une SUITE d'allers-retours entre deux origines,
+  // et l'attendre est ce qui distingue une mesure d'une course. Le document se déclare `servi`
+  // quand il a reçu son port ET la réponse à sa question : c'est le dernier maillon.
+  await expect(session.page.frameLocator("#document-applicatif").locator("html")).toHaveAttribute(
+    "data-document-applicatif",
+    "servi",
+    { timeout: 30_000 },
+  );
   const initial = await releve(session.page);
   expect(initial.origineApplicative, "la coquille encadre l'origine distincte de l'ADR 0002").toBe(
     E2E_ORIGIN_COQUILLE_APP,
@@ -147,11 +156,6 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et ret
     "backendPuisVm",
     "cadreEtPort",
   ]);
-  await expect(session.page.frameLocator("#document-applicatif").locator("html")).toHaveAttribute(
-    "data-document-applicatif",
-    "servi",
-    { timeout: 30_000 },
-  );
 
   // --- 2 et 3. Un geste ouvre le coffre, un second démarre l'application --------------------------
   await ouvrirParLaPhrase(session.page);

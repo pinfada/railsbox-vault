@@ -373,6 +373,9 @@ jeton du harnais d'un côté, enveloppe de clé de l'autre — et rien de plus.
 - **aucun authentificateur réel** : la passkey n'est pilotable que sous Chromium (ADR 0021), et le
   scénario de bout en bout emploie la **phrase** ;
 - **l'exclusivité constatée n'est pas une exclusivité tenue** (voir décision 1) ;
+- **l'arbre publié porte le descripteur, pas les artefacts qu'il nomme.** Voir ci-dessus : une
+  coquille publiée aujourd'hui trouverait son descripteur et échouerait à installer. Le scénario de
+  bout en bout, lui, sert les deux — c'est `tools/serve.mjs` qui les sert, depuis le disque ;
 - **la sonde d'exfiltration de #162 n'est pas rejouée après la mort du Worker.** Elle mesure ce qui
   n'est pas persisté, et rien de nouveau n'est écrit par cette tranche ; #25 la rejouera après un
   verrouillage, où la question se pose pour de bon.

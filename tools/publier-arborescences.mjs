@@ -86,17 +86,13 @@ export const SOURCES_COQUILLE = Object.freeze([
       "manifeste du volume doit déclarer. Il est OPTIONNEL comme les artefacts v86 — non " +
       "versionné, écrit par `npm run image:build` — et son absence rend l'arbre INCOMPLET, ce que " +
       "l'inventaire déclare au lieu de le taire. Il ne porte que du public : des noms " +
-      "d'artefacts, des tailles et une ligne de commande, tous déjà dans le manifeste d'image.",
-  }),
-  Object.freeze({
-    depuis: "artifacts/reference-image",
-    vers: "artifacts/reference-image",
-    optionnel: true,
-    role:
-      "Les artefacts de l'IMAGE DE RÉFÉRENCE (#5), que le descripteur ci-dessus nomme. La " +
-      "coquille les verse dans le volume applicatif au premier démarrage : une origine qui sert " +
-      "le descripteur sans servir ce qu'il nomme promet une application qu'elle ne peut pas " +
-      "installer. Un demi-gibioctet, non versionné, construit sous Docker — d'où `optionnel`.",
+      "d'artefacts, des tailles et une ligne de commande, tous déjà dans le manifeste d'image. " +
+      "Ce qu'il NOMME — les artefacts de l'image de référence, 926 Mio — n'est PAS publié ici, et " +
+      "c'est une décision : la chaîne de publication recopie et hache tout ce qu'elle émet, et un " +
+      "arbre d'un gibioctet ferait passer `npm run check` de deux minutes à des dizaines pour " +
+      "quiconque a construit l'image. Déposer les artefacts sur l'origine de confiance est une " +
+      "obligation d'EXPLOITANT, mesurable seulement sur une origine réelle (#124–#126) ; la " +
+      "conséquence est écrite dans l'ADR 0030 § Limites.",
   }),
   Object.freeze({
     depuis: "vendor/v86/artefacts",
