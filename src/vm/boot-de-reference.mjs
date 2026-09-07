@@ -34,6 +34,7 @@ import {
   mesurerRythme,
 } from "./runtime-environment.mjs";
 import { decrireBoucle, installerBoucleOrdonnancement } from "./scheduling-loop.mjs";
+import { createBootTimeline } from "./decomposition-du-boot.mjs";
 import { verifierEmpreintesV86, verifierLeModuleV86 } from "./empreintes-du-runtime-v86.mjs";
 import { createV86BufferAdapter } from "./v86-buffer-adapter.mjs";
 import {
@@ -189,98 +190,6 @@ export async function acquerirRuntime(runtime) {
   };
 }
 
-/**
- * Repères de la décomposition #60 dans le flux série BRUT du guest : exactement les lignes que
- * `guest-init.sh` imprime sur la console avant que le pont `@VLT1` ne démarre. Déclarés hors de la
- * fabrique parce qu'ils ne dépendent d'aucun boot : ce sont les repères du guest de référence, les
- * mêmes d'une exécution à l'autre.
- */
-const REPERES_SERIE = Object.freeze([
-  ["montageDisqueApp", "[init] montage du disque applicatif"],
-  ["lancementApp", "[init] lancement de l'application"],
-  ["pontSerieActif", "[init] pont serie actif"],
-]);
-
-/**
- * Décomposition finale des jalons. Les durées sont en millisecondes, arrondies, relatives au jalon
- * indiqué. `healthMs` reste la mesure publiée (fenêtre de `awaitHealth`) ; les autres l'éclairent.
- *
- * Séparée de l'enregistrement des jalons : poser un jalon et calculer un écart sont deux gestes,
- * le premier au fil du boot, le second une fois pour toutes à la fin.
- *
- * @param {Map<string, number>} jalons horodatages posés, un jamais vu restant absent
- * @param {{ premierOctet: number | null, dmesgDernierSec: number | null, healthMs: number }} vus
- */
-function decomposerJalons(jalons, { premierOctet, dmesgDernierSec, healthMs, empreintesV86Ms }) {
-  const t = (cle) => jalons.get(cle) ?? null;
-  const delta = (a, b) => (a === null || b === null ? null : Number((b - a).toFixed(0)));
-  return {
-    acquisitionRuntimeMs: delta(t("debut"), t("runtimePret")),
-    // Part de l'acquisition passée à CONFRONTER les octets reçus aux 256 bits du manifeste (#123).
-    // Elle est publiée à part parce qu'elle est le prix d'une garantie, et qu'un prix qu'on ne
-    // relève pas ne se discute pas : la revue de sécurité l'a exigée sur le chemin de boot réel,
-    // et non en contexte de page comme la première estimation de la PR.
-    empreintesV86Ms: empreintesV86Ms ?? null,
-    initEmulateurMs: delta(t("runtimePret"), t("bootRendu")),
-    premierOctetSerieMs: delta(t("bootRendu"), premierOctet),
-    noyauVersMontageMs: delta(premierOctet, t("montageDisqueApp")),
-    montageVersLancementMs: delta(t("montageDisqueApp"), t("lancementApp")),
-    lancementVersPontMs: delta(t("lancementApp"), t("pontSerieActif")),
-    pontVersSanteMs: delta(t("pontSerieActif"), t("santePrete")),
-    healthMs,
-    invariantMs: delta(t("santePrete"), t("invariantRendu")),
-    noyauDmesgDernierSec: dmesgDernierSec,
-  };
-}
-
-/**
- * Enregistreur de décomposition du temps de reprise (#60). Il n'INSTRUMENTE rien du boot : il pose
- * des jalons `performance.now()` que le banc lit déjà, plus quelques jalons repérés dans le flux
- * série BRUT du guest (`onSerial`). Chaque jalon horodate un événement RÉELLEMENT observé ; un jalon
- * jamais vu reste `null` et n'est pas inventé.
- */
-function createBootTimeline() {
-  const jalons = new Map();
-  let tampon = "";
-  let premierOctet = null;
-  let dmesgDernierSec = null;
-
-  const noter = (cle) => {
-    if (!jalons.has(cle)) jalons.set(cle, performance.now());
-  };
-
-  return {
-    /** Jalon posé côté hôte (entrée du boot, runtime prêt, boot rendu, santé, invariant). */
-    marquer: noter,
-    /** Fragment de série brut : repère les lignes d'init et le dernier horodatage dmesg du noyau. */
-    ingererSerie(fragment) {
-      if (fragment.length === 0) return;
-      if (premierOctet === null) premierOctet = performance.now();
-      // On garde une fenêtre glissante bornée : un repère tient sur une seule ligne.
-      tampon = (tampon + fragment).slice(-4096);
-      for (const [cle, aiguille] of REPERES_SERIE) {
-        if (!jalons.has(cle) && tampon.includes(aiguille)) noter(cle);
-      }
-      const horodatages = tampon.match(/\[\s*(\d+\.\d+)\]/g);
-      if (horodatages) {
-        const dernier = Number.parseFloat(
-          horodatages[horodatages.length - 1].replace(/[[\]]/g, ""),
-        );
-        if (Number.isFinite(dernier)) dmesgDernierSec = dernier;
-      }
-    },
-    /** Décomposition finale, déléguée à `decomposerJalons`. */
-    decomposer({ healthMs, empreintesV86Ms = null }) {
-      return decomposerJalons(jalons, {
-        premierOctet,
-        dmesgDernierSec,
-        healthMs,
-        empreintesV86Ms,
-      });
-    },
-  };
-}
-
 /** Écritures du guest exigées avant d'annoncer une mutation. Une seule ne prouverait pas grand-chose. */
 const ECRITURES_AVANT_COUPURE = 8;
 
@@ -380,46 +289,81 @@ async function deroulerBootEtInvariant({
   timeline,
   etatARestaurer = null,
   capturerApres = null,
+  garderLaSessionOuverte = false,
 }) {
-  const { session, backend, journal } = montage;
-  const started = performance.now();
   // Guet de MUTATION : il prévient l'appelant dès que le guest a réellement muté le volume ET
   // qu'une barrière a été acquittée. C'est le seul instant où couper prouve quelque chose — couper
   // avant la première barrière ne mesurerait qu'un volume jamais touché. Il ne coupe RIEN lui-même :
   // la coupure est la mort du Worker, décidée par la page.
-  const guet = surMutation === null ? null : guetterMutation(journal, surMutation);
-  const observations = [];
-  let health;
-  let invariant;
-  let rythme;
-  let boucle;
-  let capture = null;
+  const guet = surMutation === null ? null : guetterMutation(montage.journal, surMutation);
+  let commun;
   try {
-    health = await booterEtAttendreSante(session, {
-      bootTimeoutMs,
-      timeline,
-      observations,
-      etatARestaurer,
-    });
-    timeline.marquer("santePrete");
-    // Rythme de la boucle sur la fenêtre boot → santé de Rails. C'est l'instrument qui rend
-    // comparables deux exécutions de l'IMAGE DE RÉFÉRENCE avec des boucles d'ordonnancement
-    // différentes (#74) : `healthMilliseconds` seul ne dirait pas si l'émulateur a battu plus vite.
-    rythme = mesurerRythme({ ticks: session.ticks(), fenetreMs: performance.now() - started });
-    boucle = decrireBoucle(boucleOrdonnancement);
-    invariant = await lireInvariant(session);
-    timeline.marquer("invariantRendu");
-    // La CAPTURE vient après l'invariant et AVANT la fermeture, et l'ordre est le protocole de
-    // l'ADR 0024 : point de contrôle, liaison lue ensuite, arrêt, quiescence, scellement. La faire
-    // après `backend.close()` serait impossible — le volume n'est plus ouvert — et la faire avant
-    // l'invariant capturerait un état dont personne n'a encore vérifié qu'il vaut quelque chose.
-    if (capturerApres !== null) capture = await capturerApres();
+    commun = await observerLeBoot({ montage, bootTimeoutMs, timeline, etatARestaurer });
+  } catch (erreur) {
+    // Le chemin d'ÉCHEC ferme TOUJOURS, et sans capturer : un instantané pris sur un boot qui vient
+    // d'échouer décrirait un état dont personne n'a constaté qu'il vaut quelque chose.
+    await fermerLeMontage({ montage, guet, capturerApres: null });
+    throw erreur;
+  }
+  // La coquille de produit GARDE la session ouverte (#163) : l'étape 7 du cycle de vie — arrêter la
+  // VM, capturer, `close()`, puis `terminate()` — est un geste à part, et l'instantané se prend au
+  // moment de la fermeture, dans l'ordre de l'ADR 0024. Le banc, lui, ne passe jamais ce drapeau :
+  // son `finally` d'origine reste le sien, phase par phase.
+  if (garderLaSessionOuverte) {
+    return {
+      ...commun,
+      capture: null,
+      fermer: ({ capturer = true } = {}) =>
+        fermerLeMontage({ montage, guet, capturerApres: capturer ? capturerApres : null }),
+    };
+  }
+  const capture = await fermerLeMontage({ montage, guet, capturerApres });
+  return { ...commun, capture, fermer: null };
+}
+
+/**
+ * OBSERVE le boot : santé de Rails, rythme de la boucle, invariant applicatif. Rien n'est fermé ici
+ * — la fermeture appartient à l'appelant, qui doit la tenir aussi bien sur l'échec que sur le
+ * succès, et la mêler à l'observation rendait cette garantie difficile à lire.
+ */
+async function observerLeBoot({ montage, bootTimeoutMs, timeline, etatARestaurer }) {
+  const { session } = montage;
+  const started = performance.now();
+  const observations = [];
+  const health = await booterEtAttendreSante(session, {
+    bootTimeoutMs,
+    timeline,
+    observations,
+    etatARestaurer,
+  });
+  timeline.marquer("santePrete");
+  // Rythme de la boucle sur la fenêtre boot → santé de Rails. C'est l'instrument qui rend
+  // comparables deux exécutions de l'IMAGE DE RÉFÉRENCE avec des boucles d'ordonnancement
+  // différentes (#74) : `healthMilliseconds` seul ne dirait pas si l'émulateur a battu plus vite.
+  const rythme = mesurerRythme({ ticks: session.ticks(), fenetreMs: performance.now() - started });
+  const boucle = decrireBoucle(boucleOrdonnancement);
+  const invariant = await lireInvariant(session);
+  timeline.marquer("invariantRendu");
+  return { health, invariant, rythme, boucle, observations, started };
+}
+
+/**
+ * FERME le montage : capture d'abord si on la demande, puis arrêt de la session, puis fermeture du
+ * backend. L'ordre est le protocole de l'ADR 0024 — point de contrôle, liaison lue ensuite, arrêt,
+ * quiescence, scellement —, et il ne se réordonne pas : capturer après `close()` serait impossible,
+ * le volume n'étant plus ouvert.
+ *
+ * Le `try/finally` est la garantie que ce module doit : quoi qu'il arrive à la capture, le guet
+ * s'arrête, la session s'arrête et le backend se ferme.
+ */
+async function fermerLeMontage({ montage, guet, capturerApres }) {
+  try {
+    return capturerApres === null ? null : await capturerApres();
   } finally {
     guet?.arreter();
-    session.stop();
-    await backend.close();
+    montage.session.stop();
+    await montage.backend.close();
   }
-  return { health, invariant, rythme, boucle, observations, started, capture };
 }
 
 /**
@@ -565,14 +509,14 @@ async function monterEtOuvrirLInstantane({
  * comme tel. Une capture demandée sans être possible se serait vue par une exception ; une capture
  * non demandée doit se voir par une absence.
  */
-function captureDemandee({ capturerInstantane, montage, volume, empreinteImage }) {
-  if (!capturerInstantane) return null;
+function captureDemandee({ options, montage, empreinteImage }) {
+  if (options.capturerInstantane !== true) return null;
   return () =>
     capturerApresPointDeControle({
       backend: montage.backend,
       session: montage.session,
       adapter: montage.adapter,
-      volume,
+      volume: options.volume,
       empreinteImage,
     });
 }
@@ -584,7 +528,7 @@ function captureDemandee({ capturerInstantane, montage, volume, empreinteImage }
  * anonyme, et le refuser ici épargne l'acquisition d'un runtime qui n'aurait servi à rien. La
  * décomposition (#60) pose ses jalons DÈS l'entrée, pour dater aussi cette acquisition.
  */
-async function preparerLeBoot({ manifest, runtime, runtimeBundle }) {
+async function preparerLeBoot({ manifest, runtime, runtimeBundle = null }) {
   const attentes = attentesDe(manifest);
   const timeline = createBootTimeline();
   timeline.marquer("debut");
@@ -636,52 +580,46 @@ function ouvrirSousLeManifeste({ name, journal, expectations, cle }) {
  * `deroulerBootEtInvariant`, `assemblerCompteRendu`. Les trois premiers sont des phases, le dernier
  * est de la mise en forme, et les mêler rendait la garantie du `try/finally` difficile à lire.
  */
-export async function bootEtVerifier({
-  phase,
-  volume,
-  cmdline,
-  memoryBytes,
-  runtime,
-  runtimeBundle = null,
-  manifest,
-  expected,
-  bootTimeoutMs,
-  surMutation = null,
-  capturerInstantane = false,
-  reprendreParInstantane = false,
-  ouvrirLeVolumeDuGuest = ouvrirSousLeManifeste,
-}) {
+export async function bootEtVerifier(options) {
   const { attentes, timeline, V86, artifacts, empreinteImage, ...mesuresDAcquisition } =
-    await preparerLeBoot({ manifest, runtime, runtimeBundle });
+    await preparerLeBoot(options);
 
   const { montage, instantane } = await monterEtOuvrirLInstantane({
-    volume,
+    volume: options.volume,
     attentes,
     timeline,
-    guest: { V86, artifacts, cmdline, memoryBytes },
+    guest: { V86, artifacts, cmdline: options.cmdline, memoryBytes: options.memoryBytes },
     empreinteImage,
-    reprendreParInstantane,
-    ouvrirLeVolumeDuGuest,
+    reprendreParInstantane: options.reprendreParInstantane === true,
+    ouvrirLeVolumeDuGuest: options.ouvrirLeVolumeDuGuest ?? ouvrirSousLeManifeste,
   });
 
   const deroule = await deroulerBootEtInvariant({
     montage,
-    surMutation,
-    bootTimeoutMs,
+    surMutation: options.surMutation ?? null,
+    bootTimeoutMs: options.bootTimeoutMs,
     timeline,
     etatARestaurer: instantane?.utilise ? instantane.etat : null,
-    capturerApres: captureDemandee({ capturerInstantane, montage, volume, empreinteImage }),
+    capturerApres: captureDemandee({ options, montage, empreinteImage }),
+    garderLaSessionOuverte: options.garderLaSessionOuverte === true,
   });
   // L'état v86 est LÂCHÉ dès que la restauration a eu lieu : il pèse 250 Mio, et le boot qui suit
   // tient déjà la mémoire du guest (512 Mio), le rootfs (385 Mio) et les artefacts du runtime. Le
   // budget navigateur de `docs/quality-attributes.md` est de 1,5 Gio.
   if (instantane !== null) instantane.etat = null;
 
-  return assemblerCompteRendu({
-    identite: { phase, volume, expected },
-    mesures: { ...mesuresDAcquisition, memoryBytes, instantane: sansLEtat(instantane) },
+  const compteRendu = assemblerCompteRendu({
+    identite: { phase: options.phase, volume: options.volume, expected: options.expected },
+    mesures: {
+      ...mesuresDAcquisition,
+      memoryBytes: options.memoryBytes,
+      instantane: sansLEtat(instantane),
+    },
     montage,
     deroule,
     timeline,
   });
+  // `fermer` est une FONCTION : `sansCapacite` la refuse, et c'est voulu. Elle ne peut donc pas
+  // franchir un port par inadvertance — la poignée de fermeture reste du côté qui tient le handle.
+  return deroule.fermer === null ? compteRendu : { ...compteRendu, fermer: deroule.fermer };
 }

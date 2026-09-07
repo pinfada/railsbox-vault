@@ -92,6 +92,25 @@
       </section>
 
       <!--
+        Le CYCLE DE VIE assemblé (#163, ADR 0030). Deux gestes, et ils sont des boutons pour la
+        raison qui a fait des quatre autres des boutons : ce que la coquille fait du volume
+        appartient à qui l'ouvre. Démarrer coûte un boot — deux minutes sur une machine ordinaire —
+        et personne d'autre que l'utilisateur n'a à décider de le payer.
+
+        Le second geste, « fermer le coffre », est le chemin de fermeture propre : arrêter la VM,
+        capturer l'instantané, fermer les volumes, puis terminer le Worker. #25 le réemploiera pour
+        verrouiller ; c'est elle qui dira sous quel délai et sur quel déclencheur.
+      -->
+      <section id="cycle" aria-labelledby="cycle-titre">
+        <h2 id="cycle-titre">Application</h2>
+        <p id="cycle-etat" role="status">cycle:au-repos</p>
+        <p>
+          <button id="demarrer-application" type="button">Démarrer l'application</button>
+        </p>
+        <p><button id="fermer-le-coffre" type="button">Fermer le coffre</button></p>
+      </section>
+
+      <!--
         Le relevé de la coquille : ce qu'elle a refusé, et dans quel ordre elle a agi. Il ne porte
         aucune donnée du volume — ni nom, ni taille, ni clé — et sert aux épreuves de frontière comme
         à quiconque veut voir ce que la coquille a fait sans ouvrir la console.

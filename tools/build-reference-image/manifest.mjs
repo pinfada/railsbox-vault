@@ -17,6 +17,60 @@ export const DOSSIER_ARTEFACTS = join(RACINE_DEPOT, "artifacts", "reference-imag
 export const CHEMIN_MANIFESTE = join(dossierOutils, "manifest.json");
 
 /**
+ * Le DESCRIPTEUR D'APPLICATION, servi par l'origine de confiance (#163, ADR 0030).
+ *
+ * Le manifeste ci-dessus vit dans `tools/` : il atteste ce qui a été CONSTRUIT, et il est commité.
+ * La coquille de produit, elle, ne peut lire que ce que son origine sert — `public/`, `src/`,
+ * `vendor/` et `artifacts/` (`tools/serve.mjs`). Sans un descripteur servi, elle ne saurait ni la
+ * taille du disque à installer, ni la ligne de commande du guest, ni l'identité que le manifeste du
+ * volume doit déclarer : elle devrait les recevoir d'un harnais, c'est-à-dire du chemin que #162 a
+ * précisément fermé.
+ *
+ * Il ne porte AUCUN secret : des noms d'artefacts, des tailles et une ligne de commande, tous déjà
+ * publics dans le manifeste. Il n'entre dans aucune archive et ne décrit aucun volume d'utilisateur.
+ */
+export const CHEMIN_DESCRIPTEUR_APPLICATIF = join(RACINE_DEPOT, "artifacts", "application.json");
+
+/** Version du descripteur. Un lecteur d'une autre version refuse plutôt que de deviner. */
+export const DESCRIPTEUR_APPLICATIF_VERSION = 1;
+
+/**
+ * Dérive le descripteur applicatif du manifeste d'image, sans rien y ajouter qui ne s'y trouve.
+ *
+ * `runtime.version` vient de `package.json` : c'est le plus ancien runtime autorisé à écrire le
+ * volume (`minWriter`, format v2), et le banc déclare déjà la version en cours — le choix le plus
+ * strict. Le recopier ici garde les deux chemins sur la même règle.
+ *
+ * @param {Record<string, any>} manifeste
+ * @param {string} versionRuntime
+ */
+export function descripteurApplicatif(manifeste, versionRuntime) {
+  const disque = manifeste.artifacts.find((artefact) => artefact.name === manifeste.boot.hdb);
+  if (disque === undefined) {
+    throw new Error(
+      `Aucun artefact « ${manifeste.boot.hdb} » dans le manifeste : rien à installer.`,
+    );
+  }
+  return {
+    descripteurVersion: DESCRIPTEUR_APPLICATIF_VERSION,
+    application: { id: manifeste.application.id, version: manifeste.application.version },
+    runtime: { version: versionRuntime },
+    disque: { nom: manifeste.boot.hdb, octets: disque.byteSize },
+    boot: {
+      cmdline: manifeste.boot.cmdline,
+      memoireOctets: manifeste.boot.memoryMiB * 1024 * 1024,
+      kernel: manifeste.boot.kernel,
+      initrd: manifeste.boot.initrd,
+      rootfs: manifeste.boot.hda,
+      bios: manifeste.boot.bios,
+      vgaBios: manifeste.boot.vgaBios,
+    },
+    /** Où les artefacts ci-dessus sont servis. Le chemin est celui de `tools/serve.mjs`. */
+    prefixeDesArtefacts: "/artifacts/reference-image/",
+  };
+}
+
+/**
  * Métadonnées non calculables : rôle, licence et origine de chaque artefact.
  * Une empreinte sans provenance n'est pas une preuve exploitable.
  *

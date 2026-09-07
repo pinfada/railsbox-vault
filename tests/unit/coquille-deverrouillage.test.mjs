@@ -552,8 +552,13 @@ test("TOUTE réponse du canal privilégié est appariable : aucune ne peut reste
   assert.deepEqual(
     [...REPONSES_PRIVILEGIEES].sort(),
     [
+      // Les deux gestes du cycle de vie assemblé (#163) : démarrer l'application, fermer le coffre.
+      // Ils entrent dans cette liste au même titre que les autres — un boot de deux minutes qui
+      // resterait en suspens serait la plus longue des attentes muettes.
+      TYPES_PRIVILEGIES.applicationReponse,
       TYPES_PRIVILEGIES.deverrouillageReponse,
       TYPES_PRIVILEGIES.etatReponse,
+      TYPES_PRIVILEGIES.fermetureReponse,
       TYPES_PRIVILEGIES.inventaireReponse,
       TYPES_PRIVILEGIES.preparationReponse,
       TYPES_PRIVILEGIES.recuperationRendue,
@@ -571,6 +576,8 @@ test("TOUTE réponse du canal privilégié est appariable : aucune ne peut reste
     TYPES_PRIVILEGIES.preparation,
     TYPES_PRIVILEGIES.deverrouiller,
     TYPES_PRIVILEGIES.creerRecuperation,
+    TYPES_PRIVILEGIES.application,
+    TYPES_PRIVILEGIES.fermeture,
     TYPES_PRIVILEGIES.barriere,
   ]);
   for (const type of Object.values(TYPES_PRIVILEGIES)) {

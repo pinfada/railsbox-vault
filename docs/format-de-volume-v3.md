@@ -2076,10 +2076,10 @@ parvient au document applicatif : ils vivent entre la coquille, son Worker de co
 propre document.
 
 | Code                                 | Ce qu'il constate                                                                                                                                                                                        |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `VAULT_COQUILLE_WORKER_MORT`         | le Worker de confiance ne répond plus : il a jeté, il a été terminé, ou il s'est tu au-delà de `DELAI_WORKER_MORT_MS`. La coquille refuse alors **tout service jusqu'à un geste explicite**              |
 | `VAULT_COQUILLE_ETAPE_HORS_ORDRE`    | une étape du cycle de vie a été demandée avant celle dont elle dépend — un boot avant l'ouverture du backend, un cadre avant que l'étape 3 ait conclu                                                    |
-| `VAULT_COQUILLE_APPLICATION_ABSENTE` | aucune application n'est servie par cette origine : il n'y a rien à démarrer. Ce n'est pas un échec du geste, c'est l'absence de son objet — comme `indisponible` est l'absence d'un moteur capable       |
+| `VAULT_COQUILLE_APPLICATION_ABSENTE` | aucune application n'est servie par cette origine : il n'y a rien à démarrer. Ce n'est pas un échec du geste, c'est l'absence de son objet — comme `indisponible` est l'absence d'un moteur capable      |
 | `VAULT_COQUILLE_CAPACITE_MANQUANTE`  | une capacité EXIGÉE manque au moteur, mesurée dans le document de la coquille et **sous la CSP servie** — sans l'exemption dont jouit la sonde `public/compat.html` (#2), qui mesurerait notre politique |
 
 `VAULT_COQUILLE_WORKER_MORT` est neuf, et son absence était un défaut : la borne de mort rejetait

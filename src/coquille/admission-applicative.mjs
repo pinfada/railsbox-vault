@@ -43,7 +43,7 @@ export const GESTES_ADMIS = Object.freeze([
     type: TYPES_APPLICATIFS.etat,
     geste: "demander l'état du volume et le rang de la dernière barrière acquittée",
     usage: Object.freeze([
-      "public/vm/reference-worker-phases-volume.mjs:253 › « present: etat.present, » — la seule " +
+      "public/vm/reference-worker-phases-volume.mjs:227 › « present: etat.present, » — la seule " +
         "observation qu'un scénario fait d'un volume avant de s'en servir ; tout le reste du " +
         "compte rendu concerne les VOISINS du volume, qui ne regardent pas l'application",
       'tests/e2e/instantane-reprise.spec.mjs:201 › « phase: "inspect-volume" » — un scénario ' +
