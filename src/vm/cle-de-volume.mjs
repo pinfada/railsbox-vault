@@ -18,26 +18,42 @@
 //
 // ## Le jeton est PUBLIC, et il faut le dire (revue de la PR #166, constat 1)
 //
-// Ce fichier écrivait « aucun chemin du produit ne la transmet ». Ce n'est plus vrai depuis #161 :
-// la coquille de produit LIT le jeton d'un paramètre d'URL et le transmet au Worker de confiance,
-// qui s'en sert pour ouvrir un volume tant que la tranche 2 (#162) n'a pas mis le vrai
-// déverrouillage à sa place. Et ce module est PUBLIÉ — sans étape de construction, une constante que
-// le produit compare existe forcément dans le code servi, sur les deux origines.
+// Ce fichier a écrit deux choses successivement fausses, et la seconde est instructive.
+//
+// Il écrivait d'abord « aucun chemin du produit ne la transmet ». C'est devenu faux avec #161 : la
+// coquille de produit lisait le jeton d'un paramètre d'URL et le transmettait à son Worker de
+// confiance. Il a donc été corrigé pour décrire cette porte — **et cette description-là est devenue
+// fausse à son tour avec #162**, qui l'a refermée. La revue de sécurité de la PR #167 l'a relevé :
+// une prose qui décrit un état transitoire vieillit exactement comme une affirmation que rien ne
+// relit.
+//
+// **L'état d'aujourd'hui** : AUCUN chemin de produit ne franchit cette porte. `public/main.mjs` ne
+// lit plus de paramètre, `public/runtime-worker.mjs` n'appelle plus ces fonctions, et le
+// déverrouillage est un geste de l'utilisateur — phrase, passkey ou code de récupération
+// ([ADR 0029](../../docs/decisions/0029-deverrouillage-dans-la-coquille.md), décision 1).
+// `tests/unit/harnais-portes.test.mjs` n'exige plus « un seul appelant de PRODUIT » mais **aucun**,
+// et nomme les fichiers de la coquille un par un.
+//
+// Ce module reste PUBLIÉ, et le jeton reste donc lisible : sans étape de construction, une constante
+// que le produit compare existe forcément dans le code servi, sur les deux origines.
 //
 // Ce que le dépôt promet est donc autre chose, et c'est plus fort qu'un secret mal gardé :
 //
 //  - **la valeur ne protège rien.** Elle ouvre la clé de TEST, trente-deux octets publics sans
 //    entropie, et un volume scellé sous elle est un banc, pas un coffre ;
-//  - **la connaître ne sert à rien depuis l'origine applicative.** Le jeton ne s'emploie que sur le
-//    canal PRIVILÉGIÉ, qu'aucun message du document applicatif n'atteint.
-//    `tests/browser/coquille-frontiere.spec.mjs` › « le jeton du harnais est PUBLIC, lisible d'ici,
-//    et ne sert à rien d'ici » le LIT depuis l'origine applicative — témoin positif — puis le
-//    présente par tous les chemins qu'elle a, et relève que l'état de la coquille n'a pas bougé ;
+//  - **la connaître ne sert à rien, nulle part.** Elle ne servait déjà à rien depuis l'origine
+//    applicative — le jeton ne s'emploie que sur le canal PRIVILÉGIÉ, qu'aucun message du document
+//    applicatif n'atteint —, et depuis #162 elle ne sert plus à rien non plus sur ce canal : le
+//    geste de déverrouillage n'y connaît plus de jeton. `tests/browser/coquille-frontiere.spec.mjs`
+//    › « le jeton du harnais est PUBLIC, lisible d'ici, et ne sert à rien — nulle part » le LIT
+//    depuis l'origine applicative — témoin positif, longueur comprise — puis le présente par tous
+//    les chemins qu'elle a, et relève que l'état de la coquille n'a pas bougé ;
 //  - **un seul fichier publié le porte**, celui-ci, et `tests/unit/coquille-fixture.test.mjs`
 //    rougirait sur un second.
 //
-// Cette porte est PROVISOIRE. La tranche 2 la referme, et c'est la réserve écrite de
-// `SEC-ORIGIN-001` côté produit dans `SECURITY.md`.
+// Cette porte a été REFERMÉE par la tranche 2 (#162). Ce qui reste derrière elle est ce qui y a
+// toujours été : les BANCS et les outils de mesure, inscrits un par un avec leur motif dans
+// `tests/unit/harnais-portes.test.mjs`.
 
 import { CLE_OCTETS } from "./format-chiffre/identite-logique.mjs";
 import { STORAGE_ERROR_CODES, StorageError } from "./storage-errors.mjs";

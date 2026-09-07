@@ -441,6 +441,37 @@ export const MUTATIONS = Object.freeze([
       "  );\n",
     epreuves: [EPREUVE_DEVERROUILLAGE],
   },
+  {
+    nom: "une KEK qui ARRIVE au Worker de confiance est une CryptoKey",
+    garde: "exigerKekDeLaPage — la moitié ARRIVANTE de la dérogation à `sansCapacite`",
+    fichier: MOYENS,
+    avant:
+      '  if (kek?.constructor?.name !== "CryptoKey") {\n' +
+      "    throw refusDeLaKek(`ce n'est pas une CryptoKey (${kek?.constructor?.name ?? typeof kek})`);\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "une KEK qui ARRIVE n'est jamais EXTRACTIBLE",
+    garde: "exigerKekDeLaPage — la seconde condition, qui se manque autrement que la première",
+    fichier: MOYENS,
+    avant:
+      "  if (kek.extractable !== false) {\n" +
+      '    throw refusDeLaKek("cette CryptoKey est EXTRACTIBLE : ses octets se relisent");\n' +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "les réponses APPARIÉES sont dérivées de la table, jamais recopiées",
+    garde: "REPONSES_PRIVILEGIEES — le filtre qui les nomme",
+    fichier: CONTRAT,
+    avant:
+      '      .filter(([nom]) => nom.endsWith("Reponse") || nom === "recuperationRendue" || nom === "refus")\n',
+    apres: '      .filter(([nom]) => nom.endsWith("Reponse"))\n',
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
 ]);
 
 function rapporter({ resultats }, json) {

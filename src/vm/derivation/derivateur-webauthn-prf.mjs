@@ -119,8 +119,14 @@ function octetsDe(source) {
  * et rien n'est dégradé en un autre moyen. Le refus tombe AVANT que quoi que ce soit ne soit écrit
  * dans le fichier d'enveloppes — l'appelant n'a reçu aucun paramètre, il n'a donc rien à écrire.
  *
+ * `delaiMs` est la BORNE laissée à l'utilisateur, et elle est un PARAMÈTRE depuis #162 (ADR 0029,
+ * décision 6). L'assertion en acceptait une (`geste.delaiMs`) ; l'enregistrement, non — il imposait
+ * `DELAI_MS`, soit une minute pendant laquelle un appelant ne pouvait rien dire ni rien annuler.
+ * L'asymétrie ne se justifiait par rien : c'est le même geste humain, sur le même authentificateur.
+ *
  * @param {{ credentials?: object, rpId: string, nomUtilisateur: string,
- *           identifiantUtilisateur: Uint8Array, nomAffiche?: string, defi?: Uint8Array }} appel
+ *           identifiantUtilisateur: Uint8Array, nomAffiche?: string, defi?: Uint8Array,
+ *           delaiMs?: number }} appel
  */
 export async function enregistrerEmplacementPrf({
   credentials,
@@ -129,6 +135,7 @@ export async function enregistrerEmplacementPrf({
   identifiantUtilisateur,
   nomAffiche = nomUtilisateur,
   defi = crypto.getRandomValues(new Uint8Array(32)),
+  delaiMs = DELAI_MS,
 }) {
   const api = exigerCredentials(credentials);
   const creance = await creerLaCreance(api, {
@@ -137,6 +144,7 @@ export async function enregistrerEmplacementPrf({
     identifiantUtilisateur,
     nomAffiche,
     defi,
+    delaiMs,
   });
   const identifiantCredential = octetsEnHex(creanceAvecPrf(creance, rpId));
   return Object.freeze({
@@ -153,7 +161,7 @@ export async function enregistrerEmplacementPrf({
 /** Demande la créance à l'authentificateur, et traduit tout échec de plate-forme en refus typé. */
 async function creerLaCreance(
   api,
-  { rpId, nomUtilisateur, identifiantUtilisateur, nomAffiche, defi },
+  { rpId, nomUtilisateur, identifiantUtilisateur, nomAffiche, defi, delaiMs = DELAI_MS },
 ) {
   try {
     return await api.create({
@@ -163,7 +171,7 @@ async function creerLaCreance(
         user: { id: identifiantUtilisateur, name: nomUtilisateur, displayName: nomAffiche },
         pubKeyCredParams: [...ALGORITHMES],
         authenticatorSelection: { ...CONDUITE_ENREGISTREMENT },
-        timeout: DELAI_MS,
+        timeout: delaiMs,
         // L'extension est DEMANDÉE ici. Un moteur qui l'ignore rendra `prf` absent des résultats,
         // et c'est exactement ce que `creanceAvecPrf` refuse.
         extensions: { prf: {} },

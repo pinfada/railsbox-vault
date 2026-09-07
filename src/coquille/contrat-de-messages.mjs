@@ -53,6 +53,14 @@ export const TYPES_PRIVILEGIES = Object.freeze({
    */
   inventaire: "vault.coquille.inventaire-prive",
   inventaireReponse: "vault.coquille.inventaire-prive-reponse",
+  /**
+   * Préparation d'un emplacement NEUF pour un moyen que la PAGE dérive.
+   *
+   * La page a besoin de l'identité de l'emplacement AVANT de dériver — la KEK y est liée par son
+   * info HKDF (ADR 0021) —, et d'un sel calibré qu'elle ne choisit pas elle-même.
+   */
+  preparation: "vault.coquille.preparer-emplacement",
+  preparationReponse: "vault.coquille.preparer-emplacement-reponse",
   /** Création du moyen de récupération. Le code repart UNE fois, par la réponse ci-dessous. */
   creerRecuperation: "vault.coquille.creer-recuperation",
   recuperationRendue: "vault.coquille.recuperation-rendue",
@@ -79,6 +87,28 @@ export const TYPES_APPLICATIFS = Object.freeze({
 });
 
 const TYPES_PRIVILEGIES_CONNUS = Object.freeze(new Set(Object.values(TYPES_PRIVILEGIES)));
+
+/**
+ * Les types du canal privilégié qui RÉPONDENT à une demande, et qu'un appelant doit donc apparier.
+ *
+ * La liste est DÉRIVÉE de `TYPES_PRIVILEGIES`, jamais recopiée, et c'est la correction d'une classe
+ * de défauts plutôt que d'un cas : `public/main.mjs` en tenait une copie à la main, et ajouter un
+ * type de réponse sans l'y inscrire faisait attendre la page pour toujours — pas d'erreur, pas de
+ * refus, pas de journal, seulement un geste qui n'aboutit jamais. C'est arrivé deux fois en écrivant
+ * #162, sous deux formes différentes ; une liste dérivée ne peut pas être en retard sur la table
+ * dont elle vient.
+ *
+ * Le critère est le NOM : un type de réponse s'appelle `…Reponse`, ou nomme ce qu'il rend une fois
+ * (`recuperationRendue`). `refus` en fait partie — c'est la réponse de tout le reste. Les trois
+ * types qui ne répondent à rien (`canal`, `barriere`, et les demandes elles-mêmes) n'y sont pas.
+ */
+export const REPONSES_PRIVILEGIEES = Object.freeze(
+  new Set(
+    Object.entries(TYPES_PRIVILEGIES)
+      .filter(([nom]) => nom.endsWith("Reponse") || nom === "recuperationRendue" || nom === "refus")
+      .map(([, type]) => type),
+  ),
+);
 
 /** @param {unknown} type */
 export function estTypePrivilegie(type) {

@@ -37,6 +37,7 @@ import {
 import {
   CHAMP_DE_LA_KEK,
   CONTRAT_COQUILLE,
+  REPONSES_PRIVILEGIEES,
   TYPES_APPLICATIFS,
   TYPES_PRIVILEGIES,
   enveloppeDeMessage,
@@ -59,6 +60,7 @@ import {
 import {
   MOYENS_SERVIS,
   NOMS_SERVIS,
+  exigerKekDeLaPage,
   moyenParNom,
   moyensProposes,
 } from "../../src/coquille/moyens-de-deverrouillage.mjs";
@@ -82,6 +84,17 @@ async function lire(relatif) {
 /** Un code VALIDE, tiré par le produit. Il n'est écrit nulle part, comme dans le produit. */
 function unCode() {
   return encoderCode(tirerCodeDeRecuperation());
+}
+
+/** Une `CryptoKey` de forme, sans WebCrypto : la garde regarde le CONSTRUCTEUR et `extractable`. */
+function fausseCle({ extractable }) {
+  class CryptoKey {
+    constructor() {
+      this.extractable = extractable;
+      this.type = "secret";
+    }
+  }
+  return new CryptoKey();
 }
 
 // --- L'attente annoncée -----------------------------------------------------------------------
@@ -376,29 +389,71 @@ test("un même type présent deux fois ne fait qu'un seul moyen proposé", () =>
   assert.equal(propose.moyens[0].identifiantEmplacement, "aa");
 });
 
-test("chaque moyen dit OÙ il se dérive, et les deux endroits sont ceux de l'ADR 0021", () => {
-  assert.equal(moyenParNom("phrase").derivePar, "worker");
-  assert.equal(moyenParNom("recuperation").derivePar, "worker");
+test("chaque moyen dit OÙ il se dérive, et le Worker de CONFIANCE n'en dérive qu'un", () => {
+  // La phrase se dérivait dans le Worker de confiance ; elle se dérive désormais dans un Worker
+  // DÉDIÉ que la page crée (ADR 0029, décision 5 réécrite). Le motif est mesuré, pas esthétique :
+  // Argon2id est un appel WebAssembly SYNCHRONE, et le fil qui le porte ne dispatche plus aucun
+  // message pendant deux secondes — y compris la question d'état que la coquille relaie pour le
+  // document applicatif.
+  assert.equal(
+    moyenParNom("phrase").derivePar,
+    "page",
+    "Argon2id ne doit plus bloquer le fil du Worker de confiance : c'est le constat 2 de la revue de la PR #167.",
+  );
   assert.equal(
     moyenParNom("webauthn-prf").derivePar,
     "page",
     "`navigator.credentials` n'existe pas dans un Worker : la décision 5 de l'ADR 0021 est un fait de plate-forme.",
   );
+  assert.equal(
+    moyenParNom("recuperation").derivePar,
+    "worker",
+    "HKDF coûte zéro à deux millisecondes : le dériver ailleurs ferait voyager le code une fois de plus pour rien.",
+  );
   assert.equal(moyenParNom("un-moyen-inventé"), null);
 });
 
-// --- La seule dérogation à `sansCapacite` ---------------------------------------------------------
+test("une KEK NON EXTRACTIBLE ARRIVE au Worker de confiance ; rien d'autre n'y arrive", () => {
+  // La moitié ARRIVANTE de la dérogation à `sansCapacite`. Elle n'avait ni épreuve ni mutant — la
+  // revue de sécurité de la PR #167 l'a relevé —, alors même que l'ADR affirmait qu'elle ne faisait
+  // pas double emploi avec la moitié PARTANTE. Les deux conditions se manquent différemment, et les
+  // deux sont donc éprouvées séparément.
+  const opaque = fausseCle({ extractable: false });
+  assert.equal(exigerKekDeLaPage(opaque), opaque);
 
-/** Une `CryptoKey` de forme, sans WebCrypto : la garde regarde le CONSTRUCTEUR et `extractable`. */
-function fausseCle({ extractable }) {
-  class CryptoKey {
-    constructor() {
-      this.extractable = extractable;
-      this.type = "secret";
-    }
+  assert.throws(
+    () => exigerKekDeLaPage(fausseCle({ extractable: true })),
+    (erreur) =>
+      erreur.code === CODES_REFUS_COQUILLE.capaciteDansUnMessage &&
+      /EXTRACTIBLE/.test(erreur.message),
+    "une CryptoKey extractible est un secret que du code peut relire.",
+  );
+  for (const valeur of [new Uint8Array(32), "00ff", { extractable: false }, 42, null, undefined]) {
+    assert.throws(
+      () => exigerKekDeLaPage(valeur),
+      (erreur) => erreur.code === CODES_REFUS_COQUILLE.capaciteDansUnMessage,
+      `« ${String(valeur)} » a été pris pour une KEK.`,
+    );
   }
-  return new CryptoKey();
-}
+});
+
+test("le Worker de DÉRIVATION ne peut atteindre ni le stockage, ni l'enveloppe, ni le volume", async () => {
+  // Une propriété qui tient à ce qu'un fichier ne fasse PAS quelque chose se relit mieux qu'elle ne
+  // se croit. Ce Worker ne connaît que ce qu'on lui passe : une phrase, des paramètres publics, une
+  // identité d'emplacement. Le balayage vise les IMPORTS, pas les mentions — son en-tête explique
+  // longuement ce qu'il ne touche pas, et lui interdire les mots rendrait la garde indocumentable.
+  const source = await lire("public/derivation-worker.mjs");
+  const imports = [...source.matchAll(/from\s+"([^"]+)"/g)].map((occurrence) => occurrence[1]);
+  assert.deepEqual(
+    imports.sort(),
+    ["/src/vm/derivation/derivateur-phrase.mjs", "/src/vm/format-chiffre/octets.mjs"],
+    "Le Worker de dérivation ne doit importer que de quoi dériver une phrase.",
+  );
+  // Et il MEURT après usage : son tas — la phrase comprise — s'en va avec lui (ADR 0029, déc. 5).
+  assert.match(source, /self\.close\(\)/);
+});
+
+// --- La seule dérogation à `sansCapacite` ---------------------------------------------------------
 
 test("une KEK NON EXTRACTIBLE franchit le canal privilégié, et rien d'autre ne franchit avec elle", () => {
   const message = enveloppePrivilegiee(TYPES_PRIVILEGIES.deverrouiller, {
@@ -489,6 +544,44 @@ test("un corps ne recouvre JAMAIS l'identité du contrat, sur les deux portes", 
   assert.equal(message.versionEnveloppe, 3);
 });
 
+test("TOUTE réponse du canal privilégié est appariable : aucune ne peut rester en suspens", () => {
+  // La classe de défauts que cette liste ferme, et qui a mordu DEUX fois en écrivant #162 : un type
+  // de réponse que l'appelant n'apparie pas fait attendre la page pour toujours — pas d'erreur, pas
+  // de refus, pas de journal, seulement un geste qui n'aboutit jamais. La liste est DÉRIVÉE de la
+  // table des types ; cette épreuve dit ce qu'elle doit contenir, nommément.
+  assert.deepEqual(
+    [...REPONSES_PRIVILEGIEES].sort(),
+    [
+      TYPES_PRIVILEGIES.deverrouillageReponse,
+      TYPES_PRIVILEGIES.etatReponse,
+      TYPES_PRIVILEGIES.inventaireReponse,
+      TYPES_PRIVILEGIES.preparationReponse,
+      TYPES_PRIVILEGIES.recuperationRendue,
+      TYPES_PRIVILEGIES.refus,
+    ].sort(),
+  );
+
+  // Et la propriété qui compte, dite autrement : CHAQUE type qui n'est ni une demande, ni
+  // l'établissement du canal, ni une annonce poussée, est appariable. Un type de réponse ajouté
+  // demain sans entrer dans la liste fait rougir ici, et non chez un utilisateur.
+  const demandes = new Set([
+    TYPES_PRIVILEGIES.canal,
+    TYPES_PRIVILEGIES.etat,
+    TYPES_PRIVILEGIES.inventaire,
+    TYPES_PRIVILEGIES.preparation,
+    TYPES_PRIVILEGIES.deverrouiller,
+    TYPES_PRIVILEGIES.creerRecuperation,
+    TYPES_PRIVILEGIES.barriere,
+  ]);
+  for (const type of Object.values(TYPES_PRIVILEGIES)) {
+    assert.equal(
+      REPONSES_PRIVILEGIEES.has(type),
+      !demandes.has(type),
+      `« ${type} » n'est ni une demande connue, ni une réponse appariable : une des deux listes est en retard.`,
+    );
+  }
+});
+
 test("un message privilégié SANS kek passe par la porte ordinaire, inchangée", () => {
   const message = enveloppePrivilegiee(TYPES_PRIVILEGIES.etat, { correlation: "c9" });
   assert.equal(message.type, TYPES_PRIVILEGIES.etat);
@@ -547,12 +640,18 @@ test("aucun module de la coquille n'écrit dans un stockage, ni dans le presse-p
     /navigator\s*\.\s*clipboard/,
     /\bwriteText\s*\(/,
   ];
+  // Les DEUX Workers y sont entrés avec la revue de la PR #167 : le balayage omettait exactement
+  // les fichiers qui TIENNENT le code et la phrase, ce qui en faisait une garde sur les seuls
+  // endroits où le risque était le plus faible.
   for (const fichier of [
     "src/coquille/interface-de-deverrouillage.mjs",
     "src/coquille/saisie-du-code.mjs",
     "src/coquille/feuille-de-recuperation.mjs",
+    "src/coquille/moyens-de-deverrouillage.mjs",
     "public/main.mjs",
     "public/index.html",
+    "public/runtime-worker.mjs",
+    "public/derivation-worker.mjs",
   ]) {
     const contenu = await lire(fichier);
     for (const motif of interdits) {

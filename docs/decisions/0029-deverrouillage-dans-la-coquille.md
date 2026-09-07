@@ -219,40 +219,146 @@ Le **CONSENTEMENT NOMMÉ** de la restauration antérieure à la feuille est écr
 pour mot avec l'ADR 0027, et une épreuve confronte la citation à l'ADR. La restauration elle-même
 n'est pas offerte ici.
 
-## Décision 5 — La question d'ÉTAT sort de la file du Worker
+## Décision 5 — La dérivation d'une phrase vit dans un WORKER DÉDIÉ
 
-Le canal privilégié est traité EN SÉRIE depuis #161, et l'ADR 0028 en donne le motif : « une demande
-d'état posée juste après un déverrouillage serait servie avant que le déverrouillage ait fini, et
-rendrait `verrouille` sur un volume qui s'ouvre. Le sérialiser n'est pas une optimisation, c'est ce
-qui rend l'état lisible. »
+### Ce que la première rédaction avait manqué
 
-Cette tranche a mis dans la file un geste qui dure **deux mille cent millisecondes** sur le moteur
-le plus lent. Et la coquille relaie la question d'état pour le DOCUMENT APPLICATIF : celui-ci s'est
-donc retrouvé à attendre derrière la phrase que l'utilisateur venait de taper. **La suite de
-frontière de #161 l'a mesuré en rougissant sous Firefox** — le geste ADMIS, le seul que la coquille
-serve, dépassait le délai d'une seconde de la fixture, et quatre requêtes concurrentes restaient
-muettes. C'est une famine, sur exactement la propriété que « un refus typé, jamais un silence »
-protège.
+Le canal privilégié est traité EN SÉRIE depuis #161, et l'ADR 0028 en donne le motif. Cette tranche
+a mis dans cette file un geste qui dure **deux mille cent millisecondes** sur le moteur le plus
+lent, et la coquille relaie la question d'ÉTAT pour le DOCUMENT APPLICATIF : celui-ci s'est retrouvé
+à attendre derrière la phrase que l'utilisateur venait de taper. La suite de frontière de #161 l'a
+mesuré en rougissant sous Firefox — le geste ADMIS, le seul que la coquille serve, dépassait le
+délai d'une seconde de la fixture, et quatre requêtes concurrentes restaient muettes.
 
-**La question d'état sort donc de la file.** C'est une LECTURE PURE de deux champs : elle ne touche
-ni l'enveloppe, ni le volume, ni l'OPFS, et rien ne dépend de sa place dans l'ordre. Tout ce qui
-MUTE — déverrouiller, inventorier, créer un moyen — reste dans la file, dans l'ordre d'arrivée.
+La première correction a sorti la lecture d'état de la FILE de promesses du Worker. **Elle ne
+pouvait rien, et c'est la leçon de cette décision : il n'y a pas de file qui tienne quand le FIL est
+pris.** `argon2Vendu` appelle le module WebAssembly de façon SYNCHRONE ; pendant tout le calcul, le
+Worker ne dispatche aucun message, dans la file ou hors d'elle. La revue de sécurité de la
+[PR #167](https://github.com/pinfada/railsbox-vault/pull/167) l'a établi par une sonde posée sur
+`MessagePort.prototype` : état posté 400 ms après le clic, réponse en **1 777 à 2 158 ms** sous
+Firefox, contre moins d'une milliseconde au repos.
 
-Ce que #161 craignait ne s'applique plus, et c'est cette tranche qui l'a rendu vrai : le
-déverrouillage rend SON état dans sa propre réponse (`deverrouillageReponse`), et la coquille ne le
-redemande pas. La raison de sérialiser la lecture avait disparu avec le geste qui l'avait motivée.
+C'était une FAMINE, sur exactement la propriété que « un refus typé, jamais un silence » protège, et
+sur le témoin positif de `SEC-ORIGIN-001` par-dessus le marché.
 
-**Deux corollaires, trouvés en même temps et du même défaut.** La coquille appariait la réponse
-applicative à une promesse qui, depuis #162, peut être ROMPUE — c'est ainsi qu'un refus du Worker
-remonte. Deux conséquences qu'aucune épreuve ne mesurait :
+### La décision
 
-- une rupture laissait le document applicatif SANS réponse. Elle ne lui rend désormais jamais le
-  code du Worker — ce serait un oracle sur l'enveloppe, que la liste de refus interdit — mais le
-  dernier état CONNU, celui que le relevé publie déjà. Un refus sur la question d'état est un défaut
-  de la coquille, jamais une faute du document applicatif ;
-- l'identifiant de corrélation n'était relâché que dans la branche du SUCCÈS. Une rupture le
-  laissait en vol pour toujours : l'identifiant devenait inutilisable, et trente-deux requêtes
-  perdues auraient fermé le port pour de bon. Il est relâché quoi qu'il arrive.
+**La dérivation d'une phrase s'exécute dans un Worker DÉDIÉ** (`public/derivation-worker.mjs`), créé
+par la PAGE, qui rend une `CryptoKey` NON EXTRACTIBLE. Le Worker de confiance ne dérive plus de
+phrase : il reçoit un handle opaque, exactement comme il reçoit celui d'une passkey depuis le début
+de la tranche.
+
+L'ADR 0021 décision 5 dit « le faire sur le fil de la page gèlerait l'interface ». C'est vrai, et
+cela ne dit pas DANS QUEL Worker : la contrainte est « dans un Worker », pas « dans CELUI-LÀ ».
+
+**Pourquoi la PAGE le crée, et non le Worker de confiance.** Les deux étaient possibles ; trois
+motifs départagent, dont un seul suffirait :
+
+- **il ne demande aucune capacité nouvelle.** Un Worker imbriqué en exigerait une que
+  `docs/compatibility.md` ne mesure sur aucun des trois moteurs, et #162 n'a pas à ajouter une ligne
+  au dossier de portabilité pour un calcul. `worker-src 'self'` (ADR 0013) couvre déjà ce Worker-ci
+  : il n'y a rien à élargir ;
+- **il donne UNE seule forme aux deux moyens dérivés hors du Worker de confiance.** La passkey l'est
+  déjà, parce que `navigator.credentials` n'existe que dans un document ; la phrase le devient, et
+  le Worker de confiance reçoit dans les deux cas la même chose, par la même porte, sous la même
+  garde ;
+- **il RÉDUIT ce que le Worker de confiance fait.** Il gardait un calcul qui n'avait besoin d'aucun
+  de ses handles : ni l'OPFS, ni l'enveloppe, ni la clé de volume n'entrent dans une dérivation.
+
+**Ce que le Worker de dérivation ne peut pas atteindre** : il n'importe que de quoi dériver une
+phrase — une épreuve unitaire relit ses imports, parce qu'une propriété qui tient à ce qu'un fichier
+ne fasse pas quelque chose se relit mieux qu'elle ne se croit. Il ne touche ni l'OPFS, ni
+l'enveloppe, ni le volume, ni le port privilégié, et **il meurt après usage** (`self.close()`). Son
+tas — la phrase comprise — s'en va avec lui : c'est plus franc qu'un effacement, que le langage ne
+permet pas sur une `string` (ADR 0021, décision 7), et c'est un effet du découpage plutôt qu'une
+promesse cryptographique. La sonde d'exfiltration couvre son port dans les deux sens.
+
+**Ce qui ne change pas** : la phrase ne quitte pas l'origine de CONFIANCE. Elle franchit un port de
+plus, à l'intérieur de la même origine — la limite 4 de l'ADR 0021, inchangée dans sa nature.
+
+### La mesure
+
+`npm run test:coquille:deverrouillage`, épreuve « le Worker de confiance répond PENDANT une
+dérivation ». Vingt questions d'état au repos, vingt pendant que la dérivation calcule.
+
+| Moteur   |         au repos (p50 / p95 / max) | PENDANT une dérivation (p50 / p95 / max) |
+| -------- | ---------------------------------: | ---------------------------------------: |
+| Chromium |                 0,1 / 0,5 / 0,5 ms |                   0,2 / 0,8 / **0,8 ms** |
+| Firefox  |                       0 / 1 / 1 ms |                         1 / 2 / **2 ms** |
+| WebKit   | volume hors d'atteinte, refus typé |                                        — |
+
+**Firefox passe de 1 777–2 158 ms à 2 ms.** Ce que l'épreuve AFFIRME n'est pas ce chiffre, qui
+dépend de la machine, mais le seul rapport qui n'en dépende pas : le maximum observé pendant une
+dérivation reste sous le budget que le document applicatif s'accorde — mille millisecondes, RELUES
+de la fixture plutôt que recopiées.
+
+### Deux corollaires, du même défaut
+
+La coquille appariait la réponse applicative à une promesse qui, depuis #162, peut être ROMPUE —
+c'est ainsi qu'un refus du Worker remonte. Deux conséquences qu'aucune épreuve ne mesurait :
+
+- une rupture laissait le document applicatif SANS réponse. Il reçoit désormais le dernier état
+  CONNU — jamais le code du Worker, qui ferait de sa réponse un oracle sur l'enveloppe. Un refus sur
+  la question d'état est un défaut de la coquille, jamais une faute du document applicatif ;
+- l'identifiant de corrélation n'était relâché que dans la branche du SUCCÈS, et jamais du tout si
+  la promesse ne se réglait pas. Un Worker mort remplissait donc les trente-deux emplacements et
+  fermait le port pour de bon — le déni de service que l'ADR 0028 déclare écarté. Il est relâché
+  quoi qu'il arrive, et `DELAI_WORKER_MORT_MS` borne l'attente à trente secondes, sous un refus TYPÉ
+  (constat 11 de la revue).
+
+## Décision 6 — La coquille NOMME ses bornes, et un geste impossible rend un refus TYPÉ
+
+Trois défauts, trouvés par la première exécution en **intégration continue** de cette tranche (run
+34088213342 sur `8d09085`), et qui ne s'étaient pas montrés en local. Ils partagent une racine : le
+produit laissait à d'autres — un module, un moteur, un instant — des décisions qui lui
+appartiennent.
+
+### La borne d'un geste de passkey
+
+`derivateur-webauthn-prf.mjs` proposait `DELAI_MS`, **une minute**, et l'imposait à l'enregistrement
+: le paramètre `delaiMs` n'existait que du côté de l'ASSERTION. Une coquille qui adopte ce défaut
+reste MUETTE pendant soixante secondes quand aucun authentificateur ne répond, et une interface
+muette pendant une minute est indiscernable d'un plantage — l'utilisateur ferme l'onglet avant que
+le refus n'arrive.
+
+**La coquille nomme sa borne : `DELAI_PASSKEY_MS`, trente secondes.** C'est largement de quoi
+toucher un lecteur d'empreinte, taper un code, ou prendre une clé posée à côté de soi ; et c'est
+assez court pour que le refus TYPÉ — `VAULT_DERIVATION_ANNULEE`, sans pénalité et sans compteur —
+arrive pendant que l'utilisateur regarde encore l'écran. `enregistrerEmplacementPrf` accepte
+désormais `delaiMs`, comme l'assertion l'acceptait déjà : c'est le même geste humain sur le même
+authentificateur, et l'asymétrie ne se justifiait par rien.
+
+**La limite** : un authentificateur qu'on va chercher dans un tiroir dépassera cette borne, et
+l'utilisateur devra recommencer. C'est le prix d'un refus qui arrive.
+
+### Un geste impossible rend un refus, pas un état
+
+Sur un moteur sans accès synchrone à l'OPFS dans un Worker, `deverrouiller` rendait l'ÉTAT
+`indisponible`. La coquille le prenait pour un succès et affichait **« Coffre ouvert »** — sur un
+moteur où rien ne s'était ouvert. C'est la pire des trois issues possibles : pas un refus, pas un
+silence, un mensonge.
+
+L'absence reste un ÉTAT — `indisponible` dit « ce moteur ne sait pas » là où `verrouille` dirait «
+il faut un geste ». Mais le GESTE reçoit désormais `VAULT_STORAGE_UNSUPPORTED`, le code que le dépôt
+emploie déjà partout pour cette absence, et que `deverrouillage-frontiere.spec.mjs` EXIGE des
+scénarios qui touchent un volume. Les deux suites nomment la même limite du même nom.
+
+### L'état publié est DÉTERMINISTE au démarrage
+
+C'est en lisant l'enveloppe que le Worker découvre l'absence d'OPFS et pose `indisponible`. Le
+relevé de la page, lui, gardait le `verrouille` de la poignée de main et ne basculait que lorsque le
+document applicatif posait SA question d'état — à un instant que personne ne contrôle. La coquille
+redemande donc l'état APRÈS l'inventaire. Ce n'était pas une divergence entre moteurs : c'était une
+COURSE, et elle expliquait qu'une suite verte en local rougisse en intégration continue.
+
+### Ce que les épreuves en tirent
+
+Aucun `test.skip` dans la suite : sur un moteur qui ne peut pas atteindre un volume, chaque scénario
+EXIGE l'état `indisponible` ET le refus typé du geste suivant. C'est la convention de
+`deverrouillage-frontiere.spec.mjs`, tenue ici aussi — **la limite est écrite, pas maquillée**. Le
+délai de l'épreuve de passkey DÉRIVE de `DELAI_PASSKEY_MS` au lieu de le deviner : les deux ne
+peuvent plus se courir après, quelle que soit la valeur choisie plus tard. C'est ce qui avait rendu
+cette épreuve « flaky » — elle attendait exactement aussi longtemps que ce qu'elle mesurait.
 
 ## Ce que la coquille n'écrit JAMAIS
 
@@ -334,23 +440,26 @@ l'exécutent, et n'annonce rien : c'est la condition de la décision 1 de l'ADR 
 4. **la FEUILLE reste un geste de l'utilisateur.** Le produit affiche ; il ne sait pas si quelqu'un
    a recopié, ni où. Une feuille perdue, non notée ou mal recopiée ne protège de rien, et le produit
    n'a aucun moyen de le savoir (ADR 0027, limite 4) ;
-5. **le gestionnaire de mots de passe du navigateur.** Le champ porte `autocomplete="new-password"`,
+5. **la borne de passkey est de trente secondes** (décision 6). Un authentificateur qu'on va
+   chercher ailleurs dans la pièce dépassera cette borne : le refus est typé, aucune pénalité n'est
+   comptée, et le geste se recommence à l'identique — l'épreuve d'annulation de #22 le mesure ;
+6. **le gestionnaire de mots de passe du navigateur.** Le champ porte `autocomplete="new-password"`,
    qui DEMANDE de ne pas proposer d'enregistrer ; aucun moteur ne le garantit, et un utilisateur
    peut toujours enregistrer sa phrase de son propre chef. C'est ce que le produit peut demander,
    pas ce qu'il peut garantir ;
-6. **aucune esthétique.** L'interface est un HTML sémantique sans style. C'est un chemin de produit,
+7. **aucune esthétique.** L'interface est un HTML sémantique sans style. C'est un chemin de produit,
    pas un design, et l'apparence relève d'un travail qui n'a pas encore d'issue. Elle se lit au
    clavier et par un lecteur d'écran, et ne promet rien qu'elle ne tienne ;
-7. **aucun authentificateur RÉEL n'est mesuré**, et la limite 2 de l'ADR 0021 reste entière : un
+8. **aucun authentificateur RÉEL n'est mesuré**, et la limite 2 de l'ADR 0021 reste entière : un
    authentificateur virtuel répond instantanément et accepte tout ;
-8. **rien du cycle de vie n'est assemblé.** Pas d'export, pas de restauration, pas de révocation,
+9. **rien du cycle de vie n'est assemblé.** Pas d'export, pas de restauration, pas de révocation,
    pas de verrouillage, pas de COOP. Ce sont #163, #25 et la suite de #24 ;
-9. **une dérivation occupe le Worker de confiance pendant deux secondes.** La question d'état en
-   sort (décision 5), mais tout ce qui MUTE reste derrière : un second geste posé pendant une
-   dérivation attend qu'elle finisse. C'est voulu — deux ouvertures concurrentes sur la même
-   enveloppe seraient pires que l'attente — et cela reste une propriété que l'interface ne montre
-   pas ;
-10. **le déverrouillage crée le coffre s'il n'existe pas**, sous la phrase ou la passkey présentée.
+10. **une dérivation occupe le Worker de confiance pendant deux secondes.** La question d'état en
+    sort (décision 5), mais tout ce qui MUTE reste derrière : un second geste posé pendant une
+    dérivation attend qu'elle finisse. C'est voulu — deux ouvertures concurrentes sur la même
+    enveloppe seraient pires que l'attente — et cela reste une propriété que l'interface ne montre
+    pas ;
+11. **le déverrouillage crée le coffre s'il n'existe pas**, sous la phrase ou la passkey présentée.
     C'est ce que faisait #161 avec les clés du harnais, et c'est ce qui rend un coffre neuf ouvrable
     ; un flux de création NOMMÉ — qui dirait « vous créez un coffre » avant de le créer — appartient
     au cycle de vie assemblé.
@@ -402,16 +511,17 @@ l'exécutent, et n'annonce rien : c'est la condition de la décision 1 de l'ADR 
 
 ## Impacts
 
-| Document                                                        | Ce qui change                                                                                                                                                          |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [ADR 0028](0028-coquille-de-produit-et-frontiere.md) décision 4 | RETIRÉE par cette tranche, avec sa note datée. La réserve de `SEC-ORIGIN-001` côté produit ne porte plus le jeton ; il reste le cycle de vie non assemblé (#163)       |
-| [ADR 0025](0025-moyen-de-recuperation.md) § Risques             | « la découpe affichée, l'aide à la saisie, un contrôle en direct par la somme » sont LIVRÉS. Le tirage n'a pas bougé, l'alphabet non plus, la version non plus         |
-| [ADR 0027](0027-archive-et-ancre-de-version.md) décision 3      | la SAISIE de l'ancre est livrée, avec son aveu. Le consentement nommé et `recovery: null` existent en texte, éprouvés, et attendent le geste qu'ils précéderont (#163) |
-| [ADR 0021](0021-derivation-des-cles-de-deverrouillage.md)       | inchangé. Les décisions 5 et 7 sont CITÉES, pas rouvertes ; le § Mesures est désormais RELU par une épreuve                                                            |
-| [ADR 0020](0020-enveloppe-de-cle.md)                            | inchangé. L'inventaire public est LU par un chemin de produit, ce que le point 3 de ses limites prévoyait                                                              |
-| [ADR 0002](0002-topologie-origine-de-confiance.md)              | inchangé. Le port restreint ne gagne aucun type, et la réponse d'état porte toujours ses deux champs                                                                   |
-| `SECURITY.md`                                                   | `SEC-RECOVERY-001` passe **exercé** sans réserve. `SEC-ORIGIN-001` — coquille de PRODUIT garde sa réserve, réduite au seul cycle de vie                                |
-| `docs/quality-attributes.md`                                    | gate données sensibles : la récupération est désormais OFFERTE par un chemin de production                                                                             |
+| Document                                                        | Ce qui change                                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [ADR 0028](0028-coquille-de-produit-et-frontiere.md) décision 4 | RETIRÉE par cette tranche, avec sa note datée. La réserve de `SEC-ORIGIN-001` côté produit ne porte plus le jeton ; il reste le cycle de vie non assemblé (#163)                                                                                                                  |
+| [ADR 0025](0025-moyen-de-recuperation.md) § Risques             | « la découpe affichée, l'aide à la saisie, un contrôle en direct par la somme » sont LIVRÉS. Le tirage n'a pas bougé, l'alphabet non plus, la version non plus                                                                                                                    |
+| [ADR 0027](0027-archive-et-ancre-de-version.md) décision 3      | la SAISIE de l'ancre est livrée, avec son aveu. Le consentement nommé et `recovery: null` existent en texte, éprouvés, et attendent le geste qu'ils précéderont (#163)                                                                                                            |
+| [ADR 0021](0021-derivation-des-cles-de-deverrouillage.md)       | inchangé. Les décisions 5 et 7 sont CITÉES, pas rouvertes ; le § Mesures est désormais RELU par une épreuve                                                                                                                                                                       |
+| [ADR 0020](0020-enveloppe-de-cle.md)                            | inchangé. L'inventaire public est LU par un chemin de produit, ce que le point 3 de ses limites prévoyait                                                                                                                                                                         |
+| [ADR 0002](0002-topologie-origine-de-confiance.md)              | inchangé. Le port restreint ne gagne aucun type, et la réponse d'état porte toujours ses deux champs                                                                                                                                                                              |
+| `SECURITY.md`                                                   | `SEC-RECOVERY-001` passe **exercé** sans réserve. `SEC-ORIGIN-001` — coquille de PRODUIT garde sa réserve, réduite au seul cycle de vie                                                                                                                                           |
+| `SECURITY.md`, gate « données sensibles »                       | la récupération est désormais OFFERTE par un chemin de production ; le gate reste FERMÉ, et le verrouillage après inactivité (#25) est ce qui manque. La phrase qui disait la séparation d'origine « pas encore implémentée dans le produit » est corrigée : #161 l'a implémentée |
+| `docs/quality-attributes.md`                                    | l'attente annoncée entre dans le tableau des mesures, avec les deux délais publiés depuis le geste                                                                                                                                                                                |
 
 Aucun format, aucun vecteur, aucune empreinte ne bouge : `node tools/verifier-vecteurs.mjs` reste
 vert sans qu'un seul fichier de `tests/vectors/` ait été touché.

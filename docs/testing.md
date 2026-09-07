@@ -47,6 +47,14 @@ stockages, OPFS en texte et en hexadécimal, les deux sens du port privilégié 
 Elle diffère de `deverrouillage-frontiere.spec.mjs` sur un point qui décide de tout : celle-là
 mesure les BANCS, et un banc n'est pas un chemin qu'un utilisateur emprunte.
 
+**Aucun `test.skip` sur un moteur qui ne peut pas atteindre un volume.** La convention est celle de
+la suite de #22, tenue ici aussi : un scénario qui touche un volume EXIGE alors l'état
+`indisponible` ET le refus typé (`VAULT_STORAGE_UNSUPPORTED`) du geste qui suit — jamais un succès,
+jamais un plantage, jamais un silence. La limite est écrite, pas maquillée. Le délai de l'épreuve de
+passkey DÉRIVE de la borne que la coquille nomme (`DELAI_PASSKEY_MS`) plutôt que de la deviner :
+c'est ce qui avait rendu cette épreuve « flaky » en intégration continue — elle attendait exactement
+aussi longtemps que ce qu'elle mesurait.
+
 **La sonde y est instrumentée par l'ÉPREUVE, pas par le produit.** Le banc de #22 tient lui-même un
 journal de ce qui franchit son port ; la coquille de produit ne le peut pas — ce serait un endroit
 de plus où le code de récupération survit, et il aurait fallu l'exclure de la sonde pour que la

@@ -40,10 +40,12 @@
 // l'épreuve — l'arbre publié ne le porte pas.
 
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
 import { expect, test } from "@playwright/test";
 
 import { ATTENTE_MESUREE } from "../../src/coquille/attente-annoncee.mjs";
+import { DELAI_PASSKEY_MS } from "../../src/coquille/moyens-de-deverrouillage.mjs";
 import {
   AVERTISSEMENT_SANS_RECUPERATION,
   AVEU_SANS_ANCRE,
@@ -51,7 +53,11 @@ import {
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { SHELL_ORIGIN, SHELL_PORT } from "../../src/spike/origin-topology.mjs";
-import { decoderCode } from "../../src/vm/derivation/code-de-recuperation.mjs";
+import {
+  CODE_OCTETS,
+  decoderCode,
+  encoderCode,
+} from "../../src/vm/derivation/code-de-recuperation.mjs";
 import { DERIVATION_ERROR_CODES } from "../../src/vm/derivation/derivation-errors.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
 import { HARNAIS_CLE_JETON } from "../../src/vm/cle-de-volume.mjs";
@@ -64,6 +70,18 @@ const APPAT = "appat-de-sonde-162-ce-texte-doit-etre-trouve";
 
 /** Délai large et EXPLICITE : Firefox paie deux secondes par dérivation, et douze projets tournent. */
 const DELAI = 60000;
+
+/**
+ * Le budget que le document applicatif s'accorde sur le port restreint, RELU de la fixture.
+ *
+ * C'est le chiffre qui décide si une lenteur est un SILENCE, et c'est donc lui que la mesure de
+ * famine oppose au Worker de confiance. Le recopier ici en ferait deux, qui divergeraient.
+ */
+const DELAI_DU_PORT_HOSTILE = Number(
+  (await readFile(new URL("../../public/coquille-epreuve/hostile.mjs", import.meta.url), "utf8"))
+    .match(/const DELAI_PORT_MS = (\d+);/)
+    .at(1),
+);
 
 /**
  * Pose l'enregistreur de ports AVANT tout script de la page.
@@ -91,6 +109,13 @@ async function installerLEnregistreur(page) {
       trafic.envois.push(texte(donnee));
       return posteur.call(this, donnee, ...reste);
     };
+    // Le PORT PRIVILÉGIÉ, retenu au premier `start()` : c'est celui que la coquille ouvre vers son
+    // Worker de confiance, et le seul que la sonde ci-dessous interroge.
+    const demarrer = MessagePort.prototype.start;
+    MessagePort.prototype.start = function (...reste) {
+      if (globalThis.__portPrivilegie === undefined) globalThis.__portPrivilegie = this;
+      return demarrer.call(this, ...reste);
+    };
     const inscrire = MessagePort.prototype.addEventListener;
     MessagePort.prototype.addEventListener = function (nom, ecouteur, ...reste) {
       if (nom !== "message" || typeof ecouteur !== "function") {
@@ -106,6 +131,29 @@ async function installerLEnregistreur(page) {
         ...reste,
       );
     };
+
+    // Une question d'ÉTAT posée depuis la page, sur le canal privilégié — celui-là même que la
+    // dérivation bloquait. Elle emprunte le port que la coquille a établi, sans rien changer au
+    // produit : l'enregistreur ci-dessus le retient au passage, et la mesure de famine s'en sert.
+    globalThis.__interrogerLaCoquille = () =>
+      new Promise((rendre) => {
+        const port = globalThis.__portPrivilegie;
+        if (port === undefined) return rendre(null);
+        const correlation = `sonde-${globalThis.__sonde++}`;
+        const ecouteur = (evenement) => {
+          if (evenement.data?.correlation !== correlation) return;
+          port.removeEventListener("message", ecouteur);
+          rendre(evenement.data);
+        };
+        port.addEventListener("message", ecouteur);
+        port.postMessage({
+          contrat: "railsbox-vault-coquille",
+          version: 1,
+          type: "vault.coquille.etat-prive",
+          correlation,
+        });
+      });
+    globalThis.__sonde = 0;
 
     // L'ANNONCE, observée plutôt que surprise en vol.
     //
@@ -175,6 +223,53 @@ async function porte(page) {
     .poll(async () => (await releve(page)).etat, { timeout: DELAI })
     .not.toBe(ETATS_DU_VOLUME.verrouille);
   return (await releve(page)).etat !== ETATS_DU_VOLUME.indisponible;
+}
+
+/**
+ * L'ÉTAT que ce moteur peut atteindre, et ce qu'un scénario de volume doit alors EXIGER de lui.
+ *
+ * WebKit n'offre pas l'accès synchrone à l'OPFS dans un Worker (`docs/compatibility.md` : « refusé
+ * (OPFS absent) »). La convention du dépôt est celle de `deverrouillage-frontiere.spec.mjs` : un
+ * scénario qui touche un volume EXIGE là-bas un refus TYPÉ — jamais un succès, jamais un plantage,
+ * et jamais un `test.skip` qui maquillerait la limite en silence.
+ *
+ * Ce qui est exigé quand le volume est hors d'atteinte : l'état DIT l'absence (`indisponible`, et
+ * non `verrouille` — l'un dit « il faut un geste », l'autre « ce moteur ne sait pas »), et le geste
+ * qui suit rend son refus typé. Cette fonction porte les deux moitiés, pour qu'aucune épreuve de la
+ * suite ne puisse l'oublier.
+ */
+async function exigerLaLimiteDuMoteur(page, info, nom) {
+  const rapport = await releve(page);
+  if (rapport.etat !== ETATS_DU_VOLUME.indisponible) return false;
+  await attacher(info, `limite-${nom}`, {
+    moteur: info.project.name,
+    etat: rapport.etat,
+    limite:
+      "Ce moteur n'offre pas l'accès synchrone à l'OPFS dans un Worker : aucun volume n'est " +
+      "atteignable. L'absence est rendue comme un ÉTAT, et le geste qui la rencontre rend un refus " +
+      "TYPÉ. La limite est écrite, pas maquillée.",
+  });
+  // Le geste qui EXIGE un volume ouvert rend son refus typé, ici comme ailleurs : c'est ce qui
+  // distingue « ce moteur ne sait pas » d'un plantage, et c'est ce que la convention demande.
+  await page.locator("#creer-recuperation").click();
+  await expect(page.locator("#deverrouillage-refus")).toContainText(
+    CODES_REFUS_COQUILLE.volumeVerrouille,
+    { timeout: DELAI },
+  );
+  return true;
+}
+
+/**
+ * L'état qu'un moteur SANS volume atteignable doit publier, et celui de tous les autres.
+ *
+ * Les deux sont affirmés, jamais l'un au détriment de l'autre : `not.toBe(ouvert)` aurait laissé
+ * passer les deux, et exiger `verrouille` partout fait rougir WebKit sur sa conduite juste. C'est
+ * le défaut qu'une exécution en intégration continue a relevé sur `8d09085`.
+ */
+async function exigerLEtatFerme(page) {
+  const etat = (await releve(page)).etat;
+  expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(etat);
+  return etat;
 }
 
 /** Ouvre le coffre par la phrase : on tape, on clique, on attend l'état. Le geste d'un utilisateur. */
@@ -276,10 +371,10 @@ test("une PHRASE ouvre le coffre depuis la coquille, et l'attente est annoncée 
 
 test("une phrase FAUSSE est refusée par l'enveloppe, sous un code distinct, et rien n'est modifié", async ({
   page,
-}) => {
+}, info) => {
   await ouvrirLaCoquille(page);
-  const etat = await ouvrirParLaPhrase(page);
-  test.skip(etat === ETATS_DU_VOLUME.indisponible, "Sans OPFS synchrone, aucun coffre n'existe.");
+  await ouvrirParLaPhrase(page);
+  if (await exigerLaLimiteDuMoteur(page, info, "phrase-fausse")) return;
 
   await rouvrirLaCoquille(page);
   await page.locator("#saisie-phrase").fill(`${PHRASE}-pas`);
@@ -296,14 +391,145 @@ test("une phrase FAUSSE est refusée par l'enveloppe, sous un code distinct, et 
   expect((await releve(page)).etat).toBe(ETATS_DU_VOLUME.verrouille);
 });
 
+/**
+ * LA FAMINE, mesurée : le Worker de confiance répond PENDANT une dérivation.
+ *
+ * C'est le constat 2 de la revue de sécurité de la PR #167, et l'épreuve que la décision 5 réécrite
+ * doit désormais tenir. Le défaut, mesuré alors : `argon2Vendu` appelle le module WebAssembly de
+ * façon SYNCHRONE, si bien que le fil du Worker de confiance ne dispatchait plus AUCUN message
+ * pendant tout le calcul — 1 777 à 2 158 ms sous Firefox. Or ce Worker sert aussi la question
+ * d'ÉTAT que la coquille relaie pour le document applicatif : le seul geste admis restait sans
+ * réponse pendant qu'un utilisateur tapait sa phrase.
+ *
+ * La première correction avait sorti cette question de la FILE de promesses du Worker. Elle ne
+ * pouvait rien : il n'y a pas de file qui tienne quand le fil est pris. La correction juste est
+ * architecturale — la dérivation vit dans un Worker DÉDIÉ —, et c'est ce que cette mesure vérifie.
+ *
+ * Ce qui est AFFIRMÉ : pendant la dérivation, la question d'état revient sous le délai que la
+ * fixture accorde au port restreint. Ce qui est PUBLIÉ, sans seuil : les quantiles au repos et
+ * pendant. Un seuil sur les quantiles mesurerait la charge de l'exécutant.
+ */
+test("le Worker de confiance répond PENDANT une dérivation : la famine est levée", async ({
+  page,
+}, info) => {
+  await ouvrirLaCoquille(page);
+  if (await exigerLaLimiteDuMoteur(page, info, "famine")) return;
+
+  // Le budget est celui que le document applicatif s'accorde lui-même sur le port restreint
+  // (`public/coquille-epreuve/hostile.mjs`). Il est RELU plutôt que recopié : c'est le chiffre qui
+  // décide si une lenteur est un silence, et deux écritures divergeraient.
+  const budget = DELAI_DU_PORT_HOSTILE;
+
+  const mesurer = (tours) =>
+    page.evaluate(async (combien) => {
+      const echantillons = [];
+      for (let tour = 0; tour < combien; tour += 1) {
+        const debut = performance.now();
+        await globalThis.__interrogerLaCoquille();
+        echantillons.push(performance.now() - debut);
+      }
+      echantillons.sort((gauche, droite) => gauche - droite);
+      const rang = (part) =>
+        echantillons[Math.min(echantillons.length - 1, Math.floor(part * echantillons.length))];
+      return {
+        tours: combien,
+        p50Ms: Math.round(rang(0.5) * 10) / 10,
+        p95Ms: Math.round(rang(0.95) * 10) / 10,
+        maxMs: Math.round(echantillons.at(-1) * 10) / 10,
+      };
+    }, tours);
+
+  const repos = await mesurer(20);
+
+  // La dérivation est LANCÉE, et n'est pas attendue : ce qui est mesuré est ce qui se passe pendant
+  // qu'elle calcule.
+  await page.locator("#saisie-phrase").fill(PHRASE);
+  const ouverture = page.locator("#ouvrir-par-phrase").click();
+  await expect(page.locator("#deverrouillage-attente")).toContainText("coûteuse", {
+    timeout: DELAI,
+  });
+  const pendant = await mesurer(20);
+  await ouverture;
+  await expect
+    .poll(async () => (await releve(page)).etat, { timeout: DELAI })
+    .toBe(ETATS_DU_VOLUME.ouvert);
+
+  await attacher(info, "famine", { moteur: info.project.name, budgetMs: budget, repos, pendant });
+  // La mesure est ÉCRITE sur la sortie, comme celles de `deverrouillage-frontiere.spec.mjs` : c'est
+  // ainsi que le dépôt publie un ordre de grandeur qu'un ADR reprend.
+  process.stdout.write(
+    `MESURE ${info.project.name} : état au repos p50 ${repos.p50Ms} ms, p95 ${repos.p95Ms} ms, max ${repos.maxMs} ms ; ` +
+      `PENDANT une dérivation p50 ${pendant.p50Ms} ms, p95 ${pendant.p95Ms} ms, max ${pendant.maxMs} ms ` +
+      `(budget du port restreint : ${budget} ms)
+`,
+  );
+
+  // Le TÉMOIN de la mesure : sans requêtes servies, « rapide » ne voudrait rien dire.
+  expect(repos.tours).toBe(20);
+  expect(pendant.tours).toBe(20);
+  // Ce que l'épreuve AFFIRME, et c'est la propriété : le MAXIMUM observé pendant la dérivation reste
+  // sous le budget du port restreint. Avant la correction, ce maximum valait la dérivation entière.
+  expect(
+    pendant.maxMs,
+    `la question d'état a mis ${pendant.maxMs} ms pendant une dérivation : le fil du Worker de confiance est repris`,
+  ).toBeLessThan(budget);
+});
+
+/**
+ * LE SECOND CLIC, qui est le chemin d'ÉCHEC de `deverrouiller` (constats 5 et 6 de la revue #167).
+ *
+ * Un geste ordinaire, pas un scénario : l'utilisateur ouvre son coffre, puis clique une seconde fois
+ * sur « Ouvrir par la phrase ». Deux défauts vivaient là, et le second cachait le premier :
+ *
+ *  - `openOpfsVolume` levait `VAULT_STORAGE_BUSY` — le backend précédent était ÉCRASÉ sans être
+ *    fermé, si bien que le handle exclusif restait tenu par un objet que plus personne ne
+ *    référençait, sur le volume que l'utilisateur venait d'ouvrir lui-même ;
+ *  - et cette levée passait AVANT `dek.fill(0)` : les octets en clair de la clé de volume restaient
+ *    dans le tas du Worker de confiance. La correction est un `try/finally`, et ce clic-ci est ce
+ *    qui l'atteint.
+ *
+ * Ce que l'épreuve peut voir de l'extérieur : le coffre reste OUVERT, aucun refus n'est affiché, et
+ * une barrière de plus est acquittée. L'effacement de la DEK, lui, n'est pas observable depuis une
+ * page — c'est `tools/muter-gardes-coquille.mjs` qui montre que le `finally` sait rougir.
+ */
+test("un SECOND déverrouillage sur un coffre déjà ouvert le rouvre proprement", async ({
+  page,
+}, info) => {
+  await ouvrirLaCoquille(page);
+  await ouvrirParLaPhrase(page);
+  if (await exigerLaLimiteDuMoteur(page, info, "second-clic")) return;
+  const premier = await releve(page);
+  expect(premier.etat).toBe(ETATS_DU_VOLUME.ouvert);
+
+  await page.locator("#saisie-phrase").fill(PHRASE);
+  await page.locator("#ouvrir-par-phrase").click();
+  await expect
+    .poll(async () => (await releve(page)).barrieres, { timeout: DELAI })
+    .toBeGreaterThan(premier.barrieres);
+
+  const second = await releve(page);
+  await attacher(info, "second-clic", {
+    moteur: info.project.name,
+    premier: { etat: premier.etat, barrieres: premier.barrieres },
+    second: { etat: second.etat, barrieres: second.barrieres },
+    refus: await page.locator("#deverrouillage-refus").textContent(),
+  });
+
+  // Aucun refus, et surtout pas `VAULT_STORAGE_BUSY` : le backend précédent est fermé avant que le
+  // suivant ne s'ouvre. Ce code n'est d'ailleurs dans aucune conduite — il n'a rien à dire à un
+  // utilisateur, parce qu'il ne doit plus lui arriver.
+  await expect(page.locator("#deverrouillage-refus")).toBeEmpty();
+  expect(second.etat).toBe(ETATS_DU_VOLUME.ouvert);
+});
+
 // --- (b) et (c) Le CODE de récupération : rendu une fois, saisi sous forme humaine -----------------
 
 test("le code est rendu UNE fois avec sa version, et un second geste est refusé", async ({
   page,
 }, info) => {
   await ouvrirLaCoquille(page);
-  const etat = await ouvrirParLaPhrase(page);
-  test.skip(etat === ETATS_DU_VOLUME.indisponible, "Sans OPFS synchrone, aucun coffre n'existe.");
+  await ouvrirParLaPhrase(page);
+  if (await exigerLaLimiteDuMoteur(page, info, "feuille")) return;
 
   // AVANT toute création : le coffre n'a aucun moyen de récupération, et la coquille le DIT. C'est
   // l'avertissement de `recovery: null` (ADR 0027, limite 6), montré là où la coquille le peut.
@@ -345,8 +571,8 @@ test("le code, saisi sous une forme HUMAINE, rouvre le coffre depuis la coquille
   page,
 }, info) => {
   await ouvrirLaCoquille(page);
-  const etat = await ouvrirParLaPhrase(page);
-  test.skip(etat === ETATS_DU_VOLUME.indisponible, "Sans OPFS synchrone, aucun coffre n'existe.");
+  await ouvrirParLaPhrase(page);
+  if (await exigerLaLimiteDuMoteur(page, info, "code-humain")) return;
   const feuille = await creerLaFeuille(page);
 
   await rouvrirLaCoquille(page);
@@ -381,10 +607,10 @@ test("le code, saisi sous une forme HUMAINE, rouvre le coffre depuis la coquille
 
 test("un code MAL RECOPIÉ est refusé avant tout envoi : le Worker ne le voit jamais", async ({
   page,
-}) => {
+}, info) => {
   await ouvrirLaCoquille(page);
-  const etat = await ouvrirParLaPhrase(page);
-  test.skip(etat === ETATS_DU_VOLUME.indisponible, "Sans OPFS synchrone, aucun coffre n'existe.");
+  await ouvrirParLaPhrase(page);
+  if (await exigerLaLimiteDuMoteur(page, info, "code-mal-recopie")) return;
   const feuille = await creerLaFeuille(page);
   await rouvrirLaCoquille(page);
 
@@ -408,10 +634,21 @@ test("la version SAISIE est transmise et OPPOSÉE ; une enveloppe antérieure es
   page,
 }, info) => {
   await ouvrirLaCoquille(page);
-  const etat = await ouvrirParLaPhrase(page);
-  test.skip(etat === ETATS_DU_VOLUME.indisponible, "Sans OPFS synchrone, aucun coffre n'existe.");
-  const versionReelle = (await releveDeLInterface(page)).moyensProposes.length;
-  expect(versionReelle).toBeGreaterThan(0);
+  await ouvrirParLaPhrase(page);
+  if (await exigerLaLimiteDuMoteur(page, info, "ancre")) return;
+  // La VERSION d'enveloppe réelle, lue de la coquille — et non le nombre de moyens proposés, que la
+  // première rédaction avait pris pour elle (constat 12 de la revue de la PR #167). C'est elle que
+  // les deux moitiés de l'épreuve encadrent : une version notée TROP HAUT refuse, la même version
+  // notée JUSTE ouvre.
+  const versionReelle = (await page.locator("#deverrouillage-moyens").textContent()).match(
+    /version d'enveloppe (\d+)/,
+  );
+  expect(
+    versionReelle,
+    "la coquille doit dire la version d'enveloppe qu'elle a ouverte",
+  ).not.toBeNull();
+  const version = Number(versionReelle[1]);
+  expect(version).toBeGreaterThan(0);
 
   await rouvrirLaCoquille(page);
 
@@ -431,7 +668,18 @@ test("la version SAISIE est transmise et OPPOSÉE ; une enveloppe antérieure es
   await expect(page.locator("#deverrouillage-refus")).toContainText("videz le champ");
   expect((await releve(page)).etat).toBe(ETATS_DU_VOLUME.verrouille);
 
+  // La version JUSTE, elle, ouvre : c'est la moitié qui donne son sens au refus ci-dessus. Sans
+  // elle, « 9999 refuse » pourrait vouloir dire « toute version refuse ».
+  await page.locator("#ancre-version").fill(String(version));
+  await page.locator("#saisie-phrase").fill(PHRASE);
+  await page.locator("#ouvrir-par-phrase").click();
+  await expect
+    .poll(async () => (await releve(page)).etat, { timeout: DELAI })
+    .toBe(ETATS_DU_VOLUME.ouvert);
+  expect((await releveDeLInterface(page)).versionExigee).toBe(version);
+
   // Le champ vidé, le MÊME geste ouvre — et la coquille AVOUE ce qu'elle ne protège plus.
+  await rouvrirLaCoquille(page);
   await page.locator("#ancre-version").fill("");
   await expect(page.locator("#ancre-aveu")).toHaveText(AVEU_SANS_ANCRE);
   await page.locator("#saisie-phrase").fill(PHRASE);
@@ -456,7 +704,12 @@ test("le jeton du harnais ne déverrouille plus rien : l'appelant de PRODUIT n'e
   // profit d'un autre chemin, mais sans effet sur l'état.
   await ouvrirLaCoquille(page, { "deverrouillage-harnais": HARNAIS_CLE_JETON });
   const rapport = await releve(page);
-  expect(rapport.etat).toBe(ETATS_DU_VOLUME.verrouille);
+  // L'état est celui d'un coffre FERMÉ, et les deux formes sont affirmées : `verrouille` là où un
+  // volume est atteignable, `indisponible` là où le moteur n'offre pas d'OPFS synchrone dans un
+  // Worker. Exiger `verrouille` partout faisait rougir WebKit sur sa conduite juste — c'est le
+  // défaut relevé en intégration continue sur `8d09085`, invisible en local parce que la bascule
+  // dépendait de l'instant où le document applicatif posait SA question d'état.
+  await exigerLEtatFerme(page);
   expect(
     Object.keys(rapport),
     "le relevé ne doit plus porter le témoin d'un déverrouillage par harnais",
@@ -620,8 +873,8 @@ test("AUCUN octet du secret ne se dépose, hors les canaux NOMMÉS de la coquill
   page,
 }, info) => {
   await ouvrirLaCoquille(page);
-  const etat = await ouvrirParLaPhrase(page);
-  test.skip(etat === ETATS_DU_VOLUME.indisponible, "Sans OPFS synchrone, rien n'a été fabriqué.");
+  await ouvrirParLaPhrase(page);
+  if (await exigerLaLimiteDuMoteur(page, info, "sonde")) return;
   const feuille = await creerLaFeuille(page);
 
   const code = feuille.code;
@@ -749,6 +1002,15 @@ async function authentificateurVirtuel(page) {
 test("une PASSKEY crée le coffre et le rouvre ; sans authentificateur, le refus est TYPÉ", async ({
   page,
 }, info) => {
+  // Le délai de l'épreuve DÉRIVE de la borne du produit, il ne la devine pas.
+  //
+  // La première exécution en intégration continue a rendu ce test « flaky » sur Firefox : la borne
+  // du module valait UNE MINUTE (`DELAI_MS`) et le délai de l'épreuve valait la même chose, si bien
+  // que les deux se couraient après. La coquille nomme désormais sa propre borne
+  // (`DELAI_PASSKEY_MS`), et l'épreuve attend celle-là plus une marge — les deux ne peuvent plus
+  // se croiser par accident, quelle que soit la valeur choisie plus tard.
+  const attendu = DELAI_PASSKEY_MS + 20000;
+  test.setTimeout(attendu * 2);
   const authentificateur = await authentificateurVirtuel(page);
   await ouvrirLaCoquille(page, {}, HOTE_WEBAUTHN);
 
@@ -760,12 +1022,13 @@ test("une PASSKEY crée le coffre et le rouvre ; sans authentificateur, le refus
     // l'écart est une mesure, pas une tolérance : WebKit rend une créance dépourvue de résultat
     // `prf` — donc PRF_INDISPONIBLE —, tandis que Firefox rend `NotAllowedError` au bout du délai —
     // donc ANNULEE, puisque le navigateur ne distingue pas « personne n'a répondu » de « refusé ».
-    await expect(page.locator("#deverrouillage-refus")).not.toBeEmpty({ timeout: DELAI });
+    await expect(page.locator("#deverrouillage-refus")).not.toBeEmpty({ timeout: attendu });
     const refus = await page.locator("#deverrouillage-refus").textContent();
     await attacher(info, "passkey-limite", {
       moteur: info.project.name,
       limite:
-        "Aucun authentificateur virtuel n'est pilotable sur ce moteur : le protocole CDP WebAuthn est propre à Chromium. Le chemin est exercé jusqu'à l'appel, et le refus typé est vérifié.",
+        "Aucun authentificateur virtuel n'est pilotable sur ce moteur : le protocole CDP WebAuthn est propre à Chromium. Le chemin est exercé jusqu'à l'appel, et le refus typé est vérifié, dans la borne que la coquille nomme.",
+      borneMs: DELAI_PASSKEY_MS,
       refus,
     });
     expect(
@@ -782,10 +1045,7 @@ test("une PASSKEY crée le coffre et le rouvre ; sans authentificateur, le refus
     .not.toBe(ETATS_DU_VOLUME.verrouille);
   const rapport = await releve(page);
   await attacher(info, "passkey", { moteur: info.project.name, etat: rapport.etat });
-  test.skip(
-    rapport.etat === ETATS_DU_VOLUME.indisponible,
-    "Sans OPFS synchrone, aucun coffre n'existe.",
-  );
+  if (await exigerLaLimiteDuMoteur(page, info, "passkey")) return;
   expect(rapport.etat).toBe(ETATS_DU_VOLUME.ouvert);
   expect((await releveDeLInterface(page)).moyensProposes).toContain("webauthn-prf");
 
@@ -811,7 +1071,9 @@ test("créer un moyen de récupération sur un coffre VERROUILLÉ est refusé, s
   page,
 }) => {
   await ouvrirLaCoquille(page);
-  expect((await releve(page)).etat).toBe(ETATS_DU_VOLUME.verrouille);
+  // Même remarque que ci-dessus : un coffre FERMÉ, sous l'une ou l'autre de ses deux formes. Ce que
+  // l'épreuve mesure ensuite ne dépend d'aucune des deux — le refus est le MÊME, et c'est le sujet.
+  await exigerLEtatFerme(page);
   await page.locator("#creer-recuperation").click();
   await expect(page.locator("#deverrouillage-refus")).toContainText(
     CODES_REFUS_COQUILLE.volumeVerrouille,
@@ -823,12 +1085,13 @@ test("un code de récupération ne CRÉE pas un coffre : il en secourt un", asyn
   // Un coffre dont l'unique clé serait un papier n'est pas un coffre que quelqu'un aurait choisi.
   // Le refus est de fond, et il porte le code du geste refusé, pas celui d'une clé.
   await ouvrirLaCoquille(page);
-  await page.locator("#saisie-code").fill("0000-0000-0000-0000-0000-0000-0000");
-  const verdict = await page.locator("#code-verdict").textContent();
-  test.skip(
-    !verdict.includes("cohérent"),
-    "Ce code littéral ne vérifie pas la somme : l'épreuve mesurerait le contrôle de saisie.",
-  );
+  // Le code est CALCULÉ pour vérifier la somme, jamais écrit à la main : un littéral dont la somme
+  // est fausse ferait mesurer le contrôle de saisie au lieu du refus qui nous intéresse, et le
+  // `test.skip` qui couvrait ce cas maquillait la limite au lieu de l'écrire.
+  const codeValide = encoderCode(new Uint8Array(CODE_OCTETS));
+  await page.locator("#saisie-code").fill(codeValide);
+  await expect(page.locator("#code-verdict")).toContainText("cohérent");
+  await expect(page.locator("#ouvrir-par-code")).toBeEnabled();
   await page.locator("#ouvrir-par-code").click();
   await expect(page.locator("#deverrouillage-refus")).not.toBeEmpty({ timeout: DELAI });
 });
