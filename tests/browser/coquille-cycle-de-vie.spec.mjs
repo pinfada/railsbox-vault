@@ -277,10 +277,14 @@ test("la FERMETURE PROPRE est la troisième cause, et la coquille se la donne à
     parEtape.get("cadreEtPort").instantMs,
   );
 
-  // LE CADRE LIT L'ÉTAT PAR SON GESTE-REQUÊTE, et il lit `verrouille`. C'est la moitié de la
-  // conduite que le document applicatif peut observer : il ne reçoit ni refus nouveau, ni silence —
-  // le geste ADMIS reste admis et rend l'état, parce que répondre par un refus là où l'état existe
-  // ferait perdre au cadre la seule chose qu'il ait le droit de savoir.
+  // LE CADRE LIT L'ÉTAT PAR SON GESTE-REQUÊTE. C'est la moitié de la conduite que le document
+  // applicatif peut observer : il ne reçoit ni refus nouveau, ni silence — le geste ADMIS reste
+  // admis et rend l'état, parce que répondre par un refus là où l'état existe ferait perdre au
+  // cadre la seule chose qu'il ait le droit de savoir.
+  //
+  // Ce qu'il lit est `verrouille` — ou `indisponible` sur un moteur qui n'a jamais rien pu ouvrir.
+  // La mort n'invente pas un verrou sur WebKit, et la suite le DÉCLARE au lieu de passer au vert
+  // par vacuité : `rapport.etat` ci-dessus dit lequel des deux ce moteur a rendu.
   const cadre = page.frameLocator("#document-applicatif");
   await cadre.locator("#document-applicatif-demander").click();
   await expect
@@ -289,5 +293,6 @@ test("la FERMETURE PROPRE est la troisième cause, et la coquille se la donne à
         JSON.parse(await cadre.locator("#document-applicatif-rapport").textContent()).etat,
       { timeout: DELAI },
     )
-    .toBe(ETATS_DU_VOLUME.verrouille);
+    .toBe(rapport.etat);
+  expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(rapport.etat);
 });
