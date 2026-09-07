@@ -135,23 +135,33 @@ test("UN SEUL fichier publié porte la valeur du jeton du harnais, et c'est celu
   );
 });
 
-test("la coquille ne fige nulle part la valeur du jeton : elle la LIT d'un paramètre", async () => {
-  // La distinction compte : un jeton écrit en dur dans la page serait un déverrouillage que
-  // n'importe quelle visite déclencherait. Lu d'un paramètre, il demande à l'appelant de le
-  // présenter — et l'origine applicative n'a aucun chemin pour le faire (l'épreuve navigateur le
-  // mesure sur les trois moteurs). Le tout est provisoire : #162 remplace ce paramètre par le
-  // déverrouillage réel, et retire cette porte.
+test("la coquille ne LIT plus aucun jeton : le paramètre de #161 a disparu (#162)", async () => {
+  // #161 lisait le jeton d'un paramètre nommé, et l'épreuve d'alors EXIGEAIT ce paramètre : « la
+  // coquille doit LIRE le jeton d'un paramètre nommé, et non le porter ». La décision 1 de
+  // l'ADR 0029 le retire, et l'exigence s'inverse — c'est désormais la PRÉSENCE du paramètre qui
+  // rougit. Une épreuve qui aurait seulement cessé de l'exiger n'aurait rien empêché.
   for (const chemin of ["public/main.mjs", "public/runtime-worker.mjs", "public/index.html"]) {
+    const contenu = await lire(chemin);
     assert.ok(
-      !(await lire(chemin)).includes(HARNAIS_CLE_JETON),
+      !contenu.includes(HARNAIS_CLE_JETON),
       `${chemin} fige la valeur du jeton du harnais.`,
     );
+    assert.ok(
+      !contenu.includes("deverrouillage-harnais"),
+      `${chemin} lit encore le paramètre de harnais de #161 : le déverrouillage est un geste de l'utilisateur.`,
+    );
   }
-  assert.match(
-    await lire("public/main.mjs"),
-    /PARAMETRE_HARNAIS = "deverrouillage-harnais"/,
-    "la coquille doit LIRE le jeton d'un paramètre nommé, et non le porter.",
-  );
+});
+
+test("la PAGE et le Worker s'accordent sur l'identifiant du volume de la coquille", async () => {
+  // La page RECOPIE cet identifiant : elle en a besoin AVANT que le coffre existe, pour lier la KEK
+  // d'une passkey neuve à l'identité de son emplacement, c'est-à-dire à un moment où l'inventaire
+  // ne peut rien lui apprendre. Une recopie que rien ne relit finit toujours par diverger — et ici
+  // la divergence produirait une passkey qui n'ouvre rien, sans qu'aucun refus ne dise pourquoi.
+  const empreinte =
+    /Uint8Array\.from\(\{ length: 16 \}, \(_, index\) => \(0x21 \+ index \* 0x07\) % 256\)/;
+  assert.match(await lire("public/runtime-worker.mjs"), empreinte);
+  assert.match(await lire("public/main.mjs"), empreinte);
 });
 
 /** Liste les fichiers `.mjs`, `.html` et `.json` d'une source de publication. */

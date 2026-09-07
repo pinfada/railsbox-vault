@@ -50,18 +50,45 @@ import { APP_ORIGIN, SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
 /** Chemin de la fixture, servi par les DEUX origines : c'est ce qui rend le témoin comparable. */
 const FIXTURE = "/coquille-epreuve/hostile.html";
 
-/** Ouvre la coquille de produit, déverrouillée par le harnais, et attend qu'elle soit prête. */
+/**
+ * La PHRASE par laquelle ces épreuves ouvrent le volume de la coquille.
+ *
+ * #161 passait ici le jeton du harnais dans un paramètre d'URL ; #162 le retire (ADR 0029,
+ * décision 1), et le déverrouillage emprunte le CHEMIN DE PRODUIT — on tape dans le champ, on
+ * clique sur le bouton. C'est plus lent d'une dérivation Argon2id, et c'est le prix d'une suite qui
+ * mesure ce que le produit fait plutôt qu'une porte que le produit n'a plus.
+ *
+ * Elle est PUBLIQUE et sans valeur : c'est un marqueur, pas un secret.
+ */
+const PHRASE = "marqueur-de-phrase-de-la-frontiere-161-cheval-batterie-agrafe-correcte";
+
+/** Ouvre la coquille de produit, déverrouillée par une PHRASE, et attend qu'elle soit prête. */
 async function ouvrirLaCoquille(page, { documentApplicatif = null, deverrouiller = true } = {}) {
   const url = new URL("/index.html", SHELL_ORIGIN);
-  if (deverrouiller) url.searchParams.set("deverrouillage-harnais", HARNAIS_CLE_JETON);
   if (documentApplicatif) url.searchParams.set("document-applicatif", documentApplicatif);
   await page.goto(url.toString());
-  // Le délai est EXPLICITE et large. « Prête » attend le canal privilégié, puis le déverrouillage
-  // du harnais, qui ouvre un volume sur l'OPFS réel : sous Firefox, et quand les douze projets de
-  // frontière tournent ensemble, les cinq secondes du défaut de Playwright mesureraient la charge
-  // de l'exécutant plutôt que la coquille.
+  // Le délai est EXPLICITE et large. Sous Firefox, et quand les quinze projets de frontière
+  // tournent ensemble, les cinq secondes du défaut de Playwright mesureraient la charge de
+  // l'exécutant plutôt que la coquille.
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: 60000 });
+  if (deverrouiller) await deverrouillerParLaPhrase(page);
   return relevéDeLaCoquille(page);
+}
+
+/**
+ * Déverrouille par le geste d'un utilisateur, et attend que l'état ait BOUGÉ.
+ *
+ * « Bougé » et non « ouvert » : sur un moteur sans OPFS synchrone dans un Worker (WebKit), l'état
+ * devient `indisponible`, ce qui est la conduite juste et non un échec (ADR 0028). Ces épreuves-ci
+ * mesurent une frontière d'ORIGINE, pas un déverrouillage ; ce qu'elles demandent au volume est
+ * qu'il existe là où le moteur le permet.
+ */
+async function deverrouillerParLaPhrase(page) {
+  await page.locator("#saisie-phrase").fill(PHRASE);
+  await page.locator("#ouvrir-par-phrase").click();
+  await expect
+    .poll(async () => (await relevéDeLaCoquille(page)).etat, { timeout: 60000 })
+    .not.toBe(ETATS_DU_VOLUME.verrouille);
 }
 
 async function relevéDeLaCoquille(page) {
@@ -246,18 +273,28 @@ test("chaque requête admise reçoit SA réponse, même quand plusieurs sont en 
   expect(parNom["gestes-admis-concurrents"].detail).toContain("4/4");
 });
 
-test("le jeton du harnais est PUBLIC, lisible d'ici, et ne sert à rien d'ici", async ({ page }) => {
+test("le jeton du harnais est PUBLIC, lisible d'ici, et ne sert à rien — nulle part", async ({
+  page,
+}) => {
   // Constat 1 de la revue de la PR #166. Le jeton du harnais est dans l'arbre publié : sans étape de
   // construction, une constante que le produit compare existe forcément dans le code servi. La
-  // réponse n'est pas de la cacher — c'est de montrer que la connaître ne donne rien depuis
-  // l'origine applicative, parce que le port privilégié où elle s'emploie n'y est pas atteignable.
+  // réponse n'est pas de la cacher — c'est de montrer que la connaître ne donne rien.
+  //
+  // Depuis #162 (ADR 0029, décision 1), elle ne donne rien même à qui atteindrait le canal
+  // privilégié : AUCUN chemin de produit ne franchit plus la porte du harnais, et le type
+  // `deverrouiller` ne connaît plus de jeton. Ce que la fixture mesure ici reste donc valable, et
+  // l'affirmation qu'il porte s'est élargie plutôt que réduite.
   await ouvrirLaCoquille(page, { documentApplicatif: FIXTURE, deverrouiller: false });
   const { parNom } = await releverLaFixture(page.frameLocator("#document-applicatif"));
 
   // TÉMOIN POSITIF : la fixture a bien mis la main sur le jeton. Sans lui, les trois refus suivants
   // ne prouveraient rien — ils pourraient venir d'un jeton jamais lu.
   expect(parNom["lecture-du-jeton-du-harnais"].resultat).toBe("aboutit");
-  expect(parNom["lecture-du-jeton-du-harnais"].detail).toMatch(/jeton lu \(\d+ caractères\)/);
+  // Et c'est bien LE jeton qu'elle a lu, à la longueur près : un témoin qui se contenterait de
+  // « quelque chose a été lu » serait vert sur une chaîne vide, donc vert pour rien.
+  expect(parNom["lecture-du-jeton-du-harnais"].detail).toBe(
+    `jeton lu (${HARNAIS_CLE_JETON.length} caractères)`,
+  );
 
   expect(parNom["jeton-du-harnais-sur-le-port-restreint"].resultat).toBe("refuse");
   expect(parNom["jeton-du-harnais-sur-le-port-restreint"].code).toBe(
@@ -268,10 +305,16 @@ test("le jeton du harnais est PUBLIC, lisible d'ici, et ne sert à rien d'ici", 
   // donc où rejouer le jeton en paramètre. Ce n'est pas la frontière, c'est une porte de moins.
   expect(parNom["url-de-la-coquille-inconnue"].resultat).toBe("refuse");
 
-  // Et le verdict qui compte : l'état de la coquille n'a pas bougé. Elle a été ouverte SANS le
-  // paramètre du harnais dans ce scénario ; rien de ce que la fixture a tenté ne l'a déverrouillée.
+  // Et le verdict qui compte : l'état de la coquille n'a pas bougé. Aucun geste n'a été fait dans
+  // ce scénario ; rien de ce que la fixture a tenté ne l'a déverrouillée.
   const releve = await relevéDeLaCoquille(page);
-  expect(releve.deverrouillageParHarnais).toBe(false);
+  expect(
+    Object.keys(releve),
+    "le relevé ne doit plus porter le témoin d'un déverrouillage par harnais",
+  ).not.toContain("deverrouillageParHarnais");
+  // « pas ouvert », et non « verrouillé » : sur un moteur sans OPFS synchrone dans un Worker, la
+  // première question d'état rend `indisponible` — l'absence est un ÉTAT, pas un échec de geste
+  // (ADR 0028). Exiger `verrouille` ferait rougir WebKit sur sa conduite juste.
   expect(releve.etat).not.toBe(ETATS_DU_VOLUME.ouvert);
 });
 
@@ -413,7 +456,7 @@ test("témoin positif : la même fixture, servie par l'origine de confiance, obt
   page,
   context,
 }, info) => {
-  // La coquille est ouverte d'abord, sous le geste du harnais : c'est elle qui pose le volume et son
+  // La coquille est ouverte d'abord, sous une PHRASE : c'est elle qui pose le volume et son
   // enveloppe dans l'OPFS de l'origine de confiance. Sans cela, « fichier absent » de l'autre côté
   // ne dirait rien — il n'y aurait rien à trouver nulle part.
   const avant = await ouvrirLaCoquille(page);

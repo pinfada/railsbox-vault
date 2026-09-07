@@ -34,8 +34,16 @@ const CONTRAT = "src/coquille/contrat-de-messages.mjs";
 const ORIGINES = "src/coquille/origines-de-la-coquille.mjs";
 const ETAT = "src/coquille/etat-de-la-coquille.mjs";
 
+/** Les gardes de #162 (ADR 0029), dans `src/coquille/` pour le motif exact de celles de #161. */
+const ATTENTE = "src/coquille/attente-annoncee.mjs";
+const SAISIE = "src/coquille/saisie-du-code.mjs";
+const FEUILLE = "src/coquille/feuille-de-recuperation.mjs";
+const MOYENS = "src/coquille/moyens-de-deverrouillage.mjs";
+const INTERFACE = "src/coquille/interface-de-deverrouillage.mjs";
+
 const EPREUVE_ADMISSION = "tests/unit/coquille-admission.test.mjs";
 const EPREUVE_CONTRAT = "tests/unit/coquille-contrat.test.mjs";
+const EPREUVE_DEVERROUILLAGE = "tests/unit/coquille-deverrouillage.test.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -300,6 +308,138 @@ export const MUTATIONS = Object.freeze([
       "  }\n",
     apres: "",
     epreuves: [EPREUVE_CONTRAT],
+  },
+
+  // --- #162 : les gardes du déverrouillage dans la coquille (ADR 0029) --------------------------
+  {
+    nom: "un corps de message ne recouvre jamais l'identité du contrat",
+    garde: "enveloppeDeMessage — `exigerCorpsSansIdentite`, appelée AVANT l'étalement du corps",
+    fichier: CONTRAT,
+    avant: "  exigerCorpsSansIdentite(corps);\n",
+    apres: "",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "une capacité ne franchit le port que sur le canal PRIVILÉGIÉ",
+    garde: "enveloppePrivilegiee — la vérification du canal, contrôlée la première",
+    fichier: CONTRAT,
+    avant:
+      "  if (!estTypePrivilegie(type)) {\n" +
+      "    throw new Error(\n" +
+      "      `« ${type} » n'est pas un type du canal privilégié : seul celui-ci peut porter une capacité.`,\n" +
+      "    );\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "une KEK EXTRACTIBLE ne franchit aucun port",
+    garde: "exigerKekOpaque — la vérification de `extractable`",
+    fichier: CONTRAT,
+    avant:
+      "  if (kek.extractable !== false) {\n" +
+      '    throw refusDeCapacite("une CryptoKey EXTRACTIBLE, dont les octets se relisent");\n' +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "la somme de contrôle est vérifiée AVANT que la saisie ne devienne envoyable",
+    garde: "etatDeLaSaisie — le contrôle en direct, qui garde le Worker d'un code mal recopié",
+    fichier: SAISIE,
+    avant:
+      "  if (!sommeDeControleValide(symboles)) return sommeFausse(symboles.length, decoupe);\n",
+    apres: "",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "une saisie plus longue que le code est refusée, jamais tronquée",
+    garde: "etatDeLaSaisie — la borne HAUTE du nombre de symboles",
+    fichier: SAISIE,
+    avant:
+      "  if (symboles.length > SYMBOLES_TOTAL) return saisieTropLongue(symboles.length, decoupe);\n",
+    apres: "",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "un signe hors de l'alphabet ferme l'envoi",
+    garde: "etatDeLaSaisie — le refus du premier signe que la table close ne connaît pas",
+    fichier: SAISIE,
+    avant:
+      "  if (signeRefuse !== null) return refusDUnSigne(symboles.length, decoupe, signeRefuse);\n",
+    apres: "",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "SEULE la phrase annonce une attente",
+    garde: "annonceDAttente — la liste CLOSE des moyens qui annoncent",
+    fichier: ATTENTE,
+    avant: "  if (!MOYENS_ANNONCES.includes(moyen)) return null;\n",
+    apres: "",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "un moteur inconnu retombe sur le PLUS LENT, jamais sur le plus rapide",
+    garde: "annonceDAttente — le repli sur `MOTEUR_PAR_DEFAUT`",
+    fichier: ATTENTE,
+    avant: "  const mesure = ATTENTE_MESUREE[moteur] ?? ATTENTE_MESUREE[MOTEUR_PAR_DEFAUT];\n",
+    apres: "  const mesure = ATTENTE_MESUREE[moteur] ?? ATTENTE_MESUREE.chromium;\n",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "l'annonce retient le p95 le plus HAUT, jamais une médiane",
+    garde: "annonceDAttente — le choix du quantile annoncé",
+    fichier: ATTENTE,
+    avant: "  const attenteMs = Math.max(...mesure.p95Ms);\n",
+    apres: "  const attenteMs = Math.max(...mesure.p50Ms);\n",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "une feuille de récupération porte une VERSION, ou n'existe pas",
+    garde: "feuilleDeRecuperation — la vérification de la version d'enveloppe",
+    fichier: FEUILLE,
+    avant:
+      "  if (!Number.isInteger(version) || version < 1) {\n" +
+      `    throw new Error("Une feuille de récupération porte une version d'enveloppe entière et ≥ 1.");\n` +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "un champ de version VIDE rend l'AVEU, jamais un silence",
+    garde: "ancreSaisie — le cas du champ vide, qui n'est pas une erreur mais un CHOIX",
+    fichier: INTERFACE,
+    avant: '  if (brut === "") return { version: null, valide: true, aveu: AVEU_SANS_ANCRE };\n',
+    apres: '  if (brut === "") return { version: null, valide: true, aveu: "" };\n',
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "une version qui n'est pas un entier est REFUSÉE, jamais corrigée",
+    garde: "ancreSaisie — le motif de l'ancre, et sa borne basse",
+    fichier: INTERFACE,
+    avant: "  if (!/^\\d{1,15}$/.test(brut) || Number(brut) < 1) {\n",
+    apres: "  if (false) {\n",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "un type d'emplacement INCONNU est dit, jamais confondu avec un moyen servi",
+    garde: "moyensProposes — la branche des types que le catalogue ne sert pas",
+    fichier: MOYENS,
+    avant: "    if (servi === undefined) {\n",
+    apres: "    if (servi === undefined && false) {\n",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  {
+    nom: "un moyen inconnu n'est jamais servi par approximation",
+    garde: "moyenParNom — l'égalité stricte du nom, et son `null`",
+    fichier: MOYENS,
+    avant: "  return Object.values(MOYENS_SERVIS).find((moyen) => moyen.nom === nom) ?? null;\n",
+    apres:
+      "  return (\n" +
+      "    Object.values(MOYENS_SERVIS).find((moyen) => moyen.nom === nom) ??\n" +
+      "    Object.values(MOYENS_SERVIS)[0]\n" +
+      "  );\n",
+    epreuves: [EPREUVE_DEVERROUILLAGE],
   },
 ]);
 

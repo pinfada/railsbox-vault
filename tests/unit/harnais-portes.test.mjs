@@ -353,25 +353,17 @@ test("le modèle de référence n'est pas franchi non plus : sa porte à lui res
  * `clesDeDeverrouillageDuHarnais` — si bien que #161 a fait franchir cette porte au PREMIER fichier
  * de PRODUIT publié du dépôt sans qu'aucun cliquet ne bouge.
  *
- * La liste sépare deux natures, et la distinction est tout l'intérêt de l'inscription :
+ * **Il n'y en a de nouveau AUCUN de produit, et c'est ce que #162 a livré.** L'inscription de
+ * `public/runtime-worker.mjs` portait la date de sa sortie — « Provisoire : #162 le retire » —, et
+ * l'épreuve du bas EXIGE désormais que la liste des appelants de produit soit VIDE. Ce n'est pas la
+ * même propriété qu'« un seul » : celle-là tolérait qu'il en reste un, celle-ci n'en tolère aucun,
+ * et c'est ce que le passage de `SEC-ORIGIN-001` à « exercé sans réserve » suppose.
  *
- *  - les BANCS et les outils de mesure, qui n'ont jamais prétendu être autre chose ;
- *  - `public/runtime-worker.mjs`, qui est du PRODUIT. Il est inscrit avec la date de sa sortie :
- *    la tranche 2 (#162) remplace le geste du harnais par le déverrouillage réel, et l'inscription
- *    devra disparaître avec lui. Le cliquet rougira au seul moment où il sert — celui où une
- *    SECONDE ligne de produit voudrait entrer.
+ * Ce qui reste sont des BANCS et des outils de mesure, qui n'ont jamais prétendu être autre chose.
  *
  * @type {{ fichier: string, produit?: boolean, motif: string }[]}
  */
 const APPELANTS_DU_HARNAIS = [
-  {
-    fichier: "public/runtime-worker.mjs",
-    produit: true,
-    motif:
-      "Worker de confiance de la coquille de PRODUIT (#161, ADR 0028). La coquille n'a pas encore " +
-      "d'interface de saisie : le geste de déverrouillage vient du harnais, sous jeton, et c'est " +
-      "la réserve écrite de `SEC-ORIGIN-001` côté produit. **Provisoire : #162 le retire.**",
-  },
   {
     fichier: "public/vm/cle-du-banc.mjs",
     motif: "distributeur de clés des bancs de `public/vm/`, qui n'ouvre rien lui-même.",
@@ -431,16 +423,28 @@ test("les inscriptions à la porte du harnais sont à jour : aucune périmée", 
   assert.deepEqual(perimees, [], "Ces inscriptions ne couvrent plus rien : retirez-les.");
 });
 
-test("un seul appelant de PRODUIT franchit la porte, et il porte l'issue qui l'en retirera", () => {
+test("AUCUN appelant de PRODUIT ne franchit la porte du harnais (#162, ADR 0029)", () => {
+  // #161 en avait laissé un, inscrit avec la date de sa sortie ; #162 l'a retiré, et la propriété
+  // se durcit avec lui : « un seul » devient « aucun ». Un chemin de produit derrière cette porte
+  // chiffrerait sous trente-deux octets publics, et c'est ce que `SEC-ORIGIN-001` ne peut pas dire
+  // « exercé » en portant.
   const produit = APPELANTS_DU_HARNAIS.filter((entree) => entree.produit === true);
   assert.deepEqual(
     produit.map((entree) => entree.fichier),
-    ["public/runtime-worker.mjs"],
-    "Un second chemin de PRODUIT derrière cette porte demande un ADR, pas une ligne de liste.",
+    [],
+    "Un chemin de PRODUIT derrière cette porte demande un ADR, pas une ligne de liste.",
   );
-  assert.match(
-    produit[0].motif,
-    /#162/,
-    "un appelant de produit doit nommer l'issue qui referme la porte.",
-  );
+});
+
+test("les fichiers de PRODUIT de la coquille ne nomment plus la porte du harnais", async () => {
+  // La garde du dessus porte sur la LISTE ; celle-ci porte sur les FICHIERS, et les deux ne se
+  // remplacent pas : une liste peut être juste et un fichier avoir été oublié dans un balayage
+  // trop étroit. Ces trois-là sont le chemin de produit de la coquille, nommés un par un.
+  for (const fichier of ["public/main.mjs", "public/runtime-worker.mjs", "public/index.html"]) {
+    const contenu = await readFile(path.join(REPO_ROOT, fichier), "utf8");
+    assert.ok(
+      !MOTIF_DU_HARNAIS.test(contenu),
+      `${fichier} appelle de nouveau la porte du harnais : le déverrouillage est un geste de l'utilisateur depuis #162.`,
+    );
+  }
 });

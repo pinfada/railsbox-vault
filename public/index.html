@@ -9,12 +9,100 @@
     <main>
       <h1>RailsBox Vault</h1>
       <p id="coquille-etat" role="status">coquille:demarrage</p>
+
+      <!--
+        Le DÉVERROUILLAGE (#162, ADR 0029). Trois moyens, une ancre de version, une feuille de
+        récupération.
+
+        Aucune mise en forme : ce n'est pas un oubli, c'est le périmètre. Cette tranche livre un
+        CHEMIN DE PRODUIT — les gestes, leurs refus typés, l'attente annoncée, la feuille — et
+        l'apparence relève d'un travail qui n'a pas encore d'issue. Un HTML sémantique sans style
+        se lit au clavier, se lit par un lecteur d'écran, et ne promet rien qu'il ne tienne.
+
+        Aucun <form> : la CSP de la coquille porte « form-action 'none' » (ADR 0022), et un
+        formulaire dont la soumission est refusée par la politique serait une porte peinte sur un
+        mur. Les gestes sont des boutons, et chaque bouton dit ce qu'il fait.
+      -->
+      <section id="deverrouillage" aria-labelledby="deverrouillage-titre">
+        <h2 id="deverrouillage-titre">Ouvrir ce coffre</h2>
+        <p id="deverrouillage-moyens" role="status"></p>
+        <p id="deverrouillage-avertissement" role="status"></p>
+        <p id="deverrouillage-attente" role="status"></p>
+        <p id="deverrouillage-etat" role="status"></p>
+        <p id="deverrouillage-refus" role="alert"></p>
+
+        <h3>Version notée sur la feuille</h3>
+        <p>
+          <label for="ancre-version">Version d'enveloppe (facultatif)</label>
+          <input
+            id="ancre-version"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </p>
+        <p id="ancre-aveu" role="status"></p>
+
+        <h3>Phrase</h3>
+        <p>
+          <label for="saisie-phrase">Phrase de déverrouillage</label>
+          <!--
+            « new-password » plutôt que « off » : les gestionnaires de mots de passe ignorent
+            largement « off », et c'est la valeur qui leur dit de ne PAS proposer d'enregistrer.
+            Ce que le produit peut demander, pas ce qu'il peut garantir — voir ADR 0029, limite 1.
+          -->
+          <input
+            id="saisie-phrase"
+            type="password"
+            autocomplete="new-password"
+            spellcheck="false"
+          />
+        </p>
+        <p><button id="ouvrir-par-phrase" type="button">Ouvrir par la phrase</button></p>
+
+        <h3>Passkey</h3>
+        <p><button id="ouvrir-par-passkey" type="button">Ouvrir par la passkey</button></p>
+
+        <h3>Code de récupération</h3>
+        <p>
+          <label for="saisie-code">Code de récupération</label>
+          <input id="saisie-code" type="text" autocomplete="off" spellcheck="false" />
+        </p>
+        <p id="code-decoupe" role="status"></p>
+        <p id="code-verdict" role="status"></p>
+        <p><button id="ouvrir-par-code" type="button" disabled>Ouvrir par le code</button></p>
+      </section>
+
+      <section id="feuille" aria-labelledby="feuille-titre">
+        <h2 id="feuille-titre">Feuille de récupération</h2>
+        <p id="deverrouillage-sans-recuperation" role="status"></p>
+        <p>
+          <button id="creer-recuperation" type="button">Créer un moyen de récupération</button>
+        </p>
+        <!--
+          Le code est ÉCRIT ICI, et nulle part ailleurs : ni presse-papiers, ni stockage, ni
+          journal, ni relevé. Il est rendu une seule fois par le Worker de confiance (ADR 0025,
+          décision 3) ; un second geste rend VAULT_DERIVATION_CODE_DEJA_RENDU.
+        -->
+        <p id="feuille-code"></p>
+        <p id="feuille-version"></p>
+        <p id="feuille-consigne"></p>
+        <p id="version-a-noter" role="status"></p>
+      </section>
+
       <!--
         Le relevé de la coquille : ce qu'elle a refusé, et dans quel ordre elle a agi. Il ne porte
         aucune donnée du volume — ni nom, ni taille, ni clé — et sert aux épreuves de frontière comme
         à quiconque veut voir ce que la coquille a fait sans ouvrir la console.
       -->
       <pre id="coquille-rapport">{}</pre>
+      <!--
+        Le relevé de l'INTERFACE de déverrouillage. Il dit ce qui a été MONTRÉ — les moyens
+        proposés, l'attente annoncée, le dernier refus, et un BOOLÉEN qui dit qu'un code a été
+        rendu. Il ne porte jamais ce qui a été saisi, ni le code lui-même.
+      -->
+      <pre id="deverrouillage-releve">{}</pre>
       <div id="cadre-applicatif"></div>
     </main>
     <script type="module" src="/main.mjs"></script>

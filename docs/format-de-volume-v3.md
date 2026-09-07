@@ -2058,6 +2058,18 @@ revue de sécurité de la [PR #166](https://github.com/pinfada/railsbox-vault/pu
 | `VAULT_COQUILLE_CORRELATION_DUPLIQUEE` | cet identifiant est déjà en vol ; le réemployer rendrait la réponse ambiguë                  |
 | `VAULT_COQUILLE_TROP_DE_REQUETES`      | plus de requêtes en vol que la borne nommée. La coquille refuse ; elle ne met pas en réserve |
 
+**Le canal PRIVILÉGIÉ, et l'ordre des gestes qu'il porte** (#162,
+[ADR 0029](decisions/0029-deverrouillage-dans-la-coquille.md)). Un seul code, et il ne parvient
+jamais au document applicatif — qui reçoit `VAULT_COQUILLE_RECUPERATION_REFUSEE` bien avant, sur le
+type du message et sans qu'aucun état ne soit consulté.
+
+| Code                               | Ce qu'il constate                                                                                                                                         |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VAULT_COQUILLE_VOLUME_VERROUILLE` | un geste qui exige un volume OUVERT a été demandé sur un volume qui ne l'est pas — créer un moyen de récupération exige de détenir déjà une clé qui ouvre |
+
+Le dire par un code plutôt que par un bouton grisé a une raison : un bouton grisé n'apprend rien à
+qui l'atteint autrement, et l'épreuve n'a rien à mesurer.
+
 **Ce qui ne franchit le port dans aucun sens** : `VAULT_COQUILLE_CAPACITE_DANS_UN_MESSAGE` sert des
 deux côtés. Vers l'application, il est levé par la coquille **contre elle-même** — une réponse
 allait transporter autre chose que des données (un port, un tampon, une `CryptoKey`, un handle, une
