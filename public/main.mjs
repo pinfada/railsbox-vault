@@ -778,6 +778,11 @@ function terminer(etat, texte) {
 }
 
 demarrer().catch((erreur) => {
+  // Une MORT constatée a déjà tenu sa conduite, et elle a déjà écrit l'état de la coquille. Le
+  // démarrage qu'elle interrompt remonte ensuite ici — `rafraichirLInventaire` rejette, comme tout
+  // geste après la mort —, et écraser « worker-mort » par « erreur » ferait perdre au relevé la
+  // seule chose qu'il ait à dire de ce moment-là.
+  if (mortDuWorker !== null) return;
   // Un compteur, comme partout ailleurs dans ce relevé : il portait un `push` sur un NOMBRE depuis
   // que la revue de la PR #166 a remplacé les tableaux par des compteurs, si bien que l'unique
   // chemin d'erreur du démarrage levait au lieu de rendre son état. Le défaut ne se voyait qu'au

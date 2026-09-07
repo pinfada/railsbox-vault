@@ -21,14 +21,20 @@ import {
 } from "/src/coquille/contrat-de-messages.mjs";
 
 const noeudEtat = document.querySelector("#document-applicatif-etat");
+const boutonEtat = document.querySelector("#document-applicatif-demander");
 const noeudRapport = document.querySelector("#document-applicatif-rapport");
 
 const rapport = {
   portRecu: false,
   etat: null,
   barrieres: null,
+  /** Le nombre de questions d'état posées. Un compte, jamais la liste de ce qui a été demandé. */
+  questions: 0,
   refus: [],
 };
+
+/** Compteur des corrélations de ce document. Il ne quitte jamais l'origine applicative. */
+let correlationSuivante = 0;
 
 function publier() {
   noeudRapport.textContent = JSON.stringify(rapport, null, 2);
@@ -62,11 +68,32 @@ window.addEventListener("message", (event) => {
   rapport.portRecu = true;
   publier();
   ecouterLePort(port);
-  // Chaque requête porte son identifiant de CORRÉLATION, et la coquille le rend tel quel : c'est
-  // ce qui apparie N réponses à N requêtes, et ce qui interdit qu'une question reste muette quand
-  // plusieurs sont en vol.
-  port.postMessage(enveloppeDeMessage(TYPES_APPLICATIFS.etat, { correlation: "etat-1" }));
+  demanderLEtat(port);
+  // Le geste-requête est REJOUABLE, et c'est ce qu'un éditeur d'application écrira : l'état d'un
+  // coffre change — il s'ouvre, il se referme, son Worker meurt —, et un document qui ne
+  // demanderait qu'une fois afficherait pour toujours ce qu'il a appris au démarrage. C'est aussi
+  // ce qui rend LISIBLE, depuis le cadre, la conduite de la coquille après la mort de son Worker :
+  // la question rend `verrouille`, et non un silence (#163, ADR 0030, décision 3).
+  boutonEtat?.addEventListener("click", () => demanderLEtat(port));
 });
+
+/**
+ * DEMANDE l'état, sous une corrélation neuve.
+ *
+ * Chaque requête porte son identifiant de CORRÉLATION, et la coquille le rend tel quel : c'est ce
+ * qui apparie N réponses à N requêtes, et ce qui interdit qu'une question reste muette quand
+ * plusieurs sont en vol. Le réemployer ferait rendre `VAULT_COQUILLE_CORRELATION_DUPLIQUEE`.
+ *
+ * @param {MessagePort} port
+ */
+function demanderLEtat(port) {
+  correlationSuivante += 1;
+  rapport.questions += 1;
+  publier();
+  port.postMessage(
+    enveloppeDeMessage(TYPES_APPLICATIFS.etat, { correlation: `etat-${correlationSuivante}` }),
+  );
+}
 
 parent.postMessage(enveloppeDeMessage(TYPES_APPLICATIFS.annonce), "*");
 document.documentElement.dataset.documentApplicatif = "annonce";
