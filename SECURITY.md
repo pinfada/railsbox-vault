@@ -61,10 +61,13 @@ modèle de menace s'écrivent au même niveau.
 hébergement et son relais. Concrètement : une application servie par l'origine applicative n'obtient
 qu'un `MessagePort` transféré **une fois**, après vérification de l'ordre, du type, de l'origine et
 de la fenêtre émettrice ; ce port n'accepte qu'un geste (l'état du volume) et refuse les dix gestes
-de la liste de #24 par un code **typé**, jamais par un silence ; il ne transporte ni clé, ni handle,
-ni descripteur, ni capacité transférable ; le canal privilégié coquille ↔ Worker n'est atteignable
-par aucun message ; et l'origine EST l'identité — aucun champ du contrat ne nomme une application
-(ADR 0018 § 4).
+de la liste de #24 par un code **typé**, jamais par un silence — chaque requête admise porte un
+identifiant de corrélation, si bien que N requêtes en vol reçoivent N réponses appariées ; il ne
+transporte, **dans aucun sens**, ni clé, ni handle, ni descripteur, ni capacité transférable ; le
+canal privilégié coquille ↔ Worker n'est atteignable par aucun message, **même en présentant le
+jeton du harnais** — qui est public, que la fixture lit chez elle, et qu'elle tente ensuite
+d'employer par tous les chemins qu'elle a ; et l'origine EST l'identité — aucun champ du contrat ne
+nomme une application (ADR 0018 § 4).
 
 **Ce qu'elle ne défend pas**, et qui compte autant :
 
@@ -79,7 +82,13 @@ par aucun message ; et l'origine EST l'identité — aucun champ du contrat ne n
   l'appareil par un chemin que le produit ne maîtrise pas ;
 - **deux applications partageant l'origine applicative** : mesuré par #46 (quatorze sondes sur
   dix-sept aboutissent, effacement des données et désinscription du Service Worker compris), accepté
-  tant qu'une seule application est publiée (ADR 0018 décision 3).
+  tant qu'une seule application est publiée (ADR 0018 décision 3) ;
+- **le TEMPS de la coquille.** Un document applicatif hostile peut poster autant de messages qu'il
+  veut, et chacun est décodé et compté : le fil d'exécution que la coquille partage avec lui n'est
+  pas défendu, et ne peut pas l'être — un document encadré occupe de toute façon le processus qui
+  l'héberge. Ce que la coquille borne est sa MÉMOIRE, et cette moitié-là est fermée et éprouvée : le
+  relevé ne recopie rien du guest, la file d'appariement a une borne nommée, et un type au-delà de
+  128 caractères est refusé au décodage (revue de sécurité de la PR #166, ADR 0028).
 
 **Aucun cookie.** La coquille n'en pose aucun, et c'est une propriété éprouvée plutôt qu'une
 abstention : après un cycle complet, le bocal du contexte est vide, `document.cookie` est vide sur

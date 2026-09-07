@@ -17,6 +17,7 @@ import test from "node:test";
 
 import {
   CONTRAT_COQUILLE,
+  TAILLE_MAXIMALE_DU_TYPE,
   TYPES_APPLICATIFS,
   TYPES_PRIVILEGIES,
   decoderMessage,
@@ -116,6 +117,26 @@ test("le décodeur refuse un type absent ou qui n'est pas une chaîne", () => {
     assert.equal(verdict.ok, false);
     assert.equal(verdict.code, CODES_REFUS_COQUILLE.messageMalforme);
   }
+});
+
+test("un type au-delà de la borne n'est pas un type : c'est une charge utile déguisée", () => {
+  // Constat 3 de la revue de la PR #166 : quarante messages dont le seul champ `type` faisait
+  // 200 000 caractères. Le contrat ne bornait que la PROFONDEUR d'un corps, jamais sa taille. Le
+  // refuser au DÉCODAGE est ce qui empêche que la chaîne soit recopiée plus loin.
+  const juste = decoderMessage({
+    contrat: CONTRAT_COQUILLE.id,
+    version: 1,
+    type: "v".repeat(TAILLE_MAXIMALE_DU_TYPE),
+  });
+  assert.equal(juste.ok, true, "la borne elle-même doit être admise");
+
+  const trop = decoderMessage({
+    contrat: CONTRAT_COQUILLE.id,
+    version: 1,
+    type: "v".repeat(TAILLE_MAXIMALE_DU_TYPE + 1),
+  });
+  assert.equal(trop.ok, false);
+  assert.equal(trop.code, CODES_REFUS_COQUILLE.messageMalforme);
 });
 
 test("un message bien formé se décode, et rend son type", () => {

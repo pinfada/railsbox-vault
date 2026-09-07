@@ -59,8 +59,30 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
   annonceFenetre: "VAULT_COQUILLE_ANNONCE_FENETRE",
   annonceUnique: "VAULT_COQUILLE_ANNONCE_UNIQUE",
 
+  // --- La CORRÉLATION, qui interdit qu'une requête reste muette (revue de #166) ----------------
+  /**
+   * La requête ne porte pas d'identifiant de corrélation admissible.
+   *
+   * Sans lui, deux requêtes en vol se disputent une seule réponse et l'une des deux reste MUETTE —
+   * ce que la revue de sécurité de la PR #166 a mesuré, et ce que « un refus typé, jamais un
+   * silence » interdit. L'exiger est la seule façon d'apparier N réponses à N requêtes.
+   */
+  correlationAbsente: "VAULT_COQUILLE_CORRELATION_ABSENTE",
+  /** Un identifiant déjà en vol : le réemployer rendrait la réponse ambiguë pour l'appelant. */
+  correlationDupliquee: "VAULT_COQUILLE_CORRELATION_DUPLIQUEE",
+  /** Plus de requêtes en vol que la borne nommée : la coquille refuse au lieu de gonfler. */
+  tropDeRequetes: "VAULT_COQUILLE_TROP_DE_REQUETES",
+
   // --- Ce qui ne doit jamais franchir le port restreint ---------------------------------------
-  /** Une réponse qui transporterait un handle, une clé ou une capacité transférable. */
+  /**
+   * Une capacité dans un message, DANS LES DEUX SENS.
+   *
+   * Vers l'application : une réponse qui transporterait un handle, une clé ou un transférable — un
+   * défaut de programmation de la coquille, et `sansCapacite` lève avant l'envoi. Vers la coquille :
+   * un message du document applicatif qui TRANSFÈRE un port ou un tampon. Rien n'en était retenu,
+   * mais rien n'était refusé non plus, et la revue de #166 l'a relevé : un canal qu'on n'a pas
+   * décidé d'ouvrir doit être fermé nommément.
+   */
   capaciteDansUnMessage: "VAULT_COQUILLE_CAPACITE_DANS_UN_MESSAGE",
 });
 
@@ -93,8 +115,14 @@ const MESSAGES = Object.freeze({
   [CODES_REFUS_COQUILLE.annonceOrigine]: "Annonce refusée : origine inattendue.",
   [CODES_REFUS_COQUILLE.annonceFenetre]: "Annonce refusée : fenêtre émettrice inattendue.",
   [CODES_REFUS_COQUILLE.annonceUnique]: "Annonce refusée : le port restreint a déjà été transféré.",
+  [CODES_REFUS_COQUILLE.correlationAbsente]:
+    "Requête refusée : il lui faut un identifiant de corrélation, pour que sa réponse lui revienne.",
+  [CODES_REFUS_COQUILLE.correlationDupliquee]:
+    "Requête refusée : cet identifiant de corrélation est déjà en vol.",
+  [CODES_REFUS_COQUILLE.tropDeRequetes]:
+    "Requête refusée : trop de requêtes en vol. La coquille borne, elle ne met pas en réserve.",
   [CODES_REFUS_COQUILLE.capaciteDansUnMessage]:
-    "Réponse retenue : elle transportait autre chose que des données.",
+    "Message retenu : il transportait autre chose que des données.",
 });
 
 /** Tous les codes, triés. Sert au cliquet d'exhaustivité et aux épreuves. */

@@ -26,6 +26,7 @@ import { join } from "node:path";
 
 import { chromium, firefox, webkit } from "@playwright/test";
 
+import { origineApplicativeDe } from "../src/coquille/origines-de-la-coquille.mjs";
 import { adresseDuManifesteEpingle } from "../src/v86-adresses.mjs";
 import { enTetesDePublication } from "./publier-en-tetes.mjs";
 import { empreinte } from "./publier-inventaire.mjs";
@@ -404,8 +405,16 @@ export function verdict(mesure) {
       }`,
     );
   }
-  if (!["prete", "sans-cadre"].includes(mesure.demarrage)) {
-    motifs.push(`démarrage de la coquille : ${mesure.demarrage}`);
+  // `sans-cadre` n'est conforme QUE si la règle d'origine ne sait rien faire de l'origine servie.
+  // L'accepter inconditionnellement — ce que faisait la version d'avant — empêchait le témoin de
+  // distinguer « la frontière tient » de « la frontière n'a jamais été exercée » (revue de la PR
+  // #166, constat 9). Sur les origines de `publier:check` la règle CONCLUT, et `prete` est exigée.
+  const attendus =
+    origineApplicativeDe(ORIGINE_COQUILLE) === null ? ["prete", "sans-cadre"] : ["prete"];
+  if (!attendus.includes(mesure.demarrage)) {
+    motifs.push(
+      `démarrage de la coquille : ${mesure.demarrage} (attendu : ${attendus.join(" ou ")})`,
+    );
   }
   if (mesure.openerAvecCoop !== true) motifs.push("COOP servi mais `window.opener` a survécu");
   if (mesure.openerSansCoop !== false) {

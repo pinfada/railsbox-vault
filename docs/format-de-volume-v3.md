@@ -2046,13 +2046,36 @@ ordre, chacune nécessaire :
 | `VAULT_COQUILLE_ANNONCE_FENETRE` | fenêtre émettrice inattendue : une iframe imbriquée porte la MÊME origine que le cadre |
 | `VAULT_COQUILLE_ANNONCE_UNIQUE`  | le port restreint a déjà été transféré ; il ne l'est qu'une fois                       |
 
-**Ce qui ne franchit jamais le port** : `VAULT_COQUILLE_CAPACITE_DANS_UN_MESSAGE` est levé par la
-coquille **contre elle-même** — il constate qu'une réponse allait transporter autre chose que des
-données (un port, un tampon, une `CryptoKey`, un handle, une fonction). Il ne parvient donc jamais
-au document applicatif : c'est un défaut de programmation de la coquille, pas une entrée hostile.
+**La CORRÉLATION, et ce qu'elle ferme.** Une requête admise porte un identifiant qui lui revient tel
+quel : c'est lui qui apparie N réponses à N requêtes. Sans lui, deux requêtes en vol se disputaient
+une seule réponse et l'une des deux restait **muette** — sur le seul geste que la coquille admette,
+et alors que « jamais un silence » est écrit quatre fois dans ce dossier. C'est le constat 2 de la
+revue de sécurité de la [PR #166](https://github.com/pinfada/railsbox-vault/pull/166).
+
+| Code                                   | Ce qu'il constate                                                                            |
+| -------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `VAULT_COQUILLE_CORRELATION_ABSENTE`   | pas d'identifiant admissible : une chaîne de 1 à 64 caractères `[A-Za-z0-9_-]`               |
+| `VAULT_COQUILLE_CORRELATION_DUPLIQUEE` | cet identifiant est déjà en vol ; le réemployer rendrait la réponse ambiguë                  |
+| `VAULT_COQUILLE_TROP_DE_REQUETES`      | plus de requêtes en vol que la borne nommée. La coquille refuse ; elle ne met pas en réserve |
+
+**Ce qui ne franchit le port dans aucun sens** : `VAULT_COQUILLE_CAPACITE_DANS_UN_MESSAGE` sert des
+deux côtés. Vers l'application, il est levé par la coquille **contre elle-même** — une réponse
+allait transporter autre chose que des données (un port, un tampon, une `CryptoKey`, un handle, une
+fonction) —, et ne parvient donc jamais au document applicatif. Vers la coquille, il refuse un
+message du document applicatif qui **transfère** un port ou un tampon : rien n'en était retenu, mais
+rien n'était refusé non plus, et un canal qu'on n'a pas décidé d'ouvrir doit être fermé nommément
+(constat 7 de la même revue).
+
 `tests/unit/coquille-contrat.test.mjs` › « `sansCapacite` laisse passer des données et REFUSE tout
-ce qui est une capacité » le mesure, et `tools/muter-gardes-coquille.mjs` montre que la garde sait
-rougir.
+ce qui est une capacité » mesure la première moitié, `tests/browser/coquille-frontiere.spec.mjs` la
+seconde, et `tools/muter-gardes-coquille.mjs` montre que les gardes savent rougir.
+
+**Deux bornes nommées, et pourquoi elles sont dans le décodeur.** Un `type` au-delà de 128
+caractères n'est pas un type : c'est une charge utile déguisée, et le refuser au décodage est ce qui
+l'empêche d'être recopiée plus loin. Un type refusé revient à son émetteur **tronqué** à 64
+caractères. Le motif est le constat 3 de la revue : quarante messages dont le seul champ `type`
+faisait 200 000 caractères faisaient passer le relevé de la coquille de 606 à 8 003 678 caractères.
+Le relevé ne recopie plus rien du guest — il COMPTE, par code, et l'ensemble des codes est clos.
 
 Épreuves : `tests/unit/coquille-admission.test.mjs`, `tests/unit/coquille-contrat.test.mjs` et
 `tests/browser/coquille-frontiere.spec.mjs` (trois moteurs, application malveillante, témoin positif

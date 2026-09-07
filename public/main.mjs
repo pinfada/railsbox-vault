@@ -78,8 +78,24 @@ const rapport = {
   // OBSERVABLE plutôt que promis : l'épreuve lit une suite, pas une affirmation.
   journal: [],
   gestesAdmis: GESTES_ADMIS.map(({ type }) => type),
-  annoncesRefusees: [],
-  requetesRefusees: [],
+  // Les refus sont COMPTÉS par code, jamais recopiés.
+  //
+  // Ils l'étaient : chaque refus poussait dans un tableau non borné le type reçu, et le relevé
+  // entier était re-sérialisé à chaque message. La revue de la PR #166 a fait passer ce nœud de
+  // 606 à 8 003 678 caractères avec quarante messages, et rejouer trois cents annonces suffisait à
+  // faire enfler l'autre tableau. C'était un déni de service de la base de confiance — celle qui
+  // tient le handle exclusif du volume —, commandé depuis exactement l'adversaire que l'ADR 0028
+  // dit défendre.
+  //
+  // La correction n'est pas une borne posée sur une recopie : c'est l'absence de recopie. Les
+  // codes forment un ensemble CLOS et fini (`refus-de-coquille.mjs`), si bien que ces deux objets
+  // ont une taille maximale connue à l'écriture, quoi qu'on leur envoie. `annoncesRefusees` et
+  // `requetesRefusees` restent des COMPTES totaux, pour qu'un relevé dise combien de fois sans
+  // dire quoi.
+  refusDAnnonce: {},
+  refusDeRequete: {},
+  annoncesRefusees: 0,
+  requetesRefusees: 0,
   etat: ETATS_DU_VOLUME.demarrage,
   barrieres: 0,
   // Ce que l'assemblage COÛTE, en millisecondes depuis l'évaluation de ce module. Deux grandeurs,
@@ -104,6 +120,16 @@ function publier() {
   noeudRapport.textContent = JSON.stringify(rapport, null, 2);
 }
 
+/**
+ * Compte un refus, par code. Rien d'autre n'est retenu de ce que le guest a envoyé.
+ *
+ * @param {Record<string, number>} compteurs
+ * @param {string} code
+ */
+function compter(compteurs, code) {
+  compteurs[code] = (compteurs[code] ?? 0) + 1;
+}
+
 // --- Étape 1 : la coquille refuse d'être encadrée -------------------------------------------------
 
 // `frame-ancestors 'none'` le dit déjà au navigateur, et c'est la vraie défense. Celle-ci existe
@@ -118,6 +144,13 @@ let cadre = null;
 let portRestreint = null;
 
 window.addEventListener("message", (event) => {
+  // Une annonce ne TRANSFÈRE rien. Un document qui joindrait un port ou un tampon à son annonce
+  // ouvrirait un canal que personne n'a décidé d'ouvrir : la coquille ne s'en servait pas, mais ne
+  // le refusait pas non plus, et la revue de #166 l'a relevé. Le refuser d'abord, c'est aussi ne
+  // jamais tenir une référence sur ce qui a été transféré.
+  if (event.ports.length > 0) {
+    return refuserLAnnonce(CODES_REFUS_COQUILLE.capaciteDansUnMessage);
+  }
   const decode = decoderMessage(event.data);
   const verdict = evaluerAnnonce({
     canalPrivilegiePret: rapport.canalPrivilegie === "etabli",
@@ -127,13 +160,16 @@ window.addEventListener("message", (event) => {
     origineAttendue: rapport.origineApplicative,
     dejaOctroye: rapport.portOctroye,
   });
-  if (!verdict.accepte) {
-    rapport.annoncesRefusees.push({ code: verdict.code, origine: event.origin });
-    publier();
-    return;
-  }
+  if (!verdict.accepte) return refuserLAnnonce(verdict.code);
   octroyerLePortRestreint(event.source, rapport.origineApplicative);
 });
+
+/** @param {string} code */
+function refuserLAnnonce(code) {
+  rapport.annoncesRefusees += 1;
+  compter(rapport.refusDAnnonce, code);
+  publier();
+}
 
 // --- Étape 3 : le canal privilégié, avant tout document applicatif ---------------------------------
 
@@ -142,7 +178,17 @@ const worker = new Worker(new URL("./runtime-worker.mjs", import.meta.url), {
   name: "vault-coquille-confiance",
 });
 const privilegie = new MessageChannel();
-let attenteDEtat = null;
+
+/**
+ * Les demandes d'état EN VOL vers le Worker, dans l'ordre où elles sont parties.
+ *
+ * Une FILE, et non une variable : le Worker traite le canal privilégié en série
+ * (`runtime-worker.mjs`) et répond dans l'ordre, si bien que la plus ancienne demande est toujours
+ * celle que la prochaine réponse sert. Une variable unique écrasait la précédente, et la réponse
+ * qui lui revenait était jetée faute de destinataire — c'est le SILENCE que la revue de la PR #166
+ * a mesuré sur le seul geste que la coquille admette.
+ */
+const demandesEnVol = [];
 
 privilegie.port1.addEventListener("message", (event) => surMessagePrivilegie(event.data));
 privilegie.port1.start();
@@ -156,11 +202,8 @@ function surMessagePrivilegie(donnee) {
     rapport.etat = decode.message.etat;
     rapport.barrieres = decode.message.barrieres;
     publier();
-    if (attenteDEtat) {
-      const rendre = attenteDEtat;
-      attenteDEtat = null;
-      rendre(chargeUtileDEtat({ etat: rapport.etat, barrieres: rapport.barrieres }));
-    }
+    const rendre = demandesEnVol.shift();
+    if (rendre) rendre(chargeUtileDEtat({ etat: rapport.etat, barrieres: rapport.barrieres }));
     return;
   }
   if (decode.type === TYPES_PRIVILEGIES.barriere) {
@@ -170,15 +213,16 @@ function surMessagePrivilegie(donnee) {
     return;
   }
   if (decode.type === TYPES_PRIVILEGIES.refus) {
-    rapport.requetesRefusees.push({ code: decode.message.code, recu: "canal-privilegie" });
+    rapport.requetesRefusees += 1;
+    compter(rapport.refusDeRequete, decode.message.code);
     publier();
   }
 }
 
-/** Aller-retour vers le Worker de confiance. Une seule question en vol à la fois. */
+/** Aller-retour vers le Worker de confiance. Chaque demande a sa place dans la file. */
 function demanderLEtat() {
   return new Promise((rendre) => {
-    attenteDEtat = rendre;
+    demandesEnVol.push(rendre);
     privilegie.port1.postMessage(enveloppeDeMessage(TYPES_PRIVILEGIES.etat));
   });
 }
@@ -195,7 +239,7 @@ function demanderLEtat() {
 function octroyerLePortRestreint(destinataire, origineCible) {
   const restreint = new MessageChannel();
   restreint.port1.addEventListener("message", (event) =>
-    surRequeteApplicative(restreint.port1, event.data),
+    surRequeteApplicative(restreint.port1, event),
   );
   restreint.port1.start();
   portRestreint = restreint.port1;
@@ -208,31 +252,89 @@ function octroyerLePortRestreint(destinataire, origineCible) {
 }
 
 /**
+ * Nombre maximal de requêtes du document applicatif servies EN MÊME TEMPS.
+ *
+ * Trente-deux, et la valeur se justifie par ce qu'elle borne plutôt que par un usage : un document
+ * loyal en a une en vol — il attend sa réponse avant de reposer sa question —, et le seul cas qui
+ * en demanderait plusieurs est un rendu qui interroge en parallèle, ce qu'aucun usage relevé ne
+ * fait. La borne existe donc contre l'autre cas : sans elle, la file d'appariement grandirait au
+ * rythme où le guest poste, ce qui rouvrirait par la porte de derrière le déni de service que le
+ * relevé borné ferme par la porte de devant. Au-delà, la coquille REFUSE — elle ne met pas en
+ * réserve.
+ */
+const REQUETES_EN_VOL_MAXIMUM = 32;
+
+/** Les corrélations en vol. Une clé bornée, un ensemble borné : la mémoire l'est aussi. */
+const correlationsEnVol = new Set();
+
+/**
  * Traite un message du document applicatif. Le refus est calculé AVANT toute consultation d'état :
  * il ne dépend que du type reçu, et deux appareils dans des états différents rendent le même code.
  *
+ * **Chaque requête admise reçoit SA réponse**, appariée par l'identifiant de corrélation qu'elle
+ * porte et que la coquille rend tel quel. C'est la correction du constat 2 de la revue de la PR
+ * #166 : deux requêtes en vol se disputaient une seule réponse, et l'une des deux restait muette —
+ * sur le SEUL geste que la coquille admette, et alors que « un refus typé, jamais un silence » est
+ * écrit quatre fois dans le dossier.
+ *
  * @param {MessagePort} port
- * @param {unknown} donnee
+ * @param {MessageEvent} event
  */
-function surRequeteApplicative(port, donnee) {
-  const verdict = evaluerRequete(donnee);
-  if (!verdict.admise) {
-    rapport.requetesRefusees.push({ code: verdict.code, recu: verdict.recu });
-    publier();
-    port.postMessage(
-      enveloppeDeMessage(TYPES_APPLICATIFS.refus, {
-        code: verdict.code,
-        message: messageDeRefus(verdict.code),
-        recu: verdict.recu,
-      }),
-    );
-    return;
+function surRequeteApplicative(port, event) {
+  // Le port restreint ne reçoit AUCUN transférable. Refusé avant tout décodage : c'est aussi la
+  // façon de ne jamais tenir une référence sur ce qui aurait été transféré.
+  if (event.ports.length > 0) {
+    return refuserLaRequete(port, CODES_REFUS_COQUILLE.capaciteDansUnMessage, null, null);
   }
+  const verdict = evaluerRequete(event.data);
+  if (!verdict.admise) {
+    return refuserLaRequete(port, verdict.code, verdict.recu, verdict.correlation);
+  }
+  if (correlationsEnVol.has(verdict.correlation)) {
+    return refuserLaRequete(
+      port,
+      CODES_REFUS_COQUILLE.correlationDupliquee,
+      verdict.type,
+      verdict.correlation,
+    );
+  }
+  if (correlationsEnVol.size >= REQUETES_EN_VOL_MAXIMUM) {
+    return refuserLaRequete(
+      port,
+      CODES_REFUS_COQUILLE.tropDeRequetes,
+      verdict.type,
+      verdict.correlation,
+    );
+  }
+  correlationsEnVol.add(verdict.correlation);
   demanderLEtat().then((charge) => {
+    correlationsEnVol.delete(verdict.correlation);
     port.postMessage(
-      enveloppeDeMessage(TYPES_APPLICATIFS.etatReponse, sansCapacite({ ...charge })),
+      enveloppeDeMessage(
+        TYPES_APPLICATIFS.etatReponse,
+        sansCapacite({ correlation: verdict.correlation, ...charge }),
+      ),
     );
   });
+}
+
+/**
+ * Rend un refus TYPÉ à l'application, et le COMPTE. Ce qui repart est ce que l'émetteur a envoyé,
+ * borné ; ce qui reste dans la coquille est un compteur.
+ *
+ * @param {MessagePort} port
+ * @param {string} code
+ * @param {string | null} recu
+ * @param {string | null} correlation
+ */
+function refuserLaRequete(port, code, recu, correlation) {
+  rapport.requetesRefusees += 1;
+  compter(rapport.refusDeRequete, code);
+  publier();
+  const corps = { code, message: messageDeRefus(code) };
+  if (recu !== null) corps.recu = recu;
+  if (correlation !== null) corps.correlation = correlation;
+  port.postMessage(enveloppeDeMessage(TYPES_APPLICATIFS.refus, corps));
 }
 
 /** Pousse l'annonce de barrière vers l'application, si un port lui a été octroyé. */

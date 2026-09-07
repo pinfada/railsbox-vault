@@ -105,7 +105,9 @@ export const MUTATIONS = Object.freeze([
     garde: "evaluerRequete — la consultation de la liste de refus",
     fichier: ADMISSION,
     avant:
-      "  if (REFUSES.has(type)) return { admise: false, code: REFUSES.get(type), recu: type };\n",
+      "  if (REFUSES.has(type)) {\n" +
+      "    return { admise: false, code: REFUSES.get(type), recu: typeRendu(type), correlation };\n" +
+      "  }\n",
     apres: "",
     epreuves: [EPREUVE_ADMISSION],
   },
@@ -115,7 +117,12 @@ export const MUTATIONS = Object.freeze([
     fichier: ADMISSION,
     avant:
       "  if (estTypePrivilegie(type)) {\n" +
-      "    return { admise: false, code: CODES_REFUS_COQUILLE.portPrivilegie, recu: type };\n" +
+      "    return {\n" +
+      "      admise: false,\n" +
+      "      code: CODES_REFUS_COQUILLE.portPrivilegie,\n" +
+      "      recu: typeRendu(type),\n" +
+      "      correlation,\n" +
+      "    };\n" +
       "  }\n",
     apres: "",
     epreuves: [EPREUVE_ADMISSION],
@@ -124,8 +131,16 @@ export const MUTATIONS = Object.freeze([
     nom: "la liste d'admission est une LISTE, pas un accueil",
     garde: "evaluerRequete — le filtre `REQUETES_ADMISES`",
     fichier: ADMISSION,
-    avant: "  if (REQUETES_ADMISES.has(type)) return { admise: true, type, message };\n",
-    apres: "  return { admise: true, type, message };\n",
+    avant:
+      "  if (!REQUETES_ADMISES.has(type)) {\n" +
+      "    return {\n" +
+      "      admise: false,\n" +
+      "      code: CODES_REFUS_COQUILLE.typeInconnu,\n" +
+      "      recu: typeRendu(type),\n" +
+      "      correlation,\n" +
+      "    };\n" +
+      "  }\n",
+    apres: "",
     epreuves: [EPREUVE_ADMISSION],
   },
   {
@@ -182,6 +197,95 @@ export const MUTATIONS = Object.freeze([
     fichier: ORIGINES,
     avant: "  if (url.hostname.startsWith(PREFIXE_APPLICATIF)) return null;\n",
     apres: "",
+    epreuves: [EPREUVE_ADMISSION],
+  },
+  {
+    nom: "un chemin qui n'est pas un chemin n'en est pas un",
+    garde: "cheminApplicatifAdmis — l'exigence d'une barre oblique initiale",
+    fichier: ORIGINES,
+    avant: '  if (!chemin.startsWith("/")) return null;\n',
+    apres: "",
+    epreuves: [EPREUVE_ADMISSION],
+  },
+  {
+    nom: "un séparateur inversé ne fabrique pas un chemin",
+    garde: "cheminApplicatifAdmis — le refus de la barre oblique inversée",
+    fichier: ORIGINES,
+    avant: '  if (chemin.includes("\\\\")) return null;\n',
+    apres: "",
+    epreuves: [EPREUVE_ADMISSION],
+  },
+  {
+    nom: "un type qui n'est pas une chaîne n'est pas un type",
+    garde: "decoderMessage — la nature du type",
+    fichier: CONTRAT,
+    avant:
+      '  if (typeof message.type !== "string" || message.type.length === 0) {\n' +
+      "    return { ok: false, code: CODES_REFUS_COQUILLE.messageMalforme };\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_CONTRAT],
+  },
+  {
+    nom: "un type au-delà de la borne est une charge utile déguisée",
+    garde: "decoderMessage — la borne de longueur du type",
+    fichier: CONTRAT,
+    avant:
+      "  if (message.type.length > TAILLE_MAXIMALE_DU_TYPE) {\n" +
+      "    return { ok: false, code: CODES_REFUS_COQUILLE.messageMalforme };\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_CONTRAT],
+  },
+  {
+    nom: "une requête admise ne porte aucun champ hors du contrat",
+    garde: "evaluerRequete — le contrôle de forme exacte",
+    fichier: ADMISSION,
+    avant:
+      "  if (!formeExacte(message)) {\n" +
+      "    return {\n" +
+      "      admise: false,\n" +
+      "      code: CODES_REFUS_COQUILLE.messageMalforme,\n" +
+      "      recu: typeRendu(type),\n" +
+      "      correlation,\n" +
+      "    };\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_ADMISSION],
+  },
+  {
+    nom: "une requête sans corrélation ne peut pas recevoir SA réponse",
+    garde: "evaluerRequete — l'exigence d'un identifiant de corrélation",
+    fichier: ADMISSION,
+    avant:
+      "  if (correlation === null) {\n" +
+      "    return {\n" +
+      "      admise: false,\n" +
+      "      code: CODES_REFUS_COQUILLE.correlationAbsente,\n" +
+      "      recu: typeRendu(type),\n" +
+      "      correlation: null,\n" +
+      "    };\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_ADMISSION],
+  },
+  {
+    nom: "un identifiant de corrélation est borné et clos",
+    garde: "correlationAdmise — l'alphabet et la longueur",
+    fichier: CONTRAT,
+    avant: "  return CORRELATION_ADMISE.test(valeur) ? valeur : null;\n",
+    apres: "  return valeur;\n",
+    epreuves: [EPREUVE_ADMISSION],
+  },
+  {
+    nom: "un type refusé est rendu TRONQUÉ, jamais entier",
+    garde: "typeRendu — la borne de ce qui repart",
+    fichier: CONTRAT,
+    avant:
+      "  return type.length <= TAILLE_MAXIMALE_DU_TYPE_RENDU\n" +
+      "    ? type\n" +
+      "    : `${type.slice(0, TAILLE_MAXIMALE_DU_TYPE_RENDU)}…`;\n",
+    apres: "  return type;\n",
     epreuves: [EPREUVE_ADMISSION],
   },
   {

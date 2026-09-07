@@ -82,13 +82,16 @@ dérivé, ce sont les gestes dont les SCÉNARIOS ont besoin pour qu'un document 
 chose.
 
 **Deux gestes admis**, chacun cité à la ligne dans `src/coquille/admission-applicative.mjs` et relu
-par `tests/unit/coquille-admission.test.mjs`, qui exige que chaque renvoi désigne un fichier et une
-ligne existants :
+par `tests/unit/coquille-admission.test.mjs`. La forme du renvoi est celle de la spécification —
+`chemin:ligne › « fragment »` —, et c'est le FRAGMENT qui ancre : la première rédaction n'exigeait
+que l'existence de la LIGNE, et la revue de la PR #166 a relevé (constat 8) qu'un numéro qui existe
+ne prouve rien, un fichier qui grandit de dix lignes déplaçant tout sans rien invalider en
+apparence.
 
-| Geste admis                                                   | Sens                             | Usage qui le demande                                                                                                                                                                                                                                      |
-| ------------------------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `vault.coquille.etat` — état du volume et compte de barrières | application → coquille           | `public/vm/reference-worker-phases-volume.mjs:250` (la seule observation qu'un scénario fait d'un volume avant de s'en servir est `present`), `tests/e2e/instantane-reprise.spec.mjs:201`, `src/spike/origin-topology.mjs:118`                            |
-| `vault.coquille.barriere` — annonce d'une barrière acquittée  | coquille → application (POUSSÉE) | `public/vm/reference-banc.mjs:73` (l'annonce existe déjà, et ne porte aucun identifiant de requête : c'est une poussée), `tests/e2e/coupure-generation-boot-froid.spec.mjs:159` (un scénario ne juge « écrit » qu'après « une barrière a été acquittée ») |
+| Geste admis                                                   | Sens                             | Usage qui le demande                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vault.coquille.etat` — état du volume et compte de barrières | application → coquille           | `public/vm/reference-worker-phases-volume.mjs:253` › « `present: etat.present,` » (la seule observation qu'un scénario fait d'un volume avant de s'en servir), `tests/e2e/instantane-reprise.spec.mjs:201` › « `phase: "inspect-volume"` », `src/spike/origin-topology.mjs:118` › « `export function isAllowedAppRequest` » |
+| `vault.coquille.barriere` — annonce d'une barrière acquittée  | coquille → application (POUSSÉE) | `public/vm/reference-banc.mjs:73` › « `if (type === "mutation")` » (l'annonce existe déjà, et ne porte aucun identifiant de requête : c'est une poussée), `tests/e2e/coupure-generation-boot-froid.spec.mjs:159` › « une barrière a été acquittée »                                                                         |
 
 La réponse d'état ne porte QUE deux champs : l'état — `demarrage`, `verrouille`, `ouvert`,
 `indisponible` — et un COMPTE de barrières. Un compte, et non un horodatage : il est monotone, ne
@@ -186,9 +189,31 @@ côté navigateur plutôt que par relecture — et rien ne sera jamais posé sur
 DÉVERROUILLAGE vient encore du harnais, sous le jeton de `src/vm/cle-de-volume.mjs` — la même porte
 que celle de la réserve de `SEC-BLOCK-001`, désormais visible sur le chemin du produit au lieu de ne
 l'être que dans les bancs. La tranche 2 (#162) la remplace par la phrase, la passkey et le code de
-récupération. Aucun fichier PUBLIÉ ne contient la valeur du jeton, et
-`tests/unit/coquille-fixture.test.mjs` balaie l'arbre publié pour le vérifier. Le cycle de vie
-assemblé reste la tranche 3 (#163).
+récupération. Le cycle de vie assemblé reste la tranche 3 (#163).
+
+**Le jeton est PUBLIC, et il faut l'écrire ainsi.** La première rédaction de cet ADR affirmait
+qu'aucun fichier publié ne contenait sa valeur. C'était faux, et la revue de sécurité de la
+[PR #166](https://github.com/pinfada/railsbox-vault/pull/166) l'a mesuré :
+`src/vm/cle-de-volume.mjs` est publié, il DÉFINIT le jeton, et — sans étape de construction — une
+constante que le produit compare existe forcément dans le code servi. Pire, l'épreuve censée
+l'attester s'excluait elle-même du balayage, et était donc verte par construction.
+
+La correction n'est pas de cacher la valeur : la cacher demanderait un minifieur, c'est-à-dire une
+promesse qui dépend d'un outil plutôt que d'une frontière. Ce que le dépôt promet est autre chose,
+et c'est plus fort :
+
+- **la valeur ne protège rien.** Elle ouvre la clé de TEST — trente-deux octets publics sans
+  entropie —, et un volume scellé sous elle est un banc, pas un coffre ;
+- **la connaître ne donne rien depuis l'origine applicative.** Le jeton ne s'emploie que sur le
+  canal PRIVILÉGIÉ, qu'aucun message du document applicatif n'atteint. La fixture le LIT chez elle —
+  témoin positif — puis le présente sur le port restreint (`VAULT_COQUILLE_PORT_PRIVILEGIE_REFUSE`),
+  sur `window` (aucun canal ne l'écoute), et constate qu'elle ne connaît même pas l'URL de la
+  coquille où le rejouer en paramètre, `Referrer-Policy: no-referrer` la lui refusant. L'état de la
+  coquille ne bouge pas ;
+- **un seul fichier publié le porte**, celui qui le définit, et le balayage EXIGE désormais de l'y
+  trouver — un témoin de fouille — et rougit sur un second porteur ;
+- **la coquille ne fige nulle part la valeur** : elle la LIT d'un paramètre nommé. Un jeton écrit en
+  dur dans la page serait un déverrouillage que n'importe quelle visite déclencherait.
 
 `tests/unit/dossier-de-revue.test.mjs` a été élargi en conséquence : un invariant peut porter
 plusieurs lignes, mais chacune doit dire CONTRE QUOI il est exercé, faute de quoi deux statuts
@@ -207,14 +232,29 @@ page vivante (un DÉNI, pas une exposition) ; l'épaule qui lit le code de récu
 deux applications partageant l'origine applicative, mesuré par #46 et accepté tant qu'une seule
 application est publiée.
 
+**Le TEMPS de la coquille, et pas sa mémoire.** La revue de la PR #166 a ajouté cette ligne au
+modèle de menace, qui ne la nommait ni d'un côté ni de l'autre. Un document applicatif hostile peut
+poster autant de messages qu'il veut, et chacun est décodé et compté : le fil d'exécution que la
+coquille partage avec lui n'est pas défendu, et ne peut pas l'être — un document encadré occupe de
+toute façon le processus qui l'héberge. Ce que la coquille borne, c'est sa MÉMOIRE, et cette
+moitié-là est fermée : le relevé ne recopie rien du guest (des compteurs par code, et l'ensemble des
+codes est clos), la file d'appariement a une borne nommée, un `type` au-delà de 128 caractères est
+refusé au décodage. La version d'avant ne bornait rien : quarante messages faisaient passer le
+relevé de 606 à 8 003 678 caractères, et le relevé entier était re-sérialisé à chaque refus — un
+déni de service de la base de confiance, commandé depuis exactement l'adversaire que cet ADR dit
+défendre. L'épreuve pousse désormais mille messages et exige que le relevé reste sous deux
+kilo-octets, sur les trois moteurs.
+
 ## Les épreuves, et leurs témoins
 
 L'application malveillante (`public/coquille-epreuve/`) est servie **par l'origine applicative**,
 encadrée par la coquille comme le serait du HTML rendu par Rails. Elle connaît le contrat aussi bien
-que la coquille : elle s'annonce en règle, obtient son port, puis exécute **vingt-neuf sondes** — le
-geste admis, les dix gestes interdits, cinq tentatives contre l'encodage et le canal privilégié, un
-second port réclamé, une iframe imbriquée usurpatrice, et dix tentatives de topologie. Elle n'est
-jamais publiée : `tools/publier-arborescences.mjs` la retire avec son motif.
+que la coquille : elle s'annonce en règle, obtient son port, puis exécute **trente-huit sondes** —
+le geste admis et quatre requêtes CONCURRENTES, les dix gestes interdits, quatre tentatives autour
+du jeton du harnais, neuf contre l'encodage et le canal privilégié, un second port réclamé, une
+iframe imbriquée usurpatrice, et dix tentatives de topologie. Elle enregistre en outre TOUT ce qui
+franchit le port, dans les deux sens, pour que l'épreuve le FOUILLE. Elle n'est jamais publiée :
+`tools/publier-arborescences.mjs` la retire avec son motif.
 
 Le témoin positif vient en deux moitiés, parce que les deux familles ne se prouvent pas de la même
 façon :
@@ -224,7 +264,13 @@ façon :
 - **la topologie** : la MÊME fixture, servie par l'origine de CONFIANCE, obtient ce qu'on lui refuse
   ailleurs — le volume et son enveloppe dans l'OPFS, le DOM, la fenêtre auxiliaire, la portée d'un
   Service Worker et l'interception de la ressource témoin. La contamination est arbitrée **depuis la
-  coquille**, qui seule sait de quelle partition il s'agit.
+  coquille**, qui seule sait de quelle partition il s'agit ;
+- **la fouille** : le trafic du port est cherché à la recherche des octets RÉELS que le Worker
+  détient — la clé de volume de TEST et les trois clés de déverrouillage, en hexadécimal et en
+  base 64. La recherche doit d'abord montrer qu'elle sait trouver ce qui EST là, faute de quoi «
+  rien trouvé » voudrait dire « rien capturé ». `sansCapacite` ne suffisait pas à porter cette
+  garantie : il refuse des CONSTRUCTEURS, pas des secrets, et laisserait passer une clé rendue en
+  hexadécimal, qui est une donnée. C'est le constat 5 de la revue de la PR #166.
 
 **Deux sondes n'ont PAS de témoin positif contre cette coquille, et il faut le dire** : le verrou
 nommé et la diffusion inter-onglets n'existent pas encore dans le produit — la coquille ne prend
@@ -233,8 +279,9 @@ en topologie T1a. C'est une des raisons pour lesquelles ce banc doit rester viva
 
 ## Campagne de mutation
 
-Quinze gardes, chacune retirée du source dans un atelier temporaire, l'épreuve rejouée
-(`tools/muter-gardes-coquille.mjs`, moteur partagé).
+Vingt-trois gardes, chacune retirée du source dans un atelier temporaire, l'épreuve rejouée
+(`tools/muter-gardes-coquille.mjs`, moteur partagé). Les huit dernières viennent de la revue de la
+PR #166 : trois gardes existantes étaient hors campagne (constat 10), et cinq sont neuves.
 
 | #   | Garde retirée                                                       | Verdict |
 | --- | ------------------------------------------------------------------- | ------- |
@@ -253,12 +300,26 @@ Quinze gardes, chacune retirée du source dans un atelier temporaire, l'épreuve
 | 13  | `cheminApplicatifAdmis` — le refus de `//`                          | TUÉ     |
 | 14  | `origineApplicativeDe` — le refus d'un hôte déjà préfixé            | TUÉ     |
 | 15  | `chargeUtileDEtat` — la table des états connus                      | TUÉ     |
+| 16  | `cheminApplicatifAdmis` — l'exigence d'une barre oblique initiale   | TUÉ     |
+| 17  | `cheminApplicatifAdmis` — le refus de la barre oblique inversée     | TUÉ     |
+| 18  | `decoderMessage` — la nature du type                                | TUÉ     |
+| 19  | `decoderMessage` — la borne de longueur du type                     | TUÉ     |
+| 20  | `evaluerRequete` — le contrôle de forme exacte                      | TUÉ     |
+| 21  | `evaluerRequete` — l'exigence d'un identifiant de corrélation       | TUÉ     |
+| 22  | `correlationAdmise` — l'alphabet et la longueur                     | TUÉ     |
+| 23  | `typeRendu` — la borne de ce qui repart                             | TUÉ     |
 
-**15/15.** Le mutant n° 9 a SURVÉCU au premier passage, et c'est le service que la campagne rend :
-retirer la comparaison d'identifiant de contrat laissait le refus tomber sur la comparaison de
-VERSION, sous le même code, si bien que l'épreuve — qui confrontait un contrat étranger portant une
-version étrangère — restait verte. L'épreuve confronte désormais un contrat étranger portant LA
-nôtre. La garde n'avait pas changé ; c'est l'épreuve qui ne la mesurait pas.
+**23/23.** Deux mutants ont SURVÉCU avant d'être tués, et c'est le service que la campagne rend :
+
+- le n° 9 — retirer la comparaison d'identifiant de contrat laissait le refus tomber sur la
+  comparaison de VERSION, sous le même code, si bien que l'épreuve — qui confrontait un contrat
+  étranger portant une version étrangère — restait verte. Elle confronte désormais un contrat
+  étranger portant LA nôtre ;
+- le n° 17 — tous les chemins refusés de l'épreuve tombaient sur l'exigence de la barre oblique
+  INITIALE, jamais sur le refus de la barre inversée. Il a fallu un cas qui commence bien par `/` et
+  contienne une barre inversée pour que la garde soit mesurée.
+
+Dans les deux cas la garde n'avait pas changé : c'est l'épreuve qui ne la mesurait pas.
 
 **Ce que la campagne ne peut PAS mesurer** : ce que le NAVIGATEUR fait de ces décisions — que
 `postMessage` transfère réellement un port, que la sandbox refuse réellement la navigation du
@@ -341,6 +402,34 @@ pas. La décision 5 (les trois contraintes de cookies) est **résolue** par la d
 #24 devait apporter deux des quatre conditions : la séparation d'origine implémentée, et la
 récupération enfin offerte. **#161 apporte la première seulement.** La seconde est la tranche 2. Le
 gate reste fermé, et le verrouillage (#25) manque de toute façon.
+
+## Ce que la revue de sécurité a changé
+
+La revue de la [PR #166](https://github.com/pinfada/railsbox-vault/pull/166) — dix constats, aucun
+critique — a tenu la frontière sous neuf tentatives forgées : le port privilégié n'a jamais été
+transféré, la navigation RÉELLE du sommet a été refusée, les quatre documents de la coquille n'ont
+pas pu être récupérés depuis le cadre, un port re-transféré vers un Worker de l'application n'a
+rendu que l'état, et trois cents annonces rejouées n'ont octroyé qu'un seul port. Ce que la revue a
+trouvé ne porte donc pas sur la topologie, mais sur ce que la coquille FAIT de ce qu'elle reçoit —
+et sur trois épreuves qui ne mesuraient pas ce qu'elles disaient mesurer.
+
+| Constat                                                                          | Ce qui a changé                                                                                                                                 |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| le jeton du harnais est dans l'arbre publié, et l'épreuve s'excluait du balayage | la PROMESSE est corrigée, pas déplacée : le jeton est public, la porte est une discipline, et ce qui protège est éprouvé (décision 4)           |
+| un geste ADMIS restait muet dès que deux requêtes étaient en vol                 | identifiant de corrélation dans le contrat v1, rendu tel quel ; refus typé si absent, dupliqué, ou au-delà de la borne en vol                   |
+| relevé non borné, recopiant les octets du guest                                  | le relevé COMPTE par code et ne recopie rien ; deux bornes nommées au décodage ; épreuve à mille messages                                       |
+| la sonde de navigation du sommet mesurait un refus de LECTURE                    | elle appelle `replace` sans rien lire, et se déclare indisponible hors d'un cadre                                                               |
+| aucun appât, aucune fouille du trafic                                            | la fixture enregistre les deux sens, l'épreuve y cherche les octets réels des clés, avec son témoin de fouille                                  |
+| le Worker de confiance franchissait la porte du harnais sans être inscrit        | `tests/unit/harnais-portes.test.mjs` énumère désormais les appelants, et exige que l'unique appelant de PRODUIT nomme l'issue qui l'en retirera |
+| décodage strict sur l'enveloppe seulement                                        | une requête admise ne porte aucun champ hors du contrat, et un transférable vers la coquille est refusé nommément                               |
+| les citations de la dérivation n'étaient ancrées que par un numéro de ligne      | la forme devient `chemin:ligne › « fragment »`, et le fragment ancre                                                                            |
+| le témoin de publication acceptait `sans-cadre` inconditionnellement             | il l'accepte seulement quand la règle d'origine ne conclut pas                                                                                  |
+| trois gardes hors campagne de mutation                                           | la table passe de quinze à vingt-trois entrées                                                                                                  |
+
+Deux de ces corrections ont demandé de RÉÉCRIRE une épreuve plutôt que d'en ajouter une, et c'est le
+fait le plus utile de la revue : une garde peut être juste et n'être mesurée par rien. Le balayage
+du jeton s'excluait du seul fichier qui portait la valeur ; la sonde de navigation levait avant
+d'atteindre le geste qu'elle nommait. Les deux étaient vertes.
 
 ## Alternatives rejetées
 

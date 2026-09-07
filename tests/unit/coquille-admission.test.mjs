@@ -23,8 +23,11 @@ import {
   evaluerRequete,
 } from "../../src/coquille/admission-applicative.mjs";
 import {
+  TAILLE_MAXIMALE_DE_CORRELATION,
+  TAILLE_MAXIMALE_DU_TYPE_RENDU,
   TYPES_APPLICATIFS,
   TYPES_PRIVILEGIES,
+  correlationAdmise,
   enveloppeDeMessage,
 } from "../../src/coquille/contrat-de-messages.mjs";
 import {
@@ -36,6 +39,15 @@ import {
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
+
+/**
+ * Une requête d'état EN RÈGLE. Depuis la revue de la PR #166, une requête admise porte son
+ * identifiant de CORRÉLATION : c'est lui qui apparie N réponses à N requêtes, et qui interdit
+ * qu'une question reste muette quand plusieurs sont en vol.
+ */
+function requeteDEtat(correlation = "c-1") {
+  return enveloppeDeMessage(TYPES_APPLICATIFS.etat, { correlation });
+}
 
 /** Annonce en règle : le point de départ dont chaque épreuve ne change QU'UNE condition. */
 const ANNONCE_EN_REGLE = Object.freeze({
@@ -61,28 +73,54 @@ test("la liste d'admission est COURTE, et chaque geste cite un usage réel", () 
   }
 });
 
-test("chaque usage cité désigne un fichier qui existe, à une ligne qui existe", async () => {
-  // Une dérivation dont les renvois se périment redevient une devinette. C'est la discipline que
-  // `dossier-de-revue.test.mjs` applique déjà à la spécification, appliquée ici à la liste.
+test("chaque usage cité désigne une ligne qui existe ET DIT ce que la citation prétend", async () => {
+  // Une dérivation dont les renvois se périment redevient une devinette. La version d'avant
+  // vérifiait que la LIGNE existait ; la revue de la PR #166 a relevé qu'un numéro qui existe ne
+  // prouve rien — un fichier qui grandit de dix lignes déplace tout sans rien invalider en
+  // apparence. La forme est donc celle de la spécification, « chemin:ligne › « fragment » », et
+  // c'est le FRAGMENT qui ancre.
   const manquants = [];
   for (const geste of GESTES_ADMIS) {
     for (const usage of geste.usage) {
-      const [, chemin, ligne] = usage.match(/^([\w./-]+):(\d+)/) ?? [];
+      const [, chemin, ligne, fragment] =
+        usage.match(/^([\w./-]+):(\d+)\s*›\s*«\s*(.+?)\s*»/) ?? [];
       if (!chemin) {
-        manquants.push(`${geste.type} : « ${usage} » ne commence pas par « fichier:ligne »`);
+        manquants.push(`${geste.type} : « ${usage} » n'est pas « fichier:ligne › « fragment » »`);
         continue;
       }
+      let lignes;
       try {
-        const contenu = await readFile(path.join(REPO_ROOT, chemin), "utf8");
-        const lignes = contenu.split("\n").length;
-        if (Number(ligne) > lignes)
-          manquants.push(`${chemin}:${ligne} — le fichier fait ${lignes} lignes`);
+        lignes = (await readFile(path.join(REPO_ROOT, chemin), "utf8")).split("\n");
       } catch {
         manquants.push(`${chemin} — fichier absent`);
+        continue;
+      }
+      const citee = lignes[Number(ligne) - 1];
+      if (citee === undefined) {
+        manquants.push(`${chemin}:${ligne} — le fichier fait ${lignes.length} lignes`);
+        continue;
+      }
+      if (!citee.includes(fragment)) {
+        manquants.push(
+          `${chemin}:${ligne} ne porte plus « ${fragment} » — elle porte « ${citee.trim()} »`,
+        );
       }
     }
   }
   assert.deepEqual(manquants, [], "La dérivation cite des renvois périmés.");
+});
+
+test("l'ancrage par fragment MORD : une citation déplacée d'une ligne est refusée", async () => {
+  // Un balayage à vide passe toujours. Celui-ci est confronté à un renvoi juste et à un renvoi
+  // faux, construits à partir du même fichier — sans quoi rien ne dirait qu'il sait refuser.
+  const lignes = (
+    await readFile(path.join(REPO_ROOT, "src/coquille/refus-de-coquille.mjs"), "utf8")
+  ).split("\n");
+  const rang = lignes.findIndex((ligne) => ligne.includes("export const CODES_REFUS_COQUILLE"));
+  assert.ok(rang > 0, "l'ancre de l'épreuve elle-même a disparu du module.");
+  const porte = (numero, fragment) => lignes[numero - 1]?.includes(fragment) ?? false;
+  assert.equal(porte(rang + 1, "export const CODES_REFUS_COQUILLE"), true);
+  assert.equal(porte(rang + 2, "export const CODES_REFUS_COQUILLE"), false);
 });
 
 test("ce qui a été EXAMINÉ puis écarté est écrit, et n'est pas admis", () => {
@@ -173,7 +211,7 @@ test("un type du canal PRIVILÉGIÉ posé sur le port restreint est refusé comm
 });
 
 test("le seul geste ADMIS en requête est l'état ; l'annonce de barrière ne se demande pas", () => {
-  assert.equal(evaluerRequete(enveloppeDeMessage(TYPES_APPLICATIFS.etat)).admise, true);
+  assert.equal(evaluerRequete(requeteDEtat()).admise, true);
   // La barrière est un geste admis du contrat, mais dans l'autre sens : la coquille la POUSSE.
   assert.equal(estGesteAdmis(TYPES_APPLICATIFS.barriere), true);
   const verdict = evaluerRequete(enveloppeDeMessage(TYPES_APPLICATIFS.barriere));
@@ -185,6 +223,61 @@ test("un type que personne ne nomme reçoit `TYPE_INCONNU`, jamais un silence", 
   const verdict = evaluerRequete(enveloppeDeMessage("vault.coquille.geste-invente"));
   assert.equal(verdict.admise, false);
   assert.equal(verdict.code, CODES_REFUS_COQUILLE.typeInconnu);
+});
+
+// --- La corrélation, et ce qu'elle ferme (revue de la PR #166) ------------------------------------
+
+test("une requête admise SANS corrélation est refusée : sinon deux réponses se disputeraient une place", () => {
+  // Le silence mesuré par la revue : deux requêtes en vol, une seule réponse. Sans identifiant,
+  // rien ne peut apparier — et le seul geste que la coquille admette restait muet.
+  const verdict = evaluerRequete(enveloppeDeMessage(TYPES_APPLICATIFS.etat));
+  assert.equal(verdict.admise, false);
+  assert.equal(verdict.code, CODES_REFUS_COQUILLE.correlationAbsente);
+});
+
+test("une corrélation qui n'en est pas une est refusée comme absente", () => {
+  for (const correlation of [
+    42,
+    null,
+    { objet: true },
+    "",
+    "espace interdit",
+    "point.interdit",
+    "x".repeat(65),
+  ]) {
+    const verdict = evaluerRequete(requeteDEtat(correlation));
+    assert.equal(verdict.admise, false, `« ${String(correlation)} » a été admise`);
+    assert.equal(verdict.code, CODES_REFUS_COQUILLE.correlationAbsente);
+  }
+});
+
+test("la corrélation est rendue TELLE QUELLE, et elle est bornée", () => {
+  const verdict = evaluerRequete(requeteDEtat("A_b-9"));
+  assert.equal(verdict.admise, true);
+  assert.equal(verdict.correlation, "A_b-9");
+  assert.equal(correlationAdmise("x".repeat(TAILLE_MAXIMALE_DE_CORRELATION)) !== null, true);
+  assert.equal(correlationAdmise("x".repeat(TAILLE_MAXIMALE_DE_CORRELATION + 1)), null);
+});
+
+test("une requête admise ne porte AUCUN champ hors du contrat", () => {
+  // Le décodage était strict sur l'enveloppe et muet sur le reste : la revue a fait servir une
+  // réponse à un message portant un champ de deux cent mille caractères. Un champ qu'on accepte
+  // sans le lire est un champ que la version suivante lira par accident.
+  const verdict = evaluerRequete({ ...requeteDEtat(), charge: "x".repeat(200000) });
+  assert.equal(verdict.admise, false);
+  assert.equal(verdict.code, CODES_REFUS_COQUILLE.messageMalforme);
+});
+
+test("un refus ne rend jamais plus que la borne du type, quoi qu'on lui envoie", () => {
+  // Ce qui repart est ce que l'émetteur a envoyé, BORNÉ. Rien de cela n'entre dans le relevé de la
+  // coquille, qui ne porte plus que des compteurs (revue de la PR #166, constat 3).
+  const verdict = evaluerRequete({
+    contrat: "railsbox-vault-coquille",
+    version: 1,
+    type: `vault.coquille.${"x".repeat(500)}`,
+  });
+  assert.equal(verdict.admise, false);
+  assert.ok(verdict.recu.length <= TAILLE_MAXIMALE_DU_TYPE_RENDU + 1, verdict.recu.length);
 });
 
 test("un message illisible reçoit le refus du décodeur, et le refus ne recopie pas le message", () => {
@@ -278,6 +371,10 @@ test("le CHEMIN encadré est un paramètre, l'ORIGINE ne l'est jamais", () => {
     "https://exemple.test/", // absolue : idem
     "commandes/42", // relative au document
     "\\\\exemple.test\\", // séparateur que certains moteurs normalisent
+    // Celui-ci commence bien par une barre oblique : SEUL le refus de la barre inversée le
+    // rattrape. Sans ce cas, la campagne de mutation laissait ce mutant vivant — les autres
+    // tombaient tous sur l'exigence de la barre initiale (revue de la PR #166, constat 10).
+    "/commandes\\..\\secret",
     "",
     null,
     42,

@@ -14,8 +14,30 @@
 //
 // La garde du Worker est donnée pour ce qu'elle est, comme celle de l'injecteur d'arrêts : elle
 // interdit l'usage ACCIDENTEL et rend l'intention explicite ; elle ne prétend pas résister à un
-// appelant décidé qui vit déjà dans le Worker. Ce qu'elle protège tient en une phrase : aucun chemin
-// du produit ne la transmet.
+// appelant décidé qui vit déjà dans le Worker.
+//
+// ## Le jeton est PUBLIC, et il faut le dire (revue de la PR #166, constat 1)
+//
+// Ce fichier écrivait « aucun chemin du produit ne la transmet ». Ce n'est plus vrai depuis #161 :
+// la coquille de produit LIT le jeton d'un paramètre d'URL et le transmet au Worker de confiance,
+// qui s'en sert pour ouvrir un volume tant que la tranche 2 (#162) n'a pas mis le vrai
+// déverrouillage à sa place. Et ce module est PUBLIÉ — sans étape de construction, une constante que
+// le produit compare existe forcément dans le code servi, sur les deux origines.
+//
+// Ce que le dépôt promet est donc autre chose, et c'est plus fort qu'un secret mal gardé :
+//
+//  - **la valeur ne protège rien.** Elle ouvre la clé de TEST, trente-deux octets publics sans
+//    entropie, et un volume scellé sous elle est un banc, pas un coffre ;
+//  - **la connaître ne sert à rien depuis l'origine applicative.** Le jeton ne s'emploie que sur le
+//    canal PRIVILÉGIÉ, qu'aucun message du document applicatif n'atteint.
+//    `tests/browser/coquille-frontiere.spec.mjs` › « le jeton du harnais est PUBLIC, lisible d'ici,
+//    et ne sert à rien d'ici » le LIT depuis l'origine applicative — témoin positif — puis le
+//    présente par tous les chemins qu'elle a, et relève que l'état de la coquille n'a pas bougé ;
+//  - **un seul fichier publié le porte**, celui-ci, et `tests/unit/coquille-fixture.test.mjs`
+//    rougirait sur un second.
+//
+// Cette porte est PROVISOIRE. La tranche 2 la referme, et c'est la réserve écrite de
+// `SEC-ORIGIN-001` côté produit dans `SECURITY.md`.
 
 import { CLE_OCTETS } from "./format-chiffre/identite-logique.mjs";
 import { STORAGE_ERROR_CODES, StorageError } from "./storage-errors.mjs";
