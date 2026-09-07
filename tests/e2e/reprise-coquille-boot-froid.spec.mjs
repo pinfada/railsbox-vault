@@ -269,7 +269,8 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et ret
 
   // LE JOURNAL, RELU À LA RÉOUVERTURE : l'étape 8 est FRANCHIE, et son motif dit par quel chemin —
   // instantané repris, ou boot à froid. C'est la seule preuve par exécution de cette étape.
-  const etapesReprise = new Map((await releve(session.page)).cycle.map((i) => [i.etape, i]));
+  const cycleALaReprise = (await releve(session.page)).cycle;
+  const etapesReprise = new Map(cycleALaReprise.map((i) => [i.etape, i]));
   expect(etapesReprise.get("reprise").issue).toBe(ISSUES_DETAPE.franchie);
   expect(["instantane", "boot-froid"]).toContain(etapesReprise.get("reprise").motif);
   expect(etapesReprise.get("backendPuisVm").issue).toBe(ISSUES_DETAPE.franchie);
@@ -304,7 +305,8 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et ret
     },
     fermeture: ferme.fermeture,
     cycleApresFermeture: ferme.cycle,
-    cycleALaReprise: (await releve(session.page)).cycle,
+    // Relevé AVANT la fermeture de la page : une mesure prise après elle n'existerait plus.
+    cycleALaReprise,
     secondDemarrage: {
       bootMs: second.bootMs,
       santeMs: second.santeMs,
