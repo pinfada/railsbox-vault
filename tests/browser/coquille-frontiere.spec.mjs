@@ -361,7 +361,14 @@ test("mille messages hostiles ne font pas enfler le relevé de la coquille", asy
   expect(apres.refusDeRequete[CODES_REFUS_COQUILLE.messageMalforme]).toBeGreaterThanOrEqual(
     ENVOYES,
   );
-  expect(tailleApres).toBeLessThan(2048);
+  // DEUX bornes, et elles ne disent pas la même chose. Le PLAFOND dit que le relevé a une taille
+  // maximale connue à l'écriture : ses champs sont un ensemble CLOS, et aucune donnée du guest n'y
+  // entre. Il est passé de 2 048 à 4 096 caractères avec #163, qui ajoute au relevé le journal des
+  // huit étapes, les capacités mesurées et le constat d'exclusivité — des champs bornés, écrits par
+  // la coquille et jamais par ce qu'elle reçoit. La borne du DELTA, elle, est celle qui mesure la
+  // propriété : deux cents millions de caractères sont entrés, et le relevé n'a pas bougé de deux
+  // cents. C'est elle qui rougirait si une recopie revenait.
+  expect(tailleApres).toBeLessThan(4096);
   expect(tailleApres - tailleAvant).toBeLessThan(200);
 });
 
