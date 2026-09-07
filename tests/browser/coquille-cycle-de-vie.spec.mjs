@@ -323,7 +323,19 @@ test("un geste présenté après la mort ne DÉRIVE rien : il reçoit le refus, 
   );
 });
 
-test("un Worker MUET est constaté par la borne, et non attendu pour toujours", async ({ page }) => {
+test("un Worker MUET est constaté par la borne, et non attendu pour toujours", async ({
+  page,
+  browserName,
+}) => {
+  // UN moteur, et c'est une décision de COÛT assumée : ce que cette épreuve mesure est une BORNE
+  // DE TEMPS — trente secondes d'attente —, et une minuterie ne dépend pas du moteur. Ce qui en
+  // dépend est la LIVRAISON d'un événement, et c'est mesuré sur les trois moteurs par les épreuves
+  // de l'erreur et de la terminaison, qui ne coûtent rien. Trois fois trente secondes dans
+  // `npm run check` seraient trois fois le même verdict, payé sur le seul gate obligatoire.
+  test.skip(
+    browserName !== "chromium",
+    "borne de temps : un moteur suffit, les trois coûtent 90 s",
+  );
   test.setTimeout(180_000);
   await substituerLeWorker(page, WORKER_MUET);
   await page.goto(`${SHELL_ORIGIN}/index.html`);
@@ -381,7 +393,14 @@ test("la FERMETURE PROPRE est la troisième cause, et la coquille se la donne à
 
 test("un Worker VIVANT mais lent n'est jamais déclaré mort, et la fermeture reste atteignable", async ({
   page,
+  browserName,
 }, info) => {
+  // UN moteur, pour le motif de l'épreuve précédente : quarante secondes d'attente mesurent une
+  // borne et un battement, non un comportement de moteur.
+  test.skip(
+    browserName !== "chromium",
+    "borne de temps : un moteur suffit, les trois coûtent 120 s",
+  );
   test.setTimeout(180_000);
   await substituerLeWorker(page, WORKER_LENT);
   await ouvrirLaCoquille(page);
@@ -450,44 +469,68 @@ test("le bouton de réouverture reste CACHÉ tant qu'aucune mort n'a été const
 });
 
 // --- Le DESCRIPTEUR d'application, contre le serveur RÉEL ------------------------------------------
+//
+// Ces deux épreuves sont les SEULES qui atteignent `lireLeDescripteur` autrement que par un double :
+// partout ailleurs, un `recuperer` injecté tient la place du réseau. Elles ouvrent donc un coffre
+// pour de bon — l'ordre refuse tout démarrage sur un backend fermé — et paient une dérivation
+// Argon2id pour cela.
+//
+// **Ce que la réponse du serveur est, elles la DÉCIDENT.** Une première rédaction s'en remettait à
+// l'absence du fichier sur le disque, et cette absence a cessé d'être vraie dès qu'une machine a
+// construit l'image de référence : la coquille s'est mise à installer un demi-gibioctet et à booter
+// Rails **à l'intérieur de `npm run check`**. Une épreuve dont le verdict dépend de ce qui traîne
+// sur le disque de qui la joue n'est pas une épreuve.
+//
+// **Un seul moteur, et c'est une décision de coût** : ce qu'elles mesurent est une REQUÊTE HTTP et
+// une FORME, non un comportement de moteur — et elles coûtent chacune un déverrouillage complet.
+// Ce qui dépend du moteur, l'ordre et son refus, est mesuré sur les trois juste au-dessus.
 
-test("sans descripteur servi, le démarrage rend `applicationAbsente` et le journal le dit", async ({
-  page,
-}, info) => {
-  test.setTimeout(180_000);
-  await ouvrirLaCoquille(page);
-  const initial = await releve(page);
-  // Sur un moteur qui n'atteint aucun volume, rien ne s'ouvre : l'ordre refuse avant le descripteur,
-  // et la suite le DÉCLARE plutôt que de passer au vert par vacuité.
-  test.skip(
-    initial.etat === ETATS_DU_VOLUME.indisponible,
-    "ce moteur n'atteint aucun volume : le backend ne s'ouvre pas, donc l'étape 3 refuse avant de lire le descripteur",
-  );
+/** Substitue la réponse du serveur au descripteur d'application, quelle que soit la machine. */
+async function servirLeDescripteur(page, reponse) {
+  await page.context().route("**/artifacts/application.json", (route) => route.fulfill(reponse));
+}
 
-  // Un vrai déverrouillage : c'est la seule façon d'atteindre `lireLeDescripteur` contre le serveur
-  // réel, puisque l'ordre refuse tout démarrage sur un backend fermé.
+/** OUVRE le coffre par la phrase, seul chemin qui mène à l'étape 3. */
+async function ouvrirParLaPhrase(page) {
   await page.fill("#saisie-phrase", "une phrase de scenario assez longue pour la calibration");
   await page.click("#ouvrir-par-phrase");
   await expect
     .poll(async () => (await releve(page)).etat, { timeout: 120_000 })
     .toBe(ETATS_DU_VOLUME.ouvert);
+}
 
+/** Ouvre, déverrouille, démarre, et rend le relevé — ou déclare pourquoi ce moteur ne peut pas. */
+async function demarrerSurUnCoffreOuvert(page, browserName, reponse) {
+  test.skip(
+    browserName !== "chromium",
+    "requête HTTP et forme : un moteur suffit, trois coûtent trois déverrouillages",
+  );
+  test.setTimeout(180_000);
+  await servirLeDescripteur(page, reponse);
+  await ouvrirLaCoquille(page);
+  await ouvrirParLaPhrase(page);
   await page.click("#demarrer-application");
   await expect(page.locator("#cycle-etat")).toContainText("cycle:sans-application", {
     timeout: 120_000,
   });
-  const rapport = await releve(page);
-  await info.attach(`descripteur-${info.project.name}.json`, {
+  return releve(page);
+}
+
+test("un descripteur ABSENT rend `applicationAbsente`, et le journal révise l'étape 3", async ({
+  page,
+  browserName,
+}, info) => {
+  const rapport = await demarrerSurUnCoffreOuvert(page, browserName, { status: 404, body: "" });
+  await info.attach(`descripteur-absent-${info.project.name}.json`, {
     body: JSON.stringify(rapport.application, null, 2),
     contentType: "application/json",
   });
 
-  // `npm run check` tourne sans les artefacts de l'image de référence : l'origine ne sert AUCUN
-  // descripteur, et la coquille le dit au lieu d'échouer. C'est le seul chemin par lequel
-  // `lireLeDescripteur` est exercé contre un serveur, et non contre un double.
+  // L'origine ne sert aucun descripteur : la coquille le DIT au lieu d'échouer. C'est le seul
+  // chemin par lequel `lireLeDescripteur` est exercé contre un serveur, et non contre un double.
   expect(rapport.application.demarree).toBe(false);
   expect(rapport.application.code).toBe(CODES_REFUS_COQUILLE.applicationAbsente);
-  expect(rapport.application.motif).toMatch(/404|descripteur/);
+  expect(rapport.application.motif).toMatch(/404/);
 
   // Et l'étape 3 est RÉVISÉE : elle ne reste pas `differee` sur un geste qui a eu lieu.
   const inscrites = rapport.cycle.filter(({ etape }) => etape === "backendPuisVm");
@@ -495,4 +538,38 @@ test("sans descripteur servi, le démarrage rend `applicationAbsente` et le jour
   expect(inscrites[0].issue).toBe(ISSUES_DETAPE.differee);
   expect(inscrites[1].issue).toBe(ISSUES_DETAPE.indisponible);
   expect(inscrites[1].revision).toBe(true);
+});
+
+test("un descripteur MALFORMÉ est refusé sur sa forme, et le motif nomme le champ", async ({
+  page,
+  browserName,
+}) => {
+  // La version seule ne suffisait pas : un descripteur d'une version connue fournit six URL, une
+  // ligne de commande de noyau et deux grandeurs d'allocation au Worker de confiance. Celui-ci
+  // porte un préfixe qui sort du chemin servi — la CSP le refuserait ensuite, mais une frontière
+  // qui ne tient que par la seconde ligne de défense n'est pas une frontière.
+  const rapport = await demarrerSurUnCoffreOuvert(page, browserName, {
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      descripteurVersion: 1,
+      application: { id: "railsbox-vault-reference", version: "1.0.0" },
+      runtime: { version: "0.1.0" },
+      disque: { nom: "reference-app.ext2", octets: 536870912 },
+      boot: {
+        cmdline: "root=/dev/sda rw",
+        memoireOctets: 536870912,
+        kernel: "reference-rootfs-vmlinuz",
+        initrd: "reference-rootfs-initrd",
+        rootfs: "reference-rootfs.ext4",
+        bios: "seabios.bin",
+        vgaBios: "vgabios.bin",
+      },
+      prefixeDesArtefacts: "https://ailleurs.test/",
+    }),
+  });
+
+  expect(rapport.application.demarree).toBe(false);
+  expect(rapport.application.code).toBe(CODES_REFUS_COQUILLE.applicationAbsente);
+  expect(rapport.application.motif).toMatch(/préfixe/);
 });

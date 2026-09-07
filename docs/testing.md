@@ -2146,9 +2146,10 @@ n'est pas réinstallée. Il exige Docker (`npm run image:build`) et les artefact
 (`npm run vm:fetch`) ; à défaut il se déclare `skipped` avec la **condition explicite** qui l'a
 ignoré, jamais par défaut.
 
-**Durée ajoutée à `reprise.yml` : environ dix minutes** — deux boots Rails et deux dérivations
-Argon2id de plus, en séquence (`workers: 1`), sur une recette qui en dure soixante à soixante-dix.
-La marge du job (120 min) les couvre.
+**Durée MESURÉE : 2,9 minutes** en local (4 vCPU, 16 Gio), et non les dix qu'une estimation prudente
+annonçait : le second démarrage ne reboote pas à froid, il reprend l'instantané que la fermeture
+propre a scellé — **252 ms** contre **102,6 s** pour le boot initial. Compter davantage sur un
+exécutant partagé ; la marge du job (120 min) les couvre largement.
 
 **Campagne de mutation** — `node tools/muter-gardes-cycle-de-vie.mjs` : vingt-sept gardes,
 vingt-sept mutants tués, table et survivant dans l'ADR 0030.
