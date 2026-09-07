@@ -37,6 +37,24 @@ export const E2E_ORIGIN_A = `http://${E2E_HOST}:${E2E_PORT}`;
 /** Origine de RESTAURATION : un stockage OPFS entièrement distinct de celui de A. */
 export const E2E_ORIGIN_B = `http://${E2E_HOST_B}:${E2E_PORT_B}`;
 
+/**
+ * Le COUPLE de la coquille de produit (#163, ADR 0030, décision 2).
+ *
+ * Deux serveurs de plus, et non les deux existants : le scénario de la coquille a besoin d'un rôle
+ * `shell` ET d'un rôle `app`, là où A et B sont tous deux des rôles `shell` — le rôle `app` ne sert
+ * ni CSP ni COOP, et le rôle `shell` sert `frame-ancestors 'none'`, qui rendrait le document
+ * applicatif INENCADRABLE. Changer le rôle de B aurait déplacé les en-têtes sous trois scénarios qui
+ * n'ont rien demandé.
+ *
+ * Les ports suivent la règle que la coquille applique elle-même (`origines-de-la-coquille.mjs`) :
+ * l'origine applicative est `localhost` sur le port SUIVANT. Ce n'est pas une convention d'épreuve,
+ * c'est la règle du produit, et le scénario tomberait si elle changeait — ce qui est bien.
+ */
+export const E2E_COQUILLE_PORT = 4179;
+export const E2E_COQUILLE_APP_PORT = 4180;
+export const E2E_ORIGIN_COQUILLE = `http://${E2E_HOST}:${E2E_COQUILLE_PORT}`;
+export const E2E_ORIGIN_COQUILLE_APP = `http://${E2E_HOST_B}:${E2E_COQUILLE_APP_PORT}`;
+
 export default defineConfig({
   testDir: "tests/e2e",
   fullyParallel: false,
@@ -59,6 +77,18 @@ export default defineConfig({
     {
       command: `node tools/serve.mjs --role shell --host ${E2E_HOST_B} --port ${E2E_PORT_B}`,
       url: `${E2E_ORIGIN_B}/vm/reference.html`,
+      reuseExistingServer: false,
+    },
+    // Le couple de la COQUILLE DE PRODUIT : origine de confiance et origine applicative, chacune
+    // avec les en-têtes de son rôle. C'est la topologie de l'ADR 0002, servie pour de bon.
+    {
+      command: `node tools/serve.mjs --role shell --host ${E2E_HOST} --port ${E2E_COQUILLE_PORT}`,
+      url: `${E2E_ORIGIN_COQUILLE}/index.html`,
+      reuseExistingServer: false,
+    },
+    {
+      command: `node tools/serve.mjs --role app --host ${E2E_HOST_B} --port ${E2E_COQUILLE_APP_PORT}`,
+      url: `${E2E_ORIGIN_COQUILLE_APP}/document-applicatif.html`,
       reuseExistingServer: false,
     },
   ],

@@ -189,11 +189,25 @@ cette décision.
 Le même ADR distingue **COOP de COEP**, et ne les rejette pas ensemble.
 `Cross-Origin-Opener-Policy: same-origin` servi **seul** ne confère pas `crossOriginIsolated`, ne
 s'applique qu'aux contextes de navigation de plus haut niveau — donc sans effet sur le cadre
-applicatif ni sur la topologie ci-dessus — et n'exige rien de l'origine applicative. Il est
-**recommandé** sur l'origine de confiance, comme **exigence différée** vers la publication #45 : il
-ferme la relation d'ouverture inter-fenêtres (`window.opener`), que `frame-ancestors 'none'` ne
-couvre pas, autour d'une coquille destinée à détenir les clés du volume (#24). GitHub Pages ne sait
-pas le servir : c'est un critère de plus pour #45, pas un couperet.
+applicatif ni sur la topologie ci-dessus — et n'exige rien de l'origine applicative. Il ferme la
+relation d'ouverture inter-fenêtres (`window.opener`), que `frame-ancestors 'none'` ne couvre pas,
+autour d'une coquille qui détient les clés du volume.
+
+**Il est SERVI depuis #163** ([ADR 0030](decisions/0030-cycle-de-vie-assemble-dans-la-coquille.md),
+décision 4), et non plus recommandé : `tools/serve-headers.mjs` le pose sur les documents de la
+coquille, `tools/publier-en-tetes.mjs` en dérive ses blocs `_headers` sans le recopier, et
+`tests/browser/entetes-durcissement.spec.mjs` l'ATTESTE sur les trois moteurs — une fenêtre
+inter-origine ouverte depuis la coquille rend `window.opener === null`, avec son témoin positif
+(deux documents de la même origine restent liés) et son témoin négatif (la même fenêtre, servie sans
+l'en-tête, garde son opener). Il était jusque-là posé par la seule chaîne de publication, et c'est
+exactement ce qui rendait la décision inéprouvable. GitHub Pages ne sait pas le servir : c'est un
+critère de plus pour #45, pas un couperet.
+
+**Un Service Worker qui injecterait COOP sur l'origine de confiance est INADMISSIBLE** (même ADR,
+décision 4) : il mettrait du code privilégié à la place de l'hébergeur, verrait passer chaque
+requête de la coquille et survivrait à la fermeture de l'onglet. L'hébergeur à en-têtes est de toute
+façon exigé des deux côtés ; `tests/unit/coquille-sans-service-worker.test.mjs` surveille cette
+absence.
 
 ## Cycle de vie de référence
 
@@ -215,22 +229,31 @@ pas le servir : c'est un critère de plus pour #45, pas un couperet.
 8. La reprise part d'un boot à froid tant qu'un snapshot lié à une génération exacte n'est pas
    démontré.
 
-**Où en est cet assemblage, au 7 septembre 2026.** Il n'est pas assemblé, et il faut le dire étape
-par étape plutôt que globalement :
+**Où en est cet assemblage, au 7 septembre 2026.** Il l'est, et il faut le dire étape par étape
+plutôt que globalement — l'ordre est désormais DATÉ et PUBLIÉ dans le relevé de la coquille
+(`#coquille-rapport` › `cycle`), et une étape demandée avant celle dont elle dépend est refusée par
+`VAULT_COQUILLE_ETAPE_HORS_ORDRE`
+([ADR 0030](decisions/0030-cycle-de-vie-assemble-dans-la-coquille.md)) :
 
-| Étape | État                                                                                                                                                                                                                               |
-| ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | sonde de capacités `public/compat.html`, **hors coquille** et exemptée de sa CSP (#2)                                                                                                                                              |
-| 2     | **PRODUIT depuis #161** — le canal privilégié est établi avant tout document, et l'ordre est TENU par une garde (`VAULT_COQUILLE_CANAL_ABSENT`), non par une convention. L'exclusivité du volume, elle, reste le banc du bail (#8) |
-| 3     | banc — le Worker de confiance ouvre le backend OPFS ; la VM n'est pas dans la coquille                                                                                                                                             |
-| 4     | **PRODUIT depuis #161** — cadre sur l'origine distincte, port transféré une fois après vérification de l'ordre, du type, de l'origine et de la fenêtre émettrice                                                                   |
-| 5     | banc — le flush et son acquittement sont éprouvés hors coquille ; ce que la coquille en publie est le COMPTE de barrières, poussé à l'application                                                                                  |
-| 6     | banc — export et migration vivent dans `public/vm/`                                                                                                                                                                                |
-| 7     | #25, non ouvert                                                                                                                                                                                                                    |
-| 8     | banc — l'instantané de reprise (#65, ADR 0024)                                                                                                                                                                                     |
+| Étape | État                                                                                                                                                                                                                                                                                             |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | **PRODUIT depuis #163** — les capacités sont mesurées DANS le document de la coquille, sous la CSP servie et sans l'exemption de la sonde `public/compat.html` (#2), qui reste par ailleurs. Ce qui manque est nommé                                                                             |
+| 2     | **PRODUIT depuis #161 et #163** — le canal privilégié est établi avant tout document, et l'ordre est TENU par une garde (`VAULT_COQUILLE_CANAL_ABSENT`). L'exclusivité du volume est CONSTATÉE par le Worker avant qu'un document applicatif existe ; l'exclusivité CONTINUE reste le bail (#79) |
+| 3     | **PRODUIT depuis #163** — un geste installe le disque applicatif, ouvre son volume sous la clé développée de l'enveloppe, PUIS boote v86, le guest, Rails et le pont série dans le Worker de confiance. Un boot demandé avant l'ouverture du backend est refusé                                  |
+| 4     | **PRODUIT depuis #161** — cadre sur l'origine distincte, port transféré une fois après vérification de l'ordre, du type, de l'origine et de la fenêtre émettrice. Depuis #163, il n'est créé qu'une fois l'étape 3 CONCLUE                                                                       |
+| 5     | **PRODUIT depuis #163** — les barrières acquittées par le GUEST entrent dans le compte que la coquille pousse à l'application ; elle n'y mettait jusque-là que la sienne                                                                                                                         |
+| 6     | banc — export et migration vivent dans `public/vm/`, et le journal du cycle l'inscrit `banc` plutôt que de le taire                                                                                                                                                                              |
+| 7     | **PRODUIT depuis #163** pour le CHEMIN — arrêt de la VM, instantané, `close()`, puis `terminate()`, dans cet ordre. Le déclencheur, le délai et le sens de « verrouillé » restent à #25                                                                                                          |
+| 8     | **PRODUIT depuis #163** — la réouverture repart de l'instantané s'il est utilisable, du boot à froid sinon, par le même code que le banc (`src/vm/boot-de-reference.mjs`)                                                                                                                        |
 
-La tranche 3 (#163) assemble le reste. Ce qui manque le plus visiblement : aucun scénario de
-`tests/e2e/` ne tourne encore sur la coquille réelle — ils partent tous de `/vm/reference.html`.
+**Ce que l'assemblage ne couvre pas encore** : le document encadré n'est pas servi par le guest — il
+est servi par l'origine applicative, et le proxy qui relaierait ce que Rails rend n'appartient pas à
+cette tranche. La VM tourne pour la durée du geste de démarrage.
+
+Un scénario de `tests/e2e/` tourne désormais sur la coquille RÉELLE —
+`reprise-coquille-boot-froid.spec.mjs`, deux origines réelles, boot Rails dans la coquille,
+fermeture propre et réouverture — et ceux qui partent de `/vm/reference.html` restent : le banc
+demeure le témoin de la reprise hors ligne.
 
 ## Erreurs contractuelles
 
@@ -1102,8 +1125,11 @@ lui permet et lui interdit est écrit dans l'ADR 0023.
    ports réels. **Fait pour la tranche 1 (#161)** : `tests/browser/coquille-frontiere.spec.mjs`
    rejoue la question sur les ports réels de la coquille de produit, contre une application
    malveillante servie par l'origine applicative, sur les trois moteurs, avec témoin positif en même
-   origine. Restent la tranche 2 (déverrouillage offert, #162) et la tranche 3 (cycle assemblé,
-   COOP, #163).
+   origine. **Fait pour la tranche 2 (#162)** : les trois moyens de déverrouillage sont offerts
+   depuis la coquille, sans jeton de harnais. **Fait pour la tranche 3 (#163)** : le cycle de vie
+   est assemblé, son ordre est prouvé par le refus de son inverse, COOP est servi et attesté sur les
+   trois moteurs, et `tests/e2e/reprise-coquille-boot-froid.spec.mjs` boote Rails dans la coquille
+   réelle. Ce qui reste de #24 après ces trois tranches est nommé dans l'ADR 0030 § Limites.
 7. Échanges chiffrés optionnels entre utilisateurs.
 
 La restauration d'un instantané mémoire pré-calculé sur un disque mutable est écartée du premier

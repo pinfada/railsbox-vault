@@ -136,7 +136,11 @@ test("les en-têtes distinguent coquille, territoire applicatif et serveur appli
   });
   assert.ok(coquille["Content-Security-Policy"]);
   assert.equal(coquille["Cross-Origin-Resource-Policy"], "same-origin");
-  assert.equal(coquille["Cross-Origin-Opener-Policy"], undefined);
+  // COOP est SERVI depuis #163 (ADR 0030, décision 4), et non plus seulement posé par la chaîne de
+  // publication. Il suit la MÊME condition que la CSP — un document de la coquille, ni territoire
+  // applicatif, ni sonde de capacités —, et c'est cette condition qui donne son témoin négatif à
+  // `tests/browser/entetes-durcissement.spec.mjs`.
+  assert.equal(coquille["Cross-Origin-Opener-Policy"], "same-origin");
 
   const applicatif = securityHeaders({
     role: "shell",
@@ -145,6 +149,9 @@ test("les en-têtes distinguent coquille, territoire applicatif et serveur appli
     appOrigin: APP_ORIGIN,
   });
   assert.equal(applicatif["Content-Security-Policy"], undefined);
+  // Le TERRITOIRE APPLICATIF n'en reçoit pas non plus : les deux politiques gouvernent ce que le
+  // document ÉMET et ce qu'il PEUT, donc son contenu — que l'ADR 0002 refuse de contraindre.
+  assert.equal(applicatif["Cross-Origin-Opener-Policy"], undefined);
 
   const serveurApplicatif = securityHeaders({
     role: "app",
