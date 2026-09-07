@@ -27,6 +27,7 @@ import {
   lireLeDescripteur,
 } from "../../src/coquille/application-de-reference.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
+import { sansCapacite } from "../../src/coquille/contrat-de-messages.mjs";
 
 // --- L'ÉTAPE 2 : le constat d'exclusivité ---------------------------------------------------------
 
@@ -420,4 +421,49 @@ test("le compte rendu publié est une liste FERMÉE : ce que le boot rend en plu
   // Les pannes sont un COMPTE, pas la liste : une panne absorbée doit se voir, son contenu
   // appartient au diagnostic du Worker.
   assert.equal(publie.pannes, 0);
+});
+
+test("le compte rendu publié FRANCHIT `sansCapacite`, instantané compris", () => {
+  // C'est l'épreuve qui manquait, et son absence a coûté un boot de douze minutes : à la
+  // réouverture, le compte rendu portait un instantané et des rapports du support dont la forme
+  // n'avait été décidée par personne, et `sansCapacite` a refusé la réponse entière sous
+  // `VAULT_COQUILLE_CAPACITE_DANS_UN_MESSAGE`. Nommer les champs ne suffisait pas : il fallait
+  // borner leur PROFONDEUR et leur nature.
+  const publie = compteRenduPublie({
+    volume: "application",
+    volumeBytes: 536870912,
+    bootMilliseconds: 90123.4,
+    healthMilliseconds: 88000,
+    usedSnapshot: true,
+    // Un instantané REPRIS porte une liaison — un objet — et un état qui peut être un tampon.
+    instantane: {
+      utilise: true,
+      motif: null,
+      millisecondes: 848,
+      liaison: { volume: "abc", sequence: 3, generation: 2 },
+      etat: new Uint8Array(8),
+    },
+    timeline: { acquisitionRuntimeMs: 12, healthMs: 88000, imbrique: { profond: 1 } },
+    counts: { write: 42, flush: 2, "flush-ack": 2 },
+    generation: { deposeeMaxOctets: 1024, valideeMaxOctets: 512 },
+    recuperation: { etat: "verifiee", temoinSequence: 3, details: { encore: "un objet" } },
+    invariantHttpStatus: 200,
+    invariantVerdict: { status: "conforming", observed: { record: { id: "x" } } },
+    observedRecordId: "x",
+    observedAttachmentSha256: "y",
+    boucleOrdonnancement: { source: "vault-postTask", appels: 12345 },
+    rythme: { ticks: 1, fenetreMs: 2 },
+    failures: [],
+    guestLog: ["une ligne"],
+  });
+  assert.doesNotThrow(() => sansCapacite(publie));
+  // Ce qui a été laissé derrière : la liaison, l'état, et tout objet imbriqué.
+  assert.equal(publie.instantane.utilise, true);
+  assert.equal(publie.instantane.liaison, undefined);
+  assert.equal(publie.instantane.etat, undefined);
+  assert.equal(publie.timeline, undefined);
+  assert.equal(publie.decomposition.imbrique, undefined);
+  assert.equal(publie.recuperation.details, undefined);
+  assert.equal(publie.invariantVerdict.observed, undefined);
+  assert.equal(publie.invariantVerdict.status, "conforming");
 });

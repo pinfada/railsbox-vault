@@ -242,7 +242,22 @@ function refuserLAnnonce(code) {
 
 // --- Étape 3 : le canal privilégié, avant tout document applicatif ---------------------------------
 
-const worker = new Worker(new URL("./runtime-worker.mjs", import.meta.url), {
+/**
+ * Le Worker de confiance est chargé avec `?use-scheduling-api`, et ce n'est PAS décoratif.
+ *
+ * v86 choisit sa boucle d'ordonnancement à l'évaluation de son module, en inspectant
+ * `location.href` du contexte qui l'importe (ADR 0013, § « Mise en œuvre par #74 ») : sans ce
+ * marqueur, il retombe sur un Worker imbriqué chargé depuis une URL `blob:` — que la CSP de la
+ * coquille refuse (`worker-src 'self'`, ADR 0013). Le contrôle préalable le voit et refuse de
+ * démarrer, sous `VAULT_RUNTIME_WORKER_REFUSED` ; c'est ce que le scénario de bout en bout a
+ * trouvé au premier boot réel dans la coquille.
+ *
+ * Le marqueur est donc porté par le PRODUIT, comme il l'est par chaque banc qui fait tourner
+ * l'émulateur (`public/vm/banc.mjs`, `public/vm/reference-banc.mjs`). Il ne demande aucune
+ * capacité et n'élargit aucune politique : il dit à v86 d'emprunter la boucle que Vault pose
+ * elle-même, y compris sur un moteur qui n'expose pas `scheduler.postTask`.
+ */
+const worker = new Worker(new URL("./runtime-worker.mjs?use-scheduling-api", import.meta.url), {
   type: "module",
   name: "vault-coquille-confiance",
 });

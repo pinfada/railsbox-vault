@@ -256,9 +256,13 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et ret
   expect(second.invariantVerdict.status).toBe("conforming");
   expect(second.enregistrementObserve).toBe(contrat.record.id);
   expect(second.pieceJointeObservee).toBe(contrat.attachment.sha256);
-  // Le verdict ENTIER, et pas seulement son statut : c'est l'objet que deux chemins de boot doivent
-  // rendre identique pour que « retrouvé » veuille dire quelque chose (#65, ADR 0024).
-  expect(second.invariantVerdict).toEqual(premier.invariantVerdict);
+  // Ce que deux chemins de boot doivent rendre IDENTIQUE pour que « retrouvé » veuille dire quelque
+  // chose (#65, ADR 0024) : le statut, l'enregistrement et l'empreinte de la pièce jointe. Le
+  // verdict entier ne franchit pas le canal — sa forme appartient au guest, et la liste publiée est
+  // fermée en profondeur autant qu'en largeur.
+  expect(second.invariantVerdict.status).toBe(premier.invariantVerdict.status);
+  expect(second.enregistrementObserve).toBe(premier.enregistrementObserve);
+  expect(second.pieceJointeObservee).toBe(premier.pieceJointeObservee);
   // L'ouverture a CONFRONTÉ ce qu'elle a relu : le rapport de récupération existe, et il n'est pas
   // inventé. Ce que ce boot en a fait — instantané repris ou boot à froid — est publié plus bas.
   expect(second.recuperation, "le rapport d'ouverture est publié").not.toBeNull();

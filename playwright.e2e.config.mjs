@@ -63,7 +63,12 @@ export default defineConfig({
   timeout: 1_500_000,
   retries: 0,
   outputDir: "test-results/e2e",
-  reporter: process.env.CI ? [["html", { open: "never" }], ["github"]] : "list",
+  // `list` est AJOUTÉ en intégration continue, et c'est la correction d'un défaut de lisibilité qui
+  // a coûté cher : la recette a rendu « 8 passed, 1 skipped » sans dire lequel ni pourquoi, et le
+  // scénario ignoré était celui que la tranche livrait. Les rapporteurs `html` et `github`
+  // n'impriment pas la sortie standard d'un scénario ; `list` le fait, et c'est par elle que
+  // `exigerLesPrealables` nomme ce qui manque.
+  reporter: process.env.CI ? [["list"], ["html", { open: "never" }], ["github"]] : "list",
   use: {
     baseURL: E2E_ORIGIN_A,
     trace: "retain-on-failure",
