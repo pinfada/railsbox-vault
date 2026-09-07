@@ -56,17 +56,16 @@ import {
   enveloppePrivilegiee,
   sansCapacite,
 } from "/src/coquille/contrat-de-messages.mjs";
+import { mesurerLesCapacites } from "/src/coquille/capacites-de-la-coquille.mjs";
+import { ISSUES_DETAPE, journalDuCycle } from "/src/coquille/cycle-de-vie.mjs";
+import { brancherLesGestesDuCycle } from "/src/coquille/gestes-du-cycle.mjs";
 import { ETATS_DU_VOLUME, chargeUtileDEtat } from "/src/coquille/etat-de-la-coquille.mjs";
+import { CAUSES_DE_MORT, conduiteApresLaMort } from "/src/coquille/mort-du-worker.mjs";
 import { monterLInterface } from "/src/coquille/interface-de-deverrouillage.mjs";
-import { DELAI_PASSKEY_MS, DELAI_WORKER_MORT_MS } from "/src/coquille/moyens-de-deverrouillage.mjs";
+import { DELAI_WORKER_MORT_MS } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { cadreApplicatif } from "/src/coquille/origines-de-la-coquille.mjs";
 import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
-import {
-  derivateurWebauthnPrf,
-  enregistrerEmplacementPrf,
-} from "/src/vm/derivation/derivateur-webauthn-prf.mjs";
-import { TYPES_KEK } from "/src/vm/enveloppe/identite-enveloppe.mjs";
-import { octetsEnHex } from "/src/vm/format-chiffre/octets.mjs";
+import { derivationsDeLaPage } from "/src/coquille/derivation-dans-la-page.mjs";
 
 /**
  * Paramètre du CHEMIN encadré. En production, ce que la coquille encadre est ce que l'utilisateur
@@ -91,6 +90,18 @@ const rapport = {
   // OBSERVABLE plutôt que promis : l'épreuve lit une suite, pas une affirmation.
   journal: [],
   gestesAdmis: GESTES_ADMIS.map(({ type }) => type),
+  // Le CYCLE DE VIE assemblé (#163, ADR 0030) : les huit étapes de `docs/architecture.md`, chacune
+  // conclue avec son issue et son horodatage. `journal` reste ce qu'il était — la suite d'événements
+  // que les épreuves de #161 et #162 lisent —, et `cycle` dit l'ORDRE, mesuré.
+  cycle: [],
+  /** Ce que ce moteur sait faire, mesuré DANS ce document et sous la CSP servie. */
+  capacites: null,
+  /** Ce que la coquille a constaté de l'exclusivité du volume, avant tout document applicatif. */
+  exclusivite: null,
+  /** Ce que la mort du Worker de confiance a fait constater, quand elle a eu lieu. */
+  workerMort: null,
+  /** Ce que le démarrage de l'application a rendu. Ni octet du volume, ni clé, ni handle. */
+  application: null,
   // Les refus sont COMPTÉS par code, jamais recopiés.
   //
   // Ils l'étaient : chaque refus poussait dans un tableau non borné le type reçu, et le relevé
@@ -133,6 +144,39 @@ const rapport = {
 
 /** Origine des mesures : l'évaluation de ce module, c'est-à-dire le premier instant de la coquille. */
 const depart = performance.now();
+
+/**
+ * Le JOURNAL DU CYCLE. Il date depuis l'évaluation du module, comme les autres mesures du relevé.
+ */
+const cycle = journalDuCycle({
+  maintenant: () => Math.round((performance.now() - depart) * 10) / 10,
+});
+
+/** Publie le cycle dans le relevé. Appelé après chaque étape conclue. */
+function inscrire(etape, issue, motif = null) {
+  cycle.conclure(etape, issue, motif);
+  rapport.cycle = cycle.releve();
+}
+
+/**
+ * ÉTAPE 1 — identités et compatibilité, mesurées ICI et pas dans la sonde.
+ *
+ * `public/compat.html` est exemptée de la CSP de la coquille pour ne pas mesurer notre politique à
+ * la place du moteur (`tools/serve-headers.mjs`). Cette exemption est juste pour une sonde et fausse
+ * pour un produit : ce que la coquille doit savoir, c'est ce qu'elle peut faire ELLE, dans son
+ * propre document, sous la politique qu'on lui sert réellement. Ce qui manque est NOMMÉ.
+ */
+const capacites = mesurerLesCapacites(globalThis);
+rapport.capacites = {
+  presentes: capacites.presentes,
+  manquantes: capacites.manquantes,
+  suffisante: capacites.suffisante,
+};
+inscrire(
+  "identites",
+  capacites.suffisante ? ISSUES_DETAPE.franchie : ISSUES_DETAPE.indisponible,
+  capacites.manquantes.length === 0 ? null : capacites.manquantes.join(","),
+);
 
 /** @param {string} nom */
 function mesurer(nom) {
@@ -201,6 +245,63 @@ const worker = new Worker(new URL("./runtime-worker.mjs", import.meta.url), {
   name: "vault-coquille-confiance",
 });
 const privilegie = new MessageChannel();
+
+/**
+ * La MORT du Worker de confiance, constatée puis conduite (#163, ADR 0030, décision 3).
+ *
+ * Trois voies, et pas une de plus : `error` et `messageerror` du Worker, le SILENCE au-delà de
+ * `DELAI_WORKER_MORT_MS` (`demanderAuWorker`), et le `terminate()` que la coquille appelle
+ * elle-même à la fermeture propre. Les écouteurs sont inscrits ICI, à la création du Worker : un
+ * Worker qui jette à l'évaluation de son module meurt AVANT que le canal soit établi, et une
+ * surveillance armée plus tard ne le verrait pas.
+ */
+let mortDuWorker = null;
+
+/**
+ * CONSTATE la mort, une fois, et tient la conduite : refuser tout service jusqu'à un geste
+ * explicite. L'interface de déverrouillage est REMONTÉE — montrée, pas actionnée — et rien n'est
+ * dérivé tant que personne n'a agi.
+ *
+ * @param {string} cause une valeur de `CAUSES_DE_MORT`
+ */
+function constaterLaMort(cause) {
+  if (mortDuWorker !== null) return mortDuWorker;
+  mortDuWorker = conduiteApresLaMort({
+    cause,
+    etatConnu: rapport.etat,
+    barrieres: rapport.barrieres,
+  });
+  rapport.etat = mortDuWorker.etat;
+  rapport.workerMort = {
+    cause,
+    code: mortDuWorker.code,
+    interfaceRemontee: mortDuWorker.interfaceRemontee,
+    derivationPermise: mortDuWorker.derivationPermise,
+    pousseeDeBarriere: mortDuWorker.pousseeDeBarriere,
+    kekRetenue: mortDuWorker.kekRetenue,
+  };
+  // Toute demande EN VOL reçoit le refus TYPÉ. Sans cela, un geste parti juste avant la mort
+  // resterait suspendu pour toujours — le silence que « un refus typé, jamais un silence » interdit,
+  // et qui serait ici le plus long de tous : le Worker ne répondra plus jamais.
+  for (const [correlation, attente] of demandesEnVol) {
+    demandesEnVol.delete(correlation);
+    attente.refuser(refusDeMort());
+  }
+  remonterLInterface();
+  publier();
+  terminer("worker-mort", `coquille:worker-mort:${cause}`);
+  return mortDuWorker;
+}
+
+/** Le refus que TOUT geste reçoit une fois la mort constatée. Il porte SON code, pas un autre. */
+function refusDeMort() {
+  return Object.assign(new Error(messageDeRefus(CODES_REFUS_COQUILLE.workerMort)), {
+    code: CODES_REFUS_COQUILLE.workerMort,
+  });
+}
+
+worker.addEventListener("error", () => constaterLaMort(CAUSES_DE_MORT.erreur));
+worker.addEventListener("messageerror", () => constaterLaMort(CAUSES_DE_MORT.erreur));
 
 /**
  * Les demandes EN VOL vers le Worker, APPARIÉES par leur identifiant de corrélation.
@@ -279,6 +380,10 @@ function surMessagePrivilegie(donnee) {
  * @param {Record<string, unknown>} corps
  */
 function demanderAuWorker(nomDuType, corps = {}) {
+  // Une coquille dont le Worker est mort ne demande plus rien : elle refuse, tout de suite, sous le
+  // code de la mort. Poser la question ferait attendre trente secondes une réponse qui ne viendra
+  // pas, et la conduite est déjà décidée.
+  if (mortDuWorker !== null) return Promise.reject(refusDeMort());
   corrélationSuivante += 1;
   const correlation = `c${corrélationSuivante}`;
   return new Promise((rendre, refuser) => {
@@ -288,14 +393,14 @@ function demanderAuWorker(nomDuType, corps = {}) {
     // autres, et il porte le code de la coquille — jamais un code du Worker, qui n'a rien dit.
     const minuterie = setTimeout(() => {
       demandesEnVol.delete(correlation);
-      refuser(
-        Object.assign(
-          new Error(
-            "Le Worker de confiance n'a pas répondu dans le délai : il est bloqué ou il est mort.",
-          ),
-          { code: CODES_REFUS_COQUILLE.typeInconnu },
-        ),
-      );
+      // Le SILENCE est l'une des trois causes de mort, et il porte désormais SON code.
+      //
+      // Il portait `typeInconnu`, dont le message est « Requête hors de la liste d'admission de la
+      // coquille » — c'est-à-dire tout autre chose que ce qui s'était produit. Le défaut a été
+      // relevé par la Definition of Ready de #25, et il est de la classe qu'on ne voit qu'une fois
+      // qu'autre chose a déjà échoué : un refus qui décrit un autre événement que le sien.
+      constaterLaMort(CAUSES_DE_MORT.silence);
+      refuser(refusDeMort());
     }, DELAI_WORKER_MORT_MS);
     const clore = (geste) => (valeur) => {
       clearTimeout(minuterie);
@@ -453,6 +558,9 @@ function refuserLaRequete(port, code, recu, correlation) {
 
 /** Pousse l'annonce de barrière vers l'application, si un port lui a été octroyé. */
 function pousserLaBarriere() {
+  // La poussée CESSE à la mort : il n'y a plus personne pour acquitter une barrière, et annoncer
+  // celles d'avant ferait dire « enregistré » à une application sur un coffre qui ne l'est plus.
+  if (mortDuWorker !== null) return;
   if (portRestreint === null) return;
   portRestreint.postMessage(
     enveloppeDeMessage(TYPES_APPLICATIFS.barriere, { barrieres: rapport.barrieres }),
@@ -485,11 +593,28 @@ async function demarrer() {
   if (encadree) {
     return terminer("refusee", "coquille:encadree-refusee");
   }
+  // ÉTAPE 1, et son refus. Une capacité EXIGÉE absente rend la coquille inutilisable : il n'y a pas
+  // de chemin dégradé, et mener l'utilisateur jusqu'à une phrase saisie pour lui refuser ensuite
+  // serait pire que de le dire tout de suite. Le Worker est terminé — rien ne doit tourner dans une
+  // coquille qui ne peut rien servir — et la surveillance est neutralisée d'abord : ce
+  // `terminate()` n'est pas une mort constatée, c'est un démarrage qui n'a pas eu lieu.
+  if (!capacites.suffisante) {
+    mortDuWorker = SANS_SURVEILLANCE;
+    worker.terminate();
+    return terminer(
+      "indisponible",
+      `coquille:capacite-manquante:${capacites.manquantes.join(",")}`,
+    );
+  }
   const cible = cadreApplicatif(location.origin, parametres.get(PARAMETRE_CHEMIN));
   rapport.origineApplicative = cible?.origineApplicative ?? null;
 
   // Le canal est établi quand le Worker a répondu : une promesse tenue, pas un `postMessage` émis.
-  await demanderLEtat();
+  // Sa réponse porte aussi ce que l'ÉTAPE 2 a constaté de l'exclusivité du volume, relevé par le
+  // Worker à son évaluation — donc avant qu'aucun document applicatif puisse exister.
+  const premierEtat = await demanderLEtatPrivilegie();
+  rapport.exclusivite = premierEtat.exclusivite ?? null;
+  inscrire("exclusiviteEtCanal", ISSUES_DETAPE.franchie, rapport.exclusivite?.verdict ?? null);
   rapport.canalPrivilegie = "etabli";
   rapport.journal.push("canal-privilegie-etabli");
   mesurer("canalPrivilegieMs");
@@ -503,8 +628,7 @@ async function demarrer() {
     document,
     racine: document,
     demander: demanderAuWorker,
-    deriverPhrase,
-    deriverPasskey,
+    ...derivations,
     agent: navigator.userAgent,
     surEtat: (reponse) => {
       rapport.etat = reponse.etat;
@@ -527,15 +651,96 @@ async function demarrer() {
   await interfaceDeDeverrouillage.rafraichirLInventaire();
   await demanderLEtat();
   rapport.journal.push("interface-de-deverrouillage-montee");
+  brancherLesGestesDuCycle({
+    racine: document,
+    demander: demanderAuWorker,
+    cycle,
+    rapport,
+    publier,
+    // Le `terminate()` vient APRÈS le `close()` que le Worker vient de faire, et c'est la troisième
+    // cause de mort — celle que la coquille se donne à elle-même. La conduite est la même que pour
+    // les deux autres : refuser tout service jusqu'à un geste explicite.
+    apresFermeture: () => {
+      worker.terminate();
+      constaterLaMort(CAUSES_DE_MORT.terminaison);
+    },
+  });
+
+  // ÉTAPE 3, conclue AVANT tout cadre. Au démarrage ordinaire le volume est verrouillé : il n'y a
+  // ni backend ni VM, et l'étape est conclue `differee` plutôt que sautée. C'est ce qui rend l'ordre
+  // tenable sans mentir — le journal dit ce qui n'a pas eu lieu, et pourquoi le cadre peut suivre.
+  inscrire("backendPuisVm", ISSUES_DETAPE.differee, "volume-verrouille");
   publier();
 
   if (cible === null) return terminer("sans-cadre", "coquille:origine-applicative-indeterminee");
+  // ÉTAPE 4. `peutEncadrer` est une GARDE, pas une formalité : elle refuse le cadre tant que
+  // l'étape 3 n'a rien conclu, et c'est ce qui empêche l'ordre des huit étapes de redevenir une
+  // description.
+  if (!cycle.peutEncadrer()) {
+    return terminer("erreur", `coquille:erreur:${CODES_REFUS_COQUILLE.etapeHorsOrdre}`);
+  }
   creerLeCadre(cible.url);
+  inscrire("cadreEtPort", ISSUES_DETAPE.franchie);
   return terminer("prete", "coquille:prete");
+}
+
+/**
+ * Marque une surveillance NEUTRALISÉE. Ce n'est pas une conduite : c'est l'absence de conduite,
+ * posée pour que le `terminate()` d'un démarrage refusé ne se lise pas comme une mort constatée.
+ */
+const SANS_SURVEILLANCE = Object.freeze({
+  cause: "neutralisee",
+  etat: ETATS_DU_VOLUME.indisponible,
+  code: CODES_REFUS_COQUILLE.capaciteManquante,
+});
+
+/**
+ * L'état PRIVILÉGIÉ, avec ce que le port restreint ne reçoit jamais : le constat d'exclusivité.
+ *
+ * `demanderLEtat` rend la charge utile EXACTE du port restreint (`chargeUtileDEtat`, deux champs) ;
+ * celle-ci rend la réponse entière du canal privilégié. Les deux existent pour que la frontière soit
+ * dans le code et non dans la mémoire de qui l'écrit.
+ */
+async function demanderLEtatPrivilegie() {
+  try {
+    return await demanderAuWorker("etat");
+  } catch {
+    return rapportDEtat();
+  }
+}
+
+/**
+ * REMONTE l'interface de déverrouillage après une mort. Montrée, pas actionnée : aucun geste n'est
+ * déclenché, aucune dérivation n'est lancée, et l'inventaire n'est PAS redemandé — il n'y a plus
+ * personne pour le rendre.
+ *
+ * Si l'interface était déjà montée, elle le reste : la remonter en créerait une seconde, avec deux
+ * écouteurs par bouton.
+ */
+function remonterLInterface() {
+  if (interfaceDeDeverrouillage !== null) return;
+  interfaceDeDeverrouillage = monterLInterface({
+    document,
+    racine: document,
+    demander: () => Promise.reject(refusDeMort()),
+    deriverPhrase: () => Promise.reject(refusDeMort()),
+    deriverPasskey: () => Promise.reject(refusDeMort()),
+    agent: navigator.userAgent,
+  });
 }
 
 /** La poignée de l'interface, une fois montée. Elle ne détient aucune clé. */
 let interfaceDeDeverrouillage = null;
+
+/**
+ * Les deux dérivations que la PAGE fait elle-même (`derivation-dans-la-page.mjs`), liées au canal
+ * privilégié de cette coquille. Elles ne détiennent aucune clé non plus : ce qui en sort est une
+ * `CryptoKey` non extractible, qui repart aussitôt par `enveloppePrivilegiee`.
+ */
+const derivations = derivationsDeLaPage({
+  demanderAuWorker,
+  urlDuWorker: new URL("./derivation-worker.mjs", import.meta.url),
+});
 
 /**
  * L'instant du dernier GESTE de l'utilisateur, origine des deux mesures de #162.
@@ -546,160 +751,6 @@ let interfaceDeDeverrouillage = null;
  * l'utilisateur a passé à taper.
  */
 let departDuGeste = null;
-
-/**
- * DÉRIVE la KEK d'une phrase dans un WORKER DÉDIÉ, et rend ce que le Worker de confiance attend.
- *
- * C'est la décision 5 de l'ADR 0029, réécrite après la revue de sécurité de la PR #167. Argon2id est
- * un appel WebAssembly SYNCHRONE : le fil qui le porte ne dispatche plus aucun message pendant deux
- * secondes sur le moteur le plus lent. Le porter dans le Worker de CONFIANCE laissait donc le
- * document applicatif sans réponse — et la première correction, qui sortait la question d'état de la
- * file de promesses de ce Worker, ne pouvait rien : il n'y a pas de file qui tienne quand le fil est
- * pris.
- *
- * **C'est la PAGE qui crée ce Worker, et non le Worker de confiance.** Les deux étaient possibles ;
- * celui-ci a trois motifs, dont un seul suffirait :
- *
- *  - il ne demande AUCUNE capacité nouvelle. Un Worker imbriqué en exigerait une que
- *    `docs/compatibility.md` ne mesure sur aucun des trois moteurs, et #162 n'a pas à ajouter une
- *    ligne au dossier de portabilité pour un calcul ;
- *  - il donne UNE seule forme aux deux moyens dérivés hors du Worker de confiance. La passkey l'est
- *    déjà, parce que `navigator.credentials` n'existe que dans un document ; la phrase le devient, et
- *    le Worker de confiance reçoit dans les deux cas exactement la même chose — une `CryptoKey` non
- *    extractible, par la même porte, sous la même garde ;
- *  - il RÉDUIT ce que le Worker de confiance fait. Il gardait un calcul qui n'avait besoin d'aucun
- *    de ses handles : ni l'OPFS, ni l'enveloppe, ni la clé de volume n'entrent dans une dérivation.
- *
- * Ce qui ne change pas : la phrase ne quitte pas l'origine de CONFIANCE. Elle franchit un port de
- * plus, à l'intérieur de la même origine — c'est la limite 4 de l'ADR 0021, inchangée dans sa nature
- * et dite une fois de plus.
- */
-async function deriverPhrase({ inventaire, phrase }) {
-  const existant = (inventaire?.emplacements ?? []).find(
-    (emplacement) => emplacement.typeKek === TYPES_KEK.phrase,
-  );
-  const identite =
-    existant === undefined
-      ? await demanderAuWorker("preparation", { moyen: "phrase" })
-      : {
-          identifiantVolume: inventaire.identifiantVolume,
-          identifiantEmplacement: existant.identifiantEmplacement,
-          parametresHex: existant.parametresHex,
-        };
-  const rendu = await dansLeWorkerDeDerivation({ ...identite, phrase });
-  return {
-    kek: rendu.kek,
-    parametresHex: rendu.parametresHex,
-    identifiantEmplacement: identite.identifiantEmplacement,
-  };
-}
-
-/**
- * Fait tourner UN Worker de dérivation, et le laisse mourir.
- *
- * Un Worker par geste : il se ferme lui-même après avoir répondu (`self.close()`), et son tas — la
- * phrase comprise — s'en va avec lui. C'est plus franc qu'un effacement, que le langage ne permet
- * pas sur une `string` (ADR 0021, décision 7), et c'est un effet du découpage plutôt qu'une promesse.
- * `terminate()` est appelé de ce côté-ci aussi : un Worker qui n'a pas répondu ne doit pas survivre à
- * l'attente de sa réponse.
- */
-function dansLeWorkerDeDerivation(appel) {
-  const worker = new Worker(new URL("./derivation-worker.mjs", import.meta.url), {
-    type: "module",
-    name: "vault-derivation",
-  });
-  return new Promise((rendre, refuser) => {
-    const finir = (geste) => {
-      worker.terminate();
-      geste();
-    };
-    worker.addEventListener("message", (event) => {
-      const rendu = event.data ?? {};
-      if (rendu.ok) return finir(() => rendre(rendu));
-      finir(() =>
-        refuser(
-          Object.assign(new Error(rendu.message ?? "dérivation refusée"), { code: rendu.code }),
-        ),
-      );
-    });
-    worker.addEventListener("error", (event) => {
-      finir(() =>
-        refuser(
-          Object.assign(new Error(`Le Worker de dérivation a échoué : ${event.message}`), {
-            code: CODES_REFUS_COQUILLE.typeInconnu,
-          }),
-        ),
-      );
-    });
-    worker.postMessage(appel);
-  });
-}
-
-/**
- * DÉRIVE la KEK d'une passkey, DANS LA PAGE, et rend ce que le Worker attend.
- *
- * `navigator.credentials` n'existe pas dans un Worker (ADR 0021, décision 5) : cet appel DOIT
- * partir d'un document, et c'est la seule dérivation que la coquille fasse elle-même. Ce qui repart
- * vers le Worker est la `CryptoKey` NON EXTRACTIBLE ; la sortie PRF brute ne quitte jamais cette
- * page, et aucune variable de ce module ne la retient.
- *
- * Deux chemins, et ils ne se confondent pas :
- *
- *  - le coffre EXISTE et porte un emplacement `webauthn-prf` : une ASSERTION refait la KEK sous les
- *    paramètres publics déjà écrits, que le Worker a rendus en hexadécimal ;
- *  - le coffre n'existe pas : un ENREGISTREMENT crée la passkey, et la page rend les paramètres
- *    publics avec la clé, pour que le Worker pose l'enveloppe sous exactement cet emplacement.
- */
-async function deriverPasskey({ inventaire }) {
-  const existant = (inventaire?.emplacements ?? []).find(
-    (emplacement) => emplacement.typeKek === TYPES_KEK["webauthn-prf"],
-  );
-  const derivateur = derivateurWebauthnPrf();
-  if (existant !== undefined) {
-    const kek = await derivateur.deriver({
-      parametres: octetsDeLHex(existant.parametresHex),
-      identite: {
-        identifiantVolume: inventaire.identifiantVolume,
-        identifiantEmplacement: existant.identifiantEmplacement,
-      },
-      // La BORNE est celle de la coquille, aux DEUX appels. Sans elle, un moteur sans
-      // authentificateur laisse la promesse en suspens une MINUTE — le défaut de la première
-      // exécution de #162 en intégration continue : `#deverrouillage-refus` restait vide pendant que
-      // la page attendait le délai par défaut du module.
-      geste: { delaiMs: DELAI_PASSKEY_MS },
-    });
-    return { kek };
-  }
-  const enregistre = await enregistrerEmplacementPrf({
-    rpId: location.hostname,
-    nomUtilisateur: "vault",
-    identifiantUtilisateur: crypto.getRandomValues(new Uint8Array(16)),
-    delaiMs: DELAI_PASSKEY_MS,
-  });
-  // L'identité de l'emplacement est DEMANDÉE au Worker de confiance, et non recopiée ici : la KEK y
-  // est liée par son info HKDF (ADR 0021), et l'identifiant de volume que le Worker pose est la
-  // seule vérité sur ce point. La page en tenait une COPIE, avec un cliquet pour la surveiller ; la
-  // demander est plus court, et ne peut pas diverger.
-  const prepare = await demanderAuWorker("preparation", { moyen: "webauthn-prf" });
-  const kek = await derivateur.deriver({
-    parametres: enregistre.parametres,
-    identite: {
-      identifiantVolume: prepare.identifiantVolume,
-      identifiantEmplacement: prepare.identifiantEmplacement,
-    },
-    geste: {},
-  });
-  return {
-    kek,
-    parametresHex: octetsEnHex(enregistre.parametres),
-    identifiantEmplacement: prepare.identifiantEmplacement,
-  };
-}
-
-/** Relit une chaîne hexadécimale en octets. La page n'importe pas le décodeur du format pour cela. */
-function octetsDeLHex(hex) {
-  return Uint8Array.from(String(hex).match(/../g) ?? [], (paire) => Number.parseInt(paire, 16));
-}
 
 /** @param {string} etat @param {string} texte */
 function terminer(etat, texte) {

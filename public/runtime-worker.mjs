@@ -50,6 +50,9 @@ import {
   enveloppeDeMessage,
   sansCapacite,
 } from "/src/coquille/contrat-de-messages.mjs";
+import { compteRenduPublie, demarrerLaVm } from "/src/coquille/application-de-reference.mjs";
+import { constaterLExclusivite } from "/src/coquille/exclusivite-du-volume.mjs";
+import { exigerLeBackend } from "/src/coquille/cycle-de-vie.mjs";
 import { ETATS_DU_VOLUME, chargeUtileDEtat } from "/src/coquille/etat-de-la-coquille.mjs";
 import { exigerKekDeLaPage, moyenParNom } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
@@ -137,6 +140,12 @@ const interne = {
   kek: null,
   /** La version d'enveloppe observée à la dernière ouverture ou au dernier ajout. */
   version: null,
+  /**
+   * La SESSION de l'application, quand la VM tourne. Elle porte la poignée de fermeture rendue par
+   * `bootEtVerifier` — une FONCTION, donc quelque chose que `sansCapacite` refuse de poster : la
+   * poignée reste du côté qui tient le handle, par construction et non par discipline.
+   */
+  application: null,
 };
 
 /** Le port privilégié, transféré UNE fois par la coquille avant tout document applicatif. */
@@ -231,6 +240,12 @@ async function surMessagePrivilegie(event) {
   if (decode.type === TYPES_PRIVILEGIES.creerRecuperation) {
     return rendreUnMoyenDeRecuperation(correlation);
   }
+  if (decode.type === TYPES_PRIVILEGIES.application) {
+    return demarrerLApplication(decode.message, correlation);
+  }
+  if (decode.type === TYPES_PRIVILEGIES.fermeture) {
+    return fermerLeCoffre(decode.message, correlation);
+  }
   return repondreCode(CODES_REFUS_COQUILLE.typeInconnu, correlation);
 }
 
@@ -246,13 +261,19 @@ function correlee(correlation) {
   return correlation === null ? {} : { correlation };
 }
 
-/** Poste l'état sur le canal privilégié. */
-function publierLEtat(correlation) {
-  repondre(
-    TYPES_PRIVILEGIES.etatReponse,
-    correlation,
-    chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),
-  );
+/**
+ * Poste l'état sur le canal privilégié, et ce que l'ÉTAPE 2 a constaté de l'exclusivité.
+ *
+ * Les deux champs supplémentaires ne franchissent QUE ce canal : `chargeUtileDEtat` reste la forme
+ * exacte de ce que le port restreint reçoit, et la coquille n'en relaie que ses deux champs
+ * (`main.mjs`, `demanderLEtat`). Le document applicatif n'apprend donc rien de l'exclusivité.
+ */
+async function publierLEtat(correlation) {
+  repondre(TYPES_PRIVILEGIES.etatReponse, correlation, {
+    ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),
+    exclusivite: await exclusiviteConstatee,
+    application: interne.application === null ? "arretee" : "demarree",
+  });
 }
 
 /** @param {string} code */
@@ -598,4 +619,119 @@ function annoncerLaBarriere() {
   portPrivilegie.postMessage(
     enveloppeDeMessage(TYPES_PRIVILEGIES.barriere, { barrieres: interne.barrieres }),
   );
+}
+
+// --- Étape 2 : ce que la coquille constate de l'EXCLUSIVITÉ, avant tout document ------------------
+
+/**
+ * Le constat, lancé À L'ÉVALUATION du module — donc avant que la coquille ait pu créer le moindre
+ * cadre, puisque le cadre attend l'établissement du canal, qui attend une réponse d'état, qui attend
+ * cette promesse. L'ordre de l'étape 2 est ainsi tenu par une DÉPENDANCE, non par une convention.
+ */
+const exclusiviteConstatee = constaterLExclusivite({ volume: VOLUME, peutOuvrir: PEUT_OUVRIR });
+
+// --- Étape 3 : le backend, PUIS la machine virtuelle ----------------------------------------------
+
+/**
+ * DÉVELOPPE la clé de volume depuis l'enveloppe, sous la KEK RETENUE de la session.
+ *
+ * La KEK est retenue depuis #162 (ADR 0029, limite 2) ; c'est elle qui rend ce geste possible sans
+ * redemander la phrase — donc sans la faire vivre une seconde fois et sans payer une seconde
+ * dérivation de deux secondes. Ce que ce chemin ajoute est un DÉPLIAGE de plus par geste
+ * d'application : AES-KW, quelques microsecondes, et aucune dérivation.
+ *
+ * Les octets rendus appartiennent à l'appelant, qui les efface dès l'ouverture faite.
+ */
+async function cleDeVolume() {
+  if (interne.kek === null || interne.etat !== ETATS_DU_VOLUME.ouvert) {
+    const erreur = new Error("Aucune clé de session : le coffre n'est pas ouvert.");
+    erreur.code = CODES_REFUS_COQUILLE.volumeVerrouille;
+    throw erreur;
+  }
+  const ouverte = await ouvrirEnveloppe({
+    support: support(),
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    kek: interne.kek,
+  });
+  return ouverte.dek;
+}
+
+/**
+ * DÉMARRE l'application, et retient la poignée de fermeture qu'elle rend.
+ *
+ * L'ORDRE est contrôlé avant toute autre chose : un boot demandé sur un volume qui n'est pas ouvert
+ * est refusé par `VAULT_COQUILLE_ETAPE_HORS_ORDRE` (`cycle-de-vie.mjs`), et c'est la preuve par
+ * l'échec de l'inverse que l'ADR 0030 demande.
+ */
+async function demarrerLApplication(message, correlation) {
+  exigerLeBackend({ etatDuVolume: interne.etat });
+  if (interne.application !== null) {
+    const erreur = new Error("L'application tourne déjà : un second démarrage n'est pas un geste.");
+    erreur.code = CODES_REFUS_COQUILLE.etapeHorsOrdre;
+    throw erreur;
+  }
+  const demarrage = await demarrerLaVm({
+    cleDeVolume,
+    reprendreParInstantane: message?.reprendreParInstantane !== false,
+  });
+  if (!demarrage.demarree) {
+    return repondre(TYPES_PRIVILEGIES.applicationReponse, correlation, {
+      demarree: false,
+      motif: demarrage.motif,
+      code: CODES_REFUS_COQUILLE.applicationAbsente,
+    });
+  }
+  interne.application = { fermer: demarrage.fermer };
+  // Les barrières du GUEST entrent dans le compte que l'application reçoit : c'est l'étape 5 du
+  // cycle de vie — « un flush traverse toutes les couches avant son acquittement » —, et jusqu'ici
+  // la coquille ne comptait que la sienne, écrite pour prouver qu'elle savait en franchir une.
+  interne.barrieres += demarrage.compte.counts?.["flush-ack"] ?? 0;
+  annoncerLaBarriere();
+  return repondre(TYPES_PRIVILEGIES.applicationReponse, correlation, {
+    demarree: true,
+    installation: demarrage.installation,
+    etat: interne.etat,
+    barrieres: interne.barrieres,
+    ...compteRenduPublie(demarrage.compte),
+  });
+}
+
+// --- Étape 7 : la fermeture propre ----------------------------------------------------------------
+
+/**
+ * FERME proprement : arrêter la VM, capturer l'instantané, `close()` les volumes.
+ *
+ * **L'ordre est le contrat, et il ne se réordonne pas.** `close()` attend les E/S déjà ACCEPTÉES
+ * (#132) et libère le nom du volume ; le `terminate()` du Worker vient APRÈS, et il est le fait de
+ * la page. Terminer avant `close()` laisserait le handle exclusif tenu par un objet que plus
+ * personne ne référence, et l'ouverture suivante rendrait `VAULT_STORAGE_BUSY` — sur le volume que
+ * l'utilisateur vient de rouvrir lui-même (constat 6 de la revue de sécurité de la PR #167).
+ *
+ * La CAPTURE a lieu avant l'arrêt, dans l'ordre de l'ADR 0024 décision 6 : suspension du guest,
+ * quiescence, scellement. Elle ne peut pas faire échouer une fermeture par ailleurs propre — une
+ * capture refusée rend son motif, jamais une exception.
+ *
+ * **Ce que ce geste NE décide pas** : ni quand il se déclenche, ni sous quel délai, ni ce que
+ * « verrouillé » veut dire. #25 possède l'état et la règle, et réemploiera ce chemin (ADR 0030,
+ * décision 3).
+ */
+async function fermerLeCoffre(message, correlation) {
+  const capture =
+    interne.application === null
+      ? null
+      : await interne.application.fermer({ capturer: message?.capturer !== false });
+  interne.application = null;
+  const precedent = interne.backend;
+  interne.backend = null;
+  // Les clés partent AVANT le `close()` : si la fermeture du handle échouait, la coquille aurait
+  // déjà cessé de détenir de quoi ouvrir. C'est l'ordre dont l'échec ne laisse rien derrière.
+  interne.kek = null;
+  moyenRetenu = null;
+  interne.etat = PEUT_OUVRIR ? ETATS_DU_VOLUME.verrouille : ETATS_DU_VOLUME.indisponible;
+  if (precedent !== null) await precedent.close();
+  return repondre(TYPES_PRIVILEGIES.fermetureReponse, correlation, {
+    etat: interne.etat,
+    barrieres: interne.barrieres,
+    capture,
+  });
 }

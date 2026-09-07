@@ -123,7 +123,9 @@ test("le DÉMARRAGE de l'application exige un backend OUVERT, et le refus le dit
   const journal = journalDuCycle({ maintenant: horlogeFeinte() });
   journal.conclure("identites", ISSUES_DETAPE.franchie);
   journal.conclure("exclusiviteEtCanal", ISSUES_DETAPE.franchie);
-  const erreur = refusDe(() => journal.exigerLeBackend({ etatDuVolume: ETATS_DU_VOLUME.verrouille }));
+  const erreur = refusDe(() =>
+    journal.exigerLeBackend({ etatDuVolume: ETATS_DU_VOLUME.verrouille }),
+  );
   assert.equal(erreur.code, CODES_REFUS_COQUILLE.etapeHorsOrdre);
   assert.doesNotThrow(() => journal.exigerLeBackend({ etatDuVolume: ETATS_DU_VOLUME.ouvert }));
 });

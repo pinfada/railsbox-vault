@@ -67,6 +67,27 @@ export const TYPES_PRIVILEGIES = Object.freeze({
   /** Demande d'état : même question que sur le port restreint, sur l'autre canal et sous un autre nom. */
   etat: "vault.coquille.etat-prive",
   etatReponse: "vault.coquille.etat-prive-reponse",
+  /**
+   * DÉMARRAGE de l'application : le Worker installe le disque si besoin, ouvre son volume et boote
+   * la VM (#163, ADR 0030, étape 3 du cycle de vie).
+   *
+   * Il est refusé sur un volume qui n'est pas ouvert — `VAULT_COQUILLE_ETAPE_HORS_ORDRE` —, et
+   * c'est la preuve par l'échec de l'inverse : la VM démarre APRÈS le backend, jamais avant.
+   */
+  application: "vault.coquille.demarrer-application",
+  applicationReponse: "vault.coquille.demarrer-application-reponse",
+  /**
+   * FERMETURE PROPRE (étape 7) : arrêter la VM, capturer l'instantané, `close()` le volume.
+   *
+   * Le `terminate()` du Worker vient APRÈS, et il est le fait de la page : terminer avant `close()`
+   * laisserait le handle exclusif tenu par un objet que plus personne ne référence, et l'ouverture
+   * suivante rendrait `VAULT_STORAGE_BUSY` — constat 6 de la revue de sécurité de la PR #167.
+   *
+   * #163 écrit ce chemin ; #25 le réemploiera pour verrouiller, et c'est elle qui dira sous quel
+   * déclencheur et sous quel délai.
+   */
+  fermeture: "vault.coquille.fermer-le-coffre",
+  fermetureReponse: "vault.coquille.fermer-le-coffre-reponse",
   /** Annonce du Worker : une barrière de durabilité vient d'être acquittée. */
   barriere: "vault.coquille.barriere-privee",
   refus: "vault.coquille.refus-prive",

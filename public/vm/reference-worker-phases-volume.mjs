@@ -30,35 +30,9 @@ import {
   VOLUME_ALGORITHM,
 } from "/src/vm/volume-manifest.mjs";
 import { ouvrirVolumeBrut } from "/src/vm/opfs-volume-brut.mjs";
+import { verserFluxDansVolume } from "/src/vm/versement-de-disque.mjs";
 import { attentesDe, manifesteDuDescripteur } from "/src/vm/boot-de-reference.mjs";
 import { EXPORT_BLOCK_BYTES } from "./reference-worker-mesures.mjs";
-
-/**
- * Verse une réponse HTTP dans le backend, morceau par morceau, et franchit une barrière à la fin.
- * Aucun morceau n'est conservé : c'est ce qui borne la surmémoire de la préparation, quelle que
- * soit la taille du disque. Rend le nombre d'octets RÉELLEMENT écrits, que l'appelant confronte à
- * la taille annoncée — un flux tronqué ne doit pas produire un volume qui se croit complet.
- *
- * La fermeture du backend n'est PAS faite ici : elle appartient au `finally` de l'appelant, qui
- * doit fermer même quand le flux échoue.
- */
-async function verserFluxDansVolume(backend, url) {
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok || response.body === null) {
-    throw new Error(`Disque applicatif ${url} indisponible (${response.status}).`);
-  }
-  const reader = response.body.getReader();
-  let offset = 0;
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    if (value.byteLength === 0) continue;
-    await backend.write(offset, value);
-    offset += value.byteLength;
-  }
-  await backend.flush();
-  return offset;
-}
 
 /**
  * Ouvre le volume NEUF, y verse le disque, et rend ce que la suite doit savoir : les octets écrits

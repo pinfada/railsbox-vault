@@ -159,15 +159,21 @@ test("la PAGE ne RECOPIE plus l'identifiant du volume : elle le demande", async 
   // revue de la PR #167, elle DEMANDE cette identité au Worker de confiance (`preparation`), qui est
   // la seule vérité sur ce point. Une recopie surveillée reste une recopie ; ne pas en avoir est
   // plus court et ne peut pas diverger.
-  const page = await lire("public/main.mjs");
+  // #163 a sorti les deux dérivations de `public/main.mjs` vers `src/coquille/derivation-dans-la-
+  // page.mjs` : le module de page portait le cycle de vie assemblé ET deux dérivations de clé, et
+  // ne se relisait plus d'un bloc. La propriété ne change pas de nature — elle change de fichier —,
+  // et les DEUX sont contrôlés pour qu'une recopie ne puisse pas se rétablir dans l'un des deux.
+  const derivations = await lire("src/coquille/derivation-dans-la-page.mjs");
   const empreinte = /0x21 \+ index \* 0x07/;
   assert.match(await lire("public/runtime-worker.mjs"), empreinte);
-  assert.ok(
-    !empreinte.test(page),
-    "la page recopie de nouveau l'identifiant de volume : demandez-le au Worker de confiance.",
-  );
+  for (const chemin of ["public/main.mjs", "src/coquille/derivation-dans-la-page.mjs"]) {
+    assert.ok(
+      !empreinte.test(await lire(chemin)),
+      `${chemin} recopie de nouveau l'identifiant de volume : demandez-le au Worker de confiance.`,
+    );
+  }
   assert.match(
-    page,
+    derivations,
     /demanderAuWorker\("preparation"/,
     "la page doit demander l'identité de l'emplacement à préparer, et non la fabriquer.",
   );
