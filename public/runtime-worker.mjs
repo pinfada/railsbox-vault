@@ -45,33 +45,36 @@
 
 import {
   TYPES_PRIVILEGIES,
+  correlationAdmise,
   decoderMessage,
   enveloppeDeMessage,
   sansCapacite,
 } from "/src/coquille/contrat-de-messages.mjs";
 import { ETATS_DU_VOLUME, chargeUtileDEtat } from "/src/coquille/etat-de-la-coquille.mjs";
-import { moyenParNom } from "/src/coquille/moyens-de-deverrouillage.mjs";
+import { exigerKekDeLaPage, moyenParNom } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
 import { SECTOR_SIZE } from "/src/vm/block-geometry.mjs";
-import { argon2Vendu } from "/src/vm/derivation/argon2-vendu.mjs";
 import {
   CALIBRATION_PHRASE,
-  derivateurPhrase,
   parametresDePhrase,
   tirerSelDePhrase,
 } from "/src/vm/derivation/derivateur-phrase.mjs";
 import { derivateurRecuperation } from "/src/vm/derivation/derivateur-recuperation.mjs";
 import { catalogueDeDerivateurs } from "/src/vm/derivation/derivateurs.mjs";
-import { preparerEmplacementDerive } from "/src/vm/derivation/emplacement-derive.mjs";
 import {
   creerEnveloppe,
   inventorierEnveloppe,
   ouvrirEnveloppe,
 } from "/src/vm/enveloppe-de-cle.mjs";
-import { TYPES_KEK, tirerCleDeVolume } from "/src/vm/enveloppe/identite-enveloppe.mjs";
+import {
+  TYPES_KEK,
+  tirerCleDeVolume,
+  tirerIdentifiantEmplacement,
+} from "/src/vm/enveloppe/identite-enveloppe.mjs";
 import { hexEnOctets, octetsEnHex } from "/src/vm/format-chiffre/octets.mjs";
 import { creerMoyenDeRecuperation } from "/src/vm/moyen-de-recuperation.mjs";
 import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
+import { STORAGE_ERROR_CODES, StorageError } from "/src/vm/storage-errors.mjs";
 import { supportEnveloppeOpfs } from "/src/vm/ouverture-par-enveloppe.mjs";
 
 /** Nom du volume que la coquille de produit ouvre. Un seul, tant qu'une seule application existe. */
@@ -88,21 +91,45 @@ const IDENTIFIANT_VOLUME = octetsEnHex(
 /**
  * Le CATALOGUE que ce Worker pose : les types qu'il sait servir, et rien d'autre.
  *
- * `webauthn-prf` n'y est pas, et ce n'est pas un oubli : cette dérivation-là se fait dans la page
- * (ADR 0021, décision 5), et le Worker n'en reçoit que la `CryptoKey`. Le catalogue dit donc ce que
- * le WORKER sert, ce qui est exactement la question que `catalogue.pour` pose. Un type absent rend
- * `VAULT_DERIVATION_TYPE_INCONNU` — jamais une tentative sous un dérivateur approchant.
+ * Il n'en sert plus qu'UN, et c'est le sujet de la décision 5 réécrite : `webauthn-prf` se dérive
+ * dans la page parce que `navigator.credentials` n'existe pas dans un Worker, et `phrase` s'y dérive
+ * désormais aussi — dans un Worker DÉDIÉ que la page crée — parce qu'Argon2id est un appel
+ * WebAssembly SYNCHRONE, et qu'il bloquait ce fil-ci pendant deux secondes. Le catalogue dit donc ce
+ * que le WORKER DE CONFIANCE sert, ce qui est exactement la question que `catalogue.pour` pose. Un
+ * type absent rend `VAULT_DERIVATION_TYPE_INCONNU` — jamais une tentative sous un dérivateur
+ * approchant.
  */
 const CATALOGUE = catalogueDeDerivateurs({
-  [TYPES_KEK.phrase]: derivateurPhrase({ argon2: argon2Vendu() }),
   [TYPES_KEK.recuperation]: derivateurRecuperation(),
 });
+
+/**
+ * Ce moteur peut-il atteindre un volume ? Constaté UNE FOIS, à l'évaluation du module.
+ *
+ * L'OPFS et son accès synchrone manquent à un moteur de la matrice #2 (WebKit). Cette question ne
+ * dépend d'aucun état et ne change pas en cours de vie : la poser une seule fois est ce qui rend
+ * l'état PUBLIÉ déterministe. Elle était posée à chaque geste, et `publierLInventaire` MUTAIT
+ * `interne.etat` en passant — si bien que la page n'apprenait `indisponible` que si le document
+ * applicatif posait sa question d'état, c'est-à-dire à un instant que personne ne contrôle. Une
+ * COURSE, qui rendait la suite verte en local et rouge en intégration continue (constat 3 de la
+ * revue de sécurité de la PR #167).
+ *
+ * L'absence est rendue comme un ÉTAT — `indisponible` — et non comme un refus de déverrouillage,
+ * parce que ce n'est pas le geste qui a échoué. Confondre les deux ferait redemander à
+ * l'utilisateur une phrase qui n'ouvrirait rien.
+ */
+const PEUT_OUVRIR =
+  typeof navigator?.storage?.getDirectory === "function" &&
+  typeof FileSystemFileHandle !== "undefined" &&
+  typeof FileSystemFileHandle.prototype.createSyncAccessHandle === "function";
 
 /**
  * Ce que le Worker sait de lui-même. Rien de tout cela ne franchit un `postMessage`.
  */
 const interne = {
-  etat: ETATS_DU_VOLUME.verrouille,
+  // L'état de DÉPART dit déjà ce que ce moteur sait faire : la toute première réponse d'état est
+  // donc juste, avant qu'aucun geste n'ait eu lieu et sans qu'aucune course ne puisse l'inverser.
+  etat: PEUT_OUVRIR ? ETATS_DU_VOLUME.verrouille : ETATS_DU_VOLUME.indisponible,
   barrieres: 0,
   /** Backend du volume ouvert. Il tient le handle exclusif ; il n'est jamais posté. */
   backend: null,
@@ -167,10 +194,18 @@ self.addEventListener("message", (event) => {
 /** File d'exécution du canal privilégié : un message à la fois, dans l'ordre d'arrivée. */
 let chaine = Promise.resolve();
 
-/** L'identifiant de corrélation d'un message reçu, ou `null`. Il est rendu TEL QUEL. */
+/**
+ * L'identifiant de corrélation d'un message reçu, ou `null`.
+ *
+ * Il passe par `correlationAdmise` — l'alphabet clos et la borne de soixante-quatre caractères du
+ * contrat — et non par un simple test de type. Il est RENDU TEL QUEL dans la réponse : c'est donc
+ * une valeur de l'appelant qui revient à l'appelant, exactement le cas que cette garde borne sur le
+ * port restreint depuis la revue de la PR #166. Le canal privilégié n'est pas atteignable depuis
+ * l'origine applicative, mais une garde qui ne vaut que d'un côté d'une frontière est une garde
+ * qu'on finit par déplacer sans elle (constat 14 de la revue de la PR #167).
+ */
 function correlationDe(donnee) {
-  const valeur = donnee?.correlation;
-  return typeof valeur === "string" ? valeur : null;
+  return correlationAdmise(donnee?.correlation);
 }
 
 /** @param {string} code */
@@ -189,6 +224,9 @@ async function surMessagePrivilegie(event) {
   if (decode.type === TYPES_PRIVILEGIES.inventaire) return publierLInventaire(correlation);
   if (decode.type === TYPES_PRIVILEGIES.deverrouiller) {
     return deverrouiller(decode.message, correlation);
+  }
+  if (decode.type === TYPES_PRIVILEGIES.preparation) {
+    return preparerUnEmplacement(decode.message, correlation);
   }
   if (decode.type === TYPES_PRIVILEGIES.creerRecuperation) {
     return rendreUnMoyenDeRecuperation(correlation);
@@ -263,27 +301,17 @@ function support() {
  * assumé de l'ADR 0020 —, et rien de tout cela ne franchit jamais le port RESTREINT.
  */
 async function publierLInventaire(correlation) {
-  if (!capaciteDOuverture()) {
-    interne.etat = ETATS_DU_VOLUME.indisponible;
-    return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, {
-      present: false,
-      versionEnveloppe: null,
-      emplacements: [],
-    });
-  }
+  // La réponse porte l'ÉTAT, et c'est la correction du constat 3 : la page apprend dans le MÊME
+  // message ce que le coffre porte et ce que ce moteur sait faire. Rien n'est muté ici — l'état de
+  // ce Worker ne dépend pas de la lecture de l'enveloppe, et le laisser en dépendre était la course.
+  const vide = { present: false, versionEnveloppe: null, emplacements: [] };
+  if (!PEUT_OUVRIR) return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, vide);
   const observe = await support().etat();
-  if (!observe.present) {
-    return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, {
-      present: false,
-      versionEnveloppe: null,
-      emplacements: [],
-    });
-  }
+  if (!observe.present) return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, vide);
   const inventaire = await inventorierEnveloppe({
     support: support(),
     identifiantVolume: IDENTIFIANT_VOLUME,
   });
-  interne.version = inventaire.version;
   return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, {
     present: true,
     identifiantVolume: IDENTIFIANT_VOLUME,
@@ -291,10 +319,38 @@ async function publierLInventaire(correlation) {
     emplacements: inventaire.emplacements.map((emplacement) => ({
       typeKek: emplacement.typeKek,
       identifiantEmplacement: emplacement.identifiantEmplacement,
-      ...(emplacement.typeKek === TYPES_KEK["webauthn-prf"]
-        ? { parametresHex: octetsEnHex(emplacement.parametres) }
-        : {}),
+      // Les paramètres publics des deux moyens que la PAGE dérive. Ils sont en clair dans le
+      // fichier (ADR 0020, canal auxiliaire assumé), et la page en a besoin pour dériver — c'est la
+      // seule raison de les lui rendre. Ceux du code de récupération restent ici : il se dérive ici.
+      ...(emplacement.typeKek === TYPES_KEK.recuperation
+        ? {}
+        : { parametresHex: octetsEnHex(emplacement.parametres) }),
     })),
+  });
+}
+
+/**
+ * PRÉPARE un emplacement NEUF pour un moyen que la page dérive : sel tiré, identifiant tiré.
+ *
+ * Les deux sont PUBLICS — c'est ce que l'ADR 0020 écrit de tout ce que porte le fichier — et la page
+ * en a besoin AVANT de dériver, puisque la KEK est liée à l'identifiant de l'emplacement par son
+ * info HKDF. Ils sont tirés ICI plutôt que dans la page pour une raison unique : le sel d'une phrase
+ * a sa calibration (ADR 0021), et la laisser choisir par l'appelant rouvrirait la porte que le
+ * plancher de la RFC 9106 ferme.
+ */
+function preparerUnEmplacement(message, correlation) {
+  const moyen = moyenParNom(message.moyen);
+  if (moyen === null || moyen.derivePar !== "page") {
+    return repondreCode(CODES_REFUS_COQUILLE.typeInconnu, correlation);
+  }
+  const parametres =
+    moyen.typeKek === TYPES_KEK.phrase
+      ? parametresDePhrase({ sel: tirerSelDePhrase(), ...CALIBRATION_PHRASE })
+      : null;
+  return repondre(TYPES_PRIVILEGIES.preparationReponse, correlation, {
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    identifiantEmplacement: tirerIdentifiantEmplacement(),
+    parametresHex: parametres === null ? null : octetsEnHex(parametres),
   });
 }
 
@@ -303,12 +359,19 @@ async function publierLInventaire(correlation) {
 /**
  * OUVRE le volume par le moyen que l'utilisateur a présenté.
  *
- * L'ordre est celui de l'ADR 0020, sans raccourci : l'inventaire public est lu, l'emplacement du
- * type demandé est choisi, la KEK est dérivée sous l'identité de CET emplacement, l'enveloppe est
- * ouverte sous `versionMinimale`, et seulement alors l'ouvreur reçoit la clé de volume.
+ * L'ordre est celui de l'ADR 0020, sans raccourci : l'enveloppe est ouverte sous `versionMinimale`,
+ * et seulement alors l'ouvreur unique reçoit la clé de volume.
  *
- * @param {{ moyen?: unknown, phrase?: unknown, code?: unknown, kek?: unknown,
- *           parametresHex?: unknown, versionMinimale?: unknown }} message
+ * **La KEK d'une phrase et celle d'une passkey ARRIVENT déjà dérivées** (ADR 0029, décision 5
+ * réécrite) : elles sont calculées dans la réalité de la page — pour la passkey parce que
+ * `navigator.credentials` n'existe pas dans un Worker, pour la phrase parce qu'Argon2id est un
+ * appel WebAssembly SYNCHRONE qui bloquait ce fil-ci pendant deux secondes. Ce Worker ne voit
+ * jamais ni la phrase, ni la sortie PRF, ni les octets d'une KEK : il reçoit un handle opaque.
+ * Le CODE de récupération, lui, se dérive ici — HKDF coûte zéro à deux millisecondes, et le faire
+ * ailleurs ferait voyager le code une fois de plus pour rien.
+ *
+ * @param {{ moyen?: unknown, code?: unknown, kek?: unknown, parametresHex?: unknown,
+ *           identifiantEmplacement?: unknown, versionMinimale?: unknown }} message
  * @param {string | null} correlation
  */
 async function deverrouiller(message, correlation) {
@@ -316,10 +379,7 @@ async function deverrouiller(message, correlation) {
   if (moyen === null) {
     return repondreCode(CODES_REFUS_COQUILLE.typeInconnu, correlation);
   }
-  if (!capaciteDOuverture()) {
-    interne.etat = ETATS_DU_VOLUME.indisponible;
-    return publierLEtat(correlation);
-  }
+  exigerUnVolumeAtteignable();
   const versionMinimale = ancre(message.versionMinimale);
   const observe = await support().etat();
 
@@ -327,17 +387,16 @@ async function deverrouiller(message, correlation) {
     ? await ouvrirLExistante(moyen, message, versionMinimale)
     : await creerLeCoffre(moyen, message);
 
-  interne.backend = await openOpfsVolume({
-    name: VOLUME,
-    size: TAILLE,
-    cle: ouverte.dek,
-    identifiantVolume: IDENTIFIANT_VOLUME,
-    transactionnel: false,
-  });
-  // La DEK est EFFACÉE dès que l'ouvreur l'a importée : l'ouvreur en garde une `CryptoKey` non
-  // extractible, jamais les octets. Ce n'est pas une garantie — le moteur a pu copier —, c'est une
-  // fenêtre refermée, et elle est gratuite (`ouverture-par-enveloppe.mjs`, même geste).
-  ouverte.dek.fill(0);
+  // La DEK est effacée QUOI QU'IL ARRIVE, et c'est un `finally` parce que le chemin d'ÉCHEC est
+  // celui qui compte : `openOpfsVolume` lève quand un volume est déjà ouvert
+  // (`VAULT_STORAGE_BUSY`), et les octets en clair de la clé de volume restaient alors dans le tas
+  // du Worker. Un second clic sur « Ouvrir par la phrase » y suffisait — un geste ordinaire, pas un
+  // scénario. C'est le constat 5 de la revue de sécurité de la PR #167.
+  try {
+    await ouvrirLeVolume(ouverte.dek);
+  } finally {
+    ouverte.dek.fill(0);
+  }
   interne.kek = ouverte.kek;
   interne.version = ouverte.version;
   interne.etat = ETATS_DU_VOLUME.ouvert;
@@ -347,6 +406,45 @@ async function deverrouiller(message, correlation) {
     barrieres: interne.barrieres,
     versionEnveloppe: interne.version,
   });
+}
+
+/**
+ * OUVRE le volume sous la clé développée, en refermant d'abord celui qui l'était.
+ *
+ * Le backend précédent était ÉCRASÉ sans être fermé : le handle exclusif restait tenu par un objet
+ * que plus personne ne référençait, et l'ouverture suivante rendait `VAULT_STORAGE_BUSY` — sur le
+ * volume que l'utilisateur venait d'ouvrir lui-même. Constat 6 de la même revue.
+ */
+async function ouvrirLeVolume(dek) {
+  const precedent = interne.backend;
+  interne.backend = null;
+  interne.etat = ETATS_DU_VOLUME.verrouille;
+  if (precedent !== null) await precedent.close();
+  interne.backend = await openOpfsVolume({
+    name: VOLUME,
+    size: TAILLE,
+    cle: dek,
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    transactionnel: false,
+  });
+}
+
+/**
+ * EXIGE que ce moteur puisse atteindre un volume, ou refuse TYPÉ.
+ *
+ * L'absence reste un ÉTAT — `indisponible` dit « ce moteur ne sait pas », là où `verrouille` dirait
+ * « il faut un geste » —, mais le GESTE, lui, reçoit un refus. Il recevait l'état, et la coquille le
+ * prenait pour un succès : elle affichait « Coffre ouvert » sur un moteur où rien ne s'était ouvert.
+ * Le code est celui que le dépôt emploie déjà partout pour cette absence, et que
+ * `deverrouillage-frontiere.spec.mjs` EXIGE des scénarios qui touchent un volume.
+ */
+function exigerUnVolumeAtteignable() {
+  if (PEUT_OUVRIR) return;
+  throw new StorageError(
+    STORAGE_ERROR_CODES.unsupported,
+    "Ce navigateur n'offre pas l'accès synchrone à l'OPFS dans un Worker : aucun volume n'est atteignable ici. Le geste n'a pas échoué — il n'a pas pu être tenté.",
+    { volume: VOLUME },
+  );
 }
 
 /**
@@ -368,8 +466,30 @@ function ancre(valeur) {
   return entier;
 }
 
-/** Ouvre une enveloppe EXISTANTE : inventaire, choix de l'emplacement, dérivation, ouverture. */
+/**
+ * Ouvre une enveloppe EXISTANTE.
+ *
+ * Pour une phrase ou une passkey, la KEK est déjà là : ce Worker ne relit RIEN de ce que la page lui
+ * dit des paramètres publics, et c'est ce qui rend la question de confiance sans objet — l'enveloppe
+ * tranche seule, par `VAULT_ENVELOPPE_CLE_REFUSEE`. Pour un code, l'emplacement est cherché ici, et
+ * la dérivation a lieu ici.
+ */
 async function ouvrirLExistante(moyen, message, versionMinimale) {
+  const kek =
+    moyen.derivePar === "page"
+      ? exigerKekDeLaPage(message.kek)
+      : await deriverLeCode(moyen, message);
+  const ouverte = await ouvrirEnveloppe({
+    support: support(),
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    kek,
+    versionMinimale,
+  });
+  return { dek: ouverte.dek, kek, version: ouverte.version };
+}
+
+/** DÉRIVE la KEK d'un code de récupération, ICI : HKDF coûte zéro à deux millisecondes. */
+async function deriverLeCode(moyen, message) {
   const inventaire = await inventorierEnveloppe({
     support: support(),
     identifiantVolume: IDENTIFIANT_VOLUME,
@@ -382,25 +502,14 @@ async function ouvrirLExistante(moyen, message, versionMinimale) {
     erreur.code = CODES_REFUS_COQUILLE.typeInconnu;
     throw erreur;
   }
-  const identite = {
-    identifiantVolume: IDENTIFIANT_VOLUME,
-    identifiantEmplacement: emplacement.identifiantEmplacement,
-  };
-  const kek =
-    moyen.derivePar === "page"
-      ? exigerKekDeLaPage(message.kek)
-      : await CATALOGUE.pour(moyen.typeKek).deriver({
-          parametres: emplacement.parametres,
-          identite,
-          geste: gesteDuMoyen(moyen, message),
-        });
-  const ouverte = await ouvrirEnveloppe({
-    support: support(),
-    identifiantVolume: IDENTIFIANT_VOLUME,
-    kek,
-    versionMinimale,
+  return CATALOGUE.pour(moyen.typeKek).deriver({
+    parametres: emplacement.parametres,
+    identite: {
+      identifiantVolume: IDENTIFIANT_VOLUME,
+      identifiantEmplacement: emplacement.identifiantEmplacement,
+    },
+    geste: { code: String(message.code ?? "") },
   });
-  return { dek: ouverte.dek, kek, version: ouverte.version };
 }
 
 /**
@@ -409,70 +518,31 @@ async function ouvrirLExistante(moyen, message, versionMinimale) {
  * `recuperation` est refusé ici, et le refus est de fond : un code de récupération secourt un
  * coffre existant ; en laisser créer un ferait naître un volume dont l'unique clé est un papier —
  * perdu ce papier, tout est perdu, et l'utilisateur n'aurait jamais choisi cela.
+ *
+ * La DEK est effacée par `deverrouiller`, dans son `finally` : elle est RENDUE à l'appelant, et
+ * l'effacer ici la lui retirerait avant qu'il n'ouvre le volume.
  */
 async function creerLeCoffre(moyen, message) {
-  if (moyen.typeKek === TYPES_KEK.recuperation) {
+  if (moyen.derivePar !== "page") {
     const erreur = new Error(
       "Aucun coffre n'existe encore : un code de récupération secourt, il ne crée pas.",
     );
     erreur.code = CODES_REFUS_COQUILLE.recuperation;
     throw erreur;
   }
-  const pose =
-    moyen.derivePar === "page"
-      ? {
-          kek: exigerKekDeLaPage(message.kek),
-          parametres: hexEnOctets(String(message.parametresHex ?? "")),
-          identifiantEmplacement: String(message.identifiantEmplacement ?? ""),
-        }
-      : await preparerLaPhrase(message);
+  const kek = exigerKekDeLaPage(message.kek);
+  const parametres = hexEnOctets(String(message.parametresHex ?? ""));
   const dek = tirerCleDeVolume();
   const creee = await creerEnveloppe({
     support: support(),
     identifiantVolume: IDENTIFIANT_VOLUME,
     dek,
-    kek: pose.kek,
+    kek,
     typeKek: moyen.typeKek,
-    parametres: pose.parametres,
-    identifiantEmplacement: pose.identifiantEmplacement,
-  });
-  return { dek, kek: pose.kek, version: creee.version };
-}
-
-/** Le sel d'une phrase NEUVE est TIRÉ, et sa calibration est celle de l'ADR 0021. */
-async function preparerLaPhrase(message) {
-  const parametres = parametresDePhrase({ sel: tirerSelDePhrase(), ...CALIBRATION_PHRASE });
-  const prepare = await preparerEmplacementDerive({
-    identifiantVolume: IDENTIFIANT_VOLUME,
-    derivateur: CATALOGUE.pour(TYPES_KEK.phrase),
     parametres,
-    geste: { phrase: String(message.phrase ?? "") },
+    identifiantEmplacement: String(message.identifiantEmplacement ?? ""),
   });
-  return { kek: prepare.kek, parametres, identifiantEmplacement: prepare.identifiantEmplacement };
-}
-
-/** Le GESTE que le dérivateur attend, choisi par le moyen. Aucun moyen n'en reçoit deux. */
-function gesteDuMoyen(moyen, message) {
-  if (moyen.typeKek === TYPES_KEK.phrase) return { phrase: String(message.phrase ?? "") };
-  return { code: String(message.code ?? "") };
-}
-
-/**
- * EXIGE une KEK opaque venue de la page, et rien d'autre.
- *
- * La garde est ici comme elle est à l'enveloppe (`enveloppePrivilegiee`), et les deux ne font pas
- * double emploi : l'une décide ce qui a le droit de PARTIR, l'autre ce qui a le droit d'ARRIVER.
- * Une seule des deux laisserait le canal ouvert dans le sens qu'elle ne garde pas.
- */
-function exigerKekDeLaPage(kek) {
-  if (kek?.constructor?.name !== "CryptoKey" || kek.extractable !== false) {
-    const erreur = new Error(
-      "Une passkey présente une CryptoKey NON EXTRACTIBLE, jamais des octets de clé.",
-    );
-    erreur.code = CODES_REFUS_COQUILLE.capaciteDansUnMessage;
-    throw erreur;
-  }
-  return kek;
+  return { dek, kek, version: creee.version };
 }
 
 // --- Le moyen de récupération, et son code rendu UNE fois -----------------------------------------
@@ -527,21 +597,5 @@ async function ecrireEtAcquitter() {
 function annoncerLaBarriere() {
   portPrivilegie.postMessage(
     enveloppeDeMessage(TYPES_PRIVILEGIES.barriere, { barrieres: interne.barrieres }),
-  );
-}
-
-/**
- * Le moteur fournit-il de quoi ouvrir un volume ?
- *
- * L'OPFS et son accès synchrone manquent à un moteur de la matrice #2 (WebKit) : l'absence est
- * rendue comme un ÉTAT — `indisponible` — et non comme un refus de déverrouillage, parce que ce
- * n'est pas le geste qui a échoué. Confondre les deux ferait redemander à l'utilisateur une phrase
- * qui n'ouvrirait rien.
- */
-function capaciteDOuverture() {
-  return (
-    typeof navigator?.storage?.getDirectory === "function" &&
-    typeof FileSystemFileHandle !== "undefined" &&
-    typeof FileSystemFileHandle.prototype.createSyncAccessHandle === "function"
   );
 }

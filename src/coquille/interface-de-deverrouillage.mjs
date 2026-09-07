@@ -42,6 +42,7 @@ import { moyensProposes } from "./moyens-de-deverrouillage.mjs";
 import { etatDeLaSaisie } from "./saisie-du-code.mjs";
 import { DERIVATION_ERROR_CODES } from "../vm/derivation/derivation-errors.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../vm/enveloppe/enveloppe-errors.mjs";
+import { STORAGE_ERROR_CODES } from "../vm/storage-errors.mjs";
 
 /**
  * Ce que la coquille dit d'un refus, par code. La table est CLOSE et courte : elle ne couvre que
@@ -76,6 +77,10 @@ export const CONDUITES = Object.freeze({
     "recommencer coûte exactement la même chose.",
   [DERIVATION_ERROR_CODES.typeInconnu]:
     "Cette coquille ne sait pas servir ce moyen de déverrouillage.",
+  [STORAGE_ERROR_CODES.unsupported]:
+    "Ce navigateur ne sait pas ouvrir un coffre : il n'offre pas l'accès synchrone au stockage privé " +
+    "depuis un Worker. Rien n'a échoué — rien n'a pu être tenté. Essayez un autre navigateur ; la " +
+    "matrice de compatibilité du dépôt dit lesquels le savent.",
   [DERIVATION_ERROR_CODES.argon2Indisponible]:
     "Le calcul de la clé n'est pas disponible sur ce navigateur : l'artefact Argon2 n'a pas été " +
     "servi, ou WebAssembly est refusé par la politique de sécurité.",
@@ -125,7 +130,7 @@ export function ancreSaisie(texte) {
  * durée de la dérivation, connue depuis l'ADR 0021, mais l'écart entre le geste et l'ANNONCE. Une
  * annonce peinte après la dérivation ne serait pas une annonce.
  *
- * @param {{ document: Document, racine: Element, demander: Function,
+ * @param {{ document: Document, racine: Element, demander: Function, deriverPhrase: Function,
  *           deriverPasskey: Function, agent?: string, surEtat?: Function,
  *           surMesure?: Function }} appel
  */
@@ -133,6 +138,7 @@ export function monterLInterface({
   document: doc,
   racine,
   demander,
+  deriverPhrase,
   deriverPasskey,
   agent = "",
   surEtat = () => {},
@@ -142,6 +148,7 @@ export function monterLInterface({
     noeuds: poignees(doc, racine),
     moteur: moteurProbable(agent),
     demander,
+    deriverPhrase,
     deriverPasskey,
     surEtat,
     surMesure,
@@ -249,7 +256,7 @@ function relireLaSaisieDuCode(contexte) {
  * sert plus à rien. C'est la seule ligne de ce module dont l'ORDRE soit le sujet, et les deux
  * mesures que la page publie la bornent.
  */
-async function ouvrirPar(contexte, moyen, corps) {
+async function ouvrirPar(contexte, moyen, corps, avantEnvoi = null) {
   const { noeuds, releve, surMesure } = contexte;
   const lue = relireLAncre(contexte);
   if (!lue.valide) return dire(noeuds.refus, lue.aveu);
@@ -262,10 +269,13 @@ async function ouvrirPar(contexte, moyen, corps) {
   await peindre();
   surMesure("annonce");
   try {
+    // Le geste PRÉPARATOIRE — la dérivation d'une phrase — a lieu ICI, après l'annonce et avant
+    // l'envoi : c'est ce qui laisse l'annonce à l'écran pendant tout le calcul.
+    const charge = avantEnvoi === null ? corps : await avantEnvoi(corps);
     const reponse = await contexte.demander("deverrouiller", {
       moyen,
       versionMinimale: lue.version,
-      ...corps,
+      ...charge,
     });
     dire(noeuds.attente, "");
     releve.dernierRefus = null;
@@ -296,7 +306,29 @@ function montrerLeRefus(contexte, erreur) {
 async function ouvrirParLaPhrase(contexte) {
   const phrase = contexte.noeuds.phrase.value;
   contexte.noeuds.phrase.value = "";
-  await ouvrirPar(contexte, "phrase", { phrase });
+  // La phrase est dérivée dans un Worker DÉDIÉ, et ce qui part vers le Worker de confiance est la
+  // `CryptoKey` non extractible — exactement ce que la passkey lui envoie déjà (ADR 0029, déc. 5).
+  await ouvrirPar(contexte, "phrase", { phrase }, (corps) =>
+    deriverAvant(contexte, corps, () =>
+      contexte.deriverPhrase({ inventaire: contexte.inventaire, phrase }),
+    ),
+  );
+}
+
+/**
+ * Dérive AVANT d'envoyer, en gardant l'annonce d'attente à l'écran pendant le calcul.
+ *
+ * C'est ici que l'attente annoncée sert vraiment : le calcul a lieu dans un autre fil, la page reste
+ * vivante, et le paragraphe d'annonce est peint depuis le début du geste jusqu'à son terme.
+ */
+async function deriverAvant(contexte, corps, deriver) {
+  const derive = await deriver();
+  void contexte;
+  // La phrase ne repart PAS vers le Worker de confiance : elle a servi, elle reste ici, et ce qui
+  // franchit le port privilégié est le handle opaque et les paramètres publics.
+  const { phrase: _phrase, ...reste } = corps;
+  void _phrase;
+  return { ...reste, ...derive };
 }
 
 /** Ouvre par le CODE, une fois seulement que la somme de contrôle a vérifié. */

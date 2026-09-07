@@ -46,6 +46,15 @@ export const SOURCES_COQUILLE = Object.freeze([
       "volume développée ; ni l'une ni l'autre ne franchit un `postMessage` (ADR 0002).",
   }),
   Object.freeze({
+    depuis: "public/derivation-worker.mjs",
+    vers: "derivation-worker.mjs",
+    role:
+      "Worker de DÉRIVATION (#162, ADR 0029, décision 5). Il dérive une KEK d'une phrase par " +
+      "Argon2id et meurt. Il ne touche ni l'OPFS, ni l'enveloppe, ni le volume : il existe parce " +
+      "qu'Argon2id est un appel WebAssembly SYNCHRONE, et que le porter dans le Worker de " +
+      "confiance y bloquait le dispatch des messages pendant deux secondes.",
+  }),
+  Object.freeze({
     depuis: "src/coquille",
     vers: "src/coquille",
     role:

@@ -24,6 +24,7 @@
 // l'origine applicative — la réponse d'état du port restreint ne porte toujours que deux champs.
 
 import { TEXTE_TROP_ANCIEN } from "./feuille-de-recuperation.mjs";
+import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { TYPES_KEK, nomDuTypeKek } from "../vm/enveloppe/identite-enveloppe.mjs";
 
 /**
@@ -41,8 +42,16 @@ export const MOYENS_SERVIS = Object.freeze({
   [TYPES_KEK.phrase]: Object.freeze({
     nom: "phrase",
     typeKek: TYPES_KEK.phrase,
-    /** La dérivation a lieu DANS le Worker de confiance : Argon2id gèlerait le fil de la page. */
-    derivePar: "worker",
+    /**
+     * Dérivée dans un Worker DÉDIÉ que la page crée (ADR 0029, décision 5 réécrite).
+     *
+     * Elle l'était dans le Worker de CONFIANCE, et c'était le mauvais fil : `argon2Vendu` appelle le
+     * module WebAssembly de façon SYNCHRONE, si bien que le Worker de confiance ne dispatchait plus
+     * aucun message pendant deux secondes — y compris la question d'état que la coquille relaie pour
+     * le document applicatif. Du point de vue de ce module, la phrase se dérive donc là où la passkey
+     * se dérive : hors du Worker de confiance, qui n'en reçoit qu'une `CryptoKey`.
+     */
+    derivePar: "page",
     libelle: "une phrase de déverrouillage",
   }),
   [TYPES_KEK["webauthn-prf"]]: Object.freeze({
@@ -60,12 +69,90 @@ export const MOYENS_SERVIS = Object.freeze({
   }),
 });
 
+/**
+ * La BORNE que la coquille laisse à un geste de passkey, en millisecondes (#162, ADR 0029, déc. 6).
+ *
+ * `derivateur-webauthn-prf.mjs` en propose une d'une MINUTE — c'est le maximum que la spécification
+ * WebAuthn suggère, et un maximum n'est pas une promesse. Une coquille qui l'adopterait resterait
+ * MUETTE pendant soixante secondes quand aucun authentificateur ne répond, et une interface muette
+ * pendant une minute est indiscernable d'un plantage : l'utilisateur ferme l'onglet avant le refus.
+ *
+ * Trente secondes, et le chiffre se justifie dans les deux sens : c'est largement de quoi toucher un
+ * lecteur d'empreinte, taper un code, ou aller chercher une clé posée à côté de soi ; et c'est assez
+ * court pour que le refus TYPÉ arrive pendant que l'utilisateur regarde encore l'écran. Au-delà, la
+ * conduite est celle de l'ADR 0021 : `VAULT_DERIVATION_ANNULEE`, sans pénalité et sans compteur —
+ * recommencer coûte exactement la même chose, et l'épreuve de #22 le mesure.
+ *
+ * La limite est écrite dans l'ADR : un authentificateur qu'on va chercher dans un tiroir dépassera
+ * cette borne, et l'utilisateur devra recommencer.
+ */
+export const DELAI_PASSKEY_MS = 30000;
+
+/**
+ * La BORNE au-delà de laquelle la coquille tient le Worker de confiance pour MORT, en millisecondes.
+ *
+ * Elle ne sert pas à masquer une lenteur, et c'est un point sur lequel cette tranche s'est reprise.
+ * Une première rédaction bornait la question d'état à deux cent cinquante millisecondes pour
+ * survivre à une dérivation qui bloquait le fil du Worker : c'était traiter le symptôme. La famine
+ * est levée à sa racine — la dérivation vit dans un Worker DÉDIÉ (décision 5 de l'ADR 0029) —, et ce
+ * qui reste ici couvre autre chose : un Worker qui ne répond PLUS DU TOUT.
+ *
+ * Sans borne, une promesse en suspens ne se règle jamais : le `finally` qui relâche l'identifiant de
+ * corrélation ne se déclenche pas, les trente-deux emplacements se remplissent, et le port restreint
+ * se ferme pour de bon — exactement le déni de service que l'ADR 0028 déclare écarté. La première
+ * rédaction l'avait corrigé pour le REJET, pas pour l'ABSENCE de réponse (constat 11 de la revue de
+ * sécurité de la PR #167).
+ *
+ * Trente secondes : un ordre de grandeur au-dessus du plus long geste que ce canal porte — ouvrir
+ * une enveloppe, ouvrir un volume, écrire et franchir une barrière —, et assez bas pour qu'un Worker
+ * mort soit constaté du vivant de l'onglet. Au-delà, le refus est TYPÉ, jamais un silence.
+ */
+export const DELAI_WORKER_MORT_MS = 30000;
+
 /** Les noms des moyens servis, pour qu'un appelant n'ait pas à parcourir la table. */
 export const NOMS_SERVIS = Object.freeze(
   Object.values(MOYENS_SERVIS)
     .map((moyen) => moyen.nom)
     .sort(),
 );
+
+/**
+ * EXIGE une KEK opaque venue de la page, et rien d'autre.
+ *
+ * C'est la moitié ARRIVANTE de la dérogation à `sansCapacite` : `enveloppePrivilegiee` décide ce qui
+ * a le droit de PARTIR, celle-ci ce qui a le droit d'ARRIVER, et une seule des deux laisserait le
+ * canal ouvert dans le sens qu'elle ne garde pas.
+ *
+ * Elle vit ICI, et non dans `public/runtime-worker.mjs`, pour la raison qui gouverne tout ce
+ * répertoire : ce qui est ici peut être MUTÉ et éprouvé sans démarrer un navigateur. Elle était
+ * là-bas, et la revue de sécurité de la PR #167 l'a relevé — la garde n'avait ni épreuve ni mutant,
+ * et l'ADR affirmait pourtant qu'elle ne faisait pas double emploi avec l'autre.
+ *
+ * Les DEUX conditions comptent, et se manquent différemment : un objet qui n'est pas une `CryptoKey`
+ * n'est pas une clé du tout, et une `CryptoKey` EXTRACTIBLE est un secret que du code peut relire —
+ * la laisser passer rendrait la dérogation aussi large que ce qu'elle prétend interdire.
+ *
+ * @param {unknown} kek
+ * @returns {CryptoKey} la clé, telle quelle, si elle est admissible
+ */
+export function exigerKekDeLaPage(kek) {
+  if (kek?.constructor?.name !== "CryptoKey") {
+    throw refusDeLaKek(`ce n'est pas une CryptoKey (${kek?.constructor?.name ?? typeof kek})`);
+  }
+  if (kek.extractable !== false) {
+    throw refusDeLaKek("cette CryptoKey est EXTRACTIBLE : ses octets se relisent");
+  }
+  return kek;
+}
+
+/** @param {string} quoi */
+function refusDeLaKek(quoi) {
+  const erreur = new Error(
+    `Une passkey ou une phrase présente une CryptoKey NON EXTRACTIBLE, jamais des octets de clé : ${quoi}.`,
+  );
+  erreur.code = CODES_REFUS_COQUILLE.capaciteDansUnMessage;
+  return erreur;
+}
 
 /** Le moyen servi qui porte ce nom, ou `null`. Aucune approximation, aucun repli. */
 export function moyenParNom(nom) {

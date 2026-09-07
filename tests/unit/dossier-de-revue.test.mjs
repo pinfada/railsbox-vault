@@ -554,6 +554,70 @@ test("la garde du registre refuse une sévérité, une disposition ou une preuve
   assert.deepEqual(ligne("HIGH", "corrigé", PR_REELLE), []);
 });
 
+/**
+ * Les invariants dont la PROSE porte une réserve, et ce que la table doit alors dire.
+ *
+ * Un invariant est décrit deux fois dans `SECURITY.md` : par un paragraphe qui l'explique, et par
+ * une ligne de table qui le statue. Rien ne les reliait, et la revue de sécurité de la PR #167 a
+ * trouvé les deux en désaccord sur `SEC-RECOVERY-001` — le paragraphe disait « EXERCÉ depuis #162 »,
+ * sa fin gardait « aucun chemin de production ne l'OFFRE encore », et la table disait « exercé sous
+ * réserve ». Trois affirmations, deux contraires, sur la même ligne du dossier remis à un relecteur.
+ *
+ * La garde est TEXTUELLE et volontairement étroite : elle ne juge pas la prose, elle refuse qu'un
+ * paragraphe garde une formule de RÉSERVE pendant que la table déclare l'invariant exercé tout
+ * court. Une réserve qui reste doit se lire des deux côtés, ou disparaître des deux.
+ */
+const FORMULES_DE_RESERVE = Object.freeze([
+  /aucun chemin de production ne l['’]OFFRE encore/i,
+  /la réserve qui reste/i,
+]);
+
+test("SECURITY.md ne déclare jamais « exercé » un invariant dont la prose garde une réserve", async () => {
+  const security = await lire(SECURITY);
+  const lignes = security.split("\n");
+  const table = lignes.filter((ligne) => /^\|\s*`?SEC-[A-Z]+-\d+/.test(ligne));
+
+  // Le TÉMOIN de CE test est la TABLE : sans lignes lues, il serait vert parce qu'il ne regarde
+  // rien. Le témoin des FORMULES, lui, est le test suivant — et il fallait le séparer, parce que la
+  // correction de #162 a retiré du dossier les deux formules qu'il aurait cherchées ici : une garde
+  // dont le témoin disparaît avec le défaut qu'elle surveille n'est pas une garde.
+  assert.ok(table.length >= 7, "aucune ligne de statut lue : la garde ne mesure rien.");
+
+  const contradictions = [];
+  for (const ligne of table) {
+    const [nom] = ligne.match(/SEC-[A-Z]+-\d+/) ?? [];
+    if (nom === undefined) continue;
+    const exerceSansReserve = /\*\*exercé\*\*/.test(ligne) && !/sous réserve/.test(ligne);
+    if (!exerceSansReserve) continue;
+    // Le paragraphe de CET invariant : il commence à sa puce et court jusqu'à la puce suivante.
+    const depart = lignes.findIndex((autre) => autre.startsWith("- `" + nom + "`"));
+    if (depart < 0) continue;
+    let fin = depart + 1;
+    while (fin < lignes.length && !/^- `SEC-[A-Z]+-\d+`/.test(lignes[fin])) fin += 1;
+    const paragraphe = lignes.slice(depart, fin).join("\n");
+    // Une réserve NOMMÉE pour dire qu'elle ne s'applique plus n'est pas une réserve. Sans cette
+    // exception, le dossier ne pourrait plus raconter ce qu'il a fermé.
+    const cite = FORMULES_DE_RESERVE.some((formule) => formule.test(paragraphe));
+    const levee = /est LEVÉE|sont LEVÉES|n'est plus une réserve/.test(paragraphe);
+    if (cite && !levee) contradictions.push(nom);
+  }
+  assert.deepEqual(
+    contradictions,
+    [],
+    "Ces invariants sont déclarés « exercé » par la table pendant que leur paragraphe garde une réserve. Un relecteur lirait deux statuts contraires pour la même chose.",
+  );
+});
+
+test("le cliquet de cohérence MORD : une table « exercé » sur une prose réservée est relevée", () => {
+  // Un cliquet à vide passe toujours. Celui-ci est confronté au dossier tel qu'il était avant la
+  // correction — paragraphe réservé, table exercée —, puis au dossier corrigé.
+  const reserve = "aucun chemin de production ne l'OFFRE encore à un utilisateur";
+  assert.ok(FORMULES_DE_RESERVE.some((formule) => formule.test(reserve)));
+  assert.ok(
+    !FORMULES_DE_RESERVE.some((formule) => formule.test("la réserve est LEVÉE depuis #162")),
+  );
+});
+
 test("SECURITY.md statue sur CHAQUE invariant, et la preuve citée existe", async () => {
   const security = await lire(SECURITY);
 

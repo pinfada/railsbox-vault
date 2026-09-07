@@ -153,15 +153,24 @@ test("la coquille ne LIT plus aucun jeton : le paramètre de #161 a disparu (#16
   }
 });
 
-test("la PAGE et le Worker s'accordent sur l'identifiant du volume de la coquille", async () => {
-  // La page RECOPIE cet identifiant : elle en a besoin AVANT que le coffre existe, pour lier la KEK
-  // d'une passkey neuve à l'identité de son emplacement, c'est-à-dire à un moment où l'inventaire
-  // ne peut rien lui apprendre. Une recopie que rien ne relit finit toujours par diverger — et ici
-  // la divergence produirait une passkey qui n'ouvre rien, sans qu'aucun refus ne dise pourquoi.
-  const empreinte =
-    /Uint8Array\.from\(\{ length: 16 \}, \(_, index\) => \(0x21 \+ index \* 0x07\) % 256\)/;
+test("la PAGE ne RECOPIE plus l'identifiant du volume : elle le demande", async () => {
+  // Elle en tenait une copie, avec un cliquet pour la surveiller : elle en avait besoin AVANT que le
+  // coffre existe, pour lier la KEK d'une passkey neuve à l'identité de son emplacement. Depuis la
+  // revue de la PR #167, elle DEMANDE cette identité au Worker de confiance (`preparation`), qui est
+  // la seule vérité sur ce point. Une recopie surveillée reste une recopie ; ne pas en avoir est
+  // plus court et ne peut pas diverger.
+  const page = await lire("public/main.mjs");
+  const empreinte = /0x21 \+ index \* 0x07/;
   assert.match(await lire("public/runtime-worker.mjs"), empreinte);
-  assert.match(await lire("public/main.mjs"), empreinte);
+  assert.ok(
+    !empreinte.test(page),
+    "la page recopie de nouveau l'identifiant de volume : demandez-le au Worker de confiance.",
+  );
+  assert.match(
+    page,
+    /demanderAuWorker\("preparation"/,
+    "la page doit demander l'identité de l'emplacement à préparer, et non la fabriquer.",
+  );
 });
 
 /** Liste les fichiers `.mjs`, `.html` et `.json` d'une source de publication. */
