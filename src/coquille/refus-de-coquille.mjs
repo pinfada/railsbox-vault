@@ -84,6 +84,22 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * décidé d'ouvrir doit être fermé nommément.
    */
   capaciteDansUnMessage: "VAULT_COQUILLE_CAPACITE_DANS_UN_MESSAGE",
+
+  // --- Le canal PRIVILÉGIÉ, et l'ordre des gestes qu'il porte (#162, ADR 0029) -----------------
+  /**
+   * Un geste qui exige un volume OUVERT a été demandé sur un volume qui ne l'est pas.
+   *
+   * Le seul, pour l'instant : créer un moyen de récupération. « Il faut détenir une KEK VALABLE
+   * pour ajouter — l'enveloppe n'est pas un trousseau ouvert en écriture » (ADR 0020, repris par
+   * `moyen-de-recuperation.mjs`), et c'est ce qui rend ce geste possible seulement à qui peut déjà
+   * ouvrir. Le dire par un code plutôt que par un bouton grisé a une raison : un bouton grisé
+   * n'apprend rien à qui l'atteint autrement, et l'épreuve n'a rien à mesurer.
+   *
+   * Ce refus vit sur le canal PRIVILÉGIÉ, entre la coquille et son Worker. Il n'est jamais rendu au
+   * document applicatif — qui reçoit `VAULT_COQUILLE_RECUPERATION_REFUSEE` bien avant, sur le type
+   * du message et sans qu'aucun état ne soit consulté.
+   */
+  volumeVerrouille: "VAULT_COQUILLE_VOLUME_VERROUILLE",
 });
 
 /** Les messages en français, un par code. Ils décrivent le REFUS, jamais l'état de l'appareil. */
@@ -123,6 +139,8 @@ const MESSAGES = Object.freeze({
     "Requête refusée : trop de requêtes en vol. La coquille borne, elle ne met pas en réserve.",
   [CODES_REFUS_COQUILLE.capaciteDansUnMessage]:
     "Message retenu : il transportait autre chose que des données.",
+  [CODES_REFUS_COQUILLE.volumeVerrouille]:
+    "Ce geste demande un volume OUVERT : créer un moyen de récupération exige de détenir déjà une clé qui ouvre ce coffre.",
 });
 
 /** Tous les codes, triés. Sert au cliquet d'exhaustivité et aux épreuves. */

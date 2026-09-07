@@ -72,6 +72,17 @@ const FRONTIERE_DEVERROUILLAGE = ["**/deverrouillage-frontiere.spec.mjs"];
  */
 const FRONTIERE_COQUILLE = ["**/coquille-frontiere.spec.mjs"];
 
+/**
+ * DÉVERROUILLAGE depuis la coquille de produit (#162, tranche 2 de #24, ADR 0029). Les trois
+ * moteurs, pour les motifs de `FRONTIERE_DEVERROUILLAGE` — une dérivation dont le coût et la
+ * disponibilité diffèrent d'un moteur à l'autre, une fouille de stockages que les trois n'offrent
+ * pas également — et pour un motif qui lui est propre : c'est le CHEMIN DE PRODUIT qui est mesuré,
+ * et l'issue #24 exige les trois moteurs nommément. La suite de #22 mesure les mêmes propriétés sur
+ * les BANCS ; les deux ne se remplacent pas, puisqu'un banc n'est pas un chemin qu'un utilisateur
+ * emprunte.
+ */
+const DEVERROUILLAGE_COQUILLE = ["**/coquille-deverrouillage.spec.mjs"];
+
 // Le harnais mesure une frontière d'origine : il lui faut DEUX serveurs, donc deux origines
 // réelles. `127.0.0.1` et `localhost` en fournissent sans DNS ni certificat, et restent tous deux
 // des contextes sécurisés.
@@ -138,6 +149,7 @@ export default defineConfig({
         ...FRONTIERE_ENVELOPPE,
         ...FRONTIERE_DEVERROUILLAGE,
         ...FRONTIERE_COQUILLE,
+        ...DEVERROUILLAGE_COQUILLE,
       ],
     })),
     // La frontière de CSP (#52) est une frontière de SÉCURITÉ, et une politique ne s'applique pas de
@@ -169,6 +181,11 @@ export default defineConfig({
       name: `frontiere-coquille-${nom}`,
       use: { browserName: nom },
       testMatch: FRONTIERE_COQUILLE,
+    })),
+    ...MOTEURS_CONNUS.map((nom) => ({
+      name: `deverrouillage-coquille-${nom}`,
+      use: { browserName: nom },
+      testMatch: DEVERROUILLAGE_COQUILLE,
     })),
   ],
 });

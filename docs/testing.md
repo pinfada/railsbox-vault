@@ -32,10 +32,26 @@ d'écrire.
 Depuis #161, la frontière d'origine est éprouvée **deux fois**, et les deux épreuves ne portent pas
 sur la même coquille — c'est pourquoi `SECURITY.md` distingue deux statuts pour `SEC-ORIGIN-001`.
 
-| Fichier                                     | Coquille éprouvée  | Ce qu'il établit                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/browser/origin-topology.spec.mjs`    | celle du SPIKE #35 | les QUATRE topologies de l'ADR 0002, avec le témoin positif en T1a. Elle reste vivante et inchangée                                                                                                                                                                                                                                                                                                                                                |
-| `tests/browser/coquille-frontiere.spec.mjs` | celle du PRODUIT   | dix gestes interdits refusés par un code typé, neuf tentatives contre l'encodage et le canal privilégié, quatre autour du JETON DU HARNAIS — public, lu par la fixture, inutilisable d'ici —, quatre requêtes concurrentes appariées, mille messages hostiles sans enflure du relevé, fouille du trafic du port, second port et iframe usurpatrice refusés, dix tentatives de topologie, aucun cookie, CSP et durcissement sur les documents neufs |
+| Fichier                                     | Coquille éprouvée  | Ce qu'il établit                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/browser/origin-topology.spec.mjs`    | celle du SPIKE #35 | les QUATRE topologies de l'ADR 0002, avec le témoin positif en T1a. Elle reste vivante et inchangée                                                                                                                                                                                                                                                                                                                                                                    |
+| `tests/browser/coquille-frontiere.spec.mjs` | celle du PRODUIT   | dix gestes interdits refusés par un code typé, neuf tentatives contre l'encodage et le canal privilégié, quatre autour du JETON DU HARNAIS — public, lu par la fixture, inutilisable de nulle part depuis #162 —, quatre requêtes concurrentes appariées, mille messages hostiles sans enflure du relevé, fouille du trafic du port, second port et iframe usurpatrice refusés, dix tentatives de topologie, aucun cookie, CSP et durcissement sur les documents neufs |
+
+`tests/browser/coquille-deverrouillage.spec.mjs` (`npm run test:coquille:deverrouillage`, trois
+moteurs, ~1 min 15 les trois ensemble) mesure le CHEMIN DE PRODUIT du déverrouillage (#162,
+[ADR 0029](decisions/0029-deverrouillage-dans-la-coquille.md)) : les trois moyens depuis la
+coquille, l'attente annoncée avant d'être subie, le code rendu une fois avec la version d'enveloppe
+et refusé au second geste, la saisie de l'ancre avec son aveu, le code mal recopié refusé AVANT tout
+envoi, le jeton de harnais devenu inerte, et la sonde de non-persistance de #22 ÉTENDUE — six
+stockages, OPFS en texte et en hexadécimal, les deux sens du port privilégié et du port restreint.
+Elle diffère de `deverrouillage-frontiere.spec.mjs` sur un point qui décide de tout : celle-là
+mesure les BANCS, et un banc n'est pas un chemin qu'un utilisateur emprunte.
+
+**La sonde y est instrumentée par l'ÉPREUVE, pas par le produit.** Le banc de #22 tient lui-même un
+journal de ce qui franchit son port ; la coquille de produit ne le peut pas — ce serait un endroit
+de plus où le code de récupération survit, et il aurait fallu l'exclure de la sonde pour que la
+sonde passe. L'enregistreur est posé par `page.addInitScript` sur `MessagePort.prototype`, avant
+tout script de la page : il voit strictement plus que le journal du banc.
 
 La fixture `public/coquille-epreuve/hostile.html` est servie par les DEUX origines, et c'est ce qui
 rend le témoin comparable : encadrée par la coquille depuis l'origine applicative, elle échoue
@@ -44,7 +60,7 @@ fenêtre auxiliaire, la portée d'un Service Worker et l'interception de la ress
 sondes n'ont PAS de témoin positif contre la coquille de produit — le verrou nommé et la diffusion
 inter-onglets, que la coquille n'emploie pas encore —, et leur témoin reste celui du spike en T1a.
 
-La campagne de mutation (`node tools/muter-gardes-coquille.mjs`, 23/23) porte sur `src/coquille/`,
+La campagne de mutation (`node tools/muter-gardes-coquille.mjs`, 37/37) porte sur `src/coquille/`,
 c'est-à-dire sur des fonctions PURES. C'est délibéré : une garde écrite dans `public/main.mjs` ne
 serait éprouvable que par un navigateur, donc jamais par un enfant borné — et une garde qu'aucune
 mutation ne peut atteindre est une garde qu'on croit sur parole.

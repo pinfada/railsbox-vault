@@ -37,8 +37,25 @@ export const CONTRAT_COQUILLE = Object.freeze({
 export const TYPES_PRIVILEGIES = Object.freeze({
   /** Établissement du canal : la coquille transfère un port au Worker, avant tout document. */
   canal: "vault.coquille.canal-privilegie",
-  /** Geste de déverrouillage. La tranche 2 lui donnera une interface ; ici le harnais le fournit. */
+  /**
+   * Geste de déverrouillage, porté par la SAISIE de l'utilisateur depuis #162 (ADR 0029).
+   *
+   * Il portait un jeton de harnais dans la tranche 1 ; il porte désormais un moyen — `phrase`,
+   * `webauthn-prf` ou `recuperation` —, son geste, et l'ancre de version. Le jeton a quitté le
+   * chemin de produit : `tests/unit/harnais-portes.test.mjs` rougit s'il y revient.
+   */
   deverrouiller: "vault.coquille.deverrouiller",
+  deverrouillageReponse: "vault.coquille.deverrouillage-reponse",
+  /**
+   * Demande de l'INVENTAIRE public de l'enveloppe : quels moyens ce coffre porte, et sous quelle
+   * version. Il ne franchit que le canal PRIVILÉGIÉ — l'origine applicative n'apprend rien de
+   * l'enveloppe, et le seul geste qu'elle obtient rend toujours ses deux champs.
+   */
+  inventaire: "vault.coquille.inventaire-prive",
+  inventaireReponse: "vault.coquille.inventaire-prive-reponse",
+  /** Création du moyen de récupération. Le code repart UNE fois, par la réponse ci-dessous. */
+  creerRecuperation: "vault.coquille.creer-recuperation",
+  recuperationRendue: "vault.coquille.recuperation-rendue",
   /** Demande d'état : même question que sur le port restreint, sur l'autre canal et sous un autre nom. */
   etat: "vault.coquille.etat-prive",
   etatReponse: "vault.coquille.etat-prive-reponse",
@@ -79,6 +96,7 @@ export function enveloppeDeMessage(type, corps = {}) {
   if (typeof type !== "string" || type.length === 0) {
     throw new Error("Un message du contrat de coquille doit porter un type non vide.");
   }
+  exigerCorpsSansIdentite(corps);
   sansCapacite(corps);
   return Object.freeze({
     contrat: CONTRAT_COQUILLE.id,
@@ -86,6 +104,97 @@ export function enveloppeDeMessage(type, corps = {}) {
     type,
     ...corps,
   });
+}
+
+/**
+ * Les trois champs d'IDENTITE d'un message. Un corps qui en porte un est refusé, jamais fusionné.
+ *
+ * L'étalement du corps vient APRÈS ces trois champs — c'est ce qui rend `enveloppeDeMessage`
+ * lisible d'un regard —, si bien qu'un corps portant `version` écrasait la version du CONTRAT par
+ * la sienne. Le message partait alors avec la mauvaise version, et le décodeur d'en face le
+ * refusait sous `VAULT_COQUILLE_CONTRAT_REFUSE` : un message parfaitement formé, jeté par sa propre
+ * moitié réceptrice, sans qu'aucune des deux ne soit fautive.
+ *
+ * Le défaut a été trouvé par EXÉCUTION en écrivant #162 : la réponse d'inventaire portait la
+ * version de l'enveloppe sous le nom `version`. Il ne se voyait nulle part — le corps était bien
+ * formé, le refus était typé, et le seul symptôme était une promesse qui n'aboutissait jamais. La
+ * correction est double : le champ s'appelle désormais `versionEnveloppe`, et cette garde interdit
+ * que la collision se reproduise un jour sous un autre nom.
+ */
+const CHAMPS_DIDENTITE = Object.freeze(["contrat", "version", "type"]);
+
+/** @param {Record<string, unknown>} corps */
+function exigerCorpsSansIdentite(corps) {
+  for (const champ of CHAMPS_DIDENTITE) {
+    if (Object.hasOwn(corps ?? {}, champ)) {
+      throw new Error(
+        `Un corps de message ne peut pas porter « ${champ} » : il recouvrirait l'identité du contrat, et le décodeur d'en face refuserait un message pourtant bien formé.`,
+      );
+    }
+  }
+}
+
+/**
+ * Le NOM du seul champ qui puisse porter une capacité, et seulement sur le canal PRIVILÉGIÉ.
+ *
+ * Une passkey se dérive dans la PAGE — `navigator.credentials` n'existe pas dans un Worker
+ * (ADR 0021, décision 5) —, et la KEK obtenue doit rejoindre le Worker de confiance qui détient
+ * l'enveloppe. Ce qui franchit alors le port est une `CryptoKey` NON EXTRACTIBLE : un handle
+ * opaque, dont les octets ne sont atteignables par aucune voie normative (ADR 0021, décision 7,
+ * ligne « GARANTI »). La sortie PRF brute, elle, ne quitte jamais la page.
+ *
+ * C'est la SEULE dérogation à `sansCapacite`, et elle est écrite ici plutôt que contournée à
+ * l'appel :
+ *
+ *  - elle ne vaut que pour les types du canal privilégié, qu'aucun message du document applicatif
+ *    n'atteint (`estTypePrivilegie` le contrôle, et `evaluerRequete` refuse ces types sur le port
+ *    restreint sous `VAULT_COQUILLE_PORT_PRIVILEGIE_REFUSE`) ;
+ *  - elle ne vaut que pour ce champ-là, et sous ce constructeur-là ;
+ *  - elle EXIGE `extractable === false`. Une `CryptoKey` extractible est un secret que du code
+ *    peut relire : la laisser passer rendrait la dérogation aussi large que ce qu'elle prétend
+ *    interdire.
+ */
+export const CHAMP_DE_LA_KEK = "kek";
+
+/**
+ * Enveloppe un message du canal PRIVILÉGIÉ, qui peut porter une KEK non extractible.
+ *
+ * Tout le reste du corps passe par `sansCapacite`, inchangé : la dérogation ne s'étend pas d'un
+ * champ à son voisin. Un type applicatif est refusé d'emblée — c'est ce qui rend impossible, par
+ * construction et non par convention, qu'une `CryptoKey` parte vers l'origine applicative.
+ *
+ * @param {string} type un type de `TYPES_PRIVILEGIES`
+ * @param {Record<string, unknown>} [corps]
+ */
+export function enveloppePrivilegiee(type, corps = {}) {
+  if (!estTypePrivilegie(type)) {
+    throw new Error(
+      `« ${type} » n'est pas un type du canal privilégié : seul celui-ci peut porter une capacité.`,
+    );
+  }
+  const { [CHAMP_DE_LA_KEK]: kek, ...reste } = corps;
+  if (kek === undefined) return enveloppeDeMessage(type, corps);
+  exigerKekOpaque(kek);
+  exigerCorpsSansIdentite(reste);
+  sansCapacite(reste);
+  return Object.freeze({
+    contrat: CONTRAT_COQUILLE.id,
+    version: CONTRAT_COQUILLE.version,
+    type,
+    [CHAMP_DE_LA_KEK]: kek,
+    ...reste,
+  });
+}
+
+/** @param {unknown} kek */
+function exigerKekOpaque(kek) {
+  const nom = kek?.constructor?.name;
+  if (nom !== "CryptoKey") {
+    throw refusDeCapacite(`« ${CHAMP_DE_LA_KEK} » n'est pas une CryptoKey (${nom ?? typeof kek})`);
+  }
+  if (kek.extractable !== false) {
+    throw refusDeCapacite("une CryptoKey EXTRACTIBLE, dont les octets se relisent");
+  }
 }
 
 /**

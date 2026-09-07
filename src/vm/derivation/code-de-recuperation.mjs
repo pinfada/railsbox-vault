@@ -280,6 +280,36 @@ export function encoderCode(octets) {
 }
 
 /**
+ * BALAYE une saisie humaine sans juger sa longueur : NFC, retrait des séparateurs, table close.
+ *
+ * Il existe parce que le CONTRÔLE EN DIRECT de l'interface (#162, ADR 0029) a besoin de savoir où
+ * en est une saisie INCOMPLÈTE — combien de symboles ont été lus, et si l'un d'eux est hors de
+ * l'alphabet — là où `normaliserSaisie` ne rend un verdict que sur un code entier. Séparer les deux
+ * est ce qui garde **une seule table** : une interface qui aurait recopié l'alphabet pour son
+ * affichage aurait fini par accepter à l'écran ce que le décodeur refuse, ou l'inverse.
+ *
+ * Il ne LÈVE jamais, et c'est sa raison d'être : un refus à chaque frappe n'est pas un refus, c'est
+ * une aide à la saisie. Le refus TYPÉ, lui, reste celui de `normaliserSaisie` et de `decoderCode`,
+ * et il tombe avant toute dérivation.
+ *
+ * @param {unknown} texte
+ * @returns {{ symboles: number[], signeRefuse: string | null }} `signeRefuse` est le PREMIER signe
+ *   hors table ; les symboles rendus sont ceux qui le précèdent.
+ */
+export function balayerSaisie(texte) {
+  if (typeof texte !== "string") return { symboles: [], signeRefuse: null };
+  const symboles = [];
+  for (const signe of texte.normalize("NFC")) {
+    const point = signe.codePointAt(0);
+    if (SEPARATEURS.has(point)) continue;
+    const valeur = SIGNES_ACCEPTES.get(point);
+    if (valeur === undefined) return { symboles, signeRefuse: signe };
+    symboles.push(valeur);
+  }
+  return { symboles, signeRefuse: null };
+}
+
+/**
  * NORMALISE une saisie humaine et rend ses vingt-huit valeurs de symbole.
  *
  * Dans cet ordre, et l'ordre compte : NFC (ADR 0021, même discipline que la phrase), retrait des
@@ -302,24 +332,19 @@ export function normaliserSaisie(texte) {
   if (typeof texte !== "string") {
     throw codeMalRecopie(`ce n'est pas une chaîne de caractères (${typeof texte}).`);
   }
-  const symboles = [];
-  for (const signe of texte.normalize("NFC")) {
-    const point = signe.codePointAt(0);
-    if (SEPARATEURS.has(point)) continue;
-    const valeur = SIGNES_ACCEPTES.get(point);
-    if (valeur === undefined) {
-      // Le signe est NOMMÉ dans le message, et rien d'autre de la saisie ne l'est. C'est le même
-      // arbitrage que celui de l'ADR 0021 sur le contexte d'un refus PRF — « la forme, jamais le
-      // résultat » —, tranché ici dans l'autre sens pour une raison qui tient : ce signe est par
-      // construction ABSENT de la table, il ne porte donc aucun bit d'un code valide, et le montrer
-      // est exactement ce qui dit à l'utilisateur quoi corriger. Le contexte, lui, ne le reprend
-      // pas : un message se lit une fois, un contexte voyage.
-      throw codeMalRecopie(
-        `le signe « ${signe} » n'appartient pas à l'alphabet base 32 de Crockford, et aucun repli ne l'y ramène.`,
-      );
-    }
-    symboles.push(valeur);
+  const balaye = balayerSaisie(texte);
+  if (balaye.signeRefuse !== null) {
+    // Le signe est NOMMÉ dans le message, et rien d'autre de la saisie ne l'est. C'est le même
+    // arbitrage que celui de l'ADR 0021 sur le contexte d'un refus PRF — « la forme, jamais le
+    // résultat » —, tranché ici dans l'autre sens pour une raison qui tient : ce signe est par
+    // construction ABSENT de la table, il ne porte donc aucun bit d'un code valide, et le montrer
+    // est exactement ce qui dit à l'utilisateur quoi corriger. Le contexte, lui, ne le reprend
+    // pas : un message se lit une fois, un contexte voyage.
+    throw codeMalRecopie(
+      `le signe « ${balaye.signeRefuse} » n'appartient pas à l'alphabet base 32 de Crockford, et aucun repli ne l'y ramène.`,
+    );
   }
+  const symboles = balaye.symboles;
   if (symboles.length !== SYMBOLES_TOTAL) {
     throw codeMalRecopie(
       `il porte ${symboles.length} symbole(s) au lieu de ${SYMBOLES_TOTAL}, séparateurs retirés.`,

@@ -887,7 +887,22 @@ test("PERTE DÉFINITIVE : aucun module du produit ne conserve le code ni ne sait
   // Le troisième est le BANC de déverrouillage, et il est là pour ce qu'il est : il fabrique un
   // code afin de l'éprouver de bout en bout sur l'OPFS réel. Il ne l'écrit nulle part, et c'est la
   // sonde de `tests/browser/deverrouillage-frontiere.spec.mjs` qui le mesure plutôt que cette
-  // liste. La liste, elle, dit qu'aucun QUATRIÈME endroit n'est apparu en silence.
+  // liste.
+  //
+  // **Les deux derniers sont entrés avec #162** (ADR 0029), et ils élargissent réellement la
+  // surface — c'est pourquoi la liste existe, et c'est ici qu'un relecteur doit en juger :
+  //
+  //  - `src/coquille/saisie-du-code.mjs` importe `balayerSaisie` et `sommeDeControleValide` pour
+  //    contrôler EN DIRECT ce que l'utilisateur tape, AVANT tout envoi au Worker. Il ne tire aucun
+  //    code, n'en décode aucun en octets — `decoderCode` reste hors de sa portée — et ne conserve
+  //    rien entre deux frappes : chaque appel rend un verdict à partir du texte courant. L'importer
+  //    est ce qui garde UNE seule table de signes acceptés : une interface qui aurait recopié
+  //    l'alphabet pour son affichage aurait fini par accepter à l'écran ce que le décodeur refuse ;
+  //  - `src/coquille/feuille-de-recuperation.mjs` importe `balayerSaisie` et `SYMBOLES_PAR_GROUPE`
+  //    pour REDÉCOUPER le code que le Worker vient de rendre, en sept groupes de quatre. Il ne le
+  //    range nulle part : la chaîne traverse la fonction et va au DOM.
+  //
+  // La liste dit donc qu'aucun endroit n'est apparu en SILENCE — pas qu'il n'y en a que trois.
   const importateurs = [];
   const parcourir = async (repertoire) => {
     for (const entree of await readdir(repertoire, { withFileTypes: true })) {
@@ -907,9 +922,27 @@ test("PERTE DÉFINITIVE : aucun module du produit ne conserve le code ni ne sait
   await parcourir(path.join(REPO_ROOT, "public", "vm"));
   assert.deepEqual(importateurs.sort(), [
     "public/vm/deverrouillage-worker.mjs",
+    "src/coquille/feuille-de-recuperation.mjs",
+    "src/coquille/saisie-du-code.mjs",
     "src/vm/derivation/derivateur-recuperation.mjs",
     "src/vm/moyen-de-recuperation.mjs",
   ]);
+
+  // Et ce que les deux entrants NE font pas : ils ne tirent aucun code, et n'en décodent aucun en
+  // octets. La distinction n'est pas de la prudence décorative — `tirerCodeDeRecuperation` est la
+  // seule source d'entropie du moyen, et `decoderCode` est ce qui transforme une chaîne en secret.
+  for (const relatif of [
+    "src/coquille/saisie-du-code.mjs",
+    "src/coquille/feuille-de-recuperation.mjs",
+  ]) {
+    const source = await readFile(path.join(REPO_ROOT, relatif), "utf8");
+    for (const interdit of ["tirerCodeDeRecuperation", "decoderCode", "octetsDesSymboles"]) {
+      assert.ok(
+        !source.includes(interdit),
+        `${relatif} importe « ${interdit} » : il ne doit que LIRE une saisie, jamais fabriquer ni développer un code.`,
+      );
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------------------------

@@ -93,6 +93,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0026 — la révocation d'urgence retire tout sauf l'emplacement qui ouvre, et la page libre est effacée](docs/decisions/0026-revocation-d-urgence-et-page-libre.md)
 - [ADR 0027 — l'archive emporte une enveloppe de RÉCUPÉRATION SEULE, et la feuille ancre la version](docs/decisions/0027-archive-et-ancre-de-version.md)
 - [ADR 0028 — la coquille de produit et sa frontière](docs/decisions/0028-coquille-de-produit-et-frontiere.md)
+- [ADR 0029 — le déverrouillage dans la coquille : trois moyens, une attente annoncée, une feuille](docs/decisions/0029-deverrouillage-dans-la-coquille.md)
 
 ## Licence
 

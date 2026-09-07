@@ -185,6 +185,15 @@ côté navigateur plutôt que par relecture — et rien ne sera jamais posé sur
   (application malveillante, dix gestes refusés, témoin positif en même origine, trois moteurs) plus
   les deux suites unitaires.
 
+> **RETIRÉE le 7 septembre 2026 par #162** ([ADR 0029](0029-deverrouillage-dans-la-coquille.md),
+> décision 1). Le jeton de harnais a quitté le chemin de produit : `public/main.mjs` ne lit plus de
+> paramètre, `public/runtime-worker.mjs` n'appelle plus la porte de `src/vm/cle-de-volume.mjs`, et
+> le type `vault.coquille.deverrouiller` porte désormais un MOYEN — phrase, passkey ou code de
+> récupération — au lieu d'un jeton. `tests/unit/harnais-portes.test.mjs` exige maintenant **aucun**
+> appelant de PRODUIT là où il en tolérait un. Ce qui suit décrit ce qui a été, et le paragraphe sur
+> le caractère PUBLIC du jeton reste vrai : ce qui a changé n'est pas sa visibilité, c'est qu'il
+> n'ouvre plus aucune porte.
+
 **La réserve, en toutes lettres** : la frontière est éprouvée sur les ports réels, mais le geste de
 DÉVERROUILLAGE vient encore du harnais, sous le jeton de `src/vm/cle-de-volume.mjs` — la même porte
 que celle de la réserve de `SEC-BLOCK-001`, désormais visible sur le chemin du produit au lieu de ne

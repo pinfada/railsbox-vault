@@ -59,6 +59,19 @@ Depuis #161 ([ADR 0028](decisions/0028-coquille-de-produit-et-frontiere.md)), ce
 | `public/runtime-worker.mjs` — le Worker de confiance : handle exclusif, clé de volume, aucune des deux ne franchissant un `postMessage`       | `public/vm/*` — les bancs de la VM, du bail, de l'enveloppe et du déverrouillage            |
 | `src/coquille/` — contrat versionné, liste d'admission dérivée, dix refus typés, dérivation de l'origine applicative                          | `public/coquille-epreuve/` — l'application malveillante, jamais publiée                     |
 
+**L'étape 1 du cycle de vie — DÉVERROUILLER — est un geste de l'utilisateur depuis #162**
+([ADR 0029](decisions/0029-deverrouillage-dans-la-coquille.md)). La coquille lit l'inventaire public
+de l'enveloppe, propose les moyens PRÉSENTS — une phrase, une passkey, un code de récupération — et
+n'en devine aucun. La phrase et le code sont dérivés dans le Worker de confiance ; la passkey l'est
+dans la page, parce que `navigator.credentials` n'existe pas dans un Worker, et seule une
+`CryptoKey` non extractible franchit le port. Avant une dérivation de phrase, la coquille ANNONCE
+l'ordre de grandeur mesuré pour le moteur courant : Firefox paie près de six fois le prix de
+Chromium pour le même travail, et une attente de deux secondes non annoncée se lit comme une panne.
+
+Le jeton de harnais de la tranche 1 a quitté le chemin de produit avec cette étape : aucun fichier
+publié ne franchit plus la porte de `src/vm/cle-de-volume.mjs`, et
+`tests/unit/harnais-portes.test.mjs` rougit si un seul y revient.
+
 Les formes de ces ports ne sont donc plus toutes ouvertes. L'ADR 0028 § « Impacts » dit, interface
 par interface, laquelle des six réserves de l'ADR 0002 reçoit sa décision et laquelle reste réservée
 — la stratégie de reprise après perte du cadre ou du Worker se tranche AVEC #25, à l'ouverture de la
