@@ -48,22 +48,32 @@ export const VERDICTS_DEXCLUSIVITE = Object.freeze({
  * Ne lève jamais : un constat qui remonterait une exception ferait échouer le démarrage de la
  * coquille sur une question à laquelle elle n'a besoin que d'une réponse.
  *
- * @param {{ volume: string, peutOuvrir: boolean }} options
+ * `observer` et `ouvrir` sont les deux primitives du support, INJECTÉES : le vrai OPFS en
+ * production, un double déterministe dans les épreuves. Sans elles, ce constat ne serait mesurable
+ * que par un navigateur, donc jamais par une campagne de mutation — et une garde qu'aucune mutation
+ * ne peut atteindre est une garde qu'on croit sur parole (`tools/muter-gardes-coquille.mjs`).
+ *
+ * @param {{ volume: string, peutOuvrir: boolean, observer?: Function, ouvrir?: Function }} options
  * @returns {Promise<{ verdict: string, volume: string, code: string | null }>}
  */
-export async function constaterLExclusivite({ volume, peutOuvrir }) {
+export async function constaterLExclusivite({
+  volume,
+  peutOuvrir,
+  observer = statOpfsVolume,
+  ouvrir = openOpfsSyncAccess,
+}) {
   const constat = (verdict, code = null) => ({ verdict, volume, code });
   if (!peutOuvrir) return constat(VERDICTS_DEXCLUSIVITE.indisponible);
   let observe;
   try {
-    observe = await statOpfsVolume(volume);
+    observe = await observer(volume);
   } catch (erreur) {
     return constat(VERDICTS_DEXCLUSIVITE.inconnue, erreur?.code ?? null);
   }
   if (!observe.present) return constat(VERDICTS_DEXCLUSIVITE.sansVolume);
   let handle;
   try {
-    handle = await openOpfsSyncAccess(volume);
+    handle = await ouvrir(volume);
   } catch (erreur) {
     return constat(VERDICTS_DEXCLUSIVITE.refusee, erreur?.code ?? null);
   }

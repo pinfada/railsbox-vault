@@ -191,6 +191,27 @@ test("la sonde ne LÈVE jamais : une portée sans rien rend un verdict, pas une 
   assert.ok(verdict.manquantes.includes("webassembly"));
 });
 
+test("une sonde qui JETTE rend « absente », et non une exception qui remonte au démarrage", () => {
+  // Le chaînage optionnel ne suffit pas à mesurer cette garde : `portee?.crypto?.subtle` ne lève
+  // sur aucune portée amputée. Ce qui lève, c'est un ACCESSEUR — et un moteur peut en poser un qui
+  // refuse : `navigator.storage` est un accesseur, et un navigateur qui bloque le stockage du site
+  // peut y jeter `SecurityError`. Une capacité qu'on ne peut pas interroger est une capacité
+  // ABSENTE, jamais un démarrage qui échoue.
+  const piegee = {
+    get crypto() {
+      throw new Error("ce navigateur refuse de répondre");
+    },
+    WebAssembly: { instantiate() {}, Module: function () {} },
+    Worker: function () {},
+    MessageChannel: function () {},
+    structuredClone() {},
+    navigator: { storage: { getDirectory() {} }, credentials: {} },
+  };
+  const verdict = mesurerLesCapacites(piegee);
+  assert.deepEqual(verdict.manquantes, ["webcrypto"]);
+  assert.equal(verdict.suffisante, false);
+});
+
 // --- La MORT du Worker de confiance ---------------------------------------------------------------
 
 test("les trois causes de mort sont nommées, et rien d'autre n'en est une", () => {

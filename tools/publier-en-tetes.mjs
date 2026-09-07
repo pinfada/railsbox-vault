@@ -34,18 +34,15 @@ export const ORIGINES = Object.freeze({
  * @type {readonly { arbre: string, nom: string, valeur: (o: object) => string,
  *                   decidePar: string, motif: string }[]}
  */
+// `Cross-Origin-Opener-Policy` FIGURAIT ici, et n'y figure plus depuis #163 (ADR 0030, décision 4).
+//
+// Il était le seul en-tête que la PUBLICATION posait et que le serveur de test ne servait pas — et
+// c'était exactement ce qui rendait la décision inéprouvable : aucune suite ne pouvait attester
+// `window.opener === null`, puisque rien de ce qu'un navigateur de test visitait ne portait
+// l'en-tête. La recommandation de l'ADR 0010 est devenue une politique SERVIE par
+// `shellSecurityHeaders` — donc mesurée par `tests/browser/entetes-durcissement.spec.mjs` sur les
+// trois moteurs, et publiée par cette table sans être recopiée. Une source, deux consommateurs.
 export const EN_TETES_AJOUTES_PAR_LA_PUBLICATION = Object.freeze([
-  Object.freeze({
-    arbre: "coquille",
-    nom: "Cross-Origin-Opener-Policy",
-    valeur: () => "same-origin",
-    decidePar: "ADR 0017 § 3, sur la recommandation différée de l'ADR 0010",
-    motif:
-      "Il retire à la future détentrice de clés la relation d'OUVERTURE inter-fenêtres, que la " +
-      "partition d'origine ne couvre pas et que `frame-ancestors` ne couvre pas non plus. Il n'est " +
-      "pas posé sur l'origine applicative : un document encadré n'est pas un contexte de " +
-      "navigation de plus haut niveau, l'en-tête y serait sans effet.",
-  }),
   Object.freeze({
     arbre: "application",
     nom: "Content-Security-Policy",

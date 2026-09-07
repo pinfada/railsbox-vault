@@ -21,9 +21,11 @@
 //
 // ## Ce que ce module ne mesure PAS
 //
-// L'accès SYNCHRONE à l'OPFS, qui n'existe que dans un Worker dédié : il est constaté par
-// `public/runtime-worker.mjs` (`PEUT_OUVRIR`) et rendu comme l'ÉTAT `indisponible`, jamais comme un
-// refus de geste. Le mesurer ici depuis un document donnerait « absent » sur les trois moteurs.
+// L'accès SYNCHRONE à l'OPFS — `createSyncAccessHandle` — n'existe que dans un Worker dédié : il est
+// constaté par `public/runtime-worker.mjs` (`PEUT_OUVRIR`) et rendu comme l'ÉTAT `indisponible`,
+// jamais comme un refus de geste. Le mesurer ici, depuis un document, rendrait « absent » sur les
+// trois moteurs. Ce que ce module relève d'OPFS est la seule chose qu'un document puisse en voir —
+// `navigator.storage.getDirectory` —, et il la relève comme FACULTATIVE pour la même raison.
 
 /**
  * Les capacités dont la coquille dépend, chacune avec le geste qui la réclame.
@@ -74,9 +76,16 @@ export const CAPACITES_DE_LA_COQUILLE = Object.freeze([
   }),
   Object.freeze({
     nom: "opfs",
-    exigee: true,
+    // FACULTATIVE, et c'est une décision plutôt qu'une indulgence : l'absence d'OPFS est déjà rendue
+    // comme un ÉTAT — `indisponible` — par le Worker de confiance (`PEUT_OUVRIR`), et l'ADR 0029 dit
+    // pourquoi : « ce n'est pas le geste qui a échoué ». L'exiger ici ferait refuser le DÉMARRAGE de
+    // la coquille sur un moteur qui la porte par ailleurs — mesuré sur WebKit, où `getDirectory`
+    // manque au document —, et ferait disparaître avec elle la frontière d'origine, les dix refus et
+    // l'interface que #161 et #162 y mesurent. Deux décisions pour une même absence, dont l'une
+    // annulerait ce que l'autre publie.
+    exigee: false,
     pourquoi:
-      "le volume, son enveloppe et ses voisins vivent dans le système de fichiers d'origine privée",
+      "le volume, son enveloppe et ses voisins vivent dans le système de fichiers d'origine privée ; son absence est l'état « indisponible », jamais un refus de démarrage",
     presente: (portee) => typeof portee?.navigator?.storage?.getDirectory === "function",
   }),
   Object.freeze({

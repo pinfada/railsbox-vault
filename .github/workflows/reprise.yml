@@ -15,10 +15,16 @@ on:
   pull_request:
     paths:
       - "src/vm/**"
+      - "src/coquille/**"
       - "public/vm/**"
+      - "public/main.mjs"
+      - "public/runtime-worker.mjs"
+      - "public/index.html"
       - "tests/e2e/**"
       - "playwright.e2e.config.mjs"
       - "tools/serve.mjs"
+      - "tools/serve-headers.mjs"
+      - "tools/build-reference-image/manifest.mjs"
       - ".github/workflows/reprise.yml"
 
 permissions:
@@ -39,6 +45,11 @@ jobs:
     # `archive-recuperation-inter-origine.spec.mjs` ajoute deux boots Rails et une dérivation
     # Argon2id à la suite, et les scénarios s'exécutent en SÉQUENCE (`workers: 1`). Une marge qui
     # devient juste finit par faire échouer la recette pour une raison qui n'est pas la sienne.
+    #
+    # Inchangée le 7 septembre 2026 (#163) : `reprise-coquille-boot-froid.spec.mjs` ajoute deux boots
+    # Rails et deux dérivations Argon2id — environ dix minutes de plus en séquence —, et la marge de
+    # 120 min les couvre. La porter plus haut sans mesure ferait passer un job qui traîne pour un job
+    # qui travaille.
     timeout-minutes: 120
 
     steps:

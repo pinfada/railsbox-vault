@@ -201,7 +201,11 @@ test("la publication n'ajoute que les en-têtes DÉCLARÉS, et rien d'autre", ()
 });
 
 test("chaque en-tête ajouté porte l'ADR qui l'a décidé et le motif qui le justifie", () => {
-  assert.equal(EN_TETES_AJOUTES_PAR_LA_PUBLICATION.length, 2);
+  // Ils étaient DEUX, ils sont UN depuis #163 : `Cross-Origin-Opener-Policy` a quitté cette table
+  // pour `tools/serve-headers.mjs`. Il était le seul en-tête que la publication posait sans que le
+  // serveur de test le serve, et c'est exactement ce qui rendait la décision inéprouvable — aucune
+  // suite ne pouvait attester `window.opener === null` sur une page qui ne le portait pas.
+  assert.equal(EN_TETES_AJOUTES_PAR_LA_PUBLICATION.length, 1);
   for (const ajout of EN_TETES_AJOUTES_PAR_LA_PUBLICATION) {
     assert.match(ajout.decidePar, /ADR \d{4}/u);
     assert.ok(ajout.motif.length > 80, `le motif de ${ajout.nom} n'argumente rien`);

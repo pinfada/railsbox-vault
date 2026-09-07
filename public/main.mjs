@@ -293,6 +293,14 @@ function constaterLaMort(cause) {
   return mortDuWorker;
 }
 
+/**
+ * N'exécute un geste que si le Worker vit. Sinon, le refus TYPÉ, tout de suite : la conduite est
+ * déjà décidée, et faire le calcul avant de le découvrir serait payer deux secondes pour rien.
+ */
+function siVivant(geste) {
+  return mortDuWorker === null ? geste() : Promise.reject(refusDeMort());
+}
+
 /** Le refus que TOUT geste reçoit une fois la mort constatée. Il porte SON code, pas un autre. */
 function refusDeMort() {
   return Object.assign(new Error(messageDeRefus(CODES_REFUS_COQUILLE.workerMort)), {
@@ -613,6 +621,10 @@ async function demarrer() {
   // Sa réponse porte aussi ce que l'ÉTAPE 2 a constaté de l'exclusivité du volume, relevé par le
   // Worker à son évaluation — donc avant qu'aucun document applicatif puisse exister.
   const premierEtat = await demanderLEtatPrivilegie();
+  // Le Worker a pu MOURIR pendant cette première question — c'est même le cas le plus probable
+  // d'une mort : un module qui jette à son évaluation, ou qui ne répond jamais. `constaterLaMort` a
+  // alors déjà tenu la conduite ; poursuivre le démarrage écraserait son état par « prête ».
+  if (mortDuWorker !== null) return;
   rapport.exclusivite = premierEtat.exclusivite ?? null;
   inscrire("exclusiviteEtCanal", ISSUES_DETAPE.franchie, rapport.exclusivite?.verdict ?? null);
   rapport.canalPrivilegie = "etabli";
@@ -628,7 +640,13 @@ async function demarrer() {
     document,
     racine: document,
     demander: demanderAuWorker,
-    ...derivations,
+    // Les deux dérivations sont gardées par la MORT, et pas seulement les questions au Worker.
+    // Sans cette garde, une phrase présentée sur un coffre dont l'enveloppe porte déjà un
+    // emplacement partirait droit dans Argon2id — deux secondes de calcul pour une KEK que
+    // personne ne pourrait plus recevoir. « Ne dérive rien tant que personne n'a agi » se tient
+    // ici, à l'entrée du calcul, et pas seulement à l'entrée du canal.
+    deriverPhrase: (appel) => siVivant(() => derivations.deriverPhrase(appel)),
+    deriverPasskey: (appel) => siVivant(() => derivations.deriverPasskey(appel)),
     agent: navigator.userAgent,
     surEtat: (reponse) => {
       rapport.etat = reponse.etat;

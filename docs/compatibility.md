@@ -99,6 +99,37 @@ Verdicts Vault correspondants :
 | Firefox  | mesuré  | aucune                                                        |
 | WebKit   | refusé  | `opfsGetDirectory`, `storageEstimate`, `opfsSyncAccessHandle` |
 
+### Ce que la COQUILLE fait de cette matrice (#163, ADR 0030)
+
+La sonde publie une matrice ; la coquille, elle, décide d'un démarrage. Depuis #163 elle mesure ses
+capacités **dans son propre document, sous la CSP servie** — sans l'exemption dont la sonde jouit
+(`tools/serve-headers.mjs`) —, et elle en tire deux verdicts distincts :
+
+- **exigée** — WebCrypto, WebAssembly, Worker de module, `MessageChannel`, `structuredClone`. Leur
+  absence arrête le démarrage, avec `VAULT_COQUILLE_CAPACITE_MANQUANTE` et le nom de ce qui manque ;
+- **facultative** — `navigator.credentials` et `navigator.storage.getDirectory`. La ligne « OPFS :
+  `navigator.storage.getDirectory()` » de la matrice ci-dessus est marquée **obligatoire** pour le
+  PRODUIT, et la coquille la traite néanmoins comme facultative au DÉMARRAGE : son absence est déjà
+  rendue comme l'état `indisponible` par le Worker de confiance. L'exiger deux fois ferait
+  disparaître, sur WebKit, la frontière d'origine, les dix refus et l'interface que #161 et #162 y
+  mesurent — c'est-à-dire tout ce qui reste mesurable sur ce moteur.
+
+### `Cross-Origin-Opener-Policy` : mesuré sur les trois moteurs
+
+Servi seul (sans COEP) sur l'origine de confiance depuis #163, et son EFFET est relevé plutôt que
+supposé — `tests/browser/entetes-durcissement.spec.mjs`, sur Chromium, Firefox et WebKit :
+
+| Manipulation                                                                | Chromium | Firefox | WebKit  |
+| --------------------------------------------------------------------------- | -------- | ------- | ------- |
+| fenêtre **inter-origine** ouverte depuis la coquille : `window.opener`      | nul      | nul     | nul     |
+| fenêtre **même origine**, même politique : `window.opener` (témoin positif) | présent  | présent | présent |
+| fenêtre inter-origine ouverte **sans** l'en-tête (témoin négatif)           | présent  | présent | présent |
+
+Les trois moteurs l'honorent donc de la même façon, et il n'y a rien à déclarer d'un moteur qui ne
+l'appliquerait pas. La ligne du milieu n'est pas un défaut : COOP compare deux documents avant de
+couper, et deux documents de la même origine portant la même politique restent liés — c'est ce que
+la directive dit, et c'est ce qui montre que la sonde sait lire un opener quand il y en a un.
+
 ### Lecture des verdicts notables
 
 - **`storagePersist` refusé sous Chromium et Firefox.** Chromium renvoie `false` sans interaction ;

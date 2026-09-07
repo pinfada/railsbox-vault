@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fenêtre ouvrante — épreuve COOP</title>
+  </head>
+  <body>
+    <main>
+      <h1>Fenêtre ouvrante</h1>
+      <!--
+        Le geste qui OUVRE une seconde fenêtre, pour mesurer ce que COOP fait de la relation
+        d'ouverture (#163, ADR 0030, décision 4).
+
+        C'est un `window.open` déclenché par un CLIC, et non un `<a target="_blank">` : les moteurs
+        posent `noopener` IMPLICITEMENT sur une ancre à cible nommée, si bien que l'épreuve
+        mesurerait cette convention-là au lieu de l'en-tête. `window.open` ne le fait pas, et le
+        clic fournit le geste d'utilisateur qu'un bloqueur de fenêtres exigerait.
+
+        Ce document est servi par les DEUX rôles de `tools/serve.mjs` : le rôle `shell` lui sert
+        COOP, le rôle `app` ne lui en sert pas. C'est cette différence, et elle seule, qui donne au
+        relevé son témoin négatif — même document, même geste, même moteur, autre en-tête.
+      -->
+      <button id="ouvrir-ici" type="button">Ouvrir sur la même origine</button>
+      <button id="ouvrir-ailleurs" type="button">Ouvrir sur une autre origine</button>
+    </main>
+    <script type="module" src="/coquille-epreuve/ouvrante.mjs"></script>
+  </body>
+</html>

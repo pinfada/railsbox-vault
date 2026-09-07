@@ -75,3 +75,89 @@ test("témoin négatif : sans `Referrer-Policy`, la même requête porte l'origi
   expect(referer).not.toBeNull();
   expect(referer).toContain(APP_ORIGIN);
 });
+
+// --- COOP : servi, et ATTESTÉ (#163, ADR 0030, décision 4) ----------------------------------------
+//
+// `Cross-Origin-Opener-Policy: same-origin` était RECOMMANDÉ par l'ADR 0010 et posé par la seule
+// chaîne de publication (ADR 0017 § 3). Le serveur de test ne le servait pas, si bien qu'aucune
+// épreuve ne pouvait attester son effet : la décision reposait sur la lecture d'une table.
+//
+// Ce qu'il ferme, et que rien d'autre ne ferme : la relation d'OUVERTURE inter-fenêtres.
+// `frame-ancestors 'none'` interdit d'ENCADRER la coquille ; il ne dit rien d'une fenêtre qu'elle
+// ouvre, ni d'une fenêtre qui l'ouvrirait. Une coquille qui détient la KEK de la session pour toute
+// sa durée (#162, ADR 0029) n'a aucune raison de laisser une référence `window.opener` vivante.
+//
+// Le TÉMOIN NÉGATIF est la même manipulation depuis le rôle `app`, qui ne reçoit pas l'en-tête :
+// sans lui, un `opener === null` pourrait n'être que le `noopener` implicite d'un moteur, ou une
+// sonde cassée.
+
+/**
+ * Ouvre la seconde fenêtre par un CLIC, sur la cible demandée, et rend ce que le moteur lui a
+ * laissé de son ouvrante.
+ *
+ * @param {"#ouvrir-ici" | "#ouvrir-ailleurs"} bouton
+ */
+async function openerDeLaFenetreOuverte(page, origine, bouton) {
+  await page.goto(`${origine}/coquille-epreuve/ouvrante.html`);
+  const [ouverte] = await Promise.all([page.waitForEvent("popup"), page.click(bouton)]);
+  await ouverte.waitForLoadState("domcontentloaded");
+  const verdict = await ouverte.evaluate(() => ({
+    opener: window.opener === null ? "nul" : "present",
+    origine: location.origin,
+  }));
+  await ouverte.close();
+  return verdict;
+}
+
+test("COOP est servi par la coquille, et par elle seule", async ({ request }) => {
+  const coquille = (await request.get(`${SHELL_ORIGIN}/index.html`)).headers();
+  const application = (await request.get(`${APP_ORIGIN}/index.html`)).headers();
+
+  expect(coquille["cross-origin-opener-policy"]).toBe("same-origin");
+
+  // Pas sur l'origine applicative, et ce n'est pas un oubli : un document ENCADRÉ n'est pas un
+  // contexte de navigation de plus haut niveau, l'en-tête y serait sans effet. Le poser y ferait
+  // croire à une protection que le moteur ignore.
+  expect(application["cross-origin-opener-policy"]).toBeUndefined();
+
+  // COEP reste ÉCARTÉ (ADR 0010) : il exigerait de chaque sous-ressource inter-origine un
+  // consentement explicite, y compris du territoire du guest, ce que l'ADR 0002 refuse de
+  // contraindre. COOP servi SEUL ne confère donc pas `crossOriginIsolated`, et ne le prétend pas.
+  expect(coquille["cross-origin-embedder-policy"]).toBeUndefined();
+  expect(application["cross-origin-embedder-policy"]).toBeUndefined();
+});
+
+test("une fenêtre INTER-ORIGINE ouverte depuis la coquille ne garde AUCUN opener", async ({
+  page,
+}, info) => {
+  const verdict = await openerDeLaFenetreOuverte(page, SHELL_ORIGIN, "#ouvrir-ailleurs");
+  await info.attach(`coop-${info.project.name}.json`, {
+    body: JSON.stringify(verdict, null, 2),
+    contentType: "application/json",
+  });
+  expect(verdict.origine, "la fenêtre ouverte est bien sur l'AUTRE origine").toBe(APP_ORIGIN);
+  expect(verdict.opener, "COOP coupe la relation d'ouverture inter-origine").toBe("nul");
+});
+
+test("témoin POSITIF de la sonde : deux documents de la MÊME origine restent liés", async ({
+  page,
+}) => {
+  // `Cross-Origin-Opener-Policy: same-origin` COMPARE deux documents avant de couper : deux
+  // documents de la même origine portant la même politique restent liés, et c'est ce que la
+  // directive dit. Ce relevé n'est donc pas un défaut — c'est ce qui montre que la sonde SAIT lire
+  // un opener quand il y en a un. Sans lui, « opener nul » pourrait n'être qu'une lecture cassée.
+  const verdict = await openerDeLaFenetreOuverte(page, SHELL_ORIGIN, "#ouvrir-ici");
+  expect(verdict.origine).toBe(SHELL_ORIGIN);
+  expect(verdict.opener).toBe("present");
+});
+
+test("témoin NÉGATIF : sans COOP, la MÊME fenêtre inter-origine garde son opener", async ({
+  page,
+}) => {
+  // La variable est l'EN-TÊTE, et rien d'autre : même document, même geste, même moteur, même forme
+  // de fenêtre — inter-origine des deux côtés —, servi cette fois par le rôle `app`, qui ne reçoit
+  // pas COOP (décision par rôle de l'ADR 0022, reprise par l'ADR 0030).
+  const verdict = await openerDeLaFenetreOuverte(page, APP_ORIGIN, "#ouvrir-ailleurs");
+  expect(verdict.origine).toBe(ORIGINE_APPLICATIVE_B);
+  expect(verdict.opener, "la fouille sait trouver un opener quand il y en a un").toBe("present");
+});

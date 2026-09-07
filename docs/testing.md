@@ -2111,6 +2111,48 @@ frontière d'origine, l'ensemble de `npm run check` tient en un peu plus d'une m
 la limite de 2 min (86 s mesurées en CI le 2026-08-23). Elle exige que les trois moteurs soient
 installés (voir `docs/development.md`).
 
+## Le cycle de vie assemblé (#163, ADR 0030)
+
+Trois niveaux, et ils ne mesurent pas la même chose.
+
+**Unitaire** — `tests/unit/coquille-cycle-de-vie.test.mjs` et
+`tests/unit/coquille-application.test.mjs`. Les gardes du cycle sont des fonctions PURES de
+`src/coquille/`, et c'est la condition pour qu'une campagne de mutation les atteigne : l'ordre des
+huit étapes, la conduite à la mort du Worker, la sonde de capacités, le constat d'exclusivité et la
+lecture du descripteur d'application. Coût : moins d'une seconde, rattaché à `npm run check`.
+
+**Intégration navigateur** — `tests/browser/coquille-cycle-de-vie.spec.mjs` et
+`tests/browser/entetes-durcissement.spec.mjs`, sur les **trois moteurs** (`npm run test:cycle`). Ce
+qu'ils mesurent et que l'unitaire ne peut pas mesurer : que le relevé publie les étapes datées dans
+l'ordre du dossier, qu'un démarrage demandé avant l'ouverture du backend est refusé, qu'un Worker
+qui **jette** livre un événement, qu'un Worker **muet** est constaté par la borne de trente
+secondes, que le `terminate()` de la fermeture propre est la troisième cause, et que
+`Cross-Origin-Opener-Policy` coupe réellement une relation d'ouverture inter-fenêtres. Coût :
+environ **40 s par moteur**, dont trente secondes pour la seule borne du Worker muet — elle ne peut
+pas être raccourcie sans mesurer autre chose que ce qu'elle mesure. Ces suites ne sont **pas**
+rattachées à `npm run check` : elles sont lancées par `npm run test:cycle`, comme
+`npm run test:coquille` et `npm run test:deverrouillage`.
+
+Le Worker est tué **par substitution de son module au niveau du réseau** (`page.route`), et jamais
+par une poignée exposée par le produit : #162 a retiré le jeton de harnais du chemin de produit, et
+lui rendre un `globalThis.tuerLeWorker` rouvrirait cette porte pour la commodité d'une épreuve.
+
+**Bout en bout** — `tests/e2e/reprise-coquille-boot-froid.spec.mjs`, job `Reprise MVP`
+(`.github/workflows/reprise.yml`). C'est le premier scénario de `tests/e2e/` qui part de
+`public/index.html` au lieu de `/vm/reference.html` : deux origines réelles servies par les deux
+rôles de `tools/serve.mjs`, déverrouillage par phrase, installation du disque applicatif, boot de
+Rails **dans le Worker de confiance**, fermeture propre, page fermée, réouverture — et l'application
+n'est pas réinstallée. Il exige Docker (`npm run image:build`) et les artefacts v86
+(`npm run vm:fetch`) ; à défaut il se déclare `skipped` avec la **condition explicite** qui l'a
+ignoré, jamais par défaut.
+
+**Durée ajoutée à `reprise.yml` : environ dix minutes** — deux boots Rails et deux dérivations
+Argon2id de plus, en séquence (`workers: 1`), sur une recette qui en dure soixante à soixante-dix.
+La marge du job (120 min) les couvre.
+
+**Campagne de mutation** — `node tools/muter-gardes-cycle-de-vie.mjs` : dix-sept gardes, dix-sept
+mutants tués, table et survivant dans l'ADR 0030.
+
 ## Preuve rouge
 
 Pour une implémentation TDD, la PR indique :

@@ -277,6 +277,24 @@ export function securityHeaders({
     // `tests/browser/entetes-durcissement.spec.mjs` le relève avec son témoin négatif. ADR 0022.
     headers["Referrer-Policy"] = "no-referrer";
     headers["Permissions-Policy"] = shellPermissionsPolicy();
+    // COOP, servi et non plus seulement recommandé (#163, ADR 0030, décision 4).
+    //
+    // L'ADR 0010 l'avait classé « recommandé, exigence différée vers #45 » : il ferme la relation
+    // d'ouverture inter-fenêtres (`window.opener`), que `frame-ancestors 'none'` ne couvre pas,
+    // autour d'une coquille destinée à détenir les clés du volume. Depuis #162 elle les détient
+    // pour de bon — la KEK vit dans le Worker de confiance pour la durée de la session —, et
+    // l'exigence cesse d'être différable.
+    //
+    // Servi SEUL, il ne confère pas `crossOriginIsolated` et n'exige RIEN de l'origine applicative :
+    // il ne s'applique qu'aux contextes de navigation de plus haut niveau, donc ni au cadre
+    // applicatif ni à la topologie de l'ADR 0002. COEP reste écarté (ADR 0010), et
+    // `SEC-ORIGIN-001` reste démontré par la PARTITION D'ORIGINE, jamais par COOP.
+    //
+    // Il suit la MÊME condition que la CSP — un document de la coquille, ni territoire applicatif,
+    // ni sonde de capacités — et c'est ce qui donne son témoin négatif à l'épreuve : une page
+    // ouverte depuis une origine sans COOP garde son `opener`, ce qui montre que la fouille sait
+    // trouver ce qui EST là.
+    headers["Cross-Origin-Opener-Policy"] = "same-origin";
   }
 
   // Un document d'origine OPAQUE récupère ses modules ES en mode CORS avec « Origin: null » :

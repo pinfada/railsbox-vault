@@ -94,6 +94,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0027 — l'archive emporte une enveloppe de RÉCUPÉRATION SEULE, et la feuille ancre la version](docs/decisions/0027-archive-et-ancre-de-version.md)
 - [ADR 0028 — la coquille de produit et sa frontière](docs/decisions/0028-coquille-de-produit-et-frontiere.md)
 - [ADR 0029 — le déverrouillage dans la coquille : trois moyens, une attente annoncée, une feuille](docs/decisions/0029-deverrouillage-dans-la-coquille.md)
+- [ADR 0030 — le cycle de vie assemblé dans la coquille : l'ordre prouvé par l'échec de son inverse, la mort du Worker, COOP](docs/decisions/0030-cycle-de-vie-assemble-dans-la-coquille.md)
 
 ## Licence
 

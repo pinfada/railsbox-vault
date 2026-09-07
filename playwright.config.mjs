@@ -83,6 +83,19 @@ const FRONTIERE_COQUILLE = ["**/coquille-frontiere.spec.mjs"];
  */
 const DEVERROUILLAGE_COQUILLE = ["**/coquille-deverrouillage.spec.mjs"];
 
+/**
+ * CYCLE DE VIE assemblé (#163, tranche 3 de #24, ADR 0030) et EN-TÊTES de durcissement (#104, #163).
+ * Les trois moteurs, pour les motifs des précédentes et pour deux qui leur sont propres :
+ *
+ *  - ce qu'un moteur fait d'un Worker qui MEURT — quel événement il livre, dans quel ordre, et s'il
+ *    en livre un — n'est écrit dans aucune norme que trois implémentations liraient pareil ;
+ *  - `Cross-Origin-Opener-Policy` est un en-tête que le moteur applique ou n'applique pas, et
+ *    l'attester par `window.opener === null` sur un seul d'entre eux publierait une garantie que les
+ *    deux autres ne tiendraient peut-être pas. La suite de durcissement rejoint donc les trois
+ *    moteurs, alors qu'elle n'en mesurait qu'un : elle mesure désormais un EFFET, pas une valeur.
+ */
+const CYCLE_DE_VIE = ["**/coquille-cycle-de-vie.spec.mjs", "**/entetes-durcissement.spec.mjs"];
+
 // Le harnais mesure une frontière d'origine : il lui faut DEUX serveurs, donc deux origines
 // réelles. `127.0.0.1` et `localhost` en fournissent sans DNS ni certificat, et restent tous deux
 // des contextes sécurisés.
@@ -150,6 +163,7 @@ export default defineConfig({
         ...FRONTIERE_DEVERROUILLAGE,
         ...FRONTIERE_COQUILLE,
         ...DEVERROUILLAGE_COQUILLE,
+        ...CYCLE_DE_VIE,
       ],
     })),
     // La frontière de CSP (#52) est une frontière de SÉCURITÉ, et une politique ne s'applique pas de
@@ -186,6 +200,11 @@ export default defineConfig({
       name: `deverrouillage-coquille-${nom}`,
       use: { browserName: nom },
       testMatch: DEVERROUILLAGE_COQUILLE,
+    })),
+    ...MOTEURS_CONNUS.map((nom) => ({
+      name: `cycle-de-vie-${nom}`,
+      use: { browserName: nom },
+      testMatch: CYCLE_DE_VIE,
     })),
   ],
 });
