@@ -206,8 +206,10 @@ Le `skip` porte sur une **condition explicite** et nommée — manifeste absent,
 absents, descripteur absent, artefacts v86 absents —, jamais sur un défaut. Une suite qui se
 déclarerait ignorée sans dire pourquoi passerait au vert là où elle doit parler.
 
-**Durée** : le scénario ajoute deux boots Rails et deux dérivations Argon2id à `reprise.yml`, soit
-environ **dix minutes** de plus sur une recette qui en dure soixante à soixante-dix.
+**Durée MESURÉE : 2,9 minutes** sur la machine de développement (4 vCPU, 16 Gio), et non les dix
+qu'une estimation prudente annonçait. Le second boot n'est pas un boot à froid : il reprend
+l'instantané que la fermeture propre a scellé, en **252 ms** contre **102,6 s** pour le premier.
+C'est le facteur que l'ADR 0024 publiait déjà, mesuré cette fois sur le chemin de PRODUIT.
 
 ## Décision 3 — La mort du Worker : détection et conduite ; l'état et la règle sont à #25
 
