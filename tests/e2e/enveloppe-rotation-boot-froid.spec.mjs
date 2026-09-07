@@ -27,7 +27,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
-import { expect, test } from "./contexte-persistant.mjs";
+import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -101,7 +101,7 @@ test.afterEach(async ({ context }, testInfo) => {
 test("une clé de déverrouillage ouvre un volume Rails à froid, sa rotation aussi, et l'ancienne est refusée", async ({
   context,
 }, testInfo) => {
-  test.skip(raison !== null, raison ?? "");
+  exigerLesPrealables(raison, "enveloppe-rotation-boot-froid.spec.mjs");
   test.setTimeout(1_500_000);
 
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));

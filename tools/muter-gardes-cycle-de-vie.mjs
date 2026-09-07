@@ -79,16 +79,12 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_CYCLE],
   },
   {
-    nom: "une étape conclue DEUX fois est refusée : le journal est une suite, pas un état",
-    garde: "exigerLOrdre — l'unicité d'une étape",
+    nom: "une étape déjà conclue passe par la garde de RÉVISION, jamais par la porte de devant",
+    garde: "exigerLOrdre — l'aiguillage vers `exigerUneRevisionAdmise`",
     fichier: CYCLE,
     avant:
-      "  if (parEtape.has(etape)) {\n" +
-      "    throw refus(\n" +
-      "      CODES_REFUS_COQUILLE.etapeHorsOrdre,\n" +
-      "      `L'étape « ${etape} » est déjà conclue : le journal est une suite, pas un état.`,\n" +
-      "    );\n" +
-      "  }\n",
+      "  const conclue = parEtape.get(etape);\n" +
+      "  if (conclue !== undefined) return exigerUneRevisionAdmise(etape, conclue, issue);\n",
     apres: "",
     epreuves: [EPREUVE_CYCLE],
   },
@@ -213,14 +209,11 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "un descripteur d'une AUTRE version est refusé, jamais deviné",
-    garde: "lireLeDescripteur — le contrôle de version",
+    garde: "formeDuDescripteur — le contrôle de version",
     fichier: APPLICATION,
     avant:
-      "  if (descripteur?.descripteurVersion !== DESCRIPTEUR_VERSION_ATTENDUE) {\n" +
-      "    return {\n" +
-      "      present: false,\n" +
-      "      motif: `version de descripteur inconnue : ${String(descripteur?.descripteurVersion)}`,\n" +
-      "    };\n" +
+      "  if (descripteur.descripteurVersion !== DESCRIPTEUR_VERSION_ATTENDUE) {\n" +
+      "    return refus(`version de descripteur inconnue : ${String(descripteur.descripteurVersion)}`);\n" +
       "  }\n",
     apres: "",
     epreuves: [EPREUVE_APPLICATION],
@@ -234,6 +227,131 @@ export const MUTATIONS = Object.freeze([
       "    return { present: false, motif: `aucun descripteur servi (${reponse.status})` };\n" +
       "  }\n",
     apres: "",
+    epreuves: [EPREUVE_APPLICATION],
+  },
+
+  // --- Les gardes ajoutées après la revue de sécurité de la PR #171 ---------------------------
+  {
+    nom: "une étape conclue FRANCHIE ne se révise pas : l'issue est finale",
+    garde: "exigerUneRevisionAdmise — le refus d'une issue finale",
+    fichier: CYCLE,
+    avant:
+      "  if (conclue.issue !== ISSUES_DETAPE.differee) {\n" +
+      "    throw refus(\n" +
+      "      CODES_REFUS_COQUILLE.etapeHorsOrdre,\n" +
+      "      `L'étape « ${etape} » est conclue « ${conclue.issue} », et cette issue est finale.`,\n" +
+      "    );\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_CYCLE],
+  },
+  {
+    nom: "une révision LÈVE un « pas encore » : elle ne le repose pas",
+    garde: "exigerUneRevisionAdmise — le refus d'une révision qui rediffère",
+    fichier: CYCLE,
+    avant:
+      "  if (issue === ISSUES_DETAPE.differee) {\n" +
+      "    throw refus(\n" +
+      "      CODES_REFUS_COQUILLE.etapeHorsOrdre,\n" +
+      "      `Une révision LÈVE un « pas encore » : elle ne le repose pas sur « ${etape} ».`,\n" +
+      "    );\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_CYCLE],
+  },
+  {
+    nom: "un manifeste voisin PRÉSENT n'est jamais réinstallé",
+    garde: "installerSiNecessaire — le court-circuit sur le manifeste existant",
+    fichier: APPLICATION,
+    avant: "  if (manifesteExistant.present) return { installee: false, volume: nom, octets };\n",
+    apres: "",
+    epreuves: [EPREUVE_APPLICATION],
+  },
+  {
+    nom: "un fichier de volume SANS manifeste est REFUSÉ, jamais écrasé",
+    garde: "installerSiNecessaire — le refus d'écraser un volume anonyme",
+    fichier: APPLICATION,
+    avant:
+      "  const volumeExistant = await observer(nom);\n" +
+      "  if (volumeExistant.present) {\n" +
+      "    throw refus(\n" +
+      "      CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste,\n" +
+      "      `Le volume « ${nom} » existe sans manifeste : la coquille ne l'écrase pas pour installer.`,\n" +
+      "    );\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_APPLICATION],
+  },
+  {
+    nom: "un versement TRONQUÉ ne produit pas un volume qui se croit complet",
+    garde: "installerSiNecessaire — la confrontation des octets écrits à la taille annoncée",
+    fichier: APPLICATION,
+    avant:
+      "  if (verse.ecrits !== octets) {\n" +
+      "    throw refus(\n" +
+      "      CODES_REFUS_COQUILLE.applicationAbsente,\n" +
+      "      `Disque applicatif tronqué : ${verse.ecrits} octets écrits sur ${octets}.`,\n" +
+      "    );\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_APPLICATION],
+  },
+  {
+    nom: "la clé de volume ne survit pas à l'ouverture, même quand l'ouverture échoue",
+    garde: "verserLeDisque — le `finally` qui efface la clé",
+    fichier: APPLICATION,
+    avant:
+      "  let backend;\n" +
+      "  try {\n" +
+      "    backend = await ouvrir({ name: nom, size: octets, cle, transactionnel: false });\n" +
+      "  } finally {\n" +
+      "    cle.fill(0);\n" +
+      "  }\n",
+    apres:
+      "  const backend = await ouvrir({ name: nom, size: octets, cle, transactionnel: false });\n",
+    epreuves: [EPREUVE_APPLICATION],
+  },
+  {
+    nom: "le PRÉFIXE des artefacts reste dans le chemin servi",
+    garde: "formeDuDescripteur — le contrôle du préfixe",
+    fichier: APPLICATION,
+    avant:
+      '  if (!PREFIXE_SERVI.test(String(descripteur.prefixeDesArtefacts ?? ""))) {\n' +
+      '    return refus("préfixe d\'artefacts hors du chemin servi");\n' +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_APPLICATION],
+  },
+  {
+    nom: "la LIGNE DE COMMANDE du guest reste sur un alphabet clos",
+    garde: "formeDuDescripteur — le contrôle de la ligne de commande",
+    fichier: APPLICATION,
+    avant:
+      '  if (!LIGNE_DE_COMMANDE.test(String(descripteur.boot?.cmdline ?? ""))) {\n' +
+      '    return refus("ligne de commande du guest refusée");\n' +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_APPLICATION],
+  },
+  {
+    nom: "les NOMS d'artefacts du boot restent des noms de fichier",
+    garde: "formeDuDescripteur — le contrôle des cinq noms du boot",
+    fichier: APPLICATION,
+    avant:
+      '  for (const cle of ["kernel", "initrd", "rootfs", "bios", "vgaBios"]) {\n' +
+      '    if (!NOM_DARTEFACT.test(String(descripteur.boot?.[cle] ?? ""))) {\n' +
+      "      return refus(`nom d'artefact refusé : ${cle}`);\n" +
+      "    }\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_APPLICATION],
+  },
+  {
+    nom: "le compte rendu publié est une liste FERMÉE",
+    garde: "compteRenduPublie — le COMPTE des pannes, jamais leur liste",
+    fichier: APPLICATION,
+    avant: "    pannes: rendu.failures.length,",
+    apres: "    pannes: rendu.failures,",
     epreuves: [EPREUVE_APPLICATION],
   },
 ]);

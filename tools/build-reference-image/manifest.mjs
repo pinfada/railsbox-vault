@@ -194,7 +194,25 @@ export function ecrireManifeste(options = {}) {
   const chemin = options.chemin ?? CHEMIN_MANIFESTE;
   mkdirSync(dirname(chemin), { recursive: true });
   writeFileSync(chemin, `${JSON.stringify(manifeste, null, 2)}\n`, "utf8");
-  return { chemin, manifeste };
+  // Le DESCRIPTEUR SERVI naît du MÊME GESTE que le manifeste, et c'est la décision (#163, ADR 0030).
+  //
+  // Deux fichiers dérivés du même manifeste doivent naître ensemble, sans quoi l'un des deux finit
+  // par décrire une image que l'autre a remplacée. Surtout, un descripteur écrit par un outil DE
+  // PLUS serait un outil que la recette d'intégration continue peut oublier d'appeler — et elle
+  // l'a oublié : la première rédaction de cette tranche définissait `descripteurApplicatif` sans
+  // que personne ne l'appelle, si bien que `reprise.yml` a SAUTÉ le scénario de la coquille et rendu
+  // « 8 passed, 1 skipped ». Un vert par vacuité, sur le scénario même que la tranche livrait.
+  const cheminDescripteur = options.cheminDescripteur ?? CHEMIN_DESCRIPTEUR_APPLICATIF;
+  const versionRuntime =
+    options.versionRuntime ??
+    JSON.parse(readFileSync(join(RACINE_DEPOT, "package.json"), "utf8")).version;
+  mkdirSync(dirname(cheminDescripteur), { recursive: true });
+  writeFileSync(
+    cheminDescripteur,
+    `${JSON.stringify(descripteurApplicatif(manifeste, versionRuntime), null, 2)}\n`,
+    "utf8",
+  );
+  return { chemin, manifeste, cheminDescripteur };
 }
 
 const executeDirectement =
@@ -204,6 +222,7 @@ if (executeDirectement) {
     const { chemin, manifeste } = ecrireManifeste();
     const mib = (manifeste.totals.byteSize / 1024 / 1024).toFixed(1);
     console.log(`Manifeste écrit : ${chemin}`);
+    console.log(`Descripteur applicatif écrit : ${CHEMIN_DESCRIPTEUR_APPLICATIF}`);
     console.log(`  ${manifeste.totals.artifactCount} artefacts, ${mib} Mio au total`);
     for (const artefact of manifeste.artifacts) {
       console.log(

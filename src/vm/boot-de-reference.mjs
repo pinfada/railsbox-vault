@@ -310,11 +310,19 @@ async function deroulerBootEtInvariant({
   // moment de la fermeture, dans l'ordre de l'ADR 0024. Le banc, lui, ne passe jamais ce drapeau :
   // son `finally` d'origine reste le sien, phase par phase.
   if (garderLaSessionOuverte) {
+    // `fermer` est IDEMPOTENT : un second appel ne referme rien et ne rend rien de neuf. Sans cela,
+    // deux gestes de fermeture — celui de l'utilisateur et celui d'un chemin d'erreur — feraient
+    // `close()` deux fois sur le même backend, et le second rendrait `VAULT_STORAGE_CLOSED` pour une
+    // fermeture qui s'était pourtant bien passée (constat 10 de la revue de la PR #171).
+    let fermee = null;
     return {
       ...commun,
       capture: null,
-      fermer: ({ capturer = true } = {}) =>
-        fermerLeMontage({ montage, guet, capturerApres: capturer ? capturerApres : null }),
+      fermer: ({ capturer = true } = {}) => {
+        if (fermee !== null) return fermee;
+        fermee = fermerLeMontage({ montage, guet, capturerApres: capturer ? capturerApres : null });
+        return fermee;
+      },
     };
   }
   const capture = await fermerLeMontage({ montage, guet, capturerApres });

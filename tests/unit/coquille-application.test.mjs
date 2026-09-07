@@ -20,9 +20,13 @@ import {
 import {
   ADRESSE_DESCRIPTEUR,
   adressesDuRuntime,
+  compteRenduPublie,
   descripteurDeManifeste,
+  formeDuDescripteur,
+  installerSiNecessaire,
   lireLeDescripteur,
 } from "../../src/coquille/application-de-reference.mjs";
+import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 
 // --- L'ÉTAPE 2 : le constat d'exclusivité ---------------------------------------------------------
 
@@ -232,4 +236,188 @@ test("les adresses du runtime mêlent l'épinglage v86 et les artefacts de l'ima
   // épinglage : les servir sous le préfixe v86 les ferait vérifier contre le mauvais manifeste.
   assert.equal(adresses.kernel, "/artifacts/reference-image/reference-rootfs-vmlinuz");
   assert.equal(adresses.rootfs, "/artifacts/reference-image/reference-rootfs.ext4");
+});
+
+// --- La FORME du descripteur, champ par champ -----------------------------------------------------
+
+test("un descripteur complet est admis", () => {
+  assert.deepEqual(formeDuDescripteur(descripteur()), { valide: true, motif: null });
+});
+
+test("chaque champ hors forme est refusé, et le refus NOMME le champ", () => {
+  // La version seule ne suffit pas : un descripteur d'une version connue fournit six URL, une ligne
+  // de commande de noyau et deux grandeurs d'allocation au Worker de confiance (constat 11 de la
+  // revue de la PR #171). `connect-src 'self'` est la SECONDE barrière, pas la première.
+  const cas = [
+    [{ prefixeDesArtefacts: "https://ailleurs.test/" }, /préfixe/],
+    [{ prefixeDesArtefacts: "/artifacts/../etc/" }, /préfixe/],
+    [{ disque: { nom: "../../etc/passwd", octets: 1024 } }, /nom de disque/],
+    [{ disque: { nom: "app.ext2", octets: 0 } }, /taille/],
+    [{ disque: { nom: "app.ext2", octets: 1e13 } }, /taille/],
+    [{ boot: { ...descripteur().boot, memoireOctets: -1 } }, /mémoire/],
+    [{ boot: { ...descripteur().boot, cmdline: "root=/dev/sda `rm -rf /`" } }, /ligne de commande/],
+    [{ boot: { ...descripteur().boot, kernel: "../vmlinuz" } }, /kernel/],
+  ];
+  for (const [champs, motif] of cas) {
+    const verdict = formeDuDescripteur(descripteur(champs));
+    assert.equal(verdict.valide, false, JSON.stringify(champs));
+    assert.match(verdict.motif, motif);
+  }
+});
+
+// --- L'INSTALLATION : trois issues, et pas une de plus ---------------------------------------------
+
+/** Un support d'installation dont chaque geste est observable. Rien n'est écrit pour de vrai. */
+function supportDInstallation({ manifeste = false, volume = false, ecrits = null } = {}) {
+  const gestes = [];
+  const octets = descripteur().disque.octets;
+  return {
+    gestes,
+    primitives: {
+      observer: async (nom) => ({
+        present: nom.endsWith(".manifest") ? manifeste : volume,
+        size: 0,
+      }),
+      ouvrir: async (options) => {
+        gestes.push(`ouvrir:${options.name}`);
+        return {
+          identifiantVolume: "0011223344556677889900aabbccddee",
+          close: async () => gestes.push("close"),
+        };
+      },
+      verser: async () => {
+        gestes.push("verser");
+        return ecrits ?? octets;
+      },
+      revoquer: async (nom) => gestes.push(`revoquer:${nom}`),
+      inscrire: async (nom) => gestes.push(`inscrire:${nom}`),
+    },
+  };
+}
+
+/** Une clé de volume factice. Elle est effacée par l'installation, et l'épreuve le vérifie. */
+function cleFeinte() {
+  const octets = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
+  return { octets, cleDeVolume: async () => octets };
+}
+
+test("un manifeste voisin PRÉSENT n'est pas réinstallé : rien n'est ouvert ni versé", async () => {
+  const support = supportDInstallation({ manifeste: true, volume: true });
+  const rendu = await installerSiNecessaire({
+    descripteur: descripteur(),
+    cleDeVolume: cleFeinte().cleDeVolume,
+    ...support.primitives,
+  });
+  assert.equal(rendu.installee, false);
+  assert.deepEqual(support.gestes, [], "réinstaller effacerait ce que le guest a écrit depuis");
+});
+
+test("un fichier de volume SANS manifeste est REFUSÉ, jamais écrasé", async () => {
+  // Un volume anonyme est soit une installation interrompue, soit autre chose. L'écraser est une
+  // décision que la coquille n'a pas à prendre seule (constat 7 de la revue de la PR #171).
+  const support = supportDInstallation({ manifeste: false, volume: true });
+  const erreur = await installerSiNecessaire({
+    descripteur: descripteur(),
+    cleDeVolume: cleFeinte().cleDeVolume,
+    ...support.primitives,
+  }).then(
+    () => null,
+    (raison) => raison,
+  );
+  assert.notEqual(erreur, null, "l'installation par-dessus un volume anonyme doit être refusée");
+  assert.equal(erreur.code, CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste);
+  assert.deepEqual(support.gestes, []);
+});
+
+test("un volume ABSENT est installé, et le manifeste est inscrit EN DERNIER", async () => {
+  const support = supportDInstallation();
+  const cle = cleFeinte();
+  const rendu = await installerSiNecessaire({
+    descripteur: descripteur(),
+    cleDeVolume: cle.cleDeVolume,
+    ...support.primitives,
+  });
+  assert.equal(rendu.installee, true);
+  // Le volume naît ANONYME : son manifeste n'est inscrit qu'une fois le disque écrit ET le backend
+  // fermé. Une installation interrompue laisse donc un volume non identifié — reconnaissable.
+  assert.deepEqual(support.gestes, [
+    "revoquer:application",
+    "ouvrir:application",
+    "verser",
+    "close",
+    "inscrire:application",
+  ]);
+  assert.ok(
+    cle.octets.every((octet) => octet === 0),
+    "la clé de volume ne survit pas à l'ouverture",
+  );
+});
+
+test("un versement TRONQUÉ ne produit pas un volume qui se croit complet", async () => {
+  const support = supportDInstallation({ ecrits: 4096 });
+  const erreur = await installerSiNecessaire({
+    descripteur: descripteur(),
+    cleDeVolume: cleFeinte().cleDeVolume,
+    ...support.primitives,
+  }).then(
+    () => null,
+    (raison) => raison,
+  );
+  assert.notEqual(erreur, null);
+  assert.match(erreur.message, /tronqué/);
+  assert.ok(!support.gestes.includes("inscrire:application"), "un volume tronqué reste ANONYME");
+});
+
+// --- Ce que le démarrage PUBLIE : une liste FERMÉE --------------------------------------------------
+
+test("le compte rendu publié est une liste FERMÉE : ce que le boot rend en plus n'en sort pas", () => {
+  // Le compte rendu de boot porte une trentaine de champs, dont le journal du guest et les
+  // observations du runtime. Les reposter en bloc ferait grossir un message de la base de confiance
+  // au rythme de ce que le guest imprime (constat 8 de la revue de la PR #171).
+  const publie = compteRenduPublie({
+    volume: "application",
+    volumeBytes: 1024,
+    bootMilliseconds: 1,
+    healthMilliseconds: 2,
+    usedSnapshot: false,
+    instantane: null,
+    timeline: {},
+    counts: {},
+    generation: {},
+    recuperation: null,
+    invariantHttpStatus: 200,
+    invariantVerdict: {},
+    observedRecordId: null,
+    observedAttachmentSha256: null,
+    boucleOrdonnancement: {},
+    rythme: {},
+    failures: [],
+    // Ce que le boot rend EN PLUS, et qui ne doit pas franchir le canal.
+    guestLog: ["une ligne", "deux lignes"],
+    observationsRuntime: [{ beaucoup: "de choses" }],
+    conforming: true,
+    transferredBytes: 999,
+  });
+  assert.deepEqual(Object.keys(publie).sort(), [
+    "bootMs",
+    "boucleOrdonnancement",
+    "counts",
+    "decomposition",
+    "enregistrementObserve",
+    "generation",
+    "instantane",
+    "instantaneUtilise",
+    "invariantStatut",
+    "invariantVerdict",
+    "pannes",
+    "pieceJointeObservee",
+    "recuperation",
+    "rythme",
+    "santeMs",
+    "volume",
+    "volumeOctets",
+  ]);
+  // Les pannes sont un COMPTE, pas la liste : une panne absorbée doit se voir, son contenu
+  // appartient au diagnostic du Worker.
+  assert.equal(publie.pannes, 0);
 });

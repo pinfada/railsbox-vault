@@ -41,6 +41,10 @@ const NODE_FILES = [
 // Sous `tests/vm/`, seules les `*.spec.mjs` (barrière de durabilité #4) relèvent de ce contexte.
 const PLAYWRIGHT_FILES = [
   "tests/browser/**/*.mjs",
+  // Les modules PARTAGÉS d'un dossier de spécifications relèvent du même contexte que les
+  // spécifications qu'ils servent : `tests/e2e/contexte-persistant.mjs` lance un navigateur, lit
+  // l'environnement du processus et écrit sur sa sortie standard.
+  "tests/e2e/**/*.mjs",
   "tests/compat/**/*.mjs",
   "tests/vm/**/*.spec.mjs",
   "tests/e2e/**/*.spec.mjs",

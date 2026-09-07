@@ -35,7 +35,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, test } from "./contexte-persistant.mjs";
+import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
+import { ISSUES_DETAPE } from "../../src/coquille/cycle-de-vie.mjs";
 import { E2E_ORIGIN_COQUILLE, E2E_ORIGIN_COQUILLE_APP } from "../../playwright.e2e.config.mjs";
 import { artefactsV86Absents } from "../../tools/v86-paths.mjs";
 
@@ -127,7 +128,7 @@ async function demarrerLApplication(page) {
 test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et retrouve son invariant", async ({
   context,
 }, testInfo) => {
-  test.skip(raison !== null, raison ?? "");
+  exigerLesPrealables(raison, "reprise-coquille-boot-froid.spec.mjs");
   test.setTimeout(1_500_000);
 
   const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
@@ -184,6 +185,31 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et ret
   // l'étape 5 du cycle de vie, et elle cesse d'être un banc.
   expect(premier.barrieres).toBeGreaterThan(1);
 
+  // LE JOURNAL, RELU APRÈS LE BOOT. L'étape 3 est RÉVISÉE — elle ne reste pas `differee` sur un
+  // geste qui a eu lieu —, l'étape 5 est franchie parce qu'un guest a réellement acquitté une
+  // barrière, et l'étape 8 dit que ce démarrage n'a rien repris : il vient d'installer.
+  const apresDemarrage = await releve(session.page);
+  const etapesApresBoot = new Map(apresDemarrage.cycle.map((i) => [i.etape, i]));
+  expect(etapesApresBoot.get("backendPuisVm").issue).toBe(ISSUES_DETAPE.franchie);
+  expect(etapesApresBoot.get("backendPuisVm").revision).toBe(true);
+  expect(etapesApresBoot.get("ecritureEtBarriere").issue).toBe(ISSUES_DETAPE.franchie);
+  expect(etapesApresBoot.get("exportEtMigration").issue).toBe(ISSUES_DETAPE.banc);
+  expect(etapesApresBoot.get("reprise").issue).toBe(ISSUES_DETAPE.differee);
+  expect(etapesApresBoot.get("reprise").motif).toBe("installation-initiale");
+
+  // Le RELEVÉ reste BORNÉ après un compte rendu de boot : la liste de `compteRenduPublie` est
+  // fermée, et le journal du guest n'y entre pas. C'est la seule mesure de ce plafond APRÈS un vrai
+  // boot — `tests/browser/coquille-frontiere.spec.mjs` le mesure avant tout démarrage.
+  const tailleApresBoot = (await session.page.locator("#coquille-rapport").textContent()).length;
+  await testInfo.attach("releve-apres-boot.txt", {
+    body: `caractères : ${tailleApresBoot}`,
+    contentType: "text/plain",
+  });
+  expect(
+    tailleApresBoot,
+    "le relevé porte un compte rendu BORNÉ, pas le journal du guest",
+  ).toBeLessThan(16_384);
+
   // --- 4. La fermeture PROPRE : arrêt de la VM, instantané, `close()`, puis `terminate()` ---------
   await session.page.click("#fermer-le-coffre");
   await expect(session.page.locator("#cycle-etat")).toHaveText("cycle:coffre-ferme", {
@@ -200,6 +226,10 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et ret
   expect(ferme.workerMort.kekRetenue).toBe(false);
   expect(ferme.etat).toBe("verrouille");
   expect(ferme.fermeture.capture, "la fermeture rend un compte rendu de capture").not.toBeNull();
+  // LE JOURNAL, RELU APRÈS LA FERMETURE : l'étape 7 est révisée de `differee` à `franchie`.
+  const etapesApresFermeture = new Map(ferme.cycle.map((i) => [i.etape, i]));
+  expect(etapesApresFermeture.get("fermeture").issue).toBe(ISSUES_DETAPE.franchie);
+  expect(etapesApresFermeture.get("fermeture").revision).toBe(true);
 
   // La PAGE est fermée : le Worker meurt avec elle, ses handles et sa mémoire s'en vont.
   await session.page.close();
@@ -228,6 +258,13 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et ret
   // L'ouverture a CONFRONTÉ ce qu'elle a relu : le rapport de récupération existe, et il n'est pas
   // inventé. Ce que ce boot en a fait — instantané repris ou boot à froid — est publié plus bas.
   expect(second.recuperation, "le rapport d'ouverture est publié").not.toBeNull();
+
+  // LE JOURNAL, RELU À LA RÉOUVERTURE : l'étape 8 est FRANCHIE, et son motif dit par quel chemin —
+  // instantané repris, ou boot à froid. C'est la seule preuve par exécution de cette étape.
+  const etapesReprise = new Map((await releve(session.page)).cycle.map((i) => [i.etape, i]));
+  expect(etapesReprise.get("reprise").issue).toBe(ISSUES_DETAPE.franchie);
+  expect(["instantane", "boot-froid"]).toContain(etapesReprise.get("reprise").motif);
+  expect(etapesReprise.get("backendPuisVm").issue).toBe(ISSUES_DETAPE.franchie);
 
   await session.page.close();
   expect(session.erreurs, "aucune erreur de page pendant la seconde session").toEqual([]);
@@ -258,6 +295,8 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et ret
       generation: premier.generation,
     },
     fermeture: ferme.fermeture,
+    cycleApresFermeture: ferme.cycle,
+    cycleALaReprise: (await releve(session.page)).cycle,
     secondDemarrage: {
       bootMs: second.bootMs,
       santeMs: second.santeMs,

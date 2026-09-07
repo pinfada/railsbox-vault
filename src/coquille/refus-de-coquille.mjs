@@ -136,6 +136,17 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * et sous la CSP servie — sans l'exemption dont jouit la sonde `public/compat.html` (#2).
    */
   capaciteManquante: "VAULT_COQUILLE_CAPACITE_MANQUANTE",
+  /**
+   * Un fichier de volume applicatif existe, mais aucun manifeste ne l'identifie.
+   *
+   * La coquille REFUSE, et ne réinstalle pas. Un volume naît anonyme et ne devient identifié qu'une
+   * fois son disque écrit et flushé : un volume sans manifeste est donc soit une installation
+   * interrompue, soit un volume que quelque chose d'autre a écrit. Verser le disque applicatif
+   * par-dessus écraserait, sans un geste et sans un mot, tout ce que le guest y aurait mis depuis —
+   * exactement le « succès muet » que la spécification refuse partout ailleurs (constat 7 de la
+   * revue de sécurité de la PR #171).
+   */
+  volumeApplicatifSansManifeste: "VAULT_COQUILLE_VOLUME_APPLICATIF_SANS_MANIFESTE",
 });
 
 /** Les messages en français, un par code. Ils décrivent le REFUS, jamais l'état de l'appareil. */
@@ -178,13 +189,15 @@ const MESSAGES = Object.freeze({
   [CODES_REFUS_COQUILLE.volumeVerrouille]:
     "Ce geste demande un volume OUVERT : créer un moyen de récupération exige de détenir déjà une clé qui ouvre ce coffre.",
   [CODES_REFUS_COQUILLE.workerMort]:
-    "Le Worker de confiance ne répond plus : la coquille ne sert plus rien tant qu'un geste ne l'a pas rouverte.",
+    "Le Worker de confiance ne répond plus : la coquille ne sert plus rien tant que « Rouvrir le coffre » ne l'a pas rechargée.",
   [CODES_REFUS_COQUILLE.etapeHorsOrdre]:
     "Étape du cycle de vie demandée avant celle dont elle dépend : l'ordre n'est pas une convention.",
   [CODES_REFUS_COQUILLE.applicationAbsente]:
     "Aucune application n'est servie par cette origine : il n'y a rien à démarrer ici.",
   [CODES_REFUS_COQUILLE.capaciteManquante]:
     "Une capacité exigée manque à ce navigateur : la coquille le dit plutôt que de l'inventer.",
+  [CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste]:
+    "Un volume applicatif existe sans manifeste : la coquille refuse de l'écraser pour installer.",
 });
 
 /** Tous les codes, triés. Sert au cliquet d'exhaustivité et aux épreuves. */

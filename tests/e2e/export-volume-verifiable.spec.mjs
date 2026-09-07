@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, test } from "./contexte-persistant.mjs";
+import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { MANIFEST_FORMAT_VERSION } from "../../src/vm/volume-manifest.mjs";
 import { tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
 
@@ -90,7 +90,7 @@ test.afterEach(async ({ context }, testInfo) => {
 test("un volume OPFS est exporté en archive vérifiable, et une archive altérée ou tronquée est refusée", async ({
   context,
 }, testInfo) => {
-  test.skip(raison !== null, raison ?? "");
+  exigerLesPrealables(raison, "export-volume-verifiable.spec.mjs");
   test.setTimeout(BUDGET_MS);
 
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));

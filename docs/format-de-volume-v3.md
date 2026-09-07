@@ -2075,18 +2075,34 @@ qui l'atteint autrement, et l'épreuve n'a rien à mesurer.
 parvient au document applicatif : ils vivent entre la coquille, son Worker de confiance et son
 propre document.
 
-| Code                                 | Ce qu'il constate                                                                                                                                                                                        |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VAULT_COQUILLE_WORKER_MORT`         | le Worker de confiance ne répond plus : il a jeté, il a été terminé, ou il s'est tu au-delà de `DELAI_WORKER_MORT_MS`. La coquille refuse alors **tout service jusqu'à un geste explicite**              |
-| `VAULT_COQUILLE_ETAPE_HORS_ORDRE`    | une étape du cycle de vie a été demandée avant celle dont elle dépend — un boot avant l'ouverture du backend, un cadre avant que l'étape 3 ait conclu                                                    |
-| `VAULT_COQUILLE_APPLICATION_ABSENTE` | aucune application n'est servie par cette origine : il n'y a rien à démarrer. Ce n'est pas un échec du geste, c'est l'absence de son objet — comme `indisponible` est l'absence d'un moteur capable      |
-| `VAULT_COQUILLE_CAPACITE_MANQUANTE`  | une capacité EXIGÉE manque au moteur, mesurée dans le document de la coquille et **sous la CSP servie** — sans l'exemption dont jouit la sonde `public/compat.html` (#2), qui mesurerait notre politique |
+| Code                                              | Ce qu'il constate                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VAULT_COQUILLE_WORKER_MORT`                      | le Worker de confiance ne répond plus : il a jeté, il a été terminé, ou il s'est tu au-delà de `DELAI_WORKER_MORT_MS`. La coquille refuse alors **tout service jusqu'à un geste explicite**                                                                                                                |
+| `VAULT_COQUILLE_ETAPE_HORS_ORDRE`                 | une étape du cycle de vie a été demandée avant celle dont elle dépend — un boot avant l'ouverture du backend, un cadre avant que l'étape 3 ait conclu                                                                                                                                                      |
+| `VAULT_COQUILLE_APPLICATION_ABSENTE`              | aucune application n'est servie par cette origine : il n'y a rien à démarrer. Ce n'est pas un échec du geste, c'est l'absence de son objet — comme `indisponible` est l'absence d'un moteur capable                                                                                                        |
+| `VAULT_COQUILLE_CAPACITE_MANQUANTE`               | une capacité EXIGÉE manque au moteur, mesurée dans le document de la coquille et **sous la CSP servie** — sans l'exemption dont jouit la sonde `public/compat.html` (#2), qui mesurerait notre politique                                                                                                   |
+| `VAULT_COQUILLE_VOLUME_APPLICATIF_SANS_MANIFESTE` | un fichier de volume applicatif existe, mais aucun manifeste ne l'identifie. La coquille **refuse**, et ne réinstalle pas : un volume anonyme est soit une installation interrompue, soit autre chose, et verser le disque par-dessus écraserait sans un geste et sans un mot ce que le guest y aurait mis |
+| `VAULT_COQUILLE_VOLUME_APPLICATIF_SANS_MANIFESTE` | un fichier de volume applicatif existe, mais aucun manifeste ne l'identifie. La coquille **refuse**, et ne réinstalle pas : un volume anonyme est soit une installation interrompue, soit autre chose, et verser le disque par-dessus écraserait sans un geste et sans un mot ce que le guest y aurait mis |
 
 `VAULT_COQUILLE_WORKER_MORT` est neuf, et son absence était un défaut : la borne de mort rejetait
 sous `VAULT_COQUILLE_TYPE_INCONNU`, dont le message dit « Requête hors de la liste d'admission de la
 coquille » — c'est-à-dire tout autre chose que ce qui s'était produit. Ce que ce code **ne dit pas**
 est aussi important : ni ce que « verrouillé » veut dire, ni sous quel délai, ni sur quel
 déclencheur. L'état et la règle appartiennent à #25 ; la coquille les cite (ADR 0030, décision 3).
+
+**Ce que « jusqu'à un geste explicite » désigne, nommément** : le bouton « Rouvrir le coffre », que
+la mort révèle dans l'interface remontée et qui **recharge** la coquille. Il ne ressuscite rien — un
+Worker recréé en place hériterait d'un cadre applicatif dont le port est mort — et il n'est jamais
+automatique. La borne qui mène à ce refus mesure l'absence de **signe de vie** et non l'absence de
+réponse : le Worker de confiance émet un **battement** (`vault.coquille.battement-prive`) pendant
+tout geste long, et un boot de deux minutes ne déclare donc plus mort un Worker vivant.
+
+**Ce que « jusqu'à un geste explicite » désigne, nommément** : le bouton « Rouvrir le coffre », que
+la mort révèle dans l'interface remontée et qui **recharge** la coquille. Il ne ressuscite rien — un
+Worker recréé en place hériterait d'un cadre applicatif dont le port est mort — et il n'est jamais
+automatique. La borne qui mène à ce refus mesure l'absence de **signe de vie** et non l'absence de
+réponse : le Worker de confiance émet un **battement** (`vault.coquille.battement-prive`) pendant
+tout geste long, et un boot de deux minutes ne déclare donc plus mort un Worker vivant.
 
 **Ce qui ne franchit le port dans aucun sens** : `VAULT_COQUILLE_CAPACITE_DANS_UN_MESSAGE` sert des
 deux côtés. Vers l'application, il est levé par la coquille **contre elle-même** — une réponse

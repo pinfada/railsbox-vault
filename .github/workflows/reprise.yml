@@ -18,6 +18,8 @@ on:
       - "src/coquille/**"
       - "public/vm/**"
       - "public/main.mjs"
+      - "public/document-applicatif.html"
+      - "public/document-applicatif.mjs"
       - "public/runtime-worker.mjs"
       - "public/index.html"
       - "tests/e2e/**"
@@ -94,7 +96,14 @@ jobs:
       # d'une ressource qui s'épuise au milieu, et c'est au milieu que l'écriture OPFS est refusée.
       # Le code de sortie des scénarios est celui de l'étape — le suivi n'a pas le droit de le
       # masquer, ni en le remplaçant par le sien, ni en faisant échouer l'étape à sa place.
+      # `VAULT_E2E_EXIGER` ferme le VERT PAR VACUITÉ (#163). Cette recette construit l'image de
+      # référence et récupère les artefacts v86 : elle n'a donc aucune raison de voir un scénario
+      # s'ignorer, et un scénario ignoré est un défaut de RECETTE, pas un scénario indisponible.
+      # Elle a rendu « 8 passed, 1 skipped » sur la PR #171 sans dire lequel ni pourquoi ; sous
+      # cette variable, chaque préalable absent est un échec qui NOMME ce qui manque.
       - name: Reprise MVP (E2E)
+        env:
+          VAULT_E2E_EXIGER: "1"
         run: |
           node tools/mesure-espace-disque.mjs --etape pendant-e2e --suivre 5 \
             --journal reports/e2e/espace-pendant-e2e.jsonl &

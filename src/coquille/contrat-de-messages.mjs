@@ -88,6 +88,21 @@ export const TYPES_PRIVILEGIES = Object.freeze({
    */
   fermeture: "vault.coquille.fermer-le-coffre",
   fermetureReponse: "vault.coquille.fermer-le-coffre-reponse",
+  /**
+   * BATTEMENT du Worker de confiance pendant un geste LONG (#163, ADR 0030, décision 3).
+   *
+   * Il n'est la réponse de personne : c'est une poussée, comme l'annonce de barrière, et il porte
+   * la corrélation du geste en cours pour que la coquille sache QUELLE attente il prolonge.
+   *
+   * Sans lui, la borne de mort — trente secondes — déclarerait MORT un Worker parfaitement vivant
+   * en train de booter une machine virtuelle, geste dont le dossier publie p95 = 125,9 s. Allonger
+   * la borne à la durée du plus long geste aurait rendu la détection AVEUGLE pendant le boot,
+   * c'est-à-dire exactement quand elle sert. Le battement garde la borne et change ce qu'elle
+   * mesure : non plus « aucune réponse », mais « aucun SIGNE DE VIE ».
+   *
+   * Il ne franchit QUE le canal privilégié : le port restreint n'en reçoit jamais un.
+   */
+  battement: "vault.coquille.battement-prive",
   /** Annonce du Worker : une barrière de durabilité vient d'être acquittée. */
   barriere: "vault.coquille.barriere-privee",
   refus: "vault.coquille.refus-prive",

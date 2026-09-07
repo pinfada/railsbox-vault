@@ -26,7 +26,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, test } from "./contexte-persistant.mjs";
+import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { MANIFEST_FORMAT_VERSION } from "../../src/vm/volume-manifest.mjs";
 import { tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
 import { PAGE_OCTETS } from "../../src/vm/enveloppe/fichier-enveloppe.mjs";
@@ -107,7 +107,7 @@ test.afterEach(async ({ context }) => {
 test("un volume chiffré exporté avec son moyen de récupération s'OUVRE PAR LE CODE sur une autre origine, et Rails y reprend", async ({
   context,
 }, testInfo) => {
-  test.skip(raison !== null, raison ?? "");
+  exigerLesPrealables(raison, "archive-recuperation-inter-origine.spec.mjs");
   test.setTimeout(1_800_000);
 
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));

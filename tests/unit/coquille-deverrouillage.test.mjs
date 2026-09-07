@@ -578,6 +578,10 @@ test("TOUTE réponse du canal privilégié est appariable : aucune ne peut reste
     TYPES_PRIVILEGIES.creerRecuperation,
     TYPES_PRIVILEGIES.application,
     TYPES_PRIVILEGIES.fermeture,
+    // Le BATTEMENT n'est la réponse de personne : c'est une poussée, comme l'annonce de barrière.
+    // Il porte la corrélation du geste en cours, non pour l'apparier mais pour dire QUELLE attente
+    // il prolonge — et la coquille l'ignore si cette corrélation n'est pas en vol.
+    TYPES_PRIVILEGIES.battement,
     TYPES_PRIVILEGIES.barriere,
   ]);
   for (const type of Object.values(TYPES_PRIVILEGIES)) {

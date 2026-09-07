@@ -53,6 +53,7 @@ import {
 import { compteRenduPublie, demarrerLaVm } from "/src/coquille/application-de-reference.mjs";
 import { constaterLExclusivite } from "/src/coquille/exclusivite-du-volume.mjs";
 import { exigerLeBackend } from "/src/coquille/cycle-de-vie.mjs";
+import { DELAI_BATTEMENT_MS } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { ETATS_DU_VOLUME, chargeUtileDEtat } from "/src/coquille/etat-de-la-coquille.mjs";
 import { exigerKekDeLaPage, moyenParNom } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
@@ -630,6 +631,29 @@ function annoncerLaBarriere() {
  */
 const exclusiviteConstatee = constaterLExclusivite({ volume: VOLUME, peutOuvrir: PEUT_OUVRIR });
 
+/**
+ * Exécute un geste LONG en battant, pour que la coquille sache qu'il vit.
+ *
+ * Le battement n'est la réponse de personne — il porte la corrélation du geste, non pour l'apparier
+ * mais pour dire QUELLE attente il prolonge. Il s'arrête dans un `finally` : un battement qui
+ * survivrait à son geste ferait tenir pour vivante une attente déjà réglée.
+ *
+ * @param {string | null} correlation
+ * @param {() => Promise<unknown>} geste
+ */
+async function enBattant(correlation, geste) {
+  const minuterie = setInterval(() => {
+    portPrivilegie.postMessage(
+      enveloppeDeMessage(TYPES_PRIVILEGIES.battement, correlee(correlation)),
+    );
+  }, DELAI_BATTEMENT_MS);
+  try {
+    return await geste();
+  } finally {
+    clearInterval(minuterie);
+  }
+}
+
 // --- Étape 3 : le backend, PUIS la machine virtuelle ----------------------------------------------
 
 /**
@@ -670,10 +694,12 @@ async function demarrerLApplication(message, correlation) {
     erreur.code = CODES_REFUS_COQUILLE.etapeHorsOrdre;
     throw erreur;
   }
-  const demarrage = await demarrerLaVm({
-    cleDeVolume,
-    reprendreParInstantane: message?.reprendreParInstantane !== false,
-  });
+  const demarrage = await enBattant(correlation, () =>
+    demarrerLaVm({
+      cleDeVolume,
+      reprendreParInstantane: message?.reprendreParInstantane !== false,
+    }),
+  );
   if (!demarrage.demarree) {
     return repondre(TYPES_PRIVILEGIES.applicationReponse, correlation, {
       demarree: false,
@@ -716,22 +742,43 @@ async function demarrerLApplication(message, correlation) {
  * décision 3).
  */
 async function fermerLeCoffre(message, correlation) {
-  const capture =
-    interne.application === null
-      ? null
-      : await interne.application.fermer({ capturer: message?.capturer !== false });
-  interne.application = null;
-  const precedent = interne.backend;
-  interne.backend = null;
-  // Les clés partent AVANT le `close()` : si la fermeture du handle échouait, la coquille aurait
-  // déjà cessé de détenir de quoi ouvrir. C'est l'ordre dont l'échec ne laisse rien derrière.
-  interne.kek = null;
-  moyenRetenu = null;
-  interne.etat = PEUT_OUVRIR ? ETATS_DU_VOLUME.verrouille : ETATS_DU_VOLUME.indisponible;
-  if (precedent !== null) await precedent.close();
+  const capture = await enBattant(correlation, () => relacherTout(message?.capturer !== false));
   return repondre(TYPES_PRIVILEGIES.fermetureReponse, correlation, {
     etat: interne.etat,
     barrieres: interne.barrieres,
     capture,
   });
+}
+
+/**
+ * RELÂCHE tout, quoi qu'il arrive à l'une des étapes.
+ *
+ * Le `finally` couvre l'arrêt de l'application ET la fermeture du volume, et c'est la correction du
+ * constat 10 de la revue de sécurité de la PR #171 : une fermeture qui échouait à mi-chemin gardait
+ * la KEK, gardait le backend ouvert et laissait l'état à `ouvert` — un coffre que l'utilisateur
+ * croyait fermé restait ouvert avec sa clé, sur le chemin même que #25 réemploiera pour verrouiller.
+ *
+ * Il est IDEMPOTENT : `interne.application` et `interne.backend` sont mis à `null` AVANT d'être
+ * fermés, si bien qu'un second geste ne referme rien deux fois et ne rend pas `VAULT_STORAGE_CLOSED`
+ * pour une fermeture qui a déjà eu lieu.
+ *
+ * @param {boolean} capturer
+ */
+async function relacherTout(capturer) {
+  const application = interne.application;
+  const precedent = interne.backend;
+  interne.application = null;
+  interne.backend = null;
+  try {
+    const capture = application === null ? null : await application.fermer({ capturer });
+    if (precedent !== null) await precedent.close();
+    return capture;
+  } finally {
+    // Les clés partent QUOI QU'IL ARRIVE. Une fermeture qui échoue laisse un volume peut-être
+    // ouvert — c'est un défaut de support, que le refus typé remonte — mais elle ne doit jamais
+    // laisser derrière elle de quoi l'ouvrir.
+    interne.kek = null;
+    moyenRetenu = null;
+    interne.etat = PEUT_OUVRIR ? ETATS_DU_VOLUME.verrouille : ETATS_DU_VOLUME.indisponible;
+  }
 }

@@ -76,6 +76,29 @@ export const SOURCES_COQUILLE = Object.freeze([
       "outil du dépôt : c'est ce qui permet qu'aucun chemin d'artefact ne soit écrit en dur.",
   }),
   Object.freeze({
+    depuis: "artifacts/application.json",
+    vers: "artifacts/application.json",
+    optionnel: true,
+    role:
+      "DESCRIPTEUR de l'application servie par cette origine (#163, ADR 0030). Sans lui, la " +
+      "coquille publiée reçoit un 404 et se déclare `applicationAbsente` : elle ne saurait ni la " +
+      "taille du disque à installer, ni la ligne de commande du guest, ni l'identité que le " +
+      "manifeste du volume doit déclarer. Il est OPTIONNEL comme les artefacts v86 — non " +
+      "versionné, écrit par `npm run image:build` — et son absence rend l'arbre INCOMPLET, ce que " +
+      "l'inventaire déclare au lieu de le taire. Il ne porte que du public : des noms " +
+      "d'artefacts, des tailles et une ligne de commande, tous déjà dans le manifeste d'image.",
+  }),
+  Object.freeze({
+    depuis: "artifacts/reference-image",
+    vers: "artifacts/reference-image",
+    optionnel: true,
+    role:
+      "Les artefacts de l'IMAGE DE RÉFÉRENCE (#5), que le descripteur ci-dessus nomme. La " +
+      "coquille les verse dans le volume applicatif au premier démarrage : une origine qui sert " +
+      "le descripteur sans servir ce qu'il nomme promet une application qu'elle ne peut pas " +
+      "installer. Un demi-gibioctet, non versionné, construit sous Docker — d'où `optionnel`.",
+  }),
+  Object.freeze({
     depuis: "vendor/v86/artefacts",
     vers: "vendor/v86/artefacts",
     optionnel: true,

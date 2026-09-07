@@ -66,6 +66,77 @@ const WORKER_QUI_JETTE = `throw new Error("worker de confiance en panne (épreuv
  */
 const WORKER_MUET = `self.addEventListener("message", () => {});\n`;
 
+/** Ce qu'un Worker LENT met à répondre : plus que la borne de mort, moins que le budget d'un boot. */
+const REPONSE_LENTE_MS = 40_000;
+
+/**
+ * Un Worker VIVANT mais LENT : il répond tout de suite à l'état et à l'inventaire, et met quarante
+ * secondes à répondre au démarrage — pendant lesquelles il BAT.
+ *
+ * C'est le cas que la première rédaction de cette tranche traitait comme une mort : la borne de
+ * trente secondes portait sur l'ABSENCE DE RÉPONSE, et le dossier publie p95 = 125,9 s pour un boot
+ * Rails. Un Worker parfaitement vivant était donc déclaré mort exactement pendant le geste le plus
+ * long que la coquille porte, et la fermeture propre devenait inatteignable dans le cas même pour
+ * lequel elle est écrite (constat 1 de la revue de sécurité de la PR #171).
+ *
+ * Il parle le contrat pour de bon — il importe le module que la coquille importe —, sans quoi
+ * l'épreuve mesurerait un double au lieu de la frontière.
+ */
+const WORKER_LENT = `
+import { TYPES_PRIVILEGIES, decoderMessage, enveloppeDeMessage } from "/src/coquille/contrat-de-messages.mjs";
+import { DELAI_BATTEMENT_MS } from "/src/coquille/moyens-de-deverrouillage.mjs";
+
+let port = null;
+const repondre = (type, corps) => port.postMessage(enveloppeDeMessage(type, corps));
+
+self.addEventListener("message", (event) => {
+  const decode = decoderMessage(event.data);
+  if (!decode.ok || decode.type !== TYPES_PRIVILEGIES.canal) return;
+  port = event.ports[0];
+  port.addEventListener("message", (message) => {
+    const recu = decoderMessage(message.data);
+    if (!recu.ok) return;
+    const correlation = recu.message.correlation;
+    if (recu.type === TYPES_PRIVILEGIES.etat) {
+      repondre(TYPES_PRIVILEGIES.etatReponse, {
+        etat: "ouvert",
+        barrieres: 0,
+        correlation,
+        exclusivite: { verdict: "disponible", volume: "coquille", code: null },
+        application: "arretee",
+      });
+      return;
+    }
+    if (recu.type === TYPES_PRIVILEGIES.inventaire) {
+      repondre(TYPES_PRIVILEGIES.inventaireReponse, {
+        present: false,
+        versionEnveloppe: null,
+        emplacements: [],
+        correlation,
+      });
+      return;
+    }
+    if (recu.type === TYPES_PRIVILEGIES.application) {
+      // Il BAT pendant tout le geste, puis répond. Sans le battement, la coquille aurait déjà
+      // constaté une mort dix secondes plus tôt.
+      const battement = setInterval(
+        () => repondre(TYPES_PRIVILEGIES.battement, { correlation }),
+        DELAI_BATTEMENT_MS,
+      );
+      setTimeout(() => {
+        clearInterval(battement);
+        repondre(TYPES_PRIVILEGIES.applicationReponse, {
+          demarree: false,
+          motif: "worker lent de l'épreuve",
+          correlation,
+        });
+      }, ${REPONSE_LENTE_MS});
+    }
+  });
+  port.start();
+});
+`;
+
 // --- L'ORDRE des huit étapes, mesuré ---------------------------------------------------------------
 
 test("le relevé publie les étapes du cycle, datées et dans l'ordre du dossier", async ({
@@ -270,9 +341,14 @@ test("la FERMETURE PROPRE est la troisième cause, et la coquille se la donne à
   // l'étape 6 est inscrite `banc` plutôt que passée sous silence — l'export et la migration vivent
   // encore dans `public/vm/`.
   const parEtape = new Map(rapport.cycle.map((inscrite) => [inscrite.etape, inscrite]));
-  expect(parEtape.get("ecritureEtBarriere").issue).toBe(ISSUES_DETAPE.franchie);
+  // L'étape 5 est `differee`, et NON `franchie` : aucune application n'a démarré, donc aucun guest
+  // n'a écrit et aucune barrière n'a été acquittée. Elle était conclue `franchie` à toute fermeture
+  // — le journal affirmait le faux, et cette épreuve gravait le défaut (constat 3 de la revue de la
+  // PR #171). L'E2E, lui, la lit `franchie` : c'est là qu'un guest écrit.
+  expect(parEtape.get("ecritureEtBarriere").issue).toBe(ISSUES_DETAPE.differee);
   expect(parEtape.get("exportEtMigration").issue).toBe(ISSUES_DETAPE.banc);
   expect(parEtape.get("fermeture").issue).toBe(ISSUES_DETAPE.franchie);
+  expect(parEtape.get("reprise").issue).toBe(ISSUES_DETAPE.differee);
   expect(parEtape.get("fermeture").instantMs).toBeGreaterThanOrEqual(
     parEtape.get("cadreEtPort").instantMs,
   );
@@ -295,4 +371,124 @@ test("la FERMETURE PROPRE est la troisième cause, et la coquille se la donne à
     )
     .toBe(rapport.etat);
   expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(rapport.etat);
+});
+
+// --- Le BATTEMENT : un Worker qui répond n'est jamais déclaré mort ---------------------------------
+
+test("un Worker VIVANT mais lent n'est jamais déclaré mort, et la fermeture reste atteignable", async ({
+  page,
+}, info) => {
+  test.setTimeout(180_000);
+  await substituerLeWorker(page, WORKER_LENT);
+  await ouvrirLaCoquille(page);
+
+  // Quarante secondes de geste, sous une borne de trente. C'est le battement — et lui seul — qui
+  // sépare « il ne répond pas encore » de « il ne répondra plus ».
+  const debut = Date.now();
+  await page.click("#demarrer-application");
+  await expect(page.locator("#cycle-etat")).toContainText("cycle:sans-application", {
+    timeout: 120_000,
+  });
+  const ecoule = Date.now() - debut;
+  await info.attach(`battement-${info.project.name}.json`, {
+    body: JSON.stringify({ ecouleMs: ecoule, releve: (await releve(page)).workerMort }, null, 2),
+    contentType: "application/json",
+  });
+  expect(ecoule, "le geste a bien duré plus que la borne de mort").toBeGreaterThan(30_000);
+
+  const rapport = await releve(page);
+  expect(rapport.workerMort, "aucune mort constatée sur un Worker qui bat").toBeNull();
+  await expect(page.locator("html")).not.toHaveAttribute("data-coquille", "worker-mort");
+
+  // Et la FERMETURE PROPRE reste atteignable — c'est ce que la mort à tort rendait impossible dans
+  // le cas même pour lequel la fermeture est écrite.
+  await page.click("#fermer-le-coffre");
+  await expect(page.locator("#cycle-etat")).not.toHaveText("cycle:fermeture-en-cours", {
+    timeout: 120_000,
+  });
+});
+
+// --- Le geste qui ROUVRE ---------------------------------------------------------------------------
+
+test("un geste explicite ROUVRE la coquille après la mort, et rejoue le cycle", async ({
+  page,
+}) => {
+  await ouvrirLaCoquille(page);
+  await page.click("#fermer-le-coffre");
+  await exigerLaConduite(page, "terminaison");
+
+  // Le bouton n'existe visiblement QU'APRÈS une mort : la coquille ne propose pas de se recharger
+  // à qui n'en a pas besoin.
+  const rouvrir = page.locator("#rouvrir-la-coquille");
+  await expect(rouvrir).toBeVisible();
+  await rouvrir.click();
+
+  // Le cycle est REJOUÉ depuis l'étape 1 : c'est ce que « refuser tout service jusqu'à un geste
+  // explicite » promet, et ce qu'aucun geste ne tenait avant (constat 5 de la revue de la PR #171).
+  await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: DELAI });
+  const rapport = await releve(page);
+  expect(rapport.workerMort).toBeNull();
+  expect(rapport.cycle.map(({ etape }) => etape)).toEqual([
+    "identites",
+    "exclusiviteEtCanal",
+    "backendPuisVm",
+    "cadreEtPort",
+  ]);
+});
+
+test("le bouton de réouverture reste CACHÉ tant qu'aucune mort n'a été constatée", async ({
+  page,
+}) => {
+  // Un témoin négatif : sans lui, « visible après la mort » passerait aussi bien sur un bouton
+  // toujours visible.
+  await ouvrirLaCoquille(page);
+  await expect(page.locator("#rouvrir-la-coquille")).toBeHidden();
+});
+
+// --- Le DESCRIPTEUR d'application, contre le serveur RÉEL ------------------------------------------
+
+test("sans descripteur servi, le démarrage rend `applicationAbsente` et le journal le dit", async ({
+  page,
+}, info) => {
+  test.setTimeout(180_000);
+  await ouvrirLaCoquille(page);
+  const initial = await releve(page);
+  // Sur un moteur qui n'atteint aucun volume, rien ne s'ouvre : l'ordre refuse avant le descripteur,
+  // et la suite le DÉCLARE plutôt que de passer au vert par vacuité.
+  test.skip(
+    initial.etat === ETATS_DU_VOLUME.indisponible,
+    "ce moteur n'atteint aucun volume : le backend ne s'ouvre pas, donc l'étape 3 refuse avant de lire le descripteur",
+  );
+
+  // Un vrai déverrouillage : c'est la seule façon d'atteindre `lireLeDescripteur` contre le serveur
+  // réel, puisque l'ordre refuse tout démarrage sur un backend fermé.
+  await page.fill("#saisie-phrase", "une phrase de scenario assez longue pour la calibration");
+  await page.click("#ouvrir-par-phrase");
+  await expect
+    .poll(async () => (await releve(page)).etat, { timeout: 120_000 })
+    .toBe(ETATS_DU_VOLUME.ouvert);
+
+  await page.click("#demarrer-application");
+  await expect(page.locator("#cycle-etat")).toContainText("cycle:sans-application", {
+    timeout: 120_000,
+  });
+  const rapport = await releve(page);
+  await info.attach(`descripteur-${info.project.name}.json`, {
+    body: JSON.stringify(rapport.application, null, 2),
+    contentType: "application/json",
+  });
+
+  // `npm run check` tourne sans les artefacts de l'image de référence : l'origine ne sert AUCUN
+  // descripteur, et la coquille le dit au lieu d'échouer. C'est le seul chemin par lequel
+  // `lireLeDescripteur` est exercé contre un serveur, et non contre un double.
+  expect(rapport.application.demarree).toBe(false);
+  expect(rapport.application.code).toBe(CODES_REFUS_COQUILLE.applicationAbsente);
+  expect(rapport.application.motif).toMatch(/404|descripteur/);
+
+  // Et l'étape 3 est RÉVISÉE : elle ne reste pas `differee` sur un geste qui a eu lieu.
+  const inscrites = rapport.cycle.filter(({ etape }) => etape === "backendPuisVm");
+  expect(inscrites).toHaveLength(2);
+  expect(inscrites[0].issue).toBe(ISSUES_DETAPE.differee);
+  expect(inscrites[1].issue).toBe(ISSUES_DETAPE.indisponible);
+  expect(inscrites[1].revision).toBe(true);
 });

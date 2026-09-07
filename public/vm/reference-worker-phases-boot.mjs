@@ -44,7 +44,18 @@ function sousLeJetonDuBanc(options) {
 let armed = null;
 
 export async function phaseLive(options) {
-  return bootEtVerifier(sousLeJetonDuBanc({ ...options, phase: "live" }));
+  // Le banc emprunte la MÊME branche que la coquille de produit : la session est GARDÉE ouverte,
+  // puis fermée par la poignée que le boot rend. Sans cela, `garderLaSessionOuverte` — la seconde
+  // différence entre les deux chemins, l'ADR 0030 le dit — ne serait exercée que par le scénario de
+  // bout en bout, c'est-à-dire par la seule suite qui exige Docker (constat 12 de la revue de la
+  // PR #171). Ici le coût est nul : le boot se termine de la même façon, une ligne plus loin.
+  //
+  // `fermer` est une FONCTION : elle ne peut pas franchir le `postMessage` qui rend ce compte rendu,
+  // et elle est donc retirée ici — par destructuration, pas par oubli.
+  const { fermer, ...compte } = await bootEtVerifier(
+    sousLeJetonDuBanc({ ...options, phase: "live", garderLaSessionOuverte: true }),
+  );
+  return { ...compte, capture: await fermer({ capturer: false }) };
 }
 
 export async function phaseResume(options) {
