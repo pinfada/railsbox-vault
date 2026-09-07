@@ -157,11 +157,21 @@ const SONDES_DE_TOPOLOGIE = [
   {
     nom: "navigation-du-sommet",
     cible: "coquille",
-    intention: "naviguer le document du sommet vers un fragment",
+    intention: "naviguer le document du sommet",
     run() {
-      // Un FRAGMENT, jamais une autre page : la sonde doit rendre la navigation OBSERVABLE sans
-      // détruire le harnais qui la mesure. C'est déjà la précaution du spike #35.
-      top.location.replace(`${top.location.href.split("#")[0]}#navigue-par-lapplication`);
+      // La sonde n'a de sens qu'ENCADRÉE : en haut de page, `top` est soi-même, et « naviguer le
+      // sommet » ne mesurerait plus une frontière.
+      if (window === top) return indisponible("la sonde n'a de sens qu'encadrée");
+      // AUCUNE LECTURE de `top.location`. C'est le constat 4 de la revue de la PR #166 : la
+      // version d'avant construisait sa destination à partir de `top.location.href`, dont la
+      // LECTURE lève `SecurityError` inter-origine AVANT que `replace` soit atteint. La sonde
+      // mesurait donc le refus de lecture, jamais le refus de NAVIGATION — et la revue l'a prouvé
+      // en élargissant la sandbox à `allow-top-navigation` : la sonde restait « refuse ».
+      //
+      // `replace` est, avec l'écriture de `href`, l'un des deux seuls membres de `Location`
+      // joignables inter-origine : l'appeler sans rien lire mesure exactement l'absence de
+      // `allow-top-navigation`.
+      top.location.replace("about:blank#navigue-par-lapplication");
       return { resultat: "aboutit", detail: "top.location.replace n'a pas levé" };
     },
   },

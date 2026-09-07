@@ -98,26 +98,60 @@ test("le document applicatif de DÉVELOPPEMENT n'est publié nulle part non plus
   }
 });
 
-test("aucun fichier PUBLIÉ ne porte la valeur du jeton du harnais", async () => {
-  // La coquille LIT le jeton d'un paramètre d'URL ; le Worker le confronte à la garde de
-  // `src/vm/cle-de-volume.mjs`, qui le définit. Aucun autre fichier publié n'a de raison de
-  // l'écrire — et un fichier qui l'écrirait ferait du harnais un chemin de production.
-  const definitions = ["src/vm/cle-de-volume.mjs"];
-  const coupables = [];
+/**
+ * Le SEUL fichier publié qui porte la valeur du jeton du harnais, et le seul qui ait le droit.
+ *
+ * Il la DÉFINIT, et sans étape de construction une constante que le produit compare existe
+ * forcément dans le code servi : la cacher demanderait un minifieur, c'est-à-dire une promesse qui
+ * dépend d'un outil plutôt que d'une frontière. Ce que le dépôt promet est donc autre chose, et
+ * c'est ce que `tests/browser/coquille-frontiere.spec.mjs` › « le jeton du harnais est PUBLIC,
+ * lisible d'ici, et ne sert à rien d'ici » mesure : la connaître ne donne rien depuis l'origine
+ * applicative, parce que le port privilégié où elle s'emploie n'y est pas atteignable.
+ */
+const PORTEUR_DU_JETON = "src/vm/cle-de-volume.mjs";
+
+test("UN SEUL fichier publié porte la valeur du jeton du harnais, et c'est celui qui la définit", async () => {
+  // La version d'avant s'EXCLUAIT du balayage : elle sautait `src/vm/cle-de-volume.mjs`, c'est-à-dire
+  // le seul fichier publié qui porte le jeton, et elle était donc verte par construction. C'est le
+  // constat 1 de la revue de la PR #166. Le balayage EXIGE désormais de le trouver là — un témoin de
+  // fouille — et rougit sur un second porteur.
+  const porteurs = [];
   for (const source of SOURCES_COQUILLE) {
     if (source.optionnel) continue;
     for (const chemin of await fichiersDe(source.depuis)) {
-      if (definitions.includes(chemin)) continue;
       let contenu;
       try {
         contenu = await lire(chemin);
       } catch {
         continue;
       }
-      if (contenu.includes(HARNAIS_CLE_JETON)) coupables.push(chemin);
+      if (contenu.includes(HARNAIS_CLE_JETON)) porteurs.push(chemin);
     }
   }
-  assert.deepEqual(coupables, [], "Ces fichiers publiés portent la valeur du jeton du harnais.");
+  assert.deepEqual(
+    porteurs,
+    [PORTEUR_DU_JETON],
+    "Le jeton du harnais doit se trouver dans EXACTEMENT un fichier publié : celui qui le définit.",
+  );
+});
+
+test("la coquille ne fige nulle part la valeur du jeton : elle la LIT d'un paramètre", async () => {
+  // La distinction compte : un jeton écrit en dur dans la page serait un déverrouillage que
+  // n'importe quelle visite déclencherait. Lu d'un paramètre, il demande à l'appelant de le
+  // présenter — et l'origine applicative n'a aucun chemin pour le faire (l'épreuve navigateur le
+  // mesure sur les trois moteurs). Le tout est provisoire : #162 remplace ce paramètre par le
+  // déverrouillage réel, et retire cette porte.
+  for (const chemin of ["public/main.mjs", "public/runtime-worker.mjs", "public/index.html"]) {
+    assert.ok(
+      !(await lire(chemin)).includes(HARNAIS_CLE_JETON),
+      `${chemin} fige la valeur du jeton du harnais.`,
+    );
+  }
+  assert.match(
+    await lire("public/main.mjs"),
+    /PARAMETRE_HARNAIS = "deverrouillage-harnais"/,
+    "la coquille doit LIRE le jeton d'un paramètre nommé, et non le porter.",
+  );
 });
 
 /** Liste les fichiers `.mjs`, `.html` et `.json` d'une source de publication. */

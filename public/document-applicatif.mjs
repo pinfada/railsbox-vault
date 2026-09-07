@@ -62,7 +62,10 @@ window.addEventListener("message", (event) => {
   rapport.portRecu = true;
   publier();
   ecouterLePort(port);
-  port.postMessage(enveloppeDeMessage(TYPES_APPLICATIFS.etat));
+  // Chaque requête porte son identifiant de CORRÉLATION, et la coquille le rend tel quel : c'est
+  // ce qui apparie N réponses à N requêtes, et ce qui interdit qu'une question reste muette quand
+  // plusieurs sont en vol.
+  port.postMessage(enveloppeDeMessage(TYPES_APPLICATIFS.etat, { correlation: "etat-1" }));
 });
 
 parent.postMessage(enveloppeDeMessage(TYPES_APPLICATIFS.annonce), "*");

@@ -52,5 +52,11 @@ export const TEMOIN_INTERCEPTE = "temoin-intercepte";
 /** Délai au-delà duquel une sonde muette est comptée refusée, plutôt que d'arrêter le relevé. */
 export const DELAI_SONDE_MS = 3000;
 
-/** Nombre de sondes que la fixture exécute. Un relevé incomplet est un relevé faux. */
-export const NOMBRE_DE_SONDES = 29;
+/**
+ * Nombre de sondes que la fixture exécute. Un relevé incomplet est un relevé faux.
+ *
+ * Trente-huit depuis la revue de la PR #166 : neuf de plus que les vingt-neuf d'origine — une
+ * requête concurrente, quatre autour du jeton du harnais, et quatre contre l'encodage (champ en
+ * trop, corrélation absente, corrélation dupliquée, transférable sur le port).
+ */
+export const NOMBRE_DE_SONDES = 38;

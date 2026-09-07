@@ -343,3 +343,104 @@ test("le modèle de référence n'est pas franchi non plus : sa porte à lui res
   ]);
   assert.deepEqual(coupables, []);
 });
+
+/**
+ * Les APPELANTS de la porte du harnais, hors épreuves — ceux qui obtiennent réellement la clé de
+ * TEST ou les clés de déverrouillage de TEST (revue de la PR #166, constat 6).
+ *
+ * Les gardes précédentes surveillaient la clé LITTÉRALE (`CLE_DE_TEST`), les sources de nonces et
+ * d'aléas, et la fraîcheur. Aucune n'énumérait les appelants de `cleDeVolumeDuHarnais` et de
+ * `clesDeDeverrouillageDuHarnais` — si bien que #161 a fait franchir cette porte au PREMIER fichier
+ * de PRODUIT publié du dépôt sans qu'aucun cliquet ne bouge.
+ *
+ * La liste sépare deux natures, et la distinction est tout l'intérêt de l'inscription :
+ *
+ *  - les BANCS et les outils de mesure, qui n'ont jamais prétendu être autre chose ;
+ *  - `public/runtime-worker.mjs`, qui est du PRODUIT. Il est inscrit avec la date de sa sortie :
+ *    la tranche 2 (#162) remplace le geste du harnais par le déverrouillage réel, et l'inscription
+ *    devra disparaître avec lui. Le cliquet rougira au seul moment où il sert — celui où une
+ *    SECONDE ligne de produit voudrait entrer.
+ *
+ * @type {{ fichier: string, produit?: boolean, motif: string }[]}
+ */
+const APPELANTS_DU_HARNAIS = [
+  {
+    fichier: "public/runtime-worker.mjs",
+    produit: true,
+    motif:
+      "Worker de confiance de la coquille de PRODUIT (#161, ADR 0028). La coquille n'a pas encore " +
+      "d'interface de saisie : le geste de déverrouillage vient du harnais, sous jeton, et c'est " +
+      "la réserve écrite de `SEC-ORIGIN-001` côté produit. **Provisoire : #162 le retire.**",
+  },
+  {
+    fichier: "public/vm/cle-du-banc.mjs",
+    motif: "distributeur de clés des bancs de `public/vm/`, qui n'ouvre rien lui-même.",
+  },
+  {
+    fichier: "public/vm/enveloppe-worker.mjs",
+    motif: "banc de l'enveloppe de clé (#21, ADR 0020).",
+  },
+  {
+    fichier: "public/vm/opfs-runtime-worker.mjs",
+    motif: "banc du backend OPFS (#6).",
+  },
+  {
+    fichier: "public/vm/reference-worker-phases-enveloppe.mjs",
+    motif: "phases d'enveloppe du banc de reprise (#7).",
+  },
+  {
+    fichier: "public/vm/reference-worker-phases-recuperation.mjs",
+    motif: "phases de récupération du banc de reprise (#147, #149).",
+  },
+  {
+    fichier: "tools/mesurer-creation-v3.mjs",
+    motif: "banc de MESURE de la création d'un volume v3, hors navigateur.",
+  },
+  {
+    fichier: "tools/vm/mesurer-boot.mjs",
+    motif: "banc de MESURE du boot, hors navigateur.",
+  },
+];
+
+const MOTIF_DU_HARNAIS = /\b(?:cleDeVolumeDuHarnais|clesDeDeverrouillageDuHarnais)\s*\(/;
+
+test("seuls des appelants INSCRITS franchissent la porte du harnais", async () => {
+  // `src/vm/cle-de-volume.mjs` est retiré du périmètre par son chemin, comme les définitions de
+  // porte plus haut : il DÉFINIT les deux fonctions, et `clesDeDeverrouillageDuHarnais` appelle
+  // `cleDeVolumeDuHarnais` pour rejouer la même garde. Il ne peut pas ne pas se nommer.
+  const autorises = [
+    ...APPELANTS_DU_HARNAIS.map((entree) => entree.fichier),
+    ...CHEMINS_DE_PORTE,
+    "src/vm/cle-de-volume.mjs",
+  ];
+  const coupables = await fichiersQuiMentionnent(MOTIF_DU_HARNAIS, autorises);
+  assert.deepEqual(
+    coupables,
+    [],
+    "Ces fichiers obtiennent la clé de TEST sans être inscrits. Un chemin de produit qui la " +
+      "recevrait chiffrerait sous un secret que tout le monde connaît.",
+  );
+});
+
+test("les inscriptions à la porte du harnais sont à jour : aucune périmée", async () => {
+  const perimees = [];
+  for (const entree of APPELANTS_DU_HARNAIS) {
+    const contenu = await readFile(path.join(REPO_ROOT, entree.fichier), "utf8");
+    if (!MOTIF_DU_HARNAIS.test(contenu)) perimees.push(entree.fichier);
+  }
+  assert.deepEqual(perimees, [], "Ces inscriptions ne couvrent plus rien : retirez-les.");
+});
+
+test("un seul appelant de PRODUIT franchit la porte, et il porte l'issue qui l'en retirera", () => {
+  const produit = APPELANTS_DU_HARNAIS.filter((entree) => entree.produit === true);
+  assert.deepEqual(
+    produit.map((entree) => entree.fichier),
+    ["public/runtime-worker.mjs"],
+    "Un second chemin de PRODUIT derrière cette porte demande un ADR, pas une ligne de liste.",
+  );
+  assert.match(
+    produit[0].motif,
+    /#162/,
+    "un appelant de produit doit nommer l'issue qui referme la porte.",
+  );
+});

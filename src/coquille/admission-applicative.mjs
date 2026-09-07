@@ -22,7 +22,13 @@
 // le type. Inventer un identifiant reviendrait à créer un critère dont #46 a mesuré qu'il ne sépare
 // rien tant que l'origine ne sépare pas — et qui serait redondant dès qu'elle sépare.
 
-import { TYPES_APPLICATIFS, decoderMessage, estTypePrivilegie } from "./contrat-de-messages.mjs";
+import {
+  TYPES_APPLICATIFS,
+  correlationAdmise,
+  decoderMessage,
+  estTypePrivilegie,
+  typeRendu,
+} from "./contrat-de-messages.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 
 /**
@@ -37,13 +43,14 @@ export const GESTES_ADMIS = Object.freeze([
     type: TYPES_APPLICATIFS.etat,
     geste: "demander l'état du volume et le rang de la dernière barrière acquittée",
     usage: Object.freeze([
-      "public/vm/reference-worker-phases-volume.mjs:250 — la seule observation qu'un scénario " +
-        "fait d'un volume avant de s'en servir est `present` ; tout le reste du compte rendu " +
-        "concerne les VOISINS du volume, qui ne regardent pas l'application",
-      "tests/e2e/instantane-reprise.spec.mjs:201 — un scénario interroge l'état entre deux gestes " +
-        "plutôt que de le supposer",
-      "src/spike/origin-topology.mjs:118 — la seule requête que le spike admettait déjà, et la " +
-        "mesure de l'ADR 0002 n'en a jamais fait apparaître d'autre",
+      "public/vm/reference-worker-phases-volume.mjs:253 › « present: etat.present, » — la seule " +
+        "observation qu'un scénario fait d'un volume avant de s'en servir ; tout le reste du " +
+        "compte rendu concerne les VOISINS du volume, qui ne regardent pas l'application",
+      'tests/e2e/instantane-reprise.spec.mjs:201 › « phase: "inspect-volume" » — un scénario ' +
+        "interroge l'état entre deux gestes plutôt que de le supposer",
+      "src/spike/origin-topology.mjs:118 › « export function isAllowedAppRequest » — la seule " +
+        "requête que le spike admettait déjà, et la mesure de l'ADR 0002 n'en a jamais fait " +
+        "apparaître d'autre",
     ]),
     motif:
       "un document applicatif ne peut rien rendre d'utile avant que le volume soit ouvert : sans " +
@@ -53,10 +60,10 @@ export const GESTES_ADMIS = Object.freeze([
     type: TYPES_APPLICATIFS.barriere,
     geste: "recevoir l'annonce d'une barrière de durabilité acquittée",
     usage: Object.freeze([
-      "public/vm/reference-banc.mjs:73 — l'annonce `mutation` existe déjà, et elle ne porte " +
-        "AUCUN identifiant de requête : c'est une poussée, pas une réponse",
-      "tests/e2e/coupure-generation-boot-froid.spec.mjs:159 — un scénario ne juge « écrit » " +
-        "qu'après « une barrière a été acquittée », jamais après l'écriture seule",
+      'public/vm/reference-banc.mjs:73 › « if (type === "mutation") » — l\'annonce existe déjà, ' +
+        "et elle ne porte AUCUN identifiant de requête : c'est une poussée, pas une réponse",
+      "tests/e2e/coupure-generation-boot-froid.spec.mjs:159 › « une barrière a été acquittée » — " +
+        "un scénario ne juge « écrit » qu'après cela, jamais après l'écriture seule",
     ]),
     motif:
       "l'application est le seul endroit qui puisse dire « enregistré » à l'utilisateur, et le " +
@@ -179,29 +186,87 @@ export function estGesteAdmis(type) {
 }
 
 /**
+ * Les SEULS champs qu'une requête admise a le droit de porter.
+ *
+ * Le décodage était strict sur l'enveloppe et muet sur le reste : la revue de #166 a fait servir
+ * une réponse à un message portant un champ de deux cent mille caractères et un objet imbriqué.
+ * Rien n'en était lu — mais rien n'en était refusé non plus, et un champ qu'on accepte sans le lire
+ * est un champ que la version suivante lira par accident.
+ */
+const CHAMPS_DUNE_REQUETE = Object.freeze(["contrat", "version", "type", "correlation"]);
+
+/**
  * Décide du sort d'un message reçu sur le port restreint. Trois issues, jamais un silence :
  *
  *  - le message ne se décode pas → le refus du décodeur (`MESSAGE_MALFORME`, `CONTRAT_REFUSE`) ;
  *  - le type est nommé par la liste de refus → SON code, calculé sans consulter le moindre état ;
- *  - le type est admis en requête → servi ; tout le reste → `TYPE_INCONNU`.
+ *  - le type est admis en requête → servi, si et seulement si sa forme est exacte ; tout le reste
+ *    → `TYPE_INCONNU`.
  *
  * Un type du canal PRIVILÉGIÉ reçu ici est traité comme la tentative d'obtenir ce canal : c'est
  * exactement ce qu'il est, et le refus le dit.
  *
+ * `recu` est TRONQUÉ : il ne sert qu'à revenir à celui qui l'a envoyé. Depuis la revue de #166, il
+ * n'entre nulle part dans le relevé de la coquille, qui ne porte plus que des compteurs.
+ *
  * @param {unknown} valeur message brut reçu sur le port
- * @returns {{ admise: true, type: string, message: Record<string, unknown> }
- *          | { admise: false, code: string, recu: string }}
+ * @returns {{ admise: true, type: string, correlation: string }
+ *          | { admise: false, code: string, recu: string, correlation: string | null }}
  */
 export function evaluerRequete(valeur) {
   const decode = decoderMessage(valeur);
-  if (!decode.ok) return { admise: false, code: decode.code, recu: nommer(valeur) };
-  const { type, message } = decode;
-  if (REFUSES.has(type)) return { admise: false, code: REFUSES.get(type), recu: type };
-  if (estTypePrivilegie(type)) {
-    return { admise: false, code: CODES_REFUS_COQUILLE.portPrivilegie, recu: type };
+  if (!decode.ok) {
+    return { admise: false, code: decode.code, recu: nommer(valeur), correlation: null };
   }
-  if (REQUETES_ADMISES.has(type)) return { admise: true, type, message };
-  return { admise: false, code: CODES_REFUS_COQUILLE.typeInconnu, recu: type };
+  const { type, message } = decode;
+  const correlation = correlationAdmise(message.correlation);
+  if (REFUSES.has(type)) {
+    return { admise: false, code: REFUSES.get(type), recu: typeRendu(type), correlation };
+  }
+  if (estTypePrivilegie(type)) {
+    return {
+      admise: false,
+      code: CODES_REFUS_COQUILLE.portPrivilegie,
+      recu: typeRendu(type),
+      correlation,
+    };
+  }
+  if (!REQUETES_ADMISES.has(type)) {
+    return {
+      admise: false,
+      code: CODES_REFUS_COQUILLE.typeInconnu,
+      recu: typeRendu(type),
+      correlation,
+    };
+  }
+  if (!formeExacte(message)) {
+    return {
+      admise: false,
+      code: CODES_REFUS_COQUILLE.messageMalforme,
+      recu: typeRendu(type),
+      correlation,
+    };
+  }
+  if (correlation === null) {
+    return {
+      admise: false,
+      code: CODES_REFUS_COQUILLE.correlationAbsente,
+      recu: typeRendu(type),
+      correlation: null,
+    };
+  }
+  return { admise: true, type, correlation };
+}
+
+/**
+ * Une requête admise ne porte AUCUN champ hors du contrat.
+ *
+ * L'absence d'un champ attendu n'est pas jugée ici : la corrélation manquante a son propre refus,
+ * qui dit à l'appelant ce qu'il doit ajouter. Confondre les deux lui rendrait « message illisible »
+ * pour un message parfaitement lisible auquel il manque une chose nommée.
+ */
+function formeExacte(message) {
+  return Object.keys(message).every((champ) => CHAMPS_DUNE_REQUETE.includes(champ));
 }
 
 /**
@@ -254,5 +319,5 @@ function nommer(valeur) {
   const nature = typeof valeur;
   if (nature !== "object") return nature;
   const type = /** @type {Record<string, unknown>} */ (valeur).type;
-  return typeof type === "string" ? type : "objet";
+  return typeof type === "string" ? typeRendu(type) : "objet";
 }

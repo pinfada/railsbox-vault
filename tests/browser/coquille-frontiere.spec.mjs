@@ -38,19 +38,29 @@ import {
 import { GESTES_REFUSES } from "../../src/coquille/admission-applicative.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
-import { HARNAIS_CLE_JETON } from "../../src/vm/cle-de-volume.mjs";
+import {
+  CLE_DE_TEST,
+  HARNAIS_CLE_ENV,
+  HARNAIS_CLE_JETON,
+  HARNAIS_CLE_VALEUR,
+  clesDeDeverrouillageDuHarnais,
+} from "../../src/vm/cle-de-volume.mjs";
 import { APP_ORIGIN, SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
 
 /** Chemin de la fixture, servi par les DEUX origines : c'est ce qui rend le témoin comparable. */
 const FIXTURE = "/coquille-epreuve/hostile.html";
 
 /** Ouvre la coquille de produit, déverrouillée par le harnais, et attend qu'elle soit prête. */
-async function ouvrirLaCoquille(page, { documentApplicatif = null } = {}) {
+async function ouvrirLaCoquille(page, { documentApplicatif = null, deverrouiller = true } = {}) {
   const url = new URL("/index.html", SHELL_ORIGIN);
-  url.searchParams.set("deverrouillage-harnais", HARNAIS_CLE_JETON);
+  if (deverrouiller) url.searchParams.set("deverrouillage-harnais", HARNAIS_CLE_JETON);
   if (documentApplicatif) url.searchParams.set("document-applicatif", documentApplicatif);
   await page.goto(url.toString());
-  await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete");
+  // Le délai est EXPLICITE et large. « Prête » attend le canal privilégié, puis le déverrouillage
+  // du harnais, qui ouvre un volume sur l'OPFS réel : sous Firefox, et quand les douze projets de
+  // frontière tournent ensemble, les cinq secondes du défaut de Playwright mesureraient la charge
+  // de l'exécutant plutôt que la coquille.
+  await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: 60000 });
   return relevéDeLaCoquille(page);
 }
 
@@ -204,11 +214,112 @@ test("l'encodage du contrat est refusé strictement, et le canal privilégié n'
     ["contrat-etranger", CODES_REFUS_COQUILLE.contratRefuse],
     ["version-etrangere", CODES_REFUS_COQUILLE.contratRefuse],
     ["type-inconnu", CODES_REFUS_COQUILLE.typeInconnu],
+    // Depuis la revue de la PR #166 : le décodage n'était strict que sur l'ENVELOPPE, et servait
+    // une réponse à un message portant des champs qu'aucun contrat ne nomme. Un champ qu'on accepte
+    // sans le lire est un champ que la version suivante lira par accident.
+    ["champ-en-trop", CODES_REFUS_COQUILLE.messageMalforme],
+    ["correlation-absente", CODES_REFUS_COQUILLE.correlationAbsente],
+    ["correlation-dupliquee", CODES_REFUS_COQUILLE.correlationDupliquee],
+    // Un transférable vers la coquille n'était ni employé, ni refusé. Un canal qu'on n'a pas décidé
+    // d'ouvrir doit être fermé nommément.
+    ["transferable-sur-le-port-restreint", CODES_REFUS_COQUILLE.capaciteDansUnMessage],
   ];
   for (const [nom, code] of attendus) {
     expect(parNom[nom].resultat, `${nom} : ${parNom[nom].detail}`).toBe("refuse");
     expect(parNom[nom].code, nom).toBe(code);
   }
+});
+
+test("chaque requête admise reçoit SA réponse, même quand plusieurs sont en vol", async ({
+  page,
+}) => {
+  // Constat 2 de la revue de la PR #166 : deux requêtes d'état postées coup sur coup rendaient une
+  // seule réponse, l'autre restant MUETTE — sur le seul geste que la coquille admette, et alors que
+  // « un refus typé, jamais un silence » est écrit quatre fois dans le dossier. La sonde poste
+  // quatre requêtes SANS attendre et exige quatre réponses appariées par leur corrélation.
+  await ouvrirLaCoquille(page, { documentApplicatif: FIXTURE });
+  const { parNom } = await releverLaFixture(page.frameLocator("#document-applicatif"));
+  expect(
+    parNom["gestes-admis-concurrents"].resultat,
+    parNom["gestes-admis-concurrents"].detail,
+  ).toBe("aboutit");
+  expect(parNom["gestes-admis-concurrents"].detail).toContain("4/4");
+});
+
+test("le jeton du harnais est PUBLIC, lisible d'ici, et ne sert à rien d'ici", async ({ page }) => {
+  // Constat 1 de la revue de la PR #166. Le jeton du harnais est dans l'arbre publié : sans étape de
+  // construction, une constante que le produit compare existe forcément dans le code servi. La
+  // réponse n'est pas de la cacher — c'est de montrer que la connaître ne donne rien depuis
+  // l'origine applicative, parce que le port privilégié où elle s'emploie n'y est pas atteignable.
+  await ouvrirLaCoquille(page, { documentApplicatif: FIXTURE, deverrouiller: false });
+  const { parNom } = await releverLaFixture(page.frameLocator("#document-applicatif"));
+
+  // TÉMOIN POSITIF : la fixture a bien mis la main sur le jeton. Sans lui, les trois refus suivants
+  // ne prouveraient rien — ils pourraient venir d'un jeton jamais lu.
+  expect(parNom["lecture-du-jeton-du-harnais"].resultat).toBe("aboutit");
+  expect(parNom["lecture-du-jeton-du-harnais"].detail).toMatch(/jeton lu \(\d+ caractères\)/);
+
+  expect(parNom["jeton-du-harnais-sur-le-port-restreint"].resultat).toBe("refuse");
+  expect(parNom["jeton-du-harnais-sur-le-port-restreint"].code).toBe(
+    CODES_REFUS_COQUILLE.portPrivilegie,
+  );
+  expect(parNom["jeton-du-harnais-sur-window"].resultat).toBe("refuse");
+  // `Referrer-Policy: no-referrer` (ADR 0022) : le document encadré ne sait même pas d'où il l'est,
+  // donc où rejouer le jeton en paramètre. Ce n'est pas la frontière, c'est une porte de moins.
+  expect(parNom["url-de-la-coquille-inconnue"].resultat).toBe("refuse");
+
+  // Et le verdict qui compte : l'état de la coquille n'a pas bougé. Elle a été ouverte SANS le
+  // paramètre du harnais dans ce scénario ; rien de ce que la fixture a tenté ne l'a déverrouillée.
+  const releve = await relevéDeLaCoquille(page);
+  expect(releve.deverrouillageParHarnais).toBe(false);
+  expect(releve.etat).not.toBe(ETATS_DU_VOLUME.ouvert);
+});
+
+test("mille messages hostiles ne font pas enfler le relevé de la coquille", async ({ page }) => {
+  // Constat 3 de la revue de la PR #166 : quarante messages dont le seul champ `type` faisait
+  // 200 000 caractères faisaient passer `#coquille-rapport` de 606 à 8 003 678 caractères. Le
+  // relevé recopiait les octets du guest et se re-sérialisait entier à chaque refus.
+  await ouvrirLaCoquille(page, { documentApplicatif: FIXTURE });
+  // Attendre la fin des sondes AVANT de chercher le cadre : sur Firefox et WebKit, le document
+  // encadré n'est pas encore chargé quand la coquille se dit prête, et `page.frames()` ne le
+  // connaît donc pas. Chercher trop tôt mesurerait la vitesse du moteur.
+  await expect(page.frameLocator("#document-applicatif").locator("html")).toHaveAttribute(
+    "data-hostile",
+    "sondes-terminees",
+    { timeout: 60000 },
+  );
+  const cadre = page.frames().find((frame) => frame.url().startsWith(APP_ORIGIN));
+  const avant = await relevéDeLaCoquille(page);
+  const tailleAvant = (await page.locator("#coquille-rapport").textContent()).length;
+
+  const ENVOYES = 1000;
+  await cadre.evaluate((combien) => {
+    const port = globalThis.__portHostile;
+    for (let index = 0; index < combien; index += 1) {
+      port.postMessage({
+        contrat: "railsbox-vault-coquille",
+        version: 1,
+        type: "x".repeat(200000),
+      });
+    }
+  }, ENVOYES);
+
+  // Attendre que la coquille ait TOUT traité, plutôt que dormir : les moteurs ne drainent pas leur
+  // file à la même vitesse, et un délai fixe mesurerait le plus lent des trois.
+  await expect
+    .poll(async () => (await relevéDeLaCoquille(page)).requetesRefusees, { timeout: 30000 })
+    .toBeGreaterThanOrEqual(avant.requetesRefusees + ENVOYES);
+
+  const tailleApres = (await page.locator("#coquille-rapport").textContent()).length;
+  const apres = await relevéDeLaCoquille(page);
+
+  // Les mille messages sont COMPTÉS — et rien d'eux n'est retenu : le relevé ne grandit pas. Deux
+  // cents millions de caractères sont entrés dans la coquille ; elle en a gardé un entier par code.
+  expect(apres.refusDeRequete[CODES_REFUS_COQUILLE.messageMalforme]).toBeGreaterThanOrEqual(
+    ENVOYES,
+  );
+  expect(tailleApres).toBeLessThan(2048);
+  expect(tailleApres - tailleAvant).toBeLessThan(200);
 });
 
 test("un second port et une iframe imbriquée usurpatrice sont refusés", async ({ page }) => {
@@ -222,7 +333,7 @@ test("un second port et une iframe imbriquée usurpatrice sont refusés", async 
   // la vitesse du moteur — Firefox et WebKit y sont plus lents que Chromium — au lieu de la garde.
   const releve = await relevéDeLaCoquille(page);
   expect(releve.portOctroye).toBe(true);
-  const motifs = new Set(releve.annoncesRefusees.map(({ code }) => code));
+  const motifs = new Set(Object.keys(releve.refusDAnnonce));
   expect(motifs.has(CODES_REFUS_COQUILLE.annonceUnique)).toBe(true);
   // Un seul port a été octroyé, quoi qu'il ait été tenté.
   expect(releve.journal.filter((etape) => etape === "port-restreint-octroye")).toHaveLength(1);
@@ -255,6 +366,45 @@ test("aucune tentative de topologie n'aboutit depuis l'origine applicative", asy
 
   // Et la ressource témoin de l'origine de confiance reste servie par le serveur.
   expect(await lireLeTemoin(context, SHELL_ORIGIN)).toBe(TEMOIN_AUTHENTIQUE);
+});
+
+test("le trafic du port est FOUILLÉ : aucun octet de clé ne le franchit, dans aucun sens", async ({
+  page,
+}, info) => {
+  // Constat 5 de la revue de la PR #166 : `sansCapacite` refuse des CONSTRUCTEURS, pas des secrets
+  // — il laisserait passer une clé rendue en hexadécimal, qui est une donnée. La garantie « aucune
+  // clé ne franchit le port » ne vaut donc que si quelqu'un FOUILLE le trafic, comme
+  // `deverrouillage-frontiere.spec.mjs` le fait depuis #22. La fixture enregistre tout ce qui passe,
+  // dans les deux sens ; l'épreuve cherche dedans.
+  await ouvrirLaCoquille(page, { documentApplicatif: FIXTURE, deverrouiller: true });
+  const cadre = page.frameLocator("#document-applicatif");
+  await releverLaFixture(cadre);
+  const journal = JSON.parse(await cadre.locator("#hostile-journal").textContent());
+  const trafic = journal.join("\n");
+  await info.attach(`journal-du-port-${info.project.name}.json`, {
+    body: JSON.stringify(journal, null, 2),
+    contentType: "application/json",
+  });
+
+  // TÉMOIN DE FOUILLE. Sans lui, « rien trouvé » pourrait vouloir dire « rien capturé » : la
+  // recherche doit d'abord montrer qu'elle sait trouver ce qui EST là.
+  expect(trafic).toContain("vault.coquille.etat-reponse");
+  expect(trafic.length).toBeGreaterThan(200);
+
+  // Les octets RÉELS que le Worker de confiance détient : la clé de volume de TEST du harnais, et
+  // les trois clés de déverrouillage. Ce sont ceux-là qu'un adversaire chercherait.
+  // La garde du harnais se présente autrement sous Node que dans un Worker : ici, c'est la variable
+  // d'environnement du processus, et l'épreuve la pose pour elle-même. C'est la porte documentée par
+  // `src/vm/cle-de-volume.mjs`, franchie par une épreuve — le seul contexte qui en ait le droit.
+  process.env[HARNAIS_CLE_ENV] = HARNAIS_CLE_VALEUR;
+  const cles = clesDeDeverrouillageDuHarnais();
+  const aChercher = [CLE_DE_TEST, cles.initiale, cles.rotation, cles.tierce];
+  for (const octets of aChercher) {
+    const hexadecimal = [...octets].map((octet) => octet.toString(16).padStart(2, "0")).join("");
+    expect(trafic).not.toContain(hexadecimal);
+    // Et la même chose en base 64 : une clé recodée reste une clé.
+    expect(trafic).not.toContain(Buffer.from(octets).toString("base64"));
+  }
 });
 
 // --- Le témoin positif, en MÊME origine ---------------------------------------------------------

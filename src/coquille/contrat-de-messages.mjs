@@ -89,7 +89,56 @@ export function enveloppeDeMessage(type, corps = {}) {
 }
 
 /**
- * Décode STRICTEMENT un message reçu. Quatre refus, dans cet ordre, et chacun a sa raison :
+ * Longueur maximale d'un TYPE, en caractères. Cent vingt-huit, soit près de six fois le plus long
+ * type du contrat (`vault.coquille.etat-prive-reponse`, vingt-neuf caractères).
+ *
+ * Elle existe parce que le contrat ne bornait que la PROFONDEUR d'un corps, jamais sa taille : la
+ * revue de #166 a posté quarante messages dont le seul champ `type` faisait deux cent mille
+ * caractères. Un type n'est pas une charge utile ; au-delà de cette borne, ce n'en est pas un.
+ */
+export const TAILLE_MAXIMALE_DU_TYPE = 128;
+
+/**
+ * Longueur maximale d'un identifiant de CORRÉLATION, et son alphabet.
+ *
+ * Il est rendu TEL QUEL à l'appelant : c'est donc une valeur du guest qui revient au guest, et elle
+ * doit être bornée et close pour que ce retour ne soit jamais un canal. Soixante-quatre caractères
+ * suffisent à un UUID comme à un compteur ; l'alphabet exclut tout ce qui ne serait pas un
+ * identifiant.
+ */
+export const TAILLE_MAXIMALE_DE_CORRELATION = 64;
+const CORRELATION_ADMISE = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Un identifiant de corrélation admissible, ou `null`.
+ *
+ * @param {unknown} valeur
+ * @returns {string | null}
+ */
+export function correlationAdmise(valeur) {
+  if (typeof valeur !== "string") return null;
+  if (valeur.length > TAILLE_MAXIMALE_DE_CORRELATION) return null;
+  return CORRELATION_ADMISE.test(valeur) ? valeur : null;
+}
+
+/**
+ * Longueur à laquelle un type REFUSÉ est tronqué avant d'être rendu à son émetteur.
+ *
+ * Il ne va nulle part ailleurs : depuis la revue de #166, le relevé de la coquille ne porte plus que
+ * des COMPTEURS, et aucune chaîne du guest n'y entre. Ce qui revient au guest est ce que le guest a
+ * envoyé, borné — assez pour qu'un développeur reconnaisse son message, trop peu pour être un canal.
+ */
+export const TAILLE_MAXIMALE_DU_TYPE_RENDU = 64;
+
+/** @param {string} type */
+export function typeRendu(type) {
+  return type.length <= TAILLE_MAXIMALE_DU_TYPE_RENDU
+    ? type
+    : `${type.slice(0, TAILLE_MAXIMALE_DU_TYPE_RENDU)}…`;
+}
+
+/**
+ * Décode STRICTEMENT un message reçu. Cinq refus, dans cet ordre, et chacun a sa raison :
  *
  *  1. ce n'est pas un objet — un nombre, une chaîne, `null`, un tableau : rien à décoder ;
  *  2. l'identifiant du contrat n'est pas le nôtre — un autre logiciel parle sur le même canal ;
@@ -116,6 +165,11 @@ export function decoderMessage(valeur) {
     return { ok: false, code: CODES_REFUS_COQUILLE.contratRefuse };
   }
   if (typeof message.type !== "string" || message.type.length === 0) {
+    return { ok: false, code: CODES_REFUS_COQUILLE.messageMalforme };
+  }
+  // Un type au-delà de la borne n'est pas un type : c'est une charge utile déguisée en type, et la
+  // refuser ICI est ce qui empêche qu'elle soit recopiée plus loin (revue de #166, constat 3).
+  if (message.type.length > TAILLE_MAXIMALE_DU_TYPE) {
     return { ok: false, code: CODES_REFUS_COQUILLE.messageMalforme };
   }
   return { ok: true, type: message.type, message };
