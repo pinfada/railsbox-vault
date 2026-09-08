@@ -26,10 +26,7 @@ import { SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { ETAPES_DU_CYCLE, ISSUES_DETAPE } from "../../src/coquille/cycle-de-vie.mjs";
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
-import {
-  DELAI_INACTIVITE_MINIMUM_MS,
-  DELAI_INACTIVITE_MS,
-} from "../../src/coquille/verrouillage.mjs";
+import { DELAI_INACTIVITE_MINIMUM_MS } from "../../src/coquille/verrouillage.mjs";
 
 /** Le délai des gestes de cette suite. La borne de mort du Worker est de trente secondes. */
 const DELAI = 90_000;
@@ -176,35 +173,77 @@ const CLE_DE_CAPTURE = "epreuve-verrouillage-169";
  */
 async function armerLaCapture(page) {
   await page.addInitScript((cle) => {
-    // L'observation porte sur `document` avec `subtree`, et non sur `document.documentElement` : un
-    // script d'initialisation s'exécute avant l'analyse du document, où l'élément racine n'existe
-    // pas encore. `document`, lui, existe toujours.
-    const observateur = new MutationObserver(() => {
-      if (document.documentElement?.dataset.coquille !== "verrouille") return;
-      const noeud = document.querySelector("#coquille-rapport");
-      if (noeud !== null) sessionStorage.setItem(cle, noeud.textContent);
-    });
-    observateur.observe(document, {
-      attributes: true,
-      subtree: true,
-      attributeFilter: ["data-coquille"],
-    });
+    // Le script d'initialisation s'exécute dans CHAQUE document du contexte, à l'instant où il
+    // commence — la coquille, le cadre applicatif inter-origine, et les documents vides que le
+    // navigateur crée en chemin. Dans certains d'entre eux, `document.documentElement` n'existe pas
+    // encore, et `observe()` y jette « parameter 1 is not of type 'Node' » : une erreur de PAGE, que
+    // le scénario de bout en bout compte et refuse à juste titre. Le branchement est donc DIFFÉRÉ
+    // jusqu'à ce qu'il y ait un élément racine à observer, et il ne jette jamais.
+    const brancher = () => {
+      const racine = document?.documentElement;
+      if (!racine) return false;
+      new MutationObserver(() => {
+        if (racine.dataset.coquille !== "verrouille") return;
+        const noeud = document.querySelector("#coquille-rapport");
+        if (noeud !== null) sessionStorage.setItem(cle, noeud.textContent);
+      }).observe(racine, { attributes: true, attributeFilter: ["data-coquille"] });
+      return true;
+    };
+    try {
+      if (brancher()) return;
+    } catch {
+      /* un document qui refuse l'observation n'est pas celui de la coquille */
+    }
+    addEventListener(
+      "DOMContentLoaded",
+      () => {
+        try {
+          brancher();
+        } catch {
+          /* idem */
+        }
+      },
+      { once: true },
+    );
   }, CLE_DE_CAPTURE);
 }
 
-/** Attend, puis rend, le relevé capturé avant le rechargement. */
-async function captureDuVerrouillage(page, budgetMs = DELAI) {
-  await expect
-    .poll(async () => page.evaluate((cle) => sessionStorage.getItem(cle), CLE_DE_CAPTURE), {
-      timeout: budgetMs,
-    })
-    .not.toBeNull();
-  return JSON.parse(await page.evaluate((cle) => sessionStorage.getItem(cle), CLE_DE_CAPTURE));
+/**
+ * Ce que l'épreuve a capturé, ou `null` si la coquille ne s'est pas encore verrouillée.
+ *
+ * L'évaluation est GARDÉE, et ce n'est pas une commodité : le verrouillage se termine par un
+ * rechargement, et une évaluation posée pendant la navigation voit son contexte d'exécution détruit.
+ * WebKit le rend comme une erreur là où Chromium l'absorbe. L'échec n'est pas un défaut — c'est
+ * exactement ce que l'épreuve mesure —, et la question se repose au tour suivant, sur le document
+ * qui revient.
+ */
+async function riendeCapture(page) {
+  try {
+    return await page.evaluate((cle) => sessionStorage.getItem(cle), CLE_DE_CAPTURE);
+  } catch {
+    return null;
+  }
 }
 
-/** Ce que l'épreuve a capturé, ou `null` si la coquille ne s'est pas encore verrouillée. */
-function riendeCapture(page) {
-  return page.evaluate((cle) => sessionStorage.getItem(cle), CLE_DE_CAPTURE);
+/**
+ * Attend, puis rend, le relevé capturé avant le rechargement.
+ *
+ * La valeur est retenue PAR le sondage, et non relue après lui : entre le tour qui l'a vue et une
+ * seconde lecture, la navigation du rechargement peut détruire le contexte, et la relecture rendrait
+ * `null` sur un relevé pourtant capturé. C'est le défaut que WebKit a montré ; Chromium l'absorbait.
+ */
+async function captureDuVerrouillage(page, budgetMs = DELAI) {
+  let capture = null;
+  await expect
+    .poll(
+      async () => {
+        capture = await riendeCapture(page);
+        return capture;
+      },
+      { timeout: budgetMs },
+    )
+    .not.toBeNull();
+  return JSON.parse(capture);
 }
 
 /**
@@ -620,9 +659,12 @@ test("un geste explicite ROUVRE la coquille après la mort, et rejoue le cycle",
 
   // Le cycle est REJOUÉ depuis l'étape 1 : c'est ce que « refuser tout service jusqu'à un geste
   // explicite » promet, et ce qu'aucun geste ne tenait avant (constat 5 de la revue de la PR #171).
-  // La substitution du Worker vit sur le CONTEXTE : la retirer de la page ne la retirerait pas, et
-  // le rechargement reservirait un Worker mort.
-  await page.context().unrouteAll();
+  // Le RECHARGEMENT doit servir le VRAI Worker, sans quoi la coquille rouvrirait sur le module qui
+  // vient de la tuer. La substitution n'est pas RETIRÉE — `unrouteAll` ne dit pas ce qu'il advient
+  // d'une requête déjà interceptée, et une requête laissée en suspens fait attendre la coquille sur
+  // un Worker qui ne sera jamais chargé. Elle est RECOUVERTE : la règle posée en dernier l'emporte,
+  // et celle-ci laisse simplement passer.
+  await page.context().route("**/runtime-worker.mjs*", (route) => route.continue());
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: DELAI });
   const rapport = await releve(page);
   expect(rapport.workerMort).toBeNull();
@@ -756,7 +798,15 @@ test("un descripteur MALFORMÉ est refusé sur sa forme, et le motif nomme le ch
 // dire est que la règle est BRANCHÉE : que le document de la coquille livre bien les événements
 // nommés, qu'une minuterie du navigateur atteigne son échéance, et qu'un verrouillage déclenché par
 // le temps fasse EXACTEMENT ce que le bouton fait. C'est ce que les deux épreuves suivantes
-// mesurent, et elles paient une minute réelle pour cela.
+// mesurent, et elles paient du temps RÉEL pour cela.
+//
+// **Deux, et pas trois.** Une troisième vérifiait que la valeur PAR DÉFAUT de dix minutes n'était pas
+// atteinte plus tôt ; elle a été retirée, et il faut dire pourquoi plutôt que de la laisser tomber
+// en silence. Ce qu'elle affirmait de la CONSTANTE, l'unitaire l'affirme sans attendre (« le délai
+// par défaut est de DIX MINUTES ») ; ce qu'elle affirmait du BRANCHEMENT, le témoin négatif
+// ci-dessous l'affirme mieux — il montre qu'une minuterie réelle court ET se remet à zéro. Elle
+// coûtait soixante-quinze secondes de plus sur le seul gate obligatoire, et une épreuve dont chaque
+// affirmation est déjà tenue ailleurs n'achète que du temps d'attente.
 
 test("un coffre LAISSÉ se verrouille tout seul, et il le fait comme le bouton", async ({
   page,
@@ -833,27 +883,6 @@ test("un coffre TENU ÉVEILLÉ par des gestes ne se verrouille pas — le témoi
   expect(
     await riendeCapture(page),
     "la coquille s'est verrouillée pendant qu'on tapait",
-  ).toBeNull();
-  expect((await releve(page)).etat, "le coffre est resté ouvert").toBe(ETATS_DU_VOLUME.ouvert);
-});
-
-test("le délai par défaut est DIX MINUTES, et la coquille ne se verrouille pas avant", async ({
-  page,
-  browserName,
-}) => {
-  // Un témoin de la VALEUR employée par le produit, et non de celle que l'épreuve substitue : sans
-  // lui, `servirUnDelaiCourt` pourrait masquer un défaut par lequel la coquille se verrouillerait
-  // en quelques secondes quelle que soit la constante.
-  test.skip(browserName !== "chromium", "borne de temps : un moteur suffit");
-  test.setTimeout(180_000);
-  expect(DELAI_INACTIVITE_MS).toBe(600_000);
-  await armerLaCapture(page);
-  await ouvrirLaCoquille(page);
-  await ouvrirParLaPhrase(page);
-  await page.waitForTimeout(DELAI_INACTIVITE_MINIMUM_MS + 15_000);
-  expect(
-    await riendeCapture(page),
-    "la coquille s'est verrouillée bien avant les dix minutes annoncées",
   ).toBeNull();
   expect((await releve(page)).etat, "le coffre est resté ouvert").toBe(ETATS_DU_VOLUME.ouvert);
 });

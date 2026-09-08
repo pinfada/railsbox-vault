@@ -140,30 +140,123 @@ async function demarrerLApplication(page) {
  */
 const CLE_DE_CAPTURE = "epreuve-verrouillage-169";
 
+/**
+ * Ce que le scénario a capturé, ou `null` si la coquille ne s'est pas encore verrouillée.
+ *
+ * L'évaluation est GARDÉE : le verrouillage se termine par un rechargement, et une évaluation posée
+ * pendant la navigation voit son contexte d'exécution détruit. L'échec n'est pas un défaut — c'est
+ * ce que le scénario mesure —, et la question se repose au tour suivant.
+ */
+async function riendeCapture(page) {
+  try {
+    return await page.evaluate((cle) => sessionStorage.getItem(cle), CLE_DE_CAPTURE);
+  } catch {
+    return null;
+  }
+}
+
+/** Ce que la coquille DIT d'elle-même, ou rien si la page navigue. Cela sert au DIAGNOSTIC. */
+async function ceQueLaCoquilleDit(page) {
+  try {
+    return await page.evaluate(() => ({
+      coquille: document.documentElement.dataset.coquille ?? null,
+      cycle: document.querySelector("#cycle-etat")?.textContent ?? null,
+      etat: document.querySelector("#coquille-etat")?.textContent ?? null,
+    }));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ATTEND le verrouillage, et dit où il en était s'il n'arrive pas.
+ *
+ * Un `expect.poll` aurait suffi à attendre ; il n'aurait pas suffi à RENSEIGNER. Ce geste-ci ferme
+ * une VM qui tourne, scelle 250 Mio de RAM invitée et attend les E/S acceptées d'un volume de cinq
+ * cents mébioctets : quand il n'aboutit pas, la question n'est pas « a-t-il abouti » mais « où
+ * s'est-il arrêté », et la ligne d'état du cycle le dit — `verrouillage-en-cours` n'est pas
+ * `verrouillage-refuse`.
+ */
+async function attendreLeVerrouillage(session, budgetMs) {
+  const limite = Date.now() + budgetMs;
+  const vus = [];
+  while (Date.now() < limite) {
+    const capture = await riendeCapture(session.page);
+    if (capture !== null) return JSON.parse(capture);
+    const dit = await ceQueLaCoquilleDit(session.page);
+    const trace = JSON.stringify(dit);
+    if (dit !== null && vus.at(-1) !== trace) vus.push(trace);
+    await session.page.waitForTimeout(1_000);
+  }
+  throw new Error(
+    `Aucun verrouillage capturé en ${budgetMs} ms.
+` +
+      `Ce que la coquille a dit, dans l'ordre : ${vus.join(" → ")}
+` +
+      `Erreurs de page : ${JSON.stringify(session.erreurs)}`,
+  );
+}
+
 /** ARME la capture, sur le CONTEXTE : elle doit survivre à la navigation du rechargement. */
 async function armerLaCapture(contexte) {
   await contexte.addInitScript((cle) => {
-    const observateur = new MutationObserver(() => {
-      if (document.documentElement.dataset.coquille !== "verrouille") return;
-      const noeud = document.querySelector("#coquille-rapport");
-      if (noeud !== null) sessionStorage.setItem(cle, noeud.textContent);
-    });
-    observateur.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-coquille"],
-    });
+    // Le script d'initialisation s'exécute dans CHAQUE document du contexte, à l'instant où il
+    // commence — la coquille, le cadre applicatif inter-origine, et les documents vides que le
+    // navigateur crée en chemin. Dans certains d'entre eux, `document.documentElement` n'existe pas
+    // encore, et `observe()` y jette « parameter 1 is not of type 'Node' » : une erreur de PAGE, que
+    // le scénario de bout en bout compte et refuse à juste titre. Le branchement est donc DIFFÉRÉ
+    // jusqu'à ce qu'il y ait un élément racine à observer, et il ne jette jamais.
+    const brancher = () => {
+      const racine = document?.documentElement;
+      if (!racine) return false;
+      new MutationObserver(() => {
+        if (racine.dataset.coquille !== "verrouille") return;
+        const noeud = document.querySelector("#coquille-rapport");
+        if (noeud !== null) sessionStorage.setItem(cle, noeud.textContent);
+      }).observe(racine, { attributes: true, attributeFilter: ["data-coquille"] });
+      return true;
+    };
+    try {
+      if (brancher()) return;
+    } catch {
+      /* un document qui refuse l'observation n'est pas celui de la coquille */
+    }
+    addEventListener(
+      "DOMContentLoaded",
+      () => {
+        try {
+          brancher();
+        } catch {
+          /* idem */
+        }
+      },
+      { once: true },
+    );
   }, CLE_DE_CAPTURE);
 }
 
-/** L'INVENTAIRE de l'OPFS de l'origine de CONFIANCE : les noms et les tailles, jamais le contenu. */
+/**
+ * L'INVENTAIRE de l'OPFS de l'origine de CONFIANCE : les chemins et les tailles, jamais le contenu.
+ *
+ * Il est RÉCURSIF, et il faut le dire : les volumes ne vivent pas à la racine de l'OPFS mais sous
+ * `vault-volumes/` (`src/vm/opfs-sync-access.mjs`). Un inventaire qui s'arrêterait à la racine
+ * conclurait « aucun instantané » sur un support qui en porte un — c'est-à-dire qu'il rendrait un
+ * verdict sur sa propre profondeur au lieu d'en rendre un sur le produit.
+ */
 async function inventaireOpfs(page) {
   return page.evaluate(async () => {
     const releve = [];
-    const racine = await navigator.storage.getDirectory();
-    for await (const [nom, poignee] of racine.entries()) {
-      if (poignee.kind !== "file") continue;
-      releve.push({ nom, octets: (await poignee.getFile()).size });
-    }
+    const parcourir = async (repertoire, prefixe) => {
+      for await (const [nom, poignee] of repertoire.entries()) {
+        const chemin = `${prefixe}${nom}`;
+        if (poignee.kind === "directory") {
+          await parcourir(poignee, `${chemin}/`);
+          continue;
+        }
+        releve.push({ nom: chemin, octets: (await poignee.getFile()).size });
+      }
+    };
+    await parcourir(await navigator.storage.getDirectory(), "");
     return releve.sort((gauche, droite) => gauche.nom.localeCompare(droite.nom));
   });
 }
@@ -264,14 +357,14 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se VERROUILLE, et 
   // fait n'a pas changé d'un appel depuis #163 ; ce qui a changé est qu'il est NOMMÉ, qu'un délai
   // d'inactivité emprunte le même chemin, et qu'il RECHARGE la coquille pour retirer le cadre.
   await session.page.click("#verrouiller-le-coffre");
-  await expect
-    .poll(async () => session.page.evaluate((cle) => sessionStorage.getItem(cle), CLE_DE_CAPTURE), {
-      timeout: 300_000,
-    })
-    .not.toBeNull();
-  const ferme = JSON.parse(
-    await session.page.evaluate((cle) => sessionStorage.getItem(cle), CLE_DE_CAPTURE),
-  );
+  // La valeur est retenue PAR l'attente, et non relue après elle : entre le tour qui l'a vue et une
+  // seconde lecture, la navigation du rechargement peut détruire le contexte d'exécution.
+  //
+  // Le budget est celui du BOOT, et non celui d'un geste d'interface : ce verrouillage-ci arrête une
+  // VM qui tourne, scelle l'instantané et attend les E/S acceptées d'un volume de cinq cents
+  // mébioctets. Le mesurer sous un budget d'interface ferait rougir la suite sur la lenteur d'un
+  // exécutant plutôt que sur le produit.
+  const ferme = await attendreLeVerrouillage(session, BUDGET_DEMARRAGE_MS);
   await testInfo.attach("verrouillage.json", {
     body: JSON.stringify(
       {
@@ -335,11 +428,17 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se VERROUILLE, et 
   const instantanes = opfsApresVerrouillage.filter(({ nom }) =>
     nom.endsWith(INSTANTANE_SIDECAR_SUFFIX),
   );
+  // Ce qui est exigé est qu'il en RESTE un qui porte quelque chose, et non que tous en portent : la
+  // coquille ouvre DEUX volumes — le sien et celui de l'application (ADR 0030) —, et le voisin d'un
+  // volume qu'aucune VM n'habite est créé vide par la question même qui l'interroge
+  // (`src/vm/instantane/support-opfs.mjs`). Exiger que tous soient pleins ferait rougir la suite sur
+  // un fichier de zéro octet qui ne promet rien.
+  const portants = instantanes.filter(({ octets }) => octets > 0);
   expect(
-    instantanes.length,
-    "aucun instantané sur l'OPFS après le verrouillage : la révision de l'ADR 0024 déc. 8 ne tient pas",
+    portants.length,
+    "aucun instantané non vide sur l'OPFS après le verrouillage : la révision de l'ADR 0024 déc. 8 " +
+      `ne tient pas. Ce que le support porte : ${JSON.stringify(opfsApresVerrouillage)}`,
   ).toBeGreaterThan(0);
-  expect(instantanes.every(({ octets }) => octets > 0)).toBe(true);
 
   // La PAGE est fermée : le Worker meurt avec elle, ses handles et sa mémoire s'en vont.
   await session.page.close();
@@ -431,6 +530,7 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se VERROUILLE, et 
       verrouillageMs: ferme.mesures.verrouillageMs,
       opfsApresVerrouillage,
       instantanesRestants: instantanes,
+      instantanesNonVides: portants,
     },
     cycleApresFermeture: ferme.cycle,
     cycleApresRechargement: rechargee.cycle,

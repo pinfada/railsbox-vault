@@ -333,6 +333,21 @@ Publiées **sans seuil**, comme celles de #161, #162 et #163.
 | instantané présent sur l'OPFS après verrouillage                   | `reports/e2e/reprise-coquille.json` › `verrouillage.instantanesRestants`      |
 | prix de la réouverture (instantané vs boot à froid)                | `reports/e2e/reprise-coquille.json` › `secondDemarrage.bootMs`, `.instantane` |
 
+**Ce que le scénario de bout en bout a RELEVÉ**, sur une machine ordinaire (4 vCPU, 16 Gio), le 8
+septembre 2026 — sans seuil, comme le reste :
+
+| Grandeur                                           | Relevé             |
+| -------------------------------------------------- | ------------------ |
+| geste « Verrouiller » → coffre `verrouille`        | **1 859,5 ms**     |
+| dont la capture de l'instantané                    | 1 854,6 ms         |
+| instantané laissé sur l'OPFS après le verrouillage | 256 332 524 octets |
+| premier démarrage, boot à FROID                    | 114 119 ms         |
+| réouverture après verrouillage, PAR L'INSTANTANÉ   | **1 038,2 ms**     |
+
+**Le rapport est de cent dix pour un**, et c'est lui qui décide la décision 3 : verrouiller coûte
+deux secondes, rouvrir en coûte une. Retirer l'instantané aurait fait de chaque réouverture deux
+minutes.
+
 **WebKit est DÉCLARÉ `indisponible`** : rien ne s'y verrouille parce que rien ne s'y ouvre — l'OPFS
 synchrone manque au Worker. Ce que la suite y mesure est l'ordre, les refus et l'état publié, et
 elle le **déclare** au lieu de passer au vert par vacuité.
@@ -360,6 +375,11 @@ elle le **déclare** au lieu de passer au vert par vacuité.
 - **les NOMS restent sur le support.** Le volume et son instantané portent des noms de fichiers, et
   l'en-tête d'un instantané n'est pas confidentiel (ADR 0024, limite 3). Ce que le verrouillage
   promet n'est pas l'absence de traces, c'est l'absence de ce qui les OUVRE ;
+- **le voisin d'un volume sans VM est un fichier VIDE.** La coquille ouvre deux volumes — le sien et
+  celui de l'application —, et interroger l'instantané du premier le crée à zéro octet
+  (`src/vm/instantane/support-opfs.mjs`). Le scénario exige donc qu'il en RESTE un qui porte quelque
+  chose, et non que tous en portent : la seconde exigence rougirait sur un fichier qui ne promet
+  rien ;
 - **la fenêtre d'avant le rechargement dure une tâche.** Ce que la coquille y publie est capturé par
   une instrumentation d'ÉPREUVE ; un utilisateur, lui, ne la lit pas. C'est assumé : ce qu'il doit
   voir est le résultat — une coquille verrouillée, sans cadre —, pas la mesure.

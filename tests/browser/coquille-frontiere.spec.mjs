@@ -585,10 +585,72 @@ test("les documents NEUFS de la coquille portent la CSP et le durcissement, sans
 // la liste de refus un ORACLE — un document applicatif apprendrait, sans y avoir droit, si un volume
 // est ouvert.
 
-/** Tente les dix gestes interdits DEPUIS le cadre, et rend le code reçu pour chacun. */
+/**
+ * L'état qu'un coffre FERMÉ publie, et celui qu'un moteur sans OPFS synchrone publie à sa place.
+ *
+ * Les deux sont affirmés, jamais l'un au détriment de l'autre : `not.toBe(ouvert)` laisserait passer
+ * les deux, et exiger `verrouille` partout ferait rougir WebKit sur sa conduite juste — `verrouille`
+ * dit « il faut un geste », `indisponible` dit « ce moteur ne sait pas ». C'est la convention de
+ * `coquille-deverrouillage.spec.mjs`, reprise ici parce que le verrouillage la rencontre.
+ */
+async function exigerLEtatFerme(page) {
+  const etat = (await relevéDeLaCoquille(page)).etat;
+  expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(etat);
+  return etat;
+}
+
+/**
+ * VERROUILLE, puis attend que le RECHARGEMENT ait eu lieu — et le prouve par un document NEUF.
+ *
+ * L'attente ne peut pas porter sur ce que la page affiche : `#deverrouillage-moyens` est déjà rempli
+ * par la session en cours, et `data-coquille` repasse par « prete » sur la même valeur qu'avant. Une
+ * épreuve qui s'y fierait lirait le relevé de la session PRÉCÉDENTE et croirait mesurer la nouvelle.
+ *
+ * Ce qui distingue les deux documents est qu'un témoin posé dans le premier n'existe pas dans le
+ * second. Il est posé par l'ÉPREUVE, sur `globalThis`, et le produit n'en sait rien.
+ */
+async function verrouillerEtAttendreLeRechargement(page) {
+  await page.evaluate(() => {
+    globalThis.__documentDAvantLeVerrouillage = true;
+  });
+  await page.locator("#verrouiller-le-coffre").click();
+  await expect
+    .poll(
+      async () => {
+        try {
+          return await page.evaluate(() => globalThis.__documentDAvantLeVerrouillage === undefined);
+        } catch {
+          // Le contexte d'exécution est détruit pendant la navigation : c'est le rechargement en
+          // cours, pas un défaut. La question se repose au tour suivant.
+          return false;
+        }
+      },
+      { timeout: 60000 },
+    )
+    .toBe(true);
+  await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: 60000 });
+}
+
+/**
+ * Tente les dix gestes interdits DEPUIS le cadre, et rend le code reçu pour chacun.
+ *
+ * L'attente de `sondes-terminees` n'est pas une précaution : la fixture obtient son port en
+ * ANNONÇANT sa présence et en attendant l'octroi, ce qui est une suite d'allers-retours entre deux
+ * origines. L'interroger avant qu'elle l'ait rendrait « le cadre n'a pas obtenu son port » — un
+ * verdict sur la vitesse de l'exécutant, pas sur la frontière.
+ */
 async function dixRefusDepuisLeCadre(page, types) {
-  const cadre = page.frames().find((frame) => frame.url().includes("hostile.html"));
-  expect(cadre, "le cadre hostile n'est pas là : rien à mesurer").toBeDefined();
+  await expect(page.frameLocator("#document-applicatif").locator("html")).toHaveAttribute(
+    "data-hostile",
+    "sondes-terminees",
+    { timeout: 60000 },
+  );
+  // Le cadre est atteint par SON ÉLÉMENT, et non par une recherche d'URL dans la liste des frames :
+  // la fixture crée elle-même une iframe IMBRIQUÉE pour sa sonde d'usurpation, et une recherche par
+  // URL peut rendre celle-là — qui n'a jamais obtenu de port, et pour cause. L'épreuve mesurerait
+  // alors l'usurpatrice en croyant mesurer l'application encadrée.
+  const cadre = await (await page.locator("#document-applicatif").elementHandle()).contentFrame();
+  expect(cadre, "le cadre hostile n'est pas là : rien à mesurer").not.toBeNull();
   return cadre.evaluate(async (listeDeTypes) => {
     const port = globalThis.__portHostile;
     if (!port) return { sansPort: true };
@@ -618,9 +680,11 @@ test("les DIX refus sont identiques sur un coffre verrouillé, ouvert, puis verr
   const types = GESTES_REFUSES.map(({ type }) => type);
   const attendus = Object.fromEntries(GESTES_REFUSES.map(({ type, code }) => [type, code]));
 
-  // (1) Coffre VERROUILLÉ : rien n'a jamais été ouvert dans cette session.
+  // (1) Coffre FERMÉ : rien n'a jamais été ouvert dans cette session. L'état est `verrouille`, ou
+  // `indisponible` sur un moteur qui n'a jamais rien pu ouvrir — l'un dit « il faut un geste »,
+  // l'autre « ce moteur ne sait pas », et la suite DÉCLARE lequel plutôt que d'exiger le premier.
   await ouvrirLaCoquille(page, { documentApplicatif: FIXTURE, deverrouiller: false });
-  expect((await relevéDeLaCoquille(page)).etat).toBe(ETATS_DU_VOLUME.verrouille);
+  const etatFerme = await exigerLEtatFerme(page);
   const surVerrouille = await dixRefusDepuisLeCadre(page, types);
   expect(surVerrouille.sansPort, "le cadre n'a pas obtenu son port").toBeUndefined();
 
@@ -632,18 +696,17 @@ test("les DIX refus sont identiques sur un coffre verrouillé, ouvert, puis verr
   const surOuvert = await dixRefusDepuisLeCadre(page, types);
 
   // (3) VERROUILLÉ par le geste de #169. La coquille se recharge, un cadre neuf reçoit un port neuf.
-  await page.locator("#verrouiller-le-coffre").click();
-  await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: 60000 });
+  await verrouillerEtAttendreLeRechargement(page);
   await expect
     .poll(async () => (await relevéDeLaCoquille(page)).cadreApplicatif, { timeout: 60000 })
     .toBe("charge");
-  const etatApres = (await relevéDeLaCoquille(page)).etat;
+  const etatApres = await exigerLEtatFerme(page);
   const surReVerrouille = await dixRefusDepuisLeCadre(page, types);
 
   await info.attach(`dix-refus-verrouillage-${info.project.name}.json`, {
     body: JSON.stringify(
       {
-        etats: { avant: ETATS_DU_VOLUME.verrouille, ouvert: etatOuvert, apres: etatApres },
+        etats: { avant: etatFerme, ouvert: etatOuvert, apres: etatApres },
         surVerrouille: surVerrouille.codes,
         surOuvert: surOuvert.codes,
         surReVerrouille: surReVerrouille.codes,
@@ -660,7 +723,8 @@ test("les DIX refus sont identiques sur un coffre verrouillé, ouvert, puis verr
   expect(surVerrouille.codes).toEqual(attendus);
   expect(surOuvert.codes).toEqual(attendus);
   expect(surReVerrouille.codes).toEqual(attendus);
-  expect(etatApres, "le coffre n'est pas revenu verrouillé après le geste").toBe(
-    ETATS_DU_VOLUME.verrouille,
-  );
+  // Le coffre est revenu à son état FERMÉ, celui-là même d'où il était parti. Sur un moteur qui sait
+  // ouvrir, c'est `verrouille` ; sur celui qui ne sait pas, c'est `indisponible` — et l'égalité avec
+  // l'état de départ dit que le verrouillage n'a rien inventé.
+  expect(etatApres, "le coffre n'est pas revenu à son état fermé après le geste").toBe(etatFerme);
 });
