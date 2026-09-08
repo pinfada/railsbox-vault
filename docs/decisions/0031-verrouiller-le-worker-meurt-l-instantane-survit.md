@@ -45,17 +45,35 @@ ne promet pas.
 Le chemin est celui de #163, sans une ligne de plus : `fermerLeCoffre` du Worker de confiance arrête
 la VM, capture l'instantané dans l'ordre des six gestes de l'ADR 0024 décision 6,
 `await backend.close()`, puis la page appelle `terminate()`. **L'ordre est le contrat, et il ne se
-réordonne pas** : `close()` attend les E/S déjà ACCEPTÉES (#132) et libère le nom du volume ;
-terminer avant elle laisserait le handle exclusif tenu par un objet que plus personne ne référence,
-et l'ouverture suivante rendrait `VAULT_STORAGE_BUSY` — sur le volume que l'utilisateur vient de
-rouvrir lui-même (constat 6 de la revue de sécurité de la PR #167).
+réordonne pas.**
 
-Ce que cette tranche ajoute au chemin est un `await` **éprouvé** et **muté** : le mutant n° 18
-déplace `apresVerrouillage()` avant l'attente, et `tests/unit/coquille-verrouillage.test.mjs` › « le
-geste de VERROUILLAGE attend la fermeture du Worker avant de le terminer » rougit. Ce que l'ordre
-inverse COÛTE est mesuré ailleurs, et cité plutôt que recopié :
-`tests/unit/vm-reouverture-handles.test.mjs` › « MESURE — un SEUL des trois handles encore tenu
-suffit à rendre « busy » ».
+**Son MOTIF, en revanche, était faux, et il est réécrit ici.** De #163 à la première rédaction de
+cette tranche, quatre endroits du dépôt affirmaient que terminer avant `close()` laisserait le
+handle exclusif « tenu par un objet que plus personne ne référence », si bien que l'ouverture
+suivante rendrait `VAULT_STORAGE_BUSY` (constat 6 de la revue de la PR #167). **La revue de sécurité
+de la PR #174 a mesuré le contraire**, sur Chromium et sur Firefox, avec témoin positif ; le dépôt
+en a fait une épreuve — `tests/browser/opfs-block-backend.spec.mjs` › « le moteur rend l'exclusivité
+du handle à la MORT du Worker qui le tenait » — et `docs/compatibility.md` l'inscrit comme un **fait
+de moteur** : tant que le détenteur vit, un second demandeur reçoit `VAULT_STORAGE_BUSY` ; après
+`terminate()` SANS `close()`, l'ouverture réussit **au premier essai**. Le moteur relâche
+l'exclusivité avec le contexte du Worker. Le dépôt le disait d'ailleurs déjà à l'endroit même que
+l'ancien motif citait comme preuve (`tests/unit/vm-reouverture-handles.test.mjs` : « ce que le
+double ne peut PAS mesurer, c'est le DÉLAI que Chromium met à rendre l'exclusivité après la mort
+d'un Worker »).
+
+**Ce que `close()` apporte vraiment**, et c'est plus fort que ce qu'on lui prêtait :
+
+- **il attend les E/S déjà ACCEPTÉES** (#132). Terminer avant lui perd des écritures que le guest
+  croit acquittées — ce que `SEC-DURABLE-001` interdit, et qui n'a rien à voir avec l'exclusivité ;
+- **il laisse le volume dans l'état que la CAPTURE vient de décrire.** L'instantané est scellé dans
+  `relacherTout`, juste AVANT le `close()` : sur un volume dont les dernières écritures manquent, il
+  décrirait un état qui n'existe pas. Un tel instantané est écarté à l'ouverture suivante (ADR 0024,
+  décision 4) — donc un boot à FROID, c'est-à-dire la décision 3 de cet ADR défaite.
+
+Le mutant n° 18 tue désormais par cette propriété-là, et non par un `VAULT_STORAGE_BUSY` qui
+n'arrive pas : il déplace `apresVerrouillage()` avant l'attente, et
+`tests/unit/coquille-verrouillage.test.mjs` › « le geste de VERROUILLAGE attend la fermeture du
+Worker avant de le terminer » rougit.
 
 **Un seul bouton, et un seul mot.** « Fermer le coffre » disparaît de la coquille ; le geste
 s'appelle « Verrouiller ». Un coffre fermé et un coffre verrouillé sont la même chose, et deux mots
@@ -100,6 +118,51 @@ est assumé : ce qui se perd est une trace d'interface, pas une donnée.
 `verrouille`, l'interface de déverrouillage est remontée, **aucune dérivation ne part sans geste**,
 et **aucune KEK n'est gardée**. C'est la conduite de l'ADR 0030 décision 3, tenue par le même code :
 remonter l'interface n'est pas redemander.
+
+### Un verrouillage REFUSÉ : ce qui arrive quand la fermeture propre échoue
+
+C'est le constat 3 de la revue de sécurité de la PR #174, et il était sévère parce qu'il était
+silencieux. La première rédaction rendait la main sans rien dire : un verrouillage refusé laissait
+**exactement l'état que le verrouillage existe pour quitter** — le coffre `ouvert`, le cadre
+applicatif affiché, et AUCUN délai, la surveillance s'étant désarmée avant d'appeler le geste sans
+que rien ne la ré-arme. Le coffre restait ouvert pour toujours sans que personne l'ait décidé. Ce
+qui empêchait d'en faire un CRITICAL : le `finally` de `relacherTout` lâche la KEK quoi qu'il arrive
+(correction du constat 10 de la PR #171). Restaient faux l'état publié, le cadre non retiré, le
+délai mort — et la divergence des deux côtés, le Worker se croyant verrouillé pendant que la
+coquille publiait « ouvert ».
+
+**Un verrouillage refusé ne laisse JAMAIS le coffre ouvert.** La conduite, dans son ordre :
+
+1. **le refus et sa cause sont PUBLIÉS**, avant toute autre chose : c'est la seule chose que
+   l'utilisateur ait à apprendre ;
+2. **le Worker est TERMINÉ**, sous la cause `terminaison` — la table de l'ADR 0030 décision 3 ne
+   gagne pas de quatrième cause. Sa KEK est déjà partie ; le garder en vie ne rendrait que
+   l'illusion d'un coffre ouvert ;
+3. **la conduite après la mort de #163 s'applique** : page conservée, interface de déverrouillage
+   remontée, bouton « Rouvrir le coffre » offert ;
+4. **le CADRE applicatif est retiré du DOM.** Laisser ses pixels sur un coffre dont l'utilisateur
+   vient de demander le verrouillage est le contraire de la promesse. **Aucun port n'est
+   re-octroyé** : `rapport.portOctroye` reste vrai, si bien que `VAULT_COQUILLE_ANNONCE_UNIQUE`
+   (garde de #161, mutant n° 5 de l'ADR 0028) continue de refuser un second octroi — l'unicité du
+   port n'est pas reformulée pour autant, et le cadre ne revient qu'au rechargement ;
+5. **la coquille NE recharge PAS**, et c'est la seule différence avec un verrouillage réussi : un
+   rechargement effacerait le refus de l'écran ;
+6. **le délai est désarmé**, au refus comme au succès.
+
+**Ce que la réouverture coûtera est ANNONCÉ** : un boot à FROID si la capture n'a pas eu lieu. Le
+refus étant survenu quelque part dans la fermeture propre, l'instantané peut manquer ou décrire un
+état que le volume n'a pas, et une ouverture qui l'écarte le retire (ADR 0024, décision 4). Le
+relevé publie `instantaneGaranti: false` plutôt que de laisser croire.
+
+**Deux refus, et ils ne se confondent pas.** Celui de l'ORDRE — un verrouillage demandé pendant
+qu'un DÉMARRAGE est en vol — ne tue rien : le geste n'a jamais atteint le Worker, le coffre est
+légitimement ouvert, et ce qu'il faut est ré-armer le délai. Il porte
+`VAULT_COQUILLE_ETAPE_HORS_ORDRE`, le code de l'ordre existant depuis #163, et non un code de
+support. Le motif du refus : ce geste arriverait au Worker derrière un boot de deux minutes — la
+coquille attendrait sans rien dire, puis capturerait l'instantané d'une machine qui vient de
+démarrer. Le drapeau du vol retombe dans un `finally`, sans quoi un boot qui échoue refuserait tout
+verrouillage jusqu'au rechargement : un coffre qu'on ne peut plus fermer. Un scénario de bout en
+bout n'est pas exigé pour ce cas ; une épreuve unitaire et deux mutants le tiennent.
 
 ### Entre la fermeture propre et le rechargement, l'état EXISTE et se mesure
 
@@ -190,9 +253,30 @@ Le refus des messages du cadre repose sur une seconde propriété, moins visible
 provoque en posant sa question ; un ré-armement qui repousserait l'échéance rendrait le délai infini
 pour qui interroge en boucle (mutant n° 2).
 
-**La LIMITE, écrite plutôt que tue** : un onglet au premier plan devant un bureau vide ne se
-distingue pas d'un onglet devant quelqu'un. Le produit n'invente pas de substitut de présence ; il
-borne une durée sans surveillance, et il le dit.
+**DEUX limites, écrites plutôt que tues, et elles vont en sens contraire.**
+
+La première est celle qu'on voit : un onglet au premier plan devant un bureau vide ne se distingue
+pas d'un onglet devant quelqu'un. Le produit n'invente pas de substitut de présence.
+
+**La seconde est la plus coûteuse, et elle borne le choix de dix minutes lui-même** (constat 4 de la
+revue de sécurité de la PR #174). Le motif écrit plus haut — « un verrouillage qui coupe le travail
+est un verrouillage que l'utilisateur allonge jusqu'à ne plus l'avoir » — suppose que le produit
+sache quand on travaille. **Il ne le sait pas dans le cas NOMINAL.** La revue l'a mesuré sur les
+trois moteurs, avec témoin positif : un clic réel, vingt frappes réelles et cinquante mouvements de
+pointeur DANS le cadre inter-origine produisent **zéro `focusin`, zéro `pointerdown`, zéro
+`keydown`** sur le document de la coquille ; un focus forcé depuis le cadre et des événements
+synthétiques ne franchissent rien non plus. C'est exactement ce que la décision voulait — le délai
+n'est ni tenu ni allongé par l'origine applicative —, et c'est aussi ce qui fait qu'**une personne
+qui travaille dans l'application est comptée comme absente, et se fait verrouiller à dix minutes
+exactement, en pleine frappe.**
+
+Ce qui l'atténue, et il faut le peser honnêtement : la réouverture coûte **une seconde** par
+l'instantané (décision 3, 1 038,2 ms mesurés), pas deux minutes ; et le volume tient tout ce que le
+guest a fait ACQUITTER. Ce qui ne l'atténue pas : ce qui n'était pas acquitté est perdu, comme à
+toute coupure ([ADR 0014](0014-generation-transactionnelle.md)) ; et il n'existe aujourd'hui **aucun
+signal de présence que le cadre ne puisse pas forger**. La question est ouverte — issue
+[#176](https://github.com/pinfada/railsbox-vault/issues/176) — et référencée depuis #25. Tant
+qu'elle l'est, dix minutes est un compromis entre deux limites, et non un chiffre confortable.
 
 **Aucun événement de fin d'onglet n'est écouté** — ni `pagehide`, ni `freeze`, ni `beforeunload` —,
 et rien n'est promis à leur sujet. C'est #170, et une épreuve unitaire refuse leur entrée dans la
@@ -213,9 +297,31 @@ replanifie pour le reste (mutant n° 9).
 **Le geste explicite est le TÉMOIN POSITIF du délai.** Sans lui, une suite verte pourrait n'être
 qu'une suite qui ne déclenche jamais rien : les épreuves prouvent d'abord que le bouton verrouille,
 puis que le délai fait EXACTEMENT la même chose — même relevé, même état, même rechargement, au
-déclencheur près. Et une épreuve de navigateur paie **une minute réelle** d'inactivité, avec le
-délai minimal obtenu par la fonction bornée, plus un **témoin négatif** : une coquille tenue
-éveillée par une frappe toutes les six secondes pendant une minute et demie ne se verrouille pas.
+déclencheur près.
+
+**Ce qui est mesuré, et SUR QUOI** — la table le dit exactement, parce que le dossier a un moment
+écrit « les deux sur les trois moteurs » alors que le délai n'était joué que sur Chromium (constat 1
+de la revue de sécurité de la PR #174) :
+
+| Propriété                                                       | Moteurs                   |
+| --------------------------------------------------------------- | ------------------------- |
+| le GESTE verrouille, recharge, et le cadre neuf lit l'état      | Chromium, Firefox, WebKit |
+| un verrouillage REFUSÉ tue, retire le cadre, et ne recharge pas | Chromium, Firefox, WebKit |
+| les dix refus identiques sur trois états du coffre              | Chromium, Firefox, WebKit |
+| le DÉLAI verrouille tout seul, en temps réel                    | Chromium, Firefox         |
+| le témoin négatif : un coffre tenu éveillé ne se verrouille pas | Chromium, Firefox         |
+| la sonde d'exfiltration après le GESTE                          | Chromium, Firefox, WebKit |
+| la sonde d'exfiltration après le DÉLAI                          | Chromium                  |
+
+Les deux épreuves de temps réel paient **une minute** et **une minute et demie**, et elles sont
+jouées sur DEUX moteurs. Le motif a changé avec elles : la première rédaction n'en jouait qu'un, en
+écrivant qu'« une minuterie ne dépend pas du moteur ». C'est faux dans sa seconde moitié, et la
+revue le mesure — la livraison du focus diffère d'un moteur à l'autre sur la même séquence. Ce qui
+est mesuré ici est la LIVRAISON d'événements de document et l'étirement des minuteries, deux
+comportements de moteur.
+
+**WebKit est hors de portée du délai, et pas par économie** : rien ne s'y ouvre, donc aucune
+surveillance ne s'y arme, donc il n'y a rien à mesurer. La suite le DÉCLARE au lieu de s'ignorer.
 
 ## Décision 3 — L'INSTANTANÉ SURVIT au verrouillage (révision de l'ADR 0024 décision 8)
 
@@ -354,6 +460,25 @@ elle le **déclare** au lieu de passer au vert par vacuité.
 
 ## Limites, dites plutôt que tues
 
+- **le délai est un PLANCHER, pas une ponctualité.** Le contrôle de la surveillance rattrape un
+  réveil trop TÔT — il replanifie le reste — et jamais un réveil trop TARD. Sur un onglet CACHÉ,
+  dont le moteur étire les minuteries à la minute ou davantage, le verrouillage arrive donc APRÈS
+  son échéance, jusqu'au prochain réveil que le moteur consent. Aucune épreuve de ce dépôt ne mesure
+  cet étirement : il demanderait plus de dix minutes d'attente réelle, et le mesurer sous un délai
+  abaissé mesurerait autre chose. Ce que la coquille peut affirmer est qu'elle ne verrouille jamais
+  AVANT son délai ;
+- **le travail dans le cadre est invisible.** Voir la décision 2 : c'est la limite qui borne le
+  choix de dix minutes, et elle est écrite là où le chiffre se justifie ;
+- **un verrouillage PENDANT un boot est refusé, pas différé.** Le geste rend
+  `VAULT_COQUILLE_ETAPE_HORS_ORDRE` et le délai se ré-arme ; il n'est pas mis en file pour être
+  servi après les deux minutes du boot. Un utilisateur qui clique « Verrouiller » pendant un
+  démarrage doit donc recliquer. C'est assumé : la file du canal privilégié aurait fait attendre la
+  coquille sans rien dire, puis capturé l'instantané d'une machine qui vient de démarrer ;
+- **le SCELLEMENT de l'instantané est constaté par l'absence de marqueurs connus**, et non par une
+  vérification cryptographique : le scénario de bout en bout n'a ni la DEK ni rien qui y mène. Il
+  exige de ne retrouver dans le corps aucun des marqueurs que le guest a écrits en clair. Ce que
+  l'en-tête révèle est assumé et écrit ailleurs (ADR 0024, limite 3) ;
+
 - **ce que la sonde d'exfiltration mesure**, et il faut le redire ici : elle mesure ce qui n'est pas
   **persisté**, pas ce qui est **effacé d'un tas**. Elle fouille six stockages, l'OPFS entier en
   texte et en hexadécimal, le DOM et les deux sens des deux ports ; elle ne peut rien dire de la
@@ -398,9 +523,14 @@ elle le **déclare** au lieu de passer au vert par vacuité.
   la note datée le dit. Son § Limites disait que la sonde d'exfiltration serait rejouée par #25
   après un verrouillage : elle l'est ;
 - **[ADR 0028](0028-coquille-de-produit-et-frontiere.md)** — la coquille gagne **un geste nommé** et
-  **aucun code de refus neuf**. Le bouton « Fermer le coffre » devient « Verrouiller » : un bouton
-  remplacé, pas un de plus. Le contrat de messages est **inchangé** : aucun type neuf, ni sur le
-  port restreint ni sur le canal privilégié ;
+  **UN code de refus neuf**, `VAULT_COQUILLE_GESTE_ROMPU` : le repli du Worker sur un jet non typé
+  rendait `VAULT_COQUILLE_TYPE_INCONNU` — « Requête hors de la liste d'admission » — pour un geste
+  qui était, lui, parfaitement admis, et il le rendait là où le message compte le plus, sur
+  l'inattendu (constat 5 de la revue de la PR #174). Le code est inscrit au § 10.5 de
+  `docs/format-de-volume-v3.md` et tenu par le cliquet d'exhaustivité de
+  `tests/unit/dossier-de-revue.test.mjs`. Il ne remplace aucun code TYPÉ. Le bouton « Fermer le
+  coffre » devient « Verrouiller » : un bouton remplacé, pas un de plus. Le contrat de messages est
+  **inchangé** : aucun type neuf, ni sur le port restreint ni sur le canal privilégié ;
 - **[ADR 0021](0021-derivation-des-cles-de-deverrouillage.md)** — la décision 7 est **appliquée**,
   pas révisée : le relevé publie `workerTermine`, jamais `clesEffacees` ;
 - **[ADR 0019](0019-fraicheur-du-volume.md)** — le § 6.9 (adversaire OPFS-écriture) fournit le motif
@@ -408,33 +538,46 @@ elle le **déclare** au lieu de passer au vert par vacuité.
 
 ## Campagne de mutation
 
-Vingt gardes, chacune retirée du source dans un atelier temporaire, l'épreuve rejouée
+Vingt-huit gardes, chacune retirée du source dans un atelier temporaire, l'épreuve rejouée
 (`tools/muter-gardes-verrouillage.mjs`, moteur partagé avec les cinq campagnes précédentes).
 
-| #   | Garde retirée                                                              | Verdict |
-| --- | -------------------------------------------------------------------------- | ------- |
-| 1   | `armer` — la condition d'ÉTAT : jamais armé sur un coffre non ouvert       | TUÉ     |
-| 2   | `armer` — l'IDEMPOTENCE, sur laquelle repose « le cadre ne compte pas »    | TUÉ     |
-| 3   | `SIGNAUX_DACTIVITE` — les barrières ne comptent pas                        | TUÉ     |
-| 4   | `SIGNAUX_SANS_EFFET` — aucun message du cadre ne compte                    | TUÉ     |
-| 5   | `estUnSignalDActivite` — un document caché ne remet pas à zéro             | TUÉ     |
-| 6   | `delaiDInactivite` — la borne BASSE                                        | TUÉ     |
-| 7   | `delaiDInactivite` — la borne HAUTE                                        | TUÉ     |
-| 8   | `surveillanceDInactivite` — la borne tenue à la CONSTRUCTION               | TUÉ     |
-| 9   | `verifier` — la replanification du reste : l'horloge décide, pas le réveil | TUÉ     |
-| 10  | `signaler` — un signal sur une surveillance désarmée ne l'arme pas         | TUÉ     |
-| 11  | `conduiteApresLeVerrouillage` — le rechargement de la coquille             | TUÉ     |
-| 12  | `conduiteApresLeVerrouillage` — le geste qui rouvre n'est PAS offert       | TUÉ     |
-| 13  | `conduiteApresLeVerrouillage` — jamais de réouverture automatique          | TUÉ     |
-| 14  | `conduiteApresLeVerrouillage` — aucune dérivation permise                  | TUÉ     |
-| 15  | `conduiteApresLeVerrouillage` — aucune KEK gardée                          | TUÉ     |
-| 16  | `conduiteApresLeVerrouillage` — l'instantané n'est PAS retiré              | TUÉ     |
-| 17  | `conduiteApresLeVerrouillage` — `indisponible` n'est pas `verrouille`      | TUÉ     |
-| 18  | `verrouiller` — l'`await` : `close()` AVANT `terminate()`                  | TUÉ     |
-| 19  | `verrouiller` — un verrouillage refusé ne termine pas le Worker            | TUÉ     |
-| 20  | `brancherLesGestesDuCycle` — le bouton unique, « verrouiller »             | TUÉ     |
+| #   | Garde retirée                                                                      | Verdict |
+| --- | ---------------------------------------------------------------------------------- | ------- |
+| 1   | `armer` — la condition d'ÉTAT : jamais armé sur un coffre non ouvert               | TUÉ     |
+| 2   | `armer` — l'IDEMPOTENCE, sur laquelle repose « le cadre ne compte pas »            | TUÉ     |
+| 3   | `SIGNAUX_DACTIVITE` — les barrières ne comptent pas                                | TUÉ     |
+| 4   | `SIGNAUX_SANS_EFFET` — aucun message du cadre ne compte                            | TUÉ     |
+| 5   | `estUnSignalDActivite` — un document caché ne remet pas à zéro                     | TUÉ     |
+| 6   | `delaiDInactivite` — la borne BASSE                                                | TUÉ     |
+| 7   | `delaiDInactivite` — la borne HAUTE                                                | TUÉ     |
+| 8   | `surveillanceDInactivite` — la borne tenue à la CONSTRUCTION                       | TUÉ     |
+| 9   | `verifier` — la replanification du reste : l'horloge décide, pas le réveil         | TUÉ     |
+| 10  | `signaler` — un signal sur une surveillance désarmée ne l'arme pas                 | TUÉ     |
+| 11  | `conduiteApresLeVerrouillage` — le rechargement de la coquille                     | TUÉ     |
+| 12  | `conduiteApresLeVerrouillage` — le geste qui rouvre n'est PAS offert               | TUÉ     |
+| 13  | `conduiteApresLeVerrouillage` — jamais de réouverture automatique                  | TUÉ     |
+| 14  | `conduiteApresLeVerrouillage` — aucune dérivation permise                          | TUÉ     |
+| 15  | `conduiteApresLeVerrouillage` — aucune KEK gardée                                  | TUÉ     |
+| 16  | `conduiteApresLeVerrouillage` — l'instantané n'est PAS retiré                      | TUÉ     |
+| 17  | `conduiteApresLeVerrouillage` — `indisponible` n'est pas `verrouille`              | TUÉ     |
+| 18  | `verrouiller` — l'`await` : la capture et les E/S ACCEPTÉES avant le `terminate()` | TUÉ     |
+| 19  | `verrouiller` — le rappel de la branche de refus                                   | TUÉ     |
+| 20  | `conduiteApresUnRefusDeVerrouillage` — un refus TERMINE le Worker                  | TUÉ     |
+| 21  | `conduiteApresUnRefusDeVerrouillage` — un refus RETIRE le cadre                    | TUÉ     |
+| 22  | `conduiteApresUnRefusDeVerrouillage` — un refus ne recharge PAS                    | TUÉ     |
+| 23  | `verrouiller` — la garde d'ordre sur le démarrage en vol                           | TUÉ     |
+| 24  | `demarrer` — le `finally` qui rend le verrouillage de nouveau possible             | TUÉ     |
+| 25  | `exigerUnDeclencheur` — la table close des deux déclencheurs                       | TUÉ     |
+| 26  | `EVENEMENTS_DACTIVITE` — ce que la coquille compte comme une personne              | TUÉ     |
+| 27  | `brancherLesSignauxDActivite` — le branchement RÉEL, et sa passivité               | TUÉ     |
+| 28  | `brancherLesGestesDuCycle` — le bouton unique, « verrouiller »                     | TUÉ     |
 
-**20/20.**
+**28/28.** Les dix derniers (n° 19 à 28) sont ceux de la revue de sécurité de la PR #174 : sept pour
+le verrouillage refusé, la garde d'ordre et le déclencheur (constats 3 et 8), deux pour la table
+d'événements et son branchement (constat 6) — « la garde qui décide ce que la coquille compte comme
+une personne était la seule que la campagne ne regardait pas ». Le mutant n° 18 a changé de MOTIF
+sans changer de forme : il tue désormais par la capture et les E/S acceptées, et non par un
+`VAULT_STORAGE_BUSY` qui n'arrive jamais (constat 2).
 
 Ce que la campagne ne peut PAS mesurer se dit au même endroit : qu'un `pointerdown` soit livré au
 document de la coquille, qu'une minuterie d'un onglet en arrière-plan atteigne son échéance, qu'un
