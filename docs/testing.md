@@ -2146,13 +2146,20 @@ chose que ce qu'elle mesure.
 SEULS, plus vite, pendant qu'on y travaille. La correction est de #169, qui ajoute du temps réel à
 ce gate et n'avait pas le droit de le faire en croyant l'ajouter ailleurs.
 
-**Deux épreuves de plus paient du temps RÉEL, sur Chromium seul** (#169) : un coffre laissé se
+**Deux épreuves de plus paient du temps RÉEL, sur DEUX moteurs** (#169) : un coffre laissé se
 verrouille tout seul après **une minute** — le délai minimal que la fonction bornée accepte — et un
 coffre tenu éveillé par une frappe toutes les six secondes ne se verrouille pas pendant une minute
-et demie. Coût : environ **2 minutes 30**, sur un seul moteur, et c'est une décision assumée — ce
-qu'elles mesurent est une MINUTERIE et le branchement d'écouteurs, non un comportement de moteur ;
-ce qui dépend du moteur, le verrouillage lui-même et son rechargement, est mesuré sur les trois par
-le geste explicite, qui est le TÉMOIN POSITIF du délai.
+et demie. Coût : environ **2 minutes 30 par moteur**, sur Chromium et Firefox.
+
+Le motif a changé avec le nombre de moteurs (constat 1 de la revue de sécurité de la PR #174). La
+première rédaction n'en jouait qu'un, en écrivant qu'« une minuterie ne dépend pas du moteur »,
+pendant que `SECURITY.md` affirmait que le délai était mesuré sur trois : les deux ne pouvaient pas
+être vrais ensemble, et c'est le motif qui était faux. Ce qui est mesuré ici est la LIVRAISON
+d'événements de document et l'ÉTIREMENT des minuteries — deux comportements de moteur, et la revue
+relève des écarts réels de livraison du focus entre les trois. **WebKit reste hors de portée** parce
+que rien ne s'y ouvre, donc rien ne s'y arme : c'est la limite du moteur, pas une économie de temps,
+et la suite le DÉCLARE. Règle qui en sort, pour cette tranche et les suivantes : **une propriété ne
+peut être dite « mesurée sur trois moteurs » que si l'épreuve tourne sur trois moteurs.**
 
 **Ce que cela coûte à la RECETTE, et ce qui en a été fait.** Ces attentes portent le job
 `Qualité et tests` de `ci.yml` au-delà de vingt minutes — la dernière recette verte de `main` tenait
