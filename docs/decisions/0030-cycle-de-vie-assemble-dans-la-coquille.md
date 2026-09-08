@@ -219,7 +219,9 @@ septembre 2026 sur #163, DoR de #25 décision 4) :
 - **#163 possède la DÉTECTION et la CONDUITE** : constater qu'un Worker ne répond plus, poser la
   coquille dans l'état que #25 définit, et le dire au cadre ;
 - **#25 possède l'ÉTAT et la RÈGLE** : ce que « verrouillé » veut dire, les déclencheurs, le délai.
-  #163 les **cite**, et n'en choisit aucun.
+  #163 les **cite**, et n'en choisit aucun. **Note datée du 8 septembre 2026** : #169 les a tranchés
+  ([ADR 0031](0031-verrouiller-le-worker-meurt-l-instantane-survit.md)), et le bouton « Fermer le
+  coffre » de cette tranche s'appelle désormais « Verrouiller » — un seul mot pour une seule chose.
 
 La position tombe d'elle-même une fois la frontière posée : **verrouiller, c'est atteindre
 volontairement l'état que la mort du Worker atteint par accident.** Un seul état, deux chemins.
@@ -380,7 +382,10 @@ jeton du harnais d'un côté, enveloppe de clé de l'autre — et rien de plus.
   bout en bout, lui, sert les deux — c'est `tools/serve.mjs` qui les sert, depuis le disque ;
 - **la sonde d'exfiltration de #162 n'est pas rejouée après la mort du Worker.** Elle mesure ce qui
   n'est pas persisté, et rien de nouveau n'est écrit par cette tranche ; #25 la rejouera après un
-  verrouillage, où la question se pose pour de bon.
+  verrouillage, où la question se pose pour de bon. **Note datée du 8 septembre 2026** : elle l'est
+  — `tests/browser/coquille-deverrouillage.spec.mjs` › « APRÈS un verrouillage, rien du secret ne
+  s'est déposé — et la sonde dit ce qu'elle mesure », sur les trois moteurs, témoin positif d'abord,
+  avec l'aveu qu'elle mesure la non-persistance et non l'effacement d'un tas (ADR 0031).
 
 ## Impacts sur les décisions antérieures
 
@@ -408,7 +413,10 @@ jeton du harnais d'un côté, enveloppe de clé de l'autre — et rien de plus.
   de la PR #171 ;
 - **[ADR 0024](0024-instantane-de-reprise.md)** — la capture au **point de contrôle** est réemployée
   telle quelle par la fermeture propre, dans l'ordre de sa décision 6. La décision 8 (« le
-  verrouillage retire l'instantané ») n'est **pas** rouverte ici : elle appartient à #25 ;
+  verrouillage retire l'instantané ») n'est **pas** rouverte ici : elle appartient à #25. **Note
+  datée du 8 septembre 2026** : #169 l'a rouverte et l'a **révisée** — le verrouillage ne retire PAS
+  l'instantané. Voir l'[ADR 0031](0031-verrouiller-le-worker-meurt-l-instantane-survit.md), décision
+  3, et la note datée posée dans l'ADR 0024 lui-même ;
 - **[ADR 0028](0028-coquille-de-produit-et-frontiere.md)** — la coquille gagne deux gestes
   privilégiés (`demarrer-application`, `fermer-le-coffre`) et quatre codes de refus. Le relevé reste
   **borné** : le compte rendu de boot porte une trentaine de champs, et ce qui repart sur le canal

@@ -18,12 +18,18 @@
 // mesuré ici est l'ORDRE — et l'ordre se prouve par le refus de son inverse, qui ne demande aucun
 // artefact.
 
+import { readFile } from "node:fs/promises";
+
 import { expect, test } from "@playwright/test";
 
 import { SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { ETAPES_DU_CYCLE, ISSUES_DETAPE } from "../../src/coquille/cycle-de-vie.mjs";
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
+import {
+  DELAI_INACTIVITE_MINIMUM_MS,
+  DELAI_INACTIVITE_MS,
+} from "../../src/coquille/verrouillage.mjs";
 
 /** Le délai des gestes de cette suite. La borne de mort du Worker est de trente secondes. */
 const DELAI = 90_000;
@@ -140,6 +146,99 @@ self.addEventListener("message", (event) => {
   port.start();
 });
 `;
+
+/**
+ * La CLÉ sous laquelle l'épreuve range le relevé qu'elle a capturé avant le rechargement. Elle
+ * appartient à l'ÉPREUVE — le produit n'écrit rien dans `sessionStorage`, et la sonde
+ * d'exfiltration de `coquille-deverrouillage.spec.mjs` le mesure.
+ */
+const CLE_DE_CAPTURE = "epreuve-verrouillage-169";
+
+/**
+ * ARME la capture du relevé publié JUSTE AVANT le rechargement (#169, ADR 0031).
+ *
+ * ## Pourquoi une instrumentation, et pourquoi du côté de l'ÉPREUVE
+ *
+ * Un verrouillage se termine par un rechargement de la coquille : le document qui porte le relevé
+ * disparaît une tâche après l'avoir publié, et une lecture par sondage arriverait après la
+ * navigation. Ce qui est mesuré ici — l'état atteint, le déclencheur, la mesure — n'existe que dans
+ * cette fenêtre-là, et elle est réelle : c'est le dernier mot de la session.
+ *
+ * L'instrumentation est celle de la sonde de #162, et pour le même motif : « la sonde est
+ * instrumentée par l'ÉPREUVE, jamais par le produit ». Rendre au produit une poignée de test — un
+ * `globalThis.__dernierVerrouillage` — reviendrait à rouvrir la porte que #162 a fermée pour la
+ * commodité d'une épreuve. Un `MutationObserver` posé par `addInitScript` observe l'attribut que la
+ * coquille écrit ; son rappel est un MICROTÂCHE, donc il s'exécute avant le `setTimeout` qui porte
+ * le rechargement. La capture n'est pas une course : elle est ordonnée par la plate-forme.
+ *
+ * `sessionStorage` est employé parce qu'il est le seul stockage qui SURVIT au rechargement dans le
+ * même onglet et meurt avec lui.
+ */
+async function armerLaCapture(page) {
+  await page.addInitScript((cle) => {
+    // L'observation porte sur `document` avec `subtree`, et non sur `document.documentElement` : un
+    // script d'initialisation s'exécute avant l'analyse du document, où l'élément racine n'existe
+    // pas encore. `document`, lui, existe toujours.
+    const observateur = new MutationObserver(() => {
+      if (document.documentElement?.dataset.coquille !== "verrouille") return;
+      const noeud = document.querySelector("#coquille-rapport");
+      if (noeud !== null) sessionStorage.setItem(cle, noeud.textContent);
+    });
+    observateur.observe(document, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ["data-coquille"],
+    });
+  }, CLE_DE_CAPTURE);
+}
+
+/** Attend, puis rend, le relevé capturé avant le rechargement. */
+async function captureDuVerrouillage(page, budgetMs = DELAI) {
+  await expect
+    .poll(async () => page.evaluate((cle) => sessionStorage.getItem(cle), CLE_DE_CAPTURE), {
+      timeout: budgetMs,
+    })
+    .not.toBeNull();
+  return JSON.parse(await page.evaluate((cle) => sessionStorage.getItem(cle), CLE_DE_CAPTURE));
+}
+
+/** Ce que l'épreuve a capturé, ou `null` si la coquille ne s'est pas encore verrouillée. */
+function riendeCapture(page) {
+  return page.evaluate((cle) => sessionStorage.getItem(cle), CLE_DE_CAPTURE);
+}
+
+/**
+ * SERT le module de verrouillage avec un délai d'inactivité COURT, pris entre les bornes que le
+ * produit tient lui-même.
+ *
+ * Le délai est réglable par SESSION et n'a aucune interface dans cette tranche (YAGNI écrit,
+ * ADR 0031 décision 2) : il n'y a donc pas de bouton par lequel une épreuve pourrait l'abaisser.
+ * L'interception est du côté du RÉSEAU, exactement comme la substitution du Worker de confiance —
+ * là où le produit n'a rien à dire. Ce qui est servi est le fichier RÉEL du dépôt, avec une seule
+ * constante remplacée par une valeur que `delaiDInactivite` accepte : l'épreuve mesure donc le
+ * produit, et non un double.
+ */
+async function servirUnDelaiCourt(page, delaiMs) {
+  const source = await readFile(
+    new URL("../../src/coquille/verrouillage.mjs", import.meta.url),
+    "utf8",
+  );
+  const abaisse = source.replace(
+    "export const DELAI_INACTIVITE_MS = 600_000;",
+    `export const DELAI_INACTIVITE_MS = ${delaiMs};`,
+  );
+  expect(
+    abaisse,
+    "la constante du délai n'a pas été trouvée : l'épreuve mesurerait dix minutes",
+  ).not.toBe(source);
+  await page.context().route("**/src/coquille/verrouillage.mjs", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/javascript; charset=utf-8",
+      body: abaisse,
+    }),
+  );
+}
 
 // --- L'ORDRE des huit étapes, mesuré ---------------------------------------------------------------
 
@@ -346,12 +445,21 @@ test("un Worker MUET est constaté par la borne, et non attendu pour toujours", 
   await exigerLaConduite(page, "silence");
 });
 
-test("la FERMETURE PROPRE est la troisième cause, et la coquille se la donne à elle-même", async ({
+test("le VERROUILLAGE est la troisième cause, et la coquille se la donne à elle-même", async ({
   page,
 }) => {
+  await armerLaCapture(page);
   await ouvrirLaCoquille(page);
-  await page.click("#fermer-le-coffre");
-  const rapport = await exigerLaConduite(page, "terminaison");
+  await page.click("#verrouiller-le-coffre");
+  const rapport = await captureDuVerrouillage(page);
+  expect(rapport.workerMort.cause).toBe("terminaison");
+  expect(rapport.workerMort.code).toBe(CODES_REFUS_COQUILLE.workerMort);
+  expect(rapport.workerMort.derivationPermise).toBe(false);
+  // LA POUSSÉE DE BARRIÈRE A CESSÉ. Il n'y a plus personne pour en acquitter une, et annoncer
+  // celles d'avant ferait dire « enregistré » à une application sur un coffre qui ne l'est plus.
+  expect(rapport.workerMort.pousseeDeBarriere).toBe(false);
+  expect(rapport.workerMort.kekRetenue).toBe(false);
+  expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(rapport.etat);
 
   // La fermeture a bien eu lieu AVANT le `terminate()` : les étapes 5, 6 et 7 sont conclues, et
   // l'étape 6 est inscrite `banc` plutôt que passée sous silence — l'export et la migration vivent
@@ -369,14 +477,77 @@ test("la FERMETURE PROPRE est la troisième cause, et la coquille se la donne à
     parEtape.get("cadreEtPort").instantMs,
   );
 
+  // LA MESURE, publiée SANS SEUIL et dans la seule fenêtre où elle existe.
+  expect(typeof rapport.mesures.verrouillageMs).toBe("number");
+  expect(rapport.verrouillage.declencheur).toBe("geste");
+  expect(rapport.verrouillage.workerTermine).toBe(true);
+  expect(rapport.verrouillage.rechargerLaCoquille).toBe(true);
+  expect(rapport.verrouillage.instantaneRetire).toBe(false);
+  expect(rapport.verrouillage.reouvertureAutomatique).toBe(false);
+});
+
+// --- Le RECHARGEMENT, et ce que le cadre lit ensuite -----------------------------------------------
+
+test("le verrouillage RECHARGE la coquille, qui revient VERROUILLÉE sans que rien ait été dérivé", async ({
+  page,
+}, info) => {
+  await armerLaCapture(page);
+  await ouvrirLaCoquille(page);
+  // « Prête » dit que le cadre est CRÉÉ ; son chargement est une suite d'allers-retours entre deux
+  // origines, et l'attendre est ce qui distingue une mesure d'une course.
+  await expect
+    .poll(async () => (await releve(page)).cadreApplicatif, { timeout: DELAI })
+    .toBe("charge");
+
+  await page.click("#verrouiller-le-coffre");
+  const auVerrouillage = await captureDuVerrouillage(page);
+
+  // LE RECHARGEMENT. Il est le fait de la coquille elle-même, et c'est ce qui retire le cadre : les
+  // pixels du cadre applicatif sont le dernier clair de la session. Aucun bouton n'est cliqué ici —
+  // l'asymétrie avec la mort est exactement là.
+  await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: DELAI });
+  const apres = await releve(page);
+  await info.attach(`verrouillage-${info.project.name}.json`, {
+    body: JSON.stringify(
+      {
+        auVerrouillage: auVerrouillage.verrouillage,
+        mesures: auVerrouillage.mesures,
+        apres: apres.etat,
+      },
+      null,
+      2,
+    ),
+    contentType: "application/json",
+  });
+
+  // Le cycle est REJOUÉ depuis l'étape 1, et la session précédente n'a rien laissé dans le relevé.
+  expect(apres.cycle.map(({ etape }) => etape)).toEqual([
+    "identites",
+    "exclusiviteEtCanal",
+    "backendPuisVm",
+    "cadreEtPort",
+  ]);
+  expect(apres.workerMort, "la coquille rechargée n'est pas une coquille morte").toBeNull();
+  expect(apres.verrouillage, "le relevé de la session verrouillée ne survit pas").toBeNull();
+
+  // CE N'EST PAS UNE RÉOUVERTURE : l'état est `verrouille` (ou `indisponible` sur un moteur qui ne
+  // sait rien ouvrir), l'interface de déverrouillage est là, et AUCUNE dérivation n'a eu lieu — le
+  // relevé de #162 ne porte ni annonce ni déverrouillage mesuré.
+  expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(apres.etat);
+  await expect(page.locator("#deverrouillage")).toBeVisible();
+  expect(apres.mesures.deverrouillageMs).toBeNull();
+  expect(apres.mesures.annonceApresLeGesteMs).toBeNull();
+  // Le bouton « Rouvrir le coffre » reste caché : il appartient à la MORT, pas au verrouillage.
+  await expect(page.locator("#rouvrir-la-coquille")).toBeHidden();
+
   // LE CADRE LIT L'ÉTAT PAR SON GESTE-REQUÊTE. C'est la moitié de la conduite que le document
   // applicatif peut observer : il ne reçoit ni refus nouveau, ni silence — le geste ADMIS reste
   // admis et rend l'état, parce que répondre par un refus là où l'état existe ferait perdre au
   // cadre la seule chose qu'il ait le droit de savoir.
   //
   // Ce qu'il lit est `verrouille` — ou `indisponible` sur un moteur qui n'a jamais rien pu ouvrir.
-  // La mort n'invente pas un verrou sur WebKit, et la suite le DÉCLARE au lieu de passer au vert
-  // par vacuité : `rapport.etat` ci-dessus dit lequel des deux ce moteur a rendu.
+  // Le verrouillage n'invente pas un verrou sur WebKit, et la suite le DÉCLARE au lieu de passer au
+  // vert par vacuité : `apres.etat` ci-dessus dit lequel des deux ce moteur a rendu.
   const cadre = page.frameLocator("#document-applicatif");
   await cadre.locator("#document-applicatif-demander").click();
   await expect
@@ -385,8 +556,7 @@ test("la FERMETURE PROPRE est la troisième cause, et la coquille se la donne à
         JSON.parse(await cadre.locator("#document-applicatif-rapport").textContent()).etat,
       { timeout: DELAI },
     )
-    .toBe(rapport.etat);
-  expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(rapport.etat);
+    .toBe(apres.etat);
 });
 
 // --- Le BATTEMENT : un Worker qui répond n'est jamais déclaré mort ---------------------------------
@@ -423,10 +593,10 @@ test("un Worker VIVANT mais lent n'est jamais déclaré mort, et la fermeture re
   expect(rapport.workerMort, "aucune mort constatée sur un Worker qui bat").toBeNull();
   await expect(page.locator("html")).not.toHaveAttribute("data-coquille", "worker-mort");
 
-  // Et la FERMETURE PROPRE reste atteignable — c'est ce que la mort à tort rendait impossible dans
-  // le cas même pour lequel la fermeture est écrite.
-  await page.click("#fermer-le-coffre");
-  await expect(page.locator("#cycle-etat")).not.toHaveText("cycle:fermeture-en-cours", {
+  // Et le VERROUILLAGE reste atteignable — c'est ce que la mort à tort rendait impossible dans le
+  // cas même pour lequel il est écrit.
+  await page.click("#verrouiller-le-coffre");
+  await expect(page.locator("#cycle-etat")).not.toHaveText("cycle:verrouillage-en-cours", {
     timeout: 120_000,
   });
 });
@@ -436,9 +606,11 @@ test("un Worker VIVANT mais lent n'est jamais déclaré mort, et la fermeture re
 test("un geste explicite ROUVRE la coquille après la mort, et rejoue le cycle", async ({
   page,
 }) => {
-  await ouvrirLaCoquille(page);
-  await page.click("#fermer-le-coffre");
-  await exigerLaConduite(page, "terminaison");
+  // La MORT, et non le verrouillage : le bouton « Rouvrir le coffre » appartient au chemin
+  // ACCIDENTEL. Un verrouillage voulu recharge de lui-même, et c'est l'asymétrie de l'ADR 0031.
+  await substituerLeWorker(page, WORKER_QUI_JETTE);
+  await page.goto(`${SHELL_ORIGIN}/index.html`);
+  await exigerLaConduite(page, "erreur");
 
   // Le bouton n'existe visiblement QU'APRÈS une mort : la coquille ne propose pas de se recharger
   // à qui n'en a pas besoin.
@@ -448,6 +620,9 @@ test("un geste explicite ROUVRE la coquille après la mort, et rejoue le cycle",
 
   // Le cycle est REJOUÉ depuis l'étape 1 : c'est ce que « refuser tout service jusqu'à un geste
   // explicite » promet, et ce qu'aucun geste ne tenait avant (constat 5 de la revue de la PR #171).
+  // La substitution du Worker vit sur le CONTEXTE : la retirer de la page ne la retirerait pas, et
+  // le rechargement reservirait un Worker mort.
+  await page.context().unrouteAll();
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: DELAI });
   const rapport = await releve(page);
   expect(rapport.workerMort).toBeNull();
@@ -572,4 +747,113 @@ test("un descripteur MALFORMÉ est refusé sur sa forme, et le motif nomme le ch
   expect(rapport.application.demarree).toBe(false);
   expect(rapport.application.code).toBe(CODES_REFUS_COQUILLE.applicationAbsente);
   expect(rapport.application.motif).toMatch(/préfixe/);
+});
+
+// --- Le DÉLAI D'INACTIVITÉ, mesuré pour de bon dans un navigateur ---------------------------------
+//
+// Les épreuves unitaires de `tests/unit/coquille-verrouillage.test.mjs` pilotent une horloge feinte,
+// et c'est ce qui rend la règle éprouvable sans attendre dix minutes. Ce qu'elles ne peuvent pas
+// dire est que la règle est BRANCHÉE : que le document de la coquille livre bien les événements
+// nommés, qu'une minuterie du navigateur atteigne son échéance, et qu'un verrouillage déclenché par
+// le temps fasse EXACTEMENT ce que le bouton fait. C'est ce que les deux épreuves suivantes
+// mesurent, et elles paient une minute réelle pour cela.
+
+test("un coffre LAISSÉ se verrouille tout seul, et il le fait comme le bouton", async ({
+  page,
+  browserName,
+}, info) => {
+  // UN moteur, et c'est la décision de coût des deux épreuves de borne au-dessus : ce qui est mesuré
+  // ici est une MINUTERIE et le branchement d'écouteurs, non un comportement de moteur. Ce qui,
+  // lui, dépend du moteur — le verrouillage, son état, son rechargement — est mesuré sur les trois
+  // par le geste explicite, qui est le TÉMOIN POSITIF de ce déclencheur-ci.
+  test.skip(
+    browserName !== "chromium",
+    "borne de temps : un moteur suffit, les trois coûtent trois minutes",
+  );
+  test.setTimeout(300_000);
+  await servirUnDelaiCourt(page, DELAI_INACTIVITE_MINIMUM_MS);
+  await armerLaCapture(page);
+  await ouvrirLaCoquille(page);
+  // LE DÉLAI N'EST ARMÉ QUE SUR UN COFFRE OUVERT : sans ce geste, l'épreuve attendrait une minuterie
+  // qui n'a jamais été posée, et son échec dirait « rien ne s'est verrouillé » là où la règle dit
+  // « il n'y avait rien à verrouiller ».
+  await ouvrirParLaPhrase(page);
+
+  // RIEN n'est fait pendant la minute : ni clic, ni frappe, ni focus. Le seul trafic est celui que
+  // le cadre applicatif produit de lui-même — et il ne compte pas.
+  const debut = Date.now();
+  const rapport = await captureDuVerrouillage(page, 180_000);
+  const ecoule = Date.now() - debut;
+  await info.attach(`inactivite-${info.project.name}.json`, {
+    body: JSON.stringify({ ecouleMs: ecoule, verrouillage: rapport.verrouillage }, null, 2),
+    contentType: "application/json",
+  });
+
+  // LE MÊME RELEVÉ QUE LE GESTE, au déclencheur près. C'est tout ce que cette tranche promet : deux
+  // déclencheurs, un seul chemin.
+  expect(rapport.verrouillage.declencheur).toBe("inactivite");
+  expect(rapport.verrouillage.delaiDInactiviteMs).toBe(DELAI_INACTIVITE_MINIMUM_MS);
+  expect(rapport.verrouillage.workerTermine).toBe(true);
+  expect(rapport.verrouillage.kekRetenue).toBe(false);
+  expect(rapport.verrouillage.instantaneRetire).toBe(false);
+  expect(rapport.workerMort.cause).toBe("terminaison");
+  expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(rapport.etat);
+  expect(ecoule, "le verrouillage est arrivé avant son échéance").toBeGreaterThan(
+    DELAI_INACTIVITE_MINIMUM_MS / 2,
+  );
+
+  // Et le rechargement suit, comme après le geste.
+  await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: DELAI });
+  expect((await releve(page)).verrouillage).toBeNull();
+});
+
+test("un coffre TENU ÉVEILLÉ par des gestes ne se verrouille pas — le témoin négatif du délai", async ({
+  page,
+  browserName,
+}) => {
+  // Sans ce témoin, l'épreuve précédente passerait aussi bien sur une coquille qui se verrouille
+  // quoi qu'il arrive : « il s'est verrouillé après une minute » ne dit rien tant que « il ne s'est
+  // pas verrouillé pendant qu'on travaillait » n'est pas mesuré.
+  test.skip(browserName !== "chromium", "borne de temps : un moteur suffit");
+  test.setTimeout(300_000);
+  await servirUnDelaiCourt(page, DELAI_INACTIVITE_MINIMUM_MS);
+  await armerLaCapture(page);
+  await ouvrirLaCoquille(page);
+  await ouvrirParLaPhrase(page);
+  // Le témoin n'a de valeur que si le délai est ARMÉ : sur un coffre qui n'est pas ouvert, il n'y a
+  // rien à tenir éveillé, et l'épreuve serait verte par vacuité.
+  expect((await releve(page)).etat).toBe(ETATS_DU_VOLUME.ouvert);
+
+  // Une frappe toutes les six secondes pendant une minute et demie — c'est-à-dire une fois et demie
+  // le délai. Un délai qui ne se remettrait pas à zéro aurait verrouillé au milieu.
+  for (let tour = 0; tour < 15; tour += 1) {
+    await page.locator("#saisie-phrase").press("a");
+    await page.waitForTimeout(6_000);
+  }
+  expect(
+    await riendeCapture(page),
+    "la coquille s'est verrouillée pendant qu'on tapait",
+  ).toBeNull();
+  expect((await releve(page)).etat, "le coffre est resté ouvert").toBe(ETATS_DU_VOLUME.ouvert);
+});
+
+test("le délai par défaut est DIX MINUTES, et la coquille ne se verrouille pas avant", async ({
+  page,
+  browserName,
+}) => {
+  // Un témoin de la VALEUR employée par le produit, et non de celle que l'épreuve substitue : sans
+  // lui, `servirUnDelaiCourt` pourrait masquer un défaut par lequel la coquille se verrouillerait
+  // en quelques secondes quelle que soit la constante.
+  test.skip(browserName !== "chromium", "borne de temps : un moteur suffit");
+  test.setTimeout(180_000);
+  expect(DELAI_INACTIVITE_MS).toBe(600_000);
+  await armerLaCapture(page);
+  await ouvrirLaCoquille(page);
+  await ouvrirParLaPhrase(page);
+  await page.waitForTimeout(DELAI_INACTIVITE_MINIMUM_MS + 15_000);
+  expect(
+    await riendeCapture(page),
+    "la coquille s'est verrouillée bien avant les dix minutes annoncées",
+  ).toBeNull();
+  expect((await releve(page)).etat, "le coffre est resté ouvert").toBe(ETATS_DU_VOLUME.ouvert);
 });

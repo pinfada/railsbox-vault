@@ -64,6 +64,11 @@ import { CAUSES_DE_MORT, conduiteApresLaMort } from "/src/coquille/mort-du-worke
 import { monterLInterface } from "/src/coquille/interface-de-deverrouillage.mjs";
 import { DELAI_WORKER_MORT_MS } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { cadreApplicatif } from "/src/coquille/origines-de-la-coquille.mjs";
+import {
+  brancherLesSignauxDActivite,
+  conduiteApresLeVerrouillage,
+  surveillanceDInactivite,
+} from "/src/coquille/verrouillage.mjs";
 import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
 import { derivationsDeLaPage } from "/src/coquille/derivation-dans-la-page.mjs";
 
@@ -100,6 +105,14 @@ const rapport = {
   exclusivite: null,
   /** Ce que la mort du Worker de confiance a fait constater, quand elle a eu lieu. */
   workerMort: null,
+  /**
+   * Ce que le VERROUILLAGE a fait, quand il a eu lieu (#169, ADR 0031).
+   *
+   * Il est publié AVANT le rechargement, et c'est la seule fenêtre où il existe : la coquille se
+   * recharge d'elle-même juste après, et le document qui revient est neuf. Ce qu'il porte est une
+   * CONDUITE — l'état atteint, le déclencheur, ce qui n'est pas gardé —, jamais un octet du volume.
+   */
+  verrouillage: null,
   /** Ce que le démarrage de l'application a rendu. Ni octet du volume, ni clé, ni handle. */
   application: null,
   /** Ce que la fermeture propre a rendu : le compte rendu de capture, et rien de l'instantané. */
@@ -140,6 +153,14 @@ const rapport = {
     annonceApresLeGesteMs: null,
     /** Délai entre le même geste et l'ouverture du coffre. C'est ce que l'annonce prépare. */
     deverrouillageMs: null,
+    /**
+     * Délai entre le GESTE de verrouillage et l'instant où le coffre est `verrouille` : arrêt de la
+     * VM, capture de l'instantané, `close()` des volumes, `terminate()` du Worker.
+     *
+     * Publiée SANS SEUIL, comme les trois autres. Elle est aussi la seule mesure de ce relevé qui
+     * ne survit pas à ce qu'elle mesure : le rechargement la suit immédiatement.
+     */
+    verrouillageMs: null,
     cadreApplicatifMs: null,
   },
 };
@@ -274,6 +295,54 @@ const privilegie = new MessageChannel();
  */
 let mortDuWorker = null;
 
+// --- Le VERROUILLAGE : l'état, la règle, les deux déclencheurs (#169, ADR 0031) -------------------
+
+/**
+ * Le geste de verrouillage, une fois le cycle branché. Les DEUX déclencheurs empruntent exactement
+ * ce chemin — le bouton « Verrouiller » de la coquille et le délai d'inactivité —, et c'est ce qui
+ * fait du geste explicite le TÉMOIN POSITIF du délai : une suite qui verrait le premier verrouiller
+ * et pas le second mesurerait un déclencheur, jamais un verrouillage.
+ */
+let verrouillerLeCoffre = null;
+
+/** Ce qui a déclenché le verrouillage en cours. Il n'y en a que deux, et le relevé le dit. */
+let declencheurDuVerrouillage = null;
+
+/** L'instant du départ du verrouillage, sur l'horloge de la page. Origine de `verrouillageMs`. */
+let departDuVerrouillage = null;
+
+/**
+ * La SURVEILLANCE d'inactivité, sous l'horloge et l'ordonnanceur du navigateur.
+ *
+ * Elle n'est pas armée ici : `refletDeLEtat` l'arme quand — et seulement quand — le coffre passe à
+ * `ouvert`, et la désarme sur tout autre état. Le délai, ses bornes et ce qui compte comme activité
+ * vivent dans `src/coquille/verrouillage.mjs`, où une campagne de mutation peut les atteindre.
+ */
+const surveillance = surveillanceDInactivite({
+  maintenant: () => performance.now(),
+  planifier: (geste, delai) => setTimeout(geste, delai),
+  annuler: (identifiant) => clearTimeout(identifiant),
+  verrouiller: () => {
+    declencheurDuVerrouillage = "inactivite";
+    void verrouillerLeCoffre?.();
+  },
+});
+
+brancherLesSignauxDActivite({ racine: document, surveillance });
+
+/**
+ * REFLÈTE dans la surveillance l'état que le relevé vient de publier.
+ *
+ * Appelée à chaque endroit où `rapport.etat` change, et à aucun autre : la règle « le délai n'est
+ * armé QUE sur un coffre ouvert » ne vaut que si elle est appliquée partout où l'état bouge. Elle
+ * est IDEMPOTENTE par construction (`armer` refuse de ré-armer une surveillance qui court déjà) :
+ * sans cela, chaque question d'état du document applicatif remettrait le délai à zéro, et un guest
+ * qui interroge en boucle rendrait le verrouillage inatteignable.
+ */
+function refletDeLEtat() {
+  surveillance.armer(rapport.etat);
+}
+
 /**
  * CONSTATE la mort, une fois, et tient la conduite : refuser tout service jusqu'à un geste
  * explicite. L'interface de déverrouillage est REMONTÉE — montrée, pas actionnée — et rien n'est
@@ -281,8 +350,12 @@ let mortDuWorker = null;
  *
  * @param {string} cause une valeur de `CAUSES_DE_MORT`
  */
-function constaterLaMort(cause) {
+function constaterLaMort(cause, { offrirLeGesteQuiRouvre = true } = {}) {
   if (mortDuWorker !== null) return mortDuWorker;
+  // La surveillance d'inactivité s'arrête ICI, quelle que soit la cause : un coffre dont le Worker
+  // est mort n'a plus rien à verrouiller, et une minuterie qui survivrait rechargerait la coquille
+  // sous les yeux de qui vient de lire « le Worker ne répond plus ».
+  surveillance.desarmer();
   mortDuWorker = conduiteApresLaMort({
     cause,
     etatConnu: rapport.etat,
@@ -305,7 +378,11 @@ function constaterLaMort(cause) {
     attente.refuser(refusDeMort());
   }
   remonterLInterface();
-  offrirLaReouverture();
+  // L'ASYMÉTRIE, assumée (ADR 0031, décision 1) : après une mort IMPRÉVUE, la coquille reste
+  // affichée avec son relevé et le bouton qui la recharge — l'utilisateur doit voir qu'il s'est
+  // passé quelque chose. Après un VERROUILLAGE voulu, elle recharge d'elle-même, et offrir un
+  // bouton qui disparaît dans la milliseconde ne dirait rien à personne.
+  if (offrirLeGesteQuiRouvre) offrirLaReouverture();
   publier();
   terminer("worker-mort", `coquille:worker-mort:${cause}`);
   return mortDuWorker;
@@ -360,11 +437,13 @@ function surMessagePrivilegie(donnee) {
   if (decode.type === TYPES_PRIVILEGIES.etatReponse) {
     rapport.etat = decode.message.etat;
     rapport.barrieres = decode.message.barrieres;
+    refletDeLEtat();
     publier();
   }
   if (decode.type === TYPES_PRIVILEGIES.deverrouillageReponse) {
     rapport.etat = decode.message.etat;
     rapport.barrieres = decode.message.barrieres;
+    refletDeLEtat();
     publier();
   }
   if (decode.type === TYPES_PRIVILEGIES.battement) {
@@ -376,6 +455,11 @@ function surMessagePrivilegie(donnee) {
   }
   if (decode.type === TYPES_PRIVILEGIES.barriere) {
     rapport.barrieres = decode.message.barrieres;
+    // La barrière est SIGNALÉE à la surveillance, qui la refuse : un guest qui écrit en boucle n'est
+    // pas une personne. Le lui présenter plutôt que de l'ignorer met le refus à l'endroit où il se
+    // mute et s'éprouve — dans `verrouillage.mjs` —, au lieu d'en faire une absence d'appel que rien
+    // ne peut rougir.
+    surveillance.signaler("barriere");
     publier();
     pousserLaBarriere();
     return;
@@ -571,6 +655,10 @@ function surRequeteApplicative(port, event) {
     );
   }
   correlationsEnVol.add(verdict.correlation);
+  // Le message du CADRE est présenté à la surveillance, qui le refuse. Le contrat n'admet aucun
+  // « je suis là », et l'origine applicative est supposée hostile : un signal qu'elle pousserait
+  // remettrait le délai de verrouillage entre les mains de l'adversaire même que la coquille sépare.
+  surveillance.signaler("message-du-cadre");
   demanderLEtat()
     .then((charge) => {
       port.postMessage(
@@ -694,6 +782,9 @@ async function demarrer() {
       rapport.etat = reponse.etat;
       rapport.barrieres = reponse.barrieres;
       rapport.journal.push("volume-ouvert");
+      // C'est ICI que le délai s'arme pour de bon : un coffre vient de s'ouvrir, et la durée que
+      // l'ADR 0029 limite 2 laissait à la KEK commence à être bornée.
+      refletDeLEtat();
       publier();
     },
     surMesure: (instant) => {
@@ -711,20 +802,28 @@ async function demarrer() {
   await interfaceDeDeverrouillage.rafraichirLInventaire();
   await demanderLEtat();
   rapport.journal.push("interface-de-deverrouillage-montee");
-  brancherLesGestesDuCycle({
+  const gestes = brancherLesGestesDuCycle({
     racine: document,
     demander: demanderAuWorker,
     cycle,
     rapport,
     publier,
+    // Le chronomètre part au DÉBUT du geste, quel que soit son déclencheur. Un verrouillage
+    // déclenché par le délai n'a pas de clic à mesurer, et une mesure qui n'existerait que pour le
+    // bouton ne dirait rien du second chemin.
+    avantVerrouillage: () => {
+      departDuVerrouillage = performance.now();
+      declencheurDuVerrouillage ??= "geste";
+    },
     // Le `terminate()` vient APRÈS le `close()` que le Worker vient de faire, et c'est la troisième
     // cause de mort — celle que la coquille se donne à elle-même. La conduite est la même que pour
     // les deux autres : refuser tout service jusqu'à un geste explicite.
-    apresFermeture: () => {
+    apresVerrouillage: () => {
       worker.terminate();
-      constaterLaMort(CAUSES_DE_MORT.terminaison);
+      acheverLeVerrouillage();
     },
   });
+  verrouillerLeCoffre = gestes.verrouillerLeCoffre;
 
   // ÉTAPE 3, conclue AVANT tout cadre. Au démarrage ordinaire le volume est verrouillé : il n'y a
   // ni backend ni VM, et l'étape est conclue `differee` plutôt que sautée. C'est ce qui rend l'ordre
@@ -767,6 +866,72 @@ async function demanderLEtatPrivilegie() {
   } catch {
     return rapportDEtat();
   }
+}
+
+/**
+ * ACHÈVE le verrouillage : constate l'état, publie la mesure, PUIS recharge la coquille.
+ *
+ * L'ordre de ces trois-là est le contrat de cette tranche, autant que celui du Worker :
+ *
+ *  1. **la conduite est posée** — l'état devient `verrouille`, toute demande en vol reçoit son refus
+ *     typé, la poussée de barrière cesse, l'interface de déverrouillage est remontée, et le bouton
+ *     « Rouvrir le coffre » n'est PAS offert (c'est l'asymétrie avec la mort : la coquille recharge
+ *     d'elle-même, et un bouton qui disparaîtrait dans la milliseconde ne dirait rien) ;
+ *  2. **le relevé est publié**, `mesures.verrouillageMs` compris. C'est la seule fenêtre où il
+ *     existe : le document qui revient du rechargement est neuf, et son relevé recommence à zéro ;
+ *  3. **la coquille recharge**, et c'est ce qui retire le cadre applicatif.
+ *
+ * **Pourquoi le rechargement, et non un retrait du cadre.** Les pixels du cadre sont le dernier
+ * clair de la session ; un coffre verrouillé n'a jamais un cadre affiché. Retirer l'élément et le
+ * recréer plus tard demanderait de reformuler l'unicité du port de #161 — `VAULT_COQUILLE_ANNONCE_
+ * UNIQUE` refuse un second octroi — en « un port par cadre », c'est-à-dire d'ajouter un compteur
+ * dans la base de confiance. Le rechargement rejoue le cycle depuis l'étape 1 et emporte le Worker
+ * de toute façon : base de confiance plus petite, et un seul chemin pour deux conduites (#163 le
+ * prend déjà pour son bouton « Rouvrir le coffre »).
+ *
+ * **Ce que le rechargement PERD**, dit plutôt que tu : l'attente annoncée en cours (#162) et le
+ * relevé de mesures de la session — `annonceApresLeGesteMs`, `deverrouillageMs`, et `verrouillageMs`
+ * lui-même. C'est le prix, et il est écrit dans l'ADR 0031.
+ *
+ * **Ce n'est PAS une réouverture** : après le rechargement, la coquille est en `verrouille`,
+ * l'interface de déverrouillage est remontée, aucune dérivation ne part sans geste, et aucune KEK
+ * n'est gardée.
+ */
+function acheverLeVerrouillage() {
+  const conduite = conduiteApresLeVerrouillage({ etatConnu: rapport.etat });
+  constaterLaMort(conduite.cause, { offrirLeGesteQuiRouvre: conduite.gesteQuiRouvreOffert });
+  if (departDuVerrouillage !== null) {
+    rapport.mesures.verrouillageMs =
+      Math.round((performance.now() - departDuVerrouillage) * 10) / 10;
+  }
+  rapport.verrouillage = {
+    declencheur: declencheurDuVerrouillage ?? "geste",
+    delaiDInactiviteMs: surveillance.delaiMs,
+    etat: conduite.etat,
+    // Le vocabulaire est celui de l'ADR 0021 décision 7 : ce qui s'écrit est « le Worker qui
+    // détenait les clés est mort ». « Les clés sont effacées » ne s'écrit pas, et ne s'écrira pas.
+    workerTermine: true,
+    kekRetenue: conduite.kekRetenue,
+    derivationPermise: conduite.derivationPermise,
+    pousseeDeBarriere: conduite.pousseeDeBarriere,
+    reouvertureAutomatique: conduite.reouvertureAutomatique,
+    instantaneRetire: conduite.instantaneRetire,
+    rechargerLaCoquille: conduite.rechargerLaCoquille,
+  };
+  terminer("verrouille", `coquille:verrouille:${rapport.verrouillage.declencheur}`);
+  if (conduite.rechargerLaCoquille) rechargerLaCoquille();
+}
+
+/**
+ * RECHARGE la coquille, au tour de boucle SUIVANT.
+ *
+ * Le report d'un tour n'est pas une temporisation : il laisse le navigateur peindre l'état publié
+ * juste au-dessus, et il laisse les observateurs de mutation du document — ceux du DOM, pas ceux du
+ * produit — voir le relevé qui décrit ce verrouillage. Sans lui, la navigation partirait dans la
+ * même tâche que l'écriture, et la dernière chose que la coquille a à dire serait perdue.
+ */
+function rechargerLaCoquille() {
+  setTimeout(() => location.reload(), 0);
 }
 
 /**

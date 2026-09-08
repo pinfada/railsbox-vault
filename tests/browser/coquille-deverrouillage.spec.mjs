@@ -1095,3 +1095,110 @@ test("un code de récupération ne CRÉE pas un coffre : il en secourt un", asyn
   await page.locator("#ouvrir-par-code").click();
   await expect(page.locator("#deverrouillage-refus")).not.toBeEmpty({ timeout: DELAI });
 });
+
+// --- (e) La SONDE, REJOUÉE APRÈS UN VERROUILLAGE (#169, ADR 0031) ---------------------------------
+//
+// La sonde ci-dessus fouille une coquille OUVERTE. Celle-ci fouille la même origine APRÈS un
+// verrouillage, c'est-à-dire après que le Worker qui détenait la KEK et la DEK a été terminé et que
+// la coquille s'est rechargée. C'est la question que l'ADR 0030 § Limites laissait ouverte : « la
+// sonde d'exfiltration de #162 n'est pas rejouée après la mort du Worker […] ; #25 la rejouera après
+// un verrouillage, où la question se pose pour de bon ».
+//
+// ## L'AVEU, écrit avant les assertions
+//
+// **Cette sonde mesure ce qui n'est pas PERSISTÉ, pas ce qui est EFFACÉ d'un tas.** Elle fouille six
+// stockages, l'OPFS entier en texte et en hexadécimal, le DOM et les deux sens des deux ports ; elle
+// ne peut rien dire de la mémoire d'un processus, d'un fichier d'échange, ni des octets d'une
+// `CryptoKey` — que, par construction, aucun code de cette origine ne peut lire (ADR 0021,
+// décision 7 : GARANTI). Ce que cette tranche affirme est donc exactement ce que l'ADR 0031 écrit :
+// **le Worker qui détenait les clés est mort**, aucun geste ne réussit plus sans une nouvelle
+// dérivation, et rien du secret ne s'est déposé là où un adversaire qui copie le profil le lirait.
+// « Les clés sont effacées » ne s'écrit pas, ici pas plus qu'ailleurs.
+//
+// ## Ce qui reste sur le support, et pourquoi ce n'est pas une fuite
+//
+// Le VOLUME reste, scellé sous sa DEK. L'INSTANTANÉ reste aussi (ADR 0031, décision 3, révision de
+// l'ADR 0024 décision 8), scellé sous la même clé, en un seul AES-256-GCM par capture. Leurs NOMS
+// sont sur le support, et l'en-tête d'un instantané n'est pas confidentiel (ADR 0024, limite 3) : ce
+// que la fouille exige n'est donc pas leur absence, c'est l'absence de ce qui les OUVRE.
+
+test("APRÈS un verrouillage, rien du secret ne s'est déposé — et la sonde dit ce qu'elle mesure", async ({
+  page,
+}, info) => {
+  await ouvrirLaCoquille(page);
+  await ouvrirParLaPhrase(page);
+  if (await exigerLaLimiteDuMoteur(page, info, "sonde-apres-verrouillage")) return;
+
+  // Un CODE de récupération est créé pendant que le coffre est ouvert : c'est le secret dont on
+  // cherchera la trace après. Sans lui, la fouille ne chercherait que la phrase, et une phrase qui
+  // n'a jamais quitté un champ de saisie serait un témoin faible.
+  const feuille = await creerLaFeuille(page);
+  const code = feuille.code;
+  const octets = decoderCode(code);
+  const octetsHex = Buffer.from(octets).toString("hex");
+  const materiauHex = createHash("sha256").update(octets).digest("hex");
+  const sansTirets = code.replaceAll("-", "");
+  const humaine = code.toLowerCase().replaceAll("-", " ").replaceAll("0", "o").replaceAll("1", "l");
+
+  // LE VERROUILLAGE, par le geste explicite — le seul déclencheur dont le produit maîtrise
+  // entièrement le chemin, et le témoin positif de l'autre. La coquille se recharge d'elle-même.
+  await page.locator("#verrouiller-le-coffre").click();
+  await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });
+  const apres = await releve(page);
+  expect(apres.etat, "le coffre n'est pas verrouillé : la sonde mesurerait un coffre ouvert").toBe(
+    ETATS_DU_VOLUME.verrouille,
+  );
+  // Rien n'a été dérivé sans geste : le rechargement n'est pas une réouverture.
+  expect(apres.mesures.deverrouillageMs).toBeNull();
+
+  const morceaux = await sonder(page, APPAT);
+  await attacher(
+    info,
+    "sonde-apres-verrouillage",
+    morceaux.map(({ ou, texte }) => ({
+      ou,
+      caracteres: texte.length,
+      porteLAppat: texte.includes(APPAT),
+      porteLeCode: texte.includes(code),
+      portelaPhrase: texte.includes(PHRASE),
+    })),
+  );
+
+  // TÉMOIN DE FOUILLE, EN PREMIER. Sans lui, « rien trouvé » pourrait vouloir dire « rien capturé » :
+  // la recherche doit d'abord montrer qu'elle sait trouver ce qui EST là — et elle doit le montrer
+  // sur une coquille rechargée, où tout est neuf.
+  const trouves = morceaux.filter(({ texte }) => texte.includes(APPAT)).map(({ ou }) => ou);
+  expect(trouves, "la sonde n'a retrouvé son appât nulle part : elle ne mesure rien").toContain(
+    "localStorage",
+  );
+  expect(trouves).toContain("sessionStorage");
+  expect(trouves).toContain("cookies");
+  expect(trouves).toContain("opfs");
+
+  // SECOND TÉMOIN : l'OPFS n'est pas vide, et la fouille l'a bien lu. Une fouille sur un support
+  // vide serait verte pour la mauvaise raison — et c'est aussi ce qui donne son sens à la ligne
+  // suivante : ce qui reste sur le support est scellé, et le verrouillage ne le retire pas.
+  const opfs = morceaux.find(({ ou }) => ou === "opfs").texte;
+  expect(opfs.length, "l'OPFS lu est vide : la fouille ne porte sur rien").toBeGreaterThan(1_000);
+
+  // ET LE VERDICT : ni la phrase, ni le code sous ses quatre formes, ni son matériau HKDF, nulle
+  // part. Pas même dans les ports — la coquille rechargée n'a rien reçu de tout cela, et c'est le
+  // point : le canal de rendu du code appartenait à la session précédente, et cette session est
+  // morte avec son Worker.
+  for (const { ou, texte } of morceaux) {
+    expect(texte.includes(PHRASE), `la phrase se retrouve dans « ${ou} » après verrouillage`).toBe(
+      false,
+    );
+    expect(texte.includes(code), `le code se retrouve dans « ${ou} » après verrouillage`).toBe(
+      false,
+    );
+    expect(texte.includes(sansTirets), `le code sans tirets est dans « ${ou} »`).toBe(false);
+    expect(texte.includes(humaine), `la forme humaine du code est dans « ${ou} »`).toBe(false);
+    expect(texte.includes(octetsHex), `les seize octets du code sont dans « ${ou} »`).toBe(false);
+    expect(texte.includes(materiauHex), `le matériau HKDF du code est dans « ${ou} »`).toBe(false);
+  }
+
+  // Et le relevé de l'interface, comme avant : il ne porte pas le code, et il n'en porte plus la
+  // trace après un rechargement.
+  expect(JSON.stringify(await releveDeLInterface(page))).not.toContain(code);
+});

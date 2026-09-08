@@ -575,3 +575,92 @@ test("les documents NEUFS de la coquille portent la CSP et le durcissement, sans
     expect(entetes["permissions-policy"], chemin).toBe("camera=(), microphone=(), geolocation=()");
   }
 });
+
+// --- Les DIX REFUS, avant et après un verrouillage (#169, ADR 0031) --------------------------------
+//
+// « Le code ne dépend QUE du type reçu » est écrit au § 10.5 de la spécification et tenu par
+// `evaluerRequete`, qui ne prend aucun état en argument (ADR 0028, décision 2). Cette épreuve le
+// MESURE là où la question se pose vraiment : sur un coffre VERROUILLÉ, sur le même coffre OUVERT, et
+// sur un coffre RE-VERROUILLÉ par le geste de #169. Une différence entre les trois relevés ferait de
+// la liste de refus un ORACLE — un document applicatif apprendrait, sans y avoir droit, si un volume
+// est ouvert.
+
+/** Tente les dix gestes interdits DEPUIS le cadre, et rend le code reçu pour chacun. */
+async function dixRefusDepuisLeCadre(page, types) {
+  const cadre = page.frames().find((frame) => frame.url().includes("hostile.html"));
+  expect(cadre, "le cadre hostile n'est pas là : rien à mesurer").toBeDefined();
+  return cadre.evaluate(async (listeDeTypes) => {
+    const port = globalThis.__portHostile;
+    if (!port) return { sansPort: true };
+    const codes = {};
+    for (const type of listeDeTypes) {
+      codes[type] = await new Promise((rendre) => {
+        const ecouteur = (evenement) => {
+          if (evenement.data?.type !== "vault.coquille.refus") return;
+          port.removeEventListener("message", ecouteur);
+          rendre(evenement.data.code);
+        };
+        port.addEventListener("message", ecouteur);
+        port.postMessage({ contrat: "railsbox-vault-coquille", version: 1, type });
+        setTimeout(() => {
+          port.removeEventListener("message", ecouteur);
+          rendre("silence");
+        }, 5_000);
+      });
+    }
+    return { codes };
+  }, types);
+}
+
+test("les DIX refus sont identiques sur un coffre verrouillé, ouvert, puis verrouillé par le geste", async ({
+  page,
+}, info) => {
+  const types = GESTES_REFUSES.map(({ type }) => type);
+  const attendus = Object.fromEntries(GESTES_REFUSES.map(({ type, code }) => [type, code]));
+
+  // (1) Coffre VERROUILLÉ : rien n'a jamais été ouvert dans cette session.
+  await ouvrirLaCoquille(page, { documentApplicatif: FIXTURE, deverrouiller: false });
+  expect((await relevéDeLaCoquille(page)).etat).toBe(ETATS_DU_VOLUME.verrouille);
+  const surVerrouille = await dixRefusDepuisLeCadre(page, types);
+  expect(surVerrouille.sansPort, "le cadre n'a pas obtenu son port").toBeUndefined();
+
+  // (2) Le MÊME coffre, OUVERT. Sur un moteur sans OPFS synchrone dans un Worker, l'état devient
+  // `indisponible` et non `ouvert` : la mesure garde tout son sens — deux états différents doivent
+  // rendre les mêmes dix codes —, et la suite le DÉCLARE plutôt que de passer au vert par vacuité.
+  await deverrouillerParLaPhrase(page);
+  const etatOuvert = (await relevéDeLaCoquille(page)).etat;
+  const surOuvert = await dixRefusDepuisLeCadre(page, types);
+
+  // (3) VERROUILLÉ par le geste de #169. La coquille se recharge, un cadre neuf reçoit un port neuf.
+  await page.locator("#verrouiller-le-coffre").click();
+  await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: 60000 });
+  await expect
+    .poll(async () => (await relevéDeLaCoquille(page)).cadreApplicatif, { timeout: 60000 })
+    .toBe("charge");
+  const etatApres = (await relevéDeLaCoquille(page)).etat;
+  const surReVerrouille = await dixRefusDepuisLeCadre(page, types);
+
+  await info.attach(`dix-refus-verrouillage-${info.project.name}.json`, {
+    body: JSON.stringify(
+      {
+        etats: { avant: ETATS_DU_VOLUME.verrouille, ouvert: etatOuvert, apres: etatApres },
+        surVerrouille: surVerrouille.codes,
+        surOuvert: surOuvert.codes,
+        surReVerrouille: surReVerrouille.codes,
+      },
+      null,
+      2,
+    ),
+    contentType: "application/json",
+  });
+
+  // Chacun des dix rend SON code, et le même dans les trois états. Le témoin de la mesure est
+  // l'égalité avec la table de `GESTES_REFUSES` : sans elle, trois relevés de silences seraient
+  // « identiques » eux aussi.
+  expect(surVerrouille.codes).toEqual(attendus);
+  expect(surOuvert.codes).toEqual(attendus);
+  expect(surReVerrouille.codes).toEqual(attendus);
+  expect(etatApres, "le coffre n'est pas revenu verrouillé après le geste").toBe(
+    ETATS_DU_VOLUME.verrouille,
+  );
+});

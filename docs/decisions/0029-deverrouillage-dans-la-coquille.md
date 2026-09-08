@@ -433,7 +433,12 @@ l'exécutent, et n'annonce rien : c'est la condition de la décision 1 de l'ADR 
    coquille devrait redemander la phrase — donc la faire vivre une seconde fois, et payer une
    seconde dérivation de deux secondes — pour un geste que l'utilisateur vient de rendre possible.
    Elle vit du même côté de la frontière que la DEK et ne franchit aucun port, mais c'est un endroit
-   de plus où un secret existe, et il dure aussi longtemps que l'onglet ;
+   de plus où un secret existe, et il dure aussi longtemps que l'onglet. **Note datée du 8 septembre
+   2026 : cette durée est désormais BORNÉE.** #169 (tranche 1 de #25) la borne par deux déclencheurs
+   — un geste « Verrouiller » et un délai d'inactivité de dix minutes — qui tuent le Worker de
+   confiance après la fermeture propre des volumes. « Aussi longtemps que l'onglet » se lit donc «
+   jusqu'au geste ou au délai, et au plus jusqu'à l'onglet ». Voir
+   l'[ADR 0031](0031-verrouiller-le-worker-meurt-l-instantane-survit.md), décisions 1 et 2 ;
 3. **l'IMPRESSION n'est pas maîtrisée.** Le bouton d'impression d'un navigateur écrit vers un
    pilote, une file d'attente, parfois un PDF déposé sur le disque. La coquille n'en offre pas et ne
    promet rien à ce sujet ;
@@ -453,7 +458,10 @@ l'exécutent, et n'annonce rien : c'est la condition de la décision 1 de l'ADR 
 8. **aucun authentificateur RÉEL n'est mesuré**, et la limite 2 de l'ADR 0021 reste entière : un
    authentificateur virtuel répond instantanément et accepte tout ;
 9. **rien du cycle de vie n'est assemblé.** Pas d'export, pas de restauration, pas de révocation,
-   pas de verrouillage, pas de COOP. Ce sont #163, #25 et la suite de #24 ;
+   pas de verrouillage, pas de COOP. Ce sont #163, #25 et la suite de #24. **Note datée du 8
+   septembre 2026** : le cycle est assemblé depuis #163 (ADR 0030), COOP est servi et attesté, et le
+   VERROUILLAGE est livré par #169 (ADR 0031). Restent hors de cette limite l'export, la
+   restauration et la révocation depuis la coquille ;
 10. **une dérivation occupe le Worker de confiance pendant deux secondes.** La question d'état en
     sort (décision 5), mais tout ce qui MUTE reste derrière : un second geste posé pendant une
     dérivation attend qu'elle finisse. C'est voulu — deux ouvertures concurrentes sur la même

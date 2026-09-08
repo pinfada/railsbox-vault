@@ -108,14 +108,16 @@
       </section>
 
       <!--
-        Le CYCLE DE VIE assemblé (#163, ADR 0030). Deux gestes, et ils sont des boutons pour la
-        raison qui a fait des quatre autres des boutons : ce que la coquille fait du volume
-        appartient à qui l'ouvre. Démarrer coûte un boot — deux minutes sur une machine ordinaire —
-        et personne d'autre que l'utilisateur n'a à décider de le payer.
+        Le CYCLE DE VIE assemblé (#163, ADR 0030 ; #169, ADR 0031). Deux gestes, et ils sont des
+        boutons pour la raison qui a fait des quatre autres des boutons : ce que la coquille fait du
+        volume appartient à qui l'ouvre. Démarrer coûte un boot — deux minutes sur une machine
+        ordinaire — et personne d'autre que l'utilisateur n'a à décider de le payer.
 
-        Le second geste, « fermer le coffre », est le chemin de fermeture propre : arrêter la VM,
-        capturer l'instantané, fermer les volumes, puis terminer le Worker. #25 le réemploiera pour
-        verrouiller ; c'est elle qui dira sous quel délai et sur quel déclencheur.
+        Le second geste est « VERROUILLER », et c'est le seul mot : un coffre fermé et un coffre
+        verrouillé sont la même chose, et deux mots pour une chose sont un mensonge en attente. Il
+        arrête la VM, capture l'instantané, ferme les volumes, termine le Worker de confiance, puis
+        RECHARGE cette coquille — les pixels du cadre applicatif sont le dernier clair de la session.
+        Le délai d'inactivité de `src/coquille/verrouillage.mjs` emprunte exactement ce chemin.
       -->
       <section id="cycle" aria-labelledby="cycle-titre">
         <h2 id="cycle-titre">Application</h2>
@@ -123,7 +125,7 @@
         <p>
           <button id="demarrer-application" type="button">Démarrer l'application</button>
         </p>
-        <p><button id="fermer-le-coffre" type="button">Fermer le coffre</button></p>
+        <p><button id="verrouiller-le-coffre" type="button">Verrouiller</button></p>
       </section>
 
       <!--

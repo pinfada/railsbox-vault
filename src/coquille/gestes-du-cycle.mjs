@@ -1,9 +1,24 @@
-// Les deux GESTES de l'utilisateur qui font avancer le cycle assemblé (#163, ADR 0030).
+// Les deux GESTES de l'utilisateur qui font avancer le cycle assemblé (#163, ADR 0030 ; #169,
+// ADR 0031).
 //
-// Démarrer l'application (étape 3) et fermer le coffre (étape 7). Ce sont des BOUTONS, comme les
-// quatre de #162, et c'est une décision : ce que la coquille fait du volume appartient à qui
-// l'ouvre. Un démarrage automatique déciderait à sa place de payer deux minutes de boot, et une
-// fermeture automatique déciderait d'un délai — or le délai et le déclencheur sont à #25.
+// Démarrer l'application (étape 3) et VERROUILLER le coffre (étape 7). Ce sont des BOUTONS, comme
+// les quatre de #162, et c'est une décision : ce que la coquille fait du volume appartient à qui
+// l'ouvre. Un démarrage automatique déciderait à sa place de payer deux minutes de boot.
+//
+// ## « Verrouiller », et un seul mot pour une seule chose (#169, ADR 0031, décision 1)
+//
+// Le second geste s'appelait « fermer le coffre » tant que le délai et le déclencheur appartenaient
+// à #25. Ils lui appartiennent désormais, et le geste porte leur nom : **un coffre fermé et un
+// coffre verrouillé sont la même chose**, et deux mots pour une chose sont un mensonge en attente.
+// Ce que le geste FAIT n'a pas changé d'un appel — c'est le chemin de #163, arrêt de la VM,
+// capture, `close()`, puis `terminate()` par la page ; ce qui a changé est qu'il est désormais
+// NOMMÉ, et qu'un second déclencheur — le délai d'inactivité de `verrouillage.mjs` — emprunte
+// exactement le même.
+//
+// Le TYPE de message ne bouge pas, lui : le canal privilégié porte toujours
+// `vault.coquille.fermer-le-coffre`. Renommer un type ajoute et retire une entrée d'une liste tenue
+// par un cliquet (ADR 0028, contrat strict) pour un nom qu'aucun utilisateur ne lit ; ce qui doit
+// être unique est le mot que la coquille MONTRE, et il l'est.
 //
 // Ce module ne contient AUCUNE garde d'ordre. Le refus d'un boot demandé avant l'ouverture du
 // backend vient du Worker de confiance (`VAULT_COQUILLE_ETAPE_HORS_ORDRE`) : la garde vit du côté
@@ -33,19 +48,19 @@ import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
  *           cycle: { issueDe: (etape: string) => string | null, releve: () => object[],
  *                    conclure: (etape: string, issue: string, motif?: string | null) => void },
  *           rapport: Record<string, unknown>, publier: () => void,
- *           apresFermeture: () => void }} liaison
+ *           avantVerrouillage?: () => void, apresVerrouillage: () => void }} liaison
  */
 export function brancherLesGestesDuCycle(liaison) {
   const contexte = { ...liaison, dire: ecrivainDEtat(liaison.racine) };
   const demarrerLApplication = () => demarrer(contexte);
-  const fermerLeCoffre = () => fermer(contexte);
+  const verrouillerLeCoffre = () => verrouiller(contexte);
   liaison.racine.querySelector("#demarrer-application")?.addEventListener("click", () => {
     void demarrerLApplication();
   });
-  liaison.racine.querySelector("#fermer-le-coffre")?.addEventListener("click", () => {
-    void fermerLeCoffre();
+  liaison.racine.querySelector("#verrouiller-le-coffre")?.addEventListener("click", () => {
+    void verrouillerLeCoffre();
   });
-  return Object.freeze({ demarrerLApplication, fermerLeCoffre });
+  return Object.freeze({ demarrerLApplication, verrouillerLeCoffre });
 }
 
 /** Écrit la ligne d'état du cycle. La seule façon dont ces deux gestes touchent le document. */
@@ -148,14 +163,28 @@ async function demarrer(contexte) {
 }
 
 /**
- * ÉTAPE 7 — la fermeture propre. Le Worker arrête la VM, capture, ferme les volumes ; PUIS la page
- * termine le Worker (`apresFermeture`). L'ordre est le contrat : terminer avant `close()` laisserait
- * le handle exclusif tenu par un objet que plus personne ne référence, et l'ouverture suivante
- * rendrait `VAULT_STORAGE_BUSY`.
+ * ÉTAPE 7 — le VERROUILLAGE, c'est-à-dire la fermeture propre nommée par ce qu'elle obtient.
+ *
+ * Le Worker arrête la VM, capture l'instantané dans l'ordre des six gestes de l'ADR 0024 décision 6,
+ * ferme les volumes ; PUIS la page termine le Worker et recharge la coquille (`apresVerrouillage`).
+ *
+ * **L'ordre est le contrat, et l'`await` est ce qui le tient.** `close()` attend les E/S déjà
+ * ACCEPTÉES (#132) et libère le nom du volume ; terminer avant elle laisserait le handle exclusif
+ * tenu par un objet que plus personne ne référence, et l'ouverture suivante rendrait
+ * `VAULT_STORAGE_BUSY` — sur le volume que l'utilisateur vient de rouvrir lui-même. Ce que l'inverse
+ * coûte est mesuré par `tests/unit/vm-reouverture-handles.test.mjs`.
+ *
+ * Un verrouillage REFUSÉ ne termine rien : le Worker vit encore, il tient encore ses handles, et le
+ * tuer là laisserait exactement l'état que l'ordre existe pour éviter.
  */
-async function fermer(contexte) {
-  const { demander, rapport, publier, dire, apresFermeture } = contexte;
-  dire("cycle:fermeture-en-cours");
+async function verrouiller(contexte) {
+  const { demander, rapport, publier, dire, avantVerrouillage, apresVerrouillage } = contexte;
+  // Le CHRONOMÈTRE part ici, et pas au clic : les DEUX déclencheurs — le bouton et le délai
+  // d'inactivité — passent par cette porte, et une mesure prise sur le seul clic ne dirait rien du
+  // second. C'est aussi la raison pour laquelle ce module ne connaît pas les déclencheurs : il en
+  // sert un de plus sans changer d'une ligne.
+  avantVerrouillage?.();
+  dire("cycle:verrouillage-en-cours");
   try {
     const rendu = await demander("fermeture", {});
     rapport.etat = rendu.etat;
@@ -170,12 +199,12 @@ async function fermer(contexte) {
     conclureSiPossible(contexte, "reprise", ISSUES_DETAPE.differee, "à la prochaine ouverture");
     publier();
   } catch (erreur) {
-    dire(`cycle:fermeture-refusee:${erreur?.code ?? "inconnu"}`);
-    return { fermee: false, code: erreur?.code ?? null };
+    dire(`cycle:verrouillage-refuse:${erreur?.code ?? "inconnu"}`);
+    return { verrouille: false, code: erreur?.code ?? null };
   }
-  apresFermeture();
-  dire("cycle:coffre-ferme");
-  return { fermee: true };
+  apresVerrouillage();
+  dire("cycle:coffre-verrouille");
+  return { verrouille: true };
 }
 
 /** Les codes que ce module cite dans ses lignes d'état. Exporté pour que les épreuves les nomment. */
