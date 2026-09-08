@@ -99,6 +99,35 @@ Verdicts Vault correspondants :
 | Firefox  | mesuré  | aucune                                                        |
 | WebKit   | refusé  | `opfsGetDirectory`, `storageEstimate`, `opfsSyncAccessHandle` |
 
+### Ce que le moteur fait du HANDLE EXCLUSIF à la mort du Worker (#169, ADR 0031)
+
+Ce n'est pas une capacité — c'est un **comportement**, et il a fallu le mesurer parce que le dossier
+affirmait le contraire de ce que les moteurs font. De #163 à la première rédaction de #169, quatre
+endroits écrivaient que terminer un Worker sans avoir appelé `close()` laisserait le handle exclusif
+« tenu par un objet que plus personne ne référence », si bien que l'ouverture suivante rendrait
+`VAULT_STORAGE_BUSY`. La revue de sécurité de la PR #174 a mesuré l'inverse, et
+`tests/browser/opfs-block-backend.spec.mjs` › « le moteur rend l'exclusivité du handle à la MORT du
+Worker qui le tenait » en fait un fait du dépôt, avec son **témoin positif d'abord** : tant que le
+détenteur vit, un second demandeur est refusé.
+
+Mesure du **2026-09-08**, un Worker détenteur tué par `terminate()` sans aucun `close()`, l'autre
+Worker retentant l'ouverture par tours de 100 ms :
+
+| Moteur   | Refus pendant que le détenteur VIT | Ouverture après `terminate()` sans `close()` | Tours attendus |
+| -------- | ---------------------------------- | -------------------------------------------- | -------------- |
+| Chromium | `VAULT_STORAGE_BUSY`               | **réussie**                                  | 0 — immédiate  |
+| Firefox  | `VAULT_STORAGE_BUSY`               | **réussie**                                  | 0 — immédiate  |
+| WebKit   | non mesurable                      | non mesurable                                | —              |
+
+WebKit n'offre pas `FileSystemSyncAccessHandle` au Worker (ligne de la matrice ci-dessus) : il n'y a
+aucune exclusivité à rendre, et l'épreuve le DÉCLARE au lieu de s'ignorer.
+
+**Ce que ce fait ne change pas** : l'ordre `close()` puis `terminate()` reste le contrat de
+l'étape 7. Son motif n'a simplement jamais été celui-là — `close()` attend les E/S déjà ACCEPTÉES
+(#132) et laisse le volume dans l'état que la capture vient de décrire ; terminer avant lui perd les
+écritures en vol et rend l'instantané incohérent avec le volume, donc écarté à la réouverture, donc
+un boot à froid. C'est une propriété de durabilité et de reprise, pas d'exclusivité.
+
 ### Ce que la COQUILLE fait de cette matrice (#163, ADR 0030)
 
 La sonde publie une matrice ; la coquille, elle, décide d'un démarrage. Depuis #163 elle mesure ses

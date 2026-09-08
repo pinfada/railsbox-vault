@@ -16,17 +16,19 @@ jobs:
   check:
     name: Qualité et tests
     runs-on: ubuntu-latest
-    # Portée de 20 à 30 minutes le 8 septembre 2026 (#169), et le motif est une DURÉE D'ATTENTE, pas
-    # une lenteur : ce gate porte désormais des épreuves qui mesurent des bornes de TEMPS, et une
-    # borne ne se raccourcit pas sans mesurer autre chose que ce qu'elle mesure. Le compte, sur
-    # l'exécutant GitHub, se lit ainsi : trente secondes pour le Worker MUET et quarante pour le
-    # Worker LENT (#163), puis une minute pour le verrouillage par inactivité et une minute et demie
-    # pour son témoin négatif (#169) — quatre minutes pendant lesquelles rien ne calcule.
+    # Portée de 20 à 25 minutes le 8 septembre 2026 (#169). Le motif est une DURÉE D'ATTENTE : ce
+    # gate porte des épreuves qui mesurent des bornes de TEMPS — trente secondes pour le Worker MUET
+    # et quarante pour le Worker LENT (#163), une minute pour le verrouillage par inactivité et une
+    # minute et demie pour son témoin négatif (#169) —, et une borne ne se raccourcit pas sans
+    # mesurer autre chose que ce qu'elle mesure.
     #
-    # La dernière recette verte de `main` tenait en 15 min 08 s ; celle de #163 en 8 min 59 s avant
-    # elle. Vingt minutes ne laissaient plus de marge à un exécutant partagé, et une recette annulée
-    # sur son plafond ne dit rien de ce qu'elle mesurait.
-    timeout-minutes: 30
+    # Ce que la MESURE dit, et elle vaut mieux qu'une estimation : `main` (run 34167283465) tenait en
+    # 15 min 06 s, #174 en 16 min 21 s. **L'écart réel est de +1 min 15 s pour +2 min 30 s d'attente
+    # annoncée** — la parallélisation en absorbe la moitié, les projets d'un autre moteur tournant
+    # pendant qu'un projet attend. Vingt-cinq minutes sont donc une MARGE, pas une nécessité : 16 min
+    # 21 s tenaient déjà sous l'ancien plafond de vingt. La marge est prise pour un exécutant partagé
+    # plus lent, et elle reste assez basse pour que le plafond morde encore.
+    timeout-minutes: 25
     steps:
       - name: Récupération du dépôt
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -23,15 +23,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DECLENCHEURS,
   DELAI_INACTIVITE_MAXIMUM_MS,
   DELAI_INACTIVITE_MINIMUM_MS,
   DELAI_INACTIVITE_MS,
   EVENEMENTS_DACTIVITE,
   SIGNAUX_DACTIVITE,
   SIGNAUX_SANS_EFFET,
+  brancherLesSignauxDActivite,
   conduiteApresLeVerrouillage,
+  conduiteApresUnRefusDeVerrouillage,
   delaiDInactivite,
   estUnSignalDActivite,
+  exigerUnDeclencheur,
   surveillanceDInactivite,
 } from "../../src/coquille/verrouillage.mjs";
 import { CAUSES_DE_MORT } from "../../src/coquille/mort-du-worker.mjs";
@@ -403,25 +407,27 @@ function documentFeint() {
 }
 
 /** Le journal des gestes, et la liaison minimale que le branchement exige. */
-function liaisonFeinte(journal, { rendu = {} } = {}) {
+function liaisonFeinte(journal, { rendu = {}, demander = null } = {}) {
   const racine = documentFeint();
   return {
     racine,
     liaison: {
       racine,
-      demander: async (type) => {
-        journal.push(`demande:${type}`);
-        // Le tour de boucle est ce qui rend l'ordre OBSERVABLE : sans lui, une implémentation qui
-        // terminerait le Worker avant d'attendre la réponse passerait pour correcte.
-        await Promise.resolve();
-        journal.push(`rendu:${type}`);
-        return {
-          etat: ETATS_DU_VOLUME.verrouille,
-          barrieres: 0,
-          capture: { retenue: true },
-          ...rendu,
-        };
-      },
+      demander:
+        demander ??
+        (async (type) => {
+          journal.push(`demande:${type}`);
+          // Le tour de boucle est ce qui rend l'ordre OBSERVABLE : sans lui, une implémentation qui
+          // terminerait le Worker avant d'attendre la réponse passerait pour correcte.
+          await Promise.resolve();
+          journal.push(`rendu:${type}`);
+          return {
+            etat: ETATS_DU_VOLUME.verrouille,
+            barrieres: 0,
+            capture: { retenue: true },
+            ...rendu,
+          };
+        }),
       cycle: {
         issueDe: () => null,
         conclure: (etape) => journal.push(`conclue:${etape}`),
@@ -429,7 +435,11 @@ function liaisonFeinte(journal, { rendu = {} } = {}) {
       },
       rapport: {},
       publier: () => {},
-      apresVerrouillage: () => journal.push("apres-verrouillage"),
+      avantVerrouillage: (declencheur) => journal.push(`avant:${declencheur}`),
+      apresRefusDOrdre: (code) => journal.push(`refus-d-ordre:${code}`),
+      apresRefusDeVerrouillage: (code, declencheur) => journal.push(`refus:${code}:${declencheur}`),
+      apresVerrouillage: (declencheur) => journal.push(`apres-verrouillage:${declencheur}`),
+      apresDemarrage: () => journal.push("apres-demarrage"),
     },
   };
 }
@@ -445,28 +455,87 @@ test("le geste de VERROUILLAGE attend la fermeture du Worker avant de le termine
   const journal = [];
   const { liaison } = liaisonFeinte(journal);
   const gestes = brancherLesGestesDuCycle(liaison);
-  await gestes.verrouillerLeCoffre();
+  await gestes.verrouillerLeCoffre(DECLENCHEURS.geste);
   const rangDuRendu = journal.indexOf("rendu:fermeture");
-  const rangDeLaMort = journal.indexOf("apres-verrouillage");
+  const rangDeLaMort = journal.indexOf(`apres-verrouillage:${DECLENCHEURS.geste}`);
   assert.ok(rangDuRendu >= 0, "la fermeture n'a jamais été demandée");
   assert.ok(rangDeLaMort > rangDuRendu, "le Worker a été terminé avant la fermeture du volume");
 });
 
-test("un verrouillage REFUSÉ ne termine pas le Worker : il n'y a rien à fermer derrière", async () => {
+test("un verrouillage REFUSÉ ne suit pas le chemin du succès, et RAPPELLE l'appelant", async () => {
+  // Le Worker a été sollicité et n'a pas pu servir : la conduite n'est pas celle d'un verrouillage
+  // réussi, mais elle n'est pas le SILENCE non plus. C'est le constat 3 de la revue de sécurité de
+  // la PR #174 : rendre la main sans rien dire laissait un coffre ouvert que plus rien ne refermait.
   const journal = [];
-  const racine = documentFeint();
-  const gestes = brancherLesGestesDuCycle({
-    racine,
+  const { liaison, racine } = liaisonFeinte(journal, {
     demander: () => Promise.reject(Object.assign(new Error("refusé"), { code: "VAULT_X" })),
-    cycle: { issueDe: () => null, conclure: () => {}, releve: () => [] },
-    rapport: {},
-    publier: () => {},
-    apresVerrouillage: () => journal.push("apres-verrouillage"),
   });
-  const rendu = await gestes.verrouillerLeCoffre();
+  const gestes = brancherLesGestesDuCycle(liaison);
+  const rendu = await gestes.verrouillerLeCoffre(DECLENCHEURS.inactivite);
   assert.equal(rendu.verrouille, false);
-  assert.deepEqual(journal, [], "le Worker a été terminé sur une fermeture refusée");
+  assert.equal(rendu.code, "VAULT_X");
+  assert.ok(
+    journal.includes(`refus:VAULT_X:${DECLENCHEURS.inactivite}`),
+    "l'appelant n'a pas été rappelé : le coffre resterait ouvert sans délai",
+  );
+  assert.ok(
+    !journal.some((ligne) => ligne.startsWith("apres-verrouillage")),
+    "le chemin du succès a été suivi sur un refus",
+  );
   assert.match(racine.texte("cycle-etat"), /refus/);
+});
+
+test("un verrouillage demandé PENDANT un boot est refusé sous le code de l'ORDRE", async () => {
+  // Le geste arriverait au Worker derrière un boot de deux minutes : la coquille attendrait sans
+  // rien dire, puis capturerait l'instantané d'une machine qui vient de démarrer. Le refus porte
+  // `VAULT_COQUILLE_ETAPE_HORS_ORDRE` — le code de l'ordre, existant depuis #163 — et NE TUE RIEN :
+  // le geste n'a jamais atteint le Worker.
+  const journal = [];
+  let libererLeBoot = null;
+  const { liaison } = liaisonFeinte(journal, {
+    demander: (type) => {
+      if (type !== "application") return Promise.resolve({ etat: ETATS_DU_VOLUME.verrouille });
+      return new Promise((rendre) => {
+        libererLeBoot = () => rendre({ demarree: true, counts: {}, installation: {} });
+      });
+    },
+  });
+  const gestes = brancherLesGestesDuCycle(liaison);
+  const boot = gestes.demarrerLApplication();
+  await Promise.resolve();
+
+  const rendu = await gestes.verrouillerLeCoffre(DECLENCHEURS.geste);
+  assert.equal(rendu.verrouille, false);
+  assert.equal(rendu.horsOrdre, true);
+  assert.equal(rendu.code, CODES_REFUS_COQUILLE.etapeHorsOrdre);
+  assert.ok(journal.includes(`refus-d-ordre:${CODES_REFUS_COQUILLE.etapeHorsOrdre}`));
+  assert.ok(
+    !journal.some((ligne) => ligne.startsWith("refus:")),
+    "le refus d'ORDRE a été confondu avec un refus du Worker : il tuerait le Worker pour rien",
+  );
+
+  // Le drapeau retombe à la conclusion du boot, et le délai reprend sa course.
+  libererLeBoot();
+  await boot;
+  assert.ok(journal.includes("apres-demarrage"), "le délai n'est pas ré-armé après le boot");
+  const apres = await gestes.verrouillerLeCoffre(DECLENCHEURS.geste);
+  assert.equal(apres.verrouille, true, "le verrouillage reste refusé après la fin du boot");
+});
+
+test("un boot qui ÉCHOUE ne verrouille pas le verrouillage pour toujours", async () => {
+  // Le drapeau du vol retombe dans un `finally`. Levé pour toujours par un boot qui jette, il
+  // refuserait tout verrouillage jusqu'au rechargement : un coffre qu'on ne peut plus fermer.
+  const journal = [];
+  const { liaison } = liaisonFeinte(journal, {
+    demander: (type) =>
+      type === "application"
+        ? Promise.reject(Object.assign(new Error("boot refusé"), { code: "VAULT_Y" }))
+        : Promise.resolve({ etat: ETATS_DU_VOLUME.verrouille, capture: null }),
+  });
+  const gestes = brancherLesGestesDuCycle(liaison);
+  await gestes.demarrerLApplication();
+  const rendu = await gestes.verrouillerLeCoffre(DECLENCHEURS.geste);
+  assert.equal(rendu.verrouille, true);
 });
 
 test("le BOUTON de la coquille est unique, et il s'appelle « verrouiller »", async () => {
@@ -479,4 +548,153 @@ test("le BOUTON de la coquille est unique, et il s'appelle « verrouiller »", a
   await new Promise((rendre) => setTimeout(rendre, 0));
   assert.ok(journal.includes("demande:fermeture"), "le bouton « Verrouiller » ne verrouille pas");
   assert.equal(racine.texte("cycle-etat"), "cycle:coffre-verrouille");
+  // Le BOUTON dit « geste », et il le dit en ARGUMENT. Aucune variable ne garde la réponse entre
+  // deux gestes, et aucun relevé ne peut donc décrire le mauvais déclencheur.
+  assert.ok(journal.includes(`avant:${DECLENCHEURS.geste}`));
+  assert.ok(journal.includes(`apres-verrouillage:${DECLENCHEURS.geste}`));
+});
+
+test("le déclencheur d'un geste ne PORTE PAS celui du verrouillage précédent", async () => {
+  // Le défaut que cette épreuve ferme : une variable de module retenait « inactivite » après un
+  // verrouillage par délai RATÉ, et le `??=` empêchait précisément le geste suivant de la corriger
+  // (constat 8 de la revue de sécurité de la PR #174). Le relevé décrivait alors un déclencheur que
+  // l'utilisateur n'avait pas employé.
+  const journal = [];
+  let refuser = true;
+  const { liaison } = liaisonFeinte(journal, {
+    demander: async (type) => {
+      if (refuser) throw Object.assign(new Error("refusé"), { code: "VAULT_X" });
+      journal.push(`rendu:${type}`);
+      return { etat: ETATS_DU_VOLUME.verrouille, barrieres: 0, capture: null };
+    },
+  });
+  const gestes = brancherLesGestesDuCycle(liaison);
+  await gestes.verrouillerLeCoffre(DECLENCHEURS.inactivite);
+  refuser = false;
+  await gestes.verrouillerLeCoffre(DECLENCHEURS.geste);
+  assert.ok(journal.includes(`apres-verrouillage:${DECLENCHEURS.geste}`));
+  assert.ok(!journal.includes(`apres-verrouillage:${DECLENCHEURS.inactivite}`));
+});
+
+test("un déclencheur hors table est REFUSÉ : le relevé ne publie pas un mot inventé", async () => {
+  const journal = [];
+  const { liaison } = liaisonFeinte(journal);
+  const gestes = brancherLesGestesDuCycle(liaison);
+  assert.match(refusDe(() => gestes.verrouillerLeCoffre("je-suis-la")).message, /Déclencheur/);
+  assert.deepEqual([...Object.values(DECLENCHEURS)].sort(), ["geste", "inactivite"]);
+  assert.equal(exigerUnDeclencheur(DECLENCHEURS.inactivite), DECLENCHEURS.inactivite);
+});
+
+// --- La CONDUITE après un verrouillage REFUSÉ (#174, constat 3) ------------------------------------
+
+test("un verrouillage refusé TERMINE le Worker et RETIRE le cadre — jamais un coffre laissé ouvert", () => {
+  // Le défaut que cette conduite ferme : un refus rendait la main en silence, si bien que le coffre
+  // restait `ouvert`, le cadre applicatif affiché, et la surveillance désarmée — un coffre ouvert
+  // pour toujours, sans que personne l'ait décidé.
+  const conduite = conduiteApresUnRefusDeVerrouillage({
+    code: "VAULT_STORAGE_CLOSED",
+    etatConnu: ETATS_DU_VOLUME.ouvert,
+  });
+  assert.equal(conduite.refuse, true);
+  assert.equal(conduite.codeDuRefus, "VAULT_STORAGE_CLOSED");
+  assert.equal(conduite.terminerLeWorker, true);
+  assert.equal(conduite.retirerLeCadre, true);
+  assert.equal(conduite.etat, ETATS_DU_VOLUME.verrouille);
+  // La CAUSE reste la troisième de la table de l'ADR 0030 : un refus n'invente pas une quatrième.
+  assert.equal(conduite.cause, CAUSES_DE_MORT.terminaison);
+  assert.equal(conduite.kekRetenue, false);
+  assert.equal(conduite.derivationPermise, false);
+});
+
+test("un verrouillage refusé NE recharge PAS, et offre le geste qui rouvre", () => {
+  // C'est l'asymétrie de la décision 1 appliquée à un accident : il s'est passé quelque chose, et
+  // l'utilisateur doit pouvoir le lire. Un rechargement effacerait le refus de l'écran.
+  const conduite = conduiteApresUnRefusDeVerrouillage({ etatConnu: ETATS_DU_VOLUME.ouvert });
+  assert.equal(conduite.rechargerLaCoquille, false);
+  assert.equal(conduite.gesteQuiRouvreOffert, true);
+  // Et la réouverture peut coûter un boot à FROID : la capture n'a peut-être pas eu lieu.
+  assert.equal(conduite.instantaneGaranti, false);
+});
+
+test("l'INSTANTANÉ n'est pas retiré par un refus non plus, et la conduite reste GELÉE", () => {
+  const conduite = conduiteApresUnRefusDeVerrouillage({ etatConnu: ETATS_DU_VOLUME.ouvert });
+  assert.equal(conduite.instantaneRetire, false);
+  assert.equal(Object.isFrozen(conduite), true);
+});
+
+test("un refus n'invente pas un verrou sur un moteur qui n'a jamais rien pu ouvrir", () => {
+  const conduite = conduiteApresUnRefusDeVerrouillage({
+    etatConnu: ETATS_DU_VOLUME.indisponible,
+  });
+  assert.equal(conduite.etat, ETATS_DU_VOLUME.indisponible);
+});
+
+// --- Les ÉCOUTEURS réellement inscrits sur le document (#174, constat 6) ---------------------------
+
+/** Un document feint qui RELÈVE ce qu'on lui inscrit : le nom, les options, et ce qui est signalé. */
+function documentEcoutant() {
+  const inscrits = [];
+  return {
+    inscrits,
+    addEventListener(nom, geste, options) {
+      inscrits.push({ nom, geste, options });
+    },
+    /** Déclenche un événement inscrit, et rend ce que l'écouteur a signalé. */
+    declencher(nom) {
+      for (const inscrit of inscrits.filter((autre) => autre.nom === nom)) inscrit.geste();
+    },
+  };
+}
+
+test("la coquille n'écoute QUE les quatre événements de la table, plus la visibilité", () => {
+  // C'est la garde qui décide ce que la coquille compte comme une PERSONNE, et rien ne la regardait
+  // (constat 6 de la revue de sécurité de la PR #174). Ce qui est mesuré ici est ce qui est
+  // réellement inscrit sur le document — pas ce que la table promet.
+  const racine = documentEcoutant();
+  const signales = [];
+  brancherLesSignauxDActivite({
+    racine,
+    surveillance: { signaler: (nom) => signales.push(nom) },
+  });
+  assert.deepEqual(
+    racine.inscrits.map(({ nom }) => nom).sort(),
+    ["focusin", "keydown", "pointerdown", "pointermove", "visibilitychange"],
+    "la coquille écoute autre chose que ce que la table nomme",
+  );
+  // AUCUN événement de cycle de vie de page : les fins d'onglet sont #170, et cette tranche ne
+  // promet rien à leur sujet.
+  for (const interdit of ["pagehide", "freeze", "beforeunload", "unload", "focus", "blur"]) {
+    assert.equal(
+      racine.inscrits.some(({ nom }) => nom === interdit),
+      false,
+      `${interdit} est écouté, et il ne devrait pas l'être`,
+    );
+  }
+  // TOUS les écouteurs sont PASSIFS, `visibilitychange` compris : ils posent un nombre, et ne
+  // doivent retarder aucun défilement.
+  assert.equal(
+    racine.inscrits.every(({ options }) => options?.passive === true),
+    true,
+    "un écouteur n'est pas passif alors que le commentaire dit qu'ils le sont tous",
+  );
+});
+
+test("chaque événement inscrit porte le SIGNAL que la table lui donne", () => {
+  const racine = documentEcoutant();
+  const signales = [];
+  brancherLesSignauxDActivite({
+    racine,
+    surveillance: { signaler: (nom) => signales.push(nom) },
+  });
+  for (const [evenement, signal] of Object.entries(EVENEMENTS_DACTIVITE)) {
+    signales.length = 0;
+    racine.declencher(evenement);
+    assert.deepEqual(signales, [signal], `${evenement} ne porte pas « ${signal} »`);
+  }
+  // Et la visibilité est PRÉSENTÉE, sans effet : le refus vit dans la surveillance, où il se mute,
+  // au lieu d'être une absence d'appel que rien ne peut rougir.
+  signales.length = 0;
+  racine.declencher("visibilitychange");
+  assert.deepEqual(signales, ["visibilite"]);
+  assert.equal(estUnSignalDActivite("visibilite"), false);
 });

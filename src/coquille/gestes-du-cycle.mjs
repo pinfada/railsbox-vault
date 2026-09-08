@@ -38,6 +38,7 @@
 //    une application a démarré ET qu'au moins une barrière du guest a été acquittée.
 
 import { ISSUES_DETAPE } from "./cycle-de-vie.mjs";
+import { DECLENCHEURS, exigerUnDeclencheur } from "./verrouillage.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 
 /**
@@ -48,17 +49,28 @@ import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
  *           cycle: { issueDe: (etape: string) => string | null, releve: () => object[],
  *                    conclure: (etape: string, issue: string, motif?: string | null) => void },
  *           rapport: Record<string, unknown>, publier: () => void,
- *           avantVerrouillage?: () => void, apresVerrouillage: () => void }} liaison
+ *           avantVerrouillage?: (declencheur: string) => void,
+ *           apresRefusDOrdre?: (code: string) => void,
+ *           apresRefusDeVerrouillage?: (code: string | null, declencheur: string) => void,
+ *           apresVerrouillage: (declencheur: string) => void }} liaison
  */
 export function brancherLesGestesDuCycle(liaison) {
-  const contexte = { ...liaison, dire: ecrivainDEtat(liaison.racine) };
+  // Un DÉMARRAGE EN VOL est retenu ici, et nulle part ailleurs : c'est ce module qui sait qu'un
+  // geste est parti et que sa réponse n'est pas revenue. Il sert à une seule chose — refuser un
+  // verrouillage demandé PENDANT un boot, sous le code de l'ORDRE (voir `verrouiller`).
+  const enVol = { demarrage: false };
+  const contexte = { ...liaison, enVol, dire: ecrivainDEtat(liaison.racine) };
   const demarrerLApplication = () => demarrer(contexte);
-  const verrouillerLeCoffre = () => verrouiller(contexte);
+  const verrouillerLeCoffre = (declencheur = DECLENCHEURS.geste) =>
+    verrouiller(contexte, exigerUnDeclencheur(declencheur));
   liaison.racine.querySelector("#demarrer-application")?.addEventListener("click", () => {
     void demarrerLApplication();
   });
   liaison.racine.querySelector("#verrouiller-le-coffre")?.addEventListener("click", () => {
-    void verrouillerLeCoffre();
+    // Le déclencheur est un ARGUMENT, posé par celui qui déclenche. Le bouton dit « geste » ; la
+    // surveillance d'inactivité dira « inactivite ». Aucune variable ne garde la réponse entre deux
+    // gestes, et aucun relevé ne peut donc décrire le mauvais.
+    void verrouillerLeCoffre(DECLENCHEURS.geste);
   });
   return Object.freeze({ demarrerLApplication, verrouillerLeCoffre });
 }
@@ -140,8 +152,9 @@ function inscrireLeDemarrage(contexte, rendu) {
 
 /** ÉTAPE 3 — le geste qui démarre l'application : installation si besoin, backend, puis VM. */
 async function demarrer(contexte) {
-  const { demander, rapport, publier, dire } = contexte;
+  const { demander, rapport, publier, dire, enVol } = contexte;
   dire("cycle:demarrage-en-cours");
+  enVol.demarrage = true;
   try {
     const rendu = await demander("application", {});
     rapport.application = rendu;
@@ -159,6 +172,11 @@ async function demarrer(contexte) {
     publier();
     dire(`cycle:demarrage-refuse:${erreur?.code ?? "inconnu"}`);
     return rapport.application;
+  } finally {
+    // Le drapeau retombe QUOI QU'IL ARRIVE. Levé pour toujours par un boot qui échoue, il refuserait
+    // tout verrouillage jusqu'au rechargement — un coffre qu'on ne peut plus fermer.
+    enVol.demarrage = false;
+    contexte.apresDemarrage?.();
   }
 }
 
@@ -169,21 +187,53 @@ async function demarrer(contexte) {
  * ferme les volumes ; PUIS la page termine le Worker et recharge la coquille (`apresVerrouillage`).
  *
  * **L'ordre est le contrat, et l'`await` est ce qui le tient.** `close()` attend les E/S déjà
- * ACCEPTÉES (#132) et libère le nom du volume ; terminer avant elle laisserait le handle exclusif
- * tenu par un objet que plus personne ne référence, et l'ouverture suivante rendrait
- * `VAULT_STORAGE_BUSY` — sur le volume que l'utilisateur vient de rouvrir lui-même. Ce que l'inverse
- * coûte est mesuré par `tests/unit/vm-reouverture-handles.test.mjs`.
+ * ACCEPTÉES (#132) et laisse le volume dans l'état que la capture vient de décrire. Terminer avant
+ * lui perd deux choses, et ce sont elles le motif :
+ *
+ *  - **les écritures EN VOL**, que le guest croit acquittées et qui ne sont pas encore sur le
+ *    support. C'est `SEC-DURABLE-001` qui l'interdit, et rien d'autre ;
+ *  - **la cohérence de l'INSTANTANÉ avec le volume.** La capture a lieu dans `relacherTout`, AVANT
+ *    le `close()` : un instantané scellé sur un volume dont les dernières écritures manquent décrit
+ *    un état qui n'existe pas, et l'ouverture suivante l'écarte (ADR 0024, décision 4) — donc un
+ *    boot à FROID, c'est-à-dire la décision 3 de l'ADR 0031 défaite.
+ *
+ * **Ce que ce motif n'est PLUS**, et il faut le dire : de #163 à la première rédaction de #169, ce
+ * commentaire affirmait que terminer avant `close()` laisserait le handle exclusif tenu et ferait
+ * rendre `VAULT_STORAGE_BUSY` à l'ouverture suivante. C'est FAUX, mesuré sur Chromium et sur
+ * Firefox par `tests/browser/opfs-block-backend.spec.mjs` › « le moteur rend l'exclusivité du handle
+ * à la MORT du Worker qui le tenait » : le moteur relâche l'exclusivité avec le contexte du Worker.
+ * L'ordre reste, son motif est meilleur (constat 2 de la revue de sécurité de la PR #174).
  *
  * Un verrouillage REFUSÉ ne termine rien : le Worker vit encore, il tient encore ses handles, et le
- * tuer là laisserait exactement l'état que l'ordre existe pour éviter.
+ * tuer là laisserait exactement l'état que l'ordre existe pour éviter. Mais il ne se tait pas non
+ * plus : il RAPPELLE l'appelant (`apresRefusDeVerrouillage`), qui doit ré-armer ce qu'il avait
+ * désarmé et réconcilier l'état qu'il publie avec celui du Worker. Un geste qui échoue en silence
+ * sur ce chemin-là laisse un coffre ouvert que plus rien ne referme.
  */
-async function verrouiller(contexte) {
-  const { demander, rapport, publier, dire, avantVerrouillage, apresVerrouillage } = contexte;
+async function verrouiller(contexte, declencheur) {
+  const { demander, rapport, publier, dire, enVol } = contexte;
+  const { avantVerrouillage, apresRefusDOrdre, apresRefusDeVerrouillage, apresVerrouillage } =
+    contexte;
+  // LA GARDE D'ORDRE, et elle vient AVANT tout le reste. Un verrouillage demandé pendant qu'un
+  // démarrage est en vol arriverait au Worker derrière un boot de deux minutes : la coquille
+  // attendrait sans rien dire, puis capturerait l'instantané d'une machine qui vient de démarrer.
+  // Le refus porte le code de l'ORDRE — `VAULT_COQUILLE_ETAPE_HORS_ORDRE`, existant depuis #163 —
+  // et non un code de support : ce n'est pas le stockage qui a échoué, c'est l'étape 3 qui n'a pas
+  // conclu.
+  //
+  // Ce refus-ci ne TUE RIEN : le geste n'a jamais atteint le Worker, le coffre est légitimement
+  // ouvert, et ce qu'il faut est RÉARMER le délai que la surveillance venait de désarmer.
+  if (enVol?.demarrage === true) {
+    const code = CODES_REFUS_COQUILLE.etapeHorsOrdre;
+    dire(`cycle:verrouillage-refuse:${code}`);
+    apresRefusDOrdre?.(code);
+    return { verrouille: false, code, horsOrdre: true };
+  }
   // Le CHRONOMÈTRE part ici, et pas au clic : les DEUX déclencheurs — le bouton et le délai
   // d'inactivité — passent par cette porte, et une mesure prise sur le seul clic ne dirait rien du
   // second. C'est aussi la raison pour laquelle ce module ne connaît pas les déclencheurs : il en
   // sert un de plus sans changer d'une ligne.
-  avantVerrouillage?.();
+  avantVerrouillage?.(declencheur);
   dire("cycle:verrouillage-en-cours");
   try {
     const rendu = await demander("fermeture", {});
@@ -199,10 +249,20 @@ async function verrouiller(contexte) {
     conclureSiPossible(contexte, "reprise", ISSUES_DETAPE.differee, "à la prochaine ouverture");
     publier();
   } catch (erreur) {
-    dire(`cycle:verrouillage-refuse:${erreur?.code ?? "inconnu"}`);
-    return { verrouille: false, code: erreur?.code ?? null };
+    const code = erreur?.code ?? null;
+    dire(`cycle:verrouillage-refuse:${code ?? "inconnu"}`);
+    // Un refus du WORKER ne rend pas la main en silence, et c'est la correction du constat 3 de la
+    // revue de sécurité de la PR #174. Sans ce rappel, un verrouillage refusé laissait exactement
+    // l'état que le verrouillage existe pour quitter : le coffre OUVERT, le cadre applicatif en
+    // place — et AUCUN délai, la surveillance s'étant désarmée avant d'appeler ce geste sans que
+    // rien ne la ré-arme. Le coffre restait ouvert pour toujours sans que personne l'ait décidé.
+    //
+    // Ce que l'appelant en fait est écrit dans `conduiteApresUnRefusDeVerrouillage` : le Worker est
+    // terminé, le cadre retiré, le refus publié avant tout, et la coquille NE recharge pas.
+    apresRefusDeVerrouillage?.(code, declencheur);
+    return { verrouille: false, code };
   }
-  apresVerrouillage();
+  apresVerrouillage(declencheur);
   dire("cycle:coffre-verrouille");
   return { verrouille: true };
 }

@@ -2071,18 +2071,26 @@ Le dire par un code plutôt que par un bouton grisé a une raison : un bouton gr
 qui l'atteint autrement, et l'épreuve n'a rien à mesurer.
 
 **Le CYCLE DE VIE assemblé, et ce qu'il refuse** (#163,
-[ADR 0030](decisions/0030-cycle-de-vie-assemble-dans-la-coquille.md)). Quatre codes, et aucun ne
-parvient au document applicatif : ils vivent entre la coquille, son Worker de confiance et son
-propre document.
+[ADR 0030](decisions/0030-cycle-de-vie-assemble-dans-la-coquille.md) ; #169,
+[ADR 0031](decisions/0031-verrouiller-le-worker-meurt-l-instantane-survit.md)). Aucun ne parvient au
+document applicatif : ils vivent entre la coquille, son Worker de confiance et son propre document.
 
 | Code                                              | Ce qu'il constate                                                                                                                                                                                                                                                                                          |
 | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `VAULT_COQUILLE_WORKER_MORT`                      | le Worker de confiance ne répond plus : il a jeté, il a été terminé, ou il s'est tu au-delà de `DELAI_WORKER_MORT_MS`. La coquille refuse alors **tout service jusqu'à un geste explicite**                                                                                                                |
-| `VAULT_COQUILLE_ETAPE_HORS_ORDRE`                 | une étape du cycle de vie a été demandée avant celle dont elle dépend — un boot avant l'ouverture du backend, un cadre avant que l'étape 3 ait conclu                                                                                                                                                      |
+| `VAULT_COQUILLE_ETAPE_HORS_ORDRE`                 | une étape du cycle de vie a été demandée avant celle dont elle dépend — un boot avant l'ouverture du backend, un cadre avant que l'étape 3 ait conclu, **un verrouillage pendant qu'un démarrage est en vol** (#169)                                                                                       |
+| `VAULT_COQUILLE_GESTE_ROMPU`                      | le Worker de confiance a **jeté en servant une requête ADMISE**, sans code de refus à donner. Le geste était admis, il n'a pas abouti, et ce qui a jeté ne se dit pas — une exception peut nommer un chemin de fichier, un refus rendu n'a rien à en dire                                                  |
 | `VAULT_COQUILLE_APPLICATION_ABSENTE`              | aucune application n'est servie par cette origine : il n'y a rien à démarrer. Ce n'est pas un échec du geste, c'est l'absence de son objet — comme `indisponible` est l'absence d'un moteur capable                                                                                                        |
 | `VAULT_COQUILLE_CAPACITE_MANQUANTE`               | une capacité EXIGÉE manque au moteur, mesurée dans le document de la coquille et **sous la CSP servie** — sans l'exemption dont jouit la sonde `public/compat.html` (#2), qui mesurerait notre politique                                                                                                   |
 | `VAULT_COQUILLE_VOLUME_APPLICATIF_SANS_MANIFESTE` | un fichier de volume applicatif existe, mais aucun manifeste ne l'identifie. La coquille **refuse**, et ne réinstalle pas : un volume anonyme est soit une installation interrompue, soit autre chose, et verser le disque par-dessus écraserait sans un geste et sans un mot ce que le guest y aurait mis |
 | `VAULT_COQUILLE_VOLUME_APPLICATIF_SANS_MANIFESTE` | un fichier de volume applicatif existe, mais aucun manifeste ne l'identifie. La coquille **refuse**, et ne réinstalle pas : un volume anonyme est soit une installation interrompue, soit autre chose, et verser le disque par-dessus écraserait sans un geste et sans un mot ce que le guest y aurait mis |
+
+`VAULT_COQUILLE_GESTE_ROMPU` est neuf (#169) et ferme un défaut de la même famille que celui qui a
+fait naître `VAULT_COQUILLE_WORKER_MORT` : le repli du Worker de confiance renvoyait
+`VAULT_COQUILLE_TYPE_INCONNU` pour un geste qui était, lui, parfaitement admis — et il le renvoyait
+**là où le message compte le plus**, sur l'inattendu, c'est-à-dire ce dont personne n'a écrit le
+refus. Il ne remplace aucun code TYPÉ : une `VAULT_STORAGE_*` garde le sien, une `VAULT_ENVELOPPE_*`
+le sien ; le repli ne mord que sur ce qui n'en a pas.
 
 `VAULT_COQUILLE_WORKER_MORT` est neuf, et son absence était un défaut : la borne de mort rejetait
 sous `VAULT_COQUILLE_TYPE_INCONNU`, dont le message dit « Requête hors de la liste d'admission de la

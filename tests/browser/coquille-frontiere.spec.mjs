@@ -36,7 +36,7 @@ import {
   TEMOIN_INTERCEPTE,
 } from "../../public/coquille-epreuve/marqueurs.mjs";
 import { GESTES_REFUSES } from "../../src/coquille/admission-applicative.mjs";
-import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
+import { CODES_REFUS_COQUILLE, messageDeRefus } from "../../src/coquille/refus-de-coquille.mjs";
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
 import {
   CLE_DE_TEST,
@@ -660,7 +660,10 @@ async function dixRefusDepuisLeCadre(page, types) {
         const ecouteur = (evenement) => {
           if (evenement.data?.type !== "vault.coquille.refus") return;
           port.removeEventListener("message", ecouteur);
-          rendre(evenement.data.code);
+          // Le CODE **et** le MESSAGE : le § 10.5 dit « identiques », et deux refus qui
+          // partageraient leur code en divergeant d'un mot seraient un oracle de plus, mesuré à
+          // l'octet près plutôt qu'à la table (constat 10 de la revue de la PR #174).
+          rendre(`${evenement.data.code}␟${evenement.data.message ?? ""}`);
         };
         port.addEventListener("message", ecouteur);
         port.postMessage({ contrat: "railsbox-vault-coquille", version: 1, type });
@@ -678,7 +681,11 @@ test("les DIX refus sont identiques sur un coffre verrouillé, ouvert, puis verr
   page,
 }, info) => {
   const types = GESTES_REFUSES.map(({ type }) => type);
-  const attendus = Object.fromEntries(GESTES_REFUSES.map(({ type, code }) => [type, code]));
+  // Le témoin de la mesure : chacun des dix rend SON code ET le message que la table lui donne.
+  // Sans ce témoin, trois relevés de silences seraient « identiques » eux aussi.
+  const attendus = Object.fromEntries(
+    GESTES_REFUSES.map(({ type, code }) => [type, `${code}␟${messageDeRefus(code)}`]),
+  );
 
   // (1) Coffre FERMÉ : rien n'a jamais été ouvert dans cette session. L'état est `verrouille`, ou
   // `indisponible` sur un moteur qui n'a jamais rien pu ouvrir — l'un dit « il faut un geste »,
@@ -717,9 +724,7 @@ test("les DIX refus sont identiques sur un coffre verrouillé, ouvert, puis verr
     contentType: "application/json",
   });
 
-  // Chacun des dix rend SON code, et le même dans les trois états. Le témoin de la mesure est
-  // l'égalité avec la table de `GESTES_REFUSES` : sans elle, trois relevés de silences seraient
-  // « identiques » eux aussi.
+  // Chacun des dix rend SON code et SON message, et les mêmes dans les trois états.
   expect(surVerrouille.codes).toEqual(attendus);
   expect(surOuvert.codes).toEqual(attendus);
   expect(surReVerrouille.codes).toEqual(attendus);

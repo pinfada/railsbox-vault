@@ -124,6 +124,23 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    */
   etapeHorsOrdre: "VAULT_COQUILLE_ETAPE_HORS_ORDRE",
   /**
+   * Le Worker de confiance a JETÉ en servant une requête ADMISE, sans code de refus à donner.
+   *
+   * Ce code est NEUF (#169), et il ferme un défaut de la même famille que celui qui a fait naître
+   * `workerMort` : le repli de `repondreRefus` renvoyait `typeInconnu` — « Requête hors de la liste
+   * d'admission de la coquille » — pour un geste qui était, lui, parfaitement admis. Le message
+   * décrivait un autre événement que le sien, et il le décrivait **exactement là où il compte le
+   * plus** : sur l'INATTENDU, c'est-à-dire ce dont personne n'a écrit le refus.
+   *
+   * Ce qu'il dit, et rien de plus : le geste était admis, le Worker a essayé, quelque chose a jeté
+   * sans se nommer. Ce qu'il ne dit PAS : ce qui a jeté. Une exception peut nommer un chemin de
+   * fichier ; un refus rendu n'a rien à en dire (ADR 0028).
+   *
+   * Il ne remplace AUCUN code typé : une `StorageError` garde le sien, une erreur d'enveloppe le
+   * sien. Le repli ne mord que sur ce qui n'en a pas.
+   */
+  gesteRompu: "VAULT_COQUILLE_GESTE_ROMPU",
+  /**
    * Aucune application n'est servie par cette origine : il n'y a rien à démarrer.
    *
    * Ce n'est pas un échec du geste — c'est l'absence de son objet, comme `indisponible` est
@@ -192,6 +209,8 @@ const MESSAGES = Object.freeze({
     "Le Worker de confiance ne répond plus : la coquille ne sert plus rien tant que « Rouvrir le coffre » ne l'a pas rechargée.",
   [CODES_REFUS_COQUILLE.etapeHorsOrdre]:
     "Étape du cycle de vie demandée avant celle dont elle dépend : l'ordre n'est pas une convention.",
+  [CODES_REFUS_COQUILLE.gesteRompu]:
+    "Le Worker de confiance a jeté en servant ce geste, sans refus à nommer : le geste était admis, il n'a pas abouti.",
   [CODES_REFUS_COQUILLE.applicationAbsente]:
     "Aucune application n'est servie par cette origine : il n'y a rien à démarrer ici.",
   [CODES_REFUS_COQUILLE.capaciteManquante]:

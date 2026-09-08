@@ -213,21 +213,102 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "le Worker n'est TERMINÉ qu'APRÈS la fermeture des volumes",
-    garde: "gestes-du-cycle.verrouiller — l'`await` qui tient l'ordre `close()` puis `terminate()`",
+    garde:
+      "gestes-du-cycle.verrouiller — l'`await` qui tient l'ordre : la capture et les E/S ACCEPTÉES " +
+      "d'abord, le `terminate()` ensuite",
     fichier: GESTES,
     avant: '    const rendu = await demander("fermeture", {});',
     apres:
-      '    const rendu = demander("fermeture", {}).then((valeur) => valeur);\n    apresVerrouillage();',
+      '    const rendu = demander("fermeture", {}).then((valeur) => valeur);\n' +
+      "    apresVerrouillage(declencheur);",
     epreuves: [EPREUVE],
   },
   {
-    nom: "un verrouillage REFUSÉ ne termine pas le Worker",
-    garde: "gestes-du-cycle.verrouiller — le `return` de la branche de refus",
+    nom: "un verrouillage REFUSÉ ne laisse pas le coffre ouvert : il RAPPELLE l'appelant",
+    garde: "gestes-du-cycle.verrouiller — le rappel de la branche de refus",
+    fichier: GESTES,
+    avant: "    apresRefusDeVerrouillage?.(code, declencheur);\n",
+    apres: "",
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "un verrouillage refusé TERMINE le Worker",
+    garde: "conduiteApresUnRefusDeVerrouillage — le Worker ne sert plus rien, et sa KEK est partie",
+    fichier: VERROUILLAGE,
+    avant: "    terminerLeWorker: true,",
+    apres: "    terminerLeWorker: false,",
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "un verrouillage refusé RETIRE le cadre applicatif",
+    garde:
+      "conduiteApresUnRefusDeVerrouillage — les pixels du cadre ne restent pas sur un coffre verrouillé",
+    fichier: VERROUILLAGE,
+    avant: "    retirerLeCadre: true,",
+    apres: "    retirerLeCadre: false,",
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "un verrouillage refusé NE recharge PAS : le refus doit se lire",
+    garde: "conduiteApresUnRefusDeVerrouillage — l'asymétrie appliquée à un accident",
+    fichier: VERROUILLAGE,
+    avant:
+      "    rechargerLaCoquille: false,\n    /** Le bouton « Rouvrir le coffre » de #163 est offert",
+    apres:
+      "    rechargerLaCoquille: true,\n    /** Le bouton « Rouvrir le coffre » de #163 est offert",
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "un verrouillage demandé PENDANT un boot est refusé sous le code de l'ORDRE",
+    garde: "gestes-du-cycle.verrouiller — la garde d'ordre sur le démarrage en vol",
     fichier: GESTES,
     avant:
-      '    dire(`cycle:verrouillage-refuse:${erreur?.code ?? "inconnu"}`);\n' +
-      "    return { verrouille: false, code: erreur?.code ?? null };\n",
-    apres: '    dire(`cycle:verrouillage-refuse:${erreur?.code ?? "inconnu"}`);\n',
+      "  if (enVol?.demarrage === true) {\n" +
+      "    const code = CODES_REFUS_COQUILLE.etapeHorsOrdre;\n" +
+      "    dire(`cycle:verrouillage-refuse:${code}`);\n" +
+      "    apresRefusDOrdre?.(code);\n" +
+      "    return { verrouille: false, code, horsOrdre: true };\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "le drapeau du démarrage retombe QUOI QU'IL ARRIVE",
+    garde: "gestes-du-cycle.demarrer — le `finally` qui rend le verrouillage de nouveau possible",
+    fichier: GESTES,
+    avant: "    enVol.demarrage = false;\n",
+    apres: "",
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "le DÉCLENCHEUR est celui qu'on lui donne, et la table est close",
+    garde: "exigerUnDeclencheur — le relevé ne publie pas un mot que personne n'a décidé",
+    fichier: VERROUILLAGE,
+    avant:
+      "  if (!DECLENCHEURS_CONNUS.has(declencheur)) {\n" +
+      "    throw new Error(\n" +
+      "      `Déclencheur de verrouillage inconnu : ${String(declencheur)}. Il n'y en a que deux.`,\n" +
+      "    );\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "la coquille n'écoute QUE les quatre événements de la table",
+    garde: "EVENEMENTS_DACTIVITE — ce que la coquille compte comme une personne",
+    fichier: VERROUILLAGE,
+    avant: '  focusin: "focus",\n});',
+    apres: '  focusin: "focus",\n  visibilitychange: "pointeur",\n});',
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "les écouteurs sont branchés sur le DOCUMENT, et ils sont PASSIFS",
+    garde: "brancherLesSignauxDActivite — le branchement réel, et non la table qu'il lit",
+    fichier: VERROUILLAGE,
+    avant:
+      "    racine.addEventListener(evenement, () => surveillance.signaler(signal), { passive: true });",
+    apres:
+      '    racine.addEventListener("focus", () => surveillance.signaler(signal), { passive: true });',
     epreuves: [EPREUVE],
   },
   {

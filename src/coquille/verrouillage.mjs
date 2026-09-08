@@ -77,9 +77,23 @@ export const DELAI_INACTIVITE_MAXIMUM_MS = 3_600_000;
  * contrat de messages n'admet aucun « je suis là », ni sur le port restreint ni sur le canal
  * privilégié.
  *
- * **La limite, écrite plutôt que tue** : un onglet au premier plan devant un bureau vide ne se
- * distingue pas d'un onglet devant quelqu'un. Le produit n'invente pas de substitut de présence ; il
- * borne une durée sans surveillance, et il le dit.
+ * **DEUX limites, écrites plutôt que tues, et elles vont en sens contraire.**
+ *
+ * La première est celle qu'on voit : un onglet au premier plan devant un bureau vide ne se distingue
+ * pas d'un onglet devant quelqu'un. Le produit n'invente pas de substitut de présence.
+ *
+ * **La seconde est la plus coûteuse, et c'est le cas NOMINAL du produit** (constat 4 de la revue de
+ * sécurité de la PR #174, mesuré : un clic réel, vingt frappes réelles et cinquante mouvements de
+ * pointeur DANS le cadre inter-origine produisent zéro `focusin`, zéro `pointerdown` et zéro
+ * `keydown` sur le document de la coquille, sur les trois moteurs). **Une personne qui travaille
+ * dans l'application est comptée comme absente**, et se fait verrouiller à dix minutes exactement,
+ * en pleine frappe. Ce n'est pas un effet de bord : c'est la conséquence directe de « aucun signal
+ * du cadre ne compte », et il vaut mieux l'écrire que le découvrir.
+ *
+ * Ce qui l'atténue : la réouverture coûte une seconde par l'instantané (ADR 0031, décision 3), et le
+ * volume tient tout ce que le guest a fait ACQUITTER. Ce qui ne l'atténue pas : ce qui n'était pas
+ * acquitté est perdu, comme à toute coupure (ADR 0014) ; et il n'existe aujourd'hui aucun signal de
+ * présence que le cadre ne puisse pas forger. La question est ouverte, elle n'est pas oubliée.
  */
 export const SIGNAUX_DACTIVITE = Object.freeze(["clavier", "focus", "pointeur"]);
 
@@ -115,6 +129,38 @@ export const EVENEMENTS_DACTIVITE = Object.freeze({
   keydown: "clavier",
   focusin: "focus",
 });
+
+/**
+ * Les DEUX déclencheurs d'un verrouillage, et il n'y en a pas de troisième.
+ *
+ * Ils sont passés en ARGUMENT du geste, jamais retenus dans une variable de module : une variable
+ * qui survit à un verrouillage RATÉ ferait publier « inactivite » sur le geste qui le suit, et le
+ * relevé mentirait sur ce que l'utilisateur a fait (constat 8 de la revue de sécurité de la PR
+ * #174). Un argument ne survit à rien.
+ */
+export const DECLENCHEURS = Object.freeze({
+  /** Le bouton « Verrouiller » de la coquille. Il est le TÉMOIN POSITIF de l'autre. */
+  geste: "geste",
+  /** Le délai d'inactivité, à son échéance. Il emprunte exactement le même chemin. */
+  inactivite: "inactivite",
+});
+
+const DECLENCHEURS_CONNUS = new Set(Object.values(DECLENCHEURS));
+
+/**
+ * VALIDE un déclencheur, ou le REFUSE. La liste est close, comme celle des causes de mort : un
+ * déclencheur hors table ferait publier au relevé un mot que personne n'a décidé.
+ *
+ * @param {unknown} declencheur
+ */
+export function exigerUnDeclencheur(declencheur) {
+  if (!DECLENCHEURS_CONNUS.has(declencheur)) {
+    throw new Error(
+      `Déclencheur de verrouillage inconnu : ${String(declencheur)}. Il n'y en a que deux.`,
+    );
+  }
+  return declencheur;
+}
 
 /**
  * Ce signal remet-il le délai à zéro ? La liste est FERMÉE : un nom inconnu ne compte pas davantage
@@ -223,6 +269,60 @@ export function conduiteApresLeVerrouillage({ etatConnu = ETATS_DU_VOLUME.verrou
 }
 
 /**
+ * La conduite à tenir quand un verrouillage est REFUSÉ — c'est-à-dire quand le geste a bien été
+ * demandé au Worker de confiance et que celui-ci n'a pas pu le servir.
+ *
+ * **Un verrouillage refusé ne laisse JAMAIS le coffre ouvert.** C'est le constat 3 de la revue de
+ * sécurité de la PR #174, et il était sévère : la première rédaction rendait la main en silence, si
+ * bien qu'un refus laissait exactement l'état que le verrouillage existe pour quitter — le coffre
+ * `ouvert`, le cadre applicatif affiché, et AUCUN délai, la surveillance s'étant désarmée avant
+ * d'appeler le geste. Le coffre restait ouvert pour toujours sans que personne l'ait décidé.
+ *
+ * Ce qui est fait à la place, et pourquoi :
+ *
+ *  - **le Worker est TERMINÉ**, sous la cause `terminaison` — la table de l'ADR 0030 décision 3 ne
+ *    gagne pas de quatrième cause. À ce point, `relacherTout` a déjà lâché la KEK dans son `finally`
+ *    (correction du constat 10 de la PR #171) : le Worker ne sert plus rien, et le garder en vie ne
+ *    rendrait que l'illusion d'un coffre ouvert ;
+ *  - **le CADRE applicatif est retiré du DOM.** Laisser ses pixels sur un coffre dont l'utilisateur
+ *    vient de demander le verrouillage est le contraire de la promesse. Le port, lui, n'est pas
+ *    re-octroyé : `VAULT_COQUILLE_ANNONCE_UNIQUE` (garde de #161, mutant n° 5 de l'ADR 0028) refuse
+ *    un second octroi, et rien ici ne le contourne — le cadre part, il ne revient qu'au
+ *    rechargement ;
+ *  - **la coquille NE recharge PAS.** C'est la seule différence avec un verrouillage réussi, et
+ *    c'est l'asymétrie de la décision 1 appliquée à un accident : il s'est passé quelque chose, et
+ *    l'utilisateur doit pouvoir le lire. Le relevé publie le REFUS et sa cause AVANT tout, et le
+ *    bouton « Rouvrir le coffre » de #163 est offert ;
+ *  - **le délai est désarmé**, au refus comme au succès : il n'y a plus rien à verrouiller.
+ *
+ * **Ce que la réouverture coûtera** : un boot à FROID si la capture n'a pas eu lieu. Le refus étant
+ * survenu quelque part dans la fermeture propre, l'instantané peut manquer ou décrire un état que
+ * le volume n'a pas — et une ouverture qui écarte un instantané le retire (ADR 0024, décision 4).
+ * C'est le prix d'un accident, et il est annoncé.
+ *
+ * @param {{ code?: string | null, etatConnu?: string }} constat
+ */
+export function conduiteApresUnRefusDeVerrouillage({ code = null, etatConnu } = {}) {
+  return Object.freeze({
+    ...conduiteApresLeVerrouillage({ etatConnu }),
+    /** Le code que le Worker a rendu, ou `null` s'il n'en a rendu aucun. */
+    codeDuRefus: code,
+    /** Le geste a été demandé et n'a pas abouti. Le relevé le dit avant toute autre chose. */
+    refuse: true,
+    /** Le Worker est terminé quand même : il ne sert plus rien, et sa KEK est déjà partie. */
+    terminerLeWorker: true,
+    /** Le cadre applicatif est RETIRÉ du DOM, sans qu'aucun port soit re-octroyé. */
+    retirerLeCadre: true,
+    /** La coquille ne recharge PAS : il s'est passé quelque chose, et cela doit se lire. */
+    rechargerLaCoquille: false,
+    /** Le bouton « Rouvrir le coffre » de #163 est offert, comme après toute mort constatée. */
+    gesteQuiRouvreOffert: true,
+    /** La réouverture peut coûter un boot à froid : la capture n'a peut-être pas eu lieu. */
+    instantaneGaranti: false,
+  });
+}
+
+/**
  * La SURVEILLANCE d'inactivité : elle s'arme sur un coffre ouvert, se laisse repousser par les
  * gestes de la personne, et verrouille à l'échéance.
  *
@@ -257,6 +357,14 @@ export function surveillanceDInactivite({
    * un onglet en arrière-plan voit ses minuteries étirées, un onglet au premier plan les voit
    * parfois se déclencher tôt, et verrouiller sur un réveil ferait dépendre le coffre d'un détail
    * d'ordonnancement.
+   *
+   * **La LIMITE que cela laisse, et elle est asymétrique** : ce contrôle rattrape un réveil trop
+   * TÔT — il replanifie le reste — et jamais un réveil trop TARD. Sur un onglet CACHÉ, dont le
+   * moteur étire les minuteries à la minute ou davantage, le verrouillage arrive donc APRÈS son
+   * échéance, jusqu'au prochain réveil que le moteur consent. Le délai est un PLANCHER, pas une
+   * garantie de ponctualité, et aucune épreuve de ce dépôt ne mesure cet étirement (il demanderait
+   * plus de dix minutes d'attente réelle). Ce que la coquille peut affirmer est qu'elle ne
+   * verrouille jamais AVANT son délai.
    */
   const verifier = () => {
     const reste = delai - (maintenant() - dernierSigneMs);
@@ -328,5 +436,7 @@ export function brancherLesSignauxDActivite({ racine, surveillance }) {
   for (const [evenement, signal] of Object.entries(EVENEMENTS_DACTIVITE)) {
     racine.addEventListener(evenement, () => surveillance.signaler(signal), { passive: true });
   }
-  racine.addEventListener("visibilitychange", () => surveillance.signaler("visibilite"));
+  racine.addEventListener("visibilitychange", () => surveillance.signaler("visibilite"), {
+    passive: true,
+  });
 }

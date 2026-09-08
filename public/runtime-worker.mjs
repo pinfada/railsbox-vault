@@ -293,7 +293,12 @@ function repondreCode(code, correlation) {
  * @param {string | null} correlation
  */
 function repondreRefus(erreur, correlation) {
-  const code = typeof erreur?.code === "string" ? erreur.code : CODES_REFUS_COQUILLE.typeInconnu;
+  // Le repli est `gesteRompu`, et non `typeInconnu` : le geste était ADMIS — il est passé par la
+  // liste, il a été mis en file, il a été servi —, et rendre « Requête hors de la liste d'admission
+  // de la coquille » décrirait un autre événement que le sien, exactement là où le message compte
+  // le plus : sur l'inattendu (constat 5 de la revue de sécurité de la PR #174). Un code typé, lui,
+  // n'est jamais remplacé.
+  const code = typeof erreur?.code === "string" ? erreur.code : CODES_REFUS_COQUILLE.gesteRompu;
   portPrivilegie.postMessage(
     enveloppeDeMessage(TYPES_PRIVILEGIES.refus, {
       code,
@@ -728,10 +733,17 @@ async function demarrerLApplication(message, correlation) {
  * FERME proprement : arrêter la VM, capturer l'instantané, `close()` les volumes.
  *
  * **L'ordre est le contrat, et il ne se réordonne pas.** `close()` attend les E/S déjà ACCEPTÉES
- * (#132) et libère le nom du volume ; le `terminate()` du Worker vient APRÈS, et il est le fait de
- * la page. Terminer avant `close()` laisserait le handle exclusif tenu par un objet que plus
- * personne ne référence, et l'ouverture suivante rendrait `VAULT_STORAGE_BUSY` — sur le volume que
- * l'utilisateur vient de rouvrir lui-même (constat 6 de la revue de sécurité de la PR #167).
+ * (#132) et laisse le volume dans l'état que la capture vient de décrire ; le `terminate()` du
+ * Worker vient APRÈS, et il est le fait de la page. Terminer avant `close()` perdrait les écritures
+ * EN VOL — ce que `SEC-DURABLE-001` interdit — et rendrait l'INSTANTANÉ incohérent avec le volume :
+ * la capture a lieu juste avant, si bien qu'elle décrirait un état que le support n'a pas. Un tel
+ * instantané est écarté à l'ouverture suivante (ADR 0024, décision 4), et la réouverture coûte alors
+ * un boot à froid.
+ *
+ * Ce que ce motif n'est PLUS : le handle exclusif est relâché par le MOTEUR avec le contexte du
+ * Worker — mesuré sur Chromium et Firefox par `tests/browser/opfs-block-backend.spec.mjs`, contre ce
+ * que le constat 6 de la revue de la PR #167 avait fait écrire ici (constat 2 de la revue de la
+ * PR #174).
  *
  * La CAPTURE a lieu avant l'arrêt, dans l'ordre de l'ADR 0024 décision 6 : suspension du guest,
  * quiescence, scellement. Elle ne peut pas faire échouer une fermeture par ailleurs propre — une
