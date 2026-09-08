@@ -1,4 +1,4 @@
-// Le cycle de vie ASSEMBLÉ, joué sur la COQUILLE RÉELLE (#163, tranche 3 de #24, ADR 0030).
+// Le cycle de vie ASSEMBLÉ, joué sur la COQUILLE RÉELLE (#163, ADR 0030 ; #169, ADR 0031).
 //
 // C'est le critère de fermeture de l'issue : « au moins un scénario de `tests/e2e/` joué sur la
 // coquille réelle avec son document applicatif encadré, au lieu de `/vm/reference.html` ». Tous les
@@ -14,12 +14,15 @@
 //     référence dans un volume chiffré, ouvre ce volume sous la clé développée de son enveloppe,
 //     puis boote v86, le guest, Rails et le pont série DANS le Worker de confiance. Rails écrit, une
 //     barrière est acquittée, l'invariant applicatif est relu ;
-//  4. un troisième geste FERME proprement : la VM s'arrête, l'instantané est scellé, les volumes
-//     sont fermés, puis le Worker est terminé ;
-//  5. la page est FERMÉE — ce qui tue le Worker, ses handles et sa mémoire — puis rouverte. Une
+//  4. un troisième geste VERROUILLE : la VM s'arrête, l'instantané est scellé, les volumes sont
+//     fermés, le Worker est terminé, et la coquille SE RECHARGE — elle revient `verrouille`, sans
+//     cadre applicatif, sans KEK, et sans que rien ait été dérivé (#169, ADR 0031) ;
+//  5. l'INSTANTANÉ est constaté PRÉSENT sur l'OPFS réel après le verrouillage. C'est la révision
+//     datée de l'ADR 0024 décision 8 : le verrouillage ne le retire pas ;
+//  6. la page est FERMÉE — ce qui tue le Worker, ses handles et sa mémoire — puis rouverte. Une
 //     nouvelle dérivation de la même phrase rouvre l'enveloppe, et l'application redémarre SANS
-//     être réinstallée : le volume de cinq cents mébioctets a survécu, scellé, et l'invariant est
-//     retrouvé.
+//     être réinstallée : le volume de cinq cents mébioctets a survécu, scellé, l'invariant est
+//     retrouvé, et la reprise emprunte l'INSTANTANÉ que le verrouillage a laissé.
 //
 // ## Ce qu'il ne prouve PAS
 //
@@ -39,6 +42,7 @@ import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { ISSUES_DETAPE } from "../../src/coquille/cycle-de-vie.mjs";
 import { E2E_ORIGIN_COQUILLE, E2E_ORIGIN_COQUILLE_APP } from "../../playwright.e2e.config.mjs";
 import { artefactsV86Absents } from "../../tools/v86-paths.mjs";
+import { INSTANTANE_SIDECAR_SUFFIX } from "../../src/vm/opfs-sync-access.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CHEMIN_MANIFESTE = join(RACINE, "tools", "build-reference-image", "manifest.json");
@@ -125,11 +129,51 @@ async function demarrerLApplication(page) {
   return (await releve(page)).application;
 }
 
-test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et retrouve son invariant", async ({
+/**
+ * La CLÉ sous laquelle ce scénario range le relevé publié JUSTE AVANT le rechargement de la coquille
+ * (#169, ADR 0031). Elle appartient à l'ÉPREUVE : le produit n'écrit rien dans `sessionStorage`, et
+ * la sonde d'exfiltration le mesure.
+ *
+ * Le verrouillage se termine par un rechargement, et le relevé qui décrit cette session disparaît
+ * avec le document. Un `MutationObserver` posé par `addInitScript` le capture ; son rappel est une
+ * microtâche, donc il précède le `setTimeout` qui porte le rechargement. Ce n'est pas une course.
+ */
+const CLE_DE_CAPTURE = "epreuve-verrouillage-169";
+
+/** ARME la capture, sur le CONTEXTE : elle doit survivre à la navigation du rechargement. */
+async function armerLaCapture(contexte) {
+  await contexte.addInitScript((cle) => {
+    const observateur = new MutationObserver(() => {
+      if (document.documentElement.dataset.coquille !== "verrouille") return;
+      const noeud = document.querySelector("#coquille-rapport");
+      if (noeud !== null) sessionStorage.setItem(cle, noeud.textContent);
+    });
+    observateur.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-coquille"],
+    });
+  }, CLE_DE_CAPTURE);
+}
+
+/** L'INVENTAIRE de l'OPFS de l'origine de CONFIANCE : les noms et les tailles, jamais le contenu. */
+async function inventaireOpfs(page) {
+  return page.evaluate(async () => {
+    const releve = [];
+    const racine = await navigator.storage.getDirectory();
+    for await (const [nom, poignee] of racine.entries()) {
+      if (poignee.kind !== "file") continue;
+      releve.push({ nom, octets: (await poignee.getFile()).size });
+    }
+    return releve.sort((gauche, droite) => gauche.nom.localeCompare(droite.nom));
+  });
+}
+
+test("le cycle de vie assemblé boote Rails dans la coquille, se VERROUILLE, et retrouve son invariant", async ({
   context,
 }, testInfo) => {
   exigerLesPrealables(raison, "reprise-coquille-boot-froid.spec.mjs");
   test.setTimeout(1_500_000);
+  await armerLaCapture(context);
 
   const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
 
@@ -214,14 +258,31 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et ret
     "le relevé porte un compte rendu BORNÉ, pas le journal du guest",
   ).toBeLessThan(16_384);
 
-  // --- 4. La fermeture PROPRE : arrêt de la VM, instantané, `close()`, puis `terminate()` ---------
-  await session.page.click("#fermer-le-coffre");
-  await expect(session.page.locator("#cycle-etat")).toHaveText("cycle:coffre-ferme", {
-    timeout: 300_000,
-  });
-  const ferme = await releve(session.page);
-  await testInfo.attach("fermeture.json", {
-    body: JSON.stringify({ fermeture: ferme.fermeture, workerMort: ferme.workerMort }, null, 2),
+  // --- 4. Le VERROUILLAGE : arrêt de la VM, instantané, `close()`, `terminate()`, rechargement ---
+  //
+  // Le geste s'appelle « Verrouiller », et c'est le seul mot (#169, ADR 0031, décision 1). Ce qu'il
+  // fait n'a pas changé d'un appel depuis #163 ; ce qui a changé est qu'il est NOMMÉ, qu'un délai
+  // d'inactivité emprunte le même chemin, et qu'il RECHARGE la coquille pour retirer le cadre.
+  await session.page.click("#verrouiller-le-coffre");
+  await expect
+    .poll(async () => session.page.evaluate((cle) => sessionStorage.getItem(cle), CLE_DE_CAPTURE), {
+      timeout: 300_000,
+    })
+    .not.toBeNull();
+  const ferme = JSON.parse(
+    await session.page.evaluate((cle) => sessionStorage.getItem(cle), CLE_DE_CAPTURE),
+  );
+  await testInfo.attach("verrouillage.json", {
+    body: JSON.stringify(
+      {
+        verrouillage: ferme.verrouillage,
+        fermeture: ferme.fermeture,
+        workerMort: ferme.workerMort,
+        verrouillageMs: ferme.mesures.verrouillageMs,
+      },
+      null,
+      2,
+    ),
     contentType: "application/json",
   });
   // Le `terminate()` vient APRÈS le `close()`, et la coquille se constate elle-même morte : c'est
@@ -229,18 +290,68 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et ret
   expect(ferme.workerMort.cause).toBe("terminaison");
   expect(ferme.workerMort.kekRetenue).toBe(false);
   expect(ferme.etat).toBe("verrouille");
-  expect(ferme.fermeture.capture, "la fermeture rend un compte rendu de capture").not.toBeNull();
-  // LE JOURNAL, RELU APRÈS LA FERMETURE : l'étape 7 est révisée de `differee` à `franchie`.
+  expect(ferme.fermeture.capture, "le verrouillage rend un compte rendu de capture").not.toBeNull();
+  expect(ferme.verrouillage.declencheur).toBe("geste");
+  expect(ferme.verrouillage.workerTermine).toBe(true);
+  expect(ferme.verrouillage.instantaneRetire).toBe(false);
+  expect(typeof ferme.mesures.verrouillageMs).toBe("number");
+  // LE JOURNAL, RELU APRÈS LE VERROUILLAGE : l'étape 7 est révisée de `differee` à `franchie`.
   const etapesApresFermeture = new Map(ferme.cycle.map((i) => [i.etape, i]));
   expect(etapesApresFermeture.get("fermeture").issue).toBe(ISSUES_DETAPE.franchie);
   expect(etapesApresFermeture.get("fermeture").revision).toBe(true);
+
+  // LE RECHARGEMENT, observé. Il est le fait de la coquille elle-même — aucun bouton n'est cliqué —
+  // et c'est ce qui retire le cadre applicatif : les pixels du cadre sont le dernier clair de la
+  // session. Ce n'est PAS une réouverture : la coquille revient `verrouille`, l'interface de
+  // déverrouillage est remontée, et aucune dérivation n'a lieu sans geste.
+  await expect(session.page.locator("html")).toHaveAttribute("data-coquille", "prete", {
+    timeout: 120_000,
+  });
+  const rechargee = await releve(session.page);
+  expect(rechargee.etat).toBe("verrouille");
+  expect(rechargee.workerMort, "la coquille rechargée n'est pas une coquille morte").toBeNull();
+  expect(rechargee.verrouillage, "le relevé de la session verrouillée ne survit pas").toBeNull();
+  expect(rechargee.mesures.deverrouillageMs, "rien n'a été dérivé sans geste").toBeNull();
+  await expect(session.page.locator("#deverrouillage")).toBeVisible();
+  // LE CYCLE est relu APRÈS le verrouillage : il repart de l'étape 1.
+  expect(rechargee.cycle.map(({ etape }) => etape)).toEqual([
+    "identites",
+    "exclusiviteEtCanal",
+    "backendPuisVm",
+    "cadreEtPort",
+  ]);
+
+  // --- 5. L'INSTANTANÉ SURVIT au verrouillage, constaté sur l'OPFS RÉEL ---------------------------
+  //
+  // C'est la révision datée de l'ADR 0024 décision 8 (ADR 0031, décision 3), et elle se mesure ici
+  // plutôt qu'ailleurs : la ligne « verrouillage : oui » de cette table était une position par
+  // défaut, jamais un comportement. Le fichier `<volume>.instantane` est scellé sous la DEK, comme
+  // le volume qui reste, lui, sur l'appareil sans que personne n'appelle cela un défaut.
+  const opfsApresVerrouillage = await inventaireOpfs(session.page);
+  await testInfo.attach("opfs-apres-verrouillage.json", {
+    body: JSON.stringify(opfsApresVerrouillage, null, 2),
+    contentType: "application/json",
+  });
+  const instantanes = opfsApresVerrouillage.filter(({ nom }) =>
+    nom.endsWith(INSTANTANE_SIDECAR_SUFFIX),
+  );
+  expect(
+    instantanes.length,
+    "aucun instantané sur l'OPFS après le verrouillage : la révision de l'ADR 0024 déc. 8 ne tient pas",
+  ).toBeGreaterThan(0);
+  expect(instantanes.every(({ octets }) => octets > 0)).toBe(true);
 
   // La PAGE est fermée : le Worker meurt avec elle, ses handles et sa mémoire s'en vont.
   await session.page.close();
   expect(session.erreurs, "aucune erreur de page pendant la première session").toEqual([]);
 
-  // --- 5. Réouverture : nouvelle dérivation, volume RETROUVÉ, invariant retrouvé ------------------
+  // --- 6. Réouverture : un NOUVEAU geste, volume RETROUVÉ, invariant retrouvé ---------------------
+  //
+  // Jamais de réouverture automatique : ce que l'utilisateur paie, il décide de le payer. Ce qu'il
+  // paie, en revanche, est ce que la décision 3 de l'ADR 0031 lui promet — l'instantané que le
+  // verrouillage a laissé, et non un boot à froid.
   session = await ouvrirLaCoquille(context);
+  expect((await releve(session.page)).etat, "la coquille rouvre VERROUILLÉE").toBe("verrouille");
   await ouvrirParLaPhrase(session.page);
   const second = await demarrerLApplication(session.page);
   await testInfo.attach("second-demarrage.json", {
@@ -274,6 +385,15 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et ret
   expect(etapesReprise.get("reprise").issue).toBe(ISSUES_DETAPE.franchie);
   expect(["instantane", "boot-froid"]).toContain(etapesReprise.get("reprise").motif);
   expect(etapesReprise.get("backendPuisVm").issue).toBe(ISSUES_DETAPE.franchie);
+  // LE PRIX DE LA RÉOUVERTURE, et le point de la décision 3 : le chemin emprunté est celui de
+  // l'INSTANTANÉ, celui que le verrouillage a laissé sur le support. Un verrouillage qui coûterait
+  // 125,9 s de boot à froid par réouverture est un verrouillage qu'on désactive — l'écart est
+  // publié plus bas, sans seuil, par `secondDemarrage.bootMs` et `secondDemarrage.instantane`.
+  expect(
+    second.instantaneUtilise,
+    "la réouverture n'a pas repris l'instantané que le verrouillage a laissé",
+  ).toBe(true);
+  expect(etapesReprise.get("reprise").motif).toBe("instantane");
 
   await session.page.close();
   expect(session.erreurs, "aucune erreur de page pendant la seconde session").toEqual([]);
@@ -304,7 +424,16 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se referme, et ret
       generation: premier.generation,
     },
     fermeture: ferme.fermeture,
+    // Le VERROUILLAGE, publié SANS SEUIL (#169, ADR 0031) : ce qu'il a coûté, ce qu'il a atteint, et
+    // ce qu'il a laissé sur le support.
+    verrouillage: {
+      ...ferme.verrouillage,
+      verrouillageMs: ferme.mesures.verrouillageMs,
+      opfsApresVerrouillage,
+      instantanesRestants: instantanes,
+    },
     cycleApresFermeture: ferme.cycle,
+    cycleApresRechargement: rechargee.cycle,
     // Relevé AVANT la fermeture de la page : une mesure prise après elle n'existerait plus.
     cycleALaReprise,
     secondDemarrage: {

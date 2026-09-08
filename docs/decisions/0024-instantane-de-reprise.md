@@ -401,7 +401,7 @@ change qui l'écrit. La règle est celle de l'ADR 0019 pour le témoin, étendue
 | restauration depuis une archive (#12) | **oui**              | le volume est réécrit entièrement ; la liaison ne décrit plus rien |
 | migration de format (#13)             | **oui**              | idem — et la version de format de la liaison serait fausse         |
 | ouverture qui écarte l'instantané     | **oui**              | décision 4 : écarter et retirer sont un seul geste                 |
-| verrouillage (#25)                    | **oui**              | position par défaut, ci-dessous                                    |
+| verrouillage (#25)                    | **non** — RÉVISÉ     | note datée du 8 septembre 2026, ci-dessous                         |
 | changement de bail d'écriture (#79)   | non — par la LIAISON | ci-dessous                                                         |
 | écriture validée pendant la session   | non — par la LIAISON | l'écart est constaté à la prochaine ouverture                      |
 
@@ -430,15 +430,41 @@ l'instantané que cette même fermeture vient d'écrire.
 
 C'est un écart assumé au raffinement de l'issue, et il est signalé comme tel.
 
-### Le verrouillage (#25) : oui, l'instantané ne survit pas
+### Le verrouillage (#25) : la position par défaut, et sa RÉVISION du 8 septembre 2026
 
-La question est posée à #25 et cet ADR écrit la position par défaut : **oui, un verrouillage retire
-l'instantané.** Verrouiller veut dire « la DEK n'est plus en mémoire, et le clair n'est plus
-accessible ». Un instantané qui survivrait au verrouillage laisserait sur le support 250 Mio de RAM
-invitée chiffrée sous une clé que l'utilisateur vient précisément de mettre hors d'atteinte — ce qui
-n'est pas une fuite, mais qui n'est pas non plus ce que « verrouiller » promet. Le coût du retrait
-est un boot à froid au déverrouillage suivant. Il est assumé, et #25 peut le rouvrir avec un
-argument, pas par omission.
+**Position par défaut, écrite le 3 septembre 2026** — conservée telle quelle, parce qu'un dossier
+qui efface ce qu'il a cru n'apprend rien à personne : la question est posée à #25 et cet ADR écrit
+la position par défaut, **oui, un verrouillage retire l'instantané.** Verrouiller veut dire « la DEK
+n'est plus en mémoire, et le clair n'est plus accessible ». Un instantané qui survivrait au
+verrouillage laisserait sur le support 250 Mio de RAM invitée chiffrée sous une clé que
+l'utilisateur vient précisément de mettre hors d'atteinte — ce qui n'est pas une fuite, mais qui
+n'est pas non plus ce que « verrouiller » promet. Le coût du retrait est un boot à froid au
+déverrouillage suivant. Il est assumé, et #25 peut le rouvrir avec un argument, pas par omission.
+
+> **Note datée du 8 septembre 2026 — cette position est RÉVISÉE.** #169 (tranche 1 de #25) l'a
+> rouverte avec l'argument que ce paragraphe demandait, et l'a inversée : **le verrouillage ne
+> retire PAS l'instantané.** La ligne « verrouillage (#25) » de la table ci-dessus passe donc de «
+> oui » à « non ». Voir l'[ADR 0031](0031-verrouiller-le-worker-meurt-l-instantane-survit.md),
+> décision 3.
+>
+> **L'argument, en trois points.** L'instantané est scellé sous la DEK, en un seul AES-256-GCM par
+> capture — exactement comme le volume, qui reste, lui, sur l'appareil sans que personne n'appelle
+> cela un défaut du verrouillage ; l'adversaire de `SECURITY.md`, « copie ou inspection du profil
+> navigateur lorsque le coffre est verrouillé », n'obtient pas davantage de l'un que de l'autre. Le
+> prix du retrait, lui, est un boot à froid par réouverture — p95 = 125,9 s, déclaré hors budget par
+> `docs/quality-attributes.md`, contre 252 ms par instantané —, et **un verrouillage qui coûte deux
+> minutes est un verrouillage dont l'utilisateur allonge le délai jusqu'à ne plus l'avoir**. Enfin
+> la condition que ce paragraphe posait est tenue : la capture au verrouillage suit les six gestes
+> de la décision 6, dans leur ordre, parce que c'est le même code.
+>
+> **L'asymétrie qui reste, et qui est écrite comme limite** : l'instantané porte la RAM invitée,
+> donc du clair que le volume n'a jamais reçu, sous la même clé. C'est le seul argument sérieux de
+> l'autre côté ; il ne l'emporte pas, et il est nommé pour qu'un relecteur externe puisse le peser
+> lui-même.
+>
+> **Les six autres lignes de la table sont INCHANGÉES**, et leurs épreuves sont rejouées telles
+> quelles : la suppression, la restauration (#12), la migration (#13) et toute ouverture qui
+> l'écarte retirent toujours l'instantané.
 
 ## Décision 9 — Le rootfs éphémère publie son DELTA, pas son disque
 

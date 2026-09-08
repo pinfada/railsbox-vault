@@ -95,6 +95,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0028 — la coquille de produit et sa frontière](docs/decisions/0028-coquille-de-produit-et-frontiere.md)
 - [ADR 0029 — le déverrouillage dans la coquille : trois moyens, une attente annoncée, une feuille](docs/decisions/0029-deverrouillage-dans-la-coquille.md)
 - [ADR 0030 — le cycle de vie assemblé dans la coquille : l'ordre prouvé par l'échec de son inverse, la mort du Worker, COOP](docs/decisions/0030-cycle-de-vie-assemble-dans-la-coquille.md)
+- [ADR 0031 — verrouiller : le Worker meurt, l'instantané survit ; le délai d'inactivité et le rechargement de la coquille](docs/decisions/0031-verrouiller-le-worker-meurt-l-instantane-survit.md)
 
 ## Licence
 

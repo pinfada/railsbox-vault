@@ -2111,27 +2111,57 @@ frontière d'origine, l'ensemble de `npm run check` tient en un peu plus d'une m
 la limite de 2 min (86 s mesurées en CI le 2026-08-23). Elle exige que les trois moteurs soient
 installés (voir `docs/development.md`).
 
-## Le cycle de vie assemblé (#163, ADR 0030)
+## Le cycle de vie assemblé (#163, ADR 0030) et le VERROUILLAGE (#169, ADR 0031)
 
 Trois niveaux, et ils ne mesurent pas la même chose.
 
-**Unitaire** — `tests/unit/coquille-cycle-de-vie.test.mjs` et
-`tests/unit/coquille-application.test.mjs`. Les gardes du cycle sont des fonctions PURES de
-`src/coquille/`, et c'est la condition pour qu'une campagne de mutation les atteigne : l'ordre des
-huit étapes, la conduite à la mort du Worker, la sonde de capacités, le constat d'exclusivité et la
-lecture du descripteur d'application. Coût : moins d'une seconde, rattaché à `npm run check`.
+**Unitaire** — `tests/unit/coquille-cycle-de-vie.test.mjs`,
+`tests/unit/coquille-application.test.mjs` et `tests/unit/coquille-verrouillage.test.mjs`. Les
+gardes du cycle sont des fonctions PURES de `src/coquille/` — ou, pour la surveillance d'inactivité,
+des fonctions à HORLOGE INJECTÉE —, et c'est la condition pour qu'une campagne de mutation les
+atteigne : l'ordre des huit étapes, la conduite à la mort du Worker, la sonde de capacités, le
+constat d'exclusivité, la lecture du descripteur d'application, et la conduite du verrouillage avec
+son délai et ses bornes. Coût : moins d'une seconde, rattaché à `npm run check`.
+
+L'injection de l'horloge n'est pas un ornement : **éprouver un délai de dix minutes sans elle
+coûterait dix minutes**. Ce que l'épreuve pilote est le TEMPS, pas la vitesse de la machine qui la
+joue, et c'est ce qui rend mesurables les quatre propriétés du déclencheur — jamais armé sur un
+coffre non ouvert, les barrières ne comptent pas, les messages du cadre ne comptent pas, un document
+caché ne remet pas à zéro.
 
 **Intégration navigateur** — `tests/browser/coquille-cycle-de-vie.spec.mjs` et
 `tests/browser/entetes-durcissement.spec.mjs`, sur les **trois moteurs** (`npm run test:cycle`). Ce
 qu'ils mesurent et que l'unitaire ne peut pas mesurer : que le relevé publie les étapes datées dans
 l'ordre du dossier, qu'un démarrage demandé avant l'ouverture du backend est refusé, qu'un Worker
 qui **jette** livre un événement, qu'un Worker **muet** est constaté par la borne de trente
-secondes, que le `terminate()` de la fermeture propre est la troisième cause, et que
-`Cross-Origin-Opener-Policy` coupe réellement une relation d'ouverture inter-fenêtres. Coût :
-environ **40 s par moteur**, dont trente secondes pour la seule borne du Worker muet — elle ne peut
-pas être raccourcie sans mesurer autre chose que ce qu'elle mesure. Ces suites ne sont **pas**
-rattachées à `npm run check` : elles sont lancées par `npm run test:cycle`, comme
-`npm run test:coquille` et `npm run test:deverrouillage`.
+secondes, que le `terminate()` du VERROUILLAGE est la troisième cause, que la coquille se RECHARGE
+et revient `verrouille` sans que rien ait été dérivé, et que `Cross-Origin-Opener-Policy` coupe
+réellement une relation d'ouverture inter-fenêtres. Coût : environ **40 s par moteur**, dont trente
+secondes pour la seule borne du Worker muet — elle ne peut pas être raccourcie sans mesurer autre
+chose que ce qu'elle mesure. Ces suites ne sont **pas** rattachées à `npm run check` : elles sont
+lancées par `npm run test:cycle`, comme `npm run test:coquille` et `npm run test:deverrouillage`.
+
+**Trois épreuves de plus paient du temps RÉEL, sur Chromium seul** (#169) : un coffre laissé se
+verrouille tout seul après **une minute** — le délai minimal que la fonction bornée accepte —, un
+coffre tenu éveillé par une frappe toutes les six secondes ne se verrouille pas pendant une minute
+et demie, et la valeur par DÉFAUT de dix minutes est vérifiée par un troisième témoin négatif. Coût
+: environ **4 minutes**, sur un seul moteur, et c'est une décision assumée — ce qu'elles mesurent
+est une MINUTERIE et le branchement d'écouteurs, non un comportement de moteur ; ce qui dépend du
+moteur, le verrouillage lui-même et son rechargement, est mesuré sur les trois par le geste
+explicite, qui est le TÉMOIN POSITIF du délai.
+
+Le délai court est obtenu **en servant le module de verrouillage avec une constante abaissée**, par
+`page.route` — le fichier RÉEL du dépôt, une seule constante remplacée par une valeur que
+`delaiDInactivite` accepte. Il n'y a aucune interface de réglage dans le produit (YAGNI écrit, ADR
+0031 décision 2), donc aucun bouton par lequel une épreuve pourrait l'abaisser : l'interception est
+du côté du réseau, là où le produit n'a rien à dire — le même motif que la substitution du Worker
+juste en dessous.
+
+Le relevé publié **juste avant le rechargement** est capturé par un `MutationObserver` posé par
+`page.addInitScript` et rangé dans `sessionStorage` par l'ÉPREUVE. Son rappel est une microtâche,
+donc il précède le `setTimeout` qui porte le rechargement : la capture est **ordonnée par la
+plate-forme**, pas gagnée par une course. L'instrumentation appartient à l'épreuve, jamais au
+produit — même motif que la sonde d'exfiltration de #162.
 
 Le Worker est tué **par substitution de son module au niveau du réseau** (`page.route`), et jamais
 par une poignée exposée par le produit : #162 a retiré le jeton de harnais du chemin de produit, et
@@ -2141,18 +2171,25 @@ lui rendre un `globalThis.tuerLeWorker` rouvrirait cette porte pour la commodit�
 (`.github/workflows/reprise.yml`). C'est le premier scénario de `tests/e2e/` qui part de
 `public/index.html` au lieu de `/vm/reference.html` : deux origines réelles servies par les deux
 rôles de `tools/serve.mjs`, déverrouillage par phrase, installation du disque applicatif, boot de
-Rails **dans le Worker de confiance**, fermeture propre, page fermée, réouverture — et l'application
-n'est pas réinstallée. Il exige Docker (`npm run image:build`) et les artefacts v86
-(`npm run vm:fetch`) ; à défaut il se déclare `skipped` avec la **condition explicite** qui l'a
-ignoré, jamais par défaut.
+Rails **dans le Worker de confiance**, VERROUILLAGE par le geste, rechargement de la coquille
+observé, instantané constaté PRÉSENT sur l'OPFS réel, page fermée, réouverture par un NOUVEAU geste
+— et l'application n'est pas réinstallée : elle reprend l'instantané que le verrouillage a laissé.
+Il exige Docker (`npm run image:build`) et les artefacts v86 (`npm run vm:fetch`) ; à défaut il se
+déclare `skipped` avec la **condition explicite** qui l'a ignoré, jamais par défaut.
 
 **Durée MESURÉE : 2,9 minutes** en local (4 vCPU, 16 Gio), et non les dix qu'une estimation prudente
-annonçait : le second démarrage ne reboote pas à froid, il reprend l'instantané que la fermeture
-propre a scellé — **252 ms** contre **102,6 s** pour le boot initial. Compter davantage sur un
-exécutant partagé ; la marge du job (120 min) les couvre largement.
+annonçait : le second démarrage ne reboote pas à froid, il reprend l'instantané que le verrouillage
+a scellé — **252 ms** contre **102,6 s** pour le boot initial. #169 ajoute à ce scénario le
+verrouillage, l'attente du rechargement et un inventaire de l'OPFS : **quelques secondes**, sans
+second boot. Compter davantage sur un exécutant partagé ; la marge du job (120 min) les couvre
+largement.
 
-**Campagne de mutation** — `node tools/muter-gardes-cycle-de-vie.mjs` : vingt-sept gardes,
+**Campagnes de mutation** — `node tools/muter-gardes-cycle-de-vie.mjs` : vingt-sept gardes,
 vingt-sept mutants tués, table et survivant dans l'ADR 0030.
+`node tools/muter-gardes-verrouillage.mjs` : **vingt gardes, vingt mutants tués**, table dans l'ADR
+0031 — le déclencheur d'inactivité et ses quatre refus, les bornes du délai, l'ordre `close()` avant
+`terminate()`, le rechargement, le refus de rouvrir sans geste, et l'instantané qui n'est pas
+retiré.
 
 ### Le VERT PAR VACUITÉ, et ce qui le ferme
 

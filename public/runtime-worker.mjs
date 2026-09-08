@@ -738,8 +738,17 @@ async function demarrerLApplication(message, correlation) {
  * capture refusée rend son motif, jamais une exception.
  *
  * **Ce que ce geste NE décide pas** : ni quand il se déclenche, ni sous quel délai, ni ce que
- * « verrouillé » veut dire. #25 possède l'état et la règle, et réemploiera ce chemin (ADR 0030,
- * décision 3).
+ * « verrouillé » veut dire. #25 possède l'état et la règle (ADR 0030, décision 3), et elle a
+ * TRANCHÉ depuis : ce chemin est le VERROUILLAGE (#169, ADR 0031). Deux déclencheurs l'empruntent —
+ * le bouton « Verrouiller » de la coquille et le délai d'inactivité de `src/coquille/
+ * verrouillage.mjs` —, et le Worker ne les distingue pas : il fait la même chose, dans le même
+ * ordre, quel que soit celui qui l'a demandé.
+ *
+ * **L'INSTANTANÉ n'est PAS retiré** par ce geste, et c'est une décision datée (ADR 0031, décision 3,
+ * révision de l'ADR 0024 décision 8) : il est scellé sous la DEK, exactement comme le volume qui
+ * reste sur l'appareil, et un verrouillage qui coûterait un boot à froid par réouverture est un
+ * verrouillage qu'on désactive. Ce qui le retire n'a pas bougé : la suppression, la restauration, la
+ * migration et toute ouverture qui l'écarte.
  */
 async function fermerLeCoffre(message, correlation) {
   const capture = await enBattant(correlation, () => relacherTout(message?.capturer !== false));
