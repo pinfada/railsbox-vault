@@ -260,15 +260,9 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "un verrouillage demandé PENDANT un boot est refusé sous le code de l'ORDRE",
-    garde: "gestes-du-cycle.verrouiller — la garde d'ordre sur le démarrage en vol",
+    garde: "gestes-du-cycle.refusDOrdre — la condition sur le démarrage en vol",
     fichier: GESTES,
-    avant:
-      "  if (enVol?.demarrage === true) {\n" +
-      "    const code = CODES_REFUS_COQUILLE.etapeHorsOrdre;\n" +
-      "    dire(`cycle:verrouillage-refuse:${code}`);\n" +
-      "    apresRefusDOrdre?.(code);\n" +
-      "    return { verrouille: false, code, horsOrdre: true };\n" +
-      "  }\n",
+    avant: "  if (enVol?.demarrage !== true) return null;\n",
     apres: "",
     epreuves: [EPREUVE],
   },

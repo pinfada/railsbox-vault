@@ -210,25 +210,35 @@ async function demarrer(contexte) {
  * désarmé et réconcilier l'état qu'il publie avec celui du Worker. Un geste qui échoue en silence
  * sur ce chemin-là laisse un coffre ouvert que plus rien ne referme.
  */
+/**
+ * LA GARDE D'ORDRE du verrouillage, et elle vient AVANT tout le reste.
+ *
+ * Un verrouillage demandé pendant qu'un démarrage est en vol arriverait au Worker DERRIÈRE un boot
+ * de deux minutes : la coquille attendrait sans rien dire, puis capturerait l'instantané d'une
+ * machine qui vient de démarrer. Le refus porte le code de l'ORDRE —
+ * `VAULT_COQUILLE_ETAPE_HORS_ORDRE`, existant depuis #163 — et non un code de support : ce n'est pas
+ * le stockage qui a échoué, c'est l'étape 3 qui n'a pas conclu.
+ *
+ * Ce refus-ci ne TUE RIEN : le geste n'a jamais atteint le Worker, le coffre est légitimement
+ * ouvert, et ce qu'il faut est RÉARMER le délai que la surveillance venait de désarmer. C'est toute
+ * la différence avec un refus du Worker, et les deux ne se confondent pas.
+ *
+ * @returns {{ verrouille: false, code: string, horsOrdre: true } | null} le refus, ou `null` si
+ *   l'ordre laisse passer.
+ */
+function refusDOrdre({ enVol, dire, apresRefusDOrdre }) {
+  if (enVol?.demarrage !== true) return null;
+  const code = CODES_REFUS_COQUILLE.etapeHorsOrdre;
+  dire(`cycle:verrouillage-refuse:${code}`);
+  apresRefusDOrdre?.(code);
+  return { verrouille: false, code, horsOrdre: true };
+}
+
 async function verrouiller(contexte, declencheur) {
-  const { demander, rapport, publier, dire, enVol } = contexte;
-  const { avantVerrouillage, apresRefusDOrdre, apresRefusDeVerrouillage, apresVerrouillage } =
-    contexte;
-  // LA GARDE D'ORDRE, et elle vient AVANT tout le reste. Un verrouillage demandé pendant qu'un
-  // démarrage est en vol arriverait au Worker derrière un boot de deux minutes : la coquille
-  // attendrait sans rien dire, puis capturerait l'instantané d'une machine qui vient de démarrer.
-  // Le refus porte le code de l'ORDRE — `VAULT_COQUILLE_ETAPE_HORS_ORDRE`, existant depuis #163 —
-  // et non un code de support : ce n'est pas le stockage qui a échoué, c'est l'étape 3 qui n'a pas
-  // conclu.
-  //
-  // Ce refus-ci ne TUE RIEN : le geste n'a jamais atteint le Worker, le coffre est légitimement
-  // ouvert, et ce qu'il faut est RÉARMER le délai que la surveillance venait de désarmer.
-  if (enVol?.demarrage === true) {
-    const code = CODES_REFUS_COQUILLE.etapeHorsOrdre;
-    dire(`cycle:verrouillage-refuse:${code}`);
-    apresRefusDOrdre?.(code);
-    return { verrouille: false, code, horsOrdre: true };
-  }
+  const { demander, rapport, publier, dire } = contexte;
+  const { avantVerrouillage, apresRefusDeVerrouillage, apresVerrouillage } = contexte;
+  const horsOrdre = refusDOrdre(contexte);
+  if (horsOrdre !== null) return horsOrdre;
   // Le CHRONOMÈTRE part ici, et pas au clic : les DEUX déclencheurs — le bouton et le délai
   // d'inactivité — passent par cette porte, et une mesure prise sur le seul clic ne dirait rien du
   // second. C'est aussi la raison pour laquelle ce module ne connaît pas les déclencheurs : il en
