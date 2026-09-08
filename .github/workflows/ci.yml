@@ -16,7 +16,17 @@ jobs:
   check:
     name: Qualité et tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Portée de 20 à 30 minutes le 8 septembre 2026 (#169), et le motif est une DURÉE D'ATTENTE, pas
+    # une lenteur : ce gate porte désormais des épreuves qui mesurent des bornes de TEMPS, et une
+    # borne ne se raccourcit pas sans mesurer autre chose que ce qu'elle mesure. Le compte, sur
+    # l'exécutant GitHub, se lit ainsi : trente secondes pour le Worker MUET et quarante pour le
+    # Worker LENT (#163), puis une minute pour le verrouillage par inactivité et une minute et demie
+    # pour son témoin négatif (#169) — quatre minutes pendant lesquelles rien ne calcule.
+    #
+    # La dernière recette verte de `main` tenait en 15 min 08 s ; celle de #163 en 8 min 59 s avant
+    # elle. Vingt minutes ne laissaient plus de marge à un exécutant partagé, et une recette annulée
+    # sur son plafond ne dit rien de ce qu'elle mesurait.
+    timeout-minutes: 30
     steps:
       - name: Récupération du dépôt
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

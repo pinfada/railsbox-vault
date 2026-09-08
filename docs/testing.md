@@ -2154,6 +2154,14 @@ qu'elles mesurent est une MINUTERIE et le branchement d'écouteurs, non un compo
 ce qui dépend du moteur, le verrouillage lui-même et son rechargement, est mesuré sur les trois par
 le geste explicite, qui est le TÉMOIN POSITIF du délai.
 
+**Ce que cela coûte à la RECETTE, et ce qui en a été fait.** Ces attentes portent le job
+`Qualité et tests` de `ci.yml` au-delà de vingt minutes — la dernière recette verte de `main` tenait
+en 15 min 08 s —, et une recette annulée sur son plafond ne dit rien de ce qu'elle mesurait. Le
+plafond est donc porté à **trente minutes**, avec son compte écrit dans le fichier : trente secondes
+pour le Worker muet, quarante pour le Worker lent (#163), une minute pour le verrouillage par
+inactivité et une minute et demie pour son témoin négatif (#169). Quatre minutes pendant lesquelles
+rien ne calcule, et qu'aucune parallélisation ne raccourcit : une borne de temps se paie en temps.
+
 **Deux, et pas trois.** Une troisième épreuve vérifiait que la valeur PAR DÉFAUT de dix minutes
 n'était pas atteinte plus tôt. Elle a été retirée avant la fusion, et le dire vaut mieux que la
 laisser tomber en silence : ce qu'elle affirmait de la CONSTANTE, l'unitaire l'affirme sans attendre
