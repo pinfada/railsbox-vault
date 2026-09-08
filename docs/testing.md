@@ -2212,10 +2212,13 @@ davantage sur un exécutant partagé ; la marge du job (120 min) les couvre larg
 
 **Campagnes de mutation** — `node tools/muter-gardes-cycle-de-vie.mjs` : vingt-sept gardes,
 vingt-sept mutants tués, table et survivant dans l'ADR 0030.
-`node tools/muter-gardes-verrouillage.mjs` : **vingt gardes, vingt mutants tués**, table dans l'ADR
-0031 — le déclencheur d'inactivité et ses quatre refus, les bornes du délai, l'ordre `close()` avant
-`terminate()`, le rechargement, le refus de rouvrir sans geste, et l'instantané qui n'est pas
-retiré.
+`node tools/muter-gardes-verrouillage.mjs` : **vingt-huit gardes, vingt-huit mutants tués**, table
+dans l'ADR 0031 — le déclencheur d'inactivité et ses quatre refus, les bornes du délai, l'ordre
+`close()` avant `terminate()`, le rechargement, le refus de rouvrir sans geste, l'instantané qui
+n'est pas retiré, et depuis la revue de la PR #174 : la conduite d'un verrouillage REFUSÉ, la garde
+d'ordre sur un démarrage en vol, la table close des déclencheurs, et le branchement RÉEL des
+écouteurs d'activité — « la garde qui décide ce que la coquille compte comme une personne était la
+seule que la campagne ne regardait pas ».
 
 ### Le VERT PAR VACUITÉ, et ce qui le ferme
 
