@@ -565,7 +565,7 @@ Vingt-huit gardes, chacune retirée du source dans un atelier temporaire, l'épr
 | 20  | `conduiteApresUnRefusDeVerrouillage` — un refus TERMINE le Worker                  | TUÉ     |
 | 21  | `conduiteApresUnRefusDeVerrouillage` — un refus RETIRE le cadre                    | TUÉ     |
 | 22  | `conduiteApresUnRefusDeVerrouillage` — un refus ne recharge PAS                    | TUÉ     |
-| 23  | `verrouiller` — la garde d'ordre sur le démarrage en vol                           | TUÉ     |
+| 23  | `refusDOrdre` — la garde d'ordre sur le démarrage en vol                           | TUÉ     |
 | 24  | `demarrer` — le `finally` qui rend le verrouillage de nouveau possible             | TUÉ     |
 | 25  | `exigerUnDeclencheur` — la table close des deux déclencheurs                       | TUÉ     |
 | 26  | `EVENEMENTS_DACTIVITE` — ce que la coquille compte comme une personne              | TUÉ     |
