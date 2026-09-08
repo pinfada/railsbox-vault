@@ -1142,7 +1142,28 @@ test("APRÈS un verrouillage, rien du secret ne s'est déposé — et la sonde d
 
   // LE VERROUILLAGE, par le geste explicite — le seul déclencheur dont le produit maîtrise
   // entièrement le chemin, et le témoin positif de l'autre. La coquille se recharge d'elle-même.
+  //
+  // L'attente porte sur un TÉMOIN posé par l'épreuve dans le document d'avant, et non sur ce que la
+  // page affiche : `#deverrouillage-moyens` est déjà rempli par la session en cours, et une épreuve
+  // qui s'y fierait fouillerait la page PRÉCÉDENTE en croyant fouiller la nouvelle. Le témoin vit
+  // sur `globalThis` ; le produit n'en sait rien, et il disparaît avec le document qui le portait.
+  await page.evaluate(() => {
+    globalThis.__documentDAvantLeVerrouillage = true;
+  });
   await page.locator("#verrouiller-le-coffre").click();
+  await expect
+    .poll(
+      async () => {
+        try {
+          return await page.evaluate(() => globalThis.__documentDAvantLeVerrouillage === undefined);
+        } catch {
+          // Contexte détruit par la navigation : c'est le rechargement, pas un défaut.
+          return false;
+        }
+      },
+      { timeout: DELAI },
+    )
+    .toBe(true);
   await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });
   const apres = await releve(page);
   expect(apres.etat, "le coffre n'est pas verrouillé : la sonde mesurerait un coffre ouvert").toBe(

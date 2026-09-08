@@ -2138,17 +2138,28 @@ secondes, que le `terminate()` du VERROUILLAGE est la troisième cause, que la c
 et revient `verrouille` sans que rien ait été dérivé, et que `Cross-Origin-Opener-Policy` coupe
 réellement une relation d'ouverture inter-fenêtres. Coût : environ **40 s par moteur**, dont trente
 secondes pour la seule borne du Worker muet — elle ne peut pas être raccourcie sans mesurer autre
-chose que ce qu'elle mesure. Ces suites ne sont **pas** rattachées à `npm run check` : elles sont
-lancées par `npm run test:cycle`, comme `npm run test:coquille` et `npm run test:deverrouillage`.
+chose que ce qu'elle mesure.
 
-**Trois épreuves de plus paient du temps RÉEL, sur Chromium seul** (#169) : un coffre laissé se
-verrouille tout seul après **une minute** — le délai minimal que la fonction bornée accepte —, un
+**Elles SONT rattachées à `npm run check`**, et cette page disait le contraire : les projets
+`cycle-de-vie-<moteur>` figurent dans `playwright.config.mjs`, et `npm run test:browser` —
+`playwright test` sans `--project` — les exécute tous. `npm run test:cycle` ne fait que les jouer
+SEULS, plus vite, pendant qu'on y travaille. La correction est de #169, qui ajoute du temps réel à
+ce gate et n'avait pas le droit de le faire en croyant l'ajouter ailleurs.
+
+**Deux épreuves de plus paient du temps RÉEL, sur Chromium seul** (#169) : un coffre laissé se
+verrouille tout seul après **une minute** — le délai minimal que la fonction bornée accepte — et un
 coffre tenu éveillé par une frappe toutes les six secondes ne se verrouille pas pendant une minute
-et demie, et la valeur par DÉFAUT de dix minutes est vérifiée par un troisième témoin négatif. Coût
-: environ **4 minutes**, sur un seul moteur, et c'est une décision assumée — ce qu'elles mesurent
-est une MINUTERIE et le branchement d'écouteurs, non un comportement de moteur ; ce qui dépend du
-moteur, le verrouillage lui-même et son rechargement, est mesuré sur les trois par le geste
-explicite, qui est le TÉMOIN POSITIF du délai.
+et demie. Coût : environ **2 minutes 30**, sur un seul moteur, et c'est une décision assumée — ce
+qu'elles mesurent est une MINUTERIE et le branchement d'écouteurs, non un comportement de moteur ;
+ce qui dépend du moteur, le verrouillage lui-même et son rechargement, est mesuré sur les trois par
+le geste explicite, qui est le TÉMOIN POSITIF du délai.
+
+**Deux, et pas trois.** Une troisième épreuve vérifiait que la valeur PAR DÉFAUT de dix minutes
+n'était pas atteinte plus tôt. Elle a été retirée avant la fusion, et le dire vaut mieux que la
+laisser tomber en silence : ce qu'elle affirmait de la CONSTANTE, l'unitaire l'affirme sans attendre
+; ce qu'elle affirmait du BRANCHEMENT, le témoin négatif l'affirme mieux — il montre qu'une
+minuterie réelle court ET se remet à zéro. Elle coûtait soixante-quinze secondes de plus sur le seul
+gate obligatoire, où le temps d'attente d'un projet retarde les quinze autres.
 
 Le délai court est obtenu **en servant le module de verrouillage avec une constante abaissée**, par
 `page.route` — le fichier RÉEL du dépôt, une seule constante remplacée par une valeur que
@@ -2177,12 +2188,12 @@ observé, instantané constaté PRÉSENT sur l'OPFS réel, page fermée, réouve
 Il exige Docker (`npm run image:build`) et les artefacts v86 (`npm run vm:fetch`) ; à défaut il se
 déclare `skipped` avec la **condition explicite** qui l'a ignoré, jamais par défaut.
 
-**Durée MESURÉE : 2,9 minutes** en local (4 vCPU, 16 Gio), et non les dix qu'une estimation prudente
-annonçait : le second démarrage ne reboote pas à froid, il reprend l'instantané que le verrouillage
-a scellé — **252 ms** contre **102,6 s** pour le boot initial. #169 ajoute à ce scénario le
-verrouillage, l'attente du rechargement et un inventaire de l'OPFS : **quelques secondes**, sans
-second boot. Compter davantage sur un exécutant partagé ; la marge du job (120 min) les couvre
-largement.
+**Durée MESURÉE : 3,1 minutes** en local (4 vCPU, 16 Gio) après #169 — 2,9 minutes avant lui —, et
+non les dix qu'une estimation prudente annonçait : le second démarrage ne reboote pas à froid, il
+reprend l'instantané que le VERROUILLAGE a scellé. Relevé du 8 septembre 2026 : verrouillage **1
+859,5 ms** (dont 1 854,6 ms de capture), boot à froid **114,1 s**, réouverture par instantané **1
+038,2 ms** — et l'instantané de 256 Mio est constaté PRÉSENT sur l'OPFS entre les deux. Compter
+davantage sur un exécutant partagé ; la marge du job (120 min) les couvre largement.
 
 **Campagnes de mutation** — `node tools/muter-gardes-cycle-de-vie.mjs` : vingt-sept gardes,
 vingt-sept mutants tués, table et survivant dans l'ADR 0030.
