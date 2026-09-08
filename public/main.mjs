@@ -65,8 +65,10 @@ import { monterLInterface } from "/src/coquille/interface-de-deverrouillage.mjs"
 import { DELAI_WORKER_MORT_MS } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { cadreApplicatif } from "/src/coquille/origines-de-la-coquille.mjs";
 import {
+  DECLENCHEURS,
   brancherLesSignauxDActivite,
   conduiteApresLeVerrouillage,
+  conduiteApresUnRefusDeVerrouillage,
   surveillanceDInactivite,
 } from "/src/coquille/verrouillage.mjs";
 import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
@@ -305,10 +307,14 @@ let mortDuWorker = null;
  */
 let verrouillerLeCoffre = null;
 
-/** Ce qui a déclenché le verrouillage en cours. Il n'y en a que deux, et le relevé le dit. */
-let declencheurDuVerrouillage = null;
-
-/** L'instant du départ du verrouillage, sur l'horloge de la page. Origine de `verrouillageMs`. */
+/**
+ * L'instant du départ du verrouillage, sur l'horloge de la page. Origine de `verrouillageMs`.
+ *
+ * Le DÉCLENCHEUR, lui, n'est plus une variable de module : il est passé en argument du geste et
+ * revient en argument des rappels. Une variable qui survivait à un verrouillage RATÉ faisait publier
+ * « inactivite » sur le geste qui le suivait — le relevé mentait sur ce que l'utilisateur avait fait
+ * (constat 8 de la revue de sécurité de la PR #174).
+ */
 let departDuVerrouillage = null;
 
 /**
@@ -322,10 +328,7 @@ const surveillance = surveillanceDInactivite({
   maintenant: () => performance.now(),
   planifier: (geste, delai) => setTimeout(geste, delai),
   annuler: (identifiant) => clearTimeout(identifiant),
-  verrouiller: () => {
-    declencheurDuVerrouillage = "inactivite";
-    void verrouillerLeCoffre?.();
-  },
+  verrouiller: () => void verrouillerLeCoffre?.(DECLENCHEURS.inactivite),
 });
 
 brancherLesSignauxDActivite({ racine: document, surveillance });
@@ -813,15 +816,28 @@ async function demarrer() {
     // bouton ne dirait rien du second chemin.
     avantVerrouillage: () => {
       departDuVerrouillage = performance.now();
-      declencheurDuVerrouillage ??= "geste";
     },
+    // L'ORDRE a refusé, et le geste n'a jamais atteint le Worker : le coffre est légitimement encore
+    // ouvert, et ce qu'il faut est RÉARMER le délai que la surveillance venait de désarmer. Rien
+    // n'est terminé, rien n'est retiré — il ne s'est rien passé d'autre qu'un « pas maintenant ».
+    apresRefusDOrdre: (code) => {
+      rapport.verrouillage = { refuse: true, code, horsOrdre: true };
+      departDuVerrouillage = null;
+      refletDeLEtat();
+      publier();
+    },
+    // Le WORKER a refusé : la conduite est celle de `conduiteApresUnRefusDeVerrouillage`.
+    apresRefusDeVerrouillage: (code, declencheur) => acheverUnRefus(code, declencheur),
     // Le `terminate()` vient APRÈS le `close()` que le Worker vient de faire, et c'est la troisième
     // cause de mort — celle que la coquille se donne à elle-même. La conduite est la même que pour
     // les deux autres : refuser tout service jusqu'à un geste explicite.
-    apresVerrouillage: () => {
+    apresVerrouillage: (declencheur) => {
       worker.terminate();
-      acheverLeVerrouillage();
+      acheverLeVerrouillage(declencheur);
     },
+    // L'étape 3 vient de conclure : si le coffre est ouvert, le délai reprend sa course. Sans ce
+    // rappel, un boot laissait la surveillance désarmée jusqu'à la prochaine réponse d'état.
+    apresDemarrage: () => refletDeLEtat(),
   });
   verrouillerLeCoffre = gestes.verrouillerLeCoffre;
 
@@ -897,7 +913,7 @@ async function demanderLEtatPrivilegie() {
  * l'interface de déverrouillage est remontée, aucune dérivation ne part sans geste, et aucune KEK
  * n'est gardée.
  */
-function acheverLeVerrouillage() {
+function acheverLeVerrouillage(declencheur) {
   const conduite = conduiteApresLeVerrouillage({ etatConnu: rapport.etat });
   constaterLaMort(conduite.cause, { offrirLeGesteQuiRouvre: conduite.gesteQuiRouvreOffert });
   if (departDuVerrouillage !== null) {
@@ -905,7 +921,7 @@ function acheverLeVerrouillage() {
       Math.round((performance.now() - departDuVerrouillage) * 10) / 10;
   }
   rapport.verrouillage = {
-    declencheur: declencheurDuVerrouillage ?? "geste",
+    declencheur,
     delaiDInactiviteMs: surveillance.delaiMs,
     etat: conduite.etat,
     // Le vocabulaire est celui de l'ADR 0021 décision 7 : ce qui s'écrit est « le Worker qui
@@ -920,6 +936,47 @@ function acheverLeVerrouillage() {
   };
   terminer("verrouille", `coquille:verrouille:${rapport.verrouillage.declencheur}`);
   if (conduite.rechargerLaCoquille) rechargerLaCoquille();
+}
+
+/**
+ * ACHÈVE un verrouillage REFUSÉ : le refus est publié AVANT tout, le Worker est terminé, le cadre
+ * est retiré, et la coquille NE recharge pas.
+ *
+ * L'ordre des trois est le contrat de ce chemin-là autant que celui de l'autre. Le refus est écrit
+ * d'abord parce qu'il est la seule chose que l'utilisateur ait à apprendre ; le `terminate()` suit
+ * parce que le Worker ne sert plus rien — sa KEK est déjà partie par le `finally` de `relacherTout`
+ * — ; le cadre part enfin, parce que laisser ses pixels sur un coffre dont l'utilisateur vient de
+ * demander le verrouillage est le contraire de la promesse.
+ *
+ * **Aucun port n'est re-octroyé.** `rapport.portOctroye` reste vrai, si bien que la garde
+ * `VAULT_COQUILLE_ANNONCE_UNIQUE` de #161 continue de refuser un second octroi : le cadre part, il
+ * ne revient qu'au rechargement, et l'unicité du port n'est pas reformulée pour autant.
+ */
+function acheverUnRefus(code, declencheur) {
+  const conduite = conduiteApresUnRefusDeVerrouillage({ code, etatConnu: rapport.etat });
+  rapport.verrouillage = {
+    refuse: true,
+    codeDuRefus: conduite.codeDuRefus,
+    declencheur,
+    delaiDInactiviteMs: surveillance.delaiMs,
+    workerTermine: conduite.terminerLeWorker,
+    cadreRetire: conduite.retirerLeCadre,
+    rechargerLaCoquille: conduite.rechargerLaCoquille,
+    instantaneGaranti: conduite.instantaneGaranti,
+    kekRetenue: conduite.kekRetenue,
+  };
+  publier();
+  if (conduite.terminerLeWorker) worker.terminate();
+  constaterLaMort(conduite.cause, { offrirLeGesteQuiRouvre: conduite.gesteQuiRouvreOffert });
+  if (conduite.retirerLeCadre) retirerLeCadre();
+  terminer("verrouillage-refuse", `coquille:verrouillage-refuse:${code ?? "inconnu"}`);
+}
+
+/** RETIRE le cadre applicatif du document. Le port n'est pas re-octroyé : la garde de #161 tient. */
+function retirerLeCadre() {
+  cadre?.remove();
+  cadre = null;
+  rapport.cadreApplicatif = "retire";
 }
 
 /**

@@ -79,12 +79,16 @@ export const TYPES_PRIVILEGIES = Object.freeze({
   /**
    * FERMETURE PROPRE (étape 7) : arrêter la VM, capturer l'instantané, `close()` le volume.
    *
-   * Le `terminate()` du Worker vient APRÈS, et il est le fait de la page : terminer avant `close()`
-   * laisserait le handle exclusif tenu par un objet que plus personne ne référence, et l'ouverture
-   * suivante rendrait `VAULT_STORAGE_BUSY` — constat 6 de la revue de sécurité de la PR #167.
+   * Le `terminate()` du Worker vient APRÈS, et il est le fait de la page : `close()` attend les E/S
+   * déjà ACCEPTÉES (#132) et laisse le volume dans l'état que la capture vient de décrire. Terminer
+   * avant lui perd les écritures en vol et rend l'instantané incohérent avec le volume — donc écarté
+   * à la réouverture, donc un boot à froid.
    *
-   * #163 écrit ce chemin ; #25 le réemploiera pour verrouiller, et c'est elle qui dira sous quel
-   * déclencheur et sous quel délai.
+   * Ce que ce motif n'est plus : le handle exclusif, lui, est relâché par le MOTEUR à la mort du
+   * Worker — mesuré sur deux moteurs (#169, ADR 0031, constat 2 de la revue de la PR #174), contre
+   * ce que le constat 6 de la revue de la PR #167 avait fait écrire ici.
+   *
+   * #163 écrit ce chemin ; #169 le NOMME verrouillage et lui donne ses deux déclencheurs.
    */
   fermeture: "vault.coquille.fermer-le-coffre",
   fermetureReponse: "vault.coquille.fermer-le-coffre-reponse",

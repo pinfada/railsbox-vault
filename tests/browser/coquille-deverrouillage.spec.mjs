@@ -1223,3 +1223,100 @@ test("APRÈS un verrouillage, rien du secret ne s'est déposé — et la sonde d
   // trace après un rechargement.
   expect(JSON.stringify(await releveDeLInterface(page))).not.toContain(code);
 });
+
+/**
+ * SERT le module de verrouillage avec un délai d'inactivité COURT, pris entre les bornes du produit.
+ *
+ * Le même geste que dans `coquille-cycle-de-vie.spec.mjs`, et pour le même motif : il n'y a aucune
+ * interface de réglage du délai (YAGNI écrit, ADR 0031 décision 2), donc aucun bouton par lequel une
+ * épreuve pourrait l'abaisser. L'interception est du côté du RÉSEAU, là où le produit n'a rien à
+ * dire, et ce qui est servi est le fichier RÉEL avec une seule constante remplacée par une valeur
+ * que `delaiDInactivite` accepte.
+ */
+async function servirUnDelaiCourt(page, delaiMs) {
+  const source = await readFile(
+    new URL("../../src/coquille/verrouillage.mjs", import.meta.url),
+    "utf8",
+  );
+  const abaisse = source.replace(
+    "export const DELAI_INACTIVITE_MS = 600_000;",
+    `export const DELAI_INACTIVITE_MS = ${delaiMs};`,
+  );
+  expect(abaisse, "la constante du délai n'a pas été trouvée").not.toBe(source);
+  await page
+    .context()
+    .route("**/src/coquille/verrouillage.mjs", (route) =>
+      route.fulfill({ status: 200, contentType: "text/javascript; charset=utf-8", body: abaisse }),
+    );
+}
+
+test("APRÈS un verrouillage par le DÉLAI, rien du secret ne s'est déposé non plus", async ({
+  page,
+  browserName,
+}, info) => {
+  // Le geste explicite est le TÉMOIN POSITIF du délai, et la sonde ci-dessus le suit. Restait à
+  // fouiller après l'AUTRE déclencheur : c'est le « non prouvé » que la revue de sécurité de la
+  // PR #174 a relevé, et le voici comblé. Un moteur suffit — ce qui est mesuré est ce qui se
+  // DÉPOSE, et cela ne dépend pas du moteur ; ce qui en dépend, la livraison des événements et
+  // l'étirement des minuteries, est mesuré sur deux moteurs par `coquille-cycle-de-vie.spec.mjs`.
+  test.skip(browserName !== "chromium", "une minute réelle : un moteur suffit pour un dépôt");
+  test.setTimeout(300_000);
+  await servirUnDelaiCourt(page, 60_000);
+  await ouvrirLaCoquille(page);
+  await ouvrirParLaPhrase(page);
+  if (await exigerLaLimiteDuMoteur(page, info, "sonde-apres-delai")) return;
+
+  const feuille = await creerLaFeuille(page);
+  const code = feuille.code;
+  const octets = decoderCode(code);
+  const octetsHex = Buffer.from(octets).toString("hex");
+  const materiauHex = createHash("sha256").update(octets).digest("hex");
+  const sansTirets = code.replaceAll("-", "");
+  const humaine = code.toLowerCase().replaceAll("-", " ").replaceAll("0", "o").replaceAll("1", "l");
+
+  // RIEN n'est fait pendant la minute : ni clic, ni frappe, ni focus. La coquille se verrouille
+  // toute seule, puis se recharge.
+  const debut = Date.now();
+  await expect
+    .poll(async () => (await releve(page)).etat, { timeout: 240_000 })
+    .toBe(ETATS_DU_VOLUME.verrouille);
+  await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });
+  const apres = await releve(page);
+  expect(apres.mesures.deverrouillageMs, "rien n'a été dérivé sans geste").toBeNull();
+
+  const morceaux = await sonder(page, APPAT);
+  await attacher(
+    info,
+    "sonde-apres-delai",
+    morceaux.map(({ ou, texte }) => ({
+      ou,
+      caracteres: texte.length,
+      porteLAppat: texte.includes(APPAT),
+      porteLeCode: texte.includes(code),
+    })),
+  );
+
+  // TÉMOIN DE FOUILLE, EN PREMIER : la recherche doit d'abord montrer qu'elle sait trouver ce qui
+  // EST là, sur une coquille rechargée où tout est neuf.
+  const trouves = morceaux.filter(({ texte }) => texte.includes(APPAT)).map(({ ou }) => ou);
+  expect(trouves, "la sonde n'a retrouvé son appât nulle part : elle ne mesure rien").toContain(
+    "localStorage",
+  );
+  expect(trouves).toContain("opfs");
+  const opfs = morceaux.find(({ ou }) => ou === "opfs").texte;
+  expect(opfs.length, "l'OPFS lu est vide : la fouille ne porte sur rien").toBeGreaterThan(1_000);
+
+  for (const { ou, texte } of morceaux) {
+    expect(texte.includes(PHRASE), `la phrase se retrouve dans « ${ou} » après le délai`).toBe(
+      false,
+    );
+    expect(texte.includes(code), `le code se retrouve dans « ${ou} » après le délai`).toBe(false);
+    expect(texte.includes(sansTirets), `le code sans tirets est dans « ${ou} »`).toBe(false);
+    expect(texte.includes(humaine), `la forme humaine du code est dans « ${ou} »`).toBe(false);
+    expect(texte.includes(octetsHex), `les seize octets du code sont dans « ${ou} »`).toBe(false);
+    expect(texte.includes(materiauHex), `le matériau HKDF du code est dans « ${ou} »`).toBe(false);
+  }
+  expect(Date.now() - debut, "le verrouillage est arrivé avant son échéance").toBeGreaterThan(
+    30_000,
+  );
+});

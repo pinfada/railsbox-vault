@@ -187,3 +187,56 @@ test("l'adaptateur v86 lit et écrit à travers le backend OPFS sans exposer de 
   expect(rapport.exposesFileSystemHandle).toBe(false);
   expect(rapport.getStateCode).toBe(STORAGE_ERROR_CODES.unsupported);
 });
+
+// --- CE QUE LE MOTEUR FAIT DU HANDLE À LA MORT DU WORKER (#169, ADR 0031) --------------------------
+//
+// Cette épreuve existe parce que le dossier affirmait le contraire de ce que les moteurs font. De
+// #163 à #169, quatre endroits écrivaient que terminer un Worker sans avoir appelé `close()`
+// laisserait le handle exclusif « tenu par un objet que plus personne ne référence », et que
+// l'ouverture suivante rendrait `VAULT_STORAGE_BUSY`. La revue de sécurité de la PR #174 a mesuré le
+// contraire sur Chromium et sur Firefox ; ce qui suit fait de cette mesure un FAIT du dépôt, inscrit
+// dans `docs/compatibility.md`.
+//
+// **L'ORDRE `close()` puis `terminate()` reste le contrat**, et il n'a jamais dépendu de ce fait :
+// ce que `close()` apporte est ailleurs — il attend les E/S déjà ACCEPTÉES (#132) et laisse le
+// volume dans l'état que la capture vient de décrire. Terminer avant lui perd les écritures en vol
+// et rend l'instantané incohérent avec le volume, donc écarté à la réouverture : un boot à froid.
+// C'est une propriété de DURABILITÉ et de REPRISE, pas d'exclusivité, et c'est ce que le mutant
+// `tools/muter-gardes-verrouillage.mjs` tue désormais.
+
+test("le moteur rend l'exclusivité du handle à la MORT du Worker qui le tenait", async ({
+  page,
+}, testInfo) => {
+  const { porte } = await contexte(page, testInfo);
+  if (!porte) {
+    // WebKit : aucun handle synchrone dans un Worker, donc aucune exclusivité à rendre. La limite
+    // est DÉCLARÉE, jamais maquillée en `test.skip`.
+    await testInfo.attach(`handle-a-la-mort-${testInfo.project.name}.json`, {
+      body: JSON.stringify({ moteur: testInfo.project.name, mesurable: false }, null, 2),
+      contentType: "application/json",
+    });
+    return;
+  }
+
+  const releve = await page.evaluate(() => globalThis.bancOpfs.handleALaMortDuWorker());
+  await testInfo.attach(`handle-a-la-mort-${testInfo.project.name}.json`, {
+    body: JSON.stringify({ moteur: testInfo.project.name, ...releve }, null, 2),
+    contentType: "application/json",
+  });
+
+  // TÉMOIN POSITIF, et il vient en premier : tant que le détenteur VIT, un second demandeur est
+  // refusé. Sans lui, « l'ouverture réussit après la mort » passerait aussi bien sur un moteur qui
+  // n'aurait aucune exclusivité du tout.
+  expect(releve.priseEnMain.tenu, "le détenteur n'a pas pris le handle").toBe(true);
+  expect(
+    releve.pendantLaVie.ouvert,
+    "un second demandeur a obtenu le handle du vivant du détenteur : il n'y a pas d'exclusivité à mesurer",
+  ).toBe(false);
+
+  // ET LE FAIT : après `terminate()` — sans aucun `close()` —, l'ouverture RÉUSSIT. Le moteur relâche
+  // l'exclusivité avec le contexte du Worker.
+  expect(
+    releve.apresLaMort.ouvert,
+    `l'exclusivité n'a pas été rendue après ${releve.toursAttendus} tour(s) de ${releve.pauseMs} ms`,
+  ).toBe(true);
+});

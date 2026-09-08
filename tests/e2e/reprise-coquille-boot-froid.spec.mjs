@@ -434,6 +434,33 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se VERROUILLE, et 
   // (`src/vm/instantane/support-opfs.mjs`). Exiger que tous soient pleins ferait rougir la suite sur
   // un fichier de zéro octet qui ne promet rien.
   const portants = instantanes.filter(({ octets }) => octets > 0);
+  // L'instantané laissé est-il SCELLÉ ? Le scénario ne peut pas déchiffrer — il n'a ni la DEK ni
+  // rien qui y mène —, mais il connaît les marqueurs en clair que le guest a écrits, et il peut
+  // exiger de ne pas les retrouver dans le corps. Ce que l'en-tête révèle, lui, est ASSUMÉ et écrit
+  // (ADR 0024, limite 3 : identifiant de volume, séquence, génération, empreintes) : il n'est pas
+  // confidentiel, et l'exiger illisible serait exiger autre chose que ce que le format promet.
+  const scellement = await session.page.evaluate(
+    async ({ chemin, marqueurs }) => {
+      const racine = await navigator.storage.getDirectory();
+      const dossier = await racine.getDirectoryHandle(chemin.split("/")[0]);
+      const poignee = await dossier.getFileHandle(chemin.split("/").slice(1).join("/"));
+      const octets = new Uint8Array(await (await poignee.getFile()).arrayBuffer());
+      const texte = new TextDecoder("latin1").decode(octets);
+      return {
+        octets: octets.length,
+        trouves: marqueurs.filter((marqueur) => texte.includes(marqueur)),
+      };
+    },
+    { chemin: portants[0].nom, marqueurs: [contrat.record.id, contrat.attachment.sha256, PHRASE] },
+  );
+  await testInfo.attach("instantane-scelle.json", {
+    body: JSON.stringify({ fichier: portants[0].nom, ...scellement }, null, 2),
+    contentType: "application/json",
+  });
+  expect(
+    scellement.trouves,
+    "un marqueur du guest se lit EN CLAIR dans l'instantané : il n'est pas scellé sous la DEK",
+  ).toEqual([]);
   expect(
     portants.length,
     "aucun instantané non vide sur l'OPFS après le verrouillage : la révision de l'ADR 0024 déc. 8 " +
@@ -531,6 +558,7 @@ test("le cycle de vie assemblé boote Rails dans la coquille, se VERROUILLE, et 
       opfsApresVerrouillage,
       instantanesRestants: instantanes,
       instantanesNonVides: portants,
+      scellement,
     },
     cycleApresFermeture: ferme.cycle,
     cycleApresRechargement: rechargee.cycle,

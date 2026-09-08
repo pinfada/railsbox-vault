@@ -721,10 +721,11 @@ Le chiffrement d'un volume ne protège pas les données déjà déverrouillées 
 dans la même autorité web. La séparation d'origine entre la coquille de confiance et l'application
 est décidée (ADR 0002), sa frontière est éprouvée sur les quatre topologies comparées, et elle est
 **implémentée dans le produit depuis #161** (ADR 0028) : une coquille, un Worker de confiance, un
-port restreint mis à l'épreuve par une application malveillante sur les trois moteurs. Le gate «
-données sensibles » ci-dessous reste fermé pour une autre raison — la revue externe (#20) ; le
-verrouillage après inactivité, lui, est livré depuis #169. Ce qui suit décrivait l'attente de #25 :
-(#25) n'est pas ouvert.
+port restreint mis à l'épreuve par une application malveillante sur les trois moteurs. Le
+**verrouillage après inactivité est livré depuis #169** (ADR 0031) : un geste « Verrouiller » et un
+délai de dix minutes tuent le Worker de confiance après la fermeture propre des volumes, et la
+coquille se recharge. Le gate « données sensibles » ci-dessous reste néanmoins **fermé**, pour une
+raison qui n'est plus une brique manquante : la revue externe (#20) n'a pas été sollicitée.
 
 Ce que la frontière d'origine ne couvre pas :
 

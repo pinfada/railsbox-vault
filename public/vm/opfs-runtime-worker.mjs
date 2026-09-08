@@ -263,11 +263,50 @@ function ouvrirVolume(options) {
   return openOpfsVolume({ ...options, cle: cleDuBanc });
 }
 
+/**
+ * Le nom du fichier sur lequel se mesure CE QUE LE MOTEUR FAIT DU HANDLE À LA MORT DU WORKER (#169).
+ *
+ * `tests/unit/vm-reouverture-handles.test.mjs` le dit depuis #19 : « Ce que le double ne peut PAS
+ * mesurer, c'est le DÉLAI que Chromium met à rendre l'exclusivité d'un fichier après la mort d'un
+ * Worker ». Ce délai ne s'observe que sur le vrai support, et il fallait qu'un banc l'observe —
+ * parce que le dossier affirmait le contraire de ce qu'il fait (constat 2 de la revue de sécurité
+ * de la PR #174).
+ */
+const SONDE_HANDLE_A_LA_MORT = "sonde-handle-a-la-mort";
+
+/** Le handle RETENU par ce Worker, pour qu'un autre contexte mesure ce que sa mort en fait. */
+let handleRetenu = null;
+
+/** PREND le handle exclusif et le GARDE. C'est le rôle du Worker qu'on va tuer. */
+async function scenarioTenirLeHandle() {
+  await removeOpfsVolume(SONDE_HANDLE_A_LA_MORT);
+  handleRetenu = await openOpfsSyncAccess(SONDE_HANDLE_A_LA_MORT);
+  return { tenu: handleRetenu !== null, volume: SONDE_HANDLE_A_LA_MORT };
+}
+
+/**
+ * TENTE d'ouvrir le même fichier, et rend ce qui s'est passé. C'est le rôle de l'autre Worker.
+ *
+ * Rien n'est jugé ici : le banc rend `{ ouvert, code }` et l'assertion vit dans l'épreuve. Un
+ * scénario qui conclurait lui-même ne mesurerait plus rien.
+ */
+async function scenarioTenterLouverture() {
+  try {
+    const handle = await openOpfsSyncAccess(SONDE_HANDLE_A_LA_MORT);
+    handle.close();
+    return { ouvert: true, code: null };
+  } catch (error) {
+    return { ouvert: false, code: codeOf(error), nom: error?.name ?? null };
+  }
+}
+
 const SCENARIOS = new Map([
   ["capacite", scenarioCapacite],
   ["persistance", scenarioPersistance],
   ["exclusivite", scenarioExclusivite],
   ["adaptateur", scenarioAdaptateur],
+  ["tenir-le-handle", scenarioTenirLeHandle],
+  ["tenter-l-ouverture", scenarioTenterLouverture],
 ]);
 
 async function run({ scenario = "persistance", jetonCle } = {}) {

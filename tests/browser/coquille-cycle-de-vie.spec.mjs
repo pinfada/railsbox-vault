@@ -807,19 +807,26 @@ test("un descripteur MALFORMÉ est refusé sur sa forme, et le motif nomme le ch
 // ci-dessous l'affirme mieux — il montre qu'une minuterie réelle court ET se remet à zéro. Elle
 // coûtait soixante-quinze secondes de plus sur le seul gate obligatoire, et une épreuve dont chaque
 // affirmation est déjà tenue ailleurs n'achète que du temps d'attente.
+//
+// **Sur DEUX moteurs, et le motif a changé** (constat 1 de la revue de sécurité de la PR #174). La
+// première rédaction ne les jouait que sur Chromium, en écrivant qu'une minuterie « ne dépend pas du
+// moteur » — pendant que le dossier affirmait ailleurs que le délai était mesuré sur trois. Les deux
+// ne pouvaient pas être vrais ensemble, et c'est le MOTIF qui était faux : ce qui est mesuré ici
+// n'est pas une minuterie abstraite, c'est la LIVRAISON d'événements de document et l'étirement des
+// minuteries par le moteur — et la revue relève des écarts réels de livraison du focus entre les
+// trois. Elles sont donc jouées sur Chromium ET Firefox.
+//
+// WebKit reste hors de portée, non par économie mais parce que rien ne s'y OUVRE : sans coffre
+// ouvert, aucune surveillance ne s'arme, et il n'y aurait rien à mesurer. La suite le DÉCLARE.
 
 test("un coffre LAISSÉ se verrouille tout seul, et il le fait comme le bouton", async ({
   page,
   browserName,
 }, info) => {
-  // UN moteur, et c'est la décision de coût des deux épreuves de borne au-dessus : ce qui est mesuré
-  // ici est une MINUTERIE et le branchement d'écouteurs, non un comportement de moteur. Ce qui,
-  // lui, dépend du moteur — le verrouillage, son état, son rechargement — est mesuré sur les trois
-  // par le geste explicite, qui est le TÉMOIN POSITIF de ce déclencheur-ci.
-  test.skip(
-    browserName !== "chromium",
-    "borne de temps : un moteur suffit, les trois coûtent trois minutes",
-  );
+  // DEUX moteurs : ce qui est mesuré ici DÉPEND du moteur — la livraison des événements de document
+  // et l'étirement des minuteries. WebKit est écarté parce que rien ne s'y ouvre, donc rien ne s'y
+  // arme : c'est la limite du moteur, pas une économie de temps.
+  test.skip(browserName === "webkit", "rien ne s'y verrouille : rien ne s'y ouvre");
   test.setTimeout(300_000);
   await servirUnDelaiCourt(page, DELAI_INACTIVITE_MINIMUM_MS);
   await armerLaCapture(page);
@@ -863,8 +870,9 @@ test("un coffre TENU ÉVEILLÉ par des gestes ne se verrouille pas — le témoi
 }) => {
   // Sans ce témoin, l'épreuve précédente passerait aussi bien sur une coquille qui se verrouille
   // quoi qu'il arrive : « il s'est verrouillé après une minute » ne dit rien tant que « il ne s'est
-  // pas verrouillé pendant qu'on travaillait » n'est pas mesuré.
-  test.skip(browserName !== "chromium", "borne de temps : un moteur suffit");
+  // pas verrouillé pendant qu'on travaillait » n'est pas mesuré. Sur les deux mêmes moteurs, et pour
+  // le même motif.
+  test.skip(browserName === "webkit", "rien ne s'y verrouille : rien ne s'y ouvre");
   test.setTimeout(300_000);
   await servirUnDelaiCourt(page, DELAI_INACTIVITE_MINIMUM_MS);
   await armerLaCapture(page);
@@ -885,4 +893,139 @@ test("un coffre TENU ÉVEILLÉ par des gestes ne se verrouille pas — le témoi
     "la coquille s'est verrouillée pendant qu'on tapait",
   ).toBeNull();
   expect((await releve(page)).etat, "le coffre est resté ouvert").toBe(ETATS_DU_VOLUME.ouvert);
+});
+
+// --- Un verrouillage REFUSÉ (#169, ADR 0031 ; constat 3 de la revue de la PR #174) -----------------
+//
+// Le défaut que ces deux épreuves ferment était sévère et silencieux : un verrouillage refusé rendait
+// la main sans rien dire, si bien que le coffre restait `ouvert`, le cadre applicatif affiché, et la
+// surveillance désarmée — elle s'était désarmée AVANT d'appeler le geste, et rien ne la ré-armait.
+// Le coffre restait ouvert pour toujours, sans que personne l'ait décidé.
+
+/**
+ * Un Worker qui parle le contrat et REFUSE la fermeture, par un refus TYPÉ.
+ *
+ * Il répond normalement à l'état et à l'inventaire — sans quoi la coquille ne se monterait pas —,
+ * puis rend un refus sur le geste de fermeture. Le module est substitué au niveau du RÉSEAU, comme
+ * les trois autres doubles de cette suite : le produit n'expose aucune poignée pour cela.
+ */
+const WORKER_QUI_REFUSE_LA_FERMETURE = `
+import { TYPES_PRIVILEGIES, decoderMessage, enveloppeDeMessage } from "/src/coquille/contrat-de-messages.mjs";
+
+let port = null;
+const repondre = (type, corps) => port.postMessage(enveloppeDeMessage(type, corps));
+
+self.addEventListener("message", (event) => {
+  const decode = decoderMessage(event.data);
+  if (!decode.ok || decode.type !== TYPES_PRIVILEGIES.canal) return;
+  port = event.ports[0];
+  port.addEventListener("message", (message) => {
+    const recu = decoderMessage(message.data);
+    if (!recu.ok) return;
+    const correlation = recu.message.correlation;
+    if (recu.type === TYPES_PRIVILEGIES.etat) {
+      repondre(TYPES_PRIVILEGIES.etatReponse, {
+        etat: "ouvert",
+        barrieres: 0,
+        correlation,
+        exclusivite: { verdict: "disponible", volume: "coquille", code: null },
+        application: "arretee",
+      });
+      return;
+    }
+    if (recu.type === TYPES_PRIVILEGIES.inventaire) {
+      repondre(TYPES_PRIVILEGIES.inventaireReponse, {
+        present: false,
+        versionEnveloppe: null,
+        emplacements: [],
+        correlation,
+      });
+      return;
+    }
+    if (recu.type === TYPES_PRIVILEGIES.fermeture) {
+      repondre(TYPES_PRIVILEGIES.refus, {
+        code: "VAULT_STORAGE_CLOSED",
+        message: "le volume était déjà fermé (double de l'épreuve #169)",
+        correlation,
+      });
+    }
+  });
+  port.start();
+});
+`;
+
+test("un verrouillage REFUSÉ ne laisse pas le coffre ouvert : il tue, il retire, et il le dit", async ({
+  page,
+}, info) => {
+  await substituerLeWorker(page, WORKER_QUI_REFUSE_LA_FERMETURE);
+  await ouvrirLaCoquille(page);
+  await expect
+    .poll(async () => (await releve(page)).cadreApplicatif, { timeout: DELAI })
+    .toBe("charge");
+  expect((await releve(page)).etat, "le double doit publier un coffre OUVERT").toBe(
+    ETATS_DU_VOLUME.ouvert,
+  );
+
+  await page.click("#verrouiller-le-coffre");
+  await expect(page.locator("html")).toHaveAttribute("data-coquille", "verrouillage-refuse", {
+    timeout: DELAI,
+  });
+  const rapport = await releve(page);
+  await info.attach(`verrouillage-refuse-${info.project.name}.json`, {
+    body: JSON.stringify({ verrouillage: rapport.verrouillage, etat: rapport.etat }, null, 2),
+    contentType: "application/json",
+  });
+
+  // LE REFUS EST PUBLIÉ, avec sa cause, et c'est la première chose que le relevé porte.
+  expect(rapport.verrouillage.refuse).toBe(true);
+  expect(rapport.verrouillage.codeDuRefus).toBe("VAULT_STORAGE_CLOSED");
+  // LE WORKER EST TERMINÉ quand même : il ne sert plus rien, et sa KEK est déjà partie par le
+  // `finally` de `relacherTout`. La cause reste la TROISIÈME de la table de #163.
+  expect(rapport.verrouillage.workerTermine).toBe(true);
+  expect(rapport.workerMort.cause).toBe("terminaison");
+  expect(rapport.workerMort.kekRetenue).toBe(false);
+  expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(rapport.etat);
+
+  // LE CADRE EST RETIRÉ DU DOM. Laisser ses pixels sur un coffre dont l'utilisateur vient de
+  // demander le verrouillage est le contraire de la promesse.
+  expect(rapport.cadreApplicatif).toBe("retire");
+  await expect(page.locator("#document-applicatif")).toHaveCount(0);
+  // Et AUCUN port n'a été re-octroyé : la garde `VAULT_COQUILLE_ANNONCE_UNIQUE` de #161 reste
+  // intacte, et le compteur d'octroi le dit.
+  expect(rapport.portOctroye).toBe(true);
+
+  // LA COQUILLE NE RECHARGE PAS : il s'est passé quelque chose, et cela doit se lire. Le bouton
+  // « Rouvrir le coffre » de #163 est offert, et l'interface de déverrouillage est remontée.
+  expect(rapport.verrouillage.rechargerLaCoquille).toBe(false);
+  await expect(page.locator("#rouvrir-la-coquille")).toBeVisible();
+  await expect(page.locator("#deverrouillage")).toBeVisible();
+
+  // Et le relevé ANNONCE ce que la réouverture coûtera : la capture n'a peut-être pas eu lieu.
+  expect(rapport.verrouillage.instantaneGaranti).toBe(false);
+});
+
+test("après un verrouillage refusé, plus aucun geste n'aboutit : la coquille est déjà morte", async ({
+  page,
+}) => {
+  // Le témoin qui manquait : le délai est désarmé au refus COMME au succès, et le Worker est parti.
+  // Une surveillance qui survivrait rechargerait la coquille sous les yeux de qui vient de lire
+  // « le verrouillage a été refusé ».
+  await substituerLeWorker(page, WORKER_QUI_REFUSE_LA_FERMETURE);
+  await ouvrirLaCoquille(page);
+  await page.click("#verrouiller-le-coffre");
+  await expect(page.locator("html")).toHaveAttribute("data-coquille", "verrouillage-refuse", {
+    timeout: DELAI,
+  });
+
+  // Un geste présenté après le refus reçoit le refus de la MORT, tout de suite : rien n'est dérivé.
+  await page.fill("#saisie-phrase", "une phrase qui ne sera jamais dérivée");
+  const debut = Date.now();
+  await page.click("#ouvrir-par-phrase");
+  await expect(page.locator("#deverrouillage-refus")).toContainText(
+    CODES_REFUS_COQUILLE.workerMort,
+    { timeout: DELAI },
+  );
+  expect(Date.now() - debut, "le refus arrive avant qu'une dérivation ait pu tourner").toBeLessThan(
+    1500,
+  );
 });
