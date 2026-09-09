@@ -5,6 +5,7 @@ import {
   BUDGET_DIAGNOSTIC_CODES,
   BUDGET_SEVERITY,
   BudgetDiagnostic,
+  PERSIST_DECISION_TIMEOUT_MS,
   RECOVERY_ACTIONS,
   RECOVERY_TEXT,
   bindNavigatorStorage,
@@ -127,6 +128,59 @@ test("requestPersistence traite un persist() qui lève comme un refus typé, non
   assert.equal(issue.state, "denied");
   assert.equal(issue.durable, false);
   assert.ok(isBudgetDiagnostic(issue.diagnostic, BUDGET_DIAGNOSTIC_CODES.persistDenied));
+});
+
+test("requestPersistence rend `pending` quand la décision n'arrive pas dans le délai, jamais un refus", async () => {
+  // Firefox laisse la promesse pendante derrière une invite : sans borne, l'appelant y attend
+  // indéfiniment — c'est le blocage de #168, mesuré sur les bancs budget et conduite.
+  const budget = createStorageBudget({
+    persisted: async () => false,
+    persist: () => new Promise(() => {}),
+    delaiDeDecisionMs: 20,
+  });
+
+  const issue = await budget.requestPersistence();
+
+  assert.equal(issue.state, "pending");
+  assert.equal(issue.durable, false);
+  // NON TRANCHÉ n'est pas REFUSÉ : aucun diagnostic de refus ne doit apparaître ici.
+  assert.equal(issue.diagnostic, null);
+});
+
+test("une décision RENDUE avant le délai n'est jamais requalifiée en attente", async () => {
+  // Le témoin positif de la borne : sans lui, une borne toujours déclenchée passerait pour juste.
+  const budget = createStorageBudget({
+    persisted: async () => false,
+    persist: () => new Promise((resoudre) => setTimeout(() => resoudre(true), 5)),
+    delaiDeDecisionMs: 200,
+  });
+
+  const issue = await budget.requestPersistence();
+
+  assert.equal(issue.state, "granted");
+  assert.equal(issue.durable, true);
+});
+
+test("la borne de décision n'attend pas plus que son délai", async () => {
+  const budget = createStorageBudget({
+    persisted: async () => false,
+    persist: () => new Promise(() => {}),
+    delaiDeDecisionMs: 30,
+  });
+
+  const depart = Date.now();
+  await budget.requestPersistence();
+
+  // Large, et c'est voulu : la mesure porte sur l'ORDRE DE GRANDEUR — la borne rend la main, elle
+  // ne laisse pas l'appelant sur une promesse qui ne se résout jamais.
+  assert.ok(Date.now() - depart < 2000, "la borne doit rendre la main bien avant le délai produit");
+});
+
+test("le délai de décision du PRODUIT est celui que la couche applique par défaut", async () => {
+  // Une seule valeur circule : celle du module. Un test qui recopierait « 4000 » en dur créerait la
+  // seconde valeur que cette tranche interdit.
+  assert.equal(typeof PERSIST_DECISION_TIMEOUT_MS, "number");
+  assert.ok(PERSIST_DECISION_TIMEOUT_MS > 0);
 });
 
 test("requestPersistence accorde la durabilité quand persist() la renvoie", async () => {

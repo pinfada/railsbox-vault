@@ -96,6 +96,43 @@ const DEVERROUILLAGE_COQUILLE = ["**/coquille-deverrouillage.spec.mjs"];
  */
 const CYCLE_DE_VIE = ["**/coquille-cycle-de-vie.spec.mjs", "**/entetes-durcissement.spec.mjs"];
 
+/**
+ * PERSISTANCE de stockage : le budget (#9) et la conduite (#42), sur les trois moteurs et sur les
+ * TROIS réponses possibles de l'invite Firefox (#168, ADR 0006).
+ *
+ * Ces deux suites vivaient dans le projet de base, donc sur Chromium seul — et c'est exactement ce
+ * que #168 reproche : `navigator.storage.persist()` est la capacité dont le verdict DIFFÈRE le plus
+ * d'un moteur à l'autre, et elle était mesurée sur celui qui répond le plus vite. Mesuré le
+ * 9 septembre 2026, dix essais par configuration, Firefox 153 sans fenêtre :
+ *
+ *  - Chromium rend `false` en 0–1 ms — refus tranché ;
+ *  - WebKit n'expose pas `persist()` du tout — absence, jamais un refus ;
+ *  - Firefox NU ne rend RIEN : la promesse reste pendante derrière une invite au-delà de 15 s, avec
+ *    ou sans geste utilisateur préalable. C'est le verdict `pending` du produit, borné à quatre
+ *    secondes par `src/vm/storage-budget.mjs` ;
+ *  - Firefox sous les préférences d'ESSAI de l'invite rend `true` en 6–8 ms (`…prompt.testing.allow`
+ *    à vrai) ou `false` en 0–2 ms (à faux). Ces deux projets ne simulent pas une absence de geste :
+ *    ils répondent à l'invite À LA PLACE de l'utilisateur, ce que seul un harnais peut faire.
+ *
+ * Cinq projets, donc, et aucun `skip` : les trois verdicts que la conduite distingue — accordée,
+ * refusée, indéterminée — sont réellement JOUÉS, plus l'absence d'API.
+ */
+const PERSISTANCE = ["**/storage-budget.spec.mjs", "**/persistence-conduct.spec.mjs"];
+
+/**
+ * Préférences d'ESSAI de l'invite de persistance de Firefox. Elles n'existent que pour les harnais :
+ * elles court-circuitent l'invite et posent la réponse. Hors de ces deux projets, rien ne les pose,
+ * et la mesure nue reste la mesure nue.
+ */
+const invitePersistanceFirefox = (accordee) => ({
+  launchOptions: {
+    firefoxUserPrefs: {
+      "dom.storageManager.prompt.testing": true,
+      "dom.storageManager.prompt.testing.allow": accordee,
+    },
+  },
+});
+
 // Le harnais mesure une frontière d'origine : il lui faut DEUX serveurs, donc deux origines
 // réelles. `127.0.0.1` et `localhost` en fournissent sans DNS ni certificat, et restent tous deux
 // des contextes sécurisés.
@@ -174,6 +211,7 @@ export default defineConfig({
         ...FRONTIERE_COQUILLE,
         ...DEVERROUILLAGE_COQUILLE,
         ...CYCLE_DE_VIE,
+        ...PERSISTANCE,
       ],
     })),
     // La frontière de CSP (#52) est une frontière de SÉCURITÉ, et une politique ne s'applique pas de
@@ -216,5 +254,20 @@ export default defineConfig({
       use: { browserName: nom },
       testMatch: CYCLE_DE_VIE,
     })),
+    ...MOTEURS_CONNUS.map((nom) => ({
+      name: `persistance-${nom}`,
+      use: { browserName: nom },
+      testMatch: PERSISTANCE,
+    })),
+    {
+      name: "persistance-firefox-invite-accordee",
+      use: { browserName: "firefox", ...invitePersistanceFirefox(true) },
+      testMatch: PERSISTANCE,
+    },
+    {
+      name: "persistance-firefox-invite-refusee",
+      use: { browserName: "firefox", ...invitePersistanceFirefox(false) },
+      testMatch: PERSISTANCE,
+    },
   ],
 });
