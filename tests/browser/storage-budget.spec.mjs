@@ -42,41 +42,48 @@ test("measure rend un état exploitable du vrai navigator.storage", async ({ pag
   }
 });
 
-test("requestPersistence ne promet jamais la durabilité sur un refus", async ({
-  page,
-}, testInfo) => {
-  await ouvrirBanc(page);
-  const issue = await page.evaluate(() => globalThis.bancBudget.persister());
-  await testInfo.attach("budget-persistance.json", {
-    body: JSON.stringify(issue, null, 2),
-    contentType: "application/json",
-  });
+// Marquée `@verdict-de-persistance` : c'est l'UNE des deux épreuves de ces deux fichiers dont le
+// résultat dépend de la réponse du moteur à l'invite. Les projets qui ne varient QUE cette réponse —
+// les deux Firefox sous préférence d'essai — ne jouent qu'elles ; rejouer les autres n'ajouterait
+// aucune mesure et ajouterait des navigations à une suite dont les navigations Firefox flottent
+// (#178).
+test(
+  "requestPersistence ne promet jamais la durabilité sur un refus",
+  { tag: "@verdict-de-persistance" },
+  async ({ page }, testInfo) => {
+    await ouvrirBanc(page);
+    const issue = await page.evaluate(() => globalThis.bancBudget.persister());
+    await testInfo.attach("budget-persistance.json", {
+      body: JSON.stringify(issue, null, 2),
+      contentType: "application/json",
+    });
 
-  // Le verdict ATTENDU de ce moteur-ci, et de cette réponse d'invite-ci. Sans lui, « le verdict est
-  // l'un des cinq » resterait vrai le jour où un moteur changerait d'avis : ce serait un vert par
-  // vacuité (#168).
-  expect(verdictsAttendus(testInfo.project.name)).toContain(issue.state);
+    // Le verdict ATTENDU de ce moteur-ci, et de cette réponse d'invite-ci. Sans lui, « le verdict est
+    // l'un des cinq » resterait vrai le jour où un moteur changerait d'avis : ce serait un vert par
+    // vacuité (#168).
+    expect(verdictsAttendus(testInfo.project.name)).toContain(issue.state);
 
-  // L'invariant central, quel que soit le verdict réel : seule une persistance accordée ou déjà
-  // acquise est durable ; un refus, une absence d'API et une invite non tranchée ne le sont jamais.
-  if (issue.state === "denied") {
-    expect(issue.durable).toBe(false);
-    expect(issue.diagnosticCode).toBe(BUDGET_DIAGNOSTIC_CODES.persistDenied);
-  }
-  if (issue.state === "unsupported") {
-    expect(issue.durable).toBe(false);
-  }
-  if (issue.state === "pending") {
-    // L'invite n'a pas répondu dans le délai du produit. Ce n'est ni un refus — aucun diagnostic de
-    // refus ne l'accompagne — ni une durabilité, et surtout ce n'est plus un BLOCAGE : la borne a
-    // rendu la main. C'est ce que #168 corrige.
-    expect(issue.durable).toBe(false);
-    expect(issue.diagnosticCode).toBeNull();
-  }
-  if (issue.durable === true) {
-    expect(VERDICTS_DURABLES).toContain(issue.state);
-  }
-});
+    // L'invariant central, quel que soit le verdict réel : seule une persistance accordée ou déjà
+    // acquise est durable ; un refus, une absence d'API et une invite non tranchée ne le sont jamais.
+    if (issue.state === "denied") {
+      expect(issue.durable).toBe(false);
+      expect(issue.diagnosticCode).toBe(BUDGET_DIAGNOSTIC_CODES.persistDenied);
+    }
+    if (issue.state === "unsupported") {
+      expect(issue.durable).toBe(false);
+    }
+    if (issue.state === "pending") {
+      // L'invite n'a pas répondu dans le délai du produit. Ce n'est ni un refus — aucun diagnostic de
+      // refus ne l'accompagne — ni une durabilité, et surtout ce n'est plus un BLOCAGE : la borne a
+      // rendu la main. C'est ce que #168 corrige.
+      expect(issue.durable).toBe(false);
+      expect(issue.diagnosticCode).toBeNull();
+    }
+    if (issue.durable === true) {
+      expect(VERDICTS_DURABLES).toContain(issue.state);
+    }
+  },
+);
 
 test("reserve avertit AVANT mutation quand le besoin dépasse l'espace, avec un role=status", async ({
   page,

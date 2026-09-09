@@ -175,11 +175,19 @@ septembre 2026 est dans [`docs/compatibility.md`](compatibility.md). Cinq projet
 | `persistance-firefox-invite-accordee` | `granted` / `already` | l'octroi réel, sous préférence d'essai de l'invite    |
 | `persistance-firefox-invite-refusee`  | `denied`              | le refus réel, sous la même préférence                |
 
+Les trois projets NUS jouent les huit épreuves des deux fichiers ; les deux projets d'INVITE ne
+jouent que les **deux** dont le résultat dépend de la réponse à l'invite, marquées
+`@verdict-de-persistance`. Le motif est double : c'est le même moteur que le projet nu, donc
+l'estimation, la réservation, la classification de quota et les verdicts synthétiques du rendu n'y
+mesureraient rien de neuf ; et chaque épreuve de plus est une navigation Firefox de plus dans une
+suite dont les navigations Firefox flottent (§ suivant). Vingt-huit épreuves, donc, et non quarante.
+
 Le verdict attendu est INSCRIT par projet dans `tests/browser/persistance-attendue.mjs`, et un
 projet absent de la table lève : sans oracle, « le verdict est l'un des cinq » resterait vrai le
-jour où un moteur changerait d'avis — un vert par vacuité. Mesuré le 9 septembre 2026 : **40
-épreuves vertes en 14,7 s**, sans réseau ni artefact ; Firefox y passe quatre secondes dans sa
-borne, et pas deux minutes dans un blocage comme avant #168.
+jour où un moteur changerait d'avis — un vert par vacuité. Mesuré le 9 septembre 2026 : **28
+épreuves vertes en 13,3 s**, sans réseau ni artefact, et **dix passages consécutifs sans une seule
+perte** ; Firefox y passe quatre secondes dans sa borne, et pas deux minutes dans un blocage comme
+avant #168.
 
 **La campagne de mutation de la borne** (`node tools/muter-gardes-persistance.mjs`, **4/4**) retire
 les quatre gardes une à une du texte réel et rejoue l'épreuve qui devrait les couvrir : la borne
