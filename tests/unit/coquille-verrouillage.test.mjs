@@ -661,8 +661,9 @@ test("la coquille n'écoute QUE les quatre événements de la table, plus la vis
     ["focusin", "keydown", "pointerdown", "pointermove", "visibilitychange"],
     "la coquille écoute autre chose que ce que la table nomme",
   );
-  // AUCUN événement de cycle de vie de page : les fins d'onglet sont #170, et cette tranche ne
-  // promet rien à leur sujet.
+  // AUCUN événement de cycle de vie de page dans la table d'ACTIVITÉ, et cela reste vrai après
+  // #170 : les fins d'onglet sont branchées par `fins-d-onglet.mjs`, elles tuent, rechargent ou
+  // vérifient une échéance — et pas une ne repousse quoi que ce soit (ADR 0032, décision 1).
   for (const interdit of ["pagehide", "freeze", "beforeunload", "unload", "focus", "blur"]) {
     assert.equal(
       racine.inscrits.some(({ nom }) => nom === interdit),

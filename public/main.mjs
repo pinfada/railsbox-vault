@@ -64,6 +64,7 @@ import { CAUSES_DE_MORT, conduiteApresLaMort } from "/src/coquille/mort-du-worke
 import { monterLInterface } from "/src/coquille/interface-de-deverrouillage.mjs";
 import { DELAI_WORKER_MORT_MS } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { cadreApplicatif } from "/src/coquille/origines-de-la-coquille.mjs";
+import { brancherLesFinsDOnglet } from "/src/coquille/fins-d-onglet.mjs";
 import {
   DECLENCHEURS,
   brancherLesSignauxDActivite,
@@ -332,6 +333,20 @@ const surveillance = surveillanceDInactivite({
 });
 
 brancherLesSignauxDActivite({ racine: document, surveillance });
+
+// Les FINS D'ONGLET (#170, ADR 0032). Ce que chaque événement déclenche, et pourquoi, vit dans
+// `src/coquille/fins-d-onglet.mjs`, où la campagne de mutation l'atteint : la page ne fait que
+// brancher. `coffreOuvert` est lu à CHAQUE événement, jamais retenu — l'état change sous les pieds
+// de tout ce qui le mémorise.
+brancherLesFinsDOnglet({
+  racine: document,
+  fenetre: globalThis,
+  surveillance,
+  coffreOuvert: () => rapport.etat === ETATS_DU_VOLUME.ouvert && mortDuWorker === null,
+  tuerLeWorker: () => worker.terminate(),
+  recharger: () => rechargerLaCoquille(),
+  journal: (evenement, action) => rapport.journal.push(`fin-d-onglet:${evenement}:${action}`),
+});
 
 /**
  * REFLÈTE dans la surveillance l'état que le relevé vient de publier.

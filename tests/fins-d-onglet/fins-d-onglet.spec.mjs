@@ -24,6 +24,7 @@ import { expect, test } from "@playwright/test";
 
 import { ARGUMENTS_RETIRES } from "../../playwright.fins-d-onglet.config.mjs";
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
+import { sonder } from "../browser/sonde-des-stockages.mjs";
 import {
   brancherLaConsole,
   evenementsDe,
@@ -41,6 +42,9 @@ const TEMOIN = "/coquille-epreuve/fenetre-ouverte.html?role=temoin";
 
 /** La phrase des épreuves. Elle est PUBLIQUE et sans valeur : c'est un marqueur, pas un secret. */
 const PHRASE = "marqueur-de-phrase-des-fins-d-onglet-170-cheval-batterie-agrafe-correcte";
+
+/** L'appât de la sonde : la même forme qu'un secret, pour prouver que la fouille trouve. */
+const APPAT = "appat-de-sonde-170-ce-texte-doit-etre-trouve";
 
 const DELAI = 120_000;
 
@@ -516,4 +520,148 @@ test("un écouteur de `beforeunload` change-t-il l'éligibilité — et l'évén
   });
 
   expect(evenementsDe(traces)).toContain("pageshow");
+});
+
+// --- (d) LA CONCLUSION, ÉCRITE D'AVANCE : la garantie n'est aucun de ces écouteurs ----------------
+//
+// Aucun événement de fin d'onglet n'est une garantie. La garantie est la NON-PERSISTANCE : la KEK et
+// la DEK ne vivent que dans le tas d'un Worker, rien n'est écrit nulle part, et un verrouillage qui
+// dépendrait d'un événement que le moteur peut ne pas livrer ne serait pas un verrouillage.
+//
+// Ce que ces deux épreuves mesurent est donc ce qui reste vrai QUOI QU'IL ARRIVE : un onglet fermé
+// SANS aucun verrouillage, et un document NEUF du même profil qui lit `verrouille`, remonte son
+// interface, ne dérive rien — pendant que la fouille des six stockages ne trouve ni la phrase, ni le
+// code, ni son matériau.
+
+test("un onglet FERMÉ sans verrouillage : ce que le document suivant lit, et ce que la fouille trouve", async ({
+  context,
+  browserName,
+}, info) => {
+  // UNE seule épreuve pour les deux moitiés, et c'est une décision de coût autant que de sens :
+  // elles partagent le geste le plus cher de la suite — ouvrir un coffre pour de bon, Argon2id
+  // compris — et la seconde n'a de sens que sur l'état que la première constate. Deux épreuves
+  // auraient payé deux ouvertures pour mesurer la même fermeture.
+  test.setTimeout(300_000);
+  await poserLObservatoire(context);
+  const premier = await context.newPage();
+  await ouvrirLaCoquille(premier);
+  const ouvert = await ouvrirLeCoffre(premier);
+  if (!ouvert) {
+    // WebKit n'ouvre rien : la ligne est DÉCLARÉE `indisponible`, jamais verte par vacuité. Ce qui
+    // est mesuré ici demande un coffre OUVERT à fermer, et il n'y en a pas.
+    await attacher(info, "fermeture-sans-verrouillage", {
+      moteur: moteurDe(info),
+      verdict: "indisponible",
+      motif: "aucun volume ne s'ouvre sur ce moteur : il n'y a pas de coffre ouvert à fermer",
+      etatLuParLeSecondDocument: (await releve(premier)).etat,
+    });
+    expect(browserName, "un moteur qui n'ouvre rien devrait être WebKit").toBe("webkit");
+    return;
+  }
+
+  // AUCUN verrouillage : ni le bouton, ni le délai. L'onglet est fermé, et rien d'autre.
+  await premier.close();
+
+  // Un document NEUF, dans le MÊME contexte — donc le même profil, le même OPFS, les mêmes
+  // stockages. C'est ce qu'un utilisateur obtient en rouvrant l'onglet qu'il vient de fermer, et
+  // c'est aussi le point de vue de l'adversaire qui copie le profil.
+  const second = await context.newPage();
+  await ouvrirLaCoquille(second);
+  const apres = await releve(second);
+  const interfaceRemontee = (await second.locator("#deverrouillage-moyens").textContent()) ?? "";
+
+  const morceaux = await sonder(second, APPAT);
+  const releveDeLaSonde = morceaux.map(({ ou, texte }) => ({
+    ou,
+    caracteres: texte.length,
+    porteLAppat: texte.includes(APPAT),
+    portelaPhrase: texte.includes(PHRASE),
+  }));
+  await attacher(info, "fermeture-sans-verrouillage", {
+    moteur: moteurDe(info),
+    etatLuParLeSecondDocument: apres.etat,
+    deverrouillageMs: apres.mesures.deverrouillageMs,
+    verrouillage: apres.verrouillage,
+    interfaceDeDeverrouillageRemontee: interfaceRemontee.length > 0,
+    // L'AVEU voyage avec la mesure : elle dit ce qui n'est pas PERSISTÉ, pas ce qui est EFFACÉ d'un
+    // tas. Elle ne peut rien dire de la mémoire d'un processus ni des octets d'une `CryptoKey`.
+    ceQueLaSondeMesure: "les six stockages, l'OPFS en texte et en hexadécimal, et le DOM",
+    ceQuElleNeMesurePas:
+      "la mémoire du processus, le fichier d'échange, les octets d'une CryptoKey",
+    sonde: releveDeLaSonde,
+  });
+
+  expect(apres.etat, "un coffre est resté ouvert après la fermeture de l'onglet").toBe(
+    ETATS_DU_VOLUME.verrouille,
+  );
+  // Le document neuf n'a rien dérivé de lui-même : le prix se paie sur un geste, jamais sans.
+  expect(apres.mesures.deverrouillageMs).toBeNull();
+  expect(
+    interfaceRemontee.length,
+    "l'interface de déverrouillage n'est pas remontée",
+  ).toBeGreaterThan(0);
+
+  // TÉMOIN DE FOUILLE, ENSUITE. Sans lui, « rien trouvé » pourrait vouloir dire « rien capturé ».
+  const trouves = releveDeLaSonde.filter(({ porteLAppat }) => porteLAppat).map(({ ou }) => ou);
+  expect(trouves, "la sonde n'a retrouvé son appât nulle part : elle ne mesure rien").toContain(
+    "localStorage",
+  );
+  expect(trouves).toContain("sessionStorage");
+  expect(trouves).toContain("cookies");
+  expect(trouves).toContain("opfs");
+
+  // Et le VERDICT : la phrase n'est nulle part. Ce qui reste sur le support est le volume scellé et
+  // ses noms de fichiers ; ce que la fermeture emporte est ce qui les OUVRE.
+  const porteurs = releveDeLaSonde.filter(({ portelaPhrase }) => portelaPhrase).map(({ ou }) => ou);
+  expect(porteurs, "la phrase de déverrouillage a été retrouvée sur l'appareil").toEqual([]);
+});
+
+// --- (e) LE TÉMOIN NÉGATIF : la coquille ne se recharge PAS toute seule ---------------------------
+
+test("un `pageshow` NON restauré ne déclenche aucune boucle : la coquille se charge UNE fois", async ({
+  context,
+  page,
+}, info) => {
+  // C'est le mutant le plus coûteux de la campagne, et le seul dont l'effet se voie de l'extérieur :
+  // un rechargement sur TOUT `pageshow` produirait un document qui se recharge à chaque chargement,
+  // indéfiniment. Aucune autre épreuve de ce dépôt ne le verrait — elles attendent toutes un état
+  // que la coquille finit par publier, et une coquille qui boucle le publie à chaque tour.
+  //
+  // Le compteur vit dans `sessionStorage` : c'est le seul stockage qui SURVIT à un rechargement dans
+  // le même onglet et meurt avec lui. Il est posé par l'ÉPREUVE, jamais par le produit.
+  await context.addInitScript(() => {
+    // Le compteur ne compte QUE le document de la coquille. Mesuré : sur Firefox, un `about:blank`
+    // créé en chemin — celui d'un cadre avant sa navigation — HÉRITE de l'origine de son parent,
+    // donc de son `sessionStorage`, et un compteur naïf y ajoutait deux chargements qui n'en
+    // étaient pas. Le filtre est la mesure, pas un contournement.
+    if (!location.href.includes("/index.html")) return;
+    try {
+      const compte = Number(sessionStorage.getItem("fins-d-onglet-chargements") ?? "0");
+      sessionStorage.setItem("fins-d-onglet-chargements", String(compte + 1));
+    } catch {
+      /* un stockage refusé n'est pas le sujet de cette épreuve */
+    }
+  });
+
+  await ouvrirLaCoquille(page);
+  await page.goto(AILLEURS);
+  await expect(page.locator("h1")).toBeVisible();
+  await page.goBack();
+  await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: DELAI });
+  // Une boucle se verrait dans les secondes qui suivent : on lui en laisse trois.
+  await page.waitForTimeout(3_000);
+
+  const chargements = Number(
+    await page.evaluate(() => sessionStorage.getItem("fins-d-onglet-chargements")),
+  );
+  await attacher(info, "aucune-boucle-de-rechargement", {
+    moteur: moteurDe(info),
+    // DEUX chargements ATTENDUS et pas un de plus : la coquille au départ, la coquille au retour.
+    // La page d'à côté n'est pas la coquille et ne compte pas. Un troisième serait un rechargement
+    // que personne n'a demandé.
+    chargementsAttendus: 2,
+    chargementsComptes: chargements,
+  });
+
+  expect(chargements, "la coquille s'est rechargée toute seule : `pageshow` boucle").toBe(2);
 });
