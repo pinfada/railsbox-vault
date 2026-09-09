@@ -163,6 +163,11 @@ pour le voir.** Firefox le livre — la console le montre — mais le message qu
 pendant `pagehide` n'atteint pas un témoin de la même origine ; WebKit fait l'inverse. Un événement
 qu'un canal ne rapporte pas n'est pas « non livré » : il est « **non observé par ce canal** ».
 
+**Et le canal du témoin PORTE, sur les trois** : le `pageshow` que le sujet diffuse à son chargement
+arrive au témoin sur Chromium, Firefox et WebKit. C'est le TÉMOIN POSITIF du canal, et c'est lui qui
+autorise à lire la ligne Firefox comme « le message émis PENDANT `pagehide` se perd » plutôt que
+comme « ce canal ne porte rien ».
+
 #### Le bfcache : aucun document n'est jamais restauré, TÉMOIN POSITIF compris
 
 | Document mesuré                                | Chromium                                       | Firefox                        | WebKit                               |
