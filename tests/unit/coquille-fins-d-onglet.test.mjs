@@ -8,15 +8,15 @@
  *
  * ## Ce que ce fichier éprouve, que le NAVIGATEUR ne peut pas éprouver ici
  *
- * La sonde de `tests/fins-d-onglet/` a MESURÉ, sur les trois moteurs, que sous Playwright **aucun
- * document n'est jamais restauré depuis le bfcache** — témoin positif compris, une page nue sans
- * instrumentation — et qu'**aucun onglet ne devient jamais caché**, si bien que ni `pageshow`
- * restauré, ni `visibilitychange` vers `visible`, ni `freeze`, ni `resume` ne sont livrés par un
- * moteur dans ce harnais.
+ * La liste a RÉTRÉCI depuis la revue de sécurité de la PR #177, et c'est une bonne nouvelle : le
+ * harnais ne restaurait aucun document parce qu'il tournait sans fenêtre et que sa propre sonde
+ * ouvrait un `BroadcastChannel` — bloqueur du bfcache. En Chromium FENÊTRÉ, `pageshow` restauré et
+ * le rechargement qui suit sont MESURÉS (`tests/fins-d-onglet/`, projet `chromium-fenetre`).
  *
- * Ce sont donc ces épreuves-ci, et elles seules, qui tiennent ces quatre chemins : elles injectent
- * l'événement et l'horloge, et la campagne de mutation les rougit. Les écrire comme des épreuves de
- * navigateur les aurait rendues vertes par vacuité, ce que le dépôt refuse depuis #163.
+ * Restent hors de portée de tout navigateur de ce dépôt : le GEL et l'onglet CACHÉ. `freeze`,
+ * `resume` et le retour à la visibilité ne tiennent donc que par les épreuves d'ici — événement et
+ * horloge injectés — et par les mutants. Les écrire comme des épreuves de navigateur les aurait
+ * rendues vertes par vacuité, ce que le dépôt refuse depuis #163.
  */
 
 import assert from "node:assert/strict";
@@ -30,8 +30,11 @@ import {
   EVENEMENTS_DE_FIN,
   EVENEMENTS_JAMAIS_BRANCHES,
   brancherLesFinsDOnglet,
+  workerAtteignable,
 } from "../../src/coquille/fins-d-onglet.mjs";
 import { DECLENCHEURS, surveillanceDInactivite } from "../../src/coquille/verrouillage.mjs";
+import { brancherLesGestesDuCycle } from "../../src/coquille/gestes-du-cycle.mjs";
+import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -93,7 +96,13 @@ function tempsFeint() {
 }
 
 /** Le montage complet : une surveillance sous horloge feinte, et la coquille feinte autour. */
-function montage({ etat = ETATS_DU_VOLUME.ouvert, visibilite = "visible", delaiMs = 60_000 } = {}) {
+function montage({
+  etat = ETATS_DU_VOLUME.ouvert,
+  visibilite = "visible",
+  delaiMs = 60_000,
+  worker = { nom: "worker-de-confiance-feint" },
+  mortDuWorker = null,
+} = {}) {
   const temps = tempsFeint();
   const verrouillages = [];
   const surveillance = surveillanceDInactivite({
@@ -108,11 +117,19 @@ function montage({ etat = ETATS_DU_VOLUME.ouvert, visibilite = "visible", delaiM
   const rechargements = [];
   const journal = [];
   let etatCourant = etat;
+  let workerCourant = worker;
+  let mortCourante = mortDuWorker;
   brancherLesFinsDOnglet({
     racine: contexte.racine,
     fenetre: contexte.fenetre,
     surveillance,
-    coffreOuvert: () => etatCourant === ETATS_DU_VOLUME.ouvert,
+    // Le CONSTAT porte l'état publié, que la garde refuse d'employer : c'est ce refus-là qui se mute
+    // (constat 1 de la revue de sécurité de la PR #177).
+    constatDuWorker: () => ({
+      worker: workerCourant,
+      mortDuWorker: mortCourante,
+      etatPublie: etatCourant,
+    }),
     tuerLeWorker: () => terminaisons.push(temps.maintenant()),
     recharger: () => rechargements.push(temps.maintenant()),
     journal: (evenement, action) => journal.push(`${evenement}:${action}`),
@@ -128,6 +145,12 @@ function montage({ etat = ETATS_DU_VOLUME.ouvert, visibilite = "visible", delaiM
     verrouillages,
     poserLEtat(valeur) {
       etatCourant = valeur;
+    },
+    poserLaMort(valeur) {
+      mortCourante = valeur;
+    },
+    poserLeWorker(valeur) {
+      workerCourant = valeur;
     },
   };
 }
@@ -224,13 +247,48 @@ test("`pagehide` tue AUSSI quand `persisted` est vrai : un seul chemin, pas deux
   assert.equal(montee.surveillance.armee(), false);
 });
 
-test("`pagehide` sur un coffre qui n'est PAS ouvert ne tue rien", () => {
-  // Un coffre verrouillé, en démarrage ou indisponible n'a aucune clé dans le tas d'un Worker : le
-  // terminer ferait payer un redémarrage pour rien, et publierait une mort là où il n'y en a pas.
-  const montee = montage({ etat: ETATS_DU_VOLUME.verrouille });
-  montee.contexte.declencher("pagehide", { persisted: false });
-  assert.deepEqual(montee.terminaisons, []);
-  assert.deepEqual(montee.rechargements, []);
+test("`pagehide` tue MÊME quand l'état publié n'est pas `ouvert` : le Worker peut tenir une clé", () => {
+  // C'EST LE CONSTAT 1 de la revue de sécurité de la PR #177, et l'épreuve qui vivait ici affirmait
+  // le contraire : « un coffre verrouillé n'a aucune clé dans le tas d'un Worker ». C'est FAUX
+  // pendant tout le déverrouillage. Le Worker reçoit la KEK au message `deverrouiller` ; l'état ne
+  // devient `ouvert` qu'après l'ouverture du volume, une écriture acquittée et un aller-retour
+  // d'inventaire de plus. Un `pagehide` déposé dans cette fenêtre — reproduit en A/B sur Chromium —
+  // laissait vivre un Worker qui tenait déjà la KEK et la DEK, et le coffre finissait de s'ouvrir
+  // après le départ du document.
+  for (const etat of [
+    ETATS_DU_VOLUME.verrouille,
+    ETATS_DU_VOLUME.demarrage,
+    ETATS_DU_VOLUME.indisponible,
+  ]) {
+    const montee = montage({ etat });
+    montee.contexte.declencher("pagehide", { persisted: false });
+    assert.equal(montee.terminaisons.length, 1, `l'état ${etat} a empêché la terminaison`);
+  }
+});
+
+test("`pagehide` ne tue rien quand le Worker est DÉJÀ mort, ou n'existe pas", () => {
+  // La garde ne retient qu'une chose : un Worker inatteignable. Le terminer une seconde fois ne
+  // ferait rien de plus, et publier une mort là où elle est déjà constatée mentirait sur l'ordre.
+  const mort = montage({ mortDuWorker: { cause: "terminaison" } });
+  mort.contexte.declencher("pagehide", { persisted: false });
+  assert.deepEqual(mort.terminaisons, []);
+
+  const absent = montage({ worker: null });
+  absent.contexte.declencher("pagehide", { persisted: false });
+  assert.deepEqual(absent.terminaisons, []);
+});
+
+test("la GARDE de `pagehide` reçoit l'état publié, et le REFUSE", () => {
+  // La forme de `SIGNAUX_SANS_EFFET` (#169) : le fait est PRÉSENTÉ à la garde plutôt qu'omis, si
+  // bien qu'un mutant qui s'en servirait rougit — là où une absence d'appel ne pourrait rien rougir.
+  assert.equal(
+    workerAtteignable({ worker: {}, mortDuWorker: null, etatPublie: "verrouille" }),
+    true,
+  );
+  assert.equal(workerAtteignable({ worker: {}, mortDuWorker: null, etatPublie: "ouvert" }), true);
+  assert.equal(workerAtteignable({ worker: {}, mortDuWorker: { cause: "erreur" } }), false);
+  assert.equal(workerAtteignable({ worker: null, mortDuWorker: null }), false);
+  assert.equal(workerAtteignable({ mortDuWorker: null }), false);
 });
 
 test("`pagehide` ne RÉARME jamais le délai : il n'y a plus rien à verrouiller", () => {
@@ -339,6 +397,153 @@ test("la vérification est le SEUL chemin neuf : `visibilite` reste un signal SA
   assert.equal(montee.surveillance.echeanceMs(), echeance);
 });
 
+// --- L'ÉCHÉANCE DUE : un verrouillage par DÉLAI refusé pendant un boot n'est pas perdu -------------
+//
+// C'est le constat 3 de la revue de sécurité de la PR #177, et il demandait de composer DEUX modules
+// que les épreuves regardaient jusqu'ici séparément : la surveillance désarme puis appelle le
+// verrouillage ; la garde d'ordre de `gestes-du-cycle.mjs` refuse d'entrée pendant un boot ; la
+// conduite du refus ré-arme — et ré-armer reposait `dernierSigneMs`. Chaque `resume` ou retour
+// visible repoussait donc le délai de dix minutes pendant les deux minutes d'un boot, indéfiniment.
+//
+// Ces épreuves-ci montent le montage de `public/main.mjs` avec l'horloge injectée : c'est le seul
+// endroit du dépôt où les deux modules se rencontrent sous un enfant borné.
+
+/**
+ * La coquille FEINTE : une surveillance réelle, les gestes réels du cycle, et un boot qu'on libère
+ * à la main. Rien de la page — le document se réduit à ce que le branchement interroge.
+ */
+function coquilleFeinte({ delaiMs = 60_000, bootQuiEchoue = false } = {}) {
+  const temps = tempsFeint();
+  const journal = [];
+  let verrouillerLeCoffre = null;
+  const surveillance = surveillanceDInactivite({
+    delaiMs,
+    maintenant: temps.maintenant,
+    planifier: temps.planifier,
+    annuler: temps.annuler,
+    verrouiller: () => void verrouillerLeCoffre?.(DECLENCHEURS.inactivite),
+  });
+  let libererLeBoot = () => {};
+  const bootEnVol = new Promise((rendre) => {
+    libererLeBoot = rendre;
+  });
+  const liaison = {
+    racine: { querySelector: () => null },
+    demander: async (type) => {
+      if (type === "application") {
+        await bootEnVol;
+        if (bootQuiEchoue) throw Object.assign(new Error("boot refusé"), { code: "VAULT_X" });
+        return { demarree: true, etat: ETATS_DU_VOLUME.ouvert, barrieres: 0 };
+      }
+      journal.push(`demande:${type}`);
+      return { etat: ETATS_DU_VOLUME.verrouille, barrieres: 0, capture: { retenue: true } };
+    },
+    cycle: { issueDe: () => null, conclure: () => {}, releve: () => [] },
+    rapport: {},
+    publier: () => {},
+    avantVerrouillage: () => {},
+    // La conduite de `public/main.mjs`, recopiée à l'identique : c'est elle qui est éprouvée.
+    apresRefusDOrdre: (code, declencheur) => {
+      journal.push(`refus-d-ordre:${code}:${declencheur}`);
+      if (declencheur === DECLENCHEURS.inactivite) surveillance.noterUnVerrouillageDu();
+      surveillance.armer(ETATS_DU_VOLUME.ouvert);
+    },
+    apresRefusDeVerrouillage: (code, declencheur) => journal.push(`refus:${code}:${declencheur}`),
+    apresVerrouillage: (declencheur) => journal.push(`verrouille:${declencheur}`),
+    apresDemarrage: () => {
+      surveillance.armer(ETATS_DU_VOLUME.ouvert);
+      surveillance.jouerLeVerrouillageDu();
+    },
+  };
+  const gestes = brancherLesGestesDuCycle(liaison);
+  verrouillerLeCoffre = gestes.verrouillerLeCoffre;
+  surveillance.armer(ETATS_DU_VOLUME.ouvert);
+  return { temps, surveillance, gestes, journal, libererLeBoot };
+}
+
+test("une échéance dépassée PENDANT un boot ne pose AUCUN délai neuf : elle reste DUE", async () => {
+  const coquille = coquilleFeinte({ delaiMs: 60_000 });
+  const echeance = coquille.surveillance.echeanceMs();
+  // Le boot n'est PAS attendu ici : c'est son vol qui est le sujet, et il reste en l'air jusqu'à la
+  // fin de l'épreuve. Il est libéré par le `finally` de `demarrer` quand le processus se termine.
+  void coquille.gestes.demarrerLApplication();
+  await Promise.resolve();
+
+  // L'onglet revient après l'échéance : la vérification verrouille, et l'ordre refuse.
+  coquille.temps.avancerSansReveil(60_001);
+  assert.equal(coquille.surveillance.verifierLEcheance(), true);
+  await Promise.resolve();
+  assert.ok(
+    coquille.journal.includes(
+      `refus-d-ordre:${CODES_REFUS_COQUILLE.etapeHorsOrdre}:${DECLENCHEURS.inactivite}`,
+    ),
+    "le refus d'ordre n'a pas porté le déclencheur",
+  );
+
+  // LE DÉFAUT QUE CETTE ÉPREUVE FERME : l'échéance valait `refus + delai`, c'est-à-dire dix minutes
+  // de plus offertes par le refus lui-même, à chaque retour d'onglet.
+  assert.equal(coquille.surveillance.armee(), false, "une minuterie neuve a été posée");
+  assert.equal(coquille.surveillance.echeanceMs(), null, "une échéance neuve a été posée");
+  assert.equal(coquille.surveillance.verrouillageDu(), true, "le verrouillage n'est pas noté DÛ");
+  assert.ok(echeance !== null);
+});
+
+test("le verrouillage DÛ est joué à la CONCLUSION du boot, sous `inactivite`", async () => {
+  const coquille = coquilleFeinte({ delaiMs: 60_000 });
+  const boot = coquille.gestes.demarrerLApplication();
+  await Promise.resolve();
+  coquille.temps.avancerSansReveil(60_001);
+  coquille.surveillance.verifierLEcheance();
+  await Promise.resolve();
+
+  coquille.libererLeBoot();
+  await boot;
+  await new Promise((rendre) => setTimeout(rendre, 0));
+
+  assert.ok(
+    coquille.journal.includes(`verrouille:${DECLENCHEURS.inactivite}`),
+    "le verrouillage dû n'a pas été joué à la conclusion du boot",
+  );
+  assert.equal(coquille.surveillance.verrouillageDu(), false, "le dû n'est pas retombé");
+});
+
+test("un boot qui ÉCHOUE joue quand même le verrouillage DÛ : le rappel est dans le `finally`", async () => {
+  // Un dû qui ne se jouerait qu'au succès laisserait un coffre ouvert sans délai après un boot
+  // refusé — exactement l'état que le verrouillage existe pour quitter.
+  const coquille = coquilleFeinte({ delaiMs: 60_000, bootQuiEchoue: true });
+  const boot = coquille.gestes.demarrerLApplication();
+  await Promise.resolve();
+  coquille.temps.avancerSansReveil(60_001);
+  coquille.surveillance.verifierLEcheance();
+  await Promise.resolve();
+
+  coquille.libererLeBoot();
+  await boot;
+  await new Promise((rendre) => setTimeout(rendre, 0));
+
+  assert.ok(coquille.journal.includes(`verrouille:${DECLENCHEURS.inactivite}`));
+});
+
+test("le GESTE refusé pendant un boot ne note RIEN : la personne est là, elle recliquera", async () => {
+  // La distinction est la décision (ADR 0032, décision 5) : un bouton refusé se reclique ; un délai
+  // refusé n'a personne pour recliquer. Le geste reste donc « refusé, pas différé » (ADR 0031).
+  const coquille = coquilleFeinte({ delaiMs: 60_000 });
+  const boot = coquille.gestes.demarrerLApplication();
+  await Promise.resolve();
+  const rendu = await coquille.gestes.verrouillerLeCoffre(DECLENCHEURS.geste);
+  assert.equal(rendu.horsOrdre, true);
+  assert.equal(coquille.surveillance.verrouillageDu(), false, "un geste refusé a été noté DÛ");
+  // Et le délai reprend sa course : rien n'était dû, `armer` fait son travail.
+  assert.equal(coquille.surveillance.armee(), true);
+
+  coquille.libererLeBoot();
+  await boot;
+  assert.ok(
+    !coquille.journal.some((ligne) => ligne.startsWith("verrouille:")),
+    "un geste refusé a été rejoué tout seul",
+  );
+});
+
 // --- Le CLIQUET : `beforeunload` et `unload` ne sont branchés NULLE PART ---------------------------
 
 /**
@@ -360,17 +565,56 @@ const PORTES = Object.freeze([
   ".onunload",
 ]);
 
-/** Les fichiers de PRODUIT que le cliquet balaie : la page de la coquille, et `src/coquille/`. */
+/**
+ * Les fichiers de PRODUIT que le cliquet balaie, et ils sont plus nombreux qu'à la première
+ * rédaction : `public/` ENTIER — modules et documents —, `src/coquille/` et `src/vm/`.
+ *
+ * Le commentaire disait « il balaie le produit entier » pendant qu'il ne lisait que `public/main.mjs`
+ * et `src/coquille/` : ni le Worker de confiance, ni celui de dérivation, ni le document applicatif,
+ * ni `src/vm/` n'étaient regardés (constat 5 de la revue de sécurité de la PR #177 ; aucune violation
+ * n'y existait, ce qui est exactement ce qu'une absence surveillée doit rester).
+ *
+ * `public/coquille-epreuve/` est ÉCARTÉ, et c'est une décision : ce banc n'est pas publié
+ * (`SOURCES_COQUILLE`), il porte déjà un Service Worker hostile, et ce qu'il sert lui appartient.
+ *
+ * **La limite du cliquet, écrite** : il compare des FORMES de texte, pas un arbre syntaxique. Un
+ * branchement construit par calcul — `addEventListener(nom, …)` avec `nom` calculé — lui échappe,
+ * et c'est assumé : ce qu'il défend est une absence contre une réintroduction ordinaire.
+ */
 async function sourcesDeLaCoquille() {
-  const fichiers = ["public/main.mjs"];
-  const entrees = await readdir(path.join(REPO_ROOT, "src", "coquille"), { recursive: true });
-  for (const entree of entrees) {
-    if (entree.endsWith(".mjs")) fichiers.push(`src/coquille/${entree.replaceAll("\\", "/")}`);
-  }
+  const fichiers = [];
+  const balayer = async (racine, extensions) => {
+    const entrees = await readdir(path.join(REPO_ROOT, ...racine.split("/")), { recursive: true });
+    for (const entree of entrees) {
+      const chemin = `${racine}/${entree.replaceAll("\\", "/")}`;
+      if (chemin.startsWith("public/coquille-epreuve/")) continue;
+      if (extensions.some((extension) => chemin.endsWith(extension))) fichiers.push(chemin);
+    }
+  };
+  await balayer("public", [".mjs", ".html"]);
+  await balayer("src/coquille", [".mjs"]);
+  await balayer("src/vm", [".mjs"]);
   return fichiers;
 }
 
 test("aucun `beforeunload` ni `unload` n'est branché dans le produit — le cliquet le surveille", async () => {
+  // Le balayage doit VOIR des fichiers, et pas seulement ne rien trouver : un cliquet qui lit une
+  // liste vide passe au vert pour la mauvaise raison.
+  const balayes = await sourcesDeLaCoquille();
+  assert.ok(balayes.includes("public/main.mjs"), "la page de la coquille n'est pas balayée");
+  assert.ok(
+    balayes.includes("public/runtime-worker.mjs"),
+    "le Worker de confiance n'est pas balayé",
+  );
+  assert.ok(balayes.includes("public/index.html"), "le document de la coquille n'est pas balayé");
+  assert.ok(
+    balayes.some((chemin) => chemin.startsWith("src/vm/")),
+    "src/vm/ n'est pas balayé",
+  );
+  assert.ok(
+    !balayes.some((chemin) => chemin.startsWith("public/coquille-epreuve/")),
+    "le banc est balayé alors qu'il est écarté par décision",
+  );
   // Une ABSENCE ne se relit pas, elle se surveille : c'est la forme de
   // `tests/unit/coquille-sans-service-worker.test.mjs`, et son en-tête vaut mot pour mot ici — « une
   // affirmation que rien ne relit finit toujours par devenir fausse ».
@@ -379,7 +623,7 @@ test("aucun `beforeunload` ni `unload` n'est branché dans le produit — le cli
   // de retenir l'utilisateur par une boîte de dialogue : s'y suspendre est ce que la Definition of
   // Ready de #25 interdit. `unload` est obsolète, et tout ce qu'il ferait, `pagehide` le fait.
   const defauts = [];
-  for (const fichier of await sourcesDeLaCoquille()) {
+  for (const fichier of balayes) {
     const source = await readFile(path.join(REPO_ROOT, fichier), "utf8");
     for (const porte of PORTES) {
       if (source.includes(porte)) defauts.push(`${fichier} : ${porte}`);

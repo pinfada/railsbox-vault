@@ -8,23 +8,24 @@
 // SANS mutation d'abord, `node --check` sur le fichier muté, arrêt sans verdict compté NON
 // CONCLUANT. Ce fichier ne tient que sa TABLE.
 //
-// ## Pourquoi cette campagne compte DOUBLE pour cette tranche
+// ## Ce que la campagne tient, et ce que le navigateur tient
 //
-// La sonde de `tests/fins-d-onglet/` a MESURÉ, sur les trois moteurs, que sous Playwright **aucun
-// document n'est jamais restauré depuis le bfcache** — témoin positif compris — et qu'**aucun onglet
-// ne devient jamais caché**. Quatre des cinq chemins de `fins-d-onglet.mjs` — `pageshow` restauré,
-// `freeze`, `resume`, le retour à la visibilité — ne sont donc atteignables par AUCUNE épreuve de
-// navigateur de ce dépôt.
+// La première rédaction écrivait ici que « quatre des cinq chemins ne sont atteignables par aucune
+// épreuve de navigateur ». C'était FAUX, et la revue de sécurité de la PR #177 l'a mesuré : le
+// harnais ne restaurait aucun document parce qu'il tournait SANS FENÊTRE et parce que sa propre
+// sonde ouvrait un `BroadcastChannel`, bloqueur connu du bfcache. En Chromium FENÊTRÉ et sans ce
+// canal, `pageshow` restauré et le rechargement qui suit sont observés pour de bon.
 //
-// Ce que cette campagne dit est par conséquent tout ce qui est dit d'eux : que la décision sait
-// rougir. C'est pour cela que le module reçoit son document, sa fenêtre, sa surveillance, l'état du
-// coffre, la terminaison et le rechargement en PARAMÈTRES — sans cette injection, ces quatre
-// décisions seraient des lignes qu'on croit sur parole.
+// Reste ce qu'aucun moteur ne provoque sous Playwright : le GEL et l'onglet CACHÉ. `freeze`,
+// `resume` et le retour à la visibilité ne tiennent donc que par les épreuves unitaires — qui
+// injectent l'événement et l'horloge — et par les mutants ci-dessous. C'est pour cela que le module
+// reçoit son document, sa fenêtre, sa surveillance, le constat du Worker, la terminaison et le
+// rechargement en PARAMÈTRES.
 //
 // ## Ce que la campagne ne peut PAS mesurer, et il faut le dire
 //
 // Elle ne mesure pas ce que le NAVIGATEUR livre : qu'un `pagehide` arrive à la fermeture d'un
-// onglet, qu'un `freeze` existe, qu'un document soit restauré. Cela relève de
+// onglet, qu'un moteur restaure un document, qu'un `freeze` existe. Cela relève de
 // `tests/fins-d-onglet/fins-d-onglet.spec.mjs`, dont la matrice est publiée dans
 // `docs/compatibility.md` — et dont plusieurs lignes disent « non simulable », avec leur motif.
 
@@ -63,15 +64,26 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE],
   },
   {
-    nom: "`pagehide` ne tue QUE sur un coffre ouvert",
-    garde: "gesteDeFin — la condition d'ÉTAT",
+    nom: "`pagehide` ne tue pas un Worker déjà mort, ni un Worker absent",
+    garde: "gesteDeFin — la garde d'ATTEIGNABILITÉ",
     fichier: FINS,
     avant:
-      "    if (!coffreOuvert()) {\n" +
-      '      journal("pagehide", "coffre-non-ouvert");\n' +
+      "    if (!workerAtteignable(constatDuWorker())) {\n" +
+      '      journal("pagehide", "worker-inatteignable");\n' +
       "      return;\n" +
       "    }\n",
     apres: "",
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "la garde lit la VIE du Worker, jamais l'état publié",
+    garde: "workerAtteignable — le constat 1 de la revue de sécurité de la PR #177",
+    fichier: FINS,
+    avant: "  return worker !== null && worker !== undefined && mortDuWorker === null;",
+    apres:
+      "  return (\n" +
+      '    worker !== null && worker !== undefined && mortDuWorker === null && etatPublie === "ouvert"\n' +
+      "  );",
     epreuves: [EPREUVE],
   },
   {
@@ -143,6 +155,30 @@ export const MUTATIONS = Object.freeze([
     apres:
       '  fenetre.addEventListener("beforeunload", () => {});\n' +
       "  for (const [evenement, { cible }] of Object.entries(EVENEMENTS_DE_FIN)) {",
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "un verrouillage par DÉLAI refusé pour cause d'ordre reste DÛ",
+    garde: "surveillanceDInactivite.noterUnVerrouillageDu — la note elle-même",
+    fichier: VERROUILLAGE,
+    avant: "      verrouillageDu = true;\n",
+    apres: "",
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "aucune échéance NEUVE n'est posée tant qu'un verrouillage est DÛ",
+    garde: "surveillanceDInactivite.armer — le refus de ré-armer sur un dû",
+    fichier: VERROUILLAGE,
+    avant: "      if (verrouillageDu) return false;\n",
+    apres: "",
+    epreuves: [EPREUVE],
+  },
+  {
+    nom: "le verrouillage DÛ est JOUÉ à la conclusion du boot",
+    garde: "surveillanceDInactivite.jouerLeVerrouillageDu — l'appel au verrouillage",
+    fichier: VERROUILLAGE,
+    avant: "      verrouillageDu = false;\n      verrouiller();\n",
+    apres: "      verrouillageDu = false;\n",
     epreuves: [EPREUVE],
   },
   {

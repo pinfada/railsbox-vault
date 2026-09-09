@@ -194,3 +194,81 @@ export async function publier(moteur, situation, valeur) {
   releve[situation] = { ...valeur, releveLe: new Date().toISOString() };
   await writeFile(fichier, `${JSON.stringify(releve, null, 2)}\n`, "utf8");
 }
+
+/**
+ * L'OBSERVATEUR LÉGER : les mêmes événements, SANS `BroadcastChannel` (#177, constat 2).
+ *
+ * ## Pourquoi il existe, et ce que l'autre mesurait à sa place
+ *
+ * Un `BroadcastChannel` OUVERT est un bloqueur connu du bfcache. Mesuré depuis la revue de la PR
+ * #177 : en Chromium fenêtré, `notRestoredReasons` rend `broadcastchannel-message` sur les documents
+ * que l'observatoire complet instrumente, et `null` — c'est-à-dire « restauré » — sur les mêmes
+ * documents sans lui. **L'observatoire mesurait donc sa propre instrumentation**, et la conclusion
+ * « aucun document n'est jamais restauré » était une propriété de la sonde, pas du moteur.
+ *
+ * Celui-ci ne pose rien qui bloque : deux écouteurs de fenêtre, un tableau sur `globalThis` pour le
+ * document vivant, et un COMPTEUR dans `sessionStorage` — le seul stockage qui survit à un
+ * rechargement dans le même onglet et meurt avec lui. Le canal du témoin reste nécessaire, mais
+ * pour les seules lignes de FERMETURE : un document qui meurt ne se lit pas depuis lui-même.
+ *
+ * @param {import("@playwright/test").BrowserContext} contexte
+ * @param {{ marqueDuDocument?: string }} [options] fragment d'URL des documents comptés
+ */
+export async function poserLObservateurLeger(contexte, { marqueDuDocument = "" } = {}) {
+  await contexte.addInitScript((marque) => {
+    if (!location.href.includes(marque)) return;
+    // Le journal vit dans `sessionStorage`, et c'est la condition pour qu'il MESURE quelque chose :
+    // un `pageshow` restauré fait recharger la coquille, et le tableau d'un `globalThis` part avec
+    // le document qui l'a vu. Le seul stockage qui survit à un rechargement dans le même onglet —
+    // et qui meurt avec lui — est celui-là.
+    const CLE = "fins-d-onglet-journal";
+    const lire = () => {
+      try {
+        return JSON.parse(sessionStorage.getItem(CLE) ?? "[]");
+      } catch {
+        return [];
+      }
+    };
+    const noter = (trace) => {
+      try {
+        sessionStorage.setItem(CLE, JSON.stringify([...lire(), trace]));
+      } catch {
+        /* un stockage refusé n'invalide pas le tableau du document vivant */
+      }
+      (globalThis.__finsDOngletLeger ??= []).push(trace);
+    };
+    globalThis.__finsDOngletLeger = [];
+    noter({ evenement: "document-charge" });
+    addEventListener("pageshow", (evenement) =>
+      noter({ evenement: "pageshow", persisted: evenement.persisted === true }),
+    );
+    addEventListener("pagehide", (evenement) =>
+      noter({ evenement: "pagehide", persisted: evenement.persisted === true }),
+    );
+  }, marqueDuDocument);
+}
+
+/**
+ * Ce que l'observateur léger a vu, DEPUIS LE DÉBUT de l'onglet — rechargements compris.
+ *
+ * `chargements` compte les documents que le script d'initialisation a vu commencer : une
+ * RESTAURATION n'en ajoute pas — le script ne rejoue pas —, un rechargement si. `restaure` est le
+ * seul signal qui fasse foi : `notRestoredReasons` rend `null` pour une navigation qui n'est pas un
+ * retour arrière, si bien qu'un rechargement s'y lit comme une restauration.
+ */
+export async function releveLeger(page) {
+  const traces = await page.evaluate(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem("fins-d-onglet-journal") ?? "[]");
+    } catch {
+      return globalThis.__finsDOngletLeger ?? [];
+    }
+  });
+  return {
+    traces,
+    chargements: traces.filter(({ evenement }) => evenement === "document-charge").length,
+    restaure: traces.some(
+      ({ evenement, persisted }) => evenement === "pageshow" && persisted === true,
+    ),
+  };
+}

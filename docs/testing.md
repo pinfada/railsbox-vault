@@ -11,7 +11,7 @@
 | `npm run test:coquille`        | frontière de la coquille de PRODUIT (#161), application malveillante, trois moteurs, seule                                       |                                                                                                                                                                                       environ 2 min 30 s |
 | `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                                                                        |                                                                                                                                                                                            environ 2 min |
 | `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                                                                              |                                                                                                                                                                          environ 20 s après installation |
-| `npm run test:fins-d-onglet`   | ce que les moteurs livrent aux fins d'onglet (#170), trois moteurs, harnais bfcache dédié                                        |                                                                                                                                                                                             environ 55 s |
+| `npm run test:fins-d-onglet`   | ce que les moteurs livrent aux fins d'onglet (#170), 3 moteurs + un projet fenêtré (bfcache)                                     |                                                                                                                                                                                             environ 55 s |
 | `npm run test:vm`              | guest Linux réel sur les backends mémoire et OPFS (Chromium), matrice de coupures, et démarrage du runtime sur les trois moteurs |                                                                                                                                                                           environ 18 min, **périodique** |
 | `npm run test:isolation`       | coût de l'isolation multi-origine sur le runtime v86, trois moteurs                                                              |                                                                                                                                                                          environ 8 min, **à la demande** |
 | `npm run test:csp`             | démarrage de v86 sous deux CSP, quatre configurations, trois moteurs                                                             |                                                                                                                                                                         environ 25 min, **à la demande** |
@@ -2221,25 +2221,20 @@ davantage sur un exécutant partagé ; la marge du job (120 min) les couvre larg
 
 **Campagnes de mutation** — `node tools/muter-gardes-cycle-de-vie.mjs` : vingt-sept gardes,
 vingt-sept mutants tués, table et survivant dans l'ADR 0030.
-`node tools/muter-gardes-fins-d-onglet.mjs` : **quatorze gardes, quatorze mutants tués**, table dans
-l'ADR 0032 — `pagehide` qui tue quel que soit `persisted`, `pageshow` qui ne recharge que restauré,
-le gel qui ne tue rien, la vérification d'échéance qui ne remet rien à zéro, et `beforeunload` que
-rien ne branche. Elle compte double : quatre des cinq chemins ne sont atteignables par aucune
-épreuve de navigateur de ce dépôt. `node tools/muter-gardes-verrouillage.mjs` : **vingt-huit gardes,
-vingt-huit mutants tués**, table dans l'ADR 0031 — le déclencheur d'inactivité et ses quatre refus,
-les bornes du délai, l'ordre `close()` avant `terminate()`, le rechargement, le refus de rouvrir
-sans geste, l'instantané qui n'est pas retiré, et depuis la revue de la PR #174 : la conduite d'un
-verrouillage REFUSÉ, la garde d'ordre sur un démarrage en vol, la table close des déclencheurs, et
-le branchement RÉEL des écouteurs d'activité — « la garde qui décide ce que la coquille compte comme
-une personne était la seule que la campagne ne regardait pas ».
+`node tools/muter-gardes-fins-d-onglet.mjs` : **dix-huit gardes, dix-huit mutants tués**, table dans
+l'ADR 0032 — `pagehide` qui tue quel que soit `persisted` et dès que le Worker VIT, `pageshow` qui
+ne recharge que restauré, le gel qui ne tue rien, la vérification d'échéance qui ne remet rien à
+zéro, le verrouillage par délai qui reste DÛ pendant un boot, et `beforeunload` que rien ne branche.
+Quatre de ces mutants viennent de la revue de sécurité de la PR #177.
 
 ### Les FINS D'ONGLET : une suite, une configuration, et ce qu'elle ne peut pas mesurer (#170)
 
-`npm run test:fins-d-onglet` — `tests/fins-d-onglet/`, **trois moteurs**, environ **55 s**, et
-**rattachée à `npm run check`**. Elle mesure ce que `pagehide`, `pageshow`, `visibilitychange`,
-`freeze`/`resume` et `beforeunload` livrent à la fermeture, à la navigation, au retour arrière et au
-gel ; elle éprouve aussi deux propriétés de PRODUIT — un onglet fermé sans verrouillage laisse un
-coffre `verrouille` au document suivant, et la coquille ne se recharge pas toute seule.
+`npm run test:fins-d-onglet` — `tests/fins-d-onglet/`, **trois moteurs plus un projet fenêtré**,
+environ **1 min**, et **rattachée à `npm run check`**. Elle mesure ce que `pagehide`, `pageshow`,
+`visibilitychange`, `freeze`/`resume` et `beforeunload` livrent à la fermeture, à la navigation, au
+retour arrière et au gel ; elle éprouve aussi deux propriétés de PRODUIT — un onglet fermé sans
+verrouillage laisse un coffre `verrouille` au document suivant, et la coquille ne se recharge pas
+toute seule.
 
 **Une configuration à elle, et le motif n'est pas la commodité.** Playwright lance Chromium avec
 `--disable-back-forward-cache` : une mesure « jamais restauré » prise sous cet argument mesurerait
@@ -2256,16 +2251,23 @@ n'atteint pas le témoin ; WebKit fait l'inverse et perd la console. Un événem
 rapporte pas n'est pas « non livré » : il est « non observé par ce canal », et la suite change de
 canal avant de conclure.
 
-**Ce que la suite NE PEUT PAS mesurer, et ce qui tient à la place.** Mesuré, avec témoin positif :
-aucun document n'est jamais restauré depuis le bfcache — une page nue sans instrumentation non plus
-—, aucun onglet ne devient jamais caché, et le gel demandé par `Page.setWebLifecycleState` ne gèle
-rien. Quatre des cinq chemins du produit sont donc hors de portée de tout navigateur ici. Ils
-tiennent par `tests/unit/coquille-fins-d-onglet.test.mjs`, où l'événement et l'horloge sont
-injectés, et par les quatorze mutants de `node tools/muter-gardes-fins-d-onglet.mjs`. La règle de
-#169 — « une propriété ne peut être dite mesurée sur trois moteurs que si l'épreuve tourne sur trois
-moteurs » — s'applique ici en sens inverse et avec la même rigueur : **ce qu'aucun moteur ne livre
-n'est pas décrit comme mesuré**, et `docs/compatibility.md` écrit « non simulable » avec son motif,
-jamais une case vide.
+**Un projet FENÊTRÉ, et c'est lui qui mesure le bfcache.** La première rédaction concluait « aucun
+document n'est jamais restauré » ; c'était FAUX, et trois pièges de harnais s'additionnaient
+(constat 2 de la revue de sécurité de la PR #177) : l'argument `--disable-back-forward-cache`, le
+mode SANS FENÊTRE — où Chromium ne restaure rien et rend `masked`, un refus de dire —, et le
+`BroadcastChannel` de la sonde, bloqueur connu du bfcache. Le projet `chromium-fenetre` rejoue donc
+les épreuves marquées `@bfcache` avec une vraie fenêtre et un observateur LÉGER ; `ci.yml` lui donne
+un affichage par `xvfb-run --auto-servernum`, et **sans affichage le projet n'est pas déclaré et le
+DIT sur la sortie standard** — un skip nommé, jamais un silence.
+
+**Ce que la suite NE PEUT PAS mesurer, et ce qui tient à la place.** Le GEL et l'onglet CACHÉ :
+`Page.setWebLifecycleState` accepte la commande et ne gèle rien, et `document.hidden` reste faux sur
+les trois moteurs. `freeze`, `resume` et le retour à la visibilité tiennent donc par
+`tests/unit/coquille-fins-d-onglet.test.mjs`, où l'événement et l'horloge sont injectés, et par les
+dix-huit mutants de `node tools/muter-gardes-fins-d-onglet.mjs`. La règle de #169 — « une propriété
+ne peut être dite mesurée sur trois moteurs que si l'épreuve tourne sur trois moteurs » — s'applique
+ici en sens inverse et avec la même rigueur : **ce qu'aucun moteur ne livre n'est pas décrit comme
+mesuré**, et `docs/compatibility.md` écrit « non simulable » avec son motif, jamais une case vide.
 
 **WebKit est DÉCLARÉ `indisponible`** partout où un coffre doit être ouvert — rien ne s'y ouvre —,
 et les deux épreuves concernées le publient dans leur relevé au lieu de passer au vert par vacuité.

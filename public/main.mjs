@@ -336,16 +336,22 @@ brancherLesSignauxDActivite({ racine: document, surveillance });
 
 // Les FINS D'ONGLET (#170, ADR 0032). Ce que chaque événement déclenche, et pourquoi, vit dans
 // `src/coquille/fins-d-onglet.mjs`, où la campagne de mutation l'atteint : la page ne fait que
-// brancher. `coffreOuvert` est lu à CHAQUE événement, jamais retenu — l'état change sous les pieds
-// de tout ce qui le mémorise.
+// brancher. Le CONSTAT est relu à chaque événement, jamais retenu — l'état change sous les pieds de
+// tout ce qui le mémorise —, et il porte l'état PUBLIÉ que la garde refuse d'employer (constat 1 de
+// la revue de sécurité de la PR #177 : le Worker tient la KEK avant que l'état devienne `ouvert`).
 brancherLesFinsDOnglet({
   racine: document,
   fenetre: globalThis,
   surveillance,
-  coffreOuvert: () => rapport.etat === ETATS_DU_VOLUME.ouvert && mortDuWorker === null,
+  constatDuWorker: () => ({ worker, mortDuWorker, etatPublie: rapport.etat }),
   tuerLeWorker: () => worker.terminate(),
   recharger: () => rechargerLaCoquille(),
-  journal: (evenement, action) => rapport.journal.push(`fin-d-onglet:${evenement}:${action}`),
+  // Le journal est PUBLIÉ dans la foulée, synchrone : sans cela, l'inscription d'un `freeze` — dont
+  // « inscrire » est la seule action — ne serait jamais lisible de personne (constat 4 de la revue).
+  journal: (evenement, action) => {
+    rapport.journal.push(`fin-d-onglet:${evenement}:${action}`);
+    publier();
+  },
 });
 
 /**
@@ -835,9 +841,13 @@ async function demarrer() {
     // L'ORDRE a refusé, et le geste n'a jamais atteint le Worker : le coffre est légitimement encore
     // ouvert, et ce qu'il faut est RÉARMER le délai que la surveillance venait de désarmer. Rien
     // n'est terminé, rien n'est retiré — il ne s'est rien passé d'autre qu'un « pas maintenant ».
-    apresRefusDOrdre: (code) => {
-      rapport.verrouillage = { refuse: true, code, horsOrdre: true };
+    apresRefusDOrdre: (code, declencheur) => {
+      rapport.verrouillage = { refuse: true, code, horsOrdre: true, declencheur };
       departDuVerrouillage = null;
+      // Le GESTE refusé se reclique : la personne est là, elle vient d'agir (ADR 0031). Le DÉLAI,
+      // lui, n'a personne pour recliquer — c'est sa définition —, et il reste DÛ : aucune échéance
+      // neuve n'est posée, et la conclusion du boot le jouera (ADR 0032, décision 5).
+      if (declencheur === DECLENCHEURS.inactivite) surveillance.noterUnVerrouillageDu();
       refletDeLEtat();
       publier();
     },
@@ -852,7 +862,13 @@ async function demarrer() {
     },
     // L'étape 3 vient de conclure : si le coffre est ouvert, le délai reprend sa course. Sans ce
     // rappel, un boot laissait la surveillance désarmée jusqu'à la prochaine réponse d'état.
-    apresDemarrage: () => refletDeLEtat(),
+    //
+    // Et le verrouillage DÛ est joué ici, succès OU échec du boot — ce rappel vient du `finally` de
+    // `demarrer`, et `enVol.demarrage` est déjà retombé, si bien que la garde d'ordre laisse passer.
+    apresDemarrage: () => {
+      refletDeLEtat();
+      surveillance.jouerLeVerrouillageDu();
+    },
   });
   verrouillerLeCoffre = gestes.verrouillerLeCoffre;
 

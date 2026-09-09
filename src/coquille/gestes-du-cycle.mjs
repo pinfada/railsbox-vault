@@ -226,18 +226,20 @@ async function demarrer(contexte) {
  * @returns {{ verrouille: false, code: string, horsOrdre: true } | null} le refus, ou `null` si
  *   l'ordre laisse passer.
  */
-function refusDOrdre({ enVol, dire, apresRefusDOrdre }) {
+function refusDOrdre({ enVol, dire, apresRefusDOrdre }, declencheur) {
   if (enVol?.demarrage !== true) return null;
   const code = CODES_REFUS_COQUILLE.etapeHorsOrdre;
   dire(`cycle:verrouillage-refuse:${code}`);
-  apresRefusDOrdre?.(code);
+  // Le DÉCLENCHEUR voyage avec le refus, et il décide de ce qui suit : un geste refusé se reclique,
+  // un délai refusé reste DÛ (ADR 0032, décision 5 ; constat 3 de la revue de la PR #177).
+  apresRefusDOrdre?.(code, declencheur);
   return { verrouille: false, code, horsOrdre: true };
 }
 
 async function verrouiller(contexte, declencheur) {
   const { demander, rapport, publier, dire } = contexte;
   const { avantVerrouillage, apresRefusDeVerrouillage, apresVerrouillage } = contexte;
-  const horsOrdre = refusDOrdre(contexte);
+  const horsOrdre = refusDOrdre(contexte, declencheur);
   if (horsOrdre !== null) return horsOrdre;
   // Le CHRONOMÈTRE part ici, et pas au clic : les DEUX déclencheurs — le bouton et le délai
   // d'inactivité — passent par cette porte, et une mesure prise sur le seul clic ne dirait rien du

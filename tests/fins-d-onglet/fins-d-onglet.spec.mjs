@@ -28,10 +28,15 @@ import { sonder } from "../browser/sonde-des-stockages.mjs";
 import {
   brancherLaConsole,
   evenementsDe,
+  poserLObservateurLeger,
   poserLObservatoire,
   publier,
   recuesParLeTemoin,
+  releveLeger,
 } from "./observatoire.mjs";
+
+/** Les projets qui tournent AVEC une fenêtre. Le relevé le publie : la mesure en dépend. */
+const EN_FENETRE = ["chromium-fenetre"];
 
 /** Le document SUJET : une page statique de la même origine, qui ne fait rien d'autre qu'exister. */
 const SUJET = "/coquille-epreuve/fenetre-ouverte.html";
@@ -69,7 +74,13 @@ async function ouvrirLeTemoin(contexte) {
  * qui l'intéresse est l'état où un onglet se referme pour de bon.
  */
 async function ouvrirLaCoquille(page) {
-  await page.goto("/index.html");
+  // `commit` et non `load`, pour la raison qui vaut aussi pour le retour arrière : ce qu'on attend
+  // est le signal de la COQUILLE — `data-coquille="prete"`, écrit par le produit —, pas la fin du
+  // chargement de ses sous-ressources. Le cadre applicatif est créé dynamiquement et retient le
+  // `load` du document ; sur Firefox, une navigation vers une coquille dont l'onglet précédent
+  // vient d'être fermé n'a pas rendu la main avant l'expiration du budget. La ligne suivante est,
+  // elle, une vraie attente : elle porte sur ce que le produit publie.
+  await page.goto("/index.html", { waitUntil: "commit" });
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: DELAI });
 }
 
@@ -205,7 +216,7 @@ test("ce que le moteur livre à la NAVIGATION sortante, puis au RETOUR ARRIÈRE"
     avantLaNavigation,
   );
 
-  await page.goBack();
+  await page.goBack({ waitUntil: "commit" });
   await expect(page.locator("h1")).toBeVisible();
   await temoin.waitForTimeout(500);
 
@@ -393,81 +404,136 @@ test("un onglet ne devient JAMAIS caché sous ce harnais, et c'est mesuré plut�
   expect(manipulations).toHaveLength(2);
 });
 
-// --- (c) L'ÉLIGIBILITÉ AU BFCACHE de la coquille : mesurée, jamais exploitée -----------------------
+// --- (c) LE BFCACHE : mesuré pour de bon, et le harnais nommé ------------------------------------
+//
+// ## Ce que la première rédaction mesurait, et qui n'était pas le moteur
+//
+// Elle concluait « aucun document n'est jamais restauré, sur aucun moteur, témoin positif compris ».
+// C'était FAUX, et deux défauts de sonde s'additionnaient (constat 2 de la revue de sécurité de la
+// PR #177) :
+//
+//  - **le mode SANS FENÊTRE.** Chromium ne restaure rien sans fenêtre, et rend `masked` — un refus
+//    de dire, pas une raison. Fenêtré, il restaure, y compris sous la politique `no-cache` de la
+//    coquille. Les épreuves de cette section sont donc rejouées par le projet `chromium-fenetre` ;
+//  - **le `BroadcastChannel` de l'observatoire**, qui est un bloqueur connu du bfcache : fenêtré,
+//    `notRestoredReasons` rend `broadcastchannel-message` sur les documents qu'il instrumente. La
+//    sonde bloquait sa propre mesure. Cette section emploie donc l'observateur LÉGER, qui ne pose
+//    rien de bloquant ; le canal du témoin reste, mais pour les seules lignes de FERMETURE.
+//
+// **`goBack({ waitUntil: "commit" })`, partout** : une RESTAURATION ne tire aucun `load`, et
+// l'attente par défaut expirait exactement sur le cas qu'on cherchait à mesurer.
 
-test("TÉMOIN POSITIF du bfcache : une page NUE, sans aucune instrumentation, est-elle restaurée", async ({
+/** Va en arrière SANS attendre un `load` : un document restauré n'en tire aucun. */
+async function retourArriere(page) {
+  await page.goBack({ waitUntil: "commit" });
+}
+
+test("@bfcache TÉMOIN POSITIF : une page NUE est-elle restaurée par ce moteur", async ({
+  context,
   page,
 }, info) => {
-  // SANS `poserLObservatoire`, et c'est tout le propos. Un `BroadcastChannel` ouvert est un
-  // bloqueur connu du bfcache sur certains moteurs : une sonde qui s'observerait elle-même
-  // publierait « jamais restauré » en mesurant sa propre instrumentation. Ce document-ci ne porte
-  // rien — pas un script du dépôt, pas un écouteur, pas un canal — et il est aussi éligible qu'un
-  // document peut l'être.
-  //
-  // C'est le témoin qui donne son sens à toutes les lignes « non restauré » de la matrice : si
-  // LUI n'est pas restauré, ce que les autres mesurent est le HARNAIS, et la matrice le dit.
+  // Le témoin qui donne son sens à toutes les autres lignes. Il ne porte que l'observateur LÉGER —
+  // deux écouteurs de fenêtre et un compteur —, donc rien qui bloque l'éligibilité.
+  await poserLObservateurLeger(context, { marqueDuDocument: "fenetre-ouverte.html" });
   await page.goto(SUJET);
   await expect(page.locator("h1")).toBeVisible();
   await page.goto(AILLEURS);
   await expect(page.locator("h1")).toBeVisible();
-  await page.goBack();
-  await expect(page.locator("h1")).toBeVisible();
+  await retourArriere(page);
 
+  const vu = await releveLeger(page);
   const raisons = await raisonsDeNonRestauration(page);
-  const typeDeNavigation = await page.evaluate(
-    () => performance.getEntriesByType("navigation")[0]?.type ?? null,
-  );
   await attacher(info, "bfcache-temoin-positif", {
     moteur: moteurDe(info),
-    argumentsRetires: ARGUMENTS_RETIRES[moteurDe(info)],
-    documentSansInstrumentation: SUJET,
-    typeDeNavigation,
+    fenetre: EN_FENETRE.includes(moteurDe(info)),
+    argumentsRetires: ARGUMENTS_RETIRES[moteurDe(info)] ?? [],
+    documentSansInstrumentationBloquante: SUJET,
+    evenements: vu.traces,
+    restaure: vu.restaure,
+    chargements: vu.chargements,
     notRestoredReasons: raisons,
   });
 
-  // Le seul invariant : le retour est bien une navigation d'HISTORIQUE. Sans lui, la sonde
-  // pourrait mesurer un chargement neuf en croyant mesurer un retour arrière.
-  expect(typeDeNavigation, "le retour n'est pas une navigation d'historique").toBe("back_forward");
+  // Le seul invariant : la sonde a bien vu le document revenir. Ce qu'un moteur en fait est une
+  // MESURE, publiée par `docs/compatibility.md`, pas une exigence.
+  expect(vu.traces.map(({ evenement }) => evenement)).toContain("pageshow");
 });
 
-test("un document de coquille est-il jamais RESTAURÉ depuis le bfcache — coffre verrouillé", async ({
+test("@bfcache la coquille, coffre VERROUILLÉ : restaurée, ou reconstruite", async ({
   context,
   page,
 }, info) => {
-  await poserLObservatoire(context);
+  await poserLObservateurLeger(context, { marqueDuDocument: "/index.html" });
   await ouvrirLaCoquille(page);
-
   await page.goto(AILLEURS);
   await expect(page.locator("h1")).toBeVisible();
-  await page.goBack();
+  await retourArriere(page);
   await page.waitForTimeout(1_000);
 
-  const traces = await page.evaluate(() => globalThis.__finsDOnglet ?? []);
+  const vu = await releveLeger(page);
   const raisons = await raisonsDeNonRestauration(page);
   await attacher(info, "bfcache-coffre-verrouille", {
     moteur: moteurDe(info),
-    argumentsRetires: ARGUMENTS_RETIRES[moteurDe(info)],
-    evenements: evenementsDe(traces),
-    persisted: traces
-      .filter(({ evenement }) => evenement === "pageshow")
-      .map(({ persisted }) => persisted),
+    fenetre: EN_FENETRE.includes(moteurDe(info)),
+    evenements: vu.traces,
+    restaure: vu.restaure,
+    chargements: vu.chargements,
     notRestoredReasons: raisons,
   });
 
-  expect(evenementsDe(traces), "aucun pageshow : la sonde ne mesure rien").toContain("pageshow");
+  expect(vu.traces.map(({ evenement }) => evenement)).toContain("pageshow");
 });
 
-test("un document de coquille est-il jamais RESTAURÉ depuis le bfcache — coffre OUVERT", async ({
+test("@bfcache un écouteur de `beforeunload` change-t-il l'éligibilité", async ({
+  context,
+  page,
+}, info) => {
+  // `beforeunload` est MESURÉ, jamais écouté par le produit. La ligne ne disait rien tant qu'AUCUN
+  // document n'était restauré ; fenêtré, elle mesure enfin quelque chose.
+  await poserLObservateurLeger(context, { marqueDuDocument: "fenetre-ouverte.html" });
+  await context.addInitScript(() => {
+    // AUCUNE boîte de dialogue : ni `preventDefault`, ni `returnValue`. Retenir l'utilisateur est
+    // précisément l'usage que la Definition of Ready de #25 interdit.
+    if (!location.href.includes("fenetre-ouverte.html")) return;
+    addEventListener("beforeunload", () => {});
+  });
+  await page.goto(SUJET);
+  await expect(page.locator("h1")).toBeVisible();
+  await page.goto(AILLEURS);
+  await expect(page.locator("h1")).toBeVisible();
+  await retourArriere(page);
+
+  const vu = await releveLeger(page);
+  const raisons = await raisonsDeNonRestauration(page);
+  await attacher(info, "bfcache-beforeunload", {
+    moteur: moteurDe(info),
+    fenetre: EN_FENETRE.includes(moteurDe(info)),
+    evenements: vu.traces,
+    restaure: vu.restaure,
+    chargements: vu.chargements,
+    notRestoredReasons: raisons,
+  });
+
+  expect(vu.traces.map(({ evenement }) => evenement)).toContain("pageshow");
+});
+
+test("@bfcache L'ÉPREUVE MAÎTRESSE : coffre OUVERT, retour arrière, la coquille revient VERROUILLÉE", async ({
   context,
   page,
   browserName,
 }, info) => {
+  // C'est le chemin entier de la tranche, et le seul endroit où il s'observe dans un navigateur :
+  // un coffre OUVERT, `pagehide` qui tue le Worker au départ du document, un RETOUR ARRIÈRE que le
+  // moteur sert depuis son cache — donc avec le cadre applicatif et ses pixels —, et `pageshow`
+  // restauré qui RECHARGE. La coquille revient `verrouille`, en DEUX chargements et pas trois.
+  //
+  // Tant que la sonde bloquait sa propre restauration, ce chemin n'était tenu que par l'unitaire et
+  // par deux mutants. Il est désormais MESURÉ (constat 2 de la revue de la PR #177).
   test.setTimeout(300_000);
-  await poserLObservatoire(context);
+  await poserLObservateurLeger(context, { marqueDuDocument: "/index.html" });
   await ouvrirLaCoquille(page);
   const ouvert = await ouvrirLeCoffre(page);
   if (!ouvert) {
-    // WebKit n'ouvre rien : la ligne est DÉCLARÉE `indisponible`, jamais verte par vacuité.
     await attacher(info, "bfcache-coffre-ouvert", {
       moteur: moteurDe(info),
       verdict: "indisponible",
@@ -479,53 +545,35 @@ test("un document de coquille est-il jamais RESTAURÉ depuis le bfcache — coff
 
   await page.goto(AILLEURS);
   await expect(page.locator("h1")).toBeVisible();
-  await page.goBack();
-  await page.waitForTimeout(2_000);
+  await retourArriere(page);
+  // Le rechargement est posé sur la tâche SUIVANTE : on lui laisse le temps de rejouer le cycle.
+  await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: DELAI });
 
-  const traces = await page.evaluate(() => globalThis.__finsDOnglet ?? []);
-  const raisons = await raisonsDeNonRestauration(page);
+  const vu = await releveLeger(page);
+  const apres = await releve(page);
+  const restaure = vu.restaure;
   await attacher(info, "bfcache-coffre-ouvert", {
     moteur: moteurDe(info),
-    argumentsRetires: ARGUMENTS_RETIRES[moteurDe(info)],
-    evenements: evenementsDe(traces),
-    persisted: traces
-      .filter(({ evenement }) => evenement === "pageshow")
-      .map(({ persisted }) => persisted),
-    notRestoredReasons: raisons,
+    fenetre: EN_FENETRE.includes(moteurDe(info)),
+    evenements: vu.traces,
+    restaure,
+    chargements: vu.chargements,
+    etatApresLeRetour: apres.etat,
+    deverrouillageMs: apres.mesures.deverrouillageMs,
+    notRestoredReasons: await raisonsDeNonRestauration(page),
   });
 
-  expect(evenementsDe(traces), "aucun pageshow : la sonde ne mesure rien").toContain("pageshow");
-});
+  // CE QUI EST EXIGÉ, restauration ou non : la coquille ne rend JAMAIS un coffre ouvert au retour.
+  expect(apres.etat, "un coffre ouvert est revenu par le retour arrière").toBe(
+    ETATS_DU_VOLUME.verrouille,
+  );
+  expect(apres.mesures.deverrouillageMs, "quelque chose a été dérivé sans geste").toBeNull();
 
-test("un écouteur de `beforeunload` change-t-il l'éligibilité — et l'événement est-il livré", async ({
-  context,
-  page,
-}, info) => {
-  // `beforeunload` est MESURÉ, jamais écouté par le produit : c'est le seul événement annulable, et
-  // le seul usage qu'il offre est de RETENIR l'utilisateur par une boîte de dialogue. La sonde
-  // l'arme sur elle-même pour relever ce qu'il change, et l'ADR 0032 écrit pourquoi la coquille ne
-  // s'en sert pas.
-  await poserLObservatoire(context, { avecBeforeunload: true });
-  await page.goto(SUJET);
-  await expect(page.locator("h1")).toBeVisible();
-
-  await page.goto(AILLEURS);
-  await expect(page.locator("h1")).toBeVisible();
-  await page.goBack();
-  await page.waitForTimeout(1_000);
-
-  const traces = await page.evaluate(() => globalThis.__finsDOnglet ?? []);
-  const raisons = await raisonsDeNonRestauration(page);
-  await attacher(info, "beforeunload", {
-    moteur: moteurDe(info),
-    evenements: evenementsDe(traces),
-    persisted: traces
-      .filter(({ evenement }) => evenement === "pageshow")
-      .map(({ persisted }) => persisted),
-    notRestoredReasons: raisons,
-  });
-
-  expect(evenementsDe(traces)).toContain("pageshow");
+  // ET, LÀ OÙ LE MOTEUR RESTAURE POUR DE BON : le chemin `pageshow` restauré → rechargement est
+  // celui qui l'a produit, et il tient en DEUX chargements du document de la coquille.
+  if (restaure) {
+    expect(vu.chargements, "le rechargement a bouclé, ou n'a pas eu lieu").toBe(2);
+  }
 });
 
 // --- (d) LA CONCLUSION, ÉCRITE D'AVANCE : la garantie n'est aucun de ces écouteurs ----------------
@@ -565,13 +613,19 @@ test("un onglet FERMÉ sans verrouillage : ce que le document suivant lit, et ce
     return;
   }
 
+  // Le second onglet est OUVERT AVANT la fermeture du premier, et c'est une précaution mesurée : sur
+  // Firefox, un `newPage()` suivi d'une navigation juste après la fermeture d'un onglet qui tenait un
+  // volume n'a pas rendu la main — la navigation n'atteignait même pas son `commit`. Ouvrir l'onglet
+  // d'abord ne change rien à ce que l'épreuve mesure : ce qui compte est que sa NAVIGATION vers la
+  // coquille vienne après la fermeture, et elle vient après.
+  const second = await context.newPage();
+
   // AUCUN verrouillage : ni le bouton, ni le délai. L'onglet est fermé, et rien d'autre.
   await premier.close();
 
   // Un document NEUF, dans le MÊME contexte — donc le même profil, le même OPFS, les mêmes
   // stockages. C'est ce qu'un utilisateur obtient en rouvrant l'onglet qu'il vient de fermer, et
   // c'est aussi le point de vue de l'adversaire qui copie le profil.
-  const second = await context.newPage();
   await ouvrirLaCoquille(second);
   const apres = await releve(second);
   const interfaceRemontee = (await second.locator("#deverrouillage-moyens").textContent()) ?? "";
@@ -652,7 +706,7 @@ test("un `pageshow` NON restauré ne déclenche aucune boucle : la coquille se c
   await ouvrirLaCoquille(page);
   await page.goto(AILLEURS);
   await expect(page.locator("h1")).toBeVisible();
-  await page.goBack();
+  await page.goBack({ waitUntil: "commit" });
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: DELAI });
   // Une boucle se verrait dans les secondes qui suivent : on lui en laisse trois.
   await page.waitForTimeout(3_000);
@@ -670,4 +724,95 @@ test("un `pageshow` NON restauré ne déclenche aucune boucle : la coquille se c
   });
 
   expect(chargements, "la coquille s'est rechargée toute seule : `pageshow` boucle").toBe(2);
+});
+
+// --- (f) LE CHEMIN DE `pagehide`, OBSERVÉ dans un navigateur --------------------------------------
+//
+// Un `pagehide` RÉEL emporte le document : ce qu'il déclenche ne se lit plus depuis lui. Un
+// `pagehide` SYNTHÉTIQUE, lui, parcourt exactement le même code — la garde, la terminaison, le
+// désarmement, le journal, la publication — et laisse le document en vie pour qu'on le lise. Ce
+// n'est pas un raccourci : c'est la seule façon d'observer ce chemin depuis l'intérieur, et
+// l'événement est posé par l'ÉPREUVE, jamais par une poignée que le produit rendrait.
+
+test("un `pagehide` sur un coffre OUVERT tue le Worker, et le relevé PUBLIÉ le dit", async ({
+  context,
+  page,
+  browserName,
+}, info) => {
+  // Constat 4 de la revue de sécurité de la PR #177 : le rappel de journal poussait dans
+  // `rapport.journal` sans appeler `publier()`. L'entrée existait donc dans un tableau que personne
+  // ne relit — et pour `freeze`, dont « inscrire » est la SEULE action, elle n'aurait jamais été
+  // observable. Le rappel publie désormais, synchrone, et cette épreuve le lit.
+  test.setTimeout(300_000);
+  await poserLObservatoire(context);
+  await ouvrirLaCoquille(page);
+  const ouvert = await ouvrirLeCoffre(page);
+  if (!ouvert) {
+    await attacher(info, "pagehide-observe", {
+      moteur: moteurDe(info),
+      verdict: "indisponible",
+      motif: "aucun volume ne s'ouvre sur ce moteur : il n'y a pas de coffre ouvert à tuer",
+    });
+    expect(browserName).toBe("webkit");
+    return;
+  }
+
+  await page.evaluate(() => {
+    globalThis.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false }));
+  });
+
+  const apres = await releve(page);
+  const inscrites = apres.journal.filter((ligne) => ligne.startsWith("fin-d-onglet:"));
+  await attacher(info, "pagehide-observe", {
+    moteur: moteurDe(info),
+    journal: inscrites,
+    etatApres: apres.etat,
+  });
+
+  // LE CHEMIN ENTIER, lu dans le relevé que la coquille PUBLIE : la garde a laissé passer, le
+  // Worker a été terminé, et l'inscription est lisible sans qu'aucun autre geste ait eu lieu.
+  expect(inscrites, "aucune entrée `fin-d-onglet:` publiée dans le relevé").toContain(
+    "fin-d-onglet:pagehide:tue",
+  );
+});
+
+test("un `pagehide` PENDANT le déverrouillage tue aussi : l'état n'atteint JAMAIS `ouvert`", async ({
+  context,
+  page,
+  browserName,
+}, info) => {
+  // C'EST LE CONSTAT 1, rejoué en navigateur. Le Worker reçoit la KEK au message de déverrouillage ;
+  // l'état ne devient `ouvert` que bien après. Une garde qui lisait l'état publié laissait donc
+  // vivre, pendant toute cette fenêtre, un Worker qui tenait déjà les clés — et le coffre finissait
+  // de s'ouvrir APRÈS le départ du document.
+  test.setTimeout(300_000);
+  await poserLObservatoire(context);
+  await ouvrirLaCoquille(page);
+  const avant = (await releve(page)).etat;
+
+  await page.fill("#saisie-phrase", PHRASE);
+  await page.click("#ouvrir-par-phrase");
+  // Le `pagehide` part SANS attendre : c'est la fenêtre qu'on mesure, et elle se referme vite.
+  await page.evaluate(() => {
+    globalThis.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false }));
+  });
+
+  // On laisse tout le temps au déverrouillage d'aboutir, s'il le peut : c'est ce qu'on cherche à
+  // exclure. Argon2id coûte jusqu'à deux secondes sur Firefox, l'ouverture du volume davantage.
+  await page.waitForTimeout(15_000);
+  const apres = await releve(page);
+  await attacher(info, "pagehide-pendant-le-deverrouillage", {
+    moteur: moteurDe(info),
+    etatAvant: avant,
+    etatApres: apres.etat,
+    journal: apres.journal.filter((ligne) => ligne.startsWith("fin-d-onglet:")),
+    workerMort: apres.workerMort,
+  });
+
+  expect(apres.etat, "le coffre a fini de s'ouvrir après le départ du document").not.toBe(
+    ETATS_DU_VOLUME.ouvert,
+  );
+  expect(browserName === "webkit" || apres.journal.includes("fin-d-onglet:pagehide:tue")).toBe(
+    true,
+  );
 });

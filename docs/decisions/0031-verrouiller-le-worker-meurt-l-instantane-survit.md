@@ -493,7 +493,13 @@ elle le **déclare** au lieu de passer au vert par vacuité.
   `VAULT_COQUILLE_ETAPE_HORS_ORDRE` et le délai se ré-arme ; il n'est pas mis en file pour être
   servi après les deux minutes du boot. Un utilisateur qui clique « Verrouiller » pendant un
   démarrage doit donc recliquer. C'est assumé : la file du canal privilégié aurait fait attendre la
-  coquille sans rien dire, puis capturé l'instantané d'une machine qui vient de démarrer ;
+  coquille sans rien dire, puis capturé l'instantané d'une machine qui vient de démarrer. **Note
+  datée du 2026-09-09 (#170, [ADR 0032](0032-les-fins-d-onglet-ce-que-le-moteur-livre.md),
+  décision 5)** : cette limite reste vraie du GESTE, et cesse de l'être du DÉLAI. Un verrouillage
+  par inactivité refusé pour cause d'ordre est désormais noté **DÛ** et joué à la conclusion du
+  boot, succès ou échec — la personne qui clique est là et recliquera ; le délai, lui, n'a personne
+  pour le faire. Sans cela, chaque retour d'onglet pendant un boot repoussait l'échéance de dix
+  minutes (constat 3 de la revue de sécurité de la PR #177) ;
 - **le SCELLEMENT de l'instantané est constaté par l'absence de marqueurs connus**, et non par une
   vérification cryptographique : le scénario de bout en bout n'a ni la DEK ni rien qui y mène. Il
   exige de ne retrouver dans le corps aucun des marqueurs que le guest a écrits en clair. Ce que
@@ -510,9 +516,10 @@ elle le **déclare** au lieu de passer au vert par vacuité.
   sous pression mémoire, ni un `freeze` livré par le moteur, ni la mort du processus. Le
   verrouillage est déclenché par un bouton et par une minuterie — deux chemins réels, et l'aveu que
   ce ne sont pas tous les chemins. **#170 a mesuré cette liste au lieu de la supposer** : le gel
-  demandé par le protocole ne gèle rien, aucun onglet ne devient jamais caché, et aucun document
-  n'est jamais restauré depuis le bfcache — témoin positif compris
-  ([ADR 0032](0032-les-fins-d-onglet-ce-que-le-moteur-livre.md), § Limites) ;
+  demandé par le protocole ne gèle rien et aucun onglet ne devient jamais caché ; le bfcache, lui,
+  se mesure — Chromium FENÊTRÉ restaure les documents de la coquille, Firefox et WebKit ne
+  restaurent rien sous ce harnais ([ADR 0032](0032-les-fins-d-onglet-ce-que-le-moteur-livre.md),
+  décision 3 et § Limites) ;
 - **la présence n'est pas mesurable.** Un onglet au premier plan devant un bureau vide ne se
   distingue pas d'un onglet devant quelqu'un (décision 2) ;
 - **`terminate()` avant `close()` n'est pas éprouvé dans un NAVIGATEUR.** L'ordre est tenu par un

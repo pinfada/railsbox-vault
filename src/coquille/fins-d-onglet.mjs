@@ -32,11 +32,13 @@
 //
 // Le motif de `tools/muter-gardes-coquille.mjs`, tranche après tranche : « une garde écrite dans
 // `public/main.mjs` ne serait éprouvable que par un navigateur, donc jamais par un enfant borné ».
-// Il vaut deux fois pour cette tranche-ci : la sonde de `tests/fins-d-onglet/` a MESURÉ que sous
-// Playwright aucun document n'est jamais restauré depuis le bfcache et qu'aucun onglet ne devient
-// jamais caché. Quatre des cinq chemins ne sont donc atteignables QUE par une épreuve qui injecte
-// l'événement — et une garde qu'aucune mutation ne peut atteindre est une garde qu'on croit sur
-// parole.
+//
+// Ce que le navigateur atteint, et ce qu'il n'atteint pas — MESURÉ, et corrigé depuis la revue de la
+// PR #177 : `pagehide`, `pageshow` restauré et le rechargement qui suit sont observés pour de bon en
+// Chromium FENÊTRÉ, qui restaure les documents depuis son bfcache. Le GEL et l'onglet CACHÉ, eux, ne
+// sont provoqués par aucun moteur sous Playwright : `freeze`, `resume` et le retour à la visibilité
+// ne tiennent que par les épreuves unitaires qui injectent l'événement et l'horloge, et par les
+// mutants — une garde qu'aucune mutation ne peut atteindre est une garde qu'on croit sur parole.
 //
 // Aucune variable de module : ni le document, ni la fenêtre, ni la surveillance, ni l'état du
 // coffre. C'est la leçon du constat 8 de la revue de sécurité de la PR #174 — une variable qui
@@ -66,7 +68,7 @@ export const ACTIONS_DE_FIN = Object.freeze({
  * navigateur, ne le dirait : la sonde de `tests/fins-d-onglet/` a conclu « ce moteur ne gèle pas »
  * sur cette erreur-là avant qu'elle soit corrigée.
  *
- *  - **`pagehide` → tuer.** Sur un coffre `ouvert`, `terminate()` immédiat, **quel que soit
+ *  - **`pagehide` → tuer.** Dès que le Worker de confiance VIT, `terminate()` immédiat, **quel que soit
  *    `event.persisted`**, sans capture et sans `close()` : aucune tâche asynchrone n'est garantie
  *    dans `pagehide`, et le dire est plus honnête que de « tenter » une fermeture propre qui
  *    n'aboutira pas. Un seul chemin, parce que la coquille ne dépend pas de savoir si le document
@@ -104,6 +106,29 @@ export const EVENEMENTS_DE_FIN = Object.freeze({
 export const EVENEMENTS_JAMAIS_BRANCHES = Object.freeze(["beforeunload", "unload"]);
 
 /**
+ * LA GARDE de `pagehide` : le Worker de confiance PEUT-IL détenir des clés ?
+ *
+ * **Ce n'est PAS « le coffre est-il publié `ouvert` ? »**, et c'est le constat 1 de la revue de
+ * sécurité de la PR #177. Le Worker reçoit la KEK au message de déverrouillage ; l'état ne devient
+ * `ouvert` qu'après l'ouverture du volume, une écriture acquittée, PUIS un aller-retour d'inventaire
+ * de plus. Pendant toute cette fenêtre — mesurée en A/B, avec un `pagehide` déposé à l'instant du
+ * message —, une garde qui lisait l'état publié laissait vivre un Worker qui tenait DÉJÀ la KEK et
+ * la DEK, et le coffre finissait de s'ouvrir après le départ du document.
+ *
+ * La correction RETIRE une condition au lieu d'en ajouter une : tuer un Worker qui ne détient rien
+ * ne coûte rien — le document part de toute façon, et s'il est mis en cache, `pageshow` restauré
+ * recharge. Ne pas tuer un Worker qui détient tout coûte la promesse entière.
+ *
+ * **L'état publié est PRÉSENTÉ à la garde, qui le refuse.** C'est la forme de `SIGNAUX_SANS_EFFET`
+ * (#169) : un refus qui s'écrit se mute, là où une absence d'appel ne peut rien rougir.
+ *
+ * @param {{ worker: unknown, mortDuWorker: unknown, etatPublie?: string }} constat
+ */
+export function workerAtteignable({ worker, mortDuWorker }) {
+  return worker !== null && worker !== undefined && mortDuWorker === null;
+}
+
+/**
  * Le geste de `pagehide` : le Worker meurt MAINTENANT, et le délai est désarmé.
  *
  * L'ordre compte. Le `terminate()` d'abord, parce qu'il est la seule chose que le moteur puisse
@@ -114,10 +139,10 @@ export const EVENEMENTS_JAMAIS_BRANCHES = Object.freeze(["beforeunload", "unload
  * annoncé, et la conduite ne s'en sert pas. Écrire le premier sans employer le second est la façon
  * dont cette décision se lit dans un journal.
  */
-function gesteDeFin({ surveillance, coffreOuvert, tuerLeWorker, journal }) {
+function gesteDeFin({ surveillance, constatDuWorker, tuerLeWorker, journal }) {
   return (evenement) => {
-    if (!coffreOuvert()) {
-      journal("pagehide", "coffre-non-ouvert");
+    if (!workerAtteignable(constatDuWorker())) {
+      journal("pagehide", "worker-inatteignable");
       return;
     }
     tuerLeWorker();
@@ -176,7 +201,7 @@ function gesteDeVerification({ racine, surveillance, journal }, nom) {
  *   racine: Document,
  *   fenetre: Window,
  *   surveillance: { desarmer: () => void, verifierLEcheance: () => boolean },
- *   coffreOuvert: () => boolean,
+ *   constatDuWorker: () => { worker: unknown, mortDuWorker: unknown, etatPublie?: string },
  *   tuerLeWorker: () => void,
  *   recharger: () => void,
  *   journal?: (evenement: string, action: string) => void,
