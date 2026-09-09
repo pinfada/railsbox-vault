@@ -62,6 +62,15 @@ jobs:
       - name: Vérifications
         run: xvfb-run --auto-servernum npm run check
 
+      # Une épreuve REPRISE n'est pas verte : elle est tolérée (#178, `docs/testing.md`). Le rapport
+      # `github` annonce « 280 passed » là où huit épreuves ont été jouées trois fois chacune ; le
+      # compte, lui, est publié ici, à chaque run, dans le résumé du job — nombre, noms, projet et
+      # moteur, nombre d'essais. L'étape ne rougit jamais : elle publie. `if: always()` la fait
+      # tourner même quand le gate a échoué, où le compte est le plus utile.
+      - name: Compte des épreuves reprises
+        if: always()
+        run: node tools/compter-reprises.mjs playwright-report/rapport.json
+
       - name: Rapports de compatibilité
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
