@@ -555,8 +555,11 @@ rien n'est dérivé sans un nouveau geste.
 **Fermer l'onglet n'est pas verrouiller, et depuis #170 la coquille en fait quand même quelque
 chose** ([ADR 0032](docs/decisions/0032-les-fins-d-onglet-ce-que-le-moteur-livre.md)) : sur
 `pagehide`, elle termine le Worker de confiance tout de suite, sans capture ni `close()` — aucune
-tâche asynchrone n'est garantie là. L'avance ainsi gagnée sur une mort que la fermeture obtient de
-toute façon se paie : ce qui n'était pas acquitté est perdu, comme à toute coupure
+tâche asynchrone n'est garantie là. Elle le termine **dès qu'il vit**, et non « si le coffre est
+ouvert » : le Worker reçoit la clé de déverrouillage AVANT que l'état publié devienne `ouvert`, et
+une garde qui aurait lu cet état aurait laissé vivre un Worker qui tenait déjà les clés (constat 1
+de la revue de sécurité de la PR #177). L'avance ainsi gagnée sur une mort que la fermeture obtient
+de toute façon se paie : ce qui n'était pas acquitté est perdu, comme à toute coupure
 ([ADR 0014](docs/decisions/0014-generation-transactionnelle.md)), et la réouverture est un boot à
 froid si aucun instantané cohérent n'existe. Le bouton « Verrouiller » reste le chemin qui paie une
 seconde au lieu de cent. **Aucun de ces écouteurs n'est une garantie** : la garantie est que rien

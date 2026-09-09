@@ -56,6 +56,43 @@ export const ARGUMENTS_RETIRES = Object.freeze({
   webkit: Object.freeze([]),
 });
 
+/**
+ * Le mot-clef qui range une épreuve dans la mesure de BFCACHE, et le projet FENÊTRÉ qui la rejoue.
+ *
+ * Il est dans le TITRE des épreuves, et non dans un fichier à part : les mêmes épreuves servent aux
+ * deux mesures — sans fenêtre sur les trois moteurs, fenêtrée sur Chromium —, et les séparer en
+ * ferait deux qui divergeraient.
+ */
+export const ETIQUETTE_BFCACHE = /@bfcache/;
+
+/**
+ * Un moteur ne restaure un document que s'il a une FENÊTRE, et c'est mesuré (#177, constat 2).
+ *
+ * Sans fenêtre, Chromium ne restaure JAMAIS — pas même une page nue —, et rend `masked` comme raison
+ * : un refus de dire, pas une raison. En mode fenêtré, il restaure, y compris sous la politique
+ * `no-cache` de la coquille. La conclusion « aucun document n'est jamais restauré » que la première
+ * rédaction de #170 publiait décrivait donc le HARNAIS, et le projet ci-dessous existe pour que le
+ * dossier cesse de la publier.
+ *
+ * **Une fenêtre exige un AFFICHAGE.** Sur Windows et macOS il y en a toujours un ; sur Linux il faut
+ * `DISPLAY`, que `xvfb-run --auto-servernum` fournit et que `ci.yml` pose. Là où il n'y en a pas, le
+ * projet n'est pas déclaré — et il le DIT sur la sortie standard, plutôt que de disparaître en
+ * silence : un projet absent sans un mot est indiscernable d'un projet oublié.
+ */
+const affichageDisponible =
+  process.platform === "win32" || process.platform === "darwin" || Boolean(process.env.DISPLAY);
+
+if (!affichageDisponible) {
+  process.stdout.write(
+    [
+      "[fins-d-onglet] projet « chromium-fenetre » NON déclaré : aucun affichage (DISPLAY absent).",
+      "[fins-d-onglet] les lignes de bfcache FENÊTRÉES ne sont pas mesurées par cette exécution.",
+      "[fins-d-onglet] sur Linux : xvfb-run --auto-servernum npm run test:fins-d-onglet",
+      "",
+    ].join("\n"),
+  );
+}
+
 const serveur = (role, host, port) => ({
   command: `node tools/serve.mjs --role ${role} --host ${host} --port ${port}`,
   url: `http://${host}:${port}/`,
@@ -78,14 +115,31 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: [serveur("shell", FINS_HOST, FINS_PORT), serveur("app", FINS_APP_HOST, FINS_APP_PORT)],
-  projects: moteurs.map((nom) => ({
-    name: nom,
-    use: {
-      browserName: nom,
-      // LE PIÈGE, retiré. Voir l'en-tête : sans cela, la mesure du bfcache mesurerait Playwright.
-      ...(ARGUMENTS_RETIRES[nom].length > 0
-        ? { launchOptions: { ignoreDefaultArgs: [...ARGUMENTS_RETIRES[nom]] } }
-        : {}),
-    },
-  })),
+  projects: [
+    ...moteurs.map((nom) => ({
+      name: nom,
+      use: {
+        browserName: nom,
+        // LE PIÈGE, retiré. Voir l'en-tête : sans cela, la mesure du bfcache mesurerait Playwright.
+        ...(ARGUMENTS_RETIRES[nom].length > 0
+          ? { launchOptions: { ignoreDefaultArgs: [...ARGUMENTS_RETIRES[nom]] } }
+          : {}),
+      },
+    })),
+    // Le projet FENÊTRÉ, et lui seul rejoue les épreuves de bfcache : c'est le seul mode où un
+    // moteur restaure quoi que ce soit. Même retrait d'argument, même serveurs, même sonde.
+    ...(affichageDisponible && moteurs.includes("chromium")
+      ? [
+          {
+            name: "chromium-fenetre",
+            grep: ETIQUETTE_BFCACHE,
+            use: {
+              browserName: "chromium",
+              headless: false,
+              launchOptions: { ignoreDefaultArgs: [...ARGUMENTS_RETIRES.chromium] },
+            },
+          },
+        ]
+      : []),
+  ],
 });

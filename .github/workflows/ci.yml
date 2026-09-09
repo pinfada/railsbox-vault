@@ -52,8 +52,15 @@ jobs:
       - name: Installation des moteurs de navigateur
         run: npx playwright install --with-deps chromium firefox webkit
 
+      # `xvfb-run` fournit un AFFICHAGE, et il en faut un : la mesure du bfcache de #170 exige un
+      # Chromium FENÊTRÉ, parce que sans fenêtre aucun moteur ne restaure de document — pas même une
+      # page nue — et que la conclusion « jamais restauré » décrirait alors l'exécutant et non le
+      # moteur (constat 2 de la revue de sécurité de la PR #177). Sans `DISPLAY`, le projet
+      # `chromium-fenetre` n'est pas déclaré et le dit sur la sortie standard : un skip nommé, jamais
+      # un silence. `--auto-servernum` prend un numéro d'écran libre ; `xvfb` vient avec
+      # `playwright install --with-deps`. Le reste des suites ne change pas de comportement.
       - name: Vérifications
-        run: npm run check
+        run: xvfb-run --auto-servernum npm run check
 
       - name: Rapports de compatibilité
         if: always()

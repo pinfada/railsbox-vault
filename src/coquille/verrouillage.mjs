@@ -347,6 +347,8 @@ export function surveillanceDInactivite({
   const delai = delaiDInactivite(delaiMs);
   let minuterie = null;
   let dernierSigneMs = null;
+  /** Un verrouillage par DÉLAI refusé pour cause d'ORDRE, et qui reste DÛ. Voir `noterUnVerrouillageDu`. */
+  let verrouillageDu = false;
 
   const desarmer = () => {
     if (minuterie !== null) annuler(minuterie);
@@ -392,8 +394,14 @@ export function surveillanceDInactivite({
     armer(etat) {
       if (etat !== ETATS_DU_VOLUME.ouvert) {
         desarmer();
+        verrouillageDu = false;
         return false;
       }
+      // Un verrouillage DÛ n'est PAS remplacé par une échéance neuve. Sans cette ligne, le refus
+      // d'ordre d'un boot repoussait le délai de dix minutes à chaque tentative : la conduite du
+      // refus ré-arme, et ré-armer posait `dernierSigneMs` à l'instant du refus (constat 3 de la
+      // revue de sécurité de la PR #177, reproduit sous horloge injectée).
+      if (verrouillageDu) return false;
       if (minuterie !== null) return false;
       dernierSigneMs = maintenant();
       minuterie = planifier(verifier, delai);
@@ -434,6 +442,40 @@ export function surveillanceDInactivite({
       if (minuterie === null) return false;
       if (maintenant() - dernierSigneMs < delai) return false;
       desarmer();
+      verrouiller();
+      return true;
+    },
+    /**
+     * NOTE qu'un verrouillage par DÉLAI a été refusé pour cause d'ORDRE : il reste DÛ (#170, ADR
+     * 0032, décision 5 ; constat 3 de la revue de sécurité de la PR #177).
+     *
+     * Le drapeau vit dans la SURVEILLANCE, et non dans une variable de `public/main.mjs` : c'est la
+     * seule façon qu'une campagne de mutation l'atteigne.
+     *
+     * **La distinction avec le GESTE est la décision.** Un bouton refusé pendant un boot se
+     * reclique : la personne est là, elle vient d'agir, et l'ADR 0031 assume qu'elle recommence. Un
+     * DÉLAI refusé, lui, n'a personne pour recliquer — c'est même sa définition —, et le laisser
+     * tomber rendrait le verrouillage automatique inatteignable pendant les deux minutes d'un boot.
+     *
+     * Aucune échéance neuve n'est posée : `armer` refuse tant que le dû n'est pas joué, et la
+     * conclusion du boot — succès OU échec — l'appelle.
+     */
+    noterUnVerrouillageDu() {
+      verrouillageDu = true;
+      desarmer();
+      return true;
+    },
+    /** Un verrouillage attend-il la conclusion d'un boot ? Le relevé le publie ; il ne porte rien. */
+    verrouillageDu: () => verrouillageDu,
+    /**
+     * JOUE le verrouillage DÛ, s'il y en a un. Rend `true` s'il a été joué.
+     *
+     * Il est joué UNE fois : le drapeau tombe avant l'appel, si bien qu'un second refus d'ordre le
+     * reposerait plutôt que de faire boucler deux verrouillages sur la même échéance.
+     */
+    jouerLeVerrouillageDu() {
+      if (!verrouillageDu) return false;
+      verrouillageDu = false;
       verrouiller();
       return true;
     },

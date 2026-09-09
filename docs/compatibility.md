@@ -132,7 +132,7 @@ un boot à froid. C'est une propriété de durabilité et de reprise, pas d'excl
 
 Comme la ligne du handle exclusif ci-dessus, ce n'est pas une capacité : c'est un **comportement**,
 et il a fallu le mesurer parce que rien, dans aucune norme, ne dit qu'un moteur livre `pagehide` à
-la fermeture d'un onglet, ni qu'un `freeze` existe, ni qu'un document soit jamais restauré.
+la fermeture d'un onglet, ni qu'un `freeze` existe, ni qu'un document donné soit restauré.
 
 Mesures du **2026-09-09**, `npm run test:fins-d-onglet`
 (`tests/fins-d-onglet/fins-d-onglet.spec.mjs`), sur le même exécutant que la matrice ci-dessus.
@@ -149,14 +149,16 @@ se lit pas depuis ce document : trois canaux sont posés ensemble — un documen
 origine joint par `BroadcastChannel`, `page.on("console")`, et le document lui-même —, et la ligne
 dit lequel a vu quoi.
 
-| Situation                         | Chromium                                               | Firefox                                                           | WebKit                                                 |
-| --------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------ |
-| `page.close()`, vu par le TÉMOIN  | `pagehide` (`persisted` faux), puis `visibilitychange` | `visibilitychange` seul — le message émis dans `pagehide` se perd | `pagehide` (`persisted` faux), puis `visibilitychange` |
-| `page.close()`, vu par la CONSOLE | `pagehide`, `visibilitychange`                         | `pagehide`, `visibilitychange`                                    | rien — la console se perd à la fermeture               |
-| navigation sortante               | `pagehide` (`persisted` faux) + `visibilitychange`     | idem                                                              | idem                                                   |
-| retour arrière                    | `pageshow`, **`persisted` faux**                       | `pageshow`, **`persisted` faux**                                  | `pageshow`, **`persisted` faux**                       |
-| `freeze` / `resume`               | **non simulable** (voir ci-dessous)                    | non livré, **par conception** : absent du moteur                  | non livré, **par conception**                          |
-| onglet réellement CACHÉ           | **non simulable** : `visibilityState` reste `visible`  | non simulable, idem                                               | non simulable, idem                                    |
+| Situation                        | Canal           | Chromium                                              | Firefox                                                        | WebKit                                                  |
+| -------------------------------- | --------------- | ----------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------- |
+| chargement du document           | témoin, console | `pageshow` (`persisted` faux)                         | `pageshow` (`persisted` faux)                                  | `pageshow` (`persisted` faux)                           |
+| `page.close()`                   | **témoin**      | `pagehide` (`persisted` faux), `visibilitychange`     | rien de la fermeture — le message émis dans `pagehide` se perd | `pagehide` (`persisted` faux), `visibilitychange`       |
+| `page.close()`                   | **console**     | `pagehide`, `visibilitychange`                        | `pagehide`, `visibilitychange`                                 | rien de la fermeture — la console se perd avec l'onglet |
+| navigation sortante              | document vivant | `pagehide` (`persisted` faux) + `visibilitychange`    | idem                                                           | idem                                                    |
+| retour arrière, **sans fenêtre** | document vivant | `pageshow`, `persisted` **faux**                      | `pageshow`, `persisted` **faux**                               | `pageshow`, `persisted` **faux**                        |
+| retour arrière, **fenêtré**      | document vivant | `pagehide` puis `pageshow`, `persisted` **VRAI**      | `persisted` faux                                               | `persisted` faux                                        |
+| `freeze` / `resume`              | document vivant | **non simulable** (voir ci-dessous)                   | non livré, **par conception** : absent du moteur               | non livré, **par conception**                           |
+| onglet réellement CACHÉ          | document vivant | **non simulable** : `visibilityState` reste `visible` | non simulable, idem                                            | non simulable, idem                                     |
 
 **Les trois moteurs livrent `pagehide` à la fermeture d'un onglet, et aucun canal seul ne suffit
 pour le voir.** Firefox le livre — la console le montre — mais le message qu'un écouteur diffuse
@@ -168,48 +170,76 @@ arrive au témoin sur Chromium, Firefox et WebKit. C'est le TÉMOIN POSITIF du c
 autorise à lire la ligne Firefox comme « le message émis PENDANT `pagehide` se perd » plutôt que
 comme « ce canal ne porte rien ».
 
-#### Le bfcache : aucun document n'est jamais restauré, TÉMOIN POSITIF compris
+#### Le bfcache : ce que le moteur restaure, et ce que l'exécutant permet d'en voir
 
-| Document mesuré                                | Chromium                                       | Firefox                        | WebKit                               |
-| ---------------------------------------------- | ---------------------------------------------- | ------------------------------ | ------------------------------------ |
-| page NUE, sans script ni écouteur (**témoin**) | non restauré — `notRestoredReasons` : `masked` | non restauré — API non exposée | non restauré — API non exposée       |
-| coquille, coffre VERROUILLÉ                    | non restauré — `masked`                        | non restauré                   | non restauré                         |
-| coquille, coffre OUVERT                        | non restauré — `masked`                        | non restauré                   | **indisponible** — rien ne s'y ouvre |
-| avec un écouteur `beforeunload` armé           | non restauré — `masked`                        | non restauré                   | non restauré                         |
+**TROIS pièges de harnais, tous nommés** — la première rédaction de #170 est tombée dans les trois
+et publiait « aucun document n'est jamais restauré », ce qui était FAUX (constat 2 de la revue de
+sécurité de la PR #177) :
 
-Le **témoin positif** est ce qui donne son sens aux autres lignes : une page statique sans script,
-sans écouteur et sans `BroadcastChannel` n'est pas restaurée non plus. Ce qui est mesuré ici est
-donc le **harnais** autant que le moteur, et la ligne « avec `beforeunload` » ne mesure rien de
-l'éligibilité — elle ne peut pas la mesurer, faute d'un cas où quoi que ce soit soit restauré.
-Chromium **masque** la raison (`masked`), Firefox et WebKit n'exposent pas `notRestoredReasons` : ce
-n'est pas la même chose que « restauré », et le relevé le distingue.
+1. **`--disable-back-forward-cache`**, posé par Playwright sur Chromium, retiré par
+   `playwright.fins-d-onglet.config.mjs` et là seulement. Nécessaire, pas suffisant ;
+2. **le mode SANS FENÊTRE.** Sans fenêtre, Chromium ne restaure rien — pas même une page statique
+   sans script — et rend `masked`, qui est un **refus de dire** et non une raison. Le projet
+   `chromium-fenetre` rejoue donc les épreuves de bfcache avec une vraie fenêtre ; `ci.yml` lui
+   donne un affichage par `xvfb-run --auto-servernum`, et sans affichage le projet n'est pas déclaré
+   **et le dit sur la sortie standard** ;
+3. **la sonde elle-même.** Un `BroadcastChannel` ouvert bloque le bfcache : fenêtré,
+   `notRestoredReasons` rend `broadcastchannel-message` sur les documents que l'observatoire complet
+   instrumente. Ces épreuves emploient donc un observateur LÉGER, dont le journal vit dans
+   `sessionStorage` — le seul stockage qui survive au rechargement que le produit déclenche.
 
-Conséquence pour le produit, écrite dans l'ADR 0032 décision 3 : le chemin `pageshow` restauré de la
-coquille est une **garde**, éprouvée en unitaire avec un `persisted: true` injecté et tenue par deux
-mutants — pas un comportement observé. Son témoin NÉGATIF, lui, est mesuré dans un navigateur sur
-les trois moteurs : la coquille se charge **deux fois** — au départ et au retour — et pas une de
-plus.
+Relevé du **2026-09-09**, une fois les trois retirés. `notRestoredReasons` n'est exposé que par
+Chromium ; `null` y signifie « restauré », mais aussi « cette navigation n'était pas un retour
+arrière » — le signal qui fait foi est donc `pageshow.persisted`, et c'est lui que la colonne
+publie.
+
+| Document mesuré                          | Chromium FENÊTRÉ            | Chromium sans fenêtre | Firefox      | WebKit                               |
+| ---------------------------------------- | --------------------------- | --------------------- | ------------ | ------------------------------------ |
+| page NUE, sans instrumentation bloquante | **restauré**, 1 chargement  | non — raison `masked` | non restauré | non restauré                         |
+| coquille, coffre VERROUILLÉ              | **restauré**, 2 chargements | non — `masked`        | non restauré | non restauré                         |
+| coquille, coffre OUVERT                  | **restauré**, 2 chargements | non — `masked`        | non restauré | **indisponible** — rien ne s'y ouvre |
+| avec un écouteur `beforeunload` armé     | **restauré**, 1 chargement  | non — `masked`        | non restauré | non restauré                         |
+
+**Ce que ces lignes disent, et il faut les lire dans les deux sens.**
+
+- **Chromium restaure la coquille**, y compris sous sa politique `no-cache` — mesuré : ce n'est pas
+  l'en-tête qui décide ici. Le chemin `pageshow` restauré du produit est donc un **comportement
+  mesuré**, et non une garde de principe : le document revient avec son cadre applicatif, la
+  coquille RECHARGE, et elle revient `verrouille` en **deux chargements** sans qu'une dérivation
+  soit partie. C'est l'épreuve maîtresse de la tranche ;
+- **un écouteur de `beforeunload` n'a PAS rendu le document inéligible** sur ce Chromium. La
+  croyance inverse est répandue ; elle est ici mesurée fausse, et c'est une raison de plus pour que
+  la coquille ne DÉPENDE d'aucune inéligibilité ;
+- **Firefox et WebKit ne restaurent rien sous ce harnais** et n'exposent pas `notRestoredReasons`.
+  Ils ne sont mesurés que SANS fenêtre — le projet fenêtré est celui de Chromium —, si bien que la
+  ligne dit « non restauré sur cet exécutant » et rien de plus. Ce qu'un vrai Firefox ou un vrai
+  Safari font du bfcache reste hors de ce dossier.
+
+Le témoin NÉGATIF, lui, tourne sur les trois moteurs : un `pageshow` non restauré ne déclenche
+aucune boucle — la coquille se charge deux fois sur un aller-retour, et pas une de plus.
 
 #### Le gel : demandé, accepté par le protocole, sans effet
 
 Chromium, `Page.setWebLifecycleState({ state: "frozen" })` par une session CDP : la commande est
 **acceptée sans erreur** et **ne gèle rien**.
 
-| Grandeur                                                | Relevé     |
-| ------------------------------------------------------- | ---------- |
-| refus du protocole                                      | aucun      |
-| `freeze` / `resume` livrés                              | **non**    |
-| battements de 200 ms comptés pendant 6 s de gel demandé | **35**     |
-| plus grand trou entre deux battements                   | **206 ms** |
-| retard d'une minuterie de 2 s échue pendant le gel      | **6 ms**   |
-| `document.visibilityState` avant le gel                 | `visible`  |
+| Grandeur                                                | Relevé                                |
+| ------------------------------------------------------- | ------------------------------------- |
+| refus du protocole                                      | aucun                                 |
+| `freeze` / `resume` livrés                              | **non**                               |
+| battements de 200 ms comptés pendant 6 s de gel demandé | **≈ 35** (35, puis 36 à la relecture) |
+| plus grand trou entre deux battements                   | **≈ 200 ms** (206 ms, puis 216 ms)    |
+| retard d'une minuterie de 2 s échue pendant le gel      | **quelques ms** (6 ms, puis 1 ms)     |
+| `document.visibilityState` avant le gel                 | `visible`                             |
 
-Le battement est le **témoin positif** : la page exécutait du code pendant toute la mesure, si bien
-que l'absence de `freeze` ne peut pas se lire « le canal n'a rien vu ». La cause est mesurée elle
-aussi — un moteur ne gèle qu'un onglet CACHÉ, et **aucun moteur n'en cache un sous Playwright** :
-`document.visibilityState` reste `visible` sur les trois, y compris après `bringToFront()` d'un
-second onglet, en mode fenêtré comme en mode sans fenêtre, avec `Emulation.setFocusEmulationEnabled`
-à faux, avec une fenêtre minimisée par `Browser.setWindowBounds`, et dans un contexte persistant.
+Ce sont des grandeurs d'EXÉCUTION, relevées deux fois le 9 septembre 2026 : ce qui se reproduit est
+l'ordre de grandeur, jamais la décimale. Le battement est le **témoin positif** : la page exécutait
+du code pendant toute la mesure, si bien que l'absence de `freeze` ne peut pas se lire « le canal
+n'a rien vu ». La cause est mesurée elle aussi — un moteur ne gèle qu'un onglet CACHÉ, et **aucun
+moteur n'en cache un sous Playwright** : `document.visibilityState` reste `visible` sur les trois, y
+compris après `bringToFront()` d'un second onglet, en mode fenêtré comme en mode sans fenêtre, avec
+`Emulation.setFocusEmulationEnabled` à faux, avec une fenêtre minimisée par
+`Browser.setWindowBounds`, et dans un contexte persistant.
 
 #### Ce que le harnais ne simule PAS, chaque ligne avec son motif
 
@@ -219,7 +249,7 @@ second onglet, en mode fenêtré comme en mode sans fenêtre, avec `Emulation.se
 | l'éviction ou le « discard » d'un onglet     | idem ; l'imiter par une fermeture mesurerait la fermeture            |
 | un `freeze` livré SPONTANÉMENT par le moteur | le gel DEMANDÉ ne survient déjà pas (ci-dessus)                      |
 | un onglet réellement caché                   | `document.hidden` reste faux sur les trois moteurs, quoi qu'on tente |
-| une restauration depuis le bfcache           | aucune, témoin positif compris (ci-dessus)                           |
+| une restauration hors Chromium fenêtré       | Firefox et WebKit ne restaurent rien sous ce harnais (ci-dessus)     |
 | la mort du processus de rendu                | `Page.crash` n'est pas exposé par le harnais                         |
 
 Aucune case n'est vide : ce qui n'est pas mesuré est **écrit comme tel**, et les chemins que cela
