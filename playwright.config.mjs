@@ -119,7 +119,17 @@ export default defineConfig({
   // silence de l'API (origine opaque) : le délai par défaut de 30 s ne leur suffit pas.
   timeout: 120000,
   retries: process.env.CI ? 2 : 0,
-  reporter: process.env.CI ? [["html", { open: "never" }], ["github"]] : "list",
+  // Le rapport JSON s'ajoute aux deux autres pour une raison et une seule : il porte le nombre
+  // d'ESSAIS de chaque épreuve, que ni `html` ni `github` ne publient dans le résumé du job. C'est
+  // lui que `tools/compter-reprises.mjs` lit pour publier le compte des reprises à chaque run
+  // (#178). Sans ce compte, « 280 passed » cache huit épreuves jouées trois fois chacune.
+  reporter: process.env.CI
+    ? [
+        ["html", { open: "never" }],
+        ["github"],
+        ["json", { outputFile: "playwright-report/rapport.json" }],
+      ]
+    : "list",
   use: {
     baseURL: `http://${SHELL_HOST}:${SHELL_PORT}`,
     trace: "retain-on-failure",

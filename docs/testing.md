@@ -159,8 +159,7 @@ un refus n'est jamais durable » tient quel que soit le verdict du moteur sans g
 réservation réelle, et le rendu d'un diagnostic dans un vrai DOM — une erreur en `role="alert"`, un
 avertissement en `role="status"`. Les branches d'absence d'API et la vraie saturation du disque
 restent prouvées par les doubles : les provoquer réellement dégraderait le moteur ou remplirait le
-disque sans rien prouver de plus. Mesuré le 2026-08-24 : **4 épreuves vertes en 3,2 s** sous
-Chromium, sans réseau ni artefact.
+disque sans rien prouver de plus.
 
 Cette conduite suit celle des épreuves COOP/COEP de la frontière d'origine : mesurer partout,
 asserter là où la capacité existe, et ne jamais rendre vert un relevé qui n'a rien mesuré.
@@ -2291,6 +2290,74 @@ défauts d'un coup, corrigés au même endroit (`tests/e2e/contexte-persistant.m
 
 Les NEUF scénarios de `tests/e2e/` passent par cette porte, et pas seulement le nouveau : ils
 avaient tous la même condition d'ignorance, donc tous la même exposition.
+
+### Le VERT PAR REPRISE, et ce qu'il coûte (#178)
+
+Le vert par vacuité a une soeur : le **vert par reprise**. La CI joue avec `retries: 2`, le gate
+local avec `retries: 0`, et le rapporteur `github` annonce « 280 passed, **8 flaky** » sans dire
+combien de fois chacune a été jouée. Sur le run 34330037820 (9 septembre 2026, PR #177), la réponse
+était **trois fois chacune** : deux échecs, puis un succès à la dernière reprise admise. Les huit
+étaient sur Firefox, aucune sur Chromium ni WebKit. Le job avait tenu en 24 min 54 s pour un plafond
+de 28 : les reprises mangent la marge, et un jour un peu plus lent le plafond expire sans qu'aucune
+épreuve ait échoué pour de bon.
+
+**La règle, posée le 9 septembre 2026.**
+
+1. **Une épreuve reprise n'est pas verte : elle est TOLÉRÉE.** « Flaky » n'est pas un état du
+   produit, c'est un aveu du harnais, et un aveu se lit.
+2. **Le compte est PUBLIÉ à chaque run.** `tools/compter-reprises.mjs` lit le rapport JSON de
+   Playwright (`playwright-report/rapport.json`, rapporteur ajouté pour cela) et écrit dans le
+   résumé du job le nombre d'épreuves reprises, leurs noms, leur projet — donc leur moteur — et leur
+   nombre d'essais. L'étape tourne en `if: always()`, y compris quand le gate a échoué, où le compte
+   est le plus utile. Elle ne rougit jamais : elle publie. L'outil est éprouvé par
+   `tests/unit/compter-reprises.test.mjs` sur un rapport à zéro reprise, un à une reprise, un où une
+   épreuve a été reprise deux fois, une épreuve restée ROUGE après ses reprises, un `describe`
+   imbriqué, et un rapport illisible — qui LÈVE, parce qu'une absence de mesure n'est jamais un
+   zéro.
+3. **`retries: 2` reste tant que la cause n'est pas mesurée.** Le retirer aujourd'hui rendrait la CI
+   rouge environ une fois par run sur un flottement que quatre campagnes de mesure n'ont pas su
+   attribuer (§ suivant) ; ce serait échanger un mensonge contre un bruit.
+4. **Le gate ne rougit pas sur une reprise.** Bloquer les fusions sur un flottement non attribué
+   punirait les tranches pour un défaut du harnais, et le compte publié suffit à ne pas le cacher.
+   **Cette phrase se revisite le jour où la cause est mesurée** : ce jour-là, `retries` retombe à 0
+   et une reprise redevient un échec.
+
+### Le flottement Firefox : quatre hypothèses, quatre éliminations, une limite (#178)
+
+Ce qui suit est un RELEVÉ, pas une conclusion : la cause n'est pas trouvée, et la page dit laquelle
+elle n'est pas. Toutes les mesures datent du 9 septembre 2026, sur Windows 11, 28 coeurs, Playwright
+1.62.1, Firefox 153 du paquet Playwright.
+
+**Le relevé de base.** Trois passages de la suite navigateur dans la configuration de
+`npm run check` (`retries: 0`), sur `origin/main` : **trois pertes, une par passage**, toutes
+Firefox, toutes dans une famille de frontière — `coquille-frontiere.spec.mjs:401`,
+`coquille-deverrouillage.spec .mjs:954`, `coquille-frontiere.spec.mjs:269`. Chaque perte est un
+`page.goto` qui ne rend jamais la main et emporte les 120 s du délai d'épreuve. Trois passages de
+plus avec les trois moteurs sur TOUTES les familles : une perte du même genre, plus sept expirations
+systématiques du projet de base `firefox`, que `npm run check` ne joue pas (dont les deux de #168,
+corrigées par cette tranche).
+
+**Ce que la cause n'est pas.**
+
+| Hypothèse                                                         | Mesure                                                                                                                                                                                                                                                                                               | Verdict      |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| (a) contention entre moteurs et entre projets                     | les sept projets Firefox joués SEULS perdent 2 épreuves sur 3 passages, puis 2 sur 3 ; en `--workers=1` — un seul navigateur, un seul ouvrier, aucun autre moteur — encore 1 sur 3                                                                                                                   | **éliminée** |
+| (b) le `load` d'un document qui encadre une autre origine         | isolé, dix navigations par document : `load` sur `/index.html` en **92–108 ms** sous Firefox contre 86–107 ms sous Chromium ; et deux pertes attendaient `commit`, une troisième un fichier `.txt` statique                                                                                          | **éliminée** |
+| (c) le serveur `tools/serve.mjs`                                  | un chien de garde HTTP sur les quatre serveurs, toutes les 250 ms pendant onze minutes : **un seul** ralentissement relevé — 3,1 s sur les quatre à la fois, à la chauffe — et rien au-dessus de 200 ms pendant les pertes ; les traces des expirations montrent les **39 requêtes finies en 3,2 s** | **éliminée** |
+| (d) Firefox 153 et le Worker de module tenant un handle synchrone | isolé, dix navigations : `load` sur `/vm/opfs.html` (Worker + handle synchrone) en **45–53 ms**, sur `/vm/enveloppe.html` en 45–54 ms, sur `/vm/budget.html` (aucun Worker) en 37–40 ms                                                                                                              | **éliminée** |
+
+**Ce qui est établi.** La perte est toujours sur Firefox ; c'est toujours un `page.goto` qui ne rend
+pas la main dans le délai de l'épreuve ; elle ne dépend ni du `waitUntil` (`load` **et** `commit`
+expirent), ni de la cible (document de coquille, document encadrant une origine hostile, fichier
+texte statique de 46 octets), ni de la présence des autres moteurs, ni du degré de parallélisme.
+Isolée — cinquante navigations réparties sur cinq documents, deux moteurs — elle ne se reproduit
+jamais. Le taux tient autour d'**une perte par passage**, quel que soit le nombre d'épreuves du
+passage.
+
+**La limite.** Aucune des quatre hypothèses de l'issue ne reproduit. Ce qui reste, et que ces
+mesures ne tranchent pas : le canal de protocole entre Playwright et Firefox — c'est-à-dire le
+harnais, pas le produit. Tant que ce n'est pas mesuré, `retries: 2` reste en CI et le compte est
+publié.
 
 ## Preuve rouge
 
