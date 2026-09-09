@@ -51,6 +51,10 @@ const PLAYWRIGHT_FILES = [
   "tests/isolation/**/*.spec.mjs",
   "tests/csp/**/*.spec.mjs",
   "tests/rythme/**/*.spec.mjs",
+  // #170 : la sonde des fins d'onglet et son observatoire, posé par `addInitScript` — du code de
+  // navigateur écrit dans un fichier que Node exécute, exactement comme les rappels de
+  // `page.evaluate` ci-dessus.
+  "tests/fins-d-onglet/**/*.mjs",
 ];
 
 /**
