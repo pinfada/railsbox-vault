@@ -36,9 +36,15 @@ async function releve(page) {
   return JSON.parse(await page.locator("#coquille-rapport").textContent());
 }
 
-/** Ouvre la coquille et attend qu'elle se déclare prête. */
+/**
+ * Ouvre la coquille et attend qu'elle se déclare prête.
+ *
+ * `commit` plutôt que le `load` par défaut : le `load` du document attend le cadre applicatif, créé
+ * dynamiquement sur une autre origine, alors que le signal qui compte est celui que le PRODUIT écrit
+ * — la ligne suivante. Le couplage a produit des expirations sur Firefox (revue de la PR #177).
+ */
 async function ouvrirLaCoquille(page) {
-  await page.goto(`${SHELL_ORIGIN}/index.html`);
+  await page.goto(`${SHELL_ORIGIN}/index.html`, { waitUntil: "commit" });
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: DELAI });
 }
 
