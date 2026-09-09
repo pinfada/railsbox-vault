@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { BUDGET_DIAGNOSTIC_CODES } from "../../src/vm/storage-budget.mjs";
+import { VERDICTS_DURABLES, verdictsAttendus } from "./persistance-attendue.mjs";
 
 // Preuve de niveau NAVIGATEUR de la couche budget de stockage (#9, `VAULT-PERSIST-001`). Elle exécute
 // la vraie couche budget contre le VRAI `navigator.storage`, dans la page — la couche budget ne touche
@@ -25,7 +26,7 @@ test("measure rend un état exploitable du vrai navigator.storage", async ({ pag
     contentType: "application/json",
   });
 
-  if (testInfo.project.name === "chromium") {
+  if (testInfo.project.name === "persistance-chromium") {
     // Chromium est le moteur du contrôle obligatoire : `estimate()` y existe et rend des octets.
     expect(mesure.state).toBe("known");
     expect(mesure.quotaIsNumber).toBe(true);
@@ -51,9 +52,13 @@ test("requestPersistence ne promet jamais la durabilité sur un refus", async ({
     contentType: "application/json",
   });
 
-  // L'invariant central, quel que soit le verdict réel du moteur sans geste utilisateur :
-  // seule une persistance accordée ou déjà acquise est durable ; un refus n'est jamais durable.
-  expect(["granted", "already", "denied", "unsupported"]).toContain(issue.state);
+  // Le verdict ATTENDU de ce moteur-ci, et de cette réponse d'invite-ci. Sans lui, « le verdict est
+  // l'un des cinq » resterait vrai le jour où un moteur changerait d'avis : ce serait un vert par
+  // vacuité (#168).
+  expect(verdictsAttendus(testInfo.project.name)).toContain(issue.state);
+
+  // L'invariant central, quel que soit le verdict réel : seule une persistance accordée ou déjà
+  // acquise est durable ; un refus, une absence d'API et une invite non tranchée ne le sont jamais.
   if (issue.state === "denied") {
     expect(issue.durable).toBe(false);
     expect(issue.diagnosticCode).toBe(BUDGET_DIAGNOSTIC_CODES.persistDenied);
@@ -61,8 +66,15 @@ test("requestPersistence ne promet jamais la durabilité sur un refus", async ({
   if (issue.state === "unsupported") {
     expect(issue.durable).toBe(false);
   }
+  if (issue.state === "pending") {
+    // L'invite n'a pas répondu dans le délai du produit. Ce n'est ni un refus — aucun diagnostic de
+    // refus ne l'accompagne — ni une durabilité, et surtout ce n'est plus un BLOCAGE : la borne a
+    // rendu la main. C'est ce que #168 corrige.
+    expect(issue.durable).toBe(false);
+    expect(issue.diagnosticCode).toBeNull();
+  }
   if (issue.durable === true) {
-    expect(["granted", "already"]).toContain(issue.state);
+    expect(VERDICTS_DURABLES).toContain(issue.state);
   }
 });
 

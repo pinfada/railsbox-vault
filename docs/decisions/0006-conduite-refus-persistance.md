@@ -78,6 +78,40 @@ peut encore rendre positive). Il produit `ATTENTE_RESOLUTION` : la décision est
 ce que le navigateur réponde, puis la conduite est réévaluée avec le verdict résolu. C'est un
 `arrêt` de la décision, pas du produit.
 
+## Note du 9 septembre 2026 — ce que `persist()` fait vraiment sous Firefox (#168)
+
+Cette note n'amende pas la décision : elle CLÔT le risque résiduel 1, qui laissait à l'appelant le
+soin d'opposer un délai à `persist()`, et elle inscrit la mesure qui manquait.
+
+**Le fait.** Sous Firefox 153 dans un contexte Playwright sans fenêtre,
+`navigator.storage.persist()` **ne rend jamais** : dix essais, promesse toujours pendante au-delà de
+quinze secondes d'observation, `navigator.permissions.query({ name: "persistent-storage" })` à
+`prompt`. Un **geste utilisateur réel** — un clic effectué avant l'appel — n'y change rien : dix
+essais de plus, dix promesses pendantes. L'hypothèse « Firefox attend un geste » est donc écartée ;
+Firefox attend une RÉPONSE À SON INVITE, et sans fenêtre pour l'afficher, personne ne peut la
+donner. Sous les préférences d'essai `dom.storageManager.prompt.testing` et `…prompt.testing.allow`,
+la même demande rend `true` en 6–8 ms ou `false` en 0–2 ms : c'est le harnais qui répond à l'invite,
+pas le produit qui la contourne. Pour mémoire, Chromium rend `false` en 0–1 ms et WebKit n'expose
+pas `persist()`.
+
+**Ce que la décision devient.** La borne quitte l'appelant et rejoint le diagnostic de #9 :
+`src/vm/storage-budget.mjs` oppose `PERSIST_DECISION_TIMEOUT_MS` (quatre secondes) à `persist()` et
+rend l'état **`pending`** au-delà. Une seule valeur circule dans la couche, et le tableau des états
+de coquille ci-dessus s'applique tel quel : `pending` → `ATTENTE_RESOLUTION` → `INCONNUE`. Avant
+cette note, `pending` était un état que la table décrivait et qu'aucun chemin réel ne produisait —
+une promesse à trois valeurs dont la troisième n'avait pas de producteur.
+
+**Ce qui ne change pas.** « Durable ⟹ persistance accordée » reste vrai, et « indéterminé » n'est ni
+l'un ni l'autre : `pending` ne devient ni `DURABLE_GARANTI` ni `POURSUITE_VOLATILE_QUALIFIEE`, et il
+ne porte aucun diagnostic de refus. La condition de révision « un moteur rend `persist()` durable
+sans geste » n'est **pas** atteinte par la mesure sous préférence d'essai : cette préférence répond
+à l'invite à la place de l'utilisateur, elle ne mesure pas un moteur qui accorderait sans réponse.
+
+**Ce que la note ne dit pas.** Le comportement d'un Firefox FENÊTRÉ, où l'invite s'affiche et où un
+humain peut répondre, n'est pas mesuré ici — la mesure porte sur le contexte automatisé, celui des
+bancs et de la CI. Le délai de quatre secondes n'est pas une propriété du moteur : c'est le temps
+que le produit accorde à une décision qui, quand elle vient, vient en millisecondes.
+
 ## Ce qui est explicitement refusé
 
 - **Annoncer « durable » sans persistance accordée.** Aucun état, aucune promesse, aucun message ne

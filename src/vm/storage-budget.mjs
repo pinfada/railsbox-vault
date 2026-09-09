@@ -7,6 +7,10 @@
 //  - un refus de `navigator.storage.persist()` n'est jamais une erreur et jamais une promesse de
 //    durabilité : c'est un état qualifié où l'appelant choisit de poursuivre en volatile ou de
 //    s'arrêter (la conduite produit revient à #42, pas à cette couche) ;
+//  - une demande de persistance NON TRANCHÉE n'est pas un refus, et elle n'est jamais une attente
+//    sans fin : au-delà du délai de décision, l'état est `pending` — « l'invite n'a pas répondu »
+//    (#168, ADR 0006). Sous Firefox en contexte automatisé, `persist()` reste pendante derrière une
+//    invite que personne ne peut trancher ; sans borne, l'appelant y attend indéfiniment ;
 //  - une estimation indisponible est l'état `unknown`, PAS une capacité nulle : traiter l'inconnu
 //    comme zéro bloquerait à tort une coquille parfaitement saine ;
 //  - aucune procédure de récupération ne propose d'effacer des données. Elle informe et laisse
@@ -18,6 +22,35 @@
 // exposer le contenu.
 
 import { STORAGE_ERROR_CODES, isStorageError } from "./storage-errors.mjs";
+
+/**
+ * Délai au-delà duquel une demande de persistance non tranchée est déclarée `pending` (#168).
+ *
+ * Ce n'est pas un délai de réseau : c'est le temps qu'on laisse au MOTEUR pour rendre une décision
+ * qu'il rend en quelques millisecondes quand il la rend. Firefox, lui, laisse la promesse pendante
+ * derrière une invite utilisateur ; sans fenêtre pour y répondre — un banc, une recette, un
+ * navigateur automatisé —, elle ne se résout jamais. Quatre secondes séparent donc « le moteur n'a
+ * pas encore répondu » de « le moteur ne répondra pas », et l'ADR 0006 dit ce qu'on fait du second :
+ * on halte la décision, on ne la tranche pas à la place du navigateur.
+ */
+export const PERSIST_DECISION_TIMEOUT_MS = 4_000;
+
+/** Signal interne : le délai de décision est écoulé, la promesse de `persist()` court encore. */
+class DecisionNonRendue extends Error {}
+
+/**
+ * Oppose un délai à une promesse. La promesse originale n'est PAS annulée — rien ne le permet — et
+ * si elle se résout plus tard, sa valeur est perdue sans bruit : c'est exactement ce que l'ADR 0006
+ * décrit sous « la conduite est réévaluée avec le verdict résolu », ce qui suppose une nouvelle
+ * demande, pas la récupération de celle-ci.
+ */
+function opposerUnDelai(promesse, delaiMs) {
+  let minuterie = null;
+  const echeance = new Promise((_resoudre, rejeter) => {
+    minuterie = setTimeout(() => rejeter(new DecisionNonRendue()), delaiMs);
+  });
+  return Promise.race([promesse, echeance]).finally(() => clearTimeout(minuterie));
+}
 
 /** Codes de diagnostic stables, propres à la couche budget. Disjoints des codes de support de #6. */
 export const BUDGET_DIAGNOSTIC_CODES = Object.freeze({
@@ -250,8 +283,9 @@ function unknownMeasure(operation) {
  *
  * @param {(() => Promise<boolean>) | undefined} persist
  * @param {(() => Promise<boolean>) | undefined} persisted
+ * @param {number} delaiDeDecisionMs délai au-delà duquel la demande est déclarée non tranchée
  */
-async function demanderPersistance(persist, persisted) {
+async function demanderPersistance(persist, persisted, delaiDeDecisionMs) {
   if (typeof persist !== "function" || typeof persisted !== "function") {
     return {
       operation: "persist",
@@ -267,10 +301,16 @@ async function demanderPersistance(persist, persisted) {
 
   let granted;
   try {
-    granted = (await persist()) === true;
-  } catch {
-    // Firefox laisse parfois la promesse pendante derrière une invite ; un rejet vaut refus.
-    // Un refus n'est pas une erreur : c'est un état qualifié, non durable.
+    granted = (await opposerUnDelai(persist(), delaiDeDecisionMs)) === true;
+  } catch (erreur) {
+    if (erreur instanceof DecisionNonRendue) {
+      // NON TRANCHÉ n'est pas REFUSÉ. Le ranger avec les refus promettrait « pas de durabilité » là
+      // où l'invite peut encore l'accorder ; l'ADR 0006 halte la décision sur `pending` et n'affiche
+      // aucune promesse. Aucun diagnostic n'accompagne cet état : il n'y a rien à récupérer, il y a
+      // une réponse à attendre.
+      return { operation: "persist", state: "pending", durable: false, diagnostic: null };
+    }
+    // Un rejet vaut refus : un refus n'est pas une erreur, c'est un état qualifié, non durable.
     granted = false;
   }
 
@@ -358,11 +398,19 @@ function classifyWriteFailure(error, { operation = "write" } = {}) {
  * La fabrique ne fait plus que LIER les primitives aux opérations du module : aucune d'elles n'avait
  * besoin de la clôture, et les tenir dehors les rend lisibles et mesurables une à une.
  *
- * @param {{ estimate?: () => Promise<StorageEstimate>, persist?: () => Promise<boolean>, persisted?: () => Promise<boolean> }} primitives
+ * Le délai de décision est celui du produit ; il n'est passé que pour être RACCOURCI par un test,
+ * jamais pour qu'une seconde valeur circule.
+ *
+ * @param {{ estimate?: () => Promise<StorageEstimate>, persist?: () => Promise<boolean>, persisted?: () => Promise<boolean>, delaiDeDecisionMs?: number }} primitives
  */
-export function createStorageBudget({ estimate, persist, persisted } = {}) {
+export function createStorageBudget({
+  estimate,
+  persist,
+  persisted,
+  delaiDeDecisionMs = PERSIST_DECISION_TIMEOUT_MS,
+} = {}) {
   const measure = () => mesurerEspace(estimate);
-  const requestPersistence = () => demanderPersistance(persist, persisted);
+  const requestPersistence = () => demanderPersistance(persist, persisted, delaiDeDecisionMs);
   const reserve = (requiredBytes) => reserverEspace(measure, requiredBytes);
 
   return { measure, requestPersistence, reserve, classifyWriteFailure };

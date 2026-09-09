@@ -78,7 +78,7 @@ Mesures produites par `npm run test:compat` le **2026-08-23**.
 | WebCrypto HKDF-SHA-256 sur vecteur RFC 5869     | page     | oui         | supported | supported   | supported   |
 | OPFS : `navigator.storage.getDirectory()`       | page     | oui         | supported | supported   | unsupported |
 | `navigator.storage.estimate()`                  | page     | oui         | supported | supported   | unsupported |
-| `navigator.storage.persist()` / `persisted()`   | page     | non         | denied    | denied      | unsupported |
+| `navigator.storage.persist()` / `persisted()`   | page     | non         | denied    | denied\*    | unsupported |
 | WebAssembly : instanciation d'un module minimal | page     | oui         | supported | supported   | supported   |
 | SharedArrayBuffer                               | page     | non         | supported | supported   | supported   |
 | Contexte isolé multi-origine                    | page     | non         | supported | supported   | supported   |
@@ -90,6 +90,11 @@ Mesures produites par `npm run test:compat` le **2026-08-23**.
 | WebCrypto AES-GCM dans le Worker                | worker   | oui         | supported | supported   | supported   |
 | `FileSystemSyncAccessHandle` dans le Worker     | worker   | oui         | supported | supported   | unsupported |
 | `Atomics.wait` dans le Worker                   | worker   | non         | supported | supported   | supported   |
+
+\* Sous Firefox, `denied` est le verdict que la SONDE rend au bout de sa borne de quatre secondes :
+le moteur, lui, ne répond pas du tout. Ce que la mesure du 9 septembre 2026 dit exactement est plus
+bas, sous « Lecture des verdicts notables » ; le produit, lui, nomme cet état `pending` —
+indéterminé — et ne le range jamais avec les refus.
 
 Verdicts Vault correspondants :
 
@@ -289,10 +294,35 @@ la directive dit, et c'est ce qui montre que la sonde sait lire un opener quand 
 
 ### Lecture des verdicts notables
 
-- **`storagePersist` refusé sous Chromium et Firefox.** Chromium renvoie `false` sans interaction ;
-  Firefox laisse la promesse en attente derrière une invite. Les deux sont des refus documentés, pas
-  des erreurs de sonde. La capacité reste facultative : Vault doit fonctionner sans persistance
-  accordée et savoir la demander plus tard.
+- **`storagePersist` refusé sous Chromium et Firefox — mais pas pour la même raison.** Le verdict de
+  la colonne est celui que la SONDE rend ; ce que chaque moteur fait, lui, est ci-dessous. Relevé du
+  **9 septembre 2026** (#168), dix essais par configuration, Playwright 1.62.1 **sans fenêtre**,
+  Windows 11, sur `/vm/budget.html` de l'origine de confiance :
+
+  | Configuration                                                    | `persist()` rend | Délai       | `permissions.query("persistent-storage")` |
+  | ---------------------------------------------------------------- | ---------------- | ----------- | ----------------------------------------- |
+  | Chromium, nu                                                     | `false`          | 0–1 ms      | `prompt`                                  |
+  | Firefox, nu                                                      | **rien**         | > 15 000 ms | `prompt`                                  |
+  | Firefox, nu, **après un clic réel**                              | **rien**         | > 15 000 ms | `prompt`                                  |
+  | Firefox, `dom.storageManager.prompt.testing` + `…allow` **vrai** | `true`           | 6–8 ms      | `prompt`                                  |
+  | Firefox, `dom.storageManager.prompt.testing` + `…allow` **faux** | `false`          | 0–2 ms      | `prompt`                                  |
+  | WebKit, nu                                                       | `TypeError`      | 0–11 ms     | non interrogeable                         |
+
+  Trois conséquences. **Firefox n'attend pas un geste** : un clic réel précédant l'appel ne change
+  rien ; il attend une RÉPONSE À SON INVITE, que rien ne peut donner sans fenêtre. La ligne « nu »
+  n'est donc pas un refus mais une **indétermination**, et le produit la nomme ainsi : la couche
+  budget (`src/vm/storage-budget.mjs`) oppose quatre secondes à `persist()` et rend l'état `pending`
+  au-delà, que la conduite de l'[ADR 0006](decisions/0006-conduite-refus-persistance.md) traduit en
+  `ATTENTE_RESOLUTION` / durabilité `INCONNUE`. La sonde de compatibilité, elle, a sa propre borne
+  (quatre secondes également) et range cette indétermination sous `denied`, avec le détail « demande
+  laissée en attente d'une interaction utilisateur » : c'est le vocabulaire d'un contrat de sonde à
+  trois verdicts, qui ne connaît pas « indéterminé ». **Enfin, WebKit n'expose pas `persist()`** :
+  c'est une absence, jamais un refus, et le produit rend `unsupported`.
+
+  La capacité reste facultative : Vault doit fonctionner sans persistance accordée et savoir la
+  demander plus tard. Ce que ce relevé ne dit pas : ce qu'un Firefox FENÊTRÉ fait de l'invite quand
+  un humain peut y répondre.
+
 - **`performance.memory` absent hors Chromium.** Verdict `unsupported`, sans erreur : l'API est une
   extension propriétaire et ne peut pas servir de base à un budget mémoire portable.
 - **WebAuthn présent dans les trois moteurs, y compris WebKit.** Attention au piège de détection :

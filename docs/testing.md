@@ -161,6 +161,26 @@ avertissement en `role="status"`. Les branches d'absence d'API et la vraie satur
 restent prouvées par les doubles : les provoquer réellement dégraderait le moteur ou remplirait le
 disque sans rien prouver de plus.
 
+**Depuis #168, ce niveau est joué sur les TROIS moteurs et sur les TROIS verdicts** (famille de
+projets `persistance-*` de `playwright.config.mjs`), et non plus sur Chromium seul. Le motif est
+qu'il n'existe pas de capacité dont le verdict diffère davantage d'un moteur à l'autre : Chromium
+refuse en une milliseconde, WebKit n'expose pas l'API, et Firefox **ne répond pas** — la mesure du 9
+septembre 2026 est dans [`docs/compatibility.md`](compatibility.md). Cinq projets, aucun `skip` :
+
+| Projet                                | Verdict attendu       | Ce qu'il mesure                                       |
+| ------------------------------------- | --------------------- | ----------------------------------------------------- |
+| `persistance-chromium`                | `denied`              | un refus tranché                                      |
+| `persistance-firefox`                 | `pending`             | l'invite non tranchée, **bornée** — jamais un blocage |
+| `persistance-webkit`                  | `unsupported`         | l'absence d'API, jamais requalifiée en refus          |
+| `persistance-firefox-invite-accordee` | `granted` / `already` | l'octroi réel, sous préférence d'essai de l'invite    |
+| `persistance-firefox-invite-refusee`  | `denied`              | le refus réel, sous la même préférence                |
+
+Le verdict attendu est INSCRIT par projet dans `tests/browser/persistance-attendue.mjs`, et un
+projet absent de la table lève : sans oracle, « le verdict est l'un des cinq » resterait vrai le
+jour où un moteur changerait d'avis — un vert par vacuité. Mesuré le 9 septembre 2026 : **40
+épreuves vertes en 14,7 s**, sans réseau ni artefact ; Firefox y passe quatre secondes dans sa
+borne, et pas deux minutes dans un blocage comme avant #168.
+
 Cette conduite suit celle des épreuves COOP/COEP de la frontière d'origine : mesurer partout,
 asserter là où la capacité existe, et ne jamais rendre vert un relevé qui n'a rien mesuré.
 
@@ -197,6 +217,11 @@ prouvée sur **deux** niveaux.
 | ---------- | -------------------------------------------- | ---------------------------------- | --------------- |
 | unitaire   | `tests/unit/vm-persistence-conduct.test.mjs` | logique pure                       | `npm run check` |
 | navigateur | `tests/browser/persistence-conduct.spec.mjs` | **vrai** DOM + `navigator.storage` | `npm run check` |
+
+Depuis #168, le niveau navigateur est joué par la famille `persistance-*` décrite ci-dessus : trois
+moteurs, trois verdicts, et l'état `ATTENTE_RESOLUTION` obtenu pour de vrai sous Firefox plutôt que
+par un verdict synthétique. C'est la troisième valeur de la promesse de durabilité qui cesse d'être
+une case de table sans producteur.
 
 **Le niveau unitaire couvre chaque conduite** avec des verdicts déterministes et des verdicts réels
 produits par les doubles de #9 : la règle « demander derrière un geste, jamais au chargement », les

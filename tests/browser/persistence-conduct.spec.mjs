@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { VERDICTS_DURABLES, verdictsAttendus } from "./persistance-attendue.mjs";
+
 // Preuve de niveau NAVIGATEUR de la couche de conduite (#42, `VAULT-PERSIST-001`). La conduite est
 // PURE ; ce que le navigateur seul peut prouver, c'est son RENDU accessible dans un vrai DOM — le rôle
 // ARIA, l'état de coquille et la promesse de durabilité effectivement posés — et que l'invariant tient
@@ -88,15 +90,23 @@ test("le vrai navigator.storage : l'invariant durable ⟹ accordé tient sur le 
     contentType: "application/json",
   });
 
-  // Sans geste utilisateur, le moteur refuse ou n'accorde pas ; jamais une durabilité inventée.
-  expect(["already", "granted", "denied", "unsupported"]).toContain(rendu.verdictState);
+  // Le verdict ATTENDU de ce projet : sans oracle, l'épreuve serait verte par vacuité (#168).
+  expect(verdictsAttendus(testInfo.project.name)).toContain(rendu.verdictState);
+
   if (rendu.durableGuaranteed === true) {
     // La durabilité garantie n'est atteignable QUE derrière un octroi réel.
-    expect(["granted", "already"]).toContain(rendu.verdictState);
+    expect(VERDICTS_DURABLES).toContain(rendu.verdictState);
     expect(rendu.domShellState).toBe("DURABLE_GARANTI");
     expect(rendu.domDurability).toBe("GARANTIE");
   } else {
     expect(rendu.domDurability).not.toBe("GARANTIE");
     expect(rendu.domShellState).not.toBe("DURABLE_GARANTI");
+  }
+
+  // L'invite non tranchée HALTE la décision : l'ADR 0006 refuse de la ranger avec les refus, et le
+  // banc rend maintenant ce verdict-là au lieu de se bloquer sur `persist()` (#168).
+  if (rendu.verdictState === "pending") {
+    expect(rendu.domShellState).toBe("ATTENTE_RESOLUTION");
+    expect(rendu.domDurability).toBe("INCONNUE");
   }
 });
