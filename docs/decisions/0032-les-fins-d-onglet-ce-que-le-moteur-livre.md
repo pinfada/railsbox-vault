@@ -125,6 +125,10 @@ la fermeture d'un onglet, Firefox livre bien `pagehide` mais le message diffusé
 n'atteint pas le témoin ; WebKit fait l'inverse et perd la console. Un événement qu'un canal ne
 rapporte pas n'est pas « non livré » : il est « non observé par ce canal ».
 
+Le canal du témoin PORTE, sur les trois : le `pageshow` que le sujet diffuse à son chargement y
+arrive. C'est le **témoin positif du canal**, et c'est lui qui autorise à lire la ligne Firefox
+comme « le message émis PENDANT `pagehide` se perd » plutôt que comme « ce canal est muet ».
+
 ## Limites, dites plutôt que tues
 
 - **le gel n'est pas simulable** par ce harnais (décision 4), et un `freeze` livré SPONTANÉMENT par
