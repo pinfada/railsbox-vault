@@ -128,6 +128,99 @@ l'étape 7. Son motif n'a simplement jamais été celui-là — `close()` attend
 écritures en vol et rend l'instantané incohérent avec le volume, donc écarté à la réouverture, donc
 un boot à froid. C'est une propriété de durabilité et de reprise, pas d'exclusivité.
 
+### Ce que les moteurs livrent aux FINS D'ONGLET (#170, ADR 0032)
+
+Comme la ligne du handle exclusif ci-dessus, ce n'est pas une capacité : c'est un **comportement**,
+et il a fallu le mesurer parce que rien, dans aucune norme, ne dit qu'un moteur livre `pagehide` à
+la fermeture d'un onglet, ni qu'un `freeze` existe, ni qu'un document soit jamais restauré.
+
+Mesures du **2026-09-09**, `npm run test:fins-d-onglet`
+(`tests/fins-d-onglet/fins-d-onglet.spec.mjs`), sur le même exécutant que la matrice ci-dessus.
+Relevés bruts : `reports/fins-d-onglet/<moteur>.json`, dossier ignoré par git et archivable en
+artefact de CI.
+
+**Le harnais est nommé, parce qu'il fausserait la mesure sans le dire.** Playwright lance Chromium
+avec `--disable-back-forward-cache` : une mesure « jamais restauré » prise sous cet argument
+mesurerait l'outil. `playwright.fins-d-onglet.config.mjs` le retire, et là seulement. Firefox et
+WebKit : **aucun argument retiré**, ce qui est un relevé et non un silence.
+
+**Le CANAL d'observation fait partie de la mesure.** Un événement livré à un document qui meurt ne
+se lit pas depuis ce document : trois canaux sont posés ensemble — un document TÉMOIN de la même
+origine joint par `BroadcastChannel`, `page.on("console")`, et le document lui-même —, et la ligne
+dit lequel a vu quoi.
+
+| Situation                         | Chromium                                               | Firefox                                                           | WebKit                                                 |
+| --------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------- | ------------------------------------------------------ |
+| `page.close()`, vu par le TÉMOIN  | `pagehide` (`persisted` faux), puis `visibilitychange` | `visibilitychange` seul — le message émis dans `pagehide` se perd | `pagehide` (`persisted` faux), puis `visibilitychange` |
+| `page.close()`, vu par la CONSOLE | `pagehide`, `visibilitychange`                         | `pagehide`, `visibilitychange`                                    | rien — la console se perd à la fermeture               |
+| navigation sortante               | `pagehide` (`persisted` faux) + `visibilitychange`     | idem                                                              | idem                                                   |
+| retour arrière                    | `pageshow`, **`persisted` faux**                       | `pageshow`, **`persisted` faux**                                  | `pageshow`, **`persisted` faux**                       |
+| `freeze` / `resume`               | **non simulable** (voir ci-dessous)                    | non livré, **par conception** : absent du moteur                  | non livré, **par conception**                          |
+| onglet réellement CACHÉ           | **non simulable** : `visibilityState` reste `visible`  | non simulable, idem                                               | non simulable, idem                                    |
+
+**Les trois moteurs livrent `pagehide` à la fermeture d'un onglet, et aucun canal seul ne suffit
+pour le voir.** Firefox le livre — la console le montre — mais le message qu'un écouteur diffuse
+pendant `pagehide` n'atteint pas un témoin de la même origine ; WebKit fait l'inverse. Un événement
+qu'un canal ne rapporte pas n'est pas « non livré » : il est « **non observé par ce canal** ».
+
+#### Le bfcache : aucun document n'est jamais restauré, TÉMOIN POSITIF compris
+
+| Document mesuré                                | Chromium                                       | Firefox                        | WebKit                               |
+| ---------------------------------------------- | ---------------------------------------------- | ------------------------------ | ------------------------------------ |
+| page NUE, sans script ni écouteur (**témoin**) | non restauré — `notRestoredReasons` : `masked` | non restauré — API non exposée | non restauré — API non exposée       |
+| coquille, coffre VERROUILLÉ                    | non restauré — `masked`                        | non restauré                   | non restauré                         |
+| coquille, coffre OUVERT                        | non restauré — `masked`                        | non restauré                   | **indisponible** — rien ne s'y ouvre |
+| avec un écouteur `beforeunload` armé           | non restauré — `masked`                        | non restauré                   | non restauré                         |
+
+Le **témoin positif** est ce qui donne son sens aux autres lignes : une page statique sans script,
+sans écouteur et sans `BroadcastChannel` n'est pas restaurée non plus. Ce qui est mesuré ici est
+donc le **harnais** autant que le moteur, et la ligne « avec `beforeunload` » ne mesure rien de
+l'éligibilité — elle ne peut pas la mesurer, faute d'un cas où quoi que ce soit soit restauré.
+Chromium **masque** la raison (`masked`), Firefox et WebKit n'exposent pas `notRestoredReasons` : ce
+n'est pas la même chose que « restauré », et le relevé le distingue.
+
+Conséquence pour le produit, écrite dans l'ADR 0032 décision 3 : le chemin `pageshow` restauré de la
+coquille est une **garde**, éprouvée en unitaire avec un `persisted: true` injecté et tenue par deux
+mutants — pas un comportement observé. Son témoin NÉGATIF, lui, est mesuré dans un navigateur sur
+les trois moteurs : la coquille se charge **deux fois** — au départ et au retour — et pas une de
+plus.
+
+#### Le gel : demandé, accepté par le protocole, sans effet
+
+Chromium, `Page.setWebLifecycleState({ state: "frozen" })` par une session CDP : la commande est
+**acceptée sans erreur** et **ne gèle rien**.
+
+| Grandeur                                                | Relevé     |
+| ------------------------------------------------------- | ---------- |
+| refus du protocole                                      | aucun      |
+| `freeze` / `resume` livrés                              | **non**    |
+| battements de 200 ms comptés pendant 6 s de gel demandé | **35**     |
+| plus grand trou entre deux battements                   | **206 ms** |
+| retard d'une minuterie de 2 s échue pendant le gel      | **6 ms**   |
+| `document.visibilityState` avant le gel                 | `visible`  |
+
+Le battement est le **témoin positif** : la page exécutait du code pendant toute la mesure, si bien
+que l'absence de `freeze` ne peut pas se lire « le canal n'a rien vu ». La cause est mesurée elle
+aussi — un moteur ne gèle qu'un onglet CACHÉ, et **aucun moteur n'en cache un sous Playwright** :
+`document.visibilityState` reste `visible` sur les trois, y compris après `bringToFront()` d'un
+second onglet, en mode fenêtré comme en mode sans fenêtre, avec `Emulation.setFocusEmulationEnabled`
+à faux, avec une fenêtre minimisée par `Browser.setWindowBounds`, et dans un contexte persistant.
+
+#### Ce que le harnais ne simule PAS, chaque ligne avec son motif
+
+| Ce qui n'est pas simulé                      | Motif                                                                |
+| -------------------------------------------- | -------------------------------------------------------------------- |
+| la mise en veille du système                 | rien dans Playwright ne la provoque                                  |
+| l'éviction ou le « discard » d'un onglet     | idem ; l'imiter par une fermeture mesurerait la fermeture            |
+| un `freeze` livré SPONTANÉMENT par le moteur | le gel DEMANDÉ ne survient déjà pas (ci-dessus)                      |
+| un onglet réellement caché                   | `document.hidden` reste faux sur les trois moteurs, quoi qu'on tente |
+| une restauration depuis le bfcache           | aucune, témoin positif compris (ci-dessus)                           |
+| la mort du processus de rendu                | `Page.crash` n'est pas exposé par le harnais                         |
+
+Aucune case n'est vide : ce qui n'est pas mesuré est **écrit comme tel**, et les chemins que cela
+laisse hors d'atteinte sont tenus par `tests/unit/coquille-fins-d-onglet.test.mjs` et par les
+quatorze mutants de `node tools/muter-gardes-fins-d-onglet.mjs`.
+
 ### Ce que la COQUILLE fait de cette matrice (#163, ADR 0030)
 
 La sonde publie une matrice ; la coquille, elle, décide d'un démarrage. Depuis #163 elle mesure ses
@@ -216,6 +309,9 @@ Conséquences retenues :
 npm ci
 npx playwright install chromium firefox webkit
 npm run test:compat
+# Les fins d'onglet (#170) ont leur propre harnais : il retire `--disable-back-forward-cache` du
+# lanceur Chromium, ce qu'aucune autre suite ne doit faire.
+npm run test:fins-d-onglet
 ```
 
 Chaque exécution écrit `reports/compat/<moteur>.json`. Ce dossier est ignoré par git et archivé en

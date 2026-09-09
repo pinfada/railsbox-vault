@@ -2,24 +2,25 @@
 
 ## Suites disponibles
 
-| Commande                       | Portée                                                                                                                           |                                                                                                                                                 Coût attendu |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -----------------------------------------------------------------------------------------------------------------------------------------------------------: |
-| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                                                                        |                                                                                                                                                     secondes |
-| `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontières d'origine (spike ET coquille de produit)                                     |                                                                                                                                                environ 2 min |
-| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                                                                                    |                                                                                                                                                environ 1 min |
-| `npm run test:spike:apps`      | frontière entre deux applications (#46), trois moteurs, seule                                                                    |                                                                                                                                                 environ 35 s |
-| `npm run test:coquille`        | frontière de la coquille de PRODUIT (#161), application malveillante, trois moteurs, seule                                       |                                                                                                                                           environ 2 min 30 s |
-| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                                                                        |                                                                                                                                                environ 2 min |
-| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                                                                              |                                                                                                                              environ 20 s après installation |
-| `npm run test:vm`              | guest Linux réel sur les backends mémoire et OPFS (Chromium), matrice de coupures, et démarrage du runtime sur les trois moteurs |                                                                                                                               environ 18 min, **périodique** |
-| `npm run test:isolation`       | coût de l'isolation multi-origine sur le runtime v86, trois moteurs                                                              |                                                                                                                              environ 8 min, **à la demande** |
-| `npm run test:csp`             | démarrage de v86 sous deux CSP, quatre configurations, trois moteurs                                                             |                                                                                                                             environ 25 min, **à la demande** |
-| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker                                                                    |                                                                                                                 environ 1 min après la première construction |
-| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                                                                               |                                                                                                                   plus de 10 min, Docker et artefacts requis |
-| `npm run test:e2e`             | reprise, coupure pendant une mutation, export vérifiable, restauration inter-origine et migration                                |                                                                                                                   environ 36 min, Docker et artefacts requis |
-| `npm run test:rythme`          | coût de la boucle d'ordonnancement, dix boots entrelacés de l'image de référence                                                 |                                                                                                                             environ 18 min, **à la demande** |
-| `npm test`                     | suites unitaire et navigateur                                                                                                    |                                                                                                                                                     secondes |
-| `npm run check`                | lint, format et toutes les suites actuelles                                                                                      | environ 5 min 30 s hors installation (#147 : la campagne de mutation en prend 50 s ; #161 : la frontière de la coquille, trois moteurs, en prend 2 min 30 s) |
+| Commande                       | Portée                                                                                                                           |                                                                                                                                                                                             Coût attendu |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
+| `npm run test:unit`            | contrats, logique pure et configuration du lint sous Node                                                                        |                                                                                                                                                                                                 secondes |
+| `npm run test:browser`         | page, Worker dédié, backend OPFS réel et frontières d'origine (spike ET coquille de produit)                                     |                                                                                                                                                                                            environ 2 min |
+| `npm run test:spike:origin`    | les deux suites de frontière d'origine seules                                                                                    |                                                                                                                                                                                            environ 1 min |
+| `npm run test:spike:apps`      | frontière entre deux applications (#46), trois moteurs, seule                                                                    |                                                                                                                                                                                             environ 35 s |
+| `npm run test:coquille`        | frontière de la coquille de PRODUIT (#161), application malveillante, trois moteurs, seule                                       |                                                                                                                                                                                       environ 2 min 30 s |
+| `npm run test:browser:moteurs` | la suite navigateur sur plusieurs moteurs                                                                                        |                                                                                                                                                                                            environ 2 min |
+| `npm run test:compat`          | sonde de capacités sous Chromium, Firefox et WebKit                                                                              |                                                                                                                                                                          environ 20 s après installation |
+| `npm run test:fins-d-onglet`   | ce que les moteurs livrent aux fins d'onglet (#170), trois moteurs, harnais bfcache dédié                                        |                                                                                                                                                                                             environ 55 s |
+| `npm run test:vm`              | guest Linux réel sur les backends mémoire et OPFS (Chromium), matrice de coupures, et démarrage du runtime sur les trois moteurs |                                                                                                                                                                           environ 18 min, **périodique** |
+| `npm run test:isolation`       | coût de l'isolation multi-origine sur le runtime v86, trois moteurs                                                              |                                                                                                                                                                          environ 8 min, **à la demande** |
+| `npm run test:csp`             | démarrage de v86 sous deux CSP, quatre configurations, trois moteurs                                                             |                                                                                                                                                                         environ 25 min, **à la demande** |
+| `npm run app:test`             | suite Minitest de l'application Rails de référence, en Docker                                                                    |                                                                                                                                                             environ 1 min après la première construction |
+| `npm run test:vm:reference`    | boot à froid réel de l'image de référence sous v86                                                                               |                                                                                                                                                               plus de 10 min, Docker et artefacts requis |
+| `npm run test:e2e`             | reprise, coupure pendant une mutation, export vérifiable, restauration inter-origine et migration                                |                                                                                                                                                               environ 36 min, Docker et artefacts requis |
+| `npm run test:rythme`          | coût de la boucle d'ordonnancement, dix boots entrelacés de l'image de référence                                                 |                                                                                                                                                                         environ 18 min, **à la demande** |
+| `npm test`                     | suites unitaire et navigateur                                                                                                    |                                                                                                                                                                                                 secondes |
+| `npm run check`                | lint, format et toutes les suites actuelles                                                                                      | environ 5 min 30 s hors installation (#147 : la campagne de mutation en prend 50 s ; #161 : la frontière de la coquille, trois moteurs, en prend 2 min 30 s ; #170 : les fins d'onglet en prennent 55 s) |
 
 La suite `test:e2e` porte depuis #7 le scénario de sortie du MVP (voir plus bas), auquel se sont
 ajoutés l'export vérifiable (#11), la restauration inter-origine (#12) et la migration de format
@@ -2212,13 +2213,55 @@ davantage sur un exécutant partagé ; la marge du job (120 min) les couvre larg
 
 **Campagnes de mutation** — `node tools/muter-gardes-cycle-de-vie.mjs` : vingt-sept gardes,
 vingt-sept mutants tués, table et survivant dans l'ADR 0030.
-`node tools/muter-gardes-verrouillage.mjs` : **vingt-huit gardes, vingt-huit mutants tués**, table
-dans l'ADR 0031 — le déclencheur d'inactivité et ses quatre refus, les bornes du délai, l'ordre
-`close()` avant `terminate()`, le rechargement, le refus de rouvrir sans geste, l'instantané qui
-n'est pas retiré, et depuis la revue de la PR #174 : la conduite d'un verrouillage REFUSÉ, la garde
-d'ordre sur un démarrage en vol, la table close des déclencheurs, et le branchement RÉEL des
-écouteurs d'activité — « la garde qui décide ce que la coquille compte comme une personne était la
-seule que la campagne ne regardait pas ».
+`node tools/muter-gardes-fins-d-onglet.mjs` : **quatorze gardes, quatorze mutants tués**, table dans
+l'ADR 0032 — `pagehide` qui tue quel que soit `persisted`, `pageshow` qui ne recharge que restauré,
+le gel qui ne tue rien, la vérification d'échéance qui ne remet rien à zéro, et `beforeunload` que
+rien ne branche. Elle compte double : quatre des cinq chemins ne sont atteignables par aucune
+épreuve de navigateur de ce dépôt. `node tools/muter-gardes-verrouillage.mjs` : **vingt-huit gardes,
+vingt-huit mutants tués**, table dans l'ADR 0031 — le déclencheur d'inactivité et ses quatre refus,
+les bornes du délai, l'ordre `close()` avant `terminate()`, le rechargement, le refus de rouvrir
+sans geste, l'instantané qui n'est pas retiré, et depuis la revue de la PR #174 : la conduite d'un
+verrouillage REFUSÉ, la garde d'ordre sur un démarrage en vol, la table close des déclencheurs, et
+le branchement RÉEL des écouteurs d'activité — « la garde qui décide ce que la coquille compte comme
+une personne était la seule que la campagne ne regardait pas ».
+
+### Les FINS D'ONGLET : une suite, une configuration, et ce qu'elle ne peut pas mesurer (#170)
+
+`npm run test:fins-d-onglet` — `tests/fins-d-onglet/`, **trois moteurs**, environ **55 s**, et
+**rattachée à `npm run check`**. Elle mesure ce que `pagehide`, `pageshow`, `visibilitychange`,
+`freeze`/`resume` et `beforeunload` livrent à la fermeture, à la navigation, au retour arrière et au
+gel ; elle éprouve aussi deux propriétés de PRODUIT — un onglet fermé sans verrouillage laisse un
+coffre `verrouille` au document suivant, et la coquille ne se recharge pas toute seule.
+
+**Une configuration à elle, et le motif n'est pas la commodité.** Playwright lance Chromium avec
+`--disable-back-forward-cache` : une mesure « jamais restauré » prise sous cet argument mesurerait
+l'OUTIL, pas le moteur. `playwright.fins-d-onglet.config.mjs` le retire, **et là seulement** — les
+suites ordinaires n'ont aucune raison de payer le non-déterminisme d'un cache de navigation qu'elles
+ne mesurent pas. Ce que le harnais retire à chaque moteur est publié avec les chiffres, plutôt que
+supposé : Firefox et WebKit, aucun argument.
+
+**Le CANAL d'observation fait partie de la mesure.** Un événement livré à un document qui meurt ne
+se lit pas depuis ce document. Trois canaux sont posés ensemble — un document TÉMOIN de la même
+origine joint par `BroadcastChannel`, `page.on("console")`, et le document lui-même —, et **aucun ne
+suffit seul** : Firefox livre `pagehide` à la fermeture mais le message diffusé pendant celui-ci
+n'atteint pas le témoin ; WebKit fait l'inverse et perd la console. Un événement qu'un canal ne
+rapporte pas n'est pas « non livré » : il est « non observé par ce canal », et la suite change de
+canal avant de conclure.
+
+**Ce que la suite NE PEUT PAS mesurer, et ce qui tient à la place.** Mesuré, avec témoin positif :
+aucun document n'est jamais restauré depuis le bfcache — une page nue sans instrumentation non plus
+—, aucun onglet ne devient jamais caché, et le gel demandé par `Page.setWebLifecycleState` ne gèle
+rien. Quatre des cinq chemins du produit sont donc hors de portée de tout navigateur ici. Ils
+tiennent par `tests/unit/coquille-fins-d-onglet.test.mjs`, où l'événement et l'horloge sont
+injectés, et par les quatorze mutants de `node tools/muter-gardes-fins-d-onglet.mjs`. La règle de
+#169 — « une propriété ne peut être dite mesurée sur trois moteurs que si l'épreuve tourne sur trois
+moteurs » — s'applique ici en sens inverse et avec la même rigueur : **ce qu'aucun moteur ne livre
+n'est pas décrit comme mesuré**, et `docs/compatibility.md` écrit « non simulable » avec son motif,
+jamais une case vide.
+
+**WebKit est DÉCLARÉ `indisponible`** partout où un coffre doit être ouvert — rien ne s'y ouvre —,
+et les deux épreuves concernées le publient dans leur relevé au lieu de passer au vert par vacuité.
+Les sept autres y tournent pour de bon.
 
 ### Le VERT PAR VACUITÉ, et ce qui le ferme
 

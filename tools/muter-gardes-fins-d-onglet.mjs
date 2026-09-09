@@ -48,7 +48,7 @@ export const MUTATIONS = Object.freeze([
   {
     nom: "`pagehide` TUE le Worker de confiance",
     garde:
-      "surLaFin — la terminaison, seule chose que le moteur garantisse encore dans cette tâche",
+      "gesteDeFin — la terminaison, seule chose que le moteur garantisse encore dans cette tâche",
     fichier: FINS,
     avant: "    tuerLeWorker();\n",
     apres: "",
@@ -56,7 +56,7 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "`pagehide` tue quel que soit `persisted` — un seul chemin, pas deux",
-    garde: "surLaFin — l'absence de condition sur `persisted`",
+    garde: "gesteDeFin — l'absence de condition sur `persisted`",
     fichier: FINS,
     avant: "    tuerLeWorker();",
     apres: "    if (evenement?.persisted !== true) tuerLeWorker();",
@@ -64,7 +64,7 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "`pagehide` ne tue QUE sur un coffre ouvert",
-    garde: "surLaFin — la condition d'ÉTAT",
+    garde: "gesteDeFin — la condition d'ÉTAT",
     fichier: FINS,
     avant:
       "    if (!coffreOuvert()) {\n" +
@@ -76,7 +76,7 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "`pagehide` DÉSARME le délai : aucune minuterie ne survit au départ du document",
-    garde: "surLaFin — le désarmement de la surveillance",
+    garde: "gesteDeFin — le désarmement de la surveillance",
     fichier: FINS,
     avant: "    surveillance.desarmer();\n",
     apres: "",
@@ -84,7 +84,7 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "`pageshow` RESTAURÉ recharge la coquille",
-    garde: "surLeRetour — le rechargement",
+    garde: "gesteDeRetour — le rechargement",
     fichier: FINS,
     avant: "    recharger();\n",
     apres: "",
@@ -92,27 +92,28 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "`pageshow` ne recharge QUE s'il est restauré — sinon, boucle infinie",
-    garde: "surLeRetour — la condition sur `persisted`",
+    garde: "gesteDeRetour — la condition sur `persisted`",
     fichier: FINS,
-    avant:
-      "    if (evenement?.persisted !== true) {\n" +
-      '      journal("pageshow", "document-neuf");\n' +
-      "      return;\n" +
-      "    }\n",
+    avant: "    if (evenement?.persisted !== true) return;\n",
     apres: "",
     epreuves: [EPREUVE],
   },
   {
     nom: "le GEL ne tue RIEN",
-    garde: "surLeGel — l'inaction, qui est la décision",
+    garde: "gesteDeGel — l'inaction, qui est la décision",
     fichier: FINS,
-    avant: '  const surLeGel = () => journal("freeze", "sans-effet");',
-    apres: '  const surLeGel = () => {\n    tuerLeWorker();\n    journal("freeze", "tue");\n  };',
+    avant: 'function gesteDeGel({ journal }) {\n  return () => journal("freeze", "sans-effet");\n}',
+    apres:
+      "function gesteDeGel({ journal, tuerLeWorker }) {\n" +
+      "  return () => {\n" +
+      "    tuerLeWorker();\n" +
+      '    journal("freeze", "tue");\n' +
+      "  };\n}",
     epreuves: [EPREUVE],
   },
   {
     nom: "le RETOUR vérifie l'échéance",
-    garde: "verifier — l'appel à `verifierLEcheance`",
+    garde: "gesteDeVerification — l'appel à `verifierLEcheance`",
     fichier: FINS,
     avant:
       '    journal(nom, surveillance.verifierLEcheance() ? "echeance-depassee" : "echeance-tenue");',
@@ -121,7 +122,7 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "un onglet qui PART en arrière-plan ne vérifie rien",
-    garde: "verifier — la condition de VISIBILITÉ",
+    garde: "gesteDeVerification — la condition de VISIBILITÉ",
     fichier: FINS,
     avant:
       '    if (nom === "visibilitychange" && racine.visibilityState !== "visible") {\n' +
