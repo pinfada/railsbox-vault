@@ -2165,10 +2165,18 @@ peut être dite « mesurée sur trois moteurs » que si l'épreuve tourne sur tr
 **Ce que cela coûte à la RECETTE, et ce qui en a été fait.** Ces attentes portent le job
 `Qualité et tests` de `ci.yml` au-delà de vingt minutes — la dernière recette verte de `main` tenait
 en 15 min 08 s —, et une recette annulée sur son plafond ne dit rien de ce qu'elle mesurait. Le
-plafond est donc porté à **trente minutes**, avec son compte écrit dans le fichier : trente secondes
-pour le Worker muet, quarante pour le Worker lent (#163), une minute pour le verrouillage par
-inactivité et une minute et demie pour son témoin négatif (#169). Quatre minutes pendant lesquelles
-rien ne calcule, et qu'aucune parallélisation ne raccourcit : une borne de temps se paie en temps.
+plafond est donc relevé, avec son compte écrit dans le fichier : trente secondes pour le Worker
+muet, quarante pour le Worker lent (#163), une minute pour le verrouillage par inactivité et une
+minute et demie pour son témoin négatif (#169). Quatre minutes pendant lesquelles rien ne calcule,
+et qu'aucune parallélisation ne raccourcit : une borne de temps se paie en temps.
+
+**Le chiffre, corrigé le 9 septembre 2026 (#170).** Cette page annonçait « trente minutes » pendant
+que `ci.yml` en portait **vingt-cinq** : la page disait une intention, le fichier tenait la règle,
+et c'est le fichier qui décide. Le plafond est désormais de **vingt-huit minutes**, et il est écrit
+ici tel qu'il est là-bas. Le motif du relèvement est lui aussi une mesure : le dernier run de la
+branche de #170 avant que la suite des fins d'onglet entre dans le gate a tenu en **20 min 42 s** —
+l'exécutant partagé décide de bien plus que les attentes annoncées —, et cette suite ajoute environ
+55 s.
 
 **Deux, et pas trois.** Une troisième épreuve vérifiait que la valeur PAR DÉFAUT de dix minutes
 n'était pas atteinte plus tôt. Elle a été retirée avant la fusion, et le dire vaut mieux que la
