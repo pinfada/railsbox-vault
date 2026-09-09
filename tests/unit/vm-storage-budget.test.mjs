@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -423,4 +424,53 @@ test("bindNavigatorStorage tolère un gestionnaire de stockage absent", () => {
   assert.equal(primitives.estimate, undefined);
   assert.equal(primitives.persist, undefined);
   assert.equal(primitives.persisted, undefined);
+});
+
+// --- La borne de décision : UNE valeur, et une seule dans tout le dépôt (#168) ---------------------
+
+test("aucun autre module ne redéfinit la borne de décision de la persistance", async () => {
+  // Le défaut visé n'est pas théorique : `src/compat/page-probe.mjs` portait sa PROPRE constante de
+  // quatre secondes pour la même invite. Deux valeurs pour une question — « au bout de combien de
+  // temps une invite devient-elle indéterminée ? » — finissent toujours par répondre deux choses.
+  const racine = new URL("../../src/", import.meta.url);
+  const fichiers = [
+    "vm/storage-budget.mjs",
+    "vm/persistence-conduct.mjs",
+    "compat/page-probe.mjs",
+    "compat/probe-runner.mjs",
+  ];
+
+  const definitions = [];
+  for (const fichier of fichiers) {
+    const source = await readFile(new URL(fichier, racine), "utf8");
+    if (/(?:const|let|var)\s+PERSIST_DECISION_TIMEOUT_MS\s*=/.test(source))
+      definitions.push(fichier);
+  }
+
+  assert.deepEqual(
+    definitions,
+    ["vm/storage-budget.mjs"],
+    "la borne se définit dans la couche budget, et nulle part ailleurs",
+  );
+});
+
+test("la couche de conduite NOMME la borne qui produit son verdict d'attente", async () => {
+  const { PERSIST_DECISION_TIMEOUT_MS: borneDeLaConduite, PERSISTENCE_VERDICTS } =
+    await import("../../src/vm/persistence-conduct.mjs");
+
+  assert.equal(borneDeLaConduite, PERSIST_DECISION_TIMEOUT_MS);
+  assert.equal(PERSISTENCE_VERDICTS.pending, "pending");
+});
+
+test("la sonde de compatibilité emprunte la borne du produit au lieu d'en poser une seconde", async () => {
+  const source = await readFile(
+    new URL("../../src/compat/page-probe.mjs", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /import \{ PERSIST_DECISION_TIMEOUT_MS \} from "\.\.\/vm\/storage-budget\.mjs"/,
+  );
+  assert.match(source, /PERSIST_DECISION_TIMEOUT_MS,/);
 });

@@ -181,6 +181,31 @@ jour où un moteur changerait d'avis — un vert par vacuité. Mesuré le 9 sept
 épreuves vertes en 14,7 s**, sans réseau ni artefact ; Firefox y passe quatre secondes dans sa
 borne, et pas deux minutes dans un blocage comme avant #168.
 
+**La campagne de mutation de la borne** (`node tools/muter-gardes-persistance.mjs`, **4/4**) retire
+les quatre gardes une à une du texte réel et rejoue l'épreuve qui devrait les couvrir : la borne
+elle-même (`persist()` attendu nu — l'épreuve n'a alors plus d'issue et le mutant meurt au délai du
+banc d'essai), la branche qui rend `pending` (rangée avec les refus), le délai passé à la borne
+(remis à zéro, ce qui requalifierait en attente une décision rendue en cinq millisecondes), et la
+branche `pending → ATTENTE_RESOLUTION` de la conduite. Une suite verte ne prouve pas qu'une garde
+tient : elle prouve qu'on ne l'a pas encore retirée.
+
+**Une seule valeur, et une épreuve qui l'exige.** `PERSIST_DECISION_TIMEOUT_MS` se définit dans
+`src/vm/storage-budget.mjs`, où la demande est faite, et nulle part ailleurs. La couche de conduite
+la réexporte — un lecteur doit pouvoir répondre à « au bout de combien de temps une invite
+devient-elle indéterminée ? » sans changer de fichier — et `src/compat/page-probe.mjs`, qui portait
+sa PROPRE constante de quatre secondes pour la même invite, l'emprunte désormais. Trois épreuves
+unitaires le tiennent : aucune autre définition dans les quatre modules concernés, la conduite nomme
+bien la borne de son verdict, et la sonde l'importe au lieu de la recopier. Deux réponses à une même
+question finissent toujours par différer.
+
+**Pourquoi quatre secondes.** Quand un moteur décide, il décide en millisecondes : Chromium refuse
+en 0–1 ms, Firefox sous préférence d'essai accorde en 6–8 ms ou refuse en 0–2 ms. Quand Firefox n'a
+pas de réponse à donner, il n'est pas lent — il ne répond **jamais** : la promesse était encore
+pendante au-delà de quinze secondes d'observation, sur dix essais, avec ou sans geste utilisateur
+préalable. Quatre secondes sont donc mille fois la décision la plus lente jamais mesurée, et une
+fraction de l'attente sans fin qu'elles remplacent. Elles ne coupent aucune décision réelle ; elles
+nomment l'absence de décision.
+
 Cette conduite suit celle des épreuves COOP/COEP de la frontière d'origine : mesurer partout,
 asserter là où la capacité existe, et ne jamais rendre vert un relevé qui n'a rien mesuré.
 
