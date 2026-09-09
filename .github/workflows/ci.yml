@@ -28,7 +28,14 @@ jobs:
     # pendant qu'un projet attend. Vingt-cinq minutes sont donc une MARGE, pas une nécessité : 16 min
     # 21 s tenaient déjà sous l'ancien plafond de vingt. La marge est prise pour un exécutant partagé
     # plus lent, et elle reste assez basse pour que le plafond morde encore.
-    timeout-minutes: 25
+    #
+    # Portée de 25 à 28 minutes le 9 septembre 2026 (#170), et le motif est encore une MESURE, pas
+    # une précaution : le dernier run de cette branche AVANT que la suite des fins d'onglet entre
+    # dans `npm run check` a tenu en **20 min 42 s** (run 34314197368) — bien au-delà des 16 min
+    # 21 s relevées sur #174, l'exécutant partagé décidant du reste. La suite ajoute environ **55 s**
+    # mesurées en local, sur trois moteurs. Trois minutes de marge sur un exécutant qui varie déjà
+    # de quatre ne sont pas une marge ; vingt-huit en laissent six, et le plafond mord encore.
+    timeout-minutes: 28
     steps:
       - name: Récupération du dépôt
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
