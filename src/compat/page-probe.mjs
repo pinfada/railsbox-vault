@@ -25,10 +25,14 @@ import {
   withTimeout,
 } from "./probe-runner.mjs";
 import { MINIMAL_WASM_EXPECTATION, MINIMAL_WASM_MODULE } from "./probe-vectors.mjs";
+// La borne de décision de la persistance est celle du PRODUIT, empruntée et jamais recopiée (#168).
+// Une sonde qui attendrait plus longtemps que le produit publierait une capacité que le produit
+// n'obtient jamais ; une sonde qui attendrait moins publierait un refus que le produit ne voit pas.
+// C'est le seul lien de ce module vers `src/vm/`, et il porte une valeur, pas une politique.
+import { PERSIST_DECISION_TIMEOUT_MS } from "../vm/storage-budget.mjs";
 
 const WORKER_HANDSHAKE_TIMEOUT_MS = 30_000;
 const CHANNEL_TIMEOUT_MS = 5_000;
-const PERSIST_DECISION_TIMEOUT_MS = 4_000;
 
 let uniqueCounter = 0;
 

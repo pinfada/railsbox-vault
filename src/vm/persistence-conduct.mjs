@@ -25,9 +25,20 @@ import {
   BUDGET_DIAGNOSTIC_CODES,
   BudgetDiagnostic,
   BUDGET_SEVERITY,
+  PERSIST_DECISION_TIMEOUT_MS,
   RECOVERY_ACTIONS,
   isBudgetDiagnostic,
 } from "./storage-budget.mjs";
+
+/**
+ * La borne qui PRODUIT le verdict `pending`, réexportée ici et jamais redéfinie (#168).
+ *
+ * Elle vit dans #9, où la demande est faite ; elle est nommée ici, où le verdict est interprété,
+ * parce qu'un lecteur de la conduite doit pouvoir répondre à « au bout de combien de temps une
+ * invite devient-elle indéterminée ? » sans changer de fichier. Deux délais pour la même invite
+ * seraient deux réponses à cette question, et un jour elles différeraient.
+ */
+export { PERSIST_DECISION_TIMEOUT_MS };
 
 /**
  * États de persistance acceptés en entrée. Ils normalisent le `state` rendu par `requestPersistence()`
