@@ -153,14 +153,16 @@ function gesteDeGel({ journal }) {
  *
  * Un onglet qui PART en arrière-plan n'a rien à rattraper : le temps continue de courir de toute
  * façon, et `visibilite` reste un signal SANS EFFET (ADR 0031, décision 2, intacte).
+ *
+ * **Le journal n'est écrit que si l'échéance était DÉPASSÉE**, pour le motif de `gesteDeRetour` : un
+ * `visibilitychange` arrive à chaque aller-retour entre onglets, et l'inscrire à chaque fois ferait
+ * grossir sans borne un relevé que la coquille PUBLIE dans son document. Le journal du cycle dit ce
+ * qui arrive, pas ce qui arrive toujours.
  */
 function gesteDeVerification({ racine, surveillance, journal }, nom) {
   return () => {
-    if (nom === "visibilitychange" && racine.visibilityState !== "visible") {
-      journal(nom, "arriere-plan");
-      return;
-    }
-    journal(nom, surveillance.verifierLEcheance() ? "echeance-depassee" : "echeance-tenue");
+    if (nom === "visibilitychange" && racine.visibilityState !== "visible") return;
+    if (surveillance.verifierLEcheance()) journal(nom, "echeance-depassee");
   };
 }
 

@@ -32,6 +32,8 @@
 // Une sonde qui l'armerait partout mesurerait donc sa propre instrumentation dans la ligne
 // « restauré depuis le bfcache ». Il est armé par un drapeau, et la sonde compare les deux relevés.
 
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+
 /** Le canal, et la clé du témoin. Publics et sans valeur : ce sont des noms, pas des secrets. */
 export const CANAL = "fins-d-onglet-170";
 
@@ -180,7 +182,6 @@ export function evenementsDe(traces) {
  * même moteur sont écrasés situation par situation, jamais fusionnés en silence.
  */
 export async function publier(moteur, situation, valeur) {
-  const { mkdir, readFile, writeFile } = await import("node:fs/promises");
   const dossier = new URL("../../reports/fins-d-onglet/", import.meta.url);
   await mkdir(dossier, { recursive: true });
   const fichier = new URL(`${moteur}.json`, dossier);
