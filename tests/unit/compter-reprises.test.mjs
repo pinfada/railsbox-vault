@@ -15,7 +15,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { enMarkdown, lireRapport, releverReprises } from "../../tools/compter-reprises.mjs";
+import {
+  composerReleve,
+  enMarkdown,
+  lireRapport,
+  releverReprises,
+} from "../../tools/compter-reprises.mjs";
 
 /** Une épreuve jouée `essais` fois dans un projet donné, au format du rapport JSON de Playwright. */
 function epreuve({ titre, ligne, projet, essais, statut }) {
@@ -160,4 +165,22 @@ test("les suites imbriquées sont parcourues : un describe ne cache pas une repr
 
 test("un rapport illisible LÈVE : une absence de mesure n'est jamais un zéro reprise", async () => {
   await assert.rejects(() => lireRapport(path.join(tmpdir(), "rapport-qui-n-existe-pas.json")));
+});
+
+test("aucun rapport lu : le relevé dit qu'il n'a rien mesuré, il ne publie pas zéro", () => {
+  const texte = composerReleve([], ["playwright-report/rapport.json : ENOENT"]);
+
+  assert.match(texte, /Aucun rapport lu : le compte des reprises n'a PAS été mesuré/);
+  assert.doesNotMatch(texte, /Aucune épreuve reprise/);
+  assert.match(texte, /Rapport\(s\) non lu\(s\)/);
+});
+
+test("un rapport lu ET un rapport manquant : le compte est publié, l'absence aussi", () => {
+  const texte = composerReleve(
+    [{ essais: 1, statut: "expected" }],
+    ["autre-rapport.json : ENOENT"],
+  );
+
+  assert.match(texte, /Aucune épreuve reprise : les 1 épreuves/);
+  assert.match(texte, /autre-rapport\.json/);
 });
