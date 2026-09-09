@@ -108,8 +108,19 @@ export default defineConfig({
   // la mesure relèverait la contention au lieu du comportement du moteur.
   workers: 1,
   timeout: 300_000,
-  retries: 0,
-  reporter: process.env.CI ? [["list"], ["github"]] : "list",
+  // La reprise n'existe qu'en CI, et elle est COMPTÉE (#178, décision du 10 septembre 2026). La
+  // politique est la même pour les trois suites du gate : un rouge sans information, sur un
+  // flottement du harnais que cinq campagnes de mesure n'ont pas su attribuer, bloquerait les
+  // fusions sans rien apprendre à personne. Le rapport JSON va dans son propre fichier, et
+  // `tools/compter-reprises.mjs` lit les trois pour publier le compte en nommant la suite d'origine.
+  retries: process.env.CI ? 2 : 0,
+  reporter: process.env.CI
+    ? [
+        ["list"],
+        ["github"],
+        ["json", { outputFile: "playwright-report/rapport-fins-d-onglet.json" }],
+      ]
+    : "list",
   use: {
     baseURL: FINS_ORIGIN,
     trace: "retain-on-failure",

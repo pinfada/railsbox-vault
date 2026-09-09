@@ -39,8 +39,9 @@ function epreuve({ titre, ligne, projet, essais, statut }) {
 }
 
 /** Un rapport minimal : une suite de fichier portant les specs données. */
-function rapport(specs, sousSuites = []) {
+function rapport(specs, sousSuites = [], racine = "/depot/tests/browser") {
   return {
+    config: { rootDir: racine },
     suites: [
       {
         title: "exemple.spec.mjs",
@@ -183,4 +184,88 @@ test("un rapport lu ET un rapport manquant : le compte est publié, l'absence au
 
   assert.match(texte, /Aucune épreuve reprise : les 1 épreuves/);
   assert.match(texte, /autre-rapport\.json/);
+});
+
+// --- Plusieurs suites, et le nom de celle d'où vient chaque reprise (10/09/2026) -------------------
+
+test("le relevé NOMME la suite d'origine de chaque reprise, lue du rapport lui-même", async () => {
+  const navigateur = await ecrireRapport(
+    rapport([
+      epreuve({ titre: "au gate", ligne: 12, projet: "firefox", essais: 2, statut: "flaky" }),
+    ]),
+  );
+  const finsDOnglet = await ecrireRapport(
+    rapport(
+      [
+        epreuve({
+          titre: "à la fin d'onglet",
+          ligne: 431,
+          projet: "firefox",
+          essais: 2,
+          statut: "flaky",
+        }),
+      ],
+      [],
+      "/depot/tests/fins-d-onglet",
+    ),
+  );
+
+  const releve = releverReprises([
+    ...(await lireRapport(navigateur)),
+    ...(await lireRapport(finsDOnglet)),
+  ]);
+  const markdown = enMarkdown(releve);
+
+  assert.equal(releve.jouees, 2);
+  assert.equal(releve.reprises.length, 2);
+  assert.deepEqual([...new Set(releve.reprises.map((r) => r.suite))].sort(), [
+    "browser",
+    "fins-d-onglet",
+  ]);
+  // Le nom de la suite vient de `config.rootDir`, pas du nom du fichier passé en argument : une
+  // étiquette venue de la ligne de commande pourrait mentir sans que rien ne le voie.
+  assert.match(markdown, /\| fins-d-onglet \| `tests\/browser\/exemple\.spec\.mjs:431`/);
+  assert.match(markdown, /Suite\(s\) touchée\(s\) : browser, fins-d-onglet/);
+});
+
+test("trois rapports dont un absent : le compte est publié ET le rapport non lu est NOMMÉ", async () => {
+  const navigateur = await ecrireRapport(
+    rapport([
+      epreuve({ titre: "au gate", ligne: 12, projet: "firefox", essais: 2, statut: "flaky" }),
+    ]),
+  );
+  const compat = await ecrireRapport(
+    rapport(
+      [
+        epreuve({
+          titre: "à la compat",
+          ligne: 52,
+          projet: "webkit",
+          essais: 1,
+          statut: "expected",
+        }),
+      ],
+      [],
+      "/depot/tests/compat",
+    ),
+  );
+  const manquant = path.join(tmpdir(), "rapport-fins-d-onglet-qui-n-existe-pas.json");
+
+  const epreuves = [];
+  const absents = [];
+  for (const chemin of [navigateur, compat, manquant]) {
+    try {
+      epreuves.push(...(await lireRapport(chemin)));
+    } catch (erreur) {
+      absents.push(`${chemin} : ${erreur.message}`);
+    }
+  }
+  const texte = composerReleve(epreuves, absents);
+
+  // Ce qui a été lu est compté…
+  assert.match(texte, /\*\*1 épreuve\(s\) reprise\(s\)\*\* sur 2 jouée\(s\)/);
+  assert.match(texte, /Suite\(s\) touchée\(s\) : browser/);
+  // …et ce qui ne l'a pas été est NOMMÉ, sinon deux suites sur trois passeraient pour comptées.
+  assert.match(texte, /Rapport\(s\) non lu\(s\), donc non comptés/);
+  assert.match(texte, /rapport-fins-d-onglet-qui-n-existe-pas\.json/);
 });

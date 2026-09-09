@@ -2363,15 +2363,18 @@ de 28 : les reprises mangent la marge, et un jour un peu plus lent le plafond ex
 
 1. **Une épreuve reprise n'est pas verte : elle est TOLÉRÉE.** « Flaky » n'est pas un état du
    produit, c'est un aveu du harnais, et un aveu se lit.
-2. **Le compte est PUBLIÉ à chaque run.** `tools/compter-reprises.mjs` lit le rapport JSON de
-   Playwright (`playwright-report/rapport.json`, rapporteur ajouté pour cela) et écrit dans le
-   résumé du job le nombre d'épreuves reprises, leurs noms, leur projet — donc leur moteur — et leur
-   nombre d'essais. L'étape tourne en `if: always()`, y compris quand le gate a échoué, où le compte
-   est le plus utile. Elle ne rougit jamais : elle publie. L'outil est éprouvé par
+2. **Le compte est PUBLIÉ à chaque run.** `tools/compter-reprises.mjs` lit les rapports JSON de
+   Playwright (rapporteur ajouté pour cela) et écrit dans le résumé du job le nombre d'épreuves
+   reprises, leurs noms, **la suite d'où elles viennent**, leur projet — donc leur moteur — et leur
+   nombre d'essais. La suite est lue dans le rapport lui-même (`config.rootDir`), jamais dans le nom
+   du fichier passé en argument : une étiquette venue de la ligne de commande pourrait mentir sans
+   que rien ne le voie. L'étape tourne en `if: always()`, y compris quand le gate a échoué, où le
+   compte est le plus utile. Elle ne rougit jamais : elle publie. L'outil est éprouvé par
    `tests/unit/compter-reprises.test.mjs` sur un rapport à zéro reprise, un à une reprise, un où une
    épreuve a été reprise deux fois, une épreuve restée ROUGE après ses reprises, un `describe`
-   imbriqué, et un rapport illisible — qui LÈVE, parce qu'une absence de mesure n'est jamais un
-   zéro.
+   imbriqué, deux suites dont chacune est nommée, **trois rapports dont un absent — le résumé dit
+   lequel n'a pas été lu** —, et un rapport illisible, qui LÈVE parce qu'une absence de mesure n'est
+   jamais un zéro.
 3. **`retries: 2` reste tant que la cause n'est pas mesurée.** Le retirer aujourd'hui rendrait la CI
    rouge environ une fois par run sur un flottement que quatre campagnes de mesure n'ont pas su
    attribuer (§ suivant) ; ce serait échanger un mensonge contre un bruit.
@@ -2379,6 +2382,15 @@ de 28 : les reprises mangent la marge, et un jour un peu plus lent le plafond ex
    punirait les tranches pour un défaut du harnais, et le compte publié suffit à ne pas le cacher.
    **Cette phrase se revisite le jour où la cause est mesurée** : ce jour-là, `retries` retombe à 0
    et une reprise redevient un échec.
+5. **La reprise n'existe qu'en CI, elle est comptée, et elle s'applique à TOUTES les suites du gate
+   depuis le 10 septembre 2026.** `playwright.config.mjs` la portait seule ; `test:compat` et
+   `test:fins-d-onglet` jouaient sans filet, et le flottement de #178 a fait rougir la seconde deux
+   fois sur cinq runs d'une même branche — sans qu'aucun compte ne dise pourquoi. Un rouge sans
+   information sur un flottement non attribué bloquerait les fusions sans rien apprendre à personne
+   ; une reprise COMPTÉE et PUBLIÉE, elle, apprend. Les trois suites rendent donc chacune son
+   rapport (`rapport.json`, `rapport-compat.json`, `rapport-fins-d-onglet.json`), et l'étape les lit
+   toutes les trois. En local, `retries` reste à 0 partout : le gate local trébuche, et c'est ce qui
+   a permis de mesurer le flottement.
 
 ### Le flottement Firefox : quatre hypothèses, quatre éliminations, une limite (#178)
 

@@ -10,18 +10,22 @@
 // flottement non attribué punirait les tranches pour un défaut du harnais ; le compte publié suffit
 // à ne pas le cacher. La règle est écrite dans `docs/testing.md`.
 //
+// Depuis le 10 septembre 2026, les TROIS suites du gate jouent avec `retries: 2` en CI et rendent
+// chacune son rapport : l'outil en lit plusieurs, et NOMME la suite d'origine de chaque reprise —
+// un compte qui ne dirait pas d'où vient la reprise obligerait à rouvrir les journaux pour le savoir.
+//
 // Usage : node tools/compter-reprises.mjs <rapport.json> [autres rapports…]
 // Le relevé va sur la sortie standard, et s'ajoute à `$GITHUB_STEP_SUMMARY` quand la variable existe.
 
 import { appendFile, readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Un essai de plus que l'unique essai attendu : voilà ce qu'est une reprise. */
 const ESSAIS_SANS_REPRISE = 1;
 
 /** Titre du relevé, le même qu'il compte quelque chose ou qu'il dise n'avoir rien lu. */
-const TITRE = "## Épreuves reprises — suite navigateur";
+const TITRE = "## Épreuves reprises — suites du gate";
 
 /**
  * Parcourt l'arbre des suites d'un rapport Playwright et rend un enregistrement par épreuve JOUÉE.
@@ -29,14 +33,16 @@ const TITRE = "## Épreuves reprises — suite navigateur";
  * un `result` par essai : c'est LUI qui compte les reprises, jamais le statut annoncé.
  *
  * @param {{ suites?: unknown[] }} noeud
- * @param {Array<{ fichier: string, ligne: number, titre: string, projet: string, essais: number, statut: string }>} recueil
+ * @param {Array<{ suite: string, fichier: string, ligne: number, titre: string, projet: string, essais: number, statut: string }>} recueil
+ * @param {string} suite nom de la suite d'où vient ce rapport
  */
-function recueillir(noeud, recueil) {
-  for (const suite of noeud?.suites ?? []) {
-    for (const spec of suite.specs ?? []) {
+function recueillir(noeud, recueil, suite) {
+  for (const sousSuite of noeud?.suites ?? []) {
+    for (const spec of sousSuite.specs ?? []) {
       for (const epreuve of spec.tests ?? []) {
         recueil.push({
-          fichier: spec.file ?? suite.file ?? "fichier inconnu",
+          suite,
+          fichier: spec.file ?? sousSuite.file ?? "fichier inconnu",
           ligne: spec.line ?? 0,
           titre: spec.title ?? "épreuve sans titre",
           projet: epreuve.projectName || "projet sans nom",
@@ -45,7 +51,7 @@ function recueillir(noeud, recueil) {
         });
       }
     }
-    recueillir(suite, recueil);
+    recueillir(sousSuite, recueil, suite);
   }
   return recueil;
 }
@@ -55,12 +61,22 @@ function recueillir(noeud, recueil) {
  * jamais un zéro, et l'appelant doit pouvoir le dire — sinon le relevé publierait « aucune reprise »
  * là où rien n'a été lu.
  *
+ * Le nom de la SUITE est lu dans le rapport lui-même (`config.rootDir`, donc `tests/<suite>`) et non
+ * dans le nom du fichier passé en argument : une étiquette qui viendrait de la ligne de commande
+ * pourrait mentir sans que rien ne le voie.
+ *
  * @param {string} chemin
  */
 export async function lireRapport(chemin) {
   const brut = await readFile(chemin, "utf8");
   const rapport = JSON.parse(brut);
-  return recueillir(rapport, []);
+  const racine = rapport?.config?.rootDir;
+  // `basename` gère les deux séparateurs et les fins de chemin : `tests/browser`, `tests\browser` et
+  // `tests/browser/` rendent tous « browser ». Faute de racine, le nom du fichier fait l'affaire —
+  // il vaut mieux une étiquette approximative qu'une colonne vide.
+  const suite =
+    typeof racine === "string" && racine.length > 0 ? basename(racine) : basename(chemin, ".json");
+  return recueillir(rapport, [], suite);
 }
 
 /**
@@ -73,7 +89,13 @@ export async function lireRapport(chemin) {
 export function releverReprises(epreuves) {
   const reprises = epreuves
     .filter((epreuve) => epreuve.essais > ESSAIS_SANS_REPRISE)
-    .sort((a, b) => b.essais - a.essais || a.fichier.localeCompare(b.fichier) || a.ligne - b.ligne);
+    .sort(
+      (a, b) =>
+        b.essais - a.essais ||
+        a.suite.localeCompare(b.suite) ||
+        a.fichier.localeCompare(b.fichier) ||
+        a.ligne - b.ligne,
+    );
   return {
     jouees: epreuves.length,
     reprises,
@@ -100,6 +122,9 @@ function issue(epreuve) {
  */
 export function enMarkdown(releve) {
   const lignes = [TITRE, ""];
+  // Les suites TOUCHÉES, nommées en tête : « six reprises » ne dit pas si le gate a trébuché dans la
+  // suite navigateur, qui les tolère, ou dans une autre — et ce n'est pas la même nouvelle.
+  const suites = [...new Set(releve.reprises.map((epreuve) => epreuve.suite))].sort();
   if (releve.reprises.length === 0) {
     lignes.push(
       `Aucune épreuve reprise : les ${releve.jouees} épreuves ont été jouées une seule fois.`,
@@ -110,14 +135,15 @@ export function enMarkdown(releve) {
   lignes.push(
     `**${releve.reprises.length} épreuve(s) reprise(s)** sur ${releve.jouees} jouée(s), ` +
       `pour ${releve.essaisSupplementaires} essai(s) supplémentaire(s). ` +
+      `Suite(s) touchée(s) : ${suites.join(", ")}. ` +
       "Une épreuve reprise n'est pas verte : elle est tolérée (`docs/testing.md`).",
     "",
-    "| Épreuve | Projet (moteur) | Essais | Issue |",
-    "| --- | --- | --- | --- |",
+    "| Suite | Épreuve | Projet (moteur) | Essais | Issue |",
+    "| --- | --- | --- | --- | --- |",
   );
   for (const epreuve of releve.reprises) {
     lignes.push(
-      `| \`${epreuve.fichier}:${epreuve.ligne}\` — ${epreuve.titre} | ${epreuve.projet} | ${epreuve.essais} | ${issue(epreuve)} |`,
+      `| ${epreuve.suite} | \`${epreuve.fichier}:${epreuve.ligne}\` — ${epreuve.titre} | ${epreuve.projet} | ${epreuve.essais} | ${issue(epreuve)} |`,
     );
   }
   lignes.push("");
