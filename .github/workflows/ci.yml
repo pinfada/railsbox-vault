@@ -35,6 +35,21 @@ jobs:
     # 21 s relevées sur #174, l'exécutant partagé décidant du reste. La suite ajoute environ **55 s**
     # mesurées en local, sur trois moteurs. Trois minutes de marge sur un exécutant qui varie déjà
     # de quatre ne sont pas une marge ; vingt-huit en laissent six, et le plafond mord encore.
+    #
+    # **Le plafond ne bouge pas le 9 septembre 2026 (#178), et c'est une décision mesurée.** Le run
+    # 34395610878 de cette branche a été TUÉ au plafond, à 28 min 34 s, pendant
+    # `test:fins-d-onglet`. Ce n'est pas le volume de la suite qui l'a fait déborder : ce sont les
+    # BLOCAGES du flottement Firefox. Sept épreuves reprises, dont les sept premiers essais ont
+    # expiré à 120 s chacun — quatorze minutes de temps de test sur deux ouvriers, sept minutes de
+    # pendule —, plus une expiration à 300 s dans `test:fins-d-onglet`. La suite navigateur a rendu
+    # 19 min 30 s là où, sans ces sept blocages, elle en aurait rendu douze et demie.
+    #
+    # Un run SANS reprise tient donc autour de **vingt minutes**, et vingt-huit en laissent huit de
+    # marge : c'est la règle de #177 appliquée telle quelle. Ce qui manquait, c'était que le coût
+    # d'UN blocage reste borné. Il l'est depuis cette tranche : `navigationTimeout: 60_000` dans
+    # `playwright.config.mjs` et `playwright.fins-d-onglet.config.mjs` ramène un blocage de 120 s à
+    # 60 et un de 300 s à 60, sans rien cacher — l'épreuve échoue quand même, la reprise est comptée,
+    # et le compte est publié dans le résumé du job par l'étape ci-dessous.
     timeout-minutes: 28
     steps:
       - name: Récupération du dépôt

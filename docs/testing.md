@@ -2379,6 +2379,24 @@ Isolée — cinquante navigations réparties sur cinq documents, deux moteurs �
 jamais. Le taux tient autour d'**une perte par passage**, quel que soit le nombre d'épreuves du
 passage.
 
+**Ce que le flottement COÛTE, mesuré en CI.** Le run 34395610878 (9 septembre 2026, cette tranche) a
+été **tué au plafond de vingt-huit minutes**, à 28 min 34 s, pendant `test:fins-d-onglet`. Le compte
+publié dit pourquoi : **sept épreuves reprises sur 340**, toutes Firefox, et les sept premiers
+essais ont expiré à **120 s chacun** sur `page.goto` — quatorze minutes de temps de test, sept
+minutes de pendule sur deux ouvriers. `test:fins-d-onglet`, qui joue avec `retries: 0`, a perdu en
+plus une épreuve sur le même geste, à **300 s**
+(`page.goto("/index.html", { waitUntil: "commit" })`). La suite navigateur a rendu 19 min 30 s là
+où, sans ces blocages, elle en aurait rendu douze et demie.
+
+**La borne de navigation, et ce qu'elle n'est pas.** `navigationTimeout: 60_000` est posé dans
+`playwright.config.mjs` et `playwright.fins-d-onglet.config.mjs` — les deux configurations où le
+blocage a été mesuré. Ce n'est pas un délai raccourci « pour voir » : une navigation vers un
+document servi en local prend une centaine de millisecondes et jamais plus de 487 ms sur cent essais
+isolés, et quand le flottement la saisit elle ne prend pas plus longtemps — **elle ne rend jamais la
+main**. Soixante secondes valent cent vingt fois la plus lente navigation saine relevée. La borne ne
+cache rien : l'épreuve échoue, la reprise est comptée, le compte est publié. Elle empêche seulement
+UN blocage du harnais de manger la marge du gate, et ramène un blocage de 300 s à 60.
+
 **La limite.** Aucune des quatre hypothèses de l'issue ne reproduit. Ce qui reste, et que ces
 mesures ne tranchent pas : le canal de protocole entre Playwright et Firefox — c'est-à-dire le
 harnais, pas le produit. Tant que ce n'est pas mesuré, `retries: 2` reste en CI et le compte est

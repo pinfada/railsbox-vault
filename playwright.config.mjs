@@ -170,6 +170,20 @@ export default defineConfig({
   use: {
     baseURL: `http://${SHELL_HOST}:${SHELL_PORT}`,
     trace: "retain-on-failure",
+    // BORNE DE NAVIGATION (#178). Une navigation vers un document servi en local prend, mesurée
+    // isolément sur cent essais, une centaine de millisecondes et jamais plus de 487 ms. Quand le
+    // flottement Firefox la saisit, elle ne prend pas « plus longtemps » : elle ne rend JAMAIS la
+    // main, et emporte alors tout le budget de l'épreuve — cent vingt secondes ici, cinq minutes dans
+    // `playwright.fins-d-onglet.config.mjs`. Le run 34395610878 l'a payé sept fois : sept épreuves
+    // reprises, sept premiers essais expirés à 120 s, quatorze minutes de temps de test sur deux
+    // ouvriers, et le job tué au plafond de vingt-huit minutes.
+    //
+    // Soixante secondes sont donc une borne, pas un raccourci : elles valent cent vingt fois la plus
+    // lente navigation saine jamais relevée, et c'est la valeur que ce dépôt emploie déjà là où il
+    // veut être généreux sous charge (`toHaveAttribute` de `coquille-frontiere.spec.mjs`). Elle ne
+    // cache rien : l'épreuve échoue quand même, la reprise est comptée, et le compte est publié à
+    // chaque run. Elle empêche seulement UN blocage du harnais de manger la marge du gate.
+    navigationTimeout: 60_000,
   },
   webServer: [
     {
