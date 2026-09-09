@@ -2433,21 +2433,27 @@ UN blocage du harnais de manger la marge du gate, et ramène un blocage de 300 s
 **Trois runs consécutifs sur le commit final, et ce qu'ils disent.** Le compte est publié dans les
 trois, et c'est le but de l'outil ; le reste est un relevé, pas une victoire.
 
-| Run | Durée     | Suite navigateur | Reprises publiées | Verdict                                                              |
-| --- | --------- | ---------------- | ----------------- | -------------------------------------------------------------------- |
-| 1   | 19 min 09 | 14 min 24        | 7 sur 328         | vert                                                                 |
-| 2   | 19 min 41 | 15 min 18        | 8 sur 328         | vert                                                                 |
-| 3   | 17 min 28 | 12 min 12        | 2 sur 328         | **rouge** — `test:fins-d-onglet`, pas le gate ni la suite navigateur |
+| Run | Durée     | Suite navigateur | Reprises publiées | Verdict                                                      |
+| --- | --------- | ---------------- | ----------------- | ------------------------------------------------------------ |
+| 1   | 19 min 09 | 14 min 24        | 7 sur 328         | vert                                                         |
+| 2   | 19 min 41 | 15 min 18        | 8 sur 328         | vert                                                         |
+| 3   | 17 min 28 | 12 min 12        | 2 sur 328         | **rouge** — `fins-d-onglet.spec.mjs:681`, `page.goto` expiré |
+| 4   | 20 min 20 | 14 min 00        | 6 sur 328         | **rouge** — `fins-d-onglet.spec.mjs:431`, `page.goto` expiré |
 
-Le rouge du troisième mérite d'être lu en entier, parce qu'il est le fait le plus dur de cette
-tranche. Il ne vient ni d'une régression, ni d'une épreuve du produit : `test:fins-d-onglet` joue
-avec `retries: 0`, et le flottement de #178 l'a saisi sur `fins-d-onglet.spec.mjs:681` —
-`page.goto: Timeout 60000ms exceeded`, le geste et le message exacts des vingt-huit autres pertes
-relevées ici. **Le flottement peut donc rendre le gate ROUGE**, et pas seulement lui manger sa marge
-: il suffit qu'il tombe sur la seule suite qui n'a pas de filet. Aucune reprise n'est ajoutée là
-pour le masquer — ce serait échanger un rouge honnête contre un vert faux —, et la conséquence est
-écrite ici : tant que la cause n'est pas mesurée, une fusion peut être retardée par un défaut du
-harnais, et il faut relancer.
+(Le run 4 porte le commit final ; il ne diffère du commit des trois premiers que par cette page.)
+
+Les rouges méritent d'être lus en entier, parce qu'ils sont le fait le plus dur de cette tranche.
+Ils ne viennent ni d'une régression, ni d'une épreuve du produit : `test:fins-d-onglet` joue avec
+`retries: 0`, et le flottement de #178 l'y a saisi **deux fois sur cinq runs de cette branche** —
+`fins-d-onglet.spec.mjs:681` puis `:431`, chaque fois `page.goto: Timeout 60000ms exceeded`, le
+geste et le message exacts des trente autres pertes relevées ici. **Le flottement peut donc rendre
+le gate ROUGE**, et pas seulement lui manger sa marge : il suffit qu'il tombe sur la seule suite qui
+n'a pas de filet. Aucune reprise n'est ajoutée là pour le masquer — ce serait échanger un rouge
+honnête contre un vert faux. Ce que la borne change quand même : avant elle, le tout premier run de
+cette branche avait perdu `fins-d-onglet.spec.mjs:590` au bout de **300 s**, ce qui prouve que ces
+navigations ne sont pas lentes mais SANS FIN, et que les borner ne fabrique aucun faux échec. La
+conséquence, elle, est écrite : tant que la cause n'est pas mesurée, une fusion peut être retardée
+par un défaut du harnais, et il faut relancer.
 
 **La limite.** Aucune des quatre hypothèses de l'issue ne reproduit. Ce qui reste, et que ces
 mesures ne tranchent pas : le canal de protocole entre Playwright et Firefox — c'est-à-dire le
