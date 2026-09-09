@@ -192,11 +192,17 @@ async function installerLEnregistreur(page) {
  * hôte-là la dérivation de l'ADR 0002 ne rend rien : la coquille se termine alors en `sans-cadre`,
  * ce qui est sa conduite juste et n'a rien à voir avec le déverrouillage. Le signal de disponibilité
  * du déverrouillage est donc l'interface elle-même.
+ *
+ * `commit` plutôt que le `load` par défaut, et ce n'est pas une commodité : le `load` du document de
+ * la coquille attend le CADRE APPLICATIF, créé dynamiquement sur une autre origine, alors que ce que
+ * l'épreuve attend est l'interface — la ligne suivante, qui est une vraie attente. Ce couplage a
+ * produit des expirations sur Firefox, relevées par la revue de sécurité de la PR #177 et par le
+ * gate ; il n'apportait rien à aucune épreuve de cette suite.
  */
 async function ouvrirLaCoquille(page, parametres = {}, origine = SHELL_ORIGIN) {
   const url = new URL("/index.html", origine);
   for (const [nom, valeur] of Object.entries(parametres)) url.searchParams.set(nom, valeur);
-  await page.goto(url.toString());
+  await page.goto(url.toString(), { waitUntil: "commit" });
   await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });
 }
 
