@@ -201,7 +201,11 @@ test("`pagehide` sur un coffre OUVERT termine le Worker, une seule fois, et dés
   assert.equal(montee.surveillance.armee(), true);
   montee.contexte.declencher("pagehide", { persisted: false });
   assert.equal(montee.terminaisons.length, 1);
-  assert.equal(montee.surveillance.armee(), false, "le délai continue de courir sur un coffre mort");
+  assert.equal(
+    montee.surveillance.armee(),
+    false,
+    "le délai continue de courir sur un coffre mort",
+  );
   assert.equal(montee.temps.armees, 0, "une minuterie survit au départ du document");
   // RIEN d'autre : ni rechargement, ni verrouillage. Aucune tâche asynchrone n'est garantie dans
   // `pagehide`, et « tenter » une fermeture propre qui n'aboutira pas serait moins honnête que de
@@ -381,12 +385,17 @@ test("aucun `beforeunload` ni `unload` n'est branché dans le produit — le cli
       if (source.includes(porte)) defauts.push(`${fichier} : ${porte}`);
     }
   }
-  assert.deepEqual(defauts, [], "un événement de fin d'onglet interdit est branché dans le produit");
+  assert.deepEqual(
+    defauts,
+    [],
+    "un événement de fin d'onglet interdit est branché dans le produit",
+  );
 });
 
 test("le cliquet MORD : présenté à un branchement interdit, il le relève", async () => {
   // Un cliquet à vide passe toujours. Celui-ci est confronté à la ligne exacte qu'il doit refuser.
-  const contrefacon = 'racine.addEventListener("beforeunload", (evenement) => evenement.preventDefault());';
+  const contrefacon =
+    'racine.addEventListener("beforeunload", (evenement) => evenement.preventDefault());';
   const releves = PORTES.filter((porte) => contrefacon.includes(porte));
   assert.deepEqual(releves, ['addEventListener("beforeunload"']);
   // Et il ne confond pas les deux : « unload » ne mord pas sur « beforeunload ».

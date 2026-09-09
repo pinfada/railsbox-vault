@@ -104,10 +104,71 @@ export const EVENEMENTS_DE_FIN = Object.freeze({
 export const EVENEMENTS_JAMAIS_BRANCHES = Object.freeze(["beforeunload", "unload"]);
 
 /**
+ * Le geste de `pagehide` : le Worker meurt MAINTENANT, et le délai est désarmé.
+ *
+ * L'ordre compte. Le `terminate()` d'abord, parce qu'il est la seule chose que le moteur puisse
+ * encore garantir dans cette tâche-ci ; le désarmement ensuite, pour qu'aucune minuterie ne survive
+ * à un document mis en cache.
+ *
+ * `persisted` est INSCRIT au journal et n'est jamais CONSULTÉ : le relevé dit ce que le moteur a
+ * annoncé, et la conduite ne s'en sert pas. Écrire le premier sans employer le second est la façon
+ * dont cette décision se lit dans un journal.
+ */
+function gesteDeFin({ surveillance, coffreOuvert, tuerLeWorker, journal }) {
+  return (evenement) => {
+    if (!coffreOuvert()) {
+      journal("pagehide", "coffre-non-ouvert");
+      return;
+    }
+    tuerLeWorker();
+    surveillance.desarmer();
+    journal("pagehide", evenement?.persisted === true ? "tue-persiste" : "tue");
+  };
+}
+
+/**
+ * Le geste de `pageshow` : le rechargement, et RIEN d'autre, sur un document RESTAURÉ.
+ *
+ * **Un `pageshow` non restauré n'écrit RIEN au journal**, et c'est une décision : il en arrive un à
+ * CHAQUE chargement, si bien que l'inscrire mettrait « le document s'est chargé » en tête du journal
+ * du cycle, avant l'étape 1. Le journal du cycle dit ce qui ARRIVE, pas ce qui arrive toujours —
+ * `tests/browser/coquille-frontiere.spec.mjs` › « le canal privilégié est établi AVANT que le cadre
+ * applicatif existe » lit sa première entrée, et elle lui appartient.
+ */
+function gesteDeRetour({ recharger, journal }) {
+  return (evenement) => {
+    if (evenement?.persisted !== true) return;
+    journal("pageshow", "restaure-recharge");
+    recharger();
+  };
+}
+
+/** Le geste du GEL : vu, inscrit, et rien de plus. Voir n'est pas agir. */
+function gesteDeGel({ journal }) {
+  return () => journal("freeze", "sans-effet");
+}
+
+/**
+ * Le geste du RETOUR : l'échéance est relue sur l'horloge, et jamais remise à zéro.
+ *
+ * Un onglet qui PART en arrière-plan n'a rien à rattraper : le temps continue de courir de toute
+ * façon, et `visibilite` reste un signal SANS EFFET (ADR 0031, décision 2, intacte).
+ */
+function gesteDeVerification({ racine, surveillance, journal }, nom) {
+  return () => {
+    if (nom === "visibilitychange" && racine.visibilityState !== "visible") {
+      journal(nom, "arriere-plan");
+      return;
+    }
+    journal(nom, surveillance.verifierLEcheance() ? "echeance-depassee" : "echeance-tenue");
+  };
+}
+
+/**
  * BRANCHE les fins d'onglet sur le document et la fenêtre de la coquille.
  *
- * Les écouteurs sont PASSIFS — ils n'annulent rien et ne peuvent rien annuler : aucun des cinq
- * n'est annulable, et c'est précisément ce qui distingue la famille de `beforeunload`.
+ * Les écouteurs sont PASSIFS — ils n'annulent rien et ne peuvent rien annuler : aucun des cinq n'est
+ * annulable, et c'est précisément ce qui distingue la famille de `beforeunload`.
  *
  * @param {{
  *   racine: Document,
@@ -119,69 +180,16 @@ export const EVENEMENTS_JAMAIS_BRANCHES = Object.freeze(["beforeunload", "unload
  *   journal?: (evenement: string, action: string) => void,
  * }} liaison
  */
-export function brancherLesFinsDOnglet({
-  racine,
-  fenetre,
-  surveillance,
-  coffreOuvert,
-  tuerLeWorker,
-  recharger,
-  journal = () => {},
-}) {
-  const cibles = { document: racine, fenetre };
-
-  /**
-   * `pagehide` : le Worker meurt MAINTENANT, et le délai est désarmé.
-   *
-   * L'ordre compte : le `terminate()` d'abord, parce qu'il est la seule chose que le moteur puisse
-   * encore garantir dans cette tâche-ci ; le désarmement ensuite, pour qu'aucune minuterie ne
-   * survive à un document mis en cache.
-   */
-  const surLaFin = (evenement) => {
-    if (!coffreOuvert()) {
-      journal("pagehide", "coffre-non-ouvert");
-      return;
-    }
-    tuerLeWorker();
-    surveillance.desarmer();
-    // `persisted` est INSCRIT et n'est pas CONSULTÉ : le relevé dit ce que le moteur a annoncé, et
-    // la conduite ne s'en sert pas. Écrire le premier sans employer le second est la façon dont
-    // cette décision se lit dans un journal.
-    journal("pagehide", evenement?.persisted === true ? "tue-persiste" : "tue");
-  };
-
-  /** `pageshow` : le rechargement, et RIEN d'autre, sur un document RESTAURÉ. */
-  const surLeRetour = (evenement) => {
-    if (evenement?.persisted !== true) {
-      journal("pageshow", "document-neuf");
-      return;
-    }
-    journal("pageshow", "restaure-recharge");
-    recharger();
-  };
-
-  /** Le GEL : vu, inscrit, et rien de plus. Voir n'est pas agir. */
-  const surLeGel = () => journal("freeze", "sans-effet");
-
-  /** Le RETOUR : l'échéance est relue sur l'horloge, jamais remise à zéro. */
-  const verifier = (nom) => () => {
-    // Un onglet qui PART en arrière-plan n'a rien à rattraper : le temps continue de courir de toute
-    // façon, et `visibilite` reste un signal SANS EFFET (ADR 0031, décision 2, intacte).
-    if (nom === "visibilitychange" && racine.visibilityState !== "visible") {
-      journal(nom, "arriere-plan");
-      return;
-    }
-    journal(nom, surveillance.verifierLEcheance() ? "echeance-depassee" : "echeance-tenue");
-  };
-
+export function brancherLesFinsDOnglet({ journal = () => {}, ...reste }) {
+  const liaison = { ...reste, journal };
+  const cibles = { document: liaison.racine, fenetre: liaison.fenetre };
   const gestes = {
-    pagehide: surLaFin,
-    pageshow: surLeRetour,
-    freeze: surLeGel,
-    resume: verifier("resume"),
-    visibilitychange: verifier("visibilitychange"),
+    pagehide: gesteDeFin(liaison),
+    pageshow: gesteDeRetour(liaison),
+    freeze: gesteDeGel(liaison),
+    resume: gesteDeVerification(liaison, "resume"),
+    visibilitychange: gesteDeVerification(liaison, "visibilitychange"),
   };
-
   for (const [evenement, { cible }] of Object.entries(EVENEMENTS_DE_FIN)) {
     cibles[cible].addEventListener(evenement, gestes[evenement], { passive: true });
   }

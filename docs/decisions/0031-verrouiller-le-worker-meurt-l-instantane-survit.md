@@ -109,10 +109,18 @@ est assumé : ce qui se perd est une trace d'interface, pas une donnée.
 
 ### L'ASYMÉTRIE avec la mort, assumée et écrite
 
-| Événement                 | Ce que la coquille fait de son écran                                    | Pourquoi                                                            |
-| ------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| MORT du Worker (imprévue) | elle RESTE affichée : relevé, cause, et le bouton « Rouvrir le coffre » | il s'est passé quelque chose, et l'utilisateur doit pouvoir le voir |
-| VERROUILLAGE (voulu)      | elle RECHARGE d'elle-même ; aucun bouton n'est offert                   | l'utilisateur vient de le demander ; il n'y a rien à lui apprendre  |
+| Événement                 | Ce que la coquille fait de son écran                                    | Pourquoi                                                                              |
+| ------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| MORT du Worker (imprévue) | elle RESTE affichée : relevé, cause, et le bouton « Rouvrir le coffre » | il s'est passé quelque chose, et l'utilisateur doit pouvoir le voir                   |
+| VERROUILLAGE (voulu)      | elle RECHARGE d'elle-même ; aucun bouton n'est offert                   | l'utilisateur vient de le demander ; il n'y a rien à lui apprendre                    |
+| RETOUR depuis le bfcache  | elle RECHARGE d'elle-même, par ce même chemin                           | c'est lui qui navigue, et le document restauré porte un cadre dont le Worker est mort |
+
+> **Ligne ajoutée le 2026-09-09 (#170,
+> [ADR 0032](0032-les-fins-d-onglet-ce-que-le-moteur-livre.md))** : le retour depuis le bfcache
+> rejoint le VERROUILLAGE et non la MORT, et le motif est celui de la colonne — la conduite « page
+> conservée + Rouvrir » de #163 est pour l'imprévu que l'utilisateur doit VOIR ; ici c'est lui qui
+> navigue. Aucun moteur ne restaure un document sous le harnais de ce dépôt : cette ligne est une
+> garde éprouvée en unitaire et mutée, pas un comportement observé.
 
 **Ce n'est PAS une réouverture automatique.** Après le rechargement, la coquille est en
 `verrouille`, l'interface de déverrouillage est remontée, **aucune dérivation ne part sans geste**,
@@ -281,6 +289,15 @@ qu'elle l'est, dix minutes est un compromis entre deux limites, et non un chiffr
 **Aucun événement de fin d'onglet n'est écouté** — ni `pagehide`, ni `freeze`, ni `beforeunload` —,
 et rien n'est promis à leur sujet. C'est #170, et une épreuve unitaire refuse leur entrée dans la
 table des événements d'activité.
+
+> **Note datée du 2026-09-09 (#170, [ADR 0032](0032-les-fins-d-onglet-ce-que-le-moteur-livre.md))**
+> : trois d'entre eux le sont désormais, et deux ne le seront jamais. `pagehide` termine le Worker
+> sur un coffre ouvert, `pageshow` restauré recharge, le gel n'est qu'inscrit, `resume` et le retour
+> à la visibilité VÉRIFIENT l'échéance ; `beforeunload` et `unload` restent nommés comme jamais
+> branchés, et un cliquet balaie la page et `src/coquille/` pour qu'aucun ne s'y glisse. **Ce
+> paragraphe-ci reste vrai sur le point qui compte** : aucune fin d'onglet n'est un signal
+> d'ACTIVITÉ, l'épreuve unitaire qui refuse leur entrée dans cette table-là est inchangée, et la
+> décision 2 ci-dessous n'est pas révisée.
 
 ### Ce que le déclencheur mesure, et comment on l'éprouve sans attendre dix minutes
 
@@ -466,7 +483,10 @@ elle le **déclare** au lieu de passer au vert par vacuité.
   son échéance, jusqu'au prochain réveil que le moteur consent. Aucune épreuve de ce dépôt ne mesure
   cet étirement : il demanderait plus de dix minutes d'attente réelle, et le mesurer sous un délai
   abaissé mesurerait autre chose. Ce que la coquille peut affirmer est qu'elle ne verrouille jamais
-  AVANT son délai ;
+  AVANT son délai. **Depuis #170 ([ADR 0032](0032-les-fins-d-onglet-ce-que-le-moteur-livre.md),
+  décision 1), c'est un plancher HONORÉ au retour** : sur `resume` et sur un retour à la visibilité,
+  l'échéance est relue sur l'horloge et le verrouillage est immédiat si elle est dépassée, au lieu
+  d'attendre le réveil d'une minuterie étirée ;
 - **le travail dans le cadre est invisible.** Voir la décision 2 : c'est la limite qui borne le
   choix de dix minutes, et elle est écrite là où le chiffre se justifie ;
 - **un verrouillage PENDANT un boot est refusé, pas différé.** Le geste rend
@@ -489,7 +509,10 @@ elle le **déclare** au lieu de passer au vert par vacuité.
 - **ce que Playwright ne simule pas** : ni une mise en veille du système, ni une éviction d'onglet
   sous pression mémoire, ni un `freeze` livré par le moteur, ni la mort du processus. Le
   verrouillage est déclenché par un bouton et par une minuterie — deux chemins réels, et l'aveu que
-  ce ne sont pas tous les chemins ;
+  ce ne sont pas tous les chemins. **#170 a mesuré cette liste au lieu de la supposer** : le gel
+  demandé par le protocole ne gèle rien, aucun onglet ne devient jamais caché, et aucun document
+  n'est jamais restauré depuis le bfcache — témoin positif compris
+  ([ADR 0032](0032-les-fins-d-onglet-ce-que-le-moteur-livre.md), § Limites) ;
 - **la présence n'est pas mesurable.** Un onglet au premier plan devant un bureau vide ne se
   distingue pas d'un onglet devant quelqu'un (décision 2) ;
 - **`terminate()` avant `close()` n'est pas éprouvé dans un NAVIGATEUR.** L'ordre est tenu par un

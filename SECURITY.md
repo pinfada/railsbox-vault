@@ -552,6 +552,18 @@ la VM, capture l'instantané, ferme les volumes (`close()`), **puis** termine le
 et la coquille se recharge : le cadre applicatif disparaît, la coquille revient `verrouille`, et
 rien n'est dérivé sans un nouveau geste.
 
+**Fermer l'onglet n'est pas verrouiller, et depuis #170 la coquille en fait quand même quelque
+chose** ([ADR 0032](docs/decisions/0032-les-fins-d-onglet-ce-que-le-moteur-livre.md)) : sur
+`pagehide`, elle termine le Worker de confiance tout de suite, sans capture ni `close()` — aucune
+tâche asynchrone n'est garantie là. L'avance ainsi gagnée sur une mort que la fermeture obtient de
+toute façon se paie : ce qui n'était pas acquitté est perdu, comme à toute coupure
+([ADR 0014](docs/decisions/0014-generation-transactionnelle.md)), et la réouverture est un boot à
+froid si aucun instantané cohérent n'existe. Le bouton « Verrouiller » reste le chemin qui paie une
+seconde au lieu de cent. **Aucun de ces écouteurs n'est une garantie** : la garantie est que rien
+n'est écrit nulle part, et c'est elle qu'une épreuve mesure sur les trois moteurs — l'onglet fermé
+sans aucun verrouillage, un document neuf du même profil lit `verrouille`, et la fouille des six
+stockages n'y retrouve pas la phrase.
+
 Ce qui se dit, et ce qui ne se dit pas : **le Worker qui détenait les clés est mort**. « Les clés
 sont effacées » ne s'écrit pas — effacer une `string` est impossible en JavaScript
 ([ADR 0021](docs/decisions/0021-derivation-des-cles-de-deverrouillage.md), décision 7), et
