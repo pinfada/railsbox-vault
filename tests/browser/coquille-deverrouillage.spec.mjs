@@ -61,12 +61,21 @@ import {
 import { DERIVATION_ERROR_CODES } from "../../src/vm/derivation/derivation-errors.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
 import { HARNAIS_CLE_JETON } from "../../src/vm/cle-de-volume.mjs";
+import { sonder } from "./sonde-des-stockages.mjs";
 
 /** La phrase des épreuves. Elle est PUBLIQUE et sans valeur : c'est un marqueur, pas un secret. */
 const PHRASE = "marqueur-de-phrase-de-la-coquille-162-cheval-batterie-agrafe-correcte";
 
 /** L'appât de la sonde : la même forme qu'un secret, pour prouver que la fouille trouve. */
 const APPAT = "appat-de-sonde-162-ce-texte-doit-etre-trouve";
+
+/**
+ * Les nœuds où le code de récupération est DÉLIBÉRÉMENT écrit, retirés avant la fouille du DOM.
+ *
+ * La sonde vérifie qu'il n'a pas ESSAIMÉ ailleurs dans la page, pas qu'il n'est nulle part : la
+ * feuille est le seul endroit où il vive, et c'est sa raison d'être.
+ */
+const NOEUDS_DU_CODE = Object.freeze(["feuille-code", "feuille-consigne"]);
 
 /** Délai large et EXPLICITE : Firefox paie deux secondes par dérivation, et douze projets tournent. */
 const DELAI = 60000;
@@ -718,156 +727,11 @@ test("le jeton du harnais ne déverrouille plus rien : l'appelant de PRODUIT n'e
   expect(trafic.includes(HARNAIS_CLE_JETON)).toBe(false);
 });
 
-// --- (d) La SONDE d'exfiltration, étendue à la coquille ---------------------------------------------
-
-/**
- * Dépose un APPÂT dans chaque stockage, puis fouille TOUT ce que l'origine de confiance porte.
- *
- * Elle rend du TEXTE, pas un verdict — comme celle de #22. Le verdict est l'affaire de l'épreuve,
- * qui y cherche des marqueurs qu'elle connaît, et qui vérifie d'abord que la fouille TROUVE ce qui
- * s'y trouve. Une recherche qui ne trouve jamais rien peut n'être qu'une recherche cassée.
- */
-async function sonder(page, appat) {
-  return page.evaluate(async (marqueur) => {
-    const morceaux = [];
-    const note = (ou, texte) => morceaux.push({ ou, texte });
-
-    try {
-      localStorage.setItem("vault-appat", marqueur);
-      sessionStorage.setItem("vault-appat", marqueur);
-    } catch {
-      /* un stockage refusé n'invalide pas les autres */
-    }
-    document.cookie = `vault-appat=${encodeURIComponent(marqueur)}; path=/`;
-    try {
-      const cache = await caches.open("vault-appat");
-      await cache.put(new Request("/vault-appat"), new Response(marqueur));
-    } catch {
-      /* Cache Storage peut manquer : la sonde le dira par une chaîne vide */
-    }
-    await new Promise((rendre) => {
-      if (!globalThis.indexedDB) return rendre();
-      const requete = indexedDB.open("vault-appat", 1);
-      requete.onupgradeneeded = () => requete.result.createObjectStore("appat");
-      requete.onsuccess = () => {
-        const base = requete.result;
-        const transaction = base.transaction("appat", "readwrite");
-        transaction.objectStore("appat").put(marqueur, "cle");
-        transaction.oncomplete = () => {
-          base.close();
-          rendre();
-        };
-        transaction.onerror = () => rendre();
-      };
-      requete.onerror = () => rendre();
-    });
-    try {
-      const racine = await navigator.storage.getDirectory();
-      const fichier = await racine.getFileHandle("vault-appat.txt", { create: true });
-      const flux = await fichier.createWritable();
-      await flux.write(marqueur);
-      await flux.close();
-    } catch {
-      /* OPFS peut manquer (WebKit) : la sonde le dira */
-    }
-
-    const lireStockage = (stockage) => {
-      if (!stockage) return "";
-      const lignes = [];
-      for (let index = 0; index < stockage.length; index += 1) {
-        const cle = stockage.key(index);
-        lignes.push(`${cle}=${stockage.getItem(cle)}`);
-      }
-      return lignes.join("\n");
-    };
-    note("localStorage", lireStockage(globalThis.localStorage));
-    note("sessionStorage", lireStockage(globalThis.sessionStorage));
-    note("cookies", document.cookie);
-
-    let indexedDb = "";
-    if (globalThis.indexedDB?.databases) {
-      const lignes = [];
-      for (const { name } of await indexedDB.databases()) {
-        if (!name) continue;
-        lignes.push(name);
-        lignes.push(
-          await new Promise((rendre) => {
-            const requete = indexedDB.open(name);
-            requete.onsuccess = () => {
-              const base = requete.result;
-              const magasins = [...base.objectStoreNames];
-              if (magasins.length === 0) {
-                base.close();
-                return rendre("");
-              }
-              const transaction = base.transaction(magasins, "readonly");
-              const lus = [];
-              for (const magasin of magasins) {
-                const tout = transaction.objectStore(magasin).getAll();
-                tout.onsuccess = () => lus.push(JSON.stringify(tout.result));
-              }
-              transaction.oncomplete = () => {
-                base.close();
-                rendre(lus.join("\n"));
-              };
-              transaction.onerror = () => rendre("");
-            };
-            requete.onerror = () => rendre("");
-          }),
-        );
-      }
-      indexedDb = lignes.join("\n");
-    }
-    note("indexedDB", indexedDb);
-
-    let cacheStorage = "";
-    if (globalThis.caches) {
-      const lignes = [];
-      for (const nom of await caches.keys()) {
-        const cache = await caches.open(nom);
-        for (const requete of await cache.keys()) {
-          lignes.push(requete.url, await (await cache.match(requete)).text());
-        }
-      }
-      cacheStorage = lignes.join("\n");
-    }
-    note("cacheStorage", cacheStorage);
-
-    // L'OPFS ENTIER, fichiers de volume et d'enveloppes compris, en texte ET en hexadécimal.
-    let opfs = "";
-    if (navigator.storage?.getDirectory) {
-      const lignes = [];
-      const parcourir = async (repertoire, prefixe) => {
-        for await (const [nom, poignee] of repertoire.entries()) {
-          lignes.push(`${prefixe}${nom}`);
-          if (poignee.kind === "directory") {
-            await parcourir(poignee, `${prefixe}${nom}/`);
-            continue;
-          }
-          const octets = new Uint8Array(await (await poignee.getFile()).arrayBuffer());
-          lignes.push(new TextDecoder("latin1").decode(octets));
-          let hex = "";
-          for (const octet of octets) hex += octet.toString(16).padStart(2, "0");
-          lignes.push(hex);
-        }
-      };
-      await parcourir(await navigator.storage.getDirectory(), "");
-      opfs = lignes.join("\n");
-    }
-    note("opfs", opfs);
-
-    // Les DEUX SENS des ports — privilégié ET restreint —, relevés au niveau de la plate-forme.
-    note("ports-envois", globalThis.__traficDesPorts.envois.join("\n"));
-    note("ports-recus", globalThis.__traficDesPorts.recus.join("\n"));
-    // Ce que le DOM montre, moins les nœuds où le code est délibérément écrit : la feuille est le
-    // seul endroit où il vive, et la sonde vérifie qu'il n'a pas essaimé ailleurs dans la page.
-    for (const identifiant of ["feuille-code", "feuille-consigne"]) {
-      document.querySelector(`#${identifiant}`).remove();
-    }
-    note("dom", document.documentElement.outerHTML);
-    return morceaux;
-  }, appat);
-}
+// --- (d) La SONDE d'exfiltration, étendue à la coquille ---------------------------------------
+//
+// La fouille elle-même vit dans `sonde-des-stockages.mjs`, partagée avec #170 : deux copies
+// auraient divergé au premier stockage ajouté, et la plus ancienne serait restée verte en
+// fouillant moins.
 
 test("AUCUN octet du secret ne se dépose, hors les canaux NOMMÉS de la coquille", async ({
   page,
@@ -884,7 +748,7 @@ test("AUCUN octet du secret ne se dépose, hors les canaux NOMMÉS de la coquill
   const sansTirets = code.replaceAll("-", "");
   const humaine = code.toLowerCase().replaceAll("-", " ").replaceAll("0", "o").replaceAll("1", "l");
 
-  const morceaux = await sonder(page, APPAT);
+  const morceaux = await sonder(page, APPAT, { noeudsARetirer: NOEUDS_DU_CODE });
   await attacher(
     info,
     "sonde",
@@ -1172,7 +1036,7 @@ test("APRÈS un verrouillage, rien du secret ne s'est déposé — et la sonde d
   // Rien n'a été dérivé sans geste : le rechargement n'est pas une réouverture.
   expect(apres.mesures.deverrouillageMs).toBeNull();
 
-  const morceaux = await sonder(page, APPAT);
+  const morceaux = await sonder(page, APPAT, { noeudsARetirer: NOEUDS_DU_CODE });
   await attacher(
     info,
     "sonde-apres-verrouillage",
@@ -1284,7 +1148,7 @@ test("APRÈS un verrouillage par le DÉLAI, rien du secret ne s'est déposé non
   const apres = await releve(page);
   expect(apres.mesures.deverrouillageMs, "rien n'a été dérivé sans geste").toBeNull();
 
-  const morceaux = await sonder(page, APPAT);
+  const morceaux = await sonder(page, APPAT, { noeudsARetirer: NOEUDS_DU_CODE });
   await attacher(
     info,
     "sonde-apres-delai",
