@@ -115,20 +115,15 @@ export const MUTATIONS = Object.freeze([
     nom: "le RETOUR vérifie l'échéance",
     garde: "gesteDeVerification — l'appel à `verifierLEcheance`",
     fichier: FINS,
-    avant:
-      '    journal(nom, surveillance.verifierLEcheance() ? "echeance-depassee" : "echeance-tenue");',
-    apres: '    journal(nom, "echeance-tenue");',
+    avant: '    if (surveillance.verifierLEcheance()) journal(nom, "echeance-depassee");\n',
+    apres: "",
     epreuves: [EPREUVE],
   },
   {
     nom: "un onglet qui PART en arrière-plan ne vérifie rien",
     garde: "gesteDeVerification — la condition de VISIBILITÉ",
     fichier: FINS,
-    avant:
-      '    if (nom === "visibilitychange" && racine.visibilityState !== "visible") {\n' +
-      '      journal(nom, "arriere-plan");\n' +
-      "      return;\n" +
-      "    }\n",
+    avant: '    if (nom === "visibilitychange" && racine.visibilityState !== "visible") return;\n',
     apres: "",
     epreuves: [EPREUVE],
   },
