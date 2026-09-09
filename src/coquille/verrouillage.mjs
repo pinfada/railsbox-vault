@@ -120,8 +120,10 @@ export const SIGNAUX_SANS_EFFET = Object.freeze(["barriere", "message-du-cadre",
  * souvent sans clic, et il ne coûte rien : il pose un nombre.
  *
  * **Ce que cette table ne porte PAS** : aucun événement de cycle de vie de page — `pagehide`,
- * `freeze`, `beforeunload`, `visibilitychange` comme signal d'activité. Les fins d'onglet sont la
- * tranche 2 (#170), et cette tranche ne promet rien à leur sujet.
+ * `freeze`, `beforeunload`, `visibilitychange` comme signal d'activité. Elle reste vraie après
+ * #170 : les fins d'onglet sont branchées ailleurs, par `fins-d-onglet.mjs`, et **aucune n'est un
+ * signal d'ACTIVITÉ** — elles tuent, rechargent ou vérifient, et rien de ce qu'elles font ne
+ * repousse une échéance (ADR 0032, décision 1).
  */
 export const EVENEMENTS_DACTIVITE = Object.freeze({
   pointerdown: "pointeur",
@@ -409,6 +411,30 @@ export function surveillanceDInactivite({
       if (minuterie === null) return false;
       if (!estUnSignalDActivite(nom)) return false;
       dernierSigneMs = maintenant();
+      return true;
+    },
+    /**
+     * VÉRIFIE l'échéance contre l'HORLOGE, et verrouille si elle est dépassée (#170, ADR 0032).
+     *
+     * C'est le pendant du contrôle de `verifier` ci-dessus, et il rattrape exactement ce que
+     * celui-ci ne rattrape pas : un réveil trop TARD, ou pas de réveil du tout. La limite écrite
+     * dans l'ADR 0031 disait « le délai est un PLANCHER, pas une ponctualité » ; il le reste, et
+     * devient un plancher HONORÉ au premier signe que l'onglet est revenu — un `resume`, ou un
+     * retour à la visibilité.
+     *
+     * **C'est une VÉRIFICATION, jamais une remise à zéro.** `dernierSigneMs` n'est pas touché, et
+     * l'échéance ne bouge pas : sans cela, un onglet qui va et vient repousserait le verrouillage
+     * indéfiniment, et le délai serait entre les mains de qui change d'onglet plutôt que de qui
+     * travaille. `visibilite` reste dans `SIGNAUX_SANS_EFFET` : la décision 2 de l'ADR 0031 est
+     * intacte, et c'est ce témoin-là qui le montre.
+     *
+     * Rend `true` si elle a verrouillé.
+     */
+    verifierLEcheance() {
+      if (minuterie === null) return false;
+      if (maintenant() - dernierSigneMs < delai) return false;
+      desarmer();
+      verrouiller();
       return true;
     },
     /** La surveillance court-elle ? */

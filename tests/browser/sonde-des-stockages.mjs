@@ -161,9 +161,13 @@ export async function sonder(page, appat, { noeudsARetirer = [] } = {}) {
       }
       note("opfs", opfs);
 
-      // Les DEUX SENS des ports — privilégié ET restreint —, relevés au niveau de la plate-forme.
-      note("ports-envois", globalThis.__traficDesPorts.envois.join("\n"));
-      note("ports-recus", globalThis.__traficDesPorts.recus.join("\n"));
+      // Les DEUX SENS des ports — privilégié ET restreint —, relevés au niveau de la plate-forme
+      // QUAND un enregistreur a été posé sur ce document. Sans lui, les deux lignes sont VIDES et
+      // le disent : une épreuve qui fouille un document NEUF, après la fermeture de celui qui
+      // portait le trafic (#170), n'a rien à relire, et une chaîne vide est un relevé, pas un oubli.
+      const trafic = globalThis.__traficDesPorts ?? { envois: [], recus: [] };
+      note("ports-envois", trafic.envois.join("\n"));
+      note("ports-recus", trafic.recus.join("\n"));
       // Ce que le DOM montre, moins les nœuds où le code est délibérément écrit : la feuille est le
       // seul endroit où il vive, et la sonde vérifie qu'il n'a pas essaimé ailleurs dans la page.
       for (const identifiant of noeudsARetirer) {
