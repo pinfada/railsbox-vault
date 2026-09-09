@@ -119,6 +119,9 @@ const CYCLE_DE_VIE = ["**/coquille-cycle-de-vie.spec.mjs", "**/entetes-durcissem
  */
 const PERSISTANCE = ["**/storage-budget.spec.mjs", "**/persistence-conduct.spec.mjs"];
 
+/** Les épreuves dont le résultat dépend de la RÉPONSE du moteur à l'invite de persistance. */
+const VERDICT_DE_PERSISTANCE = /@verdict-de-persistance/;
+
 /**
  * Préférences d'ESSAI de l'invite de persistance de Firefox. Elles n'existent que pour les harnais :
  * elles court-circuitent l'invite et posent la réponse. Hors de ces deux projets, rien ne les pose,
@@ -273,15 +276,23 @@ export default defineConfig({
       use: { browserName: nom },
       testMatch: PERSISTANCE,
     })),
+    // Les deux projets d'INVITE ne font varier qu'une chose : la réponse donnée à l'invite de
+    // Firefox. Ils ne jouent donc que les épreuves dont le résultat en dépend — deux, marquées
+    // `@verdict-de-persistance`. Rejouer l'estimation, la réservation, la classification de quota et
+    // les verdicts synthétiques du rendu n'apprendrait rien du moteur (c'est le même Firefox que le
+    // projet nu) et ajouterait douze navigations à une suite dont les navigations Firefox flottent
+    // (#178). Les trois projets NUS, eux, jouent tout : là, le moteur change.
     {
       name: "persistance-firefox-invite-accordee",
       use: { browserName: "firefox", ...invitePersistanceFirefox(true) },
       testMatch: PERSISTANCE,
+      grep: VERDICT_DE_PERSISTANCE,
     },
     {
       name: "persistance-firefox-invite-refusee",
       use: { browserName: "firefox", ...invitePersistanceFirefox(false) },
       testMatch: PERSISTANCE,
+      grep: VERDICT_DE_PERSISTANCE,
     },
   ],
 });

@@ -80,33 +80,36 @@ test("une attente pendante halte la décision : jamais durable, jamais volatile 
   expect(rendu.durableGuaranteed).toBe(false);
 });
 
-test("le vrai navigator.storage : l'invariant durable ⟹ accordé tient sur le verdict réel", async ({
-  page,
-}, testInfo) => {
-  await ouvrirBanc(page);
-  const rendu = await page.evaluate(() => globalThis.bancConduite.depuisNavigateur());
-  await testInfo.attach("conduite-navigateur.json", {
-    body: JSON.stringify(rendu, null, 2),
-    contentType: "application/json",
-  });
+// Marquée `@verdict-de-persistance` : voir le commentaire jumeau de `storage-budget.spec.mjs`.
+test(
+  "le vrai navigator.storage : l'invariant durable ⟹ accordé tient sur le verdict réel",
+  { tag: "@verdict-de-persistance" },
+  async ({ page }, testInfo) => {
+    await ouvrirBanc(page);
+    const rendu = await page.evaluate(() => globalThis.bancConduite.depuisNavigateur());
+    await testInfo.attach("conduite-navigateur.json", {
+      body: JSON.stringify(rendu, null, 2),
+      contentType: "application/json",
+    });
 
-  // Le verdict ATTENDU de ce projet : sans oracle, l'épreuve serait verte par vacuité (#168).
-  expect(verdictsAttendus(testInfo.project.name)).toContain(rendu.verdictState);
+    // Le verdict ATTENDU de ce projet : sans oracle, l'épreuve serait verte par vacuité (#168).
+    expect(verdictsAttendus(testInfo.project.name)).toContain(rendu.verdictState);
 
-  if (rendu.durableGuaranteed === true) {
-    // La durabilité garantie n'est atteignable QUE derrière un octroi réel.
-    expect(VERDICTS_DURABLES).toContain(rendu.verdictState);
-    expect(rendu.domShellState).toBe("DURABLE_GARANTI");
-    expect(rendu.domDurability).toBe("GARANTIE");
-  } else {
-    expect(rendu.domDurability).not.toBe("GARANTIE");
-    expect(rendu.domShellState).not.toBe("DURABLE_GARANTI");
-  }
+    if (rendu.durableGuaranteed === true) {
+      // La durabilité garantie n'est atteignable QUE derrière un octroi réel.
+      expect(VERDICTS_DURABLES).toContain(rendu.verdictState);
+      expect(rendu.domShellState).toBe("DURABLE_GARANTI");
+      expect(rendu.domDurability).toBe("GARANTIE");
+    } else {
+      expect(rendu.domDurability).not.toBe("GARANTIE");
+      expect(rendu.domShellState).not.toBe("DURABLE_GARANTI");
+    }
 
-  // L'invite non tranchée HALTE la décision : l'ADR 0006 refuse de la ranger avec les refus, et le
-  // banc rend maintenant ce verdict-là au lieu de se bloquer sur `persist()` (#168).
-  if (rendu.verdictState === "pending") {
-    expect(rendu.domShellState).toBe("ATTENTE_RESOLUTION");
-    expect(rendu.domDurability).toBe("INCONNUE");
-  }
-});
+    // L'invite non tranchée HALTE la décision : l'ADR 0006 refuse de la ranger avec les refus, et le
+    // banc rend maintenant ce verdict-là au lieu de se bloquer sur `persist()` (#168).
+    if (rendu.verdictState === "pending") {
+      expect(rendu.domShellState).toBe("ATTENTE_RESOLUTION");
+      expect(rendu.domDurability).toBe("INCONNUE");
+    }
+  },
+);
