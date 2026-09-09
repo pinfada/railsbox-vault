@@ -171,14 +171,20 @@ test("ce que le moteur livre à la FERMETURE d'un onglet, et par quel canal on l
       .filter(({ evenement }) => evenement === "pagehide")
       .map(({ persisted }) => persisted),
   };
+  // LE TÉMOIN POSITIF DU CANAL, relevé avec le reste : ce que le SUJET avait déjà fait parvenir au
+  // témoin AVANT sa fermeture. Le témoin reçoit aussi ses propres événements, et une épreuve qui
+  // compterait les deux passerait au vert sur un canal qui ne porte rien du sujet au témoin.
+  const duSujetAvant = avant.filter(({ url }) => !url.includes("role=temoin"));
+  releveDuCanal.temoinPositifDuCanal = evenementsDe(duSujetAvant);
   await attacher(info, "fermeture", releveDuCanal);
 
-  // AUCUNE assertion sur ce qu'un moteur DOIT livrer : c'est une mesure. La seule chose exigée est
-  // que la sonde ait su regarder — un témoin qui n'a jamais rien reçu ne mesure rien.
+  // AUCUNE assertion sur ce qu'un moteur DOIT livrer à la fermeture : c'est une mesure, et la
+  // matrice publie ce qu'elle a vu. Ce qui est EXIGÉ est que le canal porte du sujet au témoin — sans
+  // quoi « rien reçu à la fermeture » ne dirait rien du moteur, seulement du harnais.
   expect(
-    apres.length,
-    "le témoin n'a reçu aucun message : le canal d'observation ne mesure rien",
-  ).toBeGreaterThan(0);
+    releveDuCanal.temoinPositifDuCanal,
+    "le témoin n'a jamais rien reçu du sujet : le canal d'observation ne mesure rien",
+  ).toContain("pageshow");
 });
 
 test("ce que le moteur livre à la NAVIGATION sortante, puis au RETOUR ARRIÈRE", async ({
