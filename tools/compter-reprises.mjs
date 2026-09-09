@@ -20,6 +20,9 @@ import { fileURLToPath } from "node:url";
 /** Un essai de plus que l'unique essai attendu : voilà ce qu'est une reprise. */
 const ESSAIS_SANS_REPRISE = 1;
 
+/** Titre du relevé, le même qu'il compte quelque chose ou qu'il dise n'avoir rien lu. */
+const TITRE = "## Épreuves reprises — suite navigateur";
+
 /**
  * Parcourt l'arbre des suites d'un rapport Playwright et rend un enregistrement par épreuve JOUÉE.
  * Les suites s'imbriquent (fichier, `describe`), les `specs` portent les `tests`, et un `test` porte
@@ -36,7 +39,7 @@ function recueillir(noeud, recueil) {
           fichier: spec.file ?? suite.file ?? "fichier inconnu",
           ligne: spec.line ?? 0,
           titre: spec.title ?? "épreuve sans titre",
-          projet: epreuve.projectName ?? "projet inconnu",
+          projet: epreuve.projectName || "projet sans nom",
           essais: (epreuve.results ?? []).length,
           statut: epreuve.status ?? "inconnu",
         });
@@ -48,9 +51,9 @@ function recueillir(noeud, recueil) {
 }
 
 /**
- * Lit un rapport JSON et rend ses épreuves. Un rapport illisible est une ABSENCE de mesure, jamais
- * un zéro : l'appelant doit pouvoir le dire, sinon le relevé publierait « aucune reprise » là où
- * rien n'a été lu.
+ * Lit un rapport JSON et rend ses épreuves. Un rapport illisible LÈVE : c'est une ABSENCE de mesure,
+ * jamais un zéro, et l'appelant doit pouvoir le dire — sinon le relevé publierait « aucune reprise »
+ * là où rien n'a été lu.
  *
  * @param {string} chemin
  */
@@ -96,7 +99,7 @@ function issue(epreuve) {
  * @param {ReturnType<typeof releverReprises>} releve
  */
 export function enMarkdown(releve) {
-  const lignes = ["## Épreuves reprises — suite navigateur", ""];
+  const lignes = [TITRE, ""];
   if (releve.reprises.length === 0) {
     lignes.push(
       `Aucune épreuve reprise : les ${releve.jouees} épreuves ont été jouées une seule fois.`,
@@ -121,6 +124,27 @@ export function enMarkdown(releve) {
   return lignes.join("\n");
 }
 
+/**
+ * Compose le relevé publiable à partir des épreuves lues et des rapports qui ne l'ont pas été.
+ *
+ * Quand AUCUN rapport n'a été lu, le relevé ne prétend même pas compter : il dit qu'il n'a rien
+ * mesuré. Publier « aucune reprise » là où rien n'a été lu serait le défaut que cet outil corrige,
+ * déplacé d'un cran.
+ *
+ * @param {Array<{ essais: number }>} epreuves
+ * @param {string[]} absents descriptions des rapports non lus
+ */
+export function composerReleve(epreuves, absents) {
+  let texte =
+    epreuves.length === 0 && absents.length > 0
+      ? `${TITRE}\n\nAucun rapport lu : le compte des reprises n'a PAS été mesuré.\n`
+      : enMarkdown(releverReprises(epreuves));
+  if (absents.length > 0) {
+    texte += `\nRapport(s) non lu(s), donc non comptés :\n${absents.map((a) => `- ${a}`).join("\n")}\n`;
+  }
+  return texte;
+}
+
 async function principal(chemins) {
   if (chemins.length === 0) {
     process.stderr.write("Usage : node tools/compter-reprises.mjs <rapport.json> […]\n");
@@ -136,12 +160,7 @@ async function principal(chemins) {
     }
   }
 
-  let texte = enMarkdown(releverReprises(epreuves));
-  if (absents.length > 0) {
-    // Un rapport manquant n'est pas zéro reprise : le relevé le DIT, sinon il mentirait par silence.
-    texte += `\nRapport(s) non lu(s), donc non comptés :\n${absents.map((a) => `- ${a}`).join("\n")}\n`;
-  }
-
+  const texte = composerReleve(epreuves, absents);
   process.stdout.write(`${texte}\n`);
   if (process.env.GITHUB_STEP_SUMMARY) {
     await appendFile(process.env.GITHUB_STEP_SUMMARY, `${texte}\n`, "utf8");
