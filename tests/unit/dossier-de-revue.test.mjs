@@ -58,6 +58,12 @@ const PR_REELLE = "[PR #146](https://github.com/pinfada/railsbox-vault/pull/146)
 /** Une PR que le dossier ne cite nulle part : la garde doit la refuser. */
 const PR_INVENTEE = "[PR #999999](https://github.com/pinfada/railsbox-vault/pull/999999)";
 
+/** L'issue d'un constat OUVERT de la revue externe, telle que le registre la cite en preuve. */
+const ISSUE_OUVERTE_REELLE = "[#181](https://github.com/pinfada/railsbox-vault/issues/181)";
+
+/** Une issue que le dossier ne cite nulle part : une dette ne s'adosse pas à un numéro inventé. */
+const ISSUE_INVENTEE = "[#999999](https://github.com/pinfada/railsbox-vault/issues/999999)";
+
 /**
  * Les SEPT familles de refus que la spécification doit couvrir, code par code : format chiffré,
  * stockage, enveloppe de clé, dérivation des clés de déverrouillage, ARCHIVE et IMPORT depuis #149,
@@ -323,6 +329,13 @@ test("les vecteurs de disposition annoncent le format que le code écrit", async
  *    par `SECURITY.md`. Le recoupement est INTERNE, et il faut le dire : il ne prouve pas qu'un
  *    tiers a envoyé le constat, il prouve que le registre et le dossier parlent des mêmes numéros ;
  *  - la SÉVÉRITÉ et la DISPOSITION appartiennent au vocabulaire fermé du gabarit ;
+ *  - « OUVERT » est entré dans ce vocabulaire le 10 septembre 2026, avec la revue externe : ses deux
+ *    constats sont reçus et NON corrigés, et aucun des trois mots d'origine ne dit cela. « corrigé »
+ *    et « réfuté » seraient faux, « accepté » signifierait que le dépôt garde le défaut — c'est
+ *    l'inverse du contrat de #20, qui exige la correction d'un CRITICAL et d'un HIGH avant sa
+ *    fermeture. Une ligne « ouvert » est une DETTE NOMMÉE, pas une disposition, et sa preuve
+ *    opposable est l'ISSUE elle-même : elle porte le constat, sa reproduction et sa DoR. La garde
+ *    l'exige, et exige que le dossier reprenne ce numéro comme pour toute autre ligne ;
  *  - la PREUVE d'une disposition « corrigé » est le NUMÉRO DE PR, et son numéro doit être repris par
  *    le dossier. Ce n'est pas l'empreinte d'un commit, et c'est une correction : ce dépôt fusionne
  *    par « rebase and merge », si bien que GitHub RÉÉCRIT les empreintes en les portant sur `main`.
@@ -375,13 +388,18 @@ function defautsDuRegistre(registre, { commitExiste, adrExiste, numerosDuDossier
     if (!/^(CRITICAL|HIGH|MEDIUM|LOW)( → (CRITICAL|HIGH|MEDIUM|LOW))?$/.test(severite)) {
       defauts.push(`sévérité hors vocabulaire : « ${severite} »`);
     }
-    if (!/^(corrigé|accepté|réfuté)$/.test(disposition)) {
+    if (!/^(corrigé|accepté|réfuté|ouvert)$/.test(disposition)) {
       defauts.push(`disposition hors vocabulaire : « ${disposition} »`);
     }
 
     const empreintes = [...preuve.matchAll(/`([0-9a-f]{7,40})`/g)].map((trouve) => trouve[1]);
     const adrs = [...preuve.matchAll(/ADR\s*(\d{4})/g)].map((trouve) => trouve[1]);
     const prs = [...preuve.matchAll(/pinfada\/railsbox-vault\/pull\/(\d+)/g)].map(
+      (trouve) => trouve[1],
+    );
+    // La preuve d'une dette est l'ISSUE, et elle est soumise au même recoupement que le constat :
+    // un numéro que le dossier ne reprend nulle part ne serait pas opposable.
+    const issuesDeLaPreuve = [...preuve.matchAll(/pinfada\/railsbox-vault\/issues\/(\d+)/g)].map(
       (trouve) => trouve[1],
     );
     // Une empreinte est ADMISE, jamais requise — mais si elle est là, elle doit désigner un commit.
@@ -396,11 +414,22 @@ function defautsDuRegistre(registre, { commitExiste, adrExiste, numerosDuDossier
         defauts.push(`PR #${numero} absente du dossier (spécification § 9.6 ou SECURITY.md)`);
       }
     }
-    if (empreintes.length === 0 && adrs.length === 0 && prs.length === 0) {
+    for (const numero of issuesDeLaPreuve) {
+      if (!numerosDuDossier.has(numero)) {
+        defauts.push(`issue #${numero} absente du dossier (spécification § 9.6 ou SECURITY.md)`);
+      }
+    }
+    const preuveOuverte = disposition === "ouvert" && issuesDeLaPreuve.length > 0;
+    if (empreintes.length === 0 && adrs.length === 0 && prs.length === 0 && !preuveOuverte) {
       defauts.push(`preuve absente : « ${preuve} »`);
     }
     if (disposition === "corrigé" && prs.length === 0) {
       defauts.push("une disposition « corrigé » doit citer la PR qui corrige");
+    }
+    // Une dette dont la preuve serait un ADR ou une PR ne serait pas une dette : elle dirait qu'un
+    // travail a eu lieu. Ce qu'une ligne « ouvert » doit citer est l'issue qui porte le constat.
+    if (disposition === "ouvert" && issuesDeLaPreuve.length === 0) {
+      defauts.push("une disposition « ouvert » doit citer l'issue qui porte le constat");
     }
     // Symétrique de la précédente, et le registre l'écrivait déjà sans que rien ne le tienne :
     // « accepté » exige un amendement daté de l'ADR concerné. Une acceptation adossée à une seule
@@ -552,6 +581,27 @@ test("la garde du registre refuse une sévérité, une disposition ou une preuve
     "une empreinte citée doit exister, même quand elle n'est pas requise",
   );
   assert.deepEqual(ligne("HIGH", "corrigé", PR_REELLE), []);
+
+  // « OUVERT » — la dette nommée de la revue externe du 10 septembre 2026. Sa preuve est l'ISSUE,
+  // et rien d'autre ne la remplace : ni un ADR — qui dirait qu'une décision a fermé le constat —,
+  // ni une PR — qui dirait qu'un code l'a corrigé. Les deux mordent ici, dans les deux sens.
+  assert.deepEqual(
+    ligne("CRITICAL", "ouvert", ISSUE_OUVERTE_REELLE),
+    [],
+    "une dette qui cite son issue doit passer",
+  );
+  assert.ok(
+    ligne("CRITICAL", "ouvert", "ADR 0033").some((d) => d.includes("doit citer l'issue")),
+    "une dette adossée à un ADR seul doit être refusée",
+  );
+  assert.ok(
+    ligne("CRITICAL", "ouvert", PR_REELLE).some((d) => d.includes("doit citer l'issue")),
+    "une dette adossée à une PR seule doit être refusée",
+  );
+  assert.ok(
+    ligne("CRITICAL", "ouvert", ISSUE_INVENTEE).some((d) => d.includes("issue #999999")),
+    "une dette adossée à une issue absente du dossier doit être refusée",
+  );
 });
 
 /**
