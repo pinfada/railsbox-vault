@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
+import { tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
 import { createManifest, MANIFEST_FORMAT_VERSION } from "../../src/vm/volume-manifest.mjs";
 import { MANIFEST_ERROR_CODES, isManifestError } from "../../src/vm/manifest-errors.mjs";
 import { ARCHIVE_ERROR_CODES, isArchiveError } from "../../src/vm/archive-errors.mjs";
@@ -55,18 +56,47 @@ async function digestVolume(source) {
   return hash.digestHex();
 }
 
-function manifeste(volumeSize) {
+/**
+ * Identifiant du volume synthétique de ces suites. Il n'ouvre rien : elles éprouvent le CODEC
+ * d'archive, et aucun secteur n'y est déchiffré.
+ */
+const IDENTIFIANT_VOLUME = "0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e";
+
+/** Clé de volume de ces suites : publique, sans entropie. Elle ne scelle qu'un engagement. */
+const CLE = Uint8Array.from({ length: 32 }, (_, index) => 0x20 + index);
+
+/**
+ * La taille LOGIQUE dont le fichier v3 fait exactement `tailleFichier` octets.
+ *
+ * Elle est CHERCHÉE plutôt que calculée à l'envers : `tailleDeFichier` n'est pas inversible d'un
+ * trait — la région d'authentification est alignée au secteur supérieur —, et une formule inverse
+ * écrite à la main divergerait de la vraie au premier changement de géométrie.
+ */
+function tailleLogiquePourFichier(tailleFichier) {
+  for (let logique = SECTOR_SIZE; logique <= tailleFichier; logique += SECTOR_SIZE) {
+    if (tailleDeFichier({ formatVersion: 3, tailleLogique: logique }) === tailleFichier) {
+      return logique;
+    }
+  }
+  throw new RangeError(`Aucune taille logique ne donne un fichier v3 de ${tailleFichier} octets.`);
+}
+
+/**
+ * Le manifeste des suites d'export, au format v3.
+ *
+ * **Il l'est depuis #181, et il faut dire pourquoi.** Ces suites déclaraient un manifeste de format
+ * 2, pour éprouver le codec d'archive indépendamment du format de volume. Une archive v3 porte
+ * désormais un ENGAGEMENT, qui scelle l'IDENTITÉ du volume — et seul un manifeste v3 en déclare une.
+ * Ce qu'elles mesurent n'a pas changé : le conteneur, ses offsets, ses empreintes et ses refus.
+ */
+function manifeste(tailleFichier) {
   return createManifest({
     runtime: { version: "1.4.2", artifact: "sha256:abcdef", minWriter: "1.0.0" },
     app: { id: "railsbox/reference", version: "3.1.0" },
-    volumeSize,
+    volumeSize: tailleLogiquePourFichier(tailleFichier),
     identity: { algorithm: "sha-256", digest: null },
-    // FORMAT v2, et c'est délibéré (#18, ADR 0016) : ces suites éprouvent le CODEC d'archive, pas le
-    // format de volume. L'archive d'un volume v3 est refusée par ce chemin — elle doit porter le
-    // fichier chiffré TEL QUEL, ce que la tranche (b) livrera —, et
-    // `tests/unit/vm-archive-volume-chiffre.test.mjs` éprouve ce refus. Exporter ici un manifeste v3
-    // ne mesurerait donc plus que lui.
-    formatVersion: 2,
+    formatVersion: 3,
+    volume: { id: IDENTIFIANT_VOLUME, algorithm: "aes-256-gcm" },
   });
 }
 
@@ -104,12 +134,17 @@ test("aller-retour : l'archive se vérifie et porte l'empreinte du contenu dans 
     source,
     manifest: manifeste(source.size),
     consistency: cohérence,
+    cle: CLE,
   });
 
   // L'empreinte calculée est bien celle du CONTENU, et elle est inscrite dans identity.digest (#10).
   assert.equal(digest, attendu);
   assert.equal(manifest.identity.digest, attendu);
-  assert.equal(manifest.formatVersion, 2, "les suites d'archive portent sur un manifeste v2");
+  assert.equal(
+    manifest.formatVersion,
+    3,
+    "les suites d'archive portent sur un manifeste v3 (#181)",
+  );
   assert.equal(archive.byteLength, archiveLength);
 
   const verdict = await verifyArchive(archive);
@@ -125,12 +160,17 @@ test("archive ≤ 2× la taille logique et en-tête de quelques centaines d'octe
     source,
     manifest: manifeste(source.size),
     consistency: cohérence,
+    cle: CLE,
   });
   assert.ok(
     archive.byteLength <= 2 * source.size,
     `archive ${archive.byteLength} ≤ 2×${source.size}`,
   );
-  assert.ok(headerLength < 1024, `en-tête ${headerLength} octets`);
+  // Le plafond passe de 1 024 à 2 048 octets : l'en-tête d'une v3 porte l'ENGAGEMENT (#181), soit
+  // quatre champs hexadécimaux — sel, nonce, chiffré, étiquette — pour ≈ 200 octets de plus. Ce
+  // n'est pas un relâchement du budget : « quelques centaines d'octets » reste vrai, et le SURCOÛT
+  // que l'assertion suivante mesure est toujours le préambule plus l'en-tête, rien d'autre.
+  assert.ok(headerLength < 2048, `en-tête ${headerLength} octets`);
   // Surcoût = préambule + en-tête ; le reste est le contenu octet pour octet.
   assert.equal(archive.byteLength, PREAMBLE_BYTES + headerLength + source.size);
 });
@@ -144,6 +184,7 @@ test("streaming à surmémoire bornée : aucune lecture ne dépasse la taille de
     sink: { write: (bytes) => void chunks.push(bytes.slice()) },
     manifest: manifeste(source.size),
     consistency: cohérence,
+    cle: CLE,
     blockBytes,
   });
   // Ni la passe d'empreinte ni la passe de recopie ne demandent tout le volume d'un coup.
@@ -160,6 +201,7 @@ test("la vérification en streaming borne aussi ses lectures", async () => {
     source,
     manifest: manifeste(source.size),
     consistency: cohérence,
+    cle: CLE,
   });
   let maxLecture = 0;
   const read = (offset, length) => {
@@ -178,6 +220,7 @@ test("un octet de contenu altéré : empreinte non concordante, jamais un succè
     source,
     manifest: manifeste(source.size),
     consistency: cohérence,
+    cle: CLE,
   });
   const altérée = archive.slice();
   altérée[altérée.byteLength - 100] ^= 0x01; // un bit du contenu
@@ -193,6 +236,7 @@ test("archive tronquée : refus typé, jamais complétée par des zéros", async
     source,
     manifest: manifeste(source.size),
     consistency: cohérence,
+    cle: CLE,
   });
   const tronquée = archive.slice(0, archive.byteLength - 512);
   await assert.rejects(
@@ -212,6 +256,7 @@ test("marqueur binaire absent : archive malformée", async () => {
     source,
     manifest: manifeste(source.size),
     consistency: cohérence,
+    cle: CLE,
   });
   const sansMarqueur = archive.slice();
   sansMarqueur[0] ^= 0xff;
@@ -229,6 +274,7 @@ test("en-tête JSON corrompu : archive malformée", async () => {
     source,
     manifest: manifeste(source.size),
     consistency: cohérence,
+    cle: CLE,
   });
   const corrompue = archive.slice();
   // Le premier octet d'en-tête est '{' ; le remplacer casse le JSON sans toucher à sa longueur.
@@ -245,6 +291,7 @@ test("manifeste incompatible : le refus typé de #10 est propagé, pas reconditi
     source,
     manifest: manifeste(source.size),
     consistency: cohérence,
+    cle: CLE,
   });
   // L'application en cours n'est pas celle qui possède le volume : refus #10, pas #11.
   await assert.rejects(
@@ -281,6 +328,7 @@ test("export refusé si le manifeste et la source divergent en géométrie", asy
         source,
         manifest: manifeste(SECTOR_SIZE * 8), // taille déclarée ≠ taille réelle
         consistency: cohérence,
+        cle: CLE,
       }),
     (e) => isArchiveError(e, ARCHIVE_ERROR_CODES.geometryMismatch),
   );
@@ -294,6 +342,7 @@ test("la compatibilité du manifeste est vérifiée PAR DÉFAUT, sans attente à
     source,
     manifest: manifeste(source.size),
     consistency: cohérence,
+    cle: CLE,
   });
   // FORMAT FUTUR fabriqué APRÈS coup, en réécrivant l'en-tête d'une archive valide. L'export refuse
   // désormais tout manifeste v3 ou au-delà — un volume chiffré ne s'archive pas par ce chemin
@@ -329,6 +378,7 @@ test("l'algorithme d'empreinte est ÉPINGLÉ : une étiquette mensongère est re
     source,
     manifest: manifeste(source.size),
     consistency: cohérence,
+    cle: CLE,
   });
   const falsifiee = archiveAvecEnTete(archive, (entete) => {
     entete.content.algorithm = "sha-1";
@@ -345,6 +395,7 @@ test("le marqueur d'archive est reconnaissable AVANT toute interprétation", asy
     source,
     manifest: manifeste(source.size),
     consistency: cohérence,
+    cle: CLE,
   });
   assert.equal(hasArchiveMagic(archive), true);
   assert.equal(hasArchiveMagic(archive.subarray(0, ARCHIVE_MAGIC.byteLength)), true);
@@ -360,6 +411,7 @@ test("les trois garanties de cohérence connues sont acceptées et inscrites", a
       source,
       manifest: manifeste(source.size),
       consistency: { kind },
+      cle: CLE,
     });
     const verdict = await verifyArchive(archive);
     assert.equal(verdict.consistency.kind, kind);

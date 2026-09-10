@@ -122,11 +122,37 @@ async function banc({ flushDelay = 0, seuilPointDeControle } = {}) {
     adapter,
     journal,
   });
-  return { name, nomJournal, store, journal, backend, adapter, failures, master, bridge };
+  // Ce que la CRÉATION a déjà franchi sur le journal, avant que le guest n'ait rien demandé. Depuis
+  // #181, elle y écrit une RACINE INITIALE et la rend durable : le compte de départ vaut UN, et non
+  // plus zéro. Il est relevé plutôt qu'écrit en dur — ce banc mesure ce que la BARRIÈRE DU GUEST
+  // ajoute, et une création qui gagnerait un geste de plus ne doit pas le lui faire porter.
+  const barrieresDuJournalALaCreation = store.flushCount(nomJournal);
+  return {
+    name,
+    nomJournal,
+    store,
+    journal,
+    backend,
+    adapter,
+    failures,
+    master,
+    bridge,
+    barrieresDuJournalALaCreation,
+  };
 }
 
-async function fermer({ bridge, backend }) {
+/**
+ * Referme le banc, en LIBÉRANT d'abord toute barrière restée en vol.
+ *
+ * Sans cette libération, une assertion qui échoue AVANT son `releaseFlush` laisserait `close()`
+ * attendre un flush que plus personne ne débloquera : le banc pendrait, et avec lui la suite
+ * entière — un échec deviendrait un blocage, et le compte des épreuves ne serait jamais rendu.
+ */
+async function fermer({ bridge, backend, store, name, nomJournal }) {
   bridge.uninstall();
+  for (const fichier of [name, nomJournal]) {
+    if (store.isFlushPending(fichier)) store.releaseFlush(fichier);
+  }
   await backend.close();
 }
 
@@ -153,8 +179,14 @@ test("l'ordre écriture → flush → acquittement traverse le backend OPFS rée
     assert.ok(Math.max(...writes) < flushSeq, "toute écriture précède la barrière dans le journal");
     assert.ok(flushSeq < ackSeq, "l'acquittement suit la barrière");
     // DEUX flush réels du support pour la validation : la charge, puis la racine qui la scelle.
-    // L'ouverture d'un journal vierge n'en franchit aucune — elle n'écrit rien.
-    assert.equal(store.flushCount(nomJournal), 2, "l'acquittement suit des flush RÉELS du support");
+    // La CRÉATION en a franchi UN de plus depuis #181 — la racine initiale —, et le compte total
+    // vaut donc TROIS. C'est le DELTA qui est mesuré ici : ce que la barrière du guest ajoute.
+    assert.equal(banc0.barrieresDuJournalALaCreation, 1, "la création écrit sa racine initiale");
+    assert.equal(
+      store.flushCount(nomJournal) - banc0.barrieresDuJournalALaCreation,
+      2,
+      "l'acquittement suit des flush RÉELS du support",
+    );
     // La CRÉATION d'un volume v3 franchit déjà des barrières sur le fichier du volume — l'en-tête,
     // puis le scellement de tous ses secteurs (ADR 0016). Ce qui est mesuré ici est ce que la
     // BARRIÈRE DU GUEST y ajoute : rien, jusqu'au point de contrôle.
@@ -205,9 +237,13 @@ test("aucune barrière n'est acquittée au guest avant que le flush OPFS ait ren
       "le guest reste BSY tant que le flush n'a pas abouti",
     );
     assert.equal(master.irqs, 0, "aucun acquittement anticipé");
-    // Aucun flush n'a encore eu lieu : la barrière du guest est en vol, et l'ouverture d'un journal
-    // vierge n'en franchit aucune.
-    assert.equal(store.flushCount(nomJournal), 0, "le support n'a pas matérialisé cette barrière");
+    // La barrière du guest est en vol : le support n'a rien matérialisé DE PLUS que ce que la
+    // création avait déjà franchi (la racine initiale de #181).
+    assert.equal(
+      store.flushCount(nomJournal),
+      banc0.barrieresDuJournalALaCreation,
+      "le support n'a pas matérialisé cette barrière",
+    );
     assert.equal(
       journal.counts()[JOURNAL_OPERATIONS.flushAck] ?? 0,
       0,
@@ -219,7 +255,11 @@ test("aucune barrière n'est acquittée au guest avant que le flush OPFS ait ren
     store.releaseFlush(nomJournal);
     await tick();
 
-    assert.equal(store.flushCount(nomJournal), 2, "les deux flush de la validation ont eu lieu");
+    assert.equal(
+      store.flushCount(nomJournal) - banc0.barrieresDuJournalALaCreation,
+      2,
+      "les deux flush de la validation ont eu lieu",
+    );
     assert.equal(master.status_reg, ATA.srDrdy | ATA.srDsc, "le guest est acquitté APRÈS le flush");
     assert.equal(master.irqs, 1);
     assert.equal(journal.counts()[JOURNAL_OPERATIONS.flushAck], 1);
@@ -246,7 +286,11 @@ test("deux flush consécutifs sans écriture intermédiaire restent sûrs et mes
     // Deux pour la première validation, puis UNE pour la barrière à vide : rien n'a été déposé entre
     // les deux, il n'y a donc pas de racine à réécrire — mais le support est TOUT DE MÊME sollicité,
     // faute de quoi un support devenu incapable d'écrire resterait invisible.
-    assert.equal(store.flushCount(nomJournal), 3, "trois flush réels du support");
+    assert.equal(
+      store.flushCount(nomJournal) - banc0.barrieresDuJournalALaCreation,
+      3,
+      "trois flush réels du support",
+    );
     assert.equal(journal.counts()[JOURNAL_OPERATIONS.flush], 2);
     assert.equal(journal.counts()[JOURNAL_OPERATIONS.flushAck], 2);
     assert.deepEqual(failures, []);
@@ -283,7 +327,11 @@ test("un échec du support PENDANT la barrière remonte au guest et à la coquil
       0,
       "une barrière en échec n'est jamais acquittée",
     );
-    assert.equal(store.flushCount(nomJournal), 0, "aucune barrière n'a été matérialisée");
+    assert.equal(
+      store.flushCount(nomJournal),
+      banc0.barrieresDuJournalALaCreation,
+      "aucune barrière n'a été matérialisée",
+    );
   } finally {
     await fermer(banc0);
   }
@@ -339,7 +387,11 @@ test("le RANGEMENT d'une génération ne retient pas la commande ATA du guest", 
     assert.equal(master.status_reg, ATA.srDrdy | ATA.srDsc, "le guest n'attend pas le rangement");
     assert.equal(master.irqs, 1);
     assert.equal(journal.counts()[JOURNAL_OPERATIONS.flushAck], 1);
-    assert.equal(store.flushCount(nomJournal), 2, "la validation, elle, a bien eu lieu");
+    assert.equal(
+      store.flushCount(nomJournal) - banc0.barrieresDuJournalALaCreation,
+      2,
+      "la validation, elle, a bien eu lieu",
+    );
     assert.ok(store.isFlushPending(name), "le rangement attend encore la barrière du volume");
 
     // Le rangement aboutit ensuite, sans rien devoir au guest.

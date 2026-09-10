@@ -263,7 +263,14 @@ test("un dépassement de quota du support est un état distinct, jamais un succ�
   // Le quota laisse juste de quoi ouvrir le volume et son journal de génération, plus une poignée
   // d'octets : l'écriture qui déborde est celle du JOURNAL, puisque c'est là que va désormais une
   // génération en cours. Le code et le remède ne changent pas — libérer de la place.
-  const { backend } = await volume({ store: { quotaBytes: SUPPORT + 2048 } });
+  //
+  // **Le volume est CRÉÉ sous un quota confortable, PUIS le quota est resserré.** Depuis #181 une
+  // création écrit sa racine initiale, c'est-à-dire la zone des racines du journal : un quota trop
+  // court dès l'ouverture ferait échouer la CRÉATION, et l'épreuve mesurerait ce refus-là au lieu du
+  // sien. Ce qu'elle doit provoquer est un dépassement à l'ÉCRITURE du guest, sur un volume par
+  // ailleurs légitime.
+  const { backend, store } = await volume();
+  store.setQuota(store.usedBytes() + 2048);
 
   let refus = null;
   for (let essai = 0; essai < 8 && refus === null; essai += 1) {
@@ -372,9 +379,11 @@ test("la barrière franchie journalise écriture, barrière puis acquittement, d
   const journal = new BlockJournal();
   const { backend, store, name } = await volume({ journal });
   // La CRÉATION d'un volume v3 franchit déjà des barrières : l'en-tête, puis le scellement de tous
-  // les secteurs (ADR 0016). Ce qui est mesuré ici est ce que la BARRIÈRE DU GUEST ajoute, donc le
-  // compte de départ est relevé plutôt que supposé nul.
+  // les secteurs (ADR 0016), et depuis #181 la RACINE INITIALE dans le journal. Ce qui est mesuré
+  // ici est ce que la BARRIÈRE DU GUEST ajoute, donc les deux comptes de départ sont relevés plutôt
+  // que supposés nuls.
   const barrieresALaCreation = store.flushCount(name);
+  const barrieresDuJournalALaCreation = store.flushCount(`${name}.gen`);
 
   await backend.write(0, new Uint8Array(SECTOR_SIZE).fill(3));
   await backend.flush();
@@ -385,9 +394,14 @@ test("la barrière franchie journalise écriture, barrière puis acquittement, d
   );
   // DEUX barrières RÉELLES du support par validation (#16, ADR 0014) : la charge d'abord, la racine
   // ensuite. L'ordre est ce qui distingue « validé » de « probablement écrit », et le compte est
-  // épinglé pour qu'un raccourci qui n'en franchirait qu'une soit visible. L'ouverture d'un journal
-  // vierge, elle, n'écrit ni ne franchit rien.
-  assert.equal(store.flushCount(`${name}.gen`), 2, "deux flush pour la validation");
+  // épinglé pour qu'un raccourci qui n'en franchirait qu'une soit visible. La CRÉATION en a franchi
+  // UNE de plus depuis #181 — la racine initiale —, et c'est le DELTA qui est mesuré.
+  assert.equal(barrieresDuJournalALaCreation, 1, "la création écrit sa racine initiale");
+  assert.equal(
+    store.flushCount(`${name}.gen`) - barrieresDuJournalALaCreation,
+    2,
+    "deux flush pour la validation",
+  );
   assert.equal(
     store.flushCount(name),
     barrieresALaCreation,

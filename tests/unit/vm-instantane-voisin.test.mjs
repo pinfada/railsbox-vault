@@ -42,13 +42,18 @@ test("la borne de nommage laisse la place au plus long voisin", () => {
   assert.throws(() => instantaneSidecarName("v".repeat(MAX_VOLUME_NAME + 1)), TypeError);
 });
 
-test("les voisins d'un volume sont nommés en un seul endroit, instantané compris", () => {
+test("les voisins d'un volume sont nommés en un seul endroit, instantané et engagement compris", () => {
+  // La liste est DÉRIVÉE d'un seul endroit, et c'est la leçon de #145 : un voisin oublié dans une
+  // copie est un orphelin que personne ne voit. L'ENGAGEMENT (#181) y entre au même titre — il est
+  // consommé à la première ouverture d'un volume restauré, mais un volume retiré ENTRE la
+  // restauration et cette ouverture le laisserait derrière lui.
   const voisins = voisinsDunVolume("donnees");
   assert.deepEqual(voisins, [
     "donnees.gen",
     "donnees.temoin",
     "donnees.cles",
     "donnees.instantane",
+    "donnees.engagement",
   ]);
 });
 
@@ -75,7 +80,15 @@ test("la RESTAURATION retire l'instantané avec le journal et le témoin", async
     revoke: async () => {},
   });
   await cible.discardGeneration();
-  assert.deepEqual(espion.retires, ["donnees.gen", "donnees.temoin", "donnees.instantane"]);
+  // L'ENGAGEMENT d'une restauration ANTÉRIEURE part avec le journal (#181) : il atteste une archive
+  // que le volume qu'on écrase ne porte plus. Celui de l'archive en cours est posé plus tard, entre
+  // l'enveloppe et le manifeste.
+  assert.deepEqual(espion.retires, [
+    "donnees.gen",
+    "donnees.engagement",
+    "donnees.temoin",
+    "donnees.instantane",
+  ]);
 });
 
 test("la MIGRATION retire l'instantané avec le journal et le témoin", async () => {

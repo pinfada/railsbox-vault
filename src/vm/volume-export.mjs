@@ -151,9 +151,11 @@ function buildHeader({ manifest, digest, contentLength, consistency, recovery, e
     },
     recovery: recovery === null ? null : recovery.descripteur,
     // L'ENGAGEMENT (#181) : l'empreinte du fichier chiffré entier, scellée sous la clé du domaine
-    // `archive`. Il est TOUJOURS présent dans une v3 ; une v3 qui n'en porterait pas serait
-    // refusée, et c'est ce qui rend l'archive authentifiée plutôt que seulement sommée.
-    engagement: engagementEnJson(engagement),
+    // `archive`. Il est TOUJOURS déclaré — un objet, ou `null` EXPLICITE quand l'archive décrit un
+    // volume antérieur à v3, qui n'est pas chiffré et n'a donc ni clé ni identité à engager. C'est
+    // la règle de `recovery`, mot pour mot : un champ absent et un champ nul ne disent pas la même
+    // chose.
+    engagement: engagement === null ? null : engagementEnJson(engagement),
     manifest,
   };
 }
@@ -301,8 +303,8 @@ function rapportDExport({ digest, source, headerBytes, guarantee, section, engag
     recovery: section === null ? null : section.descripteur,
     // Le DESCRIPTEUR de l'engagement, sans ses octets : le compte rendu franchit `postMessage` et
     // va dans un journal. Ce qu'un exploitant doit y lire est que l'archive est engagée, et sur
-    // quelle géométrie.
-    engagement: engagement.descripteur,
+    // quelle géométrie. `null` quand elle décrit un volume antérieur à v3.
+    engagement: engagement === null ? null : engagement.descripteur,
   };
 }
 
