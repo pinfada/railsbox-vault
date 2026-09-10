@@ -4,6 +4,11 @@
 - Date : 2026-08-28
 - Issue : #21 · Invariants : `SEC-KEY-001`, `SEC-ORIGIN-001` · Jalon 5
 
+> **Révision ANNONCÉE le 2026-09-10 par
+> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#182, HIGH) :** la racine d'une
+> page (décision 3) sera scellée sous une clé du domaine `enveloppe` à USAGE UNIQUE, avec un sel
+> tiré écrit en clair dans la page ; rien n'est amendé ici tant que la tranche T2b n'a pas livré.
+
 ## Contexte
 
 Depuis #18 ([ADR 0016](0016-format-de-volume-v3-dispositions.md)), un volume est scellé sous une

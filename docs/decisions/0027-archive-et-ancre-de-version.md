@@ -8,6 +8,12 @@
   est déclenchée. Rien de l'ADR 0020 n'est réécrit : sa décision 6 reçoit une note datée d'une ligne
   qui renvoie ici.
 
+> **Révision ANNONCÉE le 2026-09-10 par
+> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#181, #182) :** la racine rescellée
+> à l'export passera sous une clé du domaine `recuperation` à USAGE UNIQUE, et l'archive qui la
+> porte gagnera un engagement authentifié ; rien n'est amendé ici tant que T1 et T2b n'ont pas
+> livré.
+
 ## Contexte
 
 L'ADR 0020, décision 6, tranchait : « l'archive n'emporte pas l'enveloppe ». Elle posait aussi, dans

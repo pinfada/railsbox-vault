@@ -4,6 +4,11 @@
 - Date : 2026-09-04
 - Issue : #65 · Invariants : `VAULT-PERSIST-001`, `SEC-DURABLE-001` · Jalon 3
 
+> **Révision ANNONCÉE le 2026-09-10 par
+> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#182, HIGH) :** l'unique scellement
+> d'une capture se fera sous une clé du domaine `instantane` à USAGE UNIQUE, avec un sel tiré écrit
+> en clair dans le fichier ; rien n'est amendé ici tant que la tranche T2a n'a pas livré.
+
 ## Contexte
 
 L'[ADR 0005](0005-qualification-de-la-reprise.md) a décomposé le temps de reprise et tranché la voie

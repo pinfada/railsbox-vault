@@ -4,6 +4,11 @@
 - Date : 2026-08-24
 - Issue : #11 · Invariant : `VAULT-PORT-001` · Jalon 2
 
+> **Révision ANNONCÉE le 2026-09-10 par
+> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#181, CRITICAL) :** l'archive
+> portera un engagement authentifié sous une clé du domaine `archive`, et son SHA-256 recalculable
+> cessera d'être sa seule intégrité ; rien n'est amendé ici tant que la tranche T1 n'a pas livré.
+
 > **Amendé le 2026-08-28 par l'[ADR 0016](0016-format-de-volume-v3-dispositions.md) (#18, #101).**
 > L'archive d'un volume v3 porte le fichier CHIFFRÉ tel quel, si bien que `content.length` décrit la
 > taille du FICHIER — en-tête et région comprises — et `identity.digest` l'empreinte du chiffré :
