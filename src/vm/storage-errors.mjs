@@ -97,6 +97,32 @@ export const STORAGE_ERROR_CODES = Object.freeze({
    * au-dessus d'une E/S », et c'est le contexte qui dit de quel côté on se trouve.
    */
   quiesce: "VAULT_STORAGE_QUIESCE",
+  /**
+   * AUCUNE racine ne fait autorité, et rien n'autorise cette ouverture (#181).
+   *
+   * Depuis #181, **aucun volume légitime n'est sans racine** : la création en écrit une avant de
+   * poser `VLTSEAL1`, la migration v2 → v3 aussi, et un volume RESTAURÉ en reçoit une à sa première
+   * ouverture, sur présentation de l'engagement que l'archive portait. Un volume sans racine est
+   * donc soit un volume créé avant cette tranche, soit un volume restauré dont on a retiré le
+   * voisin `<volume>.engagement` — c'est-à-dire, dans le second cas, exactement le geste par lequel
+   * un adversaire faisait passer un mélange de secteurs pour un volume neuf.
+   *
+   * Le refus tombe AVANT tout clair : aucun secteur n'est déchiffré, et l'ouverture ne rend aucun
+   * backend. Distinct de `generationRootCorrupt`, qui dit « une racine existe et elle est abîmée ».
+   */
+  volumeSansRacine: "VAULT_STORAGE_VOLUME_SANS_RACINE",
+  /**
+   * Un ENGAGEMENT D'ARCHIVE est présent et il n'autorise pas cette ouverture (#181).
+   *
+   * Une seule cause est rendue, et c'est délibéré : étiquette forgée, sel modifié, descripteur
+   * contredit, empreinte du fichier qui ne concorde pas, volume ou géométrie qui ne sont pas ceux
+   * que l'engagement scelle — tout cela dit « cet engagement ne vaut pas pour ce fichier-ci », et
+   * les distinguer donnerait à un adversaire un oracle sur ce qu'il a manqué.
+   *
+   * Distinct de `volumeSansRacine`, et le remède l'est aussi : là, il n'y avait rien à présenter ;
+   * ici, ce qui est présenté ne tient pas — l'archive ou le volume restauré a été altéré.
+   */
+  engagementInvalide: "VAULT_STORAGE_ENGAGEMENT_INVALIDE",
 });
 
 const KNOWN_CODES = new Set(Object.values(STORAGE_ERROR_CODES));
@@ -159,6 +185,22 @@ export function generationRootCorrupt(volume, { abimees, octets }) {
     STORAGE_ERROR_CODES.generationRootCorrupt,
     `Journal de génération du volume « ${volume} » refusé : ${abimees} racine(s) abîmée(s) et aucune lisible, au-dessus de ${octets} octet(s) de charge. Ce qui a été validé est INCONNU — l'écarter perdrait peut-être une écriture acquittée. Le volume n'est pas modifié ; restaurer une sauvegarde (#12) est le remède.`,
     { volume, abimees, octets },
+  );
+}
+
+/**
+ * AUCUNE racine, et rien qui autorise l'ouverture (#181).
+ *
+ * Le message nomme les DEUX états qui y mènent, parce que leurs remèdes n'ont rien de commun : un
+ * volume créé avant cette tranche n'a jamais eu de racine initiale et se recrée depuis une archive ;
+ * un volume restauré dont le voisin `<volume>.engagement` a disparu a perdu ce qui prouvait que ses
+ * octets sont un état réellement produit, et se restaure de nouveau depuis l'archive.
+ */
+export function volumeSansRacine(volume, { chargePresente }) {
+  return new StorageError(
+    STORAGE_ERROR_CODES.volumeSansRacine,
+    `Volume « ${volume} » refusé : aucune racine de génération ne fait autorité, et rien n'autorise à en écrire une. Depuis #181, un volume légitime porte toujours une racine — sa création en écrit une, sa migration aussi, et une restauration en fait écrire une à la première ouverture sur présentation de l'engagement que l'archive portait. Ce volume est donc soit antérieur à cette règle, soit un volume restauré dont le voisin « .engagement » a disparu. Le remède est de le restaurer depuis son archive. Aucun octet n'est lu.`,
+    { volume, chargePresente },
   );
 }
 

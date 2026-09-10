@@ -1,18 +1,22 @@
 /**
- * LE CHEMIN DE PRODUCTION REPRODUIT LES VECTEURS D'ARCHIVE V2 (#149, ADR 0027).
+ * LE CHEMIN DE PRODUCTION REPRODUIT LES VECTEURS D'ARCHIVE V3 (#181, ADR 0033 ; #149, ADR 0027).
  *
- * `tests/vectors/archive-v2.json` est un CONTRAT : la disposition d'une archive v2 et la page
- * d'enveloppe qu'elle emporte y sont figées, octet pour octet, par un outil qui pose ces octets
- * lui-même (`tools/figer-vecteurs-archive.mjs`). Cette suite confronte le produit à ce contrat.
+ * `tests/vectors/archive-v3.json` est un CONTRAT : la disposition d'une archive v3, l'ENGAGEMENT
+ * qu'elle porte et la page d'enveloppe qu'elle emporte y sont figés, octet pour octet, par un outil
+ * qui pose ces octets lui-même (`tools/figer-vecteurs-archive.mjs`). Cette suite confronte le
+ * produit à ce contrat.
  *
- * Elle mesure trois choses, de la plus petite à la plus grande :
+ * Elle mesure quatre choses, de la plus petite à la plus grande :
  *
  *  1. **la page complète** que le volume porte — créée puis complétée par le chemin de production
  *     de l'ADR 0020, sous des aléas SCRIPTÉS ;
  *  2. **la page EMBARQUÉE** — la même version, filtrée aux seuls emplacements de type 4 et
  *     rescellée par `construireEnveloppeDeRecuperation`. C'est le filtrage lui-même qui est figé :
  *     les deux pages diffèrent, et le vecteur publie les deux ;
- *  3. **l'archive entière** — `writeArchive` doit rendre exactement les octets du vecteur,
+ *  3. **l'ENGAGEMENT et son voisin** — l'empreinte du fichier chiffré entier, scellée sous la clé
+ *     du domaine `archive` dérivée par HKDF-SHA-256, et les cent quatre-vingts octets que la
+ *     restauration dépose à côté du volume ;
+ *  4. **l'archive entière** — `writeArchive` doit rendre exactement les octets du vecteur,
  *     en-tête JSON compris, ordre des champs compris.
  *
  * Un ROUGE ici ne se corrige pas en régénérant les vecteurs : soit le format persistant a changé
@@ -25,6 +29,15 @@ import test from "node:test";
 
 import { exportVolumeToBytes } from "../../src/vm/archive-en-memoire.mjs";
 import {
+  HARNAIS_ENGAGEMENT_JETON,
+  decoderFichierDEngagement,
+  donneesAssocieesDeLEngagement,
+  encoderFichierDEngagement,
+  ouvrirEngagement,
+  scellerEngagement,
+} from "../../src/vm/archive-engagement.mjs";
+import { DOMAINES, encoderInfoDeDomaine } from "../../src/vm/derivation/cle-de-domaine.mjs";
+import {
   HARNAIS_ALEAS_JETON,
   ajouterEmplacement,
   creerEnveloppe,
@@ -35,7 +48,7 @@ import { hexEnOctets, octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs
 import { aleasScriptes, supportDouble } from "./support-enveloppe-double.mjs";
 
 const vecteurs = JSON.parse(
-  await readFile(new URL("../vectors/archive-v2.json", import.meta.url), "utf8"),
+  await readFile(new URL("../vectors/archive-v3.json", import.meta.url), "utf8"),
 );
 
 const IDENTIFIANT_VOLUME = vecteurs.volume.identifiantVolume;
@@ -113,6 +126,58 @@ test("la page EMBARQUÉE est la page filtrée et RESCELLÉE, et elle diffère de
   );
 });
 
+test("l'INFO et les DONNÉES ASSOCIÉES de l'engagement sont celles du vecteur, octet pour octet", () => {
+  // La dérivation du domaine `archive` (ADR 0033, décision 3) et ce que l'engagement scelle
+  // (Definition of Ready de #181, décision 2) sont deux ENCODAGES : ils se figent, et le produit
+  // doit les reproduire. Le vecteur les publie tous les deux en hexadécimal.
+  assert.equal(
+    octetsEnHex(
+      encoderInfoDeDomaine({
+        domaine: DOMAINES.archive,
+        identifiantVolume: vecteurs.engagement.descripteur.identifiantVolume,
+        versionDeFormat: vecteurs.engagement.descripteur.versionDArchive,
+      }),
+    ),
+    vecteurs.engagement.info,
+  );
+  assert.equal(
+    octetsEnHex(donneesAssocieesDeLEngagement(vecteurs.engagement.descripteur)),
+    vecteurs.engagement.donneesAssociees,
+  );
+});
+
+test("l'ENGAGEMENT du vecteur est celui que le produit scelle, sous le même sel et le même nonce", async () => {
+  const scelle = await scellerEngagement({
+    cleMaitresse: DEK,
+    empreinteDuContenu: hexEnOctets(vecteurs.archive.empreinteDuContenu),
+    descripteur: vecteurs.engagement.descripteur,
+    sel: hexEnOctets(vecteurs.engagement.sel),
+    nonce: hexEnOctets(vecteurs.engagement.nonce),
+  });
+  assert.equal(octetsEnHex(scelle.chiffre), vecteurs.engagement.chiffre);
+  assert.equal(octetsEnHex(scelle.etiquette), vecteurs.engagement.etiquette);
+  // Et il OUVRE : un vecteur qui ne se relit pas ne prouverait que l'accord de deux encodeurs.
+  const ouvert = await ouvrirEngagement({ cleMaitresse: DEK, engagement: scelle });
+  assert.equal(octetsEnHex(ouvert), vecteurs.archive.empreinteDuContenu);
+});
+
+test("le VOISIN « .engagement » du vecteur fait 180 octets, et il se relit", async () => {
+  const scelle = await scellerEngagement({
+    cleMaitresse: DEK,
+    empreinteDuContenu: hexEnOctets(vecteurs.archive.empreinteDuContenu),
+    descripteur: vecteurs.engagement.descripteur,
+    sel: hexEnOctets(vecteurs.engagement.sel),
+    nonce: hexEnOctets(vecteurs.engagement.nonce),
+  });
+  const octets = encoderFichierDEngagement(scelle);
+  assert.equal(octets.byteLength, vecteurs.engagement.voisinOctets);
+  assert.equal(octetsEnHex(octets), vecteurs.engagement.voisin);
+
+  const relu = decoderFichierDEngagement(hexEnOctets(vecteurs.engagement.voisin));
+  assert.equal(relu.valide, true, relu.raison ?? "");
+  assert.deepEqual({ ...relu.engagement.descripteur }, vecteurs.engagement.descripteur);
+});
+
 test("l'ARCHIVE entière du vecteur est celle que `writeArchive` produit, octet pour octet", async () => {
   const contenu = Uint8Array.from(
     { length: vecteurs.volume.tailleFichier },
@@ -125,6 +190,14 @@ test("l'ARCHIVE entière du vecteur est celle que `writeArchive` produit, octet 
     },
     manifest: vecteurs.archive.enTete.manifest,
     consistency: vecteurs.archive.enTete.content.consistency,
+    cle: DEK,
+    // Le SEL et le NONCE de l'engagement sont FIGÉS, sous le jeton du harnais : le produit les tire,
+    // et un vecteur reproductible est un vecteur dont l'aléa est écrit noir sur blanc.
+    engagementFige: {
+      jeton: HARNAIS_ENGAGEMENT_JETON,
+      sel: hexEnOctets(vecteurs.engagement.sel),
+      nonce: hexEnOctets(vecteurs.engagement.nonce),
+    },
     recovery: {
       octets: hexEnOctets(vecteurs.enveloppe.embarquee.page),
       digest: vecteurs.enveloppe.embarquee.empreinte,

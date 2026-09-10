@@ -54,13 +54,23 @@ const SOUS_SURVEILLANCE = [
     fichier: "src/vm/generation-store.mjs",
     lignes: 738,
     motif:
-      "#65 y ajoute DEUX accesseurs en lecture — `sequenceValidee` et `racineValidee` — parce que " +
-      "la liaison d'un instantané (ADR 0024) est exactement ce que la racine authentifie, et que " +
-      "seul le magasin le sait. La Definition of Ready de #65 borne explicitement l'intervention " +
-      "sur ce fichier à « l'exposition en lecture de la racine validée » : le scinder pour trente " +
-      "lignes aurait dépassé ce mandat, et scinder une machine à états pour la faire tenir sous " +
-      "un seuil est le genre de découpage qui rend un protocole illisible. Le fichier reste à " +
-      "62 lignes du plafond ; la prochaine tranche qui y touchera devra le scinder.",
+      "#65 l'avait inscrit à 738 lignes en écrivant « la prochaine tranche qui y touchera devra le " +
+      "scinder ». #181 y a touché — l'ouverture décide désormais d'écrire une RACINE INITIALE — et " +
+      "l'a scindé : `generation-racine.mjs` emporte l'écrivain de racines et le seul état que le " +
+      "protocole ne porte pas, `generation-recuperation.mjs` emporte l'autorisation d'ouvrir sans " +
+      "racine et la mise en forme du rapport. Le fichier a fait 805 lignes en chemin ; il en fait " +
+      "moins qu'à son inscription en sortant. Ce qui reste est la MACHINE À ÉTATS, et la scinder " +
+      "davantage rendrait le protocole illisible pour tenir sous un seuil.",
+  },
+  {
+    fichier: "src/vm/opfs-block-backend.mjs",
+    lignes: 722,
+    motif:
+      "#181 y ajoute UN geste, `empreinteDuFichier`, et il ne peut pas vivre ailleurs : c'est le " +
+      "calcul de l'empreinte du fichier ENTIER, fait ICI précisément pour ne pas exposer du " +
+      "chiffré. `lireRegionAuth` reste le seul point du dépôt qui rende des octets bruts de " +
+      "l'intérieur du fichier, borné à la région ; déplacer le hachage aurait exigé d'ouvrir cette " +
+      "porte-là. Vingt-huit lignes, sur un fichier qui reste à 78 du plafond.",
   },
 ];
 

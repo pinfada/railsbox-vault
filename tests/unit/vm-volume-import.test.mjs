@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
+import { encoderEnTeteV3, tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
 import { FAULT_KINDS, createFaultPlan } from "../../src/vm/fault-plan.mjs";
 import { STORAGE_ERROR_CODES, StorageError } from "../../src/vm/storage-errors.mjs";
 import {
@@ -42,26 +43,67 @@ function octetA(index, seed) {
   return (index * 37 + seed * 61 + 7) & 0xff;
 }
 
+/**
+ * Identifiant du volume synthétique de ces suites. Il n'ouvre rien : ces épreuves ne déchiffrent
+ * aucun secteur, elles éprouvent le CODEC d'archive.
+ */
+const IDENTIFIANT_VOLUME = "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a";
+
+/**
+ * La taille LOGIQUE dont le fichier v3 fait exactement `tailleFichier` octets.
+ *
+ * Elle est CHERCHÉE plutôt que calculée à l'envers : `tailleDeFichier` n'est pas inversible d'un
+ * trait — la région d'authentification est alignée au secteur supérieur —, et une formule inverse
+ * écrite à la main divergerait de la vraie au premier changement de géométrie.
+ */
+function tailleLogiquePourFichier(tailleFichier) {
+  for (let logique = SECTOR_SIZE; logique <= tailleFichier; logique += SECTOR_SIZE) {
+    if (tailleDeFichier({ formatVersion: 3, tailleLogique: logique }) === tailleFichier) {
+      return logique;
+    }
+  }
+  throw new RangeError(`Aucune taille logique ne donne un fichier v3 de ${tailleFichier} octets.`);
+}
+
+/**
+ * Contenu de volume déterministe, précédé d'un EN-TÊTE V3 VALIDE.
+ *
+ * **L'en-tête est là depuis #181, et il faut dire pourquoi.** Ces suites déclaraient jusque-là un
+ * manifeste de format 2, pour éprouver le codec d'archive indépendamment du format de volume. Une
+ * archive v3 porte désormais un ENGAGEMENT, qui scelle l'IDENTITÉ du volume — et seul un manifeste
+ * v3 en déclare une. Le manifeste passe donc en v3, et la restauration confronte alors l'identité
+ * qu'il déclare à celle que le FICHIER porte (`assertIdentiteDeLArchive`) : le contenu doit porter
+ * un en-tête v3 lisible, sinon ces épreuves mesureraient ce refus-là au lieu du leur.
+ *
+ * Le reste des octets n'est pas un volume chiffré, et n'a pas à l'être : rien ici n'ouvre un secteur.
+ */
 function contenuVolume(size, seed = 3) {
   const bytes = new Uint8Array(size);
   for (let i = 0; i < size; i += 1) bytes[i] = octetA(i, seed);
+  bytes.set(
+    encoderEnTeteV3({
+      tailleLogique: tailleLogiquePourFichier(size),
+      identifiantVolume: IDENTIFIANT_VOLUME,
+      scellementComplet: true,
+    }),
+    0,
+  );
   return bytes;
 }
 
-function manifeste(volumeSize) {
+function manifeste(tailleFichier) {
   return createManifest({
     runtime: { version: "1.4.2", artifact: "sha256:abcdef", minWriter: "1.0.0" },
     app: { id: "railsbox/reference", version: "3.1.0" },
-    volumeSize,
+    volumeSize: tailleLogiquePourFichier(tailleFichier),
     identity: { algorithm: "sha-256", digest: null },
-    // FORMAT v2, et c'est délibéré (#18, ADR 0016) : ces suites éprouvent le CODEC d'archive, pas le
-    // format de volume. L'archive d'un volume v3 est refusée par ce chemin — elle doit porter le
-    // fichier chiffré TEL QUEL, ce que la tranche (b) livrera —, et
-    // `tests/unit/vm-archive-volume-chiffre.test.mjs` éprouve ce refus. Exporter ici un manifeste v3
-    // ne mesurerait donc plus que lui.
-    formatVersion: 2,
+    formatVersion: 3,
+    volume: { id: IDENTIFIANT_VOLUME, algorithm: "aes-256-gcm" },
   });
 }
+
+/** Clé de volume de ces suites : publique, sans entropie. Elle ne scelle qu'un engagement. */
+const CLE = Uint8Array.from({ length: 32 }, (_, index) => 0x20 + index);
 
 const cohérence = {
   kind: CONSISTENCY_KINDS.exclusiveHandle,
@@ -85,6 +127,7 @@ async function archiveDe(contenu) {
     source,
     manifest: manifeste(contenu.byteLength),
     consistency: cohérence,
+    cle: CLE,
   });
 }
 
@@ -216,6 +259,16 @@ function cibleMemoire({
     commitRecoveryEnvelope(bytes) {
       etat.gestes.push(bytes === null ? "retire-enveloppe" : "pose-enveloppe");
       etat.enveloppe = bytes;
+      return Promise.resolve();
+    },
+    /**
+     * DÉPOSE l'engagement (#181). Le double le RETIENT, comme l'enveloppe, et pour la même raison :
+     * son ordre par rapport au manifeste est ce que la tranche décide, et un double qui l'avalerait
+     * ne mesurerait plus l'ordre qu'il est censé garder.
+     */
+    commitEngagement(bytes) {
+      etat.gestes.push("pose-engagement");
+      etat.engagement = bytes;
       return Promise.resolve();
     },
     commitManifest(bytes) {
@@ -725,6 +778,7 @@ test("la compatibilité est contrôlée PAR DÉFAUT : un format futur est refus�
     },
     manifest: manifeste(contenu.byteLength),
     consistency: cohérence,
+    cle: CLE,
   });
   // FORMAT FUTUR fabriqué APRÈS coup, en réécrivant l'en-tête d'une archive valide. L'export refuse
   // désormais tout manifeste v3 ou au-delà — un volume chiffré ne s'archive pas par ce chemin
@@ -795,12 +849,15 @@ test("l'ordre des gestes mutants : révoquer, écarter la génération, puis ins
 
   assert.ok(rapport.volumeSize > 0);
   assert.equal(cible.etat.generationsEcartees, 1, "le journal de génération est écarté une fois");
-  // L'ordre porte désormais un rang de plus (#149, ADR 0027) : l'enveloppe de récupération est
-  // posée — ici RETIRÉE, l'archive n'en emportant aucune — entre le contenu relu et le manifeste.
+  // L'ordre porte deux rangs de plus qu'à l'origine : l'enveloppe de récupération (#149, ADR 0027)
+  // — ici RETIRÉE, l'archive n'en emportant aucune — puis l'ENGAGEMENT (#181), tous deux entre le
+  // contenu relu et le manifeste. Le manifeste reste le dernier : il est ce qui DÉCLARE le volume
+  // complet, et un volume déclaré complet porte tout ce qu'il faut pour l'ouvrir.
   assert.deepEqual(cible.etat.gestes, [
     "revoque-manifeste",
     "ecarte-generation",
     "retire-enveloppe",
+    "pose-engagement",
     "inscrit-manifeste",
   ]);
 });

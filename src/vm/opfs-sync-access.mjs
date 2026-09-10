@@ -74,6 +74,19 @@ export const ENVELOPPE_SIDECAR_SUFFIX = ".cles";
 export const INSTANTANE_SIDECAR_SUFFIX = ".instantane";
 
 /**
+ * Suffixe RÉSERVÉ de l'ENGAGEMENT D'ARCHIVE (#181, ADR 0033).
+ *
+ * La restauration n'a pas la clé — c'est une propriété du § 7.5 qu'on garde — et ne peut donc pas
+ * vérifier l'engagement que l'archive porte. Elle le DÉPOSE ici, à côté du volume ; la première
+ * ouverture le vérifie avant tout clair, écrit la racine initiale, puis RETIRE ce voisin. Il est
+ * CONSOMMÉ une fois, jamais relu à chaque ouverture.
+ *
+ * **Il fait exactement onze caractères, comme `.instantane`**, et ne rétrécit donc pas
+ * `MAX_VOLUME_NAME` : un volume créable aujourd'hui reste restaurable demain.
+ */
+export const ENGAGEMENT_SIDECAR_SUFFIX = ".engagement";
+
+/**
  * Tous les suffixes réservés aux voisins d'un volume. Aucun volume ne peut en porter un, sans quoi
  * migrer « donnees » détruirait un volume légitime nommé « donnees.migration ».
  */
@@ -84,6 +97,7 @@ export const RESERVED_SIDECAR_SUFFIXES = Object.freeze([
   TEMOIN_SEQUENCE_SUFFIX,
   ENVELOPPE_SIDECAR_SUFFIX,
   INSTANTANE_SIDECAR_SUFFIX,
+  ENGAGEMENT_SIDECAR_SUFFIX,
 ]);
 
 /** Longueur du plus long voisin à réserver : c'est elle qui borne le nom d'un volume. */
@@ -208,6 +222,17 @@ export function enveloppeSidecarName(volume) {
 }
 
 /**
+ * Nom de l'ENGAGEMENT D'ARCHIVE déposé à côté du volume restauré (#181, ADR 0033). Il est CONSOMMÉ
+ * à la première ouverture : ce nom désigne un fichier qui n'existe qu'entre une restauration et
+ * l'ouverture qui la valide.
+ * @param {string} volume
+ */
+export function engagementSidecarName(volume) {
+  assertVolumeName(volume);
+  return `${volume}${ENGAGEMENT_SIDECAR_SUFFIX}`;
+}
+
+/**
  * Nom de l'INSTANTANÉ DE REPRISE posé à côté du volume (#65, ADR 0024). Même règle de longueur que
  * les autres voisins : un volume créable est toujours un volume capturable.
  * @param {string} volume
@@ -241,6 +266,10 @@ export function voisinsDunVolume(nom) {
     TEMOIN_SEQUENCE_SUFFIX,
     ENVELOPPE_SIDECAR_SUFFIX,
     INSTANTANE_SIDECAR_SUFFIX,
+    // L'ENGAGEMENT (#181) reste dans la liste MÊME s'il est consommé à la première ouverture : un
+    // volume retiré entre sa restauration et cette ouverture laisserait sinon un orphelin, et c'est
+    // le défaut de #145.
+    ENGAGEMENT_SIDECAR_SUFFIX,
   ].map((suffixe) => `${nom}${suffixe}`);
 }
 

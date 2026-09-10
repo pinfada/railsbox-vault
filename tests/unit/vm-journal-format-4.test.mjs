@@ -45,6 +45,7 @@ import {
   racineDeSequence,
 } from "../../src/vm/generation-format.mjs";
 import { empreinteDeRegion, scellerFraicheur } from "../../src/vm/generation-fraicheur.mjs";
+import { autorisationDeCreation } from "../../src/vm/generation-recuperation.mjs";
 import { GenerationStore } from "../../src/vm/generation-store.mjs";
 import { CRYPTO_ERROR_CODES } from "../../src/vm/format-chiffre/crypto-errors.mjs";
 import { octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
@@ -126,6 +127,7 @@ async function session(cadre, fraicheur) {
     ecrireSupport: (offset, octets) => cadre.support.set(octets, offset),
   });
   const magasin = await GenerationStore.ouvrir({
+    sansRacine: autorisationDeCreation(),
     volume: "vol",
     handle: await cadre.magasin.openHandle(cadre.nom),
     tailleVolume: TAILLE,

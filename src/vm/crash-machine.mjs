@@ -30,6 +30,7 @@ import {
   relireBlocs,
 } from "./crash-scenario.mjs";
 import { createFaultPlan } from "./fault-plan.mjs";
+import { autorisationDeCreation } from "./generation-recuperation.mjs";
 import { GenerationStore } from "./generation-store.mjs";
 import { OpfsBlockBackend } from "./opfs-block-backend.mjs";
 import { generationJournalName, temoinSequenceName } from "./opfs-sync-access.mjs";
@@ -200,6 +201,10 @@ export function creerMachineJetable({
         // la matrice de #15 cessait alors de mesurer le chemin de scellement que le PRODUIT
         // emprunte. Une revue l'a relevé ; la machine ouvre désormais comme l'ouvreur ouvre.
         fraicheur: fraicheurJetable(support, backend, nom),
+        // La machine jetable CRÉE son volume — en-tête v3 posé, tous les secteurs scellés — puis
+        // l'ouvre. C'est une création, et depuis #181 une création écrit sa racine initiale : sans
+        // cette déclaration, la machine ouvrirait un volume que le produit refuse.
+        sansRacine: autorisationDeCreation(),
         volume: nom,
         handle: journalGeneration,
         tailleVolume: taille,

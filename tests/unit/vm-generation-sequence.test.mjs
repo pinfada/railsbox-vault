@@ -29,6 +29,7 @@ import {
   RACINE_OCTETS,
 } from "../../src/vm/generation-format.mjs";
 import { JournalDeGeneration } from "../../src/vm/generation-journal.mjs";
+import { autorisationDeCreation } from "../../src/vm/generation-recuperation.mjs";
 import { GENERATION_ETATS, GenerationStore } from "../../src/vm/generation-store.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
@@ -64,6 +65,7 @@ function scellementDuBanc() {
 
 async function ouvrirMagasin(support, nom, reste = {}) {
   return GenerationStore.ouvrir({
+    sansRacine: autorisationDeCreation(),
     volume: "vol",
     handle: await support.magasin.openHandle(nom),
     tailleVolume: support.tailleVolume,

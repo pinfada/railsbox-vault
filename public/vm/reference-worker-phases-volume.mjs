@@ -11,7 +11,7 @@
 
 import { BlockJournal } from "/src/vm/block-journal.mjs";
 import { cleDuBanc } from "./cle-du-banc.mjs";
-import { openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
+import { daterLaCreation, openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
 import {
   generationJournalName,
   migrationJournalName,
@@ -53,14 +53,7 @@ async function verserLeDisque({ volume, appDiskBytes, appDiskUrl, journal, forma
   // v2 — un volume qui mentirait sur lui-même, et que la migration lirait de travers. C'est ce que
   // le scénario de migration doit trouver : un vrai v2.
   if (formatVersion < MIN_VOLUME_FORMAT_VERSION) {
-    const brut = await ouvrirVolumeBrut({ name: volume, size: appDiskBytes });
-    const depart = performance.now();
-    try {
-      const offset = await verserFluxDansVolume(brut, appDiskUrl);
-      return { offset, identifiantVolume: undefined, scellementMs: 0, versementMs: duree(depart) };
-    } finally {
-      await brut.close();
-    }
+    return verserDansUnVolumeAnterieur({ volume, appDiskBytes, appDiskUrl });
   }
 
   // Le SCELLEMENT INITIAL est chronométré à part : « un secteur jamais écrit n'existe pas en v3 »
@@ -78,15 +71,45 @@ async function verserLeDisque({ volume, appDiskBytes, appDiskUrl, journal, forma
   const scellementMs = duree(avantOuverture);
   const identifiantVolume = backend.identifiantVolume;
   const avantVersement = performance.now();
+  let offset;
   try {
-    return {
-      offset: await verserFluxDansVolume(backend, appDiskUrl),
-      identifiantVolume,
-      scellementMs,
-      versementMs: duree(avantVersement),
-    };
+    offset = await verserFluxDansVolume(backend, appDiskUrl);
   } finally {
     await backend.close();
+  }
+  const versementMs = duree(avantVersement);
+
+  // DATER la création (#181), et le chronométrer À PART : le versement a écrit le fichier entier
+  // hors transaction, donc changé la région d'authentification, donc périmé la racine initiale que
+  // la naissance a écrite. Ce geste la réécrit sur la région finale ; sans lui, le boot suivant
+  // refuserait le volume par la garde de fraîcheur. Son coût est celui d'une empreinte de région et
+  // d'une écriture de racine, et le banc le publie plutôt que de le noyer dans le versement.
+  const avantDatation = performance.now();
+  await daterLaCreation({ name: volume, cle: cleDuBanc(), identifiantVolume });
+  return {
+    offset,
+    identifiantVolume,
+    scellementMs,
+    versementMs,
+    datationMs: duree(avantDatation),
+  };
+}
+
+/**
+ * Verse le disque dans un volume au format ANTÉRIEUR, c'est-à-dire dans un fichier BRUT.
+ *
+ * Extrait de `verserLeDisque` : ce chemin n'a ni scellement initial, ni datation de création, ni
+ * identifiant de volume — il n'a rien de ce que la v3 ajoute, et le mêler au chemin v3 ferait lire
+ * deux gestes là où il n'y en a qu'un.
+ */
+async function verserDansUnVolumeAnterieur({ volume, appDiskBytes, appDiskUrl }) {
+  const brut = await ouvrirVolumeBrut({ name: volume, size: appDiskBytes });
+  const depart = performance.now();
+  try {
+    const offset = await verserFluxDansVolume(brut, appDiskUrl);
+    return { offset, identifiantVolume: undefined, scellementMs: 0, versementMs: duree(depart) };
+  } finally {
+    await brut.close();
   }
 }
 

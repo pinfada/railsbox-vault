@@ -36,7 +36,11 @@ import {
   offsetDeRacine,
 } from "../../src/vm/generation-format.mjs";
 import { GardeDeFraicheur } from "../../src/vm/generation-fraicheur.mjs";
-import { GENERATION_ETATS, poserRapport } from "../../src/vm/generation-recuperation.mjs";
+import {
+  GENERATION_ETATS,
+  autorisationDeCreation,
+  poserRapport,
+} from "../../src/vm/generation-recuperation.mjs";
 import { GenerationStore } from "../../src/vm/generation-store.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
@@ -71,6 +75,7 @@ function banc() {
   // `null` — c'est-à-dire comme #18 le faisait, sans témoin ni empreinte de région.
   const ouvrir = async (fraicheur = source()) =>
     GenerationStore.ouvrir({
+      sansRacine: autorisationDeCreation(),
       volume: "vol",
       handle: await magasin.openHandle(JOURNAL),
       tailleVolume: TAILLE,

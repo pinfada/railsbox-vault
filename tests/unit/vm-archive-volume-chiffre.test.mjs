@@ -113,6 +113,9 @@ function cibleQuiCompte() {
     async revokeManifest() {
       gestes.push("revoke");
     },
+    async commitEngagement() {
+      gestes.push("engagement");
+    },
     async commitRecoveryEnvelope() {
       gestes.push("enveloppe");
     },
@@ -150,6 +153,7 @@ test("un volume v3 s'exporte TEL QUEL : l'archive porte ses octets chiffrés", a
     source: source(octets),
     manifest: manifeste(3),
     consistency: COHERENCE,
+    cle: CLE_DE_TEST,
   });
 
   const verdict = await verifyArchive(archive);
@@ -180,11 +184,13 @@ test("l'empreinte porte sur le CHIFFRÉ : deux exports d'un même contenu ne se 
     source: source(premier.octets),
     manifest: manifeste(3),
     consistency: COHERENCE,
+    cle: CLE_DE_TEST,
   });
   const b = await exportVolumeToBytes({
     source: source(second.octets),
     manifest: manifeste(3),
     consistency: COHERENCE,
+    cle: CLE_DE_TEST,
   });
 
   assert.notEqual(a.digest, b.digest, "même clair, empreintes distinctes");
@@ -201,6 +207,7 @@ test("une archive de volume v3 se restaure SANS CLÉ, octet pour octet", async (
     source: source(octets),
     manifest: manifeste(3),
     consistency: COHERENCE,
+    cle: CLE_DE_TEST,
   });
 
   const cible = cibleBrute();
@@ -252,6 +259,7 @@ function cibleBrute() {
     },
     async revokeManifest() {},
     async discardGeneration() {},
+    async commitEngagement() {},
     async commitRecoveryEnvelope(octets) {
       etat.enveloppe = octets;
     },
@@ -298,6 +306,7 @@ test("le CLAIR d'un secteur connu n'apparaît nulle part dans l'archive exporté
     source: source(octets),
     manifest: manifeste(3),
     consistency: COHERENCE,
+    cle: CLE_DE_TEST,
   });
 
   assert.equal(
@@ -331,6 +340,7 @@ test("une archive dont le MANIFESTE et le FICHIER déclarent des volumes différ
       volume: { id: autre, algorithm: "aes-256-gcm" },
     }),
     consistency: COHERENCE,
+    cle: CLE_DE_TEST,
   });
 
   const cible = cibleQuiCompte();

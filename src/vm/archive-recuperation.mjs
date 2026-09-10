@@ -251,3 +251,80 @@ function accorderLeDescripteurEtLaPage(page, descripteur) {
     { declare: { ...descripteur }, porte },
   );
 }
+
+/** Première version à porter une section de récupération. En deçà, la déclarer est une malformation. */
+const PREMIERE_VERSION_AVEC_RECUPERATION = 2;
+
+/** Erreur typée de conteneur méconnaissable, rendue par les gardes ci-dessous. */
+function malformed(message, context) {
+  return new ArchiveError(ARCHIVE_ERROR_CODES.malformed, `Archive malformée : ${message}`, context);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Les GARDES du conteneur qui parlent de la section : la présence du champ, la lecture de la
+// section, et ce qui la suit. Elles vivaient dans `volume-export.mjs`, que #181 a fait franchir le
+// plafond de 800 lignes ; elles sont ici parce qu'elles ne parlent que de la RÉCUPÉRATION.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * EXIGE que la PRÉSENCE du champ `recovery` suive la version d'archive déclarée.
+ *
+ * La règle vaut DANS LES DEUX SENS, et la première rédaction ne la tenait que dans un — constat de
+ * la revue de format de la PR #160.
+ *
+ * Une archive ANTÉRIEURE à la v2 n'a pas de section, et un en-tête v1 qui en déclarerait une
+ * décrirait une disposition que sa propre version dit inexistante. Une archive de v2, elle, DOIT
+ * porter le champ — objet, ou `null` EXPLICITE. Un champ absent était accepté comme `null`, si bien
+ * qu'il suffisait de le retirer d'un en-tête pour que huit kilo-octets d'enveloppe deviennent une
+ * queue que personne ne lit : l'archive se vérifiait, `archiveLength` était faux, et la capacité
+ * d'ouvrir disparaissait en silence. `buildHeader` écrivait déjà la règle — « un champ absent et un
+ * champ nul ne disent pas la même chose » — sans que rien ne la relise.
+ */
+export function assertChampDeRecuperation(header) {
+  const porteLeChamp = Object.hasOwn(header, "recovery");
+  const attenduAvecChamp = header.archiveFormatVersion >= PREMIERE_VERSION_AVEC_RECUPERATION;
+  if (porteLeChamp === attenduAvecChamp) return;
+  throw malformed(
+    attenduAvecChamp
+      ? `une archive v${header.archiveFormatVersion} déclare toujours « recovery » — un objet, ou « null » explicite quand le volume n'a pas de moyen de récupération. Le champ est absent.`
+      : `une archive v${header.archiveFormatVersion} ne porte pas de section de récupération, et son en-tête en déclare une.`,
+    { archiveFormatVersion: header.archiveFormatVersion, recoveryDeclare: porteLeChamp },
+  );
+}
+
+/**
+ * Valide le descripteur de récupération, lit la section et confronte son empreinte. Rend `null`
+ * quand l'archive n'en déclare pas.
+ *
+ * Extrait de `readArchive` parce que c'est un GESTE entier : l'en-tête déclare, la section est lue,
+ * l'empreinte tranche. Il se lit d'un bloc, et il vit dans la même phase que la vérification du
+ * contenu — rien n'est rendu tant que les DEUX empreintes ne concordent pas. C'est ce qui fait que
+ * la restauration, qui appelle `readArchive` en premier, ne peut pas écrire une enveloppe altérée :
+ * elle n'a même pas encore ouvert la cible.
+ */
+export async function verifierLaRecuperation({ header, read, byteLength, offset }) {
+  const descripteur = validerDescripteurDeRecuperation(header.recovery);
+  if (descripteur === null) return null;
+  const lue = await lireEtVerifierLaRecuperation({ read, byteLength, offset, descripteur });
+  // La page DÉCODÉE accompagne les octets : la restauration a besoin de l'identifiant de volume
+  // qu'elle authentifie, et le redécoder plus loin rouvrirait entre les deux une fenêtre où les
+  // octets jugés ne seraient plus tout à fait ceux qu'on écrit.
+  return { ...descripteur, offset, octets: lue.octets, page: lue.page };
+}
+
+/**
+ * REFUSE des octets AU-DELÀ de ce que l'archive déclare — constat de la revue de format de #160.
+ *
+ * La longueur totale n'était confrontée à rien : une archive suivie de n'importe quoi se vérifiait,
+ * et `archiveLength` désignait une partie du fichier sans que rien ne dise que le reste existait.
+ * C'était sans effet tant que la queue n'avait pas de sens ; depuis la v2 elle en a un, et une
+ * section greffée derrière une archive `recovery: null` passait inaperçue. Un fichier plus COURT
+ * reste une troncature, jugée plus haut, et son refus garde son code.
+ */
+export function assertRienEnQueue(byteLength, archiveLength) {
+  if (byteLength === archiveLength) return;
+  throw malformed(
+    `l'archive décrit ${archiveLength} octet(s) et le fichier en porte ${byteLength}. Ce qui suit une archive n'appartient à aucune de ses sections, et rien ne dit ce que c'est.`,
+    { archiveLength, byteLength },
+  );
+}

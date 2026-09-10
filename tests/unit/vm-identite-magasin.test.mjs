@@ -45,6 +45,7 @@ import {
 } from "../../src/vm/format-chiffre/identite-logique.mjs";
 import { octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
 import { ENTETE_OCTETS, ZONE_ENREGISTREMENTS } from "../../src/vm/generation-format.mjs";
+import { autorisationDeCreation } from "../../src/vm/generation-recuperation.mjs";
 import { GenerationStore } from "../../src/vm/generation-store.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
@@ -115,6 +116,7 @@ async function session(cadre, fraicheur) {
     ecrireSupport: (offset, octets) => cadre.support.set(octets, offset),
   });
   const magasin = await GenerationStore.ouvrir({
+    sansRacine: autorisationDeCreation(),
     volume: "vol",
     handle: await cadre.magasin.openHandle(cadre.nom),
     tailleVolume: TAILLE,

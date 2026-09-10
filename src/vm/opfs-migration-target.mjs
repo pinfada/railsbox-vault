@@ -17,10 +17,15 @@
 import { BlockJournal } from "./block-journal.mjs";
 import { MIGRATION_ERROR_CODES, MigrationError } from "./migration-errors.mjs";
 import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
+import { poserLaRacineInitialeSurAccesBrut } from "./opfs-racine-initiale.mjs";
+import { Scellement } from "./scellement.mjs";
+import { SECTOR_SIZE } from "./block-geometry.mjs";
+import { FORMAT_VOLUME_V3 } from "./volume-chiffre-format.mjs";
 import {
   generationJournalName,
   manifestSidecarName,
   migrationJournalName,
+  openOpfsSyncAccess,
   removeOpfsVolume,
   statOpfsVolume,
   instantaneSidecarName,
@@ -70,6 +75,7 @@ export function createOpfsMigrationTarget(
     writeSidecar = writeSidecarBytes,
     removeSidecar = removeOpfsVolume,
     openVolume = ouvrirVolumeBrut,
+    ouvrirHandle = openOpfsSyncAccess,
   } = {},
 ) {
   const manifeste = manifestSidecarName(volume);
@@ -158,6 +164,39 @@ export function createOpfsMigrationTarget(
     /** Inscrit le manifeste migré : l'avant-dernier geste, et le seul à rendre le volume valide. */
     async commitManifest(bytes) {
       await writeSidecar(manifeste, bytes);
+    },
+
+    /**
+     * ÉCRIT la RACINE INITIALE du volume migré, avant que son manifeste ne soit inscrit (#181).
+     *
+     * ## Pourquoi la migration date son résultat
+     *
+     * Depuis #181, **aucun volume légitime n'est sans racine** : c'est ce qui rend refusable un
+     * volume restauré dont on a retiré l'engagement. Une migration qui laisserait son résultat sans
+     * racine produirait un volume que la règle refuse — un volume sain rendu inouvrable par le
+     * produit lui-même.
+     *
+     * ## Le compteur de scellements, et la réserve qu'il porte
+     *
+     * La conversion scelle UN secteur par secteur : le compteur repart donc du nombre de secteurs,
+     * et la racine en consomme un de plus. Une conversion REPRISE peut avoir scellé certains
+     * secteurs deux fois ; le compteur est alors SOUS-ESTIMÉ, exactement comme le § 4.5 l'écrit
+     * déjà de tout ce qui se scelle hors transaction. Le dire vaut mieux que de laisser croire
+     * qu'il est exact.
+     */
+    async poserLaRacineInitiale({ brut, tailleLogique, identifiantVolume, cle }) {
+      return poserLaRacineInitialeSurAccesBrut({
+        name: volume,
+        brut,
+        tailleLogique,
+        openHandle: ouvrirHandle,
+        scellement: await Scellement.ouvrir({
+          volume: identifiantVolume,
+          cleOctets: cle,
+          formatVersion: FORMAT_VOLUME_V3,
+          scellementsCumules: tailleLogique / SECTOR_SIZE,
+        }),
+      });
     },
 
     /** Retire le journal : dernier geste. Sa présence signale un dernier geste non franchi. */

@@ -34,7 +34,7 @@
 // l'ouvreur et inscrit dans son manifeste voisin, qui en est ensuite la source (ADR 0016).
 
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
-import { openOpfsVolume } from "../vm/opfs-block-backend.mjs";
+import { daterLaCreation, openOpfsVolume } from "../vm/opfs-block-backend.mjs";
 import { manifestSidecarName, statOpfsVolume } from "../vm/opfs-sync-access.mjs";
 import {
   openVolumeForWrite,
@@ -251,21 +251,15 @@ export async function installerSiNecessaire({
   cleDeVolume,
   observer = statOpfsVolume,
   ouvrir = openOpfsVolume,
+  dater = daterLaCreation,
   verser = verserFluxDansVolume,
   revoquer = revokeVolumeManifest,
   inscrire = writeVolumeManifest,
 }) {
   const nom = NOM_DU_VOLUME_APPLICATIF;
   const octets = descripteur.disque.octets;
-  const manifesteExistant = await observer(manifestSidecarName(nom));
-  if (manifesteExistant.present) return { installee: false, volume: nom, octets };
-
-  const volumeExistant = await observer(nom);
-  if (volumeExistant.present) {
-    throw refus(
-      CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste,
-      `Le volume « ${nom} » existe sans manifeste : la coquille ne l'écrase pas pour installer.`,
-    );
+  if (await constaterLInstallation({ nom, observer })) {
+    return { installee: false, volume: nom, octets };
   }
 
   // Rien n'existe : le manifeste est révoqué d'abord, pour que rien ne puisse ouvrir un volume à
@@ -278,6 +272,12 @@ export async function installerSiNecessaire({
       `Disque applicatif tronqué : ${verse.ecrits} octets écrits sur ${octets}.`,
     );
   }
+  await daterLaCreationDuVolume({
+    dater,
+    cleDeVolume,
+    nom,
+    identifiantVolume: verse.identifiantVolume,
+  });
   // DERNIER geste : le volume devient identifié, donc ouvrable en écriture. Tout ce qui précède
   // laisse un volume ANONYME, et c'est ce qui rend une installation interrompue reconnaissable.
   const descripteurManifeste = descripteurDeManifeste(descripteur);
@@ -292,6 +292,25 @@ export async function installerSiNecessaire({
     }),
   );
   return { installee: true, volume: nom, octets, ecrits: verse.ecrits };
+}
+
+/**
+ * CONSTATE ce que le support porte déjà, et rend `true` si l'application est installée.
+ *
+ * Extrait de `installerSiNecessaire` : les deux issues qui n'installent RIEN se jugent sur le seul
+ * état observé, et elles se lisent mieux ensemble. Un volume ANONYME est refusé plutôt qu'écrasé —
+ * c'est soit une installation interrompue, soit autre chose, et l'écraser est une décision que la
+ * coquille n'a pas à prendre seule (constat 7 de la revue de la PR #171).
+ */
+async function constaterLInstallation({ nom, observer }) {
+  const manifesteExistant = await observer(manifestSidecarName(nom));
+  if (manifesteExistant.present) return true;
+  const volumeExistant = await observer(nom);
+  if (!volumeExistant.present) return false;
+  throw refus(
+    CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste,
+    `Le volume « ${nom} » existe sans manifeste : la coquille ne l'écrase pas pour installer.`,
+  );
 }
 
 /**
@@ -317,6 +336,31 @@ async function verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, o
     };
   } finally {
     await backend.close();
+  }
+}
+
+/**
+ * DATE la création du volume applicatif (#181), une fois son disque versé ENTIER.
+ *
+ * Le versement écrit le fichier hors transaction, donc change la RÉGION D'AUTHENTIFICATION : la
+ * racine initiale que la naissance a écrite date une région qui n'est plus là. Ce geste la réécrit
+ * sur la région finale, et c'est l'avant-dernier geste de l'installation — le manifeste, qui DÉCLARE
+ * le volume, vient encore après.
+ *
+ * **Sans lui, le volume est REFUSÉ au premier boot** par la garde de fraîcheur (ADR 0019) : un oubli
+ * coûte un refus, jamais un silence.
+ *
+ * Il vient APRÈS le contrôle de troncature : un disque versé à moitié n'a pas de création à dater,
+ * et l'installation s'arrête sans avoir déclaré quoi que ce soit.
+ *
+ * La clé est effacée QUOI QU'IL ARRIVE, comme partout ailleurs sur ce chemin.
+ */
+async function daterLaCreationDuVolume({ dater, cleDeVolume, nom, identifiantVolume }) {
+  const cle = await cleDeVolume();
+  try {
+    return await dater({ name: nom, cle, identifiantVolume });
+  } finally {
+    cle.fill(0);
   }
 }
 

@@ -25,6 +25,7 @@ import { fichierDEnveloppeDepuisLaPage } from "./enveloppe-de-recuperation.mjs";
 import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
 import { isManifestError } from "./manifest-errors.mjs";
 import {
+  engagementSidecarName,
   enveloppeSidecarName,
   generationJournalName,
   manifestSidecarName,
@@ -145,6 +146,11 @@ export function createOpfsImportTarget(
      */
     async discardGeneration() {
       await removeSidecar(generationJournalName(volume));
+      // Et l'ENGAGEMENT d'une restauration ANTÉRIEURE (#181) : il atteste une archive que le volume
+      // qu'on écrase ne porte plus. Le laisser ferait vérifier, à la première ouverture, un
+      // engagement qui ne parle pas de ces octets-ci — donc un REFUS, exact mais fabriqué par le
+      // produit lui-même. Celui de l'archive en cours est posé par `commitEngagement`, plus tard.
+      await removeSidecar(engagementSidecarName(volume));
       await removeSidecar(temoinSequenceName(volume));
       // Et l'INSTANTANÉ (#65, ADR 0024, décision 8), pour la raison du témoin, portée d'un cran :
       // il décrit un état MÉMOIRE lié à une génération que le volume restauré n'a jamais portée.
@@ -193,6 +199,26 @@ export function createOpfsImportTarget(
       // dans `volume-import.mjs`, avant toute mutation ; celle-ci est la garde du module qui écrit,
       // et elle tient même si un appelant futur venait par un autre chemin.
       await writeManifest(voisin, fichierDEnveloppeDepuisLaPage(bytes));
+    },
+
+    /**
+     * DÉPOSE l'ENGAGEMENT que l'archive portait, à côté du volume (#181, ADR 0033).
+     *
+     * ## Pourquoi la restauration dépose au lieu de vérifier
+     *
+     * Elle N'A PAS LA CLÉ, et c'est une propriété du § 7.5 qu'on garde : elle recopie des octets
+     * chiffrés sans jamais en ouvrir un. Elle vérifie donc ce qu'elle peut sans clé — présence,
+     * longueur, cohérence de l'en-tête, version d'archive lue — et laisse la vérification
+     * CRYPTOGRAPHIQUE à la première ouverture, qui, elle, tient la clé.
+     *
+     * ## Il est posé AVANT le manifeste, comme l'enveloppe
+     *
+     * Le manifeste est ce qui DÉCLARE le volume complet. Un volume déclaré complet doit porter tout
+     * ce qu'il faut pour l'ouvrir : son enveloppe, et désormais son engagement. Coupé entre les
+     * deux, le volume est non identifié, donc refusé au boot — le seul état sûr des deux.
+     */
+    async commitEngagement(bytes) {
+      await writeManifest(engagementSidecarName(volume), bytes);
     },
 
     async commitManifest(bytes) {
