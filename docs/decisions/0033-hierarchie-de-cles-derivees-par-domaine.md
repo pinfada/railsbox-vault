@@ -422,7 +422,7 @@ Accepté par le mainteneur le 10 septembre 2026, dans cet ordre :
 | Tranche | Objet                                                                                  | Estimation | Revues |
 | ------- | -------------------------------------------------------------------------------------- | ---------: | -----: |
 | **T0**  | cet ADR, les deux DoR, le dossier au présent                                           |    ≈ 300 k |      1 |
-| **T1**  | #181 — l'archive authentifiée ; introduit la dérivation pour le SEUL domaine `archive` |    ≈ 800 k |      2 |
+| **T1**  | #181 — l'archive authentifiée ; introduit la dérivation pour le SEUL domaine `archive` |      ≈ 1 M |      2 |
 | **T2a** | #182 — hiérarchie, domaines `volume`, `journal` et `instantane`, en-tête v4, migration |      ≈ 1 M |      2 |
 | **T2b** | #182 — domaines `enveloppe` et `recuperation`, budgets exhaustifs, cliquet anti-DEK    |    ≈ 800 k |      2 |
 | **T3**  | spike AES-GCM-SIV — une mesure et un verdict, aucun code de produit                    |    ≈ 400 k |      1 |
@@ -432,6 +432,16 @@ seule ; le volume reste v3, et sa clé reste la DEK jusqu'à T2a. C'est une ento
 décision 1 pendant deux tranches, et elle est écrite ici plutôt que découverte à la revue de T1 :
 corriger un CRITICAL avant un HIGH est le bon ordre, et faire dépendre le CRITICAL d'une version de
 format complète l'aurait retardé d'une tranche entière.
+
+**T1 ANTICIPE pour v3 la règle de la racine initiale de la décision 5**, et c'est la revue de cette
+tranche T0 qui l'a établi : sans elle, l'engagement de #181 ne peut pas être exigé. « Sans racine »
+est aujourd'hui aussi l'état LÉGITIME d'une création (§ 7.1 : la création finit par `VLTSEAL1`, pas
+par une racine), si bien qu'un adversaire qui retire le voisin d'engagement après une restauration
+rend un volume indiscernable d'un volume neuf — et le mélange repasse. T1 pose donc dès la v3 ce que
+la décision 5 réservait à la v4 : **aucun volume légitime n'est sans racine.** La création et la
+migration v2 → v3 écrivent une racine initiale ; une ouverture sans racine et sans engagement est un
+REFUS. Cela ferme du même geste, pour la v3 déjà, les 2^20 scellements qu'une création ne publiait
+pas (décision 4). L'estimation de T1 passe de 800 k à ≈ 1 M pour ce travail.
 
 Les Definition of Ready sont dans les issues :
 [DoR de #181](https://github.com/pinfada/railsbox-vault/issues/181) ·
