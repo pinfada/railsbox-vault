@@ -51,6 +51,7 @@ import {
   decoderEnTeteV3,
   identifiantVolumeEnTexte,
 } from "./volume-chiffre-format.mjs";
+import { encoderFichierDEngagement } from "./archive-engagement.mjs";
 import { MANIFEST_SIDECAR_SUFFIX, manifestSidecarName } from "./opfs-sync-access.mjs";
 import { parseManifest, serializeManifest } from "./volume-manifest.mjs";
 
@@ -76,6 +77,7 @@ function assertContract({ source, target, blockBytes }) {
     "open",
     "revokeManifest",
     "commitRecoveryEnvelope",
+    "commitEngagement",
     "commitManifest",
   ]) {
     if (typeof target?.[membre] !== "function") {
@@ -417,6 +419,10 @@ async function verifierPuisRefuser({
  */
 async function poserLEnveloppePuisLeManifeste(target, verdict) {
   await target.commitRecoveryEnvelope(verdict.recovery === null ? null : verdict.recovery.octets);
+  // L'ENGAGEMENT (#181) rejoint l'enveloppe du même côté de la frontière : avant le manifeste. Un
+  // volume déclaré complet porte tout ce qu'il faut pour l'ouvrir, et depuis #181 il faut, en plus
+  // de la clé, de quoi prouver que ces octets-ci sont un état que le volume a réellement produit.
+  await target.commitEngagement(encoderFichierDEngagement(verdict.engagement));
   await target.commitManifest(serializeManifest(verdict.manifest));
 }
 
@@ -523,18 +529,12 @@ function assertEnveloppeEmbarquee(verdict) {
  * appartient, et le voisin d'enveloppe se pose sous une identité — jamais sous « on verra bien ».
  */
 function assertEnveloppeDuMemeVolume(verdict, page) {
-  const declare = verdict.manifest.volume?.id ?? null;
-  if (declare === null) {
-    throw new ArchiveError(
-      ARCHIVE_ERROR_CODES.recuperationRefusee,
-      `Restauration refusée : l'archive emporte une enveloppe de récupération et son manifeste ne déclare aucun identifiant de volume (format v${verdict.manifest.formatVersion}). Une enveloppe appartient à UN volume ; rien ne dit auquel. Aucun octet n'est écrit sur la cible.`,
-      {
-        declare: null,
-        porte: page.identifiantVolume,
-        formatVersion: verdict.manifest.formatVersion,
-      },
-    );
-  }
+  // L'identifiant est TOUJOURS déclaré à ce point : depuis #181, `readArchive` refuse par
+  // `VAULT_ARCHIVE_ENGAGEMENT_ABSENT` une archive dont le manifeste n'en porte aucun — un engagement
+  // scelle l'identité du volume qu'il couvre, et sans elle il ne couvre rien. Le refus qui vivait
+  // ici a donc AVANCÉ de deux crans, et il est plus fort : il tombe avant même que la section de
+  // récupération ne soit lue. Le rejouer ici aurait laissé une branche que rien n'atteint.
+  const declare = verdict.manifest.volume.id;
   if (page.identifiantVolume === declare) return;
   throw new ArchiveError(
     ARCHIVE_ERROR_CODES.recuperationRefusee,
@@ -595,6 +595,9 @@ function rapportDeRestauration({
     volumeSize,
     contentDigest: verdict.contentDigest,
     // L'enveloppe posée, SANS ses octets : le rapport franchit `postMessage` et va dans un journal.
+    // L'ENGAGEMENT déposé, sous sa forme de DESCRIPTEUR : ce qu'un exploitant doit lire est que le
+    // volume restauré porte de quoi être ouvert une fois, et sur quelle géométrie il s'engage.
+    engagement: verdict.engagement.descripteur,
     recovery:
       verdict.recovery === null
         ? null

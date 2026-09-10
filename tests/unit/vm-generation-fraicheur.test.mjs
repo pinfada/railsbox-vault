@@ -22,6 +22,7 @@ import { buildPattern } from "../../src/vm/block-fixture.mjs";
 import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import { CRYPTO_ERROR_CODES } from "../../src/vm/format-chiffre/crypto-errors.mjs";
 import { GardeDeFraicheur } from "../../src/vm/generation-fraicheur.mjs";
+import { autorisationDeCreation } from "../../src/vm/generation-recuperation.mjs";
 import { GenerationStore } from "../../src/vm/generation-store.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
@@ -201,6 +202,7 @@ function bancDeMigration() {
   const boite = { octets: null };
   const ouvrir = async (fraicheur) =>
     GenerationStore.ouvrir({
+      sansRacine: autorisationDeCreation(),
       volume: "vol",
       handle: await magasin.openHandle("vol.gen"),
       tailleVolume: TAILLE,

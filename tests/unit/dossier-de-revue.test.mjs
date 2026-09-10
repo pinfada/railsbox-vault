@@ -284,7 +284,7 @@ test("le dossier remis au relecteur est complet : spec, vecteurs, script, gabari
     "tests/vectors/disposition-v3.json",
     "tests/vectors/enveloppe-v1.json",
     "tests/vectors/derivation-v1.json",
-    "tests/vectors/archive-v2.json",
+    "tests/vectors/archive-v3.json",
     "tools/verifier-vecteurs.mjs",
   ];
   const manquants = [];

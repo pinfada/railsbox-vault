@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// CAMPAGNE DE MUTATION des gardes de l'archive v2 et de l'ancre de version (#149, ADR 0027).
+// CAMPAGNE DE MUTATION des gardes de l'archive v3, de son ENGAGEMENT, et de l'ancre de version
+// (#181, ADR 0033 ; #149, ADR 0027).
 //
 //     node tools/muter-gardes-archive-recuperation.mjs [--json]
 //
@@ -27,7 +28,11 @@
 //  - le CONSENTEMENT nommé, et la LECTURE d'une archive v1, qui est la compatibilité promise ;
 //  - depuis les revues de la PR #160 : l'IDENTITÉ du volume que la page authentifie confrontée à
 //    celle du manifeste, la PRÉSENCE du champ `recovery` dans un en-tête v2, le refus d'une queue
-//    au-delà de l'archive, et la garde de forme À L'ÉCRITURE — la moitié qui manquait.
+//    au-delà de l'archive, et la garde de forme À L'ÉCRITURE — la moitié qui manquait ;
+//  - depuis #181 : ce que l'ENGAGEMENT scelle et sous quelle clé, la confrontation de l'empreinte
+//    du fichier à celle qu'il scelle, le refus d'un voisin ABSENT, le refus d'un volume sans racine
+//    que rien n'autorise, et la RACINE INITIALE que la création écrit. Ce sont les six lignes qui
+//    séparent la correction du CRITICAL d'une déclaration d'intention.
 //
 // ## Ce que la campagne ne peut PAS mesurer
 //
@@ -44,12 +49,19 @@ const SECTION = "src/vm/archive-recuperation.mjs";
 const EXPORT = "src/vm/volume-export.mjs";
 const IMPORT = "src/vm/volume-import.mjs";
 const OUVERTURE = "src/vm/ouverture-par-enveloppe.mjs";
+const ENGAGEMENT = "src/vm/archive-engagement.mjs";
+const DOMAINE = "src/vm/derivation/cle-de-domaine.mjs";
+const OUVREUR = "src/vm/opfs-volume-ouverture.mjs";
+const RECUPERATION_GENERATION = "src/vm/generation-recuperation.mjs";
+const RACINE = "src/vm/opfs-racine-initiale.mjs";
 
 const ARCHIVE = "tests/unit/vm-archive-recuperation.test.mjs";
 const RESTAURATION = "tests/unit/vm-restauration-recuperation.test.mjs";
 const ANCRE = "tests/unit/vm-enveloppe-ancre-version.test.mjs";
 const VECTEURS = "tests/unit/vm-archive-vecteurs.test.mjs";
 const IMPORT_EPREUVE = "tests/unit/vm-volume-import.test.mjs";
+const MELANGE = "tests/unit/vm-archive-melange-etats.test.mjs";
+const GENERATION = "tests/unit/vm-generation-store.test.mjs";
 
 /**
  * Les gardes de #149, et la façon exacte de les retirer.
@@ -101,11 +113,11 @@ export const MUTATIONS = Object.freeze([
     epreuves: [ARCHIVE, RESTAURATION],
   },
   {
-    nom: "une archive de version 1 reste LUE",
-    garde: "ARCHIVE_FORMAT_VERSIONS_LUES — la compatibilité promise par l'ADR 0027",
+    nom: "les archives v1 et v2 sont REFUSÉES : elles ne portent aucun engagement",
+    garde: "ARCHIVE_FORMAT_VERSIONS_LUES — le refus de #181",
     fichier: EXPORT,
-    avant: "export const ARCHIVE_FORMAT_VERSIONS_LUES = Object.freeze([1, 2]);",
-    apres: "export const ARCHIVE_FORMAT_VERSIONS_LUES = Object.freeze([2]);",
+    avant: "export const ARCHIVE_FORMAT_VERSIONS_LUES = Object.freeze([3]);",
+    apres: "export const ARCHIVE_FORMAT_VERSIONS_LUES = Object.freeze([1, 2, 3]);",
     epreuves: [ARCHIVE],
   },
   {
@@ -128,17 +140,18 @@ export const MUTATIONS = Object.freeze([
     epreuves: [RESTAURATION],
   },
   {
-    nom: "une archive qui emporte une enveloppe DÉCLARE son volume",
-    garde: "assertEnveloppeDuMemeVolume — le refus d'un manifeste sans identifiant",
-    fichier: IMPORT,
-    avant: "  const declare = verdict.manifest.volume?.id ?? null;\n  if (declare === null) {",
-    apres: "  const declare = verdict.manifest.volume?.id ?? null;\n  if (false) {",
+    nom: "une archive DÉCLARE son volume : sans identité, l'engagement ne couvre rien",
+    garde: "scellerLEngagementDeLArchive — le refus, À L'ÉCRITURE, d'un manifeste sans identifiant",
+    fichier: ENGAGEMENT,
+    avant:
+      "  const identifiantVolume = base.volume?.id ?? null;\n  if (identifiantVolume === null) {",
+    apres: "  const identifiantVolume = base.volume?.id ?? null;\n  if (false) {",
     epreuves: [RESTAURATION],
   },
   {
     nom: "un en-tête v2 DÉCLARE toujours « recovery », fût-ce à null",
     garde: "assertChampDeRecuperation — la présence du champ suit la version",
-    fichier: EXPORT,
+    fichier: SECTION,
     avant: "  if (porteLeChamp === attenduAvecChamp) return;",
     apres: "  if (porteLeChamp === attenduAvecChamp || attenduAvecChamp) return;",
     epreuves: [ARCHIVE],
@@ -146,7 +159,7 @@ export const MUTATIONS = Object.freeze([
   {
     nom: "rien ne suit une archive : la queue est refusée",
     garde: "assertRienEnQueue — la longueur totale confrontée à la disposition",
-    fichier: EXPORT,
+    fichier: SECTION,
     avant: "  if (byteLength === archiveLength) return;",
     apres: "  return;",
     epreuves: [ARCHIVE],
@@ -169,11 +182,11 @@ export const MUTATIONS = Object.freeze([
     garde: "poserLEnveloppePuisLeManifeste — l'ordre des deux derniers gestes",
     fichier: IMPORT,
     avant:
-      "  await target.commitRecoveryEnvelope(verdict.recovery === null ? null : verdict.recovery.octets);\n" +
+      "  await target.commitEngagement(encoderFichierDEngagement(verdict.engagement));\n" +
       "  await target.commitManifest(serializeManifest(verdict.manifest));",
     apres:
       "  await target.commitManifest(serializeManifest(verdict.manifest));\n" +
-      "  await target.commitRecoveryEnvelope(verdict.recovery === null ? null : verdict.recovery.octets);",
+      "  await target.commitEngagement(encoderFichierDEngagement(verdict.engagement));",
     epreuves: [RESTAURATION, IMPORT_EPREUVE],
   },
   {
@@ -210,6 +223,61 @@ export const MUTATIONS = Object.freeze([
     avant: "    size,\n    expectations,\n    versionMinimale,\n    support: supportEmploye,",
     apres: "    size,\n    expectations,\n    support: supportEmploye,",
     epreuves: [ANCRE],
+  },
+
+  // --- Les gardes de #181 : l'ENGAGEMENT, le chemin d'OUVERTURE, et la CRÉATION ----------------
+  //
+  // Elles sont ce qui sépare la correction du CRITICAL de la revue externe d'une déclaration
+  // d'intention. Chacune est retirée pour de vrai, et l'épreuve qui devrait la couvrir doit rougir.
+
+  {
+    nom: "l'engagement scelle la GÉOMÉTRIE : retirer un champ des données associées se voit",
+    garde: "donneesAssocieesDeLEngagement — la taille logique dans les données associées",
+    fichier: ENGAGEMENT,
+    avant: "    entierEnOctets(champs.tailleLogique, 8),\n",
+    apres: "",
+    epreuves: [VECTEURS],
+  },
+  {
+    nom: "l'INFO de la dérivation lie le DOMAINE : le retirer ferait tirer la même clé partout",
+    garde: "encoderInfoDeDomaine — l'étiquette de domaine dans l'info HKDF",
+    fichier: DOMAINE,
+    avant: "    chainePrefixee(domaine),\n",
+    apres: "",
+    epreuves: [VECTEURS],
+  },
+  {
+    nom: "l'EMPREINTE du fichier est confrontée à celle que l'engagement scelle",
+    garde: "verifierLEngagementDepose — la comparaison des deux empreintes",
+    fichier: RACINE,
+    avant: "  if (octetsEnHex(scellee) !== empreinte) {",
+    apres: "  if (false) {",
+    epreuves: [MELANGE],
+  },
+  {
+    nom: "un engagement ABSENT n'autorise rien : le volume est refusé",
+    garde: "verifierLEngagementDepose — le refus d'un voisin absent",
+    fichier: RACINE,
+    avant: "  if (octets === null) return null;",
+    apres:
+      "  if (octets === null) return { motif: MOTIFS_DE_RACINE_INITIALE.engagement, consommer: async () => {} };",
+    epreuves: [MELANGE],
+  },
+  {
+    nom: "un volume sans racine que RIEN n'autorise est REFUSÉ",
+    garde: "remedeSansRacine — le refus de #181",
+    fichier: RECUPERATION_GENERATION,
+    avant: "  if (!autorisee) throw volumeSansRacine(volume, { chargePresente });",
+    apres: "",
+    epreuves: [MELANGE, GENERATION],
+  },
+  {
+    nom: "la CRÉATION écrit sa racine initiale, et elle seule s'y autorise",
+    garde: "openOpfsVolume — le motif « creation » d'une naissance",
+    fichier: OUVREUR,
+    avant: "  const motif = saisi.naissance ? MOTIFS_DE_RACINE_INITIALE.creation : creation;",
+    apres: "  const motif = creation;",
+    epreuves: [MELANGE],
   },
 ]);
 

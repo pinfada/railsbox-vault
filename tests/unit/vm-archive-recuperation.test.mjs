@@ -66,6 +66,7 @@ async function archiveDUnVolume({ avecRecuperation = true } = {}) {
     source: sourceDuVolume(banc, pose.nom),
     manifest: descripteurDeManifeste(),
     consistency: { kind: "handle-exclusif", detail: "volume fermé pour l'épreuve" },
+    cle: DEK,
     recovery: recuperation,
   });
   return { banc, pose, recuperation, ...ecrite };
@@ -94,12 +95,12 @@ function offsetsDuMarqueur(archive) {
   return trouves;
 }
 
-test("le format d'archive écrit est la version 2, et sa disposition est 12 + H + N + R", async () => {
+test("le format d'archive écrit est la version 3, et sa disposition est 12 + H + N + R", async () => {
   const { archive, recuperation, contentLength, headerLength } = await archiveDUnVolume();
   const entete = enTeteDe(archive);
 
-  assert.equal(ARCHIVE_FORMAT_VERSION, 2);
-  assert.equal(entete.objet.archiveFormatVersion, 2);
+  assert.equal(ARCHIVE_FORMAT_VERSION, 3);
+  assert.equal(entete.objet.archiveFormatVersion, 3);
   assert.equal(entete.longueur, headerLength);
   assert.equal(recuperation.octets.byteLength, PAGE_OCTETS);
   assert.equal(
@@ -179,6 +180,7 @@ test("une enveloppe SANS emplacement de type 4 ne produit aucune section : l'arc
     source: sourceDuVolume(banc, pose.nom),
     manifest: descripteurDeManifeste(),
     consistency: { kind: "handle-exclusif" },
+    cle: DEK,
     recovery: recuperation,
   });
   assert.equal(enTeteDe(archive).objet.recovery, null);
@@ -236,55 +238,44 @@ test("une archive v2 tronquée dans sa section de récupération est refusée, p
   );
 });
 
-test("une archive de version 1 reste lisible, et son verdict porte « aucune récupération »", async () => {
-  const { archive, headerLength, contentLength } = await archiveDUnVolume({
-    avecRecuperation: false,
-  });
-  // L'archive v1 est reconstruite depuis la v2 sans récupération : même contenu, en-tête ramené à
-  // la version 1 et champ `recovery` retiré, comme une archive écrite avant cette tranche.
-  const entete = enTeteDe(archive);
-  delete entete.objet.recovery;
-  entete.objet.archiveFormatVersion = 1;
-  const octetsEnTete = new TextEncoder().encode(JSON.stringify(entete.objet));
-  const v1 = new Uint8Array(PREAMBLE_BYTES + octetsEnTete.byteLength + contentLength);
-  v1.set(archive.subarray(0, PREAMBLE_BYTES), 0);
-  new DataView(v1.buffer).setUint32(8, octetsEnTete.byteLength, false);
-  v1.set(octetsEnTete, PREAMBLE_BYTES);
-  v1.set(
-    archive.subarray(PREAMBLE_BYTES + headerLength, PREAMBLE_BYTES + headerLength + contentLength),
-    PREAMBLE_BYTES + octetsEnTete.byteLength,
-  );
-
-  const verdict = await verifyArchive(v1, { expectations: ATTENTES });
-  assert.equal(verdict.contentLength, contentLength);
-  assert.equal(verdict.recovery, null);
-  assert.equal(verdict.archiveLength, v1.byteLength);
-});
-
-test("une archive v1 qui DÉCLARE une récupération est malformée : la version décide de la disposition", async () => {
+test("les archives v1 et v2 sont REFUSÉES, et le code NOMME la raison (#181)", async () => {
+  // Ce que #181 retire, et pourquoi ce n'est pas un dommage collatéral : une archive antérieure à
+  // la v3 ne porte AUCUN engagement. Rien n'y atteste que son contenu est un état que le volume a
+  // réellement produit, et c'est exactement le défaut CRITICAL de la revue externe. Il n'y a aucune
+  // compatibilité à préserver — rien n'est publié, et le dépôt n'a produit d'archive que sous
+  // données synthétiques.
+  //
+  // Le CODE est distinct de « malformed » : le conteneur est parfaitement reconnu, et c'est sa
+  // version qui est refusée. Confondre les deux ferait chercher une corruption là où il n'y a qu'un
+  // format d'un autre âge.
   const { archive } = await archiveDUnVolume();
-  const entete = enTeteDe(archive);
-  entete.objet.archiveFormatVersion = 1;
-  const octetsEnTete = new TextEncoder().encode(JSON.stringify(entete.objet));
-  const forge = new Uint8Array(
-    PREAMBLE_BYTES +
-      octetsEnTete.byteLength +
-      (archive.byteLength - PREAMBLE_BYTES - entete.longueur),
-  );
-  forge.set(archive.subarray(0, PREAMBLE_BYTES), 0);
-  new DataView(forge.buffer).setUint32(8, octetsEnTete.byteLength, false);
-  forge.set(octetsEnTete, PREAMBLE_BYTES);
-  forge.set(
-    archive.subarray(PREAMBLE_BYTES + entete.longueur),
-    PREAMBLE_BYTES + octetsEnTete.byteLength,
-  );
-
-  await assert.rejects(verifyArchive(forge, { expectations: ATTENTES }), (erreur) =>
-    isArchiveError(erreur, ARCHIVE_ERROR_CODES.malformed),
-  );
+  for (const version of [1, 2, 4]) {
+    const forge = reecrireLEnTete(archive, (entete) => ({
+      ...entete,
+      archiveFormatVersion: version,
+    }));
+    await assert.rejects(
+      verifyArchive(forge, { expectations: ATTENTES }),
+      (erreur) => {
+        assert.ok(isArchiveError(erreur, ARCHIVE_ERROR_CODES.versionNonLue), erreur.code);
+        assert.deepEqual(erreur.context.supported, [3]);
+        return true;
+      },
+      `une archive v${version} doit être refusée par sa VERSION`,
+    );
+  }
 });
 
-test("un en-tête v2 SANS champ « recovery » est malformé : absent ne vaut pas null", async () => {
+test("le MARQUEUR binaire ne bouge pas : un runtime ancien dit « trop récente », pas « pas une archive »", async () => {
+  // La décision 4 de la Definition of Ready de #181, rendue observable. Le versionnage passe par un
+  // CHAMP de l'en-tête ; changer `RBVAULT1` aurait fait dire à un runtime ancien « ce n'est pas une
+  // archive » au lieu de « cette archive est trop récente », et l'ADR 0011 veut un refus explicite
+  // d'un format futur, pas une méconnaissance.
+  const { archive } = await archiveDUnVolume();
+  assert.deepEqual([...archive.subarray(0, 8)], [...Buffer.from("RBVAULT1", "utf8")]);
+});
+
+test("un en-tête v3 SANS champ « recovery » est malformé : absent ne vaut pas null", async () => {
   // Constat HIGH 2 de la revue de format. `buildHeader` écrivait la règle — « un champ absent et un
   // champ nul ne disent pas la même chose » — et rien ne la relisait : retirer le champ d'un en-tête
   // faisait passer huit kilo-octets d'enveloppe pour une queue que personne ne lit, l'archive se
@@ -301,12 +292,6 @@ test("un en-tête v2 SANS champ « recovery » est malformé : absent ne vaut pa
     assert.match(erreur.message, /déclare toujours « recovery »/);
     return true;
   });
-
-  // Et la règle vaut dans l'autre sens, déjà : une v1 qui déclare le champ est refusée elle aussi.
-  const v1 = reecrireLEnTete(archive, (entete) => ({ ...entete, archiveFormatVersion: 1 }));
-  await assert.rejects(verifyArchive(v1, { expectations: ATTENTES }), (erreur) =>
-    isArchiveError(erreur, ARCHIVE_ERROR_CODES.malformed),
-  );
 });
 
 test("des octets APRÈS la fin déclarée sont refusés, jamais ignorés", async () => {
@@ -343,6 +328,7 @@ test("la FORME de la section est gardée À L'ÉCRITURE : une archive fautive ne
         source,
         manifest: descripteurDeManifeste(),
         consistency: { kind: "handle-exclusif" },
+        cle: DEK,
         recovery: { octets, version: 2, emplacements: 1 },
       }),
       (erreur) => isArchiveError(erreur, ARCHIVE_ERROR_CODES.recuperationRefusee),
@@ -362,6 +348,7 @@ test("la FORME de la section est gardée À L'ÉCRITURE : une archive fautive ne
       source,
       manifest: descripteurDeManifeste(),
       consistency: { kind: "handle-exclusif" },
+      cle: DEK,
       recovery: { ...vraie, version: vraie.version + 1 },
     }),
     (erreur) => isArchiveError(erreur, ARCHIVE_ERROR_CODES.recuperationRefusee),

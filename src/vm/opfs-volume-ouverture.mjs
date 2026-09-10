@@ -20,22 +20,19 @@
 import { SECTOR_SIZE, assertBlockGeometry, isBlockGeometry } from "./block-geometry.mjs";
 import { BlockJournal } from "./block-journal.mjs";
 import { exigerCleDeVolume } from "./cle-de-volume.mjs";
-import { FAULT_KINDS, createFaultPlan } from "./fault-plan.mjs";
-import { TEMOIN_OCTETS } from "./generation-fraicheur.mjs";
-import { GenerationStore } from "./generation-store.mjs";
+import { createFaultPlan } from "./fault-plan.mjs";
 import { OpfsBlockBackend } from "./opfs-block-backend.mjs";
+import { installerGenerationOuFermer, ouvrirGeneration } from "./opfs-generation-voisins.mjs";
 import {
-  decodeSupportCount,
-  readCountFailure,
-  toStorageError,
-  writeCountFailure,
-} from "./opfs-error-mapping.mjs";
+  MOTIFS_DE_RACINE_INITIALE,
+  autorisationSansRacine,
+  ecarterLeJournalDeCreation,
+} from "./opfs-racine-initiale.mjs";
+import { toStorageError, writeCountFailure } from "./opfs-error-mapping.mjs";
 import {
   ENVELOPPE_SIDECAR_SUFFIX,
-  generationJournalName,
   migrationJournalName,
   openOpfsSyncAccess,
-  temoinSequenceName,
   voisinsDunVolume,
 } from "./opfs-sync-access.mjs";
 import { assertVolumeLibre, reserverVolume } from "./opfs-volume-registry.mjs";
@@ -332,215 +329,6 @@ async function saisirSupport({ name, size, identifiantVolume, openHandle }) {
 }
 
 /**
- * Installe le magasin de générations sur un backend déjà construit, ou REFERME ce backend : un
- * refus de génération ne doit pas laisser le nom occupé par un volume que personne ne détient.
- */
-async function installerGenerationOuFermer(
-  backend,
-  { name, size, scellement, openHandle, seuilPointDeControle, fautesFraicheur },
-) {
-  try {
-    backend.installerGeneration(
-      await ouvrirGeneration({
-        name,
-        size,
-        backend,
-        scellement,
-        openHandle,
-        seuilPointDeControle,
-        fautesFraicheur,
-      }),
-    );
-  } catch (cause) {
-    await backend.close().catch(() => {});
-    throw cause;
-  }
-}
-
-/**
- * Ouvre le journal de génération voisin et RÉCUPÈRE. C'est ici que se joue la promesse de #16 : au
- * retour, le volume porte la dernière génération VALIDÉE, et rien d'autre.
- */
-async function ouvrirGeneration({
-  name,
-  size,
-  backend,
-  scellement,
-  openHandle,
-  seuilPointDeControle,
-  fautesFraicheur,
-}) {
-  const handle = await saisirVoisin(openHandle, generationJournalName(name), {
-    operation: "open-generation",
-    volume: name,
-  });
-  let temoin;
-  try {
-    temoin = await saisirVoisin(openHandle, temoinSequenceName(name), {
-      operation: "open-temoin",
-      volume: name,
-    });
-  } catch (cause) {
-    rendreSansMasquer(handle);
-    throw cause;
-  }
-  try {
-    return await ouvrirMagasin({
-      name,
-      size,
-      backend,
-      scellement,
-      handle,
-      seuilPointDeControle,
-      fraicheur: sourceDeFraicheur({ name, backend, temoin, fautes: fautesFraicheur }),
-    });
-  } catch (cause) {
-    rendreSansMasquer(handle);
-    rendreSansMasquer(temoin);
-    throw cause;
-  }
-}
-
-/** Saisit un voisin de volume, en traduisant l'échec du support en état contractuel. */
-async function saisirVoisin(openHandle, nom, contexte) {
-  try {
-    return await openHandle(nom);
-  } catch (cause) {
-    throw toStorageError(cause, contexte);
-  }
-}
-
-/** Rend un handle sans jamais masquer la raison du refus qui a conduit ici. */
-function rendreSansMasquer(handle) {
-  try {
-    handle.close();
-  } catch {
-    // Une fermeture de secours qui échoue ne doit pas remplacer la cause d'origine.
-  }
-}
-
-/**
- * SOURCE de fraîcheur du magasin (#19, ADR 0019) : la région d'authentification et le témoin.
- *
- * Le handle du témoin est saisi UNE FOIS et tenu pour la session, comme celui du journal. Le rouvrir
- * à chaque racine coûterait une ouverture OPFS par barrière du guest — un prix payé sur le chemin
- * même que `SEC-DURABLE-001` rend critique.
- */
-function sourceDeFraicheur({ name, backend, temoin, fautes }) {
-  const nom = temoinSequenceName(name);
-  return {
-    regionOffset: backend.disposition.regionOffset,
-    regionOctets: backend.disposition.regionOctets,
-    lireRegion: async (offset, longueur) => {
-      const courte = fauteDeFraicheur(fautes, "read", { volume: nom, offset, longueur });
-      const octets = await backend.lireRegionAuth(offset, longueur);
-      // Une lecture COURTE programmée est rendue telle quelle : c'est `empreinteDeRegion` qui doit
-      // la refuser, et l'éprouver ici vérifie sa garde plutôt que de la contourner.
-      return courte === null ? octets : octets.subarray(0, Math.min(courte, octets.byteLength));
-    },
-    lireTemoin: async () => lireTemoinDuSupport(temoin, nom),
-    ecrireTemoin: async (octets) => {
-      fauteDeFraicheur(fautes, "write", { volume: nom, offset: 0, longueur: octets.byteLength });
-      return ecrireTemoinSurLeSupport(temoin, nom, octets);
-    },
-    fermer: () => temoin.close(),
-  };
-}
-
-/**
- * Consomme le plan de fautes des VOISINS DE FRAÎCHEUR, et traduit ce qu'il programme.
- *
- * Rend le nombre d'octets d'une lecture COURTE — que l'appelant applique lui-même —, ou lève l'état
- * contractuel que la faute décrit. Aucun genre de faute n'est ignoré en silence : une faute
- * programmée qui ne ferait rien rendrait une mesure creuse.
- */
-function fauteDeFraicheur(fautes, operation, { volume, offset, longueur }) {
-  const faute = fautes.consume(operation);
-  if (faute === null) return null;
-  if (faute.kind === FAULT_KINDS.shortRead) return faute.bytes ?? Math.floor(longueur / 2);
-  if (faute.kind === FAULT_KINDS.partialWrite) {
-    throw writeCountFailure(faute.bytes ?? 0, {
-      requested: longueur,
-      volume,
-      offset,
-      operation: "write-temoin",
-    });
-  }
-  throw new StorageError(
-    STORAGE_ERROR_CODES.handleLost,
-    `Le voisin de fraîcheur « ${volume} » a disparu sous la session : faute programmée ${faute.kind}.`,
-    { volume, offset, operation, kind: faute.kind },
-  );
-}
-
-/**
- * Lit le témoin, ou rend `null` s'il n'y en a pas encore. Un fichier VIDE est un témoin absent —
- * c'est ce que `createSyncAccessHandle` laisse d'un voisin qui vient d'être créé pour être lu.
- *
- * Une valeur de retour est INTERPRÉTÉE, jamais comparée à la va-vite (#73) : un support qui rend un
- * code d'échec casté en non signé n'a pas fait une lecture courte, il n'a rien lu — et rendre alors
- * un tampon de zéros ferait passer un témoin illisible pour un témoin absent, c'est-à-dire
- * désarmerait le contrôle au moment précis où le support se dérobe.
- */
-function lireTemoinDuSupport(handle, nom) {
-  if (handle.getSize() === 0) return null;
-  const octets = new Uint8Array(TEMOIN_OCTETS);
-  const lus = handle.read(octets, { at: 0 });
-  if (decodeSupportCount(lus, TEMOIN_OCTETS).kind === "errno") {
-    throw readCountFailure(lus, {
-      requested: TEMOIN_OCTETS,
-      volume: nom,
-      offset: 0,
-      operation: "read-temoin",
-    });
-  }
-  return lus === TEMOIN_OCTETS ? octets : octets.subarray(0, lus);
-}
-
-/** Remplace le témoin et franchit SA barrière : un témoin non durable ne date rien. */
-function ecrireTemoinSurLeSupport(handle, nom, octets) {
-  handle.truncate(0);
-  const echec = writeCountFailure(handle.write(octets, { at: 0 }), {
-    requested: octets.byteLength,
-    volume: nom,
-    offset: 0,
-    operation: "write-temoin",
-  });
-  if (echec !== null) throw echec;
-  handle.flush();
-}
-
-async function ouvrirMagasin({
-  name,
-  size,
-  backend,
-  scellement,
-  handle,
-  seuilPointDeControle,
-  fraicheur,
-}) {
-  try {
-    return await GenerationStore.ouvrir({
-      volume: name,
-      handle,
-      tailleVolume: size,
-      scellement,
-      fraicheur,
-      lireVolume: (offset, longueur) => backend.lireSupportBrut(offset, longueur),
-      ecrireVolume: (offset, octets, generation) =>
-        backend.ecrireSupportBrut(offset, octets, generation),
-      barriereVolume: () => backend.barriereSupportBrute(),
-      seuilPointDeControle,
-    });
-  } catch (cause) {
-    // Un échec du SUPPORT pendant la récupération — quota, handle perdu — reste un état contractuel
-    // nommé. Les refus propres au journal (`VAULT_STORAGE_GENERATION_*`) et au format chiffré
-    // (`VAULT_STORAGE_SCEAU_REFUSE`) traversent tels quels.
-    throw toStorageError(cause, { operation: "recover-generation", volume: name });
-  }
-}
-
-/**
  * Scelle ENTIÈREMENT un volume qui vient de naître, secteurs de zéros compris.
  *
  * « Un secteur jamais écrit n'existe pas en v3 » (ADR 0015) : si la région d'authentification était
@@ -548,17 +336,58 @@ async function ouvrirMagasin({
  * Le coût est un scellement par secteur, mesuré dans `docs/quality-attributes.md`, et il se paie une
  * fois — à la création.
  */
-async function scellerLeVolumeNeuf(backend, name, handle) {
+async function scellerLeVolumeNeuf(backend, name) {
   try {
     await backend.chiffre.scellerTout(0);
     await backend.barriereSupportBrute();
-    // La marque vient APRÈS la barrière : elle atteste que les sceaux sont sur le support, et une
-    // marque posée avant attesterait d'un état qui n'est peut-être jamais arrivé jusqu'au disque.
-    marquerScellementComplet(handle, name);
   } catch (cause) {
     await backend.close().catch(() => {});
     throw toStorageError(cause, { operation: "seal-volume", volume: name });
   }
+}
+
+/**
+ * POSE la marque `VLTSEAL1`, DERNIER geste de la création (§ 7.1).
+ *
+ * Elle vient APRÈS la barrière des sceaux — une marque posée avant attesterait d'un état qui n'est
+ * peut-être jamais arrivé jusqu'au disque — et, depuis #181, APRÈS la RACINE INITIALE : la création
+ * a gagné un geste, et la marque reste le dernier. Une coupure entre les deux laisse un volume
+ * refusé par `VAULT_STORAGE_VOLUME_INCOMPLET`, c'est-à-dire un faux refus sans perte, contre un faux
+ * succès qui coûterait le volume.
+ */
+async function marquerLaCreationAchevee(backend, name, handle) {
+  try {
+    marquerScellementComplet(handle, name);
+  } catch (cause) {
+    await backend.close().catch(() => {});
+    throw toStorageError(cause, { operation: "seal-mark", volume: name });
+  }
+}
+
+/**
+ * ÉCRIT la RACINE INITIALE d'un volume qui naît SANS transaction (#181).
+ *
+ * Un volume ouvert hors transaction n'a pas de magasin, et n'en aura pas : ce chemin est celui du
+ * VERSEMENT d'un disque applicatif (ADR 0030) et des bancs, qui écrivent le fichier entier sans
+ * passer par le journal. Sa création doit pourtant écrire sa racine, comme toute autre — sans quoi
+ * le volume serait refusé à sa première ouverture transactionnelle.
+ *
+ * Le magasin est donc ouvert le temps d'un geste, puis refermé. Il n'est pas installé sur le
+ * backend : le volume reste NON transactionnel, et `describe()` continue de le dire.
+ *
+ * **Un appelant qui ÉCRIT le fichier ensuite doit le RE-DATER** par `daterLaCreation` : cette racine
+ * scelle l'empreinte de la région telle qu'elle est à cet instant, et une écriture hors transaction
+ * la périme. L'oubli coûte un REFUS à la première ouverture, jamais un silence.
+ */
+async function racineInitialeHorsTransaction(backend, options) {
+  let magasin;
+  try {
+    magasin = await ouvrirGeneration(options);
+  } catch (cause) {
+    await backend.close().catch(() => {});
+    throw cause;
+  }
+  magasin.close();
 }
 
 /**
@@ -589,16 +418,57 @@ async function saisirLireEtAllouer({ name, size, cle, identifiantVolume, openHan
   return { ...saisi, voisinsRetires };
 }
 
-/** Assemble le backend : taille LOGIQUE d'un côté, disposition du support de l'autre. */
-function construireBackend({
+/**
+ * DATE la CRÉATION d'un volume dont le fichier vient d'atteindre son état final (#181).
+ *
+ * ## Pourquoi ce geste existe
+ *
+ * `openOpfsVolume` écrit la racine initiale À LA NAISSANCE, sur le fichier de zéros que la création
+ * vient de sceller. Deux appelants écrivent ENSUITE le fichier entier hors transaction — la coquille
+ * de produit, qui verse le disque applicatif (ADR 0030, décision 1), et le banc de référence — et
+ * cette écriture change la RÉGION D'AUTHENTIFICATION, donc périme l'empreinte que la racine
+ * initiale scelle. Leur création n'est achevée qu'après le versement, et c'est ce geste qui la date.
+ *
+ * **Sans cet appel, le volume est REFUSÉ à sa première ouverture** par la garde de fraîcheur : un
+ * oubli coûte un refus, jamais un silence. C'est la direction sûre, et elle est écrite ici pour être
+ * relue.
+ *
+ * ## Il ne peut pas dater autre chose qu'une création
+ *
+ * Il REFUSE un journal qui porte autre chose que la racine initiale d'une création — une séquence
+ * au-delà de zéro, une génération au-delà de zéro, des entrées, ou une charge. Sans cette garde, un
+ * appel malencontreux sur un volume en service écarterait une génération validée, c'est-à-dire une
+ * écriture acquittée : `SEC-DURABLE-001` l'interdit.
+ *
+ * @param {{ name: string, cle: Uint8Array, identifiantVolume?: string, journal?: BlockJournal,
+ *           openHandle?: (name: string) => Promise<FileSystemSyncAccessHandle> }} options
+ * @returns {Promise<object>} le rapport d'ouverture, qui publie la racine écrite et son motif
+ */
+export async function daterLaCreation({
   name,
-  saisi,
-  scellement,
-  journal,
-  faults,
-  flushDelay,
-  voisinsRetires,
+  cle,
+  identifiantVolume,
+  journal = new BlockJournal(),
+  openHandle = openOpfsSyncAccess,
 }) {
+  await ecarterLeJournalDeCreation(name, openHandle);
+  const backend = await openOpfsVolume({
+    name,
+    cle,
+    identifiantVolume,
+    journal,
+    openHandle,
+    creation: MOTIFS_DE_RACINE_INITIALE.creation,
+  });
+  try {
+    return backend.generation.rapport;
+  } finally {
+    await backend.close();
+  }
+}
+
+/** Assemble le backend : taille LOGIQUE d'un côté, disposition du support de l'autre. */
+function construireBackend({ name, saisi, scellement, journal, faults, flushDelay }) {
   return new OpfsBlockBackend({
     name,
     handle: saisi.handle,
@@ -608,7 +478,7 @@ function construireBackend({
     journal,
     faults,
     flushDelay,
-    voisinsRetires,
+    voisinsRetires: saisi.voisinsRetires,
   });
 }
 
@@ -644,6 +514,7 @@ export async function openOpfsVolume({
   flushDelay = 0,
   openHandle = openOpfsSyncAccess,
   transactionnel = true,
+  creation = null,
   seuilPointDeControle,
 } = {}) {
   assertVolumeLibre(name);
@@ -655,28 +526,63 @@ export async function openOpfsVolume({
     cleOctets: cle,
     formatVersion: FORMAT_VOLUME_V3,
   });
-  const backend = construireBackend({
+  const backend = construireBackend({ name, saisi, scellement, journal, faults, flushDelay });
+  if (saisi.naissance) await scellerLeVolumeNeuf(backend, name);
+  await etablirLaGeneration(backend, {
     name,
     saisi,
     scellement,
-    journal,
-    faults,
-    flushDelay,
-    voisinsRetires: saisi.voisinsRetires,
+    cle,
+    openHandle,
+    seuilPointDeControle,
+    fautesFraicheur,
+    transactionnel,
+    creation,
   });
-  if (saisi.naissance) await scellerLeVolumeNeuf(backend, name, saisi.handle);
 
-  if (transactionnel) {
-    await installerGenerationOuFermer(backend, {
-      name,
-      size: saisi.disposition.tailleLogique,
-      scellement,
-      openHandle,
-      seuilPointDeControle,
-      fautesFraicheur,
-    });
-  }
+  // La MARQUE en dernier, et depuis #181 après la racine initiale : la création a gagné un geste, et
+  // `VLTSEAL1` reste celui qui la clôt.
+  if (saisi.naissance) await marquerLaCreationAchevee(backend, name, saisi.handle);
 
   reserverVolume(name, backend);
   return backend;
+}
+
+/**
+ * INSTALLE le magasin de générations, ou — hors transaction — écrit la seule racine initiale d'une
+ * naissance.
+ *
+ * Extrait de `openOpfsVolume` parce que c'est une DÉCISION entière : ce qui autorise une ouverture
+ * sans racine (#181), et ce que le mode transactionnel fait de cette autorisation. Une naissance
+ * s'autorise elle-même ; hors naissance, seul `creation` — posé par la migration, ou par le geste
+ * qui date une création — ou l'engagement d'une archive restaurée le peut.
+ */
+async function etablirLaGeneration(
+  backend,
+  {
+    name,
+    saisi,
+    scellement,
+    cle,
+    openHandle,
+    seuilPointDeControle,
+    fautesFraicheur,
+    transactionnel,
+    creation,
+  },
+) {
+  const motif = saisi.naissance ? MOTIFS_DE_RACINE_INITIALE.creation : creation;
+  const generation = {
+    name,
+    size: saisi.disposition.tailleLogique,
+    backend,
+    scellement,
+    openHandle,
+    seuilPointDeControle,
+    fautesFraicheur,
+    sansRacine: autorisationSansRacine({ name, motif, backend, cle, openHandle }),
+  };
+  if (transactionnel) return installerGenerationOuFermer(backend, generation);
+  if (saisi.naissance) return racineInitialeHorsTransaction(backend, generation);
+  return undefined;
 }

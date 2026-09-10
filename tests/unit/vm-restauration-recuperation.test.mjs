@@ -69,6 +69,7 @@ async function archiveExportee({ avecRecuperation = true, identifiantVolume = VO
     source: sourceDuVolume(origine, pose.nom),
     manifest: descripteurDeManifeste(identifiantVolume),
     consistency: { kind: "handle-exclusif", detail: "volume fermé pour l'épreuve" },
+    cle: DEK,
     recovery: recuperation,
   });
   return { origine, pose, recuperation, ...ecrite };
@@ -113,8 +114,8 @@ test("le cycle entier : exporté, restauré ailleurs, le volume s'ouvre PAR LE C
   });
   assert.deepEqual(
     gestes,
-    ["revoque-manifeste", "ecrit:.cles", "ecrit:.manifest"],
-    "l'ordre de l'ADR 0027 : contenu, puis enveloppe, puis manifeste",
+    ["revoque-manifeste", "ecrit:.cles", "ecrit:.engagement", "ecrit:.manifest"],
+    "l'ordre de l'ADR 0027, complété par #181 : contenu, enveloppe, engagement, puis manifeste",
   );
 
   // Le voisin `.cles` porte DEUX pages : la page embarquée, puis une page à zéro.
@@ -166,7 +167,7 @@ test("une archive SANS récupération restaure le volume, et laisse la cible SAN
 
   assert.equal(rapport.restored, true);
   assert.equal(rapport.recovery, null);
-  assert.deepEqual(gestes, ["revoque-manifeste", "ecrit:.manifest"]);
+  assert.deepEqual(gestes, ["revoque-manifeste", "ecrit:.engagement", "ecrit:.manifest"]);
   assert.equal(destination.lire(`${CIBLE}.cles`), null);
 });
 
@@ -254,47 +255,71 @@ test("une section de récupération d'un AUTRE volume est refusée avant toute m
   assert.equal(destination.lire(`${CIBLE}.cles`), null);
 });
 
-test("une archive qui emporte une enveloppe sans DÉCLARER de volume est refusée", async () => {
+test("une archive dont le manifeste ne DÉCLARE aucun volume est refusée, à l'écriture ET à la lecture", async () => {
   // L'autre bord du même contrôle : une enveloppe n'existe que pour un volume v3, qui déclare
   // toujours son identifiant (ADR 0016). Une archive d'un format antérieur qui porterait malgré tout
   // une section de récupération ne dit pas à QUEL volume elle appartient — et le voisin `.cles` doit
   // être posé sous une identité, jamais sous « on verra bien ».
+  //
+  // **#181 avance ce refus de deux crans, et le rend plus fort.** L'ENGAGEMENT d'une archive scelle
+  // l'identité du volume qu'il couvre : sans identifiant, il ne couvre rien. L'export refuse donc
+  // d'en produire une, et la vérification refuse d'en lire une — avant même que la section de
+  // récupération ne soit confrontée au manifeste. L'épreuve établit les DEUX bords.
   const { recuperation } = await archiveExportee();
   const contenu = Uint8Array.from({ length: TAILLE }, (_, index) => (index * 5 + 3) % 256);
-  const { archive } = await exportVolumeToBytes({
-    source: {
-      size: contenu.byteLength,
-      read: async (offset, longueur) => contenu.slice(offset, offset + longueur),
-    },
-    // Un manifeste de format 2 : il ne porte pas de bloc `volume`, donc pas d'identifiant.
-    manifest: createManifest({
-      formatVersion: 2,
-      runtime: { version: "0.1.0", artifact: null, minWriter: "0.1.0" },
-      app: { id: "railsbox-vault-reference", version: "1.0.0" },
-      volumeSize: TAILLE,
-      identity: { algorithm: "sha-256", digest: null },
+  const source = {
+    size: contenu.byteLength,
+    read: async (offset, longueur) => contenu.slice(offset, offset + longueur),
+  };
+  // Un manifeste de format 2 : il ne porte pas de bloc `volume`, donc pas d'identifiant.
+  const manifesteSansVolume = createManifest({
+    formatVersion: 2,
+    runtime: { version: "0.1.0", artifact: null, minWriter: "0.1.0" },
+    app: { id: "railsbox-vault-reference", version: "1.0.0" },
+    volumeSize: TAILLE,
+    identity: { algorithm: "sha-256", digest: null },
+  });
+
+  // PREMIER BORD — l'écriture. Une archive fautive ne naît pas : l'utilisateur l'apprend ici, et
+  // non au moment de restaurer, c'est-à-dire au pire endroit et au pire moment.
+  await assert.rejects(
+    exportVolumeToBytes({
+      source,
+      manifest: manifesteSansVolume,
+      consistency: { kind: "handle-exclusif" },
+      cle: DEK,
+      recovery: recuperation,
     }),
-    consistency: { kind: "handle-exclusif" },
-    recovery: recuperation,
+    (erreur) => {
+      assert.ok(isArchiveError(erreur, ARCHIVE_ERROR_CODES.engagementAbsent), erreur.code);
+      assert.match(erreur.message, /ne déclare aucun identifiant/);
+      return true;
+    },
+  );
+
+  // SECOND BORD — la lecture. Il est atteint par un en-tête FORGÉ, puisque l'export refuse d'en
+  // produire un : le champ « engagement » d'une archive v3 par ailleurs valide est retiré. C'est ce
+  // qu'un conteneur bricolé à la main donnerait, et c'est le seul chemin qui reste — un manifeste v3
+  // SANS bloc « volume » est refusé par #10 avant d'arriver ici (`VAULT_MANIFEST_MALFORMED`), si
+  // bien que le refus de l'identité manquante n'est atteignable qu'à l'écriture.
+  const { archive } = await archiveExportee();
+  const sansEngagement = await reecrireLEnTete(archive, (entete) => {
+    const copie = { ...entete };
+    delete copie.engagement;
+    return copie;
   });
 
   const destination = magasin();
   const { cible, gestes } = cibleDe(destination, CIBLE);
   await assert.rejects(
-    // La dérogation de DIAGNOSTIC est nommée : sans elle, #10 refuserait le format antérieur avant
-    // que la garde de cette tranche n'ait la parole, et l'épreuve mesurerait le mauvais refus.
-    importArchive({
-      source: sourceDArchive(archive),
-      target: cible,
-      enforceCompatibility: false,
-    }),
+    importArchive({ source: sourceDArchive(sansEngagement), target: cible }),
     (erreur) => {
-      assert.ok(isArchiveError(erreur, ARCHIVE_ERROR_CODES.recuperationRefusee));
-      assert.match(erreur.message, /ne déclare aucun identifiant de volume/);
+      assert.ok(isArchiveError(erreur, ARCHIVE_ERROR_CODES.engagementAbsent), erreur.code);
+      assert.match(erreur.message, /ne déclare aucun engagement/);
       return true;
     },
   );
-  assert.deepEqual(gestes, []);
+  assert.deepEqual(gestes, [], "aucun geste : la cible n'a pas même été ouverte");
 });
 
 test("un en-tête qui MENT sur la version de l'enveloppe embarquée est refusé", async () => {
@@ -415,7 +440,7 @@ test("coupée avant le manifeste : l'enveloppe est là, le manifeste non — jam
   );
   assert.notEqual(destination.lire(`${CIBLE}.cles`), null, "l'enveloppe précède le manifeste");
   assert.equal(destination.lire(`${CIBLE}.manifest`), null);
-  assert.deepEqual(coupee.gestes, ["revoque-manifeste", "ecrit:.cles"]);
+  assert.deepEqual(coupee.gestes, ["revoque-manifeste", "ecrit:.cles", "ecrit:.engagement"]);
 });
 
 test("une archive plus ANCIENNE que la feuille exige un consentement NOMMÉ", async () => {

@@ -37,6 +37,27 @@ export const ARCHIVE_ERROR_CODES = Object.freeze({
    * archive que n'importe qui a pu écrire.
    */
   recuperationRefusee: "VAULT_ARCHIVE_RECUPERATION_REFUSEE",
+  /**
+   * L'archive porte une version que ce runtime ne LIT PAS (#181).
+   *
+   * Depuis #181, la seule version lue est la 3 : les archives v1 et v2 sont REFUSÉES parce
+   * qu'elles ne portent aucun engagement, et c'est exactement le défaut que la revue externe a
+   * relevé. Le code est distinct de `malformed`, qui dit « ce conteneur est méconnaissable » : ici
+   * le conteneur est parfaitement reconnu, et c'est sa version qui est refusée. Confondre les deux
+   * ferait chercher une corruption là où il n'y a qu'un format d'un autre âge.
+   *
+   * Il couvre aussi la version FUTURE, et l'ADR 0011 veut exactement cela : un refus explicite d'un
+   * format qu'on ne sait pas lire, jamais une méconnaissance.
+   */
+  versionNonLue: "VAULT_ARCHIVE_VERSION_NON_LUE",
+  /**
+   * Une archive v3 ne DÉCLARE aucun engagement, ou en déclare un illisible (#181).
+   *
+   * L'engagement est ce qui rend une archive authentifiée ; une v3 qui n'en porte pas n'est pas une
+   * v3, quoi que son en-tête annonce. Le refus tombe à la VÉRIFICATION, avant que la cible ne soit
+   * même ouverte.
+   */
+  engagementAbsent: "VAULT_ARCHIVE_ENGAGEMENT_ABSENT",
   // `encryptedUnsupported` (`VAULT_ARCHIVE_VOLUME_CHIFFRE`) a existé jusqu'au 6 septembre 2026 (#139),
   // retiré parce que jamais levé : il tenait lieu de ce que l'ADR 0016 décision 7 livre depuis —
   // l'archive porte le fichier v3 tel quel. L'ADR 0016 décision 9 est devenue vraie ce jour-là. Nommé

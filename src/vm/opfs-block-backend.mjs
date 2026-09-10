@@ -24,9 +24,17 @@ import { JOURNAL_OPERATIONS } from "./block-journal.mjs";
 import { FAULT_KINDS } from "./fault-plan.mjs";
 import { AccesSupport } from "./opfs-backend-support.mjs";
 import { readCountFailure, toStorageError, writeCountFailure } from "./opfs-error-mapping.mjs";
+import { createSha256Stream } from "./sha256-stream.mjs";
 import { libererVolume } from "./opfs-volume-registry.mjs";
 import { STORAGE_ERROR_CODES, StorageError, outOfRange } from "./storage-errors.mjs";
 import { VolumeChiffre } from "./volume-chiffre.mjs";
+
+/**
+ * Bloc de relecture de `empreinteDuFichier` : quatre mébioctets, comme l'export et la restauration.
+ * Très en deçà du budget de surmémoire de 64 Mio, et assez grand pour que le hachage ne soit pas
+ * dominé par le coût des appels au support.
+ */
+const EMPREINTE_BLOC_OCTETS = 4 * 1024 * 1024;
 
 /**
  * Génération sous laquelle un volume écrit HORS transaction est scellé.
@@ -39,7 +47,7 @@ import { VolumeChiffre } from "./volume-chiffre.mjs";
 export const GENERATION_HORS_TRANSACTION = 0;
 
 export { SECTOR_SIZE, V86_BLOCK_SIZE };
-export { openOpfsVolume } from "./opfs-volume-ouverture.mjs";
+export { daterLaCreation, openOpfsVolume } from "./opfs-volume-ouverture.mjs";
 
 /** Octets réellement traités par une faute programmée, sans jamais dépasser la demande. */
 function faultBytes(fault, requested) {
@@ -238,6 +246,30 @@ export class OpfsBlockBackend {
    */
   ecrireSupportBrut(offset, octets, generation) {
     return this.#chiffre.ecrireSecteurs(offset, octets, generation);
+  }
+
+  /**
+   * EMPREINTE SHA-256 du FICHIER ENTIER, tel qu'une archive le transporte (#181).
+   *
+   * C'est ce que l'ENGAGEMENT d'une archive scelle, et c'est pourquoi ce geste existe : la première
+   * ouverture d'un volume restauré doit confronter le fichier qu'elle trouve à ce que l'archive
+   * s'est engagée à livrer, AVANT de rendre le moindre octet en clair.
+   *
+   * **Le calcul est fait ICI plutôt que d'exposer les octets**, et c'est la raison d'être de la
+   * méthode : `lireRegionAuth` reste le seul point du dépôt qui rend des octets bruts de l'intérieur
+   * du fichier, borné à la région. Rendre le fichier entier en brut donnerait à un appelant du
+   * CHIFFRÉ sous une forme que rien n'authentifie ; rendre une empreinte ne donne qu'un verdict.
+   *
+   * Le coût est une relecture complète du fichier, en flux, à surmémoire bornée par le bloc. Il ne
+   * se paie qu'à la première ouverture d'un volume restauré, et il est publié.
+   */
+  async empreinteDuFichier({ blocOctets = EMPREINTE_BLOC_OCTETS } = {}) {
+    const taille = this.#disposition.tailleSupport;
+    const hachage = createSha256Stream();
+    for (let offset = 0; offset < taille; offset += blocOctets) {
+      hachage.update(this.#lireOctets(offset, Math.min(blocOctets, taille - offset)));
+    }
+    return hachage.digestHex();
   }
 
   /** Barrière du volume, franchie par le point de contrôle. Elle n'acquitte rien au guest. */

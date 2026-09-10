@@ -4,7 +4,8 @@ import test from "node:test";
 import { campagneDeMutation } from "../../tools/moteur-de-mutation.mjs";
 import { MUTATIONS } from "../../tools/muter-gardes-archive-recuperation.mjs";
 
-// ÉPREUVE DE MUTATION des gardes de l'archive v2 et de l'ancre de version (#149, ADR 0027).
+// ÉPREUVE DE MUTATION des gardes de l'archive v3, de son ENGAGEMENT et de l'ancre de version
+// (#181, ADR 0033 ; #149, ADR 0027).
 //
 // Une suite verte ne prouve rien tant qu'on n'a pas montré qu'elle sait rougir. Cette épreuve RETIRE
 // réellement chaque garde neuve du fichier source, relance l'épreuve qui devrait la couvrir, et
@@ -45,14 +46,20 @@ test("AUCUN mutant ne survit : chaque garde retirée fait rougir sa preuve", () 
   );
 });
 
-test("la table couvre les CINQ modules où la révision de la décision 6 se joue", () => {
+test("la table couvre les NEUF modules où la révision et l'engagement se jouent", () => {
   // Un compte de mutants ne dit rien de leur RÉPARTITION : dix mutations sur la même ligne feraient
-  // un score parfait et ne mesureraient qu'une garde. Ce contrôle relit les FICHIERS visés, qui sont
-  // les cinq endroits où la révision de la décision 6 se joue.
+  // un score parfait et ne mesureraient qu'une garde. Ce contrôle relit les FICHIERS visés — les
+  // cinq endroits où la révision de la décision 6 se joue (#149), et les quatre où l'ENGAGEMENT de
+  // #181 vit : ce qu'il scelle, sous quelle clé, ce que l'ouverture en fait, et ce qu'un volume sans
+  // racine devient.
   const fichiers = [...new Set(MUTATIONS.map((mutation) => mutation.fichier))].sort();
   assert.deepEqual(fichiers, [
+    "src/vm/archive-engagement.mjs",
     "src/vm/archive-recuperation.mjs",
+    "src/vm/derivation/cle-de-domaine.mjs",
     "src/vm/enveloppe-de-recuperation.mjs",
+    "src/vm/generation-recuperation.mjs",
+    "src/vm/opfs-volume-ouverture.mjs",
     "src/vm/ouverture-par-enveloppe.mjs",
     "src/vm/volume-export.mjs",
     "src/vm/volume-import.mjs",

@@ -15,6 +15,7 @@ import {
   PLAFOND_CHARGE_OCTETS,
   TAMPON_RELECTURE_OCTETS,
 } from "../../src/vm/generation-store.mjs";
+import { autorisationDeCreation } from "../../src/vm/generation-recuperation.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { createOpfsMigrationTarget } from "../../src/vm/opfs-migration-target.mjs";
 import { libererVolume } from "../../src/vm/opfs-volume-registry.mjs";
@@ -112,6 +113,7 @@ function handleComptant(handle, compte) {
 async function ouvrirMagasin(support, nom = "vol.gen", { enveloppe = (h) => h, ...reste } = {}) {
   const handle = enveloppe(await support.magasin.openHandle(nom));
   return GenerationStore.ouvrir({
+    sansRacine: autorisationDeCreation(),
     volume: "vol",
     handle,
     tailleVolume: support.tailleVolume,
@@ -127,14 +129,55 @@ async function ouvrirMagasin(support, nom = "vol.gen", { enveloppe = (h) => h, .
   });
 }
 
-test("un journal vierge n'annonce aucune génération en attente et laisse le volume intact", async () => {
+test("un journal vierge écrit la RACINE INITIALE et laisse le VOLUME intact", async () => {
+  // Ce que #181 a changé, et ce qui n'a pas changé. CHANGÉ : une ouverture qui ne trouve aucune
+  // racine n'accepte plus le volume tel quel — elle écrit la racine initiale, sur autorisation, et
+  // le publie. INCHANGÉ, et c'est la propriété que cette épreuve garde : le VOLUME n'est pas touché.
+  // L'ouverture écrit le JOURNAL, jamais les octets du volume.
   const support = creerSupport();
   support.volume.set(buildPattern(512, 1), 0);
   const magasin = await ouvrirMagasin(support);
 
-  assert.equal(magasin.rapport.etat, GENERATION_ETATS.aucune);
+  assert.equal(magasin.rapport.etat, GENERATION_ETATS.initialisee);
+  assert.equal(magasin.rapport.racineInitiale, true, "une ouverture qui ÉCRIT le publie");
+  assert.equal(magasin.rapport.motifDeLaRacine, "creation");
   assert.equal(magasin.generationValidee, 0);
   assert.deepEqual([...support.volume.subarray(0, 512)], [...buildPattern(512, 1)]);
+});
+
+test("un volume sans racine que RIEN n'autorise est REFUSÉ, avant tout clair", async () => {
+  // Le cœur de #181 vu depuis le magasin : « sansRacine: null » DÉCLARE qu'aucune création et aucun
+  // engagement ne justifient cette ouverture. C'est l'état d'un volume restauré dont le voisin
+  // « .engagement » a disparu, et c'est celui d'un volume créé avant cette tranche.
+  const support = creerSupport();
+  await assert.rejects(
+    () => ouvrirMagasin(support, "vol.gen", { sansRacine: null }),
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.volumeSansRacine),
+  );
+});
+
+test("« sansRacine » est OBLIGATOIRE : un oubli ne vaut pas « autorisé »", async () => {
+  // La même règle que « fraicheur » depuis #19, et pour le même motif : un défaut valant « aucun
+  // contrôle » est une défaillance ouverte et silencieuse. Ici, un défaut valant « autorisé »
+  // rouvrirait le défaut CRITICAL de #181 sans qu'aucune épreuve ne le voie.
+  const support = creerSupport();
+  const handle = await support.magasin.openHandle("vol.gen");
+  const scellement = await scellementDEpreuve();
+  await assert.rejects(
+    () =>
+      GenerationStore.ouvrir({
+        volume: "vol",
+        handle,
+        tailleVolume: support.tailleVolume,
+        fraicheur: null,
+        scellement,
+        lireVolume: support.lireVolume,
+        ecrireVolume: support.ecrireVolume,
+        barriereVolume: support.barriereVolume,
+      }),
+    (erreur) => erreur instanceof TypeError && /sansRacine/.test(erreur.message),
+  );
+  handle.close();
 });
 
 test("une écriture déposée n'atteint pas le volume avant la validation, mais se relit d'elle-même", async () => {
@@ -333,6 +376,7 @@ test("le journal borné refuse la génération démesurée au lieu de la publier
   const support = creerSupport();
   const handle = await support.magasin.openHandle("vol.gen");
   const magasin = await GenerationStore.ouvrir({
+    sansRacine: autorisationDeCreation(),
     volume: "vol",
     handle,
     tailleVolume: TAILLE_VOLUME,
@@ -380,16 +424,22 @@ test("deux racines ABÎMÉES au-dessus d'une charge sont un REFUS, pas une mise 
   );
 });
 
-test("un journal VIERGE et vide n'est pas une avarie, et n'écrit RIEN", async () => {
-  // Deux propriétés en une. La première : des secteurs jamais écrits ne sont pas des racines
-  // abîmées — sans quoi tout premier volume serait refusé. La seconde (MEDIUM-3 de la revue) : une
-  // ouverture qui n'a rien à récupérer ne doit rien écrire, faute de quoi un EXPORT sur un support
-  // saturé échouerait — c'est-à-dire le geste même par lequel l'utilisateur libère de la place.
+test("un journal VIERGE et vide n'est pas une avarie : l'ouverture y écrit sa RACINE INITIALE", async () => {
+  // Deux propriétés en une. La première n'a pas bougé : des secteurs jamais écrits ne sont pas des
+  // racines abîmées — sans quoi tout premier volume serait refusé.
+  //
+  // **La seconde a été RETOURNÉE par #181, et il faut dire pourquoi.** Elle exigeait qu'une
+  // ouverture sans rien à récupérer n'écrive RIEN (MEDIUM-3 de la revue de #16), au motif qu'un
+  // EXPORT sur un support saturé échouerait — c'est-à-dire le geste même par lequel l'utilisateur
+  // libère de la place. L'objection ne vaut plus : une ouverture n'écrit une racine que sur
+  // AUTORISATION, donc après une création ou une restauration — deux gestes qui viennent d'écrire un
+  // fichier de volume entier, et qui ont donc déjà échoué si le support était saturé. Ce qu'on
+  // achète en échange est le refus d'un volume sans racine, c'est-à-dire la correction de #181.
   const support = creerSupport();
   const magasin = await ouvrirMagasin(support);
-  assert.equal(magasin.rapport.etat, GENERATION_ETATS.aucune);
-  assert.equal(support.magasin.sizeOf("vol.gen"), 0, "aucun octet écrit par l'ouverture");
-  assert.equal(support.magasin.flushCount("vol.gen"), 0, "aucune barrière franchie");
+  assert.equal(magasin.rapport.etat, GENERATION_ETATS.initialisee);
+  assert.ok(support.magasin.sizeOf("vol.gen") > 0, "la racine initiale est écrite");
+  assert.ok(support.magasin.flushCount("vol.gen") > 0, "et elle est rendue DURABLE");
 });
 
 test("entre deux racines VALIDES, la séquence la plus haute fait autorité", async () => {

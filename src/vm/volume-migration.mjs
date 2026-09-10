@@ -354,9 +354,36 @@ async function muter({ target, backend, chaine, source, toVersion, evidence, cle
   });
   await backend.flush();
 
+  // 8 bis. DATER — la RACINE INITIALE du volume migré (#181). Elle vient AVANT le manifeste, comme
+  // l'enveloppe d'une restauration : un volume déclaré migré porte toujours de quoi être ouvert.
+  await daterLeVolumeMigre({ target, backend, manifest, cle });
+
   // 9. INSCRIRE, puis RELIRE depuis le support : écrire n'est pas persister.
   await inscrireEtRelire(target, manifest);
   return manifest;
+}
+
+/**
+ * ÉCRIT la RACINE INITIALE du volume MIGRÉ, quand la chaîne a produit un volume v3 (#181).
+ *
+ * Le critère est ce que le manifeste DÉCLARE : seul un manifeste v3 porte un identifiant de volume,
+ * et seul un volume v3 a un journal de génération à dater. Une chaîne qui s'arrête avant v3 n'a rien
+ * produit qui puisse porter une racine.
+ *
+ * La cible peut ne pas savoir dater — les doubles de bancs qui ne montent pas de voisins —, et
+ * l'absence est alors ce qu'elle est : aucune racine n'est écrite, et le volume sera refusé à
+ * l'ouverture. Un refus, jamais un silence.
+ */
+async function daterLeVolumeMigre({ target, backend, manifest, cle }) {
+  const identifiantVolume = manifest.volume?.id ?? null;
+  if (identifiantVolume === null) return null;
+  if (typeof target.poserLaRacineInitiale !== "function") return null;
+  return target.poserLaRacineInitiale({
+    brut: backend,
+    tailleLogique: manifest.geometry.volumeSize,
+    identifiantVolume,
+    cle,
+  });
 }
 
 /**

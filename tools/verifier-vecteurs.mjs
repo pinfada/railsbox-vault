@@ -1084,7 +1084,7 @@ function verifierLesParametresDeRecuperation(vecteurs) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// L'ARCHIVE V2 et son enveloppe de récupération (#149, ADR 0027).
+// L'ARCHIVE V3, son ENGAGEMENT et son enveloppe de récupération (#181, ADR 0033 ; #149, ADR 0027).
 //
 // Ce que ce bloc établit, depuis le seul texte de l'ADR 0027 et de l'ADR 0008 amendé : la
 // disposition `[RBVAULT1][longueur d'en-tête][en-tête JSON][contenu N][récupération R]`, son
@@ -1094,13 +1094,28 @@ function verifierLesParametresDeRecuperation(vecteurs) {
 // Il ne vérifie AUCUNE étiquette AES-GCM de l'enveloppe : la racine d'une page n'est vérifiable que
 // sous la clé de volume, qui ne se trouve nulle part dans un fichier. Les vecteurs de l'ADR 0020
 // tiennent cette part-là ; celui-ci tient le CONTENEUR, et le dit.
+//
+// **L'ENGAGEMENT, lui, est vérifié de bout en bout**, et c'est possible parce que la DEK du vecteur
+// est PUBLIÉE : ce fichier redérive la clé du domaine `archive` par HKDF-SHA-256 depuis l'ADR 0033,
+// reconstruit les données associées depuis la décision 2 de la Definition of Ready de #181, et
+// OUVRE l'étiquette GCM. Un vecteur d'engagement qui ne se relit pas ne prouverait que l'accord de
+// deux encodeurs.
 // ---------------------------------------------------------------------------------------------
 
 /** La disposition de l'archive, transcrite depuis l'ADR 0027 § « Format d'archive ». */
 const ARCHIVE_MARQUEUR = "RBVAULT1";
 const ARCHIVE_PREAMBULE_OCTETS = 12;
-const ARCHIVE_VERSION = 2;
+const ARCHIVE_VERSION = 3;
 const ARCHIVE_EN_TETE_MARQUEUR = "railsbox-vault/volume-archive";
+
+/** L'engagement de #181, transcrit depuis l'ADR 0033 (décision 3) et la DoR de #181 (décision 2). */
+const ENGAGEMENT_MARQUEUR = "VLTENG01";
+const ENGAGEMENT_FICHIER_VERSION = 1;
+const ENGAGEMENT_FICHIER_OCTETS = 180;
+const ETIQUETTE_SCHEMA_DE_DOMAINE = "railsbox-vault/derivation-de-domaine/v1";
+const DOMAINE_ARCHIVE = "archive";
+const ETIQUETTE_DOMAINE_ENGAGEMENT = "railsbox-vault/archive/engagement/v1";
+const ALGORITHME_AEAD = "aes-256-gcm";
 
 /** La disposition d'une PAGE d'enveloppe, transcrite depuis l'ADR 0020 § « Décision 2 ». */
 const ENVELOPPE_MARQUEUR = "VLTKEY01";
@@ -1202,8 +1217,160 @@ function verifierLaPageEmbarquee(page, declare) {
 }
 
 /** L'archive v2 entière : préambule, en-tête, arithmétique des sections, empreintes. */
+/**
+ * L'INFO de la dérivation d'un domaine, transcrite depuis l'ADR 0033, décision 3.
+ *
+ *     info = LP("railsbox-vault/derivation-de-domaine/v1") ‖ LP(domaine) ‖ LP(identifiantVolume)
+ *          ‖ U32BE(versionDeFormatDuDomaine) ‖ LP("aes-256-gcm")
+ */
+function infoDeDomaine({ domaine, identifiantVolume, versionDeFormat }) {
+  return concat(
+    chainePrefixee(ETIQUETTE_SCHEMA_DE_DOMAINE),
+    chainePrefixee(domaine),
+    chainePrefixee(identifiantVolume),
+    be(versionDeFormat, 4),
+    chainePrefixee(ALGORITHME_AEAD),
+  );
+}
+
+/** Les DONNÉES ASSOCIÉES de l'engagement, transcrites depuis la DoR de #181, décision 2. */
+function donneesAssocieesDeLEngagement(d) {
+  return concat(
+    chainePrefixee(ETIQUETTE_DOMAINE_ENGAGEMENT),
+    chainePrefixee(ALGORITHME_AEAD),
+    be(d.versionDArchive, 4),
+    chainePrefixee(d.identifiantVolume),
+    be(d.tailleSupport, 8),
+    be(d.tailleLogique, 8),
+    be(d.tailleDeSecteur, 4),
+    be(d.versionDeRecuperation, 4),
+    be(d.longueurDuContenu, 8),
+    be(d.longueurDeLaRecuperation, 8),
+  );
+}
+
+/**
+ * VÉRIFIE l'engagement de bout en bout : l'info, les données associées, la clé dérivée, l'étiquette
+ * GCM, et le voisin de cent quatre-vingts octets que la restauration dépose.
+ *
+ * C'est le seul endroit de ce fichier qui OUVRE un scellement du produit, et il le peut parce que la
+ * DEK du vecteur est publiée. Un engagement qui ne se relit pas ne prouverait rien.
+ */
+async function verifierLEngagement(vecteurs, enTete) {
+  const engagement = vecteurs.engagement;
+  const d = engagement.descripteur;
+
+  const info = infoDeDomaine({
+    domaine: DOMAINE_ARCHIVE,
+    identifiantVolume: d.identifiantVolume,
+    versionDeFormat: d.versionDArchive,
+  });
+  memesOctets(
+    "engagement : l'info HKDF est celle de l'ADR 0033, champ par champ",
+    info,
+    engagement.info,
+  );
+  memesOctets(
+    "engagement : les données associées sont celles de la décision 2 de #181",
+    donneesAssocieesDeLEngagement(d),
+    engagement.donneesAssociees,
+  );
+  verifier(
+    "engagement : le domaine est « archive » et sa version de format est celle de l'archive",
+    engagement.domaine === DOMAINE_ARCHIVE &&
+      engagement.versionDeFormatDuDomaine === ARCHIVE_VERSION,
+  );
+  verifier(
+    "engagement : le sel du domaine à usage unique fait trente-deux octets",
+    hexEnOctets(engagement.sel).byteLength === 32,
+  );
+
+  // La clé du domaine, redérivée depuis la DEK PUBLIÉE. HKDF-SHA-256, RFC 5869.
+  const octetsDeLaCle = await hkdf(
+    hexEnOctets(vecteurs.cles.dek.hex),
+    hexEnOctets(engagement.sel),
+    info,
+  );
+  const cle = await webcrypto.subtle.importKey("raw", octetsDeLaCle, "AES-GCM", false, ["decrypt"]);
+  const clair = await ouvrir(
+    cle,
+    hexEnOctets(engagement.nonce),
+    donneesAssocieesDeLEngagement(d),
+    hexEnOctets(engagement.chiffre),
+    hexEnOctets(engagement.etiquette),
+  );
+  verifier(
+    "engagement : l'étiquette VÉRIFIE sous la clé du domaine « archive » dérivée de la DEK",
+    clair !== null,
+  );
+  if (clair !== null) {
+    memesOctets(
+      "engagement : le clair scellé est le SHA-256 du fichier chiffré ENTIER",
+      clair,
+      vecteurs.archive.empreinteDuContenu,
+    );
+  }
+
+  // Ce que l'engagement scelle et ce que l'ARCHIVE déclare doivent se recouper : sans quoi
+  // l'engagement s'accorderait à lui-même, c'est-à-dire à rien.
+  verifier(
+    "engagement : la géométrie scellée est celle que le manifeste de l'archive déclare",
+    d.tailleLogique === enTete.manifest.geometry.volumeSize &&
+      d.tailleDeSecteur === enTete.manifest.geometry.sectorSize &&
+      d.longueurDuContenu === enTete.content.length &&
+      d.longueurDeLaRecuperation === enTete.recovery.length &&
+      d.versionDeRecuperation === enTete.recovery.envelopeVersion &&
+      d.identifiantVolume === enTete.manifest.volume.id,
+  );
+  memesOctets(
+    "engagement : l'en-tête de l'archive porte le sel, le nonce, le chiffré et l'étiquette publiés",
+    concat(
+      hexEnOctets(enTete.engagement.salt),
+      hexEnOctets(enTete.engagement.nonce),
+      hexEnOctets(enTete.engagement.ciphertext),
+      hexEnOctets(enTete.engagement.tag),
+    ),
+    engagement.sel + engagement.nonce + engagement.chiffre + engagement.etiquette,
+  );
+
+  // Le VOISIN `<volume>.engagement` : cent quatre-vingts octets à largeur fixe.
+  const voisin = hexEnOctets(engagement.voisin);
+  verifier(
+    "voisin d'engagement : cent quatre-vingts octets, ni plus ni moins",
+    voisin.byteLength === ENGAGEMENT_FICHIER_OCTETS,
+    `${voisin.byteLength}`,
+  );
+  memesOctets(
+    "voisin d'engagement : les huit octets de tête sont le marqueur VLTENG01",
+    texteAscii(ENGAGEMENT_MARQUEUR),
+    octetsEnHex(voisin.subarray(0, 8)),
+  );
+  verifier(
+    "voisin d'engagement : sa version de fichier est 1, distincte de la version d'archive",
+    lireBe(voisin, 8, 4) === ENGAGEMENT_FICHIER_VERSION &&
+      lireBe(voisin, 12, 4) === ARCHIVE_VERSION,
+  );
+  memesOctets(
+    "voisin d'engagement : il porte le descripteur EN CLAIR, puis sel, nonce, chiffré, étiquette",
+    concat(
+      texteAscii(d.identifiantVolume),
+      be(d.tailleSupport, 8),
+      be(d.tailleLogique, 8),
+      be(d.tailleDeSecteur, 4),
+      be(d.versionDeRecuperation, 4),
+      be(d.longueurDuContenu, 8),
+      be(d.longueurDeLaRecuperation, 8),
+      hexEnOctets(engagement.sel),
+      hexEnOctets(engagement.nonce),
+      hexEnOctets(engagement.chiffre),
+      hexEnOctets(engagement.etiquette),
+    ),
+    octetsEnHex(voisin.subarray(16)),
+  );
+}
+
 async function verifierArchive() {
-  const vecteurs = lire("tests/vectors/archive-v2.json");
+  const vecteurs = lire("tests/vectors/archive-v3.json");
   const archive = hexEnOctets(vecteurs.archive.hex);
 
   memesOctets(
@@ -1228,7 +1395,7 @@ async function verifierArchive() {
     enTete.magic === ARCHIVE_EN_TETE_MARQUEUR,
   );
   verifier(
-    "archive : la version de format d'archive est 2",
+    "archive : la version de format d'archive est 3",
     enTete.archiveFormatVersion === ARCHIVE_VERSION,
     `${enTete.archiveFormatVersion}`,
   );
@@ -1259,6 +1426,8 @@ async function verifierArchive() {
     "archive : le manifeste et l'en-tête portent la MÊME empreinte de contenu",
     enTete.manifest.identity.digest === enTete.content.digest,
   );
+
+  await verifierLEngagement(vecteurs, enTete);
 
   const page = archive.subarray(offsetRecuperation);
   memesOctets(

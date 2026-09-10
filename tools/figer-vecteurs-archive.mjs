@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Fige les vecteurs de l'ARCHIVE V2 et de son enveloppe de récupération (#149, ADR 0027).
+// Fige les vecteurs de l'ARCHIVE V3, de son ENGAGEMENT et de son enveloppe de récupération
+// (#181, ADR 0033 ; #149, ADR 0027).
 //
 //     node tools/figer-vecteurs-archive.mjs
 //
@@ -26,10 +27,20 @@
 //    l'ARCHIVE, pas l'encodage du manifeste, qui a ses propres épreuves ; le recopier ici
 //    dupliquerait un contrat déjà tenu ailleurs et le ferait diverger au premier champ ajouté.
 //
+// ## L'ENGAGEMENT, lui, est transcrit ICI de bout en bout (#181)
+//
+// Il n'a pas de modèle de référence : sa dérivation de clé et ses données associées sont transcrites
+// depuis l'ADR 0033 (décision 3) et la Definition of Ready de #181 (décision 2), et le scellement
+// passe par WebCrypto directement. C'est ce qui en fait un SECOND AVIS sur `archive-engagement.mjs`,
+// et non une seconde exécution du même code.
+//
+// Le SEL et le NONCE de l'engagement sont FIGÉS ici et PUBLIÉS : un vecteur reproductible est, par
+// définition, un vecteur dont l'aléa est écrit noir sur blanc. Le produit, lui, les tire.
+//
 // Les clés employées sont PUBLIQUES et volontairement sans entropie. Aucun secret n'entre ici.
 
 import { writeFileSync } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, webcrypto } from "node:crypto";
 
 import { octetsEnHex } from "../src/vm/format-chiffre/octets.mjs";
 import { ENVELOPPE_FORMAT_V1, TYPES_KEK } from "../src/vm/enveloppe/identite-enveloppe.mjs";
@@ -42,7 +53,7 @@ import {
 import { createManifest } from "../src/vm/volume-manifest.mjs";
 import { tailleDeFichier } from "../src/vm/volume-chiffre-format.mjs";
 
-const DESTINATION = new URL("../tests/vectors/archive-v2.json", import.meta.url);
+const DESTINATION = new URL("../tests/vectors/archive-v3.json", import.meta.url);
 
 // ---------------------------------------------------------------------------------------------
 // La disposition, transcrite depuis l'ADR 0027 et l'ADR 0020. Rien n'est importé du chemin d'archive.
@@ -51,7 +62,18 @@ const DESTINATION = new URL("../tests/vectors/archive-v2.json", import.meta.url)
 const MARQUEUR_ARCHIVE = "RBVAULT1";
 const PREAMBULE_OCTETS = 12;
 const MARQUEUR_EN_TETE = "railsbox-vault/volume-archive";
-const VERSION_ARCHIVE = 2;
+const VERSION_ARCHIVE = 3;
+
+// --- L'ENGAGEMENT (#181), transcrit depuis l'ADR 0033 et la DoR de #181 -------------------------
+
+const MARQUEUR_ENGAGEMENT = "VLTENG01";
+const ENGAGEMENT_FICHIER_VERSION = 1;
+const ENGAGEMENT_FICHIER_OCTETS = 180;
+const ETIQUETTE_SCHEMA_DE_DOMAINE = "railsbox-vault/derivation-de-domaine/v1";
+const DOMAINE_ARCHIVE = "archive";
+const ETIQUETTE_DOMAINE_ENGAGEMENT = "railsbox-vault/archive/engagement/v1";
+const ALGORITHME = "aes-256-gcm";
+const SECTEUR_OCTETS = 512;
 
 const MARQUEUR_ENVELOPPE = "VLTKEY01";
 const PAGE_OCTETS = 8192;
@@ -102,7 +124,11 @@ const NONCES = {
   recuperation: "bb0000000000000000000003",
   racineV2: "bb0000000000000000000004",
   racineEmbarquee: "bb0000000000000000000005",
+  engagement: "bb0000000000000000000006",
 };
+
+/** Sel du domaine `archive` : trente-deux octets, TIRÉS par le produit, FIGÉS et publiés ici. */
+const SEL_ENGAGEMENT = suite(0x70, 32);
 
 /**
  * Paramètres publics de l'emplacement de type 4, OPAQUES pour l'ADR 0020 et donc pour l'archive.
@@ -136,6 +162,131 @@ function hexEnOctets(hex) {
 
 /** SHA-256 en hexadécimal minuscule, par `node:crypto`. */
 const empreinte = (octets) => createHash("sha256").update(octets).digest("hex");
+
+/** Écrit un entier GROS-boutiste sur `octets` octets : la convention de l'ADR 0033 et de #181. */
+function entierBE(valeur, octets) {
+  const rendu = new Uint8Array(octets);
+  let reste = valeur;
+  for (let index = octets - 1; index >= 0; index -= 1) {
+    rendu[index] = reste % 256;
+    reste = Math.floor(reste / 256);
+  }
+  return rendu;
+}
+
+/** Chaîne UTF-8 préfixée de sa longueur sur deux octets gros-boutistes : le `LP(s)` des ADR. */
+function chainePrefixee(valeur) {
+  const utf8 = encodeur.encode(valeur);
+  return concat(entierBE(utf8.byteLength, 2), utf8);
+}
+
+/** Concatène des suites d'octets. */
+function concat(...morceaux) {
+  const total = morceaux.reduce((somme, morceau) => somme + morceau.byteLength, 0);
+  const rendu = new Uint8Array(total);
+  let curseur = 0;
+  for (const morceau of morceaux) {
+    rendu.set(morceau, curseur);
+    curseur += morceau.byteLength;
+  }
+  return rendu;
+}
+
+/**
+ * L'INFO de la dérivation du domaine `archive`, transcrite depuis l'ADR 0033, décision 3.
+ *
+ *     info = LP("railsbox-vault/derivation-de-domaine/v1") ‖ LP(domaine) ‖ LP(identifiantVolume)
+ *          ‖ U32BE(versionDeFormatDuDomaine) ‖ LP("aes-256-gcm")
+ */
+function infoDeDomaine({ domaine, identifiantVolume, versionDeFormat }) {
+  return concat(
+    chainePrefixee(ETIQUETTE_SCHEMA_DE_DOMAINE),
+    chainePrefixee(domaine),
+    chainePrefixee(identifiantVolume),
+    entierBE(versionDeFormat, 4),
+    chainePrefixee(ALGORITHME),
+  );
+}
+
+/**
+ * Les DONNÉES ASSOCIÉES de l'engagement, transcrites depuis la décision 2 de la DoR de #181.
+ *
+ * La longueur de l'EN-TÊTE n'y est pas : l'engagement vit DANS cet en-tête, et l'y sceller la
+ * rendrait fonction d'elle-même.
+ */
+function donneesAssocieesDeLEngagement(d) {
+  return concat(
+    chainePrefixee(ETIQUETTE_DOMAINE_ENGAGEMENT),
+    chainePrefixee(ALGORITHME),
+    entierBE(d.versionDArchive, 4),
+    chainePrefixee(d.identifiantVolume),
+    entierBE(d.tailleSupport, 8),
+    entierBE(d.tailleLogique, 8),
+    entierBE(d.tailleDeSecteur, 4),
+    entierBE(d.versionDeRecuperation, 4),
+    entierBE(d.longueurDuContenu, 8),
+    entierBE(d.longueurDeLaRecuperation, 8),
+  );
+}
+
+/** SCELLE l'engagement : HKDF-SHA-256 sous la DEK, puis AES-256-GCM sur l'empreinte du contenu. */
+async function scellerLEngagement({ descripteur, empreinteDuContenu }) {
+  const info = infoDeDomaine({
+    domaine: DOMAINE_ARCHIVE,
+    identifiantVolume: descripteur.identifiantVolume,
+    versionDeFormat: descripteur.versionDArchive,
+  });
+  const base = await webcrypto.subtle.importKey("raw", DEK, "HKDF", false, ["deriveKey"]);
+  const cle = await webcrypto.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt: SEL_ENGAGEMENT, info },
+    base,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt"],
+  );
+  const nonce = hexEnOctets(NONCES.engagement);
+  const brut = new Uint8Array(
+    await webcrypto.subtle.encrypt(
+      {
+        name: "AES-GCM",
+        iv: nonce,
+        additionalData: donneesAssocieesDeLEngagement(descripteur),
+        tagLength: 128,
+      },
+      cle,
+      empreinteDuContenu,
+    ),
+  );
+  return {
+    info,
+    sel: SEL_ENGAGEMENT,
+    nonce,
+    chiffre: brut.subarray(0, brut.byteLength - 16),
+    etiquette: brut.subarray(brut.byteLength - 16),
+    descripteur,
+  };
+}
+
+/** Le VOISIN `<volume>.engagement` : cent quatre-vingts octets à largeur fixe, transcrits ici. */
+function poserFichierDEngagement(engagement) {
+  const d = engagement.descripteur;
+  const octets = new Uint8Array(ENGAGEMENT_FICHIER_OCTETS);
+  octets.set(encodeur.encode(MARQUEUR_ENGAGEMENT), 0);
+  octets.set(entierBE(ENGAGEMENT_FICHIER_VERSION, 4), 8);
+  octets.set(entierBE(d.versionDArchive, 4), 12);
+  octets.set(encodeur.encode(d.identifiantVolume), 16);
+  octets.set(entierBE(d.tailleSupport, 8), 48);
+  octets.set(entierBE(d.tailleLogique, 8), 56);
+  octets.set(entierBE(d.tailleDeSecteur, 4), 64);
+  octets.set(entierBE(d.versionDeRecuperation, 4), 68);
+  octets.set(entierBE(d.longueurDuContenu, 8), 72);
+  octets.set(entierBE(d.longueurDeLaRecuperation, 8), 80);
+  octets.set(engagement.sel, 88);
+  octets.set(engagement.nonce, 120);
+  octets.set(engagement.chiffre, 132);
+  octets.set(engagement.etiquette, 164);
+  return octets;
+}
 
 /** Écrit un entier petit-boutiste sur `octets` octets, comme la table de l'ADR 0020 le demande. */
 function poserEntierLE(cible, position, valeur, octets) {
@@ -266,7 +417,7 @@ async function pages() {
  * `content`, `recovery`, `manifest` — et il compte : l'archive est comparée OCTET POUR OCTET, et
  * `JSON.stringify` suit l'ordre d'insertion.
  */
-function poserArchive({ manifeste, digestContenu, page }) {
+function poserArchive({ manifeste, digestContenu, page, engagement }) {
   const enTete = {
     magic: MARQUEUR_EN_TETE,
     archiveFormatVersion: VERSION_ARCHIVE,
@@ -281,6 +432,13 @@ function poserArchive({ manifeste, digestContenu, page }) {
       digest: empreinte(page),
       envelopeVersion: 2,
       slots: 1,
+    },
+    engagement: {
+      algorithm: ALGORITHME,
+      salt: octetsEnHex(engagement.sel),
+      nonce: octetsEnHex(engagement.nonce),
+      ciphertext: octetsEnHex(engagement.chiffre),
+      tag: octetsEnHex(engagement.etiquette),
     },
     manifest: manifeste,
   };
@@ -307,11 +465,30 @@ async function main() {
     identity: { algorithm: "sha-256", digest: digestContenu },
     volume: { id: IDENTIFIANT_VOLUME, algorithm: "aes-256-gcm" },
   });
-  const pose = poserArchive({ manifeste, digestContenu, page: trois.embarquee.octets });
+  const descripteur = {
+    versionDArchive: VERSION_ARCHIVE,
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    tailleSupport: CONTENU.byteLength,
+    tailleLogique: TAILLE_LOGIQUE,
+    tailleDeSecteur: SECTEUR_OCTETS,
+    versionDeRecuperation: 2,
+    longueurDuContenu: CONTENU.byteLength,
+    longueurDeLaRecuperation: trois.embarquee.octets.byteLength,
+  };
+  const engagement = await scellerLEngagement({
+    descripteur,
+    empreinteDuContenu: hexEnOctets(digestContenu),
+  });
+  const pose = poserArchive({
+    manifeste,
+    digestContenu,
+    page: trois.embarquee.octets,
+    engagement,
+  });
 
   const document = {
     avertissement:
-      "Vecteurs FIGÉS de l'archive v2 de RailsBox Vault (#149, ADR 0027). Les clés sont des clés de TEST publiques, sans entropie et sans valeur : elles ne protègent rien et ne doivent jamais servir ailleurs. Ces octets sont un CONTRAT — le chemin de production doit les reproduire à l'identique ; les régénérer change un format persistant et exige une version et un ADR.",
+      "Vecteurs FIGÉS de l'archive v3 de RailsBox Vault (#181, ADR 0033 ; #149, ADR 0027). Les clés sont des clés de TEST publiques, sans entropie et sans valeur : elles ne protègent rien et ne doivent jamais servir ailleurs. Ces octets sont un CONTRAT — le chemin de production doit les reproduire à l'identique ; les régénérer change un format persistant et exige une version et un ADR.",
     specification: {
       versionArchive: VERSION_ARCHIVE,
       marqueurArchive: MARQUEUR_ARCHIVE,
@@ -324,6 +501,7 @@ async function main() {
       marqueurEnveloppe: MARQUEUR_ENVELOPPE,
       typeEmbarque: TYPES_KEK.recuperation,
       reference: "docs/decisions/0027-archive-et-ancre-de-version.md",
+      referenceEngagement: "docs/decisions/0033-hierarchie-de-cles-derivees-par-domaine.md",
       producteur: "node tools/figer-vecteurs-archive.mjs",
     },
     volume: {
@@ -366,6 +544,24 @@ async function main() {
         page: octetsEnHex(trois.embarquee.octets),
       },
     },
+    engagement: {
+      commentaire:
+        "L'ENGAGEMENT de #181 : SHA-256 du fichier chiffré ENTIER, scellé sous la clé du domaine « archive » dérivée de la DEK par HKDF-SHA-256 avec le sel publié. Une archive, une clé, un scellement, aucun compteur.",
+      etiquetteDuSchemaDeDerivation: ETIQUETTE_SCHEMA_DE_DOMAINE,
+      domaine: DOMAINE_ARCHIVE,
+      versionDeFormatDuDomaine: VERSION_ARCHIVE,
+      etiquetteDeDomaine: ETIQUETTE_DOMAINE_ENGAGEMENT,
+      descripteur,
+      info: octetsEnHex(engagement.info),
+      donneesAssociees: octetsEnHex(donneesAssocieesDeLEngagement(descripteur)),
+      sel: octetsEnHex(engagement.sel),
+      nonce: octetsEnHex(engagement.nonce),
+      chiffre: octetsEnHex(engagement.chiffre),
+      etiquette: octetsEnHex(engagement.etiquette),
+      marqueurDuVoisin: MARQUEUR_ENGAGEMENT,
+      voisinOctets: ENGAGEMENT_FICHIER_OCTETS,
+      voisin: octetsEnHex(poserFichierDEngagement(engagement)),
+    },
     archive: {
       enTete: pose.enTete,
       longueurEnTete: pose.octetsEnTete.byteLength,
@@ -379,7 +575,7 @@ async function main() {
 
   writeFileSync(DESTINATION, `${JSON.stringify(document, null, 2)}\n`, "utf8");
   process.stdout.write(
-    `Archive v2 de ${pose.archive.byteLength} octets figée dans ${DESTINATION.pathname}\n`,
+    `Archive v3 de ${pose.archive.byteLength} octets figée dans ${DESTINATION.pathname}\n`,
   );
 }
 

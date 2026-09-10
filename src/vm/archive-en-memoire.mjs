@@ -24,7 +24,9 @@ export async function exportVolumeToBytes({
   source,
   manifest,
   consistency,
+  cle,
   recovery = null,
+  engagementFige,
   blockBytes,
 }) {
   const chunks = [];
@@ -36,7 +38,16 @@ export async function exportVolumeToBytes({
       total += copy.byteLength;
     },
   };
-  const result = await writeArchive({ source, sink, manifest, consistency, recovery, blockBytes });
+  const result = await writeArchive({
+    source,
+    sink,
+    manifest,
+    consistency,
+    cle,
+    recovery,
+    engagementFige,
+    blockBytes,
+  });
   const archive = new Uint8Array(total);
   let offset = 0;
   for (const chunk of chunks) {

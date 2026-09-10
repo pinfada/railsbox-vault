@@ -54,26 +54,29 @@ import {
   SURCOUT_ENREGISTREMENT,
   ZONE_ENREGISTREMENTS,
   encoderEnteteEnregistrement,
-  encoderRacine,
   enregistrementsSousIdentiteDeBloc,
   formatEcritSousFraicheur,
   longueurPhysiqueDeCharge,
   offsetDeRacine,
   racineDeSequence,
 } from "./generation-format.mjs";
-import { FRAICHEUR_ETATS, construireGarde } from "./generation-fraicheur.mjs";
+import { construireGarde } from "./generation-fraicheur.mjs";
 import { JournalDeGeneration } from "./generation-journal.mjs";
+import { EcrivainDeRacine } from "./generation-racine.mjs";
 import { RelectureDeCharge } from "./generation-relecture.mjs";
 import { PLAFOND_CHARGE_OCTETS, POINT_DE_CONTROLE_OCTETS } from "./generation-plafonds.mjs";
 import {
   GENERATION_ETATS,
+  SEQUENCE_AVANT_LA_PREMIERE_RACINE,
   constaterOuverture,
+  construireAutorisation,
   exigerIdentiteDeVolume,
-  poserRapport,
+  exigerRacineLisible,
+  rapportDuMagasin,
   remedeSansRacine,
 } from "./generation-recuperation.mjs";
 import { STORAGE_ERROR_CODES, StorageError, generationOverflow } from "./storage-errors.mjs";
-import { encoderSceau, identifiantVolumeEnOctets } from "./volume-chiffre-format.mjs";
+import { encoderSceau } from "./volume-chiffre-format.mjs";
 
 export { GENERATION_ETATS };
 export {
@@ -118,6 +121,11 @@ export class GenerationStore {
    */
   #garde;
   /**
+   * Ce qui AUTORISE une ouverture à écrire la RACINE INITIALE quand aucune racine ne fait autorité
+   * (#181). OBLIGATOIRE, `null` compris — voir `construireAutorisation`.
+   */
+  #sansRacine;
+  /**
    * PLANCHER de séquence présenté à chaque ouverture de racine.
    *
    * À la récupération, il vient du TÉMOIN — la dernière séquence vue dans cette origine — et vaut
@@ -152,8 +160,12 @@ export class GenerationStore {
   #sequenceValidee = 0;
   #rapport = null;
   /** Sceau et compteur de la dernière racine écrite. Conservés pour le parcours du rangement. */
-  #scelleDeLaRacine = null;
-  #scellementsDeLaRacine = 0;
+  /**
+   * L'ÉCRIVAIN DE RACINES (#181) : le seul à écrire dans la zone des racines, et le seul à se
+   * souvenir du scellé de la dernière. Extrait de cette classe quand elle a franchi le seuil
+   * d'alerte de taille ; voir `generation-racine.mjs`.
+   */
+  #ecrivain;
   /**
    * Plus grande charge que ce magasin ait VALIDÉE, en octets OCCUPÉS SUR LE SUPPORT — en-têtes et
    * sceaux compris, comme en v2. Haute eau, jamais remise à zéro.
@@ -192,12 +204,20 @@ export class GenerationStore {
       return options.ecrireVolume(offset, octets, generation);
     };
     this.#garde = construireGarde(options);
+    this.#sansRacine = construireAutorisation(options);
     this.#formatEcrit = formatEcritSousFraicheur(this.#garde !== null);
     this.#relecture = new RelectureDeCharge({
       journal: this.#journal,
       scellement: this.#scellement,
       lireVolume: this.#lireVolume,
       formatJournal: this.#formatEcrit,
+    });
+    this.#ecrivain = new EcrivainDeRacine({
+      journal: this.#journal,
+      scellement: this.#scellement,
+      garde: this.#garde,
+      tailleVolume: this.#tailleVolume,
+      formatEcrit: this.#formatEcrit,
     });
     this.#barriereVolume = options.barriereVolume ?? (async () => {});
     this.#plafond = options.plafondOctets ?? PLAFOND_CHARGE_OCTETS;
@@ -345,12 +365,36 @@ export class GenerationStore {
     this.#relecture.poserPlancher(this.#generationPlancher);
   }
 
-  /** AUCUNE racine ne fait autorité : le remède est décidé avant d'écrire quoi que ce soit. */
+  /**
+   * AUCUNE racine ne fait autorité : le remède est décidé avant d'écrire quoi que ce soit.
+   *
+   * L'ORDRE des trois gestes est le contrat de #181, et il n'est pas négociable :
+   *
+   *  1. une racine ABÎMÉE refuse d'abord, sans rien demander à personne — l'autorisation coûte
+   *     l'empreinte de tout le fichier, et ce qui a été validé est de toute façon inconnu ;
+   *  2. l'AUTORISATION est demandée ensuite, et elle décide AVANT que le moindre octet en clair ne
+   *     soit produit : rien n'est déchiffré sur ce chemin, pas même un enregistrement de charge ;
+   *  3. la RACINE INITIALE est écrite, puis — et seulement une fois qu'elle est durable —
+   *     l'autorisation est CONSOMMÉE. L'ordre inverse retirerait le voisin avant que le volume ne
+   *     porte de quoi s'en passer, et une coupure entre les deux laisserait un volume irrécupérable.
+   */
   async #recupererSansRacine({ abimees, chargePresente }) {
-    const remede = remedeSansRacine({ volume: this.#volume, abimees, chargePresente });
-    if (remede === "aucune") return this.#rapportDe(GENERATION_ETATS.aucune, {});
-    await this.#vider({ sequence: 0, generation: 0 });
-    return this.#rapportDe(GENERATION_ETATS.ecartee, { octetsEcartes: chargePresente });
+    exigerRacineLisible({ volume: this.#volume, abimees, chargePresente });
+    const autorisation = this.#sansRacine === null ? null : await this.#sansRacine.autoriser();
+    const remede = remedeSansRacine({
+      volume: this.#volume,
+      abimees,
+      chargePresente,
+      autorisee: autorisation !== null,
+    });
+    await this.#vider({ sequence: SEQUENCE_AVANT_LA_PREMIERE_RACINE, generation: 0 });
+    await autorisation.consommer();
+    return this.#rapportDe(
+      remede === "ecarter-puis-racine-initiale"
+        ? GENERATION_ETATS.ecartee
+        : GENERATION_ETATS.initialisee,
+      { octetsEcartes: chargePresente, racineInitiale: true, motifDeLaRacine: autorisation.motif },
+    );
   }
 
   /**
@@ -396,26 +440,21 @@ export class GenerationStore {
     });
   }
 
+  /** Ce que le rapport d'ouverture publie de ce magasin, et que lui seul connaît. */
   #rapportDe(etat, details) {
-    return poserRapport({
-      volume: this.#volume,
-      etat,
-      generation: this.#generation,
-      sequence: this.#sequence,
-      surmemoireMax: this.#journal.surmemoireMax,
-      details: {
-        // Publiés pour la même raison que la surmémoire : un contrôle qu'on ne publie pas finit par
-        // être supposé actif. `non-fournie` dit qu'aucune fraîcheur n'est prétendue ; `migree` dit
-        // qu'une racine d'avant #19 a été trouvée et que la suivante portera l'empreinte.
-        fraicheurRegion: this.#garde?.etat ?? FRAICHEUR_ETATS.nonFournie,
-        // Format que la racine trouvée DÉCLARE, et le nom le dit : le champ n'est pas authentifié
-        // (§ 6.7), un adversaire le choisit, et il ne vaut comme état de migration que sur un
-        // journal que rien n'a touché. C'est une DÉCLARATION, pas un constat (#143).
+    return rapportDuMagasin(
+      {
+        volume: this.#volume,
+        generation: this.#generation,
+        sequence: this.#sequence,
+        surmemoireMax: this.#journal.surmemoireMax,
+        fraicheurRegion: this.#garde?.etat ?? null,
         journalFormatAnnonce: this.#formatAnnonceTrouve,
         temoinSequence: this.#temoinALOuverture,
-        ...details,
       },
-    });
+      etat,
+      details,
+    );
   }
 
   #parcourirCharge(racine, emettre = null) {
@@ -592,49 +631,6 @@ export class GenerationStore {
     return this.#generation;
   }
 
-  /**
-   * Scelle puis écrit une racine. La SÉQUENCE PRÉCÉDENTE est présentée au modèle, qui refuse une
-   * séquence qui ne croîtrait pas strictement : deux racines authentiques de même séquence
-   * rendraient l'autorité ambiguë à la reprise (ADR 0015).
-   */
-  async #ecrireRacine({ sequence, generation, entrees }) {
-    // L'empreinte de région est RESCELLÉE sous la génération de CETTE racine, jamais recopiée d'une
-    // racine antérieure : une empreinte authentique mais scellée sous une génération plus ancienne,
-    // épissée dans une racine récente, ferait passer la région d'hier pour celle d'aujourd'hui.
-    // Le hachage, lui, n'est refait que si le volume a été écrit depuis le dernier (`marquerRegionSale`).
-    const fraicheur = this.#garde === null ? null : await this.#garde.pourRacine(generation);
-    const scelle = await this.#scellement.scellerRacine(
-      { sequence, generation, tailleVolume: this.#tailleVolume },
-      entrees,
-      { sequencePrecedente: this.#sequence },
-    );
-    const racine = encoderRacine({
-      fraicheur,
-      sequence,
-      generation,
-      tailleVolume: this.#tailleVolume,
-      nombreEntrees: scelle.entete.nombreEntrees,
-      longueurCharge: scelle.entete.longueurCharge,
-      identifiantVolume: identifiantVolumeEnOctets(this.#scellement.volume),
-      scellementsCumules: scelle.entete.scellementsCumules,
-      nonce: scelle.nonce,
-      chiffre: scelle.chiffre,
-      etiquette: scelle.etiquette,
-    });
-    this.#journal.ecrire(offsetDeRacine(racineDeSequence(sequence)), racine);
-    await this.#journal.barriere();
-    // Le TÉMOIN vient APRÈS la barrière de la racine, et l'ordre est le contrat. Une coupure entre
-    // les deux laisse un témoin EN RETARD : un plancher en retard sous-détecte, il ne refuse jamais
-    // à tort. L'ordre inverse laisserait un témoin en AVANCE, c'est-à-dire un volume intact refusé.
-    await this.#garde?.ecrireTemoin({ sequence, generation });
-    this.#scelleDeLaRacine = Object.freeze({
-      nonce: scelle.nonce,
-      chiffre: scelle.chiffre,
-      etiquette: scelle.etiquette,
-    });
-    this.#scellementsDeLaRacine = scelle.entete.scellementsCumules;
-  }
-
   /** Vrai si la charge validée mérite d'être rangée dans le volume dès maintenant. */
   get pointDeControleDu() {
     return this.#validee.longueurPhysique >= this.#seuilPointDeControle;
@@ -669,24 +665,16 @@ export class GenerationStore {
         { volume: this.#volume, generation: this.#generation },
       );
     }
-    await this.#rejouerCharge(this.#descripteurDeRacineValidee());
+    await this.#rejouerCharge(
+      this.#ecrivain.descripteurDeRacineValidee({
+        sequenceValidee: this.#sequenceValidee,
+        generation: this.#generation,
+        entrees: this.#validee.entrees.length,
+        longueurCharge: this.#validee.longueurClair,
+      }),
+    );
     await this.#barriereVolume();
     await this.#vider({ sequence: this.#sequence, generation: this.#generation });
-  }
-
-  /** Le descripteur de la racine qui fait autorité, tel que le parcours l'attend. */
-  #descripteurDeRacineValidee() {
-    return {
-      // POSÉ : il dit au parcours sous quelle étiquette cette charge a été scellée (#143).
-      format: this.#formatEcrit,
-      sequence: this.#sequenceValidee,
-      generation: this.#generation,
-      tailleVolume: this.#tailleVolume,
-      nombreEntrees: this.#validee.entrees.length,
-      longueurCharge: this.#validee.longueurClair,
-      scellementsCumules: this.#scellementsDeLaRacine,
-      scelle: this.#scelleDeLaRacine,
-    };
   }
 
   /**
@@ -704,6 +692,12 @@ export class GenerationStore {
    *  - après, la racine vide fait autorité et les octets qui traînent au-delà ne sont pas lus : une
    *    charge est bornée par ce que sa racine déclare, pas par la taille du fichier.
    */
+  /** Délègue à l'écrivain (#181), en lui présentant la séquence PRÉCÉDENTE que ce magasin tient. */
+  #ecrireRacine({ sequence, generation, entrees }) {
+    const sequencePrecedente = this.#sequence;
+    return this.#ecrivain.ecrire({ sequence, generation, entrees, sequencePrecedente });
+  }
+
   async #vider({ sequence, generation }) {
     this.#relecture.vider();
     this.#charge = etatDeCharge();

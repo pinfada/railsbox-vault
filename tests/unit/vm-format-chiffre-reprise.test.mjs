@@ -4,6 +4,7 @@ import test from "node:test";
 import { buildPattern } from "../../src/vm/block-fixture.mjs";
 import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import { ZONE_ENREGISTREMENTS } from "../../src/vm/generation-format.mjs";
+import { autorisationDeCreation } from "../../src/vm/generation-recuperation.mjs";
 import { GenerationStore } from "../../src/vm/generation-store.mjs";
 import { octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
@@ -89,6 +90,7 @@ async function ouvrirMagasin(support, releve) {
     formatVersion: 3,
   });
   return GenerationStore.ouvrir({
+    sansRacine: autorisationDeCreation(),
     volume: VOLUME,
     handle: await support.magasin.openHandle(`${VOLUME}.gen`),
     tailleVolume: TAILLE_VOLUME,

@@ -290,6 +290,13 @@ function supportDInstallation({ manifeste = false, volume = false, ecrits = null
         gestes.push("verser");
         return ecrits ?? octets;
       },
+      // DATER la création (#181) : le versement a écrit le fichier entier hors transaction, donc
+      // périmé la racine initiale de la naissance. Le geste est INJECTÉ comme les autres — sans
+      // quoi cette suite ouvrirait un vrai handle OPFS, ce qu'aucun test unitaire ne peut faire.
+      dater: async (options) => {
+        gestes.push(`dater:${options.name}`);
+        return { etat: "initialisee", racineInitiale: true, motifDeLaRacine: "creation" };
+      },
       revoquer: async (nom) => gestes.push(`revoquer:${nom}`),
       inscrire: async (nom) => gestes.push(`inscrire:${nom}`),
     },
@@ -346,6 +353,9 @@ test("un volume ABSENT est installé, et le manifeste est inscrit EN DERNIER", a
     "ouvrir:application",
     "verser",
     "close",
+    // La création est DATÉE avant que le manifeste ne la déclare (#181) : un volume déclaré complet
+    // porte toujours une racine, sans quoi le premier boot le refuserait.
+    "dater:application",
     "inscrire:application",
   ]);
   assert.ok(

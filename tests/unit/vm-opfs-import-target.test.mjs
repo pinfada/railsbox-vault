@@ -188,6 +188,10 @@ test("le journal de génération n'est retiré qu'APRÈS la révocation du manif
     "ouvre-volume",
     "revoque-manifeste",
     "retire:vault-app.gen",
+    // L'ENGAGEMENT d'une restauration ANTÉRIEURE part avec le journal (#181) : il atteste une
+    // archive que le volume qu'on écrase ne porte plus. Celui de l'archive en cours est posé plus
+    // tard, par `commitEngagement`, entre l'enveloppe et le manifeste.
+    "retire:vault-app.engagement",
     "retire:vault-app.temoin",
     "retire:vault-app.instantane",
   ]);
