@@ -4,6 +4,12 @@
 - Date : 2026-08-28
 - Issue : #22 · Invariants : `SEC-KEY-001`, `SEC-ORIGIN-001` · Jalon 5
 
+> **Révision ANNONCÉE le 2026-09-10 par
+> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#182, HIGH) :** « rien d'autre ne
+> descend d'elle » cesse d'être vrai à l'étage du dessous — la DEK développée par cette enveloppe
+> deviendra un matériau HKDF qui ne chiffre plus rien lui-même ; rien n'est amendé ici tant que la
+> tranche T2a n'a pas livré.
+
 ## Contexte
 
 L'[ADR 0020](0020-enveloppe-de-cle.md) a livré la SERRURE : un fichier `<volume>.cles` où une ou
