@@ -67,6 +67,7 @@ import {
   tirerSelDeDomaine,
 } from "./derivation/cle-de-domaine.mjs";
 import { SECTOR_SIZE } from "./block-geometry.mjs";
+import { FORMAT_VOLUME_V3 } from "./volume-chiffre-format.mjs";
 import { ARCHIVE_ERROR_CODES, ArchiveError } from "./archive-errors.mjs";
 
 /**
@@ -388,6 +389,32 @@ export function engagementDepuisJson(json, descripteur) {
 }
 
 /**
+ * EXIGE qu'une archive de volume ANTÉRIEUR à v3 déclare `engagement: null`, explicitement.
+ *
+ * **Ce que cette branche laisse, et il faut le dire.** Un adversaire qui réécrit le manifeste d'une
+ * archive de volume v3 en manifeste v2 — en accordant `volumeSize` à la longueur du contenu, sans
+ * quoi la géométrie refuse — obtient une archive sans engagement qui se restaure. Le volume qu'elle
+ * pose n'est pas ouvrable pour autant : son manifeste déclare v2, et `openVolumeForWrite` refuse par
+ * `VAULT_MANIFEST_MIGRATION_REQUIRED`. Ce que cet adversaire gagne est un déni de service qu'il
+ * avait déjà — il tenait l'archive.
+ */
+function exigerEngagementNul(header, manifest) {
+  if (manifest.formatVersion >= FORMAT_VOLUME_V3) {
+    throw new ArchiveError(
+      ARCHIVE_ERROR_CODES.engagementAbsent,
+      `Restauration refusée : cette archive v${header.archiveFormatVersion} décrit un volume au format v${manifest.formatVersion}, qui ne déclare aucun identifiant. Un engagement scelle l'identité du volume qu'il couvre ; sans elle, il ne couvre rien. Aucun octet n'est écrit sur la cible.`,
+      { formatVersion: manifest.formatVersion },
+    );
+  }
+  if (Object.hasOwn(header, "engagement") && header.engagement === null) return null;
+  throw new ArchiveError(
+    ARCHIVE_ERROR_CODES.engagementAbsent,
+    `Restauration refusée : cette archive décrit un volume au format v${manifest.formatVersion}, qui n'est pas chiffré et ne peut donc porter aucun engagement — elle doit déclarer « engagement: null », explicitement. Un champ absent et un champ nul ne disent pas la même chose. Aucun octet n'est écrit sur la cible.`,
+    { formatVersion: manifest.formatVersion },
+  );
+}
+
+/**
  * ENCODE le voisin `<volume>.engagement` : cent quatre-vingts octets à largeur fixe.
  *
  * Le voisin porte le descripteur EN CLAIR — c'est ce qui permet à l'ouverture de reconstruire les
@@ -510,17 +537,15 @@ export async function scellerLEngagementDeLArchive({
   versionDArchive,
   fige,
 }) {
+  const identifiantVolume = base.volume?.id ?? null;
+  // Un volume ANTÉRIEUR à v3 n'est pas chiffré : il n'a ni clé, ni identifiant. Son archive ne peut
+  // donc porter aucun engagement, et l'exiger rendrait la SAUVEGARDE — donc la migration v2 → v3,
+  // qui l'exige avant de muter (ADR 0011) — impossible. Elle porte `null`, EXPLICITE : un champ
+  // absent et un champ nul ne disent pas la même chose, exactement comme pour `recovery`.
+  if (identifiantVolume === null) return exigerVolumeAnterieur(base);
   if (!(cle instanceof Uint8Array)) {
     throw new TypeError(
-      "writeArchive attend « cle » : la clé de volume, sous laquelle l'engagement de l'archive est scellé (#181). Une archive v3 sans engagement n'existe pas.",
-    );
-  }
-  const identifiantVolume = base.volume?.id ?? null;
-  if (identifiantVolume === null) {
-    throw new ArchiveError(
-      ARCHIVE_ERROR_CODES.engagementAbsent,
-      `Export refusé : le manifeste décrit un volume au format v${base.formatVersion}, qui ne déclare aucun identifiant. Un engagement d'archive scelle l'identité du volume qu'il couvre ; sans elle, il ne couvre rien.`,
-      { formatVersion: base.formatVersion },
+      "writeArchive attend « cle » : la clé de volume, sous laquelle l'engagement de l'archive est scellé (#181). Une archive de volume v3 sans engagement n'existe pas.",
     );
   }
   return scellerEngagement({
@@ -540,6 +565,24 @@ export async function scellerLEngagementDeLArchive({
 }
 
 /**
+ * REFUSE un manifeste v3 sans identifiant, et rend `null` pour un volume antérieur.
+ *
+ * Le refus est impossible à atteindre par #10 — un manifeste v3 déclare toujours son bloc `volume`
+ * — et il est écrit malgré tout : la garde qui ne vaut que par une propriété d'un autre module est
+ * exactement celle qu'une tranche future défait sans le voir.
+ */
+function exigerVolumeAnterieur(base) {
+  if (base.formatVersion >= FORMAT_VOLUME_V3) {
+    throw new ArchiveError(
+      ARCHIVE_ERROR_CODES.engagementAbsent,
+      `Export refusé : le manifeste décrit un volume au format v${base.formatVersion}, qui ne déclare aucun identifiant. Un engagement d'archive scelle l'identité du volume qu'il couvre ; sans elle, il ne couvre rien.`,
+      { formatVersion: base.formatVersion },
+    );
+  }
+  return null;
+}
+
+/**
  * LIT l'engagement que l'en-tête déclare, et reconstruit le DESCRIPTEUR qu'il scelle.
  *
  * Le descripteur n'est jamais relu du champ `engagement` : il est DÉRIVÉ de ce que l'archive
@@ -554,13 +597,7 @@ export async function scellerLEngagementDeLArchive({
  */
 export function lireLEngagementDeLArchive({ header, manifest, contentLength, recovery }) {
   const identifiantVolume = manifest.volume?.id ?? null;
-  if (identifiantVolume === null) {
-    throw new ArchiveError(
-      ARCHIVE_ERROR_CODES.engagementAbsent,
-      `Restauration refusée : cette archive v${header.archiveFormatVersion} décrit un volume au format v${manifest.formatVersion}, qui ne déclare aucun identifiant. Un engagement scelle l'identité du volume qu'il couvre ; sans elle, il ne couvre rien. Aucun octet n'est écrit sur la cible.`,
-      { formatVersion: manifest.formatVersion },
-    );
-  }
+  if (identifiantVolume === null) return exigerEngagementNul(header, manifest);
   if (!Object.hasOwn(header, "engagement")) {
     throw new ArchiveError(
       ARCHIVE_ERROR_CODES.engagementAbsent,

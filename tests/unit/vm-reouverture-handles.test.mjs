@@ -35,6 +35,10 @@ const PREAMBULE_NAISSANCE = [
   "mesure.gen",
   "mesure.temoin",
   "mesure.instantane",
+  // L'ENGAGEMENT (#181) entre dans le balayage d'orphelins au même titre que les trois précédents :
+  // un volume du MÊME NOM supprimé à la main pourrait laisser derrière lui l'engagement d'une
+  // restauration, qui atteste des octets que le volume neuf ne porte pas.
+  "mesure.engagement",
   "mesure.migration",
 ];
 
@@ -105,7 +109,7 @@ test("MESURE — une session de volume v3 tient TROIS handles, saisis dans un or
   await backend.close();
   assert.deepEqual(
     new Set(noms("rendu")),
-    new Set([...HANDLES_DE_SESSION, "mesure.instantane", "mesure.migration"]),
+    new Set([...HANDLES_DE_SESSION, "mesure.instantane", "mesure.engagement", "mesure.migration"]),
   );
 });
 

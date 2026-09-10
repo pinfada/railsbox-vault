@@ -140,12 +140,19 @@ export const MUTATIONS = Object.freeze([
     epreuves: [RESTAURATION],
   },
   {
-    nom: "une archive DÉCLARE son volume : sans identité, l'engagement ne couvre rien",
-    garde: "scellerLEngagementDeLArchive — le refus, À L'ÉCRITURE, d'un manifeste sans identifiant",
+    nom: "une archive qui emporte une enveloppe DÉCLARE son volume",
+    garde: "assertEnveloppeDuMemeVolume — le refus d'un manifeste sans identifiant",
+    fichier: IMPORT,
+    avant: "  const declare = verdict.manifest.volume?.id ?? null;\n  if (declare === null) {",
+    apres: "  const declare = verdict.manifest.volume?.id ?? null;\n  if (false) {",
+    epreuves: [RESTAURATION],
+  },
+  {
+    nom: "une archive v3 DÉCLARE toujours son engagement, et une v2 le déclare NUL",
+    garde: "lireLEngagementDeLArchive — la présence du champ, et la nullité explicite (#181)",
     fichier: ENGAGEMENT,
-    avant:
-      "  const identifiantVolume = base.volume?.id ?? null;\n  if (identifiantVolume === null) {",
-    apres: "  const identifiantVolume = base.volume?.id ?? null;\n  if (false) {",
+    avant: '  if (!Object.hasOwn(header, "engagement")) {',
+    apres: "  if (false) {",
     epreuves: [RESTAURATION],
   },
   {
@@ -182,11 +189,15 @@ export const MUTATIONS = Object.freeze([
     garde: "poserLEnveloppePuisLeManifeste — l'ordre des deux derniers gestes",
     fichier: IMPORT,
     avant:
-      "  await target.commitEngagement(encoderFichierDEngagement(verdict.engagement));\n" +
+      "  await target.commitEngagement(\n" +
+      "    verdict.engagement === null ? null : encoderFichierDEngagement(verdict.engagement),\n" +
+      "  );\n" +
       "  await target.commitManifest(serializeManifest(verdict.manifest));",
     apres:
       "  await target.commitManifest(serializeManifest(verdict.manifest));\n" +
-      "  await target.commitEngagement(encoderFichierDEngagement(verdict.engagement));",
+      "  await target.commitEngagement(\n" +
+      "    verdict.engagement === null ? null : encoderFichierDEngagement(verdict.engagement),\n" +
+      "  );",
     epreuves: [RESTAURATION, IMPORT_EPREUVE],
   },
   {

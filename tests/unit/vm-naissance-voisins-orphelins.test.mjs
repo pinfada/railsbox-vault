@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
+import { ZONE_ENREGISTREMENTS } from "../../src/vm/generation-format.mjs";
 import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
@@ -73,8 +74,14 @@ test("la naissance retire les voisins orphelins .gen, .temoin et .instantane, et
     "orphelins.instantane",
     "orphelins.temoin",
   ]);
-  assert.equal(store.sizeOf("orphelins.gen"), 0);
-  assert.equal(store.sizeOf("orphelins.temoin"), 0);
+  // **Ce que « retiré » veut dire depuis #181, et ce qu'il ne veut plus dire.** La naissance retire
+  // bien les trois orphelins — c'est ce que `voisinsRetires` publie —, mais elle écrit ENSUITE sa
+  // propre racine initiale, donc son journal et son témoin. Un journal à ZÉRO ne prouverait donc
+  // plus rien ; ce qui se mesure est que les octets présents sont ceux de la naissance, pas ceux
+  // des orphelins : un journal à la taille exacte de sa zone de racines, un témoin neuf, et un
+  // INSTANTANÉ à zéro — celui-là, la naissance ne le réécrit pas.
+  assert.equal(store.sizeOf("orphelins.gen"), ZONE_ENREGISTREMENTS);
+  assert.ok(store.sizeOf("orphelins.temoin") > 0, "le témoin est celui de la naissance");
   assert.equal(store.sizeOf("orphelins.instantane"), 0);
   await second.close();
 

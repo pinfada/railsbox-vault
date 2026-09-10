@@ -223,6 +223,7 @@ test("l'ARCHIVE n'emporte pas l'enveloppe : ni son marqueur, ni un octet de DEK 
     },
     manifest: JSON.parse(new TextDecoder().decode(manifeste())),
     consistency: { kind: CONSISTENCY_KINDS.exclusiveHandle, detail: "volume fermé pour l'épreuve" },
+    cle: dek,
   });
 
   const enHex = Buffer.from(archive).toString("hex");

@@ -255,53 +255,58 @@ test("une section de récupération d'un AUTRE volume est refusée avant toute m
   assert.equal(destination.lire(`${CIBLE}.cles`), null);
 });
 
-test("une archive dont le manifeste ne DÉCLARE aucun volume est refusée, à l'écriture ET à la lecture", async () => {
+test("une archive qui emporte une enveloppe sans DÉCLARER de volume est refusée", async () => {
   // L'autre bord du même contrôle : une enveloppe n'existe que pour un volume v3, qui déclare
   // toujours son identifiant (ADR 0016). Une archive d'un format antérieur qui porterait malgré tout
   // une section de récupération ne dit pas à QUEL volume elle appartient — et le voisin `.cles` doit
   // être posé sous une identité, jamais sous « on verra bien ».
   //
-  // **#181 avance ce refus de deux crans, et le rend plus fort.** L'ENGAGEMENT d'une archive scelle
-  // l'identité du volume qu'il couvre : sans identifiant, il ne couvre rien. L'export refuse donc
-  // d'en produire une, et la vérification refuse d'en lire une — avant même que la section de
-  // récupération ne soit confrontée au manifeste. L'épreuve établit les DEUX bords.
+  // **Ce chemin reste atteignable après #181, et il faut dire pourquoi.** Une archive de volume
+  // ANTÉRIEUR à v3 porte `engagement: null` — un tel volume n'est pas chiffré, il n'a ni clé ni
+  // identité à engager, et l'exiger rendrait la sauvegarde de la migration v2 → v3 impossible. Le
+  // refus de l'enveloppe est donc le SEUL qui parle ici, exactement comme avant.
   const { recuperation } = await archiveExportee();
   const contenu = Uint8Array.from({ length: TAILLE }, (_, index) => (index * 5 + 3) % 256);
-  const source = {
-    size: contenu.byteLength,
-    read: async (offset, longueur) => contenu.slice(offset, offset + longueur),
-  };
-  // Un manifeste de format 2 : il ne porte pas de bloc `volume`, donc pas d'identifiant.
-  const manifesteSansVolume = createManifest({
-    formatVersion: 2,
-    runtime: { version: "0.1.0", artifact: null, minWriter: "0.1.0" },
-    app: { id: "railsbox-vault-reference", version: "1.0.0" },
-    volumeSize: TAILLE,
-    identity: { algorithm: "sha-256", digest: null },
+  const { archive } = await exportVolumeToBytes({
+    source: {
+      size: contenu.byteLength,
+      read: async (offset, longueur) => contenu.slice(offset, offset + longueur),
+    },
+    // Un manifeste de format 2 : il ne porte pas de bloc `volume`, donc pas d'identifiant.
+    manifest: createManifest({
+      formatVersion: 2,
+      runtime: { version: "0.1.0", artifact: null, minWriter: "0.1.0" },
+      app: { id: "railsbox-vault-reference", version: "1.0.0" },
+      volumeSize: TAILLE,
+      identity: { algorithm: "sha-256", digest: null },
+    }),
+    consistency: { kind: "handle-exclusif" },
+    recovery: recuperation,
   });
 
-  // PREMIER BORD — l'écriture. Une archive fautive ne naît pas : l'utilisateur l'apprend ici, et
-  // non au moment de restaurer, c'est-à-dire au pire endroit et au pire moment.
+  const destination = magasin();
+  const { cible, gestes } = cibleDe(destination, CIBLE);
   await assert.rejects(
-    exportVolumeToBytes({
-      source,
-      manifest: manifesteSansVolume,
-      consistency: { kind: "handle-exclusif" },
-      cle: DEK,
-      recovery: recuperation,
+    // La dérogation de DIAGNOSTIC est nommée : sans elle, #10 refuserait le format antérieur avant
+    // que la garde de cette tranche n'ait la parole, et l'épreuve mesurerait le mauvais refus.
+    importArchive({
+      source: sourceDArchive(archive),
+      target: cible,
+      enforceCompatibility: false,
     }),
     (erreur) => {
-      assert.ok(isArchiveError(erreur, ARCHIVE_ERROR_CODES.engagementAbsent), erreur.code);
-      assert.match(erreur.message, /ne déclare aucun identifiant/);
+      assert.ok(isArchiveError(erreur, ARCHIVE_ERROR_CODES.recuperationRefusee), erreur.code);
+      assert.match(erreur.message, /ne déclare aucun identifiant de volume/);
       return true;
     },
   );
+  assert.deepEqual(gestes, [], "aucun geste : la cible n'a pas même été ouverte");
+});
 
-  // SECOND BORD — la lecture. Il est atteint par un en-tête FORGÉ, puisque l'export refuse d'en
-  // produire un : le champ « engagement » d'une archive v3 par ailleurs valide est retiré. C'est ce
-  // qu'un conteneur bricolé à la main donnerait, et c'est le seul chemin qui reste — un manifeste v3
-  // SANS bloc « volume » est refusé par #10 avant d'arriver ici (`VAULT_MANIFEST_MALFORMED`), si
-  // bien que le refus de l'identité manquante n'est atteignable qu'à l'écriture.
+test("une archive v3 SANS engagement est refusée : l'engagement n'est pas facultatif", async () => {
+  // Le pendant du précédent, sur un volume v3. Une archive de volume v3 DOIT porter son engagement ;
+  // le retirer d'un en-tête par ailleurs valide est ce qu'un conteneur bricolé à la main donnerait,
+  // et c'est le seul chemin qui reste — l'export refuse d'en produire une.
   const { archive } = await archiveExportee();
   const sansEngagement = await reecrireLEnTete(archive, (entete) => {
     const copie = { ...entete };

@@ -218,6 +218,14 @@ export function createOpfsImportTarget(
      * deux, le volume est non identifié, donc refusé au boot — le seul état sûr des deux.
      */
     async commitEngagement(bytes) {
+      // `null` couvre le seul cas où une archive n'engage rien : elle décrit un volume ANTÉRIEUR à
+      // v3, qui n'est pas chiffré. RETIRER est alors aussi important que poser — la cible écrasée
+      // pouvait porter l'engagement d'une restauration antérieure, qui atteste des octets qui ne
+      // sont plus là. `discardGeneration` l'a déjà fait ; ceci est la garde du module qui écrit.
+      if (bytes === null) {
+        await removeSidecar(engagementSidecarName(volume));
+        return;
+      }
       await writeManifest(engagementSidecarName(volume), bytes);
     },
 

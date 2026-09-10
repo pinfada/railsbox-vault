@@ -146,15 +146,20 @@ function makeHandle({ file, assertQuota, relacherExclusivite, plafond, writeCost
  * Crée un espace de stockage isolé qui distribue des handles.
  *
  * @param {{ quotaBytes?: number, maxWriteBytes?: number, writeCostBytes?: number }} [options]
- *   `quotaBytes` borne le total des volumes ; `maxWriteBytes` plafonne UN appel `write` pour
+ *   `quotaBytes` borne le total des volumes — il est MUTABLE par `setQuota`, et il l'est depuis
+ *   #181 : une CRÉATION écrit désormais sa racine initiale, si bien qu'un quota trop court dès
+ *   l'ouverture fait échouer la création, et une épreuve qui veut mesurer un dépassement à
+ *   l'ÉCRITURE mesurerait alors le mauvais refus. Elle crée sous un quota confortable, puis le
+ *   resserre. `maxWriteBytes` plafonne UN appel `write` pour
  *   produire une écriture partielle ; `writeCostBytes` ajoute un coût forfaitaire par écriture,
  *   ce qui permet d'épuiser le quota sans faire grandir le volume.
  */
 export function createSyncAccessStore({
-  quotaBytes = Number.POSITIVE_INFINITY,
+  quotaBytes: quotaInitial = Number.POSITIVE_INFINITY,
   maxWriteBytes = Number.POSITIVE_INFINITY,
   writeCostBytes = 0,
 } = {}) {
+  let quotaBytes = quotaInitial; // MUTABLE depuis #181 : voir `setQuota` et l'en-tête ci-dessus.
   /**
    * Plafond d'UN appel `write`, MUTABLE.
    *
@@ -278,6 +283,10 @@ export function createSyncAccessStore({
     flushCount: (name) => fileOf(name).flushes,
     readCount: (name) => fileOf(name).reads,
     usedBytes,
+    /** Resserre ou desserre le quota du support. Voir l'en-tête de cette fabrique pour le motif. */
+    setQuota: (octets) => {
+      quotaBytes = octets;
+    },
     /** Copie du contenu, pour comparer un volume sans passer par le backend. */
     snapshot(name) {
       const file = fileOf(name);

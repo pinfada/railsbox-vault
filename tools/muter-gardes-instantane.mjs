@@ -176,8 +176,11 @@ export const MUTATIONS = Object.freeze([
     nom: "voisinage : l'instantané ne part plus avec le volume",
     garde: "voisinsDunVolume — le suffixe d'instantané",
     fichier: VOISINS,
-    avant: "    INSTANTANE_SIDECAR_SUFFIX,\n  ].map((suffixe) => `${nom}${suffixe}`);",
-    apres: "  ].map((suffixe) => `${nom}${suffixe}`);",
+    // La liste a gagné l'ENGAGEMENT de #181 : la mutation vise toujours le SUFFIXE D'INSTANTANÉ, et
+    // elle le retire seul. Une mutation qui emporterait aussi l'engagement ne mesurerait plus la
+    // garde qu'elle nomme.
+    avant: "    INSTANTANE_SIDECAR_SUFFIX,\n    // L'ENGAGEMENT (#181)",
+    apres: "    // L'ENGAGEMENT (#181)",
     epreuves: [EPREUVE_VOISIN],
   },
 ]);
