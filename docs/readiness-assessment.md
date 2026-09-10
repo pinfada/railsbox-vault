@@ -87,6 +87,22 @@ chaîne d'approvisionnement, puis obtenir la revue externe #20. Les constats cri
 doivent être corrigés ou explicitement bloquer la qualification ; aucun score documentaire ne lève
 les gates de données sensibles.
 
+**Au 10 septembre 2026 : la revue #20 a eu lieu, et elle BLOQUE.** Elle rend un constat CRITICAL
+([#181](https://github.com/pinfada/railsbox-vault/issues/181) — une archive accepte un mélange de
+secteurs provenant de plusieurs états, et la première ouverture restaurée le rend en clair) et un
+constat HIGH ([#182](https://github.com/pinfada/railsbox-vault/issues/182) — le budget AES-GCM n'est
+pas global à la clé). Les deux sont **ouverts** au registre
+([`revue-externe/registre.md`](revue-externe/registre.md)) ; leur correction est décidée par
+l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) et n'est pas livrée. La
+phrase ci-dessus s'applique donc telle quelle : ils bloquent explicitement la qualification.
+
+**Et la nature du relecteur ne se laisse pas arrondir.** C'est une revue adverse assistée par un
+agent d'IA distinct des agents du dépôt, ni tiers humain ni cabinet indépendant. **Savoir si cela
+satisfait la condition « tiers » des gates est une décision du mainteneur, qui n'est pas prise**
+([`SECURITY.md`](../SECURITY.md)). Tant qu'elle ne l'est pas, ce critère ne compte pas la revue
+comme l'audit externe que sa cible exige — et un CRITICAL ouvert lui interdit de toute façon de
+monter.
+
 ### Qualité et performance mesurées — cible 9,5
 
 Avec #4 à #7, publier p50/p95, pic mémoire, taille transférée et temps de récupération sur
