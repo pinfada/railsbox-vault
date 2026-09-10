@@ -196,6 +196,17 @@ typé, jamais lu en clair ».
 
 ### 4.5 Le budget de clé, et la conduite au plafond
 
+> **CE PARAGRAPHE DÉCRIT UN BUDGET QUI N'EST PAS GLOBAL À LA CLÉ, et la revue externe du 10
+> septembre 2026 l'a établi** ([#182](https://github.com/pinfada/railsbox-vault/issues/182), HIGH,
+> ouvert — § 9.7). « Ce que le compteur compte », plus bas, décrit ce qu'UNE instance de scellement
+> compte ; or les volumes de coquille et d'application partagent la même clé, chaque instance repart
+> de zéro, les racines d'enveloppe et les exports scellent sous cette clé hors de tout compteur, et
+> deux chemins de production s'ouvrent hors transaction. La probabilité de 2^-35 publiée ci-dessous
+> **n'est donc pas bornée par le mécanisme implémenté**. La correction est décidée —
+> [ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md), une clé dérivée par domaine
+> et par volume — et **elle n'est pas livrée** : ce paragraphe reste vrai du format v3, c'est-à-dire
+> du format que le produit écrit aujourd'hui. Il sera récrit par la version v4.
+
 | Grandeur                                                |            Valeur |
 | ------------------------------------------------------- | ----------------: |
 | Plafond d'invocations par clé, NIST SP 800-38D § 8.3    |              2^32 |
@@ -1325,6 +1336,16 @@ d'ouvrir le volume. Ce qu'un tel support obtient reste une **destruction, jamais
 
 ### 7.5 Exporter et restaurer
 
+> **L'ARCHIVE DÉCRITE ICI N'EST PAS AUTHENTIFIÉE, et cela suffit à rendre un état JAMAIS PRODUIT**
+> ([#181](https://github.com/pinfada/railsbox-vault/issues/181), CRITICAL, ouvert — § 9.7). Le
+> SHA-256 ci-dessous est **recalculable** par quiconque tient le fichier : il atteste contre
+> l'accident, pas contre un adversaire. Comme la restauration retire journal et témoin et que
+> l'ouverture suivante accepte l'absence de racine, un mélange de secteurs authentiques venus de
+> deux états du même volume se restaure, s'ouvre et se lit en clair, sans refus. La correction est
+> décidée — un engagement scellé sous une clé du domaine `archive`, vérifié avant tout clair, une
+> archive sans engagement refusée — et **elle n'est pas livrée** : ce qui suit décrit l'archive v2
+> telle que le produit l'écrit aujourd'hui.
+
 **L'archive porte le fichier v3 TEL QUEL — chiffré — et son manifeste v3.** L'intégrité est prouvée
 par l'empreinte SHA-256 du fichier ; la restauration recopie les octets **sans clé** ; la clé n'est
 nécessaire qu'à l'**ouverture** du volume restauré. Épreuves :
@@ -1780,10 +1801,82 @@ publié dans `describe().voisinsRetires`, jamais en silence. Épreuves :
 clé, écrite avant elle (ADR 0020) ». Le cas « volume neuf homonyme » du constat disparaît (§ 6.9) ;
 le § 11 ne compte plus « supprimer et recréer » parmi les remèdes non outillés.
 
-`docs/revue-externe/registre.md` porte désormais **quatre lignes** : #143, #144 et #145 disposés «
-corrigé », #142 disposé « accepté » avec sa sévérité révisée. La moitié 2 de #20 — la revue par un
-tiers — n'a pas encore eu lieu pour autant : le registre porte ce que le dépôt a reçu et ce qu'il en
-a fait, et ces quatre constats viennent d'une pré-revue INTERNE traitée comme externe.
+`docs/revue-externe/registre.md` porte ces **quatre lignes** : #143, #144 et #145 disposés « corrigé
+», #142 disposé « accepté » avec sa sévérité révisée. Ces quatre constats viennent d'une pré-revue
+INTERNE traitée comme externe ; la moitié 2 de #20 a eu lieu depuis, et ses deux constats sont au §
+9.7.
+
+### 9.7 Constats de la revue externe, 10 septembre 2026
+
+La moitié 2 de [#20](https://github.com/pinfada/railsbox-vault/issues/20) a eu lieu le 10 septembre
+2026, sur `main` à l'empreinte `aa6be826ad0e14162a9e06e5`. Son texte intégral est versé au dépôt en
+[`docs/revue-externe/revue-2026-09-10.md`](revue-externe/revue-2026-09-10.md), et sa nature est
+écrite au registre sans formule d'audit : **une revue adverse assistée par un agent d'IA distinct
+des agents du dépôt, ni tiers humain ni cabinet indépendant.** Que cela satisfasse la condition «
+tiers » des gates de [`SECURITY.md`](../SECURITY.md) est une décision du mainteneur, **et elle n'est
+pas prise**.
+
+**Verdict du relecteur : le gate « données sensibles » ne doit pas être ouvert.** Deux constats,
+tous deux **OUVERTS** au registre — c'est-à-dire reçus, reproduits, non corrigés, et dus avant la
+fermeture de #20.
+
+**[#181](https://github.com/pinfada/railsbox-vault/issues/181) — Une archive accepte un mélange de
+secteurs provenant de plusieurs états, et la première ouverture restaurée le rend en clair.
+CRITICAL, OUVERT.** La restauration retire le journal et le témoin avant de recopier le volume (§
+7.5) ; l'ouverture suivante traite l'absence de racine comme une première ouverture ; et l'archive
+n'est authentifiée par rien d'autre qu'un SHA-256 **recalculable** (§ 7.5, § 13 question n° 6). Le
+relecteur a exécuté le mélange : trois états A, B, C du même volume, puis le secteur 0 de A remis
+dans le fichier de C, puis une archive reconstruite avec le format public. Le résultat est
+`{ "archiveVerifiee": true, "fraicheur": "sans-racine", "etatJamaisProduit": true }` : chaque
+secteur reste authentique isolément, leur combinaison ne correspond à **aucun état validé**, aucun
+refus n'est produit, et le clair est rendu.
+
+**Ce que ce constat contredit dans ce document.** Le § 8, propriété P5, écrit que le format refuse «
+jamais un mélange » ; la § 9.1 assume le retour arrière COMPLET du support, pas un état **jamais
+produit**. Un adversaire qui détient deux archives ou deux captures chiffrées du même volume revient
+sélectivement sur des pages de base de données **sans connaître la clé**. La § 7.5 dit que
+l'empreinte « atteste qu'une archive n'a pas été abîmée » : c'est vrai, et c'est précisément
+insuffisant.
+
+**Ce que le dépôt fera, et où c'est écrit.** Une nouvelle version d'archive portant un **engagement
+authentifié** sur le fichier chiffré entier, son identité, sa géométrie et sa version de
+récupération, scellé sous une clé du domaine `archive` dérivée de la DEK ; déposé par la
+restauration à côté du volume, **vérifié à la première ouverture avant tout clair**, et refusé s'il
+est absent ou faux. Les archives sans engagement sont **refusées à la restauration** : rien n'est
+publié, il n'y a aucune compatibilité à préserver. La Definition of Ready est dans l'issue ; la
+hiérarchie de clés qui lui donne son domaine est
+l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md).
+
+**[#182](https://github.com/pinfada/railsbox-vault/issues/182) — Le budget AES-GCM n'est pas global
+à la clé. HIGH, OUVERT.** Le § 4.5 affirme compter « toutes les invocations sous une clé », et c'est
+l'exigence du § 8.3 de NIST SP 800-38D. Le produit compte par **instance de scellement** : les
+volumes de coquille et d'application emploient la même DEK, chaque instance repart de zéro, la
+coquille et l'installation initiale s'ouvrent hors transaction, et les deux rescellements de racine
+d'enveloppe — mutation de `<volume>.cles`, export avec récupération — se font directement sous la
+DEK, hors compteur. Le test minimal du relecteur rend
+`{ "memeCle": true, "compteurVolumeA": 1, "compteurVolumeB": 1, "sommeReelle": 2 }`.
+
+**Ce que ce constat contredit dans ce document.** La phrase « ce que le compteur compte » du § 4.5,
+et la probabilité de collision de 2^-35 qu'il publie : elle est calculée pour 2^31 invocations sous
+UNE clé, et rien dans le mécanisme implémenté ne borne le nombre réel d'invocations sous la DEK.
+**Ce n'est pas une réutilisation de nonce observée** — les nonces sont tirés (§ 4.2) —, c'est une
+borne annoncée que le mécanisme ne tient pas. La sous-estimation hors transaction que le § 4.5 avoue
+déjà en est un cas particulier, pas l'ensemble du défaut.
+
+**Ce que le dépôt fera, et où c'est écrit.**
+L'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) fait de la DEK une clé
+**maîtresse** qui ne chiffre plus rien : chaque domaine — `volume`, `journal`, `instantane`,
+`enveloppe`, `archive`, `recuperation` — scelle sous une clé AEAD dérivée par HKDF-SHA-256, liée au
+domaine, au volume et à la version de format. Deux domaines gardent un compteur, désormais exhaustif
+parce qu'une clé n'a plus qu'un consommateur ; les quatre autres prennent une clé à **usage unique**
+avec un sel tiré, et n'ont plus besoin de compter. C'est une **version de format v4** avec migration
+reprenable, sur le modèle de la v2 → v3 (§ 7.4).
+
+**Ce que ces deux constats font au reste du dossier.** La question n° 1 (AES-GCM-SIV) est
+**rouverte** par le relecteur ; la question n° 4 (le budget) reçoit une réponse en deux moitiés — la
+PORTÉE est tranchée par l'ADR 0033, l'EMPLACEMENT reste ouvert ; la question n° 6 est tranchée
+contre la position du dépôt. Les neuf réponses sont reprises une par une au § 13, et la § 14 porte
+les deux constats parmi ce que ce dossier ne prouve pas.
 
 ## 10. Les codes de refus, et la conduite
 
@@ -2217,6 +2310,15 @@ retard sur le code ; le cinquième est un commentaire en retard sur son propre f
 
 ## 13. Questions au relecteur
 
+> **RÉPONDUES le 10 septembre 2026.** La revue externe de la moitié 2 de #20 (§ 9.7,
+> [texte intégral](revue-externe/revue-2026-09-10.md)) a répondu aux neuf. Chaque question porte
+> désormais trois choses : la position d'origine du dépôt, **la réponse du relecteur citée**, et la
+> **position révisée**. Aucune position d'origine n'est effacée : ce qui a changé doit se lire.
+>
+> Le compte, pour qui ne lit que celui-là : **une rouverte** (n° 1), **une réfutée** (n° 4, sur sa
+> portée), **une tranchée contre le dépôt** (n° 6), **six confirmées ou nuancées** (n° 2, 3, 5, 7,
+> 8, 9).
+
 Neuf questions de l'[ADR 0015](decisions/0015-proprietes-cryptographiques-du-format.md), reprises
 ici avec ce que les [ADR 0016](decisions/0016-format-de-volume-v3-dispositions.md) et
 [ADR 0019](decisions/0019-fraicheur-du-volume.md) y ont ajouté ou en ont refermé. **Aucune question
@@ -2238,6 +2340,23 @@ budget retenu est mal bornée — par exemple parce que le compteur de scellemen
 n° 4) et que le budget réel dépasse 2^31 d'un facteur inconnu. Ou l'arrivée d'un AEAD résistant à la
 réutilisation de nonce **dans WebCrypto**, qui retirerait à la question son coût de dépendance.
 
+**Réponse du relecteur, 10 septembre 2026 : ROUVERTE.** « AES-GCM-SIV : position à rouvrir, compte
+tenu du budget non global. Une dépendance auditée peut être justifiée. » Et, dans le corps du
+constat #182 : « Le RFC le recommande précisément lorsque plusieurs chiffreurs partagent une clé ou
+que l'état garantissant l'unicité ne peut être assuré (RFC 8452). Cela ne dispense toutefois pas de
+séparer les clés par domaine. »
+
+**Position RÉVISÉE du dépôt : rouverte, et exactement par ce qui la ferait changer.** Le levier
+écrit ci-dessus s'est réalisé — le constat #182 est précisément que le budget réel n'est pas borné —
+et la position « non, pas aujourd'hui » ne tient plus. Elle n'est pas retournée pour autant : le
+relecteur écrit lui-même que SIV ne dispense pas de séparer les clés, et la séparation vient
+d'abord. La question devient un **spike**, T3, dont
+l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) fixe le périmètre :
+disponibilité par moteur, coût par secteur devant les ≈ 17,3 µs mesurés, et ce que SIV apporte **une
+fois les clés séparées** — c'est-à-dire quand une collision ne coûte plus que la confidentialité de
+deux clairs d'un domaine d'un volume. Aucun code, aucune version de format : une mesure et un
+verdict.
+
 ### Question n° 2 — Faut-il un arbre de Merkle sur le volume ?
 
 **Position du dépôt, et elle a changé depuis l'ADR 0015.** L'ADR 0019 a fermé le cas concret que
@@ -2252,6 +2371,16 @@ exigerait de vérifier un secteur **sans** relire la région. L'ADR 0019 écrit 
 leviers d'amortissement, dans l'ordre : empreinte à un seul coup d'abord — elle ne change aucun
 octet de format —, empreintes par suites de secteurs ensuite, qui exigeraient une version de format.
 
+**Réponse du relecteur, 10 septembre 2026 : CONFIRMÉE pour le volume, NUANCÉE pour l'archive.** «
+Arbre de Merkle : pas nécessaire pour le volume courant. L'archive a besoin d'un engagement
+authentifié global, qui peut rester plat. »
+
+**Position RÉVISÉE du dépôt : confirmée, et la nuance devient #181.** L'empreinte plate reste le bon
+outil pour le volume. Ce que la réponse ajoute est que l'archive, elle, n'a **aucun** engagement
+global — et c'est le constat CRITICAL. « Qui peut rester plat » est repris tel quel par la
+Definition of Ready de #181 : l'engagement est une empreinte du fichier chiffré entier, scellée, pas
+un arbre.
+
 ### Question n° 3 — Existe-t-il un ancrage monotone acceptable dans un navigateur ?
 
 **Position du dépôt.** Non. Le retour arrière **complet** est assumé (§ 9.1). Le témoin de la § 6.9
@@ -2263,6 +2392,17 @@ est instruit et écarté pour trois raisons cumulées, et le déverrouillage liv
 la confiance : un compteur matériel accessible depuis un navigateur, ou un témoin distant dont le
 compromis serait strictement moins grave que celui de l'origine. La question est renvoyée nommément
 à la récupération.
+
+**Réponse du relecteur, 10 septembre 2026 : CONFIRMÉE.** « Ancrage monotone navigateur : aucun
+ancrage purement local ne résiste au recul complet du profil. Il faut un témoin externe ou accepter
+explicitement cette limite. »
+
+**Position RÉVISÉE du dépôt : inchangée, et l'alternative est nommée.** La limite est acceptée
+explicitement (§ 9.1), et elle l'était déjà. Ce que la réponse ajoute est que la seule autre voie
+est un **témoin externe** — hors appareil, donc hors du modèle « tout tient dans le navigateur ». Ce
+choix appartient à [#23](https://github.com/pinfada/railsbox-vault/issues/23) et n'est pas fait ici.
+L'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) ne change rien à ce point :
+la séparation des clés ne fabrique aucune ancre.
 
 ### Question n° 4 — Le budget de scellements est-il au bon endroit, et 2^31 est-il la bonne valeur ?
 
@@ -2282,6 +2422,27 @@ peut vérifier que si l'appelant lui présente la valeur précédente.
 nombre réel d'invocations, ce qui permettrait de fixer le budget **par le calcul** plutôt que par
 une marge. Ou la démonstration que 2^31 est déjà trop haut sous le modèle de recul.
 
+**Réponse du relecteur, 10 septembre 2026 : RÉFUTÉE, sur les deux moitiés.** « Budget : ni son
+emplacement ni sa portée actuelle ne conviennent. » C'est le constat HIGH #182, et il ne porte pas
+sur le recul : il porte sur le fait que le compteur ne compte **pas ce qu'il dit compter**.
+
+**Position RÉVISÉE du dépôt : la PORTÉE est corrigée, l'EMPLACEMENT reste la question.** La position
+d'origine ne parlait que du recul, et elle passait à côté : la moitié du plafond NIST était une
+marge devant un écart de mesure, alors que le vrai problème était qu'il n'y avait pas **une** mesure
+mais une collection de mesures locales, dont certaines n'existaient pas. La correction est
+l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) : la DEK cesse de chiffrer,
+chaque domaine de chaque volume a sa clé, **deux** domaines gardent un compteur — le volume et le
+journal, tous deux dans l'en-tête authentifié de la racine v4 — et les quatre autres prennent une
+clé à usage unique, dont le budget est 1 et qu'aucune mesure ne peut rendre faux. Les ouvertures
+hors transaction, que le § 4.5 avoue aujourd'hui sous-estimer, doivent alors **clore par une
+racine** ; une session qui ne peut pas en écrire n'a plus le droit de sceller.
+
+**Ce qui reste ouvert après cette correction, et il faut le dire :** l'emplacement. Les deux
+compteurs vivent toujours dans la racine, donc reculent toujours avec elle (§ 9.1,
+[#144](https://github.com/pinfada/railsbox-vault/issues/144)), et 2^31 reste une marge **choisie**
+devant un écart non borné. Le navigateur n'offre pas de meilleur endroit : c'est la question n° 3,
+et elle est ouverte elle aussi.
+
 ### Question n° 5 — Le lot par appel est-il le bon découpage ?
 
 **Position du dépôt : instruite, laissée fermée.** Sceller 512 octets à la fois coûte **32,5 fois**
@@ -2298,6 +2459,14 @@ défendable.
 **Ce qui la ferait changer.** Une mesure montrant que la reprise se dégrade au-delà du bruit face au
 budget de reprise, avec la granularité de refus qu'on accepte en échange.
 
+**Réponse du relecteur, 10 septembre 2026 : CONFIRMÉE, et priorisée.** « Lot par appel : 512 octets
+reste défendable pour l'accès aléatoire. Une mesure comparative à 4 Kio est pertinente, mais
+secondaire par rapport à la séparation des clés. »
+
+**Position RÉVISÉE du dépôt : inchangée, et la mesure reste non faite.** Le découpage candidat de 4
+096 octets est nommé d'avance, il n'est activé par aucun chemin, et il le reste. « Secondaire » est
+repris tel quel : la mesure ne passe ni avant #181 ni avant #182, et elle n'a pas de tranche.
+
 ### Question n° 6 — Le manifeste et l'archive doivent-ils être chiffrés ?
 
 **Position du dépôt, tranchée pour l'archive seulement.** L'archive porte le fichier v3 **tel
@@ -2310,6 +2479,20 @@ est inerte.
 — aujourd'hui, un manifeste falsifié produit un écart d'identité refusé avant toute lecture. Ou une
 exigence de sauvegarde qui rendrait inacceptable qu'une archive et sa clé voyagent séparément.
 
+**Réponse du relecteur, 10 septembre 2026 : TRANCHÉE CONTRE la position du dépôt.** « Manifeste et
+archive : ils n'ont pas nécessairement besoin d'être secrets, mais l'archive doit être authentifiée
+cryptographiquement. Le SHA-256 auto-déclaré est insuffisant. »
+
+**Position RÉVISÉE du dépôt : l'archive doit être authentifiée, et c'est le CRITICAL #181.** La
+question posait « faut-il les CHIFFRER ? » et la réponse dit que ce n'était pas la bonne question :
+le secret n'est pas en cause, **l'authentification** l'est. Le SHA-256 de la § 7.5 est recalculable
+par quiconque tient le fichier ; il atteste contre l'accident, jamais contre un adversaire. La
+correction est écrite au § 9.7 et dans la Definition of Ready de
+[#181](https://github.com/pinfada/railsbox-vault/issues/181) : un engagement scellé sous une clé du
+domaine `archive`, vérifié avant tout clair, et une archive sans engagement **refusée**. **Le
+manifeste, lui, reste en clair et non authentifié** : sur ce point la position d'origine tient, et
+le relecteur ne la conteste pas.
+
 ### Question n° 7 — Un lecteur peut-il distinguer un secteur jamais écrit d'un secteur effacé ?
 
 **Position du dépôt.** Il n'y a **pas** de secteur jamais écrit en v3 : la création et la migration
@@ -2319,6 +2502,14 @@ marque de scellement complet.
 
 **Ce qui la ferait changer.** Un marquage **authentifié** des plages non initialisées qui coûterait
 moins que le scellement complet sans rouvrir la porte du secteur zéroté lu comme blanc.
+
+**Réponse du relecteur, 10 septembre 2026 : CONFIRMÉE.** « Jamais écrit / effacé : la réponse
+actuelle est cohérente puisque tous les secteurs sont initialement scellés. »
+
+**Position RÉVISÉE du dépôt : inchangée.** Elle le reste en v4 : la création scelle tous les
+secteurs, et la migration v3 → v4 les rescelle tous. Ce qui change en v4 est qu'une création doit
+désormais clore par une racine qui publie ce qu'elle a consommé (question n° 4) — le scellement
+complet cesse d'être invisible au budget.
 
 ### Question n° 8 — L'en-tête de racine en clair est-il acceptable ?
 
@@ -2330,6 +2521,15 @@ fait autorité **sans lire son en-tête**, ce que l'alternance rend impossible.
 **Ce qui la ferait changer.** Une construction qui permettrait de départager deux racines sans lire
 leurs en-têtes en clair, ou une mesure montrant que ce canal apprend, sur un usage réel, davantage
 que « le volume a été écrit ».
+
+**Réponse du relecteur, 10 septembre 2026 : CONFIRMÉE sous condition.** « En-tête de racine en clair
+: acceptable si la fuite du rythme d'activité est assumée. »
+
+**Position RÉVISÉE du dépôt : inchangée, et la condition est tenue** — le § 5.2 et le § 9.4 écrivent
+la fuite, ils ne la découvrent pas. **La v4 l'élargit d'un champ**, et il faut le dire : le second
+compteur, `scellementsCumulesJournal`, publie en clair ce que le journal a consommé, séparément du
+volume. Un observateur du support apprend donc désormais la part des dépôts dans l'activité, et non
+plus seulement son total. C'est un élargissement assumé, écrit avec la décision qui l'apporte.
 
 ### Question n° 9 — Le rescellement du point de contrôle est-il au bon endroit ?
 
@@ -2343,10 +2543,34 @@ casserait « déposer = une écriture, une seule ».
 l'alignement au dépôt, ou une démonstration que le clair en mémoire pendant le rangement est une
 exposition qualitativement pire que celle de la recopie qui existait déjà.
 
+**Réponse du relecteur, 10 septembre 2026 : CONFIRMÉE, avec une exigence en plus.** « Rescellement
+au point de contrôle : position raisonnable. L'état authentifié résultant doit cependant survivre à
+l'export. »
+
+**Position RÉVISÉE du dépôt : confirmée, et la phrase en plus est le CRITICAL.** « L'état
+authentifié résultant doit survivre à l'export » est exactement ce que #181 montre qu'il ne fait pas
+: la restauration retire journal et témoin, et l'ouverture suivante accepte l'absence de racine. Le
+rescellement est au bon endroit ; ce qu'il produit ne traverse pas l'archive. C'est l'engagement de
+#181 qui le fera traverser.
+
 ## 14. Ce que ce dossier ne prouve pas
 
+- **DEUX CONSTATS DE LA REVUE EXTERNE SONT OUVERTS, et ce document décrit donc un format dont deux
+  propriétés ne tiennent pas** (§ 9.7).
+  [#181](https://github.com/pinfada/railsbox-vault/issues/181), CRITICAL : une archive accepte un
+  mélange de secteurs provenant de plusieurs états, et la première ouverture restaurée le rend en
+  clair — la propriété P5 du § 8 ne tient pas pour un volume restauré.
+  [#182](https://github.com/pinfada/railsbox-vault/issues/182), HIGH : le budget de clé du § 4.5
+  n'est pas global à la clé, et la probabilité de collision de 2^-35 qu'il publie n'est pas bornée
+  par le mécanisme implémenté. Les deux sont **reçus, reproduits et non corrigés** au 10 septembre
+  2026 ; leur correction est décidée par
+  l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) et due avant la fermeture
+  de #20.
 - **Il ne prouve pas que le format est sûr.** Il décrit ce qu'il fait, ce qu'il ne fait pas, et sous
-  quelles hypothèses. Aucun tiers ne l'a revu.
+  quelles hypothèses. **Un relecteur l'a revu le 10 septembre 2026, et ce n'est pas un tiers au sens
+  des gates** : une revue adverse assistée par un agent d'IA distinct des agents du dépôt, ni tiers
+  humain ni cabinet indépendant. Que cela satisfasse la condition « tiers » est une décision du
+  mainteneur, et elle n'est pas prise.
 - **Il ne prouve pas la confidentialité en exploitation.** Le format est éprouvé de bout en bout
   sous une **clé de test publique** (§ 11).
 - **Il ne prouve rien sur l'implémentation WebCrypto** des moteurs, que ce dépôt ne peut pas
@@ -2358,9 +2582,11 @@ exposition qualitativement pire que celle de la recopie qui existait déjà.
   une contrainte de l'outillage (§ 6.10).
 - **Le vérificateur de vecteurs n'établit qu'un fait étroit** : les octets figés sont ceux que ce
   document décrit. Il ne cherche aucune faiblesse.
-- **Le registre de la revue externe est VIDE**, et cela veut dire que la moitié 2 n'a pas eu lieu :
-  aucun tiers n'a été sollicité, aucun constat n'a été reçu. Voir
-  [`docs/revue-externe/registre.md`](revue-externe/registre.md) et le
+- **Le registre de la revue externe porte SIX lignes, dont deux OUVERTES.** Quatre viennent d'une
+  pré-revue interne traitée comme externe ; deux viennent de la revue du 10 septembre 2026, et elles
+  ne sont pas disposées : elles sont dues. Voir
+  [`docs/revue-externe/registre.md`](revue-externe/registre.md), le texte de la revue
+  [`revue-2026-09-10.md`](revue-externe/revue-2026-09-10.md) et le
   [gabarit de constat](revue-externe/gabarit-de-constat.md).
 - **Le gate « données sensibles » reste FERMÉ.** RailsBox Vault est expérimental et ne doit contenir
   aucune donnée réelle.
