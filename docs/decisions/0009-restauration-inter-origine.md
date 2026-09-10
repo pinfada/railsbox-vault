@@ -4,6 +4,11 @@
 - Date : 2026-08-25
 - Issue : #12 · Invariant : `VAULT-PORT-001` · Jalon 2
 
+> **Révision ANNONCÉE le 2026-09-10 par
+> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#181, CRITICAL) :** la restauration
+> déposera l'engagement de l'archive à côté du volume, et une archive sans engagement sera refusée ;
+> rien n'est amendé ici tant que la tranche T1 n'a pas livré.
+
 ## Contexte
 
 L'[ADR 0008](0008-format-d-archive-d-export.md) a donné à Vault une archive **vérifiable** : elle

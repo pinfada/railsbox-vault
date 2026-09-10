@@ -4,6 +4,12 @@
 - Date : 2026-08-25
 - Issue : #13 · Invariant : `VAULT-COMPAT-001` · Jalon 2
 
+> **Révision ANNONCÉE le 2026-09-10 par
+> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#181, #182) :** une étape v3 → v4
+> rejoindra la chaîne — rescellement de chaque secteur sous une clé dérivée, reprenable par ce
+> journal — et le refus de version couvrira l'archive ; rien n'est amendé ici tant que T1 et T2a
+> n'ont pas livré.
+
 > **Amendé le 2026-08-28 par l'[ADR 0016](0016-format-de-volume-v3-dispositions.md) (#18, #101).**
 > Une étape v2 → v3 rejoint la chaîne, et c'est la première qui touche les OCTETS : elle agrandit le
 > volume de sa région d'authentification, déplace la charge entière, puis scelle chaque secteur.

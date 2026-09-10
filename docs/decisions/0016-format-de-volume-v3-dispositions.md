@@ -4,6 +4,11 @@
 - Date : 2026-08-28
 - Issue : #18 · Invariants : `SEC-BLOCK-001`, `SEC-DURABLE-001` · Jalon 4
 
+> **Révision ANNONCÉE le 2026-09-10 par
+> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#182, HIGH) :** les dispositions v3
+> deviendront des dispositions v4 — version 4 dans les données associées, racine à onze champs avec
+> son second compteur ; rien n'est amendé ici tant que la tranche T2a n'a pas livré.
+
 ## Contexte
 
 L'[ADR 0015](0015-proprietes-cryptographiques-du-format.md) a décidé les primitives, écrit les cinq

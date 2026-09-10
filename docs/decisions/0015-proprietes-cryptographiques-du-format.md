@@ -4,6 +4,12 @@
 - Date : 2026-08-27
 - Issue : #17 · Invariants : `SEC-BLOCK-001`, `SEC-GEN-001` · Jalon 4
 
+> **Révision ANNONCÉE le 2026-09-10 par
+> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#182, HIGH) :** le budget de clé de
+> cet ADR n'est pas global à la clé — la revue externe l'a exécuté —, et la clé de volume « reçue,
+> jamais dérivée ici » deviendra une clé DÉRIVÉE par domaine ; rien n'est amendé ici tant que la
+> tranche T2a n'a pas livré.
+
 > **Révisé le 2026-08-27, avant fusion.** Une revue de sécurité a réfuté PAR EXÉCUTION la
 > justification centrale de la première version : le nonce y était dérivé de (génération, rang), et
 > le chemin de reprise de `generation-store.mjs` le réémet — sans qu'aucune panne soit nécessaire.

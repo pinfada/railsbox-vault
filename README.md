@@ -97,6 +97,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0030 — le cycle de vie assemblé dans la coquille : l'ordre prouvé par l'échec de son inverse, la mort du Worker, COOP](docs/decisions/0030-cycle-de-vie-assemble-dans-la-coquille.md)
 - [ADR 0031 — verrouiller : le Worker meurt, l'instantané survit ; le délai d'inactivité et le rechargement de la coquille](docs/decisions/0031-verrouiller-le-worker-meurt-l-instantane-survit.md)
 - [ADR 0032 — les fins d'onglet : ce que le moteur livre, et ce que la coquille en fait ; `pagehide`, le bfcache mesuré et le gel non simulable](docs/decisions/0032-les-fins-d-onglet-ce-que-le-moteur-livre.md)
+- [ADR 0033 — la DEK est une clé maîtresse : chaque domaine scelle sous sa propre clé dérivée ; six domaines, deux compteurs, quatre clés à usage unique, format v4](docs/decisions/0033-hierarchie-de-cles-derivees-par-domaine.md)
 
 ## Licence
 
