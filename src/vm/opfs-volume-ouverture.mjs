@@ -22,6 +22,7 @@ import { BlockJournal } from "./block-journal.mjs";
 import { exigerCleDeVolume } from "./cle-de-volume.mjs";
 import { createFaultPlan } from "./fault-plan.mjs";
 import { OpfsBlockBackend } from "./opfs-block-backend.mjs";
+import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
 import { installerGenerationOuFermer, ouvrirGeneration } from "./opfs-generation-voisins.mjs";
 import {
   MOTIFS_DE_RACINE_INITIALE,
@@ -444,6 +445,28 @@ async function saisirLireEtAllouer({ name, size, cle, identifiantVolume, openHan
  *           openHandle?: (name: string) => Promise<FileSystemSyncAccessHandle> }} options
  * @returns {Promise<object>} le rapport d'ouverture, qui publie la racine écrite et son motif
  */
+/**
+ * Relit la taille LOGIQUE que l'en-tête v3 du volume déclare, avant qu'il ne soit ouvert.
+ *
+ * Elle est nécessaire au constat du journal : une racine est décodée SOUS une taille de volume, et
+ * la lui refuser ferait passer toute racine authentique pour abîmée. L'en-tête est un localisateur,
+ * pas une autorité — et c'est exactement l'usage qu'on en fait ici : le retrouver, ou refuser.
+ */
+async function tailleLogiqueDuFichier(name, openHandle) {
+  const brut = await ouvrirVolumeBrut({ name, openHandle });
+  try {
+    const lu = decoderEnTeteV3(await brut.read(0, EN_TETE_OCTETS));
+    if (lu.valide) return lu.enTete.tailleLogique;
+    throw geometryMismatch(name, {
+      observed: brut.size(),
+      expected: null,
+      reason: `${lu.raison} Une création ne se date pas sans son en-tête v3.`,
+    });
+  } finally {
+    await brut.close();
+  }
+}
+
 export async function daterLaCreation({
   name,
   cle,
@@ -451,7 +474,11 @@ export async function daterLaCreation({
   journal = new BlockJournal(),
   openHandle = openOpfsSyncAccess,
 }) {
-  await ecarterLeJournalDeCreation(name, openHandle);
+  await ecarterLeJournalDeCreation(
+    name,
+    openHandle,
+    await tailleLogiqueDuFichier(name, openHandle),
+  );
   const backend = await openOpfsVolume({
     name,
     cle,

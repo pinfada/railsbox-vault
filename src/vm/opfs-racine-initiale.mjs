@@ -191,11 +191,11 @@ async function lireLeVoisinDEngagement(openHandle, nom) {
  * VIDE le journal et le témoin d'une création, après avoir CONSTATÉ qu'ils n'en portent pas d'autre.
  *
  * Le constat lit les racines sans clé — marqueur, format, séquence, génération, nombre d'entrées —
- * exactement comme l'ouverture le fait au pas 4 du § 7.3. Ces champs ne sont pas authentifiés ; ils
+ * exactement comme l'ouverture le fait au pas 4 du § 7.3, et sous la même taille LOGIQUE. Ces champs ne sont pas authentifiés ; ils
  * suffisent ici, parce que la garde protège contre une MÉPRISE d'appelant, pas contre un adversaire :
  * qui peut écrire le journal peut de toute façon l'effacer.
  */
-export async function ecarterLeJournalDeCreation(name, openHandle) {
+export async function ecarterLeJournalDeCreation(name, openHandle, tailleLogique) {
   const nomDuJournal = generationJournalName(name);
   const handle = await saisirVoisin(openHandle, nomDuJournal, {
     operation: "open-generation",
@@ -203,7 +203,10 @@ export async function ecarterLeJournalDeCreation(name, openHandle) {
   });
   const journal = new JournalDeGeneration(name, handle);
   try {
-    const constat = constaterOuverture({ journal, tailleVolume: null });
+    // La taille LOGIQUE est présentée au décodeur, et il la faut : une racine authentique écrite
+    // pour un volume d'une autre taille est refusée par `decoderRacine`, et lui présenter `null`
+    // ferait donc passer TOUTE racine pour abîmée — c'est-à-dire refuser toute datation.
+    const constat = constaterOuverture({ journal, tailleVolume: tailleLogique });
     exigerCreationSeule(name, constat);
     journal.tronquer(0);
   } finally {
