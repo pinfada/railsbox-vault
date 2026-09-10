@@ -373,6 +373,11 @@ const APPELANTS_DU_HARNAIS = [
     motif: "banc de l'enveloppe de clé (#21, ADR 0020).",
   },
   {
+    fichier: "public/vm/engagement-worker.mjs",
+    motif:
+      "banc de l'engagement d'archive (#181, ADR 0034) : il rejoue le mélange de la revue externe sur l'OPFS réel, et il lui faut donc la clé de volume de TEST — celle-là même sous laquelle il scelle l'engagement qu'il vérifiera ensuite.",
+  },
+  {
     fichier: "public/vm/opfs-runtime-worker.mjs",
     motif: "banc du backend OPFS (#6).",
   },

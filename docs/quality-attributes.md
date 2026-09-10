@@ -657,6 +657,40 @@ l'ADR 0015 on obtiendrait ~31 s pour 512 Mio, là où l'ADR 0015 estimait 18,7 s
 appliqué à une extrapolation n'est pas une mesure, et **la création d'un volume de 512 Mio sur OPFS
 réel n'a pas été chronométrée par cette tranche**. C'est un manque nommé, pas un chiffre supposé.
 
+### La RACINE INITIALE de la création, et l'ENGAGEMENT de la première ouverture (#181)
+
+Relevé du **2026-09-10**,
+`npx playwright test --config playwright.config.mjs --project frontiere-engagement-<moteur>`,
+scénario `cout` du banc `public/vm/engagement.html`, même machine de développement — **pas
+l'environnement de référence**. Le hachage est en JavaScript PORTABLE (`sha256-stream.mjs`, faute
+d'un hachage incrémental dans WebCrypto) : sa vitesse est celle du moteur, et c'est pourquoi les
+trois sont relevés.
+
+**Aucun seuil n'est posé ici**, et l'épreuve n'en pose pas non plus : elle exige que la mesure
+existe et soit strictement positive. Poser un seuil sur cette machine publierait une garantie que
+l'environnement de référence ne tient pas.
+
+| Ce qui est haché                             |  Octets | Chromium |   Firefox |   WebKit |
+| -------------------------------------------- | ------: | -------: | --------: | -------: |
+| **Région d'authentification** (racine init.) |  34 Mio |   465 ms |    943 ms |   337 ms |
+| **Fichier entier** (engagement)              | 512 Mio | 4 771 ms | 13 425 ms | 5 441 ms |
+
+**Ce que ces chiffres disent.**
+
+- **La RACINE INITIALE d'une création de 512 Mio coûte une empreinte de région**, soit ≈ 0,5 s sur
+  Chromium, plus **trois scellements AES-GCM et deux barrières** — la racine, son témoin, et la
+  barrière de chacun. Rapporté aux **87,6 s** du scellement initial mesuré plus haut, c'est **moins
+  de 1 %** du geste. La création gagne **une écriture de secteur et une écriture de témoin** ;
+- **l'ENGAGEMENT coûte le hachage du fichier ENTIER**, et il ne se paie **qu'une fois** : à la
+  PREMIÈRE ouverture d'un volume restauré. Les ouvertures suivantes passent par le chemin normal, le
+  voisin ayant été consommé. Une ouverture ordinaire ne paie donc rien de cette tranche.
+
+**Ce qu'ils ne disent pas.** La LECTURE du support n'y est pas : le chiffre est celui du hachage
+seul, sur un tampon réémis. `empreinteDuFichier` lit le fichier par blocs de 4 Mio, et ce coût-là
+s'ajoute. Et le VERSEMENT d'un disque applicatif hors transaction paie une SECONDE empreinte de
+région, celle de `daterLaCreation` : le banc de référence la publie sous `datationMs`, et elle n'a
+pas été relevée sur l'image #5 par cette tranche.
+
 ### Le rythme de l'émulateur, mesuré sur v3
 
 Relevé du **2026-08-28**, `npm run test:rythme`, cinq essais par bras entrelacés, sur l'image de

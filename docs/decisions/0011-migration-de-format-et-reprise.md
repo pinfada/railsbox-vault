@@ -4,6 +4,12 @@
 - Date : 2026-08-25
 - Issue : #13 · Invariant : `VAULT-COMPAT-001` · Jalon 2
 
+> **AMENDÉ le 2026-09-10 par l'[ADR 0034](0034-archive-authentifiee-et-racine-initiale.md) (#181,
+> [PR #184](https://github.com/pinfada/railsbox-vault/pull/184)) :** le refus de version couvre
+> désormais l'ARCHIVE — v1 et v2 refusées, version future refusée, par un code qui nomme la raison —
+> et la migration v2 → v3 écrit une RACINE INITIALE avant d'inscrire son manifeste. L'étape v3 → v4
+> reste annoncée, non livrée.
+
 > **Révision ANNONCÉE le 2026-09-10 par
 > l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#181, #182) :** une étape v3 → v4
 > rejoindra la chaîne — rescellement de chaque secteur sous une clé dérivée, reprenable par ce

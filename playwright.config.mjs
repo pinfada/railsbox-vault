@@ -48,6 +48,13 @@ const FRONTIERE_APPLICATIONS = ["**/apps-frontiere.spec.mjs"];
 const FRONTIERE_ENVELOPPE = ["**/enveloppe-frontiere.spec.mjs"];
 
 /**
+ * La frontière de l'ENGAGEMENT D'ARCHIVE (#181, ADR 0034), sur les trois moteurs. Elle rejoue le
+ * mélange de secteurs de la revue externe sur l'OPFS RÉEL : le voisin d'engagement est un fichier,
+ * et sa consommation en est une suppression — deux faits qu'aucun double en mémoire n'établit.
+ */
+const FRONTIERE_ENGAGEMENT = ["**/archive-engagement-frontiere.spec.mjs"];
+
+/**
  * Frontière du DÉVERROUILLAGE (#22, ADR 0021). Les trois moteurs, pour les motifs des précédentes
  * et pour deux qui lui sont propres :
  *
@@ -224,6 +231,7 @@ export default defineConfig({
         ...FRONTIERE_CSP,
         ...FRONTIERE_APPLICATIONS,
         ...FRONTIERE_ENVELOPPE,
+        ...FRONTIERE_ENGAGEMENT,
         ...FRONTIERE_DEVERROUILLAGE,
         ...FRONTIERE_COQUILLE,
         ...DEVERROUILLAGE_COQUILLE,
@@ -250,6 +258,11 @@ export default defineConfig({
       name: `frontiere-enveloppe-${nom}`,
       use: { browserName: nom },
       testMatch: FRONTIERE_ENVELOPPE,
+    })),
+    ...MOTEURS_CONNUS.map((nom) => ({
+      name: `frontiere-engagement-${nom}`,
+      use: { browserName: nom },
+      testMatch: FRONTIERE_ENGAGEMENT,
     })),
     ...MOTEURS_CONNUS.map((nom) => ({
       name: `frontiere-deverrouillage-${nom}`,

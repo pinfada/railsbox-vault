@@ -4,6 +4,11 @@
 - Date : 2026-08-27
 - Issue : #17 · Invariants : `SEC-BLOCK-001`, `SEC-GEN-001` · Jalon 4
 
+> **AMENDÉ le 2026-09-10 par l'[ADR 0034](0034-archive-authentifiee-et-racine-initiale.md) (#181,
+> [PR #184](https://github.com/pinfada/railsbox-vault/pull/184)) :** l'ARCHIVE du § 7.5 est
+> désormais AUTHENTIFIÉE, sous une clé du domaine `archive` dérivée de la DEK. La clé du VOLUME,
+> elle, reste la DEK jusqu'à #182 — entorse assumée, écrite dans l'ADR 0033.
+
 > **Révision ANNONCÉE le 2026-09-10 par
 > l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#182, HIGH) :** le budget de clé de
 > cet ADR n'est pas global à la clé — la revue externe l'a exécuté —, et la clé de volume « reçue,

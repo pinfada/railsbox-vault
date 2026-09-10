@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RailsBox Vault — banc d'engagement d'archive (#181)</title>
+  </head>
+  <body>
+    <h1>Banc d'engagement d'archive</h1>
+    <p>
+      Cette page n'ouvre aucun volume et ne détient aucune clé : elle démarre un Worker dédié qui
+      rejoue, sur l'OPFS réel, le mélange de secteurs de la revue externe du 10 septembre 2026, et
+      n'obtient de lui que des données JSON.
+    </p>
+    <p id="etat">Prêt.</p>
+    <pre id="rapport"></pre>
+    <script type="module" src="./engagement-banc.mjs"></script>
+  </body>
+</html>

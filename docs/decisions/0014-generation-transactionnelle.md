@@ -4,6 +4,12 @@
 - Date : 2026-08-27
 - Issue : #16 · Invariant : `SEC-DURABLE-001` · Jalon 3
 
+> **AMENDÉ le 2026-09-10 par l'[ADR 0034](0034-archive-authentifiee-et-racine-initiale.md) (#181,
+> [PR #184](https://github.com/pinfada/railsbox-vault/pull/184)) :** la CRÉATION écrit une racine
+> initiale — séquence 0, génération 0 — avant `VLTSEAL1`, et une OUVERTURE peut désormais écrire une
+> racine, sur autorisation. Aucun volume légitime n'est sans racine ; le remède « aucune » de
+> `remedeSansRacine` quitte le produit.
+
 > **Amendé le 2026-08-28 par l'[ADR 0016](0016-format-de-volume-v3-dispositions.md) (#18).** Le
 > CRC-32 de la racine est remplacé par une ÉTIQUETTE AES-256-GCM, l'en-tête de racine passe de 60 à
 > 136 octets dans le même secteur, le format du journal de 1 à 2, un enregistrement grossit de 34

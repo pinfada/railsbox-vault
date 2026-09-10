@@ -8,7 +8,8 @@ vide de CRITICAL et de HIGH **ouverts**.
 
 **Ce qu'il porte, et ce qu'il ne dit pas.** Les quatre premières lignes viennent de la **pré-revue
 adverse interne** de la moitié 1, traitée comme une revue externe. Les deux dernières viennent de la
-**revue de la moitié 2, reçue le 10 septembre 2026** — son texte intégral est versé au dépôt en
+**revue de la moitié 2, reçue le 10 septembre 2026** — le CRITICAL y est corrigé le jour même, le
+HIGH reste dû — son texte intégral est versé au dépôt en
 [`revue-2026-09-10.md`](revue-2026-09-10.md). Chaque constat porte son issue `revue-externe`, et le
 registre dit ce que le dépôt en a fait.
 
@@ -18,11 +19,18 @@ registre dit ce que le dépôt en a fait.
 du dépôt**, ni tiers humain ni cabinet indépendant ; identité tenue hors dépôt par le mainteneur, à
 sa demande. Branche `main`, empreinte relue `aa6be826ad0e14162a9e06e5`.
 
+**Le CRITICAL est corrigé le 10 septembre 2026**, par la
+[PR #184](https://github.com/pinfada/railsbox-vault/pull/184) : l'archive passe en version 3 et
+porte un engagement scellé sous une clé du domaine `archive` ; aucun volume légitime n'est sans
+racine. La correction n'ouvre AUCUN gate : le HIGH
+[#182](https://github.com/pinfada/railsbox-vault/issues/182) reste ouvert, et le gate « données
+sensibles » reste FERMÉ tant qu'il l'est.
+
 Cette ligne est écrite telle quelle plutôt que sous une formule d'audit, et il faut en tirer la
 conséquence sans l'adoucir : **savoir si une revue adverse assistée par un agent d'IA satisfait la
 condition « tiers » des gates de [`SECURITY.md`](../../SECURITY.md) est une décision du mainteneur,
 et elle n'est pas prise.** Le gate « données sensibles » reste FERMÉ dans tous les cas, puisque la
-revue rend un CRITICAL et un HIGH ouverts.
+revue laisse un HIGH ouvert.
 
 **Une ligne `ouvert` est une dette nommée, pas une disposition.** Le vocabulaire d'origine —
 `corrigé`, `accepté`, `réfuté` — n'avait pas de place pour un constat REÇU et NON traité, et les
@@ -63,14 +71,14 @@ Le dossier soumis à la revue est décrit par
 
 ## Constats
 
-| Constat                                                                                                                                                                                      | Sévérité      | Disposition | Preuve                                                                                                           |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ----------- | ---------------------------------------------------------------------------------------------------------------- |
-| [#142](https://github.com/pinfada/railsbox-vault/issues/142) — un témoin authentique rejoué rend un volume sain irouvrable, et rejoué contre une racine abîmée fait reculer d'une génération | HIGH → MEDIUM | accepté     | ADR 0019 amendé le 5 septembre 2026 ; [PR #153](https://github.com/pinfada/railsbox-vault/pull/153)              |
-| [#143](https://github.com/pinfada/railsbox-vault/issues/143) — l'identité logique ne sépare pas un enregistrement de journal d'un secteur de volume                                          | HIGH          | corrigé     | [PR #146](https://github.com/pinfada/railsbox-vault/pull/146) ; ADR 0016 et ADR 0019 amendés le 5 septembre 2026 |
-| [#144](https://github.com/pinfada/railsbox-vault/issues/144) — le recul d'une génération ne demande aucune copie antérieure, et une racine abîmée à côté d'une racine lisible est ignorée    | HIGH          | corrigé     | [PR #153](https://github.com/pinfada/railsbox-vault/pull/153) ; ADR 0019 amendé le 5 septembre 2026              |
-| [#145](https://github.com/pinfada/railsbox-vault/issues/145) — « supprimer et recréer » ne retire aucun voisin, et le volume recréé est refusé                                               | MEDIUM        | corrigé     | [PR #157](https://github.com/pinfada/railsbox-vault/pull/157)                                                    |
-| [#181](https://github.com/pinfada/railsbox-vault/issues/181) — une archive accepte un mélange de secteurs provenant de plusieurs états, et la première ouverture restaurée le rend en clair  | CRITICAL      | ouvert      | [#181](https://github.com/pinfada/railsbox-vault/issues/181) — constat, reproduction A/C et DoR ; tranche T1     |
-| [#182](https://github.com/pinfada/railsbox-vault/issues/182) — le budget AES-GCM n'est pas global à la clé : même DEK pour deux volumes, l'enveloppe et les exports, compteurs par instance  | HIGH          | ouvert      | [#182](https://github.com/pinfada/railsbox-vault/issues/182) — constat, reproduction et DoR ; tranches T2a, T2b  |
+| Constat                                                                                                                                                                                      | Sévérité      | Disposition | Preuve                                                                                                                                                 |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [#142](https://github.com/pinfada/railsbox-vault/issues/142) — un témoin authentique rejoué rend un volume sain irouvrable, et rejoué contre une racine abîmée fait reculer d'une génération | HIGH → MEDIUM | accepté     | ADR 0019 amendé le 5 septembre 2026 ; [PR #153](https://github.com/pinfada/railsbox-vault/pull/153)                                                    |
+| [#143](https://github.com/pinfada/railsbox-vault/issues/143) — l'identité logique ne sépare pas un enregistrement de journal d'un secteur de volume                                          | HIGH          | corrigé     | [PR #146](https://github.com/pinfada/railsbox-vault/pull/146) ; ADR 0016 et ADR 0019 amendés le 5 septembre 2026                                       |
+| [#144](https://github.com/pinfada/railsbox-vault/issues/144) — le recul d'une génération ne demande aucune copie antérieure, et une racine abîmée à côté d'une racine lisible est ignorée    | HIGH          | corrigé     | [PR #153](https://github.com/pinfada/railsbox-vault/pull/153) ; ADR 0019 amendé le 5 septembre 2026                                                    |
+| [#145](https://github.com/pinfada/railsbox-vault/issues/145) — « supprimer et recréer » ne retire aucun voisin, et le volume recréé est refusé                                               | MEDIUM        | corrigé     | [PR #157](https://github.com/pinfada/railsbox-vault/pull/157)                                                                                          |
+| [#181](https://github.com/pinfada/railsbox-vault/issues/181) — une archive accepte un mélange de secteurs provenant de plusieurs états, et la première ouverture restaurée le rend en clair  | CRITICAL      | corrigé     | [PR #184](https://github.com/pinfada/railsbox-vault/pull/184) ; ADR 0034, et ADR 0008, 0009, 0011, 0014, 0015, 0019, 0027 amendés le 10 septembre 2026 |
+| [#182](https://github.com/pinfada/railsbox-vault/issues/182) — le budget AES-GCM n'est pas global à la clé : même DEK pour deux volumes, l'enveloppe et les exports, compteurs par instance  | HIGH          | ouvert      | [#182](https://github.com/pinfada/railsbox-vault/issues/182) — constat, reproduction et DoR ; tranches T2a, T2b                                        |
 
 ## Comment une ligne se remplit
 

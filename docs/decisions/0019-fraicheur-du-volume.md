@@ -4,6 +4,12 @@
 - Date : 2026-08-28
 - Issue : #19 · Invariant : `SEC-GEN-001` · Jalon 4
 
+> **AMENDÉ le 2026-09-10 par l'[ADR 0034](0034-archive-authentifiee-et-racine-initiale.md) (#181,
+> [PR #184](https://github.com/pinfada/railsbox-vault/pull/184)) :** ce qu'une RESTAURATION laisse à
+> l'ouverture suivante n'est plus « aucune racine, donc première ouverture ». Elle laisse un
+> ENGAGEMENT, dont la vérification fait écrire la racine initiale ; sans lui, le volume est refusé.
+> La garde de fraîcheur prend le relais dès cette racine.
+
 > **Révision ANNONCÉE le 2026-09-10 par
 > l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#182, HIGH) :** le témoin et
 > l'empreinte de région passeront sous la clé du domaine `volume`, et non plus sous la DEK ; rien
