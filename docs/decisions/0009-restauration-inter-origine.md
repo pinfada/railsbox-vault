@@ -4,6 +4,12 @@
 - Date : 2026-08-25
 - Issue : #12 · Invariant : `VAULT-PORT-001` · Jalon 2
 
+> **AMENDÉ le 2026-09-10 par l'[ADR 0034](0034-archive-authentifiee-et-racine-initiale.md) (#181,
+> [PR #184](https://github.com/pinfada/railsbox-vault/pull/184)) :** la restauration DÉPOSE
+> l'engagement de l'archive dans un voisin `<volume>.engagement`, entre l'enveloppe de récupération
+> et le manifeste ; elle ne le vérifie pas — elle n'a pas la clé, et c'est une propriété qu'on
+> garde.
+
 > **Révision ANNONCÉE le 2026-09-10 par
 > l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#181, CRITICAL) :** la restauration
 > déposera l'engagement de l'archive à côté du volume, et une archive sans engagement sera refusée ;

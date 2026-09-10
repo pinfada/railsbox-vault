@@ -933,9 +933,27 @@ prouvée sur **six** niveaux, et aucun ne remplace les autres.
 | unitaire — format | `tests/unit/vm-archive-recuperation.test.mjs`           | la disposition v2 (12 + H + N + R), la page embarquée de type 4 SEUL, les refus avant écriture, la v1 encore lue         |
 | unitaire — cycle  | `tests/unit/vm-restauration-recuperation.test.mjs`      | export → restauration → **ouverture PAR LE CODE** → lecture du clair ; l'ordre sous coupure ; le consentement nommé      |
 | unitaire — ancre  | `tests/unit/vm-enveloppe-ancre-version.test.mjs`        | une page antérieure refusée sous la feuille, **et l'aveu à la ligne suivante** ; la feuille traversant les deux ouvreurs |
-| vecteurs          | `tests/unit/vm-archive-vecteurs.test.mjs`               | le chemin de production reproduit `tests/vectors/archive-v2.json` OCTET POUR OCTET                                       |
-| mutation          | `tests/unit/vm-archive-mutation.test.mjs` (**≈ 15 s**)  | quinze gardes retirées une à une du texte source, quinze mutants tués                                                    |
+| vecteurs          | `tests/unit/vm-archive-vecteurs.test.mjs`               | le chemin de production reproduit `tests/vectors/archive-v3.json` OCTET POUR OCTET, ENGAGEMENT compris                   |
+| mutation          | `tests/unit/vm-archive-mutation.test.mjs` (**≈ 25 s**)  | vingt et une gardes retirées une à une du texte source, vingt et un mutants tués                                         |
 | Bout en bout      | `tests/e2e/archive-recuperation-inter-origine.spec.mjs` | **deux origines réelles**, volume chiffré, boot Rails sur le volume restauré ouvert par le code                          |
+
+### L'archive est AUTHENTIFIÉE, et aucun volume légitime n'est sans racine (#181, ADR 0034)
+
+La correction du CRITICAL de la revue externe du 10 septembre 2026 ajoute un septième niveau à la
+table ci-dessus, et c'est le seul qui rejoue l'attaque du relecteur :
+
+| Niveau                | Fichier                                               | Ce qu'il établit                                                                                                                                              |
+| --------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| unitaire — le mélange | `tests/unit/vm-archive-melange-etats.test.mjs`        | les six étapes du relecteur, à l'identique ; le mélange A/C REFUSÉ avant tout clair ; le voisin retiré REFUSÉ ; le témoin positif ; la CONSOMMATION du voisin |
+| unitaire — la racine  | `tests/unit/vm-generation-store.test.mjs`             | la CRÉATION écrit sa racine initiale et ne touche pas au volume ; un volume sans racine que rien n'autorise est REFUSÉ                                        |
+| navigateur            | `tests/browser/archive-engagement-frontiere.spec.mjs` | le cycle export → mélange → restauration → refus sur l'**OPFS RÉEL** des trois moteurs                                                                        |
+
+**L'ADVERSAIRE n'a PAS la clé, et l'épreuve le respecte.** L'étape 5 du relecteur est prise au mot :
+l'archive légitime de l'état C est reprise telle quelle, sa section de contenu est remplacée par le
+fichier mélangé, et les empreintes SHA-256 **publiques** sont recalculées — celle de l'en-tête et
+celle du manifeste. L'ENGAGEMENT n'est pas touché, et il ne peut pas l'être : le refabriquer
+exigerait la clé du volume. C'est exactement ce qui rend le mélange détectable, et une épreuve qui
+rescellerait l'engagement ne mesurerait rien.
 
 **Ce que l'épreuve de l'ADR 0020 est devenue.** La décision 6 était tenue par deux épreuves — « le
 marqueur `VLTKEY01` n'est pas dans l'archive » et « aucun module d'export/import ne connaît `.cles`
@@ -967,7 +985,8 @@ node --test tests/unit/vm-enveloppe-ancre-version.test.mjs
 node tools/muter-gardes-archive-recuperation.mjs       # la campagne, avec le verdict garde par garde
 node tools/verifier-vecteurs.mjs                       # les vecteurs, sans importer le produit
 node tools/figer-vecteurs-archive.mjs                  # RE-FIGE : un changement de format persistant
-npx prettier --write tests/vectors/archive-v2.json     # `format:check` couvre tests/vectors/
+npx prettier --write tests/vectors/archive-v3.json     # `format:check` couvre tests/vectors/
+node --test tests/unit/vm-archive-melange-etats.test.mjs   # le mélange A/C, et le voisin retiré
 npm run test:e2e                                       # le bout en bout, image #5 + v86 requis
 ```
 

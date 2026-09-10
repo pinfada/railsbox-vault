@@ -8,6 +8,12 @@
   est déclenchée. Rien de l'ADR 0020 n'est réécrit : sa décision 6 reçoit une note datée d'une ligne
   qui renvoie ici.
 
+> **AMENDÉ le 2026-09-10 par l'[ADR 0034](0034-archive-authentifiee-et-racine-initiale.md) (#181,
+> [PR #184](https://github.com/pinfada/railsbox-vault/pull/184)) :** la disposition de l'archive
+> gagne un champ d'en-tête — `engagement` — et la version passe à 3. La section de récupération, ses
+> offsets et son arithmétique `12 + H + N + R` ne bougent pas ; la version de l'enveloppe embarquée
+> entre dans ce que l'engagement scelle.
+
 > **Révision ANNONCÉE le 2026-09-10 par
 > l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#181, #182) :** la racine rescellée
 > à l'export passera sous une clé du domaine `recuperation` à USAGE UNIQUE, et l'archive qui la

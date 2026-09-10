@@ -98,6 +98,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0031 — verrouiller : le Worker meurt, l'instantané survit ; le délai d'inactivité et le rechargement de la coquille](docs/decisions/0031-verrouiller-le-worker-meurt-l-instantane-survit.md)
 - [ADR 0032 — les fins d'onglet : ce que le moteur livre, et ce que la coquille en fait ; `pagehide`, le bfcache mesuré et le gel non simulable](docs/decisions/0032-les-fins-d-onglet-ce-que-le-moteur-livre.md)
 - [ADR 0033 — la DEK est une clé maîtresse : chaque domaine scelle sous sa propre clé dérivée ; six domaines, deux compteurs, quatre clés à usage unique, format v4](docs/decisions/0033-hierarchie-de-cles-derivees-par-domaine.md)
+- [ADR 0034 — l'archive porte un engagement scellé sous la clé du domaine `archive`, et aucun volume légitime n'est sans racine](docs/decisions/0034-archive-authentifiee-et-racine-initiale.md)
 
 ## Licence
 

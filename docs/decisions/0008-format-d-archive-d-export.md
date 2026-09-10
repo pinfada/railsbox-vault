@@ -4,6 +4,12 @@
 - Date : 2026-08-24
 - Issue : #11 · Invariant : `VAULT-PORT-001` · Jalon 2
 
+> **AMENDÉ le 2026-09-10 par l'[ADR 0034](0034-archive-authentifiee-et-racine-initiale.md) (#181,
+> [PR #184](https://github.com/pinfada/railsbox-vault/pull/184)) :** le format d'archive passe en
+> VERSION 3 et porte un ENGAGEMENT scellé sous la clé du domaine `archive` — le SHA-256 de cet ADR
+> n'est plus sa seule intégrité — ; le marqueur `RBVAULT1` ne bouge pas, et les versions 1 et 2 sont
+> désormais REFUSÉES par `VAULT_ARCHIVE_VERSION_NON_LUE`.
+
 > **Révision ANNONCÉE le 2026-09-10 par
 > l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#181, CRITICAL) :** l'archive
 > portera un engagement authentifié sous une clé du domaine `archive`, et son SHA-256 recalculable

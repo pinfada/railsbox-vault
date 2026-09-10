@@ -46,12 +46,12 @@ test("AUCUN mutant ne survit : chaque garde retirée fait rougir sa preuve", () 
   );
 });
 
-test("la table couvre les NEUF modules où la révision et l'engagement se jouent", () => {
+test("la table couvre les DIX modules où la révision et l'engagement se jouent", () => {
   // Un compte de mutants ne dit rien de leur RÉPARTITION : dix mutations sur la même ligne feraient
   // un score parfait et ne mesureraient qu'une garde. Ce contrôle relit les FICHIERS visés — les
-  // cinq endroits où la révision de la décision 6 se joue (#149), et les quatre où l'ENGAGEMENT de
-  // #181 vit : ce qu'il scelle, sous quelle clé, ce que l'ouverture en fait, et ce qu'un volume sans
-  // racine devient.
+  // cinq endroits où la révision de la décision 6 se joue (#149), et les cinq où l'ENGAGEMENT de
+  // #181 vit : ce qu'il scelle, sous quelle clé, ce que l'ouverture en fait, ce qu'un volume sans
+  // racine devient, et ce qui autorise la création à écrire sa racine.
   const fichiers = [...new Set(MUTATIONS.map((mutation) => mutation.fichier))].sort();
   assert.deepEqual(fichiers, [
     "src/vm/archive-engagement.mjs",
@@ -59,6 +59,7 @@ test("la table couvre les NEUF modules où la révision et l'engagement se jouen
     "src/vm/derivation/cle-de-domaine.mjs",
     "src/vm/enveloppe-de-recuperation.mjs",
     "src/vm/generation-recuperation.mjs",
+    "src/vm/opfs-racine-initiale.mjs",
     "src/vm/opfs-volume-ouverture.mjs",
     "src/vm/ouverture-par-enveloppe.mjs",
     "src/vm/volume-export.mjs",

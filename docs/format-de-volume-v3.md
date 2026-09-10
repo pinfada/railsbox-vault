@@ -1164,6 +1164,43 @@ En revanche, un fichier qui **ressemble** à un témoin mais dont le sceau ne v�
 jamais ignoré : l'ignorer offrirait à quiconque peut écrire dans l'origine le moyen de désarmer le
 contrôle en abîmant huit octets.
 
+### 6.9 bis Le voisin `<volume>.engagement`
+
+Ajouté le 10 septembre 2026 (#181,
+[ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md)). **Cent quatre-vingts octets,
+GROS-boutistes**, et un fichier qui n'existe qu'entre une restauration et l'ouverture qui la valide
+: il est CONSOMMÉ à cette ouverture, jamais relu ensuite.
+
+| Offset | Largeur | Champ                                                      |
+| ------ | ------: | ---------------------------------------------------------- |
+| 0      |       8 | marqueur `VLTENG01` (ASCII)                                |
+| 8      |       4 | version du fichier d'engagement — **1**                    |
+| 12     |       4 | version d'ARCHIVE — **3**                                  |
+| 16     |      32 | identifiant de volume, 32 hexadécimaux minuscules (ASCII)  |
+| 48     |       8 | taille support                                             |
+| 56     |       8 | taille logique                                             |
+| 64     |       4 | taille de secteur — **512**                                |
+| 68     |       4 | version de l'enveloppe embarquée — **0** s'il n'y en a pas |
+| 72     |       8 | longueur du contenu                                        |
+| 80     |       8 | longueur de la section de récupération                     |
+| 88     |      32 | sel du domaine `archive`, TIRÉ, en clair                   |
+| 120    |      12 | nonce                                                      |
+| 132    |      32 | chiffré — l'empreinte du fichier, scellée                  |
+| 164    |      16 | étiquette                                                  |
+
+**Tout ce qui précède le sel est exactement ce que les données associées encodent** (§ 7.5) : le
+fichier est SELF-DESCRIPTIF, et l'ouverture y reconstruit les données associées sans rien supposer.
+Ses déclarations sont authentifiées par l'étiquette GCM — les modifier fait échouer l'ouverture,
+jamais dériver le verdict. Le SEL, lui, n'est pas authentifié et n'a pas à l'être : un adversaire
+qui le change obtient une clé différente, donc un refus.
+
+**Il fait exactement onze caractères de suffixe, comme `.instantane`** : il ne rétrécit donc aucun
+nom de volume déjà admissible. Il figure dans la liste de `removeOpfsVolume` **et** dans le balayage
+d'orphelins d'une naissance, par acquit, même s'il est consommé à la première ouverture — c'est le
+défaut de #145, et on ne le rouvre pas.
+
+Vecteur figé : `tests/vectors/archive-v3.json` › `engagement.voisin`.
+
 ### 6.10 Le manifeste v3
 
 Le manifeste est un voisin **JSON, ni chiffré ni authentifié**. Ce que la v3 y ajoute et rend
@@ -1207,9 +1244,29 @@ sinon en lisant le code.
 2. allouer le fichier à sa taille support, écrire l'en-tête v3 **sans** la marque de scellement
    complet, barrière ;
 3. sceller **tous** les secteurs, par tours bornés en mémoire, en écrivant charge puis sceau ;
-4. poser la marque `VLTSEAL1`, barrière. **C'est le dernier geste.**
+4. **écrire la RACINE INITIALE** — séquence 0, génération 0, compteur = les scellements que la
+   création vient de consommer, la racine comprise —, barrière, puis le témoin ;
+5. poser la marque `VLTSEAL1`, barrière. **C'est le dernier geste.**
 
-Une coupure avant l'étape 4 laisse un volume refusé par `VAULT_STORAGE_VOLUME_INCOMPLET` (§ 6.3).
+Une coupure avant l'étape 5 laisse un volume refusé par `VAULT_STORAGE_VOLUME_INCOMPLET` (§ 6.3).
+
+> **L'étape 4 est ajoutée le 10 septembre 2026** (#181,
+> [ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md)). Elle est ce qui rend vraie
+> la règle « **aucun volume légitime n'est sans racine** », et donc ce qui rend REFUSABLE un volume
+> restauré dont on a retiré l'engagement (§ 7.3, § 7.5). Bénéfice second : elle publie les 2^20
+> scellements qu'une création de 512 Mio ne publiait nulle part (§ 4.5).
+>
+> **Un volume v3 créé AVANT cette date n'a pas de racine initiale : il est refusé** par
+> `VAULT_STORAGE_VOLUME_SANS_RACINE`. Rien n'est publié et le gate « données sensibles » est fermé ;
+> les volumes pré-fabriqués des bancs et des scénarios ont été régénérés.
+>
+> **Le versement d'un disque applicatif hors transaction DATE sa création.** La coquille de produit
+> (ADR 0030) et le banc de référence écrivent le fichier entier sans passer par le journal, ce qui
+> change la région d'authentification et périme donc la racine de l'étape 4. Ils appellent
+> `daterLaCreation` une fois le fichier final, avant d'inscrire le manifeste. Sans cet appel, le
+> volume est refusé au premier boot par la garde de fraîcheur (§ 6.8) : un oubli coûte un refus,
+> jamais un silence. Épreuve : `tests/unit/coquille-application.test.mjs`, sur l'ordre des gestes de
+> l'installation.
 
 ### 7.2 Écrire, valider, ranger
 
@@ -1252,7 +1309,31 @@ L'ordre suivant n'est pas une commodité ; changer un seul de ses pas rendrait u
 3. **Témoin** lu et ouvert. Il fixe le **plancher de séquence** de la session. Absent = première
    ouverture.
 4. **Racines** relues, décodées sans clé (marqueur, format, taille de secteur, taille de volume) ;
-   la plus haute séquence lisible fait autorité.
+   la plus haute séquence lisible fait autorité. **Si AUCUNE ne fait autorité, voir le pas 4 bis :
+   l'ouverture ne continue pas sans une autorisation.** 4 bis. **AUCUNE racine ne fait autorité —
+   les trois cas, et il n'y en a pas de quatrième** (#181,
+   [ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md)) :
+
+   | À l'ouverture                     | Conduite                                                                                                                                                                                                          |
+   | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | une racine fait autorité          | chemin normal — les pas 5 à 9 ci-dessous ; l'engagement n'est pas consulté                                                                                                                                        |
+   | pas de racine, engagement présent | vérifier l'engagement **avant tout clair** ; s'il ouvre : écarter la charge trouvée s'il y en a une, écrire aussitôt la **racine initiale**, puis RETIRER le voisin ; sinon : `VAULT_STORAGE_ENGAGEMENT_INVALIDE` |
+   | pas de racine, engagement absent  | `VAULT_STORAGE_VOLUME_SANS_RACINE`, **avant tout clair**                                                                                                                                                          |
+
+   Le cas « au moins une racine ABÎMÉE » reste ce qu'il est :
+   `VAULT_STORAGE_GENERATION_ROOT_CORRUPT`, inchangé, et il tombe **avant** toute autorisation —
+   vérifier un engagement coûte l'empreinte de tout le fichier, et un journal dont on ne sait plus
+   ce qu'il a validé est refusé de toute façon.
+
+   **L'engagement est CONSOMMÉ une fois**, jamais vérifié à chaque ouverture : une fois la racine
+   initiale écrite, c'est la fraîcheur du § 6.8 qui prend le relais. Le voisin est retiré **après**
+   que la racine soit durable — l'ordre inverse laisserait, sur une coupure, un volume sans racine
+   et sans engagement, c'est-à-dire irrécupérable.
+
+   **Une ouverture qui ÉCRIT est un geste nouveau sur ce chemin, et il est PUBLIÉ** : le rapport
+   d'ouverture porte `racineInitiale: true` et le motif — `creation`, `migration` ou `engagement`.
+   Jamais en silence.
+
 5. **Parcours de la charge**, enregistrement par enregistrement, en **fenêtre glissante** : lire
    l'en-tête, lire le sceau, sauter le chiffré, collecter l'entrée
    `(adresse, longueur, rang, étiquette)`. Aucun déchiffrement, aucune allocation qui suive la
@@ -1336,15 +1417,23 @@ d'ouvrir le volume. Ce qu'un tel support obtient reste une **destruction, jamais
 
 ### 7.5 Exporter et restaurer
 
-> **L'ARCHIVE DÉCRITE ICI N'EST PAS AUTHENTIFIÉE, et cela suffit à rendre un état JAMAIS PRODUIT**
-> ([#181](https://github.com/pinfada/railsbox-vault/issues/181), CRITICAL, ouvert — § 9.7). Le
-> SHA-256 ci-dessous est **recalculable** par quiconque tient le fichier : il atteste contre
-> l'accident, pas contre un adversaire. Comme la restauration retire journal et témoin et que
-> l'ouverture suivante accepte l'absence de racine, un mélange de secteurs authentiques venus de
-> deux états du même volume se restaure, s'ouvre et se lit en clair, sans refus. La correction est
-> décidée — un engagement scellé sous une clé du domaine `archive`, vérifié avant tout clair, une
-> archive sans engagement refusée — et **elle n'est pas livrée** : ce qui suit décrit l'archive v2
-> telle que le produit l'écrit aujourd'hui.
+> **L'ARCHIVE EST AUTHENTIFIÉE depuis le 10 septembre 2026**
+> ([#181](https://github.com/pinfada/railsbox-vault/issues/181), CRITICAL corrigé — § 9.7,
+> [PR #184](https://github.com/pinfada/railsbox-vault/pull/184),
+> [ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md)).
+>
+> **Ce que la revue avait montré, et qui n'est plus vrai.** Le SHA-256 décrit plus bas est
+> **recalculable** par quiconque tient le fichier : il atteste contre l'accident, pas contre un
+> adversaire. Comme la restauration retire journal et témoin et que l'ouverture suivante acceptait
+> l'absence de racine, un mélange de secteurs authentiques venus de deux états du même volume se
+> restaurait, s'ouvrait et se lisait en clair, sans refus.
+>
+> **Ce qui le referme, en trois traits.** Une archive v3 porte un ENGAGEMENT — le SHA-256 du fichier
+> chiffré ENTIER, scellé sous une clé du domaine `archive` dérivée de la DEK ; la restauration le
+> dépose à côté du volume ; la première ouverture le vérifie AVANT tout clair, écrit la racine
+> initiale, puis retire le voisin. Et, pour que ce refus soit atteignable, **aucun volume légitime
+> n'est sans racine** (§ 7.1). Les archives v1 et v2 sont REFUSÉES : elles ne portent aucun
+> engagement, et c'est exactement le défaut.
 
 **L'archive porte le fichier v3 TEL QUEL — chiffré — et son manifeste v3.** L'intégrité est prouvée
 par l'empreinte SHA-256 du fichier ; la restauration recopie les octets **sans clé** ; la clé n'est
@@ -1377,10 +1466,65 @@ Deux conséquences à écrire :
 > cette page (page 0 = la page embarquée, page 1 à zéro), **après** le contenu relu et **avant** le
 > manifeste.
 >
-> Une archive v1 reste LUE ; elle n'est plus écrite. Une archive v2 dont `recovery` vaut `null`
-> décrit un volume sans moyen de récupération, et le compte rendu de l'export le DIT : elle ne
-> s'ouvrira nulle part ailleurs. Vecteurs figés : `tests/vectors/archive-v2.json`, vérifiés par
-> `node tools/verifier-vecteurs.mjs` depuis le seul texte des ADR.
+> Une archive v2 dont `recovery` vaut `null` décrit un volume sans moyen de récupération, et le
+> compte rendu de l'export le DIT : elle ne s'ouvrira nulle part ailleurs.
+
+> **AMENDÉ le 10 septembre 2026 (#181,
+> [ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md)) : le format d'archive passe
+> à la VERSION 3, et l'en-tête gagne un champ.**
+>
+> ```text
+> [ RBVAULT1 8 o ][ longueur d'en-tête 4 o ][ en-tête JSON H o ][ contenu N o ][ récupération R o ]
+> ```
+>
+> La DISPOSITION ne bouge pas : `offset du contenu = 12 + H`, `taille = 12 + H + N + R`, et le
+> marqueur `RBVAULT1` est inchangé — le changer ferait dire à un runtime ancien « ce n'est pas une
+> archive » au lieu de « cette archive est trop récente », et l'ADR 0011 veut un refus explicite
+> d'un format futur. L'en-tête déclare, entre `recovery` et `manifest` :
+>
+> ```json
+> "engagement": { "algorithm": "aes-256-gcm", "salt": "<64 hex>", "nonce": "<24 hex>",
+>                 "ciphertext": "<64 hex>", "tag": "<32 hex>" }
+> ```
+>
+> **Ce que l'engagement scelle.** Clair = `SHA-256(fichier chiffré ENTIER)`, 32 octets. Données
+> associées, champs de largeur fixe ou préfixés de leur longueur, comme au § 5.1 :
+>
+> ```text
+> donnéesAssociées = LP("railsbox-vault/archive/engagement/v1") ‖ LP("aes-256-gcm")
+>                  ‖ U32BE(versionDArchive) ‖ LP(identifiantVolume)
+>                  ‖ U64BE(tailleSupport) ‖ U64BE(tailleLogique) ‖ U32BE(tailleDeSecteur)
+>                  ‖ U32BE(versionDeRecuperation)
+>                  ‖ U64BE(longueurDuContenu) ‖ U64BE(longueurDeLaRecuperation)
+> ```
+>
+> **La longueur de l'EN-TÊTE n'y est PAS, et c'est une nécessité d'encodage, pas un oubli** :
+> l'engagement vit dans cet en-tête, et y sceller sa longueur la rendrait fonction d'elle-même. Ce
+> que l'en-tête déclare d'AUTRE — la garantie de cohérence, le nom de l'application — n'est donc pas
+> authentifié, et cette phrase est là pour ne pas le laisser croire.
+>
+> **La clé.**
+> `HKDF-SHA-256(IKM = DEK, sel = 32 octets TIRÉS et écrits en clair dans l'archive, info)`, info de
+> l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) décision 3 avec
+> `domaine = "archive"` et `versionDeFormatDuDomaine = 3`. **Une archive, une clé, un scellement,
+> aucun compteur** : le domaine `archive` est à usage unique, et le budget du § 4.5 n'a rien à y
+> compter. La clé du VOLUME, elle, reste la DEK jusqu'à #182 — entorse assumée, écrite dans
+> l'ADR 0033.
+>
+> **Qui vérifie, et quand.** La restauration **n'a pas la clé**, et c'est une propriété qu'on garde
+> : elle vérifie ce qu'elle peut sans clé — présence, longueur, cohérence de l'en-tête, version lue
+> —, refuse une archive de version non lue, et DÉPOSE l'engagement dans le voisin
+> `<volume>.engagement` (§ 6.9 bis), entre l'enveloppe de récupération et le manifeste. C'est
+> l'OUVERTURE qui le confronte, selon les trois cas du § 7.3.
+>
+> **Ce que ce refus prouve, et ce qu'il ne prouve pas.** Il est tenu contre le mélange et contre le
+> retrait du voisin. Il ne couvre PAS le rejeu d'une archive **entière et cohérente** : c'est le
+> retour arrière complet du § 9.1, inchangé. Un volume v3 créé avant cette date est refusé, comme
+> les archives v1 et v2.
+>
+> Vecteurs figés : `tests/vectors/archive-v3.json`, vérifiés par `node tools/verifier-vecteurs.mjs`
+> depuis le seul texte des ADR — l'info HKDF octet par octet, les données associées, le scellement
+> qui S'OUVRE, et les 180 octets du voisin.
 
 **L'export passe par un accès BRUT au fichier**, sans clé et sans géométrie logique : par la voie
 autorisée, qui déchiffre, il aurait produit une archive **en clair** d'un volume chiffré — le
@@ -1816,13 +1960,15 @@ des agents du dépôt, ni tiers humain ni cabinet indépendant.** Que cela satis
 tiers » des gates de [`SECURITY.md`](../SECURITY.md) est une décision du mainteneur, **et elle n'est
 pas prise**.
 
-**Verdict du relecteur : le gate « données sensibles » ne doit pas être ouvert.** Deux constats,
-tous deux **OUVERTS** au registre — c'est-à-dire reçus, reproduits, non corrigés, et dus avant la
-fermeture de #20.
+**Verdict du relecteur : le gate « données sensibles » ne doit pas être ouvert.** Deux constats. Le
+CRITICAL est **CORRIGÉ** depuis le 10 septembre 2026
+([PR #184](https://github.com/pinfada/railsbox-vault/pull/184),
+[ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md)) ; le HIGH reste **OUVERT** au
+registre — reçu, reproduit, non corrigé, et dû avant la fermeture de #20.
 
 **[#181](https://github.com/pinfada/railsbox-vault/issues/181) — Une archive accepte un mélange de
 secteurs provenant de plusieurs états, et la première ouverture restaurée le rend en clair.
-CRITICAL, OUVERT.** La restauration retire le journal et le témoin avant de recopier le volume (§
+CRITICAL, CORRIGÉ.** La restauration retire le journal et le témoin avant de recopier le volume (§
 7.5) ; l'ouverture suivante traite l'absence de racine comme une première ouverture ; et l'archive
 n'est authentifiée par rien d'autre qu'un SHA-256 **recalculable** (§ 7.5, § 13 question n° 6). Le
 relecteur a exécuté le mélange : trois états A, B, C du même volume, puis le secteur 0 de A remis
@@ -1838,14 +1984,22 @@ sélectivement sur des pages de base de données **sans connaître la clé**. La
 l'empreinte « atteste qu'une archive n'a pas été abîmée » : c'est vrai, et c'est précisément
 insuffisant.
 
-**Ce que le dépôt fera, et où c'est écrit.** Une nouvelle version d'archive portant un **engagement
-authentifié** sur le fichier chiffré entier, son identité, sa géométrie et sa version de
-récupération, scellé sous une clé du domaine `archive` dérivée de la DEK ; déposé par la
-restauration à côté du volume, **vérifié à la première ouverture avant tout clair**, et refusé s'il
-est absent ou faux. Les archives sans engagement sont **refusées à la restauration** : rien n'est
-publié, il n'y a aucune compatibilité à préserver. La Definition of Ready est dans l'issue ; la
-hiérarchie de clés qui lui donne son domaine est
-l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md).
+**Ce que le dépôt a FAIT, et où c'est écrit.** L'archive passe en **version 3** et porte un
+**engagement authentifié** sur le fichier chiffré entier, son identité, sa géométrie et sa version
+de récupération, scellé sous une clé du domaine `archive` dérivée de la DEK ; la restauration le
+dépose à côté du volume, la première ouverture le **vérifie avant tout clair**, écrit la racine
+initiale et retire le voisin. Les archives v1 et v2 sont **refusées** : rien n'est publié, il n'y a
+aucune compatibilité à préserver. Et, pour que le refus d'un engagement ABSENT soit atteignable,
+**aucun volume légitime n'est sans racine** — la création en écrit une avant `VLTSEAL1` (§ 7.1), la
+migration v2 → v3 aussi. Le détail est au § 7.5 et à
+l'[ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md) ; la hiérarchie de clés qui
+lui donne son domaine est l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md).
+
+**Ce qu'elle NE corrige pas, et qui reste écrit ici.** Le rejeu d'une archive **entière et
+cohérente** reste indétectable : c'est le retour arrière complet du § 9.1, inchangé, et l'ancrage
+monotone reste renvoyé à [#23](https://github.com/pinfada/railsbox-vault/issues/23). Les épreuves
+sont dans `tests/unit/vm-archive-melange-etats.test.mjs` — le mélange A/C du relecteur, six étapes,
+et son revers « restauration puis voisin retiré ».
 
 **[#182](https://github.com/pinfada/railsbox-vault/issues/182) — Le budget AES-GCM n'est pas global
 à la clé. HIGH, OUVERT.** Le § 4.5 affirme compter « toutes les invocations sous une clé », et c'est
@@ -1945,6 +2099,8 @@ Le reste de la famille, avec sa conduite :
 | `VAULT_STORAGE_BUDGET_DE_CLE`           | budget de scellements de la clé atteint                                                                                                                            | changer de clé de volume                         |
 | `VAULT_STORAGE_CLE_REQUISE`             | volume v3 présenté SANS clé, ou clé de longueur inadmissible                                                                                                       | fournir la clé — le produit n'en fabrique aucune |
 | `VAULT_STORAGE_VOLUME_INCOMPLET`        | création ou conversion interrompue : la marque de scellement manque                                                                                                | **supprimer et recréer**, pas restaurer          |
+| `VAULT_STORAGE_VOLUME_SANS_RACINE`      | aucune racine ne fait autorité, et rien n'autorise à en écrire une (#181)                                                                                          | restaurer depuis l'archive                       |
+| `VAULT_STORAGE_ENGAGEMENT_INVALIDE`     | un engagement d'archive est présent et n'autorise pas cette ouverture (#181)                                                                                       | restaurer de nouveau depuis l'archive            |
 | `VAULT_STORAGE_GENERATION_CORRUPT`      | une génération VALIDÉE ne concorde plus (rejeu, troncature, mélange, fraîcheur)                                                                                    | restaurer une sauvegarde                         |
 | `VAULT_STORAGE_GENERATION_ROOT_CORRUPT` | une racine abîmée dont rien ne dit ce qu'elle validait : soit aucune n'est lisible, soit une racine est retenue mais AUCUN témoin ne dit laquelle faisait autorité | restaurer une sauvegarde                         |
 | `VAULT_STORAGE_GENERATION_DISCARDED`    | des octets déposés au-delà de ce que la racine retenue authentifie ont été écartés. **Ce n'est pas une panne** : c'est le résultat normal d'une coupure            | rien — publié, jamais tu                         |
@@ -1983,6 +2139,17 @@ enveloppe de clé — § 6.9 en donne la distinction avec un écart de séquence
 
 **Deux refus retirés le 6 septembre 2026 (#139)** : `VAULT_ARCHIVE_VOLUME_CHIFFRE` et
 `VAULT_IMPORT_VOLUME_CHIFFRE` n'existent plus. Voir § 12, écart 2.
+
+**Deux codes AJOUTÉS le 10 septembre 2026 (#181,
+[PR #184](https://github.com/pinfada/railsbox-vault/pull/184),
+[ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md)), et ce qui les sépare.**
+`VAULT_STORAGE_VOLUME_SANS_RACINE` dit qu'il n'y avait RIEN à présenter : ni racine, ni engagement.
+`VAULT_STORAGE_ENGAGEMENT_INVALIDE` dit que ce qui a été présenté ne tient pas. Les remèdes ne sont
+pas les mêmes — dans le premier cas le volume est antérieur à la règle, ou son voisin a disparu ;
+dans le second, l'archive ou le volume restauré a été altéré. Le second ne rend **qu'une seule
+cause**, et c'est délibéré : étiquette forgée, sel modifié, descripteur contredit, empreinte qui ne
+concorde pas — les distinguer donnerait à un adversaire un oracle sur ce qu'il a manqué. Le CONTEXTE
+porte le détail pour l'exploitant ; le CODE est le même.
 
 ### 10.3 Les refus des voisins hors périmètre
 
@@ -2052,6 +2219,8 @@ archive, l'autre pour l'écriture de sa cible.
 | `VAULT_ARCHIVE_GEOMETRY_MISMATCH`    | la longueur du contenu contredit la géométrie du manifeste ou de l'en-tête                                                                                                                                   | l'archive est inexploitable                                |
 | `VAULT_ARCHIVE_RECUPERATION_ALTEREE` | l'empreinte recalculée de la SECTION DE RÉCUPÉRATION diffère de celle inscrite (#149)                                                                                                                        | réexporter : les données, elles, sont peut-être intactes   |
 | `VAULT_ARCHIVE_RECUPERATION_REFUSEE` | la section n'est pas une enveloppe de récupération SEULE — illisible, mauvaise taille, emplacement d'un autre type que 4, descripteur ou identité de volume qui ne s'accordent pas avec la page (#149)       | ne pas restaurer : la provenance de l'archive est en cause |
+| `VAULT_ARCHIVE_VERSION_NON_LUE`      | l'archive porte une version que ce runtime ne lit pas — v1, v2, ou une version future (#181). Distinct de `MALFORMED` : le conteneur est reconnu, et c'est sa VERSION qui est refusée                        | réexporter depuis le volume                                |
+| `VAULT_ARCHIVE_ENGAGEMENT_ABSENT`    | une archive v3 ne déclare aucun engagement, en déclare un illisible, ou décrit un volume sans identifiant (#181)                                                                                             | ne pas restaurer : l'archive n'atteste rien                |
 | `VAULT_IMPORT_TARGET_NOT_EMPTY`      | la cible porte déjà un volume, jamais écrasée sans consentement explicite                                                                                                                                    | choisir une autre cible ou consentir                       |
 | `VAULT_IMPORT_SPACE_INSUFFICIENT`    | l'espace estimé est inférieur au volume à restaurer, refusé AVANT toute mutation                                                                                                                             | libérer de la place                                        |
 | `VAULT_IMPORT_GEOMETRY_MISMATCH`     | la cible ouverte n'a pas la taille du volume de l'archive                                                                                                                                                    | choisir une cible de la bonne taille                       |
@@ -2483,15 +2652,22 @@ exigence de sauvegarde qui rendrait inacceptable qu'une archive et sa clé voyag
 archive : ils n'ont pas nécessairement besoin d'être secrets, mais l'archive doit être authentifiée
 cryptographiquement. Le SHA-256 auto-déclaré est insuffisant. »
 
-**Position RÉVISÉE du dépôt : l'archive doit être authentifiée, et c'est le CRITICAL #181.** La
-question posait « faut-il les CHIFFRER ? » et la réponse dit que ce n'était pas la bonne question :
-le secret n'est pas en cause, **l'authentification** l'est. Le SHA-256 de la § 7.5 est recalculable
-par quiconque tient le fichier ; il atteste contre l'accident, jamais contre un adversaire. La
-correction est écrite au § 9.7 et dans la Definition of Ready de
-[#181](https://github.com/pinfada/railsbox-vault/issues/181) : un engagement scellé sous une clé du
-domaine `archive`, vérifié avant tout clair, et une archive sans engagement **refusée**. **Le
-manifeste, lui, reste en clair et non authentifié** : sur ce point la position d'origine tient, et
-le relecteur ne la conteste pas.
+**Position RÉVISÉE du dépôt : l'archive doit être authentifiée, et elle l'EST depuis le 10
+septembre 2026.** La question posait « faut-il les CHIFFRER ? » et la réponse dit que ce n'était pas
+la bonne question : le secret n'est pas en cause, **l'authentification** l'est. Le SHA-256
+recalculable atteste contre l'accident, jamais contre un adversaire. Une archive v3 porte donc un
+**engagement** scellé sous une clé du domaine `archive`, vérifié avant tout clair, et une archive
+sans engagement est **refusée** (§ 7.5,
+[ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md),
+[PR #184](https://github.com/pinfada/railsbox-vault/pull/184)). **Le manifeste, lui, reste en clair
+et non authentifié** : sur ce point la position d'origine tient, et le relecteur ne la conteste pas.
+
+**Et ce que l'engagement ne couvre pas, dit ici plutôt qu'au détour d'un module.** Il scelle
+l'empreinte du fichier, l'identité et la géométrie du volume, la version de récupération et les
+longueurs des sections. Il ne scelle **pas** le reste de l'en-tête JSON — la garantie de cohérence
+déclarée par l'export, le nom de l'application du manifeste — ni la longueur de l'en-tête lui-même,
+qui serait fonction d'elle-même puisque l'engagement y vit. Ces champs restent ce que le manifeste
+est : une déclaration, pas une preuve.
 
 ### Question n° 7 — Un lecteur peut-il distinguer un secteur jamais écrit d'un secteur effacé ?
 
@@ -2555,17 +2731,21 @@ rescellement est au bon endroit ; ce qu'il produit ne traverse pas l'archive. C'
 
 ## 14. Ce que ce dossier ne prouve pas
 
-- **DEUX CONSTATS DE LA REVUE EXTERNE SONT OUVERTS, et ce document décrit donc un format dont deux
-  propriétés ne tiennent pas** (§ 9.7).
-  [#181](https://github.com/pinfada/railsbox-vault/issues/181), CRITICAL : une archive accepte un
-  mélange de secteurs provenant de plusieurs états, et la première ouverture restaurée le rend en
-  clair — la propriété P5 du § 8 ne tient pas pour un volume restauré.
-  [#182](https://github.com/pinfada/railsbox-vault/issues/182), HIGH : le budget de clé du § 4.5
-  n'est pas global à la clé, et la probabilité de collision de 2^-35 qu'il publie n'est pas bornée
-  par le mécanisme implémenté. Les deux sont **reçus, reproduits et non corrigés** au 10 septembre
-  2026 ; leur correction est décidée par
+- **UN CONSTAT DE LA REVUE EXTERNE RESTE OUVERT, et ce document décrit donc un format dont une
+  propriété ne tient pas** (§ 9.7). [#182](https://github.com/pinfada/railsbox-vault/issues/182),
+  HIGH : le budget de clé du § 4.5 n'est pas global à la clé, et la probabilité de collision de
+  2^-35 qu'il publie n'est pas bornée par le mécanisme implémenté. Il est **reçu, reproduit et non
+  corrigé** au 10 septembre 2026 ; sa correction est décidée par
   l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) et due avant la fermeture
   de #20.
+- **Le CRITICAL est corrigé, et ce qu'il corrige a une borne.**
+  [#181](https://github.com/pinfada/railsbox-vault/issues/181) est fermé par la
+  [PR #184](https://github.com/pinfada/railsbox-vault/pull/184) : une archive porte un engagement
+  scellé, et aucun volume légitime n'est sans racine. **Ce n'est pas la fermeture du § 9.1** : le
+  rejeu d'une archive ENTIÈRE et cohérente reste indétectable, et l'ancrage monotone reste renvoyé à
+  [#23](https://github.com/pinfada/railsbox-vault/issues/23). La propriété P5 du § 8 tient de
+  nouveau pour un volume restauré ; elle ne tient toujours pas contre un support ramené en arrière
+  tout entier.
 - **Il ne prouve pas que le format est sûr.** Il décrit ce qu'il fait, ce qu'il ne fait pas, et sous
   quelles hypothèses. **Un relecteur l'a revu le 10 septembre 2026, et ce n'est pas un tiers au sens
   des gates** : une revue adverse assistée par un agent d'IA distinct des agents du dépôt, ni tiers
@@ -2582,9 +2762,9 @@ rescellement est au bon endroit ; ce qu'il produit ne traverse pas l'archive. C'
   une contrainte de l'outillage (§ 6.10).
 - **Le vérificateur de vecteurs n'établit qu'un fait étroit** : les octets figés sont ceux que ce
   document décrit. Il ne cherche aucune faiblesse.
-- **Le registre de la revue externe porte SIX lignes, dont deux OUVERTES.** Quatre viennent d'une
-  pré-revue interne traitée comme externe ; deux viennent de la revue du 10 septembre 2026, et elles
-  ne sont pas disposées : elles sont dues. Voir
+- **Le registre de la revue externe porte SIX lignes, dont UNE OUVERTE.** Quatre viennent d'une
+  pré-revue interne traitée comme externe ; deux viennent de la revue du 10 septembre 2026, dont
+  l'une est corrigée le jour même et l'autre est due. Voir
   [`docs/revue-externe/registre.md`](revue-externe/registre.md), le texte de la revue
   [`revue-2026-09-10.md`](revue-externe/revue-2026-09-10.md) et le
   [gabarit de constat](revue-externe/gabarit-de-constat.md).

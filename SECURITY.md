@@ -292,22 +292,28 @@ nécessaire, l'ADR 0028 fixe la forme — préfixe `__Host-`, rien sur le domain
   de l'ADR 0014 — et les vecteurs figés `tests/vectors/format-chiffre-v1.json`, que #18 devra
   reproduire octet pour octet. La borne de forgerie est calculée, pas qualifiée : ≈ 2^-122,6 par
   tentative ;
-- `SEC-GEN-001` — rejeu, troncature et mélange de générations sont refusés. **SAUF SUR UN VOLUME
-  RESTAURÉ DEPUIS UNE ARCHIVE, et c'est le constat CRITICAL de la revue externe du 10 septembre
-  2026** ([#181](https://github.com/pinfada/railsbox-vault/issues/181), ouvert) : la restauration
-  retire journal et témoin, l'ouverture suivante accepte l'absence de racine comme une première
-  ouverture, et l'archive n'est authentifiée que par un SHA-256 recalculable. Un mélange de secteurs
-  authentiques venus de deux états du même volume — un état **jamais produit** — se restaure,
-  s'ouvre et se lit en clair, sans refus. La correction est un engagement authentifié sur l'archive,
-  vérifié avant tout clair ; **elle n'est pas livrée**. Ce qui suit décrit ce que l'invariant tient
-  hors de ce cas. **EXERCÉ par le produit depuis #19**
-  ([ADR 0019](docs/decisions/0019-fraicheur-du-volume.md)), pour ce qui peut l'être — et ce qui ne
-  le peut pas est nommé plus bas, pas masqué. #18 en avait posé la moitié matérielle : la racine v3
-  authentifie séquence, génération, nombre d'entrées, longueur de charge et empreinte de la suite
-  ordonnée. Ce qui manquait était l'autre moitié, et elle manquait en silence — les contrôles de
-  SÉQUENCE n'étaient présentés par AUCUN chemin, `generationMinimale` et `sequenceMinimale` valant
-  `null` partout, si bien que les refus de rejeu étaient du code mort. #19 les arme. Quatre
-  propriétés, chacune avec son refus typé :
+- `SEC-GEN-001` — rejeu, troncature et mélange de générations sont refusés, **y compris sur un
+  volume RESTAURÉ depuis une archive, depuis le 10 septembre 2026**
+  ([#181](https://github.com/pinfada/railsbox-vault/issues/181), CRITICAL corrigé,
+  [PR #184](https://github.com/pinfada/railsbox-vault/pull/184),
+  [ADR 0034](docs/decisions/0034-archive-authentifiee-et-racine-initiale.md)). La revue externe
+  avait montré le contraire : la restauration retire journal et témoin, l'ouverture suivante
+  acceptait l'absence de racine comme une première ouverture, et l'archive n'était authentifiée que
+  par un SHA-256 recalculable — un mélange de secteurs authentiques venus de deux états du même
+  volume, un état **jamais produit**, se restaurait, s'ouvrait et se lisait en clair, sans refus.
+  Une archive v3 porte désormais un **engagement** scellé sous une clé du domaine `archive` ; la
+  première ouverture le vérifie AVANT tout clair, écrit la racine initiale, puis retire le voisin ;
+  et **aucun volume légitime n'est sans racine**, ce qui rend le retrait du voisin refusable plutôt
+  qu'exploitable. **Ce qui reste hors de portée est nommé** : le rejeu d'une archive ENTIÈRE et
+  cohérente, c'est-à-dire le retour arrière complet du support — § 9.1 du dossier, ancrage monotone
+  renvoyé à [#23](https://github.com/pinfada/railsbox-vault/issues/23). **EXERCÉ par le produit
+  depuis #19** ([ADR 0019](docs/decisions/0019-fraicheur-du-volume.md)), pour ce qui peut l'être —
+  et ce qui ne le peut pas est nommé plus bas, pas masqué. #18 en avait posé la moitié matérielle :
+  la racine v3 authentifie séquence, génération, nombre d'entrées, longueur de charge et empreinte
+  de la suite ordonnée. Ce qui manquait était l'autre moitié, et elle manquait en silence — les
+  contrôles de SÉQUENCE n'étaient présentés par AUCUN chemin, `generationMinimale` et
+  `sequenceMinimale` valant `null` partout, si bien que les refus de rejeu étaient du code mort. #19
+  les arme. Quatre propriétés, chacune avec son refus typé :
 
   **Rejeu, en session.** L'ouvreur unique lit la dernière racine validée et PRÉSENTE le plancher de
   séquence à chaque vérification de racine, ainsi qu'un plancher de génération à chaque
@@ -524,20 +530,21 @@ nécessaire, l'ADR 0028 fixe la forme — préfixe `__Host-`, rien sur le domain
   un autre appareil s'ouvre par le code, et le code n'entre jamais dans l'archive. La perte du
   FICHIER reste la perte du volume ;
 - `SEC-RECOVERY-001` — chaque moyen de récupération annoncé possède un test de succès, de révocation
-  et de perte définitive. **Le MÉCANISME est exercé ; ce que la récupération RESTAURE ne l'est pas
-  autant, et la revue externe du 10 septembre 2026 l'a établi**
-  ([#181](https://github.com/pinfada/railsbox-vault/issues/181), CRITICAL, ouvert). Une archive
-  restaurée rend bien la capacité d'ouvrir ; elle ne prouve pas que ce qu'elle porte est un état que
-  le volume a réellement produit. C'est la réserve qui pèse sur cette ligne, et elle est nommée dans
-  la table des statuts. **EXERCÉ depuis #162 ; il l'était SOUS RÉSERVE depuis #147.** #21 en avait
-  posé la moitié mécanique — révoquer un emplacement est éprouvé, et révoquer le DERNIER est refusé,
-  parce qu'un volume sans issue n'est pas un état acceptable — mais aucun moyen de RÉCUPÉRATION
-  n'existait : perdre toutes ses clés de déverrouillage revenait à perdre le volume. #147 (tranche 1
-  de #23) pose le premier : un **code de récupération GÉNÉRÉ par le produit**, cent vingt-huit bits
-  tirés de `crypto.getRandomValues`, rendu en vingt-huit symboles base 32 de Crockford avec une
-  somme de contrôle, **rendu une seule fois** et persisté nulle part. Décision :
-  [ADR 0025](docs/decisions/0025-moyen-de-recuperation.md). Les trois épreuves que l'invariant exige
-  sont nommées : succès, révocation et perte définitive dans
+  et de perte définitive. **Le mécanisme est exercé, et ce que la récupération RESTAURE l'est
+  désormais aussi** ([#181](https://github.com/pinfada/railsbox-vault/issues/181), CRITICAL corrigé
+  le 10 septembre 2026, [PR #184](https://github.com/pinfada/railsbox-vault/pull/184)). Une archive
+  restaurée rend la capacité d'ouvrir, ET son engagement atteste que ce qu'elle porte est un état
+  que le volume a réellement produit : la première ouverture le vérifie avant tout clair. La réserve
+  qui pesait sur cette ligne est levée ; celle du § 9.1 — une archive entière et cohérente rejouée —
+  ne l'est pas, et elle ne prétend pas l'être. **EXERCÉ depuis #162 ; il l'était SOUS RÉSERVE depuis
+  #147.** #21 en avait posé la moitié mécanique — révoquer un emplacement est éprouvé, et révoquer
+  le DERNIER est refusé, parce qu'un volume sans issue n'est pas un état acceptable — mais aucun
+  moyen de RÉCUPÉRATION n'existait : perdre toutes ses clés de déverrouillage revenait à perdre le
+  volume. #147 (tranche 1 de #23) pose le premier : un **code de récupération GÉNÉRÉ par le
+  produit**, cent vingt-huit bits tirés de `crypto.getRandomValues`, rendu en vingt-huit symboles
+  base 32 de Crockford avec une somme de contrôle, **rendu une seule fois** et persisté nulle part.
+  Décision : [ADR 0025](docs/decisions/0025-moyen-de-recuperation.md). Les trois épreuves que
+  l'invariant exige sont nommées : succès, révocation et perte définitive dans
   `tests/unit/vm-derivation-recuperation.test.mjs`, et le cycle complet sur l'OPFS réel des trois
   moteurs dans `tests/browser/deverrouillage-frontiere.spec.mjs`. **Depuis #148, la RÉVOCATION
   D'URGENCE est éprouvée elle aussi** : « retirer tous les emplacements sauf celui que la clé
@@ -750,10 +757,10 @@ colonne.
 | `SEC-ORIGIN-001` — coquille de PRODUIT | **exercé**              | la frontière est éprouvée sur les ports RÉELS de la coquille de produit ; le geste de DÉVERROUILLAGE est celui d'un UTILISATEUR depuis #162 ; le CYCLE DE VIE est assemblé depuis #163 — l'ordre des huit étapes est daté, publié et tenu par une garde, et un scénario de bout en bout boote Rails DANS la coquille sur deux origines réelles ; le VERROUILLAGE est livré depuis #169 — un geste (trois moteurs) et un délai d'inactivité de dix minutes (Chromium et Firefox, en temps réel) tuent le Worker de confiance après la fermeture propre, la coquille recharge, un verrouillage REFUSÉ tue et retire le cadre plutôt que de laisser un coffre ouvert, et les dix refus restent identiques — code ET message — sur un coffre ouvert comme sur un coffre verrouillé. Ce qui n'est pas encore couvert n'est pas une réserve sur la partition : le document encadré n'est pas servi par le guest (le proxy vient plus tard), et les fins d'onglet mesurées par moteur sont #170 | `tests/browser/coquille-frontiere.spec.mjs` (application malveillante, dix gestes refusés, témoin positif en même origine, les dix refus identiques dans trois états du coffre, trois moteurs), `tests/browser/coquille-deverrouillage.spec.mjs` (les trois moyens depuis la coquille, la sonde d'exfiltration rejouée APRÈS un verrouillage, trois moteurs), `tests/browser/coquille-cycle-de-vie.spec.mjs` (l'ordre des huit étapes, le refus d'un boot avant le backend, la mort du Worker sur ses trois causes, le verrouillage par geste et par délai d'inactivité réel, le rechargement, trois moteurs), `tests/e2e/reprise-coquille-boot-froid.spec.mjs` (deux origines réelles, boot Rails dans la coquille, verrouillage, instantané constaté sur l'OPFS réel, réouverture par instantané), `tests/unit/coquille-admission.test.mjs`, `tests/unit/coquille-contrat.test.mjs`, `tests/unit/coquille-cycle-de-vie.test.mjs`, `tests/unit/coquille-verrouillage.test.mjs`                                                                             |
 | `SEC-KEY-001`                          | **exercé sous réserve** | RÉSERVE OUVERTE depuis le 10 septembre 2026 (#182) : la hiérarchie s'arrête à la DEK, qui sert directement à AES-GCM pour DEUX volumes, les racines d'enveloppe et les exports — le budget de clé n'est pas global à la clé ; corrigée par l'ADR 0033, non livrée. La DURÉE de rétention de la KEK dans le Worker de confiance est BORNÉE depuis #169 (geste « Verrouiller » et délai d'inactivité de dix minutes), et elle est mesurée ; ce que le verrouillage ne couvre pas est écrit avec lui — mémoire du processus, fichier d'échange, copie déjà prise                                                                                                                                                                                                                                                                                                                                                                                                                            | `tests/browser/enveloppe-frontiere.spec.mjs`, `tests/browser/coquille-cycle-de-vie.spec.mjs` (le verrouillage par geste et par délai, trois moteurs), `tests/unit/coquille-verrouillage.test.mjs` (l'état, la règle et les bornes du délai)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `SEC-BLOCK-001`                        | **exercé sous réserve** | le format scelle tout, de bout en bout — mais la clé du chemin de BOOT vient encore du harnais, sous jeton ; et depuis le 10 septembre 2026 (#182), les données associées séparent des identités logiques, pas des CLÉS : le budget qui borne la réutilisation d'un couple clé/nonce n'est pas celui qu'annonce la spécification                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `tests/unit/vm-volume-chiffre.test.mjs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `SEC-GEN-001`                          | **exercé sous réserve** | rejeu, troncature, mélange et retour arrière d'un secteur sont refusés ; le retour arrière COMPLET ne l'est pas ; et depuis le 10 septembre 2026 (#181, CRITICAL), un volume RESTAURÉ depuis une archive accepte un mélange de secteurs venus de deux états — un état jamais produit — et le rend en clair sans refus                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `tests/unit/vm-generation-sequence.test.mjs` (rejeu, troncature), `tests/unit/vm-format-chiffre-modele.test.mjs` (troncature, mélange), `tests/unit/vm-generation-fraicheur.test.mjs` (retour arrière d'un secteur, témoin)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `SEC-GEN-001`                          | **exercé sous réserve** | rejeu, troncature, mélange et retour arrière d'un secteur sont refusés, **sur un volume restauré compris depuis la PR #184** (#181, CRITICAL corrigé le 10 septembre 2026 : engagement d'archive scellé, et aucun volume légitime sans racine) ; le retour arrière COMPLET du support, lui, n'est toujours pas refusé, et c'est la réserve qui subsiste                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `tests/unit/vm-generation-sequence.test.mjs` (rejeu, troncature), `tests/unit/vm-format-chiffre-modele.test.mjs` (troncature, mélange), `tests/unit/vm-generation-fraicheur.test.mjs` (retour arrière d'un secteur, témoin)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `SEC-DURABLE-001`                      | **exercé**              | hors périmètre : la perte d'un cache d'écriture VOLATIL, qu'aucun support éprouvé ne produit                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `tests/vm/opfs-barrier.spec.mjs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `SEC-UPDATE-001`                       | **exercé sous réserve** | l'ouvreur unique est une discipline de revue, pas une contrainte du code : l'ouverture de bas niveau reste appelable                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `tests/unit/vm-opfs-volume-open.test.mjs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `SEC-RECOVERY-001`                     | **exercé sous réserve** | RÉSERVE OUVERTE depuis le 10 septembre 2026 (#181, CRITICAL) : une archive restaurée n'est authentifiée que par un SHA-256 recalculable, et rien ne prouve que l'état qu'elle porte a été produit par le volume ; corrigée par un engagement scellé, non livrée. Le mécanisme est éprouvé de bout en bout, **transport de la capacité d'ouvrir compris depuis #149**, et **offert à un UTILISATEUR par la coquille de produit depuis #162** (ADR 0029)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `tests/browser/coquille-deverrouillage.spec.mjs` (le code créé, rendu une fois avec sa version, repris sous sa forme humaine, depuis le chemin de produit, trois moteurs), `tests/unit/vm-derivation-recuperation.test.mjs` (succès, révocation, perte définitive), `tests/browser/deverrouillage-frontiere.spec.mjs` (le cycle complet sur l'OPFS réel des trois moteurs), `tests/unit/vm-enveloppe-operations.test.mjs` (révoquer le DERNIER est refusé), `tests/unit/vm-enveloppe-revocation-urgence.test.mjs` et `tests/unit/vm-enveloppe-coupures.test.mjs` (la révocation d'urgence de #148), `tests/browser/enveloppe-frontiere.spec.mjs` (le geste sur l'OPFS réel des trois moteurs), `tests/unit/vm-archive-recuperation.test.mjs` et `tests/unit/vm-restauration-recuperation.test.mjs` (l'archive v2 et le cycle export → restauration → ouverture par le code), `tests/unit/vm-enveloppe-ancre-version.test.mjs` (l'ancre de version et son aveu), `tests/e2e/archive-recuperation-inter-origine.spec.mjs` (deux origines réelles, boot Rails) |
+| `SEC-RECOVERY-001`                     | **exercé sous réserve** | la réserve ouverte le 10 septembre 2026 (#181, CRITICAL) est LEVÉE le jour même par la PR #184 : une archive v3 porte un engagement scellé, et la première ouverture le vérifie avant tout clair. La réserve qui subsiste est celle du § 9.1 — une archive entière et cohérente rejouée. Le mécanisme est éprouvé de bout en bout, **transport de la capacité d'ouvrir compris depuis #149**, et **offert à un UTILISATEUR par la coquille de produit depuis #162** (ADR 0029)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `tests/browser/coquille-deverrouillage.spec.mjs` (le code créé, rendu une fois avec sa version, repris sous sa forme humaine, depuis le chemin de produit, trois moteurs), `tests/unit/vm-derivation-recuperation.test.mjs` (succès, révocation, perte définitive), `tests/browser/deverrouillage-frontiere.spec.mjs` (le cycle complet sur l'OPFS réel des trois moteurs), `tests/unit/vm-enveloppe-operations.test.mjs` (révoquer le DERNIER est refusé), `tests/unit/vm-enveloppe-revocation-urgence.test.mjs` et `tests/unit/vm-enveloppe-coupures.test.mjs` (la révocation d'urgence de #148), `tests/browser/enveloppe-frontiere.spec.mjs` (le geste sur l'OPFS réel des trois moteurs), `tests/unit/vm-archive-recuperation.test.mjs` et `tests/unit/vm-restauration-recuperation.test.mjs` (l'archive v2 et le cycle export → restauration → ouverture par le code), `tests/unit/vm-enveloppe-ancre-version.test.mjs` (l'ancre de version et son aveu), `tests/e2e/archive-recuperation-inter-origine.spec.mjs` (deux origines réelles, boot Rails) |
 
 Les « sous réserve » du format de volume, la conduite de chaque refus et ce que le format ne protège
 pas sont détaillés dans [`docs/format-de-volume-v3.md`](docs/format-de-volume-v3.md), la
@@ -761,11 +768,12 @@ spécification autonome soumise à la revue externe (#20).
 
 **La revue externe a été REÇUE le 10 septembre 2026, et elle rend un CRITICAL et un HIGH.** Le
 registre ([`docs/revue-externe/registre.md`](docs/revue-externe/registre.md)) porte désormais six
-lignes, dont **deux ouvertes** — [#181](https://github.com/pinfada/railsbox-vault/issues/181) et
-[#182](https://github.com/pinfada/railsbox-vault/issues/182) —, et le texte reçu est versé au dépôt
-en [`docs/revue-externe/revue-2026-09-10.md`](docs/revue-externe/revue-2026-09-10.md). Le verdict du
-relecteur est écrit tel quel : **le gate « données sensibles » ne doit pas être ouvert.** Il reste
-FERMÉ.
+lignes, dont **une ouverte** — [#182](https://github.com/pinfada/railsbox-vault/issues/182) ; le
+CRITICAL [#181](https://github.com/pinfada/railsbox-vault/issues/181) est corrigé le jour même par
+la [PR #184](https://github.com/pinfada/railsbox-vault/pull/184) —, et le texte reçu est versé au
+dépôt en [`docs/revue-externe/revue-2026-09-10.md`](docs/revue-externe/revue-2026-09-10.md). Le
+verdict du relecteur est écrit tel quel : **le gate « données sensibles » ne doit pas être ouvert.**
+Il reste FERMÉ.
 
 **La nature du relecteur, sans arrondi.** Une revue **adverse assistée par un agent d'IA distinct
 des agents du dépôt**, ni tiers humain ni cabinet indépendant ; identité tenue hors dépôt par le
@@ -790,8 +798,11 @@ délai de dix minutes tuent le Worker de confiance après la fermeture propre de
 coquille se recharge. Un verrouillage REFUSÉ ne laisse pas non plus le coffre ouvert : le Worker est
 terminé, le cadre applicatif retiré, le refus publié — et la coquille ne recharge pas, pour que cela
 se lise. Le gate « données sensibles » ci-dessous reste néanmoins **fermé**, pour une raison qui
-n'est plus une brique manquante : la revue externe (#20) a eu lieu le 10 septembre 2026, et elle
-rend un CRITICAL et un HIGH OUVERTS (#181, #182).
+n'est plus une brique manquante : la revue externe (#20) a eu lieu le 10 septembre 2026, elle rend
+un CRITICAL et un HIGH, et le HIGH reste OUVERT (#182). Le CRITICAL (#181) est corrigé par la
+[PR #184](https://github.com/pinfada/railsbox-vault/pull/184) ; **un HIGH ouvert suffit à garder ce
+gate fermé**, et le verdict du relecteur ne se périme pas parce qu'un de ses deux constats a été
+traité.
 
 Ce que la frontière d'origine ne couvre pas :
 
@@ -839,12 +850,14 @@ Ces deux résidus sont **assumés et écrits**, pas résolus. Le gate « donnée
 et le gate « qualification produit » exige de toute façon la revue externe (#20), à laquelle l'ADR
 0015 fournit ses neuf questions — REÇUE le 10 septembre 2026, et rendant deux constats ouverts.
 
-**Un troisième résidu s'y ajoute depuis cette revue, et il n'est pas assumé : il est DÛ.** Le retour
-arrière d'un secteur est refusé sur un volume ouvert, mais un volume RESTAURÉ depuis une archive
-accepte un mélange de secteurs venus de deux états, sans refus et en clair
-([#181](https://github.com/pinfada/railsbox-vault/issues/181), CRITICAL). Ce n'est pas le retour
-arrière complet du support, qui est assumé : c'est un état **jamais produit**, que le format prétend
-refuser.
+**Un troisième résidu s'y était ajouté depuis cette revue, et il est SOLDÉ.** Le retour arrière d'un
+secteur est refusé sur un volume ouvert, et un volume RESTAURÉ depuis une archive acceptait un
+mélange de secteurs venus de deux états, sans refus et en clair
+([#181](https://github.com/pinfada/railsbox-vault/issues/181), CRITICAL). Ce n'était pas le retour
+arrière complet du support, qui est assumé : c'était un état **jamais produit**, que le format
+prétend refuser. La [PR #184](https://github.com/pinfada/railsbox-vault/pull/184) l'a fermé —
+archive authentifiée, et aucun volume légitime sans racine. **Les deux premiers résidus, eux,
+restent assumés et écrits.**
 
 ## Propriétés exigées avant une version utilisable
 
@@ -908,20 +921,23 @@ d'origine.
 
    **La revue externe a été REÇUE le 10 septembre 2026, et le gate reste FERMÉ — pour une raison qui
    n'est plus une absence, mais un verdict.** Le relecteur écrit lui-même que « le gate "données
-   sensibles" ne doit pas être ouvert », et il rend **un CRITICAL et un HIGH ouverts** :
+   sensibles" ne doit pas être ouvert », et il rend un CRITICAL et un HIGH :
    [#181](https://github.com/pinfada/railsbox-vault/issues/181) — une archive accepte un mélange de
    secteurs provenant de plusieurs états, et la première ouverture restaurée le rend en clair —, et
    [#182](https://github.com/pinfada/railsbox-vault/issues/182) — le budget AES-GCM n'est pas global
-   à la clé. Le contrat de #20 les veut corrigés avant sa fermeture ; leur correction est décidée
-   par l'[ADR 0033](docs/decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) et n'est pas
-   livrée. **Un CRITICAL ouvert ferme ce gate à lui seul**, et cela ne dépend pas de la question «
-   tiers » traitée plus haut.
+   à la clé. Le premier est **corrigé** le jour même
+   ([PR #184](https://github.com/pinfada/railsbox-vault/pull/184),
+   [ADR 0034](docs/decisions/0034-archive-authentifiee-et-racine-initiale.md)) ; le second reste
+   **ouvert**, et sa correction est décidée par
+   l'[ADR 0033](docs/decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) sans être livrée.
+   **Un HIGH ouvert ferme ce gate**, et cela ne dépend pas de la question « tiers » traitée plus
+   haut.
 
 3. **Qualification produit interdite** jusqu'à la revue externe, la résolution des constats
    critiques et élevés et la publication de la matrice navigateur. **Au 10 septembre 2026, aucune
    des trois conditions n'est remplie** : une revue a eu lieu mais le mainteneur n'a pas décidé si
-   sa nature satisfait « tiers » ; ses deux constats sont ouverts ; la matrice navigateur n'est pas
-   publiée.
+   sa nature satisfait « tiers » ; l'un de ses deux constats reste ouvert (#182) ; la matrice
+   navigateur n'est pas publiée.
 
 Une démonstration réussie ne lève jamais seule un gate.
 
