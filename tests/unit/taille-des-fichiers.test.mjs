@@ -136,6 +136,17 @@ const SOUS_SURVEILLANCE = [
       "directe : une fin d'onglet tue le Worker sans fermeture, et la clôture ne pouvait donc pas " +
       "n'exister qu'en `close()`.",
   },
+  {
+    fichier: "src/vm/enveloppe-de-cle.mjs",
+    lignes: 703,
+    motif:
+      "élagué à 700 lignes pile lors de #159 (12/09/2026). La revue de sécurité de la PR #188 " +
+      "(HIGH-4) y ajoute deux lignes dans `muter` : un fichier `.cles` mêlant les pages de deux " +
+      "volumes ne doit jamais voir une mutation écraser la page qui ne lui appartient pas, la " +
+      "même faute que #159 avait fermée pour l'inventaire. La garde ne peut vivre nulle part " +
+      "ailleurs : elle lit `pageLibreEtrangere`, un champ que `etat-de-lenveloppe.mjs` calcule " +
+      "précisément pour cet appelant, avant tout appel au transformateur.",
+  },
 ];
 
 /** Nombre de lignes d'un contenu, tel que `wc -l` le compte. */

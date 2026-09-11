@@ -460,6 +460,9 @@ async function muter({ support, identifiantVolume, kek, aleas, transformer, reti
   const sources = exigerAleasAdmis(aleas);
   const cleKek = await importerCleDeDeverrouillage(kek);
   const etat = await lireEtat({ support, identifiantVolume, kek: cleKek });
+  // `pageLibre` peut porter la page valide d'un AUTRE volume sur un fichier mêlé (#188, HIGH-4).
+  if (etat.pageLibreEtrangere !== null)
+    throw identiteDeclareeIncoherente({ volume: identifiantVolume });
   const emplacements = await transformer(etat, sources);
   const version = etat.version + 1;
   const octets = await composerPage({

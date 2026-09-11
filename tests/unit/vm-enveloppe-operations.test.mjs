@@ -537,6 +537,107 @@ test("inventaire : toutes les pages valides nomment un autre volume, refus d'ide
   );
 });
 
+// --- La MUTATION sur un fichier MÊLÉ (#188, HIGH-4) ---------------------------------------------
+//
+// `inventorierEnveloppe` confronte l'identifiant avant de retenir « la plus récente » (#159) ;
+// `muter` doit confronter la MÊME chose avant d'ÉCRIRE, sans quoi une mutation de A sur un fichier
+// `.cles` mêlant les pages de A et de B ÉCRASERAIT la page de B en la prenant pour « l'autre
+// emplacement », par pure arithmétique sur l'index. Les deux épreuves qui suivent posent le fichier
+// mêlé dans les DEUX ordres — la page de A en index 0 puis en index 1 — pour que le refus ne
+// dépende pas de l'emplacement où « notre » page se trouve.
+
+test("mutation sur fichier MÊLÉ (A en page 0, B en page 1) : refusée, B intact (#188, HIGH-4)", async () => {
+  const volA = await enveloppeNeuve({ identifiantVolume: VOLUME_A, dek: DEK_A, kek: KEK_UN });
+  const volB = await enveloppeNeuve({
+    identifiantVolume: VOLUME_B,
+    dek: suiteDOctets(0x63, 32),
+    kek: KEK_TROIS,
+  });
+  const pageA = pageAutoritaire(volA.support.contenu).octets;
+  const pageB = pageAutoritaire(volB.support.contenu).octets;
+  const melange = supportDouble({ octets: fichierAvec(pageA, pageB) });
+
+  await assert.rejects(
+    ajouterEmplacement({
+      support: melange,
+      identifiantVolume: VOLUME_A,
+      kek: KEK_UN,
+      kekNouvelle: KEK_DEUX,
+      typeKek: TYPES_KEK.phrase,
+      parametres: suiteDOctets(0xf0, 8),
+    }),
+    refusDe(ENVELOPPE_ERROR_CODES.identite),
+  );
+  assert.deepEqual(
+    octetsDePage(melange.contenu, 1),
+    pageB,
+    "l'octet de la page de B n'a PAS bougé : la mutation refusée n'a rien écrit",
+  );
+
+  // Sur CE fichier mêlé, muter B se refuse À L'IDENTIQUE : sa page libre (index 0) porte celle de
+  // A. Le mélange interdit la mutation des DEUX côtés tant qu'aucun des deux ne libère sa page —
+  // et c'est le témoin que le refus est SYMÉTRIQUE, pas un artefact de l'ordre choisi ici.
+  await assert.rejects(
+    ajouterEmplacement({
+      support: melange,
+      identifiantVolume: VOLUME_B,
+      kek: KEK_TROIS,
+      kekNouvelle: KEK_DEUX,
+      typeKek: TYPES_KEK.phrase,
+      parametres: suiteDOctets(0xf0, 8),
+    }),
+    refusDe(ENVELOPPE_ERROR_CODES.identite),
+  );
+  assert.deepEqual(
+    octetsDePage(melange.contenu, 0),
+    pageA,
+    "l'octet de la page de A n'a PAS bougé non plus : le refus de B n'écrit rien",
+  );
+
+  // Témoin positif : la page de A, seule dans un fichier À ELLE, se laisse muter normalement.
+  const seule = supportDouble({ octets: fichierAvec(pageA) });
+  const versee = await ajouterEmplacement({
+    support: seule,
+    identifiantVolume: VOLUME_A,
+    kek: KEK_UN,
+    kekNouvelle: KEK_DEUX,
+    typeKek: TYPES_KEK.phrase,
+    parametres: suiteDOctets(0xf0, 8),
+  });
+  assert.equal(versee.nombreEmplacements, 2);
+});
+
+test("mutation sur fichier MÊLÉ (A en page 1, B en page 0) : refusée, B intact (#188, HIGH-4)", async () => {
+  const volA = await enveloppeNeuve({ identifiantVolume: VOLUME_A, dek: DEK_A, kek: KEK_UN });
+  const volB = await enveloppeNeuve({
+    identifiantVolume: VOLUME_B,
+    dek: suiteDOctets(0x64, 32),
+    kek: KEK_TROIS,
+  });
+  const pageA = pageAutoritaire(volA.support.contenu).octets;
+  const pageB = pageAutoritaire(volB.support.contenu).octets;
+  // L'ordre est INVERSÉ par rapport à l'épreuve précédente : la page de A occupe maintenant l'index
+  // 1, celle de B l'index 0. Le refus ne doit pas dépendre de ce rangement.
+  const melange = supportDouble({ octets: fichierAvec(pageB, pageA) });
+
+  await assert.rejects(
+    ajouterEmplacement({
+      support: melange,
+      identifiantVolume: VOLUME_A,
+      kek: KEK_UN,
+      kekNouvelle: KEK_DEUX,
+      typeKek: TYPES_KEK.phrase,
+      parametres: suiteDOctets(0xf0, 8),
+    }),
+    refusDe(ENVELOPPE_ERROR_CODES.identite),
+  );
+  assert.deepEqual(
+    octetsDePage(melange.contenu, 0),
+    pageB,
+    "l'octet de la page de B n'a PAS bougé : la mutation refusée n'a rien écrit",
+  );
+});
+
 test("liste TRONQUÉE avec longueur rectifiée : le compte authentifié la démasque", async () => {
   const { support, kek } = await enveloppeADeux();
   const page = pageAutoritaire(support.contenu).octets;
