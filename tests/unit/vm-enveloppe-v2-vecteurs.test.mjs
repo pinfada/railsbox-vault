@@ -296,3 +296,18 @@ function rescellerLaSomme(page) {
   vue.setUint32(VECTEURS.specification.crcOffset, (valeur ^ 0xffffffff) >>> 0, true);
   return page;
 }
+
+test("un octet de DOMAINE que rien ne désigne fait REFUSER la page, sans la lire plus loin", () => {
+  // Le domaine n'est pas authentifié — comme le sel —, mais il n'est pas non plus INTERPRÉTÉ « au
+  // mieux » : une page dont on ne sait pas sous quelle clé la racine est scellée n'est pas une page
+  // qu'on essaiera de lire, c'est une page qu'on ne sait pas lire. Le refus tombe au décodage, avant
+  // que la moindre clé ne soit dérivée.
+  const page = hexEnOctets(VECTEURS.pages.complete.page);
+  page[VECTEURS.specification.domaineOffset] = 0xfe;
+  const lue = decoderPage(rescellerLaSomme(page));
+  assert.equal(lue.valide, false);
+  assert.match(lue.raison, /Domaine de racine inconnu : 254/);
+
+  // TÉMOIN POSITIF : la même page, avec son octet d'origine, se relit sans broncher.
+  assert.equal(decoderPage(hexEnOctets(VECTEURS.pages.complete.page)).valide, true);
+});

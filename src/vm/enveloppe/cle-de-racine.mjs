@@ -39,13 +39,13 @@ import {
   VERSIONS_DE_FORMAT_DE_DOMAINE,
   deriverCleDeDomaine,
   encoderInfoDeDomaine,
-  tirerSelDeDomaine,
 } from "../derivation/cle-de-domaine.mjs";
 import { malforme } from "./enveloppe-errors.mjs";
 import {
   DOMAINES_DE_RACINE,
   ENVELOPPE_FORMAT_V1,
   ENVELOPPE_FORMAT_V2,
+  SEL_DE_PAGE_OCTETS,
   nomDuDomaineDeRacine,
 } from "./identite-enveloppe.mjs";
 import { importerCleDeRacineV1 } from "./page-v1-lecture.mjs";
@@ -71,14 +71,16 @@ export const OCTET_DOMAINE_RECUPERATION = DOMAINES_DE_RACINE.recuperation;
 /**
  * TIRE le sel d'une page v2 et DÉRIVE la clé sous laquelle sa racine sera scellée.
  *
- * **Le sel est TIRÉ, et le chemin de production ne peut pas le fournir.** Un appelant qui le
- * pourrait pourrait le répéter, et deux pages scellées sous la même clé et le même nonce sont
- * exactement la collision que la séparation par domaine a pour objet de borner. Le seul appelant
- * capable d'en présenter un est le HARNAIS, par la porte de `enveloppe-de-cle.mjs` — la même que
- * celle du nonce, avec le même jeton, pour que la règle tienne à un seul endroit.
+ * **Le sel est EXIGÉ, et il n'a pas de valeur par défaut.** Un défaut ferait de cette fonction un
+ * second endroit où un sel se tire, et deux endroits qui tirent finissent par diverger — l'un des
+ * deux cesse d'être appelé sans que rien ne le dise, et la garde qu'il portait devient décorative.
+ * Le seul endroit qui tire est la source d'aléas de `enveloppe-de-cle.mjs`, derrière la porte du
+ * harnais : la même que celle du nonce, avec le même jeton, pour que la règle tienne à un seul
+ * endroit. Un appelant qui pourrait répéter un sel scellerait deux pages sous la même clé et le même
+ * nonce, c'est-à-dire la collision que la séparation par domaine a pour objet de borner.
  *
  * @param {{ dek: Uint8Array, identifiantVolume: string, domaine?: number,
- *           sel?: Uint8Array }} appel
+ *           sel: Uint8Array }} appel
  *   `domaine` est l'OCTET d'en-tête, `OCTET_DOMAINE_ENVELOPPE` par défaut.
  * @returns {Promise<{ cle: CryptoKey, sel: Uint8Array, domaine: number }>}
  */
@@ -86,9 +88,10 @@ export async function cleNeuveDeRacineV2({
   dek,
   identifiantVolume,
   domaine = OCTET_DOMAINE_ENVELOPPE,
-  sel = tirerSelDeDomaine(),
+  sel,
 }) {
   const nom = exigerDomaineDeRacine(domaine);
+  exigerSelDePage(sel);
   return Object.freeze({
     cle: await deriver({ dek, identifiantVolume, nom, sel }),
     sel,
@@ -115,6 +118,15 @@ export async function cleDOuvertureDeRacine({ dek, page }) {
     nom: exigerDomaineDeRacine(page.domaine),
     sel: page.sel,
   });
+}
+
+/** EXIGE les trente-deux octets du sel. Un sel absent n'est pas un sel vide : c'est un oubli. */
+function exigerSelDePage(sel) {
+  if (sel instanceof Uint8Array && sel.byteLength === SEL_DE_PAGE_OCTETS) return sel;
+  throw malforme(
+    `le sel d'une page v2 fait exactement ${SEL_DE_PAGE_OCTETS} octets, reçu ${sel?.byteLength ?? "aucun"}. Il porte l'unicité de la clé de racine : l'omettre ferait dériver une clé constante pour toutes les pages d'un volume.`,
+    { attendu: SEL_DE_PAGE_OCTETS },
+  );
 }
 
 /** Le nom de domaine que désigne un octet d'en-tête, ou un refus TYPÉ. */

@@ -207,7 +207,7 @@ export async function ouvrirEnveloppe({
  */
 async function migrerLaPageV1({ support, identifiantVolume, cleKek, etat, aleas }) {
   if (etat.page.formatVersion !== ENVELOPPE_FORMAT_V1) return null;
-  const version = etat.version + 1;
+  const version = versionSuivante(etat);
   try {
     const octets = await composerPage({
       identifiantVolume,
@@ -233,6 +233,17 @@ async function migrerLaPageV1({ support, identifiantVolume, cleKek, etat, aleas 
       refus: cause?.code ?? cause?.name ?? String(cause),
     });
   }
+}
+
+/**
+ * La version que la page MIGRÉE portera : celle de la v1, plus un.
+ *
+ * Un cran, et un seul. Repartir de la même ferait cohabiter deux pages de même version, que le
+ * lecteur départagerait par leur INDEX — c'est-à-dire par rien —, et l'alternance cesserait de dire
+ * laquelle des deux fait autorité.
+ */
+function versionSuivante(etat) {
+  return etat.version + 1;
 }
 
 /** Le compte rendu d'une migration de page. Toujours les mêmes champs, faite ou non. */
