@@ -83,6 +83,18 @@ import { planMigration } from "./migration-etapes.mjs";
 
 // --- Orchestration -------------------------------------------------------------------------------
 
+/**
+ * Le CONTRAT de la cible, exigé AVANT toute écriture. Une faute de programmation n'est pas un état
+ * de format, et elle se relève au seuil.
+ *
+ * `poserLaRacineInitiale` y est entré avec la revue de format de la PR #184 (constat 3), pour la
+ * raison exacte qui y avait fait entrer `commitEngagement` dans `volume-import.mjs` : depuis #181,
+ * aucun volume légitime n'est sans racine. Une cible qui ne sait pas dater produisait un volume dont
+ * le manifeste DÉCLARE la migration réussie et que toute ouverture refuse ensuite par
+ * `VOLUME_SANS_RACINE` — définitivement, puisque le journal de migration a été retiré et qu'une
+ * seconde migration ne repart pas d'un manifeste déjà v3. Un succès silencieux, donc, exactement ce
+ * que l'ordre « racine avant manifeste » voulait éviter.
+ */
 const MEMBRES_CIBLE = [
   "inspect",
   "readManifest",
@@ -92,6 +104,7 @@ const MEMBRES_CIBLE = [
   "revokeManifest",
   "commitManifest",
   "removeJournal",
+  "poserLaRacineInitiale",
 ];
 
 /** Valide les collaborateurs injectés. Une faute de programmation n'est pas un état de format. */
@@ -370,14 +383,21 @@ async function muter({ target, backend, chaine, source, toVersion, evidence, cle
  * et seul un volume v3 a un journal de génération à dater. Une chaîne qui s'arrête avant v3 n'a rien
  * produit qui puisse porter une racine.
  *
- * La cible peut ne pas savoir dater — les doubles de bancs qui ne montent pas de voisins —, et
- * l'absence est alors ce qu'elle est : aucune racine n'est écrite, et le volume sera refusé à
- * l'ouverture. Un refus, jamais un silence.
+ * **Une cible qui ne sait pas dater LÈVE**, et elle lève au seuil : `poserLaRacineInitiale` est dans
+ * `MEMBRES_CIBLE`, donc le refus tombe AVANT qu'une seule écriture n'ait lieu. La rédaction
+ * précédente rendait `null` ici, c'est-à-dire produisait en silence un volume déclaré migré et
+ * inouvrable (constat 6 de la revue de sécurité de la PR #184, constat 3 de la revue de format). La
+ * garde locale reste, et elle LÈVE : ce qui est arrivé là après le contrat est une faute de
+ * programmation, pas un état de format, et un `null` la rendrait de nouveau silencieuse.
  */
 async function daterLeVolumeMigre({ target, backend, manifest, cle }) {
   const identifiantVolume = manifest.volume?.id ?? null;
   if (identifiantVolume === null) return null;
-  if (typeof target.poserLaRacineInitiale !== "function") return null;
+  if (typeof target.poserLaRacineInitiale !== "function") {
+    throw new TypeError(
+      "migrateVolume : cette cible ne sait pas dater une migration vers v3. Le volume migré serait sans racine, donc REFUSÉ à toute ouverture — et sans remède, puisque son manifeste le déclare déjà migré.",
+    );
+  }
   return target.poserLaRacineInitiale({
     brut: backend,
     tailleLogique: manifest.geometry.volumeSize,

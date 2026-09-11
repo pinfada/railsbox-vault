@@ -125,6 +125,8 @@ export class GenerationStore {
    * (#181). OBLIGATOIRE, `null` compris — voir `construireAutorisation`.
    */
   #sansRacine;
+  /** Un voisin d'engagement trouvé alors qu'une racine faisait autorité, et vidé à cette occasion. */
+  #voisinIgnore = false;
   /**
    * PLANCHER de séquence présenté à chaque ouverture de racine.
    *
@@ -406,6 +408,12 @@ export class GenerationStore {
    * le parcours de la charge —, mais il faut bien le poser avant de sceller quoi que ce soit.
    */
   async #recupererDepuisRacine({ racine, chargePresente }) {
+    // Le voisin d'engagement n'a PLUS de rôle dès qu'une racine fait autorité : il n'est pas
+    // consulté, et l'ouverture est normale. Un voisin qui traîne là est donc un reliquat — ou un
+    // geste d'adversaire qui n'obtient rien. On le VIDE et on le publie, plutôt que de l'ignorer en
+    // silence (revue de sécurité de la PR #184, constat 9).
+    this.#voisinIgnore =
+      typeof this.#sansRacine?.ecarter === "function" ? await this.#sansRacine.ecarter() : false;
     this.#sequence = racine.sequence;
     this.#sequenceValidee = racine.sequence;
     this.#generation = racine.generation;
@@ -444,6 +452,7 @@ export class GenerationStore {
   #rapportDe(etat, details) {
     return rapportDuMagasin(
       {
+        voisinIgnore: this.#voisinIgnore,
         volume: this.#volume,
         generation: this.#generation,
         sequence: this.#sequence,

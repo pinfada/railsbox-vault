@@ -394,9 +394,13 @@ export function engagementDepuisJson(json, descripteur) {
  * **Ce que cette branche laisse, et il faut le dire.** Un adversaire qui réécrit le manifeste d'une
  * archive de volume v3 en manifeste v2 — en accordant `volumeSize` à la longueur du contenu, sans
  * quoi la géométrie refuse — obtient une archive sans engagement qui se restaure. Le volume qu'elle
- * pose n'est pas ouvrable pour autant : son manifeste déclare v2, et `openVolumeForWrite` refuse par
- * `VAULT_MANIFEST_MIGRATION_REQUIRED`. Ce que cet adversaire gagne est un déni de service qu'il
- * avait déjà — il tenait l'archive.
+ * pose n'est pas ouvrable pour autant, et DEUX refus le tiennent, chacun sur son chemin : la
+ * restauration ne dépose AUCUN voisin d'engagement, si bien qu'une ouverture directe du volume est
+ * refusée par `VAULT_STORAGE_VOLUME_SANS_RACINE` — c'est celui qui tient le fond, et il tombe avant
+ * tout clair ; et sur le chemin du produit, la garde de manifeste vient en AMONT et refuse par
+ * `VAULT_MANIFEST_MIGRATION_REQUIRED` avant même d'ouvrir. La première rédaction ne nommait que le
+ * second (constat 8 de la revue de sécurité de la PR #184). Ce que cet adversaire gagne est un déni
+ * de service qu'il avait déjà — il tenait l'archive.
  */
 function exigerEngagementNul(header, manifest) {
   if (manifest.formatVersion >= FORMAT_VOLUME_V3) {
