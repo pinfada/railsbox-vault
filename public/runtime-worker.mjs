@@ -50,7 +50,12 @@ import {
   enveloppeDeMessage,
   sansCapacite,
 } from "/src/coquille/contrat-de-messages.mjs";
-import { compteRenduPublie, demarrerLaVm } from "/src/coquille/application-de-reference.mjs";
+import {
+  compteRenduPublie,
+  demarrerLaVm,
+  lireLeDescripteur,
+} from "/src/coquille/application-de-reference.mjs";
+import { reprendreSiSignatureConfirmee } from "/src/coquille/reprise-installation.mjs";
 import { constaterLExclusivite } from "/src/coquille/exclusivite-du-volume.mjs";
 import { exigerLeBackend } from "/src/coquille/cycle-de-vie.mjs";
 import { DELAI_BATTEMENT_MS } from "/src/coquille/moyens-de-deverrouillage.mjs";
@@ -243,6 +248,9 @@ async function surMessagePrivilegie(event) {
   }
   if (decode.type === TYPES_PRIVILEGIES.application) {
     return demarrerLApplication(decode.message, correlation);
+  }
+  if (decode.type === TYPES_PRIVILEGIES.reprendreInstallation) {
+    return reprendreLInstallationGeste(correlation);
   }
   if (decode.type === TYPES_PRIVILEGIES.fermeture) {
     return fermerLeCoffre(decode.message, correlation);
@@ -735,6 +743,34 @@ async function demarrerLApplication(message, correlation) {
     barrieres: interne.barrieres,
     ...compteRenduPublie(demarrage.compte),
   });
+}
+
+/**
+ * REPREND une installation interrompue (#173, ADR 0037) : un SEUL point d'entrée depuis le canal
+ * privilégié, qui REVÉRIFIE la signature lui-même avant d'agir — `reprendreSiSignatureConfirmee`
+ * refuse SANS rien retirer si un manifeste est apparu entre-temps ou si la signature ne tient plus.
+ *
+ * Même garde d'ordre que le démarrage : ce geste ne s'exécute que sur un backend OUVERT, et jamais
+ * pendant que l'application tourne déjà — reprendre sous elle détruirait un volume EN SERVICE.
+ */
+async function reprendreLInstallationGeste(correlation) {
+  exigerLeBackend({ etatDuVolume: interne.etat });
+  if (interne.application !== null) {
+    const erreur = new Error("L'application tourne déjà : il n'y a rien à reprendre.");
+    erreur.code = CODES_REFUS_COQUILLE.etapeHorsOrdre;
+    throw erreur;
+  }
+  const lu = await lireLeDescripteur();
+  if (!lu.present) {
+    return repondre(TYPES_PRIVILEGIES.reprendreInstallationReponse, correlation, {
+      reprise: false,
+      motif: lu.motif,
+    });
+  }
+  const resultat = await enBattant(correlation, () =>
+    reprendreSiSignatureConfirmee({ descripteur: lu.descripteur, cleDeVolume }),
+  );
+  return repondre(TYPES_PRIVILEGIES.reprendreInstallationReponse, correlation, resultat);
 }
 
 // --- Étape 7 : la fermeture propre ----------------------------------------------------------------

@@ -7,9 +7,24 @@
 // c'est un bouton, un geste explicite de l'utilisateur (ADR 0037), sur le modèle du bouton
 // « Rouvrir le coffre » de #171 — jamais automatique, pour la même raison : redemander le geste à
 // la place de l'utilisateur est l'option que l'ADR 0030 range dans les alternatives rejetées.
+//
+// DEUX fonctions, à deux niveaux de confiance : `reprendreLInstallation` EXÉCUTE, sans rien vérifier
+// — elle sert de brique à qui a déjà vérifié ; `reprendreSiSignatureConfirmee` est le SEUL point
+// d'entrée que le Worker de confiance atteint depuis le canal privilégié (#173, ADR 0037), et elle
+// revérifie la signature elle-même, sous sa propre exclusivité, juste avant d'agir : un clic n'est
+// pas une preuve que rien n'a changé depuis que le bouton a été montré.
 
-import { NOM_DU_VOLUME_APPLICATIF, installerSiNecessaire } from "./application-de-reference.mjs";
-import { removeOpfsVolume } from "../vm/opfs-sync-access.mjs";
+import {
+  NOM_DU_VOLUME_APPLICATIF,
+  installerSiNecessaire,
+  signatureDInstallationInterrompue,
+} from "./application-de-reference.mjs";
+import {
+  manifestSidecarName,
+  openOpfsSyncAccess,
+  removeOpfsVolume,
+  statOpfsVolume,
+} from "../vm/opfs-sync-access.mjs";
 
 /**
  * REPREND une installation interrompue : retire le volume orphelin ET SES VOISINS
@@ -47,4 +62,56 @@ export async function reprendreLInstallation({
 }) {
   await retirer(NOM_DU_VOLUME_APPLICATIF);
   return installerSiNecessaire({ descripteur, cleDeVolume, ...primitives });
+}
+
+/**
+ * REVÉRIFIE la signature d'une installation interrompue, puis REPREND si — et seulement si — elle
+ * tient encore. Point d'entrée UNIQUE du geste depuis le canal privilégié (#173).
+ *
+ * Deux refus SANS retrait, dans l'ordre :
+ *
+ *  1. un manifeste est présent → l'application est déjà installée, rien à reprendre ;
+ *  2. la signature ne tient pas (`signatureDInstallationInterrompue`) → « autre chose », et ce
+ *     module ne le devine pas : refuser est le seul geste sûr.
+ *
+ * Aucun des deux ne touche un octet. `reprendreLInstallation` n'est appelée qu'au troisième cas, le
+ * seul où la signature est confirmée.
+ *
+ * @param {{ descripteur: object, cleDeVolume: () => Promise<Uint8Array>, observer?: Function,
+ *           openHandle?: Function, retirer?: Function, ouvrir?: Function, dater?: Function,
+ *           verser?: Function, revoquer?: Function, inscrire?: Function }} options
+ * @returns {Promise<{ reprise: boolean, motif?: string, installation?: object }>}
+ */
+export async function reprendreSiSignatureConfirmee({
+  descripteur,
+  cleDeVolume,
+  observer = statOpfsVolume,
+  openHandle = openOpfsSyncAccess,
+  ...primitives
+}) {
+  const nom = NOM_DU_VOLUME_APPLICATIF;
+  const manifesteExistant = await observer(manifestSidecarName(nom));
+  if (manifesteExistant.present) {
+    return { reprise: false, motif: "l'application est déjà installée : rien à reprendre" };
+  }
+  const signature = await signatureDInstallationInterrompue({
+    nom,
+    octetsAnnonces: descripteur.disque.octets,
+    observer,
+    openHandle,
+  });
+  if (!signature.interrompue) {
+    return {
+      reprise: false,
+      motif: `ce n'est pas la signature d'une installation interrompue : ${signature.motif}`,
+    };
+  }
+  const installation = await reprendreLInstallation({
+    descripteur,
+    cleDeVolume,
+    observer,
+    openHandle,
+    ...primitives,
+  });
+  return { reprise: true, installation };
 }

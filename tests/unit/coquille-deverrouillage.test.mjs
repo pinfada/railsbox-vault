@@ -565,6 +565,9 @@ test("TOUTE réponse du canal privilégié est appariable : aucune ne peut reste
       TYPES_PRIVILEGIES.preparationReponse,
       TYPES_PRIVILEGIES.recuperationRendue,
       TYPES_PRIVILEGIES.refus,
+      // Le geste de reprise d'une installation interrompue (#173, ADR 0037) : même exigence, il
+      // répond à une demande de la page, donc ne peut pas rester muet.
+      TYPES_PRIVILEGIES.reprendreInstallationReponse,
     ].sort(),
   );
 
@@ -580,6 +583,7 @@ test("TOUTE réponse du canal privilégié est appariable : aucune ne peut reste
     TYPES_PRIVILEGIES.creerRecuperation,
     TYPES_PRIVILEGIES.application,
     TYPES_PRIVILEGIES.fermeture,
+    TYPES_PRIVILEGIES.reprendreInstallation,
     // Le BATTEMENT n'est la réponse de personne : c'est une poussée, comme l'annonce de barrière.
     // Il porte la corrélation du geste en cours, non pour l'apparier mais pour dire QUELLE attente
     // il prolonge — et la coquille l'ignore si cette corrélation n'est pas en vol.

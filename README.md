@@ -101,6 +101,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0034 — l'archive porte un engagement scellé sous la clé du domaine `archive`, et aucun volume légitime n'est sans racine](docs/decisions/0034-archive-authentifiee-et-racine-initiale.md)
 - [ADR 0035 — le format de volume v4 : deux compteurs dans la racine, et une migration qui rescelle](docs/decisions/0035-format-de-volume-v4-et-migration.md)
 - [ADR 0036 — la page d'enveloppe v2, la clôture du troisième chemin, et un budget enfin exhaustif](docs/decisions/0036-page-d-enveloppe-v2-et-budgets-exhaustifs.md)
+- [ADR 0037 — reprendre une installation interrompue : un bouton, une signature, un seul geste](docs/decisions/0037-reprendre-une-installation-interrompue.md)
 
 ## Licence
 

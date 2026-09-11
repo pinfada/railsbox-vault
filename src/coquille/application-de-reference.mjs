@@ -561,6 +561,29 @@ export function compteRenduPublie(rendu) {
 }
 
 /**
+ * INSTALLE si nécessaire, et TRADUIT le refus « sans manifeste » en résultat plutôt qu'en exception
+ * — extrait de `demarrerLaVm` pour rester sous le plafond de fonction de #93.
+ *
+ * Rend soit le compte rendu BRUT de `installerSiNecessaire` (aucun champ `demarree`), soit
+ * `{ demarree: false, ... }` avec la SIGNATURE (#173) que l'appelant (le Worker) publiera sur le
+ * canal privilégié. Toute AUTRE exception continue de remonter telle quelle.
+ */
+async function installerOuTraduireLeRefus({ descripteur, cleDeVolume }) {
+  try {
+    return await installerSiNecessaire({ descripteur, cleDeVolume });
+  } catch (erreur) {
+    if (erreur?.code !== CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste) throw erreur;
+    return {
+      demarree: false,
+      motif: erreur.message,
+      code: erreur.code,
+      installationInterrompue: erreur.installationInterrompue ?? false,
+      motifDeLaSignature: erreur.motifDeLaSignature ?? null,
+    };
+  }
+}
+
+/**
  * DÉMARRE la machine virtuelle sur le volume applicatif, et rend la poignée de fermeture.
  *
  * Elle ne contrôle PAS l'ordre : c'est le Worker de confiance qui exige un backend ouvert avant
@@ -582,7 +605,8 @@ export async function demarrerLaVm({
   const lu = await lireLeDescripteur();
   if (!lu.present) return { demarree: false, motif: lu.motif };
   const descripteur = lu.descripteur;
-  const installation = await installerSiNecessaire({ descripteur, cleDeVolume });
+  const installation = await installerOuTraduireLeRefus({ descripteur, cleDeVolume });
+  if (installation.demarree === false) return installation;
   // Le module de boot est importé ICI, et non à l'évaluation du Worker de confiance : il POSE la
   // boucle d'ordonnancement de v86 à son évaluation (ADR 0013), et une coquille qui ne démarre
   // aucune application n'a aucune raison de la porter. L'ordre reste juste — la boucle est posée
