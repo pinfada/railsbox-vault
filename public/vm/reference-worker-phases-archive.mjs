@@ -44,7 +44,7 @@ import { ouvrirPourExport } from "/src/vm/export-du-fichier.mjs";
 import { cleDuBanc } from "./cle-du-banc.mjs";
 import {
   EN_TETE_OCTETS,
-  decoderEnTeteV3,
+  decoderEnTeteDeVolume,
   identifiantVolumeEnTexte,
 } from "/src/vm/volume-chiffre-format.mjs";
 import { manifesteDuDescripteur } from "/src/vm/boot-de-reference.mjs";
@@ -129,18 +129,21 @@ async function compteRenduExport({
  * Lit l'IDENTITÉ d'un volume dans son propre fichier : sa taille logique et son identifiant.
  *
  * L'archive décrit le volume qu'elle porte, pas un volume neuf : son identifiant est relu de
- * l'en-tête v3, jamais tiré à l'export (ADR 0016). Avant v3 il n'y a pas d'en-tête, et la taille du
+ * l'en-tête, jamais tiré à l'export (ADR 0016). Avant v3 il n'y a pas d'en-tête, et la taille du
  * fichier EST la taille logique — c'est précisément ce que le format v3 a cessé d'être vrai.
+ *
+ * L'en-tête est lu SOUS LA VERSION QUE LE MANIFESTE DÉCLARE (#182) : la v4 a son propre marqueur,
+ * et lire un v4 en cherchant `VLTVOL03` refuserait un volume parfaitement valide.
  */
 async function identiteDuFichier(brut, formatVersion) {
   if (formatVersion < MIN_VOLUME_FORMAT_VERSION) {
     return { tailleLogique: brut.size(), volume: undefined };
   }
-  const lu = decoderEnTeteV3(await brut.read(0, EN_TETE_OCTETS));
+  const lu = decoderEnTeteDeVolume(await brut.read(0, EN_TETE_OCTETS), { formatVersion });
   if (!lu.valide) {
     throw new ArchiveError(
       ARCHIVE_ERROR_CODES.geometryMismatch,
-      `Export refusé : le volume « ${brut.name} » ne porte pas d'en-tête v3 lisible (${lu.raison}). Une archive décrit le volume qu'elle porte ; ici, on ne sait pas lequel.`,
+      `Export refusé : le volume « ${brut.name} » ne porte pas d'en-tête v${formatVersion} lisible (${lu.raison}). Une archive décrit le volume qu'elle porte ; ici, on ne sait pas lequel.`,
       { volume: brut.name, raison: lu.raison },
     );
   }

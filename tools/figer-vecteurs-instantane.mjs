@@ -16,6 +16,10 @@
 //
 // La clé employée est PUBLIQUE et sans entropie (0x00 à 0x1f) : la même que celle des vecteurs de
 // l'ADR 0015, pour qu'un relecteur n'ait qu'une clé de test à connaître.
+//
+// **Après régénération, passer `npm run format`** : `JSON.stringify` éclate les courts tableaux que
+// Prettier recolle, et `npm run check` contrôle le formatage du dépôt entier, fichiers de vecteurs
+// compris. Les OCTETS ne changent pas pour autant — seule leur mise en page bouge.
 
 import { writeFileSync } from "node:fs";
 

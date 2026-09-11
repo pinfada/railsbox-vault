@@ -340,7 +340,7 @@ test("COUPURE du JOURNAL à chaque inscription : ce qu'il porte encore suffit to
 });
 
 test("la reprise ne relit PAS le volume entier : elle repart du rang journalisé", async () => {
-  const { fichier, disposition } = await volumeV3();
+  const { fichier } = await volumeV3();
   const brut = supportBrut(fichier);
   const suivi = journal();
 

@@ -228,7 +228,10 @@ const STEPS = Object.freeze([
 async function identifiantDuSupport(backend) {
   const octets = await backend.read(0, EN_TETE_OCTETS);
   const version = versionDEnTeteDeVolume(octets);
-  const lu = version === null ? { valide: false } : decoderEnTeteDeVolume(octets, { formatVersion: version });
+  const lu =
+    version === null
+      ? { valide: false }
+      : decoderEnTeteDeVolume(octets, { formatVersion: version });
   if (lu.valide) return identifiantVolumeEnTexte(lu.enTete.identifiantVolume);
   throw new MigrationError(
     MIGRATION_ERROR_CODES.conversionIncoherente,

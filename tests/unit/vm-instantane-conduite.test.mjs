@@ -332,7 +332,7 @@ test("la capture ne consomme AUCUN compteur : sa clé est à usage unique (#182)
     volume: scelle.scellementsCumulesVolume,
     journal: scelle.scellementsCumulesJournal,
   };
-  for (const _ of [0, 1]) {
+  for (const tour of [0, 1]) {
     await capturerInstantane({
       scellement: scelle,
       volume: "donnees",
@@ -340,6 +340,7 @@ test("la capture ne consomme AUCUN compteur : sa clé est à usage unique (#182)
       etat: ETAT,
       support: supportInstantaneDouble(),
     });
+    assert.equal(scelle.scellementsCumulesVolume, avant.volume, `après la capture ${tour + 1}`);
   }
   assert.equal(scelle.scellementsCumulesVolume, avant.volume);
   assert.equal(scelle.scellementsCumulesJournal, avant.journal);
@@ -348,7 +349,7 @@ test("la capture ne consomme AUCUN compteur : sa clé est à usage unique (#182)
 test("deux captures du MÊME état ne partagent pas leur clé : un sel neuf à chaque geste", async () => {
   const scelle = await scellement();
   const sels = [];
-  for (const _ of [0, 1]) {
+  for (const tour of [0, 1]) {
     const support = supportInstantaneDouble();
     await capturerInstantane({
       scellement: scelle,
@@ -358,6 +359,7 @@ test("deux captures du MÊME état ne partagent pas leur clé : un sel neuf à c
       support,
     });
     sels.push(octetsEnHex(support.contenu.slice(148, 180)));
+    assert.equal(sels.length, tour + 1);
   }
   assert.notEqual(sels[0], sels[1], "le sel est TIRÉ, pas dérivé d'un état qui pourrait reculer");
 });

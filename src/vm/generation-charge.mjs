@@ -188,7 +188,8 @@ function ouvrirLaRacine(scellement, racine, entrees, tailleVolume, sequenceMinim
       scellementsCumulesVolume: racine.scellementsCumulesVolume,
       // Présenté seulement quand la racine en porte un : les données associées comptent onze champs
       // à partir de la v4 et dix en deçà, et présenter le champ de trop ferait refuser l'étiquette.
-      ...(racine.scellementsCumulesJournal === null || racine.scellementsCumulesJournal === undefined
+      ...(racine.scellementsCumulesJournal === null ||
+      racine.scellementsCumulesJournal === undefined
         ? {}
         : { scellementsCumulesJournal: racine.scellementsCumulesJournal }),
     },
