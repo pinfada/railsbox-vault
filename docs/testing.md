@@ -1113,9 +1113,26 @@ chacun de ses paliers pris comme point de DÉPART.** `tests/unit/vm-migration-so
 comble le trou, et son v3 n'est pas fabriqué à la main — il est produit par le seul geste du dépôt
 qui en écrive un, la migration v2 → v3. Six épreuves : un v3 avec sa racine de naissance, un v3
 portant une écriture ACQUITTÉE non encore appliquée, une coupure pendant la lecture du journal, et
-les trois cas de #181 appliqués à la source (racine, engagement vérifié, refus). Le scénario E2E de
-migration reçoit lui aussi un palier v3 **qui porte un `.gen`** : ouverture, écriture, fermeture en
-v3 avant le pas v3 → v4.
+les trois cas de #181 appliqués à la source (racine, engagement vérifié, refus).
+
+**Et ce que l'E2E ne peut PAS faire aujourd'hui, mesuré plutôt que tu.** Le palier v3 devait être
+posé dans le scénario de bout en bout — arrêter la chaîne à v3, l'ouvrir, y écrire, la refermer,
+puis migrer vers v4. Il ne l'est pas, et la tentative a été RÉFUTÉE par exécution : arrêter la
+chaîne à v3 change le volume, donc la sauvegarde vérifiée prise du v1 ne le décrit plus
+(`VAULT_MIGRATION_BACKUP_MISMATCH`), et **ce runtime ne sait pas en refaire une** —
+`ouvrirPourExport` ouvre le volume par `openOpfsVolume` dès le format 3, et l'ouverture refuse un
+en-tête v3 en renvoyant à la migration.
+
+Les deux règles se referment donc de nouveau l'une sur l'autre, un cran plus loin que le CRITICAL :
+**un v3 est migrable, à condition de détenir déjà une archive faite par le runtime précédent.** Un
+pas destructif exige une sauvegarde vérifiée, et `assertPreuveDisponible` refuse explicitement qu'un
+consentement nommé en tienne lieu — c'est la correction de la revue de #110, et elle est juste.
+
+Ce n'est pas corrigé ici, et c'est délibéré : ouvrir un chemin d'export pour un format que ce
+runtime n'ouvre pas est une DÉCISION — que déclare le manifeste de l'archive, qui scelle son
+engagement, ce que devient la génération validée que le journal porte encore —, et elle ne s'invente
+pas en fin de chantier. L'état est MESURÉ par la septième épreuve de cette suite, qui rougira le
+jour où ce chemin s'ouvrira.
 
 **Les CAMPAGNES DE MUTATION de #182** — `node tools/muter-gardes-hierarchie-de-cles.mjs` :
 **vingt-huit gardes, vingt-huit mutants tués**, sur onze modules ; table dans l'ADR 0035. Huit de

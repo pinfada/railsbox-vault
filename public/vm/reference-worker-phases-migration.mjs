@@ -129,11 +129,6 @@ export async function phaseMigrate({
   backupArchive = null,
   consent = null,
   interruptAfter = null,
-  // La VERSION VISÉE, facultative : par défaut celle que les attentes déclarent courante. Le
-  // scénario s'en sert pour s'ARRÊTER à un palier — un volume v3 qui porte son journal `.gen` est
-  // un état qu'aucun banc ne fabriquait, et c'est celui que la migration refusait (revue de format
-  // de la PR #186, constat 1).
-  toVersion = null,
   blockBytes = EXPORT_BLOCK_BYTES,
 }) {
   const attentes = attentesDe(manifest);
@@ -150,7 +145,6 @@ export async function phaseMigrate({
       expectations: attentes,
       backup,
       consent,
-      ...(toVersion === null ? {} : { toVersion }),
       // La conversion v2 → v3 SCELLE : elle a besoin de la clé, et le banc la reçoit du harnais
       // sous jeton, comme tout le reste (ADR 0016, décision 6). Aucun chemin du produit n'en
       // fabrique une, et une migration qui en inventerait une chiffrerait le volume sous un secret
