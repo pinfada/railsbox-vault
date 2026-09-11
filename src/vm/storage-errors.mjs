@@ -123,6 +123,20 @@ export const STORAGE_ERROR_CODES = Object.freeze({
    * ici, ce qui est présenté ne tient pas — l'archive ou le volume restauré a été altéré.
    */
   engagementInvalide: "VAULT_STORAGE_ENGAGEMENT_INVALIDE",
+  /**
+   * Une CRÉATION versée hors transaction ne CONFIRME pas ce qu'elle a écrit (#181).
+   *
+   * Le versement d'un disque applicatif a lieu hors transaction, et la datation qui le suit ouvre le
+   * fichier une seconde fois : entre les deux, personne ne tient ce fichier. Le versement rend donc
+   * l'empreinte du fichier qu'il vient d'écrire — prise sous SA propre exclusivité —, et la datation
+   * la confronte à ce qu'elle trouve AVANT d'écrire la racine initiale.
+   *
+   * Ce refus tombe dans les deux cas où la confrontation n'a pas lieu d'être crue : le versement n'a
+   * rendu aucune empreinte — un appelant d'avant cette garde —, ou le fichier trouvé n'est pas celui
+   * qu'il a écrit. Distinct de `engagementInvalide`, qui juge un engagement d'ARCHIVE présenté par
+   * une restauration : ici il n'y a aucune archive, et le remède est de réinstaller, pas de restaurer.
+   */
+  creationNonConfirmee: "VAULT_STORAGE_CREATION_NON_CONFIRMEE",
 });
 
 const KNOWN_CODES = new Set(Object.values(STORAGE_ERROR_CODES));
@@ -201,6 +215,22 @@ export function volumeSansRacine(volume, { chargePresente }) {
     STORAGE_ERROR_CODES.volumeSansRacine,
     `Volume « ${volume} » refusé : aucune racine de génération ne fait autorité, et rien n'autorise à en écrire une. Depuis #181, un volume légitime porte toujours une racine — sa création en écrit une, sa migration aussi, et une restauration en fait écrire une à la première ouverture sur présentation de l'engagement que l'archive portait. Ce volume est donc soit antérieur à cette règle, soit un volume restauré dont le voisin « .engagement » a disparu. Le remède est de le restaurer depuis son archive. Aucun octet n'est lu.`,
     { volume, chargePresente },
+  );
+}
+
+/**
+ * Une CRÉATION versée hors transaction ne CONFIRME pas ce qu'elle a écrit (#181).
+ *
+ * Le message nomme la FENÊTRE, parce que c'est elle qu'il faut comprendre : le versement ferme le
+ * fichier, la datation le rouvre, et l'intervalle n'appartient à personne. Ce que la datation bénit
+ * n'est donc légitime que si le fichier trouvé est encore celui que le versement a écrit — et c'est
+ * l'empreinte, rendue par le versement, qui le dit.
+ */
+export function creationNonConfirmee(volume, detail) {
+  return new StorageError(
+    STORAGE_ERROR_CODES.creationNonConfirmee,
+    `Volume « ${volume} » refusé : la datation de sa création ne peut pas confirmer ce qui a été versé — ${detail} Le versement écrit le fichier hors transaction puis le relâche ; la datation le rouvre, et l'empreinte que le versement a rendue est ce qui relie les deux gestes. Sans elle, dater bénirait des octets que ce produit n'a peut-être pas écrits. L'installation n'est PAS déclarée réussie ; le remède est de la recommencer. Aucun octet n'est lu.`,
+    { volume },
   );
 }
 

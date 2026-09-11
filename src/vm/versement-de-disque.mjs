@@ -19,13 +19,27 @@
  * Rend le nombre d'octets RÉELLEMENT écrits, que l'appelant confronte à la taille annoncée : un flux
  * tronqué ne doit pas produire un volume qui se croit complet.
  *
+ * ## Et l'EMPREINTE de ce qui a été écrit (#181, revue de sécurité de la PR #184)
+ *
+ * Le versement RELÂCHE le fichier, et la datation de création le rouvre : entre les deux, personne
+ * ne le tient. L'empreinte est prise ICI, c'est-à-dire **encore sous l'exclusivité du versement**, et
+ * c'est tout ce qui la distingue d'une relecture quelconque — elle constate ce que CE geste a laissé,
+ * à un instant où aucun tiers n'a pu écrire. `daterLaCreation` la confronte à ce qu'il trouve avant
+ * d'écrire la racine initiale ; sans elle, la datation bénirait des octets sans savoir d'où ils
+ * viennent.
+ *
+ * Un backend qui ne sait pas la calculer — l'ACCÈS BRUT d'un volume au format antérieur, qui n'a ni
+ * en-tête ni région à hacher — rend `null`, et ce chemin-là ne date aucune création.
+ *
  * La fermeture du backend n'est PAS faite ici : elle appartient au `finally` de l'appelant, qui doit
- * fermer même quand le flux échoue.
+ * fermer même quand le flux échoue. L'empreinte, elle, doit être prise AVANT cette fermeture, et
+ * c'est pourquoi elle est prise ici plutôt que laissée à l'appelant.
  *
  * @param {{ write: (offset: number, octets: Uint8Array) => Promise<unknown>,
- *           flush: () => Promise<unknown> }} backend
+ *           flush: () => Promise<unknown>,
+ *           empreinteDuFichier?: () => Promise<string> }} backend
  * @param {string} url
- * @returns {Promise<number>} octets écrits
+ * @returns {Promise<{ ecrits: number, empreinte: string | null }>}
  */
 export async function verserFluxDansVolume(backend, url) {
   const response = await fetch(url, { cache: "no-store" });
@@ -42,5 +56,7 @@ export async function verserFluxDansVolume(backend, url) {
     offset += value.byteLength;
   }
   await backend.flush();
-  return offset;
+  const empreinte =
+    typeof backend.empreinteDuFichier === "function" ? await backend.empreinteDuFichier() : null;
+  return { ecrits: offset, empreinte };
 }

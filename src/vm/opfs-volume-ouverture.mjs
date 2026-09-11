@@ -434,14 +434,31 @@ async function saisirLireEtAllouer({ name, size, cle, identifiantVolume, openHan
  * oubli coûte un refus, jamais un silence. C'est la direction sûre, et elle est écrite ici pour être
  * relue.
  *
+ * ## Ce que ce geste BÉNIT, et ce qui l'y autorise
+ *
+ * Le versement ferme le fichier ; cette datation le rouvre. **L'intervalle n'appartient à personne**,
+ * et un adversaire qui sait écrire dans l'OPFS peut y poser le fichier d'un AUTRE volume : dater le
+ * fichier « tel qu'on le trouve » bénirait alors un état que ce produit n'a jamais produit, sous un
+ * motif — `creation` — qui, lui, ne prouve rien. C'est le constat 1 de la revue de sécurité de la
+ * PR #184, et c'est le CRITICAL de #181 déplacé sur le chemin de la création.
+ *
+ * Ce qui referme la fenêtre est `empreinteVersee` : le versement rend l'empreinte SHA-256 du fichier
+ * qu'il vient d'écrire, prise AVANT de relâcher son exclusivité, et la datation la confronte à ce
+ * qu'elle trouve — `backend.empreinteDuFichier()` — AVANT d'écrire la racine. Sans empreinte, ou sur
+ * une empreinte qui ne concorde pas, le refus est `VAULT_STORAGE_CREATION_NON_CONFIRMEE` et aucune
+ * racine n'est écrite.
+ *
  * ## Il ne peut pas dater autre chose qu'une création
  *
- * Il REFUSE un journal qui porte autre chose que la racine initiale d'une création — une séquence
- * au-delà de zéro, une génération au-delà de zéro, des entrées, ou une charge. Sans cette garde, un
- * appel malencontreux sur un volume en service écarterait une génération validée, c'est-à-dire une
- * écriture acquittée : `SEC-DURABLE-001` l'interdit.
+ * Il EXIGE le journal d'une création qui vient de naître : la racine de naissance PRÉSENTE, séquence
+ * zéro, génération zéro, aucune entrée, aucune charge, aucune racine abîmée. Un journal VIDE est
+ * refusé comme les autres — c'est l'état que laisse une RESTAURATION, pas une création (constat 2 de
+ * la revue de sécurité, constat 1 de la revue de format). Sans cette garde, un appel malencontreux
+ * sur un volume en service écarterait une génération validée, c'est-à-dire une écriture acquittée :
+ * `SEC-DURABLE-001` l'interdit.
  *
  * @param {{ name: string, cle: Uint8Array, identifiantVolume?: string, journal?: BlockJournal,
+ *           empreinteVersee?: string | null,
  *           openHandle?: (name: string) => Promise<FileSystemSyncAccessHandle> }} options
  * @returns {Promise<object>} le rapport d'ouverture, qui publie la racine écrite et son motif
  */
@@ -472,6 +489,7 @@ export async function daterLaCreation({
   cle,
   identifiantVolume,
   journal = new BlockJournal(),
+  empreinteVersee = null,
   openHandle = openOpfsSyncAccess,
 }) {
   await ecarterLeJournalDeCreation(
@@ -486,6 +504,7 @@ export async function daterLaCreation({
     journal,
     openHandle,
     creation: MOTIFS_DE_RACINE_INITIALE.creation,
+    empreinteVersee,
   });
   try {
     return backend.generation.rapport;
@@ -528,6 +547,10 @@ function construireBackend({ name, saisi, scellement, journal, faults, flushDela
  *   `fautesFraicheur` vise les VOISINS de fraîcheur (#19) — la région d'authentification et le
  *   témoin — et il est SÉPARÉ de `faults`, qui vise les gestes du guest : mêler les deux décalerait
  *   les occurrences de la matrice de coupures de #15.
+ *   `empreinteVersee` est l'empreinte SHA-256 du fichier que le VERSEMENT a rendue, et elle n'a de
+ *   sens qu'avec `creation` : elle est ce qui relie le geste qui a écrit le fichier hors transaction
+ *   au geste qui le date, par-dessus la fenêtre où personne ne le tient (#181, revue de sécurité de
+ *   la PR #184).
  * @returns {Promise<OpfsBlockBackend>}
  */
 export async function openOpfsVolume({
@@ -542,6 +565,7 @@ export async function openOpfsVolume({
   openHandle = openOpfsSyncAccess,
   transactionnel = true,
   creation = null,
+  empreinteVersee = null,
   seuilPointDeControle,
 } = {}) {
   assertVolumeLibre(name);
@@ -565,6 +589,7 @@ export async function openOpfsVolume({
     fautesFraicheur,
     transactionnel,
     creation,
+    empreinteVersee,
   });
 
   // La MARQUE en dernier, et depuis #181 après la racine initiale : la création a gagné un geste, et
@@ -596,6 +621,7 @@ async function etablirLaGeneration(
     fautesFraicheur,
     transactionnel,
     creation,
+    empreinteVersee,
   },
 ) {
   const motif = saisi.naissance ? MOTIFS_DE_RACINE_INITIALE.creation : creation;
@@ -607,7 +633,19 @@ async function etablirLaGeneration(
     openHandle,
     seuilPointDeControle,
     fautesFraicheur,
-    sansRacine: autorisationSansRacine({ name, motif, backend, cle, openHandle }),
+    // `tientLeFichier` dit ce que l'autorisation a le droit de croire sans rien vérifier : une
+    // NAISSANCE vient d'allouer et de sceller ce fichier sous CETTE exclusivité. Une datation de
+    // création, non — le versement l'a relâché avant elle, et c'est `empreinteVersee` qui relie les
+    // deux gestes (revue de sécurité de la PR #184, constat 1).
+    sansRacine: autorisationSansRacine({
+      name,
+      motif,
+      backend,
+      cle,
+      openHandle,
+      empreinteVersee,
+      tientLeFichier: saisi.naissance,
+    }),
   };
   if (transactionnel) return installerGenerationOuFermer(backend, generation);
   if (saisi.naissance) return racineInitialeHorsTransaction(backend, generation);
