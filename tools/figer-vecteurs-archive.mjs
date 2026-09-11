@@ -37,6 +37,18 @@
 // Le SEL et le NONCE de l'engagement sont FIGÉS ici et PUBLIÉS : un vecteur reproductible est, par
 // définition, un vecteur dont l'aléa est écrit noir sur blanc. Le produit, lui, les tire.
 //
+// ## DEUX archives sont figées, et la seconde n'a pas d'engagement (#181, revue de format de #184)
+//
+// Une archive v3 peut décrire un volume ANTÉRIEUR à v3 : un fichier brut, non chiffré, sans
+// identifiant de volume, donc sans rien à engager. Elle déclare alors `"engagement": null`,
+// EXPLICITEMENT — et un champ absent est refusé, comme pour `recovery`. C'est ce qui garde possible
+// la sauvegarde que l'ADR 0011 exige AVANT une migration v2 → v3, et c'est une forme de format
+// persistant, contractuelle dans les deux sens : le produit l'écrit et l'exige.
+//
+// Elle n'était figée nulle part, si bien que `tools/verifier-vecteurs.mjs` — l'instrument même du
+// relecteur externe — ne pouvait pas la dériver de la spécification. Le second vecteur ci-dessous
+// la fige. Il ne touche à AUCUN octet du premier.
+//
 // Les clés employées sont PUBLIQUES et volontairement sans entropie. Aucun secret n'entre ici.
 
 import { writeFileSync } from "node:fs";
@@ -411,6 +423,54 @@ async function pages() {
 }
 
 /**
+ * Le CONTENU d'un volume ANTÉRIEUR à v3 : un fichier BRUT, ni en-tête, ni région, ni secteur scellé.
+ *
+ * Il est délibérément court et d'un autre motif que `CONTENU` : deux vecteurs qui se ressembleraient
+ * à l'octet ne diraient pas lequel des deux une vérification a relu.
+ */
+const CONTENU_ANTERIEUR = Uint8Array.from({ length: 1024 }, (_, index) => (index * 11 + 5) % 256);
+
+/** Taille LOGIQUE du volume antérieur. En deçà de v3, le fichier EST le volume : les deux coïncident. */
+const TAILLE_LOGIQUE_ANTERIEURE = CONTENU_ANTERIEUR.byteLength;
+
+/**
+ * Pose l'ARCHIVE d'un volume ANTÉRIEUR à v3 : `engagement` NUL, `recovery` NUL, manifeste v2.
+ *
+ * Trois nullités, et aucune n'est un oubli. Un volume v2 n'est pas chiffré : il n'a ni identifiant,
+ * ni clé, donc rien à engager — `engagement` vaut `null`, EXPLICITEMENT, et la restauration refuse
+ * un champ absent comme elle refuse un champ non nul sur ce manifeste-là. Il n'a pas non plus de
+ * moyen de récupération embarqué, et `recovery` suit la règle de l'ADR 0027 : nul, jamais absent.
+ *
+ * **Cette archive n'est PAS authentifiée**, et c'est écrit au § 7.5 : la restauration ne dépose aucun
+ * voisin d'engagement, et le volume qu'elle pose est refusé à l'ouverture tant que la migration v2 →
+ * v3 n'a pas eu lieu. Ce que le vecteur fige est la FORME, pas une promesse d'intégrité.
+ */
+function poserArchiveAnterieure({ manifeste, digestContenu }) {
+  const enTete = {
+    magic: MARQUEUR_EN_TETE,
+    archiveFormatVersion: VERSION_ARCHIVE,
+    content: {
+      algorithm: manifeste.identity.algorithm,
+      digest: digestContenu,
+      length: CONTENU_ANTERIEUR.byteLength,
+      consistency: { kind: "handle-exclusif", detail: "vecteur figé de l'ADR 0027" },
+    },
+    recovery: null,
+    engagement: null,
+    manifest: manifeste,
+  };
+  const octetsEnTete = encodeur.encode(JSON.stringify(enTete));
+  const archive = new Uint8Array(
+    PREAMBULE_OCTETS + octetsEnTete.byteLength + CONTENU_ANTERIEUR.byteLength,
+  );
+  archive.set(encodeur.encode(MARQUEUR_ARCHIVE), 0);
+  new DataView(archive.buffer).setUint32(8, octetsEnTete.byteLength, false);
+  archive.set(octetsEnTete, PREAMBULE_OCTETS);
+  archive.set(CONTENU_ANTERIEUR, PREAMBULE_OCTETS + octetsEnTete.byteLength);
+  return { enTete, octetsEnTete, archive };
+}
+
+/**
  * Pose l'ARCHIVE entière : préambule, en-tête JSON, contenu, section de récupération.
  *
  * L'ordre des champs de l'en-tête est celui que l'ADR 0027 fixe — `magic`, `archiveFormatVersion`,
@@ -484,6 +544,21 @@ async function main() {
     digestContenu,
     page: trois.embarquee.octets,
     engagement,
+  });
+
+  // La SECONDE archive : un volume ANTÉRIEUR à v3, donc sans engagement. Elle ne partage rien avec
+  // la première que la disposition du conteneur.
+  const digestAnterieur = empreinte(CONTENU_ANTERIEUR);
+  const manifesteAnterieur = createManifest({
+    formatVersion: 2,
+    runtime: { version: "0.1.0", artifact: null, minWriter: "0.1.0" },
+    app: { id: "railsbox-vault-reference", version: "1.0.0" },
+    volumeSize: TAILLE_LOGIQUE_ANTERIEURE,
+    identity: { algorithm: "sha-256", digest: digestAnterieur },
+  });
+  const poseAnterieure = poserArchiveAnterieure({
+    manifeste: manifesteAnterieur,
+    digestContenu: digestAnterieur,
   });
 
   const document = {
@@ -571,11 +646,27 @@ async function main() {
       empreinteDuContenu: digestContenu,
       hex: octetsEnHex(pose.archive),
     },
+    archiveDeVolumeAnterieur: {
+      commentaire:
+        "Une archive v3 d'un volume ANTÉRIEUR à v3 (§ 7.5) : le contenu est un fichier BRUT, le manifeste déclare v2, et l'en-tête porte « engagement: null » et « recovery: null » — EXPLICITEMENT, jamais absents. Elle N'EST PAS authentifiée : la restauration ne dépose aucun voisin d'engagement, et l'ouverture du volume posé est refusée tant que la migration v2 → v3 n'a pas eu lieu. C'est ce qui garde possible la sauvegarde que l'ADR 0011 exige AVANT de migrer.",
+      volume: {
+        formatVersion: 2,
+        tailleLogique: TAILLE_LOGIQUE_ANTERIEURE,
+        tailleFichier: CONTENU_ANTERIEUR.byteLength,
+        motifDuContenu: "octet i = (i * 11 + 5) mod 256",
+      },
+      enTete: poseAnterieure.enTete,
+      longueurEnTete: poseAnterieure.octetsEnTete.byteLength,
+      offsetDuContenu: PREAMBULE_OCTETS + poseAnterieure.octetsEnTete.byteLength,
+      longueurTotale: poseAnterieure.archive.byteLength,
+      empreinteDuContenu: digestAnterieur,
+      hex: octetsEnHex(poseAnterieure.archive),
+    },
   };
 
   writeFileSync(DESTINATION, `${JSON.stringify(document, null, 2)}\n`, "utf8");
   process.stdout.write(
-    `Archive v3 de ${pose.archive.byteLength} octets figée dans ${DESTINATION.pathname}\n`,
+    `Archive v3 de ${pose.archive.byteLength} octets et archive v3 d'un volume antérieur de ${poseAnterieure.archive.byteLength} octets figées dans ${DESTINATION.pathname}\n`,
   );
 }
 
