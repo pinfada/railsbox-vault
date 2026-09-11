@@ -83,8 +83,10 @@ sont mesurés ; aucun ne repose plus sur la vigilance d'une revue.
 
 ### Fichiers
 
-`tests/unit/taille-des-fichiers.test.mjs` mesure tout `src/` et `public/vm/`, en comptant les lignes
-comme `wc -l` les compte. Il oppose **deux** seuils, et il en faut deux :
+`tests/unit/taille-des-fichiers.test.mjs` mesure tout `src/` et `public/` (#175, 11/09/2026 — avant
+cette date, seul `public/vm/` était couvert : `public/main.mjs` a atteint 1 022 lignes sans qu'aucun
+cliquet le voie), en comptant les lignes comme `wc -l` les compte. Il oppose **deux** seuils, et il
+en faut deux :
 
 - **800 lignes — plafond**, sans exception ni liste : un fichier qui l'atteint se scinde ;
 - **700 lignes — alerte** : un fichier au-delà est inscrit dans `SOUS_SURVEILLANCE` avec sa taille
@@ -94,6 +96,36 @@ Un plafond seul se découvre trop tard — le jour où il refuse, c'est au milie
 avait besoin de place. #93 a trouvé trois fichiers à 789, 791 et 798 lignes : la convention n'avait
 pas été violée, elle avait été **atteinte**, ce qui revient au même à l'évolution suivante. Ils sont
 scindés, et `SOUS_SURVEILLANCE` est vide.
+
+Un fichier peut aussi être **hors périmètre** (`HORS_PERIMETRE`) : une exclusion documentée, datée
+et motivée, réservée au cas où élargir une racine fait rougir un fichier pour une raison qui
+n'appartient pas à la tranche qui élargit. C'est le cas de `public/runtime-worker.mjs` depuis #175 :
+il dépassait déjà le plafond avant que `public/` rejoigne les racines mesurées, et le scinder —
+c'est le Worker de confiance, ADR 0028 — est un chantier de sécurité à part, pas une conséquence de
+cette tranche.
+
+### La page BRANCHE, `src/coquille/` DÉCIDE (#175, 11/09/2026)
+
+`public/main.mjs` portait à lui seul 1 022 lignes : le canal privilégié et le Worker de confiance,
+la frontière applicative, le cycle de démarrage et le verrouillage. #175 l'a scindé en quatre
+modules de BRANCHEMENT sous `public/coquille/` — un par sujet (`canal-de-confiance.mjs`,
+`frontiere-applicative.mjs`, `cycle-de-la-page.mjs`, `verrouillage-et-fins-d-onglet.mjs`) —,
+assemblés par `public/main.mjs`, qui n'est plus qu'un point d'assemblage.
+
+La règle qui en résulte, et qui s'applique à toute évolution future de ce périmètre :
+
+- **la page BRANCHE.** `public/coquille/*.mjs` relie des événements (`message`, `error`, un geste de
+  l'utilisateur) à des appels vers `src/coquille/`, et publie ce qui en résulte dans le relevé. Elle
+  ne décide d'aucun refus, d'aucune conduite après une mort ou un verrouillage, d'aucune forme de
+  message : ce sont des DÉCISIONS, et elles vivent toutes dans `src/coquille/`, seul périmètre que
+  les campagnes `tools/muter-gardes-*` éprouvent (une garde écrite dans la page ne serait éprouvable
+  que par un navigateur, jamais par une campagne de mutation) ;
+- **les quatre modules de branchement ne s'importent pas entre eux.** Ils ne se parlent que par le
+  RELEVÉ public (`rapport`, partagé par référence) et par le petit pont de fonctions que
+  `public/main.mjs` assemble, au fur et à mesure que chaque module existe ;
+- **la page est COMPTÉE comme le reste** : `public/` entier est désormais dans `RACINES` du cliquet
+  de taille ci-dessus, et `tests/unit/publication-arborescences.test.mjs` exige que toute surface
+  neuve soit publiée ou exclue, avec son motif.
 
 ### Fonctions
 
