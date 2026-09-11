@@ -539,8 +539,27 @@ export class Scellement {
    * Le compte des entrées et la longueur de charge sont DÉRIVÉS par le modèle, jamais reçus d'ici :
    * une racine qui annoncerait autre chose que ce qu'elle scelle serait une troncature signée par
    * son propre producteur.
+   *
+   * ## Le TÉMOIN est RÉSERVÉ dans le compteur publié (#182, revue de sécurité de la PR #186, n° 1)
+   *
+   * Le témoin de fraîcheur est scellé sous CETTE clé, et il l'est APRÈS la racine — un ordre que
+   * l'ADR 0019 impose et qu'on ne retourne pas : un témoin en avance refuserait un volume intact.
+   * La racine publiait donc le compteur d'AVANT son propre scellement, et la reprise y ajoutait un
+   * cran pour la racine ; le témoin de la dernière racine d'une session n'était publié nulle part,
+   * et jamais rattrapé. L'écart croissait d'exactement UN par ouverture, sans borne, **sur le chemin
+   * transactionnel ordinaire** — c'est-à-dire que « le compteur d'une clé compte toutes les
+   * invocations sous elle » était faux du chemin le plus banal.
+   *
+   * Le remède est de RÉSERVER : quand un témoin suit, la racine publie un cran de plus. Réserver
+   * plutôt que publier après coup est la direction sûre — une coupure entre la racine et le témoin
+   * laisse un compteur qui SUR-compte d'une unité, jamais qui sous-compte, et un budget qui
+   * sur-compte ne rend rien de faux.
    */
-  async scellerRacine({ sequence, generation, tailleVolume }, entrees, { sequencePrecedente }) {
+  async scellerRacine(
+    { sequence, generation, tailleVolume },
+    entrees,
+    { sequencePrecedente, temoinSuit = false },
+  ) {
     this.#exigerLeDroitDeSceller("sceller une racine");
     const scelle = await traduisant({ volume: this.#volume, sequence, generation }, () =>
       scellerRacineSousNonce({
@@ -551,7 +570,7 @@ export class Scellement {
           sequence,
           generation,
           tailleVolume,
-          scellementsCumulesVolume: this.#budgetVolume.consomme,
+          scellementsCumulesVolume: this.#budgetVolume.consomme + (temoinSuit ? 1 : 0),
           ...(racinePorteDeuxCompteurs(this.#formatVersion)
             ? { scellementsCumulesJournal: this.#budgetJournal.consomme }
             : {}),
@@ -602,13 +621,19 @@ export class Scellement {
   }
 
   /**
-   * La clé d'UNE capture. En v3 il n'y en a pas : la capture est scellée sous la clé de volume,
-   * c'est-à-dire sous la DEK, et le sel rendu est vide.
+   * La clé d'UNE capture, et le REFUS quand le format n'a pas ce domaine.
+   *
+   * Un volume antérieur à la v4 n'a pas de clé maîtresse, donc pas de domaine `instantane` : le
+   * geste est REFUSÉ, et il l'est par un code qui nomme cela — `DOMAINE_ABSENT_DU_FORMAT`. Il
+   * rendait `LECTURE_SEULE` jusqu'à la revue de la PR #186, qui a relevé les deux erreurs que cela
+   * faisait : la session en question a le droit de sceller (elle scelle tout le reste), et le refus
+   * tombe aussi sur une OUVERTURE d'instantané, qui ne scelle rien. Le remède, surtout, n'est pas
+   * celui que `LECTURE_SEULE` annonce : ici il faut MIGRER, pas rouvrir autrement.
    */
   async #cleDUneCapture(sel) {
     if (this.#materiauMaitre === null) {
       throw new StorageError(
-        STORAGE_ERROR_CODES.lectureSeule,
+        STORAGE_ERROR_CODES.domaineAbsentDuFormat,
         `Le volume « ${this.#volume} » est au format v${this.#formatVersion} : il n'a pas de clé maîtresse, donc pas de domaine « instantane ». Depuis le format v4, une capture est scellée sous une clé à usage unique dérivée de la DEK, et le fichier d'instantané porte son sel (ADR 0033, décision 3). Une capture d'un volume antérieur n'a pas d'équivalent : un instantané est un état de REPRISE, écarté dès qu'il est consommé ou périmé, et rien ne le migre.`,
         { volume: this.#volume, formatVersion: this.#formatVersion, geste: "instantane" },
       );

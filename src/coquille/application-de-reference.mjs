@@ -278,6 +278,7 @@ export async function installerSiNecessaire({
     nom,
     identifiantVolume: verse.identifiantVolume,
     empreinteVersee: verse.empreinte,
+    scellementsVerses: verse.scellements,
   });
   // DERNIER geste : le volume devient identifié, donc ouvrable en écriture. Tout ce qui précède
   // laisse un volume ANONYME, et c'est ce qui rend une installation interrompue reconnaissable.
@@ -344,6 +345,10 @@ async function verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, o
       identifiantVolume: backend.identifiantVolume,
       ecrits: typeof verse === "number" ? verse : verse.ecrits,
       empreinte: typeof verse === "number" ? null : (verse.empreinte ?? null),
+      // Ce que le versement a CONSOMMÉ sous la clé du volume. Un versement d'avant cette garde n'en
+      // rend pas, et la datation retombera alors sur les compteurs de la racine de naissance : elle
+      // SOUS-comptera, comme avant, plutôt que de rendre un nombre inventé.
+      scellements: typeof verse === "number" ? null : (verse.scellements ?? null),
     };
   } finally {
     await backend.close();
@@ -379,10 +384,17 @@ async function daterLaCreationDuVolume({
   nom,
   identifiantVolume,
   empreinteVersee,
+  scellementsVerses = null,
 }) {
   const cle = await cleDeVolume();
   try {
-    return await dater({ name: nom, cle, identifiantVolume, empreinteVersee });
+    return await dater({
+      name: nom,
+      cle,
+      identifiantVolume,
+      empreinteVersee,
+      scellementsVerses,
+    });
   } finally {
     cle.fill(0);
   }

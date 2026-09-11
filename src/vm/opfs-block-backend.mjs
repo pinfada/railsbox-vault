@@ -47,7 +47,8 @@ const EMPREINTE_BLOC_OCTETS = 4 * 1024 * 1024;
 export const GENERATION_HORS_TRANSACTION = 0;
 
 export { SECTOR_SIZE, V86_BLOCK_SIZE };
-export { daterLaCreation, openOpfsVolume } from "./opfs-volume-ouverture.mjs";
+export { openOpfsVolume } from "./opfs-volume-ouverture.mjs";
+export { daterLaCreation } from "./opfs-datation-de-creation.mjs";
 
 /** Octets réellement traités par une faute programmée, sans jamais dépasser la demande. */
 function faultBytes(fault, requested) {
@@ -161,6 +162,22 @@ export class OpfsBlockBackend {
    */
   get identifiantVolume() {
     return this.#chiffre.scellement.volume;
+  }
+
+  /**
+   * Ce que cette session a consommé sous les deux clés à compteur, à l'instant où on le demande.
+   *
+   * Publié pour le VERSEMENT hors transaction (#182, revue de format de la PR #186, constat 2) : la
+   * session qui verse le disque applicatif se ferme sans écrire de racine, si bien que ses
+   * scellements ne vivent QUE dans ce compteur-ci. La datation qui suit doit le recevoir, faute de
+   * quoi elle ne reporte que ceux de la naissance — et perd tout le versement, soit 2^20 sur 2^21
+   * pour un disque de 512 Mio.
+   */
+  get scellementsCumules() {
+    return Object.freeze({
+      volume: this.#chiffre.scellement.scellementsCumulesVolume,
+      journal: this.#chiffre.scellement.scellementsCumulesJournal,
+    });
   }
 
   /** Lecture BRUTE du support, comptes interprétés. Ni faute programmée, ni superposition. */

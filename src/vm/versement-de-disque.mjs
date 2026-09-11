@@ -39,7 +39,8 @@
  *           flush: () => Promise<unknown>,
  *           empreinteDuFichier?: () => Promise<string> }} backend
  * @param {string} url
- * @returns {Promise<{ ecrits: number, empreinte: string | null }>}
+ * @returns {Promise<{ ecrits: number, empreinte: string | null,
+ *                     scellements: { volume: number, journal: number } | null }>}
  */
 export async function verserFluxDansVolume(backend, url) {
   const response = await fetch(url, { cache: "no-store" });
@@ -58,5 +59,10 @@ export async function verserFluxDansVolume(backend, url) {
   await backend.flush();
   const empreinte =
     typeof backend.empreinteDuFichier === "function" ? await backend.empreinteDuFichier() : null;
-  return { ecrits: offset, empreinte };
+  // Le COMPTE des scellements, rendu pour la même raison que l'empreinte : cette session se ferme
+  // sans écrire de racine, et ce qu'elle a consommé sous la clé du volume ne vit nulle part
+  // ailleurs. La datation le REPORTE ; sans lui, elle ne reprendrait que le compteur de la
+  // naissance et perdrait tout le versement (revue de format de la PR #186, constat 2).
+  const scellements = backend.scellementsCumules ?? null;
+  return { ecrits: offset, empreinte, scellements };
 }
