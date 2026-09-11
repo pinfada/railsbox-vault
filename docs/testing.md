@@ -1957,8 +1957,14 @@ Deux fichiers montent désormais dans l'artefact `mesures-reprise`, écrits par
 
 **La propriété qui les rend utiles est qu'ils sont déposés à CHAQUE étape**, et non en fin de
 scénario : un scénario interrompu en laisse un qui s'arrête exactement là où il s'est arrêté. Les
-deux fichiers sont aussi joints au rapport Playwright, et un `--repeat-each` numérote ses passages
-plutôt que de les écraser.
+deux fichiers sont aussi joints au rapport Playwright.
+
+Deux suffixes évitent qu'un relevé en écrase un autre, et ils sont **absents du cas ordinaire** :
+`-t2`, `-t3`… pour la deuxième épreuve et les suivantes d'un même fichier (c'est le cas de
+`migration-volume-versionne.spec.mjs`, qui porte la chaîne entière ET le palier v3), et `-r2`,
+`-r3`… pour les passages d'un `--repeat-each`. Le rang dans le fichier est stable parce que la
+configuration épingle `workers: 1` et `fullyParallel: false` ; le relevé porte de toute façon le
+`titre` de son épreuve.
 
 **Comment lire une occurrence**, dans cet ordre :
 

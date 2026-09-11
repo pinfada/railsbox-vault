@@ -44,6 +44,30 @@ const DOSSIER_RAPPORTS = join(
 );
 
 /**
+ * RANG d'un scénario DANS son fichier, par fichier — `0` pour le premier titre rencontré.
+ *
+ * Deux épreuves vivent dans `migration-volume-versionne.spec.mjs` depuis #182 (la chaîne entière et
+ * le palier v3), et sans ce rang la seconde ÉCRASAIT la chronologie de la première : l'artefact du
+ * run 34652197710 le montre — le relevé de la migration n'y porte que son « ouverture », celle du
+ * palier. Un relevé qui se laisse écraser par son voisin ne date plus rien.
+ *
+ * Le rang est stable parce que la configuration de bout en bout épingle `workers: 1` et
+ * `fullyParallel: false` : les épreuves d'un fichier sont jouées dans l'ordre du fichier, par un
+ * seul processus. `docs/testing.md` le dit, et le relevé porte de toute façon son `titre`.
+ *
+ * @type {Map<string, Map<string, number>>}
+ */
+const RANGS_PAR_FICHIER = new Map();
+
+/** Rend le rang de `titre` dans `fichier`, en l'attribuant à la première rencontre. */
+function rangDuScenarioDansSonFichier(fichier, titre) {
+  if (!RANGS_PAR_FICHIER.has(fichier)) RANGS_PAR_FICHIER.set(fichier, new Map());
+  const rangs = RANGS_PAR_FICHIER.get(fichier);
+  if (!rangs.has(titre)) rangs.set(titre, rangs.size);
+  return rangs.get(titre);
+}
+
+/**
  * `test` étendu : la fixture `context` rend un contexte à profil persistant, sur disque.
  *
  * **Ce que cette fixture honore du bloc `use` du projet, et rien d'autre :** `baseURL` et `headless`,
@@ -78,14 +102,20 @@ export const test = base.extend({
     // paramètre : celle-ci n'en a aucune, et le motif vide est la façon de le dire.
     // eslint-disable-next-line no-empty-pattern
     async ({}, use, testInfo) => {
-      // Le RANG de répétition entre dans le nom : sans lui, `--repeat-each 5` écrase quatre fois
-      // son propre relevé et une campagne de mesure ne laisse que son dernier passage. C'est
-      // exactement ce dont la distribution de #152 avait besoin, et le rang est absent du cas
-      // ordinaire (un seul passage) pour que le nom de fichier reste celui que `docs/testing.md`
-      // annonce.
-      const rang = testInfo.repeatEachIndex > 0 ? `-${testInfo.repeatEachIndex}` : "";
+      // DEUX suffixes, absents l'un comme l'autre du cas ordinaire pour que le nom reste celui que
+      // `docs/testing.md` annonce :
+      //
+      //  - le RANG DANS LE FICHIER, sans quoi la seconde épreuve d'un fichier écrase la chronologie
+      //    de la première (constaté sur `migration-volume-versionne.spec.mjs`, run 34652197710) ;
+      //  - le RANG DE RÉPÉTITION, sans quoi `--repeat-each 5` écrase quatre fois son propre relevé
+      //    et une campagne de mesure ne laisse que son dernier passage — c'est exactement ce dont
+      //    la distribution de #152 avait besoin.
+      const dansLeFichier = rangDuScenarioDansSonFichier(testInfo.file, testInfo.title);
+      const suffixeDuScenario = dansLeFichier > 0 ? `-t${dansLeFichier + 1}` : "";
+      const suffixeDeRepetition =
+        testInfo.repeatEachIndex > 0 ? `-r${testInfo.repeatEachIndex + 1}` : "";
       const chronologie = creerChronologie({
-        scenario: `${basename(testInfo.file, ".spec.mjs")}${rang}`,
+        scenario: `${basename(testInfo.file, ".spec.mjs")}${suffixeDuScenario}${suffixeDeRepetition}`,
         dossier: DOSSIER_RAPPORTS,
       });
       chronologie.etape("ouverture", { titre: testInfo.title, tentative: testInfo.retry });
