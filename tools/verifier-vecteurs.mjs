@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// VÉRIFICATEUR INDÉPENDANT des vecteurs du format de volume v3 (#20, moitié 1).
+// VÉRIFICATEUR INDÉPENDANT des vecteurs du format de volume (#20, moitié 1 ; #182 pour la v4).
 //
 //     node tools/verifier-vecteurs.mjs
 //
@@ -17,7 +17,10 @@
 // deux propriétés, sa relecture, son matériau et sa KEK —, et, depuis #149, la DISPOSITION D'UNE
 // ARCHIVE V2 : son préambule, son en-tête, l'arithmétique de ses sections, ses deux empreintes, et
 // la propriété qui donne son sens à la tranche — la page embarquée ne porte que des emplacements de
-// type 4. Il les confronte ensuite aux octets FIGÉS de `tests/vectors/`.
+// type 4. **Depuis #182, il redérive en outre la HIÉRARCHIE DE CLÉS du format v4** : l'ancrage de la
+// primitive sur le cas 3 de la RFC 5869, l'info de chaque domaine champ par champ, les trente-deux
+// octets que HKDF en tire, et l'ouverture — sous SA propre clé — de ce que le produit a scellé. Il
+// les confronte ensuite aux octets FIGÉS de `tests/vectors/`.
 //
 // **Il n'importe RIEN de `src/`, et c'est toute sa valeur.** Un vérificateur qui appellerait le
 // modèle de référence emprunterait précisément les encodages qu'il prétend contrôler : il
@@ -62,6 +65,21 @@ const SECTEUR = 512;
  * dans les vecteurs : un vérificateur qui croirait le document qu'il vérifie ne vérifierait rien.
  */
 const FORMAT_JOURNAL = 4;
+
+/**
+ * La version de format de volume que #182 introduit, et celle du journal qui l'accompagne.
+ *
+ * Ils sont ÉPINGLÉS ici, comme `FORMAT_JOURNAL` : un vérificateur qui lirait ces nombres dans le
+ * document qu'il vérifie ne vérifierait rien.
+ */
+const FORMAT_VOLUME_V4 = 4;
+const FORMAT_JOURNAL_DEUX_COMPTEURS = 5;
+
+/** Largeur de l'en-tête d'une racine qui publie DEUX compteurs : 202 + 8. */
+const RACINE_ENTETE_V5_OCTETS = 210;
+
+/** Marqueur de l'en-tête d'un volume v4, en ASCII. Le premier discriminant est celui qu'on lit. */
+const MARQUEUR_V4 = "VLTVOL04";
 
 /** Rangs réservés de la fraîcheur (ADR 0019) : les deux plus grands rangs représentables, 2^40 − 1. */
 const RANG_MAX = 2 ** 40 - 1;
@@ -191,8 +209,16 @@ function donneesAssocieesDeRacine({
   nombreEntrees,
   longueurCharge,
   scellementsCumules,
+  scellementsCumulesVolume,
+  scellementsCumulesJournal,
 }) {
-  return concat(
+  // **DIX champs jusqu'à la v3, ONZE à partir de la v4** (ADR 0033, décision 5). Le nombre suit la
+  // VERSION DE FORMAT, qui est elle-même le champ 3 : une racine v3 relue comme une racine v4 ne
+  // vérifie donc pas, et réciproquement. Le nom du premier compteur change aussi — il devient celui
+  // du domaine `volume` —, et ce vérificateur accepte les deux écritures parce que les vecteurs v3
+  // sont FIGÉS et nomment encore l'ancien.
+  const duVolume = scellementsCumulesVolume ?? scellementsCumules;
+  const morceaux = [
     chainePrefixee(DOMAINE_RACINE),
     chainePrefixee(ALGORITHME),
     be(formatVersion, 4),
@@ -202,8 +228,10 @@ function donneesAssocieesDeRacine({
     be(tailleVolume, 8),
     be(nombreEntrees, 4),
     be(longueurCharge, 8),
-    be(scellementsCumules, 8),
-  );
+    be(duVolume, 8),
+  ];
+  if (formatVersion >= FORMAT_VOLUME_V4) morceaux.push(be(scellementsCumulesJournal, 8));
+  return concat(...morceaux);
 }
 
 /** Encodage canonique de la SUITE des entrées d'une génération. L'ordre y est significatif. */
@@ -862,13 +890,13 @@ function relireSaisieDeRecuperation(texte) {
 }
 
 /** HKDF-SHA-256 tel que la RFC 5869 le définit, par `node:crypto`. */
-async function hkdf(materiau, sel, infoOctets) {
+async function hkdf(materiau, sel, infoOctets, octets = 32) {
   const base = await webcrypto.subtle.importKey("raw", materiau, "HKDF", false, ["deriveBits"]);
   return new Uint8Array(
     await webcrypto.subtle.deriveBits(
       { name: "HKDF", hash: "SHA-256", salt: sel, info: infoOctets },
       base,
-      256,
+      octets * 8,
     ),
   );
 }
@@ -1540,6 +1568,294 @@ async function verifierArchiveDeVolumeAnterieur() {
   );
 }
 
+
+// ---------------------------------------------------------------------------------------------
+// 5. Le format de volume v4 et sa HIÉRARCHIE DE CLÉS (#182, ADR 0033).
+//
+// C'est la section qui mesure ce que les précédentes ne pouvaient plus mesurer : depuis la v4, les
+// octets d'un secteur ne suffisent pas, parce que la clé sous laquelle ils sont scellés n'est plus
+// la DEK. Elle redérive donc tout, depuis l'ADR seul, et OUVRE avec sa propre clé ce que le produit
+// a scellé. La clé du produit n'est jamais extraite — elle est NON EXTRACTIBLE —, et pourtant
+// l'égalité est établie : c'est la seule mesure qui vaille.
+// ---------------------------------------------------------------------------------------------
+
+/** L'en-tête v4 d'un volume, posé depuis le § 6.2 de la spécification. Petit-boutiste. */
+function enTeteDeVolumeV4({ tailleLogique, identifiantVolume, scellementComplet }) {
+  const octets = new Uint8Array(512);
+  const secteurs = tailleLogique / SECTEUR;
+  const regionOctets = Math.ceil((secteurs * SCEAU_OCTETS) / SECTEUR) * SECTEUR;
+  octets.set(texteAscii(MARQUEUR_V4), 0);
+  octets.set(le(FORMAT_VOLUME_V4, 4), 8);
+  octets.set(le(SECTEUR, 4), 12);
+  octets.set(le(tailleLogique, 8), 16);
+  octets.set(le(512, 8), 24);
+  octets.set(le(regionOctets, 8), 32);
+  octets.set(le(512 + regionOctets, 8), 40);
+  octets.set(hexEnOctets(identifiantVolume), 48);
+  if (scellementComplet) octets.set(texteAscii("VLTSEAL1"), 64);
+  return octets;
+}
+
+/** La racine SUR DISQUE au format de journal 5 : 210 octets utiles, la réserve à zéro. */
+function racineSurDisqueV5(racine, fraicheurHex) {
+  const octets = new Uint8Array(512);
+  octets.set(texteAscii("VLTGEN01"), 0);
+  octets.set(le(FORMAT_JOURNAL_DEUX_COMPTEURS, 4), 8);
+  octets.set(le(SECTEUR, 4), 12);
+  octets.set(le(racine.entete.sequence, 8), 16);
+  octets.set(le(racine.entete.generation, 8), 24);
+  octets.set(le(racine.entete.tailleVolume, 8), 32);
+  octets.set(le(racine.entete.nombreEntrees, 4), 40);
+  octets.set(le(racine.entete.longueurCharge, 8), 44);
+  octets.set(hexEnOctets(racine.entete.volume), 52);
+  octets.set(le(racine.entete.scellementsCumulesVolume, 8), 68);
+  octets.set(hexEnOctets(racine.nonce), 76);
+  octets.set(hexEnOctets(racine.chiffre), 88);
+  octets.set(hexEnOctets(racine.etiquette), 120);
+  octets.set(hexEnOctets(fraicheurHex), 136);
+  octets.set(le(racine.entete.scellementsCumulesJournal, 8), 202);
+  return octets;
+}
+
+/** Importe une clé AES-GCM depuis les trente-deux octets qu'HKDF a rendus. */
+async function cleDepuisOkm(okm) {
+  return webcrypto.subtle.importKey("raw", okm, "AES-GCM", false, ["decrypt"]);
+}
+
+async function verifierVolumeV4() {
+  const v = lire("tests/vectors/volume-v4.json");
+
+  verifier(
+    "v4 : le document annonce le format de volume 4 et le format de journal 5",
+    v.formatVolume === FORMAT_VOLUME_V4 && v.formatJournal === FORMAT_JOURNAL_DEUX_COMPTEURS,
+    `annoncés ${v.formatVolume} et ${v.formatJournal}`,
+  );
+  verifier(
+    "v4 : l'en-tête d'une racine à deux compteurs fait 210 octets",
+    v.racineEnteteOctets === RACINE_ENTETE_V5_OCTETS,
+    `annoncé ${v.racineEnteteOctets}`,
+  );
+
+  // --- L'ANCRAGE : le cas 3 de la RFC 5869, sel vide et info vide. -------------------------
+  //
+  // Il vient AVANT tout le reste, et c'est délibéré : il dit que l'HKDF de ce vérificateur est
+  // celui du document normatif. Sans lui, redériver les clés du format ne prouverait que l'accord
+  // de ce fichier avec lui-même.
+  const ancrage = v.ancrage;
+  const okmAncrage = await hkdf(
+    hexEnOctets(ancrage.ikm),
+    new Uint8Array(0),
+    new Uint8Array(0),
+    42,
+  );
+  memesOctets(
+    "v4 : ancrage RFC 5869 cas 3 — sel VIDE, info VIDE, l'OKM est celui que la RFC publie",
+    okmAncrage,
+    ancrage.attenduParLaRfc,
+  );
+  verifier(
+    "v4 : le document publie bien l'OKM que la RFC attend, et non le sien",
+    ancrage.okm === ancrage.attenduParLaRfc,
+  );
+
+  // --- L'INFO de chaque domaine, champ par champ, et l'OKM qui en sort. ---------------------
+  const dek = hexEnOctets(v.cleMaitresse.hex);
+  const cles = {};
+  for (const [nom, domaine] of Object.entries(v.derivation.domaines)) {
+    const info = infoDeDomaine({
+      domaine: nom,
+      identifiantVolume: v.derivation.identifiantVolume,
+      versionDeFormat: domaine.versionDeFormatDuDomaine,
+    });
+    memesOctets(
+      `v4 : l'info HKDF du domaine « ${nom} » est celle de l'ADR 0033`,
+      info,
+      domaine.info,
+    );
+    verifier(
+      `v4 : le domaine « ${nom} » est à COMPTEUR, donc son sel est VIDE`,
+      domaine.regime === "compteur" && domaine.sel === "" && domaine.selOctets === 0,
+    );
+    const okmDuDomaine = await hkdf(dek, new Uint8Array(0), info, 32);
+    memesOctets(
+      `v4 : l'OKM du domaine « ${nom} » est celui que le document publie`,
+      okmDuDomaine,
+      domaine.okm,
+    );
+    cles[nom] = await cleDepuisOkm(okmDuDomaine);
+  }
+  verifier(
+    "v4 : les deux domaines d'un MÊME volume tirent des clés DISTINCTES — le cœur de #182",
+    v.derivation.domaines.volume.okm !== v.derivation.domaines.journal.okm,
+  );
+
+  // --- L'EN-TÊTE du fichier. ----------------------------------------------------------------
+  memesOctets(
+    "v4 : l'en-tête de volume est celui du § 6.2, marqueur VLTVOL04 compris",
+    enTeteDeVolumeV4({
+      tailleLogique: v.volume.tailleLogique,
+      identifiantVolume: v.volume.identifiant,
+      scellementComplet: v.enTete.scellementComplet,
+    }),
+    v.enTete.hex,
+  );
+  verifier(
+    "v4 : le marqueur du fichier DIT v4 — un runtime d'avant #182 ne le prend pas pour un v3",
+    octetsEnHex(texteAscii(MARQUEUR_V4)) === v.enTete.hex.slice(0, 16),
+  );
+
+  // --- LE SECTEUR, sous la clé du domaine « volume ». ---------------------------------------
+  const secteur = v.secteur;
+  memesOctets(
+    "v4 : les données associées du secteur sont celles d'un BLOC du volume",
+    donneesAssocieesDeBloc(secteur.identite),
+    secteur.donneesAssociees,
+  );
+  memesOctets(
+    "v4 : le clair publié suit la règle que le document annonce",
+    contenuAttendu(secteur.clair.longueur, secteur.clair.graine),
+    secteur.clair.hex,
+  );
+  const clairDuSecteur = await ouvrir(
+    cles.volume,
+    hexEnOctets(secteur.nonce),
+    donneesAssocieesDeBloc(secteur.identite),
+    hexEnOctets(secteur.chiffre),
+    hexEnOctets(secteur.etiquette),
+  );
+  verifier(
+    "v4 : le secteur OUVRE sous la clé que CE fichier a dérivée — celle du produit reste non extractible",
+    clairDuSecteur !== null,
+  );
+  if (clairDuSecteur !== null) {
+    memesOctets("v4 : et il rend exactement le clair publié", clairDuSecteur, secteur.clair.hex);
+  }
+  const secteurSousLaDek = await ouvrir(
+    await importerCle(v.cleMaitresse.hex),
+    hexEnOctets(secteur.nonce),
+    donneesAssocieesDeBloc(secteur.identite),
+    hexEnOctets(secteur.chiffre),
+    hexEnOctets(secteur.etiquette),
+  );
+  verifier(
+    "v4 : le secteur ne s'ouvre PAS sous la DEK — elle ne scelle plus rien (ADR 0033, décision 1)",
+    secteurSousLaDek === null,
+  );
+  const secteurSousLaCleDuJournal = await ouvrir(
+    cles.journal,
+    hexEnOctets(secteur.nonce),
+    donneesAssocieesDeBloc(secteur.identite),
+    hexEnOctets(secteur.chiffre),
+    hexEnOctets(secteur.etiquette),
+  );
+  verifier(
+    "v4 : le secteur ne s'ouvre PAS sous la clé du JOURNAL — une collision de nonce ne traverse plus",
+    secteurSousLaCleDuJournal === null,
+  );
+  memesOctets(
+    "v4 : le sceau du secteur est celui de 34 octets, génération petit-boutiste",
+    encoderSceau({
+      nonce: hexEnOctets(secteur.nonce),
+      etiquette: hexEnOctets(secteur.etiquette),
+      generation: secteur.identite.generation,
+    }),
+    secteur.sceauHex,
+  );
+
+  // --- L'ENREGISTREMENT, sous la clé du domaine « journal ». --------------------------------
+  const enregistrement = v.enregistrement;
+  memesOctets(
+    "v4 : les données associées de l'enregistrement sont celles d'un ENREGISTREMENT (#143)",
+    donneesAssocieesDEnregistrement(enregistrement.identite),
+    enregistrement.donneesAssociees,
+  );
+  const clairDeLEnregistrement = await ouvrir(
+    cles.journal,
+    hexEnOctets(enregistrement.nonce),
+    donneesAssocieesDEnregistrement(enregistrement.identite),
+    hexEnOctets(enregistrement.chiffre),
+    hexEnOctets(enregistrement.etiquette),
+  );
+  verifier(
+    "v4 : l'enregistrement OUVRE sous la clé du domaine « journal », et sous elle seule",
+    clairDeLEnregistrement !== null,
+  );
+  const enregistrementSousLaCleDuVolume = await ouvrir(
+    cles.volume,
+    hexEnOctets(enregistrement.nonce),
+    donneesAssocieesDEnregistrement(enregistrement.identite),
+    hexEnOctets(enregistrement.chiffre),
+    hexEnOctets(enregistrement.etiquette),
+  );
+  verifier(
+    "v4 : l'enregistrement ne s'ouvre PAS sous la clé du VOLUME — deux magasins, deux clés",
+    enregistrementSousLaCleDuVolume === null,
+  );
+
+  // --- LA RACINE, à onze champs. -------------------------------------------------------------
+  const racine = v.racine;
+  const associeesDeLaRacine = donneesAssocieesDeRacine(racine.entete);
+  memesOctets(
+    "v4 : les données associées de la racine sont celles du § 5.2, ONZE champs",
+    associeesDeLaRacine,
+    racine.donneesAssociees,
+  );
+  verifier(
+    "v4 : elles font 144 octets pour un identifiant de trente-deux caractères",
+    associeesDeLaRacine.byteLength === 144 &&
+      racine.donneesAssocieesOctets === associeesDeLaRacine.byteLength,
+    `${associeesDeLaRacine.byteLength} octets`,
+  );
+  verifier(
+    "v4 : la racine publie DEUX compteurs, et le second est celui du journal",
+    Number.isInteger(racine.entete.scellementsCumulesVolume) &&
+      Number.isInteger(racine.entete.scellementsCumulesJournal),
+  );
+  memesOctets(
+    "v4 : l'empreinte des entrées est celle de l'encodage canonique de la suite",
+    await empreinte(encoderEntrees(racine.entrees)),
+    racine.empreinteEntrees,
+  );
+  const empreinteAuthentique = await ouvrir(
+    cles.volume,
+    hexEnOctets(racine.nonce),
+    associeesDeLaRacine,
+    hexEnOctets(racine.chiffre),
+    hexEnOctets(racine.etiquette),
+  );
+  verifier(
+    "v4 : la racine OUVRE sous la clé du domaine « volume » — c'est elle, l'autorité du volume",
+    empreinteAuthentique !== null,
+  );
+  if (empreinteAuthentique !== null) {
+    memesOctets(
+      "v4 : et elle scelle l'empreinte des entrées, pas autre chose",
+      empreinteAuthentique,
+      racine.empreinteEntrees,
+    );
+  }
+
+  // La MUTATION qui donne son prix aux onze champs : la même racine relue comme une racine de v3 —
+  // dix champs — ne vérifie pas. Le nombre de champs suit la version, et la version est scellée.
+  const commeUneV3 = await ouvrir(
+    cles.volume,
+    hexEnOctets(racine.nonce),
+    donneesAssocieesDeRacine({ ...racine.entete, formatVersion: 3 }),
+    hexEnOctets(racine.chiffre),
+    hexEnOctets(racine.etiquette),
+  );
+  verifier(
+    "v4 : la même racine relue à DIX champs ne vérifie pas — le second compteur est authentifié",
+    commeUneV3 === null,
+  );
+
+  memesOctets(
+    "v4 : la racine SUR DISQUE est celle du § 6.7, second compteur à l'offset 202",
+    racineSurDisqueV5(racine, racine.fraicheurHex),
+    racine.surDisqueHex,
+  );
+}
+
 // ---------------------------------------------------------------------------------------------
 
 async function main() {
@@ -1548,14 +1864,16 @@ async function main() {
   await verifierRecuperation();
   await verifierArchive();
   await verifierArchiveDeVolumeAnterieur();
+  await verifierVolumeV4();
 
   const total = vertes + rouges.length;
   if (rouges.length === 0) {
     process.stdout.write(
       `VERT — ${vertes} vérifications vertes sur ${total}, sans importer une ligne du produit.\n` +
         `Les octets figés de tests/vectors/ sont ceux que docs/format-de-volume-v3.md,\n` +
-        `docs/decisions/0025-moyen-de-recuperation.md et\n` +
-        `docs/decisions/0027-archive-et-ancre-de-version.md décrivent.\n`,
+        `docs/decisions/0025-moyen-de-recuperation.md,\n` +
+        `docs/decisions/0027-archive-et-ancre-de-version.md et\n` +
+        `docs/decisions/0033-hierarchie-de-cles-derivees-par-domaine.md décrivent.\n`,
     );
     return;
   }
