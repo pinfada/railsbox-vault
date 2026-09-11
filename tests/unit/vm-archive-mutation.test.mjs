@@ -46,12 +46,17 @@ test("AUCUN mutant ne survit : chaque garde retirée fait rougir sa preuve", () 
   );
 });
 
-test("la table couvre les DIX modules où la révision et l'engagement se jouent", () => {
+test("la table couvre les DOUZE modules où la révision et l'engagement se jouent", () => {
   // Un compte de mutants ne dit rien de leur RÉPARTITION : dix mutations sur la même ligne feraient
   // un score parfait et ne mesureraient qu'une garde. Ce contrôle relit les FICHIERS visés — les
-  // cinq endroits où la révision de la décision 6 se joue (#149), et les cinq où l'ENGAGEMENT de
+  // cinq endroits où la révision de la décision 6 se joue (#149), et les sept où l'ENGAGEMENT de
   // #181 vit : ce qu'il scelle, sous quelle clé, ce que l'ouverture en fait, ce qu'un volume sans
-  // racine devient, et ce qui autorise la création à écrire sa racine.
+  // racine devient, ce qui autorise la création à écrire sa racine, l'ORDRE des trois gestes de la
+  // récupération sans racine, et la racine initiale que la MIGRATION écrit.
+  //
+  // Les deux derniers sont entrés avec les revues de la PR #184 : l'ordre était déclaré « le
+  // contrat, et il n'est pas négociable » sans qu'aucun mutant ne le défende, et la moitié
+  // « migration » de la règle « aucun volume légitime n'est sans racine » n'était exercée nulle part.
   const fichiers = [...new Set(MUTATIONS.map((mutation) => mutation.fichier))].sort();
   assert.deepEqual(fichiers, [
     "src/vm/archive-engagement.mjs",
@@ -59,10 +64,12 @@ test("la table couvre les DIX modules où la révision et l'engagement se jouent
     "src/vm/derivation/cle-de-domaine.mjs",
     "src/vm/enveloppe-de-recuperation.mjs",
     "src/vm/generation-recuperation.mjs",
+    "src/vm/generation-store.mjs",
     "src/vm/opfs-racine-initiale.mjs",
     "src/vm/opfs-volume-ouverture.mjs",
     "src/vm/ouverture-par-enveloppe.mjs",
     "src/vm/volume-export.mjs",
     "src/vm/volume-import.mjs",
+    "src/vm/volume-migration.mjs",
   ]);
 });
