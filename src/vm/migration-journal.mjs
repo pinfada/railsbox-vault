@@ -23,13 +23,23 @@ export const MIGRATION_JOURNAL_MAGIC = "railsbox-vault/volume-migration";
 /**
  * Version du format du JOURNAL. Comme les autres formats persistants, un entier indépendant.
  *
- * **2 depuis #101.** Le journal porte désormais l'AVANCEMENT de la migration en cours — l'étape
- * franchie et la position atteinte —, parce que la conversion v2 → v3 est la première qui touche
- * les octets et que sa reprise ne peut pas se déduire de l'état du fichier. Un journal v1 lu par ce
- * runtime est refusé plutôt qu'interprété : il décrit une migration qui n'écrivait rien, et lui
- * prêter un avancement serait inventer ce qu'on ignore.
+ * **2 depuis #101.** Le journal porte l'AVANCEMENT de la migration en cours — l'étape franchie et la
+ * position atteinte —, parce que la conversion v2 → v3 est la première qui touche les octets et que
+ * sa reprise ne peut pas se déduire de l'état du fichier. Un journal v1 lu par ce runtime est refusé
+ * plutôt qu'interprété : il décrit une migration qui n'écrivait rien, et lui prêter un avancement
+ * serait inventer ce qu'on ignore.
+ *
+ * **3 depuis #182.** L'avancement porte en outre un TAMPON : les sceaux v3 de la suite de secteurs
+ * que la conversion v3 → v4 est en train d'écraser. La v3 → v4 est la première migration dont les
+ * DEUX états d'un secteur sont des chiffrés — sous deux clés différentes —, si bien que le sceau et
+ * la charge doivent changer ensemble et qu'aucun ordre d'écriture ne suffit à lui seul. Le tampon
+ * est l'écriture ANTICIPÉE qui rend la suite en vol rattrapable ; sans lui, une coupure entre les
+ * sceaux et les charges coûterait jusqu'à 512 secteurs. Voir `migration-v4.mjs`.
+ *
+ * Un journal v2 lu par ce runtime est refusé comme un v1, et pour la même raison : il décrit une
+ * migration d'un autre contrat de reprise.
  */
-export const MIGRATION_JOURNAL_VERSION = 2;
+export const MIGRATION_JOURNAL_VERSION = 3;
 
 // Le nom du journal appartient à la frontière de nommage du support : il est défini une fois, dans
 // `opfs-sync-access.mjs`, et réexporté ici pour les appelants de la migration.
@@ -62,8 +72,8 @@ function empreinteDuCorps(corps) {
  * Sérialise le journal de reprise. Déterministe, comme le manifeste.
  *
  * `progress` porte l'avancement d'une conversion qui écrit : `{ from, to, etape, position,
- * identifiantVolume }`. Il est ABSENT tant qu'aucune étape mutante n'a commencé, et c'est une
- * information en soi — une migration qui n'écrit rien, comme v1 → v2, n'en produit jamais.
+ * identifiantVolume, tampon }`. Il est ABSENT tant qu'aucune étape mutante n'a commencé, et c'est
+ * une information en soi — une migration qui n'écrit rien, comme v1 → v2, n'en produit jamais.
  *
  * ## L'EMPREINTE, et ce qu'elle protège
  *
@@ -160,6 +170,44 @@ function analyserAvancement(progress) {
     etape: progress.etape,
     position: progress.position,
     identifiantVolume: progress.identifiantVolume ?? null,
+    tampon: analyserTampon(progress.tampon),
+  });
+}
+
+/**
+ * Analyse le TAMPON d'écriture anticipée, ou `null` s'il n'y en a pas (#182).
+ *
+ * Il est FACULTATIF — une migration qui n'écrase aucun sceau n'en produit aucun — et REFUSÉ s'il est
+ * présent et malformé, comme tout le reste du journal. La raison est la même qu'ailleurs : reprendre
+ * sur un tampon deviné ferait juger « déchiré » un secteur intact, c'est-à-dire refuser un volume
+ * qu'aucune coupure n'a abîmé.
+ *
+ * Son contenu — des sceaux, c'est-à-dire des nonces et des étiquettes — vit déjà en clair dans la
+ * région d'authentification du volume : le journal n'en révèle rien de plus, et sans la clé il
+ * n'ouvre rien.
+ */
+function analyserTampon(tampon) {
+  if (tampon === undefined || tampon === null) return null;
+  if (typeof tampon !== "object") {
+    throw journalMalforme("écriture anticipée présente mais illisible.");
+  }
+  if (!Number.isInteger(tampon.rang) || tampon.rang < 0) {
+    throw journalMalforme("écriture anticipée présente mais sans rang entier.", {
+      rang: tampon.rang ?? null,
+    });
+  }
+  if (!Number.isInteger(tampon.secteurs) || tampon.secteurs <= 0) {
+    throw journalMalforme("écriture anticipée présente mais sans compte de secteurs.", {
+      secteurs: tampon.secteurs ?? null,
+    });
+  }
+  if (typeof tampon.sceauxV3 !== "string" || !/^[0-9a-f]*$/.test(tampon.sceauxV3)) {
+    throw journalMalforme("écriture anticipée présente mais dont les sceaux ne sont pas lisibles.");
+  }
+  return Object.freeze({
+    rang: tampon.rang,
+    secteurs: tampon.secteurs,
+    sceauxV3: tampon.sceauxV3,
   });
 }
 

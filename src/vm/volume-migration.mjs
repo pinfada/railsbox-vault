@@ -377,11 +377,15 @@ async function muter({ target, backend, chaine, source, toVersion, evidence, cle
 }
 
 /**
- * ÉCRIT la RACINE INITIALE du volume MIGRÉ, quand la chaîne a produit un volume v3 (#181).
+ * ÉCRIT la RACINE INITIALE du volume MIGRÉ, quand la chaîne a produit un volume chiffré (#181, #182).
  *
- * Le critère est ce que le manifeste DÉCLARE : seul un manifeste v3 porte un identifiant de volume,
- * et seul un volume v3 a un journal de génération à dater. Une chaîne qui s'arrête avant v3 n'a rien
- * produit qui puisse porter une racine.
+ * Le critère est ce que le manifeste DÉCLARE : seul un manifeste v3 ou plus porte un identifiant de
+ * volume, et seul un tel volume a un journal de génération à dater. Une chaîne qui s'arrête avant v3
+ * n'a rien produit qui puisse porter une racine.
+ *
+ * **La racine est écrite sous le format que la chaîne a ATTEINT**, et elle vient AVANT le manifeste
+ * migré : un volume déclaré v4 porte toujours de quoi être ouvert. La cible tient cette version — le
+ * manifeste qu'on lui remet la déclare — et non le dernier pas de la chaîne, qui ne la connaît plus.
  *
  * **Une cible qui ne sait pas dater LÈVE**, et elle lève au seuil : `poserLaRacineInitiale` est dans
  * `MEMBRES_CIBLE`, donc le refus tombe AVANT qu'une seule écriture n'ait lieu. La rédaction
@@ -395,13 +399,14 @@ async function daterLeVolumeMigre({ target, backend, manifest, cle }) {
   if (identifiantVolume === null) return null;
   if (typeof target.poserLaRacineInitiale !== "function") {
     throw new TypeError(
-      "migrateVolume : cette cible ne sait pas dater une migration vers v3. Le volume migré serait sans racine, donc REFUSÉ à toute ouverture — et sans remède, puisque son manifeste le déclare déjà migré.",
+      "migrateVolume : cette cible ne sait pas dater une migration vers un format chiffré. Le volume migré serait sans racine, donc REFUSÉ à toute ouverture — et sans remède, puisque son manifeste le déclare déjà migré.",
     );
   }
   return target.poserLaRacineInitiale({
     brut: backend,
     tailleLogique: manifest.geometry.volumeSize,
     identifiantVolume,
+    formatVersion: manifest.formatVersion,
     cle,
   });
 }

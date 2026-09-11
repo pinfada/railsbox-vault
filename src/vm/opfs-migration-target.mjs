@@ -20,7 +20,7 @@ import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
 import { poserLaRacineInitialeSurAccesBrut } from "./opfs-racine-initiale.mjs";
 import { Scellement } from "./scellement.mjs";
 import { SECTOR_SIZE } from "./block-geometry.mjs";
-import { FORMAT_VOLUME_V3 } from "./volume-chiffre-format.mjs";
+import { FORMAT_VOLUME_V4 } from "./volume-chiffre-format.mjs";
 import {
   generationJournalName,
   manifestSidecarName,
@@ -178,13 +178,23 @@ export function createOpfsMigrationTarget(
      *
      * ## Le compteur de scellements, et la réserve qu'il porte
      *
-     * La conversion scelle UN secteur par secteur : le compteur repart donc du nombre de secteurs,
-     * et la racine en consomme un de plus. Une conversion REPRISE peut avoir scellé certains
-     * secteurs deux fois ; le compteur est alors SOUS-ESTIMÉ, exactement comme le § 4.5 l'écrit
-     * déjà de tout ce qui se scelle hors transaction. Le dire vaut mieux que de laisser croire
+     * La conversion scelle UN secteur par secteur : le compteur du domaine `volume` repart donc du
+     * nombre de secteurs, et la racine en consomme un de plus. Celui du domaine `journal` repart de
+     * ZÉRO, et c'est exact : une conversion ne dépose aucun enregistrement.
+     *
+     * Une conversion REPRISE peut avoir scellé certains secteurs deux fois ; le compteur est alors
+     * SOUS-ESTIMÉ, et c'est le seul écart qui subsiste après #182. Il est BORNÉ, ce que l'aveu du
+     * § 4.5 ne l'était pas : il vaut au plus une suite de conversion — 512 secteurs — par coupure,
+     * parce que la reprise ne rejoue que la suite en vol. Le dire vaut mieux que de laisser croire
      * qu'il est exact.
      */
-    async poserLaRacineInitiale({ brut, tailleLogique, identifiantVolume, cle }) {
+    async poserLaRacineInitiale({
+      brut,
+      tailleLogique,
+      identifiantVolume,
+      cle,
+      formatVersion = FORMAT_VOLUME_V4,
+    }) {
       return poserLaRacineInitialeSurAccesBrut({
         name: volume,
         brut,
@@ -193,8 +203,12 @@ export function createOpfsMigrationTarget(
         scellement: await Scellement.ouvrir({
           volume: identifiantVolume,
           cleOctets: cle,
-          formatVersion: FORMAT_VOLUME_V3,
-          scellementsCumules: tailleLogique / SECTOR_SIZE,
+          formatVersion,
+          scellementsCumulesVolume: tailleLogique / SECTOR_SIZE,
+          // Le compteur du JOURNAL repart de zéro, et c'est exact : la conversion ne scelle aucun
+          // enregistrement — elle ne touche que des secteurs et la racine, qui relèvent tous deux du
+          // domaine `volume`. Un volume migré n'a jamais rien déposé sous sa clé de journal.
+          scellementsCumulesJournal: 0,
         }),
       });
     },
