@@ -158,6 +158,12 @@ async function identiteDuFichier(brut, formatVersion) {
  *
  * L'identité vient du fichier lui-même, jamais du descripteur : une archive décrit le volume qu'elle
  * porte, et un identifiant tiré à l'export décrirait un autre volume que celui qu'on copie.
+ *
+ * La CLÉ est celle du banc, c'est-à-dire exactement celle sous laquelle `recupererPuisOuvrirBrut`
+ * vient d'ouvrir le même volume : l'engagement de l'archive (#181) est scellé sous la clé du volume
+ * qu'elle porte, et sous aucune autre. Pour un volume ANTÉRIEUR à v3, le manifeste ne déclare aucun
+ * identifiant et l'engagement vaut `null` — la clé passée est alors ignorée, ce qui est la seule
+ * façon de laisser la SAUVEGARDE de la migration v2 → v3 s'écrire.
  */
 async function verserLArchive({ brut, source, sink, manifest, recovery, blockBytes }) {
   const identite = await identiteDuFichier(brut, manifest.formatVersion ?? MANIFEST_FORMAT_VERSION);
@@ -169,6 +175,7 @@ async function verserLArchive({ brut, source, sink, manifest, recovery, blockByt
       kind: CONSISTENCY_KINDS.exclusiveHandle,
       detail: "volume lu via le handle OPFS exclusif (#6), aucun autre écrivain dans l'origine",
     },
+    cle: cleDuBanc(),
     recovery,
     blockBytes,
   });
