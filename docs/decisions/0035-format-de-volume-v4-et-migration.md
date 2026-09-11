@@ -144,6 +144,34 @@ l'identifiant du volume converti vient alors de l'en-tête du fichier, où la co
 `tests/unit/vm-volume-migration.test.mjs` › « une coupure PENDANT le pas v3 → v4 ne fait pas REFAIRE
 le pas v2 → v3 ».
 
+### La règle de clôture ne tient que DEUX des trois chemins, et le troisième l'a montré
+
+La décision 4 de l'ADR 0033 donne deux conduites à une session qui ne peut pas publier ses compteurs
+: clore par une racine, ou être en LECTURE SEULE. La tranche a d'abord appliqué la seconde à toute
+ouverture hors transaction qui n'est pas une naissance — et le scénario de bout en bout
+`reprise-coquille-boot-froid` l'a réfutée en une exécution : le volume de COQUILLE
+(`public/runtime-worker.mjs`) s'ouvre ainsi et y ÉCRIT un secteur à chaque déverrouillage. Mis en
+lecture seule, le coffre ne se rouvre plus.
+
+**Ce que la réfutation a mis au jour est un fait, pas un défaut introduit** : ce volume sèle sans
+être compté depuis toujours, et sa session suivante repart de zéro. La règle a donc fait exactement
+son travail — elle refuse au lieu de compter à moitié —, et c'est le CHEMIN qui n'a pas de conduite
+disponible.
+
+**Pourquoi l'autre conduite n'est pas livrée ici.** Écrire une racine de clôture sur un volume qui
+en a déjà une demande un geste PUBLIC que `GenerationStore` n'expose pas : `valider()` n'écrit rien
+sur une charge vide, et le vidage qui écrit une racine ne part qu'à la récupération. Ajouter ce
+geste est une décision sur la machine à états TRANSACTIONNELLE, prise pour un appelant qui ne l'est
+pas, sur le chemin de la serrure. Elle revient au mainteneur et elle est portée à **T2b**.
+
+**Ce que la tranche livre à la place** : le mécanisme du refus, éprouvé et sans appelant
+(`Scellement#interdireDeSceller`, `VAULT_STORAGE_LECTURE_SEULE`), et une épreuve qui MESURE l'écart
+au lieu de garder une règle — `tests/unit/vm-cloture-par-racine.test.mjs` › « CHEMIN 3 ». Elle
+constate deux choses : la racine ne bouge pas, et l'écriture hors transaction PÉRIME la fraîcheur de
+la dernière racine. La seconde dit ce que la racine de clôture apporterait : elle rescellerait la
+région du même geste qu'elle publierait les compteurs. Le jour où T2b livre ce geste, cette épreuve
+rougit — et c'est voulu.
+
 ### Dater une création perdait le budget de la création
 
 `daterLaCreation` écarte le journal de la naissance — donc la racine qui publiait les scellements
@@ -174,18 +202,23 @@ unique de chaque capture.
 - **la DEK ne peut pas chiffrer.** Elle est importée en matériau HKDF, et `crypto.subtle.encrypt` la
   rejette par la spécification WebCrypto ;
 - **le budget d'une clé à compteur est celui de CETTE clé**, et plus une somme de compteurs locaux ;
-- **une session qui ne peut pas publier ses compteurs ne scelle pas.**
+- **une session qui ne peut pas publier ses compteurs ne scelle pas** — partout où le mécanisme est
+  employé, c'est-à-dire nulle part dans le produit à ce jour : voir ci-dessus.
 
 **FAIT, mais non garanti :**
 
 - **les deux compteurs sont exacts tant que le support n'a pas reculé.** Ils vivent dans la racine
   et reculent avec elle (§ 9.1, #144). C'est inchangé ;
 - **une migration reprise après coupure peut avoir rescellé une suite deux fois.** L'écart vaut au
-  plus 512 secteurs par coupure. C'est la seule sous-estimation qui subsiste, et elle a une BORNE —
-  ce que l'aveu du § 4.5 n'avait pas.
+  plus 512 secteurs par coupure, et il a donc une BORNE — ce que l'aveu du § 4.5 n'avait pas ;
+- **le volume de COQUILLE scelle encore sans être compté.** Un secteur par déverrouillage, et la
+  session suivante repart du compteur de la racine. C'est le dernier morceau de l'aveu du § 4.5, et
+  il est MESURÉ (« CHEMIN 3 ») plutôt qu'annoncé fermé.
 
 **PAS ENCORE, et c'est T2b :**
 
+- **le geste qui écrit une racine de CLÔTURE sur un volume déjà daté**, sans lequel le volume de
+  coquille ne peut tenir aucune des deux conduites de la décision 4 ;
 - **la page d'enveloppe et la section de récupération sont encore scellées sous la DEK.** La phrase
   « la DEK n'est plus jamais passée à AES-GCM » est donc VRAIE des domaines du volume et FAUSSE du
   reste. Elle est écrite ainsi partout, et le cliquet qui la rendra exacte est celui de T2b.

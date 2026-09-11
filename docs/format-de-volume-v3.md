@@ -275,14 +275,31 @@ typé, jamais lu en clair ».
 > il ne dépend d'aucune transaction. **Le budget d'une clé à usage unique est de 1, et aucune mesure
 > ne peut le rendre faux.**
 >
-> **La règle de CLÔTURE, qui rend les deux compteurs restants exacts.** _Toute session qui scelle
-> sous une clé à compteur clôt par une RACINE qui publie les deux compteurs ; une ouverture qui ne
-> peut pas écrire de racine n'a pas le droit de sceller — elle est en LECTURE SEULE, et un
-> scellement demandé sous ce régime est refusé par `VAULT_STORAGE_LECTURE_SEULE` (§ 10.2)._ Les
-> trois chemins qui s'ouvraient hors transaction closent donc par une racine : la CRÉATION en écrit
-> une avant `VLTSEAL1` (§ 7.1), l'INSTALLATION INITIALE du volume applicatif la réécrit une fois le
-> disque versé, et l'ouverture hors transaction de la coquille est une naissance. Ce qui reste est
-> refusé au lieu d'être compté à moitié. Épreuves : `tests/unit/vm-cloture-par-racine.test.mjs`.
+> **La règle de CLÔTURE, et ce que la v4 en tient — DEUX chemins sur trois.** La règle est celle-ci
+> : _toute session qui scelle sous une clé à compteur clôt par une RACINE qui publie les deux
+> compteurs ; une ouverture qui ne peut pas écrire de racine n'a pas le droit de sceller — elle est
+> en LECTURE SEULE, et un scellement demandé sous ce régime est refusé par
+> `VAULT_STORAGE_LECTURE_SEULE` (§ 10.2)._
+>
+> Deux des trois chemins hors transaction closent par une racine, et c'est mesuré : la CRÉATION en
+> écrit une avant `VLTSEAL1` (§ 7.1), et l'INSTALLATION INITIALE du volume applicatif la réécrit une
+> fois le disque versé — en REPORTANT les compteurs de la racine qu'elle écarte, sans quoi elle
+> perdrait les 2^20 scellements de la création.
+>
+> **Le troisième n'est PAS fermé, et il est nommé** : l'ouverture du volume de COQUILLE par
+> `public/runtime-worker.mjs`. Elle écrit un secteur à chaque déverrouillage, donc la lecture seule
+> la casserait ; et écrire une racine de clôture sur un volume qui en a déjà une demande un geste
+> public que `GenerationStore` n'expose pas — `valider()` n'écrit rien sur une charge vide, et le
+> vidage ne part qu'à la récupération. Ajouter ce geste est une décision sur la machine à états
+> transactionnelle, prise pour un appelant qui ne l'est pas : elle est portée à **T2b**. Ce chemin
+> se comporte donc comme avant #182 — il scelle sans être compté, et la session suivante repart du
+> compteur de la racine.
+>
+> **L'écart est MESURÉ, pas tu** : `tests/unit/vm-cloture-par-racine.test.mjs` › « CHEMIN 3 » écrit
+> par ce chemin, constate que la racine ne bouge pas, et constate en outre qu'une telle écriture
+> PÉRIME la fraîcheur de la dernière racine (§ 6.8) — ce qu'une racine de clôture rescellerait du
+> même geste qu'elle publierait les compteurs. Le jour où T2b livre ce geste, cette épreuve rougit,
+> et c'est voulu.
 >
 > **Ce qui reste vrai, et qui n'est pas corrigé par la séparation des clés** : les deux compteurs
 > vivent toujours dans la racine, donc ils RECULENT avec elle (§ 9.1, constat #144). L'écart entre
@@ -1559,9 +1576,11 @@ L'ordre suivant n'est pas une commodité ; changer un seul de ses pas rendrait u
    — c'est-à-dire un volume REFUSÉ par `VAULT_STORAGE_GENERATION_CORRUPT` alors que ses octets sont
    intacts. Dans l'ordre retenu, les deux interruptions possibles sont sûres.
 
-   **Une ouverture HORS TRANSACTION qui n'est pas une naissance n'écrira aucune racine** : elle est
-   donc en LECTURE SEULE, et tout scellement qu'on lui demande est refusé par
-   `VAULT_STORAGE_LECTURE_SEULE` (#182, § 4.5). C'est la moitié exécutable de la règle de clôture.
+   **Une ouverture HORS TRANSACTION qui n'est pas une naissance n'écrit aucune racine**, et la
+   tranche T2a ne le corrige pas : le § 4.5 dit lequel des trois chemins reste ouvert, pourquoi, et
+   quelle épreuve en MESURE l'écart. Le mécanisme du refus existe et mord
+   (`VAULT_STORAGE_LECTURE_SEULE`, § 10.2) ; ce qui manque est le geste qui permettrait de ne pas
+   l'employer sur ce chemin-là.
 
    **L'engagement est CONSOMMÉ une fois**, jamais vérifié à chaque ouverture : une fois la racine
    initiale écrite, c'est la fraîcheur du § 6.8 qui prend le relais. Le voisin est VIDÉ — zéro
@@ -2491,6 +2510,11 @@ ouverture qui ne peut écrire aucune racine ne publierait ses scellements dans a
 n'a donc pas le droit de sceller, et le refus tombe avant que le modèle ne produise un octet. Le
 remède n'est pas de réessayer : il est d'ouvrir le volume par un chemin qui sait dater, ou de se
 contenter de lire.
+
+**AUCUN chemin du produit ne le lève aujourd'hui**, et il vaut mieux l'écrire que le laisser
+découvrir : le seul candidat est l'ouverture du volume de coquille, qui ÉCRIT (§ 4.5). Ce code est
+donc ÉPROUVÉ et inemployé — l'inverse d'une garde décorative, qui serait employée et ne mordrait
+pas. Il attend son appelant, et T2b le lui donnera.
 
 **`VAULT_STORAGE_BUDGET_DE_CLE` couvre désormais DEUX budgets** — celui du domaine `volume` et celui
 du domaine `journal` — et le code reste UN : le remède est le même des deux côtés, et c'est le

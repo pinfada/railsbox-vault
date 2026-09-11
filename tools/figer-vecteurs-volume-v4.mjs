@@ -61,6 +61,11 @@ import {
 
 const DESTINATION = new URL("../tests/vectors/volume-v4.json", import.meta.url);
 
+// IDENTIFIANT de volume des vecteurs : trente-deux hexadécimaux PUBLICS et déterministes — le même
+// que `tests/vectors/disposition-v3.json` —, choisi pour être reconnaissable à l'œil dans un dump.
+// Ce n'est PAS un secret : un identifiant de volume est écrit en clair dans l'en-tête du fichier
+// (§ 6.2) et dans les données associées de chaque secteur. Un détecteur d'entropie le signale ;
+// c'est un faux positif, et il vaut mieux l'écrire ici que le réexpliquer à chaque revue.
 const VOLUME = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
 const TAILLE_LOGIQUE = 2048;
 const SECTEUR = 512;

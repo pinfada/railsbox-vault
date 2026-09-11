@@ -327,6 +327,14 @@ export class Scellement {
    * C'est la moitié exécutable de la règle de l'ADR 0033, décision 4 : « une ouverture qui ne peut
    * pas écrire de racine est en LECTURE seule ». Le sens unique est voulu — une session peut
    * découvrir qu'elle n'écrira pas de racine, jamais l'inverse.
+   *
+   * **AUCUN chemin du produit ne l'appelle aujourd'hui, et il faut dire pourquoi.** Le seul candidat
+   * est l'ouverture hors transaction du volume de COQUILLE, qui ÉCRIT : la lecture seule le
+   * casserait, et l'autre conduite admise — clore par une racine — demande un geste que
+   * `GenerationStore` n'expose pas encore. Voir `etablirLaGeneration` dans
+   * `opfs-volume-ouverture.mjs` : la question est portée à T2b. Ce mécanisme-ci est donc ÉPROUVÉ et
+   * inemployé, ce qui est l'inverse d'une garde décorative — une garde décorative est employée et
+   * ne mord pas ; celle-ci mord et attend son appelant.
    */
   interdireDeSceller() {
     this.#peutSceller = false;

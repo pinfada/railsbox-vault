@@ -154,11 +154,14 @@ nécessaire, l'ADR 0028 fixe la forme — préfixe `__Host-`, rien sur le domain
   c'est la plate-forme qui refuse. Quatre domaines en descendent par HKDF-SHA-256, propres au
   domaine, au volume et à la version de format : `volume`, `journal`, `instantane` et `archive`.
   Deux volumes sous la même DEK ne partagent donc plus aucune clé, et le compteur d'une clé compte
-  enfin toutes les invocations sous elle. **Ce qui RESTE ouvert** : la page d'enveloppe
-  (`<volume>.cles`) et la section de récupération d'une archive scellent encore sous la DEK. La
-  phrase « la DEK n'est plus jamais passée à AES-GCM » est donc VRAIE des domaines du volume et
-  FAUSSE de ces deux-là ; la tranche **T2b** les livre, avec le cliquet d'inspection de source qui
-  la rendra exacte. Décisions :
+  enfin toutes les invocations sous elle — **sauf sur un chemin, nommé** : le volume de COQUILLE
+  s'ouvre hors transaction et y écrit sans clore par une racine, si bien que ses scellements ne sont
+  publiés dans aucun compteur. L'écart est MESURÉ (`tests/unit/vm-cloture-par-racine.test.mjs` › «
+  CHEMIN 3 ») et porté à T2b, qui doit donner au magasin le geste de clôture qui lui manque. **Ce
+  qui RESTE ouvert par ailleurs** : la page d'enveloppe (`<volume>.cles`) et la section de
+  récupération d'une archive scellent encore sous la DEK. La phrase « la DEK n'est plus jamais
+  passée à AES-GCM » est donc VRAIE des domaines du volume et FAUSSE de ces deux-là ; la tranche
+  **T2b** les livre, avec le cliquet d'inspection de source qui la rendra exacte. Décisions :
   l'[ADR 0033](docs/decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) (la hiérarchie) et
   l'[ADR 0035](docs/decisions/0035-format-de-volume-v4-et-migration.md) (ce que la v4 en livre).
   **Depuis #169, la DURÉE de vie de cette clé dans le Worker de confiance est une propriété ÉPROUVÉE
