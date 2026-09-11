@@ -168,6 +168,8 @@ async function sessionComplete(store) {
     identifiantVolume: IDENTIFIANT_A,
     openHandle: store.openHandle,
     transactionnel: false,
+    // Ce versement sera DATÉ : `daterLaCreation` est sa clôture (#182, T2b).
+    clotureParDatation: true,
   });
   for (let rang = 0; rang < 4; rang += 1) {
     await verse.write(rang * SECTOR_SIZE, secteurDe(0x40 + rang));

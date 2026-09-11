@@ -62,6 +62,10 @@ async function verser(store) {
     identifiantVolume: VOLUME_A,
     openHandle: store.openHandle,
     transactionnel: false,
+    // Ce versement sera DATÉ, et il le déclare : `daterLaCreation` est sa clôture. Sans cette
+    // déclaration, la fermeture écrirait une racine de clôture, et la datation trouverait un
+    // journal « en service » qu'elle refuserait de dater (#182, T2b).
+    clotureParDatation: true,
   });
   try {
     for (let rang = 0; rang < TAILLE / SECTOR_SIZE; rang += 1) {

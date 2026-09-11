@@ -144,7 +144,7 @@ export const MUTATIONS = Object.freeze([
     nom: "une RÉOUVERTURE hors transaction TIENT son magasin pour clore",
     garde: "etablirLaGeneration — `tenirLaClotureHorsTransaction`",
     fichier: OUVERTURE,
-    avant: "  return tenirLaClotureHorsTransaction(backend, generation, saisi.naissance);",
+    avant: "  return tenirLaClotureHorsTransaction(backend, generation, clotureParDatation);",
     apres: "  return undefined;",
     epreuves: [CLOTURE],
   },

@@ -394,7 +394,7 @@ async function marquerLaCreationAchevee(backend, name, handle) {
  * scelle l'empreinte de la région telle qu'elle est à cet instant, et une écriture hors transaction
  * la périme. L'oubli coûte un REFUS à la première ouverture, jamais un silence.
  */
-async function tenirLaClotureHorsTransaction(backend, options, naissance) {
+async function tenirLaClotureHorsTransaction(backend, options, clotureParDatation) {
   let magasin;
   try {
     magasin = await ouvrirGeneration(options);
@@ -402,9 +402,9 @@ async function tenirLaClotureHorsTransaction(backend, options, naissance) {
     await backend.close().catch(() => {});
     throw cause;
   }
-  // Une naissance rend le magasin tout de suite : sa racine INITIALE est écrite, et la datation qui
-  // suit est sa clôture. Une réouverture le TIENT : c'est elle, le chemin 3.
-  if (naissance) {
+  // Un VERSEMENT rend le magasin tout de suite : sa racine INITIALE est écrite, et `daterLaCreation`
+  // est sa clôture. Toute autre session le TIENT.
+  if (clotureParDatation) {
     magasin.close();
     return;
   }
@@ -497,18 +497,13 @@ export async function openOpfsVolume({
   empreinteVersee = null,
   scellementsReportes = null,
   seuilPointDeControle,
+  clotureParDatation = false,
 } = {}) {
   assertVolumeLibre(name);
   if (size !== undefined) assertBlockGeometry(size);
 
   const saisi = await saisirLireEtAllouer({ name, size, cle, identifiantVolume, openHandle });
-  const scellement = await Scellement.ouvrir({
-    volume: saisi.identifiantVolume,
-    cleOctets: cle,
-    formatVersion: FORMAT_VOLUME_V4,
-    scellementsCumulesVolume: scellementsReportes?.volume ?? 0,
-    scellementsCumulesJournal: scellementsReportes?.journal ?? 0,
-  });
+  const scellement = await scellementDeLaSession(saisi, cle, scellementsReportes);
   const backend = construireBackend({ name, saisi, scellement, journal, faults, flushDelay });
   if (saisi.naissance) await scellerLeVolumeNeuf(backend, name);
   await etablirLaGeneration(backend, {
@@ -522,6 +517,7 @@ export async function openOpfsVolume({
     transactionnel,
     creation,
     empreinteVersee,
+    clotureParDatation,
   });
 
   // La MARQUE en dernier, et depuis #181 après la racine initiale : la création a gagné un geste, et
@@ -530,6 +526,23 @@ export async function openOpfsVolume({
 
   reserverVolume(name, backend);
   return backend;
+}
+
+/**
+ * Le SCELLEMENT de la session : la clé du volume, sa version de format, et les compteurs REPORTÉS.
+ *
+ * Les compteurs valent zéro par défaut et ne sont repris d'une racine qu'à la récupération. Un
+ * report EXPLICITE n'existe que pour la datation d'une création, qui reçoit de son versement un
+ * compte que nulle racine ne porte encore (revue de format de la PR #186, constat 2).
+ */
+function scellementDeLaSession(saisi, cle, scellementsReportes) {
+  return Scellement.ouvrir({
+    volume: saisi.identifiantVolume,
+    cleOctets: cle,
+    formatVersion: FORMAT_VOLUME_V4,
+    scellementsCumulesVolume: scellementsReportes?.volume ?? 0,
+    scellementsCumulesJournal: scellementsReportes?.journal ?? 0,
+  });
 }
 
 /**
@@ -572,6 +585,7 @@ async function etablirLaGeneration(
     transactionnel,
     creation,
     empreinteVersee,
+    clotureParDatation,
   },
 ) {
   const motif = saisi.naissance ? MOTIFS_DE_RACINE_INITIALE.creation : creation;
@@ -598,9 +612,11 @@ async function etablirLaGeneration(
     }),
   };
   if (transactionnel) return installerGenerationOuFermer(backend, generation);
-  // Une NAISSANCE hors transaction ne clôt PAS par une racine, et ce n'est pas un oubli : c'est le
-  // VERSEMENT (chemin 2), qui écrit le fichier entier puis se fait DATER par `daterLaCreation`. La
-  // datation est sa clôture — elle publie le compte versé et écarte le journal de création —, et une
-  // racine écrite ici lui ferait trouver un journal « en service » qu'elle refuserait de dater.
-  return tenirLaClotureHorsTransaction(backend, generation, saisi.naissance);
+  // Le VERSEMENT (chemin 2) est le seul à ne PAS clore par une racine, et il le DÉCLARE : il écrit
+  // le fichier entier puis se fait DATER par `daterLaCreation`, qui est sa clôture — elle publie le
+  // compte versé et écarte le journal de création. Une racine écrite ici lui ferait trouver un
+  // journal « en service » qu'elle refuserait de dater. Toute autre session hors transaction clôt,
+  // naissance comprise : une naissance qui écrit puis se ferme sans clore laisserait une empreinte
+  // de région périmée, et sa PROPRE réouverture la refuserait.
+  return tenirLaClotureHorsTransaction(backend, generation, clotureParDatation);
 }

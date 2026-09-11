@@ -172,7 +172,7 @@ test("CHEMIN 2 — l'INSTALLATION INITIALE clôt par une racine, sur l'état FIN
   let apres;
   try {
     // Le VERSEMENT : naissance hors transaction, puis écriture du fichier entier, puis fermeture.
-    const verse = await ouvrir(store, { transactionnel: false });
+    const verse = await ouvrir(store, { transactionnel: false, clotureParDatation: true });
     let empreinte;
     let scellementsVerses;
     try {
@@ -249,7 +249,7 @@ test("CHEMIN 3 — une RÉOUVERTURE hors transaction CLÔT par une racine, et le
   // d'invocations RÉELLES de `encrypt` sous la clé du volume : « publié + 1 pour la racine » est ce
   // que le § 4.5 promet, et rien de moins.
   const store = createSyncAccessStore();
-  const naissance = await ouvrir(store, { transactionnel: false });
+  const naissance = await ouvrir(store, { transactionnel: false, clotureParDatation: true });
   const empreinte = await naissance.empreinteDuFichier();
   const scellementsVerses = naissance.scellementsCumules;
   await naissance.close();
@@ -330,7 +330,7 @@ test("CHEMIN 3 — une réouverture qui n'écrit RIEN n'écrit AUCUNE racine", a
   // pour publier le compte de ce scellement — un compteur qui avancerait d'une unité par ouverture,
   // c'est-à-dire la dérive que la règle a précisément pour objet d'empêcher.
   const store = createSyncAccessStore();
-  const naissance = await ouvrir(store, { transactionnel: false });
+  const naissance = await ouvrir(store, { transactionnel: false, clotureParDatation: true });
   const empreinte = await naissance.empreinteDuFichier();
   const scellementsVerses = naissance.scellementsCumules;
   await naissance.close();
@@ -478,7 +478,7 @@ test("une datation SANS compte versé retombe sur les compteurs de la racine ÉC
   // régression sur ce chemin-là passerait — ce que la campagne de mutation a justement montré.
   const store = createSyncAccessStore();
 
-  const verse = await ouvrir(store, { transactionnel: false });
+  const verse = await ouvrir(store, { transactionnel: false, clotureParDatation: true });
   let empreinte;
   try {
     await verse.write(0, secteurDe(0x11));
