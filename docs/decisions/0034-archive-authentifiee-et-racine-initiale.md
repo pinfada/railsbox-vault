@@ -345,6 +345,12 @@ nonce, l'algorithme `aes-256-gcm`, les données associées d'un bloc et d'une ra
 figés antérieurs — la tranche en AJOUTE, elle n'en change aucun —, l'ordre des vérifications du §
 7.3, et la clé du volume, qui reste la DEK jusqu'à #182.
 
+> **Note datée du 11 septembre 2026** : l'entorse est levée par
+> l'[ADR 0035](0035-format-de-volume-v4-et-migration.md) (PR #186, format v4) — la clé du volume est
+> dérivée sous le domaine `volume` ; un v3 n'est plus lu que par la migration et par l'export qui la
+> précède, et ces lectures scellent encore sous la DEK, comptées dans la racine v3 (ADR 0036,
+> décision 4).
+
 ## Comment on le sait
 
 - **l'épreuve rouge du mélange A/C**, six étapes du relecteur reproduites à l'identique, sur le

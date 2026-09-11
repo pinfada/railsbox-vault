@@ -96,12 +96,28 @@ pas global à la clé). Les deux sont **ouverts** au registre
 l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) et n'est pas livrée. La
 phrase ci-dessus s'applique donc telle quelle : ils bloquent explicitement la qualification.
 
+**Au 11 septembre 2026 : les deux constats sont corrigés, et le registre est vide de CRITICAL et de
+HIGH ouverts.** #181 est corrigé par la
+[PR #184](https://github.com/pinfada/railsbox-vault/pull/184)
+([ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md) : une archive porte un
+engagement scellé, vérifié à la première ouverture avant tout clair ; aucun volume légitime n'est
+sans racine). #182 est corrigé par les [PR #186](https://github.com/pinfada/railsbox-vault/pull/186)
+et [#187](https://github.com/pinfada/railsbox-vault/pull/187)
+([ADR 0035](decisions/0035-format-de-volume-v4-et-migration.md) et
+[ADR 0036](decisions/0036-page-d-enveloppe-v2-et-budgets-exhaustifs.md) : la DEK devient une clé
+maîtresse que WebCrypto refuse de passer à AES-GCM, six domaines en descendent, chaque compteur
+compte toutes les invocations sous sa clé, et c'est mesuré). Chaque tranche a passé deux revues par
+exécution avant fusion. Ce qui reste écrit, pas arrondi : les compteurs reculent avec la racine (§
+9.1) ; ouvrir un volume v3 pour le migrer scelle encore 3 + N fois sous sa propre clé, compté ; le
+volume de coquille est sans garde de fraîcheur hors transaction. Le registre fait foi ligne par
+ligne. Plus aucun constat ne bloque la qualification par lui-même.
+
 **Et la nature du relecteur ne se laisse pas arrondir.** C'est une revue adverse assistée par un
 agent d'IA distinct des agents du dépôt, ni tiers humain ni cabinet indépendant. **Savoir si cela
 satisfait la condition « tiers » des gates est une décision du mainteneur, qui n'est pas prise**
 ([`SECURITY.md`](../SECURITY.md)). Tant qu'elle ne l'est pas, ce critère ne compte pas la revue
-comme l'audit externe que sa cible exige — et un CRITICAL ouvert lui interdit de toute façon de
-monter.
+comme l'audit externe que sa cible exige. Depuis le 11 septembre, c'est cette décision seule qui
+retient le critère, plus aucun constat ouvert.
 
 ### Qualité et performance mesurées — cible 9,5
 

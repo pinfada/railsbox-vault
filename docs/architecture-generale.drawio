@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-09-10T10:00:00.000Z" agent="RailsBox Vault" version="24.0.0" type="device">
+  <diagram id="rbv-architecture" name="Architecture générale">
+    <mxGraphModel dx="1754" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1754" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Titre -->
+        <mxCell id="titre" value="&lt;b&gt;&lt;font style=&quot;font-size: 22px&quot;&gt;RailsBox Vault — architecture générale&lt;/font&gt;&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#46515e&quot;&gt;Un coffre Rails exécuté et possédé localement dans le navigateur · état au 10 septembre 2026 · revue adverse reçue : #181 CRITICAL et #182 HIGH ouverts, gate « données sensibles » fermé&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontFamily=Helvetica;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1220" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Légende -->
+        <mxCell id="legende" value="Légende" style="swimlane;html=1;fontStyle=1;startSize=26;fillColor=#F7F8FA;strokeColor=#B7BFC9;fontColor=#1A2129;" vertex="1" parent="1">
+          <mxGeometry x="1300" y="20" width="400" height="162" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg1" value="Livré et prouvé (fusionné sur main)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=11;" vertex="1" parent="legende">
+          <mxGeometry x="10" y="34" width="180" height="26" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg2" value="En cours (PR ouverte) ou partiel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F6E8CF;strokeColor=#B07314;dashed=1;fontSize=11;" vertex="1" parent="legende">
+          <mxGeometry x="10" y="66" width="180" height="26" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg3" value="À FAIRE · #issue (non développé)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9E7A1F;dashed=1;dashPattern=8 4;fontStyle=2;fontSize=11;fontColor=#6D4F0A;" vertex="1" parent="legende">
+          <mxGeometry x="200" y="34" width="190" height="26" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg4" value="Fichier persistant (OPFS)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#E6E9EE;strokeColor=#6D7986;fontSize=11;" vertex="1" parent="legende">
+          <mxGeometry x="200" y="66" width="190" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg5" value="Flèche pointillée : flux à venir" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fontColor=#46515E;" vertex="1" parent="legende">
+          <mxGeometry x="10" y="98" width="180" height="26" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg6" value="Réserve de sécurité ouverte / gate bloqué" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8D7DA;strokeColor=#B3261E;fontColor=#7A1A14;fontStyle=1;fontSize=11;" vertex="1" parent="legende">
+          <mxGeometry x="200" y="112" width="190" height="36" as="geometry"/>
+        </mxCell>
+
+        <!-- Utilisateur -->
+        <mxCell id="user" value="Utilisateur&lt;br&gt;&lt;font style=&quot;font-size: 10px&quot; color=&quot;#46515e&quot;&gt;geste, phrase, passkey,&lt;br&gt;code de récupération, verrouiller&lt;/font&gt;" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;strokeColor=#1A2129;fillColor=#FFFFFF;" vertex="1" parent="1">
+          <mxGeometry x="60" y="100" width="40" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Navigateur -->
+        <mxCell id="nav" value="Navigateur — Chromium prouvé (OPFS) ; Firefox et WebKit : runtime v86 oui, OPFS synchrone non ; Safari réel jamais mesuré (#40)" style="swimlane;html=1;fontStyle=1;startSize=30;fillColor=#ECEEF1;strokeColor=#B7BFC9;fontColor=#1A2129;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="1280" height="770" as="geometry"/>
+        </mxCell>
+
+        <!-- Origine de confiance -->
+        <mxCell id="oc" value="Origine de confiance — coquille + runtime RailsBox Vault versionné (ADR 0002)" style="swimlane;html=1;fontStyle=1;startSize=28;fillColor=#F7F8FA;strokeColor=#2F6497;fontColor=#1A2129;" vertex="1" parent="nav">
+          <mxGeometry x="20" y="40" width="780" height="715" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="coq" value="Coquille de produit (public/index.html, main.mjs — ADR 0028) — mesure ses capacités sous la CSP servie, constate l'exclusivité du volume, encadre le document applicatif derrière une liste d'admission et dix refus identiques" style="swimlane;html=1;fontStyle=0;startSize=24;fillColor=#FFFFFF;strokeColor=#B7BFC9;fontSize=11;" vertex="1" parent="oc">
+          <mxGeometry x="15" y="38" width="750" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="coq_bancs" value="&lt;b&gt;Bancs de mesure&lt;/b&gt; (public/vm/*.html) — référence, OPFS, enveloppe, déverrouillage, récupération, budget, bail, conduite, résilience ; export et migration y vivent encore (étape 6 du cycle = banc)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="coq">
+          <mxGeometry x="10" y="32" width="235" height="76" as="geometry"/>
+        </mxCell>
+        <mxCell id="coq_ui" value="&lt;b&gt;Livré · #24 (#161, #162, #163)&lt;/b&gt; — Déverrouillage dans la coquille : phrase, passkey ou code, attente annoncée avant d'être subie, feuille de récupération rendue une fois (ADR 0029) ; cycle assemblé : disque installé, v86 booté dans le Worker, mort du Worker constatée, « Rouvrir » (ADR 0030)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="coq">
+          <mxGeometry x="255" y="32" width="240" height="76" as="geometry"/>
+        </mxCell>
+        <mxCell id="coq_lock" value="&lt;b&gt;Livré · #25 (#169, #170)&lt;/b&gt; — Verrouiller par geste ou après 10 min : fermeture propre, mort du Worker et rechargement ; l'instantané survit, réouverture ≈ 1 s (ADR 0031) · fins d'onglet mesurées : pagehide tue, retour du bfcache recharge, gel non simulable (ADR 0032)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="coq">
+          <mxGeometry x="505" y="32" width="235" height="76" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="wk" value="Worker dédié de confiance (runtime-worker) — le handle OPFS exclusif ne le quitte jamais ; ni la coquille, ni l'adaptateur, ni la VM n'ont de chemin vers OPFS" style="swimlane;html=1;fontStyle=0;startSize=24;fillColor=#FFFFFF;strokeColor=#B7BFC9;fontSize=11;" vertex="1" parent="oc">
+          <mxGeometry x="15" y="170" width="750" height="360" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_ouvreur" value="&lt;b&gt;Ouvreur unique du volume&lt;/b&gt; (opfs-volume-ouverture) · manifeste versionné · bail écrivain unique · budget de stockage et persistance (ADR 0005–0007, 0011)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="wk">
+          <mxGeometry x="10" y="32" width="235" height="66" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_backend" value="&lt;b&gt;Backend de blocs OPFS&lt;/b&gt; (opfs-block-backend) · barrière de durabilité SEC-DURABLE-001 · E/S acceptées attendues à la fermeture (ADR 0003)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="wk">
+          <mxGeometry x="257" y="32" width="235" height="66" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_adapt" value="&lt;b&gt;Adaptateur v86&lt;/b&gt; (v86-buffer-adapter, flush-bridge) · boucle d'ordonnancement sous la CSP servie, sans blob: (ADR 0013)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="wk">
+          <mxGeometry x="504" y="32" width="235" height="66" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_gen" value="&lt;b&gt;Génération transactionnelle&lt;/b&gt; (.gen, racines alternées, récupération en flux, plafond 16 Mio — ADR 0014) · &lt;b&gt;fraîcheur du volume courant&lt;/b&gt; : témoin de séquence, rejeu/troncature/mélange refusés (ADR 0019) · exception après restauration : CRITICAL #181" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8D7DA;strokeColor=#B3261E;fontColor=#7A1A14;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="wk">
+          <mxGeometry x="10" y="108" width="235" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_v3" value="&lt;b&gt;Format v3 chiffré ACTUEL&lt;/b&gt; : AES-256-GCM par secteur, journal et racine ; identité logique en données associées · migration v2 → v3 reprenable · marque de scellement complet (ADR 0015, 0016) · même DEK AEAD entre domaines : réserve HIGH #182" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8D7DA;strokeColor=#B3261E;fontColor=#7A1A14;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="wk">
+          <mxGeometry x="257" y="108" width="235" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_v86" value="&lt;b&gt;v86&lt;/b&gt; (x86 en WebAssembly, artefacts vendus et adressés par empreinte, vérifiés au chargement) → &lt;b&gt;guest Linux&lt;/b&gt; → &lt;b&gt;Rails&lt;/b&gt; (image de référence, Bootsnap)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="wk">
+          <mxGeometry x="504" y="108" width="235" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_env" value="&lt;b&gt;Enveloppe de clé ACTUELLE&lt;/b&gt; (.cles) : DEK enveloppée sous N KEK, 2 pages alternées, 5 opérations atomiques (ADR 0020) · révocation d'urgence + page libre effacée (ADR 0026) · racine scellée directement sous la DEK : réserve HIGH #182" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8D7DA;strokeColor=#B3261E;fontColor=#7A1A14;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="wk">
+          <mxGeometry x="10" y="188" width="235" height="76" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_deriv" value="&lt;b&gt;Dérivation des KEK&lt;/b&gt; : phrase → Argon2id (WebAssembly vendu, RFC 9106) · passkey → WebAuthn PRF (dans la page) · &lt;b&gt;code de récupération&lt;/b&gt; type 4, 128 bits, rendu une fois (ADR 0021, 0025)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="wk">
+          <mxGeometry x="257" y="188" width="235" height="76" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_serie" value="&lt;b&gt;Pont série&lt;/b&gt; (serial-protocol, console, client HTTP) — le HTTP de l'application passe par le port série du guest, jamais par le réseau" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="wk">
+          <mxGeometry x="504" y="188" width="235" height="76" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_snap" value="&lt;b&gt;Instantané de reprise ACTUEL&lt;/b&gt; (.instantane) : état v86 chiffré directement sous la DEK, lié à la génération validée ; reprise p95 0,84 s contre ~2 min de boot à froid (ADR 0024) · domaine de clé dédié attendu par #182" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8D7DA;strokeColor=#B3261E;fontColor=#7A1A14;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="wk">
+          <mxGeometry x="10" y="274" width="235" height="76" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_export" value="&lt;b&gt;Export / import ACTUEL · CRITICAL #181&lt;/b&gt; : RBVAULT1 ne porte qu'un SHA-256 recalculable ; la restauration retire .gen et .temoin, puis une première ouverture accepte un état sectoriel recomposé · enveloppe de RÉCUPÉRATION seule (ADR 0027)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8D7DA;strokeColor=#B3261E;fontColor=#7A1A14;fontStyle=1;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="wk">
+          <mxGeometry x="257" y="274" width="235" height="76" as="geometry"/>
+        </mxCell>
+        <mxCell id="wk_149" value="&lt;b&gt;CIBLE DÉCIDÉE · ADR 0033 · non livrée&lt;/b&gt; — la DEK devient clé maîtresse ; HKDF-SHA-256 dérive une clé par domaine, volume et version : volume, journal, instantané, enveloppe, archive, récupération · #181 T1 puis #182 T2a/T2b" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F6E8CF;strokeColor=#B07314;dashed=1;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="wk">
+          <mxGeometry x="504" y="274" width="235" height="76" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="opfs" value="Stockage OPFS de l'origine de confiance — partition par origine ; un volume et ses voisins ; les voisins orphelins sont retirés à la naissance (sauf .cles)" style="swimlane;html=1;fontStyle=0;startSize=24;fillColor=#FFFFFF;strokeColor=#B7BFC9;fontSize=11;" vertex="1" parent="oc">
+          <mxGeometry x="15" y="545" width="750" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_vol" value="&lt;b&gt;&amp;lt;volume&amp;gt;&lt;/b&gt;&lt;br&gt;disque v3 chiffré" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#E6E9EE;strokeColor=#6D7986;fontSize=10;" vertex="1" parent="opfs">
+          <mxGeometry x="10" y="34" width="100" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_man" value="&lt;b&gt;.manifest&lt;/b&gt;&lt;br&gt;identifiant, format, runtime" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#E6E9EE;strokeColor=#6D7986;fontSize=10;" vertex="1" parent="opfs">
+          <mxGeometry x="115" y="34" width="100" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_gen" value="&lt;b&gt;.gen&lt;/b&gt;&lt;br&gt;journal de génération" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#E6E9EE;strokeColor=#6D7986;fontSize=10;" vertex="1" parent="opfs">
+          <mxGeometry x="220" y="34" width="100" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_tem" value="&lt;b&gt;.temoin&lt;/b&gt;&lt;br&gt;dernière séquence vue" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#E6E9EE;strokeColor=#6D7986;fontSize=10;" vertex="1" parent="opfs">
+          <mxGeometry x="325" y="34" width="100" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_cles" value="&lt;b&gt;.cles&lt;/b&gt;&lt;br&gt;enveloppe de clé (2 pages)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#E6E9EE;strokeColor=#6D7986;fontSize=10;" vertex="1" parent="opfs">
+          <mxGeometry x="430" y="34" width="100" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_snap" value="&lt;b&gt;.instantane&lt;/b&gt;&lt;br&gt;état v86 chiffré&lt;br&gt;survit au verrouillage" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#E6E9EE;strokeColor=#6D7986;fontSize=10;" vertex="1" parent="opfs">
+          <mxGeometry x="535" y="34" width="100" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_mig" value="&lt;b&gt;.migration&lt;/b&gt;&lt;br&gt;journal de migration" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=8;fillColor=#E6E9EE;strokeColor=#6D7986;fontSize=10;" vertex="1" parent="opfs">
+          <mxGeometry x="640" y="34" width="100" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="opfs_note" value="Sa perte vaut la perte des données : aucune clé n'est conservée hors de .cles, aucun séquestre, délibérément." style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fontColor=#46515E;fontStyle=2;" vertex="1" parent="opfs">
+          <mxGeometry x="10" y="112" width="730" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- Origine applicative -->
+        <mxCell id="oa" value="Origine applicative — une par application (ADR 0018), code supposé hostile, aucun canal implicite vers la coquille" style="swimlane;html=1;fontStyle=1;startSize=28;fillColor=#F7F8FA;strokeColor=#6A5AA0;fontColor=#1A2129;" vertex="1" parent="nav">
+          <mxGeometry x="820" y="40" width="440" height="715" as="geometry"/>
+        </mxCell>
+        <mxCell id="oa_doc" value="&lt;b&gt;Document de l'application Rails&lt;/b&gt; — iframe sandbox=&quot;allow-scripts allow-same-origin&quot;, MessagePort restreint transféré par la coquille (liste d'admission) · topologie et isolation mesurées (ADR 0002, 0010, 0018) ; &lt;b&gt;coquille non isolée · cadre retiré au verrouillage par rechargement (ADR 0031) → #24&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F6E8CF;strokeColor=#B07314;dashed=1;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="oa">
+          <mxGeometry x="15" y="40" width="410" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="oa_sw" value="&lt;b&gt;Service Worker de l'application&lt;/b&gt; — hors ligne, proxy des requêtes HTTP vers le pont série (patron RailsBox Live) · spike credentialless / COOP-COEP par Service Worker (#76)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F6E8CF;strokeColor=#B07314;dashed=1;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="oa">
+          <mxGeometry x="15" y="145" width="410" height="76" as="geometry"/>
+        </mxCell>
+        <mxCell id="oa_store" value="&lt;b&gt;Stockage propre de l'application&lt;/b&gt; : cookies de session, IndexedDB, cache — jamais le volume, jamais une clé brute ; l'application observe un disque IDE ordinaire" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="oa">
+          <mxGeometry x="15" y="236" width="410" height="66" as="geometry"/>
+        </mxCell>
+        <mxCell id="oa_151" value="&lt;b&gt;À FAIRE · #151&lt;/b&gt; — Vérification d'empreinte des artefacts v86 dans le magasin d'un Service Worker (le chemin de boot les vérifie déjà)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9E7A1F;dashed=1;dashPattern=8 4;fontStyle=2;fontSize=10;fontColor=#6D4F0A;align=left;spacingLeft=6;" vertex="1" parent="oa">
+          <mxGeometry x="15" y="317" width="410" height="66" as="geometry"/>
+        </mxCell>
+        <mxCell id="oa_second" value="&lt;b&gt;À FAIRE&lt;/b&gt; — Seconde application = second sous-domaine (signal de bascule de l'ADR 0018) ; aucun cookie de coquille sur le domaine parent, préfixe __Host-" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9E7A1F;dashed=1;dashPattern=8 4;fontStyle=2;fontSize=10;fontColor=#6D4F0A;align=left;spacingLeft=6;" vertex="1" parent="oa">
+          <mxGeometry x="15" y="398" width="410" height="66" as="geometry"/>
+        </mxCell>
+        <mxCell id="oa_note" value="Frontière réelle = l'origine. Un préfixe de chemin n'en est pas une (14/17 lectures croisées aboutissent en même origine). Un port distinct reste perméable aux cookies." style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=10;fontColor=#46515E;fontStyle=2;" vertex="1" parent="oa">
+          <mxGeometry x="15" y="480" width="410" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Revue adverse du format -->
+        <mxCell id="revue" value="Revue adverse assistée du format v3 · 10 septembre 2026" style="swimlane;html=1;fontStyle=1;startSize=30;fillColor=#FFF5F5;strokeColor=#B3261E;fontColor=#7A1A14;" vertex="1" parent="1">
+          <mxGeometry x="1340" y="200" width="360" height="770" as="geometry"/>
+        </mxCell>
+        <mxCell id="revue_meta" value="&lt;b&gt;Relecteur&lt;/b&gt; : OpenAI Codex (agent IA, revue adverse assistée — ni tiers humain ni cabinet indépendant)&lt;br&gt;&lt;b&gt;Version relue&lt;/b&gt; : main · 10/09/2026&lt;br&gt;&lt;font style=&quot;font-size: 9px&quot;&gt;aa6be826ad0e14162a9e06e5bb585f1e1c218bb3&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B3261E;fontColor=#7A1A14;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="revue">
+          <mxGeometry x="15" y="42" width="330" height="104" as="geometry"/>
+        </mxCell>
+        <mxCell id="revue_181" value="&lt;b&gt;CRITICAL · #181 · OUVERT&lt;/b&gt;&lt;br&gt;Une archive accepte un mélange de secteurs provenant de plusieurs états. Son SHA-256 est public et recalculable ; la restauration écarte le journal et le témoin ; la première ouverture peut rendre en clair un état jamais produit." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8D7DA;strokeColor=#B3261E;fontColor=#7A1A14;fontStyle=1;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="revue">
+          <mxGeometry x="15" y="158" width="330" height="142" as="geometry"/>
+        </mxCell>
+        <mxCell id="revue_182" value="&lt;b&gt;HIGH · #182 · OUVERT&lt;/b&gt;&lt;br&gt;Le budget AES-GCM n'est pas global à la clé : deux volumes, l'enveloppe, l'instantané et les exports consomment la même DEK avec des comptes locaux ou absents. Les données associées séparent les identités, pas les clés." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8D7DA;strokeColor=#B3261E;fontColor=#7A1A14;fontStyle=1;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="revue">
+          <mxGeometry x="15" y="312" width="330" height="132" as="geometry"/>
+        </mxCell>
+        <mxCell id="revue_cible" value="&lt;b&gt;Architecture cible · ADR 0033 accepté, code non livré&lt;/b&gt;&lt;br&gt;DEK = clé maîtresse, jamais passée à AES-GCM. HKDF-SHA-256 → clés propres au domaine, au volume et à la version. Six domaines : volume, journal, instantané, enveloppe, archive, récupération.&lt;br&gt;&lt;br&gt;#181 ajoute une archive v3 avec engagement du chiffré entier, scellé sous la clé archive et vérifié avant tout clair ; une archive sans engagement est refusée." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F6E8CF;strokeColor=#B07314;dashed=1;fontColor=#6D4F0A;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="revue">
+          <mxGeometry x="15" y="456" width="330" height="178" as="geometry"/>
+        </mxCell>
+        <mxCell id="revue_gate" value="&lt;b&gt;Gate « données sensibles » : FERMÉ&lt;/b&gt;&lt;br&gt;Le registre compte six constats, dont deux ouverts. Le correctif #181 est sur une branche non fusionnée ; #182 reste à livrer. Cette revue ne doit pas être présentée comme un audit humain indépendant." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8D7DA;strokeColor=#B3261E;fontColor=#7A1A14;fontStyle=1;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="revue">
+          <mxGeometry x="15" y="646" width="330" height="104" as="geometry"/>
+        </mxCell>
+
+        <!-- Chaîne de publication -->
+        <mxCell id="pub" value="Chaîne de publication et preuves (ADR 0017, 0022, 0023)" style="swimlane;html=1;fontStyle=1;startSize=28;fillColor=#F7F8FA;strokeColor=#A9791F;fontColor=#1A2129;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1000" width="640" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="pub_outil" value="&lt;b&gt;tools/publier&lt;/b&gt; : deux arbres (confiance, application), en-têtes dérivés d'une source unique (CSP, COOP same-origin, Referrer-Policy, Permissions-Policy), politique de cache par nature d'artefact, artefacts v86 par empreinte + immutable un an, inventaire d'empreintes, retour arrière au bit près, actions CI épinglées par SHA" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="pub">
+          <mxGeometry x="15" y="38" width="300" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="pub_ci" value="&lt;b&gt;CI GitHub&lt;/b&gt; : Qualité et tests (obligatoire) · Intégration VM (3 moteurs) · Reprise MVP (E2E Docker) · Mesure de la reprise (environnement de référence 4 vCPU / 16 Go) · Image de référence · Publication" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="pub">
+          <mxGeometry x="325" y="38" width="300" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="pub_heb" value="&lt;b&gt;À FAIRE · #124 #125 #126&lt;/b&gt; — Hébergeur à en-têtes réel servant les deux origines : aucun déploiement réel, effet du cache et de Permissions-Policy non mesurés, aucune signature ni SBOM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9E7A1F;dashed=1;dashPattern=8 4;fontStyle=2;fontSize=10;fontColor=#6D4F0A;align=left;spacingLeft=6;" vertex="1" parent="pub">
+          <mxGeometry x="15" y="150" width="300" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="pub_preuves" value="&lt;b&gt;Preuves&lt;/b&gt; : vecteurs figés + vérificateur indépendant · dossier de revue v3 · registre : 6 constats, 4 disposés, 2 ouverts (#181 CRITICAL, #182 HIGH) · injecteur d'arrêts et oracle · matrices de coupures · campagnes de mutation bornées · sondes de non-persistance sur 3 moteurs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="pub">
+          <mxGeometry x="325" y="150" width="300" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="pub_tiers" value="&lt;b&gt;Revue reçue · #20 moitié 2&lt;/b&gt; — OpenAI Codex, 10/09/2026, main aa6be826ad0e14162a9e06e5bb585f1e1c218bb3 : 1 CRITICAL + 1 HIGH ouverts. Gate FERMÉ. Revue assistée par IA : ne vaut ni audit ni relecture humaine indépendante." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8D7DA;strokeColor=#B3261E;fontStyle=1;fontSize=10;fontColor=#7A1A14;align=left;spacingLeft=6;" vertex="1" parent="pub">
+          <mxGeometry x="15" y="230" width="300" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Autre appareil -->
+        <mxCell id="autre" value="Autre appareil ou autre origine" style="swimlane;html=1;fontStyle=1;startSize=28;fillColor=#F7F8FA;strokeColor=#2F7D5B;fontColor=#1A2129;" vertex="1" parent="1">
+          <mxGeometry x="700" y="1000" width="310" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="autre_v2" value="&lt;b&gt;Restauration d'une archive&lt;/b&gt; sur une autre origine — prouvée de bout en bout pour un volume v2 (E2E, deux origines, boot à froid hors ligne)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="autre">
+          <mxGeometry x="15" y="38" width="280" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="autre_v3" value="&lt;b&gt;Livré fonctionnellement · #149 · RÉSERVE #181&lt;/b&gt; — archive + code de récupération, E2E sur deux origines ; l'intégrité adversariale de l'état restauré n'est pas tenue tant que l'engagement authentifié d'archive n'est pas livré" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8D7DA;strokeColor=#B3261E;fontColor=#7A1A14;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="autre">
+          <mxGeometry x="15" y="120" width="280" height="76" as="geometry"/>
+        </mxCell>
+        <mxCell id="autre_feuille" value="&lt;b&gt;Feuille de récupération&lt;/b&gt; hors de l'appareil : le code (#147) et la version d'enveloppe comme ancre (#149), rendus par la coquille (#162) ; l'impression sort par un chemin que le produit ne maîtrise pas" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBE8F4;strokeColor=#2F6497;fontSize=10;align=left;spacingLeft=6;" vertex="1" parent="autre">
+          <mxGeometry x="15" y="208" width="280" height="76" as="geometry"/>
+        </mxCell>
+
+        <!-- Services optionnels -->
+        <mxCell id="opt" value="Services optionnels — jalon 6, choisis ou refusés par l'utilisateur (vision, point 6) — rien n'est développé" style="swimlane;html=1;fontStyle=1;startSize=28;fillColor=#F7F8FA;strokeColor=#9E7A1F;fontColor=#1A2129;dashed=1;dashPattern=8 4;" vertex="1" parent="1">
+          <mxGeometry x="1030" y="1000" width="670" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="opt_26" value="&lt;b&gt;À FAIRE · #26&lt;/b&gt; — Enveloppe E2EE signée d'un paquet : confidentialité et authenticité entre utilisateurs, sans confier au relais" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9E7A1F;dashed=1;dashPattern=8 4;fontStyle=2;fontSize=10;fontColor=#6D4F0A;align=left;spacingLeft=6;" vertex="1" parent="opt">
+          <mxGeometry x="15" y="38" width="310" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="opt_27" value="&lt;b&gt;À FAIRE · #27&lt;/b&gt; — API Rails d'export et d'import métier : ce que l'application échange, sous l'enveloppe E2EE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9E7A1F;dashed=1;dashPattern=8 4;fontStyle=2;fontSize=10;fontColor=#6D4F0A;align=left;spacingLeft=6;" vertex="1" parent="opt">
+          <mxGeometry x="345" y="38" width="310" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="opt_relais" value="&lt;b&gt;À FAIRE&lt;/b&gt; — Relais d'échanges : transporte des paquets qu'il ne peut pas lire ; jamais requis pour travailler hors ligne" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9E7A1F;dashed=1;dashPattern=8 4;fontStyle=2;fontSize=10;fontColor=#6D4F0A;align=left;spacingLeft=6;" vertex="1" parent="opt">
+          <mxGeometry x="15" y="120" width="310" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="opt_28" value="&lt;b&gt;À FAIRE · #28&lt;/b&gt; — Démonstrateur GenealogyApp : valide les primitives sur une application réelle" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9E7A1F;dashed=1;dashPattern=8 4;fontStyle=2;fontSize=10;fontColor=#6D4F0A;align=left;spacingLeft=6;" vertex="1" parent="opt">
+          <mxGeometry x="345" y="120" width="310" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="opt_temoin" value="&lt;b&gt;À FAIRE · #23&lt;/b&gt; — Témoin distant : ancre de fraîcheur face au retour arrière complet ; porterait les deux valeurs monotones (génération du volume + version d'enveloppe), distinctes des budgets AEAD par clé de domaine ; choisi, jamais imposé" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9E7A1F;dashed=1;dashPattern=8 4;fontStyle=2;fontSize=10;fontColor=#6D4F0A;align=left;spacingLeft=6;" vertex="1" parent="opt">
+          <mxGeometry x="15" y="202" width="310" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="opt_sync" value="&lt;b&gt;À FAIRE&lt;/b&gt; — Synchronisation entre appareils : service que l'utilisateur choisit ou refuse ; le retour arrière COMPLET du support reste indétectable sans ancre externe" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9E7A1F;dashed=1;dashPattern=8 4;fontStyle=2;fontSize=10;fontColor=#6D4F0A;align=left;spacingLeft=6;" vertex="1" parent="opt">
+          <mxGeometry x="345" y="202" width="310" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- Flèches -->
+        <mxCell id="e_user_coq" value="geste" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#46515E;fontSize=10;fontColor=#46515E;endArrow=block;" edge="1" parent="1" source="user" target="coq">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="80" y="180"/><mxPoint x="200" y="180"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e_coq_wk" value="MessagePort privé, capacité minimale — aucun secret applicatif" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2F6497;fontSize=10;fontColor=#2F6497;endArrow=block;" edge="1" parent="1" source="coq" target="wk">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_wk_opfs" value="handle exclusif (openOpfsSyncAccess)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2F6497;fontSize=10;fontColor=#2F6497;endArrow=block;" edge="1" parent="1" source="wk" target="opfs">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_coq_doc" value="iframe sandbox + MessagePort restreint" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#6A5AA0;fontSize=10;fontColor=#6A5AA0;endArrow=block;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="coq" target="oa_doc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_doc_sw" value="requêtes HTTP" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#6A5AA0;fontSize=10;fontColor=#6A5AA0;endArrow=block;" edge="1" parent="1" source="oa_doc" target="oa_sw">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_sw_serie" value="HTTP sur port série" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#6A5AA0;fontSize=10;fontColor=#6A5AA0;endArrow=block;startArrow=block;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="oa_sw" target="wk_serie">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_serie_v86" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2F6497;fontSize=10;endArrow=block;startArrow=block;" edge="1" parent="1" source="wk_serie" target="wk_v86">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_v86_adapt" value="disque IDE" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2F6497;fontSize=10;fontColor=#2F6497;endArrow=block;startArrow=block;" edge="1" parent="1" source="wk_v86" target="wk_adapt">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_adapt_backend" value="lecture, écriture, flush" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2F6497;fontSize=10;fontColor=#2F6497;endArrow=block;startArrow=block;" edge="1" parent="1" source="wk_adapt" target="wk_backend">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_export_autre" value="archive RBVAULT1 (export utilisateur)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2F7D5B;fontSize=10;fontColor=#2F7D5B;endArrow=block;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="wk_export" target="autre_v2">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="450" y="985"/><mxPoint x="855" y="985"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e_149_autre" value="archive actuelle + enveloppe de récupération · réserve #181" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#B3261E;fontSize=10;fontColor=#7A1A14;endArrow=block;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" edge="1" parent="1" source="wk_export" target="autre_v3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_pub_nav" value="publie les deux arbres (deux origines)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#A9791F;fontSize=10;fontColor=#A9791F;endArrow=block;exitX=0.5;exitY=0;entryX=0.1;entryY=1;" edge="1" parent="1" source="pub_outil" target="nav">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_rails_relais" value="paquets E2EE (à venir)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#9E7A1F;dashed=1;dashPattern=8 4;fontSize=10;fontColor=#6D4F0A;fontStyle=2;endArrow=block;startArrow=block;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="oa_doc" target="opt_relais">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1330" y="385"/><mxPoint x="1330" y="985"/><mxPoint x="1200" y="985"/></Array></mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
