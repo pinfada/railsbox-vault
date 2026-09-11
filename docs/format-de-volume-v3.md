@@ -303,6 +303,11 @@ typé, jamais lu en clair ».
 > | `archive` (une archive)    |                        1 |
 > | la clé de volume elle-même |                    **0** |
 >
+> Les chiffres des deux premières lignes dépendent du banc ; les autres ne dépendent de rien, et
+> c'est la propriété : **un domaine à usage unique n'a JAMAIS deux invocations sous la même clé.**
+> C'est la condition qui rend leur budget de 1 valable, et l'épreuve la mesure au lieu de
+> l'affirmer.
+>
 > **La liste des gestes a été corrigée le 11 septembre 2026** (revue de sécurité de la PR #187,
 > constat 8). Elle omettait quatre chemins — le cycle de la coquille, la migration d'une page v1,
 > l'export d'un v3, la restauration d'une archive — c'est-à-dire ceux que la tranche AJOUTE ou
@@ -320,11 +325,6 @@ typé, jamais lu en clair ».
 > | ----------------------------------- | -----------------------: |
 > | la clé de volume v3, à l'export     |                    **3** |
 > | toute autre clé, sur ce même chemin |                        0 |
->
-> Les chiffres des deux premières lignes dépendent du banc ; les autres ne dépendent de rien, et
-> c'est la propriété : **un domaine à usage unique n'a JAMAIS deux invocations sous la même clé.**
-> C'est la condition qui rend leur budget de 1 valable, et l'épreuve la mesure au lieu de
-> l'affirmer.
 >
 > **Pourquoi quatre domaines n'ont PAS de compteur, et pourquoi c'est plus sûr.** Compter suppose un
 > état durable, atomique et partagé ; ces domaines n'en ont aucun — c'est exactement le reproche du
