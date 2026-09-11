@@ -102,6 +102,21 @@ test("le modèle rouvre les blocs figés depuis leurs seuls octets publiés", as
   }
 });
 
+/**
+ * La racine d'un vecteur, sous le nom que le modèle emploie DEPUIS #182.
+ *
+ * Les vecteurs sont FIGÉS et ne bougent pas d'un octet : ils nomment encore le compteur
+ * `scellementsCumules`, comme la v3 le faisait. Le modèle, lui, l'appelle désormais
+ * `scellementsCumulesVolume`, parce qu'il y en a deux. La traduction se fait ICI, au bord, et pas
+ * dans le fichier de vecteurs : un vecteur qu'on retouche pour suivre le code cesse d'être un
+ * vecteur. Aucun de ces vecteurs ne porte le second compteur — ils sont des racines de v3, et une
+ * racine de v3 n'en a qu'un.
+ */
+function racineDuVecteur(vecteur) {
+  const { scellementsCumules, ...reste } = vecteur.racine;
+  return { ...reste, scellementsCumulesVolume: scellementsCumules };
+}
+
 test("le modèle reproduit OCTET POUR OCTET les racines scellées figées", async () => {
   const cle = await importerCleDeVolume(hexEnOctets(VECTEURS.cle.hex));
 
@@ -112,7 +127,7 @@ test("le modèle reproduit OCTET POUR OCTET les racines scellées figées", asyn
     }));
     const racine = await scellerRacineSousNonce({
       cle,
-      racine: vecteur.racine,
+      racine: racineDuVecteur(vecteur),
       entrees,
       nonce: hexEnOctets(vecteur.attendu.nonce),
       attentes: { sequencePrecedente: null },
@@ -148,7 +163,7 @@ test("le modèle rouvre les racines figées depuis leurs seuls octets publiés",
       etiquette: hexEnOctets(entree.etiquette),
     }));
     const entete = {
-      ...vecteur.racine,
+      ...racineDuVecteur(vecteur),
       nombreEntrees: vecteur.attendu.nombreEntrees,
       longueurCharge: vecteur.attendu.longueurCharge,
     };

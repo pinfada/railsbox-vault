@@ -46,7 +46,7 @@ async function scellement() {
   return Scellement.ouvrir({
     volume: VOLUME_TEXTE,
     cleOctets: CLE_DE_TEST,
-    formatVersion: 3,
+    formatVersion: 4,
   });
 }
 
@@ -196,7 +196,7 @@ test("un instantané d'un AUTRE volume est écarté et retiré", async () => {
   const autre = await Scellement.ouvrir({
     volume: "fedcba9876543210fedcba9876543210",
     cleOctets: CLE_DE_TEST,
-    formatVersion: 3,
+    formatVersion: 4,
   });
   const rapport = await ouvrirInstantaneDeReprise({
     scellement: autre,
@@ -322,17 +322,44 @@ test("un corps plus court que la longueur DÉCLARÉE est INCOMPLET, jamais compl
   assert.equal(rapport.motif, INSTANTANE_ERROR_CODES.incomplet);
 });
 
-test("la capture consomme EXACTEMENT un scellement du budget de clé", async () => {
+test("la capture ne consomme AUCUN compteur : sa clé est à usage unique (#182)", async () => {
+  // Jusqu'à la v3, une capture était scellée sous la clé du VOLUME et en consommait le budget.
+  // Depuis la v4 elle est scellée sous une clé du domaine « instantane », tirée d'un sel neuf : son
+  // budget est de 1 et il ne se compte pas (ADR 0033, décision 4). Deux captures successives
+  // laissent donc les deux compteurs du volume exactement où ils étaient.
   const scelle = await scellement();
-  const avant = scelle.scellementsCumules;
-  await capturerInstantane({
-    scellement: scelle,
-    volume: "donnees",
-    etatPresent: etatPresent(),
-    etat: ETAT,
-    support: supportInstantaneDouble(),
-  });
-  assert.equal(scelle.scellementsCumules, avant + 1, "un scellement par capture, ADR 0024 § 3");
+  const avant = {
+    volume: scelle.scellementsCumulesVolume,
+    journal: scelle.scellementsCumulesJournal,
+  };
+  for (const _ of [0, 1]) {
+    await capturerInstantane({
+      scellement: scelle,
+      volume: "donnees",
+      etatPresent: etatPresent(),
+      etat: ETAT,
+      support: supportInstantaneDouble(),
+    });
+  }
+  assert.equal(scelle.scellementsCumulesVolume, avant.volume);
+  assert.equal(scelle.scellementsCumulesJournal, avant.journal);
+});
+
+test("deux captures du MÊME état ne partagent pas leur clé : un sel neuf à chaque geste", async () => {
+  const scelle = await scellement();
+  const sels = [];
+  for (const _ of [0, 1]) {
+    const support = supportInstantaneDouble();
+    await capturerInstantane({
+      scellement: scelle,
+      volume: "donnees",
+      etatPresent: etatPresent(),
+      etat: ETAT,
+      support,
+    });
+    sels.push(octetsEnHex(support.contenu.slice(148, 180)));
+  }
+  assert.notEqual(sels[0], sels[1], "le sel est TIRÉ, pas dérivé d'un état qui pourrait reculer");
 });
 
 // LE QUOTA, DEMANDÉ AVANT DE RÉSERVER (#65, revue de la PR #133).

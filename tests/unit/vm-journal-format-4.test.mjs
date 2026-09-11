@@ -35,6 +35,7 @@ import { buildPattern } from "../../src/vm/block-fixture.mjs";
 import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import {
   GENERATION_FORMAT,
+  GENERATION_FORMAT_DEUX_COMPTEURS,
   GENERATION_FORMAT_IDENTITE_DE_BLOC,
   RACINE_ENTETE_V2_OCTETS,
   RACINE_OCTETS,
@@ -57,10 +58,24 @@ import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 import { VolumeChiffre } from "../../src/vm/volume-chiffre.mjs";
 import {
   FORMAT_VOLUME_V3,
+  FORMAT_VOLUME_V4,
   SCEAU_OCTETS,
   decoderSceau,
   dispositionDuVolume,
 } from "../../src/vm/volume-chiffre-format.mjs";
+
+/**
+ * Le format de journal qu'écrit le BANC de ce fichier, dont le volume est un v3.
+ *
+ * Il reste 4, et c'est exact : le nombre de compteurs d'une racine suit la version du VOLUME, et
+ * seul un volume v4 en publie deux (#182, ADR 0033). Ce banc fabrique des journaux de format 2 et 3
+ * pour éprouver le chemin de compatibilité de #143, ce qu'un volume v4 ne peut pas faire — une
+ * racine de format 2 n'a pas de place pour le second compteur, et la combinaison est refusée.
+ *
+ * L'épreuve qui mesure l'OUVREUR DU PRODUIT, elle, attend `GENERATION_FORMAT_DEUX_COMPTEURS` : le
+ * produit crée désormais des volumes v4.
+ */
+const FORMAT_DU_PRODUIT = GENERATION_FORMAT;
 
 const TAILLE = 8 * SECTOR_SIZE;
 const DISPOSITION = dispositionDuVolume(TAILLE);
@@ -247,8 +262,8 @@ test("l'OUVREUR DU PRODUIT écrit un journal de format 4, et ses enregistrements
   }
   assert.equal(
     formatTrouve,
-    GENERATION_FORMAT,
-    "l'ouvreur du produit doit écrire le format 4 : c'est lui qui met les enregistrements hors de l'espace d'identités du volume.",
+    GENERATION_FORMAT_DEUX_COMPTEURS,
+    "l'ouvreur du produit doit écrire le format 5 : la racine d'un volume v4 publie les deux compteurs, et ses enregistrements restent hors de l'espace d'identités du volume.",
   );
 
   // Le NUMÉRO ne suffit pas : ce qui compte est que les octets déposés soient hors de l'espace
@@ -261,7 +276,7 @@ test("l'OUVREUR DU PRODUIT écrit un journal de format 4, et ses enregistrements
   const scellement = await Scellement.ouvrir({
     volume: octetsEnHex(enTete),
     cleOctets: CLE_DE_TEST,
-    formatVersion: FORMAT_VOLUME_V3,
+    formatVersion: FORMAT_VOLUME_V4,
   });
   const identite = {
     generation: sceau.generation,
@@ -319,7 +334,7 @@ test("un journal de format 3 portant une génération VALIDÉE est rejoué sans 
 
   // Après le vidage qui clôt la récupération, le journal est en format 4 : la fenêtre a duré
   // exactement une ouverture.
-  assert.equal(racineDuJournal(cadre).format, GENERATION_FORMAT);
+  assert.equal(racineDuJournal(cadre).format, FORMAT_DU_PRODUIT);
   fermer(cadre, ouverte);
 });
 
@@ -333,7 +348,7 @@ test("après le rejeu, l'ouverture suivante trouve un journal de format 4 et ne 
   fermer(cadre, migrante);
 
   const suivante = await session(cadre, fraicheurDuBanc(cadre));
-  assert.equal(suivante.magasin.rapport.journalFormatAnnonce, GENERATION_FORMAT);
+  assert.equal(suivante.magasin.rapport.journalFormatAnnonce, FORMAT_DU_PRODUIT);
   assert.equal(suivante.magasin.rapport.etat, "aucune", "il n'y a plus rien à rejouer");
   assert.equal(suivante.magasin.rapport.enregistrementsRejoues, 0);
   // Et les octets rejoués une fois sont toujours là : le rejeu n'a pas été défait par la suite.
@@ -377,7 +392,7 @@ test("un journal de format 4 dont le NUMÉRO est retourné en 3 est refusé : c'
   fermer(cadre, ouverte);
 
   const racine = racineDuJournal(cadre);
-  assert.equal(racine.format, GENERATION_FORMAT, "le produit écrit du format 4");
+  assert.equal(racine.format, FORMAT_DU_PRODUIT, "le produit écrit du format 4");
   assert.equal(
     racine.nombreEntrees,
     1,
@@ -408,7 +423,7 @@ test("sur une racine VIDE, le format retourné ne change que ce qui est ANNONCÉ
   fermer(cadre, ouverte);
 
   const auRepos = racineDuJournal(cadre);
-  assert.equal(auRepos.format, GENERATION_FORMAT);
+  assert.equal(auRepos.format, FORMAT_DU_PRODUIT);
   assert.equal(auRepos.nombreEntrees, 0, "un point de contrôle laisse une racine VIDE");
 
   await retournerLeFormat(cadre, auRepos.sequence, GENERATION_FORMAT_IDENTITE_DE_BLOC);
@@ -426,7 +441,7 @@ test("sur une racine VIDE, le format retourné ne change que ce qui est ANNONCÉ
     "la fraîcheur, elle, est authentifiée : elle ne suit pas le champ retourné.",
   );
   // Et le vidage qui clôt la récupération remet du format 4 : l'annonce fausse ne survit pas.
-  assert.equal(racineDuJournal(cadre).format, GENERATION_FORMAT);
+  assert.equal(racineDuJournal(cadre).format, FORMAT_DU_PRODUIT);
   fermer(cadre, apres);
 });
 
@@ -471,7 +486,7 @@ test("la migration 3 → 4 n'écrit AUCUN octet du volume : un instantané de re
     apres.sequence > avant.racine.sequence,
     "seule la séquence avance, et la liaison la compare par ≥",
   );
-  assert.equal(apres.format, GENERATION_FORMAT);
+  assert.equal(apres.format, FORMAT_DU_PRODUIT);
   fermer(cadre, migrante);
 });
 test("un journal de format 3 dont le NUMÉRO est retourné en 4 est refusé, jamais ouvert de travers", async () => {
@@ -483,7 +498,7 @@ test("un journal de format 3 dont le NUMÉRO est retourné en 4 est refusé, jam
   const racine = await journalDeFormat3(cadre, [[0, buildPattern(SECTOR_SIZE, 75)]]);
 
   const version = new Uint8Array(4);
-  new DataView(version.buffer).setUint32(0, GENERATION_FORMAT, true);
+  new DataView(version.buffer).setUint32(0, FORMAT_DU_PRODUIT, true);
   await ecrireDansLeJournal(cadre, offsetDeRacine(racineDeSequence(racine.sequence)) + 8, version);
 
   await assert.rejects(

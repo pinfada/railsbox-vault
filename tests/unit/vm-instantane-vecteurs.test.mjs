@@ -6,10 +6,11 @@ import { hexEnOctets, octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs
 import { encoderEnTete } from "../../src/vm/instantane/fichier-instantane.mjs";
 import { encoderLiaison } from "../../src/vm/instantane/identite-instantane.mjs";
 import {
-  importerCleDeVolume,
   ouvrirInstantane,
   scellerInstantaneSousNonce,
 } from "../../src/vm/instantane/modele-reference.mjs";
+import { cleDInstantane } from "../../src/vm/derivation/hierarchie-de-volume.mjs";
+import { importerMateriauMaitre } from "../../src/vm/derivation/cle-de-domaine.mjs";
 
 // Vecteurs FIGÉS de l'INSTANTANÉ DE REPRISE (#65, ADR 0024).
 //
@@ -29,7 +30,7 @@ import {
 // ADR.
 
 const VECTEURS = JSON.parse(
-  readFileSync(new URL("../vectors/instantane-v1.json", import.meta.url), "utf8"),
+  readFileSync(new URL("../vectors/instantane-v2.json", import.meta.url), "utf8"),
 );
 
 const CLE = hexEnOctets(VECTEURS.cle.hex);
@@ -39,7 +40,12 @@ test("le vecteur déclare la clé de TEST, publique et sans entropie", () => {
     VECTEURS.cle.hex,
     "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
   );
-  assert.equal(VECTEURS.specification, "railsbox-vault/instantane-de-reprise/v1");
+  assert.equal(VECTEURS.specification, "railsbox-vault/instantane-de-reprise/v2");
+  // Depuis #182, cette clé ne CHIFFRE plus rien : elle est la clé maîtresse dont descend, par
+  // HKDF-SHA-256, la clé à usage unique de chaque capture (ADR 0033, décisions 1 et 6).
+  assert.equal(VECTEURS.derivation.domaine, "instantane");
+  assert.equal(VECTEURS.derivation.regime, "usage-unique");
+  assert.equal(VECTEURS.derivation.selOctets, 32);
 });
 
 test("les données associées du chemin de production sont celles du vecteur", () => {
@@ -68,14 +74,23 @@ test("l'en-tête du chemin de production est celui du vecteur, octet pour octet"
       liaison,
       nonce: hexEnOctets(cas.nonce),
       etiquette: hexEnOctets(cas.etiquette),
+      sel: hexEnOctets(cas.sel),
     });
     assert.equal(octetsEnHex(octets), cas.enTete, `« ${cas.nom} » : l'en-tête a changé`);
   }
 });
 
 test("le scellement du chemin de production rend le chiffré et l'étiquette du vecteur", async () => {
-  const cle = await importerCleDeVolume(CLE);
+  const materiau = await importerMateriauMaitre(CLE);
   for (const cas of VECTEURS.cas) {
+    // La clé de CETTE capture, redérivée depuis le sel PUBLIÉ. C'est ce que le vecteur mesure en
+    // plus depuis #182 : non seulement la disposition et les données associées, mais le fait que la
+    // clé descende de la DEK par une info que deux transcriptions indépendantes produisent.
+    const { cle } = await cleDInstantane({
+      materiau,
+      identifiantVolume: cas.liaison.volume,
+      sel: hexEnOctets(cas.sel),
+    });
     const liaison = {
       ...cas.liaison,
       empreinteRegion: hexEnOctets(cas.liaison.empreinteRegion),
@@ -86,7 +101,6 @@ test("le scellement du chemin de production rend le chiffré et l'étiquette du 
       liaison,
       etat: hexEnOctets(cas.etat),
       nonce: hexEnOctets(cas.nonce),
-      attentes: { scellementsCumules: cas.scellementsCumules },
     });
     assert.equal(octetsEnHex(scelle.chiffre), cas.chiffre, `« ${cas.nom} » : chiffré`);
     assert.equal(octetsEnHex(scelle.etiquette), cas.etiquette, `« ${cas.nom} » : étiquette`);

@@ -212,10 +212,22 @@ function racinePorteFraicheur(format) {
  * enregistrements sous deux étiquettes de domaine — n'existe donc à aucun instant.
  */
 export function formatEcritSousFraicheur(fraicheurTenue, formatDeVolume = 3) {
-  if (!fraicheurTenue) return GENERATION_FORMAT_SANS_FRAICHEUR;
-  return formatDeVolume >= FORMAT_DE_VOLUME_A_DEUX_COMPTEURS
-    ? GENERATION_FORMAT_DEUX_COMPTEURS
-    : GENERATION_FORMAT;
+  if (formatDeVolume >= FORMAT_DE_VOLUME_A_DEUX_COMPTEURS) {
+    // **Un volume v4 qui ne tiendrait aucune fraîcheur est REFUSÉ, et non dégradé en format 2.**
+    // Les données associées d'une racine comptent onze champs à partir de la v4 — le nombre suit la
+    // version de VOLUME, qui est authentifiée —, tandis qu'une racine de format 2 n'a pas de place
+    // sur le disque pour le second compteur. La combinaison n'a donc aucun encodage possible, et
+    // l'écrire produirait une racine que personne ne pourrait relire. Aucun chemin du produit n'y
+    // mène : l'ouvreur fournit toujours une source de fraîcheur, et
+    // `tests/unit/harnais-portes.test.mjs` le tient.
+    if (!fraicheurTenue) {
+      throw new RangeError(
+        `Un volume au format ${formatDeVolume} ne peut pas écrire de racine sans fraîcheur de région : sa racine publie deux compteurs, et le format ${GENERATION_FORMAT_SANS_FRAICHEUR} n'a pas de place pour le second. Ouvrir un volume v4 exige une source de fraîcheur (ADR 0019, ADR 0033).`,
+      );
+    }
+    return GENERATION_FORMAT_DEUX_COMPTEURS;
+  }
+  return fraicheurTenue ? GENERATION_FORMAT : GENERATION_FORMAT_SANS_FRAICHEUR;
 }
 
 /**
@@ -424,6 +436,20 @@ function exigerOctets(nom, valeur, longueur) {
   return valeur;
 }
 
+/**
+ * Vrai si la place du SECOND compteur est entièrement nulle — l'état que laisse une racine de #143.
+ *
+ * Une racine trop courte pour porter ce champ n'a rien à cacher : elle est vierge de ce point de
+ * vue, et la longueur est déjà jugée plus haut.
+ */
+function placeDuSecondCompteurVierge(octets) {
+  const fin = Math.min(octets.byteLength, RACINE_ENTETE_V5_OCTETS);
+  for (let index = RACINE_ENTETE_OCTETS; index < fin; index += 1) {
+    if (octets[index] !== 0) return false;
+  }
+  return true;
+}
+
 /** Vrai si la zone de fraîcheur est entièrement nulle — l'état que laisse une racine de #18. */
 function reserveVierge(octets) {
   const fin = Math.min(octets.byteLength, RACINE_ENTETE_OCTETS);
@@ -497,6 +523,17 @@ function controlerSansCle(octets, { tailleVolume }) {
   }
   if (racinePorteDeuxCompteurs(format) && octets.byteLength < RACINE_ENTETE_V5_OCTETS) {
     return refusDeRacine("Secteur de racine trop court pour porter le second compteur.");
+  }
+  // Le MIROIR de la garde de #19 sur la fraîcheur, et pour la même raison : ce runtime n'écrit
+  // jamais un format à un seul compteur au-dessus d'octets non nuls dans la place du second. C'est
+  // exactement ce que produit un bit retourné dans le champ de format — un seul bit fait passer 5
+  // pour 4 —, et sans ce contrôle ce bit masquerait un compteur de journal que plus rien ne
+  // relirait. Le champ reste NON AUTHENTIFIÉ ; ce qui le rend inoffensif est cette cohérence, plus
+  // le fait que les données associées comptent onze champs à partir de la v4 (#182).
+  if (!racinePorteDeuxCompteurs(format) && !placeDuSecondCompteurVierge(octets)) {
+    return refusDeRacine(
+      `Racine déclarée au format ${format}, à un seul compteur, alors que la place du second compteur n'est pas nulle : un des deux ment.`,
+    );
   }
   // Une racine qui SE DIT d'avant la fraîcheur, au-dessus d'octets de fraîcheur non nuls, ne peut
   // pas avoir été écrite ainsi : ce runtime n'écrit jamais l'un sans l'autre, et #18 laissait cette

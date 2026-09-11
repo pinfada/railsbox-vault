@@ -176,7 +176,7 @@ test("l'étiquette de domaine et l'algorithme sont dans les données associées,
     tailleVolume: 16384,
     nombreEntrees: 1,
     longueurCharge: 512,
-    scellementsCumules: 2,
+    scellementsCumulesVolume: 2,
   });
 
   const texte = new TextDecoder().decode(identite);

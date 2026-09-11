@@ -426,6 +426,31 @@ export class Scellement {
     );
   }
 
+  /**
+   * POSE la présence du second compteur dans les données associées d'une racine relue.
+   *
+   * Elle suit la VERSION DE FORMAT DU VOLUME, qui est authentifiée — champ 3 des données associées —
+   * et non le format de journal écrit à l'octet 8 de la racine, qui ne l'est pas. Un appelant qui
+   * présenterait le compteur d'après ce seul octet laisserait un bit non authentifié décider du
+   * nombre de champs que l'étiquette couvre.
+   *
+   * Sur un volume v3 le champ est donc RETIRÉ, quoi que le décodeur ait lu. Sur un volume v4 il est
+   * EXIGÉ : une racine qui n'en porte pas n'est pas une racine de ce volume, et le dire vaut mieux
+   * que de compléter par zéro un budget qu'on ne connaît pas.
+   */
+  #compteurDeJournalDeLaRacine(entete) {
+    if (!racinePorteDeuxCompteurs(this.#formatVersion)) {
+      return { scellementsCumulesJournal: undefined };
+    }
+    const compteur = entete.scellementsCumulesJournal;
+    if (typeof compteur === "number") return { scellementsCumulesJournal: compteur };
+    throw new StorageError(
+      STORAGE_ERROR_CODES.generationCorrupt,
+      `Racine refusée sur le volume « ${this.#volume} » : ce volume est au format v${this.#formatVersion}, dont chaque racine publie les deux compteurs de clé, et celle-ci n'en porte qu'un. Compléter le second par zéro annoncerait un budget de journal neuf pour une clé qui a peut-être servi. Le remède est de restaurer une sauvegarde.`,
+      { volume: this.#volume, sequence: entete.sequence },
+    );
+  }
+
   /** La clé du journal : la sienne en v4, celle du volume en v3 — où il n'y en a qu'une. */
   #cleDuJournal() {
     return this.#cleJournal ?? this.#cleVolume;
@@ -530,7 +555,11 @@ export class Scellement {
    */
   async #cleDUneCapture(sel) {
     if (this.#materiauMaitre === null) {
-      return { sel: null, cle: this.#cleVolume };
+      throw new StorageError(
+        STORAGE_ERROR_CODES.lectureSeule,
+        `Le volume « ${this.#volume} » est au format v${this.#formatVersion} : il n'a pas de clé maîtresse, donc pas de domaine « instantane ». Depuis le format v4, une capture est scellée sous une clé à usage unique dérivée de la DEK, et le fichier d'instantané porte son sel (ADR 0033, décision 3). Une capture d'un volume antérieur n'a pas d'équivalent : un instantané est un état de REPRISE, écarté dès qu'il est consommé ou périmé, et rien ne le migre.`,
+        { volume: this.#volume, formatVersion: this.#formatVersion, geste: "instantane" },
+      );
     }
     return cleDInstantane({
       materiau: this.#materiauMaitre,
@@ -553,7 +582,7 @@ export class Scellement {
     return traduisant({ volume: this.#volume, sequence: entete.sequence }, () =>
       ouvrirRacine({
         cle: this.#cleVolume,
-        entete: { ...identite, ...entete },
+        entete: { ...identite, ...entete, ...this.#compteurDeJournalDeLaRacine(entete) },
         scelle,
         entrees,
         attentes: { ...identite, ...attentes },

@@ -88,7 +88,7 @@ async function scellerGeneration(cle, { generation, sequence, adresses, compteur
       sequence,
       generation,
       tailleVolume: TAILLE_VOLUME,
-      scellementsCumules: compteur.suivant().scellementsCumules,
+      scellementsCumulesVolume: compteur.suivant().scellementsCumules,
     },
     entrees,
     attentes: { sequencePrecedente: null },
@@ -500,7 +500,7 @@ test("BORNE — une séquence de racine qui ne croît pas strictement est refus�
     sequence: 7,
     generation: 7,
     tailleVolume: TAILLE_VOLUME,
-    scellementsCumules: 12,
+    scellementsCumulesVolume: 12,
   };
 
   // Témoin positif : strictement au-dessus, le scellement passe.
@@ -560,7 +560,7 @@ test("BORNE — au budget de scellements de la clé, sceller est refusé avant d
           sequence: 1,
           generation: 1,
           tailleVolume: TAILLE_VOLUME,
-          scellementsCumules: BUDGET_SCELLEMENTS_PAR_CLE,
+          scellementsCumulesVolume: BUDGET_SCELLEMENTS_PAR_CLE,
         },
         entrees: [],
         attentes: { sequencePrecedente: null },
@@ -591,7 +591,7 @@ test("BORNE — une attente OUBLIÉE est refusée : un oubli ne vaut pas « aucu
           sequence: 1,
           generation: 1,
           tailleVolume: TAILLE_VOLUME,
-          scellementsCumules: 0,
+          scellementsCumulesVolume: 0,
         },
         entrees: [],
         attentes: {},

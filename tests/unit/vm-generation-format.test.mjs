@@ -4,8 +4,13 @@ import test from "node:test";
 import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import {
   ENTETE_OCTETS,
+  FORMAT_DE_VOLUME_A_DEUX_COMPTEURS,
   GENERATION_FORMAT,
+  GENERATION_FORMAT_DEUX_COMPTEURS,
   GENERATION_FORMAT_SANS_FRAICHEUR,
+  RACINE_ENTETE_V5_OCTETS,
+  enregistrementsSousIdentiteDeBloc,
+  formatEcritSousFraicheur,
   RACINE_ENTETE_V2_OCTETS,
   RACINES,
   RACINE_ENTETE_OCTETS,
@@ -22,7 +27,7 @@ import {
 import { FRAICHEUR_OCTETS } from "../../src/vm/generation-fraicheur.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
-import { identifiantVolumeEnOctets } from "../../src/vm/volume-chiffre-format.mjs";
+import { FORMAT_VOLUME_V4, identifiantVolumeEnOctets } from "../../src/vm/volume-chiffre-format.mjs";
 
 // Format de l'enregistrement de validation d'une génération (#16, ADR 0014 ; #18, ADR 0016).
 //
@@ -47,13 +52,16 @@ function motif(longueur, graine) {
 
 function racineValide(surcharge = {}) {
   return {
+    // Le FORMAT que la session écrit. Une racine de volume v3 en porte quatre ; une racine de volume
+    // v4 en porte cinq, et publie alors le second compteur (#182).
+    format: GENERATION_FORMAT,
     sequence: 5,
     generation: 3,
     tailleVolume: TAILLE_VOLUME,
     nombreEntrees: 2,
     longueurCharge: 1024,
     identifiantVolume: identifiantVolumeEnOctets(IDENTIFIANT),
-    scellementsCumules: 42,
+    scellementsCumulesVolume: 42,
     nonce: motif(12, 1),
     chiffre: motif(32, 2),
     etiquette: motif(16, 3),
@@ -80,7 +88,12 @@ test("une racine encodée tient dans un seul secteur et se relit à l'identique"
   assert.equal(relue.racine.generation, 3);
   assert.equal(relue.racine.nombreEntrees, 2);
   assert.equal(relue.racine.longueurCharge, 1024);
-  assert.equal(relue.racine.scellementsCumules, 42);
+  assert.equal(relue.racine.scellementsCumulesVolume, 42);
+  assert.equal(
+    relue.racine.scellementsCumulesJournal,
+    null,
+    "une racine de format 4 ne publie qu'un compteur, et le dit par « null » plutôt que par zéro",
+  );
   assert.equal(relue.racine.format, GENERATION_FORMAT);
   assert.deepEqual(relue.racine.identifiantVolume, identifiantVolumeEnOctets(IDENTIFIANT));
   assert.deepEqual(relue.racine.scelle.nonce, motif(12, 1));
@@ -120,6 +133,7 @@ test("le format du journal vaut 4 : un runtime antérieur refuse cette racine sa
   // refuse cette racine comme un format inconnu, ce qui est le comportement voulu : il ouvrirait les
   // enregistrements dans l'espace d'identités du VOLUME.
   assert.equal(GENERATION_FORMAT, 4);
+  assert.equal(GENERATION_FORMAT_DEUX_COMPTEURS, 5);
   const octets = encoderRacine(racineValide());
   const ancienne = Uint8Array.from(octets);
   new DataView(ancienne.buffer).setUint32(8, 1, true);
@@ -128,17 +142,199 @@ test("le format du journal vaut 4 : un runtime antérieur refuse cette racine sa
   assert.match(relue.raison, /format/i);
 });
 
+test("une racine de format 5 publie DEUX compteurs, et se relit pour ce qu'elle est (#182)", () => {
+  const octets = encoderRacine(
+    racineValide({
+      format: GENERATION_FORMAT_DEUX_COMPTEURS,
+      scellementsCumulesVolume: 42,
+      scellementsCumulesJournal: 7,
+    }),
+  );
+  assert.equal(octets.byteLength, RACINE_OCTETS);
+  assert.equal(
+    RACINE_ENTETE_V5_OCTETS,
+    210,
+    "202 octets du format 4, plus les huit du compteur du journal : c'est un contrat",
+  );
+
+  const relue = decoderRacine(octets, { tailleVolume: TAILLE_VOLUME });
+  assert.equal(relue.valide, true, relue.raison ?? "");
+  assert.equal(relue.racine.format, GENERATION_FORMAT_DEUX_COMPTEURS);
+  assert.equal(relue.racine.scellementsCumulesVolume, 42);
+  assert.equal(relue.racine.scellementsCumulesJournal, 7);
+
+  // Les 202 premiers octets sont ceux du format 4, INCHANGÉS : ce qui est déjà sur un support se
+  // relit à la même place, et c'est ce qui rend l'ajout compatible plutôt que destructeur.
+  const quatre = encoderRacine(racineValide());
+  assert.deepEqual(
+    [...octets.subarray(16, RACINE_ENTETE_OCTETS)],
+    [...quatre.subarray(16, RACINE_ENTETE_OCTETS)],
+    "seul le champ de format et la queue changent entre une racine 4 et une racine 5",
+  );
+});
+
+test("une racine de format 5 SANS son second compteur est refusée à l'encodage (#182)", () => {
+  // Le journal a sa propre clé depuis #182, donc son propre budget. Une racine qui ne le publierait
+  // pas rendrait ce budget invérifiable — c'est-à-dire referait exactement le défaut que #182 corrige.
+  const { scellementsCumulesJournal, ...sansLeChamp } = racineValide({
+    format: GENERATION_FORMAT_DEUX_COMPTEURS,
+    scellementsCumulesJournal: 7,
+  });
+  assert.equal(scellementsCumulesJournal, 7);
+  assert.throws(() => encoderRacine(sansLeChamp), /obligatoire/);
+});
+
+test("le format écrit suit la version du VOLUME, et les deux nombres se recoupent (#182)", () => {
+  assert.equal(formatEcritSousFraicheur(true, 3), GENERATION_FORMAT);
+  assert.equal(formatEcritSousFraicheur(true, 4), GENERATION_FORMAT_DEUX_COMPTEURS);
+  assert.equal(formatEcritSousFraicheur(false, 3), GENERATION_FORMAT_SANS_FRAICHEUR);
+  // Les deux modules nomment la même frontière, et une seule d'entre elles est la bonne : on les
+  // confronte ici plutôt que de laisser l'un importer l'autre — un module du journal qui
+  // dépendrait de la disposition du volume serait un module de volume.
+  assert.equal(FORMAT_DE_VOLUME_A_DEUX_COMPTEURS, FORMAT_VOLUME_V4);
+});
+
 test("un octet retourné dans un champ de LOCALISATION est refusé SANS clé", () => {
   // Marqueur, format, taille de secteur : ils ne sont pas dans les données associées, et c'est
   // délibéré — ils localisent, ils n'autorisent pas. Le module doit donc les refuser lui-même.
   const octets = encoderRacine(racineValide());
-  for (const position of [0, 4, 8, 12]) {
+  for (const position of [0, 4, 12]) {
     const abimee = Uint8Array.from(octets);
     abimee[position] ^= 0x01;
     const relue = decoderRacine(abimee, { tailleVolume: TAILLE_VOLUME });
     assert.equal(relue.valide, false, `l'octet ${position} doit invalider la racine`);
     assert.match(relue.raison, /\S/);
   }
+});
+
+test("un format RETOURNÉ vers un format connu ne change RIEN de ce que le lecteur fait", async () => {
+  // **Ce que #182 a changé ici, et qu'il vaut mieux écrire que découvrir.** Tant que 5 était un
+  // format inconnu, un bit retourné dans le champ de format faisait 4 → 5 et le décodeur refusait
+  // sans clé. Depuis que la v4 écrit du format 5, ce refus-là tombe : les deux nombres sont connus.
+  //
+  // Ce qui le remplace n'est pas une garde, c'est une ABSENCE DE CONSÉQUENCE, et elle se mesure.
+  // Le nombre de champs des données associées suit la version de VOLUME — champ 3, AUTHENTIFIÉ — et
+  // non cet octet-ci : `Scellement#ouvrirRacine` pose le second compteur d'après elle, et le retire
+  // quand le volume n'en a qu'un. Un bit retourné entre 4 et 5 ne déplace donc ni l'étiquette de
+  // domaine des enregistrements — `enregistrementsSousIdentiteDeBloc` rend faux pour les deux — ni
+  // le nombre de champs scellés. La racine s'ouvre, et c'est le verdict juste.
+  const scellement = await Scellement.ouvrir({
+    volume: IDENTIFIANT,
+    cleOctets: CLE_DE_TEST,
+    formatVersion: 3,
+  });
+  const scelle = await scellement.scellerRacine(
+    { sequence: 5, generation: 3, tailleVolume: TAILLE_VOLUME },
+    [],
+    { sequencePrecedente: null },
+  );
+  const octets = encoderRacine({
+    format: GENERATION_FORMAT,
+    sequence: 5,
+    generation: 3,
+    tailleVolume: TAILLE_VOLUME,
+    nombreEntrees: scelle.entete.nombreEntrees,
+    longueurCharge: scelle.entete.longueurCharge,
+    identifiantVolume: identifiantVolumeEnOctets(IDENTIFIANT),
+    scellementsCumulesVolume: scelle.entete.scellementsCumulesVolume,
+    nonce: scelle.nonce,
+    chiffre: scelle.chiffre,
+    etiquette: scelle.etiquette,
+    // Une fraîcheur est POSÉE : sans elle le format écrit serait celui de #18, et le bit retourné
+    // ne ferait pas le saut qu'on veut mesurer.
+    fraicheur: motif(FRAICHEUR_OCTETS, 9),
+  });
+
+  const abimee = Uint8Array.from(octets);
+  abimee[8] ^= 0x01; // 4 → 5
+  const relue = decoderRacine(abimee, { tailleVolume: TAILLE_VOLUME });
+  assert.equal(relue.valide, true, "le format 5 est CONNU : le décodeur le rend");
+  assert.equal(relue.racine.format, GENERATION_FORMAT_DEUX_COMPTEURS);
+  assert.equal(
+    enregistrementsSousIdentiteDeBloc(relue.racine.format),
+    enregistrementsSousIdentiteDeBloc(GENERATION_FORMAT),
+    "les deux formats scellent les enregistrements sous la même étiquette de domaine",
+  );
+
+  const ouverte = await scellement.ouvrirRacine(
+    {
+      sequence: relue.racine.sequence,
+      generation: relue.racine.generation,
+      tailleVolume: relue.racine.tailleVolume,
+      nombreEntrees: relue.racine.nombreEntrees,
+      longueurCharge: relue.racine.longueurCharge,
+      scellementsCumulesVolume: relue.racine.scellementsCumulesVolume,
+      // Ce que le décodeur a lu dans la RÉSERVE, présenté tel quel. Le scellement le retire, parce
+      // que ce volume est un v3 : c'est la version AUTHENTIFIÉE qui décide, pas l'octet 8.
+      scellementsCumulesJournal: relue.racine.scellementsCumulesJournal,
+    },
+    relue.racine.scelle,
+    [],
+    { tailleVolume: TAILLE_VOLUME, sequenceMinimale: null },
+  );
+  assert.equal(ouverte.entete.sequence, 5);
+});
+
+test("une racine à UN seul compteur est refusée par un volume v4 : pas de budget complété par zéro", async () => {
+  const scellement = await Scellement.ouvrir({
+    volume: IDENTIFIANT,
+    cleOctets: CLE_DE_TEST,
+    formatVersion: FORMAT_VOLUME_V4,
+  });
+  const scelle = await scellement.scellerRacine(
+    { sequence: 1, generation: 1, tailleVolume: TAILLE_VOLUME },
+    [],
+    { sequencePrecedente: null },
+  );
+  const entete = {
+    sequence: 1,
+    generation: 1,
+    tailleVolume: TAILLE_VOLUME,
+    nombreEntrees: scelle.entete.nombreEntrees,
+    longueurCharge: scelle.entete.longueurCharge,
+    scellementsCumulesVolume: scelle.entete.scellementsCumulesVolume,
+    scellementsCumulesJournal: scelle.entete.scellementsCumulesJournal,
+  };
+  // Témoin positif : complète, elle s'ouvre.
+  await scellement.ouvrirRacine(entete, scelle, [], {
+    tailleVolume: TAILLE_VOLUME,
+    sequenceMinimale: null,
+  });
+
+  await assert.rejects(
+    () =>
+      scellement.ouvrirRacine(
+        { ...entete, scellementsCumulesJournal: null },
+        scelle,
+        [],
+        { tailleVolume: TAILLE_VOLUME, sequenceMinimale: null },
+      ),
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.generationCorrupt),
+  );
+});
+
+test("un volume v4 sans source de fraîcheur ne peut pas écrire de racine, et le dit", () => {
+  // La combinaison n'a aucun encodage : onze champs dans les données associées, et pas de place sur
+  // le disque pour le second compteur. La refuser vaut mieux que d'écrire une racine illisible.
+  assert.throws(() => formatEcritSousFraicheur(false, FORMAT_VOLUME_V4), /fraîcheur/);
+});
+
+test("une racine de format 4 dont la place du second compteur n'est pas nulle est refusée", () => {
+  // Le miroir de la garde que #19 a posée sur la fraîcheur : ce runtime n'écrit jamais l'un sans
+  // l'autre, et un format qui SE DIT à un compteur au-dessus d'octets non nuls dans la place du
+  // second ne peut pas avoir été écrit ainsi. Sans cette garde, un bit retourné 5 → 4 masquerait
+  // un compteur de journal que plus rien ne relirait.
+  const octets = encoderRacine(
+    racineValide({
+      format: GENERATION_FORMAT_DEUX_COMPTEURS,
+      scellementsCumulesJournal: 7,
+    }),
+  );
+  const abimee = Uint8Array.from(octets);
+  abimee[8] ^= 0x01; // 5 → 4
+  const relue = decoderRacine(abimee, { tailleVolume: TAILLE_VOLUME });
+  assert.equal(relue.valide, false);
+  assert.match(relue.raison, /compteur/i);
 });
 
 test("un octet retourné dans un champ AUTHENTIFIÉ se décode encore, et c'est l'étiquette qui refuse", async () => {
@@ -163,7 +359,7 @@ test("un octet retourné dans un champ AUTHENTIFIÉ se décode encore, et c'est 
     nombreEntrees: scelle.entete.nombreEntrees,
     longueurCharge: scelle.entete.longueurCharge,
     identifiantVolume: identifiantVolumeEnOctets(IDENTIFIANT),
-    scellementsCumules: scelle.entete.scellementsCumules,
+    scellementsCumulesVolume: scelle.entete.scellementsCumulesVolume,
     nonce: scelle.nonce,
     chiffre: scelle.chiffre,
     etiquette: scelle.etiquette,
@@ -182,7 +378,7 @@ test("un octet retourné dans un champ AUTHENTIFIÉ se décode encore, et c'est 
         tailleVolume: relue.racine.tailleVolume,
         nombreEntrees: relue.racine.nombreEntrees,
         longueurCharge: relue.racine.longueurCharge,
-        scellementsCumules: relue.racine.scellementsCumules,
+        scellementsCumulesVolume: relue.racine.scellementsCumulesVolume,
       },
       relue.racine.scelle,
       entrees,
