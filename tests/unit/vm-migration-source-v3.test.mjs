@@ -47,7 +47,8 @@ import {
   MOTIFS_DE_RACINE_INITIALE,
   autorisationSansRacine,
 } from "../../src/vm/opfs-racine-initiale.mjs";
-import { exportVolumeToBytes } from "../../src/vm/archive-en-memoire.mjs";
+import { exportVolumeToBytes, verifyArchive } from "../../src/vm/archive-en-memoire.mjs";
+import { GENERATION_ETATS } from "../../src/vm/generation-recuperation.mjs";
 import { CONSISTENCY_KINDS } from "../../src/vm/volume-export.mjs";
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 import { createSha256Stream } from "../../src/vm/sha256-stream.mjs";
@@ -574,39 +575,174 @@ function coupantLaLectureDuJournal(store) {
   };
 }
 
-test("MESURE — ce runtime ne sait pas EXPORTER un v3, donc il ne peut pas en faire la sauvegarde", async () => {
-  // **Trouvé en livrant le correctif du CRITICAL, et ce n'est pas lui.** Un pas destructif exige une
-  // sauvegarde VÉRIFIÉE — `assertPreuveDisponible` refuse explicitement qu'un consentement nommé en
-  // tienne lieu (ADR 0011). Or `ouvrirPourExport` ouvre le volume par `openOpfsVolume` dès que son
-  // format atteint `MIN_VOLUME_FORMAT_VERSION`, et ce runtime REFUSE un en-tête v3 en renvoyant à la
-  // migration. Les deux règles se referment donc de nouveau l'une sur l'autre, un cran plus loin :
-  // **un v3 est migrable, à condition de détenir déjà une archive faite par le runtime précédent.**
+test("ce runtime EXPORTE un volume v3, charge acquittée comprise, et son engagement tient", async () => {
+  // **La boucle que la PR #186 a MESURÉE, refermée ici (second amendement de la DoR de #182).** Un
+  // pas destructif exige une sauvegarde VÉRIFIÉE — `assertPreuveDisponible` refuse qu'un
+  // consentement nommé en tienne lieu (ADR 0011). Or `ouvrirPourExport` passait par `openOpfsVolume`
+  // dès la version 3, et ce runtime refuse un en-tête v3 en renvoyant à la migration : **un v3
+  // n'était migrable qu'à condition de détenir déjà une archive faite par le runtime précédent.**
   //
-  // Ce n'est pas corrigé ici, et c'est délibéré : ouvrir un chemin d'export pour un format que ce
-  // runtime n'ouvre pas est une DÉCISION — que déclare le manifeste de l'archive, qui scelle son
-  // engagement, ce que devient la génération validée que le journal porte encore — et elle ne
-  // s'invente pas en fin de chantier. Elle est portée au mainteneur avec cette mesure.
-  //
-  // L'épreuve MESURE l'état, elle ne garde pas une règle : le jour où ce chemin s'ouvre, elle
-  // rougit, et c'est voulu.
+  // L'export d'un v3 emprunte désormais le SEUL lecteur de v3 du dépôt, celui de la migration. Ce
+  // que cette épreuve exige n'est donc pas « ça ne lève plus », mais que l'archive porte l'état
+  // SOLDÉ : la génération validée que le journal portait encore est DANS le fichier exporté.
   const store = createSyncAccessStore();
   const montage = await poserUnV3Reel(store);
-  assert.equal(montage.manifesteV3.formatVersion, FORMAT_VOLUME_V3);
+  const acquitte = new Uint8Array(SECTOR_SIZE).fill(0xa7);
 
-  await assert.rejects(
-    () =>
-      ouvrirPourExport({
-        name: NOM,
-        cle: CLE_DE_TEST,
-        formatVersion: FORMAT_VOLUME_V3,
-        openHandle: store.openHandle,
-      }),
-    (erreur) => {
-      // Le refus est celui de l'OUVERTURE, et il nomme la migration comme remède — ce qui est
-      // exactement la boucle : pour migrer il faut une sauvegarde, et pour la faire il faut ouvrir.
-      assert.match(erreur.message, /migr/i, `refus inattendu : ${erreur.code} — ${erreur.message}`);
-      return true;
-    },
-    "ce runtime ne sait pas ouvrir un v3, donc il ne sait pas en faire une archive",
+  const depot = await ouvrirVolumeBrut({
+    name: NOM,
+    size: tailleSupportDuVolume(TAILLE),
+    openHandle: store.openHandle,
+  });
+  try {
+    await deposerUneGenerationV3(depot, store, montage.identifiant, acquitte);
+  } finally {
+    await depot.close();
+  }
+  // Le fichier ne porte PAS encore l'écriture : c'est tout l'objet de l'épreuve.
+  const avantSolde = store.snapshot(NOM);
+
+  const { brut, rapport } = await ouvrirPourExport({
+    name: NOM,
+    cle: CLE_DE_TEST,
+    formatVersion: FORMAT_VOLUME_V3,
+    openHandle: store.openHandle,
+  });
+  let archive;
+  try {
+    assert.equal(
+      rapport?.etat,
+      GENERATION_ETATS.rejouee,
+      "l'export d'un v3 SOLDE son journal : sans cela l'archive perdrait une écriture acquittée",
+    );
+    const exporte = await exportVolumeToBytes({
+      source: { size: brut.size(), read: (offset, longueur) => brut.read(offset, longueur) },
+      manifest: montage.manifesteV3,
+      consistency: { kind: CONSISTENCY_KINDS.exclusiveHandle, detail: "export v3 avant migration" },
+      cle: CLE_DE_TEST,
+    });
+    archive = exporte.archive;
+  } finally {
+    await brut.close();
+  }
+
+  assert.notDeepEqual(
+    Array.from(store.snapshot(NOM).subarray(0, EN_TETE_OCTETS * 4)),
+    Array.from(avantSolde.subarray(0, EN_TETE_OCTETS * 4)),
+    "solder un v3 ÉCRIT dans son fichier : la charge acquittée y entre",
   );
+
+  // L'archive est une archive v3 au sens de #181 : elle déclare un volume de format 3 et porte un
+  // engagement scellé sous la clé du domaine `archive`, version 3 du domaine. Rien de neuf n'a été
+  // inventé pour elle.
+  const verdict = await verifyArchive(archive, { enforceCompatibility: false });
+  assert.equal(verdict.manifest.formatVersion, FORMAT_VOLUME_V3);
+  assert.notEqual(verdict.engagement, null, "une archive de volume chiffré PORTE son engagement");
+  assert.equal(verdict.engagement.descripteur.versionDArchive, FORMAT_VOLUME_V3);
+  assert.equal(verdict.engagement.descripteur.identifiantVolume, montage.identifiant);
 });
+
+test("l'archive d'un v3 se RESTAURE et se migre : la charge acquittée arrive dans le clair v4", async () => {
+  // Le cycle entier, par les gestes du produit : un v3 en service, une écriture acquittée restée
+  // dans son journal, un EXPORT par ce runtime, l'état qu'une restauration laisse — le fichier et
+  // son engagement, aucun voisin de génération —, puis la migration. C'est le chemin que le second
+  // amendement de la DoR ouvre, et il n'a de valeur que s'il rend le clair.
+  const store = createSyncAccessStore();
+  const montage = await poserUnV3Reel(store);
+  const acquitte = new Uint8Array(SECTOR_SIZE).fill(0x3e);
+
+  const depot = await ouvrirVolumeBrut({
+    name: NOM,
+    size: tailleSupportDuVolume(TAILLE),
+    openHandle: store.openHandle,
+  });
+  try {
+    await deposerUneGenerationV3(depot, store, montage.identifiant, acquitte);
+  } finally {
+    await depot.close();
+  }
+
+  const { brut } = await ouvrirPourExport({
+    name: NOM,
+    cle: CLE_DE_TEST,
+    formatVersion: FORMAT_VOLUME_V3,
+    openHandle: store.openHandle,
+  });
+  let archive;
+  try {
+    const exporte = await exportVolumeToBytes({
+      source: { size: brut.size(), read: (offset, longueur) => brut.read(offset, longueur) },
+      manifest: montage.manifesteV3,
+      consistency: { kind: CONSISTENCY_KINDS.exclusiveHandle, detail: "export v3 avant migration" },
+      cle: CLE_DE_TEST,
+    });
+    archive = exporte.archive;
+  } finally {
+    await brut.close();
+  }
+
+  // L'ÉTAT QU'UNE RESTAURATION LAISSE : le contenu de l'archive dans le fichier, l'engagement de
+  // l'archive à côté, et aucun voisin de génération. Les octets d'engagement viennent de l'ARCHIVE,
+  // jamais recalculés ici — un engagement refabriqué prouverait le harnais, pas le produit.
+  const verdict = await verifyArchive(archive, { enforceCompatibility: false });
+  await poserLeContenuRestaure(store, archive, verdict);
+  etatDUneRestauration(store);
+  await poserLesOctetsDEngagement(store, encoderFichierDEngagement(verdict.engagement));
+
+  const rapport = await migrateVolume({
+    target: montage.cible,
+    expectations: attentes(),
+    backup: { source: { byteLength: archive.byteLength, read: (o, l) => archive.slice(o, o + l) } },
+    cle: CLE_DE_TEST,
+  });
+  assert.equal(rapport.migrated, true, "l'archive faite par CE runtime autorise la migration");
+
+  const backend = await openOpfsVolume({
+    name: NOM,
+    cle: CLE_DE_TEST,
+    identifiantVolume: identifiantDuFichier(store, FORMAT_VOLUME_V4),
+    openHandle: store.openHandle,
+  });
+  try {
+    assert.deepEqual(
+      Array.from(await backend.read(SECTOR_SIZE, SECTOR_SIZE)),
+      Array.from(acquitte),
+      "export v3 → archive → restauration → migration : la charge acquittée est dans le clair v4",
+    );
+    assert.deepEqual(
+      Array.from(await backend.read(0, SECTOR_SIZE)),
+      Array.from(contenuV2().subarray(0, SECTOR_SIZE)),
+      "et le reste du clair n'a pas bougé",
+    );
+  } finally {
+    await backend.close();
+  }
+});
+
+/** Écrit dans le fichier de volume la section de CONTENU de l'archive, comme la restauration. */
+async function poserLeContenuRestaure(store, archive, verdict) {
+  const contenu = archive.subarray(
+    verdict.contentOffset,
+    verdict.contentOffset + verdict.contentLength,
+  );
+  const handle = await store.openHandle(NOM);
+  try {
+    handle.truncate(contenu.byteLength);
+    handle.write(contenu, { at: 0 });
+    handle.flush();
+  } finally {
+    handle.close();
+  }
+}
+
+/** Dépose les octets d'engagement que l'ARCHIVE porte, à côté du volume. */
+async function poserLesOctetsDEngagement(store, octets) {
+  const handle = await store.openHandle(engagementSidecarName(NOM));
+  try {
+    handle.truncate(octets.byteLength);
+    handle.write(octets, { at: 0 });
+    handle.flush();
+  } finally {
+    handle.close();
+  }
+}
