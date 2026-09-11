@@ -1583,6 +1583,12 @@ L'ordre suivant n'est pas une commodité ; changer un seul de ses pas rendrait u
    | pas de racine, engagement présent | vérifier l'engagement **avant tout clair** ; s'il ouvre : écrire la **racine initiale**, la rendre durable, puis tronquer ce que le journal portait, puis VIDER le voisin ; sinon : `VAULT_STORAGE_ENGAGEMENT_INVALIDE` |
    | pas de racine, engagement absent  | `VAULT_STORAGE_VOLUME_SANS_RACINE`, **avant tout clair**                                                                                                                                                                |
 
+   **Ces trois cas valent aussi pour la MIGRATION, depuis #182**, et il a fallu le dire : elle est
+   une OUVERTURE de sa source, pas un chemin privilégié. Elle ne les appliquait pas — elle DATAIT
+   d'une racine neuve un volume sans racine —, si bien que la moitié « restauration » du CRITICAL de
+   #181 redevenait franchissable par le seul chemin qu'un produit v4 laisse à une archive v3. Le §
+   7.4 dit comment, et sous quelle clé un journal v3 se lit.
+
    Le cas « au moins une racine ABÎMÉE » reste ce qu'il est :
    `VAULT_STORAGE_GENERATION_ROOT_CORRUPT`, inchangé, et il tombe **avant** toute autorisation —
    vérifier un engagement coûte l'empreinte de tout le fichier, et un journal dont on ne sait plus
