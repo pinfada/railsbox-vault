@@ -18,6 +18,7 @@ on:
       - "src/coquille/**"
       - "public/vm/**"
       - "public/main.mjs"
+      - "public/coquille/**"
       - "public/document-applicatif.html"
       - "public/document-applicatif.mjs"
       - "public/runtime-worker.mjs"
