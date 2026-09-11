@@ -25,6 +25,7 @@ import {
   cleRefusee,
   enveloppeAbsente,
   enveloppeIllisible,
+  identiteDeclareeIncoherente,
   isEnveloppeError,
   rejeu,
 } from "./enveloppe-errors.mjs";
@@ -157,20 +158,8 @@ async function ouvrirPage(page, kek, identifiantVolume) {
   return Object.freeze({ ...trouve, version: page.version });
 }
 
-/**
- * Les pages STRUCTURELLEMENT valides, de la plus récente à la plus ancienne.
- *
- * Le classement se fait sur la version DÉCLARÉE, qui n'est pas encore authentifiée à ce stade. Ce
- * n'est pas un oubli : il n'existe aucun moyen de trier deux pages sans les lire, et l'autorité
- * qu'on leur accorde ici ne va pas plus loin que l'ORDRE DES ESSAIS. Une page qui mentirait sur sa
- * version serait essayée d'abord, puis refusée par son étiquette.
- *
- * L'égalité de version est départagée par l'index, pour que le résultat ne dépende jamais de
- * l'ordre de lecture. Deux pages de même version ne devraient pas exister — le compteur croît
- * strictement —, et un fichier qui en porterait deux est précisément le cas où l'on ne veut pas
- * d'un verdict tiré au sort.
- */
-function pagesDeLaPlusRecente(octets) {
+/** Décode les DEUX pages du fichier, sans filtrer ni trier. */
+function decoderLesDeuxPages(octets) {
   const lues = [];
   for (let index = 0; index < PAGES; index += 1) {
     const lue = decoderPage(
@@ -178,9 +167,33 @@ function pagesDeLaPlusRecente(octets) {
     );
     lues.push({ index, ...lue });
   }
+  return lues;
+}
+
+/**
+ * Les pages STRUCTURELLEMENT valides ET qui NOMMENT `identifiantVolume`, de la plus récente à la
+ * plus ancienne (#159, revue de la PR #188, HIGH-4).
+ *
+ * Le classement se fait sur la version DÉCLARÉE, qui n'est pas encore authentifiée à ce stade. Ce
+ * n'est pas un oubli : il n'existe aucun moyen de trier deux pages sans les lire, et l'autorité
+ * qu'on leur accorde ici ne va pas plus loin que l'ORDRE DES ESSAIS. Une page qui mentirait sur sa
+ * version serait essayée d'abord, puis refusée par son étiquette.
+ *
+ * **Le filtre d'identité vient AVANT le tri et AVANT `refuserLaRetrogradation`, et c'est la
+ * correction du HIGH-4** : un fichier `.cles` mêlant la page d'un AUTRE volume à une version plus
+ * haute que la nôtre faisait sinon écarter notre page comme si elle rétrogradait — alors que ce
+ * n'est pas la même enveloppe. La page étrangère n'entre jamais dans ce classement ; c'est
+ * `pageLibreEtrangere`, plus bas dans `lireEtat`, qui la confronte pour l'ÉCRITURE.
+ *
+ * L'égalité de version est départagée par l'index, pour que le résultat ne dépende jamais de
+ * l'ordre de lecture. Deux pages de même version ne devraient pas exister — le compteur croît
+ * strictement —, et un fichier qui en porterait deux est précisément le cas où l'on ne veut pas
+ * d'un verdict tiré au sort.
+ */
+function pagesDeLaPlusRecente(lues, identifiantVolume) {
   return refuserLaRetrogradation(
     lues
-      .filter((lue) => lue.valide)
+      .filter((lue) => lue.valide && lue.page.identifiantVolume === identifiantVolume)
       .sort((a, b) => b.page.version - a.page.version || a.index - b.index),
   );
 }
@@ -249,11 +262,30 @@ function refuserLaRetrogradation(candidates) {
  * ancrage monotone hors du fichier pour le refuser, et `versionMinimale` est le point où il se
  * branchera (#23). Sans ancrage, ce retour arrière n'est pas détecté, et le dire vaut mieux que de
  * laisser croire qu'une révocation résiste à qui peut écrire dans l'origine de confiance.
+ *
+ * ## `pageLibreEtrangere` — la moitié ÉCRITURE du HIGH-4 (revue de la PR #188)
+ *
+ * `pagesDeLaPlusRecente` ferme la moitié LECTURE — une page d'un autre volume n'est plus jamais
+ * candidate à l'autorité, authentifiée ou non. Elle ne dit rien de l'ÉCRITURE : `muter`
+ * (`enveloppe-de-cle.mjs`) publie inconditionnellement sur `pageLibre`, quel que soit ce qui s'y
+ * trouve — « l'autre emplacement », par pure arithmétique sur l'index. Sur un fichier MÊLÉ, cet
+ * emplacement peut être une page D'UN AUTRE VOLUME, valide et à jour : l'écraser la détruirait.
+ * `pageLibreEtrangere` porte ce constat — l'identifiant DÉCLARÉ de la page qui occupe `pageLibre`,
+ * si elle est structurellement valide et ne nous appartient pas, `null` sinon — pour que `muter`
+ * refuse AVANT d'écrire plutôt qu'après avoir détruit.
  */
 export async function lireEtat({ support, identifiantVolume, kek, versionMinimale = null }) {
   const octets = await lireFichier(support, { volume: identifiantVolume });
-  const candidates = pagesDeLaPlusRecente(octets);
-  if (candidates.length === 0) throw enveloppeIllisible({ volume: identifiantVolume });
+  const lues = decoderLesDeuxPages(octets);
+  const candidates = pagesDeLaPlusRecente(lues, identifiantVolume);
+  if (candidates.length === 0) {
+    // Une page valide existe, mais aucune ne nous NOMME : c'est une enveloppe, mais pas la nôtre.
+    // Dire « illisible » mentirait exactement comme le ferait « absente » — voir #159.
+    if (lues.some((lue) => lue.valide)) {
+      throw identiteDeclareeIncoherente({ volume: identifiantVolume });
+    }
+    throw enveloppeIllisible({ volume: identifiantVolume });
+  }
 
   const refus = [];
   for (const candidate of candidates) {
@@ -270,11 +302,18 @@ export async function lireEtat({ support, identifiantVolume, kek, versionMinimal
     if (versionMinimale !== null && ouverte.version < versionMinimale) {
       throw rejeu({ version: ouverte.version, minimale: versionMinimale });
     }
+    const pageLibre = PAGES - 1 - candidate.index;
+    const libre = lues.find((lue) => lue.index === pageLibre);
+    const pageLibreEtrangere =
+      libre?.valide === true && libre.page.identifiantVolume !== identifiantVolume
+        ? libre.page.identifiantVolume
+        : null;
     return Object.freeze({
       index: candidate.index,
       page: candidate.page,
       ...ouverte,
-      pageLibre: PAGES - 1 - candidate.index,
+      pageLibre,
+      pageLibreEtrangere,
     });
   }
   throw refusLePlusEtabli(refus);

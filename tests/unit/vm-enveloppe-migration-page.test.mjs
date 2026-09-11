@@ -559,6 +559,67 @@ test("RÉTROGRADATION : une page v1 forgée à une version haute ne reprend PAS 
   );
 });
 
+test("fichier MÊLÉ v1(A, version haute) + v2(B) : A s'OUVRE, l'identité précède la rétrogradation (#188, HIGH-4)", async () => {
+  // La reproduction exacte de la revue de la PR #188 : avant le correctif, une page v2 d'un AUTRE
+  // volume suffisait à faire écarter la v1 de A comme une « rétrogradation », puisque
+  // `refuserLaRetrogradation` jugeait sur TOUTES les pages valides sans regarder à qui elles
+  // appartiennent. L'ouverture de A échouait alors par `VAULT_ENVELOPPE_CLE_REFUSEE` — un diagnostic
+  // qui ne dit rien de la vraie cause, une page étrangère mêlée au fichier.
+  const { emplacements } = await fichierV1();
+  const pageA = await composerPageAlaMain({
+    identifiantVolume: VOLUME,
+    version: 9,
+    dek: DEK,
+    emplacements,
+    nonce: suiteDOctets(0x77, 12),
+    formatVersion: ENVELOPPE_FORMAT_V1,
+  });
+
+  const VOLUME_ETRANGER = identifiantDeVolume(0xf0);
+  const DEK_ETRANGERE = suiteDOctets(0x61, 32);
+  const identifiantEmplacementEtranger = "b".repeat(16);
+  const scelleEtranger = await envelopperSousNonce({
+    kek: await importerCleDeDeverrouillage(KEKS.A),
+    emplacement: {
+      identifiantVolume: VOLUME_ETRANGER,
+      identifiantEmplacement: identifiantEmplacementEtranger,
+      formatVersion: EMPLACEMENT_FORMAT_V1,
+      typeKek: TYPES_KEK.harnais,
+      parametres: suiteDOctets(0x50, 8),
+    },
+    dek: DEK_ETRANGERE,
+    nonce: suiteDOctets(0x55, 12),
+  });
+  const pageB = await composerPageAlaMain({
+    identifiantVolume: VOLUME_ETRANGER,
+    version: 1,
+    dek: DEK_ETRANGERE,
+    emplacements: [
+      {
+        identifiantEmplacement: identifiantEmplacementEtranger,
+        typeKek: TYPES_KEK.harnais,
+        parametres: suiteDOctets(0x50, 8),
+        nonce: scelleEtranger.nonce,
+        dekEnveloppee: scelleEtranger.chiffre,
+        etiquette: scelleEtranger.etiquette,
+      },
+    ],
+    nonce: suiteDOctets(0x56, 12),
+    formatVersion: ENVELOPPE_FORMAT_V2,
+  });
+
+  const fichier = new Uint8Array(TAILLE_FICHIER_ENVELOPPE);
+  fichier.set(pageA, offsetDePage(0));
+  fichier.set(pageB, offsetDePage(1));
+
+  const etat = await etatSansMigration(fichier, KEKS.A);
+  assert.deepEqual(
+    { ouvre: etat.ouvre, formatVersion: etat.formatVersion, version: etat.version },
+    { ouvre: true, formatVersion: ENVELOPPE_FORMAT_V1, version: 9 },
+    "la page de A s'ouvre : celle de B, d'un autre volume, n'entre plus dans le classement",
+  );
+});
+
 test("après la migration, une MUTATION efface la dernière page v1 du fichier", async () => {
   // Le repli que la migration laisse derrière elle n'est pas éternel : la mutation suivante écrit
   // sur la page libre, c'est-à-dire sur elle. Aucun geste n'est ajouté pour cela — en ajouter un
