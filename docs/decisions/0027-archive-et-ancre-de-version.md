@@ -272,6 +272,26 @@ paramètre que personne ne passe est un paramètre qui n'existe pas.
 clé (`revoquerEmplacement`, `revoquerToutSauf`, `remplacerEmplacement`) rendent déjà `version` :
 c'est CE chiffre que l'interface de #24 fera noter.
 
+> **NOTE DATÉE DU 11 SEPTEMBRE 2026** (#182, tranche T2b, revue de sécurité de la PR #187, constat
+> 5). **La MIGRATION d'une page v1 en v2 avance le compteur d'une unité, et ce cran n'est le fait
+> d'aucun geste de l'utilisateur.** Il n'a ni révoqué, ni remplacé, ni ajouté ; la première
+> ouverture réussie d'une enveloppe écrite avant T2b rescelle sa racine sous une clé dérivée et
+> publie la page v2 à la version N + 1.
+>
+> La conséquence porte exactement sur ce que cette décision promet. Le nombre noté AVANT la
+> migration — N, la seule ancre qu'un porteur de page v1 puisse tenir, puisqu'elle a été notée avant
+> que la migration n'existe — ne détecte plus l'effacement de la page v2 : un adversaire qui sait
+> écrire dans l'OPFS la retire, le volume retombe sur sa page v1 à la version N, l'ancre ne bronche
+> pas, et le produit remigre. Ce cran est précisément la marge dont l'adversaire a besoin. Ce n'est
+> pas une perte de volume, aucun clair n'est rendu de travers, et le refus de rétrogradation MORD
+> bien tant qu'une page v2 subsiste ; ce qui manquait était l'aveu.
+>
+> **La conduite est de RE-NOTER la version affichée après la première ouverture qui migre**, et la
+> coquille le DIT désormais : la réponse de déverrouillage porte `enveloppeMigree`, et l'interface
+> ajoute « RE-NOTEZ cette version — celle que vous aviez notée ne vaut plus » à la ligne d'état.
+> C'est la seule occasion où le produit invite à re-noter en dehors d'une révocation, et elle est
+> unique par volume : une enveloppe déjà en v2 ne migre plus.
+
 Un utilisateur qui ne note rien n'est pas puni : sans feuille (`versionMinimale: null`), rien n'est
 exigé — **et rien n'est promis**. L'aveu est écrit ici, et il est éprouvé à la ligne suivante de
 l'épreuve qui prouve l'ancre : sans ancre tenue hors du fichier, une page antérieure réinstallée est

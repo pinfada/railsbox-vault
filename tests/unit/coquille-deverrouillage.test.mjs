@@ -56,6 +56,7 @@ import {
   CONDUITES,
   ancreSaisie,
   conduiteDeRefus,
+  messageDOuverture,
 } from "../../src/coquille/interface-de-deverrouillage.mjs";
 import {
   MOYENS_SERVIS,
@@ -708,4 +709,27 @@ test("le balayage des écritures MORD : il reconnaît un dépôt qu'on lui prés
   const motif = /\blocalStorage\s*\.\s*setItem\s*\(/;
   assert.ok(motif.test('localStorage.setItem("vault-code", code);'));
   assert.ok(!motif.test("// rien n'entre dans localStorage, et surtout pas le code"));
+});
+
+test("une ouverture QUI MIGRE dit de RE-NOTER la version, et une ouverture ordinaire ne le dit pas", () => {
+  // **Revue de sécurité de la PR #187, constat 5.** Une migration de page avance le compteur d'une
+  // unité que l'utilisateur n'a pas décidée. L'ancre qu'il a notée avant — la seule qu'un porteur de
+  // page v1 puisse tenir — ne détecte donc plus l'effacement de la page v2, et ce cran est
+  // exactement la marge dont un adversaire a besoin. Le produit ne peut pas rendre l'ancre juste à
+  // sa place ; il peut, et il doit, l'inviter à re-noter.
+  const migree = messageDOuverture({ versionEnveloppe: 8, enveloppeMigree: true });
+  assert.match(migree, /version d'enveloppe 8/, "la version affichée reste la version COURANTE");
+  assert.match(migree, /RE-NOTEZ/, "et l'invitation est explicite, pas une nuance");
+
+  // Le cas ORDINAIRE — l'immense majorité des ouvertures — ne dit rien de plus : une invitation
+  // répétée à chaque ouverture est une invitation qu'on cesse de lire, et l'ADR 0027 a déjà écrit
+  // que l'ancre se re-note à chaque RÉVOCATION, pas à chaque ouverture.
+  for (const reponse of [
+    { versionEnveloppe: 8, enveloppeMigree: false },
+    { versionEnveloppe: 8 },
+  ]) {
+    const ordinaire = messageDOuverture(reponse);
+    assert.match(ordinaire, /version d'enveloppe 8/);
+    assert.doesNotMatch(ordinaire, /RE-NOTEZ/, "aucune invitation hors de la migration");
+  }
 });

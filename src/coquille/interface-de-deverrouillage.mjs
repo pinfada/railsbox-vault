@@ -298,11 +298,32 @@ async function ouvrirPar(contexte, moyen, corps, avantEnvoi = null) {
     surMesure("ouverture");
     await rafraichirLInventaire(contexte);
     contexte.surEtat(reponse);
-    dire(noeuds.etat, `Coffre ouvert (version d'enveloppe ${reponse.versionEnveloppe}).`);
+    dire(noeuds.etat, messageDOuverture(reponse));
   } catch (erreur) {
     dire(noeuds.attente, "");
     montrerLeRefus(contexte, erreur);
   }
+}
+
+/**
+ * Ce que l'utilisateur lit après une ouverture réussie — et, s'il y a lieu, ce qu'il doit RE-NOTER.
+ *
+ * Une migration de page d'enveloppe avance le compteur de version d'UNE unité, et ce cran n'est le
+ * fait d'aucun geste de l'utilisateur : il n'a ni ajouté, ni remplacé, ni révoqué de clé. L'ancre
+ * qu'il a notée avant la migration — la seule qu'un porteur de page v1 puisse tenir — ne détecte
+ * donc plus l'effacement de la page v2 par un adversaire qui sait écrire dans l'OPFS, et le produit
+ * remigre à chaque ouverture sans que l'ancre ne bronche (revue de sécurité de la PR #187,
+ * constat 5).
+ *
+ * Ce n'est pas une perte de volume, et la page v1 conservée reste ce qui rend la migration sûre
+ * sous coupure. Ce qui manquait est l'AVEU, et il se fait ici : la conduite est de re-noter la
+ * version affichée après la première ouverture qui migre.
+ */
+export function messageDOuverture(reponse) {
+  const version = `Coffre ouvert (version d'enveloppe ${reponse.versionEnveloppe}).`;
+  return reponse.enveloppeMigree === true
+    ? `${version} L'enveloppe a été mise à jour au format v2 : RE-NOTEZ cette version — celle que vous aviez notée ne vaut plus.`
+    : version;
 }
 
 /** Rend un refus à l'utilisateur, sous sa conduite et son code. Un seul endroit, un seul format. */

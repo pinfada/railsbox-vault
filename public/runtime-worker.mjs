@@ -432,6 +432,7 @@ async function deverrouiller(message, correlation) {
     etat: interne.etat,
     barrieres: interne.barrieres,
     versionEnveloppe: interne.version,
+    enveloppeMigree: ouverte.migree === true,
   });
 }
 
@@ -512,7 +513,16 @@ async function ouvrirLExistante(moyen, message, versionMinimale) {
     kek,
     versionMinimale,
   });
-  return { dek: ouverte.dek, kek, version: ouverte.version };
+  // `enveloppeMigree` remonte jusqu'à l'utilisateur, et c'est son seul emploi : une migration de
+  // page AVANCE la version d'un cran qu'il n'a pas décidé (revue de sécurité de la PR #187,
+  // constat 5). L'ancre qu'il a notée AVANT ne détecte plus l'effacement de la page v2 ; il faut
+  // donc l'inviter à re-noter, et la coquille ne peut le faire que si on le lui DIT.
+  return {
+    dek: ouverte.dek,
+    kek,
+    version: ouverte.version,
+    migree: ouverte.migration?.faite === true,
+  };
 }
 
 /** DÉRIVE la KEK d'un code de récupération, ICI : HKDF coûte zéro à deux millisecondes. */

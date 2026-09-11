@@ -339,9 +339,16 @@ function exigerIdentifiantLibre(emplacements, identifiantEmplacement, identifian
  * descend par HKDF, et elle ne sert qu'à CE scellement. C'est ce qui rend le budget de clé de ce
  * domaine exhaustif sans compteur : son budget vaut 1, et aucun état durable ne peut le rendre faux.
  *
- * Le sel n'est pas un paramètre. Un appelant qui pourrait le fournir pourrait le répéter, et deux
- * pages scellées sous la même clé et le même nonce sont la collision que la séparation par domaine
- * a précisément pour objet de borner. `cleNeuveDeRacineV2` le tire, et rien d'autre ne le tire.
+ * **Le sel est TIRÉ ici, et nulle part ailleurs.** `cleNeuveDeRacineV2` l'EXIGE et n'en tire aucun
+ * (`exigerSelDePage`) : le tirage est l'affaire de la source d'aléas, appelée trois lignes plus bas,
+ * et c'est le seul endroit du chemin de production qui tire un sel de page. La campagne de mutation
+ * a fait retirer un SECOND tirage qui n'était jamais atteint ; ce commentaire décrivait encore
+ * l'état d'avant, et la revue de la PR #187 l'a relevé (constat 9 de la revue de format).
+ *
+ * Ce que la discipline vise reste vrai : un appelant qui choisirait le sel pourrait le RÉPÉTER, et
+ * deux pages scellées sous la même clé et le même nonce sont la collision que la séparation par
+ * domaine a précisément pour objet de borner. La source d'aléas est scriptable par le harnais, et
+ * elle seule.
  *
  * **Ce chemin n'écrit JAMAIS une page v1**, et c'est la moitié « écriture » du refus de
  * rétrogradation : une enveloppe passée en v2 ne peut pas revenir en arrière par un geste du
