@@ -33,6 +33,23 @@
 // Elle n'est pas remise à 1, et ce n'est pas un détail : c'est elle que l'ancre de la décision 3 de
 // l'ADR 0027 compare à la feuille de récupération. Une page qui repartirait de 1 ferait de chaque
 // restauration un retour arrière indétectable.
+//
+// ## Le domaine `recuperation`, et pourquoi ce n'est pas le domaine `enveloppe` (#182, T2b)
+//
+// L'ADR 0033, décision 2, sépare les deux : `enveloppe` scelle la racine de `<volume>.cles`,
+// `recuperation` celle de la page qu'une archive emporte. Deux domaines, deux infos HKDF, deux
+// clés — alors même que les deux pages ont la même version de format, la 2.
+//
+// La séparation est utile, et il faut dire de quoi : une archive VOYAGE. Elle quitte l'appareil,
+// elle est copiée, elle est conservée. La clé qui scelle sa page ne scelle rien d'autre, et surtout
+// rien qui soit resté sur la machine — si bien qu'un adversaire qui obtiendrait cette clé
+// n'obtiendrait pas l'autorité sur l'enveloppe LOCALE. C'est la même raison qui a fait donner un
+// domaine propre au journal plutôt qu'au volume.
+//
+// La page RESTAURÉE porte donc, dans son en-tête, l'octet de domaine `recuperation` : c'est ce qui
+// permet au premier déverrouillage du volume restauré de dériver la bonne clé. La première MUTATION
+// de cette enveloppe écrira une page du domaine `enveloppe`, sans geste particulier — `composerPage`
+// n'écrit que celui-là.
 
 import { ARCHIVE_ERROR_CODES, ArchiveError } from "./archive-errors.mjs";
 import { exigerAleasAdmis } from "./enveloppe-de-cle.mjs";
@@ -44,10 +61,10 @@ import {
   decoderPage,
   encoderPage,
 } from "./enveloppe/fichier-enveloppe.mjs";
-import { ENVELOPPE_FORMAT_V1, TYPES_KEK, nomDuTypeKek } from "./enveloppe/identite-enveloppe.mjs";
+import { ENVELOPPE_FORMAT_V2, TYPES_KEK, nomDuTypeKek } from "./enveloppe/identite-enveloppe.mjs";
+import { OCTET_DOMAINE_RECUPERATION, cleNeuveDeRacineV2 } from "./enveloppe/cle-de-racine.mjs";
 import {
   importerCleDeDeverrouillage,
-  importerCleDeVolume,
   scellerRacineSousNonce,
 } from "./enveloppe/modele-reference.mjs";
 import { createSha256Stream } from "./sha256-stream.mjs";
@@ -97,26 +114,52 @@ export async function construireEnveloppeDeRecuperation({
   );
   if (emplacements.length === 0) return null;
 
-  // La racine est RESCELLÉE sur la liste filtrée, sous la DEK et la version COURANTE : recopier la
-  // racine de la page complète authentifierait une liste qui n'est plus celle-là, et la page
-  // embarquée serait refusée par `VAULT_ENVELOPPE_MELANGE` au premier déverrouillage.
-  const racine = await scellerRacineSousNonce({
-    dek: await importerCleDeVolume(etat.dek),
-    racine: { identifiantVolume, formatVersion: ENVELOPPE_FORMAT_V1, version: etat.version },
-    emplacements,
-    nonce: sources.tirerNonce(),
-  });
-  const octets = encoderPage({
+  const octets = await rescellerLaPageFiltree({
     identifiantVolume,
+    dek: etat.dek,
     version: etat.version,
-    racine: { nonce: racine.nonce, chiffre: racine.chiffre, etiquette: racine.etiquette },
     emplacements,
+    sources,
   });
   return Object.freeze({
     octets,
     digest: empreinte(octets),
     version: etat.version,
     emplacements: emplacements.length,
+  });
+}
+
+/**
+ * RESCELLE la liste FILTRÉE en une page v2 du domaine `recuperation`.
+ *
+ * Recopier la racine de la page complète authentifierait une liste qui n'est plus celle-là, et la
+ * page embarquée serait refusée par `VAULT_ENVELOPPE_MELANGE` au premier déverrouillage.
+ *
+ * La clé est celle du domaine `recuperation`, à USAGE UNIQUE, avec un sel TIRÉ ici et écrit en clair
+ * dans la page. Elle ne scelle que cette page-là : le budget de ce domaine vaut 1, et aucune archive
+ * ne partage sa clé avec une autre (ADR 0033, décision 4).
+ */
+async function rescellerLaPageFiltree({ identifiantVolume, dek, version, emplacements, sources }) {
+  const cleDeRacine = await cleNeuveDeRacineV2({
+    dek,
+    identifiantVolume,
+    domaine: OCTET_DOMAINE_RECUPERATION,
+    sel: sources.tirerSel(),
+  });
+  const racine = await scellerRacineSousNonce({
+    cleDeRacine: cleDeRacine.cle,
+    racine: { identifiantVolume, formatVersion: ENVELOPPE_FORMAT_V2, version },
+    emplacements,
+    nonce: sources.tirerNonce(),
+  });
+  return encoderPage({
+    identifiantVolume,
+    version,
+    formatVersion: ENVELOPPE_FORMAT_V2,
+    racine: { nonce: racine.nonce, chiffre: racine.chiffre, etiquette: racine.etiquette },
+    sel: cleDeRacine.sel,
+    domaine: cleDeRacine.domaine,
+    emplacements,
   });
 }
 

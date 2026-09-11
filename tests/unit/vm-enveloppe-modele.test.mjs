@@ -184,7 +184,7 @@ async function racineCanonique(version = 3) {
   ];
   const dek = await importerCleDeVolume(DEK);
   const racine = await scellerRacineSousNonce({
-    dek,
+    cleDeRacine: dek,
     racine: { identifiantVolume: VOLUME_A, formatVersion: ENVELOPPE_FORMAT_V1, version },
     emplacements,
     nonce: suiteDOctets(0x70, 12),
@@ -200,7 +200,7 @@ test("la racine est AUTHENTIFIÉE avant d'être classée : un en-tête bricolé 
   // c'est un sceau qui ne vérifie pas. Prétendre le contraire serait un diagnostic inventé.
   await assert.rejects(
     ouvrirRacine({
-      dek,
+      cleDeRacine: dek,
       entete: { ...racine.entete, identifiantVolume: VOLUME_B },
       scelle,
       emplacements,
@@ -211,7 +211,7 @@ test("la racine est AUTHENTIFIÉE avant d'être classée : un en-tête bricolé 
 
   // Témoin positif : le même appel sur l'en-tête authentique aboutit.
   const ouverte = await ouvrirRacine({
-    dek,
+    cleDeRacine: dek,
     entete: racine.entete,
     scelle,
     emplacements,
@@ -227,7 +227,7 @@ test("un en-tête AUTHENTIQUE d'un autre volume rend un constat d'identité, pas
   const { dek, emplacements, racine } = await racineCanonique();
   await assert.rejects(
     ouvrirRacine({
-      dek,
+      cleDeRacine: dek,
       entete: racine.entete,
       scelle: { nonce: racine.nonce, chiffre: racine.chiffre, etiquette: racine.etiquette },
       emplacements,
@@ -247,13 +247,13 @@ test("aucune attente n'est facultative : « undefined » est refusé, « null »
 
   for (const attentes of [{ versionMinimale: null }, { identifiantVolume: VOLUME_A }, {}]) {
     await assert.rejects(
-      ouvrirRacine({ dek, entete: racine.entete, scelle, emplacements, attentes }),
+      ouvrirRacine({ cleDeRacine: dek, entete: racine.entete, scelle, emplacements, attentes }),
       (erreur) => isEnveloppeError(erreur, ENVELOPPE_ERROR_CODES.malforme),
       `attentes ${JSON.stringify(Object.keys(attentes))} acceptées alors qu'il en manque une`,
     );
   }
   await ouvrirRacine({
-    dek,
+    cleDeRacine: dek,
     entete: racine.entete,
     scelle,
     emplacements,

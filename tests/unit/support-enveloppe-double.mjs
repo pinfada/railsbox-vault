@@ -27,6 +27,17 @@
  */
 
 /** Coupure simulée. Elle porte le rang et la nature du geste, pour que l'épreuve puisse le dire. */
+import {
+  ENVELOPPE_FORMAT_V1,
+  ENVELOPPE_FORMAT_V2,
+} from "../../src/vm/enveloppe/identite-enveloppe.mjs";
+import { encoderPage } from "../../src/vm/enveloppe/fichier-enveloppe.mjs";
+import {
+  OCTET_DOMAINE_ENVELOPPE,
+  cleNeuveDeRacineV2,
+} from "../../src/vm/enveloppe/cle-de-racine.mjs";
+import { scellerRacineSousNonce } from "../../src/vm/enveloppe/modele-reference.mjs";
+
 export class CoupureSimulee extends Error {
   constructor(rang, geste, mode) {
     super(`Coupure simulée : ${mode} le geste ${rang} (${geste}).`);
@@ -105,16 +116,20 @@ export function supportDouble({
 }
 
 /**
- * Aléas SCRIPTÉS : identifiants et nonces tirés d'une liste, dans l'ordre.
+ * Aléas SCRIPTÉS : identifiants, nonces et SELS tirés d'une liste, dans l'ordre.
  *
  * C'est la seule façon de confronter le chemin de production à des vecteurs figés — et c'est
  * exactement pour cela que la porte de `enveloppe-de-cle.mjs` exige un jeton. Une liste épuisée est
  * une ERREUR, jamais un retour au tirage réel : un vecteur qui reprendrait silencieusement de
  * l'aléa cesserait d'être un vecteur.
+ *
+ * Le SEL est arrivé avec la page v2 (#182, T2b). Il est scripté par la MÊME porte que le nonce :
+ * une seconde porte aurait fini par diverger de la première.
  */
-export function aleasScriptes({ identifiants = [], nonces = [], jeton }) {
+export function aleasScriptes({ identifiants = [], nonces = [], sels = [], jeton }) {
   const idsRestants = [...identifiants];
   const noncesRestants = [...nonces];
+  const selsRestants = [...sels];
   return {
     jeton,
     tirerIdentifiant: () => {
@@ -125,8 +140,16 @@ export function aleasScriptes({ identifiants = [], nonces = [], jeton }) {
       if (noncesRestants.length === 0) throw new Error("Aléas scriptés épuisés : nonces.");
       return noncesRestants.shift();
     },
+    tirerSel: () => {
+      if (selsRestants.length === 0) throw new Error("Aléas scriptés épuisés : sels.");
+      return selsRestants.shift();
+    },
     /** Ce qui n'a pas été consommé : un vecteur qui laisse des aléas n'a pas fait ce qu'il annonce. */
-    reste: () => ({ identifiants: idsRestants.length, nonces: noncesRestants.length }),
+    reste: () => ({
+      identifiants: idsRestants.length,
+      nonces: noncesRestants.length,
+      sels: selsRestants.length,
+    }),
   };
 }
 
@@ -156,4 +179,72 @@ export function hex(chaine) {
     octets[index] = Number.parseInt(chaine.slice(index * 2, index * 2 + 2), 16);
   }
   return octets;
+}
+
+/**
+ * COMPOSE une page d'enveloppe À LA MAIN, dans la version demandée (#182, T2b).
+ *
+ * Deux usages, et deux seulement :
+ *
+ *  1. atteindre des états qu'un adversaire atteindrait et que le produit ne produit pas — une page
+ *    portant un type de clé de déverrouillage qu'il ne sait pas écrire, par exemple ;
+ *  2. fabriquer une page **v1**, que le produit n'écrit plus depuis T2b, pour éprouver la
+ *    MIGRATION de page. Les octets restent ceux du format : le scellement passe par le modèle de
+ *    référence de l'ADR 0020 et la disposition par `encoderPage`, exactement comme avant T2b.
+ *
+ * La clé de racine suit la version : la DEK elle-même en v1, la clé du domaine `enveloppe` (ou
+ * `recuperation`) en v2. C'est `cle-de-racine.mjs` qui la rend, comme pour le produit.
+ */
+export async function composerPageAlaMain({
+  identifiantVolume,
+  version,
+  dek,
+  emplacements,
+  nonce,
+  formatVersion = ENVELOPPE_FORMAT_V2,
+  domaine = OCTET_DOMAINE_ENVELOPPE,
+}) {
+  if (formatVersion === ENVELOPPE_FORMAT_V1) {
+    const racine = await scellerRacineSousNonce({
+      cleDeRacine: await importerCleDeRacineV1PourLeHarnais(dek),
+      racine: { identifiantVolume, formatVersion, version },
+      emplacements,
+      nonce,
+    });
+    return encoderPage({
+      identifiantVolume,
+      version,
+      formatVersion,
+      racine: { nonce: racine.nonce, chiffre: racine.chiffre, etiquette: racine.etiquette },
+      emplacements,
+    });
+  }
+  const cleDeRacine = await cleNeuveDeRacineV2({ dek, identifiantVolume, domaine });
+  const racine = await scellerRacineSousNonce({
+    cleDeRacine: cleDeRacine.cle,
+    racine: { identifiantVolume, formatVersion: ENVELOPPE_FORMAT_V2, version },
+    emplacements,
+    nonce,
+  });
+  return encoderPage({
+    identifiantVolume,
+    version,
+    formatVersion: ENVELOPPE_FORMAT_V2,
+    racine: { nonce: racine.nonce, chiffre: racine.chiffre, etiquette: racine.etiquette },
+    sel: cleDeRacine.sel,
+    domaine: cleDeRacine.domaine,
+    emplacements,
+  });
+}
+
+/**
+ * La clé qui SCELLE une racine v1 : la DEK, avec l'usage `encrypt`.
+ *
+ * `page-v1-lecture.mjs` ne rend qu'une clé de LECTURE — c'est la propriété que le cliquet anti-DEK
+ * mesure —, et il a raison : le produit n'écrit plus de page v1. Le harnais, lui, doit encore en
+ * écrire une pour éprouver la migration, et il le fait ICI, dans `tests/`, où le cliquet ne balaie
+ * pas et où la question ne se pose pas.
+ */
+async function importerCleDeRacineV1PourLeHarnais(dek) {
+  return crypto.subtle.importKey("raw", dek, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }

@@ -1708,19 +1708,34 @@ consentement nommé.
 > destructif : un refus laisse le volume intact ET son manifeste en place. Une reprise ne le rejoue
 > pas — le fichier n'est plus la source, il est un entre-deux dont certaines suites sont déjà v4.
 
-> **CE QUI RESTE FERMÉ, et il vaut mieux l'écrire que de le laisser découvrir** (#182, trouvé en
-> livrant le correctif ci-dessus). Un pas destructif exige une SAUVEGARDE VÉRIFIÉE, et un
-> consentement nommé ne peut pas en tenir lieu (ADR 0011, et la revue de #110 qui l'a resserré). Or
-> ce runtime ne sait pas EXPORTER un volume v3 : `ouvrirPourExport` l'ouvre par `openOpfsVolume` dès
-> le format 3, et l'ouverture refuse un en-tête v3 en renvoyant à la migration. **Un v3 est donc
-> migrable, à condition de détenir déjà une archive faite par le runtime précédent** ; qui ne l'a
-> pas n'a aucun chemin.
+> **LA BOUCLE DE LA SAUVEGARDE, ouverte par #181 et refermée par T2b** (#182). Un pas destructif
+> exige une SAUVEGARDE VÉRIFIÉE, et un consentement nommé ne peut pas en tenir lieu (ADR 0011, et la
+> revue de #110 qui l'a resserré). Or `ouvrirPourExport` ouvrait tout volume de format au moins 3
+> par `openOpfsVolume`, qui refuse un en-tête v3 en renvoyant à la migration : **un v3 n'était
+> migrable qu'à condition de détenir déjà une archive faite par le runtime précédent**, et qui ne
+> l'avait pas n'avait aucun chemin. La tranche T2a a MESURÉ cet écart plutôt que de le maquiller ;
+> T2b le comble.
 >
-> Ce n'est pas corrigé par cette tranche, et c'est délibéré : ouvrir un chemin d'export pour un
-> format que ce runtime n'ouvre pas est une décision — que déclare le manifeste de cette archive,
-> qui scelle son engagement, ce que devient la génération validée que le journal porte encore —, et
-> elle demande son propre examen. L'état est MESURÉ par `tests/unit/vm-migration-source-v3.test.mjs`
-> › « ce runtime ne sait pas EXPORTER un v3 », qui rougira le jour où ce chemin s'ouvrira.
+> **L'export d'un v3 emprunte le SOLDE ci-dessus**, et rien d'autre : le même magasin, le même
+> ordre, les mêmes trois cas avant tout clair. Il rend ensuite un accès BRUT en lecture, dont
+> l'archive est composée. L'archive produite est celle que l'ADR 0034 définit pour un volume v3 —
+> manifeste déclarant la version 3, engagement scellé sous la clé du domaine `archive` (version 3 du
+> domaine) dérivée de la DEK. Aucun chemin d'ÉCRITURE v3 ne s'ouvre à l'appelant.
+>
+> **L'écart qui reste, et il est écrit ici parce qu'il n'est pas comblé.** Ouvrir un volume v3 n'est
+> pas gratuit : le magasin clôt sa récupération en écrivant une racine v3, et rejouer une charge
+> rescelle des secteurs — deux scellements sous la clé v3, c'est-à-dire sous la DEK. Ils sont le
+> prix de l'application de la charge acquittée, ils passent par l'unique exception du cliquet
+> anti-DEK (`src/vm/scellement.mjs`), et ils sont EXACTEMENT ceux que la migration produit déjà sur
+> le même fichier. Ne pas ouvrir perdrait une écriture acquittée ; un lecteur v3 dédié qui
+> n'écrirait rien ne saurait pas appliquer la charge, donc perdrait la même chose sous un autre nom.
+> La décision de T2b demandait « aucun scellement sous une clé v3 hors l'engagement d'archive » : ce
+> chemin n'y parvient pas, et `SECURITY.md` comme l'ADR 0036 le portent dans les mêmes termes.
+>
+> Le chemin entier est MESURÉ par `tests/unit/vm-migration-source-v3.test.mjs` › « l'archive d'un v3
+> se RESTAURE et se migre » : un v3 en service, une écriture acquittée restée dans son journal, un
+> export par CE runtime, l'état qu'une restauration laisse, puis la migration — et la charge
+> acquittée se retrouve dans le clair v4.
 
 #### v3 → v4 : rescéller chaque secteur
 
@@ -2973,21 +2988,27 @@ format et non la confidentialité en exploitation.
 
 Relevés en écrivant ce document. **Le code tranche** ; l'écart est écrit, jamais corrigé en silence.
 
-**Écart 0 — la DEK scelle encore l'enveloppe et la récupération, et l'ADR 0033 dit le contraire.**
-Ajouté le 11 septembre 2026. La décision 1 de
+**Écart 0 — la DEK scellait encore l'enveloppe et la récupération. CLOS le 11 septembre 2026 par la
+tranche T2b (#182).** La décision 1 de
 l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) écrit « la DEK n'est plus
-jamais passée à AES-GCM », et la tranche T2a ne la rend vraie qu'à moitié : la racine d'une page de
-`<volume>.cles` (ADR 0020, décision 3) et la section de récupération d'une archive (ADR 0027) sont
-encore scellées sous elle. **Ce n'est pas un oubli, c'est le découpage** — l'ADR 0033 lui-même range
-ces deux domaines dans la tranche T2b, et la migration d'une page d'enveloppe est le point que sa
-DoR qualifie de plus risqué des deux tranches : perdre une enveloppe, c'est perdre le volume.
+jamais passée à AES-GCM », et la tranche T2a ne la rendait vraie qu'à moitié : la racine d'une page
+de `<volume>.cles` (ADR 0020, décision 3) et la section de récupération d'une archive (ADR 0027)
+étaient encore scellées sous elle. Ce n'était pas un oubli, c'était le découpage.
 
-Ce que le dépôt fait de cet écart en attendant : il l'INVENTORIE.
-`tests/unit/vm-dek-sous-aes.test.mjs` tient la liste des modules qui importent encore la DEK en clé
-AES-GCM, avec l'échéance de chacun, et il rougit dès qu'un module s'y ajoute. Une seule entrée doit
-survivre à T2b — le modèle de référence, qui n'est pas un chemin de production —, et l'épreuve
-l'épingle. C'est un cliquet provisoire, écrit pour être remplacé par celui de T2b, qui lira les
-APPELS et non le texte.
+**Ce qui l'a fermé** : la page d'enveloppe passe en **version 2** (§ 6.11), sa racine est scellée
+sous une clé à usage unique du domaine `enveloppe` — ou `recuperation` pour la page qu'une archive
+emporte —, et une page v1 est rescellée à la première ouverture réussie. Le cliquet PROVISOIRE
+`vm-dek-sous-aes.test.mjs`, qui tenait l'inventaire des modules important encore la DEK en clé
+AES-GCM, est REMPLACÉ par `tests/unit/vm-cliquet-anti-dek.test.mjs`, qui lit les APPELS et non le
+texte, nomme la MATIÈRE de chaque import de clé brute, et exige qu'aucun chemin de production du
+format v4 ne touche une clé de volume. Trois endroits la touchent encore, et aucun n'est un chemin
+v4 : le modèle de référence de l'ADR 0015, le régime v3 de `scellement.mjs` (migration et export
+d'un v3), et la LECTURE d'une page d'enveloppe v1 — qui importe la clé sans l'usage `encrypt`, donc
+ne peut pas sceller.
+
+**Ce qui n'est pas fermé et qui est écrit ailleurs de la même phrase** : ouvrir un volume **v3** —
+pour le migrer ou pour l'exporter — fait écrire au magasin une racine v3 et rescelle la charge
+acquittée, c'est-à-dire deux scellements sous la DEK. Voir le § 7.4 et `SECURITY.md`.
 
 **Écart 1 — la marque de scellement complet n'est décidée par aucun ADR.** L'ADR 0016 (décision 1,
 28 août 2026) donne l'en-tête v3 avec « offset 64, largeur 448, réserve, à zéro ». Le code y écrit

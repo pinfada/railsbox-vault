@@ -10,11 +10,10 @@ import {
   isEnveloppeError,
 } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
 import {
-  CRC_OFFSET,
-  ENTETE_PAGE_OCTETS,
   PAGE_OCTETS,
   TAILLE_FICHIER_ENVELOPPE,
   decoderPage,
+  dispositionDePage,
   offsetDePage,
   sommeDePage,
 } from "../../src/vm/enveloppe/fichier-enveloppe.mjs";
@@ -88,12 +87,26 @@ function octetsDePage(fichier, index) {
   return fichier.slice(offsetDePage(index), offsetDePage(index) + PAGE_OCTETS);
 }
 
+/**
+ * La DISPOSITION d'en-tête que la page présente, relue dans ses octets.
+ *
+ * Elle n'est plus une constante depuis la page v2 (#182) : la v1 s'arrête à 108 octets, la v2 à 140,
+ * sel compris. Les épreuves qui remanient des octets à la main doivent lire la version de la page
+ * qu'elles tiennent, sans quoi elles écriraient la liste par-dessus le sel.
+ */
+function dispositionDe(page) {
+  return dispositionDePage(
+    new DataView(page.buffer, page.byteOffset, page.byteLength).getUint32(8, true),
+  );
+}
+
 /** Frontières de chaque emplacement dans une page, telles que le format les impose. */
 function tranchesDEmplacements(page) {
   const vue = new DataView(page.buffer, page.byteOffset, page.byteLength);
-  const fin = ENTETE_PAGE_OCTETS + vue.getUint32(40, true);
+  const entete = dispositionDe(page).entete;
+  const fin = entete + vue.getUint32(40, true);
   const tranches = [];
-  let curseur = ENTETE_PAGE_OCTETS;
+  let curseur = entete;
   while (curseur < fin) {
     const total = 72 + vue.getUint16(curseur + 10, true);
     tranches.push(page.slice(curseur, curseur + total));
@@ -118,20 +131,27 @@ function tranchesDEmplacements(page) {
 function reecrireListe(page, morceaux) {
   const octets = Uint8Array.from(page);
   const vue = new DataView(octets.buffer);
-  octets.fill(0, ENTETE_PAGE_OCTETS, PAGE_OCTETS);
-  let curseur = ENTETE_PAGE_OCTETS;
+  const entete = dispositionDe(octets).entete;
+  octets.fill(0, entete, PAGE_OCTETS);
+  let curseur = entete;
   for (const morceau of morceaux) {
     octets.set(morceau, curseur);
     curseur += morceau.byteLength;
   }
-  const longueurListe = curseur - ENTETE_PAGE_OCTETS;
+  const longueurListe = curseur - entete;
   vue.setUint32(40, longueurListe, true);
   return rescellerLaSomme(octets, longueurListe);
 }
 
 /** Recalcule la somme de contrôle d'une page dont les octets viennent d'être remaniés. */
 function rescellerLaSomme(octets, longueurListe = new DataView(octets.buffer).getUint32(40, true)) {
-  new DataView(octets.buffer).setUint32(CRC_OFFSET, sommeDePage(octets, longueurListe), true);
+  const { crcOffset } = dispositionDe(octets);
+  const formatVersion = new DataView(octets.buffer).getUint32(8, true);
+  new DataView(octets.buffer).setUint32(
+    crcOffset,
+    sommeDePage(octets, longueurListe, formatVersion),
+    true,
+  );
   return octets;
 }
 

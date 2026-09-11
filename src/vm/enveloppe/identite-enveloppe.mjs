@@ -54,6 +54,74 @@ export {
 /** Version du FORMAT D'ENVELOPPE. Distincte de la version du volume et de celle du modèle chiffré. */
 export const ENVELOPPE_FORMAT_V1 = 1;
 
+/**
+ * Version 2 de la PAGE d'enveloppe (#182, T2b ; ADR 0033, décisions 2 et 3).
+ *
+ * Ce qui change tient en deux champs d'en-tête : un **sel** de trente-deux octets tirés, écrit en
+ * clair, et l'**octet de domaine** qui dit sous quelle clé la racine est scellée. Ce qui reste est
+ * tout le reste — le marqueur, la taille de page, la liste des emplacements, la somme de contrôle,
+ * l'alternance des deux pages.
+ *
+ * La racine d'une page v2 n'est plus scellée sous la DEK : elle l'est sous une clé À USAGE UNIQUE
+ * dérivée de la DEK par HKDF pour le domaine `enveloppe` — ou `recuperation` pour la page qu'une
+ * archive emporte (ADR 0027). Une page, une clé, un scellement, aucun compteur.
+ */
+export const ENVELOPPE_FORMAT_V2 = 2;
+
+/** Les versions de page que ce runtime sait RELIRE. La v1 reste lisible : voir la migration de page. */
+export const ENVELOPPE_FORMATS_LUS = Object.freeze([ENVELOPPE_FORMAT_V1, ENVELOPPE_FORMAT_V2]);
+
+/** La version que ce runtime ÉCRIT. Une page v1 relue est rescellée en v2 à la première ouverture. */
+export const ENVELOPPE_FORMAT_ECRIT = ENVELOPPE_FORMAT_V2;
+
+/**
+ * Version du format d'un EMPLACEMENT, et pourquoi elle ne suit PAS celle de la page.
+ *
+ * Les données associées d'une DEK enveloppée portent une version de format. Elle vaut 1 depuis #21,
+ * et elle vaut **toujours 1** : les octets d'un emplacement n'ont pas changé en v2, et surtout —
+ * c'est la raison qui décide — **rescelle qui peut**. Faire suivre à ce champ la version de la PAGE
+ * obligerait une migration v1 → v2 à réenvelopper la DEK sous CHAQUE clé de déverrouillage, alors
+ * qu'on n'en détient qu'une : la migration de page deviendrait impossible, ou ne conserverait qu'un
+ * emplacement sur huit. C'est-à-dire qu'elle perdrait des clés, ce qui est la seule chose qu'elle
+ * n'a pas le droit de faire.
+ *
+ * Ce champ ne perd rien à rester constant : il l'était déjà — `ENVELOPPE_FORMAT_V1` était écrit en
+ * dur des deux côtés du scellement —, et ce qui lie un emplacement à sa place est l'identifiant de
+ * volume, l'identifiant d'emplacement, le type et les paramètres, qui sont tous là.
+ */
+export const EMPLACEMENT_FORMAT_V1 = ENVELOPPE_FORMAT_V1;
+
+/**
+ * Le DOMAINE de dérivation sous lequel la racine d'une page v2 est scellée, tel que l'octet 14 de
+ * l'en-tête le porte.
+ *
+ * Deux valeurs, parce que l'ADR 0033, décision 2, sépare deux domaines qui produisent tous deux une
+ * page d'enveloppe : `enveloppe` pour la page de `<volume>.cles`, `recuperation` pour celle qu'une
+ * archive emporte (ADR 0027). Sans ce champ, une page de récupération RESTAURÉE — que la
+ * restauration pose en page 0 de `<volume>.cles` — ne serait relisible par personne : le lecteur
+ * dériverait la clé du domaine `enveloppe` et l'étiquette ne vérifierait pas.
+ *
+ * **Il n'est pas authentifié, et il n'a pas à l'être**, exactement comme le sel (ADR 0033,
+ * décision 3) : un adversaire qui le change fait dériver une autre clé, donc échouer l'ouverture de
+ * la racine, donc refuser la page. Il se protège par sa conséquence.
+ *
+ * L'octet 14 était un octet de remplissage, à zéro dans toute page v1 — ce qui laisse la v1
+ * inchangée à l'octet près, vecteurs figés compris.
+ */
+export const DOMAINES_DE_RACINE = Object.freeze({ enveloppe: 1, recuperation: 2 });
+
+const DOMAINES_DE_RACINE_PAR_VALEUR = Object.freeze(
+  Object.fromEntries(Object.entries(DOMAINES_DE_RACINE).map(([nom, valeur]) => [valeur, nom])),
+);
+
+/** Nom du domaine de racine, ou `null` si l'octet n'en désigne aucun. */
+export function nomDuDomaineDeRacine(valeur) {
+  return DOMAINES_DE_RACINE_PAR_VALEUR[valeur] ?? null;
+}
+
+/** Largeur du sel d'une page v2 : trente-deux octets tirés, écrits en clair dans l'en-tête. */
+export const SEL_DE_PAGE_OCTETS = 32;
+
 /** Empreinte de la suite ordonnée des emplacements : SHA-256, comme celle des entrées d'#17. */
 export const EMPREINTE_OCTETS = 32;
 

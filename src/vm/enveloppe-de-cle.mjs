@@ -28,14 +28,18 @@
 //
 // ## La source d'aléas est injectable, et elle est GARDÉE
 //
-// Deux valeurs tirées entrent dans le fichier : le NONCE de chaque scellement et l'IDENTIFIANT
-// d'un emplacement. Les remplacer est nécessaire pour reproduire les vecteurs figés de l'ADR 0020,
-// et catastrophique partout ailleurs — deux DEK enveloppées sous la même KEK, la même identité
-// d'emplacement et le même nonce livrent le ou-exclusif des deux clés de volume. La porte exige donc
-// le jeton `HARNAIS_ALEAS_JETON`, sur le modèle de `scellement.mjs` ; ce qui interdit son usage,
-// c'est `tests/unit/harnais-portes.test.mjs`, qui refuse tout appelant hors des épreuves.
+// TROIS valeurs tirées entrent dans le fichier : le NONCE de chaque scellement, l'IDENTIFIANT d'un
+// emplacement, et — depuis la page v2 (#182, T2b) — le SEL de la clé de racine. Les remplacer est
+// nécessaire pour reproduire les vecteurs figés, et catastrophique partout ailleurs : deux DEK
+// enveloppées sous la même KEK, la même identité d'emplacement et le même nonce livrent le
+// ou-exclusif des deux clés de volume ; deux pages scellées sous le même sel ET le même nonce sont
+// la collision de clé/nonce que la séparation par domaine a précisément pour objet de borner. La
+// porte exige donc le jeton `HARNAIS_ALEAS_JETON`, sur le modèle de `scellement.mjs` ; ce qui
+// interdit son usage, c'est `tests/unit/harnais-portes.test.mjs`, qui refuse tout appelant hors des
+// épreuves. Une SEULE porte pour les trois valeurs : trois portes auraient fini par diverger.
 
 import { tirerNonce } from "./format-chiffre/identite-logique.mjs";
+import { tirerSelDeDomaine } from "./derivation/cle-de-domaine.mjs";
 import {
   ENVELOPPE_ERROR_CODES,
   dernierEmplacement,
@@ -60,16 +64,18 @@ import {
 } from "./enveloppe/fichier-enveloppe.mjs";
 import {
   EMPLACEMENTS_MAX,
+  EMPLACEMENT_FORMAT_V1,
   ENVELOPPE_FORMAT_V1,
+  ENVELOPPE_FORMAT_V2,
   TYPES_KEK,
   exigerParametres,
   exigerTypeKek,
   tirerIdentifiantEmplacement,
 } from "./enveloppe/identite-enveloppe.mjs";
+import { OCTET_DOMAINE_ENVELOPPE, cleNeuveDeRacineV2 } from "./enveloppe/cle-de-racine.mjs";
 import {
   envelopperSousNonce,
   importerCleDeDeverrouillage,
-  importerCleDeVolume,
   scellerRacineSousNonce,
 } from "./enveloppe/modele-reference.mjs";
 
@@ -88,10 +94,14 @@ const REFUS_ALEAS =
   `même identité d'emplacement et le même nonce livrent le ou-exclusif des deux clés de volume. ` +
   `Aucun chemin du produit ne fournit de source : le défaut tire de crypto.getRandomValues.`;
 
-/** Les aléas par défaut : douze octets de nonce, huit octets d'identifiant, tirés à chaque appel. */
+/**
+ * Les aléas par défaut : douze octets de nonce, huit d'identifiant, trente-deux de sel — tirés à
+ * chaque appel, et par `crypto.getRandomValues` seul.
+ */
 const ALEAS_REELS = Object.freeze({
   tirerNonce,
   tirerIdentifiant: tirerIdentifiantEmplacement,
+  tirerSel: tirerSelDeDomaine,
 });
 
 /**
@@ -102,7 +112,8 @@ const ALEAS_REELS = Object.freeze({
  * correction de l'une laisserait diverger de l'autre ; la partager laisse la porte à un seul
  * endroit, avec un seul jeton.
  *
- * @param {{ tirerNonce?: () => Uint8Array, tirerIdentifiant?: () => string, jeton?: string }} aleas
+ * @param {{ tirerNonce?: () => Uint8Array, tirerIdentifiant?: () => string,
+ *           tirerSel?: () => Uint8Array, jeton?: string }} aleas
  */
 export function exigerAleasAdmis(aleas) {
   if (aleas === undefined) return ALEAS_REELS;
@@ -110,25 +121,128 @@ export function exigerAleasAdmis(aleas) {
   return Object.freeze({
     tirerNonce: aleas.tirerNonce ?? ALEAS_REELS.tirerNonce,
     tirerIdentifiant: aleas.tirerIdentifiant ?? ALEAS_REELS.tirerIdentifiant,
+    tirerSel: aleas.tirerSel ?? ALEAS_REELS.tirerSel,
   });
 }
 
 /**
- * OUVRE l'enveloppe et rend la clé de volume.
+ * OUVRE l'enveloppe, MIGRE sa page si elle est encore en v1, et rend la clé de volume.
  *
  * @param {{ support: object, identifiantVolume: string, kek: Uint8Array,
- *           versionMinimale?: number | null }} appel
- * @returns {Promise<{ dek: Uint8Array, identifiantEmplacement: string, version: number }>}
+ *           versionMinimale?: number | null, aleas?: object }} appel
+ * @returns {Promise<{ dek: Uint8Array, identifiantEmplacement: string, version: number,
+ *                     migration: object | null }>}
+ *   `migration` est `null` quand la page était déjà en v2 — le cas ordinaire.
  * @throws {EnveloppeError} `VAULT_ENVELOPPE_ABSENTE` si aucune enveloppe n'existe —
  *   distinct de `VAULT_ENVELOPPE_CLE_REFUSEE`, qui dit que la clé n'ouvre rien.
  */
-export async function ouvrirEnveloppe({ support, identifiantVolume, kek, versionMinimale = null }) {
+export async function ouvrirEnveloppe({
+  support,
+  identifiantVolume,
+  kek,
+  versionMinimale = null,
+  aleas,
+}) {
   const cleKek = await importerCleDeDeverrouillage(kek);
   const etat = await lireEtat({ support, identifiantVolume, kek: cleKek, versionMinimale });
+  const migration = await migrerLaPageV1({
+    support,
+    identifiantVolume,
+    cleKek,
+    etat,
+    aleas,
+  });
   return Object.freeze({
     dek: etat.dek,
     identifiantEmplacement: etat.identifiantEmplacement,
-    version: etat.version,
+    version: migration === null || !migration.faite ? etat.version : migration.version,
+    migration,
+  });
+}
+
+/**
+ * RESCELLE une page d'enveloppe **v1** en **v2**, à la PREMIÈRE OUVERTURE RÉUSSIE (#182, T2b).
+ *
+ * C'est le geste le plus risqué des deux tranches, et l'ADR 0033 le dit : « perdre une enveloppe,
+ * c'est perdre le volume ». Tout ce qui suit est écrit pour que cette phrase reste théorique.
+ *
+ * ## Pourquoi ici, et pourquoi à la première ouverture RÉUSSIE
+ *
+ * Rescelle qui peut : il faut la DEK, et la DEK ne s'obtient qu'en développant un emplacement sous
+ * une KEK valable. Le seul moment où le produit la tient est donc celui-ci. Une migration lancée
+ * ailleurs — au démarrage, sur inventaire — n'aurait pas la clé ; une migration lancée sur une
+ * ouverture REFUSÉE écrirait une page à partir de rien.
+ *
+ * ## Ce que chaque rang de coupure laisse, et pourquoi aucun ne perd le volume
+ *
+ * Le geste porte DEUX écritures, et pas quatre : la page v2 est publiée sur la page LIBRE, et la
+ * page v1 n'est **pas** effacée. C'est la différence avec une révocation, et elle est voulue.
+ *
+ *  1. **avant la barrière** — la page v1 est intacte et fait autorité ; la page libre porte un
+ *     brouillon que sa somme de contrôle écarte. L'enveloppe s'ouvre, en v1 ;
+ *  2. **après la barrière** — la page v2 est complète, durable, et sa version est celle de la v1
+ *     plus un : elle fait autorité. La page v1 reste là, plus ancienne, et redevient le repli si la
+ *     v2 devient illisible. L'enveloppe s'ouvre, en v2 ;
+ *  3. **jamais un sous-ensemble** — la liste des emplacements est recopiée TELLE QUELLE. Aucune
+ *     DEK n'est réenveloppée, aucune KEK n'est demandée, aucun emplacement n'est perdu : c'est ce
+ *     que `EMPLACEMENT_FORMAT_V1` achète, et c'est pourquoi ce champ ne suit pas la page.
+ *
+ * La page v1 survivante disparaît d'elle-même à la mutation suivante, qui écrit sur la page libre —
+ * c'est-à-dire sur elle. Aucun geste n'est ajouté pour l'effacer : en ajouter un retirerait au rang
+ * 2 le repli qui fait toute la sûreté de ce geste.
+ *
+ * ## Un échec d'écriture ne fait PAS échouer le déverrouillage
+ *
+ * Le quota est plein, le handle a disparu, le support refuse : le volume s'ouvre quand même, sous sa
+ * page v1, et la migration sera retentée à la prochaine ouverture. Refuser le déverrouillage parce
+ * qu'un changement de FORMAT n'a pas pu s'écrire enfermerait l'utilisateur dehors pour une raison
+ * qui n'est pas la sienne. Rien n'est avalé pour autant : le refus est RENDU dans `migration`, et
+ * l'appelant le publie. C'est la distinction entre « ne pas lever » et « taire ».
+ *
+ * ## La RELECTURE, et pourquoi elle est dans le geste
+ *
+ * La migration n'est déclarée faite qu'une fois la page v2 RELUE sous la même KEK, à la version
+ * attendue. Écrire et croire aurait suffi tant que rien ne va mal ; relire est ce qui distingue
+ * « la page est là » de « la page s'ouvre ».
+ */
+async function migrerLaPageV1({ support, identifiantVolume, cleKek, etat, aleas }) {
+  if (etat.page.formatVersion !== ENVELOPPE_FORMAT_V1) return null;
+  const version = etat.version + 1;
+  try {
+    const octets = await composerPage({
+      identifiantVolume,
+      version,
+      dek: etat.dek,
+      emplacements: etat.page.emplacements,
+      aleas: exigerAleasAdmis(aleas),
+    });
+    await publier(support, etat.pageLibre, octets);
+    const relu = await lireEtat({ support, identifiantVolume, kek: cleKek });
+    if (relu.page.formatVersion !== ENVELOPPE_FORMAT_V2 || relu.version !== version) {
+      return rapportDeMigration({
+        faite: false,
+        version: etat.version,
+        refus: `la page relue est en version ${relu.page.formatVersion} à l'indice ${relu.version}`,
+      });
+    }
+    return rapportDeMigration({ faite: true, version, refus: null });
+  } catch (cause) {
+    return rapportDeMigration({
+      faite: false,
+      version: etat.version,
+      refus: cause?.code ?? cause?.name ?? String(cause),
+    });
+  }
+}
+
+/** Le compte rendu d'une migration de page. Toujours les mêmes champs, faite ou non. */
+function rapportDeMigration({ faite, version, refus }) {
+  return Object.freeze({
+    de: ENVELOPPE_FORMAT_V1,
+    vers: ENVELOPPE_FORMAT_V2,
+    faite,
+    version,
+    refus,
   });
 }
 
@@ -154,7 +268,10 @@ async function fabriquerEmplacement({
     emplacement: {
       identifiantVolume,
       identifiantEmplacement,
-      formatVersion: ENVELOPPE_FORMAT_V1,
+      // La version de format d'un EMPLACEMENT vaut 1 et ne suit PAS celle de la page : voir
+      // `EMPLACEMENT_FORMAT_V1`. C'est ce qui rend la migration d'une page v1 en v2 possible sans
+      // détenir les huit clés de déverrouillage.
+      formatVersion: EMPLACEMENT_FORMAT_V1,
       typeKek,
       parametres,
     },
@@ -202,18 +319,51 @@ function exigerIdentifiantLibre(emplacements, identifiantEmplacement, identifian
   }
 }
 
-/** Scelle la racine sur une liste ordonnée et rend les octets de la page. */
-async function composerPage({ identifiantVolume, version, dek, emplacements, aleas }) {
+/**
+ * Scelle la racine sur une liste ordonnée et rend les octets d'une page **v2**.
+ *
+ * ## Une page, une clé, un scellement (#182, ADR 0033, décisions 2, 3 et 4)
+ *
+ * La racine n'est plus scellée sous la DEK : le sel est TIRÉ ici, la clé du domaine `enveloppe` en
+ * descend par HKDF, et elle ne sert qu'à CE scellement. C'est ce qui rend le budget de clé de ce
+ * domaine exhaustif sans compteur : son budget vaut 1, et aucun état durable ne peut le rendre faux.
+ *
+ * Le sel n'est pas un paramètre. Un appelant qui pourrait le fournir pourrait le répéter, et deux
+ * pages scellées sous la même clé et le même nonce sont la collision que la séparation par domaine
+ * a précisément pour objet de borner. `cleNeuveDeRacineV2` le tire, et rien d'autre ne le tire.
+ *
+ * **Ce chemin n'écrit JAMAIS une page v1**, et c'est la moitié « écriture » du refus de
+ * rétrogradation : une enveloppe passée en v2 ne peut pas revenir en arrière par un geste du
+ * produit. L'autre moitié est dans `etat-de-lenveloppe.mjs`, qui refuse qu'une page v1 fasse
+ * autorité au-dessus d'une page v2.
+ */
+async function composerPage({
+  identifiantVolume,
+  version,
+  dek,
+  emplacements,
+  aleas,
+  domaine = OCTET_DOMAINE_ENVELOPPE,
+}) {
+  const cleDeRacine = await cleNeuveDeRacineV2({
+    dek,
+    identifiantVolume,
+    domaine,
+    sel: aleas.tirerSel(),
+  });
   const racine = await scellerRacineSousNonce({
-    dek: await importerCleDeVolume(dek),
-    racine: { identifiantVolume, formatVersion: ENVELOPPE_FORMAT_V1, version },
+    cleDeRacine: cleDeRacine.cle,
+    racine: { identifiantVolume, formatVersion: ENVELOPPE_FORMAT_V2, version },
     emplacements,
     nonce: aleas.tirerNonce(),
   });
   return encoderPage({
     identifiantVolume,
     version,
+    formatVersion: ENVELOPPE_FORMAT_V2,
     racine: { nonce: racine.nonce, chiffre: racine.chiffre, etiquette: racine.etiquette },
+    sel: cleDeRacine.sel,
+    domaine: cleDeRacine.domaine,
     emplacements,
   });
 }
