@@ -168,6 +168,14 @@ export class GenerationStore {
    * réserve dans son compte son propre scellement et celui du témoin qui la suit.
    */
   #scellementsALaRecuperation = 0;
+
+  /**
+   * Faut-il CONFRONTER la région à ce que la dernière racine scelle ? Vrai partout, SAUF pour le
+   * magasin qu'une session hors transaction tient pour clore (#182, T2b) — ce chemin ne l'a jamais
+   * confrontée, et le confronter a été RÉFUTÉ par exécution. Le POURQUOI est dans
+   * `etablirLaGeneration` (`opfs-volume-ouverture.mjs`) et dans l'ADR 0036, décision 3.
+   */
+  #confronterLaFraicheur = true;
   /** Sceau et compteur de la dernière racine écrite. Conservés pour le parcours du rangement. */
   /**
    * L'ÉCRIVAIN DE RACINES (#181) : le seul à écrire dans la zone des racines, et le seul à se
@@ -200,6 +208,7 @@ export class GenerationStore {
 
   constructor(options) {
     this.#volume = options.volume;
+    this.#confronterLaFraicheur = options.confronterLaFraicheur ?? true;
     this.#journal = new JournalDeGeneration(options.volume, options.handle);
     this.#tailleVolume = options.tailleVolume;
     this.#scellement = options.scellement;
@@ -362,7 +371,7 @@ export class GenerationStore {
     // diagnostic. Puis la FRAÎCHEUR, avant que le moindre secteur ne soit lu ou écrit — un volume
     // dont la région ne concorde plus ne doit rendre aucun clair, fût-il authentique.
     exigerIdentiteDeVolume(this.#volume, this.#scellement.volume, constat.racine);
-    await this.#garde?.confronter(constat.racine, constat.abimees);
+    if (this.#confronterLaFraicheur) await this.#garde?.confronter(constat.racine, constat.abimees);
 
     // Le format du journal TROUVÉ, avant que le vidage n'écrive une racine neuve (#143).
     this.#formatAnnonceTrouve = constat.racine?.format ?? null;

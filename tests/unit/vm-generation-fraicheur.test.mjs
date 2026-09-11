@@ -11,11 +11,13 @@
 //    confrontée avant toute lecture de secteur.
 //
 //    **La démonstration passait par le chemin non transactionnel jusqu'à T2b** (#182). Ce chemin
-//    OUVRE désormais un magasin de générations — sans l'installer — pour reprendre les compteurs et
-//    CLORE par une racine (ADR 0033, décision 4), si bien qu'il confronte la fraîcheur comme tout
-//    autre. C'est un durcissement : le volume de COQUILLE, seul utilisateur de ce mode, gagne la
-//    garde de l'ADR 0019 qu'il n'avait pas. La couche chiffrée seule est le bon isolant pour ce que
-//    cette épreuve veut montrer — que ce n'est pas le SCEAU du secteur qui refuse.
+//    ouvre désormais un magasin de générations — sans l'installer — pour reprendre les compteurs et
+//    CLORE par une racine (ADR 0033, décision 4). Il ne confronte toujours pas la fraîcheur, et
+//    l'ADR 0036, décision 3, dit pourquoi la tentative inverse a été réfutée ; mais il OUVRE
+//    désormais un journal, et faire reposer cette démonstration-là sur les gardes d'un chemin
+//    d'ouverture, c'est la faire dépendre de ce qui bouge d'une tranche à l'autre. La couche
+//    chiffrée seule est le bon isolant pour ce qu'elle veut montrer : ce n'est pas le SCEAU du
+//    secteur qui refuse.
 //  - **Le retour arrière PARTIEL du support est détecté** par le témoin de dernière séquence vue,
 //    qui vit hors du fichier de volume et dans la même origine.
 //  - **Le retour arrière COMPLET ne l'est pas**, et l'épreuve le MONTRE plutôt que de l'écrire

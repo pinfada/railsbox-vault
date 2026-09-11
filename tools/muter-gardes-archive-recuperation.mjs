@@ -297,10 +297,10 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "la CRÉATION écrit sa racine initiale, et elle seule s'y autorise",
-    garde: "openOpfsVolume — le motif « creation » d'une naissance",
+    garde: "autorisationDeCetteOuverture — le motif « creation » d'une naissance",
     fichier: OUVREUR,
-    avant: "  const motif = saisi.naissance ? MOTIFS_DE_RACINE_INITIALE.creation : creation;",
-    apres: "  const motif = creation;",
+    avant: "    motif: saisi.naissance ? MOTIFS_DE_RACINE_INITIALE.creation : creation,",
+    apres: "    motif: creation,",
     epreuves: [MELANGE],
   },
 
