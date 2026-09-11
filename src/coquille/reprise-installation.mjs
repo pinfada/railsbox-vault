@@ -17,6 +17,7 @@
 import {
   NOM_DU_VOLUME_APPLICATIF,
   installerSiNecessaire,
+  manifesteEstLisible,
   signatureDInstallationInterrompue,
 } from "./application-de-reference.mjs";
 import {
@@ -25,6 +26,7 @@ import {
   removeOpfsVolume,
   statOpfsVolume,
 } from "../vm/opfs-sync-access.mjs";
+import { readVolumeManifest } from "../vm/opfs-volume-open.mjs";
 
 /**
  * REPREND une installation interrompue : retire le volume orphelin ET SES VOISINS
@@ -70,7 +72,10 @@ export async function reprendreLInstallation({
  *
  * Deux refus SANS retrait, dans l'ordre :
  *
- *  1. un manifeste est présent → l'application est déjà installée, rien à reprendre ;
+ *  1. un manifeste est présent ET LISIBLE → l'application est déjà installée, rien à reprendre.
+ *     Un manifeste présent mais ILLISIBLE — la coupure la plus tardive qu'une installation puisse
+ *     subir, au milieu de ce dernier geste — n'est PAS pris pour une installation achevée (#188,
+ *     revue de sécurité, MEDIUM-2) : il tombe au contrôle suivant, comme « autre chose » ;
  *  2. la signature ne tient pas (`signatureDInstallationInterrompue`) → « autre chose », et ce
  *     module ne le devine pas : refuser est le seul geste sûr.
  *
@@ -79,7 +84,8 @@ export async function reprendreLInstallation({
  *
  * @param {{ descripteur: object, cleDeVolume: () => Promise<Uint8Array>, observer?: Function,
  *           openHandle?: Function, retirer?: Function, ouvrir?: Function, dater?: Function,
- *           verser?: Function, revoquer?: Function, inscrire?: Function }} options
+ *           verser?: Function, revoquer?: Function, inscrire?: Function,
+ *           lireLeManifeste?: Function }} options
  * @returns {Promise<{ reprise: boolean, motif?: string, installation?: object }>}
  */
 export async function reprendreSiSignatureConfirmee({
@@ -87,11 +93,12 @@ export async function reprendreSiSignatureConfirmee({
   cleDeVolume,
   observer = statOpfsVolume,
   openHandle = openOpfsSyncAccess,
+  lireLeManifeste = readVolumeManifest,
   ...primitives
 }) {
   const nom = NOM_DU_VOLUME_APPLICATIF;
   const manifesteExistant = await observer(manifestSidecarName(nom));
-  if (manifesteExistant.present) {
+  if (manifesteExistant.present && (await manifesteEstLisible(nom, lireLeManifeste))) {
     return { reprise: false, motif: "l'application est déjà installée : rien à reprendre" };
   }
   const signature = await signatureDInstallationInterrompue({
@@ -111,6 +118,7 @@ export async function reprendreSiSignatureConfirmee({
     cleDeVolume,
     observer,
     openHandle,
+    lireLeManifeste,
     ...primitives,
   });
   return { reprise: true, installation };

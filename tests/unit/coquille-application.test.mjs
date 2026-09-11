@@ -38,6 +38,11 @@ import { daterLaCreation, openOpfsVolume } from "../../src/vm/opfs-block-backend
 import { generationJournalName, manifestSidecarName } from "../../src/vm/opfs-sync-access.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
+import {
+  VOLUME_ALGORITHM,
+  createManifest,
+  serializeManifest,
+} from "../../src/vm/volume-manifest.mjs";
 
 // --- L'ÉTAPE 2 : le constat d'exclusivité ---------------------------------------------------------
 
@@ -281,8 +286,27 @@ test("chaque champ hors forme est refusé, et le refus NOMME le champ", () => {
 /** L'empreinte qu'un versement feint rend. Sa valeur importe peu ; ce qui compte est qu'elle PASSE. */
 const EMPREINTE_FEINTE = "f".repeat(64);
 
+/** Un manifeste VALIDE, tel que `installerSiNecessaire` l'inscrirait pour `descripteur()`. */
+function manifesteValideFeint() {
+  const descripteurManifeste = descripteurDeManifeste(descripteur());
+  return serializeManifest(
+    createManifest({
+      runtime: descripteurManifeste.runtime,
+      app: descripteurManifeste.app,
+      volumeSize: descripteur().disque.octets,
+      identity: { algorithm: "sha-256", digest: null },
+      volume: { id: "0011223344556677889900aabbccddee", algorithm: VOLUME_ALGORITHM },
+    }),
+  );
+}
+
 /** Un support d'installation dont chaque geste est observable. Rien n'est écrit pour de vrai. */
-function supportDInstallation({ manifeste = false, volume = false, ecrits = null } = {}) {
+function supportDInstallation({
+  manifeste = false,
+  manifesteValide = true,
+  volume = false,
+  ecrits = null,
+} = {}) {
   const gestes = [];
   const octets = descripteur().disque.octets;
   return {
@@ -292,6 +316,11 @@ function supportDInstallation({ manifeste = false, volume = false, ecrits = null
         present: nom.endsWith(".manifest") ? manifeste : volume,
         size: 0,
       }),
+      // Un manifeste VALIDE, sauf si l'épreuve demande explicitement le contraire (MEDIUM-2, revue
+      // de sécurité de la PR #188) : des octets qui ne sont PAS un JSON de manifeste, comme le
+      // laisserait une coupure au milieu de l'écriture du dernier geste de l'installation.
+      lireLeManifeste: async () =>
+        manifesteValide ? manifesteValideFeint() : new TextEncoder().encode('{"tronque":'),
       ouvrir: async (options) => {
         gestes.push(`ouvrir:${options.name}`);
         return {
@@ -350,6 +379,36 @@ test("un manifeste voisin PRÉSENT n'est pas réinstallé : rien n'est ouvert ni
   });
   assert.equal(rendu.installee, false);
   assert.deepEqual(support.gestes, [], "réinstaller effacerait ce que le guest a écrit depuis");
+});
+
+test("un manifeste voisin TRONQUÉ n'est jamais pris pour « déjà installé » (#188, MEDIUM-2)", async () => {
+  // La reproduction de la revue de sécurité de la PR #188 : une coupure pendant l'écriture du
+  // DERNIER geste de l'installation laisse un manifeste présent (taille non nulle) mais illisible.
+  // Avant cette correction, la seule PRÉSENCE suffisait à rendre « installée », et l'utilisateur
+  // n'avait ni bouton ni remède face à un message qui ment (« déjà installée » sur un volume qui ne
+  // l'est pas).
+  const support = supportDInstallation({ manifeste: true, manifesteValide: false, volume: true });
+  const erreur = await installerSiNecessaire({
+    descripteur: descripteur(),
+    cleDeVolume: cleFeinte().cleDeVolume,
+    ...support.primitives,
+  }).then(
+    () => null,
+    (raison) => raison,
+  );
+  assert.notEqual(
+    erreur,
+    null,
+    "un manifeste illisible n'est jamais confondu avec une installation achevée",
+  );
+  assert.equal(erreur.code, CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste);
+  assert.match(
+    erreur.message,
+    /illisible/,
+    "le refus NOMME ce qui est trouvé, jamais « sans manifeste »",
+  );
+  assert.doesNotMatch(erreur.message, /sans manifeste/);
+  assert.deepEqual(support.gestes, [], "rien n'est écrasé pendant que la coquille refuse");
 });
 
 test("un fichier de volume SANS manifeste est REFUSÉ, jamais écrasé", async () => {
@@ -445,6 +504,20 @@ function secteurDe(motif) {
 /** Le descripteur de ces épreuves : un disque assez petit pour tenir dans un double. */
 function descripteurDepreuve() {
   return descripteur({ disque: { nom: "app.ext2", octets: TAILLE_DEPREUVE } });
+}
+
+/** Un manifeste VALIDE pour `descripteurDepreuve()`, sérialisé comme `installerSiNecessaire` l'écrirait. */
+function manifesteDepreuveValide() {
+  const descripteurManifeste = descripteurDeManifeste(descripteurDepreuve());
+  return serializeManifest(
+    createManifest({
+      runtime: descripteurManifeste.runtime,
+      app: descripteurManifeste.app,
+      volumeSize: TAILLE_DEPREUVE,
+      identity: { algorithm: "sha-256", digest: null },
+      volume: { id: ID_DEPREUVE, algorithm: VOLUME_ALGORITHM },
+    }),
+  );
 }
 
 /**
@@ -698,7 +771,8 @@ test("constaterLInstallation : un manifeste PRÉSENT n'est jamais soumis à la s
   const backend = await ouvrirSansAchever(store);
   await backend.close();
   const handle = await store.openHandle(manifestSidecarName("application"));
-  handle.write(new Uint8Array([1]), { at: 0 });
+  const manifeste = manifesteDepreuveValide();
+  handle.write(manifeste, { at: 0 });
   handle.flush();
   handle.close();
 
@@ -707,6 +781,7 @@ test("constaterLInstallation : un manifeste PRÉSENT n'est jamais soumis à la s
     cleDeVolume: async () => CLE_DEPREUVE.slice(),
     observer: observerDuStore(store),
     openHandle: store.openHandle,
+    lireLeManifeste: async () => manifeste,
   });
   assert.equal(rendu.installee, false);
 });
@@ -806,7 +881,8 @@ test("reprendreSiSignatureConfirmee : REFUSE sans rien retirer si un manifeste e
   const backend = await ouvrirSansAchever(store);
   await backend.close();
   const handle = await store.openHandle(manifestSidecarName("application"));
-  handle.write(new Uint8Array([1]), { at: 0 });
+  const manifeste = manifesteDepreuveValide();
+  handle.write(manifeste, { at: 0 });
   handle.flush();
   handle.close();
   let retire = false;
@@ -816,6 +892,7 @@ test("reprendreSiSignatureConfirmee : REFUSE sans rien retirer si un manifeste e
     cleDeVolume: async () => CLE_DEPREUVE.slice(),
     observer: observerDuStore(store),
     openHandle: store.openHandle,
+    lireLeManifeste: async () => manifeste,
     retirer: async () => {
       retire = true;
     },
@@ -823,6 +900,60 @@ test("reprendreSiSignatureConfirmee : REFUSE sans rien retirer si un manifeste e
   assert.equal(resultat.reprise, false);
   assert.match(resultat.motif, /déjà installée/);
   assert.equal(retire, false, "un manifeste présent ne retire RIEN");
+});
+
+test("reprendreSiSignatureConfirmee : un manifeste TRONQUÉ ne bloque pas la reprise (#188, MEDIUM-2)", async () => {
+  // Reproduction de l'état le plus tardif qu'une interruption puisse atteindre : la coupure survient
+  // PENDANT l'écriture du dernier geste. Avant cette correction, le premier contrôle rendait « déjà
+  // installée » sur la seule présence du sidecar, et le bouton de reprise n'avait plus rien à offrir.
+  const store = createSyncAccessStore();
+  const backend = await ouvrirSansAchever(store);
+  await backend.close();
+  const handle = await store.openHandle(manifestSidecarName("application"));
+  handle.write(new TextEncoder().encode('{"tronque":'), { at: 0 });
+  handle.flush();
+  handle.close();
+  let retire = false;
+
+  const resultat = await reprendreSiSignatureConfirmee({
+    descripteur: descripteurDepreuve(),
+    cleDeVolume: async () => CLE_DEPREUVE.slice(),
+    observer: observerDuStore(store),
+    openHandle: store.openHandle,
+    lireLeManifeste: async () => new TextEncoder().encode('{"tronque":'),
+    retirer: async (nom) => {
+      retire = true;
+      for (const cible of [nom, generationJournalName(nom)]) {
+        if (store.sizeOf(cible) === 0) continue;
+        const h = await store.openHandle(cible);
+        try {
+          h.truncate(0);
+          h.flush();
+        } finally {
+          h.close();
+        }
+      }
+    },
+    ouvrir: (options) =>
+      openOpfsVolume({ ...options, identifiantVolume: ID_DEPREUVE, openHandle: store.openHandle }),
+    verser: async (backendNeuf) => {
+      for (let rang = 0; rang < TAILLE_DEPREUVE / SECTOR_SIZE; rang += 1) {
+        await backendNeuf.write(rang * SECTOR_SIZE, secteurDe(0x44));
+      }
+      await backendNeuf.flush();
+      return { ecrits: TAILLE_DEPREUVE, empreinte: await backendNeuf.empreinteDuFichier() };
+    },
+    dater: async (options) => daterLaCreation({ ...options, openHandle: store.openHandle }),
+    revoquer: async () => {},
+    inscrire: async () => {},
+  });
+  assert.equal(
+    resultat.reprise,
+    true,
+    "la signature tient : le manifeste illisible n'est pas pris pour une installation achevée",
+  );
+  assert.equal(retire, true);
+  assert.equal(resultat.installation.installee, true);
 });
 
 test("reprendreSiSignatureConfirmee : REFUSE sans rien retirer si la signature ne tient plus", async () => {

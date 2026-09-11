@@ -427,7 +427,7 @@ jeton du harnais d'un côté, enveloppe de clé de l'autre — et rien de plus.
 
 ## Campagne de mutation
 
-Vingt-sept gardes, chacune retirée du source dans un atelier temporaire, l'épreuve rejouée
+Vingt-huit gardes, chacune retirée du source dans un atelier temporaire, l'épreuve rejouée
 (`tools/muter-gardes-cycle-de-vie.mjs`, moteur partagé). Dix de plus que la première rédaction : ce
 sont celles que la revue de sécurité de la PR #171 a demandées, et elles portent sur du code que
 rien n'exécutait — l'installation, la forme du descripteur, le compte rendu publié.
@@ -461,8 +461,9 @@ rien n'exécutait — l'installation, la forme du descripteur, le compte rendu p
 | 25  | `formeDuDescripteur` — le contrôle de la ligne de commande                  | TUÉ     |
 | 26  | `formeDuDescripteur` — le contrôle des cinq noms du boot                    | TUÉ     |
 | 27  | `compteRenduPublie` — le COMPTE des pannes, jamais leur liste               | TUÉ     |
+| 28  | `constaterLInstallation` — la lecture du manifeste, pas sa seule présence   | TUÉ     |
 
-**27/27.** Un mutant a **survécu** avant d'être tué, et c'est le service que la campagne rend : le
+**28/28.** Un mutant a **survécu** avant d'être tué, et c'est le service que la campagne rend : le
 n° 12 — retirer le `try/catch` de la sonde de capacités laissait l'épreuve verte, parce que le
 chaînage optionnel (`portee?.crypto?.subtle`) ne lève sur aucune portée amputée. Ce qui lève, c'est
 un **accesseur** — et un moteur peut en poser un qui refuse : `navigator.storage` en est un, et un
@@ -477,8 +478,16 @@ d'afficher **27/27** partout TUÉ. Réarmés, les deux mutants ont d'abord rév�
 réel celui-là : le n° 23 mutait bien le bon texte, mais l'épreuve ne le voyait pas mourir —
 `tests/unit/coquille-application.test.mjs` rendait la MÊME clé de volume factice à `verserLeDisque`
 et à `daterLaCreationDuVolume`, si bien que l'effacement du second masquait l'oubli du premier.
-Corrigé en rendant une copie fraîche à chaque appel, comme le fait déjà le reste de la suite. La
-campagne rend de nouveau 27/27, code de sortie 0.
+Corrigé en rendant une copie fraîche à chaque appel, comme le fait déjà le reste de la suite.
+
+**La même revue (MEDIUM-2) a trouvé un défaut RÉEL, distinct de la dérive ci-dessus** : le n° 20 ne
+regardait que la PRÉSENCE du manifeste (`observer(...).size > 0`), jamais son contenu. Une coupure
+pendant l'écriture du manifeste — le DERNIER geste de l'installation — laisse un sidecar tronqué,
+donc présent, donc pris pour « déjà installée » : le seul cas d'installation interrompue que #173
+promettait de réparer et laissait dehors. `constaterLInstallation` lit désormais le manifeste et le
+fait PARSER avant de conclure qu'il est là ; un manifeste illisible tombe au contrôle suivant, comme
+« autre chose », et porte un message qui le nomme plutôt que de prétendre « sans manifeste ». Le
+mutant n° 28 tient cette lecture. La campagne rend 28/28, code de sortie 0.
 
 Une garde a été **retirée** au lieu d'être mutée, et il faut le dire : « une seconde révision est
 refusée » ne peut pas être atteinte, puisque la première révision remplace `differee` par une issue

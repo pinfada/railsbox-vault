@@ -43,12 +43,13 @@ import {
 } from "../vm/opfs-sync-access.mjs";
 import {
   openVolumeForWrite,
+  readVolumeManifest,
   revokeVolumeManifest,
   writeVolumeManifest,
 } from "../vm/opfs-volume-open.mjs";
 import { chargerAdressesV86, exigerAdresse } from "../v86-adresses.mjs";
 import { verserFluxDansVolume } from "../vm/versement-de-disque.mjs";
-import { VOLUME_ALGORITHM, createManifest } from "../vm/volume-manifest.mjs";
+import { VOLUME_ALGORITHM, createManifest, parseManifest } from "../vm/volume-manifest.mjs";
 
 /**
  * Où l'origine de CONFIANCE sert le descripteur de son application.
@@ -262,10 +263,11 @@ export async function installerSiNecessaire({
   revoquer = revokeVolumeManifest,
   inscrire = writeVolumeManifest,
   openHandle = openOpfsSyncAccess,
+  lireLeManifeste = readVolumeManifest,
 }) {
   const nom = NOM_DU_VOLUME_APPLICATIF;
   const octets = descripteur.disque.octets;
-  if (await constaterLInstallation({ nom, octets, observer, openHandle })) {
+  if (await constaterLInstallation({ nom, octets, observer, openHandle, lireLeManifeste })) {
     return { installee: false, volume: nom, octets };
   }
 
@@ -287,8 +289,22 @@ export async function installerSiNecessaire({
     empreinteVersee: verse.empreinte,
     scellementsVerses: verse.scellements,
   });
-  // DERNIER geste : le volume devient identifié, donc ouvrable en écriture. Tout ce qui précède
-  // laisse un volume ANONYME, et c'est ce qui rend une installation interrompue reconnaissable.
+  await inscrireLeManifeste({
+    inscrire,
+    nom,
+    descripteur,
+    octets,
+    identifiantVolume: verse.identifiantVolume,
+  });
+  return { installee: true, volume: nom, octets, ecrits: verse.ecrits };
+}
+
+/**
+ * INSCRIT le manifeste, DERNIER geste de l'installation : le volume devient identifié, donc
+ * ouvrable en écriture. Tout ce qui précède laisse un volume ANONYME, et c'est ce qui rend une
+ * installation interrompue reconnaissable.
+ */
+async function inscrireLeManifeste({ inscrire, nom, descripteur, octets, identifiantVolume }) {
   const descripteurManifeste = descripteurDeManifeste(descripteur);
   await inscrire(
     nom,
@@ -297,10 +313,9 @@ export async function installerSiNecessaire({
       app: descripteurManifeste.app,
       volumeSize: octets,
       identity: { algorithm: "sha-256", digest: null },
-      volume: { id: verse.identifiantVolume, algorithm: VOLUME_ALGORITHM },
+      volume: { id: identifiantVolume, algorithm: VOLUME_ALGORITHM },
     }),
   );
-  return { installee: true, volume: nom, octets, ecrits: verse.ecrits };
 }
 
 /**
@@ -341,6 +356,33 @@ export async function signatureDInstallationInterrompue({
 }
 
 /**
+ * Rend `true` si le manifeste voisin est présent ET LISIBLE — un objet JSON que `parseManifest`
+ * accepte, pas seulement un fichier non vide (#188, revue de sécurité, MEDIUM-2).
+ *
+ * Un manifeste est le DERNIER geste de `installerSiNecessaire` : une coupure pendant son écriture
+ * laisse un sidecar tronqué, donc non vide, donc PRÉSENT au sens de `observer(...).size > 0` — le
+ * seul critère que cette fonction employait avant cette correction. Le confondre avec « installée »
+ * rendait « l'application est déjà installée : rien à reprendre » sur le volume dont la coupure est
+ * la plus tardive, donc pas la moins probable — précisément le cas que #173 promet de réparer et
+ * laissait dehors.
+ */
+export async function manifesteEstLisible(nom, lireLeManifeste) {
+  let octets;
+  try {
+    octets = await lireLeManifeste(nom);
+  } catch {
+    return false;
+  }
+  if (octets === null) return false;
+  try {
+    parseManifest(octets);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * CONSTATE ce que le support porte déjà, et rend `true` si l'application est installée.
  *
  * Extrait de `installerSiNecessaire` : les deux issues qui n'installent RIEN se jugent sur le seul
@@ -350,9 +392,11 @@ export async function signatureDInstallationInterrompue({
  * il s'agit accompagne le refus, dans son contexte — jamais dans son message, qui reste identique
  * dans les deux cas : c'est le geste (#173), pas ce module, qui décide quoi en faire.
  */
-async function constaterLInstallation({ nom, octets, observer, openHandle }) {
+async function constaterLInstallation({ nom, octets, observer, openHandle, lireLeManifeste }) {
   const manifesteExistant = await observer(manifestSidecarName(nom));
-  if (manifesteExistant.present) return true;
+  const manifesteLisible =
+    manifesteExistant.present && (await manifesteEstLisible(nom, lireLeManifeste));
+  if (manifesteLisible) return true;
   const volumeExistant = await observer(nom);
   if (!volumeExistant.present) return false;
   const signature = await signatureDInstallationInterrompue({
@@ -364,7 +408,9 @@ async function constaterLInstallation({ nom, octets, observer, openHandle }) {
   throw Object.assign(
     refus(
       CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste,
-      `Le volume « ${nom} » existe sans manifeste : la coquille ne l'écrase pas pour installer.`,
+      manifesteExistant.present
+        ? `Le volume « ${nom} » porte un manifeste voisin illisible : la coquille ne l'écrase pas pour installer.`
+        : `Le volume « ${nom} » existe sans manifeste : la coquille ne l'écrase pas pour installer.`,
     ),
     {
       installationInterrompue: signature.interrompue,
