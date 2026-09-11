@@ -1,11 +1,22 @@
-# Le format de volume v3 de RailsBox Vault — spécification pour la revue externe
+# Le format de volume de RailsBox Vault — spécification pour la revue externe
 
-- Version du document : 1 · 5 septembre 2026 · Issue
-  [#20](https://github.com/pinfada/railsbox-vault/issues/20), moitié 1
-- Format décrit : **volume v3**, journal de génération **format 3**, manifeste **format 3**
+- Version du document : 2 · 11 septembre 2026 · Issues
+  [#20](https://github.com/pinfada/railsbox-vault/issues/20) moitié 1,
+  [#182](https://github.com/pinfada/railsbox-vault/issues/182) (tranche T2a)
+- Format ÉCRIT par ce runtime : **volume v4**, journal de génération **format 5**, manifeste
+  **format 4**, fichier d'instantané **format 2**
+- Format encore LU, et par la seule migration : **volume v3**, journal **formats 2 à 4**
 - Décisions dont il découle : [ADR 0015](decisions/0015-proprietes-cryptographiques-du-format.md)
   (propriétés), [ADR 0016](decisions/0016-format-de-volume-v3-dispositions.md) (disposition),
-  [ADR 0019](decisions/0019-fraicheur-du-volume.md) (fraîcheur)
+  [ADR 0019](decisions/0019-fraicheur-du-volume.md) (fraîcheur),
+  [ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) (la hiérarchie de clés),
+  [ADR 0035](decisions/0035-format-de-volume-v4-et-migration.md) (ce que la v4 change)
+
+> **Le NOM de ce fichier dit encore « v3 », et il ne changera pas.** Cinquante-deux renvois pointent
+> ici, dont une douzaine depuis des ADR acceptés et un depuis un fichier de vecteurs FIGÉ. Renommer
+> le fichier ferait réécrire des documents qu'on ne réécrit pas. La version est DANS le document,
+> pas dans son nom : ce qui suit décrit le format v4 que le produit écrit, et nomme explicitement ce
+> qui reste vrai de la v3 — que la migration est désormais le seul lecteur admis.
 
 ## 1. Ce que ce document est, et ce qu'il n'est pas
 
@@ -169,7 +180,50 @@ incrémentale est calibrée contre `crypto.subtle.digest` par `tests/unit/vm-sha
 « concorde avec WebCrypto quel que soit le DÉCOUPAGE en morceaux » — un instrument non calibré
 invaliderait ce qu'il mesure.
 
-### 4.4 La clé de volume : reçue, jamais fabriquée par le produit
+### 4.4 La clé de volume : DÉRIVÉE d'une clé maîtresse reçue
+
+> **Récrit par la v4** ([#182](https://github.com/pinfada/railsbox-vault/issues/182),
+> [ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md)). Ce que le produit reçoit
+> reste une clé de 32 octets développée par l'enveloppe — la DEK —, et il n'en fabrique toujours
+> aucune. Ce qui change est ce qu'il en FAIT : elle n'est plus la clé AEAD du volume, elle est une
+> clé MAÎTRESSE dont descend une clé par domaine, par volume et par version de format.
+>
+> ```text
+> cleDeDomaine = HKDF-SHA-256(IKM = DEK, sel, info) → CryptoKey AES-256-GCM non extractible
+>
+> info = LP("railsbox-vault/derivation-de-domaine/v1")   étiquette du SCHÉMA de dérivation
+>      ‖ LP(domaine)                                      « volume », « journal », « instantane », …
+>      ‖ LP(identifiantVolume)                            32 hexadécimaux MINUSCULES
+>      ‖ U32BE(versionDeFormatDuDomaine)                  la version du format que ce domaine scelle
+>      ‖ LP("aes-256-gcm")                                l'algorithme, comme dans les données associées
+>
+> LP(s)    = longueur UTF-8 de s sur 2 octets gros-boutistes, puis les octets UTF-8 de s
+> U32BE(n) = n sur 4 octets gros-boutistes
+> ```
+>
+> **Quatre domaines sont dérivés à ce jour**, sur les six que l'ADR 0033 décide. `volume` (secteurs,
+> empreinte de région, témoin, racines) et `journal` (enregistrements de `<volume>.gen`) sont à
+> COMPTEUR : leur clé est réemployée entre deux gestes, donc leur **sel est la chaîne VIDE** (RFC
+> 5869 § 2.2 — l'extraction reste correcte parce que l'IKM est déjà uniformément aléatoire sur 256
+> bits). `instantane` et `archive` sont à USAGE UNIQUE : leur artefact est réécrit entier à chaque
+> geste et ne porte qu'UN scellement, donc leur **sel est tiré sur 32 octets et écrit EN CLAIR dans
+> l'artefact**. `enveloppe` et `recuperation` restent scellés sous la DEK ; c'est le reste de #182,
+> et c'est écrit au § 12.
+>
+> **Le sel en clair n'est pas authentifié, et il n'a pas à l'être.** Un adversaire qui le change
+> obtient une clé différente, donc une ouverture qui échoue : il se protège par sa conséquence,
+> exactement comme le nonce.
+>
+> **La DEK ne peut plus chiffrer, et ce n'est pas une discipline.** Elle est importée en matériau
+> HKDF — `importKey("raw", dek, "HKDF", false, ["deriveKey"])` —, si bien que
+> `crypto.subtle.encrypt` la REJETTE par la spécification WebCrypto elle-même. Un appelant distrait
+> obtient une exception, pas un chiffré. Épreuve : `tests/unit/vm-hierarchie-de-cles.test.mjs` › «
+> la DEK importée en matériau HKDF : WebCrypto REFUSE de chiffrer avec elle ». La seule exception du
+> produit est la MIGRATION v3 → v4, qui doit ouvrir sous la clé v3 ; elle porte un nom,
+> `Scellement.#sousLaCleMaitresse`, pour que le cliquet d'inspection de source à venir n'ait qu'une
+> entrée à inscrire.
+>
+> Ce qui suit décrivait la v3, et reste vrai d'elle : la clé était REÇUE telle quelle.
 
 Trente-deux octets aléatoires, importés dans WebCrypto en clé **non extractible**. Le format ne la
 dérive pas, ne l'écrit pas, ne l'efface pas et ne la renouvelle pas : c'est l'objet de
@@ -196,16 +250,47 @@ typé, jamais lu en clair ».
 
 ### 4.5 Le budget de clé, et la conduite au plafond
 
-> **CE PARAGRAPHE DÉCRIT UN BUDGET QUI N'EST PAS GLOBAL À LA CLÉ, et la revue externe du 10
-> septembre 2026 l'a établi** ([#182](https://github.com/pinfada/railsbox-vault/issues/182), HIGH,
-> ouvert — § 9.7). « Ce que le compteur compte », plus bas, décrit ce qu'UNE instance de scellement
-> compte ; or les volumes de coquille et d'application partagent la même clé, chaque instance repart
-> de zéro, les racines d'enveloppe et les exports scellent sous cette clé hors de tout compteur, et
-> deux chemins de production s'ouvrent hors transaction. La probabilité de 2^-35 publiée ci-dessous
-> **n'est donc pas bornée par le mécanisme implémenté**. La correction est décidée —
-> [ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md), une clé dérivée par domaine
-> et par volume — et **elle n'est pas livrée** : ce paragraphe reste vrai du format v3, c'est-à-dire
-> du format que le produit écrit aujourd'hui. Il sera récrit par la version v4.
+> **Le constat de la revue externe du 10 septembre 2026 est CORRIGÉ pour les domaines du volume, et
+> il reste ouvert pour deux autres** ([#182](https://github.com/pinfada/railsbox-vault/issues/182),
+> HIGH — § 9.7). Ce que ce paragraphe décrivait — un compteur PAR INSTANCE de scellement, présenté
+> comme un compteur PAR CLÉ — n'existe plus pour les secteurs, les racines et les enregistrements :
+> depuis la v4, chaque domaine de chaque volume a SA clé, et le compteur d'une clé compte enfin
+> toutes les invocations sous elle. Ce qui reste ouvert est nommé plus bas, et dans le § 12.
+>
+> **Le budget, domaine par domaine, exhaustif :**
+>
+> | Domaine        | Compteur ? | Où il est persisté et AUTHENTIFIÉ                            | Au plafond                                              |
+> | -------------- | ---------- | ------------------------------------------------------------ | ------------------------------------------------------- |
+> | `volume`       | oui        | `scellementsCumulesVolume`, en-tête authentifié de la racine | `VAULT_CRYPTO_BUDGET_DE_CLE` avant de produire un octet |
+> | `journal`      | oui        | `scellementsCumulesJournal`, **le même** en-tête de racine   | idem                                                    |
+> | `instantane`   | **non**    | aucun — une clé, une capture, sel tiré                       | inatteignable : 1 devant 2^31                           |
+> | `archive`      | **non**    | aucun — une clé, une archive, sel tiré                       | inatteignable                                           |
+> | `enveloppe`    | **non**    | **encore scellé sous la DEK** — reste de #182                | § 12                                                    |
+> | `recuperation` | **non**    | **encore scellé sous la DEK** — reste de #182                | § 12                                                    |
+>
+> **Pourquoi quatre domaines n'ont PAS de compteur, et pourquoi c'est plus sûr.** Compter suppose un
+> état durable, atomique et partagé ; ces domaines n'en ont aucun — c'est exactement le reproche du
+> relecteur, « certaines [limites] ne sont pas persistées et d'autres n'existent pas ». Un sel tiré
+> ne suppose rien : il ne recule pas avec le support, il ne se perd pas à la fermeture d'un onglet,
+> il ne dépend d'aucune transaction. **Le budget d'une clé à usage unique est de 1, et aucune mesure
+> ne peut le rendre faux.**
+>
+> **La règle de CLÔTURE, qui rend les deux compteurs restants exacts.** _Toute session qui scelle
+> sous une clé à compteur clôt par une RACINE qui publie les deux compteurs ; une ouverture qui ne
+> peut pas écrire de racine n'a pas le droit de sceller — elle est en LECTURE SEULE, et un
+> scellement demandé sous ce régime est refusé par `VAULT_STORAGE_LECTURE_SEULE` (§ 10.2)._ Les
+> trois chemins qui s'ouvraient hors transaction closent donc par une racine : la CRÉATION en écrit
+> une avant `VLTSEAL1` (§ 7.1), l'INSTALLATION INITIALE du volume applicatif la réécrit une fois le
+> disque versé, et l'ouverture hors transaction de la coquille est une naissance. Ce qui reste est
+> refusé au lieu d'être compté à moitié. Épreuves : `tests/unit/vm-cloture-par-racine.test.mjs`.
+>
+> **Ce qui reste vrai, et qui n'est pas corrigé par la séparation des clés** : les deux compteurs
+> vivent toujours dans la racine, donc ils RECULENT avec elle (§ 9.1, constat #144). L'écart entre
+> le compteur et le nombre réel d'invocations reste non borné, et la moitié du plafond NIST — 2^31
+> devant 2^32 — reste la marge choisie devant cet écart. La séparation des clés ne referme pas la
+> question n° 4 : elle en retire la moitié qui n'était pas une question de recul, la PORTÉE.
+>
+> Ce qui suit décrit le mécanisme commun aux deux versions, et reste vrai.
 
 | Grandeur                                                |            Valeur |
 | ------------------------------------------------------- | ----------------: |
@@ -215,24 +300,34 @@ typé, jamais lu en clair ».
 | Octets de charge correspondants (secteurs de 512 o)     |             1 Tio |
 | Réécritures complètes d'un volume applicatif de 512 Mio |             2 048 |
 
-**Ce que le compteur compte.** Le § 8.3 compte « all instances of the authenticated encryption
-function ». Ici : chaque enregistrement déposé, chaque secteur rescellé au point de contrôle, chaque
-racine écrite, chaque empreinte de région rescellée, chaque témoin écrit. Une barrière du guest qui
-valide un enregistrement en consomme donc **quatre** (enregistrement, racine, empreinte de région,
-témoin), et non deux : à 2^31, cela ramène le nombre de barrières admissibles sous une clé de ~1,07
-milliard à **~537 millions**. Épreuve : `tests/unit/vm-generation-chiffre.test.mjs` › « le compteur
-de scellements de la racine COMPTE les racines et les enregistrements ».
+**Ce que chaque compteur compte.** Le § 8.3 compte « all instances of the authenticated encryption
+function ». Depuis la v4, la comptée est répartie sur DEUX clés, et la répartition est le sujet :
+`scellementsCumulesVolume` compte les secteurs de la charge, les secteurs rescellés au point de
+contrôle, les empreintes de région, les témoins **et les racines** ; `scellementsCumulesJournal`
+compte les enregistrements déposés dans `<volume>.gen`, et rien d'autre. Une barrière du guest qui
+valide un enregistrement consomme donc **trois** du budget du volume (racine, empreinte de région,
+témoin) et **un** de celui du journal, au lieu de quatre d'un compteur unique qui les moyennait. À
+2^31 par clé, le nombre de barrières admissibles est borné par la première des deux à atteindre son
+plafond — ~716 millions du côté du volume. Épreuves : `tests/unit/vm-generation-chiffre.test.mjs` ›
+« le compteur de scellements de la racine COMPTE les racines et les enregistrements » et
+`tests/unit/vm-hierarchie-de-cles.test.mjs` › « les deux compteurs d'un volume sont DISTINCTS ».
 
-**Où il vit.** Dans l'en-tête AUTHENTIFIÉ de la racine (§ 6.7, offset 68). Il traverse donc les
-sessions — et il **recule** avec un retour arrière du support. Le nombre réel d'invocations sous la
-clé peut alors dépasser le nombre compté, d'un écart qu'aucune mesure ne borne aujourd'hui. La
-moitié du plafond NIST est la marge choisie devant cet écart ; c'est la **question n° 4** de la
-§ 13.
+**Où ils vivent.** Dans l'en-tête AUTHENTIFIÉ de la racine : `scellementsCumulesVolume` à l'offset
+68, `scellementsCumulesJournal` à l'offset 202 (§ 6.7). Ils traversent donc les sessions — et ils
+**reculent** avec un retour arrière du support. Le nombre réel d'invocations sous la clé peut alors
+dépasser le nombre compté, d'un écart qu'aucune mesure ne borne aujourd'hui. La moitié du plafond
+NIST est la marge choisie devant cet écart ; c'est la **question n° 4** de la § 13.
 
-**Le compteur est sous-estimé hors transaction.** Un volume ouvert sans journal — versement d'une
-image de référence, conversion de format — n'écrit aucune racine, donc ses scellements ne sont
-comptés que le temps de la session. L'erreur va dans le sens qui laisse consommer plus que prévu, et
-elle est écrite ici plutôt que découverte.
+**Le compteur n'est plus sous-estimé hors transaction, et c'est la règle de clôture qui le tient.**
+Ce paragraphe avouait, jusqu'à la v3, qu'un volume ouvert sans journal n'écrivait aucune racine et
+que ses scellements n'étaient donc comptés que le temps de la session. L'aveu est retiré parce que
+l'état qu'il décrivait n'est plus atteignable : une session qui ne peut pas écrire de racine ne
+scelle pas (§ 4.5, la règle de clôture ; § 10.2, `VAULT_STORAGE_LECTURE_SEULE`).
+
+**Ce qui reste sous-estimé, et c'est BORNÉ** : une MIGRATION v3 → v4 reprise après coupure peut
+avoir rescellé certains secteurs deux fois. L'écart vaut au plus une suite de conversion — 512
+secteurs — par coupure, parce que la reprise ne rejoue que la suite qui était en vol (§ 7.4). C'est
+la seule sous-estimation qui subsiste, et elle a une borne, ce que l'aveu précédent n'avait pas.
 
 **Le compteur est REPRIS de la racine qui fait autorité, sans contrôle de croissance.** À
 l'ouverture, la session reprend le compteur à `scellementsCumules + 1` de cette racine, sans le
@@ -347,24 +442,48 @@ la charge du volume est REFUSÉ ».
 
 ### 5.2 Données associées d'une racine
 
-| Ordre | Champ                       | Longueur      | Encodage                                                         |
-| ----- | --------------------------- | ------------- | ---------------------------------------------------------------- |
-| 1     | Étiquette de domaine        | 2 + 39 octets | `railsbox-vault/format-chiffre/v1/racine`                        |
-| 2     | Nom de l'algorithme         | 2 + 11 octets | `aes-256-gcm`                                                    |
-| 3     | Version du format de volume | 4 octets      | gros-boutiste — **3**                                            |
-| 4     | Identifiant de volume       | 2 + n octets  | chaîne quelconque ; 32 hexadécimaux minuscules pour un volume v3 |
-| 5     | Séquence                    | 8 octets      | gros-boutiste                                                    |
-| 6     | Génération                  | 8 octets      | gros-boutiste                                                    |
-| 7     | Taille LOGIQUE du volume    | 8 octets      | gros-boutiste                                                    |
-| 8     | Nombre d'entrées            | 4 octets      | gros-boutiste — **dérivé**, jamais reçu                          |
-| 9     | Longueur de charge          | 8 octets      | gros-boutiste — somme des CLAIRS, **dérivée**                    |
-| 10    | Scellements cumulés         | 8 octets      | gros-boutiste                                                    |
+| Ordre | Champ                                    | Longueur      | Encodage                                                         |
+| ----- | ---------------------------------------- | ------------- | ---------------------------------------------------------------- |
+| 1     | Étiquette de domaine                     | 2 + 39 octets | `railsbox-vault/format-chiffre/v1/racine`                        |
+| 2     | Nom de l'algorithme                      | 2 + 11 octets | `aes-256-gcm`                                                    |
+| 3     | Version du format de volume              | 4 octets      | gros-boutiste — **4** (3 sur un volume antérieur)                |
+| 4     | Identifiant de volume                    | 2 + n octets  | chaîne quelconque ; 32 hexadécimaux minuscules pour un volume v3 |
+| 5     | Séquence                                 | 8 octets      | gros-boutiste                                                    |
+| 6     | Génération                               | 8 octets      | gros-boutiste                                                    |
+| 7     | Taille LOGIQUE du volume                 | 8 octets      | gros-boutiste                                                    |
+| 8     | Nombre d'entrées                         | 4 octets      | gros-boutiste — **dérivé**, jamais reçu                          |
+| 9     | Longueur de charge                       | 8 octets      | gros-boutiste — somme des CLAIRS, **dérivée**                    |
+| 10    | Scellements cumulés du domaine `volume`  | 8 octets      | gros-boutiste                                                    |
+| 11    | Scellements cumulés du domaine `journal` | 8 octets      | gros-boutiste — **v4 seulement**                                 |
 
-Total : **136 octets** (41 + 13 + 4 + 34 + 8 + 8 + 8 + 4 + 8 + 8) pour un identifiant de trente-deux
-caractères — voir § 5.1 pour ce que devient ce total sous un identifiant d'une autre longueur, ce
-que `encoderEnteteRacine` accepte tout autant. À ne pas confondre avec les 136 octets qu'une racine
-de format 2 occupait dans son secteur (§ 6.7) : les deux nombres sont égaux par coïncidence et ne
-mesurent pas la même chose.
+Total : **144 octets** pour un volume v4 dont l'identifiant fait trente-deux caractères (41 + 13 + 4
+
+- 34 + 8 + 8 + 8 + 4 + 8 + 8 + 8), et **136** pour un volume v3, qui n'a pas le champ 11. Voir § 5.1
+  pour ce que devient ce total sous un identifiant d'une autre longueur, ce que
+  `encoderEnteteRacine` accepte tout autant. À ne pas confondre avec les 136 octets qu'une racine de
+  format 2 occupait dans son secteur (§ 6.7) : les deux nombres sont égaux par coïncidence et ne
+  mesurent pas la même chose.
+
+**Le NOMBRE de champs suit la version de format, et la version est le champ 3 — donc AUTHENTIFIÉE.**
+C'est ce qui rend le second compteur inviolable sans l'ajouter à une garde : une racine v4 relue
+comme une racine v3 présente dix champs à l'étiquette, qui refuse ; une racine v3 relue comme une v4
+en présente onze, et l'étiquette refuse de même. Le champ de format du JOURNAL, à l'octet 8 de la
+racine sur disque, n'est PAS authentifié et ne décide de rien ici : c'est la version du VOLUME que
+la session tient qui décide, et elle est scellée. Épreuves : `tools/verifier-vecteurs.mjs` › « la
+même racine relue à DIX champs ne vérifie pas » et `tests/unit/vm-generation-format.test.mjs` › «
+une racine à UN seul compteur est refusée par un volume v4 ».
+
+**Pourquoi les racines relèvent du domaine `volume` et non du domaine `journal`**, alors qu'elles
+authentifient la suite des entrées du journal : une racine vit dans le fichier de VOLUME, à
+l'emplacement `séquence mod 2` (§ 6.6), et c'est elle qui porte les compteurs des deux domaines. La
+faire dépendre de la clé du journal ferait dépendre le compteur du volume d'une clé que le journal
+peut vider. La racine est l'autorité du volume ; elle est scellée sous la clé du volume.
+
+**Les données associées ne gagnent PAS de champ « domaine » de dérivation**, et c'est une décision
+(ADR 0033, décision 5) : le domaine sépare désormais les CLÉS, et le répéter ici suggérerait que ce
+sont les données associées qui font ce travail — la confusion que #182 vient précisément de
+corriger. L'étiquette de domaine du champ 1 reste ce qu'elle a toujours été : ce qui empêche un
+objet d'être relu comme un autre **sous la même clé**, et il n'y en a plus qu'un par clé.
 
 **Le CLAIR que la racine scelle est l'empreinte SHA-256 de la suite ordonnée de ses entrées** (§
 5.3), 32 octets — et rien d'autre.
@@ -502,14 +621,15 @@ lecture de plus. Une page hôte de 4 096 octets de région porte les métadonné
 consécutifs** (60 Kio de charge) : le surcoût est d'une lecture par ~120 secteurs en accès
 séquentiel, et d'une lecture par secteur en accès aléatoire.
 
-### 6.2 L'en-tête v3, champ par champ
+### 6.2 L'en-tête, champ par champ
 
-Un secteur, **petit-boutiste**.
+Un secteur, **petit-boutiste**. La disposition est celle de la v3, à l'octet près : seuls le
+marqueur et le champ de version bougent en v4.
 
 | Offset | Largeur | Champ                                                  |
 | ------ | ------: | ------------------------------------------------------ |
-| 0      |       8 | marqueur `VLTVOL03` (ASCII)                            |
-| 8      |       4 | version du format de volume — **3**                    |
+| 0      |       8 | marqueur `VLTVOL04` (ASCII) — `VLTVOL03` sur un v3     |
+| 8      |       4 | version du format de volume — **4**                    |
 | 12     |       4 | taille de secteur — **512**                            |
 | 16     |       8 | taille LOGIQUE du volume                               |
 | 24     |       8 | offset de la région d'authentification — **512**       |
@@ -519,8 +639,14 @@ Un secteur, **petit-boutiste**.
 | 64     |       8 | **marque de scellement complet** — `VLTSEAL1` ou zéros |
 | 72     |     440 | réserve, à zéro                                        |
 
-Les 512 octets de cet en-tête sont figés dans `tests/vectors/disposition-v3.json`, champ
-`enTete.hex`, et le vérificateur de la § 2 les reconstruit champ par champ.
+Les 512 octets de l'en-tête v4 sont figés dans `tests/vectors/volume-v4.json`, champ `enTete.hex` ;
+ceux de l'en-tête v3 restent dans `tests/vectors/disposition-v3.json`, où ils ne bougent pas. Le
+vérificateur de la § 2 reconstruit les deux, champ par champ.
+
+**Le MARQUEUR bouge, alors que le champ de version aurait suffi à distinguer les deux formats.** La
+raison est d'exploitation, pas de sûreté : une commande qui cherche `VLTVOL03` dans un fichier ne
+doit pas trouver un volume v4 et le croire lisible par un runtime d'avant #182. Le premier
+discriminant d'un format persistant est celui qu'on lit à l'œil.
 
 **Les trois offsets déclarés (24, 32, 40) sont REDONDANTS avec la taille logique**, et le décodeur
 les traite comme tels : il recalcule la disposition depuis la taille logique et **refuse** l'en-tête
@@ -534,9 +660,15 @@ falsifié fait échouer la première lecture par un sceau refusé au lieu de ren
 dommage qu'une altération produise est donc un **refus**, jamais une lecture erronée. L'authentifier
 exigerait de pouvoir le lire sans connaître l'identifiant qu'il porte, ce qui est circulaire.
 
-**Ce que le décodeur refuse sans clé** : marqueur absent, version autre que 3, taille de secteur
-autre que 512, taille logique inadmissible, et **disposition incohérente** — l'en-tête qui placerait
-la région ou la charge ailleurs que là où la taille logique l'impose. Épreuves :
+**Ce que le décodeur refuse sans clé** : marqueur absent ou d'une autre version que celle qu'on lui
+demande, version de format qui ne concorde pas avec ce marqueur, taille de secteur autre que 512,
+taille logique inadmissible, et **disposition incohérente** — l'en-tête qui placerait la région ou
+la charge ailleurs que là où la taille logique l'impose.
+
+**Un en-tête v3 présenté à l'ouverture d'un produit v4 est REFUSÉ, et il est NOMMÉ.** Le refus dit
+que ce fichier est un volume v3 et que le remède est la MIGRATION, jamais une sauvegarde : un volume
+v3 n'est plus lu que par elle (ADR 0033, décision 5, point 2 ; § 7.3 et § 7.4). Le fichier n'est pas
+lu pour autant — on nomme, on refuse, et c'est la migration qui ouvre. Épreuves :
 `tests/unit/vm-volume-chiffre-format.test.mjs` › « l'en-tête v3 fait un secteur, porte son marqueur
 et rend ce qu'il a reçu » et `tests/unit/vm-volume-chiffre-format.test.mjs` › « un en-tête dont la
 disposition ne se déduit pas de sa taille logique est refusé ».
@@ -755,14 +887,15 @@ jamais une promesse non tenue. Le plafond est calibré sur le budget de récupé
 `docs/quality-attributes.md` : `tests/vm/recuperation-generation.spec.mjs` › « une génération portée
 au plafond est retrouvée dans le budget, sur OPFS réel ».
 
-### 6.7 La racine v3, champ par champ
+### 6.7 La racine, champ par champ
 
-Un secteur, **petit-boutiste**. **202 octets** utilisés sur 512 ; le reste est à zéro.
+Un secteur, **petit-boutiste**. **210 octets** utilisés sur 512 en format 5 — 202 en format 4 ; le
+reste est à zéro.
 
 | Offset | Largeur | Champ                                     | Dans les données associées ?     |
 | ------ | ------: | ----------------------------------------- | -------------------------------- |
 | 0      |       8 | marqueur `VLTGEN01` (ASCII)               | non — il localise                |
-| 8      |       4 | format du journal — **4**                 | non — il localise                |
+| 8      |       4 | format du journal — **5** (4 sur un v3)   | non — il localise                |
 | 12     |       4 | taille de secteur — **512**               | non — il localise                |
 | 16     |       8 | séquence                                  | **oui**                          |
 | 24     |       8 | génération                                | **oui**                          |
@@ -770,12 +903,38 @@ Un secteur, **petit-boutiste**. **202 octets** utilisés sur 512 ; le reste est 
 | 40     |       4 | nombre d'entrées                          | **oui**                          |
 | 44     |       8 | longueur de charge (somme des CLAIRS)     | **oui**                          |
 | 52     |      16 | identifiant de volume, seize octets bruts | voir ci-dessous                  |
-| 68     |       8 | scellements cumulés                       | **oui**                          |
+| 68     |       8 | scellements cumulés du domaine `volume`   | **oui**                          |
 | 76     |      12 | nonce                                     | —                                |
 | 88     |      32 | chiffré : l'empreinte scellée des entrées | —                                |
 | 120    |      16 | étiquette                                 | —                                |
 | 136    |      66 | **fraîcheur de région** (§ 6.8)           | — (non authentifiée en PRÉSENCE) |
-| 202    |     310 | réserve, à zéro                           | —                                |
+| 202    |       8 | scellements cumulés du domaine `journal`  | **oui** — format 5 seulement     |
+| 210    |     302 | réserve, à zéro                           | —                                |
+
+**Les 202 premiers octets sont ceux du format 4, INCHANGÉS.** Ce qui est déjà sur un support se
+relit à la même place ; le second compteur s'ajoute dans la réserve que l'ADR 0016 avait nommée pour
+cela. Épreuve : `tests/unit/vm-generation-format.test.mjs` › « une racine de format 5 publie DEUX
+compteurs, et se relit pour ce qu'elle est ».
+
+**Pourquoi un NUMÉRO de format de plus, alors que l'ADR 0033 range « le format 4 du journal » parmi
+ce qui ne change pas.** Ce que l'ADR y range est la DISPOSITION du journal — l'emplacement des
+racines, la forme d'un enregistrement, son sceau — et elle ne bouge pas d'un octet. Ce qui bouge est
+la RACINE, et ce module tient une règle plus ancienne que l'ADR : **un numéro de format dit ce que
+porte la racine.** Une racine à deux compteurs relue comme une racine à un seul rendrait un compteur
+de journal nul sans que rien ne le signale. Laisser les deux sous le numéro 4 aurait fait deux
+racines différentes sous un seul nom. L'ADR 0033 reçoit sa note datée sur ce point, et l'ADR 0035
+l'écrit.
+
+**Ce champ reste NON AUTHENTIFIÉ, et deux choses l'empêchent de mentir en silence.** D'abord la
+COHÉRENCE, miroir de la garde que #19 avait posée sur la fraîcheur : une racine qui se dit à un seul
+compteur au-dessus d'octets non nuls à l'offset 202 est refusée — c'est exactement ce que produit un
+bit retourné qui fait passer 5 pour 4. Ensuite, et surtout, les DONNÉES ASSOCIÉES : leur nombre de
+champs suit la version du VOLUME, qui est authentifiée (§ 5.2). Le retournement inverse — 4 vers 5 —
+n'est refusé par aucune garde, et il n'a pas à l'être : il ne déplace ni l'étiquette de domaine des
+enregistrements ni le nombre de champs scellés, donc il ne change RIEN de ce que le lecteur fait.
+C'est mesuré plutôt qu'affirmé : `tests/unit/vm-generation-format.test.mjs` › « un format RETOURNÉ
+vers un format connu ne change RIEN de ce que le lecteur fait » et › « une racine de format 4 dont
+la place du second compteur n'est pas nulle est refusée ».
 
 **Le CRC-32 de l'ancien format a disparu**, remplacé par l'étiquette : elle refuse ce qu'un CRC
 détectait (déchirure, octet retourné) **plus** ce contre quoi il ne prétendait rien — un altérateur
@@ -803,14 +962,21 @@ retourné dans un champ AUTHENTIFIÉ se décode encore, et c'est l'étiquette qu
 
 Deux grandeurs stockées peuvent diverger ; une grandeur dérivée ne le peut pas.
 
-**Le format du journal fait barrière de version.** Ce runtime **lit** les formats 2, 3 et 4.
+**Le format du journal fait barrière de version.** Ce runtime **lit** les formats 2, 3, 4 et 5.
 
-**Ce qu'il ÉCRIT dépend d'une condition, et la condition doit être dite** : une session qui tient
-une source de fraîcheur — la région d'authentification et le témoin (§ 6.8) — écrit le format **4**
-; une session ouverte **sans** source écrit le format **2**, c'est-à-dire le journal de #18, et
-scelle donc ses enregistrements sous l'étiquette de domaine d'un **bloc du volume**. Une phrase
-antérieure de ce document disait « n'écrit que le 4 » sans réserve ; une revue l'a réfutée en une
-commande, et la borne réelle n'est pas temporelle mais **conditionnelle**.
+**Ce qu'il ÉCRIT dépend de DEUX conditions, et les deux doivent être dites** : la version du VOLUME,
+et la source de fraîcheur que la session tient. Un volume v4 écrit le format **5** — sa racine
+publie les deux compteurs. Un volume v3 qui tient une source de fraîcheur écrit le format **4** ;
+sans source, il écrit le format **2**, c'est-à-dire le journal de #18, et scelle donc ses
+enregistrements sous l'étiquette de domaine d'un **bloc du volume**. Une phrase antérieure de ce
+document disait « n'écrit que le 4 » sans réserve ; une revue l'a réfutée en une commande, et la
+borne réelle n'est pas temporelle mais **conditionnelle**.
+
+**Un volume v4 SANS source de fraîcheur est REFUSÉ, et non dégradé en format 2** : ses données
+associées comptent onze champs, et une racine de format 2 n'a pas de place pour le second compteur.
+La combinaison n'a aucun encodage possible, et l'écrire produirait une racine que personne ne
+pourrait relire. Épreuve : `tests/unit/vm-generation-format.test.mjs` › « un volume v4 sans source
+de fraîcheur ne peut pas écrire de racine, et le dit ».
 
 **Aucun chemin du produit n'ouvre sans source.** `openOpfsVolume` en fournit toujours une ; les
 seuls appelants qui déclarent l'absence sont deux **bancs de mesure**, qui chronomètrent une
@@ -1261,12 +1427,15 @@ sinon en lisant le code.
 
 ### 7.1 Créer un volume
 
-1. saisir le handle exclusif ; **exiger la clé** — sans elle, rien n'est alloué ;
-2. allouer le fichier à sa taille support, écrire l'en-tête v3 **sans** la marque de scellement
+1. saisir le handle exclusif ; **exiger la clé MAÎTRESSE** — sans elle, rien n'est alloué, et les
+   clés de domaine ne sont pas dérivées ;
+2. allouer le fichier à sa taille support, écrire l'en-tête v4 **sans** la marque de scellement
    complet, barrière ;
-3. sceller **tous** les secteurs, par tours bornés en mémoire, en écrivant charge puis sceau ;
-4. **écrire la RACINE INITIALE** — séquence 0, génération 0, compteur = les scellements que la
-   création vient de consommer, la racine comprise —, barrière, puis le témoin ;
+3. sceller **tous** les secteurs sous la clé du domaine `volume`, par tours bornés en mémoire, en
+   écrivant charge puis sceau ;
+4. **écrire la RACINE INITIALE** — séquence 0, génération 0, `scellementsCumulesVolume` = les
+   scellements que la création vient de consommer, la racine comprise, `scellementsCumulesJournal` =
+   **0**, puisqu'une création ne dépose aucun enregistrement —, barrière, puis le témoin ;
 5. poser la marque `VLTSEAL1`, barrière. **C'est le dernier geste.**
 
 Une coupure avant l'étape 5 laisse un volume refusé par `VAULT_STORAGE_VOLUME_INCOMPLET` (§ 6.3).
@@ -1274,8 +1443,13 @@ Une coupure avant l'étape 5 laisse un volume refusé par `VAULT_STORAGE_VOLUME_
 > **L'étape 4 est ajoutée le 10 septembre 2026** (#181,
 > [ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md)). Elle est ce qui rend vraie
 > la règle « **aucun volume légitime n'est sans racine** », et donc ce qui rend REFUSABLE un volume
-> restauré dont on a retiré l'engagement (§ 7.3, § 7.5). Bénéfice second : elle publie les 2^20
-> scellements qu'une création de 512 Mio ne publiait nulle part (§ 4.5).
+> restauré dont on a retiré l'engagement (§ 7.3, § 7.5).
+>
+> **Depuis le 11 septembre 2026, elle n'est plus un bénéfice second mais une OBLIGATION** (#182, ADR
+> 0033, décision 4) : la création est la session qui scelle le plus — 2^20 secteurs pour un volume
+> de 512 Mio, un deux-millième du budget en un geste — et elle s'ouvre hors transaction. La règle de
+> clôture du § 4.5 lui impose donc d'écrire cette racine, faute de quoi elle n'aurait PAS le droit
+> de sceller. C'est ce qui referme la sous-estimation que le § 4.5 avouait.
 >
 > **Un volume v3 créé AVANT cette date n'a pas de racine initiale : il est refusé** par
 > `VAULT_STORAGE_VOLUME_SANS_RACINE`. Rien n'est publié et le gate « données sensibles » est fermé ;
@@ -1351,7 +1525,12 @@ C'est la **question n° 9** de la § 13.
 
 L'ordre suivant n'est pas une commodité ; changer un seul de ses pas rendrait un verdict deviné.
 
-1. **En-tête v3** relu et décodé. Marque de scellement complet exigée.
+0. **Les CLÉS DE DOMAINE sont dérivées** de la clé maîtresse (§ 4.4), avant qu'aucun octet du
+   fichier ne soit ouvert. Une clé maîtresse absente est refusée par `VAULT_STORAGE_CLE_REQUISE`, et
+   un identifiant de volume malformé fait refuser la dérivation avant qu'aucun matériau ne soit
+   importé.
+1. **En-tête v4** relu et décodé. Marque de scellement complet exigée. **Un en-tête v3 est refusé et
+   NOMMÉ** : le remède est la migration, jamais une sauvegarde (§ 6.2, § 7.4).
 2. **Identifiant** de l'en-tête confronté à celui du manifeste.
 3. **Témoin** lu et ouvert. Il fixe le **plancher de séquence** de la session. Absent = première
    ouverture.
@@ -1379,6 +1558,10 @@ L'ordre suivant n'est pas une commodité ; changer un seul de ses pas rendrait u
    deux laisserait une racine annonçant `L` octets au-dessus d'un fichier qui n'en porte plus aucun
    — c'est-à-dire un volume REFUSÉ par `VAULT_STORAGE_GENERATION_CORRUPT` alors que ses octets sont
    intacts. Dans l'ordre retenu, les deux interruptions possibles sont sûres.
+
+   **Une ouverture HORS TRANSACTION qui n'est pas une naissance n'écrira aucune racine** : elle est
+   donc en LECTURE SEULE, et tout scellement qu'on lui demande est refusé par
+   `VAULT_STORAGE_LECTURE_SEULE` (#182, § 4.5). C'est la moitié exécutable de la règle de clôture.
 
    **L'engagement est CONSOMMÉ une fois**, jamais vérifié à chaque ouverture : une fois la racine
    initiale écrite, c'est la fraîcheur du § 6.8 qui prend le relais. Le voisin est VIDÉ — zéro
@@ -1441,11 +1624,77 @@ ce moment rien n'est encore connu qui puisse minorer sa génération, et un plan
 refuserait aucun témoin authentique. Un contrôle décoratif se lit comme une garantie ; le `null`
 assumé, non.
 
-### 7.4 Migrer un volume antérieur vers v3
+### 7.4 Migrer un volume antérieur
+
+La chaîne va d'un format au SUIVANT, un pas à la fois : `v1 → v2 → v3 → v4`. Il n'existe aucun
+chemin direct, et c'est ce qui rend la chaîne vérifiable au lieu d'être crue. Deux de ses pas sont
+DESTRUCTIFS — ils réécrivent le volume — et exigent donc une sauvegarde VÉRIFIÉE, jamais un simple
+consentement nommé.
+
+> **Un pas DÉJÀ FRANCHI ne se refait pas, et il a fallu l'écrire** (#182). Le journal de reprise ne
+> porte qu'UN avancement : celui du pas EN VOL. Avec un second pas destructif dans la chaîne, une
+> reprise redonnait « rien de commencé » au pas v2 → v3 — qui redéplaçait alors la charge d'un
+> volume déjà converti par-dessus sa propre région d'authentification, sans lever d'erreur. Le
+> discriminant est le `from` de l'avancement : il atteste que tous les paliers jusque-là sont
+> atteints. Épreuve : `tests/unit/vm-volume-migration.test.mjs` › « une coupure PENDANT le pas v3 →
+> v4 ne fait pas REFAIRE le pas v2 → v3 ».
+
+#### v3 → v4 : rescéller chaque secteur
+
+**C'est le geste le plus lourd que ce dépôt ait tenté** : chaque secteur est RESCELLÉ, parce
+qu'aucune clé ne traverse une version de format (§ 4.4, champ 4 de l'info). Pour 512 Mio, cela fait
+2^20 ouvertures sous la clé v3 et 2^20 scellements sous la clé du domaine `volume` de la v4. C'est
+aussi le SEUL geste du produit qui tienne les deux clés à la fois.
+
+**La géométrie ne bouge pas d'un octet** : même en-tête d'un secteur, même région de 34 octets par
+secteur, même charge à la même place. Il n'y a donc rien à déplacer, et la moitié du code de v2 → v3
+n'a pas d'équivalent ici. Deux gestes seulement : RESCELLER toute la charge, puis POSER L'EN-TÊTE v4
+avec sa marque de scellement complet, **en dernier**.
+
+**Le problème que v2 → v3 n'avait pas.** En v2 → v3, l'un des deux états d'un secteur — le clair —
+se rescellait à l'infini. Ici, les deux états sont des chiffrés sous deux clés différentes, et **le
+sceau et la charge doivent changer ENSEMBLE**. Aucun ordre d'écriture ne suffit à lui seul :
+
+- sceau v4 d'abord, puis charge : une coupure entre les deux laisse une charge v3 sous un sceau v4.
+  La charge s'ouvrirait encore sous la clé v3 — mais son sceau v3 a été écrasé, et il est le nonce
+  et l'étiquette sans lesquels rien ne s'ouvre ;
+- charge d'abord, puis sceau : une coupure laisse une charge v4 sous un sceau v3, et le sceau v4
+  n'existe nulle part. Le secteur est perdu.
+
+**La réponse est une ÉCRITURE ANTICIPÉE, et elle coûte 6,6 %** : avant de toucher la suite de
+secteurs en vol, la conversion inscrit dans `<volume>.migration` les SCEAUX v3 de cette suite —
+trente-quatre octets par secteur. Elle écrit ensuite les sceaux v4, puis les charges v4. Une reprise
+dispose alors, pour chaque secteur de la suite en vol, des DEUX sceaux possibles, et peut trancher :
+
+```text
+ouvre sous (clé v4, sceau du support)      → converti, il n'y a rien à faire
+ouvre sous (clé v3, sceau v3 journalisé)   → charge encore v3, sceau déjà v4 : rescéller
+ouvre sous (clé v3, sceau du support)      → rien n'a encore été écrit : convertir
+n'ouvre sous aucun des trois               → écriture DÉCHIRÉE : REFUS, la sauvegarde
+```
+
+Le dernier cas est le fail-closed de v2 → v3, à l'identique. **La reprise ne relit JAMAIS le volume
+entier** : elle repart du rang journalisé et ne rejoue que la suite en vol — c'est la condition
+d'abandon que la DoR de #182 posait, et elle est mesurée. Le JOURNAL passe en **version 3** pour
+porter cette écriture anticipée ; un journal de version 2 est refusé plutôt qu'interprété.
+
+**La GÉNÉRATION de chaque secteur SURVIT** : la conversion change la clé, pas l'histoire.
+
+**Les octets rendus sont EXACTEMENT ceux du v3**, et c'est la seule vérification qui compte : les
+épreuves coupent à CHACUNE des écritures du volume et à CHACUNE des inscriptions du journal, une par
+une, et exigent à chaque fois que le volume converti rende, secteur par secteur, le clair que le v3
+portait. `tests/unit/vm-migration-v4.test.mjs`.
+
+**Le manifeste passe en v4, et il le faut.** Aucun champ n'y change ; ce qui change est ce que le
+volume EST. Un manifeste resté en v3 au-dessus d'un fichier v4 ferait tenter l'ouverture sous la
+DEK, c'est-à-dire produirait « sceau refusé » — « restaurez une sauvegarde » — pour un volume intact
+qui demandait une migration.
+
+#### v2 → v3 : déplacer puis sceller
 
 En place, sous la chaîne de l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md) —
 sauvegarde vérifiée exigée, manifeste révoqué avant la première mutation, journal de reprise inscrit
-avant la révocation, manifeste v3 inscrit **en dernier** et relu depuis le support. Une migration
+avant la révocation, manifeste cible inscrit **en dernier** et relu depuis le support. Une migration
 interrompue laisse un volume **non identifié**, que le boot refuse. Épreuve :
 `tests/unit/vm-volume-migration.test.mjs` › « la migration inscrit le manifeste cible EN DERNIER,
 après le journal et la révocation ».
@@ -2223,6 +2472,18 @@ ne serait plus qu'une panne.
 
 `VAULT_CRYPTO_MALFORME` et `VAULT_CRYPTO_ALGORITHME_INCONNU` ne sont **pas** traduits : les habiller
 en erreur de stockage ferait croire à un support abîmé là où c'est un bogue.
+
+**`VAULT_STORAGE_LECTURE_SEULE` n'est la traduction de rien** (#182, ADR 0033, décision 4) : il ne
+décrit ni un support abîmé ni une propriété du format violée, mais un RÉGIME de session. Une
+ouverture qui ne peut écrire aucune racine ne publierait ses scellements dans aucun compteur ; elle
+n'a donc pas le droit de sceller, et le refus tombe avant que le modèle ne produise un octet. Le
+remède n'est pas de réessayer : il est d'ouvrir le volume par un chemin qui sait dater, ou de se
+contenter de lire.
+
+**`VAULT_STORAGE_BUDGET_DE_CLE` couvre désormais DEUX budgets** — celui du domaine `volume` et celui
+du domaine `journal` — et le code reste UN : le remède est le même des deux côtés, et c'est le
+CONTEXTE qui dit quel domaine a atteint son plafond. Deux codes auraient nommé deux situations là où
+il n'y a qu'une règle.
 
 **Quatre causes tombent sur un seul code, et c'est une décision** : la conduite dépend du
 **remède**, pas du diagnostic, et six causes qui appellent toutes « restaurer une sauvegarde » ne
