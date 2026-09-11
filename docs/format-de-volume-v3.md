@@ -1592,6 +1592,42 @@ reste                                                                     = 3 38
 Il reste de quoi porter **cinq emplacements de plus au pire tarif**. Le sel ne coûte aucun
 emplacement, et il n'en coûterait un que si le plafond passait de huit à quatorze.
 
+**L'ASSIETTE de la somme de contrôle, publiée.** Elle ne l'avait jamais été : la table donne
+l'offset du champ, jamais ce qu'il couvre, et le relecteur de la PR #187 a dû la retrouver par
+essais (constat 8 de la revue de format). Un vérificateur indépendant qui transcrit une règle non
+publiée ne la vérifie pas — il l'invente en même temps que le produit. La voici, et elle vaut pour
+les deux versions de page :
+
+```text
+somme = CRC-32( en-tête[0 … E[ , avec ses QUATRE octets de somme mis à ZÉRO
+              ‖ liste des emplacements[E … E + longueurListe[ )
+
+E = 108 en v1, 140 en v2 ; le champ de somme est à l'offset 104 en v1, 136 en v2
+CRC-32 = polynôme réfléchi 0xEDB88320, registre initial 0xFFFFFFFF, complément final,
+         écrit sur 4 octets PETIT-BOUTISTES comme tout entier de cette page
+```
+
+Deux choses que l'assiette n'inclut PAS, et chacune pour une raison :
+
+- **le champ de somme lui-même**, mis à zéro pendant son propre calcul — sans quoi la valeur
+  dépendrait d'elle-même ;
+- **le REMPLISSAGE** qui suit la liste jusqu'aux 8 192 octets. Il est à zéro par construction (§
+  6.11, « une page réécrite laisserait sinon voir la queue de la précédente »), et l'y inclure
+  ferait dépendre la somme de huit kilo-octets pour rien. Le corollaire est écrit plutôt que laissé
+  à trouver : **la somme ne couvre pas le remplissage**, donc un adversaire qui y écrirait sans
+  toucher au reste ne serait pas détecté par elle — il le serait par la RACINE, qui authentifie la
+  liste et son compte.
+
+Ce que l'assiette couvre, en revanche, mérite d'être dit puisque le § 4.4 précise que ces champs ne
+sont pas authentifiés : **le SEL et l'octet de DOMAINE entrent dans la somme**, puisqu'ils sont dans
+l'en-tête. Un bit changé sur l'un ou l'autre rend donc la page structurellement invalide AVANT que
+l'étiquette de la racine n'échoue. Cela ne les rend pas authentiques — qui écrit dans l'origine de
+confiance recalcule une somme sans effort —, cela les rend insensibles à l'accident, comme le reste
+de la page.
+
+`node tools/verifier-vecteurs.mjs` REFAIT cette somme depuis le seul texte ci-dessus, sans importer
+une ligne du produit.
+
 **La clé de la racine.** En v1, c'était la clé de volume elle-même. En v2, c'est une clé à USAGE
 UNIQUE dérivée par HKDF-SHA-256 pour un domaine, un volume et la version 2 de la page (§ 4.4) :
 

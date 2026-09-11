@@ -273,6 +273,21 @@ La règle correcte distingue deux natures de refus sur la page la plus récente 
 
 ### Pourquoi un CRC-32 revient, alors que l'ADR 0016 l'a justement retiré
 
+> **NOTE DATÉE DU 11 SEPTEMBRE 2026** (#182, tranche T2b, revue de format de la PR #187, constat 8).
+> **Cet ADR disait pourquoi la somme existe, jamais ce qu'elle couvre.** Le relecteur externe a dû
+> retrouver son assiette par essais avant de tomber sur la règle, et il a raison de compter cela
+> comme un défaut du CONTRAT : le dossier de vecteurs promet que chaque octet soit dérivable du seul
+> texte, et un vérificateur indépendant qui transcrit une règle non publiée ne la vérifie pas.
+>
+> L'assiette est donc publiée au § 6.11 de la spécification, pour les deux versions de page :
+> `CRC-32(en-tête, ses quatre octets de somme mis à ZÉRO, suivi de la liste des emplacements)`,
+> polynôme réfléchi `0xEDB88320`, registre initial `0xFFFFFFFF`, complément final, écrit sur quatre
+> octets petit-boutistes. L'en-tête fait 108 octets en v1 et 140 en v2, et le champ de somme recule
+> de 104 à 136 ; le REMPLISSAGE n'entre pas dans l'assiette.
+>
+> Ce n'était pas une régression de la v2 — la v1 avait le même silence —, mais la v2 change
+> l'assiette : le sel y entre, et l'offset recule. C'était donc le moment de l'écrire.
+
 L'ADR 0016 retire le CRC de la racine de génération : là, une étiquette AES-GCM est vérifiable au
 même moment, et elle est strictement meilleure. Ici elle ne l'est pas — vérifier l'étiquette d'une
 racine d'enveloppe exige la DEK, qu'on ne peut obtenir qu'en développant un emplacement de la page,

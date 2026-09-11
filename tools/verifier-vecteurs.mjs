@@ -2019,6 +2019,42 @@ async function verifierUnePageV2(nom, figee, identifiantVolume, dek) {
     pageV2SurDisque(figee, identifiantVolume),
     figee.page,
   );
+
+  verifierLAssietteDeLaSomme(nom, figee);
+}
+
+/**
+ * REFAIT la somme de contrôle de la page FIGÉE depuis l'assiette publiée au § 6.11.
+ *
+ * La vérification d'à côté compare une page RECONSTRUITE aux octets figés, et une somme calculée de
+ * la même façon des deux côtés serait juste des deux côtés même si la règle était fausse. Celle-ci
+ * part des octets FIGÉS et n'en lit que ce que le texte autorise : l'en-tête jusqu'à la longueur de
+ * liste qu'il déclare, ses quatre octets de somme remis à zéro, puis la liste. C'est la règle du
+ * § 6.11, appliquée à la lettre, sur un document que ce fichier n'a pas écrit.
+ *
+ * Le TÉMOIN NÉGATIF qui la suit est ce qui la rend opposable : un bit changé dans le SEL doit
+ * changer la somme. Sans lui, l'assiette pourrait s'arrêter avant le sel sans que rien ne le dise —
+ * et c'est précisément ce que le § 4.4 laisse croire en écrivant que le sel n'est pas authentifié.
+ */
+function verifierLAssietteDeLaSomme(nom, figee) {
+  const page = hexEnOctets(figee.page);
+  const longueurListe = lireLe(page, 40, 4);
+  const utiles = page.slice(0, ENVELOPPE_V2_ENTETE_OCTETS + longueurListe);
+  utiles.fill(0, ENVELOPPE_V2_CRC_OFFSET, ENVELOPPE_V2_CRC_OFFSET + 4);
+
+  verifier(
+    `enveloppe v2 : la somme de « ${nom} » est CRC-32(en-tête à somme nulle ‖ liste), § 6.11`,
+    crc32(utiles) === lireLe(page, ENVELOPPE_V2_CRC_OFFSET, 4),
+    `publiée ${lireLe(page, ENVELOPPE_V2_CRC_OFFSET, 4)}, refaite ${crc32(utiles)}`,
+  );
+
+  const selRetouche = utiles.slice();
+  selRetouche[ENVELOPPE_V2_SEL_OFFSET] ^= 0x01;
+  verifier(
+    `enveloppe v2 : le SEL de « ${nom} » entre dans l'assiette — un bit changé change la somme`,
+    crc32(selRetouche) !== crc32(utiles),
+    "la somme ne bouge pas : l'assiette n'atteint pas le sel",
+  );
 }
 
 /**
