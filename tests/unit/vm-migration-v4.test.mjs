@@ -442,3 +442,63 @@ test("l'écriture anticipée du journal porte les SCEAUX v3 de la suite en vol, 
     "le tampon de la première suite est la région v3 telle qu'elle était avant d'être écrasée",
   );
 });
+
+test("un journal FORGÉ ne fait plus déclarer v4 un volume qui est resté v3, et le refus est DIT", async () => {
+  // **Revue de sécurité de la PR #186, constat 6.** Le § 9.2 promet d'un support hostile qu'il
+  // obtienne « une DESTRUCTION, jamais une lecture », et la promesse tient — aucun clair ne sort,
+  // aucun octet chiffré n'est effacé. Mais la destruction était SILENCIEUSE : un journal substitué
+  // qui déclare la conversion arrivée au dernier geste faisait poser l'en-tête v4 sur un fichier
+  // dont AUCUN secteur n'avait été rescellé. La conversion rendait un compte rendu de succès, et le
+  // volume ne se relisait plus.
+  //
+  // `depuisRang` décide, à partir d'un journal que le § 9.2 déclare NON AUTHENTIFIÉ, quels secteurs
+  // ne seront plus jamais regardés. La sonde confronte ce que le journal RACONTE à ce que le support
+  // PORTE, une fois, avant le seul geste qui reste.
+  const { fichier, disposition } = await volumeV3();
+  const brut = supportBrut(fichier);
+  const avant = Uint8Array.from(brut.octets);
+
+  await assert.rejects(
+    convertir(brut, journal(), { depuis: ETAPES_V4.enTete }),
+    (erreur) => {
+      assert.equal(erreur.code, MIGRATION_ERROR_CODES.conversionIncoherente);
+      assert.match(erreur.message, /ne s'ouvre pas sous la clé v4/);
+      return true;
+    },
+    "un journal qui déclare tout converti sur un volume intégralement v3 doit être REFUSÉ",
+  );
+
+  // ZÉRO écriture : le refus tombe avant le dernier geste, et le fichier reste le v3 qu'il était.
+  assert.deepEqual(
+    Array.from(brut.octets),
+    Array.from(avant),
+    "un refus de la sonde ne coûte pas un octet",
+  );
+  const enTete = decoderEnTeteV4(await brut.read(0, 512));
+  assert.equal(enTete.valide, false, "l'en-tête v4 n'a PAS été posé");
+  assert.equal(disposition.tailleSupport, brut.size());
+});
+
+test("la sonde coûte UNE ouverture, et le compte le montre plutôt que de l'affirmer", async () => {
+  // Le prix de la garde, mesuré : une conversion de seize secteurs fait seize ouvertures v3 et
+  // seize scellements v4 ; la sonde en ajoute UNE, sur la clé d'arrivée. Pour un volume de 512 Mio
+  // — 2^20 secteurs — c'est une invocation sur un million, et le dire avec un chiffre vaut mieux
+  // que d'écrire « négligeable ».
+  const { fichier } = await volumeV3();
+  const brut = supportBrut(fichier);
+  const v4 = await scellementV4();
+  let ouvertures = 0;
+  const vraiOuvrir = v4.ouvrirBloc.bind(v4);
+  v4.ouvrirBloc = async (...arguments_) => {
+    ouvertures += 1;
+    return vraiOuvrir(...arguments_);
+  };
+
+  await convertir(brut, journal(), { scellementV4: v4 });
+
+  assert.equal(
+    ouvertures,
+    1,
+    "la conversion n'OUVRE rien sous la clé v4 — elle scelle ; la seule ouverture est la sonde",
+  );
+});

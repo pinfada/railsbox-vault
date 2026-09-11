@@ -54,8 +54,14 @@ export class VolumeChiffre {
   /**
    * @param {{ volume: string, scellement: import("./scellement.mjs").Scellement,
    *           disposition: object,
-   *           lireSupport: (offset: number, longueur: number) => Uint8Array,
+   *           lireSupport: (offset: number, longueur: number) => Uint8Array | Promise<Uint8Array>,
    *           ecrireSupport: (offset: number, octets: Uint8Array) => unknown }} options
+   *   Les deux entrées/sorties de support peuvent être SYNCHRONES ou rendre une promesse, et elles
+   *   sont attendues dans les deux cas. Le backend OPFS les tient sur un handle synchrone ; la
+   *   MIGRATION, elle, n'a qu'un accès brut asynchrone (#182, revue de la PR #186). Les attendre
+   *   coûte une micro-tâche par geste, là où chacun paie déjà un appel GCM — et cela ferme au
+   *   passage une écriture dont la promesse flottait, c'est-à-dire dont l'échec ne remontait à
+   *   personne.
    */
   constructor({ volume, scellement, disposition, lireSupport, ecrireSupport }) {
     this.#volume = volume;
@@ -115,11 +121,11 @@ export class VolumeChiffre {
   /** Ouvre chaque secteur d'une plage ALIGNÉE. Une seule lecture de sceaux, une seule de charge. */
   async #lireCouverture({ debut, longueur }) {
     const nombre = longueur / SECTOR_SIZE;
-    const sceaux = this.#lireSupport(
+    const sceaux = await this.#lireSupport(
       offsetDeSceau(this.#disposition, debut),
       nombre * SCEAU_OCTETS,
     );
-    const charge = this.#lireSupport(offsetDeCharge(this.#disposition, debut), longueur);
+    const charge = await this.#lireSupport(offsetDeCharge(this.#disposition, debut), longueur);
     this.#exigerCompte(sceaux, nombre * SCEAU_OCTETS, debut, "sceaux");
     this.#exigerCompte(charge, longueur, debut, "charge");
 
@@ -199,11 +205,11 @@ export class VolumeChiffre {
     }
     const debutCharge = offsetDeCharge(this.#disposition, plage.debut);
     if (acceptes < octets.byteLength) {
-      this.#ecrireSupport(debutCharge, charge.subarray(0, plage.decalage + acceptes));
+      await this.#ecrireSupport(debutCharge, charge.subarray(0, plage.decalage + acceptes));
       return;
     }
-    this.#ecrireSupport(debutCharge, charge);
-    this.#ecrireSupport(offsetDeSceau(this.#disposition, plage.debut), sceaux);
+    await this.#ecrireSupport(debutCharge, charge);
+    await this.#ecrireSupport(offsetDeSceau(this.#disposition, plage.debut), sceaux);
   }
 
   /** Complète une écriture non alignée par relecture des secteurs qui la portent. */

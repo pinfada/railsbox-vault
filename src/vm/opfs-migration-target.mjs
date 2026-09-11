@@ -17,6 +17,7 @@
 import { BlockJournal } from "./block-journal.mjs";
 import { MIGRATION_ERROR_CODES, MigrationError } from "./migration-errors.mjs";
 import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
+import { solderLaSourceChiffreeSurAccesBrut } from "./migration-source-chiffree.mjs";
 import { poserLaRacineInitialeSurAccesBrut } from "./opfs-racine-initiale.mjs";
 import { Scellement } from "./scellement.mjs";
 import { SECTOR_SIZE } from "./block-geometry.mjs";
@@ -209,6 +210,35 @@ export function createOpfsMigrationTarget(
           // enregistrement — elle ne touche que des secteurs et la racine, qui relèvent tous deux du
           // domaine `volume`. Un volume migré n'a jamais rien déposé sous sa clé de journal.
           scellementsCumulesJournal: 0,
+        }),
+      });
+    },
+
+    /**
+     * OUVRE le volume SOURCE quand il est déjà CHIFFRÉ, et solde son journal (#182, revue de #186).
+     *
+     * C'est une OUVERTURE, pas une recopie : la charge acquittée qu'il porte est appliquée au
+     * volume, et les trois cas de #181 — racine, engagement d'archive, refus — s'appliquent à la
+     * source comme à toute autre ouverture. La migration n'est pas un chemin privilégié ; elle est
+     * le dernier chemin qui reste à un volume v3, ce qui est une raison de plus de ne rien lui
+     * passer.
+     *
+     * Le scellement est celui de la version SOURCE : en v3, la DEK importée directement en clé
+     * AES-GCM, avec un seul budget pour les deux domaines. C'est le régime que la v4 remplace, et
+     * l'unique appelant qui en reste dans le produit.
+     */
+    async solderLaSourceChiffree({ brut, tailleLogique, identifiantVolume, cle, formatVersion }) {
+      return solderLaSourceChiffreeSurAccesBrut({
+        name: volume,
+        brut,
+        tailleLogique,
+        identifiantVolume,
+        cle,
+        openHandle: ouvrirHandle,
+        scellement: await Scellement.ouvrir({
+          volume: identifiantVolume,
+          cleOctets: cle,
+          formatVersion,
         }),
       });
     },
