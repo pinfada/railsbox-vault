@@ -118,6 +118,7 @@ test.afterEach(async ({ context }) => {
 });
 
 test("un volume d'un format antérieur est migré, sa migration interrompue reprend, et une ancienne version le refuse", async ({
+  chronologie,
   context,
 }, testInfo) => {
   exigerLesPrealables(raison, "migration-volume-versionne.spec.mjs");
@@ -199,6 +200,11 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
     appDiskBytes,
   );
   expect(prepare.formatVersion, "le volume porte bien un manifeste v1").toBe(1);
+  chronologie.etape("préparation du volume v1", {
+    octets: prepare.bytesWritten,
+    formatVersion: prepare.formatVersion,
+    empreinteAvantMigration: avantMigration.digest,
+  });
 
   // 2. TÉMOIN — un format antérieur est LISIBLE mais pas INSCRIPTIBLE : le boot est refusé.
   session = await nouvellePage();
@@ -297,6 +303,11 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
     apresConversionCoupee.size,
     "le FICHIER est déjà agrandi de sa région : la conversion avait bien commencé",
   ).toBe(tailleDeFichier({ formatVersion: MANIFEST_FORMAT_VERSION, tailleLogique: appDiskBytes }));
+  chronologie.etape("conversion COUPÉE", {
+    manifestePresent: apresConversionCoupee.manifestPresent,
+    journalPresent: apresConversionCoupee.migrationJournalPresent,
+    tailleDuFichier: apresConversionCoupee.size,
+  });
 
   // 7. REPRISE — sans preuve de sauvegarde : le journal porte celle qui a été retenue. Elle repart
   //    donc d'une conversion RÉELLEMENT commencée, et non d'un volume intact.
@@ -352,6 +363,21 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   expect(apresMigration.digestClair, "et le CLAIR est celui d'avant la migration, à l'octet").toBe(
     avantMigration.digest,
   );
+  // La CHRONOLOGIE porte ici le compte rendu de migration et les DEUX empreintes du volume migré :
+  // c'est ce qui manquait à l'instruction de #165, où l'artefact du run rouge ne disait rien de
+  // l'état du volume au moment où le boot suivant a échoué.
+  chronologie.etape("reprise de la migration", {
+    repriseDuJournal: reprise.resumed,
+    deVersion: reprise.fromVersion,
+    versVersion: reprise.toVersion,
+    pas: reprise.steps.map(
+      (etape) => `${etape.from}→${etape.to}${etape.destructive ? " (destructif)" : ""}`,
+    ),
+    preuveRetenue: reprise.evidence?.kind ?? null,
+    empreinteDuFichier: apresMigration.digest,
+    empreinteDuClair: apresMigration.digestClair,
+    clairIdentiqueAvantMigration: apresMigration.digestClair === avantMigration.digest,
+  });
 
   // 8. BOOT À FROID HORS LIGNE sur le volume migré : Rails retrouve son invariant.
   session = await nouvellePage();
@@ -363,6 +389,15 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
       .then(() => "en-ligne")
       .catch((e) => `hors-ligne:${e.name}`),
   );
+  // DATÉE AVANT le boot, et c'est tout l'intérêt : un boot qui n'aboutit jamais — le mode de #165 —
+  // ne laisserait aucune trace si la chronologie n'était écrite qu'après lui. Cette ligne-ci dit que
+  // le runtime était armé, le réseau coupé, et le volume dans l'état que l'étape précédente décrit.
+  chronologie.etape("boot à froid ARMÉ, réseau coupé", {
+    arme: arm.ready,
+    reseau: controleReseau,
+    budgetBootMs: BUDGET_BOOT_MS,
+    empreinteDuVolume: apresMigration.digest,
+  });
   let bootApresMigration;
   try {
     bootApresMigration = await courir(session.page, { phase: "resume-fire" });
@@ -374,6 +409,11 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   await testInfo.attach("boot-apres-migration.json", {
     body: JSON.stringify(bootApresMigration, null, 2),
     contentType: "application/json",
+  });
+  chronologie.etape("boot à froid ABOUTI sur le volume migré", {
+    santeMs: bootApresMigration.healthMilliseconds,
+    conforming: bootApresMigration.conforming,
+    instantaneUtilise: bootApresMigration.usedSnapshot,
   });
   expect(controleReseau, "le réseau était bien coupé pendant le boot").toMatch(/^hors-ligne/);
   expect(bootApresMigration.online, "le boot à froid a tourné réseau coupé").toBe(false);
