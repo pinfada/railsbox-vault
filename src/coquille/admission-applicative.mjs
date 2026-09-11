@@ -46,7 +46,7 @@ export const GESTES_ADMIS = Object.freeze([
       "public/vm/reference-worker-phases-volume.mjs:277 › « present: etat.present, » — la seule " +
         "observation qu'un scénario fait d'un volume avant de s'en servir ; tout le reste du " +
         "compte rendu concerne les VOISINS du volume, qui ne regardent pas l'application",
-      'tests/e2e/instantane-reprise.spec.mjs:201 › « phase: "inspect-volume" » — un scénario ' +
+      'tests/e2e/instantane-reprise.spec.mjs:217 › « phase: "inspect-volume" » — un scénario ' +
         "interroge l'état entre deux gestes plutôt que de le supposer",
       "src/spike/origin-topology.mjs:118 › « export function isAllowedAppRequest » — la seule " +
         "requête que le spike admettait déjà, et la mesure de l'ADR 0002 n'en a jamais fait " +
@@ -60,7 +60,7 @@ export const GESTES_ADMIS = Object.freeze([
     type: TYPES_APPLICATIFS.barriere,
     geste: "recevoir l'annonce d'une barrière de durabilité acquittée",
     usage: Object.freeze([
-      'public/vm/reference-banc.mjs:73 › « if (type === "mutation") » — l\'annonce existe déjà, ' +
+      'public/vm/reference-banc.mjs:75 › « if (type === "mutation") » — l\'annonce existe déjà, ' +
         "et elle ne porte AUCUN identifiant de requête : c'est une poussée, pas une réponse",
       "tests/e2e/coupure-generation-boot-froid.spec.mjs:159 › « une barrière a été acquittée » — " +
         "un scénario ne juge « écrit » qu'après cela, jamais après l'écriture seule",

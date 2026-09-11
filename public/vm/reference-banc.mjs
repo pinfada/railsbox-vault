@@ -40,10 +40,12 @@ function erreurDuWorker(error) {
   const prefixe = error?.code ? `[${error.code}] ` : "";
   const contexte = decrireContexte(error?.context);
   // Le TRANSCRIPT SÉRIE, quand le Worker en a joint un (délai de boot dépassé). Il vient EN DERNIER
-  // et sur ses propres lignes : il est long, et le message doit rester lisible sans lui.
+  // et sur ses propres lignes : il est long, et le message doit rester lisible sans lui. Depuis
+  // #165 il porte la série ENTIÈRE et non plus sa fin — le marqueur ci-dessous est celui que
+  // `tests/e2e/chronologie.mjs` cherche pour l'écrire dans son propre fichier d'artefact.
   const serie = error?.transcript
     ? `
---- série du guest (fin) ---
+--- série du guest ---
 ${error.transcript}`
     : "";
   return new Error(`${prefixe}${message}${contexte}${serie}`);
