@@ -910,6 +910,44 @@ grandeur en dessous : elle ne pèse sur aucun budget de ce document.
    barrière OPFS ne sont pas dans ces nombres ; elles sont du même ordre que celles du manifeste
    voisin, que ce document ne chiffre pas non plus.
 
+### Ce que la PAGE v2 et sa migration coûtent (#182, T2b)
+
+La page d'enveloppe passe en version 2 : sa racine est scellée sous une clé à usage unique dérivée
+par HKDF, avec un sel de trente-deux octets tiré et écrit en clair (§ 6.11 de la spécification).
+Deux coûts s'ajoutent, et les deux se comptent plutôt qu'ils ne s'estiment.
+
+**Le sel, en OCTETS.** L'en-tête d'une page passe de 108 à 140 octets. La question que l'ADR 0033
+rangeait dans ses risques — « cela peut coûter un emplacement dans le pire cas » — se répond par un
+calcul :
+
+| Grandeur                                                   |    Octets |
+| ---------------------------------------------------------- | --------: |
+| une page                                                   |     8 192 |
+| en-tête v2                                                 |       140 |
+| pire cas de liste : 8 emplacements × (72 + 512 paramètres) |     4 672 |
+| **reste**                                                  | **3 380** |
+
+Il reste de quoi porter **cinq emplacements de plus au pire tarif**. Le sel ne coûte AUCUN
+emplacement, et il n'en coûterait un que si le plafond de huit passait à quatorze.
+
+**La dérivation, en APPELS.** Une page écrite coûte **deux appels WebCrypto de plus** qu'en v1 : un
+`importKey` du matériau HKDF et un `deriveKey`, là où la v1 faisait un `importKey` AES-GCM. Une page
+LUE coûte les deux mêmes. C'est le même surcoût que les domaines du volume paient déjà depuis T2a,
+et il se compare à ce que le tableau ci-dessus mesure : un déverrouillage d'enveloppe pleine coûte
+1,06 ms de médiane, dont huit ouvertures AES-GCM. Deux appels de dérivation sont du même ordre
+qu'une de ces ouvertures, et le geste reste quatre ordres de grandeur sous le boot à froid.
+
+**La MIGRATION d'une page v1, en gestes.** Deux écritures et deux barrières — écrire la page v2 sur
+la page libre, publier —, puis une RELECTURE complète du fichier de seize kilo-octets. Elle a lieu
+UNE FOIS dans la vie d'un volume, à la première ouverture réussie, et elle ne demande aucune clé de
+déverrouillage : la liste des emplacements est recopiée telle quelle. Comparée à la ligne « ajouter
+puis révoquer » du tableau — deux mutations, 2,39 ms de médiane —, elle coûte moins : une seule
+mutation, sans l'effacement de la page libérée.
+
+**Ce que ces chiffres ne disent pas.** Ils portent sur un support en mémoire, comme le reste de
+cette section. Sur OPFS, le coût dominant d'une migration de page est la BARRIÈRE, qui n'est pas
+dans ces nombres et qui est du même ordre que celle de n'importe quelle mutation d'enveloppe.
+
 ## Ce que la FRAÎCHEUR du volume coûte (#19)
 
 L'[ADR 0019](decisions/0019-fraicheur-du-volume.md) ajoute une empreinte de la région

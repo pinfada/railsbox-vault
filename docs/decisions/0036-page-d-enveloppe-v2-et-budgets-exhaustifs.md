@@ -248,3 +248,22 @@ L'emplacement du compteur — il reste dans la racine, donc il recule. La rotati
 maîtresse, qui n'existe toujours pas. AES-GCM-SIV, dont le périmètre de spike est écrit dans
 l'ADR 0033. Et l'écart de la décision 4 : ouvrir un volume v3 scelle deux fois sous la clé de
 volume, et aucune des deux options envisagées ne l'évite sans perdre une écriture acquittée.
+
+## Conséquences
+
+- Le format que ce runtime ÉCRIT est : volume **v4**, journal **format 5**, manifeste **format 4**,
+  instantané **format 2**, archive **v3**, page d'enveloppe **v2**.
+- Les vecteurs `tests/vectors/enveloppe-v1.json` et `tests/vectors/archive-v3.json` ne bougent pas
+  d'un octet et changent de RÔLE : ils deviennent des vecteurs de MIGRATION et de COMPATIBILITÉ. Les
+  vecteurs v2 vivent dans `tests/vectors/enveloppe-v2.json`, et `node tools/verifier-vecteurs.mjs`
+  en refait la chaîne entière depuis le seul texte — 240 vérifications vertes, contre 222 avant
+  cette tranche.
+- Les ADR 0020, 0027, 0033 et 0035 reçoivent leur note datée du 11 septembre 2026.
+- La ligne #182 du [registre](../revue-externe/registre.md) passe à `corrigé`, en citant les DEUX
+  PR.
+- **Ce qui n'est PAS fait, et qui est écrit ici comme dans `docs/testing.md`** : le palier v3 de
+  l'E2E de migration — arrêter la chaîne à v3, l'ouvrir, y écrire, la refermer, la sauvegarder par
+  le runtime v4, puis migrer — n'est pas revenu. Le chemin qui le bloquait est ouvert, et le cycle
+  entier est éprouvé en unitaire sur un v3 produit par le produit
+  (`tests/unit/vm-migration-source-v3.test.mjs`) ; mais le banc de cette tranche n'avait pas d'image
+  de référence, et écrire un palier d'E2E qu'on n'a pas exécuté serait écrire une supposition.
