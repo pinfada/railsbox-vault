@@ -287,20 +287,39 @@ typé, jamais lu en clair ».
 > | `recuperation` | **page embarquée** | **non**    | sel de 32 octets TIRÉ, en clair dans la page   | la racine de la page qu'une archive emporte                          | inatteignable                                           |
 >
 > **La MESURE, sur une session complète.** Création d'un volume, versement, datation, ouverture
-> transactionnelle, écriture, second volume sous la MÊME clé de volume, capture de reprise,
-> enveloppe de clé, moyen de récupération, export avec archive, révocation. Le relevé, par clé :
+> transactionnelle, écriture, **cycle déverrouiller/verrouiller hors transaction**, second volume
+> sous la MÊME clé de volume, capture de reprise, enveloppe de clé, moyen de récupération, export
+> avec archive, révocation, **migration d'une page d'enveloppe v1**. Le relevé, par clé :
 >
 > | Clé                        | Invocations de `encrypt` |
 > | -------------------------- | -----------------------: |
-> | `volume` du volume A       |                       28 |
+> | `volume` du volume A       |                       35 |
 > | `volume` du volume B       |                       18 |
 > | `journal` du volume A      |                        1 |
 > | `journal` du volume B      |                        1 |
 > | `instantane` (une capture) |                        1 |
-> | `enveloppe` (trois pages)  |                1, 1 et 1 |
+> | `enveloppe` (quatre pages) |             1, 1, 1 et 1 |
 > | `recuperation` (une page)  |                        1 |
 > | `archive` (une archive)    |                        1 |
 > | la clé de volume elle-même |                    **0** |
+>
+> **La liste des gestes a été corrigée le 11 septembre 2026** (revue de sécurité de la PR #187,
+> constat 8). Elle omettait quatre chemins — le cycle de la coquille, la migration d'une page v1,
+> l'export d'un v3, la restauration d'une archive — c'est-à-dire ceux que la tranche AJOUTE ou
+> MODIFIE, et trois de ceux que ce § déclare clos. Une sonde exhaustive jouée sur une session
+> partielle ne prouve l'exhaustivité que de cette session ; les trois premiers sont désormais joués,
+> et la restauration reste hors de ce banc parce qu'elle ne scelle rien (§ 7.5).
+>
+> **L'EXPORT D'UN v3 est mesuré à part, et il n'est pas à zéro.** Il n'est pas un chemin du format
+> v4 : un volume v3 n'a pas de clé maîtresse, et l'ouvrir scelle sous la clé de volume ELLE-MÊME —
+> trois fois au plancher, plus une par secteur rejoué. Le mesurer dans la même colonne que les
+> chemins v4 ferait disparaître l'assertion qui compte : sur les chemins v4, le compte est ZÉRO,
+> sans exception et sans nuance.
+>
+> | Clé                                 | Invocations de `encrypt` |
+> | ----------------------------------- | -----------------------: |
+> | la clé de volume v3, à l'export     |                    **3** |
+> | toute autre clé, sur ce même chemin |                        0 |
 >
 > Les chiffres des deux premières lignes dépendent du banc ; les autres ne dépendent de rien, et
 > c'est la propriété : **un domaine à usage unique n'a JAMAIS deux invocations sous la même clé.**
