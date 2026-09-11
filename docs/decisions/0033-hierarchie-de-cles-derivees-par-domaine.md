@@ -520,3 +520,28 @@ disaient ce que le code ne faisait pas ».
   repli est de livrer T1 et T2a ensemble, plus cher et plus lent ;
 - **rien de cet ADR ne ferme le gate « données sensibles »**, qui reste FERMÉ jusqu'à la résolution
   des deux constats et à la décision du mainteneur sur la nature du relecteur (`SECURITY.md`).
+
+## Note datée du 11 septembre 2026 — le PLAN est exécuté : les six domaines sont livrés
+
+Les deux tranches que cet ADR annonçait sont faites. **T2a** (PR #186, ADR 0035) a livré la
+dérivation par domaine, le format de volume v4 et sa migration ; **T2b**
+([ADR 0036](0036-page-d-enveloppe-v2-et-budgets-exhaustifs.md)) a livré les deux domaines qui
+restaient — `enveloppe` et `recuperation` —, la clôture du troisième chemin hors transaction, et le
+cliquet définitif.
+
+**Ce que la décision 4 promettait est désormais MESURÉ** :
+`tests/unit/vm-budget-par-domaine.test.mjs` compte les invocations de `encrypt` PAR CLÉ sur une
+session complète, et les quatre domaines à usage unique n'en ont jamais deux sous la même clé. La
+condition « écrite pour être relue » de la décision 3 est donc relue par une épreuve, et non par un
+lecteur.
+
+**Un risque que cet ADR inscrivait ne s'est PAS réalisé** : « le sel en clair élargit quatre
+artefacts de 32 octets ; pour la page d'enveloppe de 8 192 octets, cela peut coûter un emplacement
+dans le pire cas ». Le calcul est au § 6.11 de la spécification — il reste 3 380 octets libres au
+pire tarif, soit cinq emplacements de plus.
+
+**Un écart demeure, et il n'est pas de ceux que cet ADR avait prévus** : ouvrir un volume **v3** —
+pour le migrer, ou pour l'exporter avant de le migrer — fait écrire au magasin une racine v3 et
+rescelle la charge acquittée, c'est-à-dire deux scellements sous la clé de volume elle-même. C'est
+le régime que la v4 remplace, et c'est l'unique exception du cliquet anti-DEK. Voir la décision 4 de
+l'ADR 0036 et le § 7.4 de la spécification.

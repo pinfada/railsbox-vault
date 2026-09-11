@@ -338,8 +338,22 @@ de la mémoire du processus.
 ## Conséquences
 
 - Le format que ce runtime ÉCRIT est : volume **v4**, journal **format 5**, manifeste **format 4**,
-  instantané **format 2**, archive **v3** (#181), page d'enveloppe **v1** (T2b).
+  instantané **format 2**, archive **v3** (#181), page d'enveloppe **v2** (T2b, ADR 0036).
 - Un volume v3 n'est plus lu que par la migration. Toute autre ouverture le refuse en le NOMMANT :
   le remède est de migrer, jamais de restaurer.
 - Les ADR 0015, 0016, 0019, 0021, 0024 et 0033 reçoivent leur note datée du 11 septembre 2026.
-- La ligne #182 du [registre](../revue-externe/registre.md) reste `ouvert` : T2b la ferme.
+- La ligne #182 du [registre](../revue-externe/registre.md) est passée à `corrigé` par T2b.
+
+## Note datée du 11 septembre 2026 — le TROISIÈME chemin hors transaction est fermé
+
+Cet ADR laissait ouvert, et MESURÉ, le chemin du volume de coquille : ouvert hors transaction, il
+scellait un secteur à chaque déverrouillage sans clore par une racine. La tranche T2b
+([ADR 0036](0036-page-d-enveloppe-v2-et-budgets-exhaustifs.md), décision 3) le ferme par un geste
+public, `cloturerParRacine`, qui n'ouvre aucun second chemin de scellement.
+
+**« CHEMIN 3 » de `tests/unit/vm-cloture-par-racine.test.mjs` mesure désormais une ÉGALITÉ** là où
+il mesurait un écart : ce que la racine de clôture publie est exactement le nombre d'invocations
+réelles de `encrypt` sous la clé du domaine `volume` depuis la réouverture.
+
+**La ligne des conséquences est corrigée** : le format que ce runtime ÉCRIT porte désormais une page
+d'enveloppe **v2**, et non plus v1.

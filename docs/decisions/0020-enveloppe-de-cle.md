@@ -494,3 +494,26 @@ Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi
    peut être réexaminée — sans urgence, puisqu'elle fonctionne ;
 5. le plafond de huit emplacements devient une gêne mesurée, auquel cas il monte sous une version de
    format et la borne du coût de refus est recalculée.
+
+## Note datée du 11 septembre 2026 — la racine d'une page n'est plus scellée sous la clé de volume
+
+La **décision 3** de cet ADR disait « la racine du fichier est scellée sous la DEK ». Ce n'est plus
+vrai depuis la tranche T2b de [#182](https://github.com/pinfada/railsbox-vault/issues/182) : la page
+passe en **version 2**, et sa racine est scellée sous une clé à USAGE UNIQUE dérivée par HKDF pour
+le domaine `enveloppe` — ou `recuperation` pour la page qu'une archive emporte. Le sel de
+trente-deux octets est TIRÉ à chaque écriture et écrit en clair dans la page, à l'offset 104 ;
+l'octet 14, qui était du remplissage, porte le domaine. Rien d'autre ne bouge : ni le fichier, ni
+l'alternance des deux pages, ni la liste des emplacements, ni la précédence des refus, ni le plafond
+de huit.
+
+**Ce que cela change à la décision 5 (l'atomicité) :** rien. **Ce que cela ajoute à la matrice de
+coupures :** un geste de plus, la MIGRATION d'une page v1, éprouvée aux quatre sinistres et quatre
+rangs de `tests/unit/vm-enveloppe-migration-page.test.mjs`. La page v1 n'est PAS effacée par ce
+geste, et c'est ce qui le rend sûr.
+
+**La condition d'abandon 5 est corrigée d'un chiffre :** le plafond de huit emplacements laisse,
+avec l'en-tête v2, 3 380 octets libres au pire tarif — de quoi en porter cinq de plus. Le sel n'a
+donc coûté aucun emplacement.
+
+Voir l'[ADR 0036](0036-page-d-enveloppe-v2-et-budgets-exhaustifs.md) et le § 6.11 de la
+spécification.

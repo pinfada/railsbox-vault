@@ -250,23 +250,46 @@ typé, jamais lu en clair ».
 
 ### 4.5 Le budget de clé, et la conduite au plafond
 
-> **Le constat de la revue externe du 10 septembre 2026 est CORRIGÉ pour les domaines du volume, et
-> il reste ouvert pour deux autres** ([#182](https://github.com/pinfada/railsbox-vault/issues/182),
-> HIGH — § 9.7). Ce que ce paragraphe décrivait — un compteur PAR INSTANCE de scellement, présenté
-> comme un compteur PAR CLÉ — n'existe plus pour les secteurs, les racines et les enregistrements :
-> depuis la v4, chaque domaine de chaque volume a SA clé, et le compteur d'une clé compte enfin
-> toutes les invocations sous elle. Ce qui reste ouvert est nommé plus bas, et dans le § 12.
+> **Le constat de la revue externe du 10 septembre 2026 est CORRIGÉ, et il l'est pour les SIX
+> domaines** ([#182](https://github.com/pinfada/railsbox-vault/issues/182), HIGH — § 9.7). Ce que ce
+> paragraphe décrivait — un compteur PAR INSTANCE de scellement, présenté comme un compteur PAR CLÉ
+> — n'existe plus. Depuis la v4, chaque domaine de chaque volume a SA clé ; depuis la page
+> d'enveloppe v2 (§ 6.11), les deux derniers domaines à scellement direct sont passés eux aussi. La
+> phrase « toutes les invocations sous une clé » est donc redevenue vraie, et elle est MESURÉE :
+> `tests/unit/vm-budget-par-domaine.test.mjs` étiquette chaque `CryptoKey` par sa provenance et
+> compte les invocations de `crypto.subtle.encrypt` par clé sur une session complète du produit.
 >
 > **Le budget, domaine par domaine, exhaustif :**
 >
-> | Domaine        | Compteur ? | Où il est persisté et AUTHENTIFIÉ                            | Au plafond                                              |
-> | -------------- | ---------- | ------------------------------------------------------------ | ------------------------------------------------------- |
-> | `volume`       | oui        | `scellementsCumulesVolume`, en-tête authentifié de la racine | `VAULT_CRYPTO_BUDGET_DE_CLE` avant de produire un octet |
-> | `journal`      | oui        | `scellementsCumulesJournal`, **le même** en-tête de racine   | idem                                                    |
-> | `instantane`   | **non**    | aucun — une clé, une capture, sel tiré                       | inatteignable : 1 devant 2^31                           |
-> | `archive`      | **non**    | aucun — une clé, une archive, sel tiré                       | inatteignable                                           |
-> | `enveloppe`    | **non**    | **encore scellé sous la DEK** — reste de #182                | § 12                                                    |
-> | `recuperation` | **non**    | **encore scellé sous la DEK** — reste de #182                | § 12                                                    |
+> | Domaine        | Clé par            | Compteur ? | Ce qui porte l'unicité                         | Ce qui est compté sous elle                                          | Au plafond                                              |
+> | -------------- | ------------------ | ---------- | ---------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------- |
+> | `volume`       | volume             | oui        | aucun sel — la clé est RÉEMPLOYÉE              | secteurs, secteurs rescellés, empreintes de région, témoins, racines | `VAULT_CRYPTO_BUDGET_DE_CLE` avant de produire un octet |
+> | `journal`      | volume             | oui        | aucun sel — la clé est RÉEMPLOYÉE              | enregistrements de `<volume>.gen`, et rien d'autre                   | idem                                                    |
+> | `instantane`   | **capture**        | **non**    | sel de 32 octets TIRÉ, en clair dans l'en-tête | l'unique scellement d'une capture                                    | inatteignable : 1 devant 2^31                           |
+> | `enveloppe`    | **page écrite**    | **non**    | sel de 32 octets TIRÉ, en clair dans la page   | la racine d'une page de `<volume>.cles`                              | inatteignable                                           |
+> | `archive`      | **archive**        | **non**    | sel de 32 octets TIRÉ, en clair dans le voisin | l'engagement d'une archive                                           | inatteignable                                           |
+> | `recuperation` | **page embarquée** | **non**    | sel de 32 octets TIRÉ, en clair dans la page   | la racine de la page qu'une archive emporte                          | inatteignable                                           |
+>
+> **La MESURE, sur une session complète.** Création d'un volume, versement, datation, ouverture
+> transactionnelle, écriture, second volume sous la MÊME clé de volume, capture de reprise,
+> enveloppe de clé, moyen de récupération, export avec archive, révocation. Le relevé, par clé :
+>
+> | Clé                        | Invocations de `encrypt` |
+> | -------------------------- | -----------------------: |
+> | `volume` du volume A       |                       28 |
+> | `volume` du volume B       |                       18 |
+> | `journal` du volume A      |                        1 |
+> | `journal` du volume B      |                        1 |
+> | `instantane` (une capture) |                        1 |
+> | `enveloppe` (trois pages)  |                1, 1 et 1 |
+> | `recuperation` (une page)  |                        1 |
+> | `archive` (une archive)    |                        1 |
+> | la clé de volume elle-même |                    **0** |
+>
+> Les chiffres des deux premières lignes dépendent du banc ; les autres ne dépendent de rien, et
+> c'est la propriété : **un domaine à usage unique n'a JAMAIS deux invocations sous la même clé.**
+> C'est la condition qui rend leur budget de 1 valable, et l'épreuve la mesure au lieu de
+> l'affirmer.
 >
 > **Pourquoi quatre domaines n'ont PAS de compteur, et pourquoi c'est plus sûr.** Compter suppose un
 > état durable, atomique et partagé ; ces domaines n'en ont aucun — c'est exactement le reproche du
@@ -275,31 +298,33 @@ typé, jamais lu en clair ».
 > il ne dépend d'aucune transaction. **Le budget d'une clé à usage unique est de 1, et aucune mesure
 > ne peut le rendre faux.**
 >
-> **La règle de CLÔTURE, et ce que la v4 en tient — DEUX chemins sur trois.** La règle est celle-ci
-> : _toute session qui scelle sous une clé à compteur clôt par une RACINE qui publie les deux
+> **La règle de CLÔTURE, et ce que la v4 en tient — les TROIS chemins.** La règle est celle-ci :
+> _toute session qui scelle sous une clé à compteur clôt par une RACINE qui publie les deux
 > compteurs ; une ouverture qui ne peut pas écrire de racine n'a pas le droit de sceller — elle est
 > en LECTURE SEULE, et un scellement demandé sous ce régime est refusé par
 > `VAULT_STORAGE_LECTURE_SEULE` (§ 10.2)._
 >
-> Deux des trois chemins hors transaction closent par une racine, et c'est mesuré : la CRÉATION en
-> écrit une avant `VLTSEAL1` (§ 7.1), et l'INSTALLATION INITIALE du volume applicatif la réécrit une
-> fois le disque versé — en REPORTANT les compteurs de la racine qu'elle écarte, sans quoi elle
-> perdrait les 2^20 scellements de la création.
+> Les trois chemins hors transaction closent désormais par une racine, et les trois sont mesurés à
+> l'ÉGALITÉ — par le nombre d'invocations réelles de `crypto.subtle.encrypt`, jamais par une
+> inégalité :
 >
-> **Le troisième n'est PAS fermé, et il est nommé** : l'ouverture du volume de COQUILLE par
-> `public/runtime-worker.mjs`. Elle écrit un secteur à chaque déverrouillage, donc la lecture seule
-> la casserait ; et écrire une racine de clôture sur un volume qui en a déjà une demande un geste
-> public que `GenerationStore` n'expose pas — `valider()` n'écrit rien sur une charge vide, et le
-> vidage ne part qu'à la récupération. Ajouter ce geste est une décision sur la machine à états
-> transactionnelle, prise pour un appelant qui ne l'est pas : elle est portée à **T2b**. Ce chemin
-> se comporte donc comme avant #182 — il scelle sans être compté, et la session suivante repart du
-> compteur de la racine.
+> 1. la **CRÉATION** écrit sa racine avant `VLTSEAL1` (§ 7.1) ;
+> 2. l'**INSTALLATION INITIALE** du volume applicatif la réécrit une fois le disque versé, en
+>    REPORTANT le compte que le versement lui rend — sans quoi elle perdrait les 2^20 scellements de
+>    la création ;
+> 3. la **RÉOUVERTURE HORS TRANSACTION** — le volume de COQUILLE — tient son magasin de générations
+>    SANS l'installer, et le referme par une racine de clôture. C'est la décision de T2b, et son
+>    point est là : installer le magasin détournerait les écritures vers le journal, ce que ce mode
+>    ne veut pas ; le tenir sans l'installer reprend les compteurs à l'ouverture et les republie à
+>    la fermeture. La clôture n'écrit AUCUNE racine si la session n'a rien scellé — une clôture
+>    inconditionnelle consommerait un scellement pour publier le compte de ce scellement.
 >
-> **L'écart est MESURÉ, pas tu** : `tests/unit/vm-cloture-par-racine.test.mjs` › « CHEMIN 3 » écrit
-> par ce chemin, constate que la racine ne bouge pas, et constate en outre qu'une telle écriture
-> PÉRIME la fraîcheur de la dernière racine (§ 6.8) — ce qu'une racine de clôture rescellerait du
-> même geste qu'elle publierait les compteurs. Le jour où T2b livre ce geste, cette épreuve rougit,
-> et c'est voulu.
+> **Ce que la racine de clôture apporte en plus des compteurs.** Elle RESCELLE l'empreinte de région
+> sous sa propre génération (§ 6.8). Une écriture hors transaction périmait donc la fraîcheur de la
+> dernière racine, si bien qu'un ouvreur transactionnel refusait ensuite le volume par
+> `VAULT_STORAGE_GENERATION_CORRUPT` ; clore par une racine referme cela du même geste. En
+> contrepartie, **le chemin hors transaction CONFRONTE désormais cette fraîcheur comme tout autre**
+> : le volume de coquille gagne la garde de l'ADR 0019 qu'il n'avait pas.
 >
 > **Ce qui reste vrai, et qui n'est pas corrigé par la séparation des clés** : les deux compteurs
 > vivent toujours dans la racine, donc ils RECULENT avec elle (§ 9.1, constat #144). L'écart entre
@@ -344,20 +369,25 @@ d'invocations réelles de `crypto.subtle.encrypt`, et non par une inégalité �
 transactionnel ordinaire l'est aussi, sur cinq ouvertures successives
 (`tests/unit/vm-cloture-par-racine.test.mjs`).
 
-**DEUX sous-estimations subsistent, et elles sont nommées toutes les deux.** Les écrire ici plutôt
-que de les laisser à un § lointain est le prix d'un paragraphe normatif qui ne se contredit pas :
+**UNE sous-estimation subsiste, et elle a une BORNE.** L'écrire ici plutôt que de la laisser à un §
+lointain est le prix d'un paragraphe normatif qui ne se contredit pas :
 
-1. **le volume de COQUILLE scelle un secteur par déverrouillage hors clôture, non compté, jusqu'à
-   T2b.** C'est le troisième chemin hors transaction : `public/runtime-worker.mjs` l'ouvre hors
-   transaction et y ÉCRIT, si bien qu'aucune des deux conduites de l'ADR 0033, décision 4, ne lui
-   est ouverte en l'état — la lecture seule casse le déverrouillage, et écrire une racine de clôture
-   sur un volume déjà daté demande un geste que `GenerationStore` n'expose pas. L'écart est MESURÉ
-   par « CHEMIN 3 » de la même suite, et il n'a PAS de borne : il croît d'un scellement par
-   déverrouillage ;
-2. **une MIGRATION v3 → v4 reprise après coupure peut avoir rescellé certains secteurs deux fois.**
-   L'écart vaut au plus une suite de conversion — 512 secteurs — par coupure, parce que la reprise
-   ne rejoue que la suite qui était en vol (§ 7.4). Celle-là a une borne, ce que l'aveu précédent
-   n'avait pas.
+- **une MIGRATION v3 → v4 reprise après coupure peut avoir rescellé certains secteurs deux fois.**
+  L'écart vaut au plus une suite de conversion — 512 secteurs — par coupure, parce que la reprise ne
+  rejoue que la suite qui était en vol (§ 7.4).
+
+La seconde, qui a vécu du 11 septembre au matin au 11 septembre au soir, est CLOSE : le volume de
+COQUILLE scellait un secteur par déverrouillage sans clôture, et cet écart n'avait aucune borne — il
+croissait d'un scellement par déverrouillage. La racine de clôture du troisième chemin le referme,
+et « CHEMIN 3 » de `tests/unit/vm-cloture-par-racine.test.mjs` mesure désormais une ÉGALITÉ là où
+elle mesurait un écart.
+
+**Un dernier écart, hors de ce paragraphe mais de la même famille, reste ouvert et il est écrit
+partout de la même phrase** : ouvrir un volume **v3** — pour le migrer, ou pour l'EXPORTER avant de
+le migrer (§ 7.4) — fait écrire au magasin une racine v3 et rescelle la charge acquittée, c'est-à-
+dire deux scellements sous la clé de volume ELLE-MÊME. Un volume v3 n'a pas de clé maîtresse : c'est
+le régime que la v4 remplace, et c'est l'unique exception du cliquet anti-DEK
+(`tests/unit/vm-cliquet-anti-dek.test.mjs`).
 
 Une troisième a existé entre le 11 septembre et la revue de la PR #186, et il vaut mieux l'écrire
 que de laisser croire que ce § a toujours dit vrai : l'INSTALLATION INITIALE publiait 18 scellements
@@ -1459,6 +1489,123 @@ volume sans manifeste voisin n'est JAMAIS ouvert en écriture ».
 appelable directement, et plusieurs sites de production le font. Rien n'empêche un nouveau chemin
 d'en ajouter un sans passer par l'ouvreur. C'est écrit ici parce qu'un relecteur le découvrirait
 sinon en lisant le code.
+
+### 6.11 La page d'enveloppe `<volume>.cles`, version 2
+
+Le fichier d'enveloppes est spécifié par l'[ADR 0020](decisions/0020-enveloppe-de-cle.md) : deux
+pages de 8 192 octets, alternées, dont la plus récente valide fait autorité. **La version 2 de la
+PAGE** ([#182](https://github.com/pinfada/railsbox-vault/issues/182), ADR 0036) ne change ni le
+fichier, ni l'alternance, ni la liste des emplacements. Elle change une seule chose : **sous quelle
+clé la racine de la page est scellée.**
+
+|        Offset | Largeur | Champ                                                      | v1                 | v2             |
+| ------------: | ------: | ---------------------------------------------------------- | ------------------ | -------------- |
+|             0 |       8 | marqueur `VLTKEY01`                                        | identique          | identique      |
+|             8 |       4 | version de format de la PAGE                               | 1                  | **2**          |
+|            12 |       2 | nombre d'emplacements                                      | identique          | identique      |
+|        **14** |   **1** | **domaine de la racine** — 1 `enveloppe`, 2 `recuperation` | remplissage à zéro | **champ**      |
+|            16 |       8 | compteur de version de l'enveloppe                         | identique          | identique      |
+|            24 |      16 | identifiant de volume                                      | identique          | identique      |
+|            40 |       4 | longueur de la liste                                       | identique          | identique      |
+|            44 |      12 | nonce de la racine                                         | identique          | identique      |
+|            56 |      32 | chiffré de la racine                                       | identique          | identique      |
+|            88 |      16 | étiquette de la racine                                     | identique          | identique      |
+|       **104** |  **32** | **sel de la clé de racine**, en clair                      | absent             | **champ**      |
+| 104 / **136** |       4 | somme de contrôle CRC-32                                   | offset 104         | **offset 136** |
+| 108 / **140** |       — | début de la liste des emplacements                         | offset 108         | **offset 140** |
+
+**Rien n'est DÉPLACÉ.** Le sel s'ajoute là où la v1 s'arrêtait, et la somme de contrôle recule
+derrière lui ; tous les offsets antérieurs sont les mêmes à l'octet près. C'est ce qui permet au
+même décodeur de relire les deux versions, et aux vecteurs figés de la v1 de ne pas bouger.
+
+**Ce que le sel coûte à la page — MESURÉ, pas supposé.** L'ADR 0033 rangeait dans ses risques « le
+sel en clair élargit quatre artefacts de 32 octets ; pour la page d'enveloppe, cela peut coûter un
+emplacement dans le pire cas ». Le calcul dit non :
+
+```text
+pire cas de liste = 8 emplacements × (72 octets fixes + 512 de paramètres) = 4 672 octets
+en-tête v2 + pire cas                                     = 140 + 4 672  = 4 812 octets
+page                                                                      = 8 192 octets
+reste                                                                     = 3 380 octets
+```
+
+Il reste de quoi porter **cinq emplacements de plus au pire tarif**. Le sel ne coûte aucun
+emplacement, et il n'en coûterait un que si le plafond passait de huit à quatorze.
+
+**La clé de la racine.** En v1, c'était la clé de volume elle-même. En v2, c'est une clé à USAGE
+UNIQUE dérivée par HKDF-SHA-256 pour un domaine, un volume et la version 2 de la page (§ 4.4) :
+
+- **`enveloppe`** — la page de `<volume>.cles`, celle qui reste sur l'appareil ;
+- **`recuperation`** — la page qu'une ARCHIVE emporte, rescellée à l'export sur la liste filtrée
+  ([ADR 0027](decisions/0027-archive-et-ancre-de-version.md)).
+
+Deux domaines, deux infos, deux clés — **pour le même volume et la même version de format**. La
+séparation est utile et il faut dire de quoi : une archive VOYAGE. La clé qui scelle sa page ne
+scelle rien qui soit resté sur la machine.
+
+**La page DIT lequel des deux a scellé sa racine**, dans l'octet 14, et c'est une nécessité de
+lecture : la restauration pose la page embarquée en page 0 de `<volume>.cles`, et le premier
+déverrouillage du volume restauré doit l'ouvrir. Un lecteur qui supposerait `enveloppe` dériverait
+la mauvaise clé et refuserait une page parfaitement valide.
+
+**Ni le sel ni l'octet de domaine ne sont AUTHENTIFIÉS, et ils n'ont pas à l'être.** Les changer
+fait dériver une autre clé, donc échouer l'étiquette de la racine : ils se protègent par leur
+conséquence, exactement comme le nonce. Un octet de domaine qui ne désigne RIEN, lui, fait refuser
+la page au décodage — une page dont on ne sait pas sous quelle clé sa racine est scellée n'est pas
+une page qu'on lira « au mieux ».
+
+**La version de format d'un EMPLACEMENT ne suit PAS celle de la page** : elle vaut 1, et elle
+vaudra 1. Les octets d'un emplacement n'ont pas changé, et surtout — c'est la raison qui décide — la
+faire suivre obligerait une migration de page à réenvelopper la clé de volume sous CHAQUE clé de
+déverrouillage, alors qu'on n'en détient qu'une. La migration perdrait des clés, ce qui est la seule
+chose qu'elle n'a pas le droit de faire.
+
+#### La MIGRATION d'une page v1 en v2
+
+Une page v1 est RESCELLÉE à la **première ouverture réussie**, sous le bail exclusif. C'est le seul
+moment où le produit tient la clé de volume : elle ne s'obtient qu'en développant un emplacement
+sous une clé de déverrouillage valable.
+
+Le geste porte **deux écritures**, et pas quatre : la page v2 est publiée sur la page LIBRE, et la
+page v1 n'est **pas** effacée. C'est la différence avec une révocation, et elle est voulue.
+
+| Rang                       | Ce que le fichier porte                                 | Ce qui s'ouvre |
+| -------------------------- | ------------------------------------------------------- | -------------- |
+| avant la barrière          | page v1 intacte et autoritaire ; brouillon sur la libre | **v1 @ N**     |
+| après la barrière          | page v2 complète en version N + 1 ; page v1 conservée   | **v2 @ N + 1** |
+| après la mutation suivante | deux pages v2 : la mutation écrit sur la page libre     | **v2**         |
+
+À tout instant, **une page ouvrable existe**, et la liste des emplacements est recopiée TELLE QUELLE
+— aucune clé de déverrouillage n'est demandée, aucune n'est perdue. La migration n'est déclarée
+faite qu'une fois la page v2 RELUE sous la même clé, à la version attendue.
+
+**Un échec d'écriture ne fait PAS échouer le déverrouillage.** Le quota est plein, le handle a
+disparu : le volume s'ouvre quand même, sous sa page v1, et la migration sera retentée. Refuser le
+déverrouillage parce qu'un changement de FORMAT n'a pas pu s'écrire enfermerait l'utilisateur dehors
+pour une raison qui n'est pas la sienne. Rien n'est avalé pour autant : le refus est RENDU dans le
+compte rendu d'ouverture.
+
+**Le refus de RÉTROGRADATION.** Une page v1 n'est candidate à l'autorité que si elle est STRICTEMENT
+PLUS ANCIENNE que la plus récente des pages v2 valides. Sans cette règle, qui peut écrire dans
+l'origine de confiance composerait une page v1 portant une version arbitrairement grande et en
+recalculerait la somme : elle passerait devant la v2, et l'ouverture se ferait sous une racine
+scellée directement sous la clé de volume — un format rétrogradé par une écriture, sans décision et
+sans qu'aucun refus ne le dise. La règle n'écarte PAS la page v1 dès qu'une v2 existe : c'est elle
+qui rend la migration sûre sous coupure, et entre « refuser un peu moins » et « risquer de perdre le
+volume », l'ADR 0020 a déjà tranché une fois.
+
+**Épreuves.** `tests/unit/vm-enveloppe-migration-page.test.mjs` rejoue la matrice de coupures de
+l'ADR 0020 — quatre sinistres, quatre rangs — sur une enveloppe à quatre clés, et exige à CHAQUE
+rang que les quatre ouvrent, que l'état soit v1 @ N ou v2 @ N + 1, et que la liste soit identique
+identifiant par identifiant. `tests/unit/vm-enveloppe-vecteurs.test.mjs` migre en outre les QUATRE
+pages v1 FIGÉES du contrat de l'ADR 0020, qui ne doivent rien à ce banc.
+
+**Vecteurs.** `tests/vectors/enveloppe-v2.json` fige les deux pages — `enveloppe` et `recuperation`
+—, leurs sels, leurs infos HKDF et les trente-deux octets de leurs clés dérivées.
+`node tools/verifier-vecteurs.mjs` refait la chaîne entière depuis le seul texte des ADR, sans
+importer une ligne du produit, et ajoute son témoin négatif : la clé d'un domaine n'ouvre pas la
+racine de l'autre. Les vecteurs v1 (`tests/vectors/enveloppe-v1.json`) ne bougent pas d'un octet et
+changent de RÔLE : ils deviennent des vecteurs de MIGRATION.
 
 ## 7. Les gestes, dans l'ordre
 
