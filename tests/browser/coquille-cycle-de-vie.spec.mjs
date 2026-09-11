@@ -797,6 +797,165 @@ test("un descripteur MALFORMÉ est refusé sur sa forme, et le motif nomme le ch
   expect(rapport.application.motif).toMatch(/préfixe/);
 });
 
+// --- REPRENDRE une installation interrompue, contre le serveur RÉEL (#173, ADR 0037) ---------------
+//
+// Ce que cette suite mesure : la SIGNATURE (`installationInterrompue`) apparaît quand — et seulement
+// quand — un volume anonyme porte réellement l'état qu'une installation interrompue laisse, et le
+// bouton `#reprendre-l-installation` en dépend. Ce qu'elle NE mesure PAS, pour la même raison que le
+// reste de cette suite ne démarre aucune VM : le geste de reprise verse un disque réel puis
+// enchaînerait sur un BOOT, qui exige l'image de référence (un demi-gibioctet, construite par
+// `npm run image:build`) — absente de cet environnement. Le geste lui-même, retrait puis
+// réinstallation jusqu'au manifeste inscrit, est prouvé par
+// `tests/unit/coquille-application.test.mjs` sur le double déterministe, avec le Worker RÉEL de
+// production monté dessus.
+
+/** Sert un disque applicatif d'exactement `octets` octets, à l'adresse que le descripteur annonce. */
+async function servirLeDisque(page, descripteur, octets) {
+  await page
+    .context()
+    .route(`**${descripteur.prefixeDesArtefacts}${descripteur.disque.nom}`, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/octet-stream",
+        body: Buffer.alloc(octets, 0x42),
+      }),
+    );
+}
+
+/** Un descripteur minimal et VALIDE, de la forme que ces épreuves versent. */
+function descripteurDeReprise(octets) {
+  return {
+    descripteurVersion: 1,
+    application: { id: "reprise-installation-test", version: "1.0.0" },
+    runtime: { version: "0.1.0" },
+    disque: { nom: "disque-de-reprise.ext2", octets },
+    boot: {
+      cmdline: "root=/dev/sda rw",
+      memoireOctets: 33554432,
+      kernel: "k",
+      initrd: "i",
+      rootfs: "r",
+      bios: "seabios.bin",
+      vgaBios: "vgabios.bin",
+    },
+    prefixeDesArtefacts: "/artifacts/reprise-test/",
+  };
+}
+
+test("une installation TRONQUÉE, reconnue au second démarrage, montre le bouton de reprise", async ({
+  page,
+  browserName,
+}, info) => {
+  test.skip(
+    browserName !== "chromium",
+    "requête HTTP et OPFS réels : un moteur suffit, et WebKit ne les a pas tous deux",
+  );
+  test.setTimeout(120_000);
+  const OCTETS = 8 * 512;
+  const descripteur = descripteurDeReprise(OCTETS);
+  await servirLeDescripteur(page, {
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(descripteur),
+  });
+  // PREMIER versement, délibérément TRONQUÉ : la moitié du disque annoncé.
+  await servirLeDisque(page, descripteur, OCTETS / 2);
+  await ouvrirLaCoquille(page);
+  await ouvrirParLaPhrase(page);
+
+  // PREMIER démarrage : le versement tronqué remonte comme une EXCEPTION du Worker — le canal
+  // privilégié la réduit alors à { code, message générique } (`repondreRefus`, délibérément : « un
+  // refus rendu n'a rien à en dire » du reste de l'exception) —, d'où le motif absent ici et l'état
+  // « demarrage-refuse » plutôt que « sans-application ».
+  await page.click("#demarrer-application");
+  await expect(page.locator("#cycle-etat")).toContainText("cycle:demarrage-refuse", {
+    timeout: 60_000,
+  });
+  let rapport = await releve(page);
+  await info.attach(`reprise-tronque-${info.project.name}.json`, {
+    body: JSON.stringify(rapport.application, null, 2),
+    contentType: "application/json",
+  });
+  expect(rapport.application.demarree).toBe(false);
+  expect(rapport.application.code).toBe(CODES_REFUS_COQUILLE.applicationAbsente);
+  // Un versement tronqué n'est pas encore la signature : la coquille ne l'a pas encore RECONSTATÉE.
+  await expect(page.locator("#reprendre-l-installation")).toBeHidden();
+
+  // SECOND démarrage, SANS RIEN CHANGER sur le disque : le volume anonyme laissé par le premier
+  // essai est retrouvé, et `constaterLInstallation` REND cette fois une réponse structurée — pas une
+  // exception —, donc l'état publié est « sans-application », avec le motif ENTIER cette fois.
+  await page.click("#demarrer-application");
+  await expect(page.locator("#cycle-etat")).toContainText("cycle:sans-application", {
+    timeout: 60_000,
+  });
+  rapport = await releve(page);
+  await info.attach(`reprise-signature-${info.project.name}.json`, {
+    body: JSON.stringify(rapport.application, null, 2),
+    contentType: "application/json",
+  });
+  expect(rapport.application.code).toBe(CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste);
+  expect(rapport.application.installationInterrompue).toBe(true);
+  await expect(page.locator("#reprendre-l-installation")).toBeVisible();
+});
+
+test("un volume anonyme d'une AUTRE taille n'est jamais offert au bouton, et rien n'est retiré", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "requête HTTP et OPFS réels : un moteur suffit");
+  test.setTimeout(120_000);
+  const OCTETS = 8 * 512;
+  const premier = descripteurDeReprise(OCTETS);
+  await servirLeDescripteur(page, {
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(premier),
+  });
+  await servirLeDisque(page, premier, OCTETS / 2);
+  await ouvrirLaCoquille(page);
+  await ouvrirParLaPhrase(page);
+  await page.click("#demarrer-application");
+  await expect(page.locator("#cycle-etat")).toContainText("cycle:demarrage-refuse", {
+    timeout: 60_000,
+  });
+
+  // Le SECOND démarrage arrive sous un descripteur qui annonce une AUTRE taille : ce n'est plus,
+  // pour la coquille, le même volume que celui laissé par le premier essai — la signature ne tient
+  // pas, et « autre chose » ne propose jamais de geste.
+  const second = descripteurDeReprise(OCTETS * 2);
+  await servirLeDescripteur(page, {
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(second),
+  });
+  await page.click("#demarrer-application");
+  await expect(page.locator("#cycle-etat")).toContainText("cycle:sans-application", {
+    timeout: 60_000,
+  });
+  const rapport = await releve(page);
+  expect(rapport.application.code).toBe(CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste);
+  expect(rapport.application.installationInterrompue).toBe(false);
+  await expect(page.locator("#reprendre-l-installation")).toBeHidden();
+
+  // TÉMOIN — rien n'a été retiré : sous le DESCRIPTEUR D'ORIGINE, le même volume anonyme est
+  // retrouvé et porte ENCORE la signature d'une installation interrompue. Si le geste « autre
+  // taille » avait retiré ou altéré quoi que ce soit, cette troisième tentative échouerait
+  // autrement — un volume absent serait installé sans refus, un volume corrompu ne rendrait pas la
+  // même signature.
+  await servirLeDescripteur(page, {
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(premier),
+  });
+  await page.click("#demarrer-application");
+  await expect(page.locator("#cycle-etat")).toContainText("cycle:sans-application", {
+    timeout: 60_000,
+  });
+  const temoin = await releve(page);
+  expect(temoin.application.code).toBe(CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste);
+  expect(temoin.application.installationInterrompue).toBe(true);
+});
+
 // --- Le DÉLAI D'INACTIVITÉ, mesuré pour de bon dans un navigateur ---------------------------------
 //
 // Les épreuves unitaires de `tests/unit/coquille-verrouillage.test.mjs` pilotent une horloge feinte,
