@@ -2219,8 +2219,12 @@ Deux conséquences à écrire :
 > l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) décision 3 avec
 > `domaine = "archive"` et `versionDeFormatDuDomaine = 3`. **Une archive, une clé, un scellement,
 > aucun compteur** : le domaine `archive` est à usage unique, et le budget du § 4.5 n'a rien à y
-> compter. La clé du VOLUME, elle, reste la DEK jusqu'à #182 — entorse assumée, écrite dans
-> l'ADR 0033.
+> compter. La clé du VOLUME, elle, restait la DEK jusqu'à #182 — entorse assumée, écrite dans l'ADR
+> 0033, et LEVÉE le 11 septembre 2026 par la
+> [PR #186](https://github.com/pinfada/railsbox-vault/pull/186)
+> ([ADR 0035](decisions/0035-format-de-volume-v4-et-migration.md)) : en v4 la clé du volume est
+> dérivée sous le domaine `volume` (§ 4.4), et seule la lecture d'un v3 par la migration ou par
+> l'export scelle encore sous la DEK (§ 7.4).
 >
 > **Qui vérifie, et quand.** La restauration **n'a pas la clé**, et c'est une propriété qu'on garde
 > : elle vérifie ce qu'elle peut sans clé — présence, longueur, cohérence de l'en-tête, version lue
