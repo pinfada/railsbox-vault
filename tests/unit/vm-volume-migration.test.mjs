@@ -14,6 +14,7 @@ import { exportVolumeToBytes } from "../../src/vm/archive-en-memoire.mjs";
 import { CONSISTENCY_KINDS } from "../../src/vm/volume-export.mjs";
 import {
   MANIFEST_FORMAT_VERSION,
+  MIN_VOLUME_FORMAT_VERSION,
   createManifest,
   parseManifest,
   serializeManifest,
@@ -821,7 +822,7 @@ test("la chaîne 1 → 3 aboutit : le volume est CONVERTI et rend le même clair
 
   assert.equal(rapport.migrated, true);
   assert.equal(rapport.toVersion, MANIFEST_FORMAT_VERSION);
-  assert.equal(rapport.steps.length, 2, "un PAS à la fois : v1 → v2, puis v2 → v3");
+  assert.equal(rapport.steps.length, 3, "un PAS à la fois : v1 → v2, v2 → v3, puis v3 → v4");
   // La migration DATE son résultat, et elle le date AVANT d'inscrire le manifeste (#181). Ce que la
   // racine porte réellement est mesuré sur la vraie cible dans
   // `tests/unit/vm-migration-racine-initiale.test.mjs` ; ici c'est l'ORDRE de la chaîne qui compte.
@@ -845,7 +846,7 @@ test("la chaîne 1 → 3 aboutit : le volume est CONVERTI et rend le même clair
     scellement: await Scellement.ouvrir({
       volume: inscrit.volume.id,
       cleOctets: CLE_DE_TEST,
-      formatVersion: 3,
+      formatVersion: MANIFEST_FORMAT_VERSION,
     }),
     disposition: dispositionDuVolume(TAILLE),
     lireSupport: (offset, longueur) => cible.etat.volume.slice(offset, offset + longueur),
@@ -926,7 +927,7 @@ test("une migration v1 → v3 COUPÉE pendant la conversion REPREND, et rend le 
       scellement: await Scellement.ouvrir({
         volume: inscrit.volume.id,
         cleOctets: CLE_DE_TEST,
-        formatVersion: 3,
+        formatVersion: MANIFEST_FORMAT_VERSION,
       }),
       disposition: dispositionDuVolume(TAILLE),
       lireSupport: (offset, longueur) => cible.etat.volume.slice(offset, offset + longueur),
@@ -1053,7 +1054,7 @@ test("une écriture ACQUITTÉE restée dans le journal v1 est REPORTÉE avant la
     scellement: await Scellement.ouvrir({
       volume: inscrit.volume.id,
       cleOctets: CLE_DE_TEST,
-      formatVersion: 3,
+      formatVersion: MANIFEST_FORMAT_VERSION,
     }),
     disposition: dispositionDuVolume(TAILLE),
     lireSupport: (offset, longueur) => cible.etat.volume.slice(offset, offset + longueur),
@@ -1168,8 +1169,13 @@ test("une migration NON destructive se contente encore d'un consentement nommé"
 async function coupeePendantLeScellement() {
   const temoin = creerCible({ volume: contenu() });
   const sauvegarde = { source: await sauvegardeDe(contenu()) };
+  // La chaîne est ARRÊTÉE au palier v3 : ces deux épreuves portent sur le journal de la conversion
+  // v2 → v3 — celle dont l'identifiant est TIRÉ et n'existe donc nulle part ailleurs que dans le
+  // journal. Le pas v3 → v4, lui, lit son identifiant du manifeste ET de l'en-tête, et
+  // `tests/unit/vm-migration-v4.test.mjs` éprouve sa propre garde.
   const options = (cible) => ({
     target: cible,
+    toVersion: MIN_VOLUME_FORMAT_VERSION,
     expectations: attentes({
       supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
     }),
@@ -1184,6 +1190,59 @@ async function coupeePendantLeScellement() {
   cible.armerCoupure(null);
   return { cible, options, sauvegarde };
 }
+
+test("une coupure PENDANT le pas v3 → v4 ne fait pas REFAIRE le pas v2 → v3", async () => {
+  // **Le piège que le pas v3 → v4 introduit, et qu'il vaut mieux mesurer qu'espérer.** Le journal de
+  // reprise ne porte qu'UN avancement : celui du pas EN VOL. Une reprise qui redonnerait « rien de
+  // commencé » au pas v2 → v3 le ferait redéplacer la charge d'un volume déjà converti — par-dessus
+  // sa propre région d'authentification. Le clair serait perdu, sans qu'aucune erreur ne soit levée.
+  //
+  // Le discriminant est le `from` de l'avancement : il atteste que tous les paliers jusque-là sont
+  // atteints. Cette épreuve coupe pendant le rescellement v3 → v4, reprend, et exige que le clair
+  // d'origine soit rendu.
+  const temoin = creerCible({ volume: contenu() });
+  const sauvegarde = { source: await sauvegardeDe(contenu()) };
+  const options = (cible) => ({
+    target: cible,
+    expectations: attentes({
+      supportedFormat: { current: MANIFEST_FORMAT_VERSION, minReadable: 1 },
+    }),
+    backup: sauvegarde,
+    cle: CLE_DE_TEST,
+  });
+  await migrateVolume(options(temoin));
+  const total = temoin.ecrituresVolume;
+
+  const cible = creerCible({ volume: contenu(), couperEcritureApres: total - 1 });
+  await assert.rejects(() => migrateVolume(options(cible)));
+  cible.armerCoupure(null);
+
+  // Le journal décrit bien le DERNIER pas, et pas le précédent : c'est ce qui rendait le piège
+  // atteignable.
+  const journal = JSON.parse(new TextDecoder().decode(cible.etat.journalBytes));
+  assert.equal(journal.progress.from, MIN_VOLUME_FORMAT_VERSION);
+  assert.equal(journal.progress.to, MANIFEST_FORMAT_VERSION);
+
+  const rapport = await migrateVolume(options(cible));
+  assert.equal(rapport.migrated, true);
+
+  const inscrit = parseManifest(cible.etat.manifestBytes);
+  assert.equal(inscrit.formatVersion, MANIFEST_FORMAT_VERSION);
+  const volume = new VolumeChiffre({
+    volume: "migre",
+    scellement: await Scellement.ouvrir({
+      volume: inscrit.volume.id,
+      cleOctets: CLE_DE_TEST,
+      formatVersion: MANIFEST_FORMAT_VERSION,
+    }),
+    disposition: dispositionDuVolume(TAILLE),
+    lireSupport: (offset, longueur) => cible.etat.volume.slice(offset, offset + longueur),
+    ecrireSupport: () => {
+      throw new Error("la relecture n'écrit pas");
+    },
+  });
+  assert.deepEqual([...(await volume.lireSecteurs(0, TAILLE))], [...contenu()]);
+});
 
 test("un journal de reprise ALTÉRÉ est refusé, et pas un octet du volume ne bouge", async () => {
   // L'identifiant journalisé entre dans les données associées de chaque secteur scellé. S'il ment —

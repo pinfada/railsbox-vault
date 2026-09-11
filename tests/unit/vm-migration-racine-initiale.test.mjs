@@ -162,7 +162,7 @@ function racineDuJournal(store) {
   });
 }
 
-test("la migration v2 → v3 ÉCRIT sa racine initiale, et elle porte ce qu'une naissance porte", async () => {
+test("la migration ÉCRIT sa racine initiale, et elle porte ce qu'une naissance porte", async () => {
   const store = createSyncAccessStore();
   await poserLeVolumeV2(store);
   const montage = cibleReelle(store);
@@ -184,9 +184,14 @@ test("la migration v2 → v3 ÉCRIT sa racine initiale, et elle porte ce qu'une 
   assert.equal(racine.racine.generation, 0);
   assert.equal(racine.racine.nombreEntrees, 0);
   assert.equal(
-    racine.racine.scellementsCumules,
+    racine.racine.scellementsCumulesVolume,
     SECTEURS + 1,
     "la conversion scelle un secteur par secteur, et la racine en consomme un de plus",
+  );
+  assert.equal(
+    racine.racine.scellementsCumulesJournal,
+    0,
+    "une conversion ne dépose AUCUN enregistrement : le budget de la clé du journal est neuf",
   );
 });
 

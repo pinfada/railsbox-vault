@@ -15,7 +15,13 @@ import { MIGRATION_ERROR_CODES, MigrationError } from "./migration-errors.mjs";
 import { ETAPES_CONVERSION, convertirEnV3 } from "./migration-v3.mjs";
 import { ETAPES_V4, convertirEnV4 } from "./migration-v4.mjs";
 import { Scellement } from "./scellement.mjs";
-import { nouvelIdentifiantDeVolume } from "./volume-chiffre-format.mjs";
+import {
+  EN_TETE_OCTETS,
+  decoderEnTeteDeVolume,
+  identifiantVolumeEnTexte,
+  nouvelIdentifiantDeVolume,
+  versionDEnTeteDeVolume,
+} from "./volume-chiffre-format.mjs";
 import {
   MIN_CLE_DERIVEE_FORMAT_VERSION,
   MIN_VOLUME_FORMAT_VERSION,
@@ -93,7 +99,20 @@ const STEPS = Object.freeze([
      * seul endroit où il puisse survivre à la coupure, puisque l'en-tête v3 — l'autre endroit où il
      * vit — n'est écrit qu'en dernier, une fois la conversion finie.
      */
-    async apply({ manifest, backend, cle, avancement, marquerAvancement }) {
+    async apply({ manifest, backend, cle, avancement, dejaFranchi, marquerAvancement }) {
+      if (dejaFranchi) {
+        // Le palier v3 est DÉJÀ atteint : le fichier porte son en-tête, et c'est lui qui donne
+        // l'identifiant — le manifeste source, resté en v2, n'en a pas. Redéplacer la charge
+        // écrirait la région par-dessus les données ; ne rien faire est le seul geste juste.
+        return createManifest({
+          formatVersion: MIN_VOLUME_FORMAT_VERSION,
+          runtime: manifest.runtime,
+          app: manifest.app,
+          volumeSize: manifest.geometry.volumeSize,
+          identity: manifest.identity,
+          volume: { id: await identifiantDuSupport(backend), algorithm: VOLUME_ALGORITHM },
+        });
+      }
       const identifiantVolume =
         avancement?.identifiantVolume ?? manifest.volume?.id ?? nouvelIdentifiantDeVolume();
       await convertirEnV3({
@@ -148,8 +167,18 @@ const STEPS = Object.freeze([
      * illisible chacun des secteurs déjà convertis. `convertirEnV4` recoupe les deux récits avant
      * d'écrire quoi que ce soit.
      */
-    async apply({ manifest, backend, cle, avancement, marquerAvancement }) {
+    async apply({ manifest, backend, cle, avancement, dejaFranchi, marquerAvancement }) {
       const identifiantVolume = exigerIdentifiantDeVolume(manifest);
+      if (dejaFranchi) {
+        return createManifest({
+          formatVersion: MIN_CLE_DERIVEE_FORMAT_VERSION,
+          runtime: manifest.runtime,
+          app: manifest.app,
+          volumeSize: manifest.geometry.volumeSize,
+          identity: manifest.identity,
+          volume: { id: identifiantVolume, algorithm: VOLUME_ALGORITHM },
+        });
+      }
       const nom = backend.name ?? "volume";
       const cleOctets = exigerCleDeVolume(nom, cle);
       await convertirEnV4({
@@ -188,6 +217,24 @@ const STEPS = Object.freeze([
     },
   }),
 ]);
+
+/**
+ * L'IDENTIFIANT que le FICHIER porte, lu de son en-tête, quelle que soit sa version.
+ *
+ * Il n'est lu que pour un pas DÉJÀ FRANCHI, où le manifeste source ne peut pas le donner : un
+ * volume v2 n'en a pas, et c'est le pas qu'on saute qui l'a tiré. L'en-tête est un LOCALISATEUR —
+ * rien n'en est déchiffré ici — et le volume converti le porte depuis la fin de son déplacement.
+ */
+async function identifiantDuSupport(backend) {
+  const octets = await backend.read(0, EN_TETE_OCTETS);
+  const version = versionDEnTeteDeVolume(octets);
+  const lu = version === null ? { valide: false } : decoderEnTeteDeVolume(octets, { formatVersion: version });
+  if (lu.valide) return identifiantVolumeEnTexte(lu.enTete.identifiantVolume);
+  throw new MigrationError(
+    MIGRATION_ERROR_CODES.conversionIncoherente,
+    `Reprise refusée : le journal déclare un palier de format déjà franchi, et le fichier ne porte pas d'en-tête de volume lisible. Les deux récits se contredisent, et l'identifiant du volume converti n'est nulle part. Aucun octet n'est écrit.`,
+  );
+}
 
 /**
  * EXIGE l'identifiant qu'un manifeste v3 déclare. Il n'est ni tiré, ni deviné, ni relu du support.
