@@ -131,6 +131,41 @@ republie à la fermeture.
 consommerait un scellement pour publier le compte de ce scellement : un compteur qui avancerait
 d'une unité par ouverture, c'est-à-dire la dérive que la règle a précisément pour objet d'empêcher.
 
+**La clôture suit le SECTEUR, et non la fermeture.** Une racine écrite au seul `close()` perdrait
+tout ce qu'une session TUÉE a scellé, et une session de coquille est tuée à chaque onglet fermé —
+`pagehide` termine le Worker sans que `close()` ne soit appelé. La revue de la PR #187 l'a mesuré
+(constat 3 de la revue de sécurité) : 33 publiés pour 37 réels après UNE session tuée, et la perte
+était définitive. La racine est donc écrite dans la même séquence d'écriture que le secteur qu'elle
+publie, avant que la main ne revienne à l'appelant. Le geste est IDEMPOTENT — le repère avance avec
+la racine qu'on vient d'écrire (constat 6 de la même revue) —, de sorte que le `close()` qui suit
+n'écrive pas une seconde racine.
+
+L'alternative examinée était de RÉSERVER le compte dans une racine écrite AVANT le secteur, comme la
+v4 réserve la place du témoin. Elle est écartée : réserver suppose de savoir combien une écriture va
+consommer avant de la faire, et une écriture directe scelle un secteur par tranche de la taille d'un
+secteur — le nombre n'est connu qu'une fois l'écriture acceptée.
+
+### Le QUATRIÈME chemin, et pourquoi il ne clôt PAS : `clotureParDatation`
+
+L'INSTALLATION INITIALE écrit le fichier entier, le ferme, puis le fait DATER. Clore par une racine
+à chaque secteur versé coûterait une racine par secteur, et la datation les périmerait toutes. Le
+versement DÉCLARE donc, à l'ouverture, que sa clôture sera la datation : aucune clôture n'est
+installée, la session rend son COMPTE à l'appelant, et `daterLaCreation` le REPORTE dans la racine
+finale.
+
+**Cet invariant est FAIT, mais non garanti** — le vocabulaire est celui de l'ADR 0021. Il est tenu
+par l'APPELANT et par lui seul : rien ne confronte la déclaration, et un volume qui déclarerait la
+datation sans être daté ne clôrait par rien et se rouvrirait tout de même, hors transaction comme en
+transaction. La revue de la PR #187 l'a reproduit (constat 7 de la revue de sécurité), et elle
+qualifie elle-même la situation : « c'est une garde qui n'en est pas une, pas un trou ».
+
+Faire porter la promesse par le CODE était l'autre option — refuser à la réouverture un volume qui a
+déclaré la datation sans avoir été daté. Elle est écartée pour un motif de proportion : le drapeau
+est interne, `verserLeDisque` et le banc de budget sont les seuls à le poser, aucune surface exposée
+ne l'atteint, et la garde coûterait un état durable de plus — précisément ce que la décision 2 de
+l'ADR 0033 refuse aux domaines à usage unique. Ce qui est dû ici est l'AVEU, et il est écrit : au §
+4.5 et au § 7.1 de la spécification, et ici.
+
 ### Deux conséquences, écrites plutôt que découvertes
 
 1. **la fraîcheur est RÉTABLIE.** La racine de clôture rescelle l'empreinte de région sous sa propre
