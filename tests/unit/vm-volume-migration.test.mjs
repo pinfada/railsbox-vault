@@ -232,6 +232,21 @@ function creerCible({
       etat.journalBytes = null;
       puisEchouer("remove-journal");
     },
+    /**
+     * ÉCRIT la racine initiale du volume migré (#181). Elle est au CONTRAT de la cible depuis la
+     * revue de format de la PR #184 : une cible qui ne sait pas dater produisait un volume dont le
+     * manifeste déclare la migration réussie et que toute ouverture refuse ensuite, sans remède.
+     *
+     * Ce double ne monte aucun voisin de génération : il TRACE le geste et rend ce que la vraie
+     * cible rendrait. Ce que la racine porte réellement se mesure ailleurs, sur
+     * `createOpfsMigrationTarget` monté sur le double du support.
+     */
+    async poserLaRacineInitiale(appel) {
+      trace("poser-racine");
+      etat.racineInitiale = { ...appel, brut: undefined };
+      puisEchouer("poser-racine");
+      return { racineInitiale: true, motifDeLaRacine: "migration" };
+    },
   };
 }
 
@@ -765,6 +780,28 @@ test("un journal dont la cible ne correspond PAS au format porté n'est pas reti
   assert.equal(parseManifest(cible.etat.manifestBytes).formatVersion, CIBLE);
 });
 
+test("une cible qui ne sait pas DATER est REFUSÉE, avant la moindre écriture", async () => {
+  // Constat 6 de la revue de sécurité, constat 3 de la revue de format de la PR #184. La rédaction
+  // précédente rendait `null` : la migration se déclarait réussie, et le refus n'arrivait qu'à la
+  // première ouverture, sur un volume que le manifeste DÉCLARE migré — définitivement, puisque le
+  // journal de reprise a été retiré et qu'une seconde migration ne repart pas d'un manifeste déjà
+  // v3. Une cible incomplète est une faute de programmation ; elle se relève au seuil.
+  const cible = creerCible();
+  const { poserLaRacineInitiale, ...sansDatation } = cible;
+  assert.equal(typeof poserLaRacineInitiale, "function", "la cible complète, elle, sait dater");
+  await assert.rejects(
+    () =>
+      migrateVolume({
+        target: sansDatation,
+        expectations: attentes(),
+        consent: CONSENTEMENT,
+      }),
+    /poserLaRacineInitiale/,
+  );
+  assert.deepEqual(cible.gestes, [], "la cible n'a même pas été observée");
+  assert.notEqual(cible.etat.manifestBytes, null, "rien n'a été révoqué");
+});
+
 test("la chaîne 1 → 3 aboutit : le volume est CONVERTI et rend le même clair", async () => {
   // La migration v2 → v3 ne réécrit pas un manifeste, elle réécrit le VOLUME. L'épreuve la fait
   // porter sur un vrai fichier — celui de la cible en mémoire — et la juge sur ce que le chemin de
@@ -785,6 +822,14 @@ test("la chaîne 1 → 3 aboutit : le volume est CONVERTI et rend le même clair
   assert.equal(rapport.migrated, true);
   assert.equal(rapport.toVersion, MANIFEST_FORMAT_VERSION);
   assert.equal(rapport.steps.length, 2, "un PAS à la fois : v1 → v2, puis v2 → v3");
+  // La migration DATE son résultat, et elle le date AVANT d'inscrire le manifeste (#181). Ce que la
+  // racine porte réellement est mesuré sur la vraie cible dans
+  // `tests/unit/vm-migration-racine-initiale.test.mjs` ; ici c'est l'ORDRE de la chaîne qui compte.
+  assert.ok(
+    cible.gestes.indexOf("poser-racine") < cible.gestes.indexOf("commit"),
+    `ordre attendu racine → manifeste, relevé : ${cible.gestes}`,
+  );
+  assert.equal(cible.etat.racineInitiale.tailleLogique, TAILLE);
 
   const inscrit = parseManifest(cible.etat.manifestBytes);
   assert.equal(inscrit.formatVersion, MANIFEST_FORMAT_VERSION);

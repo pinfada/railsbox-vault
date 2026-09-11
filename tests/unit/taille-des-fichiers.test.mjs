@@ -52,7 +52,7 @@ const RACINES = ["src", "public/vm"];
 const SOUS_SURVEILLANCE = [
   {
     fichier: "src/vm/generation-store.mjs",
-    lignes: 738,
+    lignes: 741,
     motif:
       "#65 l'avait inscrit à 738 lignes en écrivant « la prochaine tranche qui y touchera devra le " +
       "scinder ». #181 y a touché — l'ouverture décide désormais d'écrire une RACINE INITIALE — et " +
@@ -60,7 +60,10 @@ const SOUS_SURVEILLANCE = [
       "protocole ne porte pas, `generation-recuperation.mjs` emporte l'autorisation d'ouvrir sans " +
       "racine et la mise en forme du rapport. Le fichier a fait 805 lignes en chemin ; il en fait " +
       "moins qu'à son inscription en sortant. Ce qui reste est la MACHINE À ÉTATS, et la scinder " +
-      "davantage rendrait le protocole illisible pour tenir sous un seuil.",
+      "davantage rendrait le protocole illisible pour tenir sous un seuil. La revue de sécurité de " +
+      "la PR #184 (constat 9) y ajoute trois lignes : un voisin d'engagement trouvé alors qu'une " +
+      "racine fait autorité est ÉCARTÉ et PUBLIÉ, au lieu d'être ignoré en silence. Le geste " +
+      "appartient au chemin « une racine décide », donc à cette machine à états.",
   },
   {
     fichier: "src/vm/opfs-block-backend.mjs",

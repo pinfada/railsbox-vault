@@ -269,6 +269,7 @@ export function rapportDuMagasin(etatPublie, etat, details) {
       // que rien n'a touché. C'est une DÉCLARATION, pas un constat (#143).
       journalFormatAnnonce: etatPublie.journalFormatAnnonce,
       temoinSequence: etatPublie.temoinSequence,
+      voisinIgnore: etatPublie.voisinIgnore ?? false,
       ...details,
     },
   });
@@ -303,6 +304,12 @@ export function poserRapport({ volume, etat, generation, sequence, surmemoireMax
     // ÉCRIT est un geste nouveau sur ce chemin, et il ne se fait jamais en silence.
     racineInitiale: false,
     motifDeLaRacine: null,
+    // Un VOISIN D'ENGAGEMENT trouvé alors qu'une racine faisait déjà autorité, et VIDÉ à cette
+    // occasion (#181, revue de sécurité de la PR #184, constat 9). Il n'est jamais consulté sur ce
+    // chemin — la décision 5 de l'ADR 0034 le dit —, mais un voisin qu'on ignore sans le dire finit
+    // par être cru actif, et un reliquat qu'on laisse finit par être cru voulu. Ici, il est écarté,
+    // et l'ouverture le publie.
+    voisinIgnore: false,
     // SURMÉMOIRE DE POINTE de la récupération, en octets : la plus grande allocation qu'elle a
     // faite pour elle-même. Publiée pour la même raison que l'export et la restauration publient
     // la leur (`docs/quality-attributes.md`) — un budget qu'on ne mesure pas n'est pas tenu, il
