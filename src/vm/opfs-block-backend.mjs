@@ -504,12 +504,32 @@ export class OpfsBlockBackend {
     await this.#chiffre.ecrireSecteurs(offset, bytes, GENERATION_HORS_TRANSACTION, {
       octetsAcceptes: offerts,
     });
-    if (offerts === requested) return;
-    throw new StorageError(
-      STORAGE_ERROR_CODES.partialWrite,
-      `Écriture partielle : ${offerts} octet(s) acceptés sur ${requested} à l'offset ${offset}.`,
-      { volume: this.#name, offset, requested, accepted: offerts },
-    );
+    if (offerts !== requested) {
+      throw new StorageError(
+        STORAGE_ERROR_CODES.partialWrite,
+        `Écriture partielle : ${offerts} octet(s) acceptés sur ${requested} à l'offset ${offset}.`,
+        { volume: this.#name, offset, requested, accepted: offerts },
+      );
+    }
+    await this.#publierCeQueLEcritureAScelle();
+  }
+
+  /**
+   * PUBLIE, par une racine de clôture, ce que l'écriture qui précède vient de sceller (#182, T2b ;
+   * revue de sécurité n° 3).
+   *
+   * La clôture ne vivait qu'en `close()`, et `src/coquille/fins-d-onglet.mjs` ne ferme RIEN : une
+   * fin d'onglet tue le Worker sans capture et sans fermeture. Le relecteur a mesuré ce que cela
+   * coûtait — publié 33 pour 37 réels après UNE session tuée, la session suivante repartant de la
+   * racine amputée : un lot perdu par onglet fermé, sans borne. La racine suit donc immédiatement le
+   * secteur, AVANT que la main ne revienne à l'appelant : il n'existe plus d'instant où un
+   * scellement hors transaction ne soit pas publié.
+   *
+   * Le POURQUOI complet — l'alternative écartée, et ce que le geste coûte — est au § 4.5 de la
+   * spécification et dans la décision 3 de l'ADR 0036.
+   */
+  async #publierCeQueLEcritureAScelle() {
+    await this.#clotureHorsTransaction?.cloturerParRacine();
   }
 
   /**

@@ -46,6 +46,9 @@ const OUVERTURE = "src/vm/opfs-volume-ouverture.mjs";
 const EXPORT = "src/vm/export-du-fichier.mjs";
 const CLIQUET = "tests/unit/vm-cliquet-anti-dek.test.mjs";
 
+/** Le saut de ligne, nommé : une table de mutation porte des fragments de source multilignes. */
+const SAUT = "\n";
+
 const MIGRATION = "tests/unit/vm-enveloppe-migration-page.test.mjs";
 const VECTEURS_V2 = "tests/unit/vm-enveloppe-v2-vecteurs.test.mjs";
 const CLOTURE = "tests/unit/vm-cloture-par-racine.test.mjs";
@@ -128,7 +131,26 @@ export const MUTATIONS = Object.freeze([
     garde: "GenerationStore.cloturerParRacine — l'écriture de la racine",
     fichier: MAGASIN,
     avant:
-      "    await this.#vider({ sequence: this.#sequence, generation: this.#generation });\n    return true;",
+      "    await this.#vider({ sequence: this.#sequence, generation: this.#generation });" +
+      SAUT +
+      "    // Le repère AVANCE avec la racine",
+    apres: "    // Le repère AVANCE avec la racine",
+    epreuves: [CLOTURE],
+  },
+  {
+    nom: "la CLÔTURE suit le secteur : une session tuée n'a rien de non publié",
+    garde: "#ecrireDansLeVolume — l'appel à `#publierCeQueLEcritureAScelle`",
+    fichier: BACKEND,
+    avant: "    await this.#publierCeQueLEcritureAScelle();",
+    apres: "",
+    epreuves: [CLOTURE],
+  },
+  {
+    nom: "la clôture par racine est IDEMPOTENTE : le repère avance avec la racine",
+    garde: "cloturerParRacine — la mise à jour de `#scellementsALaRecuperation`",
+    fichier: MAGASIN,
+    avant:
+      "    this.#scellementsALaRecuperation = this.#scellement.scellementsCumulesVolume;\n    return true;",
     apres: "    return true;",
     epreuves: [CLOTURE],
   },

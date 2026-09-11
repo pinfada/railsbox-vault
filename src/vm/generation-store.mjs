@@ -406,8 +406,10 @@ export class GenerationStore {
    * POURQUOI est écrit là où il se relit — `etablirLaGeneration` dans `opfs-volume-ouverture.mjs`,
    * le § 4.5 de la spécification, et l'ADR 0036.
    *
-   * Il n'écrit RIEN si la session n'a rien scellé depuis la récupération : une clôture
-   * inconditionnelle consommerait un scellement pour publier le compte de ce scellement.
+   * Il n'écrit RIEN si la session n'a rien scellé depuis le dernier appel : une clôture
+   * inconditionnelle consommerait un scellement pour publier le compte de ce scellement. Il est
+   * donc IDEMPOTENT, et il doit l'être — il est appelé après CHAQUE écriture directe, puis encore
+   * une fois à la fermeture.
    *
    * @returns {Promise<boolean>} vrai si une racine a été écrite
    */
@@ -415,6 +417,12 @@ export class GenerationStore {
     if (this.#scellement.scellementsCumulesVolume === this.#scellementsALaRecuperation)
       return false;
     await this.#vider({ sequence: this.#sequence, generation: this.#generation });
+    // Le repère AVANCE avec la racine qu'on vient d'écrire, et c'est ce qui rend le geste
+    // IDEMPOTENT (revue de sécurité n° 6). Écrire une racine SCELLE : sans cette ligne, un second
+    // appel verrait de nouveau un écart et écrirait une seconde racine, faisant avancer séquence et
+    // compteur pour ne rien publier de neuf. Depuis que la clôture suit chaque écriture, ce n'est
+    // plus théorique : `close()` la rappelle après la dernière.
+    this.#scellementsALaRecuperation = this.#scellement.scellementsCumulesVolume;
     return true;
   }
 

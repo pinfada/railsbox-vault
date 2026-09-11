@@ -361,6 +361,120 @@ test("CHEMIN 3 — une réouverture qui n'écrit RIEN n'écrit AUCUNE racine", a
   );
 });
 
+test("CHEMIN 3 — une session TUÉE sans `close()` a DÉJÀ publié tout ce qu'elle a scellé", async () => {
+  // **Le constat 3 de la revue de sécurité, et c'est celui qui décide de la phrase du § 4.5.**
+  //
+  // `src/coquille/fins-d-onglet.mjs` écrit la conduite en toutes lettres : « `pagehide` → tuer. Dès
+  // que le Worker de confiance VIT, `terminate()` immédiat, quel que soit `event.persisted`, SANS
+  // capture et SANS `close()` ». Or c'est `close()` qui appelait la clôture par racine. Le relecteur
+  // a mesuré ce que cela coûtait : publié 33 pour 37 réels après UNE session tuée, et la perte est
+  // DÉFINITIVE — la session suivante reprend son compteur de la racine amputée. Un lot par onglet
+  // fermé, sans borne.
+  //
+  // La correction est que la racine de clôture SUIT immédiatement le secteur, dans la même séquence
+  // d'écriture : il n'existe plus d'instant où un scellement hors transaction ne soit pas publié.
+  // Cette épreuve le mesure sur la fin d'onglet ORDINAIRE, celle qui ne referme rien.
+  const store = createSyncAccessStore();
+  const naissance = await ouvrir(store, { transactionnel: false, clotureParDatation: true });
+  const empreinte = await naissance.empreinteDuFichier();
+  const scellementsVerses = naissance.scellementsCumules;
+  await naissance.close();
+  await daterLaCreation({
+    name: NOM,
+    cle: CLE_DE_TEST,
+    identifiantVolume: IDENTIFIANT,
+    openHandle: store.openHandle,
+    empreinteVersee: empreinte,
+    scellementsVerses,
+  });
+  const avant = racineDuJournal(store);
+
+  const sonde = compteur("volume");
+  let tuee;
+  let apres;
+  try {
+    tuee = await ouvrir(store, { transactionnel: false });
+    for (const motif of [0x91, 0x92, 0x93]) {
+      await tuee.write(0, secteurDe(motif));
+      await tuee.flush();
+    }
+    // **AUCUN `close()` ici, et c'est tout le sujet.** Le relevé est pris sur le support tel qu'un
+    // `terminate()` le laisserait. La fermeture qui suit, dans le `finally`, ne sert qu'à rendre le
+    // nom au registre d'exclusivité : elle a lieu APRÈS la mesure, et elle n'écrit plus rien.
+    apres = racineDuJournal(store);
+    assert.equal(
+      apres.scellementsCumulesVolume - avant.scellementsCumulesVolume,
+      sonde.invocations,
+      `une session tuée a perdu ${sonde.invocations - (apres.scellementsCumulesVolume - avant.scellementsCumulesVolume)} scellement(s) : publié ${apres.scellementsCumulesVolume - avant.scellementsCumulesVolume}, chiffré ${sonde.invocations}`,
+    );
+  } finally {
+    sonde.rendre();
+    await tuee?.close();
+  }
+
+  assert.ok(
+    apres.sequence > avant.sequence,
+    "une racine a bien été écrite : la clôture suit le secteur, elle ne l'attend pas",
+  );
+
+  // Et le volume RESTE ouvrable transactionnellement : la racine écrite en cours de session a
+  // rescellé la région, donc la fraîcheur de la dernière racine décrit l'état réel.
+  const backend = await ouvrir(store);
+  try {
+    assert.deepEqual([...(await backend.read(0, SECTOR_SIZE))], [...secteurDe(0x93)]);
+  } finally {
+    await backend.close();
+  }
+});
+
+test("CHEMIN 3 — la clôture est IDEMPOTENTE : deux appels n'écrivent qu'une racine", async () => {
+  // Constat 6 de la revue de sécurité. La garde comparait le compteur au repère posé à la
+  // RÉCUPÉRATION, et `#vider` ne remettait pas ce repère à jour : comme écrire une racine scelle, un
+  // second appel voyait de nouveau un écart et écrivait une SECONDE racine. Le produit n'appelait le
+  // geste qu'une fois — mais l'ADR 0036 le présente comme un geste PUBLIC du magasin, et un geste
+  // public qui n'est pas idempotent est un piège pour son prochain appelant.
+  //
+  // Depuis que la clôture suit chaque écriture (constat 3), ce n'est plus théorique : `close()`
+  // rappelle la clôture après la dernière écriture, et sans l'idempotence il écrirait une racine de
+  // plus à chaque fermeture.
+  const store = createSyncAccessStore();
+  const naissance = await ouvrir(store, { transactionnel: false, clotureParDatation: true });
+  const empreinte = await naissance.empreinteDuFichier();
+  const scellementsVerses = naissance.scellementsCumules;
+  await naissance.close();
+  await daterLaCreation({
+    name: NOM,
+    cle: CLE_DE_TEST,
+    identifiantVolume: IDENTIFIANT,
+    openHandle: store.openHandle,
+    empreinteVersee: empreinte,
+    scellementsVerses,
+  });
+
+  const session = await ouvrir(store, { transactionnel: false });
+  let apresEcriture;
+  try {
+    await session.write(0, secteurDe(0x77));
+    await session.flush();
+    apresEcriture = racineDuJournal(store);
+  } finally {
+    await session.close();
+  }
+  const apresFermeture = racineDuJournal(store);
+
+  assert.deepEqual(
+    {
+      sequence: apresFermeture.sequence,
+      volume: apresFermeture.scellementsCumulesVolume,
+    },
+    {
+      sequence: apresEcriture.sequence,
+      volume: apresEcriture.scellementsCumulesVolume,
+    },
+    "la fermeture a écrit une SECONDE racine de clôture : la garde n'est pas idempotente",
+  );
+});
+
 test("le REFUS tombe AVANT que le modèle ne produise un octet", async () => {
   // Le budget d'une clé se mesure en invocations d'AES-GCM. Un refus qui arriverait APRÈS le
   // chiffrement aurait consommé exactement ce qu'il prétend interdire.
