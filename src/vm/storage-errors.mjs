@@ -94,6 +94,20 @@ export const STORAGE_ERROR_CODES = Object.freeze({
    */
   lectureSeule: "VAULT_STORAGE_LECTURE_SEULE",
   /**
+   * Le FORMAT du volume n'a pas le domaine de clés que le geste demandé exige (#182, revue de
+   * sécurité de la PR #186, constat 3 ; revue de format, constat 5).
+   *
+   * Il a été détaché de `lectureSeule`, qui en rendait deux causes. Ce n'est PAS un régime de
+   * session : cette session a le droit de sceller, et elle scelle tout le reste sans broncher ; le
+   * refus tombe aussi sur une OUVERTURE, qui ne scelle rien. Ce qui manque est une propriété du
+   * FORMAT, et le remède ne s'en déduit pas — « ouvrez le volume par un chemin qui sait dater » ne
+   * dit rien à qui présente un volume v3, dont le remède est de MIGRER.
+   *
+   * Les distinguer n'est pas un raffinement : un code qui rend deux causes finit par être traduit
+   * pour l'une et lu pour l'autre.
+   */
+  domaineAbsentDuFormat: "VAULT_STORAGE_DOMAINE_ABSENT_DU_FORMAT",
+  /**
    * Un volume au format v3 a été présenté SANS clé de volume (#18, ADR 0016). Rien n'est lu, rien
    * n'est deviné, aucune clé n'est fabriquée : le produit n'en fabrique aucune avant #21.
    */

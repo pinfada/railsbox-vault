@@ -282,3 +282,46 @@ test("la DEK importée en matériau HKDF : WebCrypto REFUSE de chiffrer avec ell
     "la DEK ne peut pas chiffrer : c'est un GARANTI, pas un « fait, non garanti »",
   );
 });
+
+test("un volume v3 REFUSE l'instantané par un code qui nomme le FORMAT, pas un régime de session", async () => {
+  // Revue de sécurité de la PR #186, constat 3 — et constat 5 de la revue de format. Ce refus était
+  // rendu sous `VAULT_STORAGE_LECTURE_SEULE`, ce qui était faux deux fois : cette session-là a le
+  // DROIT de sceller, et elle scelle tout le reste sans broncher ; et le refus tombe aussi sur une
+  // OUVERTURE, qui ne scelle rien du tout. Surtout, le remède annoncé par `LECTURE_SEULE` — « ouvrir
+  // le volume par un chemin qui sait dater » — ne dit rien à qui présente un v3, dont le remède est
+  // de MIGRER.
+  const v3 = await Scellement.ouvrir({
+    volume: "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+    cleOctets: CLE_DE_TEST,
+    formatVersion: 3,
+  });
+
+  // Cette session SCELLE : le refus qui suit ne peut donc pas être un régime de lecture seule.
+  const secteur = await v3.scellerBloc(
+    { generation: 1, rang: 0, adresse: 0, longueur: 512 },
+    new Uint8Array(512).fill(0x2a),
+  );
+  assert.ok(
+    secteur.chiffre.byteLength > 0,
+    "une session v3 scelle : elle n'est pas en lecture seule",
+  );
+
+  const liaison = { formatInstantane: 2, formatVolume: 3, sequence: 0, generation: 1 };
+  await assert.rejects(
+    () => v3.scellerInstantane(liaison, new Uint8Array(8)),
+    (erreur) => {
+      assert.ok(isStorageError(erreur, STORAGE_ERROR_CODES.domaineAbsentDuFormat));
+      assert.match(erreur.message, /domaine/);
+      return true;
+    },
+    "sceller une capture sur un v3 : le FORMAT n'a pas ce domaine",
+  );
+
+  // Et l'OUVERTURE, qui ne scelle rien, rend le MÊME code — ce qu'un régime de session ne pourrait
+  // pas expliquer.
+  await assert.rejects(
+    () => v3.ouvrirInstantane(liaison, new Uint8Array(12), new Uint8Array(24)),
+    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.domaineAbsentDuFormat),
+    "ouvrir une capture ne scelle rien : le refus ne peut pas être « lecture seule »",
+  );
+});

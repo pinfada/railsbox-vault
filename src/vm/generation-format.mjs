@@ -82,8 +82,10 @@ import { FRAICHEUR_OCTETS } from "./generation-fraicheur.mjs";
 import {
   EMPREINTE_OCTETS,
   ETIQUETTE_OCTETS,
+  GENERATION_MAX,
   IDENTIFIANT_VOLUME_OCTETS,
   NONCE_OCTETS,
+  RANG_MAX,
 } from "./format-chiffre/identite-logique.mjs";
 import { SCEAU_OCTETS } from "./volume-chiffre-format.mjs";
 
@@ -580,7 +582,57 @@ function controlerSansCle(octets, { tailleVolume }) {
       `Racine écrite pour un volume de ${declaree} octets, présenté avec une taille de ${tailleVolume}.`,
     );
   }
+  const horsBornes = champHorsBornes(vue, format);
+  if (horsBornes !== null) return refusDeRacine(horsBornes);
   return { valide: true, format, vue };
+}
+
+/**
+ * Le premier champ de 64 bits qui ne tient pas dans un entier SÛR, ou `null` (#182, revue de
+ * sécurité de la PR #186, constat 4).
+ *
+ * ## Ce que ce contrôle achète, et pourquoi il vit ICI
+ *
+ * Le relevé du relecteur a retourné le bit 7 de CHACUN des 215 premiers octets des deux
+ * emplacements de racine d'un volume v4. Sept offsets rendaient
+ * `VAULT_STORAGE_SUPPORT_FAILURE` — « le support OPFS a refusé l'opération » —, c'est-à-dire
+ * exactement l'inverse de la conduite voulue : l'exploitant lit « le disque est en panne » là où la
+ * spécification veut « restaurez une sauvegarde ». Parmi eux, **208 et 209** : les octets de poids
+ * fort du compteur du journal, le champ que la v4 ajoute.
+ *
+ * La cause était structurelle. Les champs de la racine sont donnés à `entierBorne` pour construire
+ * les DONNÉES ASSOCIÉES, donc **avant** que l'étiquette ne soit vérifiée ; `VAULT_CRYPTO_MALFORME`
+ * n'est délibérément pas traduit, parce qu'il répond d'une violation de contrat par l'APPELANT ; et
+ * ici l'appelant est le SUPPORT. La couche OPFS habillait donc en panne de support ce qui est une
+ * racine ABÎMÉE.
+ *
+ * Le contrôle vit ici parce que c'est ici que l'ORIGINE de la valeur est connue : ces octets
+ * viennent du support, et un champ hors bornes est une racine abîmée — `generationCorrupt` —, pas
+ * une faute de programmation. Il porte sur TOUS les champs de 64 bits, et pas seulement sur celui
+ * que la v4 ajoute : le défaut était ancien, et le refermer pour deux octets aurait laissé les cinq
+ * autres. L'adversaire perd du même coup l'oracle qui distinguait le champ qu'il avait touché.
+ */
+function champHorsBornes(vue, format) {
+  // Les bornes sont CELLES DU MODÈLE, reprises de `donneesAssocieesDeLaRacine` : le décodeur ne s'en
+  // invente pas. Les redire ici est le prix d'un contrôle qui tombe du bon côté de la frontière —
+  // avant que la valeur ne quitte le support pour devenir un argument.
+  const champs = [
+    ["sequence", 16, RANG_MAX],
+    ["generation", 24, GENERATION_MAX],
+    ["tailleVolume", 32, Number.MAX_SAFE_INTEGER],
+    ["longueurCharge", 44, Number.MAX_SAFE_INTEGER],
+    ["scellementsCumulesVolume", 68, Number.MAX_SAFE_INTEGER],
+    ...(racinePorteDeuxCompteurs(format)
+      ? [["scellementsCumulesJournal", RACINE_ENTETE_OCTETS, Number.MAX_SAFE_INTEGER]]
+      : []),
+  ];
+  for (const [nom, position, maximum] of champs) {
+    const valeur = lireEntier64(vue, position);
+    if (!Number.isSafeInteger(valeur) || valeur > maximum) {
+      return `Champ « ${nom} » hors bornes (${valeur}) : cette racine est ABÎMÉE, et ses octets viennent du support.`;
+    }
+  }
+  return null;
 }
 
 export function decoderRacine(octets, attentes) {

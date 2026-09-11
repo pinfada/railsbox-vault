@@ -40,7 +40,11 @@ import { malforme } from "./instantane-errors.mjs";
  *
  * **2 depuis #182** : le fichier porte le SEL de trente-deux octets dont descend la clé à usage
  * unique de la capture (ADR 0033, décision 3), et son en-tête passe de 152 à 184 octets. La liaison
- * — les données associées — ne change PAS d'un octet : ce qui bouge est la clé, pas ce qu'elle lie.
+ * — les données associées — ne change pas de FORME : mêmes champs, mêmes largeurs, même ordre. Ses
+ * OCTETS, eux, changent, et il faut le dire : elle porte `formatInstantane` (1 → 2) et
+ * `formatVolume` (3 → 4), ce que `tests/vectors/instantane-v2.json` montre au champ `cas.0.liaison`.
+ * C'est exactement ce que la note datée de l'ADR 0024 écrit, et ce commentaire le disait de trop
+ * (revue de format de la PR #186, constat 10).
  *
  * Un instantané de version 1 n'est pas migré, et il n'a pas à l'être : une capture est un état de
  * REPRISE, écarté dès qu'il est consommé ou périmé (ADR 0024). Ce runtime le REFUSE, et le refus
