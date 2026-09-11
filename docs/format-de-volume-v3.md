@@ -1199,6 +1199,27 @@ nom de volume déjà admissible. Il figure dans la liste de `removeOpfsVolume` *
 d'orphelins d'une naissance, par acquit, même s'il est consommé à la première ouverture — c'est le
 défaut de #145, et on ne le rouvre pas.
 
+**Sa taille est EXACTE : cent quatre-vingts octets, ni plus, ni moins.** Un voisin d'une autre
+taille est REFUSÉ par `VAULT_STORAGE_ENGAGEMENT_INVALIDE` — il est présent et illisible, ce qui
+n'est pas la même chose qu'absent. C'est la règle que `assertRienEnQueue` tient déjà pour l'archive
+: rien ne suit un objet de format fixe. Seul **zéro octet** vaut « absent ».
+
+**CONSOMMÉ veut dire VIDÉ, pas supprimé** (amendé le 11 septembre 2026, revue de format de la PR
+#184) : la consommation fait `truncate(0)` puis une barrière, et le fichier SURVIT à zéro octet.
+Deux raisons, et la première suffit : un Worker dédié n'a pas de handle de répertoire, donc pas de
+suppression d'entrée — `removeOpfsVolume` en a un, la consommation non ; et la troncature est de
+toute façon le geste sûr sous coupure. Un voisin de zéro octet **est** absent pour tout ce qui le
+lit, `voisinsDunVolume` le connaît toujours (donc `removeOpfsVolume` l'emporte), et le balayage des
+orphelins d'une naissance ne réécrit pas un voisin déjà vide. Conséquence à dire : une ouverture
+REFUSÉE par `VAULT_STORAGE_VOLUME_SANS_RACINE` laisse derrière elle un `.engagement` de zéro octet
+que le volume ne portait pas — `openOpfsSyncAccess` ouvre avec `{ create: true }`, exactement comme
+pour `.gen` et `.temoin`.
+
+**Un voisin REPOSÉ alors qu'une racine fait déjà autorité est VIDÉ à cette occasion**, et
+l'ouverture le PUBLIE (`voisinIgnore: true` dans le rapport). Il n'est jamais consulté sur ce chemin
+— la décision 5 de l'ADR 0034 le dit — mais un reliquat qu'on laisse sans le dire finit par être cru
+voulu, et un contrôle qu'on ne publie pas finit par être supposé actif.
+
 Vecteur figé : `tests/vectors/archive-v3.json` › `engagement.voisin`.
 
 ### 6.10 Le manifeste v3
@@ -1267,6 +1288,32 @@ Une coupure avant l'étape 5 laisse un volume refusé par `VAULT_STORAGE_VOLUME_
 > volume est refusé au premier boot par la garde de fraîcheur (§ 6.8) : un oubli coûte un refus,
 > jamais un silence. Épreuve : `tests/unit/coquille-application.test.mjs`, sur l'ordre des gestes de
 > l'installation.
+>
+> **AMENDÉ le 11 septembre 2026** (revue de sécurité de la PR #184, constat 1). Le versement FERME
+> le fichier, la datation le ROUVRE, et **l'intervalle n'appartient à personne** : un adversaire qui
+> sait écrire dans l'OPFS (§ 9.1, ADR 0019 § 6.9) peut y poser le fichier d'un autre volume, et la
+> datation bénissait alors un état que ce produit n'a jamais produit — sous le motif `creation`,
+> qui, lui, ne prouve rien.
+>
+> **Le versement hors transaction rend donc l'EMPREINTE SHA-256 du fichier qu'il a écrit, et la
+> datation la CONFRONTE** à ce qu'elle trouve (`empreinteDuFichier`, § 7.5) **avant** d'écrire la
+> racine. L'empreinte est prise pendant que le versement tient encore le fichier en exclusivité : ce
+> n'est pas une relecture qu'un tiers aurait pu influencer, c'est le constat de ce que ce geste-là a
+> laissé. Deux empreintes égales disent que l'intervalle n'a rien changé.
+>
+> Une empreinte **absente** — un appelant qui n'en rend pas — ou **discordante** REFUSE par
+> `VAULT_STORAGE_CREATION_NON_CONFIRMEE` (§ 10.2), aucune racine n'est écrite, et l'installation
+> n'est PAS déclarée réussie. C'est ce qui rend vraie, sur ce chemin-là, la phrase « celui qui vient
+> d'écrire le fichier entier SAIT que ces octets sont les siens » : ce n'est pas le geste qui le
+> sait, c'est l'empreinte qui le relie. Épreuves : `tests/unit/coquille-application.test.mjs` › «
+> ÉPREUVE ROUGE — le fichier SUBSTITUÉ entre le versement et la datation est REFUSÉ » et « un
+> versement qui n'ATTESTE rien ne fait pas dater ».
+>
+> **La datation exige aussi le journal d'une NAISSANCE** : la racine de l'étape 4 PRÉSENTE, séquence
+> zéro, génération zéro, aucune entrée. Un journal VIDE est refusé comme les autres — c'est l'état
+> qu'une RESTAURATION laisse, jamais celui d'une création (constat 2 de la revue de sécurité,
+> constat 1 de la revue de format). Épreuve, dans `tests/unit/vm-archive-melange-etats.test.mjs` : «
+> ÉPREUVE ROUGE — le mélange A/C RESTAURÉ ne peut pas être DATÉ ».
 
 ### 7.2 Écrire, valider, ranger
 
@@ -1314,21 +1361,48 @@ L'ordre suivant n'est pas une commodité ; changer un seul de ses pas rendrait u
    les trois cas, et il n'y en a pas de quatrième** (#181,
    [ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md)) :
 
-   | À l'ouverture                     | Conduite                                                                                                                                                                                                          |
-   | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-   | une racine fait autorité          | chemin normal — les pas 5 à 9 ci-dessous ; l'engagement n'est pas consulté                                                                                                                                        |
-   | pas de racine, engagement présent | vérifier l'engagement **avant tout clair** ; s'il ouvre : écarter la charge trouvée s'il y en a une, écrire aussitôt la **racine initiale**, puis RETIRER le voisin ; sinon : `VAULT_STORAGE_ENGAGEMENT_INVALIDE` |
-   | pas de racine, engagement absent  | `VAULT_STORAGE_VOLUME_SANS_RACINE`, **avant tout clair**                                                                                                                                                          |
+   | À l'ouverture                     | Conduite                                                                                                                                                                                                                |
+   | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | une racine fait autorité          | chemin normal — les pas 5 à 9 ci-dessous ; l'engagement n'est pas consulté. Un voisin qui traîne là est VIDÉ et l'ouverture le publie (`voisinIgnore`, § 6.9 bis)                                                       |
+   | pas de racine, engagement présent | vérifier l'engagement **avant tout clair** ; s'il ouvre : écrire la **racine initiale**, la rendre durable, puis tronquer ce que le journal portait, puis VIDER le voisin ; sinon : `VAULT_STORAGE_ENGAGEMENT_INVALIDE` |
+   | pas de racine, engagement absent  | `VAULT_STORAGE_VOLUME_SANS_RACINE`, **avant tout clair**                                                                                                                                                                |
 
    Le cas « au moins une racine ABÎMÉE » reste ce qu'il est :
    `VAULT_STORAGE_GENERATION_ROOT_CORRUPT`, inchangé, et il tombe **avant** toute autorisation —
    vérifier un engagement coûte l'empreinte de tout le fichier, et un journal dont on ne sait plus
    ce qu'il a validé est refusé de toute façon.
 
+   **L'ORDRE DES DEUX GESTES DU MILIEU est délibéré, et il est l'inverse de l'ordre naïf** (précisé
+   le 11 septembre 2026, revue de format de la PR #184, constat 7) : la racine initiale est écrite
+   et rendue DURABLE **avant** que le journal ne soit tronqué. Tronquer d'abord retirerait du
+   fichier les octets qu'une racine encore autoritaire déclare toujours, et une coupure entre les
+   deux laisserait une racine annonçant `L` octets au-dessus d'un fichier qui n'en porte plus aucun
+   — c'est-à-dire un volume REFUSÉ par `VAULT_STORAGE_GENERATION_CORRUPT` alors que ses octets sont
+   intacts. Dans l'ordre retenu, les deux interruptions possibles sont sûres.
+
    **L'engagement est CONSOMMÉ une fois**, jamais vérifié à chaque ouverture : une fois la racine
-   initiale écrite, c'est la fraîcheur du § 6.8 qui prend le relais. Le voisin est retiré **après**
-   que la racine soit durable — l'ordre inverse laisserait, sur une coupure, un volume sans racine
-   et sans engagement, c'est-à-dire irrécupérable.
+   initiale écrite, c'est la fraîcheur du § 6.8 qui prend le relais. Le voisin est VIDÉ — zéro
+   octet, § 6.9 bis — **après** que la racine soit durable ; l'ordre inverse laisserait, sur une
+   coupure, un volume sans racine et sans engagement, c'est-à-dire irrécupérable. Ces deux ordres
+   sont tenus par des mutants, chacun tué par une épreuve qui MESURE l'ordre des gestes, dans
+   `tests/unit/vm-archive-melange-etats.test.mjs` : « ORDRE — une racine ABÎMÉE refuse AVANT
+   l'autorisation, et ne coûte pas l'empreinte du fichier » et « ORDRE — la racine initiale est
+   ÉCRITE avant que l'engagement ne soit consommé ».
+
+   **CE QUE L'INDISTINCTION DES CAUSES COUVRE, ET CE QU'ELLE NE COUVRE PAS** (ajouté le 11 septembre
+   2026, revue de sécurité de la PR #184, constat 3). Un engagement refusé rend TOUJOURS le même
+   CODE et le même MESSAGE, quelle qu'en soit la cause — étiquette forgée, sel modifié, descripteur
+   contredit, empreinte discordante —, et c'est délibéré : les distinguer donnerait un oracle sur ce
+   qui a été manqué. **L'indistinction ne porte PAS sur la DURÉE.** Le descripteur est confronté
+   AVANT que l'empreinte du fichier ne soit calculée, si bien qu'un refus « ce voisin parle d'un
+   autre volume » coûte une fraction de milliseconde là où un refus « l'étiquette ne vérifie pas »
+   coûte une relecture complète du fichier — 0,4 ms contre ~20 ms sur 2 Mio, mesuré ; 0,4 ms contre
+   plusieurs secondes sur 512 Mio. Un observateur qui chronomètre apprend donc si ce qu'il a altéré
+   est l'identité ou la géométrie du volume, ou autre chose. **C'est le compromis retenu**, et il
+   est opérationnel : l'ordre inverse ferait relire un demi-gibioctet à chaque voisin forgé,
+   c'est-à-dire offrirait un déni de service à plusieurs secondes par tentative, contre un oracle
+   qui n'apprend rien que l'adversaire ne sache déjà — il a forgé le voisin, il sait ce qu'il y a
+   mis. Voir § 9.4.
 
    **Une ouverture qui ÉCRIT est un geste nouveau sur ce chemin, et il est PUBLIÉ** : le rapport
    d'ouverture porte `racineInitiale: true` et le motif — `creation`, `migration` ou `engagement`.
@@ -1432,8 +1506,12 @@ d'ouvrir le volume. Ce qu'un tel support obtient reste une **destruction, jamais
 > chiffré ENTIER, scellé sous une clé du domaine `archive` dérivée de la DEK ; la restauration le
 > dépose à côté du volume ; la première ouverture le vérifie AVANT tout clair, écrit la racine
 > initiale, puis retire le voisin. Et, pour que ce refus soit atteignable, **aucun volume légitime
-> n'est sans racine** (§ 7.1). Les archives v1 et v2 sont REFUSÉES : elles ne portent aucun
-> engagement, et c'est exactement le défaut.
+> n'est sans racine** (§ 7.1). Les archives v1 et v2 sont REFUSÉES — **parce que leur CONTENEUR est
+> d'une version que ce runtime ne lit plus** (`ARCHIVE_FORMAT_VERSIONS_LUES = [3]`, refus
+> `VAULT_ARCHIVE_VERSION_NON_LUE`). La formulation antérieure disait « parce qu'elles ne portent
+> aucun engagement » : c'est faux, et de deux façons — ce n'est pas la cause du refus, et « pas
+> d'engagement » n'implique pas « refus », comme l'archive de volume antérieur ci-dessous le montre
+> (corrigé le 11 septembre 2026, revue de format de la PR #184, constat 2).
 
 **L'archive porte le fichier v3 TEL QUEL — chiffré — et son manifeste v3.** L'intégrité est prouvée
 par l'empreinte SHA-256 du fichier ; la restauration recopie les octets **sans clé** ; la clé n'est
@@ -1517,6 +1595,49 @@ Deux conséquences à écrire :
 > `<volume>.engagement` (§ 6.9 bis), entre l'enveloppe de récupération et le manifeste. C'est
 > l'OUVERTURE qui le confronte, selon les trois cas du § 7.3.
 >
+> **`tailleSupport` et `longueurDuContenu` COÏNCIDENT dans le format actuel**, et il faut le dire :
+> la section de contenu EST le fichier entier, si bien que les deux champs des données associées
+> portent toujours la même valeur. Ils restent DISTINCTS pour qu'une archive future dont la section
+> de contenu ne serait pas le fichier entier — une archive partielle, un conteneur à plusieurs
+> sections de volume — n'ait pas à changer les données associées, donc à changer la clé de tout ce
+> qui existe. Un relecteur qui dérive l'encodage de ce paragraphe ne pouvait pas le deviner (précisé
+> le 11 septembre 2026, revue de format de la PR #184, constat 6).
+>
+> **UNE ARCHIVE v3 D'UN VOLUME ANTÉRIEUR À v3 DÉCLARE `"engagement": null`, EXPLICITEMENT.** C'est
+> une forme du format persistant, contractuelle dans les deux sens : le produit l'écrit, et la
+> restauration l'EXIGE — un champ absent est refusé (`VAULT_ARCHIVE_ENGAGEMENT_ABSENT`), un champ
+> non nul sur un manifeste antérieur à v3 aussi. C'est la règle de `recovery`, mot pour mot : un
+> champ absent laisserait croire à un en-tête d'une autre version, un champ nul dit « ce volume n'a
+> rien à engager ».
+>
+> ```json
+> {
+>   "magic": "railsbox-vault/volume-archive",
+>   "archiveFormatVersion": 3,
+>   "content": { "algorithm": "sha-256", "digest": "<64 hex>", "length": 1024, "consistency": {} },
+>   "recovery": null,
+>   "engagement": null,
+>   "manifest": { "formatVersion": 2, "geometry": { "volumeSize": 1024 } }
+> }
+> ```
+>
+> **Pourquoi cette forme existe** : un volume antérieur à v3 n'est pas chiffré, ne porte aucun
+> identifiant de volume, et n'a donc ni clé ni identité à engager. L'interdire rendrait impossible
+> la sauvegarde que l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md) exige **avant**
+> une migration v2 → v3, c'est-à-dire avant le seul pas destructif du dépôt.
+>
+> **Elle n'est PAS authentifiée, et sa restauration ne l'est pas non plus.** La restauration ne
+> dépose AUCUN voisin d'engagement ; le volume qu'elle pose est refusé à l'ouverture par
+> `VAULT_STORAGE_VOLUME_SANS_RACINE` sur le chemin direct, et par
+> `VAULT_MANIFEST_MIGRATION_REQUIRED` sur le chemin du produit, dont la garde de manifeste vient en
+> amont. Les secteurs d'un volume v2 ne sont authentifiés par rien — par construction, c'est ce que
+> la v3 ajoute —, et ils ne le deviennent qu'à la migration qui les rechiffre. Une archive de ce
+> type protège donc contre l'ACCIDENT, comme une archive v1 ou v2 le faisait, et contre rien
+> d'autre.
+>
+> Vecteur figé : `tests/vectors/archive-v3.json` › `archiveDeVolumeAnterieur`, vérifié par
+> `node tools/verifier-vecteurs.mjs` depuis le seul texte de ce paragraphe.
+
 > **Ce que ce refus prouve, et ce qu'il ne prouve pas.** Il est tenu contre le mélange et contre le
 > retrait du voisin. Il ne couvre PAS le rejeu d'une archive **entière et cohérente** : c'est le
 > retour arrière complet du § 9.1, inchangé. Un volume v3 créé avant cette date est refusé, comme
@@ -1715,6 +1836,16 @@ SAUF contre un adversaire qui en détient une copie antérieure** — celui de
 cette PR a corrigé la correction — la première rédaction affirmait que « le témoin le tranche »,
 sans sa réserve.
 
+**Le RETOUR ARRIÈRE VERS LA NAISSANCE est un cas de ce paragraphe, et il ne demande AUCUNE archive**
+(ajouté le 11 septembre 2026, revue de sécurité de la PR #184, constat 10). Depuis #181, chaque
+création fabrique elle-même un instantané cohérent à trois fichiers — le fichier de volume scellé,
+son journal portant la racine initiale, son témoin — et un adversaire qui les repose ENSEMBLE sur un
+volume vivant obtient une ouverture ACCEPTÉE, `fraicheur: "verifiee"`, rendant l'état de la
+naissance. Reposer le **fichier seul** est bien refusé (`VAULT_STORAGE_GENERATION_CORRUPT`, cause
+`VAULT_FRAICHEUR_REGION`) ; les trois ensemble ne le sont pas, parce que les trois ensemble SONT un
+état que ce volume a réellement produit. C'est la limite ci-dessus, sans rien de neuf — mais le prix
+de l'attaque a baissé, et le dire coûte une phrase.
+
 ### 9.2 Le journal de migration n'est ni chiffré ni authentifié
 
 `<volume>.migration` porte le manifeste source, la preuve de sauvegarde retenue, l'étape franchie et
@@ -1757,6 +1888,17 @@ Sont **observables** d'un support hostile, sans la clé :
 Rien n'est fait contre eux, et rien ne prétend le contraire. Le **temps** n'est pas modélisé non
 plus : le format n'emploie une comparaison à temps constant que pour les empreintes qu'il compare
 lui-même, et laisse au moteur la responsabilité de sa propre vérification d'étiquette.
+
+**Un cas MESURÉ, et nommé plutôt que laissé à découvrir** (ajouté le 11 septembre 2026, revue de
+sécurité de la PR #184, constat 3) : `VAULT_STORAGE_ENGAGEMENT_INVALIDE` rend une seule cause, mais
+sa DURÉE en distingue deux. Le descripteur du voisin est confronté au volume AVANT que l'empreinte
+du fichier ne soit calculée ; un refus « ce voisin parle d'un autre volume » coûte donc 0,4 ms là où
+un refus « l'étiquette ne vérifie pas » coûte 20,4 ms sur un volume de 2 Mio, et plusieurs secondes
+sur 512 Mio. Un observateur qui chronomètre apprend si ce qu'il a altéré est l'identité ou la
+géométrie, ou autre chose. **L'ordre est conservé délibérément** : l'inverser ferait relire le
+fichier entier à chaque voisin forgé — un déni de service à plusieurs secondes par tentative — pour
+fermer un oracle qui n'apprend rien à qui a forgé le voisin lui-même. L'indistinction promise porte
+sur le CODE et le MESSAGE, jamais sur la durée.
 
 ### 9.5 Ce qui est hors du format par construction
 
@@ -2101,6 +2243,7 @@ Le reste de la famille, avec sa conduite :
 | `VAULT_STORAGE_VOLUME_INCOMPLET`        | création ou conversion interrompue : la marque de scellement manque                                                                                                | **supprimer et recréer**, pas restaurer          |
 | `VAULT_STORAGE_VOLUME_SANS_RACINE`      | aucune racine ne fait autorité, et rien n'autorise à en écrire une (#181)                                                                                          | restaurer depuis l'archive                       |
 | `VAULT_STORAGE_ENGAGEMENT_INVALIDE`     | un engagement d'archive est présent et n'autorise pas cette ouverture (#181)                                                                                       | restaurer de nouveau depuis l'archive            |
+| `VAULT_STORAGE_CREATION_NON_CONFIRMEE`  | la datation d'une création ne peut pas confirmer ce que le versement a écrit : empreinte absente, ou fichier trouvé différent (#181, § 7.1)                        | recommencer l'installation                       |
 | `VAULT_STORAGE_GENERATION_CORRUPT`      | une génération VALIDÉE ne concorde plus (rejeu, troncature, mélange, fraîcheur)                                                                                    | restaurer une sauvegarde                         |
 | `VAULT_STORAGE_GENERATION_ROOT_CORRUPT` | une racine abîmée dont rien ne dit ce qu'elle validait : soit aucune n'est lisible, soit une racine est retenue mais AUCUN témoin ne dit laquelle faisait autorité | restaurer une sauvegarde                         |
 | `VAULT_STORAGE_GENERATION_DISCARDED`    | des octets déposés au-delà de ce que la racine retenue authentifie ont été écartés. **Ce n'est pas une panne** : c'est le résultat normal d'une coupure            | rien — publié, jamais tu                         |
@@ -2149,7 +2292,23 @@ pas les mêmes — dans le premier cas le volume est antérieur à la règle, ou
 dans le second, l'archive ou le volume restauré a été altéré. Le second ne rend **qu'une seule
 cause**, et c'est délibéré : étiquette forgée, sel modifié, descripteur contredit, empreinte qui ne
 concorde pas — les distinguer donnerait à un adversaire un oracle sur ce qu'il a manqué. Le CONTEXTE
-porte le détail pour l'exploitant ; le CODE est le même.
+porte le détail pour l'exploitant ; le CODE est le même. **L'indistinction porte sur le code et le
+message, PAS sur la durée** : voir le § 7.3 et le § 9.4, où la mesure et le compromis sont écrits.
+
+**Un TROISIÈME code ajouté le 11 septembre 2026** (revue de sécurité de la PR #184, constat 1) :
+`VAULT_STORAGE_CREATION_NON_CONFIRMEE`. Il ne parle d'aucune archive, et c'est ce qui le sépare des
+deux précédents — il tombe sur le chemin de la CRÉATION, quand un versement hors transaction a
+relâché le fichier et que la datation qui le rouvre ne retrouve pas ce qui y avait été écrit (§
+7.1). Son remède n'est pas de restaurer mais de **recommencer l'installation** : rien n'est déclaré
+installé, et l'archive n'est pour rien dans cette affaire.
+
+**Les trois ont une CONDUITE écrite pour la personne qui les lira**
+(`src/coquille/interface-de-deverrouillage.mjs`). Le message de cette table est celui de
+l'exploitant — il cite un numéro d'issue et le nom d'un fichier voisin ; ce que l'utilisateur voit
+dit un geste, et rien d'autre. Le contexte structuré du refus (`{ voisin, champ, taille }`) reste
+dans la coquille et ne franchit jamais le port : l'ADR 0028 n'est pas touché. Épreuve :
+`tests/unit/coquille-deverrouillage.test.mjs` › « la conduite d'un refus de #181 dit un GESTE, et
+jamais ce que l'exploitant lit ».
 
 ### 10.3 Les refus des voisins hors périmètre
 
@@ -2211,21 +2370,21 @@ Les refus de compatibilité du manifeste (`VAULT_MANIFEST_FORMAT_TOO_NEW`, `_IDE
 **L'export et la restauration (§ 7.5).** Deux familles distinctes, l'une pour l'INTÉGRITÉ d'une
 archive, l'autre pour l'écriture de sa cible.
 
-| Code                                 | Ce qu'il constate                                                                                                                                                                                            | Conduite                                                   |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| `VAULT_ARCHIVE_MALFORMED`            | l'entrée n'est pas structurellement une archive : marqueur absent, en-tête illisible, version non prise en charge, champ `recovery` absent d'une v2 ou déclaré par une v1, octets au-delà de la fin déclarée | l'archive est inexploitable                                |
-| `VAULT_ARCHIVE_TRUNCATED`            | l'archive est plus courte que ce que son en-tête déclare                                                                                                                                                     | l'archive est inexploitable                                |
-| `VAULT_ARCHIVE_DIGEST_MISMATCH`      | l'empreinte recalculée du CONTENU diffère de celle inscrite                                                                                                                                                  | l'archive est inexploitable                                |
-| `VAULT_ARCHIVE_GEOMETRY_MISMATCH`    | la longueur du contenu contredit la géométrie du manifeste ou de l'en-tête                                                                                                                                   | l'archive est inexploitable                                |
-| `VAULT_ARCHIVE_RECUPERATION_ALTEREE` | l'empreinte recalculée de la SECTION DE RÉCUPÉRATION diffère de celle inscrite (#149)                                                                                                                        | réexporter : les données, elles, sont peut-être intactes   |
-| `VAULT_ARCHIVE_RECUPERATION_REFUSEE` | la section n'est pas une enveloppe de récupération SEULE — illisible, mauvaise taille, emplacement d'un autre type que 4, descripteur ou identité de volume qui ne s'accordent pas avec la page (#149)       | ne pas restaurer : la provenance de l'archive est en cause |
-| `VAULT_ARCHIVE_VERSION_NON_LUE`      | l'archive porte une version que ce runtime ne lit pas — v1, v2, ou une version future (#181). Distinct de `MALFORMED` : le conteneur est reconnu, et c'est sa VERSION qui est refusée                        | réexporter depuis le volume                                |
-| `VAULT_ARCHIVE_ENGAGEMENT_ABSENT`    | une archive v3 ne déclare aucun engagement, en déclare un illisible, ou décrit un volume sans identifiant (#181)                                                                                             | ne pas restaurer : l'archive n'atteste rien                |
-| `VAULT_IMPORT_TARGET_NOT_EMPTY`      | la cible porte déjà un volume, jamais écrasée sans consentement explicite                                                                                                                                    | choisir une autre cible ou consentir                       |
-| `VAULT_IMPORT_SPACE_INSUFFICIENT`    | l'espace estimé est inférieur au volume à restaurer, refusé AVANT toute mutation                                                                                                                             | libérer de la place                                        |
-| `VAULT_IMPORT_GEOMETRY_MISMATCH`     | la cible ouverte n'a pas la taille du volume de l'archive                                                                                                                                                    | choisir une cible de la bonne taille                       |
-| `VAULT_IMPORT_VERIFICATION_FAILED`   | la relecture du volume restauré ne rend pas l'empreinte de l'archive                                                                                                                                         | réexporter la source                                       |
-| `VAULT_IMPORT_CONSENTEMENT_REQUIS`   | l'archive est ANTÉRIEURE à la version d'enveloppe notée sur la feuille de récupération (#149)                                                                                                                | relire la feuille ; à défaut, consentir NOMMÉMENT          |
+| Code                                 | Ce qu'il constate                                                                                                                                                                                                                                                             | Conduite                                                   |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `VAULT_ARCHIVE_MALFORMED`            | l'entrée n'est pas structurellement une archive : marqueur absent, en-tête illisible, version non prise en charge, champ `recovery` absent d'une v2 ou déclaré par une v1, octets au-delà de la fin déclarée                                                                  | l'archive est inexploitable                                |
+| `VAULT_ARCHIVE_TRUNCATED`            | l'archive est plus courte que ce que son en-tête déclare                                                                                                                                                                                                                      | l'archive est inexploitable                                |
+| `VAULT_ARCHIVE_DIGEST_MISMATCH`      | l'empreinte recalculée du CONTENU diffère de celle inscrite                                                                                                                                                                                                                   | l'archive est inexploitable                                |
+| `VAULT_ARCHIVE_GEOMETRY_MISMATCH`    | la longueur du contenu contredit la géométrie du manifeste ou de l'en-tête                                                                                                                                                                                                    | l'archive est inexploitable                                |
+| `VAULT_ARCHIVE_RECUPERATION_ALTEREE` | l'empreinte recalculée de la SECTION DE RÉCUPÉRATION diffère de celle inscrite (#149)                                                                                                                                                                                         | réexporter : les données, elles, sont peut-être intactes   |
+| `VAULT_ARCHIVE_RECUPERATION_REFUSEE` | la section n'est pas une enveloppe de récupération SEULE — illisible, mauvaise taille, emplacement d'un autre type que 4, descripteur ou identité de volume qui ne s'accordent pas avec la page (#149)                                                                        | ne pas restaurer : la provenance de l'archive est en cause |
+| `VAULT_ARCHIVE_VERSION_NON_LUE`      | l'archive porte une version que ce runtime ne lit pas — v1, v2, ou une version future (#181). Distinct de `MALFORMED` : le conteneur est reconnu, et c'est sa VERSION qui est refusée                                                                                         | réexporter depuis le volume                                |
+| `VAULT_ARCHIVE_ENGAGEMENT_ABSENT`    | une archive v3 ne déclare aucun engagement (champ ABSENT), en déclare un illisible, en déclare un **là où le volume est antérieur à v3**, ou décrit un volume v3 sans identifiant (#181). La forme LÉGITIME d'un volume antérieur est `"engagement": null`, explicite — § 7.5 | ne pas restaurer : l'archive n'atteste rien                |
+| `VAULT_IMPORT_TARGET_NOT_EMPTY`      | la cible porte déjà un volume, jamais écrasée sans consentement explicite                                                                                                                                                                                                     | choisir une autre cible ou consentir                       |
+| `VAULT_IMPORT_SPACE_INSUFFICIENT`    | l'espace estimé est inférieur au volume à restaurer, refusé AVANT toute mutation                                                                                                                                                                                              | libérer de la place                                        |
+| `VAULT_IMPORT_GEOMETRY_MISMATCH`     | la cible ouverte n'a pas la taille du volume de l'archive                                                                                                                                                                                                                     | choisir une cible de la bonne taille                       |
+| `VAULT_IMPORT_VERIFICATION_FAILED`   | la relecture du volume restauré ne rend pas l'empreinte de l'archive                                                                                                                                                                                                          | réexporter la source                                       |
+| `VAULT_IMPORT_CONSENTEMENT_REQUIS`   | l'archive est ANTÉRIEURE à la version d'enveloppe notée sur la feuille de récupération (#149)                                                                                                                                                                                 | relire la feuille ; à défaut, consentir NOMMÉMENT          |
 
 `VAULT_ARCHIVE_VOLUME_CHIFFRE` et `VAULT_IMPORT_VOLUME_CHIFFRE` ont existé et sont **retirés depuis
 le 6 septembre 2026** (#139) — voir § 10.2 et § 12, écart 2 — et n'apparaissent donc pas dans ces

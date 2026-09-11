@@ -231,7 +231,11 @@ test("chaque épreuve que la spécification cite existe réellement", async () =
 });
 
 test("les NOMS d'épreuve que la spécification cite se retrouvent dans le fichier cité", async () => {
-  const spec = await lire(SPEC);
+  // Les marqueurs de CITATION en début de ligne (« > ») sont retirés avant l'extraction : un renvoi
+  // posé dans un encadré d'amendement — la forme que prend chaque révision datée de ce document —
+  // est reflué par Prettier comme le reste de la prose, et le « > » de la ligne suivante tombait
+  // alors AU MILIEU du nom cité. La garde rougissait sur une mise en page, pas sur un fond.
+  const spec = (await lire(SPEC)).replace(/^[ \t]*>[ \t]?/gm, "");
   // Forme retenue dans la spécification : `chemin` › « nom exact du test ». Le nom est cité entre
   // guillemets français pour qu'une recherche textuelle suffise à le retrouver.
   const renvois = [

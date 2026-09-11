@@ -302,16 +302,24 @@ nécessaire, l'ADR 0028 fixe la forme — préfixe `__Host-`, rien sur le domain
   par un SHA-256 recalculable — un mélange de secteurs authentiques venus de deux états du même
   volume, un état **jamais produit**, se restaurait, s'ouvrait et se lisait en clair, sans refus.
   Une archive v3 porte désormais un **engagement** scellé sous une clé du domaine `archive` ; la
-  première ouverture le vérifie AVANT tout clair, écrit la racine initiale, puis retire le voisin ;
-  et **aucun volume légitime n'est sans racine**, ce qui rend le retrait du voisin refusable plutôt
+  première ouverture le vérifie AVANT tout clair, écrit la racine initiale, puis vide le voisin ; et
+  **aucun volume légitime n'est sans racine**, ce qui rend le retrait du voisin refusable plutôt
   qu'exploitable. **Ce qui reste hors de portée est nommé** : le rejeu d'une archive ENTIÈRE et
   cohérente, c'est-à-dire le retour arrière complet du support — § 9.1 du dossier, ancrage monotone
-  renvoyé à [#23](https://github.com/pinfada/railsbox-vault/issues/23). **EXERCÉ par le produit
-  depuis #19** ([ADR 0019](docs/decisions/0019-fraicheur-du-volume.md)), pour ce qui peut l'être —
-  et ce qui ne le peut pas est nommé plus bas, pas masqué. #18 en avait posé la moitié matérielle :
-  la racine v3 authentifie séquence, génération, nombre d'entrées, longueur de charge et empreinte
-  de la suite ordonnée. Ce qui manquait était l'autre moitié, et elle manquait en silence — les
-  contrôles de SÉQUENCE n'étaient présentés par AUCUN chemin, `generationMinimale` et
+  renvoyé à [#23](https://github.com/pinfada/railsbox-vault/issues/23). **Et une limite de plus,
+  écrite le 11 septembre 2026 après la revue de sécurité de la PR #184** : le refus d'un engagement
+  rend toujours le même CODE et le même MESSAGE, quelle qu'en soit la cause, mais **pas la même
+  DURÉE**. L'identité et la géométrie déclarées par le voisin sont confrontées avant que l'empreinte
+  du fichier ne soit calculée ; un observateur qui chronomètre apprend donc si ce qu'il a altéré est
+  l'identité du volume ou son étiquette — 0,4 ms contre ~20 ms sur 2 Mio, mesuré. L'ordre est
+  conservé délibérément : l'inverser offrirait un déni de service à plusieurs secondes par tentative
+  pour fermer un oracle qui n'apprend rien à qui a forgé le voisin lui-même. L'indistinction promise
+  porte sur le code et le message, jamais sur la durée (§ 7.3 et § 9.4 du dossier). **EXERCÉ par le
+  produit depuis #19** ([ADR 0019](docs/decisions/0019-fraicheur-du-volume.md)), pour ce qui peut
+  l'être — et ce qui ne le peut pas est nommé plus bas, pas masqué. #18 en avait posé la moitié
+  matérielle : la racine v3 authentifie séquence, génération, nombre d'entrées, longueur de charge
+  et empreinte de la suite ordonnée. Ce qui manquait était l'autre moitié, et elle manquait en
+  silence — les contrôles de SÉQUENCE n'étaient présentés par AUCUN chemin, `generationMinimale` et
   `sequenceMinimale` valant `null` partout, si bien que les refus de rejeu étaient du code mort. #19
   les arme. Quatre propriétés, chacune avec son refus typé :
 

@@ -91,6 +91,32 @@ authentifie exactement aussi bien et n'introduit AUCUNE primitive neuve. L'ADR 0
 algorithme ; en ajouter un second coûterait une famille de vecteurs, un nom dans le manifeste et une
 question d'agilité de plus.
 
+### Une archive v3 d'un volume ANTÉRIEUR à v3 déclare son engagement NUL
+
+_Ajouté le 11 septembre 2026 — revue de format de la PR #184, constat 2._
+
+Un volume antérieur à v3 n'est pas chiffré, ne porte aucun identifiant de volume, et n'a donc ni clé
+ni identité à engager. Son archive déclare `"engagement": null`, **explicitement** : un champ absent
+est refusé, un champ non nul sur un manifeste antérieur à v3 aussi. C'est la règle de `recovery`,
+mot pour mot.
+
+**Pourquoi cette forme doit exister** : sans elle, la sauvegarde que l'ADR 0011 exige AVANT une
+migration v2 → v3 — le seul pas destructif du dépôt — deviendrait impossible. On n'interdit pas de
+sauvegarder ce qu'on s'apprête à réécrire.
+
+**Sa LIMITE, écrite** : cette archive n'est **pas authentifiée**, et sa restauration ne dépose aucun
+voisin d'engagement. Les secteurs d'un volume v2 ne sont authentifiés par rien — par construction ;
+c'est ce que la v3 ajoute — et ils ne le deviennent qu'à la migration qui les rechiffre. Le volume
+qu'une telle archive pose est refusé à l'ouverture : `VAULT_STORAGE_VOLUME_SANS_RACINE` sur le
+chemin direct, `VAULT_MANIFEST_MIGRATION_REQUIRED` sur le chemin du produit, dont la garde de
+manifeste vient en amont. Elle protège contre l'ACCIDENT, comme une archive v1 ou v2 le faisait, et
+contre rien d'autre.
+
+Cette forme est FIGÉE depuis le 11 septembre 2026 : `tests/vectors/archive-v3.json` ›
+`archiveDeVolumeAnterieur`, vérifiée par `tools/verifier-vecteurs.mjs` depuis le seul texte du §
+7.5. Elle ne l'était pas, si bien qu'un état que le produit ÉCRIT et EXIGE n'avait aucun contrat
+d'octets.
+
 ## Décision 2 — La clé vient du domaine `archive`, à usage unique
 
 `HKDF-SHA-256(IKM = DEK, sel = 32 octets TIRÉS et écrits en clair dans l'archive, info)`, avec
@@ -152,6 +178,52 @@ d'inscrire le manifeste.
 un journal qui porte autre chose que la racine initiale d'une création — dater un volume en service
 écarterait une génération validée, ce que `SEC-DURABLE-001` interdit.
 
+#### Ce que la DATATION bénit, et ce qui l'y autorise
+
+_Ajouté le 11 septembre 2026 — revue de sécurité de la PR #184, constat 1 (CRITICAL)._
+
+La décision 4 justifiait les motifs `creation` et `migration` par une phrase : « celui qui vient
+d'écrire le fichier entier SAIT que ces octets sont les siens ». **Sur le chemin du versement, elle
+était fausse**, et il faut dire exactement pourquoi : le versement FERME le fichier, la datation le
+ROUVRE, et **l'intervalle n'appartient à personne**. Le geste qui date n'est pas le geste qui a
+écrit, et rien ne les reliait. Un adversaire qui sait écrire dans l'OPFS (ADR 0019 § 6.9) y posait
+le fichier d'un autre volume entre les deux ; l'installation se déclarait réussie, et l'ouverture
+suivante rendait EN CLAIR un état que ce volume n'a jamais produit — le CRITICAL de #181, déplacé du
+chemin de restauration vers le chemin de création.
+
+**Ce qui referme la fenêtre est une EMPREINTE.** Le versement hors transaction rend le SHA-256 du
+fichier qu'il vient d'écrire, pris **avant** de relâcher son exclusivité — ce n'est donc pas une
+relecture qu'un tiers aurait pu influencer, c'est le constat de ce que ce geste-là a laissé, à un
+instant où aucun autre détenteur n'existait. `daterLaCreation` reçoit cette empreinte et la
+CONFRONTE à `backend.empreinteDuFichier()` sous une exclusivité NEUVE, **avant** d'écrire la racine.
+Deux empreintes égales disent que l'intervalle n'a rien changé : c'est cela, et cela seulement, qui
+rend vraie la phrase « ces octets sont les siens » — ce n'est pas le geste qui le sait, c'est
+l'empreinte qui le relie.
+
+Une empreinte **absente** refuse elle aussi. Traiter « rien à confronter » comme « donc autorisé »
+rouvrirait la fenêtre pour quiconque oublie un paramètre ; la direction sûre est le refus. Code :
+`VAULT_STORAGE_CREATION_NON_CONFIRMEE`, et **l'installation n'est PAS déclarée réussie**.
+
+Les deux autres motifs n'ont pas de fenêtre à fermer, et il faut le dire pour ne pas croire la garde
+oubliée : une NAISSANCE vient d'allouer et de sceller le fichier **sous l'exclusivité qu'elle tient
+encore** ; une MIGRATION réécrit le fichier par un accès brut qu'elle ne relâche pas avant de dater.
+Dans ces deux cas, le geste qui écrit et le geste qui date sont le même.
+
+#### La datation EXIGE le journal d'une naissance
+
+_Ajouté le 11 septembre 2026 — revue de sécurité, constat 2 ; revue de format, constat 1._
+
+La garde refusait un journal portant une séquence, une génération, des entrées ou une charge, et
+**acceptait un journal VIDE** — c'est-à-dire exactement l'état qu'une RESTAURATION laisse derrière
+elle. `daterLaCreation` est exporté par la surface publique du module de volume : c'était un second
+chemin vers la racine initiale, sous le motif `creation`, posable sur un volume restauré que
+l'ouverture venait de refuser. Le mélange A/C de #181 se datait, puis se rouvrait en clair.
+
+La racine de naissance est désormais **EXIGÉE** : présente, séquence 0, génération 0, aucune entrée.
+Le discriminant est exact et gratuit — une création en écrit toujours une, une restauration n'en
+écrit aucune. Aucun chemin du produit ne menait au défaut ; la garde est ce qui empêche la prochaine
+tranche d'y mener sans le voir.
+
 ## Décision 5 — Qui vérifie, quand, et les trois cas de l'ouverture
 
 **La restauration n'a pas la clé** (§ 7.5 : elle recopie sans clé, et c'est une propriété qu'on
@@ -161,11 +233,11 @@ d'archive lue —, refuse une archive de version non lue, et **DÉPOSE l'engagem
 
 L'**ouverture** décide ensuite selon trois cas, et il n'y en a pas de quatrième :
 
-| À l'ouverture                     | Conduite                                                                                                                                                                                                              |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| une racine fait autorité          | chemin normal, inchangé — l'engagement n'est pas consulté                                                                                                                                                             |
-| pas de racine, engagement présent | vérifier l'engagement **avant tout clair** ; s'il ouvre : écarter la charge trouvée s'il y en a une, écrire aussitôt la **racine initiale**, puis **RETIRER** le voisin ; sinon : `VAULT_STORAGE_ENGAGEMENT_INVALIDE` |
-| pas de racine, engagement absent  | `VAULT_STORAGE_VOLUME_SANS_RACINE`, **avant tout clair**                                                                                                                                                              |
+| À l'ouverture                     | Conduite                                                                                                                                                                                                               |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| une racine fait autorité          | chemin normal, inchangé — l'engagement n'est pas consulté                                                                                                                                                              |
+| pas de racine, engagement présent | vérifier l'engagement **avant tout clair** ; s'il ouvre : écrire la **racine initiale**, la rendre durable, tronquer ce que le journal portait, puis **VIDER** le voisin ; sinon : `VAULT_STORAGE_ENGAGEMENT_INVALIDE` |
+| pas de racine, engagement absent  | `VAULT_STORAGE_VOLUME_SANS_RACINE`, **avant tout clair**                                                                                                                                                               |
 
 Le cas « au moins une racine abîmée » reste ce qu'il est : un refus, inchangé
 (`VAULT_STORAGE_GENERATION_ROOT_CORRUPT`), et il tombe **avant** toute autorisation — vérifier un
@@ -174,8 +246,53 @@ validé est refusé de toute façon.
 
 **L'engagement est CONSOMMÉ une fois**, jamais « vérifié à chaque ouverture ». Une fois la racine
 initiale écrite, c'est la fraîcheur de l'ADR 0019 qui prend le relais, et le voisin n'a plus de
-rôle. Il est retiré **après** que la racine soit durable : l'ordre inverse laisserait, sur une
+rôle. Il est vidé **après** que la racine soit durable : l'ordre inverse laisserait, sur une
 coupure, un volume sans racine et sans engagement, c'est-à-dire irrécupérable.
+
+### CONSOMMÉ veut dire VIDÉ, pas supprimé
+
+_Précisé le 11 septembre 2026 — revue de format de la PR #184, constat 4._
+
+Ce document et le § 7.3 écrivaient « RETIRER ». Le code fait `truncate(0)` puis une barrière : **le
+fichier survit, à zéro octet**. Le texte suit le code, et non l'inverse, pour deux raisons dont la
+première suffit : un Worker dédié n'a pas de handle de répertoire, donc pas de suppression d'entrée
+— `removeOpfsVolume` en a un, la consommation non ; et la troncature est de toute façon le geste sûr
+sous coupure, là où une suppression suivie d'une coupure laisserait un état de moins. Un voisin de
+zéro octet **est** absent pour tout ce qui le lit, `voisinsDunVolume` le connaît toujours, et le
+balayage des orphelins de #145 ne réécrit pas un voisin déjà vide.
+
+Conséquence à dire : une ouverture REFUSÉE par `VAULT_STORAGE_VOLUME_SANS_RACINE` laisse derrière
+elle un `.engagement` de zéro octet que le volume ne portait pas, `openOpfsSyncAccess` ouvrant avec
+`{ create: true }` — même conduite que pour `.gen` et `.temoin`, donc pas un défaut, mais à écrire.
+
+### Un voisin REPOSÉ sur un volume qui a déjà une racine est VIDÉ, et l'ouverture le PUBLIE
+
+_Ajouté le 11 septembre 2026 — revue de sécurité de la PR #184, constat 9._
+
+Le premier cas du tableau dit que l'engagement n'est pas consulté quand une racine fait autorité. Un
+adversaire qui repose le voisin après consommation n'obtient donc rien — mais le rapport d'ouverture
+ne disait rien de lui, alors qu'il publie `racineInitiale` et `motifDeLaRacine` précisément « parce
+qu'un contrôle qu'on ne publie pas finit par être supposé actif ». Un reliquat qu'on laisse sans le
+dire finit, symétriquement, par être cru voulu. Il est donc **vidé** à cette occasion — le geste
+exact de la consommation — et le rapport porte `voisinIgnore: true`.
+
+### L'indistinction des causes porte sur le CODE, pas sur la DURÉE
+
+_Ajouté le 11 septembre 2026 — revue de sécurité de la PR #184, constat 3._
+
+`VAULT_STORAGE_ENGAGEMENT_INVALIDE` rend une seule cause et un seul message, et ce document
+justifiait ce choix par « les distinguer donnerait à un adversaire un oracle sur ce qu'il a manqué
+». **La durée du refus, elle, les distingue parfaitement.** Le descripteur du voisin est confronté
+au volume AVANT que l'empreinte du fichier ne soit calculée : un refus « ce voisin parle d'un autre
+volume » coûte 0,4 ms là où un refus « l'étiquette ne vérifie pas » coûte 20,4 ms sur 2 Mio — mesuré
+— et plusieurs secondes sur 512 Mio. Un observateur qui chronomètre apprend si ce qui a été altéré
+est l'identité ou la géométrie du volume, ou autre chose.
+
+**L'ordre est CONSERVÉ**, et c'est un compromis assumé, pas un oubli : l'inverser ferait relire le
+fichier entier à chaque voisin forgé, c'est-à-dire offrirait un déni de service à plusieurs secondes
+par tentative, pour fermer un oracle qui n'apprend rien à qui a forgé le voisin lui-même. Ce que ce
+document promet est donc : un CODE et un MESSAGE indistincts. Jamais une durée. C'est écrit au §
+7.3, au § 9.4 et dans `SECURITY.md`.
 
 **Le remède « aucune » quitte le produit.** `remedeSansRacine` garde sa branche `abimees > 0` et
 gagne le refus ; la branche qui acceptait un journal vierge n'existe plus, dans le code comme dans
@@ -196,6 +313,15 @@ Trois phrases, et aucune n'est masquée :
    publié, données synthétiques seulement, aucune compatibilité à préserver. Ce qu'il fallait
    prévoir est MATÉRIEL : les volumes v3 pré-fabriqués des bancs et des scénarios sont régénérés, et
    la PR #184 dit lesquels.
+
+**Et une quatrième, ajoutée le 11 septembre 2026** (revue de sécurité de la PR #184, constat 10) :
+le **retour arrière vers la NAISSANCE** est un cas du point 2, et il ne demande AUCUNE archive.
+Depuis cette tranche, chaque création fabrique elle-même un instantané cohérent à trois fichiers —
+le fichier de volume scellé, son journal portant la racine initiale, son témoin. Un adversaire qui
+les repose ENSEMBLE sur un volume vivant obtient une ouverture acceptée, `fraicheur: "verifiee"`,
+rendant l'état de la naissance ; reposer le fichier SEUL est bien refusé. Rien de neuf sous le § 9.1
+— les trois ensemble SONT un état que ce volume a réellement produit —, mais le prix de l'attaque a
+baissé, et le dire coûte une phrase.
 
 ## Ce qui NE change pas
 
@@ -223,7 +349,39 @@ figés antérieurs — la tranche en AJOUTE, elle n'en change aucun —, l'ordre
   données associées, le scellement et les 180 octets du voisin ; `node tools/verifier-vecteurs.mjs`
   les rejoue **sans importer une ligne du produit**, redérive la clé du domaine et OUVRE l'étiquette
   ;
-- **la mutation** : `tools/muter-gardes-archive-recuperation.mjs` retire pour de vrai les six gardes
-  neuves — ce que l'engagement scelle, l'info du domaine, la confrontation des empreintes, le refus
-  d'un voisin absent, le refus d'un volume sans racine, et la racine initiale d'une création — et
-  chacune fait rougir sa preuve.
+- **la mutation** : `tools/muter-gardes-archive-recuperation.mjs` retire pour de vrai les gardes
+  neuves, et chacune fait rougir sa preuve. Six à la livraison de la PR #184 ; **sept de plus**
+  après ses deux revues, qui avaient relevé la même chose de deux côtés — ce que la PR déclarait «
+  le contrat, et il n'est pas négociable » n'était tenu par aucun mutant :
+
+  | Garde retirée                                                 | Épreuve qui rougit, et ce qu'elle MESURE                                                                |
+  | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+  | ce que l'engagement scelle (un champ des données associées)   | vecteurs figés : les octets ne concordent plus                                                          |
+  | l'info HKDF lie le domaine                                    | vecteurs figés : la clé dérivée n'est plus la même                                                      |
+  | la confrontation empreinte du fichier / empreinte scellée     | mélange A/C : le mélange s'ouvre                                                                        |
+  | le refus d'un voisin ABSENT                                   | mélange A/C : le voisin retiré n'est plus un refus                                                      |
+  | le refus d'un volume sans racine que rien n'autorise          | mélange A/C et magasin de générations                                                                   |
+  | la racine initiale d'une CRÉATION                             | mélange A/C : le motif de naissance n'est plus celui d'une naissance                                    |
+  | **la confrontation de l'empreinte que le VERSEMENT a rendue** | coquille : le fichier substitué entre versement et datation n'est plus refusé                           |
+  | **l'exigence de la racine de naissance avant de dater**       | mélange A/C : le volume restauré se date de nouveau                                                     |
+  | **l'ordre « racine lisible, puis autorisation »**             | mélange A/C : une racine abîmée coûte une relecture du fichier ENTIER — le journal des gestes le compte |
+  | **l'ordre « racine initiale, puis consommation »**            | mélange A/C : le voisin est vidé avant que la racine ne soit écrite — l'ordre est relevé                |
+  | **la consommation du voisin**                                 | mélange A/C : le voisin survit à la première ouverture                                                  |
+  | **le TIRAGE du sel de domaine**                               | vecteurs : deux scellements du même contenu portent le même sel, la même clé, le même chiffré           |
+  | **la racine initiale de la MIGRATION**                        | migration : le journal du volume migré ne porte plus de racine, et l'ouverture le refuse                |
+
+  Les cinq premières lignes sont d'avant les revues ; les sept en gras leur répondent. Chacune de
+  ces sept est tuée par une épreuve qui **mesure** — un ordre de gestes relevé, un compte de
+  lectures, un sel relu sur un second scellement, une racine relue sur le support — jamais par une
+  épreuve qui relit une intention.
+
+- **la racine initiale de la MIGRATION, mesurée** :
+  `tests/unit/vm-migration-racine-initiale.test.mjs` monte la VRAIE cible
+  (`createOpfsMigrationTarget`) sur le double du support et joue une vraie migration v2 → v3. Elle
+  relit la racine dans le journal — séquence 0, génération 0, aucune entrée, compteur = secteurs + 1
+  —, vérifie qu'elle est posée AVANT le manifeste, que l'ouverture suivante est normale sans
+  consulter d'engagement, et qu'une coupure entre les deux est reprenable. C'était la moitié non
+  mesurée de la décision 4 (revue de format de la PR #184, constat 3) ; `poserLaRacineInitiale`
+  entre au même moment dans le CONTRAT de la cible, comme `commitEngagement` y était entré pour la
+  restauration — une cible qui ne sait pas dater est refusée **avant toute écriture**, au lieu de
+  produire en silence un volume déclaré migré et inouvrable.
