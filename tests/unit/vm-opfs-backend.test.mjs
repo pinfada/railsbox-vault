@@ -519,8 +519,8 @@ test("un volume d'un format ANTÉRIEUR est diagnostiqué comme tel, même sans c
       assert.doesNotMatch(erreur.message, /clé/i, "la clé n'est pas ce qui manque à ce fichier");
       assert.match(
         erreur.message,
-        /#101/,
-        "le chemin vers v3 est nommé, et il n'existe pas encore",
+        /migration/i,
+        "le chemin vers le format courant est nommé : c'est la chaîne de migration",
       );
       return true;
     },

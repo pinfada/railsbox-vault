@@ -31,14 +31,17 @@ const BASE = {
   volume: { id: IDENTIFIANT, algorithm: ALGORITHME },
 };
 
-test("le format écrit par ce runtime est v3, et v1 reste lisible", () => {
-  assert.equal(MANIFEST_FORMAT_VERSION, 3);
+test("le format écrit par ce runtime est v4, et v1 reste lisible", () => {
+  // v4 (#182) ne change AUCUN champ du manifeste : il change ce que le volume EST — ses secteurs
+  // sont scellés sous une clé dérivée, plus sous la DEK. Le manifeste bouge tout de même, et il le
+  // faut : c'est lui qui dit à un runtime s'il sait ouvrir ce volume.
+  assert.equal(MANIFEST_FORMAT_VERSION, 4);
   assert.equal(MIN_READABLE_FORMAT_VERSION, 1);
 });
 
-test("un manifeste v3 porte l'identifiant de volume et l'algorithme, et les rend tels quels", () => {
+test("un manifeste chiffré porte l'identifiant de volume et l'algorithme, et les rend tels quels", () => {
   const manifeste = createManifest(BASE);
-  assert.equal(manifeste.formatVersion, 3);
+  assert.equal(manifeste.formatVersion, MANIFEST_FORMAT_VERSION);
   assert.equal(manifeste.volume.id, IDENTIFIANT);
   assert.equal(manifeste.volume.algorithm, ALGORITHME);
   assert.deepEqual(parseManifest(manifeste).volume, manifeste.volume);

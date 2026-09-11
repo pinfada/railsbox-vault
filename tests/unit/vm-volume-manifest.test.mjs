@@ -322,9 +322,9 @@ function champsV2(surcharge = {}) {
   };
 }
 
-test("le format courant est 3, et le plancher lisible reste 1", () => {
-  assert.equal(MANIFEST_FORMAT_VERSION, 3);
-  assert.equal(DEFAULT_SUPPORTED_FORMAT.current, 3);
+test("le format courant est 4, et le plancher lisible reste 1", () => {
+  assert.equal(MANIFEST_FORMAT_VERSION, 4);
+  assert.equal(DEFAULT_SUPPORTED_FORMAT.current, 4);
   assert.equal(DEFAULT_SUPPORTED_FORMAT.minReadable, 1);
 });
 

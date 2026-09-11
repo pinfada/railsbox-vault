@@ -465,7 +465,7 @@ test("entre deux racines VALIDES, la séquence la plus haute fait autorité", as
       nombreEntrees: 0,
       longueurCharge: 0,
       identifiantVolume: identifiantVolumeEnOctets(IDENTIFIANT),
-      scellementsCumules: scelle.entete.scellementsCumules,
+      scellementsCumulesVolume: scelle.entete.scellementsCumulesVolume,
       nonce: scelle.nonce,
       chiffre: scelle.chiffre,
       etiquette: scelle.etiquette,
