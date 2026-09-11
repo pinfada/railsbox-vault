@@ -385,8 +385,13 @@ elle mesurait un écart.
 **Un dernier écart, hors de ce paragraphe mais de la même famille, reste ouvert et il est écrit
 partout de la même phrase** : ouvrir un volume **v3** — pour le migrer, ou pour l'EXPORTER avant de
 le migrer (§ 7.4) — fait écrire au magasin une racine v3 et rescelle la charge acquittée, c'est-à-
-dire deux scellements sous la clé de volume ELLE-MÊME. Un volume v3 n'a pas de clé maîtresse : c'est
-le régime que la v4 remplace, et c'est l'unique exception du cliquet anti-DEK
+dire **3 + N scellements** sous la clé de volume ELLE-MÊME : l'empreinte de région, la racine de
+clôture et le témoin, PLUS un par secteur rejoué de la charge acquittée. Le compte n'est donc pas
+une constante, et rien dans ce § ne le borne : c'est le contenu du journal validé qui le fixe. Les
+3 + N passent tous par le budget, donc la racine v3 les PUBLIE, et
+`tests/unit/vm-migration-source-v3.test.mjs` › « ce que l'export d'un v3 SCELLE est mesuré » compte
+les deux grandeurs par sonde sur `encrypt` plutôt que de les affirmer. Un volume v3 n'a pas de clé
+maîtresse : c'est le régime que la v4 remplace, et c'est l'unique exception du cliquet anti-DEK
 (`tests/unit/vm-cliquet-anti-dek.test.mjs`).
 
 Une troisième a existé entre le 11 septembre et la revue de la PR #186, et il vaut mieux l'écrire
@@ -1871,13 +1876,17 @@ consentement nommé.
 >
 > **L'écart qui reste, et il est écrit ici parce qu'il n'est pas comblé.** Ouvrir un volume v3 n'est
 > pas gratuit : le magasin clôt sa récupération en écrivant une racine v3, et rejouer une charge
-> rescelle des secteurs — deux scellements sous la clé v3, c'est-à-dire sous la DEK. Ils sont le
-> prix de l'application de la charge acquittée, ils passent par l'unique exception du cliquet
-> anti-DEK (`src/vm/scellement.mjs`), et ils sont EXACTEMENT ceux que la migration produit déjà sur
-> le même fichier. Ne pas ouvrir perdrait une écriture acquittée ; un lecteur v3 dédié qui
-> n'écrirait rien ne saurait pas appliquer la charge, donc perdrait la même chose sous un autre nom.
-> La décision de T2b demandait « aucun scellement sous une clé v3 hors l'engagement d'archive » : ce
-> chemin n'y parvient pas, et `SECURITY.md` comme l'ADR 0036 le portent dans les mêmes termes.
+> rescelle des secteurs — **3 + N scellements** sous la clé v3, c'est-à-dire sous la DEK :
+> l'empreinte de région, la racine de clôture et le témoin, PLUS un par secteur rejoué. Le nombre
+> est MESURÉ, et non affirmé : la sonde de `tests/unit/vm-migration-source-v3.test.mjs` compte 3
+> quand le journal n'a rien à rejouer, 4 quand il porte une écriture acquittée, et vérifie dans les
+> deux cas que la racine v3 publie EXACTEMENT ce compte. Ils sont le prix de l'application de la
+> charge acquittée, ils passent par l'unique exception du cliquet anti-DEK
+> (`src/vm/scellement.mjs`), et ils sont EXACTEMENT ceux que la migration produit déjà sur le même
+> fichier. Ne pas ouvrir perdrait une écriture acquittée ; un lecteur v3 dédié qui n'écrirait rien
+> ne saurait pas appliquer la charge, donc perdrait la même chose sous un autre nom. La décision de
+> T2b demandait « aucun scellement sous une clé v3 hors l'engagement d'archive » : ce chemin n'y
+> parvient pas, et `SECURITY.md` comme l'ADR 0036 le portent dans les mêmes termes.
 >
 > Le chemin entier est MESURÉ par `tests/unit/vm-migration-source-v3.test.mjs` › « l'archive d'un v3
 > se RESTAURE et se migre » : un v3 en service, une écriture acquittée restée dans son journal, un
@@ -3155,7 +3164,8 @@ ne peut pas sceller.
 
 **Ce qui n'est pas fermé et qui est écrit ailleurs de la même phrase** : ouvrir un volume **v3** —
 pour le migrer ou pour l'exporter — fait écrire au magasin une racine v3 et rescelle la charge
-acquittée, c'est-à-dire deux scellements sous la DEK. Voir le § 7.4 et `SECURITY.md`.
+acquittée, c'est-à-dire **3 + N scellements** sous la DEK, N étant le nombre de secteurs rejoués de
+la charge acquittée. Voir le § 7.4 et `SECURITY.md`.
 
 **Écart 1 — la marque de scellement complet n'est décidée par aucun ADR.** L'ADR 0016 (décision 1,
 28 août 2026) donne l'en-tête v3 avec « offset 64, largeur 448, réserve, à zéro ». Le code y écrit

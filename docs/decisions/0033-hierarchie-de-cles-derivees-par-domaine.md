@@ -542,6 +542,8 @@ pire tarif, soit cinq emplacements de plus.
 
 **Un écart demeure, et il n'est pas de ceux que cet ADR avait prévus** : ouvrir un volume **v3** —
 pour le migrer, ou pour l'exporter avant de le migrer — fait écrire au magasin une racine v3 et
-rescelle la charge acquittée, c'est-à-dire deux scellements sous la clé de volume elle-même. C'est
-le régime que la v4 remplace, et c'est l'unique exception du cliquet anti-DEK. Voir la décision 4 de
-l'ADR 0036 et le § 7.4 de la spécification.
+rescelle la charge acquittée, c'est-à-dire **3 + N scellements** sous la clé de volume elle-même :
+l'empreinte de région, la racine de clôture et le témoin, plus un par secteur rejoué. Le nombre est
+MESURÉ depuis le 11 septembre 2026 (`tests/unit/vm-migration-source-v3.test.mjs`), et les 3 + N sont
+tous comptés dans la racine v3. C'est le régime que la v4 remplace, et c'est l'unique exception du
+cliquet anti-DEK. Voir la décision 4 de l'ADR 0036 et le § 7.4 de la spécification.

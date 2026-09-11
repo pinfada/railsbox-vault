@@ -47,7 +47,10 @@
 //
 // **L'écart qui reste, écrit plutôt que découvert.** Ouvrir un volume v3 n'est pas gratuit : le
 // magasin clôt sa récupération en écrivant une racine v3 (`#vider`), et rejouer une charge rescelle
-// des secteurs — deux scellements sous la clé v3, c'est-à-dire sous la DEK elle-même. Ils sont le
+// des secteurs — **3 + N scellements** sous la clé v3, c'est-à-dire sous la DEK elle-même :
+// l'empreinte de région, la racine de clôture et le témoin, PLUS un par secteur rejoué. N n'est pas
+// borné par ce commentaire, il l'est par le contenu du journal validé, et les 3 + N sont TOUS
+// comptés dans la racine v3 — `tests/unit/vm-migration-source-v3.test.mjs` le MESURE. Ils sont le
 // prix de l'application de la charge acquittée, ils passent par l'unique exception du cliquet
 // anti-DEK (`src/vm/scellement.mjs`, régime `#sousLaCleMaitresse`), et ils sont EXACTEMENT ceux que
 // la migration produit déjà sur le même fichier. L'alternative — ne pas ouvrir — perd une écriture
