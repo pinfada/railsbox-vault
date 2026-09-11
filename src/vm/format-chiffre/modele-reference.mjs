@@ -66,6 +66,7 @@ import {
   encoderEntrees,
   encoderIdentiteBloc,
   encoderIdentiteEnregistrement,
+  racinePorteDeuxCompteurs,
   tirerNonce,
   verifierAlgorithme,
   verifierBudgetDeCle,
@@ -410,9 +411,22 @@ export async function rescellerEnSecteurs({
   return Object.freeze({ secteurs: Object.freeze(secteurs), scellementsCumules });
 }
 
-/** Les deux obligations que l'appelant seul peut tenir, rendues falsifiables ici. */
+/**
+ * Les deux obligations que l'appelant seul peut tenir, rendues falsifiables ici.
+ *
+ * **Les DEUX budgets sont vérifiés** depuis la v4 : une racine publie les compteurs des domaines
+ * `volume` et `journal`, et un plafond atteint sur l'un des deux refuse la racine avant qu'un octet
+ * ne soit produit. Le compteur du journal est vérifié ici alors que la racine est scellée sous la
+ * clé du VOLUME : c'est la racine qui le PUBLIE, donc c'est elle qui doit refuser de le publier
+ * au-delà du budget — sans quoi le plafond du journal ne serait opposable qu'au prochain dépôt.
+ */
 function verifierObligationsDeRacine(racine, entrees, attentes) {
-  verifierBudgetDeCle(exigerAttente("scellementsCumules", racine?.scellementsCumules));
+  verifierBudgetDeCle(exigerAttente("scellementsCumulesVolume", racine?.scellementsCumulesVolume));
+  if (racinePorteDeuxCompteurs(racine?.formatVersion)) {
+    verifierBudgetDeCle(
+      exigerAttente("scellementsCumulesJournal", racine?.scellementsCumulesJournal),
+    );
+  }
   verifierRangsCroissants(entrees);
 
   const sequencePrecedente = exigerAttente("sequencePrecedente", attentes.sequencePrecedente);
@@ -433,7 +447,10 @@ function enteteDeRacine(racine, entrees) {
     tailleVolume: racine.tailleVolume,
     nombreEntrees: entrees.length,
     longueurCharge: entrees.reduce((somme, entree) => somme + (entree?.longueur ?? 0), 0),
-    scellementsCumules: racine.scellementsCumules,
+    scellementsCumulesVolume: racine.scellementsCumulesVolume,
+    ...(racinePorteDeuxCompteurs(racine.formatVersion)
+      ? { scellementsCumulesJournal: racine.scellementsCumulesJournal }
+      : {}),
   });
 }
 

@@ -26,10 +26,10 @@ import { importArchive } from "../../src/vm/volume-import.mjs";
 import { createManifest } from "../../src/vm/volume-manifest.mjs";
 import { VolumeChiffre } from "../../src/vm/volume-chiffre.mjs";
 import {
-  dispositionV3,
+  dispositionDuVolume,
   encoderEnTeteV3,
   tailleDeFichier,
-  tailleSupportV3,
+  tailleSupportDuVolume,
 } from "../../src/vm/volume-chiffre-format.mjs";
 
 const TAILLE_LOGIQUE = 8 * SECTOR_SIZE;
@@ -52,7 +52,7 @@ function manifeste(formatVersion, tailleLogique = TAILLE_LOGIQUE) {
 
 /** Fabrique un FICHIER v3 complet en mémoire, scellé par le chemin de production. */
 async function fichierV3(graine) {
-  const disposition = dispositionV3(TAILLE_LOGIQUE);
+  const disposition = dispositionDuVolume(TAILLE_LOGIQUE);
   const octets = new Uint8Array(disposition.tailleSupport);
   octets.set(encoderEnTeteV3({ tailleLogique: TAILLE_LOGIQUE, identifiantVolume: IDENTIFIANT }), 0);
   const volume = new VolumeChiffre({
@@ -142,9 +142,9 @@ test("la longueur d'archive d'un volume v3 est celle du FICHIER, pas du volume l
   );
   assert.equal(
     tailleDeFichier({ formatVersion: 3, tailleLogique: TAILLE_LOGIQUE }),
-    tailleSupportV3(TAILLE_LOGIQUE),
+    tailleSupportDuVolume(TAILLE_LOGIQUE),
   );
-  assert.ok(tailleSupportV3(TAILLE_LOGIQUE) > TAILLE_LOGIQUE, "le fichier v3 est plus grand");
+  assert.ok(tailleSupportDuVolume(TAILLE_LOGIQUE) > TAILLE_LOGIQUE, "le fichier v3 est plus grand");
 });
 
 test("un volume v3 s'exporte TEL QUEL : l'archive porte ses octets chiffrés", async () => {
@@ -277,7 +277,7 @@ test("le CLAIR d'un secteur connu n'apparaît nulle part dans l'archive exporté
   // cherché dans les octets de l'archive. Un motif court se rencontrerait par hasard dans du
   // chiffré ; cinq cent douze octets consécutifs, non.
   const motif = Uint8Array.from({ length: SECTOR_SIZE }, (_, index) => (index * 13 + 5) % 256);
-  const disposition = dispositionV3(TAILLE_LOGIQUE);
+  const disposition = dispositionDuVolume(TAILLE_LOGIQUE);
   const octets = new Uint8Array(disposition.tailleSupport);
   octets.set(encoderEnTeteV3({ tailleLogique: TAILLE_LOGIQUE, identifiantVolume: IDENTIFIANT }), 0);
   const volume = new VolumeChiffre({

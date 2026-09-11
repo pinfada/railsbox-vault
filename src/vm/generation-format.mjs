@@ -144,11 +144,37 @@ export const GENERATION_FORMAT_SANS_FRAICHEUR = 2;
  */
 export const GENERATION_FORMAT_IDENTITE_DE_BLOC = 3;
 
+/**
+ * Format d'une racine qui publie les DEUX compteurs — celui du volume et celui du journal (#182,
+ * ADR 0033, décision 4). C'est le format qu'écrit un volume v4, et lui seul.
+ *
+ * **Pourquoi un NUMÉRO de plus, alors que l'ADR 0033 range « le format 4 du journal » parmi ce qui
+ * ne change pas.** Ce que l'ADR y range est la DISPOSITION du journal — l'emplacement des racines,
+ * la forme d'un enregistrement, son sceau — et elle ne bouge pas d'un octet. Ce qui bouge est la
+ * RACINE, qui gagne huit octets dans sa réserve, et ce module tient une règle plus ancienne que
+ * l'ADR : **un numéro de format dit ce que porte la racine.** Une racine à deux compteurs relue
+ * comme une racine à un seul rendrait un compteur de journal nul sans que rien ne le signale, et
+ * une racine à un compteur relue comme une racine à deux lirait de la réserve. Laisser les deux
+ * sous le numéro 4 aurait donc fait deux racines différentes sous un seul nom. L'ADR 0033 reçoit
+ * sa note datée sur ce point, et l'ADR 0035 l'écrit.
+ *
+ * Le champ de format reste NON AUTHENTIFIÉ, comme il l'a toujours été — mais il ne peut plus mentir
+ * en silence : les données associées de la racine comptent onze champs à partir de la v4, donc une
+ * racine relue sous le mauvais nombre de compteurs ne VÉRIFIE pas.
+ */
+export const GENERATION_FORMAT_DEUX_COMPTEURS = 5;
+
 export const GENERATION_FORMATS_LUS = Object.freeze([
   GENERATION_FORMAT_SANS_FRAICHEUR,
   GENERATION_FORMAT_IDENTITE_DE_BLOC,
   GENERATION_FORMAT,
+  GENERATION_FORMAT_DEUX_COMPTEURS,
 ]);
+
+/** Vrai si la racine d'un journal de ce format publie les DEUX compteurs de l'ADR 0033. */
+export function racinePorteDeuxCompteurs(format) {
+  return format >= GENERATION_FORMAT_DEUX_COMPTEURS;
+}
 
 /**
  * Vrai si les enregistrements d'un journal de ce format portent l'identité d'un BLOC DU VOLUME.
@@ -185,9 +211,22 @@ function racinePorteFraicheur(format) {
  * termine par un vidage, qui réécrit la racine et tronque la charge. Un journal MIXTE — des
  * enregistrements sous deux étiquettes de domaine — n'existe donc à aucun instant.
  */
-export function formatEcritSousFraicheur(fraicheurTenue) {
-  return fraicheurTenue ? GENERATION_FORMAT : GENERATION_FORMAT_SANS_FRAICHEUR;
+export function formatEcritSousFraicheur(fraicheurTenue, formatDeVolume = 3) {
+  if (!fraicheurTenue) return GENERATION_FORMAT_SANS_FRAICHEUR;
+  return formatDeVolume >= FORMAT_DE_VOLUME_A_DEUX_COMPTEURS
+    ? GENERATION_FORMAT_DEUX_COMPTEURS
+    : GENERATION_FORMAT;
 }
+
+/**
+ * Version de format de VOLUME à partir de laquelle la racine publie deux compteurs.
+ *
+ * Elle est ici, et non importée de `volume-chiffre-format.mjs`, pour la raison qui tient ce module à
+ * part : il ne connaît que le journal, et une dépendance vers la disposition du volume en ferait un
+ * module de volume. Les deux nombres sont confrontés par
+ * `tests/unit/vm-generation-format.test.mjs`, qui les lit des deux côtés.
+ */
+export const FORMAT_DE_VOLUME_A_DEUX_COMPTEURS = 4;
 
 /** Une racine occupe un secteur entier : c'est l'unité de la commutation. */
 export const RACINE_OCTETS = SECTOR_SIZE;
@@ -216,6 +255,19 @@ export const RACINE_ENTETE_V2_OCTETS = 136;
  * finissent toujours par diverger.
  */
 export const RACINE_ENTETE_OCTETS = RACINE_ENTETE_V2_OCTETS + FRAICHEUR_OCTETS;
+
+/** Largeur d'un compteur cumulé dans la racine : huit octets, comme celui de #18. */
+const COMPTEUR_OCTETS = 8;
+
+/**
+ * Octets qu'occupe une racine de format 5 : 210 sur 512, la réserve restant à zéro.
+ *
+ * Les 202 premiers sont ceux du format 4, INCHANGÉS — ce qui est déjà sur un support se relit à la
+ * même place. Les huit derniers sont `scellementsCumulesJournal`, le compteur de la clé du domaine
+ * `journal` (#182, ADR 0033, décision 4). Le compteur du volume, lui, reste à l'offset 68 : il ne
+ * change que de NOM, `scellementsCumules` devenant `scellementsCumulesVolume`.
+ */
+export const RACINE_ENTETE_V5_OCTETS = RACINE_ENTETE_OCTETS + COMPTEUR_OCTETS;
 
 /** Sceau d'un enregistrement : la MÊME forme que celle de la région du volume (ADR 0016). */
 export const SCEAU_ENREGISTREMENT_OCTETS = SCEAU_OCTETS;
@@ -286,22 +338,27 @@ export function longueurPhysiqueDeCharge({ nombreEntrees, longueurCharge }) {
  * taille de secteur, qui localisent et n'autorisent pas), le second est le verdict. L'appelant a
  * déjà scellé ; ce module ne fait qu'écrire.
  *
- * @param {{ sequence: number, generation: number, tailleVolume: number, nombreEntrees: number,
- *           longueurCharge: number, identifiantVolume: Uint8Array, scellementsCumules: number,
+ * @param {{ format: number, sequence: number, generation: number, tailleVolume: number,
+ *           nombreEntrees: number, longueurCharge: number, identifiantVolume: Uint8Array,
+ *           scellementsCumulesVolume: number, scellementsCumulesJournal?: number,
  *           nonce: Uint8Array, chiffre: Uint8Array, etiquette: Uint8Array,
  *           fraicheur: Uint8Array }} racine
  *   `fraicheur` est OBLIGATOIRE : une racine sans empreinte de région désarmerait la fraîcheur de
  *   l'ADR 0019, et un champ facultatif aurait fini par manquer sans que personne le voie.
+ *   `format` est celui que la SESSION écrit (`formatEcritSousFraicheur`) : c'est lui qui décide si
+ *   le second compteur est inscrit, et l'omettre écrirait une racine de v3 sur un volume v4.
  * @returns {Uint8Array} exactement `RACINE_OCTETS` octets
  */
 export function encoderRacine({
+  format,
   sequence,
   generation,
   tailleVolume,
   nombreEntrees,
   longueurCharge,
   identifiantVolume,
-  scellementsCumules,
+  scellementsCumulesVolume,
+  scellementsCumulesJournal,
   nonce,
   chiffre,
   etiquette,
@@ -323,8 +380,12 @@ export function encoderRacine({
   octets.set(MAGIC, 0);
   // La VERSION suit ce que la racine porte réellement, et non l'inverse : écrire « format 3 » sur
   // une racine sans empreinte ferait échouer la relecture sur un champ absent, et écrire
-  // « format 2 » sur une racine qui en porte une la rendrait invisible.
-  vue.setUint32(8, formatEcritSousFraicheur(fraicheur !== null), true);
+  // « format 2 » sur une racine qui en porte une la rendrait invisible. Depuis #182, la session
+  // fournit le format qu'elle écrit — le nombre de COMPTEURS suit la version du VOLUME, que ce
+  // module ne connaît pas — et la fraîcheur le CONTREDIT plutôt que de le décider : une racine sans
+  // empreinte ne peut être que du format de #18.
+  const formatEcrit = fraicheur === null ? GENERATION_FORMAT_SANS_FRAICHEUR : exigerFormat(format);
+  vue.setUint32(8, formatEcrit, true);
   vue.setUint32(12, SECTOR_SIZE, true);
   ecrireEntier64(vue, 16, sequence);
   ecrireEntier64(vue, 24, generation);
@@ -332,12 +393,28 @@ export function encoderRacine({
   vue.setUint32(40, nombreEntrees, true);
   ecrireEntier64(vue, 44, longueurCharge);
   octets.set(identifiantVolume, 52);
-  ecrireEntier64(vue, 68, scellementsCumules);
+  ecrireEntier64(vue, 68, scellementsCumulesVolume);
   octets.set(nonce, 76);
   octets.set(chiffre, 88);
   octets.set(etiquette, 120);
   if (fraicheur !== null) octets.set(fraicheur, RACINE_ENTETE_V2_OCTETS);
+  if (racinePorteDeuxCompteurs(formatEcrit)) {
+    if (!Number.isSafeInteger(scellementsCumulesJournal) || scellementsCumulesJournal < 0) {
+      throw new RangeError(
+        `« scellementsCumulesJournal » d'une racine de format ${formatEcrit} est obligatoire : depuis #182 le journal a sa propre clé, donc son propre budget, et une racine qui ne le publierait pas rendrait ce budget invérifiable.`,
+      );
+    }
+    ecrireEntier64(vue, RACINE_ENTETE_OCTETS, scellementsCumulesJournal);
+  }
   return octets;
+}
+
+/** Refuse un format de racine que ce runtime n'écrit pas. Un format deviné écrirait des octets muets. */
+function exigerFormat(format) {
+  if (format === GENERATION_FORMAT || format === GENERATION_FORMAT_DEUX_COMPTEURS) return format;
+  throw new RangeError(
+    `Format de racine inadmissible à l'écriture : ${format}. Ce runtime écrit ${GENERATION_FORMAT} pour un volume v3 et ${GENERATION_FORMAT_DEUX_COMPTEURS} pour un volume v4, et ${GENERATION_FORMAT_SANS_FRAICHEUR} quand aucune fraîcheur n'est tenue.`,
+  );
 }
 
 function exigerOctets(nom, valeur, longueur) {
@@ -418,6 +495,9 @@ function controlerSansCle(octets, { tailleVolume }) {
   if (racinePorteFraicheur(format) && octets.byteLength < RACINE_ENTETE_OCTETS) {
     return refusDeRacine("Secteur de racine trop court pour porter la fraîcheur de sa région.");
   }
+  if (racinePorteDeuxCompteurs(format) && octets.byteLength < RACINE_ENTETE_V5_OCTETS) {
+    return refusDeRacine("Secteur de racine trop court pour porter le second compteur.");
+  }
   // Une racine qui SE DIT d'avant la fraîcheur, au-dessus d'octets de fraîcheur non nuls, ne peut
   // pas avoir été écrite ainsi : ce runtime n'écrit jamais l'un sans l'autre, et #18 laissait cette
   // zone vierge. C'est exactement ce que produit un octet retourné dans le champ de format — un
@@ -457,7 +537,12 @@ export function decoderRacine(octets, attentes) {
       nombreEntrees: vue.getUint32(40, true),
       longueurCharge: lireEntier64(vue, 44),
       identifiantVolume: octets.slice(52, 52 + IDENTIFIANT_VOLUME_OCTETS),
-      scellementsCumules: lireEntier64(vue, 68),
+      scellementsCumulesVolume: lireEntier64(vue, 68),
+      // `null` DIT que cette racine ne publie pas le compteur du journal — un volume v3 n'en a
+      // qu'un —, et l'appelant doit en décider. Zéro aurait été un compteur comme un autre.
+      scellementsCumulesJournal: racinePorteDeuxCompteurs(format)
+        ? lireEntier64(vue, RACINE_ENTETE_OCTETS)
+        : null,
       scelle: Object.freeze({
         nonce: octets.slice(76, 76 + NONCE_OCTETS),
         chiffre: octets.slice(88, 88 + EMPREINTE_OCTETS),

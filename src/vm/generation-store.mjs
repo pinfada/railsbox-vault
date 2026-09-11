@@ -207,7 +207,10 @@ export class GenerationStore {
     };
     this.#garde = construireGarde(options);
     this.#sansRacine = construireAutorisation(options);
-    this.#formatEcrit = formatEcritSousFraicheur(this.#garde !== null);
+    this.#formatEcrit = formatEcritSousFraicheur(
+      this.#garde !== null,
+      this.#scellement.formatVersion,
+    );
     this.#relecture = new RelectureDeCharge({
       journal: this.#journal,
       scellement: this.#scellement,
@@ -260,9 +263,14 @@ export class GenerationStore {
     return this.#generation;
   }
 
-  /** Scellements consommés sous la clé de ce volume. Authentifié dans la racine, donc durable. */
+  /** Scellements consommés sous la clé du domaine `volume`. Authentifié dans la racine, donc durable. */
   get scellementsCumules() {
-    return this.#scellement.scellementsCumules;
+    return this.#scellement.scellementsCumulesVolume;
+  }
+
+  /** Scellements consommés sous la clé du domaine `journal` (#182, ADR 0033). */
+  get scellementsCumulesJournal() {
+    return this.#scellement.scellementsCumulesJournal;
   }
 
   /** Ce que l'ouverture a trouvé et fait. Publié, jamais tu : une mise au rebut est une nouvelle. */
@@ -417,7 +425,18 @@ export class GenerationStore {
     this.#sequence = racine.sequence;
     this.#sequenceValidee = racine.sequence;
     this.#generation = racine.generation;
-    this.#scellement.reprendreDepuis(racine.scellementsCumules + 1);
+    // Les DEUX compteurs sont repris de la racine qui fait autorité. Le « + 1 » compte la racine
+    // elle-même : le § 8.3 de NIST SP 800-38D compte « all instances of the authenticated
+    // encryption function », et une racine en est une. Le compteur du JOURNAL, lui, ne reçoit pas ce
+    // « + 1 » : la racine est scellée sous la clé du VOLUME, elle ne consomme rien du journal.
+    this.#scellement.reprendreDepuis(
+      racine.scellementsCumulesJournal === null || racine.scellementsCumulesJournal === undefined
+        ? racine.scellementsCumulesVolume + 1
+        : {
+            volume: racine.scellementsCumulesVolume + 1,
+            journal: racine.scellementsCumulesJournal,
+          },
+    );
 
     if (racine.nombreEntrees === 0) {
       // La racine VIDE est authentifiée elle aussi, et il faut dire pourquoi : c'est elle qui fixe

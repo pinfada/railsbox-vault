@@ -33,7 +33,7 @@ import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors
 import { VolumeChiffre } from "../../src/vm/volume-chiffre.mjs";
 import {
   SCEAU_OCTETS,
-  dispositionV3,
+  dispositionDuVolume,
   offsetDeCharge,
   offsetDeSceau,
 } from "../../src/vm/volume-chiffre-format.mjs";
@@ -159,7 +159,7 @@ test("le BACKEND dépose le vecteur n° 0 aux offsets que la disposition impose"
   // l'identité de chaque secteur.
   const vecteur = VECTEURS.blocs[0];
   const taille = 8 * SECTOR_SIZE;
-  const disposition = dispositionV3(taille);
+  const disposition = dispositionDuVolume(taille);
   const store = createSyncAccessStore();
   const handle = await store.openHandle("vecteur");
   handle.truncate(disposition.tailleSupport);
@@ -253,7 +253,7 @@ test("le scellement du produit reproduit OCTET POUR OCTET les deux racines figé
 const TAILLE = 16 * SECTOR_SIZE;
 
 async function volumeDouble({ identifiant = "0".repeat(32), cleOctets = CLE } = {}) {
-  const disposition = dispositionV3(TAILLE);
+  const disposition = dispositionDuVolume(TAILLE);
   const support = supportDouble(disposition.tailleSupport);
   const scellement = await Scellement.ouvrir({
     volume: identifiant,

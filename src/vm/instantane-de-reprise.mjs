@@ -142,7 +142,14 @@ export async function capturerInstantane({
   await support.allouer(total);
   await support.ecrire(
     0,
-    encoderEnTete({ liaison, nonce: scelle.nonce, etiquette: scelle.etiquette }),
+    encoderEnTete({
+      liaison,
+      nonce: scelle.nonce,
+      etiquette: scelle.etiquette,
+      // Le SEL de la clé à USAGE UNIQUE de cette capture. Sans lui, elle ne se rouvre pas : c'est
+      // le seul champ de l'en-tête dont l'absence coûterait la capture entière (ADR 0033, déc. 3).
+      sel: scelle.sel,
+    }),
   );
   // Le CHIFFRÉ seul, sans son étiquette : celle-ci vit déjà dans l'en-tête, et l'écrire deux fois
   // ferait deux sources pour un même objet. `scelle.chiffre` est une VUE du corps, pas une copie.
@@ -305,7 +312,7 @@ async function lireInstantane({ scellement, volume, etatPresent, support }) {
   }
 
   const corps = await lireLeCorps(support, lu, volume);
-  return scellement.ouvrirInstantane(lu.liaison, lu.nonce, corps).then(
+  return scellement.ouvrirInstantane(lu.liaison, lu.nonce, corps, { sel: lu.sel }).then(
     (etat) => Object.freeze({ etat, liaison: lu.liaison }),
     (cause) => {
       // Le modèle rend déjà un `SCEAU_REFUSE` typé ; les autres causes sont des fautes de

@@ -42,11 +42,13 @@ import { STORAGE_ERROR_CODES, StorageError, geometryMismatch } from "./storage-e
 import {
   EN_TETE_OCTETS,
   FORMAT_VOLUME_V3,
+  FORMAT_VOLUME_V4,
   MARQUEUR_SCELLEMENT_COMPLET,
   SCELLEMENT_COMPLET_OFFSET,
-  decoderEnTeteV3,
-  dispositionV3,
-  encoderEnTeteV3,
+  decoderEnTeteV4,
+  dispositionDuVolume,
+  encoderEnTeteV4,
+  versionDEnTeteDeVolume,
   identifiantVolumeEnTexte,
   nouvelIdentifiantDeVolume,
 } from "./volume-chiffre-format.mjs";
@@ -90,16 +92,17 @@ function lireEnTete(handle, name) {
  * l'objet de #101.
  */
 function dispositionExistante({ name, handle, declared, observed, identifiantVolume }) {
-  const lu = decoderEnTeteV3(lireEnTete(handle, name));
+  const octets = lireEnTete(handle, name);
+  const lu = decoderEnTeteV4(octets);
   if (!lu.valide) {
     throw geometryMismatch(name, {
       observed,
       expected: null,
-      reason: `${lu.raison} Le manifeste d'un volume antérieur au format v${FORMAT_VOLUME_V3} se lit encore, mais son fichier ne s'ouvre pas ici — il n'a pas de région d'authentification — et il n'a pas de chemin vers v${FORMAT_VOLUME_V3} avant #101.`,
+      reason: `${lu.raison} ${raisonDUnEnTeteRefuse(octets)}`,
     });
   }
   if (!lu.enTete.scellementComplet) throw creationInachevee(name, observed);
-  const disposition = dispositionV3(lu.enTete.tailleLogique);
+  const disposition = dispositionDuVolume(lu.enTete.tailleLogique);
   if (observed !== disposition.tailleSupport) {
     throw geometryMismatch(name, {
       observed,
@@ -166,15 +169,31 @@ function dispositionNeuve({ name, declared, identifiantVolume }) {
     });
   }
   return {
-    disposition: dispositionV3(declared),
+    disposition: dispositionDuVolume(declared),
     identifiantVolume: identifiantVolume ?? nouvelIdentifiantDeVolume(),
   };
 }
 
-/** Alloue le fichier à sa taille support et y pose l'en-tête v3. Le scellement vient après. */
+/**
+ * DIT ce qu'un en-tête refusé est, quand on peut le dire, et ce qu'il faut en faire.
+ *
+ * Un volume v3 présenté à un produit v4 n'est pas un fichier abîmé : c'est un volume qui demande sa
+ * MIGRATION, et la lui refuser sans le nommer enverrait l'exploitant chercher une sauvegarde. Le
+ * fichier n'est pas lu pour autant — **un volume v3 n'est JAMAIS lu par le produit v4 en lecture
+ * directe** (ADR 0033, décision 5, point 2) : on nomme, on refuse, et c'est la migration qui ouvre.
+ */
+function raisonDUnEnTeteRefuse(octets) {
+  const version = versionDEnTeteDeVolume(octets);
+  if (version === FORMAT_VOLUME_V3) {
+    return `Ce fichier est un volume au format v${FORMAT_VOLUME_V3}. Il ne s'ouvre pas ici : depuis #182, un volume v${FORMAT_VOLUME_V3} n'est lu que par la MIGRATION, qui rescelle chaque secteur sous la clé du domaine « volume » de la v${FORMAT_VOLUME_V4}. Le remède est de migrer, jamais de restaurer.`;
+  }
+  return `Le manifeste d'un volume antérieur au format v${FORMAT_VOLUME_V3} se lit encore, mais son fichier ne s'ouvre pas ici — il n'a pas de région d'authentification — et il n'a de chemin vers v${FORMAT_VOLUME_V4} que par la chaîne de migration.`;
+}
+
+/** Alloue le fichier à sa taille support et y pose l'en-tête v4. Le scellement vient après. */
 function poserEnTete(handle, name, disposition, identifiantVolume) {
   handle.truncate(disposition.tailleSupport);
-  const entete = encoderEnTeteV3({
+  const entete = encoderEnTeteV4({
     tailleLogique: disposition.tailleLogique,
     identifiantVolume,
   });
@@ -472,12 +491,13 @@ async function saisirLireEtAllouer({ name, size, cle, identifiantVolume, openHan
 async function tailleLogiqueDuFichier(name, openHandle) {
   const brut = await ouvrirVolumeBrut({ name, openHandle });
   try {
-    const lu = decoderEnTeteV3(await brut.read(0, EN_TETE_OCTETS));
+    const octets = await brut.read(0, EN_TETE_OCTETS);
+    const lu = decoderEnTeteV4(octets);
     if (lu.valide) return lu.enTete.tailleLogique;
     throw geometryMismatch(name, {
       observed: brut.size(),
       expected: null,
-      reason: `${lu.raison} Une création ne se date pas sans son en-tête v3.`,
+      reason: `${lu.raison} Une création ne se date pas sans son en-tête v${FORMAT_VOLUME_V4}. ${raisonDUnEnTeteRefuse(octets)}`,
     });
   } finally {
     await brut.close();
@@ -575,7 +595,7 @@ export async function openOpfsVolume({
   const scellement = await Scellement.ouvrir({
     volume: saisi.identifiantVolume,
     cleOctets: cle,
-    formatVersion: FORMAT_VOLUME_V3,
+    formatVersion: FORMAT_VOLUME_V4,
   });
   const backend = construireBackend({ name, saisi, scellement, journal, faults, flushDelay });
   if (saisi.naissance) await scellerLeVolumeNeuf(backend, name);
@@ -649,5 +669,16 @@ async function etablirLaGeneration(
   };
   if (transactionnel) return installerGenerationOuFermer(backend, generation);
   if (saisi.naissance) return racineInitialeHorsTransaction(backend, generation);
+  // HORS TRANSACTION et sans naissance : cette session ne clôra par AUCUNE racine, donc aucun de ses
+  // scellements ne serait publié dans un compteur. Depuis le format v4, cela lui retire le droit de
+  // sceller (ADR 0033, décision 4) — elle est en LECTURE SEULE, et un scellement demandé sous ce
+  // régime est refusé par `VAULT_STORAGE_LECTURE_SEULE` plutôt que consommé en silence.
+  //
+  // C'est la moitié du § 4.5 que la spécification AVOUAIT au lieu de la fermer : « le compteur est
+  // sous-estimé hors transaction ». Les trois chemins qui scellaient ainsi closent désormais par une
+  // racine — la création (ci-dessus), l'installation initiale du volume applicatif
+  // (`daterLaCreation`) et l'ouverture hors transaction de la coquille, qui est une naissance —, et
+  // ce qui reste est REFUSÉ au lieu d'être compté à moitié.
+  scellement.interdireDeSceller();
   return undefined;
 }

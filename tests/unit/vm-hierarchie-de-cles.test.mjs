@@ -87,7 +87,7 @@ test("le constat du relecteur : sous la v3, deux volumes emploient LITTÉRALEMEN
   });
 
   assert.deepEqual(
-    relu.contenu,
+    relu,
     CLAIR,
     "ce que le volume A a scellé s'ouvre sous la clé du volume B : c'est une seule clé, et la somme des deux compteurs est le nombre réel d'invocations sous elle",
   );
@@ -125,7 +125,7 @@ test("la v4 sépare les clés : la même DEK, deux volumes, et le témoin ne tra
     scelle,
     attentes: { generationMinimale: null },
   });
-  assert.deepEqual(relu.contenu, CLAIR);
+  assert.deepEqual(relu, CLAIR);
 });
 
 test("le domaine `volume` et le domaine `journal` d'un MÊME volume ne partagent pas non plus leur clé", async () => {

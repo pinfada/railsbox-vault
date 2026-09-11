@@ -40,7 +40,7 @@ import {
   FORMAT_VOLUME_V3,
   MARQUEUR_SCELLEMENT_COMPLET,
   SCELLEMENT_COMPLET_OFFSET,
-  dispositionV3,
+  dispositionDuVolume,
   encoderEnTeteV3,
 } from "./volume-chiffre-format.mjs";
 
@@ -110,7 +110,7 @@ function fraicheurJetable(support, backend, nom) {
  */
 async function ouvrirVolumeJetable({ support, nom, taille, journal, faults, cleOctets }) {
   const handle = await support.openHandle(nom);
-  const disposition = dispositionV3(taille);
+  const disposition = dispositionDuVolume(taille);
   const neuf = handle.getSize() === 0;
   if (neuf) {
     handle.truncate(disposition.tailleSupport);

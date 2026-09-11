@@ -32,7 +32,8 @@ export class EcrivainDeRacine {
    * du journal pour la retrouver reviendrait à redécoder ce qu'on vient d'encoder.
    */
   #scelle = null;
-  #scellementsCumules = 0;
+  #scellementsCumulesVolume = 0;
+  #scellementsCumulesJournal = null;
 
   /**
    * @param {{ journal: object, scellement: object, garde: object | null, tailleVolume: number,
@@ -53,9 +54,19 @@ export class EcrivainDeRacine {
     return this.#scelle;
   }
 
-  /** Scellements cumulés que la dernière racine écrite AUTHENTIFIE. */
-  get scellementsCumules() {
-    return this.#scellementsCumules;
+  /** Scellements cumulés du domaine `volume` que la dernière racine écrite AUTHENTIFIE. */
+  get scellementsCumulesVolume() {
+    return this.#scellementsCumulesVolume;
+  }
+
+  /**
+   * Scellements cumulés du domaine `journal`, ou `null` si cette racine n'en publie pas.
+   *
+   * `null` DIT « ce format n'a qu'un compteur » — un volume v3 —, et l'appelant doit en décider.
+   * Zéro aurait été un compteur comme un autre, c'est-à-dire un budget qu'on croirait neuf.
+   */
+  get scellementsCumulesJournal() {
+    return this.#scellementsCumulesJournal;
   }
 
   /**
@@ -76,13 +87,17 @@ export class EcrivainDeRacine {
     );
     const racine = encoderRacine({
       fraicheur,
+      // Le format que la SESSION écrit, posé et non deviné : c'est lui qui dit combien de compteurs
+      // la racine publie, et il suit la version du VOLUME que le scellement porte.
+      format: this.#formatEcrit,
       sequence,
       generation,
       tailleVolume: this.#tailleVolume,
       nombreEntrees: scelle.entete.nombreEntrees,
       longueurCharge: scelle.entete.longueurCharge,
       identifiantVolume: identifiantVolumeEnOctets(this.#scellement.volume),
-      scellementsCumules: scelle.entete.scellementsCumules,
+      scellementsCumulesVolume: scelle.entete.scellementsCumulesVolume,
+      scellementsCumulesJournal: scelle.entete.scellementsCumulesJournal,
       nonce: scelle.nonce,
       chiffre: scelle.chiffre,
       etiquette: scelle.etiquette,
@@ -98,7 +113,8 @@ export class EcrivainDeRacine {
       chiffre: scelle.chiffre,
       etiquette: scelle.etiquette,
     });
-    this.#scellementsCumules = scelle.entete.scellementsCumules;
+    this.#scellementsCumulesVolume = scelle.entete.scellementsCumulesVolume;
+    this.#scellementsCumulesJournal = scelle.entete.scellementsCumulesJournal ?? null;
   }
 
   /**
@@ -116,7 +132,8 @@ export class EcrivainDeRacine {
       tailleVolume: this.#tailleVolume,
       nombreEntrees: entrees,
       longueurCharge,
-      scellementsCumules: this.#scellementsCumules,
+      scellementsCumulesVolume: this.#scellementsCumulesVolume,
+      scellementsCumulesJournal: this.#scellementsCumulesJournal,
       scelle: this.#scelle,
     };
   }

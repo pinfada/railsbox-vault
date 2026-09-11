@@ -18,7 +18,7 @@ import {
   SCEAU_OCTETS,
   decoderEnTeteV3,
   decoderSceau,
-  dispositionV3,
+  dispositionDuVolume,
   encoderEnTeteV3,
   encoderSceau,
   offsetDeCharge,
@@ -37,7 +37,7 @@ test("un sceau fait 34 octets : nonce 12, étiquette 16, génération 6", () => 
 });
 
 test("la disposition d'un volume de 512 Mio tombe juste sur 69 632 secteurs de région", () => {
-  const disposition = dispositionV3(512 * MIO);
+  const disposition = dispositionDuVolume(512 * MIO);
   assert.equal(disposition.tailleLogique, 536870912);
   assert.equal(disposition.secteurs, 1048576);
   assert.equal(disposition.regionOffset, 512);
@@ -50,7 +50,7 @@ test("la disposition d'un volume de 512 Mio tombe juste sur 69 632 secteurs de r
 test("une région qui ne tombe pas juste est alignée VERS LE HAUT, jamais tronquée", () => {
   // 10 secteurs → 340 octets de sceaux, qui n'occupent pas un secteur entier. Tronquer priverait
   // les derniers secteurs de leur sceau, c'est-à-dire les rendrait illisibles.
-  const disposition = dispositionV3(10 * SECTOR_SIZE);
+  const disposition = dispositionDuVolume(10 * SECTOR_SIZE);
   assert.equal(disposition.secteurs, 10);
   assert.equal(disposition.regionOctets, SECTOR_SIZE, "340 octets alignés sur un secteur");
   assert.equal(disposition.chargeOffset, 512 + 512);
@@ -58,12 +58,12 @@ test("une région qui ne tombe pas juste est alignée VERS LE HAUT, jamais tronq
 });
 
 test("une taille logique qui n'est pas un multiple de secteur est refusée, jamais arrondie", () => {
-  assert.throws(() => dispositionV3(SECTOR_SIZE + 1), RangeError);
-  assert.throws(() => dispositionV3(0), RangeError);
+  assert.throws(() => dispositionDuVolume(SECTOR_SIZE + 1), RangeError);
+  assert.throws(() => dispositionDuVolume(0), RangeError);
 });
 
 test("chaque secteur logique a un offset de charge et un offset de sceau qui ne se croisent pas", () => {
-  const disposition = dispositionV3(512 * MIO);
+  const disposition = dispositionDuVolume(512 * MIO);
   assert.equal(offsetDeCharge(disposition, 0), disposition.chargeOffset);
   assert.equal(offsetDeSceau(disposition, 0), disposition.regionOffset);
   assert.equal(offsetDeCharge(disposition, SECTOR_SIZE), disposition.chargeOffset + SECTOR_SIZE);
@@ -81,7 +81,7 @@ test("chaque secteur logique a un offset de charge et un offset de sceau qui ne 
 });
 
 test("une adresse non alignée ou hors bornes est refusée plutôt que ramenée dans les clous", () => {
-  const disposition = dispositionV3(10 * SECTOR_SIZE);
+  const disposition = dispositionDuVolume(10 * SECTOR_SIZE);
   assert.throws(() => offsetDeCharge(disposition, 1), RangeError);
   assert.throws(() => offsetDeSceau(disposition, 1), RangeError);
   assert.throws(() => offsetDeCharge(disposition, 10 * SECTOR_SIZE), RangeError);

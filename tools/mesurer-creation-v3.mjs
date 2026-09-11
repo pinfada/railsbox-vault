@@ -23,7 +23,7 @@
 import { cleDeVolumeDuHarnais } from "../src/vm/cle-de-volume.mjs";
 import { Scellement } from "../src/vm/scellement.mjs";
 import { VolumeChiffre } from "../src/vm/volume-chiffre.mjs";
-import { dispositionV3 } from "../src/vm/volume-chiffre-format.mjs";
+import { dispositionDuVolume } from "../src/vm/volume-chiffre-format.mjs";
 
 const IDENTIFIANT = "0123456789abcdef0123456789abcdef";
 
@@ -42,7 +42,7 @@ function supportEnMemoire(taille) {
 }
 
 async function mesurerUnEssai(tailleLogique) {
-  const disposition = dispositionV3(tailleLogique);
+  const disposition = dispositionDuVolume(tailleLogique);
   const support = supportEnMemoire(disposition.tailleSupport);
   const volume = new VolumeChiffre({
     volume: "mesure",

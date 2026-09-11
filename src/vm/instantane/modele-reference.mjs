@@ -20,9 +20,8 @@ import {
   tirerNonce,
   verifierAlgorithme,
 } from "../format-chiffre/identite-logique.mjs";
-import { BUDGET_SCELLEMENTS_PAR_CLE } from "../format-chiffre/identite-logique.mjs";
 import { encoderLiaison, exigerLiaison } from "./identite-instantane.mjs";
-import { budgetDeCle, malforme, sceauRefuse } from "./instantane-errors.mjs";
+import { malforme, sceauRefuse } from "./instantane-errors.mjs";
 
 export { importerCleDeVolume } from "../format-chiffre/modele-reference.mjs";
 
@@ -34,28 +33,28 @@ function exigerOctets(nom, valeur, longueur) {
 }
 
 /**
- * Le budget de clé est PRÉSENTÉ, jamais supposé.
+ * Il n'y a PLUS de budget à présenter ici, et c'est une décision, pas un oubli (#182, ADR 0033).
  *
- * Une capture consomme un scellement, et le § 8.3 de NIST SP 800-38D compte « all instances of the
- * authenticated encryption function ». L'omettre aurait fait un compteur faux plutôt qu'un budget
- * économisé — c'est la règle que l'ADR 0015 pose déjà pour les blocs et les racines.
+ * Jusqu'à la v3, une capture était scellée sous la clé du VOLUME et consommait donc un scellement de
+ * son compteur. Depuis la v4, elle est scellée sous une clé du domaine `instantane` **à usage
+ * unique**, tirée d'un sel de trente-deux octets écrit en clair dans le fichier : une clé neuve par
+ * capture, un scellement sous cette clé, et rien à compter.
+ *
+ * **Le budget d'une clé à usage unique est de 1, et aucune mesure ne peut le rendre faux.** C'est ce
+ * qui rend le régime plus sûr qu'un compteur, et non moins : compter suppose un état durable,
+ * atomique et partagé, et dans un système exposé au retour arrière tout ce qui se compte finit par
+ * reculer (ADR 0033, décision 4). Le compteur qui vivait ici était précisément l'un de ceux que la
+ * revue externe range parmi ceux « qui ne sont pas persistés ».
+ *
+ * Une garde reste pour le cas où un appelant présenterait encore l'ancien paramètre : le REFUSER
+ * vaut mieux que l'ignorer, car un appelant qui compte croit que quelqu'un l'écoute.
  */
-function exigerBudget(scellementsCumules) {
-  if (scellementsCumules === undefined) {
-    throw malforme(
-      "« attentes.scellementsCumules » est obligatoire. Une capture consomme un scellement sous la clé de volume, et un compteur oublié n'est pas un budget économisé : c'est un budget faux.",
-      { champ: "scellementsCumules" },
-    );
-  }
-  if (!Number.isSafeInteger(scellementsCumules) || scellementsCumules < 0) {
-    throw malforme(`« attentes.scellementsCumules » doit être un entier naturel.`, {
-      champ: "scellementsCumules",
-    });
-  }
-  if (scellementsCumules >= BUDGET_SCELLEMENTS_PAR_CLE) {
-    throw budgetDeCle({ scellementsCumules, budget: BUDGET_SCELLEMENTS_PAR_CLE });
-  }
-  return scellementsCumules;
+function refuserUnBudget(attentes) {
+  if (attentes?.scellementsCumules === undefined) return;
+  throw malforme(
+    "« attentes.scellementsCumules » n'a plus de sens pour une capture : depuis le format v4 elle est scellée sous une clé du domaine « instantane » à USAGE UNIQUE, dont le budget est de 1 et ne se compte pas (ADR 0033, décision 4).",
+    { champ: "scellementsCumules" },
+  );
 }
 
 /**
@@ -86,14 +85,15 @@ function vuesDuCorps(brut) {
  * normal est `scellerInstantane`, qui tire son nonce. Cette variante existe pour figer des vecteurs
  * reproductibles et pour permettre au chemin de production de les reproduire.
  *
- * @param {{ cle: CryptoKey, liaison: object, etat: Uint8Array, nonce: Uint8Array,
- *           attentes: { scellementsCumules: number } }} appel
+ * @param {{ cle: CryptoKey, liaison: object, etat: Uint8Array, nonce: Uint8Array }} appel
+ *   `cle` est la clé du domaine « instantane » de CETTE capture : elle est à usage unique, et son
+ *   sel est écrit en clair dans le fichier (ADR 0033, décision 3).
  * @returns {Promise<{ nonce: Uint8Array, corps: Uint8Array, chiffre: Uint8Array,
  *                     etiquette: Uint8Array }>} `chiffre` et `etiquette` sont des VUES de `corps`
  */
 export async function scellerInstantaneSousNonce({ cle, liaison, etat, nonce, attentes = {} }) {
   verifierAlgorithme(liaison?.algorithme);
-  exigerBudget(attentes.scellementsCumules);
+  refuserUnBudget(attentes);
   exigerOctets("nonce", nonce, NONCE_OCTETS);
   const exigee = exigerLiaison(liaison);
   if (!(etat instanceof Uint8Array)) {

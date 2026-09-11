@@ -59,7 +59,7 @@ import { engagementSidecarName } from "../../src/vm/opfs-sync-access.mjs";
 import { GENERATION_ETATS } from "../../src/vm/generation-recuperation.mjs";
 import {
   SCEAU_OCTETS,
-  dispositionV3,
+  dispositionDuVolume,
   offsetDeCharge,
   offsetDeSceau,
 } from "../../src/vm/volume-chiffre-format.mjs";
@@ -76,7 +76,7 @@ import {
 
 const NOM = "coffre";
 const CIBLE = "restaure";
-const DISPOSITION = dispositionV3(TAILLE);
+const DISPOSITION = dispositionDuVolume(TAILLE);
 const PREAMBULE_OCTETS = 12;
 
 /** Un secteur entier rempli d'un motif reconnaissable : c'est le CLAIR qu'on suivra. */

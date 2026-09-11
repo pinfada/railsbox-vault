@@ -54,13 +54,13 @@ import { VolumeChiffre } from "../../src/vm/volume-chiffre.mjs";
 import {
   FORMAT_VOLUME_V3,
   SCEAU_OCTETS,
-  dispositionV3,
+  dispositionDuVolume,
   offsetDeCharge,
   offsetDeSceau,
 } from "../../src/vm/volume-chiffre-format.mjs";
 
 const TAILLE = 8 * SECTOR_SIZE;
-const DISPOSITION = dispositionV3(TAILLE);
+const DISPOSITION = dispositionDuVolume(TAILLE);
 
 /** Identifiant FIXE du banc : il entre dans les données associées de chaque sceau. */
 const IDENTIFIANT = "7".repeat(32);

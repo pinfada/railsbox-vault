@@ -32,7 +32,7 @@ import { VolumeChiffre } from "../../src/vm/volume-chiffre.mjs";
 import { ETAPES_CONVERSION, convertirEnV3 } from "../../src/vm/migration-v3.mjs";
 import {
   decoderEnTeteV3,
-  dispositionV3,
+  dispositionDuVolume,
   identifiantVolumeEnTexte,
   offsetDeCharge,
 } from "../../src/vm/volume-chiffre-format.mjs";
@@ -112,7 +112,7 @@ function scellement() {
 
 /** Relit le volume converti PAR LE CHEMIN DE PRODUCTION, et rend son clair. */
 async function relireClair(support) {
-  const disposition = dispositionV3(TAILLE_LOGIQUE);
+  const disposition = dispositionDuVolume(TAILLE_LOGIQUE);
   const volume = new VolumeChiffre({
     volume: "migre",
     scellement: await scellement(),
@@ -139,7 +139,7 @@ test("un volume v2 converti en v3 rend EXACTEMENT le même clair, par le chemin 
     secteursParTour: SECTEURS_PAR_TOUR,
   });
 
-  const disposition = dispositionV3(TAILLE_LOGIQUE);
+  const disposition = dispositionDuVolume(TAILLE_LOGIQUE);
   assert.equal(support.size(), disposition.tailleSupport, "le fichier a grandi de sa région");
   assert.equal(rapport.secteursScelles, disposition.secteurs);
   assert.deepEqual([...(await relireClair(support))], [...attendu]);
@@ -326,7 +326,7 @@ test("une coupure PENDANT le scellement se reprend sans rescéller ce qui l'est 
   assert.ok(rapport.secteursScelles > 0, "et d'autres restaient à convertir");
   assert.equal(
     rapport.secteursScelles + rapport.secteursDejaScelles,
-    dispositionV3(TAILLE_LOGIQUE).secteurs,
+    dispositionDuVolume(TAILLE_LOGIQUE).secteurs,
   );
   assert.deepEqual([...(await relireClair(support))], [...attendu]);
 });
@@ -443,7 +443,7 @@ test("un secteur SOUS la position déjà scellée qui ne s'ouvre pas fait REFUSE
   assert.ok(dernier.position > 0, "des secteurs ont été scellés et la position le dit");
 
   // Un secteur SOUS cette position est abîmé : il ne s'ouvrira plus.
-  const disposition = dispositionV3(TAILLE_LOGIQUE);
+  const disposition = dispositionDuVolume(TAILLE_LOGIQUE);
   support.octets[offsetDeCharge(disposition, 0) + 10] ^= 0x01;
 
   support.armerCoupure(null);

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 
 import { TRANCHE_REGION_OCTETS } from "../../src/vm/generation-fraicheur.mjs";
-import { dispositionV3 } from "../../src/vm/volume-chiffre-format.mjs";
+import { dispositionDuVolume } from "../../src/vm/volume-chiffre-format.mjs";
 
 // COÛT de l'empreinte de la région d'authentification, sur OPFS RÉEL (#19, ADR 0019).
 //
@@ -47,7 +47,7 @@ test("l'empreinte de région d'un volume de 512 Mio reste sous le pour-cent du b
   await page.goto("/vm/recuperation.html");
   await expect(page.locator("#etat")).toHaveText("Banc de récupération prêt.");
 
-  const disposition = dispositionV3(TAILLE_LOGIQUE);
+  const disposition = dispositionDuVolume(TAILLE_LOGIQUE);
   const mesure = await page.evaluate(
     (options) => globalThis.bancRecuperation.mesurer(options),
     // TROIS répétitions : deux ne disent pas si l'écart entre elles est du bruit ou une tendance,

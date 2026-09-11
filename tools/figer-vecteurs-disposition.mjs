@@ -78,7 +78,7 @@ import {
   FORMAT_VOLUME_V3,
   SCEAU_OCTETS,
   SCELLEMENT_COMPLET_OFFSET,
-  dispositionV3,
+  dispositionDuVolume,
   encoderEnTeteV3,
   encoderSceau,
   identifiantVolumeEnOctets,
@@ -140,7 +140,7 @@ const SECTEURS = [0, 512, 1024, 1536].map((adresse, index) => ({
 }));
 
 async function main() {
-  const disposition = dispositionV3(TAILLE_LOGIQUE);
+  const disposition = dispositionDuVolume(TAILLE_LOGIQUE);
   const scellement = await Scellement.ouvrir({
     volume: IDENTIFIANT_VOLUME,
     cleOctets: CLE_DE_TEST,
