@@ -161,6 +161,13 @@ export class GenerationStore {
   #generation = 0;
   #sequenceValidee = 0;
   #rapport = null;
+
+  /**
+   * Scellements du domaine `volume` consommés quand la RÉCUPÉRATION s'est achevée : le repère de
+   * `cloturerParRacine`. Le compteur de la dernière racine ÉCRITE ne conviendrait pas — une racine
+   * réserve dans son compte son propre scellement et celui du témoin qui la suit.
+   */
+  #scellementsALaRecuperation = 0;
   /** Sceau et compteur de la dernière racine écrite. Conservés pour le parcours du rangement. */
   /**
    * L'ÉCRIVAIN DE RACINES (#181) : le seul à écrire dans la zone des racines, et le seul à se
@@ -368,6 +375,38 @@ export class GenerationStore {
     this.#sequenceMinimale = this.#sequenceValidee;
     this.#generationPlancher = this.#generation + 1;
     this.#relecture.poserPlancher(this.#generationPlancher);
+    this.#scellementsALaRecuperation = this.#scellement.scellementsCumulesVolume;
+  }
+
+  /**
+   * DÉCLARE que la RÉGION a changé sous une écriture que ce magasin n'a pas vue (#182, T2b).
+   *
+   * Un magasin INSTALLÉ voit passer toutes les écritures : `#ecrireVolume` marque la région
+   * lui-même. Un magasin TENU POUR CLORE ne les voit pas — la session hors transaction écrit droit
+   * au volume —, et la racine de clôture recopierait alors une empreinte qui ne décrit plus rien.
+   */
+  marquerRegionSale() {
+    this.#garde?.marquerRegionSale();
+  }
+
+  /**
+   * CLÔT la session par une RACINE qui publie les deux compteurs (#182, T2b ; ADR 0033, décision 4).
+   *
+   * C'est le geste qui manquait au TROISIÈME chemin hors transaction, et il n'ouvre AUCUN second
+   * chemin de scellement : il appelle `#vider`, comme la récupération et le point de contrôle. Le
+   * POURQUOI est écrit là où il se relit — `etablirLaGeneration` dans `opfs-volume-ouverture.mjs`,
+   * le § 4.5 de la spécification, et l'ADR 0036.
+   *
+   * Il n'écrit RIEN si la session n'a rien scellé depuis la récupération : une clôture
+   * inconditionnelle consommerait un scellement pour publier le compte de ce scellement.
+   *
+   * @returns {Promise<boolean>} vrai si une racine a été écrite
+   */
+  async cloturerParRacine() {
+    if (this.#scellement.scellementsCumulesVolume === this.#scellementsALaRecuperation)
+      return false;
+    await this.#vider({ sequence: this.#sequence, generation: this.#generation });
+    return true;
   }
 
   /**

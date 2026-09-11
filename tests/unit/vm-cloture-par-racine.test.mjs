@@ -231,21 +231,27 @@ test("CHEMIN 2 — l'INSTALLATION INITIALE clôt par une racine, sur l'état FIN
   }
 });
 
-test("CHEMIN 3 — une RÉOUVERTURE hors transaction ne clôt PAS par une racine, et c'est MESURÉ", async () => {
-  // **Le chemin que la tranche T2a ne ferme pas, mesuré plutôt qu'annoncé fermé.**
+test("CHEMIN 3 — une RÉOUVERTURE hors transaction CLÔT par une racine, et le compte est une ÉGALITÉ", async () => {
+  // **Le troisième chemin hors transaction, fermé par T2b (#182, amendement du 11 septembre 2026).**
   //
-  // L'ADR 0033, décision 4, donne deux conduites admissibles à une session qui ne peut pas publier
-  // ses compteurs : clore par une racine, ou être en LECTURE SEULE. Le volume de COQUILLE
-  // (`public/runtime-worker.mjs`) ne peut être ni l'une ni l'autre en l'état — il ÉCRIT un secteur
-  // par déverrouillage, donc la lecture seule le casse, et écrire une racine de clôture sur un
-  // volume qui en a déjà une demande un geste que `GenerationStore` n'expose pas.
+  // L'ADR 0033, décision 4, donne deux conduites à une session qui scelle sous une clé à compteur :
+  // clore par une racine, ou être en LECTURE SEULE. Le volume de COQUILLE ne pouvait être ni l'une
+  // ni l'autre en T2a — il ÉCRIT un secteur par déverrouillage, si bien que la lecture seule le
+  // casse (l'E2E `reprise-coquille-boot-froid` l'a réfutée par exécution), et écrire une racine sur
+  // un volume DÉJÀ DATÉ demandait un geste que `GenerationStore` n'exposait pas.
   //
-  // Cette épreuve MESURE donc l'écart au lieu de le taire : une réouverture hors transaction scelle,
-  // et la racine du volume ne bouge pas. Le jour où T2b donnera son geste au magasin, c'est ELLE qui
-  // devra rougir — et son message le dit.
+  // Ce geste est `cloturerParRacine`, et il n'ouvre AUCUN second chemin de scellement : il appelle
+  // `#vider`, exactement comme la récupération et le point de contrôle le font déjà. La session
+  // hors transaction TIENT son magasin sans l'INSTALLER — ses écritures vont droit au volume, ce
+  // que la coquille exige — et le referme par une racine.
+  //
+  // L'épreuve qui vivait ici mesurait l'ÉCART. Elle mesure désormais l'ÉGALITÉ, par le nombre
+  // d'invocations RÉELLES de `encrypt` sous la clé du volume : « publié + 1 pour la racine » est ce
+  // que le § 4.5 promet, et rien de moins.
   const store = createSyncAccessStore();
   const naissance = await ouvrir(store, { transactionnel: false });
   const empreinte = await naissance.empreinteDuFichier();
+  const scellementsVerses = naissance.scellementsCumules;
   await naissance.close();
   await daterLaCreation({
     name: NOM,
@@ -253,43 +259,105 @@ test("CHEMIN 3 — une RÉOUVERTURE hors transaction ne clôt PAS par une racine
     identifiantVolume: IDENTIFIANT,
     openHandle: store.openHandle,
     empreinteVersee: empreinte,
+    scellementsVerses,
   });
   const avant = racineDuJournal(store);
 
-  // La RÉOUVERTURE hors transaction : le fichier existe, ce n'est donc pas une naissance.
+  const sonde = compteur("volume");
+  let apres;
+  try {
+    // La RÉOUVERTURE hors transaction : le fichier existe, ce n'est donc pas une naissance.
+    const relecture = await ouvrir(store, { transactionnel: false });
+    try {
+      assert.equal(
+        relecture.describe().transactionnel,
+        false,
+        "les écritures vont droit au volume",
+      );
+      // Elle ÉCRIT, et l'écriture ABOUTIT : c'est ce que la coquille fait à chaque déverrouillage.
+      await relecture.write(0, secteurDe(0x99));
+      await relecture.flush();
+      assert.deepEqual([...(await relecture.read(0, SECTOR_SIZE))], [...secteurDe(0x99)]);
+    } finally {
+      await relecture.close();
+    }
+    apres = racineDuJournal(store);
+
+    // L'ÉGALITÉ, et elle est EXACTE — pas « publié + 1 ». Une racine RÉSERVE dans le compte qu'elle
+    // publie son propre scellement et celui du témoin qui la suit (revue de sécurité de la PR #186,
+    // constat 1) : ce que la dernière racine annonce couvre donc tout ce que la session a chiffré,
+    // la clôture comprise. La sonde compte les invocations RÉELLES de `encrypt` sous la clé du
+    // domaine `volume` depuis la réouverture.
+    assert.equal(
+      apres.scellementsCumulesVolume - avant.scellementsCumulesVolume,
+      sonde.invocations,
+      `publié ${apres.scellementsCumulesVolume - avant.scellementsCumulesVolume}, chiffré ${sonde.invocations}`,
+    );
+  } finally {
+    sonde.rendre();
+  }
+
+  assert.equal(
+    apres.sequence - avant.sequence,
+    2,
+    "DEUX racines : celle que la récupération écrit à l'ouverture, et celle de la CLÔTURE",
+  );
+  assert.equal(
+    apres.scellementsCumulesJournal,
+    avant.scellementsCumulesJournal,
+    "une session hors transaction ne dépose AUCUN enregistrement : le budget du journal ne bouge pas",
+  );
+
+  // **La seconde moitié de l'écart, refermée par le même geste.** L'écriture hors transaction avait
+  // périmé l'empreinte de région que la dernière racine scelle, et un ouvreur TRANSACTIONNEL
+  // refusait ensuite le volume par la garde de fraîcheur de l'ADR 0019. La racine de clôture
+  // rescelle la région du même geste qu'elle publie les compteurs : le volume se rouvre.
+  const backend = await ouvrir(store);
+  try {
+    assert.deepEqual(
+      [...(await backend.read(0, SECTOR_SIZE))],
+      [...secteurDe(0x99)],
+      "le clair écrit hors transaction est relu par une ouverture transactionnelle",
+    );
+  } finally {
+    await backend.close();
+  }
+});
+
+test("CHEMIN 3 — une réouverture qui n'écrit RIEN n'écrit AUCUNE racine", async () => {
+  // Le témoin négatif du geste : « toute session qui SCELLE clôt par une racine » ne dit pas
+  // « toute session clôt par une racine ». Une clôture inconditionnelle consommerait un scellement
+  // pour publier le compte de ce scellement — un compteur qui avancerait d'une unité par ouverture,
+  // c'est-à-dire la dérive que la règle a précisément pour objet d'empêcher.
+  const store = createSyncAccessStore();
+  const naissance = await ouvrir(store, { transactionnel: false });
+  const empreinte = await naissance.empreinteDuFichier();
+  const scellementsVerses = naissance.scellementsCumules;
+  await naissance.close();
+  await daterLaCreation({
+    name: NOM,
+    cle: CLE_DE_TEST,
+    identifiantVolume: IDENTIFIANT,
+    openHandle: store.openHandle,
+    empreinteVersee: empreinte,
+    scellementsVerses,
+  });
+  const avant = racineDuJournal(store);
+
   const relecture = await ouvrir(store, { transactionnel: false });
   try {
-    assert.equal(relecture.describe().transactionnel, false);
-    // Elle ÉCRIT, et l'écriture ABOUTIT : c'est ce que la coquille fait à chaque déverrouillage.
-    await relecture.write(0, secteurDe(0x99));
-    await relecture.flush();
-    assert.deepEqual([...(await relecture.read(0, SECTOR_SIZE))], [...secteurDe(0x99)]);
+    await relecture.read(0, SECTOR_SIZE);
   } finally {
     await relecture.close();
   }
 
+  // UNE seule racine : celle que la récupération écrit en ouvrant, comme toute ouverture depuis #16.
+  // La CLÔTURE, elle, n'en écrit aucune — c'est ce que cette épreuve mesure.
   const apres = racineDuJournal(store);
   assert.equal(
-    apres.scellementsCumulesVolume,
-    avant.scellementsCumulesVolume,
-    "ÉCART CONNU (#182, reste de T2b) : cette session a scellé, et aucune racine ne l'a publié. " +
-      "Si cette égalité devient fausse, c'est que la clôture par racine a été livrée — et c'est une " +
-      "bonne nouvelle : récrivez cette épreuve, elle a fini son travail.",
-  );
-  assert.equal(apres.sequence, avant.sequence, "aucune racine neuve n'a été écrite");
-
-  // **La SECONDE moitié de l'écart, et elle est plus tranchante que la première.** Cette écriture a
-  // changé la RÉGION d'authentification, donc périmé l'empreinte que la dernière racine scelle : un
-  // ouvreur TRANSACTIONNEL refuse désormais ce volume par la garde de fraîcheur de l'ADR 0019.
-  //
-  // Ce n'est pas un défaut de #182 — c'est ce que le § 7.1 écrit depuis #181 : « un appelant qui
-  // ÉCRIT le fichier ensuite doit le RE-DATER ». Le volume de COQUILLE ne le rencontre jamais parce
-  // que personne ne l'ouvre transactionnellement. Mais cela dit exactement ce que la racine de
-  // clôture apporterait : elle rescellerait la région du même geste qu'elle publie les compteurs.
-  await assert.rejects(
-    () => ouvrir(store),
-    (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.generationCorrupt),
-    "une écriture hors transaction périme la fraîcheur de la dernière racine",
+    apres.sequence - avant.sequence,
+    1,
+    "la récupération écrit sa racine ; la clôture n'en ajoute AUCUNE quand rien n'a été scellé",
   );
 });
 

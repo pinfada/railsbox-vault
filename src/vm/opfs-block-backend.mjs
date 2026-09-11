@@ -79,6 +79,16 @@ export class OpfsBlockBackend {
   #faults;
   #flushDelay;
   #generation;
+
+  /**
+   * Le magasin qu'une session HORS TRANSACTION tient pour CLORE, sans jamais y déposer (#182, T2b).
+   *
+   * Il est distinct de `#generation` et l'écart est la décision : `#generation` détourne les
+   * écritures vers le journal, ce qu'une session hors transaction ne veut pas — la coquille écrit
+   * son secteur de serrure DIRECTEMENT. Celui-ci ne sert qu'à deux choses : reprendre les compteurs
+   * de la racine qui fait autorité à l'ouverture, et écrire la racine de CLÔTURE qui les republie.
+   */
+  #clotureHorsTransaction = null;
   #rangement = null;
   #rangementEnCours = null;
   #dureeRangementMaxMs = 0;
@@ -220,6 +230,16 @@ export class OpfsBlockBackend {
   }
 
   /** Installe le magasin après l'ouverture : il a besoin du backend pour lire et écrire le volume. */
+  /**
+   * Confie à ce backend le magasin qui CLÔRA la session hors transaction par une racine.
+   *
+   * Il n'est PAS installé comme génération : les écritures continuent d'aller droit au volume. Voir
+   * `#clotureHorsTransaction`.
+   */
+  installerClotureHorsTransaction(magasin) {
+    this.#clotureHorsTransaction = magasin;
+  }
+
   installerGeneration(magasin) {
     if (this.#generation !== null) {
       throw new Error(`Le volume « ${this.#name} » a déjà un magasin de générations.`);
@@ -477,6 +497,10 @@ export class OpfsBlockBackend {
    * relecture, ce qui est plus strict que la v2 — elle y laissait des octets clairs plausibles.
    */
   async #ecrireDansLeVolume(offset, bytes, requested, offerts) {
+    // Le magasin tenu pour CLORE ne voit pas cette écriture : elle va droit au volume. Lui dire que
+    // la RÉGION a changé est ce qui fait que la racine de clôture rescelle une empreinte qui décrit
+    // l'état réel, au lieu de recopier celle de la racine précédente (#182, T2b).
+    this.#clotureHorsTransaction?.marquerRegionSale();
     await this.#chiffre.ecrireSecteurs(offset, bytes, GENERATION_HORS_TRANSACTION, {
       octetsAcceptes: offerts,
     });
@@ -728,8 +752,21 @@ export class OpfsBlockBackend {
       rangement = toStorageError(cause, { operation: "checkpoint", volume: this.#name });
     }
 
+    // La CLÔTURE PAR RACINE d'une session hors transaction (#182, T2b, ADR 0033 décision 4). Elle
+    // vient après le rangement et avant la libération des handles : elle écrit dans le volume ET
+    // dans le journal voisin, qui sont l'un et l'autre encore tenus. Son échec est traité comme
+    // celui d'un rangement — il est rendu à l'appelant, et il ne laisse aucun handle derrière lui.
+    if (rangement === null) {
+      try {
+        await this.#clotureHorsTransaction?.cloturerParRacine();
+      } catch (cause) {
+        rangement = toStorageError(cause, { operation: "cloture-par-racine", volume: this.#name });
+      }
+    }
+
     try {
       this.#generation?.close();
+      this.#clotureHorsTransaction?.close();
       this.#acces.fermer();
     } catch (cause) {
       throw rangement ?? toStorageError(cause, { operation: "close", volume: this.#name });
