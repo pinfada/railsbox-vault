@@ -20,6 +20,51 @@ import { BRIDGE_MODES, installDurabilityBridge } from "./v86-flush-bridge.mjs";
 const POLL_INTERVAL_MS = 20;
 const DEFAULT_IDE_TIMEOUT_MS = 60_000;
 
+/**
+ * Ce qu'une série de guest jointe à un délai de boot a le droit de peser, en caractères.
+ *
+ * Le plafond n'est pas là pour économiser : il est là pour qu'une boucle pathologique du guest —
+ * un `sh` qui recrache une ligne par milliseconde pendant cinq minutes — ne produise pas un message
+ * d'erreur de plusieurs dizaines de mébioctets qu'aucun rapport n'afficherait. Une série d'échec
+ * mesurée le 6 septembre 2026 pèse environ 20 000 caractères, boot du noyau compris : le plafond
+ * est vingt-cinq fois au-dessus du cas réel, et il est franchi par un défaut, pas par un boot.
+ */
+export const PLAFOND_SERIE_DU_GUEST = 500_000;
+
+/** Ce que la TÊTE garde quand le plafond est franchi : c'est là que le boot se joue. */
+const TETE_SERIE_DU_GUEST = 300_000;
+
+/**
+ * Série du guest JOINTE à un délai de boot, en ENTIER tant qu'elle tient sous le plafond.
+ *
+ * **C'est la correction d'une perte de preuve mesurée sur #165.** La version précédente joignait
+ * `transcript.slice(-4000)` : la FIN de la série. Or le mode d'échec observé deux fois — le guest
+ * reste à l'invite `(initramfs)` et Rails ne répond jamais — se joue AU DÉBUT, entre l'amorce du
+ * noyau et le montage du rootfs ; la fin ne montre que les sondes de santé qui rebondissent sur le
+ * shell de secours, c'est-à-dire la conséquence, jamais la cause. Les deux occurrences (runs
+ * 34054146291 et 34419243044, tentatives 1) ont rendu 4 152 caractères IDENTIQUES à la numérotation
+ * des requêtes près : la fin ne distingue même pas deux scénarios différents.
+ *
+ * Quand le plafond est franchi, la tête est gardée de préférence à la fin, et ce qui manque est
+ * NOMMÉ — un extrait dont on ignore ce qu'il omet vaut à peine mieux que rien.
+ *
+ * @param {string} transcript
+ * @param {{ plafond?: number, tete?: number }} [reglages]
+ * @returns {string}
+ */
+export function serieDeDiagnostic(
+  transcript,
+  { plafond = PLAFOND_SERIE_DU_GUEST, tete = TETE_SERIE_DU_GUEST } = {},
+) {
+  const serie = typeof transcript === "string" ? transcript : "";
+  if (serie.length <= plafond) return serie;
+  const gardeEnTete = Math.min(tete, plafond);
+  const gardeEnFin = plafond - gardeEnTete;
+  const omis = serie.length - plafond;
+  const fin = gardeEnFin === 0 ? "" : serie.slice(serie.length - gardeEnFin);
+  return `${serie.slice(0, gardeEnTete)}\n[… ${omis} caractères omis : la série pesait ${serie.length} caractères, le plafond en garde ${plafond} …]\n${fin}`;
+}
+
 /** Erreur de démarrage portant le journal série pour diagnostic — jamais un échec muet. */
 export class BootTimeout extends Error {
   constructor(message, transcript) {
@@ -309,7 +354,7 @@ export function createReferenceGuestSession({
       throw new BootTimeout(
         `Rails n'a pas répondu à /vault/health en ${Math.round(totalTimeoutMs / 1000)} s ; ` +
           `dernière erreur : ${derniereErreur?.message ?? "aucune"}`,
-        transcript.slice(-4000),
+        serieDeDiagnostic(transcript),
       );
     },
 

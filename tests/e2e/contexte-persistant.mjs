@@ -27,9 +27,21 @@
 // Ce module ne change AUCUNE assertion. Il change le support sous les scénarios, et le rapproche de
 // celui du produit.
 
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { chromium, test as base } from "@playwright/test";
 
+import { creerChronologie } from "./chronologie.mjs";
+
 export { expect } from "@playwright/test";
+
+/** Où les relevés montent dans l'artefact du run, à côté de ceux que les scénarios publient. */
+const DOSSIER_RAPPORTS = join(
+  resolve(dirname(fileURLToPath(import.meta.url)), "..", ".."),
+  "reports",
+  "e2e",
+);
 
 /**
  * `test` étendu : la fixture `context` rend un contexte à profil persistant, sur disque.
@@ -49,6 +61,55 @@ export { expect } from "@playwright/test";
  * tourner ses scénarios sur Chromium sans le dire.
  */
 export const test = base.extend({
+  /**
+   * CHRONOLOGIE du scénario, ouverte pour lui seul et déposée à chaque étape (#165).
+   *
+   * Elle est `auto` : un scénario n'a rien à faire pour qu'un échec soit daté, et c'est le point.
+   * Ce qu'elle porte sans qu'on lui dise rien — le début, l'issue, le message d'échec et la SÉRIE
+   * DU GUEST quand il y en a une — suffit à dater un boot qui n'a jamais répondu. Les étapes
+   * NOMMÉES (préparation, coupure, reprise, boot, santé, refus) sont poussées par les scénarios qui
+   * les connaissent : `chronologie.etape("reprise", { … })`.
+   *
+   * Le relevé vit dans `reports/e2e/`, qui monte dans l'artefact `mesures-reprise` : il se lit sans
+   * dézipper une trace Playwright, ce qui est exactement ce que l'instruction de #165 a dû faire.
+   */
+  chronologie: [
+    // Playwright DÉDUIT les dépendances d'une fixture du motif de déstructuration de son premier
+    // paramètre : celle-ci n'en a aucune, et le motif vide est la façon de le dire.
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, use, testInfo) => {
+      // Le RANG de répétition entre dans le nom : sans lui, `--repeat-each 5` écrase quatre fois
+      // son propre relevé et une campagne de mesure ne laisse que son dernier passage. C'est
+      // exactement ce dont la distribution de #152 avait besoin, et le rang est absent du cas
+      // ordinaire (un seul passage) pour que le nom de fichier reste celui que `docs/testing.md`
+      // annonce.
+      const rang = testInfo.repeatEachIndex > 0 ? `-${testInfo.repeatEachIndex}` : "";
+      const chronologie = creerChronologie({
+        scenario: `${basename(testInfo.file, ".spec.mjs")}${rang}`,
+        dossier: DOSSIER_RAPPORTS,
+      });
+      chronologie.etape("ouverture", { titre: testInfo.title, tentative: testInfo.retry });
+      await use(chronologie);
+      // APRÈS le corps du scénario et ses `afterEach` : `testInfo.status` porte alors l'issue réelle.
+      const message = testInfo.errors.map((erreur) => erreur.message ?? "").join("\n---\n");
+      const serie = chronologie.clore({
+        statut: testInfo.status ?? "inconnu",
+        message: message === "" ? null : message,
+      });
+      await testInfo.attach("chronologie.json", {
+        path: chronologie.chemins.releve,
+        contentType: "application/json",
+      });
+      if (serie !== null) {
+        await testInfo.attach("serie-guest.txt", {
+          path: chronologie.chemins.serie,
+          contentType: "text/plain",
+        });
+      }
+    },
+    { auto: true },
+  ],
+
   context: async ({ baseURL }, use, testInfo) => {
     // Un contexte lancé par nous n'hérite plus des options `use` du projet : celles dont les
     // scénarios dépendent sont reprises explicitement. `headless` doit l'être en particulier — un
