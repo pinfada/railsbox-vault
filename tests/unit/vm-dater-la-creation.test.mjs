@@ -13,7 +13,7 @@
  * aussi un chemin que seul un banc navigateur emprunterait, et qui resterait donc sans preuve sous
  * Node. Cette suite le mesure là où il se mesure : sur le double déterministe de #6.
  *
- * Quatre propriétés, et aucune ne se déduit des autres :
+ * Six propriétés, et aucune ne se déduit des autres :
  *
  *  1. **le refus SANS datation** — c'est ce qui rend le geste nécessaire, et sans cette moitié la
  *     suivante ne prouverait pas grand-chose ;
@@ -22,7 +22,14 @@
  *  3. **elle refuse un volume EN SERVICE** : dater un journal qui porte autre chose que la racine
  *     initiale d'une création écarterait une écriture acquittée, ce que `SEC-DURABLE-001` interdit ;
  *  4. **elle refuse un fichier sans en-tête v3 lisible** : une création ne se date pas sans savoir
- *     de quel volume elle parle.
+ *     de quel volume elle parle ;
+ *  5. **elle refuse un volume RESTAURÉ** — dont le journal ne porte AUCUNE racine. C'est l'état
+ *     qu'une restauration laisse, jamais celui d'une création, et le tolérer rouvrait le mélange
+ *     A/C de #181 par un geste que `opfs-block-backend.mjs` exporte (constat 2 de la revue de
+ *     sécurité et constat 1 de la revue de format de la PR #184) ;
+ *  6. **elle refuse un fichier qui n'est plus celui que le versement a écrit** : l'empreinte rendue
+ *     par le versement est ce qui relie les deux gestes par-dessus la fenêtre où personne ne tient
+ *     le fichier (constat 1 de la revue de sécurité).
  */
 
 import assert from "node:assert/strict";
@@ -61,6 +68,9 @@ async function verser(store) {
       await backend.write(rang * SECTOR_SIZE, secteurDe(0x40 + rang));
     }
     await backend.flush();
+    // L'EMPREINTE est prise ICI, encore sous l'exclusivité du versement : c'est ce qui la distingue
+    // d'une relecture quelconque, et c'est ce que `daterLaCreation` confrontera (#181).
+    return await backend.empreinteDuFichier();
   } finally {
     await backend.close();
   }
@@ -100,12 +110,13 @@ test("SANS datation, un volume versé hors transaction est REFUSÉ à la premiè
 
 test("DATÉE, la création s'ouvre normalement : une racine fait autorité", async () => {
   const store = createSyncAccessStore();
-  await verser(store);
+  const empreinteVersee = await verser(store);
 
   const rapport = await daterLaCreation({
     name: NOM,
     cle: DEK,
     identifiantVolume: VOLUME_A,
+    empreinteVersee,
     openHandle: store.openHandle,
   });
   assert.equal(rapport.etat, GENERATION_ETATS.initialisee);
@@ -125,11 +136,12 @@ test("dater un volume EN SERVICE est REFUSÉ : ce serait écarter une écriture 
   // Le volume est versé, daté, puis il SERT : une génération est validée par une barrière. Dater de
   // nouveau viderait le journal, c'est-à-dire perdrait ce que cette barrière a acquitté.
   const store = createSyncAccessStore();
-  await verser(store);
+  const empreinteVersee = await verser(store);
   await daterLaCreation({
     name: NOM,
     cle: DEK,
     identifiantVolume: VOLUME_A,
+    empreinteVersee,
     openHandle: store.openHandle,
   });
 
@@ -153,6 +165,7 @@ test("dater un volume EN SERVICE est REFUSÉ : ce serait écarter une écriture 
         name: NOM,
         cle: DEK,
         identifiantVolume: VOLUME_A,
+        empreinteVersee,
         openHandle: store.openHandle,
       }),
     (cause) => isStorageError(cause, STORAGE_ERROR_CODES.generationPending),

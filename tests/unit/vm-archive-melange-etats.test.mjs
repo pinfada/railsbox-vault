@@ -47,7 +47,12 @@ import test from "node:test";
 
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
-import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
+import { daterLaCreation, openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
+import {
+  RACINE_OCTETS,
+  ZONE_ENREGISTREMENTS,
+  offsetDeRacine,
+} from "../../src/vm/generation-format.mjs";
 import { exportVolumeToBytes } from "../../src/vm/archive-en-memoire.mjs";
 import { importArchive } from "../../src/vm/volume-import.mjs";
 import { engagementSidecarName } from "../../src/vm/opfs-sync-access.mjs";
@@ -285,4 +290,214 @@ test("TÉMOIN DE CONSOMMATION — le voisin disparaît, et la seconde ouverture 
   assert.equal(seconde.rapport.etat, GENERATION_ETATS.aucune, "chemin normal : une racine décide");
   assert.equal(seconde.rapport.racineInitiale, false);
   assert.ok(seconde.secteur1.every((octet) => octet === 0xc1));
+});
+
+// --- Ce que les revues de la PR #184 ont demandé de MESURER ---------------------------------------
+
+/**
+ * Un magasin dont chaque geste sur un fichier est JOURNALISÉ, sans rien changer à sa conduite.
+ *
+ * C'est l'instrument des deux mesures d'ORDRE que la revue de sécurité réclame (constat 5) : sans
+ * lui, la seule chose qui tienne l'ordre des trois gestes de `#recupererSansRacine` est la lecture,
+ * et une campagne de mutation qui intervertirait ces gestes ne ferait rougir personne.
+ */
+function magasinObserve(banc) {
+  const journal = [];
+  const openHandle = async (nom) => {
+    const handle = await banc.store.openHandle(nom);
+    return {
+      getSize: () => handle.getSize(),
+      read(octets, options) {
+        journal.push({ fichier: nom, geste: "read", octets: octets.byteLength });
+        return handle.read(octets, options);
+      },
+      write(octets, options) {
+        journal.push({ fichier: nom, geste: "write", octets: octets.byteLength });
+        return handle.write(octets, options);
+      },
+      truncate(taille) {
+        journal.push({ fichier: nom, geste: "truncate", octets: taille });
+        return handle.truncate(taille);
+      },
+      flush: () => handle.flush(),
+      close: () => handle.close(),
+    };
+  };
+  return { journal, openHandle };
+}
+
+/** Ouvre le volume restauré à travers un magasin observé, et rend le journal des gestes. */
+async function ouvrirEnObservant(banc, nom) {
+  const observe = magasinObserve(banc);
+  const issue = await openOpfsVolume({
+    name: nom,
+    size: TAILLE,
+    cle: DEK,
+    identifiantVolume: VOLUME_A,
+    openHandle: observe.openHandle,
+  }).then(
+    async (backend) => {
+      const rapport = backend.generation.rapport;
+      await backend.close();
+      return { rapport, refus: null };
+    },
+    (raison) => ({ rapport: null, refus: raison }),
+  );
+  return { ...issue, journal: observe.journal };
+}
+
+test("ÉPREUVE ROUGE — le mélange A/C RESTAURÉ ne peut pas être DATÉ", async () => {
+  // Le second chemin vers la racine initiale, sous le motif `creation` — celui qui ne prouve rien.
+  // `daterLaCreation` est exporté par la surface publique du module de volume : sans la garde, il
+  // datait un volume restauré, et le mélange A/C se rouvrait EN CLAIR (constat 2 de la revue de
+  // sécurité, constat 1 de la revue de format de la PR #184).
+  const { archiveDeC, melange } = await melangeDuRelecteur();
+  const forgee = await archiveMelangee(archiveDeC, melange);
+  const { destination } = await restaurer(forgee);
+
+  await assert.rejects(
+    () =>
+      daterLaCreation({
+        name: CIBLE,
+        cle: DEK,
+        identifiantVolume: VOLUME_A,
+        empreinteVersee: "0".repeat(64),
+        openHandle: destination.store.openHandle,
+      }),
+    (cause) => isStorageError(cause, STORAGE_ERROR_CODES.generationPending),
+    "un journal SANS racine est l'état d'une restauration, jamais celui d'une création",
+  );
+
+  // Et le volume reste ce qu'il était : refusé, sans un octet de clair.
+  await assert.rejects(
+    () => ouvrirLeVolumeRestaure(destination, CIBLE),
+    (cause) => isStorageError(cause, STORAGE_ERROR_CODES.engagementInvalide),
+  );
+});
+
+test("dater un volume RESTAURÉ INTACT est refusé aussi : la garde juge l'ÉTAT, pas l'intention", async () => {
+  const { archiveDeC } = await melangeDuRelecteur();
+  const { destination } = await restaurer(archiveDeC);
+  await assert.rejects(
+    () =>
+      daterLaCreation({
+        name: CIBLE,
+        cle: DEK,
+        identifiantVolume: VOLUME_A,
+        empreinteVersee: "0".repeat(64),
+        openHandle: destination.store.openHandle,
+      }),
+    (cause) => isStorageError(cause, STORAGE_ERROR_CODES.generationPending),
+  );
+});
+
+test("un voisin d'engagement PLUS LONG que 180 octets est REFUSÉ, jamais tronqué", async () => {
+  // Lire `min(taille, 180)` puis décoder laissait passer un engagement légitime suivi d'une queue
+  // arbitraire : le décodeur n'y voyait que ses 180 premiers octets (constat 4 de la revue de
+  // sécurité). Ce dépôt tient la règle inverse pour l'archive (`assertRienEnQueue`).
+  const { archiveDeC } = await melangeDuRelecteur();
+  const { destination } = await restaurer(archiveDeC);
+
+  const voisin = engagementSidecarName(CIBLE);
+  const legitime = destination.store.snapshot(voisin);
+  assert.equal(legitime.byteLength, 180, "un engagement fait 180 octets");
+  const allonge = new Uint8Array(200);
+  allonge.set(legitime, 0);
+  allonge.fill(0x41, 180);
+  await destination.ecrire(voisin, allonge);
+
+  await assert.rejects(
+    () => ouvrirLeVolumeRestaure(destination, CIBLE),
+    (cause) => isStorageError(cause, STORAGE_ERROR_CODES.engagementInvalide),
+    "un voisin d'une AUTRE taille est présent et illisible, jamais amputé de sa queue",
+  );
+});
+
+test("un voisin REPOSÉ alors qu'une racine fait autorité est VIDÉ, et l'ouverture le PUBLIE", async () => {
+  // Il n'est jamais consulté sur ce chemin — la décision 5 le dit — mais un voisin qu'on ignore
+  // sans le dire finit par être cru actif (constat 9 de la revue de sécurité).
+  const { archiveDeC } = await melangeDuRelecteur();
+  const { destination } = await restaurer(archiveDeC);
+  const voisin = engagementSidecarName(CIBLE);
+  const legitime = destination.store.snapshot(voisin);
+
+  const premiere = await ouvrirLeVolumeRestaure(destination, CIBLE);
+  assert.equal(premiere.rapport.motifDeLaRacine, "engagement");
+  assert.equal(premiere.rapport.voisinIgnore, false, "il a été CONSOMMÉ, pas ignoré");
+
+  // L'adversaire repose le voisin : une racine fait désormais autorité, il n'obtient rien.
+  await destination.ecrire(voisin, legitime);
+  const seconde = await ouvrirLeVolumeRestaure(destination, CIBLE);
+  assert.equal(seconde.rapport.etat, GENERATION_ETATS.aucune, "chemin normal : une racine décide");
+  assert.equal(seconde.rapport.voisinIgnore, true, "un voisin écarté est publié, jamais tu");
+  assert.equal(
+    destination.store.sizeOf(voisin),
+    0,
+    "vidé (0 octet), comme la consommation le fait",
+  );
+
+  // Et une troisième ouverture ne publie plus rien : il n'y a plus rien à écarter.
+  const troisieme = await ouvrirLeVolumeRestaure(destination, CIBLE);
+  assert.equal(troisieme.rapport.voisinIgnore, false);
+});
+
+test("ORDRE — une racine ABÎMÉE refuse AVANT l'autorisation, et ne coûte pas l'empreinte du fichier", async () => {
+  // Mutant visé : déplacer `exigerRacineLisible` APRÈS `this.#sansRacine.autoriser()`. Ce qui le tue
+  // est la MESURE : l'empreinte du fichier relit tout le support, et une racine abîmée ne doit pas
+  // la payer — l'inverse offrirait un déni de service à une relecture complète par tentative.
+  const { archiveDeC } = await melangeDuRelecteur();
+  const { destination } = await restaurer(archiveDeC);
+
+  // La restauration n'écrit AUCUNE racine : on en pose donc deux ILLISIBLES — ni vierges, ni
+  // décodables —, ce qui est l'état « une racine existe et elle est abîmée ».
+  const journalVoisin = `${CIBLE}.gen`;
+  const handle = await destination.store.openHandle(journalVoisin);
+  try {
+    handle.truncate(ZONE_ENREGISTREMENTS);
+    handle.write(new Uint8Array(RACINE_OCTETS).fill(0xa5), { at: offsetDeRacine(0) });
+    handle.write(new Uint8Array(RACINE_OCTETS).fill(0x5a), { at: offsetDeRacine(1) });
+    handle.flush();
+  } finally {
+    handle.close();
+  }
+
+  const observe = await ouvrirEnObservant(destination, CIBLE);
+  assert.ok(
+    isStorageError(observe.refus, STORAGE_ERROR_CODES.generationRootCorrupt),
+    `racine abîmée attendue, reçu ${observe.refus?.code}`,
+  );
+  const relecturesEntieres = observe.journal.filter(
+    (geste) => geste.fichier === CIBLE && geste.geste === "read" && geste.octets > TAILLE,
+  );
+  assert.deepEqual(
+    relecturesEntieres,
+    [],
+    "aucune relecture du fichier ENTIER : l'autorisation n'a pas été demandée",
+  );
+});
+
+test("ORDRE — la racine initiale est ÉCRITE avant que l'engagement ne soit consommé", async () => {
+  // Mutant visé : déplacer `autorisation.consommer()` AVANT `this.#vider(...)`. Ce qui le tue est la
+  // MESURE de l'ordre des gestes : retirer le voisin avant que le volume ne porte de quoi s'en
+  // passer laisserait, sur coupure, un volume irrécupérable.
+  const { archiveDeC } = await melangeDuRelecteur();
+  const { destination } = await restaurer(archiveDeC);
+
+  const observe = await ouvrirEnObservant(destination, CIBLE);
+  assert.equal(observe.rapport?.motifDeLaRacine, "engagement");
+
+  const journalVoisin = `${CIBLE}.gen`;
+  const voisin = engagementSidecarName(CIBLE);
+  const ecritureDeRacine = observe.journal.findIndex(
+    (geste) => geste.fichier === journalVoisin && geste.geste === "write",
+  );
+  const consommation = observe.journal.findIndex(
+    (geste) => geste.fichier === voisin && geste.geste === "truncate" && geste.octets === 0,
+  );
+  assert.notEqual(ecritureDeRacine, -1, "la racine initiale est ÉCRITE");
+  assert.notEqual(consommation, -1, "le voisin est CONSOMMÉ");
+  assert.ok(
+    ecritureDeRacine < consommation,
+    "la racine initiale est écrite AVANT que le voisin ne soit vidé, jamais l'inverse",
+  );
 });

@@ -277,6 +277,7 @@ export async function installerSiNecessaire({
     cleDeVolume,
     nom,
     identifiantVolume: verse.identifiantVolume,
+    empreinteVersee: verse.empreinte,
   });
   // DERNIER geste : le volume devient identifié, donc ouvrable en écriture. Tout ce qui précède
   // laisse un volume ANONYME, et c'est ce qui rend une installation interrompue reconnaissable.
@@ -314,8 +315,9 @@ async function constaterLInstallation({ nom, observer }) {
 }
 
 /**
- * OUVRE le volume NEUF et y verse le disque, en flux. Rend les octets écrits et l'IDENTIFIANT que
- * l'ouvreur a tiré : c'est lui, et non un identifiant réinventé, que le manifeste devra déclarer.
+ * OUVRE le volume NEUF et y verse le disque, en flux. Rend les octets écrits, l'EMPREINTE du fichier
+ * que le versement a laissée, et l'IDENTIFIANT que l'ouvreur a tiré : c'est lui, et non un
+ * identifiant réinventé, que le manifeste devra déclarer.
  */
 async function verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, octets }) {
   const cle = await cleDeVolume();
@@ -330,9 +332,18 @@ async function verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, o
     cle.fill(0);
   }
   try {
+    const verse = await verser(
+      backend,
+      `${descripteur.prefixeDesArtefacts}${descripteur.disque.nom}`,
+    );
+    // Un versement qui ne rend qu'un COMPTE n'atteste RIEN de ce qu'il a écrit : c'est le contrat
+    // d'avant #181, et la datation le refusera par `VAULT_STORAGE_CREATION_NON_CONFIRMEE`. On ne le
+    // rattrape pas ici — relire le fichier à sa place fabriquerait exactement l'attestation que ce
+    // versement-là n'a pas donnée, et la garde ne vaudrait plus rien.
     return {
       identifiantVolume: backend.identifiantVolume,
-      ecrits: await verser(backend, `${descripteur.prefixeDesArtefacts}${descripteur.disque.nom}`),
+      ecrits: typeof verse === "number" ? verse : verse.ecrits,
+      empreinte: typeof verse === "number" ? null : (verse.empreinte ?? null),
     };
   } finally {
     await backend.close();
@@ -353,12 +364,25 @@ async function verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, o
  * Il vient APRÈS le contrôle de troncature : un disque versé à moitié n'a pas de création à dater,
  * et l'installation s'arrête sans avoir déclaré quoi que ce soit.
  *
+ * **Il porte l'EMPREINTE que le versement a rendue** (#181, revue de sécurité de la PR #184) : le
+ * versement a fermé le fichier, ce geste le rouvre, et l'intervalle n'appartient à personne. Sans
+ * cette empreinte la datation bénirait ce qu'elle trouve — y compris le fichier qu'un adversaire
+ * OPFS aurait posé entre les deux —, et l'installation se déclarerait réussie sur un volume qui
+ * rendrait ensuite un état que ce produit n'a jamais produit. Une empreinte absente ou discordante
+ * REFUSE (`VAULT_STORAGE_CREATION_NON_CONFIRMEE`), et l'installation s'arrête là.
+ *
  * La clé est effacée QUOI QU'IL ARRIVE, comme partout ailleurs sur ce chemin.
  */
-async function daterLaCreationDuVolume({ dater, cleDeVolume, nom, identifiantVolume }) {
+async function daterLaCreationDuVolume({
+  dater,
+  cleDeVolume,
+  nom,
+  identifiantVolume,
+  empreinteVersee,
+}) {
   const cle = await cleDeVolume();
   try {
-    return await dater({ name: nom, cle, identifiantVolume });
+    return await dater({ name: nom, cle, identifiantVolume, empreinteVersee });
   } finally {
     cle.fill(0);
   }

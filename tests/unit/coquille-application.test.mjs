@@ -28,6 +28,10 @@ import {
 } from "../../src/coquille/application-de-reference.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { sansCapacite } from "../../src/coquille/contrat-de-messages.mjs";
+import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
+import { daterLaCreation, openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
+import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
+import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 
 // --- L'ÉTAPE 2 : le constat d'exclusivité ---------------------------------------------------------
 
@@ -268,6 +272,9 @@ test("chaque champ hors forme est refusé, et le refus NOMME le champ", () => {
 
 // --- L'INSTALLATION : trois issues, et pas une de plus ---------------------------------------------
 
+/** L'empreinte qu'un versement feint rend. Sa valeur importe peu ; ce qui compte est qu'elle PASSE. */
+const EMPREINTE_FEINTE = "f".repeat(64);
+
 /** Un support d'installation dont chaque geste est observable. Rien n'est écrit pour de vrai. */
 function supportDInstallation({ manifeste = false, volume = false, ecrits = null } = {}) {
   const gestes = [];
@@ -288,13 +295,15 @@ function supportDInstallation({ manifeste = false, volume = false, ecrits = null
       },
       verser: async () => {
         gestes.push("verser");
-        return ecrits ?? octets;
+        // Le versement rend ce qu'il a écrit ET l'empreinte du fichier qu'il laisse (#181, revue de
+        // sécurité de la PR #184) : c'est elle que la datation confrontera.
+        return { ecrits: ecrits ?? octets, empreinte: EMPREINTE_FEINTE };
       },
       // DATER la création (#181) : le versement a écrit le fichier entier hors transaction, donc
       // périmé la racine initiale de la naissance. Le geste est INJECTÉ comme les autres — sans
       // quoi cette suite ouvrirait un vrai handle OPFS, ce qu'aucun test unitaire ne peut faire.
       dater: async (options) => {
-        gestes.push(`dater:${options.name}`);
+        gestes.push(`dater:${options.name}:${options.empreinteVersee}`);
         return { etat: "initialisee", racineInitiale: true, motifDeLaRacine: "creation" };
       },
       revoquer: async (nom) => gestes.push(`revoquer:${nom}`),
@@ -354,8 +363,9 @@ test("un volume ABSENT est installé, et le manifeste est inscrit EN DERNIER", a
     "verser",
     "close",
     // La création est DATÉE avant que le manifeste ne la déclare (#181) : un volume déclaré complet
-    // porte toujours une racine, sans quoi le premier boot le refuserait.
-    "dater:application",
+    // porte toujours une racine, sans quoi le premier boot le refuserait. Et elle reçoit
+    // l'EMPREINTE que le versement a rendue : sans elle, la datation bénirait ce qu'elle trouve.
+    `dater:application:${EMPREINTE_FEINTE}`,
     "inscrire:application",
   ]);
   assert.ok(
@@ -377,6 +387,182 @@ test("un versement TRONQUÉ ne produit pas un volume qui se croit complet", asyn
   assert.notEqual(erreur, null);
   assert.match(erreur.message, /tronqué/);
   assert.ok(!support.gestes.includes("inscrire:application"), "un volume tronqué reste ANONYME");
+});
+
+// --- LA FENÊTRE entre le versement et la datation (#181, revue de sécurité de la PR #184) ---------
+//
+// `installerSiNecessaire` verse le disque hors transaction, FERME le backend, puis date. Entre les
+// deux, le fichier de volume n'est tenu par personne, et un adversaire qui sait écrire dans l'OPFS
+// (ADR 0019 § 6.9) peut y poser un AUTRE fichier. La datation le bénissait alors sous le motif
+// `creation` — celui qui, par construction, ne prouve rien —, l'installation se déclarait réussie, et
+// l'ouverture suivante rendait EN CLAIR un état que ce volume n'a jamais produit.
+//
+// Ces trois épreuves montent le vrai `installerSiNecessaire` sur le vrai `daterLaCreation`, sur le
+// double déterministe de #6 : le support est injecté, tout le reste est le produit.
+
+const TAILLE_DEPREUVE = 8 * SECTOR_SIZE;
+const ID_DEPREUVE = "aabbccddeeff00112233445566778899";
+const CLE_DEPREUVE = Uint8Array.from({ length: 32 }, (_, rang) => rang + 1);
+
+/** Un secteur entier rempli d'un motif reconnaissable. */
+function secteurDe(motif) {
+  return new Uint8Array(SECTOR_SIZE).fill(motif);
+}
+
+/** Le descripteur de ces épreuves : un disque assez petit pour tenir dans un double. */
+function descripteurDepreuve() {
+  return descripteur({ disque: { nom: "app.ext2", octets: TAILLE_DEPREUVE } });
+}
+
+/**
+ * FABRIQUE, dans un magasin à part, le fichier d'un volume ÉTRANGER que l'adversaire posera.
+ *
+ * Il porte le MÊME identifiant et la même clé que le volume applicatif : c'est le pire cas: rien de
+ * ce qui vérifie l'identité ou la géométrie ne mordra, et seule la confrontation des empreintes peut
+ * refuser. Ses secteurs portent `0xee` et `0xef` — l'état de l'adversaire, exactement comme dans la
+ * reproduction du relecteur.
+ */
+async function fichierEtranger() {
+  const autre = createSyncAccessStore();
+  const backend = await openOpfsVolume({
+    name: "etranger",
+    size: TAILLE_DEPREUVE,
+    cle: CLE_DEPREUVE,
+    identifiantVolume: ID_DEPREUVE,
+    openHandle: autre.openHandle,
+    transactionnel: false,
+  });
+  try {
+    for (let rang = 0; rang < TAILLE_DEPREUVE / SECTOR_SIZE; rang += 1) {
+      await backend.write(rang * SECTOR_SIZE, secteurDe(rang === 0 ? 0xee : 0xef));
+    }
+    await backend.flush();
+  } finally {
+    await backend.close();
+  }
+  return autre.snapshot("etranger");
+}
+
+/**
+ * Joue l'INSTALLATION réelle sur un magasin double, avec le geste de l'adversaire injecté à
+ * l'endroit exact où la fenêtre s'ouvre : entre le versement fermé et la datation.
+ *
+ * `verser` est le versement du produit sans son flux HTTP — il écrit le fichier entier par le
+ * backend, franchit la barrière, et rend l'empreinte SOUS SON EXCLUSIVITÉ, comme
+ * `verserFluxDansVolume`.
+ */
+async function installerAvec({ store, adversaire = null, versement = "complet" }) {
+  return installerSiNecessaire({
+    descripteur: descripteurDepreuve(),
+    cleDeVolume: async () => CLE_DEPREUVE.slice(),
+    observer: async (nom) => ({ present: store.sizeOf(nom) > 0, size: store.sizeOf(nom) }),
+    ouvrir: (options) =>
+      openOpfsVolume({
+        ...options,
+        identifiantVolume: ID_DEPREUVE,
+        openHandle: store.openHandle,
+      }),
+    verser: async (backend) => {
+      for (let rang = 0; rang < TAILLE_DEPREUVE / SECTOR_SIZE; rang += 1) {
+        await backend.write(rang * SECTOR_SIZE, secteurDe(0x11));
+      }
+      await backend.flush();
+      // « versement d'avant #181 » : il ne rend qu'un compte, et n'atteste donc rien.
+      if (versement === "sans-empreinte") return TAILLE_DEPREUVE;
+      return { ecrits: TAILLE_DEPREUVE, empreinte: await backend.empreinteDuFichier() };
+    },
+    dater: async (options) => {
+      if (adversaire !== null) await adversaire();
+      return daterLaCreation({ ...options, openHandle: store.openHandle });
+    },
+    revoquer: async () => {},
+    inscrire: async () => {},
+  });
+}
+
+/** Rouvre le volume applicatif comme le boot le ferait, et rend ses deux premiers secteurs. */
+async function ouvrirLApplication(store) {
+  const backend = await openOpfsVolume({
+    name: "application",
+    size: TAILLE_DEPREUVE,
+    cle: CLE_DEPREUVE,
+    identifiantVolume: ID_DEPREUVE,
+    openHandle: store.openHandle,
+  });
+  try {
+    return {
+      rapport: backend.generation.rapport,
+      s0: await backend.read(0, SECTOR_SIZE),
+      s1: await backend.read(SECTOR_SIZE, SECTOR_SIZE),
+    };
+  } finally {
+    await backend.close();
+  }
+}
+
+test("ÉPREUVE ROUGE — le fichier SUBSTITUÉ entre le versement et la datation est REFUSÉ", async () => {
+  // La reproduction du relecteur, mot pour mot : l'adversaire écrit le fichier d'un autre volume
+  // ENTRE la fermeture du backend versé et la datation. Rendu attendu avant la correction :
+  // `{ installee: true }`, puis une ouverture normale rendant `0xee` / `0xef`.
+  const store = createSyncAccessStore();
+  const etranger = await fichierEtranger();
+  const adversaire = async () => {
+    const handle = await store.openHandle("application");
+    try {
+      handle.truncate(etranger.byteLength);
+      handle.write(etranger, { at: 0 });
+      handle.flush();
+    } finally {
+      handle.close();
+    }
+  };
+
+  const erreur = await installerAvec({ store, adversaire }).then(
+    () => null,
+    (raison) => raison,
+  );
+  assert.notEqual(erreur, null, "l'installation ne peut pas se déclarer réussie");
+  assert.ok(
+    isStorageError(erreur, STORAGE_ERROR_CODES.creationNonConfirmee),
+    `refus attendu, reçu ${erreur?.code}`,
+  );
+
+  // Et le volume ne s'ouvre PAS : aucune racine n'a été écrite, donc rien ne rend le clair de
+  // l'adversaire. C'est la moitié qui compte — un refus qui laisserait le volume ouvrable ne
+  // refuserait rien.
+  const apres = await ouvrirLApplication(store).then(
+    (ouvert) => ouvert,
+    (raison) => raison,
+  );
+  assert.ok(
+    apres instanceof Error,
+    `le volume substitué ne doit pas s'ouvrir (${apres?.rapport?.etat})`,
+  );
+});
+
+test("TÉMOIN POSITIF — une installation légitime est datée, et rend ce que le produit a versé", async () => {
+  const store = createSyncAccessStore();
+  const rendu = await installerAvec({ store });
+  assert.equal(rendu.installee, true);
+
+  const ouvert = await ouvrirLApplication(store);
+  assert.equal(ouvert.rapport.racineInitiale, false, "chemin normal : une racine décide");
+  assert.ok(
+    ouvert.s0.every((octet) => octet === 0x11),
+    "le volume rend ce que le produit a versé",
+  );
+  assert.ok(ouvert.s1.every((octet) => octet === 0x11));
+});
+
+test("un versement qui n'ATTESTE rien ne fait pas dater : l'installation est REFUSÉE", async () => {
+  // La garde qui relève l'appelant d'avant #181. Traiter « aucune empreinte » comme « rien à
+  // confronter, donc autorisé » rouvrirait la fenêtre pour quiconque oublie un paramètre.
+  const store = createSyncAccessStore();
+  const erreur = await installerAvec({ store, versement: "sans-empreinte" }).then(
+    () => null,
+    (raison) => raison,
+  );
+  assert.ok(isStorageError(erreur, STORAGE_ERROR_CODES.creationNonConfirmee));
 });
 
 // --- Ce que le démarrage PUBLIE : une liste FERMÉE --------------------------------------------------

@@ -70,29 +70,47 @@ async function verserLeDisque({ volume, appDiskBytes, appDiskUrl, journal, forma
   });
   const scellementMs = duree(avantOuverture);
   const identifiantVolume = backend.identifiantVolume;
-  const avantVersement = performance.now();
-  let offset;
+  const verse = await verserPuisFermer(backend, appDiskUrl);
+  const datationMs = await daterEtChronometrer({ volume, identifiantVolume, verse });
+  return { offset: verse.ecrits, identifiantVolume, scellementMs, ...verse.mesures, datationMs };
+}
+
+/**
+ * Verse le flux dans le backend OUVERT, puis le ferme, et chronomètre le versement seul.
+ *
+ * L'EMPREINTE est prise DEDANS — par `verserFluxDansVolume`, avant la fermeture —, et c'est tout ce
+ * qui la distingue d'une relecture quelconque : elle constate ce que CE geste a laissé, sous SON
+ * exclusivité. C'est elle qui reliera le versement à la datation qui suit, par-dessus la fenêtre où
+ * personne ne tient le fichier (#181, revue de sécurité de la PR #184).
+ */
+async function verserPuisFermer(backend, appDiskUrl) {
+  const depart = performance.now();
   try {
-    offset = await verserFluxDansVolume(backend, appDiskUrl);
+    const verse = await verserFluxDansVolume(backend, appDiskUrl);
+    return { ...verse, mesures: { versementMs: duree(depart) } };
   } finally {
     await backend.close();
   }
-  const versementMs = duree(avantVersement);
+}
 
-  // DATER la création (#181), et le chronométrer À PART : le versement a écrit le fichier entier
-  // hors transaction, donc changé la région d'authentification, donc périmé la racine initiale que
-  // la naissance a écrite. Ce geste la réécrit sur la région finale ; sans lui, le boot suivant
-  // refuserait le volume par la garde de fraîcheur. Son coût est celui d'une empreinte de région et
-  // d'une écriture de racine, et le banc le publie plutôt que de le noyer dans le versement.
-  const avantDatation = performance.now();
-  await daterLaCreation({ name: volume, cle: cleDuBanc(), identifiantVolume });
-  return {
-    offset,
+/**
+ * DATE la création (#181), et le chronomètre À PART.
+ *
+ * Le versement a écrit le fichier entier hors transaction, donc changé la région d'authentification,
+ * donc périmé la racine initiale que la naissance a écrite. Ce geste la réécrit sur la région
+ * finale ; sans lui, le boot suivant refuserait le volume par la garde de fraîcheur. Son coût est
+ * celui d'une empreinte de fichier, d'une empreinte de région et d'une écriture de racine, et le
+ * banc le publie plutôt que de le noyer dans le versement.
+ */
+async function daterEtChronometrer({ volume, identifiantVolume, verse }) {
+  const depart = performance.now();
+  await daterLaCreation({
+    name: volume,
+    cle: cleDuBanc(),
     identifiantVolume,
-    scellementMs,
-    versementMs,
-    datationMs: duree(avantDatation),
-  };
+    empreinteVersee: verse.empreinte,
+  });
+  return duree(depart);
 }
 
 /**
@@ -106,8 +124,15 @@ async function verserDansUnVolumeAnterieur({ volume, appDiskBytes, appDiskUrl })
   const brut = await ouvrirVolumeBrut({ name: volume, size: appDiskBytes });
   const depart = performance.now();
   try {
-    const offset = await verserFluxDansVolume(brut, appDiskUrl);
-    return { offset, identifiantVolume: undefined, scellementMs: 0, versementMs: duree(depart) };
+    // L'accès BRUT n'a rien à hacher — ni en-tête, ni région — et ce chemin ne date aucune
+    // création : l'empreinte y est `null`, et c'est cohérent.
+    const verse = await verserFluxDansVolume(brut, appDiskUrl);
+    return {
+      offset: verse.ecrits,
+      identifiantVolume: undefined,
+      scellementMs: 0,
+      versementMs: duree(depart),
+    };
   } finally {
     await brut.close();
   }
