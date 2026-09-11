@@ -70,13 +70,19 @@ const SOUS_SURVEILLANCE = [
   },
   {
     fichier: "src/vm/opfs-block-backend.mjs",
-    lignes: 722,
+    lignes: 739,
     motif:
       "#181 y ajoute UN geste, `empreinteDuFichier`, et il ne peut pas vivre ailleurs : c'est le " +
       "calcul de l'empreinte du fichier ENTIER, fait ICI précisément pour ne pas exposer du " +
       "chiffré. `lireRegionAuth` reste le seul point du dépôt qui rende des octets bruts de " +
       "l'intérieur du fichier, borné à la région ; déplacer le hachage aurait exigé d'ouvrir cette " +
-      "porte-là. Vingt-huit lignes, sur un fichier qui reste à 78 du plafond.",
+      "porte-là. La revue de format de la PR #186 (constat 2) y ajoute le second point de sortie " +
+      "de la même famille, `scellementsCumules` : le versement hors transaction se ferme sans " +
+      "écrire de racine, et ce qu'il a consommé sous la clé du volume ne vit que dans ce " +
+      "compteur-ci — la datation qui suit doit le recevoir, faute de quoi elle perd la moitié du " +
+      "budget de la clé à l'installation. Comme l'empreinte, il ne rend qu'un NOMBRE, jamais des " +
+      "octets, et pour la même raison. La datation, elle, est PARTIE : elle vit désormais dans " +
+      "`opfs-datation-de-creation.mjs`, et c'est ce qui garde ce fichier à 61 lignes du plafond.",
   },
 ];
 

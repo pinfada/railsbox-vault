@@ -83,7 +83,10 @@ export class EcrivainDeRacine {
     const scelle = await this.#scellement.scellerRacine(
       { sequence, generation, tailleVolume: this.#tailleVolume },
       entrees,
-      { sequencePrecedente },
+      // Le TÉMOIN sera scellé sous la MÊME clé, juste après la barrière : la racine le RÉSERVE dans
+      // le compteur qu'elle publie, sans quoi il ne serait publié nulle part et le compteur
+      // dériverait d'une unité par ouverture (revue de sécurité de la PR #186, constat 1).
+      { sequencePrecedente, temoinSuit: this.#garde !== null },
     );
     const racine = encoderRacine({
       fraicheur,

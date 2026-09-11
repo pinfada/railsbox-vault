@@ -183,10 +183,15 @@ test("la migration ÉCRIT sa racine initiale, et elle porte ce qu'une naissance 
   assert.equal(racine.racine.sequence, 0, "une racine de NAISSANCE porte la séquence 0");
   assert.equal(racine.racine.generation, 0);
   assert.equal(racine.racine.nombreEntrees, 0);
+  // Le compte EXACT, poste par poste : un secteur par secteur, l'empreinte de RÉGION que la racine
+  // scelle, et le TÉMOIN de fraîcheur qu'elle RÉSERVE — il est scellé sous la même clé, juste après
+  // la barrière, et ne serait publié nulle part sans cette réservation (revue de sécurité de la
+  // PR #186, constat 1). La RACINE elle-même n'y est pas : c'est la REPRISE qui ajoute son cran, et
+  // le compteur repris vaut alors exactement ce qui a été scellé sous la clé.
   assert.equal(
     racine.racine.scellementsCumulesVolume,
-    SECTEURS + 1,
-    "la conversion scelle un secteur par secteur, et la racine en consomme un de plus",
+    SECTEURS + 2,
+    "secteurs + empreinte de région + témoin réservé ; la racine est ajoutée à la reprise",
   );
   assert.equal(
     racine.racine.scellementsCumulesJournal,

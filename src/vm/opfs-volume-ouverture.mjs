@@ -22,13 +22,8 @@ import { BlockJournal } from "./block-journal.mjs";
 import { exigerCleDeVolume } from "./cle-de-volume.mjs";
 import { createFaultPlan } from "./fault-plan.mjs";
 import { OpfsBlockBackend } from "./opfs-block-backend.mjs";
-import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
 import { installerGenerationOuFermer, ouvrirGeneration } from "./opfs-generation-voisins.mjs";
-import {
-  MOTIFS_DE_RACINE_INITIALE,
-  autorisationSansRacine,
-  ecarterLeJournalDeCreation,
-} from "./opfs-racine-initiale.mjs";
+import { MOTIFS_DE_RACINE_INITIALE, autorisationSansRacine } from "./opfs-racine-initiale.mjs";
 import { toStorageError, writeCountFailure } from "./opfs-error-mapping.mjs";
 import {
   ENVELOPPE_SIDECAR_SUFFIX,
@@ -182,7 +177,7 @@ function dispositionNeuve({ name, declared, identifiantVolume }) {
  * fichier n'est pas lu pour autant — **un volume v3 n'est JAMAIS lu par le produit v4 en lecture
  * directe** (ADR 0033, décision 5, point 2) : on nomme, on refuse, et c'est la migration qui ouvre.
  */
-function raisonDUnEnTeteRefuse(octets) {
+export function raisonDUnEnTeteRefuse(octets) {
   const version = versionDEnTeteDeVolume(octets);
   if (version === FORMAT_VOLUME_V3) {
     return `Ce fichier est un volume au format v${FORMAT_VOLUME_V3}. Il ne s'ouvre pas ici : depuis #182, un volume v${FORMAT_VOLUME_V3} n'est lu que par la MIGRATION, qui rescelle chaque secteur sous la clé du domaine « volume » de la v${FORMAT_VOLUME_V4}. Le remède est de migrer, jamais de restaurer.`;
@@ -436,105 +431,6 @@ async function saisirLireEtAllouer({ name, size, cle, identifiantVolume, openHan
   poserEnTeteOuRendre(saisi.handle, name, saisi.disposition, saisi.identifiantVolume);
   const voisinsRetires = await retirerVoisinsOrphelins(name, openHandle);
   return { ...saisi, voisinsRetires };
-}
-
-/**
- * DATE la CRÉATION d'un volume dont le fichier vient d'atteindre son état final (#181).
- *
- * ## Pourquoi ce geste existe
- *
- * `openOpfsVolume` écrit la racine initiale À LA NAISSANCE, sur le fichier de zéros que la création
- * vient de sceller. Deux appelants écrivent ENSUITE le fichier entier hors transaction — la coquille
- * de produit, qui verse le disque applicatif (ADR 0030, décision 1), et le banc de référence — et
- * cette écriture change la RÉGION D'AUTHENTIFICATION, donc périme l'empreinte que la racine
- * initiale scelle. Leur création n'est achevée qu'après le versement, et c'est ce geste qui la date.
- *
- * **Sans cet appel, le volume est REFUSÉ à sa première ouverture** par la garde de fraîcheur : un
- * oubli coûte un refus, jamais un silence. C'est la direction sûre, et elle est écrite ici pour être
- * relue.
- *
- * ## Ce que ce geste BÉNIT, et ce qui l'y autorise
- *
- * Le versement ferme le fichier ; cette datation le rouvre. **L'intervalle n'appartient à personne**,
- * et un adversaire qui sait écrire dans l'OPFS peut y poser le fichier d'un AUTRE volume : dater le
- * fichier « tel qu'on le trouve » bénirait alors un état que ce produit n'a jamais produit, sous un
- * motif — `creation` — qui, lui, ne prouve rien. C'est le constat 1 de la revue de sécurité de la
- * PR #184, et c'est le CRITICAL de #181 déplacé sur le chemin de la création.
- *
- * Ce qui referme la fenêtre est `empreinteVersee` : le versement rend l'empreinte SHA-256 du fichier
- * qu'il vient d'écrire, prise AVANT de relâcher son exclusivité, et la datation la confronte à ce
- * qu'elle trouve — `backend.empreinteDuFichier()` — AVANT d'écrire la racine. Sans empreinte, ou sur
- * une empreinte qui ne concorde pas, le refus est `VAULT_STORAGE_CREATION_NON_CONFIRMEE` et aucune
- * racine n'est écrite.
- *
- * ## Il ne peut pas dater autre chose qu'une création
- *
- * Il EXIGE le journal d'une création qui vient de naître : la racine de naissance PRÉSENTE, séquence
- * zéro, génération zéro, aucune entrée, aucune charge, aucune racine abîmée. Un journal VIDE est
- * refusé comme les autres — c'est l'état que laisse une RESTAURATION, pas une création (constat 2 de
- * la revue de sécurité, constat 1 de la revue de format). Sans cette garde, un appel malencontreux
- * sur un volume en service écarterait une génération validée, c'est-à-dire une écriture acquittée :
- * `SEC-DURABLE-001` l'interdit.
- *
- * @param {{ name: string, cle: Uint8Array, identifiantVolume?: string, journal?: BlockJournal,
- *           empreinteVersee?: string | null,
- *           openHandle?: (name: string) => Promise<FileSystemSyncAccessHandle> }} options
- * @returns {Promise<object>} le rapport d'ouverture, qui publie la racine écrite et son motif
- */
-/**
- * Relit la taille LOGIQUE que l'en-tête v3 du volume déclare, avant qu'il ne soit ouvert.
- *
- * Elle est nécessaire au constat du journal : une racine est décodée SOUS une taille de volume, et
- * la lui refuser ferait passer toute racine authentique pour abîmée. L'en-tête est un localisateur,
- * pas une autorité — et c'est exactement l'usage qu'on en fait ici : le retrouver, ou refuser.
- */
-async function tailleLogiqueDuFichier(name, openHandle) {
-  const brut = await ouvrirVolumeBrut({ name, openHandle });
-  try {
-    const octets = await brut.read(0, EN_TETE_OCTETS);
-    const lu = decoderEnTeteV4(octets);
-    if (lu.valide) return lu.enTete.tailleLogique;
-    throw geometryMismatch(name, {
-      observed: brut.size(),
-      expected: null,
-      reason: `${lu.raison} Une création ne se date pas sans son en-tête v${FORMAT_VOLUME_V4}. ${raisonDUnEnTeteRefuse(octets)}`,
-    });
-  } finally {
-    await brut.close();
-  }
-}
-
-export async function daterLaCreation({
-  name,
-  cle,
-  identifiantVolume,
-  journal = new BlockJournal(),
-  empreinteVersee = null,
-  openHandle = openOpfsSyncAccess,
-}) {
-  // Les compteurs de la racine ÉCARTÉE sont REPORTÉS sur celle que la datation écrit (#182) : elle
-  // était le seul endroit où vivaient les scellements de la création, et repartir de zéro perdrait
-  // un deux-millième du budget de la clé en un geste, sans que rien ne le signale.
-  const reportes = await ecarterLeJournalDeCreation(
-    name,
-    openHandle,
-    await tailleLogiqueDuFichier(name, openHandle),
-  );
-  const backend = await openOpfsVolume({
-    name,
-    cle,
-    identifiantVolume,
-    journal,
-    openHandle,
-    creation: MOTIFS_DE_RACINE_INITIALE.creation,
-    empreinteVersee,
-    scellementsReportes: reportes,
-  });
-  try {
-    return backend.generation.rapport;
-  } finally {
-    await backend.close();
-  }
 }
 
 /** Assemble le backend : taille LOGIQUE d'un côté, disposition du support de l'autre. */
