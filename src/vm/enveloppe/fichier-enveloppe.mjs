@@ -289,24 +289,44 @@ function decoderEmplacement(octets, position, fin) {
  *
  * Il reste 3 380 octets, soit de quoi porter cinq emplacements de plus au pire tarif. Le sel ne
  * coûte AUCUN emplacement, et il n'en coûterait un que si le plafond passait de huit à quatorze.
- * `tests/unit/vm-enveloppe-page-v2.test.mjs` le mesure plutôt que de le supposer.
+ * `tests/unit/vm-enveloppe-page-v2.test.mjs` ENCODE cette page-là — huit emplacements, 512 octets de
+ * paramètres chacun — et relit les quatre nombres sur les octets rendus, au lieu de les recalculer.
  *
- * @param {{ identifiantVolume: string, version: number, formatVersion?: number,
+ * ## Pourquoi `formatVersion` n'a PAS de défaut
+ *
+ * Elle en a eu un — `ENVELOPPE_FORMAT_V1` — le temps que la v2 arrive, et la revue de la PR #187 l'a
+ * relevé (constat 5 de la revue de format). Un défaut qui vaut l'ANCIENNE version est le plus
+ * mauvais de tous : un appelant neuf qui oublie le champ n'obtient pas un refus, il obtient une page
+ * v1 — donc sans sel, donc sous une clé de racine dérivée à l'ancienne — et rien dans le fichier
+ * produit ne dira que c'était un oubli plutôt qu'une intention. Le silence coûterait ici la
+ * propriété que toute la tranche T2b installe.
+ *
+ * La version est donc EXIGÉE, et son absence est un refus typé comme les autres. Ce que cela coûte
+ * est tenu : les six appelants du dépôt la nomment déjà, parce que chacun sait ce qu'il écrit — le
+ * produit une v2, les outils de vecteurs et le harnais de migration une v1.
+ *
+ * @param {{ identifiantVolume: string, version: number, formatVersion: number,
  *           racine: { nonce: Uint8Array, chiffre: Uint8Array, etiquette: Uint8Array },
  *           sel?: Uint8Array, domaine?: number, emplacements: Array<object> }} page
- *   `formatVersion` vaut `ENVELOPPE_FORMAT_V1` par défaut : les outils qui figent les vecteurs de
- *   #21 composent des pages v1 et ne changent pas. Le produit, lui, écrit toujours une v2.
+ *   `formatVersion` est OBLIGATOIRE : une page ne se compose pas sans dire dans quelle version du
+ *   format elle est écrite.
  * @returns {Uint8Array} exactement `PAGE_OCTETS` octets
  */
 export function encoderPage({
   identifiantVolume,
   version,
-  formatVersion = ENVELOPPE_FORMAT_V1,
+  formatVersion,
   racine,
   sel = null,
   domaine = DOMAINES_DE_RACINE.enveloppe,
   emplacements,
 }) {
+  if (formatVersion === undefined) {
+    throw malforme(
+      "« formatVersion » est exigée : une page d'enveloppe ne se compose pas sans dire dans quelle version du format elle est écrite.",
+      { formatVersion },
+    );
+  }
   const disposition = dispositionDePage(formatVersion);
   exigerPageEncodable({ formatVersion, disposition, sel, domaine, version, racine, emplacements });
 
