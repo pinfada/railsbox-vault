@@ -1143,15 +1143,15 @@ départ.**
 
 **LES SUITES DE LA TRANCHE T2b** (#182, ADR 0036), et ce que chacune mesure :
 
-| Suite                                       | Ce qu'elle mesure                                                                                              |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `vm-enveloppe-migration-page.test.mjs`      | la migration d'une page v1 en v2 à CHAQUE rang de CHAQUE sinistre : quatre clés, toutes ouvrantes, état classé |
-| `vm-enveloppe-v2-vecteurs.test.mjs`         | le chemin de production reproduit les octets figés des DEUX pages v2, `enveloppe` et `recuperation`            |
-| `vm-budget-par-domaine.test.mjs`            | le compte d'`encrypt` PAR CLÉ sur une session complète : zéro sous la clé de volume                            |
-| `vm-cliquet-anti-dek.test.mjs`              | aucun chemin de production du format v4 ne construit de clé AES-GCM depuis une clé de volume                   |
-| `vm-cloture-par-racine.test.mjs` › CHEMIN 3 | une réouverture hors transaction publie TOUT ce qu'elle a scellé — une ÉGALITÉ, pas un écart                   |
-| `vm-enveloppe-page-v2.test.mjs`             | ce que la page v2 COÛTE, relu sur les octets : 4 812 / 8 192, 3 380 libres, au pire tarif                      |
-| `vm-enveloppe-v2-mutation.test.mjs`         | dix-sept gardes de la tranche retirées une à une, dix-sept mutants tués                                        |
+| Suite                                       | Ce qu'elle mesure                                                                                                                                                       |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vm-enveloppe-migration-page.test.mjs`      | la migration d'une page v1 en v2 à CHAQUE rang de CHAQUE sinistre : quatre clés, toutes ouvrantes, état classé                                                          |
+| `vm-enveloppe-v2-vecteurs.test.mjs`         | le chemin de production reproduit les octets figés des DEUX pages v2, `enveloppe` et `recuperation`                                                                     |
+| `vm-budget-par-domaine.test.mjs`            | le compte d'`encrypt` PAR CLÉ sur une session complète — cycle de coquille et migration de page compris : zéro sous la clé de volume, et l'export d'un v3 mesuré à part |
+| `vm-cliquet-anti-dek.test.mjs`              | aucun chemin de production du format v4 ne construit de clé AES-GCM depuis une clé de volume                                                                            |
+| `vm-cloture-par-racine.test.mjs` › CHEMIN 3 | une réouverture hors transaction publie TOUT ce qu'elle a scellé — une ÉGALITÉ, pas un écart                                                                            |
+| `vm-enveloppe-page-v2.test.mjs`             | ce que la page v2 COÛTE, relu sur les octets : 4 812 / 8 192, 3 380 libres, au pire tarif                                                                               |
+| `vm-enveloppe-v2-mutation.test.mjs`         | dix-sept gardes de la tranche retirées une à une, dix-sept mutants tués                                                                                                 |
 
 Le **budget par domaine** mérite un mot de plus, parce que c'est la forme de preuve que la revue
 externe réclamait. Il ne lit pas le source et n'interroge aucun appelant : il intercepte `deriveKey`
