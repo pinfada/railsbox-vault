@@ -21,13 +21,52 @@
 // même si l'archive qu'il produit n'en porte pas et même si la restauration, elle, n'en demande
 // aucune. Exporter sans clé serait possible — il suffirait de copier le fichier — mais reviendrait
 // à choisir de perdre en silence ce qui a été acquitté.
+//
+// ## L'export d'un volume **v3**, et la boucle qu'il ouvre (#182, T2b, second amendement de la DoR)
+//
+// Un pas de migration destructif exige une sauvegarde VÉRIFIÉE — `assertPreuveDisponible` refuse
+// qu'un consentement nommé en tienne lieu (ADR 0011). Or ce chemin ouvrait TOUT volume de format au
+// moins v3 par `openOpfsVolume`, qui refuse un en-tête v3 en renvoyant à la migration. Les deux
+// règles se refermaient l'une sur l'autre : **un v3 n'était migrable qu'à condition de détenir déjà
+// une archive faite par le runtime précédent.** La PR #186 a mesuré l'écart par une épreuve ; c'est
+// ici qu'il se comble.
+//
+// Le v3 est ouvert par le SEUL lecteur de v3 que ce runtime possède —
+// `migration-source-chiffree.mjs`, c'est-à-dire le VRAI magasin de générations monté sur l'accès
+// brut. Rien n'est réécrit de ce lecteur, et c'est le point : un second chemin de lecture v3 serait
+// un second endroit où les trois cas de #181 pourraient diverger.
+//
+//  - la **génération validée** que le journal porte encore est appliquée au volume avant la copie,
+//    sans quoi l'archive perdrait une écriture acquittée — le défaut même que ce fichier existe pour
+//    empêcher ;
+//  - les **trois cas de l'ouverture de #181** s'appliquent AVANT tout clair : racine → ouverture
+//    normale ; pas de racine mais un engagement d'archive → vérifié sous la clé, empreinte du
+//    fichier entier ; ni l'un ni l'autre → `VAULT_STORAGE_VOLUME_SANS_RACINE` ;
+//  - **aucun chemin d'ÉCRITURE v3 n'est ouvert à l'appelant** : l'export rend un accès BRUT en
+//    lecture, et ne scelle rien sous une clé v3 de son propre chef.
+//
+// **L'écart qui reste, écrit plutôt que découvert.** Ouvrir un volume v3 n'est pas gratuit : le
+// magasin clôt sa récupération en écrivant une racine v3 (`#vider`), et rejouer une charge rescelle
+// des secteurs — deux scellements sous la clé v3, c'est-à-dire sous la DEK elle-même. Ils sont le
+// prix de l'application de la charge acquittée, ils passent par l'unique exception du cliquet
+// anti-DEK (`src/vm/scellement.mjs`, régime `#sousLaCleMaitresse`), et ils sont EXACTEMENT ceux que
+// la migration produit déjà sur le même fichier. L'alternative — ne pas ouvrir — perd une écriture
+// acquittée ; l'autre — un lecteur v3 dédié qui n'écrirait rien — ne saurait pas appliquer la
+// charge, donc rendrait la même perte sous un autre nom. Le second amendement de la DoR demandait
+// « aucun scellement sous une clé v3 hors l'engagement d'archive » : ce chemin n'y parvient pas, et
+// le dire vaut mieux que de le laisser trouver (§ 7.4 de la spécification, `SECURITY.md`, ADR 0036).
 
 import { BlockJournal } from "./block-journal.mjs";
 import { openOpfsVolume } from "./opfs-block-backend.mjs";
 import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
+import { solderLaSourceChiffreeSurAccesBrut } from "./migration-source-chiffree.mjs";
+import { Scellement } from "./scellement.mjs";
 import { MIN_VOLUME_FORMAT_VERSION } from "./volume-manifest.mjs";
 import {
   EN_TETE_OCTETS,
+  FORMAT_VOLUME_V3,
+  FORMAT_VOLUME_V4,
+  decoderEnTeteV3,
   decoderEnTeteV4,
   identifiantVolumeEnTexte,
   tailleDeFichier,
@@ -69,10 +108,13 @@ import { STORAGE_ERROR_CODES, StorageError } from "./storage-errors.mjs";
 export async function ouvrirPourExport({
   name,
   cle,
-  formatVersion = MIN_VOLUME_FORMAT_VERSION,
+  // Le défaut est le format COURANT, et il l'est depuis que la version 3 a son propre chemin : un
+  // appelant qui n'annonce rien exporte un volume de ce runtime, pas un volume à migrer.
+  formatVersion = FORMAT_VOLUME_V4,
   openHandle,
   recuperer = openOpfsVolume,
   ouvrirBrut = ouvrirVolumeBrut,
+  solder = solderLaSourceChiffreeSurAccesBrut,
 }) {
   // Un volume d'un format ANTÉRIEUR n'a pas de récupération possible : son fichier ne s'ouvre pas
   // par l'ouvreur v3, faute d'en-tête. Ce n'est pas une exception de commodité, c'est le seul état
@@ -82,6 +124,12 @@ export async function ouvrirPourExport({
   // ce qui est exactement ce qu'il est.
   if (formatVersion < MIN_VOLUME_FORMAT_VERSION) {
     return { brut: await ouvrirBrut({ name, openHandle }), rapport: null };
+  }
+
+  // Un v3, lui, PORTE une génération validée que le fichier n'a pas encore : il se solde par le
+  // lecteur de la migration, et par lui seul. Voir l'en-tête de ce fichier.
+  if (formatVersion === FORMAT_VOLUME_V3) {
+    return ouvrirUnV3PourExport({ name, cle, openHandle, ouvrirBrut, solder });
   }
 
   const backend = await recuperer({ name, cle, journal: new BlockJournal(), openHandle });
@@ -103,6 +151,64 @@ export async function ouvrirPourExport({
   const brut = await ouvrirBrut({ name, openHandle });
   await constaterQueRienNAChange({ brut, taille, identifiant });
   return { brut, rapport };
+}
+
+/**
+ * OUVRE un volume **v3** pour l'exporter : le SOLDE par le lecteur de la migration, puis rend
+ * l'accès brut qui a servi à le solder (#182, T2b).
+ *
+ * ## Le bail n'est PAS rompu ici, contrairement au chemin v4
+ *
+ * Le chemin v4 ouvre transactionnellement, referme, puis REPREND un handle brut — d'où le contrôle
+ * `constaterQueRienNAChange`, qui rend visible ce que l'intervalle laisse passer. Ici il n'y a pas
+ * d'intervalle : le magasin de générations est monté SUR l'accès brut déjà tenu, et cet accès reste
+ * le même avant et après le solde. Il n'y a donc rien à re-constater, et un contrôle qui comparerait
+ * un état à lui-même serait un décor.
+ *
+ * ## Ce qui est refermé, et ce qui ne l'est pas
+ *
+ * `solderLaSourceChiffreeSurAccesBrut` referme le magasin — donc les voisins `.gen` et `.temoin` —
+ * dans son `finally`. L'accès BRUT au fichier de volume, lui, reste ouvert : c'est celui que
+ * l'appelant va lire pour composer l'archive, et le rendre ici l'obligerait à le reprendre, c'est-à-
+ * dire à rouvrir l'intervalle que le chemin v4 doit justement surveiller.
+ *
+ * **Un refus rend le handle.** Un engagement absent, une racine illisible, une région qui ne
+ * concorde plus : chacun laisse le volume intact, et aucun ne doit laisser le nom occupé par un
+ * accès que personne ne détient.
+ */
+async function ouvrirUnV3PourExport({ name, cle, openHandle, ouvrirBrut, solder }) {
+  const brut = await ouvrirBrut({ name, openHandle });
+  try {
+    const lu = decoderEnTeteV3(await brut.read(0, EN_TETE_OCTETS));
+    if (!lu.valide) {
+      throw new StorageError(
+        STORAGE_ERROR_CODES.identiteVolume,
+        `Export refusé : « ${name} » est annoncé en version 3 et son en-tête n'en porte pas la marque (${lu.raison}). Aucun octet n'est lu au-delà.`,
+        { volume: name, raison: lu.raison },
+      );
+    }
+    const identifiantVolume = identifiantVolumeEnTexte(lu.enTete.identifiantVolume);
+    const rapport = await solder({
+      name,
+      brut,
+      tailleLogique: lu.enTete.tailleLogique,
+      identifiantVolume,
+      cle,
+      openHandle,
+      // Le scellement est celui d'un volume v3 : UN seul compteur, et la clé est la DEK elle-même
+      // (`#sousLaCleMaitresse`). C'est l'unique régime qui sache lire ces octets, et il n'est
+      // atteignable que par ce chemin et par la migration.
+      scellement: await Scellement.ouvrir({
+        volume: identifiantVolume,
+        cleOctets: cle,
+        formatVersion: FORMAT_VOLUME_V3,
+      }),
+    });
+    return { brut, rapport };
+  } catch (cause) {
+    await brut.close?.();
+    throw cause;
+  }
 }
 
 /**

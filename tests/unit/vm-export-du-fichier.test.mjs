@@ -18,6 +18,11 @@ import test from "node:test";
 
 import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import { ouvrirPourExport } from "../../src/vm/export-du-fichier.mjs";
+import {
+  FORMAT_VOLUME_V3,
+  encoderEnTeteDeVolume,
+  tailleSupportDuVolume,
+} from "../../src/vm/volume-chiffre-format.mjs";
 
 /** Journalise les gestes dans l'ordre où ils arrivent, et rien d'autre. */
 function bancDeGestes({ rapport = null, echouerALaRecuperation = null } = {}) {
@@ -131,5 +136,126 @@ test("un fichier qui a CHANGÉ entre la récupération et la copie fait refuser 
       assert.match(erreur.message, /a changé entre la récupération et la copie/);
       return true;
     },
+  );
+});
+
+// ---------------------------------------------------------------- le chemin v3 (#182, T2b)
+
+/**
+ * Un banc de gestes pour le chemin **v3** : l'accès brut est ouvert AVANT le solde, et c'est lui
+ * que l'appelant reçoit. Rien n'est refermé puis repris, donc rien n'est à re-constater.
+ *
+ * L'en-tête rendu est un VRAI en-tête v3, écrit par la disposition du format : un en-tête fabriqué
+ * à la main ferait porter l'épreuve sur l'idée qu'on s'en fait.
+ */
+function bancV3({ refuserLeSolde = null } = {}) {
+  const gestes = [];
+  const identifiant = "0123456789abcdef0123456789abcdef";
+  const enTete = encoderEnTeteDeVolume({
+    tailleLogique: TAILLE_LOGIQUE_V3,
+    identifiantVolume: identifiant,
+    formatVersion: FORMAT_VOLUME_V3,
+  });
+  const brut = {
+    name: "app",
+    ferme: false,
+    size: () => tailleSupportDuVolume(TAILLE_LOGIQUE_V3),
+    read: async (offset, longueur) => enTete.slice(offset, offset + longueur),
+    close: async () => {
+      brut.ferme = true;
+      gestes.push("fermer-brut");
+    },
+  };
+  return {
+    gestes,
+    brut,
+    identifiant,
+    recuperer: async () => {
+      gestes.push("OUVREUR-V4");
+      throw new Error("l'ouvreur v4 ne doit jamais voir un volume v3");
+    },
+    ouvrirBrut: async ({ name }) => {
+      gestes.push(`brut:${name}`);
+      return brut;
+    },
+    solder: async (appel) => {
+      gestes.push(`solder:${appel.identifiantVolume}:${appel.tailleLogique}`);
+      if (refuserLeSolde) throw refuserLeSolde;
+      return { etat: "rejouee", generation: 3 };
+    },
+  };
+}
+
+/** Taille logique du volume d'épreuve v3 : huit secteurs, comme partout ailleurs dans le dépôt. */
+const TAILLE_LOGIQUE_V3 = 8 * 512;
+
+test("un volume v3 est SOLDÉ par le lecteur de la migration, jamais ouvert par l'ouvreur v4", async () => {
+  // C'est la boucle du second amendement de la DoR de #182 : `openOpfsVolume` refuse un en-tête v3
+  // en renvoyant à la migration, si bien qu'un v3 n'était sauvegardable qu'avec une archive faite
+  // par le runtime précédent. Le v3 emprunte donc le SEUL lecteur de v3 du dépôt.
+  const banc = bancV3();
+  const rendu = await ouvrirPourExport({
+    name: "app",
+    cle: CLE_DE_TEST,
+    formatVersion: FORMAT_VOLUME_V3,
+    ...banc,
+  });
+
+  assert.deepEqual(banc.gestes, ["brut:app", `solder:${banc.identifiant}:${TAILLE_LOGIQUE_V3}`]);
+  assert.equal(rendu.brut, banc.brut, "l'accès rendu est celui qui a servi à solder");
+  assert.equal(rendu.brut.ferme, false, "il reste ouvert : c'est lui que l'archive va lire");
+  assert.deepEqual(rendu.rapport, { etat: "rejouee", generation: 3 });
+});
+
+test("un solde qui REFUSE rend le handle : un refus ne laisse pas le nom occupé", async () => {
+  // Un engagement absent, une racine illisible, une région qui ne concorde plus : chacun laisse le
+  // volume intact. Aucun ne doit laisser un accès brut que personne ne détient — c'est la règle qui
+  // traverse tous les chemins d'ouverture du dépôt.
+  const refus = Object.assign(new Error("engagement absent"), {
+    code: "VAULT_STORAGE_VOLUME_SANS_RACINE",
+  });
+  const banc = bancV3({ refuserLeSolde: refus });
+
+  await assert.rejects(
+    () =>
+      ouvrirPourExport({ name: "app", cle: CLE_DE_TEST, formatVersion: FORMAT_VOLUME_V3, ...banc }),
+    (erreur) => erreur === refus,
+  );
+  assert.equal(banc.brut.ferme, true, "le handle brut est rendu");
+  assert.deepEqual(banc.gestes.at(-1), "fermer-brut");
+});
+
+test("un fichier annoncé v3 dont l'en-tête n'en est pas un est refusé AVANT tout solde", async () => {
+  // MUTANT : « l'export accepte un v3 sans vérifier ce qu'il ouvre ». Le format annoncé vient du
+  // MANIFESTE, c'est-à-dire d'un voisin qu'un adversaire peut écrire ; l'en-tête, lui, est dans le
+  // fichier. Les faire concorder AVANT de solder est ce qui empêche d'ouvrir un v4 — ou n'importe
+  // quoi — sous le régime de clé v3, qui est la DEK elle-même.
+  const banc = bancV3();
+  const sansMarqueur = {
+    ...banc,
+    ouvrirBrut: async ({ name }) => {
+      banc.gestes.push(`brut:${name}`);
+      return { ...banc.brut, read: async (offset, longueur) => new Uint8Array(longueur) };
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      ouvrirPourExport({
+        name: "app",
+        cle: CLE_DE_TEST,
+        formatVersion: FORMAT_VOLUME_V3,
+        ...sansMarqueur,
+      }),
+    (erreur) => {
+      assert.equal(erreur.code, "VAULT_STORAGE_IDENTITE_VOLUME");
+      assert.match(erreur.message, /n'en porte pas la marque/);
+      return true;
+    },
+  );
+  assert.equal(
+    banc.gestes.some((geste) => geste.startsWith("solder:")),
+    false,
+    "aucun solde n'est tenté sur un fichier dont on ne sait pas ce qu'il est",
   );
 });
