@@ -201,27 +201,43 @@ invaliderait ce qu'il mesure.
 > U32BE(n) = n sur 4 octets gros-boutistes
 > ```
 >
-> **Quatre domaines sont dérivés à ce jour**, sur les six que l'ADR 0033 décide. `volume` (secteurs,
-> empreinte de région, témoin, racines) et `journal` (enregistrements de `<volume>.gen`) sont à
-> COMPTEUR : leur clé est réemployée entre deux gestes, donc leur **sel est la chaîne VIDE** (RFC
-> 5869 § 2.2 — l'extraction reste correcte parce que l'IKM est déjà uniformément aléatoire sur 256
-> bits). `instantane` et `archive` sont à USAGE UNIQUE : leur artefact est réécrit entier à chaque
-> geste et ne porte qu'UN scellement, donc leur **sel est tiré sur 32 octets et écrit EN CLAIR dans
-> l'artefact**. `enveloppe` et `recuperation` restent scellés sous la DEK ; c'est le reste de #182,
-> et c'est écrit au § 12.
+> **LES SIX DOMAINES sont dérivés, et la liste est CLOSE.** Elle l'est depuis la tranche T2b du 11
+> septembre 2026 : ce § en annonçait quatre, et disait que `enveloppe` et `recuperation` « restent
+> scellés sous la DEK ». Ce n'est plus vrai, et le § 12 ne porte plus l'écart.
+>
+> | Domaine        | Ce qu'il scelle                                       | Régime       | Sel                       |
+> | -------------- | ----------------------------------------------------- | ------------ | ------------------------- |
+> | `volume`       | secteurs, empreinte de région, témoin, racines        | compteur     | chaîne VIDE               |
+> | `journal`      | enregistrements de `<volume>.gen`                     | compteur     | chaîne VIDE               |
+> | `instantane`   | l'instantané de reprise, réécrit entier               | usage unique | 32 octets tirés, en clair |
+> | `archive`      | l'engagement d'une archive d'export                   | usage unique | 32 octets tirés, en clair |
+> | `enveloppe`    | la racine d'une page de `<volume>.cles` (page **v2**) | usage unique | 32 octets tirés, en clair |
+> | `recuperation` | la racine de la page qu'une archive emporte           | usage unique | 32 octets tirés, en clair |
+>
+> Les deux régimes ne sont pas une commodité, ils suivent l'usage. Une clé à COMPTEUR est réemployée
+> entre deux gestes, donc son **sel est la chaîne VIDE** (RFC 5869 § 2.2 — l'extraction reste
+> correcte parce que l'IKM est déjà uniformément aléatoire sur 256 bits), et c'est son compteur qui
+> la borne. Une clé à USAGE UNIQUE scelle un artefact réécrit ENTIER à chaque geste et ne porte donc
+> qu'UN scellement : son **sel est tiré sur 32 octets et écrit EN CLAIR dans l'artefact**, ce qui
+> rend chaque clé neuve et dispense de compter.
+>
+> **Plus AUCUN chemin d'écriture du format v4 ne scelle sous la DEK.** L'unique exception est la
+> LECTURE d'un volume **v3** — pour le migrer, ou pour l'exporter avant de le migrer —, et elle est
+> nommée : `Scellement.#sousLaCleMaitresse`. Un CLIQUET d'inspection de source
+> (`tests/unit/vm-cliquet-anti-dek.test.mjs`) refuse qu'un chemin de production du format v4
+> construise une clé AES-GCM depuis une clé de volume, en suivant les réexports et les alias.
 >
 > **Le sel en clair n'est pas authentifié, et il n'a pas à l'être.** Un adversaire qui le change
 > obtient une clé différente, donc une ouverture qui échoue : il se protège par sa conséquence,
-> exactement comme le nonce.
+> exactement comme le nonce. Pour la page d'enveloppe, il est en outre COUVERT par la somme de
+> contrôle de la page (§ 6.11), ce qui le rend accidentellement indestructible sans le rendre
+> authentique.
 >
 > **La DEK ne peut plus chiffrer, et ce n'est pas une discipline.** Elle est importée en matériau
 > HKDF — `importKey("raw", dek, "HKDF", false, ["deriveKey"])` —, si bien que
 > `crypto.subtle.encrypt` la REJETTE par la spécification WebCrypto elle-même. Un appelant distrait
 > obtient une exception, pas un chiffré. Épreuve : `tests/unit/vm-hierarchie-de-cles.test.mjs` › «
-> la DEK importée en matériau HKDF : WebCrypto REFUSE de chiffrer avec elle ». La seule exception du
-> produit est la MIGRATION v3 → v4, qui doit ouvrir sous la clé v3 ; elle porte un nom,
-> `Scellement.#sousLaCleMaitresse`, pour que le cliquet d'inspection de source à venir n'ait qu'une
-> entrée à inscrire.
+> la DEK importée en matériau HKDF : WebCrypto REFUSE de chiffrer avec elle ».
 >
 > Ce qui suit décrivait la v3, et reste vrai d'elle : la clé était REÇUE telle quelle.
 
@@ -318,6 +334,30 @@ typé, jamais lu en clair ».
 >    ne veut pas ; le tenir sans l'installer reprend les compteurs à l'ouverture et les republie à
 >    la fermeture. La clôture n'écrit AUCUNE racine si la session n'a rien scellé — une clôture
 >    inconditionnelle consommerait un scellement pour publier le compte de ce scellement.
+>
+> **La clôture suit le SECTEUR, et non la fermeture.** Une racine écrite au seul `close()` perdrait
+> tout ce qu'une session TUÉE a scellé — et une session de coquille est tuée à chaque onglet fermé,
+> par `pagehide`, sans que `close()` ne soit jamais appelé. La racine est donc écrite dans la même
+> séquence d'écriture que le secteur qu'elle publie, avant que la main ne revienne à l'appelant : à
+> tout instant, ce que la racine publie vaut ce que la session a scellé. Le geste est IDEMPOTENT —
+> le repère avance avec la racine qu'on vient d'écrire —, de sorte que le `close()` qui suit
+> n'écrive pas une seconde racine.
+>
+> **Le QUATRIÈME cas, et c'est une déclaration : `clotureParDatation`.** L'INSTALLATION INITIALE est
+> une naissance hors transaction qui écrit le fichier entier, puis le ferme, puis le fait DATER. Si
+> elle closait par une racine à chaque secteur versé, elle paierait une racine par secteur, et la
+> datation les périmerait toutes. Le versement DÉCLARE donc, à l'ouverture, que sa clôture sera la
+> datation (`clotureParDatation: true`) : aucune clôture n'est installée, la session rend son COMPTE
+> à l'appelant (`scellementsCumules`), et `daterLaCreation` écrit la racine finale en REPORTANT ce
+> compte.
+>
+> Cet invariant est **FAIT, mais non garanti**, au sens de
+> l'[ADR 0021](decisions/0021-derivation-des-cles-de-deverrouillage.md) : il est tenu par l'APPELANT
+> et par lui seul. Un appelant qui déclarerait `clotureParDatation` et ne daterait jamais laisserait
+> un volume qui ne clôt par rien — et ce volume se rouvre sans refus, des deux côtés. Le drapeau est
+> interne : seuls `verserLeDisque` et le banc de budget le posent, aucun adversaire ne l'atteint, et
+> rien n'expose ce chemin. Le dire vaut mieux que de le laisser croire vérifié (revue de sécurité de
+> la PR #187, constat 7).
 >
 > **Ce que la racine de clôture apporte en plus des compteurs.** Elle RESCELLE l'empreinte de région
 > sous sa propre génération (§ 6.8). Une écriture hors transaction périmait donc la fraîcheur de la
@@ -1673,6 +1713,20 @@ Une coupure avant l'étape 5 laisse un volume refusé par `VAULT_STORAGE_VOLUME_
 > jamais un silence. Épreuve : `tests/unit/coquille-application.test.mjs`, sur l'ordre des gestes de
 > l'installation.
 >
+> **Le versement DÉCLARE que sa clôture sera la datation** (`clotureParDatation: true`, 11 septembre
+> 2026, ADR 0036). C'est le seul des quatre chemins hors transaction à ne pas clore par une racine,
+> et il ne le fait pas par exception mais parce que sa clôture vient APRÈS lui : une racine écrite à
+> chaque secteur versé coûterait une racine par secteur, et la datation les périmerait toutes. La
+> session rend donc son COMPTE à l'appelant (`scellementsCumules`), exactement comme elle lui rend
+> son empreinte, et `daterLaCreation` REPORTE ce compte dans la racine finale — sans quoi les 2^20
+> scellements de la création disparaîtraient du budget de la clé.
+>
+> L'invariant « le versement DATE » est **FAIT, mais non garanti** (vocabulaire de l'ADR 0021) : il
+> est tenu par l'appelant, et rien ne le confronte. Un volume qui déclarerait la datation sans être
+> daté se rouvrirait sans refus. Le drapeau est interne — `verserLeDisque` et le banc de budget sont
+> les seuls à le poser —, aucun adversaire ne l'atteint, et le dire vaut mieux que de laisser croire
+> à une garde (revue de sécurité de la PR #187, constat 7).
+>
 > **AMENDÉ le 11 septembre 2026** (revue de sécurité de la PR #184, constat 1). Le versement FERME
 > le fichier, la datation le ROUVRE, et **l'intervalle n'appartient à personne** : un adversaire qui
 > sait écrire dans l'OPFS (§ 9.1, ADR 0019 § 6.9) peut y poser le fichier d'un autre volume, et la
@@ -2643,20 +2697,26 @@ pas prise**.
 **Verdict du relecteur : le gate « données sensibles » ne doit pas être ouvert.** Deux constats. Le
 CRITICAL est **CORRIGÉ** depuis le 10 septembre 2026
 ([PR #184](https://github.com/pinfada/railsbox-vault/pull/184),
-[ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md)) ; le HIGH est **CORRIGÉ À
-MOITIÉ** depuis le 11 septembre 2026 et reste **OUVERT** au registre.
+[ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md)) ; le HIGH est **CORRIGÉ**
+depuis le 11 septembre 2026, en DEUX tranches.
 
-**Ce que « à moitié » veut dire exactement, et pourquoi la ligne ne passe pas à « corrigé ».** La
-tranche T2a ([ADR 0035](decisions/0035-format-de-volume-v4-et-migration.md)) livre le format v4 : la
-DEK est importée en matériau HKDF — WebCrypto refuse alors de chiffrer avec, et les trois moteurs le
+**Ce que chaque tranche a livré.** La tranche T2a
+([ADR 0035](decisions/0035-format-de-volume-v4-et-migration.md)) livre le format v4 : la DEK est
+importée en matériau HKDF — WebCrypto refuse alors de chiffrer avec, et les trois moteurs le
 mesurent —, et les domaines `volume`, `journal` et `instantane` scellent chacun sous sa propre clé,
 à côté du domaine `archive` que T1 avait posé. Le compteur d'une clé compte enfin toutes les
 invocations sous elle, et une session qui ne peut pas le publier dans une racine n'a plus le droit
-de sceller. **Restent sous la DEK** : la racine d'une page de `<volume>.cles` et la section de
-récupération d'une archive. La phrase « la DEK n'est plus jamais passée à AES-GCM » est donc VRAIE
-des domaines du volume et FAUSSE de ces deux-là, et elle est écrite ainsi partout plutôt qu'annoncée
-en bloc. La tranche **T2b** les livre, avec le cliquet d'inspection de source qui la rendra exacte —
-et elle seule fera passer la ligne du registre à « corrigé ».
+de sceller. Restaient alors sous la DEK la racine d'une page de `<volume>.cles` et la section de
+récupération d'une archive.
+
+La tranche **T2b** ([ADR 0036](decisions/0036-page-d-enveloppe-v2-et-budgets-exhaustifs.md)) les
+livre : la page d'enveloppe passe en **v2** — sel de 32 octets tiré, octet de domaine —, les
+domaines `enveloppe` et `recuperation` complètent la liste, qui est CLOSE à six, et une page v1 est
+rescellée à la première ouverture réussie. Le troisième chemin hors transaction clôt par une racine,
+et le CLIQUET d'inspection de source refuse désormais qu'un chemin de production du format v4
+construise une clé AES-GCM depuis une clé de volume. La phrase « la DEK n'est plus jamais passée à
+AES-GCM » est donc vraie de tout ce que ce runtime ÉCRIT ; ce qui reste est nommé au § 12 et n'est
+pas un chemin v4 : ouvrir un volume **v3**, pour le migrer ou pour l'exporter avant de le migrer.
 
 **[#181](https://github.com/pinfada/railsbox-vault/issues/181) — Une archive accepte un mélange de
 secteurs provenant de plusieurs états, et la première ouverture restaurée le rend en clair.
@@ -3489,16 +3549,17 @@ rescellement est au bon endroit ; ce qu'il produit ne traverse pas l'archive. C'
 
 ## 14. Ce que ce dossier ne prouve pas
 
-- **UN CONSTAT DE LA REVUE EXTERNE RESTE OUVERT, et il ne l'est plus qu'à moitié** (§ 9.7).
+- **LE DERNIER CONSTAT OUVERT DE LA REVUE EXTERNE EST FERMÉ** (§ 9.7).
   [#182](https://github.com/pinfada/railsbox-vault/issues/182), HIGH : le budget de clé du § 4.5
-  n'était pas global à la clé. La tranche T2a l'a corrigé pour les domaines du VOLUME — chaque
-  domaine de chaque volume a sa clé, et le compteur d'une clé compte toutes les invocations sous
-  elle **sur les chemins que la v4 ferme** : la création, l'installation initiale et les sessions
-  transactionnelles, mesurés à l'ÉGALITÉ par le nombre d'invocations réelles. **Ce qui reste** : la
-  page d'enveloppe et la section de récupération scellent encore sous la DEK, et le cliquet qui
-  refusera qu'un scellement la reçoive n'est pas posé. La tranche T2b les livre, et elle seule
-  fermera la ligne du registre. Tant qu'elle n'est pas livrée, **ce document décrit un format dont
-  une propriété ne tient qu'en partie**, et c'est écrit au § 12, écart 0.
+  n'était pas global à la clé. La tranche T2a l'a corrigé pour les domaines du VOLUME, la tranche
+  T2b pour les deux derniers — chaque domaine de chaque volume a sa clé, la liste des six est CLOSE,
+  et le compteur d'une clé compte toutes les invocations sous elle sur les chemins que la v4 ferme :
+  la création, l'installation initiale, la réouverture hors transaction et les sessions
+  transactionnelles, mesurés à l'ÉGALITÉ par le nombre d'invocations réelles. **Ce qui reste, et qui
+  n'est pas un chemin v4** : ouvrir un volume **v3** — pour le migrer, ou pour l'exporter avant de
+  le migrer — scelle 3 + N fois sous la clé de volume elle-même, N secteurs rejoués, tous comptés
+  dans la racine v3. C'est le régime que la v4 remplace, c'est l'unique exception du cliquet, et
+  c'est écrit au § 12.
 - **DEUX budgets restent sous-estimés après T2a, et une seule des deux a une borne** (§ 4.5). Le
   volume de COQUILLE scelle un secteur par déverrouillage hors clôture, non compté, jusqu'à T2b :
   cet écart-là croît avec le nombre de déverrouillages, et rien ne le borne. Une conversion v3 → v4
