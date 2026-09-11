@@ -367,6 +367,29 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
     bootApresMigration.generation.deposeeMaxOctets,
     "charge sous le plafond après migration",
   ).toBeLessThan(PLAFOND_CHARGE_OCTETS);
+  // #181 — LA RACINE INITIALE DE LA MIGRATION, constatée sur le vrai support. La migration l'a
+  // écrite avant d'inscrire son manifeste ; ce boot-ci n'a donc rien à écrire de plus et rien à
+  // autoriser : une racine fait autorité, la fraîcheur est vérifiée, aucun engagement n'est
+  // consulté. Sans cette assertion, la moitié « migration » de la règle « aucun volume légitime
+  // n'est sans racine » ne serait mesurée nulle part sur un OPFS réel (revue de format de la
+  // PR #184, constat 3).
+  expect(bootApresMigration.recuperation, "le rapport d'ouverture est publié").not.toBeNull();
+  expect(
+    bootApresMigration.recuperation.racineInitiale,
+    "la migration a déjà daté : ce boot n'écrit aucune racine",
+  ).toBe(false);
+  expect(
+    bootApresMigration.recuperation.motifDeLaRacine,
+    "aucune autorisation n'a été demandée",
+  ).toBeNull();
+  expect(
+    bootApresMigration.recuperation.voisinIgnore,
+    "aucun voisin d'engagement n'a jamais existé sur ce volume",
+  ).toBe(false);
+  expect(
+    bootApresMigration.recuperation.fraicheurRegion,
+    "la région d'authentification concorde avec ce que la racine de migration scelle",
+  ).toBe("verifiee");
   expect(bootApresMigration.observedRecordId).toBe(contrat.record.id);
   expect(bootApresMigration.observedAttachmentSha256).toBe(contrat.attachment.sha256);
 
