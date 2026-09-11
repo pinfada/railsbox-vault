@@ -261,9 +261,9 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "un manifeste voisin PRÉSENT n'est jamais réinstallé",
-    garde: "installerSiNecessaire — le court-circuit sur le manifeste existant",
+    garde: "constaterLInstallation — le court-circuit sur le manifeste existant",
     fichier: APPLICATION,
-    avant: "  if (manifesteExistant.present) return { installee: false, volume: nom, octets };\n",
+    avant: "  if (manifesteExistant.present) return true;\n",
     apres: "",
     epreuves: [EPREUVE_APPLICATION],
   },
@@ -307,12 +307,26 @@ export const MUTATIONS = Object.freeze([
     avant:
       "  let backend;\n" +
       "  try {\n" +
-      "    backend = await ouvrir({ name: nom, size: octets, cle, transactionnel: false });\n" +
+      "    backend = await ouvrir({\n" +
+      "      name: nom,\n" +
+      "      size: octets,\n" +
+      "      cle,\n" +
+      "      transactionnel: false,\n" +
+      "      // Ce versement sera DATÉ : `daterLaCreation` est sa clôture, et une racine écrite à la\n" +
+      "      // fermeture lui ferait trouver un journal « en service » (#182, T2b).\n" +
+      "      clotureParDatation: true,\n" +
+      "    });\n" +
       "  } finally {\n" +
       "    cle.fill(0);\n" +
       "  }\n",
     apres:
-      "  const backend = await ouvrir({ name: nom, size: octets, cle, transactionnel: false });\n",
+      "  const backend = await ouvrir({\n" +
+      "    name: nom,\n" +
+      "    size: octets,\n" +
+      "    cle,\n" +
+      "    transactionnel: false,\n" +
+      "    clotureParDatation: true,\n" +
+      "  });\n",
     epreuves: [EPREUVE_APPLICATION],
   },
   {

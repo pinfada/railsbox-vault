@@ -69,7 +69,7 @@ fenêtre auxiliaire, la portée d'un Service Worker et l'interception de la ress
 sondes n'ont PAS de témoin positif contre la coquille de produit — le verrou nommé et la diffusion
 inter-onglets, que la coquille n'emploie pas encore —, et leur témoin reste celui du spike en T1a.
 
-La campagne de mutation (`node tools/muter-gardes-coquille.mjs`, 37/37) porte sur `src/coquille/`,
+La campagne de mutation (`node tools/muter-gardes-coquille.mjs`, 40/40) porte sur `src/coquille/`,
 c'est-à-dire sur des fonctions PURES. C'est délibéré : une garde écrite dans `public/main.mjs` ne
 serait éprouvable que par un navigateur, donc jamais par un enfant borné — et une garde qu'aucune
 mutation ne peut atteindre est une garde qu'on croit sur parole.
