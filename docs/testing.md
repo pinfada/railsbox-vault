@@ -1150,7 +1150,8 @@ départ.**
 | `vm-budget-par-domaine.test.mjs`            | le compte d'`encrypt` PAR CLÉ sur une session complète : zéro sous la clé de volume                            |
 | `vm-cliquet-anti-dek.test.mjs`              | aucun chemin de production du format v4 ne construit de clé AES-GCM depuis une clé de volume                   |
 | `vm-cloture-par-racine.test.mjs` › CHEMIN 3 | une réouverture hors transaction publie TOUT ce qu'elle a scellé — une ÉGALITÉ, pas un écart                   |
-| `vm-enveloppe-v2-mutation.test.mjs`         | douze gardes de la tranche retirées une à une, douze mutants tués                                              |
+| `vm-enveloppe-page-v2.test.mjs`             | ce que la page v2 COÛTE, relu sur les octets : 4 812 / 8 192, 3 380 libres, au pire tarif                      |
+| `vm-enveloppe-v2-mutation.test.mjs`         | dix-sept gardes de la tranche retirées une à une, dix-sept mutants tués                                        |
 
 Le **budget par domaine** mérite un mot de plus, parce que c'est la forme de preuve que la revue
 externe réclamait. Il ne lit pas le source et n'interroge aucun appelant : il intercepte `deriveKey`
@@ -1158,10 +1159,12 @@ et `importKey` pour ÉTIQUETER chaque `CryptoKey` par sa provenance, puis compte
 `encrypt` par clé. Une clé de provenance inconnue qui chiffrerait ferait rougir la suite — sans quoi
 la mesure serait creuse.
 
-**Les CAMPAGNES DE MUTATION de #182** — `node tools/muter-gardes-enveloppe-v2.mjs` : **douze gardes,
-douze mutants tués**, sur huit endroits, dont le CLIQUET lui-même, muté par ses deux motifs
-séparément. La campagne a TROUVÉ deux défauts qu'aucune épreuve verte ne montrait : un second tirage
-de sel qui n'était jamais atteint, et une mutation qui portait sur un texte présent deux fois.
+**Les CAMPAGNES DE MUTATION de #182** — `node tools/muter-gardes-enveloppe-v2.mjs` : **dix-sept
+gardes, dix-sept mutants tués**, sur neuf endroits, dont le CLIQUET lui-même, muté par ses QUATRE
+motifs séparément ; table dans l'ADR 0036. La campagne a TROUVÉ deux défauts qu'aucune épreuve verte
+ne montrait : un second tirage de sel qui n'était jamais atteint, et une mutation qui portait sur un
+texte présent deux fois. Cinq mutants viennent des deux revues de la PR #187 : les quatre motifs du
+cliquet et la réservation du témoin dans le compte que la racine v3 publie.
 `node tools/muter-gardes-hierarchie-de-cles.mjs` : **vingt-huit gardes, vingt-huit mutants tués**,
 sur onze modules ; table dans l'ADR 0035. Huit de ces mutants viennent des deux revues de la PR #186
 : la borne du lecteur de journal v1, l'ouverture de la source chiffrée, le motif de son

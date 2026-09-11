@@ -306,6 +306,32 @@ Au vocabulaire de la décision 7 de l'ADR 0021.
   retomber le lecteur sur la page v1.** L'alternance conserve exprès l'état d'avant ; l'ancrage
   monotone est la question n° 3, et `versionMinimale` en est le point de branchement.
 
+## La campagne de MUTATION de cette tranche
+
+`node tools/muter-gardes-enveloppe-v2.mjs` retire RÉELLEMENT chaque garde de son fichier source,
+relance l'épreuve qui devrait la couvrir, et vérifie qu'elle rougit. **Dix-sept gardes, dix-sept
+mutants tués**, sur neuf endroits. La table vit ici comme celle de l'ADR 0035 vit dans l'ADR 0035 :
+`docs/testing.md` compte, l'ADR dit QUOI.
+
+| Fichier muté                              | Gardes retirées                                                                                                                                           |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enveloppe-de-cle.mjs`                    | le TIRAGE du sel de page, l'avance de la version à chaque mutation                                                                                        |
+| `enveloppe/etat-de-lenveloppe.mjs`        | le refus de RÉTROGRADATION d'une page v1 au-dessus d'une v2, la migration à la première ouverture réussie                                                 |
+| `enveloppe/fichier-enveloppe.mjs`         | le refus d'un DOMAINE inconnu, l'effacement de la page v1 par la migration, le refus d'une page déjà en v2                                                |
+| `export-du-fichier.mjs`                   | le contrôle de l'en-tête v3 avant l'export                                                                                                                |
+| `generation-racine.mjs`                   | la RÉSERVATION du témoin dans le compte que la racine publie                                                                                              |
+| `generation-store.mjs`                    | la clôture par racine, la marque de région sale, l'idempotence du repère                                                                                  |
+| `opfs-block-backend.mjs`                  | la publication de la racine APRÈS le secteur, hors transaction                                                                                            |
+| `opfs-volume-ouverture.mjs`               | le fait de TENIR le magasin sans l'installer sur le chemin hors transaction                                                                               |
+| `tests/unit/vm-cliquet-anti-dek.test.mjs` | les QUATRE motifs du cliquet, séparément : les alias jusqu'au point fixe, le réexport EN BLOC, le réexport comme porte, la référence opaque à `importKey` |
+
+Deux choses méritent d'être dites, parce qu'elles sont le résultat de la campagne et non son décor.
+**La campagne a TROUVÉ deux défauts** qu'aucune épreuve verte ne montrait : un second tirage de sel
+qui n'était jamais atteint — retiré —, et une mutation qui portait sur un texte présent deux fois,
+donc ambiguë. Et le **CLIQUET est lui-même muté**, motif par motif : c'est la seule « source » de
+cette table qui soit une épreuve, et la revue de la PR #186 avait trouvé un cliquet dont un seul des
+deux mutants était vu. Chaque motif retiré doit suffire à faire rougir « le cliquet MORD ».
+
 ## Ce que cet ADR ne prétend PAS résoudre
 
 L'emplacement du compteur — il reste dans la racine, donc il recule. La rotation de la clé

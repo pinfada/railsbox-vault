@@ -114,11 +114,14 @@ grandirait ou rétrécirait pendant une écriture offrirait un troisième état 
 nouveau — que rien ne relirait.
 
 **Le plafond est de HUIT emplacements**, et chaque emplacement porte au plus 512 octets de
-paramètres publics. Le pire cas tient donc en 4776 octets, très en deçà de la page. Huit couvre
-l'usage visé — une phrase secrète, deux ou trois passkeys, un ou deux moyens de récupération (#23),
-et de la place pour une rotation — et borne le COÛT DU REFUS : l'ouverture essaie tous les
-emplacements sans court-circuit (décision 4), et ce travail est payé à chaque tentative. Le franchir
-demandera une version de format, pas une tolérance.
+paramètres publics. Le pire cas tient donc en **4 780 octets** en v1 — 108 d'en-tête plus 8 ×
+(72 + 512) — et **4 812** en v2, où l'en-tête en fait 140 ; très en deçà de la page dans les deux
+cas. (Ce nombre a été écrit « 4776 » jusqu'à la revue de la PR #187, constat 11 de la revue de
+format : il oubliait quatre octets d'en-tête.) Huit couvre l'usage visé — une phrase secrète, deux
+ou trois passkeys, un ou deux moyens de récupération (#23), et de la place pour une rotation — et
+borne le COÛT DU REFUS : l'ouverture essaie tous les emplacements sans court-circuit (décision 4),
+et ce travail est payé à chaque tentative. Le franchir demandera une version de format, pas une
+tolérance.
 
 ## Décision 3 — Ce que le scellement lie : AES-256-GCM, jamais AES-KW
 
@@ -479,7 +482,8 @@ Aucun ADR n'est réécrit ; chacun reçoit un amendement d'une phrase, qui renvo
 - **Loger l'enveloppe dans le manifeste.** Rejeté : le manifeste part dans l'archive, et les clés
   seraient sorties de l'appareil sans décision.
 - **Loger l'enveloppe dans la réserve de l'en-tête v3.** Rejeté : 448 octets, quand un seul
-  emplacement en fait 72 et que le plafond en demande 4776. Et l'en-tête n'est pas authentifié.
+  emplacement en fait 72 et que le plafond en demande 4 780 (4 812 en page v2). Et l'en-tête n'est
+  pas authentifié.
 - **`AES-KW` pour l'enveloppement de clé.** Rejeté : aucune donnée associée authentifiée. Voir
   décision 3.
 - **Un fichier temporaire renommé.** Rejeté : `move` n'est pas servi par les trois moteurs, et l'ADR
