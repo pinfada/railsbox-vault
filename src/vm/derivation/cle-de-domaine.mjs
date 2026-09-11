@@ -223,11 +223,12 @@ export async function importerMateriauMaitre(cleMaitresse) {
  *           info: Uint8Array }} appel
  *   `cleMaitresse` est soit les octets de la DEK — importés ici en matériau HKDF —, soit un matériau
  *   DÉJÀ importé : une session qui dérive plusieurs domaines l'importe UNE fois et ne garde jamais
- *   les octets. `domaine` décide de la largeur de sel admise, et rien d'autre ne la décide.
+ *   les octets. `domaine` décide de la largeur de sel admise, ET il est RECOUPÉ avec l'`info`.
  * @returns {Promise<CryptoKey>} AES-GCM 256, non extractible, `encrypt` et `decrypt`
  */
 export async function deriverCleDeDomaine({ cleMaitresse, domaine, sel, info }) {
   exigerDomaine(domaine);
+  exigerInfoDuDomaine(domaine, info);
   const largeur = largeurDeSelAttendue(domaine);
   if (!(sel instanceof Uint8Array) || sel.byteLength !== largeur) {
     throw parametresRefuses(
@@ -245,6 +246,49 @@ export async function deriverCleDeDomaine({ cleMaitresse, domaine, sel, info }) 
     { name: "AES-GCM", length: CLE_DE_DOMAINE_OCTETS * 8 },
     false,
     ["encrypt", "decrypt"],
+  );
+}
+
+/**
+ * RECOUPE le `domaine` déclaré avec le champ de domaine que l'`info` porte (#182, revue de sécurité
+ * de la PR #186, constat 5).
+ *
+ * ## Ce que l'en-tête de ce module promettait, et ne tenait pas
+ *
+ * « Le régime est une propriété du DOMAINE, et il est vérifié ici. » En fait `domaine` ne décidait
+ * que de la LARGEUR DU SEL ; l'`info` — le seul champ qui sépare réellement deux clés — était reçue
+ * telle quelle et n'était jamais confrontée à lui. Un appelant pouvait donc annoncer `volume` et
+ * présenter l'info de `journal` : il obtenait la clé du journal, à l'octet près.
+ *
+ * La conséquence qui compte n'est pas celle-là, mais sa SYMÉTRIQUE : `domaine: "volume"` admet un
+ * sel VIDE, si bien qu'un appelant pouvait dériver la clé d'un domaine à USAGE UNIQUE —
+ * `instantane`, `archive` — **sans sel**, c'est-à-dire une clé constante pour tous les artefacts
+ * d'un volume. C'est exactement le régime que la décision 4 de l'ADR 0033 refuse, et il était
+ * atteignable par la garde qui prétendait l'interdire.
+ *
+ * ## Pourquoi le PRÉFIXE suffit, et pourquoi on ne reconstruit pas l'info entière
+ *
+ * L'info est `LP(schéma) ‖ LP(domaine) ‖ LP(identifiant) ‖ U32BE(version) ‖ LP(algorithme)`. Les
+ * deux premiers champs ne dépendent que du domaine : les recalculer ici ne demande rien à
+ * l'appelant, et cela rend `domaine` AUTORITAIRE sur le seul champ qui décide du régime de sel. Les
+ * trois autres appartiennent à l'appelant — un identifiant, une version de format —, et les exiger
+ * ici obligerait `deriverCleDeDomaine` à les connaître, donc à cesser d'être la primitive qu'elle
+ * est. L'injectivité de l'encodage fait le reste : un préfixe égal sur des champs préfixés en
+ * longueur ne peut pas décrire un autre domaine.
+ */
+function exigerInfoDuDomaine(domaine, info) {
+  const prefixe = concatenerListe([
+    chainePrefixee(ETIQUETTE_SCHEMA_DE_DOMAINE),
+    chainePrefixee(domaine),
+  ]);
+  const concorde =
+    info instanceof Uint8Array &&
+    info.byteLength >= prefixe.byteLength &&
+    prefixe.every((octet, index) => octet === info[index]);
+  if (concorde) return;
+  throw parametresRefuses(
+    `l'« info » présentée ne décrit pas le domaine « ${domaine} ». Le domaine déclaré décide de la largeur de sel admise ; l'info décide de la CLÉ. Les laisser diverger permettrait de dériver la clé d'un domaine sous le régime de sel d'un autre — par exemple une clé à usage unique SANS sel, donc constante pour tous les artefacts d'un volume (ADR 0033, décision 4).`,
+    { champ: "info", domaine },
   );
 }
 

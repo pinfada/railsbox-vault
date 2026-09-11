@@ -253,3 +253,55 @@ test("le matériau maître est le MÊME objet pour tous les domaines d'une sessi
     }),
   );
 });
+
+test("le DOMAINE déclaré est RECOUPÉ avec l'info : présenter l'info d'un autre est refusé", async () => {
+  // Revue de sécurité de la PR #186, constat 5. L'en-tête du module promettait « le régime est une
+  // propriété du DOMAINE, et il est vérifié ici » ; en fait le domaine ne décidait que de la largeur
+  // du sel, et l'info — le seul champ qui sépare les clés — n'était jamais confrontée à lui.
+  const identifiantVolume = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+  const infoDuJournal = encoderInfoDeDomaine({
+    domaine: DOMAINES.journal,
+    identifiantVolume,
+    versionDeFormat: VERSIONS_DE_FORMAT_DE_DOMAINE[DOMAINES.journal],
+  });
+
+  await assert.rejects(
+    () =>
+      deriverCleDeDomaine({
+        cleMaitresse: CLE_DE_TEST,
+        domaine: DOMAINES.volume,
+        sel: SEL_VIDE,
+        info: infoDuJournal,
+      }),
+    (erreur) => {
+      assert.match(erreur.message, /ne décrit pas le domaine/);
+      return true;
+    },
+    "annoncer « volume » et présenter l'info de « journal » rendait la CLÉ DU JOURNAL",
+  );
+});
+
+test("un domaine à USAGE UNIQUE ne se dérive pas sous le régime de sel d'un domaine à compteur", async () => {
+  // La conséquence qui COMPTE, et c'est la symétrique de la précédente : `domaine: "volume"` admet
+  // un sel VIDE. Sans recoupement, un appelant dérivait donc la clé d'`instantane` ou d'`archive`
+  // SANS SEL — c'est-à-dire une clé CONSTANTE pour tous les artefacts d'un volume, exactement le
+  // régime que la décision 4 de l'ADR 0033 refuse, par la garde qui prétendait l'interdire.
+  const identifiantVolume = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
+  for (const domaine of [DOMAINES.instantane, DOMAINES.archive]) {
+    const info = encoderInfoDeDomaine({
+      domaine,
+      identifiantVolume,
+      versionDeFormat: VERSIONS_DE_FORMAT_DE_DOMAINE[domaine],
+    });
+    await assert.rejects(
+      () =>
+        deriverCleDeDomaine({
+          cleMaitresse: CLE_DE_TEST,
+          domaine: DOMAINES.volume,
+          sel: SEL_VIDE,
+          info,
+        }),
+      `le domaine « ${domaine} » ne doit pas se dériver sous un sel vide`,
+    );
+  }
+});
