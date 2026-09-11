@@ -39,8 +39,9 @@ sienne.
   sous une clé à usage unique du domaine `enveloppe`, avec un sel de trente-deux octets tiré et
   écrit en clair ; la page qu'une archive emporte suit le même régime sous le domaine
   `recuperation`. Une page v1 est rescellée à la première ouverture réussie, sans qu'aucune coupure
-  ne rende le volume inouvrable — quatre sinistres, quatre rangs, quatre clés de déverrouillage,
-  toutes ouvrantes à chaque rang ;
+  ne rende le volume inouvrable — quatre sinistres, quatre rangs, six coupures réellement produites,
+  quatre clés de déverrouillage, toutes ouvrantes à chaque coupure, et sept altérations du fichier
+  migré qui laissent chacune une page ouvrable ;
 - **le CLIQUET définitif.** Il lit les APPELS et nomme la matière de chaque import de clé brute.
   Trois endroits touchent encore une clé de volume, et aucun n'est un chemin de production du format
   v4 : le modèle de référence, le régime v3 (migration et export d'un v3), et la LECTURE d'une page

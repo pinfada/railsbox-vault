@@ -1600,10 +1600,16 @@ qui rend la migration sûre sous coupure, et entre « refuser un peu moins » et
 volume », l'ADR 0020 a déjà tranché une fois.
 
 **Épreuves.** `tests/unit/vm-enveloppe-migration-page.test.mjs` rejoue la matrice de coupures de
-l'ADR 0020 — quatre sinistres, quatre rangs — sur une enveloppe à quatre clés, et exige à CHAQUE
-rang que les quatre ouvrent, que l'état soit v1 @ N ou v2 @ N + 1, et que la liste soit identique
-identifiant par identifiant. `tests/unit/vm-enveloppe-vecteurs.test.mjs` migre en outre les QUATRE
-pages v1 FIGÉES du contrat de l'ADR 0020, qui ne doivent rien à ce banc.
+l'ADR 0020 — quatre sinistres, quatre rangs, **six coupures réellement produites** sur les seize
+cellules, puisque le geste ne porte que deux écritures de support — sur une enveloppe à quatre clés,
+et exige à CHAQUE rang que les quatre ouvrent, que l'état soit v1 @ N ou v2 @ N + 1, et que la liste
+soit identique identifiant par identifiant. Les six coupures sont ÉNUMÉRÉES et l'assertion est une
+égalité : une couverture qui baisserait ferait rougir l'épreuve au lieu de rester sous un plancher.
+Le fichier MIGRÉ est ensuite éprouvé sous sept altérations — page v1 effacée, v1 forgée à une
+version supérieure puis ÉGALE, étiquette de racine, sel, octet de domaine porté à `recuperation`
+puis à une valeur qui ne désigne rien — et sous chacune, il reste une page ouvrable par les quatre
+clés. `tests/unit/vm-enveloppe-vecteurs.test.mjs` migre en outre les QUATRE pages v1 FIGÉES du
+contrat de l'ADR 0020, qui ne doivent rien à ce banc.
 
 **Vecteurs.** `tests/vectors/enveloppe-v2.json` fige les deux pages — `enveloppe` et `recuperation`
 —, leurs sels, leurs infos HKDF et les trente-deux octets de leurs clés dérivées.
