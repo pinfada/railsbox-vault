@@ -20,7 +20,7 @@ import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { ouvrirVolumeBrut } from "../../src/vm/opfs-volume-brut.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
-import { tailleSupportV3 } from "../../src/vm/volume-chiffre-format.mjs";
+import { tailleSupportDuVolume } from "../../src/vm/volume-chiffre-format.mjs";
 
 const TAILLE_LOGIQUE = 8 * SECTOR_SIZE;
 
@@ -66,7 +66,7 @@ test("il rend les octets CHIFFRÉS d'un volume v3, et n'en ouvre aucun secteur",
   try {
     assert.equal(
       brut.size(),
-      tailleSupportV3(TAILLE_LOGIQUE),
+      tailleSupportDuVolume(TAILLE_LOGIQUE),
       "l'accès brut voit le FICHIER, pas le volume logique",
     );
     const fichier = await brut.read(0, brut.size());

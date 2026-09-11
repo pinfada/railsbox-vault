@@ -22,7 +22,7 @@ import {
   MARQUEUR_SCELLEMENT_COMPLET,
   SCEAU_OCTETS,
   SCELLEMENT_COMPLET_OFFSET,
-  dispositionV3,
+  dispositionDuVolume,
 } from "../../src/vm/volume-chiffre-format.mjs";
 
 /** 1 024 secteurs : deux tours de scellement, donc une coupure POSSIBLE entre les deux. */
@@ -96,7 +96,7 @@ test("une création interrompue laisse bien une région à MOITIÉ scellée", as
   const store = createSyncAccessStore();
   await creationInterrompue(store, "mi-scelle");
 
-  const disposition = dispositionV3(TAILLE);
+  const disposition = dispositionDuVolume(TAILLE);
   assert.equal(
     store.sizeOf("mi-scelle"),
     disposition.tailleSupport,

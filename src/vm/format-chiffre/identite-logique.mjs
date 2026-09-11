@@ -276,6 +276,21 @@ export function encoderIdentiteEnregistrement(identite) {
 }
 
 /**
+ * Première version de format de volume dont la racine publie DEUX compteurs (#182, ADR 0033).
+ *
+ * En deçà, la racine porte le seul `scellementsCumulesVolume` — dix champs, 136 octets pour un
+ * identifiant de trente-deux caractères. À partir d'elle, elle porte aussi
+ * `scellementsCumulesJournal` — onze champs, 144 octets — parce que le journal a désormais sa propre
+ * clé et donc son propre budget (ADR 0033, décision 4).
+ */
+export const FORMAT_RACINE_A_DEUX_COMPTEURS = 4;
+
+/** Vrai si la racine d'un volume de ce format publie les DEUX compteurs. */
+export function racinePorteDeuxCompteurs(formatVersion) {
+  return formatVersion >= FORMAT_RACINE_A_DEUX_COMPTEURS;
+}
+
+/**
  * Données associées d'une racine : ce que la génération AFFIRME d'elle-même.
  *
  * L'en-tête est en CLAIR sur le support et authentifié ici. Ce qu'il révèle est écrit dans
@@ -283,9 +298,20 @@ export function encoderIdentiteEnregistrement(identite) {
  * génération. C'est un canal auxiliaire sur le VOLUME d'écriture, assumé et nommé, pas une fuite
  * découverte après coup.
  *
+ * **Onze champs depuis la v4, et l'élargissement du canal est ASSUMÉ** : le second compteur publie
+ * en clair la part des dépôts dans l'activité, et non plus seulement son total (§ 13, question
+ * n° 8). C'est le prix de la phrase « toutes les invocations sous une clé », qui devient vraie.
+ *
+ * Le nombre de champs suit la VERSION DE FORMAT, et il la suit dans les octets authentifiés : une
+ * racine v3 relue en croyant qu'elle porte onze champs ne vérifierait pas, et c'est exactement ce
+ * qu'on veut — aucune clé ne traverse une version de format (ADR 0033, décision 3).
+ *
  * @param {{ volume: string, formatVersion: number, sequence: number, generation: number,
  *           tailleVolume: number, nombreEntrees: number, longueurCharge: number,
- *           scellementsCumules: number }} entete
+ *           scellementsCumulesVolume: number, scellementsCumulesJournal?: number }} entete
+ *   `scellementsCumulesJournal` est OBLIGATOIRE à partir de la v4 et REFUSÉ en deçà : un champ
+ *   facultatif aurait fini par manquer sans que personne le voie, et un champ toléré en v3 aurait
+ *   fait deux encodages possibles pour une même racine.
  */
 export function encoderEnteteRacine({
   volume,
@@ -295,7 +321,8 @@ export function encoderEnteteRacine({
   tailleVolume,
   nombreEntrees,
   longueurCharge,
-  scellementsCumules,
+  scellementsCumulesVolume,
+  scellementsCumulesJournal,
 }) {
   identifiant("volume", volume);
   entierBorne("formatVersion", formatVersion, 0xffffffff);
@@ -304,9 +331,9 @@ export function encoderEnteteRacine({
   entierBorne("tailleVolume", tailleVolume, Number.MAX_SAFE_INTEGER);
   entierBorne("nombreEntrees", nombreEntrees, 0xffffffff);
   entierBorne("longueurCharge", longueurCharge, Number.MAX_SAFE_INTEGER);
-  entierBorne("scellementsCumules", scellementsCumules, Number.MAX_SAFE_INTEGER);
+  entierBorne("scellementsCumulesVolume", scellementsCumulesVolume, Number.MAX_SAFE_INTEGER);
 
-  return concatener(
+  const champs = [
     chainePrefixee(ETIQUETTE_DOMAINE_RACINE),
     chainePrefixee(ALGORITHME),
     entierEnOctets(formatVersion, 4),
@@ -316,8 +343,18 @@ export function encoderEnteteRacine({
     entierEnOctets(tailleVolume, 8),
     entierEnOctets(nombreEntrees, 4),
     entierEnOctets(longueurCharge, 8),
-    entierEnOctets(scellementsCumules, 8),
-  );
+    entierEnOctets(scellementsCumulesVolume, 8),
+  ];
+  if (racinePorteDeuxCompteurs(formatVersion)) {
+    entierBorne("scellementsCumulesJournal", scellementsCumulesJournal, Number.MAX_SAFE_INTEGER);
+    champs.push(entierEnOctets(scellementsCumulesJournal, 8));
+  } else if (scellementsCumulesJournal !== undefined) {
+    throw malforme(
+      `une racine de format ${formatVersion} ne porte pas « scellementsCumulesJournal » : le second compteur arrive avec la v4, et l'écrire ici produirait des octets qu'aucun lecteur n'attend.`,
+      { champ: "scellementsCumulesJournal", formatVersion },
+    );
+  }
+  return concatenerListe(champs);
 }
 
 /**

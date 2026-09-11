@@ -55,7 +55,7 @@ import { RANG_SECTEUR_DE_VOLUME } from "./scellement.mjs";
 import {
   SCEAU_OCTETS,
   decoderSceau,
-  dispositionV3,
+  dispositionDuVolume,
   EN_TETE_OCTETS,
   MARQUEUR_SCELLEMENT_COMPLET,
   SCELLEMENT_COMPLET_OFFSET,
@@ -406,7 +406,7 @@ export async function convertirEnV3({
   marquerEtape,
   secteursParTour = SECTEURS_PAR_TOUR,
 }) {
-  const disposition = dispositionV3(tailleLogique);
+  const disposition = dispositionDuVolume(tailleLogique);
 
   const secteursDeplaces =
     depuis === ETAPES_CONVERSION.deplacement

@@ -44,7 +44,7 @@ import {
   parseManifest,
   serializeManifest,
 } from "../../src/vm/volume-manifest.mjs";
-import { tailleSupportV3 } from "../../src/vm/volume-chiffre-format.mjs";
+import { tailleSupportDuVolume } from "../../src/vm/volume-chiffre-format.mjs";
 
 const NOM = "migre";
 const TAILLE = 8 * SECTOR_SIZE;
@@ -176,7 +176,7 @@ test("la migration v2 → v3 ÉCRIT sa racine initiale, et elle porte ce qu'une 
   });
   assert.equal(rapport.migrated, true);
   assert.equal(rapport.toVersion, MANIFEST_FORMAT_VERSION);
-  assert.equal(store.sizeOf(NOM), tailleSupportV3(TAILLE), "le fichier a gagné sa région");
+  assert.equal(store.sizeOf(NOM), tailleSupportDuVolume(TAILLE), "le fichier a gagné sa région");
 
   const racine = racineDuJournal(store);
   assert.equal(racine.valide, true, racine.raison ?? "");

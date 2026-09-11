@@ -6,7 +6,7 @@ import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { VolumeChiffre } from "../../src/vm/volume-chiffre.mjs";
-import { dispositionV3, tailleSupportV3 } from "../../src/vm/volume-chiffre-format.mjs";
+import { dispositionDuVolume, tailleSupportDuVolume } from "../../src/vm/volume-chiffre-format.mjs";
 import { createFaultPlan, FAULT_KINDS } from "../../src/vm/fault-plan.mjs";
 import { MANIFEST_ERROR_CODES, isManifestError } from "../../src/vm/manifest-errors.mjs";
 import { MIGRATION_ERROR_CODES, isMigrationError } from "../../src/vm/migration-errors.mjs";
@@ -837,7 +837,7 @@ test("la chaîne 1 → 3 aboutit : le volume est CONVERTI et rend le même clair
   assert.equal(inscrit.geometry.volumeSize, TAILLE, "la géométrie reste LOGIQUE");
 
   // Le FICHIER, lui, a grandi de sa région d'authentification.
-  assert.equal(cible.etat.volume.byteLength, tailleSupportV3(TAILLE));
+  assert.equal(cible.etat.volume.byteLength, tailleSupportDuVolume(TAILLE));
 
   // Et le clair relu par le chemin de production est celui d'avant la migration.
   const volume = new VolumeChiffre({
@@ -847,7 +847,7 @@ test("la chaîne 1 → 3 aboutit : le volume est CONVERTI et rend le même clair
       cleOctets: CLE_DE_TEST,
       formatVersion: 3,
     }),
-    disposition: dispositionV3(TAILLE),
+    disposition: dispositionDuVolume(TAILLE),
     lireSupport: (offset, longueur) => cible.etat.volume.slice(offset, offset + longueur),
     ecrireSupport: () => {
       throw new Error("la relecture n'écrit pas");
@@ -928,7 +928,7 @@ test("une migration v1 → v3 COUPÉE pendant la conversion REPREND, et rend le 
         cleOctets: CLE_DE_TEST,
         formatVersion: 3,
       }),
-      disposition: dispositionV3(TAILLE),
+      disposition: dispositionDuVolume(TAILLE),
       lireSupport: (offset, longueur) => cible.etat.volume.slice(offset, offset + longueur),
       ecrireSupport: () => {
         throw new Error("la relecture n'écrit pas");
@@ -1055,7 +1055,7 @@ test("une écriture ACQUITTÉE restée dans le journal v1 est REPORTÉE avant la
       cleOctets: CLE_DE_TEST,
       formatVersion: 3,
     }),
-    disposition: dispositionV3(TAILLE),
+    disposition: dispositionDuVolume(TAILLE),
     lireSupport: (offset, longueur) => cible.etat.volume.slice(offset, offset + longueur),
     ecrireSupport: () => {
       throw new Error("la relecture n'écrit pas");

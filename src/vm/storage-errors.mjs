@@ -71,8 +71,28 @@ export const STORAGE_ERROR_CODES = Object.freeze({
    * précédent : ici l'en-tête a vérifié, donc l'écart est ÉTABLI, pas soupçonné.
    */
   identiteVolume: "VAULT_STORAGE_IDENTITE_VOLUME",
-  /** Le budget de scellements de la clé de volume est atteint (#18 ; NIST SP 800-38D § 8.3). */
+  /**
+   * Le budget de scellements d'une clé à compteur est atteint (#18 ; NIST SP 800-38D § 8.3).
+   *
+   * Depuis le format v4, il y a DEUX clés à compteur par volume — celle du domaine `volume` et celle
+   * du domaine `journal` — et donc deux budgets. Le code reste UN : le remède est le même des deux
+   * côtés, et c'est le CONTEXTE qui dit quel domaine a atteint son plafond. Deux codes auraient
+   * nommé deux situations là où il n'y a qu'une règle (ADR 0033, décision 4).
+   */
   budgetDeCle: "VAULT_STORAGE_BUDGET_DE_CLE",
+  /**
+   * La session est ouverte en LECTURE SEULE et un scellement lui a été demandé (#182, ADR 0033).
+   *
+   * C'est la moitié exécutable de la règle de clôture : _toute session qui scelle sous une clé à
+   * compteur clôt par une RACINE qui publie les deux compteurs ; une ouverture qui ne peut pas
+   * écrire de racine n'a pas le droit de sceller._ Sans ce refus, les scellements d'une telle
+   * session ne seraient publiés dans aucun compteur, et le budget de la clé serait de nouveau
+   * sous-estimé — c'est-à-dire exactement le constat #182, qu'un budget avoué faux reste faux.
+   *
+   * Le remède n'est pas de réessayer : il est d'ouvrir le volume par un chemin qui sait dater, ou de
+   * se contenter de lire.
+   */
+  lectureSeule: "VAULT_STORAGE_LECTURE_SEULE",
   /**
    * Un volume au format v3 a été présenté SANS clé de volume (#18, ADR 0016). Rien n'est lu, rien
    * n'est deviné, aucune clé n'est fabriquée : le produit n'en fabrique aucune avant #21.

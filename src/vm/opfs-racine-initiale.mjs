@@ -40,7 +40,7 @@ import {
 } from "./archive-engagement.mjs";
 import { octetsEnHex } from "./format-chiffre/octets.mjs";
 import { STORAGE_ERROR_CODES, StorageError, creationNonConfirmee } from "./storage-errors.mjs";
-import { dispositionV3 } from "./volume-chiffre-format.mjs";
+import { dispositionDuVolume } from "./volume-chiffre-format.mjs";
 
 /**
  * MOTIFS qui autorisent une ouverture sans racine (#181). Il n'y en a pas d'autre.
@@ -390,7 +390,7 @@ export async function poserLaRacineInitialeSurAccesBrut({
   // région d'authentification, et comment la lire. Le construire ici plutôt que de recopier la
   // source de fraîcheur évite qu'une seconde copie diverge de la première.
   const adaptateur = {
-    disposition: dispositionV3(tailleLogique),
+    disposition: dispositionDuVolume(tailleLogique),
     lireRegionAuth: (offset, longueur) => brut.read(offset, longueur),
   };
   const magasin = await ouvrirGeneration({

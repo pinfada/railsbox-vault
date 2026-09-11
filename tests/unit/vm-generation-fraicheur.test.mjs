@@ -30,13 +30,13 @@ import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 import {
   SCEAU_OCTETS,
-  dispositionV3,
+  dispositionDuVolume,
   offsetDeCharge,
   offsetDeSceau,
 } from "../../src/vm/volume-chiffre-format.mjs";
 
 const TAILLE = 64 * SECTOR_SIZE;
-const DISPOSITION = dispositionV3(TAILLE);
+const DISPOSITION = dispositionDuVolume(TAILLE);
 /** Identifiant FIXE des bancs de migration : il entre dans les données associées de chaque sceau. */
 const IDENTIFIANT_BANC = "3".repeat(32);
 let compteur = 0;

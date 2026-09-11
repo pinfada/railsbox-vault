@@ -59,11 +59,11 @@ import {
   FORMAT_VOLUME_V3,
   SCEAU_OCTETS,
   decoderSceau,
-  dispositionV3,
+  dispositionDuVolume,
 } from "../../src/vm/volume-chiffre-format.mjs";
 
 const TAILLE = 8 * SECTOR_SIZE;
-const DISPOSITION = dispositionV3(TAILLE);
+const DISPOSITION = dispositionDuVolume(TAILLE);
 const IDENTIFIANT = "9".repeat(32);
 const SANS_RANGEMENT = Number.MAX_SAFE_INTEGER;
 

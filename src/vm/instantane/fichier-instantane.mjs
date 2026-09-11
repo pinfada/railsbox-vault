@@ -4,7 +4,12 @@
 // `volume-chiffre-format.mjs` le fait pour le volume et `enveloppe/fichier-enveloppe.mjs` pour
 // l'enveloppe.
 //
-//     [ en-tête, 152 octets ][ corps chiffré, N octets ][ marque de complétude, 8 octets ]
+//     [ en-tête, 184 octets ][ corps chiffré, N octets ][ marque de complétude, 8 octets ]
+//
+// **184 depuis le format 2 (#182, ADR 0033).** L'en-tête porte désormais le SEL de trente-deux
+// octets dont descend la clé à usage unique de cette capture-là. Il est en CLAIR et n'est PAS
+// authentifié, et il n'a pas à l'être : un adversaire qui le change obtient une clé différente,
+// donc une ouverture qui échoue — le sel se protège par sa conséquence, exactement comme le nonce.
 //
 // **L'en-tête est en clair et AUTHENTIFIÉ.** Ce n'est pas une contradiction : ses champs sont les
 // DONNÉES ASSOCIÉES de l'unique scellement de la capture (`identite-instantane.mjs`), si bien qu'un
@@ -23,13 +28,14 @@ import {
   identifiantVolumeEnTexte,
 } from "../format-chiffre/identite-logique.mjs";
 import { identifiantVolumeEnOctets } from "../volume-chiffre-format.mjs";
+import { SEL_DE_DOMAINE_OCTETS } from "../derivation/cle-de-domaine.mjs";
 import { EMPREINTE_OCTETS, INSTANTANE_FORMAT, exigerLiaison } from "./identite-instantane.mjs";
 import { malforme } from "./instantane-errors.mjs";
 
 /** Marqueur de début. Huit octets, jamais modifiés. */
 export const MARQUEUR_INSTANTANE = Uint8Array.from([
-  0x56, 0x4c, 0x54, 0x53, 0x4e, 0x50, 0x30, 0x31,
-]); // "VLTSNP01"
+  0x56, 0x4c, 0x54, 0x53, 0x4e, 0x50, 0x30, 0x32,
+]); // "VLTSNP02"
 
 /**
  * Marque de COMPLÉTUDE, posée après le corps et après une barrière.
@@ -56,11 +62,12 @@ const OFFSET = Object.freeze({
   empreinteImage: 88,
   nonce: 120,
   etiquette: 132,
-  reserve: 148,
+  sel: 148,
+  reserve: 180,
 });
 
 /** Largeur de l'en-tête. Fixe : la table d'offsets ci-dessus est celle que l'ADR 0024 publie. */
-export const EN_TETE_OCTETS = 152;
+export const EN_TETE_OCTETS = 184;
 
 /** Où le corps chiffré commence. Constante, mais nommée : un offset en dur se recopie mal. */
 export function offsetDuCorps() {
@@ -89,13 +96,15 @@ function exigerOctets(nom, valeur, longueur) {
  * l'en-tête v3 de l'ADR 0016 ; les données associées, elles, sont gros-boutistes. Voir
  * `identite-instantane.mjs` : deux encodages de rôles différents, et c'est la convention du dépôt.
  *
- * @param {{ liaison: object, nonce: Uint8Array, etiquette: Uint8Array }} entete
+ * @param {{ liaison: object, nonce: Uint8Array, etiquette: Uint8Array, sel: Uint8Array }} entete
+ *   `sel` est celui dont descend la clé à usage unique de cette capture (ADR 0033, décision 3).
  * @returns {Uint8Array} `EN_TETE_OCTETS` octets
  */
-export function encoderEnTete({ liaison, nonce, etiquette }) {
+export function encoderEnTete({ liaison, nonce, etiquette, sel }) {
   const exigee = exigerLiaison(liaison);
   exigerOctets("nonce", nonce, NONCE_OCTETS);
   exigerOctets("etiquette", etiquette, ETIQUETTE_OCTETS);
+  exigerOctets("sel", sel, SEL_DE_DOMAINE_OCTETS);
 
   const octets = new Uint8Array(EN_TETE_OCTETS);
   const vue = new DataView(octets.buffer);
@@ -110,13 +119,21 @@ export function encoderEnTete({ liaison, nonce, etiquette }) {
   octets.set(exigee.empreinteImage, OFFSET.empreinteImage);
   octets.set(nonce, OFFSET.nonce);
   octets.set(etiquette, OFFSET.etiquette);
+  octets.set(sel, OFFSET.sel);
   // La réserve reste à zéro. Elle est déclarée pour qu'une version ultérieure ait où se loger sans
   // déplacer un champ — déplacer un champ casse le format, ajouter dans la réserve ne le casse pas.
   return octets;
 }
 
 function refus(raison) {
-  return Object.freeze({ valide: false, raison, liaison: null, nonce: null, etiquette: null });
+  return Object.freeze({
+    valide: false,
+    raison,
+    liaison: null,
+    nonce: null,
+    etiquette: null,
+    sel: null,
+  });
 }
 
 /**
@@ -181,6 +198,7 @@ export function decoderEnTete(octets) {
       liaison: lireLiaison(octets, vue, formatInstantane),
       nonce: octets.slice(OFFSET.nonce, OFFSET.nonce + NONCE_OCTETS),
       etiquette: octets.slice(OFFSET.etiquette, OFFSET.etiquette + ETIQUETTE_OCTETS),
+      sel: octets.slice(OFFSET.sel, OFFSET.sel + SEL_DE_DOMAINE_OCTETS),
     });
   } catch (cause) {
     // Un champ hors bornes DANS le fichier n'est pas une faute de programmation : c'est un fichier

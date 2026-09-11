@@ -8,7 +8,7 @@ import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
-import { tailleSupportV3 } from "../../src/vm/volume-chiffre-format.mjs";
+import { tailleSupportDuVolume } from "../../src/vm/volume-chiffre-format.mjs";
 
 // Tests unitaires du backend de blocs OPFS (#6, `VAULT-PERSIST-001`). Ils utilisent un DOUBLE
 // déterministe de `FileSystemSyncAccessHandle` — lui-même vérifié par
@@ -26,7 +26,7 @@ const TAILLE = 64 * SECTOR_SIZE;
  * Les deux ne se confondent jamais (ADR 0016) — `size()` rend la logique, le support porte la
  * seconde —, et l'écart de 6,64 % est ce que le sceau de chaque secteur coûte.
  */
-const SUPPORT = tailleSupportV3(TAILLE);
+const SUPPORT = tailleSupportDuVolume(TAILLE);
 let compteur = 0;
 
 /**

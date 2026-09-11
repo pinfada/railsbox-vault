@@ -203,6 +203,7 @@ function exigerDescripteur(descripteur) {
 async function cleDuDomaineArchive({ cleMaitresse, sel, identifiantVolume, versionDArchive }) {
   return deriverCleDeDomaine({
     cleMaitresse,
+    domaine: DOMAINES.archive,
     sel,
     info: encoderInfoDeDomaine({
       domaine: DOMAINES.archive,

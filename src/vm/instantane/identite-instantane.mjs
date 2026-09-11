@@ -35,8 +35,18 @@ import {
 import { chainePrefixee, concatener, entierEnOctets } from "../format-chiffre/octets.mjs";
 import { malforme } from "./instantane-errors.mjs";
 
-/** Version du format d'INSTANTANÉ, distincte de celle du volume et de celle du modèle chiffré. */
-export const INSTANTANE_FORMAT = 1;
+/**
+ * Version du format d'INSTANTANÉ, distincte de celle du volume et de celle du modèle chiffré.
+ *
+ * **2 depuis #182** : le fichier porte le SEL de trente-deux octets dont descend la clé à usage
+ * unique de la capture (ADR 0033, décision 3), et son en-tête passe de 152 à 184 octets. La liaison
+ * — les données associées — ne change PAS d'un octet : ce qui bouge est la clé, pas ce qu'elle lie.
+ *
+ * Un instantané de version 1 n'est pas migré, et il n'a pas à l'être : une capture est un état de
+ * REPRISE, écarté dès qu'il est consommé ou périmé (ADR 0024). Ce runtime le REFUSE, et le refus
+ * coûte un démarrage à froid — jamais une donnée.
+ */
+export const INSTANTANE_FORMAT = 2;
 
 /** Étiquette de domaine. Elle sépare l'instantané de tout autre objet scellé sous la même clé. */
 export const ETIQUETTE_DOMAINE_INSTANTANE = "railsbox-vault/instantane-de-reprise/v1/liaison";
