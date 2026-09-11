@@ -90,6 +90,14 @@ export const ENVELOPPE_ERROR_CODES = Object.freeze({
   pleine: "VAULT_ENVELOPPE_PLEINE",
   /** L'emplacement visé par un remplacement ou une révocation n'existe pas. */
   emplacementInconnu: "VAULT_ENVELOPPE_EMPLACEMENT_INCONNU",
+  /**
+   * `creer` refuse sur un fichier `<volume>.cles` déjà présent (#159, ADR 0020 déc. 4). Distinct de
+   * `absente`, son symétrique : ici quelque chose EXISTE déjà à cet emplacement, soit l'enveloppe de
+   * ce volume (la recréer détruirait des emplacements sans geste), soit celle d'un autre (l'écraser
+   * détruirait une enveloppe qui n'est pas la nôtre). Le seul chemin admis vers une création sur un
+   * emplacement occupé est le retrait explicite (ADR 0020 déc. 1).
+   */
+  presente: "VAULT_ENVELOPPE_PRESENTE",
 });
 
 const CODES_CONNUS = new Set(Object.values(ENVELOPPE_ERROR_CODES));
@@ -144,6 +152,20 @@ export function enveloppeAbsente(context = {}) {
   );
 }
 
+/**
+ * `creer` refuse : un fichier `<volume>.cles` existe déjà à cet emplacement (#159). Symétrique
+ * d'`enveloppeAbsente` — ici quelque chose est déjà là, et `creer` ne le lit ni ne le touche : elle
+ * ne sait pas si c'est l'enveloppe de CE volume ou celle d'un autre, et les deux sont des raisons de
+ * refuser plutôt que d'écrire.
+ */
+export function enveloppePresente(context = {}) {
+  return new EnveloppeError(
+    ENVELOPPE_ERROR_CODES.presente,
+    "Création refusée : un fichier d'enveloppe existe déjà à cet emplacement. Le recréer détruirait des emplacements sans geste explicite s'il s'agit de la vôtre, ou une enveloppe qui n'est pas la vôtre s'il s'agit d'un autre volume — dans les deux cas, aucune page n'est touchée. Retirez le volume explicitement d'abord si c'est bien ce que vous voulez.",
+    { context },
+  );
+}
+
 /** Un fichier existe, aucune de ses deux pages n'est exploitable. */
 export function enveloppeIllisible(context = {}) {
   return new EnveloppeError(
@@ -179,6 +201,21 @@ export function identiteIncoherente(context = {}) {
   return new EnveloppeError(
     ENVELOPPE_ERROR_CODES.identite,
     "Enveloppe refusée : sa racine est authentique, mais elle décrit un AUTRE volume. C'est donc bien une enveloppe — pas celle de ce volume. Aucune clé de volume n'est rendue, et la vérification s'arrête ici.",
+    { situations: [SITUATIONS.deplacement], context },
+  );
+}
+
+/**
+ * AUCUNE page valide du fichier ne DÉCLARE ce volume — constat sans clé, donc sans racine
+ * authentifiée (#159). Même CODE que `identiteIncoherente`, jamais le même message : celui-ci
+ * n'affirme que ce qu'un inventaire sait affirmer, la déclaration en clair d'une page dont la
+ * structure et la somme de contrôle sont saines — pas une racine vérifiée, qu'aucune clé ne permet
+ * ici de vérifier. Dire « authentique » serait mentir sur ce qui a été établi.
+ */
+export function identiteDeclareeIncoherente(context = {}) {
+  return new EnveloppeError(
+    ENVELOPPE_ERROR_CODES.identite,
+    "Enveloppe refusée : les pages lisibles de ce fichier sont structurellement saines, mais aucune ne DÉCLARE ce volume — c'est donc bien une enveloppe, pas celle de ce volume. Aucune clé n'a été présentée, et ce constat ne porte que sur le champ en clair : c'est tout ce qu'un inventaire sans clé peut établir.",
     { situations: [SITUATIONS.deplacement], context },
   );
 }
