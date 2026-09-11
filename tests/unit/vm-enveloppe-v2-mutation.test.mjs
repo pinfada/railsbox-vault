@@ -65,18 +65,30 @@ test("la table couvre les HUIT endroits où la tranche T2b se joue", () => {
   ]);
 });
 
-test("le CLIQUET est muté par ses DEUX motifs, et pas par un seul", () => {
-  // La revue de sécurité de la PR #186 avait trouvé un cliquet dont un seul des deux mutants était
-  // vu : son titre annonçait une universelle et son balayage n'en tenait qu'une moitié. Les deux
-  // motifs du cliquet définitif sont donc mutés séparément — retirer l'un doit suffire à faire
-  // rougir « le cliquet MORD », sans quoi l'autre le couvrirait et la mesure serait creuse.
+test("le CLIQUET est muté par CHACUN de ses motifs, et pas par un seul", () => {
+  // La revue de la PR #186 avait trouvé un cliquet dont un seul des deux mutants était vu ; celle de
+  // la PR #187 en a trouvé deux de plus qui passaient — le réexport ALIASÉ de la porte et la liaison
+  // locale d'`importKey`. Chaque motif du cliquet est donc muté SÉPARÉMENT : retirer l'un doit
+  // suffire à faire rougir « le cliquet MORD », sans quoi un autre le couvrirait et la mesure serait
+  // creuse.
   const surLeCliquet = MUTATIONS.filter(
     (mutation) => mutation.fichier === "tests/unit/vm-cliquet-anti-dek.test.mjs",
   );
-  assert.equal(surLeCliquet.length, 2, "deux motifs, deux mutants");
+  assert.equal(surLeCliquet.length, 4, "quatre motifs, quatre mutants");
   assert.deepEqual(
-    surLeCliquet.map((mutation) => mutation.epreuves),
-    [["tests/unit/vm-cliquet-anti-dek.test.mjs"], ["tests/unit/vm-cliquet-anti-dek.test.mjs"]],
+    [...new Set(surLeCliquet.flatMap((mutation) => mutation.epreuves))],
+    ["tests/unit/vm-cliquet-anti-dek.test.mjs"],
     "l'épreuve qui doit rougir est la sienne : une garde d'inspection se mesure sur elle-même",
+  );
+  assert.deepEqual(
+    surLeCliquet.map((mutation) => mutation.garde).sort(),
+    [
+      "vm-cliquet-anti-dek — `propagerParReexportEnBloc`",
+      "vm-cliquet-anti-dek — `rendus.size > 0` dans `gestesDuModule`",
+      "vm-cliquet-anti-dek — la conduite conservatrice de `referencesAImportKey`",
+      "vm-cliquet-anti-dek — la propagation des noms APPRIS dans `aliasDeLaPorte`",
+    ],
+    "les quatre motifs sont : suivre les alias, en faire des portes, suivre le réexport en bloc, et " +
+      "traiter une référence opaque comme un geste",
   );
 });
