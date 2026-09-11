@@ -25,9 +25,18 @@
 //    l'identifiant de l'enregistrement et le SHA-256 de la pièce jointe de 4096 octets — une
 //    empreinte byte-exacte de ce que le volume a rendu ;
 //  - le CLAIR DU VOLUME avant et après la reprise. L'égalité vaut parce qu'elle est ENCADRÉE : une
-//    session reprise ne redémarre pas Rails, donc n'écrit rien — ce que le scénario CONSTATE
-//    (`counts.write === 0`) au lieu de le supposer. Restaurer un état mémoire ne touche pas le
-//    volume, et c'est ce qu'« un instantané n'est jamais une source de vérité » veut dire.
+//    session reprise ne redémarre pas Rails, donc elle n'ACQUITTE aucune barrière et ne VALIDE
+//    aucune génération — ce que le scénario CONSTATE au lieu de le supposer. Restaurer un état
+//    mémoire ne touche pas le volume, et c'est ce qu'« un instantané n'est jamais une source de
+//    vérité » veut dire.
+//
+// **L'encadrement a CHANGÉ le 11 septembre 2026, et c'est #152.** Il portait sur `counts.write === 0`
+// — « le guest n'a émis aucune écriture ». Trois occurrences ont réfuté cette borne sans que rien de
+// promis ait cassé : un noyau repris écrit à sa guise (journal ext4, cache de pages rejoué, horloge
+// rattrapée), et `counts.write` compte des APPELS du guest, pas des mutations de l'état validé. La
+// borne est désormais sur les grandeurs que le protocole tient — barrière acquittée, génération
+// validée, empreintes du fichier et du clair — et `counts.write` est PUBLIÉ comme mesure sans seuil.
+// Motif complet dans l'ADR 0024 (note du 11 septembre 2026) et dans `docs/testing.md`.
 //
 // **Ce qu'il ne compare PAS** : le clair du volume entre DEUX BOOTS COMPLETS. Il ne peut pas — un
 // boot Rails réel écrit ses journaux, ses fichiers temporaires et son journal SQLite à chaque
@@ -118,6 +127,7 @@ test.afterEach(async ({ context }, testInfo) => {
 });
 
 test("un instantané rend Rails en une fraction du boot à froid, puis est écarté dès qu'il périme", async ({
+  chronologie,
   context,
 }, testInfo) => {
   exigerLesPrealables(raison, "instantane-reprise.spec.mjs");
@@ -182,9 +192,15 @@ test("un instantané rend Rails en une fraction du boot à froid, puis est écar
   expect(prepare.bytesWritten, "le disque applicatif entier est écrit dans OPFS").toBe(
     disqueApp.byteSize,
   );
+  chronologie.etape("préparation", { octets: prepare.bytesWritten });
 
   // 2. Boot à chaud qui CAPTURE. La capture a lieu après l'invariant, au point de contrôle.
   const capturant = await phase({ ...configBoot, phase: "live-capturer" });
+  chronologie.etape("boot à chaud qui capture", {
+    santeMs: capturant.healthMilliseconds,
+    instantaneOctets: capturant.capture?.octets ?? null,
+    motifDeRefus: capturant.capture?.motif ?? null,
+  });
   await testInfo.attach("live-capturer.json", {
     body: JSON.stringify(capturant, null, 2),
     contentType: "application/json",
@@ -205,6 +221,14 @@ test("un instantané rend Rails en une fraction du boot à froid, puis est écar
 
   // 4. RÉOUVERTURE PAR INSTANTANÉ, dans un Worker neuf, après fermeture complète.
   const reprise = await phase({ ...configBoot, phase: "resume-instantane" });
+  chronologie.etape("réouverture par instantané", {
+    utilise: reprise.usedSnapshot,
+    motifDeRejet: reprise.instantane?.motif ?? null,
+    santeMs: reprise.healthMilliseconds,
+    ecrituresDuGuest: reprise.counts?.write ?? 0,
+    barrieresAcquittees: reprise.counts?.["flush-ack"] ?? 0,
+    octetsValides: reprise.generation?.valideeMaxOctets ?? null,
+  });
   await testInfo.attach("resume-instantane.json", {
     body: JSON.stringify(reprise, null, 2),
     contentType: "application/json",
@@ -226,14 +250,41 @@ test("un instantané rend Rails en une fraction du boot à froid, puis est écar
   expect(reprise.observedAttachmentSha256).toBe(contrat.attachment.sha256);
 
   const clairApresReprise = await phase({ phase: "digest-volume", volume: VOLUME });
+  const apresReprise = await phase({ phase: "inspect-volume", volume: VOLUME });
 
-  // ÉQUIVALENCE BYTE-À-BYTE DU CLAIR DU VOLUME. Elle vaut parce qu'elle est ENCADRÉE : une session
-  // reprise par instantané ne redémarre pas Rails, donc n'écrit rien — ce que l'assertion suivante
-  // constate plutôt que de le supposer. Sous cette condition, le clair du volume relu par la lecture
-  // autorisée est le MÊME, octet pour octet, avant et après la reprise : la restauration d'un état
-  // mémoire ne touche pas le volume, et c'est exactement ce qu'un « instantané qui n'est jamais une
-  // source de vérité » doit vouloir dire.
-  expect(reprise.counts.write ?? 0, "une session reprise n'écrit rien dans le volume").toBe(0);
+  // ÉQUIVALENCE BYTE-À-BYTE DU CLAIR DU VOLUME, et ce qui l'ENCADRE (#152).
+  //
+  // **L'assertion « `counts.write === 0` » a été RETIRÉE d'ici, et il faut dire pourquoi.** Elle
+  // encadrait l'équivalence par « une session reprise ne redémarre pas Rails, donc n'écrit rien ».
+  // La première moitié est vraie ; la seconde ne l'est pas, et trois runs l'ont montré —
+  // 34283481251 et 34395610743 (tentatives 1) ont relevé `counts.write = 21`, exactement 21 les
+  // deux fois, sur un code qui ne touchait pas ce scénario. Ce que ce compteur compte, ce sont les
+  // APPELS D'ÉCRITURE du guest interceptés par le pont, et un noyau Linux repris en produit à sa
+  // guise : le rejeu du cache de pages, une minuterie de journal ext4, l'horloge que v86 rattrape
+  // depuis le CMOS de l'hôte (limite 4 de l'ADR 0024). Aucun de ces gestes n'est borné à zéro par
+  // construction, et aucun ne change ce que l'ADR 0024 promet.
+  //
+  // Ce que l'ADR promet est l'ÉTAT VALIDÉ, et c'est lui qui est éprouvé ici, par trois grandeurs
+  // qui, elles, sont bornées par le protocole et non par la chance :
+  //
+  //   a. AUCUNE BARRIÈRE ACQUITTÉE, donc aucune génération validée. « La génération validée
+  //      n'avance qu'à une barrière ACQUITTÉE du guest » (ADR 0024, décision 4) : sans barrière, la
+  //      garde de génération de la réouverture suivante ne peut pas bouger, quoi que le guest ait
+  //      demandé au pont ;
+  //   b. RIEN DE SCELLÉ : la plus grande génération validée de la session vaut zéro octet ;
+  //   c. et l'ÉTAT VALIDÉ LUI-MÊME est identique à l'octet, fichier ET clair — la mesure qui ferme
+  //      la question, puisqu'un secteur rangé se verrait là.
+  //
+  // `counts.write` reste MESURÉ et PUBLIÉ dans le relevé, sans seuil : une grandeur qu'on cesse de
+  // borner et qu'on cesse de publier est une grandeur qu'on cesse de voir.
+  expect(
+    reprise.counts["flush-ack"] ?? 0,
+    "une session reprise n'ACQUITTE aucune barrière : rien ne peut donc être validé",
+  ).toBe(0);
+  expect(
+    reprise.generation.valideeMaxOctets,
+    "et rien n'a été scellé : la plus grande génération validée de la session est nulle",
+  ).toBe(0);
   expect(
     clairApresReprise.digestClair,
     "le CLAIR du volume est identique, octet pour octet, avant et après la reprise",
@@ -242,10 +293,22 @@ test("un instantané rend Rails en une fraction du boot à froid, puis est écar
     clairApresReprise.digest,
     "et le FICHIER lui-même n'a pas bougé non plus : aucun secteur rescellé",
   ).toBe(clairApresCapture.digest);
+  // Le JOURNAL DE GÉNÉRATION, troisième voisin du volume, est MESURÉ ici et PUBLIÉ — jamais
+  // confronté, et il faut dire pourquoi. Sa taille APRÈS la session ne dit pas ce que la session a
+  // validé : `close()` tronque le journal à sa zone d'enregistrements, si bien qu'il rend 8 192
+  // octets quoi qu'il ait porté — mesuré à 8 192 avant comme après une session ayant DÉPOSÉ
+  // 143 924 octets. Une assertion dessus éprouverait la troncature de la fermeture, pas l'invariant.
+  // Ce que l'ADR 0024 promet est ailleurs — l'état VALIDÉ —, et le volume lui-même, mesuré à
+  // l'octet juste au-dessus, est le seul endroit où il vit.
 
   // 5. Un boot COMPLET sur le même volume : Rails redémarre, écrit et franchit des barrières.
   //    C'est la mutation qui périme l'instantané — la génération avance, la région change.
   const mutant = await phase({ ...configBoot, phase: "live" });
+  chronologie.etape("boot complet qui périme l'instantané", {
+    santeMs: mutant.healthMilliseconds,
+    ecrituresDuGuest: mutant.counts?.write ?? 0,
+    barrieresAcquittees: mutant.counts?.["flush-ack"] ?? 0,
+  });
   await testInfo.attach("live-mutant.json", {
     body: JSON.stringify(mutant, null, 2),
     contentType: "application/json",
@@ -256,6 +319,11 @@ test("un instantané rend Rails en une fraction du boot à froid, puis est écar
 
   // 6. La réouverture suivante doit ÉCARTER l'instantané, le RETIRER, et booter à froid.
   const froid = await phase({ ...configBoot, phase: "resume-instantane" });
+  chronologie.etape("réouverture qui ÉCARTE l'instantané", {
+    utilise: froid.usedSnapshot,
+    motifDeRejet: froid.instantane?.motif ?? null,
+    santeMs: froid.healthMilliseconds,
+  });
   await testInfo.attach("resume-froid.json", {
     body: JSON.stringify(froid, null, 2),
     contentType: "application/json",
@@ -302,10 +370,21 @@ test("un instantané rend Rails en une fraction du boot à froid, puis est écar
       santeMs: reprise.healthMilliseconds,
       bootMs: reprise.bootMilliseconds,
       usedSnapshot: reprise.usedSnapshot,
-      // Ce que la session REPRISE a écrit : Rails ne redémarre pas, donc il ne mute presque rien.
-      // Publié pour que la propriété se lise, plutôt que d'être supposée.
+      // **MESURE SANS SEUIL** (#152). `ecrituresDuGuest` compte les APPELS d'écriture qu'un noyau
+      // Linux repris adresse au pont — rejeu du cache de pages, minuterie de journal ext4, horloge
+      // rattrapée. Il vaut 0 la plupart du temps et 21 sur les occurrences des 8 et 9 septembre
+      // 2026 ; il n'est plus borné par une assertion parce qu'il ne mesure pas ce que l'ADR 0024
+      // promet. Ce qui est ASSERTÉ vit trois champs plus bas : `barrieresAcquittees` et
+      // `octetsValides`, tous deux nuls, plus l'égalité des deux empreintes.
       ecrituresDuGuest: reprise.counts.write ?? 0,
+      operationsAta: reprise.counts.ata ?? 0,
       barrieresAcquittees: reprise.counts["flush-ack"] ?? 0,
+      octetsDeposes: reprise.generation.deposeeMaxOctets,
+      octetsValides: reprise.generation.valideeMaxOctets,
+      journalDeGenerationOctets: {
+        apresCapture: apresCapture.generationJournalSize,
+        apresReprise: apresReprise.generationJournalSize,
+      },
     },
     bootMutant: {
       santeMs: mutant.healthMilliseconds,

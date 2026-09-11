@@ -1187,8 +1187,8 @@ porté le disque entier — 385 Mio — au lieu de 23,5.
 2. **le clair du volume est identique avant et après la reprise**,
    `cc87935d9dd16d3a79900322ed7fc0227858794bf8be5ad180271148e90c0175` des deux côtés, et le fichier
    lui-même n'a pas bougé. L'égalité est **encadrée** : le scénario constate d'abord que la session
-   reprise n'a écrit **aucun** bloc dans le volume. Restaurer un état mémoire ne touche pas le
-   volume ;
+   reprise n'a **acquitté aucune barrière** et **validé aucune génération**, si bien que rien n'a pu
+   être rangé. Restaurer un état mémoire ne touche pas le volume ;
 3. **un instantané périmé est écarté ET retiré.** Après un boot complet qui écrit et franchit une
    barrière, la réouverture suivante rejette l'instantané au motif
    `VAULT_INSTANTANE_ECART_GENERATION`, supprime le fichier, et boote à froid en 78,0 s avec
@@ -1196,12 +1196,15 @@ porté le disque entier — 385 Mio — au lieu de 23,5.
 
 ### Ce qu'une session REPRISE écrit, mesuré ailleurs
 
-Le scénario ci-dessus constate qu'une session Rails reprise n'écrit **rien**, et c'est une propriété
-de la fixture : l'application de référence n'a que deux routes, toutes deux en lecture (ADR 0004),
-et le pont série ne relaie que du HTTP. La question qui compte pour la sûreté — **une mémoire
-restaurée peut-elle encore écrire, et son écriture survit-elle ?** — est donc mesurée sur le guest
-de la matrice #2, qui rend un shell sur le port série :
-`tests/vm/instantane-ecriture-apres-reprise.spec.mjs`, Chromium, OPFS réel, volume de 16 Mio.
+Le scénario ci-dessus constate qu'une session Rails reprise ne **valide** rien, et c'est une
+propriété de la fixture : l'application de référence n'a que deux routes, toutes deux en lecture
+(ADR 0004), et le pont série ne relaie que du HTTP. Elle n'émet en revanche pas toujours ZÉRO appel
+d'écriture — deux runs de septembre 2026 en ont relevé 21, sans barrière ni génération validée ;
+c'est #152, et la note datée du 11 septembre 2026 de l'ADR 0024 dit ce que la mesure distingue. La
+question qui compte pour la sûreté — **une mémoire restaurée peut-elle encore écrire, et son
+écriture survit-elle ?** — est donc mesurée sur le guest de la matrice #2, qui rend un shell sur le
+port série : `tests/vm/instantane-ecriture-apres-reprise.spec.mjs`, Chromium, OPFS réel, volume de
+16 Mio.
 
 | Grandeur                                     | Valeur                              |
 | -------------------------------------------- | ----------------------------------- |

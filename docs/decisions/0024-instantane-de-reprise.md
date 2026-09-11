@@ -553,15 +553,65 @@ C'est la section qui doit être lue avant toute autre.
      boots du même scénario) ;
    - **le clair du volume** : identique octet pour octet AVANT et APRÈS une reprise par instantané —
      `cc87935d9dd1…` des deux côtés au relevé du 4 septembre. L'égalité vaut parce qu'elle est
-     **encadrée** : une session reprise ne redémarre pas Rails, donc n'écrit rien, et le scénario le
-     CONSTATE (`counts.write === 0`) au lieu de le supposer. Restaurer un état mémoire ne touche pas
-     le volume.
+     **encadrée**, et l'encadrement a changé le 11 septembre 2026 : voir la note ci-dessous.
 
-   **Ce qui n'est PAS comparable, et pourquoi** : le clair du volume entre deux BOOTS COMPLETS. Un
-   boot Rails réel écrit ses journaux, ses fichiers temporaires et son journal SQLite à chaque
-   démarrage ; deux boots partant du même volume en laissent deux états différents, sans que
-   l'instantané y soit pour rien. Une assertion qui les comparerait ne mesurerait pas l'instantané —
-   elle mesurerait le déterminisme de Rails.
+> ### Note du 11 septembre 2026 — ce que l'invariant promet, ce qu'il ne promet pas (#152)
+>
+> **L'encadrement de l'égalité ci-dessus était `counts.write === 0`** : « une session reprise ne
+> redémarre pas Rails, donc n'écrit rien ». La première moitié de la phrase est vraie. La seconde ne
+> l'est pas, et trois runs l'ont montré sur du code qui ne touchait pas ce scénario :
+>
+> | Run                                               | Date  | Commit    | `counts.write` de la session reprise |
+> | ------------------------------------------------- | ----- | --------- | ------------------------------------ |
+> | 34283481251 tentative 1                           | 9/09  | `25cb8c3` | **21**                               |
+> | 34395610743 tentative 1                           | 10/09 | `e5f8ea0` | **21**                               |
+> | (tous les autres runs Reprise MVP depuis le 6/09) |       |           | 0                                    |
+>
+> Le relevé de la session reprise du run 34283481251 dit exactement ce qui s'est passé :
+> `counts = { mark: 3, ata: 21, write: 21, close: 1 }` — **aucun `flush`, aucun `flush-ack`** —, et
+> `generation = { deposeeMaxOctets: 132122, valideeMaxOctets: 0 }`. Le guest a demandé 21 écritures
+> au pont ; **aucune barrière n'a été acquittée, donc rien n'a été validé**, et la garde de
+> génération de la réouverture suivante n'avait pas bougé.
+>
+> **Ce que `counts.write` compte, ce sont les APPELS d'écriture du guest**, pas les mutations de
+> l'état validé. Un noyau Linux repris en produit à sa guise : rejeu du cache de pages, minuterie de
+> validation du journal ext4 (cinq secondes par défaut, quand une session reprise vit six secondes),
+> horloge que v86 rattrape depuis le CMOS de l'hôte — c'est la limite 4 de cet ADR, et elle
+> prédisait ceci. Aucun de ces gestes n'est borné à zéro par construction.
+>
+> **Ce que cet ADR promet — et ce que l'épreuve affirme désormais :**
+>
+> | Promis                                           | Mesuré par                                                 |
+> | ------------------------------------------------ | ---------------------------------------------------------- |
+> | aucune génération VALIDÉE par la session reprise | `counts["flush-ack"] === 0` et `valideeMaxOctets === 0`    |
+> | l'état validé inchangé à l'octet                 | empreinte du FICHIER et empreinte du CLAIR, avant et après |
+> | l'invariant durable conforme                     | `conforming` au retour de la reprise                       |
+>
+> La taille du voisin `.generation` est **mesurée et publiée, jamais confrontée** : `close()` le
+> tronque à sa zone d'enregistrements, si bien qu'il rend 8 192 octets quoi qu'il ait porté — mesuré
+> à 8 192 avant comme après une session ayant DÉPOSÉ 143 924 octets. Une assertion dessus
+> éprouverait la troncature de la fermeture, pas l'invariant.
+>
+> **Ce qu'il NE promet PAS** : que le guest repris n'émette aucun appel d'écriture. `counts.write`
+> reste **mesuré et publié sans seuil** dans `reports/e2e/instantane-reprise.json` — une grandeur
+> qu'on cesse de borner et qu'on cesse de publier est une grandeur qu'on cesse de voir.
+>
+> **La limite de ce déplacement, écrite ici** : si un jour un relevé montre `valideeMaxOctets > 0`
+> ou une empreinte qui bouge sous une session REPRISE, ce n'est plus un intermittent d'épreuve —
+> c'est un défaut des décisions 3 et 4, et il se traite comme tel.
+>
+> **Éprouvé par deux mutants**, joués chacun sur le scénario complet le 11 septembre 2026 : une
+> session reprise à qui l'on fait FRANCHIR UNE BARRIÈRE rend l'épreuve rouge (`barrieresAcquittees`
+> 1 au lieu de 0, `octetsValides` 99 866) ; une session reprise à qui l'on fait écrire QUARANTE-DEUX
+> fois SANS barrière la laisse verte (143 924 octets déposés, 0 validé, FICHIER et CLAIR identiques
+> à l'octet). Distribution locale et détail des deux mutants : `docs/testing.md`, § « Reprise PAR
+> INSTANTANÉ ».
+
+**Ce qui n'est PAS comparable, et pourquoi** : le clair du volume entre deux BOOTS COMPLETS. Un boot
+Rails réel écrit ses journaux, ses fichiers temporaires et son journal SQLite à chaque démarrage ;
+deux boots partant du même volume en laissent deux états différents, sans que l'instantané y soit
+pour rien. Une assertion qui les comparerait ne mesurerait pas l'instantané — elle mesurerait le
+déterminisme de Rails.
 
 3. **L'équivalence n'est prouvée que pour l'image de référence.** Elle ne dit rien d'une autre
    application, d'un autre noyau ni d'une autre version de v86.

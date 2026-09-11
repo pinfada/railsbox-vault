@@ -1850,7 +1850,8 @@ Six étapes, chacune dans une page NEUVE — fermer la page ferme son Worker et 
   profondeur, pas son seul statut — entre le boot qui capture, la reprise, et le boot à froid ;
 - **le clair du volume est identique avant et après la reprise**, et le fichier lui-même n'a pas
   bougé. L'égalité vaut parce qu'elle est **encadrée** : le scénario constate d'abord que la session
-  reprise n'a écrit AUCUN bloc. Restaurer un état mémoire ne touche pas le volume ;
+  reprise n'a ACQUITTÉ aucune barrière et n'a VALIDÉ aucune génération. Restaurer un état mémoire ne
+  touche pas le volume ;
 - **un instantané périmé est écarté ET retiré**, avec son motif nommé.
 
 **Ce que le scénario ne compare PAS, et pourquoi.** Le clair du volume entre deux BOOTS COMPLETS. Un
@@ -1862,8 +1863,64 @@ elle mesurerait le déterminisme de Rails.
 **Pourquoi l'étape 5 est un BOOT et non une requête.** L'application de référence a exactement deux
 routes, `health` et `invariant`, toutes deux en lecture (ADR 0004). La seule mutation Rails que
 cette fixture sache produire est celle qu'un démarrage écrit. Et une session reprise, elle, ne
-redémarre pas Rails : elle ne mute presque rien — ce qui est une PROPRIÉTÉ de la reprise, mesurée
-par le scénario (`counts.write === 0`), et non un manque.
+redémarre pas Rails : elle ne mute presque rien — ce qui est une PROPRIÉTÉ de la reprise, et non un
+manque.
+
+##### L'assertion « zéro écriture » a été RETIRÉE, et voici les chiffres (#152)
+
+Jusqu'au 11 septembre 2026, l'encadrement ci-dessus était `counts.write === 0` : « une session
+reprise n'écrit rien dans le volume ». **Elle mesurait la mauvaise grandeur**, et trois runs l'ont
+montré sur du code qui ne touchait pas ce scénario — 34283481251 tentative 1 (9/09, `25cb8c3`) et
+34395610743 tentative 1 (10/09, `e5f8ea0`) ont relevé `counts.write = 21`, exactement 21 les deux
+fois.
+
+Ce que le relevé de ces sessions dit : `counts = { mark: 3, ata: 21, write: 21, close: 1 }` —
+**aucun `flush`, aucun `flush-ack`** —, et
+`generation = { deposeeMaxOctets: 132122, valideeMaxOctets: 0 }`. Le guest a demandé 21 écritures au
+pont ; **aucune barrière n'a été acquittée, donc rien n'a été validé.** `counts.write` compte des
+APPELS du guest, pas des mutations de l'état validé : un noyau Linux repris en produit à sa guise
+(minuterie du journal ext4, cache de pages rejoué, horloge rattrapée depuis le CMOS de l'hôte —
+limite 4 de l'ADR 0024).
+
+**L'épreuve porte donc désormais sur ce que l'ADR 0024 promet vraiment** : aucune barrière
+acquittée, aucune génération validée, le FICHIER et le CLAIR du volume identiques à l'octet avant et
+après. `counts.write` reste **publié comme mesure sans seuil** dans
+`reports/e2e/instantane-reprise.json` (`reprise.ecrituresDuGuest`), à côté de `operationsAta`,
+`barrieresAcquittees`, `octetsDeposes`, `octetsValides` et de la taille du journal de génération.
+
+**Le journal de génération est mesuré mais PAS confronté**, et c'est délibéré : sa taille après la
+session ne dit pas ce que la session a validé, parce que `close()` le tronque à sa zone
+d'enregistrements — 8 192 octets avant comme après une session ayant DÉPOSÉ 143 924 octets (mesuré).
+Une assertion dessus éprouverait la troncature de la fermeture, pas l'invariant. Ce que l'ADR promet
+est ailleurs — l'état VALIDÉ —, et le volume lui-même est le seul endroit où il vit.
+
+**Distribution mesurée en local le 11 septembre 2026** (Windows 11, Chromium, image de référence
+construite sur place), cinq reprises consécutives par `--repeat-each 5` :
+
+| Passage | `ecrituresDuGuest` | `barrieresAcquittees` | `octetsValides` | Santé  |
+| ------- | ------------------ | --------------------- | --------------- | ------ |
+| 1       | 0                  | 0                     | 0               | 239 ms |
+| 2       | 0                  | 0                     | 0               | 266 ms |
+| 3       | 0                  | 0                     | 0               | 308 ms |
+| 4       | 0                  | 0                     | 0               | 454 ms |
+| 5       | 0                  | 0                     | 0               | 249 ms |
+
+**Les 21 de la CI ne se sont pas reproduits sur cet hôte**, et c'est dit tel quel plutôt que
+contourné : la distribution locale est dégénérée. Ce qui a été prouvé localement l'a été par deux
+MUTANTS posés dans `src/vm/boot-de-reference.mjs`, joués chacun sur le scénario complet :
+
+| Mutant | Ce qu'il fait faire à la session reprise                  | Relevé                                                                                                                   | Verdict                                                                            |
+| ------ | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| **A**  | relit un secteur, le réécrit, **franchit une barrière**   | `ecrituresDuGuest = 21`, `barrieresAcquittees = 1`, `octetsValides = 99 866`                                             | **ROUGE** — « une session reprise n'ACQUITTE aucune barrière » (attendu 0, reçu 1) |
+| **B**  | relit et réécrit 21 secteurs, **sans jamais de barrière** | `ecrituresDuGuest = 42`, `operationsAta = 21`, `octetsDeposes = 143 924`, `barrieresAcquittees = 0`, `octetsValides = 0` | **VERT** — FICHIER et CLAIR identiques à l'octet                                   |
+
+Le mutant B est le témoin que l'assertion retirée réclamait : **quarante-deux appels d'écriture et
+143 924 octets déposés laissent l'épreuve verte**, parce que rien n'a été validé et que l'état
+validé n'a pas bougé d'un octet. Le mutant A est celui qui montre qu'elle sait encore rougir.
+
+**Ce qui reste un défaut, s'il arrive** : `octetsValides > 0`, `barrieresAcquittees > 0` ou une
+empreinte qui bouge sous une session reprise. Ce ne serait plus un intermittent d'épreuve mais un
+défaut des décisions 3 et 4 de l'ADR 0024, et la note datée de cet ADR le dit.
 
 Le relevé est publié dans `reports/e2e/instantane-reprise.json` et repris dans
 [`quality-attributes.md`](quality-attributes.md).
@@ -1873,6 +1930,51 @@ vit sous `test-results/`, et Chromium y crée une arborescence profonde : depuis
 un répertoire déjà long, `MAX_PATH` est franchi et OPFS rend `InvalidStateError` sur le premier
 `removeEntry`. Le symptôme désigne le stockage ; la cause est le chemin. Le remède est
 `npm run test:e2e -- --output=<chemin court>`.
+
+#### DATER un échec de bout en bout : ce que l'artefact contient (#165)
+
+Un scénario de bout en bout dure des minutes, tourne sur un exécutant qu'on ne reverra pas, et
+échoue parfois sans que le code ait bougé. **La seule chose qui permette alors d'instruire est ce
+qu'il a laissé dans son artefact**, et jusqu'au 11 septembre 2026 il n'y laissait presque rien :
+
+- chaque scénario écrit son `reports/e2e/<nom>.json` à sa **dernière ligne**. Une assertion rouge
+  saute cette ligne, si bien que l'artefact d'un run rouge contient le relevé des huit scénarios
+  VERTS et **pas celui du neuvième** — vérifié sur les artefacts des runs 34054146291, 34283481251
+  et 34395610743, tentatives 1 ;
+- un délai de boot joignait à son erreur les **4 000 derniers caractères** de la série du guest. Or
+  le mode d'échec de #165 se joue au DÉBUT, entre l'amorce du noyau et le montage du rootfs : les
+  deux occurrences ont rendu 4 152 caractères identiques à la numérotation des requêtes près, et la
+  fin ne distinguait même pas deux scénarios différents.
+
+Deux fichiers montent désormais dans l'artefact `mesures-reprise`, écrits par
+[`tests/e2e/chronologie.mjs`](../tests/e2e/chronologie.mjs) au travers d'une fixture `auto` de
+`contexte-persistant.mjs` — donc pour **les neuf scénarios**, sans qu'aucun ait à le demander :
+
+| Fichier                                   | Ce qu'il porte                                                                                                                |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `reports/e2e/chronologie-<scénario>.json` | l'ouverture, chaque étape NOMMÉE avec son instant absolu et ses millisecondes depuis le début, l'issue, et le message d'échec |
+| `reports/e2e/serie-guest-<scénario>.txt`  | la série série du guest **entière** quand un boot a expiré — amorce du noyau comprise                                         |
+
+**La propriété qui les rend utiles est qu'ils sont déposés à CHAQUE étape**, et non en fin de
+scénario : un scénario interrompu en laisse un qui s'arrête exactement là où il s'est arrêté. Les
+deux fichiers sont aussi joints au rapport Playwright, et un `--repeat-each` numérote ses passages
+plutôt que de les écraser.
+
+**Comment lire une occurrence**, dans cet ordre :
+
+1. `chronologie-<scénario>.json` — `etapes` donne l'étape atteinte et celle qui manque : c'est la
+   DATATION, et elle se lit sans dézipper une trace ;
+2. `serie-guest-<scénario>.txt` — si le guest n'a jamais répondu, la tête de la série dit où le boot
+   s'est arrêté. Une invite `(initramfs)` sans rien avant elle signifie que le **rootfs** — servi
+   depuis `artifacts/reference-image/`, jamais depuis le volume — n'a pas été monté ;
+3. `espace-pendant-e2e.jsonl` — mémoire disponible et espace disque de l'exécutant, échantillonnés
+   toutes les cinq secondes, à recouper avec les horodatages de la chronologie ;
+4. `<scénario>.json` — le relevé complet, quand le scénario est allé jusqu'au bout.
+
+Les étapes nommées sont poussées par le scénario qui les connaît
+(`chronologie.etape("reprise", {…})`) et portent ce que l'étape a mesuré : un compte, une empreinte,
+un motif de refus. Aucun octet du volume et aucune clé n'y entrent — ces fichiers montent dans
+l'artefact public d'un run.
 
 #### Le support des scénarios : un profil de navigateur PERSISTANT
 
