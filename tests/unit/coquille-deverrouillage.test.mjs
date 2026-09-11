@@ -65,6 +65,7 @@ import {
   moyensProposes,
 } from "../../src/coquille/moyens-de-deverrouillage.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
+import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 import { VERDICTS, decouper, etatDeLaSaisie } from "../../src/coquille/saisie-du-code.mjs";
 import {
   SYMBOLES_TOTAL,
@@ -612,12 +613,42 @@ test("chaque refus qu'un geste d'utilisateur peut provoquer a SA conduite, et so
     DERIVATION_ERROR_CODES.prfIndisponible,
     DERIVATION_ERROR_CODES.prfIgnoree,
     DERIVATION_ERROR_CODES.annulee,
+    // Les trois refus de #181 : ce sont les plus probables d'un coffre RESTAURÉ, et c'étaient les
+    // seuls du chemin de déverrouillage sans phrase écrite pour la personne qui les lit (constat 7
+    // de la revue de sécurité de la PR #184).
+    STORAGE_ERROR_CODES.volumeSansRacine,
+    STORAGE_ERROR_CODES.engagementInvalide,
+    STORAGE_ERROR_CODES.creationNonConfirmee,
   ];
   for (const code of attendus) {
     assert.ok(CONDUITES[code], `${code} n'a pas de conduite.`);
     // Le CODE accompagne toujours la phrase : un code est cherchable, une phrase ne l'est pas.
     assert.ok(conduiteDeRefus(code, null).includes(code));
   }
+});
+
+test("la conduite d'un refus de #181 dit un GESTE, et jamais ce que l'exploitant lit", () => {
+  // Le message de `storage-errors.mjs` est écrit pour l'exploitant : il cite un numéro d'issue, le
+  // nom d'un fichier voisin, et la règle interne qui a mordu. C'est ce qui tombait sous les yeux de
+  // l'utilisateur tant qu'aucune conduite n'existait. Ce que la coquille rend doit dire ce qu'il y a
+  // À FAIRE, sans rien de tout cela.
+  const trois = [
+    STORAGE_ERROR_CODES.volumeSansRacine,
+    STORAGE_ERROR_CODES.engagementInvalide,
+    STORAGE_ERROR_CODES.creationNonConfirmee,
+  ];
+  for (const code of trois) {
+    const conduite = CONDUITES[code];
+    assert.doesNotMatch(conduite, /#\d+/, `${code} : une conduite ne cite pas un numéro d'issue.`);
+    assert.doesNotMatch(
+      conduite,
+      /\.engagement|\.gen|racine|sidecar|voisin/i,
+      `${code} : une conduite ne nomme pas les fichiers du support.`,
+    );
+  }
+  // Et les trois restent DISTINCTES : leurs remèdes n'ont rien de commun — restaurer à nouveau,
+  // changer d'archive, recommencer l'installation.
+  assert.equal(new Set(trois.map((code) => CONDUITES[code])).size, 3);
 });
 
 test("les trois refus de PRF restent DISTINCTS à l'écran, comme ils le sont dans le code", () => {
