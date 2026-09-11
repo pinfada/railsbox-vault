@@ -166,6 +166,7 @@ function bancV3({ refuserLeSolde = null } = {}) {
       gestes.push("fermer-brut");
     },
   };
+  const soldes = [];
   return {
     gestes,
     brut,
@@ -180,9 +181,11 @@ function bancV3({ refuserLeSolde = null } = {}) {
     },
     solder: async (appel) => {
       gestes.push(`solder:${appel.identifiantVolume}:${appel.tailleLogique}`);
+      soldes.push(appel);
       if (refuserLeSolde) throw refuserLeSolde;
       return { etat: "rejouee", generation: 3 };
     },
+    soldes,
   };
 }
 
@@ -257,5 +260,32 @@ test("un fichier annoncé v3 dont l'en-tête n'en est pas un est refusé AVANT t
     banc.gestes.some((geste) => geste.startsWith("solder:")),
     false,
     "aucun solde n'est tenté sur un fichier dont on ne sait pas ce qu'il est",
+  );
+});
+
+test("le SOLDE d'un v3 reçoit un moyen d'ouvrir les voisins, même quand l'appelant n'en passe aucun", async () => {
+  // **Trouvé par le palier v3 de l'E2E, à sa première exécution.** Le solde d'un v3 ouvre le journal
+  // de génération et le témoin, et `ouvrirGeneration` n'a PAS de défaut d'OPFS : il reçoit toujours
+  // celui de son appelant. Or l'appelant de production — le Worker de confiance — n'en passe aucun :
+  // l'OPFS de l'origine est le seul support qu'il connaisse. L'export d'un v3 échouait donc en
+  // navigateur sur `openHandle is not a function`, là où toute la suite unitaire passait, puisqu'un
+  // double en injecte toujours un.
+  //
+  // L'épreuve ne peut pas ouvrir un OPFS sous Node ; ce qu'elle exige est ce qui manquait : que le
+  // chemin v3 TRANSMETTE un moyen d'ouvrir, et non `undefined`.
+  const banc = bancV3();
+  const { soldes, ...injections } = banc;
+  await ouvrirPourExport({
+    name: "app",
+    cle: CLE_DE_TEST,
+    formatVersion: FORMAT_VOLUME_V3,
+    ...injections,
+  });
+
+  assert.equal(soldes.length, 1, "le solde a bien eu lieu");
+  assert.equal(
+    typeof soldes[0].openHandle,
+    "function",
+    "un appelant qui ne passe rien doit tout de même recevoir le moyen d'ouvrir les voisins",
   );
 });

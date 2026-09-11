@@ -309,7 +309,7 @@ Au vocabulaire de la décision 7 de l'ADR 0021.
 ## La campagne de MUTATION de cette tranche
 
 `node tools/muter-gardes-enveloppe-v2.mjs` retire RÉELLEMENT chaque garde de son fichier source,
-relance l'épreuve qui devrait la couvrir, et vérifie qu'elle rougit. **Dix-sept gardes, dix-sept
+relance l'épreuve qui devrait la couvrir, et vérifie qu'elle rougit. **Dix-huit gardes, dix-huit
 mutants tués**, sur neuf endroits. La table vit ici comme celle de l'ADR 0035 vit dans l'ADR 0035 :
 `docs/testing.md` compte, l'ADR dit QUOI.
 
@@ -318,7 +318,7 @@ mutants tués**, sur neuf endroits. La table vit ici comme celle de l'ADR 0035 v
 | `enveloppe-de-cle.mjs`                    | le TIRAGE du sel de page, l'avance de la version à chaque mutation                                                                                        |
 | `enveloppe/etat-de-lenveloppe.mjs`        | le refus de RÉTROGRADATION d'une page v1 au-dessus d'une v2, la migration à la première ouverture réussie                                                 |
 | `enveloppe/fichier-enveloppe.mjs`         | le refus d'un DOMAINE inconnu, l'effacement de la page v1 par la migration, le refus d'une page déjà en v2                                                |
-| `export-du-fichier.mjs`                   | le contrôle de l'en-tête v3 avant l'export                                                                                                                |
+| `export-du-fichier.mjs`                   | le contrôle de l'en-tête v3 avant l'export, le DÉFAUT d'OPFS transmis au solde                                                                            |
 | `generation-racine.mjs`                   | la RÉSERVATION du témoin dans le compte que la racine publie                                                                                              |
 | `generation-store.mjs`                    | la clôture par racine, la marque de région sale, l'idempotence du repère                                                                                  |
 | `opfs-block-backend.mjs`                  | la publication de la racine APRÈS le secteur, hors transaction                                                                                            |
@@ -331,6 +331,12 @@ qui n'était jamais atteint — retiré —, et une mutation qui portait sur un 
 donc ambiguë. Et le **CLIQUET est lui-même muté**, motif par motif : c'est la seule « source » de
 cette table qui soit une épreuve, et la revue de la PR #186 avait trouvé un cliquet dont un seul des
 deux mutants était vu. Chaque motif retiré doit suffire à faire rougir « le cliquet MORD ».
+
+Le dix-huitième mutant garde un défaut que cette campagne n'aurait PAS pu trouver, et que le palier
+v3 de l'E2E a trouvé à sa première exécution : l'export d'un v3 ne transmettait aucun moyen d'ouvrir
+les voisins, si bien qu'il échouait en NAVIGATEUR là où toute la suite unitaire passait — un double
+en injecte toujours un. Une campagne de mutation mesure la force des épreuves qu'on a ; elle ne dit
+rien de celles qu'on n'a pas.
 
 ## Ce que cet ADR ne prétend PAS résoudre
 
@@ -355,9 +361,14 @@ ne l'évite sans perdre une écriture acquittée.
 - Les ADR 0020, 0027, 0033 et 0035 reçoivent leur note datée du 11 septembre 2026.
 - La ligne #182 du [registre](../revue-externe/registre.md) passe à `corrigé`, en citant les DEUX
   PR.
-- **Ce qui n'est PAS fait, et qui est écrit ici comme dans `docs/testing.md`** : le palier v3 de
-  l'E2E de migration — arrêter la chaîne à v3, l'ouvrir, y écrire, la refermer, la sauvegarder par
-  le runtime v4, puis migrer — n'est pas revenu. Le chemin qui le bloquait est ouvert, et le cycle
-  entier est éprouvé en unitaire sur un v3 produit par le produit
-  (`tests/unit/vm-migration-source-v3.test.mjs`) ; mais le banc de cette tranche n'avait pas d'image
-  de référence, et écrire un palier d'E2E qu'on n'a pas exécuté serait écrire une supposition.
+- **Le PALIER v3 de l'E2E est revenu**, et il a servi : la chaîne s'arrête à v3, le boot y est
+  refusé, le runtime v4 en fait une archive vérifiée, cette archive sert de preuve à la migration v3
+  → v4, et le boot à froid retrouve l'invariant Rails sur le clair d'avant. Dès sa première
+  exécution, il a TROUVÉ que l'export d'un v3 échouait en navigateur — `ouvrirGeneration` n'a aucun
+  défaut d'OPFS, et l'appelant de production n'en passe aucun : **le livrable 0 ne fonctionnait pas
+  hors des bancs**, et aucune épreuve unitaire ne pouvait le dire, puisqu'un double injecte toujours
+  un `openHandle`.
+- **Ce que le palier ne fait PAS** : il n'écrit pas dans le volume pendant qu'il est en v3, faute de
+  tout chemin d'écriture v3 dans ce runtime. Le rejeu d'une charge acquittée restée dans le journal
+  d'un v3 reste mesuré en unitaire, sur un v3 produit par le produit
+  (`tests/unit/vm-migration-source-v3.test.mjs`).

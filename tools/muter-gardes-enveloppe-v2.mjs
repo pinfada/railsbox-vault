@@ -181,6 +181,14 @@ export const MUTATIONS = Object.freeze([
     epreuves: [SOURCE_V3_EPREUVE],
   },
   {
+    nom: "l'export d'un v3 TRANSMET un moyen d'ouvrir les voisins, faute d'appelant qui en passe un",
+    garde: "ouvrirPourExport — le défaut d'OPFS de `openHandle`",
+    fichier: EXPORT,
+    avant: "  openHandle = openOpfsSyncAccess,",
+    apres: "  openHandle,",
+    epreuves: [EXPORT_EPREUVE],
+  },
+  {
     nom: "l'export d'un v3 REFUSE un fichier dont l'en-tête n'est pas un en-tête v3",
     garde: "ouvrirUnV3PourExport — le contrôle de l'en-tête avant tout solde",
     fichier: EXPORT,

@@ -45,8 +45,8 @@ sienne.
 - **le CLIQUET définitif.** Il lit les APPELS et nomme la matière de chaque import de clé brute.
   Trois endroits touchent encore une clé de volume, et aucun n'est un chemin de production du format
   v4 : le modèle de référence, le régime v3 (migration et export d'un v3), et la LECTURE d'une page
-  v1 — qui importe la clé sans l'usage `encrypt`, donc ne PEUT pas sceller. Il MORD : douze mutants,
-  douze tués ;
+  v1 — qui importe la clé sans l'usage `encrypt`, donc ne PEUT pas sceller. Il MORD : dix-huit
+  mutants, dix-huit tués, dont quatre sur ses propres motifs ;
 - **le TROISIÈME chemin hors transaction.** Le volume de coquille clôt désormais par une racine, par
   un geste public qui n'ouvre aucun second chemin de scellement. « CHEMIN 3 » mesure une ÉGALITÉ là
   où il mesurait un écart.
