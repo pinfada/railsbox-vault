@@ -1,5 +1,5 @@
 /**
- * Contrôle de taille des FICHIERS : **aucun fichier de `src/` ni de `public/vm/` ne dépasse
+ * Contrôle de taille des FICHIERS : **aucun fichier de `src/` ni de `public/` ne dépasse
  * 800 lignes, et aucun ne dépasse 700 sans être inscrit ici avec son motif.**
  *
  * Le plafond des 800 lignes était écrit dans `docs/development.md` depuis l'origine du dépôt, et
@@ -20,6 +20,21 @@
  *    plus grandir sans qu'une revue l'accepte, et une inscription périmée sort de la liste.
  *
  * Les lignes se comptent comme `wc -l` les compte : commentaires et lignes vides compris.
+ *
+ * ## `public/` (#175, 11/09/2026)
+ *
+ * `RACINES` ne couvrait que `public/vm/` : `public/main.mjs` a atteint 1 022 lignes sans qu'aucun
+ * cliquet le voie, et #175 l'a scindé pour cette seule raison. `RACINES` gagne donc `public` ENTIER.
+ * Deux familles de fichiers publics ne sont pas du code de produit — `public/coquille-epreuve/` (les
+ * topologies hostiles du banc de #166) et `public/spike/` (le banc d'origine de #35, délibérément
+ * laissé vivant et inchangé) : elles restent dans le relevé, et n'en sortiraient QUE si le cliquet
+ * les rougissait un jour, avec le motif écrit ici même. Ce n'est pas encore le cas.
+ *
+ * `public/runtime-worker.mjs`, lui, ROUGIT DÉJÀ à 815 lignes — découvert par l'élargissement de
+ * `RACINES`, pas causé par lui : c'est le Worker de confiance (#161, ADR 0028), et le scinder est un
+ * chantier de sécurité à part entière, hors du périmètre de #175 (qui ne scindait que `main.mjs`).
+ * Il est donc HORS PÉRIMÈTRE (voir plus bas), signalé au superviseur, à traiter par une tranche
+ * dédiée et relue pour elle-même.
  */
 
 import assert from "node:assert/strict";
@@ -37,7 +52,27 @@ const PLAFOND = 800;
 const ALERTE = 700;
 
 /** Code de production servi au navigateur. `tests/` et `tools/` ne sont pas couverts. */
-const RACINES = ["src", "public/vm"];
+const RACINES = ["src", "public"];
+
+/**
+ * Fichiers HORS PÉRIMÈTRE du relevé : un chemin ne rejoint cette liste que si l'élargissement d'une
+ * racine le fait rougir pour une raison ÉTRANGÈRE à la tranche qui élargit — jamais pour faire
+ * passer une scission en cours. Chaque entrée publie la taille du jour et un motif daté : une
+ * exclusion n'est pas un silence.
+ *
+ * @type {{ fichier: string, lignes: number, motif: string }[]}
+ */
+const HORS_PERIMETRE = [
+  {
+    fichier: "public/runtime-worker.mjs",
+    lignes: 815,
+    motif:
+      "découvert le 11/09/2026 en élargissant RACINES à `public` (#175) : il dépassait déjà le " +
+      "plafond avant cet élargissement, et #175 ne scindait que `main.mjs`. Scinder le Worker de " +
+      "confiance (#161, ADR 0028) est un chantier de sécurité distinct, signalé au superviseur ; " +
+      "cette exclusion sort de la liste dès qu'une tranche dédiée l'a scindé sous 800 lignes.",
+  },
+];
 
 /**
  * Fichiers entre l'alerte et le plafond, EXAMINÉS et gardés en l'état. Ajouter une ligne ici demande
@@ -105,8 +140,9 @@ function compterLignes(contenu) {
   return lignes.at(-1) === "" ? lignes.length - 1 : lignes.length;
 }
 
-/** Relève tous les modules du périmètre, avec leur taille. */
+/** Relève tous les modules du périmètre, avec leur taille — HORS_PERIMETRE excepté. */
 async function relever() {
+  const exclus = new Set(HORS_PERIMETRE.map(({ fichier }) => fichier));
   const releve = [];
   for (const racine of RACINES) {
     const entrees = await readdir(path.join(REPO_ROOT, racine), {
@@ -117,10 +153,20 @@ async function relever() {
       if (!entree.isFile() || !entree.name.endsWith(".mjs")) continue;
       const absolu = path.join(entree.parentPath ?? entree.path, entree.name);
       const fichier = path.relative(REPO_ROOT, absolu).replaceAll("\\", "/");
+      if (exclus.has(fichier)) continue;
       releve.push({ fichier, lignes: compterLignes(await readFile(absolu, "utf8")) });
     }
   }
   return releve.sort((a, b) => b.lignes - a.lignes);
+}
+
+/** Relève un fichier HORS_PERIMETRE tel qu'il est aujourd'hui, ou `null` s'il a disparu. */
+async function releverUnSeul(fichier) {
+  try {
+    return compterLignes(await readFile(path.join(REPO_ROOT, fichier), "utf8"));
+  } catch {
+    return null;
+  }
 }
 
 const releve = await relever();
@@ -185,5 +231,37 @@ test("aucune inscription n'est périmée", () => {
     perimees,
     [],
     "Ces fichiers sont repassés sous le seuil d'alerte ou ont disparu : retirez leur inscription.",
+  );
+});
+
+test("aucun fichier hors périmètre n'a grandi au-delà de la taille relevée", async () => {
+  const debordements = [];
+  for (const exclu of HORS_PERIMETRE) {
+    const lignes = await releverUnSeul(exclu.fichier);
+    if (lignes !== null && lignes > exclu.lignes) {
+      debordements.push(`${exclu.fichier} : ${lignes} lignes, exclu à ${exclu.lignes}`);
+    }
+  }
+
+  assert.deepEqual(
+    debordements,
+    [],
+    "L'exclusion est un cliquet, comme la liste sous surveillance : une revue doit accepter la " +
+      "croissance.",
+  );
+});
+
+test("aucune exclusion hors périmètre n'est périmée", async () => {
+  const perimees = [];
+  for (const exclu of HORS_PERIMETRE) {
+    const lignes = await releverUnSeul(exclu.fichier);
+    if (lignes === null || lignes <= PLAFOND) perimees.push(exclu.fichier);
+  }
+
+  assert.deepEqual(
+    perimees,
+    [],
+    "Ces fichiers sont repassés sous (ou au) plafond, ou ont disparu : retirez leur exclusion, ils " +
+      "rejoignent le relevé normal.",
   );
 });

@@ -55,6 +55,14 @@ export const SOURCES_COQUILLE = Object.freeze([
       "confiance y bloquait le dispatch des messages pendant deux secondes.",
   }),
   Object.freeze({
+    depuis: "public/coquille",
+    vers: "coquille",
+    role:
+      "Modules de BRANCHEMENT de `main.mjs` (#175) : canal privilégié et Worker de confiance, " +
+      "frontière applicative, cycle de la page, verrouillage et fins d'onglet. Ils ne décident " +
+      "rien — `src/coquille` reste seul maître — et ne détiennent aucune clé de volume.",
+  }),
+  Object.freeze({
     depuis: "src/coquille",
     vers: "src/coquille",
     role:
