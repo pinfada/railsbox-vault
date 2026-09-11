@@ -35,7 +35,12 @@
 
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { daterLaCreation, openOpfsVolume } from "../vm/opfs-block-backend.mjs";
-import { manifestSidecarName, statOpfsVolume } from "../vm/opfs-sync-access.mjs";
+import { constaterCreationSeule } from "../vm/opfs-datation-de-creation.mjs";
+import {
+  manifestSidecarName,
+  openOpfsSyncAccess,
+  statOpfsVolume,
+} from "../vm/opfs-sync-access.mjs";
 import {
   openVolumeForWrite,
   revokeVolumeManifest,
@@ -244,7 +249,8 @@ export async function adressesDuRuntime(descripteur, { recuperer = globalThis.fe
  * d'artefacts, donc jamais par une campagne de mutation.
  *
  * @param {{ descripteur: object, cleDeVolume: () => Promise<Uint8Array>, observer?: Function,
- *           ouvrir?: Function, verser?: Function, revoquer?: Function, inscrire?: Function }} options
+ *           ouvrir?: Function, verser?: Function, revoquer?: Function, inscrire?: Function,
+ *           openHandle?: Function }} options
  */
 export async function installerSiNecessaire({
   descripteur,
@@ -255,10 +261,11 @@ export async function installerSiNecessaire({
   verser = verserFluxDansVolume,
   revoquer = revokeVolumeManifest,
   inscrire = writeVolumeManifest,
+  openHandle = openOpfsSyncAccess,
 }) {
   const nom = NOM_DU_VOLUME_APPLICATIF;
   const octets = descripteur.disque.octets;
-  if (await constaterLInstallation({ nom, observer })) {
+  if (await constaterLInstallation({ nom, octets, observer, openHandle })) {
     return { installee: false, volume: nom, octets };
   }
 
@@ -297,21 +304,73 @@ export async function installerSiNecessaire({
 }
 
 /**
+ * La SIGNATURE d'une installation interrompue (#173), mesurée en rejouant une interruption sur le
+ * double (`tests/unit/vm-dater-la-creation.test.mjs`, `tests/unit/coquille-application.test.mjs`) :
+ * TROIS conditions, et les trois ensemble — aucun manifeste jamais inscrit (déjà le contexte de cet
+ * appel : `constaterLInstallation` n'y arrive que dans ce cas), un volume de la taille EXACTE que le
+ * descripteur annonce, et un journal de génération qui ne porte que la racine de naissance
+ * (`constaterCreationSeule`). Manquer l'une ou l'autre rend « autre chose » : le refus reste tel
+ * quel, sans geste proposé — écraser un volume dont on n'est pas SÛR qu'il vient d'une installation
+ * interrompue serait la décision que #171 a justement retirée à la coquille.
+ *
+ * @param {{ nom: string, octetsAnnonces: number, observer: Function, openHandle: Function,
+ *           constaterCreation?: Function }} options
+ * @returns {Promise<{ interrompue: boolean, motif: string | null, tailleLogique: number | null }>}
+ */
+export async function signatureDInstallationInterrompue({
+  nom,
+  octetsAnnonces,
+  observer,
+  openHandle,
+  constaterCreation = constaterCreationSeule,
+}) {
+  const creation = await constaterCreation({ name: nom, openHandle, observer });
+  if (!creation.creationSeule) {
+    return { interrompue: false, motif: creation.motif, tailleLogique: creation.tailleLogique };
+  }
+  if (creation.tailleLogique !== octetsAnnonces) {
+    return {
+      interrompue: false,
+      motif:
+        `le volume déclare ${creation.tailleLogique} octets, le descripteur en annonce ` +
+        `${octetsAnnonces} : ce n'est pas CE volume-là`,
+      tailleLogique: creation.tailleLogique,
+    };
+  }
+  return { interrompue: true, motif: null, tailleLogique: creation.tailleLogique };
+}
+
+/**
  * CONSTATE ce que le support porte déjà, et rend `true` si l'application est installée.
  *
  * Extrait de `installerSiNecessaire` : les deux issues qui n'installent RIEN se jugent sur le seul
  * état observé, et elles se lisent mieux ensemble. Un volume ANONYME est refusé plutôt qu'écrasé —
  * c'est soit une installation interrompue, soit autre chose, et l'écraser est une décision que la
- * coquille n'a pas à prendre seule (constat 7 de la revue de la PR #171).
+ * coquille n'a pas à prendre seule (constat 7 de la revue de la PR #171). La SIGNATURE de laquelle
+ * il s'agit accompagne le refus, dans son contexte — jamais dans son message, qui reste identique
+ * dans les deux cas : c'est le geste (#173), pas ce module, qui décide quoi en faire.
  */
-async function constaterLInstallation({ nom, observer }) {
+async function constaterLInstallation({ nom, octets, observer, openHandle }) {
   const manifesteExistant = await observer(manifestSidecarName(nom));
   if (manifesteExistant.present) return true;
   const volumeExistant = await observer(nom);
   if (!volumeExistant.present) return false;
-  throw refus(
-    CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste,
-    `Le volume « ${nom} » existe sans manifeste : la coquille ne l'écrase pas pour installer.`,
+  const signature = await signatureDInstallationInterrompue({
+    nom,
+    octetsAnnonces: octets,
+    observer,
+    openHandle,
+  });
+  throw Object.assign(
+    refus(
+      CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste,
+      `Le volume « ${nom} » existe sans manifeste : la coquille ne l'écrase pas pour installer.`,
+    ),
+    {
+      installationInterrompue: signature.interrompue,
+      motifDeLaSignature: signature.motif,
+      tailleDuVolume: volumeExistant.size,
+    },
   );
 }
 

@@ -25,11 +25,14 @@ import {
   formeDuDescripteur,
   installerSiNecessaire,
   lireLeDescripteur,
+  signatureDInstallationInterrompue,
 } from "../../src/coquille/application-de-reference.mjs";
+import { reprendreLInstallation } from "../../src/coquille/reprise-installation.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { sansCapacite } from "../../src/coquille/contrat-de-messages.mjs";
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
 import { daterLaCreation, openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
+import { generationJournalName, manifestSidecarName } from "../../src/vm/opfs-sync-access.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 
@@ -563,6 +566,209 @@ test("un versement qui n'ATTESTE rien ne fait pas dater : l'installation est REF
     (raison) => raison,
   );
   assert.ok(isStorageError(erreur, STORAGE_ERROR_CODES.creationNonConfirmee));
+});
+
+// --- LA SIGNATURE d'une installation interrompue, et le geste qui la répare (#173) -----------------
+//
+// Trois conditions, et les trois ensemble : aucun manifeste, la taille EXACTE que le descripteur
+// annonce, un journal qui ne porte QUE la racine de naissance. Ces épreuves montent le vrai
+// `installerSiNecessaire`, la vraie `signatureDInstallationInterrompue` et le vrai
+// `reprendreLInstallation` sur le double déterministe — le même montage que les trois épreuves de
+// la fenêtre de datation, ci-dessus.
+
+/** Observateur qui STATUE sans jamais créer un fichier, sur le store réel. */
+function observerDuStore(store) {
+  return async (nom) => ({ present: store.sizeOf(nom) > 0, size: store.sizeOf(nom) });
+}
+
+/** Ouvre le volume applicatif comme le versement le ferait, SANS le refermer ni le dater. */
+async function ouvrirSansAchever(store) {
+  return openOpfsVolume({
+    name: "application",
+    size: TAILLE_DEPREUVE,
+    cle: CLE_DEPREUVE,
+    identifiantVolume: ID_DEPREUVE,
+    openHandle: store.openHandle,
+    transactionnel: false,
+    clotureParDatation: true,
+  });
+}
+
+test("signatureDInstallationInterrompue : VRAI à la naissance, avant tout versement", async () => {
+  const store = createSyncAccessStore();
+  const backend = await ouvrirSansAchever(store);
+  await backend.close();
+
+  const signature = await signatureDInstallationInterrompue({
+    nom: "application",
+    octetsAnnonces: TAILLE_DEPREUVE,
+    observer: observerDuStore(store),
+    openHandle: store.openHandle,
+  });
+  assert.equal(signature.interrompue, true, signature.motif);
+});
+
+test("signatureDInstallationInterrompue : FAUX si la taille du volume diffère — mutant « taille ignorée »", async () => {
+  // Le volume est bien à l'état de naissance seule, mais le descripteur annonce une AUTRE taille :
+  // ce n'est pas CE volume-là, et l'ignorer offrirait un geste de réparation sur un volume que
+  // personne n'a demandé d'installer sous cette taille.
+  const store = createSyncAccessStore();
+  const backend = await ouvrirSansAchever(store);
+  await backend.close();
+
+  const signature = await signatureDInstallationInterrompue({
+    nom: "application",
+    octetsAnnonces: TAILLE_DEPREUVE + SECTOR_SIZE,
+    observer: observerDuStore(store),
+    openHandle: store.openHandle,
+  });
+  assert.equal(signature.interrompue, false);
+  assert.match(signature.motif, /octets/);
+});
+
+test("signatureDInstallationInterrompue : FAUX sur un volume déjà EN SERVICE — autre chose", async () => {
+  const store = createSyncAccessStore();
+  const backend = await ouvrirSansAchever(store);
+  await backend.write(0, secteurDe(0x11));
+  await backend.flush();
+  const empreinte = await backend.empreinteDuFichier();
+  await backend.close();
+  await daterLaCreation({
+    name: "application",
+    cle: CLE_DEPREUVE,
+    identifiantVolume: ID_DEPREUVE,
+    empreinteVersee: empreinte,
+    openHandle: store.openHandle,
+  });
+  const reouvert = await openOpfsVolume({
+    name: "application",
+    size: TAILLE_DEPREUVE,
+    cle: CLE_DEPREUVE,
+    identifiantVolume: ID_DEPREUVE,
+    openHandle: store.openHandle,
+  });
+  await reouvert.write(0, secteurDe(0x22));
+  await reouvert.flush();
+  await reouvert.close();
+
+  const signature = await signatureDInstallationInterrompue({
+    nom: "application",
+    octetsAnnonces: TAILLE_DEPREUVE,
+    observer: observerDuStore(store),
+    openHandle: store.openHandle,
+  });
+  assert.equal(signature.interrompue, false);
+});
+
+test("constaterLInstallation : un manifeste PRÉSENT n'est jamais soumis à la signature — mutant « manifeste ignoré »", async () => {
+  // Le volume est à l'état de naissance seule ET de la bonne taille — il PORTERAIT la signature s'il
+  // était examiné. Mais un manifeste est présent : `installerSiNecessaire` doit rendre « déjà
+  // installé » SANS jamais consulter la signature, encore moins refuser.
+  const store = createSyncAccessStore();
+  const backend = await ouvrirSansAchever(store);
+  await backend.close();
+  const handle = await store.openHandle(manifestSidecarName("application"));
+  handle.write(new Uint8Array([1]), { at: 0 });
+  handle.flush();
+  handle.close();
+
+  const rendu = await installerSiNecessaire({
+    descripteur: descripteurDepreuve(),
+    cleDeVolume: async () => CLE_DEPREUVE.slice(),
+    observer: observerDuStore(store),
+    openHandle: store.openHandle,
+  });
+  assert.equal(rendu.installee, false);
+});
+
+test("le refus « sans manifeste » PORTE la signature dans son contexte", async () => {
+  const store = createSyncAccessStore();
+  const backend = await ouvrirSansAchever(store);
+  await backend.close();
+
+  const erreur = await installerSiNecessaire({
+    descripteur: descripteurDepreuve(),
+    cleDeVolume: async () => CLE_DEPREUVE.slice(),
+    observer: observerDuStore(store),
+    openHandle: store.openHandle,
+  }).then(
+    () => null,
+    (raison) => raison,
+  );
+  assert.ok(erreur instanceof Error);
+  assert.equal(erreur.code, CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste);
+  assert.equal(erreur.installationInterrompue, true);
+});
+
+test("REPRENDRE l'installation : retire le volume orphelin et ses voisins, puis réinstalle", async () => {
+  const store = createSyncAccessStore();
+  const backend = await ouvrirSansAchever(store);
+  await backend.write(0, secteurDe(0x99));
+  await backend.flush();
+  // Coupure ICI : le versement ferme (comme `verserLeDisque` le fait toujours), mais rien ne
+  // date ni n'inscrit le manifeste ensuite. C'est l'installation interrompue.
+  await backend.close();
+  assert.ok(
+    store.sizeOf(generationJournalName("application")) > 0,
+    "le journal de naissance existe",
+  );
+  assert.equal(store.sizeOf(manifestSidecarName("application")) > 0, false, "aucun manifeste");
+
+  // `retirer` remplace `removeOpfsVolume` (qui exige un Worker dédié) par l'équivalent sur le
+  // double : la cascade sur les voisins réels est éprouvée ailleurs
+  // (`tests/unit/opfs-sync-access.test.mjs`), ce que CETTE épreuve mesure est que le geste retire
+  // AVANT de réinstaller, et ne réinstalle QUE le volume nommé.
+  const retirerDuStore = async (nom) => {
+    for (const cible of [nom, generationJournalName(nom)]) {
+      if (store.sizeOf(cible) === 0) continue;
+      const handle = await store.openHandle(cible);
+      try {
+        handle.truncate(0);
+        handle.flush();
+      } finally {
+        handle.close();
+      }
+    }
+  };
+
+  const rendu = await reprendreLInstallation({
+    descripteur: descripteurDepreuve(),
+    cleDeVolume: async () => CLE_DEPREUVE.slice(),
+    retirer: retirerDuStore,
+    observer: observerDuStore(store),
+    openHandle: store.openHandle,
+    ouvrir: (options) =>
+      openOpfsVolume({ ...options, identifiantVolume: ID_DEPREUVE, openHandle: store.openHandle }),
+    verser: async (backendNeuf) => {
+      for (let rang = 0; rang < TAILLE_DEPREUVE / SECTOR_SIZE; rang += 1) {
+        await backendNeuf.write(rang * SECTOR_SIZE, secteurDe(0x33));
+      }
+      await backendNeuf.flush();
+      return { ecrits: TAILLE_DEPREUVE, empreinte: await backendNeuf.empreinteDuFichier() };
+    },
+    dater: async (options) => daterLaCreation({ ...options, openHandle: store.openHandle }),
+    revoquer: async () => {},
+    inscrire: async () => {},
+  });
+
+  assert.equal(rendu.installee, true);
+  assert.ok(
+    store.sizeOf(manifestSidecarName("application")) === 0,
+    "l'inscription est un « inscrire » feint",
+  );
+  // TÉMOIN : le volume réinstallé rend ce que la RÉINSTALLATION a versé, pas les octets orphelins.
+  const relu = await openOpfsVolume({
+    name: "application",
+    size: TAILLE_DEPREUVE,
+    cle: CLE_DEPREUVE,
+    identifiantVolume: ID_DEPREUVE,
+    openHandle: store.openHandle,
+  });
+  try {
+    assert.ok((await relu.read(0, SECTOR_SIZE)).every((octet) => octet === 0x33));
+  } finally {
+    await relu.close();
+  }
 });
 
 // --- Ce que le démarrage PUBLIE : une liste FERMÉE --------------------------------------------------
