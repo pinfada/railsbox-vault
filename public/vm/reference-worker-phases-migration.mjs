@@ -129,6 +129,11 @@ export async function phaseMigrate({
   backupArchive = null,
   consent = null,
   interruptAfter = null,
+  // Le PALIER : la chaîne s'arrête à la version demandée au lieu d'aller jusqu'à la version
+  // courante. C'est ce qui permet à l'E2E de tenir un volume v3 RÉEL — avec son journal de
+  // naissance — au lieu de ne le traverser que comme un état intermédiaire d'une seule session.
+  // `undefined` laisse `migrateVolume` viser la version courante, comme avant (#182, T2b).
+  toVersion = undefined,
   blockBytes = EXPORT_BLOCK_BYTES,
 }) {
   const attentes = attentesDe(manifest);
@@ -151,6 +156,7 @@ export async function phaseMigrate({
       // que personne ne connaît.
       cle: cleDuBanc(),
       blockBytes,
+      ...(toVersion === undefined ? {} : { toVersion }),
     });
     return migrationReussie({ volume, rapport, counts: journal.counts(), durationMs: duree() });
   } catch (cause) {

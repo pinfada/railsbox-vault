@@ -62,6 +62,7 @@
 import { BlockJournal } from "./block-journal.mjs";
 import { openOpfsVolume } from "./opfs-block-backend.mjs";
 import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
+import { openOpfsSyncAccess } from "./opfs-sync-access.mjs";
 import { solderLaSourceChiffreeSurAccesBrut } from "./migration-source-chiffree.mjs";
 import { Scellement } from "./scellement.mjs";
 import { MIN_VOLUME_FORMAT_VERSION } from "./volume-manifest.mjs";
@@ -100,6 +101,15 @@ import { STORAGE_ERROR_CODES, StorageError } from "./storage-errors.mjs";
  * origine — est ce qui rend l'intervalle inoffensif en pratique ; ce contrôle est ce qui rend son
  * franchissement VISIBLE plutôt que silencieux.
  *
+ * ## Pourquoi `openHandle` a un DÉFAUT, et pourquoi il n'en avait pas
+ *
+ * `ouvrirVolumeBrut` et `openOpfsVolume` ont chacun le leur ; `ouvrirGeneration`, que seul le chemin
+ * v3 atteint, n'en a AUCUN — il reçoit toujours celui de son appelant. Or l'appelant de PRODUCTION
+ * n'en passe pas : il est dans le Worker de confiance, et l'OPFS de l'origine est le seul support
+ * qu'il connaisse. L'export d'un v3 échouait donc en NAVIGATEUR — `openHandle is not a function` —
+ * là où toutes les épreuves unitaires passaient, puisqu'un double en injecte toujours un. C'est le
+ * palier v3 de l'E2E qui l'a trouvé, à sa première exécution.
+ *
  * @param {{ name: string, cle: Uint8Array,
  *           openHandle?: (name: string) => Promise<FileSystemSyncAccessHandle>,
  *           recuperer?: typeof openOpfsVolume, ouvrirBrut?: typeof ouvrirVolumeBrut }} options
@@ -114,7 +124,7 @@ export async function ouvrirPourExport({
   // Le défaut est le format COURANT, et il l'est depuis que la version 3 a son propre chemin : un
   // appelant qui n'annonce rien exporte un volume de ce runtime, pas un volume à migrer.
   formatVersion = FORMAT_VOLUME_V4,
-  openHandle,
+  openHandle = openOpfsSyncAccess,
   recuperer = openOpfsVolume,
   ouvrirBrut = ouvrirVolumeBrut,
   solder = solderLaSourceChiffreeSurAccesBrut,

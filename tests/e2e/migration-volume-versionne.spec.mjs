@@ -38,7 +38,7 @@ import { fileURLToPath } from "node:url";
 
 import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { MANIFEST_FORMAT_VERSION } from "../../src/vm/volume-manifest.mjs";
-import { tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
+import { FORMAT_VOLUME_V3, tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
 
 import { PLAFOND_CHARGE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { E2E_ORIGIN_A } from "../../playwright.e2e.config.mjs";
@@ -62,6 +62,11 @@ const DOSSIER_RAPPORTS = join(RACINE, "reports", "e2e");
 /** Volume et archive de sauvegarde, nommés pour ne heurter aucune autre suite. */
 const VOLUME = "vault-migration-e2e";
 const SAUVEGARDE = "vault-migration-sauvegarde-e2e";
+
+/** Le PALIER v3 travaille sur ses propres fichiers : deux scénarios ne partagent jamais un volume. */
+const VOLUME_V3 = "vault-palier-v3-e2e";
+const SAUVEGARDE_V1_DU_V3 = "vault-palier-v3-sauvegarde-v1-e2e";
+const ARCHIVE_DU_V3 = "vault-palier-v3-archive-e2e";
 
 /** Budget d'un boot Rails. Généreux : l'i386 émulé démarre en dizaines de secondes. */
 const BUDGET_BOOT_MS = 300_000;
@@ -99,7 +104,7 @@ test.afterEach(async ({ context }) => {
     await page.waitForFunction(() => globalThis.bancReprise !== undefined, null, {
       timeout: 20_000,
     });
-    for (const nom of [VOLUME, SAUVEGARDE]) {
+    for (const nom of [VOLUME, SAUVEGARDE, VOLUME_V3, SAUVEGARDE_V1_DU_V3, ARCHIVE_DU_V3]) {
       await page.evaluate(
         (n) => globalThis.bancReprise.executer({ phase: "cleanup", volume: n }),
         nom,
@@ -482,6 +487,250 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
     "utf8",
   );
   await testInfo.attach("migration-volume-versionne.json", {
+    body: JSON.stringify(mesures, null, 2),
+    contentType: "application/json",
+  });
+});
+
+test("PALIER v3 — un volume v3 RÉEL est SAUVEGARDÉ par le runtime v4, puis migré, et Rails relit son clair", async ({
+  context,
+}, testInfo) => {
+  exigerLesPrealables(raison, "migration-volume-versionne.spec.mjs");
+
+  // **Ce que ce scénario ajoute, et pourquoi le précédent ne le couvrait pas.** La chaîne
+  // v1 → v2 → v3 → v4 s'y joue en UNE session : son palier v3 n'est qu'un état intermédiaire, il
+  // n'a jamais de manifeste inscrit, jamais de journal de naissance, et personne ne le présente
+  // jamais à un runtime v4 comme point de départ. La revue de la PR #186 l'a dit en une phrase qui
+  // vaut pour tous les paliers : **une chaîne éprouvée de bout en bout ne prouve rien de chacun de
+  // ses paliers pris comme point de départ.**
+  //
+  // Or c'est exactement la situation d'un utilisateur : son volume EST un v3, il l'a depuis des
+  // mois, et le premier geste que la politique de version lui impose est une SAUVEGARDE VÉRIFIÉE
+  // (ADR 0011). Avant la tranche T2b, le runtime v4 ne savait pas en produire une — l'export
+  // ouvrait tout volume par l'ouvreur v4, qui refuse un en-tête v3. **Un v3 n'était donc migrable
+  // qu'à condition de détenir déjà une archive faite par le runtime précédent.** C'est le
+  // livrable 0 de la tranche, et c'est ce que ce scénario mesure sur un vrai volume OPFS de
+  // 512 Mio, avec une vraie application Rails au bout.
+  //
+  // **Ce que ce scénario NE fait PAS, et il faut le dire ici.** Il n'ÉCRIT pas dans le volume
+  // pendant qu'il est en v3, parce que ce runtime n'a aucun chemin d'écriture v3 : un v3 n'est
+  // jamais produit que par migration, et `openOpfsVolume` refuse son en-tête. Le rejeu d'une
+  // charge ACQUITTÉE restée dans le journal d'un v3 — la partie du livrable qui dépend de cette
+  // écriture — est donc mesuré en UNITAIRE, sur un v3 également réel :
+  // `tests/unit/vm-migration-source-v3.test.mjs` › « l'archive d'un v3 se RESTAURE et se migre ».
+  const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));
+  const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
+  const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
+  const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
+  const appDiskBytes = disqueApp.byteSize;
+  const appDiskUrl = `/artifacts/reference-image/${manifeste.boot.hdb}`;
+
+  const descripteurV1 = {
+    formatVersion: 1,
+    runtime: { version: paquet.version, artifact: null },
+    app: { id: contrat.application.id, version: contrat.application.version },
+  };
+  /**
+   * Le descripteur d'un volume qui EST en v3 : c'est lui que l'export doit savoir ouvrir.
+   *
+   * `minWriter` y est EXIGÉ, là où le descripteur v1 s'en passe : le manifeste de format 3 déclare
+   * le plus ancien écrivain admis plutôt que de le laisser deviner (ADR 0009). Une archive de v3
+   * sans lui est refusée à la composition, et c'est bien ce qu'on veut.
+   */
+  const descripteurV3 = {
+    formatVersion: FORMAT_VOLUME_V3,
+    runtime: { version: paquet.version, artifact: null, minWriter: paquet.version },
+    app: { id: contrat.application.id, version: contrat.application.version },
+  };
+  const descripteurCourant = {
+    runtime: { version: paquet.version, artifact: null, minWriter: paquet.version },
+    app: { id: contrat.application.id, version: contrat.application.version },
+  };
+  const configBoot = {
+    cmdline: manifeste.boot.cmdline,
+    memoryBytes: manifeste.boot.memoryMiB * 1024 * 1024,
+    runtime: {
+      lib: ADRESSES_V86.get("libv86.mjs"),
+      wasm: ADRESSES_V86.get("v86.wasm"),
+      bios: `/artifacts/reference-image/${manifeste.boot.bios}`,
+      vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
+      kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
+      initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
+      rootfs: `/artifacts/reference-image/${manifeste.boot.hda}`,
+    },
+    manifest: descripteurCourant,
+    expected: { recordId: contrat.record.id, attachmentSha256: contrat.attachment.sha256 },
+    bootTimeoutMs: BUDGET_BOOT_MS,
+  };
+
+  async function nouvellePage() {
+    const page = await context.newPage();
+    await page.goto(`${E2E_ORIGIN_A}/vm/reference.html`, { waitUntil: "load" });
+    await page.waitForFunction(() => globalThis.bancReprise !== undefined, null, {
+      timeout: 20_000,
+    });
+    return page;
+  }
+  const courir = (page, payload) =>
+    page.evaluate((p) => globalThis.bancReprise.executer(p), payload);
+  async function courirEnEchec(page, payload) {
+    try {
+      await courir(page, payload);
+    } catch (erreur) {
+      return erreur.message;
+    }
+    return null;
+  }
+
+  // 1. UN VOLUME v1, puis sa sauvegarde — le chemin ordinaire, joué jusqu'au palier seulement.
+  let page = await nouvellePage();
+  await courir(page, {
+    phase: "prepare",
+    volume: VOLUME_V3,
+    appDiskBytes,
+    appDiskUrl,
+    manifest: descripteurV1,
+  });
+  const clairInitial = await courir(page, { phase: "digest-volume", volume: VOLUME_V3 });
+  await courir(page, {
+    phase: "export",
+    volume: VOLUME_V3,
+    archive: SAUVEGARDE_V1_DU_V3,
+    manifest: descripteurV1,
+  });
+  await page.close();
+
+  // 2. LA CHAÎNE S'ARRÊTE À v3. `toVersion` borne la migration au palier : le volume porte alors un
+  //    manifeste v3 INSCRIT, un en-tête `VLTVOL03`, une région scellée et un journal de naissance.
+  //    C'est un v3 en service, pas un état de passage.
+  page = await nouvellePage();
+  const versV3 = await courir(page, {
+    phase: "migrate",
+    volume: VOLUME_V3,
+    manifest: descripteurCourant,
+    backupArchive: SAUVEGARDE_V1_DU_V3,
+    toVersion: FORMAT_VOLUME_V3,
+  });
+  const auPalier = await courir(page, { phase: "inspect-volume", volume: VOLUME_V3 });
+  await page.close();
+  expect(versV3.ok, `la migration vers le palier a échoué : ${versV3.error?.message ?? ""}`).toBe(
+    true,
+  );
+  expect(versV3.toVersion, "la chaîne s'arrête à la version demandée").toBe(FORMAT_VOLUME_V3);
+  expect(versV3.steps.length, "deux pas : v1 → v2, puis v2 → v3").toBe(FORMAT_VOLUME_V3 - 1);
+  expect(auPalier.manifestPresent, "le v3 porte un manifeste INSCRIT").toBe(true);
+  expect(
+    auPalier.migrationJournalPresent,
+    "la migration est finie : aucun journal ne subsiste",
+  ).toBe(false);
+  // Que le manifeste inscrit dise bien TROIS est prouvé au point 5, et par le produit lui-même : la
+  // migration suivante rend `fromVersion` en le LISANT. Le constater ici demanderait une phase
+  // d'inspection qui ne sert qu'à cela.
+  expect(auPalier.generationJournalPresent, "un v3 légitime porte une racine, donc un .gen").toBe(
+    true,
+  );
+
+  // 3. TÉMOIN — ce v3 ne s'ouvre PAS en écriture : c'est la raison d'être du livrable. Sans une
+  //    sauvegarde, l'utilisateur est au point mort.
+  page = await nouvellePage();
+  const refusDuBootV3 = await courirEnEchec(page, {
+    ...configBoot,
+    phase: "resume",
+    volume: VOLUME_V3,
+  });
+  await page.close();
+  expect(refusDuBootV3, "un v3 ne s'ouvre pas en écriture sous le runtime v4").toMatch(
+    /VAULT_MANIFEST_MIGRATION_REQUIRED/,
+  );
+
+  // 4. LIVRABLE 0 — LE RUNTIME v4 SAUVEGARDE CE v3. C'est le geste qui n'existait pas : l'export
+  //    passe par le lecteur de la migration, seul chemin du dépôt qui sache ouvrir un v3.
+  page = await nouvellePage();
+  const debutExport = Date.now();
+  const archiveDuV3 = await courir(page, {
+    phase: "export",
+    volume: VOLUME_V3,
+    archive: ARCHIVE_DU_V3,
+    manifest: descripteurV3,
+  });
+  const dureeExportMs = Date.now() - debutExport;
+  const verification = await courir(page, {
+    phase: "verify-export",
+    archive: ARCHIVE_DU_V3,
+    manifest: descripteurV3,
+  });
+  await page.close();
+  expect(archiveDuV3.digest, "l'archive d'un v3 porte le FICHIER v3, pas un clair").not.toBe(
+    clairInitial.digest,
+  );
+  expect(verification.ok, `l'archive du v3 ne se vérifie pas : ${verification.error ?? ""}`).toBe(
+    true,
+  );
+
+  // 5. MIGRATION v3 → v4, avec cette archive-là pour preuve. C'est la boucle qui se referme : la
+  //    sauvegarde qu'exige le pas destructif a été produite par le runtime qui l'exige.
+  page = await nouvellePage();
+  const versV4 = await courir(page, {
+    phase: "migrate",
+    volume: VOLUME_V3,
+    manifest: descripteurCourant,
+    backupArchive: ARCHIVE_DU_V3,
+  });
+  const apresV4 = await courir(page, { phase: "digest-volume", volume: VOLUME_V3 });
+  await page.close();
+  expect(versV4.ok, `la migration v3 → v4 a échoué : ${versV4.error?.message ?? ""}`).toBe(true);
+  expect(versV4.fromVersion, "elle part bien du palier v3").toBe(FORMAT_VOLUME_V3);
+  expect(versV4.toVersion).toBe(MANIFEST_FORMAT_VERSION);
+  expect(versV4.steps.length, "un seul pas restait").toBe(1);
+  expect(versV4.evidence.kind, "et sa preuve est l'archive faite par le runtime v4").toBe(
+    "sauvegarde-verifiee",
+  );
+  expect(apresV4.digestClair, "le CLAIR a traversé les trois pas sans changer d'un octet").toBe(
+    clairInitial.digest,
+  );
+
+  // 6. BOOT À FROID — Rails retrouve son invariant sur le volume qui a fait tout le trajet.
+  page = await nouvellePage();
+  const arm = await courir(page, { ...configBoot, phase: "resume-arm", volume: VOLUME_V3 });
+  expect(arm.ready).toBe(true);
+  await context.setOffline(true);
+  let bootFinal;
+  try {
+    bootFinal = await courir(page, { phase: "resume-fire" });
+  } finally {
+    await context.setOffline(false);
+  }
+  await page.close();
+  expect(bootFinal.online, "le boot a tourné réseau coupé").toBe(false);
+  expect(bootFinal.conforming, "invariant Rails conforme après le trajet v1 → v3 → v4").toBe(true);
+  expect(bootFinal.observedRecordId).toBe(contrat.record.id);
+  expect(bootFinal.observedAttachmentSha256).toBe(contrat.attachment.sha256);
+
+  const mesures = {
+    mesureLe: new Date().toISOString(),
+    environnement: {
+      navigateur: testInfo.project.name,
+      plateforme: `${process.platform} ${process.arch}`,
+      node: process.versions.node,
+    },
+    volumeOctets: appDiskBytes,
+    palier: {
+      versV3DureeMs: versV3.durationMs ?? null,
+      exportDuV3DureeMs: dureeExportMs,
+      archiveOctets: archiveDuV3.archiveLength,
+      versV4DureeMs: versV4.durationMs ?? null,
+      bootMs: bootFinal.healthMilliseconds,
+    },
+    refusDuBootV3,
+    clair: { avant: clairInitial.digest, apres: apresV4.digestClair },
+  };
+  mkdirSync(DOSSIER_RAPPORTS, { recursive: true });
+  writeFileSync(
+    join(DOSSIER_RAPPORTS, "migration-palier-v3.json"),
+    `${JSON.stringify(mesures, null, 2)}\n`,
+    "utf8",
+  );
+  await testInfo.attach("migration-palier-v3.json", {
     body: JSON.stringify(mesures, null, 2),
     contentType: "application/json",
   });

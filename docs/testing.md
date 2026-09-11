@@ -1132,14 +1132,35 @@ son journal, un export par CE runtime, l'état qu'une restauration laisse — le
 engagement, aucun voisin de génération —, puis la migration ; et la charge acquittée se retrouve
 dans le clair v4.
 
-**Ce qui n'est PAS fait, et il faut le dire ici comme ailleurs : le palier v3 n'est pas revenu dans
-l'E2E.** Le chemin qui le bloquait est ouvert, mais l'ajouter demandait de le JOUER, et le banc
-local de cette tranche n'avait pas d'image de référence — la construire suppose Docker et un rootfs
-de 1,5 Gio. Écrire un palier d'E2E qu'on n'a pas exécuté, c'est écrire une supposition ; la chaîne
-v1 → v2 → v3 → v4 reste donc éprouvée en UNE session, et le v3 comme point de DÉPART reste éprouvé
-en unitaire, sur un v3 produit par le produit. La leçon de la revue de la PR #186 vaut toujours :
-**une chaîne éprouvée de bout en bout ne prouve rien de chacun de ses paliers pris comme point de
-départ.**
+**LE PALIER v3 EST REVENU DANS L'E2E**, et il a servi dès sa première exécution. L'image de
+référence a été construite (`npm run image:build`, Docker), et
+`tests/e2e/migration-volume-versionne.spec.mjs` porte un second scénario : un v1 est préparé depuis
+le disque applicatif, sauvegardé, puis la chaîne s'ARRÊTE à v3 (`toVersion`) — le volume porte alors
+un manifeste v3 inscrit, un en-tête `VLTVOL03`, une région scellée et un journal de naissance, c'est
+un v3 en service et non un état de passage. Le boot y est refusé
+(`VAULT_MANIFEST_MIGRATION_REQUIRED`), ce qui est la raison d'être du livrable ; le runtime **v4**
+en fait alors une archive VÉRIFIÉE — le geste qui n'existait pas —, et c'est CETTE archive qui sert
+de preuve à la migration v3 → v4. Le boot à froid hors ligne retrouve l'invariant Rails, et le clair
+est celui d'avant, à l'octet.
+
+**Ce que ce palier a TROUVÉ, et qu'aucune épreuve unitaire ne pouvait trouver** : l'export d'un v3
+échouait en NAVIGATEUR sur `openHandle is not a function`. Le solde d'un v3 ouvre le journal de
+génération et le témoin, `ouvrirGeneration` n'a aucun défaut d'OPFS — il reçoit toujours celui de
+son appelant —, et l'appelant de production n'en passe aucun. Toute la suite unitaire passait,
+puisqu'un double en injecte toujours un : **le livrable 0 de la tranche ne fonctionnait pas hors des
+bancs.** Le défaut est corrigé, gardé par une épreuve unitaire et par un mutant.
+
+**Ce que le palier ne fait PAS, et il faut le dire ici comme ailleurs** : il n'ÉCRIT pas dans le
+volume pendant qu'il est en v3, parce que ce runtime n'a aucun chemin d'ÉCRITURE v3 — un v3 n'est
+jamais produit que par migration, et `openOpfsVolume` refuse son en-tête. Le rejeu d'une charge
+ACQUITTÉE restée dans le journal d'un v3 reste donc mesuré en unitaire, sur un v3 également réel. La
+leçon de la revue de la PR #186 vaut toujours, et ce palier en est l'illustration : **une chaîne
+éprouvée de bout en bout ne prouve rien de chacun de ses paliers pris comme point de départ.**
+
+**Durées mesurées en local** (Chromium, volume applicatif de 512 Mio) : **126,1 s** pour v1 → v3,
+**6,5 s** pour l'export du v3 par le runtime v4 (archive de 572 524 088 octets), **133,1 s** pour v3
+→ v4, **89,7 s** pour le boot à froid hors ligne ; **7,0 min** pour le scénario entier, image de
+référence construite en 1 min 32 s.
 
 **LES SUITES DE LA TRANCHE T2b** (#182, ADR 0036), et ce que chacune mesure :
 
@@ -1151,7 +1172,7 @@ départ.**
 | `vm-cliquet-anti-dek.test.mjs`              | aucun chemin de production du format v4 ne construit de clé AES-GCM depuis une clé de volume                                                                            |
 | `vm-cloture-par-racine.test.mjs` › CHEMIN 3 | une réouverture hors transaction publie TOUT ce qu'elle a scellé — une ÉGALITÉ, pas un écart                                                                            |
 | `vm-enveloppe-page-v2.test.mjs`             | ce que la page v2 COÛTE, relu sur les octets : 4 812 / 8 192, 3 380 libres, au pire tarif                                                                               |
-| `vm-enveloppe-v2-mutation.test.mjs`         | dix-sept gardes de la tranche retirées une à une, dix-sept mutants tués                                                                                                 |
+| `vm-enveloppe-v2-mutation.test.mjs`         | dix-huit gardes de la tranche retirées une à une, dix-huit mutants tués                                                                                                 |
 
 Le **budget par domaine** mérite un mot de plus, parce que c'est la forme de preuve que la revue
 externe réclamait. Il ne lit pas le source et n'interroge aucun appelant : il intercepte `deriveKey`
@@ -1159,8 +1180,8 @@ et `importKey` pour ÉTIQUETER chaque `CryptoKey` par sa provenance, puis compte
 `encrypt` par clé. Une clé de provenance inconnue qui chiffrerait ferait rougir la suite — sans quoi
 la mesure serait creuse.
 
-**Les CAMPAGNES DE MUTATION de #182** — `node tools/muter-gardes-enveloppe-v2.mjs` : **dix-sept
-gardes, dix-sept mutants tués**, sur neuf endroits, dont le CLIQUET lui-même, muté par ses QUATRE
+**Les CAMPAGNES DE MUTATION de #182** — `node tools/muter-gardes-enveloppe-v2.mjs` : **dix-huit
+gardes, dix-huit mutants tués**, sur neuf endroits, dont le CLIQUET lui-même, muté par ses QUATRE
 motifs séparément ; table dans l'ADR 0036. La campagne a TROUVÉ deux défauts qu'aucune épreuve verte
 ne montrait : un second tirage de sel qui n'était jamais atteint, et une mutation qui portait sur un
 texte présent deux fois. Cinq mutants viennent des deux revues de la PR #187 : les quatre motifs du
