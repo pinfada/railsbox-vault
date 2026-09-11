@@ -512,7 +512,10 @@ export async function daterLaCreation({
   empreinteVersee = null,
   openHandle = openOpfsSyncAccess,
 }) {
-  await ecarterLeJournalDeCreation(
+  // Les compteurs de la racine ÉCARTÉE sont REPORTÉS sur celle que la datation écrit (#182) : elle
+  // était le seul endroit où vivaient les scellements de la création, et repartir de zéro perdrait
+  // un deux-millième du budget de la clé en un geste, sans que rien ne le signale.
+  const reportes = await ecarterLeJournalDeCreation(
     name,
     openHandle,
     await tailleLogiqueDuFichier(name, openHandle),
@@ -525,6 +528,7 @@ export async function daterLaCreation({
     openHandle,
     creation: MOTIFS_DE_RACINE_INITIALE.creation,
     empreinteVersee,
+    scellementsReportes: reportes,
   });
   try {
     return backend.generation.rapport;
@@ -586,6 +590,7 @@ export async function openOpfsVolume({
   transactionnel = true,
   creation = null,
   empreinteVersee = null,
+  scellementsReportes = null,
   seuilPointDeControle,
 } = {}) {
   assertVolumeLibre(name);
@@ -596,6 +601,8 @@ export async function openOpfsVolume({
     volume: saisi.identifiantVolume,
     cleOctets: cle,
     formatVersion: FORMAT_VOLUME_V4,
+    scellementsCumulesVolume: scellementsReportes?.volume ?? 0,
+    scellementsCumulesJournal: scellementsReportes?.journal ?? 0,
   });
   const backend = construireBackend({ name, saisi, scellement, journal, faults, flushDelay });
   if (saisi.naissance) await scellerLeVolumeNeuf(backend, name);

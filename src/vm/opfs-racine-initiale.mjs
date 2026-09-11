@@ -305,12 +305,14 @@ export async function ecarterLeJournalDeCreation(name, openHandle, tailleLogique
     volume: name,
   });
   const journal = new JournalDeGeneration(name, handle);
+  let compteurs;
   try {
     // La taille LOGIQUE est présentée au décodeur, et il la faut : une racine authentique écrite
     // pour un volume d'une autre taille est refusée par `decoderRacine`, et lui présenter `null`
     // ferait donc passer TOUTE racine pour abîmée — c'est-à-dire refuser toute datation.
     const constat = constaterOuverture({ journal, tailleVolume: tailleLogique });
     exigerCreationSeule(name, constat);
+    compteurs = compteursDeLaRacineEcartee(constat.racine);
     journal.tronquer(0);
   } finally {
     rendreSansMasquer(handle);
@@ -325,6 +327,32 @@ export async function ecarterLeJournalDeCreation(name, openHandle, tailleLogique
   } finally {
     rendreSansMasquer(temoin);
   }
+  return compteurs;
+}
+
+/**
+ * Les COMPTEURS que la racine de naissance publiait, RENDUS avant qu'elle ne soit écartée (#182).
+ *
+ * ## Pourquoi ce geste existe
+ *
+ * Dater une création tronque le journal, donc écarte la racine de la naissance — et cette racine
+ * était le seul endroit où vivaient les 2^20 scellements que la création venait de consommer. Sans
+ * ce report, la racine que la datation écrit repartirait de ZÉRO, et le budget de la clé du volume
+ * perdrait en une fois un deux-millième de son plafond sans que rien ne le signale.
+ *
+ * C'est exactement la sous-estimation que #182 a trouvée ailleurs, et elle se refermait ici par le
+ * geste même qui prétendait la fermer. Le report est ce qui rend la règle de clôture vraie sur le
+ * chemin 2 de `tests/unit/vm-cloture-par-racine.test.mjs`.
+ *
+ * Une racine qui ne publie qu'un compteur — celle d'un volume antérieur à la v4 — rend `null` pour
+ * le second : l'ouverture qui suit décidera, et zéro aurait été un budget qu'on croit neuf.
+ */
+function compteursDeLaRacineEcartee(racine) {
+  if (racine === null || racine === undefined) return null;
+  return Object.freeze({
+    volume: racine.scellementsCumulesVolume,
+    journal: racine.scellementsCumulesJournal,
+  });
 }
 
 /**
