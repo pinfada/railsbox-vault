@@ -249,6 +249,81 @@ function secteurIndechiffrable(adresse) {
  * d'une suite d'adresses sont contigus dans la région, et les charges le sont dans la charge : une
  * suite se traite donc en deux écritures et deux barrières, quelle que soit sa longueur.
  */
+/**
+ * CALCULE les octets v4 d'UN secteur de la suite : son état, puis son rescellement.
+ *
+ * Rendu séparément du parcours de la suite parce que c'est ici que vit la seule décision du geste —
+ * trois états s'ouvrent, le quatrième est une déchirure — et qu'un secteur DÉJÀ converti n'a rien à
+ * rescéller : ses octets sont les bons, et les rescéller consommerait un scellement pour rien.
+ */
+async function octetsV4DuSecteur({ brut, disposition, v3, v4, adresse, sceauV3Anticipe }) {
+  const etat = await etatDuSecteur({ brut, disposition, v3, v4, adresse, sceauV3Anticipe });
+  if (etat === null) throw secteurIndechiffrable(adresse);
+  if (etat.etat === "converti") {
+    return {
+      dejaConverti: true,
+      charge: await brut.read(offsetDeCharge(disposition, adresse), SECTOR_SIZE),
+      sceau: await brut.read(offsetDeSceau(disposition, adresse), SCEAU_OCTETS),
+    };
+  }
+  const scelle = await v4.scellerBloc(
+    { generation: etat.generation, rang: RANG_SECTEUR_DE_VOLUME, adresse, longueur: SECTOR_SIZE },
+    etat.clair,
+  );
+  return {
+    dejaConverti: false,
+    charge: scelle.chiffre,
+    sceau: encoderSceau({
+      nonce: scelle.nonce,
+      etiquette: scelle.etiquette,
+      generation: etat.generation,
+    }),
+  };
+}
+
+/**
+ * ASSEMBLE les octets v4 de toute la suite, secteur par secteur, en DEUX tampons.
+ *
+ * Deux tampons et non deux mille écritures : les sceaux d'une suite d'adresses sont contigus dans la
+ * région, et les charges le sont dans la charge. Un secteur déjà converti y est RECOPIÉ tel quel,
+ * pour que l'écriture de la suite reste UNE écriture — la découper autour des secteurs déjà faits
+ * rendrait le nombre de barrières dépendant de l'endroit où la coupure est tombée.
+ */
+async function assemblerLaSuite({ brut, disposition, v3, v4, adresse, secteurs, sceauxV3 }) {
+  const charges = new Uint8Array(secteurs * SECTOR_SIZE);
+  const sceaux = new Uint8Array(secteurs * SCEAU_OCTETS);
+  let rescelles = 0;
+  let dejaConvertis = 0;
+
+  for (let index = 0; index < secteurs; index += 1) {
+    const octets = await octetsV4DuSecteur({
+      brut,
+      disposition,
+      v3,
+      v4,
+      adresse: adresse + index * SECTOR_SIZE,
+      sceauV3Anticipe: decoderSceau(sceauxV3.subarray(index * SCEAU_OCTETS)),
+    });
+    charges.set(octets.charge, index * SECTOR_SIZE);
+    sceaux.set(octets.sceau, index * SCEAU_OCTETS);
+    if (octets.dejaConverti) dejaConvertis += 1;
+    else rescelles += 1;
+  }
+  return { charges, sceaux, rescelles, dejaConvertis };
+}
+
+/**
+ * D'où viennent les sceaux v3 d'une suite : du JOURNAL sur une reprise, de la RÉGION sinon.
+ *
+ * L'ordre n'est pas une préférence. Sur une suite reprise, la région peut déjà avoir reçu des sceaux
+ * v4 : la lire donnerait ceux-là, et l'écriture anticipée ne rattraperait plus rien. Hors reprise,
+ * rien n'a été écrit et la région les porte encore intacts.
+ */
+async function sceauxV3DeLaSuite({ brut, disposition, adresse, secteurs, tampon }) {
+  if (tampon !== null) return tampon.sceaux;
+  return brut.read(offsetDeSceau(disposition, adresse), secteurs * SCEAU_OCTETS);
+}
+
 async function rescellerUneSuite({
   brut,
   disposition,
@@ -260,15 +335,7 @@ async function rescellerUneSuite({
   marquerEtape,
 }) {
   const rang = adresse / SECTOR_SIZE;
-
-  // Les sceaux v3 de la suite. Ils viennent du JOURNAL quand une reprise en porte pour ce rang — la
-  // région, elle, peut déjà avoir reçu des sceaux v4 —, et de la RÉGION sinon, où ils sont encore
-  // intacts puisque rien n'a été écrit. L'ordre n'est pas une préférence : lire la région sur une
-  // suite reprise donnerait les sceaux v4, et l'écriture anticipée ne rattraperait plus rien.
-  const sceauxV3 =
-    tampon === null
-      ? await brut.read(offsetDeSceau(disposition, adresse), secteurs * SCEAU_OCTETS)
-      : tampon.sceaux;
+  const sceauxV3 = await sceauxV3DeLaSuite({ brut, disposition, adresse, secteurs, tampon });
 
   // 1. L'ÉCRITURE ANTICIPÉE, avant le premier octet écrit dans le volume. Réécrite telle quelle sur
   // une reprise : la réinscrire coûte un journal, l'omettre coûterait la suite si la reprise
@@ -279,64 +346,20 @@ async function rescellerUneSuite({
     tampon: encoderTampon({ rang, secteurs, sceaux: sceauxV3 }),
   });
 
-  const charges = new Uint8Array(secteurs * SECTOR_SIZE);
-  const sceaux = new Uint8Array(secteurs * SCEAU_OCTETS);
-  let rescelles = 0;
-  let dejaConvertis = 0;
-
-  for (let index = 0; index < secteurs; index += 1) {
-    const adresseDuSecteur = adresse + index * SECTOR_SIZE;
-    const sceauAnticipe = decoderSceau(sceauxV3.subarray(index * SCEAU_OCTETS));
-    const etat = await etatDuSecteur({
-      brut,
-      disposition,
-      v3,
-      v4,
-      adresse: adresseDuSecteur,
-      sceauV3Anticipe: sceauAnticipe,
-    });
-    if (etat === null) throw secteurIndechiffrable(adresseDuSecteur);
-    if (etat.etat === "converti") {
-      // DÉJÀ converti : ses octets sont les bons, et les rescéller consommerait un scellement pour
-      // rien. On les RECOPIE tels quels dans les tampons de la suite, pour que l'écriture de la
-      // suite reste UNE écriture — la découper autour des secteurs déjà faits rendrait le nombre de
-      // barrières dépendant de l'endroit où la coupure est tombée.
-      dejaConvertis += 1;
-      charges.set(
-        await brut.read(offsetDeCharge(disposition, adresseDuSecteur), SECTOR_SIZE),
-        index * SECTOR_SIZE,
-      );
-      sceaux.set(
-        await brut.read(offsetDeSceau(disposition, adresseDuSecteur), SCEAU_OCTETS),
-        index * SCEAU_OCTETS,
-      );
-      continue;
-    }
-    const scelle = await v4.scellerBloc(
-      {
-        generation: etat.generation,
-        rang: RANG_SECTEUR_DE_VOLUME,
-        adresse: adresseDuSecteur,
-        longueur: SECTOR_SIZE,
-      },
-      etat.clair,
-    );
-    charges.set(scelle.chiffre, index * SECTOR_SIZE);
-    sceaux.set(
-      encoderSceau({
-        nonce: scelle.nonce,
-        etiquette: scelle.etiquette,
-        generation: etat.generation,
-      }),
-      index * SCEAU_OCTETS,
-    );
-    rescelles += 1;
-  }
+  const assemblee = await assemblerLaSuite({
+    brut,
+    disposition,
+    v3,
+    v4,
+    adresse,
+    secteurs,
+    sceauxV3,
+  });
 
   // 2. LES SCEAUX v4, puis la barrière. 3. LES CHARGES v4, puis la barrière.
-  await brut.write(offsetDeSceau(disposition, adresse), sceaux);
+  await brut.write(offsetDeSceau(disposition, adresse), assemblee.sceaux);
   await brut.flush();
-  await brut.write(offsetDeCharge(disposition, adresse), charges);
+  await brut.write(offsetDeCharge(disposition, adresse), assemblee.charges);
   await brut.flush();
 
   // 4. LE RANG ATTEINT. Le tampon est VIDÉ du même geste : la suite est durable, il n'a plus rien à
@@ -346,7 +369,7 @@ async function rescellerUneSuite({
     position: rang + secteurs,
     tampon: null,
   });
-  return { rescelles, dejaConvertis };
+  return { rescelles: assemblee.rescelles, dejaConvertis: assemblee.dejaConvertis };
 }
 
 /**

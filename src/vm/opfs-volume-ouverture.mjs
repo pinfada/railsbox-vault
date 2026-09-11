@@ -628,6 +628,19 @@ export async function openOpfsVolume({
  * sans racine (#181), et ce que le mode transactionnel fait de cette autorisation. Une naissance
  * s'autorise elle-même ; hors naissance, seul `creation` — posé par la migration, ou par le geste
  * qui date une création — ou l'engagement d'une archive restaurée le peut.
+ *
+ * ## Hors transaction ET sans naissance : la session est en LECTURE SEULE (#182)
+ *
+ * Une telle session ne clôra par AUCUNE racine, donc aucun de ses scellements ne serait publié dans
+ * un compteur. Depuis le format v4, cela lui retire le droit de sceller (ADR 0033, décision 4), et
+ * un scellement demandé sous ce régime est refusé par `VAULT_STORAGE_LECTURE_SEULE` plutôt que
+ * consommé en silence.
+ *
+ * C'est la moitié du § 4.5 que la spécification AVOUAIT au lieu de la fermer : « le compteur est
+ * sous-estimé hors transaction ». Les trois chemins qui scellaient ainsi closent désormais par une
+ * racine — la création, l'installation initiale du volume applicatif (`daterLaCreation`) et
+ * l'ouverture hors transaction de la coquille, qui est une naissance —, et ce qui reste est REFUSÉ
+ * au lieu d'être compté à moitié.
  */
 async function etablirLaGeneration(
   backend,
@@ -669,16 +682,6 @@ async function etablirLaGeneration(
   };
   if (transactionnel) return installerGenerationOuFermer(backend, generation);
   if (saisi.naissance) return racineInitialeHorsTransaction(backend, generation);
-  // HORS TRANSACTION et sans naissance : cette session ne clôra par AUCUNE racine, donc aucun de ses
-  // scellements ne serait publié dans un compteur. Depuis le format v4, cela lui retire le droit de
-  // sceller (ADR 0033, décision 4) — elle est en LECTURE SEULE, et un scellement demandé sous ce
-  // régime est refusé par `VAULT_STORAGE_LECTURE_SEULE` plutôt que consommé en silence.
-  //
-  // C'est la moitié du § 4.5 que la spécification AVOUAIT au lieu de la fermer : « le compteur est
-  // sous-estimé hors transaction ». Les trois chemins qui scellaient ainsi closent désormais par une
-  // racine — la création (ci-dessus), l'installation initiale du volume applicatif
-  // (`daterLaCreation`) et l'ouverture hors transaction de la coquille, qui est une naissance —, et
-  // ce qui reste est REFUSÉ au lieu d'être compté à moitié.
   scellement.interdireDeSceller();
   return undefined;
 }
