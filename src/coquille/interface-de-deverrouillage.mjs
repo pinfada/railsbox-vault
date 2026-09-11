@@ -53,6 +53,11 @@ import { STORAGE_ERROR_CODES } from "../vm/storage-errors.mjs";
  * demander de l'aide a alors quelque chose à citer.
  */
 export const CONDUITES = Object.freeze({
+  // Le CONTEXTE d'un refus ne franchit pas le port : `{ voisin, champ, taille }` reste dans la
+  // coquille, et ce que l'utilisateur lit est la phrase écrite ici. Les trois refus de #181 y sont
+  // entrés avec la revue de sécurité de la PR #184 (constat 7) : ce sont les plus probables d'un
+  // coffre restauré, et ils tombaient jusque-là sur le message destiné à l'exploitant — celui qui
+  // cite un numéro d'issue et le nom d'un fichier voisin.
   [ENVELOPPE_ERROR_CODES.cleRefusee]:
     "Ce moyen n'ouvre pas ce coffre. Le geste était bien formé — c'est l'enveloppe qui a tranché : " +
     "phrase inexacte, passkey d'un autre appareil, ou code d'un autre coffre. Rien n'a été modifié.",
@@ -81,6 +86,17 @@ export const CONDUITES = Object.freeze({
     "Ce navigateur ne sait pas ouvrir un coffre : il n'offre pas l'accès synchrone au stockage privé " +
     "depuis un Worker. Rien n'a échoué — rien n'a pu être tenté. Essayez un autre navigateur ; la " +
     "matrice de compatibilité du dépôt dit lesquels le savent.",
+  [STORAGE_ERROR_CODES.volumeSansRacine]:
+    "Ce coffre a été restauré, mais ce qui prouvait que son contenu vient bien de son archive n'est " +
+    "plus là. Rien n'est perdu du côté de l'archive : restaurez-la à nouveau, puis ouvrez le coffre " +
+    "sans autre geste entre les deux. Aucun octet n'a été lu.",
+  [STORAGE_ERROR_CODES.engagementInvalide]:
+    "Ce qui accompagne ce coffre ne correspond pas à son contenu : l'archive ou le coffre restauré a " +
+    "été altéré. Ne réessayez pas avec les mêmes fichiers — restaurez depuis une archive à laquelle " +
+    "vous faites confiance. Aucun octet n'a été lu.",
+  [STORAGE_ERROR_CODES.creationNonConfirmee]:
+    "L'installation de ce coffre n'a pas pu être confirmée : ce qui a été écrit sur cet appareil " +
+    "n'est pas ce qui s'y trouve. Rien n'est déclaré installé ; recommencez l'installation.",
   [DERIVATION_ERROR_CODES.argon2Indisponible]:
     "Le calcul de la clé n'est pas disponible sur ce navigateur : l'artefact Argon2 n'a pas été " +
     "servi, ou WebAssembly est refusé par la politique de sécurité.",
