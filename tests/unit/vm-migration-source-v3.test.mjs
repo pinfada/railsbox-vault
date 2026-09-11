@@ -40,6 +40,7 @@ import { ouvrirVolumeBrut } from "../../src/vm/opfs-volume-brut.mjs";
 import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
 import { migrateVolume } from "../../src/vm/volume-migration.mjs";
+import { ouvrirPourExport } from "../../src/vm/export-du-fichier.mjs";
 import { createFaultPlan } from "../../src/vm/fault-plan.mjs";
 import { ouvrirGeneration } from "../../src/vm/opfs-generation-voisins.mjs";
 import {
@@ -572,3 +573,40 @@ function coupantLaLectureDuJournal(store) {
     };
   };
 }
+
+test("MESURE — ce runtime ne sait pas EXPORTER un v3, donc il ne peut pas en faire la sauvegarde", async () => {
+  // **Trouvé en livrant le correctif du CRITICAL, et ce n'est pas lui.** Un pas destructif exige une
+  // sauvegarde VÉRIFIÉE — `assertPreuveDisponible` refuse explicitement qu'un consentement nommé en
+  // tienne lieu (ADR 0011). Or `ouvrirPourExport` ouvre le volume par `openOpfsVolume` dès que son
+  // format atteint `MIN_VOLUME_FORMAT_VERSION`, et ce runtime REFUSE un en-tête v3 en renvoyant à la
+  // migration. Les deux règles se referment donc de nouveau l'une sur l'autre, un cran plus loin :
+  // **un v3 est migrable, à condition de détenir déjà une archive faite par le runtime précédent.**
+  //
+  // Ce n'est pas corrigé ici, et c'est délibéré : ouvrir un chemin d'export pour un format que ce
+  // runtime n'ouvre pas est une DÉCISION — que déclare le manifeste de l'archive, qui scelle son
+  // engagement, ce que devient la génération validée que le journal porte encore — et elle ne
+  // s'invente pas en fin de chantier. Elle est portée au mainteneur avec cette mesure.
+  //
+  // L'épreuve MESURE l'état, elle ne garde pas une règle : le jour où ce chemin s'ouvre, elle
+  // rougit, et c'est voulu.
+  const store = createSyncAccessStore();
+  const montage = await poserUnV3Reel(store);
+  assert.equal(montage.manifesteV3.formatVersion, FORMAT_VOLUME_V3);
+
+  await assert.rejects(
+    () =>
+      ouvrirPourExport({
+        name: NOM,
+        cle: CLE_DE_TEST,
+        formatVersion: FORMAT_VOLUME_V3,
+        openHandle: store.openHandle,
+      }),
+    (erreur) => {
+      // Le refus est celui de l'OUVERTURE, et il nomme la migration comme remède — ce qui est
+      // exactement la boucle : pour migrer il faut une sauvegarde, et pour la faire il faut ouvrir.
+      assert.match(erreur.message, /migr/i, `refus inattendu : ${erreur.code} — ${erreur.message}`);
+      return true;
+    },
+    "ce runtime ne sait pas ouvrir un v3, donc il ne sait pas en faire une archive",
+  );
+});

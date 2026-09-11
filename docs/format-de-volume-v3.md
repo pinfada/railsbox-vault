@@ -1702,6 +1702,20 @@ consentement nommé.
 > destructif : un refus laisse le volume intact ET son manifeste en place. Une reprise ne le rejoue
 > pas — le fichier n'est plus la source, il est un entre-deux dont certaines suites sont déjà v4.
 
+> **CE QUI RESTE FERMÉ, et il vaut mieux l'écrire que de le laisser découvrir** (#182, trouvé en
+> livrant le correctif ci-dessus). Un pas destructif exige une SAUVEGARDE VÉRIFIÉE, et un
+> consentement nommé ne peut pas en tenir lieu (ADR 0011, et la revue de #110 qui l'a resserré). Or
+> ce runtime ne sait pas EXPORTER un volume v3 : `ouvrirPourExport` l'ouvre par `openOpfsVolume` dès
+> le format 3, et l'ouverture refuse un en-tête v3 en renvoyant à la migration. **Un v3 est donc
+> migrable, à condition de détenir déjà une archive faite par le runtime précédent** ; qui ne l'a
+> pas n'a aucun chemin.
+>
+> Ce n'est pas corrigé par cette tranche, et c'est délibéré : ouvrir un chemin d'export pour un
+> format que ce runtime n'ouvre pas est une décision — que déclare le manifeste de cette archive,
+> qui scelle son engagement, ce que devient la génération validée que le journal porte encore —, et
+> elle demande son propre examen. L'état est MESURÉ par `tests/unit/vm-migration-source-v3.test.mjs`
+> › « ce runtime ne sait pas EXPORTER un v3 », qui rougira le jour où ce chemin s'ouvrira.
+
 #### v3 → v4 : rescéller chaque secteur
 
 **C'est le geste le plus lourd que ce dépôt ait tenté** : chaque secteur est RESCELLÉ, parce
