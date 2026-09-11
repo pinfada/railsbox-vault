@@ -137,12 +137,27 @@ d'une unité par ouverture, c'est-à-dire la dérive que la règle a préciséme
    génération (ADR 0019). Une écriture hors transaction ne périme donc plus la fraîcheur de la
    dernière racine, et le volume se rouvre transactionnellement — la seconde moitié de l'écart que
    la PR #186 avait mesurée ;
-2. **la fraîcheur est désormais CONFRONTÉE sur ce chemin**, comme sur tout autre, puisqu'il ouvre un
-   magasin. Le volume de coquille gagne la garde de l'ADR 0019 qu'il n'avait pas : un secteur ramené
-   en arrière y est refusé. En contrepartie, un volume écrit par une version ANTÉRIEURE de ce
-   runtime — qui n'aurait jamais reclos — porterait une empreinte de région périmée et serait refusé
-   à sa première ouverture. Aucun volume n'est dans ce cas : `docs/release-policy.md` établit
-   qu'aucune version n'a jamais été publiée. Le dire vaut mieux que de s'en remettre au hasard.
+2. **la fraîcheur n'est PAS confrontée sur ce chemin**, et cette conséquence-ci a d'abord été écrite
+   à l'envers. Elle a été vraie le temps d'un commit : le chemin hors transaction confrontait la
+   fraîcheur comme tout autre, et le banc de navigateur l'a RÉFUTÉE par exécution — un Worker de
+   confiance peut être tué sans avoir clos, c'est le cas ordinaire d'un onglet fermé, et la garde
+   refusait alors le coffre à l'ouverture suivante pour un verrouillage parfaitement ordinaire. La
+   garde a donc été retirée (`confronterLaFraicheur = false` hors transaction), et la revue de la PR
+   #187 a relevé que cet ADR et le § 4.5 publiaient toujours l'inverse (constat 2 de la revue de
+   sécurité, constat 2 de la revue de format).
+
+   Ce qui est vrai est donc ceci, et c'est la même phrase au § 4.5 et dans `SECURITY.md` : la
+   clôture par racine RÉTABLIT la fraîcheur pour l'ouvreur transactionnel qui suivra ; elle ne la
+   CONFRONTE pas. Le volume de coquille ne gagne AUCUNE garde de l'ADR 0019 — il n'en a jamais
+   porté. Un secteur ramené en arrière reste refusé, mais au SECTEUR par son sceau
+   (`VAULT_STORAGE_SCEAU_REFUSE`, à la LECTURE) et non à l'ouverture
+   (`VAULT_STORAGE_GENERATION_CORRUPT`). Aucun clair d'un secteur rejoué n'est rendu dans l'un ni
+   dans l'autre régime, et `tests/unit/vm-cloture-par-racine.test.mjs` le MESURE.
+
+   Ce que le retrait DÉPLACE, plutôt qu'il ne l'efface : une ouverture-fermeture hors transaction
+   suffit désormais à faire tomber le refus de la BARRIÈRE au SECTEUR pour un ouvreur transactionnel
+   ultérieur — la récupération réécrit le journal et le témoin même quand `cloturerParRacine()` rend
+   `false`. Le relecteur l'a mesuré ; c'est un refus plus tardif, jamais un refus perdu.
 
 ## Décision 4 — Le runtime v4 exporte un volume v3, par le lecteur de la migration
 

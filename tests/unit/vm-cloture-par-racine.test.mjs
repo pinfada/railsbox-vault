@@ -38,7 +38,11 @@ import { Scellement } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 import { generationJournalName } from "../../src/vm/opfs-sync-access.mjs";
-import { FORMAT_VOLUME_V4 } from "../../src/vm/volume-chiffre-format.mjs";
+import {
+  FORMAT_VOLUME_V4,
+  SCEAU_OCTETS,
+  dispositionDuVolume,
+} from "../../src/vm/volume-chiffre-format.mjs";
 import { encoderInfoDeDomaine } from "../../src/vm/derivation/cle-de-domaine.mjs";
 import { GENERATION_FORMAT_DEUX_COMPTEURS } from "../../src/vm/generation-format.mjs";
 
@@ -472,6 +476,149 @@ test("CHEMIN 3 — la clôture est IDEMPOTENTE : deux appels n'écrivent qu'une 
       volume: apresEcriture.scellementsCumulesVolume,
     },
     "la fermeture a écrit une SECONDE racine de clôture : la garde n'est pas idempotente",
+  );
+});
+
+/**
+ * REJOUE des octets du volume : ils reviennent à un état ANTÉRIEUR, et rien d'autre ne bouge — ni le
+ * journal, ni le témoin, ni la racine.
+ *
+ * Les octets sont remis par une ouverture BRUTE du handle, hors du produit : c'est bien un
+ * adversaire qui écrit dans l'origine de confiance, et non le produit qui se contredirait.
+ */
+async function rejouerDesOctets(store, anciens, at) {
+  const handle = await store.openHandle(NOM);
+  try {
+    handle.write(anciens, { at });
+    handle.flush();
+  } finally {
+    handle.close();
+  }
+}
+
+/** Ce qu'une lecture RESTITUE, et ce qu'elle REFUSE — sans jamais laisser passer l'un pour l'autre. */
+async function lireHorsTransaction(store, offset) {
+  const backend = await ouvrir(store, { transactionnel: false });
+  try {
+    return { rendu: await backend.read(offset, SECTOR_SIZE), code: null };
+  } catch (cause) {
+    if (!isStorageError(cause)) throw cause;
+    return { rendu: null, code: cause.code };
+  } finally {
+    await backend.close();
+  }
+}
+
+test("la fraîcheur n'est PAS confrontée hors transaction", async () => {
+  // **Le constat 2 des DEUX revues de la PR #187.** La racine de clôture rescelle l'empreinte de
+  // région, et le § 4.5 comme l'ADR 0036 en avaient conclu que le chemin hors transaction
+  // CONFRONTAIT désormais la fraîcheur « comme tout autre ». Il ne la confronte pas : le banc de
+  // navigateur avait réfuté cette garde par exécution — un Worker de confiance peut être tué sans
+  // clore, ce qui est le cas ORDINAIRE d'un onglet fermé, et la garde refusait alors le coffre à
+  // l'ouverture suivante pour un verrouillage parfaitement ordinaire. La garde a été retirée, et les
+  // deux textes ont continué d'annoncer l'inverse pendant un commit.
+  //
+  // Cette épreuve MESURE la conduite réelle, de sorte que le prochain texte qui l'affirme ait
+  // quelque chose à contredire. La scène est celle du relecteur : un volume écrit DEUX fois, puis
+  // les huit premiers secteurs ramenés à leur état antérieur, puis une réouverture.
+  const store = createSyncAccessStore();
+  const premier = await ouvrir(store, { transactionnel: false });
+  try {
+    await premier.write(0, secteurDe(0xa1));
+    await premier.flush();
+  } finally {
+    await premier.close();
+  }
+  // La TÊTE du fichier : l'en-tête, puis la région des sceaux — tout ce qui précède la charge. C'est
+  // la scène du relecteur, ramenée à la taille de ce volume-ci : il avait rejoué 4 096 octets sur un
+  // volume où cela ne couvrait que ces deux zones.
+  const teteOctets = dispositionDuVolume(TAILLE).chargeOffset;
+  const ancienneTete = store.snapshot(NOM).slice(0, teteOctets);
+
+  const second = await ouvrir(store, { transactionnel: false });
+  try {
+    await second.write(0, secteurDe(0xb2));
+    await second.flush();
+  } finally {
+    await second.close();
+  }
+
+  // LE REJEU : l'en-tête et les enregistrements de RÉGION (§ 6.8) reviennent à leur version d'avant,
+  // pendant que la charge, le journal, le témoin et la racine restent ceux de l'état COURANT.
+  await rejouerDesOctets(store, ancienneTete, 0);
+
+  // 1. L'OUVERTURE ABOUTIT, et c'est ce qui réfute les deux textes : une fraîcheur confrontée
+  //    rendrait ici `VAULT_STORAGE_GENERATION_CORRUPT`. 2. Le secteur rejoué est tout de même
+  //    refusé, mais au SECTEUR et par son SCEAU. 3. AUCUN clair n'est rendu : la lecture ne rend pas
+  //    des octets douteux, elle ne rend RIEN.
+  const rejoue = await lireHorsTransaction(store, 0);
+  assert.equal(
+    rejoue.code,
+    STORAGE_ERROR_CODES.sceauRefuse,
+    "le rejeu est refusé au SECTEUR (`SCEAU_REFUSE`), et non à l'ouverture (`GENERATION_CORRUPT`)",
+  );
+  assert.equal(
+    rejoue.rendu,
+    null,
+    "aucun clair du secteur rejoué n'est rendu : la lecture ne rend RIEN",
+  );
+
+  // 4. Et le secteur VOISIN, que le rejeu n'a pas touché, se lit toujours : le refus porte sur ce
+  //    qui a reculé, pas sur le volume entier. C'est la différence entre refuser un secteur et
+  //    refuser un coffre, et c'est tout l'enjeu du retrait de la garde.
+  const voisin = await lireHorsTransaction(store, SECTOR_SIZE);
+  assert.equal(voisin.code, null, `le reste du volume reste lisible (${voisin.code})`);
+  assert.equal(voisin.rendu.byteLength, SECTOR_SIZE);
+});
+
+test("et ce que la garde n'aurait PAS refusé non plus : un secteur ENTIER ramené en arrière", async () => {
+  // Le pendant honnête de l'épreuve précédente. Le refus qu'on vient de mesurer vient du SCEAU, et
+  // il vient d'une INCOHÉRENCE : l'enregistrement de région est ancien, la charge est neuve, donc
+  // l'étiquette ne vérifie pas. Un adversaire qui ramène en arrière le secteur ENTIER — sa région ET
+  // sa charge, ensemble — ne laisse aucune incohérence derrière lui, et rien ne le détecte.
+  //
+  // Ce n'est pas une régression de cette tranche : c'est le résidu que `SECURITY.md` nomme depuis
+  // l'ADR 0015 — « le retour arrière d'un SECTEUR n'est pas détecté », dont le remède connu est un
+  // arbre de Merkle qui n'est pas fourni. L'écrire ici évite que l'épreuve d'à côté se lise comme
+  // une détection du rejeu, qu'elle n'est pas : la fraîcheur confrontée n'aurait rien changé à
+  // celui-ci non plus, puisqu'elle porte sur la RÉGION et non sur l'âge d'un secteur.
+  const store = createSyncAccessStore();
+  const premier = await ouvrir(store, { transactionnel: false });
+  try {
+    await premier.write(0, secteurDe(0xa1));
+    await premier.flush();
+  } finally {
+    await premier.close();
+  }
+  const ancienFichier = store.snapshot(NOM);
+
+  const second = await ouvrir(store, { transactionnel: false });
+  try {
+    await second.write(0, secteurDe(0xb2));
+    await second.flush();
+  } finally {
+    await second.close();
+  }
+
+  // La RÉGION du secteur 0 et sa CHARGE sont remises ensemble, chacune à sa place.
+  const disposition = dispositionDuVolume(TAILLE);
+  await rejouerDesOctets(
+    store,
+    ancienFichier.slice(disposition.regionOffset, disposition.regionOffset + SCEAU_OCTETS),
+    disposition.regionOffset,
+  );
+  await rejouerDesOctets(
+    store,
+    ancienFichier.slice(disposition.chargeOffset, disposition.chargeOffset + SECTOR_SIZE),
+    disposition.chargeOffset,
+  );
+
+  const relu = await lireHorsTransaction(store, 0);
+  assert.equal(relu.code, null, `le secteur entier rejoué est ACCEPTÉ (${relu.code})`);
+  assert.equal(
+    relu.rendu[0],
+    0xa1,
+    "et il rend le CLAIR ANCIEN : c'est le résidu assumé, pas une détection",
   );
 });
 
