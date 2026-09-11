@@ -550,6 +550,18 @@ désormais la clé de l'épreuve qui le fait tourner, et `tools/mesurer-creation
 maintenant par `cleDeVolumeDuHarnais` sous variable d'environnement. Une affirmation que rien ne
 relit finit par devenir fausse.
 
+**Une troisième porte les rejoint depuis #181** —
+`tests/unit/archive-appelants-de-l-export.test.mjs`. Une archive de volume v3 porte un ENGAGEMENT
+scellé sous la clé du volume ; `writeArchive` l'exige donc, et refuse bruyamment quand la clé
+manque. Ce refus est à l'exécution, et il n'a rien dit d'un appelant qui n'existe que dans un
+navigateur : `verserLArchive`, dans le Worker de référence, que la suite unitaire ne charge jamais.
+Il a fallu une course E2E de trois minutes, et un boot de machine virtuelle, pour apprendre ce qu'un
+balayage de source apprend en une seconde. L'épreuve relève désormais, dans `src/`, `public/` et
+`tools/`, tout appel à `writeArchive` ou `exportVolumeToBytes` qui ne NOMME pas `cle` — accolades
+équilibrées, déclarations écartées —, et une seconde épreuve vérifie qu'elle MORD. `tests/` reste
+hors périmètre : plusieurs épreuves appellent sans clé exprès, pour prouver le refus, et l'interdire
+interdirait de prouver ce qu'on garde.
+
 ```bash
 npm run check                                   # les quatre suites unitaires y sont rattachées
 node --test tests/unit/vm-volume-chiffre.test.mjs
