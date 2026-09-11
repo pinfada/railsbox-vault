@@ -27,6 +27,19 @@ const FRONTIERE_CSP = [
 ];
 
 /**
+ * La frontière de la HIÉRARCHIE DE CLÉS (#182, ADR 0033, décision 6).
+ *
+ * L'ADR y écrit un GARANTI qui repose sur la PLATE-FORME — « une `CryptoKey` dont les usages ne
+ * portent pas `encrypt` fait rejeter `crypto.subtle.encrypt` » —, et un garanti pareil se mesure sur
+ * les trois moteurs, pas sur celui du développeur. Si un seul acceptait, la phrase serait fausse
+ * pour un tiers des utilisateurs et le dépôt l'écrirait quand même.
+ *
+ * Comme la frontière de CSP : aucun artefact v86, aucun stockage, quelques secondes. Les trois
+ * moteurs sont donc TOUJOURS exécutés, indépendamment de `VAULT_MOTEURS`.
+ */
+const FRONTIERE_HIERARCHIE = ["**/hierarchie-de-cles-frontiere.spec.mjs"];
+
+/**
  * Frontière entre deux applications partageant l'origine applicative (#46, ADR 0018). Exécutée sur
  * les trois moteurs pour le même motif que la frontière de CSP, et pour un motif de plus : le
  * partitionnement du stockage n'est pas identique d'un moteur à l'autre — l'OPFS et
@@ -229,6 +242,7 @@ export default defineConfig({
       use: { browserName: nom },
       testIgnore: [
         ...FRONTIERE_CSP,
+        ...FRONTIERE_HIERARCHIE,
         ...FRONTIERE_APPLICATIONS,
         ...FRONTIERE_ENVELOPPE,
         ...FRONTIERE_ENGAGEMENT,
@@ -248,6 +262,11 @@ export default defineConfig({
       name: `frontiere-csp-${nom}`,
       use: { browserName: nom },
       testMatch: FRONTIERE_CSP,
+    })),
+    ...MOTEURS_CONNUS.map((nom) => ({
+      name: `frontiere-hierarchie-${nom}`,
+      use: { browserName: nom },
+      testMatch: FRONTIERE_HIERARCHIE,
     })),
     ...MOTEURS_CONNUS.map((nom) => ({
       name: `frontiere-applications-${nom}`,
