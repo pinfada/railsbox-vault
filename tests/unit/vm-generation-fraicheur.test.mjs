@@ -5,9 +5,17 @@
 // ce que #19 en ferme, et — c'est aussi important — ce qu'il ne ferme pas.
 //
 //  - **Le retour arrière d'un secteur est désormais détecté.** Le secteur remis en place reste
-//    AUTHENTIQUE : l'épreuve le démontre en l'ouvrant par le chemin non transactionnel, qui ne
-//    connaît pas la fraîcheur et rend son clair sans broncher. Ce qui refuse est l'empreinte de la
-//    RÉGION, scellée par la dernière racine et confrontée avant toute lecture de secteur.
+//    AUTHENTIQUE : l'épreuve le démontre en l'ouvrant par la COUCHE CHIFFRÉE seule — `VolumeChiffre`
+//    monté sur un accès brut, qui vérifie le sceau et rien d'autre —, et elle en rend le clair sans
+//    broncher. Ce qui refuse est l'empreinte de la RÉGION, scellée par la dernière racine et
+//    confrontée avant toute lecture de secteur.
+//
+//    **La démonstration passait par le chemin non transactionnel jusqu'à T2b** (#182). Ce chemin
+//    OUVRE désormais un magasin de générations — sans l'installer — pour reprendre les compteurs et
+//    CLORE par une racine (ADR 0033, décision 4), si bien qu'il confronte la fraîcheur comme tout
+//    autre. C'est un durcissement : le volume de COQUILLE, seul utilisateur de ce mode, gagne la
+//    garde de l'ADR 0019 qu'il n'avait pas. La couche chiffrée seule est le bon isolant pour ce que
+//    cette épreuve veut montrer — que ce n'est pas le SCEAU du secteur qui refuse.
 //  - **Le retour arrière PARTIEL du support est détecté** par le témoin de dernière séquence vue,
 //    qui vit hors du fichier de volume et dans la même origine.
 //  - **Le retour arrière COMPLET ne l'est pas**, et l'épreuve le MONTRE plutôt que de l'écrire
@@ -28,9 +36,15 @@ import { openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
+import { ouvrirVolumeBrut } from "../../src/vm/opfs-volume-brut.mjs";
+import { VolumeChiffre } from "../../src/vm/volume-chiffre.mjs";
 import {
+  EN_TETE_OCTETS,
+  FORMAT_VOLUME_V4,
   SCEAU_OCTETS,
+  decoderEnTeteV4,
   dispositionDuVolume,
+  identifiantVolumeEnTexte,
   offsetDeCharge,
   offsetDeSceau,
 } from "../../src/vm/volume-chiffre-format.mjs";
@@ -64,6 +78,42 @@ async function restaurer(magasin, nom, octets) {
   handle.flush();
   handle.close();
   magasin.abandon(nom);
+}
+
+/**
+ * Lit le secteur 0 par la COUCHE CHIFFRÉE SEULE : le sceau est vérifié, la fraîcheur ne l'est pas.
+ *
+ * C'est le même montage que la migration emploie sur sa source (`migration-source-chiffree.mjs`) :
+ * `VolumeChiffre` sur un accès brut. Il isole exactement ce que l'épreuve veut montrer — un secteur
+ * remis en place reste AUTHENTIQUE —, sans rien emprunter à un chemin d'ouverture dont les gardes
+ * peuvent bouger d'une tranche à l'autre.
+ */
+async function lireParLeSceauSeul(magasin, nom) {
+  const brut = await ouvrirVolumeBrut({
+    name: nom,
+    size: DISPOSITION.tailleSupport,
+    openHandle: magasin.openHandle,
+  });
+  try {
+    // L'identifiant vient de l'EN-TÊTE du fichier : il est TIRÉ à la création, et le supposer
+    // ferait échouer le sceau pour une raison qui n'est pas celle que l'épreuve mesure.
+    const lu = decoderEnTeteV4(await brut.read(0, EN_TETE_OCTETS));
+    const identifiantVolume = identifiantVolumeEnTexte(lu.enTete.identifiantVolume);
+    const chiffre = new VolumeChiffre({
+      volume: identifiantVolume,
+      scellement: await Scellement.ouvrir({
+        volume: identifiantVolume,
+        cleOctets: CLE_DE_TEST,
+        formatVersion: FORMAT_VOLUME_V4,
+      }),
+      disposition: DISPOSITION,
+      lireSupport: (offset, longueur) => brut.read(offset, longueur),
+      ecrireSupport: (offset, octets) => brut.write(offset, octets),
+    });
+    return await chiffre.lireSecteurs(0, SECTOR_SIZE);
+  } finally {
+    await brut.close();
+  }
 }
 
 /** Recopie une plage d'un instantané dans le fichier vivant, sans toucher au reste. */
@@ -108,12 +158,10 @@ test("un SECTEUR ramené en arrière hors journal est refusé, alors que ce sect
   ]);
 
   // Le secteur ainsi remis en place est AUTHENTIQUE, et l'ADR 0015 dit pourquoi : le lecteur lit sa
-  // génération dans la région, au même endroit que son sceau. Le chemin NON TRANSACTIONNEL, qui ne
-  // connaît pas la fraîcheur, le rend donc sans broncher — c'est la démonstration que ce qui refuse
-  // n'est pas le sceau du secteur.
-  const brut = await ouvrir(magasin, nom, { transactionnel: false });
-  assert.deepEqual([...(await brut.read(0, SECTOR_SIZE))], [...ancien]);
-  await brut.close();
+  // génération dans la région, au même endroit que son sceau. La COUCHE CHIFFRÉE seule — le sceau,
+  // et rien d'autre — le rend donc sans broncher, et c'est la démonstration que ce qui refuse n'est
+  // pas le sceau du secteur.
+  assert.deepEqual([...(await lireParLeSceauSeul(magasin, nom))], [...ancien]);
 
   // Et pourtant l'ouverture TRANSACTIONNELLE refuse : la région relue ne concorde plus avec
   // l'empreinte que la dernière racine scelle.

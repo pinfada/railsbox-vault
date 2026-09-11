@@ -394,7 +394,7 @@ async function marquerLaCreationAchevee(backend, name, handle) {
  * scelle l'empreinte de la région telle qu'elle est à cet instant, et une écriture hors transaction
  * la périme. L'oubli coûte un REFUS à la première ouverture, jamais un silence.
  */
-async function racineInitialeHorsTransaction(backend, options) {
+async function tenirLaClotureHorsTransaction(backend, options, naissance) {
   let magasin;
   try {
     magasin = await ouvrirGeneration(options);
@@ -402,7 +402,16 @@ async function racineInitialeHorsTransaction(backend, options) {
     await backend.close().catch(() => {});
     throw cause;
   }
-  magasin.close();
+  // Une naissance rend le magasin tout de suite : sa racine INITIALE est écrite, et la datation qui
+  // suit est sa clôture. Une réouverture le TIENT : c'est elle, le chemin 3.
+  if (naissance) {
+    magasin.close();
+    return;
+  }
+  // Le magasin n'est PAS installé : voir `etablirLaGeneration`. Il est tenu pour la clôture, et
+  // c'est `backend.close()` qui le refermera — y compris si la session ne scelle rien, auquel cas
+  // la clôture n'écrit aucune racine.
+  backend.installerClotureHorsTransaction(magasin);
 }
 
 /**
@@ -524,22 +533,31 @@ export async function openOpfsVolume({
 }
 
 /**
- * INSTALLE le magasin de générations, ou — hors transaction — écrit la seule racine initiale d'une
- * naissance.
+ * INSTALLE le magasin de générations, ou — hors transaction — le tient pour CLORE PAR UNE RACINE.
  *
  * Extrait de `openOpfsVolume` parce que c'est une DÉCISION entière : ce qui autorise une ouverture
  * sans racine (#181), et ce que le mode transactionnel fait de cette autorisation. Une naissance
  * s'autorise elle-même ; hors naissance, seul `creation` — posé par la migration, ou par le geste
  * qui date une création — ou l'engagement d'une archive restaurée le peut.
  *
- * ## Hors transaction ET sans naissance : ce que la v4 n'a PAS fermé (#182)
+ * ## Hors transaction : le TROISIÈME chemin, fermé par T2b (#182)
  *
- * Une telle session ne clôt par AUCUNE racine : ses scellements ne sont publiés dans aucun compteur.
- * C'est le dernier morceau de l'aveu du § 4.5, et la tranche T2a ne le ferme pas — le seul chemin
- * concerné, l'ouverture du volume de COQUILLE, ÉCRIT, si bien qu'aucune des deux conduites de
- * l'ADR 0033, décision 4, ne lui est ouverte en l'état. Le POURQUOI et l'ÉCART MESURÉ sont écrits
- * là où ils se relisent : § 4.5 de la spécification, ADR 0035, et
- * `tests/unit/vm-cloture-par-racine.test.mjs` › « CHEMIN 3 ».
+ * La décision 4 de l'ADR 0033 donne deux conduites à une session qui scelle sous une clé à
+ * compteur : clore par une racine, ou être en LECTURE SEULE. Le volume de COQUILLE ne pouvait être
+ * ni l'une ni l'autre — il ÉCRIT un secteur à chaque déverrouillage, et l'E2E `reprise-coquille-
+ * boot-froid` a RÉFUTÉ la lecture seule par exécution. T2a a donc mesuré l'écart plutôt que de le
+ * taire ; T2b livre le geste qui manquait.
+ *
+ * **Le magasin est OUVERT mais pas INSTALLÉ**, et c'est là toute la conception. L'installer
+ * détournerait les écritures vers le journal, ce qu'une session hors transaction ne veut pas : la
+ * coquille écrit son secteur de serrure directement, et c'est ce que son E2E mesure. Le tenir
+ * apporte deux choses, et rien d'autre :
+ *
+ *  1. les COMPTEURS de la racine qui fait autorité sont repris à l'ouverture, au lieu de repartir
+ *    de zéro à chaque session ;
+ *  2. la racine de CLÔTURE les republie à la fermeture — et rescelle au passage l'empreinte de
+ *    région, ce qui referme la seconde moitié de l'écart : une écriture hors transaction périmait
+ *    la fraîcheur de la dernière racine, et un ouvreur transactionnel refusait ensuite le volume.
  */
 async function etablirLaGeneration(
   backend,
@@ -580,6 +598,9 @@ async function etablirLaGeneration(
     }),
   };
   if (transactionnel) return installerGenerationOuFermer(backend, generation);
-  if (saisi.naissance) return racineInitialeHorsTransaction(backend, generation);
-  return undefined;
+  // Une NAISSANCE hors transaction ne clôt PAS par une racine, et ce n'est pas un oubli : c'est le
+  // VERSEMENT (chemin 2), qui écrit le fichier entier puis se fait DATER par `daterLaCreation`. La
+  // datation est sa clôture — elle publie le compte versé et écarte le journal de création —, et une
+  // racine écrite ici lui ferait trouver un journal « en service » qu'elle refuserait de dater.
+  return tenirLaClotureHorsTransaction(backend, generation, saisi.naissance);
 }

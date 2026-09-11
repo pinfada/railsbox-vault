@@ -52,7 +52,7 @@ const RACINES = ["src", "public/vm"];
 const SOUS_SURVEILLANCE = [
   {
     fichier: "src/vm/generation-store.mjs",
-    lignes: 744,
+    lignes: 783,
     motif:
       "#65 l'avait inscrit à 738 lignes en écrivant « la prochaine tranche qui y touchera devra le " +
       "scinder ». #181 y a touché — l'ouverture décide désormais d'écrire une RACINE INITIALE — et " +
@@ -66,11 +66,17 @@ const SOUS_SURVEILLANCE = [
       "appartient au chemin « une racine décide », donc à cette machine à états. #182 y ajoute trois " +
       "lignes et en retire autant ailleurs : le format écrit suit désormais la version du VOLUME — " +
       "une racine v4 publie deux compteurs — et la reprise des compteurs depuis la racine est " +
-      "partie au `Scellement`, qui seul sait combien de clés à compteur il tient.",
+      "partie au `Scellement`, qui seul sait combien de clés à compteur il tient. **T2b y ajoute " +
+      "trente-huit lignes** : `cloturerParRacine` et `marquerRegionSale`, les deux gestes publics " +
+      "que le TROISIÈME chemin hors transaction réclamait (ADR 0033, décision 4). Ils ne peuvent " +
+      "pas vivre ailleurs — ils appellent `#vider` et la garde de fraîcheur, qui sont l'état privé " +
+      "de cette machine —, et ils n'ouvrent aucun second chemin de scellement. Le fichier reste " +
+      "sous le plafond, à dix-sept lignes de lui ; la prochaine tranche qui y touchera devra le " +
+      "scinder, et la candidate est la RÉCUPÉRATION, qui forme déjà un bloc autonome.",
   },
   {
     fichier: "src/vm/opfs-block-backend.mjs",
-    lignes: 739,
+    lignes: 776,
     motif:
       "#181 y ajoute UN geste, `empreinteDuFichier`, et il ne peut pas vivre ailleurs : c'est le " +
       "calcul de l'empreinte du fichier ENTIER, fait ICI précisément pour ne pas exposer du " +
@@ -82,7 +88,11 @@ const SOUS_SURVEILLANCE = [
       "compteur-ci — la datation qui suit doit le recevoir, faute de quoi elle perd la moitié du " +
       "budget de la clé à l'installation. Comme l'empreinte, il ne rend qu'un NOMBRE, jamais des " +
       "octets, et pour la même raison. La datation, elle, est PARTIE : elle vit désormais dans " +
-      "`opfs-datation-de-creation.mjs`, et c'est ce qui garde ce fichier à 61 lignes du plafond.",
+      "`opfs-datation-de-creation.mjs`, et c'est ce qui garde ce fichier sous le plafond. **T2b y " +
+      "ajoute le magasin TENU POUR CLORE** (#182) : un second emplacement, distinct de la " +
+      "génération installée, une méthode pour l'y poser, la clôture par racine dans `close()` et " +
+      "la déclaration de région sale dans l'écriture directe. Les quatre gestes appartiennent au " +
+      "cycle de vie du backend, et les déplacer demanderait de sortir `close()` avec eux.",
   },
 ];
 
