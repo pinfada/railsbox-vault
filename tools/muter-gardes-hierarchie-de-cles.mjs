@@ -25,9 +25,11 @@
 //    serait tiré rendrait l'artefact illisible ; un domaine à usage unique dont le sel serait vide
 //    rendrait la même clé pour tous ses artefacts ;
 //  - **la SÉPARATION des deux compteurs**, sans laquelle les deux budgets redeviennent un seul ;
-//  - **la RÈGLE DE CLÔTURE** : une session qui ne peut pas écrire de racine ne scelle pas, et les
-//    compteurs d'une racine écartée sont REPORTÉS. Les deux moitiés, parce que la seconde a été
-//    trouvée en écrivant l'épreuve de la première ;
+//  - **la RÈGLE DE CLÔTURE**, pour ce que la tranche en tient : le REPORT des compteurs d'une racine
+//    ÉCARTÉE sur celle qui la remplace, et le refus de sceller d'une session qui n'en a pas le
+//    droit. Le troisième chemin hors transaction — le volume de coquille — n'a pas de mutant ici, et
+//    il ne peut pas en avoir : la tranche ne le ferme pas, et `vm-cloture-par-racine.test.mjs`
+//    MESURE l'écart au lieu de garder une règle ;
 //  - **l'ÉCRITURE ANTICIPÉE de la migration**, et le fail-closed qui la borne. Sans le premier, une
 //    coupure entre les sceaux et les charges coûte jusqu'à 512 secteurs ; sans le second, un
 //    secteur déchiré est rescellé au hasard ;
@@ -51,7 +53,6 @@ const IDENTITE = "src/vm/format-chiffre/identite-logique.mjs";
 const FORMAT_JOURNAL = "src/vm/generation-format.mjs";
 const MIGRATION_V4 = "src/vm/migration-v4.mjs";
 const CHAINE = "src/vm/volume-migration.mjs";
-const OUVREUR = "src/vm/opfs-volume-ouverture.mjs";
 const RACINE = "src/vm/opfs-racine-initiale.mjs";
 
 const HIERARCHIE_EPREUVE = "tests/unit/vm-hierarchie-de-cles.test.mjs";
@@ -183,14 +184,6 @@ export const MUTATIONS = Object.freeze([
     fichier: SCELLEMENT,
     avant: "    if (this.#peutSceller) return;",
     apres: "    if (true) return;",
-    epreuves: [CLOTURE],
-  },
-  {
-    nom: "une ouverture hors transaction sans naissance PERD le droit de sceller",
-    garde: "etablirLaGeneration — l'appel à `interdireDeSceller`",
-    fichier: OUVREUR,
-    avant: "  scellement.interdireDeSceller();\n",
-    apres: "",
     epreuves: [CLOTURE],
   },
   {
