@@ -27,7 +27,10 @@ import {
 import { FRAICHEUR_OCTETS } from "../../src/vm/generation-fraicheur.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
-import { FORMAT_VOLUME_V4, identifiantVolumeEnOctets } from "../../src/vm/volume-chiffre-format.mjs";
+import {
+  FORMAT_VOLUME_V4,
+  identifiantVolumeEnOctets,
+} from "../../src/vm/volume-chiffre-format.mjs";
 
 // Format de l'enregistrement de validation d'une génération (#16, ADR 0014 ; #18, ADR 0016).
 //
@@ -303,12 +306,10 @@ test("une racine à UN seul compteur est refusée par un volume v4 : pas de budg
 
   await assert.rejects(
     () =>
-      scellement.ouvrirRacine(
-        { ...entete, scellementsCumulesJournal: null },
-        scelle,
-        [],
-        { tailleVolume: TAILLE_VOLUME, sequenceMinimale: null },
-      ),
+      scellement.ouvrirRacine({ ...entete, scellementsCumulesJournal: null }, scelle, [], {
+        tailleVolume: TAILLE_VOLUME,
+        sequenceMinimale: null,
+      }),
     (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.generationCorrupt),
   );
 });

@@ -65,6 +65,47 @@ export function infoDeReference({ identifiantVolume, identifiantEmplacement, ver
 }
 
 /**
+ * L'INFO d'une clé de DOMAINE, transcrite à la main depuis l'ADR 0033, décision 3 (#182).
+ *
+ * Seconde transcription, exactement au titre que `infoDeReference` porte pour les KEK : elle
+ * n'appelle ni `chainePrefixee` ni `entierEnOctets`, et c'est la seule façon qu'un désaccord
+ * d'encodage se voie — deux appels du même encodeur s'accordent toujours, y compris quand il est
+ * faux.
+ *
+ *     info = LP("railsbox-vault/derivation-de-domaine/v1") ‖ LP(domaine) ‖ LP(identifiantVolume)
+ *          ‖ U32BE(versionDeFormatDuDomaine) ‖ LP("aes-256-gcm")
+ *
+ * @param {{ domaine: string, identifiantVolume: string, versionDeFormat: number }} identite
+ */
+export function infoDeDomaineDeReference({ domaine, identifiantVolume, versionDeFormat }) {
+  return coller([
+    prefixee("railsbox-vault/derivation-de-domaine/v1"),
+    prefixee(domaine),
+    prefixee(identifiantVolume),
+    entier(versionDeFormat, 4),
+    prefixee("aes-256-gcm"),
+  ]);
+}
+
+/**
+ * L'info REÉCRITE SANS ses préfixes de longueur : la mutation qui montre ce que le préfixe achète.
+ *
+ * Elle n'existe que pour être comparée à elle-même sur deux identités distinctes. Deux champs
+ * voisins qui se recollent sans frontière rendent la MÊME suite d'octets pour deux identités
+ * différentes, donc la MÊME clé — et c'est exactement ce que le préfixe empêche.
+ */
+export function infoSansPrefixes({ domaine, identifiantVolume, versionDeFormat }) {
+  const texte = new TextEncoder();
+  return coller([
+    texte.encode("railsbox-vault/derivation-de-domaine/v1"),
+    texte.encode(domaine),
+    texte.encode(identifiantVolume),
+    entier(versionDeFormat, 4),
+    texte.encode("aes-256-gcm"),
+  ]);
+}
+
+/**
  * Les trente-deux octets qu'HKDF-SHA-256 rend. Le produit n'en rend jamais que la `CryptoKey`.
  *
  * @param {{ materiau: Uint8Array, sel: Uint8Array, info: Uint8Array }} appel

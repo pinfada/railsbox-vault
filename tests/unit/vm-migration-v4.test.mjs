@@ -374,7 +374,11 @@ test("un secteur DÉCHIRÉ est refusé, jamais rescellé au hasard : c'est la sa
   // Une déchirure DANS la charge : la moitié du secteur porte autre chose. Aucun des trois états ne
   // l'explique, et le rescéller détruirait ce qu'il porte encore.
   const octets = brut.octets;
-  octets.fill(0xa5, offsetDeCharge(disposition, 2 * SECTOR_SIZE), offsetDeCharge(disposition, 2 * SECTOR_SIZE) + 64);
+  octets.fill(
+    0xa5,
+    offsetDeCharge(disposition, 2 * SECTOR_SIZE),
+    offsetDeCharge(disposition, 2 * SECTOR_SIZE) + 64,
+  );
 
   await assert.rejects(
     () => convertir(brut, journal()),
@@ -417,7 +421,10 @@ test("la conversion d'un fichier d'une autre taille est refusée : la v4 ne reta
 test("l'écriture anticipée du journal porte les SCEAUX v3 de la suite en vol, et rien d'autre", async () => {
   const { fichier, disposition } = await volumeV3();
   const brut = supportBrut(fichier);
-  const sceauxAvant = await brut.read(offsetDeSceau(disposition, 0), SECTEURS_PAR_TOUR * SCEAU_OCTETS);
+  const sceauxAvant = await brut.read(
+    offsetDeSceau(disposition, 0),
+    SECTEURS_PAR_TOUR * SCEAU_OCTETS,
+  );
 
   const vus = [];
   await convertir(brut, {
