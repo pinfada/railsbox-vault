@@ -321,8 +321,11 @@ ne l'évite sans perdre une écriture acquittée.
 - Les vecteurs `tests/vectors/enveloppe-v1.json` et `tests/vectors/archive-v3.json` ne bougent pas
   d'un octet et changent de RÔLE : ils deviennent des vecteurs de MIGRATION et de COMPATIBILITÉ. Les
   vecteurs v2 vivent dans `tests/vectors/enveloppe-v2.json`, et `node tools/verifier-vecteurs.mjs`
-  en refait la chaîne entière depuis le seul texte — 240 vérifications vertes, contre 222 avant
-  cette tranche.
+  en refait la chaîne entière depuis le seul texte — 244 vérifications vertes, contre 222 avant
+  cette tranche. Les quatre dernières viennent de la revue de la PR #187 (constat 8 de la revue de
+  format) : l'ASSIETTE de la somme de contrôle, désormais publiée au § 6.11, est refaite sur les
+  octets FIGÉS de chaque page, avec son témoin négatif — un bit changé dans le sel change la somme.
+  Les fichiers de vecteurs, eux, n'ont pas bougé d'un octet.
 - Les ADR 0020, 0027, 0033 et 0035 reçoivent leur note datée du 11 septembre 2026.
 - La ligne #182 du [registre](../revue-externe/registre.md) passe à `corrigé`, en citant les DEUX
   PR.
