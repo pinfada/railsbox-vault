@@ -609,6 +609,12 @@ une personne était la seule que la campagne ne regardait pas ». Le mutant n° 
 sans changer de forme : il tue désormais par la capture et les E/S acceptées, et non par un
 `VAULT_STORAGE_BUSY` qui n'arrive jamais (constat 2).
 
+**Révision datée du 12/09/2026 (revue de sécurité de la PR #188, HIGH-3).** Les mutants n° 1 et n°
+10 avaient cessé de décrire le source qu'ils prétendaient muter — un ajout de ligne dans `armer`,
+une condition supplémentaire déplacée dans `signaler` — et la campagne rendait 26/28, code de sortie
+1, pendant que cette table continuait d'afficher **28/28** partout TUÉ. Réarmés sur le texte à jour,
+les deux tuent de nouveau ; la campagne rend 28/28, code de sortie 0.
+
 Ce que la campagne ne peut PAS mesurer se dit au même endroit : qu'un `pointerdown` soit livré au
 document de la coquille, qu'une minuterie d'un onglet en arrière-plan atteigne son échéance, qu'un
 `location.reload()` rejoue le cycle, que `close()` libère réellement un handle exclusif. Cela relève

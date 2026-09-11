@@ -54,6 +54,7 @@ export const MUTATIONS = Object.freeze([
     avant:
       "      if (etat !== ETATS_DU_VOLUME.ouvert) {\n" +
       "        desarmer();\n" +
+      "        verrouillageDu = false;\n" +
       "        return false;\n" +
       "      }\n",
     apres: "",
@@ -147,8 +148,11 @@ export const MUTATIONS = Object.freeze([
     nom: "un signal reçu sur une surveillance DÉSARMÉE ne l'arme pas",
     garde: "surveillanceDInactivite.signaler — la condition d'armement",
     fichier: VERROUILLAGE,
-    avant: "      if (minuterie === null) return false;\n",
-    apres: "",
+    avant:
+      "    signaler(nom) {\n" +
+      "      if (minuterie === null) return false;\n" +
+      "      if (!estUnSignalDActivite(nom)) return false;\n",
+    apres: "    signaler(nom) {\n      if (!estUnSignalDActivite(nom)) return false;\n",
     epreuves: [EPREUVE],
   },
   {

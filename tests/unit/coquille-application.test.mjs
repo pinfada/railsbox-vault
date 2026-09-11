@@ -318,10 +318,27 @@ function supportDInstallation({ manifeste = false, volume = false, ecrits = null
   };
 }
 
-/** Une clé de volume factice. Elle est effacée par l'installation, et l'épreuve le vérifie. */
+/**
+ * Une clé de volume factice. Elle est effacée par l'installation, et l'épreuve le vérifie.
+ *
+ * `cleDeVolume` rend une COPIE fraîche à chaque appel — comme le ferait un vrai fournisseur — et
+ * jamais le même tableau deux fois : `installerSiNecessaire` appelle `cleDeVolume` UNE fois dans
+ * `verserLeDisque`, UNE autre dans `daterLaCreationDuVolume`, et chacun l'efface dans son propre
+ * `finally`. Rendre le MÊME tableau aux deux aurait laissé le second effacement masquer l'absence du
+ * premier — c'est exactement ce qu'une mutation qui retire le `finally` de `verserLeDisque` a
+ * révélé : le mutant survivait, la clé étant de toute façon effacée un peu plus tard, par un autre
+ * appelant, sur le même tableau partagé.
+ */
 function cleFeinte() {
-  const octets = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
-  return { octets, cleDeVolume: async () => octets };
+  const rendues = [];
+  return {
+    rendues,
+    cleDeVolume: async () => {
+      const octets = Uint8Array.from({ length: 32 }, (_, index) => index + 1);
+      rendues.push(octets);
+      return octets;
+    },
+  };
 }
 
 test("un manifeste voisin PRÉSENT n'est pas réinstallé : rien n'est ouvert ni versé", async () => {
@@ -374,10 +391,20 @@ test("un volume ABSENT est installé, et le manifeste est inscrit EN DERNIER", a
     `dater:application:${EMPREINTE_FEINTE}`,
     "inscrire:application",
   ]);
-  assert.ok(
-    cle.octets.every((octet) => octet === 0),
-    "la clé de volume ne survit pas à l'ouverture",
+  // DEUX copies sont rendues — une pour `verserLeDisque`, une pour `daterLaCreationDuVolume` — et
+  // chacune doit être effacée par SON PROPRE appelant : la vérifier sur une seule masquerait
+  // l'oubli de l'autre.
+  assert.equal(
+    cle.rendues.length,
+    2,
+    "verserLeDisque et daterLaCreationDuVolume appellent chacun cleDeVolume",
   );
+  for (const [rang, octets] of cle.rendues.entries()) {
+    assert.ok(
+      octets.every((octet) => octet === 0),
+      `la copie ${rang} de la clé de volume ne survit pas à l'ouverture`,
+    );
+  }
 });
 
 test("un versement TRONQUÉ ne produit pas un volume qui se croit complet", async () => {

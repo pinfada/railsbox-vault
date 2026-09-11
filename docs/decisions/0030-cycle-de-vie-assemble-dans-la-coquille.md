@@ -453,7 +453,7 @@ rien n'exécutait — l'installation, la forme du descripteur, le compte rendu p
 | 17  | `lireLeDescripteur` — le contrôle du statut HTTP                            | TUÉ     |
 | 18  | `exigerUneRevisionAdmise` — le refus d'une issue finale                     | TUÉ     |
 | 19  | `exigerUneRevisionAdmise` — le refus d'une révision qui rediffère           | TUÉ     |
-| 20  | `installerSiNecessaire` — le court-circuit sur le manifeste existant        | TUÉ     |
+| 20  | `constaterLInstallation` — le court-circuit sur le manifeste existant       | TUÉ     |
 | 21  | `installerSiNecessaire` — le refus d'écraser un volume anonyme              | TUÉ     |
 | 22  | `installerSiNecessaire` — la confrontation des octets écrits à la taille    | TUÉ     |
 | 23  | `verserLeDisque` — le `finally` qui efface la clé                           | TUÉ     |
@@ -468,6 +468,17 @@ chaînage optionnel (`portee?.crypto?.subtle`) ne lève sur aucune portée amput
 un **accesseur** — et un moteur peut en poser un qui refuse : `navigator.storage` en est un, et un
 navigateur qui bloque le stockage du site peut y jeter `SecurityError`. L'épreuve confronte
 désormais une portée dont un accesseur jette.
+
+**Révision datée du 12/09/2026 (revue de sécurité de la PR #188, HIGH-3).** La campagne avait DÉRIVÉ
+sans que personne ne le voie : #173 avait extrait le court-circuit du n° 20 dans une fonction nommée
+(`constaterLInstallation`) et ajouté un paramètre à l'appel du n° 23, et les DEUX textes mutés ne
+décrivaient plus le source — la campagne rendait 25/27, code de sortie 1, et cette table continuait
+d'afficher **27/27** partout TUÉ. Réarmés, les deux mutants ont d'abord révélé un SECOND défaut,
+réel celui-là : le n° 23 mutait bien le bon texte, mais l'épreuve ne le voyait pas mourir —
+`tests/unit/coquille-application.test.mjs` rendait la MÊME clé de volume factice à `verserLeDisque`
+et à `daterLaCreationDuVolume`, si bien que l'effacement du second masquait l'oubli du premier.
+Corrigé en rendant une copie fraîche à chaque appel, comme le fait déjà le reste de la suite. La
+campagne rend de nouveau 27/27, code de sortie 0.
 
 Une garde a été **retirée** au lieu d'être mutée, et il faut le dire : « une seconde révision est
 refusée » ne peut pas être atteinte, puisque la première révision remplace `differee` par une issue
