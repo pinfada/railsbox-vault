@@ -68,6 +68,38 @@ geste retire), ni un AUTRE volume (`removeOpfsVolume` retire par nom, et `NOM_DU
 en est un seul, fixe). Le retrait ne s'exécute qu'après la revérification décrite ci-dessus, jamais
 sur la seule foi du bouton affiché.
 
+### Le troisième pilier de la signature repose sur la TOPOLOGIE, pas sur le disque seul
+
+La revue de sécurité de la PR #188 (HIGH-2) a mesuré que la troisième condition de la signature
+(`constaterCreationSeule`, qui lit `motifDeServiceEventuel`) juge un journal sur trois champs —
+séquence, génération, nombre d'entrées — et que les TROIS motifs qui autorisent une racine sans
+racine (`creation`, `migration`, `engagement`, `opfs-racine-initiale.mjs`) écrivent la MÊME chose
+sur ces trois champs : une racine de naissance, zéro partout. Le MOTIF lui-même ne vit que dans le
+rapport d'ouverture, jamais sur le support.
+
+Mesuré empiriquement en rejouant la reproduction du relecteur sur le double déterministe (le journal
+et le témoin de séquence d'un volume EN SERVICE effacés, comme le ferait un adversaire qui écrit
+déjà dans l'origine de confiance, puis `poserLaRacineInitialeSurAccesBrut` appelé dessus) : la
+racine `migration` qui en résulte est indiscernable, champ par champ, d'une racine `creation`
+légitime prise juste après la datation — même séquence zéro, même génération zéro, un compteur de
+scellements du même ordre de grandeur, puisque les DEUX comptes sont fournis par l'APPELANT et non
+mesurés depuis un état antérieur que le support garderait. **Aucun compteur ajouté à la signature ne
+peut trancher honnêtement entre les deux : ce serait affirmer depuis le support quelque chose que le
+support ne porte pas.**
+
+Ce qui rend cet état INATTEIGNABLE aujourd'hui n'est donc pas une propriété du disque, c'est une
+propriété de la TOPOLOGIE du produit SERVI : `poserLaRacineInitialeSurAccesBrut` (racine
+`migration`) et la vérification d'engagement (racine `engagement`, `migration-source-chiffree.mjs`)
+ne sont appelés que depuis `public/vm/` — les bancs de la machine virtuelle, jamais depuis
+`public/main.mjs` ni depuis le Worker de confiance (`public/runtime-worker.mjs`) — et `public/vm/`
+est explicitement RETIRÉ de la publication (`tools/publier-arborescences.mjs`, exclusion
+`public/vm/`). C'est CET invariant, et non un calcul sur les octets d'une racine, qui rend la
+signature sûre en pratique ; il est tenu par un cliquet qui suit le graphe d'import depuis les deux
+points d'entrée réellement servis jusqu'à l'absence des deux modules dangereux, avec un témoin qui
+prouve que le parcours mord réellement (`tests/unit/vm-perimetre-du-sans-racine.test.mjs`). Le jour
+où un chemin réellement servi importerait l'un de ces deux modules, ce serait une revue de sécurité
+à ouvrir — pas une ligne de compteur à ajuster ici.
+
 ## Conséquences
 
 - `VAULT_COQUILLE_VOLUME_APPLICATIF_SANS_MANIFESTE` reste inchangé dans son code et son message ; il
