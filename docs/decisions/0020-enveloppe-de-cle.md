@@ -213,6 +213,14 @@ le résultat d'un seul geste réussi. La sortie de cet état est la récupérati
 révocation qui laisserait ses octets derrière elle — la DEK enveloppée d'une clé retirée, encore
 lisible dans la queue de la page — ne serait pas une révocation.
 
+> **Note du 11 septembre 2026 (#159).** `creer` REFUSE désormais sur un fichier `<volume>.cles` déjà
+> présent, quelle que soit la version de ses pages (v1 ou v2) — code `VAULT_ENVELOPPE_PRESENTE`,
+> nouveau, § 10.3 de la spec. Un fichier présent est soit l'enveloppe de CE volume (le recréer
+> détruirait des emplacements sans geste explicite), soit celle d'un AUTRE volume (l'écraser
+> détruirait une enveloppe qui n'est pas la nôtre) : aucune des deux pages n'est touchée. Le retrait
+> explicite existe déjà (Décision 1, décrite plus haut : un volume est retiré avec ses voisins) ;
+> c'est désormais le SEUL chemin vers une création sur un emplacement occupé.
+
 ## Décision 5 — Le déverrouillage est une COUCHE au-dessus de l'ouvreur unique
 
 `src/vm/ouverture-par-enveloppe.mjs` lit le manifeste, en retient l'identifiant de volume, ouvre

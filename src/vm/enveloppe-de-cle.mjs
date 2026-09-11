@@ -46,6 +46,8 @@ import {
   emplacementInconnu,
   enveloppeIllisible,
   enveloppePleine,
+  enveloppePresente,
+  identiteDeclareeIncoherente,
   malforme,
 } from "./enveloppe/enveloppe-errors.mjs";
 import {
@@ -395,6 +397,14 @@ async function composerPage({
  * L'ordre voulu par l'ADR 0020 est que le VOLUME ne soit créé qu'après cette barrière : l'inverse
  * laisserait un volume qu'aucune clé n'ouvre.
  *
+ * ## Un fichier `.cles` déjà PRÉSENT est refusé, avant tout geste (#159)
+ *
+ * Un emplacement occupé n'est jamais écrasé : soit c'est l'enveloppe de CE volume (la recréer
+ * détruirait des emplacements sans geste explicite), soit celle d'un AUTRE (l'écraser détruirait une
+ * enveloppe qui n'est pas la nôtre) — `creer` ne lit rien de ce qui est déjà là pour trancher, donc
+ * refuse avant même de fabriquer l'emplacement. Seul le retrait explicite (ADR 0020 déc. 1,
+ * `removeOpfsVolume` avec ses voisins) ouvre la voie à une création sur un emplacement occupé.
+ *
  * @param {{ support: object, identifiantVolume: string, dek: Uint8Array, kek: Uint8Array,
  *           typeKek?: number, parametres?: Uint8Array, aleas?: object }} appel
  */
@@ -408,6 +418,10 @@ export async function creerEnveloppe({
   identifiantEmplacement,
   aleas,
 }) {
+  const etat = await support.etat();
+  if (etat.present && etat.taille > 0) {
+    throw enveloppePresente({ volume: identifiantVolume });
+  }
   const sources = exigerAleasAdmis(aleas);
   const emplacement = await fabriquerEmplacement({
     identifiantVolume,
@@ -647,6 +661,15 @@ function rangDe(emplacements, identifiantEmplacement, identifiantVolume) {
  * ce soit ne soit déverrouillé. Ce qu'il RÉVÈLE est écrit dans l'ADR 0020 et assumé : le nombre de
  * clés d'un volume et leur nature sont un canal auxiliaire, et le fichier les porte en clair parce
  * qu'un dérivateur doit pouvoir lire ses paramètres avant de dériver quoi que ce soit.
+ *
+ * ## L'identifiant est confronté AVANT de retenir la plus récente (#159)
+ *
+ * Même règle que `ouvrirRacine` (ADR 0020, déc. 3), au même endroit de la lecture : une page dont
+ * l'identifiant déclaré diffère n'est PAS candidate, quelle que soit sa version — sinon un fichier
+ * portant la page d'un AUTRE volume plus récente rendrait ses données à l'inventaire. Si aucune page
+ * valide ne nomme ce volume, le refus est `VAULT_ENVELOPPE_IDENTITE`, jamais « aucune enveloppe » :
+ * dire « absent » là où il y a l'enveloppe d'un autre volume serait un mensonge. Sans clé, la
+ * confrontation ne porte que sur le champ déclaré en clair — voir `identiteDeclareeIncoherente`.
  */
 export async function inventorierEnveloppe({ support, identifiantVolume }) {
   const octets = await lireFichier(support, { volume: identifiantVolume });
@@ -658,7 +681,9 @@ export async function inventorierEnveloppe({ support, identifiantVolume }) {
     if (lue.valide) pages.push(lue.page);
   }
   if (pages.length === 0) throw enveloppeIllisible({ volume: identifiantVolume });
-  const page = pages.reduce((a, b) => (b.version > a.version ? b : a));
+  const memesVolumes = pages.filter((page) => page.identifiantVolume === identifiantVolume);
+  if (memesVolumes.length === 0) throw identiteDeclareeIncoherente({ volume: identifiantVolume });
+  const page = memesVolumes.reduce((a, b) => (b.version > a.version ? b : a));
   return Object.freeze({
     version: page.version,
     identifiantVolume: page.identifiantVolume,

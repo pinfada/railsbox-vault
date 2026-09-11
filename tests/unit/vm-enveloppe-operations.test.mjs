@@ -175,6 +175,62 @@ test("créer puis ouvrir : la clé de volume revient telle quelle, sous la clé 
   assert.equal(ouverte.version, 1);
 });
 
+test("créer sur un fichier .cles déjà présent est refusé, aucune page n'est touchée (#159)", async () => {
+  const existant = await enveloppeNeuve();
+  const avant = Uint8Array.from(existant.support.contenu);
+
+  await assert.rejects(
+    creerEnveloppe({
+      support: existant.support,
+      identifiantVolume: VOLUME_A,
+      dek: suiteDOctets(0x70, 32),
+      kek: KEK_DEUX,
+    }),
+    refusDe(ENVELOPPE_ERROR_CODES.presente),
+  );
+  assert.deepEqual(existant.support.contenu, avant, "aucune des deux pages n'est touchée");
+
+  // Témoin positif : le MÊME geste, sur un support neuf, aboutit.
+  const neuf = supportDouble();
+  await assert.doesNotReject(
+    creerEnveloppe({ support: neuf, identifiantVolume: VOLUME_A, dek: DEK_A, kek: KEK_UN }),
+  );
+});
+
+test("créer refuse un fichier présent même ILLISIBLE : la présence seule décide, rien n'est lu (#159)", async () => {
+  // `creer` ne décode aucune page pour juger de la présence — sans quoi un fichier abîmé, qui ne se
+  // relit pas, redeviendrait un emplacement qu'on peut écraser. Des octets quelconques, de la
+  // bonne taille, suffisent à occuper l'emplacement.
+  const octetsQuelconques = suiteDOctets(0xff, TAILLE_FICHIER_ENVELOPPE);
+  const support = supportDouble({ octets: octetsQuelconques });
+
+  await assert.rejects(
+    creerEnveloppe({ support, identifiantVolume: VOLUME_A, dek: DEK_A, kek: KEK_UN }),
+    refusDe(ENVELOPPE_ERROR_CODES.presente),
+  );
+  assert.deepEqual(support.contenu, octetsQuelconques);
+});
+
+test("créer refuse même un fichier présent d'un AUTRE volume : il ne le lit pas pour le savoir (#159)", async () => {
+  const etranger = await enveloppeNeuve({
+    identifiantVolume: VOLUME_B,
+    dek: suiteDOctets(0x72, 32),
+    kek: KEK_TROIS,
+  });
+  const avant = Uint8Array.from(etranger.support.contenu);
+
+  await assert.rejects(
+    creerEnveloppe({
+      support: etranger.support,
+      identifiantVolume: VOLUME_A,
+      dek: suiteDOctets(0x73, 32),
+      kek: KEK_UN,
+    }),
+    refusDe(ENVELOPPE_ERROR_CODES.presente),
+  );
+  assert.deepEqual(etranger.support.contenu, avant);
+});
+
 test("un fichier neuf occupe exactement deux pages, et sa taille ne change plus jamais", async () => {
   const { support, kek } = await enveloppeADeux();
   assert.equal(support.contenu.byteLength, TAILLE_FICHIER_ENVELOPPE);
@@ -437,6 +493,47 @@ test("fichier d'un AUTRE volume présenté sous cet identifiant : identité, et 
   assert.deepEqual(
     (await ouvrirEnveloppe({ support, identifiantVolume: VOLUME_B, kek: KEK_TROIS })).dek,
     suiteDOctets(0x60, 32),
+  );
+});
+
+test("inventaire : deux pages de deux volumes dans un fichier, celui du second ne rend pas le premier (#159)", async () => {
+  // La page de A est en version 2 (PLUS RÉCENTE que celle de B) : c'est exactement le cas que
+  // l'ancien code confondait, en retenant « la plus récente » avant de confronter l'identité.
+  const volA = await enveloppeADeux();
+  const volB = await enveloppeNeuve({
+    identifiantVolume: VOLUME_B,
+    dek: suiteDOctets(0x61, 32),
+    kek: KEK_TROIS,
+  });
+  const pageA = pageAutoritaire(volA.support.contenu).octets;
+  const pageB = pageAutoritaire(volB.support.contenu).octets;
+  const melange = supportDouble({ octets: fichierAvec(pageA, pageB) });
+
+  const inventaireB = await inventorierEnveloppe({ support: melange, identifiantVolume: VOLUME_B });
+  assert.equal(inventaireB.identifiantVolume, VOLUME_B);
+  assert.equal(inventaireB.version, 1);
+
+  const inventaireA = await inventorierEnveloppe({ support: melange, identifiantVolume: VOLUME_A });
+  assert.equal(inventaireA.identifiantVolume, VOLUME_A);
+  assert.equal(inventaireA.version, 2);
+});
+
+test("inventaire : toutes les pages valides nomment un autre volume, refus d'identité, jamais « absente » (#159)", async () => {
+  const etranger = await enveloppeNeuve({
+    identifiantVolume: VOLUME_B,
+    dek: suiteDOctets(0x62, 32),
+    kek: KEK_TROIS,
+  });
+  const support = supportDouble({ octets: etranger.support.contenu });
+
+  await assert.rejects(
+    inventorierEnveloppe({ support, identifiantVolume: VOLUME_A }),
+    refusDe(ENVELOPPE_ERROR_CODES.identite),
+  );
+  // Témoin positif : sous SON identifiant, le même fichier rend son inventaire.
+  assert.equal(
+    (await inventorierEnveloppe({ support, identifiantVolume: VOLUME_B })).identifiantVolume,
+    VOLUME_B,
   );
 });
 
