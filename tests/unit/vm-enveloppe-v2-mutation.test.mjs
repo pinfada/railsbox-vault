@@ -45,19 +45,21 @@ test("AUCUN mutant ne survit : chaque garde retirée fait rougir sa preuve", () 
   );
 });
 
-test("la table couvre les HUIT endroits où la tranche T2b se joue", () => {
+test("la table couvre les NEUF endroits où la tranche T2b se joue", () => {
   // Un compte de mutants ne dit rien de leur RÉPARTITION : quatorze mutations sur la même ligne
   // feraient un score parfait et ne mesureraient qu'une garde. Ce contrôle relit les FICHIERS visés,
   // et ils se lisent comme le chemin de la tranche : ce qui TIRE le sel et migre la page, ce qui
   // juge quelle page fait autorité, ce qui décode une page, ce qui CLÔT par une racine, ce qui
-  // écrit hors transaction, ce qui décide de tenir le magasin, ce qui exporte un v3 — et le
-  // CLIQUET, seul « source » de cette table qui soit lui-même une épreuve.
+  // écrit hors transaction, ce qui décide de tenir le magasin, ce qui exporte un v3, ce qui
+  // RÉSERVE dans la racine la place du témoin qui la suit — et le CLIQUET, seul « source » de cette
+  // table qui soit lui-même une épreuve.
   const fichiers = [...new Set(MUTATIONS.map((mutation) => mutation.fichier))].sort();
   assert.deepEqual(fichiers, [
     "src/vm/enveloppe-de-cle.mjs",
     "src/vm/enveloppe/etat-de-lenveloppe.mjs",
     "src/vm/enveloppe/fichier-enveloppe.mjs",
     "src/vm/export-du-fichier.mjs",
+    "src/vm/generation-racine.mjs",
     "src/vm/generation-store.mjs",
     "src/vm/opfs-block-backend.mjs",
     "src/vm/opfs-volume-ouverture.mjs",

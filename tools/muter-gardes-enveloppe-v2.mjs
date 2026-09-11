@@ -44,6 +44,7 @@ const MAGASIN = "src/vm/generation-store.mjs";
 const BACKEND = "src/vm/opfs-block-backend.mjs";
 const OUVERTURE = "src/vm/opfs-volume-ouverture.mjs";
 const EXPORT = "src/vm/export-du-fichier.mjs";
+const RACINE = "src/vm/generation-racine.mjs";
 const CLIQUET = "tests/unit/vm-cliquet-anti-dek.test.mjs";
 
 /** Le saut de ligne, nommé : une table de mutation porte des fragments de source multilignes. */
@@ -54,6 +55,7 @@ const VECTEURS_V2 = "tests/unit/vm-enveloppe-v2-vecteurs.test.mjs";
 const CLOTURE = "tests/unit/vm-cloture-par-racine.test.mjs";
 const EXPORT_EPREUVE = "tests/unit/vm-export-du-fichier.test.mjs";
 const BUDGET = "tests/unit/vm-budget-par-domaine.test.mjs";
+const SOURCE_V3_EPREUVE = "tests/unit/vm-migration-source-v3.test.mjs";
 
 /**
  * Les gardes de T2b, et la façon exacte de les retirer.
@@ -169,6 +171,14 @@ export const MUTATIONS = Object.freeze([
     avant: "  return tenirLaClotureHorsTransaction(backend, generation, clotureParDatation);",
     apres: "  return undefined;",
     epreuves: [CLOTURE],
+  },
+  {
+    nom: "TOUT ce que l'export d'un v3 scelle est COMPTÉ dans la racine v3",
+    garde: "EcrivainDeRacine.ecrire — la RÉSERVATION du témoin dans le compte publié",
+    fichier: RACINE,
+    avant: "      { sequencePrecedente, temoinSuit: this.#garde !== null },",
+    apres: "      { sequencePrecedente, temoinSuit: false },",
+    epreuves: [SOURCE_V3_EPREUVE],
   },
   {
     nom: "l'export d'un v3 REFUSE un fichier dont l'en-tête n'est pas un en-tête v3",
