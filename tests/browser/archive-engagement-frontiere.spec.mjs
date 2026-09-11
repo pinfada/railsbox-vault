@@ -101,7 +101,10 @@ test("le mélange A/C est REFUSÉ sur l'OPFS réel, ou le moteur refuse typé", 
     true,
   );
 
-  // 3. LA CONSOMMATION. Le voisin est un fichier de l'OPFS : sa consommation en est une suppression.
+  // 3. LA CONSOMMATION. Le voisin est VIDÉ — zéro octet —, et non supprimé : un Worker dédié n'a pas
+  //    de handle de répertoire, donc pas de suppression d'entrée, et la troncature est de toute
+  //    façon le geste sûr sous coupure. Un fichier de zéro octet EST absent pour tout ce qui le lit,
+  //    et c'est exactement ce que cette mesure constate sur l'OPFS RÉEL (§ 6.9 bis).
   expect(report.voisinApresOuverture, "l'engagement est CONSOMMÉ une fois").toBe(0);
   expect(report.ouvertureNormale, "la seconde ouverture passe par le chemin normal").toBe(true);
 
