@@ -38,7 +38,7 @@ import { fileURLToPath } from "node:url";
 
 import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { MANIFEST_FORMAT_VERSION } from "../../src/vm/volume-manifest.mjs";
-import { tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
+import { FORMAT_VOLUME_V3, tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
 
 import { PLAFOND_CHARGE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { E2E_ORIGIN_A } from "../../playwright.e2e.config.mjs";
@@ -234,6 +234,42 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   await session.page.close();
   expect(sauvegarde.digest).toBe(avantMigration.digest);
 
+  // 4 bis. LE PALIER v3, ET IL PORTE SON JOURNAL DE GÉNÉRATION.
+  //
+  //    C'est le trou que la revue de format de la PR #186 a trouvé (constat 1), et il était
+  //    CRITIQUE : ce scénario traversait `v1 → v2 → v3 → v4` en UNE migration, si bien que son
+  //    palier v3 était intermédiaire et n'avait jamais de voisin `.gen`. Or depuis #181 tout v3
+  //    légitime en porte un — la migration v2 → v3 écrit une RACINE INITIALE —, et la conversion
+  //    v3 → v4 lui appliquait le lecteur du journal de FORMAT 1. Un v3 réel n'était donc ni
+  //    ouvrable — le § 6.2 le refuse et renvoie à la migration — ni migrable.
+  //
+  //    La chaîne est donc coupée ICI, à son palier chiffré, et non affaiblie : les trois pas et les
+  //    deux destructifs sont toujours joués, mais en deux temps, et le second part d'un v3 RÉEL
+  //    posé sur un vrai OPFS, avec son journal.
+  session = await nouvellePage();
+  const versV3 = await courir(session.page, {
+    phase: "migrate",
+    volume: VOLUME,
+    manifest: descripteurCourant,
+    backupArchive: SAUVEGARDE,
+    toVersion: FORMAT_VOLUME_V3,
+  });
+  const auPalierV3 = await courir(session.page, { phase: "inspect-volume", volume: VOLUME });
+  await session.page.close();
+  expect(versV3.ok, `arrêt au palier v3 en échec : ${versV3.error?.message ?? ""}`).toBe(true);
+  expect(versV3.toVersion, "la chaîne s'arrête au palier chiffré").toBe(FORMAT_VOLUME_V3);
+  expect(versV3.steps.length, "deux pas jusqu'à v3 : v1 → v2, puis v2 → v3").toBe(2);
+  expect(
+    versV3.steps.filter((etape) => etape.destructive).length,
+    "un seul des deux réécrit le volume",
+  ).toBe(1);
+  expect(
+    auPalierV3.generationJournalPresent,
+    "un v3 LÉGITIME porte une racine, donc un voisin `.gen` (#181) — c'est l'état que la migration refusait",
+  ).toBe(true);
+  expect(auPalierV3.manifestPresent, "le volume est identifié en v3").toBe(true);
+  expect(auPalierV3.migrationJournalPresent, "le journal de reprise est retiré").toBe(false);
+
   // 5. MIGRATION INTERROMPUE, juste après la révocation du manifeste. C'est l'état qu'un onglet
   //    fermé, un quota atteint ou un support perdu laisserait derrière lui.
   session = await nouvellePage();
@@ -311,19 +347,20 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   expect(reprise.ok, `reprise en échec : ${reprise.error?.message ?? ""}`).toBe(true);
   expect(reprise.migrated).toBe(true);
   expect(reprise.resumed, "la reprise repart du journal, pas de zéro").toBe(true);
-  expect(reprise.fromVersion).toBe(1);
-  expect(reprise.toVersion).toBe(MANIFEST_FORMAT_VERSION);
-  expect(reprise.steps.length, "un PAS à la fois : v1 → v2, v2 → v3, puis v3 → v4").toBe(
-    MANIFEST_FORMAT_VERSION - 1,
+  expect(reprise.fromVersion, "la reprise part du palier v3, avec son journal de génération").toBe(
+    FORMAT_VOLUME_V3,
   );
-  // **La chaîne compte DEUX pas destructifs depuis #182**, et c'est ce que ce scénario éprouve de
-  // bout en bout : v2 → v3 déplace la charge et la scelle sous la DEK, v3 → v4 rescelle chaque
-  // secteur sous une clé DÉRIVÉE. La coupure du point 6 tombe dans l'un des deux ; la reprise
-  // traverse les deux, et le clair doit survivre à la traversée entière.
+  expect(reprise.toVersion).toBe(MANIFEST_FORMAT_VERSION);
+  expect(reprise.steps.length, "un PAS à la fois : il reste v3 → v4").toBe(1);
+  // **La chaîne compte DEUX pas destructifs depuis #182**, et ce scénario les joue tous les deux :
+  // v2 → v3 au point 4 bis — il déplace la charge et la scelle sous la DEK —, v3 → v4 ici, qui
+  // rescelle chaque secteur sous une clé DÉRIVÉE. Les couper en deux temps n'affaiblit rien et
+  // ajoute ce qui manquait : le second part d'un v3 RÉEL, avec son voisin `.gen`. La coupure des
+  // points 5 et 6 bis tombe dans ce second pas, et le clair doit survivre à la traversée entière.
   expect(
     reprise.steps.filter((etape) => etape.destructive).length,
-    "deux pas RÉÉCRIVENT le volume, et chacun exige la sauvegarde vérifiée",
-  ).toBe(2);
+    "le pas v3 → v4 RÉÉCRIT le volume, et il exige la sauvegarde vérifiée",
+  ).toBe(1);
   expect(reprise.evidence.kind, "la preuve retenue est la sauvegarde vérifiée").toBe(
     "sauvegarde-verifiee",
   );

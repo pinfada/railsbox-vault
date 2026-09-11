@@ -491,6 +491,46 @@ async function poserLEnTeteV4({ brut, tailleLogique, identifiantVolume }) {
 }
 
 /**
+ * SONDE un secteur sous la clé v4, avant de déclarer le fichier converti (#182, revue de sécurité de
+ * la PR #186, constat 6).
+ *
+ * ## Ce que la revue a trouvé, et ce qu'elle n'a PAS trouvé
+ *
+ * Le § 9.2 promet d'un support hostile qu'il obtienne « une DESTRUCTION, jamais une lecture ». La
+ * promesse TIENT — le relecteur n'a obtenu aucun clair, et aucun octet chiffré n'est effacé. Mais la
+ * destruction était SILENCIEUSE : une reprise dont le journal avait été substitué se terminait sur
+ * un compte rendu de SUCCÈS, et le volume ne se relisait plus (`VAULT_STORAGE_SCEAU_REFUSE`).
+ *
+ * La cause est que `depuisRang` décide, **à partir d'un journal que le § 9.2 déclare non
+ * authentifié**, quels secteurs ne seront plus jamais regardés. `recouperLIdentifiant` recoupe
+ * l'identifiant, et rien d'autre : il accepte indifféremment un en-tête v3 ou v4, et ne demande
+ * jamais au support si la charge est celle que le journal raconte.
+ *
+ * ## Le prix, et il est mesuré
+ *
+ * UNE ouverture GCM sur 512 octets, une fois par conversion. Pour un volume de 512 Mio la conversion
+ * en fait déjà 2^20 : la sonde en ajoute une sur un million, c'est-à-dire un coût qu'aucune mesure
+ * ne distingue du bruit. Elle transforme en revanche une destruction muette en
+ * `VAULT_MIGRATION_CONVERSION_INCOHERENTE`, que la chaîne sait déjà dire, et elle le fait AVANT le
+ * seul geste qui reste — donc sans qu'un octet de plus soit écrit.
+ *
+ * Elle n'attrape pas TOUT, et il faut le dire : un journal forgé qui ferait sauter une suite du
+ * MILIEU laisse le secteur 0 convertible. Ce qu'elle ferme est le cas où la conversion n'a rien
+ * converti du tout — celui que le relecteur a reproduit — et la plupart des reprises en avance.
+ */
+async function sonderUnSecteurV4({ brut, disposition, v4 }) {
+  const sceau = decoderSceau(await brut.read(offsetDeSceau(disposition, 0), SCEAU_OCTETS));
+  const chiffre = await brut.read(offsetDeCharge(disposition, 0), SECTOR_SIZE);
+  const clair = await souvreSous({ scellement: v4, adresse: 0, sceau, chiffre });
+  if (clair !== null) return;
+  throw new MigrationError(
+    MIGRATION_ERROR_CODES.conversionIncoherente,
+    `Conversion refusée avant de poser l'en-tête v${FORMAT_VOLUME_V4} : le premier secteur ne s'ouvre pas sous la clé v${FORMAT_VOLUME_V4}. Le journal de reprise a déclaré converties des suites qui ne le sont pas — il n'est pas authentifié, et le § 9.2 le dit. Déclarer ce fichier v${FORMAT_VOLUME_V4} le rendrait illisible SANS le dire ; aucun octet de plus n'est écrit, et le remède est la sauvegarde que la chaîne exige et vérifie avant de convertir.`,
+    { adresse: 0 },
+  );
+}
+
+/**
  * Convertit un volume v3 en volume v4, sur place.
  *
  * @param {{ brut: object, scellementV3: import("./scellement.mjs").Scellement,
@@ -541,6 +581,10 @@ export async function convertirEnV4({
     tampon: decoderTampon(tampon, depuisRang),
     marquerEtape,
   });
+
+  // La SONDE avant le dernier geste : ce que le journal RACONTE est confronté à ce que le support
+  // PORTE, une fois, sous la clé d'arrivée.
+  await sonderUnSecteurV4({ brut, disposition, v4: scellementV4 });
 
   await marquerEtape({ etape: ETAPES_V4.enTete, position: secteursTotal, tampon: null });
   await poserLEnTeteV4({ brut, tailleLogique, identifiantVolume });

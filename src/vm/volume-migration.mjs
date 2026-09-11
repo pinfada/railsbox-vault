@@ -50,7 +50,10 @@ import {
   retenirPreuve,
 } from "./migration-backup-proof.mjs";
 import { MIGRATION_ERROR_CODES, MigrationError } from "./migration-errors.mjs";
-import { ecrituresARejouerV1 } from "./generation-v1-rejeu.mjs";
+import {
+  solderLaSourceChiffree,
+  solderLeJournalDeGeneration,
+} from "./migration-source-chiffree.mjs";
 import { tailleDeFichier } from "./volume-chiffre-format.mjs";
 import { journalMalforme, parseJournal, serialiserJournal } from "./migration-journal.mjs";
 import { MANIFEST_ERROR_CODES, ManifestError } from "./manifest-errors.mjs";
@@ -224,75 +227,6 @@ function assertGeometrieDuSupport(source, support, { cible, reprise }) {
       supportSize: support.size ?? null,
     },
   );
-}
-
-/**
- * REPORTE dans le volume la dernière génération validée du journal SOURCE, puis ÉCARTE ce journal.
- *
- * ## Pourquoi ce geste existe, et pourquoi il est ici
- *
- * Depuis #16 le fichier du volume ne porte pas tout son état : une génération VALIDÉE vit dans le
- * voisin `<volume>.gen` jusqu'à ce qu'une ouverture la reporte. Une migration qui l'ignore fait deux
- * dégâts, tous deux nommés par la revue de #110 : elle PERD une écriture acquittée, et elle laisse
- * derrière elle un journal d'un format que le volume migré ne sait plus lire — si bien que le volume
- * tout juste migré ne s'ouvre plus, sous un code qui envoie restaurer une sauvegarde alors que les
- * données sont intactes.
- *
- * ## L'ordre, qui est le contrat
- *
- * Le report ÉCRIT dans le volume : il vient donc après la révocation du manifeste (geste 7), comme
- * toute mutation. Il vient avant la conversion, et il le faut : le report vise des adresses du
- * volume V2, que la conversion déplace. Le journal est écarté ensuite, et une coupure entre les deux
- * est sans conséquence — reporter deux fois les mêmes octets aux mêmes adresses ne change rien.
- *
- * ## Ce qui protège de reporter APRÈS la conversion
- *
- * Le REPORT ne s'exécute que si le fichier est encore à sa taille SOURCE. Une reprise qui trouve un
- * fichier déjà agrandi sait que la conversion a commencé, donc que le journal a déjà été soldé.
- *
- * ## Le RETRAIT, lui, est INCONDITIONNEL (#65)
- *
- * La première version sortait avant de le demander dès qu'il n'y avait rien à reporter. C'était
- * raisonner sur le seul `<volume>.gen`, alors que le même geste emporte le témoin de séquence (#19)
- * et l'instantané de reprise (#65, ADR 0024, décision 8) — deux voisins qui, eux, existent
- * précisément quand le journal est absent, c'est-à-dire après une fermeture PROPRE. Un instantané
- * survivait donc à la migration qui vient de récrire chaque secteur sous un autre format.
- *
- * Sa liaison l'aurait fait refuser, puisqu'elle porte la version de format du volume. Mais s'en
- * remettre à cela revient à laisser sur le support la RAM invitée d'une session d'avant la
- * migration en pariant que personne ne saura la lire. Le geste est idempotent : le demander pour
- * rien coûte un appel, ne pas le demander laisse un fichier qui n'aurait pas dû survivre.
- */
-async function solderLeJournalDeGeneration({ target, backend, source }) {
-  if (typeof target.removeGenerationJournal !== "function") return null;
-  // Le REPORT d'abord : il peut refuser (journal altéré), et ce refus doit remonter AVANT tout
-  // retrait — écarter les voisins d'une migration qu'on s'apprête à interrompre les perdrait.
-  const reporte = await reporterLeJournalDeGeneration({ target, backend, source });
-  await target.removeGenerationJournal();
-  return reporte;
-}
-
-/** Rejoue dans le volume la dernière génération validée du journal SOURCE, s'il y en a une. */
-async function reporterLeJournalDeGeneration({ target, backend, source }) {
-  if (typeof target.readGenerationJournal !== "function") return null;
-  const tailleSource = tailleDeFichier({
-    formatVersion: source.formatVersion,
-    tailleLogique: source.geometry.volumeSize,
-  });
-  if (backend.size() !== tailleSource) return null;
-
-  const octets = await target.readGenerationJournal();
-  if (octets === null || octets === undefined) return null;
-
-  const { generation, ecritures } = ecrituresARejouerV1({
-    octets,
-    tailleVolume: source.geometry.volumeSize,
-  });
-  for (const ecriture of ecritures) await backend.write(ecriture.offset, ecriture.octets);
-  // La barrière AVANT le retrait : écarter un journal dont le report n'est pas durable perdrait
-  // exactement ce qu'on cherchait à sauver.
-  if (ecritures.length > 0) await backend.flush();
-  return Object.freeze({ generation, ecritures: ecritures.length });
 }
 
 /**
@@ -566,6 +500,9 @@ async function executerMigration(plan) {
   try {
     // 5. VÉRIFIER LA SAUVEGARDE, s'il en est fourni une.
     const evidence = await retenirPreuve({ ...plan, backend });
+
+    // 5 bis. SOLDER LA SOURCE CHIFFRÉE — avant de journaliser, donc avant tout geste destructif.
+    await solderLaSourceChiffree({ target, backend, source, cle, reprise: journal !== null });
 
     // 6 à 9. JOURNALISER, RÉVOQUER, APPLIQUER, INSCRIRE puis RELIRE.
     const manifest = await muter({
