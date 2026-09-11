@@ -77,6 +77,18 @@ export const TYPES_PRIVILEGIES = Object.freeze({
   application: "vault.coquille.demarrer-application",
   applicationReponse: "vault.coquille.demarrer-application-reponse",
   /**
+   * REPREND une installation interrompue (#173, ADR 0037) : retire le volume applicatif orphelin
+   * et ses voisins, puis réinstalle par le chemin ordinaire de `application`.
+   *
+   * Un geste RARE et DESTRUCTEUR, jamais automatique : la page ne l'émet qu'après un clic explicite
+   * sur le bouton que la SIGNATURE d'une installation interrompue fait apparaître
+   * (`signatureDInstallationInterrompue`). Le Worker REVÉRIFIE cette signature lui-même avant
+   * d'agir — un clic n'est pas une preuve que rien n'a changé depuis que le bouton a été montré — et
+   * refuse sans rien retirer si elle ne tient plus.
+   */
+  reprendreInstallation: "vault.coquille.reprendre-installation",
+  reprendreInstallationReponse: "vault.coquille.reprendre-installation-reponse",
+  /**
    * FERMETURE PROPRE (étape 7) : arrêter la VM, capturer l'instantané, `close()` le volume.
    *
    * Le `terminate()` du Worker vient APRÈS, et il est le fait de la page : `close()` attend les E/S
