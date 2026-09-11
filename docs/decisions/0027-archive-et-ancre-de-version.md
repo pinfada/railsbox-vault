@@ -510,3 +510,30 @@ Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi
    d'un dispositif à deux compteurs, et la note de l'ADR 0025 s'applique ;
 5. une version du produit est publiée, auquel cas la lecture d'une archive v1 cesse d'être une
    commodité et devient une conduite de compatibilité à écrire.
+
+## Note datée du 11 septembre 2026 — la page embarquée passe sous le domaine `recuperation`
+
+La racine rescellée à l'export — décision 2 de cet ADR — n'est plus scellée sous la clé de volume :
+elle l'est sous une clé à USAGE UNIQUE du domaine `recuperation`, dérivée par HKDF avec un sel tiré
+et écrit en clair dans la page (tranche T2b de
+[#182](https://github.com/pinfada/railsbox-vault/issues/182)).
+
+**Ce que la séparation achète, et qui est propre à cette page :** une archive VOYAGE. La clé qui
+scelle sa page ne scelle rien qui soit resté sur l'appareil — pas même la serrure locale, qui relève
+du domaine `enveloppe`. Un adversaire qui obtiendrait la clé de la page embarquée n'obtiendrait pas
+l'autorité sur `<volume>.cles`.
+
+**Ce qui ne change pas :** la page ne porte toujours QUE des emplacements de type 4, elle porte
+toujours la version COURANTE de l'enveloppe — c'est elle que l'ancre de la décision 3 compare à la
+feuille de récupération —, et la restauration la pose toujours en page 0 avec une page 1 à zéro.
+
+**Ce qui s'ajoute à la RESTAURATION :** la page posée déclare son domaine dans son en-tête, sans
+quoi le premier déverrouillage du volume restauré dériverait la clé du mauvais domaine. La première
+MUTATION de cette enveloppe écrira une page du domaine `enveloppe`, sans geste particulier.
+
+**Compatibilité :** la version d'ARCHIVE reste **3**. Une archive écrite avant T2b emporte une page
+v1 ; elle se restaure, s'ouvre par son code de récupération, et sa page est migrée en v2 à la
+première ouverture réussie. C'est mesuré par `tests/unit/vm-archive-vecteurs.test.mjs` sur les
+octets FIGÉS de `tests/vectors/archive-v3.json`, qui n'ont pas bougé.
+
+Voir l'[ADR 0036](0036-page-d-enveloppe-v2-et-budgets-exhaustifs.md).

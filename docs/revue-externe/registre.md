@@ -23,27 +23,44 @@ sa demande. Branche `main`, empreinte relue `aa6be826ad0e14162a9e06e5`.
 [PR #184](https://github.com/pinfada/railsbox-vault/pull/184) : l'archive passe en version 3 et
 porte un engagement scellé sous une clé du domaine `archive` ; aucun volume légitime n'est sans
 racine. La correction n'ouvre AUCUN gate : le HIGH
-[#182](https://github.com/pinfada/railsbox-vault/issues/182) reste ouvert, et le gate « données
-sensibles » reste FERMÉ tant qu'il l'est.
+[#182](https://github.com/pinfada/railsbox-vault/issues/182) était alors ouvert — il est corrigé le
+11 septembre 2026 —, et le gate « données sensibles » reste FERMÉ pour les autres raisons que
+`SECURITY.md` énumère.
 
-**Le HIGH est corrigé À MOITIÉ le 11 septembre 2026**, par la tranche **T2a** : le format de volume
-passe en v4, la DEK devient une clé maîtresse que WebCrypto refuse de passer à AES-GCM, et les
-domaines `volume`, `journal` et `instantane` scellent chacun sous la sienne. Le compteur d'une clé
-compte toutes les invocations sous elle **sur les chemins que la v4 ferme** — la création,
-l'installation initiale et les sessions transactionnelles, mesurés à l'ÉGALITÉ par le nombre
-d'invocations réelles de `crypto.subtle.encrypt`, et non par une inégalité.
+**Le HIGH est corrigé le 11 septembre 2026**, en DEUX tranches.
 
-**La ligne reste OUVERTE**, et il faut dire ce qui reste plutôt que d'en donner la moitié :
+**T2a** a livré le format de volume v4 : la DEK devient une clé maîtresse que WebCrypto refuse de
+passer à AES-GCM, et les domaines `volume`, `journal` et `instantane` scellent chacun sous la
+sienne.
 
-- la page d'enveloppe et la section de récupération scellent encore sous la DEK, et le cliquet qui
-  refusera qu'un scellement la reçoive n'est pas posé — celui de T2a est un INVENTAIRE, qui relève
-  la porte nommée et toute importation directe d'une clé AES-GCM, sur `src/` et `public/` ;
-- **le volume de COQUILLE scelle un secteur par déverrouillage hors clôture, non compté, jusqu'à
-  T2b.** Aucune des deux conduites de l'ADR 0033, décision 4, ne lui est ouverte en l'état : la
-  lecture seule casse le déverrouillage, et écrire une racine de clôture sur un volume déjà daté
-  demande un geste que `GenerationStore` n'expose pas. L'écart est MESURÉ, et il n'a pas de borne.
+**T2b** livre les trois points qui restaient, et la ligne passe à « corrigé » :
 
-La tranche **T2b** ferme les trois, et elle seule fera passer cette ligne à « corrigé ».
+- **les DEUX derniers domaines.** La page d'enveloppe passe en **version 2** : sa racine est scellée
+  sous une clé à usage unique du domaine `enveloppe`, avec un sel de trente-deux octets tiré et
+  écrit en clair ; la page qu'une archive emporte suit le même régime sous le domaine
+  `recuperation`. Une page v1 est rescellée à la première ouverture réussie, sans qu'aucune coupure
+  ne rende le volume inouvrable — quatre sinistres, quatre rangs, quatre clés de déverrouillage,
+  toutes ouvrantes à chaque rang ;
+- **le CLIQUET définitif.** Il lit les APPELS et nomme la matière de chaque import de clé brute.
+  Trois endroits touchent encore une clé de volume, et aucun n'est un chemin de production du format
+  v4 : le modèle de référence, le régime v3 (migration et export d'un v3), et la LECTURE d'une page
+  v1 — qui importe la clé sans l'usage `encrypt`, donc ne PEUT pas sceller. Il MORD : douze mutants,
+  douze tués ;
+- **le TROISIÈME chemin hors transaction.** Le volume de coquille clôt désormais par une racine, par
+  un geste public qui n'ouvre aucun second chemin de scellement. « CHEMIN 3 » mesure une ÉGALITÉ là
+  où il mesurait un écart.
+
+**Et le budget est MESURÉ, domaine par domaine, sur une session complète.** C'était la promesse que
+le relecteur avait réfutée ; `tests/unit/vm-budget-par-domaine.test.mjs` étiquette chaque
+`CryptoKey` par sa provenance et compte les invocations de `encrypt` par clé : **zéro sous la clé de
+volume**, jamais deux sous une clé à usage unique, une clé par volume pour les deux domaines à
+compteur.
+
+**Un écart reste, et il est écrit partout de la même phrase** : ouvrir un volume **v3** — pour le
+migrer, ou pour l'EXPORTER avant de le migrer — fait écrire au magasin une racine v3 et rescelle la
+charge acquittée, c'est-à-dire deux scellements sous la clé de volume elle-même. C'est le régime que
+la v4 remplace, c'est l'unique exception du cliquet, et ne pas ouvrir perdrait une écriture
+acquittée. Voir la décision 4 de l'ADR 0036 et le § 7.4 de la spécification.
 
 Cette ligne est écrite telle quelle plutôt que sous une formule d'audit, et il faut en tirer la
 conséquence sans l'adoucir : **savoir si une revue adverse assistée par un agent d'IA satisfait la
@@ -90,14 +107,14 @@ Le dossier soumis à la revue est décrit par
 
 ## Constats
 
-| Constat                                                                                                                                                                                      | Sévérité      | Disposition | Preuve                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [#142](https://github.com/pinfada/railsbox-vault/issues/142) — un témoin authentique rejoué rend un volume sain irouvrable, et rejoué contre une racine abîmée fait reculer d'une génération | HIGH → MEDIUM | accepté     | ADR 0019 amendé le 5 septembre 2026 ; [PR #153](https://github.com/pinfada/railsbox-vault/pull/153)                                                                                                                                                                                                                                                                                                                         |
-| [#143](https://github.com/pinfada/railsbox-vault/issues/143) — l'identité logique ne sépare pas un enregistrement de journal d'un secteur de volume                                          | HIGH          | corrigé     | [PR #146](https://github.com/pinfada/railsbox-vault/pull/146) ; ADR 0016 et ADR 0019 amendés le 5 septembre 2026                                                                                                                                                                                                                                                                                                            |
-| [#144](https://github.com/pinfada/railsbox-vault/issues/144) — le recul d'une génération ne demande aucune copie antérieure, et une racine abîmée à côté d'une racine lisible est ignorée    | HIGH          | corrigé     | [PR #153](https://github.com/pinfada/railsbox-vault/pull/153) ; ADR 0019 amendé le 5 septembre 2026                                                                                                                                                                                                                                                                                                                         |
-| [#145](https://github.com/pinfada/railsbox-vault/issues/145) — « supprimer et recréer » ne retire aucun voisin, et le volume recréé est refusé                                               | MEDIUM        | corrigé     | [PR #157](https://github.com/pinfada/railsbox-vault/pull/157)                                                                                                                                                                                                                                                                                                                                                               |
-| [#181](https://github.com/pinfada/railsbox-vault/issues/181) — une archive accepte un mélange de secteurs provenant de plusieurs états, et la première ouverture restaurée le rend en clair  | CRITICAL      | corrigé     | [PR #184](https://github.com/pinfada/railsbox-vault/pull/184) ; ADR 0034, et ADR 0008, 0009, 0011, 0014, 0015, 0019, 0027 amendés le 10 septembre 2026                                                                                                                                                                                                                                                                      |
-| [#182](https://github.com/pinfada/railsbox-vault/issues/182) — le budget AES-GCM n'est pas global à la clé : même DEK pour deux volumes, l'enveloppe et les exports, compteurs par instance  | HIGH          | ouvert      | [#182](https://github.com/pinfada/railsbox-vault/issues/182) — constat, reproduction et DoR ; tranche **T2a** livrée le 11 septembre 2026 (format v4, domaines `volume`, `journal`, `instantane` ; ADR 0035, ADR 0015/0016/0019/0021/0024/0033 amendés). La ligne reste OUVERTE : l'enveloppe et la récupération scellent encore sous la DEK, et le cliquet anti-DEK n'est pas posé — c'est la tranche **T2b** qui la ferme |
+| Constat                                                                                                                                                                                      | Sévérité      | Disposition | Preuve                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [#142](https://github.com/pinfada/railsbox-vault/issues/142) — un témoin authentique rejoué rend un volume sain irouvrable, et rejoué contre une racine abîmée fait reculer d'une génération | HIGH → MEDIUM | accepté     | ADR 0019 amendé le 5 septembre 2026 ; [PR #153](https://github.com/pinfada/railsbox-vault/pull/153)                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| [#143](https://github.com/pinfada/railsbox-vault/issues/143) — l'identité logique ne sépare pas un enregistrement de journal d'un secteur de volume                                          | HIGH          | corrigé     | [PR #146](https://github.com/pinfada/railsbox-vault/pull/146) ; ADR 0016 et ADR 0019 amendés le 5 septembre 2026                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| [#144](https://github.com/pinfada/railsbox-vault/issues/144) — le recul d'une génération ne demande aucune copie antérieure, et une racine abîmée à côté d'une racine lisible est ignorée    | HIGH          | corrigé     | [PR #153](https://github.com/pinfada/railsbox-vault/pull/153) ; ADR 0019 amendé le 5 septembre 2026                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| [#145](https://github.com/pinfada/railsbox-vault/issues/145) — « supprimer et recréer » ne retire aucun voisin, et le volume recréé est refusé                                               | MEDIUM        | corrigé     | [PR #157](https://github.com/pinfada/railsbox-vault/pull/157)                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| [#181](https://github.com/pinfada/railsbox-vault/issues/181) — une archive accepte un mélange de secteurs provenant de plusieurs états, et la première ouverture restaurée le rend en clair  | CRITICAL      | corrigé     | [PR #184](https://github.com/pinfada/railsbox-vault/pull/184) ; ADR 0034, et ADR 0008, 0009, 0011, 0014, 0015, 0019, 0027 amendés le 10 septembre 2026                                                                                                                                                                                                                                                                                                                                                                                  |
+| [#182](https://github.com/pinfada/railsbox-vault/issues/182) — le budget AES-GCM n'est pas global à la clé : même DEK pour deux volumes, l'enveloppe et les exports, compteurs par instance  | HIGH          | corrigé     | [PR #186](https://github.com/pinfada/railsbox-vault/pull/186) (tranche **T2a** : format v4, domaines `volume`, `journal`, `instantane` ; ADR 0035) et [PR #188](https://github.com/pinfada/railsbox-vault/pull/188) (tranche **T2b** : page d'enveloppe v2, domaines `enveloppe` et `recuperation`, clôture du troisième chemin hors transaction, cliquet définitif, budget mesuré par clé ; ADR 0036, ADR 0020/0027/0033/0035 amendés). Reste ÉCRIT : ouvrir un v3 scelle deux fois sous la clé de volume — § 7.4, ADR 0036 décision 4 |
 
 ## Comment une ligne se remplit
 
