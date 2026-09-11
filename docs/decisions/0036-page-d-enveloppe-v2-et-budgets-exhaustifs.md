@@ -158,14 +158,26 @@ porte encore est appliquée avant la copie ; les trois cas de l'ouverture s'appl
 clair ; aucun chemin d'ÉCRITURE v3 ne s'ouvre à l'appelant.
 
 **L'écart qui reste, et il n'est pas comblé.** Ouvrir un volume v3 n'est pas gratuit : le magasin
-clôt sa récupération en écrivant une racine v3, et rejouer une charge rescelle des secteurs — deux
-scellements sous la clé de volume elle-même. Ils sont le prix de l'application de la charge
-acquittée, ils passent par l'unique exception du cliquet anti-DEK, et ils sont exactement ceux que
-la migration produit déjà sur le même fichier. Ne pas ouvrir perdrait une écriture acquittée ; un
-lecteur v3 dédié qui n'écrirait rien ne saurait pas appliquer la charge, donc perdrait la même chose
-sous un autre nom. La décision de T2b demandait « aucun scellement sous une clé v3 hors l'engagement
-d'archive » : **ce chemin n'y parvient pas**, et le § 7.4 de la spécification, `SECURITY.md` et cet
-ADR le portent dans les mêmes termes.
+clôt sa récupération en écrivant une racine v3, et rejouer une charge rescelle des secteurs — **3 +
+N scellements** sous la clé de volume elle-même.
+
+Ce nombre a d'abord été ÉCRIT « deux », dans cet ADR et dans dix autres endroits du dépôt, et il
+n'avait jamais été compté ; la revue de la PR #187 l'a réfuté par la mesure, et la mesure vit
+désormais dans le dépôt. Le PLANCHER est de trois — l'empreinte de région que le magasin écrit en
+montant, la racine de clôture de sa récupération, et le témoin qui la suit — et chaque secteur
+rejoué de la charge acquittée en ajoute UN. N n'est donc pas borné par cet ADR : il l'est par le
+contenu du journal validé, et un v3 abandonné au milieu d'une écriture longue en porte autant que
+son journal en tenait. Ce que la mesure établit aussi, et qui vaut autant que le nombre : les 3 + N
+passent TOUS par le budget, donc la racine v3 les publie — ce chemin ne scelle rien hors compteur,
+et `tests/unit/vm-migration-source-v3.test.mjs` › « ce que l'export d'un v3 SCELLE est mesuré »
+exige l'égalité entre les invocations relevées et le delta du compteur publié.
+
+Ils sont le prix de l'application de la charge acquittée, ils passent par l'unique exception du
+cliquet anti-DEK, et ils sont exactement ceux que la migration produit déjà sur le même fichier. Ne
+pas ouvrir perdrait une écriture acquittée ; un lecteur v3 dédié qui n'écrirait rien ne saurait pas
+appliquer la charge, donc perdrait la même chose sous un autre nom. La décision de T2b demandait «
+aucun scellement sous une clé v3 hors l'engagement d'archive » : **ce chemin n'y parvient pas**, et
+le § 7.4 de la spécification, `SECURITY.md` et cet ADR le portent dans les mêmes termes.
 
 ## Décision 5 — Le cliquet anti-DEK lit les APPELS, et nomme la matière de chaque clé
 
@@ -246,8 +258,9 @@ Au vocabulaire de la décision 7 de l'ADR 0021.
 
 L'emplacement du compteur — il reste dans la racine, donc il recule. La rotation de la clé
 maîtresse, qui n'existe toujours pas. AES-GCM-SIV, dont le périmètre de spike est écrit dans
-l'ADR 0033. Et l'écart de la décision 4 : ouvrir un volume v3 scelle deux fois sous la clé de
-volume, et aucune des deux options envisagées ne l'évite sans perdre une écriture acquittée.
+l'ADR 0033. Et l'écart de la décision 4 : ouvrir un volume v3 scelle 3 + N fois sous la clé de
+volume — N secteurs rejoués, tous comptés dans la racine v3 —, et aucune des deux options envisagées
+ne l'évite sans perdre une écriture acquittée.
 
 ## Conséquences
 
