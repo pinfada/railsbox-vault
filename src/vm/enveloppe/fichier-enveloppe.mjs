@@ -63,17 +63,21 @@ import { hexEnOctets, octetsEnHex } from "../format-chiffre/octets.mjs";
 import { malforme } from "./enveloppe-errors.mjs";
 import {
   CLE_OCTETS,
+  DOMAINES_DE_RACINE,
   EMPLACEMENTS_MAX,
   EMPREINTE_OCTETS,
   ENVELOPPE_FORMAT_V1,
+  ENVELOPPE_FORMAT_V2,
   ETIQUETTE_OCTETS,
   IDENTIFIANT_EMPLACEMENT_OCTETS,
   NONCE_OCTETS,
   PARAMETRES_MAX,
+  SEL_DE_PAGE_OCTETS,
   VERSION_MAX,
   exigerOctets,
   exigerParametres,
   exigerOctetDeTypeKek,
+  nomDuDomaineDeRacine,
 } from "./identite-enveloppe.mjs";
 
 /** Marqueur du fichier d'enveloppes. Huit octets, jamais modifiés. */
@@ -88,11 +92,60 @@ export const PAGES = 2;
 /** Taille du fichier `<volume>.cles`. Fixe, allouée à la création. */
 export const TAILLE_FICHIER_ENVELOPPE = PAGE_OCTETS * PAGES;
 
-/** Longueur de l'en-tête d'une page, avant la liste des emplacements. */
-export const ENTETE_PAGE_OCTETS = 108;
+/**
+ * Les DISPOSITIONS d'en-tête, par version de page.
+ *
+ * La v2 n'a RIEN déplacé : elle AJOUTE le sel de trente-deux octets là où la v1 s'arrêtait, et
+ * repousse la somme de contrôle derrière lui. Tous les offsets antérieurs — marqueur, version,
+ * compte, identifiant, longueur de liste, nonce, chiffré et étiquette de racine — sont les mêmes à
+ * l'octet près. C'est ce qui permet à la migration de page de relire une v1 avec le même décodeur,
+ * et aux vecteurs figés de #21 de ne pas bouger.
+ *
+ * L'octet 14 porte le DOMAINE de la racine en v2. Il est à zéro dans toute page v1 — c'était un
+ * octet de remplissage —, ce qui rend le champ inoffensif pour les pages déjà écrites.
+ *
+ *     [ 0   marqueur (8) ][ 8  version de format (4) ][ 12 compte (2) ][ 14 domaine (1) ][ 15 nul ]
+ *     [ 16  version de page (8) ][ 24 identifiant de volume (16) ][ 40 longueur de liste (4) ]
+ *     [ 44  nonce de racine (12) ][ 56 chiffré (32) ][ 88 étiquette (16) ]
+ *     v1 :                                                        [ 104 somme (4) ] → 108
+ *     v2 : [ 104 sel (32) ]                                       [ 136 somme (4) ] → 140
+ */
+const DISPOSITIONS_DE_PAGE = Object.freeze({
+  [ENVELOPPE_FORMAT_V1]: Object.freeze({ selOffset: null, crcOffset: 104, entete: 108 }),
+  [ENVELOPPE_FORMAT_V2]: Object.freeze({ selOffset: 104, crcOffset: 136, entete: 140 }),
+});
 
-/** Où loge la somme de contrôle de la page. Elle est à ZÉRO pendant son propre calcul. */
-export const CRC_OFFSET = 104;
+/** Où loge le DOMAINE de la racine, en v2 : un octet, à zéro dans toute page v1. */
+export const DOMAINE_OFFSET = 14;
+
+/**
+ * Longueur de l'en-tête d'une page, avant la liste des emplacements.
+ *
+ * Le nom nu désigne la v1, et il reste : `tests/unit/vm-enveloppe-vecteurs.test.mjs` et les outils
+ * de `tools/figer-vecteurs-*.mjs` l'emploient pour composer des pages v1 à la main, et ces
+ * documents ne bougent pas. Le chemin de production passe par `dispositionDePage`.
+ */
+export const ENTETE_PAGE_OCTETS = DISPOSITIONS_DE_PAGE[ENVELOPPE_FORMAT_V1].entete;
+
+/** Où loge la somme de contrôle d'une page v1. Elle est à ZÉRO pendant son propre calcul. */
+export const CRC_OFFSET = DISPOSITIONS_DE_PAGE[ENVELOPPE_FORMAT_V1].crcOffset;
+
+/** Longueur de l'en-tête d'une page v2, sel compris. */
+export const ENTETE_PAGE_V2_OCTETS = DISPOSITIONS_DE_PAGE[ENVELOPPE_FORMAT_V2].entete;
+
+/**
+ * La disposition d'une version de page, ou un refus TYPÉ.
+ *
+ * Une version inconnue n'est pas une page plus courte : c'est une page qu'on ne sait pas lire, et le
+ * décodeur la traite comme telle.
+ */
+export function dispositionDePage(formatVersion) {
+  const disposition = DISPOSITIONS_DE_PAGE[formatVersion];
+  if (disposition === undefined) {
+    throw malforme(`Format d'enveloppe inconnu : ${formatVersion}.`, { formatVersion });
+  }
+  return disposition;
+}
 
 const TABLE_CRC = (() => {
   const table = new Uint32Array(256);
@@ -120,9 +173,10 @@ function crc32(octets) {
  * la liste déclarée. Le remplissage n'y entre pas — il est à zéro par construction, et l'y inclure
  * ferait dépendre la somme de huit kilo-octets pour rien.
  */
-export function sommeDePage(octets, longueurListe) {
-  const utiles = octets.slice(0, ENTETE_PAGE_OCTETS + longueurListe);
-  utiles.fill(0, CRC_OFFSET, CRC_OFFSET + 4);
+export function sommeDePage(octets, longueurListe, formatVersion = ENVELOPPE_FORMAT_V1) {
+  const { entete, crcOffset } = dispositionDePage(formatVersion);
+  const utiles = octets.slice(0, entete + longueurListe);
+  utiles.fill(0, crcOffset, crcOffset + 4);
   return crc32(utiles);
 }
 
@@ -223,12 +277,93 @@ function decoderEmplacement(octets, position, fin) {
  * la DEK enveloppée serait intacte. Une révocation qui laisserait ses octets derrière elle ne serait
  * pas une révocation.
  *
- * @param {{ identifiantVolume: string, version: number,
+ * ## Ce que la version 2 ajoute, et ce qu'elle coûte à la page — MESURÉ
+ *
+ * Deux champs : le SEL de trente-deux octets, tiré et écrit en clair, et l'octet de DOMAINE. L'en-
+ * tête passe de 108 à 140 octets. La question que l'ADR 0033 posait dans ses « Risques » — « cela
+ * peut coûter un emplacement dans le pire cas » — se répond par un calcul, et la réponse est NON :
+ *
+ *     pire cas de liste = 8 emplacements × (72 octets fixes + 512 de paramètres) = 4 672 octets
+ *     en-tête v2 + pire cas                                     = 140 + 4 672  = 4 812 octets
+ *     page                                                                      = 8 192 octets
+ *
+ * Il reste 3 380 octets, soit de quoi porter cinq emplacements de plus au pire tarif. Le sel ne
+ * coûte AUCUN emplacement, et il n'en coûterait un que si le plafond passait de huit à quatorze.
+ * `tests/unit/vm-enveloppe-page-v2.test.mjs` le mesure plutôt que de le supposer.
+ *
+ * @param {{ identifiantVolume: string, version: number, formatVersion?: number,
  *           racine: { nonce: Uint8Array, chiffre: Uint8Array, etiquette: Uint8Array },
- *           emplacements: Array<object> }} page
+ *           sel?: Uint8Array, domaine?: number, emplacements: Array<object> }} page
+ *   `formatVersion` vaut `ENVELOPPE_FORMAT_V1` par défaut : les outils qui figent les vecteurs de
+ *   #21 composent des pages v1 et ne changent pas. Le produit, lui, écrit toujours une v2.
  * @returns {Uint8Array} exactement `PAGE_OCTETS` octets
  */
-export function encoderPage({ identifiantVolume, version, racine, emplacements }) {
+export function encoderPage({
+  identifiantVolume,
+  version,
+  formatVersion = ENVELOPPE_FORMAT_V1,
+  racine,
+  sel = null,
+  domaine = DOMAINES_DE_RACINE.enveloppe,
+  emplacements,
+}) {
+  const disposition = dispositionDePage(formatVersion);
+  exigerPageEncodable({ formatVersion, disposition, sel, domaine, version, racine, emplacements });
+
+  const liste = emplacements.map(encoderEmplacement);
+  const longueurListe = liste.reduce((somme, octets) => somme + octets.byteLength, 0);
+  if (disposition.entete + longueurListe > PAGE_OCTETS) {
+    throw malforme(
+      `la liste des emplacements fait ${longueurListe} octets et ne tient pas dans une page de ${PAGE_OCTETS}.`,
+      { longueurListe, page: PAGE_OCTETS },
+    );
+  }
+
+  const octets = new Uint8Array(PAGE_OCTETS);
+  const vue = new DataView(octets.buffer);
+  ecrireEnteteDePage(octets, vue, {
+    disposition,
+    formatVersion,
+    identifiantVolume,
+    version,
+    racine,
+    sel,
+    domaine,
+    nombreEmplacements: emplacements.length,
+    longueurListe,
+  });
+  let curseur = disposition.entete;
+  for (const morceau of liste) {
+    octets.set(morceau, curseur);
+    curseur += morceau.byteLength;
+  }
+  vue.setUint32(disposition.crcOffset, sommeDePage(octets, longueurListe, formatVersion), true);
+  return octets;
+}
+
+/**
+ * REFUSE tout ce qui ne peut pas devenir une page, AVANT qu'un seul octet ne soit posé.
+ *
+ * Les contrôles vivent ensemble parce qu'ils répondent tous d'une même question — « ces valeurs
+ * décrivent-elles une page ? » — et parce que les séparer de l'écriture est ce qui rend
+ * `encoderPage` lisible d'un œil : un refus, puis une transcription.
+ */
+function exigerPageEncodable({
+  formatVersion,
+  disposition,
+  sel,
+  domaine,
+  version,
+  racine,
+  emplacements,
+}) {
+  exigerSelDeLaVersion(formatVersion, disposition, sel);
+  if (formatVersion === ENVELOPPE_FORMAT_V2 && nomDuDomaineDeRacine(domaine) === null) {
+    throw malforme(
+      `« domaine » vaut ${domaine}, qui ne désigne aucun domaine de racine (${Object.keys(DOMAINES_DE_RACINE).join(", ")}).`,
+      { domaine },
+    );
+  }
   if (!Array.isArray(emplacements) || emplacements.length === 0) {
     throw malforme("une page d'enveloppe porte au moins UN emplacement.");
   }
@@ -244,34 +379,56 @@ export function encoderPage({ identifiantVolume, version, racine, emplacements }
   exigerOctets("racine.nonce", racine?.nonce, NONCE_OCTETS);
   exigerOctets("racine.chiffre", racine?.chiffre, EMPREINTE_OCTETS);
   exigerOctets("racine.etiquette", racine?.etiquette, ETIQUETTE_OCTETS);
+}
 
-  const liste = emplacements.map(encoderEmplacement);
-  const longueurListe = liste.reduce((somme, octets) => somme + octets.byteLength, 0);
-  if (ENTETE_PAGE_OCTETS + longueurListe > PAGE_OCTETS) {
-    throw malforme(
-      `la liste des emplacements fait ${longueurListe} octets et ne tient pas dans une page de ${PAGE_OCTETS}.`,
-      { longueurListe, page: PAGE_OCTETS },
-    );
-  }
-
-  const octets = new Uint8Array(PAGE_OCTETS);
-  const vue = new DataView(octets.buffer);
+/** TRANSCRIT l'en-tête d'une page, champ par champ, aux offsets que la disposition impose. */
+function ecrireEnteteDePage(
+  octets,
+  vue,
+  {
+    disposition,
+    formatVersion,
+    identifiantVolume,
+    version,
+    racine,
+    sel,
+    domaine,
+    nombreEmplacements,
+    longueurListe,
+  },
+) {
   octets.set(MARQUEUR_ENVELOPPE, 0);
-  vue.setUint32(8, ENVELOPPE_FORMAT_V1, true);
-  vue.setUint16(12, emplacements.length, true);
+  vue.setUint32(8, formatVersion, true);
+  vue.setUint16(12, nombreEmplacements, true);
+  if (disposition.selOffset !== null) {
+    vue.setUint8(DOMAINE_OFFSET, domaine);
+    octets.set(sel, disposition.selOffset);
+  }
   ecrireEntier(vue, 16, version, 8);
   octets.set(hexEnOctets(identifiantVolume), 24);
   vue.setUint32(40, longueurListe, true);
   octets.set(racine.nonce, 44);
   octets.set(racine.chiffre, 56);
   octets.set(racine.etiquette, 88);
-  let curseur = ENTETE_PAGE_OCTETS;
-  for (const morceau of liste) {
-    octets.set(morceau, curseur);
-    curseur += morceau.byteLength;
+}
+
+/**
+ * EXIGE le sel que la version demande : aucun en v1, trente-deux octets en v2.
+ *
+ * Le refus est symétrique, et c'est le point : un sel présenté pour une page v1 serait écrit nulle
+ * part et l'appelant croirait avoir tiré une clé fraîche ; un sel absent d'une page v2 rendrait la
+ * même clé pour toutes les pages d'un volume, c'est-à-dire le régime que la décision 4 de
+ * l'ADR 0033 refuse.
+ */
+function exigerSelDeLaVersion(formatVersion, disposition, sel) {
+  if (disposition.selOffset === null) {
+    if (sel === null) return;
+    throw malforme(
+      `une page en version ${formatVersion} ne porte pas de sel ; trente-deux octets ont été présentés, et ils ne seraient écrits nulle part.`,
+      { formatVersion },
+    );
   }
-  vue.setUint32(CRC_OFFSET, sommeDePage(octets, longueurListe), true);
-  return octets;
+  exigerOctets("sel", sel, SEL_DE_PAGE_OCTETS);
 }
 
 function marqueurPresent(octets) {
@@ -298,27 +455,12 @@ export function decoderPage(octets) {
   if (!marqueurPresent(octets)) return refus("Marqueur d'enveloppe absent.");
 
   const vue = new DataView(octets.buffer, octets.byteOffset, octets.byteLength);
-  const formatVersion = vue.getUint32(8, true);
-  if (formatVersion !== ENVELOPPE_FORMAT_V1) {
-    return refus(`Format d'enveloppe inconnu : ${formatVersion}.`);
-  }
-  const nombreEmplacements = vue.getUint16(12, true);
-  if (nombreEmplacements === 0 || nombreEmplacements > EMPLACEMENTS_MAX) {
-    return refus(`Nombre d'emplacements inadmissible : ${nombreEmplacements}.`);
-  }
-  const version = lireEntier(vue, 16, 8);
-  if (version < 1) return refus("Compteur de version nul : une enveloppe créée porte au moins 1.");
-  const longueurListe = vue.getUint32(40, true);
-  if (ENTETE_PAGE_OCTETS + longueurListe > PAGE_OCTETS) {
-    return refus(`Liste de ${longueurListe} octets annoncée hors de la page.`);
-  }
-  // La somme de contrôle sépare une page COMPLÈTE d'une page DÉCHIRÉE, et rien d'autre : voir
-  // l'en-tête de ce fichier. Une page qui ne la vérifie pas n'est pas un état, c'est un reste.
-  if (sommeDePage(octets, longueurListe) !== vue.getUint32(CRC_OFFSET, true)) {
-    return refus("Somme de contrôle de page invalide : écriture incomplète ou octets abîmés.");
-  }
+  const entete = relireEnteteDePage(octets, vue);
+  if (entete.raison !== null) return refus(entete.raison);
+  const { disposition, formatVersion, nombreEmplacements, version, longueurListe, domaine } =
+    entete;
 
-  const emplacements = decoderListe(octets, longueurListe);
+  const emplacements = decoderListe(octets, longueurListe, disposition.entete);
   if (emplacements === null) return refus("Liste d'emplacements illisible ou tronquée.");
 
   return Object.freeze({
@@ -331,6 +473,13 @@ export function decoderPage(octets) {
       // Le compte AUTHENTIFIÉ vient d'ici ; le compte TROUVÉ vient de la liste. Les garder
       // distincts est ce qui permet à `ouvrirRacine` de classer une troncature.
       nombreEmplacements,
+      // Le SEL et le DOMAINE sont `null` sur une page v1 : elle n'en porte pas, et son lecteur le
+      // sait. Les rendre à zéro ferait croire à un sel constant.
+      sel:
+        disposition.selOffset === null
+          ? null
+          : octets.slice(disposition.selOffset, disposition.selOffset + SEL_DE_PAGE_OCTETS),
+      domaine,
       racine: Object.freeze({
         nonce: octets.slice(44, 56),
         chiffre: octets.slice(56, 88),
@@ -341,11 +490,57 @@ export function decoderPage(octets) {
   });
 }
 
+/**
+ * RELIT l'en-tête d'une page et REFUSE tout ce qui ne peut pas en être un, somme de contrôle
+ * comprise. Rend `{ raison }` non nulle au premier doute — jamais une lecture « probablement bonne ».
+ *
+ * L'ORDRE compte, et il est celui-ci : la VERSION de format d'abord, puisqu'elle décide de la
+ * disposition ; puis les champs de largeur fixe ; puis le DOMAINE, refusé s'il ne désigne rien —
+ * une page dont on ne sait pas sous quelle clé la racine est scellée n'est pas une page qu'on lira
+ * « au mieux » ; puis la SOMME, qui sépare une page complète d'une page déchirée, et rien d'autre.
+ */
+function relireEnteteDePage(octets, vue) {
+  const refuse = (raison) => ({ raison });
+  const formatVersion = vue.getUint32(8, true);
+  const disposition = DISPOSITIONS_DE_PAGE[formatVersion];
+  if (disposition === undefined) return refuse(`Format d'enveloppe inconnu : ${formatVersion}.`);
+
+  const nombreEmplacements = vue.getUint16(12, true);
+  if (nombreEmplacements === 0 || nombreEmplacements > EMPLACEMENTS_MAX) {
+    return refuse(`Nombre d'emplacements inadmissible : ${nombreEmplacements}.`);
+  }
+  const version = lireEntier(vue, 16, 8);
+  if (version < 1) return refuse("Compteur de version nul : une enveloppe créée porte au moins 1.");
+  const longueurListe = vue.getUint32(40, true);
+  if (disposition.entete + longueurListe > PAGE_OCTETS) {
+    return refuse(`Liste de ${longueurListe} octets annoncée hors de la page.`);
+  }
+  // La v1 ne porte pas de domaine — son octet 14 est du remplissage, et il vaut zéro.
+  const domaine = disposition.selOffset === null ? null : vue.getUint8(DOMAINE_OFFSET);
+  if (domaine !== null && nomDuDomaineDeRacine(domaine) === null) {
+    return refuse(`Domaine de racine inconnu : ${domaine}.`);
+  }
+  if (
+    sommeDePage(octets, longueurListe, formatVersion) !== vue.getUint32(disposition.crcOffset, true)
+  ) {
+    return refuse("Somme de contrôle de page invalide : écriture incomplète ou octets abîmés.");
+  }
+  return {
+    raison: null,
+    disposition,
+    formatVersion,
+    nombreEmplacements,
+    version,
+    longueurListe,
+    domaine,
+  };
+}
+
 /** Relit la liste entière, ou `null` si elle ne se décompose pas exactement. */
-function decoderListe(octets, longueurListe) {
-  const fin = ENTETE_PAGE_OCTETS + longueurListe;
+function decoderListe(octets, longueurListe, entete = ENTETE_PAGE_OCTETS) {
+  const fin = entete + longueurListe;
   const emplacements = [];
-  let curseur = ENTETE_PAGE_OCTETS;
+  let curseur = entete;
   while (curseur < fin) {
     if (emplacements.length >= EMPLACEMENTS_MAX) return null;
     const lu = decoderEmplacement(octets, curseur, fin);

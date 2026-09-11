@@ -8,31 +8,49 @@ import {
   TAILLE_FICHIER_ENVELOPPE,
   decoderPage,
   encoderPage,
-  offsetDePage,
 } from "../../src/vm/enveloppe/fichier-enveloppe.mjs";
-import { encoderEmplacements } from "../../src/vm/enveloppe/identite-enveloppe.mjs";
+import {
+  EMPLACEMENT_FORMAT_V1,
+  ENVELOPPE_FORMAT_V1,
+  ENVELOPPE_FORMAT_V2,
+  encoderEmplacements,
+  nomDuTypeKek,
+} from "../../src/vm/enveloppe/identite-enveloppe.mjs";
 import {
   empreinteDesEmplacements,
+  envelopperSousNonce,
   importerCleDeDeverrouillage,
   importerCleDeVolume,
   ouvrirRacine,
 } from "../../src/vm/enveloppe/modele-reference.mjs";
+import { ouvrirEnveloppe } from "../../src/vm/enveloppe-de-cle.mjs";
 import {
-  HARNAIS_ALEAS_JETON,
-  ajouterEmplacement,
-  creerEnveloppe,
-  ouvrirEnveloppe,
-  remplacerEmplacement,
-  revoquerEmplacement,
-} from "../../src/vm/enveloppe-de-cle.mjs";
-import { aleasScriptes, hex, supportDouble, suiteDOctets } from "./support-enveloppe-double.mjs";
+  composerPageAlaMain,
+  hex,
+  supportDouble,
+  suiteDOctets,
+} from "./support-enveloppe-double.mjs";
 
-// Vecteurs FIGÉS de l'ENVELOPPE DE CLÉ (#21, ADR 0020).
+// Vecteurs FIGÉS de l'ENVELOPPE DE CLÉ, page **v1** (#21, ADR 0020 ; #182, T2b).
 //
-// Ce fichier a un rôle précis, et un seul : le CHEMIN DE PRODUCTION doit reproduire ces octets À
-// L'IDENTIQUE. Un format qui changerait — un champ déplacé, un ordre d'octets inversé, un champ
-// ajouté aux données associées — doit faire ROUGIR cette épreuve, parce qu'un tel changement casse
-// la compatibilité d'un format persistant. C'est la règle que #17 applique déjà au format chiffré.
+// ## Ces vecteurs n'ont PAS bougé d'un octet, et ils ont changé de RÔLE
+//
+// Jusqu'à T2b, ils disaient ce que le chemin de PRODUCTION devait écrire. Depuis T2b, le produit
+// n'écrit plus de page v1 : la racine d'une page est scellée sous une clé à usage unique dérivée par
+// domaine, et la page passe en v2 (ADR 0033, décisions 2 et 3). Ces quatre pages deviennent donc des
+// **vecteurs de MIGRATION**, exactement comme les vecteurs de volume v3 le sont devenus en T2a :
+//
+//  1. le MODÈLE de référence les reproduit toujours octet pour octet, à partir des CLÉS et des
+//     aléas figés — pas seulement à partir des chiffrés publiés. C'est le contrat de format, et il
+//     est plus exigeant qu'avant : chaque emplacement est ré-enveloppé sous sa KEK, chaque racine
+//     rescellée sous la DEK ;
+//  2. le chemin de PRODUCTION doit encore les OUVRIR, et les MIGRER en v2 à la première ouverture
+//     réussie. C'est le seul geste que le produit fait encore d'une page v1, et c'est celui dont
+//     dépend le volume de quiconque ouvrira un coffre écrit avant T2b.
+//
+// Un format qui changerait — un champ déplacé, un ordre d'octets inversé, un champ ajouté aux
+// données associées — doit faire ROUGIR cette épreuve, parce qu'un tel changement casse la
+// compatibilité d'un format persistant. C'est la règle que #17 applique déjà au format chiffré.
 //
 // Les vecteurs sont produits par `node tools/figer-vecteurs-enveloppe.mjs`, qui POSE LES OCTETS
 // LUI-MÊME depuis la table de l'ADR 0020 plutôt que d'appeler `encoderPage`. C'est ce qui en fait un
@@ -51,61 +69,52 @@ const DEK = hex(VECTEURS.cles.dek.hex);
 const KEK = Object.fromEntries(
   VECTEURS.cles.keks.map(({ nom, hex: valeur }) => [nom, hex(valeur)]),
 );
-const PARAMETRES_PHRASE = hex(VECTEURS.parametres.phrase);
 const ETAPES = Object.fromEntries(VECTEURS.etapes.map((etape) => [etape.operation, etape]));
 
-/** La page que le chemin de production vient d'écrire, extraite du support. */
-function pageEcrite(support, index) {
-  return support.contenu.slice(offsetDePage(index), offsetDePage(index) + PAGE_OCTETS);
-}
-
 /**
- * Rejoue les QUATRE opérations sous les aléas figés, et rend la page produite à chaque étape.
+ * RECONSTRUIT une page figée à partir des CLÉS, pas de ses chiffrés publiés.
  *
- * Les aléas sont consommés dans l'ordre où le chemin de production les demande : un identifiant puis
- * un nonce par emplacement fabriqué, un nonce par racine scellée. Une liste épuisée est une erreur —
- * un vecteur qui reprendrait du vrai aléa ne serait plus un vecteur.
+ * Chaque emplacement est ré-enveloppé sous la KEK que son type désigne, avec le nonce figé et les
+ * données associées du format ; la racine est rescellée sous la DEK, avec le nonce figé. Si l'un des
+ * deux encodages bouge d'un octet — une donnée associée, un champ de longueur, un ordre —, la page
+ * produite cesse d'être celle qui est publiée.
+ *
+ * C'est plus exigeant que ce que la version antérieure de cette épreuve mesurait : elle rejouait les
+ * quatre opérations du produit, qui n'écrit plus de page v1.
  */
-async function rejouerLesQuatreOperations() {
-  const support = supportDouble();
-  const aleas = aleasScriptes({
-    identifiants: VECTEURS.aleas.identifiants,
-    nonces: VECTEURS.aleas.nonces.map(hex),
-    jeton: HARNAIS_ALEAS_JETON,
+async function reconstruireLaPageFigee(etape) {
+  const emplacements = [];
+  for (const emplacement of etape.emplacements) {
+    const parametres = hex(emplacement.parametres);
+    const scelle = await envelopperSousNonce({
+      kek: await importerCleDeDeverrouillage(KEK[nomDuTypeKek(emplacement.typeKek)]),
+      emplacement: {
+        identifiantVolume: IDENTIFIANT_VOLUME,
+        identifiantEmplacement: emplacement.identifiantEmplacement,
+        formatVersion: EMPLACEMENT_FORMAT_V1,
+        typeKek: emplacement.typeKek,
+        parametres,
+      },
+      dek: DEK,
+      nonce: hex(emplacement.nonce),
+    });
+    emplacements.push({
+      identifiantEmplacement: emplacement.identifiantEmplacement,
+      typeKek: emplacement.typeKek,
+      parametres,
+      nonce: scelle.nonce,
+      dekEnveloppee: scelle.chiffre,
+      etiquette: scelle.etiquette,
+    });
+  }
+  return composerPageAlaMain({
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    version: etape.version,
+    dek: DEK,
+    emplacements,
+    nonce: hex(etape.racine.nonce),
+    formatVersion: ENVELOPPE_FORMAT_V1,
   });
-  const commun = { support, identifiantVolume: IDENTIFIANT_VOLUME, aleas };
-  const pages = {};
-
-  const creee = await creerEnveloppe({ ...commun, dek: DEK, kek: KEK.harnais });
-  pages.creer = pageEcrite(support, 0);
-
-  await ajouterEmplacement({
-    ...commun,
-    kek: KEK.harnais,
-    kekNouvelle: KEK.phrase,
-    typeKek: 1,
-    parametres: PARAMETRES_PHRASE,
-  });
-  pages.ajouter = pageEcrite(support, 1);
-
-  await remplacerEmplacement({
-    ...commun,
-    kek: KEK.harnais,
-    identifiantEmplacement: creee.identifiantEmplacement,
-    kekNouvelle: KEK["webauthn-prf"],
-    typeKek: 2,
-  });
-  pages.remplacer = pageEcrite(support, 0);
-
-  const inventaire = decoderPage(pages.remplacer).page;
-  await revoquerEmplacement({
-    ...commun,
-    kek: KEK["webauthn-prf"],
-    identifiantEmplacement: inventaire.emplacements[1].identifiantEmplacement,
-  });
-  pages.revoquer = pageEcrite(support, 1);
-
-  return { pages, support, reste: aleas.reste() };
 }
 
 test("les vecteurs annoncent la disposition que le format implémente", () => {
@@ -126,12 +135,24 @@ test("les clés des vecteurs découlent de leur règle publiée, pas seulement d
   }
 });
 
-test("le chemin de PRODUCTION reproduit OCTET POUR OCTET les quatre pages figées", async () => {
-  const { pages, reste } = await rejouerLesQuatreOperations();
-  for (const [operation, attendu] of Object.entries(ETAPES)) {
-    assert.equal(octetsEnHex(pages[operation]), attendu.page, `page de l'étape « ${operation} »`);
+test("les CLÉS figées reproduisent OCTET POUR OCTET les quatre pages figées", async () => {
+  // Le scellement est refait depuis les clés : les chiffrés publiés ne servent qu'à comparer.
+  for (const etape of VECTEURS.etapes) {
+    assert.equal(
+      octetsEnHex(await reconstruireLaPageFigee(etape)),
+      etape.page,
+      `page de l'étape « ${etape.operation} »`,
+    );
   }
-  assert.deepEqual(reste, { identifiants: 0, nonces: 0 }, "tous les aléas figés ont été consommés");
+});
+
+test("ces pages sont des pages v1, et le produit n'en écrit PLUS aucune", () => {
+  // L'assertion qui donne son sens au changement de rôle. Si le produit se remettait à écrire des
+  // pages v1, la moitié « migration » de ce fichier deviendrait muette sans que rien ne le dise.
+  for (const etape of VECTEURS.etapes) {
+    assert.equal(decoderPage(hex(etape.page)).page.formatVersion, ENVELOPPE_FORMAT_V1);
+  }
+  assert.equal(VECTEURS.specification.enTetePageOctets, 108, "l'en-tête v1 fait 108 octets");
 });
 
 test("l'encodeur de page reproduit lui aussi les octets posés à la main par l'outil", () => {
@@ -141,6 +162,7 @@ test("l'encodeur de page reproduit lui aussi les octets posés à la main par l'
     const octets = encoderPage({
       identifiantVolume: IDENTIFIANT_VOLUME,
       version: etape.version,
+      formatVersion: ENVELOPPE_FORMAT_V1,
       racine: {
         nonce: hex(etape.racine.nonce),
         chiffre: hex(etape.racine.chiffre),
@@ -201,7 +223,7 @@ test("le modèle rouvre chaque racine figée depuis ses seuls octets publiés", 
   for (const etape of VECTEURS.etapes) {
     const page = decoderPage(hex(etape.page)).page;
     const ouverte = await ouvrirRacine({
-      dek,
+      cleDeRacine: dek,
       entete: {
         identifiantVolume: page.identifiantVolume,
         formatVersion: page.formatVersion,
@@ -220,7 +242,9 @@ test("le modèle rouvre chaque racine figée depuis ses seuls octets publiés", 
   }
 });
 
-test("chaque page figée rend la DEK figée sous la clé de déverrouillage figée", async () => {
+test("chaque page figée rend la DEK figée, et le produit la MIGRE en v2 au passage", async () => {
+  // Les deux moitiés du geste que T2b demande d'une page v1, sur les quatre pages du contrat : la
+  // DEK sort, et la page est rescellée en v2 sans qu'aucune clé de déverrouillage soit demandée.
   const attendus = {
     creer: "harnais",
     ajouter: "harnais",
@@ -235,7 +259,38 @@ test("chaque page figée rend la DEK figée sous la clé de déverrouillage fig�
       kek: KEK[attendus[etape.operation]],
     });
     assert.equal(octetsEnHex(ouverte.dek), VECTEURS.cles.dek.hex, `DEK de « ${etape.nom} »`);
-    assert.equal(ouverte.version, etape.version);
+    assert.deepEqual(
+      { ...ouverte.migration },
+      {
+        de: ENVELOPPE_FORMAT_V1,
+        vers: ENVELOPPE_FORMAT_V2,
+        faite: true,
+        version: etape.version + 1,
+        refus: null,
+      },
+      `migration de « ${etape.nom} »`,
+    );
+    assert.equal(ouverte.version, etape.version + 1, "la version avance d'un cran, et d'un seul");
+
+    // La page v1 est TOUJOURS là, plus ancienne : c'est le repli qui rend la migration sûre sous
+    // coupure, et il disparaîtra de lui-même à la mutation suivante.
+    const relue = decoderPage(support.contenu.subarray(0, support.contenu.byteLength / 2));
+    const autre = decoderPage(support.contenu.subarray(support.contenu.byteLength / 2));
+    const versions = [relue, autre].map((lue) => (lue.valide ? lue.page.formatVersion : null));
+    assert.deepEqual(
+      versions.slice().sort(),
+      [ENVELOPPE_FORMAT_V1, ENVELOPPE_FORMAT_V2],
+      `les deux pages de « ${etape.nom} » : la v1 conservée, la v2 publiée`,
+    );
+
+    // Et une SECONDE ouverture ne remigre rien : la page qui fait autorité est déjà en v2.
+    const encore = await ouvrirEnveloppe({
+      support,
+      identifiantVolume: IDENTIFIANT_VOLUME,
+      kek: KEK[attendus[etape.operation]],
+    });
+    assert.equal(encore.migration, null, "une page déjà migrée ne se remigre pas");
+    assert.equal(encore.version, etape.version + 1);
   }
 });
 

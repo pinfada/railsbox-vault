@@ -35,7 +35,9 @@ import {
   decoderPage,
   offsetDePage,
 } from "./fichier-enveloppe.mjs";
-import { developper, importerCleDeVolume, ouvrirRacine } from "./modele-reference.mjs";
+import { developper, ouvrirRacine } from "./modele-reference.mjs";
+import { cleDOuvertureDeRacine } from "./cle-de-racine.mjs";
+import { EMPLACEMENT_FORMAT_V1, ENVELOPPE_FORMAT_V2 } from "./identite-enveloppe.mjs";
 
 /** Précédence des refus : le plus ÉTABLI l'emporte sur le moins établi. Voir l'ADR 0020. */
 const PRECEDENCE = Object.freeze([
@@ -102,7 +104,10 @@ async function developperDansLaPage(page, kek) {
       emplacement: {
         identifiantVolume: page.identifiantVolume,
         identifiantEmplacement: emplacement.identifiantEmplacement,
-        formatVersion: page.formatVersion,
+        // La version de format d'un EMPLACEMENT ne suit pas celle de la page, et vaut toujours 1 :
+        // voir `EMPLACEMENT_FORMAT_V1`. La faire suivre obligerait la migration d'une page v1 en v2
+        // à réenvelopper la DEK sous CHAQUE clé de déverrouillage, alors qu'on n'en détient qu'une.
+        formatVersion: EMPLACEMENT_FORMAT_V1,
         typeKek: emplacement.typeKek,
         parametres: emplacement.parametres,
       },
@@ -132,9 +137,13 @@ async function ouvrirPage(page, kek, identifiantVolume) {
   const trouve = await developperDansLaPage(page, kek);
   if (trouve === null) throw cleRefusee({ volume: identifiantVolume, version: page.version });
 
-  const cleDek = await importerCleDeVolume(trouve.dek);
+  // La clé de la RACINE dépend de la version de la page : la DEK elle-même en v1, une clé à usage
+  // unique dérivée avec le sel que la page porte en v2. C'est `cle-de-racine.mjs` qui le sait, et
+  // lui seul — voir son en-tête pour les deux domaines et pour l'ordre « authentifier, puis
+  // classer » qui décide de l'identifiant employé.
+  const cleRacine = await cleDOuvertureDeRacine({ dek: trouve.dek, page });
   await ouvrirRacine({
-    dek: cleDek,
+    cleDeRacine: cleRacine,
     entete: {
       identifiantVolume: page.identifiantVolume,
       formatVersion: page.formatVersion,
@@ -169,9 +178,48 @@ function pagesDeLaPlusRecente(octets) {
     );
     lues.push({ index, ...lue });
   }
-  return lues
-    .filter((lue) => lue.valide)
-    .sort((a, b) => b.page.version - a.page.version || a.index - b.index);
+  return refuserLaRetrogradation(
+    lues
+      .filter((lue) => lue.valide)
+      .sort((a, b) => b.page.version - a.page.version || a.index - b.index),
+  );
+}
+
+/**
+ * REFUSE qu'une page **v1** fasse autorité AU-DESSUS d'une page **v2** (#182, T2b).
+ *
+ * ## Ce que cette règle refuse, et ce qu'elle ne touche pas
+ *
+ * Après la migration de page, le fichier porte les DEUX formats : la v2 en version N + 1, la v1 en
+ * version N. C'est voulu — la v1 est le repli qui rend la migration sûre sous coupure, et la
+ * mutation suivante l'écrasera. Le classement par version suffit donc au cas honnête.
+ *
+ * Il ne suffit PAS au cas hostile. Qui peut écrire dans l'origine de confiance peut composer une
+ * page v1 portant une version ARBITRAIREMENT GRANDE et la recalculer sa somme de contrôle : elle
+ * passerait devant la v2, et l'ouverture se ferait sous une racine scellée directement sous la DEK.
+ * Le format serait rétrogradé par une écriture, sans décision, sans ADR et sans que rien ne le dise
+ * — le mécanisme exact que l'ADR 0011 refuse pour le volume.
+ *
+ * La règle est donc : **une page v1 n'est candidate que si elle est STRICTEMENT PLUS ANCIENNE que
+ * la plus récente des pages v2 valides.** Elle reste le repli qu'elle doit être, et elle cesse
+ * d'être une autorité.
+ *
+ * ## Pourquoi elle n'écarte PAS la v1 dès qu'une v2 existe
+ *
+ * Parce que la sûreté de la migration en dépend. Une page v2 structurellement valide dont la racine
+ * ne s'ouvrirait pas — un défaut de notre côté, ou une page forgée — rendrait alors le volume
+ * INOUVRABLE, là où le repli sur la v1 le sauve. Entre « refuser un peu moins » et « risquer de
+ * perdre le volume », l'ADR 0020 a déjà tranché une fois, et il tranche de même ici.
+ */
+function refuserLaRetrogradation(candidates) {
+  const versionV2 = candidates
+    .filter((candidate) => candidate.page.formatVersion >= ENVELOPPE_FORMAT_V2)
+    .reduce((haute, candidate) => Math.max(haute, candidate.page.version), -1);
+  if (versionV2 === -1) return candidates;
+  return candidates.filter(
+    (candidate) =>
+      candidate.page.formatVersion >= ENVELOPPE_FORMAT_V2 || candidate.page.version < versionV2,
+  );
 }
 
 /**

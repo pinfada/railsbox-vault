@@ -8,11 +8,13 @@
  *
  * Elle mesure quatre choses, de la plus petite à la plus grande :
  *
- *  1. **la page complète** que le volume porte — créée puis complétée par le chemin de production
- *     de l'ADR 0020, sous des aléas SCRIPTÉS ;
- *  2. **la page EMBARQUÉE** — la même version, filtrée aux seuls emplacements de type 4 et
- *     rescellée par `construireEnveloppeDeRecuperation`. C'est le filtrage lui-même qui est figé :
- *     les deux pages diffèrent, et le vecteur publie les deux ;
+ *  1. **la page complète** que le volume porte, et la page EMBARQUÉE qu'il en tire — toutes deux
+ *     en **version 1**, celle qu'une archive écrite AVANT T2b emporte. Depuis #182 le produit écrit
+ *     des pages v2 : ces trois pages-ci changent donc de rôle et deviennent des vecteurs de
+ *     COMPATIBILITÉ, exactement comme `enveloppe-v1.json`. Ce que cette suite en exige est double —
+ *     le modèle les reproduit toujours depuis les CLÉS, et une archive qui les porte se RESTAURE et
+ *     s'OUVRE encore. Les pages v2 que le produit écrit aujourd'hui sont figées dans
+ *     `tests/vectors/enveloppe-v2.json` ;
  *  3. **l'ENGAGEMENT et son voisin** — l'empreinte du fichier chiffré entier, scellée sous la clé
  *     du domaine `archive` dérivée par HKDF-SHA-256, et les cent quatre-vingts octets que la
  *     restauration dépose à côté du volume ;
@@ -21,6 +23,11 @@
  *
  * Un ROUGE ici ne se corrige pas en régénérant les vecteurs : soit le format persistant a changé
  * sans version ni ADR, soit le produit et la spécification ont divergé.
+ *
+ * **`archive-v3.json` n'a pas bougé d'un octet en T2b**, et c'est une propriété, pas une chance :
+ * la version d'ARCHIVE reste 3 parce que rien de la disposition d'archive ne change. Seule la page
+ * d'enveloppe qu'elle transporte a une version à elle, et le lecteur de section les accepte toutes
+ * les deux — c'est ce qui fait qu'une archive d'avant T2b se restaure encore.
  */
 
 import assert from "node:assert/strict";
@@ -41,11 +48,27 @@ import {
   HARNAIS_ALEAS_JETON,
   ajouterEmplacement,
   creerEnveloppe,
+  ouvrirEnveloppe,
 } from "../../src/vm/enveloppe-de-cle.mjs";
-import { construireEnveloppeDeRecuperation } from "../../src/vm/enveloppe-de-recuperation.mjs";
-import { TYPES_KEK } from "../../src/vm/enveloppe/identite-enveloppe.mjs";
+import {
+  construireEnveloppeDeRecuperation,
+  exigerEnveloppeDeRecuperationSeule,
+  fichierDEnveloppeDepuisLaPage,
+} from "../../src/vm/enveloppe-de-recuperation.mjs";
+import { decoderPage } from "../../src/vm/enveloppe/fichier-enveloppe.mjs";
+import {
+  DOMAINES_DE_RACINE,
+  EMPLACEMENT_FORMAT_V1,
+  ENVELOPPE_FORMAT_V1,
+  ENVELOPPE_FORMAT_V2,
+  TYPES_KEK,
+} from "../../src/vm/enveloppe/identite-enveloppe.mjs";
+import {
+  envelopperSousNonce,
+  importerCleDeDeverrouillage,
+} from "../../src/vm/enveloppe/modele-reference.mjs";
 import { hexEnOctets, octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
-import { aleasScriptes, supportDouble } from "./support-enveloppe-double.mjs";
+import { aleasScriptes, composerPageAlaMain, supportDouble } from "./support-enveloppe-double.mjs";
 
 const vecteurs = JSON.parse(
   await readFile(new URL("../vectors/archive-v3.json", import.meta.url), "utf8"),
@@ -60,8 +83,13 @@ const NONCES = vecteurs.aleas.nonces;
 const IDENTIFIANTS = vecteurs.aleas.identifiants;
 
 /** Les aléas du vecteur, dans leur ordre de consommation. Le jeton du harnais est exigé. */
-const aleas = (identifiants, nonces) =>
-  aleasScriptes({ identifiants, nonces: nonces.map(hexEnOctets), jeton: HARNAIS_ALEAS_JETON });
+const aleas = (identifiants, nonces, sels = []) =>
+  aleasScriptes({
+    identifiants,
+    nonces: nonces.map(hexEnOctets),
+    sels,
+    jeton: HARNAIS_ALEAS_JETON,
+  });
 
 /**
  * Rejoue le chemin de production jusqu'à l'enveloppe COMPLÈTE du vecteur : création sous le harnais,
@@ -77,7 +105,7 @@ async function enveloppeComplete() {
     kek: KEK.harnais,
     typeKek: TYPES_KEK.harnais,
     identifiantEmplacement: IDENTIFIANTS.harnais,
-    aleas: aleas([], [NONCES.harnais, NONCES.racineV1]),
+    aleas: aleas([], [NONCES.harnais, NONCES.racineV1], [SEL_CREATION]),
   });
   const creation = support.contenu.slice(0, 8192);
 
@@ -89,42 +117,123 @@ async function enveloppeComplete() {
     typeKek: TYPES_KEK.recuperation,
     parametres: hexEnOctets(vecteurs.aleas.parametresRecuperation),
     identifiantEmplacement: IDENTIFIANTS.recuperation,
-    aleas: aleas([], [NONCES.recuperation, NONCES.racineV2]),
+    aleas: aleas([], [NONCES.recuperation, NONCES.racineV2], [SEL_COMPLETE]),
   });
   // La page NEUVE occupe la page libre, c'est-à-dire la seconde : l'alternance de l'ADR 0020.
   const complete = support.contenu.slice(8192, 16384);
   return { support, creation, complete };
 }
 
-test("la page de CRÉATION du vecteur est celle que le produit écrit", async () => {
-  const { creation } = await enveloppeComplete();
-  assert.equal(octetsEnHex(creation), vecteurs.enveloppe.creation.page);
-});
+/** Les sels FIGÉS des deux pages que le chemin de production écrit ici, en v2. */
+const SEL_CREATION = hexEnOctets("aa".repeat(32));
+const SEL_COMPLETE = hexEnOctets("bb".repeat(32));
 
-test("la page COMPLÈTE du vecteur — harnais ET récupération — est celle que le produit écrit", async () => {
-  const { complete } = await enveloppeComplete();
-  assert.equal(octetsEnHex(complete), vecteurs.enveloppe.complete.page);
-});
-
-test("la page EMBARQUÉE est la page filtrée et RESCELLÉE, et elle diffère de la complète", async () => {
-  const { support } = await enveloppeComplete();
-  const construite = await construireEnveloppeDeRecuperation({
-    support,
-    identifiantVolume: IDENTIFIANT_VOLUME,
-    kek: KEK.harnais,
-    aleas: aleas([], [NONCES.racineEmbarquee]),
-  });
-
-  assert.equal(construite.version, vecteurs.enveloppe.embarquee.version);
-  assert.equal(construite.emplacements, vecteurs.enveloppe.embarquee.emplacements);
-  assert.equal(octetsEnHex(construite.octets), vecteurs.enveloppe.embarquee.page);
-  assert.equal(construite.digest, vecteurs.enveloppe.embarquee.empreinte);
+test("les trois pages du vecteur sont des pages v1, et elles se relisent", () => {
+  // Le fait qui donne son rôle à ces octets : ils décrivent une archive écrite AVANT T2b. Si le
+  // produit se remettait à écrire des pages v1, cette suite cesserait de mesurer une compatibilité
+  // et se remettrait à mesurer le présent, sans que rien ne le dise.
+  for (const [nom, figee] of Object.entries(vecteurs.enveloppe)) {
+    const lue = decoderPage(hexEnOctets(figee.page));
+    assert.equal(lue.valide, true, `page « ${nom} » : ${lue.raison}`);
+    assert.equal(lue.page.formatVersion, ENVELOPPE_FORMAT_V1, `page « ${nom} »`);
+    assert.equal(lue.page.sel, null, "une page v1 ne porte pas de sel");
+    assert.equal(lue.page.domaine, null, "une page v1 ne déclare aucun domaine de racine");
+  }
   assert.notEqual(
     vecteurs.enveloppe.embarquee.page,
     vecteurs.enveloppe.complete.page,
     "si les deux pages étaient égales, le filtrage ne serait éprouvé par rien",
   );
 });
+
+test("le MODÈLE reproduit les trois pages figées depuis les CLÉS, octet pour octet", async () => {
+  // Le contrat de format, refait depuis les clés plutôt que depuis les chiffrés publiés : chaque
+  // emplacement est ré-enveloppé sous sa KEK, chaque racine rescellée sous la DEK.
+  const keks = { [TYPES_KEK.harnais]: KEK.harnais, [TYPES_KEK.recuperation]: KEK.recuperation };
+  for (const [nom, figee] of Object.entries(vecteurs.enveloppe)) {
+    const page = decoderPage(hexEnOctets(figee.page)).page;
+    const emplacements = [];
+    for (const emplacement of page.emplacements) {
+      const scelle = await envelopperSousNonce({
+        kek: await importerCleDeDeverrouillage(keks[emplacement.typeKek]),
+        emplacement: {
+          identifiantVolume: IDENTIFIANT_VOLUME,
+          identifiantEmplacement: emplacement.identifiantEmplacement,
+          formatVersion: EMPLACEMENT_FORMAT_V1,
+          typeKek: emplacement.typeKek,
+          parametres: emplacement.parametres,
+        },
+        dek: DEK,
+        nonce: emplacement.nonce,
+      });
+      emplacements.push({
+        identifiantEmplacement: emplacement.identifiantEmplacement,
+        typeKek: emplacement.typeKek,
+        parametres: emplacement.parametres,
+        nonce: scelle.nonce,
+        dekEnveloppee: scelle.chiffre,
+        etiquette: scelle.etiquette,
+      });
+    }
+    const refaite = await composerPageAlaMain({
+      identifiantVolume: IDENTIFIANT_VOLUME,
+      version: page.version,
+      dek: DEK,
+      emplacements,
+      nonce: page.racine.nonce,
+      formatVersion: ENVELOPPE_FORMAT_V1,
+    });
+    assert.equal(octetsEnHex(refaite), figee.page, `page « ${nom} »`);
+  }
+});
+
+test("la page EMBARQUÉE figée se RESTAURE encore, et s'ouvre par le code de récupération", async () => {
+  // La propriété qui compte pour un utilisateur : une archive faite avant T2b s'ouvre encore. La
+  // section est acceptée par la garde de format, posée en `<volume>.cles`, et le déverrouillage par
+  // le CODE de récupération la migre en v2 au passage.
+  const page = hexEnOctets(vecteurs.enveloppe.embarquee.page);
+  const declare = exigerEnveloppeDeRecuperationSeule(page);
+  assert.equal(declare.version, vecteurs.enveloppe.embarquee.version);
+  assert.equal(declare.emplacements, vecteurs.enveloppe.embarquee.emplacements);
+
+  const support = supportDouble({ octets: fichierDEnveloppeDepuisLaPage(page) });
+  const ouverte = await ouvrirEnveloppe({
+    support,
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    kek: KEK.recuperation,
+  });
+  assert.equal(octetsEnHex(ouverte.dek), vecteurs.cles.dek.hex, "la DEK sort de la page restaurée");
+  assert.equal(ouverte.migration.faite, true, "et la page v1 restaurée est migrée en v2");
+  assert.equal(ouverte.migration.vers, ENVELOPPE_FORMAT_V2);
+});
+
+test("le produit écrit aujourd'hui une page EMBARQUÉE en v2, du domaine « recuperation »", async () => {
+  // Ce que la tranche T2b change : la racine de la page embarquée n'est plus scellée sous la DEK.
+  // Les OCTETS de cette page sont figés dans `tests/vectors/enveloppe-v2.json` ; ce qui est mesuré
+  // ici est le FAIT, sur l'enveloppe même du vecteur d'archive.
+  const { support } = await enveloppeComplete();
+  const construite = await construireEnveloppeDeRecuperation({
+    support,
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    kek: KEK.harnais,
+    aleas: aleas([], [NONCES.racineEmbarquee], [SEL_EMBARQUE]),
+  });
+
+  const page = decoderPage(construite.octets).page;
+  assert.equal(page.formatVersion, ENVELOPPE_FORMAT_V2);
+  assert.equal(page.domaine, DOMAINES_DE_RACINE.recuperation);
+  assert.deepEqual(Array.from(page.sel), Array.from(SEL_EMBARQUE), "le sel est écrit EN CLAIR");
+  assert.equal(construite.emplacements, vecteurs.enveloppe.embarquee.emplacements);
+  assert.equal(construite.version, vecteurs.enveloppe.embarquee.version);
+  assert.notEqual(
+    octetsEnHex(construite.octets),
+    vecteurs.enveloppe.embarquee.page,
+    "une page v2 ne peut pas être égale à la page v1 figée : le format a changé",
+  );
+});
+
+/** Le sel FIGÉ de la page embarquée v2, pour que l'épreuve ne dépende d'aucun tirage. */
+const SEL_EMBARQUE = hexEnOctets("cc".repeat(32));
 
 test("l'INFO et les DONNÉES ASSOCIÉES de l'engagement sont celles du vecteur, octet pour octet", () => {
   // La dérivation du domaine `archive` (ADR 0033, décision 3) et ce que l'engagement scelle

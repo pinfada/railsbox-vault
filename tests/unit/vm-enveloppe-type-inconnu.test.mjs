@@ -43,7 +43,7 @@ import {
   ENVELOPPE_ERROR_CODES,
   isEnveloppeError,
 } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
-import { encoderPage, offsetDePage } from "../../src/vm/enveloppe/fichier-enveloppe.mjs";
+import { offsetDePage } from "../../src/vm/enveloppe/fichier-enveloppe.mjs";
 import {
   ENVELOPPE_FORMAT_V1,
   NONCE_OCTETS,
@@ -52,13 +52,14 @@ import {
   exigerTypeKek,
   nomDuTypeKek,
 } from "../../src/vm/enveloppe/identite-enveloppe.mjs";
-import {
-  envelopperSousNonce,
-  importerCleDeVolume,
-  scellerRacineSousNonce,
-} from "../../src/vm/enveloppe/modele-reference.mjs";
+import { envelopperSousNonce } from "../../src/vm/enveloppe/modele-reference.mjs";
 import { octetsEnHex } from "../../src/vm/format-chiffre/octets.mjs";
-import { identifiantDeVolume, supportDouble, suiteDOctets } from "./support-enveloppe-double.mjs";
+import {
+  composerPageAlaMain,
+  identifiantDeVolume,
+  supportDouble,
+  suiteDOctets,
+} from "./support-enveloppe-double.mjs";
 
 const VOLUME = identifiantDeVolume(0x30);
 
@@ -127,17 +128,12 @@ async function enveloppeAvecUnTypeFutur() {
       etiquette: scelle.etiquette,
     });
   }
-  const racine = await scellerRacineSousNonce({
-    dek: await importerCleDeVolume(dek),
-    racine: { identifiantVolume: VOLUME, formatVersion: ENVELOPPE_FORMAT_V1, version: 2 },
-    emplacements,
-    nonce: suiteDOctets(0x99, NONCE_OCTETS),
-  });
-  const page = encoderPage({
+  const page = await composerPageAlaMain({
     identifiantVolume: VOLUME,
     version: 2,
-    racine: { nonce: racine.nonce, chiffre: racine.chiffre, etiquette: racine.etiquette },
+    dek,
     emplacements,
+    nonce: suiteDOctets(0x99, NONCE_OCTETS),
   });
   // La page LIBRE, celle que la création n'a pas écrite : l'ordre de l'ADR 0020 est respecté.
   await support.ecrire(offsetDePage(1), page);

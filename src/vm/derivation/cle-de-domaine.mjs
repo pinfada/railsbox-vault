@@ -4,10 +4,10 @@
 // directement, chaque domaine scelle sous une clé AEAD de 256 bits qui en descend par HKDF-SHA-256.
 // Ce module est le seul endroit qui fabrique une telle clé.
 //
-// **Quatre domaines depuis #182, sur les six de l'ADR 0033.** `archive` est venu avec #181 ;
-// `volume`, `journal` et `instantane` arrivent avec le format de volume v4. Les deux derniers —
-// `enveloppe` et `recuperation` — appartiennent à la tranche T2b et ne sont PAS nommés ici :
-// déclarer un domaine que rien ne dérive laisserait croire qu'il existe.
+// **Les SIX domaines de l'ADR 0033, au complet depuis T2b.** `archive` est venu avec #181 ;
+// `volume`, `journal` et `instantane` avec le format de volume v4 (T2a) ; `enveloppe` et
+// `recuperation` avec la page d'enveloppe v2 (T2b). Plus aucun domaine n'est en attente, et plus
+// aucun artefact du produit n'est scellé sous la DEK elle-même.
 //
 // ## Ce que l'info encode, et pourquoi chaque champ y est
 //
@@ -37,9 +37,9 @@
 //    sur 256 bits. Un sel constant n'aurait rien ajouté, et aurait ajouté un champ à authentifier.
 //    Le cas 3 de la RFC 5869 est précisément le vecteur d'un sel vide : la dérivation reste
 //    VECTORISABLE sans une ligne du produit, ce que `tools/verifier-vecteurs.mjs` exige ;
-//  - **domaine à USAGE UNIQUE** (`instantane`, `archive`) — l'artefact est RÉÉCRIT ENTIER à chaque
-//    geste et ne porte qu'UN scellement. Son sel est TIRÉ — trente-deux octets de
-//    `crypto.getRandomValues` — et écrit EN CLAIR dans l'artefact. Une clé neuve par artefact, un
+//  - **domaine à USAGE UNIQUE** (`instantane`, `enveloppe`, `archive`, `recuperation`) — l'artefact
+//    est RÉÉCRIT ENTIER à chaque geste et ne porte qu'UN scellement. Son sel est TIRÉ — trente-deux
+//    octets de `crypto.getRandomValues` — et écrit EN CLAIR dedans. Une clé neuve par artefact, un
 //    scellement sous cette clé, et aucun compteur.
 //
 // **Le régime est une propriété du DOMAINE, et il est vérifié ici.** Un sel de trente-deux octets
@@ -60,16 +60,21 @@ import { parametresRefuses } from "./derivation-errors.mjs";
 export const ETIQUETTE_SCHEMA_DE_DOMAINE = "railsbox-vault/derivation-de-domaine/v1";
 
 /**
- * Les domaines que ce runtime dérive. Quatre sur les six de l'ADR 0033, décision 2.
+ * Les SIX domaines de l'ADR 0033, décision 2. La liste est close : elle n'attend plus rien.
  *
- * `enveloppe` et `recuperation` restent absents : ils appartiennent à T2b, et leurs artefacts sont
- * encore scellés sous la DEK. Les nommer ici ferait croire qu'ils descendent déjà de la hiérarchie.
+ * `enveloppe` et `recuperation` produisent tous deux une PAGE d'enveloppe, et c'est pourquoi ils
+ * partagent une version de format — la 2 — sans partager de clé : l'info porte le nom du domaine,
+ * et deux noms distincts tirent deux clés distinctes. La page dit dans son en-tête lequel des deux
+ * a scellé sa racine, sans quoi la page qu'une archive emporte cesserait d'être lisible une fois
+ * restaurée en `<volume>.cles` (ADR 0027).
  */
 export const DOMAINES = Object.freeze({
   volume: "volume",
   journal: "journal",
   instantane: "instantane",
+  enveloppe: "enveloppe",
   archive: "archive",
+  recuperation: "recuperation",
 });
 
 /** Les deux régimes de clé de l'ADR 0033, décision 3. Un domaine en a UN, et il ne change pas. */
@@ -83,7 +88,9 @@ export const REGIMES_DE_DOMAINE = Object.freeze({
   [DOMAINES.volume]: REGIMES.compteur,
   [DOMAINES.journal]: REGIMES.compteur,
   [DOMAINES.instantane]: REGIMES.usageUnique,
+  [DOMAINES.enveloppe]: REGIMES.usageUnique,
   [DOMAINES.archive]: REGIMES.usageUnique,
+  [DOMAINES.recuperation]: REGIMES.usageUnique,
 });
 
 /**
@@ -98,7 +105,9 @@ export const VERSIONS_DE_FORMAT_DE_DOMAINE = Object.freeze({
   [DOMAINES.volume]: 4,
   [DOMAINES.journal]: 4,
   [DOMAINES.instantane]: 2,
+  [DOMAINES.enveloppe]: 2,
   [DOMAINES.archive]: 3,
+  [DOMAINES.recuperation]: 2,
 });
 
 /** Largeur du sel d'un domaine à USAGE UNIQUE : trente-deux octets tirés, écrits en clair. */

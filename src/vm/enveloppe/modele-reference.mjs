@@ -12,9 +12,18 @@
 //  - la **KEK** (clé de déverrouillage) n'enveloppe QUE la DEK, dans UN emplacement. Elle ne touche
 //    jamais un octet du volume, et c'est tout l'objet de cette tranche : ajouter, remplacer ou
 //    révoquer une KEK ne rechiffre rien ;
-//  - la **DEK** (clé de volume, 32 octets tirés) scelle la RACINE du fichier d'enveloppes, en plus
-//    de tout le volume (ADR 0016). Elle est la seule autorité sur la liste des emplacements : sans
-//    elle, on ne peut ni ajouter ni retirer un emplacement sans que la racine le dise.
+//  - la **CLÉ DE RACINE** scelle la RACINE du fichier d'enveloppes. Elle est la seule autorité sur
+//    la liste des emplacements : sans elle, on ne peut ni ajouter ni retirer un emplacement sans
+//    que la racine le dise.
+//
+// **Ce que T2b change, et ce qu'elle ne change pas** (#182, ADR 0033, décisions 2 et 3). Jusqu'à la
+// page v1, la clé de racine ÉTAIT la DEK, présentée telle quelle — d'où le nom que ce paramètre
+// portait. En page v2 elle est une clé à USAGE UNIQUE, dérivée de la DEK par HKDF pour le domaine
+// `enveloppe` (ou `recuperation` pour la page qu'une archive emporte), avec un sel tiré et écrit en
+// clair dans la page. Ce module n'en sait RIEN et n'a pas à en savoir : il reçoit une `CryptoKey`,
+// il scelle sous elle. C'est `cle-de-racine.mjs` qui répond à « laquelle », et lui seul. Le
+// paramètre s'appelle donc `cleDeRacine` et non plus `dek` : le nommer d'après la clé qu'il ne
+// reçoit plus aurait fait croire que le modèle n'a pas suivi.
 //
 // Cette dissymétrie a une conséquence qu'il faut énoncer plutôt que découvrir : **ajouter un
 // emplacement exige d'avoir OUVERT l'enveloppe**, donc de détenir déjà une KEK valable. Une
@@ -258,22 +267,24 @@ function enteteDeRacine(racine, emplacements) {
  * annoncerait un compte différent de ce qu'elle scelle serait une troncature signée par le
  * producteur lui-même.
  *
- * @param {{ dek: CryptoKey, racine: object, emplacements: Array<object>, nonce: Uint8Array }} appel
+ * @param {{ cleDeRacine: CryptoKey, racine: object, emplacements: Array<object>,
+ *           nonce: Uint8Array }} appel
+ *   `cleDeRacine` est la clé du domaine `enveloppe` en page v2, et la DEK elle-même en page v1.
  */
-export async function scellerRacineSousNonce({ dek, racine, emplacements, nonce }) {
+export async function scellerRacineSousNonce({ cleDeRacine, racine, emplacements, nonce }) {
   if (!Array.isArray(emplacements) || emplacements.length === 0) {
     throw malforme("une racine d'enveloppe scelle au moins UN emplacement.");
   }
   exigerOctets("nonce", nonce, NONCE_OCTETS);
   const entete = enteteDeRacine(racine, emplacements);
   const empreinte = await empreinteDesEmplacements(emplacements);
-  const chiffre = await chiffrer(dek, nonce, encoderEnteteEnveloppe(entete), empreinte);
+  const chiffre = await chiffrer(cleDeRacine, nonce, encoderEnteteEnveloppe(entete), empreinte);
   return Object.freeze({ entete, nonce, empreinte, ...chiffre });
 }
 
 /** Scelle la racine sous un nonce TIRÉ. Le chemin normal. */
-export async function scellerRacine({ dek, racine, emplacements, tirerNonce: nonces }) {
-  return scellerRacineSousNonce({ dek, racine, emplacements, nonce: nonces() });
+export async function scellerRacine({ cleDeRacine, racine, emplacements, tirerNonce: nonces }) {
+  return scellerRacineSousNonce({ cleDeRacine, racine, emplacements, nonce: nonces() });
 }
 
 /** Vérifie que l'en-tête AUTHENTIFIÉ décrit bien le volume que l'appelant croit déverrouiller. */
@@ -313,13 +324,13 @@ async function classer(entete, emplacements, empreinteAuthentique, attentes) {
 /**
  * Ouvre la racine et confronte la liste trouvée à ce que la racine authentifie.
  *
- * @param {{ dek: CryptoKey, entete: object,
+ * @param {{ cleDeRacine: CryptoKey, entete: object,
  *           scelle: { nonce: Uint8Array, chiffre: Uint8Array, etiquette: Uint8Array },
  *           emplacements: Array<object>,
  *           attentes: { identifiantVolume: string | null, versionMinimale: number | null } }} appel
  * @returns {Promise<{ entete: object, empreinte: Uint8Array }>}
  */
-export async function ouvrirRacine({ dek, entete, scelle, emplacements, attentes = {} }) {
+export async function ouvrirRacine({ cleDeRacine, entete, scelle, emplacements, attentes = {} }) {
   exigerOctets("scelle.nonce", scelle?.nonce, NONCE_OCTETS);
   exigerOctets("scelle.chiffre", scelle?.chiffre, EMPREINTE_OCTETS);
   exigerOctets("scelle.etiquette", scelle?.etiquette, ETIQUETTE_OCTETS);
@@ -328,7 +339,7 @@ export async function ouvrirRacine({ dek, entete, scelle, emplacements, attentes
   }
 
   const empreinteAuthentique = await dechiffrer(
-    dek,
+    cleDeRacine,
     scelle.nonce,
     encoderEnteteEnveloppe(entete),
     assembler(scelle.chiffre, scelle.etiquette),
