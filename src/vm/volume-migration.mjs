@@ -316,6 +316,13 @@ async function appliquerLaChaine({ chaine, source, backend, cle, avancement, mar
       backend,
       cle,
       avancement: pourCePas,
+      // **Un pas DÉJÀ FRANCHI ne se refait pas**, et depuis #182 il faut le dire : le journal ne
+      // porte qu'UN avancement, celui du pas EN VOL, et le pas qui le précède y devient invisible.
+      // Une reprise qui rejouerait la conversion v2 → v3 sur un volume déjà converti en v4
+      // redéplacerait sa charge par-dessus sa propre région — elle le détruirait, et sans lever
+      // d'erreur. Le discriminant est exact : un avancement qui déclare partir du format `f` atteste
+      // que tous les paliers jusqu'à `f` sont atteints.
+      dejaFranchi: avancement !== null && etape.to <= avancement.from,
       marquerAvancement: (progress) =>
         marquerAvancement({ ...progress, from: etape.from, to: etape.to }),
     });

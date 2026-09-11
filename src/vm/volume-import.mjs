@@ -48,7 +48,7 @@ import { readArchive } from "./volume-export.mjs";
 import { ARCHIVE_ERROR_CODES, ArchiveError } from "./archive-errors.mjs";
 import {
   EN_TETE_OCTETS,
-  decoderEnTeteV3,
+  decoderEnTeteDeVolume,
   identifiantVolumeEnTexte,
 } from "./volume-chiffre-format.mjs";
 import { encoderFichierDEngagement } from "./archive-engagement.mjs";
@@ -567,19 +567,30 @@ function assertEnveloppeDuMemeVolume(verdict, page) {
  * juste ; son MOMENT ne l'était pas.
  *
  * Le contrôle ne porte que sur les formats qui ont un en-tête : avant v3 il n'y a rien à confronter.
+ *
+ * **L'en-tête est lu SOUS LA VERSION QUE LE MANIFESTE DÉCLARE**, et non sous une version devinée
+ * (#182). Une archive d'un volume v3 restaurée sur un produit v4 est donc acceptée telle quelle —
+ * ses octets sont recopiés, rien n'en est déchiffré — et c'est son MANIFESTE, resté en v3, qui fera
+ * demander la migration à la première ouverture. Le principe de l'ADR 0033, décision 5 — « un
+ * volume v3 n'est lu que par la migration » — est tenu : cette fonction ne lit qu'un LOCALISATEUR,
+ * et la migration reste le seul chemin qui ouvre un secteur v3.
+ *
+ * Un contenu dont l'en-tête ne porte pas la version que le manifeste annonce est refusé : les deux
+ * récits se contredisent, et restaurer produirait un volume que son propre manifeste ferait refuser.
  */
 async function assertIdentiteDeLArchive({ verdict, read, volumeSize }) {
   const declare = verdict.manifest.volume?.id;
   if (declare === undefined || declare === null) return;
   if (volumeSize < EN_TETE_OCTETS) return;
 
+  const formatVersion = verdict.manifest.formatVersion;
   const enTete = await read(verdict.contentOffset, EN_TETE_OCTETS);
-  const lu = decoderEnTeteV3(enTete);
+  const lu = decoderEnTeteDeVolume(enTete, { formatVersion });
   if (!lu.valide) {
     throw new ArchiveError(
       ARCHIVE_ERROR_CODES.malformed,
-      `Restauration refusée : le manifeste de l'archive déclare un volume chiffré (${declare}) et son contenu ne porte pas d'en-tête v3 lisible (${lu.raison}). Aucun octet n'est écrit sur la cible.`,
-      { declare, raison: lu.raison },
+      `Restauration refusée : le manifeste de l'archive déclare un volume chiffré (${declare}) au format v${formatVersion} et son contenu ne porte pas l'en-tête de ce format (${lu.raison}). Aucun octet n'est écrit sur la cible.`,
+      { declare, formatVersion, raison: lu.raison },
     );
   }
   const porte = identifiantVolumeEnTexte(lu.enTete.identifiantVolume);

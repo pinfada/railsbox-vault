@@ -28,7 +28,7 @@ import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
 import { MIN_VOLUME_FORMAT_VERSION } from "./volume-manifest.mjs";
 import {
   EN_TETE_OCTETS,
-  decoderEnTeteV3,
+  decoderEnTeteV4,
   identifiantVolumeEnTexte,
   tailleDeFichier,
 } from "./volume-chiffre-format.mjs";
@@ -105,9 +105,14 @@ export async function ouvrirPourExport({
   return { brut, rapport };
 }
 
-/** Identifiant que porte l'en-tête v3 du fichier, relu par l'accès brut du backend ouvert. */
+/**
+ * Identifiant que porte l'en-tête du fichier, relu par l'accès brut du backend ouvert.
+ *
+ * L'en-tête v4, et lui seul : l'export passe par `openOpfsVolume`, qui refuse déjà tout ce qui n'est
+ * pas un volume v4 (ADR 0033, décision 5). Un volume v3 s'exporte après sa migration, jamais avant.
+ */
 async function identifiantDeLEnTete(backend) {
-  const lu = decoderEnTeteV3(await backend.lireSupportBrut(0, EN_TETE_OCTETS));
+  const lu = decoderEnTeteV4(await backend.lireSupportBrut(0, EN_TETE_OCTETS));
   return lu.valide ? identifiantVolumeEnTexte(lu.enTete.identifiantVolume) : null;
 }
 
@@ -131,7 +136,7 @@ async function constaterQueRienNAChange({ brut, taille, identifiant }) {
     });
   }
   if (identifiant === null) return;
-  const lu = decoderEnTeteV3(await brut.read(0, EN_TETE_OCTETS));
+  const lu = decoderEnTeteV4(await brut.read(0, EN_TETE_OCTETS));
   const porte = lu.valide ? identifiantVolumeEnTexte(lu.enTete.identifiantVolume) : null;
   if (porte === identifiant) return;
   throw refus(`son en-tête portait l'identifiant ${identifiant} et porte maintenant ${porte}.`, {
