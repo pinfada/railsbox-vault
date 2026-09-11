@@ -800,7 +800,7 @@ lignes, et **les deux constats sont corrigés** : le CRITICAL
 [PR #184](https://github.com/pinfada/railsbox-vault/pull/184), le HIGH
 [#182](https://github.com/pinfada/railsbox-vault/issues/182) le 11 septembre 2026 en deux tranches,
 par la [PR #186](https://github.com/pinfada/railsbox-vault/pull/186) et la
-[PR #188](https://github.com/pinfada/railsbox-vault/pull/188). Le texte reçu est versé au dépôt en
+[PR #187](https://github.com/pinfada/railsbox-vault/pull/187). Le texte reçu est versé au dépôt en
 [`docs/revue-externe/revue-2026-09-10.md`](docs/revue-externe/revue-2026-09-10.md). Le verdict du
 relecteur est écrit tel quel : **le gate « données sensibles » ne doit pas être ouvert.** Il reste
 FERMÉ.
@@ -832,7 +832,7 @@ n'est plus une brique manquante : la revue externe (#20) a eu lieu le 10 septemb
 un CRITICAL et un HIGH, et **les deux sont corrigés** — le CRITICAL (#181) par la
 [PR #184](https://github.com/pinfada/railsbox-vault/pull/184), le HIGH (#182) par la
 [PR #186](https://github.com/pinfada/railsbox-vault/pull/186) et la
-[PR #188](https://github.com/pinfada/railsbox-vault/pull/188). Le gate reste néanmoins **fermé**, et
+[PR #187](https://github.com/pinfada/railsbox-vault/pull/187). Le gate reste néanmoins **fermé**, et
 la raison a changé de nature : elle n'est plus un constat ouvert, elle est la QUALIFICATION du
 relecteur. Le mainteneur n'a pas décidé si une revue adverse assistée par un agent d'IA distinct
 satisfait « tiers », le relecteur écrit lui-même que ce gate ne doit pas être ouvert, et **une
@@ -965,7 +965,7 @@ d'origine.
    [ADR 0034](docs/decisions/0034-archive-authentifiee-et-racine-initiale.md)) ; le second est
    **corrigé le 11 septembre 2026**, en deux tranches
    ([PR #186](https://github.com/pinfada/railsbox-vault/pull/186),
-   [PR #188](https://github.com/pinfada/railsbox-vault/pull/188),
+   [PR #187](https://github.com/pinfada/railsbox-vault/pull/187),
    [ADR 0035](docs/decisions/0035-format-de-volume-v4-et-migration.md) et
    [ADR 0036](docs/decisions/0036-page-d-enveloppe-v2-et-budgets-exhaustifs.md)).
 
