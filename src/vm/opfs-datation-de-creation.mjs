@@ -6,8 +6,15 @@
 // décider ce qu'une racine écrite après coup a le droit de bénir, et avec quels compteurs.
 
 import { BlockJournal } from "./block-journal.mjs";
-import { ecarterLeJournalDeCreation, MOTIFS_DE_RACINE_INITIALE } from "./opfs-racine-initiale.mjs";
-import { openOpfsSyncAccess } from "./opfs-sync-access.mjs";
+import { JournalDeGeneration } from "./generation-journal.mjs";
+import { constaterOuverture } from "./generation-recuperation.mjs";
+import { rendreSansMasquer, saisirVoisin } from "./opfs-generation-voisins.mjs";
+import {
+  ecarterLeJournalDeCreation,
+  motifDeServiceEventuel,
+  MOTIFS_DE_RACINE_INITIALE,
+} from "./opfs-racine-initiale.mjs";
+import { generationJournalName, openOpfsSyncAccess, statOpfsVolume } from "./opfs-sync-access.mjs";
 import { ouvrirVolumeBrut } from "./opfs-volume-brut.mjs";
 import { geometryMismatch } from "./storage-errors.mjs";
 import { EN_TETE_OCTETS, FORMAT_VOLUME_V4, decoderEnTeteV4 } from "./volume-chiffre-format.mjs";
@@ -63,7 +70,7 @@ import { openOpfsVolume, raisonDUnEnTeteRefuse } from "./opfs-volume-ouverture.m
  * la lui refuser ferait passer toute racine authentique pour abîmée. L'en-tête est un localisateur,
  * pas une autorité — et c'est exactement l'usage qu'on en fait ici : le retrouver, ou refuser.
  */
-async function tailleLogiqueDuFichier(name, openHandle) {
+export async function tailleLogiqueDuFichier(name, openHandle) {
   const brut = await ouvrirVolumeBrut({ name, openHandle });
   try {
     const octets = await brut.read(0, EN_TETE_OCTETS);
@@ -136,5 +143,67 @@ export async function daterLaCreation({
     return backend.generation.rapport;
   } finally {
     await backend.close();
+  }
+}
+
+/**
+ * CONSTATE, SANS LEVER ET SANS RIEN MUTER, si le journal d'un volume ne porte QUE la racine
+ * initiale d'une création (#173) — la SIGNATURE d'une installation interrompue, mesurée en
+ * rejouant une interruption sur le double (`tests/unit/vm-dater-la-creation.test.mjs`).
+ *
+ * Deux surprises que la mesure a trouvées, contre l'hypothèse de départ :
+ *
+ *  1. le journal n'est JAMAIS absent ni vide en octets pendant l'installation — une création OUVRE
+ *     le volume, donc écrit son journal, AVANT tout versement. Ce qui distingue n'est pas sa
+ *     PRÉSENCE, c'est son CONTENU : séquence 0, génération 0, une seule racine — celle de naissance,
+ *     aucune charge en attente ;
+ *  2. cet état SURVIT au versement entier ET à la datation, tant que rien n'a ENSUITE rouvert le
+ *     volume pour un usage normal — le versement du produit (`clotureParDatation: true`) ne ferme
+ *     jamais le journal lui-même, et la datation écrit une racine dont le motif reste « creation ».
+ *     La fenêtre couverte est donc celle qu'une interruption RÉELLE atteint, du premier octet du
+ *     versement jusqu'au manifeste jamais inscrit — pas seulement le premier instant après
+ *     l'ouverture. Seul un usage normal SUBSÉQUENT (une réouverture qui écrit) la referme.
+ *
+ * Contrairement à `ecarterLeJournalDeCreation`, dont c'est le premier geste avant de TRONQUER, cette
+ * fonction ne consomme rien : #173 doit pouvoir DÉCIDER — proposer ou non un geste de réparation —
+ * avant qu'aucun octet ne bouge. Elle n'ouvre le journal qu'après avoir constaté sa PRÉSENCE par une
+ * observation qui ne crée rien (`observer`, `create: false`) : un journal absent est traité comme un
+ * refus de la signature, jamais comme une invite à le fabriquer pour la lire.
+ *
+ * @param {{ name: string, openHandle: (name: string) => Promise<FileSystemSyncAccessHandle>,
+ *           observer?: (name: string) => Promise<{ present: boolean, size: number }> }} options
+ * @returns {Promise<{ creationSeule: boolean, motif: string | null, tailleLogique: number | null }>}
+ *   `tailleLogique` est celle que l'EN-TÊTE du fichier déclare — lue, jamais devinée —, ou `null`
+ *   quand elle n'a pas pu être établie.
+ */
+export async function constaterCreationSeule({ name, openHandle, observer = statOpfsVolume }) {
+  const nomDuJournal = generationJournalName(name);
+  const etatDuJournal = await observer(nomDuJournal);
+  if (!etatDuJournal.present || etatDuJournal.size === 0) {
+    return {
+      creationSeule: false,
+      tailleLogique: null,
+      motif:
+        "aucun journal de génération lisible : ce n'est pas ce qu'une création de ce produit " +
+        "laisse derrière elle, qui en écrit un dès l'ouverture, avant tout versement",
+    };
+  }
+  let tailleLogique;
+  try {
+    tailleLogique = await tailleLogiqueDuFichier(name, openHandle);
+  } catch (cause) {
+    return { creationSeule: false, tailleLogique: null, motif: cause?.message ?? String(cause) };
+  }
+  const handle = await saisirVoisin(openHandle, nomDuJournal, {
+    operation: "open-generation",
+    volume: name,
+  });
+  try {
+    const journal = new JournalDeGeneration(name, handle);
+    const constat = constaterOuverture({ journal, tailleVolume: tailleLogique });
+    const motif = motifDeServiceEventuel(constat.racine, constat);
+    return { creationSeule: motif === null, tailleLogique, motif };
+  } finally {
+    rendreSansMasquer(handle);
   }
 }

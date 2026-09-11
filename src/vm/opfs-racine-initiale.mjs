@@ -369,8 +369,19 @@ function compteursDeLaRacineEcartee(racine) {
  * aucune. Aucun chemin du produit ne menait au défaut ; la garde est ce qui empêche la prochaine
  * tranche d'y mener sans le voir.
  */
-function exigerCreationSeule(name, constat) {
-  const racine = constat.racine;
+/**
+ * Le motif qui refuse « création seule », ou `null` si le journal ne porte QUE la racine initiale
+ * d'une création — séquence 0, génération 0, aucune entrée, rien d'abîmé, aucune charge en attente.
+ *
+ * PARTAGÉ entre `exigerCreationSeule`, qui LÈVE, et `constaterCreationSeule` (#173,
+ * `opfs-datation-de-creation.mjs`), qui OBSERVE sans lever : #173 doit pouvoir DÉCIDER — proposer ou
+ * non un geste de réparation — avant toute mutation, et une décision ne doit pas dépendre d'une
+ * seconde copie de ce discriminant qui finirait par diverger de la première.
+ *
+ * @param {object | null} racine
+ * @param {{ abimees: number, chargePresente: number }} constat
+ */
+export function motifDeServiceEventuel(racine, constat) {
   const enService =
     constat.abimees > 0 ||
     constat.chargePresente > 0 ||
@@ -378,14 +389,18 @@ function exigerCreationSeule(name, constat) {
     racine.sequence > 0 ||
     racine.generation > 0 ||
     racine.nombreEntrees > 0;
-  if (!enService) return;
-  const etat =
-    racine === null
-      ? "son journal ne porte AUCUNE racine, alors qu'une création en écrit une à la naissance — c'est l'état que laisse une restauration, pas une création"
-      : "son journal ne porte pas la seule racine initiale d'une création";
+  if (!enService) return null;
+  return racine === null
+    ? "son journal ne porte AUCUNE racine, alors qu'une création en écrit une à la naissance — c'est l'état que laisse une restauration, pas une création"
+    : "son journal ne porte pas la seule racine initiale d'une création";
+}
+
+function exigerCreationSeule(name, constat) {
+  const motif = motifDeServiceEventuel(constat.racine, constat);
+  if (motif === null) return;
   throw new StorageError(
     STORAGE_ERROR_CODES.generationPending,
-    `Datation de création refusée sur le volume « ${name} » : ${etat}. Dater écarterait ce que ce journal contient, c'est-à-dire peut-être une écriture acquittée. Ce geste est réservé à une création qui vient d'écrire son fichier hors transaction.`,
+    `Datation de création refusée sur le volume « ${name} » : ${motif}. Dater écarterait ce que ce journal contient, c'est-à-dire peut-être une écriture acquittée. Ce geste est réservé à une création qui vient d'écrire son fichier hors transaction.`,
     { volume: name },
   );
 }
