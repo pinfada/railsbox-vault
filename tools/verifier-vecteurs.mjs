@@ -1445,6 +1445,101 @@ async function verifierArchive() {
   );
 }
 
+/**
+ * L'ARCHIVE v3 d'un volume ANTÉRIEUR à v3 : `engagement` NUL, `recovery` NUL, manifeste v2.
+ *
+ * Elle est dérivée du § 7.5 de `docs/format-de-volume-v3.md` et de rien d'autre, comme le reste de
+ * ce fichier. Ce qu'elle fige est une FORME, et il faut le dire : cette archive n'est **pas
+ * authentifiée**. Un volume antérieur à v3 n'est pas chiffré et n'a pas d'identifiant : il n'y a
+ * rien à engager, et la restauration ne dépose aucun voisin d'engagement. Le volume posé est refusé
+ * à l'ouverture tant que la migration v2 → v3 ne l'a pas rechiffré.
+ *
+ * Sans ce vecteur, cette forme n'avait AUCUN contrat d'octets, alors que le produit l'écrit ET
+ * l'exige — un champ `engagement` absent est refusé, un champ non nul aussi (constat 2 de la revue
+ * de format de la PR #184).
+ */
+async function verifierArchiveDeVolumeAnterieur() {
+  const vecteurs = lire("tests/vectors/archive-v3.json");
+  const publie = vecteurs.archiveDeVolumeAnterieur;
+  const archive = hexEnOctets(publie.hex);
+
+  memesOctets(
+    "archive antérieure : les huit octets de tête sont le MÊME marqueur RBVAULT1",
+    texteAscii(ARCHIVE_MARQUEUR),
+    octetsEnHex(archive.subarray(0, 8)),
+  );
+  const longueurEnTete = lireBe(archive, 8, 4);
+  verifier(
+    "archive antérieure : la longueur d'en-tête est un uint32 GROS-BOUTISTE, à l'offset 8",
+    longueurEnTete === publie.longueurEnTete,
+    `${longueurEnTete} lu, ${publie.longueurEnTete} publié`,
+  );
+
+  const enTete = JSON.parse(
+    new TextDecoder().decode(
+      archive.subarray(ARCHIVE_PREAMBULE_OCTETS, ARCHIVE_PREAMBULE_OCTETS + longueurEnTete),
+    ),
+  );
+  verifier(
+    "archive antérieure : la version de CONTENEUR est 3, comme toute archive que ce runtime lit",
+    enTete.magic === ARCHIVE_EN_TETE_MARQUEUR && enTete.archiveFormatVersion === ARCHIVE_VERSION,
+    `${enTete.archiveFormatVersion}`,
+  );
+  verifier(
+    "archive antérieure : le manifeste décrit un volume ANTÉRIEUR à v3",
+    enTete.manifest.formatVersion < 3,
+    `${enTete.manifest.formatVersion}`,
+  );
+  verifier(
+    "archive antérieure : le manifeste ne DÉCLARE aucun identifiant de volume — v2 n'en a pas",
+    enTete.manifest.volume === undefined || enTete.manifest.volume === null,
+  );
+  // Le cœur du vecteur : le champ est PRÉSENT et NUL. Un champ absent ne dit pas la même chose —
+  // il laisserait croire à un en-tête d'une autre version —, et le produit le REFUSE.
+  verifier(
+    "archive antérieure : « engagement » est PRÉSENT et NUL, jamais absent",
+    Object.hasOwn(enTete, "engagement") && enTete.engagement === null,
+    `${JSON.stringify(enTete.engagement)}`,
+  );
+  verifier(
+    "archive antérieure : « recovery » suit la même règle — présent et nul",
+    Object.hasOwn(enTete, "recovery") && enTete.recovery === null,
+  );
+
+  const offsetContenu = ARCHIVE_PREAMBULE_OCTETS + longueurEnTete;
+  verifier(
+    "archive antérieure : offset du contenu = 12 + H",
+    offsetContenu === publie.offsetDuContenu,
+  );
+  verifier(
+    "archive antérieure : taille de l'archive = 12 + H + N, et RIEN ne suit le contenu",
+    archive.byteLength === offsetContenu + enTete.content.length,
+    `${archive.byteLength} octets pour ${offsetContenu} + ${enTete.content.length}`,
+  );
+
+  const contenu = archive.subarray(offsetContenu);
+  memesOctets(
+    "archive antérieure : l'empreinte inscrite est le SHA-256 du contenu",
+    await empreinte(contenu),
+    enTete.content.digest,
+  );
+  verifier(
+    "archive antérieure : le manifeste et l'en-tête portent la MÊME empreinte de contenu",
+    enTete.manifest.identity.digest === enTete.content.digest,
+  );
+  // Et le contenu est un fichier BRUT : ni en-tête v3, ni région d'authentification. C'est ce qui
+  // rend vraie la phrase « il n'y a rien à engager ».
+  verifier(
+    "archive antérieure : le contenu ne porte AUCUN en-tête de volume v3",
+    octetsEnHex(contenu).includes(octetsEnHex(texteAscii("VLTVOL03"))) === false,
+  );
+  verifier(
+    "archive antérieure : le fichier EST le volume — taille de fichier et taille logique coïncident",
+    enTete.content.length === enTete.manifest.geometry.volumeSize,
+    `${enTete.content.length} contre ${enTete.manifest.geometry.volumeSize}`,
+  );
+}
+
 // ---------------------------------------------------------------------------------------------
 
 async function main() {
@@ -1452,6 +1547,7 @@ async function main() {
   await verifierDisposition();
   await verifierRecuperation();
   await verifierArchive();
+  await verifierArchiveDeVolumeAnterieur();
 
   const total = vertes + rouges.length;
   if (rouges.length === 0) {
