@@ -220,18 +220,12 @@ export class Scellement {
     budgetVolume.reprendre(scellementsCumulesVolume);
 
     if (!racinePorteDeuxCompteurs(formatVersion)) {
-      // RÉGIME v3 : une seule clé — la DEK elle-même — et donc un seul budget, partagé par les deux
-      // domaines. Le partager est ce qui empêche une racine v3 de publier deux nombres là où il n'y
-      // a qu'une clé. Ce chemin n'a plus qu'un appelant dans le produit : la migration.
-      return new Scellement({
+      return Scellement.#sousLaCleMaitresse({
         volume,
         formatVersion,
-        cleVolume: await importerCleDeVolume(cleOctets),
-        cleJournal: null,
-        materiauMaitre: null,
-        budgetVolume,
-        budgetJournal: budgetVolume,
-        tirerNonce: nonces,
+        cleOctets,
+        budget: budgetVolume,
+        nonces,
         peutSceller,
       });
     }
@@ -251,6 +245,35 @@ export class Scellement {
       materiauMaitre: materiau,
       budgetVolume,
       budgetJournal,
+      tirerNonce: nonces,
+      peutSceller,
+    });
+  }
+
+  /**
+   * RÉGIME ANTÉRIEUR à la v4 : une seule clé — la DEK elle-même — et donc un seul budget, partagé
+   * par les deux domaines.
+   *
+   * Le partager est ce qui empêche, par construction, qu'une racine v3 publie deux nombres là où il
+   * n'y a qu'une clé. Ce chemin n'a plus qu'un appelant dans le produit — la MIGRATION —, et c'est
+   * pourquoi il porte un nom : le cliquet anti-DEK de T2b n'aura qu'une exception à inscrire.
+   */
+  static async #sousLaCleMaitresse({
+    volume,
+    formatVersion,
+    cleOctets,
+    budget,
+    nonces,
+    peutSceller,
+  }) {
+    return new Scellement({
+      volume,
+      formatVersion,
+      cleVolume: await importerCleDeVolume(cleOctets),
+      cleJournal: null,
+      materiauMaitre: null,
+      budgetVolume: budget,
+      budgetJournal: budget,
       tirerNonce: nonces,
       peutSceller,
     });
@@ -324,6 +347,27 @@ export class Scellement {
     }
     this.#budgetVolume.reprendre(repere.volume);
     this.#budgetJournal.reprendre(repere.journal);
+  }
+
+  /**
+   * REPREND les compteurs d'une RACINE qui fait autorité, telle que le journal la rend.
+   *
+   * Le « + 1 » compte la racine elle-même : le § 8.3 de NIST SP 800-38D compte « all instances of
+   * the authenticated encryption function », et une racine en est une. Le compteur du JOURNAL, lui,
+   * ne le reçoit pas — la racine est scellée sous la clé du VOLUME, elle ne consomme rien du
+   * journal.
+   *
+   * Une racine qui n'en publie qu'un — celle d'un volume v3 — ne reprend que celui-là. La règle vit
+   * ICI plutôt que dans le magasin : c'est ce scellement qui sait combien de clés à compteur il
+   * tient, et deux endroits qui en décideraient finiraient par en décider deux choses.
+   */
+  reprendreDepuisLaRacine(racine) {
+    const journal = racine.scellementsCumulesJournal;
+    this.reprendreDepuis(
+      journal === null || journal === undefined
+        ? racine.scellementsCumulesVolume + 1
+        : { volume: racine.scellementsCumulesVolume + 1, journal },
+    );
   }
 
   /**

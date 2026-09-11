@@ -377,19 +377,9 @@ export function decoderEnTeteDeVolume(octets, { formatVersion: attendu }) {
   }
 
   const tailleLogique = lireEntier(vue, 16, 8);
-  let disposition;
-  try {
-    disposition = dispositionDuVolume(tailleLogique);
-  } catch (cause) {
-    return refus(`Taille logique inadmissible dans l'en-tête : ${cause.message}`);
-  }
-  const declares = [lireEntier(vue, 24, 8), lireEntier(vue, 32, 8), lireEntier(vue, 40, 8)];
-  const attendus = [disposition.regionOffset, disposition.regionOctets, disposition.chargeOffset];
-  if (declares.some((valeur, index) => valeur !== attendus[index])) {
-    return refus(
-      `Disposition incohérente : l'en-tête place la charge et la région à ${declares.join(", ")} là où la taille logique impose ${attendus.join(", ")}.`,
-    );
-  }
+  const resolue = dispositionDeclaree(vue, tailleLogique);
+  if (resolue.raison !== null) return refus(resolue.raison);
+  const disposition = resolue.disposition;
 
   return {
     valide: true,
@@ -420,6 +410,33 @@ export function decoderEnTeteV3(octets) {
 /** Relit un en-tête v4 : celui que l'ouverture d'un volume exige, et le seul. */
 export function decoderEnTeteV4(octets) {
   return decoderEnTeteDeVolume(octets, { formatVersion: FORMAT_VOLUME_V4 });
+}
+
+/**
+ * RÉSOUT la disposition qu'un en-tête décrit, et dit ce qu'elle CONTREDIT s'il ment.
+ *
+ * L'en-tête déclare où la région et la charge commencent ; la taille logique, elle, les IMPOSE. Les
+ * confronter est ce qui empêche un en-tête retouché de faire lire des sceaux comme des données.
+ */
+function dispositionDeclaree(vue, tailleLogique) {
+  let disposition;
+  try {
+    disposition = dispositionDuVolume(tailleLogique);
+  } catch (cause) {
+    return {
+      disposition: null,
+      raison: `Taille logique inadmissible dans l'en-tête : ${cause.message}`,
+    };
+  }
+  const declares = [lireEntier(vue, 24, 8), lireEntier(vue, 32, 8), lireEntier(vue, 40, 8)];
+  const attendus = [disposition.regionOffset, disposition.regionOctets, disposition.chargeOffset];
+  if (declares.some((valeur, index) => valeur !== attendus[index])) {
+    return {
+      disposition: null,
+      raison: `Disposition incohérente : l'en-tête place la charge et la région à ${declares.join(", ")} là où la taille logique impose ${attendus.join(", ")}.`,
+    };
+  }
+  return { disposition, raison: null };
 }
 
 /**

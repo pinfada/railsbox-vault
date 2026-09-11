@@ -361,6 +361,25 @@ export function longueurPhysiqueDeCharge({ nombreEntrees, longueurCharge }) {
  *   le second compteur est inscrit, et l'omettre écrirait une racine de v3 sur un volume v4.
  * @returns {Uint8Array} exactement `RACINE_OCTETS` octets
  */
+/**
+ * CONTRÔLE les largeurs qu'une racine porte, et EXIGE que la fraîcheur soit décidée.
+ *
+ * `null` déclare l'absence, `undefined` est un oubli — et un oubli aurait écrit une racine d'avant
+ * l'ADR 0019 sans que personne le décide. C'est la règle des attentes de l'ADR 0015.
+ */
+function exigerLesOctetsDUneRacine({ identifiantVolume, nonce, chiffre, etiquette, fraicheur }) {
+  exigerOctets("identifiantVolume", identifiantVolume, IDENTIFIANT_VOLUME_OCTETS);
+  exigerOctets("nonce", nonce, NONCE_OCTETS);
+  exigerOctets("chiffre", chiffre, EMPREINTE_OCTETS);
+  exigerOctets("etiquette", etiquette, ETIQUETTE_OCTETS);
+  if (fraicheur === undefined) {
+    throw new RangeError(
+      "« fraicheur » d'une racine est obligatoire : les octets de l'empreinte de région, ou « null » pour déclarer qu'aucune n'est scellée. Un oubli aurait écrit une racine d'avant l'ADR 0019 sans que personne le décide.",
+    );
+  }
+  if (fraicheur !== null) exigerOctets("fraicheur", fraicheur, FRAICHEUR_OCTETS);
+}
+
 export function encoderRacine({
   format,
   sequence,
@@ -376,16 +395,7 @@ export function encoderRacine({
   etiquette,
   fraicheur,
 }) {
-  exigerOctets("identifiantVolume", identifiantVolume, IDENTIFIANT_VOLUME_OCTETS);
-  exigerOctets("nonce", nonce, NONCE_OCTETS);
-  exigerOctets("chiffre", chiffre, EMPREINTE_OCTETS);
-  exigerOctets("etiquette", etiquette, ETIQUETTE_OCTETS);
-  if (fraicheur === undefined) {
-    throw new RangeError(
-      "« fraicheur » d'une racine est obligatoire : les octets de l'empreinte de région, ou « null » pour déclarer qu'aucune n'est scellée. Un oubli aurait écrit une racine d'avant l'ADR 0019 sans que personne le décide.",
-    );
-  }
-  if (fraicheur !== null) exigerOctets("fraicheur", fraicheur, FRAICHEUR_OCTETS);
+  exigerLesOctetsDUneRacine({ identifiantVolume, nonce, chiffre, etiquette, fraicheur });
 
   const octets = new Uint8Array(RACINE_OCTETS);
   const vue = new DataView(octets.buffer);
@@ -411,14 +421,25 @@ export function encoderRacine({
   octets.set(etiquette, 120);
   if (fraicheur !== null) octets.set(fraicheur, RACINE_ENTETE_V2_OCTETS);
   if (racinePorteDeuxCompteurs(formatEcrit)) {
-    if (!Number.isSafeInteger(scellementsCumulesJournal) || scellementsCumulesJournal < 0) {
-      throw new RangeError(
-        `« scellementsCumulesJournal » d'une racine de format ${formatEcrit} est obligatoire : depuis #182 le journal a sa propre clé, donc son propre budget, et une racine qui ne le publierait pas rendrait ce budget invérifiable.`,
-      );
-    }
-    ecrireEntier64(vue, RACINE_ENTETE_OCTETS, scellementsCumulesJournal);
+    ecrireLeCompteurDuJournal(vue, formatEcrit, scellementsCumulesJournal);
   }
   return octets;
+}
+
+/**
+ * ÉCRIT le second compteur, celui du domaine `journal`, à la suite de la fraîcheur (#182).
+ *
+ * Il est OBLIGATOIRE sur une racine de format 5 : depuis #182 le journal a sa propre clé, donc son
+ * propre budget, et une racine qui ne le publierait pas rendrait ce budget invérifiable — c'est-à-dire
+ * referait exactement le défaut que #182 corrige.
+ */
+function ecrireLeCompteurDuJournal(vue, format, scellementsCumulesJournal) {
+  if (!Number.isSafeInteger(scellementsCumulesJournal) || scellementsCumulesJournal < 0) {
+    throw new RangeError(
+      `« scellementsCumulesJournal » d'une racine de format ${format} est obligatoire : depuis #182 le journal a sa propre clé, donc son propre budget, et une racine qui ne le publierait pas rendrait ce budget invérifiable.`,
+    );
+  }
+  ecrireEntier64(vue, RACINE_ENTETE_OCTETS, scellementsCumulesJournal);
 }
 
 /** Refuse un format de racine que ce runtime n'écrit pas. Un format deviné écrirait des octets muets. */
@@ -504,6 +525,36 @@ function refusDeRacine(raison, vierge = false) {
  *
  * @returns {{ valide: false } | { valide: true, format: number, vue: DataView }}
  */
+/**
+ * Ce qu'un FORMAT DÉCLARÉ contredit dans les octets qui l'entourent, ou `null` s'il ne contredit rien.
+ *
+ * Le champ de format n'est PAS authentifié, et ces deux contrôles sont ce qui l'empêche de mentir en
+ * silence. Ils sont le même geste, à deux versions de distance : ce runtime n'écrit jamais un format
+ * au-dessus d'octets qu'il ne devrait pas y avoir, si bien qu'un bit retourné dans ce champ — un
+ * seul suffit à faire passer 3 pour 2, ou 5 pour 4 — se voit ici.
+ *
+ * Sans le premier, un adversaire désarmerait la fraîcheur de l'ADR 0019 en touchant un bit qu'aucune
+ * étiquette ne couvre (#19). Sans le second, il masquerait un compteur de journal que plus rien ne
+ * relirait (#182). Ce qui rend le champ inoffensif est cette cohérence, plus le témoin de séquence
+ * quand il en atteste une, plus — depuis la v4 — le fait que les données associées d'une racine
+ * comptent onze champs.
+ */
+function incoherenceDuFormat(octets, format) {
+  if (racinePorteFraicheur(format) && octets.byteLength < RACINE_ENTETE_OCTETS) {
+    return "Secteur de racine trop court pour porter la fraîcheur de sa région.";
+  }
+  if (racinePorteDeuxCompteurs(format) && octets.byteLength < RACINE_ENTETE_V5_OCTETS) {
+    return "Secteur de racine trop court pour porter le second compteur.";
+  }
+  if (!racinePorteDeuxCompteurs(format) && !placeDuSecondCompteurVierge(octets)) {
+    return `Racine déclarée au format ${format}, à un seul compteur, alors que la place du second compteur n'est pas nulle : un des deux ment.`;
+  }
+  if (format === GENERATION_FORMAT_SANS_FRAICHEUR && !reserveVierge(octets)) {
+    return `Racine déclarée au format ${GENERATION_FORMAT_SANS_FRAICHEUR} alors que sa réserve porte une fraîcheur de région : un des deux ment.`;
+  }
+  return null;
+}
+
 function controlerSansCle(octets, { tailleVolume }) {
   if (!(octets instanceof Uint8Array) || octets.byteLength < RACINE_ENTETE_V2_OCTETS) {
     return refusDeRacine("Secteur de racine trop court pour porter un en-tête.");
@@ -518,34 +569,8 @@ function controlerSansCle(octets, { tailleVolume }) {
   if (!GENERATION_FORMATS_LUS.includes(format)) {
     return refusDeRacine(`Format de journal de génération inconnu : ${format}.`);
   }
-  if (racinePorteFraicheur(format) && octets.byteLength < RACINE_ENTETE_OCTETS) {
-    return refusDeRacine("Secteur de racine trop court pour porter la fraîcheur de sa région.");
-  }
-  if (racinePorteDeuxCompteurs(format) && octets.byteLength < RACINE_ENTETE_V5_OCTETS) {
-    return refusDeRacine("Secteur de racine trop court pour porter le second compteur.");
-  }
-  // Le MIROIR de la garde de #19 sur la fraîcheur, et pour la même raison : ce runtime n'écrit
-  // jamais un format à un seul compteur au-dessus d'octets non nuls dans la place du second. C'est
-  // exactement ce que produit un bit retourné dans le champ de format — un seul bit fait passer 5
-  // pour 4 —, et sans ce contrôle ce bit masquerait un compteur de journal que plus rien ne
-  // relirait. Le champ reste NON AUTHENTIFIÉ ; ce qui le rend inoffensif est cette cohérence, plus
-  // le fait que les données associées comptent onze champs à partir de la v4 (#182).
-  if (!racinePorteDeuxCompteurs(format) && !placeDuSecondCompteurVierge(octets)) {
-    return refusDeRacine(
-      `Racine déclarée au format ${format}, à un seul compteur, alors que la place du second compteur n'est pas nulle : un des deux ment.`,
-    );
-  }
-  // Une racine qui SE DIT d'avant la fraîcheur, au-dessus d'octets de fraîcheur non nuls, ne peut
-  // pas avoir été écrite ainsi : ce runtime n'écrit jamais l'un sans l'autre, et #18 laissait cette
-  // zone vierge. C'est exactement ce que produit un octet retourné dans le champ de format — un
-  // seul bit fait passer 3 pour 2 —, et sans ce contrôle un adversaire désarmerait l'ADR 0019 en
-  // touchant un bit qu'aucune étiquette ne couvre. Le champ reste NON AUTHENTIFIÉ : ce qui le rend
-  // inoffensif est cette cohérence, plus le témoin de séquence quand il en atteste une.
-  if (format === GENERATION_FORMAT_SANS_FRAICHEUR && !reserveVierge(octets)) {
-    return refusDeRacine(
-      `Racine déclarée au format ${GENERATION_FORMAT_SANS_FRAICHEUR} alors que sa réserve porte une fraîcheur de région : un des deux ment.`,
-    );
-  }
+  const incoherence = incoherenceDuFormat(octets, format);
+  if (incoherence !== null) return refusDeRacine(incoherence);
   if (vue.getUint32(12, true) !== SECTOR_SIZE) {
     return refusDeRacine("Racine écrite avec une autre taille de secteur.");
   }

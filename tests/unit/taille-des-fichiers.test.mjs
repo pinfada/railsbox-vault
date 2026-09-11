@@ -52,7 +52,7 @@ const RACINES = ["src", "public/vm"];
 const SOUS_SURVEILLANCE = [
   {
     fichier: "src/vm/generation-store.mjs",
-    lignes: 741,
+    lignes: 744,
     motif:
       "#65 l'avait inscrit à 738 lignes en écrivant « la prochaine tranche qui y touchera devra le " +
       "scinder ». #181 y a touché — l'ouverture décide désormais d'écrire une RACINE INITIALE — et " +
@@ -63,7 +63,10 @@ const SOUS_SURVEILLANCE = [
       "davantage rendrait le protocole illisible pour tenir sous un seuil. La revue de sécurité de " +
       "la PR #184 (constat 9) y ajoute trois lignes : un voisin d'engagement trouvé alors qu'une " +
       "racine fait autorité est ÉCARTÉ et PUBLIÉ, au lieu d'être ignoré en silence. Le geste " +
-      "appartient au chemin « une racine décide », donc à cette machine à états.",
+      "appartient au chemin « une racine décide », donc à cette machine à états. #182 y ajoute trois " +
+      "lignes et en retire autant ailleurs : le format écrit suit désormais la version du VOLUME — " +
+      "une racine v4 publie deux compteurs — et la reprise des compteurs depuis la racine est " +
+      "partie au `Scellement`, qui seul sait combien de clés à compteur il tient.",
   },
   {
     fichier: "src/vm/opfs-block-backend.mjs",
