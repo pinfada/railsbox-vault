@@ -102,10 +102,20 @@ où un chemin réellement servi importerait l'un de ces deux modules, ce serait 
 
 ## Conséquences
 
-- `VAULT_COQUILLE_VOLUME_APPLICATIF_SANS_MANIFESTE` reste inchangé dans son code et son message ; il
-  porte désormais la signature dans son CONTEXTE (`installationInterrompue`, `motifDeLaSignature`),
-  jamais dans le message rendu à l'utilisateur, qui nomme ce qui a été trouvé (taille, voisins
-  présents, manifeste absent).
+- `VAULT_COQUILLE_VOLUME_APPLICATIF_SANS_MANIFESTE` reste inchangé dans son code ; il porte
+  désormais la signature dans son CONTEXTE (`installationInterrompue`, `motifDeLaSignature`), jamais
+  dans le message rendu à l'utilisateur, qui nomme ce qui a été trouvé (taille, voisins présents,
+  manifeste absent OU illisible).
+- **Révision datée du 12/09/2026 (revue de sécurité de la PR #188, MEDIUM-2).**
+  `constaterLInstallation` ne regardait que la PRÉSENCE du manifeste, jamais son contenu : une
+  coupure pendant l'écriture du manifeste — le DERNIER geste de l'installation, donc la coupure la
+  plus tardive qu'elle puisse subir — laissait un sidecar tronqué, PRÉSENT, et pris pour « déjà
+  installée ». C'était le seul cas d'installation interrompue que cette ADR promet de réparer et
+  laissait dehors : ni bouton, ni remède, un message qui ment. Le manifeste est désormais LU et
+  PARSÉ avant qu'un volume ne soit dit installé ; un manifeste présent mais illisible tombe au même
+  refus que son absence, avec un message qui le nomme (« manifeste voisin illisible », jamais « sans
+  manifeste ») — et rejoint donc le champ que la signature d'installation interrompue sait déjà
+  couvrir.
 - Un volume « autre chose » (signature absente) continue de recevoir le refus SEUL, sans bouton,
   sans retrait : un chemin de maintenance pour ce cas reste une issue à ouvrir, pas une tranche à
   improviser.

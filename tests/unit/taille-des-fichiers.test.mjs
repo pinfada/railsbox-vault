@@ -69,8 +69,9 @@ const HORS_PERIMETRE = [
     motif:
       "découvert le 11/09/2026 en élargissant RACINES à `public` (#175) : il dépassait déjà le " +
       "plafond avant cet élargissement, et #175 ne scindait que `main.mjs`. Scinder le Worker de " +
-      "confiance (#161, ADR 0028) est un chantier de sécurité distinct, signalé au superviseur ; " +
-      "cette exclusion sort de la liste dès qu'une tranche dédiée l'a scindé sous 800 lignes. " +
+      "confiance (#161, ADR 0028) est un chantier de sécurité distinct, ouvert sous #191 (revue de " +
+      "sécurité de la PR #188, MEDIUM-1 : un signalement n'est pas un cliquet) ; cette exclusion " +
+      "sort de la liste dès que #191 l'a scindé sous 800 lignes. " +
       "#173 (12/09/2026) y ajoute trente-six lignes — le geste `reprendreLInstallationGeste`, qui " +
       "revérifie la signature d'une installation interrompue avant d'agir — parce qu'il appartient " +
       "au même dispatch que `demarrerLApplication` ; le déplacer seul aurait scindé le fichier sans " +

@@ -2542,8 +2542,8 @@ reprend l'instantané que le VERROUILLAGE a scellé. Relevé du 8 septembre 2026
 038,2 ms** — et l'instantané de 256 Mio est constaté PRÉSENT sur l'OPFS entre les deux. Compter
 davantage sur un exécutant partagé ; la marge du job (120 min) les couvre largement.
 
-**Campagnes de mutation** — `node tools/muter-gardes-cycle-de-vie.mjs` : vingt-sept gardes,
-vingt-sept mutants tués, table et survivant dans l'ADR 0030.
+**Campagnes de mutation** — `node tools/muter-gardes-cycle-de-vie.mjs` : vingt-huit gardes,
+vingt-huit mutants tués, table et survivant dans l'ADR 0030.
 `node tools/muter-gardes-fins-d-onglet.mjs` : **dix-huit gardes, dix-huit mutants tués**, table dans
 l'ADR 0032 — `pagehide` qui tue quel que soit `persisted` et dès que le Worker VIT, `pageshow` qui
 ne recharge que restauré, le gel qui ne tue rien, la vérification d'échéance qui ne remet rien à
