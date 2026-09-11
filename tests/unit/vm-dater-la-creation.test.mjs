@@ -38,6 +38,7 @@ import test from "node:test";
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
 import { GENERATION_ETATS } from "../../src/vm/generation-recuperation.mjs";
 import { daterLaCreation, openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
+import { constaterCreationSeule } from "../../src/vm/opfs-datation-de-creation.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 import { DEK, TAILLE, VOLUME_A } from "./support-archive-recuperation.mjs";
@@ -196,4 +197,160 @@ test("dater un fichier sans en-tête v3 lisible est REFUSÉ, jamais deviné", as
       }),
     (cause) => isStorageError(cause, STORAGE_ERROR_CODES.geometryMismatch),
   );
+});
+
+// --- `constaterCreationSeule` — la SIGNATURE d'une installation interrompue (#173) -----------------
+//
+// La MESURE, en rejouant une interruption sur ce même double : le journal de génération n'est
+// JAMAIS absent pendant une installation — une création l'écrit dès l'ouverture, avant tout
+// versement. Ce qui distingue une création encore EN COURS d'une création ACHEVÉE (ou de tout
+// autre chose) est le CONTENU du journal : tant qu'aucune barrière n'a été franchie, il ne porte que
+// la racine de naissance, seule. `constaterCreationSeule` OBSERVE ce contenu sans en muter un octet
+// — contrairement à `ecarterLeJournalDeCreation`, dont c'est le premier geste avant de tronquer.
+
+/** Observateur qui STATUE sans jamais créer un fichier : le même contrat que `statOpfsVolume`. */
+function observerDuStore(store) {
+  return async (nom) => ({ present: store.sizeOf(nom) > 0, size: store.sizeOf(nom) });
+}
+
+test("constaterCreationSeule : VRAI à la naissance, avant tout versement", async () => {
+  const store = createSyncAccessStore();
+  const backend = await openOpfsVolume({
+    name: NOM,
+    size: TAILLE,
+    cle: DEK,
+    identifiantVolume: VOLUME_A,
+    openHandle: store.openHandle,
+    transactionnel: false,
+  });
+  await backend.close();
+
+  const constat = await constaterCreationSeule({
+    name: NOM,
+    openHandle: store.openHandle,
+    observer: observerDuStore(store),
+  });
+  assert.equal(constat.creationSeule, true, constat.motif);
+  assert.equal(constat.motif, null);
+  assert.equal(constat.tailleLogique, TAILLE);
+});
+
+test("constaterCreationSeule : VRAI encore après le versement complet, TANT QUE rien n'a daté", async () => {
+  // `verser` reproduit `verserLeDisque` À L'IDENTIQUE : il écrit, flush UNE fois, ferme — sous
+  // `clotureParDatation: true`. Ce drapeau est précisément ce qui laisse le journal dans l'état de
+  // naissance jusqu'à la datation : c'est la fenêtre RÉALISTE d'une interruption, du tout début du
+  // versement jusqu'à la toute fin, et pas seulement le premier instant après l'ouverture.
+  const store = createSyncAccessStore();
+  await verser(store);
+
+  const constat = await constaterCreationSeule({
+    name: NOM,
+    openHandle: store.openHandle,
+    observer: observerDuStore(store),
+  });
+  assert.equal(constat.creationSeule, true, constat.motif);
+});
+
+test("constaterCreationSeule : VRAI encore juste après la datation, tant que rien ne l'a réutilisé", async () => {
+  // La datation écrit une racine dont le motif reste « creation » : `constaterCreationSeule` ne
+  // distingue pas encore ce rang de « pas datée » — et c'est voulu, puisqu'un volume daté mais dont
+  // le manifeste n'est pas encore inscrit EST toujours une installation inachevée. C'est l'USAGE
+  // NORMAL qui suit qui fait la différence (témoin négatif ci-dessous), pas la seule datation.
+  const store = createSyncAccessStore();
+  const empreinteVersee = await verser(store);
+  await daterLaCreation({
+    name: NOM,
+    cle: DEK,
+    identifiantVolume: VOLUME_A,
+    empreinteVersee,
+    openHandle: store.openHandle,
+  });
+
+  const constat = await constaterCreationSeule({
+    name: NOM,
+    openHandle: store.openHandle,
+    observer: observerDuStore(store),
+  });
+  assert.equal(constat.creationSeule, true, constat.motif);
+});
+
+test("constaterCreationSeule : FAUX dès qu'un usage NORMAL a suivi la datation", async () => {
+  // Témoin négatif : une fois le volume réellement rouvert et réécrit — l'usage qui suit une
+  // installation ACHEVÉE —, le journal cesse de ne porter que sa racine de naissance. C'est la
+  // frontière que le prédicat protège : un volume déjà EN SERVICE n'est jamais confondu avec une
+  // installation qui n'a pas fini.
+  const store = createSyncAccessStore();
+  const empreinteVersee = await verser(store);
+  await daterLaCreation({
+    name: NOM,
+    cle: DEK,
+    identifiantVolume: VOLUME_A,
+    empreinteVersee,
+    openHandle: store.openHandle,
+  });
+  const backend = await openOpfsVolume({
+    name: NOM,
+    size: TAILLE,
+    cle: DEK,
+    identifiantVolume: VOLUME_A,
+    openHandle: store.openHandle,
+  });
+  try {
+    await backend.write(0, secteurDe(0x55));
+    await backend.flush();
+  } finally {
+    await backend.close();
+  }
+
+  const constat = await constaterCreationSeule({
+    name: NOM,
+    openHandle: store.openHandle,
+    observer: observerDuStore(store),
+  });
+  assert.equal(constat.creationSeule, false);
+  assert.match(constat.motif, /ne porte pas la seule racine initiale/);
+});
+
+test("constaterCreationSeule : FAUX sans journal lisible — ce n'est pas ce qu'une création laisse", async () => {
+  // Un fichier de volume posé par autre chose que ce produit — ou par une restauration qui n'a
+  // jamais ouvert via `openOpfsVolume` — n'a pas de journal de génération. La fonction ne le
+  // FABRIQUE pas pour trancher : un journal absent est un refus de la signature, jamais une invite.
+  const store = createSyncAccessStore();
+  const handle = await store.openHandle(NOM);
+  handle.truncate(TAILLE);
+  handle.flush();
+  handle.close();
+
+  const constat = await constaterCreationSeule({
+    name: NOM,
+    openHandle: store.openHandle,
+    observer: observerDuStore(store),
+  });
+  assert.equal(constat.creationSeule, false);
+  assert.match(constat.motif, /aucun journal de génération/);
+});
+
+test("constaterCreationSeule : n'ouvre ni ne crée le journal quand l'observateur le dit absent", async () => {
+  // Mutant nommé « le journal est ouvert avant d'être observé » : sans cette garde, la fonction
+  // FABRIQUERAIT le fichier en tentant de l'ouvrir — exactement ce qu'un « constat » ne doit jamais
+  // faire. L'observateur ment ici volontairement (le journal existe RÉELLEMENT sur le store, mais
+  // il annonce son absence) pour prouver que la décision suit l'observation, pas le disque.
+  const store = createSyncAccessStore();
+  const backend = await openOpfsVolume({
+    name: NOM,
+    size: TAILLE,
+    cle: DEK,
+    identifiantVolume: VOLUME_A,
+    openHandle: store.openHandle,
+    transactionnel: false,
+  });
+  await backend.close();
+
+  const constat = await constaterCreationSeule({
+    name: NOM,
+    openHandle: store.openHandle,
+    observer: async () => ({ present: false, size: 0 }),
+  });
+  assert.equal(constat.creationSeule, false);
+  assert.match(constat.motif, /aucun journal de génération/);
 });
