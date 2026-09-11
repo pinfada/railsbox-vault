@@ -272,13 +272,17 @@ export const MUTATIONS = Object.freeze([
     garde: "installerSiNecessaire — le refus d'écraser un volume anonyme",
     fichier: APPLICATION,
     avant:
-      "  const volumeExistant = await observer(nom);\n" +
-      "  if (volumeExistant.present) {\n" +
-      "    throw refus(\n" +
+      "  throw Object.assign(\n" +
+      "    refus(\n" +
       "      CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste,\n" +
       "      `Le volume « ${nom} » existe sans manifeste : la coquille ne l'écrase pas pour installer.`,\n" +
-      "    );\n" +
-      "  }\n",
+      "    ),\n" +
+      "    {\n" +
+      "      installationInterrompue: signature.interrompue,\n" +
+      "      motifDeLaSignature: signature.motif,\n" +
+      "      tailleDuVolume: volumeExistant.size,\n" +
+      "    },\n" +
+      "  );\n",
     apres: "",
     epreuves: [EPREUVE_APPLICATION],
   },
