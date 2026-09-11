@@ -161,6 +161,38 @@ test("l'ENGAGEMENT du vecteur est celui que le produit scelle, sous le même sel
   assert.equal(octetsEnHex(ouvert), vecteurs.archive.empreinteDuContenu);
 });
 
+test("le SEL est TIRÉ : deux scellements du MÊME contenu n'ont ni le même sel ni la même clé", async () => {
+  // Les vecteurs figent l'encodage SOUS UN SEL DONNÉ ; ils ne disent rien de la façon dont le
+  // produit l'obtient. Or c'est le tirage qui rend la clé du domaine `archive` à USAGE UNIQUE, donc
+  // ce qui autorise « une archive, une clé, un scellement, AUCUN compteur » (ADR 0033 décision 3,
+  // ADR 0034 décision 2). Une constante à la place du tirage ferait exactement ce que la règle
+  // interdit, et rien ne le voyait (constat 5 de la revue de format de la PR #184).
+  const appel = {
+    cleMaitresse: DEK,
+    empreinteDuContenu: hexEnOctets(vecteurs.archive.empreinteDuContenu),
+    descripteur: vecteurs.engagement.descripteur,
+  };
+  const premier = await scellerEngagement(appel);
+  const second = await scellerEngagement(appel);
+
+  assert.equal(premier.sel.byteLength, 32, "un sel de domaine fait 32 octets");
+  assert.notEqual(
+    octetsEnHex(premier.sel),
+    octetsEnHex(second.sel),
+    "le sel est TIRÉ, pas constant",
+  );
+  assert.notEqual(octetsEnHex(premier.nonce), octetsEnHex(second.nonce));
+  // Et ce n'est pas seulement le sel qui change : la CLÉ en dépend, donc le chiffré et l'étiquette.
+  assert.notEqual(octetsEnHex(premier.chiffre), octetsEnHex(second.chiffre));
+  assert.notEqual(octetsEnHex(premier.etiquette), octetsEnHex(second.etiquette));
+
+  // Les deux OUVRENT, et sur la même empreinte : deux sels distincts ne sont pas deux contenus.
+  for (const scelle of [premier, second]) {
+    const ouvert = await ouvrirEngagement({ cleMaitresse: DEK, engagement: scelle });
+    assert.equal(octetsEnHex(ouvert), vecteurs.archive.empreinteDuContenu);
+  }
+});
+
 test("le VOISIN « .engagement » du vecteur fait 180 octets, et il se relit", async () => {
   const scelle = await scellerEngagement({
     cleMaitresse: DEK,
@@ -209,6 +241,31 @@ test("l'ARCHIVE entière du vecteur est celle que `writeArchive` produit, octet 
   assert.equal(headerLength, vecteurs.archive.longueurEnTete);
   assert.equal(archiveLength, vecteurs.archive.longueurTotale);
   assert.equal(octetsEnHex(archive), vecteurs.archive.hex);
+});
+
+test("l'ARCHIVE d'un volume ANTÉRIEUR est celle que le produit écrit, octet pour octet", async () => {
+  // La forme que la revue de format de la PR #184 a trouvée écrite et exigée nulle part décrite
+  // (constat 2) : une archive v3 d'un volume v2 déclare « engagement: null », EXPLICITEMENT. Sans
+  // clé, sans identifiant de volume, sans section de récupération — et sans authentification, ce
+  // que le § 7.5 dit désormais. C'est ce qui garde possible la sauvegarde que l'ADR 0011 exige
+  // AVANT une migration v2 → v3.
+  const publie = vecteurs.archiveDeVolumeAnterieur;
+  const contenu = Uint8Array.from(
+    { length: publie.volume.tailleFichier },
+    (_, index) => (index * 11 + 5) % 256,
+  );
+  const { archive, headerLength, archiveLength } = await exportVolumeToBytes({
+    source: {
+      size: contenu.byteLength,
+      read: async (offset, longueur) => contenu.slice(offset, offset + longueur),
+    },
+    manifest: publie.enTete.manifest,
+    consistency: publie.enTete.content.consistency,
+  });
+
+  assert.equal(headerLength, publie.longueurEnTete);
+  assert.equal(archiveLength, publie.longueurTotale);
+  assert.equal(octetsEnHex(archive), publie.hex);
 });
 
 test("les offsets publiés sont ceux que la disposition impose", () => {

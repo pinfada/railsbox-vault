@@ -32,7 +32,12 @@
 //  - depuis #181 : ce que l'ENGAGEMENT scelle et sous quelle clé, la confrontation de l'empreinte
 //    du fichier à celle qu'il scelle, le refus d'un voisin ABSENT, le refus d'un volume sans racine
 //    que rien n'autorise, et la RACINE INITIALE que la création écrit. Ce sont les six lignes qui
-//    séparent la correction du CRITICAL d'une déclaration d'intention.
+//    séparent la correction du CRITICAL d'une déclaration d'intention ;
+//  - depuis les revues de la PR #184 : la confrontation de l'empreinte que le VERSEMENT a rendue,
+//    l'exigence de la racine de naissance avant de dater, l'ORDRE des trois gestes de
+//    `#recupererSansRacine` — deux mutants, parce qu'il y a deux inversions possibles —, la
+//    CONSOMMATION du voisin, le TIRAGE du sel de domaine, et la racine initiale de la MIGRATION.
+//    Sept propriétés que la PR déclarait non négociables et que rien ne défendait.
 //
 // ## Ce que la campagne ne peut PAS mesurer
 //
@@ -54,6 +59,8 @@ const DOMAINE = "src/vm/derivation/cle-de-domaine.mjs";
 const OUVREUR = "src/vm/opfs-volume-ouverture.mjs";
 const RECUPERATION_GENERATION = "src/vm/generation-recuperation.mjs";
 const RACINE = "src/vm/opfs-racine-initiale.mjs";
+const MAGASIN = "src/vm/generation-store.mjs";
+const MIGRATION = "src/vm/volume-migration.mjs";
 
 const ARCHIVE = "tests/unit/vm-archive-recuperation.test.mjs";
 const RESTAURATION = "tests/unit/vm-restauration-recuperation.test.mjs";
@@ -62,6 +69,8 @@ const VECTEURS = "tests/unit/vm-archive-vecteurs.test.mjs";
 const IMPORT_EPREUVE = "tests/unit/vm-volume-import.test.mjs";
 const MELANGE = "tests/unit/vm-archive-melange-etats.test.mjs";
 const GENERATION = "tests/unit/vm-generation-store.test.mjs";
+const COQUILLE = "tests/unit/coquille-application.test.mjs";
+const MIGRATION_RACINE = "tests/unit/vm-migration-racine-initiale.test.mjs";
 
 /**
  * Les gardes de #149, et la façon exacte de les retirer.
@@ -289,6 +298,78 @@ export const MUTATIONS = Object.freeze([
     avant: "  const motif = saisi.naissance ? MOTIFS_DE_RACINE_INITIALE.creation : creation;",
     apres: "  const motif = creation;",
     epreuves: [MELANGE],
+  },
+
+  // --- Les gardes ajoutées par les revues de la PR #184 -----------------------------------------
+  //
+  // Les deux revues ont relevé la même chose de deux côtés : ce que la PR déclarait « le contrat, et
+  // il n'est pas négociable » n'était tenu par AUCUN mutant. Ces sept-là le tiennent, et chacun est
+  // tué par une épreuve qui MESURE — l'ordre des gestes, le compte d'un tirage, une racine relue sur
+  // le support — jamais par une épreuve qui relit une intention.
+
+  {
+    nom: "la DATATION d'une création confronte l'empreinte que le versement a rendue",
+    garde: "confronterLEmpreinteVersee — la comparaison des deux empreintes",
+    fichier: RACINE,
+    avant: "  if (empreinte !== empreinteVersee) {",
+    apres: "  if (false) {",
+    epreuves: [COQUILLE],
+  },
+  {
+    nom: "un journal SANS racine n'est pas une création à dater : c'est une restauration",
+    garde: "exigerCreationSeule — l'exigence de la racine de naissance",
+    fichier: RACINE,
+    avant: "    racine === null ||\n",
+    apres: "",
+    epreuves: [MELANGE],
+  },
+  {
+    nom: "une racine ABÎMÉE refuse AVANT que l'autorisation ne soit demandée",
+    garde: "#recupererSansRacine — l'ordre « racine lisible, puis autorisation »",
+    fichier: MAGASIN,
+    avant:
+      "    exigerRacineLisible({ volume: this.#volume, abimees, chargePresente });\n" +
+      "    const autorisation = this.#sansRacine === null ? null : await this.#sansRacine.autoriser();",
+    apres:
+      "    const autorisation = this.#sansRacine === null ? null : await this.#sansRacine.autoriser();\n" +
+      "    exigerRacineLisible({ volume: this.#volume, abimees, chargePresente });",
+    epreuves: [MELANGE],
+  },
+  {
+    nom: "l'engagement n'est CONSOMMÉ qu'une fois la racine initiale durable",
+    garde: "#recupererSansRacine — l'ordre « racine initiale, puis consommation »",
+    fichier: MAGASIN,
+    avant:
+      "    await this.#vider({ sequence: SEQUENCE_AVANT_LA_PREMIERE_RACINE, generation: 0 });\n" +
+      "    await autorisation.consommer();",
+    apres:
+      "    await autorisation.consommer();\n" +
+      "    await this.#vider({ sequence: SEQUENCE_AVANT_LA_PREMIERE_RACINE, generation: 0 });",
+    epreuves: [MELANGE],
+  },
+  {
+    nom: "l'engagement EST consommé : un voisin relu à chaque ouverture serait une fenêtre de plus",
+    garde: "#recupererSansRacine — l'appel à `consommer`",
+    fichier: MAGASIN,
+    avant: "    await autorisation.consommer();\n",
+    apres: "",
+    epreuves: [MELANGE],
+  },
+  {
+    nom: "le SEL du domaine « archive » est TIRÉ, un par archive",
+    garde: "scellerEngagement — le tirage du sel de domaine",
+    fichier: ENGAGEMENT,
+    avant: "  sel = tirerSelDeDomaine(),",
+    apres: "  sel = new Uint8Array(32).fill(7),",
+    epreuves: [VECTEURS],
+  },
+  {
+    nom: "la MIGRATION v2 → v3 écrit sa racine initiale",
+    garde: "migrateVolume — l'appel à `daterLeVolumeMigre`",
+    fichier: MIGRATION,
+    avant: "  await daterLeVolumeMigre({ target, backend, manifest, cle });\n",
+    apres: "",
+    epreuves: [MIGRATION_RACINE],
   },
 ]);
 
