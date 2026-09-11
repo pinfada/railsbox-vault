@@ -9,11 +9,15 @@
 > désormais AUTHENTIFIÉE, sous une clé du domaine `archive` dérivée de la DEK. La clé du VOLUME,
 > elle, reste la DEK jusqu'à #182 — entorse assumée, écrite dans l'ADR 0033.
 
-> **Révision ANNONCÉE le 2026-09-10 par
-> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#182, HIGH) :** le budget de clé de
-> cet ADR n'est pas global à la clé — la revue externe l'a exécuté —, et la clé de volume « reçue,
-> jamais dérivée ici » deviendra une clé DÉRIVÉE par domaine ; rien n'est amendé ici tant que la
-> tranche T2a n'a pas livré.
+> **AMENDÉ le 2026-09-11 par l'[ADR 0035](0035-format-de-volume-v4-et-migration.md) (#182, tranche
+> T2a) :** la clé de volume de cet ADR n'est plus la DEK. Elle DESCEND d'elle par HKDF-SHA-256,
+> propre au domaine `volume`, au volume et à la version de format, et la DEK devient un matériau
+> HKDF que WebCrypto refuse de passer à AES-GCM. Le budget se lit désormais domaine par domaine : le
+> compteur d'une clé compte enfin toutes les invocations sous elle, et une session qui ne peut pas
+> le publier dans une racine n'a plus le droit de sceller. Ce qui n'est PAS corrigé et reste écrit :
+> les compteurs vivent toujours dans la racine, donc ils reculent avec elle — la question n° 4 n'est
+> refermée que sur sa PORTÉE. Les domaines `enveloppe` et `recuperation` scellent encore sous la DEK
+> : c'est la tranche T2b.
 
 > **Révisé le 2026-08-27, avant fusion.** Une revue de sécurité a réfuté PAR EXÉCUTION la
 > justification centrale de la première version : le nonce y était dérivé de (génération, rang), et

@@ -4,10 +4,16 @@
 - Date : 2026-09-04
 - Issue : #65 · Invariants : `VAULT-PERSIST-001`, `SEC-DURABLE-001` · Jalon 3
 
-> **Révision ANNONCÉE le 2026-09-10 par
-> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#182, HIGH) :** l'unique scellement
-> d'une capture se fera sous une clé du domaine `instantane` à USAGE UNIQUE, avec un sel tiré écrit
-> en clair dans le fichier ; rien n'est amendé ici tant que la tranche T2a n'a pas livré.
+> **AMENDÉ le 2026-09-11 par l'[ADR 0035](0035-format-de-volume-v4-et-migration.md) (#182, tranche
+> T2a) :** l'unique scellement d'une capture se fait sous une clé du domaine `instantane` à USAGE
+> UNIQUE, tirée d'un sel de trente-deux octets écrit EN CLAIR dans l'en-tête. Le fichier passe en
+> **format 2**, son marqueur en `VLTSNP02` et son en-tête de 152 à 184 octets ; la LIAISON — les
+> données associées — ne change pas de forme. **La capture ne consomme donc plus aucun compteur** :
+> le budget d'une clé à usage unique est de 1, et aucune mesure ne peut le rendre faux. Le compteur
+> qui vivait ici était l'un de ceux que la revue externe range parmi ceux « qui ne sont pas
+> persistés » ; le présenter encore est désormais REFUSÉ, parce qu'un appelant qui compte croit que
+> quelqu'un l'écoute. Les vecteurs de la version 1 ne sont pas conservés : un instantané est un état
+> de reprise, écarté dès qu'il est consommé ou périmé, et rien ne le migre.
 
 ## Contexte
 

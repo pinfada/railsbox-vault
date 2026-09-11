@@ -74,6 +74,14 @@ const PORTEURS_DE_LA_CLE = [
       "publique est une donnée du contrat, publiée en hexadécimal dans le document figé. Il " +
       "n'ouvre aucun volume, ne déverrouille aucune enveloppe et n'écrit que sous tests/vectors/.",
   },
+  {
+    fichier: "tools/figer-vecteurs-volume-v4.mjs",
+    motif:
+      "il FIGE les vecteurs du format v4 et de sa hiérarchie de clés (#182, ADR 0033), et la " +
+      "même clé publique y est une donnée du contrat : elle y est publiée en hexadécimal comme " +
+      "clé MAÎTRESSE, et c'est d'elle que le vérificateur redérive les clés de domaine. Il " +
+      "n'ouvre aucun volume et n'écrit que sous tests/vectors/.",
+  },
 ];
 
 /**

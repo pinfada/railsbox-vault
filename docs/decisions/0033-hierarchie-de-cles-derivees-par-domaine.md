@@ -447,6 +447,32 @@ Les Definition of Ready sont dans les issues :
 [DoR de #181](https://github.com/pinfada/railsbox-vault/issues/181) ·
 [DoR de #182](https://github.com/pinfada/railsbox-vault/issues/182).
 
+> **Note du 11 septembre 2026 — T1 et T2a sont LIVRÉES, et voici ce qu'elles ont changé à cet ADR.**
+> T1 a livré le domaine `archive` et la racine initiale
+> ([ADR 0034](0034-archive-authentifiee-et-racine-initiale.md)) ; T2a a livré la hiérarchie, les
+> trois domaines du volume, l'en-tête v4 et la migration
+> ([ADR 0035](0035-format-de-volume-v4-et-migration.md)). Trois points de cet ADR ont dû être
+> tranchés autrement que ce qu'il annonçait, et les trois sont écrits là-bas :
+>
+> 1. **la décision 5 range « le format 4 du journal » parmi ce qui ne change pas ; il passe à 5.**
+>    La DISPOSITION du journal, elle, ne bouge pas d'un octet — ce que l'ADR voulait dire est tenu.
+>    Mais la RACINE gagne huit octets, et le dépôt tient une règle plus ancienne que cet ADR : un
+>    numéro de format dit ce que porte la racine. Laisser les deux sous le numéro 4 aurait fait deux
+>    racines différentes sous un seul nom (ADR 0035, décision 1) ;
+> 2. **la décision 5 ne dit pas comment une coupure de la migration se rattrape, et le modèle de v2
+>    → v3 n'y suffit pas.** Les deux états d'un secteur y sont des chiffrés sous deux clés, si bien
+>    que le sceau et la charge doivent changer ENSEMBLE : aucun ordre d'écriture ne suffit seul. Une
+>    ÉCRITURE ANTICIPÉE des sceaux v3 de la suite en vol est journalisée, pour 6,6 % de ce que la
+>    conversion réécrit (ADR 0035, décision 3) ;
+> 3. **la décision 4 ne dit pas ce qui arrive quand une racine est ÉCARTÉE.** Dater une création
+>    écarte la racine de naissance, et repartait donc de zéro : le geste qui fermait la
+>    sous-estimation la rouvrait. Les compteurs sont désormais reportés (ADR 0035).
+>
+> Ce qui reste de cet ADR à livrer est la tranche **T2b** : les domaines `enveloppe` et
+> `recuperation`, et le cliquet anti-DEK. Jusqu'à elle, la phrase « la DEK n'est plus jamais passée
+> à AES-GCM » est VRAIE des domaines du volume et FAUSSE de la page d'enveloppe et de la section de
+> récupération. Elle est écrite ainsi partout.
+
 ## Alternatives rejetées
 
 **Un compteur global, durable et atomique.** C'est l'alternative que le relecteur nomme en second, «
