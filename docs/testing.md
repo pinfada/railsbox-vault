@@ -1111,36 +1111,64 @@ utilisateur emprunte — un v3 en service, migré vers v4 — était le seul qui
 La leçon est plus large que le correctif : **une chaîne éprouvée de bout en bout ne prouve rien de
 chacun de ses paliers pris comme point de DÉPART.** `tests/unit/vm-migration-source-v3.test.mjs`
 comble le trou, et son v3 n'est pas fabriqué à la main — il est produit par le seul geste du dépôt
-qui en écrive un, la migration v2 → v3. Six épreuves : un v3 avec sa racine de naissance, un v3
-portant une écriture ACQUITTÉE non encore appliquée, une coupure pendant la lecture du journal, et
-les trois cas de #181 appliqués à la source (racine, engagement vérifié, refus).
+qui en écrive un, la migration v2 → v3. Huit épreuves : un v3 avec sa racine de naissance, un v3
+portant une écriture ACQUITTÉE non encore appliquée, une coupure pendant la lecture du journal, les
+trois cas de #181 appliqués à la source (racine, engagement vérifié, refus), et — depuis T2b —
+l'EXPORT d'un v3 par ce runtime, puis le cycle entier export → restauration → migration.
 
-**Et ce que l'E2E ne peut PAS faire aujourd'hui, mesuré plutôt que tu.** Le palier v3 devait être
-posé dans le scénario de bout en bout — arrêter la chaîne à v3, l'ouvrir, y écrire, la refermer,
-puis migrer vers v4. Il ne l'est pas, et la tentative a été RÉFUTÉE par exécution : arrêter la
-chaîne à v3 change le volume, donc la sauvegarde vérifiée prise du v1 ne le décrit plus
-(`VAULT_MIGRATION_BACKUP_MISMATCH`), et **ce runtime ne sait pas en refaire une** —
-`ouvrirPourExport` ouvre le volume par `openOpfsVolume` dès le format 3, et l'ouverture refuse un
-en-tête v3 en renvoyant à la migration.
+**LA BOUCLE DE LA SAUVEGARDE, ouverte par le correctif précédent et FERMÉE par T2b.** Le palier v3
+devait être posé dans le scénario de bout en bout — arrêter la chaîne à v3, l'ouvrir, y écrire, la
+refermer, puis migrer vers v4. La tentative avait été RÉFUTÉE par exécution : arrêter la chaîne à v3
+change le volume, donc la sauvegarde vérifiée prise du v1 ne le décrit plus
+(`VAULT_MIGRATION_BACKUP_MISMATCH`), et ce runtime ne savait pas en refaire une — `ouvrirPourExport`
+ouvrait le volume par `openOpfsVolume` dès le format 3, et l'ouverture refuse un en-tête v3 en
+renvoyant à la migration. **Un v3 n'était migrable qu'à condition de détenir déjà une archive faite
+par le runtime précédent.**
 
-Les deux règles se referment donc de nouveau l'une sur l'autre, un cran plus loin que le CRITICAL :
-**un v3 est migrable, à condition de détenir déjà une archive faite par le runtime précédent.** Un
-pas destructif exige une sauvegarde vérifiée, et `assertPreuveDisponible` refuse explicitement qu'un
-consentement nommé en tienne lieu — c'est la correction de la revue de #110, et elle est juste.
+La tranche T2b ouvre ce chemin : l'export d'un v3 emprunte le SEUL lecteur de v3 du dépôt, celui de
+la migration. Deux épreuves de `vm-migration-source-v3.test.mjs` remplacent celle qui mesurait
+l'écart, et la seconde fait le CYCLE ENTIER : un v3 en service, une écriture ACQUITTÉE restée dans
+son journal, un export par CE runtime, l'état qu'une restauration laisse — le fichier et son
+engagement, aucun voisin de génération —, puis la migration ; et la charge acquittée se retrouve
+dans le clair v4.
 
-Ce n'est pas corrigé ici, et c'est délibéré : ouvrir un chemin d'export pour un format que ce
-runtime n'ouvre pas est une DÉCISION — que déclare le manifeste de l'archive, qui scelle son
-engagement, ce que devient la génération validée que le journal porte encore —, et elle ne s'invente
-pas en fin de chantier. L'état est MESURÉ par la septième épreuve de cette suite, qui rougira le
-jour où ce chemin s'ouvrira.
+**Ce qui n'est PAS fait, et il faut le dire ici comme ailleurs : le palier v3 n'est pas revenu dans
+l'E2E.** Le chemin qui le bloquait est ouvert, mais l'ajouter demandait de le JOUER, et le banc
+local de cette tranche n'avait pas d'image de référence — la construire suppose Docker et un rootfs
+de 1,5 Gio. Écrire un palier d'E2E qu'on n'a pas exécuté, c'est écrire une supposition ; la chaîne
+v1 → v2 → v3 → v4 reste donc éprouvée en UNE session, et le v3 comme point de DÉPART reste éprouvé
+en unitaire, sur un v3 produit par le produit. La leçon de la revue de la PR #186 vaut toujours :
+**une chaîne éprouvée de bout en bout ne prouve rien de chacun de ses paliers pris comme point de
+départ.**
 
-**Les CAMPAGNES DE MUTATION de #182** — `node tools/muter-gardes-hierarchie-de-cles.mjs` :
-**vingt-huit gardes, vingt-huit mutants tués**, sur onze modules ; table dans l'ADR 0035. Huit de
-ces mutants viennent des deux revues de la PR #186 : la borne du lecteur de journal v1, l'ouverture
-de la source chiffrée, le motif de son autorisation, la réservation du témoin dans le compteur
-publié, le report du compte versé, le recoupement du domaine avec l'info, les bornes des champs
-d'une racine, et la sonde d'un secteur avant l'en-tête v4. La campagne de #181
-(`muter-gardes-archive-recuperation.mjs`, 29/29) reste verte.
+**LES SUITES DE LA TRANCHE T2b** (#182, ADR 0036), et ce que chacune mesure :
+
+| Suite                                       | Ce qu'elle mesure                                                                                              |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `vm-enveloppe-migration-page.test.mjs`      | la migration d'une page v1 en v2 à CHAQUE rang de CHAQUE sinistre : quatre clés, toutes ouvrantes, état classé |
+| `vm-enveloppe-v2-vecteurs.test.mjs`         | le chemin de production reproduit les octets figés des DEUX pages v2, `enveloppe` et `recuperation`            |
+| `vm-budget-par-domaine.test.mjs`            | le compte d'`encrypt` PAR CLÉ sur une session complète : zéro sous la clé de volume                            |
+| `vm-cliquet-anti-dek.test.mjs`              | aucun chemin de production du format v4 ne construit de clé AES-GCM depuis une clé de volume                   |
+| `vm-cloture-par-racine.test.mjs` › CHEMIN 3 | une réouverture hors transaction publie TOUT ce qu'elle a scellé — une ÉGALITÉ, pas un écart                   |
+| `vm-enveloppe-v2-mutation.test.mjs`         | douze gardes de la tranche retirées une à une, douze mutants tués                                              |
+
+Le **budget par domaine** mérite un mot de plus, parce que c'est la forme de preuve que la revue
+externe réclamait. Il ne lit pas le source et n'interroge aucun appelant : il intercepte `deriveKey`
+et `importKey` pour ÉTIQUETER chaque `CryptoKey` par sa provenance, puis compte les invocations de
+`encrypt` par clé. Une clé de provenance inconnue qui chiffrerait ferait rougir la suite — sans quoi
+la mesure serait creuse.
+
+**Les CAMPAGNES DE MUTATION de #182** — `node tools/muter-gardes-enveloppe-v2.mjs` : **douze gardes,
+douze mutants tués**, sur huit endroits, dont le CLIQUET lui-même, muté par ses deux motifs
+séparément. La campagne a TROUVÉ deux défauts qu'aucune épreuve verte ne montrait : un second tirage
+de sel qui n'était jamais atteint, et une mutation qui portait sur un texte présent deux fois.
+`node tools/muter-gardes-hierarchie-de-cles.mjs` : **vingt-huit gardes, vingt-huit mutants tués**,
+sur onze modules ; table dans l'ADR 0035. Huit de ces mutants viennent des deux revues de la PR #186
+: la borne du lecteur de journal v1, l'ouverture de la source chiffrée, le motif de son
+autorisation, la réservation du témoin dans le compteur publié, le report du compte versé, le
+recoupement du domaine avec l'info, les bornes des champs d'une racine, et la sonde d'un secteur
+avant l'en-tête v4. La campagne de #181 (`muter-gardes-archive-recuperation.mjs`, 29/29) reste
+verte.
 
 **Les DURÉES de la migration v3 → v4, mesurées.** `tools/mesurer-migration-v4.mjs`, sous Node et sur
 support en mémoire : **98,8 s pour 512 Mio**, soit **1,89 fois** le scellement initial du même
