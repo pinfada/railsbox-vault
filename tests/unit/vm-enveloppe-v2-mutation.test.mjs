@@ -46,7 +46,7 @@ test("AUCUN mutant ne survit : chaque garde retirée fait rougir sa preuve", () 
 });
 
 test("la table couvre les HUIT endroits où la tranche T2b se joue", () => {
-  // Un compte de mutants ne dit rien de leur RÉPARTITION : douze mutations sur la même ligne
+  // Un compte de mutants ne dit rien de leur RÉPARTITION : quatorze mutations sur la même ligne
   // feraient un score parfait et ne mesureraient qu'une garde. Ce contrôle relit les FICHIERS visés,
   // et ils se lisent comme le chemin de la tranche : ce qui TIRE le sel et migre la page, ce qui
   // juge quelle page fait autorité, ce qui décode une page, ce qui CLÔT par une racine, ce qui

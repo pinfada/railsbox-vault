@@ -52,7 +52,7 @@ const RACINES = ["src", "public/vm"];
 const SOUS_SURVEILLANCE = [
   {
     fichier: "src/vm/generation-store.mjs",
-    lignes: 792,
+    lignes: 800,
     motif:
       "#65 l'avait inscrit à 738 lignes en écrivant « la prochaine tranche qui y touchera devra le " +
       "scinder ». #181 y a touché — l'ouverture décide désormais d'écrire une RACINE INITIALE — et " +
@@ -71,12 +71,12 @@ const SOUS_SURVEILLANCE = [
       "que le TROISIÈME chemin hors transaction réclamait (ADR 0033, décision 4). Ils ne peuvent " +
       "pas vivre ailleurs — ils appellent `#vider` et la garde de fraîcheur, qui sont l'état privé " +
       "de cette machine —, et ils n'ouvrent aucun second chemin de scellement. Le fichier reste " +
-      "sous le plafond, à huit lignes de lui ; la prochaine tranche qui y touchera devra le " +
+      "sous le plafond, AU plafond, à zéro ligne près ; la prochaine tranche qui y touchera devra le " +
       "scinder, et la candidate est la RÉCUPÉRATION, qui forme déjà un bloc autonome.",
   },
   {
     fichier: "src/vm/opfs-block-backend.mjs",
-    lignes: 776,
+    lignes: 796,
     motif:
       "#181 y ajoute UN geste, `empreinteDuFichier`, et il ne peut pas vivre ailleurs : c'est le " +
       "calcul de l'empreinte du fichier ENTIER, fait ICI précisément pour ne pas exposer du " +
@@ -92,7 +92,10 @@ const SOUS_SURVEILLANCE = [
       "ajoute le magasin TENU POUR CLORE** (#182) : un second emplacement, distinct de la " +
       "génération installée, une méthode pour l'y poser, la clôture par racine dans `close()` et " +
       "la déclaration de région sale dans l'écriture directe. Les quatre gestes appartiennent au " +
-      "cycle de vie du backend, et les déplacer demanderait de sortir `close()` avec eux.",
+      "cycle de vie du backend, et les déplacer demanderait de sortir `close()` avec eux. La revue " +
+      "de sécurité de la PR #187 (constat 3) y ajoute la PUBLICATION qui suit chaque écriture " +
+      "directe : une fin d'onglet tue le Worker sans fermeture, et la clôture ne pouvait donc pas " +
+      "n'exister qu'en `close()`.",
   },
 ];
 
