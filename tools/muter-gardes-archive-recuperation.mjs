@@ -262,8 +262,12 @@ export const MUTATIONS = Object.freeze([
     nom: "l'INFO de la dérivation lie le DOMAINE : le retirer ferait tirer la même clé partout",
     garde: "encoderInfoDeDomaine — l'étiquette de domaine dans l'info HKDF",
     fichier: DOMAINE,
-    avant: "    chainePrefixee(domaine),\n",
-    apres: "",
+    // Le champ est nommé AVEC SON VOISIN depuis #182 : `exigerInfoDuDomaine` reconstruit le même
+    // préfixe pour recouper le domaine déclaré avec l'info reçue (revue de sécurité de la PR #186,
+    // constat 5), et `chainePrefixee(domaine)` apparaît donc deux fois. L'outil refuse de muter au
+    // hasard, et il a raison : c'est l'occurrence de l'ENCODEUR que ce mutant décrit.
+    avant: "    chainePrefixee(domaine),\n    chainePrefixee(identifiantVolume),\n",
+    apres: "    chainePrefixee(identifiantVolume),\n",
     epreuves: [VECTEURS],
   },
   {

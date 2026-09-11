@@ -13,11 +13,13 @@
 > T2a) :** la clé de volume de cet ADR n'est plus la DEK. Elle DESCEND d'elle par HKDF-SHA-256,
 > propre au domaine `volume`, au volume et à la version de format, et la DEK devient un matériau
 > HKDF que WebCrypto refuse de passer à AES-GCM. Le budget se lit désormais domaine par domaine : le
-> compteur d'une clé compte enfin toutes les invocations sous elle, et une session qui ne peut pas
-> le publier dans une racine n'a plus le droit de sceller. Ce qui n'est PAS corrigé et reste écrit :
+> compteur d'une clé compte toutes les invocations sous elle **sur les chemins que la v4 ferme** —
+> la création, l'installation initiale et les sessions transactionnelles, mesurés à l'ÉGALITÉ par le
+> nombre d'invocations réelles et non par une inégalité. Ce qui n'est PAS corrigé et reste écrit :
 > les compteurs vivent toujours dans la racine, donc ils reculent avec elle — la question n° 4 n'est
-> refermée que sur sa PORTÉE. Les domaines `enveloppe` et `recuperation` scellent encore sous la DEK
-> : c'est la tranche T2b.
+> refermée que sur sa PORTÉE ; les domaines `enveloppe` et `recuperation` scellent encore sous la
+> DEK, c'est la tranche T2b ; et **le volume de coquille scelle un secteur par déverrouillage hors
+> clôture, non compté, jusqu'à T2b** — cet écart-là est MESURÉ, et il n'a pas de borne.
 
 > **Révisé le 2026-08-27, avant fusion.** Une revue de sécurité a réfuté PAR EXÉCUTION la
 > justification centrale de la première version : le nonce y était dérivé de (génération, rang), et

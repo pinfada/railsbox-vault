@@ -24,6 +24,20 @@
   l'ancrage monotone ([#23](https://github.com/pinfada/railsbox-vault/issues/23)) ; AES-GCM-SIV ; le
   chiffrement du manifeste, que le relecteur ne demande pas.
 
+> **Note datée du 2026-09-11 ([ADR 0035](0035-format-de-volume-v4-et-migration.md), #182,
+> [PR #186](https://github.com/pinfada/railsbox-vault/pull/186)).** La décision 4 — « aucun volume
+> légitime n'est sans racine » — avait un TROU, et il a été trouvé par la revue de format de la PR
+> #186 : la MIGRATION n'appliquait pas la décision 5. Elle n'interrogeait ni la racine ni
+> l'engagement de sa source ; elle DATAIT d'une racine neuve un volume sans racine, c'est-à-dire
+> l'état exact que `VAULT_STORAGE_VOLUME_SANS_RACINE` refuse. Comme la migration est le SEUL chemin
+> qu'un produit v4 laisse à une archive v3 restaurée, la moitié « restauration » du CRITICAL que cet
+> ADR referme redevenait franchissable par elle.
+>
+> La migration ouvre désormais sa source chiffrée par le magasin de générations, ce qui lui applique
+> les trois cas de la décision 5 sans les dupliquer. Le motif admis y est `engagement` — jamais
+> `migration` : ce motif-là dit « ces octets sont les miens, je viens de les écrire », ce qui est
+> vrai du volume que la conversion PRODUIT et faux de celui qu'elle CONSOMME.
+
 ## Contexte : ce que la revue externe a montré
 
 La revue externe du format v3, reçue le 10 septembre 2026

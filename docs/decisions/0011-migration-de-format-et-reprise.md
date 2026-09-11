@@ -10,6 +10,26 @@
 > et la migration v2 → v3 écrit une RACINE INITIALE avant d'inscrire son manifeste. L'étape v3 → v4
 > reste annoncée, non livrée.
 
+> **AMENDÉ le 2026-09-11 par l'[ADR 0035](0035-format-de-volume-v4-et-migration.md) (#182,
+> [PR #186](https://github.com/pinfada/railsbox-vault/pull/186)) :** la chaîne gagne un SECOND pas
+> destructif, v3 → v4, et cet ADR fixe la preuve qu'un pas destructif exige — c'est donc ici qu'il
+> faut lire ce que le second a changé.
+>
+> 1. **Un palier DÉJÀ FRANCHI ne se refait pas.** Le journal ne porte qu'UN avancement, celui du pas
+>    en vol, et le pas qui le précède y devient invisible. Avec deux pas destructifs, une reprise
+>    rejouait donc v2 → v3 sur un volume déjà converti en v4 et redéplaçait sa charge par-dessus sa
+>    propre région — une destruction SANS erreur levée. Le discriminant est le `from` de
+>    l'avancement : il atteste que tous les paliers jusque-là sont atteints.
+> 2. **Une source déjà CHIFFRÉE s'OUVRE, elle ne se recopie pas.** Le report du journal de
+>    génération de la source employait le lecteur du format 1 quelle que soit la version de cette
+>    source ; un v3 réel — qui, depuis l'ADR 0034, porte toujours une racine — n'était donc ni
+>    ouvrable ni migrable. La migration ouvre maintenant sa source par le magasin de générations, ce
+>    qui lui applique du même geste les TROIS cas de la décision 5 de l'ADR 0034 : elle est une
+>    OUVERTURE, et la migration n'est pas un chemin privilégié.
+> 3. **Une conversion ne DÉCLARE plus converti ce que le support n'a pas converti.** Le journal de
+>    reprise n'est pas authentifié (§ 9.2 de la spécification) ; une sonde d'un secteur sous la clé
+>    d'arrivée, avant le dernier geste, transforme une destruction silencieuse en refus typé.
+
 > **Révision ANNONCÉE le 2026-09-10 par
 > l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#181, #182) :** une étape v3 → v4
 > rejoindra la chaîne — rescellement de chaque secteur sous une clé dérivée, reprenable par ce

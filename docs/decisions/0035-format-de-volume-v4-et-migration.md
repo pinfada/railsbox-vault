@@ -153,7 +153,7 @@ ouverture hors transaction qui n'est pas une naissance — et le scénario de bo
 (`public/runtime-worker.mjs`) s'ouvre ainsi et y ÉCRIT un secteur à chaque déverrouillage. Mis en
 lecture seule, le coffre ne se rouvre plus.
 
-**Ce que la réfutation a mis au jour est un fait, pas un défaut introduit** : ce volume sèle sans
+**Ce que la réfutation a mis au jour est un fait, pas un défaut introduit** : ce volume scelle sans
 être compté depuis toujours, et sa session suivante repart de zéro. La règle a donc fait exactement
 son travail — elle refuse au lieu de compter à moitié —, et c'est le CHEMIN qui n'a pas de conduite
 disponible.
@@ -191,6 +191,115 @@ traverse, et le format v2 change sa clé, pas seulement ses octets — les rejou
 la patience de qui les a écrits. Ils restent dans l'historique git ;
 `tests/vectors/instantane-v2.json` les remplace, et il publie en plus l'INFO HKDF de la clé à usage
 unique de chaque capture.
+
+## Ce que les DEUX REVUES de la PR #186 ont trouvé, et ce que la tranche en a fait
+
+Deux revues par exécution — format et sécurité — ont été rendues le 11 septembre 2026 sur la tête
+`8479ddd` : **1 CRITICAL, 5 HIGH, 8 MEDIUM, 2 LOW**. Tout est accepté, rien n'est refusé. Ce qui
+suit ne résume pas les revues ; il dit ce que le dépôt en a fait, et ce qu'elles ont appris sur la
+façon dont cette tranche avait été éprouvée.
+
+### Le CRITICAL : un volume v3 réel n'était NI ouvrable NI migrable
+
+`reporterLeJournalDeGeneration` appliquait le lecteur du journal de FORMAT 1 — celui d'un v2 en
+clair, validé par un CRC-32 — au voisin `.gen` de la source, quelle que soit sa version. Le marqueur
+`VLTGEN01` étant partagé par les formats 1 à 5, un journal de format 4 franchissait le contrôle de
+marqueur puis échouait au CRC que ce format a justement remplacé par une étiquette.
+
+Deux règles se refermaient alors l'une sur l'autre : depuis #181 **tout v3 légitime porte une
+racine**, donc un `.gen` ; et depuis cette tranche un en-tête v3 est refusé à l'ouverture **en
+nommant la migration comme seul remède**. Le remède que le message de refus indiquait ne
+fonctionnait pas.
+
+**Pourquoi aucun banc ne le voyait** : les trois niveaux partaient d'un v1 ou d'un v2, jamais d'un
+v3 RÉEL. L'E2E traverse `v1 → v2 → v3 → v4` en une session, si bien que son palier v3 y est
+intermédiaire et n'a jamais de voisin. Le seul chemin qu'un utilisateur emprunte était le seul qui
+ne fût pas couvert — et c'est la leçon, plus que le correctif : une chaîne éprouvée de bout en bout
+ne prouve rien de chacun de ses paliers pris comme point de DÉPART.
+
+La migration OUVRE désormais sa source chiffrée par le VRAI magasin de générations
+(`migration-source-chiffree.mjs`), sous un scellement de la version source — en v3, la DEK importée
+directement en clé AES-GCM, le régime que la v4 remplace, et l'unique appelant qui en reste dans le
+produit.
+
+### Le HIGH qui allait avec : la migration ne vérifiait AUCUN engagement
+
+Seule la migration peut ouvrir un v3, et elle ne consultait jamais le voisin `.engagement` qu'une
+restauration dépose : elle DATAIT d'une racine neuve un volume sans racine — l'état exact que
+`VAULT_STORAGE_VOLUME_SANS_RACINE` refuse. La moitié « restauration » du CRITICAL de #181 redevenait
+donc franchissable, par le seul chemin que le produit v4 laisse à une archive v3.
+
+Ouvrir la source par le magasin referme les deux d'un seul geste, et c'était la bonne raison de ne
+pas écrire un lecteur de journal de plus : les trois cas de #181 — racine, engagement vérifié sous
+la clé avant tout clair, refus — s'appliquent à la SOURCE comme à toute autre ouverture. Le motif
+admis y est `engagement`, jamais `migration` : la conversion ne TIENT pas le fichier qu'elle
+consomme, elle le TROUVE.
+
+### Les compteurs sous-comptaient sur DEUX chemins, dont le chemin ordinaire
+
+- **le témoin de fraîcheur n'était publié nulle part.** Il est scellé sous la clé du volume APRÈS la
+  racine — un ordre que l'ADR 0019 impose —, si bien que le témoin de la dernière racine d'une
+  session n'entrait dans aucun compteur, et n'était jamais rattrapé. L'écart croissait d'exactement
+  UN par ouverture, sans borne, **sur le chemin transactionnel nominal**. La racine le RÉSERVE
+  désormais : réserver plutôt que publier après coup fait qu'une coupure entre la racine et le
+  témoin SUR-compte d'une unité, jamais l'inverse ;
+- **l'installation initiale perdait tout le versement** : 18 scellements publiés pour 38 réels, soit
+  la moitié du budget de la clé à l'installation d'un disque de 512 Mio. Le versement rend
+  maintenant son COMPTE comme il rend déjà son empreinte.
+
+**Ce qui ne pouvait pas les voir : des inégalités.** `>=` et `>` ne peuvent voir ni un décompte faux
+d'une unité, ni vingt sur trente-huit. Les deux sont passées à l'ÉGALITÉ MESURÉE — une sonde qui
+compte les invocations réelles de `crypto.subtle.encrypt` sous la clé d'un domaine, la clé étant
+reconnue par l'info que l'encodeur DU PRODUIT construit —, et deux épreuves de non-dérive sur N
+ouvertures successives ont été ajoutées. C'est la méthode du relecteur, adoptée telle quelle.
+
+### Trois gardes disaient plus que ce qu'elles faisaient
+
+- **le cliquet anti-DEK ne balayait qu'un NOM** et son titre annonçait une universelle : un module
+  qui importait la DEK en AES-GCM en toutes lettres passait la CI sans un mot. Il balaie désormais
+  deux GESTES, sur `src/` ET `public/`, et les deux mutants du relecteur le font rougir ;
+- **`deriverCleDeDomaine` ne recoupait pas le `domaine` avec l'`info`**, alors que son en-tête écrit
+  « le régime est une propriété du DOMAINE, et il est vérifié ici ». La conséquence qui compte est
+  la symétrique de celle qu'on voit d'abord : `domaine: "volume"` admet un sel VIDE, donc un
+  appelant pouvait dériver la clé d'un domaine à USAGE UNIQUE **sans sel** — une clé constante pour
+  tous les artefacts d'un volume, exactement le régime que la décision 4 de l'ADR 0033 refuse ;
+- **`VAULT_STORAGE_LECTURE_SEULE` rendait DEUX causes**, dont une qui n'est pas un régime de session
+  et dont le remède est de MIGRER. `VAULT_STORAGE_DOMAINE_ABSENT_DU_FORMAT` la nomme.
+
+### Deux refus tombaient du mauvais côté
+
+- **un octet retourné dans un champ de 64 bits de la racine rendait « le support OPFS a refusé
+  l'opération »** : l'exploitant lisait une panne de disque là où la spécification veut « restaurez
+  une sauvegarde », et un adversaire y gagnait un oracle sur le champ qu'il avait touché. Le défaut
+  était ANCIEN — `sequence` et `scellementsCumulesVolume` s'y comportaient déjà ainsi — et cette
+  tranche lui ajoutait deux octets. Le décodeur refuse maintenant un champ hors bornes comme une
+  racine ABÎMÉE, sur TOUS les champs : le refermer pour deux octets aurait laissé les cinq autres ;
+- **une migration reprise sur un journal FORGÉ se terminait VERTE sur un volume inouvrable.** Le §
+  9.2 promet une destruction, jamais une lecture, et la promesse tient ; ce qui manquait est qu'elle
+  soit DITE. Une sonde d'un secteur sous la clé d'arrivée, avant le dernier geste, transforme la
+  destruction muette en refus typé — pour une ouverture GCM par conversion, soit une sur 2^20 pour
+  512 Mio, et le compte est éprouvé plutôt qu'affirmé.
+
+### La campagne de mutation, et sa table
+
+La campagne de #182 n'avait aucune trace durable : ni table ici, ni ligne dans `docs/testing.md`,
+alors que le dépôt publie celles de #169 et #170 avec leur compte. Le « 20/20 » du corps de la PR
+serait parti avec la PR. Elle est inscrite ci-dessous, et elle compte désormais **28 mutants sur
+onze modules** — les huit neufs viennent des constats de ces revues.
+
+| Module                                | Ce que les mutants retirent                                                                                                          |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `derivation/cle-de-domaine.mjs`       | les préfixes de longueur, chacun des quatre champs de l'info, le recoupement du domaine, le régime de sel, l'import en matériau HKDF |
+| `derivation/hierarchie-de-volume.mjs` | la séparation des domaines `volume` et `journal`, le sel d'une capture                                                               |
+| `format-chiffre/identite-logique.mjs` | le onzième champ des données associées, la borne du budget                                                                           |
+| `format-chiffre/modele-reference.mjs` | la version de format dans les données associées d'une racine                                                                         |
+| `generation-format.mjs`               | la cohérence du format de racine, la place du second compteur, **les bornes des champs**                                             |
+| `migration-v4.mjs`                    | l'écriture anticipée, le fail-closed d'un secteur déchiré, le recoupement de l'identifiant, **la sonde avant l'en-tête**             |
+| `migration-source-chiffree.mjs`       | **la borne du lecteur v1, l'ouverture de la source, le motif de son autorisation**                                                   |
+| `volume-migration.mjs`                | le discriminant `dejaFranchi`                                                                                                        |
+| `opfs-racine-initiale.mjs`            | le report des compteurs d'une racine écartée                                                                                         |
+| `opfs-datation-de-creation.mjs`       | **le report du compte que le versement rend**                                                                                        |
+| `scellement.mjs`                      | les deux budgets, le refus de sceller, **la réservation du témoin**                                                                  |
 
 ## Modèle de menace : ce qui change, au vocabulaire de la décision 7 de l'ADR 0021
 
