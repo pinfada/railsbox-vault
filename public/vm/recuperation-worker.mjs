@@ -33,7 +33,7 @@ import {
   removeOpfsVolume,
 } from "/src/vm/opfs-sync-access.mjs";
 import { TRANCHE_REGION_OCTETS, empreinteDeRegion } from "/src/vm/generation-fraicheur.mjs";
-import { dispositionV3 } from "/src/vm/volume-chiffre-format.mjs";
+import { FORMAT_VOLUME_COURANT, dispositionDuVolume } from "/src/vm/volume-chiffre-format.mjs";
 
 /** Volume jetable du banc. Il est retiré avant et après chaque répétition. */
 const VOLUME = "recuperation-banc";
@@ -82,7 +82,7 @@ async function magasinSur({ volume, journal }, tailleVolume, plafondOctets) {
     scellement: await Scellement.ouvrir({
       volume: IDENTIFIANT,
       cleOctets: cleDuBanc(),
-      formatVersion: 3,
+      formatVersion: FORMAT_VOLUME_COURANT,
     }),
     // Le plafond est EXPLICITE : un profil témoin doit pouvoir dépasser celui de production pour
     // mesurer ce qu'il coûtait, sans quoi le chiffre qui a fait bouger le plafond deviendrait
@@ -229,7 +229,7 @@ async function mesurer({
  * croire à une mesure de bout en bout.
  */
 async function mesurerFraicheur({ tailleLogique = 512 * 1024 * 1024, repetitions = 3 } = {}) {
-  const disposition = dispositionV3(tailleLogique);
+  const disposition = dispositionDuVolume(tailleLogique);
   await nettoyer();
   const handle = await openOpfsSyncAccess(VOLUME);
   const releves = [];

@@ -643,6 +643,14 @@ function rapport({ migrated, resumed, fromVersion, toVersion, manifest, evidence
     toVersion,
     manifest,
     evidence,
-    steps: steps.map((etape) => ({ from: etape.from, to: etape.to, summary: etape.summary })),
+    // `destructive` est PUBLIÉ depuis #182, et il le faut : la chaîne compte désormais DEUX pas qui
+    // réécrivent le volume, et un compte rendu qui ne dirait pas lesquels laisserait croire qu'une
+    // migration est une réécriture de manifeste. C'est ce qui décide de la preuve exigée.
+    steps: steps.map((etape) => ({
+      from: etape.from,
+      to: etape.to,
+      summary: etape.summary,
+      destructive: etape.destructive === true,
+    })),
   };
 }

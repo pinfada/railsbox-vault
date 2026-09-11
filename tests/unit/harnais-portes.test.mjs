@@ -405,6 +405,13 @@ const APPELANTS_DU_HARNAIS = [
     fichier: "tools/vm/mesurer-boot.mjs",
     motif: "banc de MESURE du boot, hors navigateur.",
   },
+  {
+    fichier: "tools/mesurer-migration-v4.mjs",
+    motif:
+      "banc de MESURE de la migration v3 → v4 (#182). Il fabrique un volume v3 en mémoire et le " +
+      "convertit ; il n'ouvre aucun volume du support et n'écrit nulle part. Le chiffre qu'il rend " +
+      "est publié dans docs/quality-attributes.md.",
+  },
 ];
 
 const MOTIF_DU_HARNAIS = /\b(?:cleDeVolumeDuHarnais|clesDeDeverrouillageDuHarnais)\s*\(/;

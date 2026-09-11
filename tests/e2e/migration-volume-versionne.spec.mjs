@@ -14,6 +14,12 @@
 //      l'OUVERTURE EN ÉCRITURE (`VAULT_MANIFEST_FORMAT_TOO_NEW`). Le refus en LECTURE existe aussi,
 //      mais il est prouvé en unitaire : ce scénario n'exerce que `openVolumeForWrite`.
 //
+// **Étendu par #182, et non dupliqué.** La chaîne va désormais jusqu'à la v4 : le même scénario
+// traverse trois pas au lieu de deux, dont DEUX destructifs — v2 → v3 déplace la charge et la scelle
+// sous la DEK, v3 → v4 rescelle chaque secteur sous une clé DÉRIVÉE. Le contrat qu'il éprouve est
+// inchangé et il est plus exigeant : le fichier ne ressemble plus du tout à celui de départ, et le
+// CLAIR, lui, doit sortir identique à l'octet de la traversée entière.
+//
 // Deux règles le gouvernent, comme les autres scénarios de `tests/e2e/` :
 //
 //   1. il ne réussit jamais sans les artefacts : sans l'image #5 ou v86, il se déclare `skipped`
@@ -307,7 +313,17 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   expect(reprise.resumed, "la reprise repart du journal, pas de zéro").toBe(true);
   expect(reprise.fromVersion).toBe(1);
   expect(reprise.toVersion).toBe(MANIFEST_FORMAT_VERSION);
-  expect(reprise.steps.length, "un PAS à la fois : v1 → v2, puis v2 → v3").toBe(2);
+  expect(reprise.steps.length, "un PAS à la fois : v1 → v2, v2 → v3, puis v3 → v4").toBe(
+    MANIFEST_FORMAT_VERSION - 1,
+  );
+  // **La chaîne compte DEUX pas destructifs depuis #182**, et c'est ce que ce scénario éprouve de
+  // bout en bout : v2 → v3 déplace la charge et la scelle sous la DEK, v3 → v4 rescelle chaque
+  // secteur sous une clé DÉRIVÉE. La coupure du point 6 tombe dans l'un des deux ; la reprise
+  // traverse les deux, et le clair doit survivre à la traversée entière.
+  expect(
+    reprise.steps.filter((etape) => etape.destructive).length,
+    "deux pas RÉÉCRIVENT le volume, et chacun exige la sauvegarde vérifiée",
+  ).toBe(2);
   expect(reprise.evidence.kind, "la preuve retenue est la sauvegarde vérifiée").toBe(
     "sauvegarde-verifiee",
   );
@@ -315,11 +331,13 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   expect(apresReprise.migrationJournalPresent, "le journal est retiré en dernier geste").toBe(
     false,
   );
-  // **Ce que la migration v2 → v3 change, et que les deux précédentes ne changeaient pas.** Elles
-  // réécrivaient un manifeste, et l'épreuve pouvait affirmer « aucun octet du volume n'a bougé ».
-  // Celle-ci réécrit TOUT : le fichier grandit de sa région d'authentification et chaque secteur est
-  // scellé. Ce qui doit être conservé n'est donc plus le fichier, c'est le CLAIR — et le dire ainsi
-  // est une preuve plus forte, pas plus faible.
+  // **Ce que les migrations DESTRUCTIVES changent, et que les manifestes ne changeaient pas.** Les
+  // premières réécrivaient un manifeste, et l'épreuve pouvait affirmer « aucun octet du volume n'a
+  // bougé ». v2 → v3 réécrit TOUT — le fichier grandit de sa région d'authentification et chaque
+  // secteur est scellé — et v3 → v4 rescelle chaque secteur sous une AUTRE clé. Ce qui doit être
+  // conservé n'est donc plus le fichier, c'est le CLAIR — et le dire ainsi est une preuve plus
+  // forte, pas plus faible. La géométrie, elle, est la même en v3 et en v4 : la taille du fichier
+  // après la chaîne entière est celle que la v3 imposait déjà.
   expect(apresMigration.size, "le fichier a grandi de sa région d'authentification").toBe(
     tailleDeFichier({ formatVersion: MANIFEST_FORMAT_VERSION, tailleLogique: appDiskBytes }),
   );

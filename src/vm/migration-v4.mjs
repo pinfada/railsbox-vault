@@ -306,7 +306,16 @@ async function octetsV4DuSecteur({ brut, disposition, v3, v4, adresse, sceauV3An
  * pour que l'écriture de la suite reste UNE écriture — la découper autour des secteurs déjà faits
  * rendrait le nombre de barrières dépendant de l'endroit où la coupure est tombée.
  */
-async function assemblerLaSuite({ brut, disposition, v3, v4, adresse, secteurs, sceauxV3, repris }) {
+async function assemblerLaSuite({
+  brut,
+  disposition,
+  v3,
+  v4,
+  adresse,
+  secteurs,
+  sceauxV3,
+  repris,
+}) {
   const charges = new Uint8Array(secteurs * SECTOR_SIZE);
   const sceaux = new Uint8Array(secteurs * SCEAU_OCTETS);
   let rescelles = 0;

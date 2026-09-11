@@ -28,7 +28,7 @@ import { createSha256Stream } from "/src/vm/sha256-stream.mjs";
 import { createManifest } from "/src/vm/volume-manifest.mjs";
 import {
   SCEAU_OCTETS,
-  dispositionV3,
+  dispositionDuVolume,
   offsetDeCharge,
   offsetDeSceau,
 } from "/src/vm/volume-chiffre-format.mjs";
@@ -36,7 +36,7 @@ import {
 const SOURCE = "banc-engagement-a";
 const CIBLE = "banc-engagement-b";
 const TAILLE = 8 * SECTOR_SIZE;
-const DISPOSITION = dispositionV3(TAILLE);
+const DISPOSITION = dispositionDuVolume(TAILLE);
 const PREAMBULE_OCTETS = 12;
 
 const ATTENTES = { app: { id: "railsbox-vault-banc" }, runtime: { version: "0.1.0" } };
@@ -307,8 +307,8 @@ async function scenarioCout() {
     // La RACINE INITIALE à la création : l'empreinte de la RÉGION d'authentification, qui fait
     // 34 octets par secteur — 34 Mio pour un volume de 512 Mio. C'est le terme dominant du geste ;
     // s'y ajoutent trois scellements AES-GCM et deux barrières.
-    regionOctets: dispositionV3(512 * 1024 * 1024).regionOctets,
-    regionMs: hacher(dispositionV3(512 * 1024 * 1024).regionOctets),
+    regionOctets: dispositionDuVolume(512 * 1024 * 1024).regionOctets,
+    regionMs: hacher(dispositionDuVolume(512 * 1024 * 1024).regionOctets),
   };
 }
 

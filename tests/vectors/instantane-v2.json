@@ -26,14 +26,7 @@
   "cas": [
     {
       "nom": "capture nominale d'un volume applicatif",
-      "couvre": [
-        "volume",
-        "sequence",
-        "generation",
-        "region",
-        "image",
-        "longueur"
-      ],
+      "couvre": ["volume", "sequence", "generation", "region", "image", "longueur"],
       "sel": "102132435465768798a9bacbdcedfe0f2031425364758697a8b9cadbecfd0e1f",
       "info": "00277261696c73626f782d7661756c742f64657269766174696f6e2d64652d646f6d61696e652f7631000a696e7374616e74616e650020303132333435363738396162636465663031323334353637383961626364656600000002000b6165732d3235362d67636d",
       "liaison": {
@@ -55,10 +48,7 @@
     },
     {
       "nom": "même volume, séquence et génération suivantes",
-      "couvre": [
-        "sequence",
-        "generation"
-      ],
+      "couvre": ["sequence", "generation"],
       "sel": "2031425364758697a8b9cadbecfd0e1f30415263748596a7b8c9daebfc0d1e2f",
       "info": "00277261696c73626f782d7661756c742f64657269766174696f6e2d64652d646f6d61696e652f7631000a696e7374616e74616e650020303132333435363738396162636465663031323334353637383961626364656600000002000b6165732d3235362d67636d",
       "liaison": {
@@ -80,9 +70,7 @@
     },
     {
       "nom": "même état, AUTRE volume",
-      "couvre": [
-        "volume"
-      ],
+      "couvre": ["volume"],
       "sel": "30415263748596a7b8c9daebfc0d1e2f405162738495a6b7c8d9eafb0c1d2e3f",
       "info": "00277261696c73626f782d7661756c742f64657269766174696f6e2d64652d646f6d61696e652f7631000a696e7374616e74616e650020666564636261393837363534333231306665646362613938373635343332313000000002000b6165732d3235362d67636d",
       "liaison": {
@@ -104,10 +92,7 @@
     },
     {
       "nom": "même volume, AUTRE région et AUTRE image de référence",
-      "couvre": [
-        "region",
-        "image"
-      ],
+      "couvre": ["region", "image"],
       "sel": "405162738495a6b7c8d9eafb0c1d2e3f5061728394a5b6c7d8e9fa0b1c2d3e4f",
       "info": "00277261696c73626f782d7661756c742f64657269766174696f6e2d64652d646f6d61696e652f7631000a696e7374616e74616e650020303132333435363738396162636465663031323334353637383961626364656600000002000b6165732d3235362d67636d",
       "liaison": {
@@ -129,9 +114,7 @@
     },
     {
       "nom": "état d'un seul secteur : la longueur entre dans les données associées",
-      "couvre": [
-        "longueur"
-      ],
+      "couvre": ["longueur"],
       "sel": "5061728394a5b6c7d8e9fa0b1c2d3e4f60718293a4b5c6d7e8f90a1b2c3d4e5f",
       "info": "00277261696c73626f782d7661756c742f64657269766174696f6e2d64652d646f6d61696e652f7631000a696e7374616e74616e650020303132333435363738396162636465663031323334353637383961626364656600000002000b6165732d3235362d67636d",
       "liaison": {
