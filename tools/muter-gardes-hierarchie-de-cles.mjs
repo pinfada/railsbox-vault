@@ -27,9 +27,9 @@
 //  - **la SÉPARATION des deux compteurs**, sans laquelle les deux budgets redeviennent un seul ;
 //  - **la RÈGLE DE CLÔTURE**, pour ce que la tranche en tient : le REPORT des compteurs d'une racine
 //    ÉCARTÉE sur celle qui la remplace, et le refus de sceller d'une session qui n'en a pas le
-//    droit. Le troisième chemin hors transaction — le volume de coquille — n'a pas de mutant ici, et
-//    il ne peut pas en avoir : la tranche ne le ferme pas, et `vm-cloture-par-racine.test.mjs`
-//    MESURE l'écart au lieu de garder une règle ;
+//    droit. Le TROISIÈME chemin hors transaction — le volume de coquille — n'a pas de mutant ici, et
+//    il n'en a pas besoin : T2b l'a fermé, et ses mutants vivent dans la campagne qui l'a livré,
+//    `tools/muter-gardes-enveloppe-v2.mjs` ;
 //  - **l'ÉCRITURE ANTICIPÉE de la migration**, et le fail-closed qui la borne. Sans le premier, une
 //    coupure entre les sceaux et les charges coûte jusqu'à 512 secteurs ; sans le second, un
 //    secteur déchiré est rescellé au hasard ;

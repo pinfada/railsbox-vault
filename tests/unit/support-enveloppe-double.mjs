@@ -201,6 +201,7 @@ export async function composerPageAlaMain({
   dek,
   emplacements,
   nonce,
+  sel = null,
   formatVersion = ENVELOPPE_FORMAT_V2,
   domaine = OCTET_DOMAINE_ENVELOPPE,
 }) {
@@ -219,7 +220,15 @@ export async function composerPageAlaMain({
       emplacements,
     });
   }
-  const cleDeRacine = await cleNeuveDeRacineV2({ dek, identifiantVolume, domaine });
+  const cleDeRacine = await cleNeuveDeRacineV2({
+    dek,
+    identifiantVolume,
+    domaine,
+    // Le sel est EXIGÉ depuis que `cleNeuveDeRacineV2` n'en tire plus par défaut : un seul endroit
+    // du dépôt tire, et c'est la source d'aléas du produit. Le harnais tire le sien ici, avec la
+    // même primitive.
+    sel: sel ?? crypto.getRandomValues(new Uint8Array(32)),
+  });
   const racine = await scellerRacineSousNonce({
     cleDeRacine: cleDeRacine.cle,
     racine: { identifiantVolume, formatVersion: ENVELOPPE_FORMAT_V2, version },
