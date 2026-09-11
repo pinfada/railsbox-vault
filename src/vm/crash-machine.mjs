@@ -37,11 +37,11 @@ import { generationJournalName, temoinSequenceName } from "./opfs-sync-access.mj
 import { Scellement } from "./scellement.mjs";
 import { createSyncAccessStore } from "./sync-access-double.mjs";
 import {
-  FORMAT_VOLUME_V3,
+  FORMAT_VOLUME_V4,
   MARQUEUR_SCELLEMENT_COMPLET,
   SCELLEMENT_COMPLET_OFFSET,
   dispositionDuVolume,
-  encoderEnTeteV3,
+  encoderEnTeteV4,
 } from "./volume-chiffre-format.mjs";
 
 /**
@@ -115,7 +115,7 @@ async function ouvrirVolumeJetable({ support, nom, taille, journal, faults, cleO
   if (neuf) {
     handle.truncate(disposition.tailleSupport);
     handle.write(
-      encoderEnTeteV3({ tailleLogique: taille, identifiantVolume: IDENTIFIANT_JETABLE }),
+      encoderEnTeteV4({ tailleLogique: taille, identifiantVolume: IDENTIFIANT_JETABLE }),
       { at: 0 },
     );
     handle.flush();
@@ -128,7 +128,7 @@ async function ouvrirVolumeJetable({ support, nom, taille, journal, faults, cleO
     scellement: await Scellement.ouvrir({
       volume: IDENTIFIANT_JETABLE,
       cleOctets,
-      formatVersion: FORMAT_VOLUME_V3,
+      formatVersion: FORMAT_VOLUME_V4,
     }),
     journal,
     faults,
