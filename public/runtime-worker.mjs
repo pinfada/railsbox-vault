@@ -727,7 +727,17 @@ async function demarrerLApplication(message, correlation) {
     return repondre(TYPES_PRIVILEGIES.applicationReponse, correlation, {
       demarree: false,
       motif: demarrage.motif,
-      code: CODES_REFUS_COQUILLE.applicationAbsente,
+      // Le CODE distingue « rien à servir » (défaut, aucune application) du refus « sans manifeste »
+      // (#173) : c'est ce second cas qui porte la SIGNATURE, et la page ne peut décider d'offrir le
+      // bouton de reprise qu'en lisant `installationInterrompue` — jamais en devinant depuis le code
+      // seul, qui reste le même dans les deux sous-cas de ce refus.
+      code: demarrage.code ?? CODES_REFUS_COQUILLE.applicationAbsente,
+      ...(demarrage.installationInterrompue === undefined
+        ? {}
+        : {
+            installationInterrompue: demarrage.installationInterrompue,
+            motifDeLaSignature: demarrage.motifDeLaSignature,
+          }),
     });
   }
   interne.application = { fermer: demarrage.fermer };

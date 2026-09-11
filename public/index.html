@@ -126,6 +126,21 @@
           <button id="demarrer-application" type="button">Démarrer l'application</button>
         </p>
         <p><button id="verrouiller-le-coffre" type="button">Verrouiller</button></p>
+
+        <!--
+          REPRENDRE une installation interrompue (#173, ADR 0037). Caché tant qu'aucun démarrage n'a
+          reconnu la SIGNATURE d'une installation interrompue — jamais offert sur un simple refus
+          « sans manifeste », qui couvre aussi « autre chose ».
+
+          Il retire le volume applicatif orphelin et ses voisins, puis réinstalle : le Worker
+          REVÉRIFIE la signature lui-même avant d'agir, un clic n'étant pas une preuve que rien n'a
+          changé depuis que ce bouton est apparu.
+        -->
+        <p>
+          <button id="reprendre-l-installation" type="button" hidden>
+            Reprendre l'installation
+          </button>
+        </p>
       </section>
 
       <!--
