@@ -271,7 +271,7 @@ test("une génération AUGMENTÉE d'une entrée est refusée, et le refus traver
     tailleVolume: TAILLE_VOLUME,
     nombreEntrees: scelle.entete.nombreEntrees,
     longueurCharge: scelle.entete.longueurCharge,
-    scellementsCumules: scelle.entete.scellementsCumules,
+    scellementsCumulesVolume: scelle.entete.scellementsCumulesVolume,
   };
   const attentes = { tailleVolume: TAILLE_VOLUME, sequenceMinimale: 1 };
 

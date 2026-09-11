@@ -20,17 +20,29 @@
 import { writeFileSync } from "node:fs";
 
 import { hexEnOctets, octetsEnHex } from "../src/vm/format-chiffre/octets.mjs";
-import { importerCleDeVolume } from "../src/vm/instantane/modele-reference.mjs";
 
-const DESTINATION = new URL("../tests/vectors/instantane-v1.json", import.meta.url);
+const DESTINATION = new URL("../tests/vectors/instantane-v2.json", import.meta.url);
 
 /** Clé de TEST, publique, sans entropie. Jamais un secret : 0x00 à 0x1f. */
 const CLE_DE_TEST = Uint8Array.from({ length: 32 }, (_, index) => index);
 
 const ALGORITHME = "aes-256-gcm";
 const DOMAINE = "railsbox-vault/instantane-de-reprise/v1/liaison";
-const FORMAT_INSTANTANE = 1;
-const MARQUEUR = "564c54534e503031"; // "VLTSNP01"
+const FORMAT_INSTANTANE = 2;
+const MARQUEUR = "564c54534e503032"; // "VLTSNP02"
+
+/**
+ * L'étiquette du SCHÉMA de dérivation par domaine (ADR 0033, décision 3), posée ICI à la main.
+ *
+ * Depuis #182, une capture n'est plus scellée sous la DEK : elle l'est sous une clé du domaine
+ * `instantane`, à USAGE UNIQUE, tirée d'un sel de trente-deux octets écrit en clair dans l'en-tête.
+ * Ce producteur redérive donc la clé lui-même, par HKDF-SHA-256 sur la DEK publiée, sans importer
+ * une ligne de `src/vm/derivation/` : c'est ce qui fait de ces vecteurs un second avis.
+ */
+const ETIQUETTE_SCHEMA_DE_DOMAINE = "railsbox-vault/derivation-de-domaine/v1";
+const DOMAINE_INSTANTANE = "instantane";
+const SEL_OCTETS = 32;
+const EN_TETE_OCTETS = 184;
 
 /** Contenu déterministe, publié avec sa règle : `octet i = (i * 11 + graine) mod 256`. */
 function etatDeMesure(longueur, graine) {
@@ -102,9 +114,37 @@ function donneesAssociees(liaison) {
   ]);
 }
 
+/** L'INFO que HKDF reçoit pour le domaine `instantane`, posée champ par champ (ADR 0033, déc. 3). */
+function infoDeDomaine(volume) {
+  return joindre([
+    chainePrefixee(ETIQUETTE_SCHEMA_DE_DOMAINE),
+    chainePrefixee(DOMAINE_INSTANTANE),
+    chainePrefixee(volume),
+    grosBoutiste(FORMAT_INSTANTANE, 4),
+    chainePrefixee(ALGORITHME),
+  ]);
+}
+
+/** Sel DÉTERMINISTE d'un cas : `octet i = (i * 17 + graine) mod 256`. Le produit, lui, le TIRE. */
+function selDeMesure(graine) {
+  return Uint8Array.from({ length: SEL_OCTETS }, (_, index) => (index * 17 + graine) % 256);
+}
+
+/** La clé du domaine `instantane` de ce volume, redérivée à la main par HKDF-SHA-256. */
+async function cleDuDomaine(volume, sel) {
+  const base = await crypto.subtle.importKey("raw", CLE_DE_TEST, "HKDF", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt: sel, info: infoDeDomaine(volume) },
+    base,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
 /** L'en-tête, posé depuis la table de l'ADR 0024, décision 2. Chaque champ à son offset écrit. */
-function enTete(liaison, nonce, etiquette) {
-  const octets = new Uint8Array(152);
+function enTete(liaison, nonce, etiquette, sel) {
+  const octets = new Uint8Array(EN_TETE_OCTETS);
   octets.set(hexEnOctets(MARQUEUR), 0);
   octets.set(petitBoutiste(FORMAT_INSTANTANE, 4), 8);
   octets.set(petitBoutiste(liaison.formatVolume, 4), 12);
@@ -116,7 +156,8 @@ function enTete(liaison, nonce, etiquette) {
   octets.set(liaison.empreinteImage, 88);
   octets.set(nonce, 120);
   octets.set(etiquette, 132);
-  // 148..152 : réserve, laissée à zéro.
+  octets.set(sel, 148);
+  // 180..184 : réserve, laissée à zéro.
   return octets;
 }
 
@@ -129,11 +170,11 @@ const CAS = [
   {
     nom: "capture nominale d'un volume applicatif",
     couvre: ["volume", "sequence", "generation", "region", "image", "longueur"],
-    scellementsCumules: 0,
+    graineDeSel: 16,
     nonce: nonceDeMesure(0xa0),
     liaison: {
       volume: VOLUME_A,
-      formatVolume: 3,
+      formatVolume: 4,
       sequence: 42,
       generation: 17,
       empreinteRegion: empreinte(3, 1),
@@ -145,11 +186,11 @@ const CAS = [
   {
     nom: "même volume, séquence et génération suivantes",
     couvre: ["sequence", "generation"],
-    scellementsCumules: 1,
+    graineDeSel: 32,
     nonce: nonceDeMesure(0xb0),
     liaison: {
       volume: VOLUME_A,
-      formatVolume: 3,
+      formatVolume: 4,
       sequence: 43,
       generation: 18,
       empreinteRegion: empreinte(3, 1),
@@ -161,11 +202,11 @@ const CAS = [
   {
     nom: "même état, AUTRE volume",
     couvre: ["volume"],
-    scellementsCumules: 2,
+    graineDeSel: 48,
     nonce: nonceDeMesure(0xc0),
     liaison: {
       volume: VOLUME_B,
-      formatVolume: 3,
+      formatVolume: 4,
       sequence: 42,
       generation: 17,
       empreinteRegion: empreinte(3, 1),
@@ -177,11 +218,11 @@ const CAS = [
   {
     nom: "même volume, AUTRE région et AUTRE image de référence",
     couvre: ["region", "image"],
-    scellementsCumules: 3,
+    graineDeSel: 64,
     nonce: nonceDeMesure(0xd0),
     liaison: {
       volume: VOLUME_A,
-      formatVolume: 3,
+      formatVolume: 4,
       sequence: 42,
       generation: 17,
       empreinteRegion: empreinte(7, 11),
@@ -193,11 +234,11 @@ const CAS = [
   {
     nom: "état d'un seul secteur : la longueur entre dans les données associées",
     couvre: ["longueur"],
-    scellementsCumules: 4,
+    graineDeSel: 80,
     nonce: nonceDeMesure(0xe0),
     liaison: {
       volume: VOLUME_A,
-      formatVolume: 3,
+      formatVolume: 4,
       sequence: 42,
       generation: 17,
       empreinteRegion: empreinte(3, 1),
@@ -209,9 +250,10 @@ const CAS = [
 ];
 
 async function principal() {
-  const cle = await importerCleDeVolume(CLE_DE_TEST);
   const cas = [];
   for (const modele of CAS) {
+    const sel = selDeMesure(modele.graineDeSel);
+    const cle = await cleDuDomaine(modele.liaison.volume, sel);
     const associees = donneesAssociees(modele.liaison);
     const brut = new Uint8Array(
       await crypto.subtle.encrypt(
@@ -225,7 +267,8 @@ async function principal() {
     cas.push({
       nom: modele.nom,
       couvre: modele.couvre,
-      scellementsCumules: modele.scellementsCumules,
+      sel: octetsEnHex(sel),
+      info: octetsEnHex(infoDeDomaine(modele.liaison.volume)),
       liaison: {
         volume: modele.liaison.volume,
         formatInstantane: FORMAT_INSTANTANE,
@@ -239,14 +282,14 @@ async function principal() {
       etat: octetsEnHex(modele.etat),
       nonce: octetsEnHex(modele.nonce),
       donneesAssociees: octetsEnHex(associees),
-      enTete: octetsEnHex(enTete(modele.liaison, modele.nonce, etiquette)),
+      enTete: octetsEnHex(enTete(modele.liaison, modele.nonce, etiquette, sel)),
       chiffre: octetsEnHex(chiffre),
       etiquette: octetsEnHex(etiquette),
     });
   }
 
   const vecteurs = {
-    specification: "railsbox-vault/instantane-de-reprise/v1",
+    specification: "railsbox-vault/instantane-de-reprise/v2",
     adr: "docs/decisions/0024-instantane-de-reprise.md",
     produitPar: "tools/figer-vecteurs-instantane.mjs",
     avertissement:
@@ -254,14 +297,21 @@ async function principal() {
     algorithme: ALGORITHME,
     domaine: DOMAINE,
     formatInstantane: FORMAT_INSTANTANE,
+    derivation: {
+      etiquetteDuSchema: ETIQUETTE_SCHEMA_DE_DOMAINE,
+      domaine: DOMAINE_INSTANTANE,
+      regime: "usage-unique",
+      selOctets: SEL_OCTETS,
+      note: "La clé de chaque capture DESCEND de la DEK par HKDF-SHA-256, sel tiré, info à champs préfixés (ADR 0033). La DEK, elle, ne chiffre plus rien.",
+    },
     disposition: {
-      enTeteOctets: 152,
+      enTeteOctets: EN_TETE_OCTETS,
       marqueOctets: 8,
       marqueurEnTete: MARQUEUR,
       marqueurComplet: "564c54534e504631",
     },
     cle: {
-      role: "clé de volume de TEST, publique et sans entropie",
+      role: "clé MAÎTRESSE (DEK) de TEST, publique et sans entropie — elle ne chiffre rien, elle dérive",
       hex: octetsEnHex(CLE_DE_TEST),
     },
     cas,

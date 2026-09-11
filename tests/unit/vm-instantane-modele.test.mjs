@@ -39,7 +39,7 @@ function liaisonDeReference(remplacements = {}) {
   return {
     volume: "0123456789abcdef0123456789abcdef",
     formatInstantane: INSTANTANE_FORMAT,
-    formatVolume: 3,
+    formatVolume: 4,
     sequence: 42,
     generation: 17,
     empreinteRegion: REGION,
@@ -59,7 +59,6 @@ async function scelleDeReference() {
     liaison: liaisonDeReference(),
     etat: ETAT,
     nonce: NONCE,
-    attentes: { scellementsCumules: 0 },
   });
 }
 
@@ -137,7 +136,7 @@ test("chaque axe de la liaison fait ÉCHOUER l'étiquette, et aucun clair n'est 
   const scelle = await scelleDeReference();
   const ecarts = {
     volume: "fedcba9876543210fedcba9876543210",
-    formatVolume: 4,
+    formatVolume: 5,
     sequence: 43,
     generation: 18,
     empreinteRegion: Uint8Array.from(REGION, (octet) => octet ^ 0x01),
@@ -188,30 +187,23 @@ test("une autre clé n'ouvre pas l'instantané", async () => {
   );
 });
 
-test("le budget de clé est PRÉSENTÉ, et un oubli est refusé", async () => {
+test("il n'y a PLUS de budget à présenter, et le présenter encore est REFUSÉ (#182)", async () => {
+  // Une capture est désormais scellée sous une clé du domaine « instantane » à USAGE UNIQUE : son
+  // budget est de 1, et aucune mesure ne peut le rendre faux (ADR 0033, décision 4). Le compteur
+  // qui vivait ici était l'un de ceux que la revue externe range parmi ceux « qui ne sont pas
+  // persistés ».
+  //
+  // Le REFUSER plutôt que l'ignorer n'est pas une coquetterie : un appelant qui compte croit que
+  // quelqu'un l'écoute, et c'est exactement la confiance que #182 a trouvée mal placée.
   await assert.rejects(
     scellerInstantaneSousNonce({
       cle: await cle(),
       liaison: liaisonDeReference(),
       etat: ETAT,
       nonce: NONCE,
-      attentes: {},
+      attentes: { scellementsCumules: 0 },
     }),
     (erreur) => isInstantaneError(erreur, INSTANTANE_ERROR_CODES.malforme),
-    "« attentes.scellementsCumules » est obligatoire : un oubli vaudrait un budget non compté",
-  );
-});
-
-test("le budget de clé épuisé refuse la capture", async () => {
-  await assert.rejects(
-    scellerInstantaneSousNonce({
-      cle: await cle(),
-      liaison: liaisonDeReference(),
-      etat: ETAT,
-      nonce: NONCE,
-      attentes: { scellementsCumules: 2 ** 31 },
-    }),
-    (erreur) => isInstantaneError(erreur, INSTANTANE_ERROR_CODES.budgetDeCle),
   );
 });
 
@@ -222,7 +214,6 @@ test("un état dont la longueur ne correspond pas à la liaison est refusé AVAN
       liaison: liaisonDeReference({ longueurEtat: ETAT.byteLength - 1 }),
       etat: ETAT,
       nonce: NONCE,
-      attentes: { scellementsCumules: 0 },
     }),
     (erreur) => isInstantaneError(erreur, INSTANTANE_ERROR_CODES.malforme),
     "une longueur devinée n'est pas une longueur",

@@ -34,12 +34,14 @@ const IMAGE = Uint8Array.from({ length: 32 }, (_, index) => (index * 5 + 7) % 25
 const NONCE = Uint8Array.from({ length: 12 }, (_, index) => 0xa0 + index);
 const ETIQUETTE = Uint8Array.from({ length: 16 }, (_, index) => 0xb0 + index);
 const IDENTIFIANT = "0123456789abcdef0123456789abcdef";
+/** Le SEL de la clé à usage unique de cette capture (#182, ADR 0033, décision 3). */
+const SEL = Uint8Array.from({ length: 32 }, (_, index) => (index * 17 + 3) % 256);
 
 function liaison(remplacements = {}) {
   return exigerLiaison({
     volume: IDENTIFIANT,
     formatInstantane: INSTANTANE_FORMAT,
-    formatVolume: 3,
+    formatVolume: 4,
     sequence: 42,
     generation: 17,
     empreinteRegion: REGION,
@@ -50,16 +52,23 @@ function liaison(remplacements = {}) {
 }
 
 function enTete(remplacements = {}) {
-  return encoderEnTete({ liaison: liaison(remplacements), nonce: NONCE, etiquette: ETIQUETTE });
+  return encoderEnTete({
+    liaison: liaison(remplacements),
+    nonce: NONCE,
+    etiquette: ETIQUETTE,
+    sel: SEL,
+  });
 }
 
 test("l'en-tête occupe exactement la largeur que l'ADR 0024 publie", () => {
-  assert.equal(EN_TETE_OCTETS, 152);
+  // **184 depuis le format 2 (#182)** : les trente-deux octets du sel de la clé à usage unique
+  // s'ajoutent à l'en-tête, là où la réserve de quatre octets se trouvait.
+  assert.equal(EN_TETE_OCTETS, 184);
   assert.equal(MARQUE_OCTETS, 8);
   assert.equal(enTete().byteLength, EN_TETE_OCTETS);
-  assert.equal(offsetDuCorps(), 152);
-  assert.equal(offsetDeLaMarque(4096), 152 + 4096);
-  assert.equal(tailleDeFichier(4096), 152 + 4096 + 8);
+  assert.equal(offsetDuCorps(), 184);
+  assert.equal(offsetDeLaMarque(4096), 184 + 4096);
+  assert.equal(tailleDeFichier(4096), 184 + 4096 + 8);
 });
 
 test("chaque champ est à l'offset que l'ADR publie", () => {
@@ -67,7 +76,7 @@ test("chaque champ est à l'offset que l'ADR publie", () => {
   const vue = new DataView(octets.buffer, octets.byteOffset, octets.byteLength);
   assert.equal(octetsEnHex(octets.subarray(0, 8)), octetsEnHex(MARQUEUR_INSTANTANE));
   assert.equal(vue.getUint32(8, true), INSTANTANE_FORMAT);
-  assert.equal(vue.getUint32(12, true), 3);
+  assert.equal(vue.getUint32(12, true), 4);
   assert.equal(octetsEnHex(octets.subarray(16, 32)), IDENTIFIANT);
   assert.equal(Number(vue.getBigUint64(32, true)), 42);
   assert.equal(Number(vue.getBigUint64(40, true)), 17);
@@ -76,14 +85,15 @@ test("chaque champ est à l'offset que l'ADR publie", () => {
   assert.equal(octetsEnHex(octets.subarray(88, 120)), octetsEnHex(IMAGE));
   assert.equal(octetsEnHex(octets.subarray(120, 132)), octetsEnHex(NONCE));
   assert.equal(octetsEnHex(octets.subarray(132, 148)), octetsEnHex(ETIQUETTE));
-  assert.equal(octetsEnHex(octets.subarray(148, 152)), "00000000", "la réserve est à zéro");
+  assert.equal(octetsEnHex(octets.subarray(148, 180)), octetsEnHex(SEL), "le sel, en CLAIR");
+  assert.equal(octetsEnHex(octets.subarray(180, 184)), "00000000", "la réserve est à zéro");
 });
 
 test("l'en-tête se relit tel qu'il a été écrit", () => {
   const lu = decoderEnTete(enTete());
   assert.equal(lu.valide, true, lu.raison ?? "");
   assert.equal(lu.liaison.volume, IDENTIFIANT);
-  assert.equal(lu.liaison.formatVolume, 3);
+  assert.equal(lu.liaison.formatVolume, 4);
   assert.equal(lu.liaison.sequence, 42);
   assert.equal(lu.liaison.generation, 17);
   assert.equal(lu.liaison.longueurEtat, 4096);
@@ -91,6 +101,7 @@ test("l'en-tête se relit tel qu'il a été écrit", () => {
   assert.equal(octetsEnHex(lu.liaison.empreinteImage), octetsEnHex(IMAGE));
   assert.equal(octetsEnHex(lu.nonce), octetsEnHex(NONCE));
   assert.equal(octetsEnHex(lu.etiquette), octetsEnHex(ETIQUETTE));
+  assert.equal(octetsEnHex(lu.sel), octetsEnHex(SEL), "sans le sel, la capture ne se rouvre pas");
 });
 
 test("un fichier sans marqueur n'est pas un instantané, et il est REFUSÉ", () => {
@@ -121,12 +132,12 @@ test("une RÉSERVE non nulle est refusée : elle n'est couverte par rien", () =>
   // runtime, ou a été retouché. Les accepter en silence offrirait quatre octets de canal libre
   // sous un en-tête qui se présente comme scellé.
   const octets = enTete();
-  octets[150] = 1;
+  octets[182] = 1;
   const lu = decoderEnTete(octets);
   assert.equal(lu.valide, false);
   assert.match(lu.raison, /réserve/i);
   // TÉMOIN POSITIF : la même réserve à zéro s'ouvre.
-  octets[150] = 0;
+  octets[182] = 0;
   assert.equal(decoderEnTete(octets).valide, true);
 });
 
