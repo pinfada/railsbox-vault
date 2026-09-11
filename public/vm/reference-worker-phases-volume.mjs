@@ -67,6 +67,8 @@ async function verserLeDisque({ volume, appDiskBytes, appDiskUrl, journal, forma
     journal,
     cle: cleDuBanc(),
     transactionnel: false,
+    // Ce versement sera DATÉ : `daterLaCreation` est sa clôture (#182, T2b).
+    clotureParDatation: true,
   });
   const scellementMs = duree(avantOuverture);
   const identifiantVolume = backend.identifiantVolume;

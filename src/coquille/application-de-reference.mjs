@@ -328,7 +328,15 @@ async function verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, o
   // revue de la PR #171).
   let backend;
   try {
-    backend = await ouvrir({ name: nom, size: octets, cle, transactionnel: false });
+    backend = await ouvrir({
+      name: nom,
+      size: octets,
+      cle,
+      transactionnel: false,
+      // Ce versement sera DATÉ : `daterLaCreation` est sa clôture, et une racine écrite à la
+      // fermeture lui ferait trouver un journal « en service » (#182, T2b).
+      clotureParDatation: true,
+    });
   } finally {
     cle.fill(0);
   }
