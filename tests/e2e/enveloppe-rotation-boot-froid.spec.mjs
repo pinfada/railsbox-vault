@@ -99,6 +99,7 @@ test.afterEach(async ({ context }, testInfo) => {
 });
 
 test("une clé de déverrouillage ouvre un volume Rails à froid, sa rotation aussi, et l'ancienne est refusée", async ({
+  chronologie,
   context,
 }, testInfo) => {
   exigerLesPrealables(raison, "enveloppe-rotation-boot-froid.spec.mjs");
@@ -166,6 +167,8 @@ test("une clé de déverrouillage ouvre un volume Rails à froid, sa rotation au
     disqueApp.byteSize,
   );
 
+  chronologie.etape("préparation du volume", { octets: prepare.bytesWritten });
+
   const creee = await phase({ phase: "enveloppe-creer", volume: VOLUME });
   await testInfo.attach("enveloppe-creee.json", {
     body: JSON.stringify(creee, null, 2),
@@ -176,7 +179,18 @@ test("une clé de déverrouillage ouvre un volume Rails à froid, sa rotation au
 
   // 2. Boot À CHAUD par la CLÉ DE DÉVERROUILLAGE. Le Worker n'a plus le jeton pour cette phase : il
   //    ouvre l'enveloppe, développe la clé, boote, puis l'efface.
+  //
+  // La chronologie est datée AVANT le boot : c'est ce boot-ci qui a échoué le 10 septembre 2026
+  // (#165, run 34419243044 tentative 1, guest resté à l'invite `(initramfs)`), et un relevé écrit
+  // seulement APRÈS lui n'aurait rien dit de l'occurrence.
+  chronologie.etape("boot à chaud LANCÉ par la clé initiale", { budgetBootMs: BUDGET_BOOT_MS });
   const live = await phase({ ...configBoot, phase: "live", deverrouillerPar: "initiale" });
+  chronologie.etape("boot à chaud ABOUTI", {
+    santeMs: live.healthMilliseconds,
+    conforming: live.conforming,
+    ecrituresDuGuest: live.counts?.write ?? 0,
+    barrieresAcquittees: live.counts?.["flush-ack"] ?? 0,
+  });
   await testInfo.attach("live-par-kek.json", {
     body: JSON.stringify(live, null, 2),
     contentType: "application/json",
@@ -205,7 +219,14 @@ test("une clé de déverrouillage ouvre un volume Rails à froid, sa rotation au
   expect(remplacee.nombreEmplacements).toBe(1);
 
   // 4. Boot À FROID par la clé NEUVE : la mutation Rails est retrouvée.
+  chronologie.etape("boot à froid LANCÉ par la clé après rotation", {
+    versionDeLEnveloppe: remplacee.version,
+  });
   const resume = await phase({ ...configBoot, phase: "resume", deverrouillerPar: "rotation" });
+  chronologie.etape("boot à froid ABOUTI", {
+    santeMs: resume.healthMilliseconds,
+    conforming: resume.conforming,
+  });
   await testInfo.attach("resume-par-nouvelle-kek.json", {
     body: JSON.stringify(resume, null, 2),
     contentType: "application/json",
