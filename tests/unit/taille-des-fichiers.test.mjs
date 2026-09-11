@@ -52,7 +52,7 @@ const RACINES = ["src", "public/vm"];
 const SOUS_SURVEILLANCE = [
   {
     fichier: "src/vm/generation-store.mjs",
-    lignes: 783,
+    lignes: 792,
     motif:
       "#65 l'avait inscrit à 738 lignes en écrivant « la prochaine tranche qui y touchera devra le " +
       "scinder ». #181 y a touché — l'ouverture décide désormais d'écrire une RACINE INITIALE — et " +
@@ -71,7 +71,7 @@ const SOUS_SURVEILLANCE = [
       "que le TROISIÈME chemin hors transaction réclamait (ADR 0033, décision 4). Ils ne peuvent " +
       "pas vivre ailleurs — ils appellent `#vider` et la garde de fraîcheur, qui sont l'état privé " +
       "de cette machine —, et ils n'ouvrent aucun second chemin de scellement. Le fichier reste " +
-      "sous le plafond, à dix-sept lignes de lui ; la prochaine tranche qui y touchera devra le " +
+      "sous le plafond, à huit lignes de lui ; la prochaine tranche qui y touchera devra le " +
       "scinder, et la candidate est la RÉCUPÉRATION, qui forme déjà un bloc autonome.",
   },
   {

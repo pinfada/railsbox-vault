@@ -394,6 +394,34 @@ async function marquerLaCreationAchevee(backend, name, handle) {
  * scelle l'empreinte de la région telle qu'elle est à cet instant, et une écriture hors transaction
  * la périme. L'oubli coûte un REFUS à la première ouverture, jamais un silence.
  */
+/**
+ * Ce que cette ouverture a le droit de faire d'un volume SANS RACINE (#181).
+ *
+ * `tientLeFichier` dit ce que l'autorisation peut croire sans rien vérifier : une NAISSANCE vient
+ * d'allouer et de sceller ce fichier sous CETTE exclusivité. Une datation de création, non — le
+ * versement l'a relâché avant elle, et c'est `empreinteVersee` qui relie les deux gestes (revue de
+ * sécurité de la PR #184, constat 1).
+ */
+function autorisationDeCetteOuverture({
+  saisi,
+  creation,
+  name,
+  backend,
+  cle,
+  openHandle,
+  empreinteVersee,
+}) {
+  return autorisationSansRacine({
+    name,
+    motif: saisi.naissance ? MOTIFS_DE_RACINE_INITIALE.creation : creation,
+    backend,
+    cle,
+    openHandle,
+    empreinteVersee,
+    tientLeFichier: saisi.naissance,
+  });
+}
+
 async function tenirLaClotureHorsTransaction(backend, options, clotureParDatation) {
   let magasin;
   try {
@@ -588,7 +616,6 @@ async function etablirLaGeneration(
     clotureParDatation,
   },
 ) {
-  const motif = saisi.naissance ? MOTIFS_DE_RACINE_INITIALE.creation : creation;
   const generation = {
     name,
     size: saisi.disposition.tailleLogique,
@@ -597,21 +624,23 @@ async function etablirLaGeneration(
     openHandle,
     seuilPointDeControle,
     fautesFraicheur,
-    // `tientLeFichier` dit ce que l'autorisation a le droit de croire sans rien vérifier : une
-    // NAISSANCE vient d'allouer et de sceller ce fichier sous CETTE exclusivité. Une datation de
-    // création, non — le versement l'a relâché avant elle, et c'est `empreinteVersee` qui relie les
-    // deux gestes (revue de sécurité de la PR #184, constat 1).
-    sansRacine: autorisationSansRacine({
+    sansRacine: autorisationDeCetteOuverture({
+      saisi,
+      creation,
       name,
-      motif,
       backend,
       cle,
       openHandle,
       empreinteVersee,
-      tientLeFichier: saisi.naissance,
     }),
   };
   if (transactionnel) return installerGenerationOuFermer(backend, generation);
+  // Hors transaction, la fraîcheur n'est PAS confrontée — elle ne l'a jamais été sur ce chemin, et
+  // la confronter a été RÉFUTÉ par exécution : le Worker qui tient le volume de coquille peut être
+  // tué à tout instant (geste « Verrouiller », ADR 0031), donc sans écrire de racine de clôture,
+  // donc en laissant une région périmée que l'ouverture suivante refuserait. Voir
+  // `#confronterLaFraicheur` dans `generation-store.mjs`. La clôture, elle, la RÉTABLIT.
+  generation.confronterLaFraicheur = false;
   // Le VERSEMENT (chemin 2) est le seul à ne PAS clore par une racine, et il le DÉCLARE : il écrit
   // le fichier entier puis se fait DATER par `daterLaCreation`, qui est sa clôture — elle publie le
   // compte versé et écarte le journal de création. Une racine écrite ici lui ferait trouver un

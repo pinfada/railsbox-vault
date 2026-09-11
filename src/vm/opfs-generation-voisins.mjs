@@ -62,6 +62,7 @@ export async function ouvrirGeneration({
   seuilPointDeControle,
   fautesFraicheur,
   sansRacine,
+  confronterLaFraicheur = true,
 }) {
   const handle = await saisirVoisin(openHandle, generationJournalName(name), {
     operation: "open-generation",
@@ -86,6 +87,7 @@ export async function ouvrirGeneration({
       handle,
       seuilPointDeControle,
       sansRacine,
+      confronterLaFraicheur,
       fraicheur: sourceDeFraicheur({ name, backend, temoin, fautes: fautesFraicheur }),
     });
   } catch (cause) {
@@ -213,6 +215,7 @@ export async function ouvrirMagasin({
   seuilPointDeControle,
   sansRacine,
   fraicheur,
+  confronterLaFraicheur = true,
 }) {
   try {
     return await GenerationStore.ouvrir({
@@ -222,6 +225,7 @@ export async function ouvrirMagasin({
       scellement,
       fraicheur,
       sansRacine,
+      confronterLaFraicheur,
       lireVolume: (offset, longueur) => backend.lireSupportBrut(offset, longueur),
       ecrireVolume: (offset, octets, generation) =>
         backend.ecrireSupportBrut(offset, octets, generation),
