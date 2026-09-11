@@ -29,11 +29,21 @@ sensibles » reste FERMÉ tant qu'il l'est.
 **Le HIGH est corrigé À MOITIÉ le 11 septembre 2026**, par la tranche **T2a** : le format de volume
 passe en v4, la DEK devient une clé maîtresse que WebCrypto refuse de passer à AES-GCM, et les
 domaines `volume`, `journal` et `instantane` scellent chacun sous la sienne. Le compteur d'une clé
-compte enfin toutes les invocations sous elle, et une session qui ne peut pas le publier dans une
-racine n'a plus le droit de sceller. **La ligne reste OUVERTE** : la page d'enveloppe et la section
-de récupération scellent encore sous la DEK, et le cliquet qui refusera qu'un scellement la reçoive
-n'est pas posé. La tranche **T2b** ferme les deux, et elle seule fera passer cette ligne à « corrigé
-».
+compte toutes les invocations sous elle **sur les chemins que la v4 ferme** — la création,
+l'installation initiale et les sessions transactionnelles, mesurés à l'ÉGALITÉ par le nombre
+d'invocations réelles de `crypto.subtle.encrypt`, et non par une inégalité.
+
+**La ligne reste OUVERTE**, et il faut dire ce qui reste plutôt que d'en donner la moitié :
+
+- la page d'enveloppe et la section de récupération scellent encore sous la DEK, et le cliquet qui
+  refusera qu'un scellement la reçoive n'est pas posé — celui de T2a est un INVENTAIRE, qui relève
+  la porte nommée et toute importation directe d'une clé AES-GCM, sur `src/` et `public/` ;
+- **le volume de COQUILLE scelle un secteur par déverrouillage hors clôture, non compté, jusqu'à
+  T2b.** Aucune des deux conduites de l'ADR 0033, décision 4, ne lui est ouverte en l'état : la
+  lecture seule casse le déverrouillage, et écrire une racine de clôture sur un volume déjà daté
+  demande un geste que `GenerationStore` n'expose pas. L'écart est MESURÉ, et il n'a pas de borne.
+
+La tranche **T2b** ferme les trois, et elle seule fera passer cette ligne à « corrigé ».
 
 Cette ligne est écrite telle quelle plutôt que sous une formule d'audit, et il faut en tirer la
 conséquence sans l'adoucir : **savoir si une revue adverse assistée par un agent d'IA satisfait la

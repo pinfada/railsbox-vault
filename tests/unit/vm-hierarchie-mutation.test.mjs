@@ -46,13 +46,14 @@ test("AUCUN mutant ne survit : chaque garde retirée fait rougir sa preuve", () 
   );
 });
 
-test("la table couvre les NEUF modules où la hiérarchie et la v4 se jouent", () => {
+test("la table couvre les ONZE modules où la hiérarchie et la v4 se jouent", () => {
   // Un compte de mutants ne dit rien de leur RÉPARTITION : dix mutations sur la même ligne feraient
   // un score parfait et ne mesureraient qu'une garde. Ce contrôle relit les FICHIERS visés, et ils
   // se lisent comme le chemin de la tranche : ce qui DÉRIVE une clé, ce qui l'assemble pour un
   // volume, ce qui scelle sous elle, ce que la racine authentifie, ce que le journal en écrit, ce
-  // que la migration en fait, ce que la chaîne en fait, et l'endroit où la moitié tenue de la règle
-  // de clôture vit — le REPORT des compteurs d'une racine écartée.
+  // que la migration en fait, ce que la chaîne en fait, ce qu'elle fait du journal de sa SOURCE, et
+  // les deux endroits où la règle de clôture se joue — le REPORT des compteurs d'une racine écartée,
+  // et celui du compte qu'un VERSEMENT hors transaction rend à la datation.
   const fichiers = [...new Set(MUTATIONS.map((mutation) => mutation.fichier))].sort();
   assert.deepEqual(fichiers, [
     "src/vm/derivation/cle-de-domaine.mjs",
@@ -60,7 +61,9 @@ test("la table couvre les NEUF modules où la hiérarchie et la v4 se jouent", (
     "src/vm/format-chiffre/identite-logique.mjs",
     "src/vm/format-chiffre/modele-reference.mjs",
     "src/vm/generation-format.mjs",
+    "src/vm/migration-source-chiffree.mjs",
     "src/vm/migration-v4.mjs",
+    "src/vm/opfs-datation-de-creation.mjs",
     "src/vm/opfs-racine-initiale.mjs",
     "src/vm/scellement.mjs",
     "src/vm/volume-migration.mjs",

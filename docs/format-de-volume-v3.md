@@ -335,16 +335,36 @@ plafond — ~716 millions du côté du volume. Épreuves : `tests/unit/vm-genera
 dépasser le nombre compté, d'un écart qu'aucune mesure ne borne aujourd'hui. La moitié du plafond
 NIST est la marge choisie devant cet écart ; c'est la **question n° 4** de la § 13.
 
-**Le compteur n'est plus sous-estimé hors transaction, et c'est la règle de clôture qui le tient.**
-Ce paragraphe avouait, jusqu'à la v3, qu'un volume ouvert sans journal n'écrivait aucune racine et
-que ses scellements n'étaient donc comptés que le temps de la session. L'aveu est retiré parce que
-l'état qu'il décrivait n'est plus atteignable : une session qui ne peut pas écrire de racine ne
-scelle pas (§ 4.5, la règle de clôture ; § 10.2, `VAULT_STORAGE_LECTURE_SEULE`).
+**Le compteur n'est plus sous-estimé sur les chemins que la v4 ferme.** Ce paragraphe avouait,
+jusqu'à la v3, qu'un volume ouvert sans journal n'écrivait aucune racine et que ses scellements
+n'étaient donc comptés que le temps de la session. L'aveu est retiré **pour la création et pour
+l'installation initiale** : la première clôt par une racine, la seconde en réécrit une qui REPORTE
+le compte que le versement lui rend. Les deux sont mesurées à l'ÉGALITÉ — par le nombre
+d'invocations réelles de `crypto.subtle.encrypt`, et non par une inégalité —, et le chemin
+transactionnel ordinaire l'est aussi, sur cinq ouvertures successives
+(`tests/unit/vm-cloture-par-racine.test.mjs`).
 
-**Ce qui reste sous-estimé, et c'est BORNÉ** : une MIGRATION v3 → v4 reprise après coupure peut
-avoir rescellé certains secteurs deux fois. L'écart vaut au plus une suite de conversion — 512
-secteurs — par coupure, parce que la reprise ne rejoue que la suite qui était en vol (§ 7.4). C'est
-la seule sous-estimation qui subsiste, et elle a une borne, ce que l'aveu précédent n'avait pas.
+**DEUX sous-estimations subsistent, et elles sont nommées toutes les deux.** Les écrire ici plutôt
+que de les laisser à un § lointain est le prix d'un paragraphe normatif qui ne se contredit pas :
+
+1. **le volume de COQUILLE scelle un secteur par déverrouillage hors clôture, non compté, jusqu'à
+   T2b.** C'est le troisième chemin hors transaction : `public/runtime-worker.mjs` l'ouvre hors
+   transaction et y ÉCRIT, si bien qu'aucune des deux conduites de l'ADR 0033, décision 4, ne lui
+   est ouverte en l'état — la lecture seule casse le déverrouillage, et écrire une racine de clôture
+   sur un volume déjà daté demande un geste que `GenerationStore` n'expose pas. L'écart est MESURÉ
+   par « CHEMIN 3 » de la même suite, et il n'a PAS de borne : il croît d'un scellement par
+   déverrouillage ;
+2. **une MIGRATION v3 → v4 reprise après coupure peut avoir rescellé certains secteurs deux fois.**
+   L'écart vaut au plus une suite de conversion — 512 secteurs — par coupure, parce que la reprise
+   ne rejoue que la suite qui était en vol (§ 7.4). Celle-là a une borne, ce que l'aveu précédent
+   n'avait pas.
+
+Une troisième a existé entre le 11 septembre et la revue de la PR #186, et il vaut mieux l'écrire
+que de laisser croire que ce § a toujours dit vrai : l'INSTALLATION INITIALE publiait 18 scellements
+pour 38 réels — la datation ne reportait que les compteurs de la racine de NAISSANCE, et tout le
+versement disparaissait. Pour un disque de 512 Mio, c'était la moitié du budget de la clé perdue à
+l'installation, sur le chemin même que ce paragraphe déclarait clos. Le versement rend désormais son
+compte comme il rend déjà son empreinte.
 
 **Le compteur est REPRIS de la racine qui fait autorité, sans contrôle de croissance.** À
 l'ouverture, la session reprend le compteur à `scellementsCumules + 1` de cette racine, sans le
@@ -396,7 +416,7 @@ dit pourquoi le rang ne suffisait pas à les séparer.
 | ----- | --------------------------- | ------------- | -------------------------------------------------------------------------------------- |
 | 1     | Étiquette de domaine        | 2 + 37 octets | longueur gros-boutiste sur 2 o, puis UTF-8 : `railsbox-vault/format-chiffre/v1/bloc`   |
 | 2     | Nom de l'algorithme         | 2 + 11 octets | idem : `aes-256-gcm`                                                                   |
-| 3     | Version du format de volume | 4 octets      | entier gros-boutiste — **3**                                                           |
+| 3     | Version du format de volume | 4 octets      | entier gros-boutiste — **4** (3 sur un volume antérieur)                               |
 | 4     | Identifiant de volume       | 2 + n octets  | idem : chaîne quelconque ; **32 caractères hexadécimaux minuscules** pour un volume v3 |
 | 5     | Génération                  | 8 octets      | entier gros-boutiste                                                                   |
 | 6     | Rang de l'entrée            | 8 octets      | entier gros-boutiste                                                                   |
@@ -1658,6 +1678,30 @@ consentement nommé.
 > atteints. Épreuve : `tests/unit/vm-volume-migration.test.mjs` › « une coupure PENDANT le pas v3 →
 > v4 ne fait pas REFAIRE le pas v2 → v3 ».
 
+> **La migration est une OUVERTURE de sa source, et pas un chemin privilégié** (#182, revue de la PR
+> #186, constats 1 et 4). Quand la source est déjà CHIFFRÉE — un v3 —, son voisin `.gen` n'est pas
+> un fichier à recopier : c'est un journal, et il s'OUVRE par le magasin de générations, sous un
+> scellement de la version SOURCE. En v3 cela veut dire **sous la DEK importée directement en clé
+> AES-GCM**, le régime que la v4 remplace, et c'est l'unique appelant qui en reste dans le produit.
+>
+> Ce geste rend trois choses d'un coup, et c'est la raison de ne pas écrire un lecteur de plus :
+>
+> 1. la CHARGE ACQUITTÉE que le journal porte est appliquée au volume AVANT le rescellement. Le
+>    lecteur du format 1 y était appliqué quelle que soit la version de la source, et il échouait au
+>    CRC-32 que le format 4 a remplacé par une étiquette : **tout v3 légitime — donc tout v3, depuis
+>    que l'ADR 0034 leur donne une racine — était refusé à la migration**, alors même que le refus
+>    d'ouverture du § 6.2 nomme la migration comme seul remède ;
+> 2. les TROIS cas du pas 4 bis du § 7.3 s'appliquent à la SOURCE : racine → normal ; pas de racine
+>    mais un engagement d'archive → vérifié sous la clé, sur l'empreinte du fichier ENTIER, avant
+>    tout clair, puis consommé ; ni l'un ni l'autre → `VAULT_STORAGE_VOLUME_SANS_RACINE`, zéro
+>    écriture. Sans cela la migration DATAIT d'une racine neuve un volume que l'ouverture refuse,
+>    par le seul chemin qu'un produit v4 laisse à une archive v3 ;
+> 3. la FRAÎCHEUR de région est confrontée, comme à toute ouverture.
+>
+> Le solde a lieu **avant** que le journal de reprise ne soit inscrit, donc avant tout geste
+> destructif : un refus laisse le volume intact ET son manifeste en place. Une reprise ne le rejoue
+> pas — le fichier n'est plus la source, il est un entre-deux dont certaines suites sont déjà v4.
+
 #### v3 → v4 : rescéller chaque secteur
 
 **C'est le geste le plus lourd que ce dépôt ait tenté** : chaque secteur est RESCELLÉ, parce
@@ -2125,6 +2169,20 @@ Un support hostile pourrait donc faire reprendre une migration depuis une identi
 confiance repose ici encore sur le partitionnement d'origine. Ce qu'un tel support obtient est une
 **destruction**, jamais une lecture (§ 7.4).
 
+**Cette destruction est désormais DITE, et elle ne l'était pas** (revue de sécurité de la PR #186,
+constat 6). Le journal décide, à partir de champs que rien n'authentifie, quels secteurs ne seront
+plus jamais regardés : un journal substitué qui déclare la conversion arrivée à son dernier geste
+faisait poser l'en-tête v4 sur un fichier dont aucun secteur n'avait été rescellé, et la conversion
+rendait alors un compte rendu de **succès** sur un volume qui ne se relit plus. La promesse tenait —
+aucun clair ne sortait, aucun octet chiffré n'était effacé — mais rien ne l'annonçait.
+
+Avant de poser l'en-tête v4, la conversion SONDE donc un secteur sous la clé d'arrivée, et refuse
+par `VAULT_MIGRATION_CONVERSION_INCOHERENTE` si elle échoue — sans qu'un octet de plus soit écrit.
+Le prix est UNE ouverture GCM par conversion, soit une sur 2^20 pour un volume de 512 Mio. Elle
+n'attrape pas tout, et il faut le dire : un journal forgé qui ferait sauter une suite du MILIEU
+laisse le premier secteur convertible. Ce qu'elle ferme est le cas où la conversion n'a rien
+converti du tout, et la plupart des reprises en avance.
+
 ### 9.3 L'écriture déchirée intra-secteur
 
 Le format ne suppose **aucune atomicité** : ni sectorielle, ni entre la charge et son sceau, ni
@@ -2515,6 +2573,15 @@ contenter de lire.
 découvrir : le seul candidat est l'ouverture du volume de coquille, qui ÉCRIT (§ 4.5). Ce code est
 donc ÉPROUVÉ et inemployé — l'inverse d'une garde décorative, qui serait employée et ne mordrait
 pas. Il attend son appelant, et T2b le lui donnera.
+
+**`VAULT_STORAGE_DOMAINE_ABSENT_DU_FORMAT` dit ce que `LECTURE_SEULE` disait de trop** (revue de
+sécurité de la PR #186, constat 3 ; revue de format, constat 5). Un volume antérieur à la v4 n'a pas
+de clé maîtresse, donc pas de domaine `instantane` : lui demander une capture est refusé. Ce refus
+était rendu sous `LECTURE_SEULE`, et c'était faux deux fois — cette session-là a le droit de
+sceller, et elle scelle tout le reste ; et le refus tombe aussi sur une OUVERTURE d'instantané, qui
+ne scelle rien. Le remède, surtout, n'est pas celui que `LECTURE_SEULE` annonce : ici il faut
+**migrer**, pas rouvrir autrement. Ce qui manque n'est pas un droit de la session, c'est une
+propriété du FORMAT, et c'est ce que le code nomme désormais.
 
 **`VAULT_STORAGE_BUDGET_DE_CLE` couvre désormais DEUX budgets** — celui du domaine `volume` et celui
 du domaine `journal` — et le code reste UN : le remède est le même des deux côtés, et c'est le
@@ -3206,16 +3273,19 @@ rescellement est au bon endroit ; ce qu'il produit ne traverse pas l'archive. C'
 - **UN CONSTAT DE LA REVUE EXTERNE RESTE OUVERT, et il ne l'est plus qu'à moitié** (§ 9.7).
   [#182](https://github.com/pinfada/railsbox-vault/issues/182), HIGH : le budget de clé du § 4.5
   n'était pas global à la clé. La tranche T2a l'a corrigé pour les domaines du VOLUME — chaque
-  domaine de chaque volume a sa clé, le compteur d'une clé compte toutes les invocations sous elle,
-  et une session qui ne peut pas le publier ne scelle plus. **Ce qui reste** : la page d'enveloppe
-  et la section de récupération scellent encore sous la DEK, et le cliquet qui refusera qu'un
-  scellement la reçoive n'est pas posé. La tranche T2b les livre, et elle seule fermera la ligne du
-  registre. Tant qu'elle n'est pas livrée, **ce document décrit un format dont une propriété ne
-  tient qu'en partie**, et c'est écrit au § 12, écart 0.
-- **Le budget de la migration reprise est SOUS-ESTIMÉ, et c'est borné.** Une conversion v3 → v4
+  domaine de chaque volume a sa clé, et le compteur d'une clé compte toutes les invocations sous
+  elle **sur les chemins que la v4 ferme** : la création, l'installation initiale et les sessions
+  transactionnelles, mesurés à l'ÉGALITÉ par le nombre d'invocations réelles. **Ce qui reste** : la
+  page d'enveloppe et la section de récupération scellent encore sous la DEK, et le cliquet qui
+  refusera qu'un scellement la reçoive n'est pas posé. La tranche T2b les livre, et elle seule
+  fermera la ligne du registre. Tant qu'elle n'est pas livrée, **ce document décrit un format dont
+  une propriété ne tient qu'en partie**, et c'est écrit au § 12, écart 0.
+- **DEUX budgets restent sous-estimés après T2a, et une seule des deux a une borne** (§ 4.5). Le
+  volume de COQUILLE scelle un secteur par déverrouillage hors clôture, non compté, jusqu'à T2b :
+  cet écart-là croît avec le nombre de déverrouillages, et rien ne le borne. Une conversion v3 → v4
   reprise après coupure peut avoir rescellé une suite deux fois : l'écart vaut au plus 512 secteurs
-  par coupure, parce que la reprise ne rejoue que la suite en vol (§ 7.4). C'est la seule
-  sous-estimation qui subsiste après T2a, et elle a une BORNE — ce que l'aveu du § 4.5 n'avait pas.
+  par coupure, parce que la reprise ne rejoue que la suite en vol (§ 7.4), et celle-là est BORNÉE —
+  ce que l'aveu du § 4.5 n'était pas.
 - **Le CRITICAL est corrigé, et ce qu'il corrige a une borne.**
   [#181](https://github.com/pinfada/railsbox-vault/issues/181) est fermé par la
   [PR #184](https://github.com/pinfada/railsbox-vault/pull/184) : une archive porte un engagement

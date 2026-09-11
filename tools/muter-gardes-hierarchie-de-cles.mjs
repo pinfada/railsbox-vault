@@ -54,6 +54,8 @@ const FORMAT_JOURNAL = "src/vm/generation-format.mjs";
 const MIGRATION_V4 = "src/vm/migration-v4.mjs";
 const CHAINE = "src/vm/volume-migration.mjs";
 const RACINE = "src/vm/opfs-racine-initiale.mjs";
+const SOURCE_CHIFFREE = "src/vm/migration-source-chiffree.mjs";
+const DATATION = "src/vm/opfs-datation-de-creation.mjs";
 
 const HIERARCHIE_EPREUVE = "tests/unit/vm-hierarchie-de-cles.test.mjs";
 const CLOTURE = "tests/unit/vm-cloture-par-racine.test.mjs";
@@ -62,6 +64,8 @@ const CHAINE_EPREUVE = "tests/unit/vm-volume-migration.test.mjs";
 const FORMAT_EPREUVE = "tests/unit/vm-generation-format.test.mjs";
 const INJECTIVITE = "tests/unit/vm-derivation-injectivite.test.mjs";
 const VECTEURS_V4 = "tests/unit/vm-volume-v4-vecteurs.test.mjs";
+const SOURCE_V3 = "tests/unit/vm-migration-source-v3.test.mjs";
+const OCTET_RETOURNE = "tests/unit/vm-racine-octet-retourne.test.mjs";
 
 /**
  * Les gardes de #182, et la façon exacte de les retirer.
@@ -117,6 +121,14 @@ export const MUTATIONS = Object.freeze([
     avant: "    entierEnOctets(versionDeFormat, 4),\n    chainePrefixee(ALGORITHME),",
     apres: "    chainePrefixee(ALGORITHME),",
     epreuves: [MIGRATION_EPREUVE, INJECTIVITE],
+  },
+  {
+    nom: "le DOMAINE déclaré est RECOUPÉ avec l'info qui décide vraiment de la clé",
+    garde: "deriverCleDeDomaine — l'appel à `exigerInfoDuDomaine`",
+    fichier: DOMAINE,
+    avant: "  exigerInfoDuDomaine(domaine, info);\n",
+    apres: "",
+    epreuves: [INJECTIVITE],
   },
   {
     nom: "le RÉGIME de sel du domaine est vérifié avant toute dérivation",
@@ -281,6 +293,64 @@ export const MUTATIONS = Object.freeze([
     avant: "      dejaFranchi: avancement !== null && etape.to <= avancement.from,",
     apres: "      dejaFranchi: false,",
     epreuves: [CHAINE_EPREUVE],
+  },
+  {
+    nom: "le lecteur de journal de FORMAT 1 ne voit pas une source CHIFFRÉE",
+    garde: "reporterLeJournalDeGeneration — la borne sur la version de la source",
+    fichier: SOURCE_CHIFFREE,
+    avant: "  if (source.formatVersion >= MIN_VOLUME_FORMAT_VERSION) return null;\n",
+    apres: "",
+    epreuves: [SOURCE_V3],
+  },
+  {
+    nom: "une source CHIFFRÉE est OUVERTE, et son journal appliqué",
+    garde: "solderLaSourceChiffree — l'ouverture de la source",
+    fichier: SOURCE_CHIFFREE,
+    avant: "  if (source.formatVersion < MIN_VOLUME_FORMAT_VERSION) return null;\n",
+    apres: "  return null;\n",
+    epreuves: [SOURCE_V3],
+  },
+  {
+    nom: "une conversion ne DÉCLARE pas v4 un volume que le support n'a pas converti",
+    garde: "convertirEnV4 — la sonde d'un secteur avant `poserLEnTeteV4`",
+    fichier: MIGRATION_V4,
+    avant: "  await sonderUnSecteurV4({ brut, disposition, v4: scellementV4 });\n",
+    apres: "",
+    epreuves: [MIGRATION_EPREUVE],
+  },
+  {
+    nom: "un CHAMP hors bornes fait une racine ABÎMÉE, jamais une panne de support",
+    garde: "controlerSansCle — l'appel à `champHorsBornes`",
+    fichier: FORMAT_JOURNAL,
+    avant:
+      "  const horsBornes = champHorsBornes(vue, format);\n" +
+      "  if (horsBornes !== null) return refusDeRacine(horsBornes);\n",
+    apres: "",
+    epreuves: [OCTET_RETOURNE],
+  },
+  {
+    nom: "le TÉMOIN est réservé dans le compteur que la racine publie",
+    garde: "scellerRacine — la réservation du témoin",
+    fichier: SCELLEMENT,
+    avant: "this.#budgetVolume.consomme + (temoinSuit ? 1 : 0),",
+    apres: "this.#budgetVolume.consomme,",
+    epreuves: [CLOTURE],
+  },
+  {
+    nom: "le VERSEMENT hors transaction est compté par la racine de datation",
+    garde: "daterLaCreation — le report du compte versé",
+    fichier: DATATION,
+    avant: "    scellementsReportes: leplusHautDesDeux(reportes, scellementsVerses),",
+    apres: "    scellementsReportes: reportes,",
+    epreuves: [CLOTURE],
+  },
+  {
+    nom: "la migration VÉRIFIE l'engagement d'une source restaurée",
+    garde: "solderLaSourceChiffreeSurAccesBrut — le motif de l'autorisation",
+    fichier: SOURCE_CHIFFREE,
+    avant: "      motif: MOTIFS_DE_RACINE_INITIALE.engagement,",
+    apres: "      motif: MOTIFS_DE_RACINE_INITIALE.migration,",
+    epreuves: [SOURCE_V3],
   },
 ]);
 

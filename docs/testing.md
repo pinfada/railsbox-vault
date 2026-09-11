@@ -1099,6 +1099,32 @@ l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md).
 > reprise redonnait « rien de commencé » au pas précédent — qui redéplaçait la charge d'un volume
 > déjà converti par-dessus sa propre région. `vm-volume-migration.test.mjs` la tient.
 
+**LE TROU QUE CES TROIS NIVEAUX AVAIENT, et il vaut d'être écrit** (revue de format de la PR #186,
+constat 1). Ils partaient TOUS d'un v1 ou d'un v2 — jamais d'un v3 RÉEL, avec son voisin `.gen` :
+`vm-migration-racine-initiale.test.mjs` pose un fichier v2 brut sans voisin,
+`vm-volume-migration.test.mjs` travaille sur des doubles, `vm-migration-v4.test.mjs` appelle
+`convertirEnV4` sans jamais traverser `migrateVolume`, et l'E2E traverse `v1 → v2 → v3 → v4` en UNE
+session, si bien que son palier v3 y est intermédiaire et n'a jamais de voisin. Le seul chemin qu'un
+utilisateur emprunte — un v3 en service, migré vers v4 — était le seul qui ne fût pas couvert, et il
+était cassé : la migration appliquait à son journal le lecteur du format 1.
+
+La leçon est plus large que le correctif : **une chaîne éprouvée de bout en bout ne prouve rien de
+chacun de ses paliers pris comme point de DÉPART.** `tests/unit/vm-migration-source-v3.test.mjs`
+comble le trou, et son v3 n'est pas fabriqué à la main — il est produit par le seul geste du dépôt
+qui en écrive un, la migration v2 → v3. Six épreuves : un v3 avec sa racine de naissance, un v3
+portant une écriture ACQUITTÉE non encore appliquée, une coupure pendant la lecture du journal, et
+les trois cas de #181 appliqués à la source (racine, engagement vérifié, refus). Le scénario E2E de
+migration reçoit lui aussi un palier v3 **qui porte un `.gen`** : ouverture, écriture, fermeture en
+v3 avant le pas v3 → v4.
+
+**Les CAMPAGNES DE MUTATION de #182** — `node tools/muter-gardes-hierarchie-de-cles.mjs` :
+**vingt-huit gardes, vingt-huit mutants tués**, sur onze modules ; table dans l'ADR 0035. Huit de
+ces mutants viennent des deux revues de la PR #186 : la borne du lecteur de journal v1, l'ouverture
+de la source chiffrée, le motif de son autorisation, la réservation du témoin dans le compteur
+publié, le report du compte versé, le recoupement du domaine avec l'info, les bornes des champs
+d'une racine, et la sonde d'un secteur avant l'en-tête v4. La campagne de #181
+(`muter-gardes-archive-recuperation.mjs`, 29/29) reste verte.
+
 **Les DURÉES de la migration v3 → v4, mesurées.** `tools/mesurer-migration-v4.mjs`, sous Node et sur
 support en mémoire : **98,8 s pour 512 Mio**, soit **1,89 fois** le scellement initial du même
 volume mesuré dans le même run (52,4 s), et 94,2 µs par secteur. L'écriture anticipée du journal
