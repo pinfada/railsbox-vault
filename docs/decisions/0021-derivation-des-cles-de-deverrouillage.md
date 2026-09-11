@@ -4,11 +4,15 @@
 - Date : 2026-08-28
 - Issue : #22 · Invariants : `SEC-KEY-001`, `SEC-ORIGIN-001` · Jalon 5
 
-> **Révision ANNONCÉE le 2026-09-10 par
-> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#182, HIGH) :** « rien d'autre ne
-> descend d'elle » cesse d'être vrai à l'étage du dessous — la DEK développée par cette enveloppe
-> deviendra un matériau HKDF qui ne chiffre plus rien lui-même ; rien n'est amendé ici tant que la
-> tranche T2a n'a pas livré.
+> **AMENDÉ le 2026-09-11 par l'[ADR 0035](0035-format-de-volume-v4-et-migration.md) (#182, tranche
+> T2a) :** « rien d'autre ne descend d'elle » n'est plus vrai à l'étage du dessous. La DEK que cette
+> enveloppe développe est désormais importée en MATÉRIAU HKDF —
+> `importKey("raw", dek, "HKDF", false, ["deriveKey"])` — et quatre clés de domaine en descendent
+> par le même geste que les KEK : HKDF-SHA-256, info à champs préfixés, seconde transcription écrite
+> à la main. La décision 2 de cet ADR n'est donc pas contredite, elle est APPLIQUÉE un étage plus
+> bas. Et son vocabulaire de la décision 7 y gagne un GARANTI de plus : la DEK ne peut pas chiffrer,
+> parce que WebCrypto rejette `encrypt` sur une clé dont les usages ne le portent pas. Ce n'est plus
+> une discipline.
 
 ## Contexte
 

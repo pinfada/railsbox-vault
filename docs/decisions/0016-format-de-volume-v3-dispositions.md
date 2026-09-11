@@ -4,10 +4,14 @@
 - Date : 2026-08-28
 - Issue : #18 · Invariants : `SEC-BLOCK-001`, `SEC-DURABLE-001` · Jalon 4
 
-> **Révision ANNONCÉE le 2026-09-10 par
-> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#182, HIGH) :** les dispositions v3
-> deviendront des dispositions v4 — version 4 dans les données associées, racine à onze champs avec
-> son second compteur ; rien n'est amendé ici tant que la tranche T2a n'a pas livré.
+> **AMENDÉ le 2026-09-11 par l'[ADR 0035](0035-format-de-volume-v4-et-migration.md) (#182, tranche
+> T2a) :** les dispositions de cet ADR sont celles de la v4, à l'octet près — même en-tête d'un
+> secteur, même région de 34 octets par secteur, même charge à la même place. Trois choses seulement
+> bougent : le MARQUEUR de l'en-tête devient `VLTVOL04`, la RACINE gagne son second compteur à
+> l'offset 202 sous un format de journal **5**, et chaque secteur est scellé sous une clé DÉRIVÉE.
+> La réserve du secteur de racine que cet ADR avait nommée — « 376 octets libres » — accueille ce
+> second compteur, comme elle avait accueilli la fraîcheur de #19. Un volume v3 n'est plus lu que
+> par la migration.
 
 ## Contexte
 

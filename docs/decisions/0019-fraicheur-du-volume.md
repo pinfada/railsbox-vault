@@ -10,10 +10,15 @@
 > ENGAGEMENT, dont la vérification fait écrire la racine initiale ; sans lui, le volume est refusé.
 > La garde de fraîcheur prend le relais dès cette racine.
 
-> **Révision ANNONCÉE le 2026-09-10 par
-> l'[ADR 0033](0033-hierarchie-de-cles-derivees-par-domaine.md) (#182, HIGH) :** le témoin et
-> l'empreinte de région passeront sous la clé du domaine `volume`, et non plus sous la DEK ; rien
-> n'est amendé ici tant que la tranche T2a n'a pas livré.
+> **AMENDÉ le 2026-09-11 par l'[ADR 0035](0035-format-de-volume-v4-et-migration.md) (#182, tranche
+> T2a) :** le témoin et l'empreinte de région sont scellés sous la clé du domaine `volume`, et non
+> plus sous la DEK. Leur forme, leurs rangs réservés et l'ordre de leurs barrières ne changent pas.
+> La garde de cohérence que cet ADR a posée sur le champ de format — une racine qui se dit d'avant
+> la fraîcheur au-dessus d'octets non nuls est refusée — a désormais un MIROIR : une racine qui se
+> dit à un seul compteur au-dessus d'octets non nuls à l'offset 202 est refusée de même. Enfin, un
+> volume v4 qui ne tiendrait AUCUNE source de fraîcheur est refusé plutôt que dégradé : ses données
+> associées comptent onze champs, et une racine de format 2 n'a pas de place pour le second
+> compteur.
 
 ## Contexte
 
