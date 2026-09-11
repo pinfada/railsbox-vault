@@ -56,6 +56,7 @@ const CLOTURE = "tests/unit/vm-cloture-par-racine.test.mjs";
 const EXPORT_EPREUVE = "tests/unit/vm-export-du-fichier.test.mjs";
 const BUDGET = "tests/unit/vm-budget-par-domaine.test.mjs";
 const SOURCE_V3_EPREUVE = "tests/unit/vm-migration-source-v3.test.mjs";
+const OPERATIONS = "tests/unit/vm-enveloppe-operations.test.mjs";
 
 /**
  * Les gardes de T2b, et la façon exacte de les retirer.
@@ -111,14 +112,24 @@ export const MUTATIONS = Object.freeze([
     avant:
       "  return refuserLaRetrogradation(\n" +
       "    lues\n" +
-      "      .filter((lue) => lue.valide)\n" +
+      "      .filter((lue) => lue.valide && lue.page.identifiantVolume === identifiantVolume)\n" +
       "      .sort((a, b) => b.page.version - a.page.version || a.index - b.index),\n" +
       "  );",
     apres:
       "  return lues\n" +
-      "    .filter((lue) => lue.valide)\n" +
+      "    .filter((lue) => lue.valide && lue.page.identifiantVolume === identifiantVolume)\n" +
       "    .sort((a, b) => b.page.version - a.page.version || a.index - b.index);",
     epreuves: [MIGRATION],
+  },
+  {
+    nom: "une MUTATION n'écrit jamais sur l'emplacement libre d'un AUTRE volume (#188, HIGH-4)",
+    garde: "muter — le refus sur `pageLibreEtrangere`",
+    fichier: ENVELOPPE,
+    avant:
+      "  if (etat.pageLibreEtrangere !== null)\n" +
+      "    throw identiteDeclareeIncoherente({ volume: identifiantVolume });",
+    apres: "  if (false) throw identiteDeclareeIncoherente({ volume: identifiantVolume });",
+    epreuves: [OPERATIONS],
   },
   {
     nom: "un octet de DOMAINE que rien ne désigne fait REFUSER la page",
