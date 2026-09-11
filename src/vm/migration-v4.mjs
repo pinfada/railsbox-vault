@@ -173,16 +173,25 @@ export function decoderTampon(tampon, rang) {
  *
  * @returns {Promise<{ etat: string, clair: Uint8Array, generation: number } | null>}
  *   `null` dit « aucun des trois », c'est-à-dire une écriture DÉCHIRÉE.
+ *   `repris` dit si la suite est celle qui était EN VOL à la coupure. Hors reprise, deux des trois
+ *   états sont impossibles, et les sonder coûterait une ouverture GCM par secteur pour rien.
  */
-async function etatDuSecteur({ brut, disposition, v3, v4, adresse, sceauV3Anticipe }) {
+async function etatDuSecteur({ brut, disposition, v3, v4, adresse, sceauV3Anticipe, repris }) {
   const sceauDuSupport = decoderSceau(
     await brut.read(offsetDeSceau(disposition, adresse), SCEAU_OCTETS),
   );
   const chiffre = await brut.read(offsetDeCharge(disposition, adresse), SECTOR_SIZE);
 
-  const dejaV4 = await souvreSous({ scellement: v4, adresse, sceau: sceauDuSupport, chiffre });
-  if (dejaV4 !== null) {
-    return { etat: "converti", clair: dejaV4, generation: sceauDuSupport.generation };
+  // **Une suite qui n'est PAS reprise est entièrement v3, et il n'y a rien à chercher d'autre.**
+  // Rien n'y a été écrit : ni sceau, ni charge. Sonder la clé v4 y coûterait une ouverture GCM par
+  // secteur — 2^20 pour 512 Mio — pour un état que le journal exclut. Ce n'est pas une optimisation
+  // prudente, c'est une conséquence de l'ordre des barrières : les octets d'une suite ne changent
+  // qu'APRÈS que son écriture anticipée est durable, et c'est elle qui marque la suite « reprise ».
+  if (repris) {
+    const dejaV4 = await souvreSous({ scellement: v4, adresse, sceau: sceauDuSupport, chiffre });
+    if (dejaV4 !== null) {
+      return { etat: "converti", clair: dejaV4, generation: sceauDuSupport.generation };
+    }
   }
 
   const encoreV3 = await souvreSous({ scellement: v3, adresse, sceau: sceauDuSupport, chiffre });
@@ -256,8 +265,16 @@ function secteurIndechiffrable(adresse) {
  * trois états s'ouvrent, le quatrième est une déchirure — et qu'un secteur DÉJÀ converti n'a rien à
  * rescéller : ses octets sont les bons, et les rescéller consommerait un scellement pour rien.
  */
-async function octetsV4DuSecteur({ brut, disposition, v3, v4, adresse, sceauV3Anticipe }) {
-  const etat = await etatDuSecteur({ brut, disposition, v3, v4, adresse, sceauV3Anticipe });
+async function octetsV4DuSecteur({ brut, disposition, v3, v4, adresse, sceauV3Anticipe, repris }) {
+  const etat = await etatDuSecteur({
+    brut,
+    disposition,
+    v3,
+    v4,
+    adresse,
+    sceauV3Anticipe,
+    repris,
+  });
   if (etat === null) throw secteurIndechiffrable(adresse);
   if (etat.etat === "converti") {
     return {
@@ -289,7 +306,7 @@ async function octetsV4DuSecteur({ brut, disposition, v3, v4, adresse, sceauV3An
  * pour que l'écriture de la suite reste UNE écriture — la découper autour des secteurs déjà faits
  * rendrait le nombre de barrières dépendant de l'endroit où la coupure est tombée.
  */
-async function assemblerLaSuite({ brut, disposition, v3, v4, adresse, secteurs, sceauxV3 }) {
+async function assemblerLaSuite({ brut, disposition, v3, v4, adresse, secteurs, sceauxV3, repris }) {
   const charges = new Uint8Array(secteurs * SECTOR_SIZE);
   const sceaux = new Uint8Array(secteurs * SCEAU_OCTETS);
   let rescelles = 0;
@@ -303,6 +320,7 @@ async function assemblerLaSuite({ brut, disposition, v3, v4, adresse, secteurs, 
       v4,
       adresse: adresse + index * SECTOR_SIZE,
       sceauV3Anticipe: decoderSceau(sceauxV3.subarray(index * SCEAU_OCTETS)),
+      repris,
     });
     charges.set(octets.charge, index * SECTOR_SIZE);
     sceaux.set(octets.sceau, index * SCEAU_OCTETS);
@@ -354,6 +372,7 @@ async function rescellerUneSuite({
     adresse,
     secteurs,
     sceauxV3,
+    repris: tampon !== null,
   });
 
   // 2. LES SCEAUX v4, puis la barrière. 3. LES CHARGES v4, puis la barrière.

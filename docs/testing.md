@@ -908,6 +908,27 @@ l'[ADR 0009](decisions/0009-restauration-inter-origine.md).
 > zéros passerait pour une restauration ; sans la première, la comparaison porterait sur des octets
 > que l'archive ne contient pas.
 
+> **Étendu par #182 à la migration v3 → v4**, et ce qu'elle exige des épreuves est d'une autre
+> nature. En v2 → v3, l'un des deux états d'un secteur — le clair — se rescellait à l'infini : une
+> coupure laissait un état que la reprise savait rattraper par construction. En v3 → v4, les deux
+> états sont des chiffrés sous deux clés différentes, et le sceau et la charge doivent changer
+> ENSEMBLE. La preuve est donc **exhaustive sur les coupures** : `vm-migration-v4.test.mjs` coupe à
+> CHACUNE des écritures du volume et à CHACUNE des inscriptions du journal, une par une, et exige à
+> chaque fois que la reprise aboutisse et que le volume converti rende, secteur par secteur, le
+> clair que le v3 portait. Sur le volume d'épreuve de seize secteurs, cela fait neuf coupures
+> d'écriture et neuf coupures de journal, chacune suivie d'une relecture complète.
+>
+> Une épreuve de plus, et elle n'était pas prévue : **une coupure PENDANT le pas v3 → v4 ne doit pas
+> faire REFAIRE le pas v2 → v3**. Le journal ne porte qu'un avancement, celui du pas en vol, et la
+> reprise redonnait « rien de commencé » au pas précédent — qui redéplaçait la charge d'un volume
+> déjà converti par-dessus sa propre région. `vm-volume-migration.test.mjs` la tient.
+
+**Les DURÉES de la migration v3 → v4, mesurées.** `tools/mesurer-migration-v4.mjs`, sous Node et sur
+support en mémoire : **98,8 s pour 512 Mio**, soit **1,89 fois** le scellement initial du même
+volume mesuré dans le même run (52,4 s), et 94,2 µs par secteur. L'écriture anticipée du journal
+coûte **6,64 %** des octets réécrits, et le journal est inscrit 4 097 fois. Le relevé complet et ses
+réserves — ni OPFS, ni navigateur — sont dans [`docs/quality-attributes.md`](quality-attributes.md).
+
 **Le niveau unitaire éprouve l'ORDRE des gestes, qui est le contrat.** Une cible en mémoire compte
 chaque geste de l'orchestration — ouvertures, fermetures, révocations, inscriptions —, ce qui permet
 d'affirmer non pas « la restauration a échoué » mais « la cible n'a même pas été ouverte ». Les
@@ -1068,11 +1089,14 @@ La migration de `VAULT-COMPAT-001` (#13) — `src/vm/volume-migration.mjs`, sa c
 prouvée sur **deux** niveaux. La décision complète est
 l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md).
 
-| Niveau       | Fichier                                         | Support                   | Rattachement      |
-| ------------ | ----------------------------------------------- | ------------------------- | ----------------- |
-| unitaire     | `tests/unit/vm-volume-migration.test.mjs`       | doubles déterministes     | `npm run check`   |
-| unitaire     | `tests/unit/vm-volume-manifest.test.mjs`        | aucun                     | `npm run check`   |
-| Bout en bout | `tests/e2e/migration-volume-versionne.spec.mjs` | **OPFS** + image #5 + v86 | job `Reprise MVP` |
+| Niveau       | Fichier                                            | Support                   | Rattachement      |
+| ------------ | -------------------------------------------------- | ------------------------- | ----------------- |
+| unitaire     | `tests/unit/vm-volume-migration.test.mjs`          | doubles déterministes     | `npm run check`   |
+| unitaire     | `tests/unit/vm-volume-manifest.test.mjs`           | aucun                     | `npm run check`   |
+| unitaire     | `tests/unit/vm-migration-v3.test.mjs`              | accès brut en mémoire     | `npm run check`   |
+| unitaire     | `tests/unit/vm-migration-v4.test.mjs`              | accès brut en mémoire     | `npm run check`   |
+| unitaire     | `tests/unit/vm-migration-racine-initiale.test.mjs` | double calibré de #6      | `npm run check`   |
+| Bout en bout | `tests/e2e/migration-volume-versionne.spec.mjs`    | **OPFS** + image #5 + v86 | job `Reprise MVP` |
 
 > **Rétabli par #101**, et ce qu'il affirme a changé de nature. Les migrations v1 → v2 réécrivaient
 > un manifeste, et le scénario pouvait dire « aucun octet du volume n'a bougé ». La migration v2 →
@@ -1080,6 +1104,27 @@ l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md).
 > Ce qui doit être conservé n'est donc plus le fichier, c'est le CLAIR — le scénario exige que le
 > fichier ait changé, que sa taille soit celle que le format impose, et que le clair relu après
 > migration soit celui d'avant, à l'octet. C'est une preuve plus forte, pas plus faible.
+
+> **Étendu par #182 à la migration v3 → v4**, et ce qu'elle exige des épreuves est d'une autre
+> nature. En v2 → v3, l'un des deux états d'un secteur — le clair — se rescellait à l'infini : une
+> coupure laissait un état que la reprise savait rattraper par construction. En v3 → v4, les deux
+> états sont des chiffrés sous deux clés différentes, et le sceau et la charge doivent changer
+> ENSEMBLE. La preuve est donc **exhaustive sur les coupures** : `vm-migration-v4.test.mjs` coupe à
+> CHACUNE des écritures du volume et à CHACUNE des inscriptions du journal, une par une, et exige à
+> chaque fois que la reprise aboutisse et que le volume converti rende, secteur par secteur, le
+> clair que le v3 portait. Sur le volume d'épreuve de seize secteurs, cela fait neuf coupures
+> d'écriture et neuf coupures de journal, chacune suivie d'une relecture complète.
+>
+> Une épreuve de plus, et elle n'était pas prévue : **une coupure PENDANT le pas v3 → v4 ne doit pas
+> faire REFAIRE le pas v2 → v3**. Le journal ne porte qu'un avancement, celui du pas en vol, et la
+> reprise redonnait « rien de commencé » au pas précédent — qui redéplaçait la charge d'un volume
+> déjà converti par-dessus sa propre région. `vm-volume-migration.test.mjs` la tient.
+
+**Les DURÉES de la migration v3 → v4, mesurées.** `tools/mesurer-migration-v4.mjs`, sous Node et sur
+support en mémoire : **98,8 s pour 512 Mio**, soit **1,89 fois** le scellement initial du même
+volume mesuré dans le même run (52,4 s), et 94,2 µs par secteur. L'écriture anticipée du journal
+coûte **6,64 %** des octets réécrits, et le journal est inscrit 4 097 fois. Le relevé complet et ses
+réserves — ni OPFS, ni navigateur — sont dans [`docs/quality-attributes.md`](quality-attributes.md).
 
 **Le niveau unitaire éprouve l'ORDRE des gestes, qui est le contrat.** Une cible en mémoire compte
 chaque geste — inspections, ouvertures, fermetures, inscriptions de journal, révocations, commits —,
@@ -1147,7 +1192,11 @@ application Rails :
   affirme `resumed: true`, `fromVersion: 1`, `toVersion: 2`, preuve `sauvegarde-verifiee` ; le
   manifeste est réinscrit et le **journal retiré en dernier geste** ;
 - **aucun octet du volume touché** — l'empreinte après migration est identique à celle mesurée
-  avant. C'est ce qui distingue « la migration a réussi » de « la migration n'a rien cassé » ;
+  avant. C'est ce qui distingue « la migration a réussi » de « la migration n'a rien cassé ». **Ce
+  témoin-là a changé de nature depuis #101 et de nouveau depuis #182** : la chaîne compte désormais
+  DEUX pas destructifs, et le fichier migré ne ressemble plus à celui de départ — ni par sa taille
+  (v2 → v3 ajoute la région), ni par ses octets (v3 → v4 rescelle chaque secteur sous une autre
+  clé). Ce qui est conservé est le CLAIR, et c'est lui que le boot à froid ci-dessous relit ;
 - **boot à froid hors ligne** sur le volume migré — `context.setOffline(true)` coupe le réseau (une
   requête de contrôle échoue alors), Rails boote sans instantané mémoire, le disque applicatif n'est
   jamais retéléchargé, et `/vault/invariant` retrouve l'identifiant d'enregistrement et l'empreinte

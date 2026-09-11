@@ -1568,7 +1568,6 @@ async function verifierArchiveDeVolumeAnterieur() {
   );
 }
 
-
 // ---------------------------------------------------------------------------------------------
 // 5. Le format de volume v4 et sa HIÉRARCHIE DE CLÉS (#182, ADR 0033).
 //
@@ -1642,12 +1641,7 @@ async function verifierVolumeV4() {
   // celui du document normatif. Sans lui, redériver les clés du format ne prouverait que l'accord
   // de ce fichier avec lui-même.
   const ancrage = v.ancrage;
-  const okmAncrage = await hkdf(
-    hexEnOctets(ancrage.ikm),
-    new Uint8Array(0),
-    new Uint8Array(0),
-    42,
-  );
+  const okmAncrage = await hkdf(hexEnOctets(ancrage.ikm), new Uint8Array(0), new Uint8Array(0), 42);
   memesOctets(
     "v4 : ancrage RFC 5869 cas 3 — sel VIDE, info VIDE, l'OKM est celui que la RFC publie",
     okmAncrage,

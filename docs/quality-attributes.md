@@ -630,7 +630,7 @@ fenêtre glissante avec laquelle le journal est relu ; elle est une constante du
 plafond ne la relèverait pas. Elle est **mesurée du côté du support** — la plus grande lecture qu'il
 reçoit — et non déclarée par le code qu'elle contrôle.
 
-## Ce que le format v3 coûte RÉELLEMENT (#18)
+## Ce que le format de volume coûte RÉELLEMENT (#18, #181, #182)
 
 L'[ADR 0015](decisions/0015-proprietes-cryptographiques-du-format.md) avait chiffré ce que le
 scellement coûterait, sur le MODÈLE et par extrapolation. #18 le mesure sur le CHEMIN DE PRODUCTION,
@@ -656,6 +656,49 @@ ce qu'un modèle pur n'a pas. Il ne dit PAS ce que Chromium mettra : en appliqua
 l'ADR 0015 on obtiendrait ~31 s pour 512 Mio, là où l'ADR 0015 estimait 18,7 s — mais un facteur
 appliqué à une extrapolation n'est pas une mesure, et **la création d'un volume de 512 Mio sur OPFS
 réel n'a pas été chronométrée par cette tranche**. C'est un manque nommé, pas un chiffre supposé.
+
+### La MIGRATION v3 → v4 : le geste le plus lourd du dépôt (#182)
+
+Chaque secteur est OUVERT sous la clé v3 puis RESCELLÉ sous la clé du domaine `volume` de la v4 —
+aucune clé ne traverse une version de format. Relevé du **2026-09-11**,
+`VAULT_HARNAIS_CLE_DE_VOLUME=cle-de-test node --max-old-space-size=4096 tools/mesurer-migration-v4.mjs --mio=512 --essais=1`,
+même machine de développement, **support en MÉMOIRE** et **sous Node**, avec les mêmes réserves que
+le relevé précédent.
+
+| Grandeur                                           | 32 Mio (65 536 secteurs) | **512 Mio (1 048 576 secteurs)** |
+| -------------------------------------------------- | -----------------------: | -------------------------------: |
+| Scellement initial v3, **mesuré dans le même run** |                    3,1 s |                       **52,4 s** |
+| **Migration v3 → v4**                              |                    6,3 s |                       **98,8 s** |
+| Par secteur                                        |                  96,2 µs |                      **94,2 µs** |
+| **Rapport au scellement initial**                  |                 **2,03** |                         **1,89** |
+| Inscriptions au journal de migration               |                      257 |                        **4 097** |
+| Écriture anticipée, total                          |                   2,2 Mo |                      **35,7 Mo** |
+| Surcoût de l'écriture anticipée                    |                   6,64 % |                       **6,64 %** |
+
+**Le RAPPORT est le chiffre à retenir, pas la seconde.** Le scellement initial relevé le 2026-08-28
+valait 87,6 s sur la même machine ; il en vaut 52,4 dans ce run-ci, sur un Node plus récent et une
+machine moins chargée. Comparer 98,8 s à 87,6 s n'apprendrait donc rien. Ce que la mesure établit
+est que **la migration coûte 1,89 fois le scellement initial du même volume**, et la raison se lit :
+elle fait DEUX appels AES-GCM par secteur là où la création en fait un — une ouverture sous la clé
+v3, un scellement sous celle de la v4.
+
+**Ce que le facteur n'est pas.** Il n'est pas 3. Une première rédaction sondait la clé v4 avant la
+clé v3 sur chaque secteur, ce qui coûtait une ouverture GCM de plus pour un état que le journal
+exclut : le facteur mesuré était alors **3,65**. Une suite qui n'est pas REPRISE est entièrement v3,
+parce que rien n'y a été écrit — l'écriture anticipée est durable AVANT le premier octet du volume —
+et sonder la clé v4 n'y a donc aucun sens. Le facteur est tombé à 2,03 par cette seule conséquence
+de l'ordre des barrières.
+
+**L'ÉCRITURE ANTICIPÉE coûte 6,64 %** des octets réécrits — trente-quatre octets de sceau v3 par
+secteur — et c'est le prix de la reprenabilité. L'alternative pesée, journaliser les octets v4
+complets, aurait DOUBLÉ les écritures du volume : 512 Mio de plus pour un volume de 512 Mio (ADR
+0035, décision 3). Le journal est réécrit 4 097 fois pour un volume de 512 Mio, soit deux
+inscriptions par suite de 512 secteurs, plus la dernière.
+
+**Ce que ces chiffres ne disent pas.** Ni OPFS, ni le navigateur. Une migration de 512 Mio sur OPFS
+réel dans un des trois moteurs n'a pas été chronométrée par cette tranche ; le scénario
+`tests/e2e/migration-volume-versionne.spec.mjs` la joue de bout en bout, mais sur le volume de
+l'image de référence et sans publier de durée. C'est un manque nommé, pas un chiffre supposé.
 
 ### La RACINE INITIALE de la création, et l'ENGAGEMENT de la première ouverture (#181)
 

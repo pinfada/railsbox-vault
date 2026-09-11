@@ -21,6 +21,7 @@ import { FORMAT_VOLUME_V4 } from "../../src/vm/volume-chiffre-format.mjs";
 import { Scellement } from "../../src/vm/scellement.mjs";
 import { STORAGE_ERROR_CODES, isStorageError } from "../../src/vm/storage-errors.mjs";
 import { CRYPTO_ERROR_CODES, isCryptoError } from "../../src/vm/format-chiffre/crypto-errors.mjs";
+import { BUDGET_SCELLEMENTS_PAR_CLE } from "../../src/vm/format-chiffre/identite-logique.mjs";
 
 // L'ÉPREUVE ROUGE de la revue externe du 10 septembre 2026, et ce qu'elle mesure (#182, ADR 0033).
 //
@@ -189,6 +190,45 @@ test("les deux compteurs d'un volume sont DISTINCTS : un dépôt au journal ne c
   await scellement.scellerEnregistrement(identite, CLAIR);
   assert.equal(scellement.scellementsCumulesVolume, 1);
   assert.equal(scellement.scellementsCumulesJournal, 1);
+});
+
+test("au plafond, CHACUN des deux budgets refuse la racine avant de produire un octet", async () => {
+  // La racine est le seul objet qui publie les DEUX compteurs, donc le seul endroit où le plafond du
+  // JOURNAL est opposable : une racine qui publierait un compteur au-delà du budget annoncerait une
+  // clé épuisée et continuerait de servir. Le refus tombe des deux côtés, et il tombe AVANT le
+  // chiffrement — un refus qui arriverait après aurait consommé exactement ce qu'il interdit.
+  for (const [domaine, compteurs] of [
+    ["volume", { volume: BUDGET_SCELLEMENTS_PAR_CLE, journal: 0 }],
+    ["journal", { volume: 0, journal: BUDGET_SCELLEMENTS_PAR_CLE }],
+  ]) {
+    const scellement = await Scellement.ouvrir({
+      volume: VOLUME_A,
+      cleOctets: CLE_DE_TEST,
+      formatVersion: FORMAT_VOLUME_V4,
+      scellementsCumulesVolume: compteurs.volume,
+      scellementsCumulesJournal: compteurs.journal,
+    });
+    await assert.rejects(
+      () =>
+        scellement.scellerRacine({ sequence: 1, generation: 1, tailleVolume: 16384 }, [], {
+          sequencePrecedente: null,
+        }),
+      (erreur) => isStorageError(erreur, STORAGE_ERROR_CODES.budgetDeCle),
+      `le budget du domaine « ${domaine} » doit refuser la racine`,
+    );
+  }
+
+  // TÉMOIN POSITIF : un cran en dessous, des deux côtés, la racine passe.
+  const passante = await Scellement.ouvrir({
+    volume: VOLUME_A,
+    cleOctets: CLE_DE_TEST,
+    formatVersion: FORMAT_VOLUME_V4,
+    scellementsCumulesVolume: BUDGET_SCELLEMENTS_PAR_CLE - 1,
+    scellementsCumulesJournal: BUDGET_SCELLEMENTS_PAR_CLE - 1,
+  });
+  await passante.scellerRacine({ sequence: 1, generation: 1, tailleVolume: 16384 }, [], {
+    sequencePrecedente: null,
+  });
 });
 
 test("le régime de sel suit le domaine : vide pour les domaines à compteur, tiré pour les autres", async () => {
