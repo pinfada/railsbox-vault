@@ -49,6 +49,7 @@ import {
 } from "../../src/vm/opfs-racine-initiale.mjs";
 import { exportVolumeToBytes, verifyArchive } from "../../src/vm/archive-en-memoire.mjs";
 import { GENERATION_ETATS } from "../../src/vm/generation-recuperation.mjs";
+import { RACINE_OCTETS, decoderRacine, offsetDeRacine } from "../../src/vm/generation-format.mjs";
 import { CONSISTENCY_KINDS } from "../../src/vm/volume-export.mjs";
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 import { createSha256Stream } from "../../src/vm/sha256-stream.mjs";
@@ -746,3 +747,140 @@ async function poserLesOctetsDEngagement(store, octets) {
     handle.close();
   }
 }
+
+/**
+ * SONDE : compte les invocations de `encrypt` sous une clé AES-GCM importée depuis la CLÉ DE VOLUME.
+ *
+ * Un volume v3 n'a pas de clé maîtresse : ses octets sont scellés sous la clé de volume elle-même,
+ * importée en clé AES-GCM (`#sousLaCleMaitresse`). C'est donc l'ORIGINE DES OCTETS qui étiquette,
+ * pas le nom de l'appelant — la même discipline que `vm-budget-par-domaine.test.mjs`.
+ */
+function sondeDeLaCleV3() {
+  const vraiImport = crypto.subtle.importKey.bind(crypto.subtle);
+  const vraiEncrypt = crypto.subtle.encrypt.bind(crypto.subtle);
+  const sousLaCleDeVolume = new WeakSet();
+  let invocations = 0;
+  const memes = (a, b) =>
+    a instanceof Uint8Array &&
+    a.byteLength === b.byteLength &&
+    a.every((octet, index) => octet === b[index]);
+
+  crypto.subtle.importKey = async (...arguments_) => {
+    const cle = await vraiImport(...arguments_);
+    const nom = arguments_[2]?.name ?? arguments_[2];
+    if (arguments_[0] === "raw" && nom === "AES-GCM" && memes(arguments_[1], CLE_DE_TEST)) {
+      sousLaCleDeVolume.add(cle);
+    }
+    return cle;
+  };
+  crypto.subtle.encrypt = async (algorithme, cle, donnees) => {
+    if (sousLaCleDeVolume.has(cle)) invocations += 1;
+    return vraiEncrypt(algorithme, cle, donnees);
+  };
+  return {
+    remettreAZero() {
+      invocations = 0;
+    },
+    get invocations() {
+      return invocations;
+    },
+    rendre() {
+      crypto.subtle.importKey = vraiImport;
+      crypto.subtle.encrypt = vraiEncrypt;
+    },
+  };
+}
+
+/** Le compteur du domaine `volume` que la racine du journal v3 AUTHENTIFIE, ou `null`. */
+function compteurDeLaRacineV3(store) {
+  const octets = store.snapshot(generationJournalName(NOM));
+  if (octets === null || octets.byteLength === 0) return null;
+  let retenue = null;
+  for (const rang of [0, 1]) {
+    const secteur = octets.slice(offsetDeRacine(rang), offsetDeRacine(rang) + RACINE_OCTETS);
+    const lue = decoderRacine(secteur, { tailleVolume: TAILLE });
+    if (lue.valide && (retenue === null || lue.racine.sequence > retenue.sequence)) {
+      retenue = lue.racine;
+    }
+  }
+  return retenue === null ? null : retenue.scellementsCumulesVolume;
+}
+
+test("ce que l'export d'un v3 SCELLE est mesuré : TROIS, plus un par secteur rejoué", async () => {
+  // **Le constat 1 de la revue de format, et le constat 4 de la revue de sécurité.** Dix endroits du
+  // dépôt publiaient « deux scellements sous la clé de volume », et le nombre n'avait jamais été
+  // compté. La mesure en donne TROIS quand il n'y a rien à rejouer — l'empreinte de région, la
+  // racine de clôture, le témoin — et TROIS PLUS N quand le journal porte N secteurs de charge
+  // acquittée. Le nombre n'est donc pas une constante, et il n'est pas borné par le texte : il l'est
+  // par le contenu du journal validé.
+  //
+  // Ce que la mesure confirme aussi, et qui compte autant : les trois — ou 3 + N — passent TOUS par
+  // le budget, donc ils sont COMPTÉS dans la racine v3. Ce chemin ne scelle rien hors compteur.
+  const sonde = sondeDeLaCleV3();
+  try {
+    // 1. SANS RIEN À REJOUER : le plancher.
+    const sansCharge = createSyncAccessStore();
+    await poserUnV3Reel(sansCharge);
+    const avantSans = compteurDeLaRacineV3(sansCharge);
+    sonde.remettreAZero();
+    const ouvert = await ouvrirPourExport({
+      name: NOM,
+      cle: CLE_DE_TEST,
+      formatVersion: FORMAT_VOLUME_V3,
+      openHandle: sansCharge.openHandle,
+    });
+    await ouvert.brut.close();
+    const plancher = sonde.invocations;
+    assert.equal(
+      plancher,
+      3,
+      `le plancher est une empreinte de région, une racine et un témoin : trois, et non ${plancher}`,
+    );
+    assert.equal(
+      compteurDeLaRacineV3(sansCharge) - avantSans,
+      plancher,
+      "les trois scellements sont COMPTÉS dans la racine v3 : aucun n'échappe au budget",
+    );
+
+    // 2. AVEC UNE écriture acquittée restée dans le journal : trois, plus un.
+    const avecCharge = createSyncAccessStore();
+    const montage = await poserUnV3Reel(avecCharge);
+    const depot = await ouvrirVolumeBrut({
+      name: NOM,
+      size: tailleSupportDuVolume(TAILLE),
+      openHandle: avecCharge.openHandle,
+    });
+    try {
+      await deposerUneGenerationV3(
+        depot,
+        avecCharge,
+        montage.identifiant,
+        new Uint8Array(SECTOR_SIZE).fill(0xc4),
+      );
+    } finally {
+      await depot.close();
+    }
+    const avantAvec = compteurDeLaRacineV3(avecCharge);
+    sonde.remettreAZero();
+    const exporte = await ouvrirPourExport({
+      name: NOM,
+      cle: CLE_DE_TEST,
+      formatVersion: FORMAT_VOLUME_V3,
+      openHandle: avecCharge.openHandle,
+    });
+    await exporte.brut.close();
+
+    assert.equal(
+      sonde.invocations,
+      plancher + 1,
+      `un secteur rejoué coûte UN scellement de plus : ${sonde.invocations} au lieu de ${plancher + 1}`,
+    );
+    assert.equal(
+      compteurDeLaRacineV3(avecCharge) - avantAvec,
+      sonde.invocations,
+      "le secteur rejoué est COMPTÉ lui aussi : le budget du v3 suit ce que l'export consomme",
+    );
+  } finally {
+    sonde.rendre();
+  }
+});
