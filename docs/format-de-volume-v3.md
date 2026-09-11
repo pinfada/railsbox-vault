@@ -2354,8 +2354,20 @@ pas prise**.
 **Verdict du relecteur : le gate « données sensibles » ne doit pas être ouvert.** Deux constats. Le
 CRITICAL est **CORRIGÉ** depuis le 10 septembre 2026
 ([PR #184](https://github.com/pinfada/railsbox-vault/pull/184),
-[ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md)) ; le HIGH reste **OUVERT** au
-registre — reçu, reproduit, non corrigé, et dû avant la fermeture de #20.
+[ADR 0034](decisions/0034-archive-authentifiee-et-racine-initiale.md)) ; le HIGH est **CORRIGÉ À
+MOITIÉ** depuis le 11 septembre 2026 et reste **OUVERT** au registre.
+
+**Ce que « à moitié » veut dire exactement, et pourquoi la ligne ne passe pas à « corrigé ».** La
+tranche T2a ([ADR 0035](decisions/0035-format-de-volume-v4-et-migration.md)) livre le format v4 : la
+DEK est importée en matériau HKDF — WebCrypto refuse alors de chiffrer avec, et les trois moteurs le
+mesurent —, et les domaines `volume`, `journal` et `instantane` scellent chacun sous sa propre clé,
+à côté du domaine `archive` que T1 avait posé. Le compteur d'une clé compte enfin toutes les
+invocations sous elle, et une session qui ne peut pas le publier dans une racine n'a plus le droit
+de sceller. **Restent sous la DEK** : la racine d'une page de `<volume>.cles` et la section de
+récupération d'une archive. La phrase « la DEK n'est plus jamais passée à AES-GCM » est donc VRAIE
+des domaines du volume et FAUSSE de ces deux-là, et elle est écrite ainsi partout plutôt qu'annoncée
+en bloc. La tranche **T2b** les livre, avec le cliquet d'inspection de source qui la rendra exacte —
+et elle seule fera passer la ligne du registre à « corrigé ».
 
 **[#181](https://github.com/pinfada/railsbox-vault/issues/181) — Une archive accepte un mélange de
 secteurs provenant de plusieurs états, et la première ouverture restaurée le rend en clair.
@@ -2850,6 +2862,22 @@ format et non la confidentialité en exploitation.
 
 Relevés en écrivant ce document. **Le code tranche** ; l'écart est écrit, jamais corrigé en silence.
 
+**Écart 0 — la DEK scelle encore l'enveloppe et la récupération, et l'ADR 0033 dit le contraire.**
+Ajouté le 11 septembre 2026. La décision 1 de
+l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) écrit « la DEK n'est plus
+jamais passée à AES-GCM », et la tranche T2a ne la rend vraie qu'à moitié : la racine d'une page de
+`<volume>.cles` (ADR 0020, décision 3) et la section de récupération d'une archive (ADR 0027) sont
+encore scellées sous elle. **Ce n'est pas un oubli, c'est le découpage** — l'ADR 0033 lui-même range
+ces deux domaines dans la tranche T2b, et la migration d'une page d'enveloppe est le point que sa
+DoR qualifie de plus risqué des deux tranches : perdre une enveloppe, c'est perdre le volume.
+
+Ce que le dépôt fait de cet écart en attendant : il l'INVENTORIE.
+`tests/unit/vm-dek-sous-aes.test.mjs` tient la liste des modules qui importent encore la DEK en clé
+AES-GCM, avec l'échéance de chacun, et il rougit dès qu'un module s'y ajoute. Une seule entrée doit
+survivre à T2b — le modèle de référence, qui n'est pas un chemin de production —, et l'épreuve
+l'épingle. C'est un cliquet provisoire, écrit pour être remplacé par celui de T2b, qui lira les
+APPELS et non le texte.
+
 **Écart 1 — la marque de scellement complet n'est décidée par aucun ADR.** L'ADR 0016 (décision 1,
 28 août 2026) donne l'en-tête v3 avec « offset 64, largeur 448, réserve, à zéro ». Le code y écrit
 huit octets `VLTSEAL1` (§ 6.3), et la réserve réelle commence à 72 pour 440 octets. L'ADR 0016 y
@@ -3151,13 +3179,19 @@ rescellement est au bon endroit ; ce qu'il produit ne traverse pas l'archive. C'
 
 ## 14. Ce que ce dossier ne prouve pas
 
-- **UN CONSTAT DE LA REVUE EXTERNE RESTE OUVERT, et ce document décrit donc un format dont une
-  propriété ne tient pas** (§ 9.7). [#182](https://github.com/pinfada/railsbox-vault/issues/182),
-  HIGH : le budget de clé du § 4.5 n'est pas global à la clé, et la probabilité de collision de
-  2^-35 qu'il publie n'est pas bornée par le mécanisme implémenté. Il est **reçu, reproduit et non
-  corrigé** au 10 septembre 2026 ; sa correction est décidée par
-  l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) et due avant la fermeture
-  de #20.
+- **UN CONSTAT DE LA REVUE EXTERNE RESTE OUVERT, et il ne l'est plus qu'à moitié** (§ 9.7).
+  [#182](https://github.com/pinfada/railsbox-vault/issues/182), HIGH : le budget de clé du § 4.5
+  n'était pas global à la clé. La tranche T2a l'a corrigé pour les domaines du VOLUME — chaque
+  domaine de chaque volume a sa clé, le compteur d'une clé compte toutes les invocations sous elle,
+  et une session qui ne peut pas le publier ne scelle plus. **Ce qui reste** : la page d'enveloppe
+  et la section de récupération scellent encore sous la DEK, et le cliquet qui refusera qu'un
+  scellement la reçoive n'est pas posé. La tranche T2b les livre, et elle seule fermera la ligne du
+  registre. Tant qu'elle n'est pas livrée, **ce document décrit un format dont une propriété ne
+  tient qu'en partie**, et c'est écrit au § 12, écart 0.
+- **Le budget de la migration reprise est SOUS-ESTIMÉ, et c'est borné.** Une conversion v3 → v4
+  reprise après coupure peut avoir rescellé une suite deux fois : l'écart vaut au plus 512 secteurs
+  par coupure, parce que la reprise ne rejoue que la suite en vol (§ 7.4). C'est la seule
+  sous-estimation qui subsiste après T2a, et elle a une BORNE — ce que l'aveu du § 4.5 n'avait pas.
 - **Le CRITICAL est corrigé, et ce qu'il corrige a une borne.**
   [#181](https://github.com/pinfada/railsbox-vault/issues/181) est fermé par la
   [PR #184](https://github.com/pinfada/railsbox-vault/pull/184) : une archive porte un engagement
