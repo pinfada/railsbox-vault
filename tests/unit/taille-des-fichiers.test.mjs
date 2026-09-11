@@ -65,7 +65,7 @@ const RACINES = ["src", "public"];
 const HORS_PERIMETRE = [
   {
     fichier: "public/runtime-worker.mjs",
-    lignes: 851,
+    lignes: 861,
     motif:
       "découvert le 11/09/2026 en élargissant RACINES à `public` (#175) : il dépassait déjà le " +
       "plafond avant cet élargissement, et #175 ne scindait que `main.mjs`. Scinder le Worker de " +

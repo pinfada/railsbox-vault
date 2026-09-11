@@ -63,6 +63,7 @@ export function brancherLesGestesDuCycle(liaison) {
   const demarrerLApplication = () => demarrer(contexte);
   const verrouillerLeCoffre = (declencheur = DECLENCHEURS.geste) =>
     verrouiller(contexte, exigerUnDeclencheur(declencheur));
+  const reprendreLInstallation = () => reprendre(contexte);
   liaison.racine.querySelector("#demarrer-application")?.addEventListener("click", () => {
     void demarrerLApplication();
   });
@@ -72,7 +73,10 @@ export function brancherLesGestesDuCycle(liaison) {
     // gestes, et aucun relevé ne peut donc décrire le mauvais.
     void verrouillerLeCoffre(DECLENCHEURS.geste);
   });
-  return Object.freeze({ demarrerLApplication, verrouillerLeCoffre });
+  liaison.racine.querySelector("#reprendre-l-installation")?.addEventListener("click", () => {
+    void reprendreLInstallation();
+  });
+  return Object.freeze({ demarrerLApplication, verrouillerLeCoffre, reprendreLInstallation });
 }
 
 /** Écrit la ligne d'état du cycle. La seule façon dont ces deux gestes touchent le document. */
@@ -81,6 +85,16 @@ function ecrivainDEtat(racine) {
     const noeud = racine.querySelector("#cycle-etat");
     if (noeud !== null) noeud.textContent = texte;
   };
+}
+
+/**
+ * MONTRE ou CACHE le bouton de reprise (#173, ADR 0037), selon ce que le dernier démarrage a
+ * constaté. Jamais montré d'office : `hidden` est l'état de repos du document
+ * (`public/index.html`), et seule la SIGNATURE d'une installation interrompue le lève.
+ */
+function afficherLeGesteDeReprise(racine, installationInterrompue) {
+  const bouton = racine.querySelector("#reprendre-l-installation");
+  if (bouton !== null) bouton.hidden = installationInterrompue !== true;
 }
 
 /** Inscrit une conclusion et publie le relevé. */
@@ -161,6 +175,7 @@ async function demarrer(contexte) {
     if (rendu.barrieres !== undefined) rapport.barrieres = rendu.barrieres;
     if (rendu.etat !== undefined) rapport.etat = rendu.etat;
     inscrireLeDemarrage(contexte, rendu);
+    afficherLeGesteDeReprise(contexte.racine, rendu.installationInterrompue);
     publier();
     dire(rendu.demarree ? "cycle:application-demarree" : `cycle:sans-application:${rendu.motif}`);
     return rendu;
@@ -177,6 +192,35 @@ async function demarrer(contexte) {
     // tout verrouillage jusqu'au rechargement — un coffre qu'on ne peut plus fermer.
     enVol.demarrage = false;
     contexte.apresDemarrage?.();
+  }
+}
+
+/**
+ * REPREND une installation interrompue (#173, ADR 0037) : le geste que le bouton apparu après
+ * `demarrer` déclenche. Il ne DÉCIDE rien — le Worker REVÉRIFIE la signature lui-même avant d'agir
+ * (`reprendreSiSignatureConfirmee`) — il envoie le geste, et rejoue le CYCLE au succès : une
+ * installation reprise n'est pas un état à publier à part, c'est un démarrage qui vient d'aboutir.
+ */
+async function reprendre(contexte) {
+  const { demander, rapport, publier, dire } = contexte;
+  dire("cycle:reprise-en-cours");
+  try {
+    const rendu = await demander("reprendreInstallation", {});
+    if (!rendu.reprise) {
+      dire(`cycle:reprise-refusee:${rendu.motif ?? "inconnu"}`);
+      return rendu;
+    }
+    // Le geste a RETIRÉ puis RÉINSTALLÉ : plus rien à montrer tant qu'un nouveau démarrage n'a pas
+    // conclu — un bouton resté visible sur un volume qui n'est plus orphelin inviterait à le
+    // recliquer sur un « autre chose » que ce module ne saurait plus nommer.
+    afficherLeGesteDeReprise(contexte.racine, false);
+    dire("cycle:reprise-aboutie");
+    return await demarrer(contexte);
+  } catch (erreur) {
+    rapport.application = { demarree: false, code: erreur?.code ?? null };
+    publier();
+    dire(`cycle:reprise-refusee:${erreur?.code ?? "inconnu"}`);
+    return { reprise: false, code: erreur?.code ?? null };
   }
 }
 

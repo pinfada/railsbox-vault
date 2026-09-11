@@ -538,6 +538,99 @@ test("un boot qui ÉCHOUE ne verrouille pas le verrouillage pour toujours", asyn
   assert.equal(rendu.verrouille, true);
 });
 
+// --- REPRENDRE une installation interrompue (#173, ADR 0037) ---------------------------------------
+
+test("un démarrage qui reconnaît la SIGNATURE montre le bouton de reprise", async () => {
+  const journal = [];
+  const { liaison, racine } = liaisonFeinte(journal, {
+    demander: (type) =>
+      type === "application"
+        ? Promise.resolve({
+            demarree: false,
+            motif: "sans manifeste",
+            code: CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste,
+            installationInterrompue: true,
+            motifDeLaSignature: null,
+          })
+        : Promise.resolve({}),
+  });
+  const gestes = brancherLesGestesDuCycle(liaison);
+  await gestes.demarrerLApplication();
+  assert.equal(racine.querySelector("#reprendre-l-installation").hidden, false);
+});
+
+test("un démarrage SANS signature ne montre jamais le bouton", async () => {
+  const journal = [];
+  const { liaison, racine } = liaisonFeinte(journal, {
+    demander: (type) =>
+      type === "application"
+        ? Promise.resolve({ demarree: false, motif: "aucune application servie" })
+        : Promise.resolve({}),
+  });
+  const gestes = brancherLesGestesDuCycle(liaison);
+  await gestes.demarrerLApplication();
+  assert.equal(racine.querySelector("#reprendre-l-installation").hidden, true);
+});
+
+test("le geste de REPRISE rejoue le cycle de démarrage à son succès", async () => {
+  const journal = [];
+  const { liaison, racine } = liaisonFeinte(journal, {
+    demander: (type) => {
+      if (type === "reprendreInstallation") {
+        journal.push("demande:reprendreInstallation");
+        return Promise.resolve({ reprise: true, installation: { installee: true } });
+      }
+      if (type === "application") {
+        journal.push("demande:application");
+        return Promise.resolve({ demarree: true, counts: {}, installation: { installee: true } });
+      }
+      return Promise.resolve({});
+    },
+  });
+  const gestes = brancherLesGestesDuCycle(liaison);
+  const rendu = await gestes.reprendreLInstallation();
+  assert.deepEqual(
+    journal.filter((ligne) => ligne.startsWith("demande:")),
+    ["demande:reprendreInstallation", "demande:application"],
+    "le cycle doit être rejoué APRÈS la reprise, dans cet ordre",
+  );
+  assert.equal(rendu.demarree, true);
+  assert.equal(racine.querySelector("#reprendre-l-installation").hidden, true);
+});
+
+test("le geste de REPRISE refusé par le Worker ne rejoue PAS le démarrage", async () => {
+  const journal = [];
+  const { liaison } = liaisonFeinte(journal, {
+    demander: (type) => {
+      if (type === "reprendreInstallation") {
+        return Promise.resolve({ reprise: false, motif: "ce n'est pas la signature" });
+      }
+      journal.push(`demande:${type}`);
+      return Promise.resolve({});
+    },
+  });
+  const gestes = brancherLesGestesDuCycle(liaison);
+  const rendu = await gestes.reprendreLInstallation();
+  assert.equal(rendu.reprise, false);
+  assert.ok(!journal.includes("demande:application"), "un refus n'installe rien de nouveau");
+});
+
+test("le geste de REPRISE cliqué déclenche bien le bouton câblé", async () => {
+  const journal = [];
+  const { liaison, racine } = liaisonFeinte(journal, {
+    demander: (type) => {
+      journal.push(`demande:${type}`);
+      if (type === "reprendreInstallation") return Promise.resolve({ reprise: false, motif: "x" });
+      return Promise.resolve({});
+    },
+  });
+  brancherLesGestesDuCycle(liaison);
+  racine.cliquer("reprendre-l-installation");
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.ok(journal.includes("demande:reprendreInstallation"));
+});
+
 test("le BOUTON de la coquille est unique, et il s'appelle « verrouiller »", async () => {
   // Un coffre fermé et un coffre verrouillé sont la même chose ; deux mots pour une chose sont un
   // mensonge en attente. `#fermer-le-coffre` a disparu de la coquille avec cette tranche.
