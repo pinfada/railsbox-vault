@@ -1851,6 +1851,245 @@ async function verifierVolumeV4() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// La PAGE D'ENVELOPPE v2 et ses DEUX DOMAINES (#182, T2b ; ADR 0020, ADR 0027, ADR 0033).
+//
+// C'est le seul endroit de ce fichier qui refasse une CHAÎNE COMPLÈTE d'un bout à l'autre : l'info
+// d'un domaine, la clé de trente-deux octets que HKDF en tire, le scellement de la racine sous cette
+// clé, et la disposition de la page qui la porte. Il le peut parce que la DEK du vecteur est
+// publiée, et il le doit : le domaine `recuperation` scelle ce qu'une ARCHIVE emporte, c'est-à-dire
+// le seul artefact du produit qu'un tiers aura un jour à relire sans le produit.
+//
+// La disposition v2 est transcrite depuis l'ADR 0020 tel que #182 l'amende : l'en-tête passe de 108
+// à 140 octets, le SEL de trente-deux octets s'ajoute à l'offset 104 — là où la v1 s'arrêtait —, la
+// somme de contrôle recule à 136, et l'octet 14, qui était du remplissage, porte le DOMAINE.
+
+/** Disposition d'une page v2, transcrite depuis l'ADR 0020 amendé par #182. */
+const ENVELOPPE_V2_ENTETE_OCTETS = 140;
+const ENVELOPPE_V2_DOMAINE_OFFSET = 14;
+const ENVELOPPE_V2_SEL_OFFSET = 104;
+const ENVELOPPE_V2_SEL_OCTETS = 32;
+const ENVELOPPE_V2_CRC_OFFSET = 136;
+
+/** Étiquettes de domaine de l'enveloppe, transcrites depuis l'ADR 0020, décision 2. */
+const ENVELOPPE_DOMAINE_RACINE = "railsbox-vault/enveloppe/v1/racine";
+const ENVELOPPE_DOMAINE_EMPLACEMENTS = "railsbox-vault/enveloppe/v1/emplacements";
+
+/**
+ * Données associées de la RACINE d'une page, transcrites depuis l'ADR 0020.
+ *
+ * Le COMPTE des emplacements y est, la LONGUEUR de la liste n'y est pas : c'est cet écart qui rend
+ * une troncature détectable, et le vérifier ici le confirme depuis le texte seul.
+ */
+function enteteDeRacineDEnveloppe({
+  identifiantVolume,
+  formatVersion,
+  version,
+  nombreEmplacements,
+}) {
+  return concat(
+    chainePrefixee(ENVELOPPE_DOMAINE_RACINE),
+    chainePrefixee(ALGORITHME_AEAD),
+    be(formatVersion, 4),
+    chainePrefixee(identifiantVolume),
+    be(version, 8),
+    be(nombreEmplacements, 2),
+  );
+}
+
+/** Encodage canonique de la suite ORDONNÉE des emplacements, transcrit depuis l'ADR 0020. */
+function encodageCanoniqueDesEmplacements(emplacements) {
+  const morceaux = [chainePrefixee(ENVELOPPE_DOMAINE_EMPLACEMENTS), be(emplacements.length, 2)];
+  for (const emplacement of emplacements) {
+    const parametres = hexEnOctets(emplacement.parametres);
+    morceaux.push(
+      chainePrefixee(emplacement.identifiantEmplacement),
+      be(emplacement.typeKek, 1),
+      be(parametres.byteLength, 2),
+      parametres,
+      hexEnOctets(emplacement.nonce),
+      hexEnOctets(emplacement.etiquette),
+    );
+  }
+  return concat(...morceaux);
+}
+
+/** Octets d'UN emplacement sur disque, transcrits depuis la table de l'ADR 0020. */
+function emplacementSurDisque(emplacement) {
+  const parametres = hexEnOctets(emplacement.parametres);
+  const octets = new Uint8Array(ENVELOPPE_EMPLACEMENT_FIXE_OCTETS + parametres.byteLength);
+  octets.set(hexEnOctets(emplacement.identifiantEmplacement), 0);
+  octets[8] = emplacement.typeKek;
+  poserLe(octets, 10, parametres.byteLength, 2);
+  octets.set(hexEnOctets(emplacement.nonce), 12);
+  octets.set(hexEnOctets(emplacement.dekEnveloppee), 24);
+  octets.set(hexEnOctets(emplacement.etiquette), 56);
+  octets.set(parametres, ENVELOPPE_EMPLACEMENT_FIXE_OCTETS);
+  return octets;
+}
+
+/** Écrit un entier PETIT-BOUTISTE : la convention de la disposition d'une page. */
+function poserLe(cible, position, valeur, longueur) {
+  let reste = valeur;
+  for (let index = 0; index < longueur; index += 1) {
+    cible[position + index] = reste % 256;
+    reste = Math.floor(reste / 256);
+  }
+}
+
+/** Octets d'une PAGE v2 entière, transcrits depuis la table amendée par #182. */
+function pageV2SurDisque(figee, identifiantVolume) {
+  const octets = new Uint8Array(ENVELOPPE_PAGE_OCTETS);
+  const liste = figee.emplacements.map(emplacementSurDisque);
+  const longueurListe = liste.reduce((somme, morceau) => somme + morceau.byteLength, 0);
+  octets.set(texteAsciiEnOctets(ENVELOPPE_MARQUEUR), 0);
+  poserLe(octets, 8, 2, 4);
+  poserLe(octets, 12, figee.emplacements.length, 2);
+  octets[ENVELOPPE_V2_DOMAINE_OFFSET] = figee.octetDeDomaine;
+  poserLe(octets, 16, figee.version, 8);
+  octets.set(hexEnOctets(identifiantVolume), 24);
+  poserLe(octets, 40, longueurListe, 4);
+  octets.set(hexEnOctets(figee.racine.nonce), 44);
+  octets.set(hexEnOctets(figee.racine.chiffre), 56);
+  octets.set(hexEnOctets(figee.racine.etiquette), 88);
+  octets.set(hexEnOctets(figee.sel), ENVELOPPE_V2_SEL_OFFSET);
+  let curseur = ENVELOPPE_V2_ENTETE_OCTETS;
+  for (const morceau of liste) {
+    octets.set(morceau, curseur);
+    curseur += morceau.byteLength;
+  }
+  poserLe(octets, ENVELOPPE_V2_CRC_OFFSET, crc32(octets.subarray(0, curseur)), 4);
+  return octets;
+}
+
+/** Les octets ASCII d'un texte. Le marqueur est posé ainsi, comme partout dans ce fichier. */
+function texteAsciiEnOctets(valeur) {
+  return new TextEncoder().encode(valeur);
+}
+
+/** La chaîne entière, pour UNE page figée : info, clé, racine, disposition. */
+async function verifierUnePageV2(nom, figee, identifiantVolume, dek) {
+  const info = infoDeDomaine({
+    domaine: figee.domaine,
+    identifiantVolume,
+    versionDeFormat: figee.versionDeFormatDuDomaine,
+  });
+  memesOctets(`enveloppe v2 : l'info du domaine « ${figee.domaine} »`, info, figee.info);
+
+  const octetsDeLaCle = await hkdf(dek, hexEnOctets(figee.sel), info, 32);
+  memesOctets(
+    `enveloppe v2 : les 32 octets que HKDF tire pour « ${figee.domaine} »`,
+    octetsDeLaCle,
+    figee.cleDerivee,
+  );
+
+  // La RACINE, refaite : l'empreinte de la suite ordonnée est le CLAIR, l'en-tête les données
+  // associées. Sceller sous le même nonce doit rendre exactement les octets publiés.
+  const empreinte = new Uint8Array(
+    await webcrypto.subtle.digest("SHA-256", encodageCanoniqueDesEmplacements(figee.emplacements)),
+  );
+  memesOctets(
+    `enveloppe v2 : l'empreinte de la suite ordonnée de « ${nom} »`,
+    empreinte,
+    figee.racine.empreinte,
+  );
+  const scelle = await sceller(
+    await importerCle(figee.cleDerivee),
+    hexEnOctets(figee.racine.nonce),
+    enteteDeRacineDEnveloppe({
+      identifiantVolume,
+      formatVersion: 2,
+      version: figee.version,
+      nombreEmplacements: figee.emplacements.length,
+    }),
+    empreinte,
+  );
+  memesOctets(
+    `enveloppe v2 : le chiffré de la racine de « ${nom} »`,
+    scelle.chiffre,
+    figee.racine.chiffre,
+  );
+  memesOctets(
+    `enveloppe v2 : l'étiquette de la racine de « ${nom} »`,
+    scelle.etiquette,
+    figee.racine.etiquette,
+  );
+
+  memesOctets(
+    `enveloppe v2 : la PAGE de « ${nom} » sur disque, en-tête de 140 octets et sel en clair`,
+    pageV2SurDisque(figee, identifiantVolume),
+    figee.page,
+  );
+}
+
+/**
+ * La page d'enveloppe v2, ses DEUX domaines, et ce qui les sépare.
+ *
+ * La propriété centrale tient en une ligne : les deux pages ont la même version de format et le même
+ * volume, et pourtant leurs clés diffèrent — parce que l'info porte le NOM DU DOMAINE. Si ces deux
+ * clés devenaient une seule, la page qu'une archive emporte partagerait sa clé avec la serrure
+ * restée sur l'appareil, ce que l'ADR 0033, décision 2, refuse.
+ */
+async function verifierEnveloppeV2() {
+  const vecteurs = lire("tests/vectors/enveloppe-v2.json");
+  const identifiantVolume = vecteurs.volume.identifiantVolume;
+  const dek = hexEnOctets(vecteurs.cles.dek.hex);
+
+  verifier(
+    "enveloppe v2 : l'en-tête fait 140 octets, la somme recule à 136, le sel occupe 104 à 135",
+    vecteurs.specification.enTetePageOctets === ENVELOPPE_V2_ENTETE_OCTETS &&
+      vecteurs.specification.crcOffset === ENVELOPPE_V2_CRC_OFFSET &&
+      vecteurs.specification.selOffset === ENVELOPPE_V2_SEL_OFFSET &&
+      vecteurs.specification.selOctets === ENVELOPPE_V2_SEL_OCTETS,
+    JSON.stringify(vecteurs.specification),
+  );
+  verifier(
+    "enveloppe v2 : l'octet 14, remplissage en v1, porte le DOMAINE de la racine",
+    vecteurs.specification.domaineOffset === ENVELOPPE_V2_DOMAINE_OFFSET,
+    `offset ${vecteurs.specification.domaineOffset}`,
+  );
+
+  for (const [nom, figee] of Object.entries(vecteurs.pages)) {
+    await verifierUnePageV2(nom, figee, identifiantVolume, dek);
+  }
+
+  verifier(
+    "enveloppe v2 : deux domaines, deux infos, deux clés — pour le MÊME volume et la MÊME version",
+    vecteurs.pages.complete.info !== vecteurs.pages.embarquee.info &&
+      vecteurs.pages.complete.cleDerivee !== vecteurs.pages.embarquee.cleDerivee &&
+      vecteurs.pages.complete.versionDeFormatDuDomaine ===
+        vecteurs.pages.embarquee.versionDeFormatDuDomaine,
+  );
+  verifier(
+    "enveloppe v2 : la page EMBARQUÉE ne porte que des emplacements de type 4 (ADR 0027)",
+    vecteurs.pages.embarquee.emplacements.every(
+      (emplacement) => emplacement.typeKek === TYPE_KEK_RECUPERATION,
+    ),
+  );
+  verifier(
+    "enveloppe v2 : les deux SELS diffèrent — une clé à usage unique par page",
+    vecteurs.pages.complete.sel !== vecteurs.pages.embarquee.sel,
+  );
+  // Et le TÉMOIN NÉGATIF : la clé de l'autre domaine n'ouvre PAS cette racine. Sans lui, « deux
+  // clés distinctes » ne dirait pas que la séparation opère.
+  const croisee = await ouvrir(
+    await importerCle(vecteurs.pages.complete.cleDerivee),
+    hexEnOctets(vecteurs.pages.embarquee.racine.nonce),
+    enteteDeRacineDEnveloppe({
+      identifiantVolume,
+      formatVersion: 2,
+      version: vecteurs.pages.embarquee.version,
+      nombreEmplacements: vecteurs.pages.embarquee.emplacements.length,
+    }),
+    hexEnOctets(vecteurs.pages.embarquee.racine.chiffre),
+    hexEnOctets(vecteurs.pages.embarquee.racine.etiquette),
+  );
+  verifier(
+    "enveloppe v2 : la clé du domaine `enveloppe` n'ouvre PAS la racine du domaine `recuperation`",
+    croisee === null,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
 
 async function main() {
   await verifierModele();
@@ -1859,6 +2098,7 @@ async function main() {
   await verifierArchive();
   await verifierArchiveDeVolumeAnterieur();
   await verifierVolumeV4();
+  await verifierEnveloppeV2();
 
   const total = vertes + rouges.length;
   if (rouges.length === 0) {

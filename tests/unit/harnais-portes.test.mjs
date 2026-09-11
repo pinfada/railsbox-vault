@@ -140,6 +140,15 @@ const FIGEURS_DE_VECTEURS = [
       "et « nonces » du document figé. Ce sont des DONNÉES du contrat, pas une source injectée.",
   },
   {
+    fichier: "tools/figer-vecteurs-enveloppe-v2.mjs",
+    motif:
+      "même chose pour la page v2 de #182 : il publie les identifiants, les nonces et — depuis la " +
+      "v2 — les SELS des deux domaines sous la clé « aleas » du document figé. Ce sont des DONNÉES " +
+      "du contrat : un relecteur doit pouvoir refaire HKDF avec sa propre bibliothèque, et il lui " +
+      "faut pour cela le sel autant que l'info. Il n'ouvre aucune enveloppe et ne DÉVELOPPE aucune " +
+      "DEK.",
+  },
+  {
     fichier: "tools/figer-vecteurs-archive.mjs",
     motif:
       "même chose pour l'ADR 0027 (#149) : il publie les identifiants, les nonces et les " +
