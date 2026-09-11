@@ -40,8 +40,16 @@ export const MANIFEST_MAGIC = "railsbox-vault/volume-manifest";
  * incomplète : deux volumes n'étaient séparés que par leur clé. Le second épingle `aes-256-gcm`,
  * suivant la règle d'agilité que l'ADR 0011 a posée pour l'empreinte : un second algorithme exigera
  * une version de format et un ADR, jamais une négociation à l'exécution.
+ *
+ * v4 (#182, ADR 0033) ne change AUCUN champ du manifeste : il change ce que le volume est. Les
+ * secteurs ne sont plus scellés sous la DEK mais sous une clé du domaine `volume` qui en descend par
+ * HKDF, la racine publie deux compteurs, l'en-tête du fichier porte `VLTVOL04`. Le manifeste bouge
+ * tout de même, et il le faut : c'est lui, et lui seul, qui dit à un runtime s'il sait ouvrir ce
+ * volume. Un manifeste resté en v3 au-dessus d'un fichier v4 ferait tenter l'ouverture sous la DEK,
+ * c'est-à-dire produirait « sceau refusé » — « restaurez une sauvegarde » — pour un volume intact
+ * qui demandait une migration.
  */
-export const MANIFEST_FORMAT_VERSION = 3;
+export const MANIFEST_FORMAT_VERSION = 4;
 
 /** Plus ancien format que ce runtime sait encore LIRE (donc exporter, restaurer et migrer). */
 export const MIN_READABLE_FORMAT_VERSION = 1;
@@ -51,6 +59,14 @@ export const MIN_WRITER_FORMAT_VERSION = 2;
 
 /** Premier format qui porte le bloc `volume`. En deçà, le volume n'a pas d'identité propre. */
 export const MIN_VOLUME_FORMAT_VERSION = 3;
+
+/**
+ * Premier format dont les secteurs sont scellés sous une clé DÉRIVÉE, et non sous la DEK (#182).
+ *
+ * C'est la frontière que le produit refuse de franchir en lecture : un volume en deçà n'est lu que
+ * par la migration (ADR 0033, décision 5, point 2).
+ */
+export const MIN_CLE_DERIVEE_FORMAT_VERSION = 4;
 
 /**
  * SEUL algorithme de scellement admis par le format v3 — celui de l'ADR 0015, épinglé ici pour que

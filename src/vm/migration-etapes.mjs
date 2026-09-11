@@ -13,9 +13,11 @@
 import { exigerCleDeVolume } from "./cle-de-volume.mjs";
 import { MIGRATION_ERROR_CODES, MigrationError } from "./migration-errors.mjs";
 import { ETAPES_CONVERSION, convertirEnV3 } from "./migration-v3.mjs";
+import { ETAPES_V4, convertirEnV4 } from "./migration-v4.mjs";
 import { Scellement } from "./scellement.mjs";
 import { nouvelIdentifiantDeVolume } from "./volume-chiffre-format.mjs";
 import {
+  MIN_CLE_DERIVEE_FORMAT_VERSION,
   MIN_VOLUME_FORMAT_VERSION,
   MIN_WRITER_FORMAT_VERSION,
   VOLUME_ALGORITHM,
@@ -122,7 +124,88 @@ const STEPS = Object.freeze([
       });
     },
   }),
+  Object.freeze({
+    from: MIN_VOLUME_FORMAT_VERSION,
+    to: MIN_CLE_DERIVEE_FORMAT_VERSION,
+    /**
+     * DESTRUCTIVE : ce pas RESCELLE chaque secteur du volume.
+     *
+     * C'est le geste le plus lourd que ce dépôt ait tenté — 2^20 ouvertures et 2^20 scellements
+     * pour 512 Mio — et il touche chaque octet de la charge. La sauvegarde n'est donc pas une
+     * formalité : une écriture déchirée pendant la conversion n'est réparable que par elle.
+     */
+    destructive: true,
+    summary:
+      "v4 : chaque secteur est RESCELLÉ sous une clé du domaine « volume » dérivée de la DEK par HKDF-SHA-256, la DEK cessant d'être une clé de chiffrement pour devenir une clé maîtresse (ADR 0033). La racine publie deux compteurs — un par clé à compteur — et l'en-tête du fichier porte VLTVOL04.",
+    /**
+     * **Le SEUL geste du produit qui tienne les deux clés à la fois.** Il ouvre chaque secteur sous
+     * la clé v3 — la DEK elle-même — et le rescelle sous la clé du domaine `volume` de la v4. C'est
+     * l'unique exception que le cliquet anti-DEK de T2b inscrira dans sa liste, et c'est pourquoi
+     * elle est nommée ici plutôt que découverte là-bas.
+     *
+     * L'IDENTIFIANT n'est pas tiré : un volume v3 en a déjà un, il est dans son en-tête et dans son
+     * manifeste, et il entre dans l'INFO HKDF de la clé du domaine. En tirer un nouveau rendrait
+     * illisible chacun des secteurs déjà convertis. `convertirEnV4` recoupe les deux récits avant
+     * d'écrire quoi que ce soit.
+     */
+    async apply({ manifest, backend, cle, avancement, marquerAvancement }) {
+      const identifiantVolume = exigerIdentifiantDeVolume(manifest);
+      const nom = backend.name ?? "volume";
+      const cleOctets = exigerCleDeVolume(nom, cle);
+      await convertirEnV4({
+        brut: backend,
+        scellementV3: await Scellement.ouvrir({
+          volume: identifiantVolume,
+          cleOctets,
+          formatVersion: MIN_VOLUME_FORMAT_VERSION,
+        }),
+        scellementV4: await Scellement.ouvrir({
+          volume: identifiantVolume,
+          cleOctets,
+          formatVersion: MIN_CLE_DERIVEE_FORMAT_VERSION,
+        }),
+        tailleLogique: manifest.geometry.volumeSize,
+        identifiantVolume,
+        depuis: avancement?.etape ?? ETAPES_V4.rescellement,
+        position: avancement?.position ?? null,
+        tampon: avancement?.tampon ?? null,
+        marquerEtape: (progress) => marquerAvancement({ ...progress, identifiantVolume }),
+      });
+      return createManifest({
+        formatVersion: MIN_CLE_DERIVEE_FORMAT_VERSION,
+        runtime: manifest.runtime,
+        app: manifest.app,
+        volumeSize: manifest.geometry.volumeSize,
+        // `identity` est reconduite telle quelle. Ce qu'elle atteste — l'état au moment de son
+        // inscription (ADR 0009) — porte sur des octets qui viennent de changer : le rescellement
+        // réécrit chaque secteur sous un nonce neuf. L'ADR 0016 avait déjà tiré la conséquence pour
+        // v2 → v3 — deux exports d'un même contenu logique ne sont plus comparables par empreinte —
+        // et elle vaut ici à l'identique. La reconduire n'est donc pas la rendre fausse : elle
+        // n'affirmait déjà plus que ce qu'elle affirmait le jour de son inscription.
+        identity: manifest.identity,
+        volume: { id: identifiantVolume, algorithm: VOLUME_ALGORITHM },
+      });
+    },
+  }),
 ]);
+
+/**
+ * EXIGE l'identifiant qu'un manifeste v3 déclare. Il n'est ni tiré, ni deviné, ni relu du support.
+ *
+ * Il entre dans l'INFO HKDF de la clé du domaine `volume` : un identifiant inventé tirerait une clé
+ * qui n'ouvre rien de ce que la conversion a déjà écrit, et la reprise classerait chaque secteur
+ * « déchiré ». Un manifeste v3 sans bloc `volume` est une contradiction que `parseManifest` refuse
+ * déjà ; la garde est ici pour que la prochaine tranche n'y mène pas sans le voir.
+ */
+function exigerIdentifiantDeVolume(manifest) {
+  const identifiant = manifest.volume?.id;
+  if (typeof identifiant === "string" && /^[0-9a-f]{32}$/.test(identifiant)) return identifiant;
+  throw new MigrationError(
+    MIGRATION_ERROR_CODES.conversionIncoherente,
+    `Conversion vers v${MIN_CLE_DERIVEE_FORMAT_VERSION} refusée : le manifeste du volume ne déclare pas d'identifiant. Il entre dans la dérivation de la clé sous laquelle chaque secteur sera rescellé ; en inventer un rendrait le volume illisible par lui-même. Aucun octet n'est écrit.`,
+    { identifiant: identifiant ?? null },
+  );
+}
 
 for (const etape of STEPS) {
   if (etape.to !== etape.from + 1) {
