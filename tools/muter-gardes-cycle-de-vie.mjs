@@ -260,11 +260,21 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_CYCLE],
   },
   {
-    nom: "un manifeste voisin PRÉSENT n'est jamais réinstallé",
+    nom: "un manifeste voisin PRÉSENT et LISIBLE n'est jamais réinstallé",
     garde: "constaterLInstallation — le court-circuit sur le manifeste existant",
     fichier: APPLICATION,
-    avant: "  if (manifesteExistant.present) return true;\n",
+    avant: "  if (manifesteLisible) return true;\n",
     apres: "",
+    epreuves: [EPREUVE_APPLICATION],
+  },
+  {
+    nom: "un manifeste PRÉSENT mais ILLISIBLE n'est jamais pris pour une installation achevée (#188, MEDIUM-2)",
+    garde: "constaterLInstallation — la lecture du manifeste, pas sa seule présence",
+    fichier: APPLICATION,
+    avant:
+      "  const manifesteLisible =\n" +
+      "    manifesteExistant.present && (await manifesteEstLisible(nom, lireLeManifeste));\n",
+    apres: "  const manifesteLisible = manifesteExistant.present;\n",
     epreuves: [EPREUVE_APPLICATION],
   },
   {
@@ -275,7 +285,9 @@ export const MUTATIONS = Object.freeze([
       "  throw Object.assign(\n" +
       "    refus(\n" +
       "      CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste,\n" +
-      "      `Le volume « ${nom} » existe sans manifeste : la coquille ne l'écrase pas pour installer.`,\n" +
+      "      manifesteExistant.present\n" +
+      "        ? `Le volume « ${nom} » porte un manifeste voisin illisible : la coquille ne l'écrase pas pour installer.`\n" +
+      "        : `Le volume « ${nom} » existe sans manifeste : la coquille ne l'écrase pas pour installer.`,\n" +
       "    ),\n" +
       "    {\n" +
       "      installationInterrompue: signature.interrompue,\n" +
