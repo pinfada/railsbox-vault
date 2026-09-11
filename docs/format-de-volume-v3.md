@@ -322,9 +322,24 @@ typé, jamais lu en clair ».
 > **Ce que la racine de clôture apporte en plus des compteurs.** Elle RESCELLE l'empreinte de région
 > sous sa propre génération (§ 6.8). Une écriture hors transaction périmait donc la fraîcheur de la
 > dernière racine, si bien qu'un ouvreur transactionnel refusait ensuite le volume par
-> `VAULT_STORAGE_GENERATION_CORRUPT` ; clore par une racine referme cela du même geste. En
-> contrepartie, **le chemin hors transaction CONFRONTE désormais cette fraîcheur comme tout autre**
-> : le volume de coquille gagne la garde de l'ADR 0019 qu'il n'avait pas.
+> `VAULT_STORAGE_GENERATION_CORRUPT` ; clore par une racine referme cela du même geste.
+>
+> **Ce qu'elle n'apporte PAS, et ce § l'a affirmé à tort.** Hors transaction, la fraîcheur n'est PAS
+> confrontée à l'ouverture : `confronterLaFraicheur` est posé à `false` sur ce chemin. La clôture
+> RÉTABLIT la fraîcheur pour l'ouvreur transactionnel qui suivra ; elle ne la CONFRONTE pas, et le
+> volume de coquille ne gagne donc AUCUNE garde de l'ADR 0019 — il n'en a jamais porté. Ce que la
+> confrontation aurait refusé à l'OUVERTURE reste refusé, mais ailleurs et autrement : un secteur
+> ramené en arrière est refusé au SECTEUR par son SCEAU — `VAULT_STORAGE_SCEAU_REFUSE` à la LECTURE
+> — et non `VAULT_STORAGE_GENERATION_CORRUPT` à l'ouverture. Aucun clair d'un secteur rejoué n'est
+> rendu dans l'un ni dans l'autre régime.
+>
+> **Pourquoi la garde n'est pas là.** Elle y a été, le temps d'un commit, et le banc de navigateur
+> l'a réfutée par exécution : un Worker de confiance peut être TUÉ sans avoir clos — c'est le cas
+> ordinaire d'un onglet fermé —, et la garde refusait alors le coffre à l'ouverture suivante pour un
+> verrouillage parfaitement ordinaire. Entre « refuser un volume sain après un verrouillage » et «
+> refuser un secteur rejoué à la lecture plutôt qu'à l'ouverture », la seconde conduite est celle
+> qui ne coûte pas le coffre. `tests/unit/vm-cloture-par-racine.test.mjs` › « la fraîcheur n'est PAS
+> confrontée hors transaction » MESURE les deux refus plutôt que de les affirmer.
 >
 > **Ce qui reste vrai, et qui n'est pas corrigé par la séparation des clés** : les deux compteurs
 > vivent toujours dans la racine, donc ils RECULENT avec elle (§ 9.1, constat #144). L'écart entre

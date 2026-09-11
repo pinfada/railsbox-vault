@@ -875,6 +875,19 @@ ce qui reste dehors au lieu de le laisser deviner :
   antérieure, à la bonne adresse, dans le bon volume — n'est **pas** détecté. Le remède connu est un
   arbre de Merkle sur les 2^20 secteurs du volume applicatif, chiffré dans l'ADR à 20 hachages par
   écriture et 64 Mio d'état. Il n'est pas fourni, et c'est une question posée à la revue externe ;
+- **hors transaction, la fraîcheur n'est pas CONFRONTÉE à l'ouverture.** Les trois chemins hors
+  transaction closent par une racine, et cette racine RÉTABLIT la fraîcheur pour l'ouvreur
+  transactionnel qui suivra ; elle ne la confronte pas, et le volume de coquille ne porte donc
+  aucune garde de l'[ADR 0019](docs/decisions/0019-fraicheur-du-volume.md). La garde a existé le
+  temps d'un commit de la tranche T2b, et le banc de navigateur l'a réfutée par exécution : un
+  Worker de confiance peut être TUÉ sans avoir clos — le cas ordinaire d'un onglet fermé —, et la
+  garde refusait alors le coffre à l'ouverture suivante pour un verrouillage parfaitement ordinaire.
+  Ce que la confrontation aurait refusé à l'OUVERTURE reste refusé, mais au SECTEUR et par son sceau
+  : `VAULT_STORAGE_SCEAU_REFUSE` à la LECTURE, et non `VAULT_STORAGE_GENERATION_CORRUPT` à
+  l'ouverture. **Aucun clair d'un secteur rejoué n'est rendu** dans l'un ni dans l'autre régime, et
+  `tests/unit/vm-cloture-par-racine.test.mjs` MESURE les deux refus. Le retrait DÉPLACE un refus, il
+  n'en perd aucun : une ouverture-fermeture hors transaction suffit désormais à faire tomber le
+  refus de la barrière au secteur pour un ouvreur transactionnel ultérieur ;
 - **le retour arrière COMPLET du support** entre deux sessions — volume, journal, racine et
   manifeste ramenés ensemble à un état antérieur cohérent — n'est pas détectable par un format. Il
   exigerait un ancrage monotone hors de portée de l'attaquant. Le seul candidat qu'une API de
