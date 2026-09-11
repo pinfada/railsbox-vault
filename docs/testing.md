@@ -908,27 +908,6 @@ l'[ADR 0009](decisions/0009-restauration-inter-origine.md).
 > zéros passerait pour une restauration ; sans la première, la comparaison porterait sur des octets
 > que l'archive ne contient pas.
 
-> **Étendu par #182 à la migration v3 → v4**, et ce qu'elle exige des épreuves est d'une autre
-> nature. En v2 → v3, l'un des deux états d'un secteur — le clair — se rescellait à l'infini : une
-> coupure laissait un état que la reprise savait rattraper par construction. En v3 → v4, les deux
-> états sont des chiffrés sous deux clés différentes, et le sceau et la charge doivent changer
-> ENSEMBLE. La preuve est donc **exhaustive sur les coupures** : `vm-migration-v4.test.mjs` coupe à
-> CHACUNE des écritures du volume et à CHACUNE des inscriptions du journal, une par une, et exige à
-> chaque fois que la reprise aboutisse et que le volume converti rende, secteur par secteur, le
-> clair que le v3 portait. Sur le volume d'épreuve de seize secteurs, cela fait neuf coupures
-> d'écriture et neuf coupures de journal, chacune suivie d'une relecture complète.
->
-> Une épreuve de plus, et elle n'était pas prévue : **une coupure PENDANT le pas v3 → v4 ne doit pas
-> faire REFAIRE le pas v2 → v3**. Le journal ne porte qu'un avancement, celui du pas en vol, et la
-> reprise redonnait « rien de commencé » au pas précédent — qui redéplaçait la charge d'un volume
-> déjà converti par-dessus sa propre région. `vm-volume-migration.test.mjs` la tient.
-
-**Les DURÉES de la migration v3 → v4, mesurées.** `tools/mesurer-migration-v4.mjs`, sous Node et sur
-support en mémoire : **98,8 s pour 512 Mio**, soit **1,89 fois** le scellement initial du même
-volume mesuré dans le même run (52,4 s), et 94,2 µs par secteur. L'écriture anticipée du journal
-coûte **6,64 %** des octets réécrits, et le journal est inscrit 4 097 fois. Le relevé complet et ses
-réserves — ni OPFS, ni navigateur — sont dans [`docs/quality-attributes.md`](quality-attributes.md).
-
 **Le niveau unitaire éprouve l'ORDRE des gestes, qui est le contrat.** Une cible en mémoire compte
 chaque geste de l'orchestration — ouvertures, fermetures, révocations, inscriptions —, ce qui permet
 d'affirmer non pas « la restauration a échoué » mais « la cible n'a même pas été ouverte ». Les
@@ -1123,8 +1102,12 @@ l'[ADR 0011](decisions/0011-migration-de-format-et-reprise.md).
 **Les DURÉES de la migration v3 → v4, mesurées.** `tools/mesurer-migration-v4.mjs`, sous Node et sur
 support en mémoire : **98,8 s pour 512 Mio**, soit **1,89 fois** le scellement initial du même
 volume mesuré dans le même run (52,4 s), et 94,2 µs par secteur. L'écriture anticipée du journal
-coûte **6,64 %** des octets réécrits, et le journal est inscrit 4 097 fois. Le relevé complet et ses
-réserves — ni OPFS, ni navigateur — sont dans [`docs/quality-attributes.md`](quality-attributes.md).
+coûte **6,64 %** des octets réécrits, et le journal est inscrit 4 097 fois.
+
+**Et sur OPFS RÉEL** : le scénario de bout en bout joue la chaîne ENTIÈRE sur un vrai volume de 512
+Mio dans Chromium — **59,6 s** pour la tentative interrompue, **144,7 s** pour la reprise jusqu'au
+manifeste v4 inscrit et relu. Les deux relevés ne mesurent pas la même chose, et
+[`docs/quality-attributes.md`](quality-attributes.md) dit laquelle.
 
 **Le niveau unitaire éprouve l'ORDRE des gestes, qui est le contrat.** Une cible en mémoire compte
 chaque geste — inspections, ouvertures, fermetures, inscriptions de journal, révocations, commits —,

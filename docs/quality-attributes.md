@@ -695,10 +695,27 @@ complets, aurait DOUBLÉ les écritures du volume : 512 Mio de plus pour un volu
 0035, décision 3). Le journal est réécrit 4 097 fois pour un volume de 512 Mio, soit deux
 inscriptions par suite de 512 secteurs, plus la dernière.
 
-**Ce que ces chiffres ne disent pas.** Ni OPFS, ni le navigateur. Une migration de 512 Mio sur OPFS
-réel dans un des trois moteurs n'a pas été chronométrée par cette tranche ; le scénario
-`tests/e2e/migration-volume-versionne.spec.mjs` la joue de bout en bout, mais sur le volume de
-l'image de référence et sans publier de durée. C'est un manque nommé, pas un chiffre supposé.
+**Et sur OPFS RÉEL, dans un navigateur.** Le scénario
+`tests/e2e/migration-volume-versionne.spec.mjs` joue la CHAÎNE ENTIÈRE — v1 → v2 → v3 → v4, dont
+deux pas destructifs — sur un vrai volume OPFS de 512 Mio, dans Chromium, avec une interruption et
+une reprise. Relevé du **2026-09-11**, même machine, `reports/e2e/migration-volume-versionne.json` :
+
+| Ce qui est chronométré                                |       Durée |
+| ----------------------------------------------------- | ----------: |
+| la tentative INTERROMPUE (coupée après la révocation) |  **59,6 s** |
+| la REPRISE, jusqu'au manifeste v4 inscrit et relu     | **144,7 s** |
+
+**Ces 144,7 s ne sont PAS comparables aux 98,8 s du relevé précédent**, et il faut le dire : elles
+couvrent la chaîne entière — la conversion v2 → v3 qui déplace la charge et la scelle, PUIS la
+conversion v3 → v4 qui la rescelle — plus l'export de la sauvegarde, sa vérification, le report du
+journal de génération, la racine initiale et l'inscription du manifeste. Le relevé Node, lui, ne
+mesure que le rescellement. Ce que la comparaison dit tout de même : la conversion v3 → v4 sur OPFS
+réel et dans Chromium tient dans le même ordre de grandeur que le rescellement seul sous Node, ce
+qui est cohérent avec le facteur ~2,8 que l'ADR 0015 a mesuré entre les deux moteurs.
+
+**Ce que ces chiffres ne disent toujours pas** : Firefox et WebKit. Le scénario de migration tourne
+sur Chromium seul, comme les autres scénarios de `tests/e2e/`. C'est un manque nommé, pas un chiffre
+supposé.
 
 ### La RACINE INITIALE de la création, et l'ENGAGEMENT de la première ouverture (#181)
 
