@@ -27,7 +27,10 @@ import {
   lireLeDescripteur,
   signatureDInstallationInterrompue,
 } from "../../src/coquille/application-de-reference.mjs";
-import { reprendreLInstallation } from "../../src/coquille/reprise-installation.mjs";
+import {
+  reprendreLInstallation,
+  reprendreSiSignatureConfirmee,
+} from "../../src/coquille/reprise-installation.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { sansCapacite } from "../../src/coquille/contrat-de-messages.mjs";
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
@@ -769,6 +772,114 @@ test("REPRENDRE l'installation : retire le volume orphelin et ses voisins, puis 
   } finally {
     await relu.close();
   }
+});
+
+test("reprendreSiSignatureConfirmee : REFUSE sans rien retirer si un manifeste est présent", async () => {
+  const store = createSyncAccessStore();
+  const backend = await ouvrirSansAchever(store);
+  await backend.close();
+  const handle = await store.openHandle(manifestSidecarName("application"));
+  handle.write(new Uint8Array([1]), { at: 0 });
+  handle.flush();
+  handle.close();
+  let retire = false;
+
+  const resultat = await reprendreSiSignatureConfirmee({
+    descripteur: descripteurDepreuve(),
+    cleDeVolume: async () => CLE_DEPREUVE.slice(),
+    observer: observerDuStore(store),
+    openHandle: store.openHandle,
+    retirer: async () => {
+      retire = true;
+    },
+  });
+  assert.equal(resultat.reprise, false);
+  assert.match(resultat.motif, /déjà installée/);
+  assert.equal(retire, false, "un manifeste présent ne retire RIEN");
+});
+
+test("reprendreSiSignatureConfirmee : REFUSE sans rien retirer si la signature ne tient plus", async () => {
+  // Le volume est « autre chose » : déjà EN SERVICE. Revérifier ICI est ce qui empêche un bouton
+  // resté affiché après coup — un clic tardif, une seconde vue de la page — de retirer un volume
+  // qui a cessé d'être orphelin entre-temps.
+  const store = createSyncAccessStore();
+  const backend = await ouvrirSansAchever(store);
+  await backend.write(0, secteurDe(0x11));
+  await backend.flush();
+  const empreinte = await backend.empreinteDuFichier();
+  await backend.close();
+  await daterLaCreation({
+    name: "application",
+    cle: CLE_DEPREUVE,
+    identifiantVolume: ID_DEPREUVE,
+    empreinteVersee: empreinte,
+    openHandle: store.openHandle,
+  });
+  const reouvert = await openOpfsVolume({
+    name: "application",
+    size: TAILLE_DEPREUVE,
+    cle: CLE_DEPREUVE,
+    identifiantVolume: ID_DEPREUVE,
+    openHandle: store.openHandle,
+  });
+  await reouvert.write(0, secteurDe(0x22));
+  await reouvert.flush();
+  await reouvert.close();
+  let retire = false;
+
+  const resultat = await reprendreSiSignatureConfirmee({
+    descripteur: descripteurDepreuve(),
+    cleDeVolume: async () => CLE_DEPREUVE.slice(),
+    observer: observerDuStore(store),
+    openHandle: store.openHandle,
+    retirer: async () => {
+      retire = true;
+    },
+  });
+  assert.equal(resultat.reprise, false);
+  assert.match(resultat.motif, /pas la signature/);
+  assert.equal(retire, false);
+});
+
+test("reprendreSiSignatureConfirmee : REPREND quand la signature tient", async () => {
+  const store = createSyncAccessStore();
+  const backend = await ouvrirSansAchever(store);
+  await backend.write(0, secteurDe(0x99));
+  await backend.flush();
+  await backend.close();
+
+  const resultat = await reprendreSiSignatureConfirmee({
+    descripteur: descripteurDepreuve(),
+    cleDeVolume: async () => CLE_DEPREUVE.slice(),
+    observer: observerDuStore(store),
+    openHandle: store.openHandle,
+    retirer: async (nom) => {
+      for (const cible of [nom, generationJournalName(nom)]) {
+        if (store.sizeOf(cible) === 0) continue;
+        const h = await store.openHandle(cible);
+        try {
+          h.truncate(0);
+          h.flush();
+        } finally {
+          h.close();
+        }
+      }
+    },
+    ouvrir: (options) =>
+      openOpfsVolume({ ...options, identifiantVolume: ID_DEPREUVE, openHandle: store.openHandle }),
+    verser: async (backendNeuf) => {
+      for (let rang = 0; rang < TAILLE_DEPREUVE / SECTOR_SIZE; rang += 1) {
+        await backendNeuf.write(rang * SECTOR_SIZE, secteurDe(0x44));
+      }
+      await backendNeuf.flush();
+      return { ecrits: TAILLE_DEPREUVE, empreinte: await backendNeuf.empreinteDuFichier() };
+    },
+    dater: async (options) => daterLaCreation({ ...options, openHandle: store.openHandle }),
+    revoquer: async () => {},
+    inscrire: async () => {},
+  });
+  assert.equal(resultat.reprise, true);
+  assert.equal(resultat.installation.installee, true);
 });
 
 // --- Ce que le démarrage PUBLIE : une liste FERMÉE --------------------------------------------------
