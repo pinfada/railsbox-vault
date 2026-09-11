@@ -6,6 +6,7 @@ import {
   isEnveloppeError,
 } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
 import {
+  DOMAINE_OFFSET,
   PAGES,
   PAGE_OCTETS,
   TAILLE_FICHIER_ENVELOPPE,
@@ -89,6 +90,28 @@ const SINISTRES = Object.freeze([
   { nom: "coupure-apres", armer: (rang) => ({ couperApres: rang }) },
   { nom: "dechirure-entete", armer: (rang) => ({ dechirerA: rang, octetsDeDechirure: 40 }) },
   { nom: "dechirure-moitie", armer: (rang) => ({ dechirerA: rang }) },
+]);
+
+/**
+ * Les coupures que la matrice produit RÉELLEMENT, énumérées plutôt que comptées.
+ *
+ * Quatre sinistres et quatre rangs font SEIZE cellules, et six seulement coupent quelque chose. Ce
+ * n'est pas un défaut de la matrice, c'est une conséquence du geste : la migration ne porte que DEUX
+ * gestes de support — écrire la page neuve, franchir la barrière —, donc les rangs 3 et 4 n'ont rien
+ * à interrompre, et la barrière n'écrit aucun octet qu'une déchirure puisse couper en deux.
+ *
+ * La revue de la PR #187 (constat 7 de la revue de format) a relevé que l'épreuve se contentait d'un
+ * PLANCHER — `produites >= 4` — qui serait resté vert si la couverture tombait de six à quatre. Le
+ * plancher est remplacé par cette liste : la matrice doit produire ces six coupures-là, ni plus, ni
+ * moins, et un geste ajouté au chemin de migration fera rougir l'épreuve au lieu de passer inaperçu.
+ */
+const COUPURES_REELLES = Object.freeze([
+  "coupure-avant@1",
+  "coupure-avant@2",
+  "coupure-apres@1",
+  "coupure-apres@2",
+  "dechirure-entete@1",
+  "dechirure-moitie@1",
 ]);
 
 /** Version que porte la page v1 d'épreuve. Quatre emplacements, comme une enveloppe bien remplie. */
@@ -215,13 +238,13 @@ test("le geste de MIGRATION porte exactement DEUX écritures, et elles sont mesu
 test("MIGRER : à CHAQUE rang, les QUATRE clés ouvrent, et l'état est v1@N ou v2@N+1", async () => {
   const { fichier, emplacements } = await fichierV1();
   const attendus = emplacements.map((e) => e.identifiantEmplacement);
-  let produites = 0;
+  const produites = [];
 
   for (const sinistre of SINISTRES) {
     for (let rang = 1; rang <= 4; rang += 1) {
       const { coupee, octets } = await couperLaMigration({ octets: fichier, rang, sinistre });
       if (!coupee) continue;
-      produites += 1;
+      produites.push(`${sinistre.nom}@${rang}`);
 
       const etats = [];
       for (const nom of NOMS_DE_KEK) etats.push(await etatSansMigration(octets, KEKS[nom]));
@@ -252,7 +275,157 @@ test("MIGRER : à CHAQUE rang, les QUATRE clés ouvrent, et l'état est v1@N ou 
       );
     }
   }
-  assert.ok(produites >= 4, `seulement ${produites} coupure(s) produites sur la migration de page`);
+  assert.deepEqual(
+    produites,
+    [...COUPURES_REELLES],
+    "la matrice doit produire EXACTEMENT ces six coupures : un plancher laisserait la couverture baisser en silence",
+  );
+});
+
+/** Le fichier tel qu'une migration RÉUSSIE le laisse : `v1@7` en page 0, `v2@8` en page 1. */
+async function fichierApresMigration() {
+  const { fichier, emplacements } = await fichierV1();
+  const support = supportDouble({ octets: fichier });
+  const ouverte = await ouvrirEnveloppe({ support, identifiantVolume: VOLUME, kek: KEKS.A });
+  assert.equal(ouverte.migration.faite, true);
+  return { octets: support.contenu, emplacements };
+}
+
+/** Les octets de la page de rang `index`, en vue, modifiables en place. */
+function pageDe(octets, index) {
+  return octets.subarray(offsetDePage(index), offsetDePage(index) + PAGE_OCTETS);
+}
+
+/** Copie le fichier, applique `retoucher` à la copie, et rend la copie. */
+function retouche(octets, retoucher) {
+  const copie = octets.slice();
+  retoucher(copie);
+  return copie;
+}
+
+test("APRÈS la migration, à tout instant UNE page reste ouvrable — sept altérations", async () => {
+  // **Le constat 7 de la revue de format**, seconde moitié : la matrice de coupure éprouve le geste
+  // PENDANT qu'il s'écrit, et rien n'éprouvait ce qui vient après. Un fichier migré porte deux pages
+  // de formats ET de versions différents, et c'est exactement la situation où un choix d'autorité se
+  // trompe sans bruit : une page forgée plus récente que l'autre, un octet changé dans un champ que
+  // l'étiquette n'authentifie pas, une page effacée.
+  //
+  // Les altérations sont celles que le relecteur a jouées, rejouées telles quelles. L'invariant est
+  // UN, et il est le même partout : sous CHACUNE des quatre clés, il reste une page ouvrable, c'est
+  // celle que le tableau nomme, et la liste des emplacements n'a bougé d'aucun identifiant.
+  //
+  // Les deux cas restants du relecteur vivent dans les deux épreuves suivantes, parce qu'ils
+  // mesurent autre chose qu'une autorité : ce que le décodeur DIT d'un domaine inconnu, et ce que la
+  // mutation suivante fait de la page v1.
+  const { octets: migre, emplacements } = await fichierApresMigration();
+  const attendus = emplacements.map((e) => e.identifiantEmplacement);
+
+  // Une v1 FORGÉE par qui détient la DEK : la racine y est réellement scellée sur la version
+  // annoncée, donc rien ne la distingue d'une page légitime sinon sa version. C'est la forme forte
+  // de l'attaque — une v1 dont l'étiquette échouerait ne prouverait que le scellement.
+  const v1Forgee = async (version) =>
+    await composerPageAlaMain({
+      identifiantVolume: VOLUME,
+      version,
+      dek: DEK,
+      emplacements,
+      nonce: suiteDOctets(0x77, 12),
+      formatVersion: ENVELOPPE_FORMAT_V1,
+    });
+  const V1_A_999 = await v1Forgee(999);
+  const V1_A_8 = await v1Forgee(VERSION_V1 + 1);
+
+  const LA_V2 = `v${ENVELOPPE_FORMAT_V2}@${VERSION_V1 + 1}`;
+  const LA_V1 = `v${ENVELOPPE_FORMAT_V1}@${VERSION_V1}`;
+  const CAS = [
+    {
+      nom: "la page v1 est EFFACÉE à côté d'une v2 valide",
+      octets: retouche(migre, (copie) => pageDe(copie, 0).fill(0)),
+      attendu: LA_V2,
+    },
+    {
+      nom: "une v1 FORGÉE à la version 999 réclame l'autorité",
+      octets: retouche(migre, (copie) => copie.set(V1_A_999, offsetDePage(0))),
+      attendu: LA_V2,
+    },
+    {
+      nom: "une v1 forgée à la version 8 — ÉGALITÉ, pas infériorité",
+      octets: retouche(migre, (copie) => copie.set(V1_A_8, offsetDePage(0))),
+      attendu: LA_V2,
+    },
+    {
+      nom: "un octet de l'ÉTIQUETTE de racine de la v2 est changé",
+      octets: retouche(migre, (copie) => {
+        pageDe(copie, 1)[88] ^= 0x01;
+      }),
+      attendu: LA_V1,
+    },
+    {
+      nom: "le SEL de la v2 est changé d'un bit",
+      octets: retouche(migre, (copie) => {
+        pageDe(copie, 1)[104] ^= 0x01;
+      }),
+      attendu: LA_V1,
+    },
+    {
+      nom: "l'octet de domaine de la v2 passe à 2 (`recuperation`) sur une page `enveloppe`",
+      octets: retouche(migre, (copie) => {
+        pageDe(copie, 1)[DOMAINE_OFFSET] = 2;
+      }),
+      attendu: LA_V1,
+    },
+    {
+      nom: "l'octet de domaine de la v2 passe à 9, qui ne désigne AUCUN domaine",
+      octets: retouche(migre, (copie) => {
+        pageDe(copie, 1)[DOMAINE_OFFSET] = 9;
+      }),
+      attendu: LA_V1,
+    },
+  ];
+
+  for (const cas of CAS) {
+    const classes = new Set();
+    for (const nom of NOMS_DE_KEK) {
+      const etat = await etatSansMigration(cas.octets, KEKS[nom]);
+      assert.ok(etat.ouvre, `${cas.nom} : la clé ${nom} n'ouvre plus rien (${etat.code})`);
+      assert.deepEqual(etat.emplacements, attendus, `${cas.nom} : la liste a bougé sous ${nom}`);
+      classes.add(`v${etat.formatVersion}@${etat.version}`);
+    }
+    assert.deepEqual([...classes], [cas.attendu], `${cas.nom} : ce n'est pas la page attendue`);
+  }
+});
+
+test("le domaine inconnu est REFUSÉ en le NOMMANT, et le sel est couvert par la somme", async () => {
+  // Le relecteur note, sans en faire un constat, que le sel et l'octet de domaine ne sont pas
+  // AUTHENTIFIÉS — le § 6.11 le dit — mais qu'ils sont COUVERTS par la somme de contrôle de la page.
+  // Les deux refus ne se ressemblent donc pas, et l'ORDRE que le § annonce est vérifiable : le
+  // domaine est jugé AVANT la somme, et c'est pourquoi un domaine inconnu se refuse en se nommant
+  // là où un sel altéré se refuse en somme.
+  const { octets: migre } = await fichierApresMigration();
+
+  const domaineInconnu = decoderPage(
+    retouche(migre, (copie) => {
+      pageDe(copie, 1)[DOMAINE_OFFSET] = 9;
+    }).subarray(offsetDePage(1), offsetDePage(1) + PAGE_OCTETS),
+  );
+  assert.equal(domaineInconnu.valide, false, "une page de domaine inconnu n'est pas une page");
+  assert.match(String(domaineInconnu.raison), /9/, "le refus NOMME la valeur qu'il a lue");
+
+  const selAltere = decoderPage(
+    retouche(migre, (copie) => {
+      pageDe(copie, 1)[104] ^= 0x01;
+    }).subarray(offsetDePage(1), offsetDePage(1) + PAGE_OCTETS),
+  );
+  assert.equal(
+    selAltere.valide,
+    false,
+    "le sel entre dans l'assiette de la somme, donc un bit compte",
+  );
+  assert.match(
+    String(selAltere.raison),
+    /[Ss]omme/,
+    "et c'est la SOMME qui le refuse, pas le domaine",
+  );
 });
 
 test("une page v2 DÉCHIRÉE laisse l'autorité à la page v1, et la seconde tentative aboutit", async () => {
@@ -390,6 +563,12 @@ test("après la migration, une MUTATION efface la dernière page v1 du fichier",
   // Le repli que la migration laisse derrière elle n'est pas éternel : la mutation suivante écrit
   // sur la page libre, c'est-à-dire sur elle. Aucun geste n'est ajouté pour cela — en ajouter un
   // retirerait au rang 2 de la matrice le repli qui fait toute la sûreté du geste.
+  //
+  // C'est aussi le dernier des cas ajoutés par la revue de la PR #187 (constat 7 de la revue de
+  // format). Plutôt qu'une épreuve jumelle, il RENFORCE celle-ci : les VERSIONS des deux pages sont
+  // désormais nommées — v2@9 par-dessus v2@8 —, et le coffre est rouvert après coup pour constater
+  // qu'il porte bien ses cinq emplacements. Une paire de pages « toutes deux en v2 » resterait vraie
+  // si la mutation avait écrasé la mauvaise des deux.
   const { fichier } = await fichierV1();
   const support = supportDouble({ octets: fichier });
   await ouvrirEnveloppe({ support, identifiantVolume: VOLUME, kek: KEKS.A });
@@ -401,18 +580,22 @@ test("après la migration, une MUTATION efface la dernière page v1 du fichier",
     kekNouvelle: suiteDOctets(0x55, 32),
   });
 
-  const versions = [];
+  const etats = [];
   for (let index = 0; index < PAGES; index += 1) {
     const lue = decoderPage(
       support.contenu.subarray(offsetDePage(index), offsetDePage(index) + PAGE_OCTETS),
     );
-    versions.push(lue.valide ? lue.page.formatVersion : null);
+    etats.push(lue.valide ? `v${lue.page.formatVersion}@${lue.page.version}` : null);
   }
   assert.deepEqual(
-    versions,
-    [ENVELOPPE_FORMAT_V2, ENVELOPPE_FORMAT_V2],
+    etats,
+    [`v${ENVELOPPE_FORMAT_V2}@${VERSION_V1 + 2}`, `v${ENVELOPPE_FORMAT_V2}@${VERSION_V1 + 1}`],
     "les deux pages sont en v2 : plus aucune racine du fichier n'est scellée sous la DEK",
   );
+
+  const etat = await etatSansMigration(support.contenu, KEKS.A);
+  assert.equal(etat.ouvre, true);
+  assert.equal(etat.emplacements.length, 5, "cinq emplacements, et le coffre s'ouvre toujours");
 });
 
 test("une page v2 dont le DOMAINE est retouché est REFUSÉE, et la page v1 la couvre", async () => {

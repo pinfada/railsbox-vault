@@ -508,8 +508,11 @@ de huit.
 
 **Ce que cela change à la décision 5 (l'atomicité) :** rien. **Ce que cela ajoute à la matrice de
 coupures :** un geste de plus, la MIGRATION d'une page v1, éprouvée aux quatre sinistres et quatre
-rangs de `tests/unit/vm-enveloppe-migration-page.test.mjs`. La page v1 n'est PAS effacée par ce
-geste, et c'est ce qui le rend sûr.
+rangs de `tests/unit/vm-enveloppe-migration-page.test.mjs` — **soit SIX coupures réellement
+produites sur les seize cellules**, parce que le geste ne porte que deux écritures de support et que
+les rangs 3 et 4 n'ont donc rien à interrompre. L'épreuve ÉNUMÈRE ces six-là et exige l'égalité
+depuis la revue de la PR #187 : un plancher aurait laissé la couverture baisser en silence. La page
+v1 n'est PAS effacée par ce geste, et c'est ce qui le rend sûr.
 
 **La condition d'abandon 5 est corrigée d'un chiffre :** le plafond de huit emplacements laisse,
 avec l'en-tête v2, 3 380 octets libres au pire tarif — de quoi en porter cinq de plus. Le sel n'a

@@ -243,7 +243,9 @@ Au vocabulaire de la décision 7 de l'ADR 0021.
 **FAIT, mais non garanti :**
 
 - **la migration d'une page v1 ne perd aucune clé de déverrouillage sous coupure.** C'est mesuré sur
-  quatre sinistres et quatre rangs, avec quatre clés ; ce n'est pas une preuve formelle ;
+  quatre sinistres et quatre rangs — six coupures réellement produites, énumérées et exigées à
+  l'égalité — avec quatre clés, et sur sept altérations du fichier APRÈS la migration ; ce n'est pas
+  une preuve formelle ;
 - **les deux compteurs restent exacts tant que le support n'a pas reculé.** Inchangé depuis
   l'ADR 0033.
 
