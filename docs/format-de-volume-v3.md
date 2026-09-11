@@ -3019,8 +3019,11 @@ refusé — un volume sans issue n'est pas un état acceptable ; il ne s'appliqu
 d'urgence de l'[ADR 0026](decisions/0026-revocation-d-urgence-et-page-libre.md), qui laisse toujours
 exactement un emplacement et n'a donc aucun refus propre), `VAULT_ENVELOPPE_EMPLACEMENT_INCONNU`,
 `VAULT_ENVELOPPE_IDENTITE`, `VAULT_ENVELOPPE_ILLISIBLE`, `VAULT_ENVELOPPE_MALFORME`,
-`VAULT_ENVELOPPE_MELANGE`, `VAULT_ENVELOPPE_PLEINE`, `VAULT_ENVELOPPE_RACINE_REFUSEE`,
-`VAULT_ENVELOPPE_REJEU`, `VAULT_ENVELOPPE_TRONCATURE`.
+`VAULT_ENVELOPPE_MELANGE`, `VAULT_ENVELOPPE_PLEINE`, `VAULT_ENVELOPPE_PRESENTE` (#159 : créer une
+enveloppe sur un fichier `.cles` déjà présent est refusé, quelle que soit la version de ses pages —
+le seul chemin vers une création sur un emplacement occupé est le retrait explicite de la
+[Décision 1](decisions/0020-enveloppe-de-cle.md#décision-1--le-fichier-volumecles-dans-lorigine-de-confiance)),
+`VAULT_ENVELOPPE_RACINE_REFUSEE`, `VAULT_ENVELOPPE_REJEU`, `VAULT_ENVELOPPE_TRONCATURE`.
 
 **Dérivation des clés de déverrouillage** : `VAULT_DERIVATION_ANNULEE`,
 `VAULT_DERIVATION_ARGON2_INDISPONIBLE`, `VAULT_DERIVATION_CODE_DEJA_RENDU` (un code de récupération
