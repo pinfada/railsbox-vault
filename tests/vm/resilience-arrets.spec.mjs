@@ -148,13 +148,6 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
         `${ou} — ${resultat.barrieres} barrière(s) acquittée(s)`,
       ).toBeGreaterThan(0);
     }
-
-    // Le volume a bien été rouvert après la mort du Worker, DANS LA BORNE. Le nombre d'essais n'est
-    // pas figé : une session v3 tient trois handles exclusifs (#16, #19), un seul encore tenu suffit
-    // à rendre `busy`, et c'est le moteur qui décide quand il les rend. Ce qui est exigé, c'est que
-    // la réouverture aboutisse dans le budget et que son coût soit publié — voir le relevé joint
-    // `vm-resilience-reouverture.json` et `tests/unit/vm-reouverture-handles.test.mjs`.
-    exigerReouvertureDansLeBudget(resultat.reouverture, ou);
   }
 
   // Le point 2 de cette graine est une coupure sur la TROISIÈME barrière : les vingt-quatre
@@ -188,6 +181,15 @@ test("une matrice de coupures est rejouée, classée et publiée sur un volume O
   expect(resume.verdicts["generation-1"]).toBeGreaterThan(0);
   expect(resume.verdicts["generation-2"]).toBeGreaterThan(0);
   expect(resume.verdicts.nouveau).toBe(0);
+
+  // L'ORDONNANCEMENT est contrôlé APRÈS les propriétés de correction globales. Le nombre d'essais
+  // n'est pas figé : une session v3 tient trois handles exclusifs (#16, #19), un seul encore tenu
+  // suffit à rendre `busy`, et c'est le moteur qui décide quand il les rend. Un dépassement du
+  // budget doit donc rougir, mais jamais empêcher `tauxAtomique` et les classes d'être évalués.
+  // Son coût a déjà été publié dans `vm-resilience-reouverture.json` avant toute assertion.
+  for (const resultat of resultats) {
+    exigerReouvertureDansLeBudget(resultat.reouverture, JSON.stringify(resultat.point));
+  }
 
   // Chaque ligne du compte rendu se rejoue seule.
   for (const ligne of resume.rejeu) {
