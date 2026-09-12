@@ -176,12 +176,28 @@ test("le document applicatif LOYAL obtient son port et l'état : la coquille SER
   // `portRecu`, `refus` et `questions` sont ce que le document sait de LUI-MÊME — un booléen, une
   // liste de codes qu'il a reçus, et depuis #163 le compte de ses propres questions, le geste-requête
   // étant devenu rejouable. Aucun des trois ne vient d'un message de la coquille.
+  //
+  // `coquilleDeCadre` est la sixième clé, depuis #192, et elle est de la même nature que les trois
+  // précédentes : ce que le document sait de LUI-MÊME. Elle dit si la coquille de cadre s'est
+  // installée, sous quel motif sinon, ce que son Service Worker est devenu, quel chemin il a
+  // encadré, combien de requêtes il a relayées et ce qu'il attend. Aucun de ces six champs ne vient
+  // d'un message de la coquille — et la liste qui suit est EXACTE, de sorte qu'un septième champ ne
+  // puisse pas apparaître là sans qu'une revue l'ait lu.
   expect(Object.keys(rapport).sort()).toEqual([
     "barrieres",
+    "coquilleDeCadre",
     "etat",
     "portRecu",
     "questions",
     "refus",
+  ]);
+  expect(Object.keys(rapport.coquilleDeCadre).sort()).toEqual([
+    "attente",
+    "cadreServi",
+    "installee",
+    "motif",
+    "relayees",
+    "serviceWorker",
   ]);
 });
 

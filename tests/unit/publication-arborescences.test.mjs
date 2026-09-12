@@ -121,11 +121,13 @@ test("les bancs de mesure nommés par `release-policy.md` sont exclus, avec leur
     "public/spike/origin/app.html",
     "public/vm/index.html",
     "public/compat.html",
-    // #161 : la fixture malveillante et le document applicatif de développement. Le premier est
-    // l'adversaire, le second est le territoire du guest ; ni l'un ni l'autre n'est un artefact
-    // que ce dépôt a le droit de servir depuis l'une ou l'autre des deux origines de l'ADR 0002.
+    // #161 : la fixture malveillante. C'est l'ADVERSAIRE, et le publier reviendrait à servir
+    // l'attaque depuis l'origine qu'elle attaque.
+    //
+    // Le document applicatif, lui, a QUITTÉ cette liste en #192 : il n'est plus un document de
+    // développement, c'est le COURTIER du proxy, et le proxy doit bien être servi par quelqu'un.
+    // Il est publié — par l'arbre APPLICATIF et par lui seul, ce que l'épreuve suivante exige.
     "public/coquille-epreuve/hostile.html",
-    "public/document-applicatif.html",
   ]) {
     const motif = motifDExclusion(banc);
     assert.ok(motif !== null, `${banc} n'est retiré par aucun motif`);
@@ -148,9 +150,40 @@ test("le runtime et le contrat de la coquille sont publiés, eux", () => {
   }
 });
 
-test("l'origine applicative ne publie aucun artefact du dépôt (ADR 0002)", () => {
+test("l'origine applicative publie le PROXY, et rien de ce que le guest rend (#192, ADR 0038)", () => {
+  // Cette épreuve exigeait une table VIDE jusqu'à #192, sous l'ADR 0002 : « en production le HTML
+  // applicatif est produit par le guest et relayé par le proxy ». La phrase n'a pas changé — c'est
+  // sa conclusion qui manquait. Le proxy doit bien être servi par quelqu'un, et ce quelqu'un ne
+  // peut être que cette origine-là. Ce qu'elle publie est donc EXACTEMENT le proxy, et l'épreuve
+  // le vérifie fichier par fichier plutôt que par un compte.
   const application = ARBRES.find(({ nom }) => nom === "application");
-  assert.deepEqual([...application.sources], []);
+  assert.deepEqual(
+    application.sources.map(({ depuis }) => depuis),
+    [
+      "public/document-applicatif.html",
+      "public/document-applicatif.mjs",
+      "public/service-worker-du-cadre.mjs",
+      "public/cadre",
+      "src/coquille/contrat-de-messages.mjs",
+      "src/coquille/refus-de-coquille.mjs",
+      "src/coquille/relais-http.mjs",
+    ],
+    "L'arbre applicatif porte le proxy, et rien d'autre. Un artefact de plus y serait du produit " +
+      "servi depuis le territoire du guest — ce que l'ADR 0002 refuse.",
+  );
+  for (const source of application.sources) {
+    assert.ok(source.role.length > 40, source.depuis + " n'explique pas pourquoi il est là");
+  }
+  // Le SERVICE WORKER est à la RACINE de l'arbre, et pas ailleurs : sa portée maximale est le
+  // répertoire de son script, et ce dépôt refuse délibérément de servir `Service-Worker-Allowed`.
+  const ouvrier = application.sources.find(({ vers }) =>
+    vers.endsWith("service-worker-du-cadre.mjs"),
+  );
+  assert.equal(
+    ouvrier.vers,
+    "service-worker-du-cadre.mjs",
+    "un Service Worker rangé dans un sous-répertoire n'intercepte que ce sous-répertoire",
+  );
   assert.ok(
     application.placeTenante.contenu.includes("place tenante"),
     "le document de l'origine applicative doit se déclarer comme place tenante",
