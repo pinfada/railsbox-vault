@@ -62,9 +62,23 @@ async function mesurerDansLeMoteur(appels) {
     "aes-ctr-512": await mesurer(() =>
       crypto.subtle.encrypt({ name: "AES-CTR", counter: bloc, length: 32 }, cleCtr, clair512),
     ),
-    // Les trois formes suivantes reproduisent, une différence à la fois, ce que le banc fait
-    // réellement. Sous WebKit, le banc rend 15,5 ms par appel là où la première forme en rend une
-    // centaine de microsecondes : l'écart doit être imputé à quelque chose, et le voici cherché.
+    // Les formes suivantes reproduisent, UNE DIFFÉRENCE À LA FOIS, ce que le banc faisait. La
+    // première rédaction de ce fichier comparait la promesse rendue telle quelle à une enveloppe
+    // `async` QUI LISAIT le résultat : deux variables changeaient ensemble, et elle en a conclu que
+    // WebKit payait la lecture des octets. La revue de la PR #202 a isolé la bonne : c'est
+    // l'enveloppe, pas la lecture. La forme « enveloppe sans rien lire » est ici pour que la
+    // conclusion soit portée par la mesure et non par la rédaction.
+    "aes-ctr-16-enveloppe-sans-lecture": await mesurer(async () => {
+      const sortie = await crypto.subtle.encrypt(
+        { name: "AES-CTR", counter: bloc, length: 32 },
+        cleCtr,
+        zero16,
+      );
+      return sortie === null;
+    }),
+    "aes-ctr-16-sans-crypto": await mesurer(async () => {
+      await Promise.resolve();
+    }),
     "aes-ctr-16-compteur-variable": await mesurer(
       (() => {
         let tour = 0;
@@ -97,7 +111,23 @@ async function mesurerDansLeMoteur(appels) {
       );
       return new DataView(sortie).getUint8(0);
     }),
-    "aes-ctr-16-par-39": await mesurer(async () => {
+    // Les 39 blocs d'un secteur, sous trois écritures. La différence entre les deux premières est
+    // l'enveloppe `async` interne ; entre la deuxième et la troisième, l'émission en vague.
+    "39-blocs-enveloppe-interne": await mesurer(async () => {
+      const chiffrer = async (compteur) => {
+        const sortie = await crypto.subtle.encrypt(
+          { name: "AES-CTR", counter: compteur, length: 32 },
+          cleCtr,
+          zero16,
+        );
+        return new Uint8Array(sortie);
+      };
+      for (let rang = 0; rang < 39; rang += 1) {
+        bloc[0] = rang & 0xff;
+        await chiffrer(bloc);
+      }
+    }, 10),
+    "39-blocs-promesse-brute": await mesurer(async () => {
       for (let rang = 0; rang < 39; rang += 1) {
         bloc[0] = rang & 0xff;
         const sortie = await crypto.subtle.encrypt(
@@ -105,9 +135,23 @@ async function mesurerDansLeMoteur(appels) {
           cleCtr,
           zero16,
         );
-        if (sortie.byteLength !== 16) throw new Error("sortie inattendue");
+        if (new Uint8Array(sortie).length !== 16) throw new Error("sortie inattendue");
       }
-    }, 20),
+    }, 10),
+    "39-blocs-une-vague": await mesurer(async () => {
+      const compteurs = [];
+      for (let rang = 0; rang < 39; rang += 1) {
+        const compteur = new Uint8Array(16);
+        compteur[0] = rang & 0xff;
+        compteurs.push(compteur);
+      }
+      const sorties = await Promise.all(
+        compteurs.map((compteur) =>
+          crypto.subtle.encrypt({ name: "AES-CTR", counter: compteur, length: 32 }, cleCtr, zero16),
+        ),
+      );
+      if (sorties.map((s) => new Uint8Array(s)).length !== 39) throw new Error("sortie inattendue");
+    }, 10),
   };
 }
 

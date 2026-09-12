@@ -97,6 +97,15 @@ async function principal() {
 
   comptees += await verifierImplementation("composition WebCrypto", compose, vecteurs, echecs);
 
+  // L'émission en VAGUES ne doit pas changer un octet : les blocs d'une même suite sont
+  // indépendants. C'est ce qui autorise à publier son gain comme un gain d'écriture et non comme
+  // une variante d'algorithme (revue de la PR #202, HIGH 2).
+  const enVagues = {
+    sceller: (cle, nonce, clair, aad) => compose.sceller(cle, nonce, clair, aad, { vagues: true }),
+    ouvrir: (cle, nonce, scelle, aad) => compose.ouvrir(cle, nonce, scelle, aad, { vagues: true }),
+  };
+  comptees += await verifierImplementation("composition en vagues", enVagues, vecteurs, echecs);
+
   const candidate = await chargerCandidate();
   if (candidate.disponible) {
     comptees += await verifierImplementation(
