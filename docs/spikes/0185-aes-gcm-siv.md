@@ -32,7 +32,7 @@ un **verdict écrit**.
 | Node       | v24.14.0                                                                                                                                                       |
 | Playwright | 1.62.1                                                                                                                                                         |
 | Moteurs    | Chromium 151.0.7922.34, Firefox 153.0, WebKit 26.5 (révisions Playwright)                                                                                      |
-| Forme      | secteur de 512 octets, nonce de 12 octets, données associées de 112, AES-256                                                                                   |
+| Forme      | secteur de 512 octets, nonce de 12 octets, données associées de **118** — largeur réelle d'un secteur v4 —, AES-256                                            |
 | Protocole  | neuf blocs chronométrés par série ; lot calibré par série pour qu'un bloc dure ≥ 150 ms ; un lot entier jeté d'abord ; médiane des neuf valeurs par scellement |
 
 Le protocole est celui de `tools/mesurer-scellement.mjs`, dont sortent les chiffres publiés par
@@ -43,11 +43,11 @@ milliers de pour cent — elle mesurait l'ordonnanceur.
 Cette machine n'est **pas** l'environnement de référence de
 [`quality-attributes.md`](../quality-attributes.md). Le relevé porte en outre une réserve qui doit
 être écrite avant les chiffres et non après : **trois autres chantiers du dépôt occupaient la
-machine** pendant toute la séance, à une charge processeur qui est passée de 23 % à 99 % selon le
-moment. Le banc a donc été joué trois fois ; le § 2.5 donne les trois et dit lequel est publié et
-pourquoi. Tout ce que ce document conclut repose sur des **rapports mesurés dans le même processus,
-sur les mêmes octets, à la suite** — la règle que `quality-attributes.md` s'est déjà donnée pour la
-migration v3 → v4 : « le RAPPORT est le chiffre à retenir, pas la seconde ».
+machine** pendant toute la séance, à une charge processeur allant de 11 % à 99 % selon le moment. Le
+banc a donc été joué huit fois ; le § 2.6 donne la dispersion des trois exécutions publiées. Tout ce
+que ce document conclut repose sur des **rapports mesurés dans le même processus, sur les mêmes
+octets, à la suite** — la règle que `quality-attributes.md` s'est déjà donnée pour la migration v3 →
+v4 : « le RAPPORT est le chiffre à retenir, pas la seconde ».
 
 ## Commandes
 
@@ -58,11 +58,20 @@ npx playwright test --config playwright.compat.config.mjs tests/compat/gcm-siv-p
 # 2. La candidate : récupérée, confrontée à son manifeste, déposée hors du dépôt versionné.
 node tools/spike-gcm-siv/preparer-candidate.mjs
 
-# 3. Correction : les vecteurs de la RFC 8452, sur les deux implémentations.
+# 3. Correction : les vecteurs de la RFC 8452, sur les trois implémentations.
 node tools/spike-gcm-siv/verifier.mjs
 
-# 4. Coût, sur les trois moteurs — puis le banc Node de contrôle.
-npx playwright test --config tools/spike-gcm-siv/playwright.spike.config.mjs
+# 4. Ce que la voie composée CONSERVE : la clé de domaine ne quitte pas CryptoKey.
+node tools/spike-gcm-siv/epreuve-cle-non-extractible.mjs
+
+# 5. Coût, sur les trois moteurs. Les variables SONT la cadence du relevé publié ; sans elles le
+#    banc tourne à sept blocs de 60 ms, ce qui suffit aux rapports mais pas à la précision annoncée.
+VAULT_SPIKE_ESSAIS=9 VAULT_SPIKE_CIBLE_MS=150 npx playwright test --config tools/spike-gcm-siv/playwright.spike.config.mjs
+
+# 6. Ce qu'un appel à crypto.subtle coûte, forme par forme, et les 39 blocs sous trois écritures.
+node tools/spike-gcm-siv/cout-par-appel.mjs
+
+# 7. Le banc Node de contrôle.
 node tools/spike-gcm-siv/banc-node.mjs
 ```
 
@@ -107,10 +116,26 @@ AES-ECB obtenu d'AES-CTR — un bloc de clair nul sous le compteur `B` rend `E_K
 
 `node tools/spike-gcm-siv/verifier.mjs` la rejoue sur les **vingt-six vecteurs AES-256 de la RFC
 8452** (annexes C.2 et C.3, débordement de compteur compris), dans les deux sens, chacun avec son
-témoin négatif — une étiquette abîmée d'un bit doit être refusée. **157 vérifications, aucun
-échec**, et la composition rend octet pour octet ce que rend la candidate tierce, indépendamment.
-Une mesure de coût prise sur une implémentation fausse ne mesurerait rien : c'est la barrière du
-banc, pas son décor.
+témoin négatif — une étiquette abîmée d'un bit doit être refusée. **235 vérifications, aucun échec**
+sur trois implémentations : la composition à la file, la même **en vagues** — qui doit rendre
+exactement les mêmes octets —, et la candidate tierce, écrite indépendamment. Une mesure de coût
+prise sur une implémentation fausse ne mesurerait rien : c'est la barrière du banc, pas son décor.
+
+La multiplication de corps fini de `polyval.mjs` a été **remplacée** après la revue de la PR #202 :
+la première rédaction reconstruisait `H · x^i` pas à pas à chaque produit, en allouant cent
+vingt-huit tableaux, et coûtait à elle seule plus de deux fois le plancher d'appels qu'elle
+accompagnait — le document la désavouait lui-même comme « écrite pour être relue et non pour courir
+», et le verdict s'appuyait pourtant sur elle. La forme actuelle précalcule les cent vingt-huit
+multiples **une fois par message** — dans SIV la clé POLYVAL est dérivée à chaque nonce —, ne fait
+plus aucune allocation, et rend les mêmes octets sur les mêmes vecteurs. Elle passe de 440 µs à 3,5
+µs par secteur sous Chromium.
+
+**Et elle n'ajoute aucune surface de temporisation**, ce qui n'allait pas de soi : la table est
+indexée par la POSITION du bit, de 0 à 127, et parcourue dans un ordre fixe ; ce qui dépend du
+secret reste le OU-exclusif conditionnel, exactement comme dans la version bit à bit. La forme
+classique dite de Shoup, indexée par un QUARTET de l'opérande, irait plus vite encore et ajouterait,
+elle, une dépendance d'adresse au secret. Le spike s'en abstient, et le facteur cent vingt-cinq est
+obtenu sans cet arbitrage.
 
 ### 2.2 Ce qui rend cette voie chère, et ce n'est pas AES
 
@@ -121,7 +146,9 @@ incrémentent leurs **quatre premiers octets en petit-boutiste**, tandis qu'AES-
 incrémente ses **derniers bits en gros-boutiste**. Aucune des deux suites ne se replie donc sur un
 appel unique. Le compte, pour un secteur de 512 octets sous une clé de 256 bits : six blocs de
 dérivation, un import de la clé de chiffrement du message, un bloc d'étiquette, trente-deux blocs de
-flot.
+flot. La revue de la PR #202 a cherché à le réfuter et ne l'a pas pu : aucune valeur de `length`,
+aucun usage d'AES-CBC à IV nul — qui chaîne, donc sérialise — ni aucun `deriveBits` — qui est HMAC,
+pas AES — ne groupe des blocs ECB arbitraires en un appel.
 
 C'est exactement le mécanisme que `quality-attributes.md` a déjà nommé une fois : « le chiffre qui
 décide n'est pas le débit d'AES, c'est le coût par APPEL » — un facteur 32,5 entre 8 192 appels et
@@ -132,140 +159,189 @@ replierait, elle, sur deux appels. Elle ne serait pas AES-GCM-SIV, et inventer u
 tout périmètre que ce dépôt puisse s'accorder. La remarque est ici pour qu'on n'ait pas à la
 redécouvrir.
 
-### 2.3 Les mesures
+### 2.3 Ce que le nombre d'appels NE dit pas : deux corrections d'écriture, mesurées
 
-Six séries, dans le même processus, sur les mêmes octets, à la suite. Les deux du milieu
-**décomposent** la voie composée, pour que le verdict ne dépende pas de la qualité de notre
-multiplication de corps fini : `plancher-appels-subtle` ne fait que les trente-neuf chiffrements de
-bloc, sans POLYVAL ; `polyval-seul` ne fait que POLYVAL, sur la même matière.
+Deux propriétés du banc — et non de la voie composée — pesaient plus lourd que la voie elle-même
+dans une première rédaction de ce document. La revue de la PR #202 les a isolées, et
+`node tools/spike-gcm-siv/cout-par-appel.mjs` les mesure désormais **une variable à la fois**, 300
+appels par forme.
 
-Relevé du **2026-09-12**, neuf blocs par série, lot calibré pour que chaque bloc dure au moins 150
-ms. Microsecondes par scellement d'un secteur de 512 octets.
+**Première : sous WebKit, une enveloppe `async` autour d'un appel coûte un tour de reprise
+complet.** Ce que la première rédaction attribuait à « la matérialisation des octets » était faux,
+et la forme décisive est celle qui n'en lit aucun :
 
-| Série                                        | Chromium |  Firefox |      WebKit | Ce qu'elle mesure                                      |
-| -------------------------------------------- | -------: | -------: | ----------: | ------------------------------------------------------ |
-| `aes-gcm-webcrypto` — ce que le produit fait |  **7,9** | **65,8** |   **138,7** | un appel, clé importée une fois                        |
-| `gcm-siv-compose-webcrypto`                  |  1 041,9 |  3 950,0 | **598 000** | la voie sans dépendance, entière                       |
-| `plancher-appels-subtle`                     |    236,3 |  2 689,7 |     599 000 | ses 39 chiffrements de bloc, sans POLYVAL              |
-| `polyval-seul`                               |    460,6 |    666,7 |       316,7 | notre POLYVAL, écrit pour être relu et non pour courir |
-| `gcm-siv-candidate`                          | **64,9** | **64,1** |    **43,6** | `@noble/ciphers`, AES-GCM-SIV logiciel                 |
-| `aes-gcm-candidate`                          |     73,2 |     54,4 |        52,8 | la même bibliothèque, en AES-GCM                       |
+| Forme de l'appel, AES-CTR sur un bloc de 16 octets | Chromium |  Firefox |        WebKit |
+| -------------------------------------------------- | -------: | -------: | ------------: |
+| promesse rendue telle quelle, résultat **jeté**    |   3,7 µs |  53,3 µs |    **120 µs** |
+| enveloppe `async`, **rien de lu**                  |   3,7 µs |  66,7 µs | **15 393 µs** |
+| enveloppe `async`, copie par `new Uint8Array`      |   3,7 µs |  73,3 µs |     15 217 µs |
+| enveloppe `async`, lecture par `DataView`          |   3,7 µs | 193,3 µs |     15 230 µs |
+| aucune cryptographie : `await Promise.resolve()`   |   0,3 µs |   6,7 µs |        6,7 µs |
+
+**La deuxième ligne ne lit rien et coûte ce que coûte la troisième.** Les 15,3 ms ne sont pas le
+prix des octets : c'est le prix d'un tour de reprise après une promesse résolue depuis le fil de
+cryptographie de WebKit, de l'ordre du tic d'horloge de Windows. Le module du spike enveloppait
+chacun de ses trente-neuf appels ; il ne le fait plus.
+
+**Seconde : les blocs d'une même suite sont indépendants, et les émettre en une vague retire des
+tours d'attente sans changer un octet.** Les octets identiques sont vérifiés par `verifier.mjs`, qui
+rejoue les vingt-six vecteurs sur la variante en vagues.
+
+| Les 39 blocs d'un secteur            | Chromium |  Firefox |     WebKit |
+| ------------------------------------ | -------: | -------: | ---------: |
+| enveloppe `async` interne, à la file |   310 µs | 2 700 µs | 601 100 µs |
+| promesse brute, à la file            |   130 µs | 2 500 µs |  16 000 µs |
+| une seule vague                      |   150 µs |   300 µs |  15 100 µs |
+
+Ce que cela corrige dans le verdict : la phrase « ce coût-là est inévitable » est **retirée**, et la
+phrase « aucun effort d'implémentation ne peut déplacer ce plancher » est **restreinte à Chromium**,
+où elle reste vraie — le gain de la vague y est nul parce que le coût y est du calcul, pas de
+l'attente. Sous Firefox la vague gagne un facteur 8 sur les trente-neuf blocs nus — et 3,8 sur la
+voie composée entière (§ 2.4), qui ne groupe que ses deux suites indépendantes ; sous WebKit, le
+passage à la promesse brute en gagne 38, et la vague n'ajoute plus rien après lui.
+
+**Et Chromium reste le moteur qui décide**, pour une raison qui n'est pas la vitesse : c'est, avec
+Firefox, l'un des deux moteurs dont OPFS est `supported` (`compatibility.md`), et le seul sur lequel
+les scénarios de bout en bout du dépôt s'exécutent. WebKit y est `refusé (OPFS absent)` : ses
+chiffres décrivent l'ordonnanceur de WebKit sous Playwright et Windows, pas un chemin que le produit
+emprunterait.
+
+### 2.4 Les mesures
+
+Huit séries, dans le même processus, sur les mêmes octets, à la suite. Les deux du milieu
+**décomposent** la voie composée ; les deux variantes « vagues » mesurent ce que l'émission groupée
+retire.
+
+Médiane de **trois exécutions** du 12 septembre 2026, en microsecondes par scellement d'un secteur
+de 512 octets. Chaque exécution : neuf blocs chronométrés par série, lot calibré pour qu'un bloc
+dure au moins 150 ms, un lot entier jeté avant de chronométrer.
+
+| Série                                        | Chromium |  Firefox |    WebKit | Ce qu'elle mesure                                   |
+| -------------------------------------------- | -------: | -------: | --------: | --------------------------------------------------- |
+| `aes-gcm-webcrypto` — ce que le produit fait |  **4,8** | **56,6** | **102,0** | un appel, clé importée une fois                     |
+| `gcm-siv-compose-webcrypto`                  |    252,3 |  3 073,5 |    31 400 | la voie sans dépendance, à la file                  |
+| `gcm-siv-compose-vagues`                     |    279,8 |    803,8 |    30 833 | la même, suites indépendantes groupées              |
+| `plancher-appels-subtle`                     |    212,8 |  1 880,0 |    15 667 | 39 des 40 appels, sans POLYVAL ni import de message |
+| `plancher-appels-vagues`                     |    205,0 |    607,7 |    15 357 | les mêmes 39, en une vague                          |
+| `polyval-seul`                               |  **3,5** |     27,6 |       2,4 | notre POLYVAL, après correction                     |
+| `gcm-siv-candidate`                          | **44,1** |  1 062,5 |      63,5 | `@noble/ciphers`, AES-GCM-SIV logiciel              |
+| `aes-gcm-candidate`                          |     40,6 |  1 016,0 |      48,0 | la même bibliothèque, en AES-GCM                    |
 
 Rapports bruts : `reports/spike-gcm-siv/banc-<moteur>.json`, cadence et lot calibré compris.
 
-**Les rapports, qui sont ce que ce relevé établit :**
+| Rapport au `aes-gcm-webcrypto` du même moteur |   Chromium |    Firefox | WebKit |
+| --------------------------------------------- | ---------: | ---------: | -----: |
+| voie composée, à la file                      |   **× 53** |       × 54 |  × 308 |
+| son plancher d'appels seul                    |       × 44 |       × 33 |  × 154 |
+| gain de l'émission en vagues                  | **× 0,90** | **× 3,82** | × 1,02 |
+| candidate logicielle                          |  **× 9,2** |     × 18,8 | × 0,62 |
 
-| Rapport au `aes-gcm-webcrypto` du même moteur |  Chromium |    Firefox |      WebKit |
-| --------------------------------------------- | --------: | ---------: | ----------: |
-| voie composée sur WebCrypto                   | **× 132** |   **× 60** | **× 4 311** |
-| son plancher d'appels seul                    |      × 30 |       × 41 |     × 4 318 |
-| candidate logicielle                          | **× 8,2** | **× 0,97** |  **× 0,31** |
+**Quatre lectures.**
 
-**Quatre lectures, dans l'ordre de ce qu'elles coûtent au dépôt.**
-
-1. **La voie sans dépendance est fermée par son plancher, pas par notre POLYVAL.** Sous Chromium,
-   les trente-neuf chiffrements de bloc coûtent à eux seuls **trente fois** un AES-GCM entier. Une
-   multiplication de corps fini idéale — tables précalculées, zéro allocation — ferait disparaître
-   les 460 µs de `polyval-seul`, et laisserait quand même un facteur trente. Le plancher est imposé
-   par la RFC (§ 2.2), pas par notre écriture : c'est la seule ligne de ce tableau qu'aucun effort
-   d'implémentation ne peut déplacer.
+1. **La voie sans dépendance coûte de 43 à 56 fois le scellement natif sous Chromium** — c'est
+   l'étendue des trois exécutions ; la médiane vaut × 53. La revue de la PR #202, sur la même
+   machine avec une autre multiplication de corps fini, avait mesuré × 39 à × 63 : les deux
+   fourchettes se recouvrent. **Le plancher des appels en porte × 44 à lui seul** : c'est la part
+   qu'aucune écriture ne déplace sur ce moteur-là, et la correction de POLYVAL — de 440 µs à 3,5 µs
+   — l'a rendue visible.
 2. **SIV ne coûte presque rien de plus que GCM, dans la même implémentation.** Les deux dernières
    lignes portent la même bibliothèque, le même AES logiciel, la même matière : sur les trois
-   relevés pris ce jour-là, le rapport `gcm-siv-candidate / aes-gcm-candidate` s'est tenu entre
-   **0,89 et 1,35**, médiane ≈ 1,15. Les deux passages de SIV sur le clair et sa dérivation par
-   message coûtent **de l'ordre de dix à vingt pour cent**. Ce n'est pas SIV qui est cher.
-3. **Ce qui est cher, c'est de quitter WebCrypto — et cela dépend entièrement du moteur.** Sous
-   Chromium, dont le `crypto.subtle` est de loin le plus rapide des trois, la candidate coûte huit
-   fois l'appel natif. Sous Firefox et WebKit, elle est **au niveau ou au-dessous** : leurs appels à
-   `crypto.subtle` sont si chers qu'un AES logiciel les rattrape. Le moteur qui décide est Chromium
-   — c'est lui que `quality-attributes.md` mesure —, et c'est donc un facteur huit qu'il faudrait
-   accepter, pas un facteur un.
-4. **WebKit : 598 ms par secteur, et la cause n'est pas AES.**
-   `node tools/spike-gcm-siv/cout-par-appel.mjs` l'isole, et le résultat mérite d'être écrit parce
-   qu'il n'était pas prévisible.
+   exécutions, le rapport `gcm-siv-candidate / aes-gcm-candidate` s'est tenu entre **0,96 et 1,10**
+   sous Chromium. Les deux passages de SIV sur le clair et sa dérivation par message ne coûtent
+   presque rien. **Ce n'est pas SIV qui est cher.**
+3. **Ce qui est cher, c'est de quitter WebCrypto, et cela dépend entièrement du moteur.** Sous
+   Chromium — le moteur qui décide — la candidate coûte neuf fois l'appel natif. Sous WebKit elle
+   est plus rapide que lui. Le facteur qu'il faudrait accepter est donc celui de Chromium, pas le
+   plus favorable des trois.
+4. **Une série n'a pas pu être stabilisée, et il faut le dire plutôt que choisir** : la candidate
+   sous **Firefox**. Sur cinq exécutions de la journée elle a rendu 64, 111, 952, 1 063 et 1 325 µs
+   — un facteur vingt —, avec une étendue interne de 10 à 29 % à chaque fois. Aucune de nos
+   variables ne l'explique : la largeur des données associées ne change rien sous Node (32 à 51 µs
+   de 0 à 128 octets), et le plafond de lot n'y touche pas. Le tableau porte la médiane des trois
+   dernières exécutions ; le verdict ne s'appuie sur aucune d'elles, puisqu'il s'appuie sur
+   Chromium.
 
-| Sous WebKit 26.5, un appel `AES-CTR` sur un bloc de 16 octets | Coût            |
-| ------------------------------------------------------------- | --------------- |
-| résultat **jeté**                                             | **83,3 µs**     |
-| résultat lu par `new Uint8Array(sortie)`                      | **15 316,7 µs** |
-| résultat lu par `new DataView(sortie).getUint8(0)`            | **15 253,3 µs** |
-
-Ce n'est donc ni le constructeur de vue ni AES : c'est le fait de **matérialiser les octets** du
-résultat, que WebKit paie quinze millisecondes. Trente-neuf blocs lus font les 598 ms mesurées. La
-voie composée doit lire chaque bloc de flot ; ce coût-là lui est **inévitable**. Les deux autres
-moteurs ne montrent rien de tel (Chromium : 3,7 µs jeté, 4,7 µs lu). WebKit reste par ailleurs
-`refusé (OPFS absent)` dans la matrice : ce relevé ne change aucun statut, il explique un chiffre.
-
-### 2.4 Projection sur les budgets du dépôt
+### 2.5 Projection sur les budgets du dépôt
 
 Aucun de ces chiffres n'est un budget, et la règle de #16 s'applique telle quelle : « un seuil posé
-sans mesure opposable serait une promesse, pas un budget ». Ce sont des projections d'un coût par
-secteur mesuré, multiplié par des nombres de secteurs que le dépôt connaît. Elles emploient les
-valeurs **Chromium** du relevé ci-dessus.
+sans mesure opposable serait une promesse, pas un budget ». Deux projections sont publiées, parce
+qu'elles ne disent pas la même chose et que **le verdict ne dépend d'aucune des deux**.
 
-**Un volume applicatif de 512 Mio, soit 1 048 576 secteurs**, et le SURCOÛT que SIV ajoute au
-scellement de chacun :
+**Ce que la machine du relevé donne**, directement, à partir de ses microsecondes. Une génération au
+plafond de charge de 16 Mio — le plafond vient de
+[#91](https://github.com/pinfada/railsbox-vault/issues/91) — porte au plus 32 768 enregistrements de
+512 octets ; la reprise les ouvre et le point de contrôle rescelle secteur par secteur (§ 7.2), soit
+**65 536 opérations AEAD** en prenant le coût de scellement pour les deux. Les 17,1 s de p95 au pire
+cas qui servent de base sont, elles, le relevé v4 de `quality-attributes.md` — deux sources
+distinctes, et une première rédaction les attribuait toutes deux à #91.
 
-| Voie                              | Surcoût par secteur | Sur un volume de 512 Mio | À la migration (deux appels par secteur) |
-| --------------------------------- | ------------------: | -----------------------: | ---------------------------------------: |
-| composée sur WebCrypto            |         +1 034,0 µs |   **+ 18 min** (1 084 s) |                   **+ 36 min** (2 168 s) |
-| son plancher seul (POLYVAL idéal) |           +228,4 µs |      **+ 4 min** (239 s) |                      **+ 8 min** (479 s) |
-| candidate logicielle              |            +57,0 µs |      **+ 60 s** (59,8 s) |                      **+ 120 s** (120 s) |
+| Voie                              | Part cryptographique | Reprise projetée (17,1 s − part actuelle + part projetée) | Budget 60 s |
+| --------------------------------- | -------------------: | --------------------------------------------------------: | ----------- |
+| aujourd'hui, AES-GCM de WebCrypto |            **0,3 s** |                                                    17,1 s | tenu        |
+| voie composée, à la file          |           **16,5 s** |                                                **33,3 s** | **tenu**    |
+| son plancher d'appels             |               13,9 s |                                                    30,7 s | tenu        |
+| candidate logicielle              |                2,9 s |                                                    19,7 s | tenu        |
 
-Pour mémoire, le dépôt mesure aujourd'hui 19,1 s pour le scellement initial d'un volume de 512 Mio
-sur OPFS réel, et la migration v3 → v4 coûte 1,89 fois le scellement initial du même volume.
+**Ce que l'environnement de RÉFÉRENCE donnerait**, projeté par rapports comme le § 2.6 s'en donne la
+règle. C'est une **projection et non une mesure** : aucun relevé de ce spike n'y a été pris. La base
+est le seul chiffre de scellement que le dépôt y publie — 19,1 s pour 1 048 576 secteurs
+(`quality-attributes.md`), soit **18,2 µs par scellement**, un facteur **2,3** au-dessus des 7,9 µs
+que cette machine rendait au relevé précédent et **3,8** au-dessus des 4,8 µs d'aujourd'hui.
 
-**Le budget de reprise, et c'est lui qui tranche pour la voie composée.** Le budget est « dernière
-génération valide trouvée en ≤ 60 s hors temps de boot VM », et il est tenu aujourd'hui à **17,1 s
-de p95 au pire cas** (#91), au plafond de charge de 16 Mio. Une génération à ce plafond porte au
-plus 32 768 enregistrements de 512 octets ; la reprise les OUVRE, et le point de contrôle RESCELLE
-secteur par secteur (§ 7.2) — **65 536 opérations AEAD**, en prenant le coût de scellement pour les
-deux, ce qui surestime légèrement les deux colonnes de la même façon.
+| Voie                     | Part cryptographique projetée | Reprise projetée | Budget 60 s |
+| ------------------------ | ----------------------------: | ---------------: | ----------- |
+| aujourd'hui              |                     **1,2 s** |           17,1 s | tenu        |
+| voie composée, à la file |                 **51 à 67 s** |    **67 à 83 s** | **dépassé** |
+| candidate logicielle     |                        11,0 s |           26,9 s | tenu        |
 
-| Voie                              | Part cryptographique de la reprise | Reprise projetée (17,1 s − part actuelle + part projetée) | Budget 60 s |
-| --------------------------------- | ---------------------------------: | --------------------------------------------------------: | ----------- |
-| aujourd'hui, AES-GCM de WebCrypto |                          **0,5 s** |                                                    17,1 s | tenu        |
-| composée sur WebCrypto            |                         **68,3 s** |                                                **84,9 s** | **dépassé** |
-| son plancher seul                 |                             15,5 s |                                                    32,1 s | tenu        |
-| candidate logicielle              |                              4,3 s |                                                    20,9 s | tenu        |
+**Les deux projections ne s'accordent pas, et le spike ne tranche pas entre elles.** Selon que l'on
+projette avec les microsecondes de la machine du banc ou avec le rapport appliqué au coût de
+scellement de l'environnement de référence, la voie composée tient largement ou dépasse. Une
+première rédaction de ce document écrivait « fermée par le budget de reprise » ; c'était choisir la
+projection défavorable et une multiplication de corps fini que le document désavouait lui-même. Ce
+que le banc établit et qui ne dépend d'aucune projection est **le facteur : × 43 à × 56 par
+scellement sous Chromium**, et il s'applique à chaque scellement du produit — création, rescellement
+de point de contrôle, migration, export.
 
-**La voie sans dépendance dépasse le budget de reprise, et elle le dépasse dans les trois relevés
-pris ce jour-là** — la part cryptographique projetée y vaut 45,3 s, 68,3 s et 152,5 s selon la
-charge de la machine, contre 42,9 s de marge disponible. C'est la seule conclusion de coût que ce
-spike tire, et elle ne porte que sur cette voie-là : **la candidate, elle, reste largement dans le
-budget**.
+**Sur un volume applicatif de 512 Mio, soit 1 048 576 secteurs**, projeté par rapports depuis les
+18,2 µs de l'environnement de référence :
 
-### 2.5 Ce que la charge de la machine a fait, et pourquoi c'est écrit
+| Voie                 | Surcoût par secteur | Sur un volume de 512 Mio | À la migration (deux appels par secteur) |
+| -------------------- | ------------------: | -----------------------: | ---------------------------------------: |
+| composée, à la file  |             +946 µs |   **+ 16,5 min** (992 s) |                   **+ 33 min** (1 984 s) |
+| candidate logicielle |             +149 µs |    **+ 2,6 min** (156 s) |                    **+ 5,2 min** (313 s) |
 
-Le banc a été joué **trois fois** sur les trois moteurs, à des charges de machine différentes — de
-23 % à 59 % de processeur, trois autres chantiers du dépôt tournant à côté. Ce que cela donne mérite
-d'être publié, parce que c'est la raison pour laquelle ce document conclut sur des rapports et non
-sur des secondes :
+Pour mémoire, le dépôt mesure 19,1 s pour le scellement initial d'un volume de 512 Mio sur OPFS
+réel, et la migration v3 → v4 coûte 1,89 fois le scellement initial du même volume.
 
-| Grandeur, sous Chromium     |  Relevé 1 |   Relevé 2 | Relevé 3 (publié) |
-| --------------------------- | --------: | ---------: | ----------------: |
-| `aes-gcm-webcrypto`         |    4,6 µs |    16,5 µs |            7,9 µs |
-| `gcm-siv-compose-webcrypto` |  691,5 µs | 2 327,3 µs |        1 041,9 µs |
-| **rapport entre les deux**  | **× 150** |  **× 141** |         **× 132** |
-| plancher d'appels / natif   |      × 34 |       × 35 |              × 30 |
-| candidate / natif           |     × 8,9 |      × 9,9 |             × 8,2 |
+### 2.6 Ce que la charge de la machine a fait, et pourquoi c'est écrit
 
-**Les valeurs absolues varient d'un facteur trois et demi ; les rapports varient de dix pour cent.**
-C'est la même leçon que `quality-attributes.md` a tirée de ses deux exécutions de migration à
-quarante pour cent d'écart, et c'est pourquoi le § 2.4 projette à partir des rapports.
+Le banc a été joué **huit fois** au long de la journée, à des charges de machine allant de 11 % à 99
+% — trois autres chantiers du dépôt tournaient à côté. Les trois dernières exécutions, celles que le
+§ 2.4 publie, sont postérieures aux corrections et ont été prises à charge modérée.
 
-Le relevé publié est le troisième, et non le plus favorable : c'est le seul dont **l'ordre des
-séries est cohérent sur les trois moteurs** — le plancher d'appels y est partout moins cher que la
-voie composée qui l'englobe. Les deux premiers rendaient, sous Firefox, un plancher PLUS cher que la
-voie complète, ce qui est impossible : c'était le compilateur de Firefox qui n'était pas chaud. Le
-banc exécute depuis un lot entier jeté avant de chronométrer, et l'inversion a disparu.
+| Grandeur, sous Chromium     | Exécution 1 | Exécution 2 | Exécution 3 |
+| --------------------------- | ----------: | ----------: | ----------: |
+| `aes-gcm-webcrypto`         |      4,8 µs |      5,2 µs |      4,5 µs |
+| `gcm-siv-compose-webcrypto` |    255,7 µs |    224,1 µs |    252,3 µs |
+| **rapport entre les deux**  |    **× 53** |    **× 43** |    **× 56** |
+| plancher d'appels / natif   |        × 44 |        × 41 |        × 51 |
+| candidate / natif           |       × 9,2 |       × 8,3 |      × 10,0 |
 
-Une dernière réserve, qui ne se corrige pas : `performance.now` a une résolution de 100 µs sous
-Chromium et de **1 ms** sous Firefox comme sous WebKit (mesurée,
-`reports/spike-gcm-siv/cout-par-appel.json`). Le lot de chaque série est calibré pour qu'un bloc
-chronométré dure au moins 150 ms, ce qui met la quantification au-dessous de un pour cent — mais une
-première rédaction de ce banc, à lot fixe, publiait des valeurs qui n'étaient que des multiples de
-la résolution divisés par le lot. Elles avaient l'air précises.
+Les rapports tiennent en dix pour cent ; c'est sur eux que ce document conclut, et c'est la même
+règle que `quality-attributes.md` s'est donnée pour la migration v3 → v4 : « le RAPPORT est le
+chiffre à retenir, pas la seconde ».
+
+**Le protocole publié est celui que la commande publiée exécute**, et il a fallu le corriger : une
+première rédaction annonçait neuf blocs de 150 ms quand le défaut du banc en posait sept de 60 ms,
+et promettait « une quantification au-dessous de un pour cent » que les blocs réellement
+chronométrés — 21 à 61 ms sous un `performance.now` d'une milliseconde — ne tenaient pas. Le §
+Commandes pose désormais les variables, et le plafond de lot a été relevé : sans lui, la série
+`polyval-seul`, tombée à 3,5 µs, le saturait et ne chronométrait plus que des blocs de 29 ms.
+
+`performance.now` a une résolution de 100 µs sous Chromium et de **1 ms** sous Firefox comme sous
+WebKit (mesurée, `reports/spike-gcm-siv/cout-par-appel.json`). À 150 ms par bloc, la quantification
+reste au-dessous de un pour cent sur les trois moteurs.
 
 ## 3. Ce que SIV apporte une fois les clés séparées
 
@@ -299,12 +375,13 @@ Sur 96 bits, `N` tirages entrent en collision avec une probabilité majorée par
 **2^-35** au budget retenu de 2^31, 2^-33 au plafond NIST de 2^32.
 
 **Le recul de racine ne réémet aucun nonce**, et c'est le premier point à écrire parce qu'il est
-contre-intuitif. Le § 9.1 dit que les compteurs reculent avec la racine
-([#144](https://github.com/pinfada/railsbox-vault/issues/144)) ; la première rédaction de l'ADR 0015
-dérivait le nonce de `(génération, rang)`, et un recul l'aurait alors réémis — une fermeture propre
-y suffisait, sans aucune panne. Ce n'est plus le cas depuis la réfutation par exécution rappelée au
-§ 4.2 : **douze octets de `crypto.getRandomValues`, stockés avec chaque objet, qui ne dérivent de
-rien**. `src/vm/format-chiffre/identite-logique.mjs` le tient et
+contre-intuitif. Ce sont les § 4.5 et § 4.2 de la spécification qui disent que les compteurs vivent
+dans la racine et reculent avec elle ([#144](https://github.com/pinfada/railsbox-vault/issues/144))
+— le § 9.1, lui, traite du retour arrière COMPLET du support, qui est autre chose ; la première
+rédaction de l'ADR 0015 dérivait le nonce de `(génération, rang)`, et un recul l'aurait alors réémis
+— une fermeture propre y suffisait, sans aucune panne. Ce n'est plus le cas depuis la réfutation par
+exécution rappelée au § 4.2 : **douze octets de `crypto.getRandomValues`, stockés avec chaque objet,
+qui ne dérivent de rien**. `src/vm/format-chiffre/identite-logique.mjs` le tient et
 `tests/unit/vm-source-de-nonce.test.mjs` garde la source. Un nonce **tiré** n'est pas rejoué par un
 recul ; un nonce **dérivé** l'aurait été, et c'est précisément la raison pour laquelle il ne l'est
 plus.
@@ -324,7 +401,7 @@ scellements par seconde et par Worker :
 | Borne `P` atteinte       | Invocations réelles `N` | Facteur d'excès `k` | Scellement ininterrompu | Octets scellés |
 | ------------------------ | ----------------------: | ------------------: | ----------------------: | -------------: |
 | 2^-35 — la borne publiée |                    2^31 |                   1 |                ≈ 10,7 h |      ≈ 1,0 Tio |
-| 2^-30                    |                  2^33,5 |               ≈ 5,7 |                 ≈ 2,4 j |      ≈ 5,7 Tio |
+| 2^-30                    |                  2^33,5 |               ≈ 5,7 |                ≈ 2,51 j |      ≈ 5,7 Tio |
 | 2^-20                    |                  2^38,5 |               ≈ 181 |                ≈ 80,4 j |      ≈ 181 Tio |
 | 2^-10                    |                  2^43,5 |             ≈ 5 793 |               ≈ 7,1 ans |      ≈ 5,7 Pio |
 
@@ -335,14 +412,21 @@ confortable. Un volume applicatif fait 512 Mio, soit 1 048 576 secteurs.
 ### 3.3 Ce que SIV apporterait, exactement
 
 - **La comptabilité cesserait d'être un nombre de sécurité.** C'est le seul apport de fond, et il
-  est réel. La RFC 8452 § 6 donne, pour des nonces tirés au hasard, **2^64 messages d'au plus 128
-  Kio par clé** à un avantage d'adversaire de 2^-32 — contre 2^31 messages aujourd'hui, soit 2^33
-  fois plus de marge. Le secteur du produit fait 512 octets : le budget deviendrait inatteignable
-  par construction, et la moitié restante de la question n° 4 — l'EMPLACEMENT du compteur, qui
-  recule avec la racine et qui « n'a pas de meilleur candidat dans un navigateur » — perdrait sa
-  conséquence.
+  est réel. La RFC 8452 **§ 9** — les considérations de sécurité, et non le § 6 qui définit
+  `AEAD_AES_256_GCM_SIV` — donne, pour des nonces tirés au hasard, **2^64 messages d'au plus 128 Kio
+  par clé** à un avantage d'adversaire de 2^-32, contre 2^31 messages aujourd'hui, soit 2^33 fois
+  plus de marge. Le secteur du produit fait 512 octets : le budget deviendrait inatteignable par
+  construction, et la moitié restante de la question n° 4 — l'EMPLACEMENT du compteur, qui recule
+  avec la racine et qui « n'a pas de meilleur candidat dans un navigateur » — perdrait sa
+  conséquence. **Cette borne vient avec une condition que le produit ne remplit pas**, et il faut la
+  citer avec elle : « this assumes a short additional authenticated data (AAD), i.e., less than 64
+  bytes ». Les données associées du produit valent **118 octets** pour un secteur de volume et
+  **128** pour un enregistrement de journal, soit le double. L'ordre de grandeur de l'apport ne
+  bouge pas — les bornes de la RFC décroissent avec la taille du MESSAGE, et sa ligne la plus
+  défavorable reste à 2^25 messages —, mais le chiffre ne peut pas être transporté hors de son
+  hypothèse sans le dire.
 - **Une collision de nonce cesserait d'être fatale.** Le dommage tomberait de « `C1 ⊕ C2 = P1 ⊕ P2`
-  et la clé `H` » à « deux clairs IDENTIQUES produisent deux chiffrés identiques » (RFC 8452 § 6).
+  et la clé `H` » à « deux clairs IDENTIQUES produisent deux chiffrés identiques » (RFC 8452 § 9).
   Sur un volume de secteurs, cette fuite d'égalité n'est pas nulle — deux secteurs égaux se
   reconnaîtraient — mais elle n'est pas du même ordre que la perte de `H`, qui ouvre la forgerie.
 
@@ -414,22 +498,43 @@ publié — celle dont l'ADR 0021 dit qu'elle est la vraie défense contre l'hé
 adopterait alors sa première dépendance sous un régime d'intégrité **strictement plus faible** que
 son unique précédent.
 
-**Second, et il est structurel : la clé cesserait d'être une `CryptoKey` non extractible.** C'est
-l'empêchement qui ne dépend pas du langage, et il vaut aussi pour une candidate WebAssembly.
+**Second : une implémentation LOGICIELLE COMPLÈTE a besoin des octets bruts de la clé — et la voie
+composée, elle, ne les demande PAS.**
+
+> Une première rédaction de ce paragraphe écrivait « tout AEAD hors WebCrypto exige les octets bruts
+> de la clé », et en faisait l'empêchement structurel du verdict. La revue de la PR #202 l'a
+> **réfuté par exécution**. La phrase était fausse, elle est retirée, et ce qui suit est ce que la
+> mesure soutient. Ce n'est pas un détail de formulation : le verdict ne repose plus dessus.
 
 Aujourd'hui, `src/vm/derivation/cle-de-domaine.mjs` appelle `crypto.subtle.deriveKey` et rend une
 `CryptoKey` AES-GCM **non extractible** ; la DEK est importée en matériau `HKDF` avec le seul usage
 `deriveKey`, si bien que « la DEK ne peut pas chiffrer » est un **GARANTI** au sens de l'ADR 0021
 décision 7 — tenu par la plate-forme, pas par une revue (ADR 0033 décision 6, ADR 0035). Le cliquet
-anti-DEK de l'ADR 0036 décision 5 lit les appels et nomme la matière de chaque clé importée ;
-dix-huit mutants, dix-huit tués.
+anti-DEK de l'ADR 0036 décision 5 lit les appels et nomme la matière de chaque clé importée.
 
-Une implémentation d'AEAD en JavaScript ou en WebAssembly a besoin des **octets bruts** de la clé.
-`deriveKey` deviendrait `deriveBits` ; les six clés de domaine deviendraient six `Uint8Array` dans
-le tas JavaScript ou dans la mémoire linéaire d'un module ; le cliquet perdrait la plate-forme qui
-le tenait et redeviendrait une discipline relue. **Adopter SIV aujourd'hui, c'est échanger un
-GARANTI contre un FAIT non garanti** — c'est-à-dire défaire, au sens exact du vocabulaire du dépôt,
-la propriété que la correction de #182 venait d'établir.
+**La voie composée conserve ce garanti intégralement**, et
+`node tools/spike-gcm-siv/epreuve-cle-non-extractible.mjs` l'exécute :
+
+```text
+✓ la DEK est un matériau HKDF, et rien d'autre       algorithme HKDF, extractable false, usages ["deriveKey"]
+✓ la clé de domaine du produit est une AES-GCM non extractible
+✓ deriveKey rend une clé AES-CTR NON extractible     extractable false, usages ["encrypt"]
+✓ exportKey sur la clé de domaine est REFUSÉ         InvalidAccessException : key is not extractable
+✓ AES-GCM-SIV scelle et rouvre sous cette CryptoKey  528 octets scellés, clair restitué à l'identique
+```
+
+Le seul argument de `deriveKey` qui change est le type de clé demandé — `AES-CTR` au lieu de
+`AES-GCM` —, et `gcm-siv-webcrypto.mjs` scelle dessus sans que les octets de la clé de domaine
+existent jamais. Ce qui existe en octets est la clé de chiffrement **par message**, que la RFC 8452
+§ 4 impose de dériver à chaque nonce : éphémère, jamais la clé de domaine. Le cliquet devrait
+apprendre à nommer une matière `AES-CTR` — une révision de son inventaire, pas l'abandon de la
+plate-forme qui le tient.
+
+**Ce qui exige les octets bruts est l'implémentation logicielle complète** — POLYVAL **et** AES en
+JavaScript ou en WebAssembly, c'est-à-dire la candidate. Pour elle, `deriveKey` deviendrait
+`deriveBits`, et **deux** clés de domaine — `volume` et `journal`, les seules que SIV intéresse (§
+3.1) — deviendraient des `Uint8Array` dans le tas ou dans la mémoire linéaire d'un module. Pour
+elle, et pour elle seule, l'échange d'un GARANTI contre un FAIT non garanti est réel.
 
 **Troisième, et il ne décide pas seul mais il compte** : la candidate emploie des **T-tables** pour
 AES, et le dit. Le produit fait aujourd'hui tourner AES dans l'implémentation du moteur, accélérée
@@ -439,38 +544,39 @@ contextes s'exécutent, n'est pas un détail d'optimisation.
 
 ## 5. Verdict
 
-**Non — pas maintenant.** La note datée du 12 septembre 2026 sous la décision 7 de l'ADR 0033 le
-porte ; ce paragraphe dit sur quoi elle s'appuie, dans l'ordre où le spike l'a appris.
+**Non — pas maintenant**, et le verdict tient sur **trois bases, et trois seulement**.
 
-**Ce n'est pas la disponibilité qui décide.** Elle est nulle, c'est mesuré, mais une absence de
-WebCrypto n'est qu'un prix à payer, pas un argument.
+> Une première rédaction de ce paragraphe en donnait deux autres : la voie sans dépendance serait «
+> fermée par le budget de reprise », et tout AEAD hors WebCrypto exigerait les octets bruts de la
+> clé. La revue de la PR #202 a réfuté les deux par exécution. Elles sont retirées ; ce qui suit est
+> ce que le banc soutient.
 
-**Ce n'est pas le coût qui décide non plus, et c'est le résultat le plus inattendu du spike.** La
-voie sans dépendance, elle, est bien fermée par le coût : quarante appels à `crypto.subtle` par
-secteur, imposés par la RFC et non par notre écriture, mettent la reprise d'une génération au
-plafond hors du budget de 60 s. Mais une implémentation LOGICIELLE de SIV coûte, par secteur, du
-même ordre que l'AES-GCM du moteur — au-dessous sous Firefox, un ordre de grandeur au-dessus sous
-Chromium, dont le `crypto.subtle` est le plus rapide des trois. Et **SIV par-dessus GCM ne coûte que
-20 % dans la même implémentation** : le surcoût mesuré n'est pas celui de SIV, c'est celui de
-quitter WebCrypto.
+1. **AES-GCM-SIV est absent de WebCrypto sur les trois moteurs** (§ 1), dans la page et dans le
+   Worker, et l'épreuve affirme cette absence plutôt que de l'enregistrer.
+2. **La voie sans dépendance coûte de 43 à 56 fois le scellement natif sous Chromium** (§ 2.4), dont
+   un facteur 44 pour les seuls appels, qu'aucune écriture ne déplace sur ce moteur. Elle ne ferme
+   aucun budget — la part cryptographique d'une reprise passe de 0,3 s à 16,5 s sur la machine du
+   banc, soit 33 s contre 60 s, et la projection sur l'environnement de référence la met au budget
+   ou un peu au-dessus (§ 2.5). Ce que le spike retient est le **facteur**, pas le seuil, et il
+   s'applique à chaque scellement du produit.
+3. **Le résidu que SIV couvrirait est nul sur quatre domaines et borné sur les deux autres** (§ 3.1,
+   § 3.2) : budget de 1 pour les quatre domaines à usage unique, `k² · 2^-35` pour `volume` et
+   `journal`, nonces tirés donc non réémis par un recul. Le seul apport réel — 2^64 messages par clé
+   au lieu de 2^31 — ne justifie ni ce facteur, ni une dépendance auditée dont aucune forme vendable
+   n'existe.
 
-**Ce qui décide est la règle de dépendances, et l'empêchement structurel du § 4.3.** Adopter un AEAD
-hors WebCrypto oblige à sortir les six clés de domaine de `CryptoKey` pour les donner en octets
-bruts à du code tiers. Le dépôt échangerait alors un **GARANTI** tenu par la plate-forme — « la DEK
-ne peut pas chiffrer », le cliquet anti-DEK, les clés non extractibles — contre un **FAIT non
-garanti** tenu par une revue. C'est exactement la nature de la correction que #182 vient d'obtenir,
-et la défaire pour gagner autre chose n'est pas un progrès net.
+**Ce que le verdict ne dit PAS, et qui a changé.** Il ne dit plus que SIV oblige à rendre les clés
+de domaine en octets bruts : la voie composée conserve intégralement le garanti de plate-forme, et
+le § 4.3 l'exécute. Cet empêchement-là est réel pour la candidate **logicielle**, et pour elle seule
+— avec deux autres qui ne valent qu'elle : l'empreinte d'un module JavaScript ne se vérifie pas
+avant exécution sous la CSP du produit, et son AES emploie des T-tables.
 
-**Et ce que l'on achèterait est étroit.** SIV n'apporte rien à quatre domaines sur six. Sur les deux
-autres, il ne corrige pas le compteur, ne détecte pas le recul, et ne change rien au cas nominal :
-il borne le dommage d'un événement — la collision de nonce — dont la probabilité publiée est 2^-35
-et dont la dégradation par excès de comptabilité est quadratique et lente à l'échelle des grandeurs
-mesurées (§ 3.2). Le seul apport de fond, réel, est de rendre la comptabilité cryptographiquement
-sans objet : 2^64 messages par clé au lieu de 2^31.
-
-**Le spike n'a donc pas trouvé d'argument de coût contre SIV ; il a trouvé un argument de régime.**
-Ce n'est pas la même chose, et la distinction est ce qui rend les conditions de réouverture
-utilisables : elles portent sur le régime, pas sur la vitesse.
+**Ce qui tient donc réellement le « non ».** SIV n'achète, sur deux domaines sur six, qu'une
+réduction de dommage pour un événement à 2^-35. Le seul chemin qui préserve le régime coûte quarante
+à soixante fois l'AES du moteur sur le moteur qui décide. Et celui qui ne coûte presque rien demande
+de rendre deux clés de domaine en octets bruts à du code tiers dont l'AES fuit ses temps d'accès,
+sous un régime d'intégrité plus faible que l'unique précédent du dépôt. C'est un « non — pas
+maintenant » qui n'a besoin d'aucune des phrases que la revue a réfutées.
 
 ## 6. Ce que ce spike n'a pas mesuré
 
@@ -483,3 +589,12 @@ utilisables : elles portent sur le régime, pas sur la vitesse.
   l'étiquette, donc au même ordre : la voie composée y paie les mêmes quarante appels.
 - **Une campagne de mutation sur la composition**, qui n'est pas du code de produit et n'entre dans
   aucune suite du gate.
+- **Le coût d'un POLYVAL tabulé par quartet**, la forme dite de Shoup. Celui de ce spike est indexé
+  par position de bit et n'ajoute donc aucune dépendance d'adresse au secret (§ 2.1) ; la forme plus
+  rapide en ajouterait une, et le spike n'a pas mesuré ce qu'elle gagnerait. À 3,5 µs par secteur,
+  POLYVAL ne pèse plus rien devant les 213 µs d'appels : la question n'a plus d'enjeu.
+- **La projection sur l'environnement de référence** (§ 2.5) : aucune mesure n'y a été prise, ni par
+  ce spike ni par sa revue. C'est une projection par rapports, marquée comme telle.
+- **Pourquoi la candidate est vingt fois plus lente sous Firefox d'une exécution à l'autre** (§
+  2.4). Ni la largeur des données associées ni le plafond de lot ne l'expliquent ; la cause n'a pas
+  été trouvée, et le verdict ne s'appuie pas sur ce moteur.
