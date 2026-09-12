@@ -130,13 +130,51 @@ export const TYPES_APPLICATIFS = Object.freeze({
   annonce: "vault.coquille.annonce",
   /** Réponse de la coquille sur `window`, porteuse du port restreint transféré. */
   octroi: "vault.coquille.octroi",
-  /** Le seul geste ADMIS sur le port restreint (voir `admission-applicative.mjs`). */
+  /** Le premier geste ADMIS sur le port restreint (voir `admission-applicative.mjs`). */
   etat: "vault.coquille.etat",
   etatReponse: "vault.coquille.etat-reponse",
+  /**
+   * Le SECOND geste admis (#192, ADR 0038) : une requête HTTP vers l'application du guest.
+   *
+   * C'est le seul type neuf du port restreint depuis #161, et il est arrivé par le chemin que
+   * l'ADR 0028 exige — un ADR, une entrée au § 10.5 de la spécification, et le cliquet
+   * d'exhaustivité qui les relie. Ce qu'il porte : une méthode nommée, un chemin, trois en-têtes au
+   * plus, et un corps encodé en base64. Ce qu'il ne porte jamais : une capacité — `sansCapacite`
+   * refuse toujours tout tampon, et c'est pour cela que le corps est une CHAÎNE.
+   */
+  requeteHttp: "vault.coquille.requete-http",
+  requeteHttpReponse: "vault.coquille.requete-http-reponse",
   /** Annonce poussée par la coquille : les écritures du guest sont durables. */
   barriere: "vault.coquille.barriere",
   refus: "vault.coquille.refus",
 });
+
+/**
+ * Les types du CANAL DE RELAIS, entre la coquille et son Worker de confiance (#192, ADR 0038).
+ *
+ * C'est un TROISIÈME vocabulaire, et il a son propre canal — un `MessageChannel` transféré au Worker
+ * dans la même poignée de main que le canal privilégié, et jamais confondu avec lui. Le motif tient
+ * en une phrase : le canal privilégié porte les clés, les enveloppes et les gestes de l'utilisateur,
+ * et il ne doit pas apprendre à porter le trafic d'une application. Un type de relais posé sur le
+ * canal privilégié est refusé ; un type privilégié posé sur le canal de relais l'est aussi ; et le
+ * port restreint ne connaît ni l'un ni l'autre.
+ *
+ * Ce canal ne transporte que des données : une méthode, un chemin, des en-têtes nommés, un corps en
+ * base64, un statut. Jamais une clé, jamais un handle, jamais un cookie — le bocal reste dans le
+ * Worker (`relais-http.mjs`).
+ */
+export const TYPES_RELAIS = Object.freeze({
+  requete: "vault.relais.requete",
+  reponse: "vault.relais.reponse",
+  refus: "vault.relais.refus",
+});
+
+const TYPES_DE_RELAIS_CONNUS = Object.freeze(new Set(Object.values(TYPES_RELAIS)));
+
+/** @param {unknown} type */
+export function estTypeDeRelais(type) {
+  return typeof type === "string" && TYPES_DE_RELAIS_CONNUS.has(type);
+}
 
 const TYPES_PRIVILEGIES_CONNUS = Object.freeze(new Set(Object.values(TYPES_PRIVILEGIES)));
 
