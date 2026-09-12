@@ -3242,9 +3242,36 @@ caractères. Le motif est le constat 3 de la revue : quarante messages dont le s
 faisait 200 000 caractères faisaient passer le relevé de la coquille de 606 à 8 003 678 caractères.
 Le relevé ne recopie plus rien du guest — il COMPTE, par code, et l'ensemble des codes est clos.
 
+**Le RELAIS HTTP, et ce qu'il refuse** (#192,
+[ADR 0038](decisions/0038-servir-l-application-dans-le-cadre.md)). C'est le premier type NEUF du
+port restreint depuis #161 — `vault.coquille.requete-http` —, et il est arrivé par le chemin que
+l'ADR 0028 exige : un ADR, cette table, et le cliquet d'exhaustivité qui les relie. Ce qu'il porte
+est une méthode nommée, un chemin, trois en-têtes au plus et un corps encodé en base64 ; ce qu'il ne
+porte jamais est une capacité, `sansCapacite` refusant toujours tout tampon dans les deux sens.
+
+| Code                                      | Ce qu'il constate                                                                                                                                                                                                                  |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VAULT_COQUILLE_APPLICATION_NON_DEMARREE` | une requête a été relayée alors qu'aucune application ne TOURNE. Distinct de `VAULT_COQUILLE_APPLICATION_ABSENTE` comme `verrouille` l'est d'`indisponible` : l'un appelle un autre déploiement, l'autre un geste de l'utilisateur |
+| `VAULT_COQUILLE_REQUETE_HTTP_REFUSEE`     | méthode hors de `GET`/`POST`/`HEAD`, chemin qui n'est pas un chemin, en-tête illisible, corps qui n'est pas du base64 ou qui franchit le plafond. Un seul code pour cinq façons d'écrire mal la MÊME demande                       |
+| `VAULT_COQUILLE_REPONSE_HTTP_TROP_GRANDE` | la réponse du guest franchit le plafond. Elle est refusée ENTIÈRE plutôt que rendue tronquée : une réponse tronquée est une réponse fausse, que le cadre rendrait comme si elle était entière                                      |
+| `VAULT_COQUILLE_RELAIS_ABANDONNE`         | la réponse est arrivée APRÈS que la coquille a cessé de servir — verrouillage, mort du Worker, fin d'onglet. Elle n'est jamais rendue au cadre, et l'abandon est COMPTÉ plutôt que silencieux                                      |
+| `VAULT_COQUILLE_CANAL_DE_RELAIS_REFUSE`   | un type du canal de relais a été posé ailleurs que sur le canal de relais. Même nature que `VAULT_COQUILLE_PORT_PRIVILEGIE_REFUSE` : trois vocabulaires, trois canaux, et aucun ne se parle sur celui d'un autre                   |
+
+**Ce que le relais ne montre JAMAIS au document**, et qui n'a donc pas de code parce qu'il n'y a
+rien à refuser — la chose n'arrive simplement pas jusqu'à lui : le cookie de session Rails
+(`Set-Cookie` n'est pas dans la liste des en-têtes rendus ; le bocal vit dans le Worker de confiance
+et meurt avec lui), l'hôte du guest (une `Location` absolue est réécrite en chemin), et tout en-tête
+de réponse que `src/coquille/relais-http.mjs` ne nomme pas.
+
+**Ce que le guest ne reçoit jamais** : `Origin` et `Referer`. Rails compare `Origin` à sa propre
+`base_url` quand la protection anti-CSRF est armée ; transmettre l'origine applicative du navigateur
+ferait échouer toute soumission, et en forger une ferait mentir le relais à l'application.
+
 Épreuves : `tests/unit/coquille-admission.test.mjs`, `tests/unit/coquille-contrat.test.mjs` et
 `tests/browser/coquille-frontiere.spec.mjs` (trois moteurs, application malveillante, témoin positif
-en même origine).
+en même origine). Pour le relais : `tests/unit/coquille-relais-http.test.mjs`,
+`tests/browser/coquille-service-applicatif.spec.mjs` (trois moteurs) et
+`tests/e2e/parcours-page-rails.spec.mjs` (une page Rails réelle, cliquée, soumise, relue à froid).
 
 ## 11. Les voisins hors périmètre de la revue
 

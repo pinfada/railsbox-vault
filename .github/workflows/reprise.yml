@@ -47,7 +47,14 @@ on:
       - "public/coquille/**"
       - "public/document-applicatif.html"
       - "public/document-applicatif.mjs"
+      - "public/cadre/**"
+      - "public/service-worker-du-cadre.mjs"
+      - "public/relais-du-worker.mjs"
       - "public/runtime-worker.mjs"
+      # L'APPLICATION elle-même (#192) : la surface HTML qu'elle sert entre dans l'image, et le
+      # scénario `parcours-page-rails.spec.mjs` clique dedans. Une page changée sans reconstruction
+      # d'image ferait échouer la recette pour une raison qui n'est pas la sienne.
+      - "apps/reference/**"
       - "public/index.html"
       - "tests/e2e/**"
       - "playwright.e2e.config.mjs"
