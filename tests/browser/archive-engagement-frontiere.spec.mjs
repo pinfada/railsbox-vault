@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 

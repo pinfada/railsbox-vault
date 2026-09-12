@@ -77,14 +77,12 @@ jobs:
       - name: Vérifications
         run: xvfb-run --auto-servernum npm run check
 
-      # Une épreuve REPRISE n'est pas verte : elle est tolérée (#178, `docs/testing.md`). Le rapport
-      # `github` annonce « 280 passed » là où huit épreuves ont été jouées trois fois chacune ; le
-      # compte, lui, est publié ici, à chaque run, dans le résumé du job — nombre, noms, suite
-      # d'origine, projet et moteur, nombre d'essais. Les TROIS suites du gate rendent leur rapport
-      # depuis le 10 septembre 2026, et l'étape les lit toutes les trois ; un rapport qui manque est
-      # NOMMÉ plutôt que compté pour zéro. L'étape ne rougit jamais : elle publie. `if: always()` la
-      # fait tourner même quand le gate a échoué, où le compte est le plus utile.
-      - name: Compte des épreuves reprises
+      # #178 n'est plus absorbée par une reprise d'épreuve : la fixture commune ne récupère que la
+      # signature « document Firefox complet + page.goto sans réponse » et l'annote. Ce relevé
+      # publie chaque récupération et vérifie aussi que le compte historique des reprises reste à
+      # zéro. Un rapport absent est NOMMÉ plutôt que pris pour zéro ; `if: always()` conserve la
+      # mesure même quand une autre panne a fait rougir le gate.
+      - name: Stabilité des navigations Firefox
         if: always()
         run: >
           node tools/compter-reprises.mjs playwright-report/rapport.json

@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { platform, release } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import {
   CAPABILITIES,

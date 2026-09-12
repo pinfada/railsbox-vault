@@ -178,11 +178,13 @@ export default defineConfig({
   // Les relevés du spike #35 exécutent dix-neuf sondes dont plusieurs attendent volontairement un
   // silence de l'API (origine opaque) : le délai par défaut de 30 s ne leur suffit pas.
   timeout: 120000,
-  retries: process.env.CI ? 2 : 0,
-  // Le rapport JSON s'ajoute aux deux autres pour une raison et une seule : il porte le nombre
-  // d'ESSAIS de chaque épreuve, que ni `html` ni `github` ne publient dans le résumé du job. C'est
-  // lui que `tools/compter-reprises.mjs` lit pour publier le compte des reprises à chaque run
-  // (#178). Sans ce compte, « 280 passed » cache huit épreuves jouées trois fois chacune.
+  // La frontière fautive de #178 est attribuée au suivi de navigation Playwright ↔ Firefox et sa
+  // signature exacte est récupérée par `tests/support/test.mjs`. Une autre panne doit rougir dès
+  // son premier essai : aucune reprise globale ne la masque plus, en CI comme en local.
+  retries: 0,
+  // Le rapport JSON publie les récupérations Firefox annotées par la fixture. Il conserve aussi le
+  // compte historique des reprises : avec `retries: 0`, une valeur non nulle signalerait une
+  // configuration du gate qui a divergé de cette règle.
   reporter: process.env.CI
     ? [
         ["html", { open: "never" }],

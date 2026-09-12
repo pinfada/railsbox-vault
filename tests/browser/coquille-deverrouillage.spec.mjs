@@ -42,7 +42,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import { ATTENTE_MESUREE } from "../../src/coquille/attente-annoncee.mjs";
 import { DELAI_PASSKEY_MS } from "../../src/coquille/moyens-de-deverrouillage.mjs";

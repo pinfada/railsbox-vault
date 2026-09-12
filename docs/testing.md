@@ -2617,8 +2617,8 @@ avaient tous la même condition d'ignorance, donc tous la même exposition.
 
 ### Le VERT PAR REPRISE, et ce qu'il coûte (#178)
 
-Le vert par vacuité a une soeur : le **vert par reprise**. La CI joue avec `retries: 2`, le gate
-local avec `retries: 0`, et le rapporteur `github` annonce « 280 passed, **8 flaky** » sans dire
+Le vert par vacuité a une soeur : le **vert par reprise**. La CI jouait avec `retries: 2`, le gate
+local avec `retries: 0`, et le rapporteur `github` annonçait « 280 passed, **8 flaky** » sans dire
 combien de fois chacune a été jouée. Sur le run 34330037820 (9 septembre 2026, PR #177), la réponse
 était **trois fois chacune** : deux échecs, puis un succès à la dernière reprise admise. Les huit
 étaient sur Firefox, aucune sur Chromium ni WebKit. Le job avait tenu en 24 min 54 s pour un plafond
@@ -2641,28 +2641,24 @@ de 28 : les reprises mangent la marge, et un jour un peu plus lent le plafond ex
    imbriqué, deux suites dont chacune est nommée, **trois rapports dont un absent — le résumé dit
    lequel n'a pas été lu** —, et un rapport illisible, qui LÈVE parce qu'une absence de mesure n'est
    jamais un zéro.
-3. **`retries: 2` reste tant que la cause n'est pas mesurée.** Le retirer aujourd'hui rendrait la CI
-   rouge environ une fois par run sur un flottement que quatre campagnes de mesure n'ont pas su
-   attribuer (§ suivant) ; ce serait échanger un mensonge contre un bruit.
-4. **Le gate ne rougit pas sur une reprise.** Bloquer les fusions sur un flottement non attribué
-   punirait les tranches pour un défaut du harnais, et le compte publié suffit à ne pas le cacher.
-   **Cette phrase se revisite le jour où la cause est mesurée** : ce jour-là, `retries` retombe à 0
-   et une reprise redevient un échec.
-5. **La reprise n'existe qu'en CI, elle est comptée, et elle s'applique à TOUTES les suites du gate
-   depuis le 10 septembre 2026.** `playwright.config.mjs` la portait seule ; `test:compat` et
-   `test:fins-d-onglet` jouaient sans filet, et le flottement de #178 a fait rougir la seconde deux
-   fois sur cinq runs d'une même branche — sans qu'aucun compte ne dise pourquoi. Un rouge sans
-   information sur un flottement non attribué bloquerait les fusions sans rien apprendre à personne
-   ; une reprise COMPTÉE et PUBLIÉE, elle, apprend. Les trois suites rendent donc chacune son
-   rapport (`rapport.json`, `rapport-compat.json`, `rapport-fins-d-onglet.json`), et l'étape les lit
-   toutes les trois. En local, `retries` reste à 0 partout : le gate local trébuche, et c'est ce qui
-   a permis de mesurer le flottement.
+3. **Depuis le 12 septembre 2026, `retries` vaut 0 partout, CI comprise.** La frontière fautive est
+   maintenant attribuée au suivi de navigation Playwright ↔ Firefox (§ suivant). Sa signature
+   mesurée possède un contournement étroit ; toute autre panne redevient un échec au premier essai.
+4. **La récupération n'est pas une reprise d'épreuve.** Après 5 s, elle ne s'arme que si Firefox
+   répond encore, se trouve exactement à l'URL demandée et annonce un document `complete`. Une
+   seconde navigation identique libère alors le suivi bloqué. URL différente, document incomplet ou
+   navigateur muet : aucune intervention, le timeout original reste probant.
+5. **Chaque récupération est PUBLIÉE.** La fixture ajoute l'annotation
+   `navigation-firefox-recuperee` au résultat JSON ; `tools/compter-reprises.mjs` la publie avec la
+   suite, l'épreuve, le projet et l'URL. Les trois suites rendent toujours leurs rapports distincts.
+   Le même relevé conserve le compte historique des reprises : il doit désormais rester à zéro.
 
-### Le flottement Firefox : quatre hypothèses, quatre éliminations, une limite (#178)
+### Le flottement Firefox : frontière attribuée et limite explicite (#178)
 
-Ce qui suit est un RELEVÉ, pas une conclusion : la cause n'est pas trouvée, et la page dit laquelle
-elle n'est pas. Toutes les mesures datent du 9 septembre 2026, sur Windows 11, 28 coeurs, Playwright
-1.62.1, Firefox 153 du paquet Playwright.
+Les mesures locales du 9 septembre 2026 ont éliminé quatre causes propres au dépôt. Le 12 septembre,
+un rapport amont indépendant a fourni la signature et le contournement qui manquaient. La cause
+interne exacte du pilote n'est pas affirmée ; la frontière fautive, elle, est mesurée : la page et
+Firefox ont fini, tandis que le suivi de navigation de Playwright attend encore.
 
 **Le relevé de base.** Trois passages de la suite navigateur dans la configuration de
 `npm run check` (`retries: 0`), sur `origin/main` : **trois pertes, une par passage**, toutes
@@ -2729,14 +2725,36 @@ le gate ROUGE**, et pas seulement lui manger sa marge : il suffit qu'il tombe su
 n'a pas de filet. Aucune reprise n'est ajoutée là pour le masquer — ce serait échanger un rouge
 honnête contre un vert faux. Ce que la borne change quand même : avant elle, le tout premier run de
 cette branche avait perdu `fins-d-onglet.spec.mjs:590` au bout de **300 s**, ce qui prouve que ces
-navigations ne sont pas lentes mais SANS FIN, et que les borner ne fabrique aucun faux échec. La
-conséquence, elle, est écrite : tant que la cause n'est pas mesurée, une fusion peut être retardée
-par un défaut du harnais, et il faut relancer.
+navigations ne sont pas lentes mais SANS FIN, et que les borner ne fabrique aucun faux échec. La À
+ce stade, la conséquence était écrite : faute d'attribution, une fusion pouvait être retardée par le
+harnais et il fallait relancer. La mesure suivante retire précisément cette ancienne limite.
 
-**La limite.** Aucune des quatre hypothèses de l'issue ne reproduit. Ce qui reste, et que ces
-mesures ne tranchent pas : le canal de protocole entre Playwright et Firefox — c'est-à-dire le
-harnais, pas le produit. Tant que ce n'est pas mesuré, `retries: 2` reste en CI et le compte est
-publié.
+**La corroboration amont.** L'issue Playwright
+[#42183](https://github.com/microsoft/playwright/issues/42183) décrit, sous Firefox et avec un seul
+worker, un `page.goto` qui ne se résout plus alors que `readyState` vaut `complete`, que les
+événements de chargement ont été reçus et que `page.evaluate` répond. `waitUntil: "load"`,
+`"domcontentloaded"` et `"commit"` restent tous bloqués. Une seconde navigation vers la même URL a
+libéré les occurrences observées par l'auteur. C'est la même signature que les pertes de #178 :
+Firefox seul, document local déjà servi, `goto` seul sans fin, indépendamment du parallélisme et de
+`waitUntil`.
+
+**La limite, conservée.** Ce rapprochement attribue le défaut à la frontière Playwright ↔ Firefox,
+pas à une fonction précise du pilote : l'issue amont a été fermée sans correctif ni reproducer local
+fourni aux mainteneurs. La fixture `tests/support/test.mjs` applique donc le contournement seulement
+après une sonde positive des trois faits mesurables (Firefox répond, URL exacte, document complet),
+à 5 s — plus de dix fois la navigation saine la plus lente relevée (487 ms). Elle annote et publie
+chaque intervention. Si la signature diffère ou si la seconde navigation échoue, l'épreuve rougit ;
+les reprises globales ne peuvent plus transformer cette panne en vert.
+
+**La preuve sur la campagne complète du 12 septembre 2026.** Avec `retries: 0`, `npm test` a rendu 1
+688 épreuves unitaires vertes puis **329 épreuves navigateur vertes et 20 ignorées par contrat** en
+5 min 12 s. Le défaut s'est produit trois fois sur Firefox : deux fois sur `/index.html`, une fois
+sur `/vm/deverrouillage.html`. Chaque fois, la sonde a constaté le document complet après 5 s, la
+navigation identique a libéré le pilote, l'épreuve a poursuivi sans être rejouée et le journal a
+nommé l'intervention. La suite de compatibilité a ensuite rendu 6/6 ; la suite des fins d'onglet,
+auparavant capable d'expirer seule à 300 s, a rendu 38 vertes et 2 ignorées par contrat en 2 min 30,
+sans récupération. Ce passage démontre à la fois que le contournement mord sur le défaut réel et
+qu'il ne dépend pas des reprises globales supprimées.
 
 ## Preuve rouge
 

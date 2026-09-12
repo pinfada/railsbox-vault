@@ -20,7 +20,7 @@
 // protocole de débogage sait provoquer. Chaque absence est ÉCRITE avec son motif, jamais laissée
 // en case vide.
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import { ARGUMENTS_RETIRES } from "../../playwright.fins-d-onglet.config.mjs";
 import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";

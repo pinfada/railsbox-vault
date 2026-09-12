@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import { BUDGET_DIAGNOSTIC_CODES } from "../../src/vm/storage-budget.mjs";
 import { VERDICTS_DURABLES, verdictsAttendus } from "./persistance-attendue.mjs";

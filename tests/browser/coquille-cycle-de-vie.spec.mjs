@@ -20,7 +20,7 @@
 
 import { readFile } from "node:fs/promises";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import { SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
