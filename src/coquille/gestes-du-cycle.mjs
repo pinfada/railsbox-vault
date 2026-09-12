@@ -184,6 +184,9 @@ async function demarrer(contexte) {
     // avant l'ouverture du backend », et par lui que l'utilisateur apprend pourquoi. Le journal, lui,
     // n'inscrit RIEN : un geste refusé n'a rien fait avancer.
     rapport.application = { demarree: false, code: erreur?.code ?? null };
+    // Un bouton affiché par une tentative PRÉCÉDENTE ne survit pas à celle-ci : un démarrage qui
+    // LÈVE n'a rien constaté sur ce coup-ci, et le proposer serait mentir sur ce qui vient d'être vu.
+    afficherLeGesteDeReprise(contexte.racine, false);
     publier();
     dire(`cycle:demarrage-refuse:${erreur?.code ?? "inconnu"}`);
     return rapport.application;
@@ -207,6 +210,9 @@ async function reprendre(contexte) {
   try {
     const rendu = await demander("reprendreInstallation", {});
     if (!rendu.reprise) {
+      // Le refus le plus probable est « déjà installée » (un manifeste est apparu entre-temps) : le
+      // bouton n'a alors plus rien à proposer, et le laisser visible inviterait à le recliquer.
+      afficherLeGesteDeReprise(contexte.racine, false);
       dire(`cycle:reprise-refusee:${rendu.motif ?? "inconnu"}`);
       return rendu;
     }
