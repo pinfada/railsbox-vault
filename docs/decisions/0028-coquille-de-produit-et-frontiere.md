@@ -328,6 +328,12 @@ PR #166 : trois gardes existantes étaient hors campagne (constat 10), et cinq s
   INITIALE, jamais sur le refus de la barre inversée. Il a fallu un cas qui commence bien par `/` et
   contienne une barre inversée pour que la garde soit mesurée.
 
+**Révision datée du 12 septembre 2026 (#196).** La table ci-dessus s'arrête aux vingt-trois gardes
+de la PR #166 : les tranches suivantes (#171, #175, #188…) en ont ajouté sans reprendre cette table,
+qui reste un relevé HISTORIQUE plutôt qu'un compte courant. `node tools/muter-gardes-coquille.mjs`
+rend aujourd'hui **40/40**, code de sortie 0 — le compte à jour vit dans `docs/testing.md` et dans
+`reports/mutations.json` (`npm run check:mutations`), jamais ici.
+
 Dans les deux cas la garde n'avait pas changé : c'est l'épreuve qui ne la mesurait pas.
 
 **Ce que la campagne ne peut PAS mesurer** : ce que le NAVIGATEUR fait de ces décisions — que
