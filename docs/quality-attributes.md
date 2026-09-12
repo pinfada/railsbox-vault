@@ -1489,25 +1489,40 @@ L'application de référence a donc reçu une surface HTML pour qu'il y ait quel
 un document, une feuille de style, un script, une image, un formulaire protégé par un jeton
 anti-CSRF, une redirection 303 et un cookie de session.
 
-### Le relevé, Chromium, 12 septembre 2026
+### Le relevé, Chromium
 
 Banc : `tests/vm/mesure-pont-serie-http.spec.mjs`, phase `mesure-relais` du Worker de référence, sur
-le guest réel de l'image #5. Relevé publié dans `reports/mesures/pont-serie-http-chromium.json`.
+le guest réel de l'image #5. Il n'est joué par AUCUNE recette — `vm.yml` ne construit pas l'image de
+référence, et la suite s'y ignore (revue d'intégration de la PR #203, constat 11) : c'est une mesure
+LOCALE, et son relevé brut est donc versionné.
 
-| Geste                                      | Durée          | Octets reçus |
-| ------------------------------------------ | -------------- | ------------ |
-| page d'accueil (document HTML)             | 351,5 ms       | 1 083        |
-| `/vault.css`                               | 50,8 ms        | 402          |
-| `/vault.js`                                | 75,4 ms        | 396          |
-| `/vault.png`                               | 63,3 ms        | 2 053        |
-| les trois actifs demandés **en parallèle** | 186,9 ms       | —            |
-| page suivante (session chaude)             | 281,8 ms       | 1 083        |
-| soumission du formulaire (POST → 303)      | 380,2 ms       | 0            |
-| redirection suivie (la note créée)         | 112,4 ms       | 1 102        |
-| **parcours entier (7 requêtes)**           | **1 315,4 ms** | **6 119**    |
+**Remesuré le 13 septembre 2026, Chromium** — relevé BRUT versionné tel quel :
+[`docs/mesures/pont-serie-http-chromium-2026-09-13.json`](mesures/pont-serie-http-chromium-2026-09-13.json).
 
-**Une page complète coûte environ 540 ms** — document plus trois actifs —, soit dix fois moins que
-le seuil de cinq secondes que l'issue #192 posait comme condition d'abandon.
+| Geste                                      | 12 septembre (publié) | 13 septembre (relevé brut)    | Octets reçus |
+| ------------------------------------------ | --------------------- | ----------------------------- | ------------ |
+| page d'accueil (document HTML)             | 351,5 ms              | 519,4 ms                      | 1 083        |
+| `/vault.css`                               | 50,8 ms               | 49,7 ms                       | **705**      |
+| `/vault.js`                                | 75,4 ms               | 107,8 ms                      | **425**      |
+| `/vault.png`                               | 63,3 ms               | 87,3 ms                       | 2 053        |
+| les trois actifs demandés **en parallèle** | 186,9 ms              | 224,9 ms                      | —            |
+| page suivante (session chaude)             | 281,8 ms              | 375,2 ms                      | 1 083        |
+| soumission du formulaire (POST, 303)       | 380,2 ms              | 636,0 ms                      | 0            |
+| redirection suivie (la note créée)         | 112,4 ms              | 180,1 ms                      | **770**      |
+| **total du parcours**                      | 1 315,4 ms            | **1 955,5 ms** sur 7 requêtes | **6 119**    |
+
+**La table du 12 septembre portait trois octets faux**, et la revue d'intégration de la PR #203
+(constat 2) l'a relevé : `/vault.css` à 402 o, `/vault.js` à 396 o, la page d'arrivée à 1 102 o, là
+où les fichiers pèsent 705 et 425 o à chacun des commits de la branche. Le total, lui, était juste —
+402 + 396 + 1 102 = 705 + 425 + 770 —, parce qu'il avait été recopié du relevé quand les trois
+lignes avaient été retranscrites à la main. **Ce n'était pas un décalage de trame du découpeur** :
+les deux relevés, celui du relecteur et celui-ci, rendent la taille exacte de chaque fichier, et le
+banc l'EXIGE désormais à l'octet. Le relevé est publié brut, et la table en est tirée. Les durées du
+13 septembre sont plus lentes d'environ un tiers, sur la même machine chargée par d'autres chantiers
+: la conclusion ci-dessous ne change pas.
+
+**Une page complète coûte environ 540 à 750 ms** — document plus trois actifs —, soit sept à dix
+fois moins que le seuil de cinq secondes que l'issue #192 posait comme condition d'abandon.
 
 **Le parallélisme n'achète rien** : 186,9 ms pour trois actifs demandés ensemble, contre 189,5 ms en
 série. Le fil série les sérialise de toute façon. C'est la grandeur qui décide qu'un relais n'a
@@ -1516,15 +1531,16 @@ requêtes), pas un réglage de débit.
 
 ### Ce que le RELAIS ajoute au pont, et ce qu'il coûte par requête
 
-| Grandeur                                   | Valeur                                                                                                     |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| ports franchis par requête                 | 3 — Service Worker → courtier, courtier → coquille, coquille → Worker                                      |
-| surcoût d'encodage du corps                | +33 % (base64) ; ~2 Kio sur la page mesurée                                                                |
-| pourquoi le base64 plutôt qu'un tampon     | `sansCapacite` refuse toute vue sur un tampon ; le relais ne demande AUCUNE dérogation                     |
-| plafond d'un corps de requête              | 1 Mio                                                                                                      |
-| plafond d'un corps de réponse              | 8 Mio — plus de 4 000 fois le plus lourd actif mesuré                                                      |
-| requêtes relayées en vol au plus           | 16 côté Worker, 32 côté coquille (la borne de corrélations de #166)                                        |
-| borne d'une requête relayée, côté coquille | 150 s — PLUS LONGUE que les 120 s du pont série, pour que le refus TYPÉ du pont gagne sur une borne muette |
+| Grandeur                                   | Valeur                                                                                                                                                                                   |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ports franchis par requête                 | 3 — Service Worker → courtier, courtier → coquille, coquille → Worker                                                                                                                    |
+| surcoût d'encodage du corps                | +33 % (base64) ; ~2 Kio sur la page mesurée                                                                                                                                              |
+| pourquoi le base64 plutôt qu'un tampon     | `sansCapacite` refuse toute vue sur un tampon ; le relais ne demande AUCUNE dérogation                                                                                                   |
+| plafond d'un corps de requête              | 1 Mio                                                                                                                                                                                    |
+| plafond d'un corps de réponse              | 8 Mio — plus de 4 000 fois le plus lourd actif mesuré                                                                                                                                    |
+| requêtes relayées en vol au plus           | 16 côté Worker, 32 côté coquille (la borne de corrélations de #166)                                                                                                                      |
+| bornes d'une requête relayée               | pont série 120 s < coquille 150 s < Service Worker 180 s : la plus EXTÉRIEURE attend le plus longtemps, et le refus le plus précis arrive le premier (l'ordre est exigé par une épreuve) |
+| en-têtes sur ce que le Service Worker sert | ceux de l'hébergeur pour le rôle `app` — `nosniff`, CORP, `Cache-Control: no-store` —, rejoués (revue #203, 7)                                                                           |
 
 Le scénario de bout en bout `tests/e2e/parcours-page-rails.spec.mjs` publie les mêmes grandeurs sur
 le chemin SERVI — première page, page suivante, soumission, et première page après un boot à froid —
@@ -1534,47 +1550,57 @@ dans `reports/e2e/parcours-page-rails.json`. Elles incluent, elles, le rendu du 
 
 Les chiffres ci-dessus sont ceux du PONT, pris dans un Worker. Ceux-ci sont ceux du PARCOURS, pris
 dans le navigateur : ils incluent le Service Worker, le courtier, le port restreint, le canal de
-relais, le pont, Rails, et le RENDU. Banc : `tests/e2e/parcours-page-rails.spec.mjs`, Chromium, 12
-septembre 2026, **trois exécutions consécutives**.
+relais, le pont, Rails, et le RENDU. Banc : `tests/e2e/parcours-page-rails.spec.mjs`, Chromium,
+**deux exécutions consécutives le 13 septembre 2026**, après les corrections des revues de la PR
+#203 — c'est la table qui fait foi ; celles du 12 septembre (trois exécutions ici, quatre dans le
+corps de la PR) décrivaient un produit qui déclarait le Worker mort par silence sur d'autres
+machines.
 
-| Geste                                             | 1        | 2        | 3        |
-| ------------------------------------------------- | -------- | -------- | -------- |
-| boot de l'application (premier démarrage)         | 109,8 s  | 91,6 s   | 86,4 s   |
-| **première page servie**, après le démarrage      | 249 ms   | 34 ms    | 283 ms   |
-| page suivante (un clic dans la page réelle)       | 380 ms   | 292 ms   | 217 ms   |
-| soumission du formulaire, 303 suivie, page rendue | 1 524 ms | 980 ms   | 972 ms   |
-| réouverture après verrouillage (par l'instantané) | 1 228 ms | 1 176 ms | 1 091 ms |
-| première page servie après le boot à froid        | 248 ms   | 26 ms    | 41 ms    |
-| durée du scénario entier                          | 3,4 min  | 3,0 min  | 2,9 min  |
+| Geste                                                            | 1        | 2        |
+| ---------------------------------------------------------------- | -------- | -------- |
+| boot de l'application (premier démarrage, installation comprise) | 116,6 s  | 82,0 s   |
+| **plus long silence du Worker pendant ce démarrage**             | 8,3 s    | 5,7 s    |
+| **première page servie**, après le démarrage                     | 157 ms   | 266 ms   |
+| page suivante (un clic dans la page réelle)                      | 310 ms   | 337 ms   |
+| soumission du formulaire, 303 suivie, page rendue                | 1 515 ms | 953 ms   |
+| réouverture après verrouillage (par l'instantané)                | 1 281 ms | 1 084 ms |
+| première page servie après le boot à froid                       | 28 ms    | 34 ms    |
+| durée du scénario entier                                         | 3,6 min  | 2,9 min  |
 
-**La première page tombe en quelques dizaines à quelques centaines de millisecondes**, et ce n'est
-pas le relais qui fait la différence entre 34 et 283 ms : c'est l'ANNONCE DE BARRIÈRE qui réveille
-l'attente du cadre (ADR 0038, décision 5 bis), et ce qui varie est le délai entre l'annonce et la
-navigation qu'elle déclenche. La première rédaction interrogeait toutes les deux secondes et
-publiait 924 puis 1 913 ms — cinq à soixante fois plus, pour la même page.
+Le même jour, le témoin `tests/e2e/reprise-coquille-boot-froid.spec.mjs` — qui porte désormais la
+coquille de cadre ACTIVE — passe deux fois (2,7 et 2,8 min), sans neutraliser le Service Worker.
 
-**La réouverture coûte 1,1 s au lieu de 90 s** : c'est l'instantané que le verrouillage laisse (ADR
-0031, décision 3), mesuré ici sur un parcours d'utilisateur plutôt que sur un banc.
+**Le plus long silence du Worker est la grandeur de la correction I1.** La borne de mort par silence
+est de trente secondes (ADR 0030, décision 3), et le scénario exige que ce silence reste sous la
+moitié. Avant la correction, mesuré dans Chrome sur le même premier démarrage : 22,6 s coquille de
+cadre active, 32,2 s coquille de cadre neutralisée, 84 s onglet caché — la cause était
+l'installation du disque applicatif, dont les boucles ne rendaient jamais la main (ADR 0038,
+décision 5 bis), et non le relais.
 
-**La soumission, mesurée dans le navigateur (0,97 à 1,52 s), coûte plus que la somme des deux
-requêtes du pont (380,2 + 112,4 ms).** L'écart est le RENDU et les deux navigations que la
-redirection impose au moteur — la page d'arrivée est chargée en entier, avec ses trois actifs. C'est
-ce qu'un utilisateur attend, et c'est pour cela que les deux tables sont publiées côte à côte :
-l'une dit ce que le pont coûte, l'autre ce que le parcours coûte.
+**La première page tombe en quelques dizaines à quelques centaines de millisecondes** : le cadre
+attend l'ANNONCE DE BARRIÈRE qui suit le démarrage, puis redemande sa page une fois.
 
-**Ce que ces trois exécutions ont coûté pour être trois** : cinq de plus, dont trois rouges. Les
-trois rouges ne portaient pas sur le relais mais sur l'attente qui l'appelait, et l'ADR 0038
-décision 5 bis en porte le récit — une attente qui interroge en boucle pendant le geste le plus long
-du produit peut faire déclarer MORT PAR SILENCE un Worker parfaitement vivant.
+**La réouverture coûte 1,1 à 1,3 s au lieu de 80 à 120 s** : c'est l'instantané que le verrouillage
+laisse (ADR 0031, décision 3), mesuré ici sur un parcours d'utilisateur plutôt que sur un banc.
+
+**La soumission, mesurée dans le navigateur (0,95 à 1,52 s), coûte plus que la somme des deux
+requêtes du pont.** L'écart est le RENDU et les deux navigations que la redirection impose au moteur
+— la page d'arrivée est chargée en entier, avec ses trois actifs. C'est pour cela que les deux
+tables sont publiées côte à côte : l'une dit ce que le pont coûte, l'autre ce que le parcours coûte.
 
 ### L'ÉCART : la mesure Firefox n'existe pas
 
 Elle a été tentée deux fois, sous deux budgets, et Rails n'a jamais répondu à `/vault/health` dans
 le guest sous ce moteur : à 300 s, « le pont a refusé la requête : application-injoignable (code 7)
 » ; à 900 s, « aucune réponse à GET /vault/health en 5000 ms ». Le pont série répond d'abord — donc
-le guest tourne et Python vit — puis se tait ; Puma n'écoute jamais. **La cause n'est pas établie
-par #192**, et l'affirmer serait deviner. L'épreuve s'ignore en NOMMANT sa cause plutôt que de
-passer au vert par vacuité, et `compatibility.md` porte la même phrase.
+le guest tourne et Python vit — puis se tait ; Puma n'écoute jamais. Firefox paie six fois le prix
+de Chromium sur v86 (#74, reconfirmé le 12 septembre 2026 : invite du guest à 3 852 ms sous
+Chromium, 22 982 ms sous Firefox, soit 5,97×) ; un boot Rails qui répond à `/vault/health` en 106 s
+sous Chromium en demande donc environ 633 s — dix minutes — sous Firefox, et le premier budget
+essayé, cinq minutes, était structurellement trop court. Ce qui reste INEXPLIQUÉ est le silence du
+pont observé au second essai, à quinze minutes (« aucune réponse à GET /vault/health en 5000 ms »).
+Aucun budget n'a été relâché pour faire passer ce moteur. L'épreuve s'ignore en NOMMANT sa cause
+plutôt que de passer au vert par vacuité, et `compatibility.md` porte la même phrase.
 
 WebKit n'ouvre aucun volume sous Playwright (`VAULT_STORAGE_UNSUPPORTED`) : aucun guest n'y boote
 sur un disque, et la question ne se pose donc pas.

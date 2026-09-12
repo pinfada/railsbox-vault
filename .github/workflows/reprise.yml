@@ -132,6 +132,11 @@ jobs:
       # décompte de fichiers : les deux lots visent ≈ 27 min chacun. `migration-volume-versionne.spec.mjs`
       # porte SES DEUX épreuves dans le même lot — les séparer romprait le rang stable dont
       # `contexte-persistant.mjs` a besoin pour nommer sa chronologie (`-t2`).
+      #
+      # `parcours-page-rails.spec.mjs` (#192) rejoint le lot 2, le plus court mesuré (24 min 25, run
+      # 34695120844, contre 27 min 22 pour le lot 1). Il coûte 2,9 à 3,6 min en local, sur la même
+      # géométrie que `reprise-coquille-boot-froid` (2,8 min en local, 2,94 min en CI) : le lot 2 vise
+      # donc ≈ 28 min, sous la borne de 60 min du job, qui reste inchangée.
       matrix:
         include:
           - lot: "1"
@@ -145,7 +150,7 @@ jobs:
               tests/e2e/restauration-inter-origine.spec.mjs
               tests/e2e/enveloppe-rotation-boot-froid.spec.mjs
               tests/e2e/reprise-coquille-boot-froid.spec.mjs
-              tests/e2e/export-volume-verifiable.spec.mjs
+              tests/e2e/export-volume-verifiable.spec.mjs tests/e2e/parcours-page-rails.spec.mjs
 
     env:
       VAULT_E2E_LOT: ${{ matrix.lot }}

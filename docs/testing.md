@@ -18,7 +18,7 @@
 | `npm run test:csp`                | démarrage de v86 sous deux CSP, quatre configurations, trois moteurs                                                             |                                                                                                                                                                                                                           environ 25 min, **à la demande** |
 | `npm run app:test`                | suite Minitest de l'application Rails de référence, en Docker                                                                    |                                                                                                                                                                                                               environ 1 min après la première construction |
 | `npm run test:vm:reference`       | boot à froid réel de l'image de référence sous v86                                                                               |                                                                                                                                                                                                                 plus de 10 min, Docker et artefacts requis |
-| `npm run test:e2e`                | reprise, coupure pendant une mutation, export vérifiable, restauration inter-origine et migration                                |                                                                                                                                                                                                                 environ 36 min, Docker et artefacts requis |
+| `npm run test:e2e`                | reprise, coupure pendant une mutation, export vérifiable, restauration inter-origine et migration                                |                                                                                                                                                                            environ 40 min (le parcours de #192 en prend 3 à 4), Docker et artefacts requis |
 | `npm run test:rythme`             | coût de la boucle d'ordonnancement, dix boots entrelacés de l'image de référence                                                 |                                                                                                                                                                                                                           environ 18 min, **à la demande** |
 | `npm test`                        | suites unitaire et navigateur                                                                                                    |                                                                                                                                                                                                                                                   secondes |
 | `npm run check`                   | lint, format et toutes les suites actuelles                                                                                      | environ 7 min hors installation (#147 : la campagne de mutation en prend 50 s ; #161 : la frontière de la coquille, trois moteurs, en prend 2 min 30 s ; #170 : les fins d'onglet en prennent 55 s ; #192 : le chemin servi, trois moteurs, en prend 80 s) |
@@ -115,11 +115,14 @@ fenêtre auxiliaire, la portée d'un Service Worker et l'interception de la ress
 sondes n'ont PAS de témoin positif contre la coquille de produit — le verrou nommé et la diffusion
 inter-onglets, que la coquille n'emploie pas encore —, et leur témoin reste celui du spike en T1a.
 
-La campagne de mutation (`node tools/muter-gardes-coquille.mjs`, 46/47 tués, un mutant non
-applicable) porte sur `src/coquille/`, c'est-à-dire sur des fonctions PURES. C'est délibéré : une
-garde écrite dans `public/main.mjs` ne serait éprouvable que par un navigateur, donc jamais par un
-enfant borné — et une garde qu'aucune mutation ne peut atteindre est une garde qu'on croit sur
-parole.
+La campagne de mutation (`node tools/muter-gardes-coquille.mjs`, **64/64 tués, code 0** le 13
+septembre 2026 — la rédaction précédente écrivait « 46/47, un mutant non applicable » quand le 47e
+était un SURVIVANT et le code de sortie 1, revue d'intégration de la PR #203, constat 4) porte sur
+`src/coquille/`, c'est-à-dire sur des fonctions PURES, et sur trois modules de `public/` et
+`src/vm/` que leur épreuve charge tels quels sous Node (le relais du Worker, le courtier, le
+versement). C'est délibéré : une garde écrite dans `public/main.mjs` ne serait éprouvable que par un
+navigateur, donc jamais par un enfant borné — et une garde qu'aucune mutation ne peut atteindre est
+une garde qu'on croit sur parole.
 
 ### Le CHEMIN SERVI, et ses deux moitiés (#192)
 
@@ -136,23 +139,30 @@ expirées sur `page.goto` dans le check entier, et **quarante-six sur quarante-s
 mêmes projets Firefox s'exécutent SEULS (2 min 30 s) — la signature exacte de la frontière que #178
 attribue.
 
-Servir une page Rails dans le cadre se prouve en deux endroits, et les deux sont nécessaires :
+Servir une page Rails dans le cadre se prouve en plusieurs endroits, et chacun est nécessaire :
 
-| Suite                                                | Moteurs                    | Ce qu'elle mesure                                                                                                                                                                                                                         |
-| ---------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/browser/coquille-service-applicatif.spec.mjs` | Chromium, Firefox, WebKit  | la FRONTIÈRE : l'épreuve rouge, les six façons d'écrire mal une requête relayée, le canal de relais refusé depuis le port restreint, les dix refus de #24 inchangés dans le même relevé, le relevé borné, le cadre retiré au verrouillage |
-| `tests/e2e/parcours-page-rails.spec.mjs`             | Chromium                   | le SERVICE : une page Rails réelle rendue, son script exécuté, sa feuille appliquée, son image décodée ; un clic, un formulaire, une 303 suivie ; aucun cookie visible nulle part ; la mutation relue après un boot à froid               |
-| `tests/unit/coquille-relais-http.test.mjs`           | Node                       | les DÉCISIONS : méthodes, chemins, en-têtes des deux côtés, bocal à cookies, réécriture de `Location`, plafonds                                                                                                                           |
-| `tests/vm/mesure-pont-serie-http.spec.mjs`           | Chromium (Firefox déclaré) | le COÛT : le pont série sur une page réelle, publié sans seuil dans `docs/quality-attributes.md`                                                                                                                                          |
+| Suite                                                                                                                                                     | Moteurs                            | Ce qu'elle mesure                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `tests/browser/coquille-service-applicatif.spec.mjs`                                                                                                      | Chromium, Firefox, WebKit          | la FRONTIÈRE : l'épreuve rouge, les six façons d'écrire mal une requête relayée, le canal de relais refusé depuis le port restreint, les dix refus de #24 inchangés dans le même relevé, le relevé borné, le cadre retiré au verrouillage                                            |
+| `tests/e2e/parcours-page-rails.spec.mjs`                                                                                                                  | Chromium                           | le SERVICE : une page Rails réelle rendue, son script exécuté, sa feuille appliquée, son image décodée ; un clic, un formulaire, une 303 suivie ; aucun cookie visible nulle part ; la mutation relue après un boot à froid                                                          |
+| `tests/unit/coquille-relais-http.test.mjs`                                                                                                                | Node                               | les DÉCISIONS : méthodes, chemins, en-têtes des deux côtés, bocal à cookies, réécriture de `Location`, plafonds                                                                                                                                                                      |
+| `tests/vm/mesure-pont-serie-http.spec.mjs`                                                                                                                | Chromium (Firefox déclaré)         | le COÛT : le pont série sur une page réelle, publié sans seuil dans `docs/quality-attributes.md`. **Jouée en local seulement** : `vm.yml` ne construit pas l'image de référence, et la recette l'ignore (revue #203, constat 11) ; le relevé brut est versionné dans `docs/mesures/` |
+| `tests/browser/coquille-deux-coffres.spec.mjs`                                                                                                            | Chromium, Firefox (WebKit déclaré) | le ROUTAGE : deux coffres ouverts, le relais de A ne porte jamais une requête de B ; un onglet hors coffre et un leurre sur le chemin du courtier ne captent rien                                                                                                                    |
+| `tests/unit/coquille-routage-du-cadre.test.mjs`, `coquille-courtier-du-cadre.test.mjs`, `coquille-relais-du-worker.test.mjs`, `vm-ceder-la-main.test.mjs` | Node                               | le routage pur, l'attente du courtier (aucune requête pendant un boot), le relais du Worker chargé tel quel (corps forgés, plafond, rafale), et les boucles d'installation qui cèdent la main                                                                                        |
 
 **Pourquoi trois moteurs sans machine virtuelle, et un seul avec.** Le refus du relais est calculé
 sur le TYPE reçu, avant que le moindre état soit consulté (ADR 0028) : un moteur sans OPFS rend
 exactement les mêmes codes qu'un moteur qui en a, et mesurer cette frontière-là sur Chromium seul
 publierait une garantie de frontière sur un tiers du terrain qu'elle couvre. Le SERVICE, lui, exige
 un guest qui boote — et **Rails n'a jamais répondu dans le guest sous Firefox**, deux fois, sous
-deux budgets (300 s puis 900 s). La cause n'est pas établie par #192 ; l'épreuve de mesure s'ignore
-en NOMMANT ce fait plutôt que de passer au vert par vacuité, et `compatibility.md` porte la même
-phrase. WebKit n'ouvre aucun volume sous Playwright, et la question ne s'y pose pas.
+deux budgets (300 s puis 900 s). Firefox paie six fois le prix de Chromium sur v86 (#74, reconfirmé
+le 12 septembre 2026 : invite du guest à 3 852 ms sous Chromium, 22 982 ms sous Firefox, soit 5,97×)
+; un boot Rails qui répond à `/vault/health` en 106 s sous Chromium en demande donc environ 633 s —
+dix minutes — sous Firefox, et le premier budget essayé, cinq minutes, était structurellement trop
+court. Ce qui reste INEXPLIQUÉ est le silence du pont observé au second essai, à quinze minutes («
+aucune réponse à GET /vault/health en 5000 ms »). L'épreuve de mesure s'ignore en NOMMANT ce fait
+plutôt que de passer au vert par vacuité, et `compatibility.md` porte la même phrase. WebKit n'ouvre
+aucun volume sous Playwright, et la question ne s'y pose pas.
 
 **L'épreuve rouge de la tranche se relit à l'envers des autres** : ce qu'elle exige n'est pas un
 refus quelconque, c'est le refus JUSTE. Avant #192, une requête relayée bien formée recevait

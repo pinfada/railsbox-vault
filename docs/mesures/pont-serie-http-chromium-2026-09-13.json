@@ -1,0 +1,127 @@
+{
+  "moteur": "chromium",
+  "mesureLe": "2026-09-12T22:07:23.228Z",
+  "navigateur": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+  "bootMs": 109880.7,
+  "santeMs": 108590,
+  "relais": {
+    "sessionRails": {
+      "cookiePose": true,
+      "jetonAntiCsrfTrouve": true,
+      "vuesRelues": 3
+    },
+    "premierePage": {
+      "methode": "GET",
+      "chemin": "/",
+      "statut": 200,
+      "millisecondes": 519.4,
+      "octetsEmis": 0,
+      "octetsRecus": 1083,
+      "typeDeContenu": "text/html; charset=utf-8",
+      "emplacement": null
+    },
+    "actifsEnSerie": [
+      {
+        "methode": "GET",
+        "chemin": "/vault.css",
+        "statut": 200,
+        "millisecondes": 49.7,
+        "octetsEmis": 0,
+        "octetsRecus": 705,
+        "typeDeContenu": "text/css",
+        "emplacement": null
+      },
+      {
+        "methode": "GET",
+        "chemin": "/vault.js",
+        "statut": 200,
+        "millisecondes": 107.8,
+        "octetsEmis": 0,
+        "octetsRecus": 425,
+        "typeDeContenu": "text/javascript",
+        "emplacement": null
+      },
+      {
+        "methode": "GET",
+        "chemin": "/vault.png",
+        "statut": 200,
+        "millisecondes": 87.3,
+        "octetsEmis": 0,
+        "octetsRecus": 2053,
+        "typeDeContenu": "image/png",
+        "emplacement": null
+      }
+    ],
+    "actifsEnParallele": {
+      "totalMs": 224.9,
+      "requetes": [
+        {
+          "methode": "GET",
+          "chemin": "/vault.css",
+          "statut": 200,
+          "millisecondes": 119.8,
+          "octetsEmis": 0,
+          "octetsRecus": 705,
+          "typeDeContenu": "text/css",
+          "emplacement": null
+        },
+        {
+          "methode": "GET",
+          "chemin": "/vault.js",
+          "statut": 200,
+          "millisecondes": 157,
+          "octetsEmis": 0,
+          "octetsRecus": 425,
+          "typeDeContenu": "text/javascript",
+          "emplacement": null
+        },
+        {
+          "methode": "GET",
+          "chemin": "/vault.png",
+          "statut": 200,
+          "millisecondes": 224.6,
+          "octetsEmis": 0,
+          "octetsRecus": 2053,
+          "typeDeContenu": "image/png",
+          "emplacement": null
+        }
+      ]
+    },
+    "pageSuivante": {
+      "methode": "GET",
+      "chemin": "/",
+      "statut": 200,
+      "millisecondes": 375.2,
+      "octetsEmis": 0,
+      "octetsRecus": 1083,
+      "typeDeContenu": "text/html; charset=utf-8",
+      "emplacement": null
+    },
+    "soumission": {
+      "methode": "POST",
+      "chemin": "/notes",
+      "statut": 303,
+      "millisecondes": 636,
+      "octetsEmis": 146,
+      "octetsRecus": 0,
+      "typeDeContenu": "text/html; charset=utf-8",
+      "emplacement": "http://127.0.0.1/notes/0c7d30b4-3885-4ce7-b74a-521d7a167823"
+    },
+    "pageApresRedirection": {
+      "methode": "GET",
+      "chemin": "/notes/0c7d30b4-3885-4ce7-b74a-521d7a167823",
+      "statut": 200,
+      "millisecondes": 180.1,
+      "octetsEmis": 0,
+      "octetsRecus": 770,
+      "typeDeContenu": "text/html; charset=utf-8",
+      "emplacement": null
+    },
+    "total": {
+      "requetes": 7,
+      "octetsRecus": 6119,
+      "octetsEmis": 146,
+      "millisecondes": 1955.5
+    }
+  }
+}

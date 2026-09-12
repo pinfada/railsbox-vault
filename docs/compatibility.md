@@ -320,11 +320,20 @@ capacités **dans son propre document, sous la CSP servie** — sans l'exemption
 
 Le chemin servi a deux moitiés, et elles n'exigent pas la même chose du moteur :
 
-| Ce qui est mesuré                                                       | Chromium | Firefox                                               | WebKit                  |
-| ----------------------------------------------------------------------- | -------- | ----------------------------------------------------- | ----------------------- |
-| la FRONTIÈRE du relais (refus typés, dix refus inchangés, cadre retiré) | mesuré   | mesuré                                                | mesuré                  |
-| un Service Worker de MODULE dans le cadre encadré                       | mesuré   | non mesuré                                            | non mesuré              |
-| une page Rails RÉELLE servie dans le cadre                              | mesuré   | **impossible : Rails ne répond jamais dans le guest** | impossible : aucun OPFS |
+| Ce qui est mesuré                                                       | Chromium | Firefox                                               | WebKit                   |
+| ----------------------------------------------------------------------- | -------- | ----------------------------------------------------- | ------------------------ |
+| la FRONTIÈRE du relais (refus typés, dix refus inchangés, cadre retiré) | mesuré   | mesuré                                                | mesuré                   |
+| un Service Worker de MODULE dans le cadre encadré                       | mesuré   | mesuré (sans machine virtuelle)                       | non mesuré               |
+| le ROUTAGE : deux coffres, un onglet hors coffre, un leurre             | mesuré   | mesuré                                                | déclaré : aucun courtier |
+| une page Rails RÉELLE servie dans le cadre                              | mesuré   | **impossible : Rails ne répond jamais dans le guest** | impossible : aucun OPFS  |
+
+**Deux conduites de Firefox, mesurées par `tests/browser/coquille-deux-coffres.spec.mjs`** (13
+septembre 2026), et le produit en tient compte : un SECOND courtier chargé après l'activation du
+Service Worker n'est pas pris sous son contrôle de lui-même — son cadre ne s'ouvrait jamais —, et il
+le DEMANDE désormais au Service Worker actif (`cadre.reclamer`) ; et le Service Worker enregistré
+depuis le cadre est PARTITIONNÉ sous le site de la coquille, si bien qu'un onglet de premier rang
+sur l'origine applicative n'en a aucun et va au réseau, là où Chromium le contrôle et refuse
+(`CADRE_CLIENT_SANS_COURTIER`). Aucune des deux issues n'est « servi par le coffre ouvert ».
 
 La première ligne est mesurée sur les trois moteurs, et c'est possible parce que le refus du relais
 est calculé sur le TYPE reçu, **avant** que le moindre état soit consulté (ADR 0028) : un moteur
@@ -334,10 +343,14 @@ Les deux autres sont liées, et l'écart est daté. Sous **Firefox**, Rails n'a 
 `/vault/health` dans le guest : deux tentatives, deux budgets — à 300 s, « le pont a refusé la
 requête : application-injoignable (code 7) » ; à 900 s, « aucune réponse à GET /vault/health en 5000
 ms ». Le pont série RÉPOND d'abord — donc le guest tourne et son Python vit — puis se tait ; Puma
-n'écoute jamais. C'est cohérent avec ce que ce document dit déjà de ce moteur (il ne porte que le
-témoin de démarrage du runtime), et **la cause n'est pas établie par #192** : l'affirmer serait
-deviner. Tant qu'aucune page n'y est servie, ce que ce moteur ferait d'un Service Worker de module
-dans un cadre encadré n'est pas mesuré non plus.
+n'écoute jamais. **La cause de la première moitié est établie, et ce document la publiait déjà** :
+Firefox paie six fois le prix de Chromium sur v86 (#74, reconfirmé le 12 septembre 2026 : invite du
+guest à 3 852 ms sous Chromium, 22 982 ms sous Firefox, soit 5,97×) ; un boot Rails qui répond à
+`/vault/health` en 106 s sous Chromium en demande donc environ 633 s — dix minutes — sous Firefox,
+et le premier budget essayé, cinq minutes, était structurellement trop court. Ce qui reste
+INEXPLIQUÉ est le silence du pont observé au second essai, à quinze minutes (« aucune réponse à GET
+/vault/health en 5000 ms »). Tant qu'aucune page n'y est servie, ce que ce moteur ferait d'un
+Service Worker de module dans un cadre encadré n'est pas mesuré non plus.
 
 Sous **WebKit**, aucun volume ne s'ouvre (`VAULT_STORAGE_UNSUPPORTED`), donc aucun guest ne boote
 sur un disque : la question ne s'y pose pas.
