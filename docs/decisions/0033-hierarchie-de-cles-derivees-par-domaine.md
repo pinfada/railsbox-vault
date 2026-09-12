@@ -555,3 +555,78 @@ distinct des auteurs, n'avait pas participé au format, et a découvert un CRITI
 dossier ne portait pas. Cette décision clôt #20 après correction des deux constats. Elle ne qualifie
 pas la revue d'audit humain ou de cabinet et, conformément à la décision ci-dessus, n'ouvre pas le
 gate « données sensibles » à elle seule.
+
+## Note datée du 12 septembre 2026 — le spike T3 a rendu : AES-GCM-SIV, PAS MAINTENANT
+
+Le spike que la décision 7 commandait est fait
+([#185](https://github.com/pinfada/railsbox-vault/issues/185)). Son compte rendu, avec
+l'environnement, les commandes, les mesures brutes et leur lecture, est
+[`docs/spikes/0185-aes-gcm-siv.md`](../spikes/0185-aes-gcm-siv.md). La question n° 1 du § 13 reste
+**ouverte** ; la réponse du dépôt, elle, est écrite, datée, et elle est **non — pas maintenant**.
+
+**Ce qui a été mesuré, dans l'ordre des quatre points.**
+
+1. **Disponibilité : absente des trois moteurs, et le refus est publié tel quel.** Ce que l'ADR
+   supposait est désormais constaté par `tests/compat/gcm-siv-probe.spec.mjs`, dans la page et dans
+   un Worker, sous trois formes de demande. L'épreuve **affirme cette absence** : un moteur qui
+   exposerait SIV la ferait rougir. C'est la condition de réouverture, câblée plutôt que confiée à
+   une veille.
+2. **Coût : ce n'est pas lui qui décide, et c'est le résultat le plus inattendu du spike.** Une voie
+   **sans aucune dépendance** existe et elle est conforme — AES-GCM-SIV composé sur AES-CTR, vérifié
+   sur les vingt-six vecteurs AES-256 de la RFC 8452 —, mais elle demande **quarante appels à
+   `crypto.subtle` par secteur de 512 octets** là où AES-GCM en demande un, parce que les deux
+   suites de compteurs de la RFC incrémentent leurs quatre premiers octets en petit-boutiste quand
+   AES-CTR de WebCrypto incrémente ses derniers bits en gros-boutiste. Sous Chromium, le secteur
+   passe de 7,9 µs à 1 041,9 µs — un facteur 132 —, et même avec une multiplication de corps fini
+   idéale le seul plancher des appels reste à trente fois l'appel natif. Cette voie-là est fermée
+   par le budget de reprise, qu'elle dépasse dans les trois relevés pris. En revanche, une
+   implémentation LOGICIELLE de SIV coûte 64,9 µs par secteur sous Chromium et 64,1 µs sous Firefox
+   — où elle est au niveau de l'AES-GCM du moteur lui-même. **SIV par-dessus GCM ne coûte que dix à
+   vingt pour cent dans la même implémentation** ; ce qui coûte, c'est de quitter WebCrypto.
+3. **Ce que SIV apporterait, une fois les clés séparées : un seul apport, réel, et étroit.** Quatre
+   domaines sur six tirent une clé neuve par artefact — leur budget est de 1, et SIV ne leur apporte
+   rien. Pour les deux domaines à compteur, le recul de racine (§ 9.1) **ne réémet aucun nonce** —
+   ils sont tirés, pas dérivés (§ 4.2) — mais il casse la COMPTABILITÉ, et la borne se dégrade en
+   `k² · 2^-35` avec le facteur d'excès. SIV rendrait cette comptabilité cryptographiquement sans
+   objet : la RFC 8452 § 6 autorise, à nonces tirés, **2^64 messages d'au plus 128 Kio par clé**
+   contre 2^31 aujourd'hui. Et une collision de nonce cesserait d'être fatale — « deux clairs
+   identiques produisent deux chiffrés identiques » au lieu de `C1 ⊕ C2` et de la clé `H`.
+4. **Ce qui ferme la question pour aujourd'hui n'est ni la disponibilité ni le coût : c'est la règle
+   de dépendances, et un empêchement STRUCTUREL.** Une candidate sérieuse existe — `@noble/ciphers`,
+   MIT, zéro dépendance, auditée par cure53 en 2024 (sur la version 1.0.0, pas sur celle évaluée),
+   conforme aux vecteurs. Deux choses l'arrêtent, et la seconde ne dépend pas du langage :
+   - **l'empreinte d'un module JavaScript ne peut pas être vérifiée AVANT exécution.** Le précédent
+     `vendor/argon2/argon2.wasm` tient parce que `WebAssembly.instantiate` prend des octets qu'on
+     hache d'abord ; `import` exécute d'abord. La CSP du produit —
+     `script-src 'self' 'wasm-unsafe-eval'`, ADR 0013 — n'ouvre ni `eval` ni `new Function`, et
+     aucun chemin de contournement n'existe. Le dépôt adopterait sa première dépendance sous un
+     régime d'intégrité strictement plus faible que son unique précédent ;
+   - **la clé cesserait d'être une `CryptoKey` non extractible.** Tout AEAD hors WebCrypto — JS ou
+     WebAssembly — exige les octets bruts de la clé : `deriveKey` deviendrait `deriveBits`, les six
+     clés de domaine deviendraient six tampons dans le tas, et le cliquet anti-DEK de l'ADR 0036
+     décision 5 perdrait la plate-forme qui le tient. **Ce serait échanger un GARANTI contre un FAIT
+     non garanti**, c'est-à-dire défaire la propriété que la correction de #182 vient d'établir.
+
+   S'y ajoute, sans décider seule, une régression que la candidate déclare elle-même : son AES
+   emploie des **T-tables**, qui fuient leurs temps d'accès, là où le moteur exécute aujourd'hui un
+   AES à temps constant accéléré par le matériel.
+
+**Ce que cette note ne dit pas.** Elle ne dit pas que SIV est inutile : l'apport du point 3 est réel
+et, si le mainteneur juge un jour que l'excès non borné de la comptabilité est intolérable, c'est le
+bon remède. Elle dit que le prix demandé aujourd'hui — défaire un garanti de plate-forme pour
+obtenir une réduction de dommage sur deux domaines sur six, dans un cas qui ne s'est jamais produit
+— est plus élevé que ce qu'il achète.
+
+**Les conditions qui rouvriraient la question, écrites pour être relues :**
+
+- **WebCrypto expose AES-GCM-SIV sur les trois moteurs.** Alors il n'y a plus ni dépendance, ni clé
+  brute, ni T-tables, et la réponse se retourne. `tests/compat/gcm-siv-probe.spec.mjs` rougira ce
+  jour-là ;
+- **un artefact WebAssembly vendable apparaît** — RFC 8452, surface d'importation assez étroite pour
+  que la colle s'écrive ici comme celle d'argon2, audit couvrant la version vendue — **ET** le
+  mainteneur accepte que les six clés de domaine quittent `CryptoKey` pour des octets bruts. Ce
+  second point révise l'ADR 0033 décision 6 et l'ADR 0036 décision 5 : c'est une décision, pas un
+  spike ;
+- **le nombre réel d'invocations sous une clé à compteur est montré excéder le budget** d'un facteur
+  qui porte `k² · 2^-35` au-dessus d'un seuil que le mainteneur nomme. Le spike donne la forme de la
+  courbe et l'ordre de l'effort correspondant ; il ne fixe pas le seuil, qui n'est pas à lui.
