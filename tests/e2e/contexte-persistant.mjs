@@ -51,9 +51,10 @@ const DOSSIER_RAPPORTS = join(
  * run 34652197710 le montre — le relevé de la migration n'y porte que son « ouverture », celle du
  * palier. Un relevé qui se laisse écraser par son voisin ne date plus rien.
  *
- * Le rang est stable parce que la configuration de bout en bout épingle `workers: 1` et
- * `fullyParallel: false` : les épreuves d'un fichier sont jouées dans l'ordre du fichier, par un
- * seul processus. `docs/testing.md` le dit, et le relevé porte de toute façon son `titre`.
+ * Le rang est stable parce que `fullyParallel: false` fait jouer les épreuves d'un même fichier
+ * dans l'ordre du fichier, par un seul processus — que la recette emploie un ou deux ouvriers
+ * (#200) ne change que le nombre de FICHIERS joués à la fois, jamais l'ordre à l'intérieur d'un
+ * fichier. `docs/testing.md` le dit, et le relevé porte de toute façon son `titre`.
  *
  * @type {Map<string, Map<string, number>>}
  */

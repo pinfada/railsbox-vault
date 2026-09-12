@@ -1837,15 +1837,57 @@ passée au guest par le pont série — est le sujet d'une issue de suivi.
 Elle **n'est pas rattachée à `npm run check`**, pour les mêmes raisons que `test:vm:reference` : un
 boot à froid dépasse les dix minutes, la suite exige Docker et environ un gigaoctet d'artefacts
 construits (`npm run image:build`) plus les artefacts v86 (`npm run vm:fetch`). Elle tourne dans un
-job CI dédié et **non bloquant** (`.github/workflows/reprise.yml`), déclenché manuellement, chaque
-nuit, et sur toute PR touchant `src/vm/`, `public/vm/`, `tests/e2e/`, `playwright.e2e.config.mjs` ou
-`tools/serve.mjs`. Un échec y est traité comme un échec de `npm run check`.
+job CI dédié et **non bloquant** (`.github/workflows/reprise.yml`), sur le déclencheur décrit
+ci-dessous. Un échec y est traité comme un échec de `npm run check`.
 
 ```sh
 npm run image:build   # image de référence (#5), Docker requis
 npm run vm:fetch       # artefacts v86 vérifiés par empreinte
 npm run test:e2e       # scénario complet sous Chromium
 ```
+
+#### Le déclencheur, et quand la recette complète est EXIGÉE avant fusion (#200)
+
+Jusqu'au 12 septembre 2026, `reprise.yml` se déclenchait sur `pull_request` **par défaut**, donc à
+chaque `synchronize` — chaque push touchant `src/vm/`, `public/vm/`, `tests/e2e/`,
+`playwright.e2e.config.mjs` ou `tools/serve.mjs`. Le diagnostic du mainteneur (#200) : sur une seule
+PR récente, quatre exécutions annulées par `cancel-in-progress` ont consommé près d'une heure avant
+le passage complet — une recette de cinquante minutes payée plusieurs fois pour des états
+intermédiaires que personne ne fusionne.
+
+**Le déclencheur retenu** ne change rien de ce qui la rend nécessaire, seulement QUAND elle tourne :
+
+- `pull_request` avec `types: [ready_for_review, labeled]` — la PR passe « prête pour revue », ou le
+  superviseur y pose l'étiquette `recette` une fois qu'elle est stabilisée (`if` du job compare
+  nommément `github.event.label.name`, pour qu'une étiquette de tri sans rapport ne déclenche rien)
+  ; `paths` reste inchangé, donc seule une PR qui touche réellement le runtime, l'OPFS ou l'E2E peut
+  la déclencher ;
+- le nocturne (`schedule`, `41 4 * * *`) et `workflow_dispatch` sont inchangés ;
+- `concurrency` (`cancel-in-progress: true` sur `reprise-${{ github.ref }}`) reste : une nouvelle
+  pose du label ou un nouveau nocturne annule toujours un passage en cours de la même branche.
+
+Les pushes intermédiaires d'une PR ne satisfont donc plus que la CI rapide (`Vérifications`,
+`npm run check`) ; la recette complète attend la stabilisation.
+
+**Quand elle est EXIGÉE avant fusion** (recommandation du mainteneur, #200, reprise telle quelle) :
+`Reprise MVP` reste un contrôle **non bloquant** de la protection de branche — elle ne l'a jamais
+été, `npm run check` ne l'appelle pas. Mais le superviseur **attend un passage vert par le nouveau
+déclencheur** avant de fusionner une PR qui touche réellement :
+
+- le **runtime** (`src/vm/**`, `public/vm/**`, `public/runtime-worker.mjs`, `public/main.mjs`) ;
+- **OPFS** ou le format de volume (le backend de blocs, l'enveloppe, la migration) ;
+- les **migrations** de format de volume ;
+- les scénarios **E2E** eux-mêmes (`tests/e2e/**`, `playwright.e2e.config.mjs`, `tools/serve.mjs`).
+
+C'est exactement l'ensemble que `paths` couvre déjà : une PR qui le déclenche est une PR qui doit le
+voir vert avant fusion. Une PR qui ne touche AUCUN de ces chemins ne déclenche pas la recette et n'a
+pas à en exiger une : `npm run check` suffit, comme avant #200.
+
+**Un ou deux ouvriers Playwright**, et ce que la mesure a tranché : voir
+[`quality-attributes.md`](quality-attributes.md), § « Reprise MVP : un ou deux ouvriers ». Le
+paramètre `workers` du déclenchement manuel sert à REJOUER cette mesure ; la production (nocturne,
+label, `ready_for_review`) utilise la valeur retenue, posée en dur dans `reprise.yml`
+(`VAULT_E2E_WORKERS`).
 
 #### Reprise PAR INSTANTANÉ : `tests/e2e/instantane-reprise.spec.mjs` (#65)
 
@@ -1983,9 +2025,11 @@ deux fichiers sont aussi joints au rapport Playwright.
 Deux suffixes évitent qu'un relevé en écrase un autre, et ils sont **absents du cas ordinaire** :
 `-t2`, `-t3`… pour la deuxième épreuve et les suivantes d'un même fichier (c'est le cas de
 `migration-volume-versionne.spec.mjs`, qui porte la chaîne entière ET le palier v3), et `-r2`,
-`-r3`… pour les passages d'un `--repeat-each`. Le rang dans le fichier est stable parce que la
-configuration épingle `workers: 1` et `fullyParallel: false` ; le relevé porte de toute façon le
-`titre` de son épreuve.
+`-r3`… pour les passages d'un `--repeat-each`. Le rang dans le fichier est stable parce que
+`fullyParallel: false` fait jouer TOUTES les épreuves d'un même fichier, dans l'ordre, par le MÊME
+ouvrier — que la recette en emploie un ou deux (#200) ne change que le nombre de FICHIERS joués en
+même temps, jamais l'ordre à l'intérieur d'un fichier. Le relevé porte de toute façon le `titre` de
+son épreuve.
 
 **Comment lire une occurrence**, dans cet ordre :
 
