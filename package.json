@@ -41,7 +41,8 @@
     "test:coquille": "playwright test --config playwright.config.mjs --project frontiere-coquille-chromium --project frontiere-coquille-firefox --project frontiere-coquille-webkit",
     "test:deverrouillage": "playwright test --config playwright.config.mjs --project frontiere-deverrouillage-chromium --project frontiere-deverrouillage-firefox --project frontiere-deverrouillage-webkit",
     "test:coquille:deverrouillage": "playwright test --config playwright.config.mjs --project deverrouillage-coquille-chromium --project deverrouillage-coquille-firefox --project deverrouillage-coquille-webkit",
-    "test:cycle": "playwright test --config playwright.config.mjs --project cycle-de-vie-chromium --project cycle-de-vie-firefox --project cycle-de-vie-webkit"
+    "test:cycle": "playwright test --config playwright.config.mjs --project cycle-de-vie-chromium --project cycle-de-vie-firefox --project cycle-de-vie-webkit",
+    "test:service-applicatif": "playwright test --config playwright.config.mjs --project service-applicatif-chromium --project service-applicatif-firefox --project service-applicatif-webkit"
   },
   "engines": {
     "node": ">=22.13 <25"

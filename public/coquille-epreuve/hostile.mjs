@@ -19,10 +19,12 @@
 import {
   TYPES_APPLICATIFS,
   TYPES_PRIVILEGIES,
+  TYPES_RELAIS,
   decoderMessage,
   enveloppeDeMessage,
 } from "/src/coquille/contrat-de-messages.mjs";
 import { GESTES_REFUSES } from "/src/coquille/admission-applicative.mjs";
+import { CODES_REFUS_COQUILLE } from "/src/coquille/refus-de-coquille.mjs";
 import SONDES_DE_TOPOLOGIE from "./hostile-topologie.mjs";
 import { DELAI_SONDE_MS, NOMBRE_DE_SONDES } from "./marqueurs.mjs";
 
@@ -416,6 +418,116 @@ function gabaritDUsurpation() {
   );
 }
 
+/**
+ * Les sondes du RELAIS HTTP (#192, ADR 0038) : le CHEMIN NEUF, attaqué comme les autres.
+ *
+ * Elles ne sont pas une redite des précédentes. Ce que #192 ajoute au port restreint est un type
+ * qui porte une méthode, un chemin, des en-têtes et un corps — c'est-à-dire quatre surfaces de plus
+ * qu'une question d'état n'en avait, et chacune est un endroit où une application malveillante
+ * peut essayer d'écrire autre chose qu'une requête.
+ *
+ * La PREMIÈRE est l'épreuve rouge de la tranche, et elle se lit à l'envers des autres : ce qu'elle
+ * exige n'est pas un refus quelconque, c'est le refus JUSTE. Avant #192, une requête relayée bien
+ * formée recevait `VAULT_COQUILLE_TYPE_INCONNU` — « je ne sais pas de quoi tu parles » — et le
+ * cadre ne recevait RIEN de ce que Rails rend. Après, elle reçoit
+ * `VAULT_COQUILLE_APPLICATION_NON_DEMARREE` : « je sais, et il n'y a rien à servir tant que
+ * l'application n'est pas lancée ». La différence entre ces deux codes EST la tranche, et cette
+ * sonde-ci est la seule qui la mesure sans machine virtuelle, sur les trois moteurs.
+ */
+const SONDES_DE_RELAIS = [
+  {
+    nom: "relais-requete-bien-formee",
+    cible: "coquille",
+    intention: "demander au guest la page d'accueil, sans qu'aucune application ne tourne",
+    codeAttendu: CODES_REFUS_COQUILLE.applicationNonDemarree,
+    run: () => tenter(requeteRelayee({ methode: "GET", chemin: "/" })),
+  },
+  {
+    nom: "relais-methode-hors-liste",
+    cible: "coquille",
+    intention: "relayer une méthode que le relais n'admet pas",
+    codeAttendu: CODES_REFUS_COQUILLE.requeteHttpRefusee,
+    run: () => tenter(requeteRelayee({ methode: "DELETE", chemin: "/notes/1" })),
+  },
+  {
+    nom: "relais-chemin-absolu",
+    cible: "coquille",
+    intention: "faire sortir le relais de la machine en lui donnant une URL au lieu d'un chemin",
+    codeAttendu: CODES_REFUS_COQUILLE.requeteHttpRefusee,
+    run: () => tenter(requeteRelayee({ methode: "GET", chemin: "https://exemple.test/" })),
+  },
+  {
+    nom: "relais-entete-a-deux-lignes",
+    cible: "coquille",
+    intention: "écrire une SECONDE ligne dans la requête HTTP que le pont série composera",
+    codeAttendu: CODES_REFUS_COQUILLE.requeteHttpRefusee,
+    run: () =>
+      tenter(
+        requeteRelayee({
+          methode: "GET",
+          chemin: "/",
+          entetes: { accept: "text/html\r\nX-Injecte: oui" },
+        }),
+      ),
+  },
+  {
+    nom: "relais-corps-sur-un-get",
+    cible: "coquille",
+    intention: "faire porter un corps à une méthode qui n'en a pas",
+    codeAttendu: CODES_REFUS_COQUILLE.requeteHttpRefusee,
+    run: () => tenter(requeteRelayee({ methode: "GET", chemin: "/", corps: "QQ==" })),
+  },
+  {
+    nom: "relais-champ-hors-contrat",
+    cible: "coquille",
+    intention: "ajouter à une requête relayée un champ que le contrat ne nomme pas",
+    codeAttendu: CODES_REFUS_COQUILLE.messageMalforme,
+    run: () =>
+      tenter({ ...requeteRelayee({ methode: "GET", chemin: "/" }), hote: "ailleurs.test" }),
+  },
+  {
+    nom: "canal-de-relais-sur-le-port-restreint",
+    cible: "coquille",
+    intention: "parler au Worker de confiance dans le vocabulaire du canal de relais",
+    codeAttendu: CODES_REFUS_COQUILLE.canalDeRelaisRefuse,
+    run: () =>
+      tenter(
+        enveloppeDeMessage(TYPES_RELAIS.requete, {
+          correlation: "hostile-relais",
+          methode: "GET",
+          chemin: "/",
+        }),
+      ),
+  },
+  {
+    nom: "reponse-relayee-rejouee",
+    cible: "coquille",
+    intention: "REJOUER vers la coquille une réponse relayée, comme si elle en était l'auteur",
+    codeAttendu: CODES_REFUS_COQUILLE.typeInconnu,
+    run: () =>
+      tenter(
+        enveloppeDeMessage(TYPES_APPLICATIFS.requeteHttpReponse, {
+          correlation: "hostile-rejeu",
+          statut: 200,
+          entetes: {},
+          corps: "",
+        }),
+      ),
+  },
+];
+
+/** Une requête relayée BIEN FORMÉE, sous une corrélation neuve. */
+function requeteRelayee({ methode, chemin, entetes = {}, corps = null }) {
+  compteurDeCorrelation += 1;
+  return enveloppeDeMessage(TYPES_APPLICATIFS.requeteHttp, {
+    correlation: `hostile-http-${compteurDeCorrelation}`,
+    methode,
+    chemin,
+    entetes,
+    corps,
+  });
+}
+
 // --- Exécution ------------------------------------------------------------------------------------
 
 function avecDelai(promesse) {
@@ -464,6 +576,7 @@ async function toutTenter() {
     ...SONDES_INTERDITES,
     ...SONDES_DU_HARNAIS,
     ...SONDES_DE_CONTRAT,
+    ...SONDES_DE_RELAIS,
     ...SONDES_DE_TOPOLOGIE,
   ]) {
     releve.push(await executer(sonde));

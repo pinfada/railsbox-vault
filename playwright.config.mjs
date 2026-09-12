@@ -117,6 +117,20 @@ const DEVERROUILLAGE_COQUILLE = ["**/coquille-deverrouillage.spec.mjs"];
 const CYCLE_DE_VIE = ["**/coquille-cycle-de-vie.spec.mjs", "**/entetes-durcissement.spec.mjs"];
 
 /**
+ * LE CHEMIN SERVI (#192, tranche P1 de l'épique #195, ADR 0038) : la frontière du relais HTTP.
+ *
+ * Les trois moteurs, et le motif est celui des précédentes : le refus du relais est calculé sur le
+ * TYPE reçu, AVANT que le moindre état soit consulté (ADR 0028), si bien qu'un moteur sans OPFS
+ * rend exactement les mêmes codes qu'un moteur qui en a. Mesurer cette frontière-là sur Chromium
+ * seul publierait une garantie de frontière sur un tiers du terrain qu'elle couvre.
+ *
+ * Ce que cette suite ne fait PAS : rendre une page Rails. Aucune machine virtuelle n'y tourne —
+ * c'est `tests/e2e/parcours-page-rails.spec.mjs` qui mesure le service, sur Chromium et avec
+ * l'image de référence.
+ */
+const SERVICE_APPLICATIF = ["**/coquille-service-applicatif.spec.mjs"];
+
+/**
  * PERSISTANCE de stockage : le budget (#9) et la conduite (#42), sur les trois moteurs et sur les
  * TROIS réponses possibles de l'invite Firefox (#168, ADR 0006).
  *
@@ -252,6 +266,7 @@ export default defineConfig({
         ...FRONTIERE_COQUILLE,
         ...DEVERROUILLAGE_COQUILLE,
         ...CYCLE_DE_VIE,
+        ...SERVICE_APPLICATIF,
         ...PERSISTANCE,
       ],
     })),
@@ -304,6 +319,11 @@ export default defineConfig({
       name: `cycle-de-vie-${nom}`,
       use: { browserName: nom },
       testMatch: CYCLE_DE_VIE,
+    })),
+    ...MOTEURS_CONNUS.map((nom) => ({
+      name: `service-applicatif-${nom}`,
+      use: { browserName: nom },
+      testMatch: SERVICE_APPLICATIF,
     })),
     ...MOTEURS_CONNUS.map((nom) => ({
       name: `persistance-${nom}`,
