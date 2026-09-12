@@ -12,9 +12,9 @@
 
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import { MANIFESTE, RACINE_CANDIDATE } from "./candidate/emplacement.mjs";
@@ -25,16 +25,45 @@ function empreinte(octets) {
   return createHash("sha256").update(octets).digest("hex");
 }
 
+/**
+ * Le `npm-cli.js` du Node COURANT, exécuté par `node` plutôt que par un interpréteur de commandes.
+ *
+ * Une première rédaction lançait `npm.cmd` par `execFile` sans `shell`, pour ne pas concaténer les
+ * arguments — le raisonnement était bon, le moyen ne l'est plus : depuis les correctifs de `spawn`
+ * de Node (≥ 18.20.2), `execFile` REFUSE un `.cmd` sans `shell` et rend `spawn EINVAL`. La commande
+ * publiée par le compte rendu du spike ne pouvait donc pas être rejouée sur l'environnement qu'il
+ * documente (revue de la PR #202, MEDIUM 3). Passer par le script conserve les deux propriétés :
+ * arguments non concaténés, et portabilité.
+ */
+async function trouverNpmCli() {
+  const racine = dirname(process.execPath);
+  const candidats = [
+    join(racine, "node_modules", "npm", "bin", "npm-cli.js"),
+    join(racine, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+    join(racine, "..", "npm", "bin", "npm-cli.js"),
+  ];
+  for (const candidat of candidats) {
+    try {
+      await access(candidat);
+      return candidat;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error(
+    `aucun npm-cli.js trouvé à côté de ${process.execPath} ; cherché : ${candidats.join(", ")}`,
+  );
+}
+
 async function principal() {
   const manifeste = JSON.parse(await readFile(MANIFESTE, "utf8"));
   const paquet = manifeste.pins.npmPackage;
 
   const atelier = await mkdtemp(join(tmpdir(), "spike-gcm-siv-"));
   try {
-    // `npm.cmd` sous Windows plutôt que `shell: true` : passer des arguments à un interpréteur de
-    // commandes les concatène sans échappement.
-    const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-    await executer(npm, ["pack", paquet, "--silent"], { cwd: atelier });
+    await executer(process.execPath, [await trouverNpmCli(), "pack", paquet, "--silent"], {
+      cwd: atelier,
+    });
     const [archive] = (await readdir(atelier)).filter((nom) => nom.endsWith(".tgz"));
     if (!archive) throw new Error(`npm pack n'a produit aucune archive pour ${paquet}`);
 
