@@ -155,6 +155,18 @@
         rendu. Il ne porte jamais ce qui a été saisi, ni le code lui-même.
       -->
       <pre id="deverrouillage-releve">{}</pre>
+      <!--
+        L'ÉTAPE 4 du cycle de vie, et ce qu'elle sert désormais (#192, ADR 0038).
+
+        Jusqu'ici ce cadre portait une PLACE TENANTE : un document de l'origine applicative qui
+        s'annonçait, recevait son port restreint et affichait un relevé. Il porte maintenant ce que
+        RAILS rend — le document, ses actifs, ses formulaires, ses redirections —, relayé depuis le
+        guest par le seul port restreint, et jamais servi par cette origine-ci.
+        
+        Ce que le document encadré voit : des réponses HTTP. Ce qu'il ne voit jamais : le cookie de
+        session Rails (son bocal vit dans le Worker de confiance et meurt avec lui), l'adresse où
+        l'application écoute dans la machine virtuelle, et tout en-tête que le relais ne nomme pas.
+      -->
       <div id="cadre-applicatif"></div>
     </main>
     <script type="module" src="/main.mjs"></script>

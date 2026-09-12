@@ -19,10 +19,12 @@ import {
   decoderMessage,
   enveloppeDeMessage,
 } from "/src/coquille/contrat-de-messages.mjs";
+import { monterLaCoquilleDeCadre } from "/cadre/courtier-du-cadre.mjs";
 
 const noeudEtat = document.querySelector("#document-applicatif-etat");
 const boutonEtat = document.querySelector("#document-applicatif-demander");
 const noeudRapport = document.querySelector("#document-applicatif-rapport");
+const emplacementDeLApplication = document.querySelector("#application-servie-emplacement");
 
 const rapport = {
   portRecu: false,
@@ -31,6 +33,23 @@ const rapport = {
   /** Le nombre de questions d'état posées. Un compte, jamais la liste de ce qui a été demandé. */
   questions: 0,
   refus: [],
+  /**
+   * Ce que la COQUILLE DE CADRE (#192) a fait de ce document : installée ou non, sous quel motif,
+   * avec quel sort pour son Service Worker, et combien de requêtes elle a relayées. Des faits et
+   * des comptes ; jamais un octet de ce qui a transité.
+   */
+  coquilleDeCadre: {
+    installee: false,
+    motif: null,
+    serviceWorker: "non-demande",
+    cadreServi: null,
+    relayees: 0,
+    // L'ATTENTE de la première page, quand il y en a une. Elle est déclarée ICI plutôt que
+    // seulement ajoutée à son arrivée : un relevé dont la FORME change en cours de route est un
+    // relevé qu'une épreuve ne peut pas borner, et `tests/browser/coquille-frontiere.spec.mjs`
+    // exige la liste exacte de ces six champs.
+    attente: null,
+  },
 };
 
 /** Compteur des corrélations de ce document. Il ne quitte jamais l'origine applicative. */
@@ -68,6 +87,21 @@ window.addEventListener("message", (event) => {
   rapport.portRecu = true;
   publier();
   ecouterLePort(port);
+  // La COQUILLE DE CADRE est montée sur le port, et seulement sur lui (#192, ADR 0038). Elle ne le
+  // transfère jamais : ce qu'elle en fait, c'est poster des requêtes relayées et lire leurs
+  // réponses, exactement comme ce document pose déjà sa question d'état.
+  const montee = monterLaCoquilleDeCadre({
+    port,
+    document,
+    emplacement: emplacementDeLApplication,
+    publier: (faits) => {
+      Object.assign(rapport.coquilleDeCadre, faits);
+      publier();
+    },
+  });
+  rapport.coquilleDeCadre.installee = montee.installee;
+  rapport.coquilleDeCadre.motif = montee.motif;
+  publier();
   demanderLEtat(port);
   // Le geste-requête est REJOUABLE, et c'est ce qu'un éditeur d'application écrira : l'état d'un
   // coffre change — il s'ouvre, il se referme, son Worker meurt —, et un document qui ne
