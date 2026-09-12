@@ -598,21 +598,48 @@ test("le geste de REPRISE rejoue le cycle de démarrage à son succès", async (
   assert.equal(racine.querySelector("#reprendre-l-installation").hidden, true);
 });
 
-test("le geste de REPRISE refusé par le Worker ne rejoue PAS le démarrage", async () => {
+test("le geste de REPRISE refusé par le Worker ne rejoue PAS le démarrage, et RETIRE le bouton (#188, LOW-1)", async () => {
   const journal = [];
-  const { liaison } = liaisonFeinte(journal, {
+  const { liaison, racine } = liaisonFeinte(journal, {
     demander: (type) => {
       if (type === "reprendreInstallation") {
-        return Promise.resolve({ reprise: false, motif: "ce n'est pas la signature" });
+        return Promise.resolve({ reprise: false, motif: "l'application est déjà installée" });
       }
       journal.push(`demande:${type}`);
       return Promise.resolve({});
     },
   });
   const gestes = brancherLesGestesDuCycle(liaison);
+  // Le bouton est visible AVANT le geste, comme il le serait après le démarrage qui l'a fait
+  // apparaître : le refus le plus probable (« déjà installée ») ne lui laisse plus rien à proposer.
+  racine.querySelector("#reprendre-l-installation").hidden = false;
   const rendu = await gestes.reprendreLInstallation();
   assert.equal(rendu.reprise, false);
   assert.ok(!journal.includes("demande:application"), "un refus n'installe rien de nouveau");
+  assert.equal(
+    racine.querySelector("#reprendre-l-installation").hidden,
+    true,
+    "un refus de reprise ne laisse pas un bouton qui n'a plus rien à offrir",
+  );
+});
+
+test("un démarrage qui LÈVE retire un bouton de reprise resté affiché (#188, LOW-1)", async () => {
+  const journal = [];
+  const { liaison, racine } = liaisonFeinte(journal, {
+    demander: (type) =>
+      type === "application"
+        ? Promise.reject(Object.assign(new Error("boot refusé"), { code: "VAULT_Y" }))
+        : Promise.resolve({}),
+  });
+  const gestes = brancherLesGestesDuCycle(liaison);
+  // Un bouton affiché par une tentative PRÉCÉDENTE : celle-ci lève avant de rien constater.
+  racine.querySelector("#reprendre-l-installation").hidden = false;
+  await gestes.demarrerLApplication();
+  assert.equal(
+    racine.querySelector("#reprendre-l-installation").hidden,
+    true,
+    "un démarrage qui lève n'a rien vu, et ne peut donc rien proposer",
+  );
 });
 
 test("le geste de REPRISE cliqué déclenche bien le bouton câblé", async () => {

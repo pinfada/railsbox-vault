@@ -220,6 +220,11 @@ lisible dans la queue de la page — ne serait pas une révocation.
 > détruirait une enveloppe qui n'est pas la nôtre) : aucune des deux pages n'est touchée. Le retrait
 > explicite existe déjà (Décision 1, décrite plus haut : un volume est retiré avec ses voisins) ;
 > c'est désormais le SEUL chemin vers une création sur un emplacement occupé.
+>
+> **Précision du 12 septembre 2026 (revue de sécurité de la PR #188, LOW-4).** « Présent » veut dire
+> un fichier NON VIDE (`etat.taille > 0`) : un `<volume>.cles` de zéro octet n'occupe rien et n'est
+> pas refusé — `creer` l'écrit par-dessus comme s'il n'existait pas. Un fichier de trois octets, ou
+> de zéros mais non vide, EST refusé : la présence se juge sur la taille, jamais sur le contenu.
 
 ## Décision 5 — Le déverrouillage est une COUCHE au-dessus de l'ouvreur unique
 

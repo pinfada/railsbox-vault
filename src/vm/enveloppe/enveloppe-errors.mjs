@@ -161,7 +161,7 @@ export function enveloppeAbsente(context = {}) {
 export function enveloppePresente(context = {}) {
   return new EnveloppeError(
     ENVELOPPE_ERROR_CODES.presente,
-    "Création refusée : un fichier d'enveloppe existe déjà à cet emplacement. Le recréer détruirait des emplacements sans geste explicite s'il s'agit de la vôtre, ou une enveloppe qui n'est pas la vôtre s'il s'agit d'un autre volume — dans les deux cas, aucune page n'est touchée. Retirez le volume explicitement d'abord si c'est bien ce que vous voulez.",
+    "Création refusée : un fichier d'enveloppe NON VIDE existe déjà à cet emplacement (un fichier de zéro octet n'occupe rien, et n'est pas considéré présent). Le recréer détruirait des emplacements sans geste explicite s'il s'agit de la vôtre, ou une enveloppe qui n'est pas la vôtre s'il s'agit d'un autre volume — dans les deux cas, aucune page n'est touchée. Retirez le volume explicitement d'abord si c'est bien ce que vous voulez.",
     { context },
   );
 }
