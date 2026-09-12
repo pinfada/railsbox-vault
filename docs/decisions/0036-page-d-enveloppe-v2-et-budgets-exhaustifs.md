@@ -309,21 +309,21 @@ Au vocabulaire de la décision 7 de l'ADR 0021.
 ## La campagne de MUTATION de cette tranche
 
 `node tools/muter-gardes-enveloppe-v2.mjs` retire RÉELLEMENT chaque garde de son fichier source,
-relance l'épreuve qui devrait la couvrir, et vérifie qu'elle rougit. **Dix-huit gardes, dix-huit
+relance l'épreuve qui devrait la couvrir, et vérifie qu'elle rougit. **Dix-neuf gardes, dix-neuf
 mutants tués**, sur neuf endroits. La table vit ici comme celle de l'ADR 0035 vit dans l'ADR 0035 :
 `docs/testing.md` compte, l'ADR dit QUOI.
 
-| Fichier muté                              | Gardes retirées                                                                                                                                           |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enveloppe-de-cle.mjs`                    | le TIRAGE du sel de page, l'avance de la version à chaque mutation                                                                                        |
-| `enveloppe/etat-de-lenveloppe.mjs`        | le refus de RÉTROGRADATION d'une page v1 au-dessus d'une v2, la migration à la première ouverture réussie                                                 |
-| `enveloppe/fichier-enveloppe.mjs`         | le refus d'un DOMAINE inconnu, l'effacement de la page v1 par la migration, le refus d'une page déjà en v2                                                |
-| `export-du-fichier.mjs`                   | le contrôle de l'en-tête v3 avant l'export, le DÉFAUT d'OPFS transmis au solde                                                                            |
-| `generation-racine.mjs`                   | la RÉSERVATION du témoin dans le compte que la racine publie                                                                                              |
-| `generation-store.mjs`                    | la clôture par racine, la marque de région sale, l'idempotence du repère                                                                                  |
-| `opfs-block-backend.mjs`                  | la publication de la racine APRÈS le secteur, hors transaction                                                                                            |
-| `opfs-volume-ouverture.mjs`               | le fait de TENIR le magasin sans l'installer sur le chemin hors transaction                                                                               |
-| `tests/unit/vm-cliquet-anti-dek.test.mjs` | les QUATRE motifs du cliquet, séparément : les alias jusqu'au point fixe, le réexport EN BLOC, le réexport comme porte, la référence opaque à `importKey` |
+| Fichier muté                              | Gardes retirées                                                                                                                                                                  |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enveloppe-de-cle.mjs`                    | le TIRAGE du sel de page, l'avance de la version à chaque mutation                                                                                                               |
+| `enveloppe/etat-de-lenveloppe.mjs`        | le refus de RÉTROGRADATION d'une page v1 au-dessus d'une v2, la migration à la première ouverture réussie, le refus d'écrire sur une page libre d'un AUTRE volume (#188, HIGH-4) |
+| `enveloppe/fichier-enveloppe.mjs`         | le refus d'un DOMAINE inconnu, l'effacement de la page v1 par la migration, le refus d'une page déjà en v2                                                                       |
+| `export-du-fichier.mjs`                   | le contrôle de l'en-tête v3 avant l'export, le DÉFAUT d'OPFS transmis au solde                                                                                                   |
+| `generation-racine.mjs`                   | la RÉSERVATION du témoin dans le compte que la racine publie                                                                                                                     |
+| `generation-store.mjs`                    | la clôture par racine, la marque de région sale, l'idempotence du repère                                                                                                         |
+| `opfs-block-backend.mjs`                  | la publication de la racine APRÈS le secteur, hors transaction                                                                                                                   |
+| `opfs-volume-ouverture.mjs`               | le fait de TENIR le magasin sans l'installer sur le chemin hors transaction                                                                                                      |
+| `tests/unit/vm-cliquet-anti-dek.test.mjs` | les QUATRE motifs du cliquet, séparément : les alias jusqu'au point fixe, le réexport EN BLOC, le réexport comme porte, la référence opaque à `importKey`                        |
 
 Deux choses méritent d'être dites, parce qu'elles sont le résultat de la campagne et non son décor.
 **La campagne a TROUVÉ deux défauts** qu'aucune épreuve verte ne montrait : un second tirage de sel
@@ -332,11 +332,18 @@ donc ambiguë. Et le **CLIQUET est lui-même muté**, motif par motif : c'est la
 cette table qui soit une épreuve, et la revue de la PR #186 avait trouvé un cliquet dont un seul des
 deux mutants était vu. Chaque motif retiré doit suffire à faire rougir « le cliquet MORD ».
 
-Le dix-huitième mutant garde un défaut que cette campagne n'aurait PAS pu trouver, et que le palier
-v3 de l'E2E a trouvé à sa première exécution : l'export d'un v3 ne transmettait aucun moyen d'ouvrir
-les voisins, si bien qu'il échouait en NAVIGATEUR là où toute la suite unitaire passait — un double
-en injecte toujours un. Une campagne de mutation mesure la force des épreuves qu'on a ; elle ne dit
-rien de celles qu'on n'a pas.
+Le mutant sur l'export d'un v3 (« TRANSMET un moyen d'ouvrir les voisins ») garde un défaut que
+cette campagne n'aurait PAS pu trouver, et que le palier v3 de l'E2E a trouvé à sa première
+exécution : l'export d'un v3 ne transmettait aucun moyen d'ouvrir les voisins, si bien qu'il
+échouait en NAVIGATEUR là où toute la suite unitaire passait — un double en injecte toujours un. Une
+campagne de mutation mesure la force des épreuves qu'on a ; elle ne dit rien de celles qu'on n'a
+pas.
+
+**Révision datée du 12 septembre 2026 (#196).** Cette section annonçait dix-huit gardes et désignait
+ce mutant par son rang (« le dix-huitième ») : le dix-neuvième, ajouté par la revue de sécurité de
+la PR #188 (HIGH-4), est entré au milieu de la table plutôt qu'à sa fin, ce qui aurait rendu ce rang
+FAUX sans qu'aucun code n'ait changé. Désigner les mutants par leur GARDE, jamais par leur position,
+évite que la table se déjuge au prochain ajout.
 
 ## Ce que cet ADR ne prétend PAS résoudre
 

@@ -21,12 +21,57 @@
 | `npm run test:rythme`          | coût de la boucle d'ordonnancement, dix boots entrelacés de l'image de référence                                                 |                                                                                                                                                                         environ 18 min, **à la demande** |
 | `npm test`                     | suites unitaire et navigateur                                                                                                    |                                                                                                                                                                                                 secondes |
 | `npm run check`                | lint, format et toutes les suites actuelles                                                                                      | environ 5 min 30 s hors installation (#147 : la campagne de mutation en prend 50 s ; #161 : la frontière de la coquille, trois moteurs, en prend 2 min 30 s ; #170 : les fins d'onglet en prennent 55 s) |
+| `npm run check:mutations`      | les ONZE campagnes de mutation, en séquence, table à l'appui (#196)                                                              |                                                                                                        de 5 min 24 s à 8 min 17 s mesurés (charge du poste) — job CI séparé, jamais dans `npm run check` |
 
 La suite `test:e2e` porte depuis #7 le scénario de sortie du MVP (voir plus bas), auquel se sont
 ajoutés l'export vérifiable (#11), la restauration inter-origine (#12) et la migration de format
 avec sa reprise après interruption (#13). Depuis #12, sa configuration démarre **deux** serveurs sur
 deux origines distinctes : un import ne prouve rien tant qu'il peut relire le stockage qu'il vient
 d'écrire.
+
+### Les ONZE campagnes de mutation, réunies (#196)
+
+Onze outils `tools/muter-gardes-*.mjs` portent chacun leur TABLE de gardes et partagent le même
+moteur (`tools/moteur-de-mutation.mjs`) : recopie du dépôt dans un atelier temporaire, épreuve
+rejouée avant ET après le retrait d'une garde, restauration. Avant #196, rien ne les jouait TOUTES
+ENSEMBLE : six d'entre elles sont rejouées à chaque `npm run test:unit` par une épreuve compagnon
+(`tests/unit/*-mutation.test.mjs` — archive-récupération, enveloppe v2, hiérarchie de clés,
+instantané, récupération, révocation d'urgence), mais les cinq autres (coquille, cycle de vie, fins
+d'onglet, la borne de persistance, verrouillage) n'avaient AUCUN pipeline qui les rejoue. C'est
+précisément cette absence qui a laissé `muter-gardes-cycle-de-vie.mjs` et
+`muter-gardes-verrouillage.mjs` dériver en rouge (code de sortie 1) sans que rien ne le signale — la
+revue de sécurité de la PR #188 (HIGH-3) les a trouvées par relecture, pas par un gate.
+
+`node tools/rejouer-les-campagnes.mjs` (→ `npm run check:mutations`) rejoue les ONZE en SÉQUENCE —
+jamais en parallèle : chaque atelier temporaire recopie `src`, `tests`, `tools`, `public` et
+`package.json`, et onze copies simultanées multiplieraient un coût disque/mémoire non mesuré pour un
+gain non mesuré. Le premier code de sortie non nul ARRÊTE la séquence ; les campagnes suivantes ne
+sont pas jouées. La table publiée (campagne, mutants, tués, survivants, durée) va sur la sortie
+standard, dans le résumé du job GitHub (`$GITHUB_STEP_SUMMARY`) quand il existe, et dans
+`reports/mutations.json` (non versionné, comme `reports/compat/`).
+
+**Où c'est branché, et pourquoi pas dans `npm run check`.** Mesuré le 12 septembre 2026 sur un poste
+de développement : la séquence complète tient entre **5 min 24 s et 8 min 17 s** selon la charge du
+poste — la variance vient presque entièrement de `muter-gardes-persistance.mjs` et
+`muter-gardes-recuperation.mjs`, dont les épreuves couvrent des délais réels. C'est au-dessus du
+seuil de cinq minutes posé pour brancher directement dans `check` : le job **« Campagnes de mutation
+»** est donc un job SÉPARÉ dans `ci.yml`, sur les mêmes déclencheurs que « Qualité et tests »
+(`pull_request`, `push` sur `main`), sans image de référence ni VM — chaque campagne ne joue que
+`node --test` sur des fonctions pures de `src/`. Quinze minutes de plafond, mesuré contre les 8 min
+17 s les plus lentes observées. **Ce check doit être ajouté aux « required status checks » de la
+protection de branche.**
+
+**Réarmer une campagne qui a dérivé.** Un mutant SURVIVANT (« le texte muté ne fait plus rougir
+l'épreuve ») reçoit l'épreuve qui le tue — jamais un retrait pour faire passer le score. Un mutant
+STALE (le texte à retirer ne décrit plus le code : occurrences ≠ 1) est réécrit pour décrire le code
+ACTUEL ; le moteur le compte « NON APPLICABLE », jamais « tué », précisément pour qu'il ne se cache
+pas derrière un score vert. Les deux ADR 0030 et 0031 portent chacune, depuis la PR #188, une
+révision datée qui nomme ce qui a dérivé plutôt que de corriger en silence — le modèle à suivre.
+
+**Ajouter une douzième campagne.** Écrire `tools/muter-gardes-<nom>.mjs` sur le modèle des onze
+(table `MUTATIONS`, `campagneDeMutation` du moteur partagé, sortie `--json`, code de sortie 0/1),
+ajouter une ligne à `CAMPAGNES` dans `tools/rejouer-les-campagnes.mjs`, et documenter le compte ici
+et dans l'ADR de la tranche.
 
 ### La frontière de la coquille de PRODUIT (#161)
 
@@ -805,10 +850,14 @@ adjacentes), les formes de saisie humaine sous NFC, et deux inspections de sourc
 somme de contrôle n'importe rien d'autre que ses refus, et le module du code n'est importé que par
 trois fichiers nommés.
 
-`tests/unit/vm-recuperation-mutation.test.mjs` (**≈ 50 s** : trente-six processus `node --test`)
-fait tourner `tools/muter-gardes-recuperation.mjs` : quatorze gardes retirées une à une du texte
-source, quatorze mutantes tuées. La NFC a survécu au premier passage — l'alphabet base 32 ne porte
-aucun caractère composable —, et c'est le vecteur du signe KELVIN (U+212A) qui la rend mesurable.
+`tests/unit/vm-recuperation-mutation.test.mjs` (**≈ 50 s** : quarante processus `node --test`) fait
+tourner `tools/muter-gardes-recuperation.mjs` : seize gardes retirées une à une du texte source,
+seize mutantes tuées. La NFC a survécu au premier passage — l'alphabet base 32 ne porte aucun
+caractère composable —, et c'est le vecteur du signe KELVIN (U+212A) qui la rend mesurable.
+
+**Révision datée du 12 septembre 2026 (#196).** Ce paragraphe annonçait quatorze gardes : la table
+avait grandi à seize sans que ce compte soit repris. `node tools/muter-gardes-recuperation.mjs` rend
+**16/16**, code de sortie 0 — l'ADR 0025 portait déjà le compte à jour.
 
 Le bout en bout vit dans la frontière de déverrouillage : le cycle complet sur l'OPFS réel — créer
 sous une phrase, ajouter le code, révoquer la phrase, rouvrir par le code saisi sous une forme
@@ -1172,7 +1221,7 @@ référence construite en 1 min 32 s.
 | `vm-cliquet-anti-dek.test.mjs`              | aucun chemin de production du format v4 ne construit de clé AES-GCM depuis une clé de volume                                                                            |
 | `vm-cloture-par-racine.test.mjs` › CHEMIN 3 | une réouverture hors transaction publie TOUT ce qu'elle a scellé — une ÉGALITÉ, pas un écart                                                                            |
 | `vm-enveloppe-page-v2.test.mjs`             | ce que la page v2 COÛTE, relu sur les octets : 4 812 / 8 192, 3 380 libres, au pire tarif                                                                               |
-| `vm-enveloppe-v2-mutation.test.mjs`         | dix-huit gardes de la tranche retirées une à une, dix-huit mutants tués                                                                                                 |
+| `vm-enveloppe-v2-mutation.test.mjs`         | dix-neuf gardes de la tranche retirées une à une, dix-neuf mutants tués                                                                                                 |
 
 Le **budget par domaine** mérite un mot de plus, parce que c'est la forme de preuve que la revue
 externe réclamait. Il ne lit pas le source et n'interroge aucun appelant : il intercepte `deriveKey`
@@ -1180,12 +1229,15 @@ et `importKey` pour ÉTIQUETER chaque `CryptoKey` par sa provenance, puis compte
 `encrypt` par clé. Une clé de provenance inconnue qui chiffrerait ferait rougir la suite — sans quoi
 la mesure serait creuse.
 
-**Les CAMPAGNES DE MUTATION de #182** — `node tools/muter-gardes-enveloppe-v2.mjs` : **dix-huit
-gardes, dix-huit mutants tués**, sur neuf endroits, dont le CLIQUET lui-même, muté par ses QUATRE
+**Les CAMPAGNES DE MUTATION de #182** — `node tools/muter-gardes-enveloppe-v2.mjs` : **dix-neuf
+gardes, dix-neuf mutants tués**, sur neuf endroits, dont le CLIQUET lui-même, muté par ses QUATRE
 motifs séparément ; table dans l'ADR 0036. La campagne a TROUVÉ deux défauts qu'aucune épreuve verte
 ne montrait : un second tirage de sel qui n'était jamais atteint, et une mutation qui portait sur un
 texte présent deux fois. Cinq mutants viennent des deux revues de la PR #187 : les quatre motifs du
-cliquet et la réservation du témoin dans le compte que la racine v3 publie.
+cliquet et la réservation du témoin dans le compte que la racine v3 publie. **Révision datée du 12
+septembre 2026 (#196)** : un dix-neuvième est venu de la revue de sécurité de la PR #188 (HIGH-4) —
+le refus de `muter` sur une page libre appartenant à un AUTRE volume (`refuserLaRetrogradation`,
+`pageLibreEtrangere`) — sans que ce paragraphe soit repris ; ADR 0036 corrigée de même.
 `node tools/muter-gardes-hierarchie-de-cles.mjs` : **vingt-huit gardes, vingt-huit mutants tués**,
 sur onze modules ; table dans l'ADR 0035. Huit de ces mutants viennent des deux revues de la PR #186
 : la borne du lecteur de journal v1, l'ouverture de la source chiffrée, le motif de son
