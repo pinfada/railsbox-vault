@@ -405,6 +405,34 @@ test("un démarrage demandé AVANT l'ouverture du backend est refusé, et le ref
   expect(parEtape.get("backendPuisVm").issue).toBe(ISSUES_DETAPE.differee);
 });
 
+// --- La MÊME preuve par l'échec, pour le geste DESTRUCTEUR de la reprise (#188, MEDIUM-3) ---------
+//
+// `reprendreLInstallationGeste` (`public/runtime-worker.mjs`) porte la MÊME garde d'ordre que
+// `demarrerLApplication` — backend OUVERT avant tout —, et rien ne la traversait avant cette épreuve :
+// ni une campagne de mutation (elle porte sur `src/`, jamais sur le Worker), ni le navigateur (les
+// épreuves de reprise existantes ne vérifient que la VISIBILITÉ du bouton, jamais un clic qui
+// atteindrait le Worker sur un coffre non ouvert). Le bouton est `hidden` à l'état de repos
+// (`afficherLeGesteDeReprise`) : un clic Playwright ordinaire ne l'atteindrait pas, et c'est
+// exactement pourquoi cette épreuve invoque le geste directement, comme le ferait un clic si le
+// bouton n'était pas caché — la garde qu'elle mesure est celle du WORKER, pas celle de l'affichage.
+test("une reprise demandée AVANT l'ouverture du backend est refusée, et le refus nomme l'ordre", async ({
+  page,
+}) => {
+  await ouvrirLaCoquille(page);
+  const rapport = await releve(page);
+  expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(rapport.etat);
+
+  await page.evaluate(() => document.querySelector("#reprendre-l-installation")?.click());
+  await expect(page.locator("#cycle-etat")).toHaveText(
+    `cycle:reprise-refusee:${CODES_REFUS_COQUILLE.etapeHorsOrdre}`,
+    { timeout: DELAI },
+  );
+
+  const apres = await releve(page);
+  expect(apres.application.demarree).toBe(false);
+  expect(apres.application.code).toBe(CODES_REFUS_COQUILLE.etapeHorsOrdre);
+});
+
 // --- La MORT du Worker de confiance : détection et conduite -----------------------------------------
 
 /** Ce que la conduite doit rendre, quelle que soit la cause. */
