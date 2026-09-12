@@ -223,6 +223,15 @@ self.addEventListener("message", (event) => {
   port.start();
 });
 
+/**
+ * Nombre de battements POSTÉS par ce Worker depuis son évaluation (#192, correction I1).
+ *
+ * Il voyage dans chaque battement, et la page en déduit ce qu'elle n'aurait pas su autrement :
+ * un rang qui avance pendant qu'elle ne reçoit rien dit que le fil de la PAGE est affamé ; un rang
+ * qui cesse d'avancer dit que le fil du WORKER l'est.
+ */
+let battementsPostes = 0;
+
 /** File d'exécution du canal privilégié : un message à la fois, dans l'ordre d'arrivée. */
 let chaine = Promise.resolve();
 
@@ -684,7 +693,17 @@ const exclusiviteConstatee = constaterLExclusivite({ volume: VOLUME, peutOuvrir:
 async function enBattant(correlation, geste) {
   const minuterie = setInterval(() => {
     portPrivilegie.postMessage(
-      enveloppeDeMessage(TYPES_PRIVILEGIES.battement, correlee(correlation)),
+      enveloppeDeMessage(TYPES_PRIVILEGIES.battement, {
+        ...correlee(correlation),
+        // Le RANG et l'INSTANT du battement, posés par le Worker (#192, correction I1).
+        //
+        // Ils ne servent qu'à une chose, et elle est décisive : distinguer « le Worker n'a pas
+        // battu » de « la page n'a pas reçu le battement ». Sans eux, la borne de mort par SILENCE
+        // rend le même verdict dans les deux cas, et la cause reste une hypothèse. Ce sont deux
+        // nombres du côté de confiance, qui ne disent rien du volume.
+        rang: (battementsPostes += 1),
+        instantMs: Math.round(performance.now()),
+      }),
     );
   }, DELAI_BATTEMENT_MS);
   try {

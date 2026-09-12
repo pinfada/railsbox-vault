@@ -150,7 +150,17 @@ export const test = base.extend({
     // Les scénarios restent donc aussi isolés les uns des autres qu'avec un contexte éphémère.
     const context = await chromium.launchPersistentContext(
       testInfo.outputPath("profil-navigateur"),
-      { baseURL, headless },
+      // `serviceWorkers` NEUTRALISE la coquille de cadre quand la variable le demande (#192, I1).
+      //
+      // Elle n'existe que pour MESURER : c'est la manipulation par laquelle la revue d'intégration a
+      // isolé la cause — le même scénario, la même image, le même disque, avec et sans le Service
+      // Worker —, et une cause qu'on ne sait pas isoler deux fois est une hypothèse. Aucune recette
+      // ne la pose : un gate qui neutraliserait la moitié de ce qu'il mesure ne mesurerait plus rien.
+      {
+        baseURL,
+        headless,
+        ...(process.env[SANS_COQUILLE_DE_CADRE] ? { serviceWorkers: "block" } : {}),
+      },
     );
     await use(context);
     await context.close();
@@ -164,6 +174,14 @@ export const test = base.extend({
  * donc AUCUNE raison de voir un scénario s'ignorer. En local, sans elle, le `skip` explicite reste —
  * un développeur sans Docker doit pouvoir jouer le reste de la suite.
  */
+/**
+ * Variable par laquelle une MESURE neutralise la coquille de cadre (#192, correction I1).
+ *
+ * Elle sert à isoler une cause, jamais à faire passer une suite : ce que le produit livre inclut
+ * le Service Worker, et un gate qui le neutraliserait mesurerait autre chose que le produit.
+ */
+export const SANS_COQUILLE_DE_CADRE = "VAULT_E2E_SANS_COQUILLE_DE_CADRE";
+
 export const EXIGER = "VAULT_E2E_EXIGER";
 
 /**

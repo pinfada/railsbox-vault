@@ -71,9 +71,9 @@ export const GESTES_ADMIS = Object.freeze([
         "event.request, url)); » — le seul émetteur de PRODUIT : le Service Worker de la coquille " +
         "de cadre intercepte ce que le document servi demande, et n'a aucune autre voie vers le " +
         "guest, qui n'est joignable que depuis le Worker de confiance",
-      'tests/e2e/parcours-page-rails.spec.mjs:304 › « toHaveText("Application de référence") » — ' +
+      'tests/e2e/parcours-page-rails.spec.mjs:311 › « toHaveText("Application de référence") » — ' +
         "le scénario exige que le cadre porte ce que RAILS rend, et non une place tenante",
-      'tests/e2e/parcours-page-rails.spec.mjs:323 › « await servie.locator("#enregistrer")' +
+      'tests/e2e/parcours-page-rails.spec.mjs:330 › « await servie.locator("#enregistrer")' +
         ".click(); » — et qu'un formulaire SOUMIS dans cette page crée une note que le boot à " +
         "froid relit",
     ]),

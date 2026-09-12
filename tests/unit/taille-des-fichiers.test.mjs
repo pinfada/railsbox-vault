@@ -65,7 +65,7 @@ const RACINES = ["src", "public"];
 const HORS_PERIMETRE = [
   {
     fichier: "public/runtime-worker.mjs",
-    lignes: 882,
+    lignes: 900,
     motif:
       "découvert le 11/09/2026 en élargissant RACINES à `public` (#175) : il dépassait déjà le " +
       "plafond avant cet élargissement, et #175 ne scindait que `main.mjs`. Scinder le Worker de " +
@@ -82,7 +82,13 @@ const HORS_PERIMETRE = [
       "pouvait pas partir : le second port de la poignée de main (deux ports, un message, une fois), " +
       "l'appel de branchement, la porte HTTP retenue dans `interne.application`, et l'oubli de la " +
       "session Rails dans `relacherTout`. La tranche a donc réduit la dette de ce fichier plutôt que " +
-      "de l'augmenter, et l'exclusion sort toujours de la liste dès que #191 l'a scindé sous 800.",
+      "de l'augmenter, et l'exclusion sort toujours de la liste dès que #191 l'a scindé sous 800. " +
+      "La correction I1 de la revue d'intégration (12/09/2026) y ajoute DIX-HUIT lignes de MESURE : " +
+      "le battement porte désormais son rang et l'instant où le Worker l'a posté, sans quoi la borne " +
+      "de mort par silence rend le même verdict que le Worker se soit tu ou que la page ne l'ait pas " +
+      "entendu — et la cause reste une hypothèse. Ces dix-huit lignes ont éliminé deux hypothèses par " +
+      "la mesure ; elles restent parce qu'une borne qu'on ne sait pas instrumenter se rediagnostique " +
+      "à chaque incident.",
   },
 ];
 
