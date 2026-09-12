@@ -2749,9 +2749,9 @@ La moitié 2 de [#20](https://github.com/pinfada/railsbox-vault/issues/20) a eu 
 2026, sur `main` à l'empreinte `aa6be826ad0e14162a9e06e5`. Son texte intégral est versé au dépôt en
 [`docs/revue-externe/revue-2026-09-10.md`](revue-externe/revue-2026-09-10.md), et sa nature est
 écrite au registre sans formule d'audit : **une revue adverse assistée par un agent d'IA distinct
-des agents du dépôt, ni tiers humain ni cabinet indépendant.** Que cela satisfasse la condition «
-tiers » des gates de [`SECURITY.md`](../SECURITY.md) est une décision du mainteneur, **et elle n'est
-pas prise**.
+des agents du dépôt, ni tiers humain ni cabinet indépendant.** Le mainteneur décide le 12 septembre
+2026 que son indépendance factuelle satisfait la condition « tiers » de #20 ; cette décision ne la
+transforme pas en audit humain ou de cabinet et ne lève aucun gate à elle seule.
 
 **Verdict du relecteur : le gate « données sensibles » ne doit pas être ouvert.** Deux constats. Le
 CRITICAL est **CORRIGÉ** depuis le 10 septembre 2026
@@ -3634,10 +3634,10 @@ rescellement est au bon endroit ; ce qu'il produit ne traverse pas l'archive. C'
   nouveau pour un volume restauré ; elle ne tient toujours pas contre un support ramené en arrière
   tout entier.
 - **Il ne prouve pas que le format est sûr.** Il décrit ce qu'il fait, ce qu'il ne fait pas, et sous
-  quelles hypothèses. **Un relecteur l'a revu le 10 septembre 2026, et ce n'est pas un tiers au sens
-  des gates** : une revue adverse assistée par un agent d'IA distinct des agents du dépôt, ni tiers
-  humain ni cabinet indépendant. Que cela satisfasse la condition « tiers » est une décision du
-  mainteneur, et elle n'est pas prise.
+  quelles hypothèses. Un agent d'IA distinct des agents du dépôt l'a revu en mode adverse le 10
+  septembre 2026 ; le mainteneur reconnaît cette indépendance factuelle comme tierce pour #20 depuis
+  le 12 septembre. **Ce n'est ni un audit humain ni un audit de cabinet**, et le dépôt ne le
+  présente jamais ainsi.
 - **Il ne prouve pas la confidentialité en exploitation.** Le format est éprouvé de bout en bout
   sous une **clé de test publique** (§ 11).
 - **Il ne prouve rien sur l'implémentation WebCrypto** des moteurs, que ce dépôt ne peut pas

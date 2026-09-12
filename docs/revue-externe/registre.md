@@ -66,11 +66,12 @@ deux » jusqu'à la revue de la PR #187, qui l'a réfuté par la mesure ; il est
 le régime que la v4 remplace, c'est l'unique exception du cliquet, et ne pas ouvrir perdrait une
 écriture acquittée. Voir la décision 4 de l'ADR 0036 et le § 7.4 de la spécification.
 
-Cette ligne est écrite telle quelle plutôt que sous une formule d'audit, et il faut en tirer la
-conséquence sans l'adoucir : **savoir si une revue adverse assistée par un agent d'IA satisfait la
-condition « tiers » des gates de [`SECURITY.md`](../../SECURITY.md) est une décision du mainteneur,
-et elle n'est pas prise.** Le gate « données sensibles » reste FERMÉ dans tous les cas, puisque la
-revue laisse un HIGH ouvert.
+Cette ligne est écrite telle quelle plutôt que sous une formule d'audit. **Le mainteneur décide le
+12 septembre 2026 que cette revue satisfait la condition « tiers » de #20** : le relecteur est
+distinct des auteurs, n'a pas participé au format, a reçu un mandat adverse et a découvert un
+CRITICAL et un HIGH absents du dossier soumis. Cette indépendance factuelle suffit à #20 ; elle ne
+fait de la revue ni un audit humain ni un audit de cabinet. Le gate « données sensibles » reste
+FERMÉ selon ses propres conditions dans [`SECURITY.md`](../../SECURITY.md).
 
 **Une ligne `ouvert` est une dette nommée, pas une disposition.** Le vocabulaire d'origine —
 `corrigé`, `accepté`, `réfuté` — n'avait pas de place pour un constat REÇU et NON traité, et les

@@ -814,12 +814,12 @@ FERMÉ.
 des agents du dépôt**, ni tiers humain ni cabinet indépendant ; identité tenue hors dépôt par le
 mainteneur, à sa demande ; branche `main`, empreinte relue `aa6be826ad0e14162a9e06e5`.
 
-**Et la phrase qui compte, écrite sans être adoucie : savoir si une revue adverse assistée par un
-agent d'IA satisfait la condition « tiers » de ces gates est une DÉCISION DU MAINTENEUR, QUI N'EST
-PAS PRISE.** Tant qu'elle ne l'est pas, ce document ne compte pas cette revue comme la revue externe
-que le gate « qualification produit » exige, et il ne la compte pas non plus pour rien : ses deux
-constats sont dus avant la fermeture de #20. Aucun des deux gates ne bouge dans l'intervalle, et
-c'est vrai quelle que soit la décision — un CRITICAL ouvert les tient fermés à lui seul.
+**Décision du mainteneur, 12 septembre 2026.** Cette revue satisfait la condition « tiers » de #20 :
+le relecteur est distinct des auteurs, n'a pas participé à l'écriture du format, a travaillé en mode
+adverse et a rendu un CRITICAL et un HIGH que le dépôt n'avait pas identifiés. Cette indépendance de
+fait suffit au résultat attendu de #20. Elle ne transforme pas la revue en audit humain ou en audit
+de cabinet, et le dépôt ne la présente jamais ainsi. Les deux constats ont été corrigés avant la
+fermeture de #20. Cette décision clôt la condition de revue ; elle ne lève à elle seule aucun gate.
 
 ## Ce que le chiffrement au repos ne résout pas
 
@@ -837,12 +837,11 @@ n'est plus une brique manquante : la revue externe (#20) a eu lieu le 10 septemb
 un CRITICAL et un HIGH, et **les deux sont corrigés** — le CRITICAL (#181) par la
 [PR #184](https://github.com/pinfada/railsbox-vault/pull/184), le HIGH (#182) par la
 [PR #186](https://github.com/pinfada/railsbox-vault/pull/186) et la
-[PR #187](https://github.com/pinfada/railsbox-vault/pull/187). Le gate reste néanmoins **fermé**, et
-la raison a changé de nature : elle n'est plus un constat ouvert, elle est la QUALIFICATION du
-relecteur. Le mainteneur n'a pas décidé si une revue adverse assistée par un agent d'IA distinct
-satisfait « tiers », le relecteur écrit lui-même que ce gate ne doit pas être ouvert, et **une
-correction ne lève jamais seule un gate** — c'est la règle qui vaut depuis le premier jour, et elle
-vaut d'autant plus ici.
+[PR #187](https://github.com/pinfada/railsbox-vault/pull/187). Le mainteneur compte cette revue
+comme la revue tierce exigée par #20 depuis le 12 septembre 2026, pour les raisons d'indépendance
+factuelle écrites plus haut. Le gate reste néanmoins **fermé** : le verdict reçu demandait de ne pas
+l'ouvrir, les réserves `SEC-*` ci-dessous subsistent, et **une correction ne lève jamais seule un
+gate**.
 
 Ce que la frontière d'origine ne couvre pas :
 
@@ -987,16 +986,16 @@ d'origine.
    [ADR 0035](docs/decisions/0035-format-de-volume-v4-et-migration.md) et
    [ADR 0036](docs/decisions/0036-page-d-enveloppe-v2-et-budgets-exhaustifs.md)).
 
-   **Le gate reste FERMÉ, et deux raisons y suffisent chacune** : le relecteur écrit que ce gate ne
-   doit pas être ouvert, et le mainteneur n'a pas décidé si une revue adverse assistée par un agent
-   d'IA distinct satisfait « tiers ». Corriger les constats d'une revue ne transforme pas cette
-   revue en revue de tiers, et **une correction ne lève jamais seule un gate**.
+   **Le gate reste FERMÉ.** Le mainteneur reconnaît depuis le 12 septembre cette revue adverse comme
+   la revue tierce exigée par #20, sans la qualifier d'audit humain ou de cabinet. Cette décision
+   ferme #20 ; elle ne contredit ni le verdict reçu — ne pas ouvrir ce gate — ni les réserves
+   `SEC-*` qui subsistent. **Une correction ne lève jamais seule un gate.**
 
 3. **Qualification produit interdite** jusqu'à la revue externe, la résolution des constats
-   critiques et élevés et la publication de la matrice navigateur. **Au 11 septembre 2026, UNE des
-   trois conditions est remplie** : les deux constats de la revue sont corrigés (#181 le 10, #182 le
-   11). Les deux autres ne le sont pas — une revue a eu lieu mais le mainteneur n'a pas décidé si sa
-   nature satisfait « tiers », et la matrice navigateur n'est pas publiée.
+   critiques et élevés et la publication de la matrice navigateur. **Au 12 septembre 2026, DEUX des
+   trois conditions sont remplies** : le mainteneur reconnaît la revue adverse comme tierce pour
+   #20, et ses deux constats sont corrigés (#181 le 10, #182 le 11). La matrice navigateur n'est pas
+   publiée ; la qualification produit reste donc interdite.
 
 Une démonstration réussie ne lève jamais seule un gate.
 

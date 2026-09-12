@@ -547,3 +547,11 @@ l'empreinte de région, la racine de clôture et le témoin, plus un par secteur
 MESURÉ depuis le 11 septembre 2026 (`tests/unit/vm-migration-source-v3.test.mjs`), et les 3 + N sont
 tous comptés dans la racine v3. C'est le régime que la v4 remplace, et c'est l'unique exception du
 cliquet anti-DEK. Voir la décision 4 de l'ADR 0036 et le § 7.4 de la spécification.
+
+## Note datée du 12 septembre 2026 — la nature de la revue est décidée
+
+Le mainteneur reconnaît la revue adverse du 10 septembre comme tierce pour #20 : le relecteur était
+distinct des auteurs, n'avait pas participé au format, et a découvert un CRITICAL et un HIGH que le
+dossier ne portait pas. Cette décision clôt #20 après correction des deux constats. Elle ne qualifie
+pas la revue d'audit humain ou de cabinet et, conformément à la décision ci-dessus, n'ouvre pas le
+gate « données sensibles » à elle seule.
