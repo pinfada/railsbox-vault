@@ -1883,11 +1883,20 @@ C'est exactement l'ensemble que `paths` couvre déjà : une PR qui le déclenche
 voir vert avant fusion. Une PR qui ne touche AUCUN de ces chemins ne déclenche pas la recette et n'a
 pas à en exiger une : `npm run check` suffit, comme avant #200.
 
-**Un ou deux ouvriers Playwright**, et ce que la mesure a tranché : voir
-[`quality-attributes.md`](quality-attributes.md), § « Reprise MVP : un ou deux ouvriers ». Le
-paramètre `workers` du déclenchement manuel sert à REJOUER cette mesure ; la production (nocturne,
-label, `ready_for_review`) utilise la valeur retenue, posée en dur dans `reprise.yml`
-(`VAULT_E2E_WORKERS`).
+**Un ou deux ouvriers, puis deux LOTS** : ce que la mesure a tranché, en détail (durée, mémoire,
+disque, par scénario), vit dans [`quality-attributes.md`](quality-attributes.md), § « Reprise MVP :
+un ou deux ouvriers, puis deux lots ». En résumé : deux ouvriers dans UN job restent au-dessus de la
+fenêtre visée (41,5 min pour 35-40 min) parce qu'ils se partagent les 4 vCPU d'un seul exécutant, et
+chaque scénario en pâtit individuellement. `reprise.yml` répartit donc les scénarios en deux LOTS —
+deux jobs, deux exécutants, un ouvrier chacun — plutôt que deux ouvriers dans un seul job :
+`migration-volume-versionne.spec.mjs` reste ENTIER dans son lot (voir la fixture
+`contexte-persistant.mjs`) et la répartition suit la durée mesurée d'un ouvrier, pas un décompte de
+fichiers. L'image de référence est construite une seule fois (job `image`, partagée par artefact
+avec les deux lots) et le rapport Playwright de chaque lot (`blob`) est fusionné en un seul rapport
+HTML par le job `fusion`, avec les mesures des deux lots, dans le même artefact `mesures-reprise`
+qu'avant la scission. Résultat mesuré : 33 min 52 pour le pipeline complet, 10 passed, 0 skipped. Le
+paramètre `workers` du déclenchement manuel sert à REJOUER la mesure DANS un lot (par défaut 1, la
+valeur retenue) ; il ne change ni le nombre de lots ni leur répartition.
 
 #### Reprise PAR INSTANTANÉ : `tests/e2e/instantane-reprise.spec.mjs` (#65)
 

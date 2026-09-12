@@ -1357,6 +1357,75 @@ de la mémoire que le relevé publie.
   d'inclure, n'est mesurée que par le scénario navigateur (elle est dans ses 0,92 s de boot
   complet), pas par la série de dix.
 
+## Reprise MVP : un ou deux ouvriers, puis deux lots (#200)
+
+**Le diagnostic.** Le job `Reprise MVP` (`reprise.yml`) tournait avec `workers: 1` : dix scénarios
+en séquence, 54 à 60 min, pour une construction d'image qui n'en prend que 6. La recommandation du
+mainteneur (#200) : mesurer `workers: 2` sur le MÊME commit, avec un objectif de 35 à 40 min sans
+rien retirer ni ajouter de reprise, et sharder ENSUITE si deux ouvriers n'y suffisent pas.
+
+**Un ou deux ouvriers, DANS UN SEUL job — le relevé.** Deux runs `workflow_dispatch` sur le commit
+`e599d12`, exécutant `ubuntu-latest` (4 vCPU, 15,61 Gio) :
+
+| Grandeur                    | 1 ouvrier (run 34687386546) | 2 ouvriers (run 34690113393) |
+| --------------------------- | --------------------------: | ---------------------------: |
+| Job total                   |                   60 min 37 |                    48 min 09 |
+| Étape E2E (10 scénarios)    |        54 min 17 (« 54.3m») |         41 min 30 (« 41.5m») |
+| Mémoire disponible minimale |                   12,15 Gio |                    11,09 Gio |
+| Mémoire au pic              |                    3,46 Gio |                     4,52 Gio |
+| Disque disponible minimal   |                   78,88 Gio |                    77,79 Gio |
+| Résultat                    |        10 passed, 0 skipped |         10 passed, 0 skipped |
+| Invariant Rails             |              conforme 10/10 |               conforme 10/10 |
+
+Détail par fichier, à un ouvrier (séquentiel, la mesure de référence) :
+`reprise-mutation-boot-froid` 10,79 min, `restauration-inter-origine` 8,76, `instantane-reprise`
+7,25, `migration-volume-versionne` (deux épreuves) 4,98 + 5,02, `archive-recuperation-inter-origine`
+5,09, `enveloppe-rotation-boot-froid` 4,38, `coupure-generation-boot-froid` 3,56,
+`reprise-coquille-boot-froid` 2,94, `export-volume-verifiable` 1,43.
+
+**Ce que deux ouvriers dans UN job ne corrigent pas.** 41,5 min reste au-dessus de la fenêtre visée
+(35-40 min), et le relevé dit pourquoi : deux ouvriers se PARTAGENT les 4 vCPU d'un seul exécutant,
+et chaque scénario en pâtit individuellement — `reprise-mutation-boot-froid` passe de 10,79 à 15,90
+min, `restauration-inter-origine` de 8,76 à 14,01, `instantane-reprise` de 7,25 à 11,36. Le gain net
+(54,3 → 41,5 min) vient du recouvrement, pas d'une exécution plus rapide ; ni la mémoire (4,52 Gio
+sur 15,61) ni le disque (77,79 Gio restants) n'expliquent la limite — c'est le CPU.
+
+**Décision (point 3 de #200, sur mesure) : deux LOTS, deux exécutants.** Puisque deux ouvriers dans
+un seul job restent au-dessus de 40 min, `reprise.yml` répartit désormais les scénarios en deux lots
+— deux jobs, chacun sur son propre exécutant, un seul ouvrier chacun — plutôt que deux ouvriers
+partageant un job. L'image de référence est construite UNE fois (job `image`) et partagée par
+artefact ; les scénarios sont répartis par la durée mesurée ci-dessus, pas par décompte de fichiers
+(`migration-volume-versionne.spec.mjs` garde ses deux épreuves dans le même lot, pour ne pas casser
+le rang stable dont sa chronologie a besoin) :
+
+- **lot 1** — `reprise-mutation-boot-froid`, `instantane-reprise`,
+  `archive-recuperation-inter-origine`, `coupure-generation-boot-froid` (≈ 27 min visées) ;
+- **lot 2** — `migration-volume-versionne` (deux épreuves), `restauration-inter-origine`,
+  `enveloppe-rotation-boot-froid`, `reprise-coquille-boot-froid`, `export-volume-verifiable` (≈ 27
+  min visées).
+
+**Le relevé du pipeline en lots**, commit `75380d8`, run 34695120844 :
+
+| Job                                   |         Durée | Résultat                                           | Mémoire au pic | Disque disponible minimal |
+| ------------------------------------- | ------------: | -------------------------------------------------- | -------------: | ------------------------: |
+| `image` (construction, une fois)      |      6 min 11 | succès                                             |              — |                         — |
+| `reprise` — lot 1 (4 scénarios)       |     27 min 22 | 4 passed (« 26.6m »)                               |       3,41 Gio |                 81,50 Gio |
+| `reprise` — lot 2 (6 scénarios)       |     24 min 25 | 6 passed (« 23.6m »)                               |       3,12 Gio |                 80,15 Gio |
+| `fusion` (mesures + rapport fusionné) |      0 min 12 | succès                                             |              — |                         — |
+| **Pipeline complet**                  | **33 min 52** | **10 passed, 0 skipped, invariant conforme 10/10** |              — |                         — |
+
+Chaque lot retrouve quasiment le coût mémoire d'UN ouvrier seul (3,1-3,4 Gio, contre 3,46 Gio à un
+ouvrier dans le relevé du dessus) : aucune contention, parce que chaque lot a son propre exécutant.
+33 min 52 tient sous la fenêtre de 35-40 min visée par #200, sans reprise ajoutée ni scénario retiré
+— les dix passent, sur les deux relevés.
+
+**Ce que le premier essai du pipeline en lots a raté, et pourquoi ce n'est pas répété.** Le tout
+premier run (34692793350, commit `c105c48`) a rougi sur `reprise-coquille-boot-froid.spec.mjs`
+(lot 2) : `artifacts/application.json` — le descripteur SERVI (ADR 0030), écrit par le même geste
+que le manifeste mais comme un SIBLING de `artifacts/reference-image/`, pas un fichier dedans —
+n'était pas partagé entre le job `image` et les lots. Corrigé au commit `75380d8` ; c'est le run
+cité ci-dessus qui en porte la preuve.
+
 ## Compatibilité
 
 La cible produit est les deux dernières versions stables de Chromium, Firefox et Safari sur
