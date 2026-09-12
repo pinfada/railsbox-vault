@@ -130,9 +130,18 @@ const rapport = {
       dernierRetardMs: null,
       pireRetardMs: 0,
       dernierRecuMs: null,
+      /**
+       * Le plus long INTERVALLE entre deux battements consécutifs, sur l'horloge du WORKER. C'est
+       * lui qui a nommé la cause de I1 : une boucle d'installation qui ne rendait jamais la main
+       * taisait le battement plus de trente secondes, sans qu'aucun rang ne manque.
+       */
+      pireEcartMs: 0,
+      dernierInstantMs: null,
     },
     /** Ce que le CANAL de relais a porté : posté vers le Worker, revenu de lui. */
     relaisCanal: { postees: 0, revenues: 0 },
+    /** Le geste dont l'attente a expiré par SILENCE, s'il y en a eu un : son type et ses durées. */
+    silence: null,
   },
 };
 

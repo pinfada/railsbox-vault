@@ -10,6 +10,16 @@
 // L'atomicité de la création — « un volume naît ANONYME, son manifeste n'est inscrit qu'une fois le
 // disque écrit et flushé » — appartient à l'appelant, des deux côtés.
 
+import { creerCederLaMain } from "./ceder-la-main.mjs";
+
+/** Taille d'une tranche d'écriture : un mébioctet, multiple de tout secteur du dépôt. */
+const TRANCHE_D_ECRITURE_OCTETS = 1 << 20;
+
+/** La prochaine frontière ABSOLUE de tranche strictement après `position`. */
+function alignementSuivant(position) {
+  return (Math.floor(position / TRANCHE_D_ECRITURE_OCTETS) + 1) * TRANCHE_D_ECRITURE_OCTETS;
+}
+
 /**
  * Verse une réponse HTTP dans le backend, morceau par morceau, et franchit une barrière à la fin.
  *
@@ -48,12 +58,23 @@ export async function verserFluxDansVolume(backend, url) {
     throw new Error(`Disque applicatif ${url} indisponible (${response.status}).`);
   }
   const reader = response.body.getReader();
+  // Un flux déjà en mémoire se lit en microtâches : la boucle cède la main entre deux tranches, pour
+  // que le battement du Worker continue de battre pendant le versement (#192, I1).
+  const cederLaMain = creerCederLaMain();
   let offset = 0;
   for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
     if (value.byteLength === 0) continue;
-    await backend.write(offset, value);
+    // Un morceau du flux peut peser des dizaines de mébioctets, et son chiffrement est synchrone : il
+    // est écrit par TRANCHES alignées sur une frontière absolue d'un mébioctet — donc de secteur —,
+    // si bien qu'aucun secteur n'est coupé par une tranche et qu'aucun octet écrit ne change.
+    for (let lu = 0; lu < value.byteLength;) {
+      const fin = Math.min(value.byteLength, alignementSuivant(offset + lu) - offset);
+      await backend.write(offset + lu, value.subarray(lu, fin));
+      lu = fin;
+      await cederLaMain();
+    }
     offset += value.byteLength;
   }
   await backend.flush();

@@ -129,7 +129,7 @@ const SOUS_SURVEILLANCE = [
   },
   {
     fichier: "src/vm/opfs-block-backend.mjs",
-    lignes: 796,
+    lignes: 797,
     motif:
       "#181 y ajoute UN geste, `empreinteDuFichier`, et il ne peut pas vivre ailleurs : c'est le " +
       "calcul de l'empreinte du fichier ENTIER, fait ICI précisément pour ne pas exposer du " +
@@ -148,7 +148,11 @@ const SOUS_SURVEILLANCE = [
       "cycle de vie du backend, et les déplacer demanderait de sortir `close()` avec eux. La revue " +
       "de sécurité de la PR #187 (constat 3) y ajoute la PUBLICATION qui suit chaque écriture " +
       "directe : une fin d'onglet tue le Worker sans fermeture, et la clôture ne pouvait donc pas " +
-      "n'exister qu'en `close()`.",
+      "n'exister qu'en `close()`. " +
+      "La correction I1 de la revue d'intégration de la PR #203 (12/09/2026) y ajoute UNE ligne : " +
+      "l'empreinte parcourt le fichier en CÉDANT LA MAIN (`ceder-la-main.mjs`), sans quoi cinq " +
+      "secondes de relecture synchrone taisaient le battement du Worker de confiance pendant " +
+      "l'installation. La boucle est partie dans ce module-là ; il ne reste ici que son appel.",
   },
   {
     fichier: "src/vm/enveloppe-de-cle.mjs",
