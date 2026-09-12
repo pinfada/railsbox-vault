@@ -51,6 +51,17 @@ class VaultControllerTest < ActionDispatch::IntegrationTest
   test "aucune route ActiveStorage n'est exposée" do
     chemins = Rails.application.routes.routes.map { |route| route.path.spec.to_s }
 
-    assert_equal ["/vault/health(.:format)", "/vault/invariant(.:format)"], chemins
+    # La liste est EXHAUSTIVE, et c'est ce qui fait sa valeur : elle rougit sur
+    # une route ajoutée par inadvertance autant que sur une route d'ActiveStorage.
+    # Les trois dernières sont la surface HTML de #192 ; les deux premières n'ont
+    # pas bougé.
+    assert_equal [
+      "/vault/health(.:format)",
+      "/vault/invariant(.:format)",
+      "/",
+      "/notes(.:format)",
+      "/notes/:id(.:format)"
+    ], chemins
+    assert_empty chemins.grep(%r{rails/active_storage})
   end
 end

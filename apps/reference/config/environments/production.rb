@@ -15,6 +15,15 @@ Rails.application.configure do
 
   config.active_support.report_deprecations = false
 
-  # Aucun fichier statique : l'application n'a ni asset, ni page.
-  config.public_file_server.enabled = false
+  # Les fichiers statiques sont SERVIS (#192). La surface HTML porte une feuille
+  # de style, un script et une image : trois requêtes réelles que le relais doit
+  # franchir. Sans ce serveur, Rails rendrait 404 sur les trois, et la page
+  # mesurée ne serait pas une page.
+  #
+  # Aucune empreinte n'entre dans les noms et il n'y a pas de pipeline d'actifs :
+  # le cache est donc laissé à la REVALIDATION plutôt qu'à une durée, faute de
+  # quoi un actif modifié par une version suivante serait servi depuis la
+  # mémoire du navigateur sans être redemandé.
+  config.public_file_server.enabled = true
+  config.public_file_server.headers = { "cache-control" => "no-cache" }
 end
