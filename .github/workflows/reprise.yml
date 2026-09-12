@@ -97,12 +97,18 @@ jobs:
         run: npm run image:build
 
       # Partagée avec les deux lots : construite une seule fois (≈ 6 min), elle ne l'est plus deux
-      # fois. Une rétention courte suffit, l'artefact n'a de sens que pour ce run.
+      # fois. `application.json` est le DESCRIPTEUR SERVI (ADR 0030) : `image:build` l'écrit du même
+      # geste que le manifeste, à côté de `reference-image/` et non dedans (manifest.mjs) — l'oublier
+      # ici reproduit exactement le vert par vacuité de #163 sur `reprise-coquille-boot-froid.spec.mjs`
+      # (constaté sur le premier run de cette scission : lot 2 a rougi, préalable absent). Une
+      # rétention courte suffit, l'artefact n'a de sens que pour ce run.
       - name: Partage de l'image construite
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: image-de-reference
-          path: artifacts/reference-image/
+          path: |
+            artifacts/reference-image/
+            artifacts/application.json
           retention-days: 1
 
   reprise:
@@ -156,11 +162,13 @@ jobs:
       - name: Installation de Chromium
         run: npx playwright install --with-deps chromium
 
+      # `path: artifacts` (et non `artifacts/reference-image`) : l'artefact porte aussi
+      # `application.json`, un SIBLING de `reference-image/` et non un fichier dedans.
       - name: Récupération de l'image construite
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: image-de-reference
-          path: artifacts/reference-image
+          path: artifacts
 
       - name: Récupération vérifiée des artefacts v86
         run: npm run vm:fetch
