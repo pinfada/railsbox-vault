@@ -114,17 +114,35 @@ export const ENTETES_DE_REPONSE_RENDUES = Object.freeze([
  *
  * Ils existent parce que le Service Worker a pour portée l'origine ENTIÈRE : sans cette liste, il
  * relaierait au guest le document qui le porte, le module qui l'enregistre et le contrat qu'ils
- * importent — c'est-à-dire qu'il se couperait la branche sur laquelle il est assis. Les deux
- * derniers préfixes sont ceux des BANCS et des ÉPREUVES que ce dépôt sert sur la même origine en
- * local : un Service Worker qui relaierait `/coquille-epreuve/hostile.html` ferait rougir des suites
- * qui n'ont rien demandé.
+ * importent — c'est-à-dire qu'il se couperait la branche sur laquelle il est assis.
+ *
+ * Trois familles, et chacune a son motif :
+ *
+ *  - **la coquille de cadre elle-même** — le courtier, ses modules, le contrat qu'ils importent ;
+ *  - **ce que l'ARBRE APPLICATIF publie d'autre** : la place tenante (`/index.html`), l'inventaire
+ *    de publication et le fichier d'en-têtes. Ce sont des fichiers de CE DÉPÔT, pas des pages que le
+ *    guest rend — et le témoin d'en-têtes de l'ADR 0017 mesure justement la place tenante. Sans
+ *    cette famille, il a mesuré un 504 du relais au lieu des en-têtes du serveur : mesuré le
+ *    12 septembre 2026, et c'est ce qui l'a fait entrer ici ;
+ *  - **les BANCS et les ÉPREUVES** que ce dépôt sert sur la même origine en local : un Service
+ *    Worker qui relaierait `/coquille-epreuve/hostile.html` ferait rougir des suites qui n'ont rien
+ *    demandé.
+ *
+ * **Ce que cette liste COÛTE, et il faut l'écrire** : une application qui servirait elle-même l'un
+ * de ces chemins ne serait pas relayée là. Aucune n'a de raison de servir `/cadre/` ou
+ * `/document-applicatif.html` ; `/index.html`, en revanche, est un chemin qu'une application
+ * pourrait vouloir — et elle ne l'obtiendrait pas. Rails sert `/`, que le relais transmet.
  *
  * La liste est un PRÉFIXE par entrée, et elle est comparée sur le chemin seul.
  */
 export const CHEMINS_DE_LA_COQUILLE_DE_CADRE = Object.freeze([
   "/document-applicatif",
+  "/service-worker-du-cadre.mjs",
   "/cadre/",
   "/src/",
+  "/index.html",
+  "/inventaire.json",
+  "/_headers",
   "/vm/",
   "/compat",
   "/coquille-epreuve/",

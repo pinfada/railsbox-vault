@@ -123,15 +123,18 @@ parole.
 
 ### Le CHEMIN SERVI, et ses deux moitiés (#192)
 
-**Le flottement Firefox, et ce qu'il coûte à ce gate.** Sous `npm run check`, quinze projets de
-navigateur s'exécutent ensemble, et le flottement déjà documenté dans `playwright.config.mjs` — une
-navigation qui « ne rend JAMAIS la main » — se saisit de quelques épreuves par exécution,
-différentes à chaque fois. Mesuré le 12 septembre 2026 sur la machine de développement : cinq
-épreuves Firefox expirées sur `page.goto` dans le check entier, et **quarante-six sur quarante-six
-vertes** quand les mêmes projets Firefox s'exécutent SEULS (2 min 30 s). L'intégration continue
-reprend deux fois (`retries: 2`) et publie le compte des reprises (`tools/compter-reprises.mjs`).
-C'est une propriété de l'exécutant, pas du produit — et #192 y ajoute un projet de trois moteurs,
-donc de la charge.
+**Cette suite passe par la fixture de récupération Firefox**, comme les autres familles du gate :
+elle importe `test` de `tests/support/test.mjs`, et non de `@playwright/test`. Le motif est celui de
+#178, écrit plus bas dans ce document — la frontière fautive est le suivi de navigation de
+Playwright, pas la page —, et une suite qui l'oublierait paierait les cent vingt secondes du délai
+d'épreuve sur une navigation qui ne rend jamais la main.
+
+**Ce que #192 ajoute à la charge du gate**, et il faut le dire : un projet de plus sur les TROIS
+moteurs, soit environ quatre-vingts secondes. Mesuré le 12 septembre 2026 sur la machine de
+développement, avant que la fixture de récupération ne soit disponible : cinq épreuves Firefox
+expirées sur `page.goto` dans le check entier, et **quarante-six sur quarante-six vertes** quand les
+mêmes projets Firefox s'exécutent SEULS (2 min 30 s) — la signature exacte de la frontière que #178
+attribue.
 
 Servir une page Rails dans le cadre se prouve en deux endroits, et les deux sont nécessaires :
 
