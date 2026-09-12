@@ -113,11 +113,12 @@ volume de coquille est sans garde de fraîcheur hors transaction. Le registre fa
 ligne. Plus aucun constat ne bloque la qualification par lui-même.
 
 **Et la nature du relecteur ne se laisse pas arrondir.** C'est une revue adverse assistée par un
-agent d'IA distinct des agents du dépôt, ni tiers humain ni cabinet indépendant. **Savoir si cela
-satisfait la condition « tiers » des gates est une décision du mainteneur, qui n'est pas prise**
-([`SECURITY.md`](../SECURITY.md)). Tant qu'elle ne l'est pas, ce critère ne compte pas la revue
-comme l'audit externe que sa cible exige. Depuis le 11 septembre, c'est cette décision seule qui
-retient le critère, plus aucun constat ouvert.
+agent d'IA distinct des agents du dépôt, ni tiers humain ni cabinet indépendant. **Le mainteneur
+décide le 12 septembre 2026 qu'elle satisfait la condition « tiers » de #20** : séparation des
+auteurs, absence de participation au format, mandat adverse et découverte effective de deux défauts
+non identifiés. Cette décision ne la transforme pas en audit humain ou de cabinet. Les deux constats
+sont corrigés ; #20 peut fermer. Le gate « données sensibles » et la qualification produit restent
+régis séparément par [`SECURITY.md`](../SECURITY.md).
 
 ### Qualité et performance mesurées — cible 9,5
 

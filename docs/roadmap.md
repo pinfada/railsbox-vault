@@ -119,7 +119,7 @@ une empreinte de la région d'authentification qui rend détectable le retour ar
 un témoin voisin (`<volume>.temoin`) rend détectable le retour arrière PARTIEL du support. Coût
 mesuré sur OPFS réel : 339 à 387 ms pour 512 Mio, soit 0,6 % du budget de reprise de l'ADR 0005. Le
 retour arrière COMPLET reste **nommé non détecté** — il exige une ancre hors du support, renvoyée à
-#23 — et une épreuve le montre plutôt que de l'écrire seulement. Reste : #20, la revue externe.
+#23 — et une épreuve le montre plutôt que de l'écrire seulement.
 
 **#20, moitié 1, livrée le 5 septembre 2026** — le dossier de revue existe avant le relecteur :
 [`format-de-volume-v3.md`](format-de-volume-v3.md) décrit le format champ par champ, avec ses codes
@@ -136,8 +136,14 @@ du 3, aucun octet du volume ne bouge ; #142 (un témoin authentique rejoué fabr
 permanent) et #144 (l'alternance des racines garde le point de recul d'une génération sur le
 support) sont traités par la PR #153 — #144 corrigé par une règle de conjonction (racine abîmée à
 côté d'une racine retenue, sans témoin : refus ; témoin concordant : ouverture et code publié), #142
-accepté comme limite écrite, sans changement de format. La moitié 2 — solliciter un tiers — n'a pas
-eu lieu, et le registre le dit.
+accepté comme limite écrite, sans changement de format.
+
+**#20, moitié 2, achevée le 12 septembre 2026** — une revue adverse par un agent d'IA distinct des
+auteurs a été reçue le 10 septembre sur `aa6be826ad0e14162a9e06e5`. Elle a découvert #181 (CRITICAL,
+archive mélangeable) et #182 (HIGH, budget AES-GCM non global), corrigés respectivement par les PR
+#184 et #186/#187. Le mainteneur reconnaît le 12 septembre son indépendance factuelle comme tierce
+pour #20, sans la présenter comme un audit humain ou de cabinet. Le registre est sans CRITICAL/HIGH
+ouvert ; #20 est clos. Les gates d'utilisation restent gouvernés séparément par `SECURITY.md`.
 
 ## 5 — Déverrouillage et origine de confiance
 
