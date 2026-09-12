@@ -89,11 +89,54 @@ export const CHEMIN_APPLICATIF_PAR_DEFAUT = "/document-applicatif.html";
  * @returns {string | null} le chemin, ou `null` s'il n'en est pas un
  */
 export function cheminApplicatifAdmis(chemin) {
-  if (typeof chemin !== "string" || chemin.length === 0) return null;
+  return cheminSansDetour(chemin);
+}
+
+/** Les ENCODAGES d'un séparateur ou d'un point : un détour écrit autrement reste un détour. */
+const ENCODAGES_DE_DETOUR = /%(?:2f|5c|2e)/i;
+
+/**
+ * Un chemin ABSOLU de la même origine, qui ne peut plus en devenir un autre, ou `null`.
+ *
+ * Une garde qui ne regarde que le DÉBUT d'un chemin (`//`, `\`) est contournée par ce que la
+ * normalisation d'une URL fera ensuite de son MILIEU : `/..//evil.test/` commence bien par une
+ * seule barre, et se normalise pourtant en `//evil.test/` — une URL relative au schéma, c'est-à-dire
+ * une autre origine (revue de sécurité de la PR #203, constat 4). La règle est donc posée sur la
+ * partie CHEMIN entière, avant toute normalisation, et elle refuse ce qui pourrait en changer :
+ *
+ *  - un chemin qui ne commence pas par `/` ;
+ *  - une barre inversée, n'importe où — certains analyseurs la lisent comme `/` ;
+ *  - un segment VIDE (`//`), un segment `.` ou `..` — ce sont eux que la normalisation replie ;
+ *  - un séparateur ou un point ENCODÉS (`%2F`, `%5C`, `%2E`) — la même chose, écrite autrement ;
+ *  - un caractère de contrôle ou une ESPACE, n'importe où, requête comprise : c'est une seconde
+ *    ligne dans la requête HTTP que le pont série composera, et le pont refuse l'espace lui-même
+ *    (`serial-bridge.py`) — l'admettre ici rendrait un refus MUET là où un refus typé est promis.
+ *
+ * La REQUÊTE (`?…`) n'est pas repliée par la normalisation : elle n'est soumise qu'à la dernière
+ * règle, et `?retour=%2Fnotes` reste admis.
+ *
+ * @param {unknown} valeur
+ * @returns {string | null}
+ */
+export function cheminSansDetour(valeur) {
+  if (typeof valeur !== "string" || valeur.length === 0) return null;
+  for (let index = 0; index < valeur.length; index += 1) {
+    const code = valeur.charCodeAt(index);
+    if (code <= 0x20 || code === 0x7f) return null;
+  }
+  const fin = valeur.search(/[?#]/);
+  const chemin = fin === -1 ? valeur : valeur.slice(0, fin);
   if (!chemin.startsWith("/")) return null;
-  if (chemin.startsWith("//")) return null;
   if (chemin.includes("\\")) return null;
-  return chemin;
+  if (ENCODAGES_DE_DETOUR.test(chemin)) return null;
+  const segments = chemin.slice(1).split("/");
+  // Le DERNIER segment peut être vide : `/notes/` est un chemin. Aucun autre.
+  for (let rang = 0; rang < segments.length; rang += 1) {
+    const segment = segments[rang];
+    if (segment === "." || segment === "..") return null;
+    if (segment === "" && rang !== segments.length - 1) return null;
+  }
+  return valeur;
 }
 
 /**

@@ -16,7 +16,7 @@
  */
 
 import assert from "node:assert/strict";
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -166,6 +166,8 @@ test("l'origine applicative publie le PROXY, et rien de ce que le guest rend (#1
       "public/cadre",
       "src/coquille/contrat-de-messages.mjs",
       "src/coquille/refus-de-coquille.mjs",
+      "src/coquille/origines-de-la-coquille.mjs",
+      "src/coquille/routage-du-cadre.mjs",
       "src/coquille/relais-http.mjs",
     ],
     "L'arbre applicatif porte le proxy, et rien d'autre. Un artefact de plus y serait du produit " +
@@ -188,6 +190,39 @@ test("l'origine applicative publie le PROXY, et rien de ce que le guest rend (#1
     application.placeTenante.contenu.includes("place tenante"),
     "le document de l'origine applicative doit se déclarer comme place tenante",
   );
+  // Et elle ne dit plus que « aucun artefact » n'y est publié : c'est faux depuis #192 (revue
+  // d'intégration de la PR #203, constat 17).
+  assert.ok(!application.placeTenante.contenu.includes("Aucun artefact de ce dépôt"));
+});
+
+test("tout module que le proxy IMPORTE est publié avec lui (#192, revue #203)", async () => {
+  // Un import non publié casserait le Service Worker EN PRODUCTION seulement : le serveur local sert
+  // tout `public/` et `src/`, l'hébergeur ne sert que l'arbre. La fermeture des imports est donc
+  // calculée, et chaque fichier doit tomber sous une source de l'arbre applicatif.
+  const application = ARBRES.find(({ nom }) => nom === "application");
+  const couvert = (fichier) =>
+    application.sources.some(
+      ({ depuis }) => fichier === depuis || fichier.startsWith(`${depuis}/`),
+    );
+  const aVisiter = ["public/service-worker-du-cadre.mjs", "public/document-applicatif.mjs"];
+  const vus = new Set();
+  while (aVisiter.length > 0) {
+    const fichier = aVisiter.pop();
+    if (vus.has(fichier)) continue;
+    vus.add(fichier);
+    assert.ok(couvert(fichier), `${fichier} est importé par le proxy et n'est pas publié`);
+    const texte = await readFile(path.join(REPO_ROOT, fichier), "utf8");
+    for (const [, cible] of texte.matchAll(/^\s*(?:import|export)[^;]*?from\s+"([^"]+)"/gms)) {
+      const resolu = cible.startsWith("/")
+        ? path.posix.join(cible.startsWith("/src/") ? "" : "public", cible.slice(1))
+        : path.posix.join(path.posix.dirname(fichier), cible);
+      // L'arbre publié met `public/` et `src/` à la même racine : `./src/…` depuis `public/` est
+      // donc `src/…` du dépôt.
+      aVisiter.push(resolu.startsWith("public/src/") ? resolu.slice("public/".length) : resolu);
+    }
+  }
+  assert.ok(vus.has("src/coquille/routage-du-cadre.mjs"));
+  assert.ok(vus.has("src/coquille/origines-de-la-coquille.mjs"));
 });
 
 test("la CSP publiée est CELLE de `tools/serve-headers.mjs`, pas une copie", () => {

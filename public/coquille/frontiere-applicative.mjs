@@ -13,8 +13,12 @@ import {
   enveloppeDeMessage,
   sansCapacite,
 } from "/src/coquille/contrat-de-messages.mjs";
-import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
-import { evaluerRequeteRelayee } from "/src/coquille/relais-http.mjs";
+import {
+  CODES_REFUS_COQUILLE,
+  codeDeRefusAdmis,
+  messageDeRefus,
+} from "/src/coquille/refus-de-coquille.mjs";
+import { evaluerRequeteRelayee, relaisAbandonne } from "/src/coquille/relais-http.mjs";
 
 /**
  * Nombre maximal de requêtes du document applicatif servies EN MÊME TEMPS. Voir le raisonnement
@@ -49,7 +53,7 @@ export function creerFrontiereApplicative({ rapport, publier, mesurer, emplaceme
    * Le relais est-il ABANDONNÉ ? Posé par le verrouillage et les fins d'onglet, jamais retiré : une
    * coquille qui a cessé de servir ne recommence pas sans un rechargement.
    */
-  let relaisAbandonne = false;
+  let relaisRetire = false;
 
   window.addEventListener("message", (event) => {
     // Une annonce ne TRANSFÈRE rien (voir le raisonnement dans l'historique de `main.mjs` avant
@@ -228,7 +232,7 @@ export function creerFrontiereApplicative({ rapport, publier, mesurer, emplaceme
 
   /** La coquille a-t-elle cessé de servir ? Mort du Worker, ou relais explicitement abandonné. */
   function abandonne() {
-    return relaisAbandonne || pont.cycle.estMort();
+    return relaisAbandonne({ relaisAbandonne: relaisRetire, workerMort: pont.cycle.estMort() });
   }
 
   /** COMPTE un abandon. Rien n'est posté : le cadre n'existe plus, ou ne doit plus rien recevoir. */
@@ -246,7 +250,9 @@ export function creerFrontiereApplicative({ rapport, publier, mesurer, emplaceme
    * @param {string | null} recu
    * @param {string | null} correlation
    */
-  function refuserLaRequete(port, code, recu, correlation) {
+  function refuserLaRequete(port, codeRecu, recu, correlation) {
+    // L'ensemble CLOS du § 10.5, et rien d'autre, entre dans le relevé et sur le port.
+    const code = codeDeRefusAdmis(codeRecu);
     rapport.requetesRefusees += 1;
     compter(rapport.refusDeRequete, code);
     publier();
@@ -258,7 +264,9 @@ export function creerFrontiereApplicative({ rapport, publier, mesurer, emplaceme
 
   /** Pousse l'annonce de barrière vers l'application, si un port lui a été octroyé. */
   function pousserLaBarriere() {
-    if (pont.cycle.estMort()) return;
+    // La MÊME garde que les réponses relayées : un cadre retiré ne reçoit plus d'annonce (revue de
+    // sécurité de la PR #203, constat 14).
+    if (abandonne()) return;
     if (portRestreint === null) return;
     portRestreint.postMessage(
       enveloppeDeMessage(TYPES_APPLICATIFS.barriere, { barrieres: rapport.barrieres }),
@@ -309,7 +317,7 @@ export function creerFrontiereApplicative({ rapport, publier, mesurer, emplaceme
    * UN seul, et c'est pour cela qu'ils vivent dans la même fonction.
    */
   function retirerLeCadre() {
-    relaisAbandonne = true;
+    relaisRetire = true;
     cadre?.remove();
     cadre = null;
     rapport.cadreApplicatif = "retire";

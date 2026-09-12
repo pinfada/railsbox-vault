@@ -237,6 +237,20 @@ export const SOURCES_APPLICATION = Object.freeze([
     role: "Les codes de refus, que le contrat importe. Publics pour la même raison que lui.",
   }),
   Object.freeze({
+    depuis: "src/coquille/origines-de-la-coquille.mjs",
+    vers: "src/coquille/origines-de-la-coquille.mjs",
+    role:
+      "La garde de CHEMIN (`cheminSansDetour`), que le relais importe : la même règle pour le " +
+      "document encadré et pour ce que le cadre demande (revue de sécurité de la PR #203, constat 4).",
+  }),
+  Object.freeze({
+    depuis: "src/coquille/routage-du-cadre.mjs",
+    vers: "src/coquille/routage-du-cadre.mjs",
+    role:
+      "Le ROUTAGE du Service Worker : quel courtier sert quelle requête, ou quel refus lisible. Pur, " +
+      "éprouvé et muté ; il tient qu'aucune requête n'est servie par le courtier d'un autre coffre.",
+  }),
+  Object.freeze({
     depuis: "src/coquille/relais-http.mjs",
     vers: "src/coquille/relais-http.mjs",
     role:
@@ -262,9 +276,10 @@ export const PLACE_TENANTE_APPLICATION = `<!doctype html>
       <h1>Territoire applicatif</h1>
       <p id="place-tenante" role="status">
         Cette origine sert les documents rendus par le guest et relayés par le proxy (ADR 0002).
-        Aucun artefact de ce dépôt n'y est publié : ce document est une place tenante, présente pour
-        que la frontière d'origine soit joignable et que le témoin d'en-têtes ait quelque chose à
-        encadrer.
+        Le seul artefact de ce dépôt qui y est publié est ce PROXY — le courtier, son Service Worker
+        et les modules qu'ils importent (ADR 0038) ; ce document-ci est une place tenante, présente
+        pour que la frontière d'origine soit joignable et que le témoin d'en-têtes ait quelque chose
+        à encadrer.
       </p>
     </main>
   </body>

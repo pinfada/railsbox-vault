@@ -285,6 +285,24 @@ export const TOUS_LES_CODES_DE_COQUILLE = Object.freeze(
   Object.values(CODES_REFUS_COQUILLE).slice().sort(),
 );
 
+/**
+ * Le code qu'un GESTIONNAIRE D'ERREUR a le droit de poster : le sien s'il appartient à l'ensemble
+ * CLOS du § 10.5, `VAULT_COQUILLE_GESTE_ROMPU` sinon.
+ *
+ * Il existe parce qu'un refus se construit souvent depuis `erreur.code`, et qu'une erreur de la
+ * plate-forme porte AUSSI un `code` — une `DOMException` d'`atob` porte `5`. `messageDeRefus` jette
+ * sur un code inconnu, et un jet DANS un chemin de refus est le seul silence qui ne se voit pas : la
+ * revue de sécurité de la PR #203 (constat 3) l'a mesuré, corrélation restée sans réponse comprise.
+ *
+ * @param {unknown} code
+ * @returns {string}
+ */
+export function codeDeRefusAdmis(code) {
+  return typeof code === "string" && Object.hasOwn(MESSAGES, code)
+    ? code
+    : CODES_REFUS_COQUILLE.gesteRompu;
+}
+
 /** @param {string} code */
 export function messageDeRefus(code) {
   const message = MESSAGES[code];

@@ -36,6 +36,8 @@
 //    ce qu'une navigation de même origine produit ;
 //  - **un en-tête choisi par le document.** Trois seulement sont RELAYÉS, et leur valeur est bornée.
 
+import { cheminSansDetour } from "./origines-de-la-coquille.mjs";
+
 /**
  * Les MÉTHODES relayées. Trois, et le motif de chacune :
  *
@@ -131,12 +133,18 @@ export const ENTETES_DE_REPONSE_RENDUES = Object.freeze([
  * **Ce que cette liste COÛTE, et il faut l'écrire** : une application qui servirait elle-même l'un
  * de ces chemins ne serait pas relayée là. Aucune n'a de raison de servir `/cadre/` ou
  * `/document-applicatif.html` ; `/index.html`, en revanche, est un chemin qu'une application
- * pourrait vouloir — et elle ne l'obtiendrait pas. Rails sert `/`, que le relais transmet.
+ * pourrait vouloir — et elle ne l'obtiendrait pas. Rails sert `/`, que le relais transmet. Ce que
+ * le cadre OBTIENT alors n'est pas un échec silencieux : le Service Worker lui rend la page de refus
+ * `CADRE_CHEMIN_RESERVE` (revue d'intégration de la PR #203, constat 5), et jamais un document de la
+ * coquille.
  *
- * La liste est un PRÉFIXE par entrée, et elle est comparée sur le chemin seul.
+ * **Une entrée qui finit par `/` est un RÉPERTOIRE, toute autre est un FICHIER exact.** La liste était
+ * un préfixe sans frontière, et `/compat` avalait `/compatibilite-des-notes` ; `/document-applicatif`,
+ * `/document-applicatifs-de-mon-app` (même constat).
  */
 export const CHEMINS_DE_LA_COQUILLE_DE_CADRE = Object.freeze([
-  "/document-applicatif",
+  "/document-applicatif.html",
+  "/document-applicatif.mjs",
   "/service-worker-du-cadre.mjs",
   "/cadre/",
   "/src/",
@@ -144,10 +152,45 @@ export const CHEMINS_DE_LA_COQUILLE_DE_CADRE = Object.freeze([
   "/inventaire.json",
   "/_headers",
   "/vm/",
-  "/compat",
+  "/compat.html",
+  "/compat.mjs",
+  "/compat-worker.mjs",
   "/coquille-epreuve/",
   "/spike/",
 ]);
+
+/**
+ * Le chemin du COURTIER : le seul chemin réservé qu'une navigation de cadre obtient toujours du
+ * réseau, parce que c'est le document que la coquille encadre.
+ */
+export const CHEMIN_DU_COURTIER = "/document-applicatif.html";
+
+/**
+ * Borne d'une requête RELAYÉE côté COQUILLE, en millisecondes.
+ *
+ * Les trois bornes d'une requête relayée s'emboîtent, et la plus EXTÉRIEURE attend le plus
+ * longtemps (revue d'intégration de la PR #203, constat 6) : le pont série s'accorde 120 s et rend
+ * alors un refus TYPÉ ; la coquille, 150 s ; le Service Worker, 180 s (`DELAI_DU_COURTIER_MS`). Une
+ * borne intérieure qui expire rend donc toujours son refus AVANT que la suivante ne se taise, et le
+ * cadre lit la cause la plus précise. `tests/unit/coquille-relais-http.test.mjs` mesure l'ordre.
+ */
+export const DELAI_RELAIS_COQUILLE_MS = 150_000;
+
+/**
+ * Les en-têtes de POLITIQUE que l'hébergeur pose sur le territoire applicatif, et que le Service
+ * Worker REJOUE sur ce qu'il sert lui-même (revue de sécurité de la PR #203, constat 7).
+ *
+ * Une réponse fabriquée par un Service Worker ne porte aucun en-tête de l'hébergeur : sans ce
+ * rejeu, tout ce que le relais sert perdait `nosniff`, CORP et `Cache-Control`. La source reste
+ * `tools/serve-headers.mjs` ; cette table en est l'EXTRAIT pour le rôle `app`, et
+ * `tests/unit/coquille-relais-http.test.mjs` exige qu'ils soient égaux — une recopie qui
+ * divergerait rougirait.
+ */
+export const ENTETES_DE_L_HEBERGEUR_APPLICATIF = Object.freeze({
+  "Cache-Control": "no-store",
+  "X-Content-Type-Options": "nosniff",
+  "Cross-Origin-Resource-Policy": "cross-origin",
+});
 
 /**
  * Un texte porte-t-il un caractère de CONTRÔLE ?
@@ -170,7 +213,9 @@ function porteUnCaractereDeControle(texte) {
 
 /** @param {string} chemin */
 export function estUnCheminDeLaCoquilleDeCadre(chemin) {
-  return CHEMINS_DE_LA_COQUILLE_DE_CADRE.some((prefixe) => chemin.startsWith(prefixe));
+  return CHEMINS_DE_LA_COQUILLE_DE_CADRE.some((entree) =>
+    entree.endsWith("/") ? chemin.startsWith(entree) : chemin === entree,
+  );
 }
 
 /**
@@ -184,15 +229,11 @@ export function estUnCheminDeLaCoquilleDeCadre(chemin) {
  * @returns {string | null}
  */
 export function cheminRelayable(valeur) {
-  if (typeof valeur !== "string" || valeur.length === 0) return null;
-  if (valeur.length > TAILLE_MAXIMALE_DU_CHEMIN) return null;
-  if (!valeur.startsWith("/")) return null;
-  if (valeur.startsWith("//")) return null;
-  if (valeur.includes("\\")) return null;
-  // Un caractère de contrôle dans un chemin n'est pas un chemin : c'est une tentative d'écrire une
-  // seconde ligne dans la requête HTTP que le pont série composera.
-  if (porteUnCaractereDeControle(valeur)) return null;
-  return valeur;
+  if (typeof valeur === "string" && valeur.length > TAILLE_MAXIMALE_DU_CHEMIN) return null;
+  // La règle entière — séparateurs, segments repliables, encodages, contrôles et espace — est
+  // celle de `cheminSansDetour`, la même que pour le chemin du document encadré : deux gardes
+  // écrites deux fois sont deux gardes qui divergent.
+  return cheminSansDetour(valeur);
 }
 
 /**
@@ -233,6 +274,9 @@ export function entetesDeReponseRendues(entetes) {
     const valeur = entetes?.[nom];
     if (typeof valeur !== "string") continue;
     if (valeur.length > TAILLE_MAXIMALE_DUNE_VALEUR_DENTETE) continue;
+    // Une valeur à caractère de contrôle n'est pas rendue : `Headers` la refuserait en JETANT dans
+    // le Service Worker, et le cadre verrait la page d'échec du navigateur au lieu d'une réponse.
+    if (porteUnCaractereDeControle(valeur)) continue;
     rendus[nom] = valeur;
   }
   return rendus;
@@ -263,6 +307,9 @@ export function emplacementRendu(emplacement, baseDuGuest) {
     return null;
   }
   if (url.origin !== new URL(baseDuGuest).origin) return null;
+  // Le chemin NORMALISÉ est rejugé : `/..//evil.test/` est de la bonne origine et se normalise en
+  // `//evil.test/`, que le cadre lirait comme une autre origine (revue de sécurité #203, constat 4).
+  if (cheminSansDetour(`${url.pathname}${url.search}`) === null) return null;
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
@@ -271,8 +318,16 @@ export function tailleEnBase64(octets) {
   return Math.ceil(octets / 3) * 4;
 }
 
-/** L'alphabet du base64 standard, remplissage compris, et rien d'autre. */
-const BASE64_ADMIS = /^[A-Za-z0-9+/]*={0,2}$/;
+/**
+ * Le base64 CANONIQUE : des quadruplets de l'alphabet standard, le remplissage en fin seulement.
+ *
+ * L'alphabet seul ne suffit pas, et la revue de sécurité de la PR #203 (constat 3) l'a mesuré : `A`
+ * et `AAAA=` sont faits de caractères admis, et `atob` les refuse. Une garde qui admet ce que le
+ * décodeur refuse fait JETER le Worker de confiance après l'admission, c'est-à-dire là où plus
+ * personne ne rend de refus. La garde exige donc ce que le décodeur exige, et un peu plus : la
+ * longueur multiple de quatre, que `btoa` produit toujours.
+ */
+const BASE64_ADMIS = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 /**
  * ÉVALUE une requête relayée reçue du cadre.
@@ -379,4 +434,21 @@ export function creerBocalDeCookies({ plafond = 32 } = {}) {
       cookies.clear();
     },
   };
+}
+
+/**
+ * La coquille a-t-elle CESSÉ DE SERVIR ? C'est la garde d'ABANDON du relais (#192, ADR 0031 appliquée
+ * au chemin neuf), sortie de sa clôture pour être éprouvée et mutée (revue de sécurité de la PR #203,
+ * constat 6).
+ *
+ * Deux causes, et chacune suffit : le relais a été ABANDONNÉ — le verrouillage, réussi ou refusé, et
+ * les fins d'onglet retirent le cadre —, ou le Worker de confiance est MORT. Une réponse arrivée
+ * après l'une ou l'autre n'est jamais postée : elle dessinerait une page métier dans un cadre retiré,
+ * ou sur un coffre que plus rien ne sert. Une annonce de barrière non plus.
+ *
+ * @param {{ relaisAbandonne: boolean, workerMort: boolean }} etat
+ * @returns {boolean}
+ */
+export function relaisAbandonne({ relaisAbandonne: abandonne, workerMort }) {
+  return abandonne === true || workerMort === true;
 }

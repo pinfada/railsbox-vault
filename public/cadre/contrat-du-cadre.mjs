@@ -28,27 +28,43 @@ export const TYPES_DU_CADRE = Object.freeze({
   reponse: "cadre.reponse",
   /** Le courtier n'a rien à rendre, et dit pourquoi. Jamais un silence. */
   refus: "cadre.refus",
+  /**
+   * L'application n'est pas encore démarrée : le courtier ne relaie RIEN et le dit, avec depuis
+   * combien de temps il attend. Le Service Worker en fait une page d'attente honnête (#203, I1).
+   */
+  attente: "cadre.attente",
+  /** Le Service Worker demande à un candidat s'il détient un port restreint. */
+  presence: "cadre.presence",
+  /** La réponse : `porte` vaut `true` pour un courtier, `false` pour tout autre document. */
+  presenceReponse: "cadre.presence-reponse",
+  /**
+   * Le courtier demande au Service Worker DÉJÀ actif de le prendre sous contrôle. Sans elle, un
+   * second courtier chargé après l'activation reste non contrôlé sous Firefox, et son cadre ne
+   * s'ouvre jamais (mesuré le 13 septembre 2026, `tests/browser/coquille-deux-coffres.spec.mjs`).
+   */
+  reclamer: "cadre.reclamer",
 });
-
-/**
- * Le chemin du COURTIER sur l'origine applicative.
- *
- * C'est lui que le Service Worker cherche parmi ses clients : le document encadré par la coquille
- * est le seul à détenir un port restreint, et c'est donc le seul qui puisse relayer. Un autre
- * client — la page Rails elle-même, un onglet ouvert à la main — ne peut rien relayer, et le
- * Service Worker ne lui demande rien.
- */
-export const CHEMIN_DU_COURTIER = "/document-applicatif.html";
 
 /**
  * Borne d'attente du Service Worker sur une réponse du courtier, en millisecondes.
  *
- * Elle est plus GRANDE que celle de la coquille (60 s) parce qu'elle l'enveloppe : ce qu'elle borne
- * est le silence du courtier lui-même — un document détruit au milieu d'un aller-retour, un onglet
- * gelé. Si la coquille refuse, le refus arrive bien avant. Une réponse qui n'arrive jamais rend un
- * 504 qui NOMME ce qui s'est tu, jamais une page blanche sans explication.
+ * C'est la borne la plus EXTÉRIEURE des trois qui gouvernent une requête relayée, et elle est donc
+ * la plus LONGUE : 180 s, contre 150 s pour la coquille (`DELAI_RELAIS_COQUILLE_MS`) et 120 s pour
+ * le pont série. Elle valait 75 s, c'est-à-dire qu'elle gagnait sur les deux autres et rendait
+ * « courtier muet » pour une lenteur du guest (revue d'intégration de la PR #203, constat 6). Ce
+ * qu'elle borne désormais est le seul silence qui lui appartient : un courtier détruit au milieu
+ * d'un aller-retour, un onglet gelé.
  */
-export const DELAI_DU_COURTIER_MS = 75_000;
+export const DELAI_DU_COURTIER_MS = 180_000;
+
+/**
+ * Borne de la question de PRÉSENCE — « détiens-tu un port restreint ? » —, en millisecondes.
+ *
+ * Un courtier y répond sans rien demander à personne : c'est une lecture d'une variable. Trois
+ * secondes couvrent un document qui se charge sur une machine chargée ; au-delà, le candidat est
+ * INCERTAIN, et le routage refuse plutôt que de servir au hasard.
+ */
+export const DELAI_DE_PRESENCE_MS = 3_000;
 
 /**
  * Les en-têtes que le Service Worker relève de la requête interceptée.

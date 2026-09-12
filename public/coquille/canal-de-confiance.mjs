@@ -21,26 +21,16 @@ import { chargeUtileDEtat } from "/src/coquille/etat-de-la-coquille.mjs";
 import { CAUSES_DE_MORT } from "/src/coquille/mort-du-worker.mjs";
 import { DELAI_WORKER_MORT_MS } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
+import { DELAI_RELAIS_COQUILLE_MS } from "/src/coquille/relais-http.mjs";
 
 /**
- * Borne d'une requête RELAYÉE, en millisecondes.
+ * Borne d'une requête RELAYÉE : celle de la COQUILLE, entre le pont série (120 s) et le Service
+ * Worker (180 s). Le raisonnement, et l'épreuve qui mesure l'ordre, vivent avec la constante.
  *
- * Cent cinquante secondes, et l'ordre des deux bornes est le sujet : le pont série s'accorde
- * cent vingt secondes et rend alors un refus TYPÉ, que le Worker traduit. Poser ici une borne plus
- * COURTE ferait gagner la nôtre, et le cadre recevrait « requête refusée » — « sa méthode, son
- * chemin, ses en-têtes ou son corps sortent de ce que le relais admet » — pour une requête
- * parfaitement formée qui a seulement mis trop de temps. Un refus qui décrit un autre événement que
- * le sien est un refus qu'on finit par mal lire (c'est la leçon de `VAULT_COQUILLE_WORKER_MORT`).
- *
- * La borne d'ici ne mord donc que sur un Worker MUET — un cas que le battement du canal privilégié
- * ne couvre pas, ce canal-ci n'en portant aucun —, et elle rend alors `VAULT_COQUILLE_GESTE_ROMPU` :
- * le geste était admis, il n'a pas abouti, et personne ne sait dire pourquoi. C'est exactement ce
- * que ce code dit.
- *
- * Pour mémoire, la plus lente requête mesurée le 12 septembre 2026 sur une page Rails réelle pèse
- * 380,2 ms (la soumission de formulaire, Chromium) : la borne est à quatre cents fois cela.
+ * La borne d'ici ne mord que sur un Worker MUET — un cas que le battement du canal privilégié ne
+ * couvre pas, ce canal-ci n'en portant aucun —, et elle rend alors `VAULT_COQUILLE_GESTE_ROMPU`.
  */
-const DELAI_RELAIS_MS = 150_000;
+const DELAI_RELAIS_MS = DELAI_RELAIS_COQUILLE_MS;
 
 /**
  * Compte un refus, par code. Rien d'autre n'est retenu de ce que le Worker a envoyé — le même choix
@@ -99,6 +89,9 @@ export function creerCanalDeConfiance({ rapport, publier, pont }) {
    */
   const demandesEnVol = new Map();
 
+  /** La corrélation du dernier battement relevé : l'écart ne se mesure qu'au sein d'un geste. */
+  let derniereCorrelationBattue = null;
+
   /** Compteur des corrélations du canal privilégié. Il ne quitte jamais l'origine de confiance. */
   let corrélationSuivante = 0;
 
@@ -124,7 +117,20 @@ export function creerCanalDeConfiance({ rapport, publier, pont }) {
     releve.recus += 1;
     if (typeof message.rang === "number") {
       if (releve.dernierRang !== null) releve.manques += message.rang - releve.dernierRang - 1;
+      // Deux battements d'un MÊME geste : l'intervalle entre deux gestes n'est pas un silence.
+      const consecutif =
+        releve.dernierRang !== null &&
+        message.rang === releve.dernierRang + 1 &&
+        message.correlation === derniereCorrelationBattue;
+      if (consecutif && typeof message.instantMs === "number" && releve.dernierInstantMs !== null) {
+        releve.pireEcartMs = Math.max(
+          releve.pireEcartMs,
+          message.instantMs - releve.dernierInstantMs,
+        );
+      }
       releve.dernierRang = message.rang;
+      releve.dernierInstantMs = typeof message.instantMs === "number" ? message.instantMs : null;
+      derniereCorrelationBattue = message.correlation;
     }
     if (typeof message.instantMs === "number") {
       const retard = Math.round(performance.now() - message.instantMs);
@@ -198,11 +204,19 @@ export function creerCanalDeConfiance({ rapport, publier, pont }) {
     if (pont.cycle.estMort()) return Promise.reject(pont.cycle.refusDeMort());
     corrélationSuivante += 1;
     const correlation = `c${corrélationSuivante}`;
+    const posee = performance.now();
     return new Promise((rendre, refuser) => {
       let minuterie = null;
       const armer = () => {
         minuterie = setTimeout(() => {
           demandesEnVol.delete(correlation);
+          const dernier = rapport.mesures.battements.dernierRecuMs;
+          rapport.mesures.silence ??= {
+            type: nomDuType,
+            attenteMs: Math.round(performance.now() - posee),
+            depuisLeDernierBattementMs:
+              dernier === null ? null : Math.round(performance.now() - dernier),
+          };
           pont.cycle.constaterLaMort(CAUSES_DE_MORT.silence);
           refuser(pont.cycle.refusDeMort());
         }, DELAI_WORKER_MORT_MS);

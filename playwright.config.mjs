@@ -128,7 +128,11 @@ const CYCLE_DE_VIE = ["**/coquille-cycle-de-vie.spec.mjs", "**/entetes-durcissem
  * c'est `tests/e2e/parcours-page-rails.spec.mjs` qui mesure le service, sur Chromium et avec
  * l'image de référence.
  */
-const SERVICE_APPLICATIF = ["**/coquille-service-applicatif.spec.mjs"];
+const SERVICE_APPLICATIF = [
+  "**/coquille-service-applicatif.spec.mjs",
+  // Deux coffres, un seul Service Worker (revue de sécurité de la PR #203, constats 1 et 2).
+  "**/coquille-deux-coffres.spec.mjs",
+];
 
 /**
  * PERSISTANCE de stockage : le budget (#9) et la conduite (#42), sur les trois moteurs et sur les
