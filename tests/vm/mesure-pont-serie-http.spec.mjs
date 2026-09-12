@@ -22,9 +22,11 @@
 //    jamais, et le pont finit par se taire. C'est cohérent avec la position déjà écrite de ce dépôt
 //    (`playwright.vm.config.mjs` : « Chromium porte TOUTE la suite ; Firefox et WebKit ne portent
 //    que le TÉMOIN de démarrage »), et ce n'est PAS un défaut du relais : rien de ce que #192 livre
-//    n'a été exécuté sous ce moteur, puisque le boot n'y aboutit pas. La cause exacte — lenteur du
-//    JIT WebAssembly sous Firefox, ordonnancement, ou tout autre chose — n'est pas établie par cette
-//    tranche, et l'affirmer serait deviner ;
+//    n'a été exécuté sous ce moteur, puisque le boot n'y aboutit pas. La cause du premier échec est
+//    celle que `docs/compatibility.md` publie depuis #74 : Firefox exécute v86 six fois moins vite
+//    (5,97×, reconfirmé le 12 septembre 2026), un boot Rails y demande donc environ 633 s, et cinq
+//    minutes étaient structurellement trop courtes. Ce qui reste inexpliqué est le silence du pont
+//    au second essai, à quinze minutes ;
 //  - **WebKit : IMPOSSIBLE**, et c'est un fait mesuré ailleurs — il n'expose pas l'OPFS sous
 //    Playwright (`VAULT_STORAGE_UNSUPPORTED`), donc aucun volume ne s'y ouvre et aucun guest n'y
 //    boote sur un disque.
@@ -68,7 +70,9 @@ const MOTEURS_SANS_MESURE = Object.freeze({
     "Firefox : Rails n'a jamais répondu à /vault/health dans le guest, deux fois, sous deux " +
     "budgets (300 s : « le pont a refusé la requête : application-injoignable (code 7) » ; 900 s : " +
     "« aucune réponse à GET /vault/health en 5000 ms »). Le pont série répond d'abord puis se tait ; " +
-    "Puma n'écoute jamais. Mesuré le 12 septembre 2026, cause non établie par #192.",
+    "Puma n'écoute jamais. Firefox exécute v86 5,97 fois moins vite (#74, reconfirmé le " +
+    "12/09/2026) : un boot Rails y demande environ 633 s, et 300 s étaient trop courts ; le silence " +
+    "du pont à 900 s reste inexpliqué.",
   webkit:
     "WebKit : aucun OPFS sous Playwright (VAULT_STORAGE_UNSUPPORTED) — aucun volume ne s'ouvre, " +
     "donc aucun guest ne boote sur un disque.",
@@ -179,6 +183,21 @@ test("une page Rails réelle, ses actifs, sa session et son formulaire, mesurés
     mesure.actifsEnSerie.map(({ statut }) => statut),
     "les trois sous-ressources sont servies",
   ).toEqual([200, 200, 200]);
+  // Les OCTETS des actifs sont ceux des fichiers, à l'octet : une attribution décalée entre deux
+  // réponses du découpeur rendrait une feuille TRONQUÉE sans que rien ne le dise. La table publiée
+  // par la première rédaction portait 402 et 396 octets là où les fichiers en pèsent 705 et 425 à
+  // chaque commit — une retranscription, que ce contrôle rend désormais impossible à publier
+  // (revue d'intégration de la PR #203, constat 2).
+  const dossierPublic = join(REPOSITORY_ROOT, "apps", "reference", "public");
+  expect(
+    mesure.actifsEnSerie.map(({ chemin, octetsRecus }) => [chemin, octetsRecus]),
+    "chaque actif est reçu ENTIER",
+  ).toEqual(
+    ["/vault.css", "/vault.js", "/vault.png"].map((chemin) => [
+      chemin,
+      readFileSync(join(dossierPublic, chemin.slice(1))).byteLength,
+    ]),
+  );
   expect(mesure.actifsEnSerie.map(({ typeDeContenu }) => typeDeContenu)).toEqual([
     expect.stringContaining("text/css"),
     expect.stringContaining("javascript"),

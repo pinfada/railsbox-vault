@@ -43,6 +43,7 @@ import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { E2E_ORIGIN_COQUILLE, E2E_ORIGIN_COQUILLE_APP } from "../../playwright.e2e.config.mjs";
 import { artefactsV86Absents } from "../../tools/v86-paths.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
+import { DELAI_WORKER_MORT_MS } from "../../src/coquille/moyens-de-deverrouillage.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CHEMIN_MANIFESTE = join(RACINE, "tools", "build-reference-image", "manifest.json");
@@ -135,9 +136,13 @@ async function ouvrirParLaPhrase(page) {
 /** DÉMARRE l'application, et rend ce que la coquille en publie. */
 async function demarrerLApplication(page) {
   await page.click("#demarrer-application");
-  await expect(page.locator("#cycle-etat")).toHaveText("cycle:application-demarree", {
-    timeout: BUDGET_DEMARRAGE_MS,
-  });
+  // Le verdict est attendu, QUEL QU'IL SOIT : un refus de démarrage est définitif, et l'attendre
+  // dix minutes de plus n'apprendrait rien. L'égalité exigée ensuite dit lequel est arrivé.
+  await expect(page.locator("#cycle-etat")).toHaveText(
+    /^cycle:(application-demarree|demarrage-refuse)/,
+    { timeout: BUDGET_DEMARRAGE_MS },
+  );
+  await expect(page.locator("#cycle-etat")).toHaveText("cycle:application-demarree");
   return (await releve(page)).application;
 }
 
@@ -282,13 +287,19 @@ test("une page Rails réelle est servie dans le cadre, cliquée, soumise, et rel
   // La COQUILLE DE CADRE s'est installée, et son Service Worker est ACTIF. C'est le mécanisme que
   // l'ADR 0038 retient, et il ne s'installe que là où la frontière existe vraiment.
   await expect
-    .poll(async () => (await releveDuCourtier(session.page)).coquilleDeCadre.serviceWorker, {
+    .poll(async () => (await releveDuCourtier(session.page)).coquilleDeCadre?.serviceWorker, {
       timeout: 60_000,
     })
     .toBe("actif");
   const courtierInitial = await releveDuCourtier(session.page);
   expect(courtierInitial.coquilleDeCadre.installee).toBe(true);
   expect(courtierInitial.coquilleDeCadre.cadreServi).toBe("/");
+
+  // AVANT le démarrage, le cadre montre une page d'ATTENTE lisible — jamais un 504 en texte brut,
+  // jamais une page blanche (revue d'intégration de la PR #203, constat 1).
+  await expect(pageServie(session.page).locator("html")).toHaveAttribute("data-cadre", "attente", {
+    timeout: 60_000,
+  });
 
   await ouvrirParLaPhrase(session.page);
   const demarrage = await demarrerLApplication(session.page);
@@ -303,6 +314,18 @@ test("une page Rails réelle est servie dans le cadre, cliquée, soumise, et rel
   const canalApresLeBoot = (await releve(session.page)).mesures;
 
   mesures.premierePageMs = await attendreLaPremierePage(session.page);
+
+  // La CAUSE de I1, tenue par la mesure : pendant l'installation et le boot, le Worker de confiance
+  // n'a jamais cessé de battre plus de la MOITIÉ de la borne de mort par silence — et aucune requête
+  // du cadre n'a été abandonnée, puisque le courtier ne relaie rien tant que l'application attend.
+  const apresLaPremierePage = await releve(session.page);
+  mesures.pireEcartDesBattementsMs = canalApresLeBoot.battements.pireEcartMs;
+  expect(
+    canalApresLeBoot.battements.pireEcartMs,
+    "le battement du Worker s'est tu plus de la moitié de la borne de mort par silence",
+  ).toBeLessThan(DELAI_WORKER_MORT_MS / 2);
+  expect(apresLaPremierePage.relais.abandonnees).toBe(0);
+  expect(apresLaPremierePage.refusDeRequete[CODES_REFUS_COQUILLE.relaisAbandonne]).toBeUndefined();
 
   // CE QUE RAILS REND, et rien d'autre. Les quatre natures de requête, mesurées chacune par ce
   // qu'elle PRODUIT plutôt que par sa présence : un actif servi sous le mauvais type est un actif
@@ -482,7 +505,8 @@ test("une page Rails réelle est servie dans le cadre, cliquée, soumise, et rel
     `\n[parcours] première page ${mesures.premierePageMs} ms · page suivante ` +
       `${mesures.pageSuivanteMs} ms · soumission ${mesures.soumissionMs} ms · ` +
       `boot ${Math.round(mesures.bootMs)} ms puis ${Math.round(mesures.secondBootMs)} ms · ` +
-      `première page après boot à froid ${mesures.premierePageApresFroidMs} ms\n`,
+      `première page après boot à froid ${mesures.premierePageApresFroidMs} ms · ` +
+      `pire écart des battements ${mesures.pireEcartDesBattementsMs} ms\n`,
   );
 
   await session.page.close();
@@ -516,6 +540,7 @@ test.afterEach(async ({ page: _page }, testInfo) => {
             // Les deux mesures qui SÉPARENT les causes d'une mort par silence (#192, I1).
             battements: releve.mesures?.battements ?? null,
             relaisCanal: releve.mesures?.relaisCanal ?? null,
+            silence: releve.mesures?.silence ?? null,
           };
         })
         .catch((erreur) => ({ illisible: erreur?.message?.slice(0, 120) ?? null }));

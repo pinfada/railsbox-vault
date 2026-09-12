@@ -27,6 +27,7 @@ import {
   TAILLE_MAXIMALE_DU_TYPE_RENDU,
   TYPES_APPLICATIFS,
   TYPES_PRIVILEGIES,
+  TYPES_RELAIS,
   correlationAdmise,
   enveloppeDeMessage,
 } from "../../src/coquille/contrat-de-messages.mjs";
@@ -208,6 +209,17 @@ test("un type du canal PRIVILÉGIÉ posé sur le port restreint est refusé comm
   );
   assert.equal(verdict.admise, false);
   assert.equal(verdict.code, CODES_REFUS_COQUILLE.portPrivilegie);
+});
+
+test("un type du canal de RELAIS posé sur le port restreint est refusé COMME TEL", () => {
+  // Trois vocabulaires, trois canaux : un type de relais posé ici n'est pas « inconnu », il est
+  // reconnu et refusé pour ce qu'il est. Sans cette garde il retombait dans `typeInconnu`, et la
+  // campagne de mutation le laissait survivre (revue d'intégration #203, constat 4).
+  for (const type of Object.values(TYPES_RELAIS)) {
+    const verdict = evaluerRequete(enveloppeDeMessage(type, { correlation: "r1" }));
+    assert.equal(verdict.admise, false, type);
+    assert.equal(verdict.code, CODES_REFUS_COQUILLE.canalDeRelaisRefuse, type);
+  }
 });
 
 test("le seul geste ADMIS en requête est l'état ; l'annonce de barrière ne se demande pas", () => {

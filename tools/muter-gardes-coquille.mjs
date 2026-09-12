@@ -43,11 +43,16 @@ const INTERFACE = "src/coquille/interface-de-deverrouillage.mjs";
 
 /** Les gardes de #192 (ADR 0038) : les décisions du relais HTTP, pures elles aussi. */
 const RELAIS = "src/coquille/relais-http.mjs";
+const REFUS = "src/coquille/refus-de-coquille.mjs";
+const ROUTAGE = "src/coquille/routage-du-cadre.mjs";
+const RELAIS_DU_WORKER = "public/relais-du-worker.mjs";
 
 const EPREUVE_ADMISSION = "tests/unit/coquille-admission.test.mjs";
 const EPREUVE_CONTRAT = "tests/unit/coquille-contrat.test.mjs";
 const EPREUVE_DEVERROUILLAGE = "tests/unit/coquille-deverrouillage.test.mjs";
 const EPREUVE_RELAIS = "tests/unit/coquille-relais-http.test.mjs";
+const EPREUVE_ROUTAGE = "tests/unit/coquille-routage-du-cadre.test.mjs";
+const EPREUVE_RELAIS_DU_WORKER = "tests/unit/coquille-relais-du-worker.test.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -186,11 +191,28 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "un chemin relatif au SCHÉMA n'est pas un chemin",
-    garde: "cheminApplicatifAdmis — le refus de `//`",
+    garde: "cheminSansDetour — le refus d'un segment VIDE, donc de `//` n'importe où (#203)",
     fichier: ORIGINES,
-    avant: '  if (chemin.startsWith("//")) return null;\n',
+    avant: '    if (segment === "" && rang !== segments.length - 1) return null;\n',
     apres: "",
-    epreuves: [EPREUVE_ADMISSION],
+    epreuves: [EPREUVE_ADMISSION, EPREUVE_RELAIS],
+  },
+  {
+    nom: "un chemin qui REMONTE se normalise ailleurs, et n'est pas un chemin",
+    garde:
+      "cheminSansDetour — le refus des segments `.` et `..` (revue de sécurité #203, constat 4)",
+    fichier: ORIGINES,
+    avant: '    if (segment === "." || segment === "..") return null;\n',
+    apres: "",
+    epreuves: [EPREUVE_RELAIS],
+  },
+  {
+    nom: "un détour ENCODÉ reste un détour",
+    garde: "cheminSansDetour — le refus de `%2F`, `%5C` et `%2E` dans le chemin",
+    fichier: ORIGINES,
+    avant: "  if (ENCODAGES_DE_DETOUR.test(chemin)) return null;\n",
+    apres: "",
+    epreuves: [EPREUVE_RELAIS],
   },
   {
     nom: "une origine déjà applicative ne se dérive pas en `app.app.…`",
@@ -497,9 +519,45 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "aucun caractère de contrôle ne franchit dans un chemin",
-    garde: "cheminRelayable — le refus d'une seconde ligne de requête HTTP",
+    garde: "cheminSansDetour — le refus d'une seconde ligne de requête HTTP, espace comprise",
+    fichier: ORIGINES,
+    avant: "    if (code <= 0x20 || code === 0x7f) return null;\n",
+    apres: "",
+    epreuves: [EPREUVE_RELAIS],
+  },
+  {
+    nom: "une `Location` qui se normalise en `//…` n'est pas rendue",
+    garde: "emplacementRendu — le chemin NORMALISÉ rejugé (revue de sécurité #203, constat 4)",
     fichier: RELAIS,
-    avant: "  if (porteUnCaractereDeControle(valeur)) return null;\n",
+    avant: "  if (cheminSansDetour(`${url.pathname}${url.search}`) === null) return null;\n",
+    apres: "",
+    epreuves: [EPREUVE_RELAIS],
+  },
+  {
+    nom: "un corps que le décodeur refuserait est refusé AVANT l'admission",
+    garde: "BASE64_ADMIS — le base64 canonique, pas seulement son alphabet (#203, constat 3)",
+    fichier: RELAIS,
+    avant:
+      "const BASE64_ADMIS = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;",
+    apres: "const BASE64_ADMIS = /^[A-Za-z0-9+/]*={0,2}$/;",
+    epreuves: [EPREUVE_RELAIS],
+  },
+  {
+    nom: "un refus construit depuis une erreur étrangère ne jette jamais",
+    garde: "codeDeRefusAdmis — l'ensemble CLOS des codes (revue de sécurité #203, constats 3 et 9)",
+    fichier: REFUS,
+    avant:
+      '  return typeof code === "string" && Object.hasOwn(MESSAGES, code)\n' +
+      "    ? code\n" +
+      "    : CODES_REFUS_COQUILLE.gesteRompu;\n",
+    apres: "  return code;\n",
+    epreuves: [EPREUVE_RELAIS],
+  },
+  {
+    nom: "une valeur d'en-tête de réponse à caractère de contrôle n'est pas rendue",
+    garde: "entetesDeReponseRendues — le refus que `Headers` aurait JETÉ (#203, constat 11)",
+    fichier: RELAIS,
+    avant: "    if (porteUnCaractereDeControle(valeur)) continue;\n",
     apres: "",
     epreuves: [EPREUVE_RELAIS],
   },
@@ -510,6 +568,101 @@ export const MUTATIONS = Object.freeze([
     avant: '    if (methode === "GET" || methode === "HEAD") return { ok: false };\n',
     apres: "",
     epreuves: [EPREUVE_RELAIS],
+  },
+  // --- Le ROUTAGE du Service Worker (revue de sécurité de la PR #203, constats 1 et 2) ------------
+  {
+    nom: "le Service Worker ne prend jamais le PREMIER courtier venu",
+    garde: "routerLaRequete — le refus d'une navigation quand plusieurs courtiers sont joignables",
+    fichier: ROUTAGE,
+    avant: "  if (courtiers.length + incertains > 1) {\n",
+    apres: "  if (false) {\n",
+    epreuves: [EPREUVE_ROUTAGE],
+  },
+  {
+    nom: "un document SANS port n'est pas un courtier",
+    garde: "routerLaRequete — seul un candidat qui dit détenir un port est un courtier",
+    fichier: ROUTAGE,
+    avant:
+      "  const courtiers = presences.filter((presence) => presence.porte === true).map(({ id }) => id);\n",
+    apres: "  const courtiers = presences.map(({ id }) => id);\n",
+    epreuves: [EPREUVE_ROUTAGE],
+  },
+  {
+    nom: "une sous-ressource est servie par le courtier de SON client, et nul autre",
+    garde: "routerLaRequete — la liaison client → courtier",
+    fichier: ROUTAGE,
+    avant: "      return { issue: ISSUES_DU_ROUTAGE.relayer, courtier: lie };\n",
+    apres: "      return { issue: ISSUES_DU_ROUTAGE.relayer, courtier: courtiers[0] };\n",
+    epreuves: [EPREUVE_ROUTAGE],
+  },
+  {
+    nom: "un client sans liaison n'emprunte pas le courtier d'un autre coffre",
+    garde: "routerLaRequete — l'exigence d'une liaison avant de relayer une sous-ressource",
+    fichier: ROUTAGE,
+    avant: "    if (lie !== undefined && courtiers.includes(lie)) {\n",
+    apres: "    if (courtiers.length > 0) {\n",
+    epreuves: [EPREUVE_ROUTAGE],
+  },
+  {
+    nom: "une navigation de premier rang n'est jamais relayée",
+    garde: "routerLaRequete — le filtre sur la destination `iframe`",
+    fichier: ROUTAGE,
+    avant: '  if (destination !== "iframe") return { issue: ISSUES_DU_ROUTAGE.reseau };\n',
+    apres: "",
+    epreuves: [EPREUVE_ROUTAGE],
+  },
+  // --- Le relais côté WORKER DE CONFIANCE (revues de la PR #203 : sécurité 3, intégration 7) ------
+  //
+  // `public/relais-du-worker.mjs` n'est pas une fonction pure, mais son épreuve le charge TEL QUEL
+  // sous Node, avec un port et une session doubles : ses gardes se mutent donc comme les autres.
+  {
+    nom: "un refus du Worker ne JETTE jamais sur un code étranger",
+    garde: "refuser — le code réduit à l'ensemble clos avant d'être posté",
+    fichier: RELAIS_DU_WORKER,
+    avant: "    const code = codeDeRefusAdmis(codeRecu);\n",
+    apres: "    const code = codeRecu;\n",
+    epreuves: [EPREUVE_RELAIS_DU_WORKER],
+  },
+  {
+    nom: "une réponse au-delà du plafond est refusée entière",
+    garde: "relayer — le plafond du corps de RÉPONSE",
+    fichier: RELAIS_DU_WORKER,
+    avant: "    if (reponse.corps.byteLength > PLAFOND_CORPS_DE_REPONSE_OCTETS) {\n",
+    apres: "    if (false) {\n",
+    epreuves: [EPREUVE_RELAIS_DU_WORKER],
+  },
+  {
+    nom: "une rafale au-delà de la borne en vol n'atteint pas le guest",
+    garde: "relayer — la borne `RELAIS_EN_VOL_MAXIMUM`",
+    fichier: RELAIS_DU_WORKER,
+    avant: "    if (enVol >= RELAIS_EN_VOL_MAXIMUM) {\n",
+    apres: "    if (false) {\n",
+    epreuves: [EPREUVE_RELAIS_DU_WORKER],
+  },
+  {
+    nom: "une réponse arrivée après le verrouillage n'est jamais rendue",
+    garde: "relaisAbandonne — le relais retiré suffit, sans attendre la mort du Worker (#203, 6)",
+    fichier: RELAIS,
+    avant: "  return abandonne === true || workerMort === true;\n",
+    apres: "  return workerMort === true;\n",
+    epreuves: [EPREUVE_RELAIS],
+  },
+  // --- L'ATTENTE du démarrage et le BATTEMENT pendant l'installation (revue d'intégration #203, 1) --
+  {
+    nom: "pendant un boot, le cadre ne pose aucune requête sur le port restreint",
+    garde: "brancherLeCourtier — la réponse « en attente » tant que l'application ne tourne pas",
+    fichier: "public/cadre/courtier-du-cadre.mjs",
+    avant: "    if (application === APPLICATION.enAttente) {\n",
+    apres: "    if (false) {\n",
+    epreuves: ["tests/unit/coquille-courtier-du-cadre.test.mjs"],
+  },
+  {
+    nom: "le versement d'un disque rend la main au Worker, et son battement ne se tait pas",
+    garde: "verserFluxDansVolume — la cession entre deux tranches d'écriture",
+    fichier: "src/vm/versement-de-disque.mjs",
+    avant: "      await cederLaMain();\n",
+    apres: "",
+    epreuves: ["tests/unit/vm-ceder-la-main.test.mjs"],
   },
 ]);
 

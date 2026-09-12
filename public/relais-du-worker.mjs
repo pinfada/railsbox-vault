@@ -22,7 +22,11 @@ import {
   enveloppeDeMessage,
   estTypePrivilegie,
 } from "/src/coquille/contrat-de-messages.mjs";
-import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
+import {
+  CODES_REFUS_COQUILLE,
+  codeDeRefusAdmis,
+  messageDeRefus,
+} from "/src/coquille/refus-de-coquille.mjs";
 import {
   PLAFOND_CORPS_DE_REPONSE_OCTETS,
   creerBocalDeCookies,
@@ -111,8 +115,14 @@ export function brancherLeRelaisDuWorker({ port, sessionCourante }) {
     );
   }
 
-  /** @param {string} code @param {string | null} correlation */
-  function refuser(code, correlation) {
+  /**
+   * POSTE un refus. Il ne jette jamais : un code hors de l'ensemble clos devient
+   * `VAULT_COQUILLE_GESTE_ROMPU`, parce qu'un refus qui jette est une corrélation sans réponse.
+   *
+   * @param {unknown} codeRecu @param {string | null} correlation
+   */
+  function refuser(codeRecu, correlation) {
+    const code = codeDeRefusAdmis(codeRecu);
     port.postMessage(
       enveloppeDeMessage(TYPES_RELAIS.refus, {
         code,
