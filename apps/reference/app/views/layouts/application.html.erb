@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Application de référence — RailsBox Vault</title>
+    <%# Trois sous-ressources, trois natures : une feuille de style, un script et
+        une image. Elles ne décorent pas la page — elles sont ce que le relais
+        doit servir en plus du document, et ce que la mesure du pont série
+        compte. %>
+    <link rel="stylesheet" href="/vault.css">
+    <script src="/vault.js" defer></script>
+  </head>
+  <body data-application-de-reference="rendue">
+    <header>
+      <img src="/vault.png" alt="" width="32" height="32" id="marque">
+      <h1>Application de référence</h1>
+      <p id="vues">vues dans cette session : <%= @vues %></p>
+    </header>
+    <main><%= yield %></main>
+  </body>
+</html>
