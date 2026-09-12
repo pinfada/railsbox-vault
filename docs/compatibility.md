@@ -135,6 +135,15 @@ a mesuré ce que cela coûte ; voir [`spikes/0185-aes-gcm-siv.md`](spikes/0185-a
 réserve « WebKit Playwright n'est pas une qualification Safari », plus bas, vaut pour cette ligne
 comme pour les autres.
 
+**Le verdict que cette ligne sert**, pour qu'on n'ait pas à ouvrir trois documents : la réponse du
+dépôt est **non — pas maintenant**, sur trois bases et trois seulement — (1) SIV est absent de
+WebCrypto sur les trois moteurs, c'est la ligne ci-dessus ; (2) la voie sans dépendance coûte de 43
+à 56 fois le scellement natif sous Chromium, sans fermer de budget ; (3) le résidu que SIV
+couvrirait est nul sur quatre domaines sur six et borné sur les deux autres. Les conditions de
+réouverture sont dans la note datée sous la décision 7 de
+l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md), et la première d'entre
+elles est précisément que cette ligne change.
+
 ### Ce que le moteur fait du HANDLE EXCLUSIF à la mort du Worker (#169, ADR 0031)
 
 Ce n'est pas une capacité — c'est un **comportement**, et il a fallu le mesurer parce que le dossier
