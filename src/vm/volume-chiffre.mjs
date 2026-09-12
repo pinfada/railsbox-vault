@@ -23,6 +23,7 @@
 // lecture ; la protection contre la PERTE est ailleurs, dans le journal de l'ADR 0014, dont le point
 // de contrôle est le seul geste qui écrive le volume et dont l'échec ne valide rien.
 
+import { creerCederLaMain } from "./ceder-la-main.mjs";
 import { SECTOR_SIZE } from "./block-geometry.mjs";
 import { RANG_SECTEUR_DE_VOLUME } from "./scellement.mjs";
 import { STORAGE_ERROR_CODES, StorageError } from "./storage-errors.mjs";
@@ -231,12 +232,16 @@ export class VolumeChiffre {
    */
   async scellerTout(generation, { secteursParTour = SECTEURS_PAR_TOUR } = {}) {
     const vierge = new Uint8Array(secteursParTour * SECTOR_SIZE);
+    // La boucle CÈDE LA MAIN entre deux tranches : sans cela, cinq cent douze mébioctets se scellent
+    // sans que le Worker serve une seule tâche, et son battement se tait (#192, I1).
+    const cederLaMain = creerCederLaMain();
     let scelles = 0;
     for (let adresse = 0; adresse < this.#disposition.tailleLogique;) {
       const longueur = Math.min(vierge.byteLength, this.#disposition.tailleLogique - adresse);
       await this.ecrireSecteurs(adresse, vierge.subarray(0, longueur), generation);
       scelles += longueur / SECTOR_SIZE;
       adresse += longueur;
+      await cederLaMain();
     }
     return scelles;
   }

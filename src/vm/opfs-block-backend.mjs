@@ -19,6 +19,7 @@
 // sollicitation du support en état contractuel, `opfs-volume-ouverture.mjs` établit géométrie,
 // exclusivité et génération récupérée.
 
+import { parcourirEnCedantLaMain } from "./ceder-la-main.mjs";
 import { SECTOR_SIZE, V86_BLOCK_SIZE } from "./block-geometry.mjs";
 import { JOURNAL_OPERATIONS } from "./block-journal.mjs";
 import { FAULT_KINDS } from "./fault-plan.mjs";
@@ -303,9 +304,9 @@ export class OpfsBlockBackend {
   async empreinteDuFichier({ blocOctets = EMPREINTE_BLOC_OCTETS } = {}) {
     const taille = this.#disposition.tailleSupport;
     const hachage = createSha256Stream();
-    for (let offset = 0; offset < taille; offset += blocOctets) {
-      hachage.update(this.#lireOctets(offset, Math.min(blocOctets, taille - offset)));
-    }
+    await parcourirEnCedantLaMain(taille, blocOctets, (offset, longueur) =>
+      hachage.update(this.#lireOctets(offset, longueur)),
+    );
     return hachage.digestHex();
   }
 

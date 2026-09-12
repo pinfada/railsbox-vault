@@ -162,6 +162,13 @@ export const test = base.extend({
         ...(process.env[SANS_COQUILLE_DE_CADRE] ? { serviceWorkers: "block" } : {}),
       },
     );
+    const ralentissement = Number(process.env[RALENTIR_LE_PROCESSEUR] ?? 0);
+    if (ralentissement > 1) {
+      context.on("page", async (page) => {
+        const cdp = await context.newCDPSession(page);
+        await cdp.send("Emulation.setCPUThrottlingRate", { rate: ralentissement });
+      });
+    }
     await use(context);
     await context.close();
   },
@@ -181,6 +188,13 @@ export const test = base.extend({
  * le Service Worker, et un gate qui le neutraliserait mesurerait autre chose que le produit.
  */
 export const SANS_COQUILLE_DE_CADRE = "VAULT_E2E_SANS_COQUILLE_DE_CADRE";
+
+/**
+ * Variable par laquelle une MESURE ralentit le processeur de chaque page (CDP
+ * `Emulation.setCPUThrottlingRate`, facteur N) : reproduire sur une machine rapide la marge d'une
+ * machine lente (#192, correction I1). Aucune recette ne la pose.
+ */
+export const RALENTIR_LE_PROCESSEUR = "VAULT_E2E_RALENTIR_CPU";
 
 export const EXIGER = "VAULT_E2E_EXIGER";
 
