@@ -215,25 +215,29 @@ async function fichiersQuiMentionnent(motif, exclus) {
  * #15 fournit désormais une source de fraîcheur, si bien que sa matrice mesure de nouveau le chemin
  * de scellement que le produit emprunte. Une revue avait relevé qu'elle ne le mesurait plus.
  *
- * Les deux qui restent sont des BANCS DE MESURE. Ils ne produisent aucun volume que quiconque
- * rouvre : ils chronomètrent une récupération puis jettent leurs fichiers. Leur donner une source de
+ * `public/vm/recuperation-worker.mjs` en est sorti à son tour (#196) : #186 a fait passer
+ * `FORMAT_VOLUME_COURANT` à 4, et `formatEcritSousFraicheur` REFUSE désormais d'écrire une racine
+ * sans fraîcheur pour ce format — la mesure rougissait sur `main` pour la raison exacte que ce
+ * fichier vient de nommer. Le banc ouvre maintenant sa propre région et son propre témoin, comme le
+ * ferait `opfs-generation-voisins.mjs` pour le produit ; ce que cela ajoute à la durée mesurée est
+ * publié dans `docs/quality-attributes.md`, en face du relevé d'avant #186.
+ *
+ * Ce qui reste est un BANC DE MESURE hors navigateur, pour la même grandeur — `tools/mesurer-
+ * generations.mjs` compare trois MÉCANISMES candidats de l'ADR 0014 sur un volume synthétique sans
+ * clé de produit ; il n'ouvre jamais ce qu'il écrit et ne sert aucun volume. Lui donner une source de
  * fraîcheur ajouterait à la mesure le hachage de la région, c'est-à-dire déplacerait la grandeur
- * mesurée sans que le relevé le dise — et les chiffres publiés par `docs/quality-attributes.md`
- * cesseraient d'être comparables aux précédents.
+ * mesurée sans que le relevé le dise, pour une comparaison que #182 n'a jamais requalifiée.
  *
  * @type {{ fichier: string, motif: string }[]}
  */
 const OUVREURS_SANS_FRAICHEUR = [
   {
-    fichier: "public/vm/recuperation-worker.mjs",
-    motif:
-      "banc de MESURE de la durée d'une récupération, dans un Worker. Il ne rouvre jamais ce qu'il " +
-      "écrit et ne sert aucun volume ; lui donner une fraîcheur ajouterait le hachage de la région " +
-      "au temps mesuré et romprait la comparabilité des relevés.",
-  },
-  {
     fichier: "tools/mesurer-generations.mjs",
-    motif: "même banc, hors navigateur, et pour la même grandeur. Même motif.",
+    motif:
+      "banc de MESURE hors navigateur des trois mécanismes candidats de l'ADR 0014, sur un volume " +
+      "synthétique en mémoire, sans clé de produit. Il n'ouvre jamais ce qu'il écrit et ne sert " +
+      "aucun volume ; lui donner une fraîcheur ajouterait le hachage de la région à une comparaison " +
+      "qui porte sur le coût du JOURNAL, pas sur celui de la région.",
   },
 ];
 

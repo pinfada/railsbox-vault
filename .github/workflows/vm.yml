@@ -1,12 +1,23 @@
 name: Intégration VM
 
 # Preuve « intégration VM » du spike #4. Elle démarre un vrai guest Linux et télécharge des
-# artefacts tiers : elle n'est donc PAS un contrôle obligatoire de PR. Voir `docs/testing.md`.
+# artefacts tiers : elle n'est donc PAS un contrôle obligatoire de PR — mais depuis #196 elle est
+# VISIBLE sur toute PR qui touche `src/vm/**`, `public/vm/**`, `tests/vm/**`, `vendor/v86/**` ou
+# `playwright.vm.config.mjs`, en plus du nocturne. Une régression sur un BANC de cette suite — comme
+# celle que #186 a introduite sans qu'aucune CI de PR ne la relève — reste rouge jusqu'au prochain
+# passage nocturne sinon. Voir `docs/testing.md`.
 
 on:
   workflow_dispatch:
   schedule:
     - cron: "17 3 * * *"
+  pull_request:
+    paths:
+      - "src/vm/**"
+      - "public/vm/**"
+      - "tests/vm/**"
+      - "vendor/v86/**"
+      - "playwright.vm.config.mjs"
 
 permissions:
   contents: read
