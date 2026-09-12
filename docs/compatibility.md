@@ -104,6 +104,37 @@ Verdicts Vault correspondants :
 | Firefox  | mesuré  | aucune                                                        |
 | WebKit   | refusé  | `opfsGetDirectory`, `storageEstimate`, `opfsSyncAccessHandle` |
 
+### AES-GCM-SIV : absent des trois moteurs, mesuré (#185, ADR 0033 décision 7)
+
+Ce n'est pas une capacité de la matrice ci-dessus, et c'est délibéré : la sonde du produit mesure ce
+dont le produit dépend, et il ne dépend pas de SIV. Cette ligne-ci répond à une question ouverte de
+la spécification (§ 13, n° 1), et elle a sa propre sonde, `tests/compat/gcm-siv-probe.spec.mjs`,
+exécutée par `npm run test:compat`.
+
+Relevé du **2026-09-12**, dans la page **et** dans un Worker, sous trois formes de demande — nom
+d'algorithme nu, objet d'algorithme, chiffrement de bout en bout :
+
+| Moteur                 | AES-GCM-SIV | Ce que le moteur répond, tel quel                                                                   | AES-CTR sur un bloc isolé |
+| ---------------------- | ----------- | --------------------------------------------------------------------------------------------------- | ------------------------- |
+| Chromium 151.0.7922.34 | unsupported | `NotSupportedError : Failed to execute 'importKey' on 'SubtleCrypto': Algorithm: Unrecognized name` | supported                 |
+| Firefox 153.0          | unsupported | `NotSupportedError : Operation is not supported`                                                    | supported                 |
+| WebKit 26.5            | unsupported | `NotSupportedError : The operation is not supported.`                                               | supported                 |
+
+**Le refus est de la bonne nature** : `NotSupportedError`, c'est-à-dire « cet algorithme n'existe
+pas ici », et non un refus d'usage ou une clé mal formée. Il est identique dans la page et dans le
+Worker sur les trois moteurs.
+
+**Cette ligne AFFIRME une absence, ce que la matrice ci-dessus ne fait jamais.** Un moteur qui se
+mettrait à exposer AES-GCM-SIV ferait **échouer** la sonde, et c'est voulu : la note datée du 12
+septembre 2026 sous l'ADR 0033 nomme cette disponibilité comme la première condition qui rouvrirait
+la question. Le signal est câblé plutôt que confié à une veille.
+
+`AES-CTR` figure dans la même sonde parce qu'il n'est pas un ornement : c'est la seule primitive par
+laquelle un AES-GCM-SIV conforme peut être composé **sans dépendance tierce**. Le spike l'a fait, et
+a mesuré ce que cela coûte ; voir [`spikes/0185-aes-gcm-siv.md`](spikes/0185-aes-gcm-siv.md). La
+réserve « WebKit Playwright n'est pas une qualification Safari », plus bas, vaut pour cette ligne
+comme pour les autres.
+
 ### Ce que le moteur fait du HANDLE EXCLUSIF à la mort du Worker (#169, ADR 0031)
 
 Ce n'est pas une capacité — c'est un **comportement**, et il a fallu le mesurer parce que le dossier

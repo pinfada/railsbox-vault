@@ -768,6 +768,46 @@ qui est cohérent avec le facteur ~2,8 que l'ADR 0015 a mesuré entre les deux m
 sur Chromium seul, comme les autres scénarios de `tests/e2e/`. C'est un manque nommé, pas un chiffre
 supposé.
 
+### Ce qu'AES-GCM-SIV coûterait par secteur (#185, spike T3)
+
+Relevé du **2026-09-12**,
+`npx playwright test --config tools/spike-gcm-siv/playwright.spike.config.mjs`, même machine de
+développement, **trois moteurs**, secteur de 512 octets, données associées de 112, AES-256. Ce n'est
+pas un chiffre du produit : AES-GCM-SIV n'est adopté nulle part, et
+l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) a répondu « non — pas
+maintenant » le jour de ce relevé. Il est publié ici parce que la décision s'appuie dessus et qu'une
+décision sans son chiffre n'est pas relisable. Compte rendu complet, méthode et réserves comprises :
+[`spikes/0185-aes-gcm-siv.md`](spikes/0185-aes-gcm-siv.md).
+
+| Voie, en µs par scellement d'un secteur                         | Chromium 151 | Firefox 153 | WebKit 26.5 |
+| --------------------------------------------------------------- | -----------: | ----------: | ----------: |
+| **AES-256-GCM de WebCrypto** — ce que fait le produit           |      **7,9** |    **65,8** |   **138,7** |
+| AES-GCM-SIV **composé** sur AES-CTR, sans dépendance            |      1 041,9 |     3 950,0 | **598 000** |
+| — dont le seul plancher de ses 39 appels                        |        236,3 |     2 689,7 |     599 000 |
+| AES-GCM-SIV **logiciel** (`@noble/ciphers`, évalué, non adopté) |     **64,9** |    **64,1** |    **43,6** |
+
+**Trois choses, et la première est celle qui sert.** La voie **sans dépendance** demande quarante
+appels à `crypto.subtle` par secteur là où AES-GCM en demande un — les deux suites de compteurs de
+la RFC 8452 incrémentent leurs quatre premiers octets en petit-boutiste, quand AES-CTR de WebCrypto
+incrémente ses derniers bits en gros-boutiste —, et cela met la part cryptographique d'une reprise
+au plafond de charge à **68 s**, contre 0,5 s aujourd'hui et 42,9 s de marge sous le budget de 60 s.
+C'est le seul verdict de coût du spike, et il ne porte que sur cette voie.
+
+Ensuite : **SIV ne coûte que dix à vingt pour cent de plus que GCM dans la même implémentation** —
+les deux dernières lignes du rapport brut portent la même bibliothèque. Ce qui coûte est de quitter
+WebCrypto : un facteur huit sous Chromium, rien du tout sous Firefox et WebKit, dont les appels à
+`crypto.subtle` sont assez chers pour qu'un AES logiciel les rattrape.
+
+Enfin, les **598 ms de WebKit ne sont pas de l'AES** : `node tools/spike-gcm-siv/cout-par-appel.mjs`
+mesure qu'un appel `AES-CTR` sur un bloc de seize octets coûte 83 µs si l'on jette le résultat et
+**15,3 ms si on le lit**, par `Uint8Array` comme par `DataView`. WebKit paie la matérialisation des
+octets, et la voie composée doit lire chaque bloc.
+
+**Les valeurs absolues de ce tableau varient d'un facteur trois et demi d'une exécution à l'autre,
+selon ce qui tourne à côté ; les rapports varient de dix pour cent.** Trois exécutions ont été
+prises, la plus cohérente est publiée, et le § 2.5 du compte rendu donne les trois. Comme pour la
+migration v3 → v4, c'est le rapport qu'il faut retenir, pas la seconde.
+
 ### La RACINE INITIALE de la création, et l'ENGAGEMENT de la première ouverture (#181)
 
 Relevé du **2026-09-10**,

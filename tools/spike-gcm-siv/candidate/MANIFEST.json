@@ -1,0 +1,46 @@
+{
+  "contract": {
+    "id": "railsbox-vault-spike-gcm-siv-candidate",
+    "version": 1
+  },
+  "note": "Candidate ÉVALUÉE, pas adoptée. Aucun octet de cette bibliothèque n'est versionné dans le dépôt et rien ne l'ajoute à `package.json` : `node tools/spike-gcm-siv/preparer-candidate.mjs` la récupère par `npm pack`, confronte les empreintes ci-dessous AVANT de laisser le banc l'importer, et la dépose sous `reports/spike-gcm-siv/candidate/`, qui est ignoré par git. Ce geste transpose au spike la règle de dépendances de l'ADR 0021 décision 3 — artefact vendu, empreinte vérifiée avant instanciation, aucun CDN — et le § « Ce que la vérification rend impossible » de la note de spike dit ce qu'elle ne peut PAS transposer au navigateur.",
+  "pins": {
+    "npmPackage": "@noble/ciphers@2.4.0",
+    "npmTarballSha256": "4a398bcc280c8742d474f9162f6d3c153e52ab1078e8ab592b4720410fb3c3e9",
+    "upstreamRepository": "https://github.com/paulmillr/noble-ciphers",
+    "license": "MIT",
+    "dependances": 0,
+    "audit": "cure53, septembre 2024, sur la version 1.0.0 ; portée « everything ». Les changements postérieurs à 1.0.0 ne sont pas couverts par cet audit, et la version évaluée ici est la 2.4.0.",
+    "referenceImplementee": "RFC 8452 (AES-GCM-SIV), export `gcmsiv`"
+  },
+  "artifacts": [
+    {
+      "name": "aes.js",
+      "bytes": 79900,
+      "sha256": "941ebefe14c48cd1401ffe52f329d4e6ff14f3f596681b211a33cde21de3a90c",
+      "entry": "package/aes.js",
+      "role": "AES logiciel par T-tables, et les modes qui en descendent dont `gcmsiv`."
+    },
+    {
+      "name": "_polyval.js",
+      "bytes": 13065,
+      "sha256": "735b078133e0c5a97dd984a21389f152dc7958b283f52504f6f0906ded243fa5",
+      "entry": "package/_polyval.js",
+      "role": "POLYVAL et GHASH."
+    },
+    {
+      "name": "utils.js",
+      "bytes": 34005,
+      "sha256": "a443ec1f60d1aaa25d1b7d8c102d33c0e8e6d683ada1ad17be9c32e69170ff95",
+      "entry": "package/utils.js",
+      "role": "Outillage d'octets et enveloppes de chiffres."
+    },
+    {
+      "name": "LICENSE",
+      "bytes": 1161,
+      "sha256": "f36671a5487c9c5050efacb58011c37c24c55a889803cb036cf9d9a6347c1e2d",
+      "entry": "package/LICENSE",
+      "role": "Licence MIT du paquet."
+    }
+  ]
+}
