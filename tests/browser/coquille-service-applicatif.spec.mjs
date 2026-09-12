@@ -28,7 +28,7 @@
 // propriété que l'ADR 0028 exige. Un moteur sans OPFS rend donc les mêmes codes qu'un autre, et
 // c'est ce qui rend ce fichier jouable sur les trois.
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import { NOMBRE_DE_SONDES } from "../../public/coquille-epreuve/marqueurs.mjs";
 import { CODES_REFUS_COQUILLE, messageDeRefus } from "../../src/coquille/refus-de-coquille.mjs";
