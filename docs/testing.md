@@ -2509,6 +2509,22 @@ frontière d'origine, l'ensemble de `npm run check` tient en un peu plus d'une m
 la limite de 2 min (86 s mesurées en CI le 2026-08-23). Elle exige que les trois moteurs soient
 installés (voir `docs/development.md`).
 
+### La sonde AES-GCM-SIV (#185)
+
+`tests/compat/gcm-siv-probe.spec.mjs` s'exécute sous la même configuration et pour une seule raison
+: la décision 7 de l'[ADR 0033](decisions/0033-hierarchie-de-cles-derivees-par-domaine.md) demandait
+de **constater** l'absence d'AES-GCM-SIV dans WebCrypto plutôt que de la supposer. Elle la demande
+de trois façons — nom d'algorithme nu, objet d'algorithme, chiffrement complet —, dans la page et
+dans un Worker, et écrit le refus tel qu'il vient dans `reports/compat/gcm-siv-<moteur>.json`.
+
+Elle diffère de la sonde de capacités sur un point, et c'est délibéré : **elle affirme une
+absence**. Un moteur qui se mettrait à exposer SIV la ferait échouer, avec le message « le verdict
+du spike #185 est à rouvrir ». C'est le signal que la note datée de l'ADR 0033 nomme comme condition
+de réouverture, câblé plutôt que confié à une veille. Elle affirme aussi une présence, celle
+d'AES-CTR sur un bloc isolé : c'est la primitive dont dépend la seule voie sans dépendance, et le
+spike la mesure pour la même raison. Elle n'emploie aucun module de `src/` et ne change pas le
+rapport de la matrice.
+
 ## Le cycle de vie assemblé (#163, ADR 0030) et le VERROUILLAGE (#169, ADR 0031)
 
 Trois niveaux, et ils ne mesurent pas la même chose.

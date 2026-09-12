@@ -3398,6 +3398,32 @@ fois les clés séparées** — c'est-à-dire quand une collision ne coûte plus
 deux clairs d'un domaine d'un volume. Aucun code, aucune version de format : une mesure et un
 verdict.
 
+**Le spike a rendu le 12 septembre 2026 : la question reste OUVERTE, la réponse du dépôt est « non —
+pas maintenant ».** Compte rendu complet dans
+[`spikes/0185-aes-gcm-siv.md`](spikes/0185-aes-gcm-siv.md) ; verdict daté sous la décision 7 de
+l'ADR 0033. En trois lignes :
+
+- **la disponibilité est nulle et c'est mesuré**, dans la page et dans un Worker, sur les trois
+  moteurs (`tests/compat/gcm-siv-probe.spec.mjs`, `reports/compat/gcm-siv-*.json`). L'épreuve
+  **affirme** cette absence : un moteur qui exposerait SIV la ferait rougir ;
+- **le coût ne décide pas.** Une voie sans aucune dépendance existe et est conforme aux vingt-six
+  vecteurs AES-256 de la RFC 8452, mais elle demande **quarante appels à `crypto.subtle` par
+  secteur** — les deux suites de compteurs de la RFC incrémentent leurs quatre premiers octets en
+  petit-boutiste, quand AES-CTR de WebCrypto incrémente ses derniers bits en gros-boutiste —, ce qui
+  la met hors du budget de reprise. Une implémentation logicielle, elle, coûte le même ordre que
+  l'AES-GCM du moteur ; SIV par-dessus GCM ne coûte que 20 % dans la même implémentation ;
+- **ce qui ferme la question est le RÉGIME, pas la vitesse.** Tout AEAD hors WebCrypto — JavaScript
+  ou WebAssembly — exige les octets bruts des clés de domaine. Le dépôt échangerait le GARANTI que
+  la v4 vient d'établir — clés non extractibles, DEK incapable de chiffrer, cliquet tenu par la
+  plate-forme — contre un FAIT non garanti tenu par une revue. Et en JavaScript, l'empreinte ne peut
+  pas être vérifiée AVANT exécution : la CSP du produit n'ouvre ni `eval` ni `new Function`.
+
+**Ce que SIV apporterait, écrit pour qu'on n'ait pas à le redécouvrir** : il rendrait la
+comptabilité de la question n° 4 cryptographiquement sans objet — 2^64 messages par clé à nonces
+tirés (RFC 8452 § 6) contre 2^31 aujourd'hui — et ferait tomber le dommage d'une collision de nonce
+de « `C1 ⊕ C2` et la clé `H` » à « deux clairs identiques produisent deux chiffrés identiques ». Il
+n'apporterait rien aux quatre domaines à usage unique, dont le budget est de 1.
+
 ### Question n° 2 — Faut-il un arbre de Merkle sur le volume ?
 
 **Position du dépôt, et elle a changé depuis l'ADR 0015.** L'ADR 0019 a fermé le cas concret que
