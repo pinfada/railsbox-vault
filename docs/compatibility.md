@@ -316,6 +316,37 @@ capacités **dans son propre document, sous la CSP servie** — sans l'exemption
   disparaître, sur WebKit, la frontière d'origine, les dix refus et l'interface que #161 et #162 y
   mesurent — c'est-à-dire tout ce qui reste mesurable sur ce moteur.
 
+### Ce que SERVIR l'application demande aux moteurs (#192, ADR 0038)
+
+Le chemin servi a deux moitiés, et elles n'exigent pas la même chose du moteur :
+
+| Ce qui est mesuré                                                       | Chromium | Firefox                                               | WebKit                  |
+| ----------------------------------------------------------------------- | -------- | ----------------------------------------------------- | ----------------------- |
+| la FRONTIÈRE du relais (refus typés, dix refus inchangés, cadre retiré) | mesuré   | mesuré                                                | mesuré                  |
+| un Service Worker de MODULE dans le cadre encadré                       | mesuré   | non mesuré                                            | non mesuré              |
+| une page Rails RÉELLE servie dans le cadre                              | mesuré   | **impossible : Rails ne répond jamais dans le guest** | impossible : aucun OPFS |
+
+La première ligne est mesurée sur les trois moteurs, et c'est possible parce que le refus du relais
+est calculé sur le TYPE reçu, **avant** que le moindre état soit consulté (ADR 0028) : un moteur
+sans OPFS rend exactement les mêmes codes qu'un moteur qui en a.
+
+Les deux autres sont liées, et l'écart est daté. Sous **Firefox**, Rails n'a jamais répondu à
+`/vault/health` dans le guest : deux tentatives, deux budgets — à 300 s, « le pont a refusé la
+requête : application-injoignable (code 7) » ; à 900 s, « aucune réponse à GET /vault/health en 5000
+ms ». Le pont série RÉPOND d'abord — donc le guest tourne et son Python vit — puis se tait ; Puma
+n'écoute jamais. C'est cohérent avec ce que ce document dit déjà de ce moteur (il ne porte que le
+témoin de démarrage du runtime), et **la cause n'est pas établie par #192** : l'affirmer serait
+deviner. Tant qu'aucune page n'y est servie, ce que ce moteur ferait d'un Service Worker de module
+dans un cadre encadré n'est pas mesuré non plus.
+
+Sous **WebKit**, aucun volume ne s'ouvre (`VAULT_STORAGE_UNSUPPORTED`), donc aucun guest ne boote
+sur un disque : la question ne s'y pose pas.
+
+**Ce que la coquille fait d'un moteur qui refuse le Service Worker** : rien de fatal. Le courtier le
+DIT dans son relevé (`coquilleDeCadre.serviceWorker: "refuse:…"`), et le document reste ce qu'il
+était — il s'annonce, tient son port, demande l'état. Aucune page n'apparaît, et c'est un fait de
+compatibilité, pas une panne.
+
 ### `Cross-Origin-Opener-Policy` : mesuré sur les trois moteurs
 
 Servi seul (sans COEP) sur l'origine de confiance depuis #163, et son EFFET est relevé plutôt que

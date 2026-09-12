@@ -46,9 +46,12 @@ Utilisateur ──geste──► Coquille de confiance ──capacité minimale�
 Le JavaScript rendu par l'application Rails est une entrée hostile potentielle. Il ne partage pas
 l'autorité de la coquille, et depuis l'[ADR 0002](decisions/0002-topologie-origine-de-confiance.md)
 il ne partage pas non plus son **origine** : le document applicatif vit sur une origine distincte,
-encadré par `sandbox="allow-scripts allow-same-origin"`. La partition d'origine sépare OPFS,
-IndexedDB, Web Locks, `BroadcastChannel`, stockage clé-valeur, cookies et portée des Service
-Workers. La coquille n'accorde qu'un `MessagePort` transféré, restreint à une liste d'admission.
+encadré par `sandbox="allow-scripts allow-same-origin allow-forms"` (le troisième jeton depuis #192,
+[ADR 0038](decisions/0038-servir-l-application-dans-le-cadre.md) décision 4 bis : sans lui, un
+moteur bloque toute soumission de formulaire avant qu'aucune requête ne parte). La partition
+d'origine sépare OPFS, IndexedDB, Web Locks, `BroadcastChannel`, stockage clé-valeur, cookies et
+portée des Service Workers. La coquille n'accorde qu'un `MessagePort` transféré, restreint à une
+liste d'admission.
 
 Depuis #161 ([ADR 0028](decisions/0028-coquille-de-produit-et-frontiere.md)), cette frontière est
 **du produit et non plus un banc**. Ce qui a changé, et ce qui n'a pas changé :
