@@ -38,39 +38,55 @@ jeton anti-CSRF, une redirection 303 et un cookie de session
 (`apps/reference/app/controllers/pages_controller.rb`). C'est le plus petit terrain qui porte les
 quatre natures de requête qu'un relais doit franchir.
 
-**Relevé du 12 septembre 2026, Chromium** (`reports/mesures/pont-serie-http-chromium.json`) :
+**Remesuré le 13 septembre 2026, Chromium** — relevé BRUT versionné tel quel :
+[`docs/mesures/pont-serie-http-chromium-2026-09-13.json`](../mesures/pont-serie-http-chromium-2026-09-13.json).
 
-| Geste                                      | Durée                         | Octets reçus |
-| ------------------------------------------ | ----------------------------- | ------------ |
-| page d'accueil (document HTML)             | 351,5 ms                      | 1 083        |
-| `/vault.css`                               | 50,8 ms                       | 402          |
-| `/vault.js`                                | 75,4 ms                       | 396          |
-| `/vault.png`                               | 63,3 ms                       | 2 053        |
-| les trois actifs demandés **en parallèle** | 186,9 ms                      | —            |
-| page suivante (session chaude)             | 281,8 ms                      | 1 083        |
-| soumission du formulaire (POST, 303)       | 380,2 ms                      | 0            |
-| redirection suivie (la note créée)         | 112,4 ms                      | 1 102        |
-| **total du parcours**                      | **1 315,4 ms** sur 7 requêtes | **6 119**    |
+| Geste                                      | 12 septembre (publié) | 13 septembre (relevé brut)    | Octets reçus |
+| ------------------------------------------ | --------------------- | ----------------------------- | ------------ |
+| page d'accueil (document HTML)             | 351,5 ms              | 519,4 ms                      | 1 083        |
+| `/vault.css`                               | 50,8 ms               | 49,7 ms                       | **705**      |
+| `/vault.js`                                | 75,4 ms               | 107,8 ms                      | **425**      |
+| `/vault.png`                               | 63,3 ms               | 87,3 ms                       | 2 053        |
+| les trois actifs demandés **en parallèle** | 186,9 ms              | 224,9 ms                      | —            |
+| page suivante (session chaude)             | 281,8 ms              | 375,2 ms                      | 1 083        |
+| soumission du formulaire (POST, 303)       | 380,2 ms              | 636,0 ms                      | 0            |
+| redirection suivie (la note créée)         | 112,4 ms              | 180,1 ms                      | **770**      |
+| **total du parcours**                      | 1 315,4 ms            | **1 955,5 ms** sur 7 requêtes | **6 119**    |
+
+**La table du 12 septembre portait trois octets faux**, et la revue d'intégration de la PR #203
+(constat 2) l'a relevé : `/vault.css` à 402 o, `/vault.js` à 396 o, la page d'arrivée à 1 102 o, là
+où les fichiers pèsent 705 et 425 o à chacun des commits de la branche. Le total, lui, était juste —
+402 + 396 + 1 102 = 705 + 425 + 770 —, parce qu'il avait été recopié du relevé quand les trois
+lignes avaient été retranscrites à la main. **Ce n'était pas un décalage de trame du découpeur** :
+les deux relevés, celui du relecteur et celui-ci, rendent la taille exacte de chaque fichier, et le
+banc l'EXIGE désormais à l'octet. Le relevé est publié brut, et la table en est tirée. Les durées du
+13 septembre sont plus lentes d'environ un tiers, sur la même machine chargée par d'autres chantiers
+: la conclusion ci-dessous ne change pas.
 
 Trois faits sortent de cette table, et ils décident :
 
-1. **une page complète coûte environ 540 ms** — document plus trois actifs —, soit dix fois moins
-   que le seuil de cinq secondes que l'issue pose comme condition d'abandon. Le pont série n'est pas
-   le goulot ;
+1. **une page complète coûte environ 540 à 750 ms** — document plus trois actifs —, soit sept à dix
+   fois moins que le seuil de cinq secondes que l'issue pose comme condition d'abandon. Le pont
+   série n'est pas le goulot ;
 2. **le parallélisme n'achète rien** : trois actifs demandés ensemble coûtent 186,9 ms contre 189,5
-   ms en série. Le fil série les sérialise de toute façon. Un relais n'a donc aucune raison d'être
-   malin sur la concurrence, et sa borne d'en-vol est une borne de MÉMOIRE, pas de débit ;
+   ms en série le 12, 224,9 ms contre 244,8 ms le 13. Le fil série les sérialise de toute façon. Un
+   relais n'a donc aucune raison d'être malin sur la concurrence, et sa borne d'en-vol est une borne
+   de MÉMOIRE, pas de débit ;
 3. **la session Rails traverse** : le cookie a fait l'aller-retour (le compteur de vues de la page
    avance), et le jeton anti-CSRF du formulaire s'apparie.
 
 **Firefox : la mesure n'a PAS pu être prise, et c'est écrit plutôt que tu.** Rails n'a jamais
 répondu à `/vault/health` dans le guest sous ce moteur, deux fois, sous deux budgets — 300 s (« le
 pont a refusé la requête : application-injoignable (code 7) ») puis 900 s (« aucune réponse à GET
-/vault/health en 5000 ms »). Le pont série répond d'abord, puis se tait ; Puma n'écoute jamais.
-C'est cohérent avec la position déjà écrite du dépôt (`playwright.vm.config.mjs` : « Chromium porte
-TOUTE la suite ; Firefox et WebKit ne portent que le TÉMOIN de démarrage »), et ce n'est pas un
-défaut du relais — rien de ce que cette tranche livre n'a pu être exécuté sous ce moteur, puisque le
-boot n'y aboutit pas. **La cause n'est pas établie par #192, et l'affirmer serait deviner.**
+/vault/health en 5000 ms »). Le pont série répond d'abord, puis se tait ; Puma n'écoute jamais. Ce
+n'est pas un défaut du relais — rien de ce que cette tranche livre n'a pu être exécuté sous ce
+moteur, puisque le boot n'y aboutit pas. **La cause de la première moitié est établie par une mesure
+que ce dépôt publiait déjà** (revue d'intégration de la PR #203, constat 3) : Firefox paie six fois
+le prix de Chromium sur v86 (#74, reconfirmé le 12 septembre 2026 : invite du guest à 3 852 ms sous
+Chromium, 22 982 ms sous Firefox, soit 5,97×) ; un boot Rails qui répond à `/vault/health` en 106 s
+sous Chromium en demande donc environ 633 s — dix minutes — sous Firefox, et le premier budget
+essayé, cinq minutes, était structurellement trop court. Ce qui reste INEXPLIQUÉ est le silence du
+pont observé au second essai, à quinze minutes (« aucune réponse à GET /vault/health en 5000 ms »).
 `docs/compatibility.md` le porte, et l'épreuve s'ignore en NOMMANT sa cause au lieu de passer au
 vert par vacuité.
 
@@ -211,15 +227,36 @@ réponse argumentée, et elle est non.
 - **la portée.** Un Service Worker n'a de portée que sur SON origine (ADR 0002, ADR 0018 § 4 : la
   portée d'un Service Worker **est** l'origine plus un préfixe de chemin). Celui-ci ne peut prendre
   aucune portée sur l'origine de confiance, et le spike #35 le mesure depuis 2026 ;
-- **le chemin vers la coquille.** Le Service Worker ne parle à personne d'autre qu'à un CLIENT de sa
-  propre origine — le courtier. Tout ce qu'il obtient passe donc par le port restreint, sous le
-  contrat strict de l'ADR 0028, avec ses dix refus inchangés, sa corrélation exigée et ses bornes.
-  **Le supprimer n'enlèverait rien à la frontière ; l'ajouter ne lui ajoute rien non plus** ;
+- **le chemin vers la coquille.** Le Service Worker ne parle à personne d'autre qu'aux CLIENTS de sa
+  propre origine qui détiennent un port restreint — les courtiers. Tout ce qu'il obtient passe donc
+  par un port restreint, sous le contrat strict de l'ADR 0028, avec ses dix refus inchangés, sa
+  corrélation exigée et ses bornes. **Le supprimer n'enlèverait rien à la frontière ; l'ajouter ne
+  lui ajoute rien non plus** ;
+- **QUEL courtier.** Le Service Worker est unique pour l'origine, les courtiers non : un par
+  coquille ouverte. La première rédaction relayait par « le premier courtier trouvé », et la revue
+  de sécurité de la PR #203 (constat 1) l'a mesuré : deux coffres ouverts, et la page du coffre B
+  était servie par le port, le Worker, le guest et le bocal à cookies du coffre A. Le routage est
+  désormais une fonction PURE, éprouvée et mutée (`src/coquille/routage-du-cadre.mjs`), qui tient
+  une propriété : **aucune requête n'est servie par le courtier d'un autre coffre**. Un courtier est
+  un client qui DIT détenir un port quand le Service Worker le lui demande, jamais un document
+  présent sur un chemin (constat 2 : un onglet ouvert à la main répond « sans port ») ; une
+  SOUS-RESSOURCE est liée par `event.clientId` au courtier qui a servi la navigation qui a créé son
+  client ; une NAVIGATION, qu'un Service Worker ne peut pas lier à son parent, n'est servie que s'il
+  existe EXACTEMENT UN courtier, et reçoit `CADRE_COURTIERS_MULTIPLES` sinon ; une navigation de
+  PREMIER RANG n'est jamais relayée. **Le prix est déclaré : un seul coffre servi à la fois**,
+  cohérent avec l'exclusivité de volume que le produit constate déjà.
+  `tests/browser/coquille-deux-coffres.spec.mjs` le mesure sur deux coquilles réelles ;
 - **ce qu'il détient.** Rien. Ni clé, ni cookie — le bocal vit dans le Worker de confiance —, ni
   cache, ni port privilégié. Il ne connaît même pas l'origine de la coquille ;
 - **sa persistance.** Il survit à la fermeture de l'onglet, comme tout Service Worker. Ce qu'il peut
   faire alors : rien. Sans courtier joignable, il LAISSE PASSER au réseau, et le réseau est le
-  serveur statique. C'est aussi ce qui le rend inoffensif partout où la coquille n'est pas ;
+  serveur statique. Ses LIAISONS client → courtier vivent en mémoire et meurent avec lui : une
+  sous-ressource dont la liaison est perdue reçoit un refus, jamais un autre courtier ;
+- **ce qu'il sert porte les en-têtes de l'hébergeur.** Une réponse fabriquée par un Service Worker
+  ne porte aucun en-tête du serveur : la première rédaction perdait `nosniff`, CORP et
+  `Cache-Control` sur tout ce que le relais servait (revue de sécurité #203, constat 7). Il REJOUE
+  désormais ceux du rôle `app` de `tools/serve-headers.mjs` (`ENTETES_DE_L_HEBERGEUR_APPLICATIF`,
+  égalité exigée par une épreuve), après ceux du guest ;
 - **son installation est GARDÉE.** `origineDistincteDuParent` refuse d'installer quoi que ce soit
   quand le document encadré est de MÊME origine que celui qui l'encadre — c'est-à-dire sous le
   témoin positif en même origine de `tests/browser/coquille-frontiere.spec.mjs`, la seule topologie
@@ -283,43 +320,63 @@ n'existent pas dans un bocal à un seul habitant. **La limite est écrite** : un
 s'appuierait sur l'expiration d'un cookie pour déconnecter son utilisateur ne serait pas déconnectée
 par ce relais.
 
-## Décision 5 bis — L'attente de la première page est réveillée par l'ANNONCE, pas par une horloge
+## Décision 5 bis — Rien n'est relayé tant que l'application attend, et le Worker ne se tait plus
 
 L'ordre du cycle de vie crée une fenêtre : la coquille encadre le document applicatif à l'étape 4,
-et l'application ne DÉMARRE qu'au geste de l'utilisateur qui suit. Entre les deux, le relais répond
-`VAULT_COQUILLE_APPLICATION_NON_DEMARREE` — c'est la vérité —, et le cadre doit REDEMANDER.
+et l'application ne DÉMARRE qu'au geste de l'utilisateur qui suit — des minutes plus tard, parfois.
 
-**La première rédaction redemandait toutes les deux secondes. Le scénario de bout en bout l'a
-réfutée**, et c'est la mesure la plus instructive de la tranche : une centaine de navigations du
-cadre imbriqué pendant un boot qui dure cent dix secondes, et le Worker de confiance a été déclaré
-**MORT PAR SILENCE** — `workerMort.cause: "silence"`, sa borne de trente secondes expirant faute de
-battement. Trois exécutions de suite, là où deux venaient de passer, sur un produit inchangé. Le
-scénario EXISTANT (`reprise-coquille-boot-froid.spec.mjs`) passait pendant ce temps : ce n'était ni
-l'environnement, ni le boot, ni le relais — c'était la CHARGE que l'attente ajoutait au processus
-pendant que la machine virtuelle démarrait.
+### Ce que la revue d'intégration a mesuré, et ce que la mesure a réfuté
 
-**Ce qui réveille l'attente est donc l'ANNONCE DE BARRIÈRE.** C'est le second geste admis du port
-restreint depuis #161, et c'est une POUSSÉE : la coquille annonce qu'une barrière de durabilité a
-été acquittée, et le démarrage de l'application en acquitte une. Le cadre redemande sa page dans la
-milliseconde qui suit le démarrage, sans rien interroger en boucle — exactement le motif pour lequel
-cette annonce avait été admise : « l'application n'a rien à demander, donc rien à interroger en
-boucle » (ADR 0028, liste d'admission).
+La première rédaction redemandait la page toutes les deux secondes, puis toutes les dix, trente
+fois, avant d'ABANDONNER pour toujours. Le Worker de confiance était déclaré **MORT PAR SILENCE**
+pendant le démarrage — sur la machine du relecteur (trois exécutions sur trois), en CI, et dans
+Chrome à la main — et la rédaction l'attribuait à « la charge que l'attente ajoutait au processus ».
+**C'était faux, et la mesure l'a établi** (13 septembre 2026, jalons posés par le Worker lui-même,
+Chrome) :
 
-Le repli d'horloge subsiste, à **dix secondes** et borné à trente essais : il est le seul recours si
-aucune annonce ne vient. Ce que la mesure dit du changement, sur le chemin servi :
+| Exécution, premier démarrage (installation du disque applicatif comprise) | Plus long silence du Worker |
+| ------------------------------------------------------------------------- | --------------------------- |
+| coquille de cadre ACTIVE, onglet visible                                  | 22,6 s                      |
+| coquille de cadre NEUTRALISÉE (aucune requête relayée), onglet visible    | **32,2 s**                  |
+| coquille de cadre active, onglet CACHÉ                                    | **84 s** — mort par silence |
+| après la correction, onglet visible                                       | 5,2 s                       |
 
-| Grandeur                             | Horloge de 2 s   | Réveil par l'annonce |
-| ------------------------------------ | ---------------- | -------------------- |
-| première page après le démarrage     | 924 ms, 1 913 ms | 249 ms               |
-| navigations du cadre pendant le boot | ~100             | une poignée          |
-| exécutions du scénario vertes        | 2 sur 5          | 3 sur 3              |
+**La cause** : pendant la première INSTALLATION, le scellement du volume neuf (`scellerTout`, 512
+Mio), le versement du disque puis son empreinte enchaînent des `await` qui se règlent en MICROTÂCHES
+— l'écriture OPFS synchrone, un chiffrement déjà résolu, un flux déjà en mémoire. La boucle
+d'événements du Worker ne reprend jamais la main ; le battement du canal privilégié, minuterie de ce
+même fil, ne tire pas, et la page constate trente secondes de silence. Les requêtes relayées restent
+elles aussi en file. **La coquille de cadre n'en était pas la cause** : le silence le plus long a
+été relevé SANS elle. Les deux hypothèses de la rédaction précédente — le trafic du relais affame le
+battement ; le Worker ne répond pas au relais pendant le boot — avaient d'ailleurs été éliminées par
+la mesure avant celle-ci.
 
-**Ce que cet incident dit du produit, et qu'il faut garder** : la borne de trente secondes du Worker
-de confiance (ADR 0030, décision 3) mesure un SIGNE DE VIE, et un signe de vie dépend du processeur.
-Une attente qui interroge en boucle pendant le geste le plus long du produit peut donc faire
-déclarer mort un Worker parfaitement vivant. Ce n'est pas un défaut de la borne — c'est la raison
-pour laquelle une poussée vaut mieux qu'une interrogation, et cette tranche l'a payé pour
-l'apprendre.
+**La correction** : les trois boucles cèdent la main par tranches de cinquante millisecondes
+(`src/vm/ceder-la-main.mjs`), et le versement écrit par tranches alignées sur une frontière absolue
+d'un mébioctet. Aucun octet écrit ne change, ni leur ordre, ni le format du volume ; seul change
+l'instant où la boucle rend la main. `tests/unit/vm-ceder-la-main.test.mjs` rougit sans elle («
+aucune minuterie n'a tiré en 246 ms de versement »). La page publie désormais le PIRE ÉCART entre
+deux battements d'un même geste (`mesures.battements.pireEcartMs`), et le scénario de bout en bout
+exige qu'il reste sous la moitié de la borne.
+
+### Ce que le cadre fait pendant l'attente (décision du superviseur, sur la revue)
+
+La borne de trente secondes n'est pas relâchée. Et l'attente cesse d'être un parcours d'échec :
+
+1. **le courtier ne relaie RIEN tant que l'application ne tourne pas.** Il pose UNE question — la
+   première page — et, sur `VAULT_COQUILLE_APPLICATION_NON_DEMARREE`, rend au Service Worker « en
+   attente » sans rien poster sur le port. Ni la coquille, ni le Worker, ni le guest ne voient
+   passer une requête qui ne peut pas aboutir ;
+2. **le Service Worker rend une page d'ATTENTE honnête** (`CADRE_APPLICATION_EN_ATTENTE`, 503) : ce
+   qui se passe, depuis combien de temps, et un lien pour réessayer — au lieu d'un 504 en texte brut
+   ;
+3. **l'ANNONCE DE BARRIÈRE réveille l'attente**, quel que soit ce qui s'est passé avant : le
+   démarrage en acquitte une, la coquille la pousse, et le cadre redemande SA page, une fois. Plus
+   aucune horloge, plus aucun essai compté, plus aucun abandon définitif.
+
+`tests/unit/coquille-courtier-du-cadre.test.mjs` le mesure : deux cents sollicitations pendant un
+boot, zéro requête sur le port, la première page servie après l'annonce. Le mutant qui retire la
+garde d'attente rougit.
 
 ## Décision 6 — Le verrouillage retire le cadre, et abandonne ce qui est en vol
 
@@ -336,35 +393,46 @@ rendue.
 
 ## Modèle de menace
 
-| Ce qu'un adversaire tente depuis le territoire applicatif                     | Ce qu'il obtient                                                                                       |
-| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| relayer vers une autre machine (`GET https://exemple.test/`)                  | `VAULT_COQUILLE_REQUETE_HTTP_REFUSEE` — un chemin qui cesse d'être un chemin est refusé                |
-| écrire une seconde ligne dans la requête HTTP (`accept: …\r\nX-Injecte: oui`) | `VAULT_COQUILLE_REQUETE_HTTP_REFUSEE` — aucun caractère de contrôle ne franchit                        |
-| poser son propre `Cookie`, `Host` ou `Origin`                                 | l'en-tête est LAISSÉ : le guest ne reçoit que ce que le relais pose lui-même                           |
-| faire porter un corps à un `GET`                                              | `VAULT_COQUILLE_REQUETE_HTTP_REFUSEE` — une requête qui dit une chose et en fait une autre est refusée |
-| parler au Worker dans le vocabulaire du canal de relais                       | `VAULT_COQUILLE_CANAL_DE_RELAIS_REFUSE`                                                                |
-| rejouer une RÉPONSE relayée vers la coquille                                  | `VAULT_COQUILLE_TYPE_INCONNU` — une réponse n'est pas une requête                                      |
-| ajouter un champ à une requête relayée                                        | `VAULT_COQUILLE_MESSAGE_MALFORME` — la clôture des champs vaut pour le type neuf comme pour l'ancien   |
-| noyer le guest sous les requêtes                                              | `VAULT_COQUILLE_TROP_DE_REQUETES` — seize en vol au plus, côté Worker ; trente-deux côté coquille      |
-| faire rendre une réponse énorme                                               | `VAULT_COQUILLE_REPONSE_HTTP_TROP_GRANDE` — refusée ENTIÈRE, jamais tronquée                           |
-| demander une page après le verrouillage                                       | `VAULT_COQUILLE_APPLICATION_NON_DEMARREE`, et le cadre n'existe plus                                   |
-| faire annoncer la page Rails imbriquée pour obtenir son propre port           | `VAULT_COQUILLE_ANNONCE_FENETRE`                                                                       |
-| les dix gestes de l'issue #24                                                 | leurs dix codes, inchangés, mesurés dans le MÊME relevé que les huit sondes de relais                  |
+| Ce qu'un adversaire tente depuis le territoire applicatif                     | Ce qu'il obtient                                                                                           |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| relayer vers une autre machine (`GET https://exemple.test/`)                  | `VAULT_COQUILLE_REQUETE_HTTP_REFUSEE` — un chemin qui cesse d'être un chemin est refusé                    |
+| un chemin qui se NORMALISE ailleurs (`/..//evil.test/`, `%2F`, `\`, `/a//b`)  | `VAULT_COQUILLE_REQUETE_HTTP_REFUSEE` ; et une `Location` de ce genre n'est pas rendue (revue #203, 4)     |
+| un corps base64 admis par l'alphabet et refusé par `atob` (`A`, `AAAA=`) × 32 | `VAULT_COQUILLE_REQUETE_HTTP_REFUSEE`, une réponse par corrélation, aucun jet (revue #203, 3)              |
+| faire servir sa page par le courtier d'un AUTRE coffre                        | `CADRE_COURTIERS_MULTIPLES` ou `CADRE_CLIENT_SANS_COURTIER`, lus dans le cadre (revue #203, 1)             |
+| ouvrir un onglet sur le chemin du courtier pour capter le relais              | rien : il répond « sans port » et n'est pas un courtier (revue #203, 2)                                    |
+| demander un chemin de la coquille de cadre (`/index.html`, `/cadre/…`)        | `CADRE_CHEMIN_RESERVE`, jamais un document de la coquille (revue #203, 5)                                  |
+| écrire une seconde ligne dans la requête HTTP (`accept: …\r\nX-Injecte: oui`) | `VAULT_COQUILLE_REQUETE_HTTP_REFUSEE` — aucun caractère de contrôle ne franchit                            |
+| poser son propre `Cookie`, `Host` ou `Origin`                                 | l'en-tête est LAISSÉ : le guest ne reçoit que ce que le relais pose lui-même                               |
+| faire porter un corps à un `GET`                                              | `VAULT_COQUILLE_REQUETE_HTTP_REFUSEE` — une requête qui dit une chose et en fait une autre est refusée     |
+| parler au Worker dans le vocabulaire du canal de relais                       | `VAULT_COQUILLE_CANAL_DE_RELAIS_REFUSE`                                                                    |
+| rejouer une RÉPONSE relayée vers la coquille                                  | `VAULT_COQUILLE_TYPE_INCONNU` — une réponse n'est pas une requête                                          |
+| ajouter un champ à une requête relayée                                        | `VAULT_COQUILLE_MESSAGE_MALFORME` — la clôture des champs vaut pour le type neuf comme pour l'ancien       |
+| noyer le guest sous les requêtes                                              | `VAULT_COQUILLE_TROP_DE_REQUETES` — seize en vol au plus, côté Worker (mesuré : la 17e) ; 32 côté coquille |
+| faire rendre une réponse énorme                                               | `VAULT_COQUILLE_REPONSE_HTTP_TROP_GRANDE` — refusée ENTIÈRE, jamais tronquée (mesuré au plafond + 1)       |
+| demander une page après le verrouillage                                       | `VAULT_COQUILLE_APPLICATION_NON_DEMARREE`, et le cadre n'existe plus                                       |
+| faire annoncer la page Rails imbriquée pour obtenir son propre port           | `VAULT_COQUILLE_ANNONCE_FENETRE`                                                                           |
+| les dix gestes de l'issue #24                                                 | leurs dix codes, inchangés, mesurés dans le MÊME relevé que les huit sondes de relais                      |
 
 ## Les épreuves, et leurs témoins
 
-| Ce qui est prouvé                                                        | Où                                                                      |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| l'ÉPREUVE ROUGE : le cadre demande `/` et reçoit le refus JUSTE          | `tests/browser/coquille-service-applicatif.spec.mjs`, **trois moteurs** |
-| les six façons d'écrire mal une requête relayée, chacune sous son code   | idem                                                                    |
-| les dix refus de #24, INCHANGÉS sur le chemin neuf                       | idem, dans le même relevé que les huit sondes de relais                 |
-| le relevé de la coquille reste BORNÉ : des comptes, aucun octet relayé   | idem                                                                    |
-| les décisions du relais : méthodes, chemins, en-têtes, bocal, `Location` | `tests/unit/coquille-relais-http.test.mjs` (20 épreuves)                |
-| le Service Worker n'est publié que par l'origine APPLICATIVE             | `tests/unit/coquille-sans-service-worker.test.mjs`                      |
-| la garde d'installation refuse la même origine                           | idem                                                                    |
-| une page Rails RÉELLE rendue, cliquée, soumise, relue à froid            | `tests/e2e/parcours-page-rails.spec.mjs`, Chromium                      |
-| le coût du pont série sur une page réelle                                | `tests/vm/mesure-pont-serie-http.spec.mjs`, Chromium (Firefox déclaré)  |
-| l'application elle-même : HTML, actifs, formulaire, 303, session         | `apps/reference/test/controllers/pages_controller_test.rb`              |
+| Ce qui est prouvé                                                        | Où                                                                       |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| l'ÉPREUVE ROUGE : le cadre demande `/` et reçoit le refus JUSTE          | `tests/browser/coquille-service-applicatif.spec.mjs`, **trois moteurs**  |
+| les six façons d'écrire mal une requête relayée, chacune sous son code   | idem                                                                     |
+| les dix refus de #24, INCHANGÉS sur le chemin neuf                       | idem, dans le même relevé que les huit sondes de relais                  |
+| le relevé de la coquille reste BORNÉ : des comptes, aucun octet relayé   | idem                                                                     |
+| les décisions du relais : méthodes, chemins, en-têtes, bocal, `Location` | `tests/unit/coquille-relais-http.test.mjs` (29 épreuves)                 |
+| le relais côté Worker : corps forgés, erreur étrangère, plafond, rafale  | `tests/unit/coquille-relais-du-worker.test.mjs` (module réel, sous Node) |
+| le routage : quel courtier sert quelle requête, et les chemins réservés  | `tests/unit/coquille-routage-du-cadre.test.mjs`                          |
+| deux coffres, un onglet hors coffre, un leurre sur le chemin du courtier | `tests/browser/coquille-deux-coffres.spec.mjs`, Chromium et Firefox      |
+| pendant un boot, aucune requête ; la page servie après le démarrage      | `tests/unit/coquille-courtier-du-cadre.test.mjs`                         |
+| le Worker bat pendant l'installation : les boucles cèdent la main        | `tests/unit/vm-ceder-la-main.test.mjs` ; le pire écart exigé par l'E2E   |
+| les trois bornes s'emboîtent : pont < coquille < Service Worker          | `tests/unit/coquille-relais-http.test.mjs`                               |
+| le Service Worker n'est publié que par l'origine APPLICATIVE             | `tests/unit/coquille-sans-service-worker.test.mjs`                       |
+| la garde d'installation refuse la même origine                           | idem                                                                     |
+| une page Rails RÉELLE rendue, cliquée, soumise, relue à froid            | `tests/e2e/parcours-page-rails.spec.mjs`, Chromium                       |
+| le coût du pont série sur une page réelle                                | `tests/vm/mesure-pont-serie-http.spec.mjs`, Chromium (Firefox déclaré)   |
+| l'application elle-même : HTML, actifs, formulaire, 303, session         | `apps/reference/test/controllers/pages_controller_test.rb`               |
 
 Le TÉMOIN POSITIF du relais est dans le même relevé que ses refus : la question d'état, seul geste
 admis depuis #161, continue d'aboutir, et quatre requêtes concurrentes reçoivent quatre réponses
@@ -375,24 +443,49 @@ appariées. Un port cassé refuserait tout, y compris ce qu'il doit servir.
 `tools/muter-gardes-coquille.mjs` porte les gardes du relais. Chaque mutant remplace UNE garde par
 son contraire et exige que la suite rougisse :
 
-| Garde mutée                                 | Ce qu'un mutant survivant voudrait dire                   |
-| ------------------------------------------- | --------------------------------------------------------- |
-| `set-cookie` rendu au cadre                 | le cookie de session Rails franchirait la frontière       |
-| `Location` absolue rendue telle quelle      | l'hôte du guest fuiterait dans le territoire du guest     |
-| toute méthode admise                        | `PUT`, `DELETE` et le reste passeraient sans usage        |
-| tout en-tête de requête relayé              | le document choisirait `Cookie`, `Host` et `Origin`       |
-| caractères de contrôle admis dans un chemin | une seconde ligne s'écrirait dans la requête HTTP du pont |
-| garde d'abandon retirée                     | une réponse arrivée après le verrouillage serait rendue   |
+| Garde mutée                                                            | Ce qu'un mutant survivant voudrait dire                                       |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `set-cookie` rendu au cadre                                            | le cookie de session Rails franchirait la frontière                           |
+| `Location` absolue rendue telle quelle                                 | l'hôte du guest fuiterait dans le territoire du guest                         |
+| toute méthode admise                                                   | `PUT`, `DELETE` et le reste passeraient sans usage                            |
+| tout en-tête de requête relayé                                         | le document choisirait `Cookie`, `Host` et `Origin`                           |
+| caractères de contrôle admis dans un chemin                            | une seconde ligne s'écrirait dans la requête HTTP du pont                     |
+| corps sur une méthode qui n'en porte pas                               | une requête dirait une chose et en ferait une autre                           |
+| garde d'abandon (`relaisAbandonne`) réduite à la mort du Worker        | une réponse arrivée après un verrouillage REFUSÉ serait rendue                |
+| canal de relais non reconnu sur le port restreint                      | la tentative tomberait dans « type inconnu »                                  |
+| segment vide, `.`/`..`, détour encodé admis                            | un chemin se normaliserait vers une autre origine                             |
+| `Location` normalisée non rejugée                                      | le cadre naviguerait vers le web ouvert sur l'ordre du guest                  |
+| base64 jugé sur son seul alphabet                                      | le Worker jetterait dans son chemin de refus                                  |
+| code étranger posté par un refus                                       | un refus deviendrait une exception, et un silence                             |
+| en-tête de réponse à caractère de contrôle rendu                       | le Service Worker jetterait au lieu de rendre                                 |
+| le Service Worker prend le premier courtier                            | la page d'un coffre serait servie par un autre                                |
+| un document sans port tenu pour courtier                               | un onglet ouvert à la main capterait le relais                                |
+| sous-ressource sans liaison, ou liaison ignorée                        | un client emprunterait le courtier d'un autre coffre                          |
+| navigation de premier rang relayée                                     | un onglet hors coffre serait servi par le coffre ouvert                       |
+| plafond de réponse, borne en vol, `codeDeRefusAdmis` retirés du Worker | les deux refus du modèle de menace ne seraient plus rendus                    |
+| le courtier relaie pendant l'attente                                   | pendant un boot, chaque sollicitation du cadre partirait vers le Worker       |
+| le versement ne cède plus la main                                      | l'installation tairait le battement du Worker, et la page le déclarerait mort |
+
+La campagne rend **64/64, code 0** (13 septembre 2026). La rédaction précédente annonçait « 46/47,
+code 0 » : la campagne rendait le code 1, et son survivant était la garde `canalDeRelaisRefuse`, que
+seule une épreuve de navigateur exigeait — elle l'est désormais aussi par une épreuve unitaire. Et
+la table annonçait un mutant « garde d'abandon retirée » qui n'existait pas : il existe à présent,
+sur la garde sortie de sa clôture.
 
 ## Mesures publiées
 
-Sans seuil, comme celles de #161 à #173. Elles vivent dans `docs/quality-attributes.md` et dans
-`reports/mesures/pont-serie-http-chromium.json`.
+Sans seuil, comme celles de #161 à #173. Elles vivent dans `docs/quality-attributes.md` et, brutes,
+dans `docs/mesures/pont-serie-http-chromium-2026-09-13.json` — versionné, parce que `reports/` ne
+l'est pas et qu'aucune recette ne rejoue ce banc : la table ne se confronte qu'à ce fichier. Un seul
+chiffre a un seuil, et il protège le produit plutôt qu'il ne le décrit : le plus long silence du
+Worker pendant un démarrage reste sous la moitié de la borne de mort par silence.
 
 ## Limites, dites plutôt que tues
 
-- **la mesure Firefox n'existe pas**, et la cause n'est pas établie (voir ci-dessus). Ce que le
-  relais fait sous ce moteur n'est donc PAS mesuré de bout en bout ; seule sa frontière l'est ;
+- **la mesure Firefox n'existe pas** : v86 y tourne six fois moins vite, un boot Rails y demande
+  environ dix minutes, et le silence du pont à quinze minutes reste inexpliqué (voir ci-dessus). Ce
+  que le relais fait sous ce moteur n'est donc PAS mesuré de bout en bout ; seule sa frontière l'est
+  ;
 - **le bocal à cookies ignore les attributs** : ni expiration, ni `Path`, ni `Domain`, ni
   `SameSite`. Une application qui s'appuierait sur l'expiration pour déconnecter ne le serait pas ;
 - **WebSocket et `EventSource` ne sont pas relayés.** Aucun usage ne les demande, et le pont série
@@ -400,20 +493,23 @@ Sans seuil, comme celles de #161 à #173. Elles vivent dans `docs/quality-attrib
 - **les en-têtes RÉPÉTÉS, autres que `Set-Cookie`, sont écrasés** par la table du découpeur de
   réponse. Seul `set-cookie` est lu depuis la liste. Aucune application de référence n'en émet
   d'autre ;
-- **le cadre REDEMANDE la première page** tant que l'application n'est pas démarrée : réveillé par
-  l'annonce de barrière, et à défaut toutes les dix secondes, trente fois au plus (décision 5 bis).
-  C'est une attente, pas un parcours : ce que l'utilisateur LIT pendant cette attente appartient à
-  P2. Et si aucune annonce ne venait jamais — une application qui n'écrit rien au démarrage —,
-  l'attente coûterait jusqu'à dix secondes de plus que nécessaire ;
+- **le cadre attend l'ANNONCE de démarrage** (décision 5 bis) : si aucune annonce ne venait jamais —
+  une application qui n'acquitte aucune barrière au démarrage —, la page d'attente resterait
+  jusqu'au geste « Réessayer » qu'elle offre. Ce que l'utilisateur LIT pendant l'attente est une
+  phrase honnête, pas une mise en forme : celle-ci appartient à P2 ;
+- **un seul coffre est servi à la fois** (décision 4) : deux coquilles ouvertes dans le même profil,
+  et la navigation du second cadre reçoit `CADRE_COURTIERS_MULTIPLES` ;
+- **une sous-ressource perd sa liaison quand le navigateur arrête le Service Worker** : elle reçoit
+  alors `CADRE_CLIENT_SANS_COURTIER`, jusqu'à la navigation suivante du cadre, qui la réapprend ;
 - **la coquille de cadre est publiée par l'origine applicative**, ce que l'ADR 0017 n'avait pas
   prévu. Voir les impacts ;
-- **onze chemins de l'origine applicative ne sont JAMAIS relayés** : ceux de la coquille de cadre,
-  ceux que l'arbre applicatif publie d'autre (`/index.html`, `/inventaire.json`, `/_headers`) et
-  ceux des bancs servis sur la même origine en local. Une application qui servirait elle-même
-  `/index.html` ne l'obtiendrait pas — Rails sert `/`, que le relais transmet. Cette liste s'est
-  allongée par la MESURE : le témoin d'en-têtes de l'ADR 0017 a mesuré un 504 du relais au lieu des
-  en-têtes du serveur, parce qu'un Service Worker rend les en-têtes de l'hébergeur inobservables
-  pour tout ce qu'il sert lui-même ;
+- **quatorze chemins de l'origine applicative ne sont JAMAIS relayés**, listés avec ce que chacun
+  rend au § 10.5 de `docs/format-de-volume-v3.md` : ceux de la coquille de cadre, ceux que l'arbre
+  applicatif publie d'autre (`/index.html`, `/inventaire.json`, `/_headers`) et ceux des bancs
+  servis sur la même origine en local. Une entrée finie par `/` est un répertoire, toute autre un
+  fichier exact — la liste était un préfixe sans frontière qui avalait `/compatibilite-des-notes`.
+  Demandé par l'application servie, un chemin réservé rend `CADRE_CHEMIN_RESERVE` dans le cadre,
+  jamais un échec silencieux ni un document de la coquille (revue d'intégration #203, constat 5) ;
 - **rien n'est mesuré d'une application autre que celle de référence.** Ce que ce relais fait d'une
   application Rails ordinaire — Turbo, ActionCable, ActiveStorage servi par redirection — n'est pas
   su, et prétendre le contraire serait deviner.
@@ -451,9 +547,16 @@ Sans seuil, comme celles de #161 à #173. Elles vivent dans `docs/quality-attrib
 - **une dérogation à `sansCapacite` pour transporter le corps en `Uint8Array`** — elle aurait
   économisé un tiers d'octets et rendu la garde du port restreint aussi large que ce qu'elle prétend
   interdire. Deux kibioctets sur la page mesurée ne valent pas cela ;
-- **une page d'attente rendue par le Service Worker** pendant que l'application démarre — ce serait
-  du texte et de la mise en forme inventés par le relais, c'est-à-dire P2 et P3 de l'épique #195
-  faits en douce. Le refus rend un texte brut qui NOMME son code, et le cadre redemande ;
+- ~~une page d'attente rendue par le Service Worker~~ — **retenue depuis la revue d'intégration de
+  la PR #203.** Le refus d'origine craignait de faire P2 en douce ; la revue a montré ce que coûtait
+  le texte brut : une impasse silencieuse, « sans geste pour en sortir », après trente essais. La
+  page retenue ne porte ni mise en forme ni vocabulaire de produit : une phrase, une durée, un lien
+  ;
+- **relayer par le premier courtier trouvé** — deux coffres, et l'un sert l'autre (revue #203, 1) ;
+- **un préfixe opaque par courtier dans l'URL du cadre** (`/~c/<jeton>/…`), proposé par la revue de
+  sécurité — il aurait lié les navigations, mais il réécrit toutes les URL que l'application voit et
+  compose, et un jeton dans l'URL est lisible par la page qu'il protège ; le prix « un coffre à la
+  fois » est plus honnête ;
 - **désinscrire le Service Worker au verrouillage** — inutile : sans courtier joignable il laisse
   passer au réseau, et il ne retient rien. Une désinscription serait un geste qui promet un
   effacement là où il n'y a rien à effacer.
@@ -466,4 +569,7 @@ Sans seuil, comme celles de #161 à #173. Elles vivent dans `docs/quality-attrib
   même conclusion s'applique ;
 - si un moteur refuse un Service Worker de module dans une iframe encadrée, le mécanisme ne s'y
   installe pas : le courtier le DIT dans son relevé (`serviceWorker: "refuse:…"`) et le cadre reste
-  ce qu'il était. Ce n'est pas une panne de la coquille, c'est un moteur qui ne veut pas.
+  ce qu'il était. Ce n'est pas une panne de la coquille, c'est un moteur qui ne veut pas ;
+- si un usage réel exige deux coffres servis à la fois, le routage par « un seul courtier » ne
+  suffit plus, et la liaison des NAVIGATIONS doit être instruite (préfixe opaque, ou annonce du
+  cadre imbriqué au Service Worker).

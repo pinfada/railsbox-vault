@@ -3257,6 +3257,47 @@ porte jamais est une capacité, `sansCapacite` refusant toujours tout tampon dan
 | `VAULT_COQUILLE_RELAIS_ABANDONNE`         | la réponse est arrivée APRÈS que la coquille a cessé de servir — verrouillage, mort du Worker, fin d'onglet. Elle n'est jamais rendue au cadre, et l'abandon est COMPTÉ plutôt que silencieux                                      |
 | `VAULT_COQUILLE_CANAL_DE_RELAIS_REFUSE`   | un type du canal de relais a été posé ailleurs que sur le canal de relais. Même nature que `VAULT_COQUILLE_PORT_PRIVILEGIE_REFUSE` : trois vocabulaires, trois canaux, et aucun ne se parle sur celui d'un autre                   |
 
+Depuis les revues de la [PR #203](https://github.com/pinfada/railsbox-vault/pull/203),
+`VAULT_COQUILLE_REQUETE_HTTP_REFUSEE` couvre aussi un chemin qui se NORMALISERAIT ailleurs
+(`/..//evil.test/`, un segment `.`/`..` ou vide, `%2F`/`%5C`/`%2E` dans le chemin), une ESPACE — que
+le pont série refuse lui-même —, et un corps dont le base64 n'est pas CANONIQUE (`A`, `AAAA=`) : la
+garde refuse ce que le décodeur refuserait, pour qu'aucun refus ne naisse d'une exception. Et un
+gestionnaire d'erreur ne poste jamais qu'un code de cet ensemble clos : tout autre `code` porté par
+une erreur de la plate-forme devient `VAULT_COQUILLE_GESTE_ROMPU`.
+
+**Les refus de la COQUILLE DE CADRE, lus DANS le cadre.** Ils ne sont pas des codes de la coquille :
+ils ne franchissent aucun port, et c'est le Service Worker de l'origine applicative qui les rend au
+document, en page HTML lisible pour une navigation (`data-cadre`, `data-cadre-code`) et en texte
+brut pour une sous-ressource. Ils existent pour qu'aucun échec ne soit SILENCIEUX dans le cadre
+(revue d'intégration de la PR #203, constats 1 et 5 ; revue de sécurité, constats 1 et 2).
+`tests/unit/coquille-refus-du-cadre-documentes.test.mjs` exige que chaque code écrit dans le Service
+Worker ou le courtier figure dans cette table.
+
+| Code                           | Statut | Ce qu'il constate                                                                                                                   |
+| ------------------------------ | ------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `CADRE_APPLICATION_EN_ATTENTE` | 503    | l'application n'est pas encore démarrée. Page d'ATTENTE : elle dit depuis combien de temps, et se remplace d'elle-même au démarrage |
+| `CADRE_COURTIERS_MULTIPLES`    | 504    | une navigation du cadre alors que deux coffres sont ouverts : elle ne peut pas savoir lequel la porte, elle n'est servie par aucun  |
+| `CADRE_COURTIER_INCERTAIN`     | 504    | un candidat au rôle de courtier n'a pas dit à temps s'il détenait un port : on ne sert pas au hasard                                |
+| `CADRE_CLIENT_SANS_COURTIER`   | 504    | une sous-ressource dont le client n'est lié à aucun courtier joignable — jamais servie par le courtier d'un autre coffre            |
+| `CADRE_CHEMIN_RESERVE`         | 504    | l'application servie a demandé un chemin que la coquille de cadre occupe (`/index.html`, `/cadre/…`) : jamais un de ses documents   |
+| `CADRE_COURTIER_DISPARU`       | 504    | le courtier désigné s'est fermé entre le routage et le relais                                                                       |
+| `CADRE_COURTIER_MUET`          | 504    | le courtier n'a pas répondu en 180 s — la borne la plus EXTÉRIEURE (pont 120 s < coquille 150 s < Service Worker 180 s)             |
+| `CADRE_REPONSE_VIDE`           | 504    | le courtier a répondu sans rien porter                                                                                              |
+| `CADRE_REPONSE_ILLISIBLE`      | 504    | la réponse relayée ne se construit pas (en-tête, statut) : un refus nommé plutôt que la page d'échec du navigateur                  |
+| `CADRE_CORPS_ILLISIBLE`        | 504    | le moteur n'a pas laissé lire le corps de la requête interceptée                                                                    |
+| `CADRE_CHEMIN_REFUSE`          | 504    | le courtier refuse le chemin avant même de le poser sur le port                                                                     |
+| `CADRE_REFUS_SANS_CODE`        | 504    | un refus est arrivé sans code lisible                                                                                               |
+
+Les chemins RÉSERVÉS, et ce que chacun rend : `/document-applicatif.html` (le courtier : le réseau
+pour une navigation de cadre, pour que la coquille l'encadre), `/document-applicatif.mjs`,
+`/service-worker-du-cadre.mjs`, `/cadre/…`, `/src/…` (les modules du proxy), `/index.html`,
+`/inventaire.json`, `/_headers` (ce que l'arbre applicatif publie d'autre), `/vm/…`, `/compat.html`,
+`/compat.mjs`, `/compat-worker.mjs`, `/coquille-epreuve/…`, `/spike/…` (les bancs servis en local).
+Demandés par l'application servie — une navigation de son cadre, ou une sous-ressource d'un client
+lié à un courtier —, ils rendent `CADRE_CHEMIN_RESERVE` ; demandés par la coquille de cadre
+elle-même ou par un onglet hors de tout coffre, le réseau. Une entrée finie par `/` est un
+répertoire, toute autre un fichier exact.
+
 **Ce que le relais ne montre JAMAIS au document**, et qui n'a donc pas de code parce qu'il n'y a
 rien à refuser — la chose n'arrive simplement pas jusqu'à lui : le cookie de session Rails
 (`Set-Cookie` n'est pas dans la liste des en-têtes rendus ; le bocal vit dans le Worker de confiance
@@ -3270,7 +3311,10 @@ ferait échouer toute soumission, et en forger une ferait mentir le relais à l'
 Épreuves : `tests/unit/coquille-admission.test.mjs`, `tests/unit/coquille-contrat.test.mjs` et
 `tests/browser/coquille-frontiere.spec.mjs` (trois moteurs, application malveillante, témoin positif
 en même origine). Pour le relais : `tests/unit/coquille-relais-http.test.mjs`,
-`tests/browser/coquille-service-applicatif.spec.mjs` (trois moteurs) et
+`tests/unit/coquille-relais-du-worker.test.mjs`, `tests/unit/coquille-routage-du-cadre.test.mjs`,
+`tests/unit/coquille-courtier-du-cadre.test.mjs`,
+`tests/browser/coquille-service-applicatif.spec.mjs` et
+`tests/browser/coquille-deux-coffres.spec.mjs` (trois moteurs, WebKit déclaré) et
 `tests/e2e/parcours-page-rails.spec.mjs` (une page Rails réelle, cliquée, soumise, relue à froid).
 
 ## 11. Les voisins hors périmètre de la revue
