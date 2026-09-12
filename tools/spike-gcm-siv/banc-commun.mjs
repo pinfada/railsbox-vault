@@ -10,8 +10,14 @@
 import * as compose from "./gcm-siv-webcrypto.mjs";
 import { polyval } from "./polyval.mjs";
 
-/** Ce que le produit scelle : un secteur de 512 octets, nonce de 12, données associées de 112. */
-export const FORME = Object.freeze({ secteur: 512, nonce: 12, donneesAssociees: 112 });
+/**
+ * Ce que le produit scelle : un secteur de 512 octets, nonce de 12, données associées de **118**.
+ *
+ * 118 est la largeur réelle des données associées d'un secteur de volume v4 (`encoderIdentiteBloc`)
+ * ; une première rédaction posait 112, qui tient en sept blocs POLYVAL pile là où 118 en demande
+ * huit — le banc faisait un bloc de moins que le produit (revue de la PR #202, LOW 1).
+ */
+export const FORME = Object.freeze({ secteur: 512, nonce: 12, donneesAssociees: 118 });
 
 /**
  * Médiane, extrêmes et étendue relative, en microsecondes par scellement.
@@ -79,7 +85,7 @@ async function chronometrer(nom, sceller, { essais, cibleMs, lotMaximum }) {
 export async function mesurer({
   essais = 7,
   cibleMs = 60,
-  lotMaximum = 8192,
+  lotMaximum = 262144,
   candidate = null,
 } = {}) {
   const cadence = { essais, cibleMs, lotMaximum };
@@ -118,7 +124,18 @@ export async function mesurer({
     ),
   );
 
-  // 3. Le PLANCHER de la voie composée : les seuls appels à `crypto.subtle`, sans POLYVAL. Il rend
+  // 3. La MÊME voie, émise en VAGUES. Les blocs d'une même suite sont indépendants et les octets
+  // produits sont identiques (vérifié par `verifier.mjs`) : ce que la vague change est le nombre de
+  // tours d'attente, pas l'algorithme. Sous Chromium le gain est nul — le coût y est du calcul.
+  series.push(
+    await chronometrer(
+      "gcm-siv-compose-vagues",
+      () => compose.sceller(cleMaitresse, nonce, clair, donneesAssociees, { vagues: true }),
+      cadence,
+    ),
+  );
+
+  // 4. Le PLANCHER de la voie composée : les seuls appels à `crypto.subtle`, sans POLYVAL. Il rend
   // le verdict indépendant de la qualité de notre multiplication de corps fini.
   series.push(
     await chronometrer(
@@ -128,7 +145,15 @@ export async function mesurer({
     ),
   );
 
-  // 4. Et POLYVAL seul, sur la même matière : l'autre moitié de la décomposition.
+  series.push(
+    await chronometrer(
+      "plancher-appels-vagues",
+      () => compose.plancherDAppels(cleMaitresse, appelsParScellement - 1, true),
+      cadence,
+    ),
+  );
+
+  // 5. Et POLYVAL seul, sur la même matière : l'autre moitié de la décomposition.
   const matiereDePolyval = new Uint8Array(
     Math.ceil((FORME.secteur + FORME.donneesAssociees) / 16) * 16 + 16,
   );
@@ -141,7 +166,7 @@ export async function mesurer({
     ),
   );
 
-  // 5 et 6. La candidate tierce : SIV, et son propre AES-GCM. La seconde série sépare ce que SIV
+  // 6 et 7. La candidate tierce : SIV, et son propre AES-GCM. La seconde série sépare ce que SIV
   // coûte de ce que coûte le fait de QUITTER WebCrypto — sans elle, les deux sont confondus.
   if (candidate) {
     series.push(
