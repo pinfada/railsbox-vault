@@ -14,6 +14,7 @@ import {
   sansCapacite,
 } from "/src/coquille/contrat-de-messages.mjs";
 import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
+import { evaluerRequeteRelayee } from "/src/coquille/relais-http.mjs";
 
 /**
  * Nombre maximal de requêtes du document applicatif servies EN MÊME TEMPS. Voir le raisonnement
@@ -44,6 +45,11 @@ function compter(compteurs, code) {
 export function creerFrontiereApplicative({ rapport, publier, mesurer, emplacementDuCadre, pont }) {
   let cadre = null;
   let portRestreint = null;
+  /**
+   * Le relais est-il ABANDONNÉ ? Posé par le verrouillage et les fins d'onglet, jamais retiré : une
+   * coquille qui a cessé de servir ne recommence pas sans un rechargement.
+   */
+  let relaisAbandonne = false;
 
   window.addEventListener("message", (event) => {
     // Une annonce ne TRANSFÈRE rien (voir le raisonnement dans l'historique de `main.mjs` avant
@@ -129,6 +135,9 @@ export function creerFrontiereApplicative({ rapport, publier, mesurer, emplaceme
     }
     correlationsEnVol.add(verdict.correlation);
     pont.verrouillage.signalerActivite("message-du-cadre");
+    if (verdict.type === TYPES_APPLICATIFS.requeteHttp) {
+      return servirLaRequeteRelayee(port, event.data, verdict.correlation);
+    }
     pont.canal
       .demanderLEtat()
       .then((charge) => {
@@ -140,6 +149,93 @@ export function creerFrontiereApplicative({ rapport, publier, mesurer, emplaceme
         );
       })
       .finally(() => correlationsEnVol.delete(verdict.correlation));
+  }
+
+  /**
+   * SERT une requête relayée : la coquille la passe au Worker de confiance et rend au cadre ce que
+   * le guest a répondu, filtré par `relais-http.mjs`.
+   *
+   * La coquille ne lit RIEN de ce qui passe : ni le corps, ni les en-têtes, ni le chemin. Elle
+   * courtise, elle compte, et elle abandonne quand elle a cessé de servir. C'est le même rôle
+   * qu'elle tient déjà sur la question d'état, à ceci près que la charge est plus grosse — et le
+   * relevé ne porte donc que des COMPTES, jamais un octet de ce qui a transité.
+   *
+   * @param {MessagePort} port
+   * @param {Record<string, unknown>} message
+   * @param {string} correlation
+   */
+  function servirLaRequeteRelayee(port, message, correlation) {
+    const requete = evaluerRequeteRelayee(message);
+    if (!requete.ok) {
+      correlationsEnVol.delete(correlation);
+      return refuserLaRequete(
+        port,
+        CODES_REFUS_COQUILLE.requeteHttpRefusee,
+        TYPES_APPLICATIFS.requeteHttp,
+        correlation,
+      );
+    }
+    rapport.relais.demandees += 1;
+    publier();
+    pont.canal
+      .relayerRequete({
+        methode: requete.methode,
+        chemin: requete.chemin,
+        entetes: Object.fromEntries(requete.entetes),
+        corps: requete.corps,
+      })
+      .then(
+        (reponse) => rendreLaReponseRelayee(port, correlation, reponse),
+        (erreur) =>
+          abandonne()
+            ? compterLAbandon()
+            : refuserLaRequete(
+                port,
+                erreur?.code ?? CODES_REFUS_COQUILLE.gesteRompu,
+                TYPES_APPLICATIFS.requeteHttp,
+                correlation,
+              ),
+      )
+      .finally(() => correlationsEnVol.delete(correlation));
+  }
+
+  /**
+   * REND au cadre ce que le guest a répondu — sauf si la coquille a cessé de servir entre-temps.
+   *
+   * C'est la garde du VERROUILLAGE (#169, ADR 0031), appliquée au chemin neuf : le verrouillage
+   * retire le cadre, et une réponse en vol qui le rattraperait dessinerait des pixels du coffre
+   * après sa fermeture. Elle est contrôlée ICI, à l'instant de poster, et non à l'instant de
+   * demander : entre les deux il y a le guest, et c'est justement là que le geste de l'utilisateur
+   * tombe.
+   */
+  function rendreLaReponseRelayee(port, correlation, reponse) {
+    if (abandonne()) return compterLAbandon();
+    rapport.relais.servies += 1;
+    rapport.relais.octetsRendus += reponse.corps?.length ?? 0;
+    publier();
+    port.postMessage(
+      enveloppeDeMessage(
+        TYPES_APPLICATIFS.requeteHttpReponse,
+        sansCapacite({
+          correlation,
+          statut: reponse.statut,
+          entetes: reponse.entetes,
+          corps: reponse.corps,
+        }),
+      ),
+    );
+  }
+
+  /** La coquille a-t-elle cessé de servir ? Mort du Worker, ou relais explicitement abandonné. */
+  function abandonne() {
+    return relaisAbandonne || pont.cycle.estMort();
+  }
+
+  /** COMPTE un abandon. Rien n'est posté : le cadre n'existe plus, ou ne doit plus rien recevoir. */
+  function compterLAbandon() {
+    rapport.relais.abandonnees += 1;
+    compter(rapport.refusDeRequete, CODES_REFUS_COQUILLE.relaisAbandonne);
+    publier();
   }
 
   /**
@@ -174,9 +270,26 @@ export function creerFrontiereApplicative({ rapport, publier, mesurer, emplaceme
     const element = document.createElement("iframe");
     element.id = "document-applicatif";
     element.title = "document applicatif";
-    // `allow-same-origin` est conservé sur une iframe INTER-ORIGINE : il ne rend pas la sandbox
-    // contournable, il rend à l'application son propre stockage (ADR 0002, conséquence 3).
-    element.setAttribute("sandbox", "allow-scripts allow-same-origin");
+    // La SANDBOX, jeton par jeton, et rien de plus (#192, ADR 0038) :
+    //
+    //  - `allow-scripts` — sans lui, rien de ce que le guest rend ne s'exécute ;
+    //  - `allow-same-origin` — conservé sur une iframe INTER-ORIGINE : il ne rend pas la sandbox
+    //    contournable, il rend à l'application son propre stockage (ADR 0002, conséquence 3) ;
+    //  - `allow-forms` — NEUF. Un contexte sandboxé qui ne le porte pas voit toute soumission de
+    //    formulaire BLOQUÉE par le moteur, avant qu'aucune requête ne parte : « Blocked form
+    //    submission … because the form's frame is sandboxed ». Mesuré le 12 septembre 2026 sur
+    //    Chromium, sur le scénario de bout en bout — le formulaire de l'application de référence ne
+    //    produisait AUCUNE requête, donc aucune interception, donc aucun relais.
+    //
+    // Ce que `allow-forms` ajoute, exactement : soumettre un formulaire. Il n'ajoute ni popup, ni
+    // navigation du sommet, ni modale, ni téléchargement, ni verrouillage du pointeur — et une
+    // application qui pouvait déjà émettre un `fetch` (par `allow-scripts`) pouvait déjà atteindre
+    // tout ce qu'un formulaire atteint. Ce qu'il rend possible n'est donc pas une capacité neuve,
+    // c'est la capacité de le faire comme une application ordinaire l'écrit.
+    //
+    // Ce qui reste REFUSÉ, et qui compte : `allow-top-navigation` (le cadre ne déplace pas la
+    // coquille), `allow-popups` (ADR 0002), `allow-downloads`, `allow-modals`.
+    element.setAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
     element.src = url;
     element.addEventListener("load", () => {
       rapport.cadreApplicatif = "charge";
@@ -188,8 +301,15 @@ export function creerFrontiereApplicative({ rapport, publier, mesurer, emplaceme
     emplacementDuCadre.append(element);
   }
 
-  /** RETIRE le cadre applicatif du document. Le port n'est pas re-octroyé : la garde de #161 tient. */
+  /**
+   * RETIRE le cadre applicatif du document. Le port n'est pas re-octroyé : la garde de #161 tient.
+   *
+   * Il ABANDONNE aussi le relais (#192) : retirer les pixels sans arrêter le relais laisserait des
+   * réponses en vol se poser sur un port dont le destinataire n'existe plus. Les deux gestes sont
+   * UN seul, et c'est pour cela qu'ils vivent dans la même fonction.
+   */
   function retirerLeCadre() {
+    relaisAbandonne = true;
     cadre?.remove();
     cadre = null;
     rapport.cadreApplicatif = "retire";

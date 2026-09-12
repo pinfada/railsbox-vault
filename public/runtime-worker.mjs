@@ -50,6 +50,7 @@ import {
   enveloppeDeMessage,
   sansCapacite,
 } from "/src/coquille/contrat-de-messages.mjs";
+import { brancherLeRelaisDuWorker } from "./relais-du-worker.mjs";
 import {
   compteRenduPublie,
   demarrerLaVm,
@@ -157,6 +158,15 @@ const interne = {
 /** Le port privilégié, transféré UNE fois par la coquille avant tout document applicatif. */
 let portPrivilegie = null;
 
+/**
+ * Le RELAIS HTTP (#192, ADR 0038), branché sur le second port de la MÊME poignée de main.
+ *
+ * Deux ports, un seul message, une seule fois : la porte du canal global n'est pas élargie. Le
+ * trafic de l'application n'entre pas dans la file du canal privilégié, et tout ce que le relais
+ * fait — bocal à cookies compris — vit dans `relais-du-worker.mjs`.
+ */
+let relais = null;
+
 // --- Canal privilégié ---------------------------------------------------------------------------
 
 // L'écouteur est inscrit à l'évaluation du module. C'est la première ligne exécutée du Worker : le
@@ -169,9 +179,16 @@ self.addEventListener("message", (event) => {
   }
   // Unicité : un second canal réclamé après coup est refusé, comme un second port restreint.
   if (portPrivilegie !== null) return refuserSurLeGlobal(CODES_REFUS_COQUILLE.annonceUnique);
-  const [port] = event.ports;
-  if (!port) return refuserSurLeGlobal(CODES_REFUS_COQUILLE.messageMalforme);
+  // DEUX ports, dans cet ordre : le privilégié, puis le relais (#192, ADR 0038). Les deux sont
+  // EXIGÉS — une coquille qui n'en transférerait qu'un promettrait un service qu'elle ne peut pas
+  // rendre, et c'est le même raisonnement que l'ordre « canal avant cadre » de l'ADR 0028.
+  const [port, portRelais] = event.ports;
+  if (!port || !portRelais) return refuserSurLeGlobal(CODES_REFUS_COQUILLE.messageMalforme);
   portPrivilegie = port;
+  relais = brancherLeRelaisDuWorker({
+    port: portRelais,
+    sessionCourante: () => interne.application,
+  });
   // Les messages du canal privilégié sont traités EN SÉRIE. Un gestionnaire `async` ne retient pas
   // le message suivant : sans cette chaîne, une demande d'état posée juste après un déverrouillage
   // serait servie avant que le déverrouillage ait fini, et rendrait `verrouille` sur un volume qui
@@ -740,7 +757,8 @@ async function demarrerLApplication(message, correlation) {
           }),
     });
   }
-  interne.application = { fermer: demarrage.fermer };
+  // Deux poignées, dont aucune ne franchit un port : la fermeture et la porte HTTP du guest (#192).
+  interne.application = { fermer: demarrage.fermer, requeteHttp: demarrage.requeteHttp };
   // Les barrières du GUEST entrent dans le compte que l'application reçoit : c'est l'étape 5 du
   // cycle de vie — « un flush traverse toutes les couches avant son acquittement » —, et jusqu'ici
   // la coquille ne comptait que la sienne, écrite pour prouver qu'elle savait en franchir une.
@@ -846,6 +864,8 @@ async function relacherTout(capturer) {
   const precedent = interne.backend;
   interne.application = null;
   interne.backend = null;
+  // La session Rails est OUBLIÉE avec le reste : son bocal à cookies part comme partent les clés.
+  relais?.oublierLaSession();
   try {
     const capture = application === null ? null : await application.fermer({ capturer });
     if (precedent !== null) await precedent.close();
