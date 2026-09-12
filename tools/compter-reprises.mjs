@@ -1,18 +1,15 @@
-// Compte les épreuves REPRISES d'un rapport JSON de Playwright et publie le relevé (#178).
+// Compte les épreuves REPRISES et les navigations Firefox RÉCUPÉRÉES d'un rapport Playwright (#178).
 //
-// Motif : `retries: 2` en CI rend vert ce qui a trébuché deux fois, et le rapport `github` ne dit
-// pas combien. Trois passages de `npm run check` en local perdaient une épreuve Firefox chacun sans
-// que la CI ne montre rien ; le run 34330037820 a repris HUIT épreuves, chacune trois fois, pour
-// annoncer « 280 passed ». Une épreuve reprise n'est pas verte : elle est TOLÉRÉE, et le prix de
-// la tolérance est qu'elle soit COMPTÉE à chaque run, sous les yeux de qui fusionne.
+// Motif : `retries: 2` en CI rendait vert ce qui avait trébuché deux fois, et le rapport `github` ne
+// disait pas combien. Depuis l'attribution du défaut à la frontière Playwright ↔ Firefox, la reprise
+// globale vaut 0 et seule la signature mesurée est récupérée. Cette récupération doit être COMPTÉE
+// elle aussi : le contournement du harnais ne doit jamais se faire passer pour une navigation saine.
 //
-// L'outil ne juge pas et ne rougit pas : il rend toujours le code 0. Bloquer une fusion sur un
-// flottement non attribué punirait les tranches pour un défaut du harnais ; le compte publié suffit
-// à ne pas le cacher. La règle est écrite dans `docs/testing.md`.
+// L'outil ne juge pas et ne rougit pas : il rend toujours le code 0. La règle et la limite du
+// contournement sont écrites dans `docs/testing.md`.
 //
-// Depuis le 10 septembre 2026, les TROIS suites du gate jouent avec `retries: 2` en CI et rendent
-// chacune son rapport : l'outil en lit plusieurs, et NOMME la suite d'origine de chaque reprise —
-// un compte qui ne dirait pas d'où vient la reprise obligerait à rouvrir les journaux pour le savoir.
+// Les TROIS suites du gate rendent chacune leur rapport : l'outil en lit plusieurs, et NOMME la
+// suite d'origine de chaque événement — sans cette provenance, il faudrait rouvrir les journaux.
 //
 // Usage : node tools/compter-reprises.mjs <rapport.json> [autres rapports…]
 // Le relevé va sur la sortie standard, et s'ajoute à `$GITHUB_STEP_SUMMARY` quand la variable existe.
@@ -21,11 +18,13 @@ import { appendFile, readFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { ANNOTATION_RECUPERATION_FIREFOX } from "../tests/support/navigation-firefox.mjs";
+
 /** Un essai de plus que l'unique essai attendu : voilà ce qu'est une reprise. */
 const ESSAIS_SANS_REPRISE = 1;
 
 /** Titre du relevé, le même qu'il compte quelque chose ou qu'il dise n'avoir rien lu. */
-const TITRE = "## Épreuves reprises — suites du gate";
+const TITRE = "## Stabilité des suites du gate";
 
 /**
  * Parcourt l'arbre des suites d'un rapport Playwright et rend un enregistrement par épreuve JOUÉE.
@@ -33,21 +32,27 @@ const TITRE = "## Épreuves reprises — suites du gate";
  * un `result` par essai : c'est LUI qui compte les reprises, jamais le statut annoncé.
  *
  * @param {{ suites?: unknown[] }} noeud
- * @param {Array<{ suite: string, fichier: string, ligne: number, titre: string, projet: string, essais: number, statut: string }>} recueil
+ * @param {Array<{ suite: string, fichier: string, ligne: number, titre: string, projet: string, essais: number, statut: string, recuperations: string[] }>} recueil
  * @param {string} suite nom de la suite d'où vient ce rapport
  */
 function recueillir(noeud, recueil, suite) {
   for (const sousSuite of noeud?.suites ?? []) {
     for (const spec of sousSuite.specs ?? []) {
       for (const epreuve of spec.tests ?? []) {
+        const resultats = epreuve.results ?? [];
         recueil.push({
           suite,
           fichier: spec.file ?? sousSuite.file ?? "fichier inconnu",
           ligne: spec.line ?? 0,
           titre: spec.title ?? "épreuve sans titre",
           projet: epreuve.projectName || "projet sans nom",
-          essais: (epreuve.results ?? []).length,
+          essais: resultats.length,
           statut: epreuve.status ?? "inconnu",
+          recuperations: resultats.flatMap((resultat) =>
+            (resultat.annotations ?? [])
+              .filter((annotation) => annotation.type === ANNOTATION_RECUPERATION_FIREFOX)
+              .map((annotation) => annotation.description ?? "sans description"),
+          ),
         });
       }
     }
@@ -99,6 +104,9 @@ export function releverReprises(epreuves) {
   return {
     jouees: epreuves.length,
     reprises,
+    recuperations: epreuves.flatMap((epreuve) =>
+      (epreuve.recuperations ?? []).map((description) => ({ ...epreuve, description })),
+    ),
     essaisSupplementaires: reprises.reduce(
       (total, epreuve) => total + epreuve.essais - ESSAIS_SANS_REPRISE,
       0,
@@ -130,20 +138,39 @@ export function enMarkdown(releve) {
       `Aucune épreuve reprise : les ${releve.jouees} épreuves ont été jouées une seule fois.`,
       "",
     );
+    lignes.push("### Navigations Firefox récupérées", "");
+  } else {
+    lignes.push(
+      `**${releve.reprises.length} épreuve(s) reprise(s)** sur ${releve.jouees} jouée(s), ` +
+        `pour ${releve.essaisSupplementaires} essai(s) supplémentaire(s). ` +
+        `Suite(s) touchée(s) : ${suites.join(", ")}. ` +
+        "Une épreuve reprise n'est pas verte : elle est tolérée (`docs/testing.md`).",
+      "",
+      "| Suite | Épreuve | Projet (moteur) | Essais | Issue |",
+      "| --- | --- | --- | --- | --- |",
+    );
+    for (const epreuve of releve.reprises) {
+      lignes.push(
+        `| ${epreuve.suite} | \`${epreuve.fichier}:${epreuve.ligne}\` — ${epreuve.titre} | ${epreuve.projet} | ${epreuve.essais} | ${issue(epreuve)} |`,
+      );
+    }
+    lignes.push("", "### Navigations Firefox récupérées", "");
+  }
+
+  if (releve.recuperations.length === 0) {
+    lignes.push("Aucune navigation Firefox récupérée.", "");
     return lignes.join("\n");
   }
   lignes.push(
-    `**${releve.reprises.length} épreuve(s) reprise(s)** sur ${releve.jouees} jouée(s), ` +
-      `pour ${releve.essaisSupplementaires} essai(s) supplémentaire(s). ` +
-      `Suite(s) touchée(s) : ${suites.join(", ")}. ` +
-      "Une épreuve reprise n'est pas verte : elle est tolérée (`docs/testing.md`).",
+    `**${releve.recuperations.length} navigation(s) Firefox récupérée(s).** ` +
+      "Le document était complet, mais `page.goto` ne répondait plus ; aucune épreuve n'a été rejouée.",
     "",
-    "| Suite | Épreuve | Projet (moteur) | Essais | Issue |",
-    "| --- | --- | --- | --- | --- |",
+    "| Suite | Épreuve | Projet | Diagnostic |",
+    "| --- | --- | --- | --- |",
   );
-  for (const epreuve of releve.reprises) {
+  for (const recuperation of releve.recuperations) {
     lignes.push(
-      `| ${epreuve.suite} | \`${epreuve.fichier}:${epreuve.ligne}\` — ${epreuve.titre} | ${epreuve.projet} | ${epreuve.essais} | ${issue(epreuve)} |`,
+      `| ${recuperation.suite} | \`${recuperation.fichier}:${recuperation.ligne}\` — ${recuperation.titre} | ${recuperation.projet} | ${recuperation.description} |`,
     );
   }
   lignes.push("");

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import { decoderCode } from "../../src/vm/derivation/code-de-recuperation.mjs";
 import { DERIVATION_ERROR_CODES } from "../../src/vm/derivation/derivation-errors.mjs";

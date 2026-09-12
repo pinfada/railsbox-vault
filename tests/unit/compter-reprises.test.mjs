@@ -21,9 +21,10 @@ import {
   lireRapport,
   releverReprises,
 } from "../../tools/compter-reprises.mjs";
+import { ANNOTATION_RECUPERATION_FIREFOX } from "../support/navigation-firefox.mjs";
 
 /** Une épreuve jouée `essais` fois dans un projet donné, au format du rapport JSON de Playwright. */
-function epreuve({ titre, ligne, projet, essais, statut }) {
+function epreuve({ titre, ligne, projet, essais, statut, recuperations = [] }) {
   return {
     title: titre,
     file: "tests/browser/exemple.spec.mjs",
@@ -32,7 +33,17 @@ function epreuve({ titre, ligne, projet, essais, statut }) {
       {
         projectName: projet,
         status: statut,
-        results: Array.from({ length: essais }, (_, retry) => ({ retry, status: "passed" })),
+        results: Array.from({ length: essais }, (_, retry) => ({
+          retry,
+          status: "passed",
+          annotations:
+            retry === 0
+              ? recuperations.map((description) => ({
+                  type: ANNOTATION_RECUPERATION_FIREFOX,
+                  description,
+                }))
+              : [],
+        })),
       },
     ],
   };
@@ -74,6 +85,31 @@ test("zéro reprise : chaque épreuve n'a qu'un essai, et le relevé le dit", as
   assert.deepEqual(releve.reprises, []);
   assert.equal(releve.essaisSupplementaires, 0);
   assert.match(enMarkdown(releve), /Aucune épreuve reprise : les 2 épreuves/);
+  assert.match(enMarkdown(releve), /Aucune navigation Firefox récupérée/);
+});
+
+test("une navigation Firefox récupérée est publiée sans devenir une reprise d'épreuve", async () => {
+  const chemin = await ecrireRapport(
+    rapport([
+      epreuve({
+        titre: "navigation libérée",
+        ligne: 73,
+        projet: "firefox",
+        essais: 1,
+        statut: "expected",
+        recuperations: ["http://127.0.0.1:4173/index.html — document complet"],
+      }),
+    ]),
+  );
+
+  const releve = releverReprises(await lireRapport(chemin));
+  const markdown = enMarkdown(releve);
+
+  assert.equal(releve.reprises.length, 0);
+  assert.equal(releve.recuperations.length, 1);
+  assert.match(markdown, /1 navigation\(s\) Firefox récupérée\(s\)/);
+  assert.match(markdown, /navigation libérée/);
+  assert.match(markdown, /document complet/);
 });
 
 test("une reprise : deux essais comptent une épreuve reprise et un essai supplémentaire", async () => {

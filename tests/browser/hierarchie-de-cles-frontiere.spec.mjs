@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 // FRONTIÈRE de la HIÉRARCHIE DE CLÉS, sur les trois moteurs (#182, ADR 0033 décision 6 ; `SEC-KEY-001`).
 //

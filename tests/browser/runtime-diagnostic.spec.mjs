@@ -9,7 +9,7 @@
 // Elles n'ont besoin d'aucun artefact v86 : le contrôle préalable précède le chargement des
 // artefacts. Elles s'exécutent donc sur les trois moteurs dans `npm run check`.
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 const RUNTIME_SANS_MARQUEUR = "/vm/runtime-worker.mjs";
 const RUNTIME_AVEC_MARQUEUR = "/vm/runtime-worker.mjs?use-scheduling-api";

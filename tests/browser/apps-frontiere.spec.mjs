@@ -17,7 +17,7 @@
 // s'applique pas de la même façon d'un moteur à l'autre, et la mesurer sur un seul publierait une
 // garantie que les deux autres ne tiennent peut-être pas.
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import {
   ACTIFS_A,

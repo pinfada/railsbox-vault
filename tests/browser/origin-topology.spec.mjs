@@ -6,7 +6,7 @@
 //     ne prouverait rien d'autre que des sondes cassées ;
 //  3. les assertions strictes sur la topologie retenue.
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import {
   CANARY_AUTHENTIC,

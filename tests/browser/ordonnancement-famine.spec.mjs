@@ -13,7 +13,7 @@
 //
 // Aucun artefact v86 n'est nécessaire : aucun émulateur n'est démarré. Six secondes par moteur.
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 const WORKER = "/csp/famine-minuteries-worker.mjs";
 const DUREE_BOUCLE_MS = 5000;

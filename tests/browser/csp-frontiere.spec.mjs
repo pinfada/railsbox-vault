@@ -9,7 +9,7 @@
 // `playwright.config.mjs`. La mesure du démarrage de l'ÉMULATEUR, elle, exige les artefacts et vit
 // dans `npm run test:csp`.
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import { SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
 

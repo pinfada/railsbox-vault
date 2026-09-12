@@ -1,7 +1,7 @@
 // Spike #35 — contraintes d'environnement de la topologie : CSP réellement servie et appliquée,
 // isolation cross-origin (COOP/COEP) et effet de `require-corp` sur une iframe inter-origine.
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import { APP_PATH, SHELL_ORIGIN, SHELL_PATH } from "../../src/spike/origin-topology.mjs";
 import { TOPOLOGIE_RETENUE, ouvrirCoquille, releverCoquille } from "./origin-helpers.mjs";

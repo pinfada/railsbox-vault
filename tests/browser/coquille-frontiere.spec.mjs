@@ -23,7 +23,7 @@
 // verrou nommé et la diffusion inter-onglets n'existent pas encore dans le produit. Leur témoin
 // reste celui du spike, en topologie T1a — une des raisons pour lesquelles ce banc reste vivant.
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import {
   CLE_IDB_HOSTILE,

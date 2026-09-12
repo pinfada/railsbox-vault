@@ -12,7 +12,7 @@
 // origine — émise depuis un document servi par le rôle `app`, qui ne reçoit PAS de
 // `Referrer-Policy` : c'est la décision par rôle de l'ADR 0022 qui devient ici la variable.
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "../support/test.mjs";
 
 import { ORIGINE_APPLICATIVE_B } from "../../public/spike/origin/apps-topologie.mjs";
 import { APP_ORIGIN, CANARY_PATH, SHELL_ORIGIN } from "../../src/spike/origin-topology.mjs";
