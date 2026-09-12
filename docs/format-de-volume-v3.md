@@ -3406,22 +3406,31 @@ l'ADR 0033. En trois lignes :
 - **la disponibilité est nulle et c'est mesuré**, dans la page et dans un Worker, sur les trois
   moteurs (`tests/compat/gcm-siv-probe.spec.mjs`, `reports/compat/gcm-siv-*.json`). L'épreuve
   **affirme** cette absence : un moteur qui exposerait SIV la ferait rougir ;
-- **le coût ne décide pas.** Une voie sans aucune dépendance existe et est conforme aux vingt-six
-  vecteurs AES-256 de la RFC 8452, mais elle demande **quarante appels à `crypto.subtle` par
-  secteur** — les deux suites de compteurs de la RFC incrémentent leurs quatre premiers octets en
-  petit-boutiste, quand AES-CTR de WebCrypto incrémente ses derniers bits en gros-boutiste —, ce qui
-  la met hors du budget de reprise. Une implémentation logicielle, elle, coûte le même ordre que
-  l'AES-GCM du moteur ; SIV par-dessus GCM ne coûte que 20 % dans la même implémentation ;
-- **ce qui ferme la question est le RÉGIME, pas la vitesse.** Tout AEAD hors WebCrypto — JavaScript
-  ou WebAssembly — exige les octets bruts des clés de domaine. Le dépôt échangerait le GARANTI que
-  la v4 vient d'établir — clés non extractibles, DEK incapable de chiffrer, cliquet tenu par la
-  plate-forme — contre un FAIT non garanti tenu par une revue. Et en JavaScript, l'empreinte ne peut
-  pas être vérifiée AVANT exécution : la CSP du produit n'ouvre ni `eval` ni `new Function`.
+- **la voie sans dépendance coûte de 43 à 56 fois le scellement natif sous Chromium.** Elle existe
+  et elle est conforme aux vingt-six vecteurs AES-256 de la RFC 8452, mais elle demande **quarante
+  appels à `crypto.subtle` par secteur** — les deux suites de compteurs de la RFC incrémentent leurs
+  quatre premiers octets en petit-boutiste, quand AES-CTR de WebCrypto incrémente ses derniers bits
+  en gros-boutiste. Ce facteur ne ferme aucun budget : la part cryptographique d'une reprise passe
+  de 0,3 s à 16,5 s sur la machine du banc, soit 33 s contre 60 s. Ce que le spike retient est le
+  **facteur**, appliqué à chaque scellement du produit, pour un résidu déjà borné ;
+- **le résidu est nul sur quatre domaines et borné sur les deux autres.** Les quatre domaines à
+  usage unique ont un budget de 1 ; `volume` et `journal` sont bornés par `k² · 2^-35`, nonces tirés
+  donc non réémis par un recul. Le seul apport réel de SIV — 2^64 messages par clé au lieu de 2^31 —
+  ne justifie ni ce facteur, ni une dépendance auditée dont aucune forme vendable n'existe.
+
+**Ce que le spike a mesuré CONTRE une première rédaction de cette réponse, et qu'il faut lire.** La
+voie composée **conserve** le garanti de plate-forme : `deriveKey` rend une `CryptoKey` AES-CTR non
+extractible, `exportKey` la refuse, et le scellement SIV tourne dessus sans que les octets de la clé
+de domaine existent jamais (`node tools/spike-gcm-siv/epreuve-cle-non-extractible.mjs`). Seule une
+implémentation **logicielle complète** — POLYVAL et AES en JavaScript ou en WebAssembly — exige ces
+octets, et c'est pour elle seule que s'ajoutent les deux autres empêchements : une empreinte qu'on
+ne peut pas vérifier avant exécution sous la CSP du produit, et un AES à T-tables.
 
 **Ce que SIV apporterait, écrit pour qu'on n'ait pas à le redécouvrir** : il rendrait la
 comptabilité de la question n° 4 cryptographiquement sans objet — 2^64 messages par clé à nonces
-tirés (RFC 8452 § 6) contre 2^31 aujourd'hui — et ferait tomber le dommage d'une collision de nonce
-de « `C1 ⊕ C2` et la clé `H` » à « deux clairs identiques produisent deux chiffrés identiques ». Il
+tirés (RFC 8452 **§ 9**, sous la condition « AAD de moins de 64 octets » que le produit ne remplit
+pas, avec ses 118) contre 2^31 aujourd'hui — et ferait tomber le dommage d'une collision de nonce de
+« `C1 ⊕ C2` et la clé `H` » à « deux clairs identiques produisent deux chiffrés identiques ». Il
 n'apporterait rien aux quatre domaines à usage unique, dont le budget est de 1.
 
 ### Question n° 2 — Faut-il un arbre de Merkle sur le volume ?
@@ -3505,7 +3514,8 @@ hors transaction, que le § 4.5 avoue aujourd'hui sous-estimer, doivent alors **
 racine** ; une session qui ne peut pas en écrire n'a plus le droit de sceller.
 
 **Ce qui reste ouvert après cette correction, et il faut le dire :** l'emplacement. Les deux
-compteurs vivent toujours dans la racine, donc reculent toujours avec elle (§ 9.1,
+compteurs vivent toujours dans la racine, donc reculent toujours avec elle (§ 4.5 ci-dessus pour le
+mécanisme, § 9.1 pour le retour arrière complet qui en est un cas ;
 [#144](https://github.com/pinfada/railsbox-vault/issues/144)), et 2^31 reste une marge **choisie**
 devant un écart non borné. Le navigateur n'offre pas de meilleur endroit : c'est la question n° 3,
 et elle est ouverte elle aussi.
