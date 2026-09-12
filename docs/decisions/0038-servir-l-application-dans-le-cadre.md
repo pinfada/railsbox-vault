@@ -407,6 +407,13 @@ Sans seuil, comme celles de #161 à #173. Elles vivent dans `docs/quality-attrib
   l'attente coûterait jusqu'à dix secondes de plus que nécessaire ;
 - **la coquille de cadre est publiée par l'origine applicative**, ce que l'ADR 0017 n'avait pas
   prévu. Voir les impacts ;
+- **onze chemins de l'origine applicative ne sont JAMAIS relayés** : ceux de la coquille de cadre,
+  ceux que l'arbre applicatif publie d'autre (`/index.html`, `/inventaire.json`, `/_headers`) et
+  ceux des bancs servis sur la même origine en local. Une application qui servirait elle-même
+  `/index.html` ne l'obtiendrait pas — Rails sert `/`, que le relais transmet. Cette liste s'est
+  allongée par la MESURE : le témoin d'en-têtes de l'ADR 0017 a mesuré un 504 du relais au lieu des
+  en-têtes du serveur, parce qu'un Service Worker rend les en-têtes de l'hébergeur inobservables
+  pour tout ce qu'il sert lui-même ;
 - **rien n'est mesuré d'une application autre que celle de référence.** Ce que ce relais fait d'une
   application Rails ordinaire — Turbo, ActionCable, ActiveStorage servi par redirection — n'est pas
   su, et prétendre le contraire serait deviner.
