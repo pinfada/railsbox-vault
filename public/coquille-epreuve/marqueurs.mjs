@@ -58,5 +58,10 @@ export const DELAI_SONDE_MS = 3000;
  * Trente-huit depuis la revue de la PR #166 : neuf de plus que les vingt-neuf d'origine — une
  * requête concurrente, quatre autour du jeton du harnais, et quatre contre l'encodage (champ en
  * trop, corrélation absente, corrélation dupliquée, transférable sur le port).
+ *
+ * QUARANTE-SIX depuis #192 : huit de plus, toutes contre le RELAIS HTTP, parce que le type neuf du
+ * port restreint porte quatre surfaces qu'une question d'état n'avait pas — une méthode, un chemin,
+ * des en-têtes et un corps. La première de ces huit est l'ÉPREUVE ROUGE de la tranche : elle exige
+ * non pas un refus quelconque, mais le refus JUSTE.
  */
-export const NOMBRE_DE_SONDES = 38;
+export const NOMBRE_DE_SONDES = 46;

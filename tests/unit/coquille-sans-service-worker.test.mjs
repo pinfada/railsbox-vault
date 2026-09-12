@@ -36,7 +36,12 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { SOURCES_COQUILLE } from "../../tools/publier-arborescences.mjs";
+import {
+  SOURCES_COQUILLE,
+  estPublieParLApplication,
+  estPublieParLaCoquille,
+} from "../../tools/publier-arborescences.mjs";
+import { origineDistincteDuParent } from "../../public/cadre/contrat-du-cadre.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -85,7 +90,7 @@ async function fichiersDe(relatif) {
  * ils s'exécutent sur l'origine de confiance à chaque exécution de la suite navigateur, et un
  * Service Worker enregistré là s'y installerait pour de bon dans le profil qui l'a chargé.
  */
-const SERVIS_HORS_PUBLICATION = ["public", "public/coquille-epreuve"];
+const SERVIS_HORS_PUBLICATION = ["public", "public/coquille-epreuve", "public/cadre"];
 
 /**
  * Les TROIS seuls fichiers exemptés, et le motif est le même pour les trois : ils MESURENT ce qu'un
@@ -100,6 +105,28 @@ const BANCS_HOSTILES = [
   "public/coquille-epreuve/hostile-sw.mjs",
   "public/coquille-epreuve/hostile.mjs",
   "public/coquille-epreuve/hostile-topologie.mjs",
+];
+
+/**
+ * La COQUILLE DE CADRE (#192, ADR 0038) : les trois fichiers qui portent, ou nomment, un Service
+ * Worker — et qui n'en installent AUCUN sur l'origine de confiance.
+ *
+ * Ils sont exemptés du balayage textuel, et remplacés par une surveillance PLUS FORTE, écrite juste
+ * en dessous : chacun doit être publié par l'arbre APPLICATIF et par lui seul. Un balayage qui
+ * chercherait un mot dans un fichier ne dit rien de l'origine qui le sert ; cette exigence-là, si.
+ *
+ * Le raisonnement est celui de l'ADR 0002, inchangé : « le document applicatif peut enregistrer un
+ * Service Worker sur SA portée », et l'ADR 0030 décision 4 le refuse sur l'origine de CONFIANCE. Une
+ * garde de plus tient la promesse à l'exécution, là où une table ne le peut pas :
+ * `origineDistincteDuParent` (`public/cadre/contrat-du-cadre.mjs`) refuse d'installer quoi que ce
+ * soit quand le document encadré est de MÊME origine que la coquille — c'est-à-dire sous le témoin
+ * positif de `tests/browser/coquille-frontiere.spec.mjs`, la seule topologie où l'origine de
+ * confiance encadre elle-même le document applicatif.
+ */
+const COQUILLE_DE_CADRE = [
+  "public/service-worker-du-cadre.mjs",
+  "public/cadre/courtier-du-cadre.mjs",
+  "public/cadre/contrat-du-cadre.mjs",
 ];
 
 /** Les fichiers de code d'un répertoire, SANS descendre : ses sous-répertoires sont nommés à part. */
@@ -119,7 +146,9 @@ async function fichiersPublies() {
   const trouves = [];
   for (const { depuis } of SOURCES_COQUILLE) trouves.push(...(await fichiersDe(depuis)));
   for (const rang of SERVIS_HORS_PUBLICATION) trouves.push(...(await fichiersDuRang(rang)));
-  return [...new Set(trouves)].filter((chemin) => !BANCS_HOSTILES.includes(chemin));
+  return [...new Set(trouves)].filter(
+    (chemin) => !BANCS_HOSTILES.includes(chemin) && !COQUILLE_DE_CADRE.includes(chemin),
+  );
 }
 
 test("le balayage porte sur ce que l'arbre PUBLIÉ contient, et il descend dans les sous-répertoires", async () => {
@@ -139,6 +168,62 @@ test("le balayage porte sur ce que l'arbre PUBLIÉ contient, et il descend dans 
   // exécution de la suite navigateur, et un Service Worker enregistré là s'installe pour de bon.
   assert.ok(fichiers.includes("public/document-applicatif.mjs"));
   assert.ok(fichiers.includes("public/coquille-epreuve/ouvrante.mjs"));
+  // Et la coquille de cadre N'Y EST PAS : elle est exemptée par nom, et surveillée par l'épreuve
+  // suivante, qui est plus forte qu'un balayage de mots.
+  assert.ok(!fichiers.includes("public/cadre/courtier-du-cadre.mjs"));
+  assert.ok(!fichiers.includes("public/service-worker-du-cadre.mjs"));
+});
+
+test("la COQUILLE DE CADRE n'est publiée que par l'origine APPLICATIVE", () => {
+  // C'est la surveillance qui remplace le balayage pour ces trois fichiers-là, et elle mesure ce
+  // qui compte vraiment : non pas « le mot y est-il écrit », mais « quelle origine le sert ». Un
+  // Service Worker n'existe que là où quelqu'un le SERT.
+  for (const fichier of COQUILLE_DE_CADRE) {
+    assert.equal(
+      estPublieParLApplication(fichier),
+      true,
+      `${fichier} n'est publié par aucun arbre : la coquille de cadre serait introuvable en production`,
+    );
+    assert.equal(
+      estPublieParLaCoquille(fichier),
+      false,
+      `${fichier} est publié par l'origine de CONFIANCE : l'ADR 0030 décision 4 l'interdit`,
+    );
+  }
+});
+
+test("la garde d'installation REFUSE la même origine, et n'accepte que la frontière réelle", () => {
+  // Une exemption sans garde serait une porte ouverte. Celle-ci est mesurée sur les trois cas :
+  // pas de parent, parent de même origine, parent inaccessible (donc d'une autre origine).
+  const sansParent = { location: { origin: "https://app.exemple" } };
+  sansParent.parent = sansParent;
+  assert.equal(
+    origineDistincteDuParent(sansParent),
+    false,
+    "un document de premier rang n'encadre rien",
+  );
+
+  const memeOrigine = {
+    location: { origin: "https://exemple" },
+    parent: { location: { origin: "https://exemple" } },
+  };
+  assert.equal(origineDistincteDuParent(memeOrigine), false, "le témoin positif n'installe rien");
+
+  const interOrigine = {
+    location: { origin: "https://app.exemple" },
+    get parent() {
+      return {
+        get location() {
+          throw new DOMException("cross-origin", "SecurityError");
+        },
+      };
+    },
+  };
+  assert.equal(
+    origineDistincteDuParent(interOrigine),
+    true,
+    "une lecture qui JETTE est la preuve que les origines diffèrent — et c'est le navigateur qui le dit",
+  );
 });
 
 test("aucun module publié par l'origine de confiance n'installe de Service Worker", async () => {

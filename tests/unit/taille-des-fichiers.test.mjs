@@ -65,7 +65,7 @@ const RACINES = ["src", "public"];
 const HORS_PERIMETRE = [
   {
     fichier: "public/runtime-worker.mjs",
-    lignes: 861,
+    lignes: 882,
     motif:
       "découvert le 11/09/2026 en élargissant RACINES à `public` (#175) : il dépassait déjà le " +
       "plafond avant cet élargissement, et #175 ne scindait que `main.mjs`. Scinder le Worker de " +
@@ -75,7 +75,14 @@ const HORS_PERIMETRE = [
       "#173 (12/09/2026) y ajoute trente-six lignes — le geste `reprendreLInstallationGeste`, qui " +
       "revérifie la signature d'une installation interrompue avant d'agir — parce qu'il appartient " +
       "au même dispatch que `demarrerLApplication` ; le déplacer seul aurait scindé le fichier sans " +
-      "le faire repasser sous le plafond, pour un coût de lisibilité immédiat et un bénéfice différé.",
+      "le faire repasser sous le plafond, pour un coût de lisibilité immédiat et un bénéfice différé. " +
+      "#192 (12/09/2026) y ajoute VINGT ET UNE lignes et lui en RETIRE bien davantage : le relais " +
+      "HTTP pèse environ cent quatre-vingts lignes, et il est né dans un module à lui — " +
+      "`public/relais-du-worker.mjs` —, bocal à cookies compris. Ce qui reste ici est ce qui ne " +
+      "pouvait pas partir : le second port de la poignée de main (deux ports, un message, une fois), " +
+      "l'appel de branchement, la porte HTTP retenue dans `interne.application`, et l'oubli de la " +
+      "session Rails dans `relacherTout`. La tranche a donc réduit la dette de ce fichier plutôt que " +
+      "de l'augmenter, et l'exclusion sort toujours de la liste dès que #191 l'a scindé sous 800.",
   },
 ];
 

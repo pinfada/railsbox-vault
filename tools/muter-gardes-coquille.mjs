@@ -41,9 +41,13 @@ const FEUILLE = "src/coquille/feuille-de-recuperation.mjs";
 const MOYENS = "src/coquille/moyens-de-deverrouillage.mjs";
 const INTERFACE = "src/coquille/interface-de-deverrouillage.mjs";
 
+/** Les gardes de #192 (ADR 0038) : les décisions du relais HTTP, pures elles aussi. */
+const RELAIS = "src/coquille/relais-http.mjs";
+
 const EPREUVE_ADMISSION = "tests/unit/coquille-admission.test.mjs";
 const EPREUVE_CONTRAT = "tests/unit/coquille-contrat.test.mjs";
 const EPREUVE_DEVERROUILLAGE = "tests/unit/coquille-deverrouillage.test.mjs";
+const EPREUVE_RELAIS = "tests/unit/coquille-relais-http.test.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -110,44 +114,33 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "chaque geste de la liste de refus reçoit SON code",
-    garde: "evaluerRequete — la consultation de la liste de refus",
+    garde: "refusDuType — la consultation de la liste de refus, en premier",
     fichier: ADMISSION,
-    avant:
-      "  if (REFUSES.has(type)) {\n" +
-      "    return { admise: false, code: REFUSES.get(type), recu: typeRendu(type), correlation };\n" +
-      "  }\n",
+    avant: "  if (REFUSES.has(type)) return REFUSES.get(type);\n",
     apres: "",
     epreuves: [EPREUVE_ADMISSION],
   },
   {
     nom: "un type du canal privilégié n'est pas servi sur le port restreint",
-    garde: "evaluerRequete — la reconnaissance des types privilégiés",
+    garde: "refusDuType — la reconnaissance des types privilégiés",
     fichier: ADMISSION,
-    avant:
-      "  if (estTypePrivilegie(type)) {\n" +
-      "    return {\n" +
-      "      admise: false,\n" +
-      "      code: CODES_REFUS_COQUILLE.portPrivilegie,\n" +
-      "      recu: typeRendu(type),\n" +
-      "      correlation,\n" +
-      "    };\n" +
-      "  }\n",
+    avant: "  if (estTypePrivilegie(type)) return CODES_REFUS_COQUILLE.portPrivilegie;\n",
+    apres: "",
+    epreuves: [EPREUVE_ADMISSION],
+  },
+  {
+    nom: "le canal de RELAIS n'est pas atteignable depuis le port restreint",
+    garde: "refusDuType — la reconnaissance des types du canal de relais (#192)",
+    fichier: ADMISSION,
+    avant: "  if (estTypeDeRelais(type)) return CODES_REFUS_COQUILLE.canalDeRelaisRefuse;\n",
     apres: "",
     epreuves: [EPREUVE_ADMISSION],
   },
   {
     nom: "la liste d'admission est une LISTE, pas un accueil",
-    garde: "evaluerRequete — le filtre `REQUETES_ADMISES`",
+    garde: "refusDuType — le filtre `REQUETES_ADMISES`",
     fichier: ADMISSION,
-    avant:
-      "  if (!REQUETES_ADMISES.has(type)) {\n" +
-      "    return {\n" +
-      "      admise: false,\n" +
-      "      code: CODES_REFUS_COQUILLE.typeInconnu,\n" +
-      "      recu: typeRendu(type),\n" +
-      "      correlation,\n" +
-      "    };\n" +
-      "  }\n",
+    avant: "  if (!REQUETES_ADMISES.has(type)) return CODES_REFUS_COQUILLE.typeInconnu;\n",
     apres: "",
     epreuves: [EPREUVE_ADMISSION],
   },
@@ -247,17 +240,9 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "une requête admise ne porte aucun champ hors du contrat",
-    garde: "evaluerRequete — le contrôle de forme exacte",
+    garde: "refusDuType — le contrôle de forme exacte, jugé en dernier",
     fichier: ADMISSION,
-    avant:
-      "  if (!formeExacte(message)) {\n" +
-      "    return {\n" +
-      "      admise: false,\n" +
-      "      code: CODES_REFUS_COQUILLE.messageMalforme,\n" +
-      "      recu: typeRendu(type),\n" +
-      "      correlation,\n" +
-      "    };\n" +
-      "  }\n",
+    avant: "  if (!formeExacte(message)) return CODES_REFUS_COQUILLE.messageMalforme;\n",
     apres: "",
     epreuves: [EPREUVE_ADMISSION],
   },
@@ -471,6 +456,60 @@ export const MUTATIONS = Object.freeze([
       '      .filter(([nom]) => nom.endsWith("Reponse") || nom === "recuperationRendue" || nom === "refus")\n',
     apres: '      .filter(([nom]) => nom.endsWith("Reponse"))\n',
     epreuves: [EPREUVE_DEVERROUILLAGE],
+  },
+  // --- Les gardes du RELAIS HTTP (#192, ADR 0038) ------------------------------------------------
+  //
+  // Elles sont dans `src/coquille/relais-http.mjs` pour le motif exact des précédentes : ce sont
+  // des fonctions PURES, que le Worker, la coquille et le Service Worker se contentent d'appeler.
+  // Une garde écrite dans le Worker ne serait éprouvable que par un navigateur.
+  {
+    nom: "le cookie de session ne franchit JAMAIS la frontière",
+    garde: "ENTETES_DE_REPONSE_RENDUES — la liste qui ne nomme pas `set-cookie`",
+    fichier: RELAIS,
+    avant: '  "content-type",\n  "content-language",\n',
+    apres: '  "content-type",\n  "set-cookie",\n  "content-language",\n',
+    epreuves: [EPREUVE_RELAIS],
+  },
+  {
+    nom: "une `Location` absolue ne rend jamais l'hôte du guest",
+    garde: "emplacementRendu — la comparaison d'origine, puis le chemin seul",
+    fichier: RELAIS,
+    avant: "  if (url.origin !== new URL(baseDuGuest).origin) return null;\n",
+    apres: "",
+    epreuves: [EPREUVE_RELAIS],
+  },
+  {
+    nom: "seules TROIS méthodes sont relayées",
+    garde: "METHODES_RELAYEES — la liste close",
+    fichier: RELAIS,
+    avant: 'export const METHODES_RELAYEES = Object.freeze(["GET", "POST", "HEAD"]);',
+    apres:
+      'export const METHODES_RELAYEES = Object.freeze(["GET", "POST", "HEAD", "PUT", "PATCH", "DELETE"]);',
+    epreuves: [EPREUVE_RELAIS],
+  },
+  {
+    nom: "le document ne choisit que TROIS en-têtes de requête",
+    garde: "entetesDeRequeteRelayees — le filtre par la liste d'admission",
+    fichier: RELAIS,
+    avant: "    if (!ENTETES_DE_REQUETE_RELAYEES.includes(minuscule)) continue;\n",
+    apres: "",
+    epreuves: [EPREUVE_RELAIS],
+  },
+  {
+    nom: "aucun caractère de contrôle ne franchit dans un chemin",
+    garde: "cheminRelayable — le refus d'une seconde ligne de requête HTTP",
+    fichier: RELAIS,
+    avant: "  if (porteUnCaractereDeControle(valeur)) return null;\n",
+    apres: "",
+    epreuves: [EPREUVE_RELAIS],
+  },
+  {
+    nom: "un corps sur une méthode qui n'en porte pas est refusé",
+    garde: "evaluerRequeteRelayee — la cohérence entre la méthode et le corps",
+    fichier: RELAIS,
+    avant: '    if (methode === "GET" || methode === "HEAD") return { ok: false };\n',
+    apres: "",
+    epreuves: [EPREUVE_RELAIS],
   },
 ]);
 

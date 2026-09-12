@@ -35,6 +35,8 @@ import {
   EXCLUSIONS,
   SOURCES_COQUILLE,
   estPublie,
+  estPublieParLApplication,
+  estPublieParLaCoquille,
   motifDExclusion,
 } from "../../tools/publier-arborescences.mjs";
 
@@ -89,12 +91,24 @@ test("la fixture malveillante n'est publiée sur AUCUNE des deux origines", () =
   }
 });
 
-test("le document applicatif de DÉVELOPPEMENT n'est publié nulle part non plus", () => {
-  // L'ADR 0002 le refuse des deux côtés : sur l'origine de confiance ce serait un document
-  // applicatif, sur l'origine applicative un artefact de ce dépôt.
+test("le COURTIER est publié par l'origine applicative, et par elle seule (#192)", () => {
+  // Cette épreuve exigeait l'inverse jusqu'à #192 : le document applicatif n'était publié nulle
+  // part, « sur l'origine de confiance ce serait un document applicatif, sur l'origine applicative
+  // un artefact de ce dépôt ». La première moitié de la phrase reste vraie et cette épreuve la
+  // tient toujours ; la seconde a cessé de l'être le jour où le document est devenu le COURTIER du
+  // proxy — et un proxy doit bien être servi par quelqu'un (ADR 0038).
   for (const chemin of ["public/document-applicatif.html", "public/document-applicatif.mjs"]) {
-    assert.equal(estPublie(chemin), false);
-    assert.match(motifDExclusion(chemin), /ADR 0002|Même motif/);
+    assert.equal(
+      estPublieParLaCoquille(chemin),
+      false,
+      `${chemin} est servi par l'origine de CONFIANCE : ce serait un document applicatif chez elle`,
+    );
+    assert.equal(
+      estPublieParLApplication(chemin),
+      true,
+      `${chemin} n'est publié par aucun arbre : le proxy serait introuvable en production`,
+    );
+    assert.equal(motifDExclusion(chemin), null, `${chemin} est à la fois publié et exclu`);
   }
 });
 
@@ -203,8 +217,15 @@ async function fichiersDe(depuis) {
 }
 
 test("chaque exclusion neuve retire une surface qui existe encore", async () => {
+  // UNE depuis #192, et non plus trois : la fixture MALVEILLANTE reste retirée — la publier
+  // reviendrait à servir l'adversaire depuis l'origine qu'il attaque —, mais les deux documents
+  // applicatifs sont devenus le COURTIER du proxy, et ils sont publiés par l'arbre applicatif.
   const neuves = EXCLUSIONS.filter(({ prefixe }) =>
     /coquille-epreuve|document-applicatif/.test(prefixe),
   );
-  assert.equal(neuves.length, 3, "#161 retire trois surfaces : la fixture et les deux documents.");
+  assert.deepEqual(
+    neuves.map(({ prefixe }) => prefixe),
+    ["public/coquille-epreuve/"],
+    "#192 ne retire plus que la fixture malveillante : le courtier, lui, est publié.",
+  );
 });
