@@ -10,9 +10,24 @@ name: Reprise MVP
 
 on:
   workflow_dispatch:
+    inputs:
+      workers:
+        description: >-
+          Ouvriers Playwright pour les scénarios E2E (mesure #200 : 1 contre 2 sur le même commit).
+          Le déclenchement automatique (nocturne, PR stabilisée) utilise la valeur retenue
+          ci-dessous, pas ce champ.
+        required: false
+        default: "2"
+        type: string
   schedule:
     - cron: "41 4 * * *"
   pull_request:
+    # Plus de run à chaque `synchronize` (#200) : la recette complète est longue et coûteuse, et
+    # un push intermédiaire n'a que la CI rapide (`Vérifications`) à satisfaire. Elle se déclenche
+    # quand la PR est jugée stabilisée — passage en « prêt pour revue », ou pose du label
+    # `recette` par le superviseur (`if` du job, plus bas, l'exige nommément) — plus le nocturne et
+    # le déclenchement manuel ci-dessus. `docs/testing.md` dit QUAND l'exiger avant fusion.
+    types: [ready_for_review, labeled]
     paths:
       - "src/vm/**"
       - "src/coquille/**"
@@ -40,6 +55,12 @@ concurrency:
 jobs:
   reprise:
     name: Reprise d'une mutation Rails après boot à froid
+    # `labeled` se déclenche pour N'IMPORTE QUEL label : sans ce garde-fou, poser une étiquette de
+    # tri sans rapport lancerait la recette complète. Seul `recette`, posé par le superviseur une
+    # fois la PR stabilisée, doit le faire ; `ready_for_review` et les autres déclencheurs passent.
+    if: >-
+      github.event_name != 'pull_request' || github.event.action != 'labeled' ||
+      github.event.label.name == 'recette'
     runs-on: ubuntu-latest
     # Construction de l'image environ 20 min sans cache, puis préparation OPFS et plusieurs boots à
     # froid d'un Rails i386. La marge couvre un exécutant GitHub plus lent que la machine de dev.
@@ -54,6 +75,13 @@ jobs:
     # 120 min les couvre. La porter plus haut sans mesure ferait passer un job qui traîne pour un job
     # qui travaille.
     timeout-minutes: 120
+
+    env:
+      # `github.event.inputs` est vide hors `workflow_dispatch` : le nocturne, le label et
+      # `ready_for_review` retombent donc sur « 2 », la valeur retenue par la mesure de #200
+      # (docs/quality-attributes.md, § Reprise MVP : un ou deux ouvriers). Le champ du
+      # déclenchement manuel sert à REJOUER la mesure, pas à piloter la production.
+      VAULT_E2E_WORKERS: ${{ github.event.inputs.workers || '2' }}
 
     steps:
       - name: Récupération du dépôt
@@ -106,11 +134,12 @@ jobs:
         env:
           VAULT_E2E_EXIGER: "1"
         run: |
+          echo "[reprise] ouvriers Playwright : $VAULT_E2E_WORKERS"
           node tools/mesure-espace-disque.mjs --etape pendant-e2e --suivre 5 \
             --journal reports/e2e/espace-pendant-e2e.jsonl &
           suivi=$!
           set +e
-          npm run test:e2e
+          npm run test:e2e -- --workers="$VAULT_E2E_WORKERS"
           code=$?
           kill "$suivi" 2>/dev/null || true
           wait "$suivi" 2>/dev/null || true
