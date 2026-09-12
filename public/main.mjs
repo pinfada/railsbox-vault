@@ -116,6 +116,23 @@ const rapport = {
     /** Délai entre le GESTE de verrouillage et l'instant où le coffre est `verrouille`. */
     verrouillageMs: null,
     cadreApplicatifMs: null,
+    /**
+     * Le BATTEMENT du Worker de confiance, vu de cette page (#192, correction I1).
+     *
+     * La borne de mort par SILENCE rend le même verdict que le Worker se soit tu ou que cette
+     * page ne l'ait pas entendu. Ces cinq nombres séparent les deux : un rang qui avance avec un
+     * retard qui enfle dit que ce fil-ci est affamé ; un rang qui cesse d'avancer dit l'inverse.
+     */
+    battements: {
+      recus: 0,
+      dernierRang: null,
+      manques: 0,
+      dernierRetardMs: null,
+      pireRetardMs: 0,
+      dernierRecuMs: null,
+    },
+    /** Ce que le CANAL de relais a porté : posté vers le Worker, revenu de lui. */
+    relaisCanal: { postees: 0, revenues: 0 },
   },
 };
 

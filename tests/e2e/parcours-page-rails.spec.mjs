@@ -294,6 +294,13 @@ test("une page Rails réelle est servie dans le cadre, cliquée, soumise, et rel
   const demarrage = await demarrerLApplication(session.page);
   expect(demarrage.demarree).toBe(true);
   mesures.bootMs = demarrage.bootMs;
+  // Le BATTEMENT relevé À LA FIN DU PREMIER BOOT, et non à la fin du scénario (#192, correction I1).
+  //
+  // C'est la seule fenêtre où il dit quelque chose : le boot est le geste le plus long du produit,
+  // et la borne de mort par silence est de trente secondes. Relevé après le verrouillage, le compte
+  // décrirait la session suivante — dont la réouverture par instantané coûte une seconde et demie,
+  // c'est-à-dire un seul battement, ce qui ne mesure rien.
+  const canalApresLeBoot = (await releve(session.page)).mesures;
 
   mesures.premierePageMs = await attendreLaPremierePage(session.page);
 
@@ -456,6 +463,11 @@ test("une page Rails réelle est servie dans le cadre, cliquée, soumise, et rel
     navigateur: await session.page.evaluate(() => navigator.userAgent),
     note: { identifiant: identifiantDeLaNote, libelle: LIBELLE },
     mesures,
+    // Le BATTEMENT et le CANAL DE RELAIS, tels que la coquille les a relevés (#192, correction I1).
+    // Ils sont publiés sur une exécution VERTE autant que sur une rouge : c'est la marge au seuil de
+    // mort par silence qui se mesure ici, et une marge ne se lit que là où rien n'a cassé.
+    canalApresLeBoot,
+    canalALaFin: (await releve(session.page)).mesures,
   };
   writeFileSync(
     join(DOSSIER_RAPPORTS, "parcours-page-rails.json"),
@@ -501,6 +513,9 @@ test.afterEach(async ({ page: _page }, testInfo) => {
             relais: releve.relais ?? null,
             refusDeRequete: releve.refusDeRequete ?? null,
             cycle: (releve.cycle ?? []).map((etape) => `${etape.etape}:${etape.issue}`),
+            // Les deux mesures qui SÉPARENT les causes d'une mort par silence (#192, I1).
+            battements: releve.mesures?.battements ?? null,
+            relaisCanal: releve.mesures?.relaisCanal ?? null,
           };
         })
         .catch((erreur) => ({ illisible: erreur?.message?.slice(0, 120) ?? null }));

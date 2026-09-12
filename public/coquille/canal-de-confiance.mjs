@@ -114,6 +114,27 @@ export function creerCanalDeConfiance({ rapport, publier, pont }) {
   relais.port1.start();
   worker.postMessage(enveloppeDeMessage(TYPES_PRIVILEGIES.canal), [privilegie.port2, relais.port2]);
 
+  /**
+   * RELÈVE un battement : son rang, le retard de sa lecture, et les rangs manqués.
+   *
+   * @param {Record<string, unknown>} message
+   */
+  function releverLeBattement(message) {
+    const releve = rapport.mesures.battements;
+    releve.recus += 1;
+    if (typeof message.rang === "number") {
+      if (releve.dernierRang !== null) releve.manques += message.rang - releve.dernierRang - 1;
+      releve.dernierRang = message.rang;
+    }
+    if (typeof message.instantMs === "number") {
+      const retard = Math.round(performance.now() - message.instantMs);
+      releve.dernierRetardMs = retard;
+      if (retard > releve.pireRetardMs) releve.pireRetardMs = retard;
+    }
+    releve.dernierRecuMs = Math.round(performance.now());
+    publier();
+  }
+
   /** @param {unknown} donnee */
   function surMessagePrivilegie(donnee) {
     const decode = decoderMessage(donnee);
@@ -133,6 +154,11 @@ export function creerCanalDeConfiance({ rapport, publier, pont }) {
     if (decode.type === TYPES_PRIVILEGIES.battement) {
       // Un SIGNE DE VIE, et rien d'autre : il ne règle aucune promesse, il repousse la borne de
       // l'attente qu'il nomme.
+      //
+      // Ce qu'il RELÈVE au passage (#192, correction I1) : son rang, et le RETARD entre l'instant où
+      // le Worker l'a posté et celui où cette page l'a lu. Un rang qui saute dit que des battements
+      // ont été perdus ; un retard qui enfle dit que ce fil-ci est affamé, et non le Worker.
+      releverLeBattement(decode.message);
       demandesEnVol.get(decode.message.correlation)?.repousser();
       return;
     }
@@ -213,6 +239,7 @@ export function creerCanalDeConfiance({ rapport, publier, pont }) {
     const attente = relaisEnVol.get(decode.message.correlation);
     if (attente === undefined) return;
     relaisEnVol.delete(decode.message.correlation);
+    rapport.mesures.relaisCanal.revenues += 1;
     if (decode.type === TYPES_RELAIS.refus) {
       return attente.refuser(
         Object.assign(new Error(decode.message.message ?? "requête relayée refusée"), {
@@ -251,6 +278,7 @@ export function creerCanalDeConfiance({ rapport, publier, pont }) {
         geste(valeur);
       };
       relaisEnVol.set(correlation, { rendre: clore(rendre), refuser: clore(refuser) });
+      rapport.mesures.relaisCanal.postees += 1;
       relais.port1.postMessage(
         enveloppeDeMessage(TYPES_RELAIS.requete, { ...requete, correlation }),
       );
