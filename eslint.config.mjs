@@ -13,8 +13,28 @@ import globals from "globals";
 /** Modules chargés dans un Worker dédié : aucun DOM, mais les globals propres au Worker. */
 const WORKER_FILES = ["public/**/*worker*.mjs", "src/**/*worker*.mjs"];
 
-/** Service Workers : encore un autre contexte (`clients`, `skipWaiting`), sans DOM non plus. */
-const SERVICE_WORKER_FILES = ["public/**/*-sw.mjs"];
+/**
+ * Service Workers : encore un autre contexte (`clients`, `skipWaiting`), sans DOM non plus.
+ *
+ * Le second motif est celui de la coquille de cadre (#192) : son Service Worker s'appelle
+ * `service-worker-du-cadre.mjs`, et il ne se reconnaissait à AUCUN des deux motifs précédents —
+ * le suffixe `-sw.mjs` du banc, ni rien qui dise « Service Worker » plutôt que « Worker ». Il
+ * tombait donc dans le contexte du Worker DÉDIÉ, où `clients` et `skipWaiting` n'existent pas :
+ * le lint passait par chance, parce que ces deux-là ne s'écrivent que sur `self`.
+ */
+const SERVICE_WORKER_FILES = ["public/**/*-sw.mjs", "public/service-worker-*.mjs"];
+
+/**
+ * Scripts servis par l'APPLICATION DE RÉFÉRENCE (#192) : du code de navigateur, exécuté dans le
+ * guest et relayé jusqu'au cadre.
+ *
+ * Ils sont en `.js` et non en `.mjs`, parce que ce sont des scripts CLASSIQUES qu'une balise
+ * `<script src>` charge — c'est ce que Rails rend, et le dépôt ne choisit pas l'extension d'une
+ * application. Le bloc générique les analyse donc sans aucun global, exactement comme son
+ * commentaire l'annonce, et ce bloc-ci les rattache à leur contexte plutôt que de leur laisser
+ * hériter d'un jeu par défaut.
+ */
+const APPLICATION_FILES = ["apps/reference/public/**/*.js"];
 
 /** Documents et scripts de page servis tels quels, plus les modules `src/` réservés à la page. */
 const PAGE_FILES = ["public/**/*.mjs", "src/**/page-*.mjs"];
@@ -115,6 +135,10 @@ export default [
   {
     files: SERVICE_WORKER_FILES,
     languageOptions: { globals: globals.serviceworker },
+  },
+  {
+    files: APPLICATION_FILES,
+    languageOptions: { globals: globals.browser },
   },
   {
     files: NODE_FILES,

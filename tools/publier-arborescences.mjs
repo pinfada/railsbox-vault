@@ -46,6 +46,16 @@ export const SOURCES_COQUILLE = Object.freeze([
       "volume développée ; ni l'une ni l'autre ne franchit un `postMessage` (ADR 0002).",
   }),
   Object.freeze({
+    depuis: "public/relais-du-worker.mjs",
+    vers: "relais-du-worker.mjs",
+    role:
+      "Le RELAIS HTTP côté Worker de confiance (#192, ADR 0038). Il est importé par " +
+      "`runtime-worker.mjs` et ne s'exécute que dans lui : il tient la porte HTTP de la session " +
+      "guest et le bocal à cookies de la session Rails, dont aucun ne franchit un `postMessage`. " +
+      "Il est publié par l'origine de CONFIANCE, et jamais par le territoire applicatif : c'est la " +
+      "moitié privilégiée du relais, celle dont la coquille de cadre ne connaît que les réponses.",
+  }),
+  Object.freeze({
     depuis: "public/derivation-worker.mjs",
     vers: "derivation-worker.mjs",
     role:
@@ -156,16 +166,86 @@ export const SOURCES_COQUILLE = Object.freeze([
 ]);
 
 /**
- * Le territoire applicatif ne publie AUCUN artefact de ce dépôt, et ce n'est pas un oubli.
+ * Le territoire applicatif publie la COQUILLE DE CADRE, et rien d'autre (#192, ADR 0038).
  *
- * L'ADR 0002 : « en production le HTML applicatif est produit par le guest et relayé par le proxy ».
- * Ce que l'origine applicative doit donc porter aujourd'hui, c'est sa CONFIGURATION — les en-têtes
- * de `_headers` — et rien d'autre. Le document ci-dessous est une PLACE TENANTE déclarée : il
- * existe pour que la frontière soit joignable et mesurable (le témoin d'en-têtes encadre quelque
- * chose), il porte sa propre marque, et il n'est le produit de personne.
+ * **Ce que cette table disait jusqu'ici, et pourquoi elle a changé.** Elle était VIDE, avec ce
+ * motif : « l'ADR 0002 dit qu'en production le HTML applicatif est produit par le guest et relayé
+ * par le proxy », donc l'origine applicative n'a rien à porter d'autre que sa configuration. Le
+ * raisonnement était juste et il reste juste — mais il lui manquait sa conclusion : **le proxy doit
+ * bien être servi par quelqu'un**, et ce quelqu'un ne peut être que cette origine-là. Un document
+ * encadré qui n'existe pas ne relaie rien, et la coquille publiée recevrait un 404 là où
+ * l'utilisateur attend son application.
+ *
+ * Ce qui est publié ici est donc exactement le PROXY, et jamais un artefact applicatif : le
+ * courtier (`document-applicatif.html` et son module), le Service Worker qui intercepte, leur
+ * contrat commun, et les trois modules de la coquille dont ils ont besoin pour parler le contrat de
+ * messages. Ce que le guest rend, lui, n'est publié nulle part : il arrive par le port restreint, à
+ * l'exécution, et n'a aucune existence dans l'arbre.
+ *
+ * **Le Service Worker est à la RACINE**, et ce n'est pas un choix de rangement : la portée maximale
+ * d'un Service Worker est le répertoire de son script, sauf en-tête `Service-Worker-Allowed` que ce
+ * dépôt refuse délibérément de servir. Pour intercepter `/`, il lui faut la racine.
+ *
+ * **Rien de ceci n'entre dans l'arbre de la COQUILLE.** L'ADR 0030 décision 4 refuse un Service
+ * Worker sur l'origine de confiance, et `tests/unit/coquille-sans-service-worker.test.mjs` le
+ * surveille — la coquille de cadre y est nommée fichier par fichier, avec l'exigence qu'elle ne
+ * figure que dans CET arbre-ci.
  *
  * @type {readonly Source[]} */
-export const SOURCES_APPLICATION = Object.freeze([]);
+export const SOURCES_APPLICATION = Object.freeze([
+  Object.freeze({
+    depuis: "public/document-applicatif.html",
+    vers: "document-applicatif.html",
+    role:
+      "LE COURTIER : le document que la coquille encadre. Il s'annonce, reçoit le port restreint, " +
+      "ne navigue jamais — l'octroi n'a lieu qu'une fois — et relaie vers le guest ce que le " +
+      "Service Worker lui présente. Ce qu'il affiche de l'application vit dans un cadre imbriqué.",
+  }),
+  Object.freeze({
+    depuis: "public/document-applicatif.mjs",
+    vers: "document-applicatif.mjs",
+    role: "Script de page du courtier : annonce, port, montage de la coquille de cadre.",
+  }),
+  Object.freeze({
+    depuis: "public/service-worker-du-cadre.mjs",
+    vers: "service-worker-du-cadre.mjs",
+    role:
+      "Le SERVICE WORKER de la coquille de cadre, à la racine parce que sa portée l'exige. Il " +
+      "intercepte ce que le document servi demande et le fait relayer par le courtier. Il ne " +
+      "CACHE rien, ne détient ni clé ni cookie, et s'efface — en laissant passer au réseau — dès " +
+      "qu'aucun courtier n'est joignable.",
+  }),
+  Object.freeze({
+    depuis: "public/cadre",
+    vers: "cadre",
+    role:
+      "Les deux modules de la coquille de cadre : le contrat interne qui relie le Service Worker " +
+      "au courtier, et le courtier lui-même. Aucun des deux n'est une frontière — ils vivent tous " +
+      "deux dans le territoire du guest — et leur en-tête le dit.",
+  }),
+  Object.freeze({
+    depuis: "src/coquille/contrat-de-messages.mjs",
+    vers: "src/coquille/contrat-de-messages.mjs",
+    role:
+      "Le CONTRAT de messages, publié des DEUX côtés de la frontière : un document applicatif ne " +
+      "peut pas parler à la coquille sans le connaître, et il est public par construction " +
+      "(ADR 0028 : ce que la coquille refuse ne dépend que du type reçu).",
+  }),
+  Object.freeze({
+    depuis: "src/coquille/refus-de-coquille.mjs",
+    vers: "src/coquille/refus-de-coquille.mjs",
+    role: "Les codes de refus, que le contrat importe. Publics pour la même raison que lui.",
+  }),
+  Object.freeze({
+    depuis: "src/coquille/relais-http.mjs",
+    vers: "src/coquille/relais-http.mjs",
+    role:
+      "Les décisions du relais. Le courtier en lit le juge de chemin, et le Service Worker la " +
+      "liste des chemins qui lui appartiennent. Une COPIE de ces deux listes dans le territoire " +
+      "applicatif aurait divergé de celle que la coquille applique — et c'est la coquille qui " +
+      "refuse, pas le cadre : ce que le cadre en fait est une politesse, jamais une garantie.",
+  }),
+]);
 
 /**
  * Contenu de la place tenante de l'origine applicative. Généré, pas copié : rien dans `public/` ne
@@ -242,18 +322,6 @@ export const EXCLUSIONS = Object.freeze([
       "publier reviendrait à servir l'adversaire depuis l'origine qu'il attaque.",
   }),
   Object.freeze({
-    prefixe: "public/document-applicatif.html",
-    motif:
-      "Document applicatif de DÉVELOPPEMENT (#161). L'ADR 0002 le dit des deux côtés : en " +
-      "production le HTML applicatif vient du guest et est relayé par le proxy, si bien que le " +
-      "publier sur l'origine de confiance y poserait un document applicatif, et sur l'origine " +
-      "applicative un artefact de ce dépôt. Le cycle assemblé est la tranche 3 (#163).",
-  }),
-  Object.freeze({
-    prefixe: "public/document-applicatif.mjs",
-    motif: "Script de page du document applicatif de développement (#161). Même motif.",
-  }),
-  Object.freeze({
     prefixe: "src/spike/",
     motif:
       "Contrats des bancs de spike, dont la topologie de mesure `origin-topology.mjs` " +
@@ -272,9 +340,31 @@ export function motifDExclusion(chemin) {
   return exclusion ? exclusion.motif : null;
 }
 
-/** @param {string} chemin chemin du dépôt, séparateurs `/` */
+/**
+ * Ce chemin est-il publié, dans l'UN OU L'AUTRE des deux arbres ?
+ *
+ * Les deux, depuis #192 : l'arbre applicatif a cessé d'être vide, et une question qui n'aurait
+ * interrogé que l'arbre de la coquille aurait réclamé un motif d'exclusion pour des fichiers
+ * publiés — c'est-à-dire qu'elle aurait demandé d'écrire un motif faux pour passer au vert.
+ *
+ * @param {string} chemin chemin du dépôt, séparateurs `/`
+ */
 export function estPublie(chemin) {
+  return [...SOURCES_COQUILLE, ...SOURCES_APPLICATION].some(
+    ({ depuis }) => chemin === depuis || chemin.startsWith(`${depuis}/`),
+  );
+}
+
+/** Publié par l'arbre de la COQUILLE, c'est-à-dire servi par l'origine de confiance. */
+export function estPublieParLaCoquille(chemin) {
   return SOURCES_COQUILLE.some(
+    ({ depuis }) => chemin === depuis || chemin.startsWith(`${depuis}/`),
+  );
+}
+
+/** Publié par l'arbre APPLICATIF, c'est-à-dire servi par le territoire du guest. */
+export function estPublieParLApplication(chemin) {
+  return SOURCES_APPLICATION.some(
     ({ depuis }) => chemin === depuis || chemin.startsWith(`${depuis}/`),
   );
 }
@@ -296,7 +386,10 @@ export const ARBRES = Object.freeze([
     origine: ORIGINES.application,
     sources: SOURCES_APPLICATION,
     placeTenante: Object.freeze({ vers: "index.html", contenu: PLACE_TENANTE_APPLICATION }),
-    role: "Territoire applicatif (ADR 0002, origine applicative). Aucun artefact du dépôt.",
+    role:
+      "Territoire applicatif (ADR 0002, origine applicative). Il porte la COQUILLE DE CADRE " +
+      "(#192, ADR 0038) — le proxy —, et jamais ce que le guest rend : cela arrive par le port " +
+      "restreint, à l'exécution.",
   }),
 ]);
 
