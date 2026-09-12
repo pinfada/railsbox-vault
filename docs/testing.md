@@ -1591,6 +1591,12 @@ trois graines) et `resilience-fraicheur.spec.mjs` (deux plans de panne). Son mot
 delà, le remède est d'espacer les essais ou de réduire le nombre de voisins tenus, **pas de relever
 le plafond**.
 
+Dans la matrice publiée, ce budget d'ordonnancement est vérifié **après** `tauxAtomique`, les
+classes et les comptes de verdicts globaux. Un moteur qui dépasserait le budget fait toujours
+échouer l'épreuve, mais ne peut plus interrompre son évaluation avant les propriétés de durabilité
+qu'elle existe pour mesurer (#130). Le compte rendu complet et le relevé de réouverture sont en
+outre joints avant toute assertion.
+
 **Ce qui est mesuré où.** Le nombre de handles et leur ordre d'acquisition sont une propriété de
 l'ouvreur, et se mesurent sous Node sur le double calibré — celui-ci rend l'exclusivité sur-le-champ
 dans `abandon()`, et ne peut donc rien dire du délai. Le DÉLAI, lui, ne s'observe que sur le vrai
