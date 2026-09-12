@@ -7,17 +7,28 @@ name: Reprise MVP
 # Elle est longue et dépend de Docker et d'artefacts tiers : elle n'est donc PAS un contrôle
 # obligatoire de la protection de branche, et `npm run check` ne l'appelle pas. Sa périodicité et son
 # coût sont documentés dans docs/testing.md.
+#
+# DEUX LOTS depuis le 12 septembre 2026 (#200, docs/quality-attributes.md § Reprise MVP) : l'image
+# est construite UNE fois (job `image`) puis partagée par artefact avec deux jobs `reprise`
+# (matrice `lot`) qui jouent chacun une moitié des scénarios, choisie par DURÉE MESURÉE et non par
+# décompte de fichiers. Mesuré sur le même commit : un seul job à deux ouvriers tient 41,5 min — deux
+# ouvriers se PARTAGENT les 4 vCPU d'UN exécutant et chaque scénario en pâtit (10,79 → 15,90 min pour
+# le plus lourd) — quand deux lots sur deux exécutants DISTINCTS, un ouvrier chacun, ne se
+# contentent pas les uns les autres. Le job `fusion` réunit les mesures et le rapport Playwright
+# (rapporteur `blob`, fusionné par `playwright merge-reports`) en un seul artefact `mesures-reprise`,
+# comme avant la scission.
 
 on:
   workflow_dispatch:
     inputs:
       workers:
         description: >-
-          Ouvriers Playwright pour les scénarios E2E (mesure #200 : 1 contre 2 sur le même commit).
-          Le déclenchement automatique (nocturne, PR stabilisée) utilise la valeur retenue
-          ci-dessous, pas ce champ.
+          Ouvriers Playwright PAR LOT (#200). Chaque lot a déjà son propre exécutant ; la mesure a
+          montré qu'un ouvrier par lot (deux exécutants, aucune contention) bat deux ouvriers dans
+          UN seul job (41,5 min, 4 vCPU partagés). Ce champ REJOUE la mesure, il ne pilote pas la
+          production.
         required: false
-        default: "2"
+        default: "1"
         type: string
   schedule:
     - cron: "41 4 * * *"
@@ -25,7 +36,7 @@ on:
     # Plus de run à chaque `synchronize` (#200) : la recette complète est longue et coûteuse, et
     # un push intermédiaire n'a que la CI rapide (`Vérifications`) à satisfaire. Elle se déclenche
     # quand la PR est jugée stabilisée — passage en « prêt pour revue », ou pose du label
-    # `recette` par le superviseur (`if` du job, plus bas, l'exige nommément) — plus le nocturne et
+    # `recette` par le superviseur (`if` des jobs, plus bas, l'exige nommément) — plus le nocturne et
     # le déclenchement manuel ci-dessus. `docs/testing.md` dit QUAND l'exiger avant fusion.
     types: [ready_for_review, labeled]
     paths:
@@ -53,35 +64,81 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  reprise:
-    name: Reprise d'une mutation Rails après boot à froid
+  image:
+    name: Construire l'image de référence
     # `labeled` se déclenche pour N'IMPORTE QUEL label : sans ce garde-fou, poser une étiquette de
-    # tri sans rapport lancerait la recette complète. Seul `recette`, posé par le superviseur une
-    # fois la PR stabilisée, doit le faire ; `ready_for_review` et les autres déclencheurs passent.
+    # tri sans rapport lancerait toute la recette. Seul `recette`, posé par le superviseur une fois
+    # la PR stabilisée, doit le faire ; `ready_for_review`, le nocturne et le déclenchement manuel
+    # passent. `reprise` en hérite par la cascade de `needs` ; `fusion` la répète (elle tourne avec
+    # `always()`, qui court-circuite cette cascade — `if:` d'un job n'a de toute façon pas accès à
+    # `env`, un `env:` de haut de fichier n'aurait donc rien épargné).
     if: >-
       github.event_name != 'pull_request' || github.event.action != 'labeled' ||
       github.event.label.name == 'recette'
     runs-on: ubuntu-latest
-    # Construction de l'image environ 20 min sans cache, puis préparation OPFS et plusieurs boots à
-    # froid d'un Rails i386. La marge couvre un exécutant GitHub plus lent que la machine de dev.
-    #
-    # Portée à 150 min le 6 septembre 2026 (#149) : le scénario
-    # `archive-recuperation-inter-origine.spec.mjs` ajoute deux boots Rails et une dérivation
-    # Argon2id à la suite, et les scénarios s'exécutent en SÉQUENCE (`workers: 1`). Une marge qui
-    # devient juste finit par faire échouer la recette pour une raison qui n'est pas la sienne.
-    #
-    # Inchangée le 7 septembre 2026 (#163) : `reprise-coquille-boot-froid.spec.mjs` ajoute deux boots
-    # Rails et deux dérivations Argon2id — environ dix minutes de plus en séquence —, et la marge de
-    # 120 min les couvre. La porter plus haut sans mesure ferait passer un job qui traîne pour un job
-    # qui travaille.
-    timeout-minutes: 120
+    timeout-minutes: 20
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installation de Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Épinglage de la chaîne de construction
+        run: node tools/build-reference-image/verify-pinning.mjs
+
+      - name: Construction de l'image de référence
+        run: npm run image:build
+
+      # Partagée avec les deux lots : construite une seule fois (≈ 6 min), elle ne l'est plus deux
+      # fois. Une rétention courte suffit, l'artefact n'a de sens que pour ce run.
+      - name: Partage de l'image construite
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-de-reference
+          path: artifacts/reference-image/
+          retention-days: 1
+
+  reprise:
+    name: Reprise MVP — lot ${{ matrix.lot }}
+    needs: image
+    runs-on: ubuntu-latest
+    # Chaque lot boote plusieurs fois un guest Rails i386 complet, en séquence dans le lot (un seul
+    # ouvrier par défaut, cf. `workers` ci-dessus). Mesuré à ≈ 27-30 min par lot (#200) ; la marge
+    # couvre un exécutant plus lent et un rejeu à deux ouvriers pour remesurer.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      # Répartition par DURÉE MESURÉE (#200, sur le même commit, un ouvrier, en séquence), pas par
+      # décompte de fichiers : les deux lots visent ≈ 27 min chacun. `migration-volume-versionne.spec.mjs`
+      # porte SES DEUX épreuves dans le même lot — les séparer romprait le rang stable dont
+      # `contexte-persistant.mjs` a besoin pour nommer sa chronologie (`-t2`).
+      matrix:
+        include:
+          - lot: "1"
+            fichiers: >-
+              tests/e2e/reprise-mutation-boot-froid.spec.mjs tests/e2e/instantane-reprise.spec.mjs
+              tests/e2e/archive-recuperation-inter-origine.spec.mjs
+              tests/e2e/coupure-generation-boot-froid.spec.mjs
+          - lot: "2"
+            fichiers: >-
+              tests/e2e/migration-volume-versionne.spec.mjs
+              tests/e2e/restauration-inter-origine.spec.mjs
+              tests/e2e/enveloppe-rotation-boot-froid.spec.mjs
+              tests/e2e/reprise-coquille-boot-froid.spec.mjs
+              tests/e2e/export-volume-verifiable.spec.mjs
 
     env:
-      # `github.event.inputs` est vide hors `workflow_dispatch` : le nocturne, le label et
-      # `ready_for_review` retombent donc sur « 2 », la valeur retenue par la mesure de #200
-      # (docs/quality-attributes.md, § Reprise MVP : un ou deux ouvriers). Le champ du
-      # déclenchement manuel sert à REJOUER la mesure, pas à piloter la production.
-      VAULT_E2E_WORKERS: ${{ github.event.inputs.workers || '2' }}
+      VAULT_E2E_LOT: ${{ matrix.lot }}
+      # `inputs` est vide hors `workflow_dispatch` : la production retombe sur « 1 ». Voir la
+      # description du champ, plus haut, pour ce que la mesure a tranché.
+      VAULT_E2E_WORKERS: ${{ inputs.workers || '1' }}
 
     steps:
       - name: Récupération du dépôt
@@ -99,47 +156,39 @@ jobs:
       - name: Installation de Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Épinglage de la chaîne de construction
-        run: node tools/build-reference-image/verify-pinning.mjs
-
-      # Mesures d'espace disque (#73). Le quota OPFS que Chromium accorde à une origine est dérivé de
-      # l'espace RÉELLEMENT libre du disque ; une écriture OPFS courte en CI et jamais en local pose
-      # donc d'abord la question de la place restante. Ces mesures la documentent à chaque étape et
-      # partent avec les artefacts. Elles n'échouent jamais : elles n'ont rien à décider.
-      - name: Espace disque au départ
-        run: node tools/mesure-espace-disque.mjs --etape depart
-
-      - name: Construction de l'image de référence
-        run: npm run image:build
-
-      - name: Espace disque après construction de l'image
-        run: node tools/mesure-espace-disque.mjs --etape apres-image-build
+      - name: Récupération de l'image construite
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: image-de-reference
+          path: artifacts/reference-image
 
       - name: Récupération vérifiée des artefacts v86
         run: npm run vm:fetch
 
+      # Mesures d'espace disque (#73), PAR LOT : le quota OPFS que Chromium accorde à une origine est
+      # dérivé de l'espace RÉELLEMENT libre du disque de l'exécutant du lot. Le journal porte le
+      # numéro du lot pour que la fusion n'écrase pas celui de l'autre (seul fichier que les deux
+      # lots auraient sinon écrit sous le même nom — les rapports de scénario, eux, sont déjà
+      # distincts par construction). Elles n'échouent jamais : elles n'ont rien à décider.
       - name: Espace disque avant les scénarios
-        run: node tools/mesure-espace-disque.mjs --etape avant-e2e
+        run: >-
+          node tools/mesure-espace-disque.mjs --etape avant-e2e --journal
+          "reports/e2e/espace-disque-lot-${VAULT_E2E_LOT}.jsonl"
 
-      # Le suivi tourne PENDANT les scénarios (#73) : une mesure avant et une après ne disent rien
-      # d'une ressource qui s'épuise au milieu, et c'est au milieu que l'écriture OPFS est refusée.
-      # Le code de sortie des scénarios est celui de l'étape — le suivi n'a pas le droit de le
-      # masquer, ni en le remplaçant par le sien, ni en faisant échouer l'étape à sa place.
-      # `VAULT_E2E_EXIGER` ferme le VERT PAR VACUITÉ (#163). Cette recette construit l'image de
-      # référence et récupère les artefacts v86 : elle n'a donc aucune raison de voir un scénario
-      # s'ignorer, et un scénario ignoré est un défaut de RECETTE, pas un scénario indisponible.
-      # Elle a rendu « 8 passed, 1 skipped » sur la PR #171 sans dire lequel ni pourquoi ; sous
-      # cette variable, chaque préalable absent est un échec qui NOMME ce qui manque.
-      - name: Reprise MVP (E2E)
+      # `VAULT_E2E_EXIGER` ferme le VERT PAR VACUITÉ (#163) : cette recette a construit l'image de
+      # référence et récupéré les artefacts v86, elle n'a donc aucune raison de voir un scénario
+      # s'ignorer. `VAULT_E2E_FICHIERS` restreint Playwright aux scénarios du lot.
+      - name: Reprise MVP (E2E) — lot ${{ matrix.lot }}
         env:
           VAULT_E2E_EXIGER: "1"
+          VAULT_E2E_FICHIERS: ${{ matrix.fichiers }}
         run: |
-          echo "[reprise] ouvriers Playwright : $VAULT_E2E_WORKERS"
+          echo "[reprise] lot $VAULT_E2E_LOT, ouvriers Playwright : $VAULT_E2E_WORKERS"
           node tools/mesure-espace-disque.mjs --etape pendant-e2e --suivre 5 \
-            --journal reports/e2e/espace-pendant-e2e.jsonl &
+            --journal "reports/e2e/espace-pendant-e2e-lot-${VAULT_E2E_LOT}.jsonl" &
           suivi=$!
           set +e
-          npm run test:e2e -- --workers="$VAULT_E2E_WORKERS"
+          npm run test:e2e -- --workers="$VAULT_E2E_WORKERS" $VAULT_E2E_FICHIERS
           code=$?
           kill "$suivi" 2>/dev/null || true
           wait "$suivi" 2>/dev/null || true
@@ -147,7 +196,62 @@ jobs:
 
       - name: Espace disque après les scénarios
         if: always()
-        run: node tools/mesure-espace-disque.mjs --etape apres-e2e
+        run: >-
+          node tools/mesure-espace-disque.mjs --etape apres-e2e --journal
+          "reports/e2e/espace-disque-lot-${VAULT_E2E_LOT}.jsonl"
+
+      - name: Mesures du lot
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mesures-reprise-lot-${{ matrix.lot }}
+          path: |
+            reports/e2e/
+            blob-report/
+          if-no-files-found: warn
+          retention-days: 30
+
+  fusion:
+    name: Fusionner les mesures et le rapport des deux lots
+    needs: [image, reprise]
+    # `always()` : un lot rouge ne doit pas priver la PR du rapport qui daterait son échec (§ DATER
+    # un échec, docs/testing.md). `needs.image.result` évite de fusionner du vide quand `image` a été
+    # ignoré (déclencheur non pertinent) ou a échoué — auquel cas aucun lot n'a même démarré.
+    if: >-
+      always() && needs.image.result == 'success' && (github.event_name != 'pull_request' ||
+      github.event.action != 'labeled' || github.event.label.name == 'recette')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installation de Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      # Les deux artefacts de lot sont fusionnés à plat (`merge-multiple`) : aucun nom ne s'y heurte,
+      # par construction — les rapports de scénario sont uniques par lot, et les journaux d'espace
+      # disque portent déjà le numéro du lot.
+      - name: Récupération des mesures des deux lots
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          pattern: mesures-reprise-lot-*
+          path: lots
+          merge-multiple: true
+
+      - name: Rapport Playwright fusionné (blob → HTML)
+        if: always()
+        run: npx playwright merge-reports --reporter=html,github ./lots/blob-report
+
+      - name: Remise en place du dossier attendu par la documentation
+        if: always()
+        run: mkdir -p reports && mv lots/reports/e2e reports/e2e
 
       - name: Mesures
         if: always()
