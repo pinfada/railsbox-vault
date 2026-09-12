@@ -1,0 +1,30 @@
+/* Feuille de style de l'application de référence.
+ *
+ * Elle n'a pas de prétention graphique : elle existe pour qu'une PAGE ait une
+ * sous-ressource de style, donc une requête de plus à relayer, et pour qu'un
+ * relais qui rendrait le mauvais type de contenu se voie — une feuille servie
+ * sous `text/html` n'est pas appliquée par le navigateur, et la couleur de fond
+ * ci-dessous est ce que l'épreuve relit. */
+:root {
+  color-scheme: light;
+}
+
+body {
+  background: #f4f4ef;
+  color: #1b1b1b;
+  font-family: system-ui, sans-serif;
+  margin: 1.5rem;
+}
+
+header {
+  border-bottom: 1px solid #cfcfc4;
+  padding-bottom: 0.5rem;
+}
+
+#notes li {
+  margin: 0.25rem 0;
+}
+
+#refus {
+  color: #8a1c1c;
+}

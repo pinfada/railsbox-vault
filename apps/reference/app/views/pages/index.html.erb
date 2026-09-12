@@ -1,0 +1,22 @@
+<h2>Notes</h2>
+
+<% if @refus %>
+  <p id="refus" role="alert"><%= @refus %></p>
+<% end %>
+
+<%# Un formulaire ORDINAIRE : méthode POST, jeton anti-CSRF, et rien d'autre.
+    C'est ce que `form_with` produit sans configuration, et c'est ce que le
+    relais doit franchir sans que l'application sache qu'elle est relayée. %>
+<%= form_with url: notes_path, method: :post, id: "formulaire-note" do |f| %>
+  <%= f.label :libelle, "Libellé" %>
+  <%= f.text_field :libelle, id: "libelle" %>
+  <%= f.submit "Enregistrer", id: "enregistrer" %>
+<% end %>
+
+<ul id="notes">
+  <% @notes.each do |note| %>
+    <li><a href="<%= note_path(note) %>" data-note="<%= note.id %>"><%= note.label %></a></li>
+  <% end %>
+</ul>
+
+<p id="compte-notes"><%= @notes.size %></p>
