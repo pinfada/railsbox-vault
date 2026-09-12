@@ -191,6 +191,15 @@ export async function acquerirRuntime(runtime) {
 }
 
 /** Écritures du guest exigées avant d'annoncer une mutation. Une seule ne prouverait pas grand-chose. */
+/**
+ * Ce qu'une requête HTTP reçoit quand la session de l'application est déjà fermée (#192).
+ *
+ * Elle est EXPORTÉE parce qu'une épreuve doit pouvoir l'exiger mot pour mot : un message de refus
+ * qu'on relit « à peu près » est un message qu'on finit par changer sans s'en apercevoir.
+ */
+export const MOTIF_DE_SESSION_FERMEE =
+  "La session de l'application est fermée : plus aucune requête ne la traverse.";
+
 const ECRITURES_AVANT_COUPURE = 8;
 
 /**
@@ -323,6 +332,19 @@ async function deroulerBootEtInvariant({
         fermee = fermerLeMontage({ montage, guet, capturerApres: capturer ? capturerApres : null });
         return fermee;
       },
+      // La SEULE porte HTTP d'une session gardée ouverte (#192). Elle rend ce que Rails a répondu,
+      // découpé, et rien d'autre : ni la session, ni l'émulateur, ni le journal du guest. Le relais
+      // du Worker de confiance et le banc de mesure empruntent celle-ci et pas une autre.
+      //
+      // Elle refuse APRÈS la fermeture plutôt que de jeter depuis les entrailles de v86 : un guest
+      // arrêté ne répond pas, et « le pont n'a pas répondu en 120 s » décrirait une lenteur là où il
+      // s'agit d'un ORDRE. Ce module ne nomme aucun code — il appartient à `src/vm/`, qui ne connaît
+      // pas la coquille —, et c'est son appelant qui traduit : le Worker de confiance refuse la
+      // requête bien avant, sur l'absence de session, et ne tombe ici qu'à la course.
+      requeteHttp: (methode, chemin, reglages = {}) =>
+        fermee !== null
+          ? Promise.reject(new Error(MOTIF_DE_SESSION_FERMEE))
+          : montage.session.request(methode, chemin, reglages),
     };
   }
   const capture = await fermerLeMontage({ montage, guet, capturerApres });
@@ -627,7 +649,10 @@ export async function bootEtVerifier(options) {
     deroule,
     timeline,
   });
-  // `fermer` est une FONCTION : `sansCapacite` la refuse, et c'est voulu. Elle ne peut donc pas
-  // franchir un port par inadvertance — la poignée de fermeture reste du côté qui tient le handle.
-  return deroule.fermer === null ? compteRendu : { ...compteRendu, fermer: deroule.fermer };
+  // `fermer` et `requeteHttp` sont des FONCTIONS : `sansCapacite` les refuse, et c'est voulu. Elles
+  // ne peuvent donc pas franchir un port par inadvertance — la poignée de fermeture et la porte HTTP
+  // restent du côté qui tient le handle, par construction et non par discipline.
+  return deroule.fermer === null
+    ? compteRendu
+    : { ...compteRendu, fermer: deroule.fermer, requeteHttp: deroule.requeteHttp };
 }

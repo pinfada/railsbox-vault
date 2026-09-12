@@ -65,6 +65,7 @@ import {
   phaseResumeInstantane,
 } from "./reference-worker-phases-boot.mjs";
 import { phaseMigrate } from "./reference-worker-phases-migration.mjs";
+import { phaseMesureRelais } from "./reference-worker-phases-relais.mjs";
 import {
   phaseCleanup,
   phaseDigestVolume,
@@ -100,6 +101,7 @@ const PHASES = new Map([
   ["archive-file", phaseArchiveFile],
   ["import", phaseImport],
   ["migrate", phaseMigrate],
+  ["mesure-relais", phaseMesureRelais],
   ["enveloppe-creer", phaseEnveloppeCreer],
   ["enveloppe-remplacer", phaseEnveloppeRemplacer],
   ["enveloppe-ouvrir", phaseEnveloppeOuvrir],

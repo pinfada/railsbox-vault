@@ -230,8 +230,19 @@ export function creerAssembleurReponses() {
 /**
  * Sépare une réponse HTTP brute en statut, en-têtes et corps.
  *
+ * Deux vues des en-têtes sont rendues, et la seconde n'est pas un confort :
+ *
+ *  - `entetes` est la TABLE, un nom vers une valeur. Elle est commode et elle PERD ce qui se
+ *    répète : deux `Set-Cookie` s'y écrasent l'un l'autre, et le premier disparaît sans un mot ;
+ *  - `entetesRepetees` est la LISTE, dans l'ordre d'arrivée, avec ses doublons. C'est elle que lit
+ *    tout ce qui a besoin d'un en-tête RÉPÉTABLE — le bocal de cookies du relais (#192) en premier.
+ *
+ * La table n'a pas changé de forme : ce qui la lisait continue de la lire. Ce qui est neuf est
+ * qu'une information qu'elle écrasait n'est plus perdue AVANT que quiconque puisse la demander.
+ *
  * @param {Uint8Array} octets
- * @returns {{ statut: number, message: string, entetes: Record<string, string>, corps: Uint8Array }}
+ * @returns {{ statut: number, message: string, entetes: Record<string, string>,
+ *             entetesRepetees: [string, string][], corps: Uint8Array }}
  */
 export function decouperReponseHttp(octets) {
   const separation = indexDeSeparation(octets);
@@ -244,16 +255,22 @@ export function decouperReponseHttp(octets) {
 
   /** @type {Record<string, string>} */
   const entetes = {};
+  /** @type {[string, string][]} */
+  const entetesRepetees = [];
   for (const ligne of lignesEntetes) {
     const position = ligne.indexOf(":");
     if (position === -1) continue;
-    entetes[ligne.slice(0, position).trim().toLowerCase()] = ligne.slice(position + 1).trim();
+    const nom = ligne.slice(0, position).trim().toLowerCase();
+    const valeur = ligne.slice(position + 1).trim();
+    entetes[nom] = valeur;
+    entetesRepetees.push([nom, valeur]);
   }
 
   return {
     statut: Number.parseInt(correspondance[1], 10),
     message: correspondance[2],
     entetes,
+    entetesRepetees,
     corps: octets.subarray(separation + 4),
   };
 }
