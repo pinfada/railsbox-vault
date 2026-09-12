@@ -92,6 +92,13 @@ const rapport = {
   application: null,
   /** Ce que la fermeture propre a rendu : le compte rendu de capture, et rien de l'instantané. */
   fermeture: null,
+  /**
+   * Ce que le RELAIS HTTP a fait (#192, ADR 0038). Quatre COMPTES, et pas un octet de ce qui a
+   * transité : la coquille courtise le trafic de l'application, elle ne le lit pas. `octetsRendus`
+   * mesure le base64 rendu au cadre — c'est ce que la frontière a réellement fait franchir, et donc
+   * ce que `docs/quality-attributes.md` publie.
+   */
+  relais: { demandees: 0, servies: 0, abandonnees: 0, octetsRendus: 0 },
   // Les refus sont COMPTÉS par code, jamais recopiés (revue de la PR #166).
   refusDAnnonce: {},
   refusDeRequete: {},

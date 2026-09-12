@@ -8,12 +8,18 @@
 //
 // ## Ce que le relevé a trouvé, geste par geste
 //
-// `apps/reference` est une application `ActionController::API` de deux routes JSON, sans session,
-// sans cookie, sans gabarit et SANS UNE LIGNE DE JAVASCRIPT (`apps/reference/config/routes.rb`,
-// `apps/reference/app/controllers/vault_controller.rb`). Elle ne demande donc rien à la coquille
-// par elle-même : ce que le relevé mesure, ce sont les gestes dont les SCÉNARIOS ont besoin pour
-// qu'un document encadré serve à quelque chose. Ils sont deux, et un troisième candidat a été
-// examiné puis écarté.
+// **Le relevé de #161** partait d'un fait : `apps/reference` était une application
+// `ActionController::API` de deux routes JSON, sans session, sans cookie, sans gabarit et sans une
+// ligne de JavaScript. Elle ne demandait donc rien à la coquille par elle-même, et les DEUX gestes
+// admis étaient ceux dont les SCÉNARIOS avaient besoin. Trois candidats ont été examinés puis
+// écartés, et ils le restent.
+//
+// **#192 a changé le fait, et ajoute donc un troisième geste.** L'application porte désormais une
+// surface HTML — un document, trois sous-ressources, un formulaire, une redirection et un cookie de
+// session (`apps/reference/app/controllers/pages_controller.rb`) —, et cette surface est rendue par
+// le GUEST, dans une machine virtuelle que seul le Worker de confiance atteint. Le cadre ne peut
+// donc rien afficher sans demander : c'est `requeteHttp`, et son usage est cité comme les autres.
+// La liste reste COURTE, et `tests/unit/coquille-admission.test.mjs` la borne à trois.
 //
 // ## Une identité d'application n'existe pas ici
 //
@@ -26,6 +32,7 @@ import {
   TYPES_APPLICATIFS,
   correlationAdmise,
   decoderMessage,
+  estTypeDeRelais,
   estTypePrivilegie,
   typeRendu,
 } from "./contrat-de-messages.mjs";
@@ -55,6 +62,26 @@ export const GESTES_ADMIS = Object.freeze([
     motif:
       "un document applicatif ne peut rien rendre d'utile avant que le volume soit ouvert : sans " +
       "cette réponse, il ne lui reste qu'à essayer et à échouer devant l'utilisateur.",
+  }),
+  Object.freeze({
+    type: TYPES_APPLICATIFS.requeteHttp,
+    geste: "demander au guest ce qu'il rend sur un chemin HTTP, et recevoir sa réponse",
+    usage: Object.freeze([
+      "public/service-worker-du-cadre.mjs:71 › « event.respondWith(servirParLeCourtier(" +
+        "event.request, url)); » — le seul émetteur de PRODUIT : le Service Worker de la coquille " +
+        "de cadre intercepte ce que le document servi demande, et n'a aucune autre voie vers le " +
+        "guest, qui n'est joignable que depuis le Worker de confiance",
+      'tests/e2e/parcours-page-rails.spec.mjs:304 › « toHaveText("Application de référence") » — ' +
+        "le scénario exige que le cadre porte ce que RAILS rend, et non une place tenante",
+      'tests/e2e/parcours-page-rails.spec.mjs:323 › « await servie.locator("#enregistrer")' +
+        ".click(); » — et qu'un formulaire SOUMIS dans cette page crée une note que le boot à " +
+        "froid relit",
+    ]),
+    motif:
+      "l'application de référence n'est pas servie par l'origine applicative : elle est rendue par " +
+      "le guest, dans une machine virtuelle que seul le Worker de confiance atteint. Sans ce " +
+      "geste, le cadre ne peut afficher AUCUNE page métier, et l'étape 4 du cycle de vie encadre " +
+      "une place tenante — ce qu'elle a fait de #163 à #192.",
   }),
   Object.freeze({
     type: TYPES_APPLICATIFS.barriere,
@@ -178,7 +205,9 @@ const REFUSES = Object.freeze(new Map(GESTES_REFUSES.map(({ type, code }) => [ty
  * POUSSE. Une application qui la posterait vers la coquille demande quelque chose que personne ne
  * sert, et tombe donc sur le refus générique.
  */
-const REQUETES_ADMISES = Object.freeze(new Set([TYPES_APPLICATIFS.etat]));
+const REQUETES_ADMISES = Object.freeze(
+  new Set([TYPES_APPLICATIFS.etat, TYPES_APPLICATIFS.requeteHttp]),
+);
 
 /** @param {string} type */
 export function estGesteAdmis(type) {
@@ -194,6 +223,18 @@ export function estGesteAdmis(type) {
  * est un champ que la version suivante lira par accident.
  */
 const CHAMPS_DUNE_REQUETE = Object.freeze(["contrat", "version", "type", "correlation"]);
+
+/**
+ * Les champs SUPPLÉMENTAIRES qu'un type admis a le droit de porter, par type (#192).
+ *
+ * La liste close reste close : ce qui change est qu'elle dépend désormais du TYPE. Un champ
+ * `methode` sur une question d'état est refusé exactement comme il l'était avant ; il n'est admis
+ * que là où il veut dire quelque chose. La table est écrite ici, à côté de la liste d'admission,
+ * plutôt que dans le module de relais : c'est l'admission qui décide de ce qui entre.
+ */
+const CHAMPS_PAR_TYPE = Object.freeze({
+  [TYPES_APPLICATIFS.requeteHttp]: Object.freeze(["methode", "chemin", "entetes", "corps"]),
+});
 
 /**
  * Décide du sort d'un message reçu sur le port restreint. Trois issues, jamais un silence :
@@ -220,32 +261,9 @@ export function evaluerRequete(valeur) {
   }
   const { type, message } = decode;
   const correlation = correlationAdmise(message.correlation);
-  if (REFUSES.has(type)) {
-    return { admise: false, code: REFUSES.get(type), recu: typeRendu(type), correlation };
-  }
-  if (estTypePrivilegie(type)) {
-    return {
-      admise: false,
-      code: CODES_REFUS_COQUILLE.portPrivilegie,
-      recu: typeRendu(type),
-      correlation,
-    };
-  }
-  if (!REQUETES_ADMISES.has(type)) {
-    return {
-      admise: false,
-      code: CODES_REFUS_COQUILLE.typeInconnu,
-      recu: typeRendu(type),
-      correlation,
-    };
-  }
-  if (!formeExacte(message)) {
-    return {
-      admise: false,
-      code: CODES_REFUS_COQUILLE.messageMalforme,
-      recu: typeRendu(type),
-      correlation,
-    };
+  const refus = refusDuType(type, message);
+  if (refus !== null) {
+    return { admise: false, code: refus, recu: typeRendu(type), correlation };
   }
   if (correlation === null) {
     return {
@@ -259,6 +277,37 @@ export function evaluerRequete(valeur) {
 }
 
 /**
+ * Le CODE que ce type appelle, ou `null` quand la requête est servable.
+ *
+ * L'ordre est le contrat, et il ne se réordonne pas :
+ *
+ *  1. les DIX gestes refusés, chacun sous son code — c'est la liste de l'issue #24 ;
+ *  2. le canal PRIVILÉGIÉ, refusé nommément : le réclamer depuis l'origine applicative est la
+ *     tentative la plus évidente, et elle mérite son propre refus ;
+ *  3. le canal de RELAIS (#192), de la même famille : une application qui pose
+ *     `vault.relais.requete` sur le port restreint essaie de parler au Worker de confiance sans
+ *     passer par la coquille. Le laisser tomber dans « type inconnu » rendrait cette tentative
+ *     indiscernable d'une faute de frappe ;
+ *  4. tout ce qui n'est pas admis en requête ;
+ *  5. la FORME du message, jugée en dernier parce qu'elle suppose un type déjà admis.
+ *
+ * Rien ici ne consulte le moindre ÉTAT : deux appareils dans des états différents rendent le même
+ * code pour le même type, et l'épreuve le vérifie sur l'arité de `evaluerRequete`.
+ *
+ * @param {string} type
+ * @param {Record<string, unknown>} message
+ * @returns {string | null}
+ */
+function refusDuType(type, message) {
+  if (REFUSES.has(type)) return REFUSES.get(type);
+  if (estTypePrivilegie(type)) return CODES_REFUS_COQUILLE.portPrivilegie;
+  if (estTypeDeRelais(type)) return CODES_REFUS_COQUILLE.canalDeRelaisRefuse;
+  if (!REQUETES_ADMISES.has(type)) return CODES_REFUS_COQUILLE.typeInconnu;
+  if (!formeExacte(message)) return CODES_REFUS_COQUILLE.messageMalforme;
+  return null;
+}
+
+/**
  * Une requête admise ne porte AUCUN champ hors du contrat.
  *
  * L'absence d'un champ attendu n'est pas jugée ici : la corrélation manquante a son propre refus,
@@ -266,7 +315,8 @@ export function evaluerRequete(valeur) {
  * pour un message parfaitement lisible auquel il manque une chose nommée.
  */
 function formeExacte(message) {
-  return Object.keys(message).every((champ) => CHAMPS_DUNE_REQUETE.includes(champ));
+  const admis = [...CHAMPS_DUNE_REQUETE, ...(CHAMPS_PAR_TYPE[message.type] ?? [])];
+  return Object.keys(message).every((champ) => admis.includes(champ));
 }
 
 /**

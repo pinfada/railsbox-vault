@@ -72,6 +72,14 @@ export function creerVerrouillageEtFinsDOnglet({ rapport, publier, terminer, pon
     pont.cycle.constaterLaMort(conduite.cause, {
       offrirLeGesteQuiRouvre: conduite.gesteQuiRouvreOffert,
     });
+    // Le CADRE est retiré ICI, avant le rechargement (#192).
+    //
+    // Le rechargement l'emportait déjà — c'est ce que l'ADR 0031 décide —, mais il a lieu au tour de
+    // boucle suivant, et entre les deux le cadre reste peint et le relais reste en vol. Tant que
+    // celui-ci ne servait qu'une question d'état, l'écart ne se voyait pas ; depuis que le cadre
+    // porte ce que Rails rend, il vaut une page métier affichée après le verrouillage. Le retrait
+    // est donc un geste du verrouillage, et non une conséquence du rechargement.
+    pont.frontiere.retirerLeCadre();
     if (departDuVerrouillage !== null) {
       rapport.mesures.verrouillageMs =
         Math.round((performance.now() - departDuVerrouillage) * 10) / 10;

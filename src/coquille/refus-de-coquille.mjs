@@ -164,6 +164,57 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * revue de sécurité de la PR #171).
    */
   volumeApplicatifSansManifeste: "VAULT_COQUILLE_VOLUME_APPLICATIF_SANS_MANIFESTE",
+
+  // --- Le RELAIS HTTP vers l'application du guest (#192, ADR 0038) -----------------------------
+  /**
+   * Une requête a été relayée alors qu'aucune application ne TOURNE.
+   *
+   * Il se distingue de `applicationAbsente` comme `verrouille` se distingue d'`indisponible` :
+   * l'un dit « cette origine ne sert aucune application », l'autre « celle-ci n'est pas démarrée ».
+   * Le premier appelle un autre déploiement, le second un geste de l'utilisateur — et le cadre, qui
+   * n'a pas de bouton, doit pouvoir distinguer les deux pour dire à l'utilisateur ce qu'il attend.
+   *
+   * C'est aussi lui que le cadre reçoit AVANT le premier démarrage, et c'est ce qui rend l'épreuve
+   * rouge de cette tranche mesurable sans machine virtuelle : hier le cadre recevait
+   * `VAULT_COQUILLE_TYPE_INCONNU` — « je ne sais pas de quoi tu parles » —, aujourd'hui il reçoit
+   * « je sais, et il n'y a rien à servir ».
+   */
+  applicationNonDemarree: "VAULT_COQUILLE_APPLICATION_NON_DEMARREE",
+  /**
+   * La requête relayée n'a pas la forme que `relais-http.mjs` admet : méthode hors liste, chemin qui
+   * n'est pas un chemin, en-tête illisible, corps qui n'est pas du base64 ou qui franchit le
+   * plafond.
+   *
+   * Un seul code pour cinq causes, et c'est délibéré : à la différence des dix gestes refusés, ces
+   * cinq-là ne sont pas des DEMANDES distinctes qu'un adversaire formule — ce sont cinq façons
+   * d'écrire mal la même demande. Les distinguer apprendrait à qui tâtonne quelle borne il vient de
+   * franchir, et le relevé de la coquille compte déjà les refus par code.
+   */
+  requeteHttpRefusee: "VAULT_COQUILLE_REQUETE_HTTP_REFUSEE",
+  /**
+   * La réponse du guest franchit `PLAFOND_CORPS_DE_REPONSE_OCTETS`.
+   *
+   * Elle n'est pas tronquée : une réponse tronquée est une réponse FAUSSE, que le cadre rendrait
+   * comme si elle était entière. Elle est refusée, et le refus dit laquelle.
+   */
+  reponseHttpTropGrande: "VAULT_COQUILLE_REPONSE_HTTP_TROP_GRANDE",
+  /**
+   * La réponse est arrivée APRÈS que la coquille a cessé de servir — verrouillage, mort du Worker,
+   * fin d'onglet.
+   *
+   * Elle n'est jamais rendue au cadre, et c'est le point : le verrouillage retire le cadre, et une
+   * réponse en vol qui le rattraperait dessinerait des pixels du coffre après sa fermeture. Ce code
+   * existe pour que l'ABANDON soit compté et observable plutôt que silencieux.
+   */
+  relaisAbandonne: "VAULT_COQUILLE_RELAIS_ABANDONNE",
+  /**
+   * Un type du CANAL DE RELAIS a été posé ailleurs que sur le canal de relais.
+   *
+   * Même nature que `portPrivilegie` : la coquille refuse NOMMÉMENT la tentative la plus évidente
+   * plutôt que de la laisser tomber dans « type inconnu ». Trois vocabulaires, trois canaux, et
+   * aucun ne se parle sur celui d'un autre.
+   */
+  canalDeRelaisRefuse: "VAULT_COQUILLE_CANAL_DE_RELAIS_REFUSE",
 });
 
 /** Les messages en français, un par code. Ils décrivent le REFUS, jamais l'état de l'appareil. */
@@ -217,6 +268,16 @@ const MESSAGES = Object.freeze({
     "Une capacité exigée manque à ce navigateur : la coquille le dit plutôt que de l'inventer.",
   [CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste]:
     "Un volume applicatif existe sans manifeste : la coquille refuse de l'écraser pour installer.",
+  [CODES_REFUS_COQUILLE.applicationNonDemarree]:
+    "L'application n'est pas démarrée : il n'y a rien à servir tant que le coffre n'a pas été ouvert et l'application lancée.",
+  [CODES_REFUS_COQUILLE.requeteHttpRefusee]:
+    "Requête relayée refusée : sa méthode, son chemin, ses en-têtes ou son corps sortent de ce que le relais admet.",
+  [CODES_REFUS_COQUILLE.reponseHttpTropGrande]:
+    "Réponse trop grande pour le relais : elle est refusée entière plutôt que rendue tronquée.",
+  [CODES_REFUS_COQUILLE.relaisAbandonne]:
+    "Réponse abandonnée : la coquille avait cessé de servir avant qu'elle n'arrive.",
+  [CODES_REFUS_COQUILLE.canalDeRelaisRefuse]:
+    "Le canal de relais coquille ↔ Worker n'est atteignable par aucun message du port restreint.",
 });
 
 /** Tous les codes, triés. Sert au cliquet d'exhaustivité et aux épreuves. */
