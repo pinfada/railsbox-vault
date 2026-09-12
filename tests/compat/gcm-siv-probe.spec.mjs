@@ -147,10 +147,14 @@ test.describe("spike #185 — AES-GCM-SIV dans WebCrypto", () => {
         const entree = par.get(identifiant);
         expect(entree, `${identifiant} absent du rapport (${contexte})`).toBeDefined();
         expect(entree.detail.trim(), `détail vide pour ${identifiant} (${contexte})`).not.toBe("");
+        // `unsupported` et non « pas supported » : le tableau publié affirme que le refus est de
+        // la BONNE NATURE — `NotSupportedError`, c'est-à-dire « cet algorithme n'existe pas ici ».
+        // Une assertion en négatif laissait passer un `error`, donc un moteur qui implémenterait
+        // SIV en refusant à l'import pour une autre raison (revue de la PR #202, LOW 4).
         expect(
           entree.verdict,
-          `${identifiant} n'est plus refusé sous ${browserName} (${contexte}) : ${entree.detail} — le verdict du spike #185 est à rouvrir`,
-        ).not.toBe("supported");
+          `${identifiant} sous ${browserName} (${contexte}) : ${entree.detail} — si le refus n'est plus un NotSupportedError, le verdict du spike #185 est à rouvrir`,
+        ).toBe("unsupported");
       }
 
       // Et la voie sans dépendance reste ouverte : AES-CTR est là, partout.
