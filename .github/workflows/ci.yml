@@ -105,3 +105,39 @@ jobs:
           path: playwright-report/
           if-no-files-found: ignore
           retention-days: 7
+
+  mutations:
+    name: Campagnes de mutation
+    runs-on: ubuntu-latest
+    # Job séparé plutôt que branché dans `npm run check` (#196) : les onze campagnes
+    # (`tools/muter-gardes-*.mjs`, lancées en séquence par `tools/rejouer-les-campagnes.mjs`) ont
+    # mesuré entre 5 min 24 s et 8 min 17 s sur un poste de développement selon la charge — largement
+    # au-dessus du seuil de 5 min posé par le superviseur pour les brancher directement dans `check`.
+    # Aucune image ni VM ici : chaque campagne ne joue que `node --test` sur des fonctions pures de
+    # `src/`, jamais un navigateur ni v86. Quinze minutes laissent une marge proche du double de la
+    # mesure la plus lente observée, sur le même principe que la marge du job « Qualité et tests ».
+    timeout-minutes: 15
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Installation de Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Campagnes de mutation
+        run: npm run check:mutations
+
+      - name: Table des campagnes
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: campagnes-de-mutation
+          path: reports/mutations.json
+          if-no-files-found: warn
+          retention-days: 30
