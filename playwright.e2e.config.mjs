@@ -65,10 +65,26 @@ export default defineConfig({
   outputDir: "test-results/e2e",
   // `list` est AJOUTÉ en intégration continue, et c'est la correction d'un défaut de lisibilité qui
   // a coûté cher : la recette a rendu « 8 passed, 1 skipped » sans dire lequel ni pourquoi, et le
-  // scénario ignoré était celui que la tranche livrait. Les rapporteurs `html` et `github`
-  // n'impriment pas la sortie standard d'un scénario ; `list` le fait, et c'est par elle que
+  // scénario ignoré était celui que la tranche livrait. Le rapporteur `github`
+  // n'imprime pas la sortie standard d'un scénario ; `list` le fait, et c'est par elle que
   // `exigerLesPrealables` nomme ce qui manque.
-  reporter: process.env.CI ? [["list"], ["html", { open: "never" }], ["github"]] : "list",
+  // `blob`, pas `html` (#200) : la recette répartit les scénarios en deux lots (`reprise.yml`), et
+  // chaque lot tourne sur son propre exécutant. Un `html` par lot ne servirait à rien — seul le
+  // rapport FUSIONNÉ des deux compte —, alors que `blob` est le format que `playwright
+  // merge-reports` sait combiner en un seul rapport HTML. `VAULT_E2E_LOT`, posé par le job du lot,
+  // évite que les deux processus écrivent le même fichier avant la fusion.
+  reporter: process.env.CI
+    ? [
+        ["list"],
+        ["github"],
+        [
+          "blob",
+          {
+            outputFile: `blob-report/${process.env.VAULT_E2E_LOT ? `rapport-lot-${process.env.VAULT_E2E_LOT}` : "rapport"}.zip`,
+          },
+        ],
+      ]
+    : "list",
   use: {
     baseURL: E2E_ORIGIN_A,
     trace: "retain-on-failure",
