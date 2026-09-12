@@ -9,10 +9,10 @@
     <main>
       <h1>Document applicatif</h1>
       <p>
-        En production, ce que la coquille encadre est rendu par le guest et relayé par le proxy (ADR
-        0002) : ce document-ci tient sa place tant que le cycle de vie n'est pas assemblé (tranche
-        3, #163). Il fait ce qu'un document applicatif loyal fait, et rien de plus : il s'annonce,
-        reçoit un port restreint, demande l'état, et écoute les barrières.
+        Ce document est le COURTIER de la coquille de cadre (#192, ADR 0038) : il s'annonce à la
+        coquille, reçoit un port restreint, et relaie vers le guest ce que l'application demande. Ce
+        qu'il encadre ci-dessous est ce que Rails rend, servi à travers ce port et à travers lui
+        seul — jamais par cette origine.
       </p>
       <p id="document-applicatif-etat" role="status">application:demarrage</p>
       <!--
@@ -23,6 +23,12 @@
       <p>
         <button id="document-applicatif-demander" type="button">Demander l'état du coffre</button>
       </p>
+      <!--
+        L'APPLICATION SERVIE prend place ici, dans un cadre imbriqué. Il est imbriqué parce que le
+        port restreint n'est octroyé qu'une fois : ce document ne doit jamais naviguer, sous peine
+        de perdre le seul canal par lequel l'application est jointe.
+      -->
+      <div id="application-servie-emplacement"></div>
       <pre id="document-applicatif-rapport">{}</pre>
     </main>
     <script type="module" src="/document-applicatif.mjs"></script>
