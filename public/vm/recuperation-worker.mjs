@@ -10,6 +10,23 @@
 // barrière du volume, puis le vidage du journal. C'est le chemin qu'un boot à froid emprunte après
 // une coupure.
 //
+// **Depuis #196, le banc ouvre EN V4, avec une fraîcheur RÉELLE (ADR 0019, ADR 0033, ADR 0035).**
+// #186 a fait passer `FORMAT_VOLUME_COURANT` à 4, et `formatEcritSousFraicheur` REFUSE désormais
+// d'écrire une racine sans fraîcheur pour ce format — c'est la garde de `generation-format.mjs` :
+// « un volume v4 qui ne tiendrait aucune fraîcheur est REFUSÉ ». Le banc déclarait `fraicheur: null`
+// pour une raison qui n'existe plus : mesurer sans elle reproduisait le constat #143 pour les octets
+// qu'il écrivait, et le chemin du produit (`opfs-volume-ouverture.mjs`) ne l'a jamais fait. Il ouvre
+// donc désormais sa propre région d'authentification et son propre témoin, sur les MÊMES fonctions
+// (`GardeDeFraicheur`, `construireGarde`) que l'ouvreur du produit — voir `sourceDeFraicheurDuBanc`.
+// Le SEUL écart avec `opfs-generation-voisins.mjs` est que ce banc tient ses handles lui-même, faute
+// d'`OpfsBlockBackend` : il ne chiffre pas la charge qu'il rejoue, ce qui n'a jamais été son sujet.
+//
+// Ce que ce changement AJOUTE à la durée mesurée : le hachage de la région d'authentification de CE
+// volume-ci (`empreinteDeRegion`, proportionnelle à sa taille — 34 octets par secteur logique), et
+// l'écriture du témoin après chaque racine. C'est un coût RÉEL du chemin de production qu'aucune
+// mesure précédente ne portait ; `docs/quality-attributes.md` republie le relevé en v4 en face de
+// celui d'avant #186 pour que la comparaison reste possible.
+//
 // Ce qu'il ne mesure PAS, et qu'il ne faut pas lui faire dire :
 //
 //  - le temps de boot de la VM, explicitement hors budget ;
@@ -31,8 +48,13 @@ import {
   generationJournalName,
   openOpfsSyncAccess,
   removeOpfsVolume,
+  temoinSequenceName,
 } from "/src/vm/opfs-sync-access.mjs";
-import { TRANCHE_REGION_OCTETS, empreinteDeRegion } from "/src/vm/generation-fraicheur.mjs";
+import {
+  TEMOIN_OCTETS,
+  TRANCHE_REGION_OCTETS,
+  empreinteDeRegion,
+} from "/src/vm/generation-fraicheur.mjs";
 import { FORMAT_VOLUME_COURANT, dispositionDuVolume } from "/src/vm/volume-chiffre-format.mjs";
 
 /** Volume jetable du banc. Il est retiré avant et après chaque répétition. */
@@ -58,21 +80,63 @@ async function nettoyer() {
   await removeOpfsVolume(VOLUME);
 }
 
-/** Ouvre les deux fichiers du banc : le volume et son journal voisin. */
+/**
+ * Ouvre les TROIS fichiers du banc : le volume (en-tête + région + charge, disposition de
+ * `dispositionDuVolume`), son journal voisin, et son témoin de séquence (#19).
+ *
+ * Le fichier de volume est alloué à sa taille SUPPORT — celle du produit, en-tête et région
+ * d'authentification compris — et non à la taille logique de la charge : c'est ce qui donne au banc
+ * une vraie région à sceller, à l'échelle de CE volume-ci plutôt qu'à celle du disque applicatif
+ * (que `mesurerFraicheur` mesure séparément, à l'échelle de production).
+ */
 async function ouvrirFichiers(tailleVolume) {
+  const disposition = dispositionDuVolume(tailleVolume);
   const volume = await openOpfsSyncAccess(VOLUME);
-  if (volume.getSize() !== tailleVolume) volume.truncate(tailleVolume);
+  if (volume.getSize() !== disposition.tailleSupport) volume.truncate(disposition.tailleSupport);
   const journal = await openOpfsSyncAccess(generationJournalName(VOLUME));
-  return { volume, journal };
+  const temoin = await openOpfsSyncAccess(temoinSequenceName(VOLUME));
+  return { volume, journal, temoin, disposition };
 }
 
-async function magasinSur({ volume, journal }, tailleVolume, plafondOctets) {
+/**
+ * SOURCE de fraîcheur du banc (#19, ADR 0019, ADR 0033), sur le même contrat que
+ * `sourceDeFraicheur` d'`opfs-generation-voisins.mjs` — la région d'authentification et le témoin.
+ * Le seul écart est que ce banc tient ses propres handles au lieu de ceux d'un `OpfsBlockBackend` :
+ * il n'a pas de couche chiffrée à traverser pour lire la région, qui vit dans le MÊME fichier que la
+ * charge qu'il rejoue.
+ */
+function sourceDeFraicheurDuBanc({ volume, temoin, disposition }) {
+  return {
+    regionOffset: disposition.regionOffset,
+    regionOctets: disposition.regionOctets,
+    lireRegion: async (offset, longueur) => {
+      const cible = new Uint8Array(longueur);
+      volume.read(cible, { at: offset });
+      return cible;
+    },
+    // Un témoin ABSENT est une PREMIÈRE OUVERTURE, jamais une preuve de rien — voir
+    // `generation-fraicheur.mjs`. Un fichier tout juste créé par `openOpfsSyncAccess` est vide.
+    lireTemoin: async () => {
+      if (temoin.getSize() === 0) return null;
+      const octets = new Uint8Array(TEMOIN_OCTETS);
+      const lus = temoin.read(octets, { at: 0 });
+      return lus === TEMOIN_OCTETS ? octets : octets.subarray(0, lus);
+    },
+    ecrireTemoin: async (octets) => {
+      temoin.truncate(0);
+      temoin.write(octets, { at: 0 });
+      temoin.flush();
+    },
+    fermer: () => temoin.close(),
+  };
+}
+
+async function magasinSur({ volume, journal, temoin, disposition }, tailleVolume, plafondOctets) {
   return GenerationStore.ouvrir({
     sansRacine: autorisationDeCreation(),
-    // La fraîcheur de l'ADR 0019 est DÉCLARÉE absente ici, jamais oubliée : ce banc n'ouvre pas
-    // un volume v3 complet, il n'a ni région d'authentification ni voisin où poser un témoin. Le
-    // magasin écrit alors des racines sans empreinte, et son rapport le publie.
-    fraicheur: null,
+    // La fraîcheur RÉELLE du produit (#196) : voir l'en-tête du fichier. `GenerationStore.close()`
+    // rend le handle du témoin par `garde.fermer()`, comme il rend celui du journal.
+    fraicheur: sourceDeFraicheurDuBanc({ volume, temoin, disposition }),
     volume: VOLUME,
     handle: journal,
     tailleVolume,
@@ -88,12 +152,16 @@ async function magasinSur({ volume, journal }, tailleVolume, plafondOctets) {
     // mesurer ce qu'il coûtait, sans quoi le chiffre qui a fait bouger le plafond deviendrait
     // irreproductible dès que le plafond bouge.
     plafondOctets,
+    // La charge vit APRÈS l'en-tête et la région, comme sur le vrai support : deux tailles, et il
+    // ne faut jamais les confondre (`opfs-volume-ouverture.mjs`). `offset` reste l'adresse LOGIQUE
+    // que le magasin manipule ; ce décalage est le seul endroit qui la traduit en position support.
     async lireVolume(offset, longueur) {
       const cible = new Uint8Array(longueur);
-      volume.read(cible, { at: offset });
+      volume.read(cible, { at: offset + disposition.chargeOffset });
       return cible;
     },
-    ecrireVolume: async (offset, octets) => volume.write(octets, { at: offset }),
+    ecrireVolume: async (offset, octets) =>
+      volume.write(octets, { at: offset + disposition.chargeOffset }),
     barriereVolume: () => volume.flush(),
     // Le rangement automatique est DÉSARMÉ : un point de contrôle viderait le journal, et la
     // réouverture n'aurait plus rien à rejouer — c'est-à-dire plus rien à chronométrer.

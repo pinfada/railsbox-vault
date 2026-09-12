@@ -630,6 +630,57 @@ fenêtre glissante avec laquelle le journal est relu ; elle est une constante du
 plafond ne la relèverait pas. Elle est **mesurée du côté du support** — la plus grande lecture qu'il
 reçoit — et non déclarée par le code qu'elle contrôle.
 
+### Le budget tient encore en v4, avec la fraîcheur RÉELLE en plus (#196)
+
+Le banc déclarait `fraicheur: null` — il n'ouvrait ni région d'authentification ni témoin, et le
+relevé ci-dessus ne portait donc que le coût du JOURNAL. #186 a fait passer `FORMAT_VOLUME_COURANT`
+à 4, et `formatEcritSousFraicheur` (`generation-format.mjs`) refuse depuis lors d'écrire une racine
+sans fraîcheur pour ce format : le banc rougissait sur `main` depuis la fusion de #186, repéré par
+le nocturne le lendemain sans qu'aucune CI de PR ne l'ait vu venir. Le remède n'est pas de relâcher
+la garde : c'est le banc qui suivait un chemin que le produit n'a jamais emprunté
+(`opfs-volume-ouverture.mjs` fournit toujours une source de fraîcheur). Il ouvre désormais sa propre
+région et son propre témoin, sur le même contrat que `opfs-generation-voisins.mjs`.
+
+Relevé du **2026-09-12**, `npm run test:vm` (`tests/vm/recuperation-generation.spec.mjs`), OPFS réel
+sous Chromium, même machine de développement — **partagée avec d'autres processus pendant la
+mesure**, ce que l'étendue relative montre plus qu'elle ne le cachait déjà. Série complète dans
+`reports/vm/recuperation-generation.json`.
+
+| Charge rejouée              | Granularité          | Enregistrements |       p50 |           p95 | Échantillons | Étendue relative | Surmémoire de pointe |
+| --------------------------- | -------------------- | --------------: | --------: | ------------: | -----------: | ---------------: | -------------------: |
+| 16 Mio (plafond)            | 64 Kio               |             255 |    346 ms |        436 ms |            7 |             49 % |                1 Mio |
+| 16 Mio (plafond)            | 4 Kio                |           4 046 |  2 059 ms |      2 496 ms |            7 |             45 % |                1 Mio |
+| 16 Mio (plafond)            | **512 o** (pire cas) |          29 852 | 15 446 ms | **16 510 ms** |            5 |             18 % |                1 Mio |
+| **64 Mio** (ancien plafond) | **512 o**            |         119 410 | 64 572 ms |     74 722 ms |            3 |             23 % |                1 Mio |
+
+**Le budget tient, avec plus de trois fois et demie de marge au pire cas.** Le p95 le plus
+défavorable des trois profils confrontés au budget — 512 octets, granularité qui décide depuis #91 —
+vaut **16,5 s contre 60 s**, une marge plus large que celle du relevé du 2026-08-27 (24,7 s) : rien
+ici ne dit que la fraîcheur coûterait plus cher que le bruit d'une machine de développement partagée
+d'un jour à l'autre, et une comparaison chiffre à chiffre entre deux machines, deux jours et deux
+charges d'arrière-plan différentes resterait une opinion. Ce que ce relevé AFFIRME est plus étroit
+et plus sûr : la fraîcheur réelle — hachage de la région d'authentification, écriture du témoin
+après chaque racine — n'a fait basculer AUCUN des trois profils confrontés au budget au-delà de 60
+s, et le pire d'entre eux garde plus de 3,5× de marge.
+
+**Le témoin hors budget dépasse maintenant les 60 s qu'il encadrait déjà (2026-08-27 : p95 59,5
+s).** Attendu : il porte l'ANCIEN plafond de 64 Mio, quatre fois la charge que #91 a retenue, et il
+n'est délibérément confronté à aucun budget — voir l'en-tête de `recuperation-generation.spec.mjs`.
+Le publier reste ce qui distingue la décision de #91 d'une opinion, fraîcheur comprise.
+
+**Ce qui change, et ce qui ne change pas.** Le nombre d'enregistrements par profil a légèrement
+bougé depuis le relevé du 2026-08-27 (255, 4 046, 29 852 ici contre 255, 4 080, 31 775 alors) : le
+surcoût fixe d'un enregistrement (en-tête et sceau) n'a pas varié à cause de la fraîcheur — il vit
+dans `SURCOUT_ENREGISTREMENT`, que ce chantier ne touche pas —, mais il a évolué au fil des formats
+intervenus entre les deux relevés (#143 notamment). Le plafond de charge, lui, N'A PAS bougé : c'est
+toujours `PLAFOND_CHARGE_OCTETS` = 16 Mio (#91), et cette PR ne le révise pas.
+
+**Preuve locale.** `npm run test:vm` joué jusqu'au bout sur cette machine : **20/20**, Chromium,
+Firefox et WebKit compris ; `recuperation-generation.spec.mjs` seule dure **16,9 min** — la
+préparation du témoin (149 à 182 s par répétition, trois répétitions) domine ce budget, pas la
+fraîcheur, dont le coût par racine se mesure en millisecondes (`fraicheur-region-cout.spec.mjs`, sur
+un volume 32× plus grand, reste sous le pour-cent du budget de reprise).
+
 ## Ce que le format de volume coûte RÉELLEMENT (#18, #181, #182)
 
 L'[ADR 0015](decisions/0015-proprietes-cryptographiques-du-format.md) avait chiffré ce que le

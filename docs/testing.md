@@ -1557,6 +1557,18 @@ journal de génération sur un volume OPFS réel jusqu'au plafond de charge, val
 et chronomètre `GenerationStore.ouvrir` — deux passes de relecture du journal, la recopie dans le
 volume, la barrière, le vidage. C'est le chemin qu'un boot à froid emprunte après une coupure.
 
+**Depuis #196, le banc ouvre EN V4, avec une fraîcheur RÉELLE.** Il déclarait `fraicheur: null` — un
+profil délibérément SANS la garde de l'ADR 0019, pour ne mesurer que le journal — jusqu'à ce que
+#186 fasse passer `FORMAT_VOLUME_COURANT` à 4 : `formatEcritSousFraicheur` refuse depuis lors
+d'écrire une racine sans fraîcheur pour ce format, et le banc rougissait sur `main` sans qu'aucune
+CI de PR ne le relève, faute d'être `pull_request` (voir plus bas). Ce profil « sans fraîcheur »
+n'existe plus : le chemin du produit (`opfs-volume-ouverture.mjs`) n'a jamais ouvert ainsi, et le
+mesurer ne disait plus rien de lui. Le banc ouvre désormais sa propre région d'authentification et
+son propre témoin, sur le même contrat que `opfs-generation-voisins.mjs` — ce que cela AJOUTE à la
+durée mesurée (le hachage de la région, l'écriture du témoin après chaque racine) est un coût RÉEL
+du chemin de production que la mesure précédente ne portait pas. Le relevé republié dans
+`docs/quality-attributes.md` compare les deux.
+
 **Ce qu'il ne mesure pas, et qu'il ne faut pas lui faire dire.** La session de préparation FERME
 proprement son handle au lieu d'être tuée : ce banc ne prouve aucune sémantique de coupure, c'est
 `resilience-arrets.spec.mjs` qui le fait sur le même support. Ici seule la DURÉE compte, et le
@@ -1638,6 +1650,15 @@ qu'un CDN tiers est indisponible n'apprend rien sur la PR.
 
 Elle tourne donc dans un job CI dédié et **non bloquant** (`.github/workflows/vm.yml`), déclenché
 manuellement et chaque nuit.
+
+**Depuis #196, elle joue aussi sur toute PR qui touche `src/vm/**`, `public/vm/**`, `tests/vm/**`,
+`vendor/v86/**` ou `playwright.vm.config.mjs`** (`on: pull_request: paths:`), en plus du nocturne et
+du déclenchement manuel. La raison est la régression que #186 a introduite dans un BANC de cette
+suite sans qu'aucune CI de PR ne la relève : le nocturne l'a trouvée un jour après la fusion, et la
+règle de ce paragraphe existait déjà pour `main` — elle manquait pour les PR qui touchent exactement
+ce que la suite éprouve. Le job reste **NON obligatoire** : rien ne change à sa dépendance aux trois
+hôtes tiers ci-dessus, et une PR peut fusionner sans attendre son verdict. Il devient seulement
+VISIBLE sur la PR qui le déclenche, au lieu de n'apparaître que sur le nocturne du lendemain.
 
 Depuis #6 elle porte aussi `tests/vm/opfs-persistence.spec.mjs`, donc une preuve de persistance
 réelle du produit. Depuis #14 elle porte enfin `tests/vm/opfs-barrier.spec.mjs`, qui démontre sur le
