@@ -39,7 +39,7 @@ const ORIGINE = "https://banc-siv.test";
 const CADENCE = {
   essais: Number.parseInt(process.env.VAULT_SPIKE_ESSAIS ?? "7", 10),
   cibleMs: Number.parseInt(process.env.VAULT_SPIKE_CIBLE_MS ?? "60", 10),
-  lotMaximum: Number.parseInt(process.env.VAULT_SPIKE_LOT_MAX ?? "8192", 10),
+  lotMaximum: Number.parseInt(process.env.VAULT_SPIKE_LOT_MAX ?? "262144", 10),
 };
 
 /** Les modules servis, et rien d'autre : une route qui ne les nomme pas rend 404. */
