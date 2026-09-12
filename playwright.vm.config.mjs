@@ -47,7 +47,11 @@ export default defineConfig({
     {
       name: "firefox",
       use: { browserName: "firefox" },
-      testMatch: /boot-trois-moteurs\.spec\.mjs/,
+      // Deux épreuves, et la seconde est une MESURE (#192) : le coût d'une page Rails à travers le
+      // pont série dépend du moteur qui exécute le Worker, et publier ce coût sur Chromium seul
+      // ferait passer un chiffre de moteur pour une propriété du produit. Firefox ouvre l'OPFS ;
+      // WebKit non, et c'est pour cela qu'il ne porte, lui, que le témoin de démarrage.
+      testMatch: /(?:boot-trois-moteurs|mesure-pont-serie-http)\.spec\.mjs/,
     },
     {
       name: "webkit",

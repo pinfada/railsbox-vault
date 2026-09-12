@@ -680,6 +680,9 @@ export async function demarrerLaVm({
     garderLaSessionOuverte: true,
     ouvrirLeVolumeDuGuest: ouvreurSousLEnveloppe({ cleDeVolume }),
   });
-  const { fermer, ...compte } = rendu;
-  return { demarree: true, installation, fermer, compte };
+  // `fermer` et `requeteHttp` sont retirés du compte rendu par DESTRUCTURATION, jamais par oubli :
+  // ce sont des fonctions, `sansCapacite` les refuserait à l'enveloppe, et le compte rendu, lui,
+  // franchit le canal privilégié. Les laisser dedans ferait échouer un boot parfaitement réussi.
+  const { fermer, requeteHttp, ...compte } = rendu;
+  return { demarree: true, installation, fermer, requeteHttp, compte };
 }
