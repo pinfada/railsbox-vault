@@ -154,11 +154,11 @@ ext4 (revue de la PR #211, constat 4 : une comparaison de neuf essais à un seul
 sessions, ne dit rien au-delà de la dispersion de la machine). Les distributions, telles qu'elles
 sont, sans conclusion :
 
-| Chemin, grandeur                                    | ext2                                                                       | ext4 journalisé                                                |
-| --------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| local, E2E `durabilite-du-commit`, `bootMs` à froid | 100,9 s (n = 1, première session de #209)                                  | 81,6–88,1 s (n = 9, implémenteur) ; 81,6–84,0 s (n = 9, revue) |
-| local, banc `mesure-pont-serie-http`, `bootMs`      | 113,2 s (n = 1, `full`/`Disk`) ; 130,8 s (n = 1, `extra`/`DurableDisk`)    | 87,0 s (n = 1)                                                 |
-| CI, recette, lot 1, `santeMs`                       | 71–118 s selon le run (34757240628, 34750287303, 34742171513, 34696982520) | 111–113 s (n = 1 run, 34775718482)                             |
+| Chemin, grandeur                                    | ext2                                                                       | ext4 journalisé                                                                                                                                                                   |
+| --------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| local, E2E `durabilite-du-commit`, `bootMs` à froid | 100,9 s (n = 1, première session de #209)                                  | 81,6–88,1 s (n = 9, implémenteur) ; 81,6–84,0 s (n = 9, revue) ; 98,9–103,6 s (n = 9, après `errors=remount-ro` et le relevé de l'état du disque, rejeu du journal observé aux 9) |
+| local, banc `mesure-pont-serie-http`, `bootMs`      | 113,2 s (n = 1, `full`/`Disk`) ; 130,8 s (n = 1, `extra`/`DurableDisk`)    | 87,0 s (n = 1)                                                                                                                                                                    |
+| CI, recette, lot 1, `santeMs`                       | 71–118 s selon le run (34757240628, 34750287303, 34742171513, 34696982520) | 111–113 s (n = 1 run, 34775718482)                                                                                                                                                |
 
 Dire qu'un système de fichiers boote plus vite exigerait la même image, la même machine et plusieurs
 boots de chaque côté ; ce n'est pas mesuré ici. L'**artefact** garde ses 512 Mio (50 858 045 o par
