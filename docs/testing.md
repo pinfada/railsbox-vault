@@ -197,6 +197,11 @@ volume, datation, manifeste —, puis le boot échoue faute de noyau. C'est exac
 une application installée, et c'est ce que la sauvegarde exige. Que Rails relise une mutation est
 l'objet du scénario de bout en bout, et de lui seul.
 
+**Écart non comblé** : une écriture que Rails vient d'acquitter peut manquer à une sauvegarde prise
+dans les secondes qui suivent : le point de contrôle arrête la VM sans attendre que le noyau du
+guest ait écrit la fin de la transaction, et le scénario de bout en bout attend 45 s avant de
+sauvegarder (mesuré le 13/09/2026 : rouge sans l'attente, vert avec).
+
 **La fixture du coffre antérieur n'est pas fabriquée** : `tools/produire-coffre-anterieur.mjs`
 extrait le commit `bb59de7`, sert SA coquille, y crée un coffre par une phrase dans Chromium, le
 verrouille, et relève les fichiers OPFS qu'elle a laissés. La provenance est écrite dans le JSON.

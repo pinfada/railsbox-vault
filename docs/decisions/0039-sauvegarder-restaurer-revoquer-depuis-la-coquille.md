@@ -208,7 +208,14 @@ n'est publié, le gate « données sensibles » est fermé, et une migration ser
    déverrouillage entre-temps — ne serait plus reconnue, et l'emplacement serait dit occupé.
 4. **Le téléchargement est un geste du navigateur** : ce que l'hôte fait du fichier enregistré
    (synchronisation, sauvegarde système) sort du produit, comme la feuille de récupération imprimée.
-5. **La constante d'identité est publique**, comme elle l'était pour le volume `coquille` : ce qui
+5. **Écart non comblé** : une écriture que Rails vient d'acquitter peut manquer à une sauvegarde
+   prise dans les secondes qui suivent : le point de contrôle arrête la VM sans attendre que le
+   noyau du guest ait écrit la fin de la transaction, et le scénario de bout en bout attend 45 s
+   avant de sauvegarder (mesuré le 13/09/2026 : rouge sans l'attente, vert avec). Le verrouillage
+   suivi d'un boot à froid est probablement exposé au même écart — masqué jusqu'ici par l'instantané
+   —, et ce n'est pas mesuré. Rendre le point de contrôle durable exige que le guest écrive et vide
+   ses tampons avant l'arrêt : c'est `src/vm/` ou l'image, hors de cette tranche (#209).
+6. **La constante d'identité est publique**, comme elle l'était pour le volume `coquille` : ce qui
    protège un coffre est sa clé, pas son nom.
 
 ## Ce que la revue doit attaquer

@@ -1469,6 +1469,13 @@ ouvrier dans le relevé du dessus) : aucune contention, parce que chaque lot a s
 33 min 52 tient sous la fenêtre de 35-40 min visée par #200, sans reprise ajoutée ni scénario retiré
 — les dix passent, sur les deux relevés.
 
+**Depuis #207 (13/09/2026)**, `portabilite-coquille` rejoint le lot 1 — le plus court mesuré ce
+jour-là (25 min), `parcours-page-rails` ayant rejoint le lot 2 avec #192. Il coûte **6,3 min en
+local** (un ouvrier : deux boots de Rails à 101 et 102 s, sauvegarde d'une archive de 546 Mio en 9,1
+s, restauration en 13,2 s, et 45 s d'attente d'écriture du guest avant la sauvegarde — l'écart nommé
+à la limite 5 de l'ADR 0039). Le lot 1 vise donc ≈ 32 min ; la durée mesurée en CI sera publiée ici
+après la première recette.
+
 **Ce que le premier essai du pipeline en lots a raté, et pourquoi ce n'est pas répété.** Le tout
 premier run (34692793350, commit `c105c48`) a rougi sur `reprise-coquille-boot-froid.spec.mjs`
 (lot 2) : `artifacts/application.json` — le descripteur SERVI (ADR 0030), écrit par le même geste
