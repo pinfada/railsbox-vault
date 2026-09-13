@@ -50,11 +50,11 @@ export async function phaseLive(options) {
   // bout en bout, c'est-à-dire par la seule suite qui exige Docker (constat 12 de la revue de la
   // PR #171). Ici le coût est nul : le boot se termine de la même façon, une ligne plus loin.
   //
-  // `fermer` est une FONCTION : elle ne peut pas franchir le `postMessage` qui rend ce compte rendu,
-  // et elle est donc retirée ici — par destructuration, pas par oubli.
-  const { fermer, ...compte } = await bootEtVerifier(
+  // Les deux capacités de session restent dans le Worker : le rapport doit être clonable.
+  const { fermer, requeteHttp, ...compte } = await bootEtVerifier(
     sousLeJetonDuBanc({ ...options, phase: "live", garderLaSessionOuverte: true }),
   );
+  void requeteHttp;
   return { ...compte, capture: await fermer({ capturer: false }) };
 }
 
