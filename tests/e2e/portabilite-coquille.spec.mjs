@@ -48,11 +48,21 @@ const BUDGET_PREMIERE_PAGE_MS = 180_000;
 /** Une archive d'un demi-gibioctet : deux passes d'empreinte à l'écriture, deux à la restauration. */
 const BUDGET_PORTABILITE_MS = 600_000;
 /**
- * L'attente qui laisse le noyau du guest écrire la fin de la transaction avant la sauvegarde. Le
- * noyau Linux vide ses métadonnées sales au plus tard après ~35 s (expiration 30 s, réveil 5 s) ;
- * 45 s laissent la marge. Voir l'écart nommé au § 2 du scénario.
+ * ATTENTE TEMPORAIRE, retirée par #209 : elle tient lieu d'une garantie de durabilité qui n'existe
+ * pas encore.
+ *
+ * Mesuré par la revue de la PR #208 (13/09/2026, coquille réelle, Chromium, image du run
+ * 34750287303) : une note acquittée par Rails, puis « Verrouiller » après d, puis un boot à froid —
+ * perdue 4 fois sur 4 à d = 0 s, 1 fois sur 3 à 5 s, 0 sur 3 à 30 s, 0 sur 1 à 60 s. Ce scénario,
+ * avec cette attente ramenée à 0, rougit : la note manque à B. Cause probable, non prouvée : la
+ * validation SQLite en `journal_mode: delete` est l'effacement du journal, une écriture de répertoire
+ * qu'aucun `fsync` ne pousse sur ext2 ; le noyau la vide après ~35 s au plus (expiration 30 s,
+ * réveil 5 s). 45 s laissent la marge.
+ *
+ * Aucun signal du guest ne la remplace sans toucher `src/vm/` ou l'image : l'effacement du journal
+ * n'émet aucune barrière acquittée. L'épreuve ÉCRIT dans sa chronologie qu'elle a attendu.
  */
-const ATTENTE_ECRITURE_DU_GUEST_MS = 45_000;
+const ATTENTE_DURABILITE_209_MS = 45_000;
 
 function raisonDIndisponibilite() {
   if (!existsSync(CHEMIN_MANIFESTE)) {
@@ -119,6 +129,15 @@ test("une note saisie dans la coquille A se relit dans la coquille B, restaurée
   const depart = Date.now();
   const mesures = {};
   const erreurs = [];
+  /** Ce qui s'est passé, dans l'ordre, horodaté : le rapport du run le montre. */
+  const chronologie = [];
+  const noter = (evenement, detail = {}) =>
+    chronologie.push({
+      a: new Date().toISOString(),
+      depuisLeDebutMs: Date.now() - depart,
+      evenement,
+      ...detail,
+    });
 
   // --- 1. A : ouvrir, créer la feuille, démarrer, ÉCRIRE -----------------------------------------
   const a = await ouvrirLaCoquille(context, E2E_ORIGIN_COQUILLE, erreurs);
@@ -141,15 +160,23 @@ test("une note saisie dans la coquille A se relit dans la coquille B, restaurée
   await expect(servieA.locator("#libelle-note")).toHaveText(LIBELLE, { timeout: 120_000 });
   const identifiant = (await servieA.locator("#identifiant-note").textContent()).trim();
   expect(identifiant).toMatch(/^[0-9a-f-]{36}$/);
+  noter("note-acquittee-par-rails", { identifiant });
 
-  // ÉCART NON COMBLÉ (#207, ADR 0039, limite 5) : Une écriture que Rails vient d'acquitter peut
-  // manquer à une sauvegarde prise dans les secondes qui suivent : le point de contrôle arrête la VM
-  // sans attendre que le noyau du guest ait écrit la fin de la transaction, et le scénario de bout
-  // en bout attend 45 s avant de sauvegarder (mesuré le 13/09/2026 : rouge sans l'attente, vert
-  // avec).
-  // Sans elle, la note manque à B (exécution locale du 13/09/2026) ; l'écart est ouvert sous #209.
-  await a.waitForTimeout(ATTENTE_ECRITURE_DU_GUEST_MS);
-  mesures.attenteEcritureDuGuestMs = ATTENTE_ECRITURE_DU_GUEST_MS;
+  // ÉCART NON COMBLÉ (#209, ADR 0039, limite 5) : voir `ATTENTE_DURABILITE_209_MS`. L'attente est
+  // DITE — dans la chronologie, dans le rapport, dans l'annotation du test — et non cachée.
+  testInfo.annotations.push({
+    type: "attente-temporaire-209",
+    description: `${ATTENTE_DURABILITE_209_MS} ms entre l'acquittement de Rails et la sauvegarde, faute de garantie de durabilité (#209)`,
+  });
+  noter("attente-durabilite-209-debut", { dureeMs: ATTENTE_DURABILITE_209_MS });
+  await a.waitForTimeout(ATTENTE_DURABILITE_209_MS);
+  noter("attente-durabilite-209-fin");
+  // Attachée tout de suite : le rapport d'un run ROUGE montre aussi qu'elle a été attendue.
+  await testInfo.attach("attente-durabilite-209.json", {
+    body: JSON.stringify(chronologie, null, 2),
+    contentType: "application/json",
+  });
+  mesures.attenteDurabilite209Ms = ATTENTE_DURABILITE_209_MS;
   // --- 2. A : SAUVEGARDER, au point de contrôle, vers un fichier de l'hôte -----------------------
   const departSauvegarde = Date.now();
   const telechargement = a.waitForEvent("download", { timeout: BUDGET_PORTABILITE_MS });
@@ -161,6 +188,7 @@ test("une note saisie dans la coquille A se relit dans la coquille B, restaurée
   const chemin = testInfo.outputPath("coffre-a.rbvault");
   await fichier.saveAs(chemin);
   mesures.sauvegardeMs = Date.now() - departSauvegarde;
+  noter("sauvegarde-prete");
   const sauvegarde = (await releve(a)).portabilite.sauvegarde;
   expect(sauvegarde.applicationArretee, "le point de contrôle arrête l'application").toBe(true);
   expect(sauvegarde.coherence.kind).toBe("handle-exclusif");
@@ -179,6 +207,7 @@ test("une note saisie dans la coquille A se relit dans la coquille B, restaurée
     timeout: BUDGET_PORTABILITE_MS,
   });
   mesures.restaurationMs = Date.now() - departRestauration;
+  noter("restauree-sur-b");
   const restauration = (await releve(b)).portabilite.restauration;
   expect(restauration.empreinte).toBe(sauvegarde.empreinte);
   expect(restauration.empreinteRelue).toBe(sauvegarde.empreinte);
@@ -198,6 +227,7 @@ test("une note saisie dans la coquille A se relit dans la coquille B, restaurée
     pageServie(b).locator(`[data-note="${identifiant}"]`),
     "la note saisie dans A n'a pas été relue dans B",
   ).toHaveText(LIBELLE, { timeout: 120_000 });
+  noter("note-relue-dans-b");
   expect(erreurs, "aucune erreur de page").toEqual([]);
 
   mesures.totalMs = Date.now() - depart;
@@ -208,6 +238,7 @@ test("une note saisie dans la coquille A se relit dans la coquille B, restaurée
     sauvegarde,
     restauration,
     mesures,
+    chronologie,
   };
   writeFileSync(
     join(DOSSIER_RAPPORTS, "portabilite-coquille.json"),
