@@ -31,6 +31,7 @@ const { brancherLaPortabilite, ouvrirLeDisque } =
 const { TYPES_PRIVILEGIES } = await import("../../src/coquille/contrat-de-messages.mjs");
 const { CODES_REFUS_COQUILLE } = await import("../../src/coquille/refus-de-coquille.mjs");
 const { ETATS_DU_VOLUME } = await import("../../src/coquille/etat-de-la-coquille.mjs");
+const { FICHIER_DE_SAUVEGARDE } = await import("../../src/coquille/portabilite-du-coffre.mjs");
 const { IDENTIFIANT_DU_COFFRE, IDENTIFIANT_DU_VOLUME_COQUILLE } =
   await import("../../src/coquille/identites-du-coffre.mjs");
 const { ARCHIVE_ERROR_CODES } = await import("../../src/vm/archive-errors.mjs");
@@ -406,6 +407,78 @@ test("RÉVOQUER EN URGENCE garde l'emplacement qui a ouvert, et dit ce qui a ét
     ouvrirEnveloppe({ support, identifiantVolume: IDENTIFIANT_DU_COFFRE, kek: autreKek }),
   );
   await ouvrirEnveloppe({ support, identifiantVolume: IDENTIFIANT_DU_COFFRE, kek: KEK });
+});
+
+test("aucune COPIE de sauvegarde ne survit au geste qui l'a créée, qu'il aboutisse ou échoue", async () => {
+  // Revue de la PR #208, constat 4 : `coquille-sauvegarde` restait dans l'OPFS « jusqu'à la
+  // sauvegarde suivante », et survivait à la révocation d'urgence.
+  const { banc } = await coffreOuvert();
+  const rendu = await sauvegarde(workerSur(banc));
+  assert.equal((await banc.stat(FICHIER_DE_SAUVEGARDE)).present, false, "copie après succès");
+  // L'archive rendue ne dépend pas de la copie retirée : elle se relit entière.
+  assert.equal((await rendu.archive.arrayBuffer()).byteLength, rendu.taille);
+
+  const base = primitivesDe(banc, { ouvrirLeDisque });
+  const coupeeEnEcrivant = workerSur(banc, {
+    primitives: {
+      ...base,
+      async ouvrirLePuits(nom) {
+        const ouvert = await base.ouvrirLePuits(nom);
+        let blocs = 0;
+        const { puits } = ouvert;
+        return {
+          ...ouvert,
+          puits: {
+            get offset() {
+              return puits.offset;
+            },
+            async write(octets) {
+              blocs += 1;
+              if (blocs === 2) throw coupure();
+              return puits.write(octets);
+            },
+          },
+        };
+      },
+    },
+  });
+  const erreur = await echec(
+    coupeeEnEcrivant.portabilite.servir(TYPES_PRIVILEGIES.sauvegarder, {}, "s2"),
+  );
+  assert.equal(erreur.code, "COUPURE");
+  assert.equal((await banc.stat(FICHIER_DE_SAUVEGARDE)).present, false, "copie après échec");
+});
+
+test("une copie RÉSIDUELLE est retirée par la révocation d'urgence : le code révoqué n'ouvre plus rien", async () => {
+  const { banc, code } = await coffreOuvert();
+  // La coupure entre la copie et son retrait — l'onglet fermé à cet instant — laisse un résidu.
+  const base = primitivesDe(banc, { ouvrirLeDisque });
+  let retraitsDeLaCopie = 0;
+  const coupeeAuRetrait = workerSur(banc, {
+    primitives: {
+      ...base,
+      async retirer(nom) {
+        if (nom === FICHIER_DE_SAUVEGARDE) {
+          retraitsDeLaCopie += 1;
+          if (retraitsDeLaCopie === 2) throw coupure();
+        }
+        return base.retirer(nom);
+      },
+    },
+  });
+  await coupeeAuRetrait.portabilite.servir(TYPES_PRIVILEGIES.sauvegarder, {}, "s").catch(() => {});
+  assert.equal((await banc.stat(FICHIER_DE_SAUVEGARDE)).present, true, "le résidu est posé");
+
+  // Ouvert par la PHRASE, le coffre révoque tout sauf elle : le code est retiré, ET le résidu.
+  const worker = workerSur(banc);
+  await worker.portabilite.servir(TYPES_PRIVILEGIES.revoquerEnUrgence, {}, "v");
+  const bilan = worker.reponses.at(-1).corps;
+  assert.equal(bilan.retires.recuperation, 1);
+  assert.equal(bilan.copieDeSauvegardeRetiree, true);
+  assert.equal((await banc.stat(FICHIER_DE_SAUVEGARDE)).present, false, "le résidu survit");
+
+  // Le code révoqué n'ouvre rien de ce que l'appareil porte encore.
+  await assert.rejects(relireParLeCode(banc, code));
 });
 
 test("un geste de portabilité arrivé pendant un geste LONG est refusé, jamais mis en attente", async () => {
