@@ -10,9 +10,17 @@
 #                            fichier `-wal` : perdre ce fichier lors d'une
 #                            capture partielle du volume perdrait des écritures
 #                            déjà acquittées, en silence.
-#   synchronous: full      — `fsync` avant d'acquitter le commit. C'est la
-#                            condition de « RPO 0 après la barrière durable du
-#                            guest » (docs/quality-attributes.md).
+#   synchronous: extra     — `fsync` avant d'acquitter le commit, PLUS le `fsync`
+#                            du répertoire après l'effacement du journal. `full`
+#                            ne suffisait pas : en `delete`, le commit EST cet
+#                            effacement, et `full` ne le synchronise pas — une
+#                            note acquittée puis le coffre verrouillé à 0 s et
+#                            rouvert à froid était perdue 4 fois sur 4 (#209 ;
+#                            0/3 relues sur ext2 en boucle, 3/3 avec `extra`,
+#                            commit en 7 à 19 ms dans les deux modes). ADR 0004.
+#                            Écrit `3` et non `extra` : la gemme sqlite3 2.9.6
+#                            ne connaît que les noms off/normal/full et refuse
+#                            les autres ; un entier est transmis tel quel.
 #
 # `tests/lib/durability_pragmas_test.rb` interroge la connexion réelle : ces
 # deux lignes sont vérifiées, pas seulement écrites.
@@ -22,7 +30,7 @@ default: &default
   timeout: 5000
   pragmas:
     journal_mode: delete
-    synchronous: full
+    synchronous: 3
     foreign_keys: "on"
 
 production:
