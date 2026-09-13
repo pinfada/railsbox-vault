@@ -2113,6 +2113,27 @@ un répertoire déjà long, `MAX_PATH` est franchi et OPFS rend `InvalidStateErr
 
 #### DATER un échec de bout en bout : ce que l'artefact contient (#165)
 
+Le
+[run 34723827195 de la PR #203](https://github.com/pinfada/railsbox-vault/actions/runs/34723827195)
+illustre aussi un silence du banc après un boot réussi : `phaseLive` retirait `fermer` du rapport,
+mais conservait la nouvelle fonction `requeteHttp`. Le `postMessage` levait `DataCloneError` ; le
+gestionnaire de rejet placé comme second argument de ce même `.then` ne recevait pas cette erreur.
+La page attendait donc jusqu'au délai du scénario (25 ou 30 min), puis les lots étaient annulés à 60
+min. L'absence de rapports blob à la fin des lots faisait aussi échouer leur fusion. Le parcours
+`parcours-page-rails` avait pourtant réussi en 3,2 min dans ce run.
+
+`phaseLive` retire désormais les deux capacités avant de rendre son rapport et l'aiguillage du
+Worker utilise un `.catch` après l'envoi : une erreur de clonage est rendue à la requête en attente.
+`node --test tests/unit/vm-reference-worker-rapport.test.mjs` exécute les vrais modules du Worker
+avec un boot double et un envoi soumis à `structuredClone`. Ses deux épreuves échouent sur
+`DataCloneError` avec le code de `a22b4f3`, puis passent avec le correctif ; elles vérifient aussi
+que la session est fermée avant la remise du rapport.
+
+Rejeu local du 13 septembre 2026 sur le code de la PR et l'image récupérée de ce run : les 1 778
+épreuves unitaires et le lint passent. Sous `VAULT_E2E_EXIGER=1`, les scénarios
+`archive-recuperation-inter-origine` (5,2 min) et `enveloppe-rotation-boot-froid` (4,4 min) passent
+tous deux, en 9,6 min au total. Ce rejeu ciblé ne remplace pas la recette CI complète des deux lots.
+
 Un scénario de bout en bout dure des minutes, tourne sur un exécutant qu'on ne reverra pas, et
 échoue parfois sans que le code ait bougé. **La seule chose qui permette alors d'instruire est ce
 qu'il a laissé dans son artefact**, et jusqu'au 11 septembre 2026 il n'y laissait presque rien :

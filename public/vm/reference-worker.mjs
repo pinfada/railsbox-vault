@@ -184,26 +184,26 @@ self.addEventListener("message", (event) => {
   const relacher = poserCleDuBanc(options.jetonCle);
   executerPhase(runner, options)
     .finally(relacher)
-    .then(
-      (report) => self.postMessage({ id, ok: true, report }),
-      (error) =>
-        self.postMessage({
-          id,
-          ok: false,
-          // Le CONTEXTE traverse le port au même titre que le code (#73). Sans lui, un échec de
-          // support arrive en CI réduit à une phrase : ni offset, ni quota, ni errno — c'est-à-dire
-          // sans rien de ce qui permet de le diagnostiquer. Il ne porte que des nombres et des noms.
-          error: {
-            name: error.name,
-            code: error.code ?? null,
-            message: error.message,
-            context: error.context ?? null,
-            // Le TRANSCRIPT SÉRIE d'un `BootTimeout`, quand il y en a un. Sans lui, « Rails n'a pas
-            // répondu » arrive côté test sans une ligne de ce que le guest a dit — c'est-à-dire
-            // exactement le silence que #52 combat, déplacé d'un cran. Il ne porte que la sortie
-            // console du guest de référence, publique et déterministe.
-            transcript: typeof error.transcript === "string" ? error.transcript : null,
-          },
-        }),
+    .then((report) => self.postMessage({ id, ok: true, report }))
+    // Une erreur de clonage du rapport doit aussi répondre à la requête en attente.
+    .catch((error) =>
+      self.postMessage({
+        id,
+        ok: false,
+        // Le CONTEXTE traverse le port au même titre que le code (#73). Sans lui, un échec de
+        // support arrive en CI réduit à une phrase : ni offset, ni quota, ni errno — c'est-à-dire
+        // sans rien de ce qui permet de le diagnostiquer. Il ne porte que des nombres et des noms.
+        error: {
+          name: error.name,
+          code: error.code ?? null,
+          message: error.message,
+          context: error.context ?? null,
+          // Le TRANSCRIPT SÉRIE d'un `BootTimeout`, quand il y en a un. Sans lui, « Rails n'a pas
+          // répondu » arrive côté test sans une ligne de ce que le guest a dit — c'est-à-dire
+          // exactement le silence que #52 combat, déplacé d'un cran. Il ne porte que la sortie
+          // console du guest de référence, publique et déterministe.
+          transcript: typeof error.transcript === "string" ? error.transcript : null,
+        },
+      }),
     );
 });
