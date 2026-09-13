@@ -47,6 +47,11 @@ class PagesController < ActionController::Base
       sequence: prochaine_sequence,
       recorded_at: Time.now.utc
     )
+    # La PIÈCE JOINTE, facultative (#209) : une mutation ET son fichier, ce que le scénario de sortie
+    # du MVP exige de retrouver après un boot à froid. Seul un fichier téléversé est joint ; un champ
+    # textuel du même nom est ignoré plutôt que pris pour un chemin.
+    piece = params[:piece]
+    note.evidence.attach(piece) if piece.is_a?(ActionDispatch::Http::UploadedFile)
     note.save!
     redirect_to note_path(note), status: :see_other
   end
@@ -56,10 +61,24 @@ class PagesController < ActionController::Base
     @vues = compter_la_vue
     return render :absente, status: :not_found if @note.nil?
 
+    @piece = piece_relue(@note)
     render :show
   end
 
   private
+
+  # La pièce jointe RELUE depuis le stockage, son empreinte calculée sur les octets lus. Une ligne
+  # qui a survécu sans son fichier se DIT (`fichier-introuvable`) au lieu de rendre une erreur 500 :
+  # c'est exactement l'état qu'un scénario de coupure doit pouvoir constater.
+  def piece_relue(note)
+    return nil unless note.evidence.attached?
+
+    nom = note.evidence.filename.to_s
+    contenu = note.evidence.download
+    { nom: nom, octets: contenu.bytesize, sha256: Digest::SHA256.hexdigest(contenu) }
+  rescue ActiveStorage::FileNotFoundError
+    { nom: nom }
+  end
 
   # Les notes saisies : tout sauf l'enregistrement figé du contrat d'invariant.
   def notes_saisies
