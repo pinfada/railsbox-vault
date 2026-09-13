@@ -100,9 +100,12 @@ par un téléchargement, et le port restreint refuse les trois types par
 `VAULT_COQUILLE_PORT_PRIVILEGIE_REFUSE` (trois sondes de la fixture hostile). La restauration n'agit
 que sur un emplacement vide et vérifie l'archive entière avant d'écrire ; la **révocation
 d'urgence** retire depuis la coquille tout ce qui ouvre le coffre sauf l'emplacement qui vient de
-l'ouvrir (ADR 0026), et ne publie que des noms de moyens et des nombres. **Depuis le 13 septembre
-2026**, un coffre créé par une version de développement antérieure est refusé
-(`VAULT_COQUILLE_COFFRE_ANTERIEUR`), jamais migré ni écrasé.
+l'ouvrir (ADR 0026) — **copies comprises** : aucune copie de sauvegarde ne survit dans l'OPFS au
+geste qui l'a créée, une copie résiduelle laissée par une coupure est retirée avant l'acquittement,
+et la page ferme le lien de la sauvegarde qu'elle offrait. Une archive déjà enregistrée hors de
+l'origine est une copie « déjà prise » que rien ne révoque (ADR 0026). La révocation ne publie que
+des noms de moyens et des nombres. **Depuis le 13 septembre 2026**, un coffre créé par une version
+de développement antérieure est refusé (`VAULT_COQUILLE_COFFRE_ANTERIEUR`), jamais migré ni écrasé.
 
 **Aucun cookie.** La coquille n'en pose aucun, et c'est une propriété éprouvée plutôt qu'une
 abstention : après un cycle complet, le bocal du contexte est vide, `document.cookie` est vide sur
