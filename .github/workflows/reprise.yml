@@ -137,6 +137,11 @@ jobs:
       # 34695120844, contre 27 min 22 pour le lot 1). Il coûte 2,9 à 3,6 min en local, sur la même
       # géométrie que `reprise-coquille-boot-froid` (2,8 min en local, 2,94 min en CI) : le lot 2 vise
       # donc ≈ 28 min, sous la borne de 60 min du job, qui reste inchangée.
+      #
+      # `portabilite-coquille.spec.mjs` (#207) rejoint le lot 1, le plus court mesuré le 13/09/2026
+      # (25 min). Il coûte 6,3 min en local (un ouvrier, le 13/09/2026 : deux boots de Rails à 101 et
+      # 102 s, sauvegarde 9,1 s, restauration 13,2 s, attente d'écriture du guest 45 s) : le lot 1
+      # vise donc ≈ 32 min, sous la borne de 60 min du job, qui reste inchangée.
       matrix:
         include:
           - lot: "1"
@@ -144,6 +149,7 @@ jobs:
               tests/e2e/reprise-mutation-boot-froid.spec.mjs tests/e2e/instantane-reprise.spec.mjs
               tests/e2e/archive-recuperation-inter-origine.spec.mjs
               tests/e2e/coupure-generation-boot-froid.spec.mjs
+              tests/e2e/portabilite-coquille.spec.mjs
           - lot: "2"
             fichiers: >-
               tests/e2e/migration-volume-versionne.spec.mjs
