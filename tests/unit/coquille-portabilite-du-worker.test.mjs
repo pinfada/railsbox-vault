@@ -41,6 +41,7 @@ const { ajouterEmplacement, inventorierEnveloppe, ouvrirEnveloppe } =
   await import("../../src/vm/enveloppe-de-cle.mjs");
 const { TYPES_KEK } = await import("../../src/vm/enveloppe/identite-enveloppe.mjs");
 const { openOpfsVolume } = await import("../../src/vm/opfs-block-backend.mjs");
+const { voisinsDunVolume } = await import("../../src/vm/opfs-sync-access.mjs");
 const { suiteDOctets } = await import("./support-enveloppe-double.mjs");
 const {
   KEK,
@@ -55,7 +56,10 @@ const {
 } = await import("./support-coffre-de-la-coquille.mjs");
 
 /** Un Worker de confiance réduit à ce que le module emploie : son état, ses réponses. */
-function workerSur(banc, { etat = ETATS_DU_VOLUME.ouvert, kek = KEK, application = null } = {}) {
+function workerSur(
+  banc,
+  { etat = ETATS_DU_VOLUME.ouvert, kek = KEK, application = null, primitives = null } = {},
+) {
   const reponses = [];
   const interne = {
     etat,
@@ -79,9 +83,53 @@ function workerSur(banc, { etat = ETATS_DU_VOLUME.ouvert, kek = KEK, application
     },
     oublierLeMoyenRetenu: () => {},
     exigerUnVolumeAtteignable: () => {},
-    primitives: primitivesDe(banc, { ouvrirLeDisque }),
+    primitives: primitives ?? primitivesDe(banc, { ouvrirLeDisque }),
   });
   return { portabilite, interne, reponses, arrets };
+}
+
+/** Une COUPURE : ce qu'une fermeture d'onglet fait d'un geste, au rang choisi. */
+function coupure() {
+  return Object.assign(new Error("COUPURE"), { code: "COUPURE" });
+}
+
+/**
+ * Les primitives du banc, dont `retirer` suit l'ordre du support réel (`removeOpfsVolume` : les
+ * voisins, puis le volume) et se COUPE au `rang`-ième fichier retiré.
+ */
+function primitivesCoupeesAuRetrait(banc, rang) {
+  const base = primitivesDe(banc, { ouvrirLeDisque });
+  let retraits = 0;
+  return {
+    ...base,
+    async retirer(nom) {
+      for (const fichier of [...voisinsDunVolume(nom), nom]) {
+        retraits += 1;
+        if (retraits === rang) throw coupure();
+        await banc.retirer(fichier);
+      }
+    },
+  };
+}
+
+/** Une restauration réelle, COUPÉE juste avant le manifeste : l'état que la réparation reprend. */
+async function restaurationCoupeeAvantLeManifeste(banc, archive) {
+  const base = primitivesDe(banc, { ouvrirLeDisque });
+  const primitives = {
+    ...base,
+    cibleDImport: (nom) => ({
+      ...base.cibleDImport(nom),
+      commitManifest: async () => {
+        throw coupure();
+      },
+    }),
+  };
+  const worker = workerSur(banc, { etat: ETATS_DU_VOLUME.verrouille, kek: null, primitives });
+  const erreur = await echec(
+    worker.portabilite.servir(TYPES_PRIVILEGIES.restaurer, { archive }, "coupee"),
+  );
+  assert.equal(erreur.code, "COUPURE");
+  assert.equal(await worker.portabilite.constater(), "restauration-interrompue");
 }
 
 /** Un coffre complet de cette version, ouvert : disque, enveloppe, récupération, petit volume. */
@@ -246,6 +294,50 @@ test("une restauration COUPÉE avant le manifeste se RÉPARE par le même geste"
   assert.equal(reprise.reponses.at(-1).corps.reparee, true);
   const secteur = await relireParLeCode(ailleurs, code);
   assert.ok(secteur.every((octet) => octet === MOTIF_DE_RAILS));
+});
+
+test("une RÉPARATION coupée à CHAQUE rang ne laisse jamais un coffre sans disque, et le même geste la reprend", async () => {
+  // Revue de la PR #208, constat 3 : la réparation retirait `application` puis `coquille`. Coupée
+  // entre les deux, elle laissait l'enveloppe du domaine `recuperation` SANS disque — un « coffre »
+  // que le code ouvrait, et sur lequel la restauration était ensuite refusée.
+  const { banc, code } = await coffreOuvert();
+  const { archive } = await sauvegarde(workerSur(banc));
+  let rangsCoupes = 0;
+
+  for (let rang = 1; rang < 100; rang += 1) {
+    const ailleurs = magasin();
+    await restaurationCoupeeAvantLeManifeste(ailleurs, archive);
+    const reparation = workerSur(ailleurs, {
+      etat: ETATS_DU_VOLUME.verrouille,
+      kek: null,
+      primitives: primitivesCoupeesAuRetrait(ailleurs, rang),
+    });
+    const erreur = await reparation.portabilite
+      .servir(TYPES_PRIVILEGIES.restaurer, { archive }, `r${rang}`)
+      .then(
+        () => null,
+        (e) => e,
+      );
+    if (erreur === null) break;
+    rangsCoupes += 1;
+    assert.equal(erreur.code, "COUPURE");
+
+    const etat = await reparation.portabilite.constater();
+    assert.ok(
+      etat === "restauration-interrompue" || etat === "vide",
+      `rang ${rang} : la réparation coupée laisse l'état « ${etat} »`,
+    );
+    const reprise = workerSur(ailleurs, { etat: ETATS_DU_VOLUME.verrouille, kek: null });
+    await reprise.portabilite.servir(TYPES_PRIVILEGIES.restaurer, { archive }, `reprise${rang}`);
+    assert.equal(reprise.reponses.at(-1).corps.restauree, true, `rang ${rang}`);
+    const secteur = await relireParLeCode(ailleurs, code);
+    assert.ok(
+      secteur.every((octet) => octet === MOTIF_DE_RAILS),
+      `rang ${rang} : le disque repris ne relit pas Rails`,
+    );
+  }
+  // Deux volumes, chacun avec ses cinq voisins : douze retraits, chacun coupé une fois.
+  assert.equal(rangsCoupes, 2 * (1 + voisinsDunVolume("application").length));
 });
 
 test("une archive SANS récupération est refusée AVANT toute écriture, et la sauvegarde le dit", async () => {
