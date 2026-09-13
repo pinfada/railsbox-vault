@@ -139,12 +139,22 @@ de fichiers du volume applicatif paramétrable (« Ce que cette décision ne dit
 Prix de l'ext4, mesuré (coquille réelle, Chromium, local) : le scénario
 `tests/e2e/durabilite-du-commit.spec.mjs` rend **9 relectures sur 9** — note et pièce verrouillées à
 0, 5 et 30 s, trois fois chacun, boot à froid, et le disque rouvert accepte chaque fois l'écriture
-suivante, relue au boot suivant ; le **boot à froid**, rejeu du journal compris, dure 81,6 à 88,1 s
-(neuf essais), contre 100,9 s pour le seul boot à froid mesuré sur ext2 le même jour — pas plus
-lent, donc, et l'écart tient à la machine plus qu'au système de fichiers ; l'**artefact** garde ses
-512 Mio (53,4 Mio compressés, +6,6 Kio : le journal de 16 Mio est fait de zéros) ; une soumission de
-note émet **8 barrières** au lieu de 3, une note avec pièce de 64 Kio **18** au lieu de 7, pour une
-durée inchangée dans la dispersion (153–203 ms et 563–813 ms, `docs/quality-attributes.md`).
+suivante, relue au boot suivant ; le **boot à froid** n'a PAS de différence établie entre ext2 et
+ext4 (revue de la PR #211, constat 4 : une comparaison de neuf essais à un seul, pris dans deux
+sessions, ne dit rien au-delà de la dispersion de la machine). Les distributions, telles qu'elles
+sont, sans conclusion :
+
+| Chemin, grandeur                                    | ext2                                                                       | ext4 journalisé                                                |
+| --------------------------------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| local, E2E `durabilite-du-commit`, `bootMs` à froid | 100,9 s (n = 1, première session de #209)                                  | 81,6–88,1 s (n = 9, implémenteur) ; 81,6–84,0 s (n = 9, revue) |
+| local, banc `mesure-pont-serie-http`, `bootMs`      | 113,2 s (n = 1, `full`/`Disk`) ; 130,8 s (n = 1, `extra`/`DurableDisk`)    | 87,0 s (n = 1)                                                 |
+| CI, recette, lot 1, `santeMs`                       | 71–118 s selon le run (34757240628, 34750287303, 34742171513, 34696982520) | 111–113 s (n = 1 run, 34775718482)                             |
+
+Dire qu'un système de fichiers boote plus vite exigerait la même image, la même machine et plusieurs
+boots de chaque côté ; ce n'est pas mesuré ici. L'**artefact** garde ses 512 Mio (53,4 Mio
+compressés, +6,6 Kio : le journal de 16 Mio est fait de zéros) ; une soumission de note émet **8
+barrières** au lieu de 3, une note avec pièce de 64 Kio **18** au lieu de 7, pour une durée
+inchangée dans la dispersion (153–203 ms et 563–813 ms, `docs/quality-attributes.md`).
 
 **Résidu nommé** : une coupure ENTRE le commit et le téléversement laisse une ligne sans fichier. Le
 303 n'est pas parti, ce n'est donc pas une écriture acquittée perdue, mais l'état est incohérent ;
