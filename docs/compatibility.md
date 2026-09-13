@@ -736,8 +736,10 @@ l'[ADR 0010](decisions/0010-isolation-multi-origine.md).
 ## Base de données dans la VM
 
 L'**ADR 0004** est la décision de priorité que la ligne « SQLite dans la VM » attendait : la fixture
-de l'invariant durable (#5) utilise SQLite, avec `journal_mode = delete` et `synchronous = full`
-déclarés et vérifiés sur la connexion. PostgreSQL n'est pas écarté ; il n'entre pas dans cette
+de l'invariant durable (#5) utilise SQLite, avec `journal_mode = delete` et `synchronous = extra`
+déclarés et vérifiés sur la connexion (`extra` depuis #209 : en `delete`, `full` ne synchronise pas
+le répertoire après l'effacement du journal, et une écriture acquittée pouvait être annulée au boot
+à froid — ADR 0004, note du 13/09/2026). PostgreSQL n'est pas écarté ; il n'entre pas dans cette
 fixture, et sa promotion dépend désormais de #7 et d'une image de référence qui lui soit propre.
 
 Le passage de SQLite à **mesuré** repose sur un fait vérifiable et rien d'autre :
@@ -749,8 +751,11 @@ de ces quatre parcours n'est exercé ici.
 
 Ce qui n'est **pas** mesuré, et qu'il ne faut pas déduire de cette ligne :
 
-- la durabilité après coupure réelle. `synchronous = full` est vérifié, l'injection de coupures est
-  l'objet de #7 ;
+- la durabilité après coupure réelle à ce niveau-ci. `synchronous = extra` est vérifié ; la preuve
+  qu'une écriture acquittée survit au verrouillage immédiat et au boot à froid est portée par
+  `tests/e2e/durabilite-du-commit.spec.mjs` (#209), et l'injection de coupures par #7 ;
+- la durabilité des écritures d'une application tierce hors SQLite et hors ActiveStorage, que rien
+  ne synchronise (#210) ;
 - le comportement de PostgreSQL sous i386, jamais exécuté dans ce dépôt ;
 - la tenue de SQLite au-dessus du backend de blocs OPFS, qui n'existe pas encore (#4, #6) : le test
   VM utilise le disque en mémoire de v86.

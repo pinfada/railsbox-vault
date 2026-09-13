@@ -1,0 +1,324 @@
+{
+  "moteur": "chromium",
+  "mesureLe": "2026-09-13T17:10:38.301Z",
+  "navigateur": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+  "bootMs": 86975,
+  "santeMs": 86030,
+  "relais": {
+    "ecrituresDurables": {
+      "notes": [
+        {
+          "methode": "POST",
+          "chemin": "/notes",
+          "statut": 303,
+          "millisecondes": 178.9,
+          "octetsEmis": 161,
+          "octetsRecus": 0,
+          "typeDeContenu": "text/html; charset=utf-8",
+          "emplacement": "http://127.0.0.1/notes/98236107-7e44-4b9b-973b-57878ae643e9",
+          "ecritures": 12,
+          "barrieres": 8,
+          "barrieresAcquittees": 8,
+          "commandesAta": {
+            "0xca": 12,
+            "0xe7": 8
+          },
+          "sequence": "w2FAw1FAw2FAw1FAw3FAw1FAw1FAw1FA"
+        },
+        {
+          "methode": "POST",
+          "chemin": "/notes",
+          "statut": 303,
+          "millisecondes": 185.5,
+          "octetsEmis": 161,
+          "octetsRecus": 0,
+          "typeDeContenu": "text/html; charset=utf-8",
+          "emplacement": "http://127.0.0.1/notes/47043313-ce90-4fc6-b48f-d79c326857f8",
+          "ecritures": 12,
+          "barrieres": 8,
+          "barrieresAcquittees": 8,
+          "commandesAta": {
+            "0xca": 12,
+            "0xe7": 8
+          },
+          "sequence": "w2FAw1FAw2FAw1FAw3FAw1FAw1FAw1FA"
+        },
+        {
+          "methode": "POST",
+          "chemin": "/notes",
+          "statut": 303,
+          "millisecondes": 179.8,
+          "octetsEmis": 161,
+          "octetsRecus": 0,
+          "typeDeContenu": "text/html; charset=utf-8",
+          "emplacement": "http://127.0.0.1/notes/b50baab5-7204-4771-b20d-820fea4ffbda",
+          "ecritures": 12,
+          "barrieres": 8,
+          "barrieresAcquittees": 8,
+          "commandesAta": {
+            "0xca": 12,
+            "0xe7": 8
+          },
+          "sequence": "w2FAw1FAw2FAw1FAw3FAw1FAw1FAw1FA"
+        },
+        {
+          "methode": "POST",
+          "chemin": "/notes",
+          "statut": 303,
+          "millisecondes": 152.9,
+          "octetsEmis": 161,
+          "octetsRecus": 0,
+          "typeDeContenu": "text/html; charset=utf-8",
+          "emplacement": "http://127.0.0.1/notes/411f1674-591e-46e8-82da-abc09a8d138e",
+          "ecritures": 12,
+          "barrieres": 8,
+          "barrieresAcquittees": 8,
+          "commandesAta": {
+            "0xca": 12,
+            "0xe7": 8
+          },
+          "sequence": "w2FAw1FAw2FAw1FAw3FAw1FAw1FAw1FA"
+        },
+        {
+          "methode": "POST",
+          "chemin": "/notes",
+          "statut": 303,
+          "millisecondes": 203.2,
+          "octetsEmis": 161,
+          "octetsRecus": 0,
+          "typeDeContenu": "text/html; charset=utf-8",
+          "emplacement": "http://127.0.0.1/notes/145c1795-fde6-4825-bfbf-b6d66bc8daf1",
+          "ecritures": 12,
+          "barrieres": 8,
+          "barrieresAcquittees": 8,
+          "commandesAta": {
+            "0xca": 12,
+            "0xe7": 8
+          },
+          "sequence": "w2FAw1FAw2FAw1FAw3FAw1FAw1FAw1FA"
+        }
+      ],
+      "notesEtPieces": [
+        {
+          "methode": "POST",
+          "chemin": "/notes",
+          "statut": 303,
+          "millisecondes": 793.8,
+          "octetsEmis": 66030,
+          "octetsRecus": 0,
+          "typeDeContenu": "text/html; charset=utf-8",
+          "emplacement": "http://127.0.0.1/notes/fc418063-1b0f-4b6e-a181-930b16db4c08",
+          "ecritures": 28,
+          "barrieres": 18,
+          "barrieresAcquittees": 18,
+          "commandesAta": {
+            "0xc8": 2,
+            "0xca": 28,
+            "0xe7": 18
+          },
+          "sequence": "w2FAw1FAw2FAw1FAw3FAw1FAw1FAw1FAw2FAw1FAw2FAw1FAw2FAw1FAw4FAw1FAw1FAw1FA",
+          "pieceOctets": 65536,
+          "pieceJointe": true
+        },
+        {
+          "methode": "POST",
+          "chemin": "/notes",
+          "statut": 303,
+          "millisecondes": 563.1,
+          "octetsEmis": 66030,
+          "octetsRecus": 0,
+          "typeDeContenu": "text/html; charset=utf-8",
+          "emplacement": "http://127.0.0.1/notes/c7b31846-eb69-48ce-9bc6-2d75b25649c7",
+          "ecritures": 28,
+          "barrieres": 18,
+          "barrieresAcquittees": 18,
+          "commandesAta": {
+            "0xca": 28,
+            "0xe7": 18
+          },
+          "sequence": "w2FAw1FAw2FAw1FAw3FAw1FAw1FAw1FAw2FAw1FAw2FAw1FAw2FAw1FAw4FAw1FAw1FAw1FA",
+          "pieceOctets": 65536,
+          "pieceJointe": true
+        },
+        {
+          "methode": "POST",
+          "chemin": "/notes",
+          "statut": 303,
+          "millisecondes": 686.6,
+          "octetsEmis": 66030,
+          "octetsRecus": 0,
+          "typeDeContenu": "text/html; charset=utf-8",
+          "emplacement": "http://127.0.0.1/notes/8c859c0b-73e9-4e3d-9ff7-a7819e39959b",
+          "ecritures": 28,
+          "barrieres": 18,
+          "barrieresAcquittees": 18,
+          "commandesAta": {
+            "0xca": 28,
+            "0xe7": 18
+          },
+          "sequence": "w2FAw1FAw2FAw1FAw3FAw1FAw1FAw1FAw2FAw1FAw2FAw1FAw2FAw1FAw4FAw1FAw1FAw1FA",
+          "pieceOctets": 65536,
+          "pieceJointe": true
+        },
+        {
+          "methode": "POST",
+          "chemin": "/notes",
+          "statut": 303,
+          "millisecondes": 741.5,
+          "octetsEmis": 66030,
+          "octetsRecus": 0,
+          "typeDeContenu": "text/html; charset=utf-8",
+          "emplacement": "http://127.0.0.1/notes/80a8f7c3-dd0b-4857-ae62-22d3827b7fe3",
+          "ecritures": 28,
+          "barrieres": 18,
+          "barrieresAcquittees": 18,
+          "commandesAta": {
+            "0xca": 28,
+            "0xe7": 18
+          },
+          "sequence": "w2FAw1FAw2FAw1FAw3FAw1FAw1FAw1FAw2FAw1FAw2FAw1FAw2FAw1FAw4FAw1FAw1FAw1FA",
+          "pieceOctets": 65536,
+          "pieceJointe": true
+        },
+        {
+          "methode": "POST",
+          "chemin": "/notes",
+          "statut": 303,
+          "millisecondes": 813.1,
+          "octetsEmis": 66030,
+          "octetsRecus": 0,
+          "typeDeContenu": "text/html; charset=utf-8",
+          "emplacement": "http://127.0.0.1/notes/5d493282-e550-4c2f-9f86-0b1cfec3fa85",
+          "ecritures": 28,
+          "barrieres": 18,
+          "barrieresAcquittees": 18,
+          "commandesAta": {
+            "0xca": 28,
+            "0xe7": 18
+          },
+          "sequence": "w2FAw1FAw2FAw1FAw3FAw1FAw1FAw1FAw2FAw1FAw2FAw1FAw2FAw1FAw4FAw1FAw1FAw1FA",
+          "pieceOctets": 65536,
+          "pieceJointe": true
+        }
+      ]
+    },
+    "sessionRails": {
+      "cookiePose": true,
+      "jetonAntiCsrfTrouve": true,
+      "vuesRelues": 3
+    },
+    "premierePage": {
+      "methode": "GET",
+      "chemin": "/",
+      "statut": 200,
+      "millisecondes": 421,
+      "octetsEmis": 0,
+      "octetsRecus": 1204,
+      "typeDeContenu": "text/html; charset=utf-8",
+      "emplacement": null
+    },
+    "actifsEnSerie": [
+      {
+        "methode": "GET",
+        "chemin": "/vault.css",
+        "statut": 200,
+        "millisecondes": 47.9,
+        "octetsEmis": 0,
+        "octetsRecus": 705,
+        "typeDeContenu": "text/css",
+        "emplacement": null
+      },
+      {
+        "methode": "GET",
+        "chemin": "/vault.js",
+        "statut": 200,
+        "millisecondes": 64,
+        "octetsEmis": 0,
+        "octetsRecus": 425,
+        "typeDeContenu": "text/javascript",
+        "emplacement": null
+      },
+      {
+        "methode": "GET",
+        "chemin": "/vault.png",
+        "statut": 200,
+        "millisecondes": 63.7,
+        "octetsEmis": 0,
+        "octetsRecus": 2053,
+        "typeDeContenu": "image/png",
+        "emplacement": null
+      }
+    ],
+    "actifsEnParallele": {
+      "totalMs": 219.8,
+      "requetes": [
+        {
+          "methode": "GET",
+          "chemin": "/vault.css",
+          "statut": 200,
+          "millisecondes": 139.5,
+          "octetsEmis": 0,
+          "octetsRecus": 705,
+          "typeDeContenu": "text/css",
+          "emplacement": null
+        },
+        {
+          "methode": "GET",
+          "chemin": "/vault.js",
+          "statut": 200,
+          "millisecondes": 177.9,
+          "octetsEmis": 0,
+          "octetsRecus": 425,
+          "typeDeContenu": "text/javascript",
+          "emplacement": null
+        },
+        {
+          "methode": "GET",
+          "chemin": "/vault.png",
+          "statut": 200,
+          "millisecondes": 219.4,
+          "octetsEmis": 0,
+          "octetsRecus": 2053,
+          "typeDeContenu": "image/png",
+          "emplacement": null
+        }
+      ]
+    },
+    "pageSuivante": {
+      "methode": "GET",
+      "chemin": "/",
+      "statut": 200,
+      "millisecondes": 311.4,
+      "octetsEmis": 0,
+      "octetsRecus": 1204,
+      "typeDeContenu": "text/html; charset=utf-8",
+      "emplacement": null
+    },
+    "soumission": {
+      "methode": "POST",
+      "chemin": "/notes",
+      "statut": 303,
+      "millisecondes": 415.5,
+      "octetsEmis": 146,
+      "octetsRecus": 0,
+      "typeDeContenu": "text/html; charset=utf-8",
+      "emplacement": "http://127.0.0.1/notes/b9d9be0a-11ad-44a5-80ca-512a9fa47c98"
+    },
+    "pageApresRedirection": {
+      "methode": "GET",
+      "chemin": "/notes/b9d9be0a-11ad-44a5-80ca-512a9fa47c98",
+      "statut": 200,
+      "millisecondes": 117.7,
+      "octetsEmis": 0,
+      "octetsRecus": 770,
+      "typeDeContenu": "text/html; charset=utf-8",
+      "emplacement": null
+    },
+    "total": {
+      "requetes": 7,
+      "octetsRecus": 6361,
+      "octetsEmis": 146,
+      "millisecondes": 1441.2
+    }
+  }
+}

@@ -189,6 +189,7 @@ prouve à un niveau, et aucun niveau ne remplace l'autre :
 | `tests/browser/coquille-portabilite.spec.mjs`        | Chromium, Firefox, WebKit (limite exigée) | la coquille RÉELLE sans VM : sauvegarder → télécharger → restaurer sur une AUTRE origine (`127.0.0.1` → `localhost`) → ouvrir par le code ; archive altérée et tronquée refusées ; après révocation la phrase est refusée et le code ouvre ; un coffre produit par la coquille d'AVANT (`tests/fixtures/coffre-anterieur/`, `tools/produire-coffre-anterieur.mjs`) refusé dès l'inventaire, sans dérivation                                                                                                                                                                                                                   |
 | `tests/browser/coquille-frontiere.spec.mjs`          | Chromium, Firefox, WebKit                 | les trois gestes posés sur le port restreint par la fixture hostile (49 sondes) et refusés sous `VAULT_COQUILLE_PORT_PRIVILEGIE_REFUSE`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `tests/e2e/portabilite-coquille.spec.mjs`            | Chromium                                  | le SERVICE : coquille A ouvre, Rails écrit une note, A sauvegarde ; coquille B (autre origine, autre Service Worker de cadre) restaure, s'ouvre par le code, redémarre Rails sans réinstaller et RELIT la note. Lot 1 de `reprise.yml`                                                                                                                                                                                                                                                                                                                                                                                        |
+| `tests/e2e/durabilite-du-commit.spec.mjs`            | Chromium                                  | la DURABILITÉ DU COMMIT (#209) : une note et sa pièce acquittées, « Verrouiller » à 0, 5 et 30 s (trois fois chacun), instantané retiré, boot à froid — la note et l'empreinte de la pièce sont RELUES, et le disque rouvert accepte l'écriture suivante, relue au boot suivant. Lot 2 de `reprise.yml`                                                                                                                                                                                                                                                                                                                       |
 | `tools/muter-gardes-coquille.mjs`                    | Node                                      | vingt-quatre mutants neufs sur les gardes de la tranche — onze à l'ouverture, treize après la revue de la PR #208 (ordre de la réparation, copies de sauvegarde, identité de l'archive et du disque, traces de service, nature de l'archive) —, tous tués : 88/88 pour la campagne                                                                                                                                                                                                                                                                                                                                            |
 
 **Sans machine virtuelle, le disque est installé mais Rails ne boote pas.** L'épreuve navigateur
@@ -197,22 +198,16 @@ volume, datation, manifeste —, puis le boot échoue faute de noyau. C'est exac
 une application installée, et c'est ce que la sauvegarde exige. Que Rails relise une mutation est
 l'objet du scénario de bout en bout, et de lui seul.
 
-**Écart non comblé (#209)** : une écriture que Rails a acquittée n'est durable qu'une fois la
-barrière du guest franchie, et ni le verrouillage ni la sauvegarde ne l'attendent. Mesuré le
-13/09/2026 (revue de la PR #208, coquille réelle, Chromium) : une note acquittée, puis « Verrouiller
-» après _d_ secondes, puis un boot à froid — perdue 4 fois sur 4 à _d_ = 0 s, 1 fois sur 3 à 5 s, 0
-fois sur 3 à 30 s, 0 fois sur 1 à 60 s. L'instantané gardé masque la perte : la reprise par
-instantané retrouve la note, le boot à froid non. La sauvegarde est exposée de même (le scénario de
-bout en bout rougit sans son attente de 45 s). La fenêtre de perte mesurée est d'environ 30 s ; sa
-correction touche `src/vm/` ou l'image, et relève de #209.
-
-**Attente temporaire, retirée par #209** : `ATTENTE_DURABILITE_209_MS` (45 s) dans
-`tests/e2e/portabilite-coquille.spec.mjs`, entre l'acquittement de la note et la sauvegarde. Elle
-tient lieu d'une garantie qui n'existe pas encore, et elle est DITE : annotation
-`attente-temporaire-209` du test, pièce jointe `attente-durabilite-209.json` (horodatée, jointe même
-à un run rouge), et `chronologie` du rapport `reports/e2e/portabilite-coquille.json`. Aucun signal
-du guest ne la remplace sans toucher `src/vm/` ou l'image : l'effacement du journal SQLite n'émet
-aucune barrière acquittée.
+**Persistance d'une écriture acquittée (#209)** : une écriture que Rails a acquittée — ligne SQLite
+et pièce jointe ActiveStorage de l'application de référence — est durable dès l'acquittement : le
+commit (`synchronous = extra`) et le téléversement (`DurableDisk`) ne rendent la main qu'après des
+barrières validées dans l'OPFS, sur un disque applicatif ext4 journalisé, cohérent à chaque barrière
+(ADR 0004, note du 13/09/2026). Mesuré le 13/09/2026 (coquille réelle, Chromium, local) : une note
+et sa pièce, « Verrouiller » après _d_ secondes, puis un boot à froid — relues 9 fois sur 9 à _d_ =
+0, 5 et 30 s, et le disque rouvert accepte chaque fois l'écriture suivante ; la sauvegarde part dès
+l'acquittement, sans attente. Non couverts : les écritures d'une application tierce hors de SQLite
+et d'ActiveStorage (#210), une coupure entre le commit et le téléversement (une ligne sans fichier,
+le 303 n'étant pas parti), Firefox et WebKit, non mesurés.
 
 **La fixture du coffre antérieur n'est pas fabriquée** : `tools/produire-coffre-anterieur.mjs`
 extrait le commit `bb59de7`, sert SA coquille, y crée un coffre par une phrase dans Chromium, le
@@ -1934,13 +1929,13 @@ froid** depuis le même volume OPFS la retrouve. Il assemble les acquis sans les
 de référence #5, backend OPFS #6, barrière durable #14, console série #54.
 
 Le point technique dur de #7 est d'adosser le disque applicatif de v86 à OPFS **en écriture**. Il
-est traité côté données : la phase `prepare` écrit le disque `reference-app.ext2` de l'image #5 dans
+est traité côté données : la phase `prepare` écrit le disque `reference-app.ext4` de l'image #5 dans
 un volume OPFS neuf, en flux, sans jamais tenir 512 Mio en mémoire. Ce volume est ensuite servi à
 v86 comme `hdb` (`/dev/sdb`) par l'adaptateur de tampon (#4). Le rootfs, lui, reste un tampon en
-lecture servi comme `hda`. Les écritures de Rails — SQLite en `synchronous = full`, ActiveStorage —
-atteignent donc réellement OPFS, et leurs barrières `fsync` sont propagées jusqu'au flush OPFS par
-le pont de durabilité (#14). Le guest n'a pas de réseau émulé : la vérification passe par le pont
-série `@VLT1`.
+lecture servi comme `hda`. Les écritures de Rails — SQLite en `synchronous = extra` (#209),
+ActiveStorage — atteignent donc réellement OPFS, et leurs barrières `fsync` sont propagées jusqu'au
+flush OPFS par le pont de durabilité (#14). Le guest n'a pas de réseau émulé : la vérification passe
+par le pont série `@VLT1`.
 
 Le scénario, tel que `tests/e2e/reprise-mutation-boot-froid.spec.mjs` l'affirme :
 
