@@ -2235,6 +2235,25 @@ Les étapes nommées sont poussées par le scénario qui les connaît
 un motif de refus. Aucun octet du volume et aucune clé n'y entrent — ces fichiers montent dans
 l'artefact public d'un run.
 
+**LIMITE datée, non résolue : le boot bloqué de `portabilite-coquille` (#209, revue de la PR #211,
+constat 6).** Le 13 septembre 2026 à 20 h 14 (heure locale, UTC+2), en local et non en CI (run
+d'agent `run_20260913_00209_ef4f`, Chromium, image ext4 de la branche), le premier essai de
+`portabilite-coquille.spec.mjs` a rougi AVANT toute écriture : le premier boot de la coquille A est
+resté `cycle:demarrage-en-cours` pendant les 600 s de son attente, puis le délai du test (2 400 s) a
+expiré. Le journal de l'attente compte **133 interrogations du localisateur en 600 s**, soit une
+toutes les ≈ 4,5 s au lieu d'au moins une par seconde : le processus de la page ne répondait plus,
+et d'autres navigateurs et une VM tournaient alors sur la machine. Rejoué : 2 verts sur 2 le même
+soir, puis 3 sur 3 par la revue ; l'image a booté seize fois de plus sans blocage. Il est classé
+dans la **même famille que #165** (un boot sans issue, rien de capturé sur le chemin de la
+coquille), sans être supposé résolu. Ce qui distinguerait un défaut de l'image d'une saturation de
+la machine, à la prochaine occurrence : la chronologie — que ce scénario écrit désormais étape par
+étape, avant de jouer chacune — dit si le blocage suit `a-demarrage-demande` (boot) ou une étape
+postérieure ; un défaut du disque applicatif se lirait sur un boot SUIVANT dans l'état du disque que
+la page d'accueil publie (compteur d'erreurs du superbloc, rejeu du journal, alertes `EXT4-fs` —
+`durabilite-du-commit.spec.mjs` l'exige nul à chaque boot), alors qu'une saturation laisse un disque
+sain et un rythme d'interrogation effondré. Ce premier boot, lui, montait un disque fraîchement
+installé (état `clean`, journal vide) : ni rejeu de journal ni `e2fsck` n'y ont lieu.
+
 #### Le support des scénarios : un profil de navigateur PERSISTANT
 
 Les quatre scénarios de `tests/e2e/` tirent leur contexte de
