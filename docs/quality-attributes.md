@@ -60,11 +60,17 @@ ci-dessus**, et ces chiffres ne valent donc que comme ordre de grandeur et point
 | Artefact                     |  Sur disque | Compressé (gzip) |
 | ---------------------------- | ----------: | ---------------: |
 | `reference-rootfs.ext4`      |     367 Mio |          127 Mio |
-| `reference-app.ext4`         |     512 Mio |           53 Mio |
+| `reference-app.ext4`         |     512 Mio |     48,5 Mio (1) |
 | `reference-rootfs-initrd`    |    24,1 Mio |   déjà compressé |
 | `reference-rootfs-vmlinuz`   |     5,4 Mio |       non mesuré |
 | `seabios.bin`, `vgabios.bin` |    0,16 Mio |       non mesuré |
 | **Total**                    | **927 Mio** |    **≈ 200 Mio** |
+
+(1) Une seule valeur, mesurée le 13/09/2026 sur l'ext4 journalisé de #209 (revue de la PR #211,
+constat 8) : `gzip -6 -c artifacts/reference-image/reference-app.ext4 | wc -c` → **50 858 045 o**
+(gzip 1.13). La revue a relevé 50 853 159 o sur une autre construction : la fabrication n'est pas
+reproductible à l'octet (#212). Aucune taille compressée de l'ancien ext2 n'est publiée, faute d'une
+mesure faite avec la même commande.
 
 **Temps de boot à froid jusqu'à `GET /vault/health`** — 4 essais : 96 s, 119 s, 91 s, 90 s. **p50 =
 91 s, p95 = 119 s**, pour un budget « premier boot de preuve p95 ≤ 15 min ». Le p95 est ici la

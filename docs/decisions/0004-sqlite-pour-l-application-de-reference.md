@@ -151,10 +151,10 @@ sont, sans conclusion :
 | CI, recette, lot 1, `santeMs`                       | 71–118 s selon le run (34757240628, 34750287303, 34742171513, 34696982520) | 111–113 s (n = 1 run, 34775718482)                             |
 
 Dire qu'un système de fichiers boote plus vite exigerait la même image, la même machine et plusieurs
-boots de chaque côté ; ce n'est pas mesuré ici. L'**artefact** garde ses 512 Mio (53,4 Mio
-compressés, +6,6 Kio : le journal de 16 Mio est fait de zéros) ; une soumission de note émet **8
-barrières** au lieu de 3, une note avec pièce de 64 Kio **18** au lieu de 7, pour une durée
-inchangée dans la dispersion (153–203 ms et 563–813 ms, `docs/quality-attributes.md`).
+boots de chaque côté ; ce n'est pas mesuré ici. L'**artefact** garde ses 512 Mio (50 858 045 o par
+`gzip -6`, `docs/quality-attributes.md`) ; une soumission de note émet **8 barrières** au lieu de 3,
+une note avec pièce de 64 Kio **18** au lieu de 7, pour une durée inchangée dans la dispersion
+(153–203 ms et 563–813 ms, `docs/quality-attributes.md`).
 
 **Résidu nommé** : une coupure ENTRE le commit et le téléversement laisse une ligne sans fichier. Le
 303 n'est pas parti, ce n'est donc pas une écriture acquittée perdue, mais l'état est incohérent ;
