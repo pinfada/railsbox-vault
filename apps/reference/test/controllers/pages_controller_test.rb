@@ -55,6 +55,40 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_match note.id, response.body
   end
 
+  test "POST /notes avec une pièce jointe la joint à la note, et la page la relit à l'octet (#209)" do
+    jeton = jeton_du_formulaire
+    contenu = Random.new(209).bytes(64 * 1024)
+    piece = Rack::Test::UploadedFile.new(StringIO.new(contenu), "application/octet-stream",
+                                         true, original_filename: "piece.bin")
+
+    post "/notes", params: { libelle: "note et piece", piece: piece, authenticity_token: jeton }
+
+    assert_response :see_other
+    note = Record.order(:created_at).last
+    assert note.evidence.attached?, "la pièce n'est pas jointe"
+    follow_redirect!
+    assert_match %r{data-piece-octets="#{contenu.bytesize}"}, response.body
+    assert_match %r{data-piece-sha256="#{Digest::SHA256.hexdigest(contenu)}"}, response.body
+  end
+
+  test "une note sans pièce ne porte aucune pièce, et un champ « piece » textuel est ignoré" do
+    jeton = jeton_du_formulaire
+
+    post "/notes", params: { libelle: "note sans piece", piece: "pas un fichier", authenticity_token: jeton }
+
+    assert_response :see_other
+    refute Record.order(:created_at).last.evidence.attached?
+    follow_redirect!
+    refute_match %r{data-piece-octets}, response.body
+  end
+
+  test "le formulaire se soumet en multipart et porte un champ de pièce jointe" do
+    get "/"
+
+    assert_match %r{<form [^>]*enctype="multipart/form-data"}, response.body
+    assert_match %r{<input [^>]*type="file"[^>]*id="piece"|<input [^>]*id="piece"[^>]*type="file"}, response.body
+  end
+
   test "POST /notes sans jeton anti-CSRF est refusé, et rien n'est créé" do
     assert_no_difference -> { Record.count } do
       assert_raises(ActionController::InvalidAuthenticityToken) do
