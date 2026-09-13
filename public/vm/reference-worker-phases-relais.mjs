@@ -191,15 +191,29 @@ const OCTETS_DE_PIECE = 64 * 1024;
 
 /** Ce que le JOURNAL du volume a vu pendant `faire()` : écritures, barrières, acquittements. */
 async function avecLesBarrieres(journal, faire) {
-  const avant = journal.counts();
+  const debut = journal.length;
   const mesure = await faire();
-  const apres = journal.counts();
-  const ecart = (operation) => (apres[operation] ?? 0) - (avant[operation] ?? 0);
+  const fenetre = journal.entries().slice(debut);
+  const compter = (operation) => fenetre.filter((entree) => entree.operation === operation).length;
+  // Les commandes ATA du guest, par code : distinguer un FLUSH CACHE (0xe7) d'une écriture dit ce
+  // que le noyau a réellement demandé, là où le seul compte de barrières ne le dit pas.
+  const commandesAta = {};
+  for (const entree of fenetre) {
+    if (entree.operation !== "ata") continue;
+    const code = `0x${Number(entree.command).toString(16)}`;
+    commandesAta[code] = (commandesAta[code] ?? 0) + 1;
+  }
   return {
     ...mesure,
-    ecritures: ecart("write"),
-    barrieres: ecart("flush"),
-    barrieresAcquittees: ecart("flush-ack"),
+    ecritures: compter("write"),
+    barrieres: compter("flush"),
+    barrieresAcquittees: compter("flush-ack"),
+    commandesAta,
+    // L'ORDRE, sans les octets : `w` une écriture, `F` une barrière, `A` son acquittement.
+    sequence: fenetre
+      .map(({ operation }) => ({ write: "w", flush: "F", "flush-ack": "A" })[operation] ?? "")
+      .join("")
+      .replace(/w+/g, (suite) => `w${suite.length}`),
   };
 }
 
@@ -264,7 +278,8 @@ async function mesurerLesEcrituresDurables(requeteHttp, journal, { cookie, jeton
       soumission.emplacement === null
         ? null
         : new URL(soumission.emplacement, "http://127.0.0.1/").pathname;
-    const page = chemin === null ? null : await requeteHttp("GET", chemin, { headers: ENTETES_DE_PAGE });
+    const page =
+      chemin === null ? null : await requeteHttp("GET", chemin, { headers: ENTETES_DE_PAGE });
     const html = page === null ? "" : new TextDecoder().decode(page.corps);
     notesEtPieces.push({
       ...sansReponse(soumission),
