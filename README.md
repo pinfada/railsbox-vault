@@ -24,14 +24,16 @@ démontré cette propriété de persistance et de portabilité.
 antérieure est refusé par la coquille (`VAULT_COQUILLE_COFFRE_ANTERIEUR`) et n'est pas migré :
 effacez les données du site et recréez-le.
 
-**Limite connue de la persistance (#209)** : une écriture que Rails a acquittée n'est durable qu'une
-fois la barrière du guest franchie, et ni le verrouillage ni la sauvegarde ne l'attendent. Mesuré le
-13/09/2026 (revue de la PR #208, coquille réelle, Chromium) : une note acquittée, puis « Verrouiller
-» après _d_ secondes, puis un boot à froid — perdue 4 fois sur 4 à _d_ = 0 s, 1 fois sur 3 à 5 s, 0
-fois sur 3 à 30 s, 0 fois sur 1 à 60 s. L'instantané gardé masque la perte : la reprise par
-instantané retrouve la note, le boot à froid non. La sauvegarde est exposée de même (le scénario de
-bout en bout rougit sans son attente de 45 s). La fenêtre de perte mesurée est d'environ 30 s ; sa
-correction touche `src/vm/` ou l'image, et relève de #209.
+**Persistance d'une écriture acquittée (#209)** : une écriture que Rails a acquittée — ligne SQLite
+et pièce jointe ActiveStorage de l'application de référence — est durable dès l'acquittement : le
+commit (`synchronous = extra`) et le téléversement (`DurableDisk`) ne rendent la main qu'après des
+barrières validées dans l'OPFS, sur un disque applicatif ext4 journalisé, cohérent à chaque barrière
+(ADR 0004, note du 13/09/2026). Mesuré le 13/09/2026 (coquille réelle, Chromium, local) : une note
+et sa pièce, « Verrouiller » après _d_ secondes, puis un boot à froid — relues 9 fois sur 9 à _d_ =
+0, 5 et 30 s, et le disque rouvert accepte chaque fois l'écriture suivante ; la sauvegarde part dès
+l'acquittement, sans attente. Non couverts : les écritures d'une application tierce hors de SQLite
+et d'ActiveStorage (#210), une coupure entre le commit et le téléversement (une ligne sans fichier,
+le 303 n'étant pas parti), Firefox et WebKit, non mesurés.
 
 ## Principes
 

@@ -455,7 +455,7 @@ Ce que la commande produit, dans `artifacts/reference-image/` (dossier ignoré p
 | `reference-rootfs.ext4`    | `hda` : Debian i386, Ruby, scripts du guest, pont série         |
 | `reference-rootfs-vmlinuz` | noyau démarré directement par v86, sans amorceur                |
 | `reference-rootfs-initrd`  | initrd (pilotes ext2/ext4 avant montage de la racine)           |
-| `reference-app.ext2`       | `hdb` : application, bundle, base SQLite migrée et invariant    |
+| `reference-app.ext4`       | `hdb` : application, bundle, base SQLite migrée et invariant    |
 | `seabios.bin`              | micrologiciel exigé par v86 pour exécuter l'option ROM du noyau |
 | `vgabios.bin`              | micrologiciel VGA                                               |
 
@@ -466,14 +466,14 @@ et origine de chaque artefact, ainsi que les versions de la chaîne. Il est la r
 
 Coût mesuré le 2026-08-23 (Windows 11, Docker Desktop 29.4.3, 28 threads logiques, 32 Gio) :
 
-| Étape                                                 |           Temps | Résultat                                      |
-| ----------------------------------------------------- | --------------: | --------------------------------------------- |
-| `outils` : Debian i386 + Ruby 3.3.12 compilé          |      env. 4 min | image intermédiaire, jamais publiée           |
-| `rootfs` : noyau, bibliothèques, scripts du guest     |      env. 2 min | 367 Mio en ext4                               |
-| `disque-app` : bundle i386, migration, invariant créé |      env. 4 min | 512 Mio en ext2, dimensionnement paramétrable |
-| Fabrication des deux systèmes de fichiers             |    env. 1,5 min | —                                             |
-| **Construction complète, cache vide**                 | **env. 12 min** | 927 Mio d'artefacts, ≈ 200 Mio compressés     |
-| Cache Docker conservé sur l'hôte                      |               — | environ 3 Gio                                 |
+| Étape                                                 |           Temps | Résultat                                        |
+| ----------------------------------------------------- | --------------: | ----------------------------------------------- |
+| `outils` : Debian i386 + Ruby 3.3.12 compilé          |      env. 4 min | image intermédiaire, jamais publiée             |
+| `rootfs` : noyau, bibliothèques, scripts du guest     |      env. 2 min | 367 Mio en ext4                                 |
+| `disque-app` : bundle i386, migration, invariant créé |      env. 4 min | 512 Mio en ext4 journalisé (#209), paramétrable |
+| Fabrication des deux systèmes de fichiers             |    env. 1,5 min | —                                               |
+| **Construction complète, cache vide**                 | **env. 12 min** | 927 Mio d'artefacts, ≈ 200 Mio compressés       |
+| Cache Docker conservé sur l'hôte                      |               — | environ 3 Gio                                   |
 
 Une reconstruction sans changement de `Gemfile.lock` ni de paquets réutilise le cache Docker : elle
 se limite aux étapes modifiées et retombe sous les deux minutes.

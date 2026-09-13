@@ -4,13 +4,16 @@
 // ## Ce qu'il prouve, dans l'ordre où il le prouve
 //
 //  1. la coquille A s'ouvre par une phrase, crée son moyen de récupération, démarre Rails ; un
-//     utilisateur SOUMET un formulaire dans la page servie — c'est la mutation ;
-//  2. A SAUVEGARDE : l'application est arrêtée au point de contrôle, l'archive est écrite dans le
-//     Worker de confiance et remise au NAVIGATEUR par un téléchargement — un fichier sur l'hôte ;
+//     utilisateur SOUMET un formulaire dans la page servie, avec une pièce jointe — c'est la
+//     mutation ;
+//  2. A SAUVEGARDE, DÈS l'acquittement et sans attente (#209) : l'application est arrêtée au
+//     point de contrôle, l'archive est écrite dans le Worker de confiance et remise au NAVIGATEUR
+//     par un téléchargement — un fichier sur l'hôte ;
 //  3. la coquille B — une AUTRE origine de confiance, un autre OPFS, son propre Service Worker de
 //     cadre — RESTAURE ce fichier dans son emplacement vide ;
 //  4. B s'ouvre par le CODE de récupération et la version notée, par le geste existant ;
-//  5. B démarre Rails SANS réinstaller, et la page servie RELIT la note saisie dans A.
+//  5. B démarre Rails SANS réinstaller, et la page servie RELIT la note saisie dans A et l'empreinte
+//     de sa pièce jointe.
 //
 // ## Ce qu'il ne prouve PAS
 //
@@ -18,6 +21,7 @@
 //    sans machine virtuelle, sur trois moteurs, par `tests/browser/coquille-portabilite.spec.mjs` ;
 //  - un autre moteur que Chromium, comme tous les scénarios de ce dossier.
 
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,21 +52,13 @@ const BUDGET_PREMIERE_PAGE_MS = 180_000;
 /** Une archive d'un demi-gibioctet : deux passes d'empreinte à l'écriture, deux à la restauration. */
 const BUDGET_PORTABILITE_MS = 600_000;
 /**
- * ATTENTE TEMPORAIRE, retirée par #209 : elle tient lieu d'une garantie de durabilité qui n'existe
- * pas encore.
- *
- * Mesuré par la revue de la PR #208 (13/09/2026, coquille réelle, Chromium, image du run
- * 34750287303) : une note acquittée par Rails, puis « Verrouiller » après d, puis un boot à froid —
- * perdue 4 fois sur 4 à d = 0 s, 1 fois sur 3 à 5 s, 0 sur 3 à 30 s, 0 sur 1 à 60 s. Ce scénario,
- * avec cette attente ramenée à 0, rougit : la note manque à B. Cause probable, non prouvée : la
- * validation SQLite en `journal_mode: delete` est l'effacement du journal, une écriture de répertoire
- * qu'aucun `fsync` ne pousse sur ext2 ; le noyau la vide après ~35 s au plus (expiration 30 s,
- * réveil 5 s). 45 s laissent la marge.
- *
- * Aucun signal du guest ne la remplace sans toucher `src/vm/` ou l'image : l'effacement du journal
- * n'émet aucune barrière acquittée. L'épreuve ÉCRIT dans sa chronologie qu'elle a attendu.
+ * La PIÈCE JOINTE de la note : 64 Kio déterministes. La sauvegarde part DÈS l'acquittement, sans
+ * attente (#209) : l'attente de 45 s qui tenait lieu de garantie est retirée, parce que la garantie
+ * existe — le commit SQLite est durable (`synchronous = extra`) et la pièce est synchronisée avant la
+ * réponse (ADR 0004, note du 13/09/2026).
  */
-const ATTENTE_DURABILITE_209_MS = 45_000;
+const PIECE = Buffer.from(Array.from({ length: 64 * 1024 }, (_, index) => (index * 17 + 3) % 251));
+const PIECE_SHA256 = createHash("sha256").update(PIECE).digest("hex");
 
 function raisonDIndisponibilite() {
   if (!existsSync(CHEMIN_MANIFESTE)) {
@@ -156,28 +152,21 @@ test("une note saisie dans la coquille A se relit dans la coquille B, restaurée
   await attendreLaPremierePage(a);
   const servieA = pageServie(a);
   await servieA.locator("#libelle").fill(LIBELLE);
+  await servieA
+    .locator("#piece")
+    .setInputFiles({ name: "piece-a.bin", mimeType: "application/octet-stream", buffer: PIECE });
   await servieA.locator("#enregistrer").click();
   await expect(servieA.locator("#libelle-note")).toHaveText(LIBELLE, { timeout: 120_000 });
+  await expect(servieA.locator("#piece-note")).toHaveAttribute("data-piece-sha256", PIECE_SHA256);
   const identifiant = (await servieA.locator("#identifiant-note").textContent()).trim();
   expect(identifiant).toMatch(/^[0-9a-f-]{36}$/);
   noter("note-acquittee-par-rails", { identifiant });
 
-  // ÉCART NON COMBLÉ (#209, ADR 0039, limite 5) : voir `ATTENTE_DURABILITE_209_MS`. L'attente est
-  // DITE — dans la chronologie, dans le rapport, dans l'annotation du test — et non cachée.
-  testInfo.annotations.push({
-    type: "attente-temporaire-209",
-    description: `${ATTENTE_DURABILITE_209_MS} ms entre l'acquittement de Rails et la sauvegarde, faute de garantie de durabilité (#209)`,
-  });
-  noter("attente-durabilite-209-debut", { dureeMs: ATTENTE_DURABILITE_209_MS });
-  await a.waitForTimeout(ATTENTE_DURABILITE_209_MS);
-  noter("attente-durabilite-209-fin");
-  // Attachée tout de suite : le rapport d'un run ROUGE montre aussi qu'elle a été attendue.
-  await testInfo.attach("attente-durabilite-209.json", {
-    body: JSON.stringify(chronologie, null, 2),
-    contentType: "application/json",
-  });
-  mesures.attenteDurabilite209Ms = ATTENTE_DURABILITE_209_MS;
-  // --- 2. A : SAUVEGARDER, au point de contrôle, vers un fichier de l'hôte -----------------------
+  // --- 2. A : SAUVEGARDER DÈS l'acquittement, au point de contrôle, vers un fichier de l'hôte ------
+  //
+  // Aucune attente entre l'acquittement et le geste (#209) : c'est la propriété que ce scénario
+  // prouve, et la chronologie le montre — `note-acquittee-par-rails` puis `sauvegarde-demandee`.
+  noter("sauvegarde-demandee");
   const departSauvegarde = Date.now();
   const telechargement = a.waitForEvent("download", { timeout: BUDGET_PORTABILITE_MS });
   await a.click("#sauvegarder-le-coffre");
@@ -227,7 +216,13 @@ test("une note saisie dans la coquille A se relit dans la coquille B, restaurée
     pageServie(b).locator(`[data-note="${identifiant}"]`),
     "la note saisie dans A n'a pas été relue dans B",
   ).toHaveText(LIBELLE, { timeout: 120_000 });
-  noter("note-relue-dans-b");
+  // La PIÈCE aussi : Rails la relit depuis le disque restauré, et son empreinte est celle de A.
+  await pageServie(b).locator(`[data-note="${identifiant}"]`).click();
+  await expect(
+    pageServie(b).locator("#piece-note"),
+    "la pièce jointe de la note saisie dans A n'a pas été relue dans B",
+  ).toHaveAttribute("data-piece-sha256", PIECE_SHA256, { timeout: 120_000 });
+  noter("note-et-piece-relues-dans-b");
   expect(erreurs, "aucune erreur de page").toEqual([]);
 
   mesures.totalMs = Date.now() - depart;
