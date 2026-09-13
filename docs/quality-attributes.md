@@ -1550,9 +1550,11 @@ requêtes), pas un réglage de débit.
 
 Même banc, même machine, cinq soumissions par colonne, le 13 septembre 2026, Chromium. « Barrières »
 compte les FLUSH CACHE que le guest a émis ET que le pont a acquittés pendant le POST, chacun après
-validation d'une génération OPFS. Relevés bruts :
-[`avant`](mesures/pont-serie-http-chromium-2026-09-13-avant-209.json) et
-[`après`](mesures/pont-serie-http-chromium-2026-09-13-apres-209-ext4.json).
+validation d'une génération OPFS. Relevés bruts, un par colonne :
+[`avant`](mesures/pont-serie-http-chromium-2026-09-13-avant-209.json) (13:23 UTC),
+[`ext2, extra, DurableDisk`](mesures/pont-serie-http-chromium-2026-09-13-ext2-extra-209.json) (13:45
+UTC, avant la décision de l'ext4 ; versé après la revue de la PR #211, constat 3) et
+[`après`](mesures/pont-serie-http-chromium-2026-09-13-apres-209-ext4.json) (17:10 UTC).
 
 | Soumission (POST `/notes`, 303)    | Avant : `full`, `Disk`, ext2 | ext2, `extra`, `DurableDisk` (non retenu) | **Après : ext4 journalisé, `extra`, `DurableDisk`** |
 | ---------------------------------- | ---------------------------- | ----------------------------------------- | --------------------------------------------------- |
