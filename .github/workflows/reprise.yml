@@ -141,7 +141,13 @@ jobs:
       # `portabilite-coquille.spec.mjs` (#207) rejoint le lot 1, le plus court mesuré le 13/09/2026
       # (25 min). Il coûte 6,3 min en local (un ouvrier, le 13/09/2026 : deux boots de Rails à 101 et
       # 102 s, sauvegarde 9,1 s, restauration 13,2 s, attente d'écriture du guest 45 s) : le lot 1
-      # vise donc ≈ 32 min, sous la borne de 60 min du job, qui reste inchangée.
+      # vise donc ≈ 32 min, sous la borne de 60 min du job, qui reste inchangée. #209 retire ces 45 s.
+      #
+      # `durabilite-du-commit.spec.mjs` (#209) rejoint le lot 2, le plus court (≈ 28 min estimées
+      # avec `parcours-page-rails`, contre ≈ 31 pour le lot 1 sans l'attente de 45 s). Il coûte
+      # 18,5 min en local le 13/09/2026 (un ouvrier : dix boots de Rails à 81,6-88,1 s, neuf
+      # verrouillages de 1,6 s, 105 s d'attentes voulues à 5 et 30 s) : le lot 2 vise donc ≈ 47 min,
+      # sous la borne de 60 min du job, qui reste inchangée.
       matrix:
         include:
           - lot: "1"
@@ -157,6 +163,7 @@ jobs:
               tests/e2e/enveloppe-rotation-boot-froid.spec.mjs
               tests/e2e/reprise-coquille-boot-froid.spec.mjs
               tests/e2e/export-volume-verifiable.spec.mjs tests/e2e/parcours-page-rails.spec.mjs
+              tests/e2e/durabilite-du-commit.spec.mjs
 
     env:
       VAULT_E2E_LOT: ${{ matrix.lot }}
