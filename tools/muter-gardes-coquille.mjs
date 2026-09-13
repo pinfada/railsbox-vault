@@ -749,8 +749,8 @@ export const MUTATIONS = Object.freeze([
     nom: "une archive qui ne déclare aucune récupération est reconnue avant d'écrire",
     garde: "enTeteDArchive — `recovery: null`",
     fichier: PORTABILITE,
-    avant: "    return { lisible: true, emporteUneRecuperation: entete.recovery !== null };\n",
-    apres: "    return { lisible: true, emporteUneRecuperation: true };\n",
+    avant: "      emporteUneRecuperation: entete.recovery !== null,\n",
+    apres: "      emporteUneRecuperation: true,\n",
     epreuves: [EPREUVE_PORTABILITE, EPREUVE_PORTABILITE_DU_WORKER],
   },
   {
