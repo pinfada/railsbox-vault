@@ -1,4 +1,11 @@
 <h2 id="libelle-note"><%= @note.label %></h2>
 <p id="identifiant-note"><%= @note.id %></p>
 <p id="sequence-note"><%= @note.sequence %></p>
+<%# La pièce est RELUE depuis le stockage, et son empreinte calculée sur ce qui a
+    été lu : un nom de fichier survivant sans ses octets ne se lirait pas ici. %>
+<% if @piece&.key?(:sha256) %>
+  <p id="piece-note" data-piece-octets="<%= @piece[:octets] %>" data-piece-sha256="<%= @piece[:sha256] %>"><%= @piece[:nom] %></p>
+<% elsif @piece %>
+  <p id="piece-note" data-piece-etat="fichier-introuvable"><%= @piece[:nom] %></p>
+<% end %>
 <p><a href="/" id="retour">Retour</a></p>

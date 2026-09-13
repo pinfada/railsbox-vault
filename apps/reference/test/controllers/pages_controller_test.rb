@@ -71,6 +71,21 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_match %r{data-piece-sha256="#{Digest::SHA256.hexdigest(contenu)}"}, response.body
   end
 
+  test "une note dont le fichier a disparu le DIT au lieu de rendre une erreur" do
+    jeton = jeton_du_formulaire
+    piece = Rack::Test::UploadedFile.new(StringIO.new("octets"), "application/octet-stream",
+                                         true, original_filename: "piece.bin")
+    post "/notes", params: { libelle: "note amputee", piece: piece, authenticity_token: jeton }
+    note = Record.order(:created_at).last
+    File.delete(ActiveStorage::Blob.service.path_for(note.evidence.blob.key))
+
+    get "/notes/#{note.id}"
+
+    assert_response :ok
+    assert_match %r{data-piece-etat="fichier-introuvable"}, response.body
+    refute_match %r{data-piece-sha256}, response.body
+  end
+
   test "une note sans pièce ne porte aucune pièce, et un champ « piece » textuel est ignoré" do
     jeton = jeton_du_formulaire
 
@@ -90,6 +105,10 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "POST /notes sans jeton anti-CSRF est refusé, et rien n'est créé" do
+    # `InvalidAuthenticityToken` n'est défini qu'au chargement d'`ActionController::Base`. Quand ce
+    # test tire le premier de la graine, aucune requête ne l'a encore chargé, et la constante est
+    # évaluée AVANT le `post` : il faut la charger ici, sans quoi l'épreuve dépend de l'ordre.
+    assert_operator PagesController, :<, ActionController::Base
     assert_no_difference -> { Record.count } do
       assert_raises(ActionController::InvalidAuthenticityToken) do
         post "/notes", params: { libelle: "note sans jeton" }

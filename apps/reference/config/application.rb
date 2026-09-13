@@ -15,6 +15,11 @@ require "action_view/railtie"
 
 Bundler.require(*Rails.groups)
 
+# Le service de stockage durable (#209) est cherché par ActiveStorage sous
+# `active_storage/service/durable_disk_service` : `lib/` doit être sur le chemin
+# de chargement, ce que Rails 8.1 ne fait plus par défaut.
+$LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
+
 require "digest"
 
 # Chaîne source servant à DÉRIVER la clé de signature synthétique de la fixture.
@@ -43,7 +48,11 @@ module VaultReference
 
     # `lib/` porte la logique de l'invariant, partagée par les contrôleurs, la
     # commande de fixture et les tests.
-    config.autoload_lib(ignore: %w[])
+    #
+    # `lib/active_storage/` n'est PAS autochargé : ActiveStorage résout le service
+    # nommé dans `storage.yml` par un `require` sur le chemin de chargement, et un
+    # fichier requis ne doit pas être aussi géré par l'autochargeur.
+    config.autoload_lib(ignore: %w[active_storage])
 
     # Aucun secret n'est distribué avec cette application. `master.key` et
     # `credentials.yml.enc` n'existent pas, et leur absence ne doit pas être
