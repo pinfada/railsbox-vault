@@ -19,7 +19,11 @@
 //  4. l'instantané laissé par le verrouillage est RETIRÉ de l'OPFS : la réouverture ne peut pas le
 //     reprendre, et elle le PUBLIE (`instantaneUtilise: false`) ;
 //  5. la même phrase rouvre, Rails boote À FROID sur le disque sans réinstaller, et la page de la note
-//     précédente relit son libellé ET l'empreinte de sa pièce — puis le tour suivant écrit la sienne.
+//     précédente relit son libellé ET l'empreinte de sa pièce ;
+//  6. sur ce disque rouvert à froid, une NOUVELLE note et sa pièce sont écrites et acquittées — c'est
+//     ce que l'ext2 sans journal refusait (inode doublement alloué, EIO) — puis verrouillées à leur
+//     tour et relues après un SECOND boot à froid. Chacun des neuf délais est donc suivi d'une
+//     écriture sur le disque qu'il a laissé (sauf le dernier), et chaque écriture d'une relecture.
 //
 // Les neuf tours sont TOUS joués avant de juger : une perte au deuxième tour ne doit pas cacher ce
 // que les sept suivants auraient dit. Le relevé `reports/e2e/durabilite-du-commit.json` et la
@@ -292,9 +296,12 @@ test("une note et sa pièce acquittées survivent au verrouillage à 0, 5 et 30 
   // --- Le JUGEMENT, une fois les neuf tours joués ----------------------------------------------
   const relectures = tours.filter((tour) => tour.relecture !== undefined);
   expect(relectures).toHaveLength(DELAIS_S.length);
-  const tableau = relectures.map(({ rang, boot, relecture }) => ({
+  const tableau = relectures.map(({ rang, boot, relecture, ecrite }) => ({
     delaiS: relecture.note.delaiS,
+    bootMs: boot.bootMs,
     bootAFroid: boot.instantaneUtilise === false && boot.installee === false,
+    // Le dernier tour ne réécrit pas : il n'y aurait plus de boot à froid pour relire.
+    ecritureApresRelecture: rang === DELAIS_S.length ? null : ecrite !== undefined,
     noteRelue: relecture.listee && relecture.libelle === relecture.note.libelle,
     pieceRelue: relecture.pieceSha256 === relecture.note.pieceSha256,
     rang,
@@ -307,8 +314,16 @@ test("une note et sa pièce acquittées survivent au verrouillage à 0, 5 et 30 
     ).toBeGreaterThan(0);
   }
   expect(
-    tableau.filter((ligne) => !(ligne.bootAFroid && ligne.noteRelue && ligne.pieceRelue)),
-    "chaque note acquittée — et sa pièce — est relue après un verrouillage et un boot À FROID",
+    tableau.filter(
+      (ligne) =>
+        !(
+          ligne.bootAFroid &&
+          ligne.noteRelue &&
+          ligne.pieceRelue &&
+          ligne.ecritureApresRelecture !== false
+        ),
+    ),
+    "chaque note acquittée — et sa pièce — est relue après un verrouillage et un boot À FROID, et le disque rouvert accepte l'écriture suivante",
   ).toEqual([]);
   expect(erreurs, "aucune erreur de page").toEqual([]);
 });
