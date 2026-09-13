@@ -353,12 +353,25 @@ function exigerArchiveAdmise(type, archive) {
   if (!TYPES_PORTEURS_D_ARCHIVE.has(type)) {
     throw refusDeCapacite(`une archive sur « ${type} », qui n'en porte jamais`);
   }
-  const nom = archive?.constructor?.name;
-  if (nom !== "File" && nom !== "Blob") {
+  if (!estUneArchive(archive)) {
     throw refusDeCapacite(
-      `« ${CHAMP_DE_L_ARCHIVE} » n'est pas un fichier (${nom ?? typeof archive})`,
+      `« ${CHAMP_DE_L_ARCHIVE} » n'est pas un fichier (${archive?.constructor?.name ?? typeof archive})`,
     );
   }
+}
+
+/**
+ * Une valeur est-elle un VRAI `Blob` — un `File` en est un ?
+ *
+ * La dérogation juge ce qu'EST la valeur, par `instanceof`, et non le nom que porte son constructeur
+ * (revue de la PR #208, constat 8) : `{ constructor: { name: "File" } }` était admis. Le refus de
+ * `sansCapacite` juge au nom, et c'est juste dans ce sens-là — un faux positif y refuse de trop ;
+ * une ADMISSION jugée au nom admettrait de trop. Un moteur sans `Blob` n'admet rien.
+ *
+ * @param {unknown} valeur
+ */
+export function estUneArchive(valeur) {
+  return typeof Blob === "function" && valeur instanceof Blob;
 }
 
 /** @param {unknown} kek */

@@ -635,3 +635,21 @@ test("un coffre ANTÉRIEUR est refusé par la sauvegarde comme par la restaurati
     CODES_REFUS_COQUILLE.coffreAnterieur,
   );
 });
+
+test("la restauration refuse un objet DÉGUISÉ en File, avant de rien lire (revue #208, constat 8)", async () => {
+  const destination = workerSur(magasin(), { etat: ETATS_DU_VOLUME.verrouille, kek: null });
+  const lu = [];
+  const deguise = {
+    constructor: { name: "File" },
+    size: 64,
+    slice: (...bornes) => {
+      lu.push(bornes);
+      return new Blob([new Uint8Array(64)]);
+    },
+  };
+  const erreur = await echec(
+    destination.portabilite.servir(TYPES_PRIVILEGIES.restaurer, { archive: deguise }, "r"),
+  );
+  assert.equal(erreur.code, CODES_REFUS_COQUILLE.messageMalforme);
+  assert.deepEqual(lu, [], "l'objet déguisé a été lu");
+});

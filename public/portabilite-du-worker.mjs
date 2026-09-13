@@ -16,7 +16,11 @@
 //    coffre restauré s'ouvre ensuite par le code, par le geste de déverrouillage existant ;
 //  - la RÉVOCATION ne transporte rien d'autre que des noms de moyens et des nombres.
 
-import { CHAMP_DE_L_ARCHIVE, TYPES_PRIVILEGIES } from "/src/coquille/contrat-de-messages.mjs";
+import {
+  CHAMP_DE_L_ARCHIVE,
+  TYPES_PRIVILEGIES,
+  estUneArchive,
+} from "/src/coquille/contrat-de-messages.mjs";
 import {
   lireLeDescripteur,
   NOM_DU_VOLUME_APPLICATIF,
@@ -327,10 +331,7 @@ async function restaurer(contexte, message, correlation) {
   const { interne, prim } = contexte;
   contexte.exigerUnVolumeAtteignable();
   const archive = message?.[CHAMP_DE_L_ARCHIVE];
-  const nature = archive?.constructor?.name;
-  if ((nature !== "File" && nature !== "Blob") || typeof archive.slice !== "function") {
-    throw refus(CODES_REFUS_COQUILLE.messageMalforme);
-  }
+  if (!estUneArchive(archive)) throw refus(CODES_REFUS_COQUILLE.messageMalforme);
   // Un coffre OUVERT dans ce Worker est un emplacement occupé, quoi que dise le support.
   if (interne.etat === ETATS_DU_VOLUME.ouvert) throw refus(CODES_REFUS_COQUILLE.emplacementOccupe);
   const decision = decisionDeRestauration(await constaterLEmplacement(prim));
