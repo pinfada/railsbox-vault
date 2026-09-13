@@ -70,14 +70,22 @@ test("un coffre créé par la coquille d'AVANT est reconnu à son volume coquill
   assert.equal(await constater(banc), ETATS_DE_L_EMPLACEMENT.anterieur);
 });
 
-test("un coffre d'AVANT est aussi reconnu au manifeste de son disque, tiré sous une autre identité", async () => {
+test("un disque dont le manifeste déclare un AUTRE volume n'est pas un coffre antérieur : il a son propre état", async () => {
+  // Revue de la PR #208, constat 5 : `COFFRE_ANTERIEUR` recouvrait trois causes. Il n'en garde
+  // qu'une — le volume `coquille` sous l'ancienne identité ; un manifeste d'un autre volume, ou d'un
+  // autre format, est un disque que cette coquille n'a ni installé ni restauré.
   const banc = magasin();
   await installerLeDisque(banc);
   await poserLEnveloppe(banc);
+  await poserLeVolumeCoquille(banc, IDENTIFIANT_DU_VOLUME_COQUILLE);
   const manifeste = parseManifest(banc.lire(manifestSidecarName("application")));
-  const ancien = { ...manifeste, volume: { ...manifeste.volume, id: identifiantDeVolume(0x33) } };
-  await banc.ecrire(manifestSidecarName("application"), serializeManifest(ancien));
-  assert.equal(await constater(banc), ETATS_DE_L_EMPLACEMENT.anterieur);
+  const autre = { ...manifeste, volume: { ...manifeste.volume, id: identifiantDeVolume(0x33) } };
+  await banc.ecrire(manifestSidecarName("application"), serializeManifest(autre));
+  assert.equal(await constater(banc), "disque-d-un-autre-coffre");
+
+  const autreFormat = { ...manifeste, formatVersion: manifeste.formatVersion - 1 };
+  await banc.ecrire(manifestSidecarName("application"), serializeManifest(autreFormat));
+  assert.equal(await constater(banc), "disque-d-un-autre-coffre");
 });
 
 test("une restauration COUPÉE est reconnue, et une installation coupée ne l'est PAS", async () => {
