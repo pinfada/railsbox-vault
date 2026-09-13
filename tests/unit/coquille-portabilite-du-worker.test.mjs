@@ -43,6 +43,12 @@ const { ajouterEmplacement, inventorierEnveloppe, ouvrirEnveloppe } =
 const { TYPES_KEK } = await import("../../src/vm/enveloppe/identite-enveloppe.mjs");
 const { openOpfsVolume } = await import("../../src/vm/opfs-block-backend.mjs");
 const { voisinsDunVolume } = await import("../../src/vm/opfs-sync-access.mjs");
+const { construireEnveloppeDeRecuperation } =
+  await import("../../src/vm/enveloppe-de-recuperation.mjs");
+const { ouvrirVolumeBrut } = await import("../../src/vm/opfs-volume-brut.mjs");
+const { createOpfsArchiveSink } = await import("../../src/vm/opfs-archive-sink.mjs");
+const { backendSource, writeArchive } = await import("../../src/vm/volume-export.mjs");
+const A = await import("./support-archive-recuperation.mjs");
 const { suiteDOctets } = await import("./support-enveloppe-double.mjs");
 const {
   KEK,
@@ -339,6 +345,59 @@ test("une RÉPARATION coupée à CHAQUE rang ne laisse jamais un coffre sans dis
   }
   // Deux volumes, chacun avec ses cinq voisins : douze retraits, chacun coupé une fois.
   assert.equal(rangsCoupes, 2 * (1 + voisinsDunVolume("application").length));
+});
+
+/**
+ * Une archive COHÉRENTE d'un AUTRE volume : identifiant tiré, sa propre page de récupération. Toutes
+ * les gardes de `importArchive` l'acceptent — c'est l'identité du COFFRE qu'elle ne porte pas.
+ */
+async function archiveDUnAutreVolume() {
+  const source = A.magasin();
+  const pose = await A.poserVolume(source, { nom: "etranger", identifiantVolume: A.VOLUME_A });
+  const recovery = await construireEnveloppeDeRecuperation({
+    support: pose.support,
+    identifiantVolume: A.VOLUME_A,
+    kek: A.KEK,
+  });
+  const brut = await ouvrirVolumeBrut({ name: "etranger", openHandle: source.store.openHandle });
+  const handle = await source.store.openHandle("sortie");
+  try {
+    await writeArchive({
+      source: backendSource(brut),
+      sink: createOpfsArchiveSink(handle, { volume: "sortie" }),
+      manifest: A.descripteurDeManifeste(A.VOLUME_A),
+      consistency: { kind: "handle-exclusif", detail: "épreuve" },
+      cle: A.DEK.slice(),
+      recovery,
+    });
+    handle.flush();
+  } finally {
+    handle.close();
+    await brut.close();
+  }
+  return new File([source.store.snapshot("sortie")], "etranger.rbvault");
+}
+
+test("une archive d'un AUTRE coffre est refusée AVANT tout octet écrit, et l'emplacement reste vide", async () => {
+  // Revue de la PR #208, constat 5 : elle était « restaurée », puis l'emplacement était muré sous
+  // `VAULT_COQUILLE_COFFRE_ANTERIEUR`, dont la conduite ne décrivait pas la cause.
+  const archive = await archiveDUnAutreVolume();
+  const ailleurs = magasin();
+  const destination = workerSur(ailleurs, { etat: ETATS_DU_VOLUME.verrouille, kek: null });
+  const erreur = await echec(
+    destination.portabilite.servir(TYPES_PRIVILEGIES.restaurer, { archive }, "r"),
+  );
+  assert.equal(erreur.code, "VAULT_COQUILLE_ARCHIVE_D_UN_AUTRE_COFFRE");
+  for (const nom of [
+    "application",
+    "application.manifest",
+    "application.engagement",
+    "coquille.cles",
+  ]) {
+    assert.equal((await ailleurs.stat(nom)).present, false, `${nom} a été écrit malgré le refus`);
+  }
+  assert.equal(await destination.portabilite.constater(), "vide");
+  assert.equal(destination.reponses.length, 0, "aucune réponse de restauration");
 });
 
 test("une archive SANS récupération est refusée AVANT toute écriture, et la sauvegarde le dit", async () => {
