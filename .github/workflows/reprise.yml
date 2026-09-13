@@ -8,15 +8,15 @@ name: Reprise MVP
 # obligatoire de la protection de branche, et `npm run check` ne l'appelle pas. Sa périodicité et son
 # coût sont documentés dans docs/testing.md.
 #
-# DEUX LOTS depuis le 12 septembre 2026 (#200, docs/quality-attributes.md § Reprise MVP) : l'image
-# est construite UNE fois (job `image`) puis partagée par artefact avec deux jobs `reprise`
-# (matrice `lot`) qui jouent chacun une moitié des scénarios, choisie par DURÉE MESURÉE et non par
-# décompte de fichiers. Mesuré sur le même commit : un seul job à deux ouvriers tient 41,5 min — deux
-# ouvriers se PARTAGENT les 4 vCPU d'UN exécutant et chaque scénario en pâtit (10,79 → 15,90 min pour
-# le plus lourd) — quand deux lots sur deux exécutants DISTINCTS, un ouvrier chacun, ne se
-# contentent pas les uns les autres. Le job `fusion` réunit les mesures et le rapport Playwright
-# (rapporteur `blob`, fusionné par `playwright merge-reports`) en un seul artefact `mesures-reprise`,
-# comme avant la scission.
+# DEUX LOTS depuis le 12 septembre 2026 (#200, docs/quality-attributes.md § Reprise MVP), TROIS
+# depuis #209 (revue de la PR #211) : l'image est construite UNE fois (job `image`) puis partagée
+# par artefact avec les jobs `reprise` (matrice `lot`), qui jouent chacun une part des scénarios,
+# choisie par DURÉE MESURÉE et non par décompte de fichiers. Mesuré sur le même commit : un seul job
+# à deux ouvriers tient 41,5 min — deux ouvriers se PARTAGENT les 4 vCPU d'UN exécutant et chaque
+# scénario en pâtit (10,79 → 15,90 min pour le plus lourd) — quand des lots sur des exécutants
+# DISTINCTS, un ouvrier chacun, ne se contentent pas les uns les autres. Le job `fusion` réunit les
+# mesures et le rapport Playwright de chaque lot (rapporteur `blob`, fusionné par `playwright
+# merge-reports`) en un seul artefact `mesures-reprise`, comme avant la scission.
 
 on:
   workflow_dispatch:
@@ -103,7 +103,7 @@ jobs:
       - name: Construction de l'image de référence
         run: npm run image:build
 
-      # Partagée avec les deux lots : construite une seule fois (≈ 6 min), elle ne l'est plus deux
+      # Partagée avec les lots : construite une seule fois (≈ 6 min), elle ne l'est plus deux
       # fois. `application.json` est le DESCRIPTEUR SERVI (ADR 0030) : `image:build` l'écrit du même
       # geste que le manifeste, à côté de `reference-image/` et non dedans (manifest.mjs) — l'oublier
       # ici reproduit exactement le vert par vacuité de #163 sur `reprise-coquille-boot-froid.spec.mjs`
@@ -143,11 +143,14 @@ jobs:
       # 102 s, sauvegarde 9,1 s, restauration 13,2 s, attente d'écriture du guest 45 s) : le lot 1
       # vise donc ≈ 32 min, sous la borne de 60 min du job, qui reste inchangée. #209 retire ces 45 s.
       #
-      # `durabilite-du-commit.spec.mjs` (#209) rejoint le lot 2, le plus court (≈ 28 min estimées
-      # avec `parcours-page-rails`, contre ≈ 31 pour le lot 1 sans l'attente de 45 s). Il coûte
-      # 18,5 min en local le 13/09/2026 (un ouvrier : dix boots de Rails à 81,6-88,1 s, neuf
-      # verrouillages de 1,6 s, 105 s d'attentes voulues à 5 et 30 s) : le lot 2 vise donc ≈ 47 min,
-      # sous la borne de 60 min du job, qui reste inchangée.
+      # `durabilite-du-commit.spec.mjs` (#209) a SON lot, le 3 (revue de la PR #211, constat 1). Placé
+      # d'abord au lot 2, il l'a porté à 58 min 23 s pour la borne de 60 (run 34775718482, commit
+      # e3f63ef), dont 24,2 min pour ce seul scénario (18,5 en local) : un exécutant plus lent que
+      # celui du jour — boot de Rails de 71 à 118 s selon les recettes récentes — l'aurait fait
+      # dépasser. Sa répétition ×3 par délai (0, 5, 30 s) est CONSERVÉE en CI : la preuve du gate de
+      # persistance s'y joue entière, chaque nuit. Durées CI mesurées sur ce run : lot 1 36 min ; lot 2
+      # ≈ 34 min une fois ce scénario retiré (58 min 23 s moins 24,2) ; lot 3 ≈ 26 min (24,2 min de
+      # scénario et la préparation d'un job). Aucune borne relevée.
       matrix:
         include:
           - lot: "1"
@@ -163,6 +166,8 @@ jobs:
               tests/e2e/enveloppe-rotation-boot-froid.spec.mjs
               tests/e2e/reprise-coquille-boot-froid.spec.mjs
               tests/e2e/export-volume-verifiable.spec.mjs tests/e2e/parcours-page-rails.spec.mjs
+          - lot: "3"
+            fichiers: >-
               tests/e2e/durabilite-du-commit.spec.mjs
 
     env:
@@ -200,8 +205,8 @@ jobs:
 
       # Mesures d'espace disque (#73), PAR LOT : le quota OPFS que Chromium accorde à une origine est
       # dérivé de l'espace RÉELLEMENT libre du disque de l'exécutant du lot. Le journal porte le
-      # numéro du lot pour que la fusion n'écrase pas celui de l'autre (seul fichier que les deux
-      # lots auraient sinon écrit sous le même nom — les rapports de scénario, eux, sont déjà
+      # numéro du lot pour que la fusion n'écrase pas celui d'un autre (seul fichier que les lots
+      # auraient sinon écrit sous le même nom — les rapports de scénario, eux, sont déjà
       # distincts par construction). Elles n'échouent jamais : elles n'ont rien à décider.
       - name: Espace disque avant les scénarios
         run: >-
@@ -245,7 +250,7 @@ jobs:
           retention-days: 30
 
   fusion:
-    name: Fusionner les mesures et le rapport des deux lots
+    name: Fusionner les mesures et le rapport des lots
     needs: [image, reprise]
     # `always()` : un lot rouge ne doit pas priver la PR du rapport qui daterait son échec (§ DATER
     # un échec, docs/testing.md). `needs.image.result` évite de fusionner du vide quand `image` a été
@@ -268,10 +273,11 @@ jobs:
       - name: Installation des dépendances
         run: npm ci
 
-      # Les deux artefacts de lot sont fusionnés à plat (`merge-multiple`) : aucun nom ne s'y heurte,
-      # par construction — les rapports de scénario sont uniques par lot, et les journaux d'espace
-      # disque portent déjà le numéro du lot.
-      - name: Récupération des mesures des deux lots
+      # Les artefacts de lot (trois depuis #209) sont fusionnés à plat (`merge-multiple`) : aucun nom
+      # ne s'y heurte, par construction — les rapports de scénario sont uniques par lot, le rapport
+      # `blob` s'appelle `rapport-lot-<n>.zip` (playwright.e2e.config.mjs), et les journaux d'espace
+      # disque portent le numéro du lot. Le motif `mesures-reprise-lot-*` n'en suppose aucun nombre.
+      - name: Récupération des mesures des lots
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: mesures-reprise-lot-*

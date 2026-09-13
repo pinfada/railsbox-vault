@@ -1473,8 +1473,18 @@ ouvrier dans le relevé du dessus) : aucune contention, parce que chaque lot a s
 jour-là (25 min), `parcours-page-rails` ayant rejoint le lot 2 avec #192. Il coûte **6,3 min en
 local** (un ouvrier : deux boots de Rails à 101 et 102 s, sauvegarde d'une archive de 546 Mio en 9,1
 s, restauration en 13,2 s, et 45 s d'attente temporaire avant la sauvegarde, que #209 a retirée). Le
-lot 1 vise donc ≈ 32 min, ≈ 31 sans cette attente ; la durée mesurée en CI sera publiée ici après la
-première recette.
+lot 1 vise donc ≈ 32 min, ≈ 31 sans cette attente. **Mesuré en CI** (run 34775718482, commit
+e3f63ef, attente retirée) : **lot 1 36 min**.
+
+**Depuis #209 (revue de la PR #211, constat 1), un lot 3 dédié** à `durabilite-du-commit`. Placé
+d'abord au lot 2, ce scénario l'a porté à **58 min 23 s pour une borne de 60** sur le même run, dont
+**24,2 min** pour lui seul (18,5 min en local, soit ×1,3) : dix boots de Rails, que la dispersion
+des exécutants — boot de 71 à 118 s selon les recettes récentes — aurait suffi à faire dépasser. Sa
+répétition ×3 par délai (0, 5, 30 s) est conservée en CI. Répartition qui en découle, un ouvrier par
+lot : **lot 1 36 min** (mesuré), **lot 2 ≈ 34 min** (58 min 23 s moins 24,2), **lot 3 ≈ 26 min**
+(24,2 min de scénario et la préparation d'un job). Aucune borne relevée ; ≈ 26 min-exécutant de plus
+par recette, durée murale inchangée. La mesure du premier run à trois lots remplacera ici les deux
+valeurs déduites.
 
 **Ce que le premier essai du pipeline en lots a raté, et pourquoi ce n'est pas répété.** Le tout
 premier run (34692793350, commit `c105c48`) a rougi sur `reprise-coquille-boot-froid.spec.mjs`
