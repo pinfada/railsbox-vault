@@ -107,6 +107,19 @@ l'origine est une copie « déjà prise » que rien ne révoque (ADR 0026). La r
 des noms de moyens et des nombres. **Depuis le 13 septembre 2026**, un coffre créé par une version
 de développement antérieure est refusé (`VAULT_COQUILLE_COFFRE_ANTERIEUR`), jamais migré ni écrasé.
 
+**La promesse de persistance est bornée (#209).** Ce qui est garanti : aucune écriture n'est
+annoncée durable au guest avant le flush OPFS (`SEC-DURABLE-001`), et une écriture qui a franchi
+cette barrière survit au verrouillage, à la sauvegarde et au boot à froid. Ce qui ne l'est PAS :
+qu'une écriture que Rails a déjà ACQUITTÉE à l'utilisateur ait franchi cette barrière. **Écart non
+comblé (#209)** : une écriture que Rails a acquittée n'est durable qu'une fois la barrière du guest
+franchie, et ni le verrouillage ni la sauvegarde ne l'attendent. Mesuré le 13/09/2026 (revue de la
+PR #208, coquille réelle, Chromium) : une note acquittée, puis « Verrouiller » après _d_ secondes,
+puis un boot à froid — perdue 4 fois sur 4 à _d_ = 0 s, 1 fois sur 3 à 5 s, 0 fois sur 3 à 30 s, 0
+fois sur 1 à 60 s. L'instantané gardé masque la perte : la reprise par instantané retrouve la note,
+le boot à froid non. La sauvegarde est exposée de même (le scénario de bout en bout rougit sans son
+attente de 45 s). La fenêtre de perte mesurée est d'environ 30 s ; sa correction touche `src/vm/` ou
+l'image, et relève de #209.
+
 **Aucun cookie.** La coquille n'en pose aucun, et c'est une propriété éprouvée plutôt qu'une
 abstention : après un cycle complet, le bocal du contexte est vide, `document.cookie` est vide sur
 les deux origines, et aucune réponse servie ne porte `Set-Cookie`. Le motif est celui de l'ADR 0018

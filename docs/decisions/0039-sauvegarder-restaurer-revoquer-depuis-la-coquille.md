@@ -240,13 +240,18 @@ pour des coffres de développement.
    ses écritures ou les abandonner — reste une décision que la coquille ne prend pas.
 4. **Le téléchargement est un geste du navigateur** : ce que l'hôte fait du fichier enregistré
    (synchronisation, sauvegarde système) sort du produit, comme la feuille de récupération imprimée.
-5. **Écart non comblé** : une écriture que Rails vient d'acquitter peut manquer à une sauvegarde
-   prise dans les secondes qui suivent : le point de contrôle arrête la VM sans attendre que le
-   noyau du guest ait écrit la fin de la transaction, et le scénario de bout en bout attend 45 s
-   avant de sauvegarder (mesuré le 13/09/2026 : rouge sans l'attente, vert avec). Le verrouillage
-   suivi d'un boot à froid est probablement exposé au même écart — masqué jusqu'ici par l'instantané
-   —, et ce n'est pas mesuré. Rendre le point de contrôle durable exige que le guest écrive et vide
-   ses tampons avant l'arrêt : c'est `src/vm/` ou l'image, hors de cette tranche (#209).
+5. **Écart non comblé (#209)** : une écriture que Rails a acquittée n'est durable qu'une fois la
+   barrière du guest franchie, et ni le verrouillage ni la sauvegarde ne l'attendent. Mesuré le
+   13/09/2026 (revue de la PR #208, coquille réelle, Chromium) : une note acquittée, puis «
+   Verrouiller » après _d_ secondes, puis un boot à froid — perdue 4 fois sur 4 à _d_ = 0 s, 1 fois
+   sur 3 à 5 s, 0 fois sur 3 à 30 s, 0 fois sur 1 à 60 s. L'instantané gardé masque la perte : la
+   reprise par instantané retrouve la note, le boot à froid non. La sauvegarde est exposée de même
+   (le scénario de bout en bout rougit sans son attente de 45 s). La fenêtre de perte mesurée est
+   d'environ 30 s ; sa correction touche `src/vm/` ou l'image, et relève de #209. Cause probable,
+   non prouvée : en `journal_mode: delete` (ADR 0004), la validation SQLite est l'effacement du
+   journal, une écriture de répertoire qu'aucun `fsync` ne pousse sur ext2. **L'instantané n'est
+   donc pas une preuve de durabilité**, et cette PR n'en corrige rien : elle aligne ses textes sur
+   la mesure.
 6. **La constante d'identité est publique**, comme elle l'était pour le volume `coquille` : ce qui
    protège un coffre est sa clé, pas son nom.
 
