@@ -307,9 +307,14 @@ async function restaurer(contexte, message, correlation) {
   return contexte.enBattant(correlation, async () => {
     // La RÉPARATION d'une restauration coupée (ADR 0039, décision 5) : ce qu'elle a laissé ne
     // s'ouvre par rien — aucun manifeste —, et l'utilisateur tient encore l'archive qui le redonne.
+    //
+    // L'ORDRE est la garde (revue de la PR #208, constat 3) : `coquille` d'abord, qui emporte
+    // l'enveloppe `coquille.cles`, puis le disque. Coupée entre les deux, la réparation laisse un
+    // disque SANS enveloppe — une restauration interrompue, que le même geste reprend. Dans l'ordre
+    // inverse, elle laissait une enveloppe sans disque : un « coffre » que le code ouvrait.
     if (decision.reparer) {
-      await prim.retirer(NOM_DU_VOLUME_APPLICATIF);
       await prim.retirer(VOLUME_DE_LA_COQUILLE);
+      await prim.retirer(NOM_DU_VOLUME_APPLICATIF);
     }
     const cible = cibleDuCoffre(prim.cibleDImport(NOM_DU_VOLUME_APPLICATIF), {
       ecrireLEnveloppe: (page) =>

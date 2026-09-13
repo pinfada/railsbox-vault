@@ -736,6 +736,16 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_PORTABILITE_DU_WORKER],
   },
   {
+    nom: "la réparation retire l'enveloppe avant le disque, jamais l'inverse",
+    garde: "restaurer — l'ordre des retraits de la réparation (revue #208, constat 3)",
+    fichier: "public/portabilite-du-worker.mjs",
+    avant:
+      "      await prim.retirer(VOLUME_DE_LA_COQUILLE);\n      await prim.retirer(NOM_DU_VOLUME_APPLICATIF);\n",
+    apres:
+      "      await prim.retirer(NOM_DU_VOLUME_APPLICATIF);\n      await prim.retirer(VOLUME_DE_LA_COQUILLE);\n",
+    epreuves: [EPREUVE_PORTABILITE_DU_WORKER],
+  },
+  {
     nom: "la cible du coffre refuse une archive sans enveloppe",
     garde: "cibleDuCoffre — `commitRecoveryEnvelope(null)`",
     fichier: PORTABILITE,
