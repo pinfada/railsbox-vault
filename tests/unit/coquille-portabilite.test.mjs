@@ -12,6 +12,7 @@ import {
   TYPES_PRIVILEGIES,
   enveloppeDeMessage,
   enveloppePrivilegiee,
+  estUneArchive,
 } from "../../src/coquille/contrat-de-messages.mjs";
 import {
   IDENTIFIANT_DU_COFFRE,
@@ -332,6 +333,25 @@ test("une ARCHIVE franchit le canal privilégié sur deux types, et nulle part a
   );
   // Hors du canal privilégié : `enveloppeDeMessage` n'a aucune dérogation.
   assert.throws(() => enveloppeDeMessage(TYPES_PRIVILEGIES.restaurer, { archive }), capacite);
+});
+
+test("la dérogation d'archive juge ce qu'EST la valeur, pas le nom de son constructeur (revue #208, constat 8)", () => {
+  const capacite = { code: CODES_REFUS_COQUILLE.capaciteDansUnMessage };
+  const deguises = [
+    { constructor: { name: "File" }, slice: () => null, size: 8 },
+    { constructor: { name: "Blob" }, slice: () => null, size: 8 },
+    Object.create(null, { constructor: { value: { name: "File" } } }),
+  ];
+  for (const deguise of deguises) {
+    assert.throws(
+      () => enveloppePrivilegiee(TYPES_PRIVILEGIES.restaurer, { [CHAMP_DE_L_ARCHIVE]: deguise }),
+      capacite,
+    );
+  }
+  // Un vrai `File` et un vrai `Blob` restent admis — `File` hérite de `Blob`.
+  assert.ok(estUneArchive(new File(["x"], "a")));
+  assert.ok(estUneArchive(new Blob(["x"])));
+  assert.equal(estUneArchive(deguises[0]), false);
 });
 
 /** Une page réduite à ce que les gestes emploient : des nœuds dont on garde chaque texte dit. */

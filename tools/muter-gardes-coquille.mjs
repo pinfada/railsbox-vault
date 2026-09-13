@@ -845,11 +845,28 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "le champ d'archive ne porte qu'un File ou un Blob",
-    garde: "exigerArchiveAdmise — le constructeur",
+    garde: "exigerArchiveAdmise — la nature de la valeur",
     fichier: CONTRAT,
-    avant: '  if (nom !== "File" && nom !== "Blob") {\n',
+    avant: "  if (!estUneArchive(archive)) {\n",
     apres: "  if (false) {\n",
     epreuves: [EPREUVE_PORTABILITE],
+  },
+  {
+    nom: "une archive se juge à ce qu'elle EST, pas au nom de son constructeur",
+    garde: "estUneArchive — `instanceof Blob` (revue #208, constat 8)",
+    fichier: CONTRAT,
+    avant: '  return typeof Blob === "function" && valeur instanceof Blob;\n',
+    apres:
+      '  return valeur?.constructor?.name === "File" || valeur?.constructor?.name === "Blob";\n',
+    epreuves: [EPREUVE_PORTABILITE],
+  },
+  {
+    nom: "le Worker ne lit jamais un objet déguisé en archive",
+    garde: "restaurer — la nature de l'archive reçue (revue #208, constat 8)",
+    fichier: "public/portabilite-du-worker.mjs",
+    avant: "  if (!estUneArchive(archive)) throw refus(CODES_REFUS_COQUILLE.messageMalforme);\n",
+    apres: "",
+    epreuves: [EPREUVE_PORTABILITE_DU_WORKER],
   },
 ]);
 
