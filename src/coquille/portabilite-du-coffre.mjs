@@ -42,15 +42,21 @@ export const FICHIER_DE_SAUVEGARDE = "coquille-sauvegarde";
 
 /**
  * Les ÉTATS d'un emplacement, tels que la coquille les constate AVANT tout geste de portabilité ou
- * de déverrouillage. Quatre, et rien entre eux.
+ * de déverrouillage. Chacun a UNE cause, et un refus qui ne nomme qu'elle.
  */
 export const ETATS_DE_L_EMPLACEMENT = Object.freeze({
   /** Rien : ni enveloppe, ni volume `application`, ni volume `coquille`. On peut restaurer. */
   vide: "vide",
   /** Un coffre de cette version : il s'ouvre, il se sauvegarde, on ne restaure pas par-dessus. */
   coffre: "coffre",
-  /** Un coffre créé avant l'ADR 0039, sous deux identités. Refusé, jamais migré. */
+  /** Un coffre créé avant l'ADR 0039 : son volume `coquille` porte l'ancienne identité. Refusé. */
   anterieur: "anterieur",
+  /**
+   * Un disque dont le manifeste ne déclare pas le volume `application` d'un coffre de la coquille —
+   * un autre identifiant, ou un format qu'elle n'écrit pas. Ni installé ni restauré par elle :
+   * refusé (revue de la PR #208, constat 5).
+   */
+  disqueDUnAutreCoffre: "disque-d-un-autre-coffre",
   /** Une restauration COUPÉE : le disque est là, le coffre n'est pas né. Le même geste répare. */
   restaurationInterrompue: "restauration-interrompue",
 });
@@ -85,8 +91,8 @@ export async function constaterLEmplacement({ observer, lireEnTete, lireVoisin }
 
   if (coquille && (await volumeCoquilleAnterieur(lireEnTete)))
     return ETATS_DE_L_EMPLACEMENT.anterieur;
-  if (manifeste !== null && manifeste.volume?.id !== IDENTIFIANT_DU_COFFRE) {
-    return ETATS_DE_L_EMPLACEMENT.anterieur;
+  if (manifeste !== null && !declareLeVolumeDuCoffre(manifeste)) {
+    return ETATS_DE_L_EMPLACEMENT.disqueDUnAutreCoffre;
   }
   if (manifeste !== null) return ETATS_DE_L_EMPLACEMENT.coffre;
   if (!enveloppe) {
@@ -98,6 +104,20 @@ export async function constaterLEmplacement({ observer, lireEnTete, lireVoisin }
     return ETATS_DE_L_EMPLACEMENT.restaurationInterrompue;
   }
   return ETATS_DE_L_EMPLACEMENT.coffre;
+}
+
+/**
+ * Un manifeste — celui du disque, ou celui qu'une archive emporte — déclare-t-il le volume
+ * `application` d'un coffre de la coquille ? Son identifiant ET son format : la coquille n'installe
+ * et ne sauvegarde que le format courant, sous l'identité du coffre.
+ *
+ * @param {{ formatVersion?: unknown, volume?: { id?: unknown } | null } | null} manifeste
+ */
+export function declareLeVolumeDuCoffre(manifeste) {
+  return (
+    manifeste?.volume?.id === IDENTIFIANT_DU_COFFRE &&
+    manifeste.formatVersion === FORMAT_VOLUME_COURANT
+  );
 }
 
 /** Le manifeste du volume `application`, analysé, ou `null` s'il est absent ou illisible. */
@@ -151,6 +171,9 @@ async function enveloppeRestaureeIntacte(lireVoisin) {
  */
 export function refusDOuverture(etat) {
   if (etat === ETATS_DE_L_EMPLACEMENT.anterieur) return CODES_REFUS_COQUILLE.coffreAnterieur;
+  if (etat === ETATS_DE_L_EMPLACEMENT.disqueDUnAutreCoffre) {
+    return CODES_REFUS_COQUILLE.disqueDUnAutreCoffre;
+  }
   if (etat === ETATS_DE_L_EMPLACEMENT.restaurationInterrompue) {
     return CODES_REFUS_COQUILLE.restaurationInterrompue;
   }
@@ -168,6 +191,9 @@ export function decisionDeRestauration(etat) {
   if (etat === ETATS_DE_L_EMPLACEMENT.restaurationInterrompue) return { code: null, reparer: true };
   if (etat === ETATS_DE_L_EMPLACEMENT.anterieur) {
     return { code: CODES_REFUS_COQUILLE.coffreAnterieur, reparer: false };
+  }
+  if (etat === ETATS_DE_L_EMPLACEMENT.disqueDUnAutreCoffre) {
+    return { code: CODES_REFUS_COQUILLE.disqueDUnAutreCoffre, reparer: false };
   }
   return { code: CODES_REFUS_COQUILLE.emplacementOccupe, reparer: false };
 }
@@ -209,19 +235,27 @@ export function refusPendantUnGesteLong(type, gestesLongsEnCours) {
 }
 
 /**
- * Lit l'EN-TÊTE d'une archive sans rien vérifier, pour une seule question : emporte-t-elle une
- * enveloppe de récupération ?
+ * Lit l'EN-TÊTE d'une archive sans rien vérifier, pour deux questions : décrit-elle le volume d'un
+ * coffre de la coquille, et emporte-t-elle une enveloppe de récupération ?
  *
- * Ce n'est PAS la vérification — `importArchive` la fait, entière, avant toute écriture. C'est un
- * refus anticipé : une archive qui DÉCLARE `recovery: null` donnerait un coffre que rien n'ouvre, et
- * le dire avant de copier des centaines de mébioctets vaut mieux que le dire après. Une archive dont
- * l'en-tête ne se lit pas rend `lisible: false`, et `importArchive` dira pourquoi sous son code.
+ * Ce n'est PAS la vérification — `importArchive` la fait, entière, avant toute écriture. Ce sont
+ * deux refus anticipés, et le premier n'est pas un confort :
+ *
+ *  - une archive d'un AUTRE volume passe toutes les gardes de `importArchive` — elles jugent la
+ *    cohérence de l'archive avec elle-même — et donnait un disque que la coquille refusait ensuite
+ *    d'ouvrir comme de réparer (revue de la PR #208, constat 5). Elle est refusée avant tout octet ;
+ *  - une archive qui DÉCLARE `recovery: null` donnerait un coffre que rien n'ouvre, et le dire avant
+ *    de copier des centaines de mébioctets vaut mieux que le dire après.
+ *
+ * Une archive dont l'en-tête ne se lit pas rend `lisible: false`, et `importArchive` la refuse sous
+ * son code : son lecteur exige le même marqueur, la même borne et un en-tête v3 qui déclare
+ * `recovery`.
  *
  * @param {Uint8Array} tete les premiers octets de l'archive (préambule et en-tête)
- * @returns {{ lisible: boolean, emporteUneRecuperation: boolean }}
+ * @returns {{ lisible: boolean, duCoffre: boolean, emporteUneRecuperation: boolean }}
  */
 export function enTeteDArchive(tete) {
-  const illisible = { lisible: false, emporteUneRecuperation: false };
+  const illisible = { lisible: false, duCoffre: false, emporteUneRecuperation: false };
   if (!(tete instanceof Uint8Array) || tete.byteLength < PREAMBLE_BYTES) return illisible;
   if (!hasArchiveMagic(tete)) return illisible;
   const longueur = new DataView(tete.buffer, tete.byteOffset, tete.byteLength).getUint32(
@@ -236,7 +270,11 @@ export function enTeteDArchive(tete) {
     if (entete === null || typeof entete !== "object" || !Object.hasOwn(entete, "recovery")) {
       return illisible;
     }
-    return { lisible: true, emporteUneRecuperation: entete.recovery !== null };
+    return {
+      lisible: true,
+      duCoffre: declareLeVolumeDuCoffre(entete.manifest),
+      emporteUneRecuperation: entete.recovery !== null,
+    };
   } catch {
     return illisible;
   }

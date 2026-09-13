@@ -226,6 +226,18 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * n'attende rien pour apprendre qu'il n'y a rien à ouvrir.
    */
   coffreAnterieur: "VAULT_COQUILLE_COFFRE_ANTERIEUR",
+  /**
+   * Le disque applicatif de cet appareil ne déclare pas le volume du coffre : son manifeste nomme un
+   * autre identifiant, ou un format que la coquille n'écrit pas. Elle ne l'a ni installé ni
+   * restauré ; elle ne l'ouvre pas et ne le répare pas (revue de la PR #208, constat 5).
+   */
+  disqueDUnAutreCoffre: "VAULT_COQUILLE_DISQUE_D_UN_AUTRE_COFFRE",
+  /**
+   * L'archive présentée à la restauration ne décrit pas le volume d'un coffre de la coquille.
+   * Refusée AVANT tout octet écrit : l'emplacement reste tel qu'il était (revue de la PR #208,
+   * constat 5).
+   */
+  archiveDUnAutreCoffre: "VAULT_COQUILLE_ARCHIVE_D_UN_AUTRE_COFFRE",
   /** Une restauration a été demandée sur un emplacement qui porte déjà un coffre. */
   emplacementOccupe: "VAULT_COQUILLE_EMPLACEMENT_OCCUPE",
   /**
@@ -308,6 +320,10 @@ const MESSAGES = Object.freeze({
     "Le canal de relais coquille ↔ Worker n'est atteignable par aucun message du port restreint.",
   [CODES_REFUS_COQUILLE.coffreAnterieur]:
     "Ce coffre a été créé par une version de développement antérieure au 13/09/2026. Aucune migration n'est offerte, car rien n'est publié : supprimez-le puis recréez-le — dans le navigateur, effacez les données de ce site (réglages du site, « Effacer les données »), rechargez la coquille, et le premier déverrouillage créera un coffre neuf.",
+  [CODES_REFUS_COQUILLE.disqueDUnAutreCoffre]:
+    "Le disque de ce coffre n'a été ni installé ni restauré par cette coquille : son manifeste déclare un autre volume. Il n'est ni ouvert ni réparé. Effacez les données de ce site pour repartir d'un emplacement vide, puis restaurez une sauvegarde de votre coffre.",
+  [CODES_REFUS_COQUILLE.archiveDUnAutreCoffre]:
+    "Cette archive n'est pas la sauvegarde d'un coffre de la coquille : elle décrit un autre volume. Rien n'a été écrit ; choisissez le fichier produit par « Sauvegarder le coffre ».",
   [CODES_REFUS_COQUILLE.emplacementOccupe]:
     "Restauration refusée : cet appareil porte déjà un coffre. On ne restaure jamais par-dessus ; restaurez sur un emplacement vide.",
   [CODES_REFUS_COQUILLE.restaurationInterrompue]:

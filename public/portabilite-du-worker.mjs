@@ -29,7 +29,6 @@ import {
 import {
   COHERENCE_DE_LA_SAUVEGARDE,
   ENVELOPPE_DU_COFFRE,
-  ETATS_DE_L_EMPLACEMENT,
   FICHIER_DE_SAUVEGARDE,
   GESTES_LONGS,
   bilanDeRevocation,
@@ -37,6 +36,7 @@ import {
   constaterLEmplacement,
   decisionDeRestauration,
   enTeteDArchive,
+  refusDOuverture,
   refusPendantUnGesteLong,
 } from "/src/coquille/portabilite-du-coffre.mjs";
 import { CODES_REFUS_COQUILLE } from "/src/coquille/refus-de-coquille.mjs";
@@ -214,9 +214,8 @@ async function sauvegarder(contexte, correlation) {
   const { interne, prim } = contexte;
   contexte.exigerUnVolumeAtteignable();
   exigerUnCoffreOuvert(contexte);
-  if ((await constaterLEmplacement(prim)) === ETATS_DE_L_EMPLACEMENT.anterieur) {
-    throw refus(CODES_REFUS_COQUILLE.coffreAnterieur);
-  }
+  const refusDuCoffre = refusDOuverture(await constaterLEmplacement(prim));
+  if (refusDuCoffre !== null) throw refus(refusDuCoffre);
   const octetsDuManifeste = await prim.lireVoisin(manifestSidecarName(NOM_DU_VOLUME_APPLICATIF));
   if (octetsDuManifeste === null) throw refus(CODES_REFUS_COQUILLE.applicationNonInstallee);
   const manifeste = parseManifest(octetsDuManifeste);
@@ -299,9 +298,6 @@ async function ecrireLArchive(contexte, manifeste, recuperation) {
   const cle = await contexte.cleDeVolume();
   try {
     await prim.retirer(FICHIER_DE_SAUVEGARDE);
-    if (manifeste.formatVersion !== FORMAT_VOLUME_COURANT) {
-      throw refus(CODES_REFUS_COQUILLE.coffreAnterieur);
-    }
     const brut = await prim.ouvrirLeDisque({ name: NOM_DU_VOLUME_APPLICATIF, cle });
     let ouvert;
     try {
@@ -340,6 +336,8 @@ async function restaurer(contexte, message, correlation) {
   const decision = decisionDeRestauration(await constaterLEmplacement(prim));
   if (decision.code !== null) throw refus(decision.code);
   const tete = enTeteDArchive(await lireLaTete(archive));
+  // L'IDENTITÉ d'abord, avant tout octet écrit (revue de la PR #208, constat 5) : rien n'est muré.
+  if (tete.lisible && !tete.duCoffre) throw refus(CODES_REFUS_COQUILLE.archiveDUnAutreCoffre);
   if (tete.lisible && !tete.emporteUneRecuperation) {
     throw refus(CODES_REFUS_COQUILLE.archiveSansRecuperation);
   }

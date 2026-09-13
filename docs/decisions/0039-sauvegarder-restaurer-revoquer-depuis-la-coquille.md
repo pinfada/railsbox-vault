@@ -90,10 +90,13 @@ l'ADR 0002 : il donne ses propres octets, figés, et n'ouvre rien d'autre.
 Six codes neufs, tous au § 10.5 : `VAULT_COQUILLE_COFFRE_ANTERIEUR`,
 `VAULT_COQUILLE_EMPLACEMENT_OCCUPE`, `VAULT_COQUILLE_RESTAURATION_INTERROMPUE`,
 `VAULT_COQUILLE_ARCHIVE_SANS_RECUPERATION`, `VAULT_COQUILLE_APPLICATION_NON_INSTALLEE`,
-`VAULT_COQUILLE_GESTE_EN_COURS`. Une archive altérée ou tronquée garde le code de sa famille —
-`VAULT_ARCHIVE_DIGEST_MISMATCH`, `VAULT_ARCHIVE_TRUNCATED` — que la page traduit en conduite : ce
-sont deux remèdes distincts (une autre copie, un nouveau téléchargement), et un code de coquille qui
-les recouvrirait les confondrait.
+`VAULT_COQUILLE_GESTE_EN_COURS` ; puis, après la revue de la PR #208,
+`VAULT_COQUILLE_DISQUE_D_UN_AUTRE_COFFRE` et `VAULT_COQUILLE_ARCHIVE_D_UN_AUTRE_COFFRE` (constat 5)
+et `VAULT_COQUILLE_COFFRE_SERVI_SANS_MANIFESTE` (constat 6) : un code, une cause. Une archive
+altérée ou tronquée garde le code de sa famille — `VAULT_ARCHIVE_DIGEST_MISMATCH`,
+`VAULT_ARCHIVE_TRUNCATED` — que la page traduit en conduite : ce sont deux remèdes distincts (une
+autre copie, un nouveau téléchargement), et un code de coquille qui les recouvrirait les
+confondrait.
 
 ### 3. Sauvegarder
 
@@ -123,7 +126,9 @@ les recouvrirait les confondrait.
   `export-du-fichier.mjs` importe le lecteur de la migration pour solder un volume v3, et aucun
   chemin servi ne doit l'atteindre (`vm-perimetre-du-sans-racine.test.mjs`, ADR 0037). La coquille
   n'écrit que du v4 ; elle reprend la moitié v4 — récupérer, refermer, reprendre un handle brut,
-  constater taille et identifiant — et refuse un manifeste d'un autre format comme coffre antérieur.
+  constater taille et identifiant. Un manifeste d'un autre format, ou d'un autre identifiant, est
+  refusé dès l'inventaire sous `VAULT_COQUILLE_DISQUE_D_UN_AUTRE_COFFRE`, et la sauvegarde rend le
+  même refus que l'ouverture.
 
 ### 4. Restaurer
 
@@ -131,8 +136,12 @@ les recouvrirait les confondrait.
   manifeste, ni volume `coquille`, et aucun coffre ouvert dans ce Worker. Un coffre présent rend
   `VAULT_COQUILLE_EMPLACEMENT_OCCUPE` : on ne restaure jamais par-dessus.
 - **Avant tout clair et toute écriture** : l'en-tête de l'archive est lu (préambule, en-tête JSON
-  borné à 1 Mio) pour une seule question — emporte-t-elle une récupération ? Sinon
-  `VAULT_COQUILLE_ARCHIVE_SANS_RECUPERATION`, rien n'est écrit. Puis `importArchive` VÉRIFIE
+  borné à 1 Mio) pour deux questions. **Son manifeste déclare-t-il le volume du coffre** —
+  `IDENTIFIANT_DU_COFFRE` et le format courant ? Sinon `VAULT_COQUILLE_ARCHIVE_D_UN_AUTRE_COFFRE`,
+  rien n'est écrit et l'emplacement reste tel qu'il était (revue de la PR #208, constat 5 : une
+  archive cohérente d'un autre volume passait toutes les gardes de `importArchive`, qui jugent
+  l'archive contre elle-même, puis murait l'emplacement). **Emporte-t-elle une récupération ?**
+  Sinon `VAULT_COQUILLE_ARCHIVE_SANS_RECUPERATION`, rien n'est écrit. Puis `importArchive` VÉRIFIE
   l'archive entière (marqueur, version lue, empreinte, identité, page, engagement) avant d'ouvrir la
   cible ; une archive altérée ou tronquée est refusée sous son code et la cible reste vierge.
 - **L'ordre de naissance est celui de `importArchive`, inchangé** : disque recopié, flushé et
@@ -191,11 +200,13 @@ Aucun octet d'archive ne franchit le port restreint, et le Service Worker de la 
 ### 8. Les coffres de développement antérieurs sont REFUSÉS, jamais migrés
 
 Un coffre créé avant le 13/09/2026 porte l'identité du coffre dans l'en-tête de son volume
-`coquille`, ou un manifeste applicatif sous un identifiant tiré. Il est reconnu **dès l'inventaire**
-et refusé sous `VAULT_COQUILLE_COFFRE_ANTERIEUR`, avant qu'aucune phrase ne soit dérivée, avec sa
-conduite : supprimer les données du site et recréer le coffre. Aucune migration n'est offerte : rien
-n'est publié, le gate « données sensibles » est fermé, et une migration serait du code de sécurité
-écrit pour des coffres de développement.
+`coquille` — c'est la seule cause de `VAULT_COQUILLE_COFFRE_ANTERIEUR` depuis la revue de la PR #208
+(constat 5) ; un manifeste applicatif d'un autre volume a son propre code,
+`VAULT_COQUILLE_DISQUE_D_UN_AUTRE_COFFRE`. Il est reconnu **dès l'inventaire** et refusé sous
+`VAULT_COQUILLE_COFFRE_ANTERIEUR`, avant qu'aucune phrase ne soit dérivée, avec sa conduite :
+supprimer les données du site et recréer le coffre. Aucune migration n'est offerte : rien n'est
+publié, le gate « données sensibles » est fermé, et une migration serait du code de sécurité écrit
+pour des coffres de développement.
 
 ## Conséquences
 

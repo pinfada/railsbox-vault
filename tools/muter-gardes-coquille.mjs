@@ -688,12 +688,38 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_PORTABILITE],
   },
   {
-    nom: "un coffre antérieur est reconnu au manifeste de son disque",
-    garde: "constaterLEmplacement — l'identifiant déclaré par le manifeste applicatif",
+    nom: "un disque d'un autre coffre est reconnu au manifeste qu'il porte",
+    garde: "constaterLEmplacement — le volume déclaré par le manifeste applicatif",
     fichier: PORTABILITE,
-    avant: "  if (manifeste !== null && manifeste.volume?.id !== IDENTIFIANT_DU_COFFRE) {\n",
+    avant: "  if (manifeste !== null && !declareLeVolumeDuCoffre(manifeste)) {\n",
     apres: "  if (false) {\n",
     epreuves: [EPREUVE_PORTABILITE],
+  },
+  {
+    nom: "le volume du coffre se juge à son identifiant",
+    garde: "declareLeVolumeDuCoffre — l'identifiant (revue #208, constat 5)",
+    fichier: PORTABILITE,
+    avant: "    manifeste?.volume?.id === IDENTIFIANT_DU_COFFRE &&\n",
+    apres: "",
+    epreuves: [EPREUVE_PORTABILITE, EPREUVE_PORTABILITE_DU_WORKER],
+  },
+  {
+    nom: "le volume du coffre se juge à son format",
+    garde: "declareLeVolumeDuCoffre — le format courant (revue #208, constat 5)",
+    fichier: PORTABILITE,
+    avant:
+      "    manifeste?.volume?.id === IDENTIFIANT_DU_COFFRE &&\n    manifeste.formatVersion === FORMAT_VOLUME_COURANT\n",
+    apres: "    manifeste?.volume?.id === IDENTIFIANT_DU_COFFRE\n",
+    epreuves: [EPREUVE_PORTABILITE],
+  },
+  {
+    nom: "le Worker refuse une archive d'un autre coffre AVANT toute écriture",
+    garde: "restaurer — le refus d'identité sur l'en-tête (revue #208, constat 5)",
+    fichier: "public/portabilite-du-worker.mjs",
+    avant:
+      "  if (tete.lisible && !tete.duCoffre) throw refus(CODES_REFUS_COQUILLE.archiveDUnAutreCoffre);\n",
+    apres: "",
+    epreuves: [EPREUVE_PORTABILITE_DU_WORKER],
   },
   {
     nom: "une installation coupée n'est jamais prise pour une restauration coupée",
