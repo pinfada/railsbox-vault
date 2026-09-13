@@ -57,6 +57,7 @@ import { creerCanalDeConfiance } from "./coquille/canal-de-confiance.mjs";
 import { creerFrontiereApplicative } from "./coquille/frontiere-applicative.mjs";
 import { creerVerrouillageEtFinsDOnglet } from "./coquille/verrouillage-et-fins-d-onglet.mjs";
 import { creerCycle } from "./coquille/cycle-de-la-page.mjs";
+import { creerParcoursDeLaPage } from "./coquille/parcours-de-la-page.mjs";
 
 const parametres = new URL(location.href).searchParams;
 const noeudEtat = document.querySelector("#coquille-etat");
@@ -200,5 +201,10 @@ pont.cycle = creerCycle({
   parametres,
   pont,
 });
+
+// Le PARCOURS GUIDÉ (#193, ADR 0040) : il lit les relevés publiés et montre l'écran courant. Il est
+// monté AVANT le démarrage pour observer chaque relevé depuis le premier, et ne rejoint pas le pont :
+// aucun module ne l'appelle, et il n'appelle aucun geste.
+creerParcoursDeLaPage({ document, location, history, navigateur: navigator });
 
 pont.cycle.demarrer();
