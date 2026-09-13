@@ -31,7 +31,13 @@ import {
   decoderEnTeteDeVolume,
   identifiantVolumeEnTexte,
 } from "../vm/volume-chiffre-format.mjs";
-import { enveloppeSidecarName, manifestSidecarName } from "../vm/opfs-sync-access.mjs";
+import {
+  enveloppeSidecarName,
+  generationJournalName,
+  instantaneSidecarName,
+  manifestSidecarName,
+  temoinSequenceName,
+} from "../vm/opfs-sync-access.mjs";
 import { parseManifest } from "../vm/volume-manifest.mjs";
 
 /** Le voisin qui porte l'enveloppe du coffre. Le Worker de confiance le lit, et nul autre. */
@@ -57,6 +63,12 @@ export const ETATS_DE_L_EMPLACEMENT = Object.freeze({
    * refusé (revue de la PR #208, constat 5).
    */
   disqueDUnAutreCoffre: "disque-d-un-autre-coffre",
+  /**
+   * Un coffre restauré, SERVI depuis, dont le manifeste s'est perdu : la signature d'une restauration
+   * coupée, plus une trace de service. Refusé, jamais réparé — la réparation effacerait ce qui a été
+   * écrit depuis (revue de la PR #208, constat 6).
+   */
+  coffreServiSansManifeste: "coffre-servi-sans-manifeste",
   /** Une restauration COUPÉE : le disque est là, le coffre n'est pas né. Le même geste répare. */
   restaurationInterrompue: "restauration-interrompue",
 });
@@ -95,16 +107,46 @@ export async function constaterLEmplacement({ observer, lireEnTete, lireVoisin }
     return ETATS_DE_L_EMPLACEMENT.disqueDUnAutreCoffre;
   }
   if (manifeste !== null) return ETATS_DE_L_EMPLACEMENT.coffre;
-  if (!enveloppe) {
-    return disque || coquille
-      ? ETATS_DE_L_EMPLACEMENT.restaurationInterrompue
-      : ETATS_DE_L_EMPLACEMENT.vide;
+  const interrompue = enveloppe
+    ? disque && (await enveloppeRestaureeIntacte(lireVoisin))
+    : disque || coquille;
+  if (!interrompue) return enveloppe ? ETATS_DE_L_EMPLACEMENT.coffre : ETATS_DE_L_EMPLACEMENT.vide;
+  // La signature d'une restauration coupée vaut aussi pour un coffre restauré, SERVI, dont le
+  // manifeste s'est perdu : la réparation effacerait ce qui a été écrit depuis (revue de la PR #208,
+  // constat 6). Un disque qui porte une trace de service n'est jamais réparé.
+  if (disque && (await aServiDepuisLaRestauration(observer, coquille))) {
+    return ETATS_DE_L_EMPLACEMENT.coffreServiSansManifeste;
   }
-  if (disque && (await enveloppeRestaureeIntacte(lireVoisin))) {
-    return ETATS_DE_L_EMPLACEMENT.restaurationInterrompue;
-  }
-  return ETATS_DE_L_EMPLACEMENT.coffre;
+  return ETATS_DE_L_EMPLACEMENT.restaurationInterrompue;
 }
+
+/**
+ * Les TRACES DE SERVICE du disque applicatif : ce qu'aucune restauration n'écrit, et que la première
+ * ouverture écrit.
+ *
+ * Une restauration verse le disque, l'enveloppe, l'engagement et le manifeste — et RETIRE le journal
+ * de génération, le témoin et l'instantané du volume qu'elle remplace (`createOpfsImportTarget`).
+ * Le volume `coquille` n'existe pas encore : il naît au premier déverrouillage. Chacune de ces traces
+ * dit donc que le coffre a été ouvert après sa restauration — le journal de génération et le témoin
+ * sont la racine et la séquence des écritures postérieures.
+ *
+ * @param {(nom: string) => Promise<{ present: boolean }>} observer
+ * @param {boolean} coquille le volume `coquille` est-il présent ?
+ */
+async function aServiDepuisLaRestauration(observer, coquille) {
+  if (coquille) return true;
+  for (const trace of TRACES_DE_SERVICE) {
+    if ((await observer(trace)).present) return true;
+  }
+  return false;
+}
+
+/** Les voisins du disque applicatif qu'une restauration retire, et que le service écrit. */
+const TRACES_DE_SERVICE = Object.freeze([
+  generationJournalName(NOM_DU_VOLUME_APPLICATIF),
+  temoinSequenceName(NOM_DU_VOLUME_APPLICATIF),
+  instantaneSidecarName(NOM_DU_VOLUME_APPLICATIF),
+]);
 
 /**
  * Un manifeste — celui du disque, ou celui qu'une archive emporte — déclare-t-il le volume
@@ -174,6 +216,9 @@ export function refusDOuverture(etat) {
   if (etat === ETATS_DE_L_EMPLACEMENT.disqueDUnAutreCoffre) {
     return CODES_REFUS_COQUILLE.disqueDUnAutreCoffre;
   }
+  if (etat === ETATS_DE_L_EMPLACEMENT.coffreServiSansManifeste) {
+    return CODES_REFUS_COQUILLE.coffreServiSansManifeste;
+  }
   if (etat === ETATS_DE_L_EMPLACEMENT.restaurationInterrompue) {
     return CODES_REFUS_COQUILLE.restaurationInterrompue;
   }
@@ -194,6 +239,9 @@ export function decisionDeRestauration(etat) {
   }
   if (etat === ETATS_DE_L_EMPLACEMENT.disqueDUnAutreCoffre) {
     return { code: CODES_REFUS_COQUILLE.disqueDUnAutreCoffre, reparer: false };
+  }
+  if (etat === ETATS_DE_L_EMPLACEMENT.coffreServiSansManifeste) {
+    return { code: CODES_REFUS_COQUILLE.coffreServiSansManifeste, reparer: false };
   }
   return { code: CODES_REFUS_COQUILLE.emplacementOccupe, reparer: false };
 }

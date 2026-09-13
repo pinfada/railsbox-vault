@@ -90,11 +90,21 @@ test("un disque dont le manifeste déclare un AUTRE volume n'est pas un coffre a
   assert.equal(await constater(banc), "disque-d-un-autre-coffre");
 });
 
+/**
+ * Un disque tel qu'une restauration le laisse avant son manifeste : ni journal de génération, ni
+ * témoin, ni instantané — `createOpfsImportTarget` les retire, et seule une ouverture les écrit.
+ */
+async function disqueRestaureSansManifeste(banc) {
+  await installerLeDisque(banc);
+  for (const voisin of ["application.manifest", "application.gen", "application.temoin"]) {
+    await banc.retirer(voisin);
+  }
+}
+
 test("une restauration COUPÉE est reconnue, et une installation coupée ne l'est PAS", async () => {
   // Disque sans enveloppe ni manifeste : coupée avant l'enveloppe.
   const avantLEnveloppe = magasin();
-  await installerLeDisque(avantLEnveloppe);
-  await avantLEnveloppe.retirer(manifestSidecarName("application"));
+  await disqueRestaureSansManifeste(avantLEnveloppe);
   assert.equal(await constater(avantLEnveloppe), ETATS_DE_L_EMPLACEMENT.restaurationInterrompue);
 
   // Disque sans manifeste, enveloppe du domaine `enveloppe` : c'est une INSTALLATION coupée, que la
@@ -107,7 +117,13 @@ test("une restauration COUPÉE est reconnue, et une installation coupée ne l'es
 
   // Disque sans manifeste, enveloppe du domaine `recuperation` : la page d'une archive, jamais mutée.
   const apresLEnveloppe = magasin();
-  await installerLeDisque(apresLEnveloppe);
+  await disqueRestaureSansManifeste(apresLEnveloppe);
+  await poserLaPageDeRecuperation(apresLEnveloppe);
+  assert.equal(await constater(apresLEnveloppe), ETATS_DE_L_EMPLACEMENT.restaurationInterrompue);
+});
+
+/** Pose sur `coquille.cles` la page de récupération d'une archive, jamais mutée. */
+async function poserLaPageDeRecuperation(banc) {
   const { support } = await poserLEnveloppe(magasin());
   const page = await construireEnveloppeDeRecuperation({
     support,
@@ -116,9 +132,38 @@ test("une restauration COUPÉE est reconnue, et une installation coupée ne l'es
   });
   const fichier = new Uint8Array(4 * page.octets.byteLength);
   fichier.set(page.octets, 0);
-  await apresLEnveloppe.ecrire("coquille.cles", fichier);
-  await apresLEnveloppe.retirer(manifestSidecarName("application"));
-  assert.equal(await constater(apresLEnveloppe), ETATS_DE_L_EMPLACEMENT.restaurationInterrompue);
+  await banc.ecrire("coquille.cles", fichier);
+}
+
+test("la même signature, plus UNE trace de service, est un coffre servi : jamais réparé", async () => {
+  // Revue de la PR #208, constat 6. Chaque trace, seule, suffit.
+  const traces = {
+    "le volume coquille": (banc) => poserLeVolumeCoquille(banc, IDENTIFIANT_DU_VOLUME_COQUILLE),
+    "le journal de génération": (banc) => banc.ecrire("application.gen", new Uint8Array([1])),
+    "le témoin": (banc) => banc.ecrire("application.temoin", new Uint8Array([1])),
+    "l'instantané": (banc) => banc.ecrire("application.instantane", new Uint8Array([1])),
+  };
+  for (const [nom, poser] of Object.entries(traces)) {
+    for (const avecLaPage of [true, false]) {
+      const banc = magasin();
+      await disqueRestaureSansManifeste(banc);
+      if (avecLaPage) await poserLaPageDeRecuperation(banc);
+      await poser(banc);
+      assert.equal(
+        await constater(banc),
+        ETATS_DE_L_EMPLACEMENT.coffreServiSansManifeste,
+        `${nom}, ${avecLaPage ? "à côté de la page" : "sans enveloppe"}`,
+      );
+    }
+  }
+  assert.equal(
+    refusDOuverture(ETATS_DE_L_EMPLACEMENT.coffreServiSansManifeste),
+    CODES_REFUS_COQUILLE.coffreServiSansManifeste,
+  );
+  assert.deepEqual(decisionDeRestauration(ETATS_DE_L_EMPLACEMENT.coffreServiSansManifeste), {
+    code: CODES_REFUS_COQUILLE.coffreServiSansManifeste,
+    reparer: false,
+  });
 });
 
 test("ce que l'ouverture et la restauration font de chaque état", () => {

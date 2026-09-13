@@ -238,6 +238,12 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * constat 5).
    */
   archiveDUnAutreCoffre: "VAULT_COQUILLE_ARCHIVE_D_UN_AUTRE_COFFRE",
+  /**
+   * Un coffre restauré a SERVI depuis — il a été ouvert, il porte des écritures — et son manifeste a
+   * disparu. La coquille ne le répare pas : relancer la restauration effacerait ce qui a été écrit
+   * après elle. Sa réparation demande une décision (revue de la PR #208, constat 6).
+   */
+  coffreServiSansManifeste: "VAULT_COQUILLE_COFFRE_SERVI_SANS_MANIFESTE",
   /** Une restauration a été demandée sur un emplacement qui porte déjà un coffre. */
   emplacementOccupe: "VAULT_COQUILLE_EMPLACEMENT_OCCUPE",
   /**
@@ -324,6 +330,8 @@ const MESSAGES = Object.freeze({
     "Le disque de ce coffre n'a été ni installé ni restauré par cette coquille : son manifeste déclare un autre volume. Il n'est ni ouvert ni réparé. Effacez les données de ce site pour repartir d'un emplacement vide, puis restaurez une sauvegarde de votre coffre.",
   [CODES_REFUS_COQUILLE.archiveDUnAutreCoffre]:
     "Cette archive n'est pas la sauvegarde d'un coffre de la coquille : elle décrit un autre volume. Rien n'a été écrit ; choisissez le fichier produit par « Sauvegarder le coffre ».",
+  [CODES_REFUS_COQUILLE.coffreServiSansManifeste]:
+    "Ce coffre a servi depuis sa restauration, et son manifeste a disparu. Le réparer effacerait ce qui a été écrit depuis : rien n'a été touché, et il ne s'ouvre pas en attendant. Sa réparation demande une décision — n'effacez pas les données de ce site, gardez votre archive, et demandez de l'aide.",
   [CODES_REFUS_COQUILLE.emplacementOccupe]:
     "Restauration refusée : cet appareil porte déjà un coffre. On ne restaure jamais par-dessus ; restaurez sur un emplacement vide.",
   [CODES_REFUS_COQUILLE.restaurationInterrompue]:
