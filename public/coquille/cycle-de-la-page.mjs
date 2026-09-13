@@ -8,6 +8,7 @@
 
 import { ISSUES_DETAPE, journalDuCycle } from "/src/coquille/cycle-de-vie.mjs";
 import { brancherLesGestesDuCycle } from "/src/coquille/gestes-du-cycle.mjs";
+import { brancherLesGestesDePortabilite } from "/src/coquille/gestes-de-portabilite.mjs";
 import { ETATS_DU_VOLUME } from "/src/coquille/etat-de-la-coquille.mjs";
 import { mesurerLesCapacites } from "/src/coquille/capacites-de-la-coquille.mjs";
 import { conduiteApresLaMort } from "/src/coquille/mort-du-worker.mjs";
@@ -234,6 +235,16 @@ export function creerCycle({
       ...pont.verrouillage.gestesDeVerrouillage(),
     });
     pont.verrouillage.definirGesteDeVerrouillage(gestes.verrouillerLeCoffre);
+    // Sauvegarder, restaurer, révoquer en urgence (#207, ADR 0039). Après une restauration ou une
+    // révocation, l'enveloppe a changé : l'interface redit ce que le coffre porte.
+    brancherLesGestesDePortabilite({
+      racine: document,
+      demander: pont.canal.demanderAuWorker,
+      rapport,
+      publier,
+      apresRestauration: () => interfaceDeDeverrouillage.rafraichirLInventaire(),
+      apresRevocation: () => interfaceDeDeverrouillage.rafraichirLInventaire(),
+    });
 
     inscrire("backendPuisVm", ISSUES_DETAPE.differee, "volume-verrouille");
     publier();

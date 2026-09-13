@@ -48,9 +48,17 @@ import {
   correlationAdmise,
   decoderMessage,
   enveloppeDeMessage,
+  enveloppePrivilegiee,
   sansCapacite,
 } from "/src/coquille/contrat-de-messages.mjs";
+import {
+  IDENTIFIANT_DU_COFFRE,
+  IDENTIFIANT_DU_VOLUME_COQUILLE,
+} from "/src/coquille/identites-du-coffre.mjs";
+import { refusDOuverture } from "/src/coquille/portabilite-du-coffre.mjs";
 import { brancherLeRelaisDuWorker } from "./relais-du-worker.mjs";
+import { brancherLaPortabilite } from "./portabilite-du-worker.mjs";
+import { battementDuWorker } from "./battement-du-worker.mjs";
 import {
   compteRenduPublie,
   demarrerLaVm,
@@ -59,9 +67,12 @@ import {
 import { reprendreSiSignatureConfirmee } from "/src/coquille/reprise-installation.mjs";
 import { constaterLExclusivite } from "/src/coquille/exclusivite-du-volume.mjs";
 import { exigerLeBackend } from "/src/coquille/cycle-de-vie.mjs";
-import { DELAI_BATTEMENT_MS } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { ETATS_DU_VOLUME, chargeUtileDEtat } from "/src/coquille/etat-de-la-coquille.mjs";
-import { exigerKekDeLaPage, moyenParNom } from "/src/coquille/moyens-de-deverrouillage.mjs";
+import {
+  ancreDeVersion,
+  exigerKekDeLaPage,
+  moyenParNom,
+} from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
 import { SECTOR_SIZE } from "/src/vm/block-geometry.mjs";
 import {
@@ -93,10 +104,8 @@ const VOLUME = "coquille";
 /** Trente-deux secteurs : de quoi écrire et relire, sans faire du démarrage une mesure de disque. */
 const TAILLE = 32 * SECTOR_SIZE;
 
-/** Identifiant de volume, POSÉ EN OCTETS : un long littéral hexadécimal ressemble à une clé. */
-const IDENTIFIANT_VOLUME = octetsEnHex(
-  Uint8Array.from({ length: 16 }, (_, index) => (0x21 + index * 0x07) % 256),
-);
+/** L'identité que l'enveloppe authentifie, celle du COFFRE et du volume `application` (ADR 0039). */
+const IDENTIFIANT_VOLUME = IDENTIFIANT_DU_COFFRE;
 
 /**
  * Le CATALOGUE que ce Worker pose : les types qu'il sait servir, et rien d'autre.
@@ -153,6 +162,8 @@ const interne = {
    * poignée reste du côté qui tient le handle, par construction et non par discipline.
    */
   application: null,
+  /** Le bilan de la dernière révocation d'urgence, ou `null` (#207). Des noms et des nombres. */
+  revocation: null,
 };
 
 /** Le port privilégié, transféré UNE fois par la coquille avant tout document applicatif. */
@@ -216,21 +227,17 @@ self.addEventListener("message", (event) => {
     // la file, dans l'ordre d'arrivée.
     const decode = decoderMessage(message.data);
     if (decode.ok && decode.type === TYPES_PRIVILEGIES.etat) return publierLEtat(correlation);
+    // Pendant un geste LONG, un geste de portabilité est refusé ICI, jamais mis en file (ADR 0039).
+    const pendantUnGesteLong = decode.ok ? portabilite.refusALArrivee(decode.type) : null;
+    if (pendantUnGesteLong !== null) return repondreCode(pendantUnGesteLong, correlation);
+    const sortir = decode.ok ? portabilite.entrer(decode.type) : () => {};
     chaine = chaine
       .then(() => surMessagePrivilegie(message))
-      .catch((erreur) => repondreRefus(erreur, correlation));
+      .catch((erreur) => repondreRefus(erreur, correlation))
+      .finally(sortir);
   });
   port.start();
 });
-
-/**
- * Nombre de battements POSTÉS par ce Worker depuis son évaluation (#192, correction I1).
- *
- * Il voyage dans chaque battement, et la page en déduit ce qu'elle n'aurait pas su autrement :
- * un rang qui avance pendant qu'elle ne reçoit rien dit que le fil de la PAGE est affamé ; un rang
- * qui cesse d'avancer dit que le fil du WORKER l'est.
- */
-let battementsPostes = 0;
 
 /** File d'exécution du canal privilégié : un message à la fois, dans l'ordre d'arrivée. */
 let chaine = Promise.resolve();
@@ -281,6 +288,8 @@ async function surMessagePrivilegie(event) {
   if (decode.type === TYPES_PRIVILEGIES.fermeture) {
     return fermerLeCoffre(decode.message, correlation);
   }
+  const portable = portabilite.servir(decode.type, decode.message, correlation);
+  if (portable !== null) return portable;
   return repondreCode(CODES_REFUS_COQUILLE.typeInconnu, correlation);
 }
 
@@ -308,6 +317,8 @@ async function publierLEtat(correlation) {
     ...chargeUtileDEtat({ etat: interne.etat, barrieres: interne.barrieres }),
     exclusivite: await exclusiviteConstatee,
     application: interne.application === null ? "arretee" : "demarree",
+    // Ce qu'une révocation d'urgence a laissé et retiré : des noms et des nombres (#207).
+    revocation: interne.revocation,
   });
 }
 
@@ -365,8 +376,17 @@ async function publierLInventaire(correlation) {
   // La réponse porte l'ÉTAT, et c'est la correction du constat 3 : la page apprend dans le MÊME
   // message ce que le coffre porte et ce que ce moteur sait faire. Rien n'est muté ici — l'état de
   // ce Worker ne dépend pas de la lecture de l'enveloppe, et le laisser en dépendre était la course.
-  const vide = { present: false, versionEnveloppe: null, emplacements: [] };
+  const vide = { present: false, versionEnveloppe: null, emplacements: [], refus: null };
   if (!PEUT_OUVRIR) return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, vide);
+  // Un coffre ANTÉRIEUR ou une restauration COUPÉE est dit dès l'inventaire, avant qu'aucune phrase
+  // ne soit dérivée : l'utilisateur n'attend rien pour apprendre qu'il n'y a rien à ouvrir (#207).
+  const refusDuCoffre = refusDOuverture(await portabilite.constater());
+  if (refusDuCoffre !== null) {
+    return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, {
+      ...vide,
+      refus: { code: refusDuCoffre, message: messageDeRefus(refusDuCoffre) },
+    });
+  }
   const observe = await support().etat();
   if (!observe.present) return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, vide);
   const inventaire = await inventorierEnveloppe({
@@ -374,6 +394,7 @@ async function publierLInventaire(correlation) {
     identifiantVolume: IDENTIFIANT_VOLUME,
   });
   return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, {
+    refus: null,
     present: true,
     identifiantVolume: IDENTIFIANT_VOLUME,
     versionEnveloppe: inventaire.version,
@@ -441,7 +462,10 @@ async function deverrouiller(message, correlation) {
     return repondreCode(CODES_REFUS_COQUILLE.typeInconnu, correlation);
   }
   exigerUnVolumeAtteignable();
-  const versionMinimale = ancre(message.versionMinimale);
+  const refusDuCoffre = refusDOuverture(await portabilite.constater());
+  if (refusDuCoffre !== null)
+    throw Object.assign(new Error(refusDuCoffre), { code: refusDuCoffre });
+  const versionMinimale = ancreDeVersion(message.versionMinimale);
   const observe = await support().etat();
 
   const ouverte = observe.present
@@ -486,7 +510,7 @@ async function ouvrirLeVolume(dek) {
     name: VOLUME,
     size: TAILLE,
     cle: dek,
-    identifiantVolume: IDENTIFIANT_VOLUME,
+    identifiantVolume: IDENTIFIANT_DU_VOLUME_COQUILLE,
     transactionnel: false,
   });
 }
@@ -507,25 +531,6 @@ function exigerUnVolumeAtteignable() {
     "Ce navigateur n'offre pas l'accès synchrone à l'OPFS dans un Worker : aucun volume n'est atteignable ici. Le geste n'a pas échoué — il n'a pas pu être tenté.",
     { volume: VOLUME },
   );
-}
-
-/**
- * L'ANCRE de version, telle qu'elle arrive de la SAISIE (ADR 0027, décision 3).
- *
- * Elle est refusée plutôt que corrigée : une version n'est pas un nombre approché, et « 12a » n'est
- * pas 12. La page la contrôle déjà à la frappe ; ce contrôle-ci existe parce que la page n'est pas
- * l'unique appelant possible de ce canal, et qu'une garde qui n'existe que du côté de l'interface
- * n'est pas une garde.
- */
-function ancre(valeur) {
-  if (valeur === null || valeur === undefined || valeur === "") return null;
-  const entier = typeof valeur === "number" ? valeur : Number(valeur);
-  if (!Number.isInteger(entier) || entier < 1) {
-    const erreur = new Error("L'ancre de version est un entier ≥ 1, ou rien.");
-    erreur.code = CODES_REFUS_COQUILLE.messageMalforme;
-    throw erreur;
-  }
-  return entier;
 }
 
 /**
@@ -680,38 +685,11 @@ function annoncerLaBarriere() {
  */
 const exclusiviteConstatee = constaterLExclusivite({ volume: VOLUME, peutOuvrir: PEUT_OUVRIR });
 
-/**
- * Exécute un geste LONG en battant, pour que la coquille sache qu'il vit.
- *
- * Le battement n'est la réponse de personne — il porte la corrélation du geste, non pour l'apparier
- * mais pour dire QUELLE attente il prolonge. Il s'arrête dans un `finally` : un battement qui
- * survivrait à son geste ferait tenir pour vivante une attente déjà réglée.
- *
- * @param {string | null} correlation
- * @param {() => Promise<unknown>} geste
- */
-async function enBattant(correlation, geste) {
-  const minuterie = setInterval(() => {
-    portPrivilegie.postMessage(
-      enveloppeDeMessage(TYPES_PRIVILEGIES.battement, {
-        ...correlee(correlation),
-        // Le RANG et l'INSTANT du battement, posés par le Worker (#192, correction I1).
-        //
-        // Ils ne servent qu'à une chose, et elle est décisive : distinguer « le Worker n'a pas
-        // battu » de « la page n'a pas reçu le battement ». Sans eux, la borne de mort par SILENCE
-        // rend le même verdict dans les deux cas, et la cause reste une hypothèse. Ce sont deux
-        // nombres du côté de confiance, qui ne disent rien du volume.
-        rang: (battementsPostes += 1),
-        instantMs: Math.round(performance.now()),
-      }),
-    );
-  }, DELAI_BATTEMENT_MS);
-  try {
-    return await geste();
-  } finally {
-    clearInterval(minuterie);
-  }
-}
+/** Un geste LONG, exécuté en battant (`battement-du-worker.mjs`, #163 et #192). */
+const enBattant = battementDuWorker({
+  poster: (message) => portPrivilegie.postMessage(message),
+  correlee,
+});
 
 // --- Étape 3 : le backend, PUIS la machine virtuelle ----------------------------------------------
 
@@ -895,6 +873,25 @@ async function relacherTout(capturer) {
     // laisser derrière elle de quoi l'ouvrir.
     interne.kek = null;
     moyenRetenu = null;
+    interne.revocation = null;
     interne.etat = PEUT_OUVRIR ? ETATS_DU_VOLUME.verrouille : ETATS_DU_VOLUME.indisponible;
   }
 }
+
+// --- Sauvegarder, restaurer, révoquer en urgence (#207, ADR 0039) ---------------------------------
+
+/** Les trois gestes, branchés sur ce Worker. Voir `portabilite-du-worker.mjs`. */
+const portabilite = brancherLaPortabilite({
+  ...{ interne, support, cleDeVolume, enBattant, repondre, exigerUnVolumeAtteignable },
+  // L'archive est un `File` : elle passe par la seule dérogation écrite du contrat.
+  repondreAvecArchive: (type, correlation, corps) =>
+    portPrivilegie.postMessage(enveloppePrivilegiee(type, { ...corps, ...correlee(correlation) })),
+  // Le POINT DE CONTRÔLE d'une sauvegarde : l'application s'arrête, le coffre reste ouvert.
+  arreterLApplication: () => {
+    const application = interne.application;
+    interne.application = null;
+    relais?.oublierLaSession();
+    return application?.fermer({ capturer: true });
+  },
+  oublierLeMoyenRetenu: () => (moyenRetenu = null),
+});

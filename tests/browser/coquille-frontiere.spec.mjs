@@ -282,6 +282,25 @@ test("l'encodage du contrat est refusé strictement, et le canal privilégié n'
   }
 });
 
+test("sauvegarder, restaurer et révoquer sont REFUSÉS au document applicatif (#207)", async ({
+  page,
+}) => {
+  // Les trois gestes du canal privilégié, posés sur le port restreint avec une corrélation valable.
+  // Le refus est celui du canal privilégié, calculé sur le TYPE, et aucune archive n'aboutit.
+  await ouvrirLaCoquille(page, { documentApplicatif: FIXTURE });
+  const { sondes, parNom } = await releverLaFixture(page.frameLocator("#document-applicatif"));
+  const portabilite = sondes.filter(({ nom }) => nom.startsWith("portabilite-"));
+  expect(portabilite.map(({ nom }) => nom).sort()).toEqual([
+    "portabilite-restaurer",
+    "portabilite-revoquer-en-urgence",
+    "portabilite-sauvegarder",
+  ]);
+  for (const sonde of portabilite) {
+    expect(sonde.resultat, `${sonde.nom} : ${sonde.detail}`).toBe("refuse");
+    expect(parNom[sonde.nom].code, sonde.nom).toBe(CODES_REFUS_COQUILLE.portPrivilegie);
+  }
+});
+
 test("chaque requête admise reçoit SA réponse, même quand plusieurs sont en vol", async ({
   page,
 }) => {

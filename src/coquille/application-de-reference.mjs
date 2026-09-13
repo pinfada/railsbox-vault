@@ -28,12 +28,15 @@
 //  - l'ADR 0018 range déjà les applications par volume, et c'est la forme vers laquelle #24 va ;
 //  - les deux sont scellés sous la MÊME clé de volume, développée de la MÊME enveloppe, avec des
 //    identifiants de volume DISTINCTS — sans quoi un secteur de l'un se rejouerait dans l'autre
-//    (ADR 0015, données associées).
+//    (ADR 0015, données associées). `identites-du-coffre.mjs` les nomme (ADR 0039).
 //
-// L'identifiant du volume applicatif n'est pas une constante : il est TIRÉ à sa création par
-// l'ouvreur et inscrit dans son manifeste voisin, qui en est ensuite la source (ADR 0016).
+// L'identifiant du volume applicatif était TIRÉ à sa création par l'ouvreur. Depuis le 13/09/2026
+// (#207, ADR 0039), il est celui du COFFRE — la constante que l'enveloppe authentifie —, et le
+// volume `coquille` a reçu une constante distincte : jamais deux volumes sous la même clé et le
+// même identifiant. Le manifeste voisin en reste la source à la lecture (ADR 0016).
 
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
+import { IDENTIFIANT_DU_COFFRE } from "./identites-du-coffre.mjs";
 import { daterLaCreation, openOpfsVolume } from "../vm/opfs-block-backend.mjs";
 import { constaterCreationSeule } from "../vm/opfs-datation-de-creation.mjs";
 import {
@@ -437,6 +440,9 @@ async function verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, o
       name: nom,
       size: octets,
       cle,
+      // Le volume NAÎT sous l'identité du COFFRE, celle que l'enveloppe authentifie (#207,
+      // ADR 0039) : son archive peut ainsi emporter la page de récupération qui l'ouvre ailleurs.
+      identifiantVolume: IDENTIFIANT_DU_COFFRE,
       transactionnel: false,
       // Ce versement sera DATÉ : `daterLaCreation` est sa clôture, et une racine écrite à la
       // fermeture lui ferait trouver un journal « en service » (#182, T2b).

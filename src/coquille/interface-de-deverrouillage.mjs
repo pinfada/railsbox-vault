@@ -226,6 +226,15 @@ async function rafraichirLInventaire(contexte) {
   const propose = contexte.propose;
   releve.moyensProposes = propose.moyens.map((moyen) => moyen.nom);
   releve.typesInconnus = propose.inconnus.map((inconnu) => inconnu.typeKek);
+  // Un coffre ANTÉRIEUR ou une restauration COUPÉE (#207, ADR 0039) : le Worker le dit dès
+  // l'inventaire, et l'interface le montre avant que quiconque ne tape une phrase.
+  const refus = contexte.inventaire.refus ?? null;
+  if (refus !== null) {
+    releve.dernierRefus = refus.code;
+    dire(noeuds.moyens, "Ce coffre ne peut pas être ouvert par cette coquille.");
+    dire(noeuds.refus, conduiteDeRefus(refus.code, refus.message));
+    return publier(contexte);
+  }
   dire(
     noeuds.moyens,
     contexte.inventaire.present
@@ -276,6 +285,8 @@ async function ouvrirPar(contexte, moyen, corps, avantEnvoi = null) {
   const { noeuds, releve, surMesure } = contexte;
   const lue = relireLAncre(contexte);
   if (!lue.valide) return dire(noeuds.refus, lue.aveu);
+  // Rien n'est dérivé pour un coffre que l'inventaire a déjà refusé : aucune attente pour rien.
+  if (contexte.inventaire.refus) return montrerLeRefus(contexte, contexte.inventaire.refus);
   dire(noeuds.refus, "");
   surMesure("geste");
   const annonce = annonceDAttente({ moyen, moteur: contexte.moteur });
@@ -382,6 +393,7 @@ async function ouvrirParLeCode(contexte) {
 async function ouvrirParLaPasskey(contexte) {
   const lue = relireLAncre(contexte);
   if (!lue.valide) return dire(contexte.noeuds.refus, lue.aveu);
+  if (contexte.inventaire.refus) return montrerLeRefus(contexte, contexte.inventaire.refus);
   dire(contexte.noeuds.refus, "");
   try {
     const derive = await contexte.deriverPasskey({ inventaire: contexte.inventaire });
