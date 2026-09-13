@@ -40,7 +40,7 @@ const FIXTURE = "/coquille-epreuve/hostile.html";
 
 /** Ouvre la coquille de produit avec la fixture encadrée. Aucun déverrouillage : il n'en faut pas. */
 async function ouvrirLaCoquille(page) {
-  const url = new URL("/index.html", SHELL_ORIGIN);
+  const url = new URL("/index.html?vue=complete", SHELL_ORIGIN);
   url.searchParams.set("document-applicatif", FIXTURE);
   await page.goto(url.toString());
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: 60000 });

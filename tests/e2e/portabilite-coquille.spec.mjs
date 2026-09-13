@@ -90,7 +90,7 @@ const pageServie = (page) =>
 async function ouvrirLaCoquille(contexte, origine, erreurs) {
   const page = await contexte.newPage();
   page.on("pageerror", (erreur) => erreurs.push(erreur.message));
-  await page.goto(`${origine}/index.html`, { waitUntil: "load" });
+  await page.goto(`${origine}/index.html?vue=complete`, { waitUntil: "load" });
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: 60_000 });
   return page;
 }

@@ -23,7 +23,7 @@ const SANS_COURTIER_SOUS_WEBKIT =
 
 async function ouvrirUneCoquille(contexte) {
   const page = await contexte.newPage();
-  await page.goto(new URL("/index.html", SHELL_ORIGIN).toString());
+  await page.goto(new URL("/index.html?vue=complete", SHELL_ORIGIN).toString());
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: 60000 });
   return page;
 }

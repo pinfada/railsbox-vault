@@ -151,6 +151,10 @@ jobs:
       # persistance s'y joue entière, chaque nuit. Durées CI mesurées sur ce run : lot 1 36 min ; lot 2
       # ≈ 34 min une fois ce scénario retiré (58 min 23 s moins 24,2) ; lot 3 ≈ 26 min (24,2 min de
       # scénario et la préparation d'un job). Aucune borne relevée.
+      #
+      # `parcours-utilisateur.spec.mjs` (#193) rejoint le lot 3, le plus court mesuré (≈ 26 min). Il
+      # coûte 4,0 min en local (un ouvrier, le 14/09/2026 : un boot de Rails, une sauvegarde, une
+      # restauration, trois échecs conduits) : le lot 3 vise ≈ 31 min, sous la borne de 60 min.
       matrix:
         include:
           - lot: "1"
@@ -168,7 +172,7 @@ jobs:
               tests/e2e/export-volume-verifiable.spec.mjs tests/e2e/parcours-page-rails.spec.mjs
           - lot: "3"
             fichiers: >-
-              tests/e2e/durabilite-du-commit.spec.mjs
+              tests/e2e/durabilite-du-commit.spec.mjs tests/e2e/parcours-utilisateur.spec.mjs
 
     env:
       VAULT_E2E_LOT: ${{ matrix.lot }}

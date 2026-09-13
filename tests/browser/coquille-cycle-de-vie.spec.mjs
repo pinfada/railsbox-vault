@@ -44,7 +44,7 @@ async function releve(page) {
  * — la ligne suivante. Le couplage a produit des expirations sur Firefox (revue de la PR #177).
  */
 async function ouvrirLaCoquille(page) {
-  await page.goto(`${SHELL_ORIGIN}/index.html`, { waitUntil: "commit" });
+  await page.goto(`${SHELL_ORIGIN}/index.html?vue=complete`, { waitUntil: "commit" });
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: DELAI });
 }
 
@@ -460,7 +460,7 @@ test("un Worker qui JETTE est constaté, et la coquille refuse tout service", as
   page,
 }, info) => {
   await substituerLeWorker(page, WORKER_QUI_JETTE);
-  await page.goto(`${SHELL_ORIGIN}/index.html`);
+  await page.goto(`${SHELL_ORIGIN}/index.html?vue=complete`);
   const rapport = await exigerLaConduite(page, "erreur");
   await info.attach(`mort-erreur-${info.project.name}.json`, {
     body: JSON.stringify(rapport.workerMort, null, 2),
@@ -477,7 +477,7 @@ test("un geste présenté après la mort ne DÉRIVE rien : il reçoit le refus, 
   page,
 }) => {
   await substituerLeWorker(page, WORKER_QUI_JETTE);
-  await page.goto(`${SHELL_ORIGIN}/index.html`);
+  await page.goto(`${SHELL_ORIGIN}/index.html?vue=complete`);
   await exigerLaConduite(page, "erreur");
 
   // Argon2id coûte deux secondes sur le moteur le plus lent (ADR 0021, § Mesures). Le refus arrive
@@ -510,7 +510,7 @@ test("un Worker MUET est constaté par la borne, et non attendu pour toujours", 
   );
   test.setTimeout(180_000);
   await substituerLeWorker(page, WORKER_MUET);
-  await page.goto(`${SHELL_ORIGIN}/index.html`);
+  await page.goto(`${SHELL_ORIGIN}/index.html?vue=complete`);
   // La borne est `DELAI_WORKER_MORT_MS` — trente secondes, nommées dans
   // `src/coquille/moyens-de-deverrouillage.mjs` avec leur motif. C'est la seule des trois causes
   // qu'aucun événement ne signale : un Worker qui vit et se tait est indistinguable d'un Worker
@@ -682,7 +682,7 @@ test("un geste explicite ROUVRE la coquille après la mort, et rejoue le cycle",
   // La MORT, et non le verrouillage : le bouton « Rouvrir le coffre » appartient au chemin
   // ACCIDENTEL. Un verrouillage voulu recharge de lui-même, et c'est l'asymétrie de l'ADR 0031.
   await substituerLeWorker(page, WORKER_QUI_JETTE);
-  await page.goto(`${SHELL_ORIGIN}/index.html`);
+  await page.goto(`${SHELL_ORIGIN}/index.html?vue=complete`);
   await exigerLaConduite(page, "erreur");
 
   // Le bouton n'existe visiblement QU'APRÈS une mort : la coquille ne propose pas de se recharger

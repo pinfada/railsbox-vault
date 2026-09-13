@@ -200,7 +200,7 @@ async function installerLEnregistreur(page) {
  * gate ; il n'apportait rien à aucune épreuve de cette suite.
  */
 async function ouvrirLaCoquille(page, parametres = {}, origine = SHELL_ORIGIN) {
-  const url = new URL("/index.html", origine);
+  const url = new URL("/index.html?vue=complete", origine);
   for (const [nom, valeur] of Object.entries(parametres)) url.searchParams.set(nom, valeur);
   await page.goto(url.toString(), { waitUntil: "commit" });
   await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });
