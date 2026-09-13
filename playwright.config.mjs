@@ -101,7 +101,12 @@ const FRONTIERE_COQUILLE = ["**/coquille-frontiere.spec.mjs"];
  * les BANCS ; les deux ne se remplacent pas, puisqu'un banc n'est pas un chemin qu'un utilisateur
  * emprunte.
  */
-const DEVERROUILLAGE_COQUILLE = ["**/coquille-deverrouillage.spec.mjs"];
+const DEVERROUILLAGE_COQUILLE = [
+  "**/coquille-deverrouillage.spec.mjs",
+  // SAUVEGARDER, RESTAURER, RÉVOQUER depuis la coquille (#207, ADR 0039) : même chemin de produit,
+  // mêmes motifs, mêmes trois moteurs.
+  "**/coquille-portabilite.spec.mjs",
+];
 
 /**
  * CYCLE DE VIE assemblé (#163, tranche 3 de #24, ADR 0030) et EN-TÊTES de durcissement (#104, #163).
