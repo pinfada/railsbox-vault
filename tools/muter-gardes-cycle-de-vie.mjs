@@ -323,6 +323,9 @@ export const MUTATIONS = Object.freeze([
       "      name: nom,\n" +
       "      size: octets,\n" +
       "      cle,\n" +
+      "      // Le volume NAÎT sous l'identité du COFFRE, celle que l'enveloppe authentifie (#207,\n" +
+      "      // ADR 0039) : son archive peut ainsi emporter la page de récupération qui l'ouvre ailleurs.\n" +
+      "      identifiantVolume: IDENTIFIANT_DU_COFFRE,\n" +
       "      transactionnel: false,\n" +
       "      // Ce versement sera DATÉ : `daterLaCreation` est sa clôture, et une racine écrite à la\n" +
       "      // fermeture lui ferait trouver un journal « en service » (#182, T2b).\n" +
