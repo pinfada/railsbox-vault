@@ -84,6 +84,25 @@ test("les artefacts sont ordonnés par nom, quel que soit l'ordre de production"
   );
 });
 
+test("le disque applicatif est un ext4 journalisé, monté avec barrières, et son nom le dit (#209)", () => {
+  // Sur ext2, `fsync` ne rend durables ni les bitmaps d'allocation ni les descripteurs de groupe :
+  // verrouillé juste après une écriture acquittée, le coffre rouvre un système de fichiers où
+  // l'allocation suivante reprend un inode déjà utilisé (#209, EIO mesuré sous v86). Le journal
+  // valide ces métadonnées à chaque barrière.
+  assert.equal(sources.disk.appDiskFilesystem, "ext4");
+  assert.ok(ARTEFACTS_ATTENDUS.includes(`reference-app.${sources.disk.appDiskFilesystem}`));
+  assert.equal(manifesteDEssai().boot.hdb, `reference-app.${sources.disk.appDiskFilesystem}`);
+
+  const init = readFileSync(
+    join(racineDepot, "tools", "build-reference-image", "guest", "guest-init.sh"),
+    "utf8",
+  );
+  const montages = init.split("\n").filter((ligne) => /^\s*mount\b.*\/dev\/sdb/.test(ligne));
+  assert.equal(montages.length, 1, "un seul montage du disque applicatif");
+  assert.match(montages[0], /-t ext4\b/);
+  assert.doesNotMatch(montages[0], /ext2|nobarrier|barrier=0|data=writeback|noload/);
+});
+
 test("un artefact attendu manquant est refusé", () => {
   const manifeste = manifesteDEssai();
   manifeste.artifacts = manifeste.artifacts.filter(
