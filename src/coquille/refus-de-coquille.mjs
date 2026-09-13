@@ -215,6 +215,34 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * aucun ne se parle sur celui d'un autre.
    */
   canalDeRelaisRefuse: "VAULT_COQUILLE_CANAL_DE_RELAIS_REFUSE",
+
+  // --- SAUVEGARDER, RESTAURER, RÉVOQUER depuis la coquille (#207, ADR 0039) --------------------
+  /**
+   * Le coffre de cet appareil a été créé AVANT le 13/09/2026, sous deux identités (ADR 0039).
+   *
+   * Il est refusé, jamais migré : rien n'est publié, aucune donnée réelle n'a pu y être confiée, et
+   * une migration serait du code de sécurité écrit pour des coffres de développement. Le refus est
+   * rendu dès l'INVENTAIRE — avant qu'aucune phrase ne soit dérivée — pour que l'utilisateur
+   * n'attende rien pour apprendre qu'il n'y a rien à ouvrir.
+   */
+  coffreAnterieur: "VAULT_COQUILLE_COFFRE_ANTERIEUR",
+  /** Une restauration a été demandée sur un emplacement qui porte déjà un coffre. */
+  emplacementOccupe: "VAULT_COQUILLE_EMPLACEMENT_OCCUPE",
+  /**
+   * Une restauration a été COUPÉE : le disque est là, le coffre n'est pas né. Seul le même geste —
+   * restaurer de nouveau — répare ; aucun déverrouillage ne l'ouvre en attendant.
+   */
+  restaurationInterrompue: "VAULT_COQUILLE_RESTAURATION_INTERROMPUE",
+  /** L'archive n'emporte aucune enveloppe de récupération : rien ne l'ouvrirait sur cet appareil. */
+  archiveSansRecuperation: "VAULT_COQUILLE_ARCHIVE_SANS_RECUPERATION",
+  /** Aucune application n'est installée dans ce coffre : il n'y a rien à sauvegarder. */
+  applicationNonInstallee: "VAULT_COQUILLE_APPLICATION_NON_INSTALLEE",
+  /**
+   * Un geste de portabilité est arrivé pendant un geste LONG — démarrage, installation, reprise,
+   * sauvegarde, restauration. Il est refusé, et non mis en attente : une révocation d'urgence qui
+   * attendrait la fin d'un boot de deux minutes ne serait plus une urgence.
+   */
+  gesteEnCours: "VAULT_COQUILLE_GESTE_EN_COURS",
 });
 
 /** Les messages en français, un par code. Ils décrivent le REFUS, jamais l'état de l'appareil. */
@@ -278,6 +306,18 @@ const MESSAGES = Object.freeze({
     "Réponse abandonnée : la coquille avait cessé de servir avant qu'elle n'arrive.",
   [CODES_REFUS_COQUILLE.canalDeRelaisRefuse]:
     "Le canal de relais coquille ↔ Worker n'est atteignable par aucun message du port restreint.",
+  [CODES_REFUS_COQUILLE.coffreAnterieur]:
+    "Ce coffre a été créé par une version de développement antérieure au 13/09/2026. Aucune migration n'est offerte, car rien n'est publié : supprimez-le puis recréez-le — dans le navigateur, effacez les données de ce site (réglages du site, « Effacer les données »), rechargez la coquille, et le premier déverrouillage créera un coffre neuf.",
+  [CODES_REFUS_COQUILLE.emplacementOccupe]:
+    "Restauration refusée : cet appareil porte déjà un coffre. On ne restaure jamais par-dessus ; restaurez sur un emplacement vide.",
+  [CODES_REFUS_COQUILLE.restaurationInterrompue]:
+    "Une restauration a été interrompue : le coffre n'est pas né. Relancez la restauration avec la même archive ; aucun déverrouillage ne l'ouvre avant.",
+  [CODES_REFUS_COQUILLE.archiveSansRecuperation]:
+    "Cette archive n'emporte aucun moyen de récupération : une archive que personne n'ouvre ailleurs. Rien n'a été écrit.",
+  [CODES_REFUS_COQUILLE.applicationNonInstallee]:
+    "Aucune application n'est installée dans ce coffre : il n'y a rien à sauvegarder. Démarrez-la une première fois.",
+  [CODES_REFUS_COQUILLE.gesteEnCours]:
+    "Un geste long est en cours (démarrage, installation, sauvegarde ou restauration) : ce geste est refusé, pas mis en attente. Réessayez quand il a abouti.",
 });
 
 /** Tous les codes, triés. Sert au cliquet d'exhaustivité et aux épreuves. */
