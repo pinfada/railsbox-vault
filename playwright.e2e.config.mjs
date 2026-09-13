@@ -55,6 +55,17 @@ export const E2E_COQUILLE_APP_PORT = 4180;
 export const E2E_ORIGIN_COQUILLE = `http://${E2E_HOST}:${E2E_COQUILLE_PORT}`;
 export const E2E_ORIGIN_COQUILLE_APP = `http://${E2E_HOST_B}:${E2E_COQUILLE_APP_PORT}`;
 
+/**
+ * La coquille B de la PORTABILITÉ (#207, ADR 0039) : une AUTRE origine de confiance, donc un autre
+ * OPFS, où l'archive de la coquille A est restaurée. Même règle de ports que le couple A — l'origine
+ * applicative est `localhost` sur le port suivant —, et un second Service Worker de cadre, puisque
+ * l'origine applicative change elle aussi.
+ */
+export const E2E_COQUILLE_B_PORT = 4181;
+export const E2E_COQUILLE_B_APP_PORT = 4182;
+export const E2E_ORIGIN_COQUILLE_B = `http://${E2E_HOST}:${E2E_COQUILLE_B_PORT}`;
+export const E2E_ORIGIN_COQUILLE_B_APP = `http://${E2E_HOST_B}:${E2E_COQUILLE_B_APP_PORT}`;
+
 export default defineConfig({
   testDir: "tests/e2e",
   fullyParallel: false,
@@ -115,6 +126,17 @@ export default defineConfig({
     {
       command: `node tools/serve.mjs --role app --host ${E2E_HOST_B} --port ${E2E_COQUILLE_APP_PORT}`,
       url: `${E2E_ORIGIN_COQUILLE_APP}/document-applicatif.html`,
+      reuseExistingServer: false,
+    },
+    // Le couple B de la portabilité (#207) : la coquille qui RESTAURE, et son origine applicative.
+    {
+      command: `node tools/serve.mjs --role shell --host ${E2E_HOST} --port ${E2E_COQUILLE_B_PORT} --app-origin ${E2E_ORIGIN_COQUILLE_B_APP}`,
+      url: `${E2E_ORIGIN_COQUILLE_B}/index.html`,
+      reuseExistingServer: false,
+    },
+    {
+      command: `node tools/serve.mjs --role app --host ${E2E_HOST_B} --port ${E2E_COQUILLE_B_APP_PORT}`,
+      url: `${E2E_ORIGIN_COQUILLE_B_APP}/document-applicatif.html`,
       reuseExistingServer: false,
     },
   ],

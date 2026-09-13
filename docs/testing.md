@@ -175,6 +175,32 @@ servie, le Worker runtime, un volume OPFS réel sous Chromium. Aucune commande `
 séparée n'est créée pour l'instant : elle démarrerait le même serveur pour exécuter un fichier de
 plus, et un script qui n'ajoute pas de preuve n'ajoute que du temps.
 
+### Sauvegarder, restaurer, révoquer depuis la coquille (#207, ADR 0039)
+
+Trois gestes du canal privilégié, et l'identité unique du coffre qui les rend possibles. Chacun se
+prouve à un niveau, et aucun niveau ne remplace l'autre :
+
+| Suite                                                | Moteurs                                    | Ce qu'elle mesure                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/unit/coquille-identite-du-coffre.test.mjs`    | Node                                       | l'ÉPREUVE ROUGE de la tranche (commit 541d6ba) : le disque de Rails, installé par `installerSiNecessaire`, s'archive avec la page de récupération du coffre, se restaure dans un autre magasin et s'ouvre par le code. Rouge sur le code d'avant (`VAULT_ARCHIVE_RECUPERATION_REFUSEE`), vert après                                                                                                         |
+| `tests/unit/coquille-portabilite.test.mjs`           | Node                                       | les DÉCISIONS pures : états de l'emplacement (vide, coffre, antérieur, restauration coupée — et une installation coupée qui n'en est pas une), refus pendant un geste long, en-tête d'archive, cible du coffre, bilan de révocation, dérogation d'archive du contrat                                                                                                                                        |
+| `tests/unit/coquille-portabilite-du-worker.test.mjs` | Node                                       | le module du Worker TEL QU'IL EST SERVI, sur un magasin en mémoire : sauvegarde au point de contrôle, restauration relue par le code, archive altérée et tronquée refusées sans rien écrire, emplacement occupé, restauration coupée réparée, révocation qui garde l'emplacement ouvrant                                                                                                                    |
+| `tests/unit/coquille-types-documentes.test.mjs`      | Node                                       | le CLIQUET des types : chaque type de la coquille est nommé au § 10.5                                                                                                                                                                                                                                                                                                                                       |
+| `tests/browser/coquille-portabilite.spec.mjs`        | Chromium, Firefox (WebKit : limite exigée) | la coquille RÉELLE sans VM : sauvegarder → télécharger → restaurer sur une AUTRE origine (`127.0.0.1` → `localhost`) → ouvrir par le code ; archive altérée et tronquée refusées ; après révocation la phrase est refusée et le code ouvre ; un coffre produit par la coquille d'AVANT (`tests/fixtures/coffre-anterieur/`, `tools/produire-coffre-anterieur.mjs`) refusé dès l'inventaire, sans dérivation |
+| `tests/browser/coquille-frontiere.spec.mjs`          | Chromium, Firefox, WebKit                  | les trois gestes posés sur le port restreint par la fixture hostile (49 sondes) et refusés sous `VAULT_COQUILLE_PORT_PRIVILEGIE_REFUSE`                                                                                                                                                                                                                                                                     |
+| `tests/e2e/portabilite-coquille.spec.mjs`            | Chromium                                   | le SERVICE : coquille A ouvre, Rails écrit une note, A sauvegarde ; coquille B (autre origine, autre Service Worker de cadre) restaure, s'ouvre par le code, redémarre Rails sans réinstaller et RELIT la note. Lot 1 de `reprise.yml`                                                                                                                                                                      |
+| `tools/muter-gardes-coquille.mjs`                    | Node                                       | onze mutants neufs sur les gardes de la tranche, tous tués                                                                                                                                                                                                                                                                                                                                                  |
+
+**Sans machine virtuelle, le disque est installé mais Rails ne boote pas.** L'épreuve navigateur
+sert un descripteur et un disque de huit mébioctets par une route : la coquille les INSTALLE —
+volume, datation, manifeste —, puis le boot échoue faute de noyau. C'est exactement un coffre avec
+une application installée, et c'est ce que la sauvegarde exige. Que Rails relise une mutation est
+l'objet du scénario de bout en bout, et de lui seul.
+
+**La fixture du coffre antérieur n'est pas fabriquée** : `tools/produire-coffre-anterieur.mjs`
+extrait le commit `bb59de7`, sert SA coquille, y crée un coffre par une phrase dans Chromium, le
+verrouille, et relève les fichiers OPFS qu'elle a laissés. La provenance est écrite dans le JSON.
+
 ### Backend de blocs OPFS
 
 Le backend de production de `VAULT-PERSIST-001` est prouvé sur **trois** niveaux, et chacun affirme
