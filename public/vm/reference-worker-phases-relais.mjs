@@ -38,11 +38,16 @@ const ENTETES_DE_PAGE = Object.freeze([
 ]);
 
 /** Une requête, chronométrée, avec ce qu'elle a coûté en octets DANS LES DEUX SENS. */
-async function chronometrer(requeteHttp, methode, chemin, { cookie = null, corps = null } = {}) {
+async function chronometrer(
+  requeteHttp,
+  methode,
+  chemin,
+  { cookie = null, corps = null, typeDeCorps = "application/x-www-form-urlencoded" } = {},
+) {
   const entetes = ENTETES_DE_PAGE.map((paire) => [...paire]);
   if (cookie !== null) entetes.push(["Cookie", cookie]);
   if (corps !== null) {
-    entetes.push(["Content-Type", "application/x-www-form-urlencoded"]);
+    entetes.push(["Content-Type", typeDeCorps]);
     entetes.push(["Content-Length", String(corps.byteLength)]);
   }
   const debut = performance.now();
@@ -83,7 +88,7 @@ const SOUS_RESSOURCES = Object.freeze(["/vault.css", "/vault.js", "/vault.png"])
  * série de sondes : première page et ses actifs, puis les mêmes actifs DEMANDÉS ENSEMBLE, puis une
  * seconde page, puis un formulaire et la redirection qu'il rend.
  */
-async function mesurerUnParcours(requeteHttp) {
+async function mesurerUnParcours(requeteHttp, journal) {
   const premierDocument = await chronometrer(requeteHttp, "GET", "/");
   let cookie = cookieDeSession(premierDocument.reponse, null);
   const jeton = jetonDuFormulaire(premierDocument.reponse.corps);
@@ -93,8 +98,13 @@ async function mesurerUnParcours(requeteHttp) {
   cookie = cookieDeSession(secondDocument.reponse, cookie);
 
   const formulaire = await mesurerLeFormulaire(requeteHttp, { cookie, jeton });
+  const ecrituresDurables = await mesurerLesEcrituresDurables(requeteHttp, journal, {
+    cookie: cookieDeSession(formulaire.soumission.reponse, cookie),
+    jeton,
+  });
 
   return {
+    ecrituresDurables,
     // Le cookie lui-même n'est PAS publié : ce qui compte est qu'il ait existé et qu'il ait tenu.
     sessionRails: {
       cookiePose: cookie !== null,
@@ -170,6 +180,101 @@ async function mesurerLeFormulaire(requeteHttp, { cookie, jeton }) {
   return { soumission, pageApresRedirection };
 }
 
+/** Soumissions répétées : une seule ne dirait pas si la barrière comptée est la règle ou un hasard. */
+const SOUMISSIONS_MESUREES = 5;
+
+/**
+ * Une pièce de 64 Kio, déterministe : assez pour que plusieurs blocs soient écrits, loin du plafond
+ * d'un corps de requête relayé (1 Mio).
+ */
+const OCTETS_DE_PIECE = 64 * 1024;
+
+/** Ce que le JOURNAL du volume a vu pendant `faire()` : écritures, barrières, acquittements. */
+async function avecLesBarrieres(journal, faire) {
+  const avant = journal.counts();
+  const mesure = await faire();
+  const apres = journal.counts();
+  const ecart = (operation) => (apres[operation] ?? 0) - (avant[operation] ?? 0);
+  return {
+    ...mesure,
+    ecritures: ecart("write"),
+    barrieres: ecart("flush"),
+    barrieresAcquittees: ecart("flush-ack"),
+  };
+}
+
+/** Le corps `multipart/form-data` d'une note ET de sa pièce jointe, tel qu'un navigateur l'émet. */
+function corpsMultipart({ libelle, jeton, piece }) {
+  const frontiere = "----railsbox-vault-mesure-209";
+  const encodeur = new TextEncoder();
+  const champ = (nom, valeur) =>
+    `--${frontiere}\r\nContent-Disposition: form-data; name="${nom}"\r\n\r\n${valeur}\r\n`;
+  const avant = encodeur.encode(
+    champ("libelle", libelle) +
+      (jeton === null ? "" : champ("authenticity_token", jeton)) +
+      `--${frontiere}\r\nContent-Disposition: form-data; name="piece"; filename="mesure.bin"\r\n` +
+      "Content-Type: application/octet-stream\r\n\r\n",
+  );
+  const apres = encodeur.encode(`\r\n--${frontiere}--\r\n`);
+  const corps = new Uint8Array(avant.byteLength + piece.byteLength + apres.byteLength);
+  corps.set(avant, 0);
+  corps.set(piece, avant.byteLength);
+  corps.set(apres, avant.byteLength + piece.byteLength);
+  return { corps, typeDeCorps: `multipart/form-data; boundary=${frontiere}` };
+}
+
+/**
+ * LE PRIX D'UNE ÉCRITURE DURABLE (#209) : combien de barrières du guest — et combien de millisecondes
+ * — une soumission coûte, note seule puis note et pièce jointe.
+ *
+ * Les barrières sont comptées sur le journal du volume PENDANT la requête, et seulement pendant : le
+ * 303 part après le commit (et après le téléversement de la pièce), donc tout ce qu'une écriture
+ * acquittée a rendu durable tombe dans la fenêtre. Une barrière de réécriture périodique du noyau
+ * peut s'y glisser : c'est pourquoi la soumission est répétée, et chaque essai publié.
+ */
+async function mesurerLesEcrituresDurables(requeteHttp, journal, { cookie, jeton }) {
+  const notes = [];
+  for (let rang = 0; rang < SOUMISSIONS_MESUREES; rang += 1) {
+    const charge = new TextEncoder().encode(
+      `libelle=${encodeURIComponent(`note ${rang} mesuree par le banc (#209)`)}` +
+        (jeton === null ? "" : `&authenticity_token=${encodeURIComponent(jeton)}`),
+    );
+    notes.push(
+      sansReponse(
+        await avecLesBarrieres(journal, () =>
+          chronometrer(requeteHttp, "POST", "/notes", { cookie, corps: charge }),
+        ),
+      ),
+    );
+  }
+  const piece = new Uint8Array(OCTETS_DE_PIECE).map((_, index) => (index * 31 + 7) % 251);
+  const notesEtPieces = [];
+  for (let rang = 0; rang < SOUMISSIONS_MESUREES; rang += 1) {
+    const { corps, typeDeCorps } = corpsMultipart({
+      libelle: `note ${rang} et sa piece mesurees par le banc (#209)`,
+      jeton,
+      piece,
+    });
+    const soumission = await avecLesBarrieres(journal, () =>
+      chronometrer(requeteHttp, "POST", "/notes", { cookie, corps, typeDeCorps }),
+    );
+    // La pièce a-t-elle réellement été JOINTE ? Une image qui ignore le champ rendrait une note sans
+    // pièce, et la mesure compterait les barrières d'une note seule sous le nom d'une note et pièce.
+    const chemin =
+      soumission.emplacement === null
+        ? null
+        : new URL(soumission.emplacement, "http://127.0.0.1/").pathname;
+    const page = chemin === null ? null : await requeteHttp("GET", chemin, { headers: ENTETES_DE_PAGE });
+    const html = page === null ? "" : new TextDecoder().decode(page.corps);
+    notesEtPieces.push({
+      ...sansReponse(soumission),
+      pieceOctets: OCTETS_DE_PIECE,
+      pieceJointe: /data-piece-octets="(\d+)"/.exec(html)?.[1] === String(OCTETS_DE_PIECE),
+    });
+  }
+  return { notes, notesEtPieces };
+}
+
 /** Le compteur de vues, tel que la page l'affiche. `null` quand la page ne le porte pas. */
 function lireLesVues(mesure) {
   const html = new TextDecoder().decode(mesure.reponse.corps);
@@ -207,14 +312,20 @@ function totaliser(mesures) {
  * fermeture est dans un `finally` : une mesure qui échoue ne doit pas laisser une VM tourner.
  */
 export async function phaseMesureRelais(options) {
+  // Le journal du volume est RETENU à l'ouverture : c'est lui qui compte les barrières d'une
+  // soumission (#209). `bootEtVerifier` ne le publie pas après le boot, et ce banc n'y touche pas.
+  let journal = null;
   const { fermer, requeteHttp, ...compte } = await bootEtVerifier({
     ...options,
     phase: "mesure-relais",
     garderLaSessionOuverte: true,
-    ouvrirLeVolumeDuGuest: ouvrirLeVolumeDuBanc,
+    ouvrirLeVolumeDuGuest: (reglages) => {
+      journal = reglages.journal;
+      return ouvrirLeVolumeDuBanc(reglages);
+    },
   });
   try {
-    return { ...compte, relais: await mesurerUnParcours(requeteHttp) };
+    return { ...compte, relais: await mesurerUnParcours(requeteHttp, journal) };
   } finally {
     await fermer({ capturer: false });
   }

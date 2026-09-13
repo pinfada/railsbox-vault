@@ -211,6 +211,14 @@ test("une page Rails réelle, ses actifs, sa session et son formulaire, mesurés
   ).toBeGreaterThan(1);
   expect(mesure.soumission.statut, "la soumission rend une redirection 303").toBe(303);
   expect(mesure.pageApresRedirection.statut, "la redirection mène à la note créée").toBe(200);
+  // Le PRIX D'UNE ÉCRITURE DURABLE (#209) : chaque soumission répétée a bien été une écriture
+  // acquittée — un 422 ne compterait les barrières de rien. Le nombre de barrières est publié,
+  // jamais jugé : une réécriture périodique du noyau peut tomber dans la fenêtre d'une requête.
+  const { notes, notesEtPieces } = mesure.ecrituresDurables;
+  expect(
+    [...notes, ...notesEtPieces].map(({ statut }) => statut),
+    "chaque soumission mesurée rend 303",
+  ).toEqual([...notes, ...notesEtPieces].map(() => 303));
 
   // Le relevé est ÉCRIT sur la sortie standard : une mesure qui ne vit que dans un fichier
   // d'artefacts n'est pas lue, et c'est elle qui doit instruire l'ADR.
@@ -223,7 +231,12 @@ test("une page Rails réelle, ses actifs, sa session et son formulaire, mesurés
       `soumission ${mesure.soumission.millisecondes} ms · ` +
       `redirection suivie ${mesure.pageApresRedirection.millisecondes} ms · ` +
       `total ${mesure.total.requetes} requêtes, ${mesure.total.octetsRecus} o, ` +
-      `${mesure.total.millisecondes} ms\n`,
+      `${mesure.total.millisecondes} ms\n` +
+      `[mesure ${testInfo.project.name}] note seule : barrières ${notes.map((n) => n.barrieres).join("/")}, ` +
+      `${notes.map((n) => `${n.millisecondes} ms`).join(" / ")} · note et pièce de ` +
+      `${notesEtPieces[0].pieceOctets} o (jointe : ${notesEtPieces.map((n) => n.pieceJointe).join("/")}) : ` +
+      `barrières ${notesEtPieces.map((n) => n.barrieres).join("/")}, ` +
+      `${notesEtPieces.map((n) => `${n.millisecondes} ms`).join(" / ")}\n`,
   );
 
   await courir({ phase: "cleanup", volume: VOLUME }).catch(() => {});
