@@ -36,7 +36,7 @@ const DESCRIPTEUR = {
   descripteurVersion: 1,
   application: { id: "portabilite-test", version: "1.0.0" },
   runtime: { version: "0.1.0" },
-  disque: { nom: "disque-de-portabilite.ext2", octets: OCTETS_DU_DISQUE },
+  disque: { nom: "disque-de-portabilite.ext4", octets: OCTETS_DU_DISQUE },
   boot: {
     cmdline: "root=/dev/sda rw",
     memoireOctets: 33554432,

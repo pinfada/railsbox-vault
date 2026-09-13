@@ -806,7 +806,7 @@ test("un descripteur MALFORMÉ est refusé sur sa forme, et le motif nomme le ch
       descripteurVersion: 1,
       application: { id: "railsbox-vault-reference", version: "1.0.0" },
       runtime: { version: "0.1.0" },
-      disque: { nom: "reference-app.ext2", octets: 536870912 },
+      disque: { nom: "reference-app.ext4", octets: 536870912 },
       boot: {
         cmdline: "root=/dev/sda rw",
         memoireOctets: 536870912,
@@ -856,7 +856,7 @@ function descripteurDeReprise(octets) {
     descripteurVersion: 1,
     application: { id: "reprise-installation-test", version: "1.0.0" },
     runtime: { version: "0.1.0" },
-    disque: { nom: "disque-de-reprise.ext2", octets },
+    disque: { nom: "disque-de-reprise.ext4", octets },
     boot: {
       cmdline: "root=/dev/sda rw",
       memoireOctets: 33554432,

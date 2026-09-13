@@ -106,7 +106,7 @@ test("le disque applicatif est un ext4 journalisé, monté avec barrières, et s
 test("un artefact attendu manquant est refusé", () => {
   const manifeste = manifesteDEssai();
   manifeste.artifacts = manifeste.artifacts.filter(
-    (artefact) => artefact.name !== "reference-app.ext2",
+    (artefact) => artefact.name !== "reference-app.ext4",
   );
   manifeste.totals.byteSize = manifeste.artifacts.reduce((somme, a) => somme + a.byteSize, 0);
 
@@ -146,7 +146,7 @@ test("la comparaison au disque nomme l'artefact absent et l'empreinte divergente
     ]),
   );
   observes.delete("seabios.bin");
-  observes.set("reference-app.ext2", { byteSize: 1, sha256: empreinte(9) });
+  observes.set("reference-app.ext4", { byteSize: 1, sha256: empreinte(9) });
 
   const differences = comparerArtefacts(manifeste, observes);
   assert.deepEqual(differences.map((difference) => difference.code).sort(), [

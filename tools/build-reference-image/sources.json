@@ -95,10 +95,10 @@
     "rootfsMarginPercent": 10,
     "rootfsMarginMiB": 64,
     "appDiskMiB": 512,
-    "appDiskFilesystem": "ext2",
+    "appDiskFilesystem": "ext4",
     "rootfsFilesystem": "ext4",
     "blockSize": 4096,
-    "note": "La geometrie est parametrable : `npm run image:build -- --taille-app=<Mio>` surcharge appDiskMiB. Le spike #4 peut imposer une autre taille ou un autre systeme de fichiers ; seul ce bloc change alors. La marge du rootfs est faible parce qu'il est monte en lecture quasi exclusive : seul /var/log y ecrit."
+    "note": "La geometrie est parametrable : `npm run image:build -- --taille-app=<Mio>` surcharge appDiskMiB. Le disque applicatif est un ext4 AVEC journal depuis #209 : sur ext2, fsync ne rend durables ni les bitmaps d allocation ni les descripteurs de groupe, et un verrouillage juste apres une ecriture acquittee laissait un systeme de fichiers incoherent (ADR 0004, note du 13/09/2026). La marge du rootfs est faible parce qu'il est monte en lecture quasi exclusive : seul /var/log y ecrit."
   },
   "guest": {
     "cmdline": "root=/dev/sda rw console=ttyS0 init=/opt/vault/guest-init.sh net.ifnames=0 quiet loglevel=4",

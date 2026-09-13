@@ -59,7 +59,7 @@ function descripteur() {
     descripteurVersion: 1,
     application: { id: "railsbox-vault-reference", version: "1.0.0" },
     runtime: { version: "0.1.0" },
-    disque: { nom: "app.ext2", octets: OCTETS },
+    disque: { nom: "app.ext4", octets: OCTETS },
     boot: {
       cmdline: "root=/dev/sda rw",
       memoireOctets: 33554432,
