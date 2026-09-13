@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="fr" data-coquille="demarrage">
+<html lang="fr" data-coquille="demarrage" data-vue="parcours">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,199 +8,274 @@
   <body>
     <main>
       <h1>RailsBox Vault</h1>
-      <p id="coquille-etat" role="status">coquille:demarrage</p>
 
       <!--
-        Le DÉVERROUILLAGE (#162, ADR 0029). Trois moyens, une ancre de version, une feuille de
-        récupération.
+        Le PARCOURS GUIDÉ (#193, ADR 0040). Un seul chemin, un écran à la fois : l'étape courante
+        (titre, ce qui va se passer, ce qui est attendu, l'attente annoncée), la suivante annoncée, et
+        « Où suis-je ? ». Les écrans et leur ordre vivent dans `src/coquille/parcours.mjs` ; la page
+        (`public/coquille/parcours-de-la-page.mjs`) ne fait que montrer les blocs de l'écran courant.
 
-        Aucune mise en forme : ce n'est pas un oubli, c'est le périmètre. Cette tranche livre un
-        CHEMIN DE PRODUIT — les gestes, leurs refus typés, l'attente annoncée, la feuille — et
-        l'apparence relève d'un travail qui n'a pas encore d'issue. Un HTML sémantique sans style
-        se lit au clavier, se lit par un lecteur d'écran, et ne promet rien qu'il ne tienne.
+        Les GESTES sont ceux d'avant, inchangés : les mêmes boutons, les mêmes identifiants, les mêmes
+        modules de `src/coquille/`. Le parcours les ordonne et les nomme ; il n'en ajoute aucun.
 
-        Aucun <form> : la CSP de la coquille porte « form-action 'none' » (ADR 0022), et un
-        formulaire dont la soumission est refusée par la politique serait une porte peinte sur un
-        mur. Les gestes sont des boutons, et chaque bouton dit ce qu'il fait.
+        Aucune mise en forme : ce n'est pas un oubli, c'est le périmètre. L'apparence est P3 (#194).
+        Un HTML sémantique sans style se lit au clavier, se lit par un lecteur d'écran, et ne promet
+        rien qu'il ne tienne.
+
+        Aucun <form> : la CSP de la coquille porte « form-action 'none' » (ADR 0022), et un formulaire
+        dont la soumission est refusée par la politique serait une porte peinte sur un mur. Les gestes
+        sont des boutons, et chaque bouton dit ce qu'il fait.
+
+        `?vue=complete` montre tous les blocs à la fois, détails techniques ouverts : c'est la vue des
+        épreuves de frontière, qui jouent les gestes dans tous les ordres, y compris ceux que le
+        parcours n'offre pas.
       -->
-      <section id="deverrouillage" aria-labelledby="deverrouillage-titre">
-        <h2 id="deverrouillage-titre">Ouvrir ce coffre</h2>
-        <p id="deverrouillage-moyens" role="status"></p>
-        <p id="deverrouillage-avertissement" role="status"></p>
-        <p id="deverrouillage-attente" role="status"></p>
-        <p id="deverrouillage-etat" role="status"></p>
-        <p id="deverrouillage-refus" role="alert"></p>
-
+      <section id="parcours" aria-labelledby="parcours-titre">
+        <p id="parcours-rang"></p>
+        <h2 id="parcours-titre" tabindex="-1">Préparation</h2>
+        <p id="parcours-ce-qui-va-se-passer"></p>
+        <p id="parcours-attendu"></p>
+        <p id="parcours-attente-annoncee"></p>
+        <p id="parcours-attente" role="status" aria-live="polite"></p>
+        <p id="parcours-reussite" role="status" aria-live="polite"></p>
+        <p id="parcours-refus" role="alert"></p>
         <!--
           Le GESTE QUI ROUVRE, après la mort du Worker de confiance (#163, ADR 0030, décision 3).
-
-          Il est caché tant qu'aucune mort n'a été constatée, et il RECHARGE la coquille — il ne
-          ressuscite rien. Un Worker recréé en place hériterait d'un cadre applicatif dont le port
-          est mort, et d'un relevé qui décrit une session finie ; le rechargement rejoue le cycle
-          depuis l'étape 1 et refait le cadre. C'est aussi le chemin que la Definition of Ready de
-          #25 retient pour retirer le cadre au verrouillage : un seul chemin pour deux conduites.
-
-          Il est un BOUTON, jamais un rechargement automatique : « refuser tout service jusqu'à un
-          geste explicite » veut dire que c'est l'utilisateur qui décide de repayer la dérivation.
+          Caché tant qu'aucune mort n'a été constatée ; il RECHARGE la coquille, il ne ressuscite rien.
+          Il est ici, hors des blocs d'étape, pour être visible quel que soit l'écran.
         -->
         <p>
           <button id="rouvrir-la-coquille" type="button" hidden>Rouvrir le coffre</button>
         </p>
-
-        <h3>Version notée sur la feuille</h3>
-        <p>
-          <label for="ancre-version">Version d'enveloppe (facultatif)</label>
-          <input
-            id="ancre-version"
-            type="text"
-            inputmode="numeric"
-            autocomplete="off"
-            spellcheck="false"
-          />
-        </p>
-        <p id="ancre-aveu" role="status"></p>
-
-        <h3>Phrase</h3>
-        <p>
-          <label for="saisie-phrase">Phrase de déverrouillage</label>
-          <!--
-            « new-password » plutôt que « off » : les gestionnaires de mots de passe ignorent
-            largement « off », et c'est la valeur qui leur dit de ne PAS proposer d'enregistrer.
-            Ce que le produit peut demander, pas ce qu'il peut garantir — voir ADR 0029, limite 1.
-          -->
-          <input
-            id="saisie-phrase"
-            type="password"
-            autocomplete="new-password"
-            spellcheck="false"
-          />
-        </p>
-        <p><button id="ouvrir-par-phrase" type="button">Ouvrir par la phrase</button></p>
-
-        <h3>Passkey</h3>
-        <p><button id="ouvrir-par-passkey" type="button">Ouvrir par la passkey</button></p>
-
-        <h3>Code de récupération</h3>
-        <p>
-          <label for="saisie-code">Code de récupération</label>
-          <input id="saisie-code" type="text" autocomplete="off" spellcheck="false" />
-        </p>
-        <p id="code-decoupe" role="status"></p>
-        <p id="code-verdict" role="status"></p>
-        <p><button id="ouvrir-par-code" type="button" disabled>Ouvrir par le code</button></p>
       </section>
 
-      <section id="feuille" aria-labelledby="feuille-titre">
-        <h2 id="feuille-titre">Feuille de récupération</h2>
-        <p id="deverrouillage-sans-recuperation" role="status"></p>
+      <div data-bloc="commencer" hidden>
         <p>
-          <button id="creer-recuperation" type="button">Créer un moyen de récupération</button>
+          <button id="parcours-commencer" type="button">Commencer</button>
+          <button id="parcours-j-ai-une-sauvegarde" type="button">J'ai déjà une sauvegarde</button>
         </p>
-        <!--
-          Le code est ÉCRIT ICI, et nulle part ailleurs : ni presse-papiers, ni stockage, ni
-          journal, ni relevé. Il est rendu une seule fois par le Worker de confiance (ADR 0025,
-          décision 3) ; un second geste rend VAULT_DERIVATION_CODE_DEJA_RENDU.
-        -->
-        <p id="feuille-code"></p>
-        <p id="feuille-version"></p>
-        <p id="feuille-consigne"></p>
-        <p id="version-a-noter" role="status"></p>
+      </div>
+
+      <!-- Le DÉVERROUILLAGE (#162, ADR 0029) : trois moyens, une ancre de version. -->
+      <section id="deverrouillage" aria-label="Ouvrir le coffre">
+        <div data-bloc="ancre" hidden>
+          <p>
+            <label for="ancre-version">Numéro de version noté sur votre feuille (facultatif)</label>
+            <input
+              id="ancre-version"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </p>
+        </div>
+
+        <div data-bloc="phrase" hidden>
+          <p>
+            <label for="saisie-phrase">Votre phrase</label>
+            <!--
+              « new-password » plutôt que « off » : les gestionnaires de mots de passe ignorent
+              largement « off », et c'est la valeur qui leur dit de ne PAS proposer d'enregistrer.
+              Ce que le produit peut demander, pas ce qu'il peut garantir — voir ADR 0029, limite 1.
+            -->
+            <input
+              id="saisie-phrase"
+              type="password"
+              autocomplete="new-password"
+              spellcheck="false"
+            />
+          </p>
+          <p><button id="ouvrir-par-phrase" type="button">Ouvrir mon coffre</button></p>
+        </div>
+
+        <div data-bloc="passkey" hidden>
+          <p id="parcours-passkey"></p>
+          <p>
+            <button id="ouvrir-par-passkey" type="button">Ouvrir mon coffre avec ma passkey</button>
+          </p>
+        </div>
+
+        <div data-bloc="perdu" hidden>
+          <p>
+            <button id="parcours-phrase-perdue" type="button">
+              J'ai oublié ma phrase : utiliser mon code de récupération
+            </button>
+          </p>
+        </div>
+
+        <div data-bloc="code" hidden>
+          <p>
+            <label for="saisie-code">Code de récupération</label>
+            <input id="saisie-code" type="text" autocomplete="off" spellcheck="false" />
+          </p>
+          <p id="parcours-code-lu" aria-live="polite"></p>
+          <p>
+            <button id="ouvrir-par-code" type="button" disabled>
+              Ouvrir mon coffre avec le code
+            </button>
+          </p>
+        </div>
+      </section>
+
+      <!-- La FEUILLE DE RÉCUPÉRATION (ADR 0029) : rendue une fois, confirmée avant d'avancer. -->
+      <section id="feuille" aria-label="Feuille de récupération">
+        <div data-bloc="feuille-annonce" hidden>
+          <p>
+            <button id="creer-recuperation" type="button">Afficher mon code de récupération</button>
+          </p>
+        </div>
+        <div data-bloc="feuille" hidden>
+          <!--
+            Le code est ÉCRIT ICI, et nulle part ailleurs : ni presse-papiers, ni stockage, ni
+            journal, ni relevé. Il est rendu une seule fois par le Worker de confiance (ADR 0025,
+            décision 3) ; le parcours l'efface de la page dès qu'il est confirmé.
+          -->
+          <p>Votre code de récupération :</p>
+          <p id="feuille-code"></p>
+          <p id="parcours-consigne-feuille"></p>
+          <p>
+            <button id="parcours-code-recopie" type="button">J'ai recopié mon code</button>
+          </p>
+        </div>
+        <div data-bloc="confirmation" hidden>
+          <p>
+            <label for="parcours-confirmation-code">Code recopié depuis votre feuille</label>
+            <input
+              id="parcours-confirmation-code"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </p>
+          <p>
+            <button id="parcours-confirmer-code" type="button">Confirmer mon code</button>
+            <button id="parcours-revoir-code" type="button">Revoir mon code</button>
+          </p>
+        </div>
+      </section>
+
+      <!--
+        Le CYCLE DE VIE assemblé (#163, ADR 0030 ; #169, ADR 0031). Démarrer coûte un boot — deux
+        minutes sur une machine ordinaire — et personne d'autre que l'utilisateur n'a à décider de le
+        payer. « VERROUILLER » est le seul mot : un coffre fermé et un coffre verrouillé sont la même
+        chose. Le verrouillage RECHARGE la coquille ; le délai d'inactivité emprunte le même chemin.
+      -->
+      <section id="cycle" aria-label="Application">
+        <div data-bloc="application" hidden>
+          <p>
+            <button id="demarrer-application" type="button">Démarrer l'application</button>
+          </p>
+          <p>
+            <progress
+              id="parcours-progression"
+              aria-label="Démarrage de l'application en cours"
+              hidden
+            ></progress>
+          </p>
+          <!--
+            REPRENDRE une installation interrompue (#173, ADR 0037). Caché tant qu'aucun démarrage n'a
+            reconnu la SIGNATURE d'une installation interrompue ; le Worker la REVÉRIFIE avant d'agir.
+          -->
+          <p>
+            <button id="reprendre-l-installation" type="button" hidden>
+              Reprendre l'installation
+            </button>
+          </p>
+        </div>
+        <div data-bloc="verrouiller" hidden>
+          <p><button id="verrouiller-le-coffre" type="button">Verrouiller mon coffre</button></p>
+        </div>
       </section>
 
       <!--
         SAUVEGARDER, RESTAURER, RÉVOQUER EN URGENCE (#207, ADR 0039). Trois gestes du canal
         privilégié ; aucun n'existe sur le port restreint. La sauvegarde est remise au navigateur par
         le lien ci-dessous — l'archive quitte l'origine par le système de fichiers de l'hôte, jamais
-        vers le document applicatif. La restauration n'agit que sur un emplacement VIDE, et le coffre
-        restauré s'ouvre ensuite par le code de récupération, ci-dessus. L'ordre de ces écrans est
-        celui de P2 (#193) ; leur mise en forme, celle de P3 (#194).
+        vers le document applicatif. La restauration n'agit que sur un emplacement VIDE.
       -->
-      <section id="portabilite" aria-labelledby="portabilite-titre">
-        <h2 id="portabilite-titre">Sauvegarder, restaurer, révoquer</h2>
+      <section id="portabilite" aria-label="Sauvegarde et révocation">
+        <div data-bloc="sauvegarde" hidden>
+          <p>
+            <button id="sauvegarder-le-coffre" type="button">Sauvegarder mon coffre</button>
+            <a id="sauvegarde-lien" href="#portabilite" hidden>Enregistrer la sauvegarde</a>
+          </p>
+        </div>
+        <div data-bloc="restauration" hidden>
+          <p>
+            <label for="archive-a-restaurer">Fichier de sauvegarde</label>
+            <input id="archive-a-restaurer" type="file" />
+          </p>
+          <p>
+            <button id="restaurer-le-coffre" type="button">
+              Restaurer ma sauvegarde sur cet appareil
+            </button>
+          </p>
+        </div>
+        <div data-bloc="revocation" hidden>
+          <p>
+            <button id="revoquer-en-urgence" type="button">
+              Révoquer tous les autres moyens d'ouvrir ce coffre
+            </button>
+          </p>
+        </div>
+      </section>
+
+      <div data-bloc="continuer" hidden>
+        <p><button id="parcours-continuer" type="button">Continuer</button></p>
+      </div>
+
+      <p id="parcours-suivante"></p>
+
+      <details id="ou-suis-je">
+        <summary>Où suis-je ?</summary>
+        <ol id="ou-suis-je-liste"></ol>
+      </details>
+
+      <!--
+        L'ÉTAPE 4 du cycle de vie (#192, ADR 0038) : ce que RAILS rend, relayé depuis le guest par le
+        seul port restreint. Ce conteneur n'est JAMAIS déplacé dans le document — déplacer un cadre le
+        recharge, et le port restreint serait perdu ; il est seulement montré ou caché.
+      -->
+      <section data-bloc="espace-de-travail" aria-label="Votre application" hidden>
+        <p id="cycle-description">
+          Une fois démarrée, l'application s'affiche ci-dessous ; avant, cet espace dit qu'il attend
+          son démarrage.
+        </p>
+        <div id="cadre-applicatif"></div>
+      </section>
+
+      <details id="details-techniques">
+        <summary>Détails techniques</summary>
+        <p><a href="?vue=complete">Afficher tous les gestes à la fois (vue complète)</a></p>
+        <p id="coquille-etat" role="status">coquille:demarrage</p>
+        <p id="deverrouillage-moyens" role="status"></p>
+        <p id="deverrouillage-avertissement" role="status"></p>
+        <p id="deverrouillage-sans-recuperation" role="status"></p>
+        <p id="deverrouillage-attente" role="status"></p>
+        <p id="deverrouillage-etat" role="status"></p>
+        <p id="deverrouillage-refus"></p>
+        <p id="ancre-aveu" role="status"></p>
+        <p id="code-decoupe" role="status"></p>
+        <p id="code-verdict" role="status"></p>
+        <p id="feuille-version"></p>
+        <p id="feuille-consigne"></p>
+        <p id="version-a-noter" role="status"></p>
+        <p id="cycle-etat" role="status">cycle:au-repos</p>
         <p id="portabilite-etat" role="status">portabilite:au-repos</p>
         <p id="portabilite-avertissement" role="status"></p>
-        <p id="portabilite-refus" role="alert"></p>
-        <p>
-          <button id="sauvegarder-le-coffre" type="button">Sauvegarder le coffre</button>
-          <a id="sauvegarde-lien" href="#portabilite" hidden>Enregistrer la sauvegarde</a>
-        </p>
-        <p>
-          <label for="archive-a-restaurer">Sauvegarde à restaurer</label>
-          <input id="archive-a-restaurer" type="file" />
-          <button id="restaurer-le-coffre" type="button">Restaurer sur cet appareil</button>
-        </p>
-        <p>
-          <button id="revoquer-en-urgence" type="button">
-            Révoquer tout sauf ce qui vient d'ouvrir
-          </button>
-        </p>
-      </section>
-
-      <!--
-        Le CYCLE DE VIE assemblé (#163, ADR 0030 ; #169, ADR 0031). Deux gestes, et ils sont des
-        boutons pour la raison qui a fait des quatre autres des boutons : ce que la coquille fait du
-        volume appartient à qui l'ouvre. Démarrer coûte un boot — deux minutes sur une machine
-        ordinaire — et personne d'autre que l'utilisateur n'a à décider de le payer.
-
-        Le second geste est « VERROUILLER », et c'est le seul mot : un coffre fermé et un coffre
-        verrouillé sont la même chose, et deux mots pour une chose sont un mensonge en attente. Il
-        arrête la VM, capture l'instantané, ferme les volumes, termine le Worker de confiance, puis
-        RECHARGE cette coquille — les pixels du cadre applicatif sont le dernier clair de la session.
-        Le délai d'inactivité de `src/coquille/verrouillage.mjs` emprunte exactement ce chemin.
-      -->
-      <section id="cycle" aria-labelledby="cycle-titre">
-        <h2 id="cycle-titre">Application</h2>
-        <p id="cycle-description">
-          Une fois démarrée, l'application que Rails rend dans le coffre s'affiche dans le cadre
-          ci-dessous ; avant, le cadre dit qu'il attend son démarrage.
-        </p>
-        <p id="cycle-etat" role="status">cycle:au-repos</p>
-        <p>
-          <button id="demarrer-application" type="button">Démarrer l'application</button>
-        </p>
-        <p><button id="verrouiller-le-coffre" type="button">Verrouiller</button></p>
-
+        <p id="portabilite-refus"></p>
         <!--
-          REPRENDRE une installation interrompue (#173, ADR 0037). Caché tant qu'aucun démarrage n'a
-          reconnu la SIGNATURE d'une installation interrompue — jamais offert sur un simple refus
-          « sans manifeste », qui couvre aussi « autre chose ».
-
-          Il retire le volume applicatif orphelin et ses voisins, puis réinstalle : le Worker
-          REVÉRIFIE la signature lui-même avant d'agir, un clic n'étant pas une preuve que rien n'a
-          changé depuis que ce bouton est apparu.
+          Le relevé de la coquille : ce qu'elle a refusé, et dans quel ordre elle a agi. Il ne porte
+          aucune donnée du volume — ni nom, ni taille, ni clé.
         -->
-        <p>
-          <button id="reprendre-l-installation" type="button" hidden>
-            Reprendre l'installation
-          </button>
-        </p>
-      </section>
-
-      <!--
-        Le relevé de la coquille : ce qu'elle a refusé, et dans quel ordre elle a agi. Il ne porte
-        aucune donnée du volume — ni nom, ni taille, ni clé — et sert aux épreuves de frontière comme
-        à quiconque veut voir ce que la coquille a fait sans ouvrir la console.
-      -->
-      <pre id="coquille-rapport">{}</pre>
-      <!--
-        Le relevé de l'INTERFACE de déverrouillage. Il dit ce qui a été MONTRÉ — les moyens
-        proposés, l'attente annoncée, le dernier refus, et un BOOLÉEN qui dit qu'un code a été
-        rendu. Il ne porte jamais ce qui a été saisi, ni le code lui-même.
-      -->
-      <pre id="deverrouillage-releve">{}</pre>
-      <!--
-        L'ÉTAPE 4 du cycle de vie, et ce qu'elle sert désormais (#192, ADR 0038).
-
-        Jusqu'ici ce cadre portait une PLACE TENANTE : un document de l'origine applicative qui
-        s'annonçait, recevait son port restreint et affichait un relevé. Il porte maintenant ce que
-        RAILS rend — le document, ses actifs, ses formulaires, ses redirections —, relayé depuis le
-        guest par le seul port restreint, et jamais servi par cette origine-ci.
-        
-        Ce que le document encadré voit : des réponses HTTP. Ce qu'il ne voit jamais : le cookie de
-        session Rails (son bocal vit dans le Worker de confiance et meurt avec lui), l'adresse où
-        l'application écoute dans la machine virtuelle, et tout en-tête que le relais ne nomme pas.
-      -->
-      <div id="cadre-applicatif"></div>
+        <pre id="coquille-rapport">{}</pre>
+        <!--
+          Le relevé de l'INTERFACE de déverrouillage. Il dit ce qui a été MONTRÉ ; il ne porte jamais
+          ce qui a été saisi, ni le code lui-même.
+        -->
+        <pre id="deverrouillage-releve">{}</pre>
+      </details>
     </main>
     <script type="module" src="/main.mjs"></script>
   </body>

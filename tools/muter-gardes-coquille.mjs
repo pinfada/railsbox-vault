@@ -59,6 +59,9 @@ const PORTABILITE = "src/coquille/portabilite-du-coffre.mjs";
 const EPREUVE_PORTABILITE = "tests/unit/coquille-portabilite.test.mjs";
 const EPREUVE_PORTABILITE_DU_WORKER = "tests/unit/coquille-portabilite-du-worker.test.mjs";
 const EPREUVE_IDENTITE = "tests/unit/coquille-identite-du-coffre.test.mjs";
+const PARCOURS = "src/coquille/parcours.mjs";
+const EPREUVE_PARCOURS = "tests/unit/coquille-parcours.test.mjs";
+const EPREUVE_PARCOURS_CONDUITES = "tests/unit/coquille-parcours-conduites.test.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -867,6 +870,40 @@ export const MUTATIONS = Object.freeze([
     avant: "  if (!estUneArchive(archive)) throw refus(CODES_REFUS_COQUILLE.messageMalforme);\n",
     apres: "",
     epreuves: [EPREUVE_PORTABILITE_DU_WORKER],
+  },
+  // --- Le PARCOURS GUIDÉ (#193, ADR 0040) : ses gardes d'ORDRE et sa table des conduites ----------
+  {
+    nom: "un coffre ouvert sans moyen de récupération ramène toujours à l'étape 3",
+    garde: "ecranOuvert — le produit refuse d'avancer tant que le code n'est pas confirmé",
+    fichier: PARCOURS,
+    avant: "  if (!aRecuperation || pointeur === 3) return `code-${sousEtatDuCode}`;\n",
+    apres: "  if (pointeur === 3) return `code-${sousEtatDuCode}`;\n",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "la recopie confirmée est LE code affiché, pas un code bien formé quelconque",
+    garde: "confirmerLaRecopie — l'égalité avec la feuille",
+    fichier: PARCOURS,
+    avant: "  if (etat.decoupe !== affichee.decoupe) {\n",
+    apres: "  if (false) {\n",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "un refus de GESTE n'est pas un refus d'inventaire",
+    garde: "coffreObserve — la ligne des moyens d'un refus d'inventaire",
+    fichier: PARCOURS,
+    avant:
+      '  if (REFUS_D_INVENTAIRE.includes(dernierRefus) && texte.startsWith("Ce coffre ne peut pas")) {\n',
+    apres: '  if (texte.startsWith("Ce coffre ne peut pas")) {\n',
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "un code du chemin rend SA conduite, jamais la phrase générique",
+    garde: "conduiteHumaine — la lecture de la table",
+    fichier: "src/coquille/conduites-du-parcours.mjs",
+    avant: "  if (conduite !== undefined) return conduite;\n",
+    apres: "",
+    epreuves: [EPREUVE_PARCOURS_CONDUITES],
   },
 ]);
 
