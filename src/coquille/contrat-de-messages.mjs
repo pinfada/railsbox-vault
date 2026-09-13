@@ -89,6 +89,25 @@ export const TYPES_PRIVILEGIES = Object.freeze({
   reprendreInstallation: "vault.coquille.reprendre-installation",
   reprendreInstallationReponse: "vault.coquille.reprendre-installation-reponse",
   /**
+   * SAUVEGARDER le coffre (#207, ADR 0039) : le Worker de confiance écrit l'archive du volume
+   * `application`, avec l'enveloppe de récupération seule emportée, et la rend à la PAGE sous la
+   * forme d'un `File` (`CHAMP_DE_L_ARCHIVE`). Jamais au document applicatif.
+   */
+  sauvegarder: "vault.coquille.sauvegarder-le-coffre",
+  sauvegarderReponse: "vault.coquille.sauvegarder-le-coffre-reponse",
+  /**
+   * RESTAURER une archive dans un emplacement VIDE (#207, ADR 0039). La page transfère le `File`
+   * choisi par l'utilisateur ; le coffre s'ouvre ensuite par les gestes de déverrouillage existants.
+   */
+  restaurer: "vault.coquille.restaurer-le-coffre",
+  restaurerReponse: "vault.coquille.restaurer-le-coffre-reponse",
+  /**
+   * RÉVOQUER EN URGENCE (#207, ADR 0026 et 0039) : tout ce qui ouvre ce coffre est retiré, sauf
+   * l'emplacement qui vient de l'ouvrir. Une version, une barrière, la page libre effacée.
+   */
+  revoquerEnUrgence: "vault.coquille.revoquer-en-urgence",
+  revoquerEnUrgenceReponse: "vault.coquille.revoquer-en-urgence-reponse",
+  /**
    * FERMETURE PROPRE (étape 7) : arrêter la VM, capturer l'instantané, `close()` le volume.
    *
    * Le `terminate()` du Worker vient APRÈS, et il est le fait de la page : `close()` attend les E/S
@@ -292,18 +311,54 @@ export function enveloppePrivilegiee(type, corps = {}) {
       `« ${type} » n'est pas un type du canal privilégié : seul celui-ci peut porter une capacité.`,
     );
   }
-  const { [CHAMP_DE_LA_KEK]: kek, ...reste } = corps;
-  if (kek === undefined) return enveloppeDeMessage(type, corps);
-  exigerKekOpaque(kek);
+  const { [CHAMP_DE_LA_KEK]: kek, [CHAMP_DE_L_ARCHIVE]: archive, ...reste } = corps;
+  if (kek === undefined && archive === undefined) return enveloppeDeMessage(type, corps);
+  if (kek !== undefined) exigerKekOpaque(kek);
+  if (archive !== undefined) exigerArchiveAdmise(type, archive);
   exigerCorpsSansIdentite(reste);
   sansCapacite(reste);
   return Object.freeze({
     contrat: CONTRAT_COQUILLE.id,
     version: CONTRAT_COQUILLE.version,
     type,
-    [CHAMP_DE_LA_KEK]: kek,
+    ...(kek === undefined ? {} : { [CHAMP_DE_LA_KEK]: kek }),
+    ...(archive === undefined ? {} : { [CHAMP_DE_L_ARCHIVE]: archive }),
     ...reste,
   });
+}
+
+/**
+ * Le NOM du seul champ qui puisse porter une ARCHIVE, et seulement sur deux types privilégiés
+ * (#207, ADR 0039).
+ *
+ * Un `File` n'est pas une capacité au sens de l'ADR 0002 : il ne donne accès à rien d'autre qu'à
+ * ses propres octets, figés, et il ne permet d'écrire nulle part. `sansCapacite` le refuse pourtant,
+ * et il a raison de le faire PAR DÉFAUT : sur le port restreint, un `File` serait un octet du coffre
+ * franchissant la frontière. La dérogation est donc écrite ici, bornée comme celle de la KEK :
+ *
+ *  - elle ne vaut que pour `sauvegarderReponse` (Worker → page) et `restaurer` (page → Worker), deux
+ *    types du canal privilégié qu'aucun message du document applicatif n'atteint ;
+ *  - elle ne vaut que pour ce champ, et pour un `File` ou un `Blob` — jamais un tampon, un flux ou
+ *    un handle, qui restent refusés partout.
+ */
+export const CHAMP_DE_L_ARCHIVE = "archive";
+
+/** Les deux types qui ont le droit de porter `CHAMP_DE_L_ARCHIVE`, et aucun autre. */
+export const TYPES_PORTEURS_D_ARCHIVE = Object.freeze(
+  new Set([TYPES_PRIVILEGIES.sauvegarderReponse, TYPES_PRIVILEGIES.restaurer]),
+);
+
+/** @param {string} type @param {unknown} archive */
+function exigerArchiveAdmise(type, archive) {
+  if (!TYPES_PORTEURS_D_ARCHIVE.has(type)) {
+    throw refusDeCapacite(`une archive sur « ${type} », qui n'en porte jamais`);
+  }
+  const nom = archive?.constructor?.name;
+  if (nom !== "File" && nom !== "Blob") {
+    throw refusDeCapacite(
+      `« ${CHAMP_DE_L_ARCHIVE} » n'est pas un fichier (${nom ?? typeof archive})`,
+    );
+  }
 }
 
 /** @param {unknown} kek */
