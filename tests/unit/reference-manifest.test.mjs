@@ -103,6 +103,34 @@ test("le disque applicatif est un ext4 journalisé, monté avec barrières, et s
   assert.doesNotMatch(montages[0], /ext2|nobarrier|barrier=0|data=writeback|noload/);
 });
 
+test("l'état du disque applicatif est observable à chaque boot (revue #211, constat 5)", () => {
+  // `errors=continue` laissait un ext4 en erreur écrire encore, si bien que « l'écriture suivante
+  // réussit » ne prouvait rien ; et `dmesg -n 1` AVANT le montage rendait muets le rejeu du journal
+  // et toute erreur `EXT4-fs`. L'init relève donc l'état après le montage, le dit sur la série et le
+  // dépose pour l'application, puis seulement fait taire la console avant le pont.
+  const init = readFileSync(
+    join(racineDepot, "tools", "build-reference-image", "guest", "guest-init.sh"),
+    "utf8",
+  );
+  const lignes = init.split("\n");
+  const rang = (motif) => lignes.findIndex((ligne) => motif.test(ligne));
+  const montage = lignes[rang(/^\s*mount\b.*\/dev\/sdb/)];
+
+  assert.match(montage, /errors=remount-ro/);
+  assert.ok(
+    rang(/^\s*dmesg -n 1\b/) > rang(/^\s*mount\b.*\/dev\/sdb/),
+    "console muette APRÈS le montage",
+  );
+  assert.ok(rang(/^\s*dmesg -n 1\b/) < rang(/start-app\.sh/), "console muette AVANT l'application");
+  assert.ok(
+    rang(/^\s*dmesg -n 1\b/) > rang(/errors_count/),
+    "état relevé avant de faire taire la console",
+  );
+  assert.match(init, /\/sys\/fs\/ext4\/sdb\/errors_count/);
+  assert.match(init, /EXT4-fs error\|mounting unchecked/);
+  assert.match(init, /\/run\/vault-disque-applicatif/);
+});
+
 test("un artefact attendu manquant est refusé", () => {
   const manifeste = manifesteDEssai();
   manifeste.artifacts = manifeste.artifacts.filter(

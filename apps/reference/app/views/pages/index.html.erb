@@ -23,3 +23,11 @@
 </ul>
 
 <p id="compte-notes"><%= @notes.size %></p>
+
+<%# L'état du disque applicatif relevé par l'init au montage (revue #211, 5) :
+    ce qu'un scénario de boot à froid exige, un disque sans erreur. %>
+<% if @disque %>
+  <p id="etat-du-disque" data-disque-releve="oui" data-disque-options="<%= @disque["options"] %>" data-disque-erreurs="<%= @disque["erreurs"] %>" data-disque-alertes="<%= @disque["alertes"] %>" data-disque-rejeu="<%= @disque["rejeu"] %>">disque applicatif : <%= @disque["erreurs"] %> erreur(s)</p>
+<% else %>
+  <p id="etat-du-disque" data-disque-releve="non">disque applicatif : état non relevé</p>
+<% end %>

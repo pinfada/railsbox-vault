@@ -27,6 +27,7 @@ class PagesController < ActionController::Base
   def index
     @notes = notes_saisies
     @vues = compter_la_vue
+    @disque = Vault::EtatDuDisque.lire
   end
 
   # CRÉE une note. Le POST rend une REDIRECTION (303) plutôt que du HTML : c'est

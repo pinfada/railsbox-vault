@@ -23,21 +23,44 @@ hostname railsbox-vault-reference
 ip link set lo up 2>/dev/null || ifconfig lo up 2>/dev/null || true
 # `docker export` ne conserve pas /etc/hosts : Docker le monte à l'exécution.
 printf '127.0.0.1\tlocalhost railsbox-vault-reference\n::1\tlocalhost\n' > /etc/hosts
-dmesg -n 1 2>/dev/null || true
 
 # Disque applicatif attaché en hdb par v86 : /dev/sdb, un ext4 AVEC journal
 # (#209, ADR 0004 note du 13/09/2026). Les options par défaut sont celles que la
 # durabilité exige : barrières actives (chaque commit du journal émet un FLUSH
 # CACHE, acquitté après validation de la génération OPFS) et `data=ordered`. Le
 # journal est rejoué ici, au montage, après un verrouillage ou une coupure. Ne
-# jamais ajouter `nobarrier`, `data=writeback` ni `noload`.
+# jamais ajouter `nobarrier`, `data=writeback` ni `noload`. `errors=remount-ro`
+# (revue #211, constat 5) : un système de fichiers en erreur CESSE d'écrire au
+# lieu de continuer, si bien qu'une écriture qui réussit après un boot à froid
+# dit quelque chose de l'état du disque.
 if ! mountpoint -q /app; then
   echo "[init] montage du disque applicatif /dev/sdb sur /app"
-  mount -t ext4 -o barrier=1,data=ordered /dev/sdb /app || {
+  mount -t ext4 -o barrier=1,data=ordered,errors=remount-ro /dev/sdb /app || {
     echo "[init] ECHEC : /dev/sdb n'est pas un ext4 montable — aucune application a lancer"
     exec sh
   }
 fi
+
+# L'ÉTAT du disque applicatif, relevé à CHAQUE boot (revue #211, constat 5) :
+# options réellement montées, compteur d'erreurs persistant du superbloc (une
+# erreur d'une session précédente y reste), lignes `EXT4-fs error` et
+# `mounting unchecked` du noyau, rejeu du journal. Il est dit sur la série pour
+# qui lit un diagnostic, et déposé dans /run (tmpfs, neuf à chaque boot) pour
+# que l'application le publie et qu'un scénario de bout en bout l'asserte sans
+# toucher au pont. La console du noyau n'est rendue muette qu'APRÈS : jusqu'ici,
+# les erreurs du montage atteignent la série.
+etat_disque=/run/vault-disque-applicatif
+{
+  echo "options=$(grep ' /app ' /proc/mounts | cut -d ' ' -f 4)"
+  echo "erreurs=$(cat /sys/fs/ext4/sdb/errors_count 2>/dev/null || echo inconnu)"
+  echo "alertes=$(dmesg 2>/dev/null | grep -c -E 'EXT4-fs error|mounting unchecked' || true)"
+  echo "rejeu=$(dmesg 2>/dev/null | grep -c 'EXT4-fs (sdb): recovery complete' || true)"
+} > "$etat_disque"
+sed 's/^/[init] disque applicatif : /' "$etat_disque"
+dmesg 2>/dev/null | grep 'EXT4-fs' | sed 's/^/[init] noyau : /' || true
+# Muette avant l'application et le pont : un message du noyau intercalé dans le
+# flux série corromprait une trame.
+dmesg -n 1 2>/dev/null || true
 
 # Le pont suit ces journaux ; ils doivent exister avant qu'il ne démarre.
 touch /var/log/puma.log /var/log/bridge-err.log

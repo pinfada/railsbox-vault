@@ -20,6 +20,8 @@
 //     reprendre, et elle le PUBLIE (`instantaneUtilise: false`) ;
 //  5. la même phrase rouvre, Rails boote À FROID sur le disque sans réinstaller, et la page de la note
 //     précédente relit son libellé ET l'empreinte de sa pièce ;
+//  5 bis. à CHAQUE boot, l'état du disque relevé par l'init (options, compteur d'erreurs du
+//     superbloc, alertes du noyau, rejeu du journal) est lu sur la page d'accueil, et exigé sain ;
 //  6. sur ce disque rouvert à froid, une NOUVELLE note et sa pièce sont écrites et acquittées — c'est
 //     ce que l'ext2 sans journal refusait (inode doublement alloué, EIO) — puis verrouillées à leur
 //     tour et relues après un SECOND boot à froid. Chacun des neuf délais est donc suivi d'une
@@ -129,6 +131,24 @@ async function ouvrirEtDemarrer(page) {
     { timeout: BUDGET_PREMIERE_PAGE_MS },
   );
   return application;
+}
+
+/**
+ * L'ÉTAT du disque applicatif que l'init du guest a relevé à CE boot et que la page d'accueil publie
+ * (revue de la PR #211, constat 5) : sans lui, « l'écriture suivante réussit » ne distinguait pas un
+ * disque sain d'un ext4 en erreur qui continuait d'écrire.
+ */
+async function lireEtatDuDisque(page) {
+  const etat = pageServie(page).locator("#etat-du-disque");
+  await etat.waitFor({ timeout: 60_000 });
+  const attribut = (nom) => etat.getAttribute(`data-disque-${nom}`);
+  return {
+    releve: await attribut("releve"),
+    options: await attribut("options"),
+    erreurs: await attribut("erreurs"),
+    alertes: await attribut("alertes"),
+    rejeu: await attribut("rejeu"),
+  };
 }
 
 /** RELIT la note d'un tour précédent : son libellé, et l'empreinte de sa pièce relue par Rails. */
@@ -249,6 +269,8 @@ test("une note et sa pièce acquittées survivent au verrouillage à 0, 5 et 30 
       instantaneUtilise: application.instantaneUtilise ?? null,
     };
     chronologie.etape("application-demarree", { rang, ...tour.boot });
+    tour.disque = await lireEtatDuDisque(page);
+    chronologie.etape("etat-du-disque-lu", { rang, ...tour.disque });
 
     if (precedente !== null) {
       tour.relecture = { note: precedente, ...(await relireLaNote(page, precedente)) };
@@ -324,6 +346,20 @@ test("une note et sa pièce acquittées survivent au verrouillage à 0, 5 et 30 
         ),
     ),
     "chaque note acquittée — et sa pièce — est relue après un verrouillage et un boot À FROID, et le disque rouvert accepte l'écriture suivante",
+  ).toEqual([]);
+  expect(
+    tours
+      .map(({ rang, disque }) => ({ rang, ...disque }))
+      .filter(
+        (etat) =>
+          !(
+            etat.releve === "oui" &&
+            etat.erreurs === "0" &&
+            etat.alertes === "0" &&
+            /(^|,)errors=remount-ro(,|$)/.test(etat.options ?? "")
+          ),
+      ),
+    "à chaque boot, le disque applicatif est monté errors=remount-ro, sans erreur au superbloc ni ligne « EXT4-fs error » ou « mounting unchecked » du noyau",
   ).toEqual([]);
   expect(erreurs, "aucune erreur de page").toEqual([]);
 });
