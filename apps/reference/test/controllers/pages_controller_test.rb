@@ -1,4 +1,5 @@
 require "test_helper"
+require "tempfile"
 
 # La surface HTML (#192) : ce que le relais doit savoir franchir.
 #
@@ -95,6 +96,38 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     refute Record.order(:created_at).last.evidence.attached?
     follow_redirect!
     refute_match %r{data-piece-octets}, response.body
+  end
+
+  test "la page d'accueil publie l'état du disque applicatif relevé au montage (revue #211, 5)" do
+    releve = Tempfile.new("disque-applicatif")
+    releve.write("options=rw,relatime,errors=remount-ro,data=ordered\nerreurs=0\nalertes=0\nrejeu=1\n")
+    releve.close
+    precedent = ENV["VAULT_ETAT_DU_DISQUE"]
+    ENV["VAULT_ETAT_DU_DISQUE"] = releve.path
+
+    get "/"
+
+    assert_response :ok
+    assert_match %r{<p id="etat-du-disque" data-disque-releve="oui"}, response.body
+    assert_match %r{data-disque-options="rw,relatime,errors=remount-ro,data=ordered"}, response.body
+    assert_match %r{data-disque-erreurs="0"}, response.body
+    assert_match %r{data-disque-alertes="0"}, response.body
+    assert_match %r{data-disque-rejeu="1"}, response.body
+  ensure
+    ENV["VAULT_ETAT_DU_DISQUE"] = precedent
+    releve&.unlink
+  end
+
+  test "hors du guest, la page dit que l'état du disque n'est pas relevé" do
+    precedent = ENV["VAULT_ETAT_DU_DISQUE"]
+    ENV["VAULT_ETAT_DU_DISQUE"] = File.join(Dir.tmpdir, "aucun-releve-#{SecureRandom.hex(8)}")
+
+    get "/"
+
+    assert_match %r{<p id="etat-du-disque" data-disque-releve="non"}, response.body
+    refute_match %r{data-disque-erreurs}, response.body
+  ensure
+    ENV["VAULT_ETAT_DU_DISQUE"] = precedent
   end
 
   test "le formulaire se soumet en multipart et porte un champ de pièce jointe" do

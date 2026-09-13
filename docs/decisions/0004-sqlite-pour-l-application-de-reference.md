@@ -120,6 +120,16 @@ de fichiers du volume applicatif paramétrable (« Ce que cette décision ne dit
   transaction jbd2 qui porte ces métadonnées et se termine par un FLUSH CACHE, donc un disque
   **cohérent à chaque barrière** ; le journal est rejoué au montage. `nobarrier`, `data=writeback`
   et `noload` sont interdits, et un test unitaire le vérifie ;
+- cette cohérence est **observée**, pas seulement promise (revue de la PR #211, constat 5) : le
+  montage porte `errors=remount-ro` — un système de fichiers en erreur cesse d'écrire au lieu de
+  continuer, comme le faisait `errors=continue` par défaut —, et l'init relève à chaque boot les
+  options montées, le compteur d'erreurs du superbloc, les lignes `EXT4-fs error` et
+  `mounting unchecked` du noyau et le rejeu du journal ; il les écrit sur la série, AVANT de rendre
+  la console muette pour le pont, et les dépose dans `/run` pour que la page d'accueil de
+  l'application les publie. `tests/e2e/durabilite-du-commit.spec.mjs` exige, à chacun de ses dix
+  boots, un disque monté `errors=remount-ro`, zéro erreur et zéro alerte. La série elle-même n'est
+  pas lue par le scénario : sur le chemin de la coquille, elle ne sort pas de `src/vm/`, que cette
+  tranche ne touche pas ;
 - `synchronous = extra` et `DurableDisk` sont **conservés** : le journal du système de fichiers rend
   les métadonnées cohérentes, il ne synchronise pas à la place de l'application.
 
