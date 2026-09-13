@@ -160,15 +160,14 @@ async function echec(promesse) {
   );
 }
 
-/** Ouvre le disque restauré PAR LE CODE, et rend un secteur relu. */
-async function relireParLeCode(banc, code) {
-  const support = supportDe(banc, "coquille");
+/** La KEK que le CODE dérive, sur l'enveloppe que ce magasin porte. */
+async function kekDuCode(banc, code) {
   const inventaire = await inventorierEnveloppe({
-    support,
+    support: supportDe(banc, "coquille"),
     identifiantVolume: IDENTIFIANT_DU_COFFRE,
   });
   const emplacement = inventaire.emplacements.find((e) => e.typeKek === TYPES_KEK.recuperation);
-  const kek = await derivateurRecuperation().deriver({
+  return derivateurRecuperation().deriver({
     parametres: emplacement.parametres,
     identite: {
       identifiantVolume: IDENTIFIANT_DU_COFFRE,
@@ -176,6 +175,12 @@ async function relireParLeCode(banc, code) {
     },
     geste: { code },
   });
+}
+
+/** Ouvre le disque restauré PAR LE CODE, et rend un secteur relu. */
+async function relireParLeCode(banc, code) {
+  const support = supportDe(banc, "coquille");
+  const kek = await kekDuCode(banc, code);
   const ouverte = await ouvrirEnveloppe({ support, identifiantVolume: IDENTIFIANT_DU_COFFRE, kek });
   const backend = await openOpfsVolume({
     name: "application",
@@ -398,6 +403,61 @@ test("une archive d'un AUTRE coffre est refusée AVANT tout octet écrit, et l'e
   }
   assert.equal(await destination.portabilite.constater(), "vide");
   assert.equal(destination.reponses.length, 0, "aucune réponse de restauration");
+});
+
+test("un coffre restauré, SERVI, dont le manifeste se perd n'est jamais réparé : ses écritures survivent", async () => {
+  // Revue de la PR #208, constat 6 : il était pris pour une restauration coupée, et « le même
+  // geste » effaçait tout ce qui avait été écrit depuis la restauration.
+  const { banc, code } = await coffreOuvert();
+  const { archive } = await sauvegarde(workerSur(banc));
+  const ailleurs = magasin();
+  const premiere = workerSur(ailleurs, { etat: ETATS_DU_VOLUME.verrouille, kek: null });
+  await premiere.portabilite.servir(TYPES_PRIVILEGIES.restaurer, { archive }, "r1");
+
+  // Le coffre sert : ouvert par le code, le volume `coquille` naît, Rails écrit sur le disque.
+  const kek = await kekDuCode(ailleurs, code);
+  const ouverte = await ouvrirEnveloppe({
+    support: supportDe(ailleurs, "coquille"),
+    identifiantVolume: IDENTIFIANT_DU_COFFRE,
+    kek,
+  });
+  const disque = await openOpfsVolume({
+    name: "application",
+    size: OCTETS_DU_DISQUE,
+    cle: ouverte.dek,
+    identifiantVolume: IDENTIFIANT_DU_COFFRE,
+    openHandle: ailleurs.store.openHandle,
+  });
+  await disque.write(5 * SECTOR_SIZE, new Uint8Array(SECTOR_SIZE).fill(0x77));
+  await disque.flush();
+  await disque.close();
+  await poserLeVolumeCoquille(ailleurs, IDENTIFIANT_DU_VOLUME_COQUILLE);
+  // Puis le manifeste se perd : un effacement partiel, une extension, un support.
+  await ailleurs.retirer("application.manifest");
+
+  const reprise = workerSur(ailleurs, { etat: ETATS_DU_VOLUME.verrouille, kek: null });
+  assert.equal(await reprise.portabilite.constater(), "coffre-servi-sans-manifeste");
+  const erreur = await echec(
+    reprise.portabilite.servir(TYPES_PRIVILEGIES.restaurer, { archive }, "r2"),
+  );
+  assert.equal(erreur.code, CODES_REFUS_COQUILLE.coffreServiSansManifeste);
+
+  const relu = await openOpfsVolume({
+    name: "application",
+    size: OCTETS_DU_DISQUE,
+    cle: ouverte.dek,
+    identifiantVolume: IDENTIFIANT_DU_COFFRE,
+    openHandle: ailleurs.store.openHandle,
+  });
+  try {
+    const secteur = await relu.read(5 * SECTOR_SIZE, SECTOR_SIZE);
+    assert.ok(
+      secteur.every((octet) => octet === 0x77),
+      "l'écriture postérieure a été effacée",
+    );
+  } finally {
+    await relu.close();
+  }
 });
 
 test("une archive SANS récupération est refusée AVANT toute écriture, et la sauvegarde le dit", async () => {

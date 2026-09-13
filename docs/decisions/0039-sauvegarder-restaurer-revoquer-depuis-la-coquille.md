@@ -159,6 +159,14 @@ confondrait.
   `coquille` avec leurs voisins, puis restaure. Ce n'est pas une destruction de données : ce qui est
   retiré ne s'ouvre par rien, et l'utilisateur tient l'archive qui le redonne. Une installation
   coupée (enveloppe du domaine `enveloppe`) n'est pas réclamée : elle reste à la reprise de #173.
+- **Un coffre qui a SERVI n'est jamais réparé** (revue de la PR #208, constat 6). La signature d'une
+  restauration coupée vaut aussi pour un coffre restauré, ouvert, écrit, dont le manifeste s'est
+  perdu : ouvrir par le code ne réécrit pas l'enveloppe. Ce qui les sépare est une **trace de
+  service** — ce qu'aucune restauration n'écrit et que la première ouverture écrit : le volume
+  `coquille`, le journal de génération, le témoin ou l'instantané du disque (la restauration retire
+  les trois derniers). Avec une trace, l'état est `coffreServiSansManifeste`, refusé partout sous
+  `VAULT_COQUILLE_COFFRE_SERVI_SANS_MANIFESTE` : ce coffre a servi, sa réparation demande une
+  décision, et la restauration ne l'écrase pas.
 - **Le volume `coquille` d'une origine qui restaure** n'est pas restauré : il naît **neuf** au
   premier déverrouillage, sous sa constante, avec la même enveloppe. Son contenu n'est qu'un secteur
   de barrière ; le compte de barrières est celui du Worker, qui repart de zéro à chaque chargement.
@@ -225,8 +233,11 @@ pour des coffres de développement.
    que la page tient le téléchargement : le quota paie deux fois la taille du disque pendant la
    sauvegarde, et plus rien ensuite.
 3. **La réparation d'une restauration coupée repose sur deux signatures**, dont le domaine de la
-   page. Une restauration coupée puis mutée à la main — impossible par la coquille, qui refuse tout
-   déverrouillage entre-temps — ne serait plus reconnue, et l'emplacement serait dit occupé.
+   page, **et sur l'absence de toute trace de service**. Une restauration coupée puis mutée à la
+   main — impossible par la coquille, qui refuse tout déverrouillage entre-temps — ne serait plus
+   reconnue, et l'emplacement serait dit occupé. À l'inverse, un coffre restauré qui a servi et perd
+   son manifeste n'est plus réparé du tout (constat 6) : il est refusé, et sa réparation — rendre
+   ses écritures ou les abandonner — reste une décision que la coquille ne prend pas.
 4. **Le téléchargement est un geste du navigateur** : ce que l'hôte fait du fichier enregistré
    (synchronisation, sauvegarde système) sort du produit, comme la feuille de récupération imprimée.
 5. **Écart non comblé** : une écriture que Rails vient d'acquitter peut manquer à une sauvegarde
