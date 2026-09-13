@@ -92,6 +92,18 @@ nomme une application (ADR 0018 § 4).
   relevé ne recopie rien du guest, la file d'appariement a une borne nommée, et un type au-delà de
   128 caractères est refusé au décodage (revue de sécurité de la PR #166, ADR 0028).
 
+**Sauvegarder, restaurer, révoquer depuis la coquille (#207, ADR 0039).** Ce sont trois gestes du
+canal privilégié, et **l'archive ne quitte jamais l'origine de confiance vers le document
+applicatif** : le Worker de confiance la rend à la PAGE sous la forme d'un `File` — la seule
+dérogation d'archive du contrat, bornée à deux types privilégiés —, la page la remet au navigateur
+par un téléchargement, et le port restreint refuse les trois types par
+`VAULT_COQUILLE_PORT_PRIVILEGIE_REFUSE` (trois sondes de la fixture hostile). La restauration n'agit
+que sur un emplacement vide et vérifie l'archive entière avant d'écrire ; la **révocation
+d'urgence** retire depuis la coquille tout ce qui ouvre le coffre sauf l'emplacement qui vient de
+l'ouvrir (ADR 0026), et ne publie que des noms de moyens et des nombres. **Depuis le 13 septembre
+2026**, un coffre créé par une version de développement antérieure est refusé
+(`VAULT_COQUILLE_COFFRE_ANTERIEUR`), jamais migré ni écrasé.
+
 **Aucun cookie.** La coquille n'en pose aucun, et c'est une propriété éprouvée plutôt qu'une
 abstention : après un cycle complet, le bocal du contexte est vide, `document.cookie` est vide sur
 les deux origines, et aucune réponse servie ne porte `Set-Cookie`. Le motif est celui de l'ADR 0018

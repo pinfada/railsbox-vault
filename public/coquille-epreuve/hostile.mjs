@@ -528,6 +528,48 @@ function requeteRelayee({ methode, chemin, entetes = {}, corps = null }) {
   });
 }
 
+// --- SAUVEGARDER, RESTAURER, RÉVOQUER : trois gestes de l'utilisateur, jamais de l'application ------
+//
+// #207 (ADR 0039) ajoute trois types au canal PRIVILÉGIÉ. L'adversaire les pose tels quels sur le
+// port restreint, avec une corrélation valable : s'il obtenait une archive, il obtiendrait le coffre
+// chiffré ; s'il restaurait, il écraserait un emplacement ; s'il révoquait, il retirerait les clés de
+// l'utilisateur. Le refus attendu est celui du canal privilégié, calculé sur le TYPE seul.
+
+let compteurDePortabilite = 0;
+
+/** @param {string} type @param {Record<string, unknown>} [corps] */
+function gesteDePortabilite(type, corps = {}) {
+  compteurDePortabilite += 1;
+  return enveloppeDeMessage(type, {
+    correlation: `hostile-portabilite-${compteurDePortabilite}`,
+    ...corps,
+  });
+}
+
+const SONDES_DE_PORTABILITE = [
+  {
+    nom: "portabilite-sauvegarder",
+    cible: "coquille",
+    intention: "obtenir l'archive du coffre depuis le document applicatif",
+    codeAttendu: CODES_REFUS_COQUILLE.portPrivilegie,
+    run: () => tenter(gesteDePortabilite(TYPES_PRIVILEGIES.sauvegarder)),
+  },
+  {
+    nom: "portabilite-restaurer",
+    cible: "coquille",
+    intention: "restaurer une archive choisie par l'application dans l'emplacement du coffre",
+    codeAttendu: CODES_REFUS_COQUILLE.portPrivilegie,
+    run: () => tenter(gesteDePortabilite(TYPES_PRIVILEGIES.restaurer, { archive: "UkJWQVVMVDE=" })),
+  },
+  {
+    nom: "portabilite-revoquer-en-urgence",
+    cible: "coquille",
+    intention: "retirer toutes les clés de l'utilisateur sauf une",
+    codeAttendu: CODES_REFUS_COQUILLE.portPrivilegie,
+    run: () => tenter(gesteDePortabilite(TYPES_PRIVILEGIES.revoquerEnUrgence)),
+  },
+];
+
 // --- Exécution ------------------------------------------------------------------------------------
 
 function avecDelai(promesse) {
@@ -577,6 +619,7 @@ async function toutTenter() {
     ...SONDES_DU_HARNAIS,
     ...SONDES_DE_CONTRAT,
     ...SONDES_DE_RELAIS,
+    ...SONDES_DE_PORTABILITE,
     ...SONDES_DE_TOPOLOGIE,
   ]) {
     releve.push(await executer(sonde));

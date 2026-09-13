@@ -461,7 +461,8 @@ l'exécutent, et n'annonce rien : c'est la condition de la décision 1 de l'ADR 
    pas de verrouillage, pas de COOP. Ce sont #163, #25 et la suite de #24. **Note datée du 8
    septembre 2026** : le cycle est assemblé depuis #163 (ADR 0030), COOP est servi et attesté, et le
    VERROUILLAGE est livré par #169 (ADR 0031). Restent hors de cette limite l'export, la
-   restauration et la révocation depuis la coquille ;
+   restauration et la révocation depuis la coquille. **Note datée du 13 septembre 2026** : levée par
+   l'[ADR 0039](0039-sauvegarder-restaurer-revoquer-depuis-la-coquille.md) (#207) ;
 10. **une dérivation occupe le Worker de confiance pendant deux secondes.** La question d'état en
     sort (décision 5), mais tout ce qui MUTE reste derrière : un second geste posé pendant une
     dérivation attend qu'elle finisse. C'est voulu — deux ouvertures concurrentes sur la même

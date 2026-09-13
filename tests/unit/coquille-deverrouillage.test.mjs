@@ -568,6 +568,10 @@ test("TOUTE réponse du canal privilégié est appariable : aucune ne peut reste
       // Le geste de reprise d'une installation interrompue (#173, ADR 0037) : même exigence, il
       // répond à une demande de la page, donc ne peut pas rester muet.
       TYPES_PRIVILEGIES.reprendreInstallationReponse,
+      // Les trois gestes de portabilité (#207, ADR 0039) : sauvegarder, restaurer, révoquer.
+      TYPES_PRIVILEGIES.sauvegarderReponse,
+      TYPES_PRIVILEGIES.restaurerReponse,
+      TYPES_PRIVILEGIES.revoquerEnUrgenceReponse,
     ].sort(),
   );
 
@@ -584,6 +588,9 @@ test("TOUTE réponse du canal privilégié est appariable : aucune ne peut reste
     TYPES_PRIVILEGIES.application,
     TYPES_PRIVILEGIES.fermeture,
     TYPES_PRIVILEGIES.reprendreInstallation,
+    TYPES_PRIVILEGIES.sauvegarder,
+    TYPES_PRIVILEGIES.restaurer,
+    TYPES_PRIVILEGIES.revoquerEnUrgence,
     // Le BATTEMENT n'est la réponse de personne : c'est une poussée, comme l'annonce de barrière.
     // Il porte la corrélation du geste en cours, non pour l'apparier mais pour dire QUELLE attente
     // il prolonge — et la coquille l'ignore si cette corrélation n'est pas en vol.

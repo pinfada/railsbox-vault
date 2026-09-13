@@ -224,3 +224,23 @@ export function moyensProposes(inventaire) {
     avertissement: inconnus.length === 0 ? null : TEXTE_TROP_ANCIEN,
   });
 }
+
+/**
+ * L'ANCRE de version, telle qu'elle arrive de la SAISIE au Worker de confiance (ADR 0027, décision 3 ;
+ * sortie de `runtime-worker.mjs` avec #207, sans changement).
+ *
+ * Elle est refusée plutôt que corrigée : une version n'est pas un nombre approché, et « 12a » n'est
+ * pas 12. La page la contrôle déjà à la frappe ; ce contrôle-ci existe parce que la page n'est pas
+ * l'unique appelant possible de ce canal, et qu'une garde qui n'existe que du côté de l'interface
+ * n'est pas une garde.
+ */
+export function ancreDeVersion(valeur) {
+  if (valeur === null || valeur === undefined || valeur === "") return null;
+  const entier = typeof valeur === "number" ? valeur : Number(valeur);
+  if (!Number.isInteger(entier) || entier < 1) {
+    const erreur = new Error("L'ancre de version est un entier ≥ 1, ou rien.");
+    erreur.code = CODES_REFUS_COQUILLE.messageMalforme;
+    throw erreur;
+  }
+  return entier;
+}

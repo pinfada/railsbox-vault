@@ -63,5 +63,8 @@ export const DELAI_SONDE_MS = 3000;
  * port restreint porte quatre surfaces qu'une question d'état n'avait pas — une méthode, un chemin,
  * des en-têtes et un corps. La première de ces huit est l'ÉPREUVE ROUGE de la tranche : elle exige
  * non pas un refus quelconque, mais le refus JUSTE.
+ *
+ * QUARANTE-NEUF depuis #207 : trois de plus, une par geste de portabilité — sauvegarder, restaurer,
+ * révoquer en urgence —, posés sur le port restreint et refusés comme types du canal privilégié.
  */
-export const NOMBRE_DE_SONDES = 46;
+export const NOMBRE_DE_SONDES = 49;

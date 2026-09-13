@@ -54,6 +54,12 @@ const EPREUVE_RELAIS = "tests/unit/coquille-relais-http.test.mjs";
 const EPREUVE_ROUTAGE = "tests/unit/coquille-routage-du-cadre.test.mjs";
 const EPREUVE_RELAIS_DU_WORKER = "tests/unit/coquille-relais-du-worker.test.mjs";
 
+/** Les gardes de #207 (ADR 0039) : sauvegarder, restaurer, révoquer depuis la coquille. */
+const PORTABILITE = "src/coquille/portabilite-du-coffre.mjs";
+const EPREUVE_PORTABILITE = "tests/unit/coquille-portabilite.test.mjs";
+const EPREUVE_PORTABILITE_DU_WORKER = "tests/unit/coquille-portabilite-du-worker.test.mjs";
+const EPREUVE_IDENTITE = "tests/unit/coquille-identite-du-coffre.test.mjs";
+
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
  *
@@ -663,6 +669,95 @@ export const MUTATIONS = Object.freeze([
     avant: "      await cederLaMain();\n",
     apres: "",
     epreuves: ["tests/unit/vm-ceder-la-main.test.mjs"],
+  },
+  // --- SAUVEGARDER, RESTAURER, RÉVOQUER depuis la coquille (#207, ADR 0039) ----------------------
+  {
+    nom: "le volume application naît sous l'identité que l'enveloppe authentifie",
+    garde: "verserLeDisque — l'identité du coffre déclarée à la naissance",
+    fichier: "src/coquille/application-de-reference.mjs",
+    avant: "      identifiantVolume: IDENTIFIANT_DU_COFFRE,\n",
+    apres: "",
+    epreuves: [EPREUVE_IDENTITE],
+  },
+  {
+    nom: "un coffre antérieur est reconnu à l'en-tête de son volume coquille",
+    garde: "constaterLEmplacement — l'identité du coffre dans le volume coquille",
+    fichier: PORTABILITE,
+    avant: "  if (coquille && (await volumeCoquilleAnterieur(lireEnTete)))\n",
+    apres: "  if (false)\n",
+    epreuves: [EPREUVE_PORTABILITE],
+  },
+  {
+    nom: "un coffre antérieur est reconnu au manifeste de son disque",
+    garde: "constaterLEmplacement — l'identifiant déclaré par le manifeste applicatif",
+    fichier: PORTABILITE,
+    avant: "  if (manifeste !== null && manifeste.volume?.id !== IDENTIFIANT_DU_COFFRE) {\n",
+    apres: "  if (false) {\n",
+    epreuves: [EPREUVE_PORTABILITE],
+  },
+  {
+    nom: "une installation coupée n'est jamais prise pour une restauration coupée",
+    garde: "enveloppeRestaureeIntacte — le domaine `recuperation` de la page",
+    fichier: PORTABILITE,
+    avant: "  return lue.valide && lue.page.domaine === OCTET_DOMAINE_RECUPERATION;\n",
+    apres: "  return lue.valide;\n",
+    epreuves: [EPREUVE_PORTABILITE],
+  },
+  {
+    nom: "on ne restaure jamais par-dessus un coffre",
+    garde: "decisionDeRestauration — seul l'emplacement vide se restaure sans réparer",
+    fichier: PORTABILITE,
+    avant: "  if (etat === ETATS_DE_L_EMPLACEMENT.vide) return { code: null, reparer: false };\n",
+    apres: "  if (true) return { code: null, reparer: false };\n",
+    epreuves: [EPREUVE_PORTABILITE, EPREUVE_PORTABILITE_DU_WORKER],
+  },
+  {
+    nom: "un geste de portabilité pendant un geste long est refusé, pas mis en file",
+    garde: "refusPendantUnGesteLong — le compte des gestes longs",
+    fichier: PORTABILITE,
+    avant: "  return gestesLongsEnCours > 0 ? CODES_REFUS_COQUILLE.gesteEnCours : null;\n",
+    apres: "  return null;\n",
+    epreuves: [EPREUVE_PORTABILITE, EPREUVE_PORTABILITE_DU_WORKER],
+  },
+  {
+    nom: "une archive qui ne déclare aucune récupération est reconnue avant d'écrire",
+    garde: "enTeteDArchive — `recovery: null`",
+    fichier: PORTABILITE,
+    avant: "    return { lisible: true, emporteUneRecuperation: entete.recovery !== null };\n",
+    apres: "    return { lisible: true, emporteUneRecuperation: true };\n",
+    epreuves: [EPREUVE_PORTABILITE, EPREUVE_PORTABILITE_DU_WORKER],
+  },
+  {
+    nom: "le Worker refuse une archive sans récupération AVANT toute écriture",
+    garde: "restaurer — le refus anticipé sur l'en-tête",
+    fichier: "public/portabilite-du-worker.mjs",
+    avant: "  if (tete.lisible && !tete.emporteUneRecuperation) {\n",
+    apres: "  if (false) {\n",
+    epreuves: [EPREUVE_PORTABILITE_DU_WORKER],
+  },
+  {
+    nom: "la cible du coffre refuse une archive sans enveloppe",
+    garde: "cibleDuCoffre — `commitRecoveryEnvelope(null)`",
+    fichier: PORTABILITE,
+    avant: "      if (octets === null) {\n",
+    apres: "      if (false) {\n",
+    epreuves: [EPREUVE_PORTABILITE],
+  },
+  {
+    nom: "une archive ne franchit le canal privilégié que sur ses deux types",
+    garde: "exigerArchiveAdmise — les types porteurs d'archive",
+    fichier: CONTRAT,
+    avant: "  if (!TYPES_PORTEURS_D_ARCHIVE.has(type)) {\n",
+    apres: "  if (false) {\n",
+    epreuves: [EPREUVE_PORTABILITE],
+  },
+  {
+    nom: "le champ d'archive ne porte qu'un File ou un Blob",
+    garde: "exigerArchiveAdmise — le constructeur",
+    fichier: CONTRAT,
+    avant: '  if (nom !== "File" && nom !== "Blob") {\n',
+    apres: "  if (false) {\n",
+    epreuves: [EPREUVE_PORTABILITE],
   },
 ]);
 
