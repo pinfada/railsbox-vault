@@ -1554,21 +1554,31 @@ validation d'une génération OPFS. Relevés bruts :
 [`avant`](mesures/pont-serie-http-chromium-2026-09-13-avant-209.json) et
 [`après`](mesures/pont-serie-http-chromium-2026-09-13-apres-209-ext4.json).
 
-| Soumission (POST `/notes`, 303)    | Avant : `full`, `Disk`, ext2  | ext2, `extra`, `DurableDisk` (non retenu) | **Après : ext4 journalisé, `extra`, `DurableDisk`** |
-| ---------------------------------- | ----------------------------- | ----------------------------------------- | --------------------------------------------------- |
-| note seule — barrières             | 3                             | 3                                         | **8**                                               |
-| note seule — durée                 | 171–238 ms                    | 190–495 ms                                | **153–203 ms**                                      |
-| note + pièce de 64 Kio — barrières | 3 (la pièce n'en émet aucune) | 7                                         | **18**                                              |
-| note + pièce de 64 Kio — durée     | 309–537 ms                    | 649–1 206 ms                              | **563–813 ms**                                      |
+| Soumission (POST `/notes`, 303)    | Avant : `full`, `Disk`, ext2 | ext2, `extra`, `DurableDisk` (non retenu) | **Après : ext4 journalisé, `extra`, `DurableDisk`** |
+| ---------------------------------- | ---------------------------- | ----------------------------------------- | --------------------------------------------------- |
+| note seule — barrières             | 3                            | 3                                         | **8**                                               |
+| note seule — durée                 | 171–238 ms                   | 190–495 ms                                | **153–203 ms**                                      |
+| note + pièce de 64 Kio — barrières | non mesurable (1)            | 7                                         | **18**                                              |
+| note + pièce de 64 Kio — durée     | non mesurable (1)            | 649–1 206 ms                              | **563–813 ms**                                      |
 
-Ce qu'il faut en lire : **le nombre de barrières augmente, la durée ne suit pas**. Sur ext4, un
-`fsync` valide une transaction du journal jbd2, qui se termine par ses propres barrières ; la
-séquence relevée pour une note seule est `w2F w1F w2F w1F w3F w1F w1F w1F` (écritures puis barrière
-acquittée), huit barrières dont la répartition exacte entre journal SQLite, base et répertoire n'est
-PAS décomposée ici. Chacune coûte quelques millisecondes de validation OPFS : la note seule reste
-dans la dispersion d'avant, et la note avec pièce paie ≈ 250 à 300 ms de plus que le régime non
-durable — le prix d'une pièce qui survit au verrouillage, moins qu'une page relayée (540–750 ms,
-ci-dessus). L'« avant » n'était pas durable : 4 notes sur 4 perdues à 0 s (#208).
+(1) **Non mesurable avant #209** : le formulaire de `main` (4bb129e) n'est pas multipart et le
+contrôleur ignore le champ `piece`, si bien que le banc a soumis une note SEULE au corps de 64 Kio —
+le relevé brut « avant » porte `pieceJointe: false` sur ses cinq soumissions (revue de la PR #211,
+constat 2 ; reproduction :
+`node -e "const j=require('./docs/mesures/pont-serie-http-chromium-2026-09-13-avant-209.json');console.log(j.relais.ecrituresDurables.notesEtPieces.map(n=>n.pieceJointe))"`).
+Une note avec pièce n'existait pas avant cette tranche ; il n'y a donc pas de colonne « avant » à
+lui opposer avec le même protocole, et aucun surcoût « par rapport au régime non durable » n'est
+publié pour elle.
+
+Ce qu'il faut en lire : **pour une note seule, le nombre de barrières augmente, la durée ne suit
+pas**. Sur ext4, un `fsync` valide une transaction du journal jbd2, qui se termine par ses propres
+barrières ; la séquence relevée pour une note seule est `w2F w1F w2F w1F w3F w1F w1F w1F` (écritures
+puis barrière acquittée), huit barrières dont la répartition exacte entre journal SQLite, base et
+répertoire n'est PAS décomposée ici. Chacune coûte quelques millisecondes de validation OPFS : la
+note seule reste dans la dispersion d'avant. La note avec pièce, mesurée seulement depuis #209,
+prend 563 à 813 ms avec 18 barrières sur ext4 — moins que les 649 à 1 206 ms de l'ext2 avec `extra`
+et `DurableDisk`, même protocole, pièce réellement jointe. L'« avant » n'était pas durable : 4 notes
+sur 4 perdues à 0 s (#208).
 
 ### Ce que le RELAIS ajoute au pont, et ce qu'il coûte par requête
 
