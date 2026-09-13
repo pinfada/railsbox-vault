@@ -128,6 +128,11 @@ Le disque de l'application est un **autre** volume, `application`, et ce n'est p
 L'identifiant du volume applicatif n'est pas une constante : il est tiré à sa création et inscrit
 dans son manifeste voisin, qui en est ensuite la source (ADR 0016).
 
+**Note datée du 13 septembre 2026** : l'identifiant du volume applicatif n'est plus tiré. Il est
+celui que l'enveloppe authentifie, et le volume `coquille` a reçu une constante distincte — les deux
+volumes gardent deux identifiants. La décision complète, et pourquoi la distinction de l'ADR 0015
+tient, est l'[ADR 0039](0039-sauvegarder-restaurer-revoquer-depuis-la-coquille.md) (#207).
+
 ### Le boot déplacé, et non recopié — DEUX points de variation
 
 `public/vm/reference-worker-boot.mjs` devient `src/vm/boot-de-reference.mjs`. Le laisser sous

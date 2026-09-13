@@ -56,6 +56,21 @@ export const SOURCES_COQUILLE = Object.freeze([
       "moitié privilégiée du relais, celle dont la coquille de cadre ne connaît que les réponses.",
   }),
   Object.freeze({
+    depuis: "public/portabilite-du-worker.mjs",
+    vers: "portabilite-du-worker.mjs",
+    role:
+      "SAUVEGARDER, RESTAURER et RÉVOQUER EN URGENCE côté Worker de confiance (#207, ADR 0039). " +
+      "Importé par `runtime-worker.mjs` et exécuté dans lui seul : l'archive n'y circule que vers " +
+      "la page de confiance, jamais vers le territoire applicatif.",
+  }),
+  Object.freeze({
+    depuis: "public/battement-du-worker.mjs",
+    vers: "battement-du-worker.mjs",
+    role:
+      "Le BATTEMENT du Worker de confiance pendant un geste long (#163, #192), sorti de " +
+      "`runtime-worker.mjs` avec #207. Il ne porte qu'une corrélation, un rang et un instant.",
+  }),
+  Object.freeze({
     depuis: "public/derivation-worker.mjs",
     vers: "derivation-worker.mjs",
     role:

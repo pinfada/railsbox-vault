@@ -108,6 +108,35 @@
       </section>
 
       <!--
+        SAUVEGARDER, RESTAURER, RÉVOQUER EN URGENCE (#207, ADR 0039). Trois gestes du canal
+        privilégié ; aucun n'existe sur le port restreint. La sauvegarde est remise au navigateur par
+        le lien ci-dessous — l'archive quitte l'origine par le système de fichiers de l'hôte, jamais
+        vers le document applicatif. La restauration n'agit que sur un emplacement VIDE, et le coffre
+        restauré s'ouvre ensuite par le code de récupération, ci-dessus. L'ordre de ces écrans est
+        celui de P2 (#193) ; leur mise en forme, celle de P3 (#194).
+      -->
+      <section id="portabilite" aria-labelledby="portabilite-titre">
+        <h2 id="portabilite-titre">Sauvegarder, restaurer, révoquer</h2>
+        <p id="portabilite-etat" role="status">portabilite:au-repos</p>
+        <p id="portabilite-avertissement" role="status"></p>
+        <p id="portabilite-refus" role="alert"></p>
+        <p>
+          <button id="sauvegarder-le-coffre" type="button">Sauvegarder le coffre</button>
+          <a id="sauvegarde-lien" href="#portabilite" hidden>Enregistrer la sauvegarde</a>
+        </p>
+        <p>
+          <label for="archive-a-restaurer">Sauvegarde à restaurer</label>
+          <input id="archive-a-restaurer" type="file" />
+          <button id="restaurer-le-coffre" type="button">Restaurer sur cet appareil</button>
+        </p>
+        <p>
+          <button id="revoquer-en-urgence" type="button">
+            Révoquer tout sauf ce qui vient d'ouvrir
+          </button>
+        </p>
+      </section>
+
+      <!--
         Le CYCLE DE VIE assemblé (#163, ADR 0030 ; #169, ADR 0031). Deux gestes, et ils sont des
         boutons pour la raison qui a fait des quatre autres des boutons : ce que la coquille fait du
         volume appartient à qui l'ouvre. Démarrer coûte un boot — deux minutes sur une machine

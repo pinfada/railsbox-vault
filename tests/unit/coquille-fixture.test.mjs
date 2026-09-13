@@ -178,8 +178,10 @@ test("la PAGE ne RECOPIE plus l'identifiant du volume : elle le demande", async 
   // ne se relisait plus d'un bloc. La propriété ne change pas de nature — elle change de fichier —,
   // et les DEUX sont contrôlés pour qu'une recopie ne puisse pas se rétablir dans l'un des deux.
   const derivations = await lire("src/coquille/derivation-dans-la-page.mjs");
-  const empreinte = /0x21 \+ index \* 0x07/;
-  assert.match(await lire("public/runtime-worker.mjs"), empreinte);
+  // Depuis #207 (ADR 0039), l'identité vit dans `identites-du-coffre.mjs`, que le Worker importe.
+  const empreinte = /suite\(0x21, 0x07\)/;
+  assert.match(await lire("src/coquille/identites-du-coffre.mjs"), empreinte);
+  assert.match(await lire("public/runtime-worker.mjs"), /IDENTIFIANT_DU_COFFRE/);
   for (const chemin of ["public/main.mjs", "src/coquille/derivation-dans-la-page.mjs"]) {
     assert.ok(
       !empreinte.test(await lire(chemin)),

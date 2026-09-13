@@ -20,6 +20,10 @@ Le premier objectif est volontairement plus modeste que la vision complète :
 Le chiffrement, la récupération de clés et la collaboration ne seront construits qu'après avoir
 démontré cette propriété de persistance et de portabilité.
 
+**Depuis le 13 septembre 2026** (ADR 0039), un coffre créé par une version de développement
+antérieure est refusé par la coquille (`VAULT_COQUILLE_COFFRE_ANTERIEUR`) et n'est pas migré :
+effacez les données du site et recréez-le.
+
 ## Principes
 
 - **Local par défaut** : l'application et ses données fonctionnent sans serveur applicatif.
@@ -103,6 +107,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0036 — la page d'enveloppe v2, la clôture du troisième chemin, et un budget enfin exhaustif](docs/decisions/0036-page-d-enveloppe-v2-et-budgets-exhaustifs.md)
 - [ADR 0037 — reprendre une installation interrompue : un bouton, une signature, un seul geste](docs/decisions/0037-reprendre-une-installation-interrompue.md)
 - [ADR 0038 — servir l'application dans le cadre : un Service Worker sur l'origine applicative, un canal de relais, et une session Rails qui ne quitte jamais le Worker de confiance](docs/decisions/0038-servir-l-application-dans-le-cadre.md)
+- [ADR 0039 — sauvegarder, restaurer et révoquer depuis la coquille : un coffre, une identité](docs/decisions/0039-sauvegarder-restaurer-revoquer-depuis-la-coquille.md)
 
 ## Licence
 
