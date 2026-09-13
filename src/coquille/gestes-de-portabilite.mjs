@@ -127,6 +127,15 @@ function offrirLeFichier(contexte, archive) {
   lien.click();
 }
 
+/** Ferme le lien `blob:` d'une sauvegarde offerte, et le cache. */
+function retirerLeLienDeSauvegarde(contexte) {
+  const lien = contexte.noeud("sauvegarde-lien");
+  if (lien === null) return;
+  if (lien.href.startsWith("blob:")) URL.revokeObjectURL(lien.href);
+  lien.removeAttribute("href");
+  lien.hidden = true;
+}
+
 /** RESTAURER le fichier choisi par l'utilisateur, dans un emplacement vide. */
 async function restaurerLeCoffre(contexte, fichier) {
   const { demander, rapport, publier, dire } = contexte;
@@ -171,7 +180,11 @@ async function revoquerEnUrgence(contexte) {
       retires: rendu.retires,
       nombreRetires: rendu.nombreRetires,
       nombreRestants: rendu.nombreRestants,
+      copieDeSauvegardeRetiree: rendu.copieDeSauvegardeRetiree,
     };
+    // L'archive que CETTE page tient encore porte l'ancienne page de récupération : le lien qui la
+    // remet au navigateur est fermé (revue de la PR #208, constat 4).
+    retirerLeLienDeSauvegarde(contexte);
     dire(
       "portabilite-etat",
       `portabilite:revoque:${rendu.nombreRetires}-retires:${rendu.nombreRestants}-restant`,

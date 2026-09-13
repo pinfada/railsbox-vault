@@ -138,6 +138,17 @@ async function coffreSauvegarde(page) {
   return { feuille, ...(await sauvegarder(page)) };
 }
 
+/** Les fichiers de `vault-volumes` dans l'OPFS de cette origine : un résidu s'y verrait. */
+async function fichiersDeLOpfs(page) {
+  return page.evaluate(async () => {
+    const racine = await navigator.storage.getDirectory();
+    const dossier = await racine.getDirectoryHandle("vault-volumes");
+    const noms = [];
+    for await (const [nom] of dossier.entries()) noms.push(nom);
+    return noms.sort();
+  });
+}
+
 async function restaurer(page, fichier) {
   await page.setInputFiles("#archive-a-restaurer", fichier);
   await page.click("#restaurer-le-coffre");
@@ -161,6 +172,9 @@ test("SAUVEGARDER puis RESTAURER sur une AUTRE origine, et ouvrir par le CODE", 
   expect(rapport.recuperationEmportee).toBe(true);
   expect(rapport.coherence.kind).toBe("handle-exclusif");
   expect((await readFile(chemin)).byteLength).toBe(rapport.taille);
+  // Aucune copie ne survit au geste : le téléchargement ne dépend pas d'un fichier de l'OPFS
+  // (revue de la PR #208, constat 4).
+  expect(await fichiersDeLOpfs(page)).not.toContain("coquille-sauvegarde");
 
   const ailleurs = await context.newPage();
   await ouvrirLaCoquille(ailleurs, AUTRE_ORIGINE);
@@ -242,6 +256,7 @@ test("après une RÉVOCATION d'urgence, la phrase est refusée et le code ouvre"
   const bilan = (await releve(page)).portabilite.revocation;
   expect(bilan.retires).toEqual({ phrase: 1 });
   expect(bilan.restants).toEqual({ recuperation: 1 });
+  expect(bilan.copieDeSauvegardeRetiree).toBe(false);
 
   await page.reload();
   await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });

@@ -109,9 +109,13 @@ les recouvrirait les confondrait.
   `applicationArretee`. L'utilisateur redémarre l'application s'il le veut.
 - **L'archive** est au format courant (v3), avec la page de récupération seule emportée (ADR 0027)
   et l'engagement authentifié (ADR 0034). Elle est écrite en flux dans le fichier OPFS
-  `coquille-sauvegarde`, qui reste jusqu'à la sauvegarde suivante, et rendue à la **page** sous la
-  forme d'un `File` adossé à ce fichier. La page la remet au navigateur par un lien de
-  téléchargement. La réponse porte la taille, l'empreinte et la cohérence, jamais un octet.
+  `coquille-sauvegarde`, recopiée par tranches dans un `File` du navigateur qui ne dépend plus de
+  l'OPFS, et rendue à la **page**. **Aucune copie ne survit au geste qui l'a créée** (revue de la PR
+  #208, constat 4) : le fichier OPFS est retiré quand le geste aboutit comme quand il échoue. Une
+  coupure entre la copie et son retrait laisse un résidu, que retirent la sauvegarde suivante (avant
+  d'écrire) et la révocation d'urgence (avant d'acquitter). La page remet l'archive au navigateur
+  par un lien de téléchargement. La réponse porte la taille, l'empreinte et la cohérence, jamais un
+  octet.
 - **Sans moyen de récupération**, la page le DIT avant de demander l'archive
   (`AVERTISSEMENT_SANS_RECUPERATION` : « une archive prise maintenant ne s'ouvrira nulle part
   ailleurs ») ; le Worker ne refuse pas, et la réponse dit `recuperationEmportee: false`.
@@ -162,6 +166,11 @@ les recouvrirait les confondrait.
   `retires` par NOM de moyen, `nombreRestants`, `nombreRetires` et la version d'enveloppe. Jamais un
   identifiant d'emplacement, jamais un octet de clé. Le moyen de récupération retenu pour la session
   est oublié : s'il a été retiré, le recréer en rend un neuf.
+- **Les copies de sauvegarde** (revue de la PR #208, constat 4) : une copie résiduelle
+  `coquille-sauvegarde` porte l'ancienne page de récupération, et le code révoqué l'ouvrirait
+  encore. La révocation la retire AVANT d'acquitter et le dit (`copieDeSauvegardeRetiree`) ; la page
+  ferme le lien `blob:` de la sauvegarde qu'elle offrait. Ce qui a déjà été ENREGISTRÉ hors de
+  l'origine reste une copie « déjà prise » au sens de l'ADR 0026 : la révocation ne l'atteint pas.
 
 ### 6. Pendant un boot ou une installation : refusé, pas mis en attente
 
@@ -201,8 +210,9 @@ n'est publié, le gate « données sensibles » est fermé, et une migration ser
 
 1. **La sauvegarde arrête l'application.** C'est le prix du point de contrôle ; une sauvegarde à
    chaud exigerait une barrière du guest coordonnée avec la lecture, que ce dépôt n'a pas.
-2. **L'archive occupe l'OPFS de l'origine** jusqu'à la sauvegarde suivante : le quota paie deux fois
-   la taille du disque le temps de l'enregistrer.
+2. **L'archive occupe l'OPFS de l'origine le temps du geste**, puis la mémoire du navigateur tant
+   que la page tient le téléchargement : le quota paie deux fois la taille du disque pendant la
+   sauvegarde, et plus rien ensuite.
 3. **La réparation d'une restauration coupée repose sur deux signatures**, dont le domaine de la
    page. Une restauration coupée puis mutée à la main — impossible par la coquille, qui refuse tout
    déverrouillage entre-temps — ne serait plus reconnue, et l'emplacement serait dit occupé.

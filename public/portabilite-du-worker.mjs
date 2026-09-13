@@ -231,8 +231,7 @@ async function sauvegarder(contexte, correlation) {
       identifiantVolume: IDENTIFIANT_DU_COFFRE,
       kek: interne.kek,
     });
-    const ecrite = await ecrireLArchive(contexte, manifeste, recuperation);
-    const archive = await prim.fichier(FICHIER_DE_SAUVEGARDE);
+    const { ecrite, archive } = await ecrireSansLaisserDeCopie(contexte, manifeste, recuperation);
     contexte.repondreAvecArchive(TYPES_PRIVILEGIES.sauvegarderReponse, correlation, {
       [CHAMP_DE_L_ARCHIVE]: archive,
       taille: ecrite.archiveLength,
@@ -245,6 +244,49 @@ async function sauvegarder(contexte, correlation) {
       barrieres: interne.barrieres,
     });
   });
+}
+
+/** La taille des tranches dans lesquelles l'archive est détachée de sa copie OPFS. */
+const TRANCHE_DE_COPIE = 4 * 1024 * 1024;
+
+/**
+ * Écrit l'archive, la DÉTACHE de l'OPFS, puis retire la copie — AUCUNE copie ne survit au geste qui
+ * l'a créée (revue de la PR #208, constat 4 ; ADR 0039, décision 3).
+ *
+ * La copie `coquille-sauvegarde` restait jusqu'à la sauvegarde suivante : un fichier de l'origine qui
+ * porte la page de récupération et le disque, et que le code ouvrait encore après une révocation
+ * d'urgence. Elle est retirée ici quoi qu'il arrive, et ce qui est rendu à la page n'en dépend pas :
+ * un `File` issu de l'OPFS devient illisible quand son fichier disparaît, d'où la copie par
+ * tranches dans un `Blob` du navigateur, hors de l'OPFS, qui vit tant que la page le tient.
+ *
+ * Une coupure entre la copie et son retrait — l'onglet fermé à cet instant — laisse un RÉSIDU. Deux
+ * gestes le retirent : la sauvegarde suivante, avant d'écrire, et la révocation d'urgence, avant
+ * d'acquitter.
+ */
+async function ecrireSansLaisserDeCopie(contexte, manifeste, recuperation) {
+  const { prim } = contexte;
+  let rendu;
+  try {
+    const ecrite = await ecrireLArchive(contexte, manifeste, recuperation);
+    rendu = { ecrite, archive: await copieDetachee(await prim.fichier(FICHIER_DE_SAUVEGARDE)) };
+  } catch (erreur) {
+    // Le refus d'origine est celui qu'il faut rendre. Un retrait qui échoue à son tour laisse un
+    // résidu que les deux gestes nommés plus haut retirent ; il ne doit pas masquer la cause.
+    await prim.retirer(FICHIER_DE_SAUVEGARDE).catch(() => false);
+    throw erreur;
+  }
+  await prim.retirer(FICHIER_DE_SAUVEGARDE);
+  return rendu;
+}
+
+/** Recopie un fichier par tranches dans un `File` qui ne dépend plus de l'OPFS. */
+async function copieDetachee(fichier) {
+  const tranches = [];
+  for (let debut = 0; debut < fichier.size; debut += TRANCHE_DE_COPIE) {
+    const tranche = await fichier.slice(debut, debut + TRANCHE_DE_COPIE).arrayBuffer();
+    tranches.push(new Blob([tranche]));
+  }
+  return new File(tranches, FICHIER_DE_SAUVEGARDE);
 }
 
 /**
@@ -369,7 +411,7 @@ function sourceDuFichier(archive) {
 // --- RÉVOQUER EN URGENCE ---------------------------------------------------------------------------
 
 async function revoquer(contexte, correlation) {
-  const { interne } = contexte;
+  const { interne, prim } = contexte;
   exigerUnCoffreOuvert(contexte);
   const support = contexte.support();
   const avant = await inventorierEnveloppe({ support, identifiantVolume: IDENTIFIANT_DU_COFFRE });
@@ -377,7 +419,14 @@ async function revoquer(contexte, correlation) {
   // vient d'ouvrir ce coffre, et aucun identifiant n'est fourni par la page.
   await revoquerToutSauf({ support, identifiantVolume: IDENTIFIANT_DU_COFFRE, kek: interne.kek });
   const apres = await inventorierEnveloppe({ support, identifiantVolume: IDENTIFIANT_DU_COFFRE });
-  const bilan = bilanDeRevocation({ avant, apres });
+  // Une copie de sauvegarde RÉSIDUELLE porte l'ancienne page de récupération : le code révoqué
+  // l'ouvrirait encore. Elle part AVANT l'acquittement (revue de la PR #208, constat 4).
+  const copieDeSauvegardeRetiree = (await prim.observer(FICHIER_DE_SAUVEGARDE)).present;
+  if (copieDeSauvegardeRetiree) await prim.retirer(FICHIER_DE_SAUVEGARDE);
+  const bilan = Object.freeze({
+    ...bilanDeRevocation({ avant, apres }),
+    copieDeSauvegardeRetiree,
+  });
   interne.version = bilan.versionEnveloppe;
   interne.revocation = bilan;
   contexte.oublierLeMoyenRetenu();
