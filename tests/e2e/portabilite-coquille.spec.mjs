@@ -119,6 +119,7 @@ async function attendreLaPremierePage(page) {
 
 test("une note saisie dans la coquille A se relit dans la coquille B, restaurée depuis la sauvegarde de A", async ({
   context,
+  chronologie: chronologieDatee,
 }, testInfo) => {
   exigerLesPrealables(raison, "portabilite-coquille.spec.mjs");
   test.setTimeout(2_400_000);
@@ -127,30 +128,42 @@ test("une note saisie dans la coquille A se relit dans la coquille B, restaurée
   const erreurs = [];
   /** Ce qui s'est passé, dans l'ordre, horodaté : le rapport du run le montre. */
   const chronologie = [];
-  const noter = (evenement, detail = {}) =>
+  // Chaque étape est ÉCRITE AVANT d'être jouée (revue de la PR #211, constat 6) : le relevé de fin
+  // n'existe que pour un scénario vert, et le seul rouge de #209 — un boot de A resté
+  // « demarrage-en-cours » 600 s — n'a laissé que l'étape « ouverture ». La fixture de chronologie
+  // (#165) réécrit son fichier à chaque étape ; un rouge s'y arrête là où il s'est arrêté.
+  const noter = (evenement, detail = {}) => {
     chronologie.push({
       a: new Date().toISOString(),
       depuisLeDebutMs: Date.now() - depart,
       evenement,
       ...detail,
     });
+    chronologieDatee.etape(evenement, detail);
+  };
 
   // --- 1. A : ouvrir, créer la feuille, démarrer, ÉCRIRE -----------------------------------------
+  noter("coquille-a-ouverte");
   const a = await ouvrirLaCoquille(context, E2E_ORIGIN_COQUILLE, erreurs);
   expect((await releve(a)).origineApplicative).toBe(E2E_ORIGIN_COQUILLE_APP);
   await a.fill("#saisie-phrase", PHRASE);
+  noter("a-ouverture-par-phrase");
   await a.click("#ouvrir-par-phrase");
   await attendreLEtat(a, "ouvert", BUDGET_DEVERROUILLAGE_MS);
+  noter("a-feuille-de-recuperation");
   await a.click("#creer-recuperation");
   await expect(a.locator("#feuille-code")).not.toBeEmpty({ timeout: 60_000 });
   const code = (await a.locator("#feuille-code").textContent()).trim();
   const version = (await a.locator("#feuille-version").textContent()).match(/\d+/)[0];
 
+  noter("a-demarrage-demande");
   const demarrageA = await demarrerLApplication(a);
   expect(demarrageA.installation.installee).toBe(true);
   mesures.bootAMs = demarrageA.bootMs;
+  noter("a-premiere-page-attendue", { bootMs: demarrageA.bootMs });
   await attendreLaPremierePage(a);
   const servieA = pageServie(a);
+  noter("a-note-et-piece-soumises");
   await servieA.locator("#libelle").fill(LIBELLE);
   await servieA
     .locator("#piece")
@@ -186,9 +199,11 @@ test("une note saisie dans la coquille A se relit dans la coquille B, restaurée
   await a.close();
 
   // --- 3. B : une AUTRE origine, RESTAURER dans l'emplacement vide --------------------------------
+  noter("coquille-b-ouverte");
   const b = await ouvrirLaCoquille(context, E2E_ORIGIN_COQUILLE_B, erreurs);
   expect((await releve(b)).origineApplicative).toBe(E2E_ORIGIN_COQUILLE_B_APP);
   expect((await releve(b)).etat).toBe("verrouille");
+  noter("restauration-demandee");
   const departRestauration = Date.now();
   await b.setInputFiles("#archive-a-restaurer", chemin);
   await b.click("#restaurer-le-coffre");
@@ -202,16 +217,20 @@ test("une note saisie dans la coquille A se relit dans la coquille B, restaurée
   expect(restauration.empreinteRelue).toBe(sauvegarde.empreinte);
 
   // --- 4. B : ouvrir par le CODE et la version notée ---------------------------------------------
+  noter("b-ouverture-par-code");
   await b.fill("#ancre-version", version);
   await b.fill("#saisie-code", code);
   await b.click("#ouvrir-par-code");
   await attendreLEtat(b, "ouvert", BUDGET_DEVERROUILLAGE_MS);
 
   // --- 5. B : Rails démarre SANS réinstaller, et relit la note ------------------------------------
+  noter("b-demarrage-demande");
   const demarrageB = await demarrerLApplication(b);
   expect(demarrageB.installation.installee, "le disque restauré n'est pas réinstallé").toBe(false);
   mesures.bootBMs = demarrageB.bootMs;
+  noter("b-premiere-page-attendue", { bootMs: demarrageB.bootMs });
   await attendreLaPremierePage(b);
+  noter("b-relecture-de-la-note");
   await expect(
     pageServie(b).locator(`[data-note="${identifiant}"]`),
     "la note saisie dans A n'a pas été relue dans B",
