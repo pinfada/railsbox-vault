@@ -103,7 +103,7 @@ async function sauvegarderLeCoffre(contexte) {
     };
     if (rendu.applicationArretee) rapport.application = null;
     offrirLeFichier(contexte, rendu.archive);
-    dire("portabilite-etat", `portabilite:sauvegarde-prete:${rendu.taille}`);
+    conclure(contexte, `portabilite:sauvegarde-prete:${rendu.taille}`);
     return rapport.portabilite.sauvegarde;
   } catch (erreur) {
     return refuser(contexte, "sauvegarde", erreur);
@@ -158,7 +158,7 @@ async function restaurerLeCoffre(contexte, fichier) {
       barrieres: rendu.barrieres,
     };
     rapport.etat = rendu.etat;
-    dire("portabilite-etat", `portabilite:restauree:version-${rendu.versionEnveloppe ?? "aucune"}`);
+    conclure(contexte, `portabilite:restauree:version-${rendu.versionEnveloppe ?? "aucune"}`);
     await contexte.apresRestauration?.();
     return rapport.portabilite.restauration;
   } catch (erreur) {
@@ -185,8 +185,8 @@ async function revoquerEnUrgence(contexte) {
     // L'archive que CETTE page tient encore porte l'ancienne page de récupération : le lien qui la
     // remet au navigateur est fermé (revue de la PR #208, constat 4).
     retirerLeLienDeSauvegarde(contexte);
-    dire(
-      "portabilite-etat",
+    conclure(
+      contexte,
       `portabilite:revoque:${rendu.nombreRetires}-retires:${rendu.nombreRestants}-restant`,
     );
     await contexte.apresRevocation?.();
@@ -198,11 +198,24 @@ async function revoquerEnUrgence(contexte) {
   }
 }
 
+/**
+ * DIT l'état final d'un geste, APRÈS avoir publié le relevé qui le décrit (revue de la PR #208,
+ * constat 7).
+ *
+ * Le texte d'état est le signal qu'un lecteur attend — une épreuve, un parcours —, et le relevé est
+ * ce qu'il lit ensuite. Dire l'état d'abord laissait une fenêtre où le texte annonçait un geste abouti
+ * pendant que le relevé publié ne le portait pas encore : sous charge, une épreuve y lisait `null`.
+ */
+function conclure({ publier, dire }, etat) {
+  publier();
+  dire("portabilite-etat", etat);
+}
+
 /** Un refus est PUBLIÉ par son code, et DIT par sa conduite. Jamais avalé. */
-function refuser({ rapport, dire }, geste, erreur) {
+function refuser(contexte, geste, erreur) {
   const code = erreur?.code ?? CODES_REFUS_COQUILLE.gesteRompu;
-  rapport.portabilite[geste] = { refus: code };
-  dire("portabilite-refus", conduiteDePortabilite(erreur));
-  dire("portabilite-etat", `portabilite:${geste}-refusee:${code}`);
-  return rapport.portabilite[geste];
+  contexte.rapport.portabilite[geste] = { refus: code };
+  contexte.dire("portabilite-refus", conduiteDePortabilite(erreur));
+  conclure(contexte, `portabilite:${geste}-refusee:${code}`);
+  return contexte.rapport.portabilite[geste];
 }

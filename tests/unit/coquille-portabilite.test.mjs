@@ -28,6 +28,7 @@ import {
   refusDOuverture,
   refusPendantUnGesteLong,
 } from "../../src/coquille/portabilite-du-coffre.mjs";
+import { brancherLesGestesDePortabilite } from "../../src/coquille/gestes-de-portabilite.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { exportVolumeToBytes } from "../../src/vm/archive-en-memoire.mjs";
 import { construireEnveloppeDeRecuperation } from "../../src/vm/enveloppe-de-recuperation.mjs";
@@ -331,4 +332,66 @@ test("une ARCHIVE franchit le canal privilégié sur deux types, et nulle part a
   );
   // Hors du canal privilégié : `enveloppeDeMessage` n'a aucune dérogation.
   assert.throws(() => enveloppeDeMessage(TYPES_PRIVILEGIES.restaurer, { archive }), capacite);
+});
+
+/** Une page réduite à ce que les gestes emploient : des nœuds dont on garde chaque texte dit. */
+function pageEnregistree(journal) {
+  const noeuds = new Map();
+  return {
+    querySelector(selecteur) {
+      const id = selecteur.slice(1);
+      if (id === "sauvegarde-lien") return null;
+      if (!noeuds.has(id)) {
+        const noeud = { addEventListener() {} };
+        Object.defineProperty(noeud, "textContent", {
+          set(texte) {
+            journal.push({ dit: id, texte });
+          },
+        });
+        noeuds.set(id, noeud);
+      }
+      return noeuds.get(id);
+    },
+  };
+}
+
+test("chaque geste PUBLIE son relevé avant de dire son état final (revue #208, constat 7)", async () => {
+  const journal = [];
+  const rapport = {};
+  const reponses = {
+    inventaire: { present: false },
+    sauvegarder: { taille: 3, archive: null, applicationArretee: false },
+    restaurer: { versionEnveloppe: 2, etat: "verrouille" },
+    revoquerEnUrgence: { nombreRetires: 1, nombreRestants: 1, retires: {}, restants: {} },
+  };
+  const gestes = brancherLesGestesDePortabilite({
+    racine: pageEnregistree(journal),
+    demander: async (type) => {
+      if (type === "restaurer" && reponses.refuser) throw { code: "VAULT_X" };
+      return reponses[type];
+    },
+    rapport,
+    publier: () => journal.push({ publie: JSON.parse(JSON.stringify(rapport.portabilite)) }),
+    enregistrer: () => {},
+  });
+
+  await gestes.sauvegarder();
+  await gestes.restaurer({ name: "archive" });
+  await gestes.revoquer();
+  reponses.refuser = true;
+  await gestes.restaurer({ name: "archive" });
+
+  const finals = /^portabilite:(sauvegarde-prete|restauree|revoque|restauration-refusee)/;
+  const etats = journal
+    .map((entree, rang) => ({ ...entree, rang }))
+    .filter((entree) => entree.dit === "portabilite-etat" && finals.test(entree.texte));
+  assert.equal(etats.length, 4);
+  const geste = { "sauvegarde-prete": "sauvegarde", restauree: "restauration" };
+  for (const { texte, rang } of etats) {
+    const precedent = journal[rang - 1];
+    const nom = texte.split(":")[1].replace(/-refusee$/, "");
+    const cle = geste[nom] ?? (nom === "revoque" ? "revocation" : nom);
+    assert.ok(precedent.publie !== undefined, `« ${texte} » dit avant la publication`);
+    assert.notEqual(precedent.publie[cle], null, `« ${texte} » : le relevé publié ne le porte pas`);
+  }
 });
