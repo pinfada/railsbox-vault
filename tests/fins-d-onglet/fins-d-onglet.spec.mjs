@@ -80,7 +80,7 @@ async function ouvrirLaCoquille(page) {
   // `load` du document ; sur Firefox, une navigation vers une coquille dont l'onglet précédent
   // vient d'être fermé n'a pas rendu la main avant l'expiration du budget. La ligne suivante est,
   // elle, une vraie attente : elle porte sur ce que le produit publie.
-  await page.goto("/index.html", { waitUntil: "commit" });
+  await page.goto("/index.html?vue=complete", { waitUntil: "commit" });
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: DELAI });
 }
 

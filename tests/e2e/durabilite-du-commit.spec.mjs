@@ -244,7 +244,7 @@ test("une note et sa pièce acquittées survivent au verrouillage à 0, 5 et 30 
   const erreurs = [];
   const page = await context.newPage();
   page.on("pageerror", (erreur) => erreurs.push(erreur.message));
-  await page.goto(`${E2E_ORIGIN_COQUILLE}/index.html`, { waitUntil: "load" });
+  await page.goto(`${E2E_ORIGIN_COQUILLE}/index.html?vue=complete`, { waitUntil: "load" });
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: 60_000 });
 
   const tours = [];

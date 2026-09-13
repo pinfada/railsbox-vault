@@ -70,7 +70,7 @@ async function servirLApplication(contexte) {
 const releve = async (page) => JSON.parse(await page.locator("#coquille-rapport").textContent());
 
 async function ouvrirLaCoquille(page, origine = SHELL_ORIGIN) {
-  await page.goto(new URL("/index.html", origine).toString(), { waitUntil: "commit" });
+  await page.goto(new URL("/index.html?vue=complete", origine).toString(), { waitUntil: "commit" });
   await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });
   await expect(page.locator("html")).toHaveAttribute("data-coquille", /prete|sans-cadre/, {
     timeout: DELAI,

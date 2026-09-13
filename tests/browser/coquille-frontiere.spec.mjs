@@ -64,7 +64,7 @@ const PHRASE = "marqueur-de-phrase-de-la-frontiere-161-cheval-batterie-agrafe-co
 
 /** Ouvre la coquille de produit, déverrouillée par une PHRASE, et attend qu'elle soit prête. */
 async function ouvrirLaCoquille(page, { documentApplicatif = null, deverrouiller = true } = {}) {
-  const url = new URL("/index.html", SHELL_ORIGIN);
+  const url = new URL("/index.html?vue=complete", SHELL_ORIGIN);
   if (documentApplicatif) url.searchParams.set("document-applicatif", documentApplicatif);
   await page.goto(url.toString());
   // Le délai est EXPLICITE et large. Sous Firefox, et quand les quinze projets de frontière

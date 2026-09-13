@@ -119,7 +119,7 @@ async function ouvrirLaCoquille(contexte, journal = []) {
       `requete-echouee ${requete.method()} ${requete.url()} — ${requete.failure()?.errorText ?? "?"}`,
     );
   });
-  await page.goto(`${E2E_ORIGIN_COQUILLE}/index.html`, { waitUntil: "load" });
+  await page.goto(`${E2E_ORIGIN_COQUILLE}/index.html?vue=complete`, { waitUntil: "load" });
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", { timeout: 60_000 });
   return { page, erreurs };
 }

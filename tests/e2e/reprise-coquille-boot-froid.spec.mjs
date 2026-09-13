@@ -104,7 +104,7 @@ async function ouvrirLaCoquille(contexte) {
   const page = await contexte.newPage();
   const erreurs = [];
   page.on("pageerror", (erreur) => erreurs.push(erreur.message));
-  await page.goto(`${E2E_ORIGIN_COQUILLE}/index.html`, { waitUntil: "load" });
+  await page.goto(`${E2E_ORIGIN_COQUILLE}/index.html?vue=complete`, { waitUntil: "load" });
   await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", {
     timeout: 60_000,
   });
