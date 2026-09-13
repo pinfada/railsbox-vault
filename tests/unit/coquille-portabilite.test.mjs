@@ -23,6 +23,7 @@ import {
   cibleDuCoffre,
   constaterLEmplacement,
   decisionDeRestauration,
+  declareLeVolumeDuCoffre,
   enTeteDArchive,
   refusDOuverture,
   refusPendantUnGesteLong,
@@ -31,6 +32,7 @@ import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { exportVolumeToBytes } from "../../src/vm/archive-en-memoire.mjs";
 import { construireEnveloppeDeRecuperation } from "../../src/vm/enveloppe-de-recuperation.mjs";
 import { manifestSidecarName } from "../../src/vm/opfs-sync-access.mjs";
+import { ARCHIVE_MAGIC, PREAMBLE_BYTES } from "../../src/vm/volume-export.mjs";
 import { EN_TETE_OCTETS } from "../../src/vm/volume-chiffre-format.mjs";
 import { parseManifest, serializeManifest } from "../../src/vm/volume-manifest.mjs";
 import { identifiantDeVolume } from "./support-enveloppe-double.mjs";
@@ -141,6 +143,11 @@ test("ce que l'ouverture et la restauration font de chaque état", () => {
     code: CODES_REFUS_COQUILLE.coffreAnterieur,
     reparer: false,
   });
+  assert.equal(refusDOuverture(E.disqueDUnAutreCoffre), CODES_REFUS_COQUILLE.disqueDUnAutreCoffre);
+  assert.deepEqual(decisionDeRestauration(E.disqueDUnAutreCoffre), {
+    code: CODES_REFUS_COQUILLE.disqueDUnAutreCoffre,
+    reparer: false,
+  });
 });
 
 test("pendant un geste long, seuls les gestes de portabilité sont refusés", () => {
@@ -174,15 +181,52 @@ test("l'en-tête d'une archive dit si elle emporte une récupération, et ne dev
   });
   assert.deepEqual(enTeteDArchive(await ecrire(recovery)), {
     lisible: true,
+    duCoffre: true,
     emporteUneRecuperation: true,
   });
   assert.deepEqual(enTeteDArchive(await ecrire(null)), {
     lisible: true,
+    duCoffre: true,
     emporteUneRecuperation: false,
   });
-  const illisible = { lisible: false, emporteUneRecuperation: false };
+  const illisible = { lisible: false, duCoffre: false, emporteUneRecuperation: false };
   assert.deepEqual(enTeteDArchive(new Uint8Array(64)), illisible);
   assert.deepEqual(enTeteDArchive((await ecrire(recovery)).subarray(0, 40)), illisible);
+});
+
+/** Un préambule et un en-tête JSON d'archive, sans contenu : ce que `enTeteDArchive` lit. */
+function teteDArchive(entete) {
+  const json = new TextEncoder().encode(JSON.stringify(entete));
+  const tete = new Uint8Array(PREAMBLE_BYTES + json.byteLength);
+  tete.set(ARCHIVE_MAGIC, 0);
+  new DataView(tete.buffer).setUint32(ARCHIVE_MAGIC.byteLength, json.byteLength, false);
+  tete.set(json, PREAMBLE_BYTES);
+  return tete;
+}
+
+test("l'en-tête d'une archive dit si elle décrit le volume du COFFRE : son identifiant et son format", async () => {
+  const banc = magasin();
+  await installerLeDisque(banc);
+  const manifest = parseManifest(banc.lire(manifestSidecarName("application")));
+  const recovery = { format: "descripteur" };
+  assert.equal(enTeteDArchive(teteDArchive({ manifest, recovery })).duCoffre, true);
+
+  const autreVolume = {
+    ...manifest,
+    volume: { ...manifest.volume, id: identifiantDeVolume(0x44) },
+  };
+  const autreFormat = { ...manifest, formatVersion: manifest.formatVersion - 1 };
+  for (const [nom, manifeste] of [
+    ["un autre identifiant", autreVolume],
+    ["un autre format", autreFormat],
+    ["aucun volume", { ...manifest, volume: null }],
+    ["aucun manifeste", undefined],
+  ]) {
+    const lu = enTeteDArchive(teteDArchive({ manifest: manifeste, recovery }));
+    assert.deepEqual(lu, { lisible: true, duCoffre: false, emporteUneRecuperation: true }, nom);
+  }
+  assert.equal(declareLeVolumeDuCoffre(manifest), true);
+  assert.equal(declareLeVolumeDuCoffre(null), false);
 });
 
 test("la cible du coffre pose l'enveloppe là où le Worker la lit, et refuse une archive qui n'en porte pas", async () => {
