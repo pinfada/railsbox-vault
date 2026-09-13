@@ -106,7 +106,7 @@ export function metadonneesArtefacts(sources) {
       license: "licences libres diverses (initramfs-tools et modules Debian)",
       origin: `${construitPar} (cible rootfs)`,
     },
-    "reference-app.ext2": {
+    "reference-app.ext4": {
       role: "hdb — volume applicatif : application, bundle, base SQLite, pièce jointe",
       license: "MIT (RailsBox Vault) ; gemmes selon apps/reference/Gemfile.lock",
       origin: `${construitPar} (cible disque-app)`,

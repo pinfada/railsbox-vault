@@ -65,7 +65,15 @@ fi
 
 echo "[fabriquer] $NOM.$TYPE : ${TAILLE_MIB} Mio ($TYPE, blocs de $BLOC octets)…" >&2
 rm -f "/sortie/$NOM.$TYPE"
-mke2fs -q -t "$TYPE" -b "$BLOC" -d "$ARBRE" "/sortie/$NOM.$TYPE" "${TAILLE_MIB}M"
+# ext4 : tables d'inodes et journal initialisés ICI, pas par le fil `ext4lazyinit`
+# du guest après chaque montage — sinon le noyau écrit en tâche de fond, émet des
+# barrières que nulle requête n'a demandées et fausse la mesure du prix d'un commit
+# (#209). Le journal lui-même est le défaut de `mke2fs -t ext4` (has_journal).
+OPTIONS_EXT=()
+if [ "$TYPE" = "ext4" ]; then
+  OPTIONS_EXT=(-O has_journal -E lazy_itable_init=0,lazy_journal_init=0)
+fi
+mke2fs -q -t "$TYPE" -b "$BLOC" "${OPTIONS_EXT[@]}" -d "$ARBRE" "/sortie/$NOM.$TYPE" "${TAILLE_MIB}M"
 
 # Une image que e2fsck refuse n'est pas une image : le guest ne la monterait pas
 # et l'échec n'apparaîtrait qu'au boot, sans diagnostic exploitable.

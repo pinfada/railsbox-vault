@@ -25,12 +25,16 @@ ip link set lo up 2>/dev/null || ifconfig lo up 2>/dev/null || true
 printf '127.0.0.1\tlocalhost railsbox-vault-reference\n::1\tlocalhost\n' > /etc/hosts
 dmesg -n 1 2>/dev/null || true
 
-# Disque applicatif attaché en hdb par v86 : /dev/sdb. Le pilote ext4 lit aussi
-# l'ext2, mais on nomme les deux pour que l'échec dise lequel a été refusé.
+# Disque applicatif attaché en hdb par v86 : /dev/sdb, un ext4 AVEC journal
+# (#209, ADR 0004 note du 13/09/2026). Les options par défaut sont celles que la
+# durabilité exige : barrières actives (chaque commit du journal émet un FLUSH
+# CACHE, acquitté après validation de la génération OPFS) et `data=ordered`. Le
+# journal est rejoué ici, au montage, après un verrouillage ou une coupure. Ne
+# jamais ajouter `nobarrier`, `data=writeback` ni `noload`.
 if ! mountpoint -q /app; then
   echo "[init] montage du disque applicatif /dev/sdb sur /app"
-  mount -t ext2 /dev/sdb /app || mount -t ext4 /dev/sdb /app || {
-    echo "[init] ECHEC : /dev/sdb n'est ni ext2 ni ext4 — aucune application a lancer"
+  mount -t ext4 -o barrier=1,data=ordered /dev/sdb /app || {
+    echo "[init] ECHEC : /dev/sdb n'est pas un ext4 montable — aucune application a lancer"
     exec sh
   }
 fi

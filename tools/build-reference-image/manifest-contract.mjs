@@ -19,7 +19,7 @@ export const ARTEFACTS_ATTENDUS = Object.freeze([
   "reference-rootfs.ext4",
   "reference-rootfs-vmlinuz",
   "reference-rootfs-initrd",
-  "reference-app.ext2",
+  "reference-app.ext4",
   "seabios.bin",
   "vgabios.bin",
 ]);
@@ -76,7 +76,7 @@ export function construireManifeste({
       kernel: "reference-rootfs-vmlinuz",
       initrd: "reference-rootfs-initrd",
       hda: "reference-rootfs.ext4",
-      hdb: "reference-app.ext2",
+      hdb: "reference-app.ext4",
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
     },

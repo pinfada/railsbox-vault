@@ -157,7 +157,7 @@ function descripteur(champs = {}) {
     descripteurVersion: 1,
     application: { id: "railsbox-vault-reference", version: "1.0.0" },
     runtime: { version: "0.1.0" },
-    disque: { nom: "reference-app.ext2", octets: 524288000 },
+    disque: { nom: "reference-app.ext4", octets: 524288000 },
     boot: {
       cmdline: "root=/dev/sda rw console=ttyS0",
       memoireOctets: 536870912,
@@ -268,8 +268,8 @@ test("chaque champ hors forme est refusé, et le refus NOMME le champ", () => {
     [{ prefixeDesArtefacts: "https://ailleurs.test/" }, /préfixe/],
     [{ prefixeDesArtefacts: "/artifacts/../etc/" }, /préfixe/],
     [{ disque: { nom: "../../etc/passwd", octets: 1024 } }, /nom de disque/],
-    [{ disque: { nom: "app.ext2", octets: 0 } }, /taille/],
-    [{ disque: { nom: "app.ext2", octets: 1e13 } }, /taille/],
+    [{ disque: { nom: "app.ext4", octets: 0 } }, /taille/],
+    [{ disque: { nom: "app.ext4", octets: 1e13 } }, /taille/],
     [{ boot: { ...descripteur().boot, memoireOctets: -1 } }, /mémoire/],
     [{ boot: { ...descripteur().boot, cmdline: "root=/dev/sda `rm -rf /`" } }, /ligne de commande/],
     [{ boot: { ...descripteur().boot, kernel: "../vmlinuz" } }, /kernel/],
@@ -503,7 +503,7 @@ function secteurDe(motif) {
 
 /** Le descripteur de ces épreuves : un disque assez petit pour tenir dans un double. */
 function descripteurDepreuve() {
-  return descripteur({ disque: { nom: "app.ext2", octets: TAILLE_DEPREUVE } });
+  return descripteur({ disque: { nom: "app.ext4", octets: TAILLE_DEPREUVE } });
 }
 
 /** Un manifeste VALIDE pour `descripteurDepreuve()`, sérialisé comme `installerSiNecessaire` l'écrirait. */
