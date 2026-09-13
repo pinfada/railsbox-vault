@@ -223,12 +223,21 @@ niveaux :
 | `tests/unit/coquille-parcours.test.mjs`           | Node     | les ÉCRANS : quel écran pour quel état publié et quelle étape atteinte, où mène chaque geste réussi, un coffre ouvert sans moyen de récupération toujours ramené à l'étape 3, la lecture des lignes d'état, la recopie du code (incomplète, mal recopiée, étrangère, confirmée), les attentes annoncées avant                                                                                                                                     |
 | `tests/unit/coquille-parcours-conduites.test.mjs` | Node     | le CLIQUET DES CONDUITES : chaque code du chemin (déverrouillage, cycle, relais, installation interrompue, verrouillage, sauvegarde, restauration, révocation) a une conduite écrite pour une personne ; chaque code de la coquille, de l'archive et de la restauration est sur le chemin ou écarté nommément ; aucune conduite ne porte de vocabulaire interne, et le filtre mord                                                                |
 | `tests/e2e/parcours-utilisateur.spec.mjs`         | Chromium | le PARCOURS UTILISATEUR : les neuf étapes sur la coquille réelle et Rails réel (A crée, confirme, travaille, verrouille, rouvre, sauvegarde ; B restaure, récupère par le code, révoque), en ne touchant la page QUE par les titres, les libellés, le nom des boutons et les messages annoncés ; et les trois échecs les plus probables — code mal recopié, mauvaise phrase, archive altérée — chacun rendant sa conduite. Lot 3 de `reprise.yml` |
+| `tools/muter-gardes-coquille.mjs`                 | Node     | quatre mutants neufs sur les gardes du parcours — un coffre ouvert sans moyen de récupération ramène à l'étape 3, la recopie confirmée est LE code affiché, un refus de geste n'est pas un refus d'inventaire, un code du chemin rend SA conduite —, tous tués : 92/92 pour la campagne, 283/283 sur les onze (14/09/2026)                                                                                                                        |
 
 **Par les libellés, jamais par un identifiant.** L'E2E utilisateur n'emploie que
 `getByRole('heading' | 'button' | 'alert' | 'listitem')`, `getByLabel` et `getByText` ; les deux
 cadres de l'application sont atteints par leur titre. Un bouton qui perd son nom, un champ qui perd
 son libellé, un écran qui perd son titre le font rougir — c'est l'accessibilité de base mesurée par
 exécution.
+
+**Firefox, joué une fois en local (14/09/2026), et ce qu'il a coûté.** Le même scénario, sur un
+contexte Firefox non persistant (le harnais E2E est Chromium nommément, ADR 0012) : étapes 1 à 3
+vertes, échec « code mal recopié » compris ; à l'étape 4, le démarrage de Rails est refusé sous
+`VAULT_COQUILLE_GESTE_ROMPU` après 600 s, et l'écran affiche la conduite écrite pour une personne.
+630 s au total, un rouge. C'est la limite déjà écrite par l'ADR 0038 (« Rails n'a jamais répondu à
+`/vault/health` dans le guest sous ce moteur ») : le parcours n'y est pas en cause, et il n'est pas
+prouvé sous Firefox au-delà de l'étape 3.
 
 **La vue complète.** Les épreuves de frontière existantes jouent les gestes dans des ordres que le
 parcours n'offre pas ; elles chargent la coquille avec `?vue=complete`, qui montre tous les blocs.
