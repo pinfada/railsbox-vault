@@ -633,6 +633,12 @@ nécessaire, l'ADR 0028 fixe la forme — préfixe `__Host-`, rien sur le domain
   chemin que le produit ne maîtrise pas — pilote, file d'attente, parfois un PDF sur le disque. La
   coquille affiche ; elle n'imprime pas, et ne le promet pas.
 
+  **Le parcours guidé (#193, ADR 0040) exige que le code soit CONFIRMÉ avant d'avancer** : la
+  feuille est cachée, la personne retape le code depuis son papier, et la page compare la saisie au
+  texte déjà affiché — somme de contrôle, puis égalité. Aucune copie n'est faite pour cela : la
+  comparaison lit le nœud où le code est écrit, et le code en est RETIRÉ dès qu'il est confirmé. Ce
+  que la confirmation ne prouve pas : que le papier sera gardé, ni qu'il est lisible dans un an.
+
 ### Ce que la coquille RETIENT pendant qu'un coffre est ouvert
 
 Le Worker de confiance garde, pour la durée de la session ouverte, la **clé de déverrouillage**

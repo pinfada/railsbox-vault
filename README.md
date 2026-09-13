@@ -35,6 +35,29 @@ l'acquittement, sans attente. Non couverts : les écritures d'une application ti
 et d'ActiveStorage (#210), une coupure entre le commit et le téléversement (une ligne sans fichier,
 le 303 n'étant pas parti), Firefox et WebKit, non mesurés.
 
+## Essayer le parcours guidé en local
+
+La coquille guide une personne en neuf étapes (ADR 0040) : créer un coffre, choisir comment
+l'ouvrir, recevoir et confirmer son code de récupération, travailler dans l'application, verrouiller
+et rouvrir, sauvegarder, restaurer ailleurs, récupérer par le code, révoquer. Il faut Node 22,
+Docker (pour fabriquer l'image de l'application) et Chrome ou Edge récents.
+
+```sh
+npm ci
+npm run vm:fetch          # le moteur de machine virtuelle
+npm run image:build       # l'image de l'application Rails de référence (quelques minutes)
+npm run image:manifest    # son descripteur
+# deux serveurs, deux origines : la coquille, et l'origine où l'application s'affiche
+node tools/serve.mjs --role shell --host 127.0.0.1 --port 4179 --app-origin http://localhost:4180
+node tools/serve.mjs --role app --host localhost --port 4180
+```
+
+Ouvrez <http://127.0.0.1:4179/index.html> et suivez les écrans. La phrase est la vôtre : plusieurs
+mots, par exemple « une phrase de démonstration assez longue ». Pour l'étape 7 (restaurer ailleurs),
+lancez un second couple de serveurs sur les ports 4181 et 4182
+(`--app-origin http://localhost:4182`), ouvrez <http://127.0.0.1:4181/index.html> et choisissez «
+J'ai déjà une sauvegarde ». `?vue=complete` montre tous les gestes à la fois.
+
 ## Principes
 
 - **Local par défaut** : l'application et ses données fonctionnent sans serveur applicatif.
@@ -119,6 +142,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0037 — reprendre une installation interrompue : un bouton, une signature, un seul geste](docs/decisions/0037-reprendre-une-installation-interrompue.md)
 - [ADR 0038 — servir l'application dans le cadre : un Service Worker sur l'origine applicative, un canal de relais, et une session Rails qui ne quitte jamais le Worker de confiance](docs/decisions/0038-servir-l-application-dans-le-cadre.md)
 - [ADR 0039 — sauvegarder, restaurer et révoquer depuis la coquille : un coffre, une identité](docs/decisions/0039-sauvegarder-restaurer-revoquer-depuis-la-coquille.md)
+- [ADR 0040 — le parcours est un ordre, pas une décision : neuf étapes, un écran à la fois, des conduites pour une personne](docs/decisions/0040-le-parcours-est-un-ordre-pas-une-decision.md)
 
 ## Licence
 

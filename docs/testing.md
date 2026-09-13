@@ -213,6 +213,27 @@ le 303 n'étant pas parti), Firefox et WebKit, non mesurés.
 extrait le commit `bb59de7`, sert SA coquille, y crée un coffre par une phrase dans Chromium, le
 verrouille, et relève les fichiers OPFS qu'elle a laissés. La provenance est écrite dans le JSON.
 
+### Le parcours guidé, joué par les libellés (#193, ADR 0040)
+
+Le parcours ordonne les gestes existants en neuf étapes, un écran à la fois. Il se prouve à trois
+niveaux :
+
+| Suite                                             | Moteurs  | Ce qu'elle mesure                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/unit/coquille-parcours.test.mjs`           | Node     | les ÉCRANS : quel écran pour quel état publié et quelle étape atteinte, où mène chaque geste réussi, un coffre ouvert sans moyen de récupération toujours ramené à l'étape 3, la lecture des lignes d'état, la recopie du code (incomplète, mal recopiée, étrangère, confirmée), les attentes annoncées avant                                                                                                                                     |
+| `tests/unit/coquille-parcours-conduites.test.mjs` | Node     | le CLIQUET DES CONDUITES : chaque code du chemin (déverrouillage, cycle, relais, installation interrompue, verrouillage, sauvegarde, restauration, révocation) a une conduite écrite pour une personne ; chaque code de la coquille, de l'archive et de la restauration est sur le chemin ou écarté nommément ; aucune conduite ne porte de vocabulaire interne, et le filtre mord                                                                |
+| `tests/e2e/parcours-utilisateur.spec.mjs`         | Chromium | le PARCOURS UTILISATEUR : les neuf étapes sur la coquille réelle et Rails réel (A crée, confirme, travaille, verrouille, rouvre, sauvegarde ; B restaure, récupère par le code, révoque), en ne touchant la page QUE par les titres, les libellés, le nom des boutons et les messages annoncés ; et les trois échecs les plus probables — code mal recopié, mauvaise phrase, archive altérée — chacun rendant sa conduite. Lot 3 de `reprise.yml` |
+
+**Par les libellés, jamais par un identifiant.** L'E2E utilisateur n'emploie que
+`getByRole('heading' | 'button' | 'alert' | 'listitem')`, `getByLabel` et `getByText` ; les deux
+cadres de l'application sont atteints par leur titre. Un bouton qui perd son nom, un champ qui perd
+son libellé, un écran qui perd son titre le font rougir — c'est l'accessibilité de base mesurée par
+exécution.
+
+**La vue complète.** Les épreuves de frontière existantes jouent les gestes dans des ordres que le
+parcours n'offre pas ; elles chargent la coquille avec `?vue=complete`, qui montre tous les blocs.
+C'est leur seule modification (onze adresses, aucune assertion, aucun sélecteur).
+
 ### Backend de blocs OPFS
 
 Le backend de production de `VAULT-PERSIST-001` est prouvé sur **trois** niveaux, et chacun affirme
