@@ -873,12 +873,133 @@ export const MUTATIONS = Object.freeze([
   },
   // --- Le PARCOURS GUIDÉ (#193, ADR 0040) : ses gardes d'ORDRE et sa table des conduites ----------
   {
-    nom: "un coffre ouvert sans moyen de récupération ramène toujours à l'étape 3",
-    garde: "ecranOuvert — le produit refuse d'avancer tant que le code n'est pas confirmé",
+    nom: "un coffre ouvert sans moyen de récupération ramène toujours à la création du code",
+    garde: "ecranOuvert — le premier moyen de récupération se crée à l'étape 3",
     fichier: PARCOURS,
-    avant: "  if (!aRecuperation || pointeur === 3) return `code-${sousEtatDuCode}`;\n",
-    apres: "  if (pointeur === 3) return `code-${sousEtatDuCode}`;\n",
+    avant: "  if (!aRecuperation) return `code-${sousEtatDuCode}`;\n",
+    apres: "",
     epreuves: [EPREUVE_PARCOURS],
+  },
+  // Revue de la PR #213 : la progression PERSISTÉE tient l'ordre (constats 1 et 2), le code ne reste
+  // pas dans la page (3), les gardes de la page sont des fonctions pures (6, 8, 9), et le cliquet des
+  // conduites est construit depuis les tables exportées (4, 5).
+  {
+    nom: "une étape demandée par l'URL au-delà de la progression est ramenée à l'étape atteinte",
+    garde: "etapeAdmise — le minimum entre la demande et l'étape atteinte (constat 2)",
+    fichier: PARCOURS,
+    avant: "  return Math.min(demandee, progression.etapeAtteinte);\n",
+    apres: "  return demandee;\n",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "aucune étape de 4 à 9 tant que le code n'est pas confirmé",
+    garde: "ecranOuvert — la confirmation exigée, et non l'existence d'un moyen (constat 2)",
+    fichier: PARCOURS,
+    avant: "  if (!progression.code.confirme) {\n",
+    apres: "  if (false) {\n",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "un coffre verrouillé dont le code n'est pas confirmé se rouvre par ce code",
+    garde: "ecranVerrouille — « Vérifier votre code », jamais un second code (constat 1)",
+    fichier: PARCOURS,
+    avant:
+      '  if (moyens.includes("recuperation") && !progression.code.confirme) return "code-verifier";\n',
+    apres: "",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "un coffre neuf n'hérite d'aucune confirmation",
+    garde: "progressionApres — la remise à zéro du code à la création du coffre (constat 1)",
+    fichier: PARCOURS,
+    avant: "    return figerProgression({ ...PROGRESSION_INITIALE, etapeAtteinte: 3 });\n",
+    apres: "    return figerProgression({ ...progression, etapeAtteinte: 3 });\n",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "une progression mal formée ne fait sauter aucune étape",
+    garde: "lireProgression — la forme exacte, sinon la progression initiale (constat 2)",
+    fichier: PARCOURS,
+    avant: "  if (!progressionBienFormee(brut)) return PROGRESSION_INITIALE;\n",
+    apres: "",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "la progression écrite ne porte que ses champs, jamais le code",
+    garde: "ecrireProgression — la recopie champ par champ (constat 1)",
+    fichier: PARCOURS,
+    avant: "  return JSON.stringify(figerProgression(progression));\n",
+    apres: "  return JSON.stringify(progression);\n",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "seule l'ouverture par le code vaut confirmation du code",
+    garde: "ouvertureParLeCode — les deux écrans qui n'offrent que le code (constat 1)",
+    fichier: PARCOURS,
+    avant: '  return ecranId === "code-verifier" || ecranId === "recuperer";\n',
+    apres: "  return true;\n",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "aucun code en clair n'est écrit par le parcours",
+    garde: "texteSansCode — le masquage de tout code sur toute écriture de la page (constat 3)",
+    fichier: PARCOURS,
+    avant: '  return String(texte ?? "").replace(CODE_EN_CLAIR, MESSAGES.codeMasque);\n',
+    apres: '  return String(texte ?? "");\n',
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "une ligne « en cours » ferme les boutons d'un geste long",
+    garde: "unGesteEstEnCours — les lignes du cycle et de la portabilité (constat 8)",
+    fichier: PARCOURS,
+    avant: "  if (enCours(ligneDuCycle) || enCours(ligneDePortabilite)) return true;\n",
+    apres: "",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "aucun refus du relais n'est annoncé avant un démarrage abouti",
+    garde: "refusDeRelaisAAnnoncer — l'absence de référence (constat 6)",
+    fichier: PARCOURS,
+    avant: "  if (reference === null) return [];\n",
+    apres: "  if (reference === null) return Object.keys(comptes);\n",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "sous Firefox, l'étape 4 dit sa limite au lieu d'offrir « Démarrer »",
+    garde: "ecranOuvert — l'écran de la limite connue (constat 9)",
+    fichier: PARCOURS,
+    avant:
+      '  return choisi === "travailler" && moteur === "firefox" ? "travailler-sans-application" : choisi;\n',
+    apres: "  return choisi;\n",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "chaque code d'une famille exportée a sa conduite, ou le cliquet rougit",
+    garde: "TABLE — une conduite retirée, relevée par le cliquet PAR CONSTRUCTION (constat 4)",
+    fichier: "src/coquille/conduites-du-parcours.mjs",
+    avant:
+      "  [S.quiesce]: [\n" +
+      "    K.attendre,\n" +
+      '    "Le coffre enregistre son état en ce moment. Attendez quelques secondes, puis recommencez.",\n' +
+      "  ],\n",
+    apres: "",
+    epreuves: [EPREUVE_PARCOURS_CONDUITES],
+  },
+  {
+    nom: "une exclusion dit pourquoi le code est inatteignable",
+    garde: "CODES_HORS_DU_CHEMIN — le motif exigé (constat 4)",
+    fichier: "src/coquille/conduites-du-parcours.mjs",
+    avant: 'const INATTEIGNABLE = "inatteignable depuis le parcours parce que ";\n',
+    apres: 'const INATTEIGNABLE = "";\n',
+    epreuves: [EPREUVE_PARCOURS_CONDUITES],
+  },
+  {
+    nom: "un refus sans code reconnu reçoit sa conduite, jamais le texte technique",
+    garde: "conduiteDUnRefusSansCodeConnu — la conduite de la table (constat 5)",
+    fichier: "src/coquille/conduites-du-parcours.mjs",
+    avant: "  return connu === undefined ? null : connu.conduite;\n",
+    apres: "  return connu === undefined ? null : brut;\n",
+    epreuves: [EPREUVE_PARCOURS_CONDUITES],
   },
   {
     nom: "la recopie confirmée est LE code affiché, pas un code bien formé quelconque",
