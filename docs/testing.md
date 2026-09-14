@@ -215,21 +215,31 @@ verrouille, et relève les fichiers OPFS qu'elle a laissés. La provenance est �
 
 ### Le parcours guidé, joué par les libellés (#193, ADR 0040)
 
-Le parcours ordonne les gestes existants en neuf étapes, un écran à la fois. Il se prouve à trois
-niveaux :
+Le parcours ordonne les gestes existants en neuf étapes, un écran à la fois. Il se prouve à quatre
+niveaux, et la revue d'intégration de la PR #213 (quinze constats) a ajouté le deuxième et le
+cinquième :
 
-| Suite                                             | Moteurs  | Ce qu'elle mesure                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tests/unit/coquille-parcours.test.mjs`           | Node     | les ÉCRANS : quel écran pour quel état publié et quelle étape atteinte, où mène chaque geste réussi, un coffre ouvert sans moyen de récupération toujours ramené à l'étape 3, la lecture des lignes d'état, la recopie du code (incomplète, mal recopiée, étrangère, confirmée), les attentes annoncées avant                                                                                                                                     |
-| `tests/unit/coquille-parcours-conduites.test.mjs` | Node     | le CLIQUET DES CONDUITES : chaque code du chemin (déverrouillage, cycle, relais, installation interrompue, verrouillage, sauvegarde, restauration, révocation) a une conduite écrite pour une personne ; chaque code de la coquille, de l'archive et de la restauration est sur le chemin ou écarté nommément ; aucune conduite ne porte de vocabulaire interne, et le filtre mord                                                                |
-| `tests/e2e/parcours-utilisateur.spec.mjs`         | Chromium | le PARCOURS UTILISATEUR : les neuf étapes sur la coquille réelle et Rails réel (A crée, confirme, travaille, verrouille, rouvre, sauvegarde ; B restaure, récupère par le code, révoque), en ne touchant la page QUE par les titres, les libellés, le nom des boutons et les messages annoncés ; et les trois échecs les plus probables — code mal recopié, mauvaise phrase, archive altérée — chacun rendant sa conduite. Lot 3 de `reprise.yml` |
-| `tools/muter-gardes-coquille.mjs`                 | Node     | quatre mutants neufs sur les gardes du parcours — un coffre ouvert sans moyen de récupération ramène à l'étape 3, la recopie confirmée est LE code affiché, un refus de geste n'est pas un refus d'inventaire, un code du chemin rend SA conduite —, tous tués : 92/92 pour la campagne, 283/283 sur les onze (14/09/2026)                                                                                                                        |
+| Suite                                             | Moteurs                                   | Ce qu'elle mesure                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/unit/coquille-parcours.test.mjs`           | Node                                      | les ÉCRANS et la PROGRESSION : quel écran pour quel état publié, quelle progression et quel moteur ; `etapeAdmise` qui ramène une étape demandée au-delà de l'étape atteinte ; aucun écran de 4 à 9 sans code confirmé ; un code rendu et non confirmé mène à « Vérifier votre code », jamais à un second code ; la progression écrite ne porte que ses champs ; le masquage de tout code en clair ; les gestes en cours ; les refus du relais annoncés seulement après un démarrage abouti ; Firefox |
+| `tests/unit/coquille-parcours-conduites.test.mjs` | Node                                      | le CLIQUET DES CONDUITES, PAR CONSTRUCTION : chaque code des six familles exportées (coquille, stockage, enveloppe, dérivation, archive, import) est sur le chemin avec sa conduite et son classement, ou écarté par un motif « inatteignable depuis le parcours parce que … » ; les refus sans code traduits ; tout texte montré (écrans, messages, conduites) sans vocabulaire interne, et le filtre mord sur « secteur » et « génération »                                                         |
+| `tests/unit/coquille-parcours-relecture.test.mjs` | Node                                      | la PAGE DE RELECTURE est à jour (`node tools/relecture-parcours.mjs` ne change rien) et reproduit chaque texte servi ; la limite de Firefox est écrite de la même phrase dans l'ADR 0040, le README, `docs/compatibility.md` et ce document                                                                                                                                                                                                                                                           |
+| `tests/browser/coquille-parcours.spec.mjs`        | Chromium, Firefox, WebKit (limite exigée) | l'ORDRE ATTAQUÉ sur la coquille réelle, sans machine virtuelle : un rechargement après l'affichage du code ne produit aucun second `creer-recuperation` (compte = 1) et le code rendu rouvre le coffre ; `?etape=4`, `6`, `9` ramènent à l'étape 3 ; aucun lien vers la vue complète ; aucun code en clair dans `document.body.innerHTML` après la confirmation et après l'ouverture par le code ; Firefox dit sa limite à l'étape 4. Rouge sur `e18470e`, vert après                                 |
+| `tests/e2e/parcours-utilisateur.spec.mjs`         | Chromium                                  | le PARCOURS UTILISATEUR : les neuf étapes sur la coquille réelle et Rails réel (A crée, confirme, travaille, verrouille, rouvre, sauvegarde ; B restaure, récupère par le code, révoque), en ne touchant la page QUE par ce qu'une personne voit ; les trois échecs les plus probables ; aucune alerte et le bouton « Démarrer » fermé pendant le boot ; Entrée qui valide ; aucun code en clair. Délai du scénario : 15 min. Lot 3 de `reprise.yml`                                                  |
+| `tools/muter-gardes-coquille.mjs`                 | Node                                      | dix-huit mutants sur les gardes du parcours — les quatre de la première livraison, et quatorze de la revue (progression, étape admise, confirmation exigée, vérification du code, masquage, gestes en cours, relais, Firefox, cliquet par construction, refus sans code) —, tous tués : 106/106 pour la campagne (14/09/2026)                                                                                                                                                                         |
 
-**Par les libellés, jamais par un identifiant.** L'E2E utilisateur n'emploie que
-`getByRole('heading' | 'button' | 'alert' | 'listitem')`, `getByLabel` et `getByText` ; les deux
-cadres de l'application sont atteints par leur titre. Un bouton qui perd son nom, un champ qui perd
-son libellé, un écran qui perd son titre le font rougir — c'est l'accessibilité de base mesurée par
-exécution.
+**Par les libellés, jamais par un identifiant — et jamais par un sélecteur CSS.** L'E2E utilisateur
+n'emploie que `getByRole('heading' | 'button' | 'alert' | 'listitem')`, `getByLabel`, `getByText`
+et, pour les deux cadres de l'application, `getByTitle(…).contentFrame()` : le titre d'un cadre est
+son nom accessible (revue #213, constat 13 ; le `frameLocator('iframe[title=…]')` de la première
+livraison est retiré). Un bouton qui perd son nom, un champ qui perd son libellé, un écran qui perd
+son titre le font rougir — c'est l'accessibilité de base mesurée par exécution. Le seul
+`page.evaluate` lit `document.body.innerHTML` pour y chercher un code en clair : c'est une mesure,
+pas un geste.
+
+Sous Firefox, l'étape 4 du parcours guidé n'aboutit pas dans cette version : la machine virtuelle y
+tourne environ six fois plus lentement que sous Chromium, et Rails n'y a jamais répondu (ADR 0038) ;
+le parcours le dit avant toute attente et propose Chrome ou Edge.
 
 **Firefox, joué une fois en local (14/09/2026), et ce qu'il a coûté.** Le même scénario, sur un
 contexte Firefox non persistant (le harnais E2E est Chromium nommément, ADR 0012) : étapes 1 à 3
@@ -239,9 +249,12 @@ vertes, échec « code mal recopié » compris ; à l'étape 4, le démarrage de
 `/vault/health` dans le guest sous ce moteur ») : le parcours n'y est pas en cause, et il n'est pas
 prouvé sous Firefox au-delà de l'étape 3.
 
-**La vue complète.** Les épreuves de frontière existantes jouent les gestes dans des ordres que le
-parcours n'offre pas ; elles chargent la coquille avec `?vue=complete`, qui montre tous les blocs.
-C'est leur seule modification (onze adresses, aucune assertion, aucun sélecteur).
+**La vue complète est un paramètre de HARNAIS, pas un chemin du produit.** Les épreuves de frontière
+existantes jouent les gestes dans des ordres que le parcours n'offre pas ; elles chargent la
+coquille avec `?vue=complete`, qui montre tous les blocs. Aucun lien de la page n'y mène (revue
+#213, constat 2), le parcours n'y ferme aucun bouton et n'y écrit pas sa progression. C'est la seule
+modification de ces épreuves : quinze adresses dans onze fichiers (la revue en comptait quatorze ;
+`coquille-cycle-de-vie.spec.mjs` en porte cinq), aucune assertion, aucun sélecteur.
 
 ### Backend de blocs OPFS
 

@@ -42,6 +42,10 @@ l'ouvrir, recevoir et confirmer son code de récupération, travailler dans l'ap
 et rouvrir, sauvegarder, restaurer ailleurs, récupérer par le code, révoquer. Il faut Node 22,
 Docker (pour fabriquer l'image de l'application) et Chrome ou Edge récents.
 
+Sous Firefox, l'étape 4 du parcours guidé n'aboutit pas dans cette version : la machine virtuelle y
+tourne environ six fois plus lentement que sous Chromium, et Rails n'y a jamais répondu (ADR 0038) ;
+le parcours le dit avant toute attente et propose Chrome ou Edge.
+
 ```sh
 npm ci
 npm run vm:fetch          # le moteur de machine virtuelle
@@ -56,7 +60,9 @@ Ouvrez <http://127.0.0.1:4179/index.html> et suivez les écrans. La phrase est l
 mots, par exemple « une phrase de démonstration assez longue ». Pour l'étape 7 (restaurer ailleurs),
 lancez un second couple de serveurs sur les ports 4181 et 4182
 (`--app-origin http://localhost:4182`), ouvrez <http://127.0.0.1:4181/index.html> et choisissez «
-J'ai déjà une sauvegarde ». `?vue=complete` montre tous les gestes à la fois.
+J'ai déjà une sauvegarde ». La progression est retenue par le navigateur (un petit fichier du site,
+jamais le code) : pour tout reprendre de zéro, effacez les données du site dans les réglages du
+navigateur. `?vue=complete` est un paramètre des épreuves automatiques, pas un chemin du produit.
 
 ## Principes
 

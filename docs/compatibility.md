@@ -352,6 +352,15 @@ INEXPLIQUÉ est le silence du pont observé au second essai, à quinze minutes (
 /vault/health en 5000 ms »). Tant qu'aucune page n'y est servie, ce que ce moteur ferait d'un
 Service Worker de module dans un cadre encadré n'est pas mesuré non plus.
 
+**Le parcours guidé (#193, ADR 0040) en tire sa conduite.** Sous Firefox, l'étape 4 du parcours
+guidé n'aboutit pas dans cette version : la machine virtuelle y tourne environ six fois plus
+lentement que sous Chromium, et Rails n'y a jamais répondu (ADR 0038) ; le parcours le dit avant
+toute attente et propose Chrome ou Edge. Le moteur est lu par `moteurProbable`
+(`src/coquille/attente-annoncee.mjs`) ; l'écran de l'étape 4 n'offre alors ni « Démarrer », ni
+d'étape qui exige l'application, et aucune conduite n'envoie vers Firefox
+(`tests/unit/coquille-parcours-conduites.test.mjs`). Les étapes 1 à 3 y sont jouées par
+`tests/browser/coquille-parcours.spec.mjs`.
+
 Sous **WebKit**, aucun volume ne s'ouvre (`VAULT_STORAGE_UNSUPPORTED`), donc aucun guest ne boote
 sur un disque : la question ne s'y pose pas.
 

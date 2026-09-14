@@ -639,6 +639,18 @@ nécessaire, l'ADR 0028 fixe la forme — préfixe `__Host-`, rien sur le domain
   comparaison lit le nœud où le code est écrit, et le code en est RETIRÉ dès qu'il est confirmé. Ce
   que la confirmation ne prouve pas : que le papier sera gardé, ni qu'il est lisible dans un an.
 
+  **L'ordre est tenu par une progression PERSISTÉE, et il ne protège que la personne** (revue
+  d'intégration de la PR #213, constats 1 à 3). Le fichier `parcours.json` de l'OPFS de l'origine de
+  confiance porte l'étape atteinte et trois faits sur le code — rendu, sa version, confirmé —,
+  jamais le code ni la phrase (`ecrireProgression` ne recopie que ces champs). Une étape demandée
+  par l'URL au-delà de l'étape atteinte est ramenée ; aucun écran de 4 à 9 sans code confirmé. Après
+  un rechargement, un code rendu et non confirmé se VÉRIFIE en ouvrant le coffre par ce code — ce
+  qui vaut confirmation — et le parcours n'en fait jamais créer un second (#214 : un second code
+  n'ouvre rien). Aucun texte de la page ne garde un code en clair après un geste qui le consomme. Ce
+  que l'ordre ne protège PAS : quelqu'un qui tient le navigateur réécrit le fichier ou appelle les
+  gestes par la vue complète des épreuves ; les gardes de sécurité restent dans les gestes du Worker
+  de confiance, inchangées.
+
 ### Ce que la coquille RETIENT pendant qu'un coffre est ouvert
 
 Le Worker de confiance garde, pour la durée de la session ouverte, la **clé de déverrouillage**
