@@ -9,7 +9,16 @@
 // JSON : si un bouton perd son nom ou un écran son titre, ce scénario rougit.
 //
 // Les deux cadres de l'application sont atteints par leur TITRE (« document applicatif », puis
-// « application servie par le guest ») : c'est leur nom accessible, et ils appartiennent à P1 (#192).
+// « application servie par le guest ») : c'est leur nom accessible, lu par `getByTitle` — aucun
+// sélecteur CSS (revue de la PR #213, constat 13) —, et ils appartiennent à P1 (#192).
+//
+// ## Un blocage échoue VITE (revue de la PR #213, constat 14)
+//
+// Le délai du scénario est de quinze minutes, et non de quarante : un démarrage figé doit rougir tôt
+// et laisser ses artefacts — la chronologie et la série du guest, attachées par la fixture — plutôt
+// que d'occuper le lot trois quarts d'heure. Sur le chemin, le scénario exige aussi ce que la revue a
+// trouvé en défaut : aucune alerte pendant le boot (constat 6), le bouton « Démarrer » fermé pendant
+// le geste (8), Entrée qui valide un champ (12), et aucun code en clair laissé dans la page (3).
 //
 // Sur le chemin, les TROIS échecs les plus probables, chacun à l'endroit où une personne le
 // rencontre, et chacun rend la conduite écrite pour elle :
@@ -45,14 +54,19 @@ const PHRASE = "une phrase de parcours utilisateur assez longue pour la calibrat
 const MAUVAISE_PHRASE = "une phrase qui ressemble mais qui n'est pas la bonne du tout";
 const LIBELLE = "note écrite pendant le parcours utilisateur";
 
-const BUDGET_DEMARRAGE_MS = 600_000;
+/** Le délai du SCÉNARIO : un blocage échoue en quinze minutes au plus (constat 14). */
+const DELAI_DU_SCENARIO_MS = 900_000;
+const BUDGET_DEMARRAGE_MS = 420_000;
 const BUDGET_DEVERROUILLAGE_MS = 120_000;
-const BUDGET_PREMIERE_PAGE_MS = 180_000;
-const BUDGET_PORTABILITE_MS = 600_000;
+const BUDGET_PREMIERE_PAGE_MS = 120_000;
+const BUDGET_PORTABILITE_MS = 180_000;
 const BUDGET_ECRAN_MS = 60_000;
 
 /** Un code de récupération tel que la feuille l'affiche : sept groupes de quatre symboles. */
 const FORME_DU_CODE = /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){6}$/;
+
+/** Un code en clair, tel que la revue le cherche dans `document.body.innerHTML`. */
+const CODE_EN_CLAIR = /[0-9A-Z]{4}(-[0-9A-Z]{4}){6}/;
 
 function raisonDIndisponibilite() {
   if (!existsSync(CHEMIN_MANIFESTE)) return "manifeste de l'image absent : « npm run image:build »";
@@ -75,11 +89,18 @@ const bouton = (page, nom) => page.getByRole("button", { name: nom, exact: true 
 const alerte = (page) => page.getByRole("alert");
 const pageServie = (page) =>
   page
-    .frameLocator('iframe[title="document applicatif"]')
-    .frameLocator('iframe[title="application servie par le guest"]');
+    .getByTitle("document applicatif", { exact: true })
+    .contentFrame()
+    .getByTitle("application servie par le guest", { exact: true })
+    .contentFrame();
 
 async function attendreLEcran(page, titre, budget = BUDGET_ECRAN_MS) {
   await expect(ecran(page, titre)).toBeVisible({ timeout: budget });
+}
+
+async function aucunCodeEnClair(page, moment) {
+  const html = await page.evaluate(() => document.body.innerHTML);
+  expect(CODE_EN_CLAIR.exec(html)?.[0] ?? null, `aucun code en clair ${moment}`).toBeNull();
 }
 
 async function ouvrirLaCoquille(contexte, origine, erreurs) {
@@ -94,7 +115,7 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
   chronologie,
 }, testInfo) => {
   exigerLesPrealables(raison, "parcours-utilisateur.spec.mjs");
-  test.setTimeout(2_400_000);
+  test.setTimeout(DELAI_DU_SCENARIO_MS);
   const depart = Date.now();
   const durees = {};
   const erreurs = [];
@@ -151,18 +172,25 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await expect(ecran(a, "Confirmer votre code de récupération")).toBeVisible();
     noter("echec-code-mal-recopie-conduit");
 
-    await a.getByLabel("Code recopié depuis votre feuille", { exact: true }).fill(code);
-    await bouton(a, "Confirmer mon code").click();
+    // Entrée valide le champ, comme le bouton (constat 12).
+    const recopie = a.getByLabel("Code recopié depuis votre feuille", { exact: true });
+    await recopie.fill(code);
+    await recopie.press("Enter");
     await attendreLEcran(a, "Travailler dans l'application");
+    await aucunCodeEnClair(a, "après la confirmation");
   });
 
   // --- 4. Travailler -------------------------------------------------------------------------------
   await chrono("4-travailler", async () => {
     await expect(a.getByText(/Durée : Le premier démarrage installe l'application/)).toBeVisible();
+    await expect(alerte(a), "aucune alerte en arrivant à l'étape 4").toBeEmpty();
     await bouton(a, "Démarrer l'application").click();
     await expect(a.getByText(/Démarrage en cours depuis/)).toBeVisible({
       timeout: BUDGET_ECRAN_MS,
     });
+    // Pendant le boot : le bouton est fermé (constat 8), et l'écran d'attente seul parle (constat 6).
+    await expect(bouton(a, "Démarrer l'application")).toBeDisabled();
+    await expect(alerte(a), "aucune alerte pendant le boot").toBeEmpty();
     await expect(
       a.getByText("L'application est démarrée : elle s'affiche ci-dessous."),
     ).toBeVisible({ timeout: BUDGET_DEMARRAGE_MS });
@@ -243,6 +271,7 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
       .fill(code.toLowerCase().replaceAll("-", " "));
     await bouton(b, "Ouvrir mon coffre avec le code").click();
     await attendreLEcran(b, "Révoquer en urgence", BUDGET_DEVERROUILLAGE_MS);
+    await aucunCodeEnClair(b, "après l'ouverture par le code");
   });
 
   // --- 9. Révoquer en urgence ----------------------------------------------------------------------
@@ -250,7 +279,13 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await expect(b.getByText(/sauvegardes déjà faites restent ouvrables/)).toBeVisible();
     await bouton(b, "Révoquer tous les autres moyens d'ouvrir ce coffre").click();
     await attendreLEcran(b, "Parcours terminé", BUDGET_DEVERROUILLAGE_MS);
-    await expect(b.getByText(/moyen\(s\) retiré\(s\)\. Nouveau numéro de version/)).toBeVisible();
+    // Le coffre restauré ne s'ouvre que par le code qui vient de servir : il n'y a rien d'autre à
+    // retirer, et la page ne fait pas noter un numéro pour rien (revue #213, constat 15).
+    await expect(
+      b.getByText(
+        "Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.",
+      ),
+    ).toBeVisible();
   });
 
   // « Où suis-je ? » résume les neuf étapes.

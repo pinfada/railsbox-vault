@@ -2297,6 +2297,20 @@ la page d'accueil publie (compteur d'erreurs du superbloc, rejeu du journal, ale
 sain et un rythme d'interrogation effondré. Ce premier boot, lui, montait un disque fraîchement
 installé (état `clean`, journal vide) : ni rejeu de journal ni `e2fsck` n'y ont lieu.
 
+**`parcours-utilisateur.spec.mjs`, 14/09/2026 : un figement local, non reproduit, et une limite
+datée.** La revue d'intégration de la PR #213 (constat 14) a vu ce scénario rougir une fois en
+local, à la tête `e18470e` : la page figée à l'étape 4 sur « Démarrage en cours depuis 50
+seconde(s)… 9 signe(s) de vie reçu(s) », puis le délai du test (2 400 s) dépassé, 44,1 min au total.
+Trois démarrages du même chemin, lancés par ses propres scripts sur la même machine et la même
+image, avaient abouti en 161 et 180 s. Le délai du scénario est maintenant de **900 s**, pour qu'un
+blocage échoue vite et laisse sa chronologie et la série du guest. Le scénario corrigé a ensuite été
+rejoué **trois fois en local, Chromium, le 14/09/2026 : 3 verts sur 3**, en 192, 180 et 177 s (étape
+4, démarrage compris : 158, 146 et 144 s). Le figement n'est pas revenu. Il reste classé dans la
+**même famille que #165** (un boot sans issue, aucune trace capturée côté coquille), sans être tenu
+pour résolu. Les artefacts de la revue n'ont pas été conservés : il n'y a donc pas de chronologie à
+comparer. Le premier jeu corrigé avait rougi en 3 min sur une assertion du scénario lui-même (le
+message de révocation sans retrait, constat 15), pas sur un figement.
+
 #### Le support des scénarios : un profil de navigateur PERSISTANT
 
 Les quatre scénarios de `tests/e2e/` tirent leur contexte de
