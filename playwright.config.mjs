@@ -106,6 +106,9 @@ const DEVERROUILLAGE_COQUILLE = [
   // SAUVEGARDER, RESTAURER, RÉVOQUER depuis la coquille (#207, ADR 0039) : même chemin de produit,
   // mêmes motifs, mêmes trois moteurs.
   "**/coquille-portabilite.spec.mjs",
+  // Le PARCOURS GUIDÉ (#193, ADR 0040) : l'ordre attaqué et ce qu'il laisse dans la page, sur le même
+  // chemin de produit (revue de la PR #213, constats 1, 2, 3 et 9).
+  "**/coquille-parcours.spec.mjs",
 ];
 
 /**
