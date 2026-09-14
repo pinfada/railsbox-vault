@@ -35,10 +35,9 @@
 // sécurité restent dans les gestes du Worker de confiance.
 
 import { DERIVATION_ERROR_CODES } from "../vm/derivation/derivation-errors.mjs";
-import { SYMBOLES_TOTAL } from "../vm/derivation/code-de-recuperation.mjs";
 import { conduiteHumaine } from "./conduites-du-parcours.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
-import { VERDICTS, etatDeLaSaisie } from "./saisie-du-code.mjs";
+import { GROUPES, VERDICTS, etatDeLaSaisie } from "./saisie-du-code.mjs";
 import { ECRANS, ETAPES, MESSAGES, texteDAttenteDeLaPhrase } from "./textes-du-parcours.mjs";
 
 export {
@@ -487,8 +486,16 @@ export function annonceDeLaSaisie({ symbolesLus, envoyable, code }) {
   if (symbolesLus === 0) return "";
   if (envoyable) return MESSAGES.saisieComplete;
   if (code !== null) return conduiteHumaine(code);
-  return MESSAGES.saisieIncomplete(symbolesLus, SYMBOLES_TOTAL);
+  return MESSAGES.saisieIncomplete(symbolesLus, SYMBOLES_DE_LA_FEUILLE);
 }
+
+/**
+ * Les symboles d'un code tel que la feuille le montre : sept groupes de quatre. Le parcours ne
+ * l'importe pas du module du code — `vm-derivation-recuperation.test.mjs` nomme ses importateurs,
+ * et un de plus serait un endroit de plus où le code pourrait vivre ; l'épreuve du parcours relit
+ * « sur 28 ».
+ */
+const SYMBOLES_DE_LA_FEUILLE = GROUPES * 4;
 
 /**
  * Juge la RECOPIE du code : la saisie doit être complète, passer sa somme de contrôle, et être le code
