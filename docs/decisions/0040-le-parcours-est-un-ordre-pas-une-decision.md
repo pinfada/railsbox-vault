@@ -1,7 +1,8 @@
 # ADR 0040 — Le parcours est un ordre, pas une décision
 
 - **Statut** : accepté
-- **Date** : 2026-09-14
+- **Date** : 2026-09-14 (amendé le même jour après la revue d'intégration et d'accessibilité de la
+  PR #213)
 - **Issue** : [#193](https://github.com/pinfada/railsbox-vault/issues/193) (épique #195)
 - **Ordonne, sans les changer** : les gestes de
   l'[ADR 0029](0029-deverrouillage-dans-la-coquille.md) (déverrouillage, feuille rendue une fois),
@@ -10,7 +11,8 @@
   l'[ADR 0037](0037-reprendre-une-installation-interrompue.md) (reprendre une installation) et de
   l'[ADR 0039](0039-sauvegarder-restaurer-revoquer-depuis-la-coquille.md) (sauvegarder, restaurer,
   révoquer).
-- **Ne traite pas** : l'apparence (P3, #194), tout geste nouveau.
+- **Ne traite pas** : l'apparence (P3, #194), tout geste nouveau, les défauts de GESTE que le
+  parcours a mis au jour (#214, #215).
 
 ## Contexte
 
@@ -20,124 +22,209 @@ nu, avec des libellés de développeur (« Ouvrir par la phrase ») et des refus
 exploitant (« le plancher de rejeu n'est PAS opposé », « Worker de confiance »). Tout y était, rien
 n'y guidait.
 
+La revue d'intégration et d'accessibilité de la première livraison (tête `e18470e`, quinze constats)
+a montré que l'ordre se CONTOURNAIT — par l'URL, par un lien de la page, par un rechargement — et
+qu'un rechargement à l'étape 3 menait la personne à confirmer un code qui n'ouvre rien. Cet ADR est
+amendé en conséquence ; les décisions ci-dessous sont celles de la livraison corrigée.
+
 ## Décision
 
 ### 1. Neuf étapes, un écran à la fois
 
 La coquille montre l'ÉTAPE courante — son rang (« Étape 3 sur 9 »), un titre, « ce qui va se passer
 », « ce que vous avez à faire », l'attente annoncée quand le geste dure —, l'étape suivante
-annoncée, et « Où suis-je ? » qui liste les neuf étapes (précédente, vous êtes ici, à venir). Les
-neuf étapes sont celles de la DoR de #193, dans son ordre :
+annoncée, et « Où suis-je ? » qui liste les neuf étapes (précédente, vous êtes ici, à venir, ou non
+jouée sur cet appareil pour un coffre restauré). Les neuf étapes sont celles de la DoR de #193, dans
+son ordre :
 
-| Rang | Étape                                            | Écrans                                              | Gestes (inchangés)                                                    |
-| ---- | ------------------------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------- |
-| 1    | Créer votre coffre                               | `creer` (ou `refuse`)                               | aucun : « Commencer », « J'ai déjà une sauvegarde »                   |
-| 2    | Choisir comment l'ouvrir                         | `choisir`                                           | `ouvrir-par-phrase`, `ouvrir-par-passkey` (le premier crée le coffre) |
-| 3    | Recevoir et confirmer votre code de récupération | `code-annonce`, `code-feuille`, `code-confirmation` | `creer-recuperation`, puis une recopie jugée dans la page             |
-| 4    | Travailler dans l'application                    | `travailler`                                        | `demarrer-application`, `reprendre-l-installation`                    |
-| 5    | Verrouiller et rouvrir                           | `verrouiller`, `rouvrir`                            | `verrouiller-le-coffre`, `ouvrir-par-phrase`                          |
-| 6    | Sauvegarder votre coffre                         | `sauvegarder`                                       | `sauvegarder-le-coffre`                                               |
-| 7    | Restaurer sur un autre appareil                  | `restaurer-ailleurs` (coffre présent), `restaurer`  | `restaurer-le-coffre`                                                 |
-| 8    | Récupérer votre coffre avec le code              | `recuperer-preparer` (coffre ouvert), `recuperer`   | `verrouiller-le-coffre`, `ouvrir-par-code`                            |
-| 9    | Révoquer en urgence                              | `revoquer`, `termine`                               | `revoquer-en-urgence`                                                 |
+| Rang | Étape                                            | Écrans                                                                                   | Gestes (inchangés)                                                                             |
+| ---- | ------------------------------------------------ | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 1    | Créer votre coffre                               | `creer` (ou `refuse`)                                                                    | aucun : « Commencer », « J'ai déjà une sauvegarde »                                            |
+| 2    | Choisir comment l'ouvrir                         | `choisir`                                                                                | `ouvrir-par-phrase`, `ouvrir-par-passkey` (le premier crée le coffre)                          |
+| 3    | Recevoir et confirmer votre code de récupération | `code-annonce`, `code-feuille`, `code-confirmation` ; `code-verifier`, `code-a-verifier` | `creer-recuperation` UNE fois, puis une recopie jugée dans la page, ou l'ouverture par le code |
+| 4    | Travailler dans l'application                    | `travailler` (ou `travailler-sans-application` sous Firefox)                             | `demarrer-application`, `reprendre-l-installation`                                             |
+| 5    | Verrouiller et rouvrir                           | `verrouiller`, `rouvrir`                                                                 | `verrouiller-le-coffre`, `ouvrir-par-phrase`                                                   |
+| 6    | Sauvegarder votre coffre                         | `sauvegarder`                                                                            | `sauvegarder-le-coffre`                                                                        |
+| 7    | Restaurer sur un autre appareil                  | `restaurer-ailleurs` (coffre présent), `restaurer`                                       | `restaurer-le-coffre`                                                                          |
+| 8    | Récupérer votre coffre avec le code              | `recuperer-preparer` (coffre ouvert), `recuperer`                                        | `verrouiller-le-coffre`, `ouvrir-par-code`                                                     |
+| 9    | Révoquer en urgence                              | `revoquer`, `termine`                                                                    | `revoquer-en-urgence`                                                                          |
 
-Le texte intégral de chaque écran vit dans `src/coquille/parcours.mjs` et se relit, tel qu'il
-s'affiche, dans [`docs/parcours/relecture-p2.md`](../parcours/relecture-p2.md).
+Le texte intégral de chaque écran vit dans `src/coquille/textes-du-parcours.mjs` ; la page et
+[`docs/parcours/relecture-p2.md`](../parcours/relecture-p2.md) le lisent tous deux, la seconde
+GÉNÉRÉE par `tools/relecture-parcours.mjs` (§ 7).
 
-- **Pourquoi l'écran se DÉDUIT de l'état publié.** La page lit ce que la coquille publie déjà —
-  l'état du relevé, la ligne des moyens, le relevé de l'interface — et l'étape atteinte. Un écran
-  tenu à côté de l'état finirait par le contredire : un coffre ouvert sans moyen de récupération
-  ramène donc TOUJOURS à l'étape 3, quel que soit le numéro d'étape.
-- **Pourquoi l'étape atteinte vit dans l'URL (`?etape=N`).** Le verrouillage recharge la coquille
-  (ADR 0031) ; sans trace, la personne reviendrait à l'étape 1. La coquille n'écrit dans aucun
-  stockage du navigateur (`coquille-deverrouillage.test.mjs`), et un numéro d'étape n'y a rien à
-  faire. L'URL survit au rechargement et ne porte rien du coffre.
-- **Pourquoi aucun module de `src/coquille/` n'a changé.** Le parcours est un module de BRANCHEMENT
-  de plus (`public/coquille/parcours-de-la-page.mjs`) qui observe les relevés et les lignes d'état,
-  montre ou cache des blocs (`data-bloc`) et renomme des boutons. Il n'appelle aucun geste du Worker
-  de confiance. Les campagnes de mutation ne voient donc aucun code muté changer.
+- **Pourquoi l'écran se DÉDUIT de l'état publié et de la progression.** La page lit ce que la
+  coquille publie déjà — l'état du relevé, la ligne des moyens, le relevé de l'interface — et la
+  progression de la personne (§ 2). Un écran tenu à côté de l'état finirait par le contredire.
+- **Pourquoi aucun GESTE n'a changé.** Le parcours tient en trois modules qui lui sont propres —
+  `src/coquille/parcours.mjs` (l'ordre), `src/coquille/textes-du-parcours.mjs` (ce qui est dit,
+  séparé du premier par le plafond de 800 lignes) et `src/coquille/conduites-du-parcours.mjs` (les
+  refus traduits) — et un module de BRANCHEMENT, `public/coquille/parcours-de-la-page.mjs`, qui
+  observe les relevés et les lignes d'état, montre ou cache des blocs (`data-bloc`), renomme et
+  ferme des boutons. Il n'appelle aucun geste du Worker de confiance ; aucun autre module de
+  `src/coquille/` n'est touché.
 
-### 2. Le code de récupération est confirmé avant d'avancer
+### 2. L'ordre est tenu par une progression PERSISTÉE
+
+La première livraison tenait l'étape atteinte dans l'URL (`?etape=N`) et l'état de l'étape 3 en
+mémoire. La revue a montré les deux défauts : `?etape=4` après l'affichage d'un code non confirmé
+menait à « Travailler » (constat 2), et un rechargement à l'étape 3 — ou le verrouillage
+d'inactivité de 600 s pendant qu'on recopie — ramenait à l'annonce, qui faisait créer un SECOND code
+(constat 1).
+
+**Décision.** La progression vit dans `parcours.json`, un petit fichier de l'OPFS de l'origine de
+confiance, lu au chargement et réécrit à chaque pas. Il porte l'étape atteinte, l'origine du coffre
+(créé ici ou restauré), et trois faits sur le code de récupération : rendu, sa version, confirmé.
+**Jamais le code** : `ecrireProgression` ne recopie que ces champs, un par un, et une progression
+mal formée vaut la progression initiale. `localStorage` a été écarté : la coquille s'interdit d'y
+écrire, et un fichier OPFS disparaît avec le coffre quand la personne efface les données du site.
+
+- **L'URL ne fait que DEMANDER.** `etapeAdmise` ramène une étape demandée au-delà de l'étape
+  atteinte à celle-ci, et l'URL est réécrite. Revenir en arrière reste permis.
+- **Aucun écran de 4 à 9 sans code CONFIRMÉ** — et non, comme avant, sans code existant.
+- **Le parcours ne recrée JAMAIS un code.** Un coffre qui porte un moyen de récupération non
+  confirmé mène à « Vérifier votre code de récupération » : ouvert, la personne verrouille
+  (`code-a-verifier`) ; verrouillé, elle ouvre le coffre avec le code de sa feuille
+  (`code-verifier`, qui n'offre que le code). Cette ouverture VAUT confirmation — elle prouve mieux
+  que la recopie que la feuille est juste. Si le code est perdu, l'écran dit comment abandonner un
+  coffre encore vide : effacer les données du site dans les réglages du navigateur, recharger,
+  recréer. Remplacer un code perdu n'existe pas encore (#214).
+- **Ce que l'ordre protège, et ce qu'il ne protège pas.** Il protège la personne contre sa propre
+  perte : on n'avance pas sans une feuille juste. Il ne protège PAS contre un adversaire qui tient
+  le navigateur : le fichier se réécrit, et la vue complète des épreuves (§ 6) montre tous les
+  gestes. Les gardes de sécurité restent dans les gestes du Worker de confiance, inchangées.
+
+### 3. Le code de récupération : confirmé, puis absent de la page
 
 L'écran `code-annonce` dit, AVANT de montrer la feuille, qu'elle ne s'affichera qu'une fois et
 pourquoi elle compte (« sans lui, une phrase oubliée est un coffre perdu, et personne ne peut vous
 aider »). Après « J'ai recopié mon code », la feuille est cachée et la personne retape le code
 depuis son papier. `confirmerLaRecopie` rend trois refus distincts : incomplet, faute de recopie (la
-somme de contrôle ISO 7064), code bien formé mais différent. Confirmé, le code est RETIRÉ de la page
-— il n'y avait plus rien à faire. Le Worker ne voit rien de cette confirmation : c'est une
-comparaison dans la page, avec le texte déjà affiché, et aucune copie n'est faite ailleurs.
+somme de contrôle ISO 7064), code bien formé mais différent. Confirmé, le code est RETIRÉ de la
+page.
 
-### 3. Les conduites : une table pour une personne, et un cliquet
+**Aucun code en clair ne subsiste dans la page après un geste qui le consomme** (constat 3). La
+première livraison recopiait la découpe du code tapé à l'étape 8 dans une région vive jamais purgée.
+Désormais toute écriture du parcours passe par `texteSansCode`, qui masque un code en clair ; la
+région vive de la saisie dit un COMPTE (« 18 symbole(s) sur 28 »), jamais les symboles — relire le
+code à voix haute à chaque frappe le ferait entendre à qui est à côté ; et un champ vidé par le
+geste vide son annonce.
+
+### 4. Les conduites : une table pour une personne, un classement, un cliquet PAR CONSTRUCTION
 
 `src/coquille/conduites-du-parcours.mjs` porte `CODES_DU_CHEMIN` — par geste : déverrouillage,
-cycle, relais, installation interrompue, verrouillage, sauvegarde, restauration, révocation — et
-`CONDUITES_DU_PARCOURS`, une phrase par code, écrite pour quelqu'un qui ne connaît ni le dépôt ni la
-cryptographie : ce qui s'est passé, si quelque chose est perdu, quoi faire. Les messages techniques
-restent, sous « Détails techniques » (replié), avec leur code.
+cycle, relais, installation interrompue, verrouillage, sauvegarde, restauration, révocation — et,
+pour chaque code, une phrase écrite pour quelqu'un qui ne connaît ni le dépôt ni la cryptographie
+(ce qui s'est passé, si quelque chose est perdu, quoi faire) et un CLASSEMENT : recommencer,
+recopier, attendre, abandonner ce coffre, autre appareil ou navigateur, autre. La page de relecture
+regroupe les conduites par classement. Les messages techniques restent, sous « Détails techniques »,
+avec leur code.
 
-Le cliquet (`tests/unit/coquille-parcours-conduites.test.mjs`) exige : chaque code du chemin a une
-conduite ; chaque code est un vrai code du dépôt ; chaque code de la coquille, de l'archive et de la
-restauration est sur le chemin OU écarté nommément (`CODES_HORS_DU_CHEMIN`, avec son motif — les
-refus du port restreint, de l'annonce du cadre et du contrat de messages, qu'aucun geste de la
-personne ne produit) ; aucune conduite ne porte de vocabulaire interne (numéro d'issue, nom de
-fichier, code, « voisin », « racine », « enveloppe », « Worker », « coquille »…), et le filtre MORD.
+Le cliquet (`tests/unit/coquille-parcours-conduites.test.mjs`) énumère les codes depuis les tables
+EXPORTÉES des six familles — coquille, stockage, enveloppe, dérivation, archive, import — et non
+plus depuis trois d'entre elles : vingt et un codes du stockage et de l'enveloppe, que le démarrage
+remonte tels quels, n'avaient pas de conduite (constat 4). Chaque code est sur le chemin, ou écarté
+par un motif « inatteignable depuis le parcours parce que … » que l'épreuve relit.
+
+- **Aucun refus n'arrive brut dans l'alerte** (constat 5). Les refus que la coquille écrit sans code
+  — une version mal tapée, une archive non choisie — sont reconnus et traduits ; un refus inconnu
+  reçoit la conduite générique, et son texte reste sous « Détails techniques ».
+- **Aucun texte montré ne porte de vocabulaire interne** (constat 11) : écrans, messages, statuts et
+  conduites passent le même filtre (numéro d'issue, nom de fichier, code, « voisin », « racine », «
+  enveloppe », « secteur », « génération », « sceau », « dérivation », « volume », « Worker », «
+  coquille »…), et le filtre mord sur chacun de ces mots seul.
 
 Les deux remarques des revues de #208 sont portées : l'écran de révocation dit que « les sauvegardes
 déjà faites restent ouvrables par les anciens moyens » ; un coffre antérieur au 13/09
 (`VAULT_COQUILLE_COFFRE_ANTERIEUR`) s'affiche sur l'écran `refuse` avec sa conduite.
 
-### 4. Les attentes annoncées avant
+### 5. Les attentes annoncées avant, et ce que l'écran ne dit pas pendant
 
 - **Ouvrir par une phrase** : l'annonce de l'ADR 0029 (le p95 mesuré par moteur), redite pour une
   personne, avec la borne mesurée sous charge (« jusqu'à une minute et demie ») et « l'onglet peut
   sembler figé ».
 - **Démarrer** : « environ deux minutes » avant le clic ; pendant, une PROGRESSION RÉELLE — le temps
   écoulé et le nombre de signes de vie (battements, ADR 0030 et #192) reçus du Worker depuis le
-  geste, annoncée toutes les dix secondes pour ne pas saturer un lecteur d'écran, et un `<progress>`
-  indéterminé. Ce n'est pas un pourcentage : le Worker ne publie aucun avancement du boot, et le
-  parcours n'en invente pas.
+  geste, annoncée toutes les dix secondes, et un `<progress>` indéterminé. Pendant le boot, l'écran
+  d'attente parle SEUL : les refus du relais ne sont annoncés qu'une fois un démarrage abouti (la
+  page d'attente du cadre fait refuser des requêtes, et c'est normal ; constat 6).
+- **Un geste en cours ferme ses boutons** (constat 8) : tant qu'une ligne publiée dit « en cours » —
+  démarrage, reprise, verrouillage, sauvegarde, restauration — ou qu'une ouverture calcule, les
+  boutons des gestes longs sont désactivés. Un second clic sur « Démarrer » faisait déclarer le
+  Worker mort par silence et perdait le démarrage : ce défaut est celui du Worker, instruit sous
+  #215 ; la page ne l'expose plus.
+- **Sous Firefox, la limite est dite AVANT toute attente** (constat 9). Sous Firefox, l'étape 4 du
+  parcours guidé n'aboutit pas dans cette version : la machine virtuelle y tourne environ six fois
+  plus lentement que sous Chromium, et Rails n'y a jamais répondu (ADR 0038) ; le parcours le dit
+  avant toute attente et propose Chrome ou Edge. L'écran `travailler-sans-application` n'offre ni «
+  Démarrer », ni d'étape qui exige l'application ; les étapes 1 et 2 disent la limite sous Firefox ;
+  aucune conduite n'envoie vers Firefox.
 - **Sauvegarder, restaurer, verrouiller** : l'ordre de grandeur, et « ne fermez pas l'onglet ».
 
-### 5. Accessibilité de base
+### 6. Accessibilité de base
 
-Un seul `h1` ; le titre d'étape est un `h2` qui reçoit le focus quand l'écran change (jamais au
-premier affichage, jamais en vue complète) ; les blocs cachés ne sont pas dans l'ordre de
-tabulation, et l'ordre du document est celui du parcours ; chaque champ a un `label` ; les attentes
-et les réussites sont annoncées par `role="status"` (`aria-live="polite"`), les refus par
-`role="alert"` ; les boutons disent ce qu'ils font (« Créer mon coffre », « Verrouiller mon coffre
-», « Restaurer ma sauvegarde sur cet appareil ») ; aucune information n'est portée par la couleur —
-il n'y a pas de couleur. P3 (#194) fera le reste.
+Un seul `h1` ; le titre de l'écran est un `h2` qui reçoit le focus quand l'écran CHANGE — jamais au
+premier affichage, y compris quand « Préparation » laisse place au premier écran réel (constat 12),
+jamais en vue complète ; les blocs cachés ne sont pas dans l'ordre de tabulation, et l'ordre du
+document est celui du parcours — l'application, à l'étape 4, vient avant « Continuer » ; chaque
+champ a un `label`, et **Entrée dans un champ vaut le clic sur son bouton** (il n'y a pas de
+`<form>` : la CSP porte `form-action 'none'`) ; les attentes et les réussites sont annoncées par
+`role="status"`, les refus par `role="alert"` ; les boutons disent ce qu'ils font ; aucune
+information n'est portée par la couleur — il n'y a pas de couleur. P3 (#194) fera le reste.
 
-### 6. La vue complète, pour les épreuves de frontière
+### 7. La vue complète est un paramètre de HARNAIS, et la relecture est générée
 
 `?vue=complete` montre tous les blocs à la fois et ouvre les détails techniques. Les épreuves
 navigateur et E2E existantes jouent les gestes dans tous les ordres, y compris ceux que le parcours
-n'offre pas (démarrer avant d'ouvrir, sauvegarder un coffre verrouillé) : elles chargent désormais
-la coquille avec ce paramètre. C'est la SEULE modification de ces épreuves — onze adresses, aucune
-assertion, aucun sélecteur ; les identifiants des gestes sont inchangés. Le lien « Afficher tous les
-gestes à la fois » est dans les détails techniques.
+n'offre pas : elles chargent la coquille avec ce paramètre — quinze adresses dans onze fichiers,
+aucune assertion, aucun sélecteur. **La vue à plat n'est pas un chemin du produit** : aucun lien de
+la page n'y mène (le lien « Afficher tous les gestes à la fois » de la première livraison est
+retiré, constat 2), le parcours n'y ferme aucun bouton et n'y écrit pas sa progression.
+
+La page de relecture non technique est PRODUITE depuis les textes servis
+(`tools/relecture-parcours.mjs`) et `tests/unit/coquille-parcours-relecture.test.mjs` exige que la
+régénération ne change rien : la première livraison, écrite à la main, omettait seize textes
+affichés (constat 7). Les trois questions par étape restent écrites dans l'outil.
 
 ## Conséquences
 
 - `public/index.html` est réordonné en blocs ; les nœuds d'état techniques (`#coquille-etat`,
-  `#cycle-etat`, `#portabilite-etat`, `#deverrouillage-refus`, les deux relevés…) sont sous «
-  Détails techniques ». `#deverrouillage-refus` et `#portabilite-refus` ne portent plus
-  `role="alert"` : un seul refus est annoncé, celui de `#parcours-refus`.
-- L'E2E `tests/e2e/parcours-utilisateur.spec.mjs` joue les neuf étapes par les libellés visibles, et
-  les trois échecs les plus probables (code mal recopié, mauvaise phrase, archive altérée).
+  `#cycle-etat`, `#portabilite-etat`, `#parcours-progression-etat`, `#deverrouillage-refus`, les
+  deux relevés…) sont sous « Détails techniques ». `#deverrouillage-refus` et `#portabilite-refus`
+  ne portent plus `role="alert"` : un seul refus est annoncé, celui de `#parcours-refus`.
+- `tests/browser/coquille-parcours.spec.mjs` joue l'ordre attaqué sur la coquille réelle, sans
+  machine virtuelle, sur les trois moteurs : aucun second `creer-recuperation` après un
+  rechargement, `?etape=` ramené, aucun lien vers la vue complète, aucun code en clair après la
+  confirmation et après l'ouverture par le code, la limite de Firefox. Ces épreuves étaient rouges
+  sur `e18470e`.
+- L'E2E `tests/e2e/parcours-utilisateur.spec.mjs` joue les neuf étapes par ce qu'une personne voit —
+  sans sélecteur CSS, les cadres par leur titre —, les trois échecs les plus probables, et ce que la
+  revue a trouvé en défaut ; son délai est de quinze minutes, pour qu'un blocage échoue vite et
+  laisse ses artefacts.
+- Dix-huit mutants portent sur les gardes du parcours (`tools/muter-gardes-coquille.mjs`).
 
 ## Limites
 
-1. **Un rechargement pendant l'étape 3** perd le code affiché (il n'est nulle part ailleurs, par
-   décision) : l'étape 3 revient à son annonce, et la personne crée un nouveau moyen de
-   récupération. L'ancien reste valable tant qu'il n'est pas révoqué.
-2. **L'étape 7 se joue sur un autre appareil ou une autre origine** : la coquille d'origine ne voit
+1. **Un code rendu puis perdu ne se remplace pas.** Le constat mesuré par la revue : un second geste
+   « créer un moyen de récupération », quand un moyen existe déjà, affiche un code qui n'ouvre ni le
+   coffre, ni sa sauvegarde restaurée ; seul le premier ouvre. C'est un défaut du GESTE, instruit
+   sous #214, hors de cette tranche. Le parcours ne recrée donc jamais un code ; une personne qui a
+   perdu le sien avant de le recopier abandonne un coffre encore vide (§ 2). La première rédaction
+   de cette limite — « l'ancien reste valable tant qu'il n'est pas révoqué » — était fausse.
+2. **Un coffre dont la progression manque, mais qui porte un code** (créé avant cette livraison, ou
+   dont `parcours.json` n'a pas pu être écrit — l'échec est publié sous « Détails techniques »)
+   exige de vérifier le code en ouvrant le coffre par lui avant l'étape 4. C'est la lecture prudente
+   : elle ne fait sauter aucune étape.
+3. **Un second clic sur « Démarrer »** pendant un boot fait déclarer le Worker mort par silence
+   (#215) : la page ferme le bouton, le défaut du Worker demeure et s'instruit sur `main`.
+4. **Sous Firefox**, le parcours n'est prouvé que jusqu'à l'étape 4, qui dit sa limite (§ 5).
+5. **L'étape 7 se joue sur un autre appareil ou une autre origine** : la coquille d'origine ne voit
    pas la restauration ; elle explique et laisse continuer.
-3. **Le focus déplacé compte comme une activité** (`SIGNAUX_DACTIVITE`, ADR 0031) : un changement
+6. **Le focus déplacé compte comme une activité** (`SIGNAUX_DACTIVITE`, ADR 0031) : un changement
    d'écran repousse une fois le délai d'inactivité. Il suit toujours un geste de la personne.
-4. **Les pages d'attente du cadre** (P1, ADR 0038) gardent leur texte ; le parcours affiche la
-   conduite des refus de relais qu'il voit passer au relevé, sous l'application.
-5. **La passkey** n'est proposée que si le navigateur connaît `PublicKeyCredential`, et l'écran dit
-   qu'elle peut ne pas convenir ; l'E2E ne la joue pas (aucun authentificateur dans l'exécutant).
-6. **Que le texte soit compris** n'est pas prouvé par une épreuve : c'est la relecture par une
+7. **Les pages d'attente du cadre** (P1, ADR 0038) gardent leur texte.
+8. **La passkey** n'est proposée que si le navigateur connaît `PublicKeyCredential`, et l'écran dit
+   qu'elle peut ne pas convenir ; aucune épreuve ne la joue (aucun authentificateur dans
+   l'exécutant).
+9. **Que le texte soit compris** n'est pas prouvé par une épreuve : c'est la relecture par une
    personne non technique désignée par le mainteneur, le gate humain de la tranche.
