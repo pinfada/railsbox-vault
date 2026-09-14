@@ -1,31 +1,56 @@
 // Le PARCOURS GUIDÉ, côté page (#193, ADR 0040).
 //
-// Ce module de branchement ne décide rien : l'écran à montrer, où mène un geste et ce qu'une personne
-// lit d'un refus sont dans `src/coquille/parcours.mjs` et `src/coquille/conduites-du-parcours.mjs`.
-// Il n'appelle AUCUN geste du Worker de confiance : les boutons sont ceux de l'interface, du cycle et
-// de la portabilité, branchés par leurs modules. Il LIT ce que ces modules publient — les relevés et
-// les lignes d'état, dont c'est l'objet — et il montre, cache, nomme et annonce.
+// Ce module de branchement ne décide rien : l'écran à montrer, où mène un geste, ce que la progression
+// en retient et ce qu'une personne lit sont dans `src/coquille/parcours.mjs` et
+// `src/coquille/conduites-du-parcours.mjs`. Il n'appelle AUCUN geste du Worker de confiance : les
+// boutons sont ceux de l'interface, du cycle et de la portabilité, branchés par leurs modules. Il LIT
+// ce que ces modules publient — les relevés et les lignes d'état, dont c'est l'objet — et il montre,
+// cache, nomme, ferme les boutons d'un geste en cours et annonce.
+//
+// Il écrit UNE chose hors du document : la progression, dans `parcours.json` à la racine de l'OPFS de
+// l'origine de confiance (voir `parcours.mjs`). Jamais le code, jamais la phrase. En vue complète —
+// le paramètre de HARNAIS des épreuves de frontière — il n'écrit rien : la progression y reste en
+// mémoire, parce que ces épreuves jouent les gestes dans des ordres que le parcours n'offre pas.
 //
 // Il n'importe aucun des quatre autres modules de branchement, et ne leur parle pas : le relevé
 // public suffit.
 
 import { annonceDAttente, moteurProbable } from "/src/coquille/attente-annoncee.mjs";
-import { conduiteHumaine } from "/src/coquille/conduites-du-parcours.mjs";
+import {
+  conduiteDUnRefusSansCode,
+  conduiteDUnRefusSansCodeConnu,
+  conduiteHumaine,
+} from "/src/coquille/conduites-du-parcours.mjs";
 import {
   COFFRE,
   ECRANS,
+  FICHIER_DE_PROGRESSION,
+  GESTES_LONGS,
+  LIMITE_DE_FIREFOX,
+  MESSAGES,
+  PROGRESSION_INITIALE,
   SOUS_ETATS_DU_CODE,
+  STATUTS,
+  annonceDeLaSaisie,
   attenteDeLaPhrase,
   codeEnFinDeTexte,
   coffreObserve,
   confirmerLaRecopie,
   ecranCourant,
+  ecrireProgression,
+  etapeAdmise,
   etapeApres,
   etapeDeLURL,
   etapeSuivante,
   lireLigneDEtat,
+  lireProgression,
   ouSuisJe,
+  ouvertureParLeCode,
+  progressionApres,
   progressionDuDemarrage,
+  refusDeRelaisAAnnoncer,
+  texteSansCode,
+  unGesteEstEnCours,
 } from "/src/coquille/parcours.mjs";
 import { CODES_REFUS_COQUILLE } from "/src/coquille/refus-de-coquille.mjs";
 import { etatDeLaSaisie } from "/src/coquille/saisie-du-code.mjs";
@@ -36,11 +61,12 @@ const SECTIONS = ["deverrouillage", "feuille", "cycle", "portabilite"];
 /** Cadence de la progression annoncée pendant un démarrage : assez rare pour un lecteur d'écran. */
 const ANNONCE_DE_PROGRESSION_MS = 10_000;
 
-/** Ce que « Où suis-je ? » dit de chaque étape. */
-const STATUTS = Object.freeze({
-  passee: "étape précédente",
-  "en-cours": "vous êtes ici",
-  "a-venir": "à venir",
+/** Entrée dans un champ vaut le clic sur le bouton qu'il sert (revue de la PR #213, constat 12). */
+const ENTREE_VAUT = Object.freeze({
+  "saisie-phrase": ["ouvrir-par-phrase"],
+  "saisie-code": ["ouvrir-par-code"],
+  "ancre-version": ["ouvrir-par-code", "ouvrir-par-phrase"],
+  "parcours-confirmation-code": ["parcours-confirmer-code"],
 });
 
 /**
@@ -53,8 +79,11 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   doc.documentElement.dataset.vue = vueComplete ? "complete" : "parcours";
   if (vueComplete) noeud("details-techniques").open = true;
 
+  const moteur = moteurProbable(navigateur.userAgent);
   const etat = {
-    pointeur: etapeDeLURL(parametres.get("etape")),
+    progression: PROGRESSION_INITIALE,
+    progressionLue: false,
+    pointeur: null,
     sousEtatDuCode: SOUS_ETATS_DU_CODE.annonce,
     revocationFaite: false,
     coffre: COFFRE.inconnu,
@@ -62,17 +91,20 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     /** L'écran montré au moment du dernier geste : c'est de lui qu'un geste réussi fait avancer. */
     ecranDuGeste: null,
     demarrage: null,
-    refusDeRelaisVus: {},
+    /** Les refus du relais comptés quand l'application a démarré ; `null` tant qu'elle ne l'est pas. */
+    referenceDesRefus: null,
   };
 
   const attenteDeLaPhraseAnnoncee = attenteDeLaPhrase(
-    annonceDAttente({ moyen: "phrase", moteur: moteurProbable(navigateur.userAgent) }).attenteMs,
+    annonceDAttente({ moyen: "phrase", moteur }).attenteMs,
   );
   const passkeyConnue = typeof globalThis.PublicKeyCredential !== "undefined";
 
+  /** La seule écriture du parcours dans le document : jamais un code de récupération en clair. */
   function dire(id, texte) {
     const cible = noeud(id);
-    if (cible !== null && cible.textContent !== texte) cible.textContent = texte;
+    const propre = texteSansCode(texte);
+    if (cible !== null && cible.textContent !== propre) cible.textContent = propre;
   }
 
   function lireJson(id) {
@@ -83,12 +115,70 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     }
   }
 
-  function allerA(etape) {
-    if (etape === null || etape === etat.pointeur) return;
-    etat.pointeur = etape;
+  // --- La PROGRESSION : lue une fois, réécrite à chaque pas --------------------------------------------
+
+  let ecritureEnCours = Promise.resolve();
+
+  async function fichierDeProgression(creer) {
+    const racine = await navigateur.storage.getDirectory();
+    return racine.getFileHandle(FICHIER_DE_PROGRESSION, { create: creer });
+  }
+
+  async function chargerLaProgression() {
+    if (vueComplete || typeof navigateur.storage?.getDirectory !== "function") {
+      return PROGRESSION_INITIALE;
+    }
+    try {
+      const fichier = await (await fichierDeProgression(false)).getFile();
+      dire("parcours-progression-etat", "progression:lue");
+      return lireProgression(await fichier.text());
+    } catch (erreur) {
+      // Aucun fichier : une personne qui commence. Toute autre erreur est DITE, et la progression
+      // initiale est la lecture prudente — elle ne fait sauter aucune étape.
+      const nom = erreur?.name ?? "Error";
+      dire(
+        "parcours-progression-etat",
+        nom === "NotFoundError" ? "progression:absente" : `progression:illisible:${nom}`,
+      );
+      return PROGRESSION_INITIALE;
+    }
+  }
+
+  function persister() {
+    if (vueComplete || typeof navigateur.storage?.getDirectory !== "function") return;
+    const texte = ecrireProgression(etat.progression);
+    ecritureEnCours = ecritureEnCours.then(async () => {
+      try {
+        const flux = await (await fichierDeProgression(true)).createWritable();
+        await flux.write(texte);
+        await flux.close();
+        dire("parcours-progression-etat", "progression:ecrite");
+      } catch (erreur) {
+        // Non écrite, la progression reste en mémoire : un rechargement ramènera à une étape plus
+        // prudente, jamais plus loin. L'échec est publié, pas avalé.
+        dire("parcours-progression-etat", `progression:non-ecrite:${erreur?.name ?? "Error"}`);
+      }
+    });
+  }
+
+  function pas(evenement, valeur = null) {
+    etat.progression = progressionApres(etat.progression, evenement, valeur);
+    persister();
+  }
+
+  function reecrireLURL(etape) {
     const url = new URL(loc.href);
+    if (url.searchParams.get("etape") === String(etape)) return;
     url.searchParams.set("etape", String(etape));
     hist.replaceState(hist.state, "", url);
+  }
+
+  function allerA(etape) {
+    if (etape === null) return;
+    if (etape > etat.progression.etapeAtteinte) pas("etape", etape);
+    if (etape === etat.pointeur) return;
+    etat.pointeur = etape;
+    reecrireLURL(etape);
   }
 
   // --- Ce qui est MONTRÉ ----------------------------------------------------------------------------
@@ -123,21 +213,13 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       "ouvrir-par-passkey",
       creation ? "Créer mon coffre avec une passkey" : "Ouvrir mon coffre avec ma passkey",
     );
-    dire(
-      "parcours-passkey",
-      creation
-        ? "Ce navigateur connaît les passkeys (empreinte, visage, code de l'appareil ou clé de " +
-            "sécurité). Toutes ne savent pas protéger un coffre : si la vôtre ne le sait pas, " +
-            "RailsBox Vault vous le dira, et vous pourrez utiliser une phrase."
-        : "Ce coffre s'ouvre aussi avec votre passkey.",
-    );
-    const suivante = etapeSuivante(ecranId);
-    dire("parcours-continuer", suivante === null ? "Continuer" : `Continuer : ${suivante.titre}`);
+    dire("parcours-passkey", creation ? MESSAGES.passkeyALaCreation : MESSAGES.passkeyALOuverture);
+    dire("parcours-continuer", MESSAGES.continuer(etapeSuivante(ecranId)?.titre ?? null));
   }
 
   function rendreOuSuisJe(ecranId) {
     const liste = noeud("ou-suis-je-liste");
-    const lignes = ouSuisJe(ecranId).map(
+    const lignes = ouSuisJe(ecranId, etat.progression.origine).map(
       ({ rang, titre, statut }) => `${rang}. ${titre} — ${STATUTS[statut]}`,
     );
     const actuelles = [...liste.children].map((element) => element.textContent);
@@ -151,49 +233,83 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     );
   }
 
-  function rendre({ deplacerLeFocus = true } = {}) {
-    const releve = lireJson("deverrouillage-releve");
-    const rapport = lireJson("coquille-rapport");
+  /** Les boutons d'un geste long sont FERMÉS tant qu'un geste est en cours (#215). */
+  function fermerLesGestesEnCours() {
+    if (vueComplete) return;
+    const enCours = unGesteEstEnCours({
+      ligneDuCycle: noeud("cycle-etat")?.textContent,
+      ligneDePortabilite: noeud("portabilite-etat")?.textContent,
+      attenteDuDeverrouillage: noeud("deverrouillage-attente")?.textContent,
+    });
+    for (const id of GESTES_LONGS) {
+      const bouton = noeud(id);
+      if (bouton !== null && bouton.disabled !== enCours) bouton.disabled = enCours;
+    }
+  }
+
+  function ecranAMontrer(releve, rapport) {
     etat.coffre = coffreObserve({
       etat: rapport.etat,
       texteDesMoyens: noeud("deverrouillage-moyens").textContent,
       moyensProposes: releve.moyensProposes,
       dernierRefus: releve.dernierRefus,
     });
-    const ecranId = ecranCourant({
+    if (!etat.progressionLue) return "chargement";
+    return ecranCourant({
       pointeur: etat.pointeur,
       coffre: etat.coffre,
       moyens: releve.moyensProposes ?? [],
-      aRecuperation: (releve.moyensProposes ?? []).includes("recuperation"),
+      progression: etat.progression,
       sousEtatDuCode: etat.sousEtatDuCode,
       revocationFaite: etat.revocationFaite,
       refus: releve.dernierRefus ?? null,
+      moteur,
     });
-    if (ecranId.startsWith("code-")) allerA(3);
-    if (ecranId === "refuse") dire("parcours-refus", conduiteHumaine(releve.dernierRefus));
-    const change = ecranId !== etat.ecran;
-    etat.ecran = ecranId;
+  }
+
+  function rendre({ deplacerLeFocus = true } = {}) {
+    const releve = lireJson("deverrouillage-releve");
+    const ecranId = ecranAMontrer(releve, lireJson("coquille-rapport"));
     const ecran = ECRANS[ecranId];
+    if (ecran.etape === 3) allerA(3);
+    if (ecran.etape === 4 && etat.pointeur === 3) allerA(4);
+    if (ecranId === "refuse") dire("parcours-refus", conduiteHumaine(releve.dernierRefus));
+    const precedent = etat.ecran;
+    etat.ecran = ecranId;
     const visibles = blocsDeLEcran(ecranId, releve);
-    dire("parcours-rang", ecran.etape === null ? "" : `Étape ${ecran.etape} sur 9`);
+    dire("parcours-rang", ecran.etape === null ? "" : MESSAGES.rang(ecran.etape));
     dire("parcours-titre", ecran.titre);
     dire("parcours-ce-qui-va-se-passer", ecran.ceQuiVaSePasser);
-    dire("parcours-attendu", `Ce que vous avez à faire : ${ecran.attendu}`);
+    dire("parcours-attendu", MESSAGES.attendu(ecran.attendu));
+    const limite = moteur === "firefox" && (ecranId === "creer" || ecranId === "choisir");
+    dire("parcours-limite", limite ? LIMITE_DE_FIREFOX : "");
     const attente = ecran.attente ?? (visibles.includes("phrase") ? attenteDeLaPhraseAnnoncee : "");
-    dire("parcours-attente-annoncee", attente === "" ? "" : `Durée : ${attente}`);
+    dire("parcours-attente-annoncee", attente === "" ? "" : MESSAGES.duree(attente));
     const suivante = etapeSuivante(ecranId);
-    dire("parcours-suivante", suivante === null ? "" : `Étape suivante : ${suivante.titre}.`);
+    dire("parcours-suivante", suivante === null ? "" : MESSAGES.suivante(suivante.titre));
+    // Le code tapé ne survit pas à son champ : un champ vidé par un geste vide aussi son annonce.
+    if ((noeud("saisie-code")?.value ?? "") === "") dire("parcours-code-lu", "");
     nommerLesGestes(ecranId);
     montrerLesBlocs(visibles);
     rendreOuSuisJe(ecranId);
-    if (change && deplacerLeFocus && !vueComplete) noeud("parcours-titre").focus();
+    fermerLesGestesEnCours();
+    // Le focus suit un CHANGEMENT d'écran, jamais le premier affichage (ADR 0040, § 5).
+    const premierAffichage = precedent === null || precedent === "chargement";
+    if (precedent !== ecranId && !premierAffichage && deplacerLeFocus && !vueComplete) {
+      noeud("parcours-titre").focus();
+    }
   }
 
   // --- Ce qui est OBSERVÉ ---------------------------------------------------------------------------
 
-  function refuser(code, texteSansCode = null) {
+  function refuser(code) {
     dire("parcours-reussite", "");
-    dire("parcours-refus", code === null ? (texteSansCode ?? "") : conduiteHumaine(code));
+    dire("parcours-refus", conduiteHumaine(code));
+  }
+
+  function refuserSansCode(texte) {
+    dire("parcours-reussite", "");
+    dire("parcours-refus", texte);
   }
 
   function reussir(texte) {
@@ -203,29 +319,32 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
 
   function surOuverture(avant) {
     if (avant === COFFRE.ouvert || etat.coffre !== COFFRE.ouvert) return;
-    allerA(etapeApres(etat.ecranDuGeste ?? etat.ecran, "ouverture", etat.pointeur));
+    const depuis = etat.ecranDuGeste ?? etat.ecran;
+    if (depuis === "choisir") pas("coffre-cree");
+    // Ouvert par le code de la feuille : la feuille est juste, c'est la meilleure des confirmations.
+    if (ouvertureParLeCode(depuis)) pas("code-confirme");
+    allerA(etapeApres(depuis, "ouverture", etat.pointeur));
     dire("parcours-attente", "");
-    reussir("Votre coffre est ouvert.");
+    reussir(MESSAGES.coffreOuvert);
   }
 
   function surLigneDuCycle() {
     const ligne = lireLigneDEtat(noeud("cycle-etat").textContent);
     if (ligne === null) return;
     if (ligne.evenement !== "demarrage-en-cours") arreterLaProgression();
+    if (ligne.evenement !== "application-demarree") etat.referenceDesRefus = null;
     if (ligne.evenement === "demarrage-en-cours") return demarrerLaProgression();
     if (ligne.evenement === "application-demarree") {
-      return reussir("L'application est démarrée : elle s'affiche ci-dessous.");
+      etat.referenceDesRefus = { ...(lireJson("coquille-rapport").refusDeRequete ?? {}) };
+      return reussir(MESSAGES.applicationDemarree);
     }
     if (ligne.evenement === "sans-application")
       return refuser(CODES_REFUS_COQUILLE.applicationAbsente);
     if (ligne.evenement === "verrouillage-en-cours") {
-      return dire("parcours-attente", "Verrouillage en cours… Ne fermez pas l'onglet.");
+      return dire("parcours-attente", MESSAGES.verrouillageEnCours);
     }
     if (ligne.evenement === "reprise-en-cours") {
-      return dire(
-        "parcours-attente",
-        "Reprise de l'installation en cours… Ne fermez pas l'onglet.",
-      );
+      return dire("parcours-attente", MESSAGES.repriseEnCours);
     }
     if (ligne.evenement.endsWith("-refuse") || ligne.evenement.endsWith("-refusee")) {
       dire("parcours-attente", "");
@@ -236,32 +355,28 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   function surLigneDePortabilite() {
     const ligne = lireLigneDEtat(noeud("portabilite-etat").textContent);
     if (ligne === null || ligne.evenement === "au-repos") return;
+    if (ligne.evenement === "sauvegarde-en-cours") {
+      return dire("parcours-attente", MESSAGES.sauvegardeEnCours);
+    }
     if (ligne.evenement.endsWith("-en-cours")) {
-      const quoi = ligne.evenement.startsWith("sauvegarde") ? "Sauvegarde" : "Restauration";
-      return dire("parcours-attente", `${quoi} en cours… Ne fermez pas l'onglet.`);
+      return dire("parcours-attente", MESSAGES.restaurationEnCours);
     }
     dire("parcours-attente", "");
     if (ligne.evenement.endsWith("-refusee")) return refuser(ligne.code);
-    const rapport = lireJson("coquille-rapport");
-    if (ligne.evenement === "sauvegarde-prete") {
-      return reussir(
-        "Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien " +
-          "ne s'est enregistré, cliquez sur « Enregistrer la sauvegarde ». Pensez à redémarrer " +
-          "l'application si vous voulez continuer à l'utiliser.",
-      );
-    }
+    if (ligne.evenement === "sauvegarde-prete") return reussir(MESSAGES.sauvegardePrete);
     if (ligne.evenement === "restauree") {
+      pas("restauree");
       allerA(etapeApres("restaurer", "restauree", etat.pointeur));
-      return reussir(
-        "Sauvegarde restaurée et vérifiée. Ouvrez maintenant le coffre avec votre code.",
-      );
+      return reussir(MESSAGES.restauree);
     }
     if (ligne.evenement === "revoque") {
       etat.revocationFaite = true;
-      const revocation = rapport.portabilite?.revocation ?? {};
+      const revocation = lireJson("coquille-rapport").portabilite?.revocation ?? {};
+      const retires = revocation.nombreRetires ?? 0;
       return reussir(
-        `${revocation.nombreRetires ?? 0} moyen(s) retiré(s). Nouveau numéro de version à noter sur ` +
-          `votre feuille : ${revocation.versionEnveloppe ?? "?"}.`,
+        retires === 0
+          ? MESSAGES.revoqueSansRien
+          : MESSAGES.revoque(retires, revocation.versionEnveloppe ?? "?"),
       );
     }
   }
@@ -271,12 +386,20 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (texte === "") return;
     dire("parcours-attente", "");
     const code = codeEnFinDeTexte(texte);
-    refuser(code, code === null ? texte : null);
+    if (code !== null) return refuser(code);
+    // Un refus sans code n'arrive JAMAIS brut dans l'alerte : il reste sous « détails techniques ».
+    refuserSansCode(conduiteDUnRefusSansCode(texte));
   }
 
   function surRefusDePortabiliteSansCode() {
     const texte = noeud("portabilite-refus").textContent.trim();
-    if (texte !== "" && codeEnFinDeTexte(texte) === null) refuser(null, texte);
+    if (texte === "" || codeEnFinDeTexte(texte) !== null) return;
+    const connue = conduiteDUnRefusSansCodeConnu(texte);
+    if (connue !== null) return refuserSansCode(connue);
+    // Un refus de geste écrit aussi sa LIGNE d'état, qui porte le code : c'est elle qui l'a dit.
+    const ligne = lireLigneDEtat(noeud("portabilite-etat").textContent);
+    if (ligne?.evenement.endsWith("-refusee") !== true)
+      refuserSansCode(conduiteDUnRefusSansCode(texte));
   }
 
   function surEtatDeLaCoquille() {
@@ -293,24 +416,24 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   }
 
   function surRapport() {
+    if (etat.ecran !== "travailler") return;
     const rapport = lireJson("coquille-rapport");
-    for (const [code, compte] of Object.entries(rapport.refusDeRequete ?? {})) {
-      const vus = etat.refusDeRelaisVus[code] ?? 0;
-      etat.refusDeRelaisVus[code] = compte;
-      if (compte > vus && etat.ecran === "travailler") refuser(code);
-    }
+    const nouveaux = refusDeRelaisAAnnoncer({
+      comptes: rapport.refusDeRequete ?? {},
+      reference: etat.referenceDesRefus,
+    });
+    if (nouveaux.length === 0) return;
+    etat.referenceDesRefus = { ...(rapport.refusDeRequete ?? {}) };
+    refuser(nouveaux[0]);
   }
 
   function surFeuille() {
     const code = noeud("feuille-code").textContent.trim();
     if (code === "" || etat.sousEtatDuCode !== SOUS_ETATS_DU_CODE.annonce) return;
     etat.sousEtatDuCode = SOUS_ETATS_DU_CODE.feuille;
-    const version = /\d+/.exec(noeud("feuille-version").textContent)?.[0] ?? "?";
-    dire(
-      "parcours-consigne-feuille",
-      `Numéro de version à noter à côté du code : ${version}. Recopiez les 7 groupes de 4 symboles ` +
-        `exactement. Ce code ne sera plus jamais affiché.`,
-    );
+    const version = /\d+/.exec(noeud("feuille-version").textContent)?.[0] ?? null;
+    pas("code-rendu", version === null ? null : Number(version));
+    dire("parcours-consigne-feuille", MESSAGES.consigneDeLaFeuille(version ?? "?"));
   }
 
   // --- La PROGRESSION d'un démarrage : du temps écoulé et des signes de vie réels ---------------------
@@ -364,28 +487,33 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   geste("parcours-confirmer-code", () => {
     const saisie = noeud("parcours-confirmation-code");
     const verdict = confirmerLaRecopie(saisie.value, noeud("feuille-code").textContent);
-    if (!verdict.confirme) return refuser(null, verdict.message);
+    if (!verdict.confirme) return refuserSansCode(verdict.message);
     saisie.value = "";
     // Le code QUITTE la page dès qu'il est confirmé : il n'a plus rien à y faire.
-    noeud("feuille-code").textContent = "";
+    dire("feuille-code", "");
     etat.sousEtatDuCode = SOUS_ETATS_DU_CODE.annonce;
+    pas("code-confirme");
     allerA(etapeApres("code-confirmation", "code-confirme", etat.pointeur));
-    reussir("Code confirmé. Gardez bien votre feuille, loin de cet appareil.");
+    reussir(verdict.message);
   });
 
   noeud("saisie-code")?.addEventListener("input", () => {
-    const lue = etatDeLaSaisie(noeud("saisie-code").value);
-    dire(
-      "parcours-code-lu",
-      lue.symbolesLus === 0
-        ? ""
-        : lue.envoyable
-          ? `Code complet (${lue.decoupe}).`
-          : lue.code !== null
-            ? conduiteHumaine(lue.code)
-            : `${lue.symbolesLus} symbole(s) sur 28 : ${lue.decoupe}`,
-    );
+    dire("parcours-code-lu", annonceDeLaSaisie(etatDeLaSaisie(noeud("saisie-code").value)));
   });
+
+  for (const [champ, boutons] of Object.entries(ENTREE_VAUT)) {
+    noeud(champ)?.addEventListener("keydown", (evenement) => {
+      if (evenement.key !== "Enter" || evenement.isComposing) return;
+      const cible = boutons
+        .map(noeud)
+        .find(
+          (bouton) => bouton !== null && !bouton.disabled && bouton.closest("[hidden]") === null,
+        );
+      if (cible === undefined) return;
+      evenement.preventDefault();
+      cible.click();
+    });
+  }
 
   // Tout clic sur un bouton efface le message précédent, et retient l'écran d'où part le geste.
   doc.querySelector("main")?.addEventListener(
@@ -418,7 +546,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   observer("deverrouillage-refus", surRefusDeDeverrouillage);
   observer("deverrouillage-attente", () => {
     if (noeud("deverrouillage-attente").textContent.trim() !== "") {
-      dire("parcours-attente", "Ouverture en cours… Ne fermez pas l'onglet.");
+      dire("parcours-attente", MESSAGES.ouvertureEnCours);
     }
   });
   observer("feuille-code", surFeuille);
@@ -429,5 +557,14 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   observer("coquille-rapport", surRapport);
 
   rendre({ deplacerLeFocus: false });
+  void chargerLaProgression().then((progression) => {
+    etat.progression = progression;
+    etat.progressionLue = true;
+    const demandee = etapeDeLURL(parametres.get("etape"));
+    etat.pointeur = etapeAdmise(demandee, progression);
+    // Une étape demandée au-delà de la progression est RAMENÉE, et l'URL le dit.
+    if (demandee !== null && demandee !== etat.pointeur) reecrireLURL(etat.pointeur);
+    rendre({ deplacerLeFocus: false });
+  });
   return Object.freeze({ rendre });
 }

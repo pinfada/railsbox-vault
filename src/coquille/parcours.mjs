@@ -2,30 +2,40 @@
 //
 // Ce module ne décide AUCUN geste. Les gestes — ouvrir, créer le moyen de récupération, démarrer,
 // verrouiller, sauvegarder, restaurer, révoquer — sont ceux de `src/coquille/`, inchangés. Il décide
-// deux choses seulement, et elles sont d'ORDRE :
+// des choses d'ORDRE seulement :
 //
-//  - quel ÉCRAN montrer, d'après ce que la coquille a publié (le coffre, ses moyens) et l'étape que
-//    la personne a atteinte ;
-//  - où mène chaque geste réussi.
+//  - quel ÉCRAN montrer, d'après ce que la coquille a publié (le coffre, ses moyens), la PROGRESSION
+//    de la personne et le moteur ;
+//  - où mène chaque geste réussi, et ce que la progression en retient ;
+//  - ce que la page DIT : chaque texte montré à la personne est ici, et nulle part ailleurs, pour que
+//    la page de relecture (`tools/relecture-parcours.mjs`) le reproduise sans dériver.
 //
 // Il est pur — ni DOM, ni stockage, ni horloge — pour être éprouvé sans navigateur, comme le reste du
 // répertoire. La page (`public/coquille/parcours-de-la-page.mjs`) ne fait que l'appliquer.
 //
-// ## Où vit l'étape atteinte
+// ## Où vit la progression (revue de la PR #213, constats 1 et 2)
 //
-// Dans l'URL (`?etape=N`), et nulle part ailleurs. Le verrouillage RECHARGE la coquille (ADR 0031) :
-// sans trace, la personne reviendrait à l'étape 1 après chaque verrouillage. Un stockage du navigateur
-// aurait tenu la trace, mais la coquille n'écrit dans aucun (`coquille-deverrouillage.test.mjs`), et
-// un numéro d'étape n'a rien à y faire. L'URL survit au rechargement, se lit, et ne porte rien du
-// coffre.
+// Dans un petit fichier de l'OPFS de l'origine de confiance, `parcours.json`, que la page lit au
+// chargement et réécrit à chaque pas. Il porte l'étape atteinte, d'où vient le coffre (créé ici ou
+// restauré), et trois faits sur le code de récupération : rendu ou non, sa version, confirmé ou non.
+// JAMAIS le code : `ecrireProgression` ne recopie que ces champs, un par un.
 //
-// ## Ce que l'écran ne fait jamais
+// L'URL (`?etape=N`) seule ne suffisait pas. Elle se réécrit à la main : `?etape=4` sautait la
+// confirmation. Et un rechargement à l'étape 3 perdait le fait « un code a été rendu » : le parcours
+// en faisait créer un SECOND, que le geste ne sait pas ouvrir (#214). Désormais l'URL ne fait que
+// DEMANDER une étape, et `etapeAdmise` la ramène à l'étape atteinte. `localStorage` a été écarté : il
+// est synchrone, lisible par tout script de l'origine sans API de fichier, et la coquille s'interdit
+// d'y écrire (`coquille-deverrouillage.test.mjs`).
 //
-// Il ne laisse pas avancer au-delà de l'étape 3 tant que le code de récupération n'est pas confirmé
-// dans cette page (« sans lui, une phrase oubliée est un coffre perdu »). Un coffre ouvert sans moyen
-// de récupération ramène toujours à l'étape 3.
+// ## Ce que l'ordre protège, et ce qu'il ne protège pas
+//
+// Il protège la personne contre sa propre perte : on n'avance pas au-delà de l'étape 3 tant que le
+// code n'est pas CONFIRMÉ — recopié juste depuis la feuille affichée, ou ouvrant le coffre. Il ne
+// protège pas contre quelqu'un qui tient le navigateur : le fichier se réécrit, et les gardes de
+// sécurité restent dans les gestes du Worker de confiance.
 
 import { DERIVATION_ERROR_CODES } from "../vm/derivation/derivation-errors.mjs";
+import { SYMBOLES_TOTAL } from "../vm/derivation/code-de-recuperation.mjs";
 import { conduiteHumaine } from "./conduites-du-parcours.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { VERDICTS, etatDeLaSaisie } from "./saisie-du-code.mjs";
@@ -81,17 +91,78 @@ export const BLOCS = Object.freeze([
   "confirmation",
   "application",
   "verrouiller",
+  "espace-de-travail",
   "sauvegarde",
   "restauration",
   "revocation",
   "continuer",
-  "espace-de-travail",
 ]);
+
+/**
+ * Ce que les blocs portent de VISIBLE : leurs boutons et leurs champs, tels que `public/index.html`
+ * les nomme (ou que la page les renomme). La page de relecture les liste ; une épreuve relit qu'ils
+ * sont bien ceux du document.
+ */
+export const LIBELLES_DES_BLOCS = Object.freeze({
+  commencer: ["« Commencer »", "« J'ai déjà une sauvegarde »"],
+  ancre: ["« Numéro de version noté sur votre feuille (facultatif) » (champ)"],
+  phrase: ["« Votre phrase » (champ)", "« Créer mon coffre » ou « Ouvrir mon coffre »"],
+  passkey: ["« Créer mon coffre avec une passkey » ou « Ouvrir mon coffre avec ma passkey »"],
+  perdu: ["« J'ai oublié ma phrase : utiliser mon code de récupération »"],
+  code: ["« Code de récupération » (champ)", "« Ouvrir mon coffre avec le code »"],
+  "feuille-annonce": ["« Afficher mon code de récupération »"],
+  feuille: ["« J'ai recopié mon code »"],
+  confirmation: [
+    "« Code recopié depuis votre feuille » (champ)",
+    "« Confirmer mon code »",
+    "« Revoir mon code »",
+  ],
+  application: [
+    "« Démarrer l'application »",
+    "« Reprendre l'installation » (seulement si une installation a été interrompue)",
+  ],
+  verrouiller: ["« Verrouiller mon coffre »"],
+  "espace-de-travail": ["l'application elle-même, une fois démarrée"],
+  sauvegarde: ["« Sauvegarder mon coffre »", "« Enregistrer la sauvegarde » (lien)"],
+  restauration: [
+    "« Fichier de sauvegarde » (champ)",
+    "« Restaurer ma sauvegarde sur cet appareil »",
+  ],
+  revocation: ["« Révoquer tous les autres moyens d'ouvrir ce coffre »"],
+  continuer: ["« Continuer : » suivi du titre de l'étape suivante"],
+});
 
 const ENVIRON_DEUX_MINUTES =
   "Le premier démarrage installe l'application : comptez environ deux minutes, parfois davantage " +
   "sur un appareil lent ou occupé. Les démarrages suivants sont plus courts. Pendant ce temps, " +
   "l'onglet peut sembler figé : ne le fermez pas. La progression s'affiche sous le bouton.";
+
+const QUELQUES_SECONDES_DE_VERROUILLAGE = "Le verrouillage prend quelques secondes.";
+
+/**
+ * La limite de Firefox, dite AVANT toute attente (revue de la PR #213, constat 9 ; ADR 0038) : sous
+ * ce moteur, la machine qui porte l'application tourne environ six fois plus lentement, et son
+ * démarrage n'a jamais abouti.
+ */
+export const LIMITE_DE_FIREFOX =
+  "Dans cette version de RailsBox Vault, l'application ne démarre pas dans Firefox : elle y " +
+  "fonctionne environ six fois plus lentement, et son démarrage n'a jamais abouti. Pour travailler " +
+  "dans l'application, utilisez Chrome ou Edge récents.";
+
+/**
+ * Ce qu'une personne fait d'un code perdu, tant que remplacer un code n'existe pas (#214). Le coffre
+ * est encore vide à l'étape 3 : l'abandonner ne coûte rien, et la conduite dit COMMENT.
+ */
+const SI_LE_CODE_EST_PERDU =
+  "Si vous n'avez pas recopié ce code et que vous n'avez encore rien mis dans ce coffre, " +
+  "abandonnez-le et recommencez : dans les réglages du navigateur, effacez les données de ce site, " +
+  "rechargez la page, puis créez un nouveau coffre. Remplacer un code perdu n'est pas encore " +
+  "possible. Si vous avez déjà mis des données dans ce coffre, n'effacez rien et demandez de l'aide.";
+
+const UN_CODE_A_DEJA_ETE_RENDU =
+  "Un code de récupération a déjà été affiché pour ce coffre. Il ne sera plus jamais affiché, et " +
+  "RailsBox Vault n'en crée pas un second. Pour continuer, ouvrez votre coffre avec ce code, en le " +
+  "lisant sur votre feuille : c'est ainsi que l'on vérifie que votre feuille est juste.";
 
 /**
  * Les écrans. Chacun porte son étape, un titre, ce qui va se passer, ce qui est attendu, l'attente
@@ -158,8 +229,25 @@ export const ECRANS = Object.freeze({
       "sur votre papier. Vous ne pourrez pas continuer tant qu'il n'est pas confirmé.",
     attendu:
       "Tapez les 28 symboles de votre feuille (les tirets et les espaces sont libres), puis cliquez " +
-      "sur « Confirmer mon code ».",
+      "sur « Confirmer mon code ». Vous pouvez aussi appuyer sur Entrée.",
     blocs: ["confirmation"],
+  }),
+  "code-verifier": ecran(3, {
+    titre: "Vérifier votre code de récupération",
+    ceQuiVaSePasser: UN_CODE_A_DEJA_ETE_RENDU,
+    attendu:
+      "Tapez le code de votre feuille, puis cliquez sur « Ouvrir mon coffre avec le code ». " +
+      SI_LE_CODE_EST_PERDU,
+    blocs: ["code"],
+  }),
+  "code-a-verifier": ecran(3, {
+    titre: "Vérifier votre code de récupération",
+    ceQuiVaSePasser: UN_CODE_A_DEJA_ETE_RENDU,
+    attendu:
+      "Cliquez sur « Verrouiller mon coffre », puis ouvrez-le avec le code de votre feuille. " +
+      SI_LE_CODE_EST_PERDU,
+    attente: QUELQUES_SECONDES_DE_VERROUILLAGE,
+    blocs: ["verrouiller"],
   }),
   travailler: ecran(4, {
     titre: "Travailler dans l'application",
@@ -172,6 +260,15 @@ export const ECRANS = Object.freeze({
     attente: ENVIRON_DEUX_MINUTES,
     blocs: ["application", "espace-de-travail", "continuer"],
   }),
+  "travailler-sans-application": ecran(4, {
+    titre: "Travailler dans l'application",
+    ceQuiVaSePasser: LIMITE_DE_FIREFOX,
+    attendu:
+      "Ouvrez RailsBox Vault dans Chrome ou Edge récents et créez-y votre coffre. Le coffre créé dans " +
+      "ce navigateur-ci est encore vide : vous pouvez l'abandonner en effaçant les données de ce site " +
+      "dans les réglages du navigateur.",
+    blocs: [],
+  }),
   verrouiller: ecran(5, {
     titre: "Verrouiller votre coffre",
     ceQuiVaSePasser:
@@ -179,7 +276,7 @@ export const ECRANS = Object.freeze({
       "lisible sans votre secret. La page se recharge ensuite. Le coffre se verrouille aussi tout seul " +
       "après un moment sans activité.",
     attendu: "Cliquez sur « Verrouiller mon coffre », puis rouvrez-le avec votre phrase.",
-    attente: "Le verrouillage prend quelques secondes.",
+    attente: QUELQUES_SECONDES_DE_VERROUILLAGE,
     blocs: ["verrouiller", "espace-de-travail"],
   }),
   rouvrir: ecran(5, {
@@ -237,7 +334,7 @@ export const ECRANS = Object.freeze({
       "Si vous avez oublié votre phrase, le code de récupération rouvre votre coffre. Pour vous " +
       "entraîner, verrouillez d'abord le coffre : vous le rouvrirez avec le code.",
     attendu: "Cliquez sur « Verrouiller mon coffre ».",
-    attente: "Le verrouillage prend quelques secondes.",
+    attente: QUELQUES_SECONDES_DE_VERROUILLAGE,
     blocs: ["verrouiller"],
   }),
   recuperer: ecran(8, {
@@ -269,8 +366,7 @@ export const ECRANS = Object.freeze({
       "déjà faites restent ouvrables par les anciens moyens : détruisez-les si elles risquent de " +
       "tomber entre de mauvaises mains, puis faites une nouvelle sauvegarde.",
     attendu:
-      "Corrigez le numéro de version sur votre feuille. Si vous avez révoqué votre code de " +
-      "récupération, créez-en un nouveau.",
+      "Notez sur votre feuille le numéro de version indiqué ci-dessus. Il n'y a rien d'autre à faire.",
     blocs: [],
   }),
 });
@@ -285,6 +381,176 @@ function ecran(rang, { titre, ceQuiVaSePasser, attendu, attente = null, blocs })
     attente,
     blocs: Object.freeze([...blocs]),
   });
+}
+
+/**
+ * Les MESSAGES que la page écrit en plus des écrans : réussites, attentes en cours, consignes. Ceux
+ * qui portent une valeur sont des fonctions ; la page de relecture les appelle avec « N ».
+ */
+export const MESSAGES = Object.freeze({
+  rang: (rang) => `Étape ${rang} sur ${ETAPES.length}`,
+  attendu: (texte) => `Ce que vous avez à faire : ${texte}`,
+  duree: (texte) => `Durée : ${texte}`,
+  suivante: (titre) => `Étape suivante : ${titre}.`,
+  continuer: (titre) => (titre === null ? "Continuer" : `Continuer : ${titre}`),
+  passkeyALaCreation:
+    "Ce navigateur connaît les passkeys (empreinte, visage, code de l'appareil ou clé de " +
+    "sécurité). Toutes ne savent pas protéger un coffre : si la vôtre ne le sait pas, RailsBox " +
+    "Vault vous le dira, et vous pourrez utiliser une phrase.",
+  passkeyALOuverture: "Ce coffre s'ouvre aussi avec votre passkey.",
+  consigneDeLaFeuille: (version) =>
+    `Numéro de version à noter à côté du code : ${version}. Recopiez les 7 groupes de 4 symboles ` +
+    `exactement. Ce code ne sera plus jamais affiché.`,
+  recopieIncomplete: (lus, total) => `Il manque des symboles : ${lus} sur ${total}.`,
+  recopieDUnAutreCode:
+    "Ce code est bien formé, mais ce n'est pas celui qui vient d'être affiché. Relisez votre " +
+    "feuille : vous avez peut-être recopié un autre code. Si vous ne l'avez pas noté, cliquez sur « " +
+    "Revoir mon code ».",
+  codeConfirme: "Code confirmé. Gardez bien votre feuille, loin de cet appareil.",
+  saisieIncomplete: (lus, total) => `${lus} symbole(s) sur ${total}.`,
+  saisieComplete: "Code complet : aucune faute de recopie détectée.",
+  coffreOuvert: "Votre coffre est ouvert.",
+  ouvertureEnCours: "Ouverture en cours… Ne fermez pas l'onglet.",
+  verrouillageEnCours: "Verrouillage en cours… Ne fermez pas l'onglet.",
+  repriseEnCours: "Reprise de l'installation en cours… Ne fermez pas l'onglet.",
+  sauvegardeEnCours: "Sauvegarde en cours… Ne fermez pas l'onglet.",
+  restaurationEnCours: "Restauration en cours… Ne fermez pas l'onglet.",
+  applicationDemarree: "L'application est démarrée : elle s'affiche ci-dessous.",
+  demarrageEnCours: (secondes, vie) =>
+    `Démarrage en cours depuis ${secondes} seconde(s), sur environ deux minutes. ${vie}`,
+  signesDeVie: (nombre) => `Le coffre travaille : ${nombre} signe(s) de vie reçu(s).`,
+  premierSigneDeVie: "En attente du premier signe de vie du coffre.",
+  sauvegardePrete:
+    "Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien ne " +
+    "s'est enregistré, cliquez sur « Enregistrer la sauvegarde ». Pensez à redémarrer " +
+    "l'application si vous voulez continuer à l'utiliser.",
+  restauree: "Sauvegarde restaurée et vérifiée. Ouvrez maintenant le coffre avec votre code.",
+  revoque: (nombre, version) =>
+    `${nombre} moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : ${version}.`,
+  revoqueSansRien:
+    "Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.",
+  codeMasque: "(code masqué)",
+});
+
+/** Ce que « Où suis-je ? » dit de chaque étape. */
+export const STATUTS = Object.freeze({
+  passee: "étape précédente",
+  "en-cours": "vous êtes ici",
+  "a-venir": "à venir",
+  "non-jouee": "non jouée sur cet appareil : le coffre y a été restauré",
+});
+
+/** D'où vient le coffre de cet appareil, pour le parcours. */
+export const ORIGINES_DU_COFFRE = Object.freeze({
+  creation: "creation",
+  restauration: "restauration",
+});
+
+/** Le fichier OPFS de la progression, à la racine de l'origine de confiance. */
+export const FICHIER_DE_PROGRESSION = "parcours.json";
+
+/** La progression d'une personne qui n'a encore rien fait. */
+export const PROGRESSION_INITIALE = figerProgression({
+  version: 1,
+  etapeAtteinte: 1,
+  origine: ORIGINES_DU_COFFRE.creation,
+  code: { rendu: false, version: null, confirme: false },
+});
+
+function figerProgression({ etapeAtteinte, origine, code }) {
+  return Object.freeze({
+    version: 1,
+    etapeAtteinte,
+    origine,
+    code: Object.freeze({ rendu: code.rendu, version: code.version, confirme: code.confirme }),
+  });
+}
+
+/**
+ * Relit la progression écrite. Tout ce qui n'a pas EXACTEMENT sa forme vaut la progression initiale :
+ * un fichier abîmé ou réécrit à la main ne fait jamais sauter une étape.
+ *
+ * @param {string | null | undefined} texte
+ */
+export function lireProgression(texte) {
+  let brut;
+  try {
+    brut = JSON.parse(String(texte ?? ""));
+  } catch {
+    return PROGRESSION_INITIALE;
+  }
+  if (!progressionBienFormee(brut)) return PROGRESSION_INITIALE;
+  return figerProgression(brut);
+}
+
+function progressionBienFormee(brut) {
+  if (brut === null || typeof brut !== "object" || Array.isArray(brut)) return false;
+  if (Object.keys(brut).sort().join(",") !== "code,etapeAtteinte,origine,version") return false;
+  const { version, etapeAtteinte, origine, code } = brut;
+  if (version !== 1 || !Number.isInteger(etapeAtteinte) || etapeAtteinte < 1) return false;
+  if (etapeAtteinte > ETAPES.length || !Object.values(ORIGINES_DU_COFFRE).includes(origine)) {
+    return false;
+  }
+  if (code === null || typeof code !== "object") return false;
+  if (Object.keys(code).sort().join(",") !== "confirme,rendu,version") return false;
+  const versionAdmise =
+    code.version === null || (Number.isInteger(code.version) && code.version > 0);
+  return typeof code.rendu === "boolean" && typeof code.confirme === "boolean" && versionAdmise;
+}
+
+/** Le texte écrit dans `parcours.json` : les champs, un par un, et rien d'autre. */
+export function ecrireProgression(progression) {
+  return JSON.stringify(figerProgression(progression));
+}
+
+/**
+ * Ce qu'un pas du parcours change à la progression. Rend une NOUVELLE progression.
+ *
+ * @param {object} progression
+ * @param {"etape" | "coffre-cree" | "code-rendu" | "code-confirme" | "restauree"} evenement
+ * @param {number | null} [valeur] l'étape (`etape`) ou la version du code (`code-rendu`)
+ */
+export function progressionApres(progression, evenement, valeur = null) {
+  if (evenement === "etape") {
+    const etapeAtteinte = Math.max(progression.etapeAtteinte, valeur);
+    return figerProgression({ ...progression, etapeAtteinte });
+  }
+  // Un coffre NEUF n'hérite de rien : ni d'une confirmation, ni d'un code d'un coffre abandonné.
+  if (evenement === "coffre-cree")
+    return figerProgression({ ...PROGRESSION_INITIALE, etapeAtteinte: 3 });
+  if (evenement === "code-rendu") {
+    return figerProgression({
+      ...progression,
+      code: { rendu: true, version: valeur, confirme: false },
+    });
+  }
+  if (evenement === "code-confirme") {
+    return figerProgression({
+      ...progression,
+      etapeAtteinte: Math.max(progression.etapeAtteinte, 4),
+      code: { ...progression.code, rendu: true, confirme: true },
+    });
+  }
+  if (evenement === "restauree") {
+    return figerProgression({
+      ...PROGRESSION_INITIALE,
+      origine: ORIGINES_DU_COFFRE.restauration,
+      etapeAtteinte: 8,
+    });
+  }
+  throw new Error(`Événement de progression inconnu : ${evenement}`);
+}
+
+/**
+ * L'étape que la page admet : celle que l'URL DEMANDE, jamais au-delà de celle que la personne a
+ * atteinte. Sans demande, la personne reprend là où elle en était.
+ *
+ * @param {number | null} demandee
+ * @param {{ etapeAtteinte: number }} progression
+ */
+export function etapeAdmise(demandee, progression) {
+  if (demandee === null) return progression.etapeAtteinte;
+  return Math.min(demandee, progression.etapeAtteinte);
 }
 
 /**
@@ -312,7 +578,7 @@ export function coffreObserve({
   return COFFRE.absent;
 }
 
-/** Les sous-états de l'étape 3, tenus en mémoire par la page, jamais ailleurs. */
+/** Les sous-états de l'étape 3 quand la feuille est affichée DANS CETTE PAGE. */
 export const SOUS_ETATS_DU_CODE = Object.freeze({
   annonce: "annonce",
   feuille: "feuille",
@@ -333,27 +599,31 @@ export function etapeDeLURL(texte) {
 /**
  * L'ÉCRAN à montrer. C'est la seule fonction qui choisit, et elle ne choisit que parmi `ECRANS`.
  *
- * @param {{ pointeur: number | null, coffre: string, moyens?: string[], aRecuperation?: boolean,
- *           sousEtatDuCode?: string, revocationFaite?: boolean, refus?: string | null }} observation
+ * @param {{ pointeur: number | null, coffre: string, moyens?: string[], progression?: object,
+ *           sousEtatDuCode?: string, revocationFaite?: boolean, refus?: string | null,
+ *           moteur?: string }} observation
  * @returns {string} une clé de `ECRANS`
  */
 export function ecranCourant({
   pointeur,
   coffre,
   moyens = [],
-  aRecuperation = false,
+  progression = PROGRESSION_INITIALE,
   sousEtatDuCode = SOUS_ETATS_DU_CODE.annonce,
   revocationFaite = false,
   refus = null,
+  moteur = "chromium",
 }) {
   // Une restauration COUPÉE se répare par le même geste (ADR 0039, décision 4) : l'écran qui la
   // montre est celui de la restauration, et non un refus sans issue.
   if (coffre === COFFRE.refuse)
     return refus === CODE_RESTAURATION_INTERROMPUE ? "restaurer" : "refuse";
   if (coffre === COFFRE.absent) return ecranSansCoffre(pointeur);
-  if (coffre === COFFRE.verrouille) return ecranVerrouille(pointeur, moyens);
+  if (coffre === COFFRE.verrouille) return ecranVerrouille(pointeur, moyens, progression);
   if (coffre === COFFRE.ouvert) {
-    return ecranOuvert({ pointeur, aRecuperation, sousEtatDuCode, revocationFaite });
+    const aRecuperation = moyens.includes("recuperation");
+    const etat = { pointeur, aRecuperation, progression, sousEtatDuCode, revocationFaite, moteur };
+    return ecranOuvert(etat);
   }
   return "chargement";
 }
@@ -364,14 +634,31 @@ function ecranSansCoffre(pointeur) {
   return "creer";
 }
 
-function ecranVerrouille(pointeur, moyens) {
+function ecranVerrouille(pointeur, moyens, progression) {
   const ouvrableSansCode = moyens.includes("phrase") || moyens.includes("webauthn-prf");
-  if (!ouvrableSansCode || pointeur === 8) return "recuperer";
+  if (!ouvrableSansCode) return "recuperer";
+  // Un code a été rendu, et rien ne dit qu'il a été recopié juste : c'est lui qui rouvre.
+  if (moyens.includes("recuperation") && !progression.code.confirme) return "code-verifier";
+  if (pointeur === 8) return "recuperer";
   return "rouvrir";
 }
 
-function ecranOuvert({ pointeur, aRecuperation, sousEtatDuCode, revocationFaite }) {
-  if (!aRecuperation || pointeur === 3) return `code-${sousEtatDuCode}`;
+function ecranOuvert({
+  pointeur,
+  aRecuperation,
+  progression,
+  sousEtatDuCode,
+  revocationFaite,
+  moteur,
+}) {
+  // Aucun moyen de récupération : le premier se crée ici. Ce n'est jamais un SECOND code (#214).
+  if (!aRecuperation) return `code-${sousEtatDuCode}`;
+  if (!progression.code.confirme) {
+    // La feuille est dans cette page : on la recopie. Sinon, un code a été rendu ailleurs, ou avant
+    // un rechargement : on le vérifie, on n'en crée pas un autre.
+    if (sousEtatDuCode !== SOUS_ETATS_DU_CODE.annonce) return `code-${sousEtatDuCode}`;
+    return "code-a-verifier";
+  }
   const parEtape = {
     5: "verrouiller",
     6: "sauvegarder",
@@ -379,7 +666,8 @@ function ecranOuvert({ pointeur, aRecuperation, sousEtatDuCode, revocationFaite 
     8: "recuperer-preparer",
     9: revocationFaite ? "termine" : "revoquer",
   };
-  return parEtape[pointeur] ?? "travailler";
+  const choisi = parEtape[pointeur] ?? "travailler";
+  return choisi === "travailler" && moteur === "firefox" ? "travailler-sans-application" : choisi;
 }
 
 /**
@@ -397,6 +685,7 @@ export function etapeApres(ecranId, evenement, pointeur) {
     "creer:j-ai-une-sauvegarde": 7,
     "choisir:ouverture": 3,
     "code-confirmation:code-confirme": 4,
+    "code-verifier:ouverture": 4,
     "travailler:continuer": 5,
     "rouvrir:ouverture": pointeur === 5 ? 6 : pointeur,
     "rouvrir:perdu": 8,
@@ -409,6 +698,14 @@ export function etapeApres(ecranId, evenement, pointeur) {
   return cible === undefined ? null : cible;
 }
 
+/**
+ * Ce qu'une ouverture réussie PROUVE du code : ouvert depuis un écran qui n'offre que le code, le
+ * coffre a été ouvert par le code de la feuille, et la feuille est donc juste.
+ */
+export function ouvertureParLeCode(ecranId) {
+  return ecranId === "code-verifier" || ecranId === "recuperer";
+}
+
 /** Le titre de l'étape qui suit un écran, pour l'annoncer. `null` après la dernière. */
 export function etapeSuivante(ecranId) {
   const rang = ECRANS[ecranId]?.etape ?? null;
@@ -417,18 +714,21 @@ export function etapeSuivante(ecranId) {
 }
 
 /**
- * « Où suis-je » : les neuf étapes, chacune passée, en cours ou à venir, par rapport à l'écran montré.
+ * « Où suis-je » : les neuf étapes, chacune passée, en cours, à venir — ou non jouée, pour un coffre
+ * restauré dont les six premières étapes ont eu lieu ailleurs.
  *
  * @param {string} ecranId
- * @returns {{ rang: number, titre: string, statut: "passee" | "en-cours" | "a-venir" }[]}
+ * @param {string} [origine]
+ * @returns {{ rang: number, titre: string, statut: string }[]}
  */
-export function ouSuisJe(ecranId) {
+export function ouSuisJe(ecranId, origine = ORIGINES_DU_COFFRE.creation) {
   const courante = ECRANS[ecranId]?.etape ?? 0;
-  return ETAPES.map(({ rang, titre }) => ({
-    rang,
-    titre,
-    statut: rang < courante ? "passee" : rang === courante ? "en-cours" : "a-venir",
-  }));
+  const restaure = origine === ORIGINES_DU_COFFRE.restauration;
+  return ETAPES.map(({ rang, titre }) => {
+    if (rang === courante) return { rang, titre, statut: "en-cours" };
+    if (rang > courante) return { rang, titre, statut: "a-venir" };
+    return { rang, titre, statut: restaure && rang < 7 ? "non-jouee" : "passee" };
+  });
 }
 
 /**
@@ -461,6 +761,80 @@ export function codeEnFinDeTexte(texte) {
 }
 
 /**
+ * Les boutons d'un GESTE LONG : un second clic pendant qu'il court perd le premier (#215). La page
+ * les ferme tant qu'un geste est en cours ; `ouvrir-par-code` n'y est pas, l'interface le tient.
+ */
+export const GESTES_LONGS = Object.freeze([
+  "ouvrir-par-phrase",
+  "ouvrir-par-passkey",
+  "creer-recuperation",
+  "demarrer-application",
+  "reprendre-l-installation",
+  "verrouiller-le-coffre",
+  "sauvegarder-le-coffre",
+  "restaurer-le-coffre",
+  "revoquer-en-urgence",
+]);
+
+/**
+ * Un geste est-il EN COURS, d'après ce que les gestes publient ?
+ *
+ * @param {{ ligneDuCycle?: string | null, ligneDePortabilite?: string | null,
+ *           attenteDuDeverrouillage?: string | null }} releves
+ */
+export function unGesteEstEnCours({
+  ligneDuCycle = null,
+  ligneDePortabilite = null,
+  attenteDuDeverrouillage = null,
+}) {
+  const enCours = (texte) => lireLigneDEtat(texte)?.evenement.endsWith("-en-cours") === true;
+  if (enCours(ligneDuCycle) || enCours(ligneDePortabilite)) return true;
+  return String(attenteDuDeverrouillage ?? "").trim() !== "";
+}
+
+/**
+ * Les refus du RELAIS qui méritent une alerte : seulement ceux comptés APRÈS qu'un démarrage a
+ * abouti. Pendant le boot, le cadre montre sa page d'attente et ses requêtes refusées sont normales
+ * (revue de la PR #213, constat 6) ; sans démarrage abouti, aucune.
+ *
+ * @param {{ comptes?: Record<string, number>, reference: Record<string, number> | null }} releves
+ * @returns {string[]} les codes dont le compte a augmenté depuis la référence
+ */
+export function refusDeRelaisAAnnoncer({ comptes = {}, reference }) {
+  if (reference === null) return [];
+  return Object.entries(comptes)
+    .filter(([code, compte]) => compte > (reference[code] ?? 0))
+    .map(([code]) => code);
+}
+
+/** Un code de récupération tel que la feuille et la découpe l'écrivent : sept groupes de quatre. */
+const CODE_EN_CLAIR = /[0-9A-Z]{4}(?:-[0-9A-Z]{4}){6}/g;
+
+/**
+ * Un texte que la page peut écrire : tout code de récupération en clair y est MASQUÉ. Aucun message
+ * du parcours n'en porte ; cette fonction garde qu'aucun n'en portera (revue de la PR #213,
+ * constat 3).
+ *
+ * @param {string} texte
+ */
+export function texteSansCode(texte) {
+  return String(texte ?? "").replace(CODE_EN_CLAIR, MESSAGES.codeMasque);
+}
+
+/**
+ * Ce que la région vive dit d'une saisie de code, à chaque frappe : un compte, jamais les symboles.
+ * Relire le code à voix haute à chaque frappe le ferait entendre à qui est à côté.
+ *
+ * @param {{ symbolesLus: number, envoyable: boolean, code: string | null }} etat
+ */
+export function annonceDeLaSaisie({ symbolesLus, envoyable, code }) {
+  if (symbolesLus === 0) return "";
+  if (envoyable) return MESSAGES.saisieComplete;
+  if (code !== null) return conduiteHumaine(code);
+  return MESSAGES.saisieIncomplete(symbolesLus, SYMBOLES_TOTAL);
+}
+
+/**
  * Juge la RECOPIE du code : la saisie doit être complète, passer sa somme de contrôle, et être le code
  * qui vient d'être affiché. Les trois refus se disent différemment, parce qu'ils appellent trois
  * gestes différents.
@@ -478,7 +852,7 @@ export function confirmerLaRecopie(saisie, feuille) {
     return {
       confirme: false,
       code: null,
-      message: `Il manque des symboles : ${etat.symbolesLus} sur ${affichee.symbolesLus}.`,
+      message: MESSAGES.recopieIncomplete(etat.symbolesLus, affichee.symbolesLus),
     };
   }
   if (!etat.envoyable) {
@@ -489,16 +863,18 @@ export function confirmerLaRecopie(saisie, feuille) {
     };
   }
   if (etat.decoupe !== affichee.decoupe) {
-    return {
-      confirme: false,
-      code: null,
-      message:
-        "Ce code est bien formé, mais ce n'est pas celui qui vient d'être affiché. Relisez votre " +
-        "feuille : vous avez peut-être recopié un autre code. Si vous ne l'avez pas noté, cliquez sur " +
-        "« Revoir mon code ».",
-    };
+    return { confirme: false, code: null, message: MESSAGES.recopieDUnAutreCode };
   }
-  return { confirme: true, code: null, message: "Code confirmé. Gardez bien votre feuille." };
+  return { confirme: true, code: null, message: MESSAGES.codeConfirme };
+}
+
+/** Le texte de l'attente d'une phrase, pour une durée déjà dite (« moins d'une seconde »). */
+export function texteDAttenteDeLaPhrase(duree) {
+  return (
+    `Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas deviner ` +
+    `votre phrase en essayant. Comptez ${duree} sur ce navigateur ; sur un appareil très occupé, ` +
+    `cela peut aller jusqu'à une minute et demie. L'onglet peut sembler figé : ne le fermez pas.`
+  );
 }
 
 /**
@@ -511,11 +887,7 @@ export function attenteDeLaPhrase(attenteMs) {
     attenteMs >= 1000
       ? `environ ${Math.round(attenteMs / 1000)} seconde(s)`
       : "moins d'une seconde";
-  return (
-    `Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas deviner ` +
-    `votre phrase en essayant. Comptez ${duree} sur ce navigateur ; sur un appareil très occupé, ` +
-    `cela peut aller jusqu'à une minute et demie. L'onglet peut sembler figé : ne le fermez pas.`
-  );
+  return texteDAttenteDeLaPhrase(duree);
 }
 
 /**
@@ -526,9 +898,6 @@ export function attenteDeLaPhrase(attenteMs) {
  */
 export function progressionDuDemarrage({ ecouleMs, signesDeVie }) {
   const secondes = Math.max(0, Math.round(ecouleMs / 1000));
-  const vie =
-    signesDeVie > 0
-      ? `Le coffre travaille : ${signesDeVie} signe(s) de vie reçu(s).`
-      : "En attente du premier signe de vie du coffre.";
-  return `Démarrage en cours depuis ${secondes} seconde(s), sur environ deux minutes. ${vie}`;
+  const vie = signesDeVie > 0 ? MESSAGES.signesDeVie(signesDeVie) : MESSAGES.premierSigneDeVie;
+  return MESSAGES.demarrageEnCours(secondes, vie);
 }
