@@ -8,17 +8,11 @@
 //
 // ## Le cliquet, PAR CONSTRUCTION (revue de la PR #213, constat 4)
 //
-// `tests/unit/coquille-parcours-conduites.test.mjs` énumère les codes depuis les listes EXPORTÉES —
-// coquille, stockage, enveloppe, dérivation, archive, import — et non depuis une liste recopiée ici.
-// Chaque code y est soit sur le chemin (`CODES_DU_CHEMIN`), avec sa conduite et son CLASSEMENT, soit
-// écarté NOMMÉMENT (`CODES_HORS_DU_CHEMIN`) par un motif qui commence par « inatteignable depuis le
-// parcours parce que ». Un code neuf dans une de ces familles fait rougir l'épreuve. Avant la revue,
-// le cliquet ne classait que la coquille, l'archive et l'import : vingt et un codes du stockage et de
-// l'enveloppe, que le démarrage remonte tels quels, arrivaient à la phrase générique.
-//
-// ## Ce que ce module ne décide pas
-//
-// Aucun refus. Il ne change ni un code, ni une garde, ni l'ordre d'un geste : il traduit.
+// `tests/unit/coquille-parcours-conduites.test.mjs` énumère les codes depuis les tables EXPORTÉES des
+// six familles. Chaque code est sur le chemin (`CODES_DU_CHEMIN`), avec conduite et CLASSEMENT, ou
+// écarté (`CODES_HORS_DU_CHEMIN`) par un motif « inatteignable depuis le parcours parce que ». Avant la
+// revue, vingt et un codes du stockage et de l'enveloppe arrivaient à la phrase générique. Ce module
+// ne décide aucun refus : il traduit.
 
 import { ARCHIVE_ERROR_CODES } from "../vm/archive-errors.mjs";
 import { DERIVATION_ERROR_CODES } from "../vm/derivation/derivation-errors.mjs";
@@ -661,11 +655,8 @@ export const CLASSEMENT_DES_CONDUITES = Object.freeze(
   Object.fromEntries(Object.entries(TABLE).map(([code, [classe]]) => [code, classe])),
 );
 
-/**
- * Les refus que la coquille écrit SANS code (revue de la PR #213, constat 5) : reconnus au début du
- * texte qu'elle écrit, et traduits. `source` est recopié des modules qui l'écrivent ; l'épreuve relit
- * qu'il y est toujours.
- */
+/** Les refus écrits SANS code (revue #213, constat 5), reconnus au début de leur `source` — que
+ *  l'épreuve relit dans les modules qui l'écrivent. */
 export const REFUS_SANS_CODE = Object.freeze({
   versionMalTapee: Object.freeze({
     source: "La version notée sur la feuille est un nombre entier, à partir de 1.",
@@ -688,36 +679,19 @@ export const TOUS_LES_CODES_DU_CHEMIN = Object.freeze(
   [...new Set(Object.values(CODES_DU_CHEMIN).flat())].sort(),
 );
 
-/**
- * Ce qu'une personne lit d'un refus. Un code inconnu n'est pas inventé : la phrase générique renvoie
- * au détail technique, qui porte le code.
- *
- * @param {string | null | undefined} code
- * @returns {string}
- */
+/** Ce qu'une personne lit d'un refus ; un code inconnu reçoit la phrase générique, jamais une invention. */
 export function conduiteHumaine(code) {
   const conduite = typeof code === "string" ? CONDUITES_DU_PARCOURS[code] : undefined;
   if (conduite !== undefined) return conduite;
   return CONDUITE_GENERIQUE;
 }
 
-/**
- * Ce qu'une personne lit d'un refus écrit SANS code. Jamais le texte technique lui-même : il reste
- * sous « détails techniques ».
- *
- * @param {string | null | undefined} texte
- * @returns {string}
- */
+/** Ce qu'une personne lit d'un refus SANS code : jamais le texte technique, qui reste en détail. */
 export function conduiteDUnRefusSansCode(texte) {
   return conduiteDUnRefusSansCodeConnu(texte) ?? CONDUITE_GENERIQUE;
 }
 
-/**
- * La conduite d'un refus sans code que la table RECONNAÎT, ou `null`.
- *
- * @param {string | null | undefined} texte
- * @returns {string | null}
- */
+/** La conduite d'un refus sans code que la table RECONNAÎT, ou `null`. */
 export function conduiteDUnRefusSansCodeConnu(texte) {
   const brut = String(texte ?? "").trim();
   const connu = Object.values(REFUS_SANS_CODE).find(({ source }) => brut.startsWith(source));
