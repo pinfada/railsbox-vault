@@ -1,18 +1,37 @@
 # Relecture du parcours guidé (P2, #193)
 
+<!-- Page GÉNÉRÉE par tools/relecture-parcours.mjs depuis les textes servis : ne pas la modifier à la main. -->
+
 Cette page est destinée à **une personne non technique**, désignée par le mainteneur, pour une
-relecture d'environ une demi-heure. Elle reproduit, **mot pour mot**, ce que la coquille affiche à
-chaque étape (source : `src/coquille/parcours.mjs` et `src/coquille/conduites-du-parcours.mjs`),
-puis pose trois questions par étape. Il n'y a pas de bonne réponse : ce qui compte est ce que vous
+relecture d'environ trois quarts d'heure. Elle reproduit, **mot pour mot**, ce que RailsBox Vault
+affiche à chaque étape — elle est produite à partir des mêmes textes que la page elle-même —, puis
+pose trois questions par étape. Il n'y a pas de bonne réponse : ce qui compte est ce que vous
 comprenez en lisant, et ce qui vous arrête.
 
 **Comment répondre** : sous chaque question, écrivez librement (quelques mots suffisent). Signalez
 aussi tout mot inconnu, toute phrase trop longue, et tout moment où vous ne sauriez pas quoi faire.
 Vos retours seront consignés dans la PR, sans votre nom.
 
-Chaque écran affiche, dans cet ordre : « Étape N sur 9 », le titre, « ce qui va se passer », « Ce
-que vous avez à faire : … », la durée quand le geste dure, les boutons, puis « Étape suivante : … »
-et un repli « Où suis-je ? » qui liste les neuf étapes.
+## Ce que chaque écran affiche
+
+Dans cet ordre : « Étape N sur 9 », le titre, ce qui va se passer, « Ce que vous avez à faire : … »,
+« Durée : … » quand le geste dure, les boutons, « Étape suivante : titre de l'étape. », puis un
+repli « Où suis-je ? » qui liste les neuf étapes. Le bouton qui fait passer à l'étape suivante
+s'appelle « Continuer : … ». Si un code de récupération devait apparaître ailleurs que sur sa
+feuille, il serait remplacé par « (code masqué) ».
+
+Dans « Où suis-je ? », chaque étape porte l'une de ces mentions :
+
+- étape précédente
+- vous êtes ici
+- à venir
+- non jouée sur cet appareil : le coffre y a été restauré
+
+### Écran : Préparation
+
+> RailsBox Vault vérifie ce que cet appareil contient déjà.
+>
+> Ce que vous avez à faire : Rien : patientez quelques secondes.
 
 ## Étape 1 sur 9 — Créer votre coffre
 
@@ -33,6 +52,12 @@ et un repli « Où suis-je ? » qui liste les neuf étapes.
 > coffre, choisissez plutôt « J'ai déjà une sauvegarde ».
 
 Boutons et champs : « Commencer », « J'ai déjà une sauvegarde ».
+
+Messages qui peuvent s'afficher sur cet écran :
+
+- Dans cette version de RailsBox Vault, l'application ne démarre pas dans Firefox : elle y
+  fonctionne environ six fois plus lentement, et son démarrage n'a jamais abouti. Pour travailler
+  dans l'application, utilisez Chrome ou Edge récents. (seulement dans Firefox)
 
 **Questions**
 
@@ -59,12 +84,23 @@ Boutons et champs : « Commencer », « J'ai déjà une sauvegarde ».
 > Ce que vous avez à faire : Tapez votre phrase, puis cliquez sur « Créer mon coffre ».
 >
 > Durée : Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas
-> deviner votre phrase en essayant. Comptez moins d'une seconde sur ce navigateur ; sur un appareil
-> très occupé, cela peut aller jusqu'à une minute et demie. L'onglet peut sembler figé : ne le
-> fermez pas.
+> deviner votre phrase en essayant. Comptez moins d'une seconde (dans Firefox : « environ 2
+> seconde(s) ») sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute
+> et demie. L'onglet peut sembler figé : ne le fermez pas.
 
-Boutons et champs : « Votre phrase (champ) », « Créer mon coffre », « Créer mon coffre avec une
-passkey (si le navigateur connaît les passkeys) ».
+Boutons et champs : « Votre phrase » (champ), « Créer mon coffre » ou « Ouvrir mon coffre », « Créer
+mon coffre avec une passkey » ou « Ouvrir mon coffre avec ma passkey ».
+
+Messages qui peuvent s'afficher sur cet écran :
+
+- Dans cette version de RailsBox Vault, l'application ne démarre pas dans Firefox : elle y
+  fonctionne environ six fois plus lentement, et son démarrage n'a jamais abouti. Pour travailler
+  dans l'application, utilisez Chrome ou Edge récents. (seulement dans Firefox)
+- Ce navigateur connaît les passkeys (empreinte, visage, code de l'appareil ou clé de sécurité).
+  Toutes ne savent pas protéger un coffre : si la vôtre ne le sait pas, RailsBox Vault vous le dira,
+  et vous pourrez utiliser une phrase.
+- Ouverture en cours… Ne fermez pas l'onglet.
+- Votre coffre est ouvert.
 
 **Questions**
 
@@ -104,16 +140,70 @@ Boutons et champs : « Afficher mon code de récupération ».
 
 Boutons et champs : « J'ai recopié mon code ».
 
+Messages qui peuvent s'afficher sur cet écran :
+
+- Numéro de version à noter à côté du code : N. Recopiez les 7 groupes de 4 symboles exactement. Ce
+  code ne sera plus jamais affiché.
+
 ### Écran : Confirmer votre code de récupération
 
 > Le code n'est plus affiché. Pour être sûr que votre feuille est juste, retapez-le en le lisant sur
 > votre papier. Vous ne pourrez pas continuer tant qu'il n'est pas confirmé.
 >
 > Ce que vous avez à faire : Tapez les 28 symboles de votre feuille (les tirets et les espaces sont
-> libres), puis cliquez sur « Confirmer mon code ».
+> libres), puis cliquez sur « Confirmer mon code ». Vous pouvez aussi appuyer sur Entrée.
 
-Boutons et champs : « Code recopié depuis votre feuille (champ) », « Confirmer mon code », « Revoir
+Boutons et champs : « Code recopié depuis votre feuille » (champ), « Confirmer mon code », « Revoir
 mon code ».
+
+Messages qui peuvent s'afficher sur cet écran :
+
+- Il manque des symboles : N sur 28.
+- Ce code est bien formé, mais ce n'est pas celui qui vient d'être affiché. Relisez votre feuille :
+  vous avez peut-être recopié un autre code. Si vous ne l'avez pas noté, cliquez sur « Revoir mon
+  code ».
+- Code confirmé. Gardez bien votre feuille, loin de cet appareil.
+
+### Écran : Vérifier votre code de récupération
+
+> Un code de récupération a déjà été affiché pour ce coffre. Il ne sera plus jamais affiché, et
+> RailsBox Vault n'en crée pas un second. Pour continuer, ouvrez votre coffre avec ce code, en le
+> lisant sur votre feuille : c'est ainsi que l'on vérifie que votre feuille est juste.
+>
+> Ce que vous avez à faire : Tapez le code de votre feuille, puis cliquez sur « Ouvrir mon coffre
+> avec le code ». Si vous n'avez pas recopié ce code et que vous n'avez encore rien mis dans ce
+> coffre, abandonnez-le et recommencez : dans les réglages du navigateur, effacez les données de ce
+> site, rechargez la page, puis créez un nouveau coffre. Remplacer un code perdu n'est pas encore
+> possible. Si vous avez déjà mis des données dans ce coffre, n'effacez rien et demandez de l'aide.
+
+Boutons et champs : « Code de récupération » (champ), « Ouvrir mon coffre avec le code ».
+
+Messages qui peuvent s'afficher sur cet écran :
+
+- N symbole(s) sur 28.
+- Code complet : aucune faute de recopie détectée.
+- Ouverture en cours… Ne fermez pas l'onglet.
+- Votre coffre est ouvert.
+
+### Écran : Vérifier votre code de récupération
+
+> Un code de récupération a déjà été affiché pour ce coffre. Il ne sera plus jamais affiché, et
+> RailsBox Vault n'en crée pas un second. Pour continuer, ouvrez votre coffre avec ce code, en le
+> lisant sur votre feuille : c'est ainsi que l'on vérifie que votre feuille est juste.
+>
+> Ce que vous avez à faire : Cliquez sur « Verrouiller mon coffre », puis ouvrez-le avec le code de
+> votre feuille. Si vous n'avez pas recopié ce code et que vous n'avez encore rien mis dans ce
+> coffre, abandonnez-le et recommencez : dans les réglages du navigateur, effacez les données de ce
+> site, rechargez la page, puis créez un nouveau coffre. Remplacer un code perdu n'est pas encore
+> possible. Si vous avez déjà mis des données dans ce coffre, n'effacez rien et demandez de l'aide.
+>
+> Durée : Le verrouillage prend quelques secondes.
+
+Boutons et champs : « Verrouiller mon coffre ».
+
+Messages qui peuvent s'afficher sur cet écran :
+
+- Verrouillage en cours… Ne fermez pas l'onglet.
 
 **Questions**
 
@@ -125,7 +215,8 @@ mon code ».
 
    _Votre réponse :_
 
-3. Si la confirmation échoue, le message vous dit-il quoi faire ?
+3. Si la page se recharge avant la confirmation, l'écran « Vérifier votre code » vous dit-il quoi
+   faire, y compris si vous avez perdu le code ?
 
    _Votre réponse :_
 
@@ -143,8 +234,28 @@ mon code ».
 > davantage sur un appareil lent ou occupé. Les démarrages suivants sont plus courts. Pendant ce
 > temps, l'onglet peut sembler figé : ne le fermez pas. La progression s'affiche sous le bouton.
 
-Boutons et champs : « Démarrer l'application », « Reprendre l'installation (seulement si une
-installation a été interrompue) », « Continuer : Verrouiller et rouvrir ».
+Boutons et champs : « Démarrer l'application », « Reprendre l'installation » (seulement si une
+installation a été interrompue), l'application elle-même, une fois démarrée, « Continuer : » suivi
+du titre de l'étape suivante.
+
+Messages qui peuvent s'afficher sur cet écran :
+
+- Démarrage en cours depuis N seconde(s), sur environ deux minutes. Le coffre travaille : N signe(s)
+  de vie reçu(s).
+- Le coffre travaille : N signe(s) de vie reçu(s).
+- En attente du premier signe de vie du coffre.
+- L'application est démarrée : elle s'affiche ci-dessous.
+- Reprise de l'installation en cours… Ne fermez pas l'onglet.
+
+### Écran : Travailler dans l'application
+
+> Dans cette version de RailsBox Vault, l'application ne démarre pas dans Firefox : elle y
+> fonctionne environ six fois plus lentement, et son démarrage n'a jamais abouti. Pour travailler
+> dans l'application, utilisez Chrome ou Edge récents.
+>
+> Ce que vous avez à faire : Ouvrez RailsBox Vault dans Chrome ou Edge récents et créez-y votre
+> coffre. Le coffre créé dans ce navigateur-ci est encore vide : vous pouvez l'abandonner en
+> effaçant les données de ce site dans les réglages du navigateur.
 
 **Questions**
 
@@ -173,7 +284,11 @@ installation a été interrompue) », « Continuer : Verrouiller et rouvrir ».
 >
 > Durée : Le verrouillage prend quelques secondes.
 
-Boutons et champs : « Verrouiller mon coffre ».
+Boutons et champs : « Verrouiller mon coffre », l'application elle-même, une fois démarrée.
+
+Messages qui peuvent s'afficher sur cet écran :
+
+- Verrouillage en cours… Ne fermez pas l'onglet.
 
 ### Écran : Rouvrir votre coffre
 
@@ -184,13 +299,20 @@ Boutons et champs : « Verrouiller mon coffre ».
 > Ce que vous avez à faire : Tapez votre phrase, puis cliquez sur « Ouvrir mon coffre ».
 >
 > Durée : Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas
-> deviner votre phrase en essayant. Comptez moins d'une seconde sur ce navigateur ; sur un appareil
-> très occupé, cela peut aller jusqu'à une minute et demie. L'onglet peut sembler figé : ne le
-> fermez pas.
+> deviner votre phrase en essayant. Comptez moins d'une seconde (dans Firefox : « environ 2
+> seconde(s) ») sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute
+> et demie. L'onglet peut sembler figé : ne le fermez pas.
 
-Boutons et champs : « Numéro de version noté sur votre feuille (facultatif) (champ) », « Votre
-phrase (champ) », « Ouvrir mon coffre », « J'ai oublié ma phrase : utiliser mon code de récupération
-».
+Boutons et champs : « Numéro de version noté sur votre feuille (facultatif) » (champ), « Votre
+phrase » (champ), « Créer mon coffre » ou « Ouvrir mon coffre », « Créer mon coffre avec une passkey
+» ou « Ouvrir mon coffre avec ma passkey », « J'ai oublié ma phrase : utiliser mon code de
+récupération ».
+
+Messages qui peuvent s'afficher sur cet écran :
+
+- Ce coffre s'ouvre aussi avec votre passkey.
+- Ouverture en cours… Ne fermez pas l'onglet.
+- Votre coffre est ouvert.
 
 **Questions**
 
@@ -220,8 +342,15 @@ phrase (champ) », « Ouvrir mon coffre », « J'ai oublié ma phrase : utiliser
 > Durée : La sauvegarde prend de quelques secondes à quelques minutes, selon la taille du coffre et
 > l'appareil. Ne fermez pas l'onglet.
 
-Boutons et champs : « Sauvegarder mon coffre », « Enregistrer la sauvegarde (lien, après la
-sauvegarde) », « Continuer : Restaurer sur un autre appareil ».
+Boutons et champs : « Sauvegarder mon coffre », « Enregistrer la sauvegarde » (lien), « Continuer :
+» suivi du titre de l'étape suivante.
+
+Messages qui peuvent s'afficher sur cet écran :
+
+- Sauvegarde en cours… Ne fermez pas l'onglet.
+- Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien ne s'est
+  enregistré, cliquez sur « Enregistrer la sauvegarde ». Pensez à redémarrer l'application si vous
+  voulez continuer à l'utiliser.
 
 **Questions**
 
@@ -248,7 +377,7 @@ sauvegarde) », « Continuer : Restaurer sur un autre appareil ».
 > Ce que vous avez à faire : Sur l'autre appareil, ouvrez RailsBox Vault, choisissez « J'ai déjà une
 > sauvegarde » et donnez le fichier. Pour continuer ici, cliquez sur le bouton ci-dessous.
 
-Boutons et champs : « Continuer : Récupérer votre coffre avec le code ».
+Boutons et champs : « Continuer : » suivi du titre de l'étape suivante.
 
 ### Écran : Restaurer une sauvegarde
 
@@ -261,7 +390,12 @@ Boutons et champs : « Continuer : Récupérer votre coffre avec le code ».
 > Durée : La restauration prend de quelques secondes à quelques minutes, selon la taille du coffre
 > et l'appareil. Ne fermez pas l'onglet.
 
-Boutons et champs : « Fichier de sauvegarde (champ) », « Restaurer ma sauvegarde sur cet appareil ».
+Boutons et champs : « Fichier de sauvegarde » (champ), « Restaurer ma sauvegarde sur cet appareil ».
+
+Messages qui peuvent s'afficher sur cet écran :
+
+- Restauration en cours… Ne fermez pas l'onglet.
+- Sauvegarde restaurée et vérifiée. Ouvrez maintenant le coffre avec votre code.
 
 **Questions**
 
@@ -290,6 +424,10 @@ Boutons et champs : « Fichier de sauvegarde (champ) », « Restaurer ma sauvega
 
 Boutons et champs : « Verrouiller mon coffre ».
 
+Messages qui peuvent s'afficher sur cet écran :
+
+- Verrouillage en cours… Ne fermez pas l'onglet.
+
 ### Écran : Récupérer votre coffre avec le code
 
 > Le code de récupération de votre feuille rouvre votre coffre, même sans la phrase. Le numéro de
@@ -298,8 +436,15 @@ Boutons et champs : « Verrouiller mon coffre ».
 > Ce que vous avez à faire : Tapez le numéro de version et le code de votre feuille, puis cliquez
 > sur « Ouvrir mon coffre avec le code ».
 
-Boutons et champs : « Numéro de version noté sur votre feuille (facultatif) (champ) », « Code de
-récupération (champ) », « Ouvrir mon coffre avec le code ».
+Boutons et champs : « Numéro de version noté sur votre feuille (facultatif) » (champ), « Code de
+récupération » (champ), « Ouvrir mon coffre avec le code ».
+
+Messages qui peuvent s'afficher sur cet écran :
+
+- N symbole(s) sur 28.
+- Code complet : aucune faute de recopie détectée.
+- Ouverture en cours… Ne fermez pas l'onglet.
+- Votre coffre est ouvert.
 
 **Questions**
 
@@ -329,14 +474,19 @@ récupération (champ) », « Ouvrir mon coffre avec le code ».
 
 Boutons et champs : « Révoquer tous les autres moyens d'ouvrir ce coffre ».
 
+Messages qui peuvent s'afficher sur cet écran :
+
+- N moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V.
+- Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.
+
 ### Écran : Parcours terminé
 
 > Seul le moyen que vous avez utilisé pour ouvrir ce coffre l'ouvre désormais. Les sauvegardes déjà
 > faites restent ouvrables par les anciens moyens : détruisez-les si elles risquent de tomber entre
 > de mauvaises mains, puis faites une nouvelle sauvegarde.
 >
-> Ce que vous avez à faire : Corrigez le numéro de version sur votre feuille. Si vous avez révoqué
-> votre code de récupération, créez-en un nouveau.
+> Ce que vous avez à faire : Notez sur votre feuille le numéro de version indiqué ci-dessus. Il n'y
+> a rien d'autre à faire.
 
 **Questions**
 
@@ -354,106 +504,65 @@ Boutons et champs : « Révoquer tous les autres moyens d'ouvrir ce coffre ».
 
 ## Messages quand quelque chose ne va pas
 
-Voici les messages qu'une personne peut lire quand une opération est refusée. Signalez ceux que vous
-ne comprenez pas, ou qui ne vous disent pas quoi faire.
+Voici les messages qu'une personne peut lire quand une opération est refusée, regroupés par ce
+qu'ils demandent de faire. Signalez ceux que vous ne comprenez pas, ou qui ne vous disent pas quoi
+faire.
 
-- Ce que vous avez présenté n'ouvre pas ce coffre : la phrase est peut-être mal tapée (majuscules,
-  accents, espaces), ou ce n'est pas le bon code. Rien n'a été perdu. Réessayez tranquillement : il
-  n'y a pas de nombre d'essais limité.
-- Le numéro de version que vous avez tapé est plus grand que celui de ce coffre. Relisez le numéro
-  sur votre feuille. Si vous n'êtes pas sûr, videz ce champ et réessayez : le coffre s'ouvrira, mais
-  sans vérifier qu'on ne lui a pas remis une copie plus ancienne.
-- Il n'y a pas de coffre sur cet appareil. Si vous en avez créé un ailleurs, restaurez sa sauvegarde
-  ici.
-- Le fichier qui protège ce coffre sur cet appareil est abîmé. N'effacez rien. Si vous avez une
-  sauvegarde, elle peut être restaurée sur un autre navigateur ou une autre adresse.
-- Le fichier qui protège ce coffre ne correspond pas à ce coffre. N'effacez rien, et restaurez votre
-  sauvegarde sur un emplacement vide.
-- Le fichier qui protège ce coffre est incomplet sur cet appareil. N'effacez rien. Si vous avez une
-  sauvegarde, restaurez-la sur un emplacement vide.
-- Le fichier qui protège ce coffre a été assemblé à partir de deux copies différentes. N'effacez
-  rien, et restaurez votre sauvegarde sur un emplacement vide.
-- Le fichier qui protège ce coffre n'est pas lisible. N'effacez rien, et restaurez votre sauvegarde
-  sur un emplacement vide.
-- Ce coffre ne peut pas prouver que son contenu est intact. Ne l'utilisez pas : restaurez votre
-  sauvegarde sur un emplacement vide.
-- Ce coffre a été fermé par une version plus récente de RailsBox Vault. Mettez l'application à jour,
-  puis réessayez. Rien n'a été perdu.
-- Les réglages enregistrés pour ouvrir ce coffre ne sont pas acceptables : ce coffre a peut-être été
-  modifié. Rien n'a été perdu. Ouvrez-le par votre code de récupération, ou restaurez votre
-  sauvegarde.
-- Cette phrase ne peut pas servir : elle est vide ou trop courte. Choisissez une phrase de plusieurs
-  mots, facile à retenir pour vous et difficile à deviner pour les autres.
-- Cette passkey ne sait pas protéger un coffre. Utilisez une phrase, ou une autre passkey.
-- L'appareil a reconnu votre passkey mais n'a pas rendu ce qu'il fallait pour ouvrir le coffre.
-  Utilisez une phrase, ou une autre passkey.
+### Ce qu'il faut faire : recommencer
+
+- Un coffre existe déjà sur cet appareil : rien n'a été écrasé. Rechargez la page, et ouvrez le
+  coffre existant.
 - La demande a été annulée, ou personne n'y a répondu à temps. Rien n'a été perdu. Vous pouvez
   recommencer.
-- Le code a une faute de recopie : une lettre ou un chiffre est mal lu, ou deux sont inversés.
-  Relisez votre feuille, symbole par symbole. Les tirets, les espaces et les majuscules n'ont pas
-  d'importance.
-- Le code de récupération ne s'affiche qu'une fois, et il a déjà été affiché. Si vous ne l'avez pas
-  recopié, créez-en un nouveau.
-- Ce navigateur ne peut pas faire le calcul qui protège le coffre. Essayez un autre navigateur
-  récent (Chrome, Edge ou Firefox).
-- Ce navigateur ne sait pas garder un coffre. Essayez un autre navigateur récent (Chrome, Edge ou
-  Firefox). Rien n'a été perdu.
 - Ce coffre est déjà ouvert dans un autre onglet ou une autre fenêtre. Fermez l'autre onglet, puis
   réessayez ici.
 - Il n'y a plus assez de place pour ce coffre dans ce navigateur. Libérez de l'espace sur
   l'appareil, puis réessayez.
 - La restauration de ce coffre n'est pas allée jusqu'au bout. Restaurez à nouveau la sauvegarde,
   puis ouvrez le coffre tout de suite après.
-- Le contenu de ce coffre ne correspond pas à sa sauvegarde : il a été modifié. Ne l'utilisez pas ;
-  restaurez une sauvegarde en laquelle vous avez confiance.
 - L'installation n'a pas pu être vérifiée sur cet appareil. Rien n'est déclaré installé :
   recommencez.
-- Les données de ce coffre ne lui appartiennent pas. N'effacez rien, et restaurez votre sauvegarde
-  sur un emplacement vide.
+- Le coffre doit d'abord être ouvert pour faire cela. Rouvrez-le, puis recommencez.
+- La préparation des données de ce coffre a été interrompue avant la fin : rien de ce que vous aviez
+  enregistré n'a été touché. Rechargez la page puis réessayez ; si le bouton « Reprendre
+  l'installation » apparaît, utilisez-le.
 - Le coffre doit d'abord être ouvert pour faire cela. Ouvrez-le, puis recommencez.
-- Ce coffre a été créé par une version d'essai antérieure au 13 septembre 2026, que cette version ne
-  sait pas ouvrir. Pour repartir de zéro : dans les réglages du navigateur, effacez les données de
-  ce site, rechargez la page, puis créez un nouveau coffre. Ce qui était dans l'ancien coffre sera
-  effacé.
-- L'application enregistrée sur cet appareil n'appartient pas à ce coffre. Rien n'a été ouvert ni
-  modifié. Pour repartir d'un emplacement vide, effacez les données de ce site dans les réglages du
-  navigateur, puis restaurez la sauvegarde de votre coffre.
-- Ce coffre a été utilisé après sa restauration, puis une partie de ses informations a disparu. Le
-  réparer effacerait ce que vous y avez écrit depuis : rien n'a été touché. N'effacez pas les
-  données de ce site, gardez votre sauvegarde, et demandez de l'aide.
 - Une restauration a été interrompue avant la fin : le coffre n'est pas prêt. Choisissez de nouveau
   le même fichier de sauvegarde et relancez la restauration.
-- Ce navigateur n'offre pas tout ce dont le coffre a besoin. Essayez un autre navigateur récent
-  (Chrome, Edge ou Firefox).
-- Ce qui a été saisi ou choisi n'a pas la forme attendue : le numéro de version est un nombre
-  entier, et une restauration demande un fichier de sauvegarde. Corrigez, puis réessayez.
 - Le coffre a cessé de répondre. Par sécurité, il ne fait plus rien tant que vous ne l'avez pas
   rouvert. Ce qui a été enregistré avant reste enregistré. Cliquez sur « Rouvrir le coffre ».
 - L'opération n'a pas abouti, sans cause identifiée. Rechargez la page puis réessayez. Si cela se
   reproduit, notez le détail technique ci-dessous et demandez de l'aide.
-- Une autre opération est en cours, ou le coffre n'est pas encore ouvert. Attendez la fin de
-  l'opération en cours, puis recommencez.
-- Aucune application n'est livrée avec ce coffre à cette adresse : il n'y a rien à démarrer.
-- Une opération longue est déjà en cours (démarrage, sauvegarde ou restauration). Attendez qu'elle
-  se termine, puis recommencez.
 - Une installation précédente a été interrompue avant la fin. Rien n'a été écrasé. Si le bouton «
   Reprendre l'installation » apparaît, utilisez-le.
-- L'application n'est pas démarrée. Ouvrez le coffre, puis cliquez sur « Démarrer l'application ».
+- L'application s'est arrêtée. Cliquez de nouveau sur « Démarrer l'application ».
 - L'application a demandé quelque chose que le coffre ne transmet pas. Revenez à la page précédente
   de l'application et réessayez.
-- La page demandée à l'application est trop volumineuse pour être affichée ici.
 - La page n'a pas été affichée parce que le coffre venait d'être verrouillé. Rouvrez le coffre pour
   continuer.
+- Le coffre a refusé une lecture ou une écriture incohérente : rien n'a été écrit à moitié.
+  Rechargez la page puis réessayez. Si cela se reproduit, notez le détail technique ci-dessous et
+  demandez de l'aide.
+- Le navigateur n'a pas pu relire toutes les données du coffre. Rechargez la page puis réessayez. Si
+  cela se reproduit, notez le détail technique ci-dessous et demandez de l'aide.
+- Le navigateur n'a pas pu enregistrer toutes les données du coffre : ce qui avait été confirmé est
+  conservé. Libérez de l'espace sur l'appareil, puis rechargez la page.
+- Le coffre a été refermé pendant l'opération. Rouvrez-le, puis recommencez.
+- Le navigateur n'a pas pu lire ou écrire les données du coffre. Rechargez la page puis réessayez.
+  Si cela se reproduit, notez le détail technique ci-dessous et demandez de l'aide.
+- Les dernières modifications, qui n'avaient pas été confirmées avant une coupure, n'ont pas été
+  gardées. Ce qui avait été confirmé est conservé : continuez normalement.
+- L'application a voulu enregistrer trop de choses d'un seul coup : rien n'a été enregistré à
+  moitié. Rechargez la page puis réessayez. Si cela se reproduit, notez le détail technique
+  ci-dessous et demandez de l'aide.
+- Le coffre n'a été ouvert ici que pour être lu, et cette opération doit écrire. Rechargez la page,
+  rouvrez le coffre, puis recommencez.
 - Le coffre n'a pas pu confirmer l'enregistrement de vos dernières modifications. Par sécurité, il
   est arrêté. Rouvrez-le : ce qui avait été confirmé est conservé.
 - Le navigateur a retiré au coffre l'accès à ses données. Par sécurité, il est arrêté. Rouvrez-le.
 - Il n'y a encore rien à sauvegarder : démarrez l'application une première fois.
-- Cet appareil a déjà un coffre à cette adresse. On ne restaure jamais par-dessus un coffre existant
-  : restaurez à une autre adresse, dans un autre navigateur, ou sur un autre appareil.
 - Ce fichier n'est pas une sauvegarde de coffre RailsBox Vault. Rien n'a été écrit. Choisissez le
   fichier enregistré par « Sauvegarder mon coffre ».
-- Cette sauvegarde a été faite sans code de récupération : elle ne peut s'ouvrir nulle part
-  ailleurs. Rien n'a été écrit.
 - Ce fichier n'est pas une sauvegarde lisible. Rien n'a été écrit. Choisissez le fichier enregistré
   par « Sauvegarder mon coffre ».
 - Ce fichier de sauvegarde est incomplet, souvent à cause d'un téléchargement ou d'une copie
@@ -463,16 +572,128 @@ ne comprenez pas, ou qui ne vous disent pas quoi faire.
 - Cette sauvegarde est incohérente. Rien n'a été écrit. Utilisez une autre copie de la sauvegarde.
 - La partie de cette sauvegarde qui permet de l'ouvrir par le code a été abîmée. Rien n'a été écrit.
   Utilisez une autre copie de la sauvegarde.
+- Cette sauvegarde ne permet pas de vérifier que son contenu est intact. Rien n'a été écrit.
+  Utilisez une sauvegarde faite par « Sauvegarder mon coffre ».
+- Il n'y a pas assez de place dans ce navigateur pour restaurer cette sauvegarde. Rien n'a été
+  écrit. Libérez de l'espace sur l'appareil, puis réessayez.
+- La sauvegarde a été copiée, mais la vérification de la copie a échoué. Le coffre n'est pas prêt :
+  relancez la restauration avec le même fichier.
+- Ce moyen n'ouvre déjà plus ce coffre : rien n'a été retiré. Rechargez la page.
+
+### Ce qu'il faut faire : recopier
+
+- Ce que vous avez présenté n'ouvre pas ce coffre : la phrase est peut-être mal tapée (majuscules,
+  accents, espaces), ou ce n'est pas le bon code. Rien n'a été perdu. Réessayez tranquillement : il
+  n'y a pas de nombre d'essais limité.
+- Le numéro de version que vous avez tapé est plus grand que celui de ce coffre. Relisez le numéro
+  sur votre feuille. Si vous n'êtes pas sûr, videz ce champ et réessayez : le coffre s'ouvrira, mais
+  sans vérifier qu'on ne lui a pas remis une copie plus ancienne.
+- Le champ de la phrase est vide. Tapez une phrase de plusieurs mots, facile à retenir pour vous et
+  difficile à deviner pour les autres.
+- Le code a une faute de recopie : une lettre ou un chiffre est mal lu, ou deux sont inversés.
+  Relisez votre feuille, symbole par symbole. Les tirets, les espaces et les majuscules n'ont pas
+  d'importance.
+- Le code de récupération ne s'affiche qu'une fois, et il a déjà été affiché. Il ne le sera pas de
+  nouveau : ouvrez le coffre avec le code de votre feuille pour le vérifier.
+- Ce qui a été saisi ou choisi n'a pas la forme attendue : le numéro de version est un nombre
+  entier, et une restauration demande un fichier de sauvegarde. Corrigez, puis réessayez.
+- Le numéro de version se tape en chiffres, à partir de 1, tel qu'il est noté sur votre feuille. Si
+  vous n'en avez pas noté, laissez ce champ vide.
+- Aucun fichier n'est choisi. Cliquez sur « Fichier de sauvegarde », choisissez le fichier
+  enregistré par « Sauvegarder mon coffre », puis recommencez.
+
+### Ce qu'il faut faire : attendre
+
+- Une autre opération est en cours, ou le coffre n'est pas encore ouvert. Attendez la fin de
+  l'opération en cours, puis recommencez.
+- Une opération longue est déjà en cours (démarrage, sauvegarde ou restauration). Attendez qu'elle
+  se termine, puis recommencez.
+- Le coffre termine un enregistrement. Attendez quelques secondes, puis recommencez.
+- Le coffre enregistre son état en ce moment. Attendez quelques secondes, puis recommencez.
+
+### Ce qu'il faut faire : abandonner ce coffre
+
+- Ce coffre a été créé par une version d'essai antérieure au 13 septembre 2026, que cette version ne
+  sait pas ouvrir. Pour repartir de zéro : dans les réglages du navigateur, effacez les données de
+  ce site, rechargez la page, puis créez un nouveau coffre. Ce qui était dans l'ancien coffre sera
+  effacé.
+- L'application enregistrée sur cet appareil n'appartient pas à ce coffre. Rien n'a été ouvert ni
+  modifié. Pour repartir d'un emplacement vide, effacez les données de ce site dans les réglages du
+  navigateur, puis restaurez la sauvegarde de votre coffre.
+
+### Ce qu'il faut faire : autre appareil ou autre navigateur
+
+- Le fichier qui protège ce coffre sur cet appareil est abîmé. N'effacez rien. Si vous avez une
+  sauvegarde, restaurez-la dans un autre navigateur ou à une autre adresse.
+- Le fichier qui protège ce coffre ne correspond pas à ce coffre. N'effacez rien. Si vous avez une
+  sauvegarde, restaurez-la dans un autre navigateur ou à une autre adresse.
+- Le fichier qui protège ce coffre est incomplet sur cet appareil. N'effacez rien. Si vous avez une
+  sauvegarde, restaurez-la dans un autre navigateur ou à une autre adresse.
+- Le fichier qui protège ce coffre a été assemblé à partir de deux copies différentes. N'effacez
+  rien. Si vous avez une sauvegarde, restaurez-la dans un autre navigateur ou à une autre adresse.
+- Le fichier qui protège ce coffre n'est pas lisible. N'effacez rien. Si vous avez une sauvegarde,
+  restaurez-la dans un autre navigateur ou à une autre adresse.
+- Ce coffre ne peut pas prouver que son contenu est intact. Ne l'utilisez pas. N'effacez rien. Si
+  vous avez une sauvegarde, restaurez-la dans un autre navigateur ou à une autre adresse.
+- Ce navigateur ne peut pas faire le calcul qui protège le coffre. Essayez un autre navigateur
+  récent : Chrome ou Edge.
+- Ce navigateur ne sait pas garder un coffre. Essayez un autre navigateur récent : Chrome ou Edge.
+  Rien n'a été perdu.
+- Le contenu de ce coffre ne correspond pas à sa sauvegarde : il a été modifié. Ne l'utilisez pas ;
+  restaurez une sauvegarde en laquelle vous avez confiance.
+- Les données de ce coffre ne lui appartiennent pas. N'effacez rien. Si vous avez une sauvegarde,
+  restaurez-la dans un autre navigateur ou à une autre adresse.
+- Les données de ce coffre sur cet appareil ont été abîmées ou modifiées : rien n'en a été lu. Ne
+  l'utilisez pas. N'effacez rien. Si vous avez une sauvegarde, restaurez-la dans un autre navigateur
+  ou à une autre adresse.
+- Ce navigateur n'offre pas tout ce dont le coffre a besoin. Essayez un autre navigateur récent :
+  Chrome ou Edge.
+- Les données de ce coffre sur cet appareil n'ont pas la taille attendue : rien n'a été modifié.
+  N'effacez rien. Si vous avez une sauvegarde, restaurez-la dans un autre navigateur ou à une autre
+  adresse.
+- Une partie des données de ce coffre sur cet appareil est abîmée : rien n'a été deviné ni réparé.
+  Ne l'utilisez pas. N'effacez rien. Si vous avez une sauvegarde, restaurez-la dans un autre
+  navigateur ou à une autre adresse.
+- Le coffre ne peut plus savoir quel est son dernier état enregistré sur cet appareil : rien n'a été
+  deviné. Ne l'utilisez pas. N'effacez rien. Si vous avez une sauvegarde, restaurez-la dans un autre
+  navigateur ou à une autre adresse.
+- Cet appareil a déjà un coffre à cette adresse. On ne restaure jamais par-dessus un coffre existant
+  : restaurez à une autre adresse, dans un autre navigateur, ou sur un autre appareil.
+- Cet appareil a déjà un coffre à cette adresse : rien n'a été écrit. Restaurez à une autre adresse,
+  dans un autre navigateur, ou sur un autre appareil.
+
+### Ce qu'il faut faire : autre conduite, dite dans le message
+
+- Il n'y a pas de coffre sur cet appareil. Si vous en avez créé un ailleurs, restaurez sa sauvegarde
+  ici.
+- Ce coffre a déjà le nombre maximal de moyens de l'ouvrir : rien n'a été ajouté. Rien n'a été
+  perdu.
+- Ce coffre a été fermé par une version plus récente de RailsBox Vault. Mettez l'application à jour,
+  puis réessayez. Rien n'a été perdu.
+- Les réglages enregistrés pour ouvrir ce coffre ne sont pas acceptables : ce coffre a peut-être été
+  modifié. Rien n'a été perdu. Ouvrez-le par votre code de récupération, ou restaurez votre
+  sauvegarde.
+- Cette passkey ne sait pas protéger un coffre. Utilisez une phrase, ou une autre passkey.
+- L'appareil a reconnu votre passkey mais n'a pas rendu ce qu'il fallait pour ouvrir le coffre.
+  Utilisez une phrase, ou une autre passkey.
+- Ce coffre a un format que cette version de RailsBox Vault ne sait pas utiliser pour cette
+  opération. Rien n'a été perdu. Notez le détail technique ci-dessous et demandez de l'aide.
+- Ce coffre a été utilisé après sa restauration, puis une partie de ses informations a disparu. Le
+  réparer effacerait ce que vous y avez écrit depuis : rien n'a été touché. N'effacez pas les
+  données de ce site, gardez votre sauvegarde, et demandez de l'aide.
+- Aucune application n'est livrée avec ce coffre à cette adresse : il n'y a rien à démarrer.
+- La page demandée à l'application est trop volumineuse pour être affichée ici.
+- Ce coffre a atteint une limite de sécurité que cette version de RailsBox Vault ne sait pas encore
+  renouveler. Rien n'a été perdu. Faites une sauvegarde, puis demandez de l'aide.
+- Cette sauvegarde a été faite sans code de récupération : elle ne peut s'ouvrir nulle part
+  ailleurs. Rien n'a été écrit.
 - Cette sauvegarde ne s'ouvre pas par un code de récupération. Rien n'a été écrit.
 - Cette sauvegarde a été faite par une version différente de RailsBox Vault, que celle-ci ne sait
   pas lire. Rien n'a été écrit.
-- Cette sauvegarde ne permet pas de vérifier que son contenu est intact. Rien n'a été écrit.
-  Utilisez une sauvegarde faite par « Sauvegarder mon coffre ».
-- Cet appareil a déjà un coffre à cette adresse : rien n'a été écrit. Restaurez à une autre adresse,
-  dans un autre navigateur, ou sur un autre appareil.
-- Il n'y a pas assez de place dans ce navigateur pour restaurer cette sauvegarde. Rien n'a été
-  écrit. Libérez de l'espace sur l'appareil, puis réessayez.
 - Cette sauvegarde ne correspond pas à ce que cet appareil attend. Rien n'a été écrit.
-- La sauvegarde a été copiée, mais la vérification de la copie a échoué. Le coffre n'est pas prêt :
-  relancez la restauration avec le même fichier.
 - Il ne reste qu'un seul moyen d'ouvrir ce coffre : il n'y a rien d'autre à retirer.
+
+### Quand la cause n'est pas connue
+
+- L'opération a été refusée. Rechargez la page puis réessayez. Si cela se reproduit, notez le détail
+  technique ci-dessous et demandez de l'aide.
