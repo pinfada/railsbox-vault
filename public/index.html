@@ -26,15 +26,17 @@
         dont la soumission est refusée par la politique serait une porte peinte sur un mur. Les gestes
         sont des boutons, et chaque bouton dit ce qu'il fait.
 
-        `?vue=complete` montre tous les blocs à la fois, détails techniques ouverts : c'est la vue des
-        épreuves de frontière, qui jouent les gestes dans tous les ordres, y compris ceux que le
-        parcours n'offre pas.
+        `?vue=complete` montre tous les blocs à la fois, détails techniques ouverts. C'est un paramètre
+        de HARNAIS, pas un chemin du produit : les épreuves de frontière jouent les gestes dans tous les
+        ordres, y compris ceux que le parcours n'offre pas. Aucun lien de cette page n'y mène (revue de
+        la PR #213, constat 2), et le parcours n'y écrit pas sa progression.
       -->
       <section id="parcours" aria-labelledby="parcours-titre">
         <p id="parcours-rang"></p>
         <h2 id="parcours-titre" tabindex="-1">Préparation</h2>
         <p id="parcours-ce-qui-va-se-passer"></p>
         <p id="parcours-attendu"></p>
+        <p id="parcours-limite"></p>
         <p id="parcours-attente-annoncee"></p>
         <p id="parcours-attente" role="status" aria-live="polite"></p>
         <p id="parcours-reussite" role="status" aria-live="polite"></p>
@@ -189,6 +191,19 @@
       </section>
 
       <!--
+        L'ÉTAPE 4 du cycle de vie (#192, ADR 0038) : ce que RAILS rend, relayé depuis le guest par le
+        seul port restreint. Ce conteneur n'est JAMAIS déplacé dans le document — déplacer un cadre le
+        recharge, et le port restreint serait perdu ; il est seulement montré ou caché.
+      -->
+      <section data-bloc="espace-de-travail" aria-label="Votre application" hidden>
+        <p id="cycle-description">
+          Une fois démarrée, l'application s'affiche ci-dessous ; avant, cet espace dit qu'il attend
+          son démarrage.
+        </p>
+        <div id="cadre-applicatif"></div>
+      </section>
+
+      <!--
         SAUVEGARDER, RESTAURER, RÉVOQUER EN URGENCE (#207, ADR 0039). Trois gestes du canal
         privilégié ; aucun n'existe sur le port restreint. La sauvegarde est remise au navigateur par
         le lien ci-dessous — l'archive quitte l'origine par le système de fichiers de l'hôte, jamais
@@ -232,23 +247,10 @@
         <ol id="ou-suis-je-liste"></ol>
       </details>
 
-      <!--
-        L'ÉTAPE 4 du cycle de vie (#192, ADR 0038) : ce que RAILS rend, relayé depuis le guest par le
-        seul port restreint. Ce conteneur n'est JAMAIS déplacé dans le document — déplacer un cadre le
-        recharge, et le port restreint serait perdu ; il est seulement montré ou caché.
-      -->
-      <section data-bloc="espace-de-travail" aria-label="Votre application" hidden>
-        <p id="cycle-description">
-          Une fois démarrée, l'application s'affiche ci-dessous ; avant, cet espace dit qu'il attend
-          son démarrage.
-        </p>
-        <div id="cadre-applicatif"></div>
-      </section>
-
       <details id="details-techniques">
         <summary>Détails techniques</summary>
-        <p><a href="?vue=complete">Afficher tous les gestes à la fois (vue complète)</a></p>
         <p id="coquille-etat" role="status">coquille:demarrage</p>
+        <p id="parcours-progression-etat">progression:non-lue</p>
         <p id="deverrouillage-moyens" role="status"></p>
         <p id="deverrouillage-avertissement" role="status"></p>
         <p id="deverrouillage-sans-recuperation" role="status"></p>

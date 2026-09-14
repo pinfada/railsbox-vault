@@ -51,7 +51,9 @@ const creations = (page) =>
 const releve = async (page) => JSON.parse(await page.locator("#coquille-rapport").textContent());
 
 async function ouvrirLaCoquille(page, requete = "") {
-  await page.goto(new URL(`/index.html${requete}`, SHELL_ORIGIN).toString(), { waitUntil: "commit" });
+  await page.goto(new URL(`/index.html${requete}`, SHELL_ORIGIN).toString(), {
+    waitUntil: "commit",
+  });
   await expect(page.locator("#deverrouillage-moyens")).not.toBeEmpty({ timeout: DELAI });
 }
 
@@ -124,7 +126,9 @@ test("l'URL ne saute pas la confirmation, et la page n'offre aucun lien vers la 
 
   for (const etape of ["4", "6", "9"]) {
     await ouvrirLaCoquille(page, `?etape=${etape}`);
-    await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({ timeout: DELAI });
+    await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({
+      timeout: DELAI,
+    });
     await expect(bouton(page, "Démarrer l'application")).toBeHidden();
     await expect(bouton(page, "Sauvegarder mon coffre")).toBeHidden();
     await expect(page).toHaveURL(/etape=3/);
