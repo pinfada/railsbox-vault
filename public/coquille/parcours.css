@@ -113,14 +113,10 @@ p {
   border: 0;
   max-width: 68ch;
 }
-#parcours-aide > summary {
-  display: none;
-}
-html[data-travail-pret="true"] #parcours-aide {
+details#parcours-aide {
   margin-bottom: 12px;
 }
-html[data-travail-pret="true"] #parcours-aide > summary {
-  display: list-item;
+details#parcours-aide > summary {
   font-size: 14px;
   font-weight: 600;
 }
@@ -137,7 +133,6 @@ html[data-travail-pret="true"] #cycle-description {
 html[data-travail-pret="true"] #parcours-reussite {
   margin-bottom: 16px;
   padding: 8px 12px;
-  font-size: 14px;
 }
 #parcours-continuer {
   background: var(--fond);
@@ -229,7 +224,7 @@ button:disabled {
 #parcours-phrase-perdue {
   background: transparent;
   color: var(--texte);
-  border-color: var(--separateur);
+  border-color: var(--secondaire);
 }
 [data-bloc] p:has(> button + button) {
   display: flex;
@@ -267,7 +262,7 @@ button:disabled {
   border-left: 3px solid var(--bord);
   background: var(--support);
   padding: 12px 16px;
-  font-size: 13px;
+  font-size: 16px;
   margin-bottom: 24px;
 }
 #parcours-refus:not(:empty) {

@@ -7,6 +7,11 @@
     <link rel="stylesheet" href="/coquille/parcours.css" />
   </head>
   <body>
+    <!--
+      `tabindex="0"` n'est PAS redondant : sans lui, WebKit ne met pas un lien dans l'ordre de
+      tabulation, et le lien d'évitement n'est jamais atteint au clavier (mesuré par
+      `tests/apparence/parcours.spec.mjs` sur WebKit, revue de la PR #216, constat 15).
+    -->
     <a class="evitement" href="#parcours-titre" tabindex="0">Aller au parcours</a>
     <main>
       <header class="entete-du-coffre">
@@ -47,13 +52,17 @@
       -->
       <section id="parcours" aria-labelledby="parcours-titre">
         <h2 id="parcours-titre" tabindex="-1">Préparation</h2>
-        <details id="parcours-aide" open>
-          <summary>Aide pour cette étape</summary>
+        <!--
+          L'AIDE de l'étape. Un conteneur neutre sur tous les écrans ; à l'étape 4, quand Rails est
+          prêt, le branchement en fait un repli « Aide pour cette étape » (revue de la PR #216,
+          constat 7) : un repli dont le résumé serait masqué exposerait un groupe sans nom.
+        -->
+        <div id="parcours-aide">
           <p id="parcours-ce-qui-va-se-passer"></p>
           <p id="parcours-attendu"></p>
           <p id="parcours-limite"></p>
           <p id="parcours-attente-annoncee"></p>
-        </details>
+        </div>
         <p id="parcours-attente" role="status" aria-live="polite"></p>
         <p id="parcours-reussite" role="status" aria-live="polite"></p>
         <p id="parcours-refus" role="alert"></p>

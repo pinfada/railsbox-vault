@@ -1,12 +1,23 @@
 /* Le cadre reste en place ; la page Rails garde sa propre mise en forme. */
 :root {
   color-scheme: light dark;
+  /* Les fonds de la coquille : aucune bande de fond du navigateur sous la page Rails (revue #216). */
+  --fond: #ffffff;
+  --texte: #111827;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fond: #1b1e25;
+    --texte: #f3f4f6;
+  }
 }
 * {
   box-sizing: border-box;
 }
 body {
   margin: 0;
+  background: var(--fond);
+  color: var(--texte);
   font:
     14px/1.6 system-ui,
     sans-serif;

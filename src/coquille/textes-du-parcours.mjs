@@ -307,6 +307,16 @@ function ecran(rang, { titre, ceQuiVaSePasser, attendu, attente = null, blocs })
 }
 
 /**
+ * Les libellés que la MISE EN FORME ajoute à la page (#194 ; revue de la PR #216, constat 6). Le repli
+ * de l'aide est créé par le branchement quand Rails est prêt, et nommé d'ici ; la page de relecture le
+ * lit au même endroit. Le lien d'évitement et le repli du relais sont écrits dans leurs documents, et
+ * `tools/relecture-parcours.mjs` les y relit.
+ */
+export const LIBELLES_DE_LA_PAGE = Object.freeze({
+  aideDeLEtape: "Aide pour cette étape",
+});
+
+/**
  * Les MESSAGES que la page écrit en plus des écrans : réussites, attentes en cours, consignes. Ceux
  * qui portent une valeur sont des fonctions ; la page de relecture les appelle avec « N ».
  */

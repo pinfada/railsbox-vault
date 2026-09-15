@@ -26,6 +26,7 @@ import {
   ECRANS,
   FICHIER_DE_PROGRESSION,
   GESTES_LONGS,
+  LIBELLES_DE_LA_PAGE,
   LIMITE_DE_FIREFOX,
   MESSAGES,
   PROGRESSION_INITIALE,
@@ -254,6 +255,31 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     }
   }
 
+  /**
+   * L'aide est un conteneur neutre, et un repli nommé seulement quand Rails est prêt (revue de la PR
+   * #216, constat 7). Ses paragraphes sont DÉPLACÉS d'un conteneur à l'autre, jamais recréés : leurs
+   * identifiants restent ceux que `dire` écrit. Le focus posé sur le résumé qui disparaît revient au
+   * titre, pour ne pas tomber au document.
+   */
+  function mettreLAideEnForme(enRepli) {
+    const actuelle = noeud("parcours-aide");
+    if ((actuelle.tagName === "DETAILS") === enRepli) return;
+    const remplacante = doc.createElement(enRepli ? "details" : "div");
+    remplacante.id = "parcours-aide";
+    const paragraphes = [...actuelle.children].filter((enfant) => enfant.tagName !== "SUMMARY");
+    if (enRepli) {
+      const resume = doc.createElement("summary");
+      resume.textContent = LIBELLES_DE_LA_PAGE.aideDeLEtape;
+      // Chromium n'expose pas le résumé comme nom du groupe : le repli est nommé explicitement.
+      remplacante.setAttribute("aria-label", LIBELLES_DE_LA_PAGE.aideDeLEtape);
+      remplacante.append(resume);
+    }
+    const focusDedans = actuelle.contains(doc.activeElement);
+    remplacante.append(...paragraphes);
+    actuelle.replaceWith(remplacante);
+    if (focusDedans) noeud("parcours-titre").focus();
+  }
+
   function ecranAMontrer(releve, rapport) {
     etat.coffre = coffreObserve({
       etat: rapport.etat,
@@ -310,7 +336,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
         doc.activeElement === noeud("demarrer-application") ||
         (doc.activeElement === doc.body && dernierFocusSurDemarrage);
       doc.documentElement.dataset.travailPret = modeTravail;
-      noeud("parcours-aide").open = !travailPret;
+      mettreLAideEnForme(travailPret);
       if (travailPret && focusSurDemarrage) noeud("parcours-titre").focus();
     }
     rendreOuSuisJe(ecranId);

@@ -43,6 +43,7 @@ import { ECRANS, ETAPES, MESSAGES, texteDAttenteDeLaPhrase } from "./textes-du-p
 export {
   ECRANS,
   ETAPES,
+  LIBELLES_DE_LA_PAGE,
   LIBELLES_DES_BLOCS,
   LIMITE_DE_FIREFOX,
   MESSAGES,
