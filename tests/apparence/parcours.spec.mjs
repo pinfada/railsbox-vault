@@ -1,55 +1,26 @@
-import { expect, test } from "../support/test.mjs";
+// L'APPARENCE du parcours sur les trois moteurs : création, choix, restauration, feuille (#194).
+//
+// Les étapes 4 prête à 9, `forced-colors` et le mouvement non réduit sont dans
+// `parcours-etapes.spec.mjs`, sur Chromium (revue de la PR #216, constats 2 et 3).
+
 import { instrumenterNavigationFirefox } from "../support/navigation-firefox.mjs";
-import AxeBuilder from "@axe-core/playwright";
-import { mkdir, writeFile } from "node:fs/promises";
+import {
+  ORIGINE_A,
+  PHRASE,
+  RACINE,
+  aucunGroupeSansNom,
+  bouton,
+  contraste,
+  exigerLaSobriete,
+  expect,
+  ouvrir,
+  surveiller,
+  test,
+  verifier,
+} from "./outils-d-apparence.mjs";
+import { writeFile } from "node:fs/promises";
 
 const LARGEURS = [320, 768, 1024, 1440];
-const RACINE = "reports/apparence";
-const PHRASE = "une phrase publique pour les captures du parcours utilitaire";
-
-function contraste(a, b) {
-  const luminance = (rgb) => {
-    const composantes = rgb
-      .match(/[\d.]+/g)
-      .slice(0, 3)
-      .map(Number)
-      .map((v) => {
-        const c = v / 255;
-        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-      });
-    return composantes[0] * 0.2126 + composantes[1] * 0.7152 + composantes[2] * 0.0722;
-  };
-  const la = luminance(a);
-  const lb = luminance(b);
-  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
-}
-
-async function verifier(page, testInfo, nom) {
-  const resultats = await new AxeBuilder({ page })
-    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
-    .analyze();
-  await mkdir(RACINE, { recursive: true });
-  const prefixe = `${testInfo.project.name}-${testInfo.title.replaceAll(/[^a-z0-9-]/gi, "-")}-${nom}`;
-  await writeFile(
-    `${RACINE}/${prefixe}-axe.json`,
-    JSON.stringify({ violations: resultats.violations, incomplete: resultats.incomplete }, null, 2),
-  );
-  expect(resultats.violations, `accessibilité : ${nom}`).toEqual([]);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-    await page.evaluate(() => innerWidth),
-  );
-  await page.screenshot({ path: `${RACINE}/${prefixe}.png`, fullPage: true });
-}
-
-async function ouvrir(page) {
-  await page.goto("/index.html");
-  await expect(
-    page.getByRole("heading", { name: "Créer votre coffre", exact: true }),
-  ).toBeVisible();
-  await expect(page.locator("#parcours-attente-annoncee")).not.toHaveText(/calibration/, {
-    timeout: 60_000,
-  });
-}
 
 for (const theme of ["light", "dark"]) {
   for (const largeur of LARGEURS) {
@@ -59,29 +30,18 @@ for (const theme of ["light", "dark"]) {
       browserName,
     }, testInfo) => {
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-      const origines = [];
-      page.context().on("request", (request) => origines.push(new URL(request.url()).origin));
       await page.setViewportSize({ width: largeur, height: 900 });
       await ouvrir(page);
+      await aucunGroupeSansNom(page, "création");
       await verifier(page, testInfo, "creation");
-      await page.getByRole("button", { name: "Commencer", exact: true }).click();
+      await bouton(page, "Commencer").click();
+      await aucunGroupeSansNom(page, "choix");
       await verifier(page, testInfo, "choix");
-      expect(
-        origines.every((origine) =>
-          ["http://127.0.0.1:4205", "http://localhost:4206"].includes(origine),
-        ),
-      ).toBe(true);
       await expect(
         page.getByRole("heading", { level: 1, name: "RailsBox Vault", exact: true }),
       ).toBeVisible();
       await expect(page.locator("#parcours-attente")).toHaveAttribute("aria-live", "polite");
       await expect(page.getByRole("alert")).toHaveCount(1);
-      await page.context().setOffline(true);
-      await page.screenshot({
-        path: `${RACINE}/${testInfo.project.name}-${theme}-${largeur}-hors-ligne.png`,
-        fullPage: true,
-      });
-      await page.context().setOffline(false);
       const couleurs = await page.locator("main").evaluate((main) => {
         const principal = getComputedStyle(main);
         const secondaire = getComputedStyle(
@@ -119,16 +79,16 @@ for (const theme of ["light", "dark"]) {
         viewport: { width: largeur, height: 900 },
       });
       try {
+        const sobriete = await surveiller(autreAppareil);
         const restauration = await autreAppareil.newPage();
         instrumenterNavigationFirefox(restauration, {
           browserName,
           annoter: (annotation) => testInfo.annotations.push(annotation),
         });
-        await restauration.goto("http://127.0.0.1:4205/index.html");
-        await restauration
-          .getByRole("button", { name: "J'ai déjà une sauvegarde", exact: true })
-          .click();
+        await restauration.goto(`${ORIGINE_A}/index.html`);
+        await bouton(restauration, "J'ai déjà une sauvegarde").click();
         await verifier(restauration, testInfo, "restauration");
+        exigerLaSobriete(sobriete);
       } finally {
         await autreAppareil.close();
       }
@@ -137,12 +97,13 @@ for (const theme of ["light", "dark"]) {
 
   test(`${theme} : feuille réelle, impression, confirmation et refus`, async ({
     page,
+    browserName,
   }, testInfo) => {
     await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
     await ouvrir(page);
-    await page.getByRole("button", { name: "Commencer", exact: true }).click();
+    await bouton(page, "Commencer").click();
     await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
-    await page.getByRole("button", { name: "Créer mon coffre", exact: true }).click();
+    await bouton(page, "Créer mon coffre").click();
     const titreCode = page.getByRole("heading", {
       name: "Recevoir votre code de récupération",
       exact: true,
@@ -157,12 +118,13 @@ for (const theme of ["light", "dark"]) {
     if (!(await titreCode.isVisible())) {
       await expect(page.getByRole("alert")).toContainText("navigateur");
       await verifier(page, testInfo, "refus-du-moteur");
+      // L'écran le plus exposé de WebKit : le refus, le plus long texte d'alerte, à 320 px.
+      await page.setViewportSize({ width: 320, height: 900 });
+      await verifier(page, testInfo, "refus-du-moteur-320");
       return;
     }
     await verifier(page, testInfo, "annonce-du-code");
-    await page
-      .getByRole("button", { name: "Afficher mon code de récupération", exact: true })
-      .click();
+    await bouton(page, "Afficher mon code de récupération").click();
     const code = page.locator("#feuille-code");
     await expect(code).toHaveText(/^[0-9A-Z]{4}(-[0-9A-Z]{4}){6}$/);
     const valeur = (await code.textContent()).trim();
@@ -173,20 +135,18 @@ for (const theme of ["light", "dark"]) {
     await page.emulateMedia({ media: "print" });
     await expect(code).toBeVisible();
     await expect(page.locator("#parcours-consigne-feuille")).toContainText("Numéro de version");
-    await expect(
-      page.getByRole("button", { name: "J'ai recopié mon code", exact: true }),
-    ).toBeHidden();
+    await expect(bouton(page, "J'ai recopié mon code")).toBeHidden();
     await page.screenshot({
       path: `${RACINE}/${testInfo.project.name}-${theme}-impression.png`,
       fullPage: true,
     });
     await page.emulateMedia({ media: "screen" });
-    await page.getByRole("button", { name: "J'ai recopié mon code", exact: true }).click();
+    await bouton(page, "J'ai recopié mon code").click();
     await verifier(page, testInfo, "confirmation");
     await page
       .getByLabel("Code recopié depuis votre feuille", { exact: true })
       .fill("0000-0000-0000-0000-0000-0000-0000");
-    await page.getByRole("button", { name: "Confirmer mon code", exact: true }).click();
+    await bouton(page, "Confirmer mon code").click();
     await expect(page.getByRole("alert")).not.toBeEmpty();
     await verifier(page, testInfo, "refus-de-recopie");
     await page.getByLabel("Code recopié depuis votre feuille", { exact: true }).fill(valeur);
@@ -195,6 +155,11 @@ for (const theme of ["light", "dark"]) {
       page.getByRole("heading", { name: "Travailler dans l'application", exact: true }),
     ).toBeVisible();
     await verifier(page, testInfo, "travail-avant-boot");
+    if (browserName === "firefox") {
+      // L'écran le plus exposé de Firefox : l'étape 4 porte sa limite, le plus long texte d'aide.
+      await page.setViewportSize({ width: 320, height: 900 });
+      await verifier(page, testInfo, "travail-avant-boot-320");
+    }
     await page.emulateMedia({ media: "print" });
     await expect(code).toBeHidden();
     expect(await page.locator("body").textContent()).not.toContain(valeur);
