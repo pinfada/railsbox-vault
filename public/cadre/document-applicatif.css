@@ -1,0 +1,47 @@
+/* Le cadre reste en place ; la page Rails garde sa propre mise en forme. */
+:root {
+  color-scheme: light dark;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font:
+    14px/1.6 system-ui,
+    sans-serif;
+}
+details {
+  padding: 0 16px;
+}
+summary {
+  min-height: 44px;
+  padding: 10px 0;
+  cursor: pointer;
+}
+button {
+  min-height: 44px;
+  font: inherit;
+}
+:focus-visible {
+  outline: 3px solid currentColor;
+  outline-offset: 3px;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+iframe {
+  display: block;
+  width: 100%;
+  height: 560px;
+  border: 0;
+  background: white;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto;
+    animation: none;
+    transition: none;
+  }
+}

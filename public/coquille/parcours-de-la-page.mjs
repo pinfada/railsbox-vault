@@ -77,6 +77,13 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   const parametres = new URL(loc.href).searchParams;
   const vueComplete = parametres.get("vue") === "complete";
   doc.documentElement.dataset.vue = vueComplete ? "complete" : "parcours";
+  // Désactiver le bouton pendant le boot peut déjà renvoyer le focus au body.
+  // Garder sa provenance, mais laisser tout autre geste de focus prendre la main.
+  let dernierFocusSurDemarrage = false;
+  doc.addEventListener("focusin", (evenement) => {
+    if (evenement.target === doc.body || evenement.target === doc.documentElement) return;
+    dernierFocusSurDemarrage = evenement.target === noeud("demarrer-application");
+  });
   if (vueComplete) noeud("details-techniques").open = true;
 
   const moteur = moteurProbable(navigateur.userAgent);
@@ -291,6 +298,21 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if ((noeud("saisie-code")?.value ?? "") === "") dire("parcours-code-lu", "");
     nommerLesGestes(ecranId);
     montrerLesBlocs(visibles);
+    // Replier seulement les conseils quand Rails est prêt. Le cadre reste à sa place :
+    // le déplacer rechargerait son document et lui ferait perdre le port restreint.
+    const travailPret =
+      !vueComplete &&
+      ecranId === "travailler" &&
+      lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement === "application-demarree";
+    const modeTravail = String(travailPret);
+    if (doc.documentElement.dataset.travailPret !== modeTravail) {
+      const focusSurDemarrage =
+        doc.activeElement === noeud("demarrer-application") ||
+        (doc.activeElement === doc.body && dernierFocusSurDemarrage);
+      doc.documentElement.dataset.travailPret = modeTravail;
+      noeud("parcours-aide").open = !travailPret;
+      if (travailPret && focusSurDemarrage) noeud("parcours-titre").focus();
+    }
     rendreOuSuisJe(ecranId);
     fermerLesGestesEnCours();
     // Le focus suit un CHANGEMENT d'écran, jamais le premier affichage (ADR 0040, § 5).
