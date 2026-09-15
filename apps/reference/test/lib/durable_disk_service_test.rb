@@ -1,6 +1,10 @@
 require "test_helper"
 require "digest"
 require "stringio"
+# `lib/active_storage/` n'est pas autochargé (application.rb) : Rails ne requiert ce fichier qu'en
+# résolvant le service, à la première pièce jointe. Une graine qui joue cette suite avant toute
+# pièce (CI du 15/09/2026, graine 8358 : NameError ×5) doit le requérir elle-même.
+require "active_storage/service/durable_disk_service"
 
 # Le service de stockage de la pièce jointe rend DURABLE ce qu'il écrit, avant de rendre la main
 # (#209).
