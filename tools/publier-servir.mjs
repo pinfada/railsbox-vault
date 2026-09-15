@@ -34,6 +34,9 @@ export { analyserHeaders, enTetesPour };
 
 const TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
+  // Même valeur que `tools/serve.mjs` : sous `nosniff`, une feuille servie en octet-stream est
+  // refusée par le moteur (revue de la PR #216, constat 1).
+  [".css", "text/css; charset=utf-8"],
   [".js", "text/javascript; charset=utf-8"],
   [".mjs", "text/javascript; charset=utf-8"],
   [".json", "application/json; charset=utf-8"],
