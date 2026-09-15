@@ -20,6 +20,9 @@ repli « Où suis-je ? » qui liste les neuf étapes. Le bouton qui fait passer 
 s'appelle « Continuer : … ». Si un code de récupération devait apparaître ailleurs que sur sa
 feuille, il serait remplacé par « (code masqué) ».
 
+Au clavier, le premier appui sur la touche Tab fait apparaître en haut de la page un lien « Aller au
+parcours », qui mène directement au titre de l'étape.
+
 Dans « Où suis-je ? », chaque étape porte l'une de ces mentions :
 
 - étape précédente
@@ -237,6 +240,11 @@ Messages qui peuvent s'afficher sur cet écran :
 Boutons et champs : « Démarrer l'application », « Reprendre l'installation » (seulement si une
 installation a été interrompue), l'application elle-même, une fois démarrée, « Continuer : » suivi
 du titre de l'étape suivante.
+
+Quand l'application est démarrée, les explications ci-dessus se replient sous « Aide pour cette
+étape » (un clic ou la touche Entrée les rouvre), le bouton « Démarrer l'application » disparaît, et
+l'application remonte près du haut de la page. Au-dessus d'elle, un repli « Détails du relais
+applicatif » contient des informations techniques, qu'il n'est pas utile d'ouvrir.
 
 Messages qui peuvent s'afficher sur cet écran :
 
