@@ -30,17 +30,5 @@ export default defineConfig({
       url: "http://localhost:4206/document-applicatif.html",
       reuseExistingServer: false,
     },
-    // La coquille B : l'autre appareil où la sauvegarde est restaurée (étape 7).
-    {
-      command:
-        "node tools/serve.mjs --role shell --host 127.0.0.1 --port 4207 --app-origin http://localhost:4208",
-      url: "http://127.0.0.1:4207/index.html",
-      reuseExistingServer: false,
-    },
-    {
-      command: "node tools/serve.mjs --role app --host localhost --port 4208",
-      url: "http://localhost:4208/document-applicatif.html",
-      reuseExistingServer: false,
-    },
   ],
 });

@@ -16,15 +16,9 @@ export { expect };
 export const RACINE = "reports/apparence";
 export const PHRASE = "une phrase publique pour les captures du parcours utilitaire";
 
-/** Les deux couples d'origines de la suite : coquille A et son territoire, coquille B et le sien. */
+/** Les deux origines de la suite : la coquille et son territoire applicatif. */
 export const ORIGINE_A = "http://127.0.0.1:4205";
-export const ORIGINE_B = "http://127.0.0.1:4207";
-export const ORIGINES_SERVIES = Object.freeze([
-  ORIGINE_A,
-  "http://localhost:4206",
-  ORIGINE_B,
-  "http://localhost:4208",
-]);
+export const ORIGINES_SERVIES = Object.freeze([ORIGINE_A, "http://localhost:4206"]);
 
 export const titre = (page, nom) => page.getByRole("heading", { level: 2, name: nom, exact: true });
 export const bouton = (page, nom) => page.getByRole("button", { name: nom, exact: true });
@@ -62,7 +56,26 @@ export async function verifier(page, testInfo, nom) {
   );
   // Le pointeur du dernier clic laisserait un bouton en survol dans la capture (constat 13).
   await page.mouse.move(0, 0);
-  await page.screenshot({ path: `${RACINE}/${prefixe}.png`, fullPage: true });
+  await capturer(page, { path: `${RACINE}/${prefixe}.png`, fullPage: true });
+}
+
+/**
+ * Une capture, marquée comme geste du HARNAIS. WebKit insère une feuille `<style>` dans la page pour
+ * prendre une capture (mesuré : ni la navigation, ni un clic, ni Tab n'en produisent ; une capture en
+ * produit une, même avec `caret: "initial"`), et la CSP de la coquille la refuse à bon droit. Cette
+ * violation-là est comptée à part ; toute autre reste une violation.
+ */
+export async function capturer(page, options) {
+  await page.evaluate(() => {
+    globalThis.__captureDuHarnais = true;
+  });
+  try {
+    await page.screenshot(options);
+  } finally {
+    await page.evaluate(() => {
+      globalThis.__captureDuHarnais = false;
+    });
+  }
 }
 
 /** Vérifie un écran à chacune des largeurs données, en finissant sur la dernière. */
@@ -73,8 +86,8 @@ export async function verifierAux(page, testInfo, nom, largeurs) {
   }
 }
 
-export async function ouvrir(page, origine = ORIGINE_A) {
-  await page.goto(`${origine}/index.html`);
+export async function ouvrir(page) {
+  await page.goto(`${ORIGINE_A}/index.html`);
   await expect(titre(page, "Créer votre coffre")).toBeVisible({ timeout: 60_000 });
   await expect(page.locator("#parcours-attente-annoncee")).not.toHaveText(/calibration/, {
     timeout: 60_000,
@@ -87,15 +100,21 @@ export async function ouvrir(page, origine = ORIGINE_A) {
  * la coquille) et vaut pour chaque document, cadres compris.
  */
 export async function surveiller(contexte) {
-  const releve = { requetes: [], violations: [] };
+  const releve = { requetes: [], violations: [], feuillesDeCapture: 0 };
   contexte.on("request", (requete) => releve.requetes.push(requete.url()));
-  await contexte.exposeBinding("__signalerViolationCsp", (source, texte) => {
-    releve.violations.push(`${source.frame.url()} : ${texte}`);
+  await contexte.exposeBinding("__signalerViolationCsp", (source, texte, deCapture) => {
+    if (deCapture) releve.feuillesDeCapture += 1;
+    else releve.violations.push(`${source.frame.url()} : ${texte}`);
   });
   await contexte.addInitScript(() => {
     globalThis.addEventListener("securitypolicyviolation", (evenement) => {
+      const deCapture =
+        globalThis.__captureDuHarnais === true &&
+        evenement.effectiveDirective === "style-src-elem" &&
+        evenement.blockedURI === "inline";
       globalThis.__signalerViolationCsp?.(
         `${evenement.effectiveDirective} ${evenement.blockedURI}`,
+        deCapture,
       );
     });
   });

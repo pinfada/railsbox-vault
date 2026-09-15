@@ -10,6 +10,7 @@ import {
   RACINE,
   aucunGroupeSansNom,
   bouton,
+  capturer,
   contraste,
   exigerLaSobriete,
   expect,
@@ -136,7 +137,7 @@ for (const theme of ["light", "dark"]) {
     await expect(code).toBeVisible();
     await expect(page.locator("#parcours-consigne-feuille")).toContainText("Numéro de version");
     await expect(bouton(page, "J'ai recopié mon code")).toBeHidden();
-    await page.screenshot({
+    await capturer(page, {
       path: `${RACINE}/${testInfo.project.name}-${theme}-impression.png`,
       fullPage: true,
     });

@@ -2,24 +2,25 @@
 // (revue de la PR #216, constats 2, 3, 7, 10, 11).
 //
 // Les étapes 5 à 9 sont JOUÉES sur la coquille réelle, sans machine virtuelle : verrouiller, rouvrir,
-// sauvegarder, restaurer sur l'autre origine (coquille B), récupérer par le code, révoquer. Chaque écran
-// est vérifié (axe, débordement, capture) à 320 et 1024 px, en clair et en sombre.
+// sauvegarder (refusée : un coffre jamais démarré n'a rien à sauvegarder), restaurer ailleurs (l'écran
+// qui l'annonce), récupérer par le code, révoquer, parcours terminé. Chaque écran est vérifié (axe,
+// débordement, capture) à 320 et 1024 px, en clair et en sombre. La restauration RÉELLE d'une archive
+// exige un premier démarrage : elle n'est pas jouée ici (l'écran « Restaurer une sauvegarde » l'est,
+// sur un appareil vierge, dans `parcours.spec.mjs`).
 //
 // L'étape 4 PRÊTE et le DÉMARRAGE EN COURS sont SIMULÉS : la ligne d'état du cycle est posée par
 // l'épreuve, comme le module du cycle de vie la publie. Aucune machine virtuelle ne tourne ici ; la preuve
 // réelle de l'étape 4 prête (aide repliée, cadre remonté, focus) reste l'E2E clavier.
 
 import {
-  ORIGINE_B,
   PHRASE,
   aucunGroupeSansNom,
   bouton,
+  capturer,
   contraste,
-  exigerLaSobriete,
   expect,
   ouvrir,
   simulerLigneDuCycle,
-  surveiller,
   test,
   titre,
   verifier,
@@ -72,7 +73,6 @@ async function exigerLaTailleCourante(page, id) {
 for (const theme of ["light", "dark"]) {
   test(`${theme} : étape 4 prête (état simulé) puis étapes 5 à 9 jouées, 320 et 1024`, async ({
     page,
-    browser,
   }, testInfo) => {
     test.setTimeout(420_000);
     await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
@@ -114,13 +114,11 @@ for (const theme of ["light", "dark"]) {
     await expect(titre(page, "Sauvegarder votre coffre")).toBeVisible(LONG);
     await verifierAux(page, testInfo, "etape-6-sauvegarder", DEUX_LARGEURS);
 
-    const fichier = testInfo.outputPath(`coffre-${theme}.rbvault`);
-    const telechargement = page.waitForEvent("download", LONG);
+    // Sans machine virtuelle, le coffre n'a encore rien à sauvegarder : le refus est l'écran atteint.
     await bouton(page, "Sauvegarder mon coffre").click();
-    await (await telechargement).saveAs(fichier);
-    await expect(page.getByText(/^Sauvegarde prête\./)).toBeVisible(LONG);
-    await exigerLaTailleCourante(page, "parcours-reussite");
-    await verifierAux(page, testInfo, "etape-6-sauvegarde-prete", DEUX_LARGEURS);
+    await expect(page.getByRole("alert")).toContainText("rien à sauvegarder", LONG);
+    await exigerLaTailleCourante(page, "parcours-refus");
+    await verifierAux(page, testInfo, "etape-6-sauvegarde-refusee", DEUX_LARGEURS);
 
     await bouton(page, "Continuer : Restaurer sur un autre appareil").click();
     await expect(titre(page, "Restaurer sur un autre appareil")).toBeVisible();
@@ -129,38 +127,20 @@ for (const theme of ["light", "dark"]) {
     await expect(titre(page, "Récupérer votre coffre avec le code")).toBeVisible();
     await verifierAux(page, testInfo, "etape-8-preparer", DEUX_LARGEURS);
 
-    // L'autre appareil : la coquille B, une autre origine, donc un autre stockage.
-    const autre = await browser.newContext({
-      colorScheme: theme,
-      reducedMotion: "reduce",
-      viewport: { width: 1024, height: 900 },
-    });
-    try {
-      const sobriete = await surveiller(autre);
-      const b = await autre.newPage();
-      await ouvrir(b, ORIGINE_B);
-      await bouton(b, "J'ai déjà une sauvegarde").click();
-      await expect(titre(b, "Restaurer une sauvegarde")).toBeVisible();
-      await b.getByLabel("Fichier de sauvegarde", { exact: true }).setInputFiles(fichier);
-      await bouton(b, "Restaurer ma sauvegarde sur cet appareil").click();
-      await expect(titre(b, "Récupérer votre coffre avec le code")).toBeVisible(LONG);
-      await verifierAux(b, testInfo, "etape-8-recuperer", DEUX_LARGEURS);
+    await bouton(page, "Verrouiller mon coffre").click();
+    await expect(page.getByLabel("Code de récupération", { exact: true })).toBeVisible(LONG);
+    await verifierAux(page, testInfo, "etape-8-recuperer", DEUX_LARGEURS);
+    await page
+      .getByLabel("Numéro de version noté sur votre feuille (facultatif)", { exact: true })
+      .fill(version);
+    await page.getByLabel("Code de récupération", { exact: true }).fill(code);
+    await bouton(page, "Ouvrir mon coffre avec le code").click();
+    await expect(titre(page, "Révoquer en urgence")).toBeVisible(LONG);
+    await verifierAux(page, testInfo, "etape-9-revoquer", DEUX_LARGEURS);
 
-      await b
-        .getByLabel("Numéro de version noté sur votre feuille (facultatif)", { exact: true })
-        .fill(version);
-      await b.getByLabel("Code de récupération", { exact: true }).fill(code);
-      await bouton(b, "Ouvrir mon coffre avec le code").click();
-      await expect(titre(b, "Révoquer en urgence")).toBeVisible(LONG);
-      await verifierAux(b, testInfo, "etape-9-revoquer", DEUX_LARGEURS);
-
-      await bouton(b, "Révoquer tous les autres moyens d'ouvrir ce coffre").click();
-      await expect(titre(b, "Parcours terminé")).toBeVisible(LONG);
-      await verifierAux(b, testInfo, "termine", DEUX_LARGEURS);
-      exigerLaSobriete(sobriete);
-    } finally {
-      await autre.close();
-    }
+    await bouton(page, "Révoquer tous les autres moyens d'ouvrir ce coffre").click();
+    await expect(titre(page, "Parcours terminé")).toBeVisible(LONG);
+    await verifierAux(page, testInfo, "termine", DEUX_LARGEURS);
   });
 }
 
@@ -201,7 +181,7 @@ test("forced-colors : bordures et focus visibles à la création, au choix et à
   expect(contour.style).not.toBe("none");
   expect(parseFloat(contour.largeur)).toBeGreaterThanOrEqual(3);
   expect(contour.bord).toBe("solid");
-  await page.screenshot({
+  await capturer(page, {
     path: `reports/apparence/${testInfo.project.name}-forced-colors-focus.png`,
     fullPage: true,
   });
@@ -211,6 +191,7 @@ test("forced-colors : bordures et focus visibles à la création, au choix et à
   await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
   await bouton(page, "Créer mon coffre").click();
   await bouton(page, "Afficher mon code de récupération").click({ timeout: 60_000 });
+  await expect(page.locator("#feuille-code")).toHaveText(FORME_DU_CODE);
   const code = (await page.locator("#feuille-code").textContent()).trim();
   await bouton(page, "J'ai recopié mon code").click();
   await page.getByLabel("Code recopié depuis votre feuille", { exact: true }).fill(code);
