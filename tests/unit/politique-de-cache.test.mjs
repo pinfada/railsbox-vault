@@ -19,6 +19,7 @@ import test from "node:test";
 import {
   ADRESSE_ABSENTE_DU_TEMOIN,
   NATURES_RELEVEES_PAR_LE_TEMOIN,
+  feuillesReferencees,
   verdict,
 } from "../../tools/publier-temoin.mjs";
 import { ADRESSE_MANIFESTE_V86, adresseDe } from "../../src/v86-adresses.mjs";
@@ -217,6 +218,14 @@ function mesureConforme() {
     openerAvecCoop: true,
     openerSansCoop: false,
     absence: { chemin: ADRESSE_ABSENTE_DU_TEMOIN, statut: 404, recu: "no-store" },
+    feuilles: [
+      {
+        arbre: "coquille",
+        chemin: "/coquille/parcours.css",
+        statut: 200,
+        recu: "text/css; charset=utf-8",
+      },
+    ],
     politiqueDeCache: NATURES_RELEVEES_PAR_LE_TEMOIN.map((releve) => ({
       ...releve,
       attendu: POLITIQUES_DE_CACHE[releve.nature],
@@ -334,4 +343,44 @@ test("une adresse « absente » qui rendrait 200 est refusée : elle ne mesurera
   const { conforme, motifs } = verdict(mesure);
   assert.equal(conforme, false);
   assert.ok(motifs.some((motif) => motif.includes("devait être ABSENTE")));
+});
+
+// --- Les FEUILLES DE STYLE publiées (revue de la PR #216, constat 1) ------------------------------
+//
+// Sous `nosniff`, une feuille servie en `application/octet-stream` est refusée : la coquille
+// s'affiche sans mise en forme pendant que tous les en-têtes restent conformes. Le témoin disait
+// « CONFORME » de cet état ; ces épreuves exigent qu'il le refuse.
+
+test("le témoin REFUSE une feuille de style servie sous un autre type que text/css", () => {
+  const mesure = mesureConforme();
+  mesure.feuilles[0].recu = "application/octet-stream";
+  const { conforme, motifs } = verdict(mesure);
+  assert.equal(conforme, false);
+  assert.ok(motifs.some((motif) => motif.includes("/coquille/parcours.css")));
+});
+
+test("le témoin REFUSE une feuille absente, et un relevé sans aucune feuille", () => {
+  const absente = mesureConforme();
+  absente.feuilles[0].statut = 404;
+  absente.feuilles[0].recu = "text/css; charset=utf-8";
+  assert.equal(verdict(absente).conforme, false);
+
+  const vide = mesureConforme();
+  vide.feuilles = [];
+  const { conforme, motifs } = verdict(vide);
+  assert.equal(conforme, false);
+  assert.ok(motifs.some((motif) => motif.includes("aucune feuille de style relevée")));
+});
+
+test("les feuilles sont lues dans le HTML publié, résolues contre le chemin du document", () => {
+  const html = [
+    '<link rel="stylesheet" href="/coquille/parcours.css" />',
+    '<link rel="icon" href="/favicon.ico" />',
+    "<link href='style.css' rel='stylesheet'>",
+  ].join("\n");
+  assert.deepEqual(feuillesReferencees(html, "/cadre/document.html"), [
+    "/coquille/parcours.css",
+    "/cadre/style.css",
+  ]);
+  assert.deepEqual(feuillesReferencees("<p>sans feuille</p>", "/index.html"), []);
 });

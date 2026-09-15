@@ -21,8 +21,8 @@
 // Ce témoin ne rejoue PAS la frontière de CSP : `tests/browser/csp-frontiere.spec.mjs` la mesure
 // déjà sur les trois moteurs, à chaque `npm run check`, et la dupliquer ici ferait deux vérités.
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { join, posix, relative, sep } from "node:path";
 
 import { chromium, firefox, webkit } from "@playwright/test";
 
@@ -151,6 +151,84 @@ async function releverLAbsence(page) {
   }, ADRESSE_ABSENTE_DU_TEMOIN);
 }
 
+/**
+ * Feuilles de style qu'un document HTML publié référence par `<link rel="stylesheet">` (revue de la
+ * PR #216, constat 1).
+ *
+ * Les arbres publiés sont servis sous `X-Content-Type-Options: nosniff` : une feuille servie sous un
+ * autre type que `text/css` y est REFUSÉE par le moteur, et la page s'affiche sans mise en forme
+ * pendant que les en-têtes restent parfaits. L'extraction est textuelle et volontairement étroite —
+ * les documents publiés sont écrits à la main, sans gabarit —, et le chemin est résolu contre celui
+ * du document, comme le ferait le moteur.
+ *
+ * @param {string} html contenu du document
+ * @param {string} cheminDuDocument chemin servi du document, commençant par `/`
+ * @returns {string[]}
+ */
+export function feuillesReferencees(html, cheminDuDocument) {
+  const feuilles = [];
+  for (const [balise] of html.matchAll(/<link\b[^>]*>/giu)) {
+    if (!/\brel\s*=\s*["']?stylesheet["'\s/>]/iu.test(balise)) continue;
+    const href = /\bhref\s*=\s*["']([^"']+)["']/iu.exec(balise)?.[1];
+    if (href === undefined) continue;
+    feuilles.push(new URL(href, `http://arbre${cheminDuDocument}`).pathname);
+  }
+  return feuilles;
+}
+
+/** Les feuilles référencées par tous les documents HTML d'un arbre publié, sans doublon. */
+export async function feuillesDeLArbre(racine) {
+  const entrees = await readdir(racine, { recursive: true, withFileTypes: true });
+  const feuilles = new Set();
+  for (const entree of entrees) {
+    if (!entree.isFile() || !entree.name.endsWith(".html")) continue;
+    const fichier = join(entree.parentPath, entree.name);
+    const chemin = `/${relative(racine, fichier).split(sep).join(posix.sep)}`;
+    for (const feuille of feuillesReferencees(await readFile(fichier, "utf8"), chemin)) {
+      feuilles.add(feuille);
+    }
+  }
+  return [...feuilles].sort();
+}
+
+/**
+ * Relève le type servi pour chaque feuille de l'arbre courant, par un `fetch` émis depuis la page :
+ * c'est la réponse que le moteur reçoit, et `nosniff` la juge sur ce seul en-tête.
+ */
+async function releverLesFeuilles(page, arbre, feuilles) {
+  const releves = [];
+  for (const chemin of feuilles) {
+    const { statut, recu } = await page.evaluate(async (adresse) => {
+      const reponse = await fetch(adresse, { cache: "no-store" });
+      return { statut: reponse.status, recu: reponse.headers.get("content-type") };
+    }, chemin);
+    releves.push({ arbre, chemin, statut, recu });
+  }
+  return releves;
+}
+
+/**
+ * Motifs de refus tirés du relevé des feuilles (revue de la PR #216, constat 1).
+ *
+ * Deux conditions. Chaque feuille doit rendre 200 sous `text/css`. Et le relevé ne peut pas être
+ * vide : la coquille publiée porte sa feuille, et un relevé sans feuille dirait « conforme » d'un
+ * témoin qui n'a rien regardé — une extraction cassée ressemblerait à un arbre sans mise en forme.
+ */
+export function motifsDesFeuilles(feuilles) {
+  if (!Array.isArray(feuilles) || feuilles.length === 0) {
+    return [
+      'aucune feuille de style relevée : le type servi aux `<link rel="stylesheet">` n\'a pas été mesuré',
+    ];
+  }
+  return feuilles
+    .filter(({ statut, recu }) => statut !== 200 || !/^text\/css(\s*;|$)/iu.test(recu ?? ""))
+    .map(
+      ({ arbre, chemin, statut, recu }) =>
+        `feuille de style ${chemin} (arbre ${arbre}) : attendu 200 en text/css, reçu ${statut} en ` +
+        `${recu ?? "(absent)"} — sous \`nosniff\`, le moteur la refuse et la page perd sa mise en forme`,
+    );
+}
+
 /** Un en-tête qui ne doit PAS être servi. L'origine applicative n'en reçoit aucune CSP (ADR 0002). */
 export function confronterAbsences(absents, recus) {
   return absents
@@ -240,14 +318,17 @@ const ORIGINES_DU_TEMOIN = Object.freeze({
  * encore chargée, et la politique de cache d'un arbre par un `fetch` émis DEPUIS un document de cet
  * arbre — c'est ce qui en fait un relevé de même origine, sans CORS entre le témoin et sa mesure.
  */
-async function releverLesDeuxOrigines(page, natures) {
+async function releverLesDeuxOrigines(page, natures, feuilles) {
   const enTetesCoquille = await relevePage(page, `${ORIGINE_COQUILLE}/index.html`);
   const demarrage = await releverDemarrage(page);
   const cacheCoquille = await releverPolitiqueDeCache(page, "coquille", natures);
+  const feuillesCoquille = await releverLesFeuilles(page, "coquille", feuilles.coquille);
   const absence = await releverLAbsence(page);
   const enTetesApplication = await relevePage(page, `${ORIGINE_APPLICATION}/index.html`);
   const cacheApplication = await releverPolitiqueDeCache(page, "application", natures);
+  const feuillesApplication = await releverLesFeuilles(page, "application", feuilles.application);
   return {
+    feuilles: [...feuillesCoquille, ...feuillesApplication],
     enTetesCoquille,
     demarrage,
     cacheCoquille,
@@ -307,11 +388,11 @@ function mesureDeLApplication(enTetes) {
   };
 }
 
-async function mesurerMoteur(nom, natures) {
+async function mesurerMoteur(nom, natures, feuilles) {
   const navigateur = await MOTEURS[nom].launch();
   const contexte = await navigateur.newContext();
   const page = await contexte.newPage();
-  const releves = await releverLesDeuxOrigines(page, natures);
+  const releves = await releverLesDeuxOrigines(page, natures, feuilles);
   await page.close();
 
   const mesure = {
@@ -324,6 +405,8 @@ async function mesurerMoteur(nom, natures) {
     // Une ADRESSE ABSENTE sous le préfixe immuable : ce que `_headers` annonce pour un CHEMIN
     // n'est pas ce qu'un serveur doit servir pour une RÉPONSE d'absence (constat 1, revue de #123).
     absence: releves.absence,
+    // Les feuilles référencées par les documents publiés, et le type sous lequel elles sont servies.
+    feuilles: releves.feuilles,
     demarrage: releves.demarrage,
     openerAvecCoop: await releverOpener(contexte, `${ORIGINE_COQUILLE}/index.html`),
     openerSansCoop: await releverOpener(contexte, `${ORIGINE_COQUILLE_SANS_COOP}/index.html`),
@@ -395,6 +478,7 @@ function motifsDeLAbsence(absence) {
 export function verdict(mesure) {
   const motifs = [...motifsDePolitiqueDeCache(mesure.politiqueDeCache ?? [])];
   motifs.push(...motifsDeLAbsence(mesure.absence));
+  motifs.push(...motifsDesFeuilles(mesure.feuilles));
   if (mesure.coquille.ecarts.length > 0) motifs.push("en-têtes de la coquille");
   if (mesure.application.ecarts.length > 0) motifs.push("en-têtes de l'origine applicative");
   const csp = mesure.application.cspApplicativeSolitaire;
@@ -438,6 +522,9 @@ function decrire(mesure) {
         `${mesure.absence.recu ?? "(absent)"}   ${mesure.absence.chemin}`,
     );
   }
+  for (const feuille of mesure.feuilles ?? []) {
+    lignes.push(`  feuille (${feuille.statut})  ${feuille.recu ?? "(absent)"}   ${feuille.chemin}`);
+  }
   for (const releve of mesure.politiqueDeCache ?? []) {
     lignes.push(
       `  cache ${releve.nature.padEnd(24)} ${releve.recu ?? "(absent)"}   ${releve.chemin}`,
@@ -466,6 +553,10 @@ async function principal() {
   }
 
   const natures = naturesRelevees(await adresseEpingleeDeLArbre(join(RACINE_ARBRES, "coquille")));
+  const feuilles = {
+    coquille: await feuillesDeLArbre(join(RACINE_ARBRES, "coquille")),
+    application: await feuillesDeLArbre(join(RACINE_ARBRES, "application")),
+  };
 
   const serveurs = await Promise.all([
     demarrer({
@@ -491,7 +582,7 @@ async function principal() {
 
   const mesures = [];
   try {
-    for (const moteur of moteurs) mesures.push(await mesurerMoteur(moteur, natures));
+    for (const moteur of moteurs) mesures.push(await mesurerMoteur(moteur, natures, feuilles));
   } finally {
     await Promise.all(serveurs.map(({ arreter }) => arreter()));
   }
