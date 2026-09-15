@@ -2344,6 +2344,21 @@ pour résolu. Les artefacts de la revue n'ont pas été conservés : il n'y a do
 comparer. Le premier jeu corrigé avait rougi en 3 min sur une assertion du scénario lui-même (le
 message de révocation sans retrait, constat 15), pas sur un figement.
 
+**WebKit en CI, 15/09/2026 : deux rouges sur trois tentatives de la même tête, sur deux épreuves
+différentes (#217).** La tête `0e7514f` de la PR #216 — un commit de test Ruby au-dessus d'une tête
+verte — a rougi d'abord sur `tests/apparence/parcours.spec.mjs` (WebKit, `dark-1024`) : la
+navigation du second contexte, celui de l'« appareil vierge », n'a jamais reçu `load` en 120 s,
+quand le premier contexte avait chargé en 3 s (trace versée dans l'artefact `apparence-parcours`) ;
+puis sur `coquille-deverrouillage.spec.mjs` (WebKit, « l'attente est annoncée AVANT ») : la mesure
+`annonceApresLeGesteMs` était nulle alors que l'annonce avait été peinte — l'état `indisponible` de
+ce moteur revient avant le rappel de peinture qui pose la mesure, et l'épreuve lit le rapport au
+premier changement d'état. La troisième tentative a été verte en 20 min 56 s. Aucune reprise
+automatique n'a été ajoutée (`retries: 0`, reprises comptées) ; la tête précédente, identique pour
+ces épreuves, était verte, et `main` compte douze runs verts sur treize depuis le 12/09. Les deux
+causes sont à instruire sous #217 : la première appartient à la famille des navigations bloquées
+(#178, récupérées sous Firefox seulement), la seconde est une course de mesure, pas un défaut de
+l'annonce.
+
 #### Le support des scénarios : un profil de navigateur PERSISTANT
 
 Les quatre scénarios de `tests/e2e/` tirent leur contexte de
