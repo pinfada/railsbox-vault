@@ -4,10 +4,25 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>RailsBox Vault</title>
+    <link rel="stylesheet" href="/coquille/parcours.css" />
   </head>
   <body>
+    <a class="evitement" href="#parcours-titre" tabindex="0">Aller au parcours</a>
     <main>
-      <h1>RailsBox Vault</h1>
+      <header class="entete-du-coffre">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true"
+        >
+          <rect x="5" y="10" width="14" height="11" />
+          <path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3" />
+        </svg>
+        <h1>RailsBox Vault</h1>
+        <p id="parcours-rang"></p>
+      </header>
 
       <!--
         Le PARCOURS GUIDÉ (#193, ADR 0040). Un seul chemin, un écran à la fois : l'étape courante
@@ -18,9 +33,8 @@
         Les GESTES sont ceux d'avant, inchangés : les mêmes boutons, les mêmes identifiants, les mêmes
         modules de `src/coquille/`. Le parcours les ordonne et les nomme ; il n'en ajoute aucun.
 
-        Aucune mise en forme : ce n'est pas un oubli, c'est le périmètre. L'apparence est P3 (#194).
-        Un HTML sémantique sans style se lit au clavier, se lit par un lecteur d'écran, et ne promet
-        rien qu'il ne tienne.
+        La direction utilitaire (#194) est portée par une feuille locale : aucun texte ni geste
+        n'est décidé par la mise en forme. Le thème suit celui du système.
 
         Aucun <form> : la CSP de la coquille porte « form-action 'none' » (ADR 0022), et un formulaire
         dont la soumission est refusée par la politique serait une porte peinte sur un mur. Les gestes
@@ -32,12 +46,14 @@
         la PR #213, constat 2), et le parcours n'y écrit pas sa progression.
       -->
       <section id="parcours" aria-labelledby="parcours-titre">
-        <p id="parcours-rang"></p>
         <h2 id="parcours-titre" tabindex="-1">Préparation</h2>
-        <p id="parcours-ce-qui-va-se-passer"></p>
-        <p id="parcours-attendu"></p>
-        <p id="parcours-limite"></p>
-        <p id="parcours-attente-annoncee"></p>
+        <details id="parcours-aide" open>
+          <summary>Aide pour cette étape</summary>
+          <p id="parcours-ce-qui-va-se-passer"></p>
+          <p id="parcours-attendu"></p>
+          <p id="parcours-limite"></p>
+          <p id="parcours-attente-annoncee"></p>
+        </details>
         <p id="parcours-attente" role="status" aria-live="polite"></p>
         <p id="parcours-reussite" role="status" aria-live="polite"></p>
         <p id="parcours-refus" role="alert"></p>

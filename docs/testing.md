@@ -256,6 +256,23 @@ coquille avec `?vue=complete`, qui montre tous les blocs. Aucun lien de la page 
 modification de ces épreuves : quinze adresses dans onze fichiers (la revue en comptait quatorze ;
 `coquille-cycle-de-vie.spec.mjs` en porte cinq), aucune assertion, aucun sélecteur.
 
+### La mise en forme du parcours, mesurée par exécution (#194)
+
+P3 ne change aucun geste ni aucun texte : une feuille locale (`public/coquille/parcours.css`,
+`public/cadre/document-applicatif.css`, harmonisation de `apps/reference/public/vault.css` dans
+l'image de référence) et un repli des conseils de l'étape 4 quand Rails est prêt. La direction
+retenue et les mesures sont dans `docs/direction-visuelle.md`. Elle se prouve à deux niveaux, en
+plus des suites du parcours guidé ci-dessus, qui restent vertes sans modification :
+
+| Suite                                 | Moteurs                   | Ce qu'elle mesure                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tests/apparence/parcours.spec.mjs`   | Chromium, Firefox, WebKit | l'ACCESSIBILITÉ et le RENDU, par exécution : axe (règles A et AA jusqu'à WCAG 2.2) sur chaque écran atteint sans machine virtuelle, en clair et en sombre, aux largeurs 320, 768, 1024 et 1440 ; les contrastes recalculés depuis les styles calculés (texte ≥ 4,5:1, bordure de champ ≥ 3:1) ; aucun débordement horizontal ; aucune requête hors des deux origines servies ; la feuille de récupération à l'impression, puis son absence après confirmation ; le focus clavier visible (contour ≥ 3 px) ; WebKit qui refuse le stockage le dit. 33 scénarios, `npm run test:apparence` (dans `npm run check`), 1,2 min en local ; captures et rapports axe dans `reports/apparence/`, versés par la CI dans l'artefact `apparence-parcours` |
+| `tests/e2e/parcours-clavier.spec.mjs` | Chromium                  | les NEUF ÉTAPES AU CLAVIER sur la coquille réelle et Rails réel : Tabulation, Entrée et saisie seulement (le fichier de sauvegarde est remis au champ par Playwright, le dialogue du système n'étant pas dans le DOM), y compris une note écrite dans Rails, le verrouillage, la restauration sur l'autre origine, la récupération par le code et la révocation ; l'aide de l'étape 4 repliée quand Rails est prêt et rouvrable au clavier sans perdre la session ; le cadre à moins de 380 px du haut ; le focus rendu au titre. Délai : 15 min. 3,5 min en local (15/09/2026 ; 5,0 min le 14/09). Lot 3 de `reprise.yml`                                                                                                                    |
+
+Ce que ces suites ne prouvent pas : la lecture par un lecteur d'écran réel (NVDA, VoiceOver) — les
+résultats `incomplete` d'axe sont conservés dans les rapports pour un examen humain, et l'absence de
+violation automatique n'est pas une certification.
+
 ### Backend de blocs OPFS
 
 Le backend de production de `VAULT-PERSIST-001` est prouvé sur **trois** niveaux, et chacun affirme
