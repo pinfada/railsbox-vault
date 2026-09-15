@@ -18,6 +18,7 @@ import {
   MESSAGES_PAR_ECRAN,
   QUESTIONS,
   genererLaRelecture,
+  libellesDeLaMiseEnForme,
 } from "../../tools/relecture-parcours.mjs";
 
 const lire = (chemin) => readFile(new URL(`../../${chemin}`, import.meta.url), "utf8");
@@ -32,6 +33,19 @@ const LIMITE_DE_FIREFOX_DOCUMENTEE =
 test("la page de relecture est À JOUR : la régénérer ne change rien", async () => {
   const actuelle = await readFile(CHEMIN_DE_LA_RELECTURE, "utf8");
   assert.equal(actuelle, await genererLaRelecture(), "« node tools/relecture-parcours.mjs »");
+});
+
+test("la page de relecture montre les libellés de la mise en forme, lus là où la page les prend", async () => {
+  const page = aPlat(await readFile(CHEMIN_DE_LA_RELECTURE, "utf8"));
+  const libelles = await libellesDeLaMiseEnForme();
+  assert.deepEqual(libelles, {
+    evitement: "Aller au parcours",
+    aide: "Aide pour cette étape",
+    relais: "Détails du relais applicatif",
+  });
+  for (const libelle of Object.values(libelles)) {
+    assert.ok(page.includes(`« ${libelle} »`), `« ${libelle} » absent de la relecture`);
+  }
 });
 
 test("la page de relecture reproduit chaque texte servi : écrans, messages, conduites", async () => {

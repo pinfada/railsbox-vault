@@ -11,6 +11,11 @@
 // `src/coquille/conduites-du-parcours.mjs` — et `tests/unit/coquille-parcours-relecture.test.mjs`
 // exige que la régénération ne change rien. Seuls l'introduction et les trois questions par étape sont
 // écrites ici.
+//
+// Les libellés que la mise en forme ajoute (revue de la PR #216, constat 6) viennent de deux sources :
+// le repli de l'aide, créé par le branchement, est lu dans `LIBELLES_DE_LA_PAGE` ; le lien d'évitement
+// et le repli du relais, écrits dans leurs documents sans script, sont RELUS dans `public/index.html` et
+// `public/document-applicatif.html`. Changer l'un d'eux sans régénérer fait échouer l'épreuve.
 
 import { writeFile, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -28,6 +33,7 @@ import {
 import {
   ECRANS,
   ETAPES,
+  LIBELLES_DE_LA_PAGE,
   LIBELLES_DES_BLOCS,
   LIMITE_DE_FIREFOX,
   MESSAGES,
@@ -136,6 +142,36 @@ comprenez en lisant, et ce qui vous arrête.
 aussi tout mot inconnu, toute phrase trop longue, et tout moment où vous ne sauriez pas quoi faire.
 Vos retours seront consignés dans la PR, sans votre nom.`;
 
+/** Les documents servis d'où les libellés sans script sont relus. */
+const DOCUMENT_DE_LA_COQUILLE = new URL("../public/index.html", import.meta.url);
+const DOCUMENT_DU_RELAIS = new URL("../public/document-applicatif.html", import.meta.url);
+
+/** Le texte que capture `motif` dans `html`, ou une erreur qui nomme ce qui n'a pas été trouvé. */
+function libelleDuDocument(html, motif, nom) {
+  const trouve = motif.exec(html)?.[1]?.replace(/\s+/g, " ").trim();
+  if (!trouve) throw new Error(`Libellé introuvable dans le document servi : ${nom}.`);
+  return trouve;
+}
+
+/** Les libellés de la mise en forme, lus là où la page les prend. */
+export async function libellesDeLaMiseEnForme() {
+  const coquille = await readFile(DOCUMENT_DE_LA_COQUILLE, "utf8");
+  const relais = await readFile(DOCUMENT_DU_RELAIS, "utf8");
+  return {
+    evitement: libelleDuDocument(
+      coquille,
+      /<a class="evitement"[^>]*>([^<]+)<\/a>/u,
+      "lien d'évitement",
+    ),
+    aide: LIBELLES_DE_LA_PAGE.aideDeLEtape,
+    relais: libelleDuDocument(
+      relais,
+      /<details id="details-du-courtier">\s*<summary>([^<]+)<\/summary>/u,
+      "repli du relais applicatif",
+    ),
+  };
+}
+
 /** La valeur montrée à la place d'un nombre. */
 const N = "N";
 
@@ -163,15 +199,25 @@ function attenteDeLaPhraseRelue() {
   return texteDAttenteDeLaPhrase(`${duree("chromium")} (dans Firefox : « ${duree("firefox")} »)`);
 }
 
-function sectionDEcran(id) {
+function sectionDEcran(id, libelles) {
   const ecran = ECRANS[id];
   const lignes = [ecran.ceQuiVaSePasser, MESSAGES.attendu(ecran.attendu)];
   const attente =
     ecran.attente ?? (ecran.blocs.includes("phrase") ? attenteDeLaPhraseRelue() : null);
   if (attente !== null) lignes.push(MESSAGES.duree(attente));
   const morceaux = [`### Écran : ${ecran.titre}`, "", citation(lignes)];
-  const libelles = ecran.blocs.flatMap((bloc) => LIBELLES_DES_BLOCS[bloc]);
-  if (libelles.length > 0) morceaux.push("", `Boutons et champs : ${libelles.join(", ")}.`);
+  const libellesDesBlocs = ecran.blocs.flatMap((bloc) => LIBELLES_DES_BLOCS[bloc]);
+  if (libellesDesBlocs.length > 0)
+    morceaux.push("", `Boutons et champs : ${libellesDesBlocs.join(", ")}.`);
+  if (id === "travailler") {
+    morceaux.push(
+      "",
+      `Quand l'application est démarrée, les explications ci-dessus se replient sous « ${libelles.aide} » ` +
+        "(un clic ou la touche Entrée les rouvre), le bouton « Démarrer l'application » disparaît, et " +
+        "l'application remonte près du haut de la page. Au-dessus d'elle, un repli " +
+        `« ${libelles.relais} » contient des informations techniques, qu'il n'est pas utile d'ouvrir.`,
+    );
+  }
   const messages = MESSAGES_PAR_ECRAN[id] ?? [];
   if (messages.length > 0) {
     morceaux.push("", "Messages qui peuvent s'afficher sur cet écran :", "");
@@ -180,20 +226,20 @@ function sectionDEcran(id) {
   return morceaux.join("\n");
 }
 
-function sectionDEtape({ rang, titre }) {
+function sectionDEtape({ rang, titre }, libelles) {
   const ecrans = Object.keys(ECRANS).filter((id) => ECRANS[id].etape === rang);
   const questions = QUESTIONS[rang].map(
     (question, index) => `${index + 1}. ${question}\n\n   _Votre réponse :_`,
   );
   return [
     `## ${MESSAGES.rang(rang)} — ${titre}`,
-    ...ecrans.map(sectionDEcran),
+    ...ecrans.map((id) => sectionDEcran(id, libelles)),
     "**Questions**",
     ...questions,
   ].join("\n\n");
 }
 
-function sectionDeStructure() {
+function sectionDeStructure(libelles) {
   return [
     "## Ce que chaque écran affiche",
     [
@@ -203,11 +249,12 @@ function sectionDeStructure() {
       `s'appelle « ${MESSAGES.continuer("…")} ». Si un code de récupération devait apparaître ailleurs`,
       `que sur sa feuille, il serait remplacé par « ${MESSAGES.codeMasque} ».`,
     ].join(" "),
+    `Au clavier, le premier appui sur la touche Tab fait apparaître en haut de la page un lien « ${libelles.evitement} », qui mène directement au titre de l'étape.`,
     "Dans « Où suis-je ? », chaque étape porte l'une de ces mentions :",
     Object.values(STATUTS)
       .map((statut) => `- ${statut}`)
       .join("\n"),
-    sectionDEcran("chargement"),
+    sectionDEcran("chargement", libelles),
   ].join("\n\n");
 }
 
@@ -241,10 +288,11 @@ function sectionDesConduites() {
 
 /** Le texte de la page, formaté comme le dépôt formate son Markdown. */
 export async function genererLaRelecture() {
+  const libelles = await libellesDeLaMiseEnForme();
   const brut = [
     INTRODUCTION,
-    sectionDeStructure(),
-    ...ETAPES.map(sectionDEtape),
+    sectionDeStructure(libelles),
+    ...ETAPES.map((etape) => sectionDEtape(etape, libelles)),
     sectionDesConduites(),
   ].join("\n\n");
   const options = (await prettier.resolveConfig(CHEMIN_DE_LA_RELECTURE)) ?? {};
