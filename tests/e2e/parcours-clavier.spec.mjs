@@ -9,10 +9,15 @@ const titre = (page, nom) => page.getByRole("heading", { level: 2, name: nom, ex
 const bouton = (page, nom) => page.getByRole("button", { name: nom, exact: true });
 const attendre = async (page, nom) => expect(titre(page, nom)).toBeVisible({ timeout: 120_000 });
 
-// Tab traverse les vrais documents imbriqués ; aucun focus forcé ni clic de pointeur.
+// Tab traverse les vrais documents imbriqués ; aucun focus forcé ni clic de pointeur. Un cadre qui a
+// perdu le focus garde son `activeElement` : la cible n'est admise que si son document A le focus
+// (revue de la PR #216, constat 15).
 async function tabuler(page, cible) {
   for (let i = 0; i < 80; i += 1) {
-    if (await cible.evaluate((node) => node === node.ownerDocument.activeElement)) return;
+    const atteinte = await cible.evaluate(
+      (node) => node.ownerDocument.hasFocus() && node === node.ownerDocument.activeElement,
+    );
+    if (atteinte) return;
     await page.keyboard.press("Tab");
   }
   throw new Error(`Cible inaccessible au clavier : ${await cible.textContent()}`);
