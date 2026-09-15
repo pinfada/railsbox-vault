@@ -90,6 +90,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 
 ## Documentation
 
+- [Direction visuelle et accessibilité du parcours](docs/direction-visuelle.md)
 - [Vision](docs/vision.md)
 - [Exigences produit](docs/product-requirements.md)
 - [Architecture exploratoire](docs/architecture.md)
