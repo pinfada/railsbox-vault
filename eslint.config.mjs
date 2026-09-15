@@ -60,6 +60,7 @@ const NODE_FILES = [
 // légitimes ici ; les couvrir par des commentaires `/* global */` reviendrait à désactiver la règle.
 // Sous `tests/vm/`, seules les `*.spec.mjs` (barrière de durabilité #4) relèvent de ce contexte.
 const PLAYWRIGHT_FILES = [
+  "tests/apparence/**/*.mjs",
   "tests/browser/**/*.mjs",
   // Les modules PARTAGÉS d'un dossier de spécifications relèvent du même contexte que les
   // spécifications qu'ils servent : `tests/e2e/contexte-persistant.mjs` lance un navigateur, lit

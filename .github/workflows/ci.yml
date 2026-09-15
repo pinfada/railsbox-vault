@@ -87,6 +87,18 @@ jobs:
         run: >
           node tools/compter-reprises.mjs playwright-report/rapport.json
           playwright-report/rapport-compat.json playwright-report/rapport-fins-d-onglet.json
+          reports/apparence/resultats.json
+
+      - name: Accessibilité, contrastes et captures du parcours
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: apparence-parcours
+          path: |
+            reports/apparence/
+            test-results/apparence/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Rapports de compatibilité
         if: always()
