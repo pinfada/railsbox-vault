@@ -622,6 +622,7 @@ test("le verrouillage RECHARGE la coquille, qui revient VERROUILLÉE sans que ri
   // Le verrouillage n'invente pas un verrou sur WebKit, et la suite le DÉCLARE au lieu de passer au
   // vert par vacuité : `apres.etat` ci-dessus dit lequel des deux ce moteur a rendu.
   const cadre = page.frameLocator("#document-applicatif");
+  await cadre.getByText("Détails du relais applicatif", { exact: true }).click();
   await cadre.locator("#document-applicatif-demander").click();
   await expect
     .poll(
