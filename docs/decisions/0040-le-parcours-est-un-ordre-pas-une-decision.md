@@ -170,7 +170,16 @@ document est celui du parcours — l'application, à l'étape 4, vient avant « 
 champ a un `label`, et **Entrée dans un champ vaut le clic sur son bouton** (il n'y a pas de
 `<form>` : la CSP porte `form-action 'none'`) ; les attentes et les réussites sont annoncées par
 `role="status"`, les refus par `role="alert"` ; les boutons disent ce qu'ils font ; aucune
-information n'est portée par la couleur — il n'y a pas de couleur. P3 (#194) fera le reste.
+information n'est portée par la couleur — il n'y a pas de couleur. P3 (#194) a donné au parcours sa
+mise en forme (`public/coquille/parcours.css`, `docs/direction-visuelle.md`) : contraste mesuré,
+cibles de 48 px, contour de focus de 3 px, lien d'évitement, deux thèmes, `forced-colors`, et le
+repli de l'aide à l'étape 4 quand Rails est prêt.
+
+> **Note du 15/09/2026 (PR #216).** Le titre reçoit AUSSI le focus sans changement d'écran, dans un
+> seul cas : quand Rails devient prêt et que le bouton « Démarrer l'application » avait le focus. Ce
+> bouton disparaît de la présentation, et le focus ne doit pas tomber au document. Si le focus était
+> ailleurs, il y reste. La règle « le focus suit un changement d'écran » est inchangée pour tout le
+> reste.
 
 ### 7. La vue complète est un paramètre de HARNAIS, et la relecture est générée
 
