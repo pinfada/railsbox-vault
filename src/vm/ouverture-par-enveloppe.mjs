@@ -29,7 +29,7 @@
 
 import { catalogueDeDerivateurs } from "./derivation/derivateurs.mjs";
 import { ouvrirEnveloppe, creerEnveloppe, inventorierEnveloppe } from "./enveloppe-de-cle.mjs";
-import { emplacementInconnu } from "./enveloppe/enveloppe-errors.mjs";
+import { emplacementAmbigu, emplacementInconnu } from "./enveloppe/enveloppe-errors.mjs";
 import { TAILLE_FICHIER_ENVELOPPE } from "./enveloppe/fichier-enveloppe.mjs";
 import { tirerCleDeVolume } from "./enveloppe/identite-enveloppe.mjs";
 import { MANIFEST_ERROR_CODES, ManifestError } from "./manifest-errors.mjs";
@@ -202,16 +202,22 @@ async function emplacementADeriver({ support, identifiantVolume, catalogue, iden
   if (vises.length === 0) {
     throw emplacementInconnu({ volume: identifiantVolume, identifiantEmplacement: identifiant });
   }
-  // Le PREMIER emplacement que le catalogue sait servir. Un emplacement d'un type inconnu ne fait
-  // pas échouer une enveloppe qui en porte un autre, servable : c'est la compatibilité que le
-  // point 5 du contrat demande. Le refus ne tombe que si AUCUN n'est servable.
+  // Le premier TYPE servable reste préféré aux types inconnus. Plusieurs emplacements de ce
+  // type exigent en revanche un identifiant : l'ordre public n'est pas un choix de secret (#220).
   let dernierRefus = null;
   for (const emplacement of vises) {
+    let derivateur;
     try {
-      return { emplacement, derivateur: catalogue.pour(emplacement.typeKek) };
+      derivateur = catalogue.pour(emplacement.typeKek);
     } catch (cause) {
       dernierRefus = cause;
+      continue;
     }
+    const homologues = inventaire.emplacements.filter((e) => e.typeKek === emplacement.typeKek);
+    if (identifiant === undefined && homologues.length > 1) {
+      throw emplacementAmbigu({ volume: identifiantVolume, typeKek: emplacement.typeKek });
+    }
+    return { emplacement, derivateur };
   }
   throw dernierRefus;
 }
@@ -223,6 +229,8 @@ async function emplacementADeriver({ support, identifiantVolume, catalogue, iden
  * identifiant retenu, l'INVENTAIRE public de l'enveloppe est lu, le dérivateur qui sert le type de
  * l'emplacement dérive la KEK sous l'identité de CET emplacement, et seulement alors l'enveloppe
  * est ouverte et l'ouvreur unique reçoit la clé de volume.
+ * Si le premier type servable porte plusieurs emplacements, `identifiantEmplacement` est requis
+ * AVANT toute dérivation (#220). Un identifiant explicite inconnu est refusé, jamais remplacé.
  *
  * Un geste faux ne rend jamais un refus du dérivateur : il rend une AUTRE clé, et c'est
  * `VAULT_ENVELOPPE_CLE_REFUSEE` qui tombe. Un dérivateur ne sait pas qu'une phrase est fausse.

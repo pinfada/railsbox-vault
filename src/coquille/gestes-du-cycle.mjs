@@ -20,7 +20,7 @@
 // par un cliquet (ADR 0028, contrat strict) pour un nom qu'aucun utilisateur ne lit ; ce qui doit
 // être unique est le mot que la coquille MONTRE, et il l'est.
 //
-// Ce module ne contient AUCUNE garde d'ordre. Le refus d'un boot demandé avant l'ouverture du
+// La garde d'ordre faisant autorité reste au Worker. Le refus d'un boot avant l'ouverture du
 // backend vient du Worker de confiance (`VAULT_COQUILLE_ETAPE_HORS_ORDRE`) : la garde vit du côté
 // qui tient le volume, et non du côté qui grise un bouton. Un bouton grisé n'apprend rien à qui
 // l'atteint autrement, et l'épreuve n'a rien à mesurer — c'est déjà l'argument de l'ADR 0028 sur
@@ -56,8 +56,8 @@ import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
  */
 export function brancherLesGestesDuCycle(liaison) {
   // Un DÉMARRAGE EN VOL est retenu ici, et nulle part ailleurs : c'est ce module qui sait qu'un
-  // geste est parti et que sa réponse n'est pas revenue. Il sert à une seule chose — refuser un
-  // verrouillage demandé PENDANT un boot, sous le code de l'ORDRE (voir `verrouiller`).
+  // geste est parti et que sa réponse n'est pas revenue. Il refuse un second démarrage (#215) et
+  // un verrouillage demandé PENDANT un boot, sous le code de l'ORDRE (voir `verrouiller`).
   const enVol = { demarrage: false };
   const contexte = { ...liaison, enVol, dire: ecrivainDEtat(liaison.racine) };
   const demarrerLApplication = () => demarrer(contexte);
@@ -167,6 +167,10 @@ function inscrireLeDemarrage(contexte, rendu) {
 /** ÉTAPE 3 — le geste qui démarre l'application : installation si besoin, backend, puis VM. */
 async function demarrer(contexte) {
   const { demander, rapport, publier, dire, enVol } = contexte;
+  if (enVol.demarrage) return { demarree: false, code: CODES_REFUS_COQUILLE.gesteEnCours };
+  const bouton = contexte.racine.querySelector("#demarrer-application");
+  const etaitDesactive = bouton?.disabled ?? false;
+  if (bouton) bouton.disabled = true;
   dire("cycle:demarrage-en-cours");
   enVol.demarrage = true;
   try {
@@ -194,6 +198,7 @@ async function demarrer(contexte) {
     // Le drapeau retombe QUOI QU'IL ARRIVE. Levé pour toujours par un boot qui échoue, il refuserait
     // tout verrouillage jusqu'au rechargement — un coffre qu'on ne peut plus fermer.
     enVol.demarrage = false;
+    if (bouton) bouton.disabled = etaitDesactive;
     contexte.apresDemarrage?.();
   }
 }

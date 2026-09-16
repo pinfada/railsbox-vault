@@ -256,7 +256,7 @@ export const GESTES_DE_PORTABILITE = Object.freeze(
 );
 
 /**
- * Les gestes LONGS : ceux pendant lesquels un geste de portabilité est refusé, pas mis en attente.
+ * Les gestes LONGS : pendant eux, portabilité et nouveaux gestes longs sont refusés à l'arrivée.
  * Les deux gestes de portabilité qui battent en font partie — une sauvegarde pendant une
  * restauration n'a pas de sens, et une seconde sauvegarde écraserait le fichier de la première.
  */
@@ -270,7 +270,7 @@ export const GESTES_LONGS = Object.freeze(
 );
 
 /**
- * Le refus d'un geste de portabilité arrivé pendant un geste long, ou `null`.
+ * Le refus d'un geste de portabilité ou d'un nouveau geste long pendant un geste long, ou `null`.
  *
  * Il est jugé À L'ARRIVÉE du message, hors de la file du canal : le Worker sert ses gestes en série,
  * et une révocation mise en file derrière un boot attendrait deux minutes sans le dire.
@@ -278,7 +278,7 @@ export const GESTES_LONGS = Object.freeze(
  * @param {string} type @param {number} gestesLongsEnCours
  */
 export function refusPendantUnGesteLong(type, gestesLongsEnCours) {
-  if (!GESTES_DE_PORTABILITE.has(type)) return null;
+  if (!GESTES_DE_PORTABILITE.has(type) && !GESTES_LONGS.has(type)) return null;
   return gestesLongsEnCours > 0 ? CODES_REFUS_COQUILLE.gesteEnCours : null;
 }
 

@@ -244,6 +244,14 @@ export const MUTATIONS = Object.freeze([
     apres: "    size,\n    expectations,\n    support: supportEmploye,",
     epreuves: [ANCRE],
   },
+  {
+    nom: "plusieurs codes exigent un choix explicite avant dérivation (#220)",
+    garde: "emplacementADeriver — refus du choix ambigu",
+    fichier: OUVERTURE,
+    avant: "if (identifiant === undefined && homologues.length > 1)",
+    apres: "if (identifiant === undefined && homologues.length > 8)",
+    epreuves: ["tests/unit/vm-derivation-branchement.test.mjs"],
+  },
 
   // --- Les gardes de #181 : l'ENGAGEMENT, le chemin d'OUVERTURE, et la CRÉATION ----------------
   //

@@ -635,7 +635,7 @@ test("le verrouillage RECHARGE la coquille, qui revient VERROUILLÉE sans que ri
 
 // --- Le BATTEMENT : un Worker qui répond n'est jamais déclaré mort ---------------------------------
 
-test("un Worker VIVANT mais lent n'est jamais déclaré mort, et la fermeture reste atteignable", async ({
+test("#215 : un double clic sur un Worker VIVANT mais lent ne le déclare pas mort", async ({
   page,
   browserName,
 }, info) => {
@@ -652,7 +652,8 @@ test("un Worker VIVANT mais lent n'est jamais déclaré mort, et la fermeture re
   // Quarante secondes de geste, sous une borne de trente. C'est le battement — et lui seul — qui
   // sépare « il ne répond pas encore » de « il ne répondra plus ».
   const debut = Date.now();
-  await page.click("#demarrer-application");
+  await page.locator("#demarrer-application").dblclick();
+  await expect(page.locator("#demarrer-application")).toBeDisabled();
   await expect(page.locator("#cycle-etat")).toContainText("cycle:sans-application", {
     timeout: 120_000,
   });
@@ -665,6 +666,7 @@ test("un Worker VIVANT mais lent n'est jamais déclaré mort, et la fermeture re
 
   const rapport = await releve(page);
   expect(rapport.workerMort, "aucune mort constatée sur un Worker qui bat").toBeNull();
+  await expect(page.locator("#demarrer-application")).toBeEnabled();
   await expect(page.locator("html")).not.toHaveAttribute("data-coquille", "worker-mort");
 
   // Et le VERROUILLAGE reste atteignable — c'est ce que la mort à tort rendait impossible dans le

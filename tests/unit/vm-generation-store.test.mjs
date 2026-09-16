@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { buildPattern } from "../../src/vm/block-fixture.mjs";
 import { CLE_DE_TEST } from "../../src/vm/cle-de-volume.mjs";
+import { constaterLaCoupure } from "../../src/vm/constat-de-coupure.mjs";
 import {
   SURCOUT_ENREGISTREMENT,
   ZONE_ENREGISTREMENTS,
@@ -36,6 +37,49 @@ import { identifiantVolumeEnOctets } from "../../src/vm/volume-chiffre-format.mj
 
 const TAILLE_VOLUME = 32 * 512;
 const IDENTIFIANT = "0123456789abcdef0123456789abcdef";
+
+for (const queue of [false, true]) {
+  test(`#222 : constat avant récupération, avec queue non validée = ${queue}`, async () => {
+    const support = creerSupport();
+    const magasin = await ouvrirMagasin(support);
+    await magasin.deposer(0, buildPattern(512, 11));
+    await magasin.valider();
+    if (queue) await magasin.deposer(512, buildPattern(512, 22));
+    support.magasin.abandon("vol.gen");
+    const avant = support.magasin.snapshot("vol.gen");
+    const journal = {
+      taille: () => avant.byteLength,
+      lire: (offset, longueur) => avant.slice(offset, offset + longueur),
+    };
+    const constat = constaterLaCoupure({ journal, tailleVolume: TAILLE_VOLUME });
+    assert.equal(constat.octetsNonValides, queue ? 512 + SURCOUT_ENREGISTREMENT : 0);
+    assert.deepEqual(support.magasin.snapshot("vol.gen"), avant);
+    const rouvert = await ouvrirMagasin(support);
+    assert.equal(rouvert.rapport.etat, GENERATION_ETATS.rejouee);
+    assert.equal(rouvert.rapport.generation, constat.generation);
+    assert.equal(rouvert.rapport.enregistrementsRejoues, constat.enregistrementsValides);
+    assert.equal(rouvert.rapport.octetsEcartes, constat.octetsNonValides);
+  });
+}
+
+test("#222 : un journal absent ou une charge tronquée ne donnent pas un faux constat zéro", async () => {
+  const vide = { taille: () => 0, lire: () => new Uint8Array() };
+  assert.throws(
+    () => constaterLaCoupure({ journal: vide, tailleVolume: TAILLE_VOLUME }),
+    /absente/,
+  );
+  const support = creerSupport();
+  const magasin = await ouvrirMagasin(support);
+  await magasin.deposer(0, buildPattern(512, 11));
+  await magasin.valider();
+  support.magasin.abandon("vol.gen");
+  const octets = support.magasin.snapshot("vol.gen");
+  const journal = {
+    taille: () => octets.length - 1,
+    lire: (offset, longueur) => octets.slice(offset, offset + longueur),
+  };
+  assert.throws(() => constaterLaCoupure({ journal, tailleVolume: TAILLE_VOLUME }), /tronquée/);
+});
 
 /** Un scellement neuf sous la clé de TEST. Chaque magasin a le sien, comme en production. */
 function scellementDEpreuve(volume = IDENTIFIANT) {

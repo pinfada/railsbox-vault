@@ -522,6 +522,32 @@ test("un verrouillage demandé PENDANT un boot est refusé sous le code de l'ORD
   assert.equal(apres.verrouille, true, "le verrouillage reste refusé après la fin du boot");
 });
 
+test("#215 : un second démarrage ne part pas et ne remplace pas le rapport du premier", async () => {
+  let liberer;
+  let demandes = 0;
+  const { liaison, racine } = liaisonFeinte([], {
+    demander: () => {
+      demandes++;
+      return new Promise((resolve) => {
+        liberer = resolve;
+      });
+    },
+  });
+  const gestes = brancherLesGestesDuCycle(liaison);
+  const premier = gestes.demarrerLApplication();
+  const bouton = racine.querySelector("#demarrer-application");
+  assert.equal(bouton.disabled, true);
+  const second = gestes.demarrerLApplication();
+  assert.equal(demandes, 1);
+  assert.deepEqual(await second, { demarree: false, code: CODES_REFUS_COQUILLE.gesteEnCours });
+  assert.equal(liaison.rapport.application, undefined);
+  assert.equal(bouton.disabled, true);
+  liberer({ demarree: true, counts: {}, installation: {} });
+  assert.equal((await premier).demarree, true);
+  assert.equal(liaison.rapport.application.demarree, true);
+  assert.equal(bouton.disabled, false);
+});
+
 test("un boot qui ÉCHOUE ne verrouille pas le verrouillage pour toujours", async () => {
   // Le drapeau du vol retombe dans un `finally`. Levé pour toujours par un boot qui jette, il
   // refuserait tout verrouillage jusqu'au rechargement : un coffre qu'on ne peut plus fermer.
@@ -534,6 +560,7 @@ test("un boot qui ÉCHOUE ne verrouille pas le verrouillage pour toujours", asyn
   });
   const gestes = brancherLesGestesDuCycle(liaison);
   await gestes.demarrerLApplication();
+  assert.equal(liaison.racine.querySelector("#demarrer-application").disabled, false);
   const rendu = await gestes.verrouillerLeCoffre(DECLENCHEURS.geste);
   assert.equal(rendu.verrouille, true);
 });
