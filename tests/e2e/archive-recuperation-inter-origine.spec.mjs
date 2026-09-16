@@ -363,8 +363,8 @@ test("un volume chiffré exporté avec son moyen de récupération s'OUVRE PAR L
   );
   expect(
     [...phrase.emplacements].sort(),
-    "l'enveloppe porte désormais le code ET la phrase",
-  ).toEqual([TYPES_KEK.phrase, TYPES_KEK.recuperation].sort());
+    "l'enveloppe porte désormais les DEUX codes ET la phrase (#214)",
+  ).toEqual([TYPES_KEK.phrase, TYPES_KEK.recuperation, TYPES_KEK.recuperation].sort());
 
   // 10. BOOT RAILS sur B, sur le volume restauré, ouvert PAR LE CODE. L'invariant est retrouvé.
   page = await nouvellePage(E2E_ORIGIN_B);
