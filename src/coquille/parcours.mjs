@@ -85,6 +85,7 @@ export const BLOCS = Object.freeze([
   "perdu",
   "code",
   "feuille-annonce",
+  "nouveau-code",
   "feuille",
   "confirmation",
   "application",
@@ -255,18 +256,24 @@ export function etapeDeLURL(texte) {
 /**
  * L'ÉCRAN à montrer. C'est la seule fonction qui choisit, et elle ne choisit que parmi `ECRANS`.
  *
- * @param {{ pointeur: number | null, coffre: string, moyens?: string[], progression?: object,
- *           sousEtatDuCode?: string, revocationFaite?: boolean, refus?: string | null,
- *           moteur?: string }} observation
+ * `nombreDeCodes` est le COMPTE des feuilles que le coffre porte (#214). Sans lui, la ligne des
+ * moyens dit seulement qu'il en existe une : c'est le repli, et il suffit à tout ce qui précède
+ * l'étape 3.
+ *
+ * @param {{ pointeur: number | null, coffre: string, moyens?: string[], nombreDeCodes?: number,
+ *           progression?: object, sousEtatDuCode?: string, revocationFaite?: boolean,
+ *           nouveauCodeDemande?: boolean, refus?: string | null, moteur?: string }} observation
  * @returns {string} une clé de `ECRANS`
  */
 export function ecranCourant({
   pointeur,
   coffre,
   moyens = [],
+  nombreDeCodes = moyens.includes("recuperation") ? 1 : 0,
   progression = PROGRESSION_INITIALE,
   sousEtatDuCode = SOUS_ETATS_DU_CODE.annonce,
   revocationFaite = false,
+  nouveauCodeDemande = false,
   refus = null,
   moteur = "chromium",
 }) {
@@ -277,9 +284,15 @@ export function ecranCourant({
   if (coffre === COFFRE.absent) return ecranSansCoffre(pointeur);
   if (coffre === COFFRE.verrouille) return ecranVerrouille(pointeur, moyens, progression);
   if (coffre === COFFRE.ouvert) {
-    const aRecuperation = moyens.includes("recuperation");
-    const etat = { pointeur, aRecuperation, progression, sousEtatDuCode, revocationFaite, moteur };
-    return ecranOuvert(etat);
+    return ecranOuvert({
+      pointeur,
+      nombreDeCodes,
+      progression,
+      sousEtatDuCode,
+      revocationFaite,
+      nouveauCodeDemande,
+      moteur,
+    });
   }
   return "chargement";
 }
@@ -301,19 +314,22 @@ function ecranVerrouille(pointeur, moyens, progression) {
 
 function ecranOuvert({
   pointeur,
-  aRecuperation,
+  nombreDeCodes,
   progression,
   sousEtatDuCode,
   revocationFaite,
+  nouveauCodeDemande,
   moteur,
 }) {
-  // Aucun moyen de récupération : le premier se crée ici. Ce n'est jamais un SECOND code (#214).
-  if (!aRecuperation) return `code-${sousEtatDuCode}`;
+  // Aucun moyen de récupération : le premier se crée ici.
+  if (nombreDeCodes === 0) return `code-${sousEtatDuCode}`;
   if (!progression.code.confirme) {
     // La feuille est dans cette page : on la recopie. Sinon, un code a été rendu ailleurs, ou avant
-    // un rechargement : on le vérifie, on n'en crée pas un autre.
+    // un rechargement : on le VÉRIFIE d'abord — c'est la feuille que l'on a qui compte.
     if (sousEtatDuCode !== SOUS_ETATS_DU_CODE.annonce) return `code-${sousEtatDuCode}`;
-    return "code-a-verifier";
+    // « Je n'ai plus cette feuille » : le parcours revient à l'annonce, et le geste qui suit AJOUTE
+    // un second code. L'ancien reste valable tant qu'il n'est pas révoqué (#214, ADR 0025).
+    return nouveauCodeDemande ? "code-annonce" : "code-a-verifier";
   }
   const parEtape = {
     5: "verrouiller",

@@ -61,6 +61,8 @@ const EPREUVE_PORTABILITE_DU_WORKER = "tests/unit/coquille-portabilite-du-worker
 const EPREUVE_IDENTITE = "tests/unit/coquille-identite-du-coffre.test.mjs";
 const PARCOURS = "src/coquille/parcours.mjs";
 const EPREUVE_PARCOURS = "tests/unit/coquille-parcours.test.mjs";
+const OUVERTURE_PAR_LE_CODE = "src/coquille/ouverture-par-le-code.mjs";
+const EPREUVE_OUVERTURE_PAR_LE_CODE = "tests/unit/coquille-ouverture-par-le-code.test.mjs";
 const EPREUVE_PARCOURS_CONDUITES = "tests/unit/coquille-parcours-conduites.test.mjs";
 
 /**
@@ -876,9 +878,43 @@ export const MUTATIONS = Object.freeze([
     nom: "un coffre ouvert sans moyen de récupération ramène toujours à la création du code",
     garde: "ecranOuvert — le premier moyen de récupération se crée à l'étape 3",
     fichier: PARCOURS,
-    avant: "  if (!aRecuperation) return `code-${sousEtatDuCode}`;\n",
+    avant: "  if (nombreDeCodes === 0) return `code-${sousEtatDuCode}`;\n",
     apres: "",
     epreuves: [EPREUVE_PARCOURS],
+  },
+  // #214 : l'ouverture par le code ESSAIE chaque emplacement de type 4, et la coquille les COMPTE.
+  {
+    nom: "le second code de récupération ouvre le coffre comme le premier",
+    garde: "ouvrirParLeCode — tous les emplacements de type 4, et non le premier",
+    fichier: OUVERTURE_PAR_LE_CODE,
+    avant:
+      "  return emplacements.filter((candidat) => candidat.typeKek === TYPES_KEK.recuperation);\n",
+    apres:
+      "  return emplacements\n" +
+      "    .filter((candidat) => candidat.typeKek === TYPES_KEK.recuperation)\n" +
+      "    .slice(0, 1);\n",
+    epreuves: [EPREUVE_OUVERTURE_PAR_LE_CODE],
+  },
+  {
+    nom: "le coût d'une ouverture par code ne désigne pas la feuille employée",
+    garde: "ouvrirParLeCode — l'absence de court-circuit après un succès",
+    fichier: OUVERTURE_PAR_LE_CODE,
+    avant:
+      "    if (ouverte === null) ouverte = Object.freeze({ ...essai, kek });\n" +
+      "    else essai.dek.fill(0);\n",
+    apres: "    ouverte = Object.freeze({ ...essai, kek });\n    break;\n",
+    epreuves: [EPREUVE_OUVERTURE_PAR_LE_CODE],
+  },
+  {
+    nom: "la coquille COMPTE les feuilles au lieu de dire qu'il y en a une",
+    garde: "moyensProposes — nombreDeCodes",
+    fichier: "src/coquille/moyens-de-deverrouillage.mjs",
+    avant:
+      "    nombreDeCodes: emplacements.filter(\n" +
+      "      (emplacement) => emplacement.typeKek === TYPES_KEK.recuperation,\n" +
+      "    ).length,\n",
+    apres: '    nombreDeCodes: vus.has("recuperation") ? 1 : 0,\n',
+    epreuves: [EPREUVE_DEVERROUILLAGE],
   },
   // Revue de la PR #213 : la progression PERSISTÉE tient l'ordre (constats 1 et 2), le code ne reste
   // pas dans la page (3), les gardes de la page sont des fonctions pures (6, 8, 9), et le cliquet des

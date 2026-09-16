@@ -73,6 +73,7 @@ import {
   exigerKekDeLaPage,
   moyenParNom,
 } from "/src/coquille/moyens-de-deverrouillage.mjs";
+import { ouvrirParLeCode } from "/src/coquille/ouverture-par-le-code.mjs";
 import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
 import { SECTOR_SIZE } from "/src/vm/block-geometry.mjs";
 import {
@@ -534,57 +535,57 @@ function exigerUnVolumeAtteignable() {
 }
 
 /**
- * Ouvre une enveloppe EXISTANTE.
+ * Ouvre une enveloppe EXISTANTE, sous la KEK de la page ou sous un code de récupération.
  *
- * Pour une phrase ou une passkey, la KEK est déjà là : ce Worker ne relit RIEN de ce que la page lui
- * dit des paramètres publics, et c'est ce qui rend la question de confiance sans objet — l'enveloppe
- * tranche seule, par `VAULT_ENVELOPPE_CLE_REFUSEE`. Pour un code, l'emplacement est cherché ici, et
- * la dérivation a lieu ici.
+ * `enveloppeMigree` remonte jusqu'à l'utilisateur, et c'est son seul emploi : une migration de page
+ * AVANCE la version d'un cran qu'il n'a pas décidé (revue de sécurité de la PR #187, constat 5), et
+ * l'ancre notée AVANT ne détecte plus l'effacement de la page v2.
  */
 async function ouvrirLExistante(moyen, message, versionMinimale) {
-  const kek =
+  const ouverte =
     moyen.derivePar === "page"
-      ? exigerKekDeLaPage(message.kek)
-      : await deriverLeCode(moyen, message);
+      ? await ouvrirSousLaPage(message, versionMinimale)
+      : await ouvrirSousLeCode(moyen, message, versionMinimale);
+  return {
+    dek: ouverte.dek,
+    kek: ouverte.kek,
+    version: ouverte.version,
+    migree: ouverte.migration?.faite === true,
+  };
+}
+
+/** La KEK est DÉJÀ LÀ : ce Worker ne relit RIEN des paramètres publics — l'enveloppe tranche seule. */
+async function ouvrirSousLaPage(message, versionMinimale) {
+  const kek = exigerKekDeLaPage(message.kek);
   const ouverte = await ouvrirEnveloppe({
     support: support(),
     identifiantVolume: IDENTIFIANT_VOLUME,
     kek,
     versionMinimale,
   });
-  // `enveloppeMigree` remonte jusqu'à l'utilisateur, et c'est son seul emploi : une migration de
-  // page AVANCE la version d'un cran qu'il n'a pas décidé (revue de sécurité de la PR #187,
-  // constat 5). L'ancre qu'il a notée AVANT ne détecte plus l'effacement de la page v2 ; il faut
-  // donc l'inviter à re-noter, et la coquille ne peut le faire que si on le lui DIT.
-  return {
-    dek: ouverte.dek,
-    kek,
-    version: ouverte.version,
-    migree: ouverte.migration?.faite === true,
-  };
+  return { ...ouverte, kek };
 }
 
-/** DÉRIVE la KEK d'un code de récupération, ICI : HKDF coûte zéro à deux millisecondes. */
-async function deriverLeCode(moyen, message) {
-  const inventaire = await inventorierEnveloppe({
+/**
+ * OUVRE sous un code, en ESSAYANT chaque emplacement de récupération (#214).
+ *
+ * Ce Worker CHOISISSAIT le premier emplacement de type 4 et dérivait sous son sel : un coffre qui en
+ * porte deux — ce qu'un rechargement rend ordinaire — refusait le code qu'il venait d'imprimer. La
+ * boucle sans court-circuit vit dans `ouverture-par-le-code.mjs`, avec son motif, et le banc de
+ * référence l'appelle aussi. Le refus d'un coffre SANS emplacement de récupération reste celui
+ * d'ici : il nomme le moyen demandé.
+ */
+async function ouvrirSousLeCode(moyen, message, versionMinimale) {
+  return ouvrirParLeCode({
     support: support(),
     identifiantVolume: IDENTIFIANT_VOLUME,
-  });
-  const emplacement = inventaire.emplacements.find(
-    (candidat) => candidat.typeKek === moyen.typeKek,
-  );
-  if (emplacement === undefined) {
-    const erreur = new Error(`Aucun emplacement de type « ${moyen.nom} » dans cette enveloppe.`);
-    erreur.code = CODES_REFUS_COQUILLE.typeInconnu;
-    throw erreur;
-  }
-  return CATALOGUE.pour(moyen.typeKek).deriver({
-    parametres: emplacement.parametres,
-    identite: {
-      identifiantVolume: IDENTIFIANT_VOLUME,
-      identifiantEmplacement: emplacement.identifiantEmplacement,
-    },
-    geste: { code: String(message.code ?? "") },
+    code: String(message.code ?? ""),
+    derivateur: CATALOGUE.pour(moyen.typeKek),
+    versionMinimale,
+    sansEmplacement: () =>
+      Object.assign(new Error(`Aucun emplacement de type « ${moyen.nom} » dans cette enveloppe.`), {
+        code: CODES_REFUS_COQUILLE.typeInconnu,
+      }),
   });
 }
 
@@ -624,13 +625,9 @@ async function creerLeCoffre(moyen, message) {
 // --- Le moyen de récupération, et son code rendu UNE fois -----------------------------------------
 
 /**
- * CRÉE un moyen de récupération et rend son code, une seule fois.
- *
- * Le second appel n'est pas gardé ici : c'est `creerMoyenDeRecuperation` qui rend un PORTEUR dont
- * `rendre()` relâche la chaîne au premier appel et lève `VAULT_DERIVATION_CODE_DEJA_RENDU` ensuite
- * (ADR 0025, décision 3). Le porteur est retenu pour que la garde porte sur LA MÊME instance : la
- * recréer à chaque demande rendrait un code NEUF à chaque clic, ce qui est exactement le défaut que
- * « rendu une seule fois » prétend fermer.
+ * CRÉE un moyen de récupération et rend son code, une seule fois PAR CODE : `rendre()` relâche la
+ * chaîne au premier appel et lève `VAULT_DERIVATION_CODE_DEJA_RENDU` ensuite (ADR 0025, décision 3).
+ * La garde est structurelle et vaut PAR CODE ; `moyenRetenu` ne la double pas — voir sa déclaration.
  */
 async function rendreUnMoyenDeRecuperation(correlation) {
   if (interne.etat !== ETATS_DU_VOLUME.ouvert || interne.kek === null) {
@@ -654,7 +651,12 @@ async function rendreUnMoyenDeRecuperation(correlation) {
   });
 }
 
-/** Le porteur du code de la session. Une seule création par Worker, une seule reddition. */
+/**
+ * Le porteur du code de LA SESSION : une commodité, jamais la garantie (#214 ; ADR 0029, limite 2).
+ * C'est une variable de MODULE, que tout Worker neuf remet à `null` (rechargement, verrouillage de
+ * #169) : le geste suivant AJOUTE un second code, que l'ouverture sait désormais essayer. Ce que le
+ * porteur achète, et c'est tout : un double clic dans la MÊME page ne brûle pas une place sur huit.
+ */
 let moyenRetenu = null;
 
 /**

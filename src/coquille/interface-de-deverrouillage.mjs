@@ -174,6 +174,7 @@ export function monterLInterface({
     releve: {
       moteur: moteurProbable(agent),
       moyensProposes: [],
+      nombreDeCodes: 0,
       typesInconnus: [],
       attenteAnnoncee: null,
       codeRendu: false,
@@ -225,6 +226,9 @@ async function rafraichirLInventaire(contexte) {
   contexte.propose = moyensProposes(contexte.inventaire);
   const propose = contexte.propose;
   releve.moyensProposes = propose.moyens.map((moyen) => moyen.nom);
+  // Le COMPTE des feuilles, et non « il y en a » : l'écran du code l'annonce (#214). Il ne franchit
+  // aucune frontière — ce relevé est celui de la page de CONFIANCE, que le parcours relit.
+  releve.nombreDeCodes = propose.nombreDeCodes;
   releve.typesInconnus = propose.inconnus.map((inconnu) => inconnu.typeKek);
   // Un coffre ANTÉRIEUR ou une restauration COUPÉE (#207, ADR 0039) : le Worker le dit dès
   // l'inventaire, et l'interface le montre avant que quiconque ne tape une phrase.
@@ -246,7 +250,7 @@ async function rafraichirLInventaire(contexte) {
   // n'a AUCUN moyen de récupération (ADR 0027, limite 6 ; ADR 0029, décision 4).
   dire(
     noeuds.sansRecuperation,
-    contexte.inventaire.present && !propose.aUnMoyenDeRecuperation
+    contexte.inventaire.present && propose.nombreDeCodes === 0
       ? AVERTISSEMENT_SANS_RECUPERATION
       : "",
   );

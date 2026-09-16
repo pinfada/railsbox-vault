@@ -29,15 +29,10 @@ import {
   parametresDePhrase,
   tirerSelDePhrase,
 } from "/src/vm/derivation/derivateur-phrase.mjs";
-import { derivateurRecuperation } from "/src/vm/derivation/derivateur-recuperation.mjs";
 import { preparerEmplacementDerive } from "/src/vm/derivation/emplacement-derive.mjs";
-import {
-  ajouterEmplacement,
-  inventorierEnveloppe,
-  ouvrirEnveloppe,
-} from "/src/vm/enveloppe-de-cle.mjs";
+import { ajouterEmplacement, inventorierEnveloppe } from "/src/vm/enveloppe-de-cle.mjs";
 import { isEnveloppeError } from "/src/vm/enveloppe/enveloppe-errors.mjs";
-import { TYPES_KEK } from "/src/vm/enveloppe/identite-enveloppe.mjs";
+import { ouvrirParLeCode } from "/src/coquille/ouverture-par-le-code.mjs";
 import { construireEnveloppeDeRecuperation } from "/src/vm/enveloppe-de-recuperation.mjs";
 import { creerMoyenDeRecuperation } from "/src/vm/moyen-de-recuperation.mjs";
 import {
@@ -65,32 +60,26 @@ async function identifiantDeclare(volume) {
 }
 
 /**
- * DÉRIVE la KEK d'un code de récupération, en lisant l'inventaire PUBLIC de l'enveloppe.
+ * OUVRE l'enveloppe sous un code, en ESSAYANT chaque emplacement de récupération.
  *
  * L'inventaire ne demande aucune clé : le fichier porte en clair le type et les paramètres de
  * chaque emplacement, précisément pour qu'un dérivateur puisse lire les siens avant de dériver
- * (ADR 0020, limite 3). Un volume restauré depuis une archive n'a QU'UN emplacement, de type 4 —
- * mais rien n'oblige à le supposer, et le chercher coûte une comparaison.
+ * (ADR 0020, limite 3). Ce banc CHOISISSAIT le premier emplacement de type 4 — le même défaut que
+ * le Worker de confiance portait (#214) —, si bien qu'il n'aurait pas su rejouer un coffre qui en
+ * porte deux. Les deux appellent désormais la MÊME fonction : un banc qui ne joue pas le chemin du
+ * produit ne mesure pas le produit.
  */
-async function kekDuCode({ support, identifiantVolume, code }) {
-  const inventaire = await inventorierEnveloppe({ support, identifiantVolume });
-  const emplacement = inventaire.emplacements.find(
-    (candidat) => candidat.typeKek === TYPES_KEK.recuperation,
-  );
-  if (emplacement === undefined) {
-    throw new Error(
-      `Volume « ${identifiantVolume} » : son enveloppe ne porte aucun emplacement de récupération (${inventaire.emplacements.length} emplacement(s), types ${inventaire.emplacements.map((e) => e.typeKek).join(", ")}).`,
-    );
-  }
-  const kek = await derivateurRecuperation().deriver({
-    parametres: emplacement.parametres,
-    identite: {
-      identifiantVolume,
-      identifiantEmplacement: emplacement.identifiantEmplacement,
-    },
-    geste: { code },
+async function ouvrirSousLeCode({ support, identifiantVolume, code, versionMinimale = null }) {
+  return ouvrirParLeCode({
+    support,
+    identifiantVolume,
+    code,
+    versionMinimale,
+    sansEmplacement: () =>
+      new Error(
+        `Volume « ${identifiantVolume} » : son enveloppe ne porte aucun emplacement de récupération.`,
+      ),
   });
-  return { kek, identifiantEmplacement: emplacement.identifiantEmplacement };
 }
 
 /**
@@ -128,13 +117,7 @@ export async function phaseRecuperationOuvrir({ volume, code, versionMinimale = 
   const identifiantVolume = await identifiantDeclare(volume);
   const support = supportEnveloppeOpfs(volume);
   try {
-    const derive = await kekDuCode({ support, identifiantVolume, code });
-    const ouverte = await ouvrirEnveloppe({
-      support,
-      identifiantVolume,
-      kek: derive.kek,
-      versionMinimale,
-    });
+    const ouverte = await ouvrirSousLeCode({ support, identifiantVolume, code, versionMinimale });
     // La clé développée est effacée ici même : cette phase ne boote rien, et rien n'en a besoin.
     poserCleDeveloppee(ouverte.dek)();
     return {
@@ -169,7 +152,9 @@ export async function phaseRecuperationOuvrir({ volume, code, versionMinimale = 
 export async function phaseRecuperationAjouterPhrase({ volume, code, phrase }) {
   const identifiantVolume = await identifiantDeclare(volume);
   const support = supportEnveloppeOpfs(volume);
-  const derive = await kekDuCode({ support, identifiantVolume, code });
+  const ouverte = await ouvrirSousLeCode({ support, identifiantVolume, code });
+  // La clé de volume ne sert à rien ici — c'est la KEK du code qui autorise l'ajout : on l'efface.
+  poserCleDeveloppee(ouverte.dek)();
   const parametres = parametresDePhrase({ sel: tirerSelDePhrase(), ...CALIBRATION_PHRASE });
   const prepare = await preparerEmplacementDerive({
     identifiantVolume,
@@ -180,7 +165,7 @@ export async function phaseRecuperationAjouterPhrase({ volume, code, phrase }) {
   const ajoute = await ajouterEmplacement({
     support,
     identifiantVolume,
-    kek: derive.kek,
+    kek: ouverte.kek,
     kekNouvelle: prepare.kek,
     typeKek: prepare.typeKek,
     parametres,
@@ -206,13 +191,7 @@ export async function phaseRecuperationAjouterPhrase({ volume, code, phrase }) {
 export async function installerCleParCode({ volume, code, versionMinimale = null }) {
   const identifiantVolume = await identifiantDeclare(volume);
   const support = supportEnveloppeOpfs(volume);
-  const derive = await kekDuCode({ support, identifiantVolume, code });
-  const ouverte = await ouvrirEnveloppe({
-    support,
-    identifiantVolume,
-    kek: derive.kek,
-    versionMinimale,
-  });
+  const ouverte = await ouvrirSousLeCode({ support, identifiantVolume, code, versionMinimale });
   return { relacher: poserCleDeveloppee(ouverte.dek), version: ouverte.version };
 }
 

@@ -278,6 +278,11 @@ test("les trois échecs les plus probables ont la conduite que l'E2E attend", ()
   assert.match(conduiteHumaine(ARCHIVE_ERROR_CODES.digestMismatch), /abîmée ou modifiée/);
 });
 
-test("un code déjà rendu ne conseille jamais d'en créer un second (#214)", () => {
-  assert.doesNotMatch(conduiteHumaine(DERIVATION_ERROR_CODES.codeDejaRendu), /créez/);
+test("un code déjà rendu dit qu'un NOUVEAU est possible, et que l'ancien reste valable (#214)", () => {
+  // L'épreuve disait l'inverse jusqu'à #214, et elle avait raison de le dire : un second « créer »
+  // posait alors un emplacement que l'ouverture ne savait pas essayer, si bien que le code promis
+  // était refusé. L'ouverture les essaie tous ; la phrase redevient VRAIE, et elle est due.
+  const conduite = conduiteHumaine(DERIVATION_ERROR_CODES.codeDejaRendu);
+  assert.match(conduite, /NOUVEAU code/);
+  assert.match(conduite, /tant que personne ne le retire/);
 });

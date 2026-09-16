@@ -93,6 +93,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     progressionLue: false,
     pointeur: null,
     sousEtatDuCode: SOUS_ETATS_DU_CODE.annonce,
+    /** « Je n'ai plus cette feuille » : vrai jusqu'au prochain code affiché (#214). */
+    nouveauCodeDemande: false,
     revocationFaite: false,
     coffre: COFFRE.inconnu,
     ecran: null,
@@ -292,9 +294,11 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       pointeur: etat.pointeur,
       coffre: etat.coffre,
       moyens: releve.moyensProposes ?? [],
+      nombreDeCodes: releve.nombreDeCodes,
       progression: etat.progression,
       sousEtatDuCode: etat.sousEtatDuCode,
       revocationFaite: etat.revocationFaite,
+      nouveauCodeDemande: etat.nouveauCodeDemande,
       refus: releve.dernierRefus ?? null,
       moteur,
     });
@@ -316,6 +320,10 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     dire("parcours-attendu", MESSAGES.attendu(ecran.attendu));
     const limite = moteur === "firefox" && (ecranId === "creer" || ecranId === "choisir");
     dire("parcours-limite", limite ? LIMITE_DE_FIREFOX : "");
+    // Le COMPTE des feuilles, là où la personne décide d'en demander une de plus (#214).
+    const codes = releve.nombreDeCodes ?? 0;
+    const compteDit = codes > 0 && (ecranId === "code-annonce" || ecranId === "code-a-verifier");
+    dire("parcours-codes", compteDit ? MESSAGES.codesDejaRendus(codes) : "");
     const attente = ecran.attente ?? (visibles.includes("phrase") ? attenteDeLaPhraseAnnoncee : "");
     dire("parcours-attente-annoncee", attente === "" ? "" : MESSAGES.duree(attente));
     const suivante = etapeSuivante(ecranId);
@@ -479,6 +487,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     const code = noeud("feuille-code").textContent.trim();
     if (code === "" || etat.sousEtatDuCode !== SOUS_ETATS_DU_CODE.annonce) return;
     etat.sousEtatDuCode = SOUS_ETATS_DU_CODE.feuille;
+    etat.nouveauCodeDemande = false;
     const version = /\d+/.exec(noeud("feuille-version").textContent)?.[0] ?? null;
     pas("code-rendu", version === null ? null : Number(version));
     dire("parcours-consigne-feuille", MESSAGES.consigneDeLaFeuille(version ?? "?"));
@@ -526,6 +535,11 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   );
   geste("parcours-phrase-perdue", () => allerA(etapeApres("rouvrir", "perdu", etat.pointeur)));
   geste("parcours-continuer", () => allerA(etapeApres(etat.ecran, "continuer", etat.pointeur)));
+  // « Je n'ai plus cette feuille » : aucun geste n'est envoyé au Worker ici. L'écran revient à
+  // l'annonce, où la personne prépare son papier, et c'est le bouton d'avant qui crée le code.
+  geste("parcours-nouveau-code", () => {
+    etat.nouveauCodeDemande = true;
+  });
   geste("parcours-code-recopie", () => {
     etat.sousEtatDuCode = SOUS_ETATS_DU_CODE.confirmation;
   });

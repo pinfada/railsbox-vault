@@ -132,6 +132,11 @@ Messages qui peuvent s'afficher sur cet écran :
 
 Boutons et champs : « Afficher mon code de récupération ».
 
+Messages qui peuvent s'afficher sur cet écran :
+
+- Ce coffre porte déjà N codes de récupération. En afficher un nouveau n'efface aucun des précédents
+  : tous ouvrent ce coffre tant que vous n'en retirez aucun.
+
 ### Écran : Recopier votre code de récupération
 
 > Voici votre code. Il ne sera plus jamais affiché, et rien sur cet appareil n'en garde de copie.
@@ -169,15 +174,16 @@ Messages qui peuvent s'afficher sur cet écran :
 
 ### Écran : Vérifier votre code de récupération
 
-> Un code de récupération a déjà été affiché pour ce coffre. Il ne sera plus jamais affiché, et
-> RailsBox Vault n'en crée pas un second. Pour continuer, ouvrez votre coffre avec ce code, en le
-> lisant sur votre feuille : c'est ainsi que l'on vérifie que votre feuille est juste.
+> Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché :
+> il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le lisant
+> sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste.
 >
 > Ce que vous avez à faire : Tapez le code de votre feuille, puis cliquez sur « Ouvrir mon coffre
-> avec le code ». Si vous n'avez pas recopié ce code et que vous n'avez encore rien mis dans ce
-> coffre, abandonnez-le et recommencez : dans les réglages du navigateur, effacez les données de ce
-> site, rechargez la page, puis créez un nouveau coffre. Remplacer un code perdu n'est pas encore
-> possible. Si vous avez déjà mis des données dans ce coffre, n'effacez rien et demandez de l'aide.
+> avec le code ». Si vous n'avez plus cette feuille : un nouveau code ne peut être affiché que sur
+> un coffre OUVERT, et celui-ci est verrouillé. Si vous n'avez encore rien mis dans ce coffre,
+> abandonnez-le et recommencez : dans les réglages du navigateur, effacez les données de ce site,
+> rechargez la page, puis créez un nouveau coffre. Si vous avez déjà mis des données dans ce coffre,
+> n'effacez rien et demandez de l'aide.
 
 Boutons et champs : « Code de récupération » (champ), « Ouvrir mon coffre avec le code ».
 
@@ -190,23 +196,27 @@ Messages qui peuvent s'afficher sur cet écran :
 
 ### Écran : Vérifier votre code de récupération
 
-> Un code de récupération a déjà été affiché pour ce coffre. Il ne sera plus jamais affiché, et
-> RailsBox Vault n'en crée pas un second. Pour continuer, ouvrez votre coffre avec ce code, en le
-> lisant sur votre feuille : c'est ainsi que l'on vérifie que votre feuille est juste.
+> Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché :
+> il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le lisant
+> sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste.
 >
-> Ce que vous avez à faire : Cliquez sur « Verrouiller mon coffre », puis ouvrez-le avec le code de
-> votre feuille. Si vous n'avez pas recopié ce code et que vous n'avez encore rien mis dans ce
-> coffre, abandonnez-le et recommencez : dans les réglages du navigateur, effacez les données de ce
-> site, rechargez la page, puis créez un nouveau coffre. Remplacer un code perdu n'est pas encore
-> possible. Si vous avez déjà mis des données dans ce coffre, n'effacez rien et demandez de l'aide.
+> Ce que vous avez à faire : Si vous avez votre feuille : cliquez sur « Verrouiller mon coffre »,
+> puis ouvrez le coffre avec le code que vous y avez recopié. Si vous n'avez plus cette feuille,
+> cliquez sur « Je n'ai plus cette feuille — afficher un nouveau code » : un nouveau code sera
+> affiché, une seule fois, et vous le recopierez sur une feuille neuve. L'ancien code continue
+> d'ouvrir ce coffre tant que personne ne le retire. Si quelqu'un d'autre a vu votre feuille, c'est
+> un autre geste : allez à l'étape 9 et révoquez les autres moyens d'ouvrir ce coffre.
 >
 > Durée : Le verrouillage prend quelques secondes.
 
-Boutons et champs : « Verrouiller mon coffre ».
+Boutons et champs : « Je n'ai plus cette feuille — afficher un nouveau code », « Verrouiller mon
+coffre ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
 - Verrouillage en cours… Ne fermez pas l'onglet.
+- Ce coffre porte déjà N codes de récupération. En afficher un nouveau n'efface aucun des précédents
+  : tous ouvrent ce coffre tant que vous n'en retirez aucun.
 
 **Questions**
 
@@ -219,7 +229,8 @@ Messages qui peuvent s'afficher sur cet écran :
    _Votre réponse :_
 
 3. Si la page se recharge avant la confirmation, l'écran « Vérifier votre code » vous dit-il quoi
-   faire, y compris si vous avez perdu le code ?
+   faire — y compris demander une nouvelle feuille si vous avez perdu la vôtre, et comprenez-vous
+   que l'ancienne continue d'ouvrir le coffre ?
 
    _Votre réponse :_
 
@@ -601,8 +612,9 @@ faire.
 - Le code a une faute de recopie : une lettre ou un chiffre est mal lu, ou deux sont inversés.
   Relisez votre feuille, symbole par symbole. Les tirets, les espaces et les majuscules n'ont pas
   d'importance.
-- Le code de récupération ne s'affiche qu'une fois, et il a déjà été affiché. Il ne le sera pas de
-  nouveau : ouvrez le coffre avec le code de votre feuille pour le vérifier.
+- Le code de récupération ne s'affiche qu'une fois, et celui-ci a déjà été affiché. Ouvrez le coffre
+  avec le code de votre feuille pour le vérifier ; si vous ne l'avez pas noté, demandez un NOUVEAU
+  code : l'ancien ouvrira ce coffre tant que personne ne le retire.
 - Ce qui a été saisi ou choisi n'a pas la forme attendue : le numéro de version est un nombre
   entier, et une restauration demande un fichier de sauvegarde. Corrigez, puis réessayez.
 - Le numéro de version se tape en chiffres, à partir de 1, tel qu'il est noté sur votre feuille. Si

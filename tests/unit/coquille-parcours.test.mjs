@@ -216,7 +216,7 @@ test("un coffre ouvert SANS moyen de récupération ramène toujours à la créa
   }
 });
 
-test("CONSTAT 1 : un code rendu et non confirmé ne fait JAMAIS proposer d'en créer un second", () => {
+test("CONSTAT 1 : un code rendu et non confirmé fait d'abord VÉRIFIER la feuille que l'on a", () => {
   for (const pointeur of [null, 3, 4, 5, 6, 7, 8, 9]) {
     const ouvertSansFeuille = ecranCourant(ouvert({ pointeur, progression: rendue }));
     assert.equal(ouvertSansFeuille, "code-a-verifier", `ouvert, étape ${pointeur}`);
@@ -236,12 +236,56 @@ test("CONSTAT 1 : un code rendu et non confirmé ne fait JAMAIS proposer d'en cr
   };
   assert.equal(ecranCourant({ ...perdue, pointeur: 1 }), "code-verifier");
   for (const id of ["code-verifier", "code-a-verifier"]) {
+    // Aucun des deux ne CRÉE un code d'un clic : le geste reste derrière l'annonce, qui dit de
+    // préparer une feuille avant que le code ne s'affiche (une seule fois).
     assert.ok(
       !ECRANS[id].blocs.includes("feuille-annonce"),
       `${id} n'offre pas d'afficher un code`,
     );
-    assert.match(ECRANS[id].attendu, /effacez les données de ce site/);
   }
+  // Coffre VERROUILLÉ : afficher un code exige un coffre ouvert, et le dire est la seule conduite
+  // honnête. Coffre OUVERT : la sortie existe, et l'écran nomme AUSSI la révocation (#214).
+  assert.match(ECRANS["code-verifier"].attendu, /effacez les données de ce site/);
+  assert.match(ECRANS["code-a-verifier"].attendu, /afficher un nouveau code/);
+  assert.match(ECRANS["code-a-verifier"].attendu, /étape 9/);
+  assert.doesNotMatch(ECRANS["code-a-verifier"].attendu, /effacez les données de ce site/);
+});
+
+test("« je n'ai plus cette feuille » ramène à l'annonce, et un SECOND code s'y crée (#214)", () => {
+  const sansLaFeuille = ouvert({ pointeur: 3, progression: rendue, nouveauCodeDemande: true });
+  assert.equal(ecranCourant(sansLaFeuille), "code-annonce");
+  assert.equal(
+    ecranCourant(ouvert({ pointeur: 3, progression: rendue })),
+    "code-a-verifier",
+    "sans la demande, on vérifie la feuille que l'on a",
+  );
+  // La demande ne fait rien sauter : le code reste à recopier et à confirmer.
+  assert.equal(
+    ecranCourant({ ...sansLaFeuille, sousEtatDuCode: SOUS_ETATS_DU_CODE.feuille }),
+    "code-feuille",
+  );
+  assert.equal(
+    ecranCourant({ ...sansLaFeuille, progression: confirmee }),
+    "travailler",
+    "une fois le code confirmé, la demande n'a plus de prise",
+  );
+  assert.ok(ECRANS["code-a-verifier"].blocs.includes("nouveau-code"), "la sortie est sur l'écran");
+  assert.ok(BLOCS.includes("nouveau-code"), "le bloc est déclaré");
+});
+
+test("le COMPTE des feuilles remplace « il y en a une » (#214)", () => {
+  // Deux codes posés : la ligne des moyens dit toujours « recuperation » une fois, et c'est le
+  // compte, non la ligne, qui apprend au parcours combien de feuilles ouvrent ce coffre.
+  const deux = ouvert({ pointeur: 3, progression: rendue, nombreDeCodes: 2 });
+  assert.equal(ecranCourant(deux), "code-a-verifier");
+  assert.equal(
+    ecranCourant(ouvert({ pointeur: 3, progression: creee, nombreDeCodes: 0, moyens: ["phrase"] })),
+    "code-annonce",
+    "zéro code : le premier se crée",
+  );
+  assert.match(MESSAGES.codesDejaRendus(1), /déjà un code/);
+  assert.match(MESSAGES.codesDejaRendus(3), /déjà 3 codes/);
+  assert.match(MESSAGES.codesDejaRendus(2), /n'efface aucun des précédents/);
 });
 
 test("CONSTAT 1 : la feuille affichée DANS la page se recopie et se confirme, sans quitter l'étape 3", () => {

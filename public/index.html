@@ -61,6 +61,8 @@
           <p id="parcours-ce-qui-va-se-passer"></p>
           <p id="parcours-attendu"></p>
           <p id="parcours-limite"></p>
+          <!-- Le COMPTE des feuilles de récupération que ce coffre porte déjà (#214). -->
+          <p id="parcours-codes"></p>
           <p id="parcours-attente-annoncee"></p>
         </div>
         <p id="parcours-attente" role="status" aria-live="polite"></p>
@@ -150,6 +152,19 @@
         <div data-bloc="feuille-annonce" hidden>
           <p>
             <button id="creer-recuperation" type="button">Afficher mon code de récupération</button>
+          </p>
+        </div>
+        <!--
+          La sortie « je n'ai plus cette feuille » (#214). Elle ne CRÉE rien : elle ramène à
+          l'annonce, où la personne prépare son papier avant de cliquer sur « Afficher mon code de
+          récupération » — le code ne s'affiche qu'une fois, et le geste est celui d'avant. Elle vit
+          ici, dans la section de la feuille, parce que c'est de la feuille qu'elle parle.
+        -->
+        <div data-bloc="nouveau-code" hidden>
+          <p>
+            <button id="parcours-nouveau-code" type="button">
+              Je n'ai plus cette feuille — afficher un nouveau code
+            </button>
           </p>
         </div>
         <div data-bloc="feuille" hidden>

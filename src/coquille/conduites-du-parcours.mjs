@@ -324,8 +324,9 @@ const TABLE = Object.freeze({
   ],
   [D.codeDejaRendu]: [
     K.recopier,
-    "Le code de récupération ne s'affiche qu'une fois, et il a déjà été affiché. Il ne le sera pas " +
-      "de nouveau : ouvrez le coffre avec le code de votre feuille pour le vérifier.",
+    "Le code de récupération ne s'affiche qu'une fois, et celui-ci a déjà été affiché. Ouvrez le " +
+      "coffre avec le code de votre feuille pour le vérifier ; si vous ne l'avez pas noté, demandez " +
+      "un NOUVEAU code : l'ancien ouvrira ce coffre tant que personne ne le retire.",
   ],
   [D.argon2Indisponible]: [
     K.autreAppareil,
