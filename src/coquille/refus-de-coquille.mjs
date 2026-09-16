@@ -325,9 +325,9 @@ const MESSAGES = Object.freeze({
   [CODES_REFUS_COQUILLE.canalDeRelaisRefuse]:
     "Le canal de relais coquille ↔ Worker n'est atteignable par aucun message du port restreint.",
   [CODES_REFUS_COQUILLE.coffreAnterieur]:
-    "Ce coffre a été créé par une version de développement antérieure au 13/09/2026. Aucune migration n'est offerte, car rien n'est publié : supprimez-le puis recréez-le — dans le navigateur, effacez les données de ce site (réglages du site, « Effacer les données »), rechargez la coquille, et le premier déverrouillage créera un coffre neuf.",
+    "Ce coffre a été créé par une version de développement antérieure au 13/09/2026. Sa mise à niveau n'est pas encore disponible. N'effacez pas les données de ce site : elles sont nécessaires à sa récupération. Conservez vos moyens de déverrouillage et toute sauvegarde existante. Essayez cette sauvegarde sur un autre appareil ou dans un autre navigateur compatible, avec une version qui sait la lire ; sinon, demandez de l'aide en conservant ce coffre.",
   [CODES_REFUS_COQUILLE.disqueDUnAutreCoffre]:
-    "Le disque de ce coffre n'a été ni installé ni restauré par cette coquille : son manifeste déclare un autre volume. Il n'est ni ouvert ni réparé. Effacez les données de ce site pour repartir d'un emplacement vide, puis restaurez une sauvegarde de votre coffre.",
+    "Le disque de ce coffre n'a été ni installé ni restauré par cette coquille : son manifeste déclare un autre volume. Il n'est ni ouvert ni réparé. N'effacez pas les données de ce site. Conservez toute sauvegarde existante ; essayez-la sur un autre appareil ou dans un autre navigateur compatible. Sans sauvegarde utilisable, demandez de l'aide en conservant ce coffre.",
   [CODES_REFUS_COQUILLE.archiveDUnAutreCoffre]:
     "Cette archive n'est pas la sauvegarde d'un coffre de la coquille : elle décrit un autre volume. Rien n'a été écrit ; choisissez le fichier produit par « Sauvegarder le coffre ».",
   [CODES_REFUS_COQUILLE.coffreServiSansManifeste]:

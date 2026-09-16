@@ -393,17 +393,17 @@ const TABLE = Object.freeze({
     "Le coffre doit d'abord être ouvert pour faire cela. Ouvrez-le, puis recommencez.",
   ],
   [C.coffreAnterieur]: [
-    K.abandonner,
-    "Ce coffre a été créé par une version d'essai antérieure au 13 septembre 2026, que cette version " +
-      "ne sait pas ouvrir. Pour repartir de zéro : dans les réglages du navigateur, effacez les données " +
-      "de ce site, rechargez la page, puis créez un nouveau coffre. Ce qui était dans l'ancien coffre " +
-      "sera effacé.",
+    K.autre,
+    "Ce coffre date d'avant le 13 septembre 2026. Sa mise à niveau n'est pas encore disponible. " +
+      "N'effacez pas les données de ce site. Gardez vos moyens d'ouverture et toute sauvegarde. " +
+      "Essayez la sauvegarde dans un autre navigateur compatible, avec une version qui sait la lire ; " +
+      "sinon, demandez de l'aide en conservant ce coffre.",
   ],
   [C.disqueDUnAutreCoffre]: [
-    K.abandonner,
-    "L'application enregistrée sur cet appareil n'appartient pas à ce coffre. Rien n'a été ouvert ni " +
-      "modifié. Pour repartir d'un emplacement vide, effacez les données de ce site dans les réglages " +
-      "du navigateur, puis restaurez la sauvegarde de votre coffre.",
+    K.autre,
+    "L'application enregistrée n'appartient pas à ce coffre. Rien n'a été modifié. " +
+      "N'effacez pas les données de ce site. Essayez votre sauvegarde dans un autre navigateur " +
+      "compatible. Sans sauvegarde utilisable, demandez de l'aide en conservant ce coffre.",
   ],
   [C.coffreServiSansManifeste]: [
     K.autre,

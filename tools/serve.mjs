@@ -1,7 +1,7 @@
-import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { open, realpath, stat } from "node:fs/promises";
 import { createServer } from "node:http";
-import { extname, resolve, sep } from "node:path";
+import { extname, relative, resolve, sep } from "node:path";
+import { pipeline } from "node:stream/promises";
 
 import {
   ISOLATION_REQUIRE_CORP,
@@ -45,19 +45,74 @@ function resolveRoot(pathname) {
   return { root: publicRoot, relativePath };
 }
 
+/** Une erreur HTTP ne révèle aucun chemin local et n'est jamais mise en cache. */
+function refuser(response, statut, message, entetes = {}) {
+  response
+    .writeHead(statut, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "X-Content-Type-Options": "nosniff",
+      ...enTetesDAbsence(),
+      ...entetes,
+    })
+    .end(message);
+}
+
+/** Refuse aussi les séparateurs Windows et les flux NTFS, même sur un hôte Unix. */
+function lireAdresse(cible) {
+  if (!cible.startsWith("/") || cible.startsWith("//") || cible.includes("\\")) {
+    throw new Error("Invalid request target");
+  }
+  const url = new URL(cible, "http://localhost");
+  const pathname = decodeURIComponent(url.pathname);
+  if (
+    pathname.startsWith("//") ||
+    /[\\:]/u.test(pathname) ||
+    [...pathname].some(
+      (caractere) => caractere.charCodeAt(0) < 32 || caractere.charCodeAt(0) === 127,
+    ) ||
+    pathname.split("/").some((segment) => segment === "." || segment === "..")
+  )
+    throw new Error("Invalid path");
+  return { url, pathname };
+}
+
 createServer(async (request, response) => {
-  const url = new URL(request.url ?? "/", "http://localhost");
-  const pathname = url.pathname;
+  let adresse;
+  try {
+    adresse = lireAdresse(request.url ?? "/");
+  } catch {
+    refuser(response, 400, "Bad request");
+    return;
+  }
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    refuser(response, 405, "Method not allowed", { Allow: "GET, HEAD" });
+    return;
+  }
+  const { url, pathname } = adresse;
   const { root, relativePath } = resolveRoot(pathname);
   const candidate = resolve(root, relativePath);
 
   if (candidate !== root && !candidate.startsWith(`${root}${sep}`)) {
-    response.writeHead(403).end("Forbidden");
+    refuser(response, 403, "Forbidden");
     return;
   }
 
+  let fichier;
   try {
-    const metadata = await stat(candidate);
+    const racineReelle = await realpath(root);
+    const cheminReel = await realpath(candidate);
+    // Même un lien INTERNE est refusé : son alias pourrait recevoir les exemptions CSP d'un
+    // autre chemin. La racine configurée peut elle-même être un lien (checkout de développement).
+    if (relative(resolve(racineReelle, relativePath), cheminReel) !== "") {
+      refuser(response, 403, "Forbidden");
+      return;
+    }
+    // Ne pas ouvrir un tube nommé : son ouverture en lecture pourrait attendre un écrivain.
+    if (!(await stat(cheminReel)).isFile()) throw new Error("Not a file");
+    // Le fichier vérifié et le flux partagent un descripteur ; aucune seconde ouverture entre
+    // le contrôle du type et la lecture. Le système de fichiers local reste de confiance.
+    fichier = await open(cheminReel, "r");
+    const metadata = await fichier.stat();
     if (!metadata.isFile()) throw new Error("Not a file");
     response.writeHead(200, {
       "Content-Type": contentTypes.get(extname(candidate)) ?? "application/octet-stream",
@@ -75,17 +130,16 @@ createServer(async (request, response) => {
         workerSrcBlob: options.workerSrcBlob,
       }),
     });
-    createReadStream(candidate).pipe(response);
+    if (request.method === "HEAD") response.end();
+    else await pipeline(fichier.createReadStream({ autoClose: false }), response);
   } catch {
     // Une ABSENCE n'est jamais cachable. Sous `/vendor/v86/artefacts/*` le `_headers` publié
     // annonce un an d'`immutable` pour le CHEMIN, et un 404 gardé un an n'aurait aucun geste de
     // récupération côté client (constat 1 de la revue de #123).
-    response
-      .writeHead(404, {
-        "Content-Type": "text/plain; charset=utf-8",
-        ...enTetesDAbsence(),
-      })
-      .end("Not found");
+    if (response.headersSent) response.destroy();
+    else refuser(response, 404, "Not found");
+  } finally {
+    await fichier?.close().catch(() => response.destroy());
   }
 }).listen(options.port, options.host, () => {
   process.stdout.write(

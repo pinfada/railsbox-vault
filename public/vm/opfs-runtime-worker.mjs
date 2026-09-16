@@ -55,6 +55,38 @@ async function scenarioPersistance() {
   return observePersistence({ openVolume: ouvrirVolume, name, support: "opfs" });
 }
 
+/** Le cache ne doit pas emprunter le tampon réutilisable d'une écriture déjà acquittée. */
+async function scenarioTamponReutilise() {
+  const name = "sonde-tampon-reutilise";
+  await removeOpfsVolume(name);
+  let backend = await ouvrirVolume({ name, size: 4 * SECTOR_SIZE });
+  const attendu = new Uint8Array(4 * SECTOR_SIZE).fill(0x53);
+  const tampon = attendu.slice();
+  const comparer = (octets) => octets.findIndex((octet, rang) => octet !== attendu[rang]);
+  try {
+    await backend.write(0, tampon);
+    await backend.flush();
+    tampon.fill(0);
+    const differenceApresEffacement = comparer(await backend.read(0, attendu.length));
+    const differenceRelectureSupport = comparer(await backend.relire(0, attendu.length));
+    await backend.write(19, Uint8Array.of(0x71));
+    await backend.flush();
+    attendu[19] = 0x71;
+    const differenceApresEcriture = comparer(await backend.read(0, attendu.length));
+    await backend.close();
+    backend = await ouvrirVolume({ name });
+    const differenceApresReouverture = comparer(await backend.read(0, attendu.length));
+    return {
+      differenceApresEffacement,
+      differenceRelectureSupport,
+      differenceApresEcriture,
+      differenceApresReouverture,
+    };
+  } finally {
+    await backend.close();
+  }
+}
+
 /** Exclusivité : le registre local ET le support lui-même refusent un second détenteur. */
 async function scenarioExclusivite() {
   const name = "sonde-exclusivite";
@@ -303,6 +335,7 @@ async function scenarioTenterLouverture() {
 const SCENARIOS = new Map([
   ["capacite", scenarioCapacite],
   ["persistance", scenarioPersistance],
+  ["tampon-reutilise", scenarioTamponReutilise],
   ["exclusivite", scenarioExclusivite],
   ["adaptateur", scenarioAdaptateur],
   ["tenir-le-handle", scenarioTenirLeHandle],

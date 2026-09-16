@@ -3,6 +3,20 @@
 Ce document décrit les frontières visées. Il ne constitue pas encore une garantie de sécurité :
 RailsBox Vault est au stade expérimental et ne doit contenir aucune donnée réelle.
 
+## Serveur local de développement
+
+`tools/serve.mjs` ne sert que des fichiers ordinaires sous `public/`, `src/`, `vendor/` et
+`artifacts/`, par `GET` ou `HEAD`. Les liens symboliques et jonctions qui changent le chemin réel
+sous ces racines sont refusés, même vers un autre fichier interne : un alias ne doit pas changer la
+politique CSP appliquée au document. Les URL invalides, les chemins ambigus et les syntaxes de flux
+NTFS sont refusés sans arrêter le serveur. Les réponses d'erreur portent `no-store` et `nosniff`,
+sans chemin local ni détail d'exception.
+
+Ces règles sont éprouvées par `tests/unit/serve-securite.test.mjs`, sur un serveur HTTP réel. Elles
+supposent un système de fichiers local de confiance : elles ne protègent pas contre un processus
+local qui remplace les fichiers ou les répertoires pendant leur ouverture, ni contre les liens
+physiques. Elles ne qualifient pas la configuration d'un hébergeur de production.
+
 ## Actifs à protéger
 
 - le volume applicatif et ses sauvegardes ;

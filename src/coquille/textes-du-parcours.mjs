@@ -134,8 +134,8 @@ export const ECRANS = Object.freeze({
     titre: "Créer votre coffre",
     ceQuiVaSePasser:
       "Votre coffre garde une application et ses données sur cet appareil, dans ce navigateur, " +
-      "protégées par un secret que vous seul connaissez. Personne d'autre — pas même les auteurs de " +
-      "RailsBox Vault — ne peut l'ouvrir à votre place.",
+      "protégées par votre secret. Cette version est expérimentale : utilisez uniquement des données " +
+      "d'essai. La protection dépend aussi du navigateur et de la version de RailsBox Vault que vous utilisez.",
     attendu:
       "Cliquez sur « Commencer ». Si vous avez déjà une sauvegarde d'un coffre, choisissez plutôt « " +
       "J'ai déjà une sauvegarde ».",

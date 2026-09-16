@@ -96,7 +96,10 @@ export class RelectureDeCharge {
 
   /** Inscrit ce qu'un dépôt vient de poser sur le support, et mémorise son clair. */
   inscrire(position, { debut, fin, charge, generation, rang }) {
-    this.#dernierOuvert = { position, clair: charge };
+    // Après write(), l'appelant peut réutiliser ou effacer son tampon. Le cache doit garder
+    // les octets SCELLÉS, pas une référence mutable qui fausserait les lectures et les prochains
+    // read-modify-write. Le constructeur copie aussi les Buffer Node, dont slice() est une vue.
+    this.#dernierOuvert = { position, clair: new Uint8Array(charge) };
     for (let secteur = debut; secteur < fin; secteur += SECTOR_SIZE) {
       this.#index.set(secteur, {
         position,
@@ -141,7 +144,9 @@ export class RelectureDeCharge {
    * @param {number} offset offset logique du premier octet de `tampon`
    * @param {Uint8Array} tampon modifié en place, puis rendu
    */
-  async superposer(offset, tampon) {
+  async superposer(offset, tampon, relireSupport = false) {
+    // Une vérification de migration doit authentifier les octets du journal, pas son mémo.
+    if (relireSupport) this.#dernierOuvert = null;
     if (this.#index.size === 0) return tampon;
     const fin = offset + tampon.byteLength;
     for (let secteur = alignerBas(offset); secteur < fin; secteur += SECTOR_SIZE) {
