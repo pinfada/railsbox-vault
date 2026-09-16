@@ -16,6 +16,36 @@
 version: 2
 
 updates:
+  # Les dépendances de développement exécutent du code dans la CI et fabriquent les artefacts :
+  # elles font donc partie de la chaîne d'approvisionnement même si le navigateur ne les charge pas.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      npm:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: chore
+    labels:
+      - area:security
+
+  # Le verrou de l'application de référence est distinct du verrou npm et doit recevoir ses propres
+  # avis de sécurité. Dependabot relit apps/reference/Gemfile.lock depuis ce répertoire.
+  - package-ecosystem: bundler
+    directory: /apps/reference
+    schedule:
+      interval: weekly
+    groups:
+      ruby:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: chore
+    labels:
+      - area:security
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
