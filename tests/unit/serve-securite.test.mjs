@@ -1,0 +1,138 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { request } from "node:http";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+import { adresseDe } from "../../src/v86-adresses.mjs";
+
+const SERVEUR = fileURLToPath(new URL("../../tools/serve.mjs", import.meta.url));
+const TYPE_DE_LIEN = process.platform === "win32" ? "junction" : "dir";
+
+async function lancerServeur(t) {
+  const racine = await mkdtemp(join(tmpdir(), "vault-serve-securite-"));
+  let enfant;
+  t.after(async () => {
+    if (enfant && enfant.exitCode === null && enfant.signalCode === null) {
+      const fin = once(enfant, "exit");
+      enfant.kill();
+      await fin;
+    }
+    await rm(racine, { recursive: true, force: true });
+  });
+  for (const dossier of ["public", "src", "vendor", "artifacts", "prive", "public/interne"]) {
+    await mkdir(join(racine, dossier), { recursive: true });
+  }
+  await writeFile(join(racine, "public/index.html"), "coquille publique");
+  await writeFile(join(racine, "prive/secret.txt"), "secret hors des racines servies");
+  await writeFile(join(racine, "public/interne/index.html"), "document de confiance");
+  const reservation = createServer();
+  reservation.listen(0, "127.0.0.1");
+  await once(reservation, "listening");
+  const { port } = reservation.address();
+  await new Promise((resolve) => reservation.close(resolve));
+  enfant = spawn(process.execPath, [SERVEUR, "--host", "127.0.0.1", "--port", String(port)], {
+    cwd: racine,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  await new Promise((resolve, reject) => {
+    enfant.once("error", reject);
+    enfant.once("exit", (code) => reject(new Error(`Serveur arrêté : ${code}`)));
+    enfant.stdout.once("data", resolve);
+  });
+  return { racine, port };
+}
+
+function lire(port, path, method = "GET") {
+  return new Promise((resolve, reject) => {
+    const requete = request({ hostname: "127.0.0.1", port, path, method }, (reponse) => {
+      let corps = "";
+      reponse.setEncoding("utf8");
+      reponse.on("data", (morceau) => (corps += morceau));
+      reponse.on("error", reject);
+      reponse.on("end", () =>
+        resolve({ statut: reponse.statusCode, entetes: reponse.headers, corps }),
+      );
+    });
+    requete.on("error", reject);
+    requete.setTimeout(5000, () => requete.destroy(new Error("Réponse absente")));
+    requete.end();
+  });
+}
+
+test("serveur — aucune des quatre racines ne suit un lien vers des fichiers privés", async (t) => {
+  const { racine, port } = await lancerServeur(t);
+  for (const dossier of ["public", "src", "vendor", "artifacts"]) {
+    await symlink(join(racine, "prive"), join(racine, dossier, "lien"), TYPE_DE_LIEN);
+    const prefixe = dossier === "public" ? "" : `/${dossier}`;
+    const reponse = await lire(port, `${prefixe}/lien/secret.txt`);
+    assert.equal(reponse.statut, 403, dossier);
+    assert.equal(reponse.entetes["cache-control"], "no-store");
+    assert.equal(reponse.entetes["x-content-type-options"], "nosniff");
+    assert.doesNotMatch(reponse.corps, /secret hors/);
+  }
+});
+
+test("serveur — un alias interne ne contourne pas la politique CSP du chemin", async (t) => {
+  const { racine, port } = await lancerServeur(t);
+  await symlink(join(racine, "public/interne"), join(racine, "public/compat-alias"), TYPE_DE_LIEN);
+  assert.equal((await lire(port, "/compat-alias/index.html")).statut, 403);
+  const normal = await lire(port, "/interne/index.html");
+  assert.equal(normal.statut, 200);
+  assert.match(normal.entetes["content-security-policy"], /default-src 'none'/);
+});
+
+test("serveur — une URL invalide est refusée sans arrêter le processus", async (t) => {
+  const { port } = await lancerServeur(t);
+  const invalide = await lire(port, "http://[");
+  assert.equal(invalide.statut, 400);
+  assert.equal(invalide.entetes["cache-control"], "no-store");
+  assert.equal((await lire(port, "/index.html")).corps, "coquille publique");
+});
+
+test("serveur — les fichiers ordinaires restent lisibles sous les quatre racines", async (t) => {
+  const { racine, port } = await lancerServeur(t);
+  for (const dossier of ["public", "src", "vendor", "artifacts"]) {
+    await writeFile(join(racine, dossier, "témoin local.txt"), `contenu ${dossier}`);
+    const prefixe = dossier === "public" ? "" : `/${dossier}`;
+    const reponse = await lire(port, `${prefixe}/t%C3%A9moin%20local.txt?version=1`);
+    assert.equal(reponse.statut, 200);
+    assert.equal(reponse.corps, `contenu ${dossier}`);
+    assert.equal(reponse.entetes["content-type"], "text/plain; charset=utf-8");
+  }
+  assert.equal((await lire(port, "/interne/")).statut, 200);
+  assert.equal((await lire(port, "/interne")).statut, 404);
+});
+
+test("serveur — les chemins ambigus et les flux Windows sont refusés", async (t) => {
+  const { port } = await lancerServeur(t);
+  for (const chemin of [
+    "//ailleurs.test/index.html",
+    "/%ZZ",
+    "/%00",
+    "/index.html::$DATA",
+    "/%5cprive",
+    "/%2e%2e%2fprive/secret.txt",
+  ]) {
+    assert.equal((await lire(port, chemin)).statut, 400, chemin);
+  }
+  assert.equal((await lire(port, "/index.html")).statut, 200);
+});
+
+test("serveur — seules GET et HEAD lisent un fichier, les absences restent non cachables", async (t) => {
+  const { port } = await lancerServeur(t);
+  const refus = await lire(port, "/index.html", "POST");
+  assert.equal(refus.statut, 405);
+  assert.equal(refus.entetes.allow, "GET, HEAD");
+  const tete = await lire(port, "/index.html", "HEAD");
+  assert.equal(tete.statut, 200);
+  assert.equal(tete.corps, "");
+  const absent = await lire(port, adresseDe("v86.wasm", "0".repeat(64)));
+  assert.equal(absent.statut, 404);
+  assert.equal(absent.entetes["cache-control"], "no-store");
+});

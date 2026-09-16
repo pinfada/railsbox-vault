@@ -98,6 +98,30 @@ test("la page ne peut pas obtenir de handle OPFS synchrone", async ({ page }, te
   expect(sonde.opened).toBe(false);
 });
 
+test("réutiliser un tampon acquitté ne change ni la lecture ni une écriture partielle persistée", async ({
+  page,
+  browserName,
+}, testInfo) => {
+  const { porte } = await contexte(page, testInfo);
+  if (browserName === "chromium") expect(porte).toBe(true);
+  const resultat = await executerOuRefus(page, { scenario: "tampon-reutilise" });
+  await testInfo.attach("opfs-tampon-reutilise.json", {
+    body: JSON.stringify(resultat),
+    contentType: "application/json",
+  });
+  if (!porte) {
+    expect(resultat.code).toBe(STORAGE_ERROR_CODES.unsupported);
+    return;
+  }
+  expect(resultat.code).toBeNull();
+  expect(resultat.report).toEqual({
+    differenceApresEffacement: -1,
+    differenceRelectureSupport: -1,
+    differenceApresEcriture: -1,
+    differenceApresReouverture: -1,
+  });
+});
+
 test("un Worker dédié écrit, ferme, rouvre et relit le volume octet pour octet", async ({
   page,
 }, testInfo) => {

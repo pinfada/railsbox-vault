@@ -18,6 +18,15 @@ export const SECTOR_SIZE = 512;
  */
 export const V86_BLOCK_SIZE = 256;
 
+/**
+ * Arrondit vers le bas aux secteurs entiers. Une lecture chiffrée écourtée à 300 octets
+ * ne peut authentifier aucun secteur. Une écriture partielle garde, elle, son compte exact :
+ * l'arrondir masquerait une déchirure du support.
+ */
+export function alignerBasSecteur(octets) {
+  return octets - (octets % SECTOR_SIZE);
+}
+
 if (SECTOR_SIZE % V86_BLOCK_SIZE !== 0) {
   throw new Error(
     `Géométrie incohérente : un secteur de ${SECTOR_SIZE} octets doit être un multiple du bloc v86 de ${V86_BLOCK_SIZE}.`,

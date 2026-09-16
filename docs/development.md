@@ -32,6 +32,10 @@ Chromium seul suffit pour `npm run test:browser`. Les trois moteurs sont nécess
 
 ## Boucle rapide
 
+La [trajectoire vers un produit viable](viabilite.md) suit les écarts et les preuves attendues.
+`npm run test:viabilite` exécute les parcours de création et de restauration dans Chrome installé,
+avec un profil persistant de test et une attestation du navigateur réellement lancé.
+
 ```sh
 npm run test:unit
 npm run lint

@@ -643,8 +643,8 @@ export class GenerationStore {
   }
 
   /** SUPERPOSE la génération en cours à un tampon déjà relu du volume, en place. */
-  superposer(offset, tampon) {
-    return this.#relecture.superposer(offset, tampon);
+  superposer(offset, tampon, relireSupport = false) {
+    return this.#relecture.superposer(offset, tampon, relireSupport);
   }
 
   /**

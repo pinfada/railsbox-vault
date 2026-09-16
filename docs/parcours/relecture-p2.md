@@ -48,8 +48,8 @@ Dans « Où suis-je ? », chaque étape porte l'une de ces mentions :
 ### Écran : Créer votre coffre
 
 > Votre coffre garde une application et ses données sur cet appareil, dans ce navigateur, protégées
-> par un secret que vous seul connaissez. Personne d'autre — pas même les auteurs de RailsBox Vault
-> — ne peut l'ouvrir à votre place.
+> par votre secret. Cette version est expérimentale : utilisez uniquement des données d'essai. La
+> protection dépend aussi du navigateur et de la version de RailsBox Vault que vous utilisez.
 >
 > Ce que vous avez à faire : Cliquez sur « Commencer ». Si vous avez déjà une sauvegarde d'un
 > coffre, choisissez plutôt « J'ai déjà une sauvegarde ».
@@ -637,16 +637,6 @@ faire.
 - Le coffre termine un enregistrement. Attendez quelques secondes, puis recommencez.
 - Le coffre enregistre son état en ce moment. Attendez quelques secondes, puis recommencez.
 
-### Ce qu'il faut faire : abandonner ce coffre
-
-- Ce coffre a été créé par une version d'essai antérieure au 13 septembre 2026, que cette version ne
-  sait pas ouvrir. Pour repartir de zéro : dans les réglages du navigateur, effacez les données de
-  ce site, rechargez la page, puis créez un nouveau coffre. Ce qui était dans l'ancien coffre sera
-  effacé.
-- L'application enregistrée sur cet appareil n'appartient pas à ce coffre. Rien n'a été ouvert ni
-  modifié. Pour repartir d'un emplacement vide, effacez les données de ce site dans les réglages du
-  navigateur, puis restaurez la sauvegarde de votre coffre.
-
 ### Ce qu'il faut faire : autre appareil ou autre navigateur
 
 - Le fichier qui protège ce coffre sur cet appareil est abîmé. N'effacez rien. Si vous avez une
@@ -704,6 +694,13 @@ faire.
   Utilisez une phrase, ou une autre passkey.
 - Ce coffre a un format que cette version de RailsBox Vault ne sait pas utiliser pour cette
   opération. Rien n'a été perdu. Notez le détail technique ci-dessous et demandez de l'aide.
+- Ce coffre date d'avant le 13 septembre 2026. Sa mise à niveau n'est pas encore disponible.
+  N'effacez pas les données de ce site. Gardez vos moyens d'ouverture et toute sauvegarde. Essayez
+  la sauvegarde dans un autre navigateur compatible, avec une version qui sait la lire ; sinon,
+  demandez de l'aide en conservant ce coffre.
+- L'application enregistrée n'appartient pas à ce coffre. Rien n'a été modifié. N'effacez pas les
+  données de ce site. Essayez votre sauvegarde dans un autre navigateur compatible. Sans sauvegarde
+  utilisable, demandez de l'aide en conservant ce coffre.
 - Ce coffre a été utilisé après sa restauration, puis une partie de ses informations a disparu. Le
   réparer effacerait ce que vous y avez écrit depuis : rien n'a été touché. N'effacez pas les
   données de ce site, gardez votre sauvegarde, et demandez de l'aide.

@@ -207,6 +207,14 @@ Aucun octet d'archive ne franchit le port restreint, et le Service Worker de la 
 
 ### 8. Les coffres de développement antérieurs sont REFUSÉS, jamais migrés
 
+**Amendement du 17 septembre 2026 — conservation des données.** Le refus reste en place tant que la
+migration d'identité n'est pas implémentée et éprouvée. Sa conduite ne prescrit plus l'effacement :
+l'utilisateur conserve les fichiers du site, ses moyens de déverrouillage et ses sauvegardes.
+L'objectif de viabilité inclut désormais leur migration sans perte ; le
+[plan de réalisation](../viabilite.md) distingue cette migration de la conversion v3 → v4. La
+description qui suit rappelle la décision initiale ; sa consigne de suppression est remplacée par
+cet amendement.
+
 Un coffre créé avant le 13/09/2026 porte l'identité du coffre dans l'en-tête de son volume
 `coquille` — c'est la seule cause de `VAULT_COQUILLE_COFFRE_ANTERIEUR` depuis la revue de la PR #208
 (constat 5) ; un manifeste applicatif d'un autre volume a son propre code,

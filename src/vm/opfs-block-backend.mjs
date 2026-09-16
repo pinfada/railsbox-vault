@@ -20,7 +20,7 @@
 // exclusivité et génération récupérée.
 
 import { parcourirEnCedantLaMain } from "./ceder-la-main.mjs";
-import { SECTOR_SIZE, V86_BLOCK_SIZE } from "./block-geometry.mjs";
+import { SECTOR_SIZE, V86_BLOCK_SIZE, alignerBasSecteur } from "./block-geometry.mjs";
 import { JOURNAL_OPERATIONS } from "./block-journal.mjs";
 import { FAULT_KINDS } from "./fault-plan.mjs";
 import { AccesSupport } from "./opfs-backend-support.mjs";
@@ -55,19 +55,6 @@ export { daterLaCreation } from "./opfs-datation-de-creation.mjs";
 function faultBytes(fault, requested) {
   const proposed = fault.bytes ?? Math.floor(requested / 2 / SECTOR_SIZE) * SECTOR_SIZE;
   return Math.min(Math.max(0, proposed), requested);
-}
-
-/**
- * Ramène un compte à des secteurs ENTIERS, vers le bas.
- *
- * Employé pour les LECTURES seulement. Une lecture de v3 se fait par secteur — ouvrir la moitié
- * d'une étiquette n'a aucun sens —, si bien qu'une lecture courte programmée à 300 octets vaut ici
- * une lecture de zéro secteur. L'ÉCRITURE, elle, garde le compte exact de la faute : une écriture
- * déchirée à 300 octets est justement ce que #15 mesure, et le chiffré tronqué qu'elle laisse est
- * refusé à la relecture — ce qui est le comportement voulu, et plus strict qu'en v2.
- */
-function alignerBasSecteur(octets) {
-  return octets - (octets % SECTOR_SIZE);
 }
 
 export class OpfsBlockBackend {
@@ -376,7 +363,12 @@ export class OpfsBlockBackend {
     return this.#suivre(this.#servirLecture(offset, length));
   }
 
-  async #servirLecture(offset, length) {
+  /** Relit et authentifie aussi la génération depuis le support, sans son cache de clair. */
+  relire(offset, length) {
+    return this.#suivre(this.#servirLecture(offset, length, true));
+  }
+
+  async #servirLecture(offset, length, relireSupport = false) {
     this.#acces.assertUtilisable();
     // Un rangement en cours va tronquer le journal et vider l'index : lire pendant qu'il court
     // rendrait un tampon superposé à partir de positions sur le point de disparaître.
@@ -417,7 +409,9 @@ export class OpfsBlockBackend {
 
     // La génération EN COURS se superpose au volume : l'écrivain se relit. Elle n'est visible que
     // de lui — un lecteur qui rouvrirait le volume ne verrait que la dernière génération validée.
-    if (this.#generation !== null) await this.#generation.superposer(offset, target);
+    if (this.#generation !== null) {
+      await this.#generation.superposer(offset, target, relireSupport);
+    }
 
     this.#journal.record(JOURNAL_OPERATIONS.read, { offset, length });
     return target;

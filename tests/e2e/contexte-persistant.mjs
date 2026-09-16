@@ -71,7 +71,7 @@ function rangDuScenarioDansSonFichier(fichier, titre) {
 /**
  * `test` étendu : la fixture `context` rend un contexte à profil persistant, sur disque.
  *
- * **Ce que cette fixture honore du bloc `use` du projet, et rien d'autre :** `baseURL` et `headless`,
+ * **Ce que cette fixture honore du bloc `use` du projet, et rien d'autre :** `baseURL`, `headless` et `channel`,
  * repris nommément ci-dessous, plus `trace` — que Playwright applique lui-même, parce qu'il
  * instrumente TOUT contexte créé pendant un test, y compris celui-ci. (Le démarrer à la main lève
  * « Tracing has been already started » ; c'est ainsi que nous l'avons vérifié.)
@@ -141,7 +141,7 @@ export const test = base.extend({
     { auto: true },
   ],
 
-  context: async ({ baseURL }, use, testInfo) => {
+  context: async ({ baseURL, channel }, use, testInfo) => {
     // Un contexte lancé par nous n'hérite plus des options `use` du projet : celles dont les
     // scénarios dépendent sont reprises explicitement. `headless` doit l'être en particulier — un
     // exécutant CI n'a pas d'affichage, et `--headed` doit rester utilisable pour déboguer.
@@ -159,6 +159,7 @@ export const test = base.extend({
       {
         baseURL,
         headless,
+        channel,
         ...(process.env[SANS_COQUILLE_DE_CADRE] ? { serviceWorkers: "block" } : {}),
       },
     );
@@ -169,8 +170,19 @@ export const test = base.extend({
         await cdp.send("Emulation.setCPUThrottlingRate", { rate: ralentissement });
       });
     }
-    await use(context);
-    await context.close();
+    try {
+      // Le moteur réellement lancé figure dans les preuves : le nom d'un projet ne suffit pas.
+      const session = await context.newCDPSession(context.pages()[0]);
+      const version = await session.send("Browser.getVersion");
+      await session.detach();
+      await testInfo.attach("navigateur.json", {
+        body: JSON.stringify({ channel: channel ?? "chromium", ...version }, null, 2),
+        contentType: "application/json",
+      });
+      await use(context);
+    } finally {
+      await context.close();
+    }
   },
 });
 
