@@ -902,6 +902,13 @@ test("PERTE DÉFINITIVE : aucun module du produit ne conserve le code ni ne sait
   //    pour REDÉCOUPER le code que le Worker vient de rendre, en sept groupes de quatre. Il ne le
   //    range nulle part : la chaîne traverse la fonction et va au DOM.
   //
+  // **Le dernier est entré avec la revue de sécurité de la PR #219** (constat 1) :
+  //
+  //  - `src/coquille/ouverture-par-le-code.mjs` importe `decoderCode` pour CONTRÔLER le code une
+  //    seule fois, avant d'essayer les emplacements : un code mal recopié est refusé sans qu'aucune
+  //    clé ne soit dérivée. Les seize octets rendus sont effacés sur la même ligne, et rien n'en est
+  //    gardé ; la chaîne, elle, n'est transmise qu'au dérivateur, comme avant.
+  //
   // La liste dit donc qu'aucun endroit n'est apparu en SILENCE — pas qu'il n'y en a que trois.
   const importateurs = [];
   const parcourir = async (repertoire) => {
@@ -923,6 +930,7 @@ test("PERTE DÉFINITIVE : aucun module du produit ne conserve le code ni ne sait
   assert.deepEqual(importateurs.sort(), [
     "public/vm/deverrouillage-worker.mjs",
     "src/coquille/feuille-de-recuperation.mjs",
+    "src/coquille/ouverture-par-le-code.mjs",
     "src/coquille/saisie-du-code.mjs",
     "src/vm/derivation/derivateur-recuperation.mjs",
     "src/vm/moyen-de-recuperation.mjs",
