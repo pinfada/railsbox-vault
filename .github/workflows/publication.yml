@@ -61,8 +61,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  audits:
+    uses: ./.github/workflows/security.yml
+    with:
+      ref: ${{ inputs.commit || github.sha }}
+
   publier:
     name: Construire, vérifier et éprouver les en-têtes
+    needs: audits
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
