@@ -52,7 +52,8 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
   "code-feuille": ["consigneDeLaFeuille"],
   "code-confirmation": ["recopieIncomplete", "recopieDUnAutreCode", "codeConfirme"],
   "code-verifier": ["saisieIncomplete", "saisieComplete", "ouvertureEnCours", "coffreOuvert"],
-  "code-a-verifier": ["verrouillageEnCours"],
+  "code-annonce": ["codesDejaRendus"],
+  "code-a-verifier": ["verrouillageEnCours", "codesDejaRendus"],
   travailler: [
     "demarrageEnCours",
     "signesDeVie",
@@ -94,7 +95,7 @@ export const QUESTIONS = Object.freeze({
   3: [
     "Avant de cliquer, avez-vous compris que le code ne s'affichera qu'une fois ?",
     "Savez-vous ce qu'il faut recopier (le code ET le numéro de version) et où ranger la feuille ?",
-    "Si la page se recharge avant la confirmation, l'écran « Vérifier votre code » vous dit-il quoi faire, y compris si vous avez perdu le code ?",
+    "Si la page se recharge avant la confirmation, l'écran « Vérifier votre code » vous dit-il quoi faire — y compris demander une nouvelle feuille si vous avez perdu la vôtre, et comprenez-vous que l'ancienne continue d'ouvrir le coffre ?",
   ],
   4: [
     "L'attente de deux minutes est-elle annoncée assez clairement pour que vous patientiez ?",

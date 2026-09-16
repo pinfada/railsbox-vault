@@ -88,7 +88,7 @@ async function sauvegarderLeCoffre(contexte) {
   dire("portabilite-avertissement", "");
   try {
     const inventaire = await demander("inventaire", {});
-    if (inventaire.present && !moyensProposes(inventaire).aUnMoyenDeRecuperation) {
+    if (inventaire.present && moyensProposes(inventaire).nombreDeCodes === 0) {
       dire("portabilite-avertissement", AVERTISSEMENT_SANS_RECUPERATION);
     }
     dire("portabilite-etat", "portabilite:sauvegarde-en-cours");

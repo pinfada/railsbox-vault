@@ -34,6 +34,7 @@ export const LIBELLES_DES_BLOCS = Object.freeze({
   perdu: ["« J'ai oublié ma phrase : utiliser mon code de récupération »"],
   code: ["« Code de récupération » (champ)", "« Ouvrir mon coffre avec le code »"],
   "feuille-annonce": ["« Afficher mon code de récupération »"],
+  "nouveau-code": ["« Je n'ai plus cette feuille — afficher un nouveau code »"],
   feuille: ["« J'ai recopié mon code »"],
   confirmation: [
     "« Code recopié depuis votre feuille » (champ)",
@@ -73,19 +74,33 @@ export const LIMITE_DE_FIREFOX =
   "dans l'application, utilisez Chrome ou Edge récents.";
 
 /**
- * Ce qu'une personne fait d'un code perdu, tant que remplacer un code n'existe pas (#214). Le coffre
- * est encore vide à l'étape 3 : l'abandonner ne coûte rien, et la conduite dit COMMENT.
+ * Ce qu'une personne fait d'une feuille perdue sur un coffre OUVERT (#214) : elle en demande une
+ * nouvelle. L'ancien code n'est pas remplacé — il reste valable jusqu'à une révocation —, et c'est
+ * pourquoi l'écran nomme les DEUX sorties : « je ne l'ai plus » et « quelqu'un l'a vue ».
+ */
+const SI_LA_FEUILLE_EST_PERDUE =
+  "Si vous n'avez plus cette feuille, cliquez sur « Je n'ai plus cette feuille — afficher un " +
+  "nouveau code » : un nouveau code sera affiché, une seule fois, et vous le recopierez sur une " +
+  "feuille neuve. L'ancien code continue d'ouvrir ce coffre tant que personne ne le retire. Si " +
+  "quelqu'un d'autre a vu votre feuille, c'est un autre geste : allez à l'étape 9 et révoquez les " +
+  "autres moyens d'ouvrir ce coffre.";
+
+/**
+ * La même question sur un coffre VERROUILLÉ : afficher un code exige un coffre ouvert, et celui-ci
+ * ne l'est pas. Le coffre est encore vide à l'étape 3 : l'abandonner ne coûte rien, et la conduite
+ * dit COMMENT.
  */
 const SI_LE_CODE_EST_PERDU =
-  "Si vous n'avez pas recopié ce code et que vous n'avez encore rien mis dans ce coffre, " +
-  "abandonnez-le et recommencez : dans les réglages du navigateur, effacez les données de ce site, " +
-  "rechargez la page, puis créez un nouveau coffre. Remplacer un code perdu n'est pas encore " +
-  "possible. Si vous avez déjà mis des données dans ce coffre, n'effacez rien et demandez de l'aide.";
+  "Si vous n'avez plus cette feuille : un nouveau code ne peut être affiché que sur un coffre " +
+  "OUVERT, et celui-ci est verrouillé. Si vous n'avez encore rien mis dans ce coffre, abandonnez-le " +
+  "et recommencez : dans les réglages du navigateur, effacez les données de ce site, rechargez la " +
+  "page, puis créez un nouveau coffre. Si vous avez déjà mis des données dans ce coffre, n'effacez " +
+  "rien et demandez de l'aide.";
 
 const UN_CODE_A_DEJA_ETE_RENDU =
-  "Un code de récupération a déjà été affiché pour ce coffre. Il ne sera plus jamais affiché, et " +
-  "RailsBox Vault n'en crée pas un second. Pour continuer, ouvrez votre coffre avec ce code, en le " +
-  "lisant sur votre feuille : c'est ainsi que l'on vérifie que votre feuille est juste.";
+  "Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché : " +
+  "il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le " +
+  "lisant sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste.";
 
 /**
  * Les écrans. Chacun porte son étape, un titre, ce qui va se passer, ce qui est attendu, l'attente
@@ -167,10 +182,11 @@ export const ECRANS = Object.freeze({
     titre: "Vérifier votre code de récupération",
     ceQuiVaSePasser: UN_CODE_A_DEJA_ETE_RENDU,
     attendu:
-      "Cliquez sur « Verrouiller mon coffre », puis ouvrez-le avec le code de votre feuille. " +
-      SI_LE_CODE_EST_PERDU,
+      "Si vous avez votre feuille : cliquez sur « Verrouiller mon coffre », puis ouvrez le coffre " +
+      "avec le code que vous y avez recopié. " +
+      SI_LA_FEUILLE_EST_PERDUE,
     attente: QUELQUES_SECONDES_DE_VERROUILLAGE,
-    blocs: ["verrouiller"],
+    blocs: ["nouveau-code", "verrouiller"],
   }),
   travailler: ecran(4, {
     titre: "Travailler dans l'application",
@@ -363,6 +379,12 @@ export const MESSAGES = Object.freeze({
   revoqueSansRien:
     "Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.",
   codeMasque: "(code masqué)",
+  codesDejaRendus: (nombre) =>
+    nombre <= 1
+      ? "Ce coffre porte déjà un code de récupération. En afficher un nouveau n'efface pas " +
+        "l'ancien : les deux ouvriront ce coffre tant que vous n'en retirez aucun."
+      : `Ce coffre porte déjà ${nombre} codes de récupération. En afficher un nouveau n'efface ` +
+        "aucun des précédents : tous ouvrent ce coffre tant que vous n'en retirez aucun.",
 });
 
 /** Ce que « Où suis-je ? » dit de chaque étape. */

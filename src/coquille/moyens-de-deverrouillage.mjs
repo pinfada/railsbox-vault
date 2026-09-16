@@ -189,6 +189,11 @@ export function moyenParNom(nom) {
  * contrat ne peut pas porter `version` sans recouvrir celle du CONTRAT, et `enveloppeDeMessage`
  * refuse désormais un corps qui essaierait.
  *
+ * `nombreDeCodes` COMPTE les emplacements de récupération au lieu d'annoncer qu'il y en a un
+ * (#214) : le produit en pose un second dès qu'un Worker neuf reçoit « afficher un nouveau code »,
+ * et l'ADR 0025, limite 10, écrivait déjà que « rien n'empêche d'en créer plusieurs ». La liste des
+ * MOYENS, elle, reste dédoublonnée : elle dit comment ouvrir, pas combien de feuilles existent.
+ *
  * @param {{ emplacements: { typeKek: number, identifiantEmplacement: string }[],
  *           versionEnveloppe: number }} inventaire
  */
@@ -220,7 +225,9 @@ export function moyensProposes(inventaire) {
     versionEnveloppe: inventaire?.versionEnveloppe ?? null,
     moyens: Object.freeze(moyens),
     inconnus: Object.freeze(inconnus),
-    aUnMoyenDeRecuperation: vus.has("recuperation"),
+    nombreDeCodes: emplacements.filter(
+      (emplacement) => emplacement.typeKek === TYPES_KEK.recuperation,
+    ).length,
     avertissement: inconnus.length === 0 ? null : TEXTE_TROP_ANCIEN,
   });
 }

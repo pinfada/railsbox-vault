@@ -341,9 +341,32 @@ test("la coquille ne propose QUE ce que l'enveloppe porte", () => {
     propose.moyens.map((moyen) => moyen.nom),
     ["phrase", "recuperation"],
   );
-  assert.equal(propose.aUnMoyenDeRecuperation, true);
+  assert.equal(propose.nombreDeCodes, 1);
   assert.equal(propose.avertissement, null);
   assert.equal(propose.versionEnveloppe, 3);
+});
+
+test("les codes de récupération sont COMPTÉS, pas dédoublonnés (#214)", () => {
+  // Deux emplacements de type 4 : un seul MOYEN — « un code de récupération » ouvre ce coffre —,
+  // mais DEUX feuilles l'ouvrent, et c'est ce que l'écran du code annonce.
+  const propose = moyensProposes({
+    versionEnveloppe: 5,
+    emplacements: [
+      { typeKek: TYPES_KEK.phrase, identifiantEmplacement: "aa" },
+      { typeKek: TYPES_KEK.recuperation, identifiantEmplacement: "bb" },
+      { typeKek: TYPES_KEK.recuperation, identifiantEmplacement: "cc" },
+    ],
+  });
+  assert.deepEqual(
+    propose.moyens.map((moyen) => moyen.nom),
+    ["phrase", "recuperation"],
+  );
+  assert.equal(propose.nombreDeCodes, 2);
+  assert.equal(
+    moyensProposes({ versionEnveloppe: 1, emplacements: [] }).nombreDeCodes,
+    0,
+    "aucun code : c'est ce compte qui déclenche l'avertissement de l'ADR 0029",
+  );
 });
 
 test("un type INCONNU est dit « trop ancien », et n'empêche pas les autres de servir", () => {
