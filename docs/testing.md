@@ -2,9 +2,42 @@
 
 ## Suites disponibles
 
+La couverture native est exécutée dans un job CI séparé sur Node 22 et 24. `npm test` conserve les
+tests unitaires sans instrumentation, puis les tests navigateur : leurs mesures de durée ne doivent
+pas dépendre du coût de collecte de couverture. Le rapport est archivé même en cas d'échec ; les
+planchers 90 % lignes, 85 % branches et 85 % fonctions font échouer ce job.
+
+**Périmètre de cette mesure : les fichiers `src/**/*.mjs` chargés par les tests Node.** Un fichier
+jamais chargé n'entre pas dans le dénominateur ; `public/`, Rails et les tests navigateur ne sont
+pas mesurés. Le relevé local initial (Node 24 : 94,01 %, 89,54 %, 92,37 %) n'est donc ni une
+couverture globale du produit, ni une couverture différentielle des modifications. Les seuils sont
+des planchers agrégés ; ils ne remplacent pas les scénarios adverses et les mutations.
+
+Le workflow `security.yml` exécute les audits npm et Ruby dans deux jobs indépendants, sur chaque PR
+et sur `main` via un appel depuis `ci.yml`, à la demande et chaque semaine. Un constat npm élevé ou
+critique échoue ; `bundler-audit` échoue sur tout avis non ignoré. Une panne du registre ou de la
+base d'avis fait également échouer le contrôle. Le job final `Qualité et tests`, déjà requis sur
+`main`, attend les tests du produit, la matrice de couverture et les deux audits. Il s'exécute même
+après un échec et refuse tout résultat autre que `success`, y compris `skipped`, `cancelled` ou
+absent. Les suites restent parallèles. Ce raccordement ne change pas les règles GitHub et doit
+encore être livré puis constaté sur une PR. `publication.yml` appelle aussi les audits avant sa
+construction, en leur transmettant la révision demandée. Les déclenchements PR et push ne sont pas
+dupliqués dans `security.yml`. Les tests `workflows-controles-requis.test.mjs` exécutent le code du
+gate avec des résultats positifs et négatifs ; ils ne remplacent pas une exécution réelle de GitHub
+Actions.
+
+Le SBOM npm lit uniquement `package-lock.json`, avec les dépendances de développement, optionnelles
+et peer incluses, même sous `NODE_ENV=production`. Il est généré aussi après un échec d'audit npm.
+Il décrit le verrou, pas les paquets réellement présents dans une image VM. Son UUID et sa date
+varient à chaque génération : le fichier n'est pas reproductible à l'octet près. La signature, la
+provenance attestée et le SBOM complet de la distribution restent à réaliser.
+
 | Commande                          | Portée                                                                                                                           |                                                                                                                                                                                                                                               Coût attendu |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
 | `npm run test:unit`               | contrats, logique pure et configuration du lint sous Node                                                                        |                                                                                                                                                                                                                                                   secondes |
+| `npm run test:coverage`           | même suite avec couverture native de `src/` et planchers 90 % lignes, 85 % branches, 85 % fonctions                              |                                                                                                                                                                                                                                              environ 1 min |
+| `npm run security:audit:npm`      | avis de sécurité du verrou npm ; échec à partir de la sévérité élevée                                                            |                                                                                                                                                                                                                                                   secondes |
+| `npm run security:sbom:npm`       | inventaire CycloneDX de l'outillage npm sous `reports/supply-chain/`                                                             |                                                                                                                                                                                                                                                   secondes |
 | `npm run test:browser`            | page, Worker dédié, backend OPFS réel et frontières d'origine (spike ET coquille de produit)                                     |                                                                                                                                                                                                                                              environ 2 min |
 | `npm run test:spike:origin`       | les deux suites de frontière d'origine seules                                                                                    |                                                                                                                                                                                                                                              environ 1 min |
 | `npm run test:spike:apps`         | frontière entre deux applications (#46), trois moteurs, seule                                                                    |                                                                                                                                                                                                                                               environ 35 s |

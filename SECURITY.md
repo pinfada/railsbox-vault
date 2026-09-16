@@ -1163,8 +1163,17 @@ si bien que la comparaison hors bande de l'ADR 0017 confirmerait l'altération a
 Chaque `uses:` porte l'étiquette figée en commentaire, ce qui donne son mécanisme de mise à jour
 (`.github/dependabot.yml`, lot hebdomadaire relu comme une PR ordinaire) ;
 `tests/unit/workflows-actions-epinglees.test.mjs` refuse toute action qui perdrait l'une des deux
-moitiés. Les images VM publiées devront fournir empreinte, provenance de build et SBOM. Aucun secret
-de signature ne réside dans un artefact servi au navigateur.
+moitiés. Dependabot couvre également les verrous npm et Bundler. Le workflow `security.yml` contrôle
+chaque PR, `main` et les avis hebdomadaires dans deux jobs indépendants. `npm audit` échoue sur un
+constat élevé ou critique ; `bundler-audit` actualise sa base et contrôle
+`apps/reference/Gemfile.lock`. Dans `ci.yml`, le contrôle déjà requis `Qualité et tests` attend
+désormais les tests, la couverture et les audits, et refuse aussi les résultats sautés ou annulés.
+Ce raccordement local reste à valider sur GitHub après livraison ; les règles de branche ne sont pas
+modifiées. La publication attend elle aussi les audits de la révision demandée. L'inventaire
+CycloneDX npm décrit le verrou, toutes catégories de dépendances incluses, et reste généré après un
+échec d'audit npm. Cet inventaire partiel n'est pas le SBOM de la distribution : les images VM
+publiées devront encore fournir empreinte, provenance de build et SBOM complet. Aucun secret de
+signature ne réside dans un artefact servi au navigateur.
 
 Les artefacts de la machine virtuelle ne sont pas versionnés mais **épinglés** :
 `vendor/v86/MANIFEST.json` fixe pour chacun son nom, sa taille, son empreinte SHA-256, sa licence et
@@ -1416,11 +1425,12 @@ mémoire du guest** — des pages de la base SQLite en cache, des tampons de Pum
 du matériel de session. C'est l'objet le plus sensible que ce dépôt écrive après le volume lui-même,
 et les quatre règles qui suivent découlent de ce seul fait.
 
-- **Il est CHIFFRÉ sous la DEK**, la même clé que le volume, développée par l'enveloppe de
-  l'ADR 0020. Un instantané en clair à côté d'un volume chiffré serait un contournement complet du
-  jalon 4 : il suffirait de le lire pour lire le volume. Un seul scellement AES-256-GCM par capture,
-  dont les données associées sont la liaison entière — identifiant de volume, séquence, génération,
-  empreinte de région, empreinte d'image, longueur.
+- **Il est CHIFFRÉ sous une clé à usage unique du domaine `instantane`**, dérivée par HKDF de la DEK
+  maîtresse développée par l'enveloppe de l'ADR 0020. La clé de volume et celle de la capture sont
+  donc distinctes. Un instantané en clair à côté d'un volume chiffré serait un contournement complet
+  du jalon 4 : il suffirait de le lire pour lire le volume. Un seul scellement AES-256-GCM par
+  capture, dont les données associées sont la liaison entière — identifiant de volume, séquence,
+  génération, empreinte de région, empreinte d'image, longueur.
 - **Il ne sort JAMAIS de l'origine de confiance.** Il n'entre dans aucune archive d'export (ADR
   0008, ADR 0024 § 1) : l'archive reste sans clé et sans état mémoire. Il ne traverse aucun port,
   aucun `postMessage` et aucune frontière d'origine ; seul le Worker runtime le lit et l'écrit, par
@@ -1431,11 +1441,12 @@ et les quatre règles qui suivent découlent de ce seul fait.
   septembre 2026
   ([ADR 0031](docs/decisions/0031-verrouiller-le-worker-meurt-l-instantane-survit.md), décision 3 ;
   note datée dans l'[ADR 0024](docs/decisions/0024-instantane-de-reprise.md), décision 8).
-  L'instantané est scellé sous la DEK, exactement comme le volume qui reste, lui, sur l'appareil ;
-  et un verrouillage qui coûterait un boot à froid de 125,9 s par réouverture est un verrouillage
-  dont l'utilisateur allonge le délai jusqu'à ne plus l'avoir. **L'asymétrie qui reste est écrite
-  comme limite** : l'instantané porte la RAM invitée, donc du clair que le volume n'a jamais reçu,
-  sous la même clé.
+  L'instantané est scellé sous sa clé dérivée du domaine `instantane` ; le volume reste lui aussi
+  chiffré sur l'appareil ; et un verrouillage qui coûterait un boot à froid de 125,9 s par
+  réouverture est un verrouillage dont l'utilisateur allonge le délai jusqu'à ne plus l'avoir.
+  **L'asymétrie qui reste est écrite comme limite** : l'instantané porte la RAM invitée, donc du
+  clair que le volume n'a jamais reçu, protégé par une clé distincte mais issue de la même clé
+  maîtresse.
 - **`SEC-DURABLE-001` est INCHANGÉ.** L'instantané n'est jamais une source de vérité et ne porte
   aucune promesse de durabilité : celle-ci est tenue par le journal de génération, comme depuis #14.
   Un instantané perdu, refusé ou retiré ne perd aucune donnée — il coûte un boot à froid. La
