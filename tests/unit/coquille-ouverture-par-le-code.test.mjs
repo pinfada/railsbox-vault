@@ -19,14 +19,20 @@ import {
   emplacementsDeRecuperation,
   ouvrirParLeCode,
 } from "../../src/coquille/ouverture-par-le-code.mjs";
+import {
+  DERIVATION_ERROR_CODES,
+  isDerivationError,
+} from "../../src/vm/derivation/derivation-errors.mjs";
+import { encoderParametresPublics } from "../../src/vm/derivation/parametres-publics.mjs";
 import { creerMoyenDeRecuperation } from "../../src/vm/moyen-de-recuperation.mjs";
-import { inventorierEnveloppe } from "../../src/vm/enveloppe-de-cle.mjs";
+import { ajouterEmplacement, inventorierEnveloppe } from "../../src/vm/enveloppe-de-cle.mjs";
 import {
   ENVELOPPE_ERROR_CODES,
   isEnveloppeError,
 } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
-import { EMPLACEMENTS_MAX } from "../../src/vm/enveloppe/identite-enveloppe.mjs";
+import { EMPLACEMENTS_MAX, TYPES_KEK } from "../../src/vm/enveloppe/identite-enveloppe.mjs";
 import { KEK, VOLUME_A, magasin, poserVolume } from "./support-archive-recuperation.mjs";
+import { suiteDOctets } from "./support-enveloppe-double.mjs";
 
 /** Le refus que l'appelant fournit quand l'enveloppe ne porte aucun emplacement de récupération. */
 function sansEmplacement() {
@@ -166,5 +172,106 @@ test("une ancre de version plus haute que la page refuse par REJEU, non par clé
     () => ouvrir(support, codes[1], 99),
     (erreur) => isEnveloppeError(erreur, ENVELOPPE_ERROR_CODES.rejeu),
     "ce qui dit quelque chose du FICHIER remonte tel quel, et n'est pas replié sur un refus de clé",
+  );
+});
+
+// --- Revue de sécurité de la PR #219 : AUCUN refus ne sort de la boucle (constats 1, 2) ----------
+
+/** Compte les lectures du support d'enveloppe pendant un geste. */
+function supportCompte(support) {
+  const compte = { lectures: 0 };
+  const lire = (...args) => {
+    compte.lectures += 1;
+    return support.lire(...args);
+  };
+  return { support: Object.freeze({ ...support, lire }), compte };
+}
+
+test("le coût d'un REJEU ne dépend pas du RANG de l'emplacement qui l'a rendu", async () => {
+  // Constat 1 : un REJEU n'arrive qu'avec la BONNE clé. S'il sortait de la boucle, ouvrir sous une
+  // ancre trop haute coûterait un essai au premier code et sept au septième — un oracle du rang.
+  const { support, codes } = await coffreAvecCodes(7);
+  const refus = [];
+  const cout = async (code) =>
+    appelsAead(() => ouvrir(support, code, 99).catch((erreur) => refus.push(erreur)));
+
+  const parLePremier = await cout(codes[0]);
+  const parLeDernier = await cout(codes[6]);
+
+  assert.equal(refus.length, 2, "les deux ouvertures sont refusées");
+  for (const erreur of refus) {
+    assert.ok(
+      isEnveloppeError(erreur, ENVELOPPE_ERROR_CODES.rejeu),
+      `le refus est un REJEU quel que soit le rang (reçu ${erreur?.code})`,
+    );
+  }
+  assert.equal(
+    parLePremier,
+    parLeDernier,
+    "le coût d'un REJEU dépend du RANG de l'emplacement : il désigne la feuille employée",
+  );
+  assert.ok(parLePremier >= 7 * EMPLACEMENTS_MAX, "les sept clés doivent être toutes essayées");
+});
+
+test("un type 4 aux paramètres ILLISIBLES ne masque pas un code valable posé après lui", async () => {
+  // Constat 2 : un emplacement écrit par un produit plus récent (octet de version 2) fait refuser SA
+  // dérivation. Ce refus dit quelque chose de CET emplacement, pas du fichier : les suivants restent
+  // essayés, et le code qui leur répond ouvre.
+  const banc = magasin();
+  const { support } = await poserVolume(banc, { avecRecuperation: false });
+  await ajouterEmplacement({
+    support,
+    identifiantVolume: VOLUME_A,
+    kek: KEK,
+    kekNouvelle: suiteDOctets(0x40, 32),
+    typeKek: TYPES_KEK.recuperation,
+    parametres: encoderParametresPublics(TYPES_KEK.recuperation, {
+      version: 2,
+      sel: "ab".repeat(32),
+    }),
+    identifiantEmplacement: "0123456789abcdef",
+  });
+  const moyen = await creerMoyenDeRecuperation({ support, identifiantVolume: VOLUME_A, kek: KEK });
+  const code = moyen.rendre();
+
+  const inventaire = await inventorierEnveloppe({ support, identifiantVolume: VOLUME_A });
+  assert.equal(emplacementsDeRecuperation(inventaire).length, 2, "l'illisible est le PREMIER");
+
+  const ouverte = await ouvrir(support, code);
+  assert.equal(ouverte.dek.byteLength, 32, "le code valable ouvre malgré l'emplacement illisible");
+  assert.equal(ouverte.identifiantEmplacement, moyen.identifiantEmplacement);
+
+  const autre = await coffreAvecCodes(1);
+  await assert.rejects(
+    () => ouvrir(support, autre.codes[0]),
+    (erreur) => isDerivationError(erreur, DERIVATION_ERROR_CODES.parametresRefuses),
+    "sans succès, le refus ÉTABLI de l'emplacement illisible l'emporte sur « clé refusée »",
+  );
+});
+
+test("un code MAL RECOPIÉ : une seule lecture de l'enveloppe, zéro déchiffrement", async () => {
+  const { support: reel, codes } = await coffreAvecCodes(3);
+  const mal = `${codes[1].slice(0, -1)}${codes[1].endsWith("0") ? "1" : "0"}`;
+
+  const inventaire = supportCompte(reel);
+  await inventorierEnveloppe({ support: inventaire.support, identifiantVolume: VOLUME_A });
+
+  const essai = supportCompte(reel);
+  let refus = null;
+  const appels = await appelsAead(() =>
+    ouvrir(essai.support, mal).catch((erreur) => {
+      refus = erreur;
+    }),
+  );
+
+  assert.ok(
+    isDerivationError(refus, DERIVATION_ERROR_CODES.codeMalRecopie),
+    `le refus est « mal recopié » (reçu ${refus?.code})`,
+  );
+  assert.equal(appels, 0, "aucune clé n'est essayée pour un code dont la somme ne vérifie pas");
+  assert.equal(
+    essai.compte.lectures,
+    inventaire.compte.lectures,
+    "le refus tombe après l'inventaire et avant toute ouverture",
   );
 });
