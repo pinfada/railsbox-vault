@@ -43,6 +43,11 @@ taux de réussite et incompréhensions, puis ajuster les exigences uniquement pa
 atteinte quand deux sessions indépendantes accomplissent installation, reprise et restauration sans
 aide orale dès que ces capacités existent.
 
+**Au 16 septembre 2026 : ces capacités existent.** Le parcours guidé (épique #195 : P1, P2a, P2, P3)
+est sur `main`, et `docs/parcours/relecture-p2.md` en donne la lecture pas à pas. Aucune session
+d'utilisateur n'a encore eu lieu : la première relecture, par une personne non technique que le
+mainteneur désigne, est le gate qui ferme l'épique. Cette mise à jour ne révise pas la note de 9,3.
+
 ### Architecture et contrats — cible 9,5
 
 Fermer #35 et #4 avec ADR, prototypes reproductibles et tests de franchissement de frontière. Puis

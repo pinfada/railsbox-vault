@@ -200,6 +200,29 @@ restaurée sur un autre appareil donne aujourd'hui un volume que personne n'ouvr
 module d'export ou d'import ne connaît `.cles` — le gate « portabilité » est prouvé pour un volume
 v2 seulement, jusqu'à #149.
 
+**Au 16 septembre 2026 — le parcours utilisateur (épique #195) est sur `main`, sauf son gate
+humain.** Après #24 et #25, la coquille portait tous les gestes sans guider personne. L'épique #195
+les a ordonnés en quatre tranches, toutes fusionnées : **P1** (#192,
+[ADR 0038](decisions/0038-servir-l-application-dans-le-cadre.md)) sert la page Rails réelle dans le
+cadre par un Service Worker de l'origine applicative et un troisième canal du Worker de confiance ;
+**P2a** (#207, [ADR 0039](decisions/0039-sauvegarder-restaurer-revoquer-depuis-la-coquille.md))
+branche sauvegarder, restaurer et révoquer dans la coquille, sous une seule identité de coffre ;
+**P2** (#193, [ADR 0040](decisions/0040-le-parcours-est-un-ordre-pas-une-decision.md)) en fait neuf
+étapes, un écran à la fois ; **P3** (#194, [direction visuelle](direction-visuelle.md)) les met en
+forme, accessibilité et apparence mesurées sur trois moteurs. L'épique ne se ferme que par une
+relecture non technique (`docs/parcours/relecture-p2.md`) par une personne que le mainteneur désigne
+: c'est sa décision, pas une tranche.
+
+La revue de P2 a trouvé **#214** (CRITICAL) : un second « créer un moyen de récupération » rendait
+un code qui n'ouvrait rien, parce que l'ouverture prenait le PREMIER emplacement de type 4 et
+dérivait le code sous le mauvais sel. Le 16 septembre, après un défi d'architecture, la décision est
+d'**élargir** : plusieurs codes sont admis (l'ADR 0025 le permettait déjà, dix au plus), et
+l'ouverture par code les essaie tous, sans court-circuit, sans refus neuf et sans toucher `src/vm/`
+— la PR #219 est en recette. Remplacer le code a été écarté (il périmait la clé retenue quand c'est
+le code qui a ouvert), « révoquer puis créer » aussi (il détruisait la passkey). Suite ordonnée :
+#215, #217, #218 (retirer un code perdu sans détruire la passkey), #220 (`emplacementADeriver` exige
+l'identifiant dès qu'un type est porté deux fois), #191, #197, #210, #212.
+
 #52 est tranchée par l'[ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md) : la CSP de
 la coquille n'est **pas** élargie — `worker-src` reste `'self'` — parce que la mesure a montré
 qu'une boucle d'ordonnancement fournie par Vault couvre les trois moteurs sans elle. La CSP possède
