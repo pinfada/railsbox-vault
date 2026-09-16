@@ -135,7 +135,8 @@ Boutons et champs : « Afficher mon code de récupération ».
 Messages qui peuvent s'afficher sur cet écran :
 
 - Ce coffre porte déjà N codes de récupération. En afficher un nouveau n'efface aucun des précédents
-  : tous ouvrent ce coffre tant que vous n'en retirez aucun.
+  : tous ouvrent ce coffre tant que vous n'en retirez aucun. Une sauvegarde faite avant ce nouveau
+  code ne le connaît pas : refaites-en une à l'étape 6.
 
 ### Écran : Recopier votre code de récupération
 
@@ -219,7 +220,8 @@ Messages qui peuvent s'afficher sur cet écran :
 
 - Verrouillage en cours… Ne fermez pas l'onglet.
 - Ce coffre porte déjà N codes de récupération. En afficher un nouveau n'efface aucun des précédents
-  : tous ouvrent ce coffre tant que vous n'en retirez aucun.
+  : tous ouvrent ce coffre tant que vous n'en retirez aucun. Une sauvegarde faite avant ce nouveau
+  code ne le connaît pas : refaites-en une à l'étape 6.
 
 **Questions**
 
@@ -417,7 +419,8 @@ Boutons et champs : « Fichier de sauvegarde » (champ), « Restaurer ma sauvega
 Messages qui peuvent s'afficher sur cet écran :
 
 - Restauration en cours… Ne fermez pas l'onglet.
-- Sauvegarde restaurée et vérifiée. Ouvrez maintenant le coffre avec votre code.
+- Sauvegarde restaurée et vérifiée. Ouvrez maintenant le coffre avec votre code — avec un code qui
+  existait quand la sauvegarde a été faite.
 
 **Questions**
 
