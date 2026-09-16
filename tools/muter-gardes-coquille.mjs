@@ -900,9 +900,54 @@ export const MUTATIONS = Object.freeze([
     garde: "ouvrirParLeCode — l'absence de court-circuit après un succès",
     fichier: OUVERTURE_PAR_LE_CODE,
     avant:
-      "    if (ouverte === null) ouverte = Object.freeze({ ...essai, kek });\n" +
-      "    else essai.dek.fill(0);\n",
-    apres: "    ouverte = Object.freeze({ ...essai, kek });\n    break;\n",
+      "      if (ouverte === null) {\n" +
+      "        ouverte = Object.freeze({ ...essai, kek });\n" +
+      "        kek = null;\n" +
+      "      } else essai.dek.fill(0);\n",
+    apres:
+      "      ouverte = Object.freeze({ ...essai, kek });\n" +
+      "      kek = null;\n" +
+      "      break;\n",
+    epreuves: [EPREUVE_OUVERTURE_PAR_LE_CODE],
+  },
+  // Revue de sécurité de la PR #219 : aucun refus ne sort de la boucle (constats 1 et 2).
+  {
+    nom: "le coût d'un REJEU ne désigne pas la feuille employée",
+    garde: "ouvrirParLeCode — aucun refus levé dans la boucle (revue #219, constat 1)",
+    fichier: OUVERTURE_PAR_LE_CODE,
+    avant: "    } catch (cause) {\n      retenirLeRefus(refus, cause);\n",
+    apres:
+      "    } catch (cause) {\n" +
+      "      if (!isEnveloppeError(cause, ENVELOPPE_ERROR_CODES.cleRefusee)) throw cause;\n" +
+      "      retenirLeRefus(refus, cause);\n",
+    epreuves: [EPREUVE_OUVERTURE_PAR_LE_CODE],
+  },
+  {
+    nom: "un emplacement de type 4 illisible ne masque pas le code valable qui le suit",
+    garde:
+      "ouvrirParLeCode — la dérivation dans le même try que l'ouverture (revue #219, constat 2)",
+    fichier: OUVERTURE_PAR_LE_CODE,
+    avant:
+      "    let kek = null;\n" +
+      "    try {\n" +
+      "      kek = await derivateur.deriver({\n" +
+      "        parametres: emplacement.parametres,\n" +
+      "        identite: {\n" +
+      "          identifiantVolume,\n" +
+      "          identifiantEmplacement: emplacement.identifiantEmplacement,\n" +
+      "        },\n" +
+      "        geste: { code },\n" +
+      "      });\n",
+    apres:
+      "    let kek = await derivateur.deriver({\n" +
+      "      parametres: emplacement.parametres,\n" +
+      "      identite: {\n" +
+      "        identifiantVolume,\n" +
+      "        identifiantEmplacement: emplacement.identifiantEmplacement,\n" +
+      "      },\n" +
+      "      geste: { code },\n" +
+      "    });\n" +
+      "    try {\n",
     epreuves: [EPREUVE_OUVERTURE_PAR_LE_CODE],
   },
   {
