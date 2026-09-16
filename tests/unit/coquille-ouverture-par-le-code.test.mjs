@@ -133,8 +133,10 @@ test("un code ÉTRANGER bien formé est refusé après avoir essayé CHAQUE empl
   assert.equal(
     ouvert - refuse,
     1,
-    "un succès ne coûte qu'UNE ouverture de racine de plus qu'un refus : les tentatives, elles, " +
-      "sont au même nombre",
+    "sur une page v2, un succès ne coûte qu'UNE ouverture de racine de plus qu'un refus : les " +
+      "tentatives, elles, sont au même nombre. La première ouverture d'une page v1 y ajoute sa " +
+      "migration et sa relecture (mesuré : 11 decrypt au succès, 6 au refus, une seule migration " +
+      "quel que soit le rang)",
   );
 });
 

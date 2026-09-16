@@ -236,14 +236,16 @@ affichés (constat 7). Les trois questions par étape restent écrites dans l'ou
    > n'aurait donc jamais servi à personne. Sur `code-verifier` elle mène à « Rouvrir », où le
    > coffre s'ouvre par la phrase ; le nouveau code s'affiche ensuite. L'ordre n'est pas sauté pour
    > autant : ouvrir par la phrase ne vaut PAS confirmation (`ouvertureParLeCode` ne nomme que les
-   > écrans qui n'offrent que le code), aucun écran de 4 à 9 n'est atteint sans code confirmé, et la
-   > demande ne survit pas à un rechargement — elle vit dans la page, jamais dans `parcours.json`.
+   > écrans qui n'offrent que le code), aucun écran COFFRE OUVERT de 4 à 9 n'est atteint sans code
+   > confirmé — les écrans `rouvrir` et `recuperer`, verrouillés, sont atteints sans confirmation,
+   > et c'est la décision —, et la demande ne survit pas à un rechargement — elle vit dans la page,
+   > jamais dans `parcours.json`.
    >
    > La première rédaction de cette limite — « l'ancien reste valable tant qu'il n'est pas révoqué »
    > — était fausse quand elle a été écrite, et elle redevient VRAIE : N feuilles ouvrent le coffre,
-   > et retirer celle que l'on n'a plus est un geste distinct, la révocation d'urgence de l'étape 9.
-   > L'écran nomme les deux sorties. Reste hors de cette tranche : retirer UN code nommément, sans
-   > toucher aux autres moyens — c'est #218.
+   > et le geste qui existe aujourd'hui est la révocation d'urgence de l'étape 9, qui retire TOUS
+   > les autres moyens — phrase, passkey, autres feuilles — sauf celui employé ; retirer la seule
+   > feuille perdue est #218. L'écran nomme les deux sorties.
 
 2. **Un coffre dont la progression manque, mais qui porte un code** (créé avant cette livraison, ou
    dont `parcours.json` n'a pas pu être écrit — l'échec est publié sous « Détails techniques »)
