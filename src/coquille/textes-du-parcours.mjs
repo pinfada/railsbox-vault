@@ -99,6 +99,13 @@ const SI_LE_CODE_EST_PERDU =
   "les données de ce site, rechargez la page, puis créez un nouveau coffre. Si vous avez déjà mis " +
   "des données dans ce coffre, n'effacez rien et demandez de l'aide.";
 
+/**
+ * Une sauvegarde ne connaît que les codes qui existaient quand elle a été faite (revue de la PR
+ * #219, constat 5) : l'archive emporte les emplacements du moment, pas ceux qui viendront.
+ */
+const SAUVEGARDE_ANTERIEURE =
+  "Une sauvegarde faite avant ce nouveau code ne le connaît pas : refaites-en une à l'étape 6.";
+
 const UN_CODE_A_DEJA_ETE_RENDU =
   "Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché : " +
   "il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le " +
@@ -376,7 +383,9 @@ export const MESSAGES = Object.freeze({
     "Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien ne " +
     "s'est enregistré, cliquez sur « Enregistrer la sauvegarde ». Pensez à redémarrer " +
     "l'application si vous voulez continuer à l'utiliser.",
-  restauree: "Sauvegarde restaurée et vérifiée. Ouvrez maintenant le coffre avec votre code.",
+  restauree:
+    "Sauvegarde restaurée et vérifiée. Ouvrez maintenant le coffre avec votre code — avec un code " +
+    "qui existait quand la sauvegarde a été faite.",
   revoque: (nombre, version) =>
     `${nombre} moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : ${version}.`,
   revoqueSansRien:
@@ -385,9 +394,11 @@ export const MESSAGES = Object.freeze({
   codesDejaRendus: (nombre) =>
     nombre <= 1
       ? "Ce coffre porte déjà un code de récupération. En afficher un nouveau n'efface pas " +
-        "l'ancien : les deux ouvriront ce coffre tant que vous n'en retirez aucun."
+        "l'ancien : les deux ouvriront ce coffre tant que vous n'en retirez aucun. " +
+        SAUVEGARDE_ANTERIEURE
       : `Ce coffre porte déjà ${nombre} codes de récupération. En afficher un nouveau n'efface ` +
-        "aucun des précédents : tous ouvrent ce coffre tant que vous n'en retirez aucun.",
+        "aucun des précédents : tous ouvrent ce coffre tant que vous n'en retirez aucun. " +
+        SAUVEGARDE_ANTERIEURE,
 });
 
 /** Ce que « Où suis-je ? » dit de chaque étape. */
