@@ -282,7 +282,8 @@ export function ecranCourant({
   if (coffre === COFFRE.refuse)
     return refus === CODE_RESTAURATION_INTERROMPUE ? "restaurer" : "refuse";
   if (coffre === COFFRE.absent) return ecranSansCoffre(pointeur);
-  if (coffre === COFFRE.verrouille) return ecranVerrouille(pointeur, moyens, progression);
+  if (coffre === COFFRE.verrouille)
+    return ecranVerrouille(pointeur, moyens, progression, nouveauCodeDemande);
   if (coffre === COFFRE.ouvert) {
     return ecranOuvert({
       pointeur,
@@ -303,11 +304,16 @@ function ecranSansCoffre(pointeur) {
   return "creer";
 }
 
-function ecranVerrouille(pointeur, moyens, progression) {
+function ecranVerrouille(pointeur, moyens, progression, nouveauCodeDemande) {
   const ouvrableSansCode = moyens.includes("phrase") || moyens.includes("webauthn-prf");
   if (!ouvrableSansCode) return "recuperer";
-  // Un code a été rendu, et rien ne dit qu'il a été recopié juste : c'est lui qui rouvre.
-  if (moyens.includes("recuperation") && !progression.code.confirme) return "code-verifier";
+  // Un code a été rendu, et rien ne dit qu'il a été recopié juste : c'est lui qui rouvre. Sauf pour
+  // qui n'a plus sa feuille : un coffre VERROUILLÉ n'affiche aucun code — il faut l'ouvrir d'abord,
+  // par la phrase, et le nouveau code s'affiche ensuite (#214). La demande ne survit pas à un
+  // rechargement : l'ordre n'est jamais sauté, il est seulement contourné par qui le dit.
+  if (moyens.includes("recuperation") && !progression.code.confirme && !nouveauCodeDemande) {
+    return "code-verifier";
+  }
   if (pointeur === 8) return "recuperer";
   return "rouvrir";
 }

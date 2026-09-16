@@ -940,7 +940,7 @@ export const MUTATIONS = Object.freeze([
     garde: "ecranVerrouille — « Vérifier votre code », jamais un second code (constat 1)",
     fichier: PARCOURS,
     avant:
-      '  if (moyens.includes("recuperation") && !progression.code.confirme) return "code-verifier";\n',
+      '  if (moyens.includes("recuperation") && !progression.code.confirme && !nouveauCodeDemande) {\n    return "code-verifier";\n  }\n',
     apres: "",
     epreuves: [EPREUVE_PARCOURS],
   },

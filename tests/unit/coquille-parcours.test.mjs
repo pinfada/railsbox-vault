@@ -246,6 +246,7 @@ test("CONSTAT 1 : un code rendu et non confirmé fait d'abord VÉRIFIER la feuil
   // Coffre VERROUILLÉ : afficher un code exige un coffre ouvert, et le dire est la seule conduite
   // honnête. Coffre OUVERT : la sortie existe, et l'écran nomme AUSSI la révocation (#214).
   assert.match(ECRANS["code-verifier"].attendu, /effacez les données de ce site/);
+  assert.match(ECRANS["code-verifier"].attendu, /afficher un nouveau code/);
   assert.match(ECRANS["code-a-verifier"].attendu, /afficher un nouveau code/);
   assert.match(ECRANS["code-a-verifier"].attendu, /étape 9/);
   assert.doesNotMatch(ECRANS["code-a-verifier"].attendu, /effacez les données de ce site/);
@@ -271,6 +272,36 @@ test("« je n'ai plus cette feuille » ramène à l'annonce, et un SECOND code s
   );
   assert.ok(ECRANS["code-a-verifier"].blocs.includes("nouveau-code"), "la sortie est sur l'écran");
   assert.ok(BLOCS.includes("nouveau-code"), "le bloc est déclaré");
+});
+
+test("coffre VERROUILLÉ : « je n'ai plus cette feuille » fait d'abord ouvrir par la phrase (#214)", () => {
+  // Un coffre verrouillé n'affiche aucun code — le Worker n'a pas de clé. La sortie mène donc à
+  // « Rouvrir », d'où le coffre ouvert ramène à l'annonce du code. L'ordre n'est pas sauté : le
+  // code reste à recopier et à confirmer avant l'étape 4.
+  const verrouille = {
+    pointeur: 3,
+    coffre: COFFRE.verrouille,
+    moyens: MOYENS_DE_A,
+    progression: rendue,
+  };
+  assert.equal(ecranCourant(verrouille), "code-verifier");
+  assert.equal(ecranCourant({ ...verrouille, nouveauCodeDemande: true }), "rouvrir");
+  assert.ok(ECRANS["code-verifier"].blocs.includes("nouveau-code"), "la sortie est sur l'écran");
+  assert.match(ECRANS["code-verifier"].attendu, /ouvrirez donc d'abord avec votre phrase/);
+  // Une fois le coffre OUVERT, la demande mène à l'annonce, où le geste d'avant crée le code.
+  assert.equal(
+    ecranCourant(ouvert({ pointeur: 3, progression: rendue, nouveauCodeDemande: true })),
+    "code-annonce",
+  );
+  // Un coffre qui n'a QUE le code reste à « Récupérer » : il n'y a pas de phrase pour l'ouvrir.
+  assert.equal(
+    ecranCourant({
+      ...verrouille,
+      moyens: ["recuperation"],
+      nouveauCodeDemande: true,
+    }),
+    "recuperer",
+  );
 });
 
 test("le COMPTE des feuilles remplace « il y en a une » (#214)", () => {
@@ -393,7 +424,12 @@ test("seule une ouverture depuis un écran qui n'offre que le code vaut confirma
   for (const id of ["rouvrir", "choisir", "code-a-verifier", "travailler"]) {
     assert.equal(ouvertureParLeCode(id), false, id);
   }
-  assert.deepEqual(ECRANS["code-verifier"].blocs, ["code"]);
+  // Ce que l'invariant exige est qu'aucun AUTRE moyen d'ouvrir n'y soit offert : la sortie « je
+  // n'ai plus cette feuille » (#214) n'ouvre rien, elle mène à l'écran qui ouvre par la phrase.
+  assert.deepEqual(ECRANS["code-verifier"].blocs, ["code", "nouveau-code"]);
+  for (const bloc of ["phrase", "passkey", "perdu", "ancre"]) {
+    assert.ok(!ECRANS["code-verifier"].blocs.includes(bloc), bloc);
+  }
   assert.ok(
     !ECRANS.recuperer.blocs.includes("phrase") && !ECRANS.recuperer.blocs.includes("passkey"),
   );

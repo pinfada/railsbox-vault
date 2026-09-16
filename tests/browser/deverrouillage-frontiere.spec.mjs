@@ -475,7 +475,13 @@ test("le code ouvre un volume dont plus AUCUN autre moyen ne subsiste, et une ph
     // Le CODE lui-même n'est pas attaché : un relevé de test finit dans un artefact de CI, et un
     // secret rendu une fois n'a rien à y faire. Sa LONGUEUR et sa forme suffisent à juger.
     body: JSON.stringify(
-      { porte, code, report: report === null ? null : { ...report, code: undefined } },
+      {
+        porte,
+        code,
+        // Ni l'un ni l'autre des DEUX codes rendus n'est attaché : un relevé de test finit dans un
+        // artefact de CI (#214).
+        report: report === null ? null : { ...report, code: undefined, secondCode: undefined },
+      },
       null,
       2,
     ),
@@ -504,7 +510,9 @@ test("le code ouvre un volume dont plus AUCUN autre moyen ne subsiste, et une ph
     report.volumeReluParLaNouvellePhrase,
     "la phrase recréée sous le code ne rouvre pas le volume",
   ).toBe(true);
-  expect(report.versionFinale).toBe(report.versionApresRevocation + 1);
+  // DEUX mutations depuis la révocation : le second code de #214, puis la phrase recréée. Chacune
+  // avance le compteur d'un cran, et le fichier n'en porte pas d'autre.
+  expect(report.versionFinale).toBe(report.versionApresRevocation + 2);
 
   // La CONDITION de la décision 1, gardée à CHAQUE exécution et non seulement sous
   // `VAULT_MESURER_DERIVATION`. La mesure publiée dans l'ADR 0025 documente l'ordre de grandeur ;
@@ -515,6 +523,57 @@ test("le code ouvre un volume dont plus AUCUN autre moyen ne subsiste, et une ph
     report.coutCodeMs,
     "le déverrouillage par code coûte l'ordre d'un étirement : la décision 1 ne tient plus",
   ).toBeLessThan(50);
+});
+
+/**
+ * Le SECOND code (#214), sur l'OPFS RÉEL des trois moteurs.
+ *
+ * Le même scénario pose un second moyen de récupération sous la KEK du premier — ce qu'un
+ * rechargement de la page du produit rend ordinaire — et rouvre le volume par le second PUIS par le
+ * premier, en passant par le chemin du produit (`ouvrirParLeCode`, qui essaie chaque emplacement de
+ * type 4 sans court-circuit). Les deux durées d'ouverture ENTIÈRE sont publiées ; aucune borne ne
+ * leur est opposée, parce que ce qu'elles contiennent — deux lectures d'un fichier de 16 Kio sur
+ * l'OPFS — n'est pas ce que l'ADR 0025 a décidé. Ce que la suite AFFIRME est que les deux ouvrent.
+ */
+test("un SECOND code de récupération ouvre le volume, et le premier aussi (#214)", async ({
+  page,
+}, testInfo) => {
+  const { porte } = await contexte(page, testInfo);
+  const { report, code } = await executerOuRefus(page, {
+    scenario: "recuperation",
+    phrase: PHRASE,
+    nouvellePhrase: `${PHRASE}-la-seconde`,
+  });
+  if (!porte) {
+    expect(code).toBe(STORAGE_ERROR_CODES.unsupported);
+    return;
+  }
+  expect(report.secondCode, "le second code a la même forme que le premier").toMatch(
+    /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){6}$/,
+  );
+  expect(report.secondCode, "deux créations rendent deux codes distincts").not.toBe(report.code);
+  expect(report.codesApresLeSecondRendu, "l'enveloppe porte DEUX emplacements de type 4").toBe(2);
+  expect(
+    report.volumeReluParLeSecondCode,
+    "le second code ne rouvre pas le volume : c'est le défaut de #214",
+  ).toBe(true);
+  expect(
+    report.volumeReluParLePremierCodeAvecDeux,
+    "le premier code a cessé d'ouvrir : quelque chose l'a remplacé, et rien ne devait le faire",
+  ).toBe(true);
+
+  await testInfo.attach(`deverrouillage-deux-codes-${testInfo.project.name}.json`, {
+    body: JSON.stringify(
+      {
+        moteur: testInfo.project.name,
+        coutParLeSecondMs: report.coutParLeSecondMs,
+        coutParLePremierMs: report.coutParLePremierMs,
+      },
+      null,
+      2,
+    ),
+    contentType: "application/json",
+  });
 });
 
 test("AUCUN octet du code de récupération ne se dépose, hors son unique canal de rendu", async ({
