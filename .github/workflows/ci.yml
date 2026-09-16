@@ -13,8 +13,68 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  audits:
+    uses: ./.github/workflows/security.yml
+
+  qualite:
+    # Conserve le nom déjà requis par la protection de main. Un simple `needs`
+    # sans `always()` sauterait ce job après un échec, au lieu de le faire échouer.
     name: Qualité et tests
+    needs: [check, couverture, audits]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Tous les contrôles doivent avoir réussi
+        shell: bash
+        env:
+          VAULT_RESULTATS_CI: ${{ toJSON(needs) }}
+        run: |
+          node --input-type=module <<'JS'
+          const resultats = JSON.parse(process.env.VAULT_RESULTATS_CI);
+          const attendus = ["check", "couverture", "audits"];
+          const echecs = attendus.filter((nom) => resultats[nom]?.result !== "success");
+          if (echecs.length) {
+            console.error("Contrôles absents ou non réussis : " + echecs.join(", "));
+            process.exit(1);
+          }
+          console.log("Qualité, couverture et audits réussis.");
+          JS
+
+  couverture:
+    name: Couverture unitaire (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Installation de Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Installation des dépendances
+        run: npm ci
+      - name: Couverture des modules chargés par les tests
+        shell: bash
+        run: |
+          mkdir -p reports/coverage
+          npm run test:coverage 2>&1 | tee reports/coverage/unit.txt
+      - name: Rapport de couverture
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: couverture-node-${{ matrix.node }}
+          path: reports/coverage/unit.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  check:
+    name: Vérifications du produit
     runs-on: ubuntu-latest
     # Portée de 20 à 25 minutes le 8 septembre 2026 (#169). Le motif est une DURÉE D'ATTENTE : ce
     # gate porte des épreuves qui mesurent des bornes de TEMPS — trente secondes pour le Worker MUET

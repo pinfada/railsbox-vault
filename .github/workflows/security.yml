@@ -1,0 +1,75 @@
+name: Chaîne d'approvisionnement
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Révision dont les verrous doivent être audités
+        required: false
+        type: string
+  workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  npm:
+    name: Audit npm et inventaire du verrou
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      - name: Installation de Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Installation des dépendances npm
+        run: npm ci --ignore-scripts
+
+      - name: Audit npm
+        run: npm run security:audit:npm
+
+      - name: Inventaire CycloneDX des dépendances npm
+        if: ${{ !cancelled() }}
+        run: npm run security:sbom:npm
+
+      - name: Dépôt de l'inventaire
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom-npm
+          path: reports/supply-chain/npm.cdx.json
+          if-no-files-found: error
+          retention-days: 30
+
+  ruby:
+    name: Audit du verrou Ruby
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      # Ruby est fourni par l'image Ubuntu. Installation dans le compte de l'exécutant,
+      # sans dépendre des permissions des répertoires système de RubyGems.
+      - name: Installation de bundler-audit
+        run: |
+          gem install bundler-audit --version 0.9.3 --no-document --user-install
+          printf '%s/bin\n' "$(ruby -e 'print Gem.user_dir')" >> "$GITHUB_PATH"
+
+      - name: Audit du verrou Ruby
+        run: bundler-audit check --update apps/reference
