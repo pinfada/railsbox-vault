@@ -1133,7 +1133,13 @@ lui permet et lui interdit est écrit dans l'ADR 0023.
    depuis la coquille, sans jeton de harnais. **Fait pour la tranche 3 (#163)** : le cycle de vie
    est assemblé, son ordre est prouvé par le refus de son inverse, COOP est servi et attesté sur les
    trois moteurs, et `tests/e2e/reprise-coquille-boot-froid.spec.mjs` boote Rails dans la coquille
-   réelle. Ce qui reste de #24 après ces trois tranches est nommé dans l'ADR 0030 § Limites.
+   réelle. Ce qui reste de #24 après ces trois tranches est nommé dans l'ADR 0030 § Limites. **Fait
+   pour le parcours (épique #195, au 16/09/2026)** : la page Rails réelle est servie dans le cadre
+   (P1, ADR 0038), sauvegarder, restaurer et révoquer sont des gestes de la coquille (P2a, ADR
+   0039), le parcours est ordonné en neuf étapes (P2, ADR 0040) et mis en forme (P3,
+   `docs/direction-visuelle.md`). Un second code de récupération ouvre désormais le coffre :
+   l'ouverture par code essaie chaque emplacement de type 4 (#214, PR #219 en recette). Reste la
+   relecture par une personne non technique, qui ferme l'épique.
 7. Échanges chiffrés optionnels entre utilisateurs.
 
 La restauration d'un instantané mémoire pré-calculé sur un disque mutable est écartée du premier
