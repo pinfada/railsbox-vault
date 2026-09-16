@@ -587,10 +587,15 @@ test("AUCUN octet du code de récupération ne se dépose, hors son unique canal
   });
   test.skip(!porte, "Sans OPFS synchrone dans un Worker, aucun code n'a été fabriqué ici.");
 
-  const code = report.code;
-  const octets = decoderCode(code);
-  const octetsHex = Buffer.from(octets).toString("hex");
-  const materiauHex = createHash("sha256").update(octets).digest("hex");
+  // Les DEUX codes que le scénario a rendus (revue de la PR #219, constat 7) : la fouille qui ne
+  // cherchait que le premier laissait le second hors mesure. Un code ABSENT du rapport fait échouer
+  // ici, avant toute fouille — une absence qu'on ne cherche pas ne prouve rien.
+  const codes = [report.code, report.secondCode];
+  for (const code of codes) {
+    expect(code, "le rapport doit porter les deux codes rendus").toMatch(
+      /^[0-9A-HJKMNP-TV-Z]{4}(-[0-9A-HJKMNP-TV-Z]{4}){6}$/,
+    );
+  }
 
   const morceaux = await page.evaluate(
     (appat) => globalThis.bancDeverrouillage.sondeStockages({ appat }),
@@ -601,7 +606,7 @@ test("AUCUN octet du code de récupération ne se dépose, hors son unique canal
       morceaux.map(({ ou, texte }) => ({
         ou,
         caracteres: texte.length,
-        porteLeCode: texte.includes(code),
+        porteLesCodes: codes.map((code) => texte.includes(code)),
       })),
       null,
       2,
@@ -614,38 +619,47 @@ test("AUCUN octet du code de récupération ne se dépose, hors son unique canal
   expect(trouves).toContain("localStorage");
   expect(trouves).toContain("opfs");
 
-  // Le CANAL DE RENDU, nommé plutôt que subi : le code passe du Worker de confiance à la page de la
-  // MÊME origine, une fois. C'est le symétrique de la phrase qui passe en sens inverse (ADR 0021,
-  // limite 4), et l'affirmer positivement est ce qui donne un sens à toutes les absences suivantes.
   const port = morceaux.find(({ ou }) => ou === "port").texte;
-  expect(
-    port.includes(code),
-    "le code n'a pas emprunté son canal de rendu : la fouille est vide",
-  ).toBe(true);
-
-  const sansTirets = code.replaceAll("-", "");
-  // La forme HUMAINE que le banc fabrique pour rouvrir — minuscules, espaces, « o » et « l » — est
-  // un autre visage du même secret, et elle passe par `geste.code`. Elle est cherchée partout, sans
-  // exception : contrairement à la chaîne rendue, elle n'a AUCUN canal légitime.
-  const humaine = code.toLowerCase().replaceAll("-", " ").replaceAll("0", "o").replaceAll("1", "l");
-  for (const { ou, texte } of morceaux) {
-    expect(texte.includes(humaine), `la forme humaine du code se retrouve dans « ${ou} »`).toBe(
-      false,
-    );
-  }
-  for (const { ou, texte } of morceaux) {
-    if (ou !== "port") {
-      expect(texte.includes(code), `le code se retrouve dans « ${ou} »`).toBe(false);
-    }
-    expect(texte.includes(sansTirets), `le code sans tirets se retrouve dans « ${ou} »`).toBe(
-      false,
-    );
-    expect(texte.includes(octetsHex), `les seize octets du code sont dans « ${ou} »`).toBe(false);
-    expect(texte.includes(materiauHex), `le matériau HKDF du code est dans « ${ou} »`).toBe(false);
-  }
-  // Et l'autre sens du port : la page n'a jamais renvoyé le code au Worker dans ce scénario.
   const envois = morceaux.find(({ ou }) => ou === "envois").texte;
-  expect(envois.includes(code)).toBe(false);
+  for (const [rang, code] of codes.entries()) {
+    const nom = rang === 0 ? "le premier code" : "le second code";
+    const octets = decoderCode(code);
+    const octetsHex = Buffer.from(octets).toString("hex");
+    const materiauHex = createHash("sha256").update(octets).digest("hex");
+
+    // Le CANAL DE RENDU, nommé plutôt que subi : le code passe du Worker de confiance à la page de
+    // la MÊME origine, une fois. C'est le symétrique de la phrase qui passe en sens inverse (ADR
+    // 0021, limite 4), et l'affirmer positivement est ce qui donne un sens aux absences suivantes.
+    expect(
+      port.includes(code),
+      `${nom} n'a pas emprunté son canal de rendu : la fouille est vide`,
+    ).toBe(true);
+
+    const sansTirets = code.replaceAll("-", "");
+    // La forme HUMAINE que le banc fabrique pour rouvrir — minuscules, espaces, « o » et « l » —
+    // est un autre visage du même secret, et elle passe par `geste.code`. Elle est cherchée
+    // partout, sans exception : contrairement à la chaîne rendue, elle n'a AUCUN canal légitime.
+    const humaine = code
+      .toLowerCase()
+      .replaceAll("-", " ")
+      .replaceAll("0", "o")
+      .replaceAll("1", "l");
+    for (const { ou, texte } of morceaux) {
+      expect(texte.includes(humaine), `la forme humaine de ${nom} est dans « ${ou} »`).toBe(false);
+      if (ou !== "port") {
+        expect(texte.includes(code), `${nom} se retrouve dans « ${ou} »`).toBe(false);
+      }
+      expect(texte.includes(sansTirets), `${nom} sans tirets est dans « ${ou} »`).toBe(false);
+      expect(texte.includes(octetsHex), `les seize octets de ${nom} sont dans « ${ou} »`).toBe(
+        false,
+      );
+      expect(texte.includes(materiauHex), `le matériau HKDF de ${nom} est dans « ${ou} »`).toBe(
+        false,
+      );
+    }
+    // Et l'autre sens du port : la page n'a jamais renvoyé ce code au Worker dans ce scénario.
+    expect(envois.includes(code), `la page a renvoyé ${nom} au Worker`).toBe(false);
+  }
 });
 
 test("la PAGE n'obtient aucun handle sur le fichier d'enveloppes", async ({ page }, testInfo) => {
