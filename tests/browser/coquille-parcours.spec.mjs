@@ -157,11 +157,21 @@ test("« je n'ai plus cette feuille » affiche un SECOND code, et les DEUX ouvre
   await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
   await aucunCodeEnClair(page, "après la confirmation du second code");
 
-  // `parcours.json` porte le NOUVEAU rendu, et n'a pas perdu l'origine du coffre.
-  const progression = await lireLaProgression(page);
-  expect(progression.origine).toBe("creation");
-  expect(progression.code).toMatchObject({ rendu: true, confirme: true });
-  expect(progression.etapeAtteinte).toBeGreaterThanOrEqual(4);
+  // `parcours.json` porte le NOUVEAU rendu, et n'a pas perdu l'origine du coffre. L'écran de
+  // l'étape 4 peut précéder l'écriture du fichier : la lecture est ATTENDUE, sans délai fixe (revue
+  // de la PR #219, constat 3 — intermittent sur Firefox).
+  const resume = async () => {
+    const progression = await lireLaProgression(page).catch(() => null);
+    return {
+      origine: progression?.origine,
+      rendu: progression?.code?.rendu,
+      confirme: progression?.code?.confirme,
+      etapeQuatreAtteinte: (progression?.etapeAtteinte ?? 0) >= 4,
+    };
+  };
+  await expect
+    .poll(resume, { timeout: DELAI })
+    .toEqual({ origine: "creation", rendu: true, confirme: true, etapeQuatreAtteinte: true });
 
   // Les DEUX codes ouvrent, dans les deux ordres : le second d'abord, l'ancien ensuite.
   for (const code of [second, premier]) {
