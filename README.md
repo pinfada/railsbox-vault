@@ -12,13 +12,27 @@ dépendre d'un serveur applicatif permanent.
 RailsBox Vault est un projet expérimental. Il ne protège encore aucune donnée réelle et ne doit pas
 être utilisé en production.
 
+### Limites de sécurité à connaître
+
+- un retour arrière complet et cohérent du stockage local ne peut pas être distingué de l'état
+  historique authentique qu'il restaure ; il peut notamment réintroduire un moyen révoqué ;
+- révoquer un moyen d'ouverture ne rechiffre aucune copie déjà prise du volume et de l'enveloppe ;
+- l'instantané de reprise contient la mémoire complète de la machine invitée. Il est chiffré sous
+  une clé à usage unique du domaine `instantane`, dérivée de la clé maîtresse du volume, mais il
+  survit volontairement au verrouillage afin d'éviter un redémarrage à froid ;
+- perdre tous les moyens d'ouverture, code de récupération compris, rend le volume définitivement
+  inaccessible : RailsBox Vault ne possède aucun séquestre.
+
+Le détail, les conséquences et les scénarios couverts figurent dans
+[le modèle de menace](SECURITY.md).
+
 Le premier objectif est volontairement plus modeste que la vision complète :
 
 > Modifier une base Rails, fermer entièrement le navigateur, retrouver les données hors ligne,
 > exporter le volume, puis le restaurer depuis une autre origine.
 
-Le chiffrement, la récupération de clés et la collaboration ne seront construits qu'après avoir
-démontré cette propriété de persistance et de portabilité.
+Le chiffrement et la récupération de clés sont implémentés et éprouvés ; les conditions
+d'utilisation restent celles de [SECURITY.md](SECURITY.md). La collaboration reste une perspective.
 
 **Depuis le 13 septembre 2026** (ADR 0039), un coffre créé par une version de développement
 antérieure est refusé par la coquille (`VAULT_COQUILLE_COFFRE_ANTERIEUR`) et n'est pas migré :

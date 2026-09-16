@@ -1,7 +1,33 @@
-# Évaluation de readiness
+# Évaluation de readiness — photographie historique et écarts courants
 
 Date de référence : 23 août 2026. L'évaluation porte sur l'état observable de `main` et de GitHub
 après les PR #32, #33 et #36. Une note mesure une capacité démontrée, pas l'intention du projet.
+
+> **Portée de la table ci-dessous.** Les notes et leurs preuves constituent la photographie du 23
+> août ; elles ne décrivent pas l'état courant et ne sont pas silencieusement recalculées. Les mises
+> à jour datées sous chaque critère donnent les écarts observés. Au 16 septembre 2026, le dépôt
+> possède notamment des suites VM et de résilience, une chaîne de construction d'image et une chaîne
+> de publication vérifiée. Il lui manque encore un déploiement réel, une signature et un SBOM
+> complet couvrant l'image Rails et les artefacts vendus. L'inventaire CycloneDX npm n'en couvre que
+> l'outillage.
+
+## État observable au 16 septembre 2026
+
+Le [suivi des six remarques de l'audit](revue-externe/suivi-audit-projet-2026-09-16.md) distingue
+les corrections locales, les recommandations déjà satisfaites et les travaux encore ouverts.
+
+Cette synthèse remplace la table historique pour lire l'état courant. Elle ne donne pas une nouvelle
+note globale : les vérifications locales ne qualifient pas tous les navigateurs ou une distribution
+déployée.
+
+| Domaine       | État et limite actuelle                                                                                                                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Tests         | Suites unitaires, navigateur, VM, résilience et mutations présentes. Couverture native séparée sur Node 22 et 24 en CI ; seuls les modules de `src/` chargés par les tests Node entrent dans le pourcentage. |
+| Dépendances   | Dependabot couvre Actions, npm et Bundler. Deux jobs indépendants auditent npm et Ruby ; le contrôle déjà requis `Qualité et tests` attend désormais ces audits. Raccordement local à valider sur GitHub.    |
+| Cryptographie | Clés séparées par domaine déjà implémentées, dont une clé d'instantané à usage unique. La conservation de la RAM invitée chiffrée au verrouillage reste un choix documenté.                                  |
+| Publication   | Construction et vérification des arbres présentes ; SBOM du verrou npm disponible. Signature, provenance attestée, SBOM complet des images et validation du déploiement restent à réaliser.                  |
+| Révocation    | Le retrait d'un moyen ne change pas la clé maîtresse. La rotation complète et la détection du retour arrière intégral ne sont pas implémentées.                                                              |
+| Qualification | Gates de `SECURITY.md` inchangés ; les constats historiques corrigés ne valent pas autorisation de production.                                                                                               |
 
 ## Méthode
 
