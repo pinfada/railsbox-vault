@@ -4,8 +4,9 @@
 // L'E2E `tests/e2e/parcours-utilisateur.spec.mjs` joue le chemin nominal avec Rails. Cette suite-ci
 // joue ce que la revue a ATTAQUÉ, là où aucun boot n'est nécessaire :
 //
-//  1. **un rechargement après l'affichage du code** ne fait créer AUCUN second code (#214) : l'écran
-//     demande de vérifier le code rendu, et c'est lui qui rouvre le coffre ;
+//  1. **un rechargement après l'affichage du code** ne fait créer aucun second code DE LUI-MÊME :
+//     l'écran demande d'abord de vérifier le code rendu, et c'est lui qui rouvre le coffre. La
+//     personne qui n'a plus sa feuille en demande une nouvelle, et les DEUX codes ouvrent (#214) ;
 //  2. **l'URL ne saute pas la confirmation** : `?etape=4` et `?etape=6` ramènent à l'étape atteinte,
 //     et la page du produit n'offre plus de lien vers la vue complète ;
 //  3. **aucun code en clair ne subsiste** dans `document.body.innerHTML` après un geste qui consomme
@@ -104,7 +105,10 @@ test("un rechargement après l'affichage du code ne crée aucun second code : le
   await page.reload({ waitUntil: "commit" });
   await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({ timeout: DELAI });
   await expect(bouton(page, "Afficher mon code de récupération")).toHaveCount(0);
-  await expect(page.getByText(/effacez les données de ce site/)).toBeVisible();
+  // L'écran nomme les deux sorties — en demander une nouvelle, ou révoquer si quelqu'un l'a vue —
+  // et il ne conseille plus d'abandonner le coffre, ce qui n'était vrai que faute de mieux (#214).
+  await expect(page.getByText(/afficher un nouveau code/).first()).toBeVisible();
+  await expect(page.getByText(/ouvrirez donc d'abord avec votre phrase/)).toBeVisible();
 
   // Le code rendu, tapé depuis la feuille et validé par Entrée, rouvre le coffre et vaut confirmation.
   const champ = page.getByLabel("Code de récupération", { exact: true });
@@ -115,6 +119,87 @@ test("un rechargement après l'affichage du code ne crée aucun second code : le
   await aucunCodeEnClair(page, "après l'ouverture par le code");
   expect(await creations(page), "un seul geste « créer un moyen de récupération »").toBe(1);
 });
+
+test("« je n'ai plus cette feuille » affiche un SECOND code, et les DEUX ouvrent le coffre", async ({
+  page,
+}) => {
+  await installerLeCompteur(page, TYPES_PRIVILEGIES.creerRecuperation);
+  await ouvrirLaCoquille(page);
+  if (await exigerLaLimiteDuMoteur(page)) return;
+  const premier = await creerEtAfficherLeCode(page);
+
+  // Le rechargement perd la feuille ET verrouille le coffre. La personne ne l'a plus : elle demande
+  // une nouvelle feuille, et le coffre s'ouvre d'abord par la phrase — verrouillé, il n'affiche
+  // aucun code.
+  await page.reload({ waitUntil: "commit" });
+  await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({ timeout: DELAI });
+  expect(await creations(page)).toBe(1);
+  await bouton(page, "Je n'ai plus cette feuille — afficher un nouveau code").click();
+  await expect(ecran(page, "Rouvrir votre coffre")).toBeVisible();
+  await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
+  await bouton(page, "Ouvrir mon coffre").click();
+
+  // La sortie ne crée RIEN d'un clic : elle mène à l'annonce, qui dit de préparer son papier.
+  await expect(ecran(page, "Recevoir votre code de récupération")).toBeVisible({ timeout: DELAI });
+  await expect(page.getByText(/porte déjà un code de récupération/)).toBeVisible();
+  expect(await creations(page), "le retour à l'annonce n'a créé aucun code").toBe(1);
+  await bouton(page, "Afficher mon code de récupération").click();
+  await expect(ecran(page, "Recopier votre code de récupération")).toBeVisible({ timeout: DELAI });
+  const second = ((await page.getByText(FORME_DU_CODE).textContent()) ?? "").trim();
+  expect(second).toMatch(FORME_DU_CODE);
+  expect(second, "deux gestes rendent deux codes distincts").not.toBe(premier);
+  expect(await creations(page)).toBe(2);
+
+  // Le second code se recopie et se confirme comme le premier : l'ordre ne saute rien.
+  await bouton(page, "J'ai recopié mon code").click();
+  await page.getByLabel("Code recopié depuis votre feuille", { exact: true }).fill(second);
+  await bouton(page, "Confirmer mon code").click();
+  await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
+  await aucunCodeEnClair(page, "après la confirmation du second code");
+
+  // `parcours.json` porte le NOUVEAU rendu, et n'a pas perdu l'origine du coffre.
+  const progression = await lireLaProgression(page);
+  expect(progression.origine).toBe("creation");
+  expect(progression.code).toMatchObject({ rendu: true, confirme: true });
+  expect(progression.etapeAtteinte).toBeGreaterThanOrEqual(4);
+
+  // Les DEUX codes ouvrent, dans les deux ordres : le second d'abord, l'ancien ensuite.
+  for (const code of [second, premier]) {
+    await recupererParLeCode(page, code);
+  }
+});
+
+/** Relit `parcours.json` dans l'OPFS de l'origine de confiance, comme la page l'y écrit. */
+async function lireLaProgression(page) {
+  return page.evaluate(async () => {
+    const racine = await navigator.storage.getDirectory();
+    const fichier = await (await racine.getFileHandle("parcours.json")).getFile();
+    return JSON.parse(await fichier.text());
+  });
+}
+
+/**
+ * ROUVRE le coffre par le code présenté — le chemin de l'étape 8.
+ *
+ * Le rechargement suffit à verrouiller : le Worker de confiance meurt avec la page, et le coffre
+ * avec lui. Selon l'étape déjà atteinte, la coquille montre « Rouvrir » (d'où l'on déclare la
+ * phrase perdue) ou directement « Récupérer ».
+ */
+async function recupererParLeCode(page, code) {
+  await ouvrirLaCoquille(page, "?etape=8");
+  const entree = page.getByRole("heading", {
+    level: 2,
+    name: /^(Rouvrir votre coffre|Récupérer votre coffre avec le code)$/,
+  });
+  await expect(entree).toBeVisible({ timeout: DELAI });
+  if ((await entree.textContent()) === "Rouvrir votre coffre") {
+    await bouton(page, "J'ai oublié ma phrase : utiliser mon code de récupération").click();
+  }
+  await expect(ecran(page, "Récupérer votre coffre avec le code")).toBeVisible();
+  await page.getByLabel("Code de récupération", { exact: true }).fill(code);
+  await bouton(page, "Ouvrir mon coffre avec le code").click();
+  await expect(ecran(page, "Révoquer en urgence")).toBeVisible({ timeout: DELAI });
+}
 
 test("l'URL ne saute pas la confirmation, et la page n'offre aucun lien vers la vue complète", async ({
   page,

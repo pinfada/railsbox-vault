@@ -226,9 +226,18 @@ affichés (constat 7). Les trois questions par étape restent écrites dans l'ou
    >
    > Ce qui change : l'ouverture par code dérive une KEK par emplacement de type 4 et les essaie
    > toutes, sans court-circuit (`src/coquille/ouverture-par-le-code.mjs`) ; la coquille COMPTE les
-   > codes ; et l'écran `code-a-verifier` gagne UNE sortie — « Je n'ai plus cette feuille — afficher
-   > un nouveau code » — qui ramène à `code-annonce`, où le geste d'avant crée le code après que la
-   > personne a préparé son papier. Aucun écran neuf, aucun geste neuf, aucun refus neuf.
+   > codes ; et les DEUX écrans « Vérifier votre code » gagnent UNE sortie — « Je n'ai plus cette
+   > feuille — afficher un nouveau code ». Aucun écran neuf, aucun geste neuf, aucun refus neuf.
+   >
+   > **Pourquoi les deux écrans, et non le seul `code-a-verifier`.** Le brouillon de la tranche ne
+   > visait que lui. Or le rechargement qui fait perdre la feuille TUE aussi le Worker de confiance
+   > : la personne retombe sur `code-verifier`, coffre VERROUILLÉ, et un coffre verrouillé n'affiche
+   > aucun code — le Worker n'a pas de clé. La sortie posée sur le seul écran « coffre ouvert »
+   > n'aurait donc jamais servi à personne. Sur `code-verifier` elle mène à « Rouvrir », où le
+   > coffre s'ouvre par la phrase ; le nouveau code s'affiche ensuite. L'ordre n'est pas sauté pour
+   > autant : ouvrir par la phrase ne vaut PAS confirmation (`ouvertureParLeCode` ne nomme que les
+   > écrans qui n'offrent que le code), aucun écran de 4 à 9 n'est atteint sans code confirmé, et la
+   > demande ne survit pas à un rechargement — elle vit dans la page, jamais dans `parcours.json`.
    >
    > La première rédaction de cette limite — « l'ancien reste valable tant qu'il n'est pas révoqué »
    > — était fausse quand elle a été écrite, et elle redevient VRAIE : N feuilles ouvrent le coffre,

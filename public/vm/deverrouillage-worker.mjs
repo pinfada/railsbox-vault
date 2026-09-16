@@ -45,6 +45,7 @@ import {
   revoquerEmplacement,
 } from "/src/vm/enveloppe-de-cle.mjs";
 import { isEnveloppeError } from "/src/vm/enveloppe/enveloppe-errors.mjs";
+import { ouvrirParLeCode as ouvrirEnEssayantChaqueCode } from "/src/coquille/ouverture-par-le-code.mjs";
 import { TYPES_KEK } from "/src/vm/enveloppe/identite-enveloppe.mjs";
 import { octetsEnHex, hexEnOctets } from "/src/vm/format-chiffre/octets.mjs";
 import { creerMoyenDeRecuperation } from "/src/vm/moyen-de-recuperation.mjs";
@@ -273,7 +274,9 @@ async function scenarioRecuperation({ phrase, nouvellePhrase }) {
   const seul = await inventorierEnveloppe({ support, identifiantVolume: IDENTIFIANT_VOLUME });
 
   const ouvert = await ouvrirParLeCode(support, seul.emplacements[0], code);
-  const neuf = await recreerUnePhrase(support, ouvert.kek, nouvellePhrase);
+
+  const deuxCodes = await poserUnSecondCode(support, ouvert.kek, code);
+  const neuf = await recreerUnePhrase(support, deuxCodes.kek, nouvellePhrase);
 
   return {
     code,
@@ -283,11 +286,71 @@ async function scenarioRecuperation({ phrase, nouvellePhrase }) {
     versionApresRevocation: seul.version,
     volumeReluParLeCode: ouvert.volumeRelu,
     coutCodeMs: Math.round(ouvert.coutMs),
+    ...deuxCodes.rapport,
     refusDunCodeEtranger: await refusDunCodeEtranger(support, seul.emplacements[0]),
     refusDunCodeMalRecopie: await refusDunCodeMalRecopie(seul.emplacements[0], code),
     volumeReluParLaNouvellePhrase: neuf.volumeRelu,
     versionFinale: neuf.version,
   };
+}
+
+/**
+ * POSE un SECOND code sous la KEK du premier, et rouvre par les DEUX (#214).
+ *
+ * C'est le geste qu'un rechargement de la page du produit rend ordinaire : le porteur de session ne
+ * survit pas au Worker, et le geste suivant AJOUTE un emplacement de type 4. Le chemin joué ici est
+ * celui du produit — `ouvrirParLeCode`, qui dérive une KEK par emplacement et les essaie toutes,
+ * sans court-circuit — et l'ordre est inversé exprès : le second d'abord, l'ancien ensuite.
+ */
+async function poserUnSecondCode(support, kek, premierCode) {
+  const second = await creerMoyenDeRecuperation({
+    support,
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    kek,
+  });
+  const secondCode = second.rendre();
+  const aDeux = await inventorierEnveloppe({ support, identifiantVolume: IDENTIFIANT_VOLUME });
+  const parLeSecond = await ouvrirEnEssayant(support, secondCode);
+  const parLePremier = await ouvrirEnEssayant(support, premierCode);
+  return {
+    kek: parLePremier.kek,
+    rapport: {
+      secondCode,
+      codesApresLeSecondRendu: aDeux.emplacements.filter(
+        (emplacement) => emplacement.typeKek === TYPES_KEK.recuperation,
+      ).length,
+      volumeReluParLeSecondCode: parLeSecond.volumeRelu,
+      volumeReluParLePremierCodeAvecDeux: parLePremier.volumeRelu,
+      // Les DEUX durées d'une ouverture ENTIÈRE — dérivations et lectures d'enveloppe comprises —,
+      // publiées plutôt qu'affirmées : la suite ne leur oppose aucun budget. Un échantillon par
+      // moteur et par exécution ne mesure pas une distribution, et ce que l'ADR 0025 a décidé n'est
+      // pas un temps d'horloge : ce qui PROUVE l'indépendance au rang est le nombre d'appels AEAD,
+      // compté par `tests/unit/coquille-ouverture-par-le-code.test.mjs`.
+      coutParLeSecondMs: Math.round(parLeSecond.coutMs),
+      coutParLePremierMs: Math.round(parLePremier.coutMs),
+    },
+  };
+}
+
+/**
+ * OUVRE par le CHEMIN DU PRODUIT — chaque emplacement de type 4 essayé —, et chronomètre le tout.
+ *
+ * Le code est retapé sous sa forme HUMAINE, comme ailleurs dans ce banc : minuscules, espaces au
+ * lieu des tirets, « o » et « l » pour les chiffres qu'ils imitent.
+ */
+async function ouvrirEnEssayant(support, code) {
+  const humain = code.toLowerCase().replaceAll("-", " ").replaceAll("0", "o").replaceAll("1", "l");
+  const debut = performance.now();
+  const ouverte = await ouvrirEnEssayantChaqueCode({
+    support,
+    identifiantVolume: IDENTIFIANT_VOLUME,
+    code: humain,
+    sansEmplacement: () => new Error("Aucun emplacement de récupération dans cette enveloppe."),
+  });
+  const coutMs = performance.now() - debut;
+  const volumeRelu = await relireLeVolume(ouverte.dek);
+  ouverte.dek.fill(0);
+  return { kek: ouverte.kek, volumeRelu, coutMs };
 }
 
 /** Ouvre le volume par le code, saisi sous une forme HUMAINE, et chronomètre la dérivation. */
