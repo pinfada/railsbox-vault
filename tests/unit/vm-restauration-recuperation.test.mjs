@@ -24,6 +24,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ARCHIVE_ERROR_CODES, isArchiveError } from "../../src/vm/archive-errors.mjs";
+import { ouvrirParLeCode } from "../../src/coquille/ouverture-par-le-code.mjs";
+import { creerMoyenDeRecuperation } from "../../src/vm/moyen-de-recuperation.mjs";
 import { derivateurRecuperation } from "../../src/vm/derivation/derivateur-recuperation.mjs";
 import { construireEnveloppeDeRecuperation } from "../../src/vm/enveloppe-de-recuperation.mjs";
 import {
@@ -152,6 +154,56 @@ test("le cycle entier : exporté, restauré ailleurs, le volume s'ouvre PAR LE C
     assert.deepEqual(Array.from(await backend.read(0, 512)), Array.from(clairAvant));
   } finally {
     await backend.close();
+  }
+});
+
+test("une archive qui emporte DEUX codes les restaure tous les deux, et les deux ouvrent (#214)", async () => {
+  // L'archive a toujours emporté les emplacements de type 4 AU PLURIEL
+  // (`enveloppe-de-recuperation.mjs` les FILTRE). Ce qui manquait est l'ouverture : elle en
+  // choisissait un. Le chemin joué ici est celui du produit — le même que le Worker de confiance.
+  const origine = magasin();
+  const pose = await poserVolume(origine, { identifiantVolume: VOLUME_A });
+  const secondMoyen = await creerMoyenDeRecuperation({
+    support: pose.support,
+    identifiantVolume: VOLUME_A,
+    kek: KEK,
+  });
+  const secondCode = secondMoyen.rendre();
+  const recuperation = await construireEnveloppeDeRecuperation({
+    support: pose.support,
+    identifiantVolume: VOLUME_A,
+    kek: KEK,
+  });
+  assert.equal(recuperation.emplacements, 2, "la page embarquée emporte les DEUX feuilles");
+  const { archive } = await exportVolumeToBytes({
+    source: sourceDuVolume(origine, pose.nom),
+    manifest: descripteurDeManifeste(VOLUME_A),
+    consistency: { kind: "handle-exclusif", detail: "volume fermé pour l'épreuve" },
+    cle: DEK,
+    recovery: recuperation,
+  });
+
+  const destination = magasin();
+  const { cible } = cibleDe(destination, CIBLE);
+  const rapport = await importArchive({
+    source: sourceDArchive(archive),
+    target: cible,
+    expectations: ATTENTES,
+  });
+  assert.equal(rapport.restored, true);
+  assert.equal(rapport.recovery.slots, 2, "la cible reçoit les deux emplacements");
+
+  // Les DEUX codes ouvrent le volume restauré, dans les deux ordres.
+  const support = supportDe(destination, CIBLE);
+  for (const code of [secondCode, pose.code]) {
+    const ouverte = await ouvrirParLeCode({
+      support,
+      identifiantVolume: VOLUME_A,
+      code,
+      sansEmplacement: () => new Error("aucun emplacement de récupération"),
+    });
+    assert.equal(ouverte.dek.byteLength, 32, "le volume restauré ne s'ouvre pas sous ce code");
+    ouverte.dek.fill(0);
   }
 });
 

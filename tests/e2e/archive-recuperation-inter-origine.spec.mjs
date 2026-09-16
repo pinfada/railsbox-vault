@@ -171,6 +171,10 @@ test("un volume chiffré exporté avec son moyen de récupération s'OUVRE PAR L
   });
   const enveloppe = await courir(page, { phase: "enveloppe-creer", volume: VOLUME_A });
   const moyen = await courir(page, { phase: "recuperation-creer", volume: VOLUME_A });
+  // Un SECOND moyen (#214) : c'est ce qu'un rechargement de la page du produit rend ordinaire, et
+  // l'archive emporte les emplacements de type 4 AU PLURIEL. Les deux feuilles doivent ouvrir le
+  // volume restauré sur l'autre origine — sans quoi le produit aurait imprimé un papier inutile.
+  const second = await courir(page, { phase: "recuperation-creer", volume: VOLUME_A });
   await page.close();
   expect(prepare.bytesWritten, "le disque applicatif entier est écrit dans OPFS").toBe(
     appDiskBytes,
@@ -180,10 +184,15 @@ test("un volume chiffré exporté avec son moyen de récupération s'OUVRE PAR L
     TYPES_KEK.recuperation,
   );
   expect(moyen.version, "la pose du moyen fait avancer la version de l'enveloppe").toBe(2);
+  expect(second.version, "le second moyen fait avancer la version d'un cran de plus").toBe(3);
   const CODE = moyen.code;
-  expect(CODE, "le banc rend le code une fois, comme le produit").toMatch(
-    /^[0-9A-Z]{4}(-[0-9A-Z]{4}){6}$/,
-  );
+  const SECOND_CODE = second.code;
+  for (const rendu of [CODE, SECOND_CODE]) {
+    expect(rendu, "le banc rend le code une fois, comme le produit").toMatch(
+      /^[0-9A-Z]{4}(-[0-9A-Z]{4}){6}$/,
+    );
+  }
+  expect(SECOND_CODE, "deux gestes rendent deux codes distincts").not.toBe(CODE);
 
   // 2. MUTATION RAILS sur A, sur un volume ouvert PAR L'ENVELOPPE — pas par le jeton du harnais.
   page = await nouvellePage(E2E_ORIGIN_A);
@@ -213,9 +222,9 @@ test("un volume chiffré exporté avec son moyen de récupération s'OUVRE PAR L
   expect(exporte.enveloppe.length, "et cette enveloppe est UNE page de 8192 octets").toBe(
     PAGE_OCTETS,
   );
-  expect(exporte.enveloppe.slots, "qui ne porte qu'un emplacement").toBe(1);
+  expect(exporte.enveloppe.slots, "qui porte les DEUX emplacements de type 4").toBe(2);
   expect(exporte.enveloppe.envelopeVersion, "à la version COURANTE de l'enveloppe").toBe(
-    moyen.version,
+    second.version,
   );
   // La MESURE que la tranche annonce : une archive v2 coûte exactement une page de plus.
   expect(exporte.archiveLength, "taille de l'archive = 12 + H + N + R, avec R = 8192").toBe(
@@ -239,11 +248,13 @@ test("un volume chiffré exporté avec son moyen de récupération s'OUVRE PAR L
   // SONDE — le CODE ne quitte pas l'appareil avec l'archive. C'est la propriété qui reste de la
   // décision 6 de l'ADR 0020, et elle se mesure ici sur les octets réels qui traversent l'hôte.
   const octetsDeLArchive = readFileSync(cheminArchive);
-  for (const forme of [CODE, CODE.replaceAll("-", ""), CODE.toLowerCase()]) {
-    expect(
-      octetsDeLArchive.includes(Buffer.from(forme, "utf8")),
-      `le code de récupération est dans l'archive sous la forme « ${forme} »`,
-    ).toBe(false);
+  for (const rendu of [CODE, SECOND_CODE]) {
+    for (const forme of [rendu, rendu.replaceAll("-", ""), rendu.toLowerCase()]) {
+      expect(
+        octetsDeLArchive.includes(Buffer.from(forme, "utf8")),
+        `un code de récupération est dans l'archive sous la forme « ${forme} »`,
+      ).toBe(false);
+    }
   }
 
   // === ORIGINE B ================================================================================
@@ -313,8 +324,19 @@ test("un volume chiffré exporté avec son moyen de récupération s'OUVRE PAR L
     code: CODE,
     versionMinimale: parLeCode.version + 1,
   });
+  // Les DEUX feuilles ouvrent le volume RESTAURÉ, et l'ordre ne change rien (#214).
+  const parLeSecondCode = await courir(page, {
+    phase: "recuperation-ouvrir",
+    volume: VOLUME_B,
+    code: SECOND_CODE,
+  });
   const sonde = await courir(page, { phase: "sonde-du-code", volume: VOLUME_B, code: CODE });
   await page.close();
+  expect(
+    parLeSecondCode.ouverte,
+    `le second code n'ouvre pas le volume restauré : ${parLeSecondCode.message ?? ""}`,
+  ).toBe(true);
+  expect(parLeSecondCode.version).toBe(exporte.enveloppe.envelopeVersion);
   expect(parLeCode.ouverte, `le code n'ouvre pas : ${parLeCode.message ?? ""}`).toBe(true);
   expect(parLeCode.version).toBe(exporte.enveloppe.envelopeVersion);
   expect(sousLaFeuille.ouverte).toBe(false);
