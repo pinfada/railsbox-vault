@@ -3018,10 +3018,13 @@ refus, indiscernable »), `VAULT_ENVELOPPE_DERNIER_EMPLACEMENT` (révoquer le de
 refusé — un volume sans issue n'est pas un état acceptable ; il ne s'applique PAS à la révocation
 d'urgence de l'[ADR 0026](decisions/0026-revocation-d-urgence-et-page-libre.md), qui laisse toujours
 exactement un emplacement et n'a donc aucun refus propre), `VAULT_ENVELOPPE_EMPLACEMENT_INCONNU`,
-`VAULT_ENVELOPPE_IDENTITE`, `VAULT_ENVELOPPE_ILLISIBLE`, `VAULT_ENVELOPPE_MALFORME`,
-`VAULT_ENVELOPPE_MELANGE`, `VAULT_ENVELOPPE_PLEINE`, `VAULT_ENVELOPPE_PRESENTE` (#159 : créer une
-enveloppe sur un fichier `.cles` déjà présent est refusé, quelle que soit la version de ses pages —
-le seul chemin vers une création sur un emplacement occupé est le retrait explicite de la
+`VAULT_ENVELOPPE_EMPLACEMENT_AMBIGU` (#220 : plusieurs emplacements du premier type servable, sans
+identifiant explicite ; refus avant dérivation, sans écriture ni choix implicite d'un autre type ;
+l'inventaire public n'est pas une preuve d'authenticité), `VAULT_ENVELOPPE_IDENTITE`,
+`VAULT_ENVELOPPE_ILLISIBLE`, `VAULT_ENVELOPPE_MALFORME`, `VAULT_ENVELOPPE_MELANGE`,
+`VAULT_ENVELOPPE_PLEINE`, `VAULT_ENVELOPPE_PRESENTE` (#159 : créer une enveloppe sur un fichier
+`.cles` déjà présent est refusé, quelle que soit la version de ses pages — le seul chemin vers une
+création sur un emplacement occupé est le retrait explicite de la
 [Décision 1](decisions/0020-enveloppe-de-cle.md#décision-1--le-fichier-volumecles-dans-lorigine-de-confiance)),
 `VAULT_ENVELOPPE_RACINE_REFUSEE`, `VAULT_ENVELOPPE_REJEU`, `VAULT_ENVELOPPE_TRONCATURE`.
 

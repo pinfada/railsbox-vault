@@ -600,20 +600,23 @@ test("une copie RÉSIDUELLE est retirée par la révocation d'urgence : le code 
   await assert.rejects(relireParLeCode(banc, code));
 });
 
-test("un geste de portabilité arrivé pendant un geste LONG est refusé, jamais mis en attente", async () => {
+test("portabilité et second boot pendant un geste LONG sont refusés, jamais mis en attente (#215)", async () => {
   const { portabilite } = workerSur(magasin());
   assert.equal(portabilite.refusALArrivee(TYPES_PRIVILEGIES.revoquerEnUrgence), null);
   const sortir = portabilite.entrer(TYPES_PRIVILEGIES.application);
   for (const type of [
+    TYPES_PRIVILEGIES.application,
+    TYPES_PRIVILEGIES.reprendreInstallation,
     TYPES_PRIVILEGIES.revoquerEnUrgence,
     TYPES_PRIVILEGIES.sauvegarder,
     TYPES_PRIVILEGIES.restaurer,
   ]) {
     assert.equal(portabilite.refusALArrivee(type), CODES_REFUS_COQUILLE.gesteEnCours);
   }
-  // Un geste qui n'est pas de portabilité n'est pas concerné : le verrouillage a sa propre garde.
+  // Le verrouillage a sa propre garde, contrairement au second démarrage.
   assert.equal(portabilite.refusALArrivee(TYPES_PRIVILEGIES.fermeture), null);
   sortir();
+  assert.equal(portabilite.refusALArrivee(TYPES_PRIVILEGIES.application), null);
   assert.equal(portabilite.refusALArrivee(TYPES_PRIVILEGIES.revoquerEnUrgence), null);
 });
 

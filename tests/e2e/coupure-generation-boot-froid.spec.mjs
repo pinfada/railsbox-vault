@@ -2,7 +2,7 @@
 //
 // Une vraie application Rails boote sur un disque OPFS et le mute. La page est FERMÉE pendant que le
 // guest écrit, ce qui tue son Worker avec le handle exclusif — sans fermeture propre, sans barrière,
-// et donc en laissant une génération en cours. Le boot à froid suivant doit :
+// et peut laisser une queue non validée OU couper juste après une validation (#222). Le boot suivant doit :
 //
 //   1. ouvrir le volume, c'est-à-dire ne PAS le refuser ;
 //   2. DIRE ce que la récupération a fait — génération écartée, rejouée, ou rien en attente ;
@@ -159,6 +159,20 @@ test("une coupure pendant une mutation Rails laisse un volume qui reboote et dit
   expect(mutation.counts["flush-ack"], "une barrière a été acquittée").toBeGreaterThanOrEqual(1);
   await page.close();
 
+  // #222 : les compteurs cumulés ne prouvent PAS qu'une écriture suit la dernière barrière.
+  // Mesurer APRÈS la mort du Worker, AVANT que l'ouverture ne rejoue/tronque quoi que ce soit.
+  page = await nouvellePage();
+  const constat = await courir(page, {
+    phase: "inspect-generation",
+    volume: VOLUME,
+    tailleVolume: disqueApp.byteSize,
+  });
+  await page.close();
+  await testInfo.attach("journal-apres-coupure.json", {
+    body: JSON.stringify(constat, null, 2),
+    contentType: "application/json",
+  });
+
   // 3. BOOT À FROID. Le volume s'ouvre, la récupération DIT ce qu'elle a fait, et Rails est conforme.
   page = await nouvellePage();
   const froid = await courir(page, { ...configBoot, phase: "live" });
@@ -180,8 +194,11 @@ test("une coupure pendant une mutation Rails laisse un volume qui reboote et dit
   expect(froid.recuperation.etat).toBe("rejouee");
   expect(froid.recuperation.generation).toBeGreaterThanOrEqual(1);
   expect(froid.recuperation.enregistrementsRejoues).toBeGreaterThan(0);
-  // Et la génération NON validée que la coupure a laissée derrière elle est écartée, comptée.
-  expect(froid.recuperation.octetsEcartes).toBeGreaterThan(0);
+  // Confrontation EXACTE au journal avant récupération, y compris quand la queue mesure zéro.
+  // Le constat est structurel : seule cette ouverture authentifie la racine et les enregistrements.
+  expect(froid.recuperation.generation).toBe(constat.generation);
+  expect(froid.recuperation.enregistrementsRejoues).toBe(constat.enregistrementsValides);
+  expect(froid.recuperation.octetsEcartes).toBe(constat.octetsNonValides);
 
   // #91 — la RÉCUPÉRATION dit aussi ce qu'elle a coûté, sur un vrai Rails et un vrai OPFS.
   //
@@ -212,6 +229,7 @@ test("une coupure pendant une mutation Rails laisse un volume qui reboote et dit
         mesureLe: new Date().toISOString(),
         scenario: "coupure pendant une mutation Rails, puis boot à froid",
         avantCoupure: { ecritures: mutation.counts.write, barrieres: mutation.counts["flush-ack"] },
+        journalAvantRecuperation: constat,
         rejoueeAuBootFroid: froid.recuperation.octetsRejoues,
         ecarteeAuBootFroid: froid.recuperation.octetsEcartes,
         // Pendant le boot à froid : ce que le plafond borne, puis la plus grande génération scellée.

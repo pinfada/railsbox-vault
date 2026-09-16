@@ -665,11 +665,13 @@ nécessaire, l'ADR 0028 fixe la forme — préfixe `__Host-`, rien sur le domain
 
   Ce qui n'est PAS couvert, et n'est pas une réserve de l'invariant : la RÉVOCATION depuis la
   coquille appartient au cycle de vie assemblé (#163) ; retirer UN code nommément, sans toucher aux
-  autres moyens, n'existe pas encore (#218) ; `ouvrirVolumeParDerivateur` sans
-  `identifiantEmplacement` choisit le premier emplacement servable ; aucun chemin de produit ne
-  l'appelle ; #220 exigera l'identifiant ; et l'impression de la feuille sort par un chemin que le
-  produit ne maîtrise pas — pilote, file d'attente, parfois un PDF sur le disque. La coquille
-  affiche ; elle n'imprime pas, et ne le promet pas.
+  autres moyens, n'existe pas encore (#218). L'API générique `ouvrirVolumeParDerivateur`, qu'aucun
+  chemin de produit n'appelle, exige désormais `identifiantEmplacement` si le premier type servable
+  porte plusieurs emplacements (#220) : `VAULT_ENVELOPPE_EMPLACEMENT_AMBIGU` tombe avant toute
+  dérivation ou écriture. Le choix explicite ne remplace pas l'authentification de l'enveloppe.
+  L'impression de la feuille sort par un chemin que le produit ne maîtrise pas — pilote, file
+  d'attente, parfois un PDF sur le disque. La coquille affiche ; elle n'imprime pas, et ne le promet
+  pas.
 
   **Le parcours guidé (#193, ADR 0040) exige que le code soit CONFIRMÉ avant d'avancer** : la
   feuille est cachée, la personne retape le code depuis son papier, et la page compare la saisie au

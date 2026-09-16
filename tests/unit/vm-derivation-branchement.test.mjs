@@ -108,7 +108,7 @@ async function enveloppePosee(derivateur, geste) {
     parametres: prepare.parametres,
     identifiantEmplacement: prepare.identifiantEmplacement,
   });
-  return { support, dek };
+  return { support, dek, prepare };
 }
 
 /** Les octets du fichier d'enveloppes, pour comparer un avant et un après à l'octet près. */
@@ -116,6 +116,60 @@ async function octetsDuFichier(support) {
   const etat = await support.etat();
   return octetsEnHex(await support.lire(0, etat.taille));
 }
+
+test("#220 : deux codes exigent un identifiant AVANT de dériver ; chacun ouvre explicitement", async () => {
+  const derivateur = derivateurDEpreuve(TYPES_KEK.recuperation);
+  const { support, dek, prepare } = await enveloppePosee(derivateur, { mot: "ouvre-toi" });
+  const second = await preparerEmplacementDerive({
+    identifiantVolume: VOLUME,
+    derivateur,
+    parametres: suiteDOctets(0x22, 24),
+    geste: { mot: "ouvre-toi" },
+  });
+  await ajouterEmplacement({
+    support,
+    identifiantVolume: VOLUME,
+    kek: prepare.kek,
+    kekNouvelle: second.kek,
+    typeKek: derivateur.type,
+    parametres: second.parametres,
+    identifiantEmplacement: second.identifiantEmplacement,
+  });
+  const avant = await octetsDuFichier(support);
+  let ouvertures = 0;
+  const appel = {
+    name: NOM,
+    derivateur,
+    geste: { mot: "ouvre-toi" },
+    support,
+    ...PRIMITIVES,
+    openVolume: async ({ cle }) => {
+      ouvertures += 1;
+      assert.deepEqual(cle, dek);
+      return {};
+    },
+  };
+  const derives = derivateur.appels.length;
+  await assert.rejects(ouvrirVolumeParDerivateur(appel), {
+    code: "VAULT_ENVELOPPE_EMPLACEMENT_AMBIGU",
+  });
+  assert.equal(derivateur.appels.length, derives, "aucune dérivation avant le choix");
+  assert.equal(ouvertures, 0);
+  assert.equal(await octetsDuFichier(support), avant, "aucune mutation de l'enveloppe");
+  for (const identifiantEmplacement of [
+    prepare.identifiantEmplacement,
+    second.identifiantEmplacement,
+  ]) {
+    await ouvrirVolumeParDerivateur({ ...appel, identifiantEmplacement });
+  }
+  assert.equal(ouvertures, 2, "les deux emplacements restent utilisables");
+  await assert.rejects(
+    ouvrirVolumeParDerivateur({ ...appel, identifiantEmplacement: "ffffffffffffffff" }),
+    {
+      code: "VAULT_ENVELOPPE_EMPLACEMENT_INCONNU",
+    },
+  );
+});
 
 test("un dérivateur ouvre le volume : l'ouvreur unique reçoit la clé développée, et rien d'autre", async () => {
   const derivateur = derivateurDEpreuve(TYPES_KEK.phrase);

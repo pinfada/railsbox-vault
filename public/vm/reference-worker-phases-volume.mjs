@@ -10,10 +10,13 @@
 // non ouvrable en écriture. C'est la même règle qu'à la restauration, appliquée à la création.
 
 import { BlockJournal } from "/src/vm/block-journal.mjs";
+import { constaterLaCoupure } from "/src/vm/constat-de-coupure.mjs";
+import { ZONE_ENREGISTREMENTS } from "/src/vm/generation-format.mjs";
 import { cleDuBanc } from "./cle-du-banc.mjs";
 import { daterLaCreation, openOpfsVolume } from "/src/vm/opfs-block-backend.mjs";
 import {
   generationJournalName,
+  openOpfsVolumeFile,
   migrationJournalName,
   removeOpfsVolume,
   statOpfsVolume,
@@ -33,6 +36,17 @@ import { ouvrirVolumeBrut } from "/src/vm/opfs-volume-brut.mjs";
 import { verserFluxDansVolume } from "/src/vm/versement-de-disque.mjs";
 import { attentesDe, manifesteDuDescripteur } from "/src/vm/boot-de-reference.mjs";
 import { EXPORT_BLOCK_BYTES } from "./reference-worker-mesures.mjs";
+
+/** Après coupure seulement : vue File sans création, flush, rejeu ni lecture de la charge (#222). */
+export async function phaseInspectGeneration({ volume, tailleVolume }) {
+  const fichier = await openOpfsVolumeFile(generationJournalName(volume));
+  const racines = new Uint8Array(await fichier.slice(0, ZONE_ENREGISTREMENTS).arrayBuffer());
+  const journal = {
+    taille: () => fichier.size,
+    lire: (offset, longueur) => racines.slice(offset, offset + longueur),
+  };
+  return { phase: "inspect-generation", ...constaterLaCoupure({ journal, tailleVolume }) };
+}
 
 /**
  * Ouvre le volume NEUF, y verse le disque, et rend ce que la suite doit savoir : les octets écrits

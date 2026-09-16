@@ -197,13 +197,17 @@ test("ce que l'ouverture et la restauration font de chaque état", () => {
   });
 });
 
-test("pendant un geste long, seuls les gestes de portabilité sont refusés", () => {
+test("pendant un geste long, portabilité et nouveaux gestes longs sont refusés", () => {
   assert.equal(refusPendantUnGesteLong(TYPES_PRIVILEGIES.revoquerEnUrgence, 0), null);
   assert.equal(
     refusPendantUnGesteLong(TYPES_PRIVILEGIES.revoquerEnUrgence, 1),
     CODES_REFUS_COQUILLE.gesteEnCours,
   );
   assert.equal(refusPendantUnGesteLong(TYPES_PRIVILEGIES.inventaire, 3), null);
+  for (const type of [TYPES_PRIVILEGIES.application, TYPES_PRIVILEGIES.reprendreInstallation]) {
+    assert.equal(refusPendantUnGesteLong(type, 0), null);
+    assert.equal(refusPendantUnGesteLong(type, 1), CODES_REFUS_COQUILLE.gesteEnCours);
+  }
 });
 
 test("l'en-tête d'une archive dit si elle emporte une récupération, et ne devine rien d'illisible", async () => {

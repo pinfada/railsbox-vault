@@ -90,6 +90,8 @@ export const ENVELOPPE_ERROR_CODES = Object.freeze({
   pleine: "VAULT_ENVELOPPE_PLEINE",
   /** L'emplacement visé par un remplacement ou une révocation n'existe pas. */
   emplacementInconnu: "VAULT_ENVELOPPE_EMPLACEMENT_INCONNU",
+  /** Plusieurs emplacements du type choisi : un identifiant explicite est nécessaire. */
+  emplacementAmbigu: "VAULT_ENVELOPPE_EMPLACEMENT_AMBIGU",
   /**
    * `creer` refuse sur un fichier `<volume>.cles` déjà présent (#159, ADR 0020 déc. 4). Distinct de
    * `absente`, son symétrique : ici quelque chose EXISTE déjà à cet emplacement, soit l'enveloppe de
@@ -279,6 +281,15 @@ export function emplacementInconnu(context = {}) {
   return new EnveloppeError(
     ENVELOPPE_ERROR_CODES.emplacementInconnu,
     "Geste refusé : l'emplacement visé n'existe pas dans cette enveloppe. Il a peut-être déjà été révoqué. Rien n'est écrit, et aucun emplacement n'est créé pour l'occasion.",
+    { context },
+  );
+}
+
+/** Le type public ne suffit pas à choisir une feuille parmi plusieurs (#220). */
+export function emplacementAmbigu(context = {}) {
+  return new EnveloppeError(
+    ENVELOPPE_ERROR_CODES.emplacementAmbigu,
+    "Plusieurs emplacements de ce type sont présents. Choisissez leur identifiant avant de déverrouiller ; aucune clé n'a été dérivée et rien n'a été écrit.",
     { context },
   );
 }

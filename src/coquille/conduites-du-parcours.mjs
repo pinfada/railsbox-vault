@@ -11,8 +11,7 @@
 // `tests/unit/coquille-parcours-conduites.test.mjs` énumère les codes depuis les tables EXPORTÉES des
 // six familles. Chaque code est sur le chemin (`CODES_DU_CHEMIN`), avec conduite et CLASSEMENT, ou
 // écarté (`CODES_HORS_DU_CHEMIN`) par un motif « inatteignable depuis le parcours parce que ». Avant la
-// revue, vingt et un codes du stockage et de l'enveloppe arrivaient à la phrase générique. Ce module
-// ne décide aucun refus : il traduit.
+// revue, vingt et un codes arrivaient à la phrase générique. Ce module traduit, sans décider.
 
 import { ARCHIVE_ERROR_CODES } from "../vm/archive-errors.mjs";
 import { DERIVATION_ERROR_CODES } from "../vm/derivation/derivation-errors.mjs";
@@ -187,6 +186,7 @@ const INATTEIGNABLE = "inatteignable depuis le parcours parce que ";
  * écrite, jamais un oubli ; son motif dit POURQUOI aucun geste de la personne ne la produit.
  */
 export const CODES_HORS_DU_CHEMIN = Object.freeze({
+  [E.emplacementAmbigu]: `${INATTEIGNABLE}seule l'API générique ouvrirVolumeParDerivateur exige ce choix ; le parcours ouvre par ses propres moyens identifiés`,
   [C.contratRefuse]: `${INATTEIGNABLE}seul le document applicatif d'un autre dialecte le reçoit, sur le port restreint`,
   [C.typeInconnu]: `${INATTEIGNABLE}c'est un message hors contrat, jamais un geste de la page`,
   [C.kek]: `${INATTEIGNABLE}c'est l'application qui demande une clé, sur le port restreint`,
