@@ -633,18 +633,28 @@ nécessaire, l'ADR 0028 fixe la forme — préfixe `__Host-`, rien sur le domain
   », et une archive les emporte toutes. Ce qui manquait est que l'OUVERTURE en choisissait une : le
   Worker de confiance dérivait sous le PREMIER emplacement de type 4, si bien qu'un second code —
   rendu par le produit après un rechargement de page — était refusé. L'ouverture dérive désormais
-  une KEK par emplacement de type 4 et les essaie TOUTES, **sans court-circuit**, pour qu'un succès
-  coûte le même nombre d'appels AEAD quel que soit le rang de la feuille employée. Trois
-  conséquences, écrites plutôt qu'arrondies : N feuilles ouvrent le coffre tant qu'aucune n'est
-  retirée ; le CONTREPOIDS est la révocation, qui reste le geste de l'étape 9 ; et le temps d'un
+  une KEK par emplacement de type 4 et les essaie TOUTES, **sans court-circuit, quel que soit le
+  refus rencontré** : aucun refus ne sort de la boucle — ni un `REJEU`, qui n'arrive qu'avec la
+  bonne clé, ni la dérivation refusée d'un emplacement écrit par un produit plus récent —, si bien
+  qu'une ouverture, réussie ou refusée, coûte le même nombre d'appels AEAD quel que soit le rang de
+  la feuille employée (revue de sécurité de la PR #219, constats 1 et 2). Les refus sont tranchés
+  après la boucle : un refus du fichier l'emporte même sur un succès, dont la clé de volume est
+  alors effacée ; un code mal recopié est refusé avant toute dérivation. Trois conséquences, écrites
+  plutôt qu'arrondies : N feuilles ouvrent le coffre tant qu'aucune n'est retirée ; le CONTREPOIDS
+  est la révocation d'urgence de l'étape 9, qui retire TOUS les autres moyens — phrase, passkey,
+  autres feuilles — sauf celui employé ; retirer la seule feuille perdue est #218 ; et le temps d'un
   refus est celui de N tentatives entières, non court-circuitées — ce que le dépôt mesure est le
-  nombre d'appels, jamais le temps d'horloge (ADR 0025, limite 9). Un succès coûte exactement UN
-  appel de plus qu'un refus, l'ouverture de la racine, que seul un succès atteint.
+  nombre d'appels, jamais le temps d'horloge (ADR 0025, limite 9). Sur une page v2, un succès coûte
+  exactement UN appel de plus qu'un refus, l'ouverture de la racine, que seul un succès atteint ; la
+  première ouverture d'une page v1 y ajoute sa migration et sa relecture (mesuré : 11 decrypt au
+  succès, 6 au refus, une seule migration quel que soit le rang).
 
   Ce qui n'est PAS couvert, et n'est pas une réserve de l'invariant : la RÉVOCATION depuis la
   coquille appartient au cycle de vie assemblé (#163) ; retirer UN code nommément, sans toucher aux
-  autres moyens, n'existe pas encore (#218) ; et l'impression de la feuille sort par un chemin que
-  le produit ne maîtrise pas — pilote, file d'attente, parfois un PDF sur le disque. La coquille
+  autres moyens, n'existe pas encore (#218) ; `ouvrirVolumeParDerivateur` sans
+  `identifiantEmplacement` choisit le premier emplacement servable ; aucun chemin de produit ne
+  l'appelle ; #220 exigera l'identifiant ; et l'impression de la feuille sort par un chemin que le
+  produit ne maîtrise pas — pilote, file d'attente, parfois un PDF sur le disque. La coquille
   affiche ; elle n'imprime pas, et ne le promet pas.
 
   **Le parcours guidé (#193, ADR 0040) exige que le code soit CONFIRMÉ avant d'avancer** : la
