@@ -628,10 +628,24 @@ nécessaire, l'ADR 0028 fixe la forme — préfixe `__Host-`, rien sur le domain
   est rendu une fois avec la version d'enveloppe, et il rouvre le coffre depuis la même coquille,
   saisi sous sa forme humaine. Le Worker des bancs n'est plus le seul appelant hors épreuves.
 
+  **Un coffre peut porter PLUSIEURS feuilles, et toutes ouvrent** (#214, 16 septembre 2026). Le
+  format ne l'a jamais interdit — l'ADR 0025, limite 10, écrit « rien n'empêche d'en créer plusieurs
+  », et une archive les emporte toutes. Ce qui manquait est que l'OUVERTURE en choisissait une : le
+  Worker de confiance dérivait sous le PREMIER emplacement de type 4, si bien qu'un second code —
+  rendu par le produit après un rechargement de page — était refusé. L'ouverture dérive désormais
+  une KEK par emplacement de type 4 et les essaie TOUTES, **sans court-circuit**, pour qu'un succès
+  coûte le même nombre d'appels AEAD quel que soit le rang de la feuille employée. Trois
+  conséquences, écrites plutôt qu'arrondies : N feuilles ouvrent le coffre tant qu'aucune n'est
+  retirée ; le CONTREPOIDS est la révocation, qui reste le geste de l'étape 9 ; et le temps d'un
+  refus est celui de N tentatives entières, non court-circuitées — ce que le dépôt mesure est le
+  nombre d'appels, jamais le temps d'horloge (ADR 0025, limite 9). Un succès coûte exactement UN
+  appel de plus qu'un refus, l'ouverture de la racine, que seul un succès atteint.
+
   Ce qui n'est PAS couvert, et n'est pas une réserve de l'invariant : la RÉVOCATION depuis la
-  coquille appartient au cycle de vie assemblé (#163), et l'impression de la feuille sort par un
-  chemin que le produit ne maîtrise pas — pilote, file d'attente, parfois un PDF sur le disque. La
-  coquille affiche ; elle n'imprime pas, et ne le promet pas.
+  coquille appartient au cycle de vie assemblé (#163) ; retirer UN code nommément, sans toucher aux
+  autres moyens, n'existe pas encore (#218) ; et l'impression de la feuille sort par un chemin que
+  le produit ne maîtrise pas — pilote, file d'attente, parfois un PDF sur le disque. La coquille
+  affiche ; elle n'imprime pas, et ne le promet pas.
 
   **Le parcours guidé (#193, ADR 0040) exige que le code soit CONFIRMÉ avant d'avancer** : la
   feuille est cachée, la personne retape le code depuis son papier, et la page compare la saisie au
@@ -645,8 +659,8 @@ nécessaire, l'ADR 0028 fixe la forme — préfixe `__Host-`, rien sur le domain
   jamais le code ni la phrase (`ecrireProgression` ne recopie que ces champs). Une étape demandée
   par l'URL au-delà de l'étape atteinte est ramenée ; aucun écran de 4 à 9 sans code confirmé. Après
   un rechargement, un code rendu et non confirmé se VÉRIFIE en ouvrant le coffre par ce code — ce
-  qui vaut confirmation — et le parcours n'en fait jamais créer un second (#214 : un second code
-  n'ouvre rien). Aucun texte de la page ne garde un code en clair après un geste qui le consomme. Ce
+  qui vaut confirmation — et la personne qui n'a plus sa feuille en demande une NOUVELLE depuis le
+  même écran. Aucun texte de la page ne garde un code en clair après un geste qui le consomme. Ce
   que l'ordre ne protège PAS : quelqu'un qui tient le navigateur réécrit le fichier ou appelle les
   gestes par la vue complète des épreuves ; les gardes de sécurité restent dans les gestes du Worker
   de confiance, inchangées.
