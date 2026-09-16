@@ -438,7 +438,17 @@ l'exécutent, et n'annonce rien : c'est la condition de la décision 1 de l'ADR 
    — un geste « Verrouiller » et un délai d'inactivité de dix minutes — qui tuent le Worker de
    confiance après la fermeture propre des volumes. « Aussi longtemps que l'onglet » se lit donc «
    jusqu'au geste ou au délai, et au plus jusqu'à l'onglet ». Voir
-   l'[ADR 0031](0031-verrouiller-le-worker-meurt-l-instantane-survit.md), décisions 1 et 2 ;
+   l'[ADR 0031](0031-verrouiller-le-worker-meurt-l-instantane-survit.md), décisions 1 et 2.
+
+   **Note datée du 16 septembre 2026 (#214) : ce qui ne survit pas au Worker n'a plus à survivre.**
+   Le porteur `moyenRetenu` mourait avec le Worker comme la KEK, et il était présenté comme la
+   garantie du « rendu une seule fois ». Il ne l'était pas : le geste suivant, dans un Worker neuf,
+   posait un SECOND emplacement de type 4 — que l'ouverture ne savait pas essayer, et qui refusait
+   donc le code que le produit venait d'imprimer. L'ouverture les essaie tous depuis #214, la garde
+   du « rendu une seule fois » est celle du PORTEUR de `creerMoyenDeRecuperation` et vaut PAR CODE
+   (ADR 0025, décision 3), et `moyenRetenu` n'achète plus qu'une chose : un double clic dans la MÊME
+   page ne brûle pas une place sur huit ;
+
 3. **l'IMPRESSION n'est pas maîtrisée.** Le bouton d'impression d'un navigateur écrit vers un
    pilote, une file d'attente, parfois un PDF déposé sur le disque. La coquille n'en offre pas et ne
    promet rien à ce sujet ;

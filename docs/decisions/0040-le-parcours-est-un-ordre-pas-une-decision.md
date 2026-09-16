@@ -214,12 +214,28 @@ affichés (constat 7). Les trois questions par étape restent écrites dans l'ou
 
 ## Limites
 
-1. **Un code rendu puis perdu ne se remplace pas.** Le constat mesuré par la revue : un second geste
-   « créer un moyen de récupération », quand un moyen existe déjà, affiche un code qui n'ouvre ni le
-   coffre, ni sa sauvegarde restaurée ; seul le premier ouvre. C'est un défaut du GESTE, instruit
-   sous #214, hors de cette tranche. Le parcours ne recrée donc jamais un code ; une personne qui a
-   perdu le sien avant de le recopier abandonne un coffre encore vide (§ 2). La première rédaction
-   de cette limite — « l'ancien reste valable tant qu'il n'est pas révoqué » — était fausse.
+1. ~~**Un code rendu puis perdu ne se remplace pas.**~~ Le constat mesuré par la revue : un second
+   geste « créer un moyen de récupération », quand un moyen existe déjà, affiche un code qui n'ouvre
+   ni le coffre, ni sa sauvegarde restaurée ; seul le premier ouvre.
+
+   > **FERMÉE le 16 septembre 2026 (#214).** La cause n'était pas la CRÉATION — le second
+   > emplacement de type 4 était correctement posé, scellé, version + 1, barrière franchie — mais
+   > l'OUVERTURE : `deriverLeCode`, dans le Worker de confiance, prenait le PREMIER emplacement de
+   > type 4 et dérivait la KEK sous son sel et son identifiant, alors que la KEK d'un code dépend
+   > des deux (ADR 0021). Une fonction qui CHOISISSAIT là où il fallait ESSAYER.
+   >
+   > Ce qui change : l'ouverture par code dérive une KEK par emplacement de type 4 et les essaie
+   > toutes, sans court-circuit (`src/coquille/ouverture-par-le-code.mjs`) ; la coquille COMPTE les
+   > codes ; et l'écran `code-a-verifier` gagne UNE sortie — « Je n'ai plus cette feuille — afficher
+   > un nouveau code » — qui ramène à `code-annonce`, où le geste d'avant crée le code après que la
+   > personne a préparé son papier. Aucun écran neuf, aucun geste neuf, aucun refus neuf.
+   >
+   > La première rédaction de cette limite — « l'ancien reste valable tant qu'il n'est pas révoqué »
+   > — était fausse quand elle a été écrite, et elle redevient VRAIE : N feuilles ouvrent le coffre,
+   > et retirer celle que l'on n'a plus est un geste distinct, la révocation d'urgence de l'étape 9.
+   > L'écran nomme les deux sorties. Reste hors de cette tranche : retirer UN code nommément, sans
+   > toucher aux autres moyens — c'est #218.
+
 2. **Un coffre dont la progression manque, mais qui porte un code** (créé avant cette livraison, ou
    dont `parcours.json` n'a pas pu être écrit — l'échec est publié sous « Détails techniques »)
    exige de vérifier le code en ouvrant le coffre par lui avant l'étape 4. C'est la lecture prudente

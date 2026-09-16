@@ -293,6 +293,15 @@ ce qui est ANNONCÉ. Il est tenu par la STRUCTURE et non par une consigne — le
 fabriqué à partir de ce que l'ajout a rendu, il ne peut donc pas exister avant lui —, et la campagne
 de mutation retire l'attente pour vérifier que l'épreuve rougit.
 
+> **Note du 16 septembre 2026 (#214) : « rendu une seule fois » vaut PAR CODE.** La garde est celle
+> du PORTEUR, qui est fabriqué par appel : deux appels rendent deux codes, chacun une fois. Elle n'a
+> jamais promis « un seul code par coffre », et `moyenRetenu`, dans `public/runtime-worker.mjs`, ne
+> la double pas — c'est une variable de module, que tout Worker neuf remet à `null`. Ce que le
+> porteur de session achète, et c'est tout, est qu'un double clic dans la MÊME page ne brûle pas une
+> place sur huit. La phrase de la coupure ci-dessus reste donc exacte, et elle vaut désormais aussi
+> pour un code rendu que la personne n'a pas recopié : l'emplacement est inoffensif, et le geste «
+> je n'ai plus cette feuille » en AJOUTE un autre au lieu de le remplacer.
+
 ### Le chemin de rendu, nommé
 
 Le code est fabriqué **dans le Worker de confiance** et passe **une fois** vers la page de l'origine
@@ -518,9 +527,24 @@ système, aucun téléphone. La limite est celle de l'ADR 0021, inchangée.
    recopié » tombe en revanche BEAUCOUP plus tôt qu'un refus d'enveloppe, et c'est visible à
    l'horloge — ce n'est pas un oracle pour autant, puisqu'il ne dépend que de la saisie et qu'un
    adversaire le calcule lui-même hors ligne ;
-10. **Un seul code par appel, et le plafond de huit emplacements est partagé.** Rien n'empêche d'en
-    créer plusieurs, rien ne les compte, et rien n'avertit avant que `VAULT_ENVELOPPE_PLEINE` ne
-    tombe. C'est un travail d'interface (#24) ;
+10. **Un seul code par appel, et le plafond de huit emplacements est partagé.** ~~Rien n'empêche
+    d'en créer plusieurs, rien ne les compte, et rien n'avertit avant que `VAULT_ENVELOPPE_PLEINE`
+    ne tombe. C'est un travail d'interface (#24).~~
+
+    > **ASSUMÉE le 16 septembre 2026 (#214).** « Rien n'empêche d'en créer plusieurs » était déjà
+    > écrit ; ce qui manquait est que l'OUVERTURE n'en essayait qu'un. `deriverLeCode`, dans le
+    > Worker de confiance, prenait le PREMIER emplacement de type 4 et dérivait sous son sel, si
+    > bien qu'un second code — rendu par le produit lui-même après un rechargement de page, la
+    > variable `moyenRetenu` ne survivant pas au Worker — était refusé par
+    > `VAULT_ENVELOPPE_CLE_REFUSEE`. `src/coquille/ouverture-par-le-code.mjs` dérive désormais une
+    > KEK PAR emplacement et les essaie TOUTES, sans court-circuit.
+    >
+    > Les codes sont donc COMPTÉS : `moyensProposes` rend `nombreDeCodes`, et l'écran du code
+    > annonce « ce coffre porte déjà N code(s) ». Le plafond de huit reste partagé et
+    > `VAULT_ENVELOPPE_PLEINE` devient atteignable par un geste ordinaire — sa conduite pour une
+    > personne existe déjà (`src/coquille/conduites-du-parcours.mjs`). Ce qui manque encore est le
+    > geste inverse, « retirer les codes que je n'ai plus » : c'est #218, et non cette tranche ;
+
 11. **Le BANC garde le code en mémoire, et le produit n'a pas cet endroit-là.** La coquille de
     `deverrouillage.html` conserve toutes les réponses du Worker pour que la sonde puisse les
     fouiller ; le code y séjourne donc dans un tableau JavaScript, pour la durée de la page. C'est
