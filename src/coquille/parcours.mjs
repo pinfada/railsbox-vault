@@ -125,7 +125,7 @@ function figerProgression({ etapeAtteinte, origine, code }) {
 
 /**
  * Relit la progression écrite. Tout ce qui n'a pas EXACTEMENT sa forme vaut la progression initiale :
- * un fichier abîmé ou réécrit à la main ne fait jamais sauter une étape.
+ * un fichier abîmé revient au début. Même bien formé, il ne prouve aucune confirmation de code.
  *
  * @param {string | null | undefined} texte
  */
@@ -137,7 +137,9 @@ export function lireProgression(texte) {
     return PROGRESSION_INITIALE;
   }
   if (!progressionBienFormee(brut)) return PROGRESSION_INITIALE;
-  return figerProgression(brut);
+  // Le fichier est réinscriptible : seules la recopie dans cette session et une ouverture par
+  // le code peuvent confirmer la feuille. L'engagement d'archive ne prouve pas cette recopie.
+  return figerProgression({ ...brut, code: PROGRESSION_INITIALE.code });
 }
 
 function progressionBienFormee(brut) {
@@ -307,6 +309,7 @@ function ecranSansCoffre(pointeur) {
 function ecranVerrouille(pointeur, moyens, progression, nouveauCodeDemande) {
   const ouvrableSansCode = moyens.includes("phrase") || moyens.includes("webauthn-prf");
   if (!ouvrableSansCode) return "recuperer";
+  if (pointeur === 8) return "recuperer";
   // Un code a été rendu, et rien ne dit qu'il a été recopié juste : c'est lui qui rouvre. Sauf pour
   // qui n'a plus sa feuille : un coffre VERROUILLÉ n'affiche aucun code — il faut l'ouvrir d'abord,
   // par la phrase, et le nouveau code s'affiche ensuite (#214). La demande ne survit pas à un
@@ -314,7 +317,6 @@ function ecranVerrouille(pointeur, moyens, progression, nouveauCodeDemande) {
   if (moyens.includes("recuperation") && !progression.code.confirme && !nouveauCodeDemande) {
     return "code-verifier";
   }
-  if (pointeur === 8) return "recuperer";
   return "rouvrir";
 }
 
@@ -363,7 +365,7 @@ export function etapeApres(ecranId, evenement, pointeur) {
     "creer:j-ai-une-sauvegarde": 7,
     "choisir:ouverture": 3,
     "code-confirmation:code-confirme": 4,
-    "code-verifier:ouverture": 4,
+    "code-verifier:ouverture": pointeur === 5 ? 6 : Math.max(4, pointeur ?? 4),
     "travailler:continuer": 5,
     "rouvrir:ouverture": pointeur === 5 ? 6 : pointeur,
     "rouvrir:perdu": 8,

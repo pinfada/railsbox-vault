@@ -39,6 +39,7 @@ import {
   versionANoter,
 } from "./feuille-de-recuperation.mjs";
 import { moyensProposes } from "./moyens-de-deverrouillage.mjs";
+import { evaluerPhrase, LONGUEUR_MINIMALE_PHRASE } from "./politique-de-phrase.mjs";
 import { etatDeLaSaisie } from "./saisie-du-code.mjs";
 import { DERIVATION_ERROR_CODES } from "../vm/derivation/derivation-errors.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../vm/enveloppe/enveloppe-errors.mjs";
@@ -208,6 +209,7 @@ function brancherLesGestes(contexte) {
   const { noeuds } = contexte;
   noeuds.ancre.addEventListener("input", () => relireLAncre(contexte));
   noeuds.code.addEventListener("input", () => relireLaSaisieDuCode(contexte));
+  noeuds.phrase.addEventListener("input", () => relireLaPhrase(contexte));
   noeuds.ouvrirParPhrase.addEventListener("click", () => ouvrirParLaPhrase(contexte));
   noeuds.ouvrirParCode.addEventListener("click", () => ouvrirParLeCode(contexte));
   noeuds.ouvrirParPasskey.addEventListener("click", () => ouvrirParLaPasskey(contexte));
@@ -223,6 +225,7 @@ function brancherLesGestes(contexte) {
 async function rafraichirLInventaire(contexte) {
   const { noeuds, releve } = contexte;
   contexte.inventaire = await contexte.demander("inventaire", {});
+  relireLaPhrase(contexte);
   contexte.propose = moyensProposes(contexte.inventaire);
   const propose = contexte.propose;
   releve.moyensProposes = propose.moyens.map((moyen) => moyen.nom);
@@ -355,9 +358,28 @@ function montrerLeRefus(contexte, erreur) {
  * secret pendant les deux secondes de la dérivation — c'est-à-dire pendant tout le temps où
  * quelqu'un regarderait par-dessus l'épaule (ADR 0029, limite 1).
  */
+function relireLaPhrase(contexte) {
+  const { noeuds, inventaire } = contexte;
+  const creation = !inventaire.present;
+  noeuds.phrase.required = true;
+  noeuds.phrase.minLength = creation ? LONGUEUR_MINIMALE_PHRASE : 1;
+  noeuds.phrase.autocomplete = creation ? "new-password" : "current-password";
+  const verdict = evaluerPhrase(noeuds.phrase.value);
+  dire(
+    noeuds.phraseConseil,
+    creation ? verdict.message : "Saisissez la phrase utilisée lors de la création du coffre.",
+  );
+  return !creation || verdict.admise;
+}
+
 async function ouvrirParLaPhrase(contexte) {
+  if (!relireLaPhrase(contexte)) {
+    dire(contexte.noeuds.refus, evaluerPhrase(contexte.noeuds.phrase.value).message);
+    return;
+  }
   const phrase = contexte.noeuds.phrase.value;
   contexte.noeuds.phrase.value = "";
+  relireLaPhrase(contexte);
   // La phrase est dérivée dans un Worker DÉDIÉ, et ce qui part vers le Worker de confiance est la
   // `CryptoKey` non extractible — exactement ce que la passkey lui envoie déjà (ADR 0029, déc. 5).
   await ouvrirPar(contexte, "phrase", { phrase }, (corps) =>
@@ -463,6 +485,7 @@ function poignees(doc, racine) {
     ancre: trouver("ancre-version"),
     aveu: trouver("ancre-aveu"),
     phrase: trouver("saisie-phrase"),
+    phraseConseil: trouver("phrase-conseil"),
     ouvrirParPhrase: trouver("ouvrir-par-phrase"),
     ouvrirParPasskey: trouver("ouvrir-par-passkey"),
     code: trouver("saisie-code"),

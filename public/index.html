@@ -111,10 +111,14 @@
             <input
               id="saisie-phrase"
               type="password"
+              required
+              minlength="12"
+              aria-describedby="phrase-conseil"
               autocomplete="new-password"
               spellcheck="false"
             />
           </p>
+          <p id="phrase-conseil" role="status" aria-live="polite"></p>
           <p><button id="ouvrir-par-phrase" type="button">Ouvrir mon coffre</button></p>
         </div>
 

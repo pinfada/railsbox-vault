@@ -199,16 +199,24 @@ async function recupererParLeCode(page, code) {
   await ouvrirLaCoquille(page, "?etape=8");
   const entree = page.getByRole("heading", {
     level: 2,
-    name: /^(Rouvrir votre coffre|Récupérer votre coffre avec le code)$/,
+    name: /^(Rouvrir votre coffre|Récupérer votre coffre avec le code|Vérifier votre code de récupération)$/,
   });
   await expect(entree).toBeVisible({ timeout: DELAI });
+  const verification = (await entree.textContent()) === "Vérifier votre code de récupération";
   if ((await entree.textContent()) === "Rouvrir votre coffre") {
     await bouton(page, "J'ai oublié ma phrase : utiliser mon code de récupération").click();
   }
-  await expect(ecran(page, "Récupérer votre coffre avec le code")).toBeVisible();
+  await expect(
+    ecran(
+      page,
+      verification ? "Vérifier votre code de récupération" : "Récupérer votre coffre avec le code",
+    ),
+  ).toBeVisible();
   await page.getByLabel("Code de récupération", { exact: true }).fill(code);
   await bouton(page, "Ouvrir mon coffre avec le code").click();
-  await expect(ecran(page, "Révoquer en urgence")).toBeVisible({ timeout: DELAI });
+  await expect(
+    ecran(page, verification ? "Travailler dans l'application" : "Révoquer en urgence"),
+  ).toBeVisible({ timeout: DELAI });
 }
 
 test("l'URL ne saute pas la confirmation, et la page n'offre aucun lien vers la vue complète", async ({
@@ -254,11 +262,59 @@ test("aucun code en clair ne subsiste après la confirmation ni après l'ouvertu
   await bouton(page, "Continuer : Verrouiller et rouvrir").click();
   await expect(ecran(page, "Verrouiller votre coffre")).toBeVisible();
   await bouton(page, "Verrouiller mon coffre").click();
-  await expect(ecran(page, "Rouvrir votre coffre")).toBeVisible({ timeout: DELAI });
+  await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({ timeout: DELAI });
+  await bouton(page, "Je n'ai plus cette feuille — afficher un nouveau code").click();
+  await expect(ecran(page, "Rouvrir votre coffre")).toBeVisible();
   await bouton(page, "J'ai oublié ma phrase : utiliser mon code de récupération").click();
   await expect(ecran(page, "Récupérer votre coffre avec le code")).toBeVisible();
   await page.getByLabel("Code de récupération", { exact: true }).fill(code);
   await bouton(page, "Ouvrir mon coffre avec le code").click();
   await expect(ecran(page, "Révoquer en urgence")).toBeVisible({ timeout: DELAI });
   await aucunCodeEnClair(page, "après l'ouverture par le code, à l'étape 8");
+});
+
+test("une phrase trop courte est refusée avant la création, avec un conseil à chaque saisie", async ({
+  page,
+}) => {
+  await ouvrirLaCoquille(page);
+  await bouton(page, "Commencer").click();
+  const phrase = page.getByLabel("Votre phrase", { exact: true });
+  await expect(phrase).toHaveAttribute("minlength", "12");
+  for (const faible of ["a", "aaaaaaaaaaaa"]) {
+    await phrase.fill(faible);
+    await bouton(page, "Créer mon coffre").click();
+    await expect(page.locator("#deverrouillage-refus")).toContainText(
+      /12 caractères|trop prévisible/,
+    );
+    await expect(page.locator("#deverrouillage-moyens")).toContainText("Aucun coffre");
+  }
+  await phrase.fill(PHRASE);
+  await expect(page.locator("#phrase-conseil")).toContainText("Longueur suffisante");
+});
+
+test("falsifier les drapeaux persistés ne saute pas la vérification du code", async ({ page }) => {
+  await ouvrirLaCoquille(page);
+  if (await exigerLaLimiteDuMoteur(page)) return;
+  const code = await creerEtAfficherLeCode(page);
+  await expect.poll(async () => (await lireLaProgression(page)).code.rendu).toBe(true);
+  await page.evaluate(async () => {
+    const racine = await navigator.storage.getDirectory();
+    const fichier = await racine.getFileHandle("parcours.json");
+    const flux = await fichier.createWritable();
+    await flux.write(
+      JSON.stringify({
+        version: 1,
+        etapeAtteinte: 9,
+        origine: "creation",
+        code: { rendu: true, version: 2, confirme: true },
+      }),
+    );
+    await flux.close();
+  });
+  await ouvrirLaCoquille(page, "?etape=6");
+  await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({ timeout: DELAI });
+  await expect(bouton(page, "Sauvegarder mon coffre")).toBeHidden();
+  await page.getByLabel("Code de récupération", { exact: true }).fill(code);
+  await bouton(page, "Ouvrir mon coffre avec le code").click();
+  await expect(ecran(page, "Sauvegarder votre coffre")).toBeVisible({ timeout: DELAI });
 });

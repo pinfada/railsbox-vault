@@ -134,7 +134,10 @@ test("l'écran de révocation dit que les sauvegardes déjà faites restent ouvr
 // --- La PROGRESSION (revue de la PR #213, constats 1 et 2) -----------------------------------------
 
 test("la progression se relit, et tout ce qui n'a pas exactement sa forme vaut la progression initiale", () => {
-  assert.deepEqual(lireProgression(ecrireProgression(confirmee)), confirmee);
+  assert.deepEqual(lireProgression(ecrireProgression(confirmee)), {
+    ...confirmee,
+    code: PROGRESSION_INITIALE.code,
+  });
   const valide = JSON.parse(ecrireProgression(confirmee));
   const abimees = [
     null,
@@ -226,7 +229,11 @@ test("CONSTAT 1 : un code rendu et non confirmé fait d'abord VÉRIFIER la feuil
       moyens: MOYENS_DE_A,
       progression: rendue,
     });
-    assert.equal(ferme, "code-verifier", `verrouillé, étape ${pointeur}`);
+    assert.equal(
+      ferme,
+      pointeur === 8 ? "recuperer" : "code-verifier",
+      `verrouillé, étape ${pointeur}`,
+    );
   }
   // Un coffre dont la progression est perdue, mais qui porte un code : vérifier, pas recréer.
   const perdue = {
@@ -331,10 +338,10 @@ test("CONSTAT 1 : la feuille affichée DANS la page se recopie et se confirme, s
   assert.equal(ecranCourant({ ...confirmation, pointeur: 9 }), "code-confirmation");
 });
 
-test("CONSTAT 2 : aucune étape de 4 à 9 n'est montrée tant que le code n'est pas confirmé", () => {
+test("CONSTAT 2 : aucun écran de travail sans confirmation ; la récupération permet de la fournir", () => {
   const ecransDeTravail = new Set(
     Object.entries(ECRANS)
-      .filter(([, ecran]) => ecran.etape !== null && ecran.etape >= 4)
+      .filter(([id, ecran]) => id !== "recuperer" && ecran.etape !== null && ecran.etape >= 4)
       .map(([id]) => id),
   );
   for (const progression of [creee, rendue, PROGRESSION_INITIALE]) {

@@ -56,13 +56,23 @@ node tools/serve.mjs --role shell --host 127.0.0.1 --port 4179 --app-origin http
 node tools/serve.mjs --role app --host localhost --port 4180
 ```
 
-Ouvrez <http://127.0.0.1:4179/index.html> et suivez les écrans. La phrase est la vôtre : plusieurs
-mots, par exemple « une phrase de démonstration assez longue ». Pour l'étape 7 (restaurer ailleurs),
-lancez un second couple de serveurs sur les ports 4181 et 4182
+Ouvrez <http://127.0.0.1:4179/index.html> et suivez les écrans. La création exige au moins 12
+caractères hors espaces de bord ; choisissez plusieurs mots sans lien entre eux ou un secret généré
+par votre gestionnaire. Les anciennes phrases restent utilisables à la réouverture. Pour l'étape 7
+(restaurer ailleurs), lancez un second couple de serveurs sur les ports 4181 et 4182
 (`--app-origin http://localhost:4182`), ouvrez <http://127.0.0.1:4181/index.html> et choisissez «
 J'ai déjà une sauvegarde ». La progression est retenue par le navigateur (un petit fichier du site,
 jamais le code) : pour tout reprendre de zéro, effacez les données du site dans les réglages du
 navigateur. `?vue=complete` est un paramètre des épreuves automatiques, pas un chemin du produit.
+
+Après chaque rechargement, la confirmation du code de récupération doit être refaite en ouvrant le
+coffre avec le code de votre feuille : le fichier de progression ne constitue pas une preuve.
+
+Respectez les hôtes indiqués : les cookies sont partagés entre les ports d'un même hôte. Le serveur
+refuse les alias, notamment `localhost:4179` pour la coquille configurée sur `127.0.0.1`. Ce couple
+sépare les deux hôtes du projet, mais pas les autres services qui utiliseraient ces mêmes hôtes :
+pour vos coffres de développement, utilisez un profil de navigateur réservé. Changer d'origine
+change aussi l'espace de stockage OPFS ; exportez une sauvegarde avant de déplacer un coffre.
 
 ## Principes
 

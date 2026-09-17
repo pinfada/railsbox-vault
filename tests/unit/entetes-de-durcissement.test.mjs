@@ -30,6 +30,13 @@ function enTetes(role, pathname) {
 
 // --- Referrer-Policy ---------------------------------------------------------------------------
 
+test("X-Frame-Options protège la coquille sans interdire le cadre applicatif", () => {
+  assert.equal(enTetes("shell", DOCUMENT_DE_COQUILLE)["X-Frame-Options"], "DENY");
+  assert.equal(enTetes("app", DOCUMENT_DE_COQUILLE)["X-Frame-Options"], undefined);
+  assert.equal(enTetes("shell", TERRITOIRE_APPLICATIF)["X-Frame-Options"], undefined);
+  assert.equal(enTetes("shell", SONDE_DE_CAPACITES)["X-Frame-Options"], undefined);
+});
+
 test("la coquille sert `Referrer-Policy: no-referrer` sur ses propres documents", () => {
   // La seule requête inter-origine que la CSP de la coquille autorise est le CADRE du territoire
   // applicatif. Sous la politique par défaut des moteurs, cette requête porte l'origine de la

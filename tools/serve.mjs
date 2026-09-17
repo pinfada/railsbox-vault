@@ -77,6 +77,13 @@ function lireAdresse(cible) {
 }
 
 createServer(async (request, response) => {
+  // Une socket de bouclage accepte aussi les alias de son adresse. Servir le coffre sous
+  // localhost partagerait les cookies des autres applications localhost, quel que soit le port.
+  const hoteAttendu = new URL(`http://${options.host}:${options.port}`).host;
+  if (request.headers.host?.toLowerCase() !== hoteAttendu.toLowerCase()) {
+    refuser(response, 421, "Unexpected host");
+    return;
+  }
   let adresse;
   try {
     adresse = lireAdresse(request.url ?? "/");
