@@ -362,6 +362,16 @@ function relireLaPhrase(contexte) {
   const { noeuds, inventaire } = contexte;
   const creation = !inventaire.present;
   noeuds.phrase.required = true;
+  // `minLength` compte en UNITÉS UTF-16 (la plateforme DOM), `evaluerPhrase` en POINTS DE CODE (la
+  // notion humaine, ADR implicite de `politique-de-phrase.mjs`) : un caractère astral (emoji,
+  // certains sinogrammes) vaut deux unités UTF-16 pour un seul point de code, donc la longueur
+  // UTF-16 d'une chaîne est TOUJOURS ≥ sa longueur en points de code. Poser le même seuil aux deux
+  // garantit que l'attribut, mesuré dans sa propre unité, n'est jamais PLUS restrictif que la
+  // politique : il ne peut jamais refuser (via la validation native) une phrase que
+  // `evaluerPhrase` admet. Il peut à l'inverse admettre une phrase que la politique refuse encore
+  // (des caractères astraux en nombre insuffisant) — sans conséquence, puisque `evaluerPhrase` est
+  // la seule source de vérité qui gouverne réellement la création (voir `relireLaPhrase` plus bas
+  // et `exigerPhraseDeCreation`). L'attribut n'est donc qu'un PRÉ-FILTRE d'ergonomie native.
   noeuds.phrase.minLength = creation ? LONGUEUR_MINIMALE_PHRASE : 1;
   noeuds.phrase.autocomplete = creation ? "new-password" : "current-password";
   const verdict = evaluerPhrase(noeuds.phrase.value);

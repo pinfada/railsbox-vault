@@ -5,6 +5,10 @@ export const CODE_PHRASE_FAIBLE = "VAULT_PHRASE_TROP_FAIBLE";
 /** Indication locale et prudente, sans prétendre mesurer l'entropie d'une phrase humaine. */
 export function evaluerPhrase(phrase) {
   const texte = String(phrase ?? "");
+  // Compte en POINTS DE CODE (`[...texte]` itère par point de code, pas en unités UTF-16) : c'est
+  // la source de vérité de la politique. `interface-de-deverrouillage.mjs` pose l'attribut HTML
+  // `minLength` au même seuil numérique, en UTF-16 — jamais plus restrictif que ce compte (voir son
+  // commentaire), et jamais l'inverse : cette fonction seule gouverne la création.
   const longueur = [...texte.trim()].length;
   const conseil =
     "Choisissez plusieurs mots sans lien entre eux, ou un secret généré par votre gestionnaire de mots de passe.";

@@ -27,6 +27,26 @@ test("création : phrases courtes, espaces, répétitions et suites sont refusé
   assert.equal(evaluerPhrase("Orbite-tulip!").admise, true, "borne exacte de douze caractères");
 });
 
+test("création : le compte porte sur les POINTS DE CODE, pas les unités UTF-16 (caractères astraux)", () => {
+  // Chaque emoji ci-dessous est un caractère ASTRAL DISTINCT : un point de code, deux unités UTF-16
+  // (des caractères distincts, pour ne pas heurter le filtre de répétition ci-dessus). Douze points
+  // de code astraux valent donc vingt-quatre unités UTF-16 — la politique et l'attribut natif
+  // `minLength` (posé au même seuil numérique 12, mais en UTF-16 dans `interface-de-deverrouillage`)
+  // doivent rester cohérents : l'attribut, plus large dans sa propre unité pour tout point de code
+  // astral, n'est jamais plus restrictif que ce compte.
+  const douze = "😀😁😂😃😄😅😆😇😈😉😊😋";
+  const onze = "😀😁😂😃😄😅😆😇😈😉😊";
+  assert.equal([...douze].length, 12);
+  assert.equal(
+    douze.length,
+    24,
+    "longueur UTF-16, pour mémoire — ce n'est pas ce que compte la politique",
+  );
+  assert.equal(evaluerPhrase(douze).admise, true, "douze points de code astraux sont admis");
+  assert.equal(evaluerPhrase(onze).admise, false, "onze points de code astraux restent refusés");
+  assert.throws(() => exigerPhraseDeCreation(onze), { code: CODE_PHRASE_FAIBLE });
+});
+
 test("le chemin de dérivation refuse un nouveau secret faible avant toute préparation", async () => {
   let appele = false;
   const page = derivationsDeLaPage({
