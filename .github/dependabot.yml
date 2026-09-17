@@ -23,9 +23,29 @@ updates:
     schedule:
       interval: weekly
     groups:
+      # Trois lots au lieu d'un (17/09/2026, PR #227 fermée) : une montée de Playwright change les
+      # MOTEURS de navigateur, et une montée de v86 exige la procédure « Monter v86 de version »
+      # (docs/development.md : manifeste, empreintes, garde de mémoire). Chacune bloquerait le lot
+      # entier si elle y restait ; séparées, les autres montées npm continuent de passer.
       npm:
         patterns:
           - "*"
+        exclude-patterns:
+          - "@playwright/*"
+          - "playwright*"
+          - "v86"
+      playwright:
+        patterns:
+          - "@playwright/*"
+          - "playwright*"
+      v86:
+        patterns:
+          - "v86"
+    ignore:
+      # Playwright 1.63.0 embarque WebKit 26.6 : 47 épreuves WebKit rouges, la coquille démarre en
+      # erreur (#231). Écart de cette seule version mineure ; la suivante sera proposée normalement.
+      - dependency-name: "@playwright/test"
+        versions: ["1.63.x"]
     commit-message:
       prefix: chore
     labels:
