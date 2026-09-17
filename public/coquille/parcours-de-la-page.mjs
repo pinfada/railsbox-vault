@@ -308,7 +308,10 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     const releve = lireJson("deverrouillage-releve");
     const ecranId = ecranAMontrer(releve, lireJson("coquille-rapport"));
     const ecran = ECRANS[ecranId];
-    if (ecran.etape === 3) allerA(3);
+    // La vérification renouvelée à chaque session suspend la reprise sans oublier sa destination.
+    // L'écran reste celui du code, même si le fichier demandait une étape ultérieure.
+    const verification = ecranId === "code-verifier" || ecranId === "code-a-verifier";
+    if (ecran.etape === 3 && !(verification && etat.pointeur > 3)) allerA(3);
     if (ecran.etape === 4 && etat.pointeur === 3) allerA(4);
     if (ecranId === "refuse") dire("parcours-refus", conduiteHumaine(releve.dernierRefus));
     const precedent = etat.ecran;

@@ -142,6 +142,34 @@ les deux origines, et aucune réponse servie ne porte `Set-Cookie`. Le motif est
 et **`SameSite` ne sépare pas deux sous-domaines d'un même site**. Si un cookie devenait un jour
 nécessaire, l'ADR 0028 fixe la forme — préfixe `__Host-`, rien sur le domaine parent.
 
+Cette mesure utilise un profil vierge : elle ne promet pas que des cookies déposés par d'autres
+services seront absents d'un profil partagé. Les cookies ne sont pas isolés par port. En local, la
+coquille utilise `127.0.0.1`, l'application `localhost`, et le serveur refuse les autres valeurs de
+`Host` (VULN-03). Un service tiers sur le même hôte partage encore ses cookies : réserver un profil
+de navigateur au développement du coffre. En production, réserver les hôtes, interdire les cookies
+de domaine parent et, si des cookies sont nécessaires côté application, employer `__Host-`,
+`Secure`, `Path=/`, sans `Domain`, avec `SameSite` adapté et `HttpOnly` pour les sessions. Voir la
+[portée des cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Cookies).
+
+**Création par phrase (VULN-02).** Le produit exige 12 points de code Unicode hors espaces de bord,
+refuse les répétitions courtes et quelques suites évidentes, et donne un retour local pendant la
+saisie. Ce retour est un contrôle de longueur et de motifs, pas un estimateur d'entropie ni zxcvbn :
+une citation ou une phrase courante peut encore passer. Utiliser des mots tirés indépendamment ou un
+gestionnaire de mots de passe. Le contrôle intervient dans l'interface et avant la préparation de la
+dérivation. Il ne modifie jamais la phrase donnée à Argon2id et ne s'applique pas aux coffres
+existants, afin de préserver leur accès. Le Worker de confiance reçoit une KEK : il ne peut pas
+déduire la robustesse de la phrase qui l'a produite. Aucun verrouillage d'essais côté client ne
+protège une copie attaquée hors ligne.
+
+**En-têtes (VULN-05 et VULN-06).** `X-Frame-Options: DENY` complète `frame-ancestors 'none'` sur la
+coquille et dans les artefacts publiés, sans interdire son cadre applicatif. COEP reste absent
+conformément à l'ADR 0010 : `require-corp` impose aussi des contraintes aux cadres imbriqués
+([documentation COEP](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cross-Origin-Embedder-Policy)).
+L'isolation cross-origin complète n'est donc pas promise. HSTS reste une obligation du déploiement
+HTTPS, décrite dans `docs/release-policy.md`, et n'est pas ajouté au serveur HTTP local.
+`wasm-unsafe-eval` reste nécessaire à v86 et Argon2id ; `unsafe-eval`, les scripts inline et les
+Workers `blob:` restent interdits par la politique de service (ADR 0013).
+
 ## Invariants vérifiables
 
 - `SEC-ORIGIN-001` — un script applicatif ne peut acquérir le canal privilégié ou lire une clé de
@@ -681,15 +709,16 @@ nécessaire, l'ADR 0028 fixe la forme — préfixe `__Host-`, rien sur le domain
 
   **L'ordre est tenu par une progression PERSISTÉE, et il ne protège que la personne** (revue
   d'intégration de la PR #213, constats 1 à 3). Le fichier `parcours.json` de l'OPFS de l'origine de
-  confiance porte l'étape atteinte et trois faits sur le code — rendu, sa version, confirmé —,
+  confiance porte l'étape atteinte et trois indications sur le code — rendu, sa version, confirmé —,
   jamais le code ni la phrase (`ecrireProgression` ne recopie que ces champs). Une étape demandée
-  par l'URL au-delà de l'étape atteinte est ramenée ; aucun écran de 4 à 9 sans code confirmé. Après
-  un rechargement, un code rendu et non confirmé se VÉRIFIE en ouvrant le coffre par ce code — ce
-  qui vaut confirmation — et la personne qui n'a plus sa feuille en demande une NOUVELLE depuis le
-  même écran. Aucun texte de la page ne garde un code en clair après un geste qui le consomme. Ce
-  que l'ordre ne protège PAS : quelqu'un qui tient le navigateur réécrit le fichier ou appelle les
-  gestes par la vue complète des épreuves ; les gardes de sécurité restent dans les gestes du Worker
-  de confiance, inchangées.
+  par l'URL au-delà de l'étape atteinte est ramenée ; travail, sauvegarde et révocation exigent un
+  code confirmé. L'écran de récupération peut servir à apporter cette confirmation. Après un
+  rechargement, les trois indications relues sont ignorées (VULN-04). Un code existant se VÉRIFIE en
+  ouvrant le coffre par ce code dans la session courante — ce qui vaut confirmation — et la personne
+  qui n'a plus sa feuille en demande une NOUVELLE depuis le même écran. Aucun texte de la page ne
+  garde un code en clair après un geste qui le consomme. Ce que l'ordre ne protège PAS : quelqu'un
+  qui exécute du code de même origine modifie la mémoire ou appelle les gestes par la vue complète
+  des épreuves ; les gardes de sécurité restent dans les gestes du Worker de confiance, inchangées.
 
 ### Ce que la coquille RETIENT pendant qu'un coffre est ouvert
 

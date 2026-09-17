@@ -207,6 +207,8 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
   await chrono("5-verrouiller-rouvrir", async () => {
     await attendreLEcran(a, "Verrouiller votre coffre");
     await bouton(a, "Verrouiller mon coffre").click();
+    await attendreLEcran(a, "Vérifier votre code de récupération", BUDGET_DEVERROUILLAGE_MS);
+    await bouton(a, "Je n'ai plus cette feuille — afficher un nouveau code").click();
     await attendreLEcran(a, "Rouvrir votre coffre", BUDGET_DEVERROUILLAGE_MS);
 
     // ÉCHEC 2 : une mauvaise phrase. Le coffre reste fermé, et la conduite le dit.
@@ -218,8 +220,12 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await expect(ecran(a, "Rouvrir votre coffre")).toBeVisible();
     noter("echec-mauvaise-phrase-conduit");
 
-    await a.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
-    await bouton(a, "Ouvrir mon coffre").click();
+    // Le fichier du parcours n'atteste plus une confirmation après rechargement.
+    // Revenir à la vérification ne crée aucun nouveau code.
+    await a.reload();
+    await attendreLEcran(a, "Vérifier votre code de récupération", BUDGET_DEVERROUILLAGE_MS);
+    await a.getByLabel("Code de récupération", { exact: true }).fill(code);
+    await bouton(a, "Ouvrir mon coffre avec le code").click();
     await attendreLEcran(a, "Sauvegarder votre coffre", BUDGET_DEVERROUILLAGE_MS);
   });
 

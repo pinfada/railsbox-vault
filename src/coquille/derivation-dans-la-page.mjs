@@ -17,6 +17,7 @@
 // ni les octets d'une KEK ne quittent ce module.
 
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
+import { exigerPhraseDeCreation } from "./politique-de-phrase.mjs";
 import { DELAI_PASSKEY_MS } from "./moyens-de-deverrouillage.mjs";
 import {
   derivateurWebauthnPrf,
@@ -70,6 +71,7 @@ export function derivationsDeLaPage({ demanderAuWorker, urlDuWorker }) {
  * et dite une fois de plus.
  */
 async function deriverPhrase({ inventaire, phrase, demanderAuWorker, urlDuWorker }) {
+  if (!inventaire?.present) exigerPhraseDeCreation(phrase);
   const existant = (inventaire?.emplacements ?? []).find(
     (emplacement) => emplacement.typeKek === TYPES_KEK.phrase,
   );

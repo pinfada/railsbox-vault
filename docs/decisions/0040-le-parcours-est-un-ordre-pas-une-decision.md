@@ -264,3 +264,17 @@ affichés (constat 7). Les trois questions par étape restent écrites dans l'ou
    l'exécutant).
 9. **Que le texte soit compris** n'est pas prouvé par une épreuve : c'est la relecture par une
    personne non technique désignée par le mainteneur, le gate humain de la tranche.
+
+### Amendement du 2026-09-17 — état persisté non probant (VULN-04)
+
+Les champs `code.rendu`, `code.version` et `code.confirme` de `parcours.json` ne constituent pas des
+preuves : le fichier est réinscriptible. À la lecture, ils sont ramenés à leur état initial, même si
+le JSON est parfaitement formé. Seules une recopie vérifiée dans la page courante ou une ouverture
+réussie par code confirment la feuille. Le témoin `.engagement` authentifie une archive, pas la
+recopie d'un code ; il ne remplace donc pas cette confirmation.
+
+Conséquence assumée : un rechargement, y compris après verrouillage, redemande le code existant. La
+vérification suspend la reprise à l'étape mémorisée sans permettre de l'atteindre avant succès. Si
+la feuille a été perdue, l'ouverture par phrase ou passkey permet toujours d'en créer une nouvelle.
+Le fichier reste en clair, sans secret ; cet amendement ne protège pas contre un script de même
+origine capable de modifier aussi le code ou la mémoire de la page.

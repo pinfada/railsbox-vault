@@ -97,6 +97,8 @@ for (const theme of ["light", "dark"]) {
     await verifierAux(page, testInfo, "etape-5-verrouiller", DEUX_LARGEURS);
 
     await bouton(page, "Verrouiller mon coffre").click();
+    await expect(titre(page, "Vérifier votre code de récupération")).toBeVisible(LONG);
+    await bouton(page, "Je n'ai plus cette feuille — afficher un nouveau code").click();
     await expect(titre(page, "Rouvrir votre coffre")).toBeVisible(LONG);
     await verifierAux(page, testInfo, "etape-5-rouvrir", DEUX_LARGEURS);
     // « J'ai oublié ma phrase » est un bouton actif : son contour doit se voir (constat 11).
@@ -109,8 +111,10 @@ for (const theme of ["light", "dark"]) {
       "contour de « J'ai oublié ma phrase »",
     ).toBeGreaterThanOrEqual(3);
 
-    await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
-    await bouton(page, "Ouvrir mon coffre").click();
+    await page.reload();
+    await expect(titre(page, "Vérifier votre code de récupération")).toBeVisible(LONG);
+    await page.getByLabel("Code de récupération", { exact: true }).fill(code);
+    await bouton(page, "Ouvrir mon coffre avec le code").click();
     await expect(titre(page, "Sauvegarder votre coffre")).toBeVisible(LONG);
     await verifierAux(page, testInfo, "etape-6-sauvegarder", DEUX_LARGEURS);
 

@@ -48,9 +48,9 @@ async function lancerServeur(t) {
   return { racine, port };
 }
 
-function lire(port, path, method = "GET") {
+function lire(port, path, method = "GET", headers = {}) {
   return new Promise((resolve, reject) => {
-    const requete = request({ hostname: "127.0.0.1", port, path, method }, (reponse) => {
+    const requete = request({ hostname: "127.0.0.1", port, path, method, headers }, (reponse) => {
       let corps = "";
       reponse.setEncoding("utf8");
       reponse.on("data", (morceau) => (corps += morceau));
@@ -64,6 +64,19 @@ function lire(port, path, method = "GET") {
     requete.end();
   });
 }
+
+test("serveur — les alias localhost ne servent pas la coquille dans un autre jar de cookies", async (t) => {
+  const { port } = await lancerServeur(t);
+  for (const host of [`localhost:${port}`, `vault.localhost:${port}`, `127.0.0.1:${port + 1}`]) {
+    const reponse = await lire(port, "/index.html", "GET", { Host: host });
+    assert.equal(reponse.statut, 421);
+    assert.equal(reponse.entetes["cache-control"], "no-store");
+  }
+  const normal = await lire(port, "/index.html");
+  assert.equal(normal.statut, 200);
+  assert.equal(normal.entetes["x-frame-options"], "DENY");
+  assert.equal(normal.entetes["set-cookie"], undefined);
+});
 
 test("serveur — aucune des quatre racines ne suit un lien vers des fichiers privés", async (t) => {
   const { racine, port } = await lancerServeur(t);

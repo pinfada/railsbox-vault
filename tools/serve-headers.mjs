@@ -276,6 +276,7 @@ export function securityHeaders({
     // le contenu vient du guest (ADR 0002). `no-referrer` la retire, et
     // `tests/browser/entetes-durcissement.spec.mjs` le relève avec son témoin négatif. ADR 0022.
     headers["Referrer-Policy"] = "no-referrer";
+    headers["X-Frame-Options"] = "DENY";
     headers["Permissions-Policy"] = shellPermissionsPolicy();
     // COOP, servi et non plus seulement recommandé (#163, ADR 0030, décision 4).
     //
