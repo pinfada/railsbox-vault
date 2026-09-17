@@ -69,10 +69,12 @@ Après chaque rechargement, la confirmation du code de récupération doit être
 coffre avec le code de votre feuille : le fichier de progression ne constitue pas une preuve.
 
 Respectez les hôtes indiqués : les cookies sont partagés entre les ports d'un même hôte. Le serveur
-refuse les alias, notamment `localhost:4179` pour la coquille configurée sur `127.0.0.1`. Ce couple
-sépare les deux hôtes du projet, mais pas les autres services qui utiliseraient ces mêmes hôtes :
-pour vos coffres de développement, utilisez un profil de navigateur réservé. Changer d'origine
-change aussi l'espace de stockage OPFS ; exportez une sauvegarde avant de déplacer un coffre.
+refuse les alias, notamment `localhost:4179` pour la coquille configurée sur `127.0.0.1` ; seul un
+alias déclaré au lancement (`--alias localhost`, réservé aux épreuves automatiques qui exigent un
+nom de domaine) est servi. Ce couple sépare les deux hôtes du projet, mais pas les autres services
+qui utiliseraient ces mêmes hôtes : pour vos coffres de développement, utilisez un profil de
+navigateur réservé. Changer d'origine change aussi l'espace de stockage OPFS ; exportez une
+sauvegarde avant de déplacer un coffre.
 
 ## Principes
 

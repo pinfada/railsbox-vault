@@ -20,6 +20,15 @@ const vendorRoot = resolve("vendor");
 // sert à v86 dans le navigateur, en lecture seule, sous leur propre racine.
 const artifactRoot = resolve("artifacts");
 const options = parseServerOptions(process.argv.slice(2), process.env);
+// Une socket de bouclage accepte aussi les alias de son adresse. Servir le coffre sous
+// localhost partagerait les cookies des autres applications localhost, quel que soit le port.
+// Seuls le couple configuré et les alias DÉCLARÉS (`--alias`) sont admis ; un alias sans port
+// vaut pour le port du serveur, jamais pour un autre.
+const hotesAdmis = new Set(
+  [`${options.host}:${options.port}`, ...options.aliases].map((hote) =>
+    new URL(`http://${hote.includes(":") ? hote : `${hote}:${options.port}`}`).host.toLowerCase(),
+  ),
+);
 
 const contentTypes = new Map([
   [".html", "text/html; charset=utf-8"],
@@ -77,10 +86,7 @@ function lireAdresse(cible) {
 }
 
 createServer(async (request, response) => {
-  // Une socket de bouclage accepte aussi les alias de son adresse. Servir le coffre sous
-  // localhost partagerait les cookies des autres applications localhost, quel que soit le port.
-  const hoteAttendu = new URL(`http://${options.host}:${options.port}`).host;
-  if (request.headers.host?.toLowerCase() !== hoteAttendu.toLowerCase()) {
+  if (!hotesAdmis.has(request.headers.host?.toLowerCase() ?? "")) {
     refuser(response, 421, "Unexpected host");
     return;
   }

@@ -14,7 +14,7 @@ import { adresseDe } from "../../src/v86-adresses.mjs";
 const SERVEUR = fileURLToPath(new URL("../../tools/serve.mjs", import.meta.url));
 const TYPE_DE_LIEN = process.platform === "win32" ? "junction" : "dir";
 
-async function lancerServeur(t) {
+async function lancerServeur(t, argumentsSupplementaires = []) {
   const racine = await mkdtemp(join(tmpdir(), "vault-serve-securite-"));
   let enfant;
   t.after(async () => {
@@ -36,10 +36,14 @@ async function lancerServeur(t) {
   await once(reservation, "listening");
   const { port } = reservation.address();
   await new Promise((resolve) => reservation.close(resolve));
-  enfant = spawn(process.execPath, [SERVEUR, "--host", "127.0.0.1", "--port", String(port)], {
-    cwd: racine,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  enfant = spawn(
+    process.execPath,
+    [SERVEUR, "--host", "127.0.0.1", "--port", String(port), ...argumentsSupplementaires],
+    {
+      cwd: racine,
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
   await new Promise((resolve, reject) => {
     enfant.once("error", reject);
     enfant.once("exit", (code) => reject(new Error(`Serveur arrêté : ${code}`)));
@@ -76,6 +80,19 @@ test("serveur — les alias localhost ne servent pas la coquille dans un autre j
   assert.equal(normal.statut, 200);
   assert.equal(normal.entetes["x-frame-options"], "DENY");
   assert.equal(normal.entetes["set-cookie"], undefined);
+});
+
+test("serveur — un alias DÉCLARÉ est servi, sur son port seulement ; les autres restent refusés", async (t) => {
+  // Les épreuves WebAuthn joignent la coquille par `localhost` (un `rpId` ne peut pas être une
+  // IP) et la portabilité veut un second hôte : l'alias est déclaré au lancement, et lui seul.
+  const { port } = await lancerServeur(t, ["--alias", "localhost"]);
+  const alias = await lire(port, "/index.html", "GET", { Host: `localhost:${port}` });
+  assert.equal(alias.statut, 200);
+  assert.equal(alias.corps, "coquille publique");
+  for (const host of [`vault.localhost:${port}`, `localhost:${port + 1}`, "localhost"]) {
+    const reponse = await lire(port, "/index.html", "GET", { Host: host });
+    assert.equal(reponse.statut, 421, host);
+  }
 });
 
 test("serveur — aucune des quatre racines ne suit un lien vers des fichiers privés", async (t) => {
