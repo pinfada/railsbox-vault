@@ -1168,3 +1168,32 @@ test("le compte rendu publié FRANCHIT `sansCapacite`, instantané compris", () 
   assert.equal(publie.invariantVerdict.observed, undefined);
   assert.equal(publie.invariantVerdict.status, "conforming");
 });
+
+test("une GRAINE dont l'empreinte diffère refuse l'installation sous le code de l'application absente (#236)", async () => {
+  // Le versement lève sur l'empreinte ; sans traduction, l'exception remonterait NUE, et le canal
+  // privilégié la réduirait à « démarrage refusé », sans code. La personne saurait qu'il s'est passé
+  // quelque chose, pas QUOI — alors que l'installation d'une application absente ou altérée a déjà
+  // son code et sa conduite.
+  const support = supportDInstallation({});
+  const erreur = await installerSiNecessaire({
+    descripteur: descripteur(),
+    cleDeVolume: cleFeinte().cleDeVolume,
+    ...support.primitives,
+    verser: async () => {
+      throw new Error(
+        "Versement refusé : les octets reçus ont pour empreinte 00…, l'origine en déclare aa….",
+      );
+    },
+  }).then(
+    () => null,
+    (raison) => raison,
+  );
+
+  assert.notEqual(erreur, null);
+  assert.equal(erreur.code, CODES_REFUS_COQUILLE.applicationAbsente);
+  assert.match(erreur.message, /empreinte/);
+  assert.ok(
+    !support.gestes.includes("inscrire:application"),
+    "rien n'est déclaré : le volume reste ANONYME",
+  );
+});
