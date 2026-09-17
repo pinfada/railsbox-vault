@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { MANIFEST_FORMAT_VERSION } from "../../src/vm/volume-manifest.mjs";
 import { tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
+import { graineDuManifeste } from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CHEMIN_MANIFESTE = join(RACINE, "tools", "build-reference-image", "manifest.json");
@@ -41,7 +42,7 @@ function raisonDIndisponibilite() {
     return `manifeste absent : « npm run image:build »`;
   }
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));
-  const disque = manifeste.boot.hdb;
+  const disque = manifeste.boot.graine;
   if (!existsSync(join(DOSSIER_IMAGE, disque))) {
     return `disque applicatif de l'image #5 absent (${disque}) : « npm run image:build »`;
   }
@@ -96,14 +97,14 @@ test("un volume OPFS est exporté en archive vérifiable, et une archive altér�
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));
   const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
   const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
-  const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
-  const appDiskBytes = disqueApp.byteSize;
+  const graine = graineDuManifeste(manifeste);
+  const appDiskBytes = graine.appDiskBytes;
   // Taille du FICHIER que ce volume occupe au format courant : c'est elle que l'archive porte.
   const fichierAttendu = tailleDeFichier({
     formatVersion: MANIFEST_FORMAT_VERSION,
     tailleLogique: appDiskBytes,
   });
-  const appDiskUrl = `/artifacts/reference-image/${manifeste.boot.hdb}`;
+  const appDiskUrl = graine.appDiskUrl;
 
   const manifestDescriptor = {
     // `minWriter` est exigé par le format v2 (#13) : le volume DÉCLARE le plus ancien runtime

@@ -7,6 +7,16 @@
   document encadré n'est pas encore servi par le guest ; le proxy qui relaierait ce que Rails rend
   n'est pas dans cette tranche. »
 
+## Note datée du 17/09/2026 — le descripteur servi est en v2 (#236, ADR 0041)
+
+`artifacts/application.json` a changé de forme : le champ `disque` (un nom, une taille) a disparu au
+profit de trois morceaux portant chacun leur EMPREINTE — `rootfs`, `paquet` et `graine` —, et
+`application` porte le `schema` de la base. La coquille REFUSE un descripteur v1 : aucun déploiement
+réel n'existe, et accepter les deux formes garderait un chemin d'installation sans empreinte. Voir
+l'[ADR 0041](0041-le-paquet-applicatif-partition-2-d-un-hda-compose.md).
+
+Ce que cette décision dit du CADRE, de son origine et de ce qui y transite ne change pas.
+
 ## Contexte
 
 Le cycle de vie était assemblé depuis #163 : un coffre s'ouvre par une phrase, installe un disque

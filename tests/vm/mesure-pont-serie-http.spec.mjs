@@ -44,6 +44,7 @@ import {
   adressesServiesV86,
   artefactsV86Absents,
 } from "../../tools/v86-paths.mjs";
+import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
 
 const ADRESSES_V86 = adressesServiesV86();
 const CHEMIN_MANIFESTE = join(REPOSITORY_ROOT, "tools", "build-reference-image", "manifest.json");
@@ -115,7 +116,7 @@ test("une page Rails réelle, ses actifs, sa session et son formulaire, mesurés
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));
   const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
   const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
-  const disqueApp = manifeste.artifacts.find((artefact) => artefact.name === manifeste.boot.hdb);
+  const graine = graineDuManifeste(manifeste);
 
   const descripteurManifeste = {
     runtime: { version: paquet.version, artifact: null, minWriter: paquet.version },
@@ -132,7 +133,7 @@ test("une page Rails réelle, ses actifs, sa session et son formulaire, mesurés
       vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
       kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
       initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
-      rootfs: `/artifacts/reference-image/${manifeste.boot.hda}`,
+      disqueSysteme: disqueSystemeDuManifeste(manifeste),
     },
     manifest: descripteurManifeste,
     expected: { recordId: contrat.record.id, attachmentSha256: contrat.attachment.sha256 },
@@ -148,8 +149,8 @@ test("une page Rails réelle, ses actifs, sa session et son formulaire, mesurés
   await courir({
     phase: "prepare",
     volume: VOLUME,
-    appDiskBytes: disqueApp.byteSize,
-    appDiskUrl: `/artifacts/reference-image/${manifeste.boot.hdb}`,
+    appDiskBytes: graine.appDiskBytes,
+    appDiskUrl: graine.appDiskUrl,
     manifest: descripteurManifeste,
   });
 

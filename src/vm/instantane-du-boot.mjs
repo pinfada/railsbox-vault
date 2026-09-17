@@ -38,6 +38,10 @@ const ARTEFACTS_DE_L_IMAGE = Object.freeze([
   "kernel",
   "initrd",
   "rootfs",
+  // Le PAQUET APPLICATIF, depuis #236 (ADR 0024, note du 17/09/2026 ; format inchangé) : il est la
+  // seconde partition du disque système, et un instantané pris sous un autre paquet décrit une
+  // mémoire de guest qui a chargé un autre code. Il est écarté par le même motif typé que l'image.
+  "paquet",
 ]);
 
 /**

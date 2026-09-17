@@ -111,9 +111,10 @@ function construireEmulateur({ V86, artifacts, wasm, rootfs, appAdapter, cmdline
     bzimage: { buffer: asArrayBuffer(artifacts.kernel) },
     initrd: { buffer: asArrayBuffer(artifacts.initrd) },
     cmdline,
-    // hda = rootfs en lecture/écriture éphémère (les écritures du guest y restent en RAM, et le
-    // tampon n'en publie que le DELTA dans un instantané) ; hdb = disque applicatif adossé à OPFS,
-    // où atterrissent SQLite et la pièce jointe.
+    // hda = disque système composé — partition 1 le rootfs, partition 2 le paquet applicatif — en
+    // lecture/écriture ÉPHÉMÈRE : les écritures du guest y restent en RAM, et le tampon n'en publie
+    // que le DELTA dans un instantané. hdb = disque de DONNÉES adossé à OPFS, où atterrissent
+    // SQLite et les pièces jointes, et lui seul survit au boot à froid (#236, ADR 0041).
     hda: rootfs,
     hdb: appAdapter,
     memory_size: memoryBytes,
@@ -198,7 +199,7 @@ function creerAttenteCadencee({ cadence, lireTranscript }) {
  * @param {{
  *   V86: Function,
  *   artifacts: { wasm: BufferSource, bios: BufferSource, vgaBios: BufferSource,
- *                kernel: BufferSource, initrd: BufferSource, rootfs: BufferSource },
+ *                kernel: BufferSource, initrd: BufferSource, disqueSysteme: BufferSource },
  *   appAdapter: object,
  *   journal: import("./block-journal.mjs").BlockJournal,
  *   cmdline: string,
@@ -226,11 +227,15 @@ export function createReferenceGuestSession({
   let emulator = null;
   let bridge = null;
   /**
-   * Tampon du ROOTFS, à état DIFFÉRENTIEL (#65). Il remplace le `{ buffer }` que v86 transformait en
-   * `SyncBuffer` — dont l'état capturé était le disque ENTIER, 385 Mio par instantané. Il est
-   * construit au boot et retenu ici : la capture et la restauration passent par lui.
+   * Tampon du DISQUE SYSTÈME, à état DIFFÉRENTIEL (#65). Il remplace le `{ buffer }` que v86
+   * transformait en `SyncBuffer` — dont l'état capturé était le disque ENTIER, 385 Mio par
+   * instantané. Il est construit au boot et retenu ici : la capture et la restauration passent par
+   * lui.
+   *
+   * Depuis #236 il porte le disque COMPOSÉ — table de partitions, rootfs, paquet applicatif —, et
+   * non plus le rootfs nu : le delta reste celui des blocs que le guest écrit, où qu'ils soient.
    */
-  let rootfs = null;
+  let disqueSysteme = null;
   let transcript = "";
   const decoder = new TextDecoder("utf-8", { fatal: false });
   const client = createSerialHttpClient({
@@ -248,18 +253,19 @@ export function createReferenceGuestSession({
      * une seule fois au démarrage, et un pont posé après coup n'obtiendrait aucune barrière.
      */
     async boot({ ideTimeoutMs = DEFAULT_IDE_TIMEOUT_MS, etatARestaurer = null } = {}) {
-      // Les octets du rootfs sont ADOPTÉS, non recopiés : le Worker vient de les télécharger et n'en
-      // garde pas d'autre référence. Les recopier coûterait 385 Mio pour rien.
-      rootfs = creerTamponRootfs(
-        artifacts.rootfs instanceof Uint8Array
-          ? artifacts.rootfs
-          : new Uint8Array(asArrayBuffer(artifacts.rootfs)),
+      // Les octets du disque système sont ADOPTÉS, non recopiés : l'acquisition vient de les
+      // ranger et n'en garde pas d'autre référence. Les recopier coûterait un demi-gibioctet.
+      const octetsDuDisque = artifacts.disqueSysteme ?? artifacts.rootfs;
+      disqueSysteme = creerTamponRootfs(
+        octetsDuDisque instanceof Uint8Array
+          ? octetsDuDisque
+          : new Uint8Array(asArrayBuffer(octetsDuDisque)),
       );
       emulator = construireEmulateur({
         V86,
         artifacts,
         wasm: asArrayBuffer(artifacts.wasm),
-        rootfs,
+        rootfs: disqueSysteme,
         appAdapter,
         cmdline,
         memoryBytes,
@@ -317,9 +323,9 @@ export function createReferenceGuestSession({
       return new Uint8Array(await emulator.save_state());
     },
 
-    /** Ce que le delta du rootfs pèse. Publié : la taille d'un instantané se mesure. */
+    /** Ce que le delta du disque système pèse. Publié : la taille d'un instantané se mesure. */
     deltaRootfsOctets() {
-      return rootfs === null ? null : rootfs.deltaOctets();
+      return disqueSysteme === null ? null : disqueSysteme.deltaOctets();
     },
 
     /**

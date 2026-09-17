@@ -32,6 +32,7 @@
     "test:vm:reference": "node --test \"tests/vm/**/*.test.mjs\"",
     "app:test": "node tools/run-app-tests.mjs",
     "image:build": "node tools/build-reference-image/build-image.mjs",
+    "app:paquet": "node tools/paquet/fabriquer-paquet.mjs",
     "image:manifest": "node tools/build-reference-image/manifest.mjs",
     "vm:fetch": "node tools/fetch-v86.mjs",
     "vm:check": "node tools/fetch-v86.mjs --check",

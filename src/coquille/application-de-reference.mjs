@@ -36,6 +36,12 @@
 // même identifiant. Le manifeste voisin en reste la source à la lecture (ADR 0016).
 
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
+import {
+  ADRESSE_DESCRIPTEUR,
+  DESCRIPTEUR_VERSION_ATTENDUE,
+  formeDuDescripteur,
+  lireLeDescripteur,
+} from "./descripteur-applicatif.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "./identites-du-coffre.mjs";
 import { daterLaCreation, openOpfsVolume } from "../vm/opfs-block-backend.mjs";
 import { constaterCreationSeule } from "../vm/opfs-datation-de-creation.mjs";
@@ -55,99 +61,11 @@ import { verserFluxDansVolume } from "../vm/versement-de-disque.mjs";
 import { VOLUME_ALGORITHM, createManifest, parseManifest } from "../vm/volume-manifest.mjs";
 
 /**
- * Où l'origine de CONFIANCE sert le descripteur de son application.
- *
- * Il est écrit par `tools/build-reference-image/manifest.mjs`, dérivé du manifeste d'image, et il ne
- * porte que du public : des noms d'artefacts, des tailles, une ligne de commande. La coquille ne
- * peut pas lire `tools/` — son origine ne sert que `public/`, `src/`, `vendor/` et `artifacts/` —,
- * et le lui faire passer par un paramètre d'URL rouvrirait exactement la porte que #162 a fermée.
+ * La LECTURE et la FORME du descripteur vivent dans `descripteur-applicatif.mjs` depuis #236 ; elles
+ * sont RÉEXPORTÉES ici parce que ce module reste l'entrée du chemin de démarrage, et qu'une épreuve
+ * n'a pas à connaître la coupe interne pour exiger un refus.
  */
-export const ADRESSE_DESCRIPTEUR = "/artifacts/application.json";
-
-/** Version de descripteur que ce module sait lire. Une autre est refusée, jamais devinée. */
-export const DESCRIPTEUR_VERSION_ATTENDUE = 1;
-
-/**
- * Le NOM d'un artefact servi : une lettre ou un chiffre, puis des caractères de nom de fichier.
- *
- * Il entre dans une URL que le Worker de confiance va chercher. La CSP `connect-src 'self'` est la
- * SECONDE barrière — elle refuserait une origine étrangère —, mais une garde qui n'existe que dans
- * l'en-tête n'est pas une garde du produit : un nom porteur de `..` ou d'une barre oblique ferait
- * sortir la requête de son préfixe sans que la politique y voie quoi que ce soit.
- */
-const NOM_DARTEFACT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
-
-/** Le PRÉFIXE servi : un chemin absolu, sans remontée, sans schéma, sans autorité. */
-const PREFIXE_SERVI = /^\/[A-Za-z0-9][A-Za-z0-9._/-]{0,127}\/$/;
-
-/**
- * La LIGNE DE COMMANDE du guest, sur un alphabet clos et bornée.
- *
- * Elle est passée telle quelle à l'émulateur, qui la donne au noyau. Elle ne peut donc pas être
- * libre : ce qu'un descripteur y glisserait, c'est un `init=` de son choix.
- */
-const LIGNE_DE_COMMANDE = /^[A-Za-z0-9 ._:/=,+-]{1,512}$/;
-
-/** Bornes des deux grandeurs. Elles sont larges, et leur seul rôle est de refuser l'absurde. */
-const TAILLE_DISQUE_MAX = 8 * 1024 * 1024 * 1024;
-const MEMOIRE_MAX = 4 * 1024 * 1024 * 1024;
-
-/** @param {unknown} valeur @param {number} plafond */
-function entierBorne(valeur, plafond) {
-  return Number.isInteger(valeur) && valeur > 0 && valeur <= plafond;
-}
-
-/**
- * CONTRÔLE la forme d'un descripteur, champ par champ.
- *
- * La version seule ne suffit pas, et c'est le constat 11 de la revue de sécurité de la PR #171 : un
- * descripteur d'une version connue mais aux champs libres fournit six URL, une ligne de commande de
- * noyau et deux grandeurs d'allocation au Worker de confiance. Le descripteur est servi par
- * l'origine de confiance elle-même — ce n'est pas l'adversaire de `SEC-ORIGIN-001` — mais une
- * donnée qui traverse une frontière se contrôle à l'entrée, pas à la source.
- *
- * Rend un MOTIF plutôt qu'un booléen : l'appelant le publie, et « descripteur refusé » sans dire
- * quel champ enverrait chercher au mauvais endroit.
- *
- * @param {unknown} descripteur
- * @returns {{ valide: boolean, motif: string | null }}
- */
-export function formeDuDescripteur(descripteur) {
-  const refus = (motif) => ({ valide: false, motif });
-  if (typeof descripteur !== "object" || descripteur === null)
-    return refus("descripteur illisible");
-  if (descripteur.descripteurVersion !== DESCRIPTEUR_VERSION_ATTENDUE) {
-    return refus(`version de descripteur inconnue : ${String(descripteur.descripteurVersion)}`);
-  }
-  if (typeof descripteur.application?.id !== "string" || descripteur.application.id.length === 0) {
-    return refus("identité d'application absente");
-  }
-  if (typeof descripteur.runtime?.version !== "string") return refus("version de runtime absente");
-  if (!PREFIXE_SERVI.test(String(descripteur.prefixeDesArtefacts ?? ""))) {
-    return refus("préfixe d'artefacts hors du chemin servi");
-  }
-  if (String(descripteur.prefixeDesArtefacts).includes("..")) {
-    return refus("préfixe d'artefacts porteur d'une remontée");
-  }
-  if (!NOM_DARTEFACT.test(String(descripteur.disque?.nom ?? ""))) {
-    return refus("nom de disque applicatif refusé");
-  }
-  if (!entierBorne(descripteur.disque?.octets, TAILLE_DISQUE_MAX)) {
-    return refus("taille de disque applicatif hors bornes");
-  }
-  if (!entierBorne(descripteur.boot?.memoireOctets, MEMOIRE_MAX)) {
-    return refus("mémoire du guest hors bornes");
-  }
-  if (!LIGNE_DE_COMMANDE.test(String(descripteur.boot?.cmdline ?? ""))) {
-    return refus("ligne de commande du guest refusée");
-  }
-  for (const cle of ["kernel", "initrd", "rootfs", "bios", "vgaBios"]) {
-    if (!NOM_DARTEFACT.test(String(descripteur.boot?.[cle] ?? ""))) {
-      return refus(`nom d'artefact refusé : ${cle}`);
-    }
-  }
-  return { valide: true, motif: null };
-}
+export { ADRESSE_DESCRIPTEUR, DESCRIPTEUR_VERSION_ATTENDUE, formeDuDescripteur, lireLeDescripteur };
 
 /** Nom du volume qui porte le disque de l'application. Voir l'en-tête : ce n'est pas `coquille`. */
 export const NOM_DU_VOLUME_APPLICATIF = "application";
@@ -155,37 +73,6 @@ export const NOM_DU_VOLUME_APPLICATIF = "application";
 /** @param {string} code @param {string} message */
 function refus(code, message) {
   return Object.assign(new Error(message), { code });
-}
-
-/**
- * LIT le descripteur servi, ou dit ce qui manque.
- *
- * L'absence n'est PAS une erreur : `npm run check` tourne sans les artefacts de l'image de
- * référence, et la coquille doit alors se déclarer sans application plutôt qu'échouer. C'est la même
- * règle que l'état `indisponible` — nommer l'absence au lieu de la traiter comme une panne.
- *
- * @param {{ recuperer?: typeof fetch }} [options]
- * @returns {Promise<{ present: boolean, descripteur?: object, motif?: string }>}
- */
-export async function lireLeDescripteur({ recuperer = globalThis.fetch } = {}) {
-  let reponse;
-  try {
-    reponse = await recuperer(ADRESSE_DESCRIPTEUR, { cache: "no-store" });
-  } catch (erreur) {
-    return { present: false, motif: `descripteur inatteignable : ${erreur.message}` };
-  }
-  if (!reponse.ok) {
-    return { present: false, motif: `aucun descripteur servi (${reponse.status})` };
-  }
-  let descripteur;
-  try {
-    descripteur = await reponse.json();
-  } catch {
-    return { present: false, motif: "descripteur illisible" };
-  }
-  const forme = formeDuDescripteur(descripteur);
-  if (!forme.valide) return { present: false, motif: forme.motif };
-  return { present: true, descripteur };
 }
 
 /**
@@ -217,6 +104,11 @@ export function descripteurDeManifeste(descripteur) {
 export async function adressesDuRuntime(descripteur, { recuperer = globalThis.fetch } = {}) {
   const { adresses } = await chargerAdressesV86({ fetch: recuperer });
   const prefixe = descripteur.prefixeDesArtefacts;
+  const morceau = (cle) => ({
+    url: `${prefixe}${descripteur[cle].nom}`,
+    octets: descripteur[cle].octets,
+    sha256: descripteur[cle].sha256,
+  });
   return {
     lib: exigerAdresse(adresses, "libv86.mjs"),
     wasm: exigerAdresse(adresses, "v86.wasm"),
@@ -224,7 +116,9 @@ export async function adressesDuRuntime(descripteur, { recuperer = globalThis.fe
     vgaBios: `${prefixe}${descripteur.boot.vgaBios}`,
     kernel: `${prefixe}${descripteur.boot.kernel}`,
     initrd: `${prefixe}${descripteur.boot.initrd}`,
-    rootfs: `${prefixe}${descripteur.boot.rootfs}`,
+    // Les DEUX morceaux du disque système, avec leur empreinte : le boot les range aux décalages
+    // du plan (`src/vm/disque-compose.mjs`) et refuse celui dont les octets ne correspondent pas.
+    disqueSysteme: { rootfs: morceau("rootfs"), paquet: morceau("paquet") },
   };
 }
 
@@ -269,7 +163,10 @@ export async function installerSiNecessaire({
   lireLeManifeste = readVolumeManifest,
 }) {
   const nom = NOM_DU_VOLUME_APPLICATIF;
-  const octets = descripteur.disque.octets;
+  // La taille du VOLUME est celle du disque de données, pas celle du fichier de graine : la graine
+  // est l'image d'un disque de cette taille exactement, et le volume déclare la sienne à sa
+  // naissance, sans jamais grandir (`opfs-volume-ouverture.mjs`).
+  const octets = descripteur.graine.disqueOctets;
   if (await constaterLInstallation({ nom, octets, observer, openHandle, lireLeManifeste })) {
     return { installee: false, volume: nom, octets };
   }
@@ -278,10 +175,10 @@ export async function installerSiNecessaire({
   // demi versé entre-temps.
   await revoquer(nom);
   const verse = await verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, octets });
-  if (verse.ecrits !== octets) {
+  if (verse.ecrits !== descripteur.graine.octets) {
     throw refus(
       CODES_REFUS_COQUILLE.applicationAbsente,
-      `Disque applicatif tronqué : ${verse.ecrits} octets écrits sur ${octets}.`,
+      `Graine tronquée : ${verse.ecrits} octets reçus sur ${descripteur.graine.octets}.`,
     );
   }
   await daterLaCreationDuVolume({
@@ -429,32 +326,21 @@ async function constaterLInstallation({ nom, octets, observer, openHandle, lireL
  * identifiant réinventé, que le manifeste devra déclarer.
  */
 async function verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, octets }) {
-  const cle = await cleDeVolume();
-  // La clé est effacée QUOI QU'IL ARRIVE à l'ouverture. Elle ne l'était que sur le chemin du
-  // succès, si bien qu'un `VAULT_STORAGE_BUSY` laissait ses octets en clair dans le tas du Worker :
-  // c'est le constat 5 de la revue de la PR #167, dont la correction manquait ici (constat 9 de la
-  // revue de la PR #171).
-  let backend;
-  try {
-    backend = await ouvrir({
-      name: nom,
-      size: octets,
-      cle,
-      // Le volume NAÎT sous l'identité du COFFRE, celle que l'enveloppe authentifie (#207,
-      // ADR 0039) : son archive peut ainsi emporter la page de récupération qui l'ouvre ailleurs.
-      identifiantVolume: IDENTIFIANT_DU_COFFRE,
-      transactionnel: false,
-      // Ce versement sera DATÉ : `daterLaCreation` est sa clôture, et une racine écrite à la
-      // fermeture lui ferait trouver un journal « en service » (#182, T2b).
-      clotureParDatation: true,
-    });
-  } finally {
-    cle.fill(0);
-  }
+  const backend = await ouvrirLeVolumeNeuf({ ouvrir, cleDeVolume, nom, octets });
   try {
     const verse = await verser(
       backend,
-      `${descripteur.prefixeDesArtefacts}${descripteur.disque.nom}`,
+      `${descripteur.prefixeDesArtefacts}${descripteur.graine.nom}`,
+      {
+        // L'EMPREINTE de la graine est confrontée PENDANT le versement, sur les octets reçus : un
+        // écart refuse l'installation au lieu de sceller dans le coffre une base que l'origine n'a
+        // pas produite. Jusqu'à #236, l'empreinte du fichier écrit était rendue mais celle de la
+        // SOURCE n'était comparée à rien.
+        empreinteAttendue: descripteur.graine.sha256,
+        // Un volume neuf scellé se relit à ZÉRO (ADR 0041) : les blocs nuls de la graine n'ont donc
+        // pas à être écrits. Sur 512 Mio dont 118 utiles, c'est l'essentiel de l'installation.
+        sauterLesBlocsNuls: true,
+      },
     );
     // Un versement qui ne rend qu'un COMPTE n'atteste RIEN de ce qu'il a écrit : c'est le contrat
     // d'avant #181, et la datation le refusera par `VAULT_STORAGE_CREATION_NON_CONFIRMEE`. On ne le
@@ -471,6 +357,33 @@ async function verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, o
     };
   } finally {
     await backend.close();
+  }
+}
+
+/**
+ * OUVRE le volume NEUF, sous une clé effacée QUOI QU'IL ARRIVE.
+ *
+ * Elle ne l'était que sur le chemin du succès, si bien qu'un `VAULT_STORAGE_BUSY` laissait ses
+ * octets en clair dans le tas du Worker : c'est le constat 5 de la revue de la PR #167, dont la
+ * correction manquait ici (constat 9 de la revue de la PR #171).
+ */
+async function ouvrirLeVolumeNeuf({ ouvrir, cleDeVolume, nom, octets }) {
+  const cle = await cleDeVolume();
+  try {
+    return await ouvrir({
+      name: nom,
+      size: octets,
+      cle,
+      // Le volume NAÎT sous l'identité du COFFRE, celle que l'enveloppe authentifie (#207,
+      // ADR 0039) : son archive peut ainsi emporter la page de récupération qui l'ouvre ailleurs.
+      identifiantVolume: IDENTIFIANT_DU_COFFRE,
+      transactionnel: false,
+      // Ce versement sera DATÉ : `daterLaCreation` est sa clôture, et une racine écrite à la
+      // fermeture lui ferait trouver un journal « en service » (#182, T2b).
+      clotureParDatation: true,
+    });
+  } finally {
+    cle.fill(0);
   }
 }
 

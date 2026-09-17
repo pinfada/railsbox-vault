@@ -103,7 +103,7 @@ export async function reprendreSiSignatureConfirmee({
   }
   const signature = await signatureDInstallationInterrompue({
     nom,
-    octetsAnnonces: descripteur.disque.octets,
+    octetsAnnonces: descripteur.graine.disqueOctets,
     observer,
     openHandle,
   });

@@ -27,20 +27,48 @@ const empreinte = (index) =>
     .slice(0, 64)
     .replace(/[^0-9a-f]/g, "a");
 
-const artefacts = ARTEFACTS_ATTENDUS.map((name, index) => ({
-  name,
-  role: "essai",
-  byteSize: (index + 1) * 1024,
-  sha256: empreinte(index + 1),
-  license: "MIT",
-  origin: "construction locale",
-}));
+/** Le contrat du paquet applicatif, tel que `npm run app:paquet` le dépose (#236). */
+const paquet = {
+  contractVersion: 1,
+  generatedAt: "2026-09-17T12:00:00.000Z",
+  application: {
+    id: invariant.application.id,
+    version: invariant.application.version,
+    schema: "20260815120000",
+  },
+  image: {
+    name: "railsbox-vault-reference-1.0.0-0123abcd.ext4",
+    byteSize: 147849216,
+    sha256: "a".repeat(64),
+  },
+  graine: {
+    name: "railsbox-vault-reference-1.0.0-graine-89abcdef.ext4",
+    byteSize: 536870912,
+    sha256: "b".repeat(64),
+    disqueOctets: 536870912,
+  },
+  exigences: { ruby: "3.3.12", rails: "8.1.3.1", debianSuite: "bookworm" },
+  secretKeyBase: { derivation: "chaîne publique" },
+  licence: "MIT (RailsBox Vault)",
+};
+
+const artefacts = [...ARTEFACTS_ATTENDUS, paquet.image.name, paquet.graine.name].map(
+  (name, index) => ({
+    name,
+    role: "essai",
+    byteSize: (index + 1) * 1024,
+    sha256: empreinte(index + 1),
+    license: "MIT",
+    origin: "construction locale",
+  }),
+);
 
 const manifesteDEssai = () =>
   construireManifeste({
     sources,
     artefacts,
     invariant,
+    paquet,
     rails: "8.1.3.1",
     environnement: { os: "linux", node: "22.0.0", docker: "29.0.0" },
     genereLe: "2026-08-23T12:00:00.000Z",
@@ -73,6 +101,7 @@ test("les artefacts sont ordonnés par nom, quel que soit l'ordre de production"
     sources,
     artefacts: [...artefacts].reverse(),
     invariant,
+    paquet,
     rails: "8.1.3.1",
     environnement: {},
     genereLe: "2026-08-23T12:00:00.000Z",
@@ -80,7 +109,9 @@ test("les artefacts sont ordonnés par nom, quel que soit l'ordre de production"
 
   assert.deepEqual(
     manifeste.artifacts.map((artefact) => artefact.name),
-    [...ARTEFACTS_ATTENDUS].sort((gauche, droite) => gauche.localeCompare(droite)),
+    artefacts
+      .map((artefact) => artefact.name)
+      .sort((gauche, droite) => gauche.localeCompare(droite)),
   );
 });
 
@@ -90,8 +121,11 @@ test("le disque applicatif est un ext4 journalisé, monté avec barrières, et s
   // l'allocation suivante reprend un inode déjà utilisé (#209, EIO mesuré sous v86). Le journal
   // valide ces métadonnées à chaque barrière.
   assert.equal(sources.disk.appDiskFilesystem, "ext4");
-  assert.ok(ARTEFACTS_ATTENDUS.includes(`reference-app.${sources.disk.appDiskFilesystem}`));
-  assert.equal(manifesteDEssai().boot.hdb, `reference-app.${sources.disk.appDiskFilesystem}`);
+  // Depuis #236, le disque de données naît d'une GRAINE : c'est elle qui porte le journal, et c'est
+  // elle que le manifeste cite. Le PAQUET, lui, est éphémère et n'en a pas (ADR 0041).
+  assert.equal(manifesteDEssai().boot.graine, paquet.graine.name);
+  assert.equal(manifesteDEssai().boot.paquet, paquet.image.name);
+  assert.equal(manifesteDEssai().donnees.disqueOctets, paquet.graine.disqueOctets);
 
   const init = readFileSync(
     join(racineDepot, "tools", "build-reference-image", "guest", "guest-init.sh"),
@@ -134,7 +168,7 @@ test("l'état du disque applicatif est observable à chaque boot (revue #211, co
 test("un artefact attendu manquant est refusé", () => {
   const manifeste = manifesteDEssai();
   manifeste.artifacts = manifeste.artifacts.filter(
-    (artefact) => artefact.name !== "reference-app.ext4",
+    (artefact) => artefact.name !== "reference-rootfs.ext4",
   );
   manifeste.totals.byteSize = manifeste.artifacts.reduce((somme, a) => somme + a.byteSize, 0);
 
@@ -174,7 +208,7 @@ test("la comparaison au disque nomme l'artefact absent et l'empreinte divergente
     ]),
   );
   observes.delete("seabios.bin");
-  observes.set("reference-app.ext4", { byteSize: 1, sha256: empreinte(9) });
+  observes.set(paquet.image.name, { byteSize: 1, sha256: empreinte(9) });
 
   const differences = comparerArtefacts(manifeste, observes);
   assert.deepEqual(differences.map((difference) => difference.code).sort(), [
@@ -194,4 +228,43 @@ test("une comparaison sans écart ne rend rien", () => {
   );
 
   assert.deepEqual(comparerArtefacts(manifeste, observes), []);
+});
+
+test("le guest monte le PAQUET sur /app et les DONNÉES sur /app/var (#236)", () => {
+  // La séparation du code et des données se joue dans deux lignes de l'init, et elle est la raison
+  // d'être de la tranche : /dev/sda2 porte le code, éphémère ; /dev/sdb porte les données, durables.
+  const init = readFileSync(
+    join(racineDepot, "tools", "build-reference-image", "guest", "guest-init.sh"),
+    "utf8",
+  );
+  const lignes = init.split("\n");
+  const rang = (motif) => lignes.findIndex((ligne) => motif.test(ligne));
+
+  const paquet = lignes.filter((ligne) => /^\s*mount\b.*\/dev\/sda2/.test(ligne));
+  assert.equal(paquet.length, 1, "un seul montage du paquet applicatif");
+  assert.match(paquet[0], /\/app\b/);
+  assert.doesNotMatch(paquet[0], /\/app\/var/);
+
+  const donnees = lignes.filter((ligne) => /^\s*mount\b.*\/dev\/sdb/.test(ligne));
+  assert.equal(donnees.length, 1, "un seul montage du disque de données");
+  assert.match(donnees[0], /\/app\/var\b/);
+  assert.match(donnees[0], /barrier=1,data=ordered,errors=remount-ro/);
+
+  assert.ok(
+    rang(/^\s*mount\b.*\/dev\/sda2/) < rang(/^\s*mount\b.*\/dev\/sdb/),
+    "le paquet est monté AVANT les données : /app/var n'existe pas sans lui",
+  );
+  // Les journaux sur tmpfs : la marge du paquet est réduite, et chaque bloc écrit entre dans le
+  // delta en RAM, donc dans l'instantané.
+  assert.match(init, /mount -t tmpfs tmpfs \/app\/log/);
+  // Le caractère ÉPHÉMÈRE des écritures hors de /app/var est dit DANS le script (exigence de
+  // compatibilité du paquet, #210, SECURITY.md).
+  assert.match(init, /ephemeres|éphémères/i);
+});
+
+test("la ligne de commande du noyau désigne la PREMIÈRE PARTITION, pas le disque nu (#236)", () => {
+  // Le disque système est partitionné depuis #236 : `root=/dev/sda` monterait la table de
+  // partitions comme si elle était un système de fichiers, et le noyau paniquerait.
+  assert.match(sources.guest.cmdline, /\broot=\/dev\/sda1\b/);
+  assert.equal(manifesteDEssai().boot.cmdline, sources.guest.cmdline);
 });

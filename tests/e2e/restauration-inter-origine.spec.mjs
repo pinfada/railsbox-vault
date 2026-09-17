@@ -33,6 +33,7 @@ import { tailleDeFichier } from "../../src/vm/volume-chiffre-format.mjs";
 
 import { E2E_ORIGIN_A, E2E_ORIGIN_B } from "../../playwright.e2e.config.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
+import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -136,15 +137,15 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));
   const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
   const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
-  const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
-  const appDiskBytes = disqueApp.byteSize;
+  const graine = graineDuManifeste(manifeste);
+  const appDiskBytes = graine.appDiskBytes;
   // Taille du FICHIER que ce volume occupe au format courant : c'est elle que l'archive porte, et
   // c'est elle que la cible reçoit (ADR 0016, décision 7).
   const fichierAttendu = tailleDeFichier({
     formatVersion: MANIFEST_FORMAT_VERSION,
     tailleLogique: appDiskBytes,
   });
-  const appDiskUrl = `/artifacts/reference-image/${manifeste.boot.hdb}`;
+  const appDiskUrl = graine.appDiskUrl;
 
   const descripteurManifeste = {
     // `minWriter` est exigé par le format v2 (#13) : le volume DÉCLARE le plus ancien runtime
@@ -161,7 +162,7 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
     vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
     kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
     initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
-    rootfs: `/artifacts/reference-image/${manifeste.boot.hda}`,
+    disqueSysteme: disqueSystemeDuManifeste(manifeste),
   };
   const configBoot = {
     cmdline: manifeste.boot.cmdline,
@@ -371,7 +372,7 @@ test("un volume exporté depuis une origine est restauré, booté à froid et v�
   }
   // La donnée retrouvée sur B ne traverse pas le réseau : le disque applicatif n'est jamais
   // retéléchargé, et toute requête de la page reste sur l'origine B.
-  expect(session.requetes.some((u) => u.includes(manifeste.boot.hdb))).toBe(false);
+  expect(session.requetes.some((u) => u.includes(manifeste.boot.graine))).toBe(false);
   for (const url of session.requetes) {
     expect(url.startsWith(E2E_ORIGIN_B), `requête inattendue hors de l'origine B : ${url}`).toBe(
       true,

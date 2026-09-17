@@ -154,16 +154,30 @@ test("un handle qui refuse de se FERMER ne transforme pas le constat en refus", 
 /** Un descripteur minimal, de la forme que `tools/build-reference-image/manifest.mjs` écrit. */
 function descripteur(champs = {}) {
   return {
-    descripteurVersion: 1,
-    application: { id: "railsbox-vault-reference", version: "1.0.0" },
+    descripteurVersion: 2,
+    application: { id: "railsbox-vault-reference", version: "1.0.0", schema: "20260815120000" },
     runtime: { version: "0.1.0" },
-    disque: { nom: "reference-app.ext4", octets: 524288000 },
+    rootfs: {
+      nom: "reference-rootfs.ext4",
+      octets: 403701760,
+      sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    },
+    paquet: {
+      nom: "railsbox-vault-reference-1.0.0-0123abcd.ext4",
+      octets: 147849216,
+      sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    },
+    graine: {
+      nom: "reference-graine.ext4",
+      octets: 524288000,
+      sha256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      disqueOctets: 524288000,
+    },
     boot: {
-      cmdline: "root=/dev/sda rw console=ttyS0",
+      cmdline: "root=/dev/sda1 rw console=ttyS0",
       memoireOctets: 536870912,
       kernel: "reference-rootfs-vmlinuz",
       initrd: "reference-rootfs-initrd",
-      rootfs: "reference-rootfs.ext4",
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
     },
@@ -204,7 +218,7 @@ test("une origine SANS application n'est pas une panne : elle rend son motif", a
 });
 
 test("un descripteur d'une AUTRE version est refusé, jamais deviné", async () => {
-  const { recuperer } = serveur({ corps: descripteur({ descripteurVersion: 2 }) });
+  const { recuperer } = serveur({ corps: descripteur({ descripteurVersion: 1 }) });
   const lu = await lireLeDescripteur({ recuperer });
   assert.equal(lu.present, false);
   assert.match(lu.motif, /version/);
@@ -248,10 +262,17 @@ test("les adresses du runtime mêlent l'épinglage v86 et les artefacts de l'ima
   // Les deux artefacts v86 sont adressés PAR EMPREINTE (#123) : leur URL nomme ce qu'ils sont.
   assert.match(adresses.lib, /^\/vendor\/v86\/artefacts\//);
   assert.match(adresses.wasm, /^\/vendor\/v86\/artefacts\//);
-  // Les cinq autres viennent de l'image de référence, qui a son propre manifeste et son propre
+  // Les autres viennent de l'image de référence, qui a son propre manifeste et son propre
   // épinglage : les servir sous le préfixe v86 les ferait vérifier contre le mauvais manifeste.
   assert.equal(adresses.kernel, "/artifacts/reference-image/reference-rootfs-vmlinuz");
-  assert.equal(adresses.rootfs, "/artifacts/reference-image/reference-rootfs.ext4");
+  // Les DEUX morceaux du disque système viennent avec leur EMPREINTE : c'est elle que l'acquisition
+  // confronte aux octets reçus avant de composer `hda` (#236).
+  assert.equal(
+    adresses.disqueSysteme.rootfs.url,
+    "/artifacts/reference-image/reference-rootfs.ext4",
+  );
+  assert.equal(adresses.disqueSysteme.rootfs.sha256, descripteur().rootfs.sha256);
+  assert.equal(adresses.disqueSysteme.paquet.octets, descripteur().paquet.octets);
 });
 
 // --- La FORME du descripteur, champ par champ -----------------------------------------------------
@@ -267,9 +288,11 @@ test("chaque champ hors forme est refusé, et le refus NOMME le champ", () => {
   const cas = [
     [{ prefixeDesArtefacts: "https://ailleurs.test/" }, /préfixe/],
     [{ prefixeDesArtefacts: "/artifacts/../etc/" }, /préfixe/],
-    [{ disque: { nom: "../../etc/passwd", octets: 1024 } }, /nom de disque/],
-    [{ disque: { nom: "app.ext4", octets: 0 } }, /taille/],
-    [{ disque: { nom: "app.ext4", octets: 1e13 } }, /taille/],
+    [{ graine: { nom: "../../etc/passwd", octets: 1024 } }, /nom d'artefact refusé : graine/],
+    [{ paquet: { nom: "app.ext4", octets: 0, sha256: "a".repeat(64) } }, /taille hors bornes/],
+    [{ rootfs: { nom: "app.ext4", octets: 1e13, sha256: "a".repeat(64) } }, /taille hors bornes/],
+    [{ paquet: { nom: "app.ext4", octets: 1024, sha256: "trop court" } }, /empreinte/],
+    [{ graine: { nom: "g.ext4", octets: 1024, sha256: "a".repeat(64) } }, /disque de données/],
     [{ boot: { ...descripteur().boot, memoireOctets: -1 } }, /mémoire/],
     [{ boot: { ...descripteur().boot, cmdline: "root=/dev/sda `rm -rf /`" } }, /ligne de commande/],
     [{ boot: { ...descripteur().boot, kernel: "../vmlinuz" } }, /kernel/],
@@ -293,7 +316,7 @@ function manifesteValideFeint() {
     createManifest({
       runtime: descripteurManifeste.runtime,
       app: descripteurManifeste.app,
-      volumeSize: descripteur().disque.octets,
+      volumeSize: descripteur().graine.disqueOctets,
       identity: { algorithm: "sha-256", digest: null },
       volume: { id: "0011223344556677889900aabbccddee", algorithm: VOLUME_ALGORITHM },
     }),
@@ -308,7 +331,7 @@ function supportDInstallation({
   ecrits = null,
 } = {}) {
   const gestes = [];
-  const octets = descripteur().disque.octets;
+  const octets = descripteur().graine.disqueOctets;
   return {
     gestes,
     primitives: {
@@ -503,7 +526,14 @@ function secteurDe(motif) {
 
 /** Le descripteur de ces épreuves : un disque assez petit pour tenir dans un double. */
 function descripteurDepreuve() {
-  return descripteur({ disque: { nom: "app.ext4", octets: TAILLE_DEPREUVE } });
+  return descripteur({
+    graine: {
+      nom: "graine.ext4",
+      octets: TAILLE_DEPREUVE,
+      sha256: "c".repeat(64),
+      disqueOctets: TAILLE_DEPREUVE,
+    },
+  });
 }
 
 /** Un manifeste VALIDE pour `descripteurDepreuve()`, sérialisé comme `installerSiNecessaire` l'écrirait. */

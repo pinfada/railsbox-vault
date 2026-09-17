@@ -114,13 +114,15 @@ export const SOURCES_COQUILLE = Object.freeze([
     optionnel: true,
     role:
       "DESCRIPTEUR de l'application servie par cette origine (#163, ADR 0030). Sans lui, la " +
-      "coquille publiée reçoit un 404 et se déclare `applicationAbsente` : elle ne saurait ni la " +
-      "taille du disque à installer, ni la ligne de commande du guest, ni l'identité que le " +
-      "manifeste du volume doit déclarer. Il est OPTIONNEL comme les artefacts v86 — non " +
+      "coquille publiée reçoit un 404 et se déclare `applicationAbsente` : elle ne saurait ni quels " +
+      "morceaux composent le disque système, ni leur empreinte, ni la graine à verser, ni la ligne " +
+      "de commande du guest, ni l'identité que le manifeste du volume doit déclarer (v2 depuis " +
+      "#236, ADR 0041). Il est OPTIONNEL comme les artefacts v86 — non " +
       "versionné, écrit par `npm run image:build` — et son absence rend l'arbre INCOMPLET, ce que " +
       "l'inventaire déclare au lieu de le taire. Il ne porte que du public : des noms " +
       "d'artefacts, des tailles et une ligne de commande, tous déjà dans le manifeste d'image. " +
-      "Ce qu'il NOMME — les artefacts de l'image de référence, 926 Mio — n'est PAS publié ici, et " +
+      "Ce qu'il NOMME — les artefacts de l'image de référence, plus d'un gibioctet — n'est PAS " +
+      "publié ici, et " +
       "c'est une décision : la chaîne de publication recopie et hache tout ce qu'elle émet, et un " +
       "arbre d'un gibioctet ferait passer `npm run check` de deux minutes à des dizaines pour " +
       "quiconque a construit l'image. Déposer les artefacts sur l'origine de confiance est une " +

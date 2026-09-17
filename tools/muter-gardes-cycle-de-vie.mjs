@@ -38,6 +38,8 @@ const MORT = "src/coquille/mort-du-worker.mjs";
 const CAPACITES = "src/coquille/capacites-de-la-coquille.mjs";
 const EXCLUSIVITE = "src/coquille/exclusivite-du-volume.mjs";
 const APPLICATION = "src/coquille/application-de-reference.mjs";
+/** La LECTURE et la FORME du descripteur, scindées de `APPLICATION` par #236 (ADR 0041). */
+const DESCRIPTEUR = "src/coquille/descripteur-applicatif.mjs";
 
 const EPREUVE_CYCLE = "tests/unit/coquille-cycle-de-vie.test.mjs";
 const EPREUVE_APPLICATION = "tests/unit/coquille-application.test.mjs";
@@ -210,7 +212,7 @@ export const MUTATIONS = Object.freeze([
   {
     nom: "un descripteur d'une AUTRE version est refusé, jamais deviné",
     garde: "formeDuDescripteur — le contrôle de version",
-    fichier: APPLICATION,
+    fichier: DESCRIPTEUR,
     avant:
       "  if (descripteur.descripteurVersion !== DESCRIPTEUR_VERSION_ATTENDUE) {\n" +
       "    return refus(`version de descripteur inconnue : ${String(descripteur.descripteurVersion)}`);\n" +
@@ -221,7 +223,7 @@ export const MUTATIONS = Object.freeze([
   {
     nom: "une origine sans application rend son motif, et non un descripteur vide",
     garde: "lireLeDescripteur — le contrôle du statut HTTP",
-    fichier: APPLICATION,
+    fichier: DESCRIPTEUR,
     avant:
       "  if (!reponse.ok) {\n" +
       "    return { present: false, motif: `aucun descripteur servi (${reponse.status})` };\n" +

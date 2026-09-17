@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { PLAFOND_CHARGE_OCTETS, TAMPON_RELECTURE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
+import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -90,7 +91,7 @@ test("une coupure pendant une mutation Rails laisse un volume qui reboote et dit
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));
   const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
   const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
-  const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
+  const graine = graineDuManifeste(manifeste);
 
   const runtime = {
     lib: ADRESSES_V86.get("libv86.mjs"),
@@ -99,7 +100,7 @@ test("une coupure pendant une mutation Rails laisse un volume qui reboote et dit
     vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
     kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
     initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
-    rootfs: `/artifacts/reference-image/${manifeste.boot.hda}`,
+    disqueSysteme: disqueSystemeDuManifeste(manifeste),
   };
   const descripteurManifeste = {
     runtime: { version: paquet.version, artifact: null, minWriter: paquet.version },
@@ -132,12 +133,12 @@ test("une coupure pendant une mutation Rails laisse un volume qui reboote et dit
   const prepare = await courir(page, {
     phase: "prepare",
     volume: VOLUME,
-    appDiskBytes: disqueApp.byteSize,
-    appDiskUrl: `/artifacts/reference-image/${manifeste.boot.hdb}`,
+    appDiskBytes: graine.appDiskBytes,
+    appDiskUrl: graine.appDiskUrl,
     manifest: descripteurManifeste,
   });
   await page.close();
-  expect(prepare.bytesWritten).toBe(disqueApp.byteSize);
+  expect(prepare.bytesWritten).toBe(graine.appDiskBytes);
 
   // 2. BOOT COUPÉ. La phase annonce l'instant où le guest a écrit ET acquitté une barrière ; la page
   //    est fermée là, ce qui tue le Worker avec son handle exclusif — sans `close()`, sans barrière.
@@ -165,7 +166,7 @@ test("une coupure pendant une mutation Rails laisse un volume qui reboote et dit
   const constat = await courir(page, {
     phase: "inspect-generation",
     volume: VOLUME,
-    tailleVolume: disqueApp.byteSize,
+    tailleVolume: graine.appDiskBytes,
   });
   await page.close();
   await testInfo.attach("journal-apres-coupure.json", {

@@ -34,6 +34,7 @@ import { TYPES_KEK } from "../../src/vm/enveloppe/identite-enveloppe.mjs";
 
 import { E2E_ORIGIN_A, E2E_ORIGIN_B } from "../../playwright.e2e.config.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
+import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ADRESSES_V86 = adressesServiesV86();
@@ -113,13 +114,13 @@ test("un volume chiffré exporté avec son moyen de récupération s'OUVRE PAR L
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));
   const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
   const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
-  const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
-  const appDiskBytes = disqueApp.byteSize;
+  const graine = graineDuManifeste(manifeste);
+  const appDiskBytes = graine.appDiskBytes;
   const fichierAttendu = tailleDeFichier({
     formatVersion: MANIFEST_FORMAT_VERSION,
     tailleLogique: appDiskBytes,
   });
-  const appDiskUrl = `/artifacts/reference-image/${manifeste.boot.hdb}`;
+  const appDiskUrl = graine.appDiskUrl;
 
   const descripteurManifeste = {
     runtime: { version: paquet.version, artifact: null, minWriter: paquet.version },
@@ -136,7 +137,7 @@ test("un volume chiffré exporté avec son moyen de récupération s'OUVRE PAR L
       vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
       kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
       initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
-      rootfs: `/artifacts/reference-image/${manifeste.boot.hda}`,
+      disqueSysteme: disqueSystemeDuManifeste(manifeste),
     },
     manifest: descripteurManifeste,
     expected: { recordId: contrat.record.id, attachmentSha256: contrat.attachment.sha256 },

@@ -50,6 +50,10 @@ import { chromium } from "@playwright/test";
 
 import { relever } from "./memoire-processus.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "./v86-paths.mjs";
+import {
+  disqueSystemeDuManifeste,
+  graineDuManifeste,
+} from "../tests/support/image-de-reference.mjs";
 
 const RACINE = resolve(import.meta.dirname, "..");
 
@@ -280,11 +284,11 @@ function configurationDeBoot() {
     runtime: { version: paquet.version, artifact: null, minWriter: paquet.version },
     app: { id: contrat.application.id, version: contrat.application.version },
   };
-  const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
+  const graine = graineDuManifeste(manifeste);
   return {
     manifeste,
-    appDiskBytes: disqueApp.byteSize,
-    appDiskUrl: `/artifacts/reference-image/${manifeste.boot.hdb}`,
+    appDiskBytes: graine.appDiskBytes,
+    appDiskUrl: graine.appDiskUrl,
     manifest,
     configBoot: {
       volume: VOLUME,
@@ -297,7 +301,7 @@ function configurationDeBoot() {
         vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
         kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
         initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
-        rootfs: `/artifacts/reference-image/${manifeste.boot.hda}`,
+        disqueSysteme: disqueSystemeDuManifeste(manifeste),
       },
       manifest,
       expected: { recordId: contrat.record.id, attachmentSha256: contrat.attachment.sha256 },

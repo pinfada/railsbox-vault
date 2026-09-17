@@ -575,6 +575,28 @@ sont des mesures prises sur une machine qui n'est pas l'environnement de référ
 moteur. Firefox et WebKit ne sont pas mesurés, et l'effet du scellement sur le rythme de l'émulateur
 ne l'est pas non plus — `test:rythme` ne saurait pas plus conclure ici qu'il ne le savait pour #16.
 
+### Ce que le PAQUET APPLICATIF change à l'installation (#236, ADR 0041)
+
+Le disque unique de 512 Mio qui portait le code ET les données a été scindé le 17/09/2026 : le code
+est un PAQUET servi à part (partition 2 du disque système), et le volume du coffre reçoit une GRAINE
+— la base migrée et vide.
+
+| Grandeur, mesurée le 17/09/2026                          |         Avant |         Après | Ce que le chiffre couvre                                           |
+| -------------------------------------------------------- | ------------: | ------------: | ------------------------------------------------------------------ |
+| Contenu **non nul** de ce que l'installation verse       | **117,7 Mio** |   **0,4 Mio** | blocs de 4 Kio non nuls (`reference-app.ext4` → graine)            |
+| Octets réellement **écrits** dans le volume au versement |     512,0 Mio |   **0,4 Mio** | versement creux : un volume neuf est scellé à zéro à sa naissance  |
+| Taille du **paquet** (code, bundle i386, cache Bootsnap) |             — | **137,0 Mio** | ext4 sans journal, marge +5 % + 16 Mio, sur 116 Mio occupés        |
+| Taille du **disque système** téléchargé pour booter      |     385,0 Mio | **522,0 Mio** | rootfs (385) + paquet (137), chacun sous son adresse par empreinte |
+
+**Le versement n'écrit plus que ce qui n'est pas nul.** Les 18,9 s mesurées en #101 couvraient 512
+Mio de chiffrement et d'écriture ; il en reste 0,4 Mio. Le **scellement initial** du volume (19,1 s)
+ne change pas : il appartient au format, pas au contenu, et c'est lui qui domine désormais
+l'installation.
+
+**Ce que cela coûte en mémoire** : le paquet s'ajoute au rootfs, tous deux en RAM pour la session
+(le disque système est un tampon différentiel, ADR 0024). Le RSS pendant le boot est relevé par
+`node tools/mesurer-memoire.mjs` ; la cible du MVP reste 1,2 Gio (#67).
+
 ## Le budget de récupération est mesuré, et le plafond de charge en découle (#91)
 
 Le budget « dernière génération valide trouvée en ≤ 60 s hors temps de boot VM » existait depuis le

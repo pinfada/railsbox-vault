@@ -2,3 +2,4 @@
 # `node_modules/` compris — serait envoyé au démon Docker.
 *
 !tools/build-reference-image/fabriquer-systeme-de-fichiers.sh
+!tools/build-reference-image/fabriquer-paquet-et-graine.sh

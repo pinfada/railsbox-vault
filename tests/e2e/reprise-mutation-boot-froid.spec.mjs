@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { PLAFOND_CHARGE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
+import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -118,9 +119,9 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
 
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));
   const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
-  const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
-  const appDiskBytes = disqueApp.byteSize;
-  const appDiskUrl = `/artifacts/reference-image/${manifeste.boot.hdb}`;
+  const graine = graineDuManifeste(manifeste);
+  const appDiskBytes = graine.appDiskBytes;
+  const appDiskUrl = graine.appDiskUrl;
 
   const runtime = {
     lib: ADRESSES_V86.get("libv86.mjs"),
@@ -129,7 +130,7 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
     vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
     kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
     initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
-    rootfs: `/artifacts/reference-image/${manifeste.boot.hda}`,
+    disqueSysteme: disqueSystemeDuManifeste(manifeste),
   };
   // Identités portées par le manifeste du volume (#10). Depuis #12, un volume ne s'ouvre en écriture
   // que s'il porte un manifeste compatible (`SEC-UPDATE-001`) : la préparation l'inscrit, et chaque
@@ -237,7 +238,7 @@ test("une mutation Rails et sa pièce jointe survivent à la fermeture complète
 
     // Preuve d'absence de RÉSEAU dans la reprise : le disque applicatif n'est jamais retéléchargé,
     // et toute requête de la page reste sur la coquille locale (l'application installée).
-    expect(session.requetes.some((u) => u.includes(manifeste.boot.hdb))).toBe(false);
+    expect(session.requetes.some((u) => u.includes(manifeste.boot.graine))).toBe(false);
     for (const url of session.requetes) {
       expect(url.startsWith(baseURL), `requête inattendue hors coquille : ${url}`).toBe(true);
     }

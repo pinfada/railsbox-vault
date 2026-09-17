@@ -176,6 +176,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0038 — servir l'application dans le cadre : un Service Worker sur l'origine applicative, un canal de relais, et une session Rails qui ne quitte jamais le Worker de confiance](docs/decisions/0038-servir-l-application-dans-le-cadre.md)
 - [ADR 0039 — sauvegarder, restaurer et révoquer depuis la coquille : un coffre, une identité](docs/decisions/0039-sauvegarder-restaurer-revoquer-depuis-la-coquille.md)
 - [ADR 0040 — le parcours est un ordre, pas une décision : neuf étapes, un écran à la fois, des conduites pour une personne](docs/decisions/0040-le-parcours-est-un-ordre-pas-une-decision.md)
+- [ADR 0041 — le paquet applicatif : partition 2 d un `hda` composé, données sur hdb, descripteur v2](docs/decisions/0041-le-paquet-applicatif-partition-2-d-un-hda-compose.md)
 
 ## Licence
 

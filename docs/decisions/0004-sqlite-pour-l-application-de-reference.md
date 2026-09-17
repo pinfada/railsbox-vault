@@ -174,6 +174,21 @@ ici.
 **Limite** : cette garantie est une discipline de l'APPLICATION de référence. Une application tierce
 (P3) qui écrit hors de SQLite et hors d'ActiveStorage sans `fsync` n'est pas couverte (#210).
 
+## Note datée du 17/09/2026 — le disque applicatif unique n'existe plus (#236, ADR 0041)
+
+Cette décision décrivait un disque `hdb` qui portait à la fois le CODE de l'application et ses
+DONNÉES (`reference-app.ext4`). Il a été scindé en deux par
+l'[ADR 0041](0041-le-paquet-applicatif-partition-2-d-un-hda-compose.md) :
+
+- le **code** devient le PAQUET, une image ext4 sans journal montée sur `/app` depuis la partition 2
+  du disque système composé — écritures éphémères, perdues au boot à froid ;
+- les **données** restent sur `hdb`, montées sur `/app/var`, avec les options de durabilité que la
+  note du 13/09/2026 ci-dessus fixe (#209), **inchangées**.
+
+Ce que cette décision dit de SQLite, des deux pragmas et du chemin de la base ne change pas : seul
+le disque qui porte `var/db` a cessé de porter aussi le code. La base naît désormais dans une GRAINE
+migrée, fabriquée avec le paquet et versée à l'installation.
+
 ## Options comparées
 
 | Critère                            | **SQLite (retenue)**                                        | PostgreSQL dans la VM                                                                       | Aucune base (fichier brut)                           |

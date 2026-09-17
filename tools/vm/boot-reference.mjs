@@ -12,6 +12,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
+import { composerLeDisqueSysteme } from "./composer-hda.mjs";
 import {
   construireTramesRequete,
   creerAssembleurLignes,
@@ -94,6 +95,13 @@ export async function demarrerVm({
   const { V86 } = await import("v86");
   const chemin = (nom) => join(dossierArtefacts, nom);
   const disque = (nom) => ({ url: chemin(nom), size: statSync(chemin(nom)).size, async: true });
+  // `hda` est COMPOSÉ depuis #236 : table de partitions, rootfs en partition 1, paquet applicatif
+  // en partition 2. Le navigateur le compose en mémoire ; ici, il faut un fichier — v86 sert ses
+  // disques par URL sous Node. La géométrie vient du MÊME module pur des deux côtés.
+  const compose = await composerLeDisqueSysteme({ manifeste, dossierArtefacts });
+  // Le disque de DONNÉES : la graine, telle quelle. Sous Node, elle n'est pas versée dans un volume
+  // chiffré — le harnais boote l'image, il ne joue pas le coffre.
+  const donnees = disque(manifeste.boot.graine);
 
   const emulateur = new V86({
     wasm_path: join(RACINE_DEPOT, "node_modules", "v86", "build", "v86.wasm"),
@@ -104,8 +112,8 @@ export async function demarrerVm({
     bzimage: { url: chemin(manifeste.boot.kernel) },
     initrd: { url: chemin(manifeste.boot.initrd) },
     cmdline: manifeste.boot.cmdline,
-    hda: disque(manifeste.boot.hda),
-    hdb: disque(manifeste.boot.hdb),
+    hda: { url: compose.chemin, size: compose.octets, async: true },
+    hdb: donnees,
     autostart,
     disable_speaker: true,
     disable_keyboard: true,

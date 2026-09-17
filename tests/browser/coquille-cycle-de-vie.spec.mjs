@@ -18,6 +18,7 @@
 // mesuré ici est l'ORDRE — et l'ordre se prouve par le refus de son inverse, qui ne demande aucun
 // artefact.
 
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { expect, test } from "../support/test.mjs";
@@ -806,16 +807,22 @@ test("un descripteur MALFORMÉ est refusé sur sa forme, et le motif nomme le ch
     status: 200,
     contentType: "application/json",
     body: JSON.stringify({
-      descripteurVersion: 1,
-      application: { id: "railsbox-vault-reference", version: "1.0.0" },
+      descripteurVersion: 2,
+      application: { id: "railsbox-vault-reference", version: "1.0.0", schema: "20260101000002" },
       runtime: { version: "0.1.0" },
-      disque: { nom: "reference-app.ext4", octets: 536870912 },
+      rootfs: { nom: "reference-rootfs.ext4", octets: 403701760, sha256: "a".repeat(64) },
+      paquet: { nom: "paquet.ext4", octets: 147849216, sha256: "b".repeat(64) },
+      graine: {
+        nom: "graine.ext4",
+        octets: 536870912,
+        sha256: "c".repeat(64),
+        disqueOctets: 536870912,
+      },
       boot: {
-        cmdline: "root=/dev/sda rw",
+        cmdline: "root=/dev/sda1 rw",
         memoireOctets: 536870912,
         kernel: "reference-rootfs-vmlinuz",
         initrd: "reference-rootfs-initrd",
-        rootfs: "reference-rootfs.ext4",
         bios: "seabios.bin",
         vgaBios: "vgabios.bin",
       },
@@ -844,7 +851,7 @@ test("un descripteur MALFORMÉ est refusé sur sa forme, et le motif nomme le ch
 async function servirLeDisque(page, descripteur, octets) {
   await page
     .context()
-    .route(`**${descripteur.prefixeDesArtefacts}${descripteur.disque.nom}`, (route) =>
+    .route(`**${descripteur.prefixeDesArtefacts}${descripteur.graine.nom}`, (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/octet-stream",
@@ -856,16 +863,22 @@ async function servirLeDisque(page, descripteur, octets) {
 /** Un descripteur minimal et VALIDE, de la forme que ces épreuves versent. */
 function descripteurDeReprise(octets) {
   return {
-    descripteurVersion: 1,
-    application: { id: "reprise-installation-test", version: "1.0.0" },
+    descripteurVersion: 2,
+    application: { id: "reprise-installation-test", version: "1.0.0", schema: "20260101000002" },
     runtime: { version: "0.1.0" },
-    disque: { nom: "disque-de-reprise.ext4", octets },
+    rootfs: { nom: "r.ext4", octets: 4096, sha256: "a".repeat(64) },
+    paquet: { nom: "p.ext4", octets: 4096, sha256: "b".repeat(64) },
+    graine: {
+      nom: "graine-de-reprise.ext4",
+      octets,
+      sha256: createHash("sha256").update(Buffer.alloc(octets, 0x42)).digest("hex"),
+      disqueOctets: octets,
+    },
     boot: {
-      cmdline: "root=/dev/sda rw",
+      cmdline: "root=/dev/sda1 rw",
       memoireOctets: 33554432,
       kernel: "k",
       initrd: "i",
-      rootfs: "r",
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
     },
