@@ -328,20 +328,7 @@ async function constaterLInstallation({ nom, octets, observer, openHandle, lireL
 async function verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, octets }) {
   const backend = await ouvrirLeVolumeNeuf({ ouvrir, cleDeVolume, nom, octets });
   try {
-    const verse = await verser(
-      backend,
-      `${descripteur.prefixeDesArtefacts}${descripteur.graine.nom}`,
-      {
-        // L'EMPREINTE de la graine est confrontée PENDANT le versement, sur les octets reçus : un
-        // écart refuse l'installation au lieu de sceller dans le coffre une base que l'origine n'a
-        // pas produite. Jusqu'à #236, l'empreinte du fichier écrit était rendue mais celle de la
-        // SOURCE n'était comparée à rien.
-        empreinteAttendue: descripteur.graine.sha256,
-        // Un volume neuf scellé se relit à ZÉRO (ADR 0041) : les blocs nuls de la graine n'ont donc
-        // pas à être écrits. Sur 512 Mio dont 118 utiles, c'est l'essentiel de l'installation.
-        sauterLesBlocsNuls: true,
-      },
-    );
+    const verse = await verserLaGraine(backend, descripteur, verser);
     // Un versement qui ne rend qu'un COMPTE n'atteste RIEN de ce qu'il a écrit : c'est le contrat
     // d'avant #181, et la datation le refusera par `VAULT_STORAGE_CREATION_NON_CONFIRMEE`. On ne le
     // rattrape pas ici — relire le fichier à sa place fabriquerait exactement l'attestation que ce
@@ -357,6 +344,36 @@ async function verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, o
     };
   } finally {
     await backend.close();
+  }
+}
+
+/**
+ * VERSE la graine, et TRADUIT l'échec du versement en refus TYPÉ.
+ *
+ * Le versement lève sur deux manques, et l'un est neuf (#236) : les octets reçus n'ont pas
+ * l'empreinte que l'origine déclare. Sans cette traduction, l'exception remonterait nue jusqu'au
+ * canal privilégié, qui la réduit à « démarrage refusé » sans code — la coquille dirait à la
+ * personne que quelque chose a échoué sans dire QUOI, là où l'installation d'une application absente
+ * ou altérée a déjà son code et sa conduite (`applicationAbsente`).
+ */
+async function verserLaGraine(backend, descripteur, verser) {
+  try {
+    return await verser(backend, `${descripteur.prefixeDesArtefacts}${descripteur.graine.nom}`, {
+      // L'EMPREINTE de la graine est confrontée PENDANT le versement, sur les octets reçus : un
+      // écart refuse l'installation au lieu de sceller dans le coffre une base que l'origine n'a
+      // pas produite. Jusqu'à #236, l'empreinte du fichier écrit était rendue mais celle de la
+      // SOURCE n'était comparée à rien.
+      empreinteAttendue: descripteur.graine.sha256,
+      // Un volume neuf scellé se relit à ZÉRO (ADR 0041) : les blocs nuls de la graine n'ont donc
+      // pas à être écrits. Sur 512 Mio dont 0,4 utile, c'est l'essentiel de l'installation.
+      sauterLesBlocsNuls: true,
+    });
+  } catch (erreur) {
+    if (erreur?.code !== undefined) throw erreur;
+    throw refus(
+      CODES_REFUS_COQUILLE.applicationAbsente,
+      `L'application n'a pas pu être installée : ${erreur.message}`,
+    );
   }
 }
 
