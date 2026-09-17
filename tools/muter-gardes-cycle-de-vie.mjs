@@ -302,13 +302,13 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "un versement TRONQUÉ ne produit pas un volume qui se croit complet",
-    garde: "installerSiNecessaire — la confrontation des octets écrits à la taille annoncée",
+    garde: "installerSiNecessaire — la confrontation des octets reçus à la taille annoncée",
     fichier: APPLICATION,
     avant:
-      "  if (verse.ecrits !== octets) {\n" +
+      "  if (verse.ecrits !== descripteur.graine.octets) {\n" +
       "    throw refus(\n" +
       "      CODES_REFUS_COQUILLE.applicationAbsente,\n" +
-      "      `Disque applicatif tronqué : ${verse.ecrits} octets écrits sur ${octets}.`,\n" +
+      "      `Graine tronquée : ${verse.ecrits} octets reçus sur ${descripteur.graine.octets}.`,\n" +
       "    );\n" +
       "  }\n",
     apres: "",
@@ -316,40 +316,16 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "la clé de volume ne survit pas à l'ouverture, même quand l'ouverture échoue",
-    garde: "verserLeDisque — le `finally` qui efface la clé",
+    garde: "ouvrirLeVolumeNeuf — le `finally` qui efface la clé",
     fichier: APPLICATION,
-    avant:
-      "  let backend;\n" +
-      "  try {\n" +
-      "    backend = await ouvrir({\n" +
-      "      name: nom,\n" +
-      "      size: octets,\n" +
-      "      cle,\n" +
-      "      // Le volume NAÎT sous l'identité du COFFRE, celle que l'enveloppe authentifie (#207,\n" +
-      "      // ADR 0039) : son archive peut ainsi emporter la page de récupération qui l'ouvre ailleurs.\n" +
-      "      identifiantVolume: IDENTIFIANT_DU_COFFRE,\n" +
-      "      transactionnel: false,\n" +
-      "      // Ce versement sera DATÉ : `daterLaCreation` est sa clôture, et une racine écrite à la\n" +
-      "      // fermeture lui ferait trouver un journal « en service » (#182, T2b).\n" +
-      "      clotureParDatation: true,\n" +
-      "    });\n" +
-      "  } finally {\n" +
-      "    cle.fill(0);\n" +
-      "  }\n",
-    apres:
-      "  const backend = await ouvrir({\n" +
-      "    name: nom,\n" +
-      "    size: octets,\n" +
-      "    cle,\n" +
-      "    transactionnel: false,\n" +
-      "    clotureParDatation: true,\n" +
-      "  });\n",
+    avant: "  } finally {\n    cle.fill(0);\n  }\n}\n\n/**\n * DATE la création",
+    apres: "  } finally {\n  }\n}\n\n/**\n * DATE la création",
     epreuves: [EPREUVE_APPLICATION],
   },
   {
     nom: "le PRÉFIXE des artefacts reste dans le chemin servi",
     garde: "formeDuDescripteur — le contrôle du préfixe",
-    fichier: APPLICATION,
+    fichier: DESCRIPTEUR,
     avant:
       '  if (!PREFIXE_SERVI.test(String(descripteur.prefixeDesArtefacts ?? ""))) {\n' +
       '    return refus("préfixe d\'artefacts hors du chemin servi");\n' +
@@ -360,7 +336,7 @@ export const MUTATIONS = Object.freeze([
   {
     nom: "la LIGNE DE COMMANDE du guest reste sur un alphabet clos",
     garde: "formeDuDescripteur — le contrôle de la ligne de commande",
-    fichier: APPLICATION,
+    fichier: DESCRIPTEUR,
     avant:
       '  if (!LIGNE_DE_COMMANDE.test(String(descripteur.boot?.cmdline ?? ""))) {\n' +
       '    return refus("ligne de commande du guest refusée");\n' +
@@ -369,11 +345,21 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_APPLICATION],
   },
   {
-    nom: "les NOMS d'artefacts du boot restent des noms de fichier",
-    garde: "formeDuDescripteur — le contrôle des cinq noms du boot",
-    fichier: APPLICATION,
+    nom: "chaque MORCEAU du paquet porte une empreinte bien formée (#236)",
+    garde: "formeDesMorceaux — le contrôle de l'empreinte des trois morceaux",
+    fichier: DESCRIPTEUR,
     avant:
-      '  for (const cle of ["kernel", "initrd", "rootfs", "bios", "vgaBios"]) {\n' +
+      '    if (!EMPREINTE.test(String(morceau?.sha256 ?? "")))\n' +
+      "      return `empreinte absente ou mal formée : ${cle}`;\n",
+    apres: "",
+    epreuves: [EPREUVE_APPLICATION],
+  },
+  {
+    nom: "les NOMS d'artefacts du boot restent des noms de fichier",
+    garde: "formeDuDescripteur — le contrôle des quatre noms du boot",
+    fichier: DESCRIPTEUR,
+    avant:
+      '  for (const cle of ["kernel", "initrd", "bios", "vgaBios"]) {\n' +
       '    if (!NOM_DARTEFACT.test(String(descripteur.boot?.[cle] ?? ""))) {\n' +
       "      return refus(`nom d'artefact refusé : ${cle}`);\n" +
       "    }\n" +

@@ -118,6 +118,22 @@ jobs:
             artifacts/application.json
           retention-days: 1
 
+      # Le MANIFESTE de CETTE construction, et non celui que le dépôt porte (#236, ADR 0041).
+      #
+      # Depuis que le paquet applicatif et sa graine sont nommés par leur EMPREINTE, deux
+      # constructions de la même source ne produisent pas les mêmes NOMS de fichiers : la chaîne
+      # n'est pas reproductible au bit près (horodatages, ordre d'allocation). Les lots qui liraient
+      # le manifeste commité chercheraient donc les artefacts d'une AUTRE construction — et
+      # s'ignoreraient au motif « artefacts absents », c'est-à-dire un vert par vacuité que
+      # `VAULT_E2E_EXIGER=1` transforme heureusement en rouge. Ce manifeste-ci décrit ce que le job
+      # vient de construire ; c'est lui que les lots doivent lire.
+      - name: Partage du manifeste de cette construction
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: manifeste-de-l-image
+          path: tools/build-reference-image/manifest.json
+          retention-days: 1
+
   reprise:
     name: Reprise MVP — lot ${{ matrix.lot }}
     needs: image
@@ -207,6 +223,14 @@ jobs:
         with:
           name: image-de-reference
           path: artifacts
+
+      # Le manifeste de la construction du job amont ÉCRASE celui du dépôt : les noms du paquet et
+      # de la graine portent leur empreinte, et celui du dépôt décrit une autre construction.
+      - name: Récupération du manifeste de cette construction
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: manifeste-de-l-image
+          path: tools/build-reference-image
 
       - name: Récupération vérifiée des artefacts v86
         run: npm run vm:fetch
