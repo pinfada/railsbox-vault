@@ -334,6 +334,20 @@ function readFlag(argv, name) {
   return value;
 }
 
+/** Toutes les valeurs d'un drapeau répétable, dans l'ordre de la ligne de commande. */
+function readFlags(argv, name) {
+  const values = [];
+  argv.forEach((argument, index) => {
+    if (argument !== `--${name}`) return;
+    const value = argv[index + 1];
+    if (value === undefined || value.startsWith("--")) {
+      throw new Error(`L'option --${name} attend une valeur.`);
+    }
+    values.push(value);
+  });
+  return values;
+}
+
 function readPort(argv, fallback) {
   const raw = readFlag(argv, "port");
   if (raw === null) return fallback;
@@ -347,7 +361,7 @@ function readPort(argv, fallback) {
 /**
  * @param {string[]} argv arguments bruts, `process.argv.slice(2)`
  * @param {Record<string, string | undefined>} [env] environnement du processus
- * @returns {{ role: string, host: string, port: number, appOrigin: string,
+ * @returns {{ role: string, host: string, port: number, appOrigin: string, aliases: string[],
  *             crossOriginIsolated: boolean, workerSrcBlob: boolean }}
  */
 export function parseServerOptions(argv, env = {}) {
@@ -372,6 +386,12 @@ export function parseServerOptions(argv, env = {}) {
     host: readFlag(argv, "host") ?? (isApp ? APP_HOST : SHELL_HOST),
     port: readPort(argv, isApp ? APP_PORT : SHELL_PORT),
     appOrigin: readFlag(argv, "app-origin") ?? APP_ORIGIN,
+    // Hôtes SUPPLÉMENTAIRES admis dans l'en-tête `Host` (`hôte` ou `hôte:port`, un par drapeau).
+    // Le serveur refuse tout autre alias de sa socket (421) : servir la coquille sous `localhost`
+    // partagerait son jar de cookies avec les autres applications locales. Les épreuves WebAuthn
+    // et de portabilité déclarent `localhost` parce qu'elles en ont besoin — un `rpId` n'est
+    // jamais une IP, une seconde origine change d'hôte —, et `npm start` ne déclare rien.
+    aliases: Object.freeze(readFlags(argv, "alias")),
     // Drapeau sans valeur : la suite de compatibilité #2 sert TOUTES ses réponses sous COOP/COEP,
     // là où le spike #35 n'isole que la requête qui le demande.
     crossOriginIsolated: argv.includes("--cross-origin-isolated"),

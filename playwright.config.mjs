@@ -238,7 +238,10 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `node tools/serve.mjs --role shell --host ${SHELL_HOST} --port ${SHELL_PORT}`,
+      // `localhost` est déclaré parce que deux épreuves en ont besoin, pas par confort : WebAuthn
+      // refuse une IP comme `rpId` (déverrouillage par passkey), et la portabilité veut une SECONDE
+      // origine dont l'hôte change. Sans ce drapeau, le serveur répond 421 à cet alias.
+      command: `node tools/serve.mjs --role shell --host ${SHELL_HOST} --port ${SHELL_PORT} --alias localhost`,
       url: `http://${SHELL_HOST}:${SHELL_PORT}/`,
       reuseExistingServer: !process.env.CI,
     },

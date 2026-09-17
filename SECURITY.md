@@ -145,10 +145,12 @@ nécessaire, l'ADR 0028 fixe la forme — préfixe `__Host-`, rien sur le domain
 Cette mesure utilise un profil vierge : elle ne promet pas que des cookies déposés par d'autres
 services seront absents d'un profil partagé. Les cookies ne sont pas isolés par port. En local, la
 coquille utilise `127.0.0.1`, l'application `localhost`, et le serveur refuse les autres valeurs de
-`Host` (VULN-03). Un service tiers sur le même hôte partage encore ses cookies : réserver un profil
-de navigateur au développement du coffre. En production, réserver les hôtes, interdire les cookies
-de domaine parent et, si des cookies sont nécessaires côté application, employer `__Host-`,
-`Secure`, `Path=/`, sans `Domain`, avec `SameSite` adapté et `HttpOnly` pour les sessions. Voir la
+`Host` (VULN-03), hormis un alias déclaré à son lancement par `--alias`, que seules les épreuves
+automatiques posent (WebAuthn exige un nom de domaine, la portabilité un second hôte). Un service
+tiers sur le même hôte partage encore ses cookies : réserver un profil de navigateur au
+développement du coffre. En production, réserver les hôtes, interdire les cookies de domaine parent
+et, si des cookies sont nécessaires côté application, employer `__Host-`, `Secure`, `Path=/`, sans
+`Domain`, avec `SameSite` adapté et `HttpOnly` pour les sessions. Voir la
 [portée des cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Cookies).
 
 **Création par phrase (VULN-02).** Le produit exige 12 points de code Unicode hors espaces de bord,

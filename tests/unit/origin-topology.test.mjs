@@ -188,6 +188,7 @@ test("les options du serveur ont des défauts par rôle et refusent une valeur i
     host: "127.0.0.1",
     port: 4173,
     appOrigin: APP_ORIGIN,
+    aliases: [],
     crossOriginIsolated: false,
     workerSrcBlob: false,
   });
@@ -196,12 +197,28 @@ test("les options du serveur ont des défauts par rôle et refusent une valeur i
     host: "localhost",
     port: 4174,
     appOrigin: APP_ORIGIN,
+    aliases: [],
     crossOriginIsolated: false,
     workerSrcBlob: false,
   });
   assert.equal(parseServerOptions(["--host", "127.0.0.1", "--port", "5000"]).port, 5000);
   assert.throws(() => parseServerOptions(["--port", "abc"]), /Port invalide/);
   assert.throws(() => parseServerOptions(["--port"]), /L'option --port attend une valeur/);
+});
+
+test("un alias d'hôte n'est admis que déclaré, un par drapeau --alias", () => {
+  // Le serveur refuse tout en-tête Host qui n'est pas son couple hôte:port (421), parce qu'un
+  // alias partagerait le jar de cookies de `localhost`. Les épreuves WebAuthn et de portabilité
+  // ont pourtant BESOIN de joindre la coquille par `localhost` : un nom de domaine pour `rpId`,
+  // un second hôte pour une seconde origine. L'alias est donc déclaré, jamais deviné.
+  assert.deepEqual(parseServerOptions([]).aliases, []);
+  assert.deepEqual(parseServerOptions(["--alias", "localhost"]).aliases, ["localhost"]);
+  assert.deepEqual(
+    parseServerOptions(["--alias", "localhost", "--alias", "vault.localhost:4200"]).aliases,
+    ["localhost", "vault.localhost:4200"],
+  );
+  assert.throws(() => parseServerOptions(["--alias"]), /L'option --alias attend une valeur/);
+  assert.throws(() => parseServerOptions(["--alias", "--port", "4173"]), /attend une valeur/);
 });
 
 test("le drapeau de mesure --worker-src-blob est refusé hors du harnais", () => {
