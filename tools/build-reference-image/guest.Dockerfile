@@ -193,10 +193,15 @@ RUN set -eu; \
 # migration à jouer au premier boot. L'INVARIANT de l'application de référence est créé dans la
 # foulée — c'est la condition d'une preuve de persistance après boot à froid —, et seulement pour
 # elle : une application extérieure n'a pas de `bin/vault-fixture`, et la garde le dit.
+#
+# La garde teste la PRÉSENCE (`-f`), pas le bit d'exécution : `bin/vault-fixture` est commité en
+# 100644, il est invoqué par `ruby bin/vault-fixture`, et un `-x` était vrai sous Docker Desktop
+# (Windows) et faux sur un exécutant Linux — l'invariant n'y était alors pas créé, et le boot de la
+# recette rendait 404 sur /vault/invariant. Constat de la CI de la PR #237.
 RUN set -eu; \
     mkdir -p var/db var/storage tmp/pids log; \
     linux32 ruby bin/rails db:migrate; \
-    if [ -x bin/vault-fixture ]; then \
+    if [ -f bin/vault-fixture ]; then \
       linux32 ruby bin/vault-fixture create; \
       linux32 ruby bin/vault-fixture create; \
       linux32 ruby bin/vault-fixture verify --json > /app/var/invariant-a-la-construction.json; \
