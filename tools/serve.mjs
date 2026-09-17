@@ -1,4 +1,5 @@
-import { open, realpath, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open, realpath } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, relative, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -120,11 +121,14 @@ createServer(async (request, response) => {
       refuser(response, 403, "Forbidden");
       return;
     }
-    // Ne pas ouvrir un tube nommé : son ouverture en lecture pourrait attendre un écrivain.
-    if (!(await stat(cheminReel)).isFile()) throw new Error("Not a file");
-    // Le fichier vérifié et le flux partagent un descripteur ; aucune seconde ouverture entre
-    // le contrôle du type et la lecture. Le système de fichiers local reste de confiance.
-    fichier = await open(cheminReel, "r");
+    // Décision (a) de la revue de #225 (constat 1) : ouvrir D'ABORD, `fstat` ENSUITE sur le
+    // descripteur déjà ouvert — plus de fenêtre entre un contrôle de type et la lecture. Un `stat`
+    // préalable laissait cette fenêtre à un processus LOCAL qui substituerait le fichier entre les
+    // deux appels ; `O_NONBLOCK` évite le seul risque que ce `stat` prévenait (l'ouverture en
+    // lecture d'un tube nommé attendrait un écrivain) : POSIX rend cette ouverture immédiate même
+    // sans écrivain. Sans effet sous Windows, où aucun tube nommé ne vit dans l'arbre servi — le
+    // `fstat` qui suit reste la vraie garde, sur les deux systèmes.
+    fichier = await open(cheminReel, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
     const metadata = await fichier.stat();
     if (!metadata.isFile()) throw new Error("Not a file");
     response.writeHead(200, {
@@ -152,7 +156,14 @@ createServer(async (request, response) => {
     if (response.headersSent) response.destroy();
     else refuser(response, 404, "Not found");
   } finally {
-    await fichier?.close().catch(() => response.destroy());
+    // L'échec d'une fermeture n'est plus avalé (constat 2 de la revue de #225) : une ligne sur
+    // `stderr`, sans chemin local ni pile complète — même discipline que les réponses d'erreur.
+    await fichier?.close().catch((erreur) => {
+      process.stderr.write(
+        `serve: fermeture du descripteur en échec (${erreur.code ?? "inconnu"})\n`,
+      );
+      response.destroy();
+    });
   }
 }).listen(options.port, options.host, () => {
   process.stdout.write(

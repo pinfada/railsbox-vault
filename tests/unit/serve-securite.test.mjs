@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { request } from "node:http";
@@ -165,4 +165,26 @@ test("serveur — seules GET et HEAD lisent un fichier, les absences restent non
   const absent = await lire(port, adresseDe("v86.wasm", "0".repeat(64)));
   assert.equal(absent.statut, 404);
   assert.equal(absent.entetes["cache-control"], "no-store");
+});
+
+test("serveur — un vrai tube nommé n'est jamais lu, et ne bloque jamais la réponse (décision (a) de #225)", async (t) => {
+  // `mkfifo` n'existe que sous des systèmes POSIX ; la CI est sous Ubuntu, c'est elle qui compte
+  // (voir le brief). Sous Windows, aucun tube nommé ne vit dans l'arbre servi : l'épreuve saute
+  // avec un motif nommé, plutôt qu'un silence.
+  if (process.platform === "win32") {
+    t.skip("mkfifo indisponible sous Windows ; la CI (Ubuntu) rejoue cette épreuve.");
+    return;
+  }
+  const { racine, port } = await lancerServeur(t);
+  const cheminFifo = join(racine, "public", "tube-nomme");
+  await new Promise((resolve, reject) => {
+    execFile("mkfifo", [cheminFifo], (erreur) => (erreur ? reject(erreur) : resolve()));
+  });
+  // Avant la décision (a), un `stat` bloquant sur un tube SANS écrivain n'aurait posé aucun
+  // problème ici (c'est justement ce que ce `stat` évitait) ; ce qui est vérifié est l'ABSENCE de
+  // fenêtre et de blocage une fois ouvert en `O_NONBLOCK` : la réponse revient, refusée, sans
+  // qu'un écrivain n'ouvre jamais l'autre bout.
+  const reponse = await lire(port, "/tube-nomme");
+  assert.equal(reponse.statut, 404);
+  assert.equal(reponse.entetes["cache-control"], "no-store");
 });
