@@ -140,8 +140,20 @@ RUN set -eu; \
     } > /opt/vault/env.sh
 
 ########################################################################
-# Étage `disque-app` : le disque hdb, invariant déjà en place.
+# Étage `disque-app` : le PAQUET applicatif et sa GRAINE de données.
 ########################################################################
+#
+# Depuis #236 (ADR 0041), cet étage produit DEUX arbres, et non plus un disque unique :
+#
+#   /app     le CODE — arbre de l'application, bundle i386, cache Bootsnap chaud. Il devient le
+#            PAQUET : partition 2 du disque système, montée en lecture-écriture ÉPHÉMÈRE.
+#   /graine  les DONNÉES à la naissance — base SQLite migrée et vide, `storage/` vide, marqueur de
+#            schéma. Elle devient le volume `application` du coffre, et elle seule survit au boot
+#            à froid.
+#
+# La source est un CONTEXTE DE CONSTRUCTION NOMMÉ (`--build-context application=<dossier>`) : une
+# application extérieure au dépôt entre ainsi dans la construction sans être copiée dans l'arbre, et
+# le contexte principal reste la racine du dépôt.
 FROM outils AS disque-app
 
 ENV RAILS_ENV=production \
@@ -160,21 +172,37 @@ WORKDIR /app
 # Couche de gemmes séparée du reste de l'application : elle n'est reconstruite
 # que si le verrou change, ce qui économise la compilation de nokogiri et de
 # sqlite3 à chaque itération sur le code Rails.
-COPY apps/reference/Gemfile apps/reference/Gemfile.lock ./
+COPY --from=application Gemfile Gemfile.lock ./
 RUN linux32 bundle install && linux32 bundle clean --force
 
-COPY apps/reference/ ./
+COPY --from=application . ./
 
-# La base est migrée et l'invariant créé ICI, à la construction. Le `verify` qui
-# suit est la preuve que le disque publié porte bien l'invariant attendu : si le
-# digest de la pièce jointe ne correspond pas, la construction échoue, et rien
-# n'est publié.
+# Un SECRET dans la source arrête la construction ICI aussi, et pas seulement dans
+# `verify-pinning.mjs` : une application extérieure n'est pas dans l'arbre du dépôt, et son
+# `master.key` finirait dans une image publiée sous une adresse immuable que tout visiteur
+# télécharge. Le `secret_key_base` se dérive d'une chaîne publique, comme celui de la référence.
+RUN set -eu; \
+    for secret in config/master.key config/credentials.yml.enc config/credentials/production.key; do \
+      if [ -e "/app/$secret" ]; then \
+        echo "REFUS : la source porte un secret Rails ($secret)." >&2; \
+        exit 1; \
+      fi; \
+    done
+
+# La base est migrée ICI, à la construction : la graine naît DÉJÀ migrée, et le guest n'a aucune
+# migration à jouer au premier boot. L'INVARIANT de l'application de référence est créé dans la
+# foulée — c'est la condition d'une preuve de persistance après boot à froid —, et seulement pour
+# elle : une application extérieure n'a pas de `bin/vault-fixture`, et la garde le dit.
 RUN set -eu; \
     mkdir -p var/db var/storage tmp/pids log; \
     linux32 ruby bin/rails db:migrate; \
-    linux32 ruby bin/vault-fixture create; \
-    linux32 ruby bin/vault-fixture create; \
-    linux32 ruby bin/vault-fixture verify --json > /app/var/invariant-a-la-construction.json; \
+    if [ -x bin/vault-fixture ]; then \
+      linux32 ruby bin/vault-fixture create; \
+      linux32 ruby bin/vault-fixture create; \
+      linux32 ruby bin/vault-fixture verify --json > /app/var/invariant-a-la-construction.json; \
+    else \
+      echo "[disque-app] pas de bin/vault-fixture : application extérieure, aucun invariant"; \
+    fi; \
     rm -rf log/*.log
 
 # Pré-chauffage du cache Bootsnap (`config/boot.rb`). Les étapes ci-dessus l'ont
@@ -196,3 +224,16 @@ RUN set -eu; \
     linux32 ruby -e 'require "./config/environment"'; \
     test -d tmp/cache/bootsnap; \
     echo "cache Bootsnap : $(du -sh tmp/cache | cut -f1), $(find tmp/cache -type f | wc -l) fichiers"
+
+# SÉPARATION du code et des données, DERNIER geste : `/app/var` devient `/graine`, et `/app` garde
+# un point de montage vide. Le guest montera la graine — devenue le volume du coffre — sur
+# `/app/var`, et le paquet, lui, est éphémère.
+#
+# Le MARQUEUR de schéma vit dans la GRAINE : c'est lui que T2 comparera à celui du paquet pour
+# décider d'une migration, et il doit donc voyager avec les données, pas avec le code.
+ARG SCHEMA_DE_L_APPLICATION=inconnu
+RUN set -eu; \
+    mv /app/var /graine; \
+    mkdir -p /app/var /app/log /app/tmp/pids; \
+    printf '%s\n' "$SCHEMA_DE_L_APPLICATION" > /graine/.vault-schema; \
+    echo "[disque-app] paquet $(du -sh /app | cut -f1), graine $(du -sh /graine | cut -f1), schéma $SCHEMA_DE_L_APPLICATION"

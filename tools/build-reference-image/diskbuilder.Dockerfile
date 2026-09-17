@@ -16,6 +16,7 @@ RUN set -eu; \
     rm -rf /var/lib/apt/lists/*
 
 COPY tools/build-reference-image/fabriquer-systeme-de-fichiers.sh /usr/local/bin/fabriquer
-RUN chmod +x /usr/local/bin/fabriquer
+COPY tools/build-reference-image/fabriquer-paquet-et-graine.sh /usr/local/bin/fabriquer-paquet
+RUN chmod +x /usr/local/bin/fabriquer /usr/local/bin/fabriquer-paquet
 
 ENTRYPOINT ["/usr/local/bin/fabriquer"]

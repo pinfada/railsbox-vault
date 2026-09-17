@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
 import { ARTEFACTS_ATTENDUS, construireManifeste, validerManifeste } from "./manifest-contract.mjs";
+import { validerPaquet } from "../paquet/contrat-du-paquet.mjs";
 
 const dossierOutils = dirname(fileURLToPath(import.meta.url));
 export const RACINE_DEPOT = resolve(dossierOutils, "..", "..");
@@ -31,8 +32,18 @@ export const CHEMIN_MANIFESTE = join(dossierOutils, "manifest.json");
  */
 export const CHEMIN_DESCRIPTEUR_APPLICATIF = join(RACINE_DEPOT, "artifacts", "application.json");
 
-/** Version du descripteur. Un lecteur d'une autre version refuse plutôt que de deviner. */
-export const DESCRIPTEUR_APPLICATIF_VERSION = 1;
+/**
+ * Version du descripteur. Un lecteur d'une autre version refuse plutôt que de deviner.
+ *
+ * **v2 depuis #236** : le disque unique (`disque`) a disparu, remplacé par les trois morceaux du
+ * paquet applicatif — le `rootfs` et le `paquet`, que la coquille RANGE dans un `hda` composé, et la
+ * `graine`, qu'elle VERSE dans le volume de données. Chacun porte désormais son EMPREINTE, que
+ * l'installation et le boot confrontent aux octets reçus ; la v1 ne portait que des tailles.
+ *
+ * Aucune compatibilité v1 n'est portée : aucun déploiement réel n'existe (ADR 0041), et un lecteur
+ * qui accepterait les deux formes accepterait aussi un descripteur sans empreinte.
+ */
+export const DESCRIPTEUR_APPLICATIF_VERSION = 2;
 
 /**
  * Dérive le descripteur applicatif du manifeste d'image, sans rien y ajouter qui ne s'y trouve.
@@ -45,23 +56,30 @@ export const DESCRIPTEUR_APPLICATIF_VERSION = 1;
  * @param {string} versionRuntime
  */
 export function descripteurApplicatif(manifeste, versionRuntime) {
-  const disque = manifeste.artifacts.find((artefact) => artefact.name === manifeste.boot.hdb);
-  if (disque === undefined) {
-    throw new Error(
-      `Aucun artefact « ${manifeste.boot.hdb} » dans le manifeste : rien à installer.`,
-    );
-  }
+  const artefact = (role) => {
+    const nom = manifeste.boot[role];
+    const trouve = manifeste.artifacts.find((candidat) => candidat.name === nom);
+    if (trouve === undefined) {
+      throw new Error(`Aucun artefact « ${nom} » dans le manifeste : rien à servir pour ${role}.`);
+    }
+    return { nom, octets: trouve.byteSize, sha256: trouve.sha256 };
+  };
   return {
     descripteurVersion: DESCRIPTEUR_APPLICATIF_VERSION,
-    application: { id: manifeste.application.id, version: manifeste.application.version },
+    application: {
+      id: manifeste.application.id,
+      version: manifeste.application.version,
+      schema: manifeste.application.schema,
+    },
     runtime: { version: versionRuntime },
-    disque: { nom: manifeste.boot.hdb, octets: disque.byteSize },
+    rootfs: artefact("rootfs"),
+    paquet: artefact("paquet"),
+    graine: { ...artefact("graine"), disqueOctets: manifeste.donnees.disqueOctets },
     boot: {
       cmdline: manifeste.boot.cmdline,
       memoireOctets: manifeste.boot.memoryMiB * 1024 * 1024,
       kernel: manifeste.boot.kernel,
       initrd: manifeste.boot.initrd,
-      rootfs: manifeste.boot.hda,
       bios: manifeste.boot.bios,
       vgaBios: manifeste.boot.vgaBios,
     },
@@ -77,7 +95,7 @@ export function descripteurApplicatif(manifeste, versionRuntime) {
  * @param {Record<string, any>} sources
  * @returns {Record<string, { role: string, license: string, origin: string }>}
  */
-export function metadonneesArtefacts(sources) {
+export function metadonneesArtefacts(sources, paquet) {
   const construitPar = "tools/build-reference-image/guest.Dockerfile";
   const firmware = Object.fromEntries(
     sources.firmware.files.map((fichier) => [
@@ -106,13 +124,46 @@ export function metadonneesArtefacts(sources) {
       license: "licences libres diverses (initramfs-tools et modules Debian)",
       origin: `${construitPar} (cible rootfs)`,
     },
-    "reference-app.ext4": {
-      role: "hdb — volume applicatif : application, bundle, base SQLite, pièce jointe",
-      license: "MIT (RailsBox Vault) ; gemmes selon apps/reference/Gemfile.lock",
-      origin: `${construitPar} (cible disque-app)`,
+    [paquet.image.name]: {
+      role: "partition 2 de hda — paquet applicatif : arbre de l'application, bundle i386, cache Bootsnap",
+      license: paquet.licence,
+      origin: `${construitPar} (cible disque-app), npm run app:paquet`,
+    },
+    [paquet.graine.name]: {
+      role: "graine du volume de données — base SQLite migrée et vide, storage/ vide, marqueur de schéma",
+      license: paquet.licence,
+      origin: `${construitPar} (cible disque-app), npm run app:paquet`,
     },
     ...firmware,
   };
+}
+
+/** Où la fabrication dépose le contrat du paquet applicatif construit (`npm run app:paquet`). */
+export const NOM_DU_CONTRAT_DE_PAQUET = "paquet.json";
+
+/**
+ * LIT le contrat du paquet déposé par la fabrication, et le REFUSE s'il n'est pas conforme.
+ *
+ * Sans lui, le manifeste ne peut rien dire : les noms des deux images portent leur empreinte, le
+ * schéma vient de la base migrée, et la taille du disque de données est celle que la graine a
+ * reçue. Rien de tout cela n'est devinable depuis `sources.json`.
+ *
+ * @param {string} dossierArtefacts
+ */
+export function lirePaquetApplicatif(dossierArtefacts) {
+  const chemin = join(dossierArtefacts, NOM_DU_CONTRAT_DE_PAQUET);
+  if (!existsSync(chemin)) {
+    throw new Error(
+      `contrat de paquet absent (${chemin}) — fabriquer le paquet d'abord : npm run app:paquet`,
+    );
+  }
+  const paquet = JSON.parse(readFileSync(chemin, "utf8"));
+  const anomalies = validerPaquet(paquet);
+  if (anomalies.length > 0) {
+    const detail = anomalies.map((anomalie) => `  · [${anomalie.code}] ${anomalie.message}`);
+    throw new Error(["contrat de paquet refusé :", ...detail].join("\n"));
+  }
+  return paquet;
 }
 
 /**
@@ -133,6 +184,7 @@ export function empreinteFichier(chemin) {
  */
 export function assemblerManifeste(options = {}) {
   const dossierArtefacts = options.dossierArtefacts ?? DOSSIER_ARTEFACTS;
+  const paquet = options.paquet ?? lirePaquetApplicatif(dossierArtefacts);
   const sources = JSON.parse(readFileSync(join(dossierOutils, "sources.json"), "utf8"));
   const invariant = JSON.parse(
     readFileSync(join(RACINE_DEPOT, "apps", "reference", "vault-invariant.json"), "utf8"),
@@ -143,10 +195,10 @@ export function assemblerManifeste(options = {}) {
     throw new Error("version de Rails introuvable dans apps/reference/Gemfile.lock");
   }
 
-  const metadonnees = metadonneesArtefacts(sources);
+  const metadonnees = metadonneesArtefacts(sources, paquet);
   const artefacts = [];
   const manquants = [];
-  for (const nom of ARTEFACTS_ATTENDUS) {
+  for (const nom of [...ARTEFACTS_ATTENDUS, paquet.image.name, paquet.graine.name]) {
     const chemin = join(dossierArtefacts, nom);
     if (!existsSync(chemin)) {
       manquants.push(nom);
@@ -165,6 +217,7 @@ export function assemblerManifeste(options = {}) {
     sources,
     artefacts,
     invariant,
+    paquet,
     rails,
     environnement: options.environnement ?? environnementCourant(),
     genereLe: new Date().toISOString(),

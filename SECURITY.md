@@ -1419,6 +1419,39 @@ jetables et nommés à part. L'instrument MESURE le budget « coupures injectée
 bloc acquitté, franchi par une barrière et pourtant absent du support serait classé `corrompu`, et
 un témoin négatif vérifie que cette règle sait se déclencher.
 
+## Ce qu'un PAQUET APPLICATIF garantit, et ce qu'il ne garantit pas (#236, ADR 0041)
+
+Depuis #236, le code d'une application est un **paquet** : une image ext4 servie sous son empreinte,
+rangée en partition 2 du disque système que la coquille compose, et montée sur `/app`. Les données
+vivent seules sur `/dev/sdb`, monté sur `/app/var`, avec les options de durabilité de #209.
+
+**Ce qui est garanti**
+
+- Le paquet et le rootfs sont **confrontés à leur empreinte** avant que le guest ne batte : un octet
+  qui ne correspond pas au descripteur refuse le boot, et rien n'est monté.
+- La **graine** est confrontée à son empreinte **pendant** l'installation, avant la barrière et
+  avant la datation : un écart laisse le volume ANONYME, donc non ouvrable en écriture, et
+  l'installation s'arrête.
+- Un **instantané** pris sous un autre paquet est écarté par le motif typé de l'ADR 0024 :
+  l'empreinte d'image d'une liaison couvre désormais le code de l'application.
+
+**Ce qui n'est PAS garanti**
+
+- **Les écritures hors de `/app/var` sont éphémères, et perdues au boot à froid SANS erreur.** Le
+  paquet est monté en lecture-écriture pour que Bootsnap, `tmp/` et les fichiers de travail d'une
+  application tierce fonctionnent ; ces écritures vivent dans le delta en RAM du disque système. Une
+  application qui doit conserver quelque chose l'écrit sous `/app/var`. C'est une **exigence de
+  compatibilité du paquet** (#210), et non une propriété de sécurité : rien ne l'impose au guest
+  aujourd'hui, et un montage en lecture seule — qui ferait échouer franchement — casserait Bootsnap
+  et `tmp/` de la plupart des applications.
+- **Le paquet n'est pas signé par son auteur.** La signature de l'auteur et sa distribution E2EE
+  sont du jalon 6 (#26–#28). Jusque-là, **la seule garantie est l'empreinte servie par l'origine de
+  confiance** : qui contrôle l'origine contrôle ce que la coquille installe et boote. Le descripteur
+  v2 ne rend pas cette origine moins critique ; il rend seulement détectable un artefact altéré
+  APRÈS que l'origine l'a décrit.
+- **Un paquet n'isole pas l'application du volume.** Le code du paquet s'exécute avec un accès plein
+  aux données montées sur `/app/var` : le paquet décide ce que le coffre contient.
+
 ## L'instantané de reprise contient la RAM invitée (#65)
 
 L'[ADR 0024](docs/decisions/0024-instantane-de-reprise.md) ajoute un sixième voisin de volume,

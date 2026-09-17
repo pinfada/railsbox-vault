@@ -43,6 +43,7 @@ import { FORMAT_VOLUME_V3, tailleDeFichier } from "../../src/vm/volume-chiffre-f
 import { PLAFOND_CHARGE_OCTETS } from "../../src/vm/generation-store.mjs";
 import { E2E_ORIGIN_A } from "../../playwright.e2e.config.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
+import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -127,9 +128,9 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));
   const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
   const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
-  const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
-  const appDiskBytes = disqueApp.byteSize;
-  const appDiskUrl = `/artifacts/reference-image/${manifeste.boot.hdb}`;
+  const graine = graineDuManifeste(manifeste);
+  const appDiskBytes = graine.appDiskBytes;
+  const appDiskUrl = graine.appDiskUrl;
 
   /** Descripteur d'un volume au format ANTÉRIEUR : c'est lui qu'il faudra migrer. */
   const descripteurV1 = {
@@ -150,7 +151,7 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
     vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
     kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
     initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
-    rootfs: `/artifacts/reference-image/${manifeste.boot.hda}`,
+    disqueSysteme: disqueSystemeDuManifeste(manifeste),
   };
   const configBoot = {
     cmdline: manifeste.boot.cmdline,
@@ -404,7 +405,7 @@ test("un volume d'un format antérieur est migré, sa migration interrompue repr
   } finally {
     await context.setOffline(false);
   }
-  expect(session.requetes.some((u) => u.includes(manifeste.boot.hdb))).toBe(false);
+  expect(session.requetes.some((u) => u.includes(manifeste.boot.graine))).toBe(false);
   await session.page.close();
   await testInfo.attach("boot-apres-migration.json", {
     body: JSON.stringify(bootApresMigration, null, 2),
@@ -561,9 +562,9 @@ test("PALIER v3 — un volume v3 RÉEL est SAUVEGARDÉ par le runtime v4, puis m
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));
   const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
   const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
-  const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
-  const appDiskBytes = disqueApp.byteSize;
-  const appDiskUrl = `/artifacts/reference-image/${manifeste.boot.hdb}`;
+  const graine = graineDuManifeste(manifeste);
+  const appDiskBytes = graine.appDiskBytes;
+  const appDiskUrl = graine.appDiskUrl;
 
   const descripteurV1 = {
     formatVersion: 1,
@@ -596,7 +597,7 @@ test("PALIER v3 — un volume v3 RÉEL est SAUVEGARDÉ par le runtime v4, puis m
       vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
       kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
       initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
-      rootfs: `/artifacts/reference-image/${manifeste.boot.hda}`,
+      disqueSysteme: disqueSystemeDuManifeste(manifeste),
     },
     manifest: descripteurCourant,
     expected: { recordId: contrat.record.id, attachmentSha256: contrat.attachment.sha256 },

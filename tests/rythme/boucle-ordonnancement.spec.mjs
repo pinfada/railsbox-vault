@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "../e2e/contexte-persistant.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
+import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -123,7 +124,7 @@ test("coût de la boucle de Vault sur l'image de référence : cinq essais par b
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));
   const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
   const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
-  const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
+  const graine = graineDuManifeste(manifeste);
   const descripteurManifeste = {
     runtime: { version: paquet.version, artifact: null, minWriter: paquet.version },
     app: { id: contrat.application.id, version: contrat.application.version },
@@ -139,7 +140,7 @@ test("coût de la boucle de Vault sur l'image de référence : cinq essais par b
       vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
       kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
       initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
-      rootfs: `/artifacts/reference-image/${manifeste.boot.hda}`,
+      disqueSysteme: disqueSystemeDuManifeste(manifeste),
     },
     manifest: descripteurManifeste,
     expected: { recordId: contrat.record.id, attachmentSha256: contrat.attachment.sha256 },
@@ -169,13 +170,13 @@ test("coût de la boucle de Vault sur l'image de référence : cinq essais par b
   const prepare = await phase(preparation, {
     phase: "prepare",
     volume: VOLUME,
-    appDiskBytes: disqueApp.byteSize,
-    appDiskUrl: `/artifacts/reference-image/${manifeste.boot.hdb}`,
+    appDiskBytes: graine.appDiskBytes,
+    appDiskUrl: graine.appDiskUrl,
     manifest: descripteurManifeste,
   });
   await preparation.close();
   expect(prepare.bytesWritten, "le disque applicatif entier est écrit dans OPFS").toBe(
-    disqueApp.byteSize,
+    graine.appDiskBytes,
   );
 
   // 2. Dix boots entrelacés. L'ordre alterne à chaque tour : native, Vault, native, Vault…
@@ -224,7 +225,7 @@ test("coût de la boucle de Vault sur l'image de référence : cinq essais par b
       plateforme: `${process.platform} ${process.arch}`,
       node: process.versions.node,
       memoireVmOctets: configBoot.memoryBytes,
-      disqueAppOctets: disqueApp.byteSize,
+      disqueAppOctets: graine.appDiskBytes,
     },
     essais,
     parBras,

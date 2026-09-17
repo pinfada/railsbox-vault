@@ -30,16 +30,30 @@ export const MOTIF_DE_RAILS = 0x5b;
 
 export function descripteurDEpreuve() {
   return {
-    descripteurVersion: 1,
-    application: { id: "railsbox-vault-reference", version: "1.0.0" },
+    descripteurVersion: 2,
+    application: { id: "railsbox-vault-reference", version: "1.0.0", schema: "20260815120000" },
     runtime: { version: "0.1.0" },
-    disque: { nom: "app.ext4", octets: OCTETS_DU_DISQUE },
+    rootfs: {
+      nom: "r",
+      octets: 403701760,
+      sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    },
+    paquet: {
+      nom: "railsbox-vault-reference-1.0.0-0123abcd.ext4",
+      octets: 147849216,
+      sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    },
+    graine: {
+      nom: "graine.ext4",
+      octets: OCTETS_DU_DISQUE,
+      sha256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      disqueOctets: OCTETS_DU_DISQUE,
+    },
     boot: {
-      cmdline: "root=/dev/sda rw",
+      cmdline: "root=/dev/sda1 rw",
       memoireOctets: 33554432,
       kernel: "k",
       initrd: "i",
-      rootfs: "r",
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
     },

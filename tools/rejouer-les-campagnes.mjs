@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// LE LANCEUR des onze campagnes de mutation (#196) : il les rejoue en SÉQUENCE, s'arrête au premier
+// LE LANCEUR des douze campagnes de mutation (#196) : il les rejoue en SÉQUENCE, s'arrête au premier
 // code de sortie non nul, et publie une table (campagne, mutants, tués, survivants, durée).
 //
 //     npm run check:mutations
@@ -10,7 +10,7 @@
 // Chaque `tools/muter-gardes-*.mjs` recopie déjà le dépôt entier (`src`, `tests`, `tools`, `public`,
 // `package.json`) dans un atelier temporaire et le détruit à la fin de SA campagne
 // (`tools/moteur-de-mutation.mjs`) ; à l'intérieur, chaque mutant rejoue `node --test` avec un tas
-// plafonné à 512 Mo. Mesuré le 12 septembre 2026 sur ce poste : les onze campagnes tiennent en
+// plafonné à 512 Mo. Mesuré le 12 septembre 2026 sur ce poste : les onze campagnes tenaient en
 // **environ 5 min 30 s au total**, un atelier à la fois. Onze copies SIMULTANÉES multiplieraient le
 // coût disque et mémoire par onze sans qu'aucune mesure n'ait montré qu'un exécutant CI partagé
 // l'absorbe — c'est justement la condition que le superviseur a posée avant tout parallélisme. La
@@ -31,7 +31,7 @@ import { fileURLToPath } from "node:url";
 const RACINE = fileURLToPath(new URL("..", import.meta.url));
 
 /**
- * Les onze campagnes, dans l'ordre où elles sont jouées. Ajouter une douzième campagne, c'est ajouter
+ * Les douze campagnes, dans l'ordre où elles sont jouées. Ajouter une treizième campagne, c'est ajouter
  * une ligne ici — le lanceur ne connaît rien d'autre du contrat que le nom du script et `--json`.
  */
 export const CAMPAGNES = Object.freeze([
@@ -42,6 +42,7 @@ export const CAMPAGNES = Object.freeze([
   { nom: "fins-d-onglet", script: "tools/muter-gardes-fins-d-onglet.mjs" },
   { nom: "hierarchie-de-cles", script: "tools/muter-gardes-hierarchie-de-cles.mjs" },
   { nom: "instantane", script: "tools/muter-gardes-instantane.mjs" },
+  { nom: "paquet-applicatif", script: "tools/muter-gardes-paquet-applicatif.mjs" },
   { nom: "persistance", script: "tools/muter-gardes-persistance.mjs" },
   { nom: "recuperation", script: "tools/muter-gardes-recuperation.mjs" },
   { nom: "revocation-urgence", script: "tools/muter-gardes-revocation-urgence.mjs" },

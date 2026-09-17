@@ -19,10 +19,19 @@ export const ARTEFACTS_ATTENDUS = Object.freeze([
   "reference-rootfs.ext4",
   "reference-rootfs-vmlinuz",
   "reference-rootfs-initrd",
-  "reference-app.ext4",
   "seabios.bin",
   "vgabios.bin",
 ]);
+
+/**
+ * Artefacts du PAQUET APPLICATIF, dont les noms portent leur empreinte (#236, ADR 0041) : ils ne
+ * peuvent donc pas être énumérés à l'avance. Le manifeste les désigne par leur RÔLE — `boot.paquet`
+ * et `boot.graine` —, et la validation exige que ces deux rôles trouvent un artefact.
+ *
+ * `reference-app.ext4` a disparu avec eux : le disque unique qui portait à la fois le code et les
+ * données n'existe plus.
+ */
+export const ROLES_DU_PAQUET = Object.freeze(["paquet", "graine"]);
 
 /**
  * @typedef {{ name: string, role: string, byteSize: number, sha256: string,
@@ -45,6 +54,7 @@ export function construireManifeste({
   sources,
   artefacts,
   invariant,
+  paquet,
   rails,
   environnement,
   genereLe,
@@ -54,8 +64,11 @@ export function construireManifeste({
     manifestVersion: VERSION_MANIFESTE,
     generatedAt: genereLe,
     application: {
-      id: invariant.application.id,
-      version: invariant.application.version,
+      id: paquet.application.id,
+      version: paquet.application.version,
+      // Le SCHÉMA de la base que la graine porte : la dernière migration appliquée à la
+      // fabrication. C'est lui que T2 comparera à celui du volume pour décider d'une mise à jour.
+      schema: paquet.application.schema,
       invariantRecordId: invariant.record.id,
       attachmentSha256: invariant.attachment.sha256,
     },
@@ -75,11 +88,19 @@ export function construireManifeste({
       memoryMiB: sources.guest.memoryMiB,
       kernel: "reference-rootfs-vmlinuz",
       initrd: "reference-rootfs-initrd",
-      hda: "reference-rootfs.ext4",
-      hdb: "reference-app.ext4",
+      // `hda` n'est plus UN artefact : la coquille le COMPOSE (MBR calculé, partition 1 = rootfs,
+      // partition 2 = paquet ; `src/vm/disque-compose.mjs`). Les deux morceaux gardent leur adresse
+      // par empreinte, et une mise à jour de l'application ne retélécharge pas le rootfs.
+      rootfs: "reference-rootfs.ext4",
+      paquet: paquet.image.name,
+      // La GRAINE n'est pas un disque du guest : c'est ce que la coquille verse dans le volume
+      // `application` du coffre à l'installation. Le guest la voit ensuite en `hdb` (`/dev/sdb`).
+      graine: paquet.graine.name,
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
     },
+    /** Le disque de DONNÉES du coffre : taille fixe, fixée à la fabrication de la graine. */
+    donnees: { disqueOctets: paquet.graine.disqueOctets },
     environment: environnement,
     artifacts: tries,
     totals: {
@@ -113,7 +134,7 @@ export function validerManifeste(manifeste) {
   if (!/^\d{4}-\d{2}-\d{2}T/.test(donnees.generatedAt ?? "")) {
     ajouter("horodatage-absent", "generatedAt absent ou mal formé");
   }
-  for (const champ of ["id", "version", "invariantRecordId", "attachmentSha256"]) {
+  for (const champ of ["id", "version", "schema", "invariantRecordId", "attachmentSha256"]) {
     if (!donnees.application?.[champ])
       ajouter("application-incomplete", `application.${champ} absent`);
   }
@@ -147,7 +168,11 @@ export function validerManifeste(manifeste) {
     );
   }
 
-  for (const role of ["kernel", "initrd", "hda", "hdb", "bios", "vgaBios"]) {
+  if (!Number.isInteger(donnees.donnees?.disqueOctets) || donnees.donnees.disqueOctets <= 0) {
+    ajouter("donnees-incompletes", "donnees.disqueOctets absent ou nul");
+  }
+
+  for (const role of ["kernel", "initrd", "rootfs", "paquet", "graine", "bios", "vgaBios"]) {
     const nom = donnees.boot?.[role];
     if (!nom) {
       ajouter("boot-incomplet", `boot.${role} absent`);

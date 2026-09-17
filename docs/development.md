@@ -440,8 +440,8 @@ node tools/run-app-tests.mjs bundle exec ruby bin/vault-fixture verify --json
 
 ```sh
 npm run image:build                       # tout
-npm run image:build -- --seulement=app    # le disque applicatif seul
-npm run image:build -- --taille-app=768   # géométrie du disque applicatif, en Mio
+npm run image:build -- --seulement=app    # le paquet applicatif et sa graine
+npm run image:build -- --taille-app=768   # taille du disque de données, en Mio
 npm run image:build -- --sans-cache
 npm run image:manifest                    # réécrit le manifeste depuis les artefacts présents
 ```
@@ -454,14 +454,20 @@ node tools/build-reference-image/verify-pinning.mjs
 
 Ce que la commande produit, dans `artifacts/reference-image/` (dossier ignoré par git) :
 
-| Artefact                   | Rôle                                                            |
-| -------------------------- | --------------------------------------------------------------- |
-| `reference-rootfs.ext4`    | `hda` : Debian i386, Ruby, scripts du guest, pont série         |
-| `reference-rootfs-vmlinuz` | noyau démarré directement par v86, sans amorceur                |
-| `reference-rootfs-initrd`  | initrd (pilotes ext2/ext4 avant montage de la racine)           |
-| `reference-app.ext4`       | `hdb` : application, bundle, base SQLite migrée et invariant    |
-| `seabios.bin`              | micrologiciel exigé par v86 pour exécuter l'option ROM du noyau |
-| `vgabios.bin`              | micrologiciel VGA                                               |
+| Artefact                            | Rôle                                                                              |
+| ----------------------------------- | --------------------------------------------------------------------------------- |
+| `reference-rootfs.ext4`             | **partition 1** de `hda` : Debian i386, Ruby, scripts du guest, pont série        |
+| `reference-rootfs-vmlinuz`          | noyau démarré directement par v86, sans amorceur                                  |
+| `reference-rootfs-initrd`           | initrd (pilotes ext2/ext4 avant montage de la racine)                             |
+| `<id>-<version>-<empreinte>.ext4`   | **partition 2** de `hda` : le PAQUET — code, bundle i386, cache Bootsnap          |
+| `<id>-<version>-graine-<empr>.ext4` | la GRAINE : base migrée et vide, `storage/` vide, marqueur `.vault-schema`        |
+| `paquet.json`                       | contrat du paquet : identité, schéma, empreintes, exigences, dérivation du secret |
+| `seabios.bin`                       | micrologiciel exigé par v86 pour exécuter l'option ROM du noyau                   |
+| `vgabios.bin`                       | micrologiciel VGA                                                                 |
+
+`hda` n'est plus un artefact : la coquille le COMPOSE (table MBR calculée, rootfs en partition 1,
+paquet en partition 2 ; ADR 0041). Le harnais Node fait la même composition dans un fichier local,
+`reference-hda-composee.img`, refait seulement quand l'un des deux morceaux change.
 
 Les artefacts binaires ne sont **jamais** commités. Le manifeste
 `tools/build-reference-image/manifest.json` l'est : il porte nom, taille, empreinte SHA-256, licence
@@ -470,17 +476,66 @@ et origine de chaque artefact, ainsi que les versions de la chaîne. Il est la r
 
 Coût mesuré le 2026-08-23 (Windows 11, Docker Desktop 29.4.3, 28 threads logiques, 32 Gio) :
 
-| Étape                                                 |           Temps | Résultat                                        |
-| ----------------------------------------------------- | --------------: | ----------------------------------------------- |
-| `outils` : Debian i386 + Ruby 3.3.12 compilé          |      env. 4 min | image intermédiaire, jamais publiée             |
-| `rootfs` : noyau, bibliothèques, scripts du guest     |      env. 2 min | 367 Mio en ext4                                 |
-| `disque-app` : bundle i386, migration, invariant créé |      env. 4 min | 512 Mio en ext4 journalisé (#209), paramétrable |
-| Fabrication des deux systèmes de fichiers             |    env. 1,5 min | —                                               |
-| **Construction complète, cache vide**                 | **env. 12 min** | 927 Mio d'artefacts, ≈ 200 Mio compressés       |
-| Cache Docker conservé sur l'hôte                      |               — | environ 3 Gio                                   |
+| Étape                                                 |           Temps | Résultat                                                             |
+| ----------------------------------------------------- | --------------: | -------------------------------------------------------------------- |
+| `outils` : Debian i386 + Ruby 3.3.12 compilé          |      env. 4 min | image intermédiaire, jamais publiée                                  |
+| `rootfs` : noyau, bibliothèques, scripts du guest     |      env. 2 min | 367 Mio en ext4                                                      |
+| `disque-app` : bundle i386, migration, invariant créé |      env. 4 min | paquet (ext4 sans journal) + graine (512 Mio, ext4 journalisé, #209) |
+| Fabrication des deux systèmes de fichiers             |    env. 1,5 min | —                                                                    |
+| **Construction complète, cache vide**                 | **env. 12 min** | 927 Mio d'artefacts, ≈ 200 Mio compressés                            |
+| Cache Docker conservé sur l'hôte                      |               — | environ 3 Gio                                                        |
 
 Une reconstruction sans changement de `Gemfile.lock` ni de paquets réutilise le cache Docker : elle
 se limite aux étapes modifiées et retombe sous les deux minutes.
+
+### Fabriquer un paquet applicatif
+
+Une application Rails s'installe dans un coffre sous la forme d'un **paquet** : une image du code
+(ext4 sans journal, montée en lecture-écriture éphémère sur `/app`) et une **graine** de données
+(ext4 journalisé, versée dans le volume du coffre et montée sur `/app/var`). Voir l'ADR 0041.
+
+```sh
+npm run app:paquet                                   # apps/reference, le premier paquet
+npm run app:paquet -- --source ../mon-application    # un dossier HORS du dépôt
+npm run app:paquet -- --source ../mon-app --id mon-app --version 1.2.0
+npm run app:paquet -- --taille-donnees=1024          # taille du disque de données, en Mio
+```
+
+Un dossier extérieur n'est **jamais copié dans l'arbre** : il entre par un contexte de construction
+nommé BuildKit (`--build-context application=<dossier>`, lu par `COPY --from=application`), et le
+contexte principal reste la racine du dépôt.
+
+L'identité vient, champ par champ, des options, puis de `vault-app.json` à la racine de
+l'application, puis — pour la référence seule — de `vault-invariant.json` :
+
+```json
+{
+  "application": { "id": "mon-application", "version": "1.2.0" },
+  "secretKeyBase": {
+    "derivation": "SHA-256 de « mon-application/secret/1 », documenté dans README"
+  }
+}
+```
+
+**Ce que l'application doit respecter** pour être empaquetable :
+
+- **Ruby 3.3.12** et le `Gemfile.lock` résolu pour la plateforme `ruby` : le bundle est compilé en
+  i386 par le Ruby de l'image, et `BUNDLE_FORCE_RUBY_PLATFORM` est posé ;
+- **SQLite**, sous `/app/var/db` (`VAULT_DATABASE_PATH`), et ActiveStorage sous `/app/var/storage`
+  (`VAULT_STORAGE_ROOT`). PostgreSQL reste hors périmètre (ADR 0004) ;
+- **toute écriture durable sous `/app/var`, et nulle part ailleurs.** Ce qui est écrit dans `/app`
+  (y compris `tmp/` et le cache) vit en RAM pour la session et disparaît au boot à froid, **sans
+  erreur** : c'est une exigence de compatibilité, pas un défaut (#210, `SECURITY.md`) ;
+- **aucun secret** : ni `config/master.key`, ni `config/credentials.yml.enc`, ni
+  `config/credentials/production.key`. Le `secret_key_base` se dérive d'une chaîne publique. La
+  fabrication refuse avant le premier `docker build`, et le Dockerfile refuse à nouveau ;
+- **au moins une migration** : le schéma du paquet (dernière migration, lue de `db/schema.rb` ou du
+  plus grand préfixe de `db/migrate/`) est ce qui décidera d'une mise à jour ;
+- **une taille de données fixe** : le disque de données est dimensionné à la fabrication (512 Mio
+  par défaut) et ne grandit pas ensuite (ADR 0035).
+
+La fabrication dépose les deux images, nommées par leur empreinte, et `paquet.json` dans
+`artifacts/reference-image/`.
 
 ### Boot réel
 

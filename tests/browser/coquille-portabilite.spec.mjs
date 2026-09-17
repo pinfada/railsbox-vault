@@ -15,6 +15,7 @@
 // **WebKit** n'offre pas l'OPFS synchrone dans un Worker : la coquille y publie `indisponible`, et le
 // geste qui touche un volume rend son refus typé. La limite est EXIGÉE, pas sautée.
 
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 
 import { expect, test } from "../support/test.mjs";
@@ -32,17 +33,29 @@ const PHRASE = "une phrase de portabilité assez longue pour la calibration";
 const DELAI = 120_000;
 const OCTETS_DU_DISQUE = 16 * 512;
 
+/** La GRAINE servie par ces épreuves, et son empreinte : le versement la confronte (ADR 0041). */
+const GRAINE = Buffer.alloc(OCTETS_DU_DISQUE, 0x42);
+const EMPREINTE_DE_LA_GRAINE = createHash("sha256").update(GRAINE).digest("hex");
+
 const DESCRIPTEUR = {
-  descripteurVersion: 1,
-  application: { id: "portabilite-test", version: "1.0.0" },
+  descripteurVersion: 2,
+  application: { id: "portabilite-test", version: "1.0.0", schema: "20260101000002" },
   runtime: { version: "0.1.0" },
-  disque: { nom: "disque-de-portabilite.ext4", octets: OCTETS_DU_DISQUE },
+  // Les DEUX morceaux du disque système : ces épreuves ne bootent aucune VM, mais le descripteur
+  // v2 les exige, et la garde de forme les contrôle (ADR 0041).
+  rootfs: { nom: "r.ext4", octets: 4096, sha256: "a".repeat(64) },
+  paquet: { nom: "p.ext4", octets: 4096, sha256: "b".repeat(64) },
+  graine: {
+    nom: "graine-de-portabilite.ext4",
+    octets: OCTETS_DU_DISQUE,
+    sha256: EMPREINTE_DE_LA_GRAINE,
+    disqueOctets: OCTETS_DU_DISQUE,
+  },
   boot: {
-    cmdline: "root=/dev/sda rw",
+    cmdline: "root=/dev/sda1 rw",
     memoireOctets: 33554432,
     kernel: "k",
     initrd: "i",
-    rootfs: "r",
     bios: "seabios.bin",
     vgaBios: "vgabios.bin",
   },
@@ -58,11 +71,11 @@ async function servirLApplication(contexte) {
       body: JSON.stringify(DESCRIPTEUR),
     }),
   );
-  await contexte.route(`**${DESCRIPTEUR.prefixeDesArtefacts}${DESCRIPTEUR.disque.nom}`, (route) =>
+  await contexte.route(`**${DESCRIPTEUR.prefixeDesArtefacts}${DESCRIPTEUR.graine.nom}`, (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/octet-stream",
-      body: Buffer.alloc(OCTETS_DU_DISQUE, 0x42),
+      body: GRAINE,
     }),
   );
 }

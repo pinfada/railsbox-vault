@@ -401,6 +401,21 @@ marge n'est plus la même. **La compression est le premier levier à tirer si le
 contraignant, et les chiffres pour la décider sont ci-dessus** — c'est explicitement une condition
 d'abandon de cette décision-ci, pas de l'ADR entier.
 
+## Note datée du 17/09/2026 — le PAQUET applicatif entre dans l'empreinte d'image (#236, ADR 0041)
+
+`ARTEFACTS_DE_L_IMAGE` (`src/vm/instantane-du-boot.mjs`) gagne une septième entrée : `paquet`, le
+code de l'application, désormais servi à part du rootfs et rangé en partition 2 du disque système
+que la coquille compose ([ADR 0041](0041-le-paquet-applicatif-partition-2-d-un-hda-compose.md)).
+
+**Le format ne change pas** : l'empreinte d'image reste 32 octets, et la liaison reste celle que la
+décision 3 décrit. Ce qui change est ce qu'elle COUVRE — un instantané pris sous un autre paquet
+décrit une mémoire de guest qui a chargé un autre code, et il est écarté par le motif typé déjà
+existant, au même titre qu'un instantané pris sous une autre image.
+
+Le tampon différentiel (`creerTamponRootfs`) adopte maintenant le disque COMPOSÉ, table de
+partitions comprise, et non plus le rootfs nu : le delta reste celui des blocs que le guest écrit,
+où qu'ils soient. Les écritures du guest dans `/app` y entrent donc, comme celles du rootfs.
+
 ## Décision 8 — Le cycle de vie : ce qui retire l'instantané
 
 L'instantané **part avec le volume**, et il part aussi avec tout geste qui **réécrit** le volume ou

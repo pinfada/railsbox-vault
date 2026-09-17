@@ -3,8 +3,8 @@
 #
 # Il n'y a pas de réseau émulé sous v86 : la seule voie entre l'hôte et Rails
 # est le port série. Cet init monte les pseudo-systèmes de fichiers, monte le
-# disque applicatif, lance Puma, puis rend ttyS0 au pont série — qui devient le
-# processus 1 pour le reste de la vie de la VM.
+# paquet applicatif puis le disque de données, lance Puma, puis rend ttyS0 au
+# pont série — qui devient le processus 1 pour le reste de la vie de la VM.
 set -eu
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -24,7 +24,31 @@ ip link set lo up 2>/dev/null || ifconfig lo up 2>/dev/null || true
 # `docker export` ne conserve pas /etc/hosts : Docker le monte à l'exécution.
 printf '127.0.0.1\tlocalhost railsbox-vault-reference\n::1\tlocalhost\n' > /etc/hosts
 
-# Disque applicatif attaché en hdb par v86 : /dev/sdb, un ext4 AVEC journal
+# PAQUET APPLICATIF : seconde partition du disque système (#236, ADR 0041).
+#
+# `hda` porte une table de partitions composée par la coquille : /dev/sda1 est le rootfs (monté par
+# le noyau), /dev/sda2 le paquet — le CODE de l'application. Il est monté en LECTURE-ÉCRITURE, et
+# ces écritures sont ÉPHÉMÈRES : elles vivent dans le delta en RAM du tampon du disque système et
+# disparaissent au boot à froid, sans erreur. Une application qui doit conserver quelque chose
+# l'écrit sous /app/var, et nulle part ailleurs (SECURITY.md, #210).
+#
+# Pas de journal sur cette partition : il ne serait jamais rejoué, puisque rien de ce qui est écrit
+# ici ne survit. Les options de durabilité de #209 s'appliquent au disque de DONNÉES, plus bas.
+if ! mountpoint -q /app; then
+  echo "[init] montage du paquet applicatif /dev/sda2 sur /app (ecritures ephemeres)"
+  mount -t ext4 -o rw /dev/sda2 /app || {
+    echo "[init] ECHEC : /dev/sda2 n'est pas un ext4 montable — aucun paquet applicatif"
+    exec sh
+  }
+fi
+
+# Les journaux de l'application vont sur un tmpfs : la partition du paquet a une marge RÉDUITE
+# (+5 % + 16 Mio), et un journal qui grossit pendant une longue session la remplirait — or chaque
+# bloc écrit entre dans le delta en RAM, donc dans l'instantané.
+mkdir -p /app/log /app/tmp
+mountpoint -q /app/log || mount -t tmpfs tmpfs /app/log
+
+# DISQUE DE DONNÉES attaché en hdb par v86 : /dev/sdb, un ext4 AVEC journal
 # (#209, ADR 0004 note du 13/09/2026). Les options par défaut sont celles que la
 # durabilité exige : barrières actives (chaque commit du journal émet un FLUSH
 # CACHE, acquitté après validation de la génération OPFS) et `data=ordered`. Le
@@ -33,15 +57,15 @@ printf '127.0.0.1\tlocalhost railsbox-vault-reference\n::1\tlocalhost\n' > /etc/
 # (revue #211, constat 5) : un système de fichiers en erreur CESSE d'écrire au
 # lieu de continuer, si bien qu'une écriture qui réussit après un boot à froid
 # dit quelque chose de l'état du disque.
-if ! mountpoint -q /app; then
-  echo "[init] montage du disque applicatif /dev/sdb sur /app"
-  mount -t ext4 -o barrier=1,data=ordered,errors=remount-ro /dev/sdb /app || {
-    echo "[init] ECHEC : /dev/sdb n'est pas un ext4 montable — aucune application a lancer"
+if ! mountpoint -q /app/var; then
+  echo "[init] montage du disque de donnees /dev/sdb sur /app/var"
+  mount -t ext4 -o barrier=1,data=ordered,errors=remount-ro /dev/sdb /app/var || {
+    echo "[init] ECHEC : /dev/sdb n'est pas un ext4 montable — aucune donnee a servir"
     exec sh
   }
 fi
 
-# L'ÉTAT du disque applicatif, relevé à CHAQUE boot (revue #211, constat 5) :
+# L'ÉTAT du disque de données, relevé à CHAQUE boot (revue #211, constat 5) :
 # options réellement montées, compteur d'erreurs persistant du superbloc (une
 # erreur d'une session précédente y reste), lignes `EXT4-fs error` et
 # `mounting unchecked` du noyau, rejeu du journal. Il est dit sur la série pour
@@ -51,7 +75,7 @@ fi
 # les erreurs du montage atteignent la série.
 etat_disque=/run/vault-disque-applicatif
 {
-  echo "options=$(grep ' /app ' /proc/mounts | cut -d ' ' -f 4)"
+  echo "options=$(grep ' /app/var ' /proc/mounts | cut -d ' ' -f 4)"
   echo "erreurs=$(cat /sys/fs/ext4/sdb/errors_count 2>/dev/null || echo inconnu)"
   echo "alertes=$(dmesg 2>/dev/null | grep -c -E 'EXT4-fs error|mounting unchecked' || true)"
   echo "rejeu=$(dmesg 2>/dev/null | grep -c 'EXT4-fs (sdb): recovery complete' || true)"

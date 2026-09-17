@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { ecrireManifeste, DOSSIER_ARTEFACTS, RACINE_DEPOT } from "./manifest.mjs";
+import { fabriquerLePaquet } from "../paquet/fabriquer-paquet.mjs";
 import { verifierEpinglage } from "./verify-pinning.mjs";
 
 const dossierOutils = dirname(fileURLToPath(import.meta.url));
@@ -24,7 +25,6 @@ const sources = JSON.parse(readFileSync(join(dossierOutils, "sources.json"), "ut
 
 const ETIQUETTES = {
   rootfs: "railsbox-vault-reference-rootfs:local",
-  app: "railsbox-vault-reference-app:local",
   fabricant: "railsbox-vault-diskbuilder:local",
 };
 
@@ -195,7 +195,7 @@ async function principal() {
 
   if (cible("firmware")) await recupererMicrologiciels();
 
-  if (cible("rootfs") || cible("app")) {
+  if (cible("rootfs")) {
     durees.fabricant = executer("image du fabricant de systèmes de fichiers", [
       "build",
       "-f",
@@ -229,26 +229,13 @@ async function principal() {
   }
 
   if (cible("app")) {
-    durees.appDocker = executer("construction du disque applicatif", [
-      "build",
-      "--platform",
-      "linux/386",
-      ...cache,
-      "-f",
-      "tools/build-reference-image/guest.Dockerfile",
-      "--target",
-      "disque-app",
-      "-t",
-      ETIQUETTES.app,
-      ".",
-    ]);
-    durees.appDisque = await fabriquerDisque({
-      etiquette: ETIQUETTES.app,
-      nom: "reference-app",
-      type: sources.disk.appDiskFilesystem,
-      sousArbre: "app",
-      tailleMiB: options.tailleApp,
-    });
+    // Le disque applicatif unique a disparu : l'application de référence est le PREMIER PAQUET, et
+    // elle se fabrique par le MÊME outil qu'une application extérieure (#236, ADR 0041). Un second
+    // chemin de fabrication pour la référence aurait divergé au premier correctif — et surtout, il
+    // aurait laissé le chemin des applications tierces sans preuve.
+    const debutPaquet = Date.now();
+    await fabriquerLePaquet(["--taille-donnees", String(options.tailleApp)]);
+    durees.paquet = Date.now() - debutPaquet;
   }
 
   const { chemin, manifeste } = ecrireManifeste();

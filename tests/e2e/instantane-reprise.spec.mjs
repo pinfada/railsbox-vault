@@ -51,6 +51,7 @@ import { fileURLToPath } from "node:url";
 import { INSTANTANE_ERROR_CODES } from "../../src/vm/instantane/instantane-errors.mjs";
 import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
+import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -136,7 +137,7 @@ test("un instantané rend Rails en une fraction du boot à froid, puis est écar
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));
   const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
   const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
-  const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
+  const graine = graineDuManifeste(manifeste);
 
   const runtime = {
     lib: ADRESSES_V86.get("libv86.mjs"),
@@ -145,7 +146,7 @@ test("un instantané rend Rails en une fraction du boot à froid, puis est écar
     vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
     kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
     initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
-    rootfs: `/artifacts/reference-image/${manifeste.boot.hda}`,
+    disqueSysteme: disqueSystemeDuManifeste(manifeste),
   };
   const descripteurManifeste = {
     runtime: { version: paquet.version, artifact: null, minWriter: paquet.version },
@@ -185,12 +186,12 @@ test("un instantané rend Rails en une fraction du boot à froid, puis est écar
   const prepare = await phase({
     phase: "prepare",
     volume: VOLUME,
-    appDiskBytes: disqueApp.byteSize,
-    appDiskUrl: `/artifacts/reference-image/${manifeste.boot.hdb}`,
+    appDiskBytes: graine.appDiskBytes,
+    appDiskUrl: graine.appDiskUrl,
     manifest: descripteurManifeste,
   });
   expect(prepare.bytesWritten, "le disque applicatif entier est écrit dans OPFS").toBe(
-    disqueApp.byteSize,
+    graine.appDiskBytes,
   );
   chronologie.etape("préparation", { octets: prepare.bytesWritten });
 

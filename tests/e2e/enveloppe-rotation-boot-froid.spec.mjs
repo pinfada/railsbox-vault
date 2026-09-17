@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { ENVELOPPE_ERROR_CODES } from "../../src/vm/enveloppe/enveloppe-errors.mjs";
 import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "../../tools/v86-paths.mjs";
+import { disqueSystemeDuManifeste, graineDuManifeste } from "../support/image-de-reference.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -108,7 +109,7 @@ test("une clé de déverrouillage ouvre un volume Rails à froid, sa rotation au
   const manifeste = JSON.parse(readFileSync(CHEMIN_MANIFESTE, "utf8"));
   const contrat = JSON.parse(readFileSync(CHEMIN_CONTRAT, "utf8"));
   const paquet = JSON.parse(readFileSync(CHEMIN_PACKAGE, "utf8"));
-  const disqueApp = manifeste.artifacts.find((a) => a.name === manifeste.boot.hdb);
+  const graine = graineDuManifeste(manifeste);
 
   const descripteurManifeste = {
     runtime: { version: paquet.version, artifact: null, minWriter: paquet.version },
@@ -125,7 +126,7 @@ test("une clé de déverrouillage ouvre un volume Rails à froid, sa rotation au
       vgaBios: `/artifacts/reference-image/${manifeste.boot.vgaBios}`,
       kernel: `/artifacts/reference-image/${manifeste.boot.kernel}`,
       initrd: `/artifacts/reference-image/${manifeste.boot.initrd}`,
-      rootfs: `/artifacts/reference-image/${manifeste.boot.hda}`,
+      disqueSysteme: disqueSystemeDuManifeste(manifeste),
     },
     manifest: descripteurManifeste,
     expected: { recordId: contrat.record.id, attachmentSha256: contrat.attachment.sha256 },
@@ -159,12 +160,12 @@ test("une clé de déverrouillage ouvre un volume Rails à froid, sa rotation au
   const prepare = await phase({
     phase: "prepare",
     volume: VOLUME,
-    appDiskBytes: disqueApp.byteSize,
-    appDiskUrl: `/artifacts/reference-image/${manifeste.boot.hdb}`,
+    appDiskBytes: graine.appDiskBytes,
+    appDiskUrl: graine.appDiskUrl,
     manifest: descripteurManifeste,
   });
   expect(prepare.bytesWritten, "le disque applicatif entier est écrit dans OPFS").toBe(
-    disqueApp.byteSize,
+    graine.appDiskBytes,
   );
 
   chronologie.etape("préparation du volume", { octets: prepare.bytesWritten });
