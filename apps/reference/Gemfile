@@ -43,4 +43,4 @@ gem "puma", "= 8.0.2"
 #
 # `require: false` : le chargement se fait dans `config/boot.rb`, avant Rails,
 # ce qui est le seul endroit où il sert à quelque chose.
-gem "bootsnap", "= 1.25.0", require: false
+gem "bootsnap", "1.26.0", require: false
