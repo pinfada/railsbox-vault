@@ -357,6 +357,12 @@ export const EXCLUSIONS = Object.freeze([
       "Contrats des bancs de spike, dont la topologie de mesure `origin-topology.mjs` " +
       "(ports 4173/4174, documents hostiles). Ce n'est pas la topologie de production.",
   }),
+  Object.freeze({
+    prefixe: "src/jetable/",
+    motif:
+      "Lest JETABLE du suivi d'audit (remarque 2) : constate le chemin négatif du contrôle " +
+      "requis « Qualité et tests ». N'existe que sur la branche jetable, jamais fusionné.",
+  }),
 ]);
 
 /** Racines du dépôt dont chaque fichier doit être soit publié, soit explicitement exclu. */
