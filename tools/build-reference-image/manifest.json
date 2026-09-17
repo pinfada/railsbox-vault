@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "generatedAt": "2026-09-17T18:27:55.145Z",
+  "generatedAt": "2026-09-17T19:33:20.638Z",
   "application": {
     "id": "railsbox-vault-reference",
     "version": "1.0.0",
@@ -24,8 +24,8 @@
     "kernel": "reference-rootfs-vmlinuz",
     "initrd": "reference-rootfs-initrd",
     "rootfs": "reference-rootfs.ext4",
-    "paquet": "railsbox-vault-reference-1.0.0-9a44e7f6.ext4",
-    "graine": "railsbox-vault-reference-1.0.0-graine-b52c5129.ext4",
+    "paquet": "railsbox-vault-reference-1.0.0-6a5efb12.ext4",
+    "graine": "railsbox-vault-reference-1.0.0-graine-124bc2fa.ext4",
     "bios": "seabios.bin",
     "vgaBios": "vgabios.bin"
   },
@@ -38,20 +38,20 @@
   },
   "artifacts": [
     {
-      "name": "railsbox-vault-reference-1.0.0-9a44e7f6.ext4",
+      "name": "railsbox-vault-reference-1.0.0-6a5efb12.ext4",
       "role": "partition 2 de hda — paquet applicatif : arbre de l'application, bundle i386, cache Bootsnap",
       "license": "MIT (RailsBox Vault) ; gemmes selon le Gemfile.lock de l'application",
       "origin": "tools/build-reference-image/guest.Dockerfile (cible disque-app), npm run app:paquet",
       "byteSize": 143654912,
-      "sha256": "9a44e7f6ef38d1acb06388105eeec6defc1264db9d86b5c929afbe1a6d52f117"
+      "sha256": "6a5efb1280c0a98e35fd9cc443c372518766ba8f2bb611cbe61508bc861f2f74"
     },
     {
-      "name": "railsbox-vault-reference-1.0.0-graine-b52c5129.ext4",
+      "name": "railsbox-vault-reference-1.0.0-graine-124bc2fa.ext4",
       "role": "graine du volume de données — base SQLite migrée et vide, storage/ vide, marqueur de schéma",
       "license": "MIT (RailsBox Vault) ; gemmes selon le Gemfile.lock de l'application",
       "origin": "tools/build-reference-image/guest.Dockerfile (cible disque-app), npm run app:paquet",
       "byteSize": 536870912,
-      "sha256": "b52c512912bebc4b38afa90ebd1754357a684f230da4fc7f87c821ff338678d0"
+      "sha256": "124bc2faa62bd7243de530e808b26cbad42f7d5ef0f494f0cdce226be0d13e21"
     },
     {
       "name": "reference-rootfs-initrd",

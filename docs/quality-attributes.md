@@ -593,9 +593,21 @@ Mio de chiffrement et d'écriture ; il en reste 0,4 Mio. Le **scellement initial
 ne change pas : il appartient au format, pas au contenu, et c'est lui qui domine désormais
 l'installation.
 
-**Ce que cela coûte en mémoire** : le paquet s'ajoute au rootfs, tous deux en RAM pour la session
-(le disque système est un tampon différentiel, ADR 0024). Le RSS pendant le boot est relevé par
-`node tools/mesurer-memoire.mjs` ; la cible du MVP reste 1,2 Gio (#67).
+**Ce que cela coûte en mémoire, mesuré le 17/09/2026** (`node tools/mesurer-memoire.mjs --essais=1`,
+Chromium, image avec paquet) :
+
+| Phase        | Relevés |   Pic (Mio) | Moyen (Mio) | Privé au pic (Mio) |
+| ------------ | ------: | ----------: | ----------: | -----------------: |
+| base         |       3 |       267,6 |       236,8 |              147,3 |
+| préparation  |      42 |       692,7 |       546,2 |              558,7 |
+| boot à chaud |      71 | **1 552,4** |     1 317,3 |            1 843,0 |
+| reprise 1    |      74 |     1 531,6 |     1 300,6 |            1 843,8 |
+
+**La cible de 1,2 Gio (#67) est dépassée**, et l'issue #238 est ouverte avec ces chiffres : le
+disque système tient désormais rootfs + paquet (522 Mio) en RAM pour la session. Ce qui n'est PAS
+établi : la comparaison avant/après **sur le même poste** — le pic de 940 Mio publié plus haut vient
+d'une autre campagne, et l'écart (+612 Mio) dépasse ce que le seul paquet explique. Rejouer la
+mesure sur `main` est le premier geste de #238.
 
 ## Le budget de récupération est mesuré, et le plafond de charge en découle (#91)
 
