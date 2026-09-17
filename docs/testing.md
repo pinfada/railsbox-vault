@@ -19,12 +19,17 @@ critique échoue ; `bundler-audit` échoue sur tout avis non ignoré. Une panne 
 base d'avis fait également échouer le contrôle. Le job final `Qualité et tests`, déjà requis sur
 `main`, attend les tests du produit, la matrice de couverture et les deux audits. Il s'exécute même
 après un échec et refuse tout résultat autre que `success`, y compris `skipped`, `cancelled` ou
-absent. Les suites restent parallèles. Ce raccordement ne change pas les règles GitHub et doit
-encore être livré puis constaté sur une PR. `publication.yml` appelle aussi les audits avant sa
-construction, en leur transmettant la révision demandée. Les déclenchements PR et push ne sont pas
-dupliqués dans `security.yml`. Les tests `workflows-controles-requis.test.mjs` exécutent le code du
-gate avec des résultats positifs et négatifs ; ils ne remplacent pas une exécution réelle de GitHub
-Actions.
+absent. Les suites restent parallèles. Ce raccordement ne change pas les règles GitHub ; il est
+constaté sur deux PR réelles. Chemin POSITIF : PR #224, run 35199493648 (tête `5447e7f8`), tous les
+jobs `success`, dont `Qualité et tests`. Chemin NÉGATIF, constaté le 17/09/2026 par une PR jetable
+fermée sans fusion (PR #229, run 35228193355) : `Couverture unitaire (Node 22)` et `(Node 24)` en
+`failure`, `Vérifications du produit`, les deux audits et `Campagnes de mutation` restés `success`,
+et `Qualité et tests` en `failure` — jamais `skipped` ni `cancelled`.
+
+`publication.yml` appelle aussi les audits avant sa construction, en leur transmettant la révision
+demandée. Les déclenchements PR et push ne sont pas dupliqués dans `security.yml`. Les tests
+`workflows-controles-requis.test.mjs` exécutent le code du gate avec des résultats positifs et
+négatifs ; ils ne remplacent pas une exécution réelle de GitHub Actions.
 
 Le SBOM npm lit uniquement `package-lock.json`, avec les dépendances de développement, optionnelles
 et peer incluses, même sous `NODE_ENV=production`. Il est généré aussi après un échec d'audit npm.
