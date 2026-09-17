@@ -161,7 +161,9 @@ gestionnaire de mots de passe. Le contrôle intervient dans l'interface et avant
 dérivation. Il ne modifie jamais la phrase donnée à Argon2id et ne s'applique pas aux coffres
 existants, afin de préserver leur accès. Le Worker de confiance reçoit une KEK : il ne peut pas
 déduire la robustesse de la phrase qui l'a produite. Aucun verrouillage d'essais côté client ne
-protège une copie attaquée hors ligne.
+protège une copie attaquée hors ligne. C'est un contrôle D'ERGONOMIE, pas une barrière
+d'authentification : un appel qui atteindrait directement le Worker de dérivation (hors de
+l'interface) le contournerait, sans affaiblir Argon2id ni la KEK qui en sort.
 
 **En-têtes (VULN-05 et VULN-06).** `X-Frame-Options: DENY` complète `frame-ancestors 'none'` sur la
 coquille et dans les artefacts publiés, sans interdire son cadre applicatif. COEP reste absent
