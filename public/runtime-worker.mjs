@@ -74,7 +74,11 @@ import {
   moyenParNom,
 } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { ouvrirParLeCode } from "/src/coquille/ouverture-par-le-code.mjs";
-import { constaterALOuverture, feuilleEprouvee } from "/src/coquille/preuve-de-la-feuille.mjs";
+import {
+  constaterALOuverture,
+  feuilleConstatee,
+  feuilleEprouvee,
+} from "/src/coquille/preuve-de-la-feuille.mjs";
 import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
 import { SECTOR_SIZE } from "/src/vm/block-geometry.mjs";
 import {
@@ -490,20 +494,23 @@ async function deverrouiller(message, correlation) {
     ouverte.dek.fill(0);
   }
   // Après l'ouverture seulement ; la barrière qui suit rend l'inscription durable (#239).
-  interne.eprouves = await constaterALOuverture(interne.backend, ouverte.identifiantEprouve);
+  const constat = await constaterALOuverture(interne.backend, ouverte.identifiantEprouve);
+  interne.eprouves = constat.identifiants;
   interne.kek = ouverte.kek;
   interne.version = ouverte.version;
   interne.etat = ETATS_DU_VOLUME.ouvert;
   await ecrireEtAcquitter();
+  const feuille = await feuilleConstatee(interne.eprouves, () =>
+    inventorierEnveloppe({ support: support(), identifiantVolume: IDENTIFIANT_VOLUME }),
+  );
+  // Une preuve illisible ne referme pas le coffre ; son refus est publié, jamais avalé.
+  for (const erreur of [constat.erreur, feuille.erreur]) if (erreur) repondreRefus(erreur, null);
   return repondre(TYPES_PRIVILEGIES.deverrouillageReponse, correlation, {
     etat: interne.etat,
     barrieres: interne.barrieres,
     versionEnveloppe: interne.version,
     enveloppeMigree: ouverte.migree === true,
-    feuilleEprouvee: feuilleEprouvee(
-      interne.eprouves,
-      await inventorierEnveloppe({ support: support(), identifiantVolume: IDENTIFIANT_VOLUME }),
-    ),
+    feuilleEprouvee: feuille.eprouvee,
   });
 }
 

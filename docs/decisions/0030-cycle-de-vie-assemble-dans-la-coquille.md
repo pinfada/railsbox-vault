@@ -562,8 +562,14 @@ est `src/coquille/preuve-de-la-feuille.mjs` ; le Worker de confiance n'en porte 
   (`coquille-preuve-de-la-feuille.test.mjs`) : un coffre d'avant #239 — secteur 0 écrit, secteur 1
   jamais — rend 512 zéros, lus « vierge », c'est-à-dire « aucune feuille éprouvée ». Une marque
   étrangère, un format à venir ou un compte hors borne se lisent de même et sont réécrits au format
-  1 à la prochaine inscription ; une lecture qui ÉCHOUE (sceau refusé) n'est pas un secteur vierge,
-  et remonte typée comme toute lecture du volume.
+  1 à la prochaine inscription ; une lecture ou une inscription qui ÉCHOUE (sceau refusé, support
+  perdu) ne referme PAS le coffre : la feuille est lue « non éprouvée », et le Worker publie le
+  refus typé, sans corrélation (revue de sécurité de la PR #244). Une preuve perdue ne coûte qu'une
+  saisie du code.
+- **Ce que le secteur révèle, et que l'on accepte** (revue de sécurité de la PR #244, LOW) : qui
+  compare deux copies du fichier chiffré du volume voit que le secteur 1 a changé, donc qu'un code
+  NEUF a ouvert ce coffre entre les deux — pas lequel, ni rien du code. Le secteur 0 change déjà à
+  chaque ouverture ; cette fuite est de même nature que la date de modification du fichier.
 - **Il ne voyage pas** : l'archive porte le volume `application`, pas `coquille`. Un coffre restauré
   n'a donc aucune preuve, et l'ouverture par le code de l'étape 8 l'inscrit. La présence du volume,
   qui sert de trace de service (`aServiDepuisLaRestauration`), ne change pas.

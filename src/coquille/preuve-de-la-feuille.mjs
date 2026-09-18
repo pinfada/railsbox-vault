@@ -26,7 +26,8 @@
 // comme « aucune feuille éprouvée » — l'état ordinaire d'un coffre ancien, restauré ou neuf —, et
 // jamais comme une erreur. Une marque inconnue ou un format à venir se lisent de même, et sont
 // réécrits au format 1 à la prochaine inscription. Une lecture qui ÉCHOUE (sceau refusé, support
-// perdu) n'est pas un secteur vierge : son erreur remonte, typée, comme celle de tout autre secteur.
+// perdu) n'est pas un secteur vierge : elle ne prouve rien, et son erreur est RENDUE au Worker, qui la
+// publie comme un refus typé sans refermer le coffre (`constaterALOuverture`).
 //
 // Pur à l'exception des deux fonctions qui prennent un `backend` : ni DOM, ni horloge.
 
@@ -178,13 +179,48 @@ export async function inscrireLaPreuve(backend, identifiants, identifiant) {
  * l'emplacement qui vient d'ouvrir quand c'est un code de récupération. Appelée seulement APRÈS que
  * le volume s'est ouvert : une ouverture refusée n'écrit rien.
  *
+ * Elle ne fait JAMAIS échouer l'ouverture (revue de sécurité de la PR #244) : le coffre est ouvert, et
+ * une preuve illisible ou non inscrite n'en retire rien — elle ne coûte qu'une saisie du code. L'erreur
+ * n'est pas avalée pour autant : elle est RENDUE, et le Worker la publie comme un refus typé. Une
+ * lecture qui échoue ne prouve rien (liste vide) ; une inscription qui échoue laisse la liste LUE,
+ * dont chaque identifiant a déjà ouvert ce coffre.
+ *
  * @param {{ read: Function, write: Function }} backend le volume `coquille`, ouvert
  * @param {string | null} identifiant l'emplacement de récupération qui a ouvert, ou `null` pour une
  *   phrase, une passkey ou une création
- * @returns {Promise<readonly string[]>} les identifiants éprouvés, à comparer à l'enveloppe
+ * @returns {Promise<{ identifiants: readonly string[], erreur: Error | null }>}
  */
 export async function constaterALOuverture(backend, identifiant) {
-  const lue = await lireLaPreuveDuVolume(backend);
-  if (identifiant === null) return lue.identifiants;
-  return inscrireLaPreuve(backend, lue.identifiants, identifiant);
+  let lue;
+  try {
+    lue = await lireLaPreuveDuVolume(backend);
+  } catch (erreur) {
+    return Object.freeze({ identifiants: Object.freeze([]), erreur });
+  }
+  if (identifiant === null) return Object.freeze({ identifiants: lue.identifiants, erreur: null });
+  try {
+    const identifiants = await inscrireLaPreuve(backend, lue.identifiants, identifiant);
+    return Object.freeze({ identifiants, erreur: null });
+  } catch (erreur) {
+    return Object.freeze({ identifiants: lue.identifiants, erreur });
+  }
+}
+
+/**
+ * Le CONSTAT publié : la liste éprouvée, comparée à l'enveloppe du moment. Un inventaire qui échoue
+ * rend « non éprouvée » et l'erreur, que le Worker publie ; il ne fait pas échouer l'ouverture.
+ *
+ * @param {readonly string[]} identifiants
+ * @param {() => Promise<object>} inventorier
+ * @returns {Promise<{ eprouvee: boolean, erreur: Error | null }>}
+ */
+export async function feuilleConstatee(identifiants, inventorier) {
+  try {
+    return Object.freeze({
+      eprouvee: feuilleEprouvee(identifiants, await inventorier()),
+      erreur: null,
+    });
+  } catch (erreur) {
+    return Object.freeze({ eprouvee: false, erreur });
+  }
 }

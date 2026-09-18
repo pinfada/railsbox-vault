@@ -1089,6 +1089,23 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_PREUVE],
   },
   {
+    nom: "l'inscription garde les identifiants déjà éprouvés (revue de sécurité de la PR #244)",
+    garde: "constaterALOuverture — inscrire sur la liste LUE, jamais sur une liste vide",
+    fichier: PREUVE,
+    avant:
+      "    const identifiants = await inscrireLaPreuve(backend, lue.identifiants, identifiant);\n",
+    apres: "    const identifiants = await inscrireLaPreuve(backend, [], identifiant);\n",
+    epreuves: [EPREUVE_PREUVE],
+  },
+  {
+    nom: "une inscription qui échoue rend son erreur, jamais un silence (revue de la PR #244)",
+    garde: "constaterALOuverture — l'erreur rendue au Worker, qui la publie",
+    fichier: PREUVE,
+    avant: "    return Object.freeze({ identifiants: lue.identifiants, erreur });\n",
+    apres: "    return Object.freeze({ identifiants: lue.identifiants, erreur: null });\n",
+    epreuves: [EPREUVE_PREUVE],
+  },
+  {
     nom: "le Worker n'inscrit la preuve qu'APRÈS l'ouverture du volume (#239)",
     garde: "deverrouiller — l'ordre ouvrir, constater, barrière",
     fichier: WORKER,

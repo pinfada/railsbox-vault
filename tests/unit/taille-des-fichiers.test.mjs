@@ -65,7 +65,7 @@ const RACINES = ["src", "public"];
 const HORS_PERIMETRE = [
   {
     fichier: "public/runtime-worker.mjs",
-    lignes: 914,
+    lignes: 921,
     motif:
       "découvert le 11/09/2026 en élargissant RACINES à `public` (#175) : il dépassait déjà le " +
       "plafond avant cet élargissement, et #175 ne scindait que `main.mjs`. Scinder le Worker de " +
@@ -89,12 +89,13 @@ const HORS_PERIMETRE = [
       "entendu — et la cause reste une hypothèse. Ces dix-huit lignes ont éliminé deux hypothèses par " +
       "la mesure ; elles restent parce qu'une borne qu'on ne sait pas instrumenter se rediagnostique " +
       "à chaque incident. " +
-      "#239 (18/09/2026) y ajoute QUATORZE lignes de COUTURE : lire et inscrire la preuve de la " +
+      "#239 (18/09/2026) y ajoute VINGT ET UNE lignes de COUTURE : lire et inscrire la preuve de la " +
       "feuille au secteur 1 du volume `coquille` après une ouverture, et publier `feuilleEprouvee` " +
       "dans les deux réponses qui la portent. La logique — format, lecture d'un secteur vierge, " +
       "inscription, comparaison à l'enveloppe — est née dans `src/coquille/preuve-de-la-feuille.mjs`, " +
       "éprouvée sans navigateur ; ce qui reste ici est ce qui ne pouvait pas partir : l'appel entre " +
-      "l'ouverture du volume et sa barrière, et l'état qu'il tient.",
+      "l'ouverture du volume et sa barrière, l'état qu'il tient, et la publication du refus quand " +
+      "la preuve est illisible (revue de sécurité de la PR #244 : le coffre reste ouvert).",
   },
 ];
 
