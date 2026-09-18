@@ -20,7 +20,9 @@ import {
   FORMAT_DE_LA_PREUVE,
   IDENTIFIANTS_MAX,
   SECTEUR_DE_LA_PREUVE,
+  constaterALOuverture,
   encoderLaPreuve,
+  feuilleConstatee,
   feuilleEprouvee,
   inscrireLaPreuve,
   lireLaPreuve,
@@ -240,7 +242,10 @@ test("WORKER : la preuve est lue et inscrite APRÈS l'ouverture du volume, AVANT
   assert.ok(rang("await ouvrirLeVolume(ouverte.dek)") < rang("await constaterALOuverture("));
   assert.ok(rang("await constaterALOuverture(") < rang("interne.etat = ETATS_DU_VOLUME.ouvert"));
   assert.ok(rang("interne.etat = ETATS_DU_VOLUME.ouvert") < rang("await ecrireEtAcquitter()"));
-  assert.match(corps, /feuilleEprouvee: feuilleEprouvee\(\s*interne\.eprouves,/);
+  assert.match(corps, /feuilleEprouvee: feuille\.eprouvee,/);
+  // Une preuve illisible ne referme pas le coffre : son refus est PUBLIÉ, sans corrélation.
+  assert.match(corps, /for \(const erreur of \[constat\.erreur, feuille\.erreur\]\) if \(erreur\)/);
+  assert.match(corps, /repondreRefus\(erreur, null\)/);
   // L'emplacement inscrit est celui d'un CODE, jamais celui d'une phrase ou d'une passkey.
   assert.match(
     source,
@@ -255,5 +260,82 @@ test("WORKER : la preuve est lue et inscrite APRÈS l'ouverture du volume, AVANT
   assert.match(
     source,
     /interne\.etat = ETATS_DU_VOLUME\.verrouille;\n\s*interne\.eprouves = \[\];/,
+  );
+});
+
+/** Une ouverture du Worker, sur le vrai volume : ouvrir, constater, acquitter, fermer. */
+async function uneOuverture(banc, identifiant) {
+  const backend = await ouvrirLaCoquille(banc);
+  try {
+    const constat = await constaterALOuverture(backend, identifiant);
+    await ecrireEtAcquitter(backend);
+    return constat;
+  } finally {
+    await backend.close();
+  }
+}
+
+test("COMPORTEMENT (revue de la PR #244) : deux codes différents restent inscrits TOUS DEUX, un code déjà inscrit ne double pas, huit au plus", async () => {
+  const banc = magasin();
+  assert.deepEqual(await uneOuverture(banc, ID(1)), { identifiants: [ID(1)], erreur: null });
+  assert.deepEqual(await uneOuverture(banc, ID(2)), {
+    identifiants: [ID(1), ID(2)],
+    erreur: null,
+  });
+  assert.deepEqual(
+    (await uneOuverture(banc, ID(2))).identifiants,
+    [ID(1), ID(2)],
+    "un code déjà inscrit ne double pas",
+  );
+  // Une phrase relit sans rien écrire : la preuve des codes tient.
+  assert.deepEqual((await uneOuverture(banc, null)).identifiants, [ID(1), ID(2)]);
+  for (let rang = 3; rang <= 10; rang += 1) await uneOuverture(banc, ID(rang));
+  const relue = (await uneOuverture(banc, null)).identifiants;
+  assert.equal(relue.length, IDENTIFIANTS_MAX);
+  assert.deepEqual(relue, [3, 4, 5, 6, 7, 8, 9, 10].map(ID), "les plus anciennes sortent");
+});
+
+test("COMPORTEMENT (revue de la PR #244) : une preuve illisible ou non inscrite ne referme rien, et son erreur est RENDUE", async () => {
+  const erreurDEcriture = Object.assign(new Error("écriture refusée"), {
+    code: "VAULT_STORAGE_SUPPORT_FAILURE",
+  });
+  const inscrite = encoderLaPreuve([ID(1)]);
+  const quiRefuseDEcrire = {
+    read: async () => inscrite.slice(),
+    write: async () => {
+      throw erreurDEcriture;
+    },
+  };
+  // L'inscription échoue : la liste LUE reste (chaque identifiant a déjà ouvert), l'erreur est rendue.
+  assert.deepEqual(await constaterALOuverture(quiRefuseDEcrire, ID(2)), {
+    identifiants: [ID(1)],
+    erreur: erreurDEcriture,
+  });
+  const erreurDeLecture = Object.assign(new Error("sceau refusé"), {
+    code: "VAULT_STORAGE_SCEAU_REFUSE",
+  });
+  const quiRefuseDeLire = {
+    read: async () => {
+      throw erreurDeLecture;
+    },
+    write: async () => assert.fail("rien ne s'écrit après une lecture refusée"),
+  };
+  assert.deepEqual(await constaterALOuverture(quiRefuseDeLire, ID(2)), {
+    identifiants: [],
+    erreur: erreurDeLecture,
+  });
+  // Le constat publié : un inventaire qui échoue rend « non éprouvée », et son erreur.
+  const erreurDInventaire = new Error("inventaire illisible");
+  assert.deepEqual(
+    await feuilleConstatee([ID(1)], async () => {
+      throw erreurDInventaire;
+    }),
+    { eprouvee: false, erreur: erreurDInventaire },
+  );
+  assert.deepEqual(
+    await feuilleConstatee([ID(1)], async () => ({
+      emplacements: [{ typeKek: TYPES_KEK.recuperation, identifiantEmplacement: ID(1) }],
+    })),
+    { eprouvee: true, erreur: null },
   );
 });

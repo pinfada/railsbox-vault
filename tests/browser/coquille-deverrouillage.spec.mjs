@@ -344,6 +344,17 @@ test("une PHRASE ouvre le coffre depuis la coquille, et l'attente est annoncée 
   await expect
     .poll(async () => (await releve(page)).etat, { timeout: DELAI })
     .not.toBe(ETATS_DU_VOLUME.verrouille);
+  // L'état « ouvert » est publié dès la réponse du Worker ; le journal ne dit « volume-ouvert »
+  // qu'après la relecture de l'inventaire qui suit. Lire entre les deux était une course (#244).
+  await expect
+    .poll(
+      async () => {
+        const vu = await releve(page);
+        return vu.etat === ETATS_DU_VOLUME.indisponible || vu.journal.includes("volume-ouvert");
+      },
+      { timeout: DELAI },
+    )
+    .toBe(true);
 
   const rapport = await releve(page);
   const interne = await releveDeLInterface(page);

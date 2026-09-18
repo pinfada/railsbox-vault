@@ -313,7 +313,9 @@ fichier n'ouvre un écran de travail. Le fichier reste sans secret.
   l'étape 5, depuis `recuperer` hors de l'étape 8. Seuls les exercices de la visite avancent (5 → 6,
   8 → 9). C'est aussi la cause de ce que la QA avait vu : une origine RESTAURÉE ne s'ouvre que par
   `recuperer`, dont l'ouverture menait à 9 quelle que soit l'étape demandée — `?etape=4` n'y
-  changeait rien.
+  changeait rien. Accepté par la revue de sécurité de la PR #244 (LOW) : une vraie preuve jointe à
+  un `parcours.json` falsifié (étape 9) peut mener à l'étape 9 par « J'ai oublié ma phrase » ; c'est
+  un écran que la preuve autorise déjà, et l'ordre ne protège que la personne (§ 2).
 - **L'ordre tient vers l'avant, il ne retient personne vers l'arrière.** `etapeAdmise` est inchangée
   ; les écrans 5 à 9 et `termine` portent « Revenir à mon application » (geste de page, → 4), et «
   Continuer » depuis l'étape 4 mène à la prochaine étape NON jouée.
