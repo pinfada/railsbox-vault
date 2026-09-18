@@ -489,3 +489,41 @@ test("#239, VULN-04 : falsifier parcours.json n'ouvre aucun écran de travail", 
   const etape4 = browserName === "firefox" ? "Travailler dans l'application" : "Votre application";
   await expect(ecran(page, etape4)).toBeVisible({ timeout: DELAI });
 });
+
+test("contre-recette de #244 : « je n'ai plus cette feuille », puis la même feuille ouvre — c'est une preuve, étape 4", async ({
+  page,
+}) => {
+  await ouvrirLaCoquille(page);
+  if (await exigerLaLimiteDuMoteur(page)) return;
+  const code = await creerEtAfficherLeCode(page);
+  await ouvrirLaCoquille(page);
+  await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({ timeout: DELAI });
+  await bouton(page, "Je n'ai plus cette feuille — afficher un nouveau code").click();
+  await expect(ecran(page, "Rouvrir votre coffre")).toBeVisible();
+  await bouton(page, "J'ai oublié ma phrase : utiliser mon code de récupération").click();
+  await page.getByLabel("Code de récupération", { exact: true }).fill(code);
+  await bouton(page, "Ouvrir mon coffre avec le code").click();
+  await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
+});
+
+test("contre-recette de #244 : l'avertissement de révocation dépend du moyen de la séance", async ({
+  page,
+}) => {
+  await ouvrirLaCoquille(page);
+  if (await exigerLaLimiteDuMoteur(page)) return;
+  const code = await creerEtAfficherLeCode(page);
+  await eprouverLaFeuille(page, code);
+  const avertissement = page.locator("#parcours-avertissement-revocation");
+  // Ouvert par le CODE : la phrase et la passkey seraient retirées.
+  await expect(avertissement).toContainText("— le code de votre feuille — continuera de l'ouvrir");
+  await expect(avertissement).toContainText("Votre phrase et votre passkey ne fonctionneront plus");
+  // Ouvert par la PHRASE : c'est la feuille qui serait retirée, et l'écran le dit en toutes lettres.
+  await expect.poll(async () => (await lireLaProgression(page)).feuilleEprouvee).toBe(true);
+  await ouvrirLaCoquille(page);
+  await rouvrirParLaPhrase(page);
+  await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
+  await expect(avertissement).toContainText("— votre phrase — continuera de l'ouvrir");
+  await expect(avertissement).toContainText(
+    "votre feuille de récupération ne servira plus à rien, créez-en une nouvelle ensuite",
+  );
+});

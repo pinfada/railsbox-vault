@@ -89,10 +89,12 @@ navigateur. `?vue=complete` est un paramètre des épreuves automatiques, pas un
 coffre, puis rouvrez-le avec le code de votre feuille. Sur cet appareil, c'est la seule fois où le
 code est demandé : ensuite, votre phrase suffit — tant que vous ne l'avez pas révoquée —, et chaque
 ouverture vous ramène à votre application. L'étape 9 est facultative : « Terminer sans révoquer »
-finit la visite sans rien retirer. Le fichier de progression ne constitue pas une preuve ; c'est le
-coffre lui-même qui retient qu'une feuille l'a ouvert (ADR 0040, amendement du 18/09/2026). Des
-étapes 5 à 9, « Revenir à mon application » vous y ramène aussi ; après la dernière étape, l'écran
-de l'application porte les gestes de tous les jours : verrouiller, sauvegarder, révoquer.
+finit la visite sans rien retirer. Révoquer garde le moyen avec lequel vous venez d'ouvrir et retire
+tous les autres — ouvert par la phrase, c'est votre feuille qui ne servira plus — ; l'écran dit
+lesquels avant le geste. Le fichier de progression ne constitue pas une preuve ; c'est le coffre
+lui-même qui retient qu'une feuille l'a ouvert (ADR 0040, amendement du 18/09/2026). Des étapes 5 à
+9, « Revenir à mon application » vous y ramène aussi ; après la dernière étape, l'écran de
+l'application porte les gestes de tous les jours : verrouiller, sauvegarder, révoquer.
 
 Respectez les hôtes indiqués : les cookies sont partagés entre les ports d'un même hôte. Le serveur
 refuse les alias, notamment `localhost:4179` pour la coquille configurée sur `127.0.0.1` ; seul un

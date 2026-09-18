@@ -87,7 +87,7 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
   restaurer: ["restaurationEnCours", "restauree"],
   "recuperer-preparer": ["verrouillageEnCours"],
   recuperer: ["saisieIncomplete", "saisieComplete", "ouvertureEnCours", "coffreOuvert"],
-  revoquer: ["revoque", "revoqueSansRien"],
+  revoquer: ["avertissementDeRevocation", "revoque", "revoqueSansRien"],
 });
 
 /** Les messages de STRUCTURE, communs à tous les écrans, dits une fois dans l'introduction. */
@@ -203,6 +203,14 @@ function texteDuMessage(nom) {
   if (nom === "demarrageEnCours") return message(N, MESSAGES.signesDeVie(N));
   if (nom === "revoque") return message(N, "V");
   if (nom === "saisieIncomplete") return message(N, 28);
+  if (nom === "avertissementDeRevocation") {
+    return ["phrase", "webauthn-prf", "recuperation"]
+      .map(
+        (moyen) =>
+          `(ouvert par ${moyen === "recuperation" ? "le code" : moyen === "phrase" ? "la phrase" : "la passkey"}) ${message(moyen)}`,
+      )
+      .join(" — ou — ");
+  }
   return message(N);
 }
 

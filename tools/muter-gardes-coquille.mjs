@@ -881,8 +881,9 @@ export const MUTATIONS = Object.freeze([
     nom: "un coffre ouvert sans moyen de récupération ramène toujours à la création du code",
     garde: "ecranOuvert — le premier moyen de récupération se crée à l'étape 3",
     fichier: PARCOURS,
-    avant: '  if (nombreDeCodes === 0 || nouveauCodeDemande) return "code-annonce";\n',
-    apres: '  if (nouveauCodeDemande) return "code-annonce";\n',
+    avant:
+      '  if (nombreDeCodes === 0 || (nouveauCodeDemande && !feuilleEprouvee)) return "code-annonce";\n',
+    apres: '  if (nouveauCodeDemande && !feuilleEprouvee) return "code-annonce";\n',
     epreuves: [EPREUVE_PARCOURS],
   },
   // #214 : l'ouverture par le code ESSAIE chaque emplacement de type 4, et la coquille les COMPTE.
@@ -1120,6 +1121,15 @@ export const MUTATIONS = Object.freeze([
     avant:
       '  if ((ecranId === "rouvrir" || ecranId === "recuperer") && pointeur !== rang) return null;\n',
     apres: "",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "une feuille qui vient d'ouvrir abandonne la demande de nouveau code (contre-recette de #244)",
+    garde: "ecranOuvert — `nouveauCodeDemande` sans preuve seulement",
+    fichier: PARCOURS,
+    avant:
+      '  if (nombreDeCodes === 0 || (nouveauCodeDemande && !feuilleEprouvee)) return "code-annonce";\n',
+    apres: '  if (nombreDeCodes === 0 || nouveauCodeDemande) return "code-annonce";\n',
     epreuves: [EPREUVE_PARCOURS],
   },
   {

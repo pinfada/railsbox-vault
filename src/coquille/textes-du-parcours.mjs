@@ -120,12 +120,31 @@ const UN_CODE_A_DEJA_ETE_RENDU =
   "l'avez pas révoquée.";
 
 /**
- * Ce que la révocation d'urgence COÛTE, dit en clair avant le geste (décision du 19/09/2026) : ouverte
- * par le code, elle retire la phrase et la passkey.
+ * Ce que la révocation d'urgence COÛTE dépend du moyen de la séance : elle garde celui qui vient
+ * d'ouvrir et retire les autres (contre-recette QA de #244). L'écran renvoie au texte écrit au-dessus
+ * du bouton, que la page choisit (`MESSAGES.avertissementDeRevocation`).
  */
 const CE_QUE_LA_REVOCATION_RETIRE =
-  "Attention : si vous avez ouvert ce coffre avec le code de votre feuille, votre phrase et votre " +
-  "passkey ne fonctionneront plus sur ce coffre ; seul le code de votre feuille l'ouvrira.";
+  "Ce que la révocation retirerait est écrit au-dessus du bouton : cela dépend du moyen avec lequel " +
+  "vous avez ouvert ce coffre.";
+
+/** Les moyens, tels qu'une personne les nomme, et ce que la révocation retire des autres. */
+const MOYEN_NOMME = Object.freeze({
+  phrase: "votre phrase",
+  "webauthn-prf": "votre passkey",
+  recuperation: "le code de votre feuille",
+});
+const LES_AUTRES_RETIRES = Object.freeze({
+  phrase:
+    "Votre passkey et vos codes de récupération ne fonctionneront plus : votre feuille de " +
+    "récupération ne servira plus à rien, créez-en une nouvelle ensuite.",
+  "webauthn-prf":
+    "Votre phrase et vos codes de récupération ne fonctionneront plus : votre feuille de " +
+    "récupération ne servira plus à rien, créez-en une nouvelle ensuite.",
+  recuperation:
+    "Votre phrase et votre passkey ne fonctionneront plus sur ce coffre : seul le code de votre " +
+    "feuille l'ouvrira.",
+});
 
 /**
  * L'étape 3 éprouve la feuille en S'EN SERVANT (#239) : verrouiller, puis rouvrir par le code. Le
@@ -452,6 +471,12 @@ export const MESSAGES = Object.freeze({
   revoqueSansRien:
     "Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.",
   codeMasque: "(code masqué)",
+  avertissementDeRevocation: (moyen) =>
+    MOYEN_NOMME[moyen] === undefined
+      ? "Seul le moyen avec lequel vous avez ouvert ce coffre continuera de l'ouvrir ; tous les " +
+        "autres ne fonctionneront plus."
+      : `Seul le moyen avec lequel vous venez d'ouvrir ce coffre — ${MOYEN_NOMME[moyen]} — ` +
+        `continuera de l'ouvrir. ${LES_AUTRES_RETIRES[moyen]}`,
   codesDejaRendus: (nombre) =>
     nombre <= 1
       ? "Ce coffre porte déjà un code de récupération. En afficher un nouveau n'efface pas " +

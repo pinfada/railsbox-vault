@@ -778,12 +778,9 @@ test("décision du 19/09 : l'étape 9 est FACULTATIVE, et sa conséquence est di
   assert.equal(ecranCourant(ouvert({ pointeur: 9, revocationFaite: true })), "termine");
   assert.deepEqual(ECRANS.revoquer.blocs, ["revocation", "sans-revoquer", "retour"]);
   assert.match(ECRANS.revoquer.ceQuiVaSePasser, /facultative/);
-  assert.match(
-    ECRANS.revoquer.ceQuiVaSePasser,
-    /votre phrase et votre passkey ne fonctionneront plus sur ce coffre ; seul le code de votre feuille l'ouvrira/,
-  );
+  assert.match(ECRANS.revoquer.ceQuiVaSePasser, /écrit au-dessus du bouton/);
   assert.match(ECRANS.revoquer.attendu, /Terminer sans révoquer/);
-  assert.match(ECRANS.accueil.ceQuiVaSePasser, /ne fonctionneront plus sur ce coffre/);
+  assert.match(ECRANS.accueil.ceQuiVaSePasser, /écrit au-dessus du bouton/);
   assert.match(ECRANS["termine-sans-revoquer"].ceQuiVaSePasser, /ouvrent toujours/);
   assert.ok(ECRANS_AVEC_RETOUR.includes("termine-sans-revoquer"));
   // L'écran 3 ne promet plus ce que la révocation retirerait.
@@ -820,4 +817,41 @@ test("QA de #244 : hors de la visite, un titre ne porte pas de numéro d'étape"
   assert.equal(rangAffiche("sauvegarder", 6, finie), null);
   assert.equal(rangAffiche("accueil", 4, eprouvee), null);
   assert.equal(rangAffiche("chargement", null, eprouvee), null);
+});
+
+test("contre-recette de #244 : l'avertissement de révocation dit ce que retire le moyen de la SÉANCE", () => {
+  const phrase = MESSAGES.avertissementDeRevocation("phrase");
+  assert.match(phrase, /— votre phrase — continuera de l'ouvrir/);
+  assert.match(
+    phrase,
+    /votre feuille de récupération ne servira plus à rien, créez-en une nouvelle/,
+  );
+  const passkey = MESSAGES.avertissementDeRevocation("webauthn-prf");
+  assert.match(passkey, /— votre passkey — continuera/);
+  assert.match(passkey, /Votre phrase et vos codes de récupération ne fonctionneront plus/);
+  const code = MESSAGES.avertissementDeRevocation("recuperation");
+  assert.match(code, /— le code de votre feuille — continuera/);
+  assert.match(code, /Votre phrase et votre passkey ne fonctionneront plus/);
+  assert.doesNotMatch(code, /feuille de récupération ne servira plus/);
+  assert.match(MESSAGES.avertissementDeRevocation(null), /tous les autres ne fonctionneront plus/);
+});
+
+test("contre-recette de #244 : ouvrir avec le code de la feuille dont on disait « je ne l'ai plus » vaut preuve", () => {
+  // Coffre ouvert PAR CE CODE : le Worker constate la feuille, la demande tombe, étape 4.
+  assert.equal(
+    ecranCourant(ouvert({ pointeur: 3, progression: rendue, nouveauCodeDemande: true })),
+    "travailler",
+  );
+  // Ouvert par la phrase, sans preuve : la demande tient, l'annonce crée le nouveau code.
+  assert.equal(
+    ecranCourant(
+      ouvert({
+        pointeur: 3,
+        progression: rendue,
+        nouveauCodeDemande: true,
+        feuilleEprouvee: false,
+      }),
+    ),
+    "code-annonce",
+  );
 });

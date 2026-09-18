@@ -188,6 +188,7 @@ export function monterLInterface({
       codeRendu: false,
       versionExigee: null,
       dernierRefus: null,
+      moyenDOuverture: null,
     },
   };
 
@@ -320,6 +321,8 @@ async function ouvrirPar(contexte, moyen, corps, avantEnvoi = null) {
     });
     dire(noeuds.attente, "");
     releve.dernierRefus = null;
+    // Le moyen de la séance : la révocation le garde et retire les autres, et la page le dit (#244).
+    releve.moyenDOuverture = moyen;
     surMesure("ouverture");
     await rafraichirLInventaire(contexte);
     contexte.surEtat(reponse);
