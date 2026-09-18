@@ -9,9 +9,13 @@
 //     personne qui n'a plus sa feuille en demande une nouvelle, et les DEUX codes ouvrent (#214) ;
 //  2. **l'URL ne saute pas la confirmation** : `?etape=4` et `?etape=6` ramènent à l'étape atteinte,
 //     et la page du produit n'offre plus de lien vers la vue complète ;
-//  3. **aucun code en clair ne subsiste** dans `document.body.innerHTML` après un geste qui consomme
-//     un code — la confirmation, l'ouverture par le code ;
-//  4. **Firefox** : l'étape 4 dit sa limite avant toute attente, et n'offre pas « Démarrer ».
+//  3. **aucun code en clair ne subsiste** dans `document.body.innerHTML` ni dans `parcours.json`
+//     après le verrouillage qui éprouve la feuille, ni après l'ouverture par le code ;
+//  4. **Firefox** : l'étape 4 dit sa limite avant toute attente, et n'offre pas « Démarrer » ;
+//  5. **#239** : la feuille s'éprouve en rouvrant par le code, UNE fois ; ensuite la phrase rouvre,
+//     l'étape 5 se joue par la phrase, et « Revenir à mon application » ramène à l'étape 4 ; un
+//     `parcours.json` falsifié n'ouvre rien ; un coffre d'avant la correction demande son code une
+//     fois, puis plus ; une enveloppe pleine dit sa sortie, et la sortie marche.
 //
 // Les gestes sont joués par les libellés visibles. Le compte des `creer-recuperation` est pris par un
 // enregistreur posé par l'ÉPREUVE (`addInitScript`) et tenu dans `sessionStorage` pour survivre aux
@@ -92,6 +96,48 @@ async function aucunCodeEnClair(page, moment) {
   expect(CODE_EN_CLAIR.exec(html)?.[0] ?? null, `aucun code en clair ${moment}`).toBeNull();
 }
 
+/**
+ * ÉPROUVE la feuille affichée (#239) : « J'ai recopié », verrouiller — la page se recharge et le code
+ * part avec elle —, puis rouvrir par le code, lu sur la feuille. Mène à l'étape 4.
+ */
+async function eprouverLaFeuille(page, code) {
+  await bouton(page, "J'ai recopié mon code").click();
+  await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible();
+  await expect(bouton(page, "Revoir mon code")).toBeVisible();
+  // Le verrouillage RECHARGE la page : l'écran d'après porte le même titre, et c'est le champ du code,
+  // absent avant, qui dit que le nouveau document est là.
+  await bouton(page, "Verrouiller mon coffre").click();
+  await expect(page.getByLabel("Code de récupération", { exact: true })).toBeVisible({
+    timeout: DELAI,
+  });
+  await page.waitForLoadState("load");
+  await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible();
+  await expect(bouton(page, "Revoir mon code")).toBeHidden();
+  await aucunCodeEnClair(page, "après le verrouillage qui éprouve la feuille");
+  await page.getByLabel("Code de récupération", { exact: true }).fill(code);
+  await bouton(page, "Ouvrir mon coffre avec le code").click();
+  await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
+  await expect(page.getByText(/Votre feuille est juste/)).toBeVisible();
+}
+
+/** Rouvre par la PHRASE depuis « Rouvrir votre coffre ». */
+async function rouvrirParLaPhrase(page) {
+  await expect(ecran(page, "Rouvrir votre coffre")).toBeVisible({ timeout: DELAI });
+  await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
+  await bouton(page, "Ouvrir mon coffre").click();
+}
+
+/** Écrit `parcours.json` tel qu'un script de l'origine le réécrirait (VULN-04). */
+async function ecrireLaProgression(page, progression) {
+  await page.evaluate(async (texte) => {
+    const racine = await navigator.storage.getDirectory();
+    const fichier = await racine.getFileHandle("parcours.json", { create: true });
+    const flux = await fichier.createWritable();
+    await flux.write(texte);
+    await flux.close();
+  }, JSON.stringify(progression));
+}
+
 test("un rechargement après l'affichage du code ne crée aucun second code : le code rendu rouvre le coffre", async ({
   page,
 }) => {
@@ -150,12 +196,9 @@ test("« je n'ai plus cette feuille » affiche un SECOND code, et les DEUX ouvre
   expect(second, "deux gestes rendent deux codes distincts").not.toBe(premier);
   expect(await creations(page)).toBe(2);
 
-  // Le second code se recopie et se confirme comme le premier : l'ordre ne saute rien.
-  await bouton(page, "J'ai recopié mon code").click();
-  await page.getByLabel("Code recopié depuis votre feuille", { exact: true }).fill(second);
-  await bouton(page, "Confirmer mon code").click();
-  await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
-  await aucunCodeEnClair(page, "après la confirmation du second code");
+  // Le second code s'éprouve comme le premier : verrouiller, puis rouvrir par ce code (#239).
+  await eprouverLaFeuille(page, second);
+  await aucunCodeEnClair(page, "après l'ouverture par le second code");
 
   // `parcours.json` porte le NOUVEAU rendu, et n'a pas perdu l'origine du coffre. L'écran de
   // l'étape 4 peut précéder l'écriture du fichier : la lecture est ATTENDUE, sans délai fixe (revue
@@ -164,14 +207,13 @@ test("« je n'ai plus cette feuille » affiche un SECOND code, et les DEUX ouvre
     const progression = await lireLaProgression(page).catch(() => null);
     return {
       origine: progression?.origine,
-      rendu: progression?.code?.rendu,
-      confirme: progression?.code?.confirme,
+      feuilleEprouvee: progression?.feuilleEprouvee,
       etapeQuatreAtteinte: (progression?.etapeAtteinte ?? 0) >= 4,
     };
   };
   await expect
     .poll(resume, { timeout: DELAI })
-    .toEqual({ origine: "creation", rendu: true, confirme: true, etapeQuatreAtteinte: true });
+    .toEqual({ origine: "creation", feuilleEprouvee: true, etapeQuatreAtteinte: true });
 
   // Les DEUX codes ouvrent, dans les deux ordres : le second d'abord, l'ancien ensuite.
   for (const code of [second, premier]) {
@@ -238,18 +280,17 @@ test("l'URL ne saute pas la confirmation, et la page n'offre aucun lien vers la 
   }
 });
 
-test("aucun code en clair ne subsiste après la confirmation ni après l'ouverture par le code ; Firefox dit sa limite à l'étape 4", async ({
+test("#239 : la feuille s'éprouve UNE fois ; ensuite la phrase rouvre, l'étape 5 se joue par la phrase, et l'on revient à l'application ; Firefox dit sa limite", async ({
   page,
   browserName,
 }) => {
   await ouvrirLaCoquille(page);
   if (await exigerLaLimiteDuMoteur(page)) return;
   const code = await creerEtAfficherLeCode(page);
-  await bouton(page, "J'ai recopié mon code").click();
-  await page.getByLabel("Code recopié depuis votre feuille", { exact: true }).fill(code);
-  await bouton(page, "Confirmer mon code").click();
-  await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
-  await aucunCodeEnClair(page, "après la confirmation");
+  await eprouverLaFeuille(page, code);
+  await aucunCodeEnClair(page, "après l'ouverture par le code");
+  const progression = await lireLaProgression(page);
+  expect(JSON.stringify(progression)).not.toMatch(CODE_EN_CLAIR);
 
   if (browserName === "firefox") {
     // La limite est DITE avant toute attente, et rien n'y envoie attendre dix minutes.
@@ -259,18 +300,101 @@ test("aucun code en clair ne subsiste après la confirmation ni après l'ouvertu
   }
   await expect(bouton(page, "Démarrer l'application")).toBeVisible();
 
+  // L'étape 5 : verrouiller, puis rouvrir par la PHRASE — la feuille éprouvée ne se redemande pas.
   await bouton(page, "Continuer : Verrouiller et rouvrir").click();
   await expect(ecran(page, "Verrouiller votre coffre")).toBeVisible();
   await bouton(page, "Verrouiller mon coffre").click();
+  await rouvrirParLaPhrase(page);
+  await expect(ecran(page, "Sauvegarder votre coffre")).toBeVisible({ timeout: DELAI });
+
+  // De l'étape 6, l'application est à un geste ; « Continuer » mène à l'étape non jouée.
+  await bouton(page, "Revenir à mon application").click();
+  await expect(ecran(page, "Travailler dans l'application")).toBeVisible();
+  await expect(bouton(page, "Démarrer l'application")).toBeVisible();
+  await expect(bouton(page, "Continuer : Sauvegarder votre coffre")).toBeVisible();
+
+  // Une ouverture de ROUTINE, de n'importe quelle étape : l'application.
+  await ouvrirLaCoquille(page, "?etape=6");
+  await rouvrirParLaPhrase(page);
+  await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
+});
+
+test("#239 : un coffre d'avant la correction demande son code UNE fois, puis la phrase suffit", async ({
+  page,
+  browserName,
+}) => {
+  await ouvrirLaCoquille(page);
+  if (await exigerLaLimiteDuMoteur(page)) return;
+  const code = await creerEtAfficherLeCode(page);
+  await expect.poll(async () => (await lireLaProgression(page)).code.rendu).toBe(true);
+  // Le coffre porte un code, mais son secteur 1 n'a jamais été écrit : c'est l'état exact d'un coffre
+  // d'avant #239. Son `parcours.json` est du format 1, et disait « confirmé ».
+  await ecrireLaProgression(page, {
+    version: 1,
+    etapeAtteinte: 9,
+    origine: "creation",
+    code: { rendu: true, version: 2, confirme: true },
+  });
+  await ouvrirLaCoquille(page);
   await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({ timeout: DELAI });
-  await bouton(page, "Je n'ai plus cette feuille — afficher un nouveau code").click();
-  await expect(ecran(page, "Rouvrir votre coffre")).toBeVisible();
-  await bouton(page, "J'ai oublié ma phrase : utiliser mon code de récupération").click();
-  await expect(ecran(page, "Récupérer votre coffre avec le code")).toBeVisible();
+  await expect(page.getByText(/cela ne vous est demandé qu'une fois/)).toBeVisible();
   await page.getByLabel("Code de récupération", { exact: true }).fill(code);
   await bouton(page, "Ouvrir mon coffre avec le code").click();
-  await expect(ecran(page, "Révoquer en urgence")).toBeVisible({ timeout: DELAI });
-  await aucunCodeEnClair(page, "après l'ouverture par le code, à l'étape 8");
+  await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
+
+  // Puis plus : verrouillé, le coffre se rouvre par la phrase, et la preuve tient.
+  await ouvrirLaCoquille(page);
+  await rouvrirParLaPhrase(page);
+  await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
+  // Sous Firefox, l'étape 4 dit sa limite et n'offre aucun « Continuer » (constat 9).
+  if (browserName !== "firefox") {
+    await expect(bouton(page, "Continuer : Révoquer en urgence")).toBeVisible();
+  }
+});
+
+test("#239 : une enveloppe pleine dit sa sortie, et la révocation fait de la place", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await ouvrirLaCoquille(page);
+  if (await exigerLaLimiteDuMoteur(page)) return;
+  await creerEtAfficherLeCode(page);
+  // La phrase et un code : deux emplacements sur huit. Six codes de plus remplissent l'enveloppe ;
+  // le suivant est refusé. Chaque code demande une page neuve : un même Worker n'en rend qu'un.
+  for (let rendus = 1; rendus <= 7; rendus += 1) {
+    await ouvrirLaCoquille(page);
+    await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({
+      timeout: DELAI,
+    });
+    await bouton(page, "Je n'ai plus cette feuille — afficher un nouveau code").click();
+    await rouvrirParLaPhrase(page);
+    await expect(ecran(page, "Recevoir votre code de récupération")).toBeVisible({
+      timeout: DELAI,
+    });
+    if (rendus === 1) {
+      // L'annonce offre de revenir : la feuille retrouvée ne coûte aucun emplacement.
+      await bouton(page, "Revenir : j'ai toujours ma feuille").click();
+      await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible();
+      await bouton(page, "Je n'ai plus cette feuille — afficher un nouveau code").click();
+      await expect(ecran(page, "Recevoir votre code de récupération")).toBeVisible();
+    }
+    await bouton(page, "Afficher mon code de récupération").click();
+    if (rendus < 7) {
+      await expect(ecran(page, "Recopier votre code de récupération")).toBeVisible({
+        timeout: DELAI,
+      });
+    }
+  }
+  // Le huitième code : l'enveloppe est pleine, la conduite dit la sortie, et la sortie est là.
+  await expect(page.getByRole("alert")).toContainText("huit moyens de l'ouvrir", {
+    timeout: DELAI,
+  });
+  await expect(page.getByRole("alert")).not.toContainText("Rechargez la page");
+  await expect(ecran(page, "Recevoir votre code de récupération")).toBeVisible();
+  await bouton(page, "Révoquer tous les autres moyens d'ouvrir ce coffre").click();
+  await expect(page.getByText(/^7 moyen\(s\) retiré\(s\)/)).toBeVisible({ timeout: DELAI });
+  await bouton(page, "Afficher mon code de récupération").click();
+  await expect(ecran(page, "Recopier votre code de récupération")).toBeVisible({ timeout: DELAI });
 });
 
 test("une phrase trop courte est refusée avant la création, avec un conseil à chaque saisie", async ({
@@ -287,34 +411,45 @@ test("une phrase trop courte est refusée avant la création, avec un conseil à
       /12 caractères|trop prévisible/,
     );
     await expect(page.locator("#deverrouillage-moyens")).toContainText("Aucun coffre");
+    // #240 : la personne lit la règle, jamais « rechargez la page… demandez de l'aide ».
+    await expect(page.getByRole("alert")).toContainText("au moins 12");
+    await expect(page.getByRole("alert")).not.toContainText("Rechargez la page");
   }
   await phrase.fill(PHRASE);
   await expect(page.locator("#phrase-conseil")).toContainText("Longueur suffisante");
 });
 
-test("falsifier les drapeaux persistés ne saute pas la vérification du code", async ({ page }) => {
+test("#239, VULN-04 : falsifier parcours.json n'ouvre aucun écran de travail", async ({
+  page,
+  browserName,
+}) => {
   await ouvrirLaCoquille(page);
   if (await exigerLaLimiteDuMoteur(page)) return;
   const code = await creerEtAfficherLeCode(page);
   await expect.poll(async () => (await lireLaProgression(page)).code.rendu).toBe(true);
-  await page.evaluate(async () => {
-    const racine = await navigator.storage.getDirectory();
-    const fichier = await racine.getFileHandle("parcours.json");
-    const flux = await fichier.createWritable();
-    await flux.write(
-      JSON.stringify({
-        version: 1,
-        etapeAtteinte: 9,
-        origine: "creation",
-        code: { rendu: true, version: 2, confirme: true },
-      }),
-    );
-    await flux.close();
+  await ecrireLaProgression(page, {
+    version: 2,
+    etapeAtteinte: 9,
+    origine: "creation",
+    code: { rendu: true, version: 2 },
+    feuilleEprouvee: true,
+    visiteTerminee: true,
   });
+  // L'indice falsifié choisit le premier formulaire — « Rouvrir » —, et rien d'autre : ouvert par la
+  // phrase, le coffre n'a aucune feuille éprouvée, et le Worker le dit.
   await ouvrirLaCoquille(page, "?etape=6");
+  await rouvrirParLaPhrase(page);
   await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({ timeout: DELAI });
   await expect(bouton(page, "Sauvegarder mon coffre")).toBeHidden();
+  await expect(bouton(page, "Démarrer l'application")).toBeHidden();
+  // Et l'indice est corrigé : le prochain verrouillage redemande le code.
+  await expect.poll(async () => (await lireLaProgression(page)).feuilleEprouvee).toBe(false);
+  await ouvrirLaCoquille(page, "?etape=6");
+  await expect(ecran(page, "Vérifier votre code de récupération")).toBeVisible({ timeout: DELAI });
   await page.getByLabel("Code de récupération", { exact: true }).fill(code);
   await bouton(page, "Ouvrir mon coffre avec le code").click();
-  await expect(ecran(page, "Sauvegarder votre coffre")).toBeVisible({ timeout: DELAI });
+  // L'indice « visite finie » falsifié ne change que la présentation de l'étape 4 : l'accueil porte
+  // des gestes qu'un coffre éprouvé offre déjà.
+  const etape4 = browserName === "firefox" ? "Travailler dans l'application" : "Votre application";
+  await expect(ecran(page, etape4)).toBeVisible({ timeout: DELAI });
 });

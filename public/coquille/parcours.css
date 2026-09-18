@@ -341,6 +341,13 @@ main:has([data-bloc="espace-de-travail"]:not([hidden])) {
   border: 1px solid var(--bord);
   background: var(--fond);
 }
+/* Tant que l'application n'a pas démarré, le cadre est REPLIÉ (#242, défaut 11) : le paragraphe
+   au-dessus dit qu'il attend, au lieu d'un rectangle blanc. Le cadre n'est ni retiré ni déplacé —
+   le déplacer le rechargerait —, seulement ramené à une hauteur nulle. */
+[data-application="attente"] #cadre-applicatif iframe {
+  height: 0;
+  border-width: 0;
+}
 @media (max-width: 380px) {
   :root {
     --espace: 16px;

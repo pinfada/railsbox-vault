@@ -68,13 +68,16 @@ test("les neuf étapes sont traversées au clavier, y compris Rails et les refus
   const code = (await a.getByText(/^[0-9A-Z]{4}(-[0-9A-Z]{4}){6}$/).textContent()).trim();
   const consigne = await a.getByText(/Numéro de version à noter à côté du code/).textContent();
   const version = /: (\d+)\./.exec(consigne)[1];
+  // #239 : la feuille s'éprouve en verrouillant, puis en rouvrant par son code — au clavier aussi.
   await activer(a, bouton(a, "J'ai recopié mon code"));
-  await attendre(a, "Confirmer votre code de récupération");
-  const confirmation = a.getByLabel("Code recopié depuis votre feuille", { exact: true });
-  await saisir(a, confirmation, "0000-0000-0000-0000-0000-0000-0000");
-  await activer(a, bouton(a, "Confirmer mon code"));
-  await expect(a.getByRole("alert")).not.toBeEmpty();
-  await saisir(a, confirmation, code);
+  await attendre(a, "Vérifier votre code de récupération");
+  await activer(a, bouton(a, "Verrouiller mon coffre"));
+  const champDuCode = a.getByLabel("Code de récupération", { exact: true });
+  await expect(champDuCode).toBeVisible({ timeout: 120_000 });
+  await a.waitForLoadState("load");
+  await saisir(a, champDuCode, "0000-0000-0000-0000-0000-0000-0000");
+  await expect(bouton(a, "Ouvrir mon coffre avec le code")).toBeDisabled();
+  await saisir(a, champDuCode, code);
   await a.keyboard.press("Enter");
   await attendre(a, "Travailler dans l'application");
   chronologie.etape("4-boot-clavier");
@@ -109,17 +112,14 @@ test("les neuf étapes sont traversées au clavier, y compris Rails et les refus
   await attendre(a, "Verrouiller votre coffre");
   chronologie.etape("5-verrouillage-clavier");
   await activer(a, bouton(a, "Verrouiller mon coffre"));
-  await attendre(a, "Vérifier votre code de récupération");
-  await activer(a, bouton(a, "Je n'ai plus cette feuille — afficher un nouveau code"));
   await attendre(a, "Rouvrir votre coffre");
   const secret = a.getByLabel("Votre phrase", { exact: true });
   await saisir(a, secret, "cette phrase publique ne correspond pas au coffre");
   await activer(a, bouton(a, "Ouvrir mon coffre"));
   await expect(a.getByRole("alert")).toContainText("n'ouvre pas ce coffre", { timeout: 120_000 });
-  await a.reload();
-  await attendre(a, "Vérifier votre code de récupération");
-  await saisir(a, a.getByLabel("Code de récupération", { exact: true }), code);
-  await activer(a, bouton(a, "Ouvrir mon coffre avec le code"));
+  // La bonne phrase rouvre : la feuille éprouvée à l'étape 3 ne se redemande pas (#239).
+  await saisir(a, secret, phrase);
+  await activer(a, bouton(a, "Ouvrir mon coffre"));
   await attendre(a, "Sauvegarder votre coffre");
   chronologie.etape("6-sauvegarde-clavier");
   const fichier = testInfo.outputPath("coffre-clavier.rbvault");
@@ -153,6 +153,9 @@ test("les neuf étapes sont traversées au clavier, y compris Rails et les refus
   chronologie.etape("9-revocation-clavier");
   await activer(b, bouton(b, "Révoquer tous les autres moyens d'ouvrir ce coffre"));
   await attendre(b, "Parcours terminé");
+  // « Revenir à mon application » est atteint au clavier, et mène à l'accueil (#239).
+  await activer(b, bouton(b, "Revenir à mon application"));
+  await attendre(b, "Votre application");
   await activer(b, b.getByText("Où suis-je ?", { exact: true }));
   await expect(b.getByRole("listitem")).toHaveCount(9);
 });

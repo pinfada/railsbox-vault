@@ -24,6 +24,8 @@ import {
 import {
   COFFRE,
   ECRANS,
+  ECRANS_DE_L_APPLICATION,
+  ETAPES,
   FICHIER_DE_PROGRESSION,
   GESTES_LONGS,
   LIBELLES_DE_LA_PAGE,
@@ -36,7 +38,6 @@ import {
   attenteDeLaPhrase,
   codeEnFinDeTexte,
   coffreObserve,
-  confirmerLaRecopie,
   ecranCourant,
   ecrireProgression,
   etapeAdmise,
@@ -46,7 +47,6 @@ import {
   lireLigneDEtat,
   lireProgression,
   ouSuisJe,
-  ouvertureParLeCode,
   progressionApres,
   progressionDuDemarrage,
   refusDeRelaisAAnnoncer,
@@ -67,7 +67,6 @@ const ENTREE_VAUT = Object.freeze({
   "saisie-phrase": ["ouvrir-par-phrase"],
   "saisie-code": ["ouvrir-par-code"],
   "ancre-version": ["ouvrir-par-code", "ouvrir-par-phrase"],
-  "parcours-confirmation-code": ["parcours-confirmer-code"],
 });
 
 /**
@@ -103,6 +102,12 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     demarrage: null,
     /** Les refus du relais comptés quand l'application a démarré ; `null` tant qu'elle ne l'est pas. */
     referenceDesRefus: null,
+    /**
+     * La sauvegarde ARRÊTE l'application (`portabilite-du-worker.mjs`) sans que la ligne du cycle le
+     * dise : sans ce fait, « Revenir à mon application » après l'étape 6 montrait une application
+     * crue démarrée, sans « Démarrer » (#239). Vrai d'une sauvegarde au prochain démarrage.
+     */
+    applicationArretee: false,
   };
 
   const attenteDeLaPhraseAnnoncee = attenteDeLaPhrase(
@@ -197,6 +202,11 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     const moyens = releve.moyensProposes ?? [];
     return ECRANS[ecranId].blocs.filter((bloc) => {
       if (ecranId === "rouvrir" && bloc === "phrase") return moyens.includes("phrase");
+      // L'annonce n'offre de revenir, et de faire de la place par la révocation, qu'à un coffre qui
+      // porte déjà un code : celui où l'on est venu dire « je n'ai plus cette feuille » (#239).
+      if (ecranId === "code-annonce" && (bloc === "feuille-revenir" || bloc === "revocation")) {
+        return (releve.nombreDeCodes ?? 0) > 0;
+      }
       if (bloc === "passkey") {
         return ecranId === "choisir" ? passkeyConnue : moyens.includes("webauthn-prf");
       }
@@ -224,7 +234,16 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       creation ? "Créer mon coffre avec une passkey" : "Ouvrir mon coffre avec ma passkey",
     );
     dire("parcours-passkey", creation ? MESSAGES.passkeyALaCreation : MESSAGES.passkeyALOuverture);
-    dire("parcours-continuer", MESSAGES.continuer(etapeSuivante(ecranId)?.titre ?? null));
+    dire("parcours-continuer", MESSAGES.continuer(etapeAContinuer(ecranId)?.titre ?? null));
+  }
+
+  /**
+   * L'étape où « Continuer » mène : depuis l'application, la prochaine étape NON jouée (#239) ;
+   * ailleurs, celle qui suit l'écran.
+   */
+  function etapeAContinuer(ecranId) {
+    const cible = etapeApres(ecranId, "continuer", etat.pointeur, etat.progression.etapeAtteinte);
+    return ecranId === "travailler" && cible !== null ? ETAPES[cible - 1] : etapeSuivante(ecranId);
   }
 
   function rendreOuSuisJe(ecranId) {
@@ -295,6 +314,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       coffre: etat.coffre,
       moyens: releve.moyensProposes ?? [],
       nombreDeCodes: releve.nombreDeCodes,
+      // Le CONSTAT du Worker, jamais l'indice du fichier : c'est la garde des étapes 4 à 9 (#239).
+      feuilleEprouvee: rapport.feuilleEprouvee === true,
       progression: etat.progression,
       sousEtatDuCode: etat.sousEtatDuCode,
       revocationFaite: etat.revocationFaite,
@@ -306,11 +327,16 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
 
   function rendre({ deplacerLeFocus = true } = {}) {
     const releve = lireJson("deverrouillage-releve");
-    const ecranId = ecranAMontrer(releve, lireJson("coquille-rapport"));
+    const rapport = lireJson("coquille-rapport");
+    const ecranId = ecranAMontrer(releve, rapport);
     const ecran = ECRANS[ecranId];
+    retenirLesIndices(ecranId, rapport);
     // La vérification renouvelée à chaque session suspend la reprise sans oublier sa destination.
     // L'écran reste celui du code, même si le fichier demandait une étape ultérieure.
-    const verification = ecranId === "code-verifier" || ecranId === "code-a-verifier";
+    const verification =
+      ecranId === "code-verifier" ||
+      ecranId === "code-a-verifier" ||
+      ecranId === "code-a-verrouiller";
     if (ecran.etape === 3 && !(verification && etat.pointeur > 3)) allerA(3);
     if (ecran.etape === 4 && etat.pointeur === 3) allerA(4);
     if (ecranId === "refuse") dire("parcours-refus", conduiteHumaine(releve.dernierRefus));
@@ -337,10 +363,11 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     montrerLesBlocs(visibles);
     // Replier seulement les conseils quand Rails est prêt. Le cadre reste à sa place :
     // le déplacer rechargerait son document et lui ferait perdre le port restreint.
-    const travailPret =
-      !vueComplete &&
-      ecranId === "travailler" &&
-      lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement === "application-demarree";
+    const demarree =
+      lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement === "application-demarree" &&
+      !etat.applicationArretee;
+    direLEspaceDeTravail(demarree);
+    const travailPret = !vueComplete && ECRANS_DE_L_APPLICATION.includes(ecranId) && demarree;
     const modeTravail = String(travailPret);
     if (doc.documentElement.dataset.travailPret !== modeTravail) {
       const focusSurDemarrage =
@@ -357,6 +384,34 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (precedent !== ecranId && !premierAffichage && deplacerLeFocus && !vueComplete) {
       noeud("parcours-titre").focus();
     }
+  }
+
+  /**
+   * Ce que la page RETIENT de ce qu'elle observe, en indices de `parcours.json` (#239) : le constat du
+   * Worker sur la feuille — relu seulement coffre OUVERT, seul moment où il existe —, et la fin de la
+   * visite. Aucun des deux n'ouvre un écran : le premier choisit le formulaire d'un coffre verrouillé,
+   * le second fait de l'étape 4 l'accueil.
+   */
+  function retenirLesIndices(ecranId, rapport) {
+    if (!etat.progressionLue) return;
+    const constat = rapport.feuilleEprouvee === true;
+    if (etat.coffre === COFFRE.ouvert && constat !== etat.progression.feuilleEprouvee) {
+      pas("feuille", constat);
+    }
+    if (ecranId === "termine" && !etat.progression.visiteTerminee) pas("visite-terminee");
+  }
+
+  /** Le cadre replié dit qu'il attend son démarrage, au lieu d'un rectangle blanc (#242, défaut 11). */
+  function direLEspaceDeTravail(demarree) {
+    const espace = noeud("cycle-description")?.closest("[data-bloc]");
+    const valeur = demarree ? "demarree" : "attente";
+    if (espace !== null && espace !== undefined && espace.dataset.application !== valeur) {
+      espace.dataset.application = valeur;
+    }
+    dire(
+      "cycle-description",
+      demarree ? MESSAGES.applicationAffichee : MESSAGES.applicationEnAttente,
+    );
   }
 
   // --- Ce qui est OBSERVÉ ---------------------------------------------------------------------------
@@ -380,11 +435,14 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (avant === COFFRE.ouvert || etat.coffre !== COFFRE.ouvert) return;
     const depuis = etat.ecranDuGeste ?? etat.ecran;
     if (depuis === "choisir") pas("coffre-cree");
-    // Ouvert par le code de la feuille : la feuille est juste, c'est la meilleure des confirmations.
-    if (ouvertureParLeCode(depuis)) pas("code-confirme");
+    // Ce que l'ouverture PROUVE de la feuille, c'est le Worker qui l'a constaté et publié dans le même
+    // relevé que l'état ouvert ; `rendre` l'a déjà retenu en indice (#239).
+    const eprouvee = lireJson("coquille-rapport").feuilleEprouvee === true;
     allerA(etapeApres(depuis, "ouverture", etat.pointeur));
     dire("parcours-attente", "");
-    reussir(MESSAGES.coffreOuvert);
+    reussir(
+      eprouvee && depuis === "code-verifier" ? MESSAGES.feuilleEprouvee : MESSAGES.coffreOuvert,
+    );
   }
 
   function surLigneDuCycle() {
@@ -394,6 +452,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (ligne.evenement !== "application-demarree") etat.referenceDesRefus = null;
     if (ligne.evenement === "demarrage-en-cours") return demarrerLaProgression();
     if (ligne.evenement === "application-demarree") {
+      etat.applicationArretee = false;
       etat.referenceDesRefus = { ...(lireJson("coquille-rapport").refusDeRequete ?? {}) };
       return reussir(MESSAGES.applicationDemarree);
     }
@@ -415,6 +474,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     const ligne = lireLigneDEtat(noeud("portabilite-etat").textContent);
     if (ligne === null || ligne.evenement === "au-repos") return;
     if (ligne.evenement === "sauvegarde-en-cours") {
+      etat.applicationArretee = true;
+      etat.referenceDesRefus = null;
       return dire("parcours-attente", MESSAGES.sauvegardeEnCours);
     }
     if (ligne.evenement.endsWith("-en-cours")) {
@@ -475,7 +536,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   }
 
   function surRapport() {
-    if (etat.ecran !== "travailler") return;
+    if (!ECRANS_DE_L_APPLICATION.includes(etat.ecran)) return;
     const rapport = lireJson("coquille-rapport");
     const nouveaux = refusDeRelaisAAnnoncer({
       comptes: rapport.refusDeRequete ?? {},
@@ -537,29 +598,29 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     allerA(etapeApres("creer", "j-ai-une-sauvegarde", etat.pointeur)),
   );
   geste("parcours-phrase-perdue", () => allerA(etapeApres("rouvrir", "perdu", etat.pointeur)));
-  geste("parcours-continuer", () => allerA(etapeApres(etat.ecran, "continuer", etat.pointeur)));
+  geste("parcours-continuer", () =>
+    allerA(etapeApres(etat.ecran, "continuer", etat.pointeur, etat.progression.etapeAtteinte)),
+  );
+  // « Revenir à mon application » (#239) : aucun geste du Worker, l'étape 4 seulement. L'application
+  // démarrée le reste ; arrêtée, « Démarrer » choisit entre installation, instantané et boot à froid.
+  geste("parcours-retour-application", () =>
+    allerA(etapeApres(etat.ecran, "retour", etat.pointeur)),
+  );
   // « Je n'ai plus cette feuille » : aucun geste n'est envoyé au Worker ici. L'écran revient à
   // l'annonce, où la personne prépare son papier, et c'est le bouton d'avant qui crée le code.
   geste("parcours-nouveau-code", () => {
     etat.nouveauCodeDemande = true;
   });
+  geste("parcours-garder-ma-feuille", () => {
+    etat.nouveauCodeDemande = false;
+  });
+  // La recopie n'est plus JUGÉE ici (#239) : la feuille s'éprouve en ouvrant le coffre, verrouillé,
+  // par son code. Le code reste dans le document jusqu'au verrouillage, qui recharge la page.
   geste("parcours-code-recopie", () => {
-    etat.sousEtatDuCode = SOUS_ETATS_DU_CODE.confirmation;
+    etat.sousEtatDuCode = SOUS_ETATS_DU_CODE.recopie;
   });
   geste("parcours-revoir-code", () => {
     etat.sousEtatDuCode = SOUS_ETATS_DU_CODE.feuille;
-  });
-  geste("parcours-confirmer-code", () => {
-    const saisie = noeud("parcours-confirmation-code");
-    const verdict = confirmerLaRecopie(saisie.value, noeud("feuille-code").textContent);
-    if (!verdict.confirme) return refuserSansCode(verdict.message);
-    saisie.value = "";
-    // Le code QUITTE la page dès qu'il est confirmé : il n'a plus rien à y faire.
-    dire("feuille-code", "");
-    etat.sousEtatDuCode = SOUS_ETATS_DU_CODE.annonce;
-    pas("code-confirme");
-    allerA(etapeApres("code-confirmation", "code-confirme", etat.pointeur));
-    reussir(verdict.message);
   });
 
   noeud("saisie-code")?.addEventListener("input", () => {

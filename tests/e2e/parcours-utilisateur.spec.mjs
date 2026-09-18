@@ -23,9 +23,16 @@
 // Sur le chemin, les TROIS échecs les plus probables, chacun à l'endroit où une personne le
 // rencontre, et chacun rend la conduite écrite pour elle :
 //
-//  1. un code MAL RECOPIÉ à la confirmation (étape 3) — la somme de contrôle le voit ;
+//  1. un code MAL RECOPIÉ à l'épreuve de la feuille (étape 3) — la somme de contrôle le voit ;
 //  2. une MAUVAISE PHRASE à la réouverture (étape 5) ;
 //  3. une archive ALTÉRÉE à la restauration (étape 7).
+//
+// ## L'usage, et non plus seulement la visite (#239)
+//
+// La feuille s'éprouve à l'étape 3 en VERROUILLANT puis en rouvrant par son code ; l'étape 5 se rouvre
+// par la PHRASE ; après l'étape 6, « Revenir à mon application » la redémarre et la note est relue ;
+// après « Parcours terminé », sur l'origine restaurée, on revient à l'application, qui démarre à froid
+// et relit la même note. Les durées de ces deux retours sont publiées avec les autres.
 //
 // ## Ce qu'il ne prouve pas
 //
@@ -103,6 +110,21 @@ async function aucunCodeEnClair(page, moment) {
   expect(CODE_EN_CLAIR.exec(html)?.[0] ?? null, `aucun code en clair ${moment}`).toBeNull();
 }
 
+/**
+ * « Démarrer l'application » depuis l'étape 4 ou l'accueil, puis RELIRE la note écrite à l'étape 4 :
+ * le démarrage choisit seul entre installation, instantané et boot à froid (#239).
+ */
+async function relireLaNote(page) {
+  await expect(page.getByText(/L'application n'est pas encore démarrée/)).toBeVisible();
+  await bouton(page, "Démarrer l'application").click();
+  await expect(
+    page.getByText("L'application est démarrée : elle s'affiche ci-dessous."),
+  ).toBeVisible({ timeout: BUDGET_DEMARRAGE_MS });
+  await expect(pageServie(page).getByText(LIBELLE).first()).toBeVisible({
+    timeout: BUDGET_PREMIERE_PAGE_MS,
+  });
+}
+
 async function ouvrirLaCoquille(contexte, origine, erreurs) {
   const page = await contexte.newPage();
   page.on("pageerror", (erreur) => erreurs.push(erreur.message));
@@ -147,7 +169,7 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await attendreLEcran(a, "Recevoir votre code de récupération", BUDGET_DEVERROUILLAGE_MS);
   });
 
-  // --- 3. Recevoir et confirmer le code — avec l'échec « code mal recopié » ------------------------
+  // --- 3. Recevoir le code et ÉPROUVER la feuille — avec l'échec « code mal recopié » --------------
   await chrono("3-code", async () => {
     await expect(a.getByText(/QU'UNE SEULE FOIS/)).toBeVisible();
     await bouton(a, "Afficher mon code de récupération").click();
@@ -158,26 +180,31 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     version = /: (\d+)\./.exec(consigne ?? "")?.[1] ?? "";
     expect(version).toMatch(/^\d+$/);
     await bouton(a, "J'ai recopié mon code").click();
-    await attendreLEcran(a, "Confirmer votre code de récupération");
-    await expect(a.getByText(FORME_DU_CODE), "le code n'est plus affiché").toBeHidden();
+    await attendreLEcran(a, "Vérifier votre code de récupération");
+    await expect(a.getByText(/verrouillez votre coffre/)).toBeVisible();
 
-    // ÉCHEC 1 : un symbole mal recopié. La somme de contrôle le voit, et on n'avance pas.
+    // La feuille s'éprouve en S'EN SERVANT : verrouiller recharge la page, et le code part avec elle.
+    await bouton(a, "Verrouiller mon coffre").click();
+    const champ = a.getByLabel("Code de récupération", { exact: true });
+    await expect(champ).toBeVisible({ timeout: BUDGET_DEVERROUILLAGE_MS });
+    await a.waitForLoadState("load");
+    await aucunCodeEnClair(a, "après le verrouillage de l'étape 3");
+
+    // ÉCHEC 1 : un symbole mal recopié. La somme de contrôle le voit, et rien ne part.
     const symboles = code.replaceAll("-", "").split("");
     symboles[5] = symboles[5] === "7" ? "8" : "7";
-    await a
-      .getByLabel("Code recopié depuis votre feuille", { exact: true })
-      .fill(symboles.join(""));
-    await bouton(a, "Confirmer mon code").click();
-    await expect(alerte(a)).toContainText("faute de recopie");
-    await expect(ecran(a, "Confirmer votre code de récupération")).toBeVisible();
+    await champ.fill(symboles.join(""));
+    await expect(a.getByText(/faute de recopie/).first()).toBeVisible();
+    await expect(bouton(a, "Ouvrir mon coffre avec le code")).toBeDisabled();
+    await expect(ecran(a, "Vérifier votre code de récupération")).toBeVisible();
     noter("echec-code-mal-recopie-conduit");
 
     // Entrée valide le champ, comme le bouton (constat 12).
-    const recopie = a.getByLabel("Code recopié depuis votre feuille", { exact: true });
-    await recopie.fill(code);
-    await recopie.press("Enter");
-    await attendreLEcran(a, "Travailler dans l'application");
-    await aucunCodeEnClair(a, "après la confirmation");
+    await champ.fill(code);
+    await champ.press("Enter");
+    await attendreLEcran(a, "Travailler dans l'application", BUDGET_DEVERROUILLAGE_MS);
+    await expect(a.getByText(/Votre feuille est juste/)).toBeVisible();
+    await aucunCodeEnClair(a, "après l'ouverture par le code");
   });
 
   // --- 4. Travailler -------------------------------------------------------------------------------
@@ -207,8 +234,6 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
   await chrono("5-verrouiller-rouvrir", async () => {
     await attendreLEcran(a, "Verrouiller votre coffre");
     await bouton(a, "Verrouiller mon coffre").click();
-    await attendreLEcran(a, "Vérifier votre code de récupération", BUDGET_DEVERROUILLAGE_MS);
-    await bouton(a, "Je n'ai plus cette feuille — afficher un nouveau code").click();
     await attendreLEcran(a, "Rouvrir votre coffre", BUDGET_DEVERROUILLAGE_MS);
 
     // ÉCHEC 2 : une mauvaise phrase. Le coffre reste fermé, et la conduite le dit.
@@ -220,12 +245,9 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await expect(ecran(a, "Rouvrir votre coffre")).toBeVisible();
     noter("echec-mauvaise-phrase-conduit");
 
-    // Le fichier du parcours n'atteste plus une confirmation après rechargement.
-    // Revenir à la vérification ne crée aucun nouveau code.
-    await a.reload();
-    await attendreLEcran(a, "Vérifier votre code de récupération", BUDGET_DEVERROUILLAGE_MS);
-    await a.getByLabel("Code de récupération", { exact: true }).fill(code);
-    await bouton(a, "Ouvrir mon coffre avec le code").click();
+    // La bonne phrase rouvre : la feuille éprouvée à l'étape 3 ne se redemande pas (#239).
+    await a.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
+    await bouton(a, "Ouvrir mon coffre").click();
     await attendreLEcran(a, "Sauvegarder votre coffre", BUDGET_DEVERROUILLAGE_MS);
   });
 
@@ -238,6 +260,15 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await expect(a.getByText(/^Sauvegarde prête\./)).toBeVisible({
       timeout: BUDGET_PORTABILITE_MS,
     });
+    await bouton(a, "Continuer : Restaurer sur un autre appareil").click();
+    await attendreLEcran(a, "Restaurer sur un autre appareil");
+  });
+
+  // --- Après l'étape 6 : revenir à l'application, qui redémarre et relit la note (#239) ------------
+  await chrono("6-retour-application", async () => {
+    await bouton(a, "Revenir à mon application").click();
+    await attendreLEcran(a, "Travailler dans l'application");
+    await relireLaNote(a);
     await bouton(a, "Continuer : Restaurer sur un autre appareil").click();
     await attendreLEcran(a, "Restaurer sur un autre appareil");
   });
@@ -292,6 +323,16 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
         "Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.",
       ),
     ).toBeVisible();
+  });
+
+  // --- Après « Parcours terminé » : l'application, sur l'origine RESTAURÉE, à froid (#239) ----------
+  await chrono("9-retour-application", async () => {
+    await bouton(b, "Revenir à mon application").click();
+    await attendreLEcran(b, "Votre application");
+    await expect(b.getByText(/La visite est finie/)).toBeVisible();
+    await expect(bouton(b, "Verrouiller mon coffre")).toBeVisible();
+    await expect(bouton(b, "Sauvegarder mon coffre")).toBeVisible();
+    await relireLaNote(b);
   });
 
   // « Où suis-je ? » résume les neuf étapes.

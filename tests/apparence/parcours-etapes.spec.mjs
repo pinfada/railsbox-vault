@@ -45,12 +45,21 @@ async function afficherLeCode(page) {
   return { code, version: /: (\d+)\./.exec(consigne)[1] };
 }
 
+/** La feuille s'éprouve en verrouillant, puis en rouvrant par son code (#239). */
+async function eprouverLaFeuille(page, code) {
+  await bouton(page, "J'ai recopié mon code").click();
+  await bouton(page, "Verrouiller mon coffre").click();
+  const champ = page.getByLabel("Code de récupération", { exact: true });
+  await expect(champ).toBeVisible({ timeout: 60_000 });
+  await page.waitForLoadState("load");
+  await champ.fill(code);
+  await bouton(page, "Ouvrir mon coffre avec le code").click();
+  await expect(titre(page, "Travailler dans l'application")).toBeVisible({ timeout: 60_000 });
+}
+
 async function jusquAuTravail(page) {
   const feuille = await afficherLeCode(page);
-  await bouton(page, "J'ai recopié mon code").click();
-  await page.getByLabel("Code recopié depuis votre feuille", { exact: true }).fill(feuille.code);
-  await bouton(page, "Confirmer mon code").click();
-  await expect(titre(page, "Travailler dans l'application")).toBeVisible();
+  await eprouverLaFeuille(page, feuille.code);
   return feuille;
 }
 
@@ -97,8 +106,6 @@ for (const theme of ["light", "dark"]) {
     await verifierAux(page, testInfo, "etape-5-verrouiller", DEUX_LARGEURS);
 
     await bouton(page, "Verrouiller mon coffre").click();
-    await expect(titre(page, "Vérifier votre code de récupération")).toBeVisible(LONG);
-    await bouton(page, "Je n'ai plus cette feuille — afficher un nouveau code").click();
     await expect(titre(page, "Rouvrir votre coffre")).toBeVisible(LONG);
     await verifierAux(page, testInfo, "etape-5-rouvrir", DEUX_LARGEURS);
     // « J'ai oublié ma phrase » est un bouton actif : son contour doit se voir (constat 11).
@@ -111,10 +118,9 @@ for (const theme of ["light", "dark"]) {
       "contour de « J'ai oublié ma phrase »",
     ).toBeGreaterThanOrEqual(3);
 
-    await page.reload();
-    await expect(titre(page, "Vérifier votre code de récupération")).toBeVisible(LONG);
-    await page.getByLabel("Code de récupération", { exact: true }).fill(code);
-    await bouton(page, "Ouvrir mon coffre avec le code").click();
+    // L'étape 5 se rouvre par la PHRASE : la feuille est éprouvée depuis l'étape 3 (#239).
+    await page.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
+    await bouton(page, "Ouvrir mon coffre").click();
     await expect(titre(page, "Sauvegarder votre coffre")).toBeVisible(LONG);
     await verifierAux(page, testInfo, "etape-6-sauvegarder", DEUX_LARGEURS);
 
@@ -145,6 +151,12 @@ for (const theme of ["light", "dark"]) {
     await bouton(page, "Révoquer tous les autres moyens d'ouvrir ce coffre").click();
     await expect(titre(page, "Parcours terminé")).toBeVisible(LONG);
     await verifierAux(page, testInfo, "termine", DEUX_LARGEURS);
+
+    // Après la visite, l'étape 4 est l'accueil : l'application et les gestes du quotidien (#239).
+    await bouton(page, "Revenir à mon application").click();
+    await expect(titre(page, "Votre application")).toBeVisible();
+    await aucunGroupeSansNom(page, "accueil");
+    await verifierAux(page, testInfo, "accueil", DEUX_LARGEURS);
   });
 }
 
@@ -197,10 +209,7 @@ test("forced-colors : bordures et focus visibles à la création, au choix et à
   await bouton(page, "Afficher mon code de récupération").click({ timeout: 60_000 });
   await expect(page.locator("#feuille-code")).toHaveText(FORME_DU_CODE);
   const code = (await page.locator("#feuille-code").textContent()).trim();
-  await bouton(page, "J'ai recopié mon code").click();
-  await page.getByLabel("Code recopié depuis votre feuille", { exact: true }).fill(code);
-  await bouton(page, "Confirmer mon code").click();
-  await expect(titre(page, "Travailler dans l'application")).toBeVisible();
+  await eprouverLaFeuille(page, code);
   await simulerRailsPret(page);
   await aucunGroupeSansNom(page, "étape 4 prête, forced-colors");
   await verifier(page, testInfo, "etape-4-prete-simulee");

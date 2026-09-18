@@ -2,7 +2,7 @@
 
 - **Statut** : accepté
 - **Date** : 2026-09-14 (amendé le même jour après la revue d'intégration et d'accessibilité de la
-  PR #213)
+  PR #213 ; amendé le 17/09/2026 — VULN-04 — et le 18/09/2026 — #239)
 - **Issue** : [#193](https://github.com/pinfada/railsbox-vault/issues/193) (épique #195)
 - **Ordonne, sans les changer** : les gestes de
   l'[ADR 0029](0029-deverrouillage-dans-la-coquille.md) (déverrouillage, feuille rendue une fois),
@@ -37,17 +37,17 @@ annoncée, et « Où suis-je ? » qui liste les neuf étapes (précédente, vous
 jouée sur cet appareil pour un coffre restauré). Les neuf étapes sont celles de la DoR de #193, dans
 son ordre :
 
-| Rang | Étape                                            | Écrans                                                                                   | Gestes (inchangés)                                                                             |
-| ---- | ------------------------------------------------ | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| 1    | Créer votre coffre                               | `creer` (ou `refuse`)                                                                    | aucun : « Commencer », « J'ai déjà une sauvegarde »                                            |
-| 2    | Choisir comment l'ouvrir                         | `choisir`                                                                                | `ouvrir-par-phrase`, `ouvrir-par-passkey` (le premier crée le coffre)                          |
-| 3    | Recevoir et confirmer votre code de récupération | `code-annonce`, `code-feuille`, `code-confirmation` ; `code-verifier`, `code-a-verifier` | `creer-recuperation` UNE fois, puis une recopie jugée dans la page, ou l'ouverture par le code |
-| 4    | Travailler dans l'application                    | `travailler` (ou `travailler-sans-application` sous Firefox)                             | `demarrer-application`, `reprendre-l-installation`                                             |
-| 5    | Verrouiller et rouvrir                           | `verrouiller`, `rouvrir`                                                                 | `verrouiller-le-coffre`, `ouvrir-par-phrase`                                                   |
-| 6    | Sauvegarder votre coffre                         | `sauvegarder`                                                                            | `sauvegarder-le-coffre`                                                                        |
-| 7    | Restaurer sur un autre appareil                  | `restaurer-ailleurs` (coffre présent), `restaurer`                                       | `restaurer-le-coffre`                                                                          |
-| 8    | Récupérer votre coffre avec le code              | `recuperer-preparer` (coffre ouvert), `recuperer`                                        | `verrouiller-le-coffre`, `ouvrir-par-code`                                                     |
-| 9    | Révoquer en urgence                              | `revoquer`, `termine`                                                                    | `revoquer-en-urgence`                                                                          |
+| Rang | Étape                                            | Écrans                                                                                    | Gestes (inchangés)                                                                                           |
+| ---- | ------------------------------------------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| 1    | Créer votre coffre                               | `creer` (ou `refuse`)                                                                     | aucun : « Commencer », « J'ai déjà une sauvegarde »                                                          |
+| 2    | Choisir comment l'ouvrir                         | `choisir`                                                                                 | `ouvrir-par-phrase`, `ouvrir-par-passkey` (le premier crée le coffre)                                        |
+| 3    | Recevoir et confirmer votre code de récupération | `code-annonce`, `code-feuille`, `code-a-verrouiller` ; `code-verifier`, `code-a-verifier` | `creer-recuperation` UNE fois, puis `verrouiller-le-coffre` et l'ouverture par le code (amendement du 18/09) |
+| 4    | Travailler dans l'application                    | `travailler`, `accueil` après la visite (ou `travailler-sans-application` sous Firefox)   | `demarrer-application`, `reprendre-l-installation`                                                           |
+| 5    | Verrouiller et rouvrir                           | `verrouiller`, `rouvrir`                                                                  | `verrouiller-le-coffre`, `ouvrir-par-phrase`                                                                 |
+| 6    | Sauvegarder votre coffre                         | `sauvegarder`                                                                             | `sauvegarder-le-coffre`                                                                                      |
+| 7    | Restaurer sur un autre appareil                  | `restaurer-ailleurs` (coffre présent), `restaurer`                                        | `restaurer-le-coffre`                                                                                        |
+| 8    | Récupérer votre coffre avec le code              | `recuperer-preparer` (coffre ouvert), `recuperer`                                         | `verrouiller-le-coffre`, `ouvrir-par-code`                                                                   |
+| 9    | Révoquer en urgence                              | `revoquer`, `termine`                                                                     | `revoquer-en-urgence`                                                                                        |
 
 Le texte intégral de chaque écran vit dans `src/coquille/textes-du-parcours.mjs` ; la page et
 [`docs/parcours/relecture-p2.md`](../parcours/relecture-p2.md) le lisent tous deux, la seconde
@@ -278,3 +278,63 @@ vérification suspend la reprise à l'étape mémorisée sans permettre de l'att
 la feuille a été perdue, l'ouverture par phrase ou passkey permet toujours d'en créer une nouvelle.
 Le fichier reste en clair, sans secret ; cet amendement ne protège pas contre un script de même
 origine capable de modifier aussi le code ou la mémoire de la page.
+
+### Amendement du 2026-09-18 — la visite n'est pas l'usage, et la feuille est prouvée par le Worker (#239)
+
+La recette QA du 18/09/2026 (PR #237, défaut 8) a trouvé l'application **inatteignable** après
+l'étape 5 : verrouiller ramenait à « Vérifier votre code », l'ouverture menait à l'étape mémorisée
+(6 ou 9), et aucun geste ne revenait à « Démarrer ». Le défi d'architecture du même jour l'a aggravé
+: la garde des étapes 4 à 9 était `code.confirme`, que l'amendement du 17/09 remet à faux à chaque
+chargement — la phrase n'ouvrait donc JAMAIS les étapes 4 à 9 —, et la seule sortie, « Je n'ai plus
+cette feuille », créait un code à chaque fois, jusqu'à remplir l'enveloppe (huit emplacements).
+Décision du superviseur, DoR gelée le 18/09 (commentaire de #239) : **simplifier**.
+
+**Ce que cet amendement GARDE de celui du 17/09.** `parcours.json` reste non probant : ses faits sur
+le code (`code.rendu`, `code.version`) sont remis à l'initiale à la lecture, et aucun champ du
+fichier n'ouvre un écran de travail. Le fichier reste sans secret.
+
+**Ce qui le complète (§ 2).**
+
+- **La garde des étapes 4 à 9 est le CONSTAT du Worker de confiance**, `feuilleEprouvee` : après
+  toute ouverture, le Worker relit le secteur 1 du volume `coquille` (note du 18/09 à
+  l'[ADR 0030](0030-cycle-de-vie-assemble-dans-la-coquille.md)), où il a inscrit, après chaque
+  ouverture réussie PAR LE CODE, l'identifiant de l'emplacement qui a ouvert ; la feuille est
+  éprouvée si l'un de ces identifiants est ENCORE un emplacement de récupération de l'enveloppe. Il
+  publie ce booléen dans les réponses d'ouverture et d'inventaire, et la coquille le relève dans le
+  même relevé que l'état ouvert. Aucune affirmation de la page ne franchit la frontière : un message
+  « recopie vérifiée » se forgerait aussi facilement que le fichier (défi du 18/09, K).
+- **`parcours.json` passe au format 2**, avec deux INDICES : `feuilleEprouvee` (recopie du dernier
+  constat, pour choisir le PREMIER formulaire d'un coffre verrouillé : « Vérifier votre code » ou «
+  Rouvrir votre coffre ») et `visiteTerminee` (l'étape 4 devient l'accueil). Un indice falsifié
+  coûte au pire un détour d'un écran : ouvert par la phrase sans preuve, le coffre retombe sur la
+  vérification, et l'indice est corrigé. Le format 1 se relit : l'étape et l'origine, jamais une
+  feuille éprouvée — un coffre d'avant la correction demande son code UNE fois.
+- **Une ouverture de ROUTINE mène à l'étape 4** : depuis `rouvrir` et `code-verifier` hors de
+  l'étape 5, depuis `recuperer` hors de l'étape 8. Seuls les exercices de la visite avancent (5 → 6,
+  8 → 9). C'est aussi la cause de ce que la QA avait vu : une origine RESTAURÉE ne s'ouvre que par
+  `recuperer`, dont l'ouverture menait à 9 quelle que soit l'étape demandée — `?etape=4` n'y
+  changeait rien.
+- **L'ordre tient vers l'avant, il ne retient personne vers l'arrière.** `etapeAdmise` est inchangée
+  ; les écrans 5 à 9 et `termine` portent « Revenir à mon application » (geste de page, → 4), et «
+  Continuer » depuis l'étape 4 mène à la prochaine étape NON jouée.
+- **Après « Parcours terminé »**, l'étape 4 est l'écran `accueil` : la visite est dite finie, et il
+  porte l'application, verrouiller, sauvegarder et révoquer — des gestes qui existaient. Aucun fait
+  « volume application » n'est publié : « Démarrer » choisit déjà entre installation, instantané et
+  boot à froid. T2 de #236 ajoutera « Mettre à jour l'application » comme BLOC de ces deux écrans,
+  jamais comme une étape.
+
+**Ce qui remplace le § 3 (la recopie jugée dans la page).** La confirmation de l'étape 3 EST une
+ouverture par le code : annonce → feuille (code rendu une fois, ADR 0025 décision 3 inchangée) → «
+J'ai recopié mon code » → `code-a-verrouiller` (« verrouillez votre coffre », « Revoir mon code »
+tant que le code est dans la page) → le verrouillage RECHARGE la page, et le code part avec le
+document → `code-verifier` (« ouvrez-le avec le code de votre feuille ») → preuve inscrite →
+étape 4. L'écran `code-confirmation`, `confirmerLaRecopie` et la comparaison au DOM disparaissent.
+Risque assumé : une personne qui a mal recopié l'apprend coffre fermé ; la phrase et « Je n'ai plus
+cette feuille » l'en sortent, et rien n'est perdu (le coffre est vide à l'étape 3). L'étape 5
+redevient « rouvrir par la phrase ou la passkey ».
+
+**L'enveloppe pleine.** `code-annonce` ne s'atteint plus, un code existant, que par « Je n'ai plus
+cette feuille », et y offre « Revenir : j'ai toujours ma feuille » et la révocation d'urgence. Le
+refus `VAULT_ENVELOPPE_PLEINE` au neuvième emplacement (établi par
+`coquille-preuve-de-la-feuille.test.mjs`) dit cette sortie : révoquer retire tous les autres moyens,
+puis un code se crée. Le retrait d'une seule feuille reste à #218.

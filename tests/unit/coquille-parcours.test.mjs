@@ -15,14 +15,16 @@ import {
   encoderCode,
   tirerCodeDeRecuperation,
 } from "../../src/vm/derivation/code-de-recuperation.mjs";
-import { DERIVATION_ERROR_CODES } from "../../src/vm/derivation/derivation-errors.mjs";
 import { CODES_REFUS_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import { etatDeLaSaisie } from "../../src/coquille/saisie-du-code.mjs";
 import {
   BLOCS,
   COFFRE,
   ECRANS,
+  ECRANS_AVEC_RETOUR,
+  ECRANS_DE_L_APPLICATION,
   ETAPES,
+  FORMAT_DE_PROGRESSION,
   GESTES_LONGS,
   LIBELLES_DES_BLOCS,
   LIMITE_DE_FIREFOX,
@@ -34,7 +36,6 @@ import {
   attenteDeLaPhrase,
   codeEnFinDeTexte,
   coffreObserve,
-  confirmerLaRecopie,
   ecranCourant,
   ecrireProgression,
   etapeAdmise,
@@ -44,7 +45,6 @@ import {
   lireLigneDEtat,
   lireProgression,
   ouSuisJe,
-  ouvertureParLeCode,
   progressionApres,
   progressionDuDemarrage,
   refusDeRelaisAAnnoncer,
@@ -56,13 +56,15 @@ const lire = (chemin) => readFile(new URL(`../../${chemin}`, import.meta.url), "
 
 const creee = progressionApres(PROGRESSION_INITIALE, "coffre-cree");
 const rendue = progressionApres(creee, "code-rendu", 2);
-const confirmee = progressionApres(rendue, "code-confirme");
+// La feuille éprouvée : ce que le Worker a CONSTATÉ, recopié en indice (#239).
+const eprouvee = progressionApres(rendue, "feuille", true);
 const MOYENS_DE_A = ["phrase", "recuperation"];
 
 const ouvert = (reste) => ({
   coffre: COFFRE.ouvert,
   moyens: MOYENS_DE_A,
-  progression: confirmee,
+  progression: eprouvee,
+  feuilleEprouvee: true,
   ...reste,
 });
 
@@ -110,8 +112,10 @@ test("les attentes longues sont annoncées AVANT : démarrage, sauvegarde, resta
   assert.match(ECRANS.sauvegarder.attente, /minutes/);
   assert.match(ECRANS.restaurer.attente, /minutes/);
   assert.match(ECRANS.verrouiller.attente, /secondes/);
-  assert.match(attenteDeLaPhrase(446), /moins d'une seconde/);
-  assert.match(attenteDeLaPhrase(2207), /environ 2 seconde/);
+  // #242, défaut 13 : « moins d'une seconde » annonçait la dérivation seule ; le geste en prend deux.
+  assert.match(attenteDeLaPhrase(446), /environ 2 secondes/);
+  assert.match(attenteDeLaPhrase(2207), /environ 4 secondes/);
+  assert.doesNotMatch(attenteDeLaPhrase(446), /moins d'une seconde/);
   assert.match(attenteDeLaPhrase(446), /figé/);
 });
 
@@ -131,27 +135,31 @@ test("l'écran de révocation dit que les sauvegardes déjà faites restent ouvr
   );
 });
 
-// --- La PROGRESSION (revue de la PR #213, constats 1 et 2) -----------------------------------------
+// --- La PROGRESSION (revue de la PR #213, constats 1 et 2 ; #239) ----------------------------------
 
 test("la progression se relit, et tout ce qui n'a pas exactement sa forme vaut la progression initiale", () => {
-  assert.deepEqual(lireProgression(ecrireProgression(confirmee)), {
-    ...confirmee,
+  const termine = progressionApres(eprouvee, "visite-terminee");
+  assert.deepEqual(lireProgression(ecrireProgression(termine)), {
+    ...termine,
     code: PROGRESSION_INITIALE.code,
   });
-  const valide = JSON.parse(ecrireProgression(confirmee));
+  const valide = JSON.parse(ecrireProgression(eprouvee));
+  assert.equal(valide.version, FORMAT_DE_PROGRESSION);
   const abimees = [
     null,
     "",
     "{",
     "[]",
-    JSON.stringify({ ...valide, version: 2 }),
+    JSON.stringify({ ...valide, version: 3 }),
     JSON.stringify({ ...valide, etapeAtteinte: 10 }),
     JSON.stringify({ ...valide, etapeAtteinte: 0 }),
     JSON.stringify({ ...valide, etapeAtteinte: "9" }),
     JSON.stringify({ ...valide, origine: "ailleurs" }),
-    JSON.stringify({ ...valide, code: { ...valide.code, confirme: "oui" } }),
+    JSON.stringify({ ...valide, feuilleEprouvee: "oui" }),
+    JSON.stringify({ ...valide, visiteTerminee: 1 }),
     JSON.stringify({ ...valide, code: { ...valide.code, version: 0 } }),
     JSON.stringify({ ...valide, code: { ...valide.code, valeur: "ABCD-EFGH" } }),
+    JSON.stringify({ ...valide, code: { ...valide.code, confirme: true } }),
     JSON.stringify({ ...valide, code: null }),
     JSON.stringify({ ...valide, phrase: "x" }),
   ];
@@ -160,42 +168,73 @@ test("la progression se relit, et tout ce qui n'a pas exactement sa forme vaut l
   }
 });
 
+test("un fichier du format 1 (avant #239) se relit : l'étape et l'origine, jamais une feuille éprouvée", () => {
+  const ancien = {
+    version: 1,
+    etapeAtteinte: 9,
+    origine: "creation",
+    code: { rendu: true, version: 2, confirme: true },
+  };
+  assert.deepEqual(lireProgression(JSON.stringify(ancien)), {
+    ...PROGRESSION_INITIALE,
+    etapeAtteinte: 9,
+  });
+  const faux = { ...ancien, code: { rendu: true, version: 2 } };
+  assert.deepEqual(lireProgression(JSON.stringify(faux)), PROGRESSION_INITIALE);
+});
+
 test("la progression écrite ne porte que ses champs : jamais le code, jamais la phrase", () => {
-  const avecIntrus = { ...confirmee, code: { ...confirmee.code, valeur: "SECRET" }, phrase: "x" };
+  const avecIntrus = { ...eprouvee, code: { ...eprouvee.code, valeur: "SECRET" }, phrase: "x" };
   const ecrite = JSON.parse(ecrireProgression(avecIntrus));
-  assert.deepEqual(Object.keys(ecrite).sort(), ["code", "etapeAtteinte", "origine", "version"]);
-  assert.deepEqual(Object.keys(ecrite.code).sort(), ["confirme", "rendu", "version"]);
+  assert.deepEqual(Object.keys(ecrite).sort(), [
+    "code",
+    "etapeAtteinte",
+    "feuilleEprouvee",
+    "origine",
+    "version",
+    "visiteTerminee",
+  ]);
+  assert.deepEqual(Object.keys(ecrite.code).sort(), ["rendu", "version"]);
   assert.doesNotMatch(JSON.stringify(ecrite), /SECRET/);
 });
 
-test("chaque pas rend une NOUVELLE progression, et un coffre neuf n'hérite d'aucune confirmation", () => {
+test("chaque pas rend une NOUVELLE progression, et un coffre neuf n'hérite d'aucune feuille éprouvée", () => {
   assert.equal(creee.etapeAtteinte, 3);
-  assert.deepEqual(rendue.code, { rendu: true, version: 2, confirme: false });
-  assert.equal(rendue.code.confirme, false);
-  assert.deepEqual(confirmee.code, { rendu: true, version: 2, confirme: true });
-  assert.equal(confirmee.etapeAtteinte, 4);
-  assert.ok(Object.isFrozen(confirmee) && Object.isFrozen(confirmee.code));
-  assert.notEqual(confirmee, rendue);
-  const recommence = progressionApres(progressionApres(confirmee, "etape", 9), "coffre-cree");
-  assert.equal(recommence.code.confirme, false, "un coffre recréé exige une nouvelle confirmation");
+  assert.deepEqual(rendue.code, { rendu: true, version: 2 });
+  assert.equal(rendue.feuilleEprouvee, false);
+  assert.equal(eprouvee.feuilleEprouvee, true);
+  assert.equal(eprouvee.etapeAtteinte, 4, "une feuille éprouvée ouvre l'étape 4");
+  assert.ok(Object.isFrozen(eprouvee) && Object.isFrozen(eprouvee.code));
+  assert.notEqual(eprouvee, rendue);
+  const retiree = progressionApres(progressionApres(eprouvee, "etape", 7), "feuille", false);
+  assert.equal(retiree.feuilleEprouvee, false, "le Worker ne la constate plus : l'indice tombe");
+  assert.equal(retiree.etapeAtteinte, 7, "l'étape atteinte ne recule pas");
+  assert.equal(progressionApres(rendue, "feuille", "oui").feuilleEprouvee, false);
+  const recommence = progressionApres(progressionApres(eprouvee, "etape", 9), "coffre-cree");
+  assert.equal(recommence.feuilleEprouvee, false, "un coffre recréé exige une nouvelle preuve");
+  assert.equal(recommence.visiteTerminee, false);
   assert.equal(recommence.etapeAtteinte, 3);
+  assert.equal(progressionApres(eprouvee, "visite-terminee").visiteTerminee, true);
   assert.equal(
-    progressionApres(confirmee, "etape", 2).etapeAtteinte,
+    progressionApres(eprouvee, "etape", 2).etapeAtteinte,
     4,
     "on n'atteint pas en reculant",
   );
-  const restauree = progressionApres(confirmee, "restauree");
+  const restauree = progressionApres(progressionApres(eprouvee, "visite-terminee"), "restauree");
   assert.equal(restauree.origine, ORIGINES_DU_COFFRE.restauration);
   assert.equal(restauree.etapeAtteinte, 8);
-  assert.equal(restauree.code.confirme, false);
-  assert.throws(() => progressionApres(confirmee, "inconnu"), /inconnu/);
+  assert.equal(restauree.feuilleEprouvee, false, "la preuve ne voyage pas dans l'archive");
+  assert.equal(restauree.visiteTerminee, false);
+  assert.throws(() => progressionApres(eprouvee, "inconnu"), /inconnu/);
+  assert.throws(() => progressionApres(eprouvee, "code-confirme"), /inconnu/);
 });
 
-test("ORDRE : une étape demandée au-delà de la progression est ramenée à l'étape atteinte", () => {
+test("ORDRE : vers l'avant, une étape demandée est ramenée à l'étape atteinte ; vers l'arrière, tout est admis", () => {
   assert.equal(etapeAdmise(4, creee), 3);
   assert.equal(etapeAdmise(9, rendue), 3);
-  assert.equal(etapeAdmise(2, confirmee), 2, "revenir en arrière reste permis");
-  assert.equal(etapeAdmise(null, confirmee), 4, "sans demande, on reprend là où on en était");
+  assert.equal(etapeAdmise(2, eprouvee), 2, "revenir en arrière reste permis");
+  assert.equal(etapeAdmise(4, progressionApres(eprouvee, "etape", 9)), 4);
+  assert.equal(etapeAdmise(null, eprouvee), 4, "sans demande, on reprend là où on en était");
   assert.equal(etapeAdmise(null, PROGRESSION_INITIALE), 1);
 });
 
@@ -212,17 +251,21 @@ test("sans coffre : créer, choisir, ou restaurer selon l'étape atteinte", () =
 test("un coffre ouvert SANS moyen de récupération ramène toujours à la création du code", () => {
   for (const pointeur of [null, 1, 2, 3, 4, 5, 6, 7, 8, 9]) {
     assert.equal(
-      ecranCourant(ouvert({ pointeur, moyens: ["phrase"], progression: creee })),
+      ecranCourant(
+        ouvert({ pointeur, moyens: ["phrase"], progression: creee, feuilleEprouvee: false }),
+      ),
       "code-annonce",
       `étape ${pointeur}`,
     );
   }
 });
 
-test("CONSTAT 1 : un code rendu et non confirmé fait d'abord VÉRIFIER la feuille que l'on a", () => {
+test("#239 : un code rendu et jamais éprouvé fait d'abord ÉPROUVER la feuille que l'on a", () => {
   for (const pointeur of [null, 3, 4, 5, 6, 7, 8, 9]) {
-    const ouvertSansFeuille = ecranCourant(ouvert({ pointeur, progression: rendue }));
-    assert.equal(ouvertSansFeuille, "code-a-verifier", `ouvert, étape ${pointeur}`);
+    const ouvertSansPreuve = ecranCourant(
+      ouvert({ pointeur, progression: rendue, feuilleEprouvee: false }),
+    );
+    assert.equal(ouvertSansPreuve, "code-a-verifier", `ouvert, étape ${pointeur}`);
     const ferme = ecranCourant({
       pointeur,
       coffre: COFFRE.verrouille,
@@ -242,49 +285,68 @@ test("CONSTAT 1 : un code rendu et non confirmé fait d'abord VÉRIFIER la feuil
     progression: PROGRESSION_INITIALE,
   };
   assert.equal(ecranCourant({ ...perdue, pointeur: 1 }), "code-verifier");
-  for (const id of ["code-verifier", "code-a-verifier"]) {
-    // Aucun des deux ne CRÉE un code d'un clic : le geste reste derrière l'annonce, qui dit de
-    // préparer une feuille avant que le code ne s'affiche (une seule fois).
+  for (const id of ["code-verifier", "code-a-verifier", "code-a-verrouiller"]) {
+    // Aucun ne CRÉE un code d'un clic : le geste reste derrière l'annonce, qui dit de préparer une
+    // feuille avant que le code ne s'affiche (une seule fois).
     assert.ok(
       !ECRANS[id].blocs.includes("feuille-annonce"),
       `${id} n'offre pas d'afficher un code`,
     );
   }
-  // Coffre VERROUILLÉ : afficher un code exige un coffre ouvert, et le dire est la seule conduite
-  // honnête. Coffre OUVERT : la sortie existe, et l'écran nomme AUSSI la révocation (#214).
   assert.match(ECRANS["code-verifier"].attendu, /effacez les données de ce site/);
   assert.match(ECRANS["code-verifier"].attendu, /afficher un nouveau code/);
+  assert.match(ECRANS["code-verifier"].ceQuiVaSePasser, /qu'une fois/);
   assert.match(ECRANS["code-a-verifier"].attendu, /afficher un nouveau code/);
-  assert.match(ECRANS["code-a-verifier"].attendu, /étape 9/);
+  assert.match(ECRANS["code-a-verifier"].attendu, /Révoquer tous les autres moyens/);
   assert.doesNotMatch(ECRANS["code-a-verifier"].attendu, /effacez les données de ce site/);
 });
 
+test("#239, VULN-04 : l'indice de parcours.json ne choisit que le premier formulaire, jamais un écran de travail", () => {
+  // Un fichier falsifié qui dit « éprouvée » et « étape 9 » : verrouillé, il montre « Rouvrir »
+  // au lieu de « Vérifier » — un détour d'un écran. Ouvert, sans le constat du Worker, rien de 4 à 9.
+  const falsifiee = progressionApres(progressionApres(rendue, "etape", 9), "feuille", true);
+  const verrouille = { coffre: COFFRE.verrouille, moyens: MOYENS_DE_A, progression: falsifiee };
+  assert.equal(ecranCourant({ ...verrouille, pointeur: 9 }), "rouvrir");
+  for (const pointeur of [4, 5, 6, 7, 8, 9]) {
+    assert.equal(
+      ecranCourant(ouvert({ pointeur, progression: falsifiee, feuilleEprouvee: false })),
+      "code-a-verifier",
+      `étape ${pointeur}`,
+    );
+  }
+  // Et l'inverse : le constat du Worker suffit, quel que soit le fichier.
+  assert.equal(
+    ecranCourant(ouvert({ pointeur: 6, progression: PROGRESSION_INITIALE })),
+    "sauvegarder",
+  );
+});
+
 test("« je n'ai plus cette feuille » ramène à l'annonce, et un SECOND code s'y crée (#214)", () => {
-  const sansLaFeuille = ouvert({ pointeur: 3, progression: rendue, nouveauCodeDemande: true });
+  const sansLaFeuille = ouvert({
+    pointeur: 3,
+    progression: rendue,
+    feuilleEprouvee: false,
+    nouveauCodeDemande: true,
+  });
   assert.equal(ecranCourant(sansLaFeuille), "code-annonce");
   assert.equal(
-    ecranCourant(ouvert({ pointeur: 3, progression: rendue })),
+    ecranCourant({ ...sansLaFeuille, nouveauCodeDemande: false }),
     "code-a-verifier",
-    "sans la demande, on vérifie la feuille que l'on a",
+    "sans la demande, on éprouve la feuille que l'on a",
   );
-  // La demande ne fait rien sauter : le code reste à recopier et à confirmer.
+  // La demande ne fait rien sauter : le code reste à recopier puis à éprouver.
   assert.equal(
     ecranCourant({ ...sansLaFeuille, sousEtatDuCode: SOUS_ETATS_DU_CODE.feuille }),
     "code-feuille",
   );
-  assert.equal(
-    ecranCourant({ ...sansLaFeuille, progression: confirmee }),
-    "travailler",
-    "une fois le code confirmé, la demande n'a plus de prise",
-  );
   assert.ok(ECRANS["code-a-verifier"].blocs.includes("nouveau-code"), "la sortie est sur l'écran");
-  assert.ok(BLOCS.includes("nouveau-code"), "le bloc est déclaré");
+  // L'annonce offre de revenir, et la révocation qui fait de la place (#239, enveloppe pleine).
+  assert.ok(ECRANS["code-annonce"].blocs.includes("feuille-revenir"));
+  assert.ok(ECRANS["code-annonce"].blocs.includes("revocation"));
+  assert.match(MESSAGES.codesDejaRendus(1), /Revenir : j'ai toujours ma feuille/);
 });
 
 test("coffre VERROUILLÉ : « je n'ai plus cette feuille » fait d'abord ouvrir par la phrase (#214)", () => {
-  // Un coffre verrouillé n'affiche aucun code — le Worker n'a pas de clé. La sortie mène donc à
-  // « Rouvrir », d'où le coffre ouvert ramène à l'annonce du code. L'ordre n'est pas sauté : le
-  // code reste à recopier et à confirmer avant l'étape 4.
   const verrouille = {
     pointeur: 3,
     coffre: COFFRE.verrouille,
@@ -295,29 +357,31 @@ test("coffre VERROUILLÉ : « je n'ai plus cette feuille » fait d'abord ouvrir 
   assert.equal(ecranCourant({ ...verrouille, nouveauCodeDemande: true }), "rouvrir");
   assert.ok(ECRANS["code-verifier"].blocs.includes("nouveau-code"), "la sortie est sur l'écran");
   assert.match(ECRANS["code-verifier"].attendu, /ouvrirez donc d'abord avec votre phrase/);
-  // Une fois le coffre OUVERT, la demande mène à l'annonce, où le geste d'avant crée le code.
   assert.equal(
-    ecranCourant(ouvert({ pointeur: 3, progression: rendue, nouveauCodeDemande: true })),
-    "code-annonce",
-  );
-  // Un coffre qui n'a QUE le code reste à « Récupérer » : il n'y a pas de phrase pour l'ouvrir.
-  assert.equal(
-    ecranCourant({
-      ...verrouille,
-      moyens: ["recuperation"],
-      nouveauCodeDemande: true,
-    }),
+    ecranCourant({ ...verrouille, moyens: ["recuperation"], nouveauCodeDemande: true }),
     "recuperer",
+    "un coffre qui n'a QUE le code reste à « Récupérer »",
   );
 });
 
 test("le COMPTE des feuilles remplace « il y en a une » (#214)", () => {
-  // Deux codes posés : la ligne des moyens dit toujours « recuperation » une fois, et c'est le
-  // compte, non la ligne, qui apprend au parcours combien de feuilles ouvrent ce coffre.
-  const deux = ouvert({ pointeur: 3, progression: rendue, nombreDeCodes: 2 });
+  const deux = ouvert({
+    pointeur: 3,
+    progression: rendue,
+    nombreDeCodes: 2,
+    feuilleEprouvee: false,
+  });
   assert.equal(ecranCourant(deux), "code-a-verifier");
   assert.equal(
-    ecranCourant(ouvert({ pointeur: 3, progression: creee, nombreDeCodes: 0, moyens: ["phrase"] })),
+    ecranCourant(
+      ouvert({
+        pointeur: 3,
+        progression: creee,
+        nombreDeCodes: 0,
+        moyens: ["phrase"],
+        feuilleEprouvee: false,
+      }),
+    ),
     "code-annonce",
     "zéro code : le premier se crée",
   );
@@ -326,35 +390,50 @@ test("le COMPTE des feuilles remplace « il y en a une » (#214)", () => {
   assert.match(MESSAGES.codesDejaRendus(2), /n'efface aucun des précédents/);
 });
 
-test("CONSTAT 1 : la feuille affichée DANS la page se recopie et se confirme, sans quitter l'étape 3", () => {
+test("#239 : la feuille affichée DANS la page se recopie, puis s'éprouve en verrouillant", () => {
   const feuille = ouvert({
     pointeur: 3,
     progression: rendue,
+    feuilleEprouvee: false,
     sousEtatDuCode: SOUS_ETATS_DU_CODE.feuille,
   });
   assert.equal(ecranCourant(feuille), "code-feuille");
-  const confirmation = { ...feuille, sousEtatDuCode: SOUS_ETATS_DU_CODE.confirmation };
-  assert.equal(ecranCourant(confirmation), "code-confirmation");
-  assert.equal(ecranCourant({ ...confirmation, pointeur: 9 }), "code-confirmation");
+  const recopiee = { ...feuille, sousEtatDuCode: SOUS_ETATS_DU_CODE.recopie };
+  assert.equal(ecranCourant(recopiee), "code-a-verrouiller");
+  assert.deepEqual(ECRANS["code-a-verrouiller"].blocs, ["revoir", "verrouiller"]);
+  assert.match(ECRANS["code-a-verrouiller"].ceQuiVaSePasser, /verrouillez votre coffre/);
+  assert.match(ECRANS["code-a-verrouiller"].ceQuiVaSePasser, /votre phrase le rouvre/);
+  assert.equal(ECRANS["code-a-verrouiller"].etape, 3);
+  assert.equal(ECRANS["code-confirmation"], undefined, "la recopie au DOM a disparu");
+  assert.deepEqual(Object.keys(SOUS_ETATS_DU_CODE).sort(), ["annonce", "feuille", "recopie"]);
 });
 
-test("CONSTAT 2 : aucun écran de travail sans confirmation ; la récupération permet de la fournir", () => {
+test("#239 : aucun écran de travail sans feuille éprouvée ; la récupération permet de l'éprouver", () => {
   const ecransDeTravail = new Set(
     Object.entries(ECRANS)
       .filter(([id, ecran]) => id !== "recuperer" && ecran.etape !== null && ecran.etape >= 4)
       .map(([id]) => id),
   );
-  for (const progression of [creee, rendue, PROGRESSION_INITIALE]) {
+  for (const progression of [creee, rendue, eprouvee, PROGRESSION_INITIALE]) {
     for (const pointeur of [4, 5, 6, 7, 8, 9]) {
       for (const coffre of [COFFRE.ouvert, COFFRE.verrouille]) {
-        const id = ecranCourant({ pointeur, coffre, moyens: MOYENS_DE_A, progression });
-        assert.ok(!ecransDeTravail.has(id), `${coffre}, étape ${pointeur} : ${id}`);
+        const id = ecranCourant({
+          pointeur,
+          coffre,
+          moyens: MOYENS_DE_A,
+          progression,
+          feuilleEprouvee: false,
+        });
+        assert.ok(
+          !ecransDeTravail.has(id) || id === "rouvrir",
+          `${coffre}, étape ${pointeur} : ${id}`,
+        );
       }
     }
   }
 });
 
-test("un coffre ouvert et confirmé suit l'étape atteinte, de 4 à 9", () => {
+test("un coffre ouvert et éprouvé suit l'étape montrée, de 4 à 9", () => {
   assert.equal(ecranCourant(ouvert({ pointeur: null })), "travailler");
   assert.equal(ecranCourant(ouvert({ pointeur: 3 })), "travailler");
   assert.equal(ecranCourant(ouvert({ pointeur: 4 })), "travailler");
@@ -364,6 +443,48 @@ test("un coffre ouvert et confirmé suit l'étape atteinte, de 4 à 9", () => {
   assert.equal(ecranCourant(ouvert({ pointeur: 8 })), "recuperer-preparer");
   assert.equal(ecranCourant(ouvert({ pointeur: 9 })), "revoquer");
   assert.equal(ecranCourant(ouvert({ pointeur: 9, revocationFaite: true })), "termine");
+});
+
+test("#239 : après « Parcours terminé », l'étape 4 est l'ACCUEIL, avec les gestes du quotidien", () => {
+  const finie = progressionApres(progressionApres(eprouvee, "etape", 9), "visite-terminee");
+  assert.equal(ecranCourant(ouvert({ pointeur: 4, progression: finie })), "accueil");
+  assert.equal(ecranCourant(ouvert({ pointeur: null, progression: finie })), "accueil");
+  assert.equal(ecranCourant(ouvert({ pointeur: 6, progression: finie })), "sauvegarder");
+  const accueil = ECRANS.accueil;
+  assert.equal(accueil.etape, 4);
+  assert.match(accueil.ceQuiVaSePasser, /La visite est finie/);
+  for (const bloc of [
+    "application",
+    "espace-de-travail",
+    "verrouiller",
+    "sauvegarde",
+    "revocation",
+  ]) {
+    assert.ok(accueil.blocs.includes(bloc), bloc);
+  }
+  assert.ok(!accueil.blocs.includes("continuer"), "plus rien à continuer");
+  assert.deepEqual(ECRANS_DE_L_APPLICATION, ["travailler", "accueil"]);
+  assert.equal(
+    ecranCourant(ouvert({ pointeur: 4, progression: finie, moteur: "firefox" })),
+    "travailler-sans-application",
+  );
+});
+
+test("#239 : les écrans 5 à 9 et « Parcours terminé » portent « Revenir à mon application »", () => {
+  const avecRetour = Object.entries(ECRANS)
+    .filter(([, ecran]) => ecran.blocs.includes("retour"))
+    .map(([id]) => id)
+    .sort();
+  assert.deepEqual(avecRetour, [...ECRANS_AVEC_RETOUR].sort());
+  for (const id of ECRANS_AVEC_RETOUR) {
+    assert.ok(ECRANS[id].etape >= 5, id);
+    assert.equal(etapeApres(id, "retour", ECRANS[id].etape, 9), 4, id);
+  }
+  for (const id of ["travailler", "rouvrir", "recuperer", "code-verifier", "code-annonce"]) {
+    assert.equal(etapeApres(id, "retour", 4, 9), null, id);
+  }
+  assert.match(ECRANS.termine.attendu, /ci-dessous/);
+  assert.doesNotMatch(ECRANS.termine.attendu, /ci-dessus/);
 });
 
 test("CONSTAT 9 : sous Firefox, l'étape 4 dit sa limite et n'offre pas « Démarrer »", () => {
@@ -384,9 +505,10 @@ test("CONSTAT 9 : sous Firefox, l'étape 4 dit sa limite et n'offre pas « Déma
   assert.match(LIMITE_DE_FIREFOX, /Chrome ou Edge/);
 });
 
-test("un coffre verrouillé et confirmé : rouvrir par la phrase, ou récupérer par le code", () => {
-  const verrouille = (reste) => ({ coffre: COFFRE.verrouille, progression: confirmee, ...reste });
+test("un coffre verrouillé et éprouvé : rouvrir par la phrase, ou récupérer par le code", () => {
+  const verrouille = (reste) => ({ coffre: COFFRE.verrouille, progression: eprouvee, ...reste });
   assert.equal(ecranCourant(verrouille({ pointeur: 5, moyens: MOYENS_DE_A })), "rouvrir");
+  assert.equal(ecranCourant(verrouille({ pointeur: 9, moyens: MOYENS_DE_A })), "rouvrir");
   assert.equal(ecranCourant(verrouille({ pointeur: 8, moyens: MOYENS_DE_A })), "recuperer");
   assert.equal(
     ecranCourant(verrouille({ pointeur: 6, moyens: ["webauthn-prf", "recuperation"] })),
@@ -410,27 +532,50 @@ test("où mènent les gestes : le chemin nominal, de A à B", () => {
   assert.equal(etapeApres("creer", "commencer", null), 2);
   assert.equal(etapeApres("creer", "j-ai-une-sauvegarde", null), 7);
   assert.equal(etapeApres("choisir", "ouverture", 2), 3);
-  assert.equal(etapeApres("code-confirmation", "code-confirme", 3), 4);
-  assert.equal(etapeApres("code-verifier", "ouverture", 3), 4);
-  assert.equal(etapeApres("travailler", "continuer", 4), 5);
-  assert.equal(etapeApres("rouvrir", "ouverture", 5), 6);
-  assert.equal(etapeApres("rouvrir", "ouverture", 3), 3, "rouvrir ne saute pas la confirmation");
+  assert.equal(
+    etapeApres("code-verifier", "ouverture", 3),
+    4,
+    "la feuille éprouvée ouvre l'étape 4",
+  );
+  assert.equal(etapeApres("travailler", "continuer", 4, 4), 5);
+  assert.equal(etapeApres("rouvrir", "ouverture", 5), 6, "l'exercice de l'étape 5 avance");
   assert.equal(etapeApres("rouvrir", "perdu", 5), 8);
   assert.equal(etapeApres("sauvegarder", "continuer", 6), 7);
   assert.equal(etapeApres("restaurer-ailleurs", "continuer", 7), 8);
   assert.equal(etapeApres("restaurer", "restauree", 7), 8);
-  assert.equal(etapeApres("recuperer", "ouverture", 8), 9);
+  assert.equal(etapeApres("recuperer", "ouverture", 8), 9, "l'exercice de l'étape 8 avance");
   assert.equal(etapeApres("code-feuille", "ouverture", 3), null);
+  assert.equal(etapeApres("code-confirmation", "code-confirme", 3), null);
   assert.equal(etapeApres("travailler-sans-application", "continuer", 4), null);
   assert.equal(etapeApres("travailler", "inconnu", 4), null);
+  assert.equal(etapeApres("accueil", "continuer", 4, 9), null, "l'accueil ne continue rien");
 });
 
-test("seule une ouverture depuis un écran qui n'offre que le code vaut confirmation du code", () => {
-  assert.equal(ouvertureParLeCode("code-verifier"), true);
-  assert.equal(ouvertureParLeCode("recuperer"), true);
-  for (const id of ["rouvrir", "choisir", "code-a-verifier", "travailler"]) {
-    assert.equal(ouvertureParLeCode(id), false, id);
+test("#239 : une ouverture de ROUTINE mène à l'application, quelle que soit l'étape mémorisée", () => {
+  for (const pointeur of [null, 1, 3, 4, 6, 7, 8, 9]) {
+    assert.equal(etapeApres("rouvrir", "ouverture", pointeur), 4, `rouvrir, étape ${pointeur}`);
   }
+  for (const pointeur of [null, 3, 4, 6, 7, 8, 9]) {
+    assert.equal(etapeApres("code-verifier", "ouverture", pointeur), 4, `vérifier, ${pointeur}`);
+  }
+  assert.equal(etapeApres("code-verifier", "ouverture", 5), 6);
+  for (const pointeur of [null, 4, 5, 6, 7, 9]) {
+    // Le cas de la QA : une origine RESTAURÉE ne s'ouvre que par « Récupérer », qui menait toujours à
+    // l'étape 9 — `?etape=4` n'y changeait rien.
+    assert.equal(etapeApres("recuperer", "ouverture", pointeur), 4, `récupérer, ${pointeur}`);
+  }
+});
+
+test("#239 : « Continuer » depuis l'application mène à la prochaine étape NON jouée", () => {
+  assert.equal(etapeApres("travailler", "continuer", 4, 4), 5);
+  assert.equal(etapeApres("travailler", "continuer", 4, 5), 5);
+  assert.equal(etapeApres("travailler", "continuer", 4, 7), 7);
+  assert.equal(etapeApres("travailler", "continuer", 4, 9), 9);
+  assert.equal(etapeApres("travailler", "continuer", null, 3), 5);
+});
+
+test("« où suis-je » ne compte plus d'écran de recopie ; l'ouverture par le code est l'affaire du Worker", () => {
+  assert.equal(ECRANS["code-verifier"].etape, 3);
   // Ce que l'invariant exige est qu'aucun AUTRE moyen d'ouvrir n'y soit offert : la sortie « je
   // n'ai plus cette feuille » (#214) n'ouvre rien, elle mène à l'écran qui ouvre par la phrase.
   assert.deepEqual(ECRANS["code-verifier"].blocs, ["code", "nouveau-code"]);
@@ -581,35 +726,6 @@ test("CONSTAT 6 : aucun refus du relais n'est annoncé avant qu'un démarrage ai
     }),
     ["VAULT_COQUILLE_RELAIS_ABANDONNE"],
   );
-});
-
-test("la recopie du code : incomplète, mal recopiée, étrangère, confirmée", () => {
-  const feuille = encoderCode(tirerCodeDeRecuperation());
-  const autre = encoderCode(tirerCodeDeRecuperation());
-  assert.deepEqual(confirmerLaRecopie("", feuille), {
-    confirme: false,
-    code: null,
-    message: "Il manque des symboles : 0 sur 28.",
-  });
-  assert.equal(confirmerLaRecopie(feuille.slice(0, 9), feuille).confirme, false);
-  // Un symbole changé : la somme de contrôle le voit, et la conduite est celle de la recopie.
-  const symboles = feuille.replaceAll("-", "").split("");
-  symboles[3] = symboles[3] === "0" ? "1" : "0";
-  const fautif = confirmerLaRecopie(symboles.join(""), feuille);
-  assert.equal(fautif.confirme, false);
-  assert.equal(fautif.code, DERIVATION_ERROR_CODES.codeMalRecopie);
-  assert.match(fautif.message, /faute de recopie/);
-  const etranger = confirmerLaRecopie(autre, feuille);
-  assert.equal(etranger.confirme, false);
-  assert.equal(etranger.code, null);
-  assert.match(etranger.message, /ce n'est pas celui qui vient d'être affiché/);
-  // Casse, espaces et tirets sont libres : c'est le code, pas sa typographie, qui est confirmé.
-  const libre = feuille.toLowerCase().replaceAll("-", " ");
-  assert.deepEqual(confirmerLaRecopie(libre, feuille), {
-    confirme: true,
-    code: null,
-    message: MESSAGES.codeConfirme,
-  });
 });
 
 test("la progression d'un démarrage dit le temps écoulé et les signes de vie réels", () => {

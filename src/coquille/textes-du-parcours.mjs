@@ -35,12 +35,11 @@ export const LIBELLES_DES_BLOCS = Object.freeze({
   code: ["« Code de récupération » (champ)", "« Ouvrir mon coffre avec le code »"],
   "feuille-annonce": ["« Afficher mon code de récupération »"],
   "nouveau-code": ["« Je n'ai plus cette feuille — afficher un nouveau code »"],
-  feuille: ["« J'ai recopié mon code »"],
-  confirmation: [
-    "« Code recopié depuis votre feuille » (champ)",
-    "« Confirmer mon code »",
-    "« Revoir mon code »",
+  "feuille-revenir": [
+    "« Revenir : j'ai toujours ma feuille » (seulement quand la personne a dit ne plus l'avoir)",
   ],
+  feuille: ["« J'ai recopié mon code »"],
+  revoir: ["« Revoir mon code »"],
   application: [
     "« Démarrer l'application »",
     "« Reprendre l'installation » (seulement si une installation a été interrompue)",
@@ -54,6 +53,7 @@ export const LIBELLES_DES_BLOCS = Object.freeze({
   ],
   revocation: ["« Révoquer tous les autres moyens d'ouvrir ce coffre »"],
   continuer: ["« Continuer : » suivi du titre de l'étape suivante"],
+  retour: ["« Revenir à mon application »"],
 });
 
 const ENVIRON_DEUX_MINUTES =
@@ -82,8 +82,9 @@ const SI_LA_FEUILLE_EST_PERDUE =
   "Si vous n'avez plus cette feuille, cliquez sur « Je n'ai plus cette feuille — afficher un " +
   "nouveau code » : un nouveau code sera affiché, une seule fois, et vous le recopierez sur une " +
   "feuille neuve. L'ancien code continue d'ouvrir ce coffre tant que personne ne le retire. Si " +
-  "quelqu'un d'autre a vu votre feuille, c'est un autre geste : allez à l'étape 9 et révoquez les " +
-  "autres moyens d'ouvrir ce coffre.";
+  "quelqu'un d'autre a vu votre feuille, cliquez aussi sur « Je n'ai plus cette feuille », puis, " +
+  "avant d'afficher un nouveau code, sur « Révoquer tous les autres moyens d'ouvrir ce coffre » : " +
+  "les anciens codes seront retirés.";
 
 /**
  * La même question sur un coffre VERROUILLÉ : afficher un code exige un coffre ouvert, et celui-ci
@@ -106,10 +107,35 @@ const SI_LE_CODE_EST_PERDU =
 const SAUVEGARDE_ANTERIEURE =
   "Une sauvegarde faite avant ce nouveau code ne le connaît pas : refaites-en une à l'étape 6.";
 
+/** La sortie de l'annonce, quand on y est venu dire « je n'ai plus cette feuille » (#239). */
+const SI_LA_FEUILLE_EST_RETROUVEE =
+  " Si vous avez retrouvé votre feuille, cliquez sur « Revenir : j'ai toujours ma feuille ».";
+
 const UN_CODE_A_DEJA_ETE_RENDU =
   "Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché : " +
   "il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le " +
-  "lisant sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste.";
+  "lisant sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste. Sur cet " +
+  "appareil, cela ne vous est demandé qu'une fois : ensuite, votre phrase suffit.";
+
+/**
+ * L'étape 3 éprouve la feuille en S'EN SERVANT (#239) : verrouiller, puis rouvrir par le code. Le
+ * coffre est encore vide, et la phrase le rouvre si la recopie était fausse.
+ */
+const EPROUVER_LA_FEUILLE =
+  "Pour être sûr que votre feuille est juste, vous allez vous en servir : verrouillez votre " +
+  "coffre, puis rouvrez-le avec le code que vous venez de recopier. Le code quitte alors cette " +
+  "page. Votre coffre est encore vide : si vous vous êtes trompé en recopiant, votre phrase le " +
+  "rouvre, et rien n'est perdu.";
+
+/**
+ * L'application, telle que l'étape 4 et l'accueil la montrent.
+ *
+ * T2 de #236 ajoutera ici un BLOC « Mettre à jour l'application », sous l'application, montré
+ * seulement quand une mise à jour est proposée : un bloc de ces deux écrans, pas une étape (#239).
+ */
+const L_APPLICATION_S_EXECUTE_ICI =
+  "L'application s'exécute entièrement dans votre navigateur. Ce que vous y écrivez est enregistré " +
+  "dans votre coffre, sur cet appareil.";
 
 /**
  * Les écrans. Chacun porte son étape, un titre, ce qui va se passer, ce qui est attendu, l'attente
@@ -157,7 +183,7 @@ export const ECRANS = Object.freeze({
       "lui, une phrase oubliée est un coffre perdu, et personne ne peut vous aider. Ce code ne " +
       "s'affichera QU'UNE SEULE FOIS : préparez une feuille de papier et un stylo avant de cliquer.",
     attendu: "Quand vous êtes prêt à écrire, cliquez sur « Afficher mon code de récupération ».",
-    blocs: ["feuille-annonce"],
+    blocs: ["feuille-annonce", "feuille-revenir", "revocation"],
   }),
   "code-feuille": ecran(3, {
     titre: "Recopier votre code de récupération",
@@ -169,15 +195,14 @@ export const ECRANS = Object.freeze({
       "Recopiez le code et le numéro de version, puis cliquez sur « J'ai recopié mon code ».",
     blocs: ["feuille"],
   }),
-  "code-confirmation": ecran(3, {
-    titre: "Confirmer votre code de récupération",
-    ceQuiVaSePasser:
-      "Le code n'est plus affiché. Pour être sûr que votre feuille est juste, retapez-le en le lisant " +
-      "sur votre papier. Vous ne pourrez pas continuer tant qu'il n'est pas confirmé.",
+  "code-a-verrouiller": ecran(3, {
+    titre: "Vérifier votre code de récupération",
+    ceQuiVaSePasser: EPROUVER_LA_FEUILLE,
     attendu:
-      "Tapez les 28 symboles de votre feuille (les tirets et les espaces sont libres), puis cliquez " +
-      "sur « Confirmer mon code ». Vous pouvez aussi appuyer sur Entrée.",
-    blocs: ["confirmation"],
+      "Cliquez sur « Verrouiller mon coffre », puis ouvrez-le avec le code de votre feuille. Si vous " +
+      "n'avez pas fini de recopier, cliquez d'abord sur « Revoir mon code ».",
+    attente: QUELQUES_SECONDES_DE_VERROUILLAGE,
+    blocs: ["revoir", "verrouiller"],
   }),
   "code-verifier": ecran(3, {
     titre: "Vérifier votre code de récupération",
@@ -200,14 +225,26 @@ export const ECRANS = Object.freeze({
   }),
   travailler: ecran(4, {
     titre: "Travailler dans l'application",
-    ceQuiVaSePasser:
-      "L'application s'exécute entièrement dans votre navigateur. Ce que vous y écrivez est enregistré " +
-      "dans votre coffre, sur cet appareil.",
+    ceQuiVaSePasser: L_APPLICATION_S_EXECUTE_ICI,
     attendu:
       "Cliquez sur « Démarrer l'application », attendez qu'elle s'affiche, puis utilisez-la. Quand " +
       "vous avez fini, passez à l'étape suivante.",
     attente: ENVIRON_DEUX_MINUTES,
     blocs: ["application", "espace-de-travail", "continuer"],
+  }),
+  accueil: ecran(4, {
+    titre: "Votre application",
+    ceQuiVaSePasser:
+      "La visite est finie. " +
+      L_APPLICATION_S_EXECUTE_ICI +
+      " Vos gestes de tous les jours sont sur cet écran : verrouiller le coffre quand vous avez " +
+      "fini, le sauvegarder de temps en temps, et révoquer les autres moyens de l'ouvrir si l'un " +
+      "d'eux a pu être vu.",
+    attendu:
+      "Cliquez sur « Démarrer l'application », attendez qu'elle s'affiche, puis utilisez-la. Quand " +
+      "vous avez fini, cliquez sur « Verrouiller mon coffre ».",
+    attente: ENVIRON_DEUX_MINUTES,
+    blocs: ["application", "verrouiller", "espace-de-travail", "sauvegarde", "revocation"],
   }),
   "travailler-sans-application": ecran(4, {
     titre: "Travailler dans l'application",
@@ -226,7 +263,7 @@ export const ECRANS = Object.freeze({
       "après un moment sans activité.",
     attendu: "Cliquez sur « Verrouiller mon coffre », puis rouvrez-le avec votre phrase.",
     attente: QUELQUES_SECONDES_DE_VERROUILLAGE,
-    blocs: ["verrouiller", "espace-de-travail"],
+    blocs: ["verrouiller", "espace-de-travail", "retour"],
   }),
   rouvrir: ecran(5, {
     titre: "Rouvrir votre coffre",
@@ -250,7 +287,7 @@ export const ECRANS = Object.freeze({
     attente:
       "La sauvegarde prend de quelques secondes à quelques minutes, selon la taille du coffre et " +
       "l'appareil. Ne fermez pas l'onglet.",
-    blocs: ["sauvegarde", "continuer"],
+    blocs: ["sauvegarde", "continuer", "retour"],
   }),
   "restaurer-ailleurs": ecran(7, {
     titre: "Restaurer sur un autre appareil",
@@ -261,7 +298,7 @@ export const ECRANS = Object.freeze({
     attendu:
       "Sur l'autre appareil, ouvrez RailsBox Vault, choisissez « J'ai déjà une sauvegarde » et donnez " +
       "le fichier. Pour continuer ici, cliquez sur le bouton ci-dessous.",
-    blocs: ["continuer"],
+    blocs: ["continuer", "retour"],
   }),
   restaurer: ecran(7, {
     titre: "Restaurer une sauvegarde",
@@ -284,7 +321,7 @@ export const ECRANS = Object.freeze({
       "entraîner, verrouillez d'abord le coffre : vous le rouvrirez avec le code.",
     attendu: "Cliquez sur « Verrouiller mon coffre ».",
     attente: QUELQUES_SECONDES_DE_VERROUILLAGE,
-    blocs: ["verrouiller"],
+    blocs: ["verrouiller", "retour"],
   }),
   recuperer: ecran(8, {
     titre: "Récupérer votre coffre avec le code",
@@ -306,7 +343,7 @@ export const ECRANS = Object.freeze({
     attendu:
       "Seulement si c'est nécessaire : cliquez sur « Révoquer tous les autres moyens d'ouvrir ce " +
       "coffre ». Notez ensuite le nouveau numéro de version sur votre feuille.",
-    blocs: ["revocation"],
+    blocs: ["revocation", "retour"],
   }),
   termine: ecran(9, {
     titre: "Parcours terminé",
@@ -315,8 +352,9 @@ export const ECRANS = Object.freeze({
       "déjà faites restent ouvrables par les anciens moyens : détruisez-les si elles risquent de " +
       "tomber entre de mauvaises mains, puis faites une nouvelle sauvegarde.",
     attendu:
-      "Notez sur votre feuille le numéro de version indiqué ci-dessus. Il n'y a rien d'autre à faire.",
-    blocs: [],
+      "Notez sur votre feuille le numéro de version indiqué ci-dessous. Pour vous servir de votre " +
+      "application, cliquez sur « Revenir à mon application ».",
+    blocs: ["retour"],
   }),
 });
 
@@ -360,12 +398,8 @@ export const MESSAGES = Object.freeze({
   consigneDeLaFeuille: (version) =>
     `Numéro de version à noter à côté du code : ${version}. Recopiez les 7 groupes de 4 symboles ` +
     `exactement. Ce code ne sera plus jamais affiché.`,
-  recopieIncomplete: (lus, total) => `Il manque des symboles : ${lus} sur ${total}.`,
-  recopieDUnAutreCode:
-    "Ce code est bien formé, mais ce n'est pas celui qui vient d'être affiché. Relisez votre " +
-    "feuille : vous avez peut-être recopié un autre code. Si vous ne l'avez pas noté, cliquez sur « " +
-    "Revoir mon code ».",
-  codeConfirme: "Code confirmé. Gardez bien votre feuille, loin de cet appareil.",
+  feuilleEprouvee:
+    "Votre feuille est juste : son code a ouvert votre coffre. Gardez-la bien, loin de cet appareil.",
   saisieIncomplete: (lus, total) => `${lus} symbole(s) sur ${total}.`,
   saisieComplete: "Code complet : aucune faute de recopie détectée.",
   coffreOuvert: "Votre coffre est ouvert.",
@@ -375,6 +409,10 @@ export const MESSAGES = Object.freeze({
   sauvegardeEnCours: "Sauvegarde en cours… Ne fermez pas l'onglet.",
   restaurationEnCours: "Restauration en cours… Ne fermez pas l'onglet.",
   applicationDemarree: "L'application est démarrée : elle s'affiche ci-dessous.",
+  applicationEnAttente:
+    "L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur « " +
+    "Démarrer l'application ».",
+  applicationAffichee: "L'application s'affiche ci-dessous.",
   demarrageEnCours: (secondes, vie) =>
     `Démarrage en cours depuis ${secondes} seconde(s), sur environ deux minutes. ${vie}`,
   signesDeVie: (nombre) => `Le coffre travaille : ${nombre} signe(s) de vie reçu(s).`,
@@ -395,10 +433,12 @@ export const MESSAGES = Object.freeze({
     nombre <= 1
       ? "Ce coffre porte déjà un code de récupération. En afficher un nouveau n'efface pas " +
         "l'ancien : les deux ouvriront ce coffre tant que vous n'en retirez aucun. " +
-        SAUVEGARDE_ANTERIEURE
+        SAUVEGARDE_ANTERIEURE +
+        SI_LA_FEUILLE_EST_RETROUVEE
       : `Ce coffre porte déjà ${nombre} codes de récupération. En afficher un nouveau n'efface ` +
         "aucun des précédents : tous ouvrent ce coffre tant que vous n'en retirez aucun. " +
-        SAUVEGARDE_ANTERIEURE,
+        SAUVEGARDE_ANTERIEURE +
+        SI_LA_FEUILLE_EST_RETROUVEE,
 });
 
 /** Ce que « Où suis-je ? » dit de chaque étape. */
@@ -409,7 +449,7 @@ export const STATUTS = Object.freeze({
   "non-jouee": "non jouée sur cet appareil : le coffre y a été restauré",
 });
 
-/** Le texte de l'attente d'une phrase, pour une durée déjà dite (« moins d'une seconde »). */
+/** Le texte de l'attente d'une phrase, pour une durée déjà dite (« environ 2 secondes »). */
 export function texteDAttenteDeLaPhrase(duree) {
   return (
     `Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas deviner ` +

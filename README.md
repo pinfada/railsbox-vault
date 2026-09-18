@@ -85,8 +85,13 @@ J'ai déjà une sauvegarde ». La progression est retenue par le navigateur (un 
 jamais le code) : pour tout reprendre de zéro, effacez les données du site dans les réglages du
 navigateur. `?vue=complete` est un paramètre des épreuves automatiques, pas un chemin du produit.
 
-Après chaque rechargement, la confirmation du code de récupération doit être refaite en ouvrant le
-coffre avec le code de votre feuille : le fichier de progression ne constitue pas une preuve.
+À l'étape 3, votre feuille s'éprouve en vous en servant : après l'avoir recopiée, verrouillez le
+coffre, puis rouvrez-le avec le code de votre feuille. Sur cet appareil, c'est la seule fois où le
+code est demandé : ensuite, votre phrase suffit, et chaque ouverture vous ramène à votre
+application. Le fichier de progression ne constitue pas une preuve ; c'est le coffre lui-même qui
+retient qu'une feuille l'a ouvert (ADR 0040, amendement du 18/09/2026). Des étapes 5 à 9, « Revenir
+à mon application » vous y ramène aussi ; après la dernière étape, l'écran de l'application porte
+les gestes de tous les jours : verrouiller, sauvegarder, révoquer.
 
 Respectez les hôtes indiqués : les cookies sont partagés entre les ports d'un même hôte. Le serveur
 refuse les alias, notamment `localhost:4179` pour la coquille configurée sur `127.0.0.1` ; seul un
