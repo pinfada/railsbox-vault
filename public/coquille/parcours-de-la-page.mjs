@@ -49,6 +49,7 @@ import {
   ouSuisJe,
   progressionApres,
   progressionDuDemarrage,
+  rangAffiche,
   refusDeRelaisAAnnoncer,
   texteSansCode,
   unGesteEstEnCours,
@@ -95,6 +96,9 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     /** « Je n'ai plus cette feuille » : vrai jusqu'au prochain code affiché (#214). */
     nouveauCodeDemande: false,
     revocationFaite: false,
+    /** « Terminer sans révoquer » (l'étape 9 est facultative) ; « J'ai oublié ma phrase ». */
+    sansRevoquer: false,
+    phrasePerdue: false,
     coffre: COFFRE.inconnu,
     ecran: null,
     /** L'écran montré au moment du dernier geste : c'est de lui qu'un geste réussi fait avancer. */
@@ -245,7 +249,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
 
   function rendreOuSuisJe(ecranId) {
     const liste = noeud("ou-suis-je-liste");
-    const lignes = ouSuisJe(ecranId, etat.progression.origine).map(
+    const lignes = ouSuisJe(ecranId, etat.progression.origine, etat.progression).map(
       ({ rang, titre, statut }) => `${rang}. ${titre} — ${STATUTS[statut]}`,
     );
     const actuelles = [...liste.children].map((element) => element.textContent);
@@ -316,6 +320,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       progression: etat.progression,
       sousEtatDuCode: etat.sousEtatDuCode,
       revocationFaite: etat.revocationFaite,
+      sansRevoquer: etat.sansRevoquer,
+      phrasePerdue: etat.phrasePerdue,
       nouveauCodeDemande: etat.nouveauCodeDemande,
       refus: releve.dernierRefus ?? null,
       moteur,
@@ -345,7 +351,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     const precedent = etat.ecran;
     etat.ecran = ecranId;
     const visibles = blocsDeLEcran(ecranId, releve);
-    dire("parcours-rang", ecran.etape === null ? "" : MESSAGES.rang(ecran.etape));
+    const rang = rangAffiche(ecranId, etat.pointeur, etat.progression);
+    dire("parcours-rang", rang === null ? "" : MESSAGES.rang(rang));
     dire("parcours-titre", ecran.titre);
     dire("parcours-ce-qui-va-se-passer", ecran.ceQuiVaSePasser);
     dire("parcours-attendu", MESSAGES.attendu(ecran.attendu));
@@ -400,7 +407,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (etat.coffre === COFFRE.ouvert && constat !== etat.progression.feuilleEprouvee) {
       pas("feuille", constat);
     }
-    if (ecranId === "termine" && !etat.progression.visiteTerminee) pas("visite-terminee");
+    const fin = ecranId === "termine" || ecranId === "termine-sans-revoquer";
+    if (fin && !etat.progression.visiteTerminee) pas("visite-terminee");
   }
 
   /** Le cadre replié dit qu'il attend son démarrage, au lieu d'un rectangle blanc (#242, défaut 11). */
@@ -599,7 +607,13 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   geste("parcours-j-ai-une-sauvegarde", () =>
     allerA(etapeApres("creer", "j-ai-une-sauvegarde", etat.pointeur)),
   );
-  geste("parcours-phrase-perdue", () => allerA(etapeApres("rouvrir", "perdu", etat.pointeur)));
+  // La phrase oubliée ouvre le formulaire du code sans rien marquer de la visite (QA de #244).
+  geste("parcours-phrase-perdue", () => {
+    etat.phrasePerdue = true;
+  });
+  geste("parcours-sans-revoquer", () => {
+    etat.sansRevoquer = true;
+  });
   geste("parcours-continuer", () =>
     allerA(etapeApres(etat.ecran, "continuer", etat.pointeur, etat.progression.etapeAtteinte)),
   );

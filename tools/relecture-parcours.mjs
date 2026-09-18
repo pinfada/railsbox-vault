@@ -145,7 +145,7 @@ export const QUESTIONS = Object.freeze({
   9: [
     "Savez-vous QUAND il faut révoquer (et quand il ne le faut pas) ?",
     "Comprenez-vous que les sauvegardes déjà faites restent ouvrables par les anciens moyens ?",
-    "Savez-vous quoi faire après la révocation (noter la version, refaire une sauvegarde), puis comment revenir à votre application ?",
+    "Comprenez-vous que cette étape est facultative, et ce que la révocation retire (votre phrase, si vous avez ouvert avec le code) ; sauriez-vous revenir à votre application ?",
   ],
 });
 

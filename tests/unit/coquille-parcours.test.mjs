@@ -32,6 +32,7 @@ import {
   ORIGINES_DU_COFFRE,
   PROGRESSION_INITIALE,
   SOUS_ETATS_DU_CODE,
+  STATUTS,
   annonceDeLaSaisie,
   attenteDeLaPhrase,
   codeEnFinDeTexte,
@@ -47,6 +48,7 @@ import {
   ouSuisJe,
   progressionApres,
   progressionDuDemarrage,
+  rangAffiche,
   refusDeRelaisAAnnoncer,
   texteSansCode,
   unGesteEstEnCours,
@@ -539,7 +541,11 @@ test("où mènent les gestes : le chemin nominal, de A à B", () => {
   );
   assert.equal(etapeApres("travailler", "continuer", 4, 4), 5);
   assert.equal(etapeApres("rouvrir", "ouverture", 5), 6, "l'exercice de l'étape 5 avance");
-  assert.equal(etapeApres("rouvrir", "perdu", 5), 8);
+  assert.equal(
+    etapeApres("rouvrir", "perdu", 5),
+    null,
+    "la phrase oubliée ne déplace pas la visite",
+  );
   assert.equal(etapeApres("sauvegarder", "continuer", 6), 7);
   assert.equal(etapeApres("restaurer-ailleurs", "continuer", 7), 8);
   assert.equal(etapeApres("restaurer", "restauree", 7), 8);
@@ -740,4 +746,78 @@ test("la progression d'un démarrage dit le temps écoulé et les signes de vie 
 test("une seconde révocation qui ne retire rien ne fait pas noter un numéro pour rien", () => {
   assert.match(MESSAGES.revoque(2, 5), /Nouveau numéro de version/);
   assert.doesNotMatch(MESSAGES.revoqueSansRien, /numéro/);
+});
+
+test("QA de #244 : « J'ai oublié ma phrase » est une ouverture de ROUTINE, jamais un saut vers 8 ou 9", () => {
+  const verrouille = (pointeur, progression) => ({
+    pointeur,
+    coffre: COFFRE.verrouille,
+    moyens: MOYENS_DE_A,
+    progression,
+    phrasePerdue: true,
+  });
+  // Étape 3 (feuille mal recopiée), étape 4, étape 5, après la visite : le formulaire du code.
+  for (const [pointeur, progression] of [
+    [3, rendue],
+    [4, eprouvee],
+    [5, eprouvee],
+    [9, progressionApres(eprouvee, "visite-terminee")],
+  ]) {
+    assert.equal(ecranCourant(verrouille(pointeur, progression)), "recuperer", `étape ${pointeur}`);
+    // Ouvrir par le code depuis là mène à l'application, et ne marque aucune étape jouée.
+    assert.equal(etapeApres("recuperer", "ouverture", pointeur), 4, `étape ${pointeur}`);
+  }
+  assert.equal(etapeApres("rouvrir", "perdu", 4), null);
+  // Seule l'étape 8 atteinte PAR LA VISITE avance vers 9.
+  assert.equal(etapeApres("recuperer", "ouverture", 8), 9);
+});
+
+test("décision du 19/09 : l'étape 9 est FACULTATIVE, et sa conséquence est dite", () => {
+  assert.equal(ecranCourant(ouvert({ pointeur: 9 })), "revoquer");
+  assert.equal(ecranCourant(ouvert({ pointeur: 9, sansRevoquer: true })), "termine-sans-revoquer");
+  assert.equal(ecranCourant(ouvert({ pointeur: 9, revocationFaite: true })), "termine");
+  assert.deepEqual(ECRANS.revoquer.blocs, ["revocation", "sans-revoquer", "retour"]);
+  assert.match(ECRANS.revoquer.ceQuiVaSePasser, /facultative/);
+  assert.match(
+    ECRANS.revoquer.ceQuiVaSePasser,
+    /votre phrase et votre passkey ne fonctionneront plus sur ce coffre ; seul le code de votre feuille l'ouvrira/,
+  );
+  assert.match(ECRANS.revoquer.attendu, /Terminer sans révoquer/);
+  assert.match(ECRANS.accueil.ceQuiVaSePasser, /ne fonctionneront plus sur ce coffre/);
+  assert.match(ECRANS["termine-sans-revoquer"].ceQuiVaSePasser, /ouvrent toujours/);
+  assert.ok(ECRANS_AVEC_RETOUR.includes("termine-sans-revoquer"));
+  // L'écran 3 ne promet plus ce que la révocation retirerait.
+  assert.match(ECRANS["code-verifier"].ceQuiVaSePasser, /tant que vous ne l'avez pas révoquée/);
+});
+
+test("QA de #244 : « Où suis-je ? » dit la vérité — pendant la visite et après elle", () => {
+  const atteinte7 = progressionApres(eprouvee, "etape", 7);
+  assert.deepEqual(
+    ouSuisJe("travailler", ORIGINES_DU_COFFRE.creation, atteinte7).map((ligne) => ligne.statut),
+    ["passee", "passee", "passee", "en-cours", "passee", "passee", "a-venir", "a-venir", "a-venir"],
+  );
+  const finie = progressionApres(progressionApres(eprouvee, "etape", 9), "visite-terminee");
+  assert.ok(
+    ouSuisJe("accueil", ORIGINES_DU_COFFRE.creation, finie).every(
+      (ligne) => ligne.statut === "passee",
+    ),
+    "la visite finie : aucune étape en cours ni à venir",
+  );
+  assert.deepEqual(
+    ouSuisJe("accueil", ORIGINES_DU_COFFRE.restauration, finie).map((ligne) => ligne.statut),
+    [...Array(6).fill("non-jouee"), "passee", "passee", "passee"],
+  );
+  assert.equal(STATUTS.passee, "étape passée");
+});
+
+test("QA de #244 : hors de la visite, un titre ne porte pas de numéro d'étape", () => {
+  assert.equal(rangAffiche("rouvrir", 5, eprouvee), 5, "l'exercice de l'étape 5");
+  assert.equal(rangAffiche("rouvrir", 9, eprouvee), null, "une réouverture de routine");
+  assert.equal(rangAffiche("recuperer", 8, eprouvee), 8);
+  assert.equal(rangAffiche("recuperer", 4, eprouvee), null, "la phrase oubliée");
+  assert.equal(rangAffiche("sauvegarder", 6, eprouvee), 6);
+  const finie = progressionApres(eprouvee, "visite-terminee");
+  assert.equal(rangAffiche("sauvegarder", 6, finie), null);
+  assert.equal(rangAffiche("accueil", 4, eprouvee), null);
+  assert.equal(rangAffiche("chargement", null, eprouvee), null);
 });

@@ -256,6 +256,8 @@ async function recupererParLeCode(page, code) {
   });
   await expect(entree).toBeVisible({ timeout: DELAI });
   const verification = (await entree.textContent()) === "Vérifier votre code de récupération";
+  // L'étape 8 n'avance vers 9 que si la visite y est arrivée ; la phrase oubliée ramène à 4 (#244).
+  const parLaVisite = (await entree.textContent()) === "Récupérer votre coffre avec le code";
   if ((await entree.textContent()) === "Rouvrir votre coffre") {
     await bouton(page, "J'ai oublié ma phrase : utiliser mon code de récupération").click();
   }
@@ -268,7 +270,7 @@ async function recupererParLeCode(page, code) {
   await page.getByLabel("Code de récupération", { exact: true }).fill(code);
   await bouton(page, "Ouvrir mon coffre avec le code").click();
   await expect(
-    ecran(page, verification ? "Travailler dans l'application" : "Révoquer en urgence"),
+    ecran(page, parLaVisite ? "Révoquer en urgence" : "Travailler dans l'application"),
   ).toBeVisible({ timeout: DELAI });
 }
 
@@ -328,6 +330,29 @@ test("#239 : la feuille s'éprouve UNE fois ; ensuite la phrase rouvre, l'étape
   await ouvrirLaCoquille(page, "?etape=6");
   await rouvrirParLaPhrase(page);
   await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
+});
+
+test("QA de #244 : « J'ai oublié ma phrase » ouvre par le code et ramène à l'application, sans rien marquer de la visite", async ({
+  page,
+}) => {
+  await ouvrirLaCoquille(page);
+  if (await exigerLaLimiteDuMoteur(page)) return;
+  const code = await creerEtAfficherLeCode(page);
+  await eprouverLaFeuille(page, code);
+  // Verrouillé depuis l'étape 4 : la phrase est oubliée.
+  await ouvrirLaCoquille(page, "?etape=4");
+  await expect(ecran(page, "Rouvrir votre coffre")).toBeVisible({ timeout: DELAI });
+  await expect(page.getByText(/^Étape \d sur 9$/)).toHaveCount(0);
+  await bouton(page, "J'ai oublié ma phrase : utiliser mon code de récupération").click();
+  await expect(ecran(page, "Récupérer votre coffre avec le code")).toBeVisible();
+  await expect(page.getByText("Étape 8 sur 9", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Code de récupération", { exact: true }).fill(code);
+  await bouton(page, "Ouvrir mon coffre avec le code").click();
+  await expect(ecran(page, "Travailler dans l'application")).toBeVisible({ timeout: DELAI });
+  await expect.poll(async () => (await lireLaProgression(page)).etapeAtteinte).toBe(4);
+  await page.getByText("Où suis-je ?").click();
+  await expect(page.getByRole("listitem").nth(4)).toHaveText(/à venir/);
+  await expect(page.getByRole("listitem").nth(8)).toHaveText(/à venir/);
 });
 
 test("#239 : un coffre d'avant la correction demande son code UNE fois, puis la phrase suffit", async ({
