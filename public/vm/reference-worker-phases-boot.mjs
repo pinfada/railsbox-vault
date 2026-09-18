@@ -4,7 +4,8 @@
 //
 //   live          Rails boote sur le disque OPFS en écriture ; l'invariant est vérifié à chaud.
 //   resume        BOOT À FROID depuis le même volume OPFS (aucun snapshot), invariant revérifié.
-//   live-couper   comme `live`, mais ANNONCE l'instant où le guest a muté et acquitté une barrière.
+//   live-couper   comme `live`, puis MUTE par des notes Rails et ANNONCE l'instant où le guest a
+//                 écrit et acquitté une barrière (#16, #236).
 //   live-capturer comme `live`, mais CAPTURE un instantané au point de contrôle qui clôt le boot.
 //   resume-instantane  reprise PAR INSTANTANÉ : l'instantané est ouvert avant le boot, restauré s'il
 //                 est utilisable, écarté et retiré sinon — et le boot à froid s'exécute alors.
@@ -17,6 +18,7 @@
 import { acquerirRuntime, bootEtVerifier } from "/src/vm/boot-de-reference.mjs";
 import { openVolumeForWrite } from "/src/vm/opfs-volume-open.mjs";
 import { cleDuBanc } from "./cle-du-banc.mjs";
+import { muterJusquALaCoupure } from "./requetes-rails-du-banc.mjs";
 
 /**
  * L'ouvreur du BANC : le volume du guest s'ouvre sous le jeton du harnais (ADR 0016).
@@ -95,15 +97,29 @@ export async function phaseResumeInstantane(options) {
  * Le message d'annonce ne porte AUCUN identifiant de requête : il n'est la réponse de personne. Le
  * banc l'écoute à part, et la promesse de la phase ne se résout jamais si la page coupe — ce qui est
  * exactement ce qu'on veut mesurer.
+ *
+ * La MUTATION est une vraie mutation Rails, provoquée après le boot (#236) : des notes enregistrées
+ * l'une après l'autre sous `/app/var`, jusqu'à la coupure. Le boot seul ne suffit plus — depuis
+ * l'ADR 0041, le code et ses fichiers de travail vivent sur `sda2`, et le boot n'écrit sur le disque
+ * de données que ce que le montage demande. La session est donc GARDÉE OUVERTE ; le guet, lui,
+ * court jusqu'à la fermeture et annonce dès que les écritures des notes ont franchi son seuil.
  */
 export async function phaseLiveCouper(options) {
-  return bootEtVerifier(
+  const { fermer, requeteHttp, ...compte } = await bootEtVerifier(
     sousLeJetonDuBanc({
       ...options,
       phase: "live-couper",
+      garderLaSessionOuverte: true,
       surMutation: (etat) => self.postMessage({ type: "mutation", ...etat }),
     }),
   );
+  // Le `finally` ne sert que si la page NE coupe PAS : pilote refusé, ou borne atteinte. Dans le
+  // scénario, le Worker meurt pendant une soumission et rien après cette ligne ne s'exécute.
+  try {
+    return { ...compte, mutation: await muterJusquALaCoupure(requeteHttp) };
+  } finally {
+    await fermer({ capturer: false });
+  }
 }
 
 /** Arme la reprise hors ligne : acquiert le runtime PENDANT que la page est en ligne. */
