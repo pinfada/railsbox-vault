@@ -292,7 +292,11 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await a.getByLabel("Code de récupération", { exact: true }).fill(code);
     await bouton(a, "Ouvrir mon coffre avec le code").click();
     await attendreLEcran(a, "Révoquer en urgence", BUDGET_DEVERROUILLAGE_MS);
-    await expect(a.getByText(/votre phrase et votre passkey ne fonctionneront plus/)).toBeVisible();
+    await expect(
+      a.getByText(
+        /— le code de votre feuille — continuera de l.ouvrir. Votre phrase et votre passkey ne fonctionneront plus/,
+      ),
+    ).toBeVisible();
     await bouton(a, "Terminer sans révoquer").click();
     await attendreLEcran(a, "Parcours terminé");
     await expect(a.getByText(/ouvrent toujours/)).toBeVisible();
