@@ -705,11 +705,13 @@ Workers `blob:` restent interdits par la politique de service (ADR 0013).
   d'attente, parfois un PDF sur le disque. La coquille affiche ; elle n'imprime pas, et ne le promet
   pas.
 
-  **Le parcours guidé (#193, ADR 0040) exige que le code soit CONFIRMÉ avant d'avancer** : la
-  feuille est cachée, la personne retape le code depuis son papier, et la page compare la saisie au
-  texte déjà affiché — somme de contrôle, puis égalité. Aucune copie n'est faite pour cela : la
-  comparaison lit le nœud où le code est écrit, et le code en est RETIRÉ dès qu'il est confirmé. Ce
-  que la confirmation ne prouve pas : que le papier sera gardé, ni qu'il est lisible dans un an.
+  **Le parcours guidé (#193, ADR 0040) exige que la feuille soit ÉPROUVÉE avant d'avancer**
+  (amendement du 18/09/2026, #239) : après « J'ai recopié mon code », la personne VERROUILLE son
+  coffre — la page se recharge, et le code part avec le document —, puis le rouvre avec le code lu
+  sur sa feuille. La page ne compare plus rien : c'est le Worker de confiance qui CONSTATE que ce
+  code ouvre, et qui l'inscrit au secteur 1 scellé du volume `coquille` (identifiant de
+  l'emplacement, jamais le code). Ce que l'épreuve ne prouve pas : que le papier sera gardé, ni
+  qu'il est lisible dans un an.
 
   **L'ordre est tenu par une progression PERSISTÉE, et il ne protège que la personne** (revue
   d'intégration de la PR #213, constats 1 à 3). Le fichier `parcours.json` de l'OPFS de l'origine de
@@ -717,8 +719,14 @@ Workers `blob:` restent interdits par la politique de service (ADR 0013).
   jamais le code ni la phrase (`ecrireProgression` ne recopie que ces champs). Une étape demandée
   par l'URL au-delà de l'étape atteinte est ramenée ; travail, sauvegarde et révocation exigent un
   code confirmé. L'écran de récupération peut servir à apporter cette confirmation. Après un
-  rechargement, les trois indications relues sont ignorées (VULN-04). Un code existant se VÉRIFIE en
-  ouvrant le coffre par ce code dans la session courante — ce qui vaut confirmation — et la personne
+  rechargement, les indications relues sur le code sont ignorées (VULN-04). Depuis le 18/09/2026
+  (#239), la garde des étapes 4 à 9 n'est plus aucun champ de ce fichier : c'est `feuilleEprouvee`,
+  le constat du Worker (un identifiant inscrit au secteur 1 est encore un emplacement de
+  récupération de l'enveloppe), publié dans la réponse d'ouverture et relevé par la coquille. Le
+  fichier garde deux INDICES — la feuille déjà éprouvée, la visite finie — qui choisissent le
+  premier formulaire d'un coffre verrouillé et la présentation de l'étape 4, jamais un écran de
+  travail : falsifiés, ils coûtent un détour d'un écran, puis le constat du Worker les corrige. Un
+  code existant se VÉRIFIE en ouvrant le coffre par ce code, UNE fois par appareil, et la personne
   qui n'a plus sa feuille en demande une NOUVELLE depuis le même écran. Aucun texte de la page ne
   garde un code en clair après un geste qui le consomme. Ce que l'ordre ne protège PAS : quelqu'un
   qui exécute du code de même origine modifie la mémoire ou appelle les gestes par la vue complète

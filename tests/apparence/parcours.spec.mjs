@@ -96,7 +96,7 @@ for (const theme of ["light", "dark"]) {
     });
   }
 
-  test(`${theme} : feuille réelle, impression, confirmation et refus`, async ({
+  test(`${theme} : feuille réelle, impression, épreuve de la feuille et refus`, async ({
     page,
     browserName,
   }, testInfo) => {
@@ -142,19 +142,23 @@ for (const theme of ["light", "dark"]) {
       fullPage: true,
     });
     await page.emulateMedia({ media: "screen" });
+    // #239 : la recopie n'est plus jugée dans la page ; la feuille s'éprouve en verrouillant.
     await bouton(page, "J'ai recopié mon code").click();
-    await verifier(page, testInfo, "confirmation");
-    await page
-      .getByLabel("Code recopié depuis votre feuille", { exact: true })
-      .fill("0000-0000-0000-0000-0000-0000-0000");
-    await bouton(page, "Confirmer mon code").click();
-    await expect(page.getByRole("alert")).not.toBeEmpty();
+    await verifier(page, testInfo, "a-verrouiller");
+    await bouton(page, "Verrouiller mon coffre").click();
+    const champ = page.getByLabel("Code de récupération", { exact: true });
+    await expect(champ).toBeVisible({ timeout: 60_000 });
+    await page.waitForLoadState("load");
+    expect(await page.locator("body").textContent()).not.toContain(valeur);
+    await verifier(page, testInfo, "verifier-apres-verrouillage");
+    await champ.fill("0000-0000-0000-0000-0000-0000-0000");
+    await expect(bouton(page, "Ouvrir mon coffre avec le code")).toBeDisabled();
     await verifier(page, testInfo, "refus-de-recopie");
-    await page.getByLabel("Code recopié depuis votre feuille", { exact: true }).fill(valeur);
-    await page.getByLabel("Code recopié depuis votre feuille", { exact: true }).press("Enter");
+    await champ.fill(valeur);
+    await champ.press("Enter");
     await expect(
       page.getByRole("heading", { name: "Travailler dans l'application", exact: true }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 60_000 });
     await verifier(page, testInfo, "travail-avant-boot");
     if (browserName === "firefox") {
       // L'écran le plus exposé de Firefox : l'étape 4 porte sa limite, le plus long texte d'aide.

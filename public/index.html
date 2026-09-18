@@ -151,11 +151,25 @@
         </div>
       </section>
 
-      <!-- La FEUILLE DE RÉCUPÉRATION (ADR 0029) : rendue une fois, confirmée avant d'avancer. -->
+      <!--
+        La FEUILLE DE RÉCUPÉRATION (ADR 0029) : rendue une fois, puis ÉPROUVÉE avant d'avancer — le
+        coffre est verrouillé, et c'est le code de la feuille qui le rouvre (#239).
+      -->
       <section id="feuille" aria-label="Feuille de récupération">
         <div data-bloc="feuille-annonce" hidden>
           <p>
             <button id="creer-recuperation" type="button">Afficher mon code de récupération</button>
+          </p>
+        </div>
+        <!--
+          La sortie de l'annonce pour qui y est venu dire « je n'ai plus cette feuille » et l'a
+          retrouvée (#239) : elle ne crée rien, elle revient à la vérification.
+        -->
+        <div data-bloc="feuille-revenir" hidden>
+          <p>
+            <button id="parcours-garder-ma-feuille" type="button">
+              Revenir : j'ai toujours ma feuille
+            </button>
           </p>
         </div>
         <!--
@@ -175,7 +189,7 @@
           <!--
             Le code est ÉCRIT ICI, et nulle part ailleurs : ni presse-papiers, ni stockage, ni
             journal, ni relevé. Il est rendu une seule fois par le Worker de confiance (ADR 0025,
-            décision 3) ; le parcours l'efface de la page dès qu'il est confirmé.
+            décision 3) ; il quitte la page avec elle quand le coffre est verrouillé pour l'éprouver.
           -->
           <p>Votre code de récupération :</p>
           <p id="feuille-code"></p>
@@ -184,20 +198,8 @@
             <button id="parcours-code-recopie" type="button">J'ai recopié mon code</button>
           </p>
         </div>
-        <div data-bloc="confirmation" hidden>
-          <p>
-            <label for="parcours-confirmation-code">Code recopié depuis votre feuille</label>
-            <input
-              id="parcours-confirmation-code"
-              type="text"
-              autocomplete="off"
-              spellcheck="false"
-            />
-          </p>
-          <p>
-            <button id="parcours-confirmer-code" type="button">Confirmer mon code</button>
-            <button id="parcours-revoir-code" type="button">Revoir mon code</button>
-          </p>
+        <div data-bloc="revoir" hidden>
+          <p><button id="parcours-revoir-code" type="button">Revoir mon code</button></p>
         </div>
       </section>
 
@@ -240,9 +242,12 @@
         recharge, et le port restreint serait perdu ; il est seulement montré ou caché.
       -->
       <section data-bloc="espace-de-travail" aria-label="Votre application" hidden>
-        <p id="cycle-description">
-          Une fois démarrée, l'application s'affiche ci-dessous ; avant, cet espace dit qu'il attend
-          son démarrage.
+        <!--
+          Tant que l'application n'a pas démarré, le cadre est replié et CE paragraphe le dit (#242,
+          défaut 11) : un rectangle blanc ne dit rien. Le parcours écrit le texte et l'état.
+        -->
+        <p id="cycle-description" role="status">
+          L'application n'est pas encore démarrée : elle s'affichera ici.
         </p>
         <div id="cadre-applicatif"></div>
       </section>
@@ -282,6 +287,13 @@
 
       <div data-bloc="continuer" hidden>
         <p><button id="parcours-continuer" type="button">Continuer</button></p>
+      </div>
+
+      <!-- Des étapes 5 à 9, l'application reste à un geste (#239) : aucun geste du Worker ici. -->
+      <div data-bloc="retour" hidden>
+        <p>
+          <button id="parcours-retour-application" type="button">Revenir à mon application</button>
+        </p>
       </div>
 
       <p id="parcours-suivante"></p>
