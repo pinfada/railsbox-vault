@@ -400,7 +400,8 @@ function ecranOuvert({
   }
   // Aucun moyen de récupération, ou « Je n'ai plus cette feuille » : le code se crée à l'annonce.
   // L'annonce ne s'atteint pas autrement — c'est elle qui AJOUTE un emplacement, sur huit (#239).
-  if (nombreDeCodes === 0 || nouveauCodeDemande) return "code-annonce";
+  // Une feuille qui vient d'OUVRIR ce coffre vaut preuve : la demande tombe (contre-recette de #244).
+  if (nombreDeCodes === 0 || (nouveauCodeDemande && !feuilleEprouvee)) return "code-annonce";
   // Un code a été rendu, et aucune feuille n'a encore ouvert ce coffre : on l'éprouve.
   if (!feuilleEprouvee) return "code-a-verifier";
   const parEtape = {

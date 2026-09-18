@@ -350,11 +350,10 @@ datée sur #239.
   à l'étape 8, elle retirait la phrase, et toute ouverture passait ensuite par « Récupérer… avec le
   code » — alors que l'écran 3 et le README disaient « ensuite, votre phrase suffit ». Une visite ne
   détruit pas le moyen d'ouverture quotidien de la personne. L'écran `revoquer` explique le geste,
-  dit sa CONSÉQUENCE en clair (« votre phrase et votre passkey ne fonctionneront plus sur ce coffre
-  ; seul le code de votre feuille l'ouvrira ») et offre deux sorties : « Révoquer tous les autres
-  moyens… » (inchangé) et « Terminer sans révoquer » (écran `termine-sans-revoquer`). La révocation
-  reste sur l'accueil, avec le même avertissement. Redonner une phrase à un coffre révoqué est hors
-  de cette tranche (issue à part).
+  dit sa CONSÉQUENCE en clair, selon le moyen de la séance (correction ci-dessous), et offre deux
+  sorties : « Révoquer tous les autres moyens… » (inchangé) et « Terminer sans révoquer » (écran
+  `termine-sans-revoquer`). La révocation reste sur l'accueil, avec le même avertissement. Redonner
+  une phrase à un coffre révoqué est hors de cette tranche (issue à part).
 - **« J'ai oublié ma phrase » est une ouverture de ROUTINE.** Elle menait à l'étape 8
   (`rouvrir:perdu`), donc à 9 après l'ouverture, et marquait 5 à 8 comme faites : un saut vers
   l'AVANT, contraire au § 2. Elle montre désormais le formulaire du code sans déplacer la visite ;
@@ -365,3 +364,15 @@ datée sur #239.
   phrase oubliée, accueil), un titre ne porte plus de numéro d'étape.
 - **« Verrouiller » reste visible et atteignable au clavier à l'accueil, application démarrée** : le
   repli de Rails prêt ne retire plus que « Démarrer ».
+
+**Correction du même jour (contre-recette QA de la PR #244).** L'avertissement dicté plus haut («
+votre phrase et votre passkey ne fonctionneront plus ; seul le code de votre feuille l'ouvrira »)
+n'était vrai que pour une séance ouverte par le code : la révocation GARDE le moyen qui vient
+d'ouvrir. Ouverte par la phrase, c'est la feuille (et la passkey) qui est retirée. L'avertissement,
+au-dessus du bouton de révocation (étape 9, accueil, annonce du code), dépend donc du moyen de la
+séance, que l'interface publie dans son relevé (`moyenDOuverture`, un nom, jamais un secret) : «
+Seul le moyen avec lequel vous venez d'ouvrir ce coffre — votre phrase | votre passkey | le code de
+votre feuille — continuera de l'ouvrir », puis ce qui ne fonctionnera plus, et, si la feuille est
+retirée, « votre feuille de récupération ne servira plus à rien : créez-en une nouvelle ensuite ».
+Et une ouverture réussie par un code existant vaut preuve : une demande « Je n'ai plus cette feuille
+» en cours tombe, et la personne arrive à l'étape 4.

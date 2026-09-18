@@ -369,6 +369,10 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     // Le code tapé ne survit pas à son champ : un champ vidé par un geste vide aussi son annonce.
     if ((noeud("saisie-code")?.value ?? "") === "") dire("parcours-code-lu", "");
     nommerLesGestes(ecranId);
+    dire(
+      "parcours-avertissement-revocation",
+      MESSAGES.avertissementDeRevocation(releve.moyenDOuverture),
+    );
     montrerLesBlocs(visibles);
     // Replier seulement les conseils quand Rails est prêt. Le cadre reste à sa place :
     // le déplacer rechargerait son document et lui ferait perdre le port restreint.
