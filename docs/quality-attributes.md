@@ -587,6 +587,12 @@ est un PAQUET servi à part (partition 2 du disque système), et le volume du co
 | Octets réellement **écrits** dans le volume au versement |     512,0 Mio |   **0,4 Mio** | versement creux : un volume neuf est scellé à zéro à sa naissance  |
 | Taille du **paquet** (code, bundle i386, cache Bootsnap) |             — | **137,0 Mio** | ext4 sans journal, marge +5 % + 16 Mio, sur 116 Mio occupés        |
 | Taille du **disque système** téléchargé pour booter      |     385,0 Mio | **522,0 Mio** | rootfs (385) + paquet (137), chacun sous son adresse par empreinte |
+| **Graine** téléchargée au premier démarrage              |     512,0 Mio | **512,0 Mio** | téléchargée EN ENTIER : seule l'écriture est creuse (issue #241)   |
+
+**Le premier démarrage transfère encore plus d'un gibioctet** : disque système (522 Mio) plus graine
+entière (512 Mio) — la recette QA du 18/09/2026 a relevé 1,06 Gio transférés. Le versement est
+creux, le TÉLÉCHARGEMENT de la graine ne l'est pas encore ; la graine creuse est renvoyée à T2
+(#241).
 
 **Le versement n'écrit plus que ce qui n'est pas nul.** Les 18,9 s mesurées en #101 couvraient 512
 Mio de chiffrement et d'écriture ; il en reste 0,4 Mio. Le **scellement initial** du volume (19,1 s)

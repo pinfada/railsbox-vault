@@ -446,6 +446,11 @@ npm run image:build -- --sans-cache
 npm run image:manifest                    # réécrit le manifeste depuis les artefacts présents
 ```
 
+`tools/build-reference-image/manifest.json` est SUIVI par git : `image:manifest` le réécrit, et une
+reconstruction locale le laisse modifié dans l'arbre. Il ne se commite que lorsqu'une ENTRÉE de
+l'image change (sources épinglées, Dockerfile, application de référence) ; une reconstruction de
+confort se défait par `git restore tools/build-reference-image/manifest.json` (#212).
+
 La construction refuse de commencer si un artefact n'est pas épinglé ou si un secret est requis :
 
 ```sh
@@ -526,9 +531,16 @@ l'application, puis — pour la référence seule — de `vault-invariant.json` 
 - **toute écriture durable sous `/app/var`, et nulle part ailleurs.** Ce qui est écrit dans `/app`
   (y compris `tmp/` et le cache) vit en RAM pour la session et disparaît au boot à froid, **sans
   erreur** : c'est une exigence de compatibilité, pas un défaut (#210, `SECURITY.md`) ;
-- **aucun secret** : ni `config/master.key`, ni `config/credentials.yml.enc`, ni
-  `config/credentials/production.key`. Le `secret_key_base` se dérive d'une chaîne publique. La
-  fabrication refuse avant le premier `docker build`, et le Dockerfile refuse à nouveau ;
+- **aucun secret** : la fabrication refuse tout fichier que désigne un motif de `SECRETS_REFUSES`
+  (`tools/paquet/identite-de-l-application.mjs`), c'est-à-dire la clé maîtresse
+  (`config/master.key`), les identifiants chiffrés (`config/credentials.yml.enc`), les clés et
+  identifiants d'environnement (`config/credentials/*.key`, `config/credentials/*.yml.enc`), les
+  fichiers d'environnement (`.env`, `.env.*`, à toute profondeur), les certificats et magasins
+  (`*.pem`, `*.p12`, `*.pfx`, `*.jks`, `*.keystore`), les clés SSH privées (`id_rsa`, `id_dsa`,
+  `id_ecdsa`, `id_ed25519`) et, sous `config/`, tout fichier dont le nom annonce un secret
+  (`secret`, `key`). Le `secret_key_base` se dérive d'une chaîne publique. La fabrication refuse
+  avant le premier `docker build`, et le Dockerfile refuse à nouveau les secrets de Rails (clé
+  maîtresse, identifiants chiffrés, clés et identifiants d'environnement) ;
 - **au moins une migration** : le schéma du paquet (dernière migration, lue de `db/schema.rb` ou du
   plus grand préfixe de `db/migrate/`) est ce qui décidera d'une mise à jour ;
 - **une taille de données fixe** : le disque de données est dimensionné à la fabrication (512 Mio
@@ -536,6 +548,18 @@ l'application, puis — pour la référence seule — de `vault-invariant.json` 
 
 La fabrication dépose les deux images, nommées par leur empreinte, et `paquet.json` dans
 `artifacts/reference-image/`.
+
+**Un seul paquet est servi à la fois.** `app:paquet --source <dossier>` REMPLACE le `paquet.json` de
+la référence, et le dit : « remplace le paquet servi : <ancien> → <nouveau> ». Deux gestes suivent :
+
+```sh
+npm run image:manifest    # le descripteur de l'image nomme désormais le NOUVEAU paquet
+npm run app:paquet        # plus tard, sans --source : la référence redevient le paquet servi
+```
+
+Les images d'une AUTRE application restent dans le dossier (elles portent son identifiant) ; celles
+d'une construction antérieure de la MÊME application sont retirées. Seul le contrat servi change.
+Garder plusieurs paquets côte à côte relève de T2.
 
 ### Boot réel
 

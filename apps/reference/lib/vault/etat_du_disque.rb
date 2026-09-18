@@ -1,5 +1,5 @@
 module Vault
-  # L'ÉTAT du système de fichiers applicatif, tel que l'init du guest l'a relevé
+  # L'ÉTAT du disque de DONNÉES (`/app/var`, `/dev/sdb`), tel que l'init du guest l'a relevé
   # au montage (`guest-init.sh`, revue de la PR #211, constat 5) : options
   # montées, compteur d'erreurs du superbloc, alertes du noyau, rejeu du journal.
   #
@@ -8,7 +8,7 @@ module Vault
   # froid sans rien ajouter au pont série. Hors du guest il n'existe pas, et
   # l'état rendu est `nil` — jamais un « 0 » inventé.
   module EtatDuDisque
-    CHEMIN = "/run/vault-disque-applicatif".freeze
+    CHEMIN = "/run/vault-disque-de-donnees".freeze
     CLES = %w[options erreurs alertes rejeu].freeze
 
     module_function

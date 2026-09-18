@@ -98,8 +98,8 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     refute_match %r{data-piece-octets}, response.body
   end
 
-  test "la page d'accueil publie l'état du disque applicatif relevé au montage (revue #211, 5)" do
-    releve = Tempfile.new("disque-applicatif")
+  test "la page d'accueil publie l'état du disque de données relevé au montage (revue #211, 5 ; #236)" do
+    releve = Tempfile.new("disque-de-donnees")
     releve.write("options=rw,relatime,errors=remount-ro,data=ordered\nerreurs=0\nalertes=0\nrejeu=1\n")
     releve.close
     precedent = ENV["VAULT_ETAT_DU_DISQUE"]
@@ -113,6 +113,9 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_match %r{data-disque-erreurs="0"}, response.body
     assert_match %r{data-disque-alertes="0"}, response.body
     assert_match %r{data-disque-rejeu="1"}, response.body
+    # Le disque relevé est celui des DONNÉES (/app/var) : T1 (#236) a retiré le « disque applicatif ».
+    assert_match %r{>disque de données : 0 erreur\(s\)</p>}, response.body
+    refute_match %r{disque applicatif}, response.body
   ensure
     ENV["VAULT_ETAT_DU_DISQUE"] = precedent
     releve&.unlink

@@ -23,6 +23,7 @@ import {
   MOTIFS_EXCLUS,
 } from "../../tools/paquet/exclusions-de-la-source.mjs";
 import { SECRETS_REFUSES, secretsPresents } from "../../tools/paquet/identite-de-l-application.mjs";
+import { annonceDeRemplacement } from "../../tools/paquet/fabriquer-paquet.mjs";
 
 test("l'historique Git, les dépendances et les journaux n'entrent JAMAIS dans un paquet", () => {
   for (const chemin of [
@@ -117,4 +118,25 @@ test("ce qui n'est pas un secret n'est pas refusé : le refus reste utilisable",
     SECRETS_REFUSES.length >= 5,
     "la liste des motifs est publiée pour le message de refus",
   );
+});
+
+// Recette QA du 18/09 (#237, défaut 2) : `app:paquet --source <extérieur>` remplaçait le
+// `paquet.json` de la référence sans un mot. L'outil DIT désormais ce qu'il remplace, ce qui reste à
+// faire pour que le descripteur suive, et comment revenir à la référence.
+test("remplacer le paquet servi par un autre le dit, avec l'étape suivante et le retour", () => {
+  const ancien = { application: { id: "railsbox-vault-reference", version: "1.0.0" } };
+  const nouveau = { application: { id: "mon-application", version: "2.1.0" } };
+  const annonce = annonceDeRemplacement(ancien, nouveau);
+  assert.match(
+    annonce,
+    /remplace le paquet servi : railsbox-vault-reference 1\.0\.0 → mon-application 2\.1\.0/,
+  );
+  assert.match(annonce, /`npm run image:manifest` pour le descripteur/);
+  assert.match(annonce, /pour revenir à la référence : `npm run app:paquet` sans `--source`/);
+});
+
+test("refabriquer le même paquet, ou le fabriquer une première fois, ne remplace rien", () => {
+  const paquet = { application: { id: "railsbox-vault-reference", version: "1.0.0" } };
+  assert.equal(annonceDeRemplacement(paquet, structuredClone(paquet)), null);
+  assert.equal(annonceDeRemplacement(null, paquet), null);
 });
