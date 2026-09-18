@@ -340,3 +340,28 @@ cette feuille », et y offre « Revenir : j'ai toujours ma feuille » et la rév
 refus `VAULT_ENVELOPPE_PLEINE` au neuvième emplacement (établi par
 `coquille-preuve-de-la-feuille.test.mjs`) dit cette sortie : révoquer retire tous les autres moyens,
 puis un code se crée. Le retrait d'une seule feuille reste à #218.
+
+### Amendement du 2026-09-19 — l'étape 9 est facultative, et la phrase oubliée n'avance pas la visite (recette QA de la PR #244)
+
+La recette QA manuelle de la PR #244 a trouvé quatre défauts majeurs ; décision du superviseur,
+datée sur #239.
+
+- **L'étape 9 est FACULTATIVE.** Elle exécutait une vraie révocation d'urgence : ouverte par le code
+  à l'étape 8, elle retirait la phrase, et toute ouverture passait ensuite par « Récupérer… avec le
+  code » — alors que l'écran 3 et le README disaient « ensuite, votre phrase suffit ». Une visite ne
+  détruit pas le moyen d'ouverture quotidien de la personne. L'écran `revoquer` explique le geste,
+  dit sa CONSÉQUENCE en clair (« votre phrase et votre passkey ne fonctionneront plus sur ce coffre
+  ; seul le code de votre feuille l'ouvrira ») et offre deux sorties : « Révoquer tous les autres
+  moyens… » (inchangé) et « Terminer sans révoquer » (écran `termine-sans-revoquer`). La révocation
+  reste sur l'accueil, avec le même avertissement. Redonner une phrase à un coffre révoqué est hors
+  de cette tranche (issue à part).
+- **« J'ai oublié ma phrase » est une ouverture de ROUTINE.** Elle menait à l'étape 8
+  (`rouvrir:perdu`), donc à 9 après l'ouverture, et marquait 5 à 8 comme faites : un saut vers
+  l'AVANT, contraire au § 2. Elle montre désormais le formulaire du code sans déplacer la visite ;
+  l'ouverture mène à l'étape 4. Seule l'étape 8 atteinte PAR LA VISITE avance vers 9. Ceci corrige
+  la classification « conforme » de la revue de sécurité (LOW) écrite plus haut.
+- **« Où suis-je ? » dit la vérité** : une étape est « passée » quand la visite est allée au-delà ;
+  la visite finie, aucune n'est en cours ni à venir. Hors de la visite (réouverture de routine,
+  phrase oubliée, accueil), un titre ne porte plus de numéro d'étape.
+- **« Verrouiller » reste visible et atteignable au clavier à l'accueil, application démarrée** : le
+  repli de Rails prêt ne retire plus que « Démarrer ».

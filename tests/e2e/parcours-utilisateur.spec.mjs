@@ -283,6 +283,28 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await bouton(a, "Continuer : Restaurer sur un autre appareil").click();
     await attendreLEcran(a, "Restaurer sur un autre appareil");
   });
+
+  // --- Sur A : les étapes 8 et 9, et la sortie SANS révoquer (décision du 19/09/2026) -------------
+  await chrono("8-9-sans-revoquer", async () => {
+    await bouton(a, "Continuer : Récupérer votre coffre avec le code").click();
+    await attendreLEcran(a, "Récupérer votre coffre avec le code");
+    await verrouillerEtRecharger(a);
+    await a.getByLabel("Code de récupération", { exact: true }).fill(code);
+    await bouton(a, "Ouvrir mon coffre avec le code").click();
+    await attendreLEcran(a, "Révoquer en urgence", BUDGET_DEVERROUILLAGE_MS);
+    await expect(a.getByText(/votre phrase et votre passkey ne fonctionneront plus/)).toBeVisible();
+    await bouton(a, "Terminer sans révoquer").click();
+    await attendreLEcran(a, "Parcours terminé");
+    await expect(a.getByText(/ouvrent toujours/)).toBeVisible();
+    // La phrase ouvre TOUJOURS : la visite n'a rien détruit.
+    await bouton(a, "Revenir à mon application").click();
+    await attendreLEcran(a, "Votre application");
+    await verrouillerEtRecharger(a);
+    await attendreLEcran(a, "Rouvrir votre coffre", BUDGET_DEVERROUILLAGE_MS);
+    await a.getByLabel("Votre phrase", { exact: true }).fill(PHRASE);
+    await bouton(a, "Ouvrir mon coffre").click();
+    await attendreLEcran(a, "Votre application", BUDGET_DEVERROUILLAGE_MS);
+  });
   await a.close();
 
   // --- 7. Restaurer ailleurs — avec l'échec « archive altérée » ------------------------------------

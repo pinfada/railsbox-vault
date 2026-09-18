@@ -1089,6 +1089,40 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_PREUVE],
   },
   {
+    nom: "« J'ai oublié ma phrase » montre le code sans déplacer la visite (QA de #244)",
+    garde: "ecranVerrouille — la phrase perdue, hors de l'étape 8",
+    fichier: PARCOURS,
+    avant: '  if (pointeur === 8 || phrasePerdue) return "recuperer";\n',
+    apres: '  if (pointeur === 8) return "recuperer";\n',
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "l'étape 9 est facultative : « Terminer sans révoquer » (décision du 19/09)",
+    garde: "ecranOuvert — la fin de visite sans révocation",
+    fichier: PARCOURS,
+    avant:
+      '    9: revocationFaite ? "termine" : sansRevoquer ? "termine-sans-revoquer" : "revoquer",\n',
+    apres: '    9: revocationFaite ? "termine" : "revoquer",\n',
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "« Où suis-je ? » ne dit rien « en cours » ni « à venir » après la visite (QA de #244)",
+    garde: "ouSuisJe — la visite finie",
+    fichier: PARCOURS,
+    avant: "  const courante = finie ? 0 : (ECRANS[ecranId]?.etape ?? 0);\n",
+    apres: "  const courante = ECRANS[ecranId]?.etape ?? 0;\n",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "hors de la visite, un titre ne porte pas de numéro d'étape (QA de #244)",
+    garde: "rangAffiche — rouvrir et récupérer hors de leur exercice",
+    fichier: PARCOURS,
+    avant:
+      '  if ((ecranId === "rouvrir" || ecranId === "recuperer") && pointeur !== rang) return null;\n',
+    apres: "",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
     nom: "l'inscription garde les identifiants déjà éprouvés (revue de sécurité de la PR #244)",
     garde: "constaterALOuverture — inscrire sur la liste LUE, jamais sur une liste vide",
     fichier: PREUVE,

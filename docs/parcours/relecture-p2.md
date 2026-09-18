@@ -25,7 +25,7 @@ parcours », qui mène directement au titre de l'étape.
 
 Dans « Où suis-je ? », chaque étape porte l'une de ces mentions :
 
-- étape précédente
+- étape passée
 - vous êtes ici
 - à venir
 - non jouée sur cet appareil : le coffre y a été restauré
@@ -159,7 +159,7 @@ Messages qui peuvent s'afficher sur cet écran :
 > Ce que vous avez à faire : Recopiez le code et le numéro de version, puis cliquez sur « J'ai
 > recopié mon code ».
 
-Boutons et champs : « J'ai recopié mon code ».
+Boutons et champs : « Votre code de récupération : » suivi du code, « J'ai recopié mon code ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
@@ -189,7 +189,8 @@ Messages qui peuvent s'afficher sur cet écran :
 > Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché :
 > il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le lisant
 > sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste. Sur cet appareil,
-> cela ne vous est demandé qu'une fois : ensuite, votre phrase suffit.
+> cela ne vous est demandé qu'une fois : ensuite, votre phrase suffit, tant que vous ne l'avez pas
+> révoquée.
 >
 > Ce que vous avez à faire : Si vous avez votre feuille : tapez le code, puis cliquez sur « Ouvrir
 > mon coffre avec le code ». Si vous n'avez plus cette feuille, cliquez sur « Je n'ai plus cette
@@ -216,7 +217,8 @@ Messages qui peuvent s'afficher sur cet écran :
 > Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché :
 > il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le lisant
 > sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste. Sur cet appareil,
-> cela ne vous est demandé qu'une fois : ensuite, votre phrase suffit.
+> cela ne vous est demandé qu'une fois : ensuite, votre phrase suffit, tant que vous ne l'avez pas
+> révoquée.
 >
 > Ce que vous avez à faire : Si vous avez votre feuille : cliquez sur « Verrouiller mon coffre »,
 > puis ouvrez le coffre avec le code que vous y avez recopié. Si vous n'avez plus cette feuille,
@@ -295,7 +297,9 @@ Messages qui peuvent s'afficher sur cet écran :
 > La visite est finie. L'application s'exécute entièrement dans votre navigateur. Ce que vous y
 > écrivez est enregistré dans votre coffre, sur cet appareil. Vos gestes de tous les jours sont sur
 > cet écran : verrouiller le coffre quand vous avez fini, le sauvegarder de temps en temps, et
-> révoquer les autres moyens de l'ouvrir si l'un d'eux a pu être vu.
+> révoquer les autres moyens de l'ouvrir si l'un d'eux a pu être vu. Attention : si vous avez ouvert
+> ce coffre avec le code de votre feuille, votre phrase et votre passkey ne fonctionneront plus sur
+> ce coffre ; seul le code de votre feuille l'ouvrira.
 >
 > Ce que vous avez à faire : Cliquez sur « Démarrer l'application », attendez qu'elle s'affiche,
 > puis utilisez-la. Quand vous avez fini, cliquez sur « Verrouiller mon coffre ».
@@ -552,21 +556,35 @@ Messages qui peuvent s'afficher sur cet écran :
 
 ### Écran : Révoquer en urgence
 
-> Si vous pensez que quelqu'un connaît votre phrase ou a trouvé votre feuille, révoquez : tout ce
-> qui ouvre ce coffre est retiré, SAUF le moyen que vous venez d'utiliser. Attention : les
-> sauvegardes déjà faites restent ouvrables par les anciens moyens. Détruisez-les si elles risquent
-> de tomber entre de mauvaises mains, puis faites une nouvelle sauvegarde.
+> Cette étape est facultative : elle vous montre le geste à faire si quelqu'un connaît votre phrase
+> ou a trouvé votre feuille. Révoquer retire tout ce qui ouvre ce coffre, SAUF le moyen que vous
+> venez d'utiliser. Attention : si vous avez ouvert ce coffre avec le code de votre feuille, votre
+> phrase et votre passkey ne fonctionneront plus sur ce coffre ; seul le code de votre feuille
+> l'ouvrira. Les sauvegardes déjà faites restent ouvrables par les anciens moyens : détruisez-les si
+> elles risquent de tomber entre de mauvaises mains, puis faites une nouvelle sauvegarde.
 >
-> Ce que vous avez à faire : Seulement si c'est nécessaire : cliquez sur « Révoquer tous les autres
-> moyens d'ouvrir ce coffre ». Notez ensuite le nouveau numéro de version sur votre feuille.
+> Ce que vous avez à faire : Si personne n'a vu votre phrase ni votre feuille, cliquez sur «
+> Terminer sans révoquer ». Seulement si c'est nécessaire, cliquez sur « Révoquer tous les autres
+> moyens d'ouvrir ce coffre », puis notez le nouveau numéro de version sur votre feuille.
 
-Boutons et champs : « Révoquer tous les autres moyens d'ouvrir ce coffre », « Revenir à mon
-application ».
+Boutons et champs : « Révoquer tous les autres moyens d'ouvrir ce coffre », « Terminer sans révoquer
+», « Revenir à mon application ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
 - N moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V.
 - Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.
+
+### Écran : Parcours terminé
+
+> Vous avez fait le tour de votre coffre, sans rien révoquer : votre phrase, votre passkey et votre
+> feuille l'ouvrent toujours. Si un jour l'un de ces moyens a pu être vu, la révocation reste
+> disponible sur l'écran de votre application.
+>
+> Ce que vous avez à faire : Pour vous servir de votre application, cliquez sur « Revenir à mon
+> application ».
+
+Boutons et champs : « Revenir à mon application ».
 
 ### Écran : Parcours terminé
 
@@ -589,8 +607,8 @@ Boutons et champs : « Revenir à mon application ».
 
    _Votre réponse :_
 
-3. Savez-vous quoi faire après la révocation (noter la version, refaire une sauvegarde), puis
-   comment revenir à votre application ?
+3. Comprenez-vous que cette étape est facultative, et ce que la révocation retire (votre phrase, si
+   vous avez ouvert avec le code) ; sauriez-vous revenir à votre application ?
 
    _Votre réponse :_
 

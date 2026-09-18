@@ -126,7 +126,9 @@ html[data-travail-pret="true"] #parcours {
 html[data-travail-pret="true"] #parcours-titre {
   margin-bottom: 4px;
 }
-html[data-travail-pret="true"] #cycle,
+/* Rails prêt : « Démarrer » se retire, « Verrouiller » RESTE — le geste quotidien de l'accueil
+   doit rester visible et atteignable au clavier, application démarrée (QA de #244). */
+html[data-travail-pret="true"] #cycle [data-bloc="application"],
 html[data-travail-pret="true"] #cycle-description {
   display: none;
 }

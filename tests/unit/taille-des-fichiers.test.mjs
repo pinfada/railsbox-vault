@@ -111,6 +111,17 @@ const HORS_PERIMETRE = [
  */
 const SOUS_SURVEILLANCE = [
   {
+    fichier: "public/coquille/parcours-de-la-page.mjs",
+    lignes: 712,
+    motif:
+      "#239 et sa recette QA (19/09/2026) le font passer de 635 à 712 lignes : l'accueil, les " +
+      "indices de la progression, le retour à l'application, l'étape 9 facultative, la phrase " +
+      "oubliée hors de la visite, l'application arrêtée par une sauvegarde. Ce module ne décide rien " +
+      "(tout est dans `parcours.mjs`, éprouvé sans navigateur) ; ce qui reste est du branchement de " +
+      "gestes et d'observateurs. À scinder (observateurs d'un côté, gestes de l'autre) si une tranche " +
+      "le fait passer 750.",
+  },
+  {
     fichier: "src/coquille/conduites-du-parcours.mjs",
     lignes: 716,
     motif:

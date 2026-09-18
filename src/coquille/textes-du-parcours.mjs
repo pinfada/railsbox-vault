@@ -38,7 +38,7 @@ export const LIBELLES_DES_BLOCS = Object.freeze({
   "feuille-revenir": [
     "« Revenir : j'ai toujours ma feuille » (seulement quand la personne a dit ne plus l'avoir)",
   ],
-  feuille: ["« J'ai recopié mon code »"],
+  feuille: ["« Votre code de récupération : » suivi du code", "« J'ai recopié mon code »"],
   revoir: ["« Revoir mon code »"],
   application: [
     "« Démarrer l'application »",
@@ -52,6 +52,7 @@ export const LIBELLES_DES_BLOCS = Object.freeze({
     "« Restaurer ma sauvegarde sur cet appareil »",
   ],
   revocation: ["« Révoquer tous les autres moyens d'ouvrir ce coffre »"],
+  "sans-revoquer": ["« Terminer sans révoquer »"],
   continuer: ["« Continuer : » suivi du titre de l'étape suivante"],
   retour: ["« Revenir à mon application »"],
 });
@@ -115,7 +116,16 @@ const UN_CODE_A_DEJA_ETE_RENDU =
   "Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché : " +
   "il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le " +
   "lisant sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste. Sur cet " +
-  "appareil, cela ne vous est demandé qu'une fois : ensuite, votre phrase suffit.";
+  "appareil, cela ne vous est demandé qu'une fois : ensuite, votre phrase suffit, tant que vous ne " +
+  "l'avez pas révoquée.";
+
+/**
+ * Ce que la révocation d'urgence COÛTE, dit en clair avant le geste (décision du 19/09/2026) : ouverte
+ * par le code, elle retire la phrase et la passkey.
+ */
+const CE_QUE_LA_REVOCATION_RETIRE =
+  "Attention : si vous avez ouvert ce coffre avec le code de votre feuille, votre phrase et votre " +
+  "passkey ne fonctionneront plus sur ce coffre ; seul le code de votre feuille l'ouvrira.";
 
 /**
  * L'étape 3 éprouve la feuille en S'EN SERVANT (#239) : verrouiller, puis rouvrir par le code. Le
@@ -239,7 +249,8 @@ export const ECRANS = Object.freeze({
       L_APPLICATION_S_EXECUTE_ICI +
       " Vos gestes de tous les jours sont sur cet écran : verrouiller le coffre quand vous avez " +
       "fini, le sauvegarder de temps en temps, et révoquer les autres moyens de l'ouvrir si l'un " +
-      "d'eux a pu être vu.",
+      "d'eux a pu être vu. " +
+      CE_QUE_LA_REVOCATION_RETIRE,
     attendu:
       "Cliquez sur « Démarrer l'application », attendez qu'elle s'affiche, puis utilisez-la. Quand " +
       "vous avez fini, cliquez sur « Verrouiller mon coffre ».",
@@ -336,14 +347,26 @@ export const ECRANS = Object.freeze({
   revoquer: ecran(9, {
     titre: "Révoquer en urgence",
     ceQuiVaSePasser:
-      "Si vous pensez que quelqu'un connaît votre phrase ou a trouvé votre feuille, révoquez : tout " +
-      "ce qui ouvre ce coffre est retiré, SAUF le moyen que vous venez d'utiliser. Attention : les " +
-      "sauvegardes déjà faites restent ouvrables par les anciens moyens. Détruisez-les si elles " +
+      "Cette étape est facultative : elle vous montre le geste à faire si quelqu'un connaît votre " +
+      "phrase ou a trouvé votre feuille. Révoquer retire tout ce qui ouvre ce coffre, SAUF le moyen " +
+      "que vous venez d'utiliser. " +
+      CE_QUE_LA_REVOCATION_RETIRE +
+      " Les sauvegardes déjà faites restent ouvrables par les anciens moyens : détruisez-les si elles " +
       "risquent de tomber entre de mauvaises mains, puis faites une nouvelle sauvegarde.",
     attendu:
-      "Seulement si c'est nécessaire : cliquez sur « Révoquer tous les autres moyens d'ouvrir ce " +
-      "coffre ». Notez ensuite le nouveau numéro de version sur votre feuille.",
-    blocs: ["revocation", "retour"],
+      "Si personne n'a vu votre phrase ni votre feuille, cliquez sur « Terminer sans révoquer ». " +
+      "Seulement si c'est nécessaire, cliquez sur « Révoquer tous les autres moyens d'ouvrir ce " +
+      "coffre », puis notez le nouveau numéro de version sur votre feuille.",
+    blocs: ["revocation", "sans-revoquer", "retour"],
+  }),
+  "termine-sans-revoquer": ecran(9, {
+    titre: "Parcours terminé",
+    ceQuiVaSePasser:
+      "Vous avez fait le tour de votre coffre, sans rien révoquer : votre phrase, votre passkey et " +
+      "votre feuille l'ouvrent toujours. Si un jour l'un de ces moyens a pu être vu, la révocation " +
+      "reste disponible sur l'écran de votre application.",
+    attendu: "Pour vous servir de votre application, cliquez sur « Revenir à mon application ».",
+    blocs: ["retour"],
   }),
   termine: ecran(9, {
     titre: "Parcours terminé",
@@ -443,7 +466,7 @@ export const MESSAGES = Object.freeze({
 
 /** Ce que « Où suis-je ? » dit de chaque étape. */
 export const STATUTS = Object.freeze({
-  passee: "étape précédente",
+  passee: "étape passée",
   "en-cours": "vous êtes ici",
   "a-venir": "à venir",
   "non-jouee": "non jouée sur cet appareil : le coffre y a été restauré",

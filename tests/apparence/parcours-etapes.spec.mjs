@@ -168,6 +168,19 @@ for (const theme of ["light", "dark"]) {
     await expect(titre(page, "Votre application")).toBeVisible();
     await aucunGroupeSansNom(page, "accueil");
     await verifierAux(page, testInfo, "accueil", DEUX_LARGEURS);
+
+    // Application démarrée (état simulé) : « Démarrer » se retire, « Verrouiller » reste, au clavier.
+    await simulerLigneDuCycle(page, "cycle:application-demarree");
+    await expect(bouton(page, "Démarrer l'application")).toBeHidden();
+    const verrouiller = bouton(page, "Verrouiller mon coffre");
+    await expect(verrouiller).toBeVisible();
+    for (let appuis = 0; appuis < 60; appuis += 1) {
+      if (await verrouiller.evaluate((noeud) => noeud === document.activeElement)) break;
+      await page.keyboard.press("Tab");
+    }
+    await expect(verrouiller).toBeFocused();
+    await verifierAux(page, testInfo, "accueil-application-demarree", DEUX_LARGEURS);
+    await simulerLigneDuCycle(page, "cycle:au-repos");
   });
 }
 

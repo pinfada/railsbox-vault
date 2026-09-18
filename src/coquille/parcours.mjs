@@ -101,6 +101,7 @@ export const BLOCS = Object.freeze([
   "sauvegarde",
   "restauration",
   "revocation",
+  "sans-revoquer",
   "continuer",
   "retour",
 ]);
@@ -315,8 +316,8 @@ export function etapeDeLURL(texte) {
  *
  * @param {{ pointeur: number | null, coffre: string, moyens?: string[], nombreDeCodes?: number,
  *           feuilleEprouvee?: boolean, progression?: object, sousEtatDuCode?: string,
- *           revocationFaite?: boolean, nouveauCodeDemande?: boolean, refus?: string | null,
- *           moteur?: string }} observation
+ *           revocationFaite?: boolean, sansRevoquer?: boolean, phrasePerdue?: boolean,
+ *           nouveauCodeDemande?: boolean, refus?: string | null, moteur?: string }} observation
  * @returns {string} une clé de `ECRANS`
  */
 export function ecranCourant({
@@ -328,6 +329,8 @@ export function ecranCourant({
   progression = PROGRESSION_INITIALE,
   sousEtatDuCode = SOUS_ETATS_DU_CODE.annonce,
   revocationFaite = false,
+  sansRevoquer = false,
+  phrasePerdue = false,
   nouveauCodeDemande = false,
   refus = null,
   moteur = "chromium",
@@ -338,7 +341,7 @@ export function ecranCourant({
     return refus === CODE_RESTAURATION_INTERROMPUE ? "restaurer" : "refuse";
   if (coffre === COFFRE.absent) return ecranSansCoffre(pointeur);
   if (coffre === COFFRE.verrouille)
-    return ecranVerrouille(pointeur, moyens, progression, nouveauCodeDemande);
+    return ecranVerrouille(pointeur, moyens, progression, nouveauCodeDemande, phrasePerdue);
   if (coffre === COFFRE.ouvert) {
     return ecranOuvert({
       pointeur,
@@ -347,6 +350,7 @@ export function ecranCourant({
       progression,
       sousEtatDuCode,
       revocationFaite,
+      sansRevoquer,
       nouveauCodeDemande,
       moteur,
     });
@@ -360,10 +364,12 @@ function ecranSansCoffre(pointeur) {
   return "creer";
 }
 
-function ecranVerrouille(pointeur, moyens, progression, nouveauCodeDemande) {
+function ecranVerrouille(pointeur, moyens, progression, nouveauCodeDemande, phrasePerdue) {
   const ouvrableSansCode = moyens.includes("phrase") || moyens.includes("webauthn-prf");
   if (!ouvrableSansCode) return "recuperer";
-  if (pointeur === 8) return "recuperer";
+  // « J'ai oublié ma phrase » montre le formulaire du code SANS déplacer la visite (QA de #244) : ce
+  // n'est pas l'étape 8, c'est une ouverture de routine par un autre moyen.
+  if (pointeur === 8 || phrasePerdue) return "recuperer";
   // Le PREMIER formulaire d'un coffre verrouillé, choisi par l'indice (#239). Aucune feuille n'a
   // encore été éprouvée ici : c'est le code qui rouvre, et son ouverture inscrit la preuve. Sinon, la
   // phrase et la passkey. Un indice falsifié coûte au pire un détour d'un écran : ouvert par la
@@ -383,6 +389,7 @@ function ecranOuvert({
   progression,
   sousEtatDuCode,
   revocationFaite,
+  sansRevoquer,
   nouveauCodeDemande,
   moteur,
 }) {
@@ -401,7 +408,9 @@ function ecranOuvert({
     6: "sauvegarder",
     7: "restaurer-ailleurs",
     8: "recuperer-preparer",
-    9: revocationFaite ? "termine" : "revoquer",
+    // L'étape 9 est FACULTATIVE (décision du 19/09/2026) : une visite ne détruit pas le moyen
+    // d'ouverture quotidien de la personne.
+    9: revocationFaite ? "termine" : sansRevoquer ? "termine-sans-revoquer" : "revoquer",
   };
   const choisi = parEtape[pointeur] ?? (progression.visiteTerminee ? "accueil" : "travailler");
   if (moteur === "firefox" && (choisi === "travailler" || choisi === "accueil")) {
@@ -421,6 +430,7 @@ export const ECRANS_AVEC_RETOUR = Object.freeze([
   "recuperer-preparer",
   "revoquer",
   "termine",
+  "termine-sans-revoquer",
 ]);
 
 /**
@@ -447,7 +457,6 @@ export function etapeApres(ecranId, evenement, pointeur, etapeAtteinte = 4) {
     "code-verifier:ouverture": pointeur === 5 ? 6 : 4,
     "travailler:continuer": prochaineEtapeNonJouee(etapeAtteinte),
     "rouvrir:ouverture": pointeur === 5 ? 6 : 4,
-    "rouvrir:perdu": 8,
     "sauvegarder:continuer": 7,
     "restaurer-ailleurs:continuer": 8,
     "restaurer:restauree": 8,
@@ -471,20 +480,43 @@ export function etapeSuivante(ecranId) {
 
 /**
  * « Où suis-je » : les neuf étapes, chacune passée, en cours, à venir — ou non jouée, pour un coffre
- * restauré dont les six premières étapes ont eu lieu ailleurs.
+ * restauré dont les six premières étapes ont eu lieu ailleurs. Une étape est « passée » quand la
+ * visite est allée au-delà ; la visite FINIE, aucune n'est en cours ni à venir (QA de #244 : l'accueil
+ * disait « 5 à 9 à venir » sous « La visite est finie »).
  *
  * @param {string} ecranId
  * @param {string} [origine]
+ * @param {{ etapeAtteinte?: number, visiteTerminee?: boolean }} [progression]
  * @returns {{ rang: number, titre: string, statut: string }[]}
  */
-export function ouSuisJe(ecranId, origine = ORIGINES_DU_COFFRE.creation) {
-  const courante = ECRANS[ecranId]?.etape ?? 0;
+export function ouSuisJe(ecranId, origine = ORIGINES_DU_COFFRE.creation, progression = {}) {
   const restaure = origine === ORIGINES_DU_COFFRE.restauration;
+  const finie = progression.visiteTerminee === true;
+  const courante = finie ? 0 : (ECRANS[ecranId]?.etape ?? 0);
+  const atteinte = finie ? ETAPES.length + 1 : Math.max(progression.etapeAtteinte ?? 0, courante);
   return ETAPES.map(({ rang, titre }) => {
+    if (restaure && rang < 7) return { rang, titre, statut: "non-jouee" };
     if (rang === courante) return { rang, titre, statut: "en-cours" };
-    if (rang > courante) return { rang, titre, statut: "a-venir" };
-    return { rang, titre, statut: restaure && rang < 7 ? "non-jouee" : "passee" };
+    if (rang < atteinte) return { rang, titre, statut: "passee" };
+    return { rang, titre, statut: "a-venir" };
   });
+}
+
+/**
+ * Le rang affiché (« Étape 5 sur 9 ») : seulement pendant la VISITE, et seulement quand l'écran est
+ * l'étape en cours. Hors de la visite — une ouverture de routine, l'accueil, la phrase oubliée —, un
+ * titre ne porte pas de numéro (QA de #244).
+ *
+ * @param {string} ecranId
+ * @param {number | null} pointeur
+ * @param {{ visiteTerminee?: boolean }} progression
+ * @returns {number | null}
+ */
+export function rangAffiche(ecranId, pointeur, progression) {
+  const rang = ECRANS[ecranId]?.etape ?? null;
+  if (rang === null || progression.visiteTerminee === true || ecranId === "accueil") return null;
+  if ((ecranId === "rouvrir" || ecranId === "recuperer") && pointeur !== rang) return null;
+  return rang;
 }
 
 /**
