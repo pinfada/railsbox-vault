@@ -23,6 +23,7 @@
 // `paquet.json`, le contrat que le manifeste d'image relit ensuite.
 
 import { spawn, spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -33,6 +34,8 @@ import {
   statSync,
   writeFileSync,
   rmSync,
+  copyFileSync,
+  mkdtempSync,
 } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
@@ -41,8 +44,9 @@ import { construirePaquet, nomDImage, validerPaquet } from "./contrat-du-paquet.
 import {
   identiteDeLApplication,
   secretsPresents,
-  SECRETS_REFUSES,
+  SECRETS_REFUSES_LIBELLES,
 } from "./identite-de-l-application.mjs";
+import { cheminExclu, fichiersRetenus } from "./exclusions-de-la-source.mjs";
 import { schemaDeLApplication } from "./schema-de-l-application.mjs";
 
 const dossierOutils = dirname(fileURLToPath(import.meta.url));
@@ -89,23 +93,66 @@ export function analyserArguments(arguments_) {
   return { source: resolve(source), id, version, tailleDonnees };
 }
 
-/** Liste les fichiers de la source, en chemins relatifs à barres obliques, sans descendre inutilement. */
+/**
+ * Les fichiers de la source qui ENTRERONT dans le paquet, en chemins relatifs à barres obliques.
+ *
+ * C'est la liste UNIQUE (#236, revue de sécurité, constat 1) : elle décide de ce que la copie prend,
+ * et c'est elle que le balayage de secrets parcourt. Auparavant, le balayage ignorait `.git/`,
+ * `vendor/` et `log/` que la copie prenait — les deux listes étaient complémentaires, si bien que
+ * tout ce qui n'était pas examiné était exactement ce qui partait dans l'image publiée.
+ *
+ * Quand la source est un dépôt git, sa propre liste fait foi EN PLUS : un fichier ignoré par git
+ * (`.env` local, dump de base, clé posée à la main) n'entre pas, même s'il ne correspond à aucun
+ * motif. `git ls-files -co --exclude-standard` rend les fichiers suivis et les non suivis NON
+ * ignorés ; c'est exactement « ce que le dépôt reconnaît ».
+ */
 function fichiersDeLaSource(source) {
+  const listeGit = fichiersSelonGit(source);
+  if (listeGit !== null) return fichiersRetenus(listeGit);
+
   const trouves = [];
-  const ignores = new Set(["node_modules", ".git", "tmp", "log", "vendor", "var"]);
   const parcourir = (dossier, prefixe) => {
     for (const entree of readdirSync(dossier, { withFileTypes: true })) {
       const relatif = prefixe === "" ? entree.name : `${prefixe}/${entree.name}`;
-      if (entree.isDirectory()) {
-        if (ignores.has(entree.name)) continue;
-        parcourir(join(dossier, entree.name), relatif);
-      } else {
-        trouves.push(relatif);
-      }
+      if (cheminExclu(relatif)) continue;
+      if (entree.isDirectory()) parcourir(join(dossier, entree.name), relatif);
+      else trouves.push(relatif);
     }
   };
   parcourir(source, "");
   return trouves;
+}
+
+/**
+ * Ce que GIT reconnaît dans la source, ou `null` si ce n'en est pas un dépôt.
+ *
+ * `-c` (suivis) et `-o --exclude-standard` (non suivis mais non ignorés) : ce qui est ignoré par
+ * `.gitignore` reste dehors. Une source qui n'est pas un dépôt rend `null`, et le parcours du disque
+ * prend le relais — les motifs d'exclusion s'appliquent dans les deux cas.
+ */
+function fichiersSelonGit(source) {
+  const resultat = spawnSync("git", ["-C", source, "ls-files", "-c", "-o", "--exclude-standard"], {
+    encoding: "utf8",
+  });
+  if (resultat.error !== undefined || resultat.status !== 0) return null;
+  return resultat.stdout.split("\n").filter((ligne) => ligne.trim() !== "");
+}
+
+/**
+ * RECOPIE la source filtrée dans un arbre de travail, et rend son chemin.
+ *
+ * C'est CET arbre que Docker reçoit comme contexte de construction nommé, et lui seul : le
+ * `.dockerignore` du dépôt ne peut rien pour un contexte extérieur, et un contexte qu'on ne
+ * contrôle pas est un contexte dont on ne sait pas ce qu'il porte.
+ */
+function preparerLArbreDuPaquet(source, fichiers) {
+  const arbre = mkdtempSync(join(tmpdir(), "vault-paquet-"));
+  for (const relatif of fichiers) {
+    const destination = join(arbre, relatif);
+    mkdirSync(dirname(destination), { recursive: true });
+    copyFileSync(join(source, relatif), destination);
+  }
+  return arbre;
 }
 
 /** LIT ce que la source déclare d'elle-même : `vault-app.json`, puis `vault-invariant.json`. */
@@ -124,12 +171,13 @@ export function examinerLaSource(source, options) {
       `Source refusée : ${source} n'a pas de Gemfile — ce n'est pas une application Rails.`,
     );
   }
+  // Le balayage porte sur CE QUI ENTRERA, et sur rien d'autre : c'est la correction du constat 1.
   const fichiers = fichiersDeLaSource(source);
   const secrets = secretsPresents(fichiers);
   if (secrets.length > 0) {
     throw new Error(
-      `Source refusée : elle porte ${secrets.join(", ")}. Un paquet ne contient AUCUN secret ` +
-        `(${SECRETS_REFUSES.join(", ")}) ; le secret_key_base se dérive d'une chaîne publique.`,
+      `Source refusée : elle porte ${secrets.join(", ")}. Un paquet ne contient AUCUN secret — ` +
+        `ni ${SECRETS_REFUSES_LIBELLES.join(", ni ")} ; le secret_key_base se dérive d'une chaîne publique.`,
     );
   }
   const { vaultApp, invariant } = declarationsDeLaSource(source);
@@ -142,7 +190,7 @@ export function examinerLaSource(source, options) {
     schemaRb: existsSync(cheminSchema) ? readFileSync(cheminSchema, "utf8") : null,
     migrations,
   });
-  return { ...identite, schema };
+  return { ...identite, schema, fichiers };
 }
 
 /** @param {string} etape @param {string[]} arguments_ */
@@ -238,6 +286,22 @@ export async function fabriquerLePaquet(arguments_) {
   );
   mkdirSync(DOSSIER_ARTEFACTS, { recursive: true });
 
+  // L'arbre FILTRÉ, et lui seul, devient le contexte de construction : ce que Docker copie est
+  // exactement ce que le balayage de secrets a examiné (revue #237, constat 1).
+  const arbreDuPaquet = preparerLArbreDuPaquet(options.source, identite.fichiers);
+  console.log(`→ contexte : ${identite.fichiers.length} fichiers retenus (arbre filtré)`);
+  try {
+    return await fabriquerDepuisLArbre({ options, identite, arbreDuPaquet });
+  } finally {
+    rmSync(arbreDuPaquet, { recursive: true, force: true });
+  }
+}
+
+/**
+ * FABRIQUE depuis l'arbre filtré. Séparé de `fabriquerLePaquet` pour que le nettoyage de l'arbre
+ * tienne dans un `finally` qui ne peut pas être oublié, quoi qu'il arrive à la construction.
+ */
+async function fabriquerDepuisLArbre({ options, identite, arbreDuPaquet }) {
   docker("image du fabricant de systèmes de fichiers", [
     "build",
     "-f",
@@ -254,9 +318,9 @@ export async function fabriquerLePaquet(arguments_) {
     "tools/build-reference-image/guest.Dockerfile",
     "--target",
     "disque-app",
-    // Le contexte NOMMÉ : la source entre ici, et nulle part ailleurs.
+    // Le contexte NOMMÉ : l'arbre FILTRÉ entre ici, et nulle part ailleurs.
     "--build-context",
-    `application=${options.source}`,
+    `application=${arbreDuPaquet}`,
     "--build-arg",
     `SCHEMA_DE_L_APPLICATION=${identite.schema}`,
     "-t",

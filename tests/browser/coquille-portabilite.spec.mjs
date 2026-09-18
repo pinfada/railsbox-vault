@@ -52,7 +52,7 @@ const DESCRIPTEUR = {
     disqueOctets: OCTETS_DU_DISQUE,
   },
   boot: {
-    cmdline: "root=/dev/sda1 rw",
+    cmdline: "root=/dev/sda1 rw console=ttyS0 init=/opt/vault/guest-init.sh",
     memoireOctets: 33554432,
     kernel: "k",
     initrd: "i",

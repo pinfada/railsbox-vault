@@ -335,13 +335,39 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "la LIGNE DE COMMANDE du guest reste sur un alphabet clos",
-    garde: "formeDuDescripteur — le contrôle de la ligne de commande",
+    garde: "formeDeLaLigneDeCommande — le contrôle de l'alphabet",
+    fichier: DESCRIPTEUR,
+    avant: '  if (!LIGNE_DE_COMMANDE.test(ligne)) return "ligne de commande du guest refusée";\n',
+    apres: "",
+    epreuves: [EPREUVE_APPLICATION],
+  },
+  {
+    nom: "la RACINE et l'INIT du guest sont ceux de l'image, pas ceux du descripteur (revue #237, 7)",
+    garde: "formeDeLaLigneDeCommande — les deux paramètres exigés mot pour mot",
     fichier: DESCRIPTEUR,
     avant:
-      '  if (!LIGNE_DE_COMMANDE.test(String(descripteur.boot?.cmdline ?? ""))) {\n' +
-      '    return refus("ligne de commande du guest refusée");\n' +
+      "  for (const exige of [RACINE_EXIGEE, INIT_EXIGE]) {\n" +
+      "    if (!parametres.includes(exige)) {\n" +
+      "      return `ligne de commande du guest refusée : « ${exige} » est exigé`;\n" +
+      "    }\n" +
       "  }\n",
     apres: "",
+    epreuves: [EPREUVE_APPLICATION],
+  },
+  {
+    nom: "la GRAINE déclare la même taille que son disque (revue #237, 3)",
+    garde: "formeDesMorceaux — la cohérence des deux tailles de la graine",
+    fichier: DESCRIPTEUR,
+    avant: "  if (descripteur.graine.octets !== descripteur.graine.disqueOctets) {\n",
+    apres: "  if (false) {\n",
+    epreuves: [EPREUVE_APPLICATION],
+  },
+  {
+    nom: "le DISQUE SYSTÈME reste sous son budget de mémoire (revue #237, 4)",
+    garde: "formeDesMorceaux — la borne de la somme rootfs + paquet",
+    fichier: DESCRIPTEUR,
+    avant: "  if (disqueSysteme > DISQUE_SYSTEME_MAX_OCTETS) {\n",
+    apres: "  if (false) {\n",
     epreuves: [EPREUVE_APPLICATION],
   },
   {

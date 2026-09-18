@@ -42,6 +42,19 @@ export const MBR_OCTETS = 512;
  */
 export const ALIGNEMENT_OCTETS = 1024 * 1024;
 
+/**
+ * PLAFOND du disque système composé — rootfs + paquet —, en octets (revue #237, constat 4).
+ *
+ * Il n'est pas arbitraire : ce disque est tenu ENTIER en RAM pour la durée de la session (tampon
+ * différentiel, ADR 0024), à côté des 512 Mio de mémoire du guest et de l'état de l'émulateur. La
+ * cible de mémoire du MVP est 1,2 Gio (#67), et l'ADR 0010 refuse d'isoler l'origine pour gagner de
+ * la mesure : un gibioctet de disque système laisse la place au reste, et refuse franchement ce qui
+ * ne tiendrait pas. L'image de référence en occupe 522 Mio, soit la moitié.
+ *
+ * Le refus arrive AVANT le premier octet téléchargé — le tampon est alloué sur ces tailles-là.
+ */
+export const DISQUE_SYSTEME_MAX_OCTETS = 1024 * 1024 * 1024;
+
 /** Type de partition « Linux ». Le noyau ne s'y fie pas pour monter, mais un outil humain, si. */
 export const TYPE_LINUX = 0x83;
 

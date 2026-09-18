@@ -181,13 +181,28 @@ COPY --from=application . ./
 # `verify-pinning.mjs` : une application extérieure n'est pas dans l'arbre du dépôt, et son
 # `master.key` finirait dans une image publiée sous une adresse immuable que tout visiteur
 # télécharge. Le `secret_key_base` se dérive d'une chaîne publique, comme celui de la référence.
+#
+# La garde cherche des MOTIFS, non une liste fermée (revue de sécurité de la PR #237, constat 2) :
+# une application Rails a une clé par ENVIRONNEMENT, et `config/credentials/staging.key` traversait
+# les trois chemins énumérés. C'est la SECONDE barrière — `tools/paquet/fabriquer-paquet.mjs` refuse
+# déjà avant le premier `docker build`, sur la liste des fichiers qui entrent réellement —, et deux
+# barrières valent mieux qu'une pour ce qui ne se rattrape pas une fois publié.
 RUN set -eu; \
-    for secret in config/master.key config/credentials.yml.enc config/credentials/production.key; do \
-      if [ -e "/app/$secret" ]; then \
-        echo "REFUS : la source porte un secret Rails ($secret)." >&2; \
-        exit 1; \
-      fi; \
-    done
+    trouves="$( \
+      find /app -type f \( \
+        -path '/app/config/master.key' \
+        -o -path '/app/config/credentials.yml.enc' \
+        -o -path '/app/config/credentials/*.key' \
+        -o -path '/app/config/credentials/*.yml.enc' \
+        -o -name '.env' -o -name '.env.*' \
+        -o -name '*.pem' -o -name '*.p12' -o -name '*.pfx' -o -name '*.jks' \
+        -o -name 'id_rsa' -o -name 'id_dsa' -o -name 'id_ecdsa' -o -name 'id_ed25519' \
+      \) -print)"; \
+    if [ -n "$trouves" ]; then \
+      echo "REFUS : la source porte un ou des secrets :" >&2; \
+      echo "$trouves" >&2; \
+      exit 1; \
+    fi
 
 # La base est migrée ICI, à la construction : la graine naît DÉJÀ migrée, et le guest n'a aucune
 # migration à jouer au premier boot. L'INVARIANT de l'application de référence est créé dans la
