@@ -53,8 +53,9 @@ le 303 n'étant pas parti), Firefox et WebKit, non mesurés.
 
 La coquille guide une personne en neuf étapes (ADR 0040) : créer un coffre, choisir comment
 l'ouvrir, recevoir et confirmer son code de récupération, travailler dans l'application, verrouiller
-et rouvrir, sauvegarder, restaurer ailleurs, récupérer par le code, révoquer. Il faut Node 22,
-Docker (pour fabriquer l'image de l'application) et Chrome ou Edge récents.
+et rouvrir, sauvegarder, restaurer ailleurs, récupérer par le code, révoquer. Il faut Node 22.13 ou
+plus récent, jusqu’à Node 24 (champ `engines`), Docker (pour fabriquer l'image de l'application) et
+Chrome ou Edge récents.
 
 Sous Firefox, l'étape 4 du parcours guidé n'aboutit pas dans cette version : la machine virtuelle y
 tourne environ six fois plus lentement que sous Chromium, et Rails n'y a jamais répondu (ADR 0038) ;
