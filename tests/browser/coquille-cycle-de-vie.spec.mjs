@@ -819,7 +819,7 @@ test("un descripteur MALFORMÉ est refusé sur sa forme, et le motif nomme le ch
         disqueOctets: 536870912,
       },
       boot: {
-        cmdline: "root=/dev/sda1 rw",
+        cmdline: "root=/dev/sda1 rw console=ttyS0 init=/opt/vault/guest-init.sh",
         memoireOctets: 536870912,
         kernel: "reference-rootfs-vmlinuz",
         initrd: "reference-rootfs-initrd",
@@ -875,7 +875,7 @@ function descripteurDeReprise(octets) {
       disqueOctets: octets,
     },
     boot: {
-      cmdline: "root=/dev/sda1 rw",
+      cmdline: "root=/dev/sda1 rw console=ttyS0 init=/opt/vault/guest-init.sh",
       memoireOctets: 33554432,
       kernel: "k",
       initrd: "i",

@@ -14,6 +14,8 @@
  * peut pas lire `tools/` — son origine ne sert que `public/`, `src/`, `vendor/` et `artifacts/` —,
  * et le lui faire passer par un paramètre d'URL rouvrirait exactement la porte que #162 a fermée.
  */
+import { DISQUE_SYSTEME_MAX_OCTETS } from "../vm/disque-compose.mjs";
+
 export const ADRESSE_DESCRIPTEUR = "/artifacts/application.json";
 
 /**
@@ -37,16 +39,59 @@ export const DESCRIPTEUR_VERSION_ATTENDUE = 2;
  */
 const NOM_DARTEFACT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
-/** Le PRÉFIXE servi : un chemin absolu, sans remontée, sans schéma, sans autorité. */
-const PREFIXE_SERVI = /^\/[A-Za-z0-9][A-Za-z0-9._/-]{0,127}\/$/;
+/**
+ * Le PRÉFIXE servi : sous `/artifacts/`, sans remontée, sans schéma, sans autorité.
+ *
+ * Il n'était borné qu'au « chemin servi » en général, si bien que `/src/` et
+ * `/vendor/v86/artefacts/` étaient admis : le Worker de confiance serait allé chercher les morceaux
+ * du disque système au milieu du CODE de la coquille ou des artefacts épinglés de l'émulateur
+ * (revue de sécurité de la PR #237, constat 6). Les artefacts d'une application vivent sous
+ * `/artifacts/`, et nulle part ailleurs.
+ */
+const PREFIXE_SERVI = /^\/artifacts\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/$/;
 
 /**
- * La LIGNE DE COMMANDE du guest, sur un alphabet clos et bornée.
+ * La LIGNE DE COMMANDE du guest : l'alphabet NE SUFFIT PAS, c'est la ligne qui est contrôlée.
  *
- * Elle est passée telle quelle à l'émulateur, qui la donne au noyau. Elle ne peut donc pas être
- * libre : ce qu'un descripteur y glisserait, c'est un `init=` de son choix.
+ * Elle est passée telle quelle à l'émulateur, qui la donne au noyau. L'expression ne bornait que
+ * l'alphabet, et le commentaire promettait l'inverse : `init=/bin/sh` — un shell à la place de
+ * l'init du guest — et `root=/dev/sdb` — le volume de DONNÉES monté comme racine — la traversaient
+ * (revue de sécurité de la PR #237, constat 7).
+ *
+ * Deux paramètres sont donc EXIGÉS mot pour mot, et le reste doit rester sur l'alphabet clos :
+ * la racine est la première partition du disque système, l'init est celui de l'image.
  */
 const LIGNE_DE_COMMANDE = /^[A-Za-z0-9 ._:/=,+-]{1,512}$/;
+
+/** La racine du guest : la partition 1 du disque composé, jamais le disque de données. */
+const RACINE_EXIGEE = "root=/dev/sda1";
+
+/** L'init du guest : celui de l'image, jamais un exécutable que le descripteur choisirait. */
+const INIT_EXIGE = "init=/opt/vault/guest-init.sh";
+
+/**
+ * Contrôle la ligne de commande : l'alphabet, la racine, l'init. Rend le MOTIF ou `null`.
+ *
+ * @param {unknown} cmdline
+ */
+function formeDeLaLigneDeCommande(cmdline) {
+  const ligne = String(cmdline ?? "");
+  if (!LIGNE_DE_COMMANDE.test(ligne)) return "ligne de commande du guest refusée";
+  const parametres = ligne.split(/\s+/);
+  for (const exige of [RACINE_EXIGEE, INIT_EXIGE]) {
+    if (!parametres.includes(exige)) {
+      return `ligne de commande du guest refusée : « ${exige} » est exigé`;
+    }
+  }
+  // Un SEUL `root=` et un SEUL `init=` : le noyau retient le dernier, et deux valeurs laisseraient
+  // passer celle qui compte derrière celle qu'on contrôle.
+  for (const cle of ["root=", "init="]) {
+    if (parametres.filter((parametre) => parametre.startsWith(cle)).length !== 1) {
+      return `ligne de commande du guest refusée : un seul « ${cle} » est admis`;
+    }
+  }
+  return null;
+}
 
 /** Bornes des deux grandeurs. Elles sont larges, et leur seul rôle est de refuser l'absurde. */
 const TAILLE_DISQUE_MAX = 8 * 1024 * 1024 * 1024;
@@ -94,9 +139,8 @@ export function formeDuDescripteur(descripteur) {
   if (!entierBorne(descripteur.boot?.memoireOctets, MEMOIRE_MAX)) {
     return refus("mémoire du guest hors bornes");
   }
-  if (!LIGNE_DE_COMMANDE.test(String(descripteur.boot?.cmdline ?? ""))) {
-    return refus("ligne de commande du guest refusée");
-  }
+  const ligne = formeDeLaLigneDeCommande(descripteur.boot?.cmdline);
+  if (ligne !== null) return refus(ligne);
   for (const cle of ["kernel", "initrd", "bios", "vgaBios"]) {
     if (!NOM_DARTEFACT.test(String(descripteur.boot?.[cle] ?? ""))) {
       return refus(`nom d'artefact refusé : ${cle}`);
@@ -131,6 +175,26 @@ function formeDesMorceaux(descripteur) {
   }
   if (!entierBorne(descripteur.graine?.disqueOctets, TAILLE_DISQUE_MAX)) {
     return "taille du disque de données hors bornes";
+  }
+  // La graine EST l'image du disque de données : les deux tailles sont la même grandeur, vue deux
+  // fois. Les admettre différentes laissait installer un ext4 TRONQUÉ dans un volume qui se
+  // déclarait complet — le versement écrivait ce que la graine pesait, le volume naissait à la
+  // taille annoncée, le manifeste était inscrit (revue de sécurité de la PR #237, constat 3).
+  if (descripteur.graine.octets !== descripteur.graine.disqueOctets) {
+    return (
+      `taille de la graine incohérente : le fichier pèse ${descripteur.graine.octets} octets, ` +
+      `le disque de données en déclare ${descripteur.graine.disqueOctets}`
+    );
+  }
+  // La SOMME, et pas seulement chaque morceau : le tampon du disque système est alloué AVANT le
+  // premier octet reçu (`acquisition-du-disque-systeme.mjs`), et deux morceaux chacun sous la borne
+  // rendaient un `RangeError` nu, hors de tout budget de mémoire (#67, ADR 0010).
+  const disqueSysteme = descripteur.rootfs.octets + descripteur.paquet.octets;
+  if (disqueSysteme > DISQUE_SYSTEME_MAX_OCTETS) {
+    return (
+      `disque système hors budget : rootfs + paquet = ${disqueSysteme} octets, ` +
+      `le plafond est ${DISQUE_SYSTEME_MAX_OCTETS}`
+    );
   }
   return null;
 }

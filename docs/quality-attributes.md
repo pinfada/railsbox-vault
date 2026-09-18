@@ -593,21 +593,29 @@ Mio de chiffrement et d'écriture ; il en reste 0,4 Mio. Le **scellement initial
 ne change pas : il appartient au format, pas au contenu, et c'est lui qui domine désormais
 l'installation.
 
-**Ce que cela coûte en mémoire, mesuré le 17/09/2026** (`node tools/mesurer-memoire.mjs --essais=1`,
+**Ce que cela coûte en mémoire, mesuré le 18/09/2026** (`node tools/mesurer-memoire.mjs --essais=1`,
 Chromium, image avec paquet) :
 
-| Phase        | Relevés |   Pic (Mio) | Moyen (Mio) | Privé au pic (Mio) |
-| ------------ | ------: | ----------: | ----------: | -----------------: |
-| base         |       3 |       267,6 |       236,8 |              147,3 |
-| préparation  |      42 |       692,7 |       546,2 |              558,7 |
-| boot à chaud |      71 | **1 552,4** |     1 317,3 |            1 843,0 |
-| reprise 1    |      74 |     1 531,6 |     1 300,6 |            1 843,8 |
+| Phase        | Relevés |   Pic (Mio) | Moyen (Mio) | Privé AU pic (Mio) | Privé max (Mio) |
+| ------------ | ------: | ----------: | ----------: | -----------------: | --------------: |
+| base         |       3 |       270,5 |       239,9 |              144,8 |           144,8 |
+| préparation  |      99 |       651,5 |       489,3 |              516,9 |           516,9 |
+| boot à chaud |      57 | **1 550,0** |     1 294,4 |            1 733,8 |         1 769,9 |
+| reprise 1    |      56 | **1 596,4** |     1 312,6 |            1 925,0 |         1 925,0 |
 
 **La cible de 1,2 Gio (#67) est dépassée**, et l'issue #238 est ouverte avec ces chiffres : le
-disque système tient désormais rootfs + paquet (522 Mio) en RAM pour la session. Ce qui n'est PAS
-établi : la comparaison avant/après **sur le même poste** — le pic de 940 Mio publié plus haut vient
-d'une autre campagne, et l'écart (+612 Mio) dépasse ce que le seul paquet explique. Rejouer la
-mesure sur `main` est le premier geste de #238.
+disque système tient désormais rootfs + paquet (522 Mio) en RAM pour la session.
+
+**Deux colonnes, deux grandeurs, et elles ne se comparent pas entre elles.** « Privé AU pic » est le
+privé de l'ÉCHANTILLON du pic ; « privé max » est le plus grand privé de la phase. Le relevé
+précédent n'en publiait qu'une, calculée par un maximum indépendant, et la présentait comme un
+encadrement du pic (revue de sécurité de la PR #237, constat 5). Le « résident » est un working set,
+le « privé » un engagement (`PrivatePageCount` sous Windows, `RssAnon` sous Linux) : le second peut
+dépasser le premier, et cela ne dit rien d'une incohérence.
+
+**Ce qui n'est PAS établi** : la comparaison avant/après **sur le même poste**. Le pic de 940 Mio
+publié plus haut vient d'une autre campagne, et l'écart dépasse ce que le seul paquet explique.
+Rejouer la mesure sur `main` est le premier geste de #238.
 
 ## Le budget de récupération est mesuré, et le plafond de charge en découle (#91)
 

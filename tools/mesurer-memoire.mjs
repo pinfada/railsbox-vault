@@ -48,6 +48,7 @@ import { join, resolve } from "node:path";
 
 import { chromium } from "@playwright/test";
 
+import { agregerLesReleves } from "./memoire-agregats.mjs";
 import { relever } from "./memoire-processus.mjs";
 import { adressesServiesV86, artefactsV86Absents } from "./v86-paths.mjs";
 import {
@@ -199,23 +200,18 @@ class Echantillonneur {
     this.#arrete = true;
   }
 
-  /** Agrégats par phase : pic, moyenne, nombre de relevés. Le pic est la grandeur du budget. */
+  /**
+   * Agrégats par phase : pic, moyenne, nombre de relevés. Le pic est la grandeur du budget.
+   *
+   * Le calcul vit dans `tools/memoire-agregats.mjs`, et il y est MESURÉ : la colonne « privé au
+   * pic » prenait le maximum de la SÉRIE du privé, indépendamment du relevé du pic — deux instants
+   * différents présentés comme un encadrement du même (revue de sécurité de la PR #237, constat 5).
+   */
   agregats() {
     const resume = {};
     for (const [phase, releves] of this.#series) {
-      if (releves.length === 0) continue;
-      const residents = releves.map((r) => r.residentOctets);
-      const prives = releves.map((r) => r.priveOctets).filter((v) => v !== null);
-      const pic = Math.max(...residents);
-      resume[phase] = {
-        releves: releves.length,
-        residentPicOctets: pic,
-        residentMoyenOctets: Math.round(residents.reduce((a, b) => a + b, 0) / residents.length),
-        privePicOctets: prives.length === releves.length ? Math.max(...prives) : null,
-        plusGrosProcessusAuPic:
-          releves.find((r) => r.residentOctets === pic)?.plusGrosProcessus ?? null,
-        processusMax: Math.max(...releves.map((r) => r.processus)),
-      };
+      const agregat = agregerLesReleves(releves);
+      if (agregat !== null) resume[phase] = agregat;
     }
     return resume;
   }
@@ -356,13 +352,18 @@ async function mesurer(contexte, echantillonneur, plan) {
 /** Tableau lisible en sortie de banc : une ligne par phase, en mébioctets. */
 function afficher(agregats, mesures) {
   process.stdout.write("\nEmpreinte du navigateur, par phase (Mio) :\n");
-  process.stdout.write("  phase             relevés    pic     moyen    privé au pic\n");
+  // Deux colonnes, deux grandeurs : « privé AU pic » vient de l'échantillon du pic, « privé max »
+  // est le plus grand privé de la phase. Une seule colonne les confondait (revue #237, constat 5).
+  process.stdout.write(
+    "  phase             relevés    pic     moyen    privé AU pic   privé max\n",
+  );
   for (const [phase, a] of Object.entries(agregats)) {
     process.stdout.write(
       `  ${phase.padEnd(18)}${String(a.releves).padStart(5)}` +
         `${String(enMio(a.residentPicOctets)).padStart(9)}` +
         `${String(enMio(a.residentMoyenOctets)).padStart(9)}` +
-        `${String(enMio(a.privePicOctets)).padStart(14)}\n`,
+        `${String(enMio(a.priveAuPicOctets)).padStart(14)}` +
+        `${String(enMio(a.priveMaximumOctets)).padStart(12)}\n`,
     );
   }
   const heap = mesures.reprises.at(-1)?.tasJs?.page?.usedJSHeapSize ?? null;

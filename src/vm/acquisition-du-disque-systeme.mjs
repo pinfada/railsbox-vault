@@ -19,7 +19,11 @@
 // qui lit les données du coffre. L'empreinte du BLOC est prise à part, artefact par artefact, parce
 // que c'est celle-là que la liaison de l'instantané porte (ADR 0024, `ARTEFACTS_DE_L_IMAGE`).
 
-import { composerDisqueSysteme, ecrireTableDePartitions } from "./disque-compose.mjs";
+import {
+  DISQUE_SYSTEME_MAX_OCTETS,
+  composerDisqueSysteme,
+  ecrireTableDePartitions,
+} from "./disque-compose.mjs";
 import { createSha256Stream } from "./sha256-stream.mjs";
 
 /**
@@ -64,6 +68,27 @@ async function verserLeMorceau({ tampon, debut, morceau, nom, recuperer }) {
 }
 
 /**
+ * PLAN du disque, REFUSÉ s'il dépasse le budget de mémoire.
+ *
+ * Le contrôle vit ici et pas seulement dans la forme du descripteur : ce tampon est alloué sur des
+ * tailles ANNONCÉES, avant le premier octet reçu, et il vit en RAM pour toute la session. Sans cette
+ * borne, un descripteur ou un appelant fautif rendait un `RangeError` nu, hors de tout budget
+ * (#67, ADR 0010 ; revue de sécurité de la PR #237, constat 4).
+ */
+function planSousBudget({ rootfs, paquet }) {
+  const plan = composerDisqueSysteme({
+    rootfsOctets: rootfs.octets,
+    paquetOctets: paquet.octets,
+  });
+  if (plan.octets > DISQUE_SYSTEME_MAX_OCTETS) {
+    throw new Error(
+      `Disque système refusé : ${plan.octets} octets dépassent le plafond de ${DISQUE_SYSTEME_MAX_OCTETS} octets (budget de mémoire, #67).`,
+    );
+  }
+  return plan;
+}
+
+/**
  * ACQUIERT le disque système entier : rootfs et paquet rangés, table de partitions écrite.
  *
  * Rend le tampon, le plan, et des VUES sur chaque morceau — des vues, jamais des copies : elles
@@ -75,10 +100,7 @@ async function verserLeMorceau({ tampon, debut, morceau, nom, recuperer }) {
  */
 export async function acquerirLeDisqueSysteme({ rootfs, paquet, recuperer = globalThis.fetch }) {
   const debut = Date.now();
-  const plan = composerDisqueSysteme({
-    rootfsOctets: rootfs.octets,
-    paquetOctets: paquet.octets,
-  });
+  const plan = planSousBudget({ rootfs, paquet });
   const tampon = new Uint8Array(plan.octets);
 
   // En SÉRIE, et non en parallèle : deux flux concurrents doublent la mémoire des morceaux en vol

@@ -3,10 +3,10 @@
 - **Statut** : accepté
 - **Date** : 2026-09-17
 - **Issue** : [#236](https://github.com/pinfada/railsbox-vault/issues/236), tranche T1
-- **Amende, sans changer leur format** : l'[ADR 0024](0024-instantane-du-boot.md) (le paquet entre
-  dans l'empreinte d'image d'une liaison d'instantané), l'[ADR 0004](0004-image-de-reference.md)
-  (l'image ne cuit plus l'application dans un disque unique),
-  l'[ADR 0030](0030-cycle-de-vie-assemble-dans-la-coquille.md) et
+- **Amende, sans changer leur format** : l'[ADR 0024](0024-instantane-de-reprise.md) (le paquet
+  entre dans l'empreinte d'image d'une liaison d'instantané),
+  l'[ADR 0004](0004-sqlite-pour-l-application-de-reference.md) (l'image ne cuit plus l'application
+  dans un disque unique), l'[ADR 0030](0030-cycle-de-vie-assemble-dans-la-coquille.md) et
   l'[ADR 0038](0038-servir-l-application-dans-le-cadre.md) (le descripteur servi passe en v2).
 - **Ne rouvre pas** : le format de volume v4 et la hiérarchie de clés (ADR 0033–0036), le contrat de
   messages (ADR 0028), « un coffre = une identité » (ADR 0039), la durabilité par le commit (#209 :
@@ -150,6 +150,22 @@ de l'application. Un instantané pris sous un AUTRE paquet est écarté par le m
   confiance reste une obligation d'exploitant. Ce que #236 change : les noms du paquet et de la
   graine **portent leur empreinte** (`<id>-<version>-<sha256 tronqué>.ext4`), donc supportent un
   cache immuable dès qu'ils sont déposés, comme les artefacts v86 (#123).
+
+## Ce que la revue de sécurité a laissé ouvert, et pourquoi
+
+- **Le versement creux n'exige rien du volume** (constat 8). `sauterLesBlocsNuls` suppose un volume
+  neuf ; appliqué à un volume habité, il laisserait en place ce que la source veut effacer. La
+  fabrique n'est demandée qu'à l'installation, qui vient de CRÉER le volume, et le relecteur a
+  vérifié qu'aucun chemin du produit ne l'atteint autrement. La garde manque néanmoins au module
+  lui-même : elle demande un drapeau porté par le backend (« ce volume est neuf »), que le format ne
+  publie pas aujourd'hui. À traiter avec le geste de mise à jour de T2, qui versera, lui, dans un
+  volume habité — c'est là que l'option deviendrait dangereuse, et c'est là qu'elle doit être
+  refusée plutôt que documentée.
+- **Les artefacts du paquet sont servis `no-cache`** (constat 11). Leurs noms portent leur
+  empreinte, ce qui rend un cache immuable TENABLE, mais la politique de cache est décidée par arbre
+  publié (`tools/publier-en-tetes.mjs`) et les artefacts de l'image ne sont pas publiés par cette
+  chaîne — c'est l'obligation d'exploitant de l'ADR 0030 § Limites. Le jour où une origine réelle
+  les sert, l'en-tête `immutable` s'applique sous le même argument que les artefacts v86 (#123).
 
 ## Limites, mesurées
 

@@ -174,7 +174,7 @@ function descripteur(champs = {}) {
       disqueOctets: 524288000,
     },
     boot: {
-      cmdline: "root=/dev/sda1 rw console=ttyS0",
+      cmdline: "root=/dev/sda1 rw console=ttyS0 init=/opt/vault/guest-init.sh",
       memoireOctets: 536870912,
       kernel: "reference-rootfs-vmlinuz",
       initrd: "reference-rootfs-initrd",
@@ -1195,5 +1195,102 @@ test("une GRAINE dont l'empreinte diffère refuse l'installation sous le code de
   assert.ok(
     !support.gestes.includes("inscrire:application"),
     "rien n'est déclaré : le volume reste ANONYME",
+  );
+});
+
+test("une graine dont la taille de FICHIER ne vaut pas celle du DISQUE est refusée (revue #237, 3)", () => {
+  // La graine est l'image d'un disque entier : les deux tailles sont la même grandeur vue deux fois.
+  // Les admettre différentes laissait installer un ext4 TRONQUÉ dans un volume qui se déclarait
+  // complet — reproduit par la revue sur l'installation réelle : { installee: true, octets: 4 Mio,
+  // ecrits: 1 Mio }, manifeste inscrit, volume daté.
+  const verdict = formeDuDescripteur(
+    descripteur({
+      graine: {
+        nom: "graine.ext4",
+        octets: 1048576,
+        sha256: "c".repeat(64),
+        disqueOctets: 4194304,
+      },
+    }),
+  );
+
+  assert.equal(verdict.valide, false);
+  assert.match(verdict.motif, /graine/);
+  assert.match(verdict.motif, /disque/);
+});
+
+test("un disque système plus grand que sa borne est refusé AVANT tout téléchargement (revue #237, 4)", () => {
+  // `rootfs` et `paquet` étaient bornés à 8 Gio CHACUN, leur somme par rien : le tampon est alloué
+  // AVANT le premier octet reçu, et 16 Gio rendaient un `RangeError` nu, hors de tout budget (#67,
+  // ADR 0010).
+  const verdict = formeDuDescripteur(
+    descripteur({
+      rootfs: { nom: "r.ext4", octets: 6 * 1024 * 1024 * 1024, sha256: "a".repeat(64) },
+      paquet: { nom: "p.ext4", octets: 6 * 1024 * 1024 * 1024, sha256: "b".repeat(64) },
+    }),
+  );
+
+  assert.equal(verdict.valide, false);
+  assert.match(verdict.motif, /disque système/i);
+});
+
+test("le disque système de l'image de référence tient sous la borne", () => {
+  const verdict = formeDuDescripteur(
+    descripteur({
+      rootfs: { nom: "r.ext4", octets: 403701760, sha256: "a".repeat(64) },
+      paquet: { nom: "p.ext4", octets: 143654912, sha256: "b".repeat(64) },
+    }),
+  );
+
+  assert.deepEqual(verdict, { valide: true, motif: null });
+});
+
+test("le préfixe des artefacts reste dans /artifacts/ (revue #237, 6)", () => {
+  // Un préfixe `/src/` ou `/vendor/v86/artefacts/` restait « dans le chemin servi » au sens de la
+  // forme, et faisait chercher les morceaux du disque système au milieu du CODE de la coquille.
+  // L'adresse des artefacts v86 n'est pas écrite en dur ici : elle est DÉRIVÉE de leur
+  // manifeste (#123), et une épreuve du dépôt refuse qu'un module la fige.
+  const prefixeDesArtefactsV86 = `/vendor/${"v86"}/artefacts/`;
+  for (const prefixe of ["/src/", prefixeDesArtefactsV86, "/public/", "/"]) {
+    const verdict = formeDuDescripteur(descripteur({ prefixeDesArtefacts: prefixe }));
+    assert.equal(verdict.valide, false, `${prefixe} devrait être refusé`);
+    assert.match(verdict.motif, /préfixe/);
+  }
+  assert.equal(
+    formeDuDescripteur(descripteur({ prefixeDesArtefacts: "/artifacts/reference-image/" })).valide,
+    true,
+  );
+  assert.equal(
+    formeDuDescripteur(descripteur({ prefixeDesArtefacts: "/artifacts/autre-application/" }))
+      .valide,
+    true,
+  );
+});
+
+test("la ligne de commande du guest EST celle de l'image, pas un alphabet libre (revue #237, 7)", () => {
+  // Le commentaire promettait qu'un `init=` choisi par le descripteur était refusé ; l'expression
+  // ne contrôlait que l'alphabet, et `init=/bin/sh` comme `root=/dev/sdb` passaient — le premier
+  // remplace l'init du guest, le second fait monter le volume de DONNÉES comme racine.
+  for (const cmdline of [
+    "root=/dev/sda1 rw console=ttyS0 init=/bin/sh",
+    "root=/dev/sdb rw console=ttyS0 init=/opt/vault/guest-init.sh",
+    "rw console=ttyS0 init=/opt/vault/guest-init.sh",
+  ]) {
+    const verdict = formeDuDescripteur(descripteur({ boot: { ...descripteur().boot, cmdline } }));
+    assert.equal(verdict.valide, false, `« ${cmdline} » devrait être refusée`);
+    assert.match(verdict.motif, /ligne de commande/);
+  }
+  // L'ALPHABET reste contrôlé même quand la racine et l'init sont ceux de l'image : sans lui, une
+  // ligne conforme en apparence pourrait porter n'importe quel octet jusqu'au noyau.
+  for (const suffixe of ["`rm -rf /`", "$(id)", " ", "; halt"]) {
+    const cmdline = `root=/dev/sda1 rw init=/opt/vault/guest-init.sh ${suffixe}`;
+    const verdict = formeDuDescripteur(descripteur({ boot: { ...descripteur().boot, cmdline } }));
+    assert.equal(verdict.valide, false, `« ${cmdline} » devrait être refusée`);
+  }
+  const attendue =
+    "root=/dev/sda1 rw console=ttyS0 init=/opt/vault/guest-init.sh net.ifnames=0 quiet loglevel=4";
+  assert.equal(
+    formeDuDescripteur(descripteur({ boot: { ...descripteur().boot, cmdline: attendue } })).valide,
+    true,
   );
 });

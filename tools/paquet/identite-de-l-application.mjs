@@ -18,12 +18,38 @@
 // référence — c'est la règle, et c'est elle que ce module fait respecter avant le premier
 // `docker build`.
 
-/** Fichiers de secret Rails qu'un paquet ne peut pas contenir. */
+/**
+ * MOTIFS de fichiers qu'un paquet ne peut pas contenir (#236, revue de sécurité, constat 2).
+ *
+ * C'était une liste FERMÉE de trois chemins, et `config/credentials/staging.key` la traversait : une
+ * application Rails a une clé PAR ENVIRONNEMENT, et rien n'oblige à les nommer `production`. Une
+ * énumération de chemins ne peut pas suivre ce que les applications inventent ; des motifs, si.
+ *
+ * Chaque entrée porte son motif, pour que le refus explique ce qu'il refuse plutôt que d'opposer une
+ * liste.
+ */
 export const SECRETS_REFUSES = Object.freeze([
-  "config/master.key",
-  "config/credentials.yml.enc",
-  "config/credentials/production.key",
+  { motif: /^config\/master\.key$/i, quoi: "la clé maîtresse de Rails" },
+  { motif: /^config\/credentials\.yml\.enc$/i, quoi: "les identifiants chiffrés de Rails" },
+  {
+    motif: /^config\/credentials\/[^/]+\.(key|yml\.enc)$/i,
+    quoi: "une clé ou des identifiants chiffrés d'environnement",
+  },
+  { motif: /(^|\/)\.env($|\.)/i, quoi: "un fichier d'environnement" },
+  { motif: /\.(pem|p12|pfx|jks|keystore)$/i, quoi: "une clé ou un magasin de certificats" },
+  { motif: /(^|\/)id_(rsa|dsa|ecdsa|ed25519)$/i, quoi: "une clé SSH privée" },
+  {
+    // Sous `config/`, un nom qui porte « secret » ou « key » est traité comme un secret : c'est là
+    // que Rails range ce qui ouvre l'application. Le reste de l'arbre n'est pas visé — `KeyboardController`
+    // n'est pas une clé, et un refus qui crie partout n'est plus lu.
+    motif:
+      /^config\/(?:.*\/)?[^/]*(secret|_key|key_|\bkey)[^/]*\.(key|pem|yml|yaml|json|txt|rb|enc)$/i,
+    quoi: "un fichier de configuration dont le nom annonce un secret",
+  },
 ]);
+
+/** Les motifs, en clair, pour un message de refus qui dit ce qu'il refuse. */
+export const SECRETS_REFUSES_LIBELLES = Object.freeze(SECRETS_REFUSES.map(({ quoi }) => quoi));
 
 /** Identifiant d'application : minuscules, chiffres et tirets. Il entre dans un nom de fichier. */
 const IDENTIFIANT = /^[a-z0-9][a-z0-9-]{1,63}$/;
@@ -45,8 +71,9 @@ export const DERIVATION_PAR_DEFAUT =
  * @returns {string[]}
  */
 export function secretsPresents(fichiers) {
-  const normalises = new Set(fichiers.map((fichier) => fichier.replaceAll("\\", "/")));
-  return SECRETS_REFUSES.filter((secret) => normalises.has(secret));
+  return fichiers
+    .map((fichier) => String(fichier).replaceAll("\\", "/").replace(/^\.\//, ""))
+    .filter((chemin) => SECRETS_REFUSES.some(({ motif }) => motif.test(chemin)));
 }
 
 /**

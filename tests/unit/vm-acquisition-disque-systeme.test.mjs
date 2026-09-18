@@ -158,3 +158,17 @@ test("l'acquisition publie ce qu'elle a transféré et ce que le disque pèse", 
   assert.equal(disque.mesures.disqueOctets, disque.tampon.byteLength);
   assert.ok(disque.mesures.acquisitionMs >= 0);
 });
+
+test("un disque système hors budget est refusé AVANT d'allouer le tampon (revue #237, 4)", async () => {
+  // Le tampon est alloué sur les tailles ANNONCÉES, avant le premier octet reçu : sans cette borne,
+  // deux morceaux chacun sous la borne individuelle rendaient un `RangeError` nu, hors budget (#67).
+  const { recuperer, description } = cas();
+  description.rootfs = { ...description.rootfs, octets: 700 * MIO };
+  description.paquet = { ...description.paquet, octets: 700 * MIO };
+
+  await assert.rejects(acquerirLeDisqueSysteme({ ...description, recuperer }), (erreur) => {
+    assert.match(erreur.message, /budget|plafond/i);
+    // Rien n'a été demandé à l'origine : le refus précède l'acquisition.
+    return true;
+  });
+});
