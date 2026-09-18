@@ -21,21 +21,12 @@
 import { bootEtVerifier } from "/src/vm/boot-de-reference.mjs";
 import { openVolumeForWrite } from "/src/vm/opfs-volume-open.mjs";
 import { cleDuBanc } from "./cle-du-banc.mjs";
+import { ENTETES_DE_PAGE, cookieDeSession, jetonDuFormulaire } from "./requetes-rails-du-banc.mjs";
 
 /** L'ouvreur du BANC, identique à celui des phases de boot : le jeton du harnais (ADR 0016). */
 function ouvrirLeVolumeDuBanc({ name, journal, expectations }) {
   return openVolumeForWrite({ name, journal, cle: cleDuBanc(), expectations });
 }
-
-/**
- * Les en-têtes qu'un NAVIGATEUR poserait sur une navigation ordinaire, et que la mesure pose donc
- * aussi : mesurer sous `Accept: application/json` rendrait une page que personne ne demande.
- */
-const ENTETES_DE_PAGE = Object.freeze([
-  ["Host", "127.0.0.1"],
-  ["Accept", "text/html,application/xhtml+xml"],
-  ["User-Agent", "railsbox-vault-mesure"],
-]);
 
 /** Une requête, chronométrée, avec ce qu'elle a coûté en octets DANS LES DEUX SENS. */
 async function chronometrer(
@@ -64,20 +55,6 @@ async function chronometrer(
     emplacement: reponse.entetes.location ?? null,
     reponse,
   };
-}
-
-/** Le cookie de session, tel que la réponse le pose. Le premier attribut suffit à le renvoyer. */
-function cookieDeSession(reponse, courant) {
-  const poses = reponse.entetesRepetees
-    .filter(([nom]) => nom === "set-cookie")
-    .map(([, valeur]) => valeur.split(";", 1)[0]);
-  return poses.length === 0 ? courant : poses.join("; ");
-}
-
-/** Le jeton anti-CSRF que le formulaire porte. Une mesure qui l'omettrait mesurerait un 422. */
-function jetonDuFormulaire(octets) {
-  const html = new TextDecoder().decode(octets);
-  return html.match(/name="authenticity_token" value="([^"]+)"/)?.[1] ?? null;
 }
 
 /** Les trois sous-ressources de la page, dans l'ordre où le document les nomme. */
