@@ -6,7 +6,7 @@ require "tempfile"
 # un disque sain d'un ext4 en erreur qui continue d'écrire.
 class EtatDuDisqueTest < ActiveSupport::TestCase
   def releve(contenu)
-    fichier = Tempfile.new("disque-applicatif")
+    fichier = Tempfile.new("disque-de-donnees")
     fichier.write(contenu)
     fichier.close
     Vault::EtatDuDisque.lire(fichier.path)

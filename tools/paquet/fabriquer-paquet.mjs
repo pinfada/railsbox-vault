@@ -274,6 +274,39 @@ function estDuMemeRole(nom, suffixe, id) {
 }
 
 /**
+ * Ce que la fabrication REMPLACE, dit en une ligne, ou `null` si elle ne remplace rien.
+ *
+ * `paquet.json` est le paquet SERVI : un seul à la fois dans `artifacts/reference-image/`. Fabriquer
+ * une application extérieure retire donc la référence, et l'outil le taisait (recette QA du 18/09,
+ * défaut 2). La rétention de plusieurs paquets appartient à T2 ; ici, on le DIT, avec l'étape qui
+ * reste à faire et le chemin du retour.
+ *
+ * @param {{ application: { id: string, version: string } } | null} ancien
+ * @param {{ application: { id: string, version: string } }} nouveau
+ */
+export function annonceDeRemplacement(ancien, nouveau) {
+  const nommer = ({ application }) => `${application.id} ${application.version}`;
+  if (ancien?.application === undefined || nommer(ancien) === nommer(nouveau)) return null;
+  return (
+    `→ remplace le paquet servi : ${nommer(ancien)} → ${nommer(nouveau)} ; ` +
+    "`npm run image:manifest` pour le descripteur ; " +
+    "pour revenir à la référence : `npm run app:paquet` sans `--source`"
+  );
+}
+
+/** Le `paquet.json` en place, ou `null` s'il n'y en a pas (ou s'il est illisible). */
+function paquetEnPlace() {
+  const chemin = join(DOSSIER_ARTEFACTS, "paquet.json");
+  if (!existsSync(chemin)) return null;
+  try {
+    return JSON.parse(readFileSync(chemin, "utf8"));
+  } catch {
+    // Un contrat illisible n'est le paquet servi de personne : il est remplacé sans annonce.
+    return null;
+  }
+}
+
+/**
  * FABRIQUE le paquet et rend son contrat.
  *
  * @param {string[]} arguments_
@@ -353,6 +386,7 @@ async function fabriquerDepuisLArbre({ options, identite, arbreDuPaquet }) {
       `contrat de paquet refusé :\n${anomalies.map((a) => `  · [${a.code}] ${a.message}`).join("\n")}`,
     );
   }
+  const remplacement = annonceDeRemplacement(paquetEnPlace(), paquet);
   writeFileSync(
     join(DOSSIER_ARTEFACTS, "paquet.json"),
     `${JSON.stringify(paquet, null, 2)}\n`,
@@ -364,6 +398,7 @@ async function fabriquerDepuisLArbre({ options, identite, arbreDuPaquet }) {
       `→ graine   ${graine.name}  ${mio(graine.byteSize)} Mio (disque de données : ${options.tailleDonnees} Mio)\n` +
       `→ contrat  paquet.json (fabrication des images : ${((Date.now() - debut) / 1000).toFixed(0)} s)`,
   );
+  if (remplacement !== null) console.log(remplacement);
   return paquet;
 }
 

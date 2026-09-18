@@ -137,7 +137,7 @@ test("le disque applicatif est un ext4 journalisé, monté avec barrières, et s
   assert.doesNotMatch(montages[0], /ext2|nobarrier|barrier=0|data=writeback|noload/);
 });
 
-test("l'état du disque applicatif est observable à chaque boot (revue #211, constat 5)", () => {
+test("l'état du disque de données est observable à chaque boot (revue #211, constat 5)", () => {
   // `errors=continue` laissait un ext4 en erreur écrire encore, si bien que « l'écriture suivante
   // réussit » ne prouvait rien ; et `dmesg -n 1` AVANT le montage rendait muets le rejeu du journal
   // et toute erreur `EXT4-fs`. L'init relève donc l'état après le montage, le dit sur la série et le
@@ -162,7 +162,11 @@ test("l'état du disque applicatif est observable à chaque boot (revue #211, co
   );
   assert.match(init, /\/sys\/fs\/ext4\/sdb\/errors_count/);
   assert.match(init, /EXT4-fs error\|mounting unchecked/);
-  assert.match(init, /\/run\/vault-disque-applicatif/);
+  // Le relevé porte sur le disque de DONNÉES (/dev/sdb, /app/var) : depuis T1 (#236), il n'y a plus
+  // de « disque applicatif », et la série comme la page le nomment pour ce qu'il est.
+  assert.match(init, /\/run\/vault-disque-de-donnees/);
+  assert.match(init, /\[init\] disque de donnees : /);
+  assert.doesNotMatch(init, /disque applicatif/);
 });
 
 test("un artefact attendu manquant est refusé", () => {

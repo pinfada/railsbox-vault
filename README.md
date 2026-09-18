@@ -70,6 +70,11 @@ node tools/serve.mjs --role shell --host 127.0.0.1 --port 4179 --app-origin http
 node tools/serve.mjs --role app --host localhost --port 4180
 ```
 
+`npm run image:manifest` réécrit `tools/build-reference-image/manifest.json`, un fichier suivi par
+git. Après une reconstruction locale, `git status` le montre donc modifié. Ne le commitez pas, sauf
+si vous avez changé une ENTRÉE de l'image (sources épinglées, Dockerfile, application) ; sinon,
+`git restore tools/build-reference-image/manifest.json` (#212).
+
 Ouvrez <http://127.0.0.1:4179/index.html> et suivez les écrans. La création exige au moins 12
 caractères hors espaces de bord ; choisissez plusieurs mots sans lien entre eux ou un secret généré
 par votre gestionnaire. Les anciennes phrases restent utilisables à la réouverture. Pour l'étape 7

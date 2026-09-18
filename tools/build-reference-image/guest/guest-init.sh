@@ -73,14 +73,14 @@ fi
 # que l'application le publie et qu'un scénario de bout en bout l'asserte sans
 # toucher au pont. La console du noyau n'est rendue muette qu'APRÈS : jusqu'ici,
 # les erreurs du montage atteignent la série.
-etat_disque=/run/vault-disque-applicatif
+etat_disque=/run/vault-disque-de-donnees
 {
   echo "options=$(grep ' /app/var ' /proc/mounts | cut -d ' ' -f 4)"
   echo "erreurs=$(cat /sys/fs/ext4/sdb/errors_count 2>/dev/null || echo inconnu)"
   echo "alertes=$(dmesg 2>/dev/null | grep -c -E 'EXT4-fs error|mounting unchecked' || true)"
   echo "rejeu=$(dmesg 2>/dev/null | grep -c 'EXT4-fs (sdb): recovery complete' || true)"
 } > "$etat_disque"
-sed 's/^/[init] disque applicatif : /' "$etat_disque"
+sed 's/^/[init] disque de donnees : /' "$etat_disque"
 dmesg 2>/dev/null | grep 'EXT4-fs' | sed 's/^/[init] noyau : /' || true
 # Muette avant l'application et le pont : un message du noyau intercalé dans le
 # flux série corromprait une trame.

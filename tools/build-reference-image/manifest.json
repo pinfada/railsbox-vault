@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "generatedAt": "2026-09-17T21:10:11.493Z",
+  "generatedAt": "2026-09-18T17:25:54.830Z",
   "application": {
     "id": "railsbox-vault-reference",
     "version": "1.0.0",
@@ -24,8 +24,8 @@
     "kernel": "reference-rootfs-vmlinuz",
     "initrd": "reference-rootfs-initrd",
     "rootfs": "reference-rootfs.ext4",
-    "paquet": "railsbox-vault-reference-1.0.0-72321c59.ext4",
-    "graine": "railsbox-vault-reference-1.0.0-graine-5b9078d7.ext4",
+    "paquet": "railsbox-vault-reference-1.0.0-08c78ce3.ext4",
+    "graine": "railsbox-vault-reference-1.0.0-graine-872d6555.ext4",
     "bios": "seabios.bin",
     "vgaBios": "vgabios.bin"
   },
@@ -38,20 +38,20 @@
   },
   "artifacts": [
     {
-      "name": "railsbox-vault-reference-1.0.0-72321c59.ext4",
+      "name": "railsbox-vault-reference-1.0.0-08c78ce3.ext4",
       "role": "partition 2 de hda — paquet applicatif : arbre de l'application, bundle i386, cache Bootsnap",
       "license": "MIT (RailsBox Vault) ; gemmes selon le Gemfile.lock de l'application",
       "origin": "tools/build-reference-image/guest.Dockerfile (cible disque-app), npm run app:paquet",
       "byteSize": 143654912,
-      "sha256": "72321c59c9e2d6d2e1eb9fa3c57bc2d9d192106ad4d801a13d15b9b785ac8aca"
+      "sha256": "08c78ce3b1bd4fdf5a2c77d14a8db0a5724457b7259ef2c6d01b91e581f818e6"
     },
     {
-      "name": "railsbox-vault-reference-1.0.0-graine-5b9078d7.ext4",
+      "name": "railsbox-vault-reference-1.0.0-graine-872d6555.ext4",
       "role": "graine du volume de données — base SQLite migrée et vide, storage/ vide, marqueur de schéma",
       "license": "MIT (RailsBox Vault) ; gemmes selon le Gemfile.lock de l'application",
       "origin": "tools/build-reference-image/guest.Dockerfile (cible disque-app), npm run app:paquet",
       "byteSize": 536870912,
-      "sha256": "5b9078d71f6d304d9cc480f19007942e325bd138003208df4aaba5c784655e7e"
+      "sha256": "872d6555d6500f3362cd5453321971fefd9e7c8ced95c04483187371b351840a"
     },
     {
       "name": "reference-rootfs-initrd",
@@ -75,7 +75,7 @@
       "license": "Debian bookworm (licences libres diverses) ; Ruby 3.3.12 (Ruby / BSD-2-Clause)",
       "origin": "tools/build-reference-image/guest.Dockerfile (cible rootfs)",
       "byteSize": 403701760,
-      "sha256": "dedc3e67e9abb27ffffe8a64362bf80ced8e66f6e9d43a22691d154d665c25a6"
+      "sha256": "b6b609762bbd2d61d8b7e51c6fa7f9456e80f2ea2678b56f2fbe3c1081073259"
     },
     {
       "name": "seabios.bin",

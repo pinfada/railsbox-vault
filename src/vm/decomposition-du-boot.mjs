@@ -15,8 +15,10 @@
  * fabrique parce qu'ils ne dépendent d'aucun boot : ce sont les repères du guest de référence, les
  * mêmes d'une exécution à l'autre.
  */
-const REPERES_SERIE = Object.freeze([
-  ["montageDisqueApp", "[init] montage du disque applicatif"],
+export const REPERES_SERIE = Object.freeze([
+  // Depuis T1 (#236), le premier montage de l'application est celui du PAQUET (/dev/sda2) ; le
+  // disque de données suit. Le jalon garde son nom : il date le début des montages applicatifs.
+  ["montageDisqueApp", "[init] montage du paquet applicatif"],
   ["lancementApp", "[init] lancement de l'application"],
   ["pontSerieActif", "[init] pont serie actif"],
 ]);
