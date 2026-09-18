@@ -107,6 +107,11 @@ const rapport = {
   requetesRefusees: 0,
   etat: ETATS_DU_VOLUME.demarrage,
   barrieres: 0,
+  /**
+   * Ce que le Worker de confiance a CONSTATÉ de la feuille de récupération (#239) : un code encore
+   * présent a ouvert ce coffre sur cet appareil. Garde des étapes 4 à 9 du parcours ; un booléen.
+   */
+  feuilleEprouvee: false,
   // Ce que l'assemblage COÛTE, en millisecondes depuis l'évaluation de ce module.
   mesures: {
     canalPrivilegieMs: null,

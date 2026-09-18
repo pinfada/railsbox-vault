@@ -16,6 +16,7 @@ import {
   enveloppeDeMessage,
   REPONSES_PRIVILEGIEES,
   enveloppePrivilegiee,
+  feuilleEprouveeDuMessage,
 } from "/src/coquille/contrat-de-messages.mjs";
 import { chargeUtileDEtat } from "/src/coquille/etat-de-la-coquille.mjs";
 import { CAUSES_DE_MORT } from "/src/coquille/mort-du-worker.mjs";
@@ -148,12 +149,21 @@ export function creerCanalDeConfiance({ rapport, publier, pont }) {
     if (decode.type === TYPES_PRIVILEGIES.etatReponse) {
       rapport.etat = decode.message.etat;
       rapport.barrieres = decode.message.barrieres;
+      // Un coffre qui n'est plus ouvert ne porte plus de preuve lisible (#239).
+      if (rapport.etat !== "ouvert") rapport.feuilleEprouvee = false;
       pont.verrouillage.refletDeLEtat();
+      publier();
+    }
+    // Le constat de la feuille (#239) est publié DANS LE MÊME relevé que l'état ouvert : le parcours
+    // ne voit jamais un coffre ouvert sans savoir si sa feuille est éprouvée.
+    if (decode.type === TYPES_PRIVILEGIES.inventaireReponse) {
+      rapport.feuilleEprouvee = feuilleEprouveeDuMessage(decode.message);
       publier();
     }
     if (decode.type === TYPES_PRIVILEGIES.deverrouillageReponse) {
       rapport.etat = decode.message.etat;
       rapport.barrieres = decode.message.barrieres;
+      rapport.feuilleEprouvee = feuilleEprouveeDuMessage(decode.message);
       pont.verrouillage.refletDeLEtat();
       publier();
     }

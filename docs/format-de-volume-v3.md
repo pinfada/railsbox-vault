@@ -3343,45 +3343,45 @@ sont deux remèdes distincts.
 **Les TYPES de la coquille, par canal.** `tests/unit/coquille-types-documentes.test.mjs` exige que
 chacun figure ici : un type ne naît pas dans le contrat sans qu'un relecteur en soit prévenu.
 
-| Canal                              | Type                                            | Sens                                 | ADR        |
-| ---------------------------------- | ----------------------------------------------- | ------------------------------------ | ---------- |
-| privilégié (page ↔ Worker)         | `vault.coquille.canal-privilegie`               | page → Worker, sur `self`            | 0028, 0038 |
-| privilégié                         | `vault.coquille.deverrouiller`                  | demande                              | 0029       |
-| privilégié                         | `vault.coquille.deverrouillage-reponse`         | réponse                              | 0029       |
-| privilégié                         | `vault.coquille.inventaire-prive`               | demande                              | 0029, 0039 |
-| privilégié                         | `vault.coquille.inventaire-prive-reponse`       | réponse (porte `refus`, #207)        | 0029, 0039 |
-| privilégié                         | `vault.coquille.preparer-emplacement`           | demande                              | 0029       |
-| privilégié                         | `vault.coquille.preparer-emplacement-reponse`   | réponse                              | 0029       |
-| privilégié                         | `vault.coquille.creer-recuperation`             | demande                              | 0029       |
-| privilégié                         | `vault.coquille.recuperation-rendue`            | réponse, rendue une fois             | 0025, 0029 |
-| privilégié                         | `vault.coquille.etat-prive`                     | demande, hors file                   | 0029       |
-| privilégié                         | `vault.coquille.etat-prive-reponse`             | réponse (porte `revocation`)         | 0029, 0039 |
-| privilégié                         | `vault.coquille.demarrer-application`           | demande, geste long                  | 0030       |
-| privilégié                         | `vault.coquille.demarrer-application-reponse`   | réponse                              | 0030       |
-| privilégié                         | `vault.coquille.reprendre-installation`         | demande, geste long                  | 0037       |
-| privilégié                         | `vault.coquille.reprendre-installation-reponse` | réponse                              | 0037       |
-| privilégié                         | `vault.coquille.sauvegarder-le-coffre`          | demande, geste long                  | 0039       |
-| privilégié                         | `vault.coquille.sauvegarder-le-coffre-reponse`  | réponse, porte un `File`             | 0039       |
-| privilégié                         | `vault.coquille.restaurer-le-coffre`            | demande, geste long, porte un `File` | 0039       |
-| privilégié                         | `vault.coquille.restaurer-le-coffre-reponse`    | réponse                              | 0039       |
-| privilégié                         | `vault.coquille.revoquer-en-urgence`            | demande                              | 0026, 0039 |
-| privilégié                         | `vault.coquille.revoquer-en-urgence-reponse`    | réponse, des noms et des nombres     | 0026, 0039 |
-| privilégié                         | `vault.coquille.fermer-le-coffre`               | demande, le verrouillage             | 0030, 0031 |
-| privilégié                         | `vault.coquille.fermer-le-coffre-reponse`       | réponse                              | 0030, 0031 |
-| privilégié                         | `vault.coquille.battement-prive`                | poussée du Worker                    | 0030       |
-| privilégié                         | `vault.coquille.barriere-privee`                | poussée du Worker                    | 0028       |
-| privilégié                         | `vault.coquille.refus-prive`                    | réponse de tout refus                | 0028       |
-| restreint (coquille ↔ application) | `vault.coquille.annonce`                        | application → coquille, sur `window` | 0028       |
-| restreint                          | `vault.coquille.octroi`                         | coquille → application, sur `window` | 0028       |
-| restreint                          | `vault.coquille.etat`                           | demande admise                       | 0028       |
-| restreint                          | `vault.coquille.etat-reponse`                   | réponse                              | 0028       |
-| restreint                          | `vault.coquille.requete-http`                   | demande admise                       | 0038       |
-| restreint                          | `vault.coquille.requete-http-reponse`           | réponse                              | 0038       |
-| restreint                          | `vault.coquille.barriere`                       | poussée de la coquille               | 0028       |
-| restreint                          | `vault.coquille.refus`                          | réponse de tout refus                | 0028       |
-| relais (coquille ↔ Worker)         | `vault.relais.requete`                          | coquille → Worker                    | 0038       |
-| relais                             | `vault.relais.reponse`                          | Worker → coquille                    | 0038       |
-| relais                             | `vault.relais.refus`                            | Worker → coquille                    | 0038       |
+| Canal                              | Type                                            | Sens                                                    | ADR              |
+| ---------------------------------- | ----------------------------------------------- | ------------------------------------------------------- | ---------------- |
+| privilégié (page ↔ Worker)         | `vault.coquille.canal-privilegie`               | page → Worker, sur `self`                               | 0028, 0038       |
+| privilégié                         | `vault.coquille.deverrouiller`                  | demande                                                 | 0029             |
+| privilégié                         | `vault.coquille.deverrouillage-reponse`         | réponse (porte `feuilleEprouvee`, #239)                 | 0029, 0040       |
+| privilégié                         | `vault.coquille.inventaire-prive`               | demande                                                 | 0029, 0039       |
+| privilégié                         | `vault.coquille.inventaire-prive-reponse`       | réponse (porte `refus`, #207 ; `feuilleEprouvee`, #239) | 0029, 0039, 0040 |
+| privilégié                         | `vault.coquille.preparer-emplacement`           | demande                                                 | 0029             |
+| privilégié                         | `vault.coquille.preparer-emplacement-reponse`   | réponse                                                 | 0029             |
+| privilégié                         | `vault.coquille.creer-recuperation`             | demande                                                 | 0029             |
+| privilégié                         | `vault.coquille.recuperation-rendue`            | réponse, rendue une fois                                | 0025, 0029       |
+| privilégié                         | `vault.coquille.etat-prive`                     | demande, hors file                                      | 0029             |
+| privilégié                         | `vault.coquille.etat-prive-reponse`             | réponse (porte `revocation`)                            | 0029, 0039       |
+| privilégié                         | `vault.coquille.demarrer-application`           | demande, geste long                                     | 0030             |
+| privilégié                         | `vault.coquille.demarrer-application-reponse`   | réponse                                                 | 0030             |
+| privilégié                         | `vault.coquille.reprendre-installation`         | demande, geste long                                     | 0037             |
+| privilégié                         | `vault.coquille.reprendre-installation-reponse` | réponse                                                 | 0037             |
+| privilégié                         | `vault.coquille.sauvegarder-le-coffre`          | demande, geste long                                     | 0039             |
+| privilégié                         | `vault.coquille.sauvegarder-le-coffre-reponse`  | réponse, porte un `File`                                | 0039             |
+| privilégié                         | `vault.coquille.restaurer-le-coffre`            | demande, geste long, porte un `File`                    | 0039             |
+| privilégié                         | `vault.coquille.restaurer-le-coffre-reponse`    | réponse                                                 | 0039             |
+| privilégié                         | `vault.coquille.revoquer-en-urgence`            | demande                                                 | 0026, 0039       |
+| privilégié                         | `vault.coquille.revoquer-en-urgence-reponse`    | réponse, des noms et des nombres                        | 0026, 0039       |
+| privilégié                         | `vault.coquille.fermer-le-coffre`               | demande, le verrouillage                                | 0030, 0031       |
+| privilégié                         | `vault.coquille.fermer-le-coffre-reponse`       | réponse                                                 | 0030, 0031       |
+| privilégié                         | `vault.coquille.battement-prive`                | poussée du Worker                                       | 0030             |
+| privilégié                         | `vault.coquille.barriere-privee`                | poussée du Worker                                       | 0028             |
+| privilégié                         | `vault.coquille.refus-prive`                    | réponse de tout refus                                   | 0028             |
+| restreint (coquille ↔ application) | `vault.coquille.annonce`                        | application → coquille, sur `window`                    | 0028             |
+| restreint                          | `vault.coquille.octroi`                         | coquille → application, sur `window`                    | 0028             |
+| restreint                          | `vault.coquille.etat`                           | demande admise                                          | 0028             |
+| restreint                          | `vault.coquille.etat-reponse`                   | réponse                                                 | 0028             |
+| restreint                          | `vault.coquille.requete-http`                   | demande admise                                          | 0038             |
+| restreint                          | `vault.coquille.requete-http-reponse`           | réponse                                                 | 0038             |
+| restreint                          | `vault.coquille.barriere`                       | poussée de la coquille                                  | 0028             |
+| restreint                          | `vault.coquille.refus`                          | réponse de tout refus                                   | 0028             |
+| relais (coquille ↔ Worker)         | `vault.relais.requete`                          | coquille → Worker                                       | 0038             |
+| relais                             | `vault.relais.reponse`                          | Worker → coquille                                       | 0038             |
+| relais                             | `vault.relais.refus`                            | Worker → coquille                                       | 0038             |
 
 Deux champs, et deux seulement, portent autre chose que des données, et seulement sur le canal
 privilégié : `kek` (une `CryptoKey` NON EXTRACTIBLE, ADR 0021) et `archive` (un `File` ou un `Blob`,

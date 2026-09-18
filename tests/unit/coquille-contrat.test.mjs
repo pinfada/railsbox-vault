@@ -22,7 +22,9 @@ import {
   TYPES_PRIVILEGIES,
   decoderMessage,
   enveloppeDeMessage,
+  CHAMP_DE_LA_FEUILLE,
   estTypePrivilegie,
+  feuilleEprouveeDuMessage,
   sansCapacite,
 } from "../../src/coquille/contrat-de-messages.mjs";
 import { ETATS_DU_VOLUME, chargeUtileDEtat } from "../../src/coquille/etat-de-la-coquille.mjs";
@@ -214,4 +216,24 @@ test("« indisponible » et « verrouillé » sont deux états distincts, et ce 
   // redemander à l'utilisateur une phrase qui n'ouvrirait rien — c'est la conduite, pas le mot.
   assert.notEqual(ETATS_DU_VOLUME.indisponible, ETATS_DU_VOLUME.verrouille);
   assert.equal(Object.keys(ETATS_DU_VOLUME).length, 4);
+});
+
+test("#239 : seul le booléen true vaut « feuille éprouvée » ; l'inconnu est refusé comme preuve", () => {
+  assert.equal(CHAMP_DE_LA_FEUILLE, "feuilleEprouvee");
+  const reponse = (valeur) =>
+    enveloppeDeMessage(TYPES_PRIVILEGIES.deverrouillageReponse, {
+      etat: "ouvert",
+      feuilleEprouvee: valeur,
+    });
+  assert.equal(feuilleEprouveeDuMessage(reponse(true)), true);
+  for (const valeur of [false, "true", 1, {}, [true], null]) {
+    assert.equal(feuilleEprouveeDuMessage(reponse(valeur)), false, JSON.stringify(valeur));
+  }
+  // Un Worker d'avant #239 ne porte pas le champ : la feuille n'est pas éprouvée, rien ne casse.
+  assert.equal(
+    feuilleEprouveeDuMessage(enveloppeDeMessage(TYPES_PRIVILEGIES.deverrouillageReponse, {})),
+    false,
+  );
+  assert.equal(feuilleEprouveeDuMessage(null), false);
+  assert.equal(feuilleEprouveeDuMessage(undefined), false);
 });

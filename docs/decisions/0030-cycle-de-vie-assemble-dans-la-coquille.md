@@ -535,3 +535,35 @@ les trois moteurs, et du scénario de bout en bout.
 - **Recopier le chemin de boot dans la coquille** — deux versions divergent au premier correctif. Le
   module est **déplacé**, et le seul point de variation — d'où vient la clé de volume — est un
   paramètre.
+
+## Note du 2026-09-18 — le secteur 1 du volume `coquille` porte la preuve de la feuille (#239)
+
+Le volume `coquille` (décision 1, « Deux volumes, un seul coffre ») n'était écrit qu'à son secteur
+0, le motif fixe de `ecrireEtAcquitter`. Depuis #239, son **secteur 1** porte la preuve qu'une
+feuille de récupération a OUVERT ce coffre sur cet appareil
+([ADR 0040](0040-le-parcours-est-un-ordre-pas-une-decision.md), amendement du 18/09/2026). Le module
+est `src/coquille/preuve-de-la-feuille.mjs` ; le Worker de confiance n'en porte que la couture.
+
+- **Format 1**, 512 octets scellés comme tout le volume : la marque `RBVFEUIL` (octets 0 à 7), le
+  format `1` (octet 8), le nombre d'identifiants de 0 à 8 (octet 9), puis huit places de huit octets
+  — les `identifiantEmplacement` des codes qui ont ouvert, du plus ancien au plus récent, sans
+  doublon, les plus anciens sortant au-delà de huit. Le reste du secteur est à zéro.
+- **Écrit par le Worker seul**, après un `ouvrirParLeCode` réussi — donc après que la clé de volume
+  a ouvert le volume —, AVANT la barrière que l'ouverture acquitte déjà : la même `flush` le rend
+  durable. Une phrase, une passkey ou une création n'inscrivent rien. La page n'y écrit jamais et ne
+  peut rien y affirmer.
+- **Relu après TOUTE ouverture**, et comparé à l'enveloppe du moment : la feuille est éprouvée si un
+  identifiant inscrit est encore un emplacement de type 4. Le booléen `feuilleEprouvee` part dans la
+  réponse d'ouverture et dans celle d'inventaire (le contrat reste en version 1, comme pour
+  `enveloppeMigree` : seul le booléen `true` vaut preuve, toute autre valeur se lit « non éprouvée
+  »).
+- **Un secteur jamais écrit se lit en zéros authentifiés, jamais comme un refus** : un volume v3
+  naît scellé entièrement, zéros compris (`opfs-volume-ouverture.mjs`). Mesuré sur un vrai volume
+  (`coquille-preuve-de-la-feuille.test.mjs`) : un coffre d'avant #239 — secteur 0 écrit, secteur 1
+  jamais — rend 512 zéros, lus « vierge », c'est-à-dire « aucune feuille éprouvée ». Une marque
+  étrangère, un format à venir ou un compte hors borne se lisent de même et sont réécrits au format
+  1 à la prochaine inscription ; une lecture qui ÉCHOUE (sceau refusé) n'est pas un secteur vierge,
+  et remonte typée comme toute lecture du volume.
+- **Il ne voyage pas** : l'archive porte le volume `application`, pas `coquille`. Un coffre restauré
+  n'a donc aucune preuve, et l'ouverture par le code de l'étape 8 l'inscrit. La présence du volume,
+  qui sert de trace de service (`aServiDepuisLaRestauration`), ne change pas.
