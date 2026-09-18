@@ -74,6 +74,7 @@ import {
   moyenParNom,
 } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { ouvrirParLeCode } from "/src/coquille/ouverture-par-le-code.mjs";
+import { constaterALOuverture, feuilleEprouvee } from "/src/coquille/preuve-de-la-feuille.mjs";
 import { CODES_REFUS_COQUILLE, messageDeRefus } from "/src/coquille/refus-de-coquille.mjs";
 import { SECTOR_SIZE } from "/src/vm/block-geometry.mjs";
 import {
@@ -165,6 +166,8 @@ const interne = {
   application: null,
   /** Le bilan de la dernière révocation d'urgence, ou `null` (#207). Des noms et des nombres. */
   revocation: null,
+  /** Les emplacements dont le CODE a ouvert ce coffre, lus au secteur 1 de `coquille` (#239). */
+  eprouves: [],
 };
 
 /** Le port privilégié, transféré UNE fois par la coquille avant tout document applicatif. */
@@ -397,6 +400,9 @@ async function publierLInventaire(correlation) {
   return repondre(TYPES_PRIVILEGIES.inventaireReponse, correlation, {
     refus: null,
     present: true,
+    // Relu contre l'enveloppe du MOMENT : une feuille retirée fait tomber la preuve (#239).
+    feuilleEprouvee:
+      interne.etat === ETATS_DU_VOLUME.ouvert && feuilleEprouvee(interne.eprouves, inventaire),
     identifiantVolume: IDENTIFIANT_VOLUME,
     versionEnveloppe: inventaire.version,
     emplacements: inventaire.emplacements.map((emplacement) => ({
@@ -483,6 +489,8 @@ async function deverrouiller(message, correlation) {
   } finally {
     ouverte.dek.fill(0);
   }
+  // Après l'ouverture seulement ; la barrière qui suit rend l'inscription durable (#239).
+  interne.eprouves = await constaterALOuverture(interne.backend, ouverte.identifiantEprouve);
   interne.kek = ouverte.kek;
   interne.version = ouverte.version;
   interne.etat = ETATS_DU_VOLUME.ouvert;
@@ -492,6 +500,10 @@ async function deverrouiller(message, correlation) {
     barrieres: interne.barrieres,
     versionEnveloppe: interne.version,
     enveloppeMigree: ouverte.migree === true,
+    feuilleEprouvee: feuilleEprouvee(
+      interne.eprouves,
+      await inventorierEnveloppe({ support: support(), identifiantVolume: IDENTIFIANT_VOLUME }),
+    ),
   });
 }
 
@@ -506,6 +518,7 @@ async function ouvrirLeVolume(dek) {
   const precedent = interne.backend;
   interne.backend = null;
   interne.etat = ETATS_DU_VOLUME.verrouille;
+  interne.eprouves = [];
   if (precedent !== null) await precedent.close();
   interne.backend = await openOpfsVolume({
     name: VOLUME,
@@ -551,6 +564,8 @@ async function ouvrirLExistante(moyen, message, versionMinimale) {
     kek: ouverte.kek,
     version: ouverte.version,
     migree: ouverte.migration?.faite === true,
+    // Seul un CODE éprouve une feuille, jamais l'emplacement d'une phrase ou d'une passkey.
+    identifiantEprouve: moyen.derivePar === "page" ? null : ouverte.identifiantEmplacement,
   };
 }
 
@@ -619,7 +634,7 @@ async function creerLeCoffre(moyen, message) {
     parametres,
     identifiantEmplacement: String(message.identifiantEmplacement ?? ""),
   });
-  return { dek, kek, version: creee.version };
+  return { dek, kek, version: creee.version, identifiantEprouve: null };
 }
 
 // --- Le moyen de récupération, et son code rendu UNE fois -----------------------------------------

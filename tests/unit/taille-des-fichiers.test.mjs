@@ -65,7 +65,7 @@ const RACINES = ["src", "public"];
 const HORS_PERIMETRE = [
   {
     fichier: "public/runtime-worker.mjs",
-    lignes: 900,
+    lignes: 914,
     motif:
       "découvert le 11/09/2026 en élargissant RACINES à `public` (#175) : il dépassait déjà le " +
       "plafond avant cet élargissement, et #175 ne scindait que `main.mjs`. Scinder le Worker de " +
@@ -88,7 +88,13 @@ const HORS_PERIMETRE = [
       "de mort par silence rend le même verdict que le Worker se soit tu ou que la page ne l'ait pas " +
       "entendu — et la cause reste une hypothèse. Ces dix-huit lignes ont éliminé deux hypothèses par " +
       "la mesure ; elles restent parce qu'une borne qu'on ne sait pas instrumenter se rediagnostique " +
-      "à chaque incident.",
+      "à chaque incident. " +
+      "#239 (18/09/2026) y ajoute QUATORZE lignes de COUTURE : lire et inscrire la preuve de la " +
+      "feuille au secteur 1 du volume `coquille` après une ouverture, et publier `feuilleEprouvee` " +
+      "dans les deux réponses qui la portent. La logique — format, lecture d'un secteur vierge, " +
+      "inscription, comparaison à l'enveloppe — est née dans `src/coquille/preuve-de-la-feuille.mjs`, " +
+      "éprouvée sans navigateur ; ce qui reste ici est ce qui ne pouvait pas partir : l'appel entre " +
+      "l'ouverture du volume et sa barrière, et l'état qu'il tient.",
   },
 ];
 
@@ -103,6 +109,16 @@ const HORS_PERIMETRE = [
  * @type {{ fichier: string, lignes: number, motif: string }[]}
  */
 const SOUS_SURVEILLANCE = [
+  {
+    fichier: "src/coquille/conduites-du-parcours.mjs",
+    lignes: 716,
+    motif:
+      "#239 et #240 (18/09/2026) le font passer de 700 à 716 lignes : la conduite de la phrase trop " +
+      "courte, et celle de l'enveloppe pleine, qui dit désormais sa sortie. Le module est une TABLE " +
+      "plate — un code, un classement, une phrase — que le cliquet des conduites énumère d'un bloc ; " +
+      "la scinder par famille séparerait les phrases de la liste qui les exige. À scinder par geste " +
+      "(ouvrir, démarrer, porter) si une tranche le fait passer 750.",
+  },
   {
     fichier: "src/vm/generation-store.mjs",
     lignes: 800,

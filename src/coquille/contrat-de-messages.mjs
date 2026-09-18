@@ -219,6 +219,24 @@ export const REPONSES_PRIVILEGIEES = Object.freeze(
   ),
 );
 
+/**
+ * Le champ que DEUX réponses du canal privilégié portent depuis #239 — `deverrouillageReponse` et
+ * `inventaireReponse` : ce que le Worker de confiance a CONSTATÉ de la feuille de récupération (un
+ * code encore présent dans l'enveloppe a ouvert ce coffre sur cet appareil, `preuve-de-la-feuille.mjs`).
+ *
+ * Le contrat reste en version 1, comme pour `enveloppeMigree` (ADR 0027) : le champ s'AJOUTE à deux
+ * réponses que le même déploiement émet et lit, jamais au port restreint. Ce qui le versionne est sa
+ * lecture : seul le booléen `true` vaut preuve. Absent, faux, ou de toute autre forme — un Worker
+ * d'avant #239, un message altéré —, il est REFUSÉ comme preuve et lu « non éprouvée » : l'inconnu
+ * coûte au pire une saisie du code, jamais un écran de travail.
+ */
+export const CHAMP_DE_LA_FEUILLE = "feuilleEprouvee";
+
+/** @param {Record<string, unknown> | null | undefined} corps */
+export function feuilleEprouveeDuMessage(corps) {
+  return corps?.[CHAMP_DE_LA_FEUILLE] === true;
+}
+
 /** @param {unknown} type */
 export function estTypePrivilegie(type) {
   return typeof type === "string" && TYPES_PRIVILEGIES_CONNUS.has(type);
