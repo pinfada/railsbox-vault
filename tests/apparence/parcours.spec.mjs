@@ -21,6 +21,17 @@ import {
 } from "./outils-d-apparence.mjs";
 import { writeFile } from "node:fs/promises";
 
+/**
+ * VERROUILLE et attend le NOUVEAU document : le verrouillage recharge la coquille, mais l'ancien
+ * document voit le coffre verrouillé un instant avant — et y montre déjà l'écran d'après. Attendre un
+ * titre ou un champ laissait l'épreuve agir dans un document condamné (#239, Firefox en CI).
+ */
+async function verrouillerEtRecharger(page) {
+  const recharge = page.waitForEvent("load");
+  await bouton(page, "Verrouiller mon coffre").click();
+  await recharge;
+}
+
 const LARGEURS = [320, 768, 1024, 1440];
 
 for (const theme of ["light", "dark"]) {
@@ -145,7 +156,7 @@ for (const theme of ["light", "dark"]) {
     // #239 : la recopie n'est plus jugée dans la page ; la feuille s'éprouve en verrouillant.
     await bouton(page, "J'ai recopié mon code").click();
     await verifier(page, testInfo, "a-verrouiller");
-    await bouton(page, "Verrouiller mon coffre").click();
+    await verrouillerEtRecharger(page);
     const champ = page.getByLabel("Code de récupération", { exact: true });
     await expect(champ).toBeVisible({ timeout: 60_000 });
     await page.waitForLoadState("load");

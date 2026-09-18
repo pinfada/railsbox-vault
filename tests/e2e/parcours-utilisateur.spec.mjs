@@ -105,6 +105,17 @@ async function attendreLEcran(page, titre, budget = BUDGET_ECRAN_MS) {
   await expect(ecran(page, titre)).toBeVisible({ timeout: budget });
 }
 
+/**
+ * VERROUILLE et attend le NOUVEAU document : le verrouillage recharge la coquille, mais l'ancien
+ * document voit le coffre verrouillé un instant avant — et y montre déjà l'écran d'après. Attendre un
+ * titre ou un champ laissait l'épreuve agir dans un document condamné (#239, Firefox en CI).
+ */
+async function verrouillerEtRecharger(a) {
+  const recharge = a.waitForEvent("load");
+  await bouton(a, "Verrouiller mon coffre").click();
+  await recharge;
+}
+
 async function aucunCodeEnClair(page, moment) {
   const html = await page.evaluate(() => document.body.innerHTML);
   expect(CODE_EN_CLAIR.exec(html)?.[0] ?? null, `aucun code en clair ${moment}`).toBeNull();
@@ -184,7 +195,7 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await expect(a.getByText(/verrouillez votre coffre/)).toBeVisible();
 
     // La feuille s'éprouve en S'EN SERVANT : verrouiller recharge la page, et le code part avec elle.
-    await bouton(a, "Verrouiller mon coffre").click();
+    await verrouillerEtRecharger(a);
     const champ = a.getByLabel("Code de récupération", { exact: true });
     await expect(champ).toBeVisible({ timeout: BUDGET_DEVERROUILLAGE_MS });
     await a.waitForLoadState("load");
@@ -233,7 +244,7 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
   // --- 5. Verrouiller et rouvrir — avec l'échec « mauvaise phrase » --------------------------------
   await chrono("5-verrouiller-rouvrir", async () => {
     await attendreLEcran(a, "Verrouiller votre coffre");
-    await bouton(a, "Verrouiller mon coffre").click();
+    await verrouillerEtRecharger(a);
     await attendreLEcran(a, "Rouvrir votre coffre", BUDGET_DEVERROUILLAGE_MS);
 
     // ÉCHEC 2 : une mauvaise phrase. Le coffre reste fermé, et la conduite le dit.
