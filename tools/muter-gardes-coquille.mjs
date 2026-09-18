@@ -64,6 +64,9 @@ const EPREUVE_PARCOURS = "tests/unit/coquille-parcours.test.mjs";
 const OUVERTURE_PAR_LE_CODE = "src/coquille/ouverture-par-le-code.mjs";
 const EPREUVE_OUVERTURE_PAR_LE_CODE = "tests/unit/coquille-ouverture-par-le-code.test.mjs";
 const EPREUVE_PARCOURS_CONDUITES = "tests/unit/coquille-parcours-conduites.test.mjs";
+const PREUVE = "src/coquille/preuve-de-la-feuille.mjs";
+const EPREUVE_PREUVE = "tests/unit/coquille-preuve-de-la-feuille.test.mjs";
+const WORKER = "public/runtime-worker.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -878,8 +881,8 @@ export const MUTATIONS = Object.freeze([
     nom: "un coffre ouvert sans moyen de récupération ramène toujours à la création du code",
     garde: "ecranOuvert — le premier moyen de récupération se crée à l'étape 3",
     fichier: PARCOURS,
-    avant: "  if (nombreDeCodes === 0) return `code-${sousEtatDuCode}`;\n",
-    apres: "",
+    avant: '  if (nombreDeCodes === 0 || nouveauCodeDemande) return "code-annonce";\n',
+    apres: '  if (nouveauCodeDemande) return "code-annonce";\n',
     epreuves: [EPREUVE_PARCOURS],
   },
   // #214 : l'ouverture par le code ESSAIE chaque emplacement de type 4, et la coquille les COMPTE.
@@ -973,19 +976,27 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_PARCOURS],
   },
   {
-    nom: "aucune étape de 4 à 9 tant que le code n'est pas confirmé",
-    garde: "ecranOuvert — la confirmation exigée, et non l'existence d'un moyen (constat 2)",
+    nom: "aucune étape de 4 à 9 tant que la feuille n'est pas ÉPROUVÉE par le Worker (#239)",
+    garde: "ecranOuvert — le constat `feuilleEprouvee`, et non l'existence d'un moyen",
     fichier: PARCOURS,
-    avant: "  if (!progression.code.confirme) {\n",
-    apres: "  if (false) {\n",
+    avant: '  if (!feuilleEprouvee) return "code-a-verifier";\n',
+    apres: "",
     epreuves: [EPREUVE_PARCOURS],
   },
   {
-    nom: "un coffre verrouillé dont le code n'est pas confirmé se rouvre par ce code",
-    garde: "ecranVerrouille — « Vérifier votre code », jamais un second code (constat 1)",
+    nom: "l'indice de parcours.json ne remplace pas le constat du Worker (#239, VULN-04)",
+    garde: "ecranOuvert — la garde lit le relevé, jamais la progression",
+    fichier: PARCOURS,
+    avant: '  if (!feuilleEprouvee) return "code-a-verifier";\n',
+    apres: '  if (!feuilleEprouvee && !progression.feuilleEprouvee) return "code-a-verifier";\n',
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "un coffre verrouillé sans feuille éprouvée se rouvre par le code, une fois",
+    garde: "ecranVerrouille — « Vérifier votre code », jamais un second code (constat 1, #239)",
     fichier: PARCOURS,
     avant:
-      '  if (moyens.includes("recuperation") && !progression.code.confirme && !nouveauCodeDemande) {\n    return "code-verifier";\n  }\n',
+      '  if (moyens.includes("recuperation") && !progression.feuilleEprouvee && !nouveauCodeDemande) {\n    return "code-verifier";\n  }\n',
     apres: "",
     epreuves: [EPREUVE_PARCOURS],
   },
@@ -1014,12 +1025,94 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_PARCOURS],
   },
   {
-    nom: "seule l'ouverture par le code vaut confirmation du code",
-    garde: "ouvertureParLeCode — les deux écrans qui n'offrent que le code (constat 1)",
+    nom: "une ouverture de ROUTINE mène à l'application, pas à l'étape mémorisée (#239)",
+    garde: "etapeApres — `rouvrir:ouverture` hors de l'étape 5",
     fichier: PARCOURS,
-    avant: '  return ecranId === "code-verifier" || ecranId === "recuperer";\n',
-    apres: "  return true;\n",
+    avant: '    "rouvrir:ouverture": pointeur === 5 ? 6 : 4,\n',
+    apres: '    "rouvrir:ouverture": pointeur === 5 ? 6 : pointeur,\n',
     epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "une origine restaurée rouverte par le code hors de l'étape 8 revient à l'application (#239)",
+    garde: "etapeApres — `recuperer:ouverture`, la cause de « ?etape=4 mène à 9 »",
+    fichier: PARCOURS,
+    avant: '    "recuperer:ouverture": pointeur === 8 ? 9 : 4,\n',
+    apres: '    "recuperer:ouverture": 9,\n',
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "« Continuer » depuis l'application mène à la prochaine étape non jouée (#239)",
+    garde: "prochaineEtapeNonJouee — l'étape atteinte, et non 5",
+    fichier: PARCOURS,
+    avant: "  return Math.min(Math.max(etapeAtteinte, 5), ETAPES.length);\n",
+    apres: "  return 5;\n",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "le fichier ne prouve rien du code : ses faits sont remis à l'initiale (17/09, gardé)",
+    garde: "lireProgression — `code` relu à l'initiale",
+    fichier: PARCOURS,
+    avant: "  return figerProgression({ ...brut, code: PROGRESSION_INITIALE.code });\n",
+    apres: "  return figerProgression(brut);\n",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "seul le booléen vrai du Worker devient l'indice d'une feuille éprouvée (#239)",
+    garde: "progressionApres — `feuille`, lu strictement",
+    fichier: PARCOURS,
+    avant: "    const feuilleEprouvee = valeur === true;\n",
+    apres: "    const feuilleEprouvee = Boolean(valeur);\n",
+    epreuves: [EPREUVE_PARCOURS],
+  },
+  {
+    nom: "seul un emplacement de TYPE 4 encore présent éprouve la feuille (#239)",
+    garde: "feuilleEprouvee — le filtre des emplacements de récupération",
+    fichier: PREUVE,
+    avant: "      .filter((emplacement) => emplacement.typeKek === TYPES_KEK.recuperation)\n",
+    apres: "",
+    epreuves: [EPREUVE_PREUVE],
+  },
+  {
+    nom: "une feuille retirée de l'enveloppe fait tomber la preuve (#239)",
+    garde: "feuilleEprouvee — la présence dans l'enveloppe du moment",
+    fichier: PREUVE,
+    avant: "  return identifiants.some((identifiant) => codes.has(identifiant));\n",
+    apres: "  return identifiants.length > 0;\n",
+    epreuves: [EPREUVE_PREUVE],
+  },
+  {
+    nom: "un secteur jamais écrit se lit « vierge », jamais comme une preuve ni une erreur (#239)",
+    garde: "lireLaPreuve — le secteur de zéros",
+    fichier: PREUVE,
+    avant: "  if (secteur.every((octet) => octet === 0)) return vide(ETATS_DE_LA_PREUVE.vierge);\n",
+    apres: "",
+    epreuves: [EPREUVE_PREUVE],
+  },
+  {
+    nom: "le Worker n'inscrit la preuve qu'APRÈS l'ouverture du volume (#239)",
+    garde: "deverrouiller — l'ordre ouvrir, constater, barrière",
+    fichier: WORKER,
+    avant: "    await ouvrirLeVolume(ouverte.dek);\n",
+    apres:
+      "    interne.eprouves = await constaterALOuverture(interne.backend, ouverte.identifiantEprouve);\n    await ouvrirLeVolume(ouverte.dek);\n",
+    epreuves: [EPREUVE_PREUVE],
+  },
+  {
+    nom: "seul un CODE éprouve une feuille, jamais une phrase ni une passkey (#239)",
+    garde: "ouvrirLExistante — `identifiantEprouve` nul hors du code",
+    fichier: WORKER,
+    avant:
+      '    identifiantEprouve: moyen.derivePar === "page" ? null : ouverte.identifiantEmplacement,\n',
+    apres: "    identifiantEprouve: ouverte.identifiantEmplacement,\n",
+    epreuves: [EPREUVE_PREUVE],
+  },
+  {
+    nom: "seul le booléen true d'une réponse vaut preuve ; l'inconnu est refusé (#239)",
+    garde: "feuilleEprouveeDuMessage — l'égalité stricte",
+    fichier: "src/coquille/contrat-de-messages.mjs",
+    avant: "  return corps?.[CHAMP_DE_LA_FEUILLE] === true;\n",
+    apres: "  return Boolean(corps?.[CHAMP_DE_LA_FEUILLE]);\n",
+    epreuves: [EPREUVE_CONTRAT],
   },
   {
     nom: "aucun code en clair n'est écrit par le parcours",
@@ -1049,9 +1142,8 @@ export const MUTATIONS = Object.freeze([
     nom: "sous Firefox, l'étape 4 dit sa limite au lieu d'offrir « Démarrer »",
     garde: "ecranOuvert — l'écran de la limite connue (constat 9)",
     fichier: PARCOURS,
-    avant:
-      '  return choisi === "travailler" && moteur === "firefox" ? "travailler-sans-application" : choisi;\n',
-    apres: "  return choisi;\n",
+    avant: '  if (moteur === "firefox" && (choisi === "travailler" || choisi === "accueil")) {\n',
+    apres: "  if (false) {\n",
     epreuves: [EPREUVE_PARCOURS],
   },
   {
@@ -1083,12 +1175,12 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_PARCOURS_CONDUITES],
   },
   {
-    nom: "la recopie confirmée est LE code affiché, pas un code bien formé quelconque",
-    garde: "confirmerLaRecopie — l'égalité avec la feuille",
-    fichier: PARCOURS,
-    avant: "  if (etat.decoupe !== affichee.decoupe) {\n",
-    apres: "  if (false) {\n",
-    epreuves: [EPREUVE_PARCOURS],
+    nom: "une phrase trop courte reçoit SA conduite, pas la phrase générique (#240)",
+    garde: "TABLE — la conduite de `VAULT_PHRASE_TROP_FAIBLE`",
+    fichier: "src/coquille/conduites-du-parcours.mjs",
+    avant: "    CODE_PHRASE_FAIBLE,\n    S.unsupported,\n",
+    apres: "    S.unsupported,\n",
+    epreuves: [EPREUVE_PARCOURS_CONDUITES],
   },
   {
     nom: "un refus de GESTE n'est pas un refus d'inventaire",

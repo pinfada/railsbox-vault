@@ -23,6 +23,9 @@ import { fileURLToPath } from "node:url";
 import prettier from "prettier";
 
 import { annonceDAttente } from "../src/coquille/attente-annoncee.mjs";
+import { CONSEIL_DE_REOUVERTURE } from "../src/coquille/interface-de-deverrouillage.mjs";
+import { SURCOUT_MESURE_DE_L_OUVERTURE_MS } from "../src/coquille/parcours.mjs";
+import { evaluerPhrase } from "../src/coquille/politique-de-phrase.mjs";
 import {
   CLASSEMENT_DES_CONDUITES,
   CLASSES_DE_CONDUITE,
@@ -50,16 +53,33 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
   creer: ["limiteDeFirefox"],
   choisir: ["limiteDeFirefox", "passkeyALaCreation", "ouvertureEnCours", "coffreOuvert"],
   "code-feuille": ["consigneDeLaFeuille"],
-  "code-confirmation": ["recopieIncomplete", "recopieDUnAutreCode", "codeConfirme"],
-  "code-verifier": ["saisieIncomplete", "saisieComplete", "ouvertureEnCours", "coffreOuvert"],
+  "code-a-verrouiller": ["verrouillageEnCours"],
+  "code-verifier": [
+    "saisieIncomplete",
+    "saisieComplete",
+    "ouvertureEnCours",
+    "feuilleEprouvee",
+    "coffreOuvert",
+  ],
   "code-annonce": ["codesDejaRendus"],
   "code-a-verifier": ["verrouillageEnCours", "codesDejaRendus"],
   travailler: [
+    "applicationEnAttente",
     "demarrageEnCours",
     "signesDeVie",
     "premierSigneDeVie",
     "applicationDemarree",
+    "applicationAffichee",
     "repriseEnCours",
+  ],
+  accueil: [
+    "applicationEnAttente",
+    "demarrageEnCours",
+    "applicationDemarree",
+    "verrouillageEnCours",
+    "sauvegardeEnCours",
+    "sauvegardePrete",
+    "revoque",
   ],
   verrouiller: ["verrouillageEnCours"],
   rouvrir: ["passkeyALOuverture", "ouvertureEnCours", "coffreOuvert"],
@@ -95,7 +115,7 @@ export const QUESTIONS = Object.freeze({
   3: [
     "Avant de cliquer, avez-vous compris que le code ne s'affichera qu'une fois ?",
     "Savez-vous ce qu'il faut recopier (le code ET le numéro de version) et où ranger la feuille ?",
-    "Si la page se recharge avant la confirmation, l'écran « Vérifier votre code » vous dit-il quoi faire — y compris demander une nouvelle feuille si vous avez perdu la vôtre, et comprenez-vous que l'ancienne continue d'ouvrir le coffre ?",
+    "Comprenez-vous qu'il faut ensuite verrouiller le coffre puis le rouvrir avec le code de votre feuille — et que, si vous vous êtes trompé en recopiant, votre phrase le rouvre et une nouvelle feuille peut être demandée ?",
   ],
   4: [
     "L'attente de deux minutes est-elle annoncée assez clairement pour que vous patientiez ?",
@@ -125,7 +145,7 @@ export const QUESTIONS = Object.freeze({
   9: [
     "Savez-vous QUAND il faut révoquer (et quand il ne le faut pas) ?",
     "Comprenez-vous que les sauvegardes déjà faites restent ouvrables par les anciens moyens ?",
-    "Savez-vous quoi faire après la révocation (noter la version, refaire une sauvegarde) ?",
+    "Savez-vous quoi faire après la révocation (noter la version, refaire une sauvegarde), puis comment revenir à votre application ?",
   ],
 });
 
@@ -182,8 +202,25 @@ function texteDuMessage(nom) {
   if (typeof message !== "function") return message;
   if (nom === "demarrageEnCours") return message(N, MESSAGES.signesDeVie(N));
   if (nom === "revoque") return message(N, "V");
-  if (nom === "recopieIncomplete" || nom === "saisieIncomplete") return message(N, 28);
+  if (nom === "saisieIncomplete") return message(N, 28);
   return message(N);
+}
+
+/**
+ * Ce que l'interface écrit SOUS le champ de la phrase (#242, défaut 10) : à la création, la règle et
+ * ses trois verdicts ; à la réouverture, un seul conseil. Ils ne sont pas dans `MESSAGES` : ils
+ * viennent de `politique-de-phrase.mjs`, que la création applique.
+ */
+function textesSousLeChamp(id) {
+  if (id !== "choisir") return [CONSEIL_DE_REOUVERTURE];
+  return [
+    evaluerPhrase("").message,
+    evaluerPhrase("aaaaaaaaaaaa").message,
+    evaluerPhrase("une phrase assez longue").message.replace(
+      /\(\d+ caractères\)/,
+      "(N caractères)",
+    ),
+  ];
 }
 
 function citation(lignes) {
@@ -193,9 +230,7 @@ function citation(lignes) {
 function attenteDeLaPhraseRelue() {
   const duree = (moteur) => {
     const { attenteMs } = annonceDAttente({ moyen: "phrase", moteur });
-    return attenteMs >= 1000
-      ? `environ ${Math.round(attenteMs / 1000)} seconde(s)`
-      : "moins d'une seconde";
+    return `environ ${Math.ceil((attenteMs + SURCOUT_MESURE_DE_L_OUVERTURE_MS) / 1000)} secondes`;
   };
   return texteDAttenteDeLaPhrase(`${duree("chromium")} (dans Firefox : « ${duree("firefox")} »)`);
 }
@@ -210,7 +245,11 @@ function sectionDEcran(id, libelles) {
   const libellesDesBlocs = ecran.blocs.flatMap((bloc) => LIBELLES_DES_BLOCS[bloc]);
   if (libellesDesBlocs.length > 0)
     morceaux.push("", `Boutons et champs : ${libellesDesBlocs.join(", ")}.`);
-  if (id === "travailler") {
+  if (ecran.blocs.includes("phrase")) {
+    morceaux.push("", "Sous le champ « Votre phrase », selon ce qui est tapé :", "");
+    morceaux.push(...textesSousLeChamp(id).map((texte) => `- ${texte}`));
+  }
+  if (id === "travailler" || id === "accueil") {
     morceaux.push(
       "",
       `Quand l'application est démarrée, les explications ci-dessus se replient sous « ${libelles.aide} » ` +

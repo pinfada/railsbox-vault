@@ -18,6 +18,7 @@ import { DERIVATION_ERROR_CODES } from "../vm/derivation/derivation-errors.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../vm/enveloppe/enveloppe-errors.mjs";
 import { IMPORT_ERROR_CODES } from "../vm/import-errors.mjs";
 import { STORAGE_ERROR_CODES as S } from "../vm/storage-errors.mjs";
+import { CODE_PHRASE_FAIBLE, LONGUEUR_MINIMALE_PHRASE } from "./politique-de-phrase.mjs";
 import { CODES_REFUS_COQUILLE as C } from "./refus-de-coquille.mjs";
 
 const E = ENVELOPPE_ERROR_CODES;
@@ -63,6 +64,7 @@ export const CODES_DU_CHEMIN = Object.freeze({
     D.codeMalRecopie,
     D.codeDejaRendu,
     D.argon2Indisponible,
+    CODE_PHRASE_FAIBLE,
     S.unsupported,
     S.busy,
     S.quotaExceeded,
@@ -274,9 +276,23 @@ const TABLE = Object.freeze({
     "Ce coffre ne peut pas prouver que son contenu est intact. Ne l'utilisez pas. " +
       RESTAURER_AILLEURS,
   ],
+  // #239 : le refus DIT la sortie qui existe ; retirer une seule feuille reste à #218.
   [E.pleine]: [
     K.autre,
-    "Ce coffre a déjà le nombre maximal de moyens de l'ouvrir : rien n'a été ajouté. " + RIEN_PERDU,
+    "Ce coffre a déjà huit moyens de l'ouvrir, le maximum : aucun nouveau code n'a été ajouté. " +
+      RIEN_PERDU +
+      " Pour faire de la place, cliquez sur « Révoquer tous les autres moyens d'ouvrir ce coffre » " +
+      "(c'est le geste de l'étape 9) : tous les autres codes seront retirés, et seul le moyen avec " +
+      "lequel vous venez d'ouvrir le coffre restera. Vous pourrez ensuite afficher un nouveau code.",
+  ],
+  // #240 : une règle de saisie, pas une panne : rien à recharger, personne à qui demander.
+  [CODE_PHRASE_FAIBLE]: [
+    K.recopier,
+    `Cette phrase ne suit pas la règle écrite sous le champ : au moins ${LONGUEUR_MINIMALE_PHRASE} ` +
+      "caractères (les espaces au début et à la fin ne comptent pas), sans répétition ni suite " +
+      "évidente comme « 123456789 ». Le coffre n'a pas été créé. " +
+      RIEN_PERDU +
+      " Allongez ou changez votre phrase, puis cliquez à nouveau sur « Créer mon coffre ».",
   ],
   [E.presente]: [
     K.recommencer,
