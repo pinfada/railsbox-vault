@@ -102,11 +102,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     demarrage: null,
     /** Les refus du relais comptés quand l'application a démarré ; `null` tant qu'elle ne l'est pas. */
     referenceDesRefus: null,
-    /**
-     * La sauvegarde ARRÊTE l'application (`portabilite-du-worker.mjs`) sans que la ligne du cycle le
-     * dise : sans ce fait, « Revenir à mon application » après l'étape 6 montrait une application
-     * crue démarrée, sans « Démarrer » (#239). Vrai d'une sauvegarde au prochain démarrage.
-     */
+    /** La sauvegarde ARRÊTE l'application sans que la ligne du cycle le dise : « Démarrer » reste
+     *  offert au retour après l'étape 6 (#239). Vrai d'une sauvegarde au prochain démarrage. */
     applicationArretee: false,
   };
 
@@ -331,6 +328,11 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     const ecranId = ecranAMontrer(releve, rapport);
     const ecran = ECRANS[ecranId];
     retenirLesIndices(ecranId, rapport);
+    // Verrouillé, le coffre n'affiche aucun code : la feuille part avant même le rechargement (#239).
+    if (etat.coffre === COFFRE.verrouille && etat.sousEtatDuCode !== SOUS_ETATS_DU_CODE.annonce) {
+      etat.sousEtatDuCode = SOUS_ETATS_DU_CODE.annonce;
+      dire("feuille-code", "");
+    }
     // La vérification renouvelée à chaque session suspend la reprise sans oublier sa destination.
     // L'écran reste celui du code, même si le fichier demandait une étape ultérieure.
     const verification =

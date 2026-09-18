@@ -45,10 +45,21 @@ async function afficherLeCode(page) {
   return { code, version: /: (\d+)\./.exec(consigne)[1] };
 }
 
+/**
+ * VERROUILLE et attend le NOUVEAU document : le verrouillage recharge la coquille, mais l'ancien
+ * document voit le coffre verrouillé un instant avant — et y montre déjà l'écran d'après. Attendre un
+ * titre ou un champ laissait l'épreuve agir dans un document condamné (#239, Firefox en CI).
+ */
+async function verrouillerEtRecharger(page) {
+  const recharge = page.waitForEvent("load");
+  await bouton(page, "Verrouiller mon coffre").click();
+  await recharge;
+}
+
 /** La feuille s'éprouve en verrouillant, puis en rouvrant par son code (#239). */
 async function eprouverLaFeuille(page, code) {
   await bouton(page, "J'ai recopié mon code").click();
-  await bouton(page, "Verrouiller mon coffre").click();
+  await verrouillerEtRecharger(page);
   const champ = page.getByLabel("Code de récupération", { exact: true });
   await expect(champ).toBeVisible({ timeout: 60_000 });
   await page.waitForLoadState("load");
@@ -105,7 +116,7 @@ for (const theme of ["light", "dark"]) {
     await expect(titre(page, "Verrouiller votre coffre")).toBeVisible();
     await verifierAux(page, testInfo, "etape-5-verrouiller", DEUX_LARGEURS);
 
-    await bouton(page, "Verrouiller mon coffre").click();
+    await verrouillerEtRecharger(page);
     await expect(titre(page, "Rouvrir votre coffre")).toBeVisible(LONG);
     await verifierAux(page, testInfo, "etape-5-rouvrir", DEUX_LARGEURS);
     // « J'ai oublié ma phrase » est un bouton actif : son contour doit se voir (constat 11).
@@ -137,7 +148,7 @@ for (const theme of ["light", "dark"]) {
     await expect(titre(page, "Récupérer votre coffre avec le code")).toBeVisible();
     await verifierAux(page, testInfo, "etape-8-preparer", DEUX_LARGEURS);
 
-    await bouton(page, "Verrouiller mon coffre").click();
+    await verrouillerEtRecharger(page);
     await expect(page.getByLabel("Code de récupération", { exact: true })).toBeVisible(LONG);
     await verifierAux(page, testInfo, "etape-8-recuperer", DEUX_LARGEURS);
     await page

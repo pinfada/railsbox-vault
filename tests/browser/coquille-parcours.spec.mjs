@@ -91,6 +91,17 @@ async function creerEtAfficherLeCode(page) {
   return code;
 }
 
+/**
+ * VERROUILLE et attend le NOUVEAU document : le verrouillage recharge la coquille, mais l'ancien
+ * document voit le coffre verrouillé un instant avant — et y montre déjà l'écran d'après. Attendre un
+ * titre ou un champ laissait l'épreuve agir dans un document condamné (#239, Firefox en CI).
+ */
+async function verrouillerEtRecharger(page) {
+  const recharge = page.waitForEvent("load");
+  await bouton(page, "Verrouiller mon coffre").click();
+  await recharge;
+}
+
 async function aucunCodeEnClair(page, moment) {
   const html = await page.evaluate(() => document.body.innerHTML);
   expect(CODE_EN_CLAIR.exec(html)?.[0] ?? null, `aucun code en clair ${moment}`).toBeNull();
@@ -106,7 +117,7 @@ async function eprouverLaFeuille(page, code) {
   await expect(bouton(page, "Revoir mon code")).toBeVisible();
   // Le verrouillage RECHARGE la page : l'écran d'après porte le même titre, et c'est le champ du code,
   // absent avant, qui dit que le nouveau document est là.
-  await bouton(page, "Verrouiller mon coffre").click();
+  await verrouillerEtRecharger(page);
   await expect(page.getByLabel("Code de récupération", { exact: true })).toBeVisible({
     timeout: DELAI,
   });
@@ -303,7 +314,7 @@ test("#239 : la feuille s'éprouve UNE fois ; ensuite la phrase rouvre, l'étape
   // L'étape 5 : verrouiller, puis rouvrir par la PHRASE — la feuille éprouvée ne se redemande pas.
   await bouton(page, "Continuer : Verrouiller et rouvrir").click();
   await expect(ecran(page, "Verrouiller votre coffre")).toBeVisible();
-  await bouton(page, "Verrouiller mon coffre").click();
+  await verrouillerEtRecharger(page);
   await rouvrirParLaPhrase(page);
   await expect(ecran(page, "Sauvegarder votre coffre")).toBeVisible({ timeout: DELAI });
 

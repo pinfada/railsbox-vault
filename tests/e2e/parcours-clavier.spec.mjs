@@ -71,7 +71,12 @@ test("les neuf étapes sont traversées au clavier, y compris Rails et les refus
   // #239 : la feuille s'éprouve en verrouillant, puis en rouvrant par son code — au clavier aussi.
   await activer(a, bouton(a, "J'ai recopié mon code"));
   await attendre(a, "Vérifier votre code de récupération");
-  await activer(a, bouton(a, "Verrouiller mon coffre"));
+  {
+    // Le verrouillage recharge la coquille : on attend le NOUVEAU document (#239).
+    const recharge = a.waitForEvent("load");
+    await activer(a, bouton(a, "Verrouiller mon coffre"));
+    await recharge;
+  }
   const champDuCode = a.getByLabel("Code de récupération", { exact: true });
   await expect(champDuCode).toBeVisible({ timeout: 120_000 });
   await a.waitForLoadState("load");
@@ -111,7 +116,12 @@ test("les neuf étapes sont traversées au clavier, y compris Rails et les refus
   await activer(a, bouton(a, "Continuer : Verrouiller et rouvrir"));
   await attendre(a, "Verrouiller votre coffre");
   chronologie.etape("5-verrouillage-clavier");
-  await activer(a, bouton(a, "Verrouiller mon coffre"));
+  {
+    // Le verrouillage recharge la coquille : on attend le NOUVEAU document (#239).
+    const recharge = a.waitForEvent("load");
+    await activer(a, bouton(a, "Verrouiller mon coffre"));
+    await recharge;
+  }
   await attendre(a, "Rouvrir votre coffre");
   const secret = a.getByLabel("Votre phrase", { exact: true });
   await saisir(a, secret, "cette phrase publique ne correspond pas au coffre");
