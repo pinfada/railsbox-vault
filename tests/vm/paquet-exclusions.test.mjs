@@ -15,7 +15,15 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -114,72 +122,90 @@ function inspecterLImage(nomDeLImage, chainesPiegees) {
   return { chemins: listeDesChemins, porteursDeChaine: chaines.split("\n").filter(Boolean) };
 }
 
+/**
+ * Fabrique sous `paquet.json` PRÉSERVÉ : fabriquer une source extérieure remplace le paquet servi
+ * (`annonceDeRemplacement`), et une épreuve qui le laissait pointé sur la source piégée — dont elle
+ * retire ensuite les images — cassait le boot et les scénarios joués après elle sur le même poste.
+ */
+async function sousLePaquetServiPreserve(action) {
+  const chemin = join(DOSSIER_ARTEFACTS, "paquet.json");
+  const avant = existsSync(chemin) ? readFileSync(chemin) : null;
+  try {
+    return await action();
+  } finally {
+    if (avant === null) rmSync(chemin, { force: true });
+    else writeFileSync(chemin, avant);
+  }
+}
+
 const raison = raisonDIndisponibilite();
 
 test(
   "un paquet fabriqué depuis une source piégée ne contient ni .git, ni journaux, ni dépendances, ni fichier ignoré",
   { skip: raison ?? false, timeout: 900_000 },
-  async () => {
-    const source = sourcePiegee();
-    let paquet;
-    try {
-      paquet = await fabriquerLePaquet(["--source", source, "--taille-donnees", "64"]);
-    } finally {
-      rmSync(source, { recursive: true, force: true });
-    }
+  () =>
+    sousLePaquetServiPreserve(async () => {
+      const source = sourcePiegee();
+      let paquet;
+      try {
+        paquet = await fabriquerLePaquet(["--source", source, "--taille-donnees", "64"]);
+      } finally {
+        rmSync(source, { recursive: true, force: true });
+      }
 
-    const { chemins, porteursDeChaine } = inspecterLImage(paquet.image.name, [
-      "ANCIENNE_CLE_DANS_L_HISTORIQUE_GIT",
-      "JETON_QUI_NE_DOIT_PAS_SORTIR",
-      "COOKIE_DE_SESSION_DANS_UN_JOURNAL",
-      "DEPENDANCE_AMD64_INUTILE",
-    ]);
+      const { chemins, porteursDeChaine } = inspecterLImage(paquet.image.name, [
+        "ANCIENNE_CLE_DANS_L_HISTORIQUE_GIT",
+        "JETON_QUI_NE_DOIT_PAS_SORTIR",
+        "COOKIE_DE_SESSION_DANS_UN_JOURNAL",
+        "DEPENDANCE_AMD64_INUTILE",
+      ]);
 
-    for (const interdit of [
-      /(^|\/)\.git(\/|$)/,
-      /(^|\/)node_modules(\/|$)/,
-      /(^|\/)log\/production\.log$/,
-      /secret-ignore-par-git\.txt$/,
-    ]) {
-      const trouve = chemins.filter((chemin) => interdit.test(chemin));
-      assert.deepEqual(trouve, [], `${interdit} est entré dans le paquet ${paquet.image.name}`);
-    }
-    // Et le CONTENU, pas seulement les noms : une clé retirée de l'arbre vit dans les objets de Git.
-    assert.deepEqual(
-      porteursDeChaine,
-      [],
-      "une chaîne piégée de la source se relit dans l'image du paquet",
-    );
-    // Le CODE, lui, est bien là : une exclusion qui viderait l'image passerait aussi les gardes
-    // ci-dessus, et l'épreuve serait verte par vacuité.
-    for (const present of ["Gemfile", "config/application.rb", "app", "db/migrate"]) {
-      assert.ok(
-        chemins.some((chemin) => chemin === present || chemin.startsWith(`${present}/`)),
-        `« ${present} » manque au paquet`,
+      for (const interdit of [
+        /(^|\/)\.git(\/|$)/,
+        /(^|\/)node_modules(\/|$)/,
+        /(^|\/)log\/production\.log$/,
+        /secret-ignore-par-git\.txt$/,
+      ]) {
+        const trouve = chemins.filter((chemin) => interdit.test(chemin));
+        assert.deepEqual(trouve, [], `${interdit} est entré dans le paquet ${paquet.image.name}`);
+      }
+      // Et le CONTENU, pas seulement les noms : une clé retirée de l'arbre vit dans les objets de Git.
+      assert.deepEqual(
+        porteursDeChaine,
+        [],
+        "une chaîne piégée de la source se relit dans l'image du paquet",
       );
-    }
+      // Le CODE, lui, est bien là : une exclusion qui viderait l'image passerait aussi les gardes
+      // ci-dessus, et l'épreuve serait verte par vacuité.
+      for (const present of ["Gemfile", "config/application.rb", "app", "db/migrate"]) {
+        assert.ok(
+          chemins.some((chemin) => chemin === present || chemin.startsWith(`${present}/`)),
+          `« ${present} » manque au paquet`,
+        );
+      }
 
-    // Hygiène : les images de cette épreuve ne restent pas dans les artefacts du dépôt.
-    for (const nom of [paquet.image.name, paquet.graine.name]) {
-      rmSync(join(DOSSIER_ARTEFACTS, nom), { force: true });
-    }
-  },
+      // Hygiène : les images de cette épreuve ne restent pas dans les artefacts du dépôt.
+      for (const nom of [paquet.image.name, paquet.graine.name]) {
+        rmSync(join(DOSSIER_ARTEFACTS, nom), { force: true });
+      }
+    }),
 );
 
 test(
   "une source portant une clé d'environnement est REFUSÉE avant toute construction",
   { skip: raison ?? false, timeout: 120_000 },
-  async () => {
-    const source = sourcePiegee();
-    mkdirSync(join(source, "config", "credentials"), { recursive: true });
-    writeFileSync(join(source, "config", "credentials", "staging.key"), "CLE_DE_STAGING\n");
-    try {
-      await assert.rejects(
-        fabriquerLePaquet(["--source", source, "--taille-donnees", "64"]),
-        /staging\.key/,
-      );
-    } finally {
-      rmSync(source, { recursive: true, force: true });
-    }
-  },
+  () =>
+    sousLePaquetServiPreserve(async () => {
+      const source = sourcePiegee();
+      mkdirSync(join(source, "config", "credentials"), { recursive: true });
+      writeFileSync(join(source, "config", "credentials", "staging.key"), "CLE_DE_STAGING\n");
+      try {
+        await assert.rejects(
+          fabriquerLePaquet(["--source", source, "--taille-donnees", "64"]),
+          /staging\.key/,
+        );
+      } finally {
+        rmSync(source, { recursive: true, force: true });
+      }
+    }),
 );
