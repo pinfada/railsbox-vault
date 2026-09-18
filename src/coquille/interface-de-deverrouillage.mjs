@@ -39,7 +39,11 @@ import {
   versionANoter,
 } from "./feuille-de-recuperation.mjs";
 import { moyensProposes } from "./moyens-de-deverrouillage.mjs";
-import { evaluerPhrase, LONGUEUR_MINIMALE_PHRASE } from "./politique-de-phrase.mjs";
+import {
+  CODE_PHRASE_FAIBLE,
+  evaluerPhrase,
+  LONGUEUR_MINIMALE_PHRASE,
+} from "./politique-de-phrase.mjs";
 import { etatDeLaSaisie } from "./saisie-du-code.mjs";
 import { DERIVATION_ERROR_CODES } from "../vm/derivation/derivation-errors.mjs";
 import { ENVELOPPE_ERROR_CODES } from "../vm/enveloppe/enveloppe-errors.mjs";
@@ -102,6 +106,9 @@ export const CONDUITES = Object.freeze({
     "Le calcul de la clé n'est pas disponible sur ce navigateur : l'artefact Argon2 n'a pas été " +
     "servi, ou WebAssembly est refusé par la politique de sécurité.",
 });
+
+/** Ce que le champ de la phrase dit d'un coffre qui EXISTE : sa règle ne vaut qu'à la création. */
+export const CONSEIL_DE_REOUVERTURE = "Saisissez la phrase utilisée lors de la création du coffre.";
 
 /** Ce que l'utilisateur lit d'un refus : sa conduite s'il y en a une, son code sinon. */
 export function conduiteDeRefus(code, message) {
@@ -375,16 +382,16 @@ function relireLaPhrase(contexte) {
   noeuds.phrase.minLength = creation ? LONGUEUR_MINIMALE_PHRASE : 1;
   noeuds.phrase.autocomplete = creation ? "new-password" : "current-password";
   const verdict = evaluerPhrase(noeuds.phrase.value);
-  dire(
-    noeuds.phraseConseil,
-    creation ? verdict.message : "Saisissez la phrase utilisée lors de la création du coffre.",
-  );
+  dire(noeuds.phraseConseil, creation ? verdict.message : CONSEIL_DE_REOUVERTURE);
   return !creation || verdict.admise;
 }
 
 async function ouvrirParLaPhrase(contexte) {
   if (!relireLaPhrase(contexte)) {
-    dire(contexte.noeuds.refus, evaluerPhrase(contexte.noeuds.phrase.value).message);
+    // Le refus porte son CODE, comme tout autre : le parcours lui donne sa conduite (#240), au lieu
+    // de la phrase générique qu'un refus sans code reçoit.
+    const { message } = evaluerPhrase(contexte.noeuds.phrase.value);
+    dire(contexte.noeuds.refus, conduiteDeRefus(CODE_PHRASE_FAIBLE, message));
     return;
   }
   const phrase = contexte.noeuds.phrase.value;

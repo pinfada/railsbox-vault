@@ -87,12 +87,21 @@ Messages qui peuvent s'afficher sur cet écran :
 > Ce que vous avez à faire : Tapez votre phrase, puis cliquez sur « Créer mon coffre ».
 >
 > Durée : Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas
-> deviner votre phrase en essayant. Comptez moins d'une seconde (dans Firefox : « environ 2
-> seconde(s) ») sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute
-> et demie. L'onglet peut sembler figé : ne le fermez pas.
+> deviner votre phrase en essayant. Comptez environ 2 secondes (dans Firefox : « environ 4 secondes
+> ») sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute et demie.
+> L'onglet peut sembler figé : ne le fermez pas.
 
 Boutons et champs : « Votre phrase » (champ), « Créer mon coffre » ou « Ouvrir mon coffre », « Créer
 mon coffre avec une passkey » ou « Ouvrir mon coffre avec ma passkey ».
+
+Sous le champ « Votre phrase », selon ce qui est tapé :
+
+- Au moins 12 caractères hors espaces de bord sont nécessaires. Choisissez plusieurs mots sans lien
+  entre eux, ou un secret généré par votre gestionnaire de mots de passe.
+- Phrase trop prévisible : évitez les répétitions et les suites. Choisissez plusieurs mots sans lien
+  entre eux, ou un secret généré par votre gestionnaire de mots de passe.
+- Longueur suffisante (N caractères). La longueur seule ne garantit pas la robustesse. Choisissez
+  plusieurs mots sans lien entre eux, ou un secret généré par votre gestionnaire de mots de passe.
 
 Messages qui peuvent s'afficher sur cet écran :
 
@@ -130,13 +139,16 @@ Messages qui peuvent s'afficher sur cet écran :
 > Ce que vous avez à faire : Quand vous êtes prêt à écrire, cliquez sur « Afficher mon code de
 > récupération ».
 
-Boutons et champs : « Afficher mon code de récupération ».
+Boutons et champs : « Afficher mon code de récupération », « Revenir : j'ai toujours ma feuille »
+(seulement quand la personne a dit ne plus l'avoir), « Révoquer tous les autres moyens d'ouvrir ce
+coffre ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
 - Ce coffre porte déjà N codes de récupération. En afficher un nouveau n'efface aucun des précédents
   : tous ouvrent ce coffre tant que vous n'en retirez aucun. Une sauvegarde faite avant ce nouveau
-  code ne le connaît pas : refaites-en une à l'étape 6.
+  code ne le connaît pas : refaites-en une à l'étape 6. Si vous avez retrouvé votre feuille, cliquez
+  sur « Revenir : j'ai toujours ma feuille ».
 
 ### Écran : Recopier votre code de récupération
 
@@ -154,30 +166,30 @@ Messages qui peuvent s'afficher sur cet écran :
 - Numéro de version à noter à côté du code : N. Recopiez les 7 groupes de 4 symboles exactement. Ce
   code ne sera plus jamais affiché.
 
-### Écran : Confirmer votre code de récupération
+### Écran : Vérifier votre code de récupération
 
-> Le code n'est plus affiché. Pour être sûr que votre feuille est juste, retapez-le en le lisant sur
-> votre papier. Vous ne pourrez pas continuer tant qu'il n'est pas confirmé.
+> Pour être sûr que votre feuille est juste, vous allez vous en servir : verrouillez votre coffre,
+> puis rouvrez-le avec le code que vous venez de recopier. Le code quitte alors cette page. Votre
+> coffre est encore vide : si vous vous êtes trompé en recopiant, votre phrase le rouvre, et rien
+> n'est perdu.
 >
-> Ce que vous avez à faire : Tapez les 28 symboles de votre feuille (les tirets et les espaces sont
-> libres), puis cliquez sur « Confirmer mon code ». Vous pouvez aussi appuyer sur Entrée.
+> Ce que vous avez à faire : Cliquez sur « Verrouiller mon coffre », puis ouvrez-le avec le code de
+> votre feuille. Si vous n'avez pas fini de recopier, cliquez d'abord sur « Revoir mon code ».
+>
+> Durée : Le verrouillage prend quelques secondes.
 
-Boutons et champs : « Code recopié depuis votre feuille » (champ), « Confirmer mon code », « Revoir
-mon code ».
+Boutons et champs : « Revoir mon code », « Verrouiller mon coffre ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
-- Il manque des symboles : N sur 28.
-- Ce code est bien formé, mais ce n'est pas celui qui vient d'être affiché. Relisez votre feuille :
-  vous avez peut-être recopié un autre code. Si vous ne l'avez pas noté, cliquez sur « Revoir mon
-  code ».
-- Code confirmé. Gardez bien votre feuille, loin de cet appareil.
+- Verrouillage en cours… Ne fermez pas l'onglet.
 
 ### Écran : Vérifier votre code de récupération
 
 > Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché :
 > il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le lisant
-> sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste.
+> sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste. Sur cet appareil,
+> cela ne vous est demandé qu'une fois : ensuite, votre phrase suffit.
 >
 > Ce que vous avez à faire : Si vous avez votre feuille : tapez le code, puis cliquez sur « Ouvrir
 > mon coffre avec le code ». Si vous n'avez plus cette feuille, cliquez sur « Je n'ai plus cette
@@ -196,20 +208,23 @@ Messages qui peuvent s'afficher sur cet écran :
 - N symbole(s) sur 28.
 - Code complet : aucune faute de recopie détectée.
 - Ouverture en cours… Ne fermez pas l'onglet.
+- Votre feuille est juste : son code a ouvert votre coffre. Gardez-la bien, loin de cet appareil.
 - Votre coffre est ouvert.
 
 ### Écran : Vérifier votre code de récupération
 
 > Un code de récupération a déjà été affiché pour ce coffre, et il ne sera plus jamais réaffiché :
 > il n'existe que sur votre feuille. Pour continuer, ouvrez votre coffre avec ce code, en le lisant
-> sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste.
+> sur votre feuille — c'est ainsi que l'on vérifie que votre feuille est juste. Sur cet appareil,
+> cela ne vous est demandé qu'une fois : ensuite, votre phrase suffit.
 >
 > Ce que vous avez à faire : Si vous avez votre feuille : cliquez sur « Verrouiller mon coffre »,
 > puis ouvrez le coffre avec le code que vous y avez recopié. Si vous n'avez plus cette feuille,
 > cliquez sur « Je n'ai plus cette feuille — afficher un nouveau code » : un nouveau code sera
 > affiché, une seule fois, et vous le recopierez sur une feuille neuve. L'ancien code continue
-> d'ouvrir ce coffre tant que personne ne le retire. Si quelqu'un d'autre a vu votre feuille, c'est
-> un autre geste : allez à l'étape 9 et révoquez les autres moyens d'ouvrir ce coffre.
+> d'ouvrir ce coffre tant que personne ne le retire. Si quelqu'un d'autre a vu votre feuille,
+> cliquez aussi sur « Je n'ai plus cette feuille », puis, avant d'afficher un nouveau code, sur «
+> Révoquer tous les autres moyens d'ouvrir ce coffre » : les anciens codes seront retirés.
 >
 > Durée : Le verrouillage prend quelques secondes.
 
@@ -221,7 +236,8 @@ Messages qui peuvent s'afficher sur cet écran :
 - Verrouillage en cours… Ne fermez pas l'onglet.
 - Ce coffre porte déjà N codes de récupération. En afficher un nouveau n'efface aucun des précédents
   : tous ouvrent ce coffre tant que vous n'en retirez aucun. Une sauvegarde faite avant ce nouveau
-  code ne le connaît pas : refaites-en une à l'étape 6.
+  code ne le connaît pas : refaites-en une à l'étape 6. Si vous avez retrouvé votre feuille, cliquez
+  sur « Revenir : j'ai toujours ma feuille ».
 
 **Questions**
 
@@ -233,9 +249,9 @@ Messages qui peuvent s'afficher sur cet écran :
 
    _Votre réponse :_
 
-3. Si la page se recharge avant la confirmation, l'écran « Vérifier votre code » vous dit-il quoi
-   faire — y compris demander une nouvelle feuille si vous avez perdu la vôtre, et comprenez-vous
-   que l'ancienne continue d'ouvrir le coffre ?
+3. Comprenez-vous qu'il faut ensuite verrouiller le coffre puis le rouvrir avec le code de votre
+   feuille — et que, si vous vous êtes trompé en recopiant, votre phrase le rouvre et une nouvelle
+   feuille peut être demandée ?
 
    _Votre réponse :_
 
@@ -264,12 +280,53 @@ applicatif » contient des informations techniques, qu'il n'est pas utile d'ouvr
 
 Messages qui peuvent s'afficher sur cet écran :
 
+- L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur «
+  Démarrer l'application ».
 - Démarrage en cours depuis N seconde(s), sur environ deux minutes. Le coffre travaille : N signe(s)
   de vie reçu(s).
 - Le coffre travaille : N signe(s) de vie reçu(s).
 - En attente du premier signe de vie du coffre.
 - L'application est démarrée : elle s'affiche ci-dessous.
+- L'application s'affiche ci-dessous.
 - Reprise de l'installation en cours… Ne fermez pas l'onglet.
+
+### Écran : Votre application
+
+> La visite est finie. L'application s'exécute entièrement dans votre navigateur. Ce que vous y
+> écrivez est enregistré dans votre coffre, sur cet appareil. Vos gestes de tous les jours sont sur
+> cet écran : verrouiller le coffre quand vous avez fini, le sauvegarder de temps en temps, et
+> révoquer les autres moyens de l'ouvrir si l'un d'eux a pu être vu.
+>
+> Ce que vous avez à faire : Cliquez sur « Démarrer l'application », attendez qu'elle s'affiche,
+> puis utilisez-la. Quand vous avez fini, cliquez sur « Verrouiller mon coffre ».
+>
+> Durée : Le premier démarrage installe l'application : comptez environ deux minutes, parfois
+> davantage sur un appareil lent ou occupé. Les démarrages suivants sont plus courts. Pendant ce
+> temps, l'onglet peut sembler figé : ne le fermez pas. La progression s'affiche sous le bouton.
+
+Boutons et champs : « Démarrer l'application », « Reprendre l'installation » (seulement si une
+installation a été interrompue), « Verrouiller mon coffre », l'application elle-même, une fois
+démarrée, « Sauvegarder mon coffre », « Enregistrer la sauvegarde » (lien), « Révoquer tous les
+autres moyens d'ouvrir ce coffre ».
+
+Quand l'application est démarrée, les explications ci-dessus se replient sous « Aide pour cette
+étape » (un clic ou la touche Entrée les rouvre), le bouton « Démarrer l'application » disparaît, et
+l'application remonte près du haut de la page. Au-dessus d'elle, un repli « Détails du relais
+applicatif » contient des informations techniques, qu'il n'est pas utile d'ouvrir.
+
+Messages qui peuvent s'afficher sur cet écran :
+
+- L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur «
+  Démarrer l'application ».
+- Démarrage en cours depuis N seconde(s), sur environ deux minutes. Le coffre travaille : N signe(s)
+  de vie reçu(s).
+- L'application est démarrée : elle s'affiche ci-dessous.
+- Verrouillage en cours… Ne fermez pas l'onglet.
+- Sauvegarde en cours… Ne fermez pas l'onglet.
+- Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien ne s'est
+  enregistré, cliquez sur « Enregistrer la sauvegarde ». Pensez à redémarrer l'application si vous
+  voulez continuer à l'utiliser.
+- N moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V.
 
 ### Écran : Travailler dans l'application
 
@@ -308,7 +365,8 @@ Messages qui peuvent s'afficher sur cet écran :
 >
 > Durée : Le verrouillage prend quelques secondes.
 
-Boutons et champs : « Verrouiller mon coffre », l'application elle-même, une fois démarrée.
+Boutons et champs : « Verrouiller mon coffre », l'application elle-même, une fois démarrée, «
+Revenir à mon application ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
@@ -323,14 +381,18 @@ Messages qui peuvent s'afficher sur cet écran :
 > Ce que vous avez à faire : Tapez votre phrase, puis cliquez sur « Ouvrir mon coffre ».
 >
 > Durée : Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas
-> deviner votre phrase en essayant. Comptez moins d'une seconde (dans Firefox : « environ 2
-> seconde(s) ») sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute
-> et demie. L'onglet peut sembler figé : ne le fermez pas.
+> deviner votre phrase en essayant. Comptez environ 2 secondes (dans Firefox : « environ 4 secondes
+> ») sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute et demie.
+> L'onglet peut sembler figé : ne le fermez pas.
 
 Boutons et champs : « Numéro de version noté sur votre feuille (facultatif) » (champ), « Votre
 phrase » (champ), « Créer mon coffre » ou « Ouvrir mon coffre », « Créer mon coffre avec une passkey
 » ou « Ouvrir mon coffre avec ma passkey », « J'ai oublié ma phrase : utiliser mon code de
 récupération ».
+
+Sous le champ « Votre phrase », selon ce qui est tapé :
+
+- Saisissez la phrase utilisée lors de la création du coffre.
 
 Messages qui peuvent s'afficher sur cet écran :
 
@@ -367,7 +429,7 @@ Messages qui peuvent s'afficher sur cet écran :
 > l'appareil. Ne fermez pas l'onglet.
 
 Boutons et champs : « Sauvegarder mon coffre », « Enregistrer la sauvegarde » (lien), « Continuer :
-» suivi du titre de l'étape suivante.
+» suivi du titre de l'étape suivante, « Revenir à mon application ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
@@ -401,7 +463,8 @@ Messages qui peuvent s'afficher sur cet écran :
 > Ce que vous avez à faire : Sur l'autre appareil, ouvrez RailsBox Vault, choisissez « J'ai déjà une
 > sauvegarde » et donnez le fichier. Pour continuer ici, cliquez sur le bouton ci-dessous.
 
-Boutons et champs : « Continuer : » suivi du titre de l'étape suivante.
+Boutons et champs : « Continuer : » suivi du titre de l'étape suivante, « Revenir à mon application
+».
 
 ### Écran : Restaurer une sauvegarde
 
@@ -447,7 +510,7 @@ Messages qui peuvent s'afficher sur cet écran :
 >
 > Durée : Le verrouillage prend quelques secondes.
 
-Boutons et champs : « Verrouiller mon coffre ».
+Boutons et champs : « Verrouiller mon coffre », « Revenir à mon application ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
@@ -497,7 +560,8 @@ Messages qui peuvent s'afficher sur cet écran :
 > Ce que vous avez à faire : Seulement si c'est nécessaire : cliquez sur « Révoquer tous les autres
 > moyens d'ouvrir ce coffre ». Notez ensuite le nouveau numéro de version sur votre feuille.
 
-Boutons et champs : « Révoquer tous les autres moyens d'ouvrir ce coffre ».
+Boutons et champs : « Révoquer tous les autres moyens d'ouvrir ce coffre », « Revenir à mon
+application ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
@@ -510,8 +574,10 @@ Messages qui peuvent s'afficher sur cet écran :
 > faites restent ouvrables par les anciens moyens : détruisez-les si elles risquent de tomber entre
 > de mauvaises mains, puis faites une nouvelle sauvegarde.
 >
-> Ce que vous avez à faire : Notez sur votre feuille le numéro de version indiqué ci-dessus. Il n'y
-> a rien d'autre à faire.
+> Ce que vous avez à faire : Notez sur votre feuille le numéro de version indiqué ci-dessous. Pour
+> vous servir de votre application, cliquez sur « Revenir à mon application ».
+
+Boutons et champs : « Revenir à mon application ».
 
 **Questions**
 
@@ -523,7 +589,8 @@ Messages qui peuvent s'afficher sur cet écran :
 
    _Votre réponse :_
 
-3. Savez-vous quoi faire après la révocation (noter la version, refaire une sauvegarde) ?
+3. Savez-vous quoi faire après la révocation (noter la version, refaire une sauvegarde), puis
+   comment revenir à votre application ?
 
    _Votre réponse :_
 
@@ -613,6 +680,10 @@ faire.
 - Le numéro de version que vous avez tapé est plus grand que celui de ce coffre. Relisez le numéro
   sur votre feuille. Si vous n'êtes pas sûr, videz ce champ et réessayez : le coffre s'ouvrira, mais
   sans vérifier qu'on ne lui a pas remis une copie plus ancienne.
+- Cette phrase ne suit pas la règle écrite sous le champ : au moins 12 caractères (les espaces au
+  début et à la fin ne comptent pas), sans répétition ni suite évidente comme « 123456789 ». Le
+  coffre n'a pas été créé. Rien n'a été perdu. Allongez ou changez votre phrase, puis cliquez à
+  nouveau sur « Créer mon coffre ».
 - Le champ de la phrase est vide. Tapez une phrase de plusieurs mots, facile à retenir pour vous et
   difficile à deviner pour les autres.
 - Le code a une faute de recopie : une lettre ou un chiffre est mal lu, ou deux sont inversés.
@@ -682,8 +753,10 @@ faire.
 
 - Il n'y a pas de coffre sur cet appareil. Si vous en avez créé un ailleurs, restaurez sa sauvegarde
   ici.
-- Ce coffre a déjà le nombre maximal de moyens de l'ouvrir : rien n'a été ajouté. Rien n'a été
-  perdu.
+- Ce coffre a déjà huit moyens de l'ouvrir, le maximum : aucun nouveau code n'a été ajouté. Rien n'a
+  été perdu. Pour faire de la place, cliquez sur « Révoquer tous les autres moyens d'ouvrir ce
+  coffre » (c'est le geste de l'étape 9) : tous les autres codes seront retirés, et seul le moyen
+  avec lequel vous venez d'ouvrir le coffre restera. Vous pourrez ensuite afficher un nouveau code.
 - Ce coffre a été fermé par une version plus récente de RailsBox Vault. Mettez l'application à jour,
   puis réessayez. Rien n'a été perdu.
 - Les réglages enregistrés pour ouvrir ce coffre ne sont pas acceptables : ce coffre a peut-être été

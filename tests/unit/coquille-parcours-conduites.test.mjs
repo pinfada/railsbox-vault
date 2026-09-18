@@ -20,6 +20,7 @@ import { IMPORT_ERROR_CODES } from "../../src/vm/import-errors.mjs";
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 import { CONDUITES, ancreSaisie } from "../../src/coquille/interface-de-deverrouillage.mjs";
 import { CONDUITES_DE_PORTABILITE } from "../../src/coquille/gestes-de-portabilite.mjs";
+import { CODE_PHRASE_FAIBLE } from "../../src/coquille/politique-de-phrase.mjs";
 import { TOUS_LES_CODES_DE_COQUILLE } from "../../src/coquille/refus-de-coquille.mjs";
 import {
   CLASSEMENT_DES_CONDUITES,
@@ -64,6 +65,8 @@ const FAMILLES = Object.freeze({
   derivation: Object.values(DERIVATION_ERROR_CODES),
   archive: Object.values(ARCHIVE_ERROR_CODES),
   import: Object.values(IMPORT_ERROR_CODES),
+  // La politique de phrase (#240) : son seul code, rendu avant toute dérivation.
+  phrase: [CODE_PHRASE_FAIBLE],
 });
 
 const TOUS_LES_CODES_CONNUS = new Set(Object.values(FAMILLES).flat());

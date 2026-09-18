@@ -11,7 +11,9 @@ import {
   CONDUITES_DU_PARCOURS,
   REFUS_SANS_CODE,
 } from "../../src/coquille/conduites-du-parcours.mjs";
+import { CONSEIL_DE_REOUVERTURE } from "../../src/coquille/interface-de-deverrouillage.mjs";
 import { ECRANS, ETAPES, MESSAGES } from "../../src/coquille/parcours.mjs";
+import { evaluerPhrase } from "../../src/coquille/politique-de-phrase.mjs";
 import {
   CHEMIN_DE_LA_RELECTURE,
   MESSAGES_DE_STRUCTURE,
@@ -61,6 +63,23 @@ test("la page de relecture reproduit chaque texte servi : écrans, messages, con
   }
   for (const { conduite } of Object.values(REFUS_SANS_CODE))
     assert.ok(page.includes(aPlat(conduite)));
+});
+
+test("#242, défaut 10 : les textes écrits sous le champ de la phrase figurent dans la relecture", async () => {
+  const page = aPlat(await readFile(CHEMIN_DE_LA_RELECTURE, "utf8"));
+  const sousLeChamp = [
+    evaluerPhrase("").message,
+    evaluerPhrase("aaaaaaaaaaaa").message,
+    evaluerPhrase("une phrase assez longue").message.replace(
+      /\(\d+ caractères\)/,
+      "(N caractères)",
+    ),
+    CONSEIL_DE_REOUVERTURE,
+  ];
+  for (const texte of sousLeChamp) {
+    assert.ok(page.includes(aPlat(texte)), `absent de la relecture : ${texte.slice(0, 50)}…`);
+  }
+  assert.match(page, /Au moins 12 caractères/);
 });
 
 test("chaque message de la page est rattaché à un écran, ou dit dans l'introduction", () => {
