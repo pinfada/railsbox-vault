@@ -581,6 +581,8 @@ test("TOUTE réponse du canal privilégié est appariable : aucune ne peut reste
       // Ils entrent dans cette liste au même titre que les autres — un boot de deux minutes qui
       // resterait en suspens serait la plus longue des attentes muettes.
       TYPES_PRIVILEGIES.applicationReponse,
+      // Le constat du déphasage (#236 T2) : une lecture demandée par la page, donc appariée.
+      TYPES_PRIVILEGIES.dephasageReponse,
       TYPES_PRIVILEGIES.deverrouillageReponse,
       TYPES_PRIVILEGIES.etatReponse,
       TYPES_PRIVILEGIES.fermetureReponse,
@@ -609,6 +611,7 @@ test("TOUTE réponse du canal privilégié est appariable : aucune ne peut reste
     TYPES_PRIVILEGIES.deverrouiller,
     TYPES_PRIVILEGIES.creerRecuperation,
     TYPES_PRIVILEGIES.application,
+    TYPES_PRIVILEGIES.dephasage,
     TYPES_PRIVILEGIES.fermeture,
     TYPES_PRIVILEGIES.reprendreInstallation,
     TYPES_PRIVILEGIES.sauvegarder,

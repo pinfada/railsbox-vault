@@ -71,11 +71,21 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "applicationDemarree",
     "applicationAffichee",
     "repriseEnCours",
+    "miseAJourProposee",
+    "miseAJourPlusTard",
+    "miseAJourSansPlusTard",
+    "miseAJourEnCours",
+    "miseAJourFaite",
   ],
   accueil: [
     "applicationEnAttente",
     "demarrageEnCours",
     "applicationDemarree",
+    "miseAJourProposee",
+    "miseAJourPlusTard",
+    "miseAJourSansPlusTard",
+    "miseAJourEnCours",
+    "miseAJourFaite",
     "verrouillageEnCours",
     "sauvegardeEnCours",
     "sauvegardePrete",
@@ -203,6 +213,9 @@ function texteDuMessage(nom) {
   if (nom === "demarrageEnCours") return message(N, MESSAGES.signesDeVie(N));
   if (nom === "revoque") return message(N, "V");
   if (nom === "saisieIncomplete") return message(N, 28);
+  if (nom === "miseAJourProposee") {
+    return `${message("A", "B", true)} — ou, sans migration — ${message("A", "B", false)}`;
+  }
   if (nom === "avertissementDeRevocation") {
     return ["phrase", "webauthn-prf", "recuperation"]
       .map(

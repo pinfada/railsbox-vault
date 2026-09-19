@@ -89,8 +89,17 @@ dmesg -n 1 2>/dev/null || true
 # Le pont suit ces journaux ; ils doivent exister avant qu'il ne démarre.
 touch /var/log/puma.log /var/log/bridge-err.log
 
-echo "[init] lancement de l'application"
-sh /opt/vault/start-app.sh >> /var/log/puma.log 2>&1 &
+# Le SCHÉMA des données est confronté au paquet AVANT Rails (#236 T2, ADR 0042) : une migration
+# n'est jouée que si le paquet le dépasse, et Rails n'est PAS lancé si les données sont plus
+# récentes que le code ou ne disent pas ce que le manifeste attend. Synchrone, et dit sur la série :
+# le Worker de confiance relève ces lignes. Le pont démarre dans tous les cas — un guest qui refuse
+# reste joignable, et son refus se lit au lieu de se deviner.
+if sh /opt/vault/schema-du-volume.sh; then
+  echo "[init] lancement de l'application"
+  sh /opt/vault/start-app.sh >> /var/log/puma.log 2>&1 &
+else
+  echo "[init] application NON lancee : le schema des donnees l'interdit"
+fi
 
 echo "[init] pont serie actif sur ttyS0"
 # `raw` : en mode canonique le tty tronque les lignes au-delà de 4096

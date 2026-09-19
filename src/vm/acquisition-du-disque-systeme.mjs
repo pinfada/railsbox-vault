@@ -24,20 +24,21 @@ import {
   composerDisqueSysteme,
   ecrireTableDePartitions,
 } from "./disque-compose.mjs";
+import { ouvrirLeFluxDArtefact } from "./flux-d-artefact.mjs";
 import { createSha256Stream } from "./sha256-stream.mjs";
 
 /**
  * TÉLÉCHARGE un morceau directement dans le tampon, à son décalage, en le hachant au passage.
  *
- * @param {{ tampon: Uint8Array, debut: number, morceau: { url: string, octets: number, sha256: string },
+ * Un morceau COMPRESSÉ (gzip, #236 T2) est décompressé en flux par `ouvrirLeFluxDArtefact` : ce qui
+ * est borné, rangé et haché ici est l'image DÉCOMPRESSÉE, comme avant. Rend les octets TRANSFÉRÉS.
+ *
+ * @param {{ tampon: Uint8Array, debut: number, morceau: { url: string, octets: number, sha256: string,
+ *           compression?: string, transfertOctets?: number },
  *           nom: string, recuperer: typeof fetch }} parametres
  */
 async function verserLeMorceau({ tampon, debut, morceau, nom, recuperer }) {
-  const reponse = await recuperer(morceau.url, { cache: "no-store" });
-  if (!reponse.ok || reponse.body === null) {
-    throw new Error(`Artefact ${nom} (${morceau.url}) indisponible (${reponse.status}).`);
-  }
-  const lecteur = reponse.body.getReader();
+  const { lecteur, clore } = await ouvrirLeFluxDArtefact(morceau, { nom, recuperer });
   const empreinte = createSha256Stream();
   let recu = 0;
   for (;;) {
@@ -64,7 +65,7 @@ async function verserLeMorceau({ tampon, debut, morceau, nom, recuperer }) {
       `Artefact ${nom} refusé : empreinte ${obtenue}, le descripteur déclare ${morceau.sha256}.`,
     );
   }
-  return recu;
+  return clore(recu);
 }
 
 /**

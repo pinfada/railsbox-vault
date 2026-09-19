@@ -272,8 +272,9 @@ Messages qui peuvent s'afficher sur cet écran :
 > temps, l'onglet peut sembler figé : ne le fermez pas. La progression s'affiche sous le bouton.
 
 Boutons et champs : « Démarrer l'application », « Reprendre l'installation » (seulement si une
-installation a été interrompue), l'application elle-même, une fois démarrée, « Continuer : » suivi
-du titre de l'étape suivante.
+installation a été interrompue), « Sauvegarder d'abord », « Mettre à jour l'application » et « Plus
+tard » (seulement quand une nouvelle version de l'application est proposée), l'application
+elle-même, une fois démarrée, « Continuer : » suivi du titre de l'étape suivante.
 
 Quand l'application est démarrée, les explications ci-dessus se replient sous « Aide pour cette
 étape » (un clic ou la touche Entrée les rouvre), le bouton « Démarrer l'application » disparaît, et
@@ -291,6 +292,23 @@ Messages qui peuvent s'afficher sur cet écran :
 - L'application est démarrée : elle s'affiche ci-dessous.
 - L'application s'affiche ci-dessous.
 - Reprise de l'installation en cours… Ne fermez pas l'onglet.
+- Une nouvelle version de l'application est disponible : B. Votre coffre utilise la version A. La
+  mise à jour transforme vos données pour la nouvelle version, au démarrage, dans votre navigateur :
+  comptez environ quatre minutes, et ne fermez pas l'onglet. Rien ne se fait sans vous : avant de
+  mettre à jour, faites une sauvegarde — si quelque chose se passait mal, elle rouvrira votre coffre
+  tel qu'il est aujourd'hui. — ou, sans migration — Une nouvelle version de l'application est
+  disponible : B. Votre coffre utilise la version A. La mise à jour ne change pas vos données ; seul
+  le code de l'application change. Rien ne se fait sans vous : avant de mettre à jour, faites une
+  sauvegarde — si quelque chose se passait mal, elle rouvrira votre coffre tel qu'il est
+  aujourd'hui.
+- « Plus tard » garde votre version actuelle : « Démarrer l'application » l'ouvre comme d'habitude,
+  et la mise à jour vous sera proposée à la prochaine ouverture.
+- Cette adresse ne sert plus votre version actuelle : pour démarrer l'application ici, il faut la
+  mettre à jour. Vos données restent intactes tant que vous ne le faites pas.
+- Mise à jour en cours : comptez environ quatre minutes, et ne fermez pas l'onglet. Si la page se
+  fermait, vos données seraient retrouvées telles qu'avant ou telles qu'après la mise à jour, jamais
+  entre les deux.
+- L'application est à jour : version N. Elle s'affiche ci-dessous.
 
 ### Écran : Votre application
 
@@ -308,9 +326,10 @@ Messages qui peuvent s'afficher sur cet écran :
 > temps, l'onglet peut sembler figé : ne le fermez pas. La progression s'affiche sous le bouton.
 
 Boutons et champs : « Démarrer l'application », « Reprendre l'installation » (seulement si une
-installation a été interrompue), « Verrouiller mon coffre », l'application elle-même, une fois
-démarrée, « Sauvegarder mon coffre », « Enregistrer la sauvegarde » (lien), « Révoquer tous les
-autres moyens d'ouvrir ce coffre ».
+installation a été interrompue), « Sauvegarder d'abord », « Mettre à jour l'application » et « Plus
+tard » (seulement quand une nouvelle version de l'application est proposée), « Verrouiller mon
+coffre », l'application elle-même, une fois démarrée, « Sauvegarder mon coffre », « Enregistrer la
+sauvegarde » (lien), « Révoquer tous les autres moyens d'ouvrir ce coffre ».
 
 Quand l'application est démarrée, les explications ci-dessus se replient sous « Aide pour cette
 étape » (un clic ou la touche Entrée les rouvre), le bouton « Démarrer l'application » disparaît, et
@@ -324,6 +343,23 @@ Messages qui peuvent s'afficher sur cet écran :
 - Démarrage en cours depuis N seconde(s), sur environ deux minutes. Le coffre travaille : N signe(s)
   de vie reçu(s).
 - L'application est démarrée : elle s'affiche ci-dessous.
+- Une nouvelle version de l'application est disponible : B. Votre coffre utilise la version A. La
+  mise à jour transforme vos données pour la nouvelle version, au démarrage, dans votre navigateur :
+  comptez environ quatre minutes, et ne fermez pas l'onglet. Rien ne se fait sans vous : avant de
+  mettre à jour, faites une sauvegarde — si quelque chose se passait mal, elle rouvrira votre coffre
+  tel qu'il est aujourd'hui. — ou, sans migration — Une nouvelle version de l'application est
+  disponible : B. Votre coffre utilise la version A. La mise à jour ne change pas vos données ; seul
+  le code de l'application change. Rien ne se fait sans vous : avant de mettre à jour, faites une
+  sauvegarde — si quelque chose se passait mal, elle rouvrira votre coffre tel qu'il est
+  aujourd'hui.
+- « Plus tard » garde votre version actuelle : « Démarrer l'application » l'ouvre comme d'habitude,
+  et la mise à jour vous sera proposée à la prochaine ouverture.
+- Cette adresse ne sert plus votre version actuelle : pour démarrer l'application ici, il faut la
+  mettre à jour. Vos données restent intactes tant que vous ne le faites pas.
+- Mise à jour en cours : comptez environ quatre minutes, et ne fermez pas l'onglet. Si la page se
+  fermait, vos données seraient retrouvées telles qu'avant ou telles qu'après la mise à jour, jamais
+  entre les deux.
+- L'application est à jour : version N. Elle s'affiche ci-dessous.
 - Verrouillage en cours… Ne fermez pas l'onglet.
 - Sauvegarde en cours… Ne fermez pas l'onglet.
 - Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien ne s'est
@@ -729,6 +765,10 @@ faire.
 
 - Une autre opération est en cours, ou le coffre n'est pas encore ouvert. Attendez la fin de
   l'opération en cours, puis recommencez.
+- Vos données viennent d'une version plus récente de l'application que celle que cette adresse sert.
+  Rien n'a été démarré ni modifié. Rouvrez ce coffre plus tard, ou depuis une adresse qui sert la
+  version récente. Vous pouvez aussi en faire une sauvegarde : elle se fait sans démarrer
+  l'application.
 - Une opération longue est déjà en cours (démarrage, sauvegarde ou restauration). Attendez qu'elle
   se termine, puis recommencez.
 - Le coffre termine un enregistrement. Attendez quelques secondes, puis recommencez.
@@ -804,6 +844,26 @@ faire.
   réparer effacerait ce que vous y avez écrit depuis : rien n'a été touché. N'effacez pas les
   données de ce site, gardez votre sauvegarde, et demandez de l'aide.
 - Aucune application n'est livrée avec ce coffre à cette adresse : il n'y a rien à démarrer.
+- Ce coffre contient les données d'une autre application que celle que cette adresse propose. Rien
+  n'a été démarré ni modifié : vos données sont intactes dans ce navigateur. Rouvrez ce coffre
+  depuis l'adresse qui sert son application. Vous pouvez aussi en faire une sauvegarde : elle se
+  fait sans démarrer l'application.
+- Vos données sont intactes dans ce navigateur, mais cette adresse ne sert pas l'application dont
+  elles ont besoin, ou plus sa version. Rouvrez ce coffre depuis une adresse qui la sert, ou, si «
+  Mettre à jour l'application » vous est proposé, mettez à jour. Vous pouvez aussi en faire une
+  sauvegarde : elle se fait sans démarrer l'application.
+- Ce coffre a été créé par une version de l'application que cette adresse ne sert plus, et l'état
+  exact de ses données ne peut pas être vérifié ici. Rien n'a été démarré ni modifié. Rouvrez-le
+  depuis une adresse qui sert cette version. Vous pouvez aussi en faire une sauvegarde : elle se
+  fait sans démarrer l'application.
+- L'application n'a pas été lancée : l'état de vos données ne correspond pas à ce que le coffre
+  annonçait, le plus souvent après une mise à jour interrompue. Rien n'a été perdu. Si « Mettre à
+  jour l'application » vous est proposé, utilisez-le pour reprendre la mise à jour ; sinon,
+  restaurez la sauvegarde faite avant.
+- La mise à jour de vos données a échoué, et l'application n'a pas été lancée. Ce qui était
+  enregistré avant la mise à jour n'a pas été perdu. Rouvrez le coffre sur l'ancienne version avec «
+  Plus tard » s'il vous est proposé, ou restaurez la sauvegarde faite avant, et signalez l'échec à
+  l'auteur de l'application.
 - La page demandée à l'application est trop volumineuse pour être affichée ici.
 - Ce coffre a atteint une limite de sécurité que cette version de RailsBox Vault ne sait pas encore
   renouveler. Rien n'a été perdu. Faites une sauvegarde, puis demandez de l'aide.

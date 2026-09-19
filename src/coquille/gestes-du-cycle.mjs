@@ -60,7 +60,7 @@ export function brancherLesGestesDuCycle(liaison) {
   // un verrouillage demandé PENDANT un boot, sous le code de l'ORDRE (voir `verrouiller`).
   const enVol = { demarrage: false };
   const contexte = { ...liaison, enVol, dire: ecrivainDEtat(liaison.racine) };
-  const demarrerLApplication = () => demarrer(contexte);
+  const demarrerLApplication = (corps = {}) => demarrer(contexte, corps);
   const verrouillerLeCoffre = (declencheur = DECLENCHEURS.geste) =>
     verrouiller(contexte, exigerUnDeclencheur(declencheur));
   const reprendreLInstallation = () => reprendre(contexte);
@@ -77,6 +77,16 @@ export function brancherLesGestesDuCycle(liaison) {
     void reprendreLInstallation();
   });
   return Object.freeze({ demarrerLApplication, verrouillerLeCoffre, reprendreLInstallation });
+}
+
+/**
+ * La ligne d'état d'un démarrage rendu. Un refus de DÉPHASAGE (#236 T2) porte son code, et sa
+ * conduite n'est pas celle d'une origine sans application : il passe par la ligne des refus.
+ */
+function ligneDuDemarrage(rendu) {
+  if (rendu.demarree) return "cycle:application-demarree";
+  if (rendu.dephasage !== undefined) return `cycle:demarrage-refuse:${rendu.code}`;
+  return `cycle:sans-application:${rendu.motif}`;
 }
 
 /** Écrit la ligne d'état du cycle. La seule façon dont ces deux gestes touchent le document. */
@@ -164,8 +174,13 @@ function inscrireLeDemarrage(contexte, rendu) {
   );
 }
 
-/** ÉTAPE 3 — le geste qui démarre l'application : installation si besoin, backend, puis VM. */
-async function demarrer(contexte) {
+/**
+ * ÉTAPE 3 — le geste qui démarre l'application : installation si besoin, backend, puis VM.
+ *
+ * `corps` ne porte qu'une chose, et seulement depuis le bloc de mise à jour (#236 T2) : `miseAJour`,
+ * le geste sans lequel le Worker ne joue aucune migration.
+ */
+async function demarrer(contexte, corps = {}) {
   const { demander, rapport, publier, dire, enVol } = contexte;
   if (enVol.demarrage) return { demarree: false, code: CODES_REFUS_COQUILLE.gesteEnCours };
   const bouton = contexte.racine.querySelector("#demarrer-application");
@@ -174,14 +189,17 @@ async function demarrer(contexte) {
   dire("cycle:demarrage-en-cours");
   enVol.demarrage = true;
   try {
-    const rendu = await demander("application", {});
+    const rendu = await demander(
+      "application",
+      corps.miseAJour === true ? { miseAJour: true } : {},
+    );
     rapport.application = rendu;
     if (rendu.barrieres !== undefined) rapport.barrieres = rendu.barrieres;
     if (rendu.etat !== undefined) rapport.etat = rendu.etat;
     inscrireLeDemarrage(contexte, rendu);
     afficherLeGesteDeReprise(contexte.racine, rendu.installationInterrompue);
     publier();
-    dire(rendu.demarree ? "cycle:application-demarree" : `cycle:sans-application:${rendu.motif}`);
+    dire(ligneDuDemarrage(rendu));
     return rendu;
   } catch (erreur) {
     // Un refus est PUBLIÉ, jamais avalé : c'est par lui que l'épreuve de l'ordre lit « boot demandé

@@ -62,8 +62,10 @@ import { battementDuWorker } from "./battement-du-worker.mjs";
 import {
   compteRenduPublie,
   demarrerLaVm,
+  dephasagePourLaPage,
   lireLeDescripteur,
 } from "/src/coquille/application-de-reference.mjs";
+import { reponseDeDemarrageRefuse } from "/src/coquille/mise-a-jour-applicative.mjs";
 import { reprendreSiSignatureConfirmee } from "/src/coquille/reprise-installation.mjs";
 import { constaterLExclusivite } from "/src/coquille/exclusivite-du-volume.mjs";
 import { exigerLeBackend } from "/src/coquille/cycle-de-vie.mjs";
@@ -290,6 +292,7 @@ async function surMessagePrivilegie(event) {
   if (decode.type === TYPES_PRIVILEGIES.application) {
     return demarrerLApplication(decode.message, correlation);
   }
+  if (decode.type === TYPES_PRIVILEGIES.dephasage) return constaterLeDephasage(correlation);
   if (decode.type === TYPES_PRIVILEGIES.reprendreInstallation) {
     return reprendreLInstallationGeste(correlation);
   }
@@ -759,24 +762,15 @@ async function demarrerLApplication(message, correlation) {
     demarrerLaVm({
       cleDeVolume,
       reprendreParInstantane: message?.reprendreParInstantane !== false,
+      miseAJour: message?.miseAJour === true, // le geste « Mettre à jour » (#236 T2)
     }),
   );
   if (!demarrage.demarree) {
-    return repondre(TYPES_PRIVILEGIES.applicationReponse, correlation, {
-      demarree: false,
-      motif: demarrage.motif,
-      // Le CODE distingue « rien à servir » (défaut, aucune application) du refus « sans manifeste »
-      // (#173) : c'est ce second cas qui porte la SIGNATURE, et la page ne peut décider d'offrir le
-      // bouton de reprise qu'en lisant `installationInterrompue` — jamais en devinant depuis le code
-      // seul, qui reste le même dans les deux sous-cas de ce refus.
-      code: demarrage.code ?? CODES_REFUS_COQUILLE.applicationAbsente,
-      ...(demarrage.installationInterrompue === undefined
-        ? {}
-        : {
-            installationInterrompue: demarrage.installationInterrompue,
-            motifDeLaSignature: demarrage.motifDeLaSignature,
-          }),
-    });
+    return repondre(
+      TYPES_PRIVILEGIES.applicationReponse,
+      correlation,
+      reponseDeDemarrageRefuse(demarrage),
+    );
   }
   // Deux poignées, dont aucune ne franchit un port : la fermeture et la porte HTTP du guest (#192).
   interne.application = { fermer: demarrage.fermer, requeteHttp: demarrage.requeteHttp };
@@ -792,6 +786,12 @@ async function demarrerLApplication(message, correlation) {
     barrieres: interne.barrieres,
     ...compteRenduPublie(demarrage.compte),
   });
+}
+
+/** Le DÉPHASAGE, lu pour la page après le déverrouillage, sans rien écrire ni booter (#236 T2). */
+async function constaterLeDephasage(correlation) {
+  exigerLeBackend({ etatDuVolume: interne.etat });
+  return repondre(TYPES_PRIVILEGIES.dephasageReponse, correlation, await dephasagePourLaPage());
 }
 
 /**

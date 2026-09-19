@@ -101,6 +101,8 @@ export class OpfsBlockBackend {
    * retirer.
    */
   #voisinsRetires;
+  /** Volume NÉ de cette ouverture, donc scellé à zéro : le témoin du versement creux (#237, c. 8). */
+  #naissance;
 
   /**
    * Utiliser `openOpfsVolume` : le constructeur ne garantit ni géométrie ni exclusivité, et surtout
@@ -121,6 +123,7 @@ export class OpfsBlockBackend {
     flushDelay,
     generation = null,
     voisinsRetires = [],
+    naissance = false,
   }) {
     this.#name = name;
     this.#acces = new AccesSupport({ volume: name, handle, journal });
@@ -131,6 +134,7 @@ export class OpfsBlockBackend {
     this.#flushDelay = flushDelay;
     this.#generation = generation;
     this.#voisinsRetires = Object.freeze([...voisinsRetires]);
+    this.#naissance = naissance === true;
     this.#chiffre = new VolumeChiffre({
       volume: name,
       scellement,
@@ -209,15 +213,16 @@ export class OpfsBlockBackend {
     return this.#generation;
   }
 
-  /**
-   * Voisins ORPHELINS retirés à la naissance de ce volume (#145). Vide hors naissance, ou quand la
-   * naissance n'a trouvé aucun orphelin à retirer.
-   */
+  /** Voisins ORPHELINS retirés à la naissance de ce volume (#145) : voir `#voisinsRetires`. */
   get voisinsRetires() {
     return this.#voisinsRetires;
   }
 
-  /** Installe le magasin après l'ouverture : il a besoin du backend pour lire et écrire le volume. */
+  /** Voir `#naissance`. */
+  get naissance() {
+    return this.#naissance;
+  }
+
   /**
    * Confie à ce backend le magasin qui CLÔRA la session hors transaction par une racine.
    *
