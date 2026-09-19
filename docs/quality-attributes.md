@@ -629,19 +629,26 @@ Rejouer la mesure sur `main` est le premier geste de #238.
 **Le transfert** — tailles des fichiers servis, relevées le 19/09/2026 sur les artefacts construits
 par `npm run image:build` (gzip déterministe, niveau 9) :
 
-| Morceau servi                   | Image (Mio) | Transféré avant T2 (Mio) | Transféré après (Mio) |
-| ------------------------------- | ----------: | -----------------------: | --------------------: |
-| rootfs                          |       385,0 |                    385,0 |             **128,4** |
-| paquet 1.1.0                    |       137,0 |                    137,0 |              **48,5** |
-| graine (base migrée, vide)      |       512,0 |                    512,0 |               **0,5** |
-| **premier démarrage** (3)       |     1 034,0 |              **1 034,0** |             **177,4** |
-| **réouverture** (rootfs+paquet) |       522,0 |                **522,0** |             **176,9** |
-| **mise à jour** (paquet seul)   |       137,0 |                    137,0 |              **48,5** |
+| Morceau servi              | Image (Mio) | Transféré avant T2 (Mio) | Transféré après (Mio) |
+| -------------------------- | ----------: | -----------------------: | --------------------: |
+| rootfs                     |       385,0 |                    385,0 |             **128,4** |
+| paquet 1.1.0               |       137,0 |                    137,0 |              **48,5** |
+| graine (base migrée, vide) |       512,0 |                    512,0 |               **0,5** |
+| **les trois morceaux** (3) |     1 034,0 |              **1 034,0** |             **177,4** |
+| **rootfs + paquet**        |       522,0 |                **522,0** |             **176,9** |
 
-La recette QA du 18/09/2026 avait mesuré 1,06 Gio transférés au premier démarrage (#241) ; le compte
-ci-dessus est celui des octets servis. La décompression se fait en flux (`DecompressionStream`),
-hachée au fil de l'eau : l'empreinte reste celle de l'image décompressée, et le tampon du disque
-système n'est pas plus grand qu'avant (rootfs + paquet, en RAM, #238).
+**Ce qu'un démarrage transfère VRAIMENT**, relevé par la recette QA du 19/09/2026 (Chrome installé,
+octets de chaque artefact au réseau) : le **premier démarrage** transfère **206,9 Mio** — les trois
+morceaux ci-dessus, plus le noyau (5,7 Mo), l'initrd (25,3 Mo) et le BIOS. Le tableau ne compte que
+les morceaux applicatifs ; le chiffre de 177,4 Mio publié d'abord comme « premier démarrage »
+omettait noyau et initrd. **Tout démarrage qui boote** — mise à jour, reprise d'une mise à jour, «
+Plus tard », boot à froid — retélécharge le rootfs, le paquet, le noyau et l'initrd : **≈ 206 Mio
+chacun**, cache inchangé. Une mise à jour ne transfère donc PAS « le paquet seul » (48,5 Mio), comme
+publié d'abord : c'est #247 — un magasin d'artefacts OPFS adressé par empreinte — qui l'évitera. La
+recette QA du 18/09/2026 avait mesuré 1,06 Gio transférés au premier démarrage avant les morceaux
+gzip (#241). La décompression se fait en flux (`DecompressionStream`), hachée au fil de l'eau :
+l'empreinte reste celle de l'image décompressée, et le tampon du disque système n'est pas plus grand
+qu'avant (rootfs + paquet, en RAM, #238).
 
 **La réouverture par instantané** ne change pas de nature : les deux morceaux du disque système sont
 retéléchargés à chaque ouverture (le mode de cache ne change pas, ADR 0042 § « écarté » ; un magasin
@@ -658,6 +665,13 @@ poste de développement, origine en boucle locale, un seul ouvrier) :
 | boot à froid après la mise à jour                  |    115,5 s | aucune migration rejouée, manifeste déjà suivi     |
 | réouverture par instantané, morceaux **gzip**      | **16,2 s** | acquisition 13,6 s pour 176,9 Mio transférés       |
 | réouverture par instantané, morceaux **bruts**     | **14,1 s** | acquisition 11,9 s pour 522,0 Mio transférés       |
+
+**Mesuré par la recette QA** (19/09/2026, Chrome installé et fenêtré, même poste) : mise à jour
+1.0.0 → 1.1.0 **215,9 s** du clic à l'application ; « Plus tard » (démarrage de la 1.0.0, boot à
+froid, disque système retéléchargé) **163 s** ; installation 137,5 s. L'accueil annonce donc une
+durée par chemin : « environ trois à quatre minutes » pour la mise à jour (165 à 216 s mesurés), «
+environ trois minutes » pour « Plus tard » (`DUREE_DE_LA_MISE_A_JOUR`, `DUREE_DE_PLUS_TARD` dans
+`src/coquille/textes-du-parcours.mjs`).
 
 **En boucle locale, gzip ne fait pas gagner de temps à la réouverture** : le transfert y est presque
 gratuit, et la décompression coûte ≈ 1,7 s de plus. Le gain est dans les OCTETS (522 → 176,9 Mio, ÷

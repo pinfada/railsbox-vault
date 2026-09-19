@@ -12,6 +12,7 @@ import { precedentRetenu } from "../../tools/build-reference-image/manifest.mjs"
 import {
   CONTRATS,
   confronterALaRetention,
+  courantDevientPrecedent,
   imagesDuContrat,
   retirerLePrecedent,
 } from "../../tools/paquet/retention-du-precedent.mjs";
@@ -137,6 +138,31 @@ test("Q5 : --retirer-precedent retire le contrat et ses images, et le dit ; sans
       [CONTRATS.courant, ...imagesDuContrat(courant)].sort(),
     );
     assert.match(retirerLePrecedent(dossier)[0], /aucun paquet précédent/);
+  } finally {
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test("Q5 : --courant-devient-precedent garde les images qui ont installé les coffres, sans rien construire", () => {
+  const courant = contrat("ref", "1.0.0", "a");
+  const dossier = dossierAvec({
+    [CONTRATS.courant]: courant,
+    [CONTRATS.precedent]: contrat("ref", "0.9.0", "z"),
+  });
+  try {
+    const lignes = courantDevientPrecedent(dossier);
+    assert.match(lignes.join(" "), /ref 1.0.0 devient le paquet précédent/);
+    assert.match(lignes.join(" "), /précédent retiré : ref 0.9.0/);
+    assert.deepEqual(
+      readdirSync(dossier).sort(),
+      [CONTRATS.precedent, ...imagesDuContrat(courant)].sort(),
+    );
+    // La nouvelle version peut maintenant être fabriquée : rien ne la refuse.
+    assert.deepEqual(
+      confronterALaRetention({ dossier, role: CONTRATS.courant, id: "ref", version: "1.1.0" }),
+      { retirerLePrecedent: false, lignes: [] },
+    );
+    assert.throws(() => courantDevientPrecedent(dossier), /aucun paquet courant/);
   } finally {
     rmSync(dossier, { recursive: true, force: true });
   }
