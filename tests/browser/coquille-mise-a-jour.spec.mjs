@@ -18,6 +18,7 @@ import { ETATS_DU_VOLUME } from "../../src/coquille/etat-de-la-coquille.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "../../src/coquille/identites-du-coffre.mjs";
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
 import { createManifest, serializeManifest } from "../../src/vm/volume-manifest.mjs";
+import { MESSAGES } from "../../src/coquille/textes-du-parcours.mjs";
 
 const DELAI = 120_000;
 const M = "20260101000002";
@@ -153,6 +154,11 @@ test("une version plus récente est PROPOSÉE à l'accueil, avant tout boot ; «
   await expect(page.locator("#plus-tard")).toBeVisible();
   expect((await releve(page)).application, "rien n'a démarré").toBeNull();
 
+  // La VERSION du coffre est dite à l'accueil, en une ligne (recette QA de la PR #249, Q3).
+  await expect(page.locator("#version-de-l-application")).toHaveText(
+    MESSAGES.versionDeLApplication("1.0.0"),
+  );
+
   await page.click("#plus-tard");
   await expect(page.locator("#mise-a-jour")).toBeHidden();
   expect((await releve(page)).dephasage.reportee).toBe(true);
@@ -179,6 +185,39 @@ test("sans le précédent servi, « Plus tard » n'est pas offert, et démarrer 
     `cycle:demarrage-refuse:${C.applicationNonServie}`,
     { timeout: DELAI },
   );
+  expect((await releve(page)).application.bootMs, "aucun boot").toBeUndefined();
+  expect(await etatDuVolumeApplicatif(page), "aucun octet du volume écrit").toEqual(avant);
+});
+
+test("REPRISE SEULE (recette QA de #249, Q1 et Q8) : son texte, son bouton, et « Démarrer » ne dit jamais « non servie »", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const app = {
+    id: "reference-essai",
+    version: "1.0.0",
+    schema: M,
+    migration: { version: "1.1.0", schema: N },
+  };
+  const constat = await ouvrirSur(page, { servi: descripteur(), app });
+  expect(constat).toMatchObject({ issue: "mettre-a-jour", reprise: true, plusTard: false });
+  await expect(page.locator("#mise-a-jour-texte")).toHaveText(MESSAGES.miseAJourAReprendre);
+  await expect(page.locator("#mettre-a-jour-l-application")).toHaveText("Reprendre la mise à jour");
+  await expect(page.locator("#plus-tard")).toBeHidden();
+  await expect(page.locator("#mise-a-jour-plus-tard-texte")).toHaveText(
+    MESSAGES.miseAJourSauvegardeAvantReprise("1.1.0"),
+  );
+  for (const faux of ["ne sert plus", "tel qu'il est aujourd'hui"]) {
+    await expect(page.locator("#mise-a-jour")).not.toContainText(faux);
+  }
+  const avant = await etatDuVolumeApplicatif(page);
+  // « Démarrer » n'est pas offert dans le parcours ; la vue complète l'expose, et il REDÉCIDE.
+  await page.click("#demarrer-application");
+  await expect(page.locator("#cycle-etat")).toHaveText(
+    `cycle:demarrage-refuse:${C.miseAJourAReprendre}`,
+    { timeout: DELAI },
+  );
+  await expect(page.locator("#parcours-refus")).toContainText("reprenez la mise à jour");
   expect((await releve(page)).application.bootMs, "aucun boot").toBeUndefined();
   expect(await etatDuVolumeApplicatif(page), "aucun octet du volume écrit").toEqual(avant);
 });
