@@ -261,6 +261,51 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * attendrait la fin d'un boot de deux minutes ne serait plus une urgence.
    */
   gesteEnCours: "VAULT_COQUILLE_GESTE_EN_COURS",
+
+  // --- Le DÉPHASAGE de versions (#236 T2, ADR 0042) : décidé AVANT le boot ---------------------
+  //
+  // Ces refus ne sont rendus qu'au canal privilégié, après le déverrouillage : le manifeste du
+  // volume n'est lu qu'alors. Aucun ne boote, aucun ne migre, aucun n'écrit un octet du volume.
+  /** Le coffre contient les données d'une AUTRE application que celle que l'origine sert. */
+  applicationEtrangere: "VAULT_COQUILLE_APPLICATION_ETRANGERE",
+  /**
+   * L'origine ne sert pas l'application — ou pas la version — dont ce coffre a besoin pour s'ouvrir
+   * sans mise à jour. Distinct d'`applicationAbsente`, qui dit qu'il n'y a rien à installer dans
+   * un coffre NEUF : ici des données existent, et elles sont intactes.
+   */
+  applicationNonServie: "VAULT_COQUILLE_APPLICATION_NON_SERVIE",
+  /** Le paquet servi a un schéma ANTÉRIEUR à celui des données : du vieux code sur des données récentes. */
+  applicationAnterieure: "VAULT_COQUILLE_APPLICATION_ANTERIEURE",
+  /**
+   * Le manifeste du coffre ne dit pas son schéma (installé avant T2) et aucun paquet servi n'a sa
+   * version : le schéma n'est pas deviné.
+   */
+  schemaDuCoffreInconnu: "VAULT_COQUILLE_SCHEMA_DU_COFFRE_INCONNU",
+  /**
+   * Le guest a constaté, avant de lancer Rails, que le marqueur `.vault-schema` des données ne dit
+   * pas ce que le manifeste dit — ou que les données sont plus récentes que le paquet booté. Rails
+   * n'est pas lancé, aucune migration n'est jouée.
+   */
+  schemaDivergent: "VAULT_COQUILLE_SCHEMA_DIVERGENT",
+  /** Une migration a échoué dans le guest : Rails n'est pas lancé, le marqueur n'a pas bougé. */
+  migrationEchouee: "VAULT_COQUILLE_MIGRATION_ECHOUEE",
+  /**
+   * Une mise à jour commencée ne peut reprendre qu'avec une version STRICTEMENT plus récente que celle
+   * du coffre et d'un schéma au moins égal à la cible ; l'origine n'en sert pas (revue de #249, 1).
+   */
+  miseAJourInterrompue: "VAULT_COQUILLE_MISE_A_JOUR_INTERROMPUE",
+  /**
+   * Une mise à jour commencée PEUT reprendre ici, mais « Démarrer » n'est pas le geste qui la reprend :
+   * seul « Reprendre la mise à jour » le fait (recette QA de la PR #249, Q1). Jamais « non servie » :
+   * l'origine sert ce qu'il faut.
+   */
+  miseAJourAReprendre: "VAULT_COQUILLE_MISE_A_JOUR_A_REPRENDRE",
+  /** Un marqueur de schéma du guest n'est pas un entier de quatorze chiffres au plus (revue de #249, 3). */
+  marqueurDeSchemaInvalide: "VAULT_COQUILLE_MARQUEUR_DE_SCHEMA_INVALIDE",
+  /** Un paramètre « vault.* » de la ligne de commande apparaît deux fois : le guest refuse (revue de #249, 2). */
+  parametreDuGuestRefuse: "VAULT_COQUILLE_PARAMETRE_DU_GUEST_REFUSE",
+  /** Le paquet dépasse les données, mais aucune migration n'a été autorisée par le geste (revue de #249, 4). */
+  migrationNonAutorisee: "VAULT_COQUILLE_MIGRATION_NON_AUTORISEE",
 });
 
 /** Les messages en français, un par code. Ils décrivent le REFUS, jamais l'état de l'appareil. */
@@ -342,6 +387,28 @@ const MESSAGES = Object.freeze({
     "Aucune application n'est installée dans ce coffre : il n'y a rien à sauvegarder. Démarrez-la une première fois.",
   [CODES_REFUS_COQUILLE.gesteEnCours]:
     "Un geste long est en cours (démarrage, installation, sauvegarde ou restauration) : ce geste est refusé, pas mis en attente. Réessayez quand il a abouti.",
+  [CODES_REFUS_COQUILLE.applicationEtrangere]:
+    "Ce coffre contient les données d'une autre application que celle que cette origine sert : rien n'est démarré, rien n'est écrit.",
+  [CODES_REFUS_COQUILLE.applicationNonServie]:
+    "Cette origine ne sert pas l'application, ou la version, dont ce coffre a besoin : ses données sont intactes, rien n'est démarré.",
+  [CODES_REFUS_COQUILLE.applicationAnterieure]:
+    "Les données de ce coffre viennent d'une version plus récente que celle que cette origine sert : rien n'est démarré, rien n'est migré.",
+  [CODES_REFUS_COQUILLE.schemaDuCoffreInconnu]:
+    "Le manifeste de ce coffre ne dit pas son schéma, et aucun paquet servi n'a sa version : le schéma n'est pas deviné, rien n'est démarré.",
+  [CODES_REFUS_COQUILLE.schemaDivergent]:
+    "Le marqueur de schéma des données ne correspond ni au manifeste ni au paquet : Rails n'est pas lancé, aucune migration n'est jouée.",
+  [CODES_REFUS_COQUILLE.migrationEchouee]:
+    "La migration des données a échoué dans la machine virtuelle : Rails n'est pas lancé, le marqueur de schéma n'a pas bougé.",
+  [CODES_REFUS_COQUILLE.miseAJourInterrompue]:
+    "Une mise à jour commencée ne peut reprendre qu'avec une version plus récente que celle du coffre, d'un schéma au moins égal à celui visé : cette origine n'en sert pas. Rien n'est démarré.",
+  [CODES_REFUS_COQUILLE.miseAJourAReprendre]:
+    "Une mise à jour commencée ne se termine que par le geste « Reprendre la mise à jour » : « Démarrer » ne la reprend pas. Rien n'est démarré.",
+  [CODES_REFUS_COQUILLE.marqueurDeSchemaInvalide]:
+    "Un marqueur de schéma des données ou du paquet est illisible : Rails n'est pas lancé, rien n'est migré ni réécrit.",
+  [CODES_REFUS_COQUILLE.parametreDuGuestRefuse]:
+    "La ligne de commande du guest porte deux fois un paramètre réservé au Worker de confiance : Rails n'est pas lancé.",
+  [CODES_REFUS_COQUILLE.migrationNonAutorisee]:
+    "Le paquet booté dépasse le schéma des données, mais aucune mise à jour n'a été demandée : Rails n'est pas lancé, rien n'est migré.",
 });
 
 /** Tous les codes, triés. Sert au cliquet d'exhaustivité et aux épreuves. */

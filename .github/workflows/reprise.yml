@@ -83,10 +83,14 @@ jobs:
       github.event_name != 'pull_request' || github.event.action != 'labeled' ||
       github.event.label.name == 'recette'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Récupération du dépôt
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # L'historique ENTIER : le paquet PRÉCÉDENT (rétention 1, #236 T2) est refabriqué depuis la
+        # révision git que `sources.json` épingle (`paquetPrecedent.ref`), par `git archive`.
+        with:
+          fetch-depth: 0
 
       - name: Installation de Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -193,6 +197,11 @@ jobs:
             fichiers: >-
               tests/e2e/durabilite-du-commit.spec.mjs tests/e2e/parcours-utilisateur.spec.mjs
               tests/e2e/parcours-clavier.spec.mjs
+          # La MISE À JOUR du paquet (#236 T2) a SON lot : sept ouvertures du coffre, quatre boots de
+          # Rails dont un qui migre (Rails chargé deux fois), une sauvegarde et une restauration.
+          - lot: "4"
+            fichiers: >-
+              tests/e2e/mise-a-jour-du-paquet.spec.mjs
 
     env:
       VAULT_E2E_LOT: ${{ matrix.lot }}

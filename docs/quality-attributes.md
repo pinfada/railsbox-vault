@@ -592,7 +592,8 @@ est un PAQUET servi à part (partition 2 du disque système), et le volume du co
 **Le premier démarrage transfère encore plus d'un gibioctet** : disque système (522 Mio) plus graine
 entière (512 Mio) — la recette QA du 18/09/2026 a relevé 1,06 Gio transférés. Le versement est
 creux, le TÉLÉCHARGEMENT de la graine ne l'est pas encore ; la graine creuse est renvoyée à T2
-(#241).
+(#241). **Corrigé par T2** : les trois morceaux voyagent en gzip, 177 Mio au premier démarrage
+(section suivante).
 
 **Le versement n'écrit plus que ce qui n'est pas nul.** Les 18,9 s mesurées en #101 couvraient 512
 Mio de chiffrement et d'écriture ; il en reste 0,4 Mio. Le **scellement initial** du volume (19,1 s)
@@ -622,6 +623,68 @@ dépasser le premier, et cela ne dit rien d'une incohérence.
 **Ce qui n'est PAS établi** : la comparaison avant/après **sur le même poste**. Le pic de 940 Mio
 publié plus haut vient d'une autre campagne, et l'écart dépasse ce que le seul paquet explique.
 Rejouer la mesure sur `main` est le premier geste de #238.
+
+### Ce que les morceaux GZIP et la mise à jour coûtent (#236 T2, ADR 0042)
+
+**Le transfert** — tailles des fichiers servis, relevées le 19/09/2026 sur les artefacts construits
+par `npm run image:build` (gzip déterministe, niveau 9) :
+
+| Morceau servi              | Image (Mio) | Transféré avant T2 (Mio) | Transféré après (Mio) |
+| -------------------------- | ----------: | -----------------------: | --------------------: |
+| rootfs                     |       385,0 |                    385,0 |             **128,4** |
+| paquet 1.1.0               |       137,0 |                    137,0 |              **48,5** |
+| graine (base migrée, vide) |       512,0 |                    512,0 |               **0,5** |
+| **les trois morceaux** (3) |     1 034,0 |              **1 034,0** |             **177,4** |
+| **rootfs + paquet**        |       522,0 |                **522,0** |             **176,9** |
+
+**Ce qu'un démarrage transfère VRAIMENT**, relevé par la recette QA du 19/09/2026 (Chrome installé,
+octets de chaque artefact au réseau) : le **premier démarrage** transfère **206,9 Mio** — les trois
+morceaux ci-dessus, plus le noyau (5,7 Mo), l'initrd (25,3 Mo) et le BIOS. Le tableau ne compte que
+les morceaux applicatifs ; le chiffre de 177,4 Mio publié d'abord comme « premier démarrage »
+omettait noyau et initrd. **Tout démarrage qui boote** — mise à jour, reprise d'une mise à jour, «
+Plus tard », boot à froid — retélécharge le rootfs, le paquet, le noyau et l'initrd : **≈ 206 Mio
+chacun**, cache inchangé. Une mise à jour ne transfère donc PAS « le paquet seul » (48,5 Mio), comme
+publié d'abord : c'est #247 — un magasin d'artefacts OPFS adressé par empreinte — qui l'évitera. La
+recette QA du 18/09/2026 avait mesuré 1,06 Gio transférés au premier démarrage avant les morceaux
+gzip (#241). La décompression se fait en flux (`DecompressionStream`), hachée au fil de l'eau :
+l'empreinte reste celle de l'image décompressée, et le tampon du disque système n'est pas plus grand
+qu'avant (rootfs + paquet, en RAM, #238).
+
+**La réouverture par instantané** ne change pas de nature : les deux morceaux du disque système sont
+retéléchargés à chaque ouverture (le mode de cache ne change pas, ADR 0042 § « écarté » ; un magasin
+d'artefacts OPFS adressé par empreinte est le chantier qui l'évitera). Ce qui change est ce qu'elle
+transfère : 522 → 176,9 Mio.
+
+**Mesuré dans la coquille, sous Chromium** (`tests/e2e/mise-a-jour-du-paquet.spec.mjs`, 19/09/2026,
+poste de développement, origine en boucle locale, un seul ouvrier) :
+
+| Geste                                              |      Durée | Détail                                             |
+| -------------------------------------------------- | ---------: | -------------------------------------------------- |
+| installation 1.0.0 (premier démarrage, boot Rails) |    114,9 s | boot publié par la coquille                        |
+| **mise à jour 1.0.0 → 1.1.0** (geste complet)      |    165,2 s | boot 151,0 s, dont **51,4 s de migrations** (deux) |
+| boot à froid après la mise à jour                  |    115,5 s | aucune migration rejouée, manifeste déjà suivi     |
+| réouverture par instantané, morceaux **gzip**      | **16,2 s** | acquisition 13,6 s pour 176,9 Mio transférés       |
+| réouverture par instantané, morceaux **bruts**     | **14,1 s** | acquisition 11,9 s pour 522,0 Mio transférés       |
+
+**Mesuré par la recette QA** (19/09/2026, Chrome installé et fenêtré, même poste) : mise à jour
+1.0.0 → 1.1.0 **215,9 s** du clic à l'application ; « Plus tard » (démarrage de la 1.0.0, boot à
+froid, disque système retéléchargé) **163 s** ; installation 137,5 s. L'accueil annonce donc une
+durée par chemin : « environ trois à quatre minutes » pour la mise à jour (165 à 216 s mesurés), «
+environ trois minutes » pour « Plus tard » (`DUREE_DE_LA_MISE_A_JOUR`, `DUREE_DE_PLUS_TARD` dans
+`src/coquille/textes-du-parcours.mjs`).
+
+**En boucle locale, gzip ne fait pas gagner de temps à la réouverture** : le transfert y est presque
+gratuit, et la décompression coûte ≈ 1,7 s de plus. Le gain est dans les OCTETS (522 → 176,9 Mio, ÷
+2,95) et il se change en secondes dès que le débit réseau est la borne : à 50 Mbit/s, 522 Mio
+coûtent ≈ 88 s de transfert, 176,9 Mio ≈ 30 s. Ce dernier calcul n'est PAS une mesure ; la
+réouverture de 18 à 36 s relevée par la recette QA du 18/09 (#241) avait été mesurée à travers un
+serveur local, comme ici.
+
+sur l'image réelle (`tests/vm/migration-coupee.test.mjs`, 19/09/2026, poste de développement,
+épreuves VM jouées en parallèle) : la REPRISE d'une mise à jour coupée — Rails chargé pour
+`db:migrate`, une migration restante (`add_index`), le marqueur et le `sync` — a pris **38,5 s**
+avant que Rails ne soit relancé pour servir. Un boot qui migre charge donc Rails deux fois ; son
+délai est doublé (`FACTEUR_DU_DELAI_DE_MIGRATION`).
 
 ## Le budget de récupération est mesuré, et le plafond de charge en découle (#91)
 

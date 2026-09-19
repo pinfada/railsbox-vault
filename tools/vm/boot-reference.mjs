@@ -90,7 +90,11 @@ export async function demarrerVm({
   manifeste,
   dossierArtefacts = DOSSIER_ARTEFACTS,
   surJournal = () => {},
+  surSerie = () => {},
   autostart = true,
+  paquet = null,
+  donnees: donneesEnMemoire = null,
+  cmdlineEnPlus = "",
 }) {
   const { V86 } = await import("v86");
   const chemin = (nom) => join(dossierArtefacts, nom);
@@ -98,10 +102,17 @@ export async function demarrerVm({
   // `hda` est COMPOSÉ depuis #236 : table de partitions, rootfs en partition 1, paquet applicatif
   // en partition 2. Le navigateur le compose en mémoire ; ici, il faut un fichier — v86 sert ses
   // disques par URL sous Node. La géométrie vient du MÊME module pur des deux côtés.
-  const compose = await composerLeDisqueSysteme({ manifeste, dossierArtefacts });
+  // Un AUTRE paquet que celui du manifeste (#236 T2 : le précédent de la rétention 1) : seul le rôle
+  // change, la composition et ses empreintes restent celles de `composer-hda.mjs`.
+  const manifesteDuBoot =
+    paquet === null ? manifeste : { ...manifeste, boot: { ...manifeste.boot, paquet } };
+  const compose = await composerLeDisqueSysteme({ manifeste: manifesteDuBoot, dossierArtefacts });
   // Le disque de DONNÉES : la graine, telle quelle. Sous Node, elle n'est pas versée dans un volume
-  // chiffré — le harnais boote l'image, il ne joue pas le coffre.
-  const donnees = disque(manifeste.boot.graine);
+  // chiffré — le harnais boote l'image, il ne joue pas le coffre. EN MÉMOIRE quand l'épreuve doit le
+  // relire après une coupure (#236 T2) : v86 écrit alors dans ce tampon même, et ce qu'il porte à
+  // l'arrêt est ce qu'une coupure de courant laisserait.
+  const donnees =
+    donneesEnMemoire === null ? disque(manifeste.boot.graine) : { buffer: donneesEnMemoire.buffer };
 
   const emulateur = new V86({
     wasm_path: join(RACINE_DEPOT, "node_modules", "v86", "build", "v86.wasm"),
@@ -111,7 +122,7 @@ export async function demarrerVm({
     vga_bios: { url: chemin(manifeste.boot.vgaBios) },
     bzimage: { url: chemin(manifeste.boot.kernel) },
     initrd: { url: chemin(manifeste.boot.initrd) },
-    cmdline: manifeste.boot.cmdline,
+    cmdline: [manifeste.boot.cmdline, cmdlineEnPlus].filter((partie) => partie !== "").join(" "),
     hda: { url: compose.chemin, size: compose.octets, async: true },
     hdb: donnees,
     autostart,
@@ -151,7 +162,9 @@ export async function demarrerVm({
 
   const decodeur = new TextDecoder("utf-8", { fatal: false });
   emulateur.add_listener("serial0-output-byte", (octet) => {
-    assembleurLignes.ajouter(decodeur.decode(new Uint8Array([octet]), { stream: true }));
+    const texte = decodeur.decode(new Uint8Array([octet]), { stream: true });
+    surSerie(texte);
+    assembleurLignes.ajouter(texte);
   });
 
   let compteur = 0;

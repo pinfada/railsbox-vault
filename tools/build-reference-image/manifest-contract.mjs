@@ -55,6 +55,8 @@ export function construireManifeste({
   artefacts,
   invariant,
   paquet,
+  precedent = null,
+  rootfsServi = null,
   rails,
   environnement,
   genereLe,
@@ -98,7 +100,36 @@ export function construireManifeste({
       graine: paquet.graine.name,
       bios: "seabios.bin",
       vgaBios: "vgabios.bin",
+      // Les fichiers SERVIS (#236 T2) : chaque morceau voyage en gzip, sous un nom qui porte
+      // l'empreinte de l'image décompressée. Absents d'un manifeste d'avant T2.
+      ...(rootfsServi === null
+        ? {}
+        : {
+            servis: {
+              rootfs: rootfsServi,
+              paquet: paquet.image.servi?.name ?? null,
+              graine: paquet.graine.servi?.name ?? null,
+            },
+          }),
     },
+    // La RÉTENTION 1 (#236 T2, ADR 0042) : le paquet PRÉCÉDENT, gardé servable pour que « Plus tard »
+    // ouvre un coffre sur sa version. Sa graine est gardée aussi : elle fait naître un coffre de cette
+    // version, ce que les épreuves de mise à jour exigent.
+    ...(precedent === null
+      ? {}
+      : {
+          precedent: {
+            application: {
+              // L'IDENTITÉ du précédent, que la coquille confronte au courant (QA de #249, Q4).
+              id: precedent.application.id,
+              version: precedent.application.version,
+              schema: precedent.application.schema,
+            },
+            paquet: precedent.image.name,
+            graine: precedent.graine.name,
+            servis: { paquet: precedent.image.servi.name, graine: precedent.graine.servi.name },
+          },
+        }),
     /** Le disque de DONNÉES du coffre : taille fixe, fixée à la fabrication de la graine. */
     donnees: { disqueOctets: paquet.graine.disqueOctets },
     environment: environnement,
@@ -181,6 +212,14 @@ export function validerManifeste(manifeste) {
     }
   }
   if (!donnees.boot?.cmdline) ajouter("boot-incomplet", "boot.cmdline absent");
+  const servis = [
+    ...Object.values(donnees.boot?.servis ?? {}),
+    ...Object.values(donnees.precedent ?? {}).filter((valeur) => typeof valeur === "string"),
+    ...Object.values(donnees.precedent?.servis ?? {}),
+  ];
+  for (const nom of servis) {
+    if (!noms.has(nom)) ajouter("servi-incoherent", `${nom} est désigné, absent des artefacts`);
+  }
 
   return anomalies;
 }

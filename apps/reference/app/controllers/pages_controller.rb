@@ -66,7 +66,29 @@ class PagesController < ActionController::Base
     render :show
   end
 
+  # ÉCRIT le commentaire d'une note (version 1.1.0, recette QA de la PR #249, Q9) : la colonne que
+  # la migration ajoute doit être UTILISABLE, pas seulement visible. Paramètres forts, longueur
+  # bornée par le modèle, redirection 303 comme la création. L'enregistrement de l'invariant n'est
+  # pas une note : il ne s'écrit pas ici.
+  def update
+    @note = Record.find_by(id: params[:id])
+    @vues = compter_la_vue
+    return render :absente, status: :not_found if @note.nil? || invariant?(@note)
+
+    if @note.update(params.require(:note).permit(:commentaire))
+      redirect_to note_path(@note), status: :see_other
+    else
+      @piece = piece_relue(@note)
+      @refus = @note.errors.full_messages.to_sentence
+      render :show, status: :unprocessable_entity
+    end
+  end
+
   private
+
+  def invariant?(note)
+    note.id == Vault::Contract.record.fetch("id")
+  end
 
   # La pièce jointe RELUE depuis le stockage, son empreinte calculée sur les octets lus. Une ligne
   # qui a survécu sans son fichier se DIT (`fichier-introuvable`) au lieu de rendre une erreur 500 :

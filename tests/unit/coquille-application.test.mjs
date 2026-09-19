@@ -1111,6 +1111,8 @@ test("le compte rendu publié est une liste FERMÉE : ce que le boot rend en plu
     "instantaneUtilise",
     "invariantStatut",
     "invariantVerdict",
+    // Le déphasage (#236 T2) : `null` quand le boot n'en a rien dit, à plat sinon.
+    "miseAJour",
     "pannes",
     "pieceJointeObservee",
     "recuperation",

@@ -204,3 +204,14 @@ Cette décision est révisée par un nouvel ADR si l'un de ces faits est établi
 ```
 
 ```
+
+## Note du 19/09/2026 — deux champs facultatifs du bloc `app` (#236 T2, ADR 0042)
+
+Le bloc `app` peut porter `schema` (le schéma CONSTATÉ des données, la version de leur dernière
+migration, en chiffres) et `migration` (l'INTENTION d'une mise à jour commencée : le schéma visé).
+Tous deux sont facultatifs, et le FORMAT ne change pas : un manifeste qui ne les porte pas se relit
+et se resérialise à l'octet, et aucun des deux n'est inventé à la relecture. Une valeur qui n'est
+pas un entier en chiffres rend le manifeste `VAULT_MANIFEST_MALFORMED`. La règle qui lit un
+manifeste sans `schema` — celui du paquet servi de même version, sinon refus
+`VAULT_COQUILLE_SCHEMA_DU_COFFRE_INCONNU` — appartient à la décision de déphasage (ADR 0042,
+`src/coquille/dephasage.mjs`), pas à ce format.

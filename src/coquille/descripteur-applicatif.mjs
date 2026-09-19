@@ -15,6 +15,9 @@
  * et le lui faire passer par un paramètre d'URL rouvrirait exactement la porte que #162 a fermée.
  */
 import { DISQUE_SYSTEME_MAX_OCTETS } from "../vm/disque-compose.mjs";
+import { COMPRESSION_GZIP } from "../vm/flux-d-artefact.mjs";
+import { SCHEMA_APPLICATIF } from "../vm/volume-manifest.mjs";
+import { comparerSchemas, comparerVersions, estUneVersion } from "./dephasage.mjs";
 
 export const ADRESSE_DESCRIPTEUR = "/artifacts/application.json";
 
@@ -83,6 +86,12 @@ function formeDeLaLigneDeCommande(cmdline) {
       return `ligne de commande du guest refusée : « ${exige} » est exigé`;
     }
   }
+  // L'espace `vault.*` appartient au Worker de confiance, qui y pose le schéma attendu et
+  // l'autorisation de migrer APRÈS ce contrôle : une ligne SERVIE qui en porte un imposerait sa valeur
+  // au guest (revue de sécurité de la PR #249, constat 2).
+  if (parametres.some((parametre) => parametre.startsWith("vault."))) {
+    return "ligne de commande du guest refusée : l'espace « vault.* » est réservé au Worker";
+  }
   // Un SEUL `root=` et un SEUL `init=` : le noyau retient le dernier, et deux valeurs laisseraient
   // passer celle qui compte derrière celle qu'on contrôle.
   for (const cle of ["root=", "init="]) {
@@ -127,6 +136,8 @@ export function formeDuDescripteur(descripteur) {
   if (typeof descripteur.application?.id !== "string" || descripteur.application.id.length === 0) {
     return refus("identité d'application absente");
   }
+  const application = formeDeLApplication(descripteur.application);
+  if (application !== null) return refus(application);
   if (typeof descripteur.runtime?.version !== "string") return refus("version de runtime absente");
   if (!PREFIXE_SERVI.test(String(descripteur.prefixeDesArtefacts ?? ""))) {
     return refus("préfixe d'artefacts hors du chemin servi");
@@ -153,6 +164,72 @@ export function formeDuDescripteur(descripteur) {
 const EMPREINTE = /^[0-9a-f]{64}$/;
 
 /**
+ * Le SCHÉMA et la VERSION d'une application servie (#236 T2, ADR 0042) : la décision de déphasage
+ * les compare à ceux du coffre AVANT le boot, et une grandeur absente ou mal formée la rendrait
+ * aveugle. Le schéma est la version de la dernière migration, en chiffres.
+ */
+function formeDeLApplication(application) {
+  if (!estUneVersion(application?.version)) return "version d'application absente ou non SemVer";
+  if (!SCHEMA_APPLICATIF.test(String(application.schema ?? ""))) {
+    return "schéma d'application absent ou mal formé";
+  }
+  return null;
+}
+
+/**
+ * Le contrôle commun d'un morceau servi : nom, taille bornée, empreinte — et, s'il est COMPRESSÉ
+ * (#236 T2), sa compression et sa taille transférée. `octets` et `sha256` restent ceux de l'image
+ * DÉCOMPRESSÉE ; `transfertOctets` est ce qui voyage, exigé à l'octet par le flux.
+ */
+function formeDUnMorceau(morceau, cle) {
+  if (!NOM_DARTEFACT.test(String(morceau?.nom ?? ""))) return `nom d'artefact refusé : ${cle}`;
+  if (!entierBorne(morceau?.octets, TAILLE_DISQUE_MAX)) return `taille hors bornes : ${cle}`;
+  if (!EMPREINTE.test(String(morceau?.sha256 ?? ""))) {
+    return `empreinte absente ou mal formée : ${cle}`;
+  }
+  if (morceau.compression === undefined) return null;
+  if (morceau.compression !== COMPRESSION_GZIP) return `compression inconnue : ${cle}`;
+  if (!entierBorne(morceau.transfertOctets, TAILLE_DISQUE_MAX)) {
+    return `taille transférée hors bornes : ${cle}`;
+  }
+  return null;
+}
+
+/**
+ * Le PAQUET PRÉCÉDENT, facultatif : la RÉTENTION 1 du descripteur (#236 T2, ADR 0042).
+ *
+ * « Plus tard » doit ouvrir un coffre sur SA version quand l'origine sert déjà la suivante ; sans le
+ * paquet précédent servable, « jamais automatiquement » ne laisserait le choix qu'entre mettre à
+ * jour et ne pas ouvrir. Il porte sa version, son schéma et son paquet sous empreinte — le rootfs,
+ * la graine et le boot sont ceux du courant : une rétention de l'APPLICATION, pas de l'image.
+ *
+ * Il ne peut être ni la même version que le courant, ni d'un schéma PLUS RÉCENT : ce ne serait pas
+ * un précédent, et la décision qui s'y fierait ouvrirait du vieux code sous un nom neuf.
+ */
+function formeDuPrecedent(descripteur) {
+  const precedent = descripteur.precedent;
+  if (precedent === undefined) return null;
+  const application = formeDeLApplication(precedent?.application);
+  if (application !== null) return `précédent : ${application}`;
+  // Un précédent est une version ANTÉRIEURE de la MÊME application (ADR 0042, § 4 ; QA de #249, Q4).
+  if (precedent.application.id !== descripteur.application.id) {
+    return "précédent : une autre application que le paquet courant (identifiant absent ou différent)";
+  }
+  const paquet = formeDUnMorceau(precedent.paquet, "precedent.paquet");
+  if (paquet !== null) return paquet;
+  if (comparerVersions(precedent.application.version, descripteur.application.version) >= 0) {
+    return "précédent : version égale ou plus récente que celle du paquet courant";
+  }
+  if (comparerSchemas(precedent.application.schema, descripteur.application.schema) > 0) {
+    return "précédent : schéma plus récent que celui du paquet courant";
+  }
+  if (descripteur.rootfs.octets + precedent.paquet.octets > DISQUE_SYSTEME_MAX_OCTETS) {
+    return "disque système hors budget : rootfs + paquet précédent";
+  }
+  return null;
+}
+
+/**
  * CONTRÔLE les trois morceaux du paquet : le `rootfs` et le `paquet`, que la coquille range dans le
  * disque composé, et la `graine`, qu'elle verse dans le volume de données.
  *
@@ -167,11 +244,8 @@ const EMPREINTE = /^[0-9a-f]{64}$/;
  */
 function formeDesMorceaux(descripteur) {
   for (const cle of ["rootfs", "paquet", "graine"]) {
-    const morceau = descripteur[cle];
-    if (!NOM_DARTEFACT.test(String(morceau?.nom ?? ""))) return `nom d'artefact refusé : ${cle}`;
-    if (!entierBorne(morceau?.octets, TAILLE_DISQUE_MAX)) return `taille hors bornes : ${cle}`;
-    if (!EMPREINTE.test(String(morceau?.sha256 ?? "")))
-      return `empreinte absente ou mal formée : ${cle}`;
+    const motif = formeDUnMorceau(descripteur[cle], cle);
+    if (motif !== null) return motif;
   }
   if (!entierBorne(descripteur.graine?.disqueOctets, TAILLE_DISQUE_MAX)) {
     return "taille du disque de données hors bornes";
@@ -196,7 +270,7 @@ function formeDesMorceaux(descripteur) {
       `le plafond est ${DISQUE_SYSTEME_MAX_OCTETS}`
     );
   }
-  return null;
+  return formeDuPrecedent(descripteur);
 }
 
 /**

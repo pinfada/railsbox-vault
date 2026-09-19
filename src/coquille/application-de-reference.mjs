@@ -35,7 +35,7 @@
 // volume `coquille` a reçu une constante distincte : jamais deux volumes sous la même clé et le
 // même identifiant. Le manifeste voisin en reste la source à la lecture (ADR 0016).
 
-import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
+import { CODES_REFUS_COQUILLE, messageDeRefus } from "./refus-de-coquille.mjs";
 import {
   ADRESSE_DESCRIPTEUR,
   DESCRIPTEUR_VERSION_ATTENDUE,
@@ -58,6 +58,15 @@ import {
 } from "../vm/opfs-volume-open.mjs";
 import { chargerAdressesV86, exigerAdresse } from "../v86-adresses.mjs";
 import { verserFluxDansVolume } from "../vm/versement-de-disque.mjs";
+import {
+  codeDuRefusDuGuest,
+  avantLeBootDuPaquet,
+  constaterLeDephasage,
+  decisionPubliee,
+  miseAJourPubliee,
+  preparerLeDemarrage,
+  suivreLeConstat,
+} from "./mise-a-jour-applicative.mjs";
 import { VOLUME_ALGORITHM, createManifest, parseManifest } from "../vm/volume-manifest.mjs";
 
 /**
@@ -90,7 +99,13 @@ export function descripteurDeManifeste(descripteur) {
       artifact: null,
       minWriter: descripteur.runtime.version,
     },
-    app: { id: descripteur.application.id, version: descripteur.application.version },
+    // Le SCHÉMA de la graine installée (#236 T2, ADR 0042) : un coffre né depuis T2 le dit, et la
+    // décision de déphasage n'a rien à déduire pour lui.
+    app: {
+      id: descripteur.application.id,
+      version: descripteur.application.version,
+      schema: descripteur.application.schema,
+    },
   };
 }
 
@@ -108,6 +123,8 @@ export async function adressesDuRuntime(descripteur, { recuperer = globalThis.fe
     url: `${prefixe}${descripteur[cle].nom}`,
     octets: descripteur[cle].octets,
     sha256: descripteur[cle].sha256,
+    compression: descripteur[cle].compression ?? null,
+    transfertOctets: descripteur[cle].transfertOctets ?? null,
   });
   return {
     lib: exigerAdresse(adresses, "libv86.mjs"),
@@ -364,6 +381,11 @@ async function verserLaGraine(backend, descripteur, verser) {
       // pas produite. Jusqu'à #236, l'empreinte du fichier écrit était rendue mais celle de la
       // SOURCE n'était comparée à rien.
       empreinteAttendue: descripteur.graine.sha256,
+      // Une graine COMPRESSÉE (gzip, #236 T2) se décompresse en flux ; son empreinte et sa taille
+      // restent celles de l'image décompressée, qui BORNE aussi la décompression (anti-bombe).
+      compression: descripteur.graine.compression ?? null,
+      transfertOctets: descripteur.graine.transfertOctets ?? null,
+      octetsMax: descripteur.graine.octets,
       // Un volume neuf scellé se relit à ZÉRO (ADR 0041) : les blocs nuls de la graine n'ont donc
       // pas à être écrits. Sur 512 Mio dont 0,4 utile, c'est l'essentiel de l'installation.
       sauterLesBlocsNuls: true,
@@ -539,6 +561,8 @@ export function compteRenduPublie(rendu) {
     // Un COMPTE, pas la liste : une panne de support absorbée doit se voir ; son contenu appartient
     // au diagnostic du Worker, pas au relevé.
     pannes: rendu.failures.length,
+    // Ce que le déphasage a décidé et ce que le guest a fait du schéma (#236 T2), à plat.
+    miseAJour: miseAJourPubliee(rendu.miseAJourApplicative, rendu.schema),
   };
 }
 
@@ -583,42 +607,94 @@ export async function demarrerLaVm({
   cleDeVolume,
   reprendreParInstantane = true,
   bootTimeoutMs = DELAI_BOOT_MS,
+  miseAJour = false,
 }) {
   const lu = await lireLeDescripteur();
-  if (!lu.present) return { demarree: false, motif: lu.motif };
-  const descripteur = lu.descripteur;
+  // Le DÉPHASAGE est décidé ICI, avant toute installation et tout boot (#236 T2, ADR 0042) : le
+  // manifeste du coffre est lu, confronté au descripteur, et un refus rend la main sans qu'un octet
+  // du volume ait été écrit.
+  const prepare = await preparerLeDemarrage({
+    lu,
+    nom: NOM_DU_VOLUME_APPLICATIF,
+    miseAJour,
+    delaiMs: bootTimeoutMs,
+  });
+  if (prepare.sansApplication) return { demarree: false, motif: prepare.motif };
+  if (prepare.refus !== undefined) return refusDeDemarrage(prepare.refus, prepare);
+  const descripteur = prepare.descripteur;
   const installation = await installerOuTraduireLeRefus({ descripteur, cleDeVolume });
   if (installation.demarree === false) return installation;
-  // Le module de boot est importé ICI, et non à l'évaluation du Worker de confiance : il POSE la
-  // boucle d'ordonnancement de v86 à son évaluation (ADR 0013), et une coquille qui ne démarre
-  // aucune application n'a aucune raison de la porter. L'ordre reste juste — la boucle est posée
-  // avant que le module de l'émulateur soit importé, ce qui est la seule contrainte.
-  const { bootEtVerifier } = await import("../vm/boot-de-reference.mjs");
-  const rendu = await bootEtVerifier({
-    phase: "coquille",
-    volume: NOM_DU_VOLUME_APPLICATIF,
-    cmdline: descripteur.boot.cmdline,
-    memoryBytes: descripteur.boot.memoireOctets,
-    runtime: await adressesDuRuntime(descripteur),
-    manifest: descripteurDeManifeste(descripteur),
-    // Aucune ATTENTE d'invariant n'est déclarée ici, et c'est délibéré : le contrat applicatif vit
-    // dans `apps/reference/vault-invariant.json`, que l'origine de confiance ne sert pas. La
-    // coquille publie donc le VERDICT que Rails a rendu, et l'assertion vit dans `tests/e2e/` —
-    // ce qui est déjà la règle du banc : « aucune phase ne se déclare réussie d'elle-même ».
-    expected: {},
-    bootTimeoutMs,
-    reprendreParInstantane,
-    // Ce drapeau ARME la capture ; il ne la déclenche pas. Sous `garderLaSessionOuverte`, la
-    // fonction construite n'est appelée que par `fermer()` — donc à la FERMETURE, dans l'ordre de
-    // l'ADR 0024 décision 6. Capturer au boot lierait l'instantané à l'état du démarrage plutôt
-    // qu'à celui de la session que l'utilisateur vient de finir.
-    capturerInstantane: true,
-    garderLaSessionOuverte: true,
-    ouvrirLeVolumeDuGuest: ouvreurSousLEnveloppe({ cleDeVolume }),
+  const rendu = await booterLePaquet({ descripteur, prepare, cleDeVolume, reprendreParInstantane });
+  if (rendu.demarree === false) return rendu;
+  // Le manifeste SUIT ce que le guest a constaté, après un boot réussi et jamais avant.
+  const manifesteSuivi = await suivreLeConstat({
+    nom: NOM_DU_VOLUME_APPLICATIF,
+    manifeste: prepare.manifeste,
+    application: descripteur.application,
+    constat: rendu.schema ?? null,
   });
-  // `fermer` et `requeteHttp` sont retirés du compte rendu par DESTRUCTURATION, jamais par oubli :
-  // ce sont des fonctions, `sansCapacite` les refuserait à l'enveloppe, et le compte rendu, lui,
-  // franchit le canal privilégié. Les laisser dedans ferait échouer un boot parfaitement réussi.
+  // `fermer` et `requeteHttp` sont des fonctions : retirées par DESTRUCTURATION, jamais par oubli,
+  // car le compte rendu franchit le canal privilégié et `sansCapacite` les refuserait.
   const { fermer, requeteHttp, ...compte } = rendu;
-  return { demarree: true, installation, fermer, requeteHttp, compte };
+  const miseAJourApplicative = {
+    ...prepare.dephasage,
+    jouee: prepare.miseAJour,
+    manifeste: manifesteSuivi,
+  };
+  return {
+    demarree: true,
+    installation,
+    fermer,
+    requeteHttp,
+    compte: { ...compte, miseAJourApplicative },
+  };
+}
+
+/**
+ * Ce que la PAGE apprend du déphasage, après le déverrouillage et avant tout boot (#236 T2) : la
+ * décision publiée, que l'accueil montre — refus, ou bloc « Mettre à jour l'application ». Rien n'est
+ * écrit, rien n'est booté ; le démarrage REDÉCIDE de lui-même, la page n'est pas crue.
+ */
+export async function dephasagePourLaPage() {
+  const lu = await lireLeDescripteur();
+  const { decision } = await constaterLeDephasage({ lu, nom: NOM_DU_VOLUME_APPLICATIF });
+  return decisionPubliee(decision);
+}
+
+/**
+ * BOOTE le paquet choisi, et traduit le REFUS du guest (#236 T2) en réponse typée plutôt qu'en
+ * exception : un guest qui refuse de lancer Rails n'est pas une panne, c'est une décision dite.
+ */
+async function booterLePaquet({ descripteur, prepare, cleDeVolume, reprendreParInstantane }) {
+  // Importé ICI et non à l'évaluation du Worker : il POSE la boucle d'ordonnancement de v86
+  // (ADR 0013), qu'une coquille qui ne démarre rien n'a pas à porter.
+  const { bootEtVerifier } = await import("../vm/boot-de-reference.mjs");
+  try {
+    return await bootEtVerifier({
+      phase: "coquille",
+      volume: NOM_DU_VOLUME_APPLICATIF,
+      cmdline: prepare.cmdline,
+      memoryBytes: descripteur.boot.memoireOctets,
+      runtime: await adressesDuRuntime(descripteur),
+      manifest: descripteurDeManifeste(descripteur),
+      // Aucune ATTENTE d'invariant : la coquille publie le VERDICT de Rails, `tests/e2e/` l'asserte.
+      expected: {},
+      bootTimeoutMs: prepare.delaiMs,
+      reprendreParInstantane,
+      // ARME la capture, à la FERMETURE seulement (ADR 0024, décision 6).
+      capturerInstantane: true,
+      garderLaSessionOuverte: true,
+      ouvrirLeVolumeDuGuest: ouvreurSousLEnveloppe({ cleDeVolume }),
+      avantLeBoot: avantLeBootDuPaquet({ nom: NOM_DU_VOLUME_APPLICATIF, prepare }),
+    });
+  } catch (erreur) {
+    const code = codeDuRefusDuGuest(erreur);
+    if (code === null) throw erreur;
+    return refusDeDemarrage(code, prepare);
+  }
+}
+
+/** Un démarrage REFUSÉ par le déphasage, avant ou pendant le boot : son code, son message, la décision. */
+function refusDeDemarrage(code, prepare) {
+  return { demarree: false, code, motif: messageDeRefus(code), dephasage: prepare.dephasage };
 }

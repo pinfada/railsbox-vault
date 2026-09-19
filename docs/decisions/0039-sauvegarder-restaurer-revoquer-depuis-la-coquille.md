@@ -268,3 +268,11 @@ pour des coffres de développement.
 2. l'**enveloppe copiée en clair** sur `coquille.cles` : des octets publics, scellés — à démontrer ;
 3. la **restauration coupée** : chaque rang de coupure, et ce que le déverrouillage en fait ;
 4. le **refus des coffres antérieurs** : qu'aucun ne soit ouvert, écrasé ou migré en silence.
+
+## Note du 19/09/2026 — la sauvegarde proposée avant une mise à jour (#236 T2, ADR 0042)
+
+Le bloc « Mettre à jour l'application » propose « Sauvegarder d'abord » : c'est CE geste, emprunté
+tel quel (le bouton déclenche `#sauvegarder-le-coffre`), avec son archive et sa conduite. Une
+sauvegarde faite avant une mise à jour se restaure sur une origine qui sert l'ANCIEN paquet et s'y
+ouvre (`tests/e2e/mise-a-jour-du-paquet.spec.mjs`, étape 6) : l'archive porte le manifeste d'avant,
+schéma compris, et la décision de déphasage l'ouvre sans rien proposer.

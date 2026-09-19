@@ -30,7 +30,21 @@ const VERSION_DE_MIGRATION = /^(\d{3,})_/;
  * @param {{ schemaRb?: string | null, migrations?: string[] }} sources
  * @returns {string}
  */
-export function schemaDeLApplication({ schemaRb = null, migrations = [] }) {
+export function schemaDeLApplication(sources) {
+  const schema = schemaLu(sources);
+  // La forme que le guest et le manifeste exigent : quatorze chiffres au plus, sans zéro de tête
+  // (revue de sécurité de la PR #249, constat 3). Hors de cette forme, `dash` ne compare plus.
+  if (!/^(0|[1-9][0-9]{0,13})$/.test(schema)) {
+    throw new Error(
+      `Schéma refusé : « ${schema} ». Une version de migration de quatorze chiffres au plus, ` +
+        "sans zéro de tête, est exigée.",
+    );
+  }
+  return schema;
+}
+
+/** Le schéma tel que la source le déclare, avant le contrôle de sa forme. */
+function schemaLu({ schemaRb = null, migrations = [] }) {
   const dump = typeof schemaRb === "string" ? schemaRb.match(VERSION_DU_DUMP) : null;
   if (dump !== null) return dump[1];
 

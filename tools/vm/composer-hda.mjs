@@ -71,8 +71,15 @@ export async function composerLeDisqueSysteme({ manifeste, dossierArtefacts }) {
     rootfsOctets: rootfs.byteSize,
     paquetOctets: paquet.byteSize,
   });
-  const chemin = join(dossierArtefacts, NOM_DU_DISQUE_COMPOSE);
-  const cheminMarque = join(dossierArtefacts, NOM_DE_LA_MARQUE);
+  // Un fichier PAR PAQUET (#236 T2) : deux épreuves qui bootent deux paquets — le courant et le
+  // précédent de la rétention 1 — peuvent tourner en même temps, et la seconde recomposait le fichier
+  // que la première était en train de lire (mesuré le 19/09/2026 : santé jamais rendue).
+  const suffixe = paquet.sha256.slice(0, 8);
+  const chemin = join(dossierArtefacts, NOM_DU_DISQUE_COMPOSE.replace(".img", `-${suffixe}.img`));
+  const cheminMarque = join(
+    dossierArtefacts,
+    NOM_DE_LA_MARQUE.replace(".json", `-${suffixe}.json`),
+  );
   const marque = {
     rootfs: rootfs.sha256,
     paquet: paquet.sha256,

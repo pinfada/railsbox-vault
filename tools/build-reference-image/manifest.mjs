@@ -11,6 +11,8 @@ import { dirname, join, resolve } from "node:path";
 
 import { ARTEFACTS_ATTENDUS, construireManifeste, validerManifeste } from "./manifest-contract.mjs";
 import { validerPaquet } from "../paquet/contrat-du-paquet.mjs";
+import { nomServi } from "../paquet/compression.mjs";
+import { comparerVersions, estUneVersion } from "../../src/coquille/dephasage.mjs";
 
 const dossierOutils = dirname(fileURLToPath(import.meta.url));
 export const RACINE_DEPOT = resolve(dossierOutils, "..", "..");
@@ -56,14 +58,29 @@ export const DESCRIPTEUR_APPLICATIF_VERSION = 2;
  * @param {string} versionRuntime
  */
 export function descripteurApplicatif(manifeste, versionRuntime) {
-  const artefact = (role) => {
-    const nom = manifeste.boot[role];
+  const trouver = (nom, role) => {
     const trouve = manifeste.artifacts.find((candidat) => candidat.name === nom);
     if (trouve === undefined) {
       throw new Error(`Aucun artefact « ${nom} » dans le manifeste : rien à servir pour ${role}.`);
     }
-    return { nom, octets: trouve.byteSize, sha256: trouve.sha256 };
+    return trouve;
   };
+  // Un MORCEAU servi (#236 T2) : son nom et sa taille transférée sont ceux du fichier gzip ; `octets`
+  // et `sha256` restent ceux de l'image DÉCOMPRESSÉE, que l'empreinte d'image et la datation lisent.
+  const morceau = (nomImage, nomServi, role) => {
+    const image = trouver(nomImage, role);
+    if (nomServi === undefined || nomServi === null) {
+      return { nom: nomImage, octets: image.byteSize, sha256: image.sha256 };
+    }
+    return {
+      nom: nomServi,
+      octets: image.byteSize,
+      sha256: image.sha256,
+      compression: "gzip",
+      transfertOctets: trouver(nomServi, role).byteSize,
+    };
+  };
+  const artefact = (role) => morceau(manifeste.boot[role], manifeste.boot.servis?.[role], role);
   return {
     descripteurVersion: DESCRIPTEUR_APPLICATIF_VERSION,
     application: {
@@ -85,6 +102,18 @@ export function descripteurApplicatif(manifeste, versionRuntime) {
     },
     /** Où les artefacts ci-dessus sont servis. Le chemin est celui de `tools/serve.mjs`. */
     prefixeDesArtefacts: "/artifacts/reference-image/",
+    ...(manifeste.precedent === undefined
+      ? {}
+      : {
+          precedent: {
+            application: manifeste.precedent.application,
+            paquet: morceau(
+              manifeste.precedent.paquet,
+              manifeste.precedent.servis?.paquet,
+              "précédent",
+            ),
+          },
+        }),
   };
 }
 
@@ -195,22 +224,33 @@ export function assemblerManifeste(options = {}) {
     throw new Error("version de Rails introuvable dans apps/reference/Gemfile.lock");
   }
 
-  const metadonnees = metadonneesArtefacts(sources, paquet);
+  const retenu = precedentRetenu(
+    paquet,
+    options.precedent === undefined ? lirePaquetPrecedent(dossierArtefacts) : options.precedent,
+  );
+  if (retenu.ecarte !== null) (options.dire ?? console.log)(retenu.ecarte);
+  const precedent = retenu.precedent;
+  const metadonnees = {
+    ...metadonneesArtefacts(sources, paquet),
+    ...(precedent === null ? {} : metadonneesArtefacts(sources, precedent)),
+  };
+  const rootfs = join(dossierArtefacts, "reference-rootfs.ext4");
+  const rootfsServi = existsSync(rootfs)
+    ? nomServi("reference-rootfs.ext4", empreinteFichier(rootfs).sha256)
+    : null;
   const artefacts = [];
   const manquants = [];
-  for (const nom of [...ARTEFACTS_ATTENDUS, paquet.image.name, paquet.graine.name]) {
+  for (const nom of nomsAttendus({ paquet, precedent, rootfsServi })) {
     const chemin = join(dossierArtefacts, nom);
     if (!existsSync(chemin)) {
       manquants.push(nom);
       continue;
     }
-    artefacts.push({ name: nom, ...metadonnees[nom], ...empreinteFichier(chemin) });
+    const decrit = metadonnees[nom] ?? metadonneesDUnServi(nom);
+    artefacts.push({ name: nom, ...decrit, ...empreinteFichier(chemin) });
   }
   if (manquants.length > 0) {
-    throw new Error(
-      `artefacts absents de ${dossierArtefacts} : ${manquants.join(", ")}\n` +
-        "Construire l'image d'abord : npm run image:build",
-    );
+    throw new Error(motifDesManquants({ manquants, precedent, dossierArtefacts }));
   }
 
   return construireManifeste({
@@ -218,11 +258,121 @@ export function assemblerManifeste(options = {}) {
     artefacts,
     invariant,
     paquet,
+    precedent,
+    rootfsServi,
     rails,
     environnement: options.environnement ?? environnementCourant(),
     genereLe: new Date().toISOString(),
   });
 }
+
+/**
+ * Les noms que le manifeste doit trouver : l'image de référence, le paquet courant et sa graine, le
+ * PRÉCÉDENT et sa graine (rétention 1, #236 T2), et le fichier SERVI — gzip — de chacun.
+ */
+function nomsAttendus({ paquet, precedent, rootfsServi }) {
+  const duPaquet = (contrat) => [
+    contrat.image.name,
+    contrat.graine.name,
+    contrat.image.servi.name,
+    contrat.graine.servi.name,
+  ];
+  return [
+    ...ARTEFACTS_ATTENDUS,
+    ...(rootfsServi === null ? [] : [rootfsServi]),
+    ...duPaquet(paquet),
+    ...(precedent === null ? [] : duPaquet(precedent)),
+  ];
+}
+
+/**
+ * Le PRÉCÉDENT RETENU (recette QA de la PR #249, Q4) : un précédent n'est gardé que s'il est une
+ * version STRICTEMENT antérieure de la MÊME application (ADR 0042, § 4). Sinon il est ÉCARTÉ — le
+ * descripteur sert le courant seul — et une ligne le dit, avec le geste qui retire le contrat.
+ *
+ * @param {{ application: { id: string, version: string } }} paquet
+ * @param {{ application: { id: string, version: string } } | null} precedent
+ * @returns {{ precedent: object | null, ecarte: string | null }}
+ */
+export function precedentRetenu(paquet, precedent) {
+  if (precedent === null || precedent === undefined) return { precedent: null, ecarte: null };
+  const [courant, ancien] = [paquet.application, precedent.application];
+  const nommer = (application) => `${application.id} ${application.version}`;
+  const suite =
+    ` : le descripteur sert ${nommer(courant)} seul. Pour retirer ce précédent : ` +
+    "`npm run app:paquet -- --retirer-precedent`.";
+  if (ancien.id !== courant.id) {
+    return {
+      precedent: null,
+      ecarte: `→ précédent écarté : ${nommer(ancien)} est une AUTRE application que ${courant.id}${suite}`,
+    };
+  }
+  const anterieur =
+    estUneVersion(ancien.version) &&
+    estUneVersion(courant.version) &&
+    comparerVersions(ancien.version, courant.version) < 0;
+  if (!anterieur) {
+    return {
+      precedent: null,
+      ecarte: `→ précédent écarté : ${nommer(ancien)} n'est pas antérieur à ${courant.version}${suite}`,
+    };
+  }
+  return { precedent, ecarte: null };
+}
+
+/**
+ * Ce que dit l'outil quand des artefacts manquent : la VRAIE cause (recette QA de la PR #249, Q5). Si
+ * seules les images du précédent manquent, construire l'image n'y changerait rien.
+ */
+function motifDesManquants({ manquants, precedent, dossierArtefacts }) {
+  const duPrecedent =
+    precedent === null
+      ? []
+      : [
+          precedent.image.name,
+          precedent.graine.name,
+          precedent.image.servi.name,
+          precedent.graine.servi.name,
+        ];
+  if (manquants.every((nom) => duPrecedent.includes(nom))) {
+    const nom = `${precedent.application.id} ${precedent.application.version}`;
+    return (
+      `le paquet précédent ${nom}, que ${NOM_DU_CONTRAT_PRECEDENT} désigne, n'a plus ses images dans ` +
+      `${dossierArtefacts} : ${manquants.join(", ")}\n` +
+      "Pour servir la version courante seule : npm run app:paquet -- --retirer-precedent ; pour " +
+      "garder ce précédent : le refabriquer (npm run app:paquet -- --precedent --source <sa source>)."
+    );
+  }
+  return (
+    `artefacts absents de ${dossierArtefacts} : ${manquants.join(", ")}\n` +
+    "Construire l'image d'abord : npm run image:build (le paquet seul : npm run app:paquet)"
+  );
+}
+
+/** Rôle, licence et origine d'un fichier SERVI : ceux de l'image qu'il compresse. */
+function metadonneesDUnServi(nom) {
+  return {
+    role: `fichier servi, gzip déterministe (#236 T2) de l'image ${nom.replace(/.gz$/, "")}`,
+    license: "celle de l'image compressée",
+    origin: "tools/paquet/compression.mjs (gzip -9, en-tête sans nom ni date, OS inconnu)",
+  };
+}
+
+/** Le contrat du paquet PRÉCÉDENT (rétention 1), ou `null` s'il n'a pas été fabriqué. */
+export function lirePaquetPrecedent(dossierArtefacts) {
+  const chemin = join(dossierArtefacts, NOM_DU_CONTRAT_PRECEDENT);
+  if (!existsSync(chemin)) return null;
+  const precedent = JSON.parse(readFileSync(chemin, "utf8"));
+  const anomalies = validerPaquet(precedent);
+  if (anomalies.length > 0) {
+    const detail = anomalies.map((anomalie) => `  · [${anomalie.code}] ${anomalie.message}`);
+    throw new Error(["contrat du paquet précédent refusé :", ...detail].join("\n"));
+  }
+  return precedent;
+}
+
+/** Où la fabrication `--precedent` dépose le contrat du paquet précédent. */
+export const NOM_DU_CONTRAT_PRECEDENT = "paquet-precedent.json";
 
 /** @returns {Record<string, string>} */
 export function environnementCourant() {

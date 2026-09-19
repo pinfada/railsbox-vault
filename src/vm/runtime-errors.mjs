@@ -42,6 +42,11 @@ export const RUNTIME_ERROR_CODES = Object.freeze({
    * en silence et se déguise ensuite en délai de garde du guest.
    */
   unhandledRejection: "VAULT_RUNTIME_UNHANDLED_REJECTION",
+  /**
+   * Un artefact est servi COMPRESSÉ (gzip, #236 T2) et ce contexte n'a pas `DecompressionStream`. La
+   * coquille l'exige déjà parmi ses capacités ; ce code est la seconde barrière, au moment du flux.
+   */
+  decompressionUnavailable: "VAULT_RUNTIME_DECOMPRESSION_UNAVAILABLE",
 });
 
 const CODES_CONNUS = new Set(Object.values(RUNTIME_ERROR_CODES));

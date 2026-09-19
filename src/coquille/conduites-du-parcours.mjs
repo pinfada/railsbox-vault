@@ -20,6 +20,7 @@ import { IMPORT_ERROR_CODES } from "../vm/import-errors.mjs";
 import { STORAGE_ERROR_CODES as S } from "../vm/storage-errors.mjs";
 import { CODE_PHRASE_FAIBLE, LONGUEUR_MINIMALE_PHRASE } from "./politique-de-phrase.mjs";
 import { CODES_REFUS_COQUILLE as C } from "./refus-de-coquille.mjs";
+import { CODES_DU_DEPHASAGE, conduitesDuDephasage } from "./conduites-du-dephasage.mjs";
 
 const E = ENVELOPPE_ERROR_CODES;
 const D = DERIVATION_ERROR_CODES;
@@ -38,10 +39,7 @@ const RESTAURER_AILLEURS =
 /** La conduite d'un refus que la table ne connaît pas : humaine, et le détail reste technique. */
 export const CONDUITE_GENERIQUE = "L'opération a été refusée. " + REESSAYER_PLUS_TARD;
 
-/**
- * Les codes que chaque geste du parcours peut rendre, groupés par geste. Un code peut appartenir à
- * plusieurs gestes : la liste dit où on le rencontre, la table dit ce qu'on en lit.
- */
+/** Les codes que chaque geste peut rendre ; un code peut appartenir à plusieurs gestes. */
 export const CODES_DU_CHEMIN = Object.freeze({
   deverrouillage: Object.freeze([
     E.cleRefusee,
@@ -89,6 +87,7 @@ export const CODES_DU_CHEMIN = Object.freeze({
   cycle: Object.freeze([
     C.etapeHorsOrdre,
     C.applicationAbsente,
+    ...CODES_DU_DEPHASAGE,
     C.gesteEnCours,
     C.volumeVerrouille,
     C.disqueDUnAutreCoffre,
@@ -461,6 +460,7 @@ const TABLE = Object.freeze({
     K.autre,
     "Aucune application n'est livrée avec ce coffre à cette adresse : il n'y a rien à démarrer.",
   ],
+  ...conduitesDuDephasage(K, RIEN_PERDU),
   [C.gesteEnCours]: [
     K.attendre,
     "Une opération longue est déjà en cours (démarrage, sauvegarde ou restauration). Attendez " +

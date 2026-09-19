@@ -376,3 +376,15 @@ votre feuille — continuera de l'ouvrir », puis ce qui ne fonctionnera plus, e
 retirée, « votre feuille de récupération ne servira plus à rien : créez-en une nouvelle ensuite ».
 Et une ouverture réussie par un code existant vaut preuve : une demande « Je n'ai plus cette feuille
 » en cours tombe, et la personne arrive à l'étape 4.
+
+## Note du 19/09/2026 — un bloc de l'accueil, pas un écran (#236 T2, ADR 0042)
+
+« Mettre à jour l'application » est un BLOC du bloc `application` (écrans `travailler` et
+`accueil`), caché tant que le Worker n'a pas constaté, après le déverrouillage, qu'une autre version
+est servie. Il dit ce qui va se passer, propose la sauvegarde d'abord, et offre « Mettre à jour
+l'application » et — quand l'origine sert encore la version du coffre — « Plus tard », qui le
+referme et laisse l'accueil tel qu'il est. La visite en neuf étapes ne change pas. Les refus de
+déphasage s'affichent à l'accueil par la ligne d'état du cycle, avec leurs conduites
+(`conduites-du-dephasage.mjs`, cliquet `coquille-parcours-conduites`). Le bouton, atteint AVANT le
+déverrouillage par un script, reçoit le refus d'ordre du Worker
+(`tests/browser/coquille-mise-a-jour.spec.mjs`) : le bloc n'autorise rien.

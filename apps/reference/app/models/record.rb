@@ -22,6 +22,8 @@ class Record < ApplicationRecord
   validates :payload, presence: true
   validates :sequence, numericality: { only_integer: true, greater_than: 0 }
   validates :recorded_at, presence: true
+  # Version 1.1.0 (#236 T2) : la colonne de la migration, facultative et bornée comme en base.
+  validates :commentaire, length: { maximum: 200 }, allow_nil: true
 
   validate :identifiant_immuable, on: :update
 

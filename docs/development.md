@@ -472,7 +472,8 @@ Ce que la commande produit, dans `artifacts/reference-image/` (dossier ignoré p
 
 `hda` n'est plus un artefact : la coquille le COMPOSE (table MBR calculée, rootfs en partition 1,
 paquet en partition 2 ; ADR 0041). Le harnais Node fait la même composition dans un fichier local,
-`reference-hda-composee.img`, refait seulement quand l'un des deux morceaux change.
+`reference-hda-composee-<empreinte du paquet>.img` (un fichier par paquet depuis #236 T2), refait
+seulement quand l'un des deux morceaux change.
 
 Les artefacts binaires ne sont **jamais** commités. Le manifeste
 `tools/build-reference-image/manifest.json` l'est : il porte nom, taille, empreinte SHA-256, licence
@@ -549,17 +550,97 @@ l'application, puis — pour la référence seule — de `vault-invariant.json` 
 La fabrication dépose les deux images, nommées par leur empreinte, et `paquet.json` dans
 `artifacts/reference-image/`.
 
-**Un seul paquet est servi à la fois.** `app:paquet --source <dossier>` REMPLACE le `paquet.json` de
-la référence, et le dit : « remplace le paquet servi : <ancien> → <nouveau> ». Deux gestes suivent :
+**Ce que le dossier sert : un paquet COURANT, et au plus un PRÉCÉDENT.** `paquet.json` est le paquet
+servi ; `paquet-precedent.json`, facultatif, est une version ANTÉRIEURE de la MÊME application,
+celle que « Plus tard » ouvre (rétention 1, ADR 0042). Les trois gestes ci-dessous ont été joués
+tels quels sous Docker le 19/09/2026 (recette QA de la PR #249, défauts 4 et 5) ; aucun des deux
+gestes de rétention (`--retirer-precedent`, `--courant-devient-precedent`) ne construit quoi que ce
+soit.
 
-```sh
-npm run image:manifest    # le descripteur de l'image nomme désormais le NOUVEAU paquet
-npm run app:paquet        # plus tard, sans --source : la référence redevient le paquet servi
-```
+1. **Servir une version SEULE** — une première version, ou une application extérieure :
 
-Les images d'une AUTRE application restent dans le dossier (elles portent son identifiant) ; celles
-d'une construction antérieure de la MÊME application sont retirées. Seul le contrat servi change.
-Garder plusieurs paquets côte à côte relève de T2.
+   ```sh
+   npm run app:paquet -- --retirer-precedent    # s'il y a un précédent : son contrat et ses images
+   npm run app:paquet -- --source ../mon-app --id mon-app --version 1.0.0
+   npm run image:manifest                       # le descripteur sert mon-app 1.0.0, seule
+   ```
+
+2. **Publier une NOUVELLE version en gardant la précédente** :
+
+   ```sh
+   npm run app:paquet -- --courant-devient-precedent   # le paquet servi devient le précédent
+   npm run app:paquet -- --source ../mon-app --id mon-app --version 1.1.0
+   npm run image:manifest                              # le descripteur sert 1.1.0 ET 1.0.0
+   ```
+
+   Le précédent garde ainsi les images EXACTES qui ont installé les coffres existants : refabriquer
+   la même source ne les redonnerait pas à l'octet (#212).
+
+3. **Retirer le précédent** (servir la version courante seule) :
+
+   ```sh
+   npm run app:paquet -- --retirer-precedent
+   npm run image:manifest
+   ```
+
+Pour revenir à la référence : `npm run image:build`, ou `npm run app:paquet` sans `--source` puis
+`npm run image:manifest`.
+
+**Ce que les outils disent.** `app:paquet --source` qui remplace le paquet servi le dit (« remplace
+le paquet servi : <ancien> → <nouveau> »). Fabriquer comme courant la version que le précédent
+désigne retire ce précédent — il n'en serait plus un — et le dit. `--precedent` sur la version du
+paquet courant est refusé avant toute construction, avec le geste qui convient. `image:manifest`
+ÉCARTE, en une ligne qui le dit, un précédent d'une AUTRE application ou qui n'est pas STRICTEMENT
+antérieur : le descripteur sert alors le courant seul, et la coquille, elle, refuserait un tel
+descripteur. Si ce sont les images du précédent qui manquent, il le dit aussi, au lieu de renvoyer à
+`image:build`.
+
+Les images d'une AUTRE application ou d'une AUTRE version restent dans le dossier (leur nom porte
+l'identifiant et la version) ; celles d'une construction antérieure de la MÊME version sont
+retirées.
+
+La fabrication sert chaque image **compressée** : `<image>.ext4.gz`, gzip déterministe (niveau 9,
+en-tête sans nom ni date, octet OS « inconnu » — une même image a la même empreinte sous Windows et
+sous Linux). `paquet.json` en porte le nom, la taille et l'empreinte (`servi`) ; le descripteur,
+lui, garde `octets` et `sha256` de l'image DÉCOMPRESSÉE et ajoute `compression` et
+`transfertOctets`. Le rootfs est compressé par `image:build` sous
+`reference-rootfs-<empreinte>.ext4.gz`. Une origine les sert en `application/octet-stream`, **sans**
+`Content-Encoding` : la coquille décompresse elle-même (ADR 0041, note du 19/09/2026).
+
+### Publier une nouvelle version d'un paquet (#236 T2, ADR 0042)
+
+Un coffre garde ses données d'une version à l'autre ; ce qui décide d'une mise à jour est le
+**schéma** (la dernière migration) et la **version** (SemVer 2.0.0), comparés AVANT le boot à ceux
+que le coffre a constatés. Pour publier :
+
+1. **augmenter la version** (`vault-app.json` ou `--version`) — une version égale ou inférieure à
+   celle d'un coffre y est refusée, même à schéma égal (retour arrière) ;
+2. **ajouter les migrations** dans `db/migrate/` : le guest les joue au premier démarrage qui suit
+   le geste « Mettre à jour l'application », une par une, après avoir écrit l'intention
+   `/app/var/.vault-migration` ; une coupure entre deux migrations se REPREND, jamais avec l'ancien
+   code ;
+3. **garder le paquet servi comme PRÉCÉDENT, puis fabriquer le courant** (rétention 1) :
+
+   ```sh
+   npm run app:paquet -- --courant-devient-precedent
+   npm run app:paquet -- --source <dossier de la nouvelle version>
+   npm run image:manifest    # le descripteur sert le courant ET le précédent
+   ```
+
+   Un précédent qui n'a jamais été servi se fabrique depuis sa source :
+   `npm run app:paquet -- --source <dossier de la version précédente> --precedent`. `--precedent`
+   écrit `paquet-precedent.json` au lieu de `paquet.json`. Sans précédent servi, « Plus tard » n'est
+   pas offert : un coffre de l'ancienne version ne s'ouvre qu'en se mettant à jour.
+
+Pour la référence, `npm run image:build` fait les trois gestes : le précédent est refabriqué depuis
+la révision git que `sources.json` épingle (`paquetPrecedent`), par `git archive` — la construction
+a donc besoin de l'historique (`fetch-depth: 0` en CI), puis `apps/reference` est fabriqué en
+courant. `--seulement=precedent` ne refait que le premier.
+
+**Ce qu'une migration doit respecter** : être réversible par la SAUVEGARDE, pas par Rails (la
+coquille propose une sauvegarde avant la mise à jour, et c'est elle qui rouvre les données sur
+l'ancien paquet) ; tenir dans une transaction SQLite (le DDL de SQLite est transactionnel, une
+migration coupée s'annule entière) ; ne rien écrire hors de `/app/var`.
 
 ### Boot réel
 

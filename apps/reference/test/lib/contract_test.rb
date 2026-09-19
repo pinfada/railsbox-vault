@@ -3,7 +3,8 @@ require "test_helper"
 class ContractTest < ActiveSupport::TestCase
   test "le contrat expose l'identité figée de l'application" do
     assert_equal "railsbox-vault-reference", Vault::Contract.application_id
-    assert_equal "1.0.0", Vault::Contract.application_version
+    # 1.1.0 depuis #236 T2 : le second paquet, qui porte deux migrations.
+    assert_equal "1.1.0", Vault::Contract.application_version
   end
 
   test "l'identifiant de l'invariant est un UUID v4 en minuscules" do

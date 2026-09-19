@@ -7,6 +7,7 @@
 
 import { TYPES_PRIVILEGIES, enveloppeDeMessage } from "/src/coquille/contrat-de-messages.mjs";
 import { DELAI_BATTEMENT_MS } from "/src/coquille/moyens-de-deverrouillage.mjs";
+import { phaseDuBoot, poserLaPhase } from "/src/vm/phase-du-boot.mjs";
 
 /**
  * Rend `enBattant(correlation, geste)` : exécute un geste LONG en battant, pour que la coquille sache
@@ -34,6 +35,8 @@ export function battementDuWorker({ poster, correlee }) {
    * @param {() => Promise<unknown>} geste
    */
   return async function enBattant(correlation, geste) {
+    // La PHASE d'un démarrage (QA de #249, Q2) : chaque geste part sans phase, et n'en laisse aucune.
+    poserLaPhase(null);
     const minuterie = setInterval(() => {
       poster(
         enveloppeDeMessage(TYPES_PRIVILEGIES.battement, {
@@ -46,6 +49,8 @@ export function battementDuWorker({ poster, correlee }) {
           // nombres du côté de confiance, qui ne disent rien du volume.
           rang: (battementsPostes += 1),
           instantMs: Math.round(performance.now()),
+          // Où en est un démarrage : téléchargement, démarrage, mise à jour des données — ou rien.
+          phase: phaseDuBoot(),
         }),
       );
     }, DELAI_BATTEMENT_MS);
@@ -53,6 +58,7 @@ export function battementDuWorker({ poster, correlee }) {
       return await geste();
     } finally {
       clearInterval(minuterie);
+      poserLaPhase(null);
     }
   };
 }

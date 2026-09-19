@@ -179,6 +179,57 @@ export function createManifest({
   });
 }
 
+/**
+ * Rend un NOUVEAU manifeste qui porte l'INTENTION d'une migration vers `cible` (#236 T2, ADR 0042) :
+ * inscrite AVANT le boot qui migre, elle interdit à toute ouverture suivante de rouvrir ces données
+ * avec un code plus ancien que la cible, tant que le manifeste n'a pas suivi la migration.
+ *
+ * `schemaDuCoffre`, quand il est donné, est inscrit aussi : un coffre de T1 dont le schéma avait été
+ * DÉDUIT le garde écrit, et sa reprise ne dépend plus d'un paquet précédent encore servi (revue de la
+ * PR #249, constat 5).
+ *
+ * @param {ReturnType<typeof parseManifest>} manifeste
+ * @param {{ version: string, schema: string }} cible
+ * @param {string | null} [schemaDuCoffre]
+ */
+export function manifesteAvecIntention(manifeste, cible, schemaDuCoffre = null) {
+  return createManifest({
+    formatVersion: manifeste.formatVersion,
+    runtime: manifeste.runtime,
+    app: {
+      ...manifeste.app,
+      ...(schemaDuCoffre === null ? {} : { schema: schemaDuCoffre }),
+      migration: { version: cible.version, schema: cible.schema },
+    },
+    volumeSize: manifeste.geometry.volumeSize,
+    identity: manifeste.identity,
+    ...(manifeste.volume === undefined ? {} : { volume: manifeste.volume }),
+  });
+}
+
+/**
+ * Rend un NOUVEAU manifeste, identique à celui-ci sauf son bloc `app` (#236 T2, ADR 0042) — et SANS
+ * intention de migration : il n'est écrit que quand les données ont atteint ce schéma.
+ *
+ * C'est le seul geste qu'une mise à jour d'application fait au manifeste : la version et le schéma
+ * CONSTATÉS changent, rien d'autre — ni le format, ni le runtime qui a le droit d'écrire, ni la
+ * géométrie, ni l'identité du volume. L'identité de l'APPLICATION ne change jamais par ce chemin :
+ * un coffre appartient à une application, et en changer n'est pas une mise à jour.
+ *
+ * @param {ReturnType<typeof parseManifest>} manifeste
+ * @param {{ version: string, schema: string }} app
+ */
+export function manifesteAvecApplication(manifeste, { version, schema }) {
+  return createManifest({
+    formatVersion: manifeste.formatVersion,
+    runtime: manifeste.runtime,
+    app: { id: manifeste.app.id, version, schema },
+    volumeSize: manifeste.geometry.volumeSize,
+    identity: manifeste.identity,
+    ...(manifeste.volume === undefined ? {} : { volume: manifeste.volume }),
+  });
+}
+
 /** Encode un manifeste en octets déterministes (empreinte reproductible). */
 export function serializeManifest(manifest) {
   return new TextEncoder().encode(JSON.stringify(canonicalize(manifest)));
@@ -437,6 +488,30 @@ function normalizeVolume(volume, onError, formatVersion) {
   return { id: volume.id, algorithm: volume.algorithm };
 }
 
+/**
+ * Le SCHÉMA d'une application : la version de sa dernière migration ActiveRecord, en chiffres
+ * (`20260101000002`). QUATORZE chiffres au plus, sans zéro de tête — l'horodatage de Rails — :
+ * c'est la même forme que le guest valide avant toute comparaison (`schema-du-volume.sh`), où un
+ * nombre plus long déborderait l'entier de `dash` et désarmerait la comparaison (revue de sécurité
+ * de la PR #249, constat 3).
+ */
+export const SCHEMA_APPLICATIF = /^(0|[1-9][0-9]{0,13})$/;
+
+/**
+ * Normalise le bloc `app`. Depuis #236 T2 (ADR 0042, note datée de l'ADR 0007), il peut porter
+ * `schema` : le schéma CONSTATÉ des données que ce volume contient. Le champ est FACULTATIF et le
+ * format de volume ne change pas — un volume installé avant lui ne le porte pas, et la règle qui le
+ * lit alors (« inconnu, celui du paquet de même version, sinon refus ») appartient à la décision de
+ * déphasage (`src/coquille/dephasage.mjs`), pas à ce module : il ne devine rien.
+ *
+ * Absent, il n'est PAS réécrit : la sérialisation canonique d'un manifeste d'avant reste octet pour
+ * octet la même, et son empreinte aussi.
+ *
+ * `migration`, facultatif lui aussi, est l'INTENTION d'une mise à jour en cours : la CIBLE, `{ version,
+ * schema }`, inscrite avant le boot qui migre et effacée quand le manifeste a suivi. Présente, elle dit
+ * que les données peuvent être à un schéma INTERMÉDIAIRE, et seule la reprise de la mise à jour est
+ * admise (ADR 0042) — par une version plus récente que celle du coffre (revue de la PR #249, constat 1).
+ */
 function normalizeApp(app, onError) {
   if (!app || typeof app !== "object") throwWith(onError, "application absente.", TypeError);
   if (typeof app.id !== "string" || app.id === "") {
@@ -445,7 +520,35 @@ function normalizeApp(app, onError) {
   if (typeof app.version !== "string" || app.version === "") {
     throwWith(onError, "version d'application absente.", TypeError);
   }
-  return { id: app.id, version: app.version };
+  const normalise = { id: app.id, version: app.version };
+  if (app.schema !== undefined) normalise.schema = schemaExige(app.schema, "schema", onError);
+  if (app.migration !== undefined) {
+    const cible = app.migration;
+    if (!cible || typeof cible !== "object" || parseSemVer(cible.version) === null) {
+      throwWith(
+        onError,
+        `« migration » d'application invalide : ${JSON.stringify(cible)}. La cible { version, schema } est exigée.`,
+        TypeError,
+      );
+    }
+    normalise.migration = {
+      version: cible.version,
+      schema: schemaExige(cible.schema, "migration.schema", onError),
+    };
+  }
+  return normalise;
+}
+
+/** Un schéma de la forme `SCHEMA_APPLICATIF`, ou le refus nommé. */
+function schemaExige(valeur, champ, onError) {
+  if (typeof valeur !== "string" || !SCHEMA_APPLICATIF.test(valeur)) {
+    throwWith(
+      onError,
+      `« ${champ} » d'application invalide : ${JSON.stringify(valeur)}. Une version de migration est exigée : des chiffres, quatorze au plus, sans zéro de tête.`,
+      TypeError,
+    );
+  }
+  return valeur;
 }
 
 function normalizeIdentity(identity, onError) {
