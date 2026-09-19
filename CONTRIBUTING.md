@@ -20,6 +20,11 @@ La pull request :
 Une issue peut nécessiter plusieurs PR uniquement si chacune apporte une preuve autonome et si la
 décomposition est inscrite dans l'issue avant le découpage.
 
+**Depuis le 19 septembre 2026**, une PR peut aussi fermer plusieurs issues d'un même **lot** (mêmes
+fichiers, même type de contrôle, même compétence d'agent) plutôt qu'une seule : voir la
+[stratégie de traitement des issues](https://github.com/pinfada/railsbox-vault/issues/31#issuecomment-5744955316)
+publiée sur l'issue d'index #31, qui fait foi.
+
 ### Definition of Ready
 
 Une issue d'implémentation ne passe à l'état prête que si :
