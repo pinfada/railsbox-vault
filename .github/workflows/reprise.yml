@@ -178,6 +178,8 @@ jobs:
       # P3 (#194) ajoute dans ce même lot le parcours au clavier (`parcours-clavier.spec.mjs`) : les
       # neuf étapes, avec son propre profil persistant, 3,5 min en local le 15/09/2026 (un boot de
       # Rails). Il conserve le scénario nominal P2 sans modification : le lot 3 vise ≈ 35 min.
+      # `reprise-installation.spec.mjs` (#197, #250) rejoint le lot 2 : une graine refusée, le clic sur
+      # « Reprendre l'installation », un boot de Rails (≈ 3 à 4 min) ; le lot 2 vise ≈ 29 min.
       matrix:
         include:
           - lot: "1"
@@ -193,6 +195,7 @@ jobs:
               tests/e2e/enveloppe-rotation-boot-froid.spec.mjs
               tests/e2e/reprise-coquille-boot-froid.spec.mjs
               tests/e2e/export-volume-verifiable.spec.mjs tests/e2e/parcours-page-rails.spec.mjs
+              tests/e2e/reprise-installation.spec.mjs
           - lot: "3"
             fichiers: >-
               tests/e2e/durabilite-du-commit.spec.mjs tests/e2e/parcours-utilisateur.spec.mjs
