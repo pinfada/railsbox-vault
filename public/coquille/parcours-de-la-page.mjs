@@ -50,6 +50,7 @@ import {
   unGesteEstEnCours,
 } from "/src/coquille/parcours.mjs";
 import { brancherLesObservateurs } from "./observateurs-du-parcours.mjs";
+import { surveillerLaPression } from "./pression-du-bouton.mjs";
 import { etatDeLaSaisie } from "/src/coquille/saisie-du-code.mjs";
 
 /** Les sections qui regroupent des blocs : cachées quand aucun de leurs blocs n'est montré. */
@@ -101,6 +102,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     /** La sauvegarde ARRÊTE l'application sans que la ligne du cycle le dise : « Démarrer » reste
      *  offert au retour après l'étape 6 (#239). Vrai d'une sauvegarde au prochain démarrage. */
     applicationArretee: false,
+    /** Le bouton du dernier geste LONG reçu, dit occupé tant qu'il court (#251). */
+    boutonDuGeste: null,
   };
 
   const attenteDeLaPhraseAnnoncee = attenteDeLaPhrase(
@@ -109,10 +112,15 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   const passkeyConnue = typeof globalThis.PublicKeyCredential !== "undefined";
 
   /** La seule écriture du parcours dans le document : jamais un code de récupération en clair. */
+  // Un bouton PRESSÉ ne change pas sous le doigt : écritures et rendu attendent le clic (#251).
+  const pression = surveillerLaPression(doc);
+
   function dire(id, texte) {
-    const cible = noeud(id);
     const propre = texteSansCode(texte);
-    if (cible !== null && cible.textContent !== propre) cible.textContent = propre;
+    pression.differer(id, () => {
+      const cible = noeud(id);
+      if (cible !== null && cible.textContent !== propre) cible.textContent = propre;
+    });
   }
 
   function lireJson(id) {
@@ -270,6 +278,9 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       const bouton = noeud(id);
       if (bouton !== null && bouton.disabled !== enCours) bouton.disabled = enCours;
     }
+    // Le bouton du geste REÇU se dit occupé tant que le geste court : un clic pris se VOIT (#251).
+    const occupe = etat.boutonDuGeste === null ? null : noeud(etat.boutonDuGeste);
+    if (occupe !== null) occupe.setAttribute("aria-busy", String(enCours));
   }
 
   /**
@@ -324,6 +335,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   }
 
   function rendre({ deplacerLeFocus = true } = {}) {
+    if (pression.differerLeRendu(() => rendre({ deplacerLeFocus }))) return;
     const releve = lireJson("deverrouillage-releve");
     const rapport = lireJson("coquille-rapport");
     const ecranId = ecranAMontrer(releve, rapport);
@@ -500,6 +512,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     (event) => {
       if (!(event.target instanceof Element) || event.target.closest("button") === null) return;
       etat.ecranDuGeste = etat.ecran;
+      const id = event.target.closest("button").id;
+      etat.boutonDuGeste = GESTES_LONGS.includes(id) ? id : null;
       dire("parcours-refus", "");
       dire("parcours-reussite", "");
     },

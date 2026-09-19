@@ -129,6 +129,8 @@ const CYCLE_DE_VIE = [
   "**/coquille-mise-a-jour.spec.mjs",
   // Un premier démarrage interrompu (#250) : reconnu, dit, et repris.
   "**/coquille-installation-interrompue.spec.mjs",
+  // Le premier clic dans la coquille après l’application (#251).
+  "**/coquille-premier-clic.spec.mjs",
 ];
 
 /**
