@@ -357,3 +357,10 @@ réelles de `encrypt` sous la clé du domaine `volume` depuis la réouverture.
 
 **La ligne des conséquences est corrigée** : le format que ce runtime ÉCRIT porte désormais une page
 d'enveloppe **v2**, et non plus v1.
+
+## Note du 19/09/2026 — le manifeste v4 gagne deux champs facultatifs (#236 T2, ADR 0042)
+
+`app.schema` et `app.migration` s'ajoutent au bloc `app` SANS nouvelle version de format : un
+manifeste v4 qui ne les porte pas reste un manifeste v4 valide, relu à l'identique (voir la note du
+même jour à l'ADR 0007). La migration de format v3 → v4 recopie le bloc `app` tel quel : un volume
+migré garde ces champs s'il les portait.

@@ -68,7 +68,17 @@ avec sa reprise après interruption (#13). Depuis #12, sa configuration démarre
 deux origines distinctes : un import ne prouve rien tant qu'il peut relire le stockage qu'il vient
 d'écrire.
 
-### Les ONZE campagnes de mutation, réunies (#196)
+### Les campagnes de mutation, réunies (#196) — treize depuis #236 T2
+
+La treizième, `tools/muter-gardes-dephasage.mjs` (#236 T2, ADR 0042), tient quinze gardes :
+l'identité de l'application, la précédence SemVer (retour arrière refusé même à schéma égal), le
+schéma sous une version supérieure, la divergence à version égale, « Plus tard » limité à la version
+exacte, la reprise d'une migration interrompue, la forme du précédent, l'intention inscrite sous le
+seul geste, le manifeste qui ne suit que le schéma du paquet booté, la garde « volume neuf »
+(constat 8 de la revue de #237), la borne de décompression, la taille transférée,
+`DecompressionStream` exigé, et la forme de `schema`/`migration` au manifeste. 15/15 tués le
+19/09/2026. Les onze campagnes dont parle la suite de cette section sont les onze d'avant #236 ; la
+douzième est celle du paquet applicatif (T1).
 
 Onze outils `tools/muter-gardes-*.mjs` portent chacun leur TABLE de gardes et partagent le même
 moteur (`tools/moteur-de-mutation.mjs`) : recopie du dépôt dans un atelier temporaire, épreuve
@@ -2180,6 +2190,28 @@ CI mesurées ou déduites de ce run, un ouvrier par lot : **lot 1 36 min**, **lo
 d'un job). Aucune borne n'est relevée ; le coût est de ≈ 26 min-exécutant de plus par recette, à
 durée murale inchangée. Le job `fusion` réunit les trois artefacts `mesures-reprise-lot-*` sans rien
 supposer de leur nombre : rapport `blob` et journaux d'espace disque sont nommés par lot.
+
+**Un QUATRIÈME lot, la mise à jour du paquet (#236 T2, ADR 0042).** `mise-a-jour-du-paquet.spec.mjs`
+joue, sur la coquille réelle et sous Chromium : un coffre créé sous 1.0.0, une note et une pièce
+jointe ; l'origine qui publie 1.1.0 (deux migrations) en gardant 1.0.0 servable ; le bloc « Mettre à
+jour l'application » proposé AVANT tout boot ; « Plus tard », qui ouvre le code 1.0.0 (la colonne
+n'existe pas) ; la sauvegarde d'abord, puis la mise à jour — migrations jouées, manifeste suivi,
+note et pièce relues, colonne présente ; la réouverture après coup, sans rien à rejouer ; les trois
+refus avant boot (retour arrière, autre application, origine sans application) ; enfin la sauvegarde
+d'AVANT restaurée sur une origine qui sert 1.0.0, où elle s'ouvre. Les descripteurs sont servis par
+`context.route`, qui atteint le `fetch` du Worker de confiance (mesuré sous Chromium) : aucun
+fichier partagé avec les autres lots n'est touché. Sept ouvertures, quatre boots de Rails dont un
+qui migre (Rails chargé deux fois) : il a son lot.
+
+**La coupure ENTRE deux migrations** n'est pas jouée ici mais sur l'image réelle, sous Node, par
+`tests/vm/migration-coupee.test.mjs` (`npm run test:vm:reference`) : la graine 1.0.0 bootée sous le
+paquet 1.1.0, la machine ARRÊTÉE dans le rappel même qui reçoit la ligne « migrated » de la première
+migration ; puis le paquet 1.0.0 sur ce disque — le guest REFUSE de lancer Rails (« REFUS anterieur
+… intention=N ») — ; puis 1.1.0, qui REPREND et termine (schéma N, invariant intact). Mesuré le
+19/09/2026 : coupure après 1 migration commise sur 2, reprise en 38,5 s, épreuve entière en 3
+min 31. Le disque composé est un fichier PAR PAQUET (`reference-hda-composee-<empreinte>.img`) :
+deux épreuves qui bootent deux paquets en parallèle recomposaient le même fichier sous le boot de
+l'autre.
 
 #### Reprise PAR INSTANTANÉ : `tests/e2e/instantane-reprise.spec.mjs` (#65)
 

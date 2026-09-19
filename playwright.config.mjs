@@ -122,7 +122,12 @@ const DEVERROUILLAGE_COQUILLE = [
  *    deux autres ne tiendraient peut-être pas. La suite de durcissement rejoint donc les trois
  *    moteurs, alors qu'elle n'en mesurait qu'un : elle mesure désormais un EFFET, pas une valeur.
  */
-const CYCLE_DE_VIE = ["**/coquille-cycle-de-vie.spec.mjs", "**/entetes-durcissement.spec.mjs"];
+const CYCLE_DE_VIE = [
+  "**/coquille-cycle-de-vie.spec.mjs",
+  "**/entetes-durcissement.spec.mjs",
+  // Le bloc « Mettre à jour » et les refus de déphasage (#236 T2) : décidés avant tout boot.
+  "**/coquille-mise-a-jour.spec.mjs",
+];
 
 /**
  * LE CHEMIN SERVI (#192, tranche P1 de l'épique #195, ADR 0038) : la frontière du relais HTTP.

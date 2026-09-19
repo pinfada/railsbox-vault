@@ -472,7 +472,8 @@ Ce que la commande produit, dans `artifacts/reference-image/` (dossier ignoré p
 
 `hda` n'est plus un artefact : la coquille le COMPOSE (table MBR calculée, rootfs en partition 1,
 paquet en partition 2 ; ADR 0041). Le harnais Node fait la même composition dans un fichier local,
-`reference-hda-composee.img`, refait seulement quand l'un des deux morceaux change.
+`reference-hda-composee-<empreinte du paquet>.img` (un fichier par paquet depuis #236 T2), refait
+seulement quand l'un des deux morceaux change.
 
 Les artefacts binaires ne sont **jamais** commités. Le manifeste
 `tools/build-reference-image/manifest.json` l'est : il porte nom, taille, empreinte SHA-256, licence
@@ -557,9 +558,51 @@ npm run image:manifest    # le descripteur de l'image nomme désormais le NOUVEA
 npm run app:paquet        # plus tard, sans --source : la référence redevient le paquet servi
 ```
 
-Les images d'une AUTRE application restent dans le dossier (elles portent son identifiant) ; celles
-d'une construction antérieure de la MÊME application sont retirées. Seul le contrat servi change.
-Garder plusieurs paquets côte à côte relève de T2.
+Les images d'une AUTRE application ou d'une AUTRE version restent dans le dossier (leur nom porte
+l'identifiant et la version) ; celles d'une construction antérieure de la MÊME version sont
+retirées. Seul le contrat servi change.
+
+La fabrication sert chaque image **compressée** : `<image>.ext4.gz`, gzip déterministe (niveau 9,
+en-tête sans nom ni date, octet OS « inconnu » — une même image a la même empreinte sous Windows et
+sous Linux). `paquet.json` en porte le nom, la taille et l'empreinte (`servi`) ; le descripteur,
+lui, garde `octets` et `sha256` de l'image DÉCOMPRESSÉE et ajoute `compression` et
+`transfertOctets`. Le rootfs est compressé par `image:build` sous
+`reference-rootfs-<empreinte>.ext4.gz`. Une origine les sert en `application/octet-stream`, **sans**
+`Content-Encoding` : la coquille décompresse elle-même (ADR 0041, note du 19/09/2026).
+
+### Publier une nouvelle version d'un paquet (#236 T2, ADR 0042)
+
+Un coffre garde ses données d'une version à l'autre ; ce qui décide d'une mise à jour est le
+**schéma** (la dernière migration) et la **version** (SemVer 2.0.0), comparés AVANT le boot à ceux
+que le coffre a constatés. Pour publier :
+
+1. **augmenter la version** (`vault-app.json` ou `--version`) — une version égale ou inférieure à
+   celle d'un coffre y est refusée, même à schéma égal (retour arrière) ;
+2. **ajouter les migrations** dans `db/migrate/` : le guest les joue au premier démarrage qui suit
+   le geste « Mettre à jour l'application », une par une, après avoir écrit l'intention
+   `/app/var/.vault-migration` ; une coupure entre deux migrations se REPREND, jamais avec l'ancien
+   code ;
+3. **fabriquer le PRÉCÉDENT, puis le courant** (rétention 1) :
+
+   ```sh
+   npm run app:paquet -- --source <dossier de la version précédente> --precedent
+   npm run app:paquet -- --source <dossier de la nouvelle version>
+   npm run image:manifest    # le descripteur sert le courant ET le précédent
+   ```
+
+   `--precedent` écrit `paquet-precedent.json` au lieu de `paquet.json`. Sans précédent servi, «
+   Plus tard » n'est pas offert : un coffre de l'ancienne version ne s'ouvre qu'en se mettant à
+   jour.
+
+Pour la référence, `npm run image:build` fait les trois gestes : le précédent est refabriqué depuis
+la révision git que `sources.json` épingle (`paquetPrecedent`), par `git archive` — la construction
+a donc besoin de l'historique (`fetch-depth: 0` en CI), puis `apps/reference` est fabriqué en
+courant. `--seulement=precedent` ne refait que le premier.
+
+**Ce qu'une migration doit respecter** : être réversible par la SAUVEGARDE, pas par Rails (la
+coquille propose une sauvegarde avant la mise à jour, et c'est elle qui rouvre les données sur
+l'ancien paquet) ; tenir dans une transaction SQLite (le DDL de SQLite est transactionnel, une
+migration coupée s'annule entière) ; ne rien écrire hors de `/app/var`.
 
 ### Boot réel
 
