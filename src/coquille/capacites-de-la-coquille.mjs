@@ -75,6 +75,13 @@ export const CAPACITES_DE_LA_COQUILLE = Object.freeze([
     presente: (portee) => typeof portee?.structuredClone === "function",
   }),
   Object.freeze({
+    nom: "decompression",
+    exigee: true,
+    pourquoi:
+      "les morceaux de l'application (rootfs, paquet, graine) sont servis en gzip et décompressés par `DecompressionStream` (#236 T2) : sans lui, rien ne s'installe ni ne démarre",
+    presente: (portee) => typeof portee?.DecompressionStream === "function",
+  }),
+  Object.freeze({
     nom: "opfs",
     // FACULTATIVE, et c'est une décision plutôt qu'une indulgence : l'absence d'OPFS est déjà rendue
     // comme un ÉTAT — `indisponible` — par le Worker de confiance (`PEUT_OUVRIR`), et l'ADR 0029 dit

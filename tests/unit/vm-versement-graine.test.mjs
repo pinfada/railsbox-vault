@@ -20,10 +20,15 @@ import { verserFluxDansVolume } from "../../src/vm/versement-de-disque.mjs";
 
 const MIO = 1024 * 1024;
 
-/** Backend d'essai : retient ce qui a été écrit, et compte les écritures. */
-function backendDEssai() {
+/**
+ * Backend d'essai : retient ce qui a été écrit, et compte les écritures. Il se déclare NÉ de cette
+ * ouverture, comme celui que l'installation vient de créer : sans ce témoin, le saut des blocs nuls
+ * est refusé (constat 8 de la revue de la PR #237, `vm-graine-creuse.test.mjs`).
+ */
+function backendDEssai({ naissance = true } = {}) {
   const ecritures = [];
   return {
+    naissance,
     ecritures,
     octetsEcrits: () => ecritures.reduce((somme, ecriture) => somme + ecriture.octets, 0),
     async write(offset, octets) {

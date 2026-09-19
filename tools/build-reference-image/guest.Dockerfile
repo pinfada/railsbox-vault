@@ -114,6 +114,7 @@ RUN ldconfig && test "$(ruby -e 'print RUBY_VERSION')" = "3.3.12"
 
 COPY tools/build-reference-image/guest/guest-init.sh /opt/vault/guest-init.sh
 COPY tools/build-reference-image/guest/start-app.sh /opt/vault/start-app.sh
+COPY tools/build-reference-image/guest/schema-du-volume.sh /opt/vault/schema-du-volume.sh
 COPY tools/build-reference-image/guest/serial-bridge.py /opt/vault/serial-bridge.py
 
 # Environnement du guest. Aucune clé, aucun jeton, aucun mot de passe : la
@@ -121,7 +122,7 @@ COPY tools/build-reference-image/guest/serial-bridge.py /opt/vault/serial-bridge
 # (config/application.rb), et `SECRET_KEY_BASE` n'est PAS posée ici pour que la
 # valeur synthétique reste la valeur effective et reste traçable.
 RUN set -eu; \
-    chmod +x /opt/vault/guest-init.sh /opt/vault/start-app.sh; \
+    chmod +x /opt/vault/guest-init.sh /opt/vault/start-app.sh /opt/vault/schema-du-volume.sh; \
     mkdir -p /app /var/log; \
     { \
       echo 'export RAILS_ENV=production'; \
@@ -249,11 +250,14 @@ RUN set -eu; \
 # un point de montage vide. Le guest montera la graine — devenue le volume du coffre — sur
 # `/app/var`, et le paquet, lui, est éphémère.
 #
-# Le MARQUEUR de schéma vit dans la GRAINE : c'est lui que T2 comparera à celui du paquet pour
-# décider d'une migration, et il doit donc voyager avec les données, pas avec le code.
+# Le MARQUEUR de schéma est posé DEUX fois (#236 T2, ADR 0042) : dans la GRAINE, où il voyage avec
+# les données et suit leurs migrations, et dans le PAQUET (/app/db/.vault-schema), où il dit le
+# schéma que ce code attend. `schema-du-volume.sh` les compare au boot, avant Rails.
 ARG SCHEMA_DE_L_APPLICATION=inconnu
 RUN set -eu; \
     mv /app/var /graine; \
     mkdir -p /app/var /app/log /app/tmp/pids; \
     printf '%s\n' "$SCHEMA_DE_L_APPLICATION" > /graine/.vault-schema; \
+    mkdir -p /app/db; \
+    printf '%s\n' "$SCHEMA_DE_L_APPLICATION" > /app/db/.vault-schema; \
     echo "[disque-app] paquet $(du -sh /app | cut -f1), graine $(du -sh /graine | cut -f1), schéma $SCHEMA_DE_L_APPLICATION"

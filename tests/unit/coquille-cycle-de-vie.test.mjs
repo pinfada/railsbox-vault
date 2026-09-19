@@ -195,6 +195,7 @@ function porteeComplete() {
     Worker: function () {},
     MessageChannel: function () {},
     structuredClone() {},
+    DecompressionStream: function () {},
     navigator: { storage: { getDirectory() {} }, credentials: {} },
   };
 }
@@ -219,6 +220,14 @@ test("une capacité EXIGÉE absente est nommée, et la coquille se déclare insu
   delete portee.WebAssembly;
   const verdict = mesurerLesCapacites(portee);
   assert.deepEqual(verdict.manquantes, ["webassembly"]);
+  assert.equal(verdict.suffisante, false);
+});
+
+test("DecompressionStream est EXIGÉ : sans lui, aucun morceau gzip ne s'installe (#236 T2)", () => {
+  const portee = porteeComplete();
+  delete portee.DecompressionStream;
+  const verdict = mesurerLesCapacites(portee);
+  assert.deepEqual(verdict.manquantes, ["decompression"]);
   assert.equal(verdict.suffisante, false);
 });
 
@@ -250,6 +259,7 @@ test("une sonde qui JETTE rend « absente », et non une exception qui remonte a
     Worker: function () {},
     MessageChannel: function () {},
     structuredClone() {},
+    DecompressionStream: function () {},
     navigator: { storage: { getDirectory() {} }, credentials: {} },
   };
   const verdict = mesurerLesCapacites(piegee);

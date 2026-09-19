@@ -9,6 +9,7 @@
 import { ISSUES_DETAPE, journalDuCycle } from "/src/coquille/cycle-de-vie.mjs";
 import { brancherLesGestesDuCycle } from "/src/coquille/gestes-du-cycle.mjs";
 import { brancherLesGestesDePortabilite } from "/src/coquille/gestes-de-portabilite.mjs";
+import { brancherLeGesteDeMiseAJour } from "/src/coquille/geste-de-mise-a-jour.mjs";
 import { ETATS_DU_VOLUME } from "/src/coquille/etat-de-la-coquille.mjs";
 import { mesurerLesCapacites } from "/src/coquille/capacites-de-la-coquille.mjs";
 import { conduiteApresLaMort } from "/src/coquille/mort-du-worker.mjs";
@@ -73,6 +74,9 @@ export function creerCycle({
 
   /** La poignée de l'interface, une fois montée. Elle ne détient aucune clé. */
   let interfaceDeDeverrouillage = null;
+
+  /** Le bloc « Mettre à jour l'application » (#236 T2), branché avec les gestes du cycle. */
+  let miseAJour = null;
 
   /** L'instant du dernier GESTE de l'utilisateur, origine des deux mesures de #162. */
   let departDuGeste = null;
@@ -210,6 +214,8 @@ export function creerCycle({
         rapport.journal.push("volume-ouvert");
         pont.verrouillage.refletDeLEtat();
         publier();
+        // Le déphasage se constate une fois le coffre OUVERT, avant tout démarrage (#236 T2).
+        if (reponse.etat === ETATS_DU_VOLUME.ouvert) void miseAJour?.constater();
       },
       surMesure: (instant) => {
         if (instant === "geste") {
@@ -235,6 +241,13 @@ export function creerCycle({
       ...pont.verrouillage.gestesDeVerrouillage(),
     });
     pont.verrouillage.definirGesteDeVerrouillage(gestes.verrouillerLeCoffre);
+    miseAJour = brancherLeGesteDeMiseAJour({
+      racine: document,
+      demander: pont.canal.demanderAuWorker,
+      rapport,
+      publier,
+      demarrer: gestes.demarrerLApplication,
+    });
     // Sauvegarder, restaurer, révoquer en urgence (#207, ADR 0039). Après une restauration ou une
     // révocation, l'enveloppe a changé : l'interface redit ce que le coffre porte.
     brancherLesGestesDePortabilite({

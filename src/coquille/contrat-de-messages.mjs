@@ -89,6 +89,14 @@ export const TYPES_PRIVILEGIES = Object.freeze({
   reprendreInstallation: "vault.coquille.reprendre-installation",
   reprendreInstallationReponse: "vault.coquille.reprendre-installation-reponse",
   /**
+   * CONSTATER le DÉPHASAGE de versions (#236 T2, ADR 0042) : après le déverrouillage, la page demande
+   * au Worker ce que le coffre et l'origine disent l'un de l'autre, pour montrer à l'accueil un refus
+   * ou le bloc « Mettre à jour l'application ». Une LECTURE : rien n'est écrit ni booté, et le
+   * démarrage redécide de lui-même — la réponse éclaire la page, elle ne l'autorise à rien.
+   */
+  dephasage: "vault.coquille.constater-le-dephasage",
+  dephasageReponse: "vault.coquille.constater-le-dephasage-reponse",
+  /**
    * SAUVEGARDER le coffre (#207, ADR 0039) : le Worker de confiance écrit l'archive du volume
    * `application`, avec l'enveloppe de récupération seule emportée, et la rend à la PAGE sous la
    * forme d'un `File` (`CHAMP_DE_L_ARCHIVE`). Jamais au document applicatif.

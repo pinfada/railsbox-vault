@@ -179,6 +179,47 @@ export function createManifest({
   });
 }
 
+/**
+ * Rend un NOUVEAU manifeste qui porte l'INTENTION d'une migration vers `cible` (#236 T2, ADR 0042) :
+ * inscrite AVANT le boot qui migre, elle interdit à toute ouverture suivante de rouvrir ces données
+ * avec un code plus ancien que la cible, tant que le manifeste n'a pas suivi la migration.
+ *
+ * @param {ReturnType<typeof parseManifest>} manifeste @param {string} cible
+ */
+export function manifesteAvecIntention(manifeste, cible) {
+  return createManifest({
+    formatVersion: manifeste.formatVersion,
+    runtime: manifeste.runtime,
+    app: { ...manifeste.app, migration: cible },
+    volumeSize: manifeste.geometry.volumeSize,
+    identity: manifeste.identity,
+    ...(manifeste.volume === undefined ? {} : { volume: manifeste.volume }),
+  });
+}
+
+/**
+ * Rend un NOUVEAU manifeste, identique à celui-ci sauf son bloc `app` (#236 T2, ADR 0042) — et SANS
+ * intention de migration : il n'est écrit que quand les données ont atteint ce schéma.
+ *
+ * C'est le seul geste qu'une mise à jour d'application fait au manifeste : la version et le schéma
+ * CONSTATÉS changent, rien d'autre — ni le format, ni le runtime qui a le droit d'écrire, ni la
+ * géométrie, ni l'identité du volume. L'identité de l'APPLICATION ne change jamais par ce chemin :
+ * un coffre appartient à une application, et en changer n'est pas une mise à jour.
+ *
+ * @param {ReturnType<typeof parseManifest>} manifeste
+ * @param {{ version: string, schema: string }} app
+ */
+export function manifesteAvecApplication(manifeste, { version, schema }) {
+  return createManifest({
+    formatVersion: manifeste.formatVersion,
+    runtime: manifeste.runtime,
+    app: { id: manifeste.app.id, version, schema },
+    volumeSize: manifeste.geometry.volumeSize,
+    identity: manifeste.identity,
+    ...(manifeste.volume === undefined ? {} : { volume: manifeste.volume }),
+  });
+}
+
 /** Encode un manifeste en octets déterministes (empreinte reproductible). */
 export function serializeManifest(manifest) {
   return new TextEncoder().encode(JSON.stringify(canonicalize(manifest)));
@@ -437,6 +478,26 @@ function normalizeVolume(volume, onError, formatVersion) {
   return { id: volume.id, algorithm: volume.algorithm };
 }
 
+/**
+ * Le SCHÉMA d'une application : la version de sa dernière migration ActiveRecord, en chiffres
+ * (`20260101000002`). Trente-deux chiffres au plus : c'est un entier, jamais une étiquette.
+ */
+export const SCHEMA_APPLICATIF = /^[0-9]{1,32}$/;
+
+/**
+ * Normalise le bloc `app`. Depuis #236 T2 (ADR 0042, note datée de l'ADR 0007), il peut porter
+ * `schema` : le schéma CONSTATÉ des données que ce volume contient. Le champ est FACULTATIF et le
+ * format de volume ne change pas — un volume installé avant lui ne le porte pas, et la règle qui le
+ * lit alors (« inconnu, celui du paquet de même version, sinon refus ») appartient à la décision de
+ * déphasage (`src/coquille/dephasage.mjs`), pas à ce module : il ne devine rien.
+ *
+ * Absent, il n'est PAS réécrit : la sérialisation canonique d'un manifeste d'avant reste octet pour
+ * octet la même, et son empreinte aussi.
+ *
+ * `migration`, facultatif lui aussi, est l'INTENTION d'une mise à jour en cours : le schéma VISÉ, inscrit
+ * avant le boot qui migre et effacé quand le manifeste a suivi. Présent, il dit que les données peuvent
+ * être à un schéma INTERMÉDIAIRE, et seule la reprise de la mise à jour est admise (ADR 0042).
+ */
 function normalizeApp(app, onError) {
   if (!app || typeof app !== "object") throwWith(onError, "application absente.", TypeError);
   if (typeof app.id !== "string" || app.id === "") {
@@ -445,7 +506,19 @@ function normalizeApp(app, onError) {
   if (typeof app.version !== "string" || app.version === "") {
     throwWith(onError, "version d'application absente.", TypeError);
   }
-  return { id: app.id, version: app.version };
+  const normalise = { id: app.id, version: app.version };
+  for (const champ of ["schema", "migration"]) {
+    if (app[champ] === undefined) continue;
+    if (typeof app[champ] !== "string" || !SCHEMA_APPLICATIF.test(app[champ])) {
+      throwWith(
+        onError,
+        `« ${champ} » d'application invalide : ${JSON.stringify(app[champ])}. Des chiffres sont exigés — une version de migration.`,
+        TypeError,
+      );
+    }
+    normalise[champ] = app[champ];
+  }
+  return normalise;
 }
 
 function normalizeIdentity(identity, onError) {

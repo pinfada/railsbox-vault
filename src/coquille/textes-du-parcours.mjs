@@ -43,6 +43,8 @@ export const LIBELLES_DES_BLOCS = Object.freeze({
   application: [
     "« Démarrer l'application »",
     "« Reprendre l'installation » (seulement si une installation a été interrompue)",
+    "« Sauvegarder d'abord », « Mettre à jour l'application » et « Plus tard » (seulement quand " +
+      "une nouvelle version de l'application est proposée)",
   ],
   verrouiller: ["« Verrouiller mon coffre »"],
   "espace-de-travail": ["l'application elle-même, une fois démarrée"],
@@ -159,8 +161,9 @@ const EPROUVER_LA_FEUILLE =
 /**
  * L'application, telle que l'étape 4 et l'accueil la montrent.
  *
- * T2 de #236 ajoutera ici un BLOC « Mettre à jour l'application », sous l'application, montré
- * seulement quand une mise à jour est proposée : un bloc de ces deux écrans, pas une étape (#239).
+ * Le BLOC « Mettre à jour l'application » (#236 T2, ADR 0042) vit sous « Démarrer l'application »,
+ * dans le bloc `application` de ces deux écrans, et ne se montre que quand une mise à jour est
+ * proposée : un bloc, pas une étape (#239). Ses textes sont dans `MESSAGES` (`miseAJour…`).
  */
 const L_APPLICATION_S_EXECUTE_ICI =
   "L'application s'exécute entièrement dans votre navigateur. Ce que vous y écrivez est enregistré " +
@@ -471,6 +474,28 @@ export const MESSAGES = Object.freeze({
   revoqueSansRien:
     "Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.",
   codeMasque: "(code masqué)",
+  // --- La mise à jour de l'application (#236 T2, ADR 0042) : un bloc de l'accueil -------------
+  miseAJourProposee: (versionDuCoffre, versionServie, migration) =>
+    `Une nouvelle version de l'application est disponible : ${versionServie}. Votre coffre ` +
+    `utilise la version ${versionDuCoffre}. ` +
+    (migration
+      ? "La mise à jour transforme vos données pour la nouvelle version, au démarrage, dans votre " +
+        "navigateur : comptez environ quatre minutes, et ne fermez pas l'onglet. "
+      : "La mise à jour ne change pas vos données ; seul le code de l'application change. ") +
+    "Rien ne se fait sans vous : avant de mettre à jour, faites une sauvegarde — si quelque chose " +
+    "se passait mal, elle rouvrira votre coffre tel qu'il est aujourd'hui.",
+  miseAJourPlusTard:
+    "« Plus tard » garde votre version actuelle : « Démarrer l'application » l'ouvre comme " +
+    "d'habitude, et la mise à jour vous sera proposée à la prochaine ouverture.",
+  miseAJourSansPlusTard:
+    "Cette adresse ne sert plus votre version actuelle : pour démarrer l'application ici, il faut " +
+    "la mettre à jour. Vos données restent intactes tant que vous ne le faites pas.",
+  miseAJourEnCours:
+    "Mise à jour en cours : comptez environ quatre minutes, et ne fermez pas l'onglet. Si la page " +
+    "se fermait, vos données seraient retrouvées telles qu'avant ou telles qu'après la mise à " +
+    "jour, jamais entre les deux.",
+  miseAJourFaite: (version) =>
+    `L'application est à jour : version ${version}. Elle s'affiche ci-dessous.`,
   avertissementDeRevocation: (moyen) =>
     MOYEN_NOMME[moyen] === undefined
       ? "Seul le moyen avec lequel vous avez ouvert ce coffre continuera de l'ouvrir ; tous les " +

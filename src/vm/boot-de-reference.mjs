@@ -35,6 +35,7 @@ import {
 } from "./runtime-environment.mjs";
 import { decrireBoucle, installerBoucleOrdonnancement } from "./scheduling-loop.mjs";
 import { createBootTimeline } from "./decomposition-du-boot.mjs";
+import { creerVeilleurDeSchema } from "./constat-de-schema.mjs";
 import { verifierEmpreintesV86, verifierLeModuleV86 } from "./empreintes-du-runtime-v86.mjs";
 import { acquerirLeDisqueSysteme } from "./acquisition-du-disque-systeme.mjs";
 import { createV86BufferAdapter } from "./v86-buffer-adapter.mjs";
@@ -123,13 +124,18 @@ export function manifesteDuDescripteur(manifest, volumeSize, volume) {
  * accuse le GUEST — exactement la cause fausse que #52 combat. La garde couvre donc le boot ET
  * l'attente de santé, et rend le compte rendu de cette dernière.
  */
-function booterEtAttendreSante(session, { bootTimeoutMs, timeline, observations, etatARestaurer }) {
+function booterEtAttendreSante(
+  session,
+  { bootTimeoutMs, timeline, observations, etatARestaurer, refusDuGuest },
+) {
   return executerSousGarde(
     () => session.ticks(),
     async () => {
       await session.boot({ etatARestaurer });
       timeline.marquer("bootRendu");
-      return session.awaitHealth({ totalTimeoutMs: bootTimeoutMs });
+      // Un guest qui REFUSE de lancer Rails (#236 T2) le dit sur la série : la santé ne viendra
+      // jamais, et l'attendre cinq minutes déguiserait un refus en lenteur.
+      return Promise.race([session.awaitHealth({ totalTimeoutMs: bootTimeoutMs }), refusDuGuest]);
     },
     {
       onObservation: (observation) => observations.push(observation),
@@ -289,6 +295,7 @@ async function ouvrirVolumeEtSession({ volume, attentes, timeline, guest, ouvrir
     }),
   });
   const guestLog = [];
+  const schema = creerVeilleurDeSchema();
   const session = createReferenceGuestSession({
     V86: guest.V86,
     artifacts: guest.artifacts,
@@ -299,13 +306,16 @@ async function ouvrirVolumeEtSession({ volume, attentes, timeline, guest, ouvrir
     onJournal: (ligne) => {
       if (guestLog.length < 200) guestLog.push(ligne);
     },
-    onSerial: (fragment) => timeline.ingererSerie(fragment),
+    onSerial: (fragment) => {
+      timeline.ingererSerie(fragment);
+      schema.ingererSerie(fragment);
+    },
     // Les attentes de la session se cadencent aussi sur la boucle : sans cela, un moteur qui affame
     // ses minuteries pendant que la boucle tourne laisserait un boot sans issue rester suspendu,
     // sans jamais rendre de `BootTimeout` (WebKit, mesuré).
     boucle: boucleOrdonnancement,
   });
-  return { journal, backend, failures, recuperation, session, guestLog, adapter };
+  return { journal, backend, failures, recuperation, session, guestLog, adapter, schema };
 }
 
 /**
@@ -392,6 +402,7 @@ async function observerLeBoot({ montage, bootTimeoutMs, timeline, etatARestaurer
     timeline,
     observations,
     etatARestaurer,
+    refusDuGuest: montage.schema.refus,
   });
   timeline.marquer("santePrete");
   // Rythme de la boucle sur la fenêtre boot → santé de Rails. C'est l'instrument qui rend
@@ -510,6 +521,8 @@ function assemblerCompteRendu({ identite, mesures, montage, deroule, timeline })
     failures: montage.failures,
     observationsRuntime: [...deroule.observations, ...lireRejets()],
     guestLog: montage.guestLog,
+    // Le schéma CONSTATÉ par le guest avant Rails (#236 T2) ; `null` sur une reprise par instantané.
+    schema: montage.schema.constat(),
   };
 }
 

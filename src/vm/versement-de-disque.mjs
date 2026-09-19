@@ -11,6 +11,7 @@
 // disque écrit et flushé » — appartient à l'appelant, des deux côtés.
 
 import { creerCederLaMain } from "./ceder-la-main.mjs";
+import { ouvrirLeFluxDArtefact } from "./flux-d-artefact.mjs";
 import { createSha256Stream } from "./sha256-stream.mjs";
 
 /** Taille d'une tranche d'écriture : un mébioctet, multiple de tout secteur du dépôt. */
@@ -83,16 +84,22 @@ export async function verserFluxDansVolume(backend, url, options = {}) {
     recuperer = globalThis.fetch,
     sauterLesBlocsNuls = false,
     empreinteAttendue = null,
+    compression = null,
+    transfertOctets = null,
+    octetsMax = Number.POSITIVE_INFINITY,
   } = options;
-  const response = await recuperer(url, { cache: "no-store" });
-  if (!response.ok || response.body === null) {
-    throw new Error(`Disque applicatif ${url} indisponible (${response.status}).`);
-  }
-  const { ecrits: offset, empreinteSource } = await lireLeFlux(
-    response.body.getReader(),
-    backend,
-    sauterLesBlocsNuls,
+  exigerUnVolumeNeuf(backend, { sauterLesBlocsNuls });
+  // Une graine COMPRESSÉE (gzip, #236 T2) est décompressée en flux ; tout ce qui suit — saut des blocs
+  // nuls, empreinte de la source, barrière — porte sur l'image DÉCOMPRESSÉE, comme avant.
+  const { lecteur, clore } = await ouvrirLeFluxDArtefact(
+    { url, compression, transfertOctets, sha256: empreinteAttendue ?? undefined },
+    { nom: "disque applicatif", recuperer },
   );
+  const { ecrits: offset, empreinteSource } = await lireLeFlux(lecteur, backend, {
+    sauterLesBlocsNuls,
+    octetsMax,
+  });
+  const transferes = clore(offset);
   // L'empreinte est confrontée AVANT la barrière : un versement qui ne correspond pas à ce que
   // l'origine déclare ne doit pas être rendu durable, et surtout pas être daté ensuite comme une
   // création réussie. Le volume reste ANONYME, donc non ouvrable en écriture.
@@ -110,7 +117,25 @@ export async function verserFluxDansVolume(backend, url, options = {}) {
   // ailleurs. La datation le REPORTE ; sans lui, elle ne reprendrait que le compteur de la
   // naissance et perdrait tout le versement (revue de format de la PR #186, constat 2).
   const scellements = backend.scellementsCumules ?? null;
-  return { ecrits: offset, empreinte, empreinteSource, scellements };
+  return { ecrits: offset, empreinte, empreinteSource, scellements, transferes };
+}
+
+/**
+ * La GARDE « volume neuf » (revue de sécurité de la PR #237, constat 8 ; ADR 0042).
+ *
+ * Sauter les blocs nuls n'est juste que sur un volume qui vient de NAÎTRE, donc scellé à zéro : sur un volume habité, les octets
+ * anciens resteraient là où la source veut des zéros (la sonde de la revue en a compté 8 192). La
+ * propriété vivait dans la discipline de l'appelant, à deux modules d'ici ; elle est désormais EXIGÉE
+ * du backend, qui seul sait dire « je viens de naître » (`naissance`, posé par `openOpfsVolume`). Un
+ * backend qui ne le dit pas n'est pas neuf.
+ */
+function exigerUnVolumeNeuf(backend, { sauterLesBlocsNuls }) {
+  if (sauterLesBlocsNuls && backend.naissance !== true) {
+    throw new Error(
+      "Versement refusé : un versement qui n'écrit pas les zéros exige un volume NEUF, et ce " +
+        "volume ne se déclare pas né de cette ouverture — ses anciens octets resteraient en place.",
+    );
+  }
 }
 
 /**
@@ -120,7 +145,7 @@ export async function verserFluxDansVolume(backend, url, options = {}) {
  * un enchaînement de décisions — acquisition, écriture, empreinte, barrière —, la boucle n'en est
  * qu'une.
  */
-async function lireLeFlux(reader, backend, sauterLesBlocsNuls) {
+async function lireLeFlux(reader, backend, { sauterLesBlocsNuls, octetsMax }) {
   // Un flux déjà en mémoire se lit en microtâches : la boucle cède la main entre deux tranches, pour
   // que le battement du Worker continue de battre pendant le versement (#192, I1).
   const cederLaMain = creerCederLaMain();
@@ -132,6 +157,11 @@ async function lireLeFlux(reader, backend, sauterLesBlocsNuls) {
     const { value, done } = await reader.read();
     if (done) break;
     if (value.byteLength === 0) continue;
+    // L'ANTI-BOMBE : une graine compressée de quelques kibioctets peut se décompresser sans fin, et
+    // des zéros sautés n'atteindraient jamais la borne du volume. La taille annoncée est la borne.
+    if (offset + value.byteLength > octetsMax) {
+      throw new Error(`Versement refusé : plus de ${octetsMax} octets décompressés reçus.`);
+    }
     empreinteDeLaSource.update(value);
     // Un morceau du flux peut peser des dizaines de mébioctets, et son chiffrement est synchrone : il
     // est écrit par TRANCHES alignées sur une frontière absolue d'un mébioctet — donc de secteur —,

@@ -482,6 +482,7 @@ function construireBackend({ name, saisi, scellement, journal, faults, flushDela
     faults,
     flushDelay,
     voisinsRetires: saisi.voisinsRetires,
+    naissance: saisi.naissance,
   });
 }
 

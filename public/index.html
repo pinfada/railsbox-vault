@@ -230,6 +230,24 @@
               Reprendre l'installation
             </button>
           </p>
+          <!--
+            METTRE À JOUR l'application (#236 T2, ADR 0042). Caché tant que le Worker de confiance n'a
+            pas constaté, après le déverrouillage, qu'une autre version est servie. Rien ne se fait
+            sans le geste ; « Plus tard » laisse l'accueil tel qu'il est. Le démarrage REDÉCIDE de
+            lui-même : ce bloc éclaire la page, il ne l'autorise à rien.
+          -->
+          <div id="mise-a-jour" role="region" aria-labelledby="mise-a-jour-titre" hidden>
+            <h3 id="mise-a-jour-titre">Mettre à jour l'application</h3>
+            <p id="mise-a-jour-texte"></p>
+            <p id="mise-a-jour-plus-tard-texte"></p>
+            <p>
+              <button id="sauvegarder-avant-mise-a-jour" type="button">Sauvegarder d'abord</button>
+              <button id="mettre-a-jour-l-application" type="button">
+                Mettre à jour l'application
+              </button>
+              <button id="plus-tard" type="button">Plus tard</button>
+            </p>
+          </div>
         </div>
         <div data-bloc="verrouiller" hidden>
           <p><button id="verrouiller-le-coffre" type="button">Verrouiller mon coffre</button></p>
