@@ -12,29 +12,60 @@
 #      commite migration par migration, et une coupure entre deux laisse la base à un schéma
 #      INTERMÉDIAIRE que V ne dit pas (V n'avance qu'à la fin).
 #
-# et fait UNE chose :
+# Et une AUTORISATION : `vault.migrer=1`, posé par le Worker sous le seul geste « Mettre à jour ».
+# L'espace `vault.*` est refusé dans la ligne de commande SERVIE (descripteur) : seul le Worker l'écrit.
 #
-#   V > P, ou P < I     REFUS anterieur : du vieux code sur des données récentes — ou peut-être
-#                       intermédiaires —, jamais ;
-#   E connu, V != E     REFUS divergent — SAUF si V = P : c'est une mise à jour ACHEVÉE dont le
-#     et V != P         manifeste n'a pas encore suivi (coupure entre la barrière et son écriture) ;
-#   P > V               I := P et `sync`, db:migrate, puis V := P, I retiré, `sync` — la barrière
-#                       qui rend la nouvelle génération VALIDÉE avant que la ligne ne soit dite ;
-#   sinon               rien : aucun second chargement de Rails.
+# Avant toute comparaison, chaque grandeur est VALIDÉE : un entier de quatorze chiffres au plus, sans
+# zéro de tête (l'horodatage de Rails). `dash` compare en 64 bits et rend « Illegal number », évalué
+# FAUX, sur tout le reste : un marqueur illisible désarmait les gardes (revue de la PR #249, constat 3).
+#
+#   marqueur ou valeur invalide       REFUS marqueur-invalide : rien n'est migré ni réécrit ;
+#   paramètre vault.* en double       REFUS parametre-double (revue de la PR #249, constat 2) ;
+#   V > P, ou P < I                   REFUS anterieur : du vieux code sur des données récentes — ou
+#                                     peut-être intermédiaires —, jamais ;
+#   E connu, V != E et V != P         REFUS divergent — sauf V = P : une mise à jour ACHEVÉE dont le
+#                                     manifeste n'a pas encore suivi ;
+#   P > V sans vault.migrer=1         REFUS migration-non-autorisee (revue de la PR #249, constat 4) ;
+#   P > V, autorisé                   I := P et `sync`, db:migrate, puis V := P, I retiré, `sync` ;
+#   sinon                             rien : aucun second chargement de Rails.
 #
 # Chaque décision est dite sur la série, préfixée `[schema]` : c'est ce que le Worker relève
-# (`src/vm/constat-de-schema.mjs`). La console du noyau est muette à ce stade ; ces lignes, elles,
-# sont imprimées par l'init sur ttyS0 avant que le pont ne la prenne.
+# (`src/vm/constat-de-schema.mjs`). `VAULT_CMDLINE` ne sert qu'aux épreuves du script
+# (`tests/vm/schema-du-volume.test.mjs`) : le guest lit /proc/cmdline.
 set -u
 
-. /opt/vault/env.sh
+if [ -f /opt/vault/env.sh ]; then . /opt/vault/env.sh; fi
 
 marqueur_donnees=/app/var/.vault-schema
 marqueur_paquet=/app/db/.vault-schema
 marqueur_intention=/app/var/.vault-migration
+ligne_du_noyau=${VAULT_CMDLINE:-/proc/cmdline}
 
+# Un entier de quatorze chiffres au plus, sans zéro de tête (« 0 » seul est admis).
+valide() {
+  case "$1" in
+    '' | *[!0-9]*) return 1 ;;
+    0) return 0 ;;
+    0*) return 1 ;;
+  esac
+  [ "${#1}" -le 14 ]
+}
+
+refuser() {
+  echo "[schema] REFUS $*"
+  exit 3
+}
+
+# Lit un marqueur : « absent » s'il n'existe pas ou est vide, sa valeur exacte sinon — ou le REFUS.
+# Rien n'est filtré : un octet de trop est un marqueur invalide, pas un marqueur deviné.
 lire() {
-  if [ -s "$1" ]; then tr -cd '0-9' < "$1"; else printf 'absent'; fi
+  if [ ! -s "$1" ]; then
+    printf 'absent'
+    return 0
+  fi
+  valeur=$(cat "$1")
+  valide "$valeur" || return 1
+  printf '%s' "$valeur"
 }
 
 # Écrit un marqueur par RENOMMAGE, journalisé par ext4 : une coupure laisse l'ancien ou le nouveau,
@@ -43,11 +74,19 @@ ecrire() {
   printf '%s\n' "$2" > "$1.neuf" && mv "$1.neuf" "$1"
 }
 
-V=$(lire "$marqueur_donnees")
-P=$(lire "$marqueur_paquet")
-I=$(lire "$marqueur_intention")
-E=$(tr ' ' '\n' < /proc/cmdline | sed -n 's/^vault\.schema=\([0-9]\{1,32\}\)$/\1/p' | head -n 1)
+# Les paramètres vault.* de la ligne du noyau : un par ligne. Deux fois la même clé est un refus.
+parametres=$(tr ' ' '\n' < "$ligne_du_noyau" | grep '^vault\.' || true)
+doubles=$(printf '%s\n' "$parametres" | sed -n 's/^\(vault\.[^=]*\)=.*$/\1/p' | sort | uniq -d)
+[ -z "$doubles" ] || refuser "parametre-double"
+
+V=$(lire "$marqueur_donnees") || refuser "marqueur-invalide nom=volume"
+P=$(lire "$marqueur_paquet") || refuser "marqueur-invalide nom=paquet"
+I=$(lire "$marqueur_intention") || refuser "marqueur-invalide nom=intention"
+E=$(printf '%s\n' "$parametres" | sed -n 's/^vault\.schema=//p')
 [ -n "$E" ] || E=absent
+if [ "$E" != absent ] && ! valide "$E"; then refuser "marqueur-invalide"; fi
+migrer=non
+if printf '%s\n' "$parametres" | grep -qx 'vault\.migrer=1'; then migrer=oui; fi
 
 echo "[schema] volume=$V paquet=$P attendu=$E intention=$I"
 
@@ -57,24 +96,15 @@ if [ "$P" = absent ]; then
   echo "[schema] migration aucune schema=absent"
   exit 0
 fi
-if [ "$V" = absent ]; then
-  echo "[schema] REFUS divergent volume=absent paquet=$P attendu=$E"
-  exit 3
-fi
+[ "$V" != absent ] || refuser "divergent volume=absent paquet=$P attendu=$E"
 
-# Comparaison ENTIÈRE (les versions de migration d'ActiveRecord sont des entiers) : `-gt` de dash
-# travaille sur 64 bits, et un horodatage de migration en tient 47.
-if [ "$V" -gt "$P" ]; then
-  echo "[schema] REFUS anterieur volume=$V paquet=$P"
-  exit 3
-fi
+# Comparaisons ENTIÈRES, sur des valeurs validées : `-gt` de dash ne se trompe plus.
+[ "$V" -le "$P" ] || refuser "anterieur volume=$V paquet=$P"
 if [ "$I" != absent ] && [ "$P" -lt "$I" ]; then
-  echo "[schema] REFUS anterieur volume=$V paquet=$P intention=$I"
-  exit 3
+  refuser "anterieur volume=$V paquet=$P intention=$I"
 fi
 if [ "$E" != absent ] && [ "$V" != "$E" ] && [ "$V" != "$P" ]; then
-  echo "[schema] REFUS divergent volume=$V paquet=$P attendu=$E"
-  exit 3
+  refuser "divergent volume=$V paquet=$P attendu=$E"
 fi
 if [ "$P" -eq "$V" ]; then
   # Une intention restée là (coupure après le marqueur, avant son retrait) n'a plus d'objet.
@@ -82,6 +112,7 @@ if [ "$P" -eq "$V" ]; then
   echo "[schema] migration aucune schema=$V"
   exit 0
 fi
+[ "$migrer" = oui ] || refuser "migration-non-autorisee volume=$V paquet=$P"
 
 # L'INTENTION d'abord, rendue durable AVANT la première migration : `sync` pousse le fichier ET le
 # répertoire à travers le journal d'ext4 et la barrière du disque (#209). Une coupure pendant les
@@ -96,10 +127,7 @@ cd /app || exit 3
 { bundle exec ruby bin/rails db:migrate 2>&1; echo $? > /run/vault-migration-code; } \
   | tee /var/log/migration.log | sed -u 's/^/[schema] rails : /'
 code=$(cat /run/vault-migration-code 2>/dev/null || echo 1)
-if [ "$code" -ne 0 ]; then
-  echo "[schema] REFUS migration-echouee de=$V vers=$P code=$code"
-  exit 3
-fi
+[ "$code" -eq 0 ] 2>/dev/null || refuser "migration-echouee de=$V vers=$P code=$code"
 # Le marqueur passe à P, PUIS l'intention est retirée, PUIS `sync` : la barrière franchit toutes les
 # couches — la génération OPFS qui porte la base migrée, le marqueur et le retrait de l'intention est
 # validée avant que la ligne soit dite. Le manifeste du coffre garde SON intention jusqu'à ce que le

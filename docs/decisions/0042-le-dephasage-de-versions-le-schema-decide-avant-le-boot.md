@@ -179,3 +179,42 @@ refusé avant la première écriture. La mise à jour, elle, ne verse jamais dan
   Durées publiées dans `docs/quality-attributes.md`.
 - Le scénario de bout en bout tourne sous Chromium seul, comme tous ceux de `tests/e2e/` ; le bloc
   et les refus sont mesurés sur les trois moteurs par `tests/browser/coquille-mise-a-jour.spec.mjs`.
+
+## Note du 19/09/2026 — ce que la revue de sécurité de la PR #249 a fait durcir
+
+Sept constats, tous reproduits par exécution ; les gardes qui en découlent, et ce qu'elles couvrent
+:
+
+- **La reprise est jugée par la VERSION aussi** (constat 1, CRITICAL). L'intention `app.migration`
+  porte désormais la CIBLE entière, `{ version, schema }`. Une mise à jour interrompue ne reprend
+  que par une version servie STRICTEMENT plus récente que celle du coffre et d'un schéma au moins
+  égal à celui de la cible ; tout autre cas est `VAULT_COQUILLE_MISE_A_JOUR_INTERROMPUE`, sans boot.
+  Avant cette garde, un 0.9.0 servi sur un coffre 1.0.0 en cours de mise à jour obtenait le clic.
+- **L'espace `vault.*` appartient au Worker** (constat 2, HIGH). Le descripteur servi qui en porte
+  un est refusé à sa forme ; le guest refuse un paramètre `vault.*` présent deux fois
+  (`VAULT_COQUILLE_PARAMETRE_DU_GUEST_REFUSE`). La valeur servie ne peut plus l'emporter sur celle
+  du Worker.
+- **Chaque marqueur est VALIDÉ avant toute comparaison** (constat 3, HIGH) : un entier de quatorze
+  chiffres au plus, sans zéro de tête, dans le guest (`case` portable de `dash`), au manifeste
+  (`SCHEMA_APPLICATIF`), à la fabrication et dans le Dockerfile. Un marqueur invalide est un refus
+  du guest (`VAULT_COQUILLE_MARQUEUR_DE_SCHEMA_INVALIDE`) : rien n'est migré ni réécrit. `dash`
+  rendait « Illegal number », évalué faux, et la migration était jouée puis le marqueur réécrit vers
+  le bas.
+- **Le guest ne migre que sous l'autorisation du Worker** (constat 4) : `vault.migrer=1`, posé
+  seulement sous le geste « Mettre à jour l'application » ; sans lui, un paquet qui dépasse les
+  données est refusé (`VAULT_COQUILLE_MIGRATION_NON_AUTORISEE`). Une migration ne se joue plus sur
+  la foi d'un schéma DÉCLARÉ qui ment.
+- **Un coffre de T1 reprend sans le paquet précédent** (constat 5) : l'intention est lue avant la
+  déduction du schéma, et elle inscrit le schéma déduit au manifeste.
+- **Épreuves** (constat 6) : chaque refus navigateur compare l'état du volume `application` avant et
+  après (aucun octet écrit) ; les deux coupures que l'épreuve VM ne place pas — entre l'intention et
+  `db:migrate`, entre le marqueur et le retrait de l'intention — sont jouées par
+  `tests/vm/schema-du-volume.test.mjs`, sous le vrai `dash` de l'image du guest, avec dix-sept cas.
+  La campagne `dephasage` passe à vingt mutants.
+
+**Ce qui reste au jalon 6** (signature de l'auteur, TUF 1.0.x) : ces gardes tiennent contre une
+origine qui se TROMPE ou qui publie mal, et contre des données altérées dans le volume ; elles ne
+tiennent pas contre une origine qui MENT de façon cohérente — un paquet ancien republié sous un
+numéro plus grand et un schéma déclaré conforme, ou des morceaux de deux publications réunis sous un
+même descripteur. Seule une signature de l'auteur, avec une version monotone et une expiration
+signées, les distinguera.

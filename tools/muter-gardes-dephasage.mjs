@@ -18,7 +18,14 @@
 //    constaté ;
 //  - un versement qui n'écrit pas les zéros sur un volume habité (constat 8 de la revue de #237) ;
 //  - un artefact compressé qui se décompresse sans borne, ou dont le transfert n'est pas celui
-//    annoncé.
+//    annoncé ;
+//  - depuis la revue de sécurité de la PR #249 : une reprise par une version égale ou plus ancienne,
+//    un paramètre vault.* imposé par la ligne SERVIE, une migration non autorisée par le geste, un
+//    schéma que dash ne sait pas comparer.
+//
+// Les gardes du SCRIPT du guest (marqueur invalide, paramètre en double, migration non autorisée)
+// sont tenues par `tests/vm/schema-du-volume.test.mjs`, joué sous le vrai dash : une campagne dont
+// l'épreuve exige Docker ne serait pas rejouable partout, et un mutant y survivrait par absence.
 //
 // ## Ce que la campagne ne peut PAS mesurer
 //
@@ -91,17 +98,57 @@ export const MUTATIONS = Object.freeze([
     nom: "une migration INTERROMPUE ne laisse que la reprise",
     garde: "deciderLeDephasage — l'intention au manifeste",
     fichier: DEPHASAGE,
-    avant: '  if (typeof app.migration === "string") {',
+    avant: "  if (app.migration !== undefined) {",
     apres: "  if (false) {",
     epreuves: [EPREUVE_DEPHASAGE],
   },
   {
-    nom: "la reprise exige un schéma servi au moins égal à la cible",
-    garde: "deciderLaReprise — la cible de l'intention",
+    nom: "la reprise exige une version STRICTEMENT plus récente que celle du coffre (revue de #249, 1)",
+    garde: "deciderLaReprise — la précédence de la version servie",
     fichier: DEPHASAGE,
-    avant: "  if (comparerSchemas(servie.schema, cible) < 0) {",
+    avant: "  if (!plusRecente || comparerSchemas(servie.schema, cible.schema) < 0) {",
+    apres: "  if (comparerSchemas(servie.schema, cible.schema) < 0) {",
+    epreuves: [EPREUVE_DEPHASAGE],
+  },
+  {
+    nom: "la reprise exige un schéma servi au moins égal à celui de la cible",
+    garde: "deciderLaReprise — le schéma de la cible",
+    fichier: DEPHASAGE,
+    avant: "  if (!plusRecente || comparerSchemas(servie.schema, cible.schema) < 0) {",
+    apres: "  if (!plusRecente) {",
+    epreuves: [EPREUVE_DEPHASAGE],
+  },
+  {
+    nom: "la ligne de commande SERVIE ne porte aucun paramètre vault.* (revue de #249, 2)",
+    garde: "formeDeLaLigneDeCommande — l'espace réservé au Worker",
+    fichier: DESCRIPTEUR,
+    avant: '  if (parametres.some((parametre) => parametre.startsWith("vault."))) {',
     apres: "  if (false) {",
     epreuves: [EPREUVE_DEPHASAGE],
+  },
+  {
+    nom: "le guest n'est autorisé à migrer que sous le geste (revue de #249, 4)",
+    garde: "ligneDeCommande — vault.migrer=1 posé sous le seul geste",
+    fichier: MISE_A_JOUR,
+    avant: "  if (migrer === true) parties.push(PARAMETRE_DE_MIGRATION);",
+    apres: "  parties.push(PARAMETRE_DE_MIGRATION);",
+    epreuves: [EPREUVE_MISE_A_JOUR],
+  },
+  {
+    nom: "l'intention d'un coffre de T1 inscrit le schéma déduit (revue de #249, 5)",
+    garde: "inscrireLIntention — le schéma déduit gardé écrit",
+    fichier: MISE_A_JOUR,
+    avant: "prepare.schemaDeduit ?? null",
+    apres: "null",
+    epreuves: [EPREUVE_MISE_A_JOUR],
+  },
+  {
+    nom: "un schéma de plus de quatorze chiffres, ou à zéro de tête, est malformé (revue de #249, 3)",
+    garde: "SCHEMA_APPLICATIF — la forme que le guest sait comparer",
+    fichier: MANIFESTE,
+    avant: "export const SCHEMA_APPLICATIF = /^(0|[1-9][0-9]{0,13})$/;",
+    apres: "export const SCHEMA_APPLICATIF = /^[0-9]{1,32}$/;",
+    epreuves: [EPREUVE_MANIFESTE],
   },
   {
     nom: "le paquet précédent ne peut être ni la même version ni plus récent que le courant",
@@ -162,9 +209,9 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "un schéma de manifeste qui n'est pas un entier est un manifeste malformé",
-    garde: "normalizeApp — la forme de `schema` et de `migration`",
+    garde: "schemaExige — la forme de `schema` et de `migration.schema`",
     fichier: MANIFESTE,
-    avant: '    if (typeof app[champ] !== "string" || !SCHEMA_APPLICATIF.test(app[champ])) {',
+    avant: '  if (typeof valeur !== "string" || !SCHEMA_APPLICATIF.test(valeur)) {',
     apres: "    if (false) {",
     epreuves: [EPREUVE_MANIFESTE],
   },

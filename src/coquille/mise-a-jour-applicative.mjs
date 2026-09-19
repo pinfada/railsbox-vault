@@ -25,6 +25,7 @@ import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { MOTIFS_DE_SCHEMA } from "../vm/constat-de-schema.mjs";
 import { readVolumeManifest, writeVolumeManifest } from "../vm/opfs-volume-open.mjs";
 import {
+  SCHEMA_APPLICATIF,
   manifesteAvecApplication,
   manifesteAvecIntention,
   parseManifest,
@@ -32,6 +33,14 @@ import {
 
 /** Le paramètre de noyau qui porte le schéma que le manifeste du coffre ATTEND. */
 export const PARAMETRE_DE_SCHEMA = "vault.schema";
+
+/**
+ * Le paramètre de noyau qui AUTORISE le guest à migrer, posé par le Worker sous le seul geste « Mettre
+ * à jour » (revue de sécurité de la PR #249, constat 4). Sans lui, un paquet qui dépasse les données est
+ * refusé par le guest : une migration ne se joue jamais sur la foi d'un schéma DÉCLARÉ. L'espace
+ * « vault.* » est refusé dans la ligne SERVIE (descripteur-applicatif.mjs) : seul le Worker l'écrit.
+ */
+export const PARAMETRE_DE_MIGRATION = "vault.migrer=1";
 
 /** Un boot qui migre charge Rails DEUX fois : son délai est doublé, et le dit. */
 export const FACTEUR_DU_DELAI_DE_MIGRATION = 2;
@@ -84,9 +93,13 @@ export function descripteurDuPaquet(descripteur, paquet) {
  * Elle est composée ICI, après le contrôle du descripteur : la valeur ajoutée est un nombre que ce
  * module a lu dans un manifeste parsé (`SCHEMA_APPLICATIF`), jamais une chaîne servie.
  */
-export function ligneDeCommande(cmdline, schemaAttendu) {
-  if (typeof schemaAttendu !== "string" || !/^[0-9]{1,32}$/.test(schemaAttendu)) return cmdline;
-  return `${cmdline} ${PARAMETRE_DE_SCHEMA}=${schemaAttendu}`;
+export function ligneDeCommande(cmdline, schemaAttendu, { migrer = false } = {}) {
+  const parties = [cmdline];
+  if (typeof schemaAttendu === "string" && SCHEMA_APPLICATIF.test(schemaAttendu)) {
+    parties.push(`${PARAMETRE_DE_SCHEMA}=${schemaAttendu}`);
+  }
+  if (migrer === true) parties.push(PARAMETRE_DE_MIGRATION);
+  return parties.join(" ");
 }
 
 /**
@@ -146,12 +159,17 @@ export async function preparerLeDemarrage({ lu, nom, miseAJour = false, delaiMs,
     };
   }
   const descripteur = descripteurDuPaquet(lu.descripteur, choix.paquet);
+  const migration = choix.miseAJour && decision.migration === true;
   return {
     descripteur,
     manifeste,
     miseAJour: choix.miseAJour,
-    migration: choix.miseAJour && decision.migration === true,
-    cmdline: ligneDeCommande(descripteur.boot.cmdline, decision.coffre?.schema ?? null),
+    migration,
+    // Le schéma DÉDUIT d'un coffre de T1, que l'intention inscrira (revue de #249, constat 5).
+    schemaDeduit: decision.coffre?.schemaDeduit === true ? decision.coffre.schema : null,
+    cmdline: ligneDeCommande(descripteur.boot.cmdline, decision.coffre?.schema ?? null, {
+      migrer: migration,
+    }),
     delaiMs: choix.miseAJour ? delaiMs * FACTEUR_DU_DELAI_DE_MIGRATION : delaiMs,
     dephasage: decisionPubliee(decision),
   };
@@ -170,9 +188,16 @@ export async function preparerLeDemarrage({ lu, nom, miseAJour = false, delaiMs,
  */
 export async function inscrireLIntention({ nom, prepare, inscrire = writeVolumeManifest }) {
   if (prepare.migration !== true || prepare.manifeste === null) return false;
-  const cible = prepare.descripteur.application.schema;
-  if (prepare.manifeste.app.migration === cible) return false;
-  await inscrire(nom, manifesteAvecIntention(prepare.manifeste, cible));
+  const cible = {
+    version: prepare.descripteur.application.version,
+    schema: prepare.descripteur.application.schema,
+  };
+  const deja = prepare.manifeste.app.migration;
+  if (deja?.version === cible.version && deja?.schema === cible.schema) return false;
+  await inscrire(
+    nom,
+    manifesteAvecIntention(prepare.manifeste, cible, prepare.schemaDeduit ?? null),
+  );
   return true;
 }
 
@@ -185,10 +210,16 @@ export async function inscrireLIntention({ nom, prepare, inscrire = writeVolumeM
 export function codeDuRefusDuGuest(erreur) {
   const motif = erreur?.motifDeSchema;
   if (motif === undefined) return null;
-  return motif === MOTIFS_DE_SCHEMA.migrationEchouee
-    ? CODES_REFUS_COQUILLE.migrationEchouee
-    : CODES_REFUS_COQUILLE.schemaDivergent;
+  return CODES_DES_MOTIFS[motif] ?? CODES_REFUS_COQUILLE.schemaDivergent;
 }
+
+/** Le code de coquille de chaque motif de refus du guest ; un motif inconnu reste « divergent ». */
+const CODES_DES_MOTIFS = Object.freeze({
+  [MOTIFS_DE_SCHEMA.migrationEchouee]: CODES_REFUS_COQUILLE.migrationEchouee,
+  [MOTIFS_DE_SCHEMA.marqueurInvalide]: CODES_REFUS_COQUILLE.marqueurDeSchemaInvalide,
+  [MOTIFS_DE_SCHEMA.parametreDouble]: CODES_REFUS_COQUILLE.parametreDuGuestRefuse,
+  [MOTIFS_DE_SCHEMA.migrationNonAutorisee]: CODES_REFUS_COQUILLE.migrationNonAutorisee,
+});
 
 /**
  * Le SCHÉMA que les données portent au sortir du boot, selon le constat du guest — ou `null` si le

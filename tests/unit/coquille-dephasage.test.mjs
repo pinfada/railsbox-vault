@@ -281,7 +281,12 @@ test("une version de coffre qui n'est pas un SemVer n'est pas devinée : refus",
 
 test("MIGRATION INTERROMPUE : seule la reprise est proposée, ni « Plus tard » ni le précédent", () => {
   const decision = deciderLeDephasage({
-    manifeste: manifeste({ id: "ref", version: "1.0.0", schema: M, migration: N }),
+    manifeste: manifeste({
+      id: "ref",
+      version: "1.0.0",
+      schema: M,
+      migration: { version: "1.1.0", schema: N },
+    }),
     descripteur: descripteur(),
   });
   assert.equal(decision.issue, I.miseAJour);
@@ -298,10 +303,76 @@ test("MIGRATION INTERROMPUE : une origine qui sert un schéma sous la cible est 
   });
   delete ancienne.precedent;
   const decision = deciderLeDephasage({
-    manifeste: manifeste({ id: "ref", version: "1.0.0", schema: M, migration: N }),
+    manifeste: manifeste({
+      id: "ref",
+      version: "1.0.0",
+      schema: M,
+      migration: { version: "1.1.0", schema: N },
+    }),
     descripteur: ancienne,
   });
-  assert.equal(decision.code, C.applicationAnterieure);
+  assert.equal(decision.code, C.miseAJourInterrompue);
+});
+
+test("REPRISE (revue de #249, constat 1) : la table version × schéma de la cible, en entier", () => {
+  // Coffre 1.0.0 (schéma M), mise à jour commencée vers 1.1.0 (schéma N). On fait varier ce qui est servi.
+  const [BAS, HAUT] = ["20260601000001", "20261001000001"];
+  const cases = [
+    ["0.9.0", BAS, "refus"],
+    ["0.9.0", N, "refus"], // le retour arrière déguisé en reprise
+    ["0.9.0", HAUT, "refus"],
+    ["1.0.0", BAS, "refus"],
+    ["1.0.0", N, "refus"], // même version que le coffre, autre schéma
+    ["1.0.0", HAUT, "refus"],
+    ["1.1.0", BAS, "refus"], // schéma sous la cible
+    ["1.1.0", N, "reprise"],
+    ["1.2.0", HAUT, "reprise"],
+  ];
+  for (const [version, schema, attendu] of cases) {
+    const servi = descripteur({ application: { id: "ref", version, schema } });
+    delete servi.precedent;
+    const decision = deciderLeDephasage({
+      manifeste: manifeste({
+        id: "ref",
+        version: "1.0.0",
+        schema: M,
+        migration: { version: "1.1.0", schema: N },
+      }),
+      descripteur: servi,
+    });
+    if (attendu === "refus") {
+      assert.equal(decision.code, C.miseAJourInterrompue, `servi ${version} / ${schema}`);
+      assert.deepEqual(paquetADemarrer(decision, { miseAJour: true }), {
+        refus: C.miseAJourInterrompue,
+      });
+    } else {
+      assert.equal(decision.reprise, true, `servi ${version} / ${schema}`);
+    }
+  }
+});
+
+test("REPRISE d'un coffre de T1 (constat 5) : sans schéma au manifeste et sans précédent servi", () => {
+  const servi = descripteur();
+  delete servi.precedent;
+  const decision = deciderLeDephasage({
+    manifeste: manifeste({
+      id: "ref",
+      version: "1.0.0",
+      migration: { version: "1.1.0", schema: N },
+    }),
+    descripteur: servi,
+  });
+  assert.equal(decision.issue, I.miseAJour);
+  assert.equal(decision.reprise, true);
+});
+
+test("coffre de T1 : la version se compare par PRÉCÉDENCE, métadonnées de construction ignorées", () => {
+  const decision = deciderLeDephasage({
+    manifeste: manifeste({ id: "ref", version: "1.0.0+build.7" }),
+    descripteur: descripteur(),
+  });
+  assert.equal(decision.issue, I.miseAJour);
+  assert.equal(decision.coffre.schema, M);
 });
 
 test("DESCRIPTEUR : le schéma servi est exigé, en chiffres", () => {
@@ -313,6 +384,18 @@ test("DESCRIPTEUR : le schéma servi est exigé, en chiffres", () => {
     assert.match(forme.motif, /schéma/);
   }
   assert.equal(formeDuDescripteur(descripteur()).valide, true);
+});
+
+test("DESCRIPTEUR : la ligne de commande SERVIE ne porte aucun paramètre vault.* (constat 2)", () => {
+  for (const ajout of [" vault.schema=20260101000002", " vault.migrer=1", " vault.x=1"]) {
+    const d = descripteur();
+    const forme = formeDuDescripteur({
+      ...d,
+      boot: { ...d.boot, cmdline: d.boot.cmdline + ajout },
+    });
+    assert.equal(forme.valide, false, ajout);
+    assert.match(forme.motif, /vault\.\*/);
+  }
 });
 
 test("DESCRIPTEUR : le précédent est contrôlé comme un paquet, et ne peut être plus récent", () => {

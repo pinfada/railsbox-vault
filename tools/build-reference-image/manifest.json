@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "generatedAt": "2026-09-19T08:53:59.153Z",
+  "generatedAt": "2026-09-19T12:27:22.790Z",
   "application": {
     "id": "railsbox-vault-reference",
     "version": "1.1.0",
@@ -29,7 +29,7 @@
     "bios": "seabios.bin",
     "vgaBios": "vgabios.bin",
     "servis": {
-      "rootfs": "reference-rootfs-ccf1f18c.ext4.gz",
+      "rootfs": "reference-rootfs-9cd041c1.ext4.gz",
       "paquet": "railsbox-vault-reference-1.1.0-9de356a7.ext4.gz",
       "graine": "railsbox-vault-reference-1.1.0-graine-f1614921.ext4.gz"
     }
@@ -119,12 +119,12 @@
       "sha256": "ed19d36bb731d678a81aba06edfb3a0b8e2a300a144dfd3d55b3358496b1d472"
     },
     {
-      "name": "reference-rootfs-ccf1f18c.ext4.gz",
-      "role": "fichier servi, gzip déterministe (#236 T2) de l'image reference-rootfs-ccf1f18c.ext4",
+      "name": "reference-rootfs-9cd041c1.ext4.gz",
+      "role": "fichier servi, gzip déterministe (#236 T2) de l'image reference-rootfs-9cd041c1.ext4",
       "license": "celle de l'image compressée",
       "origin": "tools/paquet/compression.mjs (gzip -9, en-tête sans nom ni date, OS inconnu)",
-      "byteSize": 134639365,
-      "sha256": "5bd80d7f8f0eb808d769fc2fe0bc14bffd12d671931d776e9f5c71923ba8ab3a"
+      "byteSize": 134638690,
+      "sha256": "165d93076c23b0d8fc68fc83c2fa558b55404e7696d760a356d86283f2e9b2b6"
     },
     {
       "name": "reference-rootfs-initrd",
@@ -148,7 +148,7 @@
       "license": "Debian bookworm (licences libres diverses) ; Ruby 3.3.12 (Ruby / BSD-2-Clause)",
       "origin": "tools/build-reference-image/guest.Dockerfile (cible rootfs)",
       "byteSize": 403701760,
-      "sha256": "ccf1f18ca81d40b76c85119af3e9e5e8ccf79396d7601b808baddbff0557ef1d"
+      "sha256": "9cd041c161d81cf1c759cf0684ae7493986cdcb118b7e39791914a58b809cce1"
     },
     {
       "name": "seabios.bin",
@@ -169,6 +169,6 @@
   ],
   "totals": {
     "artifactCount": 14,
-    "byteSize": 2033397796
+    "byteSize": 2033397121
   }
 }

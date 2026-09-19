@@ -27,10 +27,13 @@
 // ## Une migration INTERROMPUE (`app.migration` au manifeste)
 //
 // Rails commite migration par migration : une coupure entre deux laisse un schéma INTERMÉDIAIRE, que
-// l'ancien code lirait mal. Le Worker inscrit donc l'INTENTION (`app.migration` = schéma visé) avant le
-// boot qui migre, et l'efface quand le manifeste a suivi. Présente, elle ne laisse qu'une issue : la
-// REPRISE de la mise à jour, par un paquet de schéma au moins égal à la cible — ni « Plus tard », ni
-// le paquet précédent.
+// l'ancien code lirait mal. Le Worker inscrit donc l'INTENTION (`app.migration` = la CIBLE, version et
+// schéma) avant le boot qui migre, et l'efface quand le manifeste a suivi. Présente, elle ne laisse
+// qu'une issue : la REPRISE de la mise à jour, par une version servie STRICTEMENT plus récente que celle
+// du coffre ET d'un schéma au moins égal à celui de la cible — ni « Plus tard », ni le paquet précédent,
+// ni un retour arrière déguisé en reprise (revue de sécurité de la PR #249, constat 1). Tout autre cas
+// est refusé sous `MISE_A_JOUR_INTERROMPUE`. L'intention est lue AVANT la déduction du schéma d'un
+// coffre de T1 : sa reprise ne dépend pas du paquet précédent (constat 5).
 //
 // ## Un coffre installé avant ce champ (T1) : la règle, écrite une fois
 //
@@ -133,7 +136,10 @@ function paquetsServis(descripteur) {
  */
 function schemaDuCoffre(app, servis) {
   if (typeof app.schema === "string") return { schema: app.schema, deduit: false };
-  const meme = servis.find((servi) => servi.version === app.version);
+  // Même PRÉCÉDENCE, et non même chaîne : `1.0.0+x` est la version `1.0.0` (revue de #249, LOW).
+  const meme = servis.find(
+    (servi) => estUneVersion(servi.version) && comparerVersions(servi.version, app.version) === 0,
+  );
   return meme === undefined ? null : { schema: meme.schema, deduit: true };
 }
 
@@ -158,14 +164,14 @@ export function deciderLeDephasage({ manifeste, descripteur }) {
   if (descripteur === null) return refus(C.applicationNonServie, { coffre, servie: null });
   const servie = { id: descripteur.application.id, ...versionEtSchema(descripteur.application) };
   if (app.id !== servie.id) return refus(C.applicationEtrangere, { coffre, servie });
-  const servis = paquetsServis(descripteur);
-  const connu = estUneVersion(app.version) ? schemaDuCoffre(app, servis) : null;
+  if (!estUneVersion(app.version)) return refus(C.schemaDuCoffreInconnu, { coffre, servie });
+  if (app.migration !== undefined) {
+    return deciderLaReprise({ constat: coffre, servie, cible: app.migration });
+  }
+  const connu = schemaDuCoffre(app, paquetsServis(descripteur));
   if (connu === null) return refus(C.schemaDuCoffreInconnu, { coffre, servie });
   const constat = { ...coffre, schema: connu.schema, schemaDeduit: connu.deduit };
-  if (typeof app.migration === "string") {
-    return deciderLaReprise({ constat, servie, cible: app.migration });
-  }
-  return deciderSurLaTable({ constat, servie, servis });
+  return deciderSurLaTable({ constat, servie, servis: paquetsServis(descripteur) });
 }
 
 /**
@@ -207,12 +213,14 @@ function deciderSurLaTable({ constat, servie, servis }) {
 }
 
 /**
- * Une migration INTERROMPUE : la seule issue est de la REPRENDRE, par un paquet dont le schéma atteint
- * au moins la cible. Ni « Plus tard », ni le précédent, ni un paquet plus ancien.
+ * Une migration INTERROMPUE : la seule issue est de la REPRENDRE, par une version servie STRICTEMENT
+ * plus récente que celle du coffre ET d'un schéma au moins égal à celui de la cible. Ni « Plus tard »,
+ * ni le précédent, ni une version égale ou plus ancienne : refus `MISE_A_JOUR_INTERROMPUE`.
  */
 function deciderLaReprise({ constat, servie, cible }) {
-  if (comparerSchemas(servie.schema, cible) < 0) {
-    return refus(C.applicationAnterieure, { coffre: constat, servie });
+  const plusRecente = comparerVersions(servie.version, constat.version) > 0;
+  if (!plusRecente || comparerSchemas(servie.schema, cible.schema) < 0) {
+    return refus(C.miseAJourInterrompue, { coffre: { ...constat, migration: cible }, servie });
   }
   return Object.freeze({
     issue: ISSUES_DU_DEPHASAGE.miseAJour,

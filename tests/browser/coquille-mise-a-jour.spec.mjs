@@ -110,6 +110,30 @@ async function ouvrirSur(page, { servi, app }) {
   return (await releve(page)).dephasage;
 }
 
+/**
+ * Ce que l'OPFS porte du volume `application` : chaque fichier (nom, taille) et le texte de son
+ * manifeste. Un refus de déphasage n'écrit AUCUN octet du volume (revue de sécurité de la PR #249,
+ * constat 6) : cet état doit être le même avant et après le démarrage refusé, et le manifeste celui qui
+ * a été posé.
+ */
+async function etatDuVolumeApplicatif(page) {
+  return page.evaluate(async () => {
+    const racine = await navigator.storage.getDirectory();
+    const dossier = await racine.getDirectoryHandle("vault-volumes");
+    const fichiers = [];
+    for await (const [nom, poignee] of dossier.entries()) {
+      if (!nom.startsWith("application") || poignee.kind !== "file") continue;
+      const fichier = await poignee.getFile();
+      fichiers.push({
+        nom,
+        taille: fichier.size,
+        texte: nom.endsWith(".manifest") ? await fichier.text() : null,
+      });
+    }
+    return fichiers.sort((a, b) => a.nom.localeCompare(b.nom));
+  });
+}
+
 test("une version plus récente est PROPOSÉE à l'accueil, avant tout boot ; « Plus tard » laisse l'accueil", async ({
   page,
 }) => {
@@ -149,12 +173,14 @@ test("sans le précédent servi, « Plus tard » n'est pas offert, et démarrer 
   await expect(page.locator("#mise-a-jour-plus-tard-texte")).toContainText(
     "ne sert plus votre version actuelle",
   );
+  const avant = await etatDuVolumeApplicatif(page);
   await page.click("#demarrer-application");
   await expect(page.locator("#cycle-etat")).toHaveText(
     `cycle:demarrage-refuse:${C.applicationNonServie}`,
     { timeout: DELAI },
   );
   expect((await releve(page)).application.bootMs, "aucun boot").toBeUndefined();
+  expect(await etatDuVolumeApplicatif(page), "aucun octet du volume écrit").toEqual(avant);
 });
 
 for (const [titre, app, servi, code, conduite] of [
@@ -173,6 +199,18 @@ for (const [titre, app, servi, code, conduite] of [
     "version plus récente",
   ],
   [
+    "une mise à jour interrompue ne reprend pas avec une version égale à celle du coffre",
+    {
+      id: "reference-essai",
+      version: "1.1.0",
+      schema: M,
+      migration: { version: "1.2.0", schema: "20261001000001" },
+    },
+    descripteur(),
+    C.miseAJourInterrompue,
+    "ne peut reprendre",
+  ],
+  [
     "le coffre d'une autre application",
     { id: "une-autre-application", version: "1.0.0", schema: M },
     descripteur(),
@@ -188,12 +226,19 @@ for (const [titre, app, servi, code, conduite] of [
     await expect(page.locator("#mise-a-jour")).toBeHidden();
     await expect(page.locator("#parcours-refus")).toContainText(conduite);
     await expect(page.locator("#parcours-refus")).toContainText("sauvegarde");
+    const avant = await etatDuVolumeApplicatif(page);
+    expect(
+      avant.map(({ nom }) => nom),
+      "seul le manifeste posé existe",
+    ).toEqual(["application.manifest"]);
+    expect(avant[0].texte).toBe(manifesteDuCoffre(app));
     // Le démarrage REDÉCIDE : la page n'est pas crue, le refus revient, et rien ne boote.
     await page.click("#demarrer-application");
     await expect(page.locator("#cycle-etat")).toHaveText(`cycle:demarrage-refuse:${code}`, {
       timeout: DELAI,
     });
     expect((await releve(page)).application.bootMs, "aucun boot").toBeUndefined();
+    expect(await etatDuVolumeApplicatif(page), "aucun octet du volume écrit").toEqual(avant);
   });
 }
 

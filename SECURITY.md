@@ -1483,6 +1483,12 @@ vivent seules sur `/dev/sdb`, monté sur `/app/var`, avec les options de durabil
 - **Le guest confronte ses marqueurs avant Rails** : des données plus récentes que le paquet booté,
   ou qui ne disent pas ce que le manifeste attend, arrêtent le boot (`SCHEMA_DIVERGENT`), sans
   migration.
+- **Ce que le guest refuse de lui-même, avant Rails** (revue de sécurité de la PR #249) : un
+  marqueur de schéma qui n'est pas un entier de quatorze chiffres au plus (rien n'est migré ni
+  réécrit), un paramètre `vault.*` présent deux fois — l'espace est réservé au Worker, et la ligne
+  servie qui en porte un est refusée à la forme —, et une migration que le Worker n'a pas autorisée
+  (`vault.migrer=1`, posé sous le seul geste). Une reprise n'est admise que par une version
+  STRICTEMENT plus récente que celle du coffre, d'un schéma au moins égal à la cible.
 - **Les morceaux compressés sont bornés** : la taille transférée est exigée à l'octet, la
   décompression est arrêtée à la taille de l'image annoncée, et l'empreinte reste celle de l'image
   DÉCOMPRESSÉE. Ils sont servis sans `Content-Encoding` : le navigateur ne décompresse rien à la
@@ -1498,6 +1504,9 @@ vivent seules sur `/dev/sdb`, monté sur `/app/var`, avec les options de durabil
 - **Une migration peut échouer ou être incorrecte** : c'est le code de l'auteur du paquet. La
   sauvegarde proposée avant la mise à jour est le seul retour arrière des DONNÉES ; elle se restaure
   sur une origine qui sert l'ancien paquet.
+- **Des morceaux de deux publications réunis sous un même descripteur** (le rootfs de l'une, le
+  paquet d'une autre) sont acceptés si leurs empreintes sont celles que le descripteur déclare :
+  l'origine est crue sur la COMPOSITION comme sur le reste, jusqu'à la signature du jalon 6.
 - **Le manifeste est un fichier voisin réécrit en place** : une coupure pendant sa réécriture le
   laisse illisible, et le coffre est alors refusé (`VOLUME_APPLICATIF_SANS_MANIFESTE`) sans que les
   données soient perdues.

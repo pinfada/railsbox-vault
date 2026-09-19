@@ -17,6 +17,11 @@ export const CODES_DU_DEPHASAGE = Object.freeze([
   C.schemaDuCoffreInconnu,
   C.schemaDivergent,
   C.migrationEchouee,
+  // Revue de sécurité de la PR #249 : la reprise par version, et les refus neufs du guest.
+  C.miseAJourInterrompue,
+  C.marqueurDeSchemaInvalide,
+  C.parametreDuGuestRefuse,
+  C.migrationNonAutorisee,
 ]);
 
 const SAUVEGARDE_SANS_DEMARRER =
@@ -59,6 +64,26 @@ export function conduitesDuDephasage(K, RIEN_PERDU) {
         "Rouvrez-le depuis une adresse qui sert cette version." +
         SAUVEGARDE_SANS_DEMARRER,
     ],
+    [C.miseAJourInterrompue]: [
+      K.attendre,
+      "Une mise à jour de l'application a commencé sur ce coffre et n'a pas pu se terminer. Elle ne " +
+        "peut reprendre qu'avec la version visée ou une plus récente, que cette adresse ne sert pas. " +
+        "Rien n'a été démarré ni modifié. Rouvrez ce coffre plus tard, ou depuis une adresse qui sert " +
+        "cette version." +
+        SAUVEGARDE_SANS_DEMARRER,
+    ],
+    ...conduitesDuGuest(K, RIEN_PERDU),
+  };
+}
+
+/**
+ * Les conduites des refus que le GUEST constate avant Rails (marqueurs, paramètres, migration).
+ * Scindées de `conduitesDuDephasage` pour rester sous le plafond de fonction (#93).
+ *
+ * @param {Record<string, string>} K @param {string} RIEN_PERDU
+ */
+function conduitesDuGuest(K, RIEN_PERDU) {
+  return {
     [C.schemaDivergent]: [
       K.autre,
       "L'application n'a pas été lancée : l'état de vos données ne correspond pas à ce que le " +
@@ -73,6 +98,29 @@ export function conduitesDuDephasage(K, RIEN_PERDU) {
         "enregistré avant la mise à jour n'a pas été perdu. Rouvrez le coffre sur l'ancienne version " +
         "avec « Plus tard » s'il vous est proposé, ou restaurez la sauvegarde faite avant, et " +
         "signalez l'échec à l'auteur de l'application.",
+    ],
+    [C.marqueurDeSchemaInvalide]: [
+      K.autre,
+      "L'application n'a pas été lancée : une indication sur l'état de vos données est illisible. " +
+        "Rien n'a été modifié ni migré. N'effacez rien : gardez ce coffre, faites-en une sauvegarde, " +
+        "et demandez de l'aide." +
+        SAUVEGARDE_SANS_DEMARRER,
+    ],
+    [C.parametreDuGuestRefuse]: [
+      K.autre,
+      "L'application n'a pas été lancée : cette adresse lui a transmis un réglage qu'elle n'a pas le " +
+        "droit de fixer. " +
+        RIEN_PERDU +
+        " Rouvrez ce coffre depuis une autre adresse, ou signalez le problème à qui publie cette " +
+        "application.",
+    ],
+    [C.migrationNonAutorisee]: [
+      K.autre,
+      "L'application n'a pas été lancée : elle aurait dû transformer vos données alors que vous ne " +
+        "l'avez pas demandé. " +
+        RIEN_PERDU +
+        " Si « Mettre à jour l'application » vous est proposé, utilisez-le ; sinon, signalez le " +
+        "problème à qui publie cette application.",
     ],
   };
 }

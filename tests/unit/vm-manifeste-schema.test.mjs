@@ -48,7 +48,16 @@ test("relecture ASCENDANTE : un manifeste de T1, sans schéma, se relit et se re
 });
 
 test("un schéma qui n'est pas un entier en chiffres est un manifeste MALFORMÉ", () => {
-  for (const schema of ["", "2026-09-19", "v3", "12".repeat(17), 20260919, null]) {
+  for (const schema of [
+    "",
+    "2026-09-19",
+    "v3",
+    "12".repeat(17),
+    "202601010000021",
+    "020260101000002",
+    20260919,
+    null,
+  ]) {
     const brut = JSON.parse(
       new TextDecoder().decode(
         serializeManifest(createManifest(champs({ id: "a", version: "1" }))),
@@ -81,8 +90,11 @@ test("manifesteAvecApplication ne change QUE la version et le schéma, jamais l'
 
 test("l'INTENTION de migration s'inscrit, se relit, et s'efface quand le manifeste a suivi", () => {
   const avant = createManifest(champs({ id: "ref", version: "1.0.0", schema: "20260101000002" }));
-  const intention = manifesteAvecIntention(avant, "20260919000002");
-  assert.equal(parseManifest(serializeManifest(intention)).app.migration, "20260919000002");
+  const intention = manifesteAvecIntention(avant, { version: "1.1.0", schema: "20260919000002" });
+  assert.deepEqual(parseManifest(serializeManifest(intention)).app.migration, {
+    version: "1.1.0",
+    schema: "20260919000002",
+  });
   assert.equal(intention.app.schema, "20260101000002", "l'intention ne change pas le constat");
   const suivi = manifesteAvecApplication(intention, {
     version: "1.1.0",
@@ -90,9 +102,27 @@ test("l'INTENTION de migration s'inscrit, se relit, et s'efface quand le manifes
   });
   assert.equal("migration" in suivi.app, false);
   const brut = JSON.parse(new TextDecoder().decode(serializeManifest(avant)));
-  brut.app.migration = "N";
-  assert.throws(
-    () => parseManifest(brut),
-    (e) => e.code === MANIFEST_ERROR_CODES.malformed,
+  for (const cible of [
+    "N",
+    { version: "1.1.0" },
+    { version: "x", schema: "1" },
+    { version: "1.1.0", schema: "01" },
+  ]) {
+    brut.app.migration = cible;
+    assert.throws(
+      () => parseManifest(brut),
+      (e) => e.code === MANIFEST_ERROR_CODES.malformed,
+      JSON.stringify(cible),
+    );
+  }
+});
+
+test("un coffre de T1 garde, avec son intention, le schéma qui avait été DÉDUIT (constat 5)", () => {
+  const avant = createManifest(champs({ id: "ref", version: "1.0.0" }));
+  const intention = manifesteAvecIntention(
+    avant,
+    { version: "1.1.0", schema: "20260919000002" },
+    "20260101000002",
   );
+  assert.equal(intention.app.schema, "20260101000002");
 });
