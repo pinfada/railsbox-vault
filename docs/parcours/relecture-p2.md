@@ -303,8 +303,8 @@ Messages qui peuvent s'afficher sur cet écran :
   vos données ; seul le code de l'application change : comptez environ trois à quatre minutes. Rien
   ne se fait sans vous : avant de mettre à jour, faites une sauvegarde — si quelque chose se passait
   mal, elle rouvrira votre coffre tel qu'il est aujourd'hui.
-- « Plus tard » garde votre version actuelle : « Démarrer l'application » l'ouvre, en environ trois
-  minutes, et la mise à jour vous sera proposée à la prochaine ouverture.
+- « Plus tard » garde votre version actuelle : « Démarrer l'application » l'ouvre (comptez jusqu'à
+  environ trois minutes), et la mise à jour vous sera proposée à la prochaine ouverture.
 - Cette adresse ne sert plus votre version actuelle : pour démarrer l'application ici, il faut la
   mettre à jour. Vos données restent intactes tant que vous ne le faites pas.
 - Mise à jour en cours : comptez environ trois à quatre minutes, et ne fermez pas l'onglet. Si la
@@ -320,15 +320,26 @@ Messages qui peuvent s'afficher sur cet écran :
 - Reprendre la mise à jour
 - Mise à jour en cours depuis N seconde(s), sur environ trois à quatre minutes. Étape en cours :
   démarrage de l'application.
-- Démarrage de votre version actuelle depuis N seconde(s), sur environ trois minutes. Étape en cours
-  : démarrage de l'application.
+- Démarrage de votre version actuelle depuis N seconde(s) ; comptez jusqu'à environ trois minutes.
+  Étape en cours : démarrage de l'application.
 - Étape en cours : téléchargement de l'application.
 - Étape en cours : démarrage de l'application.
 - Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.
 - Version de l'application : V.
-- L'application ne peut pas démarrer à cette adresse : lisez le message ci-dessus. Votre coffre
-  reste intact, et vous pouvez le sauvegarder ou le verrouiller.
+- L'application ne peut pas démarrer à cette adresse : lisez le message affiché sur cette page.
+  Votre coffre reste intact, et vous pouvez le sauvegarder ou le verrouiller.
 - Cliquez sur « Reprendre la mise à jour », puis attendez que l'application s'affiche.
+- Durée : La mise à jour prend environ trois à quatre minutes : l'application est téléchargée,
+  démarrée, puis vos données sont mises à jour ; la progression dit l'étape en cours. Garder votre
+  version actuelle avec « Plus tard » peut prendre jusqu'à environ trois minutes : l'application
+  (environ 200 Mo) est téléchargée de nouveau, puis elle redémarre entièrement.
+- Durée : La reprise de la mise à jour prend environ trois à quatre minutes : l'application est
+  téléchargée, démarrée, puis la mise à jour de vos données se termine ; la progression dit l'étape
+  en cours.
+- L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur «
+  Reprendre la mise à jour ».
+- L'application ne peut pas démarrer à cette adresse : le message affiché sur cette page dit
+  pourquoi, et ce que vous pouvez faire.
 
 ### Écran : Votre application
 
@@ -374,8 +385,8 @@ Messages qui peuvent s'afficher sur cet écran :
   vos données ; seul le code de l'application change : comptez environ trois à quatre minutes. Rien
   ne se fait sans vous : avant de mettre à jour, faites une sauvegarde — si quelque chose se passait
   mal, elle rouvrira votre coffre tel qu'il est aujourd'hui.
-- « Plus tard » garde votre version actuelle : « Démarrer l'application » l'ouvre, en environ trois
-  minutes, et la mise à jour vous sera proposée à la prochaine ouverture.
+- « Plus tard » garde votre version actuelle : « Démarrer l'application » l'ouvre (comptez jusqu'à
+  environ trois minutes), et la mise à jour vous sera proposée à la prochaine ouverture.
 - Cette adresse ne sert plus votre version actuelle : pour démarrer l'application ici, il faut la
   mettre à jour. Vos données restent intactes tant que vous ne le faites pas.
 - Mise à jour en cours : comptez environ trois à quatre minutes, et ne fermez pas l'onglet. Si la
@@ -391,15 +402,26 @@ Messages qui peuvent s'afficher sur cet écran :
 - Reprendre la mise à jour
 - Mise à jour en cours depuis N seconde(s), sur environ trois à quatre minutes. Étape en cours :
   démarrage de l'application.
-- Démarrage de votre version actuelle depuis N seconde(s), sur environ trois minutes. Étape en cours
-  : démarrage de l'application.
+- Démarrage de votre version actuelle depuis N seconde(s) ; comptez jusqu'à environ trois minutes.
+  Étape en cours : démarrage de l'application.
 - Étape en cours : téléchargement de l'application.
 - Étape en cours : démarrage de l'application.
 - Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.
 - Version de l'application : V.
-- L'application ne peut pas démarrer à cette adresse : lisez le message ci-dessus. Votre coffre
-  reste intact, et vous pouvez le sauvegarder ou le verrouiller.
+- L'application ne peut pas démarrer à cette adresse : lisez le message affiché sur cette page.
+  Votre coffre reste intact, et vous pouvez le sauvegarder ou le verrouiller.
 - Cliquez sur « Reprendre la mise à jour », puis attendez que l'application s'affiche.
+- Durée : La mise à jour prend environ trois à quatre minutes : l'application est téléchargée,
+  démarrée, puis vos données sont mises à jour ; la progression dit l'étape en cours. Garder votre
+  version actuelle avec « Plus tard » peut prendre jusqu'à environ trois minutes : l'application
+  (environ 200 Mo) est téléchargée de nouveau, puis elle redémarre entièrement.
+- Durée : La reprise de la mise à jour prend environ trois à quatre minutes : l'application est
+  téléchargée, démarrée, puis la mise à jour de vos données se termine ; la progression dit l'étape
+  en cours.
+- L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur «
+  Reprendre la mise à jour ».
+- L'application ne peut pas démarrer à cette adresse : le message affiché sur cette page dit
+  pourquoi, et ce que vous pouvez faire.
 - Verrouillage en cours… Ne fermez pas l'onglet.
 - Sauvegarde en cours… Ne fermez pas l'onglet.
 - Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien ne s'est

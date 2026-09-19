@@ -119,6 +119,9 @@ fi
 # migrations laisse donc toujours I = P, et aucun paquet plus ancien ne rouvrira ces données.
 ecrire "$marqueur_intention" "$P"
 sync
+# La mise à jour des DONNÉES commence ICI, avant le chargement de Rails pour `db:migrate` : c'est la
+# ligne que le Worker guette pour dire « mise à jour de vos données » (contre-recette QA de #249, 1).
+echo "[schema] migration commencee de=$V vers=$P"
 debut=$(date +%s%N)
 cd /app || exit 3
 # Chaque ligne de Rails est redite sur la série, préfixée : « == <version> <Nom>: migrated » dit

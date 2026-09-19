@@ -135,6 +135,14 @@ test("remplacer le paquet servi par un autre le dit, avec l'étape suivante et l
   assert.match(annonce, /pour revenir à la référence : `npm run app:paquet` sans `--source`/);
 });
 
+test("revenir à la référence le dit, sans conseiller d'y revenir (contre-recette QA de #249, 7)", () => {
+  const ancien = { application: { id: "qa-exemple", version: "1.0.0" } };
+  const nouveau = { application: { id: "railsbox-vault-reference", version: "1.1.0" } };
+  const annonce = annonceDeRemplacement(ancien, nouveau);
+  assert.match(annonce, /qa-exemple 1.0.0 → railsbox-vault-reference 1.1.0/);
+  assert.doesNotMatch(annonce, /pour revenir à la référence/);
+});
+
 test("refabriquer le même paquet, ou le fabriquer une première fois, ne remplace rien", () => {
   const paquet = { application: { id: "railsbox-vault-reference", version: "1.0.0" } };
   assert.equal(annonceDeRemplacement(paquet, structuredClone(paquet)), null);

@@ -8,6 +8,7 @@ import {
   CHEMINS_DU_DEMARRAGE as CH,
   attenduSousLeDephasage,
   attenteDuDephasage,
+  texteDeLEspaceEnAttente,
   cheminDuDemarrage,
   demarrerEstPossible,
   progressionDuChemin,
@@ -21,12 +22,14 @@ import {
 import { CODES_REFUS_COQUILLE as C } from "../../src/coquille/refus-de-coquille.mjs";
 import {
   ATTENTE_DE_LA_MISE_A_JOUR,
+  ATTENTE_DE_LA_REPRISE,
   DUREE_DE_LA_MISE_A_JOUR,
   DUREE_DE_PLUS_TARD,
   MESSAGES,
 } from "../../src/coquille/textes-du-parcours.mjs";
 import {
   PHASES_DU_BOOT,
+  autoriserLaPhaseDesDonnees,
   phaseDeLaLigne,
   phaseDuBoot,
   poserLaPhase,
@@ -86,7 +89,7 @@ test("Q2 : UNE durée par chemin, et la phase dite", () => {
   assert.match(MESSAGES.miseAJourPlusTard, new RegExp(DUREE_DE_PLUS_TARD));
   assert.equal(attenteDuDephasage(proposee()), ATTENTE_DE_LA_MISE_A_JOUR);
   assert.equal(attenteDuDephasage({ issue: "ouvrir" }), null);
-  assert.match(ATTENTE_DE_LA_MISE_A_JOUR, /retéléchargé/);
+  assert.match(ATTENTE_DE_LA_MISE_A_JOUR, /téléchargée de nouveau/);
 });
 
 test("Q3 : la version est toujours dite, et la réussite de la mise à jour aussi", () => {
@@ -128,22 +131,61 @@ test("Q7 : un refus qui tient retire « Démarrer », change l'attendu, et la sa
   assert.match(texteDeSauvegardePrete(true), /redémarrer/);
 });
 
-test("Q2 : la phase suit la série du guest — données pendant db:migrate, démarrage après", () => {
-  assert.equal(
-    phaseDeLaLigne("[schema] rails : == 20260919000001 AjouterUneNote: migrating"),
-    PHASES_DU_BOOT.donnees,
-  );
-  assert.equal(
-    phaseDeLaLigne("[schema] migration jouee de=1 vers=2 ms=3"),
-    PHASES_DU_BOOT.demarrage,
-  );
+test("Q2, contre-recette 1 : « données » s'ouvre AVANT Rails, sous la seule migration autorisée", () => {
+  const COMMENCEE = "[schema] migration commencee de=1 vers=2\n";
+  const JOUEE = "[schema] migration jouee de=1 vers=2 ms=3\n";
+  assert.equal(phaseDeLaLigne(COMMENCEE.trim()), PHASES_DU_BOOT.donnees);
+  assert.equal(phaseDeLaLigne(JOUEE.trim()), PHASES_DU_BOOT.demarrage);
+  // Rails qui parle pendant db:migrate ne change plus rien : la phase est déjà ouverte.
+  assert.equal(phaseDeLaLigne("[schema] rails : == 20260919000001 AjouterUneNote: migrated"), null);
   assert.equal(phaseDeLaLigne("[schema] volume=1 paquet=2 attendu=1 intention=absent"), null);
+
+  // Une ligne FORGÉE hors d'une mise à jour ne pose pas la phase.
+  poserLaPhase(null);
   poserLaPhase(PHASES_DU_BOOT.demarrage);
+  creerVeilleurDeSchema().ingererSerie(COMMENCEE);
+  assert.equal(phaseDuBoot(), PHASES_DU_BOOT.demarrage);
+
+  // Sous le geste, elle tient de la ligne neuve à « migration jouee », puis ne se rouvre plus.
+  poserLaPhase(null);
+  poserLaPhase(PHASES_DU_BOOT.demarrage);
+  autoriserLaPhaseDesDonnees(true);
   const veilleur = creerVeilleurDeSchema();
+  veilleur.ingererSerie(COMMENCEE);
+  assert.equal(phaseDuBoot(), PHASES_DU_BOOT.donnees);
+  // La ligne neuve n'est pas un constat : une coupure après elle laisse la migration « non dite ».
+  assert.equal(veilleur.constat().migration, null);
   veilleur.ingererSerie("[schema] rails : == 20260919000001 AjouterUneNote: migrating\n");
   assert.equal(phaseDuBoot(), PHASES_DU_BOOT.donnees);
-  veilleur.ingererSerie("[schema] migration jouee de=1 vers=2 ms=3\n");
+  veilleur.ingererSerie(JOUEE);
   assert.equal(phaseDuBoot(), PHASES_DU_BOOT.demarrage);
+  veilleur.ingererSerie(COMMENCEE);
+  assert.equal(phaseDuBoot(), PHASES_DU_BOOT.demarrage, "l'autorisation est tombée");
   poserLaPhase("n'importe quoi");
   assert.equal(phaseDuBoot(), null);
+});
+
+test("contre-recette 2, 3, 5, 6 : la zone ne nomme aucun bouton absent, la durée dit vrai et simple", () => {
+  const reprise = proposee({ plusTard: false, reprise: true });
+  const refus = { dephasage: { issue: "refus", code: C.applicationEtrangere } };
+  assert.equal(
+    texteDeLEspaceEnAttente({ dephasage: reprise }),
+    MESSAGES.applicationEnAttenteDeLaReprise,
+  );
+  assert.match(MESSAGES.applicationEnAttenteDeLaReprise, /Reprendre la mise à jour/);
+  assert.equal(texteDeLEspaceEnAttente(refus), MESSAGES.applicationEnAttenteSousUnRefus);
+  assert.equal(texteDeLEspaceEnAttente({ dephasage: proposee() }), MESSAGES.applicationEnAttente);
+  for (const texte of [MESSAGES.applicationEnAttenteSousUnRefus, MESSAGES.attenduSousUnRefus]) {
+    assert.doesNotMatch(texte, /Démarrer l'application|ci-dessus|ci-dessous/);
+  }
+  assert.equal(attenteDuDephasage(reprise), ATTENTE_DE_LA_REPRISE);
+  assert.doesNotMatch(ATTENTE_DE_LA_REPRISE, /Plus tard/);
+  for (const texte of [
+    ATTENTE_DE_LA_MISE_A_JOUR,
+    ATTENTE_DE_LA_REPRISE,
+    MESSAGES.miseAJourPlusTard,
+  ]) {
+    assert.doesNotMatch(texte, /Mio|à froid/);
+  }
+  assert.match(DUREE_DE_PLUS_TARD, /^jusqu'à /);
 });

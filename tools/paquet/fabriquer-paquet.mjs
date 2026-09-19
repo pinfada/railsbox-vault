@@ -73,6 +73,11 @@ const SOURCES = JSON.parse(
 );
 
 const ETIQUETTE_PAQUET = "railsbox-vault-paquet:local";
+
+/** L'identité de l'application de RÉFÉRENCE, celle que `app:paquet` sans `--source` fabrique. */
+const ID_DE_LA_REFERENCE = JSON.parse(
+  readFileSync(join(RACINE_DEPOT, "apps", "reference", "vault-invariant.json"), "utf8"),
+).application.id;
 const ETIQUETTE_FABRICANT = "railsbox-vault-diskbuilder:local";
 
 /**
@@ -333,10 +338,14 @@ function estDuMemeRole(nom, suffixe, id) {
 export function annonceDeRemplacement(ancien, nouveau) {
   const nommer = ({ application }) => `${application.id} ${application.version}`;
   if (ancien?.application === undefined || nommer(ancien) === nommer(nouveau)) return null;
+  // Revenir à la référence ne se conseille pas à qui vient d'y revenir (contre-recette de #249, 7).
+  const retour =
+    nouveau.application.id === ID_DE_LA_REFERENCE
+      ? ""
+      : " ; pour revenir à la référence : `npm run app:paquet` sans `--source`";
   return (
     `→ remplace le paquet servi : ${nommer(ancien)} → ${nommer(nouveau)} ; ` +
-    "`npm run image:manifest` pour le descripteur ; " +
-    "pour revenir à la référence : `npm run app:paquet` sans `--source`"
+    `\`npm run image:manifest\` pour le descripteur${retour}`
   );
 }
 

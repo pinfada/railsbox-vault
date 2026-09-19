@@ -89,6 +89,10 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "versionDeLApplication",
     "attenduSousUnRefus",
     "attenduDeLaReprise",
+    "dureeDeLaMiseAJour",
+    "dureeDeLaReprise",
+    "applicationEnAttenteDeLaReprise",
+    "applicationEnAttenteSousUnRefus",
   ],
   accueil: [
     "applicationEnAttente",
@@ -112,6 +116,10 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "versionDeLApplication",
     "attenduSousUnRefus",
     "attenduDeLaReprise",
+    "dureeDeLaMiseAJour",
+    "dureeDeLaReprise",
+    "applicationEnAttenteDeLaReprise",
+    "applicationEnAttenteSousUnRefus",
     "verrouillageEnCours",
     "sauvegardeEnCours",
     "sauvegardePrete",
@@ -236,6 +244,7 @@ const N = "N";
 function texteDuMessage(nom) {
   if (nom === "limiteDeFirefox") return `${LIMITE_DE_FIREFOX} (seulement dans Firefox)`;
   const message = MESSAGES[nom];
+  if (nom.startsWith("dureeDe")) return MESSAGES.duree(message);
   if (typeof message !== "function") return message;
   if (nom === "demarrageEnCours") return message(N, MESSAGES.signesDeVie(N));
   if (nom === "revoque") return message(N, "V");

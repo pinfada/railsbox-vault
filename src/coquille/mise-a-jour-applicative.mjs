@@ -23,7 +23,7 @@ import {
 } from "./dephasage.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { MOTIFS_DE_SCHEMA } from "../vm/constat-de-schema.mjs";
-import { PHASES_DU_BOOT, poserLaPhase } from "../vm/phase-du-boot.mjs";
+import { PHASES_DU_BOOT, autoriserLaPhaseDesDonnees, poserLaPhase } from "../vm/phase-du-boot.mjs";
 import { readVolumeManifest, writeVolumeManifest } from "../vm/opfs-volume-open.mjs";
 import {
   SCHEMA_APPLICATIF,
@@ -198,6 +198,8 @@ export async function preparerLeDemarrage({ lu, nom, miseAJour = false, delaiMs,
 export function avantLeBootDuPaquet({ nom, prepare, inscrire = writeVolumeManifest }) {
   return async () => {
     poserLaPhase(PHASES_DU_BOOT.demarrage);
+    // « Mise à jour de vos données » ne s'affiche que sous le geste qui migre (contre-recette, 1).
+    autoriserLaPhaseDesDonnees(prepare.migration === true);
     await inscrireLIntention({ nom, prepare, inscrire });
   };
 }
