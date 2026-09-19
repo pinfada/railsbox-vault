@@ -309,7 +309,7 @@ export async function suivreLeConstat({
  * qu'en lisant `installationInterrompue`, jamais en devinant depuis le code seul —, et des refus de
  * déphasage, qui portent la DÉCISION publiée (#236 T2).
  *
- * @param {{ motif?: string, code?: string, installationInterrompue?: boolean,
+ * @param {{ motif?: string, code?: string, installationInterrompue?: boolean, installee?: boolean,
  *           motifDeLaSignature?: string | null, dephasage?: object }} demarrage
  */
 export function reponseDeDemarrageRefuse(demarrage) {
@@ -321,8 +321,10 @@ export function reponseDeDemarrageRefuse(demarrage) {
       ? {}
       : {
           installationInterrompue: demarrage.installationInterrompue,
-          motifDeLaSignature: demarrage.motifDeLaSignature,
+          motifDeLaSignature: demarrage.motifDeLaSignature ?? null,
         }),
+    // Un volume INSTALLÉ dont le premier boot n'a pas abouti (#250) : la reprise redémarre.
+    ...(demarrage.installee === true ? { installee: true } : {}),
     ...(demarrage.dephasage === undefined ? {} : { dephasage: demarrage.dephasage }),
   };
 }

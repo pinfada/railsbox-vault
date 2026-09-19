@@ -130,3 +130,51 @@ où un chemin réellement servi importerait l'un de ces deux modules, ce serait 
 - `tests/unit/coquille-deverrouillage.test.mjs` porte le cliquet d'exhaustivité des TYPES du canal
   privilégié (demande ↔ réponse appariable) : les deux types neufs y sont inscrits, dans les deux
   listes que l'épreuve confronte l'une à l'autre.
+
+## Note du 19/09/2026 — la signature revue pour l'installation par graine (#250)
+
+**Ce qui a été mesuré.** L'issue #250 supposait que la signature ne tenait plus depuis que
+l'installation verse une graine en sautant ses blocs nuls (ADR 0041). C'est FAUX, et l'épreuve le
+montre : une graine refusée (403, 404, 503), coupée, tronquée ou d'une empreinte fausse laisse un
+volume qui porte les TROIS conditions — sur le double déterministe avec le vrai versement
+(`tests/unit/coquille-installation-interrompue.test.mjs`), et dans Chromium avec une graine gzip de
+64 Mio refusée, avant et après un verrouillage
+(`tests/browser/coquille-installation-interrompue.spec.mjs`). La signature n'est donc pas modifiée,
+et aucun champ n'est ajouté au volume ni au format.
+
+**Ce qui enfermait le coffre** était ailleurs :
+
+1. le PREMIER échec remontait nu, sous `VAULT_COQUILLE_APPLICATION_ABSENTE` — « aucune application
+   n'est livrée » —, et la signature n'était mesurée qu'au démarrage suivant. Désormais, un échec
+   d'ACQUISITION de la graine (sans code, ou `applicationAbsente` que le versement lève sur la
+   troncature et l'empreinte) sur un volume déjà créé est constaté tout de suite
+   (`echecDInstallationReconnu`, `src/coquille/installation-interrompue.mjs`) : la réponse est celle
+   que le démarrage suivant rendrait, signature comprise. Un refus TYPÉ du support (la datation qui
+   ne confirme pas la création, un quota) garde son code ;
+2. la page publiait `cycle:sans-application` pour TOUTE réponse non démarrée sans déphasage, et
+   l'observateur du parcours la lisait « aucune application n'est livrée ». La ligne porte désormais
+   le code (`cycle:demarrage-refuse:<code>`), et la page choisit la conduite depuis la réponse
+   publiée : une installation reconnue dit « L'installation de votre application n'a pas pu se
+   terminer. Rien n'est perdu… », avec « Reprendre l'installation » ;
+3. un premier boot dont un artefact manque (noyau, initrd, rootfs, paquet) sur un volume installé et
+   jamais démarré remontait sans code. Il rend `VAULT_COQUILLE_INSTALLATION_INACHEVEE`
+   (`echecDuPremierBoot`) ; « Reprendre l'installation » y REDÉMARRE — le volume porte son
+   manifeste, et le Worker ne retire jamais un volume identifié.
+
+**La garde, dite en une phrase.** « Reprendre l'installation » reverse la graine, donc écrase le
+volume applicatif : elle n'est offerte et exécutable que sur la preuve POSITIVE et FERMÉE des trois
+conditions, revérifiée par le Worker sous sa propre exclusivité. Le troisième pilier — le journal ne
+porte QUE la racine de naissance — est aussi ce qui garantit qu'aucune DONNÉE n'est écrasée : un
+boot qui a validé une génération le fait sortir de cet état, et le volume tombe alors en « autre
+chose ». Un marqueur d'installation en cours n'est donc pas nécessaire : il redirait ce que le
+journal dit déjà, et ajouterait un fichier à tenir.
+
+**Ce que la garde REFUSE**, sans rien écraser, sous
+`VAULT_COQUILLE_VOLUME_APPLICATIF_SANS_MANIFESTE` avec `installationInterrompue: false` : un volume
+anonyme dont le journal a avancé (il a servi), dont le journal est absent ou illisible, ou d'une
+autre taille que celle que le descripteur annonce. La table de
+`tests/unit/coquille-installation-interrompue.test.mjs` donne chaque état et sa décision ; la
+campagne `cycle-de-vie` porte les mutants de la garde (un volume qui a servi n'est jamais « à
+reprendre » ; une installation achevée qui a démarré n'est jamais « inachevée »). La page y offre «
+Verrouiller mon coffre », jamais « Sauvegarder » : sans manifeste, la sauvegarde n'a rien à emporter
+(`VAULT_COQUILLE_APPLICATION_NON_INSTALLEE`), et aucun texte ne nomme un bouton qui échouerait.

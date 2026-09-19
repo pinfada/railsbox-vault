@@ -490,6 +490,10 @@ export const MESSAGES = Object.freeze({
   applicationEnAttenteDeLaReprise:
     "L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur « " +
     "Reprendre la mise à jour ».",
+  // Une installation INACHEVÉE (#250) : la zone nomme le seul bouton qui la démarrera.
+  applicationEnAttenteDeLInstallation:
+    "L'application n'est pas encore installée : elle s'affichera ici quand vous aurez cliqué sur « " +
+    "Reprendre l'installation ».",
   applicationEnAttenteSousUnRefus:
     "L'application ne peut pas démarrer à cette adresse : le message affiché sur cette page dit " +
     "pourquoi, et ce que vous pouvez faire.",
@@ -542,6 +546,9 @@ export const MESSAGES = Object.freeze({
   attenduSousUnRefus:
     "L'application ne peut pas démarrer à cette adresse : lisez le message affiché sur cette page. " +
     "Votre coffre reste intact, et vous pouvez le sauvegarder ou le verrouiller.",
+  attenduDeLInstallationInachevee:
+    "Cliquez sur « Reprendre l'installation », puis attendez que l'application s'affiche. Votre " +
+    "coffre reste intact, et vous pouvez aussi le verrouiller.",
   attenduDeLaReprise:
     "Cliquez sur « Reprendre la mise à jour », puis attendez que l'application s'affiche.",
   boutonMettreAJour: "Mettre à jour l'application",

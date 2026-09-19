@@ -21,6 +21,7 @@ import { STORAGE_ERROR_CODES as S } from "../vm/storage-errors.mjs";
 import { CODE_PHRASE_FAIBLE, LONGUEUR_MINIMALE_PHRASE } from "./politique-de-phrase.mjs";
 import { CODES_REFUS_COQUILLE as C } from "./refus-de-coquille.mjs";
 import { CODES_DU_DEPHASAGE, conduitesDuDephasage } from "./conduites-du-dephasage.mjs";
+import { conduitesDeLInstallation } from "./conduites-de-l-installation.mjs";
 
 const E = ENVELOPPE_ERROR_CODES;
 const D = DERIVATION_ERROR_CODES;
@@ -87,6 +88,7 @@ export const CODES_DU_CHEMIN = Object.freeze({
   cycle: Object.freeze([
     C.etapeHorsOrdre,
     C.applicationAbsente,
+    C.installationInachevee,
     ...CODES_DU_DEPHASAGE,
     C.gesteEnCours,
     C.volumeVerrouille,
@@ -125,6 +127,7 @@ export const CODES_DU_CHEMIN = Object.freeze({
   ]),
   installationInterrompue: Object.freeze([
     C.volumeApplicatifSansManifeste,
+    C.installationInachevee,
     S.creationNonConfirmee,
     C.gesteRompu,
   ]),
@@ -466,11 +469,7 @@ const TABLE = Object.freeze({
     "Une opération longue est déjà en cours (démarrage, sauvegarde ou restauration). Attendez " +
       "qu'elle se termine, puis recommencez.",
   ],
-  [C.volumeApplicatifSansManifeste]: [
-    K.recommencer,
-    "Une installation précédente a été interrompue avant la fin. Rien n'a été écrasé. Si le bouton " +
-      "« Reprendre l'installation » apparaît, utilisez-le.",
-  ],
+  ...conduitesDeLInstallation(K),
   [C.applicationNonDemarree]: [
     K.recommencer,
     "L'application s'est arrêtée. Cliquez de nouveau sur « Démarrer l'application ».",
