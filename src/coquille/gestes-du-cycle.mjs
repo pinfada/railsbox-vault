@@ -265,8 +265,12 @@ async function reprendre(contexte) {
     dire("cycle:reprise-aboutie");
     return await demarrer(contexte);
   } catch (erreur) {
-    rapport.application = { demarree: false, code: erreur?.code ?? null };
-    publier();
+    // Une reprise refusée PAR L'ORDRE — l'application tourne déjà — ne dit rien de l'application :
+    // la réponse du démarrage qui la fait tourner reste celle que la page lit (#197).
+    if (erreur?.code !== CODES_REFUS_COQUILLE.etapeHorsOrdre) {
+      rapport.application = { demarree: false, code: erreur?.code ?? null };
+      publier();
+    }
     dire(`cycle:reprise-refusee:${erreur?.code ?? "inconnu"}`);
     return { reprise: false, code: erreur?.code ?? null };
   }
