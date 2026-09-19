@@ -111,23 +111,6 @@ const HORS_PERIMETRE = [
  */
 const SOUS_SURVEILLANCE = [
   {
-    fichier: "public/coquille/parcours-de-la-page.mjs",
-    lignes: 745,
-    motif:
-      "#239 et sa recette QA (19/09/2026) le font passer de 635 à 716 lignes : l'accueil, les " +
-      "indices de la progression, le retour à l'application, l'étape 9 facultative, la phrase " +
-      "oubliée hors de la visite, l'application arrêtée par une sauvegarde, l'avertissement de révocation selon le moyen de la séance. Ce module ne décide rien " +
-      "(tout est dans `parcours.mjs`, éprouvé sans navigateur) ; ce qui reste est du branchement de " +
-      "gestes et d'observateurs. À scinder (observateurs d'un côté, gestes de l'autre) si une tranche " +
-      "le fait passer 750. " +
-      "La recette QA de la PR #249 (19/09/2026) y ajoute VINGT ET UNE lignes de BRANCHEMENT : la " +
-      "version affichée, « Démarrer » retiré sous un refus ou une reprise, la durée et la phase d'une " +
-      "mise à jour, la réussite qui la dit, le refus qui tient après une sauvegarde. Tout ce qui " +
-      "décide vit dans `src/coquille/accueil-de-la-mise-a-jour.mjs`, éprouvé sans navigateur. " +
-      "Sa contre-recette y ajoute HUIT lignes : la phase d'un démarrage dite dès qu'elle change, et " +
-      "la zone de l'application qui suit l'état. 745 lignes : la prochaine tranche qui y touche le scinde.",
-  },
-  {
     fichier: "src/coquille/conduites-du-parcours.mjs",
     lignes: 716,
     motif:

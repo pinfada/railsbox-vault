@@ -91,7 +91,9 @@ test("les blocs de la page sont ceux du parcours, dans l'ordre du document, et c
   assert.deepEqual(dansLeDocument, [...BLOCS]);
   assert.deepEqual(Object.keys(LIBELLES_DES_BLOCS).sort(), [...BLOCS].sort());
   // Chaque nom cité entre guillemets est un texte du document, ou un nom que la page lui donne.
-  const branchement = await lire("public/coquille/parcours-de-la-page.mjs");
+  const branchement =
+    (await lire("public/coquille/parcours-de-la-page.mjs")) +
+    (await lire("public/coquille/observateurs-du-parcours.mjs"));
   const pageSansBlancs = page.replace(/\s+/g, " ");
   for (const [bloc, libelles] of Object.entries(LIBELLES_DES_BLOCS)) {
     for (const libelle of libelles) {
