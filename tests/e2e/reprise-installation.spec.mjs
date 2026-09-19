@@ -97,7 +97,10 @@ test("#197 : la graine refusée, puis le CLIC sur « Reprendre l'installation »
   });
   const demarree = (await releve(page)).application;
   expect(demarree.demarree).toBe(true);
-  expect(demarree.installation.installee, "la reprise a RÉINSTALLÉ").toBe(true);
+  // C'est la REPRISE qui a réinstallé ; le démarrage qu'elle enchaîne trouve donc l'application en
+  // place — `installee: false` est ici la preuve que le versement a abouti avant le boot.
+  expect(demarree.installation.installee).toBe(false);
+  expect(demarree.bootMs, "Rails a booté").toBeGreaterThan(0);
   await expect(page.locator("#reprendre-l-installation")).toBeHidden();
 
   // --- 3. La SECONDE garde d'ordre : pas de reprise sous une application qui tourne ---------------
