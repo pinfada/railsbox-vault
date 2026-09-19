@@ -769,6 +769,10 @@ faire.
   Rien n'a été démarré ni modifié. Rouvrez ce coffre plus tard, ou depuis une adresse qui sert la
   version récente. Vous pouvez aussi en faire une sauvegarde : elle se fait sans démarrer
   l'application.
+- Une mise à jour de l'application a commencé sur ce coffre et n'a pas pu se terminer. Elle ne peut
+  reprendre qu'avec la version visée ou une plus récente, que cette adresse ne sert pas. Rien n'a
+  été démarré ni modifié. Rouvrez ce coffre plus tard, ou depuis une adresse qui sert cette version.
+  Vous pouvez aussi en faire une sauvegarde : elle se fait sans démarrer l'application.
 - Une opération longue est déjà en cours (démarrage, sauvegarde ou restauration). Attendez qu'elle
   se termine, puis recommencez.
 - Le coffre termine un enregistrement. Attendez quelques secondes, puis recommencez.
@@ -864,6 +868,15 @@ faire.
   enregistré avant la mise à jour n'a pas été perdu. Rouvrez le coffre sur l'ancienne version avec «
   Plus tard » s'il vous est proposé, ou restaurez la sauvegarde faite avant, et signalez l'échec à
   l'auteur de l'application.
+- L'application n'a pas été lancée : une indication sur l'état de vos données est illisible. Rien
+  n'a été modifié ni migré. N'effacez rien : gardez ce coffre, faites-en une sauvegarde, et demandez
+  de l'aide. Vous pouvez aussi en faire une sauvegarde : elle se fait sans démarrer l'application.
+- L'application n'a pas été lancée : cette adresse lui a transmis un réglage qu'elle n'a pas le
+  droit de fixer. Rien n'a été perdu. Rouvrez ce coffre depuis une autre adresse, ou signalez le
+  problème à qui publie cette application.
+- L'application n'a pas été lancée : elle aurait dû transformer vos données alors que vous ne l'avez
+  pas demandé. Rien n'a été perdu. Si « Mettre à jour l'application » vous est proposé, utilisez-le
+  ; sinon, signalez le problème à qui publie cette application.
 - La page demandée à l'application est trop volumineuse pour être affichée ici.
 - Ce coffre a atteint une limite de sécurité que cette version de RailsBox Vault ne sait pas encore
   renouveler. Rien n'a été perdu. Faites une sauvegarde, puis demandez de l'aide.

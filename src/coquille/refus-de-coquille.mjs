@@ -289,6 +289,17 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
   schemaDivergent: "VAULT_COQUILLE_SCHEMA_DIVERGENT",
   /** Une migration a échoué dans le guest : Rails n'est pas lancé, le marqueur n'a pas bougé. */
   migrationEchouee: "VAULT_COQUILLE_MIGRATION_ECHOUEE",
+  /**
+   * Une mise à jour commencée ne peut reprendre qu'avec une version STRICTEMENT plus récente que celle
+   * du coffre et d'un schéma au moins égal à la cible ; l'origine n'en sert pas (revue de #249, 1).
+   */
+  miseAJourInterrompue: "VAULT_COQUILLE_MISE_A_JOUR_INTERROMPUE",
+  /** Un marqueur de schéma du guest n'est pas un entier de quatorze chiffres au plus (revue de #249, 3). */
+  marqueurDeSchemaInvalide: "VAULT_COQUILLE_MARQUEUR_DE_SCHEMA_INVALIDE",
+  /** Un paramètre « vault.* » de la ligne de commande apparaît deux fois : le guest refuse (revue de #249, 2). */
+  parametreDuGuestRefuse: "VAULT_COQUILLE_PARAMETRE_DU_GUEST_REFUSE",
+  /** Le paquet dépasse les données, mais aucune migration n'a été autorisée par le geste (revue de #249, 4). */
+  migrationNonAutorisee: "VAULT_COQUILLE_MIGRATION_NON_AUTORISEE",
 });
 
 /** Les messages en français, un par code. Ils décrivent le REFUS, jamais l'état de l'appareil. */
@@ -382,6 +393,14 @@ const MESSAGES = Object.freeze({
     "Le marqueur de schéma des données ne correspond ni au manifeste ni au paquet : Rails n'est pas lancé, aucune migration n'est jouée.",
   [CODES_REFUS_COQUILLE.migrationEchouee]:
     "La migration des données a échoué dans la machine virtuelle : Rails n'est pas lancé, le marqueur de schéma n'a pas bougé.",
+  [CODES_REFUS_COQUILLE.miseAJourInterrompue]:
+    "Une mise à jour commencée ne peut reprendre qu'avec une version plus récente que celle du coffre, d'un schéma au moins égal à celui visé : cette origine n'en sert pas. Rien n'est démarré.",
+  [CODES_REFUS_COQUILLE.marqueurDeSchemaInvalide]:
+    "Un marqueur de schéma des données ou du paquet est illisible : Rails n'est pas lancé, rien n'est migré ni réécrit.",
+  [CODES_REFUS_COQUILLE.parametreDuGuestRefuse]:
+    "La ligne de commande du guest porte deux fois un paramètre réservé au Worker de confiance : Rails n'est pas lancé.",
+  [CODES_REFUS_COQUILLE.migrationNonAutorisee]:
+    "Le paquet booté dépasse le schéma des données, mais aucune mise à jour n'a été demandée : Rails n'est pas lancé, rien n'est migré.",
 });
 
 /** Tous les codes, triés. Sert au cliquet d'exhaustivité et aux épreuves. */

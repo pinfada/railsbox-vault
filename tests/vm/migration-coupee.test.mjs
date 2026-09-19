@@ -51,14 +51,22 @@ function preparer() {
 }
 
 /** Boote, guette le constat de schéma, et rend le veilleur et la VM. */
-async function booter({ manifeste, paquet, donnees, schemaAttendu, surLigne = () => {} }) {
+async function booter({
+  manifeste,
+  paquet,
+  donnees,
+  schemaAttendu,
+  migrer = false,
+  surLigne = () => {},
+}) {
   const veilleur = creerVeilleurDeSchema();
   let vm = null;
   vm = await demarrerVm({
     manifeste,
     paquet,
     donnees,
-    cmdlineEnPlus: `vault.schema=${schemaAttendu}`,
+    // `vault.migrer=1` : l'autorisation que le Worker ne pose que sous le geste (revue de #249, 4).
+    cmdlineEnPlus: `vault.schema=${schemaAttendu}${migrer ? " vault.migrer=1" : ""}`,
     surSerie: (fragment) => {
       veilleur.ingererSerie(fragment);
       surLigne(veilleur.constat(), vm);
@@ -100,6 +108,7 @@ test(
       paquet: manifeste.boot.paquet,
       donnees,
       schemaAttendu: M,
+      migrer: true,
       surLigne: (constat, vm) => {
         if (coupeA !== null || vm === null || (constat?.commises.length ?? 0) < 1) return;
         vm.emulateur.stop();
@@ -149,6 +158,7 @@ test(
       paquet: manifeste.boot.paquet,
       donnees,
       schemaAttendu: M,
+      migrer: true,
     });
     try {
       const { sante } = await c.vm.attendreSante({ delaiTotalMs: BUDGET_BOOT_MS });

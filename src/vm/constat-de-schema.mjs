@@ -13,6 +13,9 @@
 //     [schema] REFUS divergent volume=V paquet=P attendu=E
 //     [schema] REFUS anterieur volume=V paquet=P
 //     [schema] REFUS migration-echouee de=M vers=N code=C
+//     [schema] REFUS marqueur-invalide
+//     [schema] REFUS parametre-double
+//     [schema] REFUS migration-non-autorisee volume=V paquet=P
 //
 // Ce module les LIT, et il ne décide rien de la coquille : il ne connaît aucun code de refus — il
 // appartient à `src/vm/`, qui ne connaît pas la coquille. Un REFUS rejette la promesse `refus` avec
@@ -26,6 +29,9 @@ export const MOTIFS_DE_SCHEMA = Object.freeze({
   divergent: "divergent",
   anterieur: "anterieur",
   migrationEchouee: "migration-echouee",
+  marqueurInvalide: "marqueur-invalide",
+  parametreDouble: "parametre-double",
+  migrationNonAutorisee: "migration-non-autorisee",
 });
 
 /** Un schéma imprimé par le guest : des chiffres, ou `absent` quand un marqueur manque. */

@@ -4,7 +4,9 @@
 // en gzip standard (RFC 1952, déterministe : `gzip -n`, niveau fixé) et servis tels quels, en
 // `application/octet-stream`, SANS `Content-Encoding` : c'est ce module, et non le navigateur, qui
 // décompresse, par `DecompressionStream("gzip")` — livré par les trois moteurs. Un en-tête
-// `Content-Encoding` ferait décompresser DEUX fois.
+// `Content-Encoding` ferait décoder le navigateur d'abord : `DecompressionStream` recevrait l'image
+// brute et la REFUSERAIT (en-tête gzip absent) — un refus propre, mais une panne permanente chez un
+// hébergeur qui ajoute l'en-tête (revue de sécurité de la PR #249, LOW).
 //
 // Ce qui ne change pas, et c'est voulu : `octets` et `sha256` décrivent l'image DÉCOMPRESSÉE, que
 // l'appelant hache au fil de l'eau comme avant. Ce module ne garde que ce qui est propre au

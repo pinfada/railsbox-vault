@@ -86,6 +86,12 @@ function formeDeLaLigneDeCommande(cmdline) {
       return `ligne de commande du guest refusée : « ${exige} » est exigé`;
     }
   }
+  // L'espace `vault.*` appartient au Worker de confiance, qui y pose le schéma attendu et
+  // l'autorisation de migrer APRÈS ce contrôle : une ligne SERVIE qui en porte un imposerait sa valeur
+  // au guest (revue de sécurité de la PR #249, constat 2).
+  if (parametres.some((parametre) => parametre.startsWith("vault."))) {
+    return "ligne de commande du guest refusée : l'espace « vault.* » est réservé au Worker";
+  }
   // Un SEUL `root=` et un SEUL `init=` : le noyau retient le dernier, et deux valeurs laisseraient
   // passer celle qui compte derrière celle qu'on contrôle.
   for (const cle of ["root=", "init="]) {

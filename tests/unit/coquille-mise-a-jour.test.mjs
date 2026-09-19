@@ -88,6 +88,11 @@ test("« Plus tard » : le PRÉCÉDENT est booté, avec le schéma attendu sur l
   assert.equal(prepare.migration, false);
   assert.equal(prepare.delaiMs, 1000);
   assert.match(prepare.cmdline, new RegExp(` vault\\.schema=${M}$`));
+  assert.doesNotMatch(
+    prepare.cmdline,
+    /vault\.migrer/,
+    "« Plus tard » n'autorise aucune migration",
+  );
 });
 
 test("le GESTE : le courant est booté, la migration annoncée, le délai doublé", async () => {
@@ -101,6 +106,8 @@ test("le GESTE : le courant est booté, la migration annoncée, le délai doubl�
   assert.equal(prepare.descripteur.paquet.nom, "p110");
   assert.equal(prepare.migration, true);
   assert.equal(prepare.delaiMs, 1000 * FACTEUR_DU_DELAI_DE_MIGRATION);
+  // L'AUTORISATION de migrer n'est posée que sous le geste (revue de #249, constat 4).
+  assert.match(prepare.cmdline, / vault\.migrer=1$/);
 });
 
 test("un refus de déphasage rend son code et la décision, sans descripteur à booter", async () => {
@@ -147,11 +154,28 @@ test("l'INTENTION n'est inscrite que sous le geste qui migre, et une seule fois"
   );
   const geste = { migration: true, manifeste: avant, descripteur: descripteur() };
   assert.equal(await inscrireLIntention({ nom: "application", prepare: geste, inscrire }), true);
-  assert.equal(ecrits[0].app.migration, N);
+  assert.deepEqual(ecrits[0].app.migration, { version: "1.1.0", schema: N });
   assert.equal(ecrits[0].app.schema, M, "l'intention ne déplace pas le constat");
   const deja = { ...geste, manifeste: ecrits[0] };
   assert.equal(await inscrireLIntention({ nom: "application", prepare: deja, inscrire }), false);
   assert.equal(ecrits.length, 1);
+});
+
+test("l'intention d'un coffre de T1 inscrit aussi le schéma DÉDUIT (revue de #249, constat 5)", async () => {
+  const ecrits = [];
+  const prepare = {
+    migration: true,
+    schemaDeduit: M,
+    manifeste: manifeste({ id: "ref", version: "1.0.0" }),
+    descripteur: descripteur(),
+  };
+  await inscrireLIntention({
+    nom: "application",
+    prepare,
+    inscrire: async (nom, m) => ecrits.push(m),
+  });
+  assert.equal(ecrits[0].app.schema, M);
+  assert.deepEqual(ecrits[0].app.migration, { version: "1.1.0", schema: N });
 });
 
 test("le manifeste SUIT une migration jouée : version et schéma, intention effacée", async () => {
@@ -159,7 +183,7 @@ test("le manifeste SUIT une migration jouée : version et schéma, intention eff
   const avant = parseManifest(
     serializeManifest({
       ...manifeste({ id: "ref", version: "1.0.0", schema: M }),
-      app: { id: "ref", version: "1.0.0", schema: M, migration: N },
+      app: { id: "ref", version: "1.0.0", schema: M, migration: { version: "1.1.0", schema: N } },
     }),
   );
   const suivi = await suivreLeConstat({
@@ -222,6 +246,15 @@ test("les refus du GUEST reçoivent leur code de coquille ; une panne n'en reço
   assert.equal(codeDuRefusDuGuest({ motifDeSchema: "anterieur" }), C.schemaDivergent);
   assert.equal(codeDuRefusDuGuest({ motifDeSchema: "divergent" }), C.schemaDivergent);
   assert.equal(codeDuRefusDuGuest({ motifDeSchema: "migration-echouee" }), C.migrationEchouee);
+  assert.equal(
+    codeDuRefusDuGuest({ motifDeSchema: "marqueur-invalide" }),
+    C.marqueurDeSchemaInvalide,
+  );
+  assert.equal(codeDuRefusDuGuest({ motifDeSchema: "parametre-double" }), C.parametreDuGuestRefuse);
+  assert.equal(
+    codeDuRefusDuGuest({ motifDeSchema: "migration-non-autorisee" }),
+    C.migrationNonAutorisee,
+  );
   assert.equal(codeDuRefusDuGuest(new Error("panne")), null);
 });
 

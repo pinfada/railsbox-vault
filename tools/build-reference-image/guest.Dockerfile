@@ -254,7 +254,13 @@ RUN set -eu; \
 # les données et suit leurs migrations, et dans le PAQUET (/app/db/.vault-schema), où il dit le
 # schéma que ce code attend. `schema-du-volume.sh` les compare au boot, avant Rails.
 ARG SCHEMA_DE_L_APPLICATION=inconnu
+# Le schéma est VALIDÉ ici aussi (revue de sécurité de la PR #249, constat 3) : quatorze chiffres au
+# plus, sans zéro de tête — la forme que le guest compare en `dash` sans déborder.
 RUN set -eu; \
+    case "$SCHEMA_DE_L_APPLICATION" in \
+      '' | *[!0-9]* | 0?*) echo "REFUS : schéma invalide : $SCHEMA_DE_L_APPLICATION" >&2; exit 1 ;; \
+    esac; \
+    test "${#SCHEMA_DE_L_APPLICATION}" -le 14; \
     mv /app/var /graine; \
     mkdir -p /app/var /app/log /app/tmp/pids; \
     printf '%s\n' "$SCHEMA_DE_L_APPLICATION" > /graine/.vault-schema; \
