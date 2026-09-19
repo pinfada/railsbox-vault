@@ -670,8 +670,9 @@ poste de développement, origine en boucle locale, un seul ouvrier) :
 1.0.0 → 1.1.0 **215,9 s** du clic à l'application ; « Plus tard » (démarrage de la 1.0.0, boot à
 froid, disque système retéléchargé) **163 s** ; installation 137,5 s. L'accueil annonce donc une
 durée par chemin : « environ trois à quatre minutes » pour la mise à jour (165 à 216 s mesurés), «
-environ trois minutes » pour « Plus tard » (`DUREE_DE_LA_MISE_A_JOUR`, `DUREE_DE_PLUS_TARD` dans
-`src/coquille/textes-du-parcours.mjs`).
+jusqu'à environ trois minutes » pour « Plus tard » (`DUREE_DE_LA_MISE_A_JOUR`, `DUREE_DE_PLUS_TARD`
+dans `src/coquille/textes-du-parcours.mjs`) — une borne HAUTE : la contre-recette a mesuré 14 s
+quand un instantané de la version actuelle existe, ce que la page ne sait pas sans coût.
 
 **En boucle locale, gzip ne fait pas gagner de temps à la réouverture** : le transfert y est presque
 gratuit, et la décompression coûte ≈ 1,7 s de plus. Le gain est dans les OCTETS (522 → 176,9 Mio, ÷

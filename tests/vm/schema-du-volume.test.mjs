@@ -55,7 +55,8 @@ const CAS = [
     I: null,
     cmd: `vault.schema=${M} vault.migrer=1`,
     sortie: 0,
-    ligne: new RegExp(`migration jouee de=${M} vers=${N}`),
+    // La ligne qui ouvre la phase « données » précède Rails (contre-recette QA de #249, 1).
+    ligne: new RegExp(`migration commencee de=${M} vers=${N}\\n[\\s\\S]*migration jouee de=${M}`),
     apres: { V: N, I: null },
     rails: true,
   },

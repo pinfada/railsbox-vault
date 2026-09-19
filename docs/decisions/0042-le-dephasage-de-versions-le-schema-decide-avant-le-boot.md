@@ -103,9 +103,10 @@ neuf étapes ne change pas.
 
 ### 4. La rétention 1
 
-Le descripteur v2 porte, facultatif, `precedent : { application { version, schema }, paquet { … } }`
-: le paquet PRÉCÉDENT sous son empreinte. Il ne peut être ni de la même version ni plus récent que
-le courant. `npm run image:build` le refabrique depuis la révision git que `sources.json` épingle
+Le descripteur v2 porte, facultatif,
+`precedent : { application { id, version, schema }, paquet { … } }` : le paquet PRÉCÉDENT sous son
+empreinte. Il ne peut être ni de la même version ni plus récent que le courant.
+`npm run image:build` le refabrique depuis la révision git que `sources.json` épingle
 (`paquetPrecedent.ref`), par l'outillage COURANT — le même chemin qu'une application extérieure — ;
 `app:paquet --precedent` écrit `paquet-precedent.json`, et une fabrication ne retire jamais les
 images d'une autre version. Sa graine est gardée : elle fait naître un coffre de cette version pour
@@ -237,11 +238,18 @@ décision ne disait pas à la personne, et un outil qui fabriquait un descripteu
   jamais `APPLICATION_NON_SERVIE`, qui disait faux : l'origine sert ce qu'il faut. « Démarrer »
   n'est d'ailleurs plus offert sous la reprise seule ni sous un refus (Q7).
 - **Une durée par chemin, et la phase** (Q2) : « environ trois à quatre minutes » pour la mise à
-  jour, « environ trois minutes » pour « Plus tard », dites partout de la même façon ; la phase
-  (téléchargement, démarrage, mise à jour des données) voyage dans le BATTEMENT du Worker, déjà émis
-  toutes les cinq secondes — aucun type de message neuf. Elle vient de signaux qui existaient : le
-  début du démarrage, le crochet `avantLeBoot`, et les lignes `[schema] rails` que le guest imprime
-  pendant `db:migrate` (`src/vm/phase-du-boot.mjs`).
+  jour, « jusqu'à environ trois minutes » pour « Plus tard » (borne haute : un instantané de la
+  version actuelle la ramène à quelques secondes, et la page ne le sait pas sans coût), dites
+  partout de la même façon ; la phase (téléchargement, démarrage, mise à jour des données) voyage
+  dans le BATTEMENT du Worker — aucun type de message neuf. Elle vient du début du démarrage, du
+  crochet `avantLeBoot`, et de la ligne `[schema] migration commencee` que le guest imprime AVANT de
+  charger Rails pour `db:migrate`, refermée par `[schema] migration jouee`
+  (`src/vm/phase-du-boot.mjs`). **Contre-recette du 19/09** : la première version s'ouvrait sur les
+  lignes `[schema] rails`, que Rails n'imprime qu'une fois chargé, et se refermait dans la seconde —
+  la phase n'était jamais vue. La phase « données » n'est acceptée que sous la migration autorisée
+  par le Worker (une ligne forgée ne l'ouvre pas), et un changement de phase part tout de suite dans
+  un battement de plus (sondé toutes les 500 ms), que la page affiche à la seconde : moins de trois
+  secondes en tout.
 - **La réussite se dit là où la personne regarde, et la version est toujours affichée** (Q3).
 - **Le précédent porte l'`id` de son application, et la coquille l'exige égal à celui du courant**
   (§ 4, Q4) ; `image:manifest` écarte, en le disant, un précédent d'une autre application ou non

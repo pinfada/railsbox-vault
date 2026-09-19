@@ -202,6 +202,10 @@ test("REPRISE SEULE (recette QA de #249, Q1 et Q8) : son texte, son bouton, et �
   const constat = await ouvrirSur(page, { servi: descripteur(), app });
   expect(constat).toMatchObject({ issue: "mettre-a-jour", reprise: true, plusTard: false });
   await expect(page.locator("#mise-a-jour-texte")).toHaveText(MESSAGES.miseAJourAReprendre);
+  // La zone de l'application nomme le SEUL bouton qui la démarrera (contre-recette de #249, 2).
+  await expect(page.locator("#cycle-description")).toHaveText(
+    MESSAGES.applicationEnAttenteDeLaReprise,
+  );
   await expect(page.locator("#mettre-a-jour-l-application")).toHaveText("Reprendre la mise à jour");
   await expect(page.locator("#plus-tard")).toBeHidden();
   await expect(page.locator("#mise-a-jour-plus-tard-texte")).toHaveText(
@@ -220,6 +224,35 @@ test("REPRISE SEULE (recette QA de #249, Q1 et Q8) : son texte, son bouton, et �
   await expect(page.locator("#parcours-refus")).toContainText("reprenez la mise à jour");
   expect((await releve(page)).application.bootMs, "aucun boot").toBeUndefined();
   expect(await etatDuVolumeApplicatif(page), "aucun octet du volume écrit").toEqual(avant);
+});
+
+test("CONTRE-RECETTE 1 : un changement de phase s'affiche en moins de trois secondes", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const app = { id: "reference-essai", version: "1.0.0", schema: M };
+  await ouvrirSur(page, { servi: descripteur(), app });
+  // Le démarrage d'une mise à jour, SIMULÉ : aucune machine virtuelle ne tourne ici. Le relevé que
+  // la page lit porte le chemin et la phase ; la ligne du cycle ouvre la progression.
+  const poser = (phase) =>
+    page.evaluate((valeur) => {
+      const noeud = document.querySelector("#coquille-rapport");
+      const rapport = JSON.parse(noeud.textContent);
+      rapport.miseAJourDemandee = true;
+      rapport.mesures.battements.phase = valeur;
+      noeud.textContent = JSON.stringify(rapport);
+    }, phase);
+  await poser("telechargement");
+  await page.locator("#cycle-etat").evaluate((noeud) => {
+    noeud.textContent = "cycle:demarrage-en-cours";
+  });
+  await expect(page.locator("#parcours-attente")).toContainText(MESSAGES.phaseTelechargement);
+  await poser("donnees");
+  const debut = Date.now();
+  await expect(page.locator("#parcours-attente")).toContainText(MESSAGES.phaseDonnees, {
+    timeout: 3_000,
+  });
+  expect(Date.now() - debut, "délai d'affichage d'une phase").toBeLessThan(3_000);
 });
 
 for (const [titre, app, servi, code, conduite] of [
@@ -265,6 +298,10 @@ for (const [titre, app, servi, code, conduite] of [
     await expect(page.locator("#mise-a-jour")).toBeHidden();
     await expect(page.locator("#parcours-refus")).toContainText(conduite);
     await expect(page.locator("#parcours-refus")).toContainText("sauvegarde");
+    // Aucun bouton absent n'est nommé par la zone de l'application (contre-recette de #249, 2).
+    await expect(page.locator("#cycle-description")).toHaveText(
+      MESSAGES.applicationEnAttenteSousUnRefus,
+    );
     const avant = await etatDuVolumeApplicatif(page);
     expect(
       avant.map(({ nom }) => nom),

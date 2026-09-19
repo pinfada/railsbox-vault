@@ -75,17 +75,24 @@ const QUELQUES_SECONDES_DE_VERROUILLAGE = "Le verrouillage prend quelques second
  * Les DURÉES de la mise à jour, une par chemin (recette QA de la PR #249, Q2), fondées sur les mesures
  * publiées dans `docs/quality-attributes.md` : la mise à jour 1.0.0 → 1.1.0 a pris 165 à 216 s,
  * « Plus tard » 160 à 163 s. Le second est long parce que le disque de l'application est retéléchargé
- * en entier (#247) et que l'application démarre à froid.
+ * en entier (#247) et que l'application démarre à froid — sauf si un instantané de la version
+ * actuelle existe (mesuré 14 s par la contre-recette) : la page ne le sait pas sans coût, d'où la
+ * borne HAUTE annoncée (contre-recette QA de la PR #249, défaut 4).
  */
 export const DUREE_DE_LA_MISE_A_JOUR = "environ trois à quatre minutes";
-export const DUREE_DE_PLUS_TARD = "environ trois minutes";
+export const DUREE_DE_PLUS_TARD = "jusqu'à environ trois minutes";
 
 /** Ce que l'écran annonce quand une mise à jour est proposée ou à reprendre (« Durée : … »). */
 export const ATTENTE_DE_LA_MISE_A_JOUR =
   `La mise à jour prend ${DUREE_DE_LA_MISE_A_JOUR} : l'application est téléchargée, démarrée, puis ` +
   "vos données sont mises à jour ; la progression dit l'étape en cours. Garder votre version " +
-  `actuelle avec « Plus tard » prend ${DUREE_DE_PLUS_TARD} : le disque de l'application (environ ` +
-  "200 Mio) est retéléchargé, puis l'application démarre à froid.";
+  `actuelle avec « Plus tard » peut prendre ${DUREE_DE_PLUS_TARD} : l'application (environ 200 ` +
+  "Mo) est téléchargée de nouveau, puis elle redémarre entièrement.";
+
+/** Sous la REPRISE seule, « Plus tard » n'existe pas : la « Durée » n'en parle pas (défaut 6). */
+export const ATTENTE_DE_LA_REPRISE =
+  `La reprise de la mise à jour prend ${DUREE_DE_LA_MISE_A_JOUR} : l'application est téléchargée, ` +
+  "démarrée, puis la mise à jour de vos données se termine ; la progression dit l'étape en cours.";
 
 /**
  * La limite de Firefox, dite AVANT toute attente (revue de la PR #213, constat 9 ; ADR 0038) : sous
@@ -479,6 +486,13 @@ export const MESSAGES = Object.freeze({
     "L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur « " +
     "Démarrer l'application ».",
   applicationAffichee: "L'application s'affiche ci-dessous.",
+  // La zone de l'application ne nomme jamais un bouton absent (contre-recette QA de #249, 2).
+  applicationEnAttenteDeLaReprise:
+    "L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur « " +
+    "Reprendre la mise à jour ».",
+  applicationEnAttenteSousUnRefus:
+    "L'application ne peut pas démarrer à cette adresse : le message affiché sur cette page dit " +
+    "pourquoi, et ce que vous pouvez faire.",
   demarrageEnCours: (secondes, vie) =>
     `Démarrage en cours depuis ${secondes} seconde(s), sur environ deux minutes. ${vie}`,
   signesDeVie: (nombre) => `Le coffre travaille : ${nombre} signe(s) de vie reçu(s).`,
@@ -509,8 +523,8 @@ export const MESSAGES = Object.freeze({
     "Rien ne se fait sans vous : avant de mettre à jour, faites une sauvegarde — si quelque chose " +
     "se passait mal, elle rouvrira votre coffre tel qu'il est aujourd'hui.",
   miseAJourPlusTard:
-    "« Plus tard » garde votre version actuelle : « Démarrer l'application » l'ouvre, en " +
-    `${DUREE_DE_PLUS_TARD}, et la mise à jour vous sera proposée à la prochaine ouverture.`,
+    "« Plus tard » garde votre version actuelle : « Démarrer l'application » l'ouvre (comptez " +
+    `${DUREE_DE_PLUS_TARD}), et la mise à jour vous sera proposée à la prochaine ouverture.`,
   // La REPRISE seule (recette QA de la PR #249, Q1 et Q8) : ce qui est vrai, et le seul geste utile.
   miseAJourAReprendre:
     "Une mise à jour de votre application a été commencée et n'est pas terminée. Vos données sont " +
@@ -521,10 +535,13 @@ export const MESSAGES = Object.freeze({
     `l'application ou une plus récente. La reprise prend ${DUREE_DE_LA_MISE_A_JOUR} ; ne fermez ` +
     "pas l'onglet.",
   boutonReprendreLaMiseAJour: "Reprendre la mise à jour",
+  // Les deux « Durée » de l'accueil, relues avec le reste (contre-recette QA de #249, 5 et 6).
+  dureeDeLaMiseAJour: ATTENTE_DE_LA_MISE_A_JOUR,
+  dureeDeLaReprise: ATTENTE_DE_LA_REPRISE,
   // « Ce que vous avez à faire » quand « Démarrer » n'est pas un geste possible (Q7, Q1).
   attenduSousUnRefus:
-    "L'application ne peut pas démarrer à cette adresse : lisez le message ci-dessus. Votre coffre " +
-    "reste intact, et vous pouvez le sauvegarder ou le verrouiller.",
+    "L'application ne peut pas démarrer à cette adresse : lisez le message affiché sur cette page. " +
+    "Votre coffre reste intact, et vous pouvez le sauvegarder ou le verrouiller.",
   attenduDeLaReprise:
     "Cliquez sur « Reprendre la mise à jour », puis attendez que l'application s'affiche.",
   boutonMettreAJour: "Mettre à jour l'application",
@@ -543,8 +560,8 @@ export const MESSAGES = Object.freeze({
   miseAJourEnCoursDepuis: (secondes, phase) =>
     `Mise à jour en cours depuis ${secondes} seconde(s), sur ${DUREE_DE_LA_MISE_A_JOUR}. ${phase}`,
   plusTardEnCoursDepuis: (secondes, phase) =>
-    `Démarrage de votre version actuelle depuis ${secondes} seconde(s), sur ${DUREE_DE_PLUS_TARD}. ` +
-    phase,
+    `Démarrage de votre version actuelle depuis ${secondes} seconde(s) ; comptez ` +
+    `${DUREE_DE_PLUS_TARD}. ${phase}`,
   phaseTelechargement: "Étape en cours : téléchargement de l'application.",
   phaseDemarrage: "Étape en cours : démarrage de l'application.",
   phaseDonnees: "Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.",

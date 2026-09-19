@@ -9,6 +9,7 @@
 //     [schema] volume=M paquet=N attendu=E intention=I
 //     [schema] rails : == 20260919000001 AjouterUneNote: migrated (0.0213s)
 //     [schema] migration aucune schema=N
+//     [schema] migration commencee de=M vers=N
 //     [schema] migration jouee de=M vers=N ms=D
 //     [schema] REFUS divergent volume=V paquet=P attendu=E
 //     [schema] REFUS anterieur volume=V paquet=P
@@ -22,7 +23,7 @@
 // son motif (`motifDeSchema`), pour que le boot n'attende pas cinq minutes une santé que Rails, non
 // lancé, ne rendra jamais ; c'est l'appelant qui traduit le motif en code.
 
-import { phaseDeLaLigne, poserLaPhase } from "./phase-du-boot.mjs";
+import { appliquerLaLigne } from "./phase-du-boot.mjs";
 
 const PREFIXE = "[schema] ";
 
@@ -110,6 +111,10 @@ export function lireUneLigne(constat, ligne) {
     return { constat: { ...courant, refus: motif, ...pairesUtiles(paires) }, refus: motif };
   }
   const { paires, libres } = lirePaires([tete, ...reste]);
+  // « migration commencee » n'est pas un constat : elle ouvre la phase affichée, et rien d'autre
+  // (contre-recette QA de #249, 1) — une migration coupée après elle reste « non dite ».
+  if (libres[0] === "migration" && libres[1] === "commencee")
+    return { constat: courant, refus: null };
   if (libres[0] === "migration") {
     return { constat: { ...courant, migration: migrationDite(libres, paires) }, refus: null };
   }
@@ -135,8 +140,7 @@ export function creerVeilleurDeSchema() {
   refus.catch(() => {});
   const lire = (ligne) => {
     // La PHASE que la page affiche (QA de #249, Q2) : les données se mettent à jour, ou c'est fini.
-    const phase = phaseDeLaLigne(ligne);
-    if (phase !== null) poserLaPhase(phase);
+    appliquerLaLigne(ligne);
     const lu = lireUneLigne(constat, ligne);
     constat = lu.constat;
     if (lu.refus === null) return;

@@ -64,6 +64,9 @@ const SECTIONS = ["deverrouillage", "feuille", "cycle", "portabilite"];
 /** Cadence de la progression annoncée pendant un démarrage : assez rare pour un lecteur d'écran. */
 const ANNONCE_DE_PROGRESSION_MS = 10_000;
 
+/** Cadence à laquelle la page regarde si la phase d'un démarrage a changé (contre-recette de #249). */
+const SONDE_DE_LA_PHASE_MS = 1_000;
+
 /** Entrée dans un champ vaut le clic sur le bouton qu'il sert (revue de la PR #213, constat 12). */
 const ENTREE_VAUT = Object.freeze({
   "saisie-phrase": ["ouvrir-par-phrase"],
@@ -388,7 +391,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     const demarree =
       lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement === "application-demarree" &&
       !etat.applicationArretee;
-    direLEspaceDeTravail(demarree);
+    direLEspaceDeTravail(demarree, rapport);
     const travailPret = !vueComplete && ECRANS_DE_L_APPLICATION.includes(ecranId) && demarree;
     const modeTravail = String(travailPret);
     if (doc.documentElement.dataset.travailPret !== modeTravail) {
@@ -425,7 +428,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
   }
 
   /** Le cadre replié dit qu'il attend son démarrage, au lieu d'un rectangle blanc (#242, défaut 11). */
-  function direLEspaceDeTravail(demarree) {
+  function direLEspaceDeTravail(demarree, rapport) {
     const espace = noeud("cycle-description")?.closest("[data-bloc]");
     const valeur = demarree ? "demarree" : "attente";
     if (espace !== null && espace !== undefined && espace.dataset.application !== valeur) {
@@ -433,7 +436,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     }
     dire(
       "cycle-description",
-      demarree ? MESSAGES.applicationAffichee : MESSAGES.applicationEnAttente,
+      demarree ? MESSAGES.applicationAffichee : accueil.texteDeLEspaceEnAttente(rapport),
     );
   }
 
@@ -594,21 +597,26 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (etat.demarrage !== null) return;
     const recus = () => lireJson("coquille-rapport").mesures?.battements?.recus ?? 0;
     const depart = { instant: performance.now(), battements: recus() };
+    const dite = { phase: undefined, a: 0 };
     const annoncer = () => {
       const rapport = lireJson("coquille-rapport");
+      // Un CHANGEMENT de phase se dit tout de suite ; sinon, toutes les dix secondes (contre-recette, 1).
+      const phase = rapport.mesures?.battements?.phase ?? null;
+      if (phase === dite.phase && performance.now() - dite.a < ANNONCE_DE_PROGRESSION_MS) return;
+      Object.assign(dite, { phase, a: performance.now() });
       const ecouleMs = performance.now() - depart.instant;
       // UNE durée par chemin, et la PHASE du dernier battement (recette QA de la PR #249, Q2).
       const chemin = accueil.progressionDuChemin({
         chemin: accueil.cheminDuDemarrage(rapport),
         secondes: Math.max(0, Math.round(ecouleMs / 1000)),
-        phase: rapport.mesures?.battements?.phase ?? null,
+        phase,
       });
       const signesDeVie = recus() - depart.battements;
       dire("parcours-attente", chemin ?? progressionDuDemarrage({ ecouleMs, signesDeVie }));
     };
     noeud("parcours-progression").hidden = false;
     annoncer();
-    etat.demarrage = setInterval(annoncer, ANNONCE_DE_PROGRESSION_MS);
+    etat.demarrage = setInterval(annoncer, SONDE_DE_LA_PHASE_MS);
   }
 
   function arreterLaProgression() {

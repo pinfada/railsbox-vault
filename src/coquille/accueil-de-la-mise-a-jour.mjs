@@ -6,7 +6,11 @@
 // rien : le Worker redécide à chaque démarrage. Pur, comme le reste du répertoire : ni DOM, ni horloge.
 
 import { ISSUES_DU_DEPHASAGE } from "./dephasage.mjs";
-import { ATTENTE_DE_LA_MISE_A_JOUR, MESSAGES } from "./textes-du-parcours.mjs";
+import {
+  ATTENTE_DE_LA_MISE_A_JOUR,
+  ATTENTE_DE_LA_REPRISE,
+  MESSAGES,
+} from "./textes-du-parcours.mjs";
 
 /** Les chemins d'un démarrage, chacun avec SA durée annoncée (Q2). */
 export const CHEMINS_DU_DEMARRAGE = Object.freeze({
@@ -67,7 +71,8 @@ export function progressionDuChemin({ chemin, secondes, phase }) {
 
 /** La « Durée » de l'écran quand une mise à jour est proposée ou à reprendre ; sinon `null`. */
 export function attenteDuDephasage(dephasage) {
-  return proposee(dephasage) ? ATTENTE_DE_LA_MISE_A_JOUR : null;
+  if (!proposee(dephasage)) return null;
+  return repriseSeule(dephasage) ? ATTENTE_DE_LA_REPRISE : ATTENTE_DE_LA_MISE_A_JOUR;
 }
 
 /**
@@ -131,4 +136,16 @@ export function texteDeDemarrage(rapport) {
   return publiee?.geste === true && typeof publiee.versionServie === "string"
     ? MESSAGES.miseAJourFaite(publiee.versionServie)
     : MESSAGES.applicationDemarree;
+}
+
+/**
+ * Ce que la zone de l'application dit tant qu'elle attend : elle nomme le bouton qui la démarrera
+ * vraiment, ou — sous un refus — aucun (contre-recette QA de la PR #249, 2).
+ *
+ * @param {{ dephasage?: object | null }} rapport
+ */
+export function texteDeLEspaceEnAttente(rapport) {
+  if (refusQuiTient(rapport) !== null) return MESSAGES.applicationEnAttenteSousUnRefus;
+  if (repriseSeule(rapport?.dephasage)) return MESSAGES.applicationEnAttenteDeLaReprise;
+  return MESSAGES.applicationEnAttente;
 }

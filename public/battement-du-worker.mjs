@@ -9,6 +9,9 @@ import { TYPES_PRIVILEGIES, enveloppeDeMessage } from "/src/coquille/contrat-de-
 import { DELAI_BATTEMENT_MS } from "/src/coquille/moyens-de-deverrouillage.mjs";
 import { phaseDuBoot, poserLaPhase } from "/src/vm/phase-du-boot.mjs";
 
+/** Cadence à laquelle le Worker regarde si la phase a changé : bien sous la seconde. */
+export const SONDE_DE_PHASE_MS = 500;
+
 /**
  * Rend `enBattant(correlation, geste)` : exécute un geste LONG en battant, pour que la coquille sache
  * qu'il vit.
@@ -37,7 +40,7 @@ export function battementDuWorker({ poster, correlee }) {
   return async function enBattant(correlation, geste) {
     // La PHASE d'un démarrage (QA de #249, Q2) : chaque geste part sans phase, et n'en laisse aucune.
     poserLaPhase(null);
-    const minuterie = setInterval(() => {
+    const battre = () =>
       poster(
         enveloppeDeMessage(TYPES_PRIVILEGIES.battement, {
           ...correlee(correlation),
@@ -53,7 +56,18 @@ export function battementDuWorker({ poster, correlee }) {
           phase: phaseDuBoot(),
         }),
       );
-    }, DELAI_BATTEMENT_MS);
+    // Un CHANGEMENT de phase part tout de suite, sans attendre le battement suivant : la page le
+    // montre en moins de trois secondes (contre-recette QA de #249, 1). Le même type de message,
+    // un battement de plus ; la cadence ordinaire reste celle de `DELAI_BATTEMENT_MS`.
+    let phaseBattue = phaseDuBoot();
+    let dernierBattement = performance.now();
+    const minuterie = setInterval(() => {
+      const echu = performance.now() - dernierBattement >= DELAI_BATTEMENT_MS;
+      if (!echu && phaseDuBoot() === phaseBattue) return;
+      phaseBattue = phaseDuBoot();
+      dernierBattement = performance.now();
+      battre();
+    }, SONDE_DE_PHASE_MS);
     try {
       return await geste();
     } finally {
