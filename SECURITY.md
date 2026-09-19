@@ -1460,6 +1460,48 @@ vivent seules sur `/dev/sdb`, monté sur `/app/var`, avec les options de durabil
 - **Un paquet n'isole pas l'application du volume.** Le code du paquet s'exécute avec un accès plein
   aux données montées sur `/app/var` : le paquet décide ce que le coffre contient.
 
+## La MISE À JOUR d'une application : ce qui est décidé avant le boot (#236 T2, ADR 0042)
+
+**Ce qui est garanti**
+
+- **Aucun code ne s'exécute sur des données qui ne sont pas les siennes sans que la coquille l'ait
+  décidé AVANT le boot.** Après le déverrouillage, le Worker de confiance lit le manifeste du volume
+  et le confronte au descripteur servi : une autre application
+  (`VAULT_COQUILLE_APPLICATION_ETRANGERE`), une version servie inférieure — même à schéma égal,
+  l'attaque par retour arrière de TUF —, un schéma servi inférieur à celui des données
+  (`_ANTERIEURE`), un schéma inconnu (`SCHEMA_DU_COFFRE_INCONNU`) sont REFUSÉS : ni boot, ni
+  migration, aucun octet du volume écrit. Le démarrage redécide de lui-même ; ce que la page affiche
+  n'autorise rien.
+- **Une migration n'est jouée que sous le geste « Mettre à jour l'application ».** Sans lui, une
+  version plus récente ouvre le coffre sur SA version par le paquet précédent (rétention 1), ou
+  refuse.
+- **Une migration interrompue ne se rouvre pas avec l'ancien code.** L'intention est inscrite au
+  manifeste avant le boot qui migre, et au disque de données (`.vault-migration`, synchronisé) avant
+  la première migration : seule la REPRISE est proposée, et le guest refuse de lancer Rails sous un
+  paquet dont le schéma est inférieur à l'intention (épreuve :
+  `tests/vm/migration-coupee.test.mjs`).
+- **Le guest confronte ses marqueurs avant Rails** : des données plus récentes que le paquet booté,
+  ou qui ne disent pas ce que le manifeste attend, arrêtent le boot (`SCHEMA_DIVERGENT`), sans
+  migration.
+- **Les morceaux compressés sont bornés** : la taille transférée est exigée à l'octet, la
+  décompression est arrêtée à la taille de l'image annoncée, et l'empreinte reste celle de l'image
+  DÉCOMPRESSÉE. Ils sont servis sans `Content-Encoding` : le navigateur ne décompresse rien à la
+  place de la coquille.
+
+**Ce qui n'est PAS garanti**
+
+- **La version et le schéma sont ceux que l'origine DÉCLARE.** Sans signature de l'auteur (jalon 6,
+  qui suivra TUF 1.0.x : version monotone, `expires`, rôles), qui contrôle l'origine peut servir un
+  paquet qui ment sur son schéma. La précédence refuse un retour arrière déclaré ; elle ne détecte
+  pas un paquet ancien re-publié sous un numéro plus grand. Aucun champ `expires` n'est posé avant
+  la signature : non signé, il ne protégerait de rien.
+- **Une migration peut échouer ou être incorrecte** : c'est le code de l'auteur du paquet. La
+  sauvegarde proposée avant la mise à jour est le seul retour arrière des DONNÉES ; elle se restaure
+  sur une origine qui sert l'ancien paquet.
+- **Le manifeste est un fichier voisin réécrit en place** : une coupure pendant sa réécriture le
+  laisse illisible, et le coffre est alors refusé (`VOLUME_APPLICATIF_SANS_MANIFESTE`) sans que les
+  données soient perdues.
+
 ## L'instantané de reprise contient la RAM invitée (#65)
 
 L'[ADR 0024](docs/decisions/0024-instantane-de-reprise.md) ajoute un sixième voisin de volume,

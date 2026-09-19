@@ -177,3 +177,22 @@ de l'application. Un instantané pris sous un AUTRE paquet est écarté par le m
   système de fichiers se remplit. Les journaux sont donc sur tmpfs.
 - `db:migrate` n'est **pas** joué au boot : la graine naît migrée, et le marqueur `.vault-schema`
   qu'elle porte est ce que T2 comparera au schéma du paquet.
+
+## Note du 19/09/2026 — morceaux gzip, rétention 1, et la garde « volume neuf » (#236 T2, ADR 0042)
+
+- **Les trois morceaux voyagent en gzip** (RFC 1952), précompressés à la fabrication de façon
+  déterministe ; le descripteur porte `compression` et `transfertOctets`, et `octets`/`sha256`
+  restent ceux de l'image DÉCOMPRESSÉE. Premier démarrage : 1 034 → 177 Mio transférés. Pourquoi
+  gzip : `DecompressionStream("gzip")` est livré par Chrome 80, Firefox 113 et Safari 16.4
+  (mdn/browser-compat-data, `api/DecompressionStream.json`) ; brotli n'y est pas livré par Chrome,
+  zstd nulle part. Pourquoi pas un format maison d'extents (première rédaction de T2) : il
+  réinventait l'image creuse d'Android (`libsparse/sparse_format.h`) pour la seule graine. Le rootfs
+  servi porte désormais l'empreinte de son image dans son nom, comme le paquet et la graine.
+- **Le mode de cache ne change pas** (`no-store` pour le descripteur, `no-cache` à l'origine pour
+  `/artifacts/`) : l'argument de la section « Ce que la revue a laissé ouvert » tient, mais les
+  caches HTTP bornent des entrées de 48 à 128 Mio ; un magasin d'artefacts OPFS adressé par
+  empreinte le remplacera (hors #236).
+- **Rétention 1** : le descripteur porte le paquet `precedent`, refabriqué depuis une révision git
+  épinglée ; voir l'ADR 0042 § 4.
+- **Constat 8, fermé** : sauter les blocs nuls exige `backend.naissance === true`, posé par
+  `openOpfsVolume` ; une mutation le tient (campagne `dephasage`).

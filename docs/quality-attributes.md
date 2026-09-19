@@ -592,7 +592,8 @@ est un PAQUET servi à part (partition 2 du disque système), et le volume du co
 **Le premier démarrage transfère encore plus d'un gibioctet** : disque système (522 Mio) plus graine
 entière (512 Mio) — la recette QA du 18/09/2026 a relevé 1,06 Gio transférés. Le versement est
 creux, le TÉLÉCHARGEMENT de la graine ne l'est pas encore ; la graine creuse est renvoyée à T2
-(#241).
+(#241). **Corrigé par T2** : les trois morceaux voyagent en gzip, 177 Mio au premier démarrage
+(section suivante).
 
 **Le versement n'écrit plus que ce qui n'est pas nul.** Les 18,9 s mesurées en #101 couvraient 512
 Mio de chiffrement et d'écriture ; il en reste 0,4 Mio. Le **scellement initial** du volume (19,1 s)
@@ -622,6 +623,37 @@ dépasser le premier, et cela ne dit rien d'une incohérence.
 **Ce qui n'est PAS établi** : la comparaison avant/après **sur le même poste**. Le pic de 940 Mio
 publié plus haut vient d'une autre campagne, et l'écart dépasse ce que le seul paquet explique.
 Rejouer la mesure sur `main` est le premier geste de #238.
+
+### Ce que les morceaux GZIP et la mise à jour coûtent (#236 T2, ADR 0042)
+
+**Le transfert** — tailles des fichiers servis, relevées le 19/09/2026 sur les artefacts construits
+par `npm run image:build` (gzip déterministe, niveau 9) :
+
+| Morceau servi                   | Image (Mio) | Transféré avant T2 (Mio) | Transféré après (Mio) |
+| ------------------------------- | ----------: | -----------------------: | --------------------: |
+| rootfs                          |       385,0 |                    385,0 |             **128,4** |
+| paquet 1.1.0                    |       137,0 |                    137,0 |              **48,5** |
+| graine (base migrée, vide)      |       512,0 |                    512,0 |               **0,5** |
+| **premier démarrage** (3)       |     1 034,0 |              **1 034,0** |             **177,4** |
+| **réouverture** (rootfs+paquet) |       522,0 |                **522,0** |             **176,9** |
+| **mise à jour** (paquet seul)   |       137,0 |                    137,0 |              **48,5** |
+
+La recette QA du 18/09/2026 avait mesuré 1,06 Gio transférés au premier démarrage (#241) ; le compte
+ci-dessus est celui des octets servis. La décompression se fait en flux (`DecompressionStream`),
+hachée au fil de l'eau : l'empreinte reste celle de l'image décompressée, et le tampon du disque
+système n'est pas plus grand qu'avant (rootfs + paquet, en RAM, #238).
+
+**La réouverture par instantané** ne change pas de nature : les deux morceaux du disque système sont
+retéléchargés à chaque ouverture (le mode de cache ne change pas, ADR 0042 § « écarté » ; un magasin
+d'artefacts OPFS adressé par empreinte est le chantier qui l'évitera). Ce qui change est ce qu'elle
+transfère : 522 → 176,9 Mio.
+
+**La migration au boot**, mesurée sous Node sur l'image réelle
+(`tests/vm/migration-coupee.test.mjs`, 19/09/2026, poste de développement, épreuves VM jouées en
+parallèle) : la REPRISE d'une mise à jour coupée — Rails chargé pour `db:migrate`, une migration
+restante (`add_index`), le marqueur et le `sync` — a pris **38,5 s** avant que Rails ne soit relancé
+pour servir. Un boot qui migre charge donc Rails deux fois ; son délai est doublé
+(`FACTEUR_DU_DELAI_DE_MIGRATION`).
 
 ## Le budget de récupération est mesuré, et le plafond de charge en découle (#91)
 

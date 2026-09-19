@@ -105,6 +105,26 @@ function descripteurs() {
         disqueOctets: complet.graine.disqueOctets,
       },
     },
+    // Les MÊMES morceaux, servis BRUTS : la mesure de la réouverture avant/après gzip (#236 T2).
+    brut: {
+      ...complet,
+      ...Object.fromEntries(
+        ["rootfs", "paquet", "graine"].map((cle) => {
+          const morceau = { ...complet[cle] };
+          delete morceau.compression;
+          delete morceau.transfertOctets;
+          return [
+            cle,
+            {
+              ...morceau,
+              nom: morceau.nom
+                .replace(/.gz$/, "")
+                .replace(/^reference-rootfs-[0-9a-f]{8}.ext4$/, "reference-rootfs.ext4"),
+            },
+          ];
+        }),
+      ),
+    },
     autre: {
       ...sansPrecedent,
       application: { ...complet.application, id: "une-autre-application" },
@@ -165,6 +185,20 @@ async function demarrer(page) {
   return (await releve(page)).application;
 }
 
+/**
+ * VERROUILLE : l'instantané est capturé, le Worker terminé, la coquille rechargée — et l'on attend le
+ * document RECHARGÉ, prêt, avant de rendre la main.
+ */
+async function verrouiller(page) {
+  const rechargement = page.waitForEvent("load", { timeout: 300_000 });
+  await page.click("#verrouiller-le-coffre");
+  await rechargement;
+  await expect(page.locator("html")).toHaveAttribute("data-coquille", "prete", {
+    timeout: 120_000,
+  });
+  await attendreLEtat(page, "verrouille", 60_000);
+}
+
 /** Le constat de déphasage que la page a reçu du Worker, après le déverrouillage. */
 async function dephasage(page) {
   await expect
@@ -217,7 +251,7 @@ test("un coffre 1.0.0 se met à jour en 1.1.0 sans rien perdre ; « Plus tard »
   test.setTimeout(4_800_000);
   const erreurs = [];
   const mesures = {};
-  const { complet, seul100, autre } = descripteurs();
+  const { complet, seul100, autre, brut } = descripteurs();
   const noter = (etape, detail = {}) => chronologie.etape(etape, detail);
 
   // --- 1. Sous 1.0.0 : créer le coffre, sa feuille, installer, écrire une note et une pièce ------
@@ -259,7 +293,7 @@ test("un coffre 1.0.0 se met à jour en 1.1.0 sans rien perdre ; « Plus tard »
   await expect(page.locator("#mise-a-jour")).toBeVisible();
   await expect(page.locator("#mise-a-jour-texte")).toContainText(complet.application.version);
   await expect(page.locator("#plus-tard")).toBeVisible();
-  expect((await releve(page)).application, "rien n'a démarré à l'ouverture").toBeUndefined();
+  expect((await releve(page)).application, "rien n'a démarré à l'ouverture").toBeNull();
   await page.click("#plus-tard");
   await expect(page.locator("#mise-a-jour")).toBeHidden();
   const plusTard = await demarrer(page);
@@ -321,6 +355,32 @@ test("un coffre 1.0.0 se met à jour en 1.1.0 sans rien perdre ; « Plus tard »
     colonne: 1,
     commentaire: "(aucun commentaire)",
   });
+
+  // --- 4 bis. La RÉOUVERTURE PAR INSTANTANÉ, morceaux gzip puis bruts (amendement B du 19/09) ----
+  mesures.reouverture = {};
+  for (const [nom, descripteur] of [
+    ["gzip", complet],
+    ["brut", brut],
+  ]) {
+    await verrouiller(page);
+    await servirLeDescripteur(context, E2E_ORIGIN_COQUILLE, descripteur);
+    noter(`reouverture-par-instantane-${nom}`);
+    await ouvrirParLaPhrase(page);
+    const debut = Date.now();
+    const reprise = await demarrer(page);
+    mesures.reouverture[nom] = {
+      gesteMs: Date.now() - debut,
+      bootMs: reprise.bootMs,
+      acquisitionMs: reprise.decomposition?.acquisitionRuntimeMs ?? null,
+      instantaneUtilise: reprise.instantaneUtilise,
+      transfereOctets: ["rootfs", "paquet"].reduce(
+        (somme, cle) => somme + (descripteur[cle].transfertOctets ?? descripteur[cle].octets),
+        0,
+      ),
+    };
+  }
+  noter("reouvertures-mesurees", mesures.reouverture);
+  await servirLeDescripteur(context, E2E_ORIGIN_COQUILLE, complet);
   await page.close();
 
   // --- 5. Les REFUS, avant tout boot --------------------------------------------------------------
