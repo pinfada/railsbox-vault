@@ -7,7 +7,7 @@
 // aucun geste ne retirait un précédent pour servir une version seule. Ce module porte les trois
 // réponses : dire, refuser ce qui casserait, et retirer sur demande.
 
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 /** Les deux contrats qu'un dossier d'artefacts peut porter. */
@@ -62,6 +62,32 @@ export function retirerLePrecedent(dossier, { garder = [] } = {}) {
 }
 
 /**
+ * Le paquet COURANT devient le PRÉCÉDENT, sans rien reconstruire : ses images restent celles qui ont
+ * installé les coffres existants (une fabrication n'est pas reproductible à l'octet, #212). Un
+ * précédent déjà là est retiré d'abord — la rétention est de UN. Rend les lignes qui le disent.
+ *
+ * @param {string} dossier
+ */
+export function courantDevientPrecedent(dossier) {
+  const courant = lireContrat(dossier, CONTRATS.courant);
+  if (courant === null)
+    throw new Error("aucun paquet courant (paquet.json) à garder comme précédent");
+  const lignes =
+    lireContrat(dossier, CONTRATS.precedent) === null
+      ? []
+      : retirerLePrecedent(dossier, {
+          garder: imagesDuContrat(courant),
+        }).slice(0, 1);
+  renameSync(join(dossier, CONTRATS.courant), join(dossier, CONTRATS.precedent));
+  return [
+    ...lignes,
+    `→ ${nommer(courant)} devient le paquet précédent (${CONTRATS.precedent}), images inchangées`,
+    "→ suite : fabriquez la nouvelle version (`npm run app:paquet -- --source …`), puis " +
+      "`npm run image:manifest`.",
+  ];
+}
+
+/**
  * CONFRONTE une fabrication à ce que le dossier retient déjà, AVANT de construire quoi que ce soit.
  *
  *  - Fabriquer un PRÉCÉDENT de la même application et de la même version que le courant retirerait
@@ -83,8 +109,9 @@ export function confronterALaRetention({ dossier, role, id, version }) {
   if (role === CONTRATS.precedent) {
     throw new Error(
       `refus : ${id} ${version} est déjà le paquet COURANT — un précédent est une version ` +
-        "ANTÉRIEURE de la même application : fabriquez-le avec une version plus ancienne " +
-        "(`--version`), ou fabriquez d'abord le nouveau paquet courant.",
+        "ANTÉRIEURE de la même application. Pour que le paquet servi devienne le précédent, sans le " +
+        "reconstruire : `npm run app:paquet -- --courant-devient-precedent`, puis fabriquez la " +
+        "nouvelle version.",
     );
   }
   return {

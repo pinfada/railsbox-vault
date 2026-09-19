@@ -51,12 +51,19 @@ import { cheminExclu, fichiersRetenus } from "./exclusions-de-la-source.mjs";
 import { schemaDeLApplication } from "./schema-de-l-application.mjs";
 import {
   confronterALaRetention,
+  courantDevientPrecedent,
   imagesDuContrat,
   retirerLePrecedent,
 } from "./retention-du-precedent.mjs";
 
-/** Le geste qui retire le précédent, SEUL sur la ligne de commande (recette QA de #249, Q5). */
-export const OPTION_RETIRER_LE_PRECEDENT = "--retirer-precedent";
+/**
+ * Les deux gestes de RÉTENTION, chacun SEUL sur la ligne de commande (recette QA de #249, Q5) : aucun
+ * ne construit rien, aucun n'a besoin de Docker.
+ */
+export const GESTES_DE_RETENTION = Object.freeze({
+  "--retirer-precedent": retirerLePrecedent,
+  "--courant-devient-precedent": courantDevientPrecedent,
+});
 
 const dossierOutils = dirname(fileURLToPath(import.meta.url));
 export const RACINE_DEPOT = resolve(dossierOutils, "..", "..");
@@ -351,11 +358,10 @@ function paquetEnPlace() {
  * @param {string[]} arguments_
  */
 export async function fabriquerLePaquet(arguments_) {
-  if (arguments_.includes(OPTION_RETIRER_LE_PRECEDENT)) {
-    if (arguments_.length !== 1) {
-      throw new Error(`${OPTION_RETIRER_LE_PRECEDENT} ne se combine avec aucune autre option`);
-    }
-    for (const ligne of retirerLePrecedent(DOSSIER_ARTEFACTS)) console.log(ligne);
+  const geste = arguments_.find((argument) => Object.hasOwn(GESTES_DE_RETENTION, argument));
+  if (geste !== undefined) {
+    if (arguments_.length !== 1) throw new Error(`${geste} ne se combine avec aucune autre option`);
+    for (const ligne of GESTES_DE_RETENTION[geste](DOSSIER_ARTEFACTS)) console.log(ligne);
     return null;
   }
   const options = analyserArguments(arguments_);

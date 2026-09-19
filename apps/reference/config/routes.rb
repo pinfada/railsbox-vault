@@ -10,4 +10,6 @@ Rails.application.routes.draw do
   root to: "pages#index"
   post "/notes", to: "pages#create", as: :notes
   get "/notes/:id", to: "pages#show", as: :note
+  # Version 1.1.0 (#236 T2, recette QA de la PR #249, Q9) : la colonne « commentaire » s'ÉCRIT.
+  patch "/notes/:id", to: "pages#update"
 end

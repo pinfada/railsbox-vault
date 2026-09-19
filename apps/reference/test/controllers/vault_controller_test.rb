@@ -60,6 +60,8 @@ class VaultControllerTest < ActionDispatch::IntegrationTest
       "/vault/invariant(.:format)",
       "/",
       "/notes(.:format)",
+      "/notes/:id(.:format)",
+      # PATCH du commentaire, version 1.1.0 (recette QA de la PR #249, Q9).
       "/notes/:id(.:format)"
     ], chemins
     assert_empty chemins.grep(%r{rails/active_storage})

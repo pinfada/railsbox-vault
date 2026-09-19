@@ -100,6 +100,41 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     assert_match %r{>relu après la mise à jour</p>}, response.body
   end
 
+  test "1.1.0 (recette QA de #249, Q9) : le commentaire S'ÉCRIT par le formulaire, échappé à la relecture" do
+    post "/notes", params: { libelle: "note à commenter", authenticity_token: jeton_du_formulaire }
+    note = Record.order(:created_at).last
+    get "/notes/#{note.id}"
+    jeton = response.body[/id="formulaire-commentaire".*?name="authenticity_token" value="([^"]+)"/m, 1]
+    refute_nil jeton, "la page d'une note porte le formulaire du commentaire"
+
+    patch "/notes/#{note.id}",
+          params: { note: { commentaire: "<b>écrit</b> & relu", label: "détourné" }, authenticity_token: jeton }
+
+    assert_response :see_other
+    assert_equal "<b>écrit</b> & relu", note.reload.commentaire
+    assert_equal "note à commenter", note.label, "seul le commentaire est permis"
+    get "/notes/#{note.id}"
+    assert_match %r{>&lt;b&gt;écrit&lt;/b&gt; &amp; relu</p>}, response.body
+  end
+
+  test "1.1.0 (Q9) : un commentaire trop long est refusé, et l'invariant ne s'écrit pas" do
+    post "/notes", params: { libelle: "note bornée", authenticity_token: jeton_du_formulaire }
+    note = Record.order(:created_at).last
+    get "/notes/#{note.id}"
+    jeton = response.body[/id="formulaire-commentaire".*?name="authenticity_token" value="([^"]+)"/m, 1]
+
+    patch "/notes/#{note.id}", params: { note: { commentaire: "x" * 201 }, authenticity_token: jeton }
+
+    assert_response :unprocessable_entity
+    assert_nil note.reload.commentaire
+    Vault::Fixture.create
+    invariant = Vault::Contract.record.fetch("id")
+    get "/notes/#{invariant}"
+    jeton = response.body[/id="formulaire-commentaire".*?name="authenticity_token" value="([^"]+)"/m, 1]
+    patch "/notes/#{invariant}", params: { note: { commentaire: "non" }, authenticity_token: jeton }
+    assert_response :not_found
+  end
+
   test "une note sans pièce ne porte aucune pièce, et un champ « piece » textuel est ignoré" do
     jeton = jeton_du_formulaire
 

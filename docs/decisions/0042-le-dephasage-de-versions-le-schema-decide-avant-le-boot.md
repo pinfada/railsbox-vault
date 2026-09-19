@@ -218,3 +218,33 @@ tiennent pas contre une origine qui MENT de façon cohérente — un paquet anci
 numéro plus grand et un schéma déclaré conforme, ou des morceaux de deux publications réunis sous un
 même descripteur. Seule une signature de l'auteur, avec une version monotone et une expiration
 signées, les distinguera.
+
+## Note du 19/09/2026 — ce que la recette QA de la PR #249 a fait corriger
+
+La recette manuelle (Chrome installé, 106 captures) n'a perdu aucune donnée. Elle a montré ce que la
+décision ne disait pas à la personne, et un outil qui fabriquait un descripteur refusé :
+
+- **L'intention est inscrite APRÈS l'acquisition du disque système** (Q1). Inscrite avant le
+  téléchargement, elle faisait perdre « Plus tard » à une coupure pendant laquelle rien n'avait été
+  migré. Elle est désormais inscrite par le crochet `avantLeBoot` de `bootEtVerifier`, appelé une
+  fois le runtime acquis et ses empreintes vérifiées, juste avant l'ouverture du volume et le boot
+  qui porte `vault.migrer=1`. Une coupure avant ne change rien au coffre ; une coupure après ne
+  laisse que la reprise — la règle de sécurité de la reprise (version strictement supérieure, schéma
+  au moins égal à la cible) est inchangée.
+- **La reprise seule a son texte, son bouton et son refus** (Q1) : « Une mise à jour de votre
+  application a été commencée et n'est pas terminée… reprenez la mise à jour », le bouton «
+  Reprendre la mise à jour », et, pour « Démarrer », `VAULT_COQUILLE_MISE_A_JOUR_A_REPRENDRE` —
+  jamais `APPLICATION_NON_SERVIE`, qui disait faux : l'origine sert ce qu'il faut. « Démarrer »
+  n'est d'ailleurs plus offert sous la reprise seule ni sous un refus (Q7).
+- **Une durée par chemin, et la phase** (Q2) : « environ trois à quatre minutes » pour la mise à
+  jour, « environ trois minutes » pour « Plus tard », dites partout de la même façon ; la phase
+  (téléchargement, démarrage, mise à jour des données) voyage dans le BATTEMENT du Worker, déjà émis
+  toutes les cinq secondes — aucun type de message neuf. Elle vient de signaux qui existaient : le
+  début du démarrage, le crochet `avantLeBoot`, et les lignes `[schema] rails` que le guest imprime
+  pendant `db:migrate` (`src/vm/phase-du-boot.mjs`).
+- **La réussite se dit là où la personne regarde, et la version est toujours affichée** (Q3).
+- **Le précédent porte l'`id` de son application, et la coquille l'exige égal à celui du courant**
+  (§ 4, Q4) ; `image:manifest` écarte, en le disant, un précédent d'une autre application ou non
+  strictement antérieur, et `app:paquet` gagne deux gestes sans construction :
+  `--courant-devient-precedent` (le paquet servi, avec les images EXACTES qui ont installé les
+  coffres, devient le précédent) et `--retirer-precedent` (Q5).
