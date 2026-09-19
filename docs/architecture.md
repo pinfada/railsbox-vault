@@ -1138,8 +1138,21 @@ lui permet et lui interdit est écrit dans l'ADR 0023.
    (P1, ADR 0038), sauvegarder, restaurer et révoquer sont des gestes de la coquille (P2a, ADR
    0039), le parcours est ordonné en neuf étapes (P2, ADR 0040) et mis en forme (P3,
    `docs/direction-visuelle.md`). Un second code de récupération ouvre désormais le coffre :
-   l'ouverture par code essaie chaque emplacement de type 4 (#214, PR #219 en recette). Reste la
-   relecture par une personne non technique, qui ferme l'épique.
+   l'ouverture par code essaie chaque emplacement de type 4 (#214, PR #219 en recette). **Depuis,
+   #239 est clos (PR #244, 19/09/2026 00 h 14 UTC)** : l'accueil d'un coffre installé est l'écran «
+   travailler » plutôt que la seule visite guidée, la preuve qu'une feuille de récupération a ouvert
+   vit dans le secteur 1 du volume `coquille`, constatée par le Worker de confiance et jamais
+   affirmée par la page, et l'étape 9 de la visite (révocation d'urgence) devient facultative («
+   Terminer sans révoquer »). **#236 (installer une application Rails extérieure) est livré en deux
+   tranches** : T1 (PR #237, 18/09/2026 19 h 46 UTC, ADR 0041) sépare le code — paquet applicatif
+   immuable, partition 2 d'un `hda` composé avec le rootfs — des données, sur `hdb` ; T2 (PR #249,
+   19/09/2026 19 h 00 UTC, ADR 0042) décide du déphasage de versions avant tout boot (schéma,
+   précédence SemVer), refuse par un code typé un retour arrière ou une application étrangère, et
+   reprend une mise à jour interrompue sans perte de données. Reste la relecture par une personne
+   non technique, qui ferme l'épique #195, et les issues ouvertes en chemin : #250 (critique : un
+   premier démarrage dont un morceau échoue enferme le coffre), #251 (le premier clic après
+   l'affichage de l'application est parfois perdu) et #247 (le disque système, ≈ 206 Mio, est
+   retéléchargé à chaque démarrage).
 7. Échanges chiffrés optionnels entre utilisateurs.
 
 La restauration d'un instantané mémoire pré-calculé sur un disque mutable est écartée du premier
