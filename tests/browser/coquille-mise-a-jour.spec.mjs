@@ -72,8 +72,18 @@ function manifesteDuCoffre(app) {
   );
 }
 
-/** Sert le descripteur, pose le manifeste, ouvre la coquille, et déverrouille par la phrase. */
+/**
+ * Sert le descripteur, pose le manifeste, ouvre la coquille, et déverrouille par la phrase.
+ *
+ * WebKit n'offre pas l'OPFS synchrone dans un Worker : la coquille y publie `indisponible` et rien ne
+ * s'y ouvre (`coquille-portabilite.spec.mjs`, même règle). Ces épreuves ne s'y jouent donc pas ;
+ * l'ordre attaqué, lui, s'y joue — il ne demande aucun volume.
+ */
 async function ouvrirSur(page, { servi, app }) {
+  test.skip(
+    test.info().project.use.browserName === "webkit",
+    "rien ne s'y ouvre : pas d'OPFS synchrone",
+  );
   await page
     .context()
     .route("**/artifacts/application.json", (route) =>
@@ -206,5 +216,7 @@ test("ORDRE ATTAQUÉ : « Mettre à jour » cliqué avant le déverrouillage est
     `cycle:demarrage-refuse:${C.etapeHorsOrdre}`,
     { timeout: DELAI },
   );
-  expect((await releve(page)).etat).toBe(ETATS_DU_VOLUME.verrouille);
+  expect([ETATS_DU_VOLUME.verrouille, ETATS_DU_VOLUME.indisponible]).toContain(
+    (await releve(page)).etat,
+  );
 });

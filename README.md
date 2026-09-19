@@ -191,6 +191,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0039 — sauvegarder, restaurer et révoquer depuis la coquille : un coffre, une identité](docs/decisions/0039-sauvegarder-restaurer-revoquer-depuis-la-coquille.md)
 - [ADR 0040 — le parcours est un ordre, pas une décision : neuf étapes, un écran à la fois, des conduites pour une personne](docs/decisions/0040-le-parcours-est-un-ordre-pas-une-decision.md)
 - [ADR 0041 — le paquet applicatif : partition 2 d un `hda` composé, données sur hdb, descripteur v2](docs/decisions/0041-le-paquet-applicatif-partition-2-d-un-hda-compose.md)
+- [ADR 0042 — le déphasage de versions : la version et le schéma décident avant le boot](docs/decisions/0042-le-dephasage-de-versions-le-schema-decide-avant-le-boot.md)
 
 ## Licence
 
