@@ -559,6 +559,10 @@ export const GESTES_LONGS = Object.freeze([
   "creer-recuperation",
   "demarrer-application",
   "reprendre-l-installation",
+  // Le bloc de mise à jour (recette QA de la PR #249, Q6) : rien ne s'y clique pendant un geste long.
+  "sauvegarder-avant-mise-a-jour",
+  "mettre-a-jour-l-application",
+  "plus-tard",
   "verrouiller-le-coffre",
   "sauvegarder-le-coffre",
   "restaurer-le-coffre",

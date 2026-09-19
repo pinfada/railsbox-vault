@@ -22,6 +22,8 @@
 // son motif (`motifDeSchema`), pour que le boot n'attende pas cinq minutes une santé que Rails, non
 // lancé, ne rendra jamais ; c'est l'appelant qui traduit le motif en code.
 
+import { phaseDeLaLigne, poserLaPhase } from "./phase-du-boot.mjs";
+
 const PREFIXE = "[schema] ";
 
 /** Les motifs de refus que le guest peut imprimer. Une autre valeur n'est pas un refus connu. */
@@ -132,6 +134,9 @@ export function creerVeilleurDeSchema() {
   // boot l'attend en course avec la santé, mais un refus peut précéder cette course.
   refus.catch(() => {});
   const lire = (ligne) => {
+    // La PHASE que la page affiche (QA de #249, Q2) : les données se mettent à jour, ou c'est fini.
+    const phase = phaseDeLaLigne(ligne);
+    if (phase !== null) poserLaPhase(phase);
     const lu = lireUneLigne(constat, ligne);
     constat = lu.constat;
     if (lu.refus === null) return;

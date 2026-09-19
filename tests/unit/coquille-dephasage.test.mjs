@@ -35,7 +35,7 @@ function descripteur(surcharge = {}) {
     paquet: { nom: "ref-1.1.0.ext4", octets: 4096, sha256: E("b") },
     graine: { nom: "graine.ext4", octets: 8192, sha256: E("c"), disqueOctets: 8192 },
     precedent: {
-      application: { version: "1.0.0", schema: M },
+      application: { id: "ref", version: "1.0.0", schema: M },
       paquet: { nom: "ref-1.0.0.ext4", octets: 4096, sha256: E("d") },
     },
     boot: {
@@ -64,9 +64,11 @@ test("les schémas se comparent en ENTIERS, comme ActiveRecord", () => {
 test("aucun volume : la voie d'installation de T1, inchangée", () => {
   const decision = deciderLeDephasage({ manifeste: null, descripteur: descripteur() });
   assert.equal(decision.issue, I.installer);
+  // La version SERVIE est dite dès l'installation : l'accueil l'affiche (recette QA de #249, Q3).
+  assert.deepEqual(decision.servie, { version: "1.1.0", schema: N });
   assert.deepEqual(paquetADemarrer(decision), {
     paquet: PAQUETS_SERVIS.courant,
-    application: null,
+    application: { version: "1.1.0", schema: N },
     miseAJour: false,
   });
 });
@@ -292,7 +294,8 @@ test("MIGRATION INTERROMPUE : seule la reprise est proposée, ni « Plus tard »
   assert.equal(decision.issue, I.miseAJour);
   assert.equal(decision.reprise, true);
   assert.equal(decision.plusTard, false);
-  assert.deepEqual(paquetADemarrer(decision), { refus: C.applicationNonServie });
+  // « Démarrer » sous la reprise seule dit la reprise, jamais « non servie » (recette QA de #249, Q1).
+  assert.deepEqual(paquetADemarrer(decision), { refus: C.miseAJourAReprendre });
   assert.equal(paquetADemarrer(decision, { miseAJour: true }).paquet, PAQUETS_SERVIS.courant);
 });
 
@@ -400,9 +403,12 @@ test("DESCRIPTEUR : la ligne de commande SERVIE ne porte aucun paramètre vault.
 
 test("DESCRIPTEUR : le précédent est contrôlé comme un paquet, et ne peut être plus récent", () => {
   const cas = [
-    [{ application: { version: "1.1.0", schema: M } }, /égale ou plus récente/],
-    [{ application: { version: "1.2.0", schema: M } }, /égale ou plus récente/],
-    [{ application: { version: "1.0.0", schema: "20270101000001" } }, /plus récent/],
+    [{ application: { id: "ref", version: "1.1.0", schema: M } }, /égale ou plus récente/],
+    [{ application: { id: "ref", version: "1.2.0", schema: M } }, /égale ou plus récente/],
+    [{ application: { id: "ref", version: "1.0.0", schema: "20270101000001" } }, /plus récent/],
+    // Recette QA de la PR #249, Q4 : le précédent d'une AUTRE application — ou sans identité.
+    [{ application: { id: "qa-exemple", version: "1.0.0", schema: M } }, /autre application/],
+    [{ application: { version: "1.0.0", schema: M } }, /autre application/],
     [{ paquet: { nom: "../x", octets: 4096, sha256: E("d") } }, /nom d'artefact/],
     [{ paquet: { nom: "p", octets: 4096, sha256: "abc" } }, /empreinte/],
     [{ paquet: { nom: "p", octets: 0, sha256: E("d") } }, /taille/],

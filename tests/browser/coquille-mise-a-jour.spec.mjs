@@ -39,7 +39,7 @@ function descripteur({ precedent = true, id = "reference-essai" } = {}) {
     ...(precedent
       ? {
           precedent: {
-            application: { version: "1.0.0", schema: M },
+            application: { id, version: "1.0.0", schema: M },
             paquet: { nom: "p100.ext4", octets: 4096, sha256: "d".repeat(64) },
           },
         }

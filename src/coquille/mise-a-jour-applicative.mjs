@@ -23,6 +23,7 @@ import {
 } from "./dephasage.mjs";
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { MOTIFS_DE_SCHEMA } from "../vm/constat-de-schema.mjs";
+import { PHASES_DU_BOOT, poserLaPhase } from "../vm/phase-du-boot.mjs";
 import { readVolumeManifest, writeVolumeManifest } from "../vm/opfs-volume-open.mjs";
 import {
   SCHEMA_APPLICATIF,
@@ -121,6 +122,8 @@ export function decisionPubliee(decision) {
     migration: decision.migration === true,
     plusTard: decision.plusTard === true,
     reprise: decision.reprise === true,
+    // La CIBLE d'une mise à jour commencée : ce que la sauvegarde exigera pour se rouvrir (QA, Q8).
+    cible: simple(decision.coffre?.migration),
   };
 }
 
@@ -147,6 +150,7 @@ export async function constaterLeDephasage({ lu, nom, lireManifeste = lireLeMani
  *           lireManifeste?: Function }} entrees
  */
 export async function preparerLeDemarrage({ lu, nom, miseAJour = false, delaiMs, lireManifeste }) {
+  poserLaPhase(PHASES_DU_BOOT.telechargement);
   const { manifeste, decision } = await constaterLeDephasage({ lu, nom, lireManifeste });
   if (decision.issue === ISSUES_DU_DEPHASAGE.installer && !lu.present) {
     return { sansApplication: true, motif: lu.motif };
@@ -182,7 +186,24 @@ export async function preparerLeDemarrage({ lu, nom, miseAJour = false, delaiMs,
  * coupure entre deux laisserait un schéma intermédiaire que « Plus tard » rouvrirait avec l'ancien code.
  *
  * Seul geste d'écriture avant le boot, et seulement sous le geste « Mettre à jour » : un refus n'écrit
- * jamais rien. Rend `true` si l'intention a été inscrite.
+ * jamais rien.
+ *
+ * Rend le CROCHET `avantLeBoot` de `bootEtVerifier`, qui ne l'appelle qu'une fois le disque système
+ * ACQUIS et VÉRIFIÉ (recette QA de la PR #249, Q1) : inscrite avant le téléchargement, l'intention
+ * faisait perdre « Plus tard » à une coupure pendant laquelle rien n'avait été migré. Une coupure
+ * AVANT le crochet ne change donc rien au coffre ; une coupure APRÈS ne laisse que la reprise.
+ *
+ * @param {{ nom: string, prepare: object, inscrire?: typeof writeVolumeManifest }} entrees
+ */
+export function avantLeBootDuPaquet({ nom, prepare, inscrire = writeVolumeManifest }) {
+  return async () => {
+    poserLaPhase(PHASES_DU_BOOT.demarrage);
+    await inscrireLIntention({ nom, prepare, inscrire });
+  };
+}
+
+/**
+ * INSCRIT l'intention (voir `avantLeBootDuPaquet`, seul appelant du chemin de produit).
  *
  * @param {{ nom: string, prepare: object, inscrire?: typeof writeVolumeManifest }} entrees
  */

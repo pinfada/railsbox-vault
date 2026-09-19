@@ -139,6 +139,8 @@ export function creerCanalDeConfiance({ rapport, publier, pont }) {
       if (retard > releve.pireRetardMs) releve.pireRetardMs = retard;
     }
     releve.dernierRecuMs = Math.round(performance.now());
+    // La PHASE d'un démarrage (QA de #249, Q2), que la progression affiche ; la page la filtre.
+    releve.phase = typeof message.phase === "string" ? message.phase : null;
     publier();
   }
 

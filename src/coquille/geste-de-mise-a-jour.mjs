@@ -13,6 +13,7 @@
 // propos est refusé là-bas, typé. Ce qu'il porte est l'ORDRE des gestes : jamais de migration sans
 // le clic « Mettre à jour l'application ».
 
+import { repriseSeule } from "./accueil-de-la-mise-a-jour.mjs";
 import { ISSUES_DU_DEPHASAGE } from "./dephasage.mjs";
 import { MESSAGES } from "./textes-du-parcours.mjs";
 
@@ -28,7 +29,7 @@ export function brancherLeGesteDeMiseAJour(liaison) {
   const { racine } = liaison;
   const noeud = (id) => racine.querySelector(`#${id}`);
   const constater = () => constaterLeDephasage(liaison, noeud);
-  const mettreAJour = () => mettreAJourLApplication(liaison, noeud);
+  const mettreAJour = () => mettreAJourLApplication({ ...liaison, constater }, noeud);
   const plusTard = () => reporter(liaison, noeud);
   noeud("mettre-a-jour-l-application")?.addEventListener("click", () => void mettreAJour());
   noeud("plus-tard")?.addEventListener("click", plusTard);
@@ -54,19 +55,36 @@ function montrer(noeud, decision) {
     bloc.hidden = true;
     return;
   }
-  noeud("mise-a-jour-texte").textContent = MESSAGES.miseAJourProposee(
-    decision.coffre?.version ?? "?",
-    decision.servie?.version ?? "?",
-    decision.migration === true,
-  );
-  noeud("mise-a-jour-plus-tard-texte").textContent = decision.plusTard
-    ? MESSAGES.miseAJourPlusTard
-    : MESSAGES.miseAJourSansPlusTard;
+  const reprise = repriseSeule(decision);
+  noeud("mise-a-jour-texte").textContent = reprise
+    ? MESSAGES.miseAJourAReprendre
+    : MESSAGES.miseAJourProposee(
+        decision.coffre?.version ?? "?",
+        decision.servie?.version ?? "?",
+        decision.migration === true,
+      );
+  noeud("mise-a-jour-plus-tard-texte").textContent = texteSousLeBloc(decision, reprise);
+  noeud("mettre-a-jour-l-application").textContent = reprise
+    ? MESSAGES.boutonReprendreLaMiseAJour
+    : MESSAGES.boutonMettreAJour;
   noeud("plus-tard").hidden = decision.plusTard !== true;
   for (const id of ["sauvegarder-avant-mise-a-jour", "mettre-a-jour-l-application"]) {
     noeud(id).hidden = false;
   }
   bloc.hidden = false;
+}
+
+/**
+ * Ce que le bloc dit sous son texte : « Plus tard », son absence, ou — sous la reprise seule — ce que
+ * la sauvegarde contiendra vraiment (recette QA de la PR #249, Q8).
+ */
+function texteSousLeBloc(decision, reprise) {
+  if (reprise) {
+    return MESSAGES.miseAJourSauvegardeAvantReprise(
+      decision.cible?.version ?? decision.servie?.version ?? "?",
+    );
+  }
+  return decision.plusTard ? MESSAGES.miseAJourPlusTard : MESSAGES.miseAJourSansPlusTard;
 }
 
 /**
@@ -95,30 +113,26 @@ async function constaterLeDephasage({ racine, demander, rapport, publier }, noeu
  * Le GESTE : démarrer avec `miseAJour`, et dire ce qui a été fait. Le bouton se désactive pendant
  * le geste ; un second clic ne part pas.
  */
-async function mettreAJourLApplication({ rapport, publier, demarrer }, noeud) {
+async function mettreAJourLApplication({ rapport, publier, demarrer, constater }, noeud) {
   const bouton = noeud("mettre-a-jour-l-application");
   if (bouton?.disabled) return null;
   if (bouton) bouton.disabled = true;
   noeud("mise-a-jour-plus-tard-texte").textContent = MESSAGES.miseAJourEnCours;
+  // Le CHEMIN du démarrage, que la progression lit pour annoncer SA durée et sa phase (Q2).
+  rapport.miseAJourDemandee = true;
+  publier();
   try {
     const rendu = await demarrer({ miseAJour: true });
-    if (rendu?.demarree === true) {
-      noeud("mise-a-jour-texte").textContent = MESSAGES.miseAJourFaite(
-        rendu.miseAJour?.versionServie ?? "",
-      );
-      noeud("mise-a-jour-plus-tard-texte").textContent = "";
-      for (const id of [
-        "sauvegarder-avant-mise-a-jour",
-        "mettre-a-jour-l-application",
-        "plus-tard",
-      ]) {
-        noeud(id).hidden = true;
-      }
-    }
     rapport.miseAJour = rendu?.miseAJour ?? null;
+    rapport.miseAJourDemandee = false;
     publier();
+    // Réussie, la mise à jour est dite là où la personne regarde — la ligne de réussite de l'écran,
+    // qui reste visible application démarrée (Q3) — et le coffre est constaté de nouveau : il n'y a
+    // plus rien à proposer, et la version affichée est la nouvelle.
+    if (rendu?.demarree === true) await constater();
     return rendu;
   } finally {
+    rapport.miseAJourDemandee = false;
     if (bouton) bouton.disabled = false;
   }
 }

@@ -16,6 +16,7 @@
 // public suffit.
 
 import { annonceDAttente, moteurProbable } from "/src/coquille/attente-annoncee.mjs";
+import * as accueil from "/src/coquille/accueil-de-la-mise-a-jour.mjs";
 import {
   conduiteDUnRefusSansCode,
   conduiteDUnRefusSansCodeConnu,
@@ -355,14 +356,22 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     dire("parcours-rang", rang === null ? "" : MESSAGES.rang(rang));
     dire("parcours-titre", ecran.titre);
     dire("parcours-ce-qui-va-se-passer", ecran.ceQuiVaSePasser);
-    dire("parcours-attendu", MESSAGES.attendu(ecran.attendu));
+    const surLApplication = ECRANS_DE_L_APPLICATION.includes(ecranId);
+    const dephasage = surLApplication ? accueil.attenduSousLeDephasage(rapport) : null;
+    dire("parcours-attendu", MESSAGES.attendu(dephasage ?? ecran.attendu));
+    // Recette QA de la PR #249 : la version toujours dite (Q3), aucun geste impossible offert (Q7).
+    dire("version-de-l-application", accueil.versionAffichee(rapport));
+    noeud("demarrer-application").hidden = !vueComplete && !accueil.demarrerEstPossible(rapport);
     const limite = moteur === "firefox" && (ecranId === "creer" || ecranId === "choisir");
     dire("parcours-limite", limite ? LIMITE_DE_FIREFOX : "");
     // Le COMPTE des feuilles, là où la personne décide d'en demander une de plus (#214).
     const codes = releve.nombreDeCodes ?? 0;
     const compteDit = codes > 0 && (ecranId === "code-annonce" || ecranId === "code-a-verifier");
     dire("parcours-codes", compteDit ? MESSAGES.codesDejaRendus(codes) : "");
-    const attente = ecran.attente ?? (visibles.includes("phrase") ? attenteDeLaPhraseAnnoncee : "");
+    const attente =
+      (surLApplication ? accueil.attenteDuDephasage(rapport.dephasage) : null) ??
+      ecran.attente ??
+      (visibles.includes("phrase") ? attenteDeLaPhraseAnnoncee : "");
     dire("parcours-attente-annoncee", attente === "" ? "" : MESSAGES.duree(attente));
     const suivante = etapeSuivante(ecranId);
     dire("parcours-suivante", suivante === null ? "" : MESSAGES.suivante(suivante.titre));
@@ -467,8 +476,9 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (ligne.evenement === "demarrage-en-cours") return demarrerLaProgression();
     if (ligne.evenement === "application-demarree") {
       etat.applicationArretee = false;
-      etat.referenceDesRefus = { ...(lireJson("coquille-rapport").refusDeRequete ?? {}) };
-      return reussir(MESSAGES.applicationDemarree);
+      const rapport = lireJson("coquille-rapport");
+      etat.referenceDesRefus = { ...(rapport.refusDeRequete ?? {}) };
+      return reussir(accueil.texteDeDemarrage(rapport));
     }
     if (ligne.evenement === "sans-application")
       return refuser(CODES_REFUS_COQUILLE.applicationAbsente);
@@ -488,6 +498,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     const ligne = lireLigneDEtat(noeud("portabilite-etat").textContent);
     if (ligne === null || ligne.evenement === "au-repos") return;
     if (ligne.evenement === "sauvegarde-en-cours") {
+      const cycle = lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement;
+      etat.etaitDemarree = cycle === "application-demarree" && !etat.applicationArretee;
       etat.applicationArretee = true;
       etat.referenceDesRefus = null;
       return dire("parcours-attente", MESSAGES.sauvegardeEnCours);
@@ -497,7 +509,12 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     }
     dire("parcours-attente", "");
     if (ligne.evenement.endsWith("-refusee")) return refuser(ligne.code);
-    if (ligne.evenement === "sauvegarde-prete") return reussir(MESSAGES.sauvegardePrete);
+    if (ligne.evenement === "sauvegarde-prete") {
+      reussir(accueil.texteDeSauvegardePrete(etat.etaitDemarree === true));
+      // Un refus qui TIENT reste affiché après la sauvegarde (Q7) : elle ne l'a pas levé.
+      const tient = accueil.refusQuiTient(lireJson("coquille-rapport"));
+      return tient === null ? undefined : dire("parcours-refus", conduiteHumaine(tient));
+    }
     if (ligne.evenement === "restauree") {
       pas("restauree");
       allerA(etapeApres("restaurer", "restauree", etat.pointeur));
@@ -577,14 +594,18 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (etat.demarrage !== null) return;
     const recus = () => lireJson("coquille-rapport").mesures?.battements?.recus ?? 0;
     const depart = { instant: performance.now(), battements: recus() };
-    const annoncer = () =>
-      dire(
-        "parcours-attente",
-        progressionDuDemarrage({
-          ecouleMs: performance.now() - depart.instant,
-          signesDeVie: recus() - depart.battements,
-        }),
-      );
+    const annoncer = () => {
+      const rapport = lireJson("coquille-rapport");
+      const ecouleMs = performance.now() - depart.instant;
+      // UNE durée par chemin, et la PHASE du dernier battement (recette QA de la PR #249, Q2).
+      const chemin = accueil.progressionDuChemin({
+        chemin: accueil.cheminDuDemarrage(rapport),
+        secondes: Math.max(0, Math.round(ecouleMs / 1000)),
+        phase: rapport.mesures?.battements?.phase ?? null,
+      });
+      const signesDeVie = recus() - depart.battements;
+      dire("parcours-attente", chemin ?? progressionDuDemarrage({ ecouleMs, signesDeVie }));
+    };
     noeud("parcours-progression").hidden = false;
     annoncer();
     etat.demarrage = setInterval(annoncer, ANNONCE_DE_PROGRESSION_MS);

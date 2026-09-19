@@ -49,6 +49,14 @@ import {
 } from "./identite-de-l-application.mjs";
 import { cheminExclu, fichiersRetenus } from "./exclusions-de-la-source.mjs";
 import { schemaDeLApplication } from "./schema-de-l-application.mjs";
+import {
+  confronterALaRetention,
+  imagesDuContrat,
+  retirerLePrecedent,
+} from "./retention-du-precedent.mjs";
+
+/** Le geste qui retire le précédent, SEUL sur la ligne de commande (recette QA de #249, Q5). */
+export const OPTION_RETIRER_LE_PRECEDENT = "--retirer-precedent";
 
 const dossierOutils = dirname(fileURLToPath(import.meta.url));
 export const RACINE_DEPOT = resolve(dossierOutils, "..", "..");
@@ -343,8 +351,22 @@ function paquetEnPlace() {
  * @param {string[]} arguments_
  */
 export async function fabriquerLePaquet(arguments_) {
+  if (arguments_.includes(OPTION_RETIRER_LE_PRECEDENT)) {
+    if (arguments_.length !== 1) {
+      throw new Error(`${OPTION_RETIRER_LE_PRECEDENT} ne se combine avec aucune autre option`);
+    }
+    for (const ligne of retirerLePrecedent(DOSSIER_ARTEFACTS)) console.log(ligne);
+    return null;
+  }
   const options = analyserArguments(arguments_);
   const identite = examinerLaSource(options.source, { id: options.id, version: options.version });
+  // Ce que le dossier retient déjà, confronté AVANT toute construction (recette QA de #249, Q5).
+  const retention = confronterALaRetention({
+    dossier: DOSSIER_ARTEFACTS,
+    role: options.role,
+    id: identite.id,
+    version: identite.version,
+  });
   console.log(
     `→ source : ${options.source}\n→ identité : ${identite.id} ${identite.version}, schéma ${identite.schema}`,
   );
@@ -355,7 +377,7 @@ export async function fabriquerLePaquet(arguments_) {
   const arbreDuPaquet = preparerLArbreDuPaquet(options.source, identite.fichiers);
   console.log(`→ contexte : ${identite.fichiers.length} fichiers retenus (arbre filtré)`);
   try {
-    return await fabriquerDepuisLArbre({ options, identite, arbreDuPaquet });
+    return await fabriquerDepuisLArbre({ options, identite, arbreDuPaquet, retention });
   } finally {
     rmSync(arbreDuPaquet, { recursive: true, force: true });
   }
@@ -365,7 +387,7 @@ export async function fabriquerLePaquet(arguments_) {
  * FABRIQUE depuis l'arbre filtré. Séparé de `fabriquerLePaquet` pour que le nettoyage de l'arbre
  * tienne dans un `finally` qui ne peut pas être oublié, quoi qu'il arrive à la construction.
  */
-async function fabriquerDepuisLArbre({ options, identite, arbreDuPaquet }) {
+async function fabriquerDepuisLArbre({ options, identite, arbreDuPaquet, retention }) {
   docker("image du fabricant de systèmes de fichiers", [
     "build",
     "-f",
@@ -437,6 +459,10 @@ async function fabriquerDepuisLArbre({ options, identite, arbreDuPaquet }) {
       `→ contrat  ${options.role} (fabrication des images : ${((Date.now() - debut) / 1000).toFixed(0)} s)`,
   );
   if (remplacement !== null) console.log(remplacement);
+  if (retention.retirerLePrecedent) {
+    for (const ligne of retention.lignes) console.log(ligne);
+    retirerLePrecedent(DOSSIER_ARTEFACTS, { garder: imagesDuContrat(paquet) });
+  }
   return paquet;
 }
 

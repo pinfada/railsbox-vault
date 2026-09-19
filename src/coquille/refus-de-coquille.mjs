@@ -294,6 +294,12 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * du coffre et d'un schéma au moins égal à la cible ; l'origine n'en sert pas (revue de #249, 1).
    */
   miseAJourInterrompue: "VAULT_COQUILLE_MISE_A_JOUR_INTERROMPUE",
+  /**
+   * Une mise à jour commencée PEUT reprendre ici, mais « Démarrer » n'est pas le geste qui la reprend :
+   * seul « Reprendre la mise à jour » le fait (recette QA de la PR #249, Q1). Jamais « non servie » :
+   * l'origine sert ce qu'il faut.
+   */
+  miseAJourAReprendre: "VAULT_COQUILLE_MISE_A_JOUR_A_REPRENDRE",
   /** Un marqueur de schéma du guest n'est pas un entier de quatorze chiffres au plus (revue de #249, 3). */
   marqueurDeSchemaInvalide: "VAULT_COQUILLE_MARQUEUR_DE_SCHEMA_INVALIDE",
   /** Un paramètre « vault.* » de la ligne de commande apparaît deux fois : le guest refuse (revue de #249, 2). */
@@ -395,6 +401,8 @@ const MESSAGES = Object.freeze({
     "La migration des données a échoué dans la machine virtuelle : Rails n'est pas lancé, le marqueur de schéma n'a pas bougé.",
   [CODES_REFUS_COQUILLE.miseAJourInterrompue]:
     "Une mise à jour commencée ne peut reprendre qu'avec une version plus récente que celle du coffre, d'un schéma au moins égal à celui visé : cette origine n'en sert pas. Rien n'est démarré.",
+  [CODES_REFUS_COQUILLE.miseAJourAReprendre]:
+    "Une mise à jour commencée ne se termine que par le geste « Reprendre la mise à jour » : « Démarrer » ne la reprend pas. Rien n'est démarré.",
   [CODES_REFUS_COQUILLE.marqueurDeSchemaInvalide]:
     "Un marqueur de schéma des données ou du paquet est illisible : Rails n'est pas lancé, rien n'est migré ni réécrit.",
   [CODES_REFUS_COQUILLE.parametreDuGuestRefuse]:

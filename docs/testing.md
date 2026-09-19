@@ -78,7 +78,8 @@ seul geste, le manifeste qui ne suit que le schéma du paquet booté, la garde �
 (constat 8 de la revue de #237), la borne de décompression, la taille transférée,
 `DecompressionStream` exigé, et la forme de `schema`/`migration` au manifeste. 15/15 tués le
 19/09/2026 ; **20/20** après la revue de sécurité de la PR #249 (reprise par version, espace
-`vault.*` réservé, autorisation de migrer, schéma déduit gardé, forme de quatorze chiffres). Les
+`vault.*` réservé, autorisation de migrer, schéma déduit gardé, forme de quatorze chiffres) ;
+**21/21** après la recette QA (« Démarrer » sous la reprise seule ne dit jamais « non servie »). Les
 gardes du SCRIPT du guest sont tenues par `tests/vm/schema-du-volume.test.mjs` : dix-sept cas sous
 le vrai `dash` de `i386/debian:bookworm-slim` (marqueurs invalides — non numérique, espaces, signe,
 zéros de tête, quinze et vingt chiffres —, `vault.*` en double, migration non autorisée, et les deux

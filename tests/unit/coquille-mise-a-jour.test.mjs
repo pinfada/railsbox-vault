@@ -36,7 +36,7 @@ function descripteur() {
     paquet: { nom: "p110", octets: 4096, sha256: E("b") },
     graine: { nom: "g", octets: 8192, sha256: E("c"), disqueOctets: 8192 },
     precedent: {
-      application: { version: "1.0.0", schema: M },
+      application: { id: "ref", version: "1.0.0", schema: M },
       paquet: { nom: "p100", octets: 4096, sha256: E("d") },
     },
     boot: { cmdline: "root=/dev/sda1 init=/opt/vault/guest-init.sh", memoireOctets: 1 << 29 },

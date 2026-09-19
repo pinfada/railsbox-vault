@@ -100,7 +100,9 @@ test("les blocs de la page sont ceux du parcours, dans l'ordre du document, et c
         assert.ok(
           pageSansBlancs.includes(`>${nom}<`) ||
             pageSansBlancs.includes(`> ${nom} <`) ||
-            branchement.includes(`"${nom}"`),
+            branchement.includes(`"${nom}"`) ||
+            // Un libellé que le bloc de mise à jour pose lui-même, depuis les textes (QA de #249).
+            Object.values(MESSAGES).includes(nom),
           `${bloc} : « ${nom} » n'est ni dans la page, ni nommé par le parcours`,
         );
       }

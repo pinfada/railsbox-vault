@@ -143,6 +143,8 @@ const rapport = {
        */
       pireEcartMs: 0,
       dernierInstantMs: null,
+      /** La phase du démarrage que le dernier battement portait (QA de #249, Q2), ou `null`. */
+      phase: null,
     },
     /** Ce que le CANAL de relais a porté : posté vers le Worker, revenu de lui. */
     relaisCanal: { postees: 0, revenues: 0 },

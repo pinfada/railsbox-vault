@@ -60,9 +60,9 @@ import { chargerAdressesV86, exigerAdresse } from "../v86-adresses.mjs";
 import { verserFluxDansVolume } from "../vm/versement-de-disque.mjs";
 import {
   codeDuRefusDuGuest,
+  avantLeBootDuPaquet,
   constaterLeDephasage,
   decisionPubliee,
-  inscrireLIntention,
   miseAJourPubliee,
   preparerLeDemarrage,
   suivreLeConstat,
@@ -624,7 +624,6 @@ export async function demarrerLaVm({
   const descripteur = prepare.descripteur;
   const installation = await installerOuTraduireLeRefus({ descripteur, cleDeVolume });
   if (installation.demarree === false) return installation;
-  await inscrireLIntention({ nom: NOM_DU_VOLUME_APPLICATIF, prepare });
   const rendu = await booterLePaquet({ descripteur, prepare, cleDeVolume, reprendreParInstantane });
   if (rendu.demarree === false) return rendu;
   // Le manifeste SUIT ce que le guest a constaté, après un boot réussi et jamais avant.
@@ -686,6 +685,7 @@ async function booterLePaquet({ descripteur, prepare, cleDeVolume, reprendreParI
       capturerInstantane: true,
       garderLaSessionOuverte: true,
       ouvrirLeVolumeDuGuest: ouvreurSousLEnveloppe({ cleDeVolume }),
+      avantLeBoot: avantLeBootDuPaquet({ nom: NOM_DU_VOLUME_APPLICATIF, prepare }),
     });
   } catch (erreur) {
     const code = codeDuRefusDuGuest(erreur);
