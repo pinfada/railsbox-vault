@@ -648,12 +648,29 @@ retéléchargés à chaque ouverture (le mode de cache ne change pas, ADR 0042 �
 d'artefacts OPFS adressé par empreinte est le chantier qui l'évitera). Ce qui change est ce qu'elle
 transfère : 522 → 176,9 Mio.
 
-**La migration au boot**, mesurée sous Node sur l'image réelle
-(`tests/vm/migration-coupee.test.mjs`, 19/09/2026, poste de développement, épreuves VM jouées en
-parallèle) : la REPRISE d'une mise à jour coupée — Rails chargé pour `db:migrate`, une migration
-restante (`add_index`), le marqueur et le `sync` — a pris **38,5 s** avant que Rails ne soit relancé
-pour servir. Un boot qui migre charge donc Rails deux fois ; son délai est doublé
-(`FACTEUR_DU_DELAI_DE_MIGRATION`).
+**Mesuré dans la coquille, sous Chromium** (`tests/e2e/mise-a-jour-du-paquet.spec.mjs`, 19/09/2026,
+poste de développement, origine en boucle locale, un seul ouvrier) :
+
+| Geste                                              |      Durée | Détail                                             |
+| -------------------------------------------------- | ---------: | -------------------------------------------------- |
+| installation 1.0.0 (premier démarrage, boot Rails) |    114,9 s | boot publié par la coquille                        |
+| **mise à jour 1.0.0 → 1.1.0** (geste complet)      |    165,2 s | boot 151,0 s, dont **51,4 s de migrations** (deux) |
+| boot à froid après la mise à jour                  |    115,5 s | aucune migration rejouée, manifeste déjà suivi     |
+| réouverture par instantané, morceaux **gzip**      | **16,2 s** | acquisition 13,6 s pour 176,9 Mio transférés       |
+| réouverture par instantané, morceaux **bruts**     | **14,1 s** | acquisition 11,9 s pour 522,0 Mio transférés       |
+
+**En boucle locale, gzip ne fait pas gagner de temps à la réouverture** : le transfert y est presque
+gratuit, et la décompression coûte ≈ 1,7 s de plus. Le gain est dans les OCTETS (522 → 176,9 Mio, ÷
+2,95) et il se change en secondes dès que le débit réseau est la borne : à 50 Mbit/s, 522 Mio
+coûtent ≈ 88 s de transfert, 176,9 Mio ≈ 30 s. Ce dernier calcul n'est PAS une mesure ; la
+réouverture de 18 à 36 s relevée par la recette QA du 18/09 (#241) avait été mesurée à travers un
+serveur local, comme ici.
+
+sur l'image réelle (`tests/vm/migration-coupee.test.mjs`, 19/09/2026, poste de développement,
+épreuves VM jouées en parallèle) : la REPRISE d'une mise à jour coupée — Rails chargé pour
+`db:migrate`, une migration restante (`add_index`), le marqueur et le `sync` — a pris **38,5 s**
+avant que Rails ne soit relancé pour servir. Un boot qui migre charge donc Rails deux fois ; son
+délai est doublé (`FACTEUR_DU_DELAI_DE_MIGRATION`).
 
 ## Le budget de récupération est mesuré, et le plafond de charge en découle (#91)
 

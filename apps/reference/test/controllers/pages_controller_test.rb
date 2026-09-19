@@ -94,7 +94,7 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     get "/notes/#{note.id}"
 
     assert_response :ok
-    assert_match %r{<p id="commentaire-note" data-colonne="commentaire">(aucun commentaire)</p>}, response.body
+    assert_match %r{<p id="commentaire-note" data-colonne="commentaire">\(aucun commentaire\)</p>}, response.body
     note.update!(commentaire: "relu après la mise à jour")
     get "/notes/#{note.id}"
     assert_match %r{>relu après la mise à jour</p>}, response.body
