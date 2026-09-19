@@ -136,6 +136,11 @@ html[data-travail-pret="true"] #parcours-reussite {
   margin-bottom: 16px;
   padding: 8px 12px;
 }
+#version-de-l-application {
+  color: var(--secondaire);
+  font-size: 13px;
+  margin: 0 0 8px;
+}
 #parcours-continuer {
   background: var(--fond);
   color: var(--texte);

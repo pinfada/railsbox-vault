@@ -120,6 +120,8 @@ export function construireManifeste({
       : {
           precedent: {
             application: {
+              // L'IDENTITÉ du précédent, que la coquille confronte au courant (QA de #249, Q4).
+              id: precedent.application.id,
               version: precedent.application.version,
               schema: precedent.application.schema,
             },

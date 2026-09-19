@@ -596,14 +596,16 @@ function captureDemandee({ options, montage, empreinteImage }) {
  *
  * L'identité est exigée EN PREMIER, avant même le réseau : `SEC-UPDATE-001` n'admet aucun volume
  * anonyme, et le refuser ici épargne l'acquisition d'un runtime qui n'aurait servi à rien. La
- * décomposition (#60) pose ses jalons DÈS l'entrée, pour dater aussi cette acquisition.
+ * décomposition (#60) pose ses jalons DÈS l'entrée, pour dater aussi cette acquisition. `avantLeBoot`
+ * n'est appelé qu'une fois le runtime ACQUIS et VÉRIFIÉ, avant l'ouverture du volume (QA de #249, Q1).
  */
-async function preparerLeBoot({ manifest, runtime, runtimeBundle = null }) {
+export async function preparerLeBoot({ manifest, runtime, runtimeBundle = null, avantLeBoot }) {
   const attentes = attentesDe(manifest);
   const timeline = createBootTimeline();
   timeline.marquer("debut");
   const acquis = runtimeBundle ?? (await acquerirRuntime(runtime));
   timeline.marquer("runtimePret");
+  await avantLeBoot?.();
   return { attentes, timeline, ...acquis, online: navigator.onLine };
 }
 

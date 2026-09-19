@@ -103,6 +103,14 @@ export const MUTATIONS = Object.freeze([
     epreuves: [EPREUVE_DEPHASAGE],
   },
   {
+    nom: "« Démarrer » sous la reprise seule dit la reprise, jamais « non servie » (QA de #249, Q1)",
+    garde: "paquetADemarrer — le refus de la reprise sans geste",
+    fichier: DEPHASAGE,
+    avant: "  return { refus: decision.reprise ? C.miseAJourAReprendre : C.applicationNonServie };",
+    apres: "  return { refus: C.applicationNonServie };",
+    epreuves: [EPREUVE_DEPHASAGE],
+  },
+  {
     nom: "la reprise exige une version STRICTEMENT plus récente que celle du coffre (revue de #249, 1)",
     garde: "deciderLaReprise — la précédence de la version servie",
     fichier: DEPHASAGE,

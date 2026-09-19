@@ -8,6 +8,7 @@
 // Aucune de ces conduites ne propose d'effacer quoi que ce soit.
 
 import { CODES_REFUS_COQUILLE as C } from "./refus-de-coquille.mjs";
+import { MESSAGES } from "./textes-du-parcours.mjs";
 
 /** Les codes du déphasage, sur le chemin du démarrage (constatés à l'ouverture, redits au geste). */
 export const CODES_DU_DEPHASAGE = Object.freeze([
@@ -19,6 +20,8 @@ export const CODES_DU_DEPHASAGE = Object.freeze([
   C.migrationEchouee,
   // Revue de sécurité de la PR #249 : la reprise par version, et les refus neufs du guest.
   C.miseAJourInterrompue,
+  // Recette QA de la PR #249, Q1 : la reprise a son texte, jamais « non servie ».
+  C.miseAJourAReprendre,
   C.marqueurDeSchemaInvalide,
   C.parametreDuGuestRefuse,
   C.migrationNonAutorisee,
@@ -72,6 +75,7 @@ export function conduitesDuDephasage(K, RIEN_PERDU) {
         "cette version." +
         SAUVEGARDE_SANS_DEMARRER,
     ],
+    [C.miseAJourAReprendre]: [K.autre, MESSAGES.miseAJourAReprendre],
     ...conduitesDuGuest(K, RIEN_PERDU),
   };
 }

@@ -158,7 +158,11 @@ function refus(code, contexte) {
  *   `descripteur` est le descripteur servi et ADMIS (`formeDuDescripteur`), ou `null`.
  */
 export function deciderLeDephasage({ manifeste, descripteur }) {
-  if (manifeste === null) return Object.freeze({ issue: ISSUES_DU_DEPHASAGE.installer });
+  if (manifeste === null) {
+    // La version SERVIE est dite dès l'installation : l'accueil l'affiche (recette QA de #249, Q3).
+    const servie = descripteur === null ? null : versionEtSchema(descripteur.application);
+    return Object.freeze({ issue: ISSUES_DU_DEPHASAGE.installer, servie });
+  }
   const app = manifeste.app;
   const coffre = { id: app.id, version: app.version, schema: app.schema ?? null };
   if (descripteur === null) return refus(C.applicationNonServie, { coffre, servie: null });
@@ -237,7 +241,8 @@ function deciderLaReprise({ constat, servie, cible }) {
  *
  * `miseAJour` n'est vrai que si la personne a cliqué « Mettre à jour l'application » : c'est la
  * seule façon d'obtenir une migration. Sans lui, une mise à jour proposée ouvre le précédent s'il
- * est servi, et refuse sinon — jamais le courant.
+ * est servi, et refuse sinon — jamais le courant. Sous une REPRISE, le refus dit la reprise, jamais
+ * « non servie » (recette QA de la PR #249, Q1) : l'origine sert ce qu'il faut pour la terminer.
  *
  * @param {ReturnType<typeof deciderLeDephasage>} decision
  * @param {{ miseAJour?: boolean }} [geste]
@@ -262,5 +267,5 @@ export function paquetADemarrer(decision, { miseAJour = false } = {}) {
       miseAJour: false,
     };
   }
-  return { refus: C.applicationNonServie };
+  return { refus: decision.reprise ? C.miseAJourAReprendre : C.applicationNonServie };
 }

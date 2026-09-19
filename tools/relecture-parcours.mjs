@@ -76,6 +76,19 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "miseAJourSansPlusTard",
     "miseAJourEnCours",
     "miseAJourFaite",
+    // Recette QA de la PR #249 : reprise, durée et phase, réussite, version, refus qui tient.
+    "miseAJourAReprendre",
+    "miseAJourSauvegardeAvantReprise",
+    "boutonMettreAJour",
+    "boutonReprendreLaMiseAJour",
+    "miseAJourEnCoursDepuis",
+    "plusTardEnCoursDepuis",
+    "phaseTelechargement",
+    "phaseDemarrage",
+    "phaseDonnees",
+    "versionDeLApplication",
+    "attenduSousUnRefus",
+    "attenduDeLaReprise",
   ],
   accueil: [
     "applicationEnAttente",
@@ -86,14 +99,28 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "miseAJourSansPlusTard",
     "miseAJourEnCours",
     "miseAJourFaite",
+    // Recette QA de la PR #249 : reprise, durée et phase, réussite, version, refus qui tient.
+    "miseAJourAReprendre",
+    "miseAJourSauvegardeAvantReprise",
+    "boutonMettreAJour",
+    "boutonReprendreLaMiseAJour",
+    "miseAJourEnCoursDepuis",
+    "plusTardEnCoursDepuis",
+    "phaseTelechargement",
+    "phaseDemarrage",
+    "phaseDonnees",
+    "versionDeLApplication",
+    "attenduSousUnRefus",
+    "attenduDeLaReprise",
     "verrouillageEnCours",
     "sauvegardeEnCours",
     "sauvegardePrete",
+    "redemarrerApresSauvegarde",
     "revoque",
   ],
   verrouiller: ["verrouillageEnCours"],
   rouvrir: ["passkeyALOuverture", "ouvertureEnCours", "coffreOuvert"],
-  sauvegarder: ["sauvegardeEnCours", "sauvegardePrete"],
+  sauvegarder: ["sauvegardeEnCours", "sauvegardePrete", "redemarrerApresSauvegarde"],
   restaurer: ["restaurationEnCours", "restauree"],
   "recuperer-preparer": ["verrouillageEnCours"],
   recuperer: ["saisieIncomplete", "saisieComplete", "ouvertureEnCours", "coffreOuvert"],
@@ -212,6 +239,12 @@ function texteDuMessage(nom) {
   if (typeof message !== "function") return message;
   if (nom === "demarrageEnCours") return message(N, MESSAGES.signesDeVie(N));
   if (nom === "revoque") return message(N, "V");
+  if (nom === "miseAJourEnCoursDepuis" || nom === "plusTardEnCoursDepuis") {
+    return message(N, MESSAGES.phaseDemarrage);
+  }
+  if (nom === "miseAJourSauvegardeAvantReprise" || nom === "versionDeLApplication") {
+    return message("V");
+  }
   if (nom === "saisieIncomplete") return message(N, 28);
   if (nom === "miseAJourProposee") {
     return `${message("A", "B", true)} — ou, sans migration — ${message("A", "B", false)}`;

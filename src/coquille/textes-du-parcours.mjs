@@ -45,9 +45,14 @@ export const LIBELLES_DES_BLOCS = Object.freeze({
     "« Reprendre l'installation » (seulement si une installation a été interrompue)",
     "« Sauvegarder d'abord », « Mettre à jour l'application » et « Plus tard » (seulement quand " +
       "une nouvelle version de l'application est proposée)",
+    "« Reprendre la mise à jour » à la place de « Mettre à jour l'application » (seulement quand " +
+      "une mise à jour a été commencée et n'est pas terminée)",
   ],
   verrouiller: ["« Verrouiller mon coffre »"],
-  "espace-de-travail": ["l'application elle-même, une fois démarrée"],
+  "espace-de-travail": [
+    "la version de l'application, en une ligne discrète",
+    "l'application elle-même, une fois démarrée",
+  ],
   sauvegarde: ["« Sauvegarder mon coffre »", "« Enregistrer la sauvegarde » (lien)"],
   restauration: [
     "« Fichier de sauvegarde » (champ)",
@@ -65,6 +70,22 @@ const ENVIRON_DEUX_MINUTES =
   "l'onglet peut sembler figé : ne le fermez pas. La progression s'affiche sous le bouton.";
 
 const QUELQUES_SECONDES_DE_VERROUILLAGE = "Le verrouillage prend quelques secondes.";
+
+/**
+ * Les DURÉES de la mise à jour, une par chemin (recette QA de la PR #249, Q2), fondées sur les mesures
+ * publiées dans `docs/quality-attributes.md` : la mise à jour 1.0.0 → 1.1.0 a pris 165 à 216 s,
+ * « Plus tard » 160 à 163 s. Le second est long parce que le disque de l'application est retéléchargé
+ * en entier (#247) et que l'application démarre à froid.
+ */
+export const DUREE_DE_LA_MISE_A_JOUR = "environ trois à quatre minutes";
+export const DUREE_DE_PLUS_TARD = "environ trois minutes";
+
+/** Ce que l'écran annonce quand une mise à jour est proposée ou à reprendre (« Durée : … »). */
+export const ATTENTE_DE_LA_MISE_A_JOUR =
+  `La mise à jour prend ${DUREE_DE_LA_MISE_A_JOUR} : l'application est téléchargée, démarrée, puis ` +
+  "vos données sont mises à jour ; la progression dit l'étape en cours. Garder votre version " +
+  `actuelle avec « Plus tard » prend ${DUREE_DE_PLUS_TARD} : le disque de l'application (environ ` +
+  "200 Mio) est retéléchargé, puis l'application démarre à froid.";
 
 /**
  * La limite de Firefox, dite AVANT toute attente (revue de la PR #213, constat 9 ; ADR 0038) : sous
@@ -464,8 +485,10 @@ export const MESSAGES = Object.freeze({
   premierSigneDeVie: "En attente du premier signe de vie du coffre.",
   sauvegardePrete:
     "Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien ne " +
-    "s'est enregistré, cliquez sur « Enregistrer la sauvegarde ». Pensez à redémarrer " +
-    "l'application si vous voulez continuer à l'utiliser.",
+    "s'est enregistré, cliquez sur « Enregistrer la sauvegarde ».",
+  // Dite seulement si l'application TOURNAIT avant la sauvegarde (recette QA de la PR #249, Q7).
+  redemarrerApresSauvegarde:
+    " Pensez à redémarrer l'application si vous voulez continuer à l'utiliser.",
   restauree:
     "Sauvegarde restaurée et vérifiée. Ouvrez maintenant le coffre avec votre code — avec un code " +
     "qui existait quand la sauvegarde a été faite.",
@@ -480,22 +503,51 @@ export const MESSAGES = Object.freeze({
     `utilise la version ${versionDuCoffre}. ` +
     (migration
       ? "La mise à jour transforme vos données pour la nouvelle version, au démarrage, dans votre " +
-        "navigateur : comptez environ quatre minutes, et ne fermez pas l'onglet. "
-      : "La mise à jour ne change pas vos données ; seul le code de l'application change. ") +
+        `navigateur : comptez ${DUREE_DE_LA_MISE_A_JOUR}, et ne fermez pas l'onglet. `
+      : "La mise à jour ne change pas vos données ; seul le code de l'application change : " +
+        `comptez ${DUREE_DE_LA_MISE_A_JOUR}. `) +
     "Rien ne se fait sans vous : avant de mettre à jour, faites une sauvegarde — si quelque chose " +
     "se passait mal, elle rouvrira votre coffre tel qu'il est aujourd'hui.",
   miseAJourPlusTard:
-    "« Plus tard » garde votre version actuelle : « Démarrer l'application » l'ouvre comme " +
-    "d'habitude, et la mise à jour vous sera proposée à la prochaine ouverture.",
+    "« Plus tard » garde votre version actuelle : « Démarrer l'application » l'ouvre, en " +
+    `${DUREE_DE_PLUS_TARD}, et la mise à jour vous sera proposée à la prochaine ouverture.`,
+  // La REPRISE seule (recette QA de la PR #249, Q1 et Q8) : ce qui est vrai, et le seul geste utile.
+  miseAJourAReprendre:
+    "Une mise à jour de votre application a été commencée et n'est pas terminée. Vos données sont " +
+    "intactes. Pour retrouver votre application, reprenez la mise à jour.",
+  miseAJourSauvegardeAvantReprise: (versionCible) =>
+    "Vous pouvez d'abord faire une sauvegarde : elle contiendra vos données telles qu'elles sont, " +
+    `mise à jour inachevée comprise, et se rouvrira avec la version ${versionCible} de ` +
+    `l'application ou une plus récente. La reprise prend ${DUREE_DE_LA_MISE_A_JOUR} ; ne fermez ` +
+    "pas l'onglet.",
+  boutonReprendreLaMiseAJour: "Reprendre la mise à jour",
+  // « Ce que vous avez à faire » quand « Démarrer » n'est pas un geste possible (Q7, Q1).
+  attenduSousUnRefus:
+    "L'application ne peut pas démarrer à cette adresse : lisez le message ci-dessus. Votre coffre " +
+    "reste intact, et vous pouvez le sauvegarder ou le verrouiller.",
+  attenduDeLaReprise:
+    "Cliquez sur « Reprendre la mise à jour », puis attendez que l'application s'affiche.",
+  boutonMettreAJour: "Mettre à jour l'application",
+  // La RÉUSSITE, là où la personne regarde (Q3), et la version, en une ligne discrète.
+  versionDeLApplication: (version) => `Version de l'application : ${version}.`,
   miseAJourSansPlusTard:
     "Cette adresse ne sert plus votre version actuelle : pour démarrer l'application ici, il faut " +
     "la mettre à jour. Vos données restent intactes tant que vous ne le faites pas.",
   miseAJourEnCours:
-    "Mise à jour en cours : comptez environ quatre minutes, et ne fermez pas l'onglet. Si la page " +
+    `Mise à jour en cours : comptez ${DUREE_DE_LA_MISE_A_JOUR}, et ne fermez pas l'onglet. Si la page ` +
     "se fermait, vos données seraient retrouvées telles qu'avant ou telles qu'après la mise à " +
     "jour, jamais entre les deux.",
   miseAJourFaite: (version) =>
     `L'application est à jour : version ${version}. Elle s'affiche ci-dessous.`,
+  // La PROGRESSION d'une mise à jour et de « Plus tard » : UNE durée par chemin, et la PHASE (Q2).
+  miseAJourEnCoursDepuis: (secondes, phase) =>
+    `Mise à jour en cours depuis ${secondes} seconde(s), sur ${DUREE_DE_LA_MISE_A_JOUR}. ${phase}`,
+  plusTardEnCoursDepuis: (secondes, phase) =>
+    `Démarrage de votre version actuelle depuis ${secondes} seconde(s), sur ${DUREE_DE_PLUS_TARD}. ` +
+    phase,
+  phaseTelechargement: "Étape en cours : téléchargement de l'application.",
+  phaseDemarrage: "Étape en cours : démarrage de l'application.",
+  phaseDonnees: "Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.",
   avertissementDeRevocation: (moyen) =>
     MOYEN_NOMME[moyen] === undefined
       ? "Seul le moyen avec lequel vous avez ouvert ce coffre continuera de l'ouvrir ; tous les " +

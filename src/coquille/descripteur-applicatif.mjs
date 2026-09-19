@@ -211,6 +211,10 @@ function formeDuPrecedent(descripteur) {
   if (precedent === undefined) return null;
   const application = formeDeLApplication(precedent?.application);
   if (application !== null) return `précédent : ${application}`;
+  // Un précédent est une version ANTÉRIEURE de la MÊME application (ADR 0042, § 4 ; QA de #249, Q4).
+  if (precedent.application.id !== descripteur.application.id) {
+    return "précédent : une autre application que le paquet courant (identifiant absent ou différent)";
+  }
   const paquet = formeDUnMorceau(precedent.paquet, "precedent.paquet");
   if (paquet !== null) return paquet;
   if (comparerVersions(precedent.application.version, descripteur.application.version) >= 0) {
