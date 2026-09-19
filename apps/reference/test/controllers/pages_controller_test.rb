@@ -87,6 +87,19 @@ class PagesControllerTest < ActionDispatch::IntegrationTest
     refute_match %r{data-piece-sha256}, response.body
   end
 
+  test "1.1.0 (#236 T2) : une note montre sa colonne « commentaire », vide pour une note d'avant" do
+    post "/notes", params: { libelle: "note ancienne", authenticity_token: jeton_du_formulaire }
+    note = Record.order(:created_at).last
+
+    get "/notes/#{note.id}"
+
+    assert_response :ok
+    assert_match %r{<p id="commentaire-note" data-colonne="commentaire">(aucun commentaire)</p>}, response.body
+    note.update!(commentaire: "relu après la mise à jour")
+    get "/notes/#{note.id}"
+    assert_match %r{>relu après la mise à jour</p>}, response.body
+  end
+
   test "une note sans pièce ne porte aucune pièce, et un champ « piece » textuel est ignoré" do
     jeton = jeton_du_formulaire
 

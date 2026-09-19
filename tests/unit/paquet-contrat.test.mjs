@@ -30,11 +30,27 @@ import { schemaDeLApplication } from "../../tools/paquet/schema-de-l-application
 
 const ENTREES = Object.freeze({
   application: { id: "railsbox-vault-reference", version: "1.0.0", schema: "20260815120000" },
-  image: { name: "railsbox-vault-reference-1.0.0-0123abcd.ext4", byteSize: 147 * 1024 * 1024 },
+  image: {
+    name: "railsbox-vault-reference-1.0.0-0123abcd.ext4",
+    byteSize: 147 * 1024 * 1024,
+    // Le fichier SERVI (#236 T2) : l'image compressée en gzip, sous un nom qui porte son empreinte.
+    servi: {
+      name: "railsbox-vault-reference-1.0.0-0123abcd.ext4.gz",
+      compression: "gzip",
+      byteSize: 49 * 1024 * 1024,
+      sha256: "c".repeat(64),
+    },
+  },
   graine: {
     name: "railsbox-vault-reference-1.0.0-graine-89abcdef.ext4",
     byteSize: 536870912,
     disqueOctets: 536870912,
+    servi: {
+      name: "railsbox-vault-reference-1.0.0-graine-89abcdef.ext4.gz",
+      compression: "gzip",
+      byteSize: 531121,
+      sha256: "d".repeat(64),
+    },
   },
   exigences: { ruby: "3.3.12", rails: "8.1.3.1", debianSuite: "bookworm" },
   secretKeyBase: { derivation: "sha256 d'une chaîne publique documentée" },
@@ -53,6 +69,23 @@ function paquetConforme(remplacements = {}) {
     ...remplacements,
   });
 }
+
+test("un paquet sans fichier SERVI, ou servi autrement qu'en gzip, est refusé (#236 T2)", () => {
+  const sansServi = paquetConforme({
+    image: { ...ENTREES.image, sha256: EMPREINTE, servi: undefined },
+  });
+  assert.ok(validerPaquet(sansServi).some(({ message }) => /image.servi absent/.test(message)));
+  const autre = paquetConforme({
+    graine: {
+      ...ENTREES.graine,
+      sha256: AUTRE_EMPREINTE,
+      servi: { ...ENTREES.graine.servi, compression: "zstd", name: "g.zst" },
+    },
+  });
+  const messages = validerPaquet(autre).map(({ message }) => message);
+  assert.ok(messages.some((message) => /compression/.test(message)));
+  assert.ok(messages.some((message) => /.gz/.test(message)));
+});
 
 test("un paquet conforme est accepté et porte sa version de contrat", () => {
   const paquet = paquetConforme();

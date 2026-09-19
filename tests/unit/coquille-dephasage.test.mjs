@@ -348,3 +348,15 @@ test("DESCRIPTEUR : un morceau COMPRESSÉ déclare gzip et sa taille transféré
     assert.match(avec({ compression: "zstd", transfertOctets: 1 }).motif, /compression inconnue/);
   }
 });
+
+test("« Plus tard » n'ouvre pas un précédent de MÊME schéma mais d'une autre version", () => {
+  // Le coffre est en 1.0.5 (schéma M) ; l'origine sert 1.1.0 et, en précédent, 1.0.0 (schéma M).
+  // Ouvrir le coffre avec 1.0.0 serait un retour arrière déguisé en « Plus tard ».
+  const decision = deciderLeDephasage({
+    manifeste: manifeste({ id: "ref", version: "1.0.5", schema: M }),
+    descripteur: descripteur(),
+  });
+  assert.equal(decision.issue, I.miseAJour);
+  assert.equal(decision.plusTard, false);
+  assert.deepEqual(paquetADemarrer(decision), { refus: C.applicationNonServie });
+});

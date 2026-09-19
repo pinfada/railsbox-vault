@@ -9,15 +9,26 @@
 // `docker export` au conteneur fabricant de systèmes de fichiers, sans fichier
 // intermédiaire de 1,5 Gio sur un montage lié Windows.
 //
-// Options : --sans-cache, --seulement=rootfs|app|firmware, --taille-app=<Mio>
+// Options : --sans-cache, --seulement=rootfs|precedent|app|firmware, --taille-app=<Mio>
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { ecrireManifeste, DOSSIER_ARTEFACTS, RACINE_DEPOT } from "./manifest.mjs";
 import { fabriquerLePaquet } from "../paquet/fabriquer-paquet.mjs";
+import { compresserDeterministe, nomServi } from "../paquet/compression.mjs";
 import { verifierEpinglage } from "./verify-pinning.mjs";
 
 const dossierOutils = dirname(fileURLToPath(import.meta.url));
@@ -228,6 +239,14 @@ async function principal() {
     });
   }
 
+  if (cible("rootfs")) durees.rootfsGzip = await compresserLeRootfs();
+
+  if (cible("precedent")) {
+    const debutPrecedent = Date.now();
+    await fabriquerLePrecedent(options.tailleApp);
+    durees.precedent = Date.now() - debutPrecedent;
+  }
+
   if (cible("app")) {
     // Le disque applicatif unique a disparu : l'application de référence est le PREMIER PAQUET, et
     // elle se fabrique par le MÊME outil qu'une application extérieure (#236, ADR 0041). Un second
@@ -252,6 +271,57 @@ async function principal() {
   }
   const disponible = statSync(DOSSIER_ARTEFACTS).isDirectory();
   if (!disponible) echouer("dossier d'artefacts introuvable après construction", 1);
+}
+
+/**
+ * COMPRESSE le rootfs pour le servir (gzip déterministe, #236 T2) sous un nom qui porte l'empreinte
+ * de l'image décompressée. Les anciens rootfs servis sont retirés : un seul est cité par le manifeste.
+ */
+async function compresserLeRootfs() {
+  const debut = Date.now();
+  const image = join(DOSSIER_ARTEFACTS, "reference-rootfs.ext4");
+  const servi = nomServi("reference-rootfs.ext4", empreinte(image));
+  for (const ancien of readdirSync(DOSSIER_ARTEFACTS)) {
+    if (/^reference-rootfs-[0-9a-f]{8}.ext4.gz$/.test(ancien) && ancien !== servi) {
+      rmSync(join(DOSSIER_ARTEFACTS, ancien));
+    }
+  }
+  const mesure = await compresserDeterministe(image, join(DOSSIER_ARTEFACTS, servi));
+  console.log(`→ ${servi} : ${(mesure.byteSize / 1024 / 1024).toFixed(1)} Mio servis`);
+  return Date.now() - debut;
+}
+
+/**
+ * FABRIQUE le paquet PRÉCÉDENT (rétention 1, #236 T2) depuis la révision git épinglée par
+ * `sources.json` (`paquetPrecedent`) : l'arbre de l'application tel qu'il était, extrait par
+ * `git archive` dans un dossier temporaire, puis fabriqué par l'outillage COURANT — le même chemin
+ * que n'importe quelle application extérieure.
+ */
+async function fabriquerLePrecedent(tailleApp) {
+  const { ref, chemin, version } = sources.paquetPrecedent;
+  const dossier = mkdtempSync(join(tmpdir(), "vault-precedent-"));
+  try {
+    const archive = spawnSync("git", ["archive", "--format=tar", ref, chemin], {
+      cwd: RACINE_DEPOT,
+      maxBuffer: 1 << 30,
+    });
+    if (archive.status !== 0) {
+      echouer(`git archive ${ref} ${chemin} a échoué : ${archive.stderr}`, 1);
+    }
+    const extraction = spawnSync("tar", ["-x"], { cwd: dossier, input: archive.stdout });
+    if (extraction.status !== 0) echouer(`extraction du précédent : ${extraction.stderr}`, 1);
+    await fabriquerLePaquet([
+      "--source",
+      join(dossier, chemin),
+      "--version",
+      version,
+      "--taille-donnees",
+      String(tailleApp),
+      "--precedent",
+    ]);
+  } finally {
+    rmSync(dossier, { recursive: true, force: true });
+  }
 }
 
 principal().catch((erreur) => {
