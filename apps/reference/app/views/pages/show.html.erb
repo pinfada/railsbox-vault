@@ -1,6 +1,8 @@
 <h2 id="libelle-note"><%= @note.label %></h2>
 <p id="identifiant-note"><%= @note.id %></p>
 <p id="sequence-note"><%= @note.sequence %></p>
+<%# Version 1.1.0 (#236 T2) : la colonne ajoutée par la migration, relue sur une note d'avant. %>
+<p id="commentaire-note" data-colonne="commentaire"><%= @note.commentaire.presence || "(aucun commentaire)" %></p>
 <%# La pièce est RELUE depuis le stockage, et son empreinte calculée sur ce qui a
     été lu : un nom de fichier survivant sans ses octets ne se lirait pas ici. %>
 <% if @piece&.key?(:sha256) %>

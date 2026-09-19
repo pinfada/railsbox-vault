@@ -46,6 +46,10 @@ jobs:
     steps:
       - name: Récupération du dépôt
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # L'historique ENTIER : le paquet PRÉCÉDENT (rétention 1, #236 T2) est refabriqué depuis la
+        # révision git que `sources.json` épingle (`paquetPrecedent.ref`), par `git archive`.
+        with:
+          fetch-depth: 0
 
       - name: Installation de Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

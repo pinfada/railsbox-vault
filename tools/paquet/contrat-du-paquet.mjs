@@ -42,8 +42,9 @@ export function nomDImage({ id, version, sha256, suffixe = "" }) {
  *
  * @param {{
  *   application: { id: string, version: string, schema: string },
- *   image: { name?: string, byteSize: number, sha256: string },
- *   graine: { name?: string, byteSize: number, sha256: string, disqueOctets: number },
+ *   image: { name?: string, byteSize: number, sha256: string, servi: object },
+ *   graine: { name?: string, byteSize: number, sha256: string, disqueOctets: number,
+ *             servi: object },
  *   exigences: { ruby: string, rails: string, debianSuite: string },
  *   secretKeyBase: { derivation: string },
  *   licence: string,
@@ -68,12 +69,14 @@ export function construirePaquet({
       name: image.name ?? nomDImage({ id, version, sha256: image.sha256 }),
       byteSize: image.byteSize,
       sha256: image.sha256,
+      servi: image.servi,
     },
     graine: {
       name: graine.name ?? nomDImage({ id, version, sha256: graine.sha256, suffixe: "graine" }),
       byteSize: graine.byteSize,
       sha256: graine.sha256,
       disqueOctets: graine.disqueOctets,
+      servi: graine.servi,
     },
     exigences: {
       ruby: exigences.ruby,
@@ -108,6 +111,28 @@ function validerImage(partie, cle, ajouter) {
   }
   if (!estTaille(partie.byteSize)) ajouter(code, `${cle}.byteSize absent ou nul`);
   if (!EMPREINTE.test(partie.sha256 ?? "")) ajouter(code, `${cle}.sha256 absent ou mal formé`);
+  validerServi(partie.servi, cle, ajouter);
+}
+
+/**
+ * VALIDE le fichier SERVI d'une image (#236 T2) : l'image compressée en gzip, sous un nom qui porte
+ * l'empreinte de l'image DÉCOMPRESSÉE. Sa taille et son empreinte sont celles du fichier compressé,
+ * c'est-à-dire de ce qui voyage.
+ */
+function validerServi(servi, cle, ajouter) {
+  const code = `${cle}-invalide`;
+  if (typeof servi !== "object" || servi === null) {
+    ajouter(code, `${cle}.servi absent : l'image n'a pas été compressée pour être servie`);
+    return;
+  }
+  if (servi.compression !== "gzip") ajouter(code, `${cle}.servi.compression n'est pas « gzip »`);
+  if (typeof servi.name !== "string" || !servi.name.endsWith(".gz")) {
+    ajouter(code, `${cle}.servi.name absent ou sans « .gz »`);
+  }
+  if (!estTaille(servi.byteSize)) ajouter(code, `${cle}.servi.byteSize absent ou nul`);
+  if (!EMPREINTE.test(servi.sha256 ?? "")) {
+    ajouter(code, `${cle}.servi.sha256 absent ou mal formé`);
+  }
 }
 
 /**

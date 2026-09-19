@@ -105,5 +105,11 @@
     "memoryMiB": 512,
     "appMountpoint": "/app",
     "httpPort": 3000
+  },
+  "paquetPrecedent": {
+    "note": "Retention 1 (#236 T2, ADR 0042) : le paquet PRECEDENT de l'application de reference est refabrique depuis cette revision git epinglee, avec l'outillage courant. Il est servi a cote du courant pour que « Plus tard » ouvre un coffre sur sa version, et sa graine fait naitre un coffre 1.0.0 pour les epreuves de mise a jour.",
+    "ref": "6e387819ba64c43601567e3462d8fc389ef50d2a",
+    "chemin": "apps/reference",
+    "version": "1.0.0"
   }
 }

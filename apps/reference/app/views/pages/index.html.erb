@@ -27,7 +27,12 @@
 <%# L'état du disque de données relevé par l'init au montage (revue #211, 5) :
     ce qu'un scénario de boot à froid exige, un disque sans erreur. %>
 <% if @disque %>
-  <p id="etat-du-disque" data-disque-releve="oui" data-disque-options="<%= @disque["options"] %>" data-disque-erreurs="<%= @disque["erreurs"] %>" data-disque-alertes="<%= @disque["alertes"] %>" data-disque-rejeu="<%= @disque["rejeu"] %>">disque de données : <%= @disque["erreurs"] %> erreur(s)</p>
+  <%# `tag.p` et `data:` plutôt que des attributs interpolés : rendu identique, et aucune variable
+      de gabarit hors guillemets pour les scanners (faux positif de la PR #237). %>
+  <%= tag.p "disque de données : #{@disque['erreurs']} erreur(s)", id: "etat-du-disque",
+            data: { disque_releve: "oui", disque_options: @disque['options'],
+                    disque_erreurs: @disque['erreurs'], disque_alertes: @disque['alertes'],
+                    disque_rejeu: @disque['rejeu'] } %>
 <% else %>
   <p id="etat-du-disque" data-disque-releve="non">disque de données : état non relevé</p>
 <% end %>

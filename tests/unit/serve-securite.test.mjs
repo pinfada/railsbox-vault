@@ -188,3 +188,21 @@ test("serveur — un vrai tube nommé n'est jamais lu, et ne bloque jamais la r�
   assert.equal(reponse.statut, 404);
   assert.equal(reponse.entetes["cache-control"], "no-store");
 });
+
+test("serveur — un morceau gzip est servi TEL QUEL : octet-stream, sans Content-Encoding (#236 T2)", async (t) => {
+  // La coquille décompresse elle-même, par `DecompressionStream`, et hache l'image DÉCOMPRESSÉE : un
+  // `Content-Encoding: gzip` ferait décompresser le navigateur d'abord, et la coquille recevrait des
+  // octets qui ne sont plus du gzip.
+  const { racine, port } = await lancerServeur(t);
+  await mkdir(join(racine, "artifacts", "reference-image"), { recursive: true });
+  await writeFile(
+    join(racine, "artifacts", "reference-image", "graine-08c78ce3.ext4.gz"),
+    Buffer.from([0x1f, 0x8b, 0x08, 0x00]),
+  );
+  const reponse = await lire(port, "/artifacts/reference-image/graine-08c78ce3.ext4.gz");
+  assert.equal(reponse.statut, 200);
+  assert.equal(reponse.entetes["content-type"], "application/octet-stream");
+  assert.equal(reponse.entetes["content-encoding"], undefined);
+  // La politique de cache ne change PAS dans #236 T2 : `no-cache`, comme tout `/artifacts/`.
+  assert.equal(reponse.entetes["cache-control"], "no-cache");
+});

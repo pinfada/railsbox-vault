@@ -41,6 +41,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 
 import { construirePaquet, nomDImage, validerPaquet } from "./contrat-du-paquet.mjs";
+import { compresserDeterministe, nomServi } from "./compression.mjs";
 import {
   identiteDeLApplication,
   secretsPresents,
@@ -61,13 +62,15 @@ const ETIQUETTE_FABRICANT = "railsbox-vault-diskbuilder:local";
 
 /**
  * @param {string[]} arguments_
- * @returns {{ source: string, id: string | null, version: string | null, tailleDonnees: number }}
+ * @returns {{ source: string, id: string | null, version: string | null, tailleDonnees: number,
+ *             role: string }}
  */
 export function analyserArguments(arguments_) {
   let source = join(RACINE_DEPOT, "apps", "reference");
   let id = null;
   let version = null;
   let tailleDonnees = SOURCES.disk.appDiskMiB;
+  let role = ROLES_DU_CONTRAT.courant;
 
   for (let rang = 0; rang < arguments_.length; rang += 1) {
     const argument = arguments_[rang];
@@ -83,6 +86,8 @@ export function analyserArguments(arguments_) {
       tailleDonnees = Number.parseInt(valeurCollee("--taille-donnees="), 10);
     } else if (argument === "--taille-donnees") {
       tailleDonnees = Number.parseInt(arguments_[++rang], 10);
+    } else if (argument === "--precedent") {
+      role = ROLES_DU_CONTRAT.precedent;
     } else {
       throw new Error(`option inconnue : ${argument}`);
     }
@@ -90,8 +95,18 @@ export function analyserArguments(arguments_) {
   if (!Number.isInteger(tailleDonnees) || tailleDonnees < 64) {
     throw new Error(`taille du disque de données invalide : ${tailleDonnees} Mio`);
   }
-  return { source: resolve(source), id, version, tailleDonnees };
+  return { source: resolve(source), id, version, tailleDonnees, role };
 }
+
+/**
+ * Les deux CONTRATS qu'un dossier d'artefacts porte (#236 T2, rétention 1) : le paquet COURANT, que
+ * le descripteur sert, et le PRÉCÉDENT, gardé servable pour que « Plus tard » ouvre un coffre sur sa
+ * version. `--precedent` fabrique le second ; les images de l'un ne retirent jamais celles de l'autre.
+ */
+export const ROLES_DU_CONTRAT = Object.freeze({
+  courant: "paquet.json",
+  precedent: "paquet-precedent.json",
+});
 
 /**
  * Les fichiers de la source qui ENTRERONT dans le paquet, en chemins relatifs à barres obliques.
@@ -255,16 +270,32 @@ function mesurer(chemin) {
 function nommerParEmpreinte(fichierTemporaire, { id, version, suffixe }) {
   const mesure = mesurer(join(DOSSIER_ARTEFACTS, fichierTemporaire));
   const nom = nomDImage({ id, version, sha256: mesure.sha256, suffixe });
-  // Les images d'une fabrication PRÉCÉDENTE du même id sont retirées : elles ne sont plus citées
-  // par aucun manifeste, et `publier` publierait sinon un artefact que rien ne réclame.
-  const motif = new RegExp(`^${id}-.*${suffixe === "" ? "" : `${suffixe}-`}[0-9a-f]{8}\\.ext4$`);
+  // Les images d'une fabrication ANTÉRIEURE du même id ET de la même VERSION sont retirées — brutes
+  // et servies : elles ne sont plus citées par aucun manifeste. Une AUTRE version est gardée : c'est
+  // peut-être le paquet PRÉCÉDENT de la rétention 1 (#236 T2), sans lequel « Plus tard » n'ouvre rien.
+  const prefixe = `${id}-${version}-`;
+  const estUneImage = (fichier) => fichier.endsWith(".ext4") || fichier.endsWith(".ext4.gz");
   for (const ancien of readdirSync(DOSSIER_ARTEFACTS)) {
-    if (ancien !== nom && motif.test(ancien) && estDuMemeRole(ancien, suffixe, id)) {
+    const memeImage = ancien.startsWith(prefixe) && estUneImage(ancien);
+    if (ancien !== nom && memeImage && estDuMemeRole(ancien, suffixe, id)) {
       rmSync(join(DOSSIER_ARTEFACTS, ancien));
     }
   }
   renameSync(join(DOSSIER_ARTEFACTS, fichierTemporaire), join(DOSSIER_ARTEFACTS, nom));
   return { name: nom, ...mesure };
+}
+
+/**
+ * COMPRESSE une image pour la servir (gzip déterministe, #236 T2) et rend l'image augmentée de son
+ * fichier SERVI : nom, taille et empreinte de ce qui voyage.
+ */
+async function servirCompresse(image) {
+  const nom = nomServi(image.name, image.sha256);
+  const mesure = await compresserDeterministe(
+    join(DOSSIER_ARTEFACTS, image.name),
+    join(DOSSIER_ARTEFACTS, nom),
+  );
+  return { ...image, servi: { name: nom, compression: "gzip", ...mesure } };
 }
 
 /** Distingue une image de CODE d'une GRAINE : leurs noms ne diffèrent que par ce segment. */
@@ -363,8 +394,12 @@ async function fabriquerDepuisLArbre({ options, identite, arbreDuPaquet }) {
 
   const debut = Date.now();
   await fabriquerLesImages({ tailleDonnees: options.tailleDonnees });
-  const image = nommerParEmpreinte("paquet.ext4", { ...identite, suffixe: "" });
-  const graine = nommerParEmpreinte("graine.ext4", { ...identite, suffixe: "graine" });
+  const image = await servirCompresse(
+    nommerParEmpreinte("paquet.ext4", { ...identite, suffixe: "" }),
+  );
+  const graine = await servirCompresse(
+    nommerParEmpreinte("graine.ext4", { ...identite, suffixe: "graine" }),
+  );
 
   const verrou = readFileSync(join(options.source, "Gemfile.lock"), "utf8");
   const rails = verrou.match(/^\s+railties \(([^)]+)\)/m)?.[1];
@@ -386,9 +421,12 @@ async function fabriquerDepuisLArbre({ options, identite, arbreDuPaquet }) {
       `contrat de paquet refusé :\n${anomalies.map((a) => `  · [${a.code}] ${a.message}`).join("\n")}`,
     );
   }
-  const remplacement = annonceDeRemplacement(paquetEnPlace(), paquet);
+  const remplacement =
+    options.role === ROLES_DU_CONTRAT.courant
+      ? annonceDeRemplacement(paquetEnPlace(), paquet)
+      : null;
   writeFileSync(
-    join(DOSSIER_ARTEFACTS, "paquet.json"),
+    join(DOSSIER_ARTEFACTS, options.role),
     `${JSON.stringify(paquet, null, 2)}\n`,
     "utf8",
   );
@@ -396,7 +434,7 @@ async function fabriquerDepuisLArbre({ options, identite, arbreDuPaquet }) {
   console.log(
     `→ paquet   ${image.name}  ${mio(image.byteSize)} Mio\n` +
       `→ graine   ${graine.name}  ${mio(graine.byteSize)} Mio (disque de données : ${options.tailleDonnees} Mio)\n` +
-      `→ contrat  paquet.json (fabrication des images : ${((Date.now() - debut) / 1000).toFixed(0)} s)`,
+      `→ contrat  ${options.role} (fabrication des images : ${((Date.now() - debut) / 1000).toFixed(0)} s)`,
   );
   if (remplacement !== null) console.log(remplacement);
   return paquet;

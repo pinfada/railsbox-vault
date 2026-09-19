@@ -38,6 +38,7 @@ export const CAMPAGNES = Object.freeze([
   { nom: "archive-recuperation", script: "tools/muter-gardes-archive-recuperation.mjs" },
   { nom: "coquille", script: "tools/muter-gardes-coquille.mjs" },
   { nom: "cycle-de-vie", script: "tools/muter-gardes-cycle-de-vie.mjs" },
+  { nom: "dephasage", script: "tools/muter-gardes-dephasage.mjs" },
   { nom: "enveloppe-v2", script: "tools/muter-gardes-enveloppe-v2.mjs" },
   { nom: "fins-d-onglet", script: "tools/muter-gardes-fins-d-onglet.mjs" },
   { nom: "hierarchie-de-cles", script: "tools/muter-gardes-hierarchie-de-cles.mjs" },
