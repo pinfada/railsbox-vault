@@ -372,11 +372,14 @@ export const MUTATIONS = Object.freeze([
   },
   {
     nom: "chaque MORCEAU du paquet porte une empreinte bien formée (#236)",
-    garde: "formeDesMorceaux — le contrôle de l'empreinte des trois morceaux",
+    // Depuis #236 T2, le contrôle vit dans `formeDUnMorceau`, commun aux trois morceaux et au
+    // paquet précédent de la rétention 1.
+    garde: "formeDUnMorceau — le contrôle de l'empreinte des morceaux",
     fichier: DESCRIPTEUR,
     avant:
-      '    if (!EMPREINTE.test(String(morceau?.sha256 ?? "")))\n' +
-      "      return `empreinte absente ou mal formée : ${cle}`;\n",
+      '  if (!EMPREINTE.test(String(morceau?.sha256 ?? ""))) {\n' +
+      "    return `empreinte absente ou mal formée : ${cle}`;\n" +
+      "  }\n",
     apres: "",
     epreuves: [EPREUVE_APPLICATION],
   },
