@@ -25,6 +25,13 @@ import {
 } from "/src/coquille/parcours.mjs";
 import { CODES_REFUS_COQUILLE } from "/src/coquille/refus-de-coquille.mjs";
 
+/** Les lignes d'un démarrage refusé, dont la conduite se lit dans la réponse publiée (#250). */
+const DEMARRAGES_REFUSES = Object.freeze([
+  "sans-application",
+  "demarrage-refuse",
+  "reprise-refusee",
+]);
+
 /** Cadence de la progression annoncée pendant un démarrage : assez rare pour un lecteur d'écran. */
 const ANNONCE_DE_PROGRESSION_MS = 10_000;
 
@@ -82,8 +89,13 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
       etat.referenceDesRefus = { ...(rapport.refusDeRequete ?? {}) };
       return reussir(accueil.texteDeDemarrage(rapport));
     }
-    if (ligne.evenement === "sans-application")
-      return refuser(CODES_REFUS_COQUILLE.applicationAbsente);
+    // Un démarrage — ou une reprise — refusé : la réponse PUBLIÉE dit laquelle, signature comprise
+    // (#250). « Aucune application » n'est lu que d'une origine qui n'en sert aucune.
+    if (DEMARRAGES_REFUSES.includes(ligne.evenement)) {
+      dire("parcours-attente", "");
+      const application = lireJson("coquille-rapport").application;
+      return refuser(accueil.codeDuDemarrageRefuse(application, ligne.code ?? null));
+    }
     if (ligne.evenement === "verrouillage-en-cours") {
       return dire("parcours-attente", MESSAGES.verrouillageEnCours);
     }

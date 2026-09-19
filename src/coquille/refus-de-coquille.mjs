@@ -164,6 +164,13 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * revue de sécurité de la PR #171).
    */
   volumeApplicatifSansManifeste: "VAULT_COQUILLE_VOLUME_APPLICATIF_SANS_MANIFESTE",
+  /**
+   * Le PREMIER boot d'une application installée n'a pas pu acquérir ses artefacts — noyau, initrd,
+   * rootfs, paquet : refusés, coupés ou d'une empreinte fausse —, et le volume n'a jamais démarré
+   * (#250). Rien n'est perdu : il porte la graine telle que l'installation l'a versée, et
+   * « Reprendre l'installation » redémarre, sans rien retirer — le volume est identifié.
+   */
+  installationInachevee: "VAULT_COQUILLE_INSTALLATION_INACHEVEE",
 
   // --- Le RELAIS HTTP vers l'application du guest (#192, ADR 0038) -----------------------------
   /**
@@ -359,6 +366,8 @@ const MESSAGES = Object.freeze({
     "Une capacité exigée manque à ce navigateur : la coquille le dit plutôt que de l'inventer.",
   [CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste]:
     "Un volume applicatif existe sans manifeste : la coquille refuse de l'écraser pour installer.",
+  [CODES_REFUS_COQUILLE.installationInachevee]:
+    "Le premier démarrage n'a pas pu acquérir les artefacts du boot, et le volume n'a jamais démarré : l'installation est inachevée.",
   [CODES_REFUS_COQUILLE.applicationNonDemarree]:
     "L'application n'est pas démarrée : il n'y a rien à servir tant que le coffre n'a pas été ouvert et l'application lancée.",
   [CODES_REFUS_COQUILLE.requeteHttpRefusee]:

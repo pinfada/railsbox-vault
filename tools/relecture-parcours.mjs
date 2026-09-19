@@ -93,6 +93,9 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "dureeDeLaReprise",
     "applicationEnAttenteDeLaReprise",
     "applicationEnAttenteSousUnRefus",
+    // Une installation inachevée (#250) : « Reprendre l'installation », et le coffre à l'abri.
+    "attenduDeLInstallationInachevee",
+    "applicationEnAttenteDeLInstallation",
   ],
   accueil: [
     "applicationEnAttente",
@@ -120,6 +123,9 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "dureeDeLaReprise",
     "applicationEnAttenteDeLaReprise",
     "applicationEnAttenteSousUnRefus",
+    // Une installation inachevée (#250) : « Reprendre l'installation », et le coffre à l'abri.
+    "attenduDeLInstallationInachevee",
+    "applicationEnAttenteDeLInstallation",
     "verrouillageEnCours",
     "sauvegardeEnCours",
     "sauvegardePrete",

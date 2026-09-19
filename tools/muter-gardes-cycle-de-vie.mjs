@@ -43,6 +43,11 @@ const DESCRIPTEUR = "src/coquille/descripteur-applicatif.mjs";
 
 const EPREUVE_CYCLE = "tests/unit/coquille-cycle-de-vie.test.mjs";
 const EPREUVE_APPLICATION = "tests/unit/coquille-application.test.mjs";
+/** L'installation interrompue reconnue dès le premier échec, et la garde de sa reprise (#250). */
+const INSTALLATION = "src/coquille/installation-interrompue.mjs";
+const REPRISE = "src/coquille/reprise-installation.mjs";
+const ACCUEIL = "src/coquille/accueil-de-la-mise-a-jour.mjs";
+const EPREUVE_INSTALLATION = "tests/unit/coquille-installation-interrompue.test.mjs";
 
 /**
  * Les gardes de #163, et la façon exacte de les retirer.
@@ -403,6 +408,51 @@ export const MUTATIONS = Object.freeze([
     avant: "    pannes: rendu.failures.length,",
     apres: "    pannes: rendu.failures,",
     epreuves: [EPREUVE_APPLICATION],
+  },
+  // --- #250 : la GARDE de la reprise, et les mots de la page ---------------------------------------
+  {
+    nom: "un volume qui a SERVI (journal avancé, ou absent) n'est jamais « à reprendre » (#250)",
+    garde: "signatureDInstallationInterrompue — le journal réduit à la racine de naissance",
+    fichier: INSTALLATION,
+    avant:
+      "  if (!creation.creationSeule) {\n" +
+      "    return { interrompue: false, motif: creation.motif, tailleLogique: creation.tailleLogique };\n" +
+      "  }\n",
+    apres: "",
+    epreuves: [EPREUVE_INSTALLATION],
+  },
+  {
+    nom: "une installation qui a DÉJÀ démarré n'est jamais dite « inachevée » (#250)",
+    garde: "echecDuPremierBoot — le volume jamais démarré",
+    fichier: INSTALLATION,
+    avant: "  if (!(await jamaisDemarree({ nom }))) return null;\n",
+    apres: "",
+    epreuves: [EPREUVE_INSTALLATION],
+  },
+  {
+    nom: "un refus TYPÉ du support n'est pas traduit en installation interrompue (#250)",
+    garde: "echecDInstallationReconnu — seuls les échecs d'acquisition sont reconnus",
+    fichier: INSTALLATION,
+    avant: "  if (!acquisition) return erreur;\n",
+    apres: "",
+    epreuves: [EPREUVE_INSTALLATION],
+  },
+  {
+    nom: "une reprise n'avale que l'échec RECONNU : tout autre refus remonte (#250)",
+    garde: "reprendreSiSignatureConfirmee — le code de l'échec de la réinstallation",
+    fichier: REPRISE,
+    avant:
+      "    if (erreur?.code !== CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste) throw erreur;\n",
+    apres: "",
+    epreuves: [EPREUVE_INSTALLATION],
+  },
+  {
+    nom: "la page dit l'installation inachevée d'après la SIGNATURE, pas d'après le code (#250)",
+    garde: "codeDuDemarrageRefuse — la signature publiée",
+    fichier: ACCUEIL,
+    avant: "  if (application?.installationInterrompue === true) return C.installationInachevee;\n",
+    apres: "",
+    epreuves: [EPREUVE_INSTALLATION],
   },
 ]);
 

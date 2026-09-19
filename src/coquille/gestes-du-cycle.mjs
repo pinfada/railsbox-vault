@@ -80,12 +80,15 @@ export function brancherLesGestesDuCycle(liaison) {
 }
 
 /**
- * La ligne d'état d'un démarrage rendu. Un refus de DÉPHASAGE (#236 T2) porte son code, et sa
- * conduite n'est pas celle d'une origine sans application : il passe par la ligne des refus.
+ * La ligne d'état d'un démarrage rendu. Un refus TYPÉ — déphasage (#236 T2), installation inachevée
+ * ou volume anonyme (#250) — porte son code et passe par la ligne des refus : « sans application »
+ * n'est dit que d'une origine qui n'en sert aucune. C'était le mensonge de #250 : un volume anonyme
+ * y était publié, et la page le lisait « aucune application n'est livrée ».
  */
 function ligneDuDemarrage(rendu) {
   if (rendu.demarree) return "cycle:application-demarree";
-  if (rendu.dephasage !== undefined) return `cycle:demarrage-refuse:${rendu.code}`;
+  const code = rendu.code ?? CODES_REFUS_COQUILLE.applicationAbsente;
+  if (code !== CODES_REFUS_COQUILLE.applicationAbsente) return `cycle:demarrage-refuse:${code}`;
   return `cycle:sans-application:${rendu.motif}`;
 }
 
@@ -229,9 +232,25 @@ async function demarrer(contexte, corps = {}) {
  */
 async function reprendre(contexte) {
   const { demander, rapport, publier, dire } = contexte;
+  // Un volume INSTALLÉ dont le premier boot n'a pas pu acquérir ses artefacts (#250) : il n'y a rien
+  // à retirer — le Worker le refuserait, le volume étant identifié —, reprendre, c'est redémarrer.
+  if (rapport.application?.installee === true) return demarrer(contexte);
   dire("cycle:reprise-en-cours");
   try {
     const rendu = await demander("reprendreInstallation", {});
+    if (!rendu.reprise && rendu.installationInterrompue === true) {
+      // La réinstallation a échoué À SON TOUR, et le volume qu'elle laisse est de nouveau reconnu
+      // (#250) : le bouton RESTE, et la page redit l'installation inachevée, pas « geste rompu ».
+      rapport.application = {
+        demarree: false,
+        code: rendu.code,
+        motif: rendu.motif,
+        installationInterrompue: true,
+      };
+      publier();
+      dire(`cycle:reprise-refusee:${rendu.code}`);
+      return rendu;
+    }
     if (!rendu.reprise) {
       // Le refus le plus probable est « déjà installée » (un manifeste est apparu entre-temps) : le
       // bouton n'a alors plus rien à proposer, et le laisser visible inviterait à le recliquer.

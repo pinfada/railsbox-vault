@@ -191,9 +191,12 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
 
   // --- Ce qui est MONTRÉ ----------------------------------------------------------------------------
 
-  function blocsDeLEcran(ecranId, releve) {
+  function blocsDeLEcran(ecranId, releve, rapport) {
     const moyens = releve.moyensProposes ?? [];
-    return ECRANS[ecranId].blocs.filter((bloc) => {
+    // Sous un refus à l'étape 4, la personne met son coffre à l'abri là où elle est : la conduite
+    // nomme « sauvegarder » et « verrouiller », l'étape les OFFRE (#252 ; #250).
+    const abri = ecranId === "travailler" ? accueil.gestesDAbri(rapport) : [];
+    return [...ECRANS[ecranId].blocs, ...abri].filter((bloc) => {
       if (ecranId === "rouvrir" && bloc === "phrase") return moyens.includes("phrase");
       // L'annonce n'offre de revenir, et de faire de la place par la révocation, qu'à un coffre qui
       // porte déjà un code : celui où l'on est venu dire « je n'ai plus cette feuille » (#239).
@@ -342,7 +345,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (ecranId === "refuse") dire("parcours-refus", conduiteHumaine(releve.dernierRefus));
     const precedent = etat.ecran;
     etat.ecran = ecranId;
-    const visibles = blocsDeLEcran(ecranId, releve);
+    const visibles = blocsDeLEcran(ecranId, releve, rapport);
     const rang = rangAffiche(ecranId, etat.pointeur, etat.progression);
     dire("parcours-rang", rang === null ? "" : MESSAGES.rang(rang));
     dire("parcours-titre", ecran.titre);

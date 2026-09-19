@@ -27,6 +27,7 @@ import {
   statOpfsVolume,
 } from "../vm/opfs-sync-access.mjs";
 import { readVolumeManifest } from "../vm/opfs-volume-open.mjs";
+import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 
 /**
  * REPREND une installation interrompue : retire le volume orphelin ET SES VOISINS
@@ -113,13 +114,25 @@ export async function reprendreSiSignatureConfirmee({
       motif: `ce n'est pas la signature d'une installation interrompue : ${signature.motif}`,
     };
   }
-  const installation = await reprendreLInstallation({
-    descripteur,
-    cleDeVolume,
-    observer,
-    openHandle,
-    lireLeManifeste,
-    ...primitives,
-  });
-  return { reprise: true, installation };
+  try {
+    const installation = await reprendreLInstallation({
+      descripteur,
+      cleDeVolume,
+      observer,
+      openHandle,
+      lireLeManifeste,
+      ...primitives,
+    });
+    return { reprise: true, installation };
+  } catch (erreur) {
+    // La réinstallation a échoué À SON TOUR — l'origine refuse encore, ou coupe (#250) : le volume
+    // qu'elle laisse est de nouveau reconnu, et la page doit pouvoir le redire, pas « geste rompu ».
+    if (erreur?.code !== CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste) throw erreur;
+    return {
+      reprise: false,
+      code: erreur.code,
+      motif: erreur.message,
+      installationInterrompue: erreur.installationInterrompue === true,
+    };
+  }
 }

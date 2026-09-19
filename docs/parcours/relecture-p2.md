@@ -340,6 +340,10 @@ Messages qui peuvent s'afficher sur cet écran :
   Reprendre la mise à jour ».
 - L'application ne peut pas démarrer à cette adresse : le message affiché sur cette page dit
   pourquoi, et ce que vous pouvez faire.
+- Cliquez sur « Reprendre l'installation », puis attendez que l'application s'affiche. Votre coffre
+  reste intact, et vous pouvez aussi le verrouiller.
+- L'application n'est pas encore installée : elle s'affichera ici quand vous aurez cliqué sur «
+  Reprendre l'installation ».
 
 ### Écran : Votre application
 
@@ -422,6 +426,10 @@ Messages qui peuvent s'afficher sur cet écran :
   Reprendre la mise à jour ».
 - L'application ne peut pas démarrer à cette adresse : le message affiché sur cette page dit
   pourquoi, et ce que vous pouvez faire.
+- Cliquez sur « Reprendre l'installation », puis attendez que l'application s'affiche. Votre coffre
+  reste intact, et vous pouvez aussi le verrouiller.
+- L'application n'est pas encore installée : elle s'affichera ici quand vous aurez cliqué sur «
+  Reprendre l'installation ».
 - Verrouillage en cours… Ne fermez pas l'onglet.
 - Sauvegarde en cours… Ne fermez pas l'onglet.
 - Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien ne s'est
@@ -749,8 +757,10 @@ faire.
   rouvert. Ce qui a été enregistré avant reste enregistré. Cliquez sur « Rouvrir le coffre ».
 - L'opération n'a pas abouti, sans cause identifiée. Rechargez la page puis réessayez. Si cela se
   reproduit, notez le détail technique ci-dessous et demandez de l'aide.
-- Une installation précédente a été interrompue avant la fin. Rien n'a été écrasé. Si le bouton «
-  Reprendre l'installation » apparaît, utilisez-le.
+- L'installation de votre application n'a pas pu se terminer. Rien n'est perdu : votre coffre ne
+  contient encore aucune donnée de l'application. Cliquez sur « Reprendre l'installation ». Si cela
+  recommence, cette adresse ne sert pas correctement l'application : vous pouvez alors verrouiller
+  votre coffre, et réessayer plus tard.
 - L'application s'est arrêtée. Cliquez de nouveau sur « Démarrer l'application ».
 - L'application a demandé quelque chose que le coffre ne transmet pas. Revenez à la page précédente
   de l'application et réessayez.
@@ -941,6 +951,8 @@ faire.
 - L'application n'a pas été lancée : elle aurait dû transformer vos données alors que vous ne l'avez
   pas demandé. Rien n'a été perdu. Si « Mettre à jour l'application » vous est proposé, utilisez-le
   ; sinon, signalez le problème à qui publie cette application.
+- Votre coffre contient déjà un disque d'application dont l'état ne peut pas être vérifié ici. Rien
+  n'a été effacé ni modifié. N'effacez rien : verrouillez votre coffre, puis demandez de l'aide.
 - La page demandée à l'application est trop volumineuse pour être affichée ici.
 - Ce coffre a atteint une limite de sécurité que cette version de RailsBox Vault ne sait pas encore
   renouveler. Rien n'a été perdu. Faites une sauvegarde, puis demandez de l'aide.

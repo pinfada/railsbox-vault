@@ -44,7 +44,6 @@ import {
 } from "./descripteur-applicatif.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "./identites-du-coffre.mjs";
 import { daterLaCreation, openOpfsVolume } from "../vm/opfs-block-backend.mjs";
-import { constaterCreationSeule } from "../vm/opfs-datation-de-creation.mjs";
 import {
   manifestSidecarName,
   openOpfsSyncAccess,
@@ -67,7 +66,13 @@ import {
   preparerLeDemarrage,
   suivreLeConstat,
 } from "./mise-a-jour-applicative.mjs";
-import { VOLUME_ALGORITHM, createManifest, parseManifest } from "../vm/volume-manifest.mjs";
+import { VOLUME_ALGORITHM, createManifest } from "../vm/volume-manifest.mjs";
+import {
+  echecDInstallationReconnu,
+  echecDuPremierBoot,
+  manifesteEstLisible,
+  signatureDInstallationInterrompue,
+} from "./installation-interrompue.mjs";
 
 /**
  * La LECTURE et la FORME du descripteur vivent dans `descripteur-applicatif.mjs` depuis #236 ; elles
@@ -75,6 +80,9 @@ import { VOLUME_ALGORITHM, createManifest, parseManifest } from "../vm/volume-ma
  * n'a pas à connaître la coupe interne pour exiger un refus.
  */
 export { ADRESSE_DESCRIPTEUR, DESCRIPTEUR_VERSION_ATTENDUE, formeDuDescripteur, lireLeDescripteur };
+
+/** La signature (#173) et la lecture du manifeste vivent dans `installation-interrompue.mjs` (#250). */
+export { manifesteEstLisible, signatureDInstallationInterrompue };
 
 /** Nom du volume qui porte le disque de l'application. Voir l'en-tête : ce n'est pas `coquille`. */
 export const NOM_DU_VOLUME_APPLICATIF = "application";
@@ -191,6 +199,38 @@ export async function installerSiNecessaire({
   // Rien n'existe : le manifeste est révoqué d'abord, pour que rien ne puisse ouvrir un volume à
   // demi versé entre-temps.
   await revoquer(nom);
+  try {
+    return await installerDansUnVolumeNeuf({
+      descripteur,
+      cleDeVolume,
+      ouvrir,
+      dater,
+      verser,
+      inscrire,
+      nom,
+      octets,
+    });
+  } catch (erreur) {
+    // Un échec APRÈS la création du volume laisse ce que le démarrage suivant trouverait : il est
+    // reconnu tout de suite, signature comprise (#250), au lieu de remonter nu.
+    throw await echecDInstallationReconnu({ erreur, nom, octets, observer, openHandle });
+  }
+}
+
+/**
+ * VERSE, DATE, puis INSCRIT le manifeste — l'installation proprement dite, sur un volume qui n'existe
+ * pas encore. Extraite de `installerSiNecessaire` pour que tout échec y soit reconnu (#250).
+ */
+async function installerDansUnVolumeNeuf({
+  descripteur,
+  cleDeVolume,
+  ouvrir,
+  dater,
+  verser,
+  inscrire,
+  nom,
+  octets,
+}) {
   const verse = await verserLeDisque({ descripteur, cleDeVolume, ouvrir, verser, nom, octets });
   if (verse.ecrits !== descripteur.graine.octets) {
     throw refus(
@@ -233,70 +273,6 @@ async function inscrireLeManifeste({ inscrire, nom, descripteur, octets, identif
       volume: { id: identifiantVolume, algorithm: VOLUME_ALGORITHM },
     }),
   );
-}
-
-/**
- * La SIGNATURE d'une installation interrompue (#173), mesurée en rejouant une interruption sur le
- * double (`tests/unit/vm-dater-la-creation.test.mjs`, `tests/unit/coquille-application.test.mjs`) :
- * TROIS conditions, et les trois ensemble — aucun manifeste jamais inscrit (déjà le contexte de cet
- * appel : `constaterLInstallation` n'y arrive que dans ce cas), un volume de la taille EXACTE que le
- * descripteur annonce, et un journal de génération qui ne porte que la racine de naissance
- * (`constaterCreationSeule`). Manquer l'une ou l'autre rend « autre chose » : le refus reste tel
- * quel, sans geste proposé — écraser un volume dont on n'est pas SÛR qu'il vient d'une installation
- * interrompue serait la décision que #171 a justement retirée à la coquille.
- *
- * @param {{ nom: string, octetsAnnonces: number, observer: Function, openHandle: Function,
- *           constaterCreation?: Function }} options
- * @returns {Promise<{ interrompue: boolean, motif: string | null, tailleLogique: number | null }>}
- */
-export async function signatureDInstallationInterrompue({
-  nom,
-  octetsAnnonces,
-  observer,
-  openHandle,
-  constaterCreation = constaterCreationSeule,
-}) {
-  const creation = await constaterCreation({ name: nom, openHandle, observer });
-  if (!creation.creationSeule) {
-    return { interrompue: false, motif: creation.motif, tailleLogique: creation.tailleLogique };
-  }
-  if (creation.tailleLogique !== octetsAnnonces) {
-    return {
-      interrompue: false,
-      motif:
-        `le volume déclare ${creation.tailleLogique} octets, le descripteur en annonce ` +
-        `${octetsAnnonces} : ce n'est pas CE volume-là`,
-      tailleLogique: creation.tailleLogique,
-    };
-  }
-  return { interrompue: true, motif: null, tailleLogique: creation.tailleLogique };
-}
-
-/**
- * Rend `true` si le manifeste voisin est présent ET LISIBLE — un objet JSON que `parseManifest`
- * accepte, pas seulement un fichier non vide (#188, revue de sécurité, MEDIUM-2).
- *
- * Un manifeste est le DERNIER geste de `installerSiNecessaire` : une coupure pendant son écriture
- * laisse un sidecar tronqué, donc non vide, donc PRÉSENT au sens de `observer(...).size > 0` — le
- * seul critère que cette fonction employait avant cette correction. Le confondre avec « installée »
- * rendait « l'application est déjà installée : rien à reprendre » sur le volume dont la coupure est
- * la plus tardive, donc pas la moins probable — précisément le cas que #173 promet de réparer et
- * laissait dehors.
- */
-export async function manifesteEstLisible(nom, lireLeManifeste) {
-  let octets;
-  try {
-    octets = await lireLeManifeste(nom);
-  } catch {
-    return false;
-  }
-  if (octets === null) return false;
-  try {
-    parseManifest(octets);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -689,8 +665,11 @@ async function booterLePaquet({ descripteur, prepare, cleDeVolume, reprendreParI
     });
   } catch (erreur) {
     const code = codeDuRefusDuGuest(erreur);
-    if (code === null) throw erreur;
-    return refusDeDemarrage(code, prepare);
+    if (code !== null) return refusDeDemarrage(code, prepare);
+    // Un artefact du boot non acquis sur un volume jamais démarré : installation INACHEVÉE (#250).
+    const inachevee = await echecDuPremierBoot(erreur, { nom: NOM_DU_VOLUME_APPLICATIF });
+    if (inachevee !== null) return inachevee;
+    throw erreur;
   }
 }
 

@@ -127,6 +127,8 @@ const CYCLE_DE_VIE = [
   "**/entetes-durcissement.spec.mjs",
   // Le bloc « Mettre à jour » et les refus de déphasage (#236 T2) : décidés avant tout boot.
   "**/coquille-mise-a-jour.spec.mjs",
+  // Un premier démarrage interrompu (#250) : reconnu, dit, et repris.
+  "**/coquille-installation-interrompue.spec.mjs",
 ];
 
 /**
