@@ -257,12 +257,15 @@ sous marqueur d'intention synchronisé ; les morceaux sont servis en gzip. Contr
 : une première revue de sécurité (1 CRITICAL — la reprise acceptait une version inférieure — et 2
 HIGH) et une première recette QA (5 majeurs) ont conclu non fusionnable ; corrigées, une
 contre-recette (2 réserves, corrigées) puis un contrôle ciblé (coupure provoquée en pleine migration
-: reprise aboutie, aucune donnée perdue) ont conclu fusionnable. Reste ouvert : **#250** (critique,
-antérieur à T2 : un premier démarrage dont un morceau échoue enferme le coffre sans geste de
-reprise), #251 (le premier clic après l'affichage de l'application est parfois perdu), #247 (le
-disque système, environ 206 Mio, est retéléchargé à chaque démarrage — magasin d'artefacts OPFS à
-instruire par un nouveau défi d'architecture avec veille avant toute tranche 3), #238, #241, #243,
-#245, #246, #248.
+: reprise aboutie, aucune donnée perdue) ont conclu fusionnable. Depuis le 19 septembre, les issues
+de suite sont traitées par lot plutôt qu'une à une
+([stratégie publiée sur #31](https://github.com/pinfada/railsbox-vault/issues/31#issuecomment-5744955316))
+: reste ouvert, lot A (en cours) — **#250** (critique, antérieur à T2 : un premier démarrage dont un
+morceau échoue enferme le coffre sans geste de reprise), #251 (le premier clic après l'affichage de
+l'application est parfois perdu) ; lot D, T3 de #236, après un défi d'architecture avec veille —
+#247 (le disque système, environ 206 Mio, est retéléchargé à chaque démarrage), #238 (pic mémoire) ;
+lot E — #243 ; lot C — #245 ; lot B — #246 ; lot J, après le jalon 6 — #248. #241 (résolue par cette
+PR) et #172 (absorbée par l'ADR 0033) sont closes.
 
 **Ce qui ferme l'épique #195 reste inchangé et vous revient** : une personne non technique, que vous
 désignez, suit les neuf écrans et leurs trois échecs sans aide (`docs/parcours/relecture-p2.md`) ;
