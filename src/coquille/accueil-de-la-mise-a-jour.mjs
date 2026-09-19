@@ -6,6 +6,7 @@
 // rien : le Worker redécide à chaque démarrage. Pur, comme le reste du répertoire : ni DOM, ni horloge.
 
 import { ISSUES_DU_DEPHASAGE } from "./dephasage.mjs";
+import { CODES_REFUS_COQUILLE as C } from "./refus-de-coquille.mjs";
 import {
   ATTENTE_DE_LA_MISE_A_JOUR,
   ATTENTE_DE_LA_REPRISE,
@@ -100,9 +101,69 @@ export function refusQuiTient(rapport) {
   return dephasage?.issue === ISSUES_DU_DEPHASAGE.refus ? (dephasage.code ?? null) : null;
 }
 
-/** « Démarrer l'application » est-il un geste POSSIBLE ? Ni sous un refus, ni sous la reprise seule. */
+/**
+ * Le dernier démarrage a-t-il reconnu une INSTALLATION INACHEVÉE (#250) ? La signature que le Worker
+ * a mesurée, jamais une déduction du code seul.
+ *
+ * @param {{ application?: object | null }} rapport
+ */
+export function installationInachevee(rapport) {
+  const application = rapport?.application;
+  return application?.demarree === false && application.installationInterrompue === true;
+}
+
+/**
+ * Le code dont la page dit la CONDUITE après un démarrage — ou une reprise — refusé (#250) : une
+ * installation reconnue a la sienne, quel que soit le code qui la porte ; sinon le code de la réponse,
+ * puis celui de la ligne d'état ; « aucune application » seulement quand rien d'autre n'est dit.
+ *
+ * @param {object | null | undefined} application la réponse publiée du dernier démarrage
+ * @param {string | null} [codeDeLaLigne]
+ */
+export function codeDuDemarrageRefuse(application, codeDeLaLigne = null) {
+  if (application?.installationInterrompue === true) return C.installationInachevee;
+  return application?.code ?? codeDeLaLigne ?? C.applicationAbsente;
+}
+
+/** Les codes d'un démarrage refusé qui laissent le coffre SANS données d'application (#250). */
+const REFUS_SANS_DONNEES_A_SAUVEGARDER = Object.freeze([
+  C.installationInachevee,
+  C.volumeApplicatifSansManifeste,
+]);
+
+/** Les BLOCS que l'étape 4 ajoute sous un refus, pour mettre le coffre à l'abri là où l'on est. */
+export const BLOCS_D_ABRI = Object.freeze({ verrouiller: "verrouiller", sauvegarde: "sauvegarde" });
+
+/**
+ * Les gestes de mise à l'abri OFFERTS à l'étape 4 sous un refus (#252 ; #250) — ceux que la conduite
+ * nomme, et eux seuls : aucun texte ne nomme un bouton absent, aucun bouton n'est offert pour échouer.
+ *
+ *  - un refus de déphasage qui TIENT : « Sauvegarder mon coffre » et « Verrouiller mon coffre » — ses
+ *    données sont intactes, et la sauvegarde se fait sans démarrer ;
+ *  - une installation inachevée, ou un volume anonyme : « Verrouiller mon coffre » seul — aucun
+ *    manifeste, donc rien que la sauvegarde puisse emporter (`VAULT_COQUILLE_APPLICATION_NON_INSTALLEE`).
+ *
+ * @param {{ application?: object | null, dephasage?: object | null }} rapport
+ * @returns {string[]} des valeurs de `BLOCS_D_ABRI`
+ */
+export function gestesDAbri(rapport) {
+  if (refusQuiTient(rapport) !== null) return [BLOCS_D_ABRI.verrouiller, BLOCS_D_ABRI.sauvegarde];
+  const application = rapport?.application;
+  if (application?.demarree !== false) return [];
+  const code = codeDuDemarrageRefuse(application);
+  return REFUS_SANS_DONNEES_A_SAUVEGARDER.includes(code) ? [BLOCS_D_ABRI.verrouiller] : [];
+}
+
+/**
+ * « Démarrer l'application » est-il un geste POSSIBLE ? Ni sous un refus, ni sous la reprise seule, ni
+ * sous une installation inachevée — c'est « Reprendre l'installation » qui la termine (#250).
+ */
 export function demarrerEstPossible(rapport) {
-  return refusQuiTient(rapport) === null && !repriseSeule(rapport?.dephasage);
+  return (
+    refusQuiTient(rapport) === null &&
+    !repriseSeule(rapport?.dephasage) &&
+    !installationInachevee(rapport)
+  );
 }
 
 /**
@@ -113,6 +174,7 @@ export function demarrerEstPossible(rapport) {
 export function attenduSousLeDephasage(rapport) {
   if (refusQuiTient(rapport) !== null) return MESSAGES.attenduSousUnRefus;
   if (repriseSeule(rapport?.dephasage)) return MESSAGES.attenduDeLaReprise;
+  if (installationInachevee(rapport)) return MESSAGES.attenduDeLInstallationInachevee;
   return null;
 }
 
@@ -147,5 +209,6 @@ export function texteDeDemarrage(rapport) {
 export function texteDeLEspaceEnAttente(rapport) {
   if (refusQuiTient(rapport) !== null) return MESSAGES.applicationEnAttenteSousUnRefus;
   if (repriseSeule(rapport?.dephasage)) return MESSAGES.applicationEnAttenteDeLaReprise;
+  if (installationInachevee(rapport)) return MESSAGES.applicationEnAttenteDeLInstallation;
   return MESSAGES.applicationEnAttente;
 }

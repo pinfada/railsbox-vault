@@ -886,7 +886,7 @@ function descripteurDeReprise(octets) {
   };
 }
 
-test("une installation TRONQUÉE, reconnue au second démarrage, montre le bouton de reprise", async ({
+test("une installation TRONQUÉE est reconnue dès le PREMIER démarrage, et le redit au second (#250)", async ({
   page,
   browserName,
 }, info) => {
@@ -907,31 +907,31 @@ test("une installation TRONQUÉE, reconnue au second démarrage, montre le bouto
   await ouvrirLaCoquille(page);
   await ouvrirParLaPhrase(page);
 
-  // PREMIER démarrage : le versement tronqué remonte comme une EXCEPTION du Worker — le canal
-  // privilégié la réduit alors à { code, message générique } (`repondreRefus`, délibérément : « un
-  // refus rendu n'a rien à en dire » du reste de l'exception) —, d'où le motif absent ici et l'état
-  // « demarrage-refuse » plutôt que « sans-application ».
+  // PREMIER démarrage : le versement tronqué ne remonte plus NU (`applicationAbsente`, « aucune
+  // application n'est livrée ») — le volume qu'il laisse est constaté TOUT DE SUITE, signature
+  // comprise, et la réponse est celle que le démarrage suivant rendrait (#250).
   await page.click("#demarrer-application");
-  await expect(page.locator("#cycle-etat")).toContainText("cycle:demarrage-refuse", {
-    timeout: 60_000,
-  });
+  await expect(page.locator("#cycle-etat")).toHaveText(
+    `cycle:demarrage-refuse:${CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste}`,
+    { timeout: 60_000 },
+  );
   let rapport = await releve(page);
   await info.attach(`reprise-tronque-${info.project.name}.json`, {
     body: JSON.stringify(rapport.application, null, 2),
     contentType: "application/json",
   });
   expect(rapport.application.demarree).toBe(false);
-  expect(rapport.application.code).toBe(CODES_REFUS_COQUILLE.applicationAbsente);
-  // Un versement tronqué n'est pas encore la signature : la coquille ne l'a pas encore RECONSTATÉE.
-  await expect(page.locator("#reprendre-l-installation")).toBeHidden();
+  expect(rapport.application.code).toBe(CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste);
+  expect(rapport.application.installationInterrompue).toBe(true);
+  await expect(page.locator("#reprendre-l-installation")).toBeVisible();
 
   // SECOND démarrage, SANS RIEN CHANGER sur le disque : le volume anonyme laissé par le premier
-  // essai est retrouvé, et `constaterLInstallation` REND cette fois une réponse structurée — pas une
-  // exception —, donc l'état publié est « sans-application », avec le motif ENTIER cette fois.
+  // essai est retrouvé par `constaterLInstallation`, et la réponse est la même.
   await page.click("#demarrer-application");
-  await expect(page.locator("#cycle-etat")).toContainText("cycle:sans-application", {
-    timeout: 60_000,
-  });
+  await expect(page.locator("#cycle-etat")).toHaveText(
+    `cycle:demarrage-refuse:${CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste}`,
+    { timeout: 60_000 },
+  );
   rapport = await releve(page);
   await info.attach(`reprise-signature-${info.project.name}.json`, {
     body: JSON.stringify(rapport.application, null, 2),
@@ -973,9 +973,12 @@ test("un volume anonyme d'une AUTRE taille n'est jamais offert au bouton, et rie
     body: JSON.stringify(second),
   });
   await page.click("#demarrer-application");
-  await expect(page.locator("#cycle-etat")).toContainText("cycle:sans-application", {
-    timeout: 60_000,
-  });
+  await expect(page.locator("#cycle-etat")).toContainText(
+    `cycle:demarrage-refuse:${CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste}`,
+    {
+      timeout: 60_000,
+    },
+  );
   const rapport = await releve(page);
   expect(rapport.application.code).toBe(CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste);
   expect(rapport.application.installationInterrompue).toBe(false);
@@ -992,9 +995,12 @@ test("un volume anonyme d'une AUTRE taille n'est jamais offert au bouton, et rie
     body: JSON.stringify(premier),
   });
   await page.click("#demarrer-application");
-  await expect(page.locator("#cycle-etat")).toContainText("cycle:sans-application", {
-    timeout: 60_000,
-  });
+  await expect(page.locator("#cycle-etat")).toContainText(
+    `cycle:demarrage-refuse:${CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste}`,
+    {
+      timeout: 60_000,
+    },
+  );
   const temoin = await releve(page);
   expect(temoin.application.code).toBe(CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste);
   expect(temoin.application.installationInterrompue).toBe(true);
