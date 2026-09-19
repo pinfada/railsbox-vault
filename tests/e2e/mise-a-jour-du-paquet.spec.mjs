@@ -31,6 +31,7 @@ import { fileURLToPath } from "node:url";
 import { exigerLesPrealables, expect, test } from "./contexte-persistant.mjs";
 import { E2E_ORIGIN_COQUILLE, E2E_ORIGIN_COQUILLE_B } from "../../playwright.e2e.config.mjs";
 import { artefactsV86Absents } from "../../tools/v86-paths.mjs";
+import { MESSAGES } from "../../src/coquille/textes-du-parcours.mjs";
 
 const RACINE = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CHEMIN_MANIFESTE = join(RACINE, "tools", "build-reference-image", "manifest.json");
@@ -51,6 +52,8 @@ const BUDGET_PREMIERE_PAGE_MS = 180_000;
 const BUDGET_PORTABILITE_MS = 600_000;
 /** Un refus de déphasage est décidé avant tout boot : il arrive en secondes. */
 const BUDGET_REFUS_MS = 60_000;
+/** Un verrouillage prend deux secondes ; la recette QA de #249 en a vu un « sans effet » 60 s (Q14). */
+const BUDGET_VERROUILLAGE_APRES_MISE_A_JOUR_MS = 60_000;
 
 function raisonDIndisponibilite() {
   if (!existsSync(CHEMIN_MANIFESTE)) {
@@ -334,23 +337,49 @@ test("un coffre 1.0.0 se met à jour en 1.1.0 sans rien perdre ; « Plus tard »
   });
   mesures.migrationMs = miseAJour.miseAJour.migrationMs;
   mesures.bootDeMiseAJourMs = miseAJour.bootMs;
-  await expect(page.locator("#mise-a-jour-texte")).toContainText(complet.application.version);
+  // La RÉUSSITE est dite là où la personne regarde, et la version affichée (recette QA de #249, Q3).
+  const versionServie = complet.application.version;
+  await expect(page.locator("#parcours-reussite")).toHaveText(
+    MESSAGES.miseAJourFaite(versionServie),
+  );
+  await expect(page.locator("#version-de-l-application")).toHaveText(
+    MESSAGES.versionDeLApplication(versionServie),
+  );
+  await expect(page.locator("#mise-a-jour"), "plus rien à proposer").toBeHidden();
+  mkdirSync(DOSSIER_RAPPORTS, { recursive: true });
+  await page.screenshot({
+    path: join(DOSSIER_RAPPORTS, "mise-a-jour-reussie.png"),
+    fullPage: true,
+  });
   const sous110 = await relireLaNote(page, identifiant);
   expect(sous110).toEqual({ colonne: 1, commentaire: "(aucun commentaire)" });
   noter("mise-a-jour-faite", mesures);
-  await page.close();
 
-  // --- 4. Rouvrir APRÈS la mise à jour : rien à proposer, rien à rejouer --------------------------
+  // --- 4. VERROUILLER juste après la mise à jour, puis rouvrir par l'INSTANTANÉ (recette QA, Q14) --
+  // La recette a vu une fois « Verrouiller » sans effet 60 s, puis un boot à froid. L'épreuve exige :
+  // le verrouillage aboutit dans son budget, l'instantané capturé est lié au NOUVEAU paquet (son
+  // empreinte d'image le compte), et la réouverture le reprend au lieu de booter à froid.
+  noter("verrouillage-apres-mise-a-jour");
+  const debutVerrouillage = Date.now();
+  await Promise.race([
+    verrouiller(page),
+    new Promise((_, rejeter) =>
+      setTimeout(
+        () => rejeter(new Error("verrouillage après la mise à jour sans effet (Q14)")),
+        BUDGET_VERROUILLAGE_APRES_MISE_A_JOUR_MS,
+      ),
+    ),
+  ]);
+  mesures.verrouillageApresMiseAJourMs = Date.now() - debutVerrouillage;
   noter("reouverture-apres-mise-a-jour");
-  page = await ouvrirLaCoquille(context, E2E_ORIGIN_COQUILLE, erreurs);
   await ouvrirParLaPhrase(page);
   expect((await dephasage(page)).issue).toBe("ouvrir");
   await expect(page.locator("#mise-a-jour")).toBeHidden();
   const apres = await demarrer(page);
   expect(apres.installation.installee).toBe(false);
+  expect(apres.instantaneUtilise, "l'instantané pris sous 1.1.0 est repris").toBe(true);
   expect(apres.miseAJour.migrationJouee).toBe(false);
-  expect(apres.miseAJour.schemaDesDonnees).toBe(complet.application.schema);
-  mesures.bootApresMiseAJourMs = apres.bootMs;
+  mesures.repriseApresMiseAJourMs = apres.bootMs;
   expect(await relireLaNote(page, identifiant)).toEqual({
     colonne: 1,
     commentaire: "(aucun commentaire)",
