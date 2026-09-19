@@ -223,6 +223,52 @@ le code qui a ouvert), « révoquer puis créer » aussi (il détruisait la pass
 #215, #217, #218 (retirer un code perdu sans détruire la passkey), #220 (`emplacementADeriver` exige
 l'identifiant dès qu'un type est porté deux fois), #191, #197, #210, #212.
 
+**#239 clos le 19 septembre 2026** (PR #244, 00 h 14 UTC, `main` `6e38781`) — le parcours quotidien
+existe : l'accueil d'un coffre déjà installé est l'écran « travailler » (et non plus la seule visite
+guidée vers l'avant), et la preuve qu'une feuille de récupération a ouvert vit désormais dans le
+coffre lui-même (secteur 1 du volume `coquille`, écrit par le Worker de confiance après une
+ouverture par le code réussie, jamais affirmée par la page) : `parcours.json` reste non probant
+(VULN-04 inchangée) et ne sert plus qu'à choisir le premier écran d'un coffre verrouillé. La
+confirmation de l'étape 3 devient une ouverture réelle par le code. Après « Parcours terminé »,
+l'étape 9 (révocation d'urgence) est facultative : « Révoquer maintenant » ou « Terminer sans
+révoquer ». Contrôles : défi C-K (décision « SIMPLIFIER »), 327 mutants tués sur onze campagnes,
+revue de sécurité par exécution (0 CRITICAL, 0 HIGH, 1 MEDIUM, 4 LOW), recette QA puis
+contre-recette (quatre majeurs corrigés).
+
+**#236 — installer une application Rails extérieure — livré en deux tranches, après un défi
+d'architecture ÉLARGIR le 17 septembre 2026** (paquet en image ext4 sans journal plutôt qu'en ISO
+9660 sur `cdrom`, pour rester chargeable sans reconstruire l'initramfs et sans recopier un tampon
+synchrone entier à chaque instantané). **T1 close le 18 septembre 2026** (PR #237, 19 h 46 UTC,
+`main` `c4efe5e`, [ADR 0041](decisions/0041-le-paquet-applicatif-partition-2-d-un-hda-compose.md)) :
+un paquet applicatif se fabrique depuis un dossier Rails extérieur au dépôt
+(`npm run app:paquet -- --source … --id … --version …`) sans copier ni secret ni historique Git ; le
+code (rootfs + paquet, partitions 1 et 2 d'un `hda` composé) et les données (`hdb`, options de
+durabilité de #209 inchangées) sont séparés ; le descripteur servi (v2) désigne le paquet par son
+empreinte. Revue de sécurité par exécution : 2 CRITICAL (secrets d'une source tierce non balayés —
+`.git/`, `vendor/`, `log/`, clés par environnement — et une graine plus petite que le disque annoncé
+admise), tous corrigés avant fusion. Recette QA : fusionnable avec réserves documentaires et de
+mesure. **T2 close le 19 septembre 2026** (PR #249, 19 h 00 UTC, `main` `730d09e`,
+[ADR 0042](decisions/0042-le-dephasage-de-versions-le-schema-decide-avant-le-boot.md)) : le
+manifeste du volume de données porte `app.id`, `app.version` et le schéma ; la coquille décide AVANT
+tout boot (refus d'un `id` étranger, d'une application non servie, d'un retour arrière déclaré, d'un
+schéma antérieur ; geste « Mettre à jour l'application » avec sauvegarde proposée et « Plus tard » —
+rétention 1 du paquet précédent) ; une migration interrompue reprend seule, sans perte de donnée,
+sous marqueur d'intention synchronisé ; les morceaux sont servis en gzip. Contrôles, en deux passes
+: une première revue de sécurité (1 CRITICAL — la reprise acceptait une version inférieure — et 2
+HIGH) et une première recette QA (5 majeurs) ont conclu non fusionnable ; corrigées, une
+contre-recette (2 réserves, corrigées) puis un contrôle ciblé (coupure provoquée en pleine migration
+: reprise aboutie, aucune donnée perdue) ont conclu fusionnable. Reste ouvert : **#250** (critique,
+antérieur à T2 : un premier démarrage dont un morceau échoue enferme le coffre sans geste de
+reprise), #251 (le premier clic après l'affichage de l'application est parfois perdu), #247 (le
+disque système, environ 206 Mio, est retéléchargé à chaque démarrage — magasin d'artefacts OPFS à
+instruire par un nouveau défi d'architecture avec veille avant toute tranche 3), #238, #241, #243,
+#245, #246, #248.
+
+**Ce qui ferme l'épique #195 reste inchangé et vous revient** : une personne non technique, que vous
+désignez, suit les neuf écrans et leurs trois échecs sans aide (`docs/parcours/relecture-p2.md`) ;
+ses retours vont dans une issue ; ce qui passe ferme #195 et ouvre la proposition du palier « usage
+sur données non sensibles ». Les gates de sécurité ne bougent pas.
+
 #52 est tranchée par l'[ADR 0013](decisions/0013-csp-de-la-coquille-et-boucle-de-v86.md) : la CSP de
 la coquille n'est **pas** élargie — `worker-src` reste `'self'` — parce que la mesure a montré
 qu'une boucle d'ordonnancement fournie par Vault couvre les trois moteurs sans elle. La CSP possède
