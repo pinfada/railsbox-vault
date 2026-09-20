@@ -76,6 +76,9 @@ const PLAYWRIGHT_FILES = [
   // navigateur écrit dans un fichier que Node exécute, exactement comme les rappels de
   // `page.evaluate` ci-dessus.
   "tests/fins-d-onglet/**/*.mjs",
+  // #251 : le banc du premier clic, qui pilote Chrome depuis Node et INJECTE son instrumentation
+  // dans la page — même mélange des deux contextes, pour la même raison.
+  "tools/reproduire-le-premier-clic.mjs",
 ];
 
 /**

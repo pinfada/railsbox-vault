@@ -127,10 +127,29 @@ html[data-travail-pret="true"] #parcours-titre {
   margin-bottom: 4px;
 }
 /* Rails prêt : « Démarrer » se retire, « Verrouiller » RESTE — le geste quotidien de l'accueil
-   doit rester visible et atteignable au clavier, application démarrée (QA de #244). */
-html[data-travail-pret="true"] #cycle [data-bloc="application"],
+   doit rester visible et atteignable au clavier, application démarrée (QA de #244).
+
+   Le mode travail s'installe DÈS LE DÉBUT du démarrage (#251), pendant que tous les gestes longs
+   sont fermés : c'est le seul instant où replier ne déplace rien sous une main. Ce qui reste alors
+   visible est la LIGNE DE PROGRESSION, et elle seule — un boot de deux minutes sans signe de vie
+   serait pire que le repli. Elle garde ensuite sa place quand elle se retire : la mesure du
+   20/09/2026 a relevé « Verrouiller mon coffre » sautant de 262 pixels vers le haut à l'instant où
+   l'application s'affichait, et une main déjà visée perd alors son clic sans aucun signe. */
+html[data-travail-pret="true"]
+  #cycle
+  [data-bloc="application"]
+  > *:not(:has(#parcours-progression)),
 html[data-travail-pret="true"] #cycle-description {
   display: none;
+}
+html[data-travail-pret="true"] #cycle [data-bloc="application"] > *:has(#parcours-progression) {
+  margin: 0;
+  min-height: 18px;
+}
+/* Retirée, la progression garde sa BOÎTE : sinon le geste en dessous d'elle sauterait à la fin. */
+html[data-travail-pret="true"] #parcours-progression[hidden] {
+  display: block;
+  visibility: hidden;
 }
 html[data-travail-pret="true"] #parcours-reussite {
   margin-bottom: 16px;
