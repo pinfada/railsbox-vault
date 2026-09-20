@@ -67,7 +67,8 @@ export const LIBELLES_DES_BLOCS = Object.freeze({
 const ENVIRON_DEUX_MINUTES =
   "Le premier démarrage installe l'application : comptez environ deux minutes, parfois davantage " +
   "sur un appareil lent ou occupé. Les démarrages suivants sont plus courts. Pendant ce temps, " +
-  "l'onglet peut sembler figé : ne le fermez pas. La progression s'affiche sous le bouton.";
+  "l'onglet peut sembler figé : ne le fermez pas. Le bouton s'efface dès le premier clic, et la " +
+  "progression s'affiche à sa place.";
 
 const QUELQUES_SECONDES_DE_VERROUILLAGE = "Le verrouillage prend quelques secondes.";
 
