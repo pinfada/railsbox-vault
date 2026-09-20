@@ -206,6 +206,7 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
 
   function demarrerLaProgression() {
     if (etat.demarrage !== null) return;
+    noeud("parcours-attente").style.minHeight = "";
     const recus = () => lireJson("coquille-rapport").mesures?.battements?.recus ?? 0;
     const depart = { instant: performance.now(), battements: recus() };
     const dite = { phase: undefined, a: 0 };
@@ -230,10 +231,34 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
     etat.demarrage = setInterval(annoncer, SONDE_DE_LA_PHASE_MS);
   }
 
+  /**
+   * La ligne d'attente GARDE la place qu'elle occupait, jusqu'au prochain geste de la personne (#251).
+   *
+   * Mesuré le 20/09/2026 (`tools/reproduire-le-premier-clic.mjs`) : à l'instant où l'application
+   * s'affiche, la ligne de progression se vide, et tout ce qui la suit — `#cycle`, qui porte
+   * « Verrouiller mon coffre » — remonte. Une main déjà visée clique alors à côté, sans aucun signe.
+   * La place est donc retenue tant que personne n'a agi, puis rendue au premier geste REÇU : le clic
+   * est livré d'abord, la page se referme ensuite, et rien ne bouge sous un doigt.
+   */
+  function retenirLaPlaceDeLAttente() {
+    const ligne = noeud("parcours-attente");
+    if (ligne === null) return;
+    const hauteur = ligne.getBoundingClientRect().height;
+    if (hauteur === 0) return;
+    ligne.style.minHeight = `${hauteur}px`;
+    const rendre = () => {
+      ligne.style.minHeight = "";
+    };
+    for (const type of ["click", "keydown"]) {
+      ligne.ownerDocument.addEventListener(type, rendre, { once: true });
+    }
+  }
+
   function arreterLaProgression() {
     if (etat.demarrage === null) return;
     clearInterval(etat.demarrage);
     etat.demarrage = null;
+    retenirLaPlaceDeLAttente();
     noeud("parcours-progression").hidden = true;
     dire("parcours-attente", "");
   }

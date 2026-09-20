@@ -55,8 +55,18 @@ async function jusquALAccueil(page, browserName) {
   await expect(ecran(page, "Votre application")).toBeVisible({ timeout: DELAI });
 }
 
-/** L'application « s'affiche » : la ligne du cycle, telle que le démarrage la publie. */
+/**
+ * L'application « s'affiche » : les DEUX lignes du cycle, dans l'ordre où le démarrage les publie.
+ * Le démarrage EN COURS n'est pas un détail : c'est lui qui installe le mode travail, pendant que
+ * tous les gestes longs sont fermés (#251).
+ */
 async function afficherLApplication(page, browserName) {
+  await page.evaluate(() => {
+    document.getElementById("cycle-etat").textContent = "cycle:demarrage-en-cours";
+  });
+  if (browserName !== "firefox") {
+    await expect(page.locator("html")).toHaveAttribute("data-travail-pret", "true");
+  }
   await page.evaluate(() => {
     document.getElementById("cycle-etat").textContent = "cycle:application-demarree";
   });
@@ -189,4 +199,100 @@ test("#251, Chromium et WebKit : un geste long pressé pendant un rendu de la pa
     return;
   }
   await expect(ecran(page, "Recevoir votre code de récupération")).toBeVisible({ timeout: DELAI });
+});
+
+// LE CAS QUE LA MESURE A RÉVÉLÉ (#251, banc du 20/09/2026) : à l'instant où l'application s'affiche,
+// AUCUN geste de la coquille ne bouge.
+//
+// `tools/reproduire-le-premier-clic.mjs`, sous Chrome installé fenêtré et machine virtuelle RÉELLE, a
+// relevé un décalage de mise en page de 0,187 au moment de l'affichage : `#cycle` — la section qui
+// porte « Verrouiller mon coffre » — remontait de 262 pixels, et `#portabilite`, qui porte
+// « Sauvegarder mon coffre », se déplaçait aussi. Une main déjà visée clique alors à côté : aucun
+// effet, aucun signe, second clic pris — exactement le symptôme de l'issue, et il touche une personne
+// autant qu'un pilote.
+//
+// Le repli du mode travail se fait désormais au DÉBUT du démarrage, pendant que tous les gestes longs
+// sont fermés. Ce que cette épreuve tient : entre « application affichée » et dix secondes plus tard,
+// la zone des gestes ne bouge pas d'un pixel, et aucun décalage subi ne la nomme.
+test("#251 : entre l'affichage de l'application et dix secondes plus tard, aucun geste de la coquille ne bouge", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName === "webkit", "rien ne s'y ouvre : pas d'OPFS synchrone");
+  test.skip(browserName === "firefox", "l'application ne s'y affiche pas (ADR 0040)");
+  test.setTimeout(240_000);
+  await jusquALAccueil(page, browserName);
+
+  const rectangle = (id) =>
+    page.evaluate((cible) => {
+      const noeud = document.getElementById(cible);
+      if (noeud === null) return null;
+      const boite = noeud.getBoundingClientRect();
+      return { x: boite.x, y: boite.y, l: boite.width, h: boite.height };
+    }, id);
+  // La zone des GESTES : les deux sections que la mesure a vues bouger, et leurs boutons.
+  const GESTES = ["cycle", "portabilite", "verrouiller-le-coffre", "sauvegarder-le-coffre"];
+  const releve = async () =>
+    Object.fromEntries(await Promise.all(GESTES.map(async (id) => [id, await rectangle(id)])));
+
+  // Le démarrage COMMENCE : c'est là que le mode travail s'installe, gestes longs fermés.
+  await page.evaluate(() => {
+    document.getElementById("cycle-etat").textContent = "cycle:demarrage-en-cours";
+  });
+  await expect(page.locator("html")).toHaveAttribute("data-travail-pret", "true");
+  await expect(page.locator("#verrouiller-le-coffre")).toBeDisabled();
+  // L'application S'AFFICHE, et dix secondes passent — la fenêtre où la QA a perdu ses clics.
+  await page.evaluate(() => {
+    document.getElementById("cycle-etat").textContent = "cycle:application-demarree";
+  });
+  await expect(page.locator("#verrouiller-le-coffre")).toBeEnabled();
+  // Les décalages qui comptent sont ceux d'APRÈS la réouverture : avant, rien ne se clique.
+  await page.evaluate(() => {
+    globalThis.__decalagesApresOuverture = [];
+    new PerformanceObserver((liste) => {
+      for (const entree of liste.getEntries()) {
+        globalThis.__decalagesApresOuverture.push({
+          valeur: entree.value,
+          geste: entree.hadRecentInput,
+          sources: [...(entree.sources ?? [])].map((source) => ({
+            noeud: source.node?.id || source.node?.tagName || null,
+            de: source.previousRect?.y ?? null,
+            a: source.currentRect?.y ?? null,
+          })),
+        });
+      }
+    }).observe({ type: "layout-shift" });
+  });
+
+  // CE QUI EST TENU : les gestes ne sont ROUVERTS qu'une fois la mise en page posée, et à partir de
+  // là plus rien ne les déplace. Ce qui bouge encore bouge pendant qu'ils sont FERMÉS — et un bouton
+  // fermé se voit fermé, il ne se clique pas dans le vide.
+  const aLOuverture = await releve();
+  await page.waitForTimeout(10_000);
+  const apres = await releve();
+  for (const id of GESTES) {
+    expect(
+      apres[id],
+      `« ${id} » a bougé APRÈS la réouverture des gestes, ou dans les dix secondes`,
+    ).toEqual(aLOuverture[id]);
+  }
+  // Et aucun décalage SUBI n'a nommé la zone des gestes après leur réouverture.
+  const subis = await page.evaluate((zone) => {
+    const dedans = (entree) => entree.sources.some((source) => zone.includes(source.noeud));
+    return globalThis.__decalagesApresOuverture
+      .filter((entree) => entree.geste !== true)
+      .filter(dedans);
+  }, GESTES);
+  expect(subis, `la zone des gestes a subi un décalage : ${JSON.stringify(subis)}`).toEqual([]);
+
+  // Et le geste part au PREMIER clic, visé là où le bouton se trouve alors.
+  const cible = bouton(page, "Verrouiller mon coffre");
+  await cible.scrollIntoViewIfNeeded();
+  const boite = await cible.boundingBox();
+  const recharge = page.waitForEvent("load", { timeout: 20_000 });
+  await page.mouse.move(boite.x + boite.width / 2, boite.y + boite.height / 2);
+  await page.mouse.down();
+  await page.mouse.up();
+  await recharge;
+  await expect(ecran(page, "Rouvrir votre coffre")).toBeVisible({ timeout: DELAI });
 });

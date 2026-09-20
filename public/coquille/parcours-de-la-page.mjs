@@ -266,7 +266,15 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     );
   }
 
-  /** Les boutons d'un geste long sont FERMÉS tant qu'un geste est en cours (#215). */
+  /**
+   * Les boutons d'un geste long sont FERMÉS tant qu'un geste est en cours (#215).
+   *
+   * Fermer est IMMÉDIAT ; ROUVRIR attend que la mise en page se soit posée (#251). La fin d'un geste
+   * long change la page — la ligne de progression se retire, les blocs se replient — et rouvrir dans
+   * la même image offrirait un bouton qui bouge encore : une main déjà visée cliquerait à côté, sans
+   * aucun signe. Un bouton fermé, lui, SE VOIT fermé ; la personne attend. Deux images suffisent : la
+   * première applique les écritures, la seconde les mesure posées.
+   */
   function fermerLesGestesEnCours() {
     if (vueComplete) return;
     const enCours = unGesteEstEnCours({
@@ -274,10 +282,14 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       ligneDePortabilite: noeud("portabilite-etat")?.textContent,
       attenteDuDeverrouillage: noeud("deverrouillage-attente")?.textContent,
     });
-    for (const id of GESTES_LONGS) {
-      const bouton = noeud(id);
-      if (bouton !== null && bouton.disabled !== enCours) bouton.disabled = enCours;
-    }
+    const poser = () => {
+      for (const id of GESTES_LONGS) {
+        const bouton = noeud(id);
+        if (bouton !== null && bouton.disabled !== enCours) bouton.disabled = enCours;
+      }
+    };
+    if (enCours) poser();
+    else requestAnimationFrame(() => requestAnimationFrame(poser));
     // Le bouton du geste REÇU se dit occupé tant que le geste court : un clic pris se VOIT (#251).
     const occupe = etat.boutonDuGeste === null ? null : noeud(etat.boutonDuGeste);
     if (occupe !== null) occupe.setAttribute("aria-busy", String(enCours));
@@ -389,13 +401,20 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       MESSAGES.avertissementDeRevocation(releve.moyenDOuverture),
     );
     montrerLesBlocs(visibles);
-    // Replier seulement les conseils quand Rails est prêt. Le cadre reste à sa place :
+    // Replier seulement les conseils quand Rails DÉMARRE. Le cadre reste à sa place :
     // le déplacer rechargerait son document et lui ferait perdre le port restreint.
-    const demarree =
-      lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement === "application-demarree" &&
-      !etat.applicationArretee;
+    //
+    // Le repli se fait au DÉBUT du démarrage, et non à son aboutissement (#251). La mesure du
+    // 20/09/2026 (`tools/reproduire-le-premier-clic.mjs`) a relevé, à l'instant où l'application
+    // s'affiche, un décalage de 0,187 qui remonte `#cycle` de 262 pixels et déplace `#portabilite` :
+    // « Verrouiller mon coffre » saute sous la main de qui le visait, le clic tombe à côté, et rien
+    // ne le dit. Fait au début, le repli tombe pendant que `fermerLesGestesEnCours` tient TOUS les
+    // gestes longs fermés — le seul moment où déplacer un bouton ne perd aucun geste.
+    const ligneDuCycle = lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement ?? null;
+    const demarree = ligneDuCycle === "application-demarree" && !etat.applicationArretee;
     direLEspaceDeTravail(demarree, rapport);
-    const travailPret = !vueComplete && ECRANS_DE_L_APPLICATION.includes(ecranId) && demarree;
+    const auTravail = demarree || ligneDuCycle === "demarrage-en-cours";
+    const travailPret = !vueComplete && ECRANS_DE_L_APPLICATION.includes(ecranId) && auTravail;
     const modeTravail = String(travailPret);
     if (doc.documentElement.dataset.travailPret !== modeTravail) {
       const focusSurDemarrage =
