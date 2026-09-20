@@ -268,3 +268,58 @@ test("#252 : un refus pendant la visite, à l'étape 4, OFFRE « Sauvegarder » 
   await recharge;
   await expect(ecran(page, "Rouvrir votre coffre")).toBeVisible({ timeout: DELAI });
 });
+
+// --- #255 : un artefact refusé sur un coffre qui a SERVI -------------------------------------------
+//
+// Le contrôle QA du 20/09/2026 l'a lu en 1,0 s, rootfs en 403, sur un coffre ayant porté une note et
+// une pièce jointe : « L'opération n'a pas abouti, sans cause identifiée. Rechargez la page puis
+// réessayez. » — le fourre-tout que #240 et #244 ont banni ailleurs, et un conseil faux tant que
+// l'origine est en défaut. La garde avait raison de ne proposer aucune reprise ; c'étaient les mots
+// qui manquaient.
+//
+// Ce qu'une VM ferait ici, personne ne peut l'obtenir sans elle : « ce volume a déjà démarré » se lit
+// dans son journal de génération, que seul un boot avance. La décision, elle, est mesurée SANS VM par
+// `tests/unit/coquille-installation-interrompue.test.mjs` (chaque artefact × refusé / coupé / empreinte
+// fausse). Ce qui se mesure ICI est ce qu'une personne LIT et ce qu'elle peut CLIQUER quand la réponse
+// est publiée — la réponse est donc posée comme le Worker la poserait, exactement comme
+// `tests/browser/coquille-premier-clic.spec.mjs` pose l'application affichée.
+test("#255 : un artefact refusé sur un coffre qui a servi nomme l'adresse, et n'offre JAMAIS de reprendre", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "OPFS réel : un moteur suffit");
+  test.setTimeout(240_000);
+  await servirLeDescripteur(page, descripteurDEpreuve(8 * 4096));
+  await ouvrirLeParcours(page);
+  await jusquALEtape4(page);
+
+  await page.evaluate((code) => {
+    const noeud = document.getElementById("coquille-rapport");
+    const rapport = JSON.parse(noeud.textContent);
+    rapport.application = {
+      demarree: false,
+      code,
+      motif:
+        "Un artefact du démarrage n'a pas pu être acquis : Artefact rootfs indisponible (403).",
+      installationInterrompue: false,
+    };
+    noeud.textContent = JSON.stringify(rapport);
+    document.getElementById("cycle-etat").textContent = `cycle:demarrage-refuse:${code}`;
+  }, C.artefactDuDemarrageRefuse);
+
+  const alerte = page.locator("#parcours-refus");
+  await expect(alerte).toContainText("Cette adresse n'a pas pu fournir l'application", {
+    timeout: DELAI,
+  });
+  await expect(alerte).toContainText("Vos données sont intactes dans votre coffre");
+  await expect(alerte).toContainText("rien n'a été démarré ni modifié");
+  // Plus jamais le fourre-tout, ni le conseil faux qui l'accompagnait.
+  await expect(alerte).not.toContainText("sans cause identifiée");
+  await expect(alerte).not.toContainText("Rechargez la page");
+  await expect(alerte).not.toContainText(AUCUNE_APPLICATION);
+  await expect(alerte).not.toContainText(INSTALLATION_INACHEVEE);
+  // La GARDE : une reprise écraserait ce que le guest a écrit. Elle n'est pas offerte.
+  await expect(bouton(page, "Reprendre l'installation")).toBeHidden();
+  // Les données sont là, et la sauvegarde se fait sans démarrer : les deux gestes d'abri sont offerts.
+  await gestesDAbriVisibles(page, { sauvegarde: true });
+});

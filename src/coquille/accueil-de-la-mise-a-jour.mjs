@@ -131,6 +131,12 @@ const REFUS_SANS_DONNEES_A_SAUVEGARDER = Object.freeze([
   C.volumeApplicatifSansManifeste,
 ]);
 
+/**
+ * Les codes d'un démarrage refusé qui laissent le coffre AVEC ses données, intactes et sauvegardables
+ * (#255) : l'application n'a pas été servie, le volume n'a été ni ouvert ni modifié.
+ */
+const REFUS_AVEC_DONNEES_A_SAUVEGARDER = Object.freeze([C.artefactDuDemarrageRefuse]);
+
 /** Les BLOCS que l'étape 4 ajoute sous un refus, pour mettre le coffre à l'abri là où l'on est. */
 export const BLOCS_D_ABRI = Object.freeze({ verrouiller: "verrouiller", sauvegarde: "sauvegarde" });
 
@@ -151,6 +157,9 @@ export function gestesDAbri(rapport) {
   const application = rapport?.application;
   if (application?.demarree !== false) return [];
   const code = codeDuDemarrageRefuse(application);
+  if (REFUS_AVEC_DONNEES_A_SAUVEGARDER.includes(code)) {
+    return [BLOCS_D_ABRI.verrouiller, BLOCS_D_ABRI.sauvegarde];
+  }
   return REFUS_SANS_DONNEES_A_SAUVEGARDER.includes(code) ? [BLOCS_D_ABRI.verrouiller] : [];
 }
 

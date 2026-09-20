@@ -69,6 +69,7 @@ import {
 import { VOLUME_ALGORITHM, createManifest } from "../vm/volume-manifest.mjs";
 import {
   echecDInstallationReconnu,
+  echecDUnArtefactDuDemarrage,
   echecDuPremierBoot,
   manifesteEstLisible,
   signatureDInstallationInterrompue,
@@ -669,6 +670,10 @@ async function booterLePaquet({ descripteur, prepare, cleDeVolume, reprendreParI
     // Un artefact du boot non acquis sur un volume jamais démarré : installation INACHEVÉE (#250).
     const inachevee = await echecDuPremierBoot(erreur, { nom: NOM_DU_VOLUME_APPLICATIF });
     if (inachevee !== null) return inachevee;
+    // Le même échec sur un volume QUI A SERVI : c'est l'adresse qui n'a pas fourni l'application,
+    // et il n'y a rien à reprendre — les données sont là, et rien ne les a touchées (#255).
+    const refuse = await echecDUnArtefactDuDemarrage(erreur, { nom: NOM_DU_VOLUME_APPLICATIF });
+    if (refuse !== null) return refuse;
     throw erreur;
   }
 }

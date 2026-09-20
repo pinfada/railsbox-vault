@@ -171,6 +171,16 @@ export const CODES_REFUS_COQUILLE = Object.freeze({
    * « Reprendre l'installation » redémarre, sans rien retirer — le volume est identifié.
    */
   installationInachevee: "VAULT_COQUILLE_INSTALLATION_INACHEVEE",
+  /**
+   * Un artefact du DÉMARRAGE — noyau, initrd, rootfs, paquet — n'a pas pu être acquis (refusé, coupé,
+   * d'une empreinte fausse) sur un volume qui a DÉJÀ démarré (#255).
+   *
+   * Il se distingue d'`installationInachevee` par le volume, et par lui seul : là, rien n'était encore
+   * né et « Reprendre l'installation » termine ce qui avait commencé ; ici, le coffre porte des données
+   * qu'une reprise écraserait, et rien n'est à reprendre — l'origine n'a pas servi l'application, c'est
+   * tout ce qui s'est passé. Le boot acquiert AVANT d'ouvrir le volume : rien n'a été démarré ni modifié.
+   */
+  artefactDuDemarrageRefuse: "VAULT_COQUILLE_ARTEFACT_DU_DEMARRAGE_REFUSE",
 
   // --- Le RELAIS HTTP vers l'application du guest (#192, ADR 0038) -----------------------------
   /**
@@ -368,6 +378,8 @@ const MESSAGES = Object.freeze({
     "Un volume applicatif existe sans manifeste : la coquille refuse de l'écraser pour installer.",
   [CODES_REFUS_COQUILLE.installationInachevee]:
     "Le premier démarrage n'a pas pu acquérir les artefacts du boot, et le volume n'a jamais démarré : l'installation est inachevée.",
+  [CODES_REFUS_COQUILLE.artefactDuDemarrageRefuse]:
+    "Un artefact du démarrage n'a pas pu être acquis depuis cette origine, sur un volume qui a déjà démarré : rien n'a été ouvert ni modifié.",
   [CODES_REFUS_COQUILLE.applicationNonDemarree]:
     "L'application n'est pas démarrée : il n'y a rien à servir tant que le coffre n'a pas été ouvert et l'application lancée.",
   [CODES_REFUS_COQUILLE.requeteHttpRefusee]:

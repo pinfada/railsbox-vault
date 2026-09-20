@@ -25,6 +25,14 @@ export function conduitesDeLInstallation(K) {
         "Si cela recommence, cette adresse ne sert pas correctement l'application : vous pouvez " +
         "alors verrouiller votre coffre, et réessayer plus tard.",
     ],
+    // Le volume a SERVI : l'adresse n'a pas fourni l'application, et il n'y a rien à reprendre (#255).
+    [C.artefactDuDemarrageRefuse]: [
+      K.attendre,
+      "Cette adresse n'a pas pu fournir l'application (téléchargement refusé, interrompu ou " +
+        "altéré). Vos données sont intactes dans votre coffre : rien n'a été démarré ni modifié. " +
+        "Réessayez plus tard ; si cela recommence, c'est cette adresse qui ne sert pas " +
+        "correctement l'application.",
+    ],
     // L'état AMBIGU : un disque anonyme que rien ne prouve être une installation interrompue.
     [C.volumeApplicatifSansManifeste]: [
       K.autre,

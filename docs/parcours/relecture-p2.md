@@ -847,6 +847,9 @@ faire.
   Vous pouvez aussi en faire une sauvegarde : elle se fait sans démarrer l'application.
 - Une opération longue est déjà en cours (démarrage, sauvegarde ou restauration). Attendez qu'elle
   se termine, puis recommencez.
+- Cette adresse n'a pas pu fournir l'application (téléchargement refusé, interrompu ou altéré). Vos
+  données sont intactes dans votre coffre : rien n'a été démarré ni modifié. Réessayez plus tard ;
+  si cela recommence, c'est cette adresse qui ne sert pas correctement l'application.
 - Le coffre termine un enregistrement. Attendez quelques secondes, puis recommencez.
 - Le coffre enregistre son état en ce moment. Attendez quelques secondes, puis recommencez.
 
