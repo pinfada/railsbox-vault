@@ -1,6 +1,6 @@
 {
   "manifestVersion": 1,
-  "generatedAt": "2026-09-19T17:15:19.628Z",
+  "generatedAt": "2026-09-20T08:15:05.281Z",
   "application": {
     "id": "railsbox-vault-reference",
     "version": "1.1.0",
@@ -24,14 +24,14 @@
     "kernel": "reference-rootfs-vmlinuz",
     "initrd": "reference-rootfs-initrd",
     "rootfs": "reference-rootfs.ext4",
-    "paquet": "railsbox-vault-reference-1.1.0-6cf40790.ext4",
-    "graine": "railsbox-vault-reference-1.1.0-graine-7a79564c.ext4",
+    "paquet": "railsbox-vault-reference-1.1.0-fa11a8f5.ext4",
+    "graine": "railsbox-vault-reference-1.1.0-graine-17207705.ext4",
     "bios": "seabios.bin",
     "vgaBios": "vgabios.bin",
     "servis": {
-      "rootfs": "reference-rootfs-58c990a7.ext4.gz",
-      "paquet": "railsbox-vault-reference-1.1.0-6cf40790.ext4.gz",
-      "graine": "railsbox-vault-reference-1.1.0-graine-7a79564c.ext4.gz"
+      "rootfs": "reference-rootfs-62ae22ed.ext4.gz",
+      "paquet": "railsbox-vault-reference-1.1.0-fa11a8f5.ext4.gz",
+      "graine": "railsbox-vault-reference-1.1.0-graine-17207705.ext4.gz"
     }
   },
   "precedent": {
@@ -40,11 +40,11 @@
       "version": "1.0.0",
       "schema": "20260101000002"
     },
-    "paquet": "railsbox-vault-reference-1.0.0-e357e70f.ext4",
-    "graine": "railsbox-vault-reference-1.0.0-graine-46135abb.ext4",
+    "paquet": "railsbox-vault-reference-1.0.0-287e002a.ext4",
+    "graine": "railsbox-vault-reference-1.0.0-graine-24e3e62d.ext4",
     "servis": {
-      "paquet": "railsbox-vault-reference-1.0.0-e357e70f.ext4.gz",
-      "graine": "railsbox-vault-reference-1.0.0-graine-46135abb.ext4.gz"
+      "paquet": "railsbox-vault-reference-1.0.0-287e002a.ext4.gz",
+      "graine": "railsbox-vault-reference-1.0.0-graine-24e3e62d.ext4.gz"
     }
   },
   "donnees": {
@@ -56,76 +56,76 @@
   },
   "artifacts": [
     {
-      "name": "railsbox-vault-reference-1.0.0-e357e70f.ext4",
+      "name": "railsbox-vault-reference-1.0.0-287e002a.ext4",
       "role": "partition 2 de hda — paquet applicatif : arbre de l'application, bundle i386, cache Bootsnap",
       "license": "MIT (RailsBox Vault) ; gemmes selon le Gemfile.lock de l'application",
       "origin": "tools/build-reference-image/guest.Dockerfile (cible disque-app), npm run app:paquet",
       "byteSize": 143654912,
-      "sha256": "e357e70f8d8bdb17f20fb473aea810a1eced1361d9daab0e464c24939d386bfa"
+      "sha256": "287e002aba8b0ee4e573c84153300d78497026682577192fb2166d75114642f1"
     },
     {
-      "name": "railsbox-vault-reference-1.0.0-e357e70f.ext4.gz",
-      "role": "fichier servi, gzip déterministe (#236 T2) de l'image railsbox-vault-reference-1.0.0-e357e70f.ext4",
+      "name": "railsbox-vault-reference-1.0.0-287e002a.ext4.gz",
+      "role": "fichier servi, gzip déterministe (#236 T2) de l'image railsbox-vault-reference-1.0.0-287e002a.ext4",
       "license": "celle de l'image compressée",
       "origin": "tools/paquet/compression.mjs (gzip -9, en-tête sans nom ni date, OS inconnu)",
-      "byteSize": 50870406,
-      "sha256": "973fb89208ca236ad0ad26241c77efa7eff2380e26541947be55e465c3f49b08"
+      "byteSize": 50870192,
+      "sha256": "3a226b4bca5eb288d3a01b4ca79c200fa887c7b9cfc5251703c4ef952392be4b"
     },
     {
-      "name": "railsbox-vault-reference-1.0.0-graine-46135abb.ext4",
+      "name": "railsbox-vault-reference-1.0.0-graine-24e3e62d.ext4",
       "role": "graine du volume de données — base SQLite migrée et vide, storage/ vide, marqueur de schéma",
       "license": "MIT (RailsBox Vault) ; gemmes selon le Gemfile.lock de l'application",
       "origin": "tools/build-reference-image/guest.Dockerfile (cible disque-app), npm run app:paquet",
       "byteSize": 536870912,
-      "sha256": "46135abb4a57275bb568ca1eb8f45c1877b1955feee1221bb43b3dfab589ff0d"
+      "sha256": "24e3e62d3fee9bddc153aa32b7102b8390ed81ad34ab36465a492639f7254307"
     },
     {
-      "name": "railsbox-vault-reference-1.0.0-graine-46135abb.ext4.gz",
-      "role": "fichier servi, gzip déterministe (#236 T2) de l'image railsbox-vault-reference-1.0.0-graine-46135abb.ext4",
+      "name": "railsbox-vault-reference-1.0.0-graine-24e3e62d.ext4.gz",
+      "role": "fichier servi, gzip déterministe (#236 T2) de l'image railsbox-vault-reference-1.0.0-graine-24e3e62d.ext4",
       "license": "celle de l'image compressée",
       "origin": "tools/paquet/compression.mjs (gzip -9, en-tête sans nom ni date, OS inconnu)",
-      "byteSize": 531000,
-      "sha256": "92eb5fc194fdcf405103c3f19f7850d2055c264790d92844e64d3324e3c4ac0f"
+      "byteSize": 531004,
+      "sha256": "110757dc2e73d6e0b509de47dde23882872482a404c2d258bb36f06731f9f72e"
     },
     {
-      "name": "railsbox-vault-reference-1.1.0-6cf40790.ext4",
+      "name": "railsbox-vault-reference-1.1.0-fa11a8f5.ext4",
       "role": "partition 2 de hda — paquet applicatif : arbre de l'application, bundle i386, cache Bootsnap",
       "license": "MIT (RailsBox Vault) ; gemmes selon le Gemfile.lock de l'application",
       "origin": "tools/build-reference-image/guest.Dockerfile (cible disque-app), npm run app:paquet",
       "byteSize": 143654912,
-      "sha256": "6cf4079005c6ba90757b0a169b00edaeb0d9db42e64d1cf7b9894f5ff6fce764"
+      "sha256": "fa11a8f5603c277ec763041693cfeab0b6708d56942b2fb4a4b22971c173fa27"
     },
     {
-      "name": "railsbox-vault-reference-1.1.0-6cf40790.ext4.gz",
-      "role": "fichier servi, gzip déterministe (#236 T2) de l'image railsbox-vault-reference-1.1.0-6cf40790.ext4",
+      "name": "railsbox-vault-reference-1.1.0-fa11a8f5.ext4.gz",
+      "role": "fichier servi, gzip déterministe (#236 T2) de l'image railsbox-vault-reference-1.1.0-fa11a8f5.ext4",
       "license": "celle de l'image compressée",
       "origin": "tools/paquet/compression.mjs (gzip -9, en-tête sans nom ni date, OS inconnu)",
-      "byteSize": 50870191,
-      "sha256": "ad31101339335af02d5eda9db1f8aa2248c6f6dd58a39bfa82cad683f84ca591"
+      "byteSize": 50870448,
+      "sha256": "31b1e36ba6de34fc1306dc7005bbae3016fc4ad1d5caeb9cac2e8d3ca72de0be"
     },
     {
-      "name": "railsbox-vault-reference-1.1.0-graine-7a79564c.ext4",
+      "name": "railsbox-vault-reference-1.1.0-graine-17207705.ext4",
       "role": "graine du volume de données — base SQLite migrée et vide, storage/ vide, marqueur de schéma",
       "license": "MIT (RailsBox Vault) ; gemmes selon le Gemfile.lock de l'application",
       "origin": "tools/build-reference-image/guest.Dockerfile (cible disque-app), npm run app:paquet",
       "byteSize": 536870912,
-      "sha256": "7a79564c4e8712d79b789780647fa7e90fc205679cc96ba51a02a163de6b5eda"
+      "sha256": "172077056a40426a2f86881323818efea3e9be1e7d0223727b778d239ac6d650"
     },
     {
-      "name": "railsbox-vault-reference-1.1.0-graine-7a79564c.ext4.gz",
-      "role": "fichier servi, gzip déterministe (#236 T2) de l'image railsbox-vault-reference-1.1.0-graine-7a79564c.ext4",
+      "name": "railsbox-vault-reference-1.1.0-graine-17207705.ext4.gz",
+      "role": "fichier servi, gzip déterministe (#236 T2) de l'image railsbox-vault-reference-1.1.0-graine-17207705.ext4",
       "license": "celle de l'image compressée",
       "origin": "tools/paquet/compression.mjs (gzip -9, en-tête sans nom ni date, OS inconnu)",
-      "byteSize": 531153,
-      "sha256": "f6459254d313171aa95130ff27c415bd2570fedd1bd81b90f4a752c405b1db8f"
+      "byteSize": 531149,
+      "sha256": "e0b22636e729d5d076d3ec3ace072b87384b8dda54c55dc4ded3b7e5e0b7af98"
     },
     {
-      "name": "reference-rootfs-58c990a7.ext4.gz",
-      "role": "fichier servi, gzip déterministe (#236 T2) de l'image reference-rootfs-58c990a7.ext4",
+      "name": "reference-rootfs-62ae22ed.ext4.gz",
+      "role": "fichier servi, gzip déterministe (#236 T2) de l'image reference-rootfs-62ae22ed.ext4",
       "license": "celle de l'image compressée",
       "origin": "tools/paquet/compression.mjs (gzip -9, en-tête sans nom ni date, OS inconnu)",
-      "byteSize": 134639117,
-      "sha256": "f7e59a862b9f12723832e07649f39ae22640b9d56bbd98fc448ccb62955d0c0a"
+      "byteSize": 134638646,
+      "sha256": "4fc3514721a03c70531a40c37dec3cfceee0cf4edf8c423385d5f1c44284e308"
     },
     {
       "name": "reference-rootfs-initrd",
@@ -149,7 +149,7 @@
       "license": "Debian bookworm (licences libres diverses) ; Ruby 3.3.12 (Ruby / BSD-2-Clause)",
       "origin": "tools/build-reference-image/guest.Dockerfile (cible rootfs)",
       "byteSize": 403701760,
-      "sha256": "58c990a70cbfe01426b861bc4742aed6a79ac6b1c3fa9c1dd9d22e93d6ac4dcb"
+      "sha256": "62ae22ed90a4bfaaaa6d65bf550058ca2bf842073fe277cd551520bb014ae56b"
     },
     {
       "name": "seabios.bin",
@@ -170,6 +170,6 @@
   ],
   "totals": {
     "artifactCount": 14,
-    "byteSize": 2033396378
+    "byteSize": 2033395950
   }
 }

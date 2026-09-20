@@ -32,6 +32,7 @@ const hotesAdmis = new Set(
 );
 
 const contentTypes = new Map([
+  [".ico", "image/vnd.microsoft.icon"],
   [".html", "text/html; charset=utf-8"],
   [".css", "text/css; charset=utf-8"],
   [".js", "text/javascript; charset=utf-8"],
