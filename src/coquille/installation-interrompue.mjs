@@ -175,6 +175,36 @@ export async function installationJamaisDemarree({
 }
 
 /**
+ * Ce que devient un démarrage dont un ARTEFACT n'a pas été acquis, sur un volume QUI A SERVI (#255) :
+ * la réponse typée, ou `null` — l'erreur d'origine remonte alors telle quelle.
+ *
+ * Trois conditions, et les trois ensemble : l'échec n'a PAS de code ; il vient de l'ACQUISITION, que
+ * `marquerLAcquisitionDesArtefacts` a marquée à sa source ; et le volume a DÉJÀ démarré. La réponse dit
+ * l'adresse en défaut, les données intactes, et n'offre JAMAIS « Reprendre l'installation » — la garde
+ * que le contrôle QA du 20/09/2026 a vérifiée, et qui doit rester tenue par ce chemin-ci comme par
+ * l'ancien : ce qui manquait n'était pas la garde, c'étaient les mots.
+ *
+ * @param {unknown} erreur
+ * @param {{ nom: string, jamaisDemarree?: typeof installationJamaisDemarree }} options
+ */
+export async function echecDUnArtefactDuDemarrage(
+  erreur,
+  { nom, jamaisDemarree = installationJamaisDemarree },
+) {
+  if (erreur?.code !== undefined || erreur?.artefactDuDemarrage !== true) return null;
+  // Un volume JAMAIS démarré est l'affaire de #250 : là, il y a quelque chose à reprendre.
+  if (await jamaisDemarree({ nom })) return null;
+  return {
+    demarree: false,
+    code: CODES_REFUS_COQUILLE.artefactDuDemarrageRefuse,
+    motif: `Un artefact du démarrage n'a pas pu être acquis : ${erreur?.message ?? "cause inconnue"}`,
+    // JAMAIS une installation interrompue : c'est ce drapeau qui montre « Reprendre l'installation »,
+    // et une reprise écraserait les données que ce volume porte (#250, garde).
+    installationInterrompue: false,
+  };
+}
+
+/**
  * Ce que devient un boot ÉCHOUÉ (#250) : la RÉPONSE d'une installation inachevée, ou `null` — l'erreur
  * d'origine remonte alors telle quelle.
  *

@@ -30,18 +30,15 @@ import { createReferenceGuestSession } from "./reference-guest-session.mjs";
 import {
   consignerRejetsNonTraites,
   executerSousGarde,
-  exigerContexteExecutable,
   mesurerRythme,
 } from "./runtime-environment.mjs";
 import { decrireBoucle, installerBoucleOrdonnancement } from "./scheduling-loop.mjs";
 import { createBootTimeline } from "./decomposition-du-boot.mjs";
 import { creerVeilleurDeSchema } from "./constat-de-schema.mjs";
-import { verifierEmpreintesV86, verifierLeModuleV86 } from "./empreintes-du-runtime-v86.mjs";
-import { acquerirLeDisqueSysteme } from "./acquisition-du-disque-systeme.mjs";
+import { acquerirRuntime } from "./acquisition-des-artefacts.mjs";
 import { createV86BufferAdapter } from "./v86-buffer-adapter.mjs";
 import {
   capturerApresPointDeControle,
-  empreinteDeLImage,
   ouvrirInstantanePourReprise,
 } from "./instantane-du-boot.mjs";
 import {
@@ -146,81 +143,6 @@ function booterEtAttendreSante(
       boucle: boucleOrdonnancement,
     },
   );
-}
-
-async function fetchBytes(url) {
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Artefact ${url} indisponible (${response.status}).`);
-  }
-  return new Uint8Array(await response.arrayBuffer());
-}
-
-/**
- * Charge les tampons du runtime. Les DONNÉES n'en font PAS partie : elles vivent dans OPFS.
- *
- * Le disque système (`hda`) n'est plus un artefact mais une COMPOSITION : le rootfs et le paquet
- * applicatif, chacun servi sous son empreinte, rangés aux décalages d'un tampon partitionné
- * (#236, ADR 0041). Les deux morceaux restent exposés comme artefacts — ce sont eux, et non le
- * disque composé, que l'empreinte d'image et la liaison d'un instantané nomment.
- */
-async function loadRuntime(runtime) {
-  const [wasm, bios, vgaBios, kernel, initrd] = await Promise.all([
-    fetchBytes(runtime.wasm),
-    fetchBytes(runtime.bios),
-    fetchBytes(runtime.vgaBios),
-    fetchBytes(runtime.kernel),
-    fetchBytes(runtime.initrd),
-  ]);
-  const disqueSysteme = await acquerirLeDisqueSysteme(runtime.disqueSysteme);
-  const artifacts = {
-    wasm,
-    bios,
-    vgaBios,
-    kernel,
-    initrd,
-    rootfs: disqueSysteme.vues.rootfs,
-    paquet: disqueSysteme.vues.paquet,
-    // Ce que v86 reçoit en `hda` : le disque ENTIER, table de partitions comprise. Il n'entre pas
-    // dans l'empreinte d'image — ses deux morceaux y sont déjà, et la table est calculée.
-    disqueSysteme: disqueSysteme.tampon,
-  };
-  const transferredBytes =
-    wasm.byteLength +
-    bios.byteLength +
-    vgaBios.byteLength +
-    kernel.byteLength +
-    initrd.byteLength +
-    disqueSysteme.mesures.transfereOctets;
-  const empreintesV86Ms = await verifierEmpreintesV86(runtime, artifacts);
-  return { artifacts, transferredBytes, empreintesV86Ms, disqueSysteme: disqueSysteme.mesures };
-}
-
-/** Importe la classe V86, ses octets AYANT ÉTÉ confrontés au manifeste (#123). */
-async function importV86(libUrl) {
-  await verifierLeModuleV86(libUrl, fetchBytes);
-  const module = await import(libUrl);
-  return module.V86;
-}
-
-/** Acquiert TOUT ce qui vient du réseau : la classe V86 et les tampons du runtime. */
-export async function acquerirRuntime(runtime) {
-  await exigerContexteExecutable();
-  const V86 = await importV86(runtime.lib);
-  const { artifacts, transferredBytes, empreintesV86Ms, disqueSysteme } =
-    await loadRuntime(runtime);
-  // L'EMPREINTE DE L'IMAGE est prise ICI, sur les octets tout juste acquis, et jamais plus tard.
-  // Le rootfs est un tampon que le guest ÉCRIT (#65) : le hacher après un boot donnerait l'empreinte
-  // d'une session, pas celle d'une image. Le défaut est tombé sur le scénario de bout en bout de
-  // #65 — la reprise écartait l'instantané au motif ECART_IMAGE, sur la même image exactement.
-  return {
-    V86,
-    artifacts,
-    transferredBytes,
-    empreintesV86Ms,
-    disqueSysteme,
-    empreinteImage: await empreinteDeLImage(artifacts),
-  };
 }
 
 /** Écritures du guest exigées avant d'annoncer une mutation. Une seule ne prouverait pas grand-chose. */

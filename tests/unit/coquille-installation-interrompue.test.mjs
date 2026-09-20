@@ -13,6 +13,7 @@ import test from "node:test";
 import { installerSiNecessaire } from "../../src/coquille/application-de-reference.mjs";
 import {
   echecDInstallationReconnu,
+  echecDUnArtefactDuDemarrage,
   echecDuPremierBoot,
   installationJamaisDemarree,
 } from "../../src/coquille/installation-interrompue.mjs";
@@ -24,7 +25,9 @@ import {
   gestesDAbri,
   installationInachevee,
 } from "../../src/coquille/accueil-de-la-mise-a-jour.mjs";
+import { CONDUITE_GENERIQUE, conduiteHumaine } from "../../src/coquille/conduites-du-parcours.mjs";
 import { reponseDeDemarrageRefuse } from "../../src/coquille/mise-a-jour-applicative.mjs";
+import { marquerLAcquisitionDesArtefacts } from "../../src/vm/acquisition-des-artefacts.mjs";
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
 import { daterLaCreation, openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
 import { generationJournalName, manifestSidecarName } from "../../src/vm/opfs-sync-access.mjs";
@@ -496,4 +499,98 @@ test("la page ne lit « aucune application » que d'une origine qui n'en sert au
     [],
   );
   assert.deepEqual(gestesDAbri({ application: { demarree: true } }), []);
+});
+
+/** Le marquage que l'acquisition pose sur un échec sans code, tel que `preparerLeBoot` le pose. */
+const marqueDAcquisition = (erreur) =>
+  Object.assign(new Error(erreur.message), { artefactDuDemarrage: true, cause: erreur });
+
+// --- Le DÉMARRAGE d'un coffre QUI A SERVI, dont un artefact est refusé (#255) ------------------------
+//
+// Symétrique du précédent, et c'est le seul point qui les sépare : le volume a DÉJÀ démarré. Rien n'est
+// inachevé, rien n'est à reprendre — l'adresse n'a pas fourni l'application, et c'est tout ce qui s'est
+// passé. Le fourre-tout « l'opération n'a pas abouti, sans cause identifiée » ne doit plus jamais sortir
+// de ce chemin : le contrôle QA du 20/09/2026 l'y a lu en 1,0 s sur un rootfs en 403.
+
+for (const [morceau, message] of Object.entries(ECHECS_DU_BOOT)) {
+  test(`démarrage, ${morceau} non acquis, volume qui a SERVI → l'adresse n'a pas fourni l'application`, async () => {
+    const rendu = await echecDUnArtefactDuDemarrage(marqueDAcquisition(new Error(message)), {
+      nom: NOM,
+      jamaisDemarree: async () => false,
+    });
+    assert.equal(rendu.code, C.artefactDuDemarrageRefuse);
+    // JAMAIS une installation interrompue : c'est ce drapeau, et lui seul, qui montre « Reprendre ».
+    assert.equal(rendu.installationInterrompue, false);
+    assert.match(rendu.motif, /n'a pas pu être acquis/);
+    const publiee = reponseDeDemarrageRefuse(rendu);
+    assert.equal(installationInachevee({ application: publiee }), false);
+    assert.equal(codeDuDemarrageRefuse(publiee), C.artefactDuDemarrageRefuse);
+    // Sauvegarder ET verrouiller : les données sont là, et la sauvegarde se fait sans démarrer.
+    assert.deepEqual(gestesDAbri({ application: publiee }), ["verrouiller", "sauvegarde"]);
+    // La conduite NOMME l'adresse, et ne renvoie ni au rechargement ni au fourre-tout.
+    const conduite = conduiteHumaine(C.artefactDuDemarrageRefuse);
+    assert.notEqual(conduite, CONDUITE_GENERIQUE);
+    assert.match(conduite, /Cette adresse n'a pas pu fournir l'application/);
+    assert.match(conduite, /Vos données sont intactes/);
+    assert.doesNotMatch(conduite, /Rechargez la page/);
+  });
+}
+
+test("#255 : un volume JAMAIS démarré reste l'affaire de #250 — l'installation inachevée", async () => {
+  const rendu = await echecDUnArtefactDuDemarrage(
+    marqueDAcquisition(new Error(ECHECS_DU_BOOT.rootfs)),
+    { nom: NOM, jamaisDemarree: async () => true },
+  );
+  assert.equal(rendu, null);
+});
+
+test("#255 : un échec qui n'est PAS une acquisition d'artefact remonte tel quel", async () => {
+  const rendu = await echecDUnArtefactDuDemarrage(new Error("le guest a cessé de battre"), {
+    nom: NOM,
+    jamaisDemarree: async () => false,
+  });
+  assert.equal(rendu, null);
+});
+
+test("#255 : un échec d'acquisition TYPÉ garde son code", async () => {
+  const typee = Object.assign(new Error("quota"), {
+    code: STORAGE_ERROR_CODES.quotaExceeded,
+    artefactDuDemarrage: true,
+  });
+  assert.equal(
+    await echecDUnArtefactDuDemarrage(typee, { nom: NOM, jamaisDemarree: async () => false }),
+    null,
+  );
+});
+
+/** Ce que l'acquisition a jeté, rendu plutôt que relevé : l'épreuve le LIT, elle ne meurt pas avec. */
+async function jetePar(acquerir) {
+  try {
+    await marquerLAcquisitionDesArtefacts(acquerir);
+  } catch (erreur) {
+    return erreur;
+  }
+  return null;
+}
+
+test("#255 : l'acquisition MARQUE ses échecs sans code, et laisse les autres intacts", async () => {
+  const brute = new Error("Artefact rootfs indisponible (403).");
+  const marquee = await jetePar(() => {
+    throw brute;
+  });
+  assert.equal(marquee.artefactDuDemarrage, true);
+  assert.equal(marquee.message, brute.message);
+  // Le détail technique ne se perd pas : l'erreur d'origine reste sous `cause`.
+  assert.equal(marquee.cause, brute);
+  const typee = Object.assign(new Error("capacité"), { code: C.capaciteManquante });
+  assert.equal(
+    await jetePar(() => {
+      throw typee;
+    }),
+    typee,
+  );
+  // Ce qui réussit passe sans être touché.
+  assert.deepEqual(await marquerLAcquisitionDesArtefacts(async () => ({ V86: null })), {
+    V86: null,
+  });
 });

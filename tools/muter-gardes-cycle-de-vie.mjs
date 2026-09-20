@@ -45,6 +45,7 @@ const EPREUVE_CYCLE = "tests/unit/coquille-cycle-de-vie.test.mjs";
 const EPREUVE_APPLICATION = "tests/unit/coquille-application.test.mjs";
 /** L'installation interrompue reconnue dès le premier échec, et la garde de sa reprise (#250). */
 const INSTALLATION = "src/coquille/installation-interrompue.mjs";
+const ACQUISITION = "src/vm/acquisition-des-artefacts.mjs";
 const REPRISE = "src/coquille/reprise-installation.mjs";
 const ACCUEIL = "src/coquille/accueil-de-la-mise-a-jour.mjs";
 const EPREUVE_INSTALLATION = "tests/unit/coquille-installation-interrompue.test.mjs";
@@ -443,6 +444,32 @@ export const MUTATIONS = Object.freeze([
     fichier: REPRISE,
     avant:
       "    if (erreur?.code !== CODES_REFUS_COQUILLE.volumeApplicatifSansManifeste) throw erreur;\n",
+    apres: "",
+    epreuves: [EPREUVE_INSTALLATION],
+  },
+  // --- #255 : l'adresse qui n'a pas fourni l'application, sur un coffre QUI A SERVI ----------------
+  {
+    nom: "un volume qui a SERVI n'est JAMAIS renvoyé à une reprise d'installation (#255)",
+    garde: "echecDUnArtefactDuDemarrage — le volume qui a déjà démarré",
+    fichier: INSTALLATION,
+    avant: "  if (await jamaisDemarree({ nom })) return null;\n",
+    apres: "",
+    epreuves: [EPREUVE_INSTALLATION],
+  },
+  {
+    nom: "seule une ACQUISITION d'artefact fait accuser l'adresse ; tout autre échec remonte (#255)",
+    garde: "echecDUnArtefactDuDemarrage — le marquage posé à l'acquisition",
+    fichier: INSTALLATION,
+    avant:
+      "  if (erreur?.code !== undefined || erreur?.artefactDuDemarrage !== true) return null;\n",
+    apres: "  if (erreur?.code !== undefined) return null;\n",
+    epreuves: [EPREUVE_INSTALLATION],
+  },
+  {
+    nom: "un échec d'acquisition TYPÉ n'est jamais marqué : il nomme déjà sa cause (#255)",
+    garde: "marquerLAcquisitionDesArtefacts — les erreurs typées ressortent intactes",
+    fichier: ACQUISITION,
+    avant: "    if (erreur?.code !== undefined) throw erreur;\n",
     apres: "",
     epreuves: [EPREUVE_INSTALLATION],
   },

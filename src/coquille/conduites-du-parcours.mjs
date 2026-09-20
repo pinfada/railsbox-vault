@@ -89,6 +89,7 @@ export const CODES_DU_CHEMIN = Object.freeze({
     C.etapeHorsOrdre,
     C.applicationAbsente,
     C.installationInachevee,
+    C.artefactDuDemarrageRefuse,
     ...CODES_DU_DEPHASAGE,
     C.gesteEnCours,
     C.volumeVerrouille,

@@ -36,9 +36,17 @@ registerHooks({
         format: "module",
         shortCircuit: true,
         source: `export const bootEtVerifier = (options) => globalThis.bootDuTest(options);
-          export const acquerirRuntime = () => {};
           export const attentesDe = () => {};
           export const manifesteDuDescripteur = () => {};`,
+      };
+    }
+    // L'acquisition est scindée depuis #255 : elle est feinte comme le boot, et pour la même
+    // raison — elle télécharge.
+    if (url === new URL("src/vm/acquisition-des-artefacts.mjs", racine).href) {
+      return {
+        format: "module",
+        shortCircuit: true,
+        source: "export const acquerirRuntime = () => {};",
       };
     }
     return suivant(url, context);

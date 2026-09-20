@@ -15,7 +15,8 @@
 // Aucune ne se déclare « réussie » d'elle-même : elle rend ce qu'elle a observé, et l'assertion vit
 // dans les spécifications de `tests/e2e/`.
 
-import { acquerirRuntime, bootEtVerifier } from "/src/vm/boot-de-reference.mjs";
+import { acquerirRuntime } from "/src/vm/acquisition-des-artefacts.mjs";
+import { bootEtVerifier } from "/src/vm/boot-de-reference.mjs";
 import { openVolumeForWrite } from "/src/vm/opfs-volume-open.mjs";
 import { cleDuBanc } from "./cle-du-banc.mjs";
 import { muterJusquALaCoupure } from "./requetes-rails-du-banc.mjs";
