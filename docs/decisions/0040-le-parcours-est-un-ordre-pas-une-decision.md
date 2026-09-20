@@ -153,6 +153,19 @@ déjà faites restent ouvrables par les anciens moyens » ; un coffre antérieur
   boutons des gestes longs sont désactivés. Un second clic sur « Démarrer » faisait déclarer le
   Worker mort par silence et perdait le démarrage : ce défaut est celui du Worker, instruit sous
   #215 ; la page ne l'expose plus.
+
+> **Note du 20/09/2026 (PR #256, issue #251).** Pendant le DÉMARRAGE, « Démarrer l'application »
+> n'est plus seulement fermé : il n'est plus OFFERT. Le repli du mode travail — les explications
+> sous « Aide pour cette étape », le bouton retiré, l'application remontée — se fait désormais au
+> DÉBUT du démarrage et non à son aboutissement. Motif, mesuré : à l'instant où l'application
+> s'affichait, `#cycle` remontait de 262 pixels et `#portabilite` se déplaçait ; une main déjà visée
+> cliquait à côté, sans aucun signe. Replier pendant que TOUS les gestes longs sont fermés est le
+> seul instant où déplacer un bouton ne perd aucun geste. Ce qui reste à l'écran pendant le boot est
+> la progression, et elle seule (constat 6) ; elle garde sa place quand elle se retire. Le bouton
+> étant hors de l'affichage, il est hors de portée du pointeur comme de la tabulation, et un rôle ne
+> le trouve plus : les épreuves le mesurent ainsi (`parcours-utilisateur.spec.mjs`,
+> `coquille-premier-clic.spec.mjs`), et non plus par `disabled` seul.
+
 - **Sous Firefox, la limite est dite AVANT toute attente** (constat 9). Sous Firefox, l'étape 4 du
   parcours guidé n'aboutit pas dans cette version : la machine virtuelle y tourne environ six fois
   plus lentement que sous Chromium, et Rails n'y a jamais répondu (ADR 0038) ; le parcours le dit

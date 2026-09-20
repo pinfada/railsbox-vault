@@ -269,7 +269,8 @@ Messages qui peuvent s'afficher sur cet écran :
 >
 > Durée : Le premier démarrage installe l'application : comptez environ deux minutes, parfois
 > davantage sur un appareil lent ou occupé. Les démarrages suivants sont plus courts. Pendant ce
-> temps, l'onglet peut sembler figé : ne le fermez pas. La progression s'affiche sous le bouton.
+> temps, l'onglet peut sembler figé : ne le fermez pas. Le bouton s'efface dès le premier clic, et
+> la progression s'affiche à sa place.
 
 Boutons et champs : « Démarrer l'application », « Reprendre l'installation » (seulement si une
 installation a été interrompue), « Sauvegarder d'abord », « Mettre à jour l'application » et « Plus
@@ -278,10 +279,11 @@ jour » à la place de « Mettre à jour l'application » (seulement quand une m
 commencée et n'est pas terminée), la version de l'application, en une ligne discrète, l'application
 elle-même, une fois démarrée, « Continuer : » suivi du titre de l'étape suivante.
 
-Quand l'application est démarrée, les explications ci-dessus se replient sous « Aide pour cette
-étape » (un clic ou la touche Entrée les rouvre), le bouton « Démarrer l'application » disparaît, et
-l'application remonte près du haut de la page. Au-dessus d'elle, un repli « Détails du relais
-applicatif » contient des informations techniques, qu'il n'est pas utile d'ouvrir.
+Dès que le démarrage commence, les explications ci-dessus se replient sous « Aide pour cette étape »
+(un clic ou la touche Entrée les rouvre) et le bouton « Démarrer l'application » s'efface : pendant
+le démarrage, la progression est seule à parler, et rien ne bouge plus sous votre main.
+L'application s'affiche ensuite près du haut de la page. Au-dessus d'elle, un repli « Détails du
+relais applicatif » contient des informations techniques, qu'il n'est pas utile d'ouvrir.
 
 Messages qui peuvent s'afficher sur cet écran :
 
@@ -358,7 +360,8 @@ Messages qui peuvent s'afficher sur cet écran :
 >
 > Durée : Le premier démarrage installe l'application : comptez environ deux minutes, parfois
 > davantage sur un appareil lent ou occupé. Les démarrages suivants sont plus courts. Pendant ce
-> temps, l'onglet peut sembler figé : ne le fermez pas. La progression s'affiche sous le bouton.
+> temps, l'onglet peut sembler figé : ne le fermez pas. Le bouton s'efface dès le premier clic, et
+> la progression s'affiche à sa place.
 
 Boutons et champs : « Démarrer l'application », « Reprendre l'installation » (seulement si une
 installation a été interrompue), « Sauvegarder d'abord », « Mettre à jour l'application » et « Plus
@@ -368,10 +371,11 @@ commencée et n'est pas terminée), « Verrouiller mon coffre », la version de 
 ligne discrète, l'application elle-même, une fois démarrée, « Sauvegarder mon coffre », «
 Enregistrer la sauvegarde » (lien), « Révoquer tous les autres moyens d'ouvrir ce coffre ».
 
-Quand l'application est démarrée, les explications ci-dessus se replient sous « Aide pour cette
-étape » (un clic ou la touche Entrée les rouvre), le bouton « Démarrer l'application » disparaît, et
-l'application remonte près du haut de la page. Au-dessus d'elle, un repli « Détails du relais
-applicatif » contient des informations techniques, qu'il n'est pas utile d'ouvrir.
+Dès que le démarrage commence, les explications ci-dessus se replient sous « Aide pour cette étape »
+(un clic ou la touche Entrée les rouvre) et le bouton « Démarrer l'application » s'efface : pendant
+le démarrage, la progression est seule à parler, et rien ne bouge plus sous votre main.
+L'application s'affiche ensuite près du haut de la page. Au-dessus d'elle, un repli « Détails du
+relais applicatif » contient des informations techniques, qu'il n'est pas utile d'ouvrir.
 
 Messages qui peuvent s'afficher sur cet écran :
 

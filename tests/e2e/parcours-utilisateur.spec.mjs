@@ -226,8 +226,18 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await expect(a.getByText(/Démarrage en cours depuis/)).toBeVisible({
       timeout: BUDGET_ECRAN_MS,
     });
-    // Pendant le boot : le bouton est fermé (constat 8), et l'écran d'attente seul parle (constat 6).
-    await expect(bouton(a, "Démarrer l'application")).toBeDisabled();
+    // Pendant le boot, UN SEUL état lisible : l'attente annoncée, et aucun geste long OFFERT (#251).
+    //
+    // Le mode travail s'installe dès le DÉBUT du démarrage, pendant que tous les gestes longs sont
+    // fermés : c'est le seul instant où replier la page ne déplace rien sous une main. « Démarrer
+    // l'application » n'est donc plus seulement désactivé, il n'est plus OFFERT — il sort de l'arbre
+    // d'accessibilité, et le rôle ne le trouve plus. Fermé ET retiré de l'affichage, il est hors de
+    // portée du pointeur comme de la tabulation. Ce qui reste à l'écran est la progression, et elle
+    // seule (constat 8, constat 6 ; « Écran : Travailler dans l'application » de relecture-p2.md).
+    await expect(bouton(a, "Démarrer l'application")).toBeHidden();
+    await expect(a.locator("#demarrer-application")).toBeHidden();
+    await expect(a.locator("#demarrer-application")).toBeDisabled();
+    await expect(a.locator("#parcours-progression")).toBeVisible();
     await expect(alerte(a), "aucune alerte pendant le boot").toBeEmpty();
     await expect(
       a.getByText("L'application est démarrée : elle s'affiche ci-dessous."),

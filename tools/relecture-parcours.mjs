@@ -321,9 +321,10 @@ function sectionDEcran(id, libelles) {
   if (id === "travailler" || id === "accueil") {
     morceaux.push(
       "",
-      `Quand l'application est démarrée, les explications ci-dessus se replient sous « ${libelles.aide} » ` +
-        "(un clic ou la touche Entrée les rouvre), le bouton « Démarrer l'application » disparaît, et " +
-        "l'application remonte près du haut de la page. Au-dessus d'elle, un repli " +
+      `Dès que le démarrage commence, les explications ci-dessus se replient sous « ${libelles.aide} » ` +
+        "(un clic ou la touche Entrée les rouvre) et le bouton « Démarrer l'application » s'efface : " +
+        "pendant le démarrage, la progression est seule à parler, et rien ne bouge plus sous votre " +
+        "main. L'application s'affiche ensuite près du haut de la page. Au-dessus d'elle, un repli " +
         `« ${libelles.relais} » contient des informations techniques, qu'il n'est pas utile d'ouvrir.`,
     );
   }

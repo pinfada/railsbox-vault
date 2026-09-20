@@ -241,6 +241,15 @@ test("#251 : entre l'affichage de l'application et dix secondes plus tard, aucun
   });
   await expect(page.locator("html")).toHaveAttribute("data-travail-pret", "true");
   await expect(page.locator("#verrouiller-le-coffre")).toBeDisabled();
+  // Le démarrage n'est plus un geste OFFERT pendant qu'il court : le bouton est fermé ET retiré de
+  // l'affichage, donc hors de portée du pointeur comme de la tabulation, et il sort de l'arbre
+  // d'accessibilité — un rôle ne le trouve plus. C'est ce que « parcours-utilisateur » mesure de bout
+  // en bout ; ici, sans machine virtuelle.
+  await expect(page.locator("#demarrer-application")).toBeHidden();
+  await expect(page.locator("#demarrer-application")).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Démarrer l'application", exact: true }),
+  ).toHaveCount(0);
   // L'application S'AFFICHE, et dix secondes passent — la fenêtre où la QA a perdu ses clics.
   await page.evaluate(() => {
     document.getElementById("cycle-etat").textContent = "cycle:application-demarree";
