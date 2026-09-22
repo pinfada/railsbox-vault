@@ -292,6 +292,22 @@ test("#255 : un artefact refusé sur un coffre qui a servi nomme l'adresse, et n
   await servirLeDescripteur(page, descripteurDEpreuve(8 * 4096));
   await ouvrirLeParcours(page);
   await jusquALEtape4(page);
+  // Le relevé est RÉÉCRIT en entier à chaque publication. L'ouverture en déclenche encore une, après
+  // l'étape 4 affichée : le déphasage constaté (`geste-de-mise-a-jour.mjs`). Posée avant elle, la
+  // réponse serait effacée, et les gestes d'abri avec — la conduite, elle, déjà écrite, resterait.
+  await expect
+    .poll(async () => (await releve(page)).dephasage !== undefined, { timeout: DELAI })
+    .toBe(true);
+  await expect
+    .poll(
+      async () => {
+        const avant = await page.locator("#coquille-rapport").textContent();
+        await page.waitForTimeout(500);
+        return (await page.locator("#coquille-rapport").textContent()) === avant;
+      },
+      { timeout: DELAI },
+    )
+    .toBe(true);
 
   await page.evaluate((code) => {
     const noeud = document.getElementById("coquille-rapport");
