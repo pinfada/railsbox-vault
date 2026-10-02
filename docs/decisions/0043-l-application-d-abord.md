@@ -55,4 +55,23 @@ L'**ordre** des étapes de l'ADR 0040, les identifiants des boutons et les geste
   de la barre, l'attente, les refus et « Rouvrir le coffre », montrés en bandeau.
 - Les épreuves qui mesuraient la position du cadre restent valables : il est désormais à 52 px du
   haut.
-- Risque : les positions de la barre sont fixées en pixels ; un libellé plus long devra les revoir.
+- ~~Risque : les positions de la barre sont fixées en pixels ; un libellé plus long devra les
+  revoir.~~ Levé par R1-bis : la barre est une rangée flexible.
+
+### R1-bis (03/10/2026, recette réelle dans Chrome)
+
+- **Application démarrée, toutes étapes.** La mise en page « application d'abord » dépend de l'état
+  « application démarrée » (`data-travail-pret`), plus du numéro d'étape : aux étapes 5 à 9, le
+  cadre garde la fenêtre et les textes de l'étape vont dans le panneau du menu « Coffre ». Seule
+  l'ATTENTE du démarrage reste propre aux écrans de l'application.
+- **Gestes de la barre.** « Sauvegarder », « Verrouiller » et « Continuer » sont DÉPLACÉS dans
+  `#gestes-de-la-barre` tant que l'application tourne, puis rendus à leur place : mêmes boutons,
+  mêmes identifiants. L'ordre du DOM suit l'ordre visuel (titre, Sauvegarder, Verrouiller,
+  Continuer, Coffre), donc celui du clavier. « Continuer » reste caché si son bloc d'étape l'est. Le
+  cadre, lui, ne bouge jamais.
+- **Titre de la barre** : le nom du coffre (`h1`), pas l'étape ; le titre de l'étape reste la cible
+  du focus, masqué visuellement menu fermé.
+- **Évitement** : le lien mène au cadre une fois l'application démarrée, au titre du parcours avant.
+  Avant le démarrage, l'iframe est `inert` : plus d'arrêt de focus invisible.
+- **Document applicatif** : `html`, `body` à 100 % et l'iframe Rails en flex ; une seule barre de
+  défilement, celle de l'application. La frontière (en-têtes, CSP, port) ne change pas.
