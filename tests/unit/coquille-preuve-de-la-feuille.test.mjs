@@ -229,6 +229,10 @@ test("ENVELOPPE RÉELLE : le neuvième emplacement est refusé par VAULT_ENVELOP
  */
 test("WORKER : la preuve est lue et inscrite APRÈS l'ouverture du volume, AVANT sa barrière, et seul un code l'écrit", async () => {
   const source = await readFile(
+    new URL("../../public/runtime-worker-deverrouillage.mjs", import.meta.url),
+    "utf8",
+  );
+  const principal = await readFile(
     new URL("../../public/runtime-worker.mjs", import.meta.url),
     "utf8",
   );
@@ -254,7 +258,7 @@ test("WORKER : la preuve est lue et inscrite APRÈS l'ouverture du volume, AVANT
   assert.match(source, /return \{ dek, kek, version: creee\.version, identifiantEprouve: null \};/);
   // L'inventaire relit la preuve contre l'enveloppe du moment, et seulement coffre ouvert.
   assert.match(
-    source,
+    principal,
     /feuilleEprouvee:\s*interne\.etat === ETATS_DU_VOLUME\.ouvert && feuilleEprouvee\(interne\.eprouves, inventaire\),/,
   );
   assert.match(
