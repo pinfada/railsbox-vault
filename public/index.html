@@ -12,7 +12,9 @@
       tabulation, et le lien d'évitement n'est jamais atteint au clavier (mesuré par
       `tests/apparence/parcours.spec.mjs` sur WebKit, revue de la PR #216, constat 15).
     -->
-    <a class="evitement" href="#parcours-titre" tabindex="0">Aller au parcours</a>
+    <a id="lien-d-evitement" class="evitement" href="#parcours-titre" tabindex="0"
+      >Aller au parcours</a
+    >
     <main>
       <!--
         L'EN-TÊTE devient la BARRE DE COFFRE quand l'application tourne (ADR 0043) : le nom, l'état qui
@@ -34,6 +36,8 @@
         <h1>RailsBox Vault</h1>
         <p id="parcours-rang"></p>
         <p class="barre-etat">Sur cet appareil · chiffré</p>
+        <!-- Les gestes de la barre, dans l'ordre visuel : le script y déplace les boutons (R1-bis). -->
+        <div id="gestes-de-la-barre"></div>
         <details id="menu-du-coffre">
           <summary>Coffre</summary>
           <p><a href="#parcours-titre">Aller au panneau du coffre</a></p>

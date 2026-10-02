@@ -324,6 +324,47 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (focusDedans) noeud("parcours-titre").focus();
   }
 
+  /**
+   * La BARRE DU COFFRE (ADR 0043, R1-bis) : quand l'application tourne, « Sauvegarder »,
+   * « Verrouiller » et « Continuer » sont DÉPLACÉS dans la barre, dans son ordre visuel, puis rendus
+   * à leur place d'origine. Ce sont les mêmes boutons, mêmes identifiants ; seul le cadre de
+   * l'application est intouchable (le déplacer le rechargerait). Un geste dont le bloc d'étape est
+   * caché reste caché dans la barre (`data-hors-etape`), sauf Sauvegarder et Verrouiller, toujours
+   * offerts tant que l'application tourne.
+   */
+  const GESTES_DE_LA_BARRE = [
+    "sauvegarder-le-coffre",
+    "verrouiller-le-coffre",
+    "parcours-continuer",
+  ];
+  const placesDOrigine = new Map();
+  function placerLesGestes(dansLaBarre) {
+    const barre = noeud("gestes-de-la-barre");
+    if (!barre) return;
+    for (const id of GESTES_DE_LA_BARRE) {
+      const bouton = noeud(id);
+      if (dansLaBarre && bouton.parentElement !== barre) {
+        const repere = doc.createComment(id);
+        bouton.before(repere);
+        placesDOrigine.set(id, repere);
+        barre.append(bouton);
+      } else if (!dansLaBarre && placesDOrigine.has(id)) {
+        placesDOrigine.get(id).replaceWith(bouton);
+        placesDOrigine.delete(id);
+      }
+      const repere = placesDOrigine.get(id);
+      const horsEtape =
+        id === "parcours-continuer" && repere?.parentElement?.closest("[hidden]") != null;
+      bouton.toggleAttribute("data-hors-etape", horsEtape);
+    }
+    const cadre = noeud("cadre-applicatif");
+    if (dansLaBarre) cadre.tabIndex = -1;
+    const evitement = noeud("lien-d-evitement");
+    if (!evitement) return;
+    evitement.setAttribute("href", dansLaBarre ? "#cadre-applicatif" : "#parcours-titre");
+    evitement.textContent = dansLaBarre ? "Aller à l'application" : "Aller au parcours";
+  }
+
   function ecranAMontrer(releve, rapport) {
     etat.coffre = coffreObserve({
       etat: rapport.etat,
@@ -420,7 +461,9 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     const demarree = ligneDuCycle === "application-demarree" && !etat.applicationArretee;
     direLEspaceDeTravail(demarree, rapport, ligneDuCycle === "demarrage-en-cours");
     const auTravail = demarree || ligneDuCycle === "demarrage-en-cours";
-    const travailPret = !vueComplete && ECRANS_DE_L_APPLICATION.includes(ecranId) && auTravail;
+    // « L'application d'abord » suit l'état « application démarrée », à toutes les étapes (ADR 0043).
+    const travailPret =
+      !vueComplete && (demarree || (auTravail && ECRANS_DE_L_APPLICATION.includes(ecranId)));
     const modeTravail = String(travailPret);
     if (doc.documentElement.dataset.travailPret !== modeTravail) {
       const focusSurDemarrage =
@@ -430,6 +473,10 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       mettreLAideEnForme(travailPret);
       if (travailPret && focusSurDemarrage) noeud("parcours-titre").focus();
     }
+    placerLesGestes(travailPret);
+    // Avant le démarrage, le cadre vide n'est pas un arrêt de focus invisible (R1-bis, point 4).
+    const iframe = noeud("cadre-applicatif").querySelector("iframe");
+    if (iframe && !vueComplete) iframe.inert = !demarree;
     rendreOuSuisJe(ecranId);
     fermerLesGestesEnCours();
     // Le focus suit un CHANGEMENT d'écran, jamais le premier affichage (ADR 0040, § 5).
