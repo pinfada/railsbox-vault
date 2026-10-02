@@ -233,7 +233,7 @@ export async function libellesDeLaMiseEnForme() {
   return {
     evitement: libelleDuDocument(
       coquille,
-      /<a class="evitement"[^>]*>([^<]+)<\/a>/u,
+      /<a [^>]*class="evitement"[^>]*>\s*([^<]+?)\s*<\/a\s*>/u,
       "lien d'évitement",
     ),
     aide: LIBELLES_DE_LA_PAGE.aideDeLEtape,

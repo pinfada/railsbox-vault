@@ -290,12 +290,12 @@ Messages qui peuvent s'afficher sur cet écran :
 - L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur «
   Démarrer l'application ».
 - Votre application démarre sur cet appareil. Rien n'est envoyé sur Internet.
-- Démarrage en cours depuis N seconde(s), sur environ deux minutes. Le démarrage avance : le coffre
-  a répondu N fois.
+- Démarrage en cours depuis NaN minutes, sur environ deux minutes. Le démarrage avance : le coffre a
+  répondu N fois.
 - Le démarrage avance : le coffre a répondu N fois.
 - Le démarrage commence : le coffre n'a pas encore répondu.
-- L'application est démarrée : elle s'affiche ci-dessous.
-- L'application s'affiche ci-dessous.
+- L'application est démarrée.
+- L'application est affichée.
 - Reprise de l'installation en cours… Ne fermez pas l'onglet.
 - Une nouvelle version de l'application est disponible : B. Votre coffre utilise la version A. La
   mise à jour transforme vos données pour la nouvelle version, au démarrage, dans votre navigateur :
@@ -313,7 +313,7 @@ Messages qui peuvent s'afficher sur cet écran :
 - Mise à jour en cours : comptez environ trois à quatre minutes, et ne fermez pas l'onglet. Si la
   page se fermait, vos données seraient retrouvées telles qu'avant ou telles qu'après la mise à
   jour, jamais entre les deux.
-- L'application est à jour : version N. Elle s'affiche ci-dessous.
+- L'application est à jour : version N.
 - Une mise à jour de votre application a été commencée et n'est pas terminée. Vos données sont
   intactes. Pour retrouver votre application, reprenez la mise à jour.
 - Vous pouvez d'abord faire une sauvegarde : elle contiendra vos données telles qu'elles sont, mise
@@ -382,9 +382,9 @@ Messages qui peuvent s'afficher sur cet écran :
 
 - L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur «
   Démarrer l'application ».
-- Démarrage en cours depuis N seconde(s), sur environ deux minutes. Le démarrage avance : le coffre
-  a répondu N fois.
-- L'application est démarrée : elle s'affiche ci-dessous.
+- Démarrage en cours depuis NaN minutes, sur environ deux minutes. Le démarrage avance : le coffre a
+  répondu N fois.
+- L'application est démarrée.
 - Une nouvelle version de l'application est disponible : B. Votre coffre utilise la version A. La
   mise à jour transforme vos données pour la nouvelle version, au démarrage, dans votre navigateur :
   comptez environ trois à quatre minutes, et ne fermez pas l'onglet. Rien ne se fait sans vous :
@@ -401,7 +401,7 @@ Messages qui peuvent s'afficher sur cet écran :
 - Mise à jour en cours : comptez environ trois à quatre minutes, et ne fermez pas l'onglet. Si la
   page se fermait, vos données seraient retrouvées telles qu'avant ou telles qu'après la mise à
   jour, jamais entre les deux.
-- L'application est à jour : version N. Elle s'affiche ci-dessous.
+- L'application est à jour : version N.
 - Une mise à jour de votre application a été commencée et n'est pas terminée. Vos données sont
   intactes. Pour retrouver votre application, reprenez la mise à jour.
 - Vous pouvez d'abord faire une sauvegarde : elle contiendra vos données telles qu'elles sont, mise

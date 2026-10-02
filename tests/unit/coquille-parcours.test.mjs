@@ -741,8 +741,12 @@ test("CONSTAT 6 : aucun refus du relais n'est annoncé avant qu'un démarrage ai
 test("la progression d'un démarrage dit le temps écoulé et les signes de vie réels", () => {
   assert.equal(
     progressionDuDemarrage({ ecouleMs: 45_400, signesDeVie: 9 }),
-    "Démarrage en cours depuis 45 seconde(s), sur environ deux minutes. Le démarrage avance : le coffre a répondu 9 fois.",
+    "Démarrage en cours depuis 45 secondes, sur environ deux minutes. Le démarrage avance : le coffre a répondu 9 fois.",
   );
+  // R1-bis : au-delà de l'estimation, la page dit que c'est plus long, sans chiffre figé ni « (s) ».
+  const long = progressionDuDemarrage({ ecouleMs: 302_000, signesDeVie: 9 });
+  assert.match(long, /depuis 5 minutes\. C'est plus long que prévu.*rien n'est perdu/);
+  assert.doesNotMatch(long, /deux minutes|\(s\)/);
   assert.match(progressionDuDemarrage({ ecouleMs: -5, signesDeVie: 0 }), /depuis 0 seconde/);
   assert.match(progressionDuDemarrage({ ecouleMs: 0, signesDeVie: 0 }), /pas encore répondu/);
   // #266 m8 : plus de « signe(s) de vie reçu(s) », une phrase que tout le monde lit.

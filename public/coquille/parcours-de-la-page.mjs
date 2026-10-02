@@ -436,7 +436,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       ecran.attente ??
       (visibles.includes("phrase") ? attenteDeLaPhraseAnnoncee : "");
     dire("parcours-attente-annoncee", attente === "" ? "" : MESSAGES.duree(attente));
-    const suivante = etapeSuivante(ecranId);
+    // Une seule étape annoncée : celle où « Continuer » mène (R1-bis, point 5).
+    const suivante = etapeAContinuer(ecranId);
     dire("parcours-suivante", suivante === null ? "" : MESSAGES.suivante(suivante.titre));
     // Le code tapé ne survit pas à son champ : un champ vidé par un geste vide aussi son annonce.
     if ((noeud("saisie-code")?.value ?? "") === "") dire("parcours-code-lu", "");

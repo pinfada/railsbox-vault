@@ -8,6 +8,15 @@
 //
 // Pur, comme le reste du répertoire : ni DOM, ni stockage, ni horloge.
 
+/** L'estimation annoncée d'un premier démarrage : « environ deux minutes ». */
+const ESTIMATION_DU_DEMARRAGE_EN_SECONDES = 120;
+
+/** Une durée en clair, sans « (s) » : « 1 seconde », « 45 secondes », « 5 minutes ». */
+export function dureeEnClair(secondes) {
+  if (secondes < 120) return `${secondes} seconde${secondes > 1 ? "s" : ""}`;
+  return `${Math.floor(secondes / 60)} minutes`;
+}
+
 /** Les neuf étapes de la Definition of Ready de #193, dans l'ordre. */
 export const ETAPES = Object.freeze([
   Object.freeze({ rang: 1, titre: "Créer votre coffre" }),
@@ -538,11 +547,11 @@ export const MESSAGES = Object.freeze({
   repriseEnCours: "Reprise de l'installation en cours… Ne fermez pas l'onglet.",
   sauvegardeEnCours: "Sauvegarde en cours… Ne fermez pas l'onglet.",
   restaurationEnCours: "Restauration en cours… Ne fermez pas l'onglet.",
-  applicationDemarree: "L'application est démarrée : elle s'affiche ci-dessous.",
+  applicationDemarree: "L'application est démarrée.",
   applicationEnAttente:
     "L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur « " +
     "Démarrer l'application ».",
-  applicationAffichee: "L'application s'affiche ci-dessous.",
+  applicationAffichee: "L'application est affichée.",
   // La zone de l'application ne nomme jamais un bouton absent (contre-recette QA de #249, 2).
   applicationEnAttenteDeLaReprise:
     "L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur « " +
@@ -554,8 +563,12 @@ export const MESSAGES = Object.freeze({
   applicationEnAttenteSousUnRefus:
     "L'application ne peut pas démarrer à cette adresse : le message affiché sur cette page dit " +
     "pourquoi, et ce que vous pouvez faire.",
+  // Au-delà de l'estimation, la page le DIT au lieu de répéter un chiffre figé (R1-bis, point 5).
   demarrageEnCours: (secondes, vie) =>
-    `Démarrage en cours depuis ${secondes} seconde(s), sur environ deux minutes. ${vie}`,
+    secondes > ESTIMATION_DU_DEMARRAGE_EN_SECONDES
+      ? `Démarrage en cours depuis ${dureeEnClair(secondes)}. C'est plus long que prévu, cela ` +
+        `arrive sur cet appareil ; rien n'est perdu. ${vie}`
+      : `Démarrage en cours depuis ${dureeEnClair(secondes)}, sur environ deux minutes. ${vie}`,
   // Ce que la page dit d'un démarrage, en langage clair (#266 m8).
   signesDeVie: (nombre) => `Le démarrage avance : le coffre a répondu ${nombre} fois.`,
   premierSigneDeVie: "Le démarrage commence : le coffre n'a pas encore répondu.",
@@ -622,7 +635,7 @@ export const MESSAGES = Object.freeze({
     "se fermait, vos données seraient retrouvées telles qu'avant ou telles qu'après la mise à " +
     "jour, jamais entre les deux.",
   miseAJourFaite: (version) =>
-    `L'application est à jour : version ${version}. Elle s'affiche ci-dessous.`,
+    `L'application est à jour : version ${version}.`,
   // La PROGRESSION d'une mise à jour et de « Plus tard » : UNE durée par chemin, et la PHASE (Q2).
   miseAJourEnCoursDepuis: (secondes, phase) =>
     `Mise à jour en cours depuis ${secondes} seconde(s), sur ${DUREE_DE_LA_MISE_A_JOUR}. ${phase}`,
