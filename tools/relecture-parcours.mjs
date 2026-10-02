@@ -308,6 +308,8 @@ function attenteDeLaPhraseRelue() {
 function sectionDEcran(id, libelles) {
   const ecran = ECRANS[id];
   const lignes = [ecran.ceQuiVaSePasser, MESSAGES.attendu(ecran.attendu)];
+  if (ecran.casRares !== null)
+    lignes.push(`Replié sous « Je n'ai plus ma feuille » : ${ecran.casRares}`);
   const attente =
     ecran.attente ?? (ecran.blocs.includes("phrase") ? attenteDeLaPhraseRelue() : null);
   if (attente !== null) lignes.push(MESSAGES.duree(attente));

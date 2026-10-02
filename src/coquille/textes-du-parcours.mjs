@@ -279,8 +279,8 @@ export const ECRANS = Object.freeze({
     ceQuiVaSePasser: UN_CODE_A_DEJA_ETE_RENDU,
     attendu:
       "Si vous avez votre feuille : tapez le code, puis cliquez sur « Ouvrir mon coffre avec le " +
-      "code ». " +
-      SI_LE_CODE_EST_PERDU,
+      "code ».",
+    casRares: SI_LE_CODE_EST_PERDU,
     blocs: ["code", "nouveau-code"],
   }),
   "code-a-verifier": ecran(3, {
@@ -442,12 +442,14 @@ export const ECRANS = Object.freeze({
 });
 
 /** @param {number | null} rang */
-function ecran(rang, { titre, ceQuiVaSePasser, attendu, attente = null, blocs }) {
+function ecran(rang, { titre, ceQuiVaSePasser, attendu, casRares = null, attente = null, blocs }) {
   return Object.freeze({
     etape: rang,
     titre,
     ceQuiVaSePasser,
     attendu,
+    // Les cas rares, repliés sous « Je n'ai plus ma feuille » (R1-bis, point 6).
+    casRares,
     attente,
     blocs: Object.freeze([...blocs]),
   });
@@ -634,8 +636,7 @@ export const MESSAGES = Object.freeze({
     `Mise à jour en cours : comptez ${DUREE_DE_LA_MISE_A_JOUR}, et ne fermez pas l'onglet. Si la page ` +
     "se fermait, vos données seraient retrouvées telles qu'avant ou telles qu'après la mise à " +
     "jour, jamais entre les deux.",
-  miseAJourFaite: (version) =>
-    `L'application est à jour : version ${version}.`,
+  miseAJourFaite: (version) => `L'application est à jour : version ${version}.`,
   // La PROGRESSION d'une mise à jour et de « Plus tard » : UNE durée par chemin, et la PHASE (Q2).
   miseAJourEnCoursDepuis: (secondes, phase) =>
     `Mise à jour en cours depuis ${secondes} seconde(s), sur ${DUREE_DE_LA_MISE_A_JOUR}. ${phase}`,
