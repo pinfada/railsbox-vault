@@ -272,3 +272,14 @@ test("la ligne de commande du noyau désigne la PREMIÈRE PARTITION, pas le disq
   assert.match(sources.guest.cmdline, /\broot=\/dev\/sda1\b/);
   assert.equal(manifesteDEssai().boot.cmdline, sources.guest.cmdline);
 });
+
+test("l'initramfs attend le disque système au-delà de ses 30 s par défaut (#165)", () => {
+  // initramfs-tools 0.142 (bookworm) abandonne la racine après max(30, rootdelay) secondes de
+  // l'horloge du GUEST, qui suit l'horloge murale de l'hôte sous v86 : un Worker ralenti brûle ces
+  // 30 s sans énumérer `sda`. L'attente ne coûte rien quand le disque arrive ; elle reste sous les
+  // 300 s d'une épreuve pour qu'un vrai disque absent se lise encore dans la série.
+  const valeurs = sources.guest.cmdline.match(/(?:^| )rootdelay=(\d+)(?= |$)/g) ?? [];
+  assert.equal(valeurs.length, 1, "un seul rootdelay=");
+  const secondes = Number(valeurs[0].trim().slice("rootdelay=".length));
+  assert.ok(secondes >= 120 && secondes < 300, `rootdelay=${secondes}`);
+});
