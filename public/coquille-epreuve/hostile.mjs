@@ -20,11 +20,13 @@ import {
   TYPES_APPLICATIFS,
   TYPES_PRIVILEGIES,
   TYPES_RELAIS,
+  correlationAdmise,
   decoderMessage,
   enveloppeDeMessage,
 } from "/src/coquille/contrat-de-messages.mjs";
 import { GESTES_REFUSES } from "/src/coquille/admission-applicative.mjs";
 import { CODES_REFUS_COQUILLE } from "/src/coquille/refus-de-coquille.mjs";
+import { appariementDuPort } from "./appariement.mjs";
 import SONDES_DE_TOPOLOGIE from "./hostile-topologie.mjs";
 import { DELAI_SONDE_MS, NOMBRE_DE_SONDES } from "./marqueurs.mjs";
 
@@ -35,8 +37,8 @@ const noeudRapport = document.querySelector("#hostile-rapport");
 const DELAI_PORT_MS = 1000;
 
 let portRestreint = null;
-/** @type {{ rendre: (valeur: unknown) => void, servi: boolean }[]} */
-const attentes = [];
+/** Les sondes en attente d'une réponse, appariées par corrélation (#179). */
+const attentes = appariementDuPort({ typeDeRefus: TYPES_APPLICATIFS.refus });
 
 /**
  * TOUT ce qui franchit le port, dans les deux sens, sérialisé.
@@ -62,10 +64,20 @@ function journaliser(sens, valeur) {
 
 function surMessageDuPort(event) {
   journaliser("reçu", event.data);
-  const attente = attentes.find((candidate) => !candidate.servi);
-  if (!attente) return;
-  attente.servi = true;
-  attente.rendre(event.data);
+  attentes.servir(event.data);
+}
+
+/**
+ * La corrélation que la coquille rendra en réponse à `brut`, ou `null` si elle n'en rendra pas.
+ *
+ * C'est la règle de `surRequeteApplicative` (`public/coquille/frontiere-applicative.mjs`) : une
+ * capacité transférée est refusée avant tout décodage ; un message qui ne se décode pas est refusé
+ * sans corrélation ; sinon la corrélation admissible du message revient, refus ou réponse.
+ */
+function correlationAttendue(brut, transferes) {
+  if (transferes.some((objet) => objet instanceof MessagePort)) return null;
+  const decode = decoderMessage(brut);
+  return decode.ok ? correlationAdmise(decode.message.correlation) : null;
 }
 
 /** Réclame le port restreint par une annonce en règle, et attend l'octroi. */
@@ -92,14 +104,11 @@ function poster(brut) {
 /** Le même, en TRANSFÉRANT des objets : c'est la sonde qui mesure ce que le port accepte. */
 function posterAvecTransfert(brut, transferes) {
   return new Promise((rendre) => {
-    const attente = { rendre, servi: false };
-    attentes.push(attente);
+    const attente = attentes.attendre(correlationAttendue(brut, transferes), rendre);
     journaliser("émis", brut);
     portRestreint.postMessage(brut, transferes);
     setTimeout(() => {
-      if (attente.servi) return;
-      attente.servi = true;
-      rendre({ type: "vault.coquille.aucune-reponse" });
+      attentes.expirer(attente, { type: "vault.coquille.aucune-reponse" });
     }, DELAI_PORT_MS);
   });
 }
