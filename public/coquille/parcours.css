@@ -437,38 +437,30 @@ html[data-travail-pret="true"] .entete-du-coffre {
   flex-wrap: nowrap;
   background: var(--fond);
 }
+/* Le titre de la barre est le nom du coffre, pas celui de l'étape (R1-bis, point 2). */
 html[data-travail-pret="true"] .entete-du-coffre h1 {
-  position: absolute;
+  margin: 0 12px 0 8px;
+  font-size: 15px;
+  line-height: var(--barre);
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+}
+html[data-travail-pret="true"] #parcours-rang {
+  display: none;
+}
+/* Menu fermé, le titre de l'étape reste la cible du focus, sans être montré. */
+html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #parcours-titre {
+  visibility: visible;
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   overflow: hidden;
   clip-path: inset(50%);
 }
-html[data-travail-pret="true"] #parcours-rang {
-  display: none;
-}
-/* Le titre de l'étape devient le nom de ce qui s'affiche : il reste la cible du focus. */
-html[data-travail-pret="true"] #parcours-titre {
-  visibility: visible;
-  position: fixed;
-  top: 0;
-  left: 42px;
-  z-index: 4;
-  max-width: 240px;
-  margin: 0;
-  font-size: 15px;
-  line-height: var(--barre);
-  letter-spacing: -0.3px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 html[data-travail-pret="true"] .barre-etat {
   display: block;
-  position: fixed;
-  top: 0;
-  left: 296px;
-  z-index: 4;
   margin: 0;
   font-size: 13px;
   line-height: var(--barre);
@@ -478,7 +470,6 @@ html[data-travail-pret="true"] .barre-etat {
 html[data-travail-pret="true"] #menu-du-coffre {
   display: block;
   position: relative;
-  margin-left: auto;
   border: 0;
 }
 #menu-du-coffre > summary {
@@ -595,25 +586,26 @@ html[data-travail-pret="true"]:has(#menu-du-coffre[open]) main {
 html[data-travail-pret="true"]:has(#menu-du-coffre[open]) [data-bloc="espace-de-travail"] {
   right: min(440px, 100%);
 }
-@media (min-width: 641px) {
-  html[data-travail-pret="true"]
-    :is(#verrouiller-le-coffre, #sauvegarder-le-coffre, #parcours-continuer) {
-    visibility: visible;
-    position: fixed;
-    top: 4px;
-    z-index: 4;
-    width: auto;
-    min-height: 44px;
-    margin: 0;
-    padding: 10px 14px;
-    white-space: nowrap;
-  }
-  html[data-travail-pret="true"] :is(#verrouiller-le-coffre, #parcours-continuer) {
-    right: 124px;
-  }
-  html[data-travail-pret="true"] #sauvegarder-le-coffre {
-    right: 316px;
-  }
+/* Les gestes de la barre : placés là par le script, dans l'ordre visuel (titre, Sauvegarder,
+   Verrouiller, Continuer, Coffre) ; l'ordre du clavier est donc celui de l'écran. */
+#gestes-de-la-barre {
+  display: none;
+}
+html[data-travail-pret="true"] #gestes-de-la-barre {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+  margin-right: 8px;
+}
+#gestes-de-la-barre > button {
+  width: auto;
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 14px;
+  white-space: nowrap;
+}
+#gestes-de-la-barre > [data-hors-etape] {
+  display: none;
 }
 /* Sur un écran étroit, la barre se replie en un seul bouton « Coffre ». */
 @media (max-width: 1023px) {
