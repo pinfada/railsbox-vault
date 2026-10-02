@@ -292,6 +292,12 @@ test("#255 : un artefact refusé sur un coffre qui a servi nomme l'adresse, et n
   await servirLeDescripteur(page, descripteurDEpreuve(8 * 4096));
   await ouvrirLeParcours(page);
   await jusquALEtape4(page);
+  // La DERNIÈRE publication de l'ouverture : le constat du déphasage, demandé APRÈS l'état ouvert
+  // (`cycle-de-la-page.mjs`, `surEtat`). `publier()` réécrit tout le relevé depuis la mémoire, où
+  // `application` est nulle : posée avant, la réponse serait effacée, et les gestes d'abri avec elle.
+  await expect
+    .poll(async () => (await releve(page)).dephasage !== undefined, { timeout: DELAI })
+    .toBe(true);
 
   await page.evaluate((code) => {
     const noeud = document.getElementById("coquille-rapport");
