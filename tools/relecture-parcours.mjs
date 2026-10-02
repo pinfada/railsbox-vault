@@ -65,6 +65,7 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
   "code-a-verifier": ["verrouillageEnCours", "codesDejaRendus"],
   travailler: [
     "applicationEnAttente",
+    "demarrageSurCetAppareil",
     "demarrageEnCours",
     "signesDeVie",
     "premierSigneDeVie",

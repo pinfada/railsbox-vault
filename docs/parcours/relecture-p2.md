@@ -289,10 +289,11 @@ Messages qui peuvent s'afficher sur cet écran :
 
 - L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur «
   Démarrer l'application ».
-- Démarrage en cours depuis N seconde(s), sur environ deux minutes. Le coffre travaille : N signe(s)
-  de vie reçu(s).
-- Le coffre travaille : N signe(s) de vie reçu(s).
-- En attente du premier signe de vie du coffre.
+- Votre application démarre sur cet appareil. Rien n'est envoyé sur Internet.
+- Démarrage en cours depuis N seconde(s), sur environ deux minutes. Le démarrage avance : le coffre
+  a répondu N fois.
+- Le démarrage avance : le coffre a répondu N fois.
+- Le démarrage commence : le coffre n'a pas encore répondu.
 - L'application est démarrée : elle s'affiche ci-dessous.
 - L'application s'affiche ci-dessous.
 - Reprise de l'installation en cours… Ne fermez pas l'onglet.
@@ -381,8 +382,8 @@ Messages qui peuvent s'afficher sur cet écran :
 
 - L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur «
   Démarrer l'application ».
-- Démarrage en cours depuis N seconde(s), sur environ deux minutes. Le coffre travaille : N signe(s)
-  de vie reçu(s).
+- Démarrage en cours depuis N seconde(s), sur environ deux minutes. Le démarrage avance : le coffre
+  a répondu N fois.
 - L'application est démarrée : elle s'affiche ci-dessous.
 - Une nouvelle version de l'application est disponible : B. Votre coffre utilise la version A. La
   mise à jour transforme vos données pour la nouvelle version, au démarrage, dans votre navigateur :

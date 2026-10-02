@@ -23,13 +23,16 @@ import {
   COFFRE,
   ECRANS,
   ECRANS_DE_L_APPLICATION,
+  ECRANS_DE_L_ENTREE,
   ETAPES,
   FICHIER_DE_PROGRESSION,
   GESTES_LONGS,
   LIBELLES_DE_LA_PAGE,
   LIMITE_DE_FIREFOX,
   MESSAGES,
+  PRINCIPAL_DE_L_ECRAN,
   PROGRESSION_INITIALE,
+  PROMESSE,
   SOUS_ETATS_DU_CODE,
   STATUTS,
   annonceDeLaSaisie,
@@ -79,6 +82,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     dernierFocusSurDemarrage = evenement.target === noeud("demarrer-application");
   });
   if (vueComplete) noeud("details-techniques").open = true;
+  ecrireLaPromesse();
 
   const moteur = moteurProbable(navigateur.userAgent);
   const etat = {
@@ -401,6 +405,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       MESSAGES.avertissementDeRevocation(releve.moyenDOuverture),
     );
     montrerLesBlocs(visibles);
+    noeud("promesse").hidden = !ECRANS_DE_L_ENTREE.includes(ecranId);
+    marquerLePrincipal(ecranId);
     // Replier seulement les conseils quand Rails DÉMARRE. Le cadre reste à sa place :
     // le déplacer rechargerait son document et lui ferait perdre le port restreint.
     //
@@ -412,7 +418,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     // gestes longs fermés — le seul moment où déplacer un bouton ne perd aucun geste.
     const ligneDuCycle = lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement ?? null;
     const demarree = ligneDuCycle === "application-demarree" && !etat.applicationArretee;
-    direLEspaceDeTravail(demarree, rapport);
+    direLEspaceDeTravail(demarree, rapport, ligneDuCycle === "demarrage-en-cours");
     const auTravail = demarree || ligneDuCycle === "demarrage-en-cours";
     const travailPret = !vueComplete && ECRANS_DE_L_APPLICATION.includes(ecranId) && auTravail;
     const modeTravail = String(travailPret);
@@ -449,8 +455,34 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (fin && !etat.progression.visiteTerminee) pas("visite-terminee");
   }
 
+  /** La promesse de l'entrée (ADR 0043), écrite une fois depuis les textes du parcours. */
+  function ecrireLaPromesse() {
+    noeud("promesse-phrase").textContent = PROMESSE.phrase;
+    const liste = noeud("promesse-garanties");
+    liste.replaceChildren(
+      ...PROMESSE.garanties.map(({ titre, preuve }) => {
+        const item = doc.createElement("li");
+        const fort = doc.createElement("strong");
+        fort.textContent = titre;
+        const texte = doc.createElement("span");
+        texte.textContent = preuve;
+        item.append(fort, texte);
+        return item;
+      }),
+    );
+  }
+
+  /** UN seul bouton principal par écran (#266 M1) : la table des textes le désigne, la page le marque. */
+  function marquerLePrincipal(ecranId) {
+    const principal = PRINCIPAL_DE_L_ECRAN[ecranId] ?? null;
+    for (const bouton of doc.querySelectorAll("button[data-principal]")) {
+      if (bouton.id !== principal) delete bouton.dataset.principal;
+    }
+    if (principal !== null && noeud(principal) !== null) noeud(principal).dataset.principal = "";
+  }
+
   /** Le cadre replié dit qu'il attend son démarrage, au lieu d'un rectangle blanc (#242, défaut 11). */
-  function direLEspaceDeTravail(demarree, rapport) {
+  function direLEspaceDeTravail(demarree, rapport, enCours = false) {
     const espace = noeud("cycle-description")?.closest("[data-bloc]");
     const valeur = demarree ? "demarree" : "attente";
     if (espace !== null && espace !== undefined && espace.dataset.application !== valeur) {
@@ -458,7 +490,11 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     }
     dire(
       "cycle-description",
-      demarree ? MESSAGES.applicationAffichee : accueil.texteDeLEspaceEnAttente(rapport),
+      demarree
+        ? MESSAGES.applicationAffichee
+        : enCours
+          ? MESSAGES.demarrageSurCetAppareil
+          : accueil.texteDeLEspaceEnAttente(rapport),
     );
   }
 
