@@ -43,12 +43,15 @@ import {
 } from "./src/coquille/relais-http.mjs";
 import {
   ISSUES_DU_ROUTAGE,
+  elaguerLesLiaisons,
   presencesNecessaires,
   routerLaRequete,
 } from "./src/coquille/routage-du-cadre.mjs";
 
 /** Client → courtier, appris à chaque navigation relayée. En mémoire seulement. */
-const liaisons = new Map();
+let liaisons = new Map();
+/** Clients liés déjà vus dans `clients.matchAll()` : seuls ceux-là peuvent être élagués (#257). */
+let liaisonsVues = new Set();
 
 self.addEventListener("install", () => {
   // Il prend la main TOUT DE SUITE : un cadre qui attendrait la fermeture de l'onglet pour activer
@@ -132,7 +135,7 @@ async function presencesDesCandidats() {
   const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
   const candidats = clients.filter((client) => new URL(client.url).pathname === CHEMIN_DU_COURTIER);
   const vivants = new Set(clients.map((client) => client.id));
-  for (const client of liaisons.keys()) if (!vivants.has(client)) liaisons.delete(client);
+  ({ liaisons, vus: liaisonsVues } = elaguerLesLiaisons({ liaisons, vus: liaisonsVues, vivants }));
   return Promise.all(
     candidats.map(async (client) => ({ id: client.id, porte: await demanderLaPresence(client) })),
   );

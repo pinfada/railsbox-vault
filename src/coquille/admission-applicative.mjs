@@ -67,7 +67,7 @@ export const GESTES_ADMIS = Object.freeze([
     type: TYPES_APPLICATIFS.requeteHttp,
     geste: "demander au guest ce qu'il rend sur un chemin HTTP, et recevoir sa réponse",
     usage: Object.freeze([
-      "public/service-worker-du-cadre.mjs:115 › « return servirParLeCourtier(courtier, " +
+      "public/service-worker-du-cadre.mjs:118 › « return servirParLeCourtier(courtier, " +
         "event.request, url); » — le seul émetteur de PRODUIT : le Service Worker de la coquille " +
         "de cadre intercepte ce que le document servi demande, et n'a aucune autre voie vers le " +
         "guest, qui n'est joignable que depuis le Worker de confiance",
