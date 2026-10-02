@@ -71,6 +71,30 @@ export function presencesNecessaires({ mode, destination, reserve, cheminDuCourt
 }
 
 /**
+ * ÉLAGUE les liaisons des clients disparus (#257).
+ *
+ * Une liaison n'est retirée que si son client a été VU dans `clients.matchAll()` puis n'y est plus.
+ * Un client fraîchement navigué n'y figure pas toujours encore : l'élaguer sur sa seule absence lui
+ * retirait sa liaison pour de bon, et ses sous-ressources tombaient en `CADRE_CLIENT_SANS_COURTIER`.
+ *
+ * Aucune horloge : « vu puis disparu » ferme la course sans délai de grâce à régler. Rend de
+ * nouvelles collections ; celles reçues ne sont pas modifiées.
+ *
+ * @param {object} etat
+ * @param {ReadonlyMap<string, string>} etat.liaisons client → courtier
+ * @param {ReadonlySet<string>} etat.vus clients liés déjà vus vivants
+ * @param {ReadonlySet<string>} etat.vivants identifiants rendus par `clients.matchAll()`
+ * @returns {{ liaisons: Map<string, string>, vus: Set<string> }}
+ */
+export function elaguerLesLiaisons({ liaisons, vus, vivants }) {
+  const gardees = [...liaisons].filter(([client]) => vivants.has(client) || !vus.has(client));
+  return {
+    liaisons: new Map(gardees),
+    vus: new Set(gardees.map(([client]) => client).filter((client) => vivants.has(client))),
+  };
+}
+
+/**
  * Ce qu'un candidat a répondu à la question « détiens-tu un port restreint ? ».
  *
  * `true` : un courtier. `false` : un document sans port (un onglet ouvert à la main). `null` : il n'a

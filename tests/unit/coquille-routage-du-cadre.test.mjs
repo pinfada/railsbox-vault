@@ -9,6 +9,7 @@ import test from "node:test";
 import {
   CODES_DU_ROUTAGE,
   ISSUES_DU_ROUTAGE,
+  elaguerLesLiaisons,
   routerLaRequete,
 } from "../../src/coquille/routage-du-cadre.mjs";
 
@@ -205,4 +206,46 @@ test("la coquille de cadre, elle, obtient toujours ses propres chemins du résea
     }),
     reseau,
   );
+});
+
+// --- L'ÉLAGAGE des liaisons (#257) -----------------------------------------------------------------
+//
+// Le document Rails était servi à 200, puis ses sous-ressources refusées CADRE_CLIENT_SANS_COURTIER :
+// la liaison apprise à la navigation était élaguée à la requête suivante, parce que le client
+// fraîchement navigué ne figurait pas encore dans clients.matchAll().
+
+test("un client navigué il y a 450 ms, encore absent de matchAll, GARDE sa liaison (#257)", () => {
+  const liaisons = new Map([["cadre-neuf", "courtier-a"]]);
+  const elague = elaguerLesLiaisons({ liaisons, vus: new Set(), vivants: new Set(["courtier-a"]) });
+  assert.equal(elague.liaisons.get("cadre-neuf"), "courtier-a");
+  // Et la sous-ressource qui suit est RELAYÉE, non refusée.
+  assert.deepEqual(
+    routerLaRequete({
+      mode: "no-cors",
+      destination: "script",
+      clientId: "cadre-neuf",
+      liaisons: elague.liaisons,
+      presences: [A],
+    }),
+    { issue: ISSUES_DU_ROUTAGE.relayer, courtier: "courtier-a" },
+  );
+});
+
+test("un client VU puis disparu de matchAll perd sa liaison", () => {
+  const liaisons = new Map([["cadre", "courtier-a"]]);
+  const vu = elaguerLesLiaisons({ liaisons, vus: new Set(), vivants: new Set(["cadre"]) });
+  assert.ok(vu.vus.has("cadre"));
+  const disparu = elaguerLesLiaisons({ ...vu, vivants: new Set() });
+  assert.equal(disparu.liaisons.has("cadre"), false);
+  assert.equal(disparu.vus.has("cadre"), false);
+});
+
+test("l'élagage rend de NOUVELLES collections et ne touche pas à celles qu'il reçoit", () => {
+  const liaisons = new Map([["cadre", "courtier-a"]]);
+  const vus = new Set(["cadre"]);
+  const elague = elaguerLesLiaisons({ liaisons, vus, vivants: new Set() });
+  assert.equal(liaisons.get("cadre"), "courtier-a");
+  assert.ok(vus.has("cadre"));
+  assert.notEqual(elague.liaisons, liaisons);
+  assert.notEqual(elague.vus, vus);
 });
