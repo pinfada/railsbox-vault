@@ -2,6 +2,7 @@
 // rendu. Elle n'a aucun accès à l'émulateur ni au backend.
 
 import { HARNAIS_CLE_JETON } from "/src/vm/cle-de-volume.mjs";
+import { messageDErreurDuWorker } from "./erreur-du-worker.mjs";
 
 const etat = document.querySelector("#etat");
 const rapport = document.querySelector("#rapport");
@@ -27,7 +28,7 @@ worker.addEventListener("message", (event) => {
 
 worker.addEventListener("error", (event) => {
   for (const attente of enCours.values()) {
-    attente.reject(new Error(`Erreur du Worker runtime : ${event.message}`));
+    attente.reject(new Error(messageDErreurDuWorker("runtime", event)));
   }
   enCours.clear();
 });

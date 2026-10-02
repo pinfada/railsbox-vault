@@ -6,6 +6,7 @@
 // de la coquille (`worker-src 'self'`) refuse — l'émulateur ne bat alors jamais. Voir l'ADR 0003.
 
 import { HARNAIS_CLE_JETON } from "/src/vm/cle-de-volume.mjs";
+import { messageDErreurDuWorker } from "./erreur-du-worker.mjs";
 
 const etat = document.querySelector("#etat");
 const rapport = document.querySelector("#rapport");
@@ -99,7 +100,7 @@ function attendreMutation() {
 
 worker.addEventListener("error", (event) => {
   for (const attente of enCours.values()) {
-    attente.reject(new Error(`Erreur du Worker runtime : ${event.message}`));
+    attente.reject(new Error(messageDErreurDuWorker("runtime", event)));
   }
   enCours.clear();
 });
