@@ -22,7 +22,18 @@
 
 import { CODES_REFUS_COQUILLE } from "./refus-de-coquille.mjs";
 import { constaterCreationSeule } from "../vm/opfs-datation-de-creation.mjs";
-import { openOpfsSyncAccess, statOpfsVolume } from "../vm/opfs-sync-access.mjs";
+import {
+  engagementSidecarName,
+  generationJournalName,
+  openOpfsSyncAccess,
+  statOpfsVolume,
+} from "../vm/opfs-sync-access.mjs";
+import { ouvrirVolumeBrut } from "../vm/opfs-volume-brut.mjs";
+import {
+  EN_TETE_OCTETS,
+  decoderEnTeteV4,
+  dispositionDuVolume,
+} from "../vm/volume-chiffre-format.mjs";
 import { parseManifest } from "../vm/volume-manifest.mjs";
 
 /**
@@ -50,6 +61,9 @@ export async function signatureDInstallationInterrompue({
   openHandle,
   constaterCreation = constaterCreationSeule,
 }) {
+  if (await journalJamaisEcrit(nom, observer)) {
+    return naissanceCoupeeAvantSaRacine({ nom, octetsAnnonces, observer, openHandle });
+  }
   let creation;
   try {
     creation = await constaterCreation({ name: nom, openHandle, observer });
@@ -73,6 +87,75 @@ export async function signatureDInstallationInterrompue({
     };
   }
   return { interrompue: true, motif: null, tailleLogique: creation.tailleLogique };
+}
+
+/** Le journal de génération est absent ou vide : aucune racine n'y a JAMAIS été écrite. */
+async function journalJamaisEcrit(nom, observer) {
+  const journal = await observer(generationJournalName(nom));
+  return !journal.present || journal.size === 0;
+}
+
+/**
+ * La NAISSANCE coupée avant sa racine initiale (#264) : un rechargement pendant le PREMIER démarrage,
+ * mesuré par la recette QA du 03/10/2026 — volume alloué à sa taille, journal et engagement à 0 octet.
+ *
+ * La naissance alloue le fichier et pose son en-tête, retire les voisins orphelins (ce qui laisse
+ * `.gen` et `.engagement` présents et VIDES), scelle chaque secteur — 19 s mesurés pour 512 Mio —,
+ * écrit la racine initiale, puis pose la marque `VLTSEAL1` en DERNIER (`opfs-volume-ouverture.mjs`).
+ * Une coupure pendant le scellement laisse donc un en-tête SANS marque. Or l'ouverture REFUSE tout
+ * volume sans marque (`creationInachevee`) : aucun guest n'a pu y écrire, et le reprendre n'écrase rien.
+ *
+ * Les QUATRE conditions, ensemble, en plus du journal vide déjà constaté : un engagement vide (une
+ * restauration en dépose un), un en-tête v4 lisible qui déclare la taille annoncée par le descripteur,
+ * un fichier de la taille support exacte que cette taille donne, et la marque ABSENTE. Un volume
+ * dont le journal a été vidé APRÈS sa naissance porte la marque, et reste refusé.
+ */
+async function naissanceCoupeeAvantSaRacine({ nom, octetsAnnonces, observer, openHandle }) {
+  const engagement = await observer(engagementSidecarName(nom));
+  if (engagement.present && engagement.size > 0) {
+    return refusDeLaSignature("un engagement d'archive est déposé : ce n'est pas une naissance");
+  }
+  let lu;
+  let tailleDuFichier;
+  try {
+    const brut = await ouvrirVolumeBrut({ name: nom, openHandle });
+    try {
+      lu = decoderEnTeteV4(await brut.read(0, EN_TETE_OCTETS));
+      tailleDuFichier = brut.size();
+    } finally {
+      await brut.close();
+    }
+  } catch (erreur) {
+    return refusDeLaSignature(
+      `la lecture de l'en-tête a échoué : ${erreur?.message ?? "cause inconnue"}`,
+    );
+  }
+  if (!lu.valide) return refusDeLaSignature(`aucun journal de génération, et ${lu.raison}`);
+  const { tailleLogique, scellementComplet } = lu.enTete;
+  if (tailleLogique !== octetsAnnonces) {
+    return refusDeLaSignature(
+      `le volume déclare ${tailleLogique} octets, le descripteur en annonce ` +
+        `${octetsAnnonces} : ce n'est pas CE volume-là`,
+      tailleLogique,
+    );
+  }
+  if (tailleDuFichier !== dispositionDuVolume(octetsAnnonces).tailleSupport) {
+    return refusDeLaSignature(
+      `le fichier fait ${tailleDuFichier} octets, pas la taille support de ce volume`,
+      tailleLogique,
+    );
+  }
+  if (scellementComplet) {
+    return refusDeLaSignature(
+      "aucun journal de génération lisible, sur un volume dont la création s'est achevée",
+      tailleLogique,
+    );
+  }
+  return { interrompue: true, motif: null, tailleLogique };
+}
+
+function refusDeLaSignature(motif, tailleLogique = null) {
+  return { interrompue: false, motif, tailleLogique };
 }
 
 /**
