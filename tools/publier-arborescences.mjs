@@ -46,6 +46,14 @@ export const SOURCES_COQUILLE = Object.freeze([
       "volume développée ; ni l'une ni l'autre ne franchit un `postMessage` (ADR 0002).",
   }),
   Object.freeze({
+    depuis: "public/runtime-worker-deverrouillage.mjs",
+    vers: "runtime-worker-deverrouillage.mjs",
+    role:
+      "Le DÉVERROUILLAGE du Worker de confiance (#191) : enveloppe, clés, ouverture du volume. " +
+      "Importé par `runtime-worker.mjs` et exécuté dans lui seul : la KEK et la clé de volume " +
+      "qu'il manipule ne franchissent aucun `postMessage`.",
+  }),
+  Object.freeze({
     depuis: "public/relais-du-worker.mjs",
     vers: "relais-du-worker.mjs",
     role:

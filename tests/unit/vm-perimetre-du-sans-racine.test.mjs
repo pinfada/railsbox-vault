@@ -45,7 +45,11 @@ const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
  * `src/vm/*` — c'est LUI qui ouvrirait un volume, pas la page). Un Worker se charge par URL, pas
  * par `import` : sans ce second point d'entrée, sa fermeture d'import resterait invisible d'ici.
  */
-const ENTREES_SERVIES = ["public/main.mjs", "public/runtime-worker.mjs"];
+const ENTREES_SERVIES = [
+  "public/main.mjs",
+  "public/runtime-worker.mjs",
+  "public/runtime-worker-deverrouillage.mjs",
+];
 
 /** Les DEUX modules qui écrivent une racine `migration` ou `engagement` — jamais `creation`. */
 const MODULES_DANGEREUX = [

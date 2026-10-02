@@ -30,11 +30,9 @@
  * laissé vivant et inchangé) : elles restent dans le relevé, et n'en sortiraient QUE si le cliquet
  * les rougissait un jour, avec le motif écrit ici même. Ce n'est pas encore le cas.
  *
- * `public/runtime-worker.mjs`, lui, ROUGIT DÉJÀ à 815 lignes — découvert par l'élargissement de
- * `RACINES`, pas causé par lui : c'est le Worker de confiance (#161, ADR 0028), et le scinder est un
- * chantier de sécurité à part entière, hors du périmètre de #175 (qui ne scindait que `main.mjs`).
- * Il est donc HORS PÉRIMÈTRE (voir plus bas), signalé au superviseur, à traiter par une tranche
- * dédiée et relue pour elle-même.
+ * `public/runtime-worker.mjs`, lui, rougissait à 815 lignes à cet élargissement. #191 l'a scindé : le
+ * déverrouillage et les clés vivent dans `public/runtime-worker-deverrouillage.mjs`, et la liste
+ * HORS PÉRIMÈTRE est vide — le cliquet passe SANS exception pour les deux fichiers.
  */
 
 import assert from "node:assert/strict";
@@ -62,42 +60,7 @@ const RACINES = ["src", "public"];
  *
  * @type {{ fichier: string, lignes: number, motif: string }[]}
  */
-const HORS_PERIMETRE = [
-  {
-    fichier: "public/runtime-worker.mjs",
-    lignes: 921,
-    motif:
-      "découvert le 11/09/2026 en élargissant RACINES à `public` (#175) : il dépassait déjà le " +
-      "plafond avant cet élargissement, et #175 ne scindait que `main.mjs`. Scinder le Worker de " +
-      "confiance (#161, ADR 0028) est un chantier de sécurité distinct, ouvert sous #191 (revue de " +
-      "sécurité de la PR #188, MEDIUM-1 : un signalement n'est pas un cliquet) ; cette exclusion " +
-      "sort de la liste dès que #191 l'a scindé sous 800 lignes. " +
-      "#173 (12/09/2026) y ajoute trente-six lignes — le geste `reprendreLInstallationGeste`, qui " +
-      "revérifie la signature d'une installation interrompue avant d'agir — parce qu'il appartient " +
-      "au même dispatch que `demarrerLApplication` ; le déplacer seul aurait scindé le fichier sans " +
-      "le faire repasser sous le plafond, pour un coût de lisibilité immédiat et un bénéfice différé. " +
-      "#192 (12/09/2026) y ajoute VINGT ET UNE lignes et lui en RETIRE bien davantage : le relais " +
-      "HTTP pèse environ cent quatre-vingts lignes, et il est né dans un module à lui — " +
-      "`public/relais-du-worker.mjs` —, bocal à cookies compris. Ce qui reste ici est ce qui ne " +
-      "pouvait pas partir : le second port de la poignée de main (deux ports, un message, une fois), " +
-      "l'appel de branchement, la porte HTTP retenue dans `interne.application`, et l'oubli de la " +
-      "session Rails dans `relacherTout`. La tranche a donc réduit la dette de ce fichier plutôt que " +
-      "de l'augmenter, et l'exclusion sort toujours de la liste dès que #191 l'a scindé sous 800. " +
-      "La correction I1 de la revue d'intégration (12/09/2026) y ajoute DIX-HUIT lignes de MESURE : " +
-      "le battement porte désormais son rang et l'instant où le Worker l'a posté, sans quoi la borne " +
-      "de mort par silence rend le même verdict que le Worker se soit tu ou que la page ne l'ait pas " +
-      "entendu — et la cause reste une hypothèse. Ces dix-huit lignes ont éliminé deux hypothèses par " +
-      "la mesure ; elles restent parce qu'une borne qu'on ne sait pas instrumenter se rediagnostique " +
-      "à chaque incident. " +
-      "#239 (18/09/2026) y ajoute VINGT ET UNE lignes de COUTURE : lire et inscrire la preuve de la " +
-      "feuille au secteur 1 du volume `coquille` après une ouverture, et publier `feuilleEprouvee` " +
-      "dans les deux réponses qui la portent. La logique — format, lecture d'un secteur vierge, " +
-      "inscription, comparaison à l'enveloppe — est née dans `src/coquille/preuve-de-la-feuille.mjs`, " +
-      "éprouvée sans navigateur ; ce qui reste ici est ce qui ne pouvait pas partir : l'appel entre " +
-      "l'ouverture du volume et sa barrière, l'état qu'il tient, et la publication du refus quand " +
-      "la preuve est illisible (revue de sécurité de la PR #244 : le coffre reste ouvert).",
-  },
-];
+const HORS_PERIMETRE = [];
 
 /**
  * Fichiers entre l'alerte et le plafond, EXAMINÉS et gardés en l'état. Ajouter une ligne ici demande
