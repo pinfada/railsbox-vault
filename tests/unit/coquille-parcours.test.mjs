@@ -299,8 +299,10 @@ test("#239 : un code rendu et jamais éprouvé fait d'abord ÉPROUVER la feuille
       `${id} n'offre pas d'afficher un code`,
     );
   }
-  assert.match(ECRANS["code-verifier"].attendu, /effacez les données de ce site/);
-  assert.match(ECRANS["code-verifier"].attendu, /afficher un nouveau code/);
+  // R1-bis, point 6 : une phrase d'action ; les cas rares sont repliés sous « Je n'ai plus ma feuille ».
+  assert.match(ECRANS["code-verifier"].casRares, /effacez les données de ce site/);
+  assert.match(ECRANS["code-verifier"].casRares, /afficher un nouveau code/);
+  assert.doesNotMatch(ECRANS["code-verifier"].attendu, /effacez|n'avez plus/);
   assert.match(ECRANS["code-verifier"].ceQuiVaSePasser, /qu'une fois/);
   assert.match(ECRANS["code-a-verifier"].attendu, /afficher un nouveau code/);
   assert.match(ECRANS["code-a-verifier"].attendu, /Révoquer tous les autres moyens/);
@@ -362,7 +364,7 @@ test("coffre VERROUILLÉ : « je n'ai plus cette feuille » fait d'abord ouvrir 
   assert.equal(ecranCourant(verrouille), "code-verifier");
   assert.equal(ecranCourant({ ...verrouille, nouveauCodeDemande: true }), "rouvrir");
   assert.ok(ECRANS["code-verifier"].blocs.includes("nouveau-code"), "la sortie est sur l'écran");
-  assert.match(ECRANS["code-verifier"].attendu, /ouvrirez donc d'abord avec votre phrase/);
+  assert.match(ECRANS["code-verifier"].casRares, /ouvrirez donc d'abord avec votre phrase/);
   assert.equal(
     ecranCourant({ ...verrouille, moyens: ["recuperation"], nouveauCodeDemande: true }),
     "recuperer",

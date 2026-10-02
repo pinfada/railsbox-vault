@@ -193,11 +193,13 @@ Messages qui peuvent s'afficher sur cet écran :
 > révoquée.
 >
 > Ce que vous avez à faire : Si vous avez votre feuille : tapez le code, puis cliquez sur « Ouvrir
-> mon coffre avec le code ». Si vous n'avez plus cette feuille, cliquez sur « Je n'ai plus cette
-> feuille — afficher un nouveau code » : un coffre VERROUILLÉ n'affiche aucun code, vous l'ouvrirez
-> donc d'abord avec votre phrase, et un nouveau code vous sera proposé ensuite. L'ancien code
-> continue d'ouvrir ce coffre tant que personne ne le retire. Si vous n'avez ni la feuille ni la
-> phrase et que vous n'avez encore rien mis dans ce coffre, abandonnez-le : dans les réglages du
+> mon coffre avec le code ».
+>
+> Replié sous « Je n'ai plus ma feuille » : Si vous n'avez plus cette feuille, cliquez sur « Je n'ai
+> plus cette feuille — afficher un nouveau code » : un coffre VERROUILLÉ n'affiche aucun code, vous
+> l'ouvrirez donc d'abord avec votre phrase, et un nouveau code vous sera proposé ensuite. L'ancien
+> code continue d'ouvrir ce coffre tant que personne ne le retire. Si vous n'avez ni la feuille ni
+> la phrase et que vous n'avez encore rien mis dans ce coffre, abandonnez-le : dans les réglages du
 > navigateur, effacez les données de ce site, rechargez la page, puis créez un nouveau coffre. Si
 > vous avez déjà mis des données dans ce coffre, n'effacez rien et demandez de l'aide.
 

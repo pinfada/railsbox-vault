@@ -436,6 +436,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       ecran.attente ??
       (visibles.includes("phrase") ? attenteDeLaPhraseAnnoncee : "");
     dire("parcours-attente-annoncee", attente === "" ? "" : MESSAGES.duree(attente));
+    dire("parcours-cas-rares", ecran.casRares ?? "");
+    noeud("parcours-feuille-perdue").hidden = ecran.casRares === null;
     // Une seule étape annoncée : celle où « Continuer » mène (R1-bis, point 5).
     const suivante = etapeAContinuer(ecranId);
     dire("parcours-suivante", suivante === null ? "" : MESSAGES.suivante(suivante.titre));
@@ -448,6 +450,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     );
     montrerLesBlocs(visibles);
     noeud("promesse").hidden = !ECRANS_DE_L_ENTREE.includes(ecranId);
+    // Sur « rouvrir », la promesse tient en une ligne : le champ de la phrase reste à l'écran (R1-bis, 7).
+    noeud("promesse-garanties").hidden = ecranId === "rouvrir";
     marquerLePrincipal(ecranId);
     // Replier seulement les conseils quand Rails DÉMARRE. Le cadre reste à sa place :
     // le déplacer rechargerait son document et lui ferait perdre le port restreint.
