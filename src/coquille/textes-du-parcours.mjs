@@ -455,6 +455,62 @@ export const LIBELLES_DE_LA_PAGE = Object.freeze({
 });
 
 /**
+ * La PROMESSE, dite à l'entrée (ADR 0043) : une phrase, puis trois garanties et ce qui les fonde.
+ * Aucun mot technique : la personne doit comprendre en quelques secondes ce qu'elle va utiliser.
+ */
+export const PROMESSE = Object.freeze({
+  phrase:
+    "Votre application, chez vous : elle s'ouvre comme un site, mais tourne entièrement sur cet " +
+    "appareil, sans serveur.",
+  garanties: Object.freeze([
+    Object.freeze({
+      titre: "Elle tourne sur cet appareil",
+      preuve: "Tout se passe dans ce navigateur : aucun serveur ne fait le travail à votre place.",
+    }),
+    Object.freeze({
+      titre: "Vos données restent ici, chiffrées",
+      preuve:
+        "Rien n'est lisible sans votre secret, et rien ne quitte l'appareil sauf la sauvegarde que " +
+        "vous demandez.",
+    }),
+    Object.freeze({
+      titre: "Elle marche hors ligne",
+      preuve:
+        "Une fois démarrée, elle n'a plus besoin d'Internet : vous pouvez couper la connexion.",
+    }),
+  ]),
+});
+
+/** Les écrans d'ENTRÉE, ceux qui commencent par la promesse : créer un coffre, ou le rouvrir. */
+export const ECRANS_DE_L_ENTREE = Object.freeze(["creer", "rouvrir"]);
+
+/**
+ * Le geste PRINCIPAL de chaque écran (#266 M1) : un seul par écran, posé là où l'écran est décrit.
+ * Tous les autres boutons sont secondaires. Un écran absent de cette table n'a pas de principal.
+ */
+export const PRINCIPAL_DE_L_ECRAN = Object.freeze({
+  creer: "parcours-commencer",
+  choisir: "ouvrir-par-phrase",
+  "code-annonce": "creer-recuperation",
+  "code-feuille": "parcours-code-recopie",
+  "code-a-verrouiller": "verrouiller-le-coffre",
+  "code-verifier": "ouvrir-par-code",
+  "code-a-verifier": "verrouiller-le-coffre",
+  travailler: "demarrer-application",
+  accueil: "demarrer-application",
+  verrouiller: "verrouiller-le-coffre",
+  rouvrir: "ouvrir-par-phrase",
+  sauvegarder: "sauvegarder-le-coffre",
+  "restaurer-ailleurs": "parcours-continuer",
+  restaurer: "restaurer-le-coffre",
+  "recuperer-preparer": "verrouiller-le-coffre",
+  recuperer: "ouvrir-par-code",
+  revoquer: "parcours-sans-revoquer",
+  "termine-sans-revoquer": "parcours-retour-application",
+  termine: "parcours-retour-application",
+});
+
+/**
  * Les MESSAGES que la page écrit en plus des écrans : réussites, attentes en cours, consignes. Ceux
  * qui portent une valeur sont des fonctions ; la page de relecture les appelle avec « N ».
  */
@@ -500,8 +556,11 @@ export const MESSAGES = Object.freeze({
     "pourquoi, et ce que vous pouvez faire.",
   demarrageEnCours: (secondes, vie) =>
     `Démarrage en cours depuis ${secondes} seconde(s), sur environ deux minutes. ${vie}`,
-  signesDeVie: (nombre) => `Le coffre travaille : ${nombre} signe(s) de vie reçu(s).`,
-  premierSigneDeVie: "En attente du premier signe de vie du coffre.",
+  // Ce que la page dit d'un démarrage, en langage clair (#266 m8).
+  signesDeVie: (nombre) => `Le démarrage avance : le coffre a répondu ${nombre} fois.`,
+  premierSigneDeVie: "Le démarrage commence : le coffre n'a pas encore répondu.",
+  demarrageSurCetAppareil:
+    "Votre application démarre sur cet appareil. Rien n'est envoyé sur Internet.",
   sauvegardePrete:
     "Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien ne " +
     "s'est enregistré, cliquez sur « Enregistrer la sauvegarde ».",
