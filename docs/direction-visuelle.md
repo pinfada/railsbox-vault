@@ -1,5 +1,11 @@
 # Direction visuelle du parcours
 
+> **Mise à jour du 3 octobre 2026** : la place de l'application à l'écran, la promesse à l'entrée et
+> la règle du bouton principal sont désormais fixées par
+> l'[ADR 0043](decisions/0043-l-application-d-abord.md). La carte décrite ci-dessous reste celle des
+> étapes hors de l'application ; dès que l'application démarre, le cadre occupe la fenêtre sous une
+> barre de coffre, et le bouton secondaire est le style par défaut.
+
 Pour P3 (#194), le mainteneur a choisi le 14 septembre 2026 sa proposition utilitaire : une carte
 blanche, des angles droits, des bordures sombres et une ombre franche de six pixels. L'harmonisation
 de l'application de référence a ensuite été autorisée comme complément après l'essai réel dans
