@@ -154,12 +154,13 @@ test("l'origine applicative publie le PROXY, et rien de ce que le guest rend (#1
   // Cette épreuve exigeait une table VIDE jusqu'à #192, sous l'ADR 0002 : « en production le HTML
   // applicatif est produit par le guest et relayé par le proxy ». La phrase n'a pas changé — c'est
   // sa conclusion qui manquait. Le proxy doit bien être servi par quelqu'un, et ce quelqu'un ne
-  // peut être que cette origine-là. Ce qu'elle publie est donc EXACTEMENT le proxy, et l'épreuve
+  // peut être que cette origine-là. Elle publie le proxy et son icône publique, et l'épreuve
   // le vérifie fichier par fichier plutôt que par un compte.
   const application = ARBRES.find(({ nom }) => nom === "application");
   assert.deepEqual(
     application.sources.map(({ depuis }) => depuis),
     [
+      "public/favicon.ico",
       "public/document-applicatif.html",
       "public/document-applicatif.mjs",
       "public/service-worker-du-cadre.mjs",
@@ -170,7 +171,7 @@ test("l'origine applicative publie le PROXY, et rien de ce que le guest rend (#1
       "src/coquille/routage-du-cadre.mjs",
       "src/coquille/relais-http.mjs",
     ],
-    "L'arbre applicatif porte le proxy, et rien d'autre. Un artefact de plus y serait du produit " +
+    "L'arbre applicatif porte le proxy et son icône. Un artefact de plus y serait du produit " +
       "servi depuis le territoire du guest — ce que l'ADR 0002 refuse.",
   );
   for (const source of application.sources) {
