@@ -149,6 +149,8 @@
               spellcheck="false"
             />
           </p>
+          <!-- Le refus de la phrase vient s'écrire ICI, sous le champ (#266 B2-1). -->
+          <div class="refus-du-champ" id="refus-saisie-phrase"></div>
           <p id="phrase-conseil" role="status" aria-live="polite"></p>
           <p><button id="ouvrir-par-phrase" type="button">Ouvrir mon coffre</button></p>
         </div>
@@ -171,8 +173,15 @@
         <div data-bloc="code" hidden>
           <p>
             <label for="saisie-code">Code de récupération</label>
-            <input id="saisie-code" type="text" autocomplete="off" spellcheck="false" />
+            <input
+              id="saisie-code"
+              type="text"
+              aria-describedby="parcours-code-lu"
+              autocomplete="off"
+              spellcheck="false"
+            />
           </p>
+          <div class="refus-du-champ" id="refus-saisie-code"></div>
           <p id="parcours-code-lu" aria-live="polite"></p>
           <p>
             <button id="ouvrir-par-code" type="button" disabled>
