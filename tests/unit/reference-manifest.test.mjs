@@ -273,13 +273,12 @@ test("la ligne de commande du noyau désigne la PREMIÈRE PARTITION, pas le disq
   assert.equal(manifesteDEssai().boot.cmdline, sources.guest.cmdline);
 });
 
-test("l'initramfs attend le disque système au-delà de ses 30 s par défaut (#165)", () => {
-  // initramfs-tools 0.142 (bookworm) abandonne la racine après max(30, rootdelay) secondes de
-  // l'horloge du GUEST, qui suit l'horloge murale de l'hôte sous v86 : un Worker ralenti brûle ces
-  // 30 s sans énumérer `sda`. L'attente ne coûte rien quand le disque arrive ; elle reste sous les
-  // 300 s d'une épreuve pour qu'un vrai disque absent se lise encore dans la série.
-  const valeurs = sources.guest.cmdline.match(/(?:^| )rootdelay=(\d+)(?= |$)/g) ?? [];
-  assert.equal(valeurs.length, 1, "un seul rootdelay=");
-  const secondes = Number(valeurs[0].trim().slice("rootdelay=".length));
-  assert.ok(secondes >= 120 && secondes < 300, `rootdelay=${secondes}`);
+test("la ligne de commande ne porte aucun rootdelay= : l'initramfs le DORT à chaque boot (#165)", () => {
+  // `rootdelay=` n'allonge pas seulement l'attente de la racine (max(30, rootdelay) dans
+  // `scripts/local`) : le `init` d'initramfs-tools 0.142 (bookworm) fait d'abord
+  // `if [ "$ROOTDELAY" ]; then sleep "$ROOTDELAY"; fi`, sans condition sur le disque. Avec
+  // `rootdelay=120`, chaque boot payait 120 s, et `migration-coupee` est tombée 2 fois sur 2
+  // (PR #263, run 37075639310).
+  const lignes = [sources.guest.cmdline, manifesteDEssai().boot.cmdline];
+  for (const ligne of lignes) assert.doesNotMatch(ligne, /(?:^| )rootdelay=/);
 });
