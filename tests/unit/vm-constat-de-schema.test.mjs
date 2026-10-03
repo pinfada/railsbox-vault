@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { MOTIFS_DE_SCHEMA, creerVeilleurDeSchema } from "../../src/vm/constat-de-schema.mjs";
+import { PHASES_DU_BOOT, phaseDuBoot, poserLaPhase } from "../../src/vm/phase-du-boot.mjs";
 
 const M = "20260101000002";
 const N = "20260919000002";
@@ -61,6 +62,40 @@ test("un REFUS rejette la promesse avec son motif, et le constat le retient", as
     await assert.rejects(veilleur.refus, (erreur) => erreur.motifDeSchema === motif);
     assert.equal(veilleur.constat().refus, motif);
   }
+});
+
+test("une ligne série privée de son crochet initial se lit encore, une autre tête non (PR #263)", () => {
+  // Run 37075639310 : la série du guest arrive hachée, et la ligne décisive est arrivée sans son
+  // `[` — `migration` restait null, et `migration-coupee` tombait sur `migration?.jouee`.
+  const veilleur = creerVeilleurDeSchema();
+  poserLaPhase(null);
+  veilleur.ingererSerie(`[schema] volume=${M} paquet=${M} attendu=${M} intention=${N}\n`);
+  veilleur.ingererSerie(`schema] migration jouee de=${M} vers=${N} ms=30427\r\n`);
+  assert.deepEqual(veilleur.constat().migration, { jouee: true, de: M, vers: N, ms: 30427 });
+  // La phase que la page affiche passe elle aussi à « démarrage ».
+  assert.equal(phaseDuBoot(), PHASES_DU_BOOT.demarrage);
+  poserLaPhase(null);
+
+  // Pas n'importe quoi : un autre préfixe, ou un `schema]` au milieu d'une ligne, ne compte pas.
+  for (const ligne of [
+    `xschema] migration aucune schema=${N}`,
+    `chema] migration aucune schema=${N}`,
+    `@VLT1 schema] migration aucune schema=${N}`,
+    `[schema]migration aucune schema=${N}`,
+  ]) {
+    veilleur.ingererSerie(`${ligne}\n`);
+    assert.equal(veilleur.constat().migration.jouee, true, ligne);
+  }
+});
+
+test("un REFUS privé de son crochet initial rejette encore la promesse", async () => {
+  const veilleur = creerVeilleurDeSchema();
+  veilleur.ingererSerie(`schema] REFUS anterieur volume=${M} paquet=${M} intention=${N}\n`);
+  assert.equal(veilleur.constat()?.refus, MOTIFS_DE_SCHEMA.anterieur);
+  await assert.rejects(
+    veilleur.refus,
+    (erreur) => erreur.motifDeSchema === MOTIFS_DE_SCHEMA.anterieur,
+  );
 });
 
 test("un marqueur absent se relit null, et une ligne interminable ne grossit pas sans borne", () => {
