@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RailsBox Vault — banc de débit OPFS par blocs (#247)</title>
+  </head>
+  <body>
+    <h1>Banc de débit OPFS par blocs</h1>
+    <p>
+      Un Worker écrit un fichier de la taille du disque système dans l'OPFS, le relit par blocs de
+      4&nbsp;096 octets (séquentiel puis aléatoire) et le hache par tranches de 8 Mio. Taille
+      réglable par
+      <code>?mio=</code>.
+    </p>
+    <p id="etat">Prêt.</p>
+    <pre id="rapport"></pre>
+    <script type="module" src="./debit-opfs-banc.mjs"></script>
+  </body>
+</html>
