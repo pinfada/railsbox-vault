@@ -128,7 +128,8 @@ async function aucunCodeEnClair(page, moment) {
 async function relireLaNote(page) {
   await expect(page.getByText(/L'application n'est pas encore démarrée/)).toBeVisible();
   await bouton(page, "Démarrer l'application").click();
-  await expect(page.getByText("L'application est démarrée.")).toBeVisible({
+  // Le message vit dans le panneau du coffre (ADR 0043) : on attend l'état publié par le cycle.
+  await expect(page.locator("#cycle-etat")).toContainText("application-demarree", {
     timeout: BUDGET_DEMARRAGE_MS,
   });
   await expect(pageServie(page).getByText(LIBELLE).first()).toBeVisible({
@@ -239,7 +240,8 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await expect(a.locator("#demarrer-application")).toBeDisabled();
     await expect(a.locator("#parcours-progression")).toBeVisible();
     await expect(alerte(a), "aucune alerte pendant le boot").toBeEmpty();
-    await expect(a.getByText("L'application est démarrée.")).toBeVisible({
+    // Le message vit dans le panneau du coffre (ADR 0043) : on attend l'état publié par le cycle.
+    await expect(a.locator("#cycle-etat")).toContainText("application-demarree", {
       timeout: BUDGET_DEMARRAGE_MS,
     });
     const servie = pageServie(a);
