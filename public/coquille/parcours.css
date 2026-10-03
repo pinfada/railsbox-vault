@@ -614,7 +614,18 @@ html[data-travail-pret="true"] #gestes-de-la-barre {
   padding: 10px 14px;
   white-space: nowrap;
 }
-#gestes-de-la-barre > [data-hors-etape] {
+#gestes-de-la-barre > [data-hors-etape],
+#gestes-du-panneau > [data-hors-etape] {
+  display: none;
+}
+/* Les gestes que la barre n'a pas la largeur de porter, en tête du panneau du coffre. */
+#gestes-du-panneau {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 20px;
+}
+#gestes-du-panneau:empty {
   display: none;
 }
 /* Sur un écran étroit, la barre se replie en un seul bouton « Coffre ». */
@@ -626,6 +637,13 @@ html[data-travail-pret="true"] #gestes-de-la-barre {
 @media (max-width: 640px) {
   html[data-travail-pret="true"] #parcours-titre {
     max-width: calc(100% - 180px);
+  }
+  /* Sur un écran étroit, le panneau du coffre COUVRE l'écran au lieu de rétrécir l'application :
+     rétrécie de 440 px, elle tombait à une largeur nulle et la ligne de version se cassait lettre
+     par lettre. L'application est seulement masquée, jamais retirée : son cadre garde son document. */
+  html[data-travail-pret="true"]:has(#menu-du-coffre[open]) [data-bloc="espace-de-travail"] {
+    right: 0;
+    visibility: hidden;
   }
 }
 @media (max-width: 380px) {
