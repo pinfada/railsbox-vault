@@ -2394,8 +2394,8 @@ son épreuve.
    d'attente de l'initramfs qui a expiré : initramfs-tools 0.142 (bookworm) attend
    `max(30, rootdelay)` secondes de l'horloge du guest, qui suit l'horloge murale de l'hôte sous
    v86, si bien qu'un Worker ralenti les consomme sans énumérer `sda` (#165, troisième occurrence
-   sur `archive-recuperation-inter-origine`). **`rootdelay=` n'est pas le remède** : le `init` de
-   la même version fait d'abord `sleep "$ROOTDELAY"` sans condition, si bien que `rootdelay=120`
+   sur `archive-recuperation-inter-origine`). **`rootdelay=` n'est pas le remède** : le `init` de la
+   même version fait d'abord `sleep "$ROOTDELAY"` sans condition, si bien que `rootdelay=120`
    ajoutait 120 s à CHAQUE boot et a fait tomber `tests/vm/migration-coupee.test.mjs` 2 fois sur 2
    (PR #263, 3 octobre 2026). Allonger l'attente sans dormir demande un script `local-top` dans
    l'initrd, donc une refabrication de l'image ;
