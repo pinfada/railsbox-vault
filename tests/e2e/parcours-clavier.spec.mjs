@@ -87,7 +87,8 @@ test("les neuf étapes sont traversées au clavier, y compris Rails et les refus
   await attendre(a, "Travailler dans l'application");
   chronologie.etape("4-boot-clavier");
   await activer(a, bouton(a, "Démarrer l'application"));
-  await expect(a.getByText("L'application est démarrée.", { exact: true })).toBeVisible({
+  // Le message vit dans le panneau du coffre (ADR 0043) : on attend l'état publié par le cycle.
+  await expect(a.locator("#cycle-etat")).toContainText("application-demarree", {
     timeout: 600_000,
   });
   const rails = a
