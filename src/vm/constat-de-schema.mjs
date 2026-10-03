@@ -27,6 +27,18 @@ import { appliquerLaLigne } from "./phase-du-boot.mjs";
 
 const PREFIXE = "[schema] ";
 
+/**
+ * Le préfixe sans son CROCHET initial : la série du guest arrive parfois hachée, et le run
+ * 37075639310 (PR #263) a reçu « schema] migration jouee … » — la migration restait non dite. Seul
+ * le `[` peut manquer, en tête de ligne ; toute autre altération n'est pas une ligne de schéma.
+ */
+const PREFIXE_SANS_CROCHET = PREFIXE.slice(1);
+
+/** La ligne, rendue à son préfixe si elle n'a perdu que le crochet initial. */
+function rendreLeCrochet(ligne) {
+  return ligne.startsWith(PREFIXE_SANS_CROCHET) ? `[${ligne}` : ligne;
+}
+
 /** Les motifs de refus que le guest peut imprimer. Une autre valeur n'est pas un refus connu. */
 export const MOTIFS_DE_SCHEMA = Object.freeze({
   divergent: "divergent",
@@ -93,10 +105,11 @@ function migrationDite(libres, paires) {
  * APPLIQUE une ligne au constat, et rend le constat suivant avec le motif de refus éventuel. Pure :
  * le veilleur ne fait que garder l'état et rejeter sa promesse.
  *
- * @param {object | null} constat @param {string} ligne
+ * @param {object | null} constat @param {string} brute
  * @returns {{ constat: object | null, refus: string | null }}
  */
-export function lireUneLigne(constat, ligne) {
+export function lireUneLigne(constat, brute) {
+  const ligne = rendreLeCrochet(brute);
   if (!ligne.startsWith(PREFIXE)) return { constat, refus: null };
   const courant = constat ?? constatVierge();
   const commise = ligne.match(MIGRATION_COMMISE);
@@ -138,7 +151,8 @@ export function creerVeilleurDeSchema() {
   // Une promesse que personne n'attend encore ne doit pas se signaler comme rejet non traité : le
   // boot l'attend en course avec la santé, mais un refus peut précéder cette course.
   refus.catch(() => {});
-  const lire = (ligne) => {
+  const lire = (brute) => {
+    const ligne = rendreLeCrochet(brute);
     // La PHASE que la page affiche (QA de #249, Q2) : les données se mettent à jour, ou c'est fini.
     appliquerLaLigne(ligne);
     const lu = lireUneLigne(constat, ligne);
