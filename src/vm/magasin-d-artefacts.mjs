@@ -88,41 +88,7 @@ export function creerMagasinDArtefacts({
   hacher = hacherParWebCrypto,
   peutAdmettre = async () => true,
 }) {
-  async function oublier(sha256) {
-    for (const nom of [sha256, sha256 + SUFFIXE_TRANCHES, sha256 + SUFFIXE_PARTIEL]) {
-      await primitives.supprimer(nom);
-    }
-  }
-
-  async function lireLaListe(sha256, octets) {
-    const taille = await primitives.taille(sha256 + SUFFIXE_TRANCHES);
-    if (taille === null || taille > 1024 * 1024) return null;
-    const brut = new Uint8Array(taille);
-    if ((await primitives.lire(sha256 + SUFFIXE_TRANCHES, 0, brut)) !== taille) return null;
-    try {
-      const liste = JSON.parse(new TextDecoder().decode(brut));
-      const attendues = Math.ceil(octets / TRANCHE_OCTETS);
-      if (liste.sha256 !== sha256 || liste.octets !== octets) return null;
-      if (!Array.isArray(liste.tranches) || liste.tranches.length !== attendues) return null;
-      if (!liste.tranches.every((e) => typeof e === "string" && EMPREINTE.test(e))) return null;
-      return liste.tranches;
-    } catch {
-      return null;
-    }
-  }
-
-  /** Lit et vérifie l'artefact rangé DANS `cible` (gros appels de 8 Mio). Rend `true` s'il est conforme. */
-  async function verserEtVerifier(morceau, cible, tranches) {
-    const flux = tranches === null ? createSha256Stream() : null;
-    for (let debut = 0, index = 0; debut < morceau.octets; debut += TRANCHE_OCTETS, index += 1) {
-      const vue = cible.subarray(debut, Math.min(morceau.octets, debut + TRANCHE_OCTETS));
-      if ((await primitives.lire(morceau.sha256, debut, vue)) !== vue.byteLength) return false;
-      if (flux !== null) flux.update(vue);
-      else if ((await hacher(vue)) !== tranches[index]) return false;
-    }
-    return flux === null || flux.digestHex() === morceau.sha256;
-  }
-
+  const contexte = { primitives, hacher, peutAdmettre };
   return {
     /**
      * SERT un artefact rangé dans `cible` (une vue de `morceau.octets` octets), après vérification.
@@ -131,68 +97,106 @@ export function creerMagasinDArtefacts({
      * @param {{ sha256: string, octets: number, racine?: string }} morceau
      * @param {Uint8Array} cible
      */
-    async servir(morceau, cible) {
-      if (!EMPREINTE.test(morceau.sha256) || cible.byteLength !== morceau.octets) return false;
-      if ((await primitives.taille(morceau.sha256)) !== morceau.octets) {
-        if ((await primitives.lister()).some((nom) => nom.startsWith(morceau.sha256)))
-          await oublier(morceau.sha256);
-        return false;
-      }
-      let tranches = null;
-      if (morceau.racine !== undefined) {
-        tranches = await lireLaListe(morceau.sha256, morceau.octets);
-        if (tranches === null || (await racineDesTranches(tranches, hacher)) !== morceau.racine) {
-          await oublier(morceau.sha256);
-          return false;
-        }
-      }
-      if (await verserEtVerifier(morceau, cible, tranches)) return true;
-      await oublier(morceau.sha256);
-      return false;
-    },
-
+    servir: (morceau, cible) => servir(contexte, morceau, cible),
     /**
      * ADMET un artefact DÉJÀ vérifié contre le descripteur (`octets` est une vue sur le tampon : aucune
      * copie). Le budget est consulté AVANT la première écriture ; un refus est typé (`AdmissionRefusee`).
      *
      * @param {{ sha256: string, octets: Uint8Array }} artefact
      */
-    async admettre({ sha256, octets }) {
-      if (!EMPREINTE.test(sha256)) throw new TypeError(`Empreinte invalide : ${sha256}`);
-      if (!(await peutAdmettre(octets.byteLength))) {
-        throw new AdmissionRefusee(
-          `Artefact ${sha256} non rangé : ${octets.byteLength} octets refusés par le budget de stockage.`,
-        );
-      }
-      await oublier(sha256);
-      const partiel = sha256 + SUFFIXE_PARTIEL;
-      for (let debut = 0; debut < octets.byteLength; debut += TRANCHE_OCTETS) {
-        await primitives.ecrire(
-          partiel,
-          debut,
-          octets.subarray(debut, Math.min(octets.byteLength, debut + TRANCHE_OCTETS)),
-        );
-      }
-      const tranches = await empreintesDeTranches(octets, hacher);
-      const liste = JSON.stringify({ sha256, octets: octets.byteLength, tranches });
-      await primitives.ecrire(sha256 + SUFFIXE_TRANCHES, 0, new TextEncoder().encode(liste));
-      // EN DERNIER : le nom définitif est le marqueur « complet ».
-      await primitives.renommer(partiel, sha256);
-      return { tranches, racine: await racineDesTranches(tranches, hacher) };
-    },
-
+    admettre: (artefact) => admettre(contexte, artefact),
     /** RÉTENTION : oublie toute empreinte hors de `garder` (rootfs courant, paquet courant et précédent). */
-    async purger(garder) {
-      const gardees = new Set(garder);
-      const oubliees = new Set();
-      for (const nom of await primitives.lister()) {
-        const sha256 = nom.slice(0, 64);
-        if (!gardees.has(sha256) && !oubliees.has(sha256)) {
-          oubliees.add(sha256);
-          await oublier(sha256);
-        }
-      }
-      return [...oubliees];
-    },
+    purger: (garder) => purger(contexte, garder),
   };
+}
+
+async function oublier({ primitives }, sha256) {
+  for (const nom of [sha256, sha256 + SUFFIXE_TRANCHES, sha256 + SUFFIXE_PARTIEL]) {
+    await primitives.supprimer(nom);
+  }
+}
+
+async function lireLaListe({ primitives }, sha256, octets) {
+  const taille = await primitives.taille(sha256 + SUFFIXE_TRANCHES);
+  if (taille === null || taille > 1024 * 1024) return null;
+  const brut = new Uint8Array(taille);
+  if ((await primitives.lire(sha256 + SUFFIXE_TRANCHES, 0, brut)) !== taille) return null;
+  try {
+    const liste = JSON.parse(new TextDecoder().decode(brut));
+    const attendues = Math.ceil(octets / TRANCHE_OCTETS);
+    if (liste.sha256 !== sha256 || liste.octets !== octets) return null;
+    if (!Array.isArray(liste.tranches) || liste.tranches.length !== attendues) return null;
+    if (!liste.tranches.every((e) => typeof e === "string" && EMPREINTE.test(e))) return null;
+    return liste.tranches;
+  } catch {
+    return null;
+  }
+}
+
+/** Lit et vérifie l'artefact rangé DANS `cible` (gros appels de 8 Mio). Rend `true` s'il est conforme. */
+async function verserEtVerifier({ primitives, hacher }, morceau, cible, tranches) {
+  const flux = tranches === null ? createSha256Stream() : null;
+  for (let debut = 0, index = 0; debut < morceau.octets; debut += TRANCHE_OCTETS, index += 1) {
+    const vue = cible.subarray(debut, Math.min(morceau.octets, debut + TRANCHE_OCTETS));
+    if ((await primitives.lire(morceau.sha256, debut, vue)) !== vue.byteLength) return false;
+    if (flux !== null) flux.update(vue);
+    else if ((await hacher(vue)) !== tranches[index]) return false;
+  }
+  return flux === null || flux.digestHex() === morceau.sha256;
+}
+
+async function servir(contexte, morceau, cible) {
+  const { primitives, hacher } = contexte;
+  if (!EMPREINTE.test(morceau.sha256) || cible.byteLength !== morceau.octets) return false;
+  if ((await primitives.taille(morceau.sha256)) !== morceau.octets) {
+    const restes = (await primitives.lister()).some((nom) => nom.startsWith(morceau.sha256));
+    if (restes) await oublier(contexte, morceau.sha256);
+    return false;
+  }
+  let tranches = null;
+  if (morceau.racine !== undefined) {
+    tranches = await lireLaListe(contexte, morceau.sha256, morceau.octets);
+    if (tranches === null || (await racineDesTranches(tranches, hacher)) !== morceau.racine) {
+      await oublier(contexte, morceau.sha256);
+      return false;
+    }
+  }
+  if (await verserEtVerifier(contexte, morceau, cible, tranches)) return true;
+  await oublier(contexte, morceau.sha256);
+  return false;
+}
+
+async function admettre(contexte, { sha256, octets }) {
+  const { primitives, hacher, peutAdmettre } = contexte;
+  if (!EMPREINTE.test(sha256)) throw new TypeError(`Empreinte invalide : ${sha256}`);
+  if (!(await peutAdmettre(octets.byteLength))) {
+    throw new AdmissionRefusee(
+      `Artefact ${sha256} non rangé : ${octets.byteLength} octets refusés par le budget de stockage.`,
+    );
+  }
+  await oublier(contexte, sha256);
+  const partiel = sha256 + SUFFIXE_PARTIEL;
+  for (let debut = 0; debut < octets.byteLength; debut += TRANCHE_OCTETS) {
+    const fin = Math.min(octets.byteLength, debut + TRANCHE_OCTETS);
+    await primitives.ecrire(partiel, debut, octets.subarray(debut, fin));
+  }
+  const tranches = await empreintesDeTranches(octets, hacher);
+  const liste = JSON.stringify({ sha256, octets: octets.byteLength, tranches });
+  await primitives.ecrire(sha256 + SUFFIXE_TRANCHES, 0, new TextEncoder().encode(liste));
+  // EN DERNIER : le nom définitif est le marqueur « complet ».
+  await primitives.renommer(partiel, sha256);
+  return { tranches, racine: await racineDesTranches(tranches, hacher) };
+}
+
+async function purger(contexte, garder) {
+  const gardees = new Set(garder);
+  const oubliees = new Set();
+  for (const nom of await contexte.primitives.lister()) {
+    const sha256 = nom.slice(0, 64);
+    if (!gardees.has(sha256) && !oubliees.has(sha256)) {
+      oubliees.add(sha256);
+      await oublier(contexte, sha256);
+    }
+  }
+  return [...oubliees];
 }
