@@ -282,7 +282,9 @@ button:disabled {
   min-height: 44px;
   background: var(--texte);
   color: var(--inverse);
-  z-index: 1;
+  /* Au-dessus de la barre de l'application (z-index 3) et des bandeaux (4) : un lien d'évitement
+     focalisé doit se voir. */
+  z-index: 5;
 }
 .evitement:focus {
   transform: none;

@@ -49,10 +49,20 @@ pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* La chaîne flex descend jusqu'au cadre imbriqué : `main`, puis son emplacement, puis le cadre.
+   Sans elle, l'attribut `height="480"` posé par le courtier l'emporte et laisse une bande vide. */
+main,
+#application-servie-emplacement {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
 iframe {
   display: block;
   flex: 1 1 auto;
   width: 100%;
+  height: auto;
   min-height: 0;
   border: 0;
   background: white;
