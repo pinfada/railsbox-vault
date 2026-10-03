@@ -524,6 +524,9 @@ export function ouSuisJe(ecranId, origine = ORIGINES_DU_COFFRE.creation, progres
   return ETAPES.map(({ rang, titre }) => {
     if (restaure && rang < 7) return { rang, titre, statut: "non-jouee" };
     if (rang === courante) return { rang, titre, statut: "en-cours" };
+    if (rang === 9 && ecranId === "termine-sans-revoquer") {
+      return { rang, titre, statut: "sans-revoquer" };
+    }
     if (rang < atteinte) return { rang, titre, statut: "passee" };
     return { rang, titre, statut: "a-venir" };
   });
@@ -683,10 +686,11 @@ export const SURCOUT_MESURE_DE_L_OUVERTURE_MS = 1500;
  * La PROGRESSION d'un démarrage, à partir de ce que la page a réellement observé : le temps écoulé et
  * les signes de vie envoyés par le coffre pendant le geste.
  *
- * @param {{ ecouleMs: number, signesDeVie: number }} observation
+ * @param {{ ecouleMs: number, signesDeVie: number, premier?: boolean }} observation `premier` : le
+ *   premier démarrage annonce deux minutes, les suivants moins de trente secondes (#266 B2-6)
  */
-export function progressionDuDemarrage({ ecouleMs, signesDeVie }) {
+export function progressionDuDemarrage({ ecouleMs, signesDeVie, premier = true }) {
   const secondes = Math.max(0, Math.round(ecouleMs / 1000));
   const vie = signesDeVie > 0 ? MESSAGES.signesDeVie(signesDeVie) : MESSAGES.premierSigneDeVie;
-  return MESSAGES.demarrageEnCours(secondes, vie);
+  return MESSAGES.demarrageEnCours(secondes, vie, premier);
 }

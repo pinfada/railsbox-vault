@@ -69,3 +69,23 @@ export function relierLeRefusAuChamp({ doc, noeud, gesteCourant, dire, jugeLaVal
   }
   return Object.freeze({ relier });
 }
+
+/**
+ * Un code mal recopié se dit comme une erreur de champ (#266 B2-2) : le champ est marqué tant que le
+ * code est faux, et cite son message.
+ *
+ * @param {{ noeud: (id: string) => HTMLElement | null, dire: (id: string, texte: string) => void,
+ *           lire: (texte: string) => { code: string | null }, annoncer: (etat: object) => string,
+ *           relier: () => void }} page
+ */
+export function relierLaSaisieDuCode({ noeud, dire, lire, annoncer, relier }) {
+  noeud("saisie-code")?.addEventListener("input", () => {
+    const lue = lire(noeud("saisie-code").value);
+    const fausse = lue.code !== null;
+    dire("parcours-code-lu", annoncer(lue));
+    if (fausse) noeud("parcours-code-lu").dataset.faute = "";
+    else delete noeud("parcours-code-lu").dataset.faute;
+    noeud("saisie-code").dataset.saisieFausse = String(fausse);
+    relier();
+  });
+}

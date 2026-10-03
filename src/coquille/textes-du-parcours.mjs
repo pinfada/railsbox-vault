@@ -13,6 +13,9 @@ import { MOYEN_NOMME, lesAutresRetires } from "./moyens-nommes.mjs";
 /** L'estimation annoncée d'un premier démarrage : « environ deux minutes ». */
 const ESTIMATION_DU_DEMARRAGE_EN_SECONDES = 120;
 
+/** L'estimation d'un démarrage SUIVANT : « moins de trente secondes » (#266 B2-6). */
+const ESTIMATION_D_UN_DEMARRAGE_SUIVANT_EN_SECONDES = 30;
+
 /** Une durée en clair, sans « (s) » : « 1 seconde », « 45 secondes », « 5 minutes ». */
 export function dureeEnClair(secondes) {
   if (secondes < 120) return `${secondes} seconde${secondes > 1 ? "s" : ""}`;
@@ -413,7 +416,8 @@ export const ECRANS = Object.freeze({
     blocs: ["revocation", "sans-revoquer", "retour"],
   }),
   "termine-sans-revoquer": ecran(9, {
-    titre: "Parcours terminé",
+    // Distinct de « Parcours terminé » : ici, rien n'a été retiré (#246).
+    titre: "Parcours terminé, rien n'a été révoqué",
     ceQuiVaSePasser:
       "Vous avez fait le tour de votre coffre, sans rien révoquer : chacun des moyens qui l'ouvraient " +
       "l'ouvre toujours. Si un jour l'un de ces moyens a pu être vu, la révocation " +
@@ -431,7 +435,7 @@ export const ECRANS = Object.freeze({
       "déjà faites restent ouvrables par les anciens moyens : détruisez-les si elles risquent de " +
       "tomber entre de mauvaises mains, puis faites une nouvelle sauvegarde.",
     attendu:
-      "Notez sur votre feuille le numéro de version indiqué ci-dessous. Pour vous servir de votre " +
+      "Notez sur votre feuille le nouveau numéro de version. Pour vous servir de votre " +
       "application, cliquez sur « Revenir à mon application ». Pour recommencer le parcours depuis " +
       "le début, effacez les données du site dans les réglages du navigateur : supprimer les " +
       "cookies ne suffit pas.",
@@ -564,11 +568,16 @@ export const MESSAGES = Object.freeze({
     "L'application ne peut pas démarrer à cette adresse : le message affiché sur cette page dit " +
     "pourquoi, et ce que vous pouvez faire.",
   // Au-delà de l'estimation, la page le DIT au lieu de répéter un chiffre figé (R1-bis, point 5).
-  demarrageEnCours: (secondes, vie) =>
-    secondes > ESTIMATION_DU_DEMARRAGE_EN_SECONDES
+  // L'estimation suit celle qu'annonce l'écran : deux minutes la première fois, moins de trente
+  // secondes ensuite (#266 B2-6).
+  demarrageEnCours: (secondes, vie, premier = true) =>
+    secondes >
+    (premier ? ESTIMATION_DU_DEMARRAGE_EN_SECONDES : ESTIMATION_D_UN_DEMARRAGE_SUIVANT_EN_SECONDES)
       ? `Démarrage en cours depuis ${dureeEnClair(secondes)}. C'est plus long que prévu, cela ` +
         `arrive sur cet appareil ; rien n'est perdu. ${vie}`
-      : `Démarrage en cours depuis ${dureeEnClair(secondes)}, sur environ deux minutes. ${vie}`,
+      : `Démarrage en cours depuis ${dureeEnClair(secondes)}, ${
+          premier ? "sur environ deux minutes" : "en général moins de trente secondes"
+        }. ${vie}`,
   // Ce que la page dit d'un démarrage, en langage clair (#266 m8).
   signesDeVie: (nombre) => `Le démarrage avance : le coffre a répondu ${nombre} fois.`,
   premierSigneDeVie: "Le démarrage commence : le coffre n'a pas encore répondu.",
@@ -668,6 +677,8 @@ export const STATUTS = Object.freeze({
   passee: "étape passée",
   "en-cours": "vous êtes ici",
   "a-venir": "à venir",
+  // L'étape 9 facultative, passée par « Terminer sans révoquer » : elle n'a pas été jouée (#246).
+  "sans-revoquer": "passée sans rien révoquer",
   "non-jouee": "non jouée sur cet appareil : le coffre y a été restauré",
 });
 

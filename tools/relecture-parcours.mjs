@@ -254,7 +254,8 @@ function texteDuMessage(nom) {
   if (nom.startsWith("dureeDe")) return MESSAGES.duree(message);
   if (typeof message !== "function") return message;
   if (nom === "demarrageEnCours") return message(N, MESSAGES.signesDeVie(N));
-  if (nom === "revoque") return message(N, "V");
+  // Le pluriel, puis le SINGULIER : un seul moyen retiré se lit autrement (#246).
+  if (nom === "revoque") return `${message(N, "V")} — ou, pour un seul moyen — ${message(1, "V")}`;
   if (nom === "miseAJourEnCoursDepuis" || nom === "plusTardEnCoursDepuis") {
     return message(N, MESSAGES.phaseDemarrage);
   }

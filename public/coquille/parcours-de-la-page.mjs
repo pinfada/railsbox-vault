@@ -16,10 +16,12 @@
 // public suffit. Ses OBSERVATEURS de ces relevés vivent à part, dans `observateurs-du-parcours.mjs`
 // (scission du 19/09/2026, #250) ; ce module garde l'écran, la progression et les gestes.
 
-import { relierLeRefusAuChamp } from "./refus-du-champ.mjs";
+import { relierLaSaisieDuCode, relierLeRefusAuChamp } from "./refus-du-champ.mjs";
+import { ecrireLaPromesse } from "./promesse-de-l-entree.mjs";
 import { annonceDAttente, moteurProbable } from "/src/coquille/attente-annoncee.mjs";
 import * as accueil from "/src/coquille/accueil-de-la-mise-a-jour.mjs";
-import { conduiteHumaine, refusJugeLaValeur } from "/src/coquille/conduites-du-parcours.mjs";
+import { conduiteHumaine } from "/src/coquille/conduites-du-parcours.mjs";
+import { refusJugeLaValeur } from "/src/coquille/refus-qui-jugent-une-valeur.mjs";
 import {
   COFFRE,
   ECRANS,
@@ -33,7 +35,6 @@ import {
   MESSAGES,
   PRINCIPAL_DE_L_ECRAN,
   PROGRESSION_INITIALE,
-  PROMESSE,
   SOUS_ETATS_DU_CODE,
   STATUTS,
   annonceDeLaSaisie,
@@ -83,7 +84,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     dernierFocusSurDemarrage = evenement.target === noeud("demarrer-application");
   });
   if (vueComplete) noeud("details-techniques").open = true;
-  ecrireLaPromesse();
+  ecrireLaPromesse({ doc, noeud });
 
   const moteur = moteurProbable(navigateur.userAgent);
   const etat = {
@@ -286,15 +287,19 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
    */
   function fermerLesGestesEnCours() {
     if (vueComplete) return;
-    const enCours = unGesteEstEnCours({
-      ligneDuCycle: noeud("cycle-etat")?.textContent,
-      ligneDePortabilite: noeud("portabilite-etat")?.textContent,
-      attenteDuDeverrouillage: noeud("deverrouillage-attente")?.textContent,
-    });
+    const lireEnCours = () =>
+      unGesteEstEnCours({
+        ligneDuCycle: noeud("cycle-etat")?.textContent,
+        ligneDePortabilite: noeud("portabilite-etat")?.textContent,
+        attenteDuDeverrouillage: noeud("deverrouillage-attente")?.textContent,
+      });
+    const enCours = lireEnCours();
+    // Relu en posant (#266 B2-5) : la réouverture différée ne rouvre pas un geste commencé depuis.
     const poser = () => {
+      const maintenant = lireEnCours();
       for (const id of GESTES_LONGS) {
         const bouton = noeud(id);
-        if (bouton !== null && bouton.disabled !== enCours) bouton.disabled = enCours;
+        if (bouton !== null && bouton.disabled !== maintenant) bouton.disabled = maintenant;
       }
     };
     if (enCours) poser();
@@ -479,7 +484,10 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     noeud("parcours-feuille-perdue").hidden = ecran.casRares === null;
     // Une seule étape annoncée : celle où « Continuer » mène (R1-bis, point 5).
     const suivante = etapeAContinuer(ecranId);
-    dire("parcours-suivante", suivante === null ? "" : MESSAGES.suivante(suivante.titre));
+    dire(
+      "parcours-suivante",
+      suivante === null || rang === null ? "" : MESSAGES.suivante(suivante.titre),
+    );
     // Le code tapé ne survit pas à son champ : un champ vidé par un geste vide aussi son annonce.
     if ((noeud("saisie-code")?.value ?? "") === "") {
       dire("parcours-code-lu", "");
@@ -556,23 +564,6 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     }
     const fin = ecranId === "termine" || ecranId === "termine-sans-revoquer";
     if (fin && !etat.progression.visiteTerminee) pas("visite-terminee");
-  }
-
-  /** La promesse de l'entrée (ADR 0043), écrite une fois depuis les textes du parcours. */
-  function ecrireLaPromesse() {
-    noeud("promesse-phrase").textContent = PROMESSE.phrase;
-    const liste = noeud("promesse-garanties");
-    liste.replaceChildren(
-      ...PROMESSE.garanties.map(({ titre, preuve }) => {
-        const item = doc.createElement("li");
-        const fort = doc.createElement("strong");
-        fort.textContent = titre;
-        const texte = doc.createElement("span");
-        texte.textContent = preuve;
-        item.append(fort, texte);
-        return item;
-      }),
-    );
   }
 
   /** UN seul bouton principal par écran (#266 M1) : la table des textes le désigne, la page le marque. */
@@ -654,17 +645,12 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     jugeLaValeur: refusJugeLaValeur,
   });
 
-  // Un code mal recopié se dit comme une erreur de champ (#266 B2-2) : le champ est marqué tant que
-  // le code est faux, et cite son message.
-  noeud("saisie-code")?.addEventListener("input", () => {
-    const lue = etatDeLaSaisie(noeud("saisie-code").value);
-    const lu = noeud("parcours-code-lu");
-    const fausse = lue.code !== null;
-    dire("parcours-code-lu", annonceDeLaSaisie(lue));
-    if (fausse) lu.dataset.faute = "";
-    else delete lu.dataset.faute;
-    noeud("saisie-code").dataset.saisieFausse = String(fausse);
-    refusDuChamp.relier();
+  relierLaSaisieDuCode({
+    noeud,
+    dire,
+    lire: (texte) => etatDeLaSaisie(texte),
+    annoncer: annonceDeLaSaisie,
+    relier: refusDuChamp.relier,
   });
 
   for (const [champ, boutons] of Object.entries(ENTREE_VAUT)) {

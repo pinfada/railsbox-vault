@@ -703,28 +703,6 @@ export function conduiteHumaine(code) {
   return CONDUITE_GENERIQUE;
 }
 
-/**
- * Les codes qui jugent la VALEUR qu'une personne a saisie (phrase, code) : seuls ceux-là accusent
- * un champ (#266 B2-3). Un refus d'état — coffre déjà ouvert ailleurs, installation inachevée —
- * n'a rien à reprocher à ce qui a été tapé.
- */
-const CODES_QUI_JUGENT_UNE_VALEUR = Object.freeze([
-  E.cleRefusee,
-  E.rejeu,
-  D.phraseRefusee,
-  D.codeMalRecopie,
-  CODE_PHRASE_FAIBLE,
-]);
-
-const CONDUITES_QUI_JUGENT_UNE_VALEUR = new Set(
-  CODES_QUI_JUGENT_UNE_VALEUR.map((code) => conduiteHumaine(code)),
-);
-
-/** Le texte affiché est-il celui d'un refus qui juge la valeur saisie ? */
-export function refusJugeLaValeur(texte) {
-  return CONDUITES_QUI_JUGENT_UNE_VALEUR.has(String(texte ?? ""));
-}
-
 /** Ce qu'une personne lit d'un refus SANS code : jamais le texte technique, qui reste en détail. */
 export function conduiteDUnRefusSansCode(texte) {
   return conduiteDUnRefusSansCodeConnu(texte) ?? CONDUITE_GENERIQUE;
