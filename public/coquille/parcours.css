@@ -330,8 +330,9 @@ input[aria-invalid="true"] {
   border-left: 4px solid var(--danger);
   padding-left: 12px;
 }
-/* L'emplacement du refus d'un champ (#266 B2-1, B2-4) : il garde sa place, vide ou rempli, pour que
-   le bouton qui suit ne bouge pas quand le refus apparaît. */
+/* L'emplacement du refus d'un champ (#266 B2-1, B2-4) : il suit le bouton du champ et garde sa place,
+   vide ou rempli, pour que rien ne bouge quand le refus apparaît. Placé au-dessus du bouton, il le
+   repoussait hors d'un écran de 720 px (#251). */
 .refus-du-champ {
   min-height: 7.5em;
   margin: 0 0 16px;
