@@ -7,6 +7,7 @@
 // `src/vm/` qui portent le runtime livré : la mesure porte sur ce code-là, pas sur une réplique.
 
 import { mesurerMemoireDetaillee } from "/src/spike/mesure-memoire.mjs";
+import { messageDErreurDuWorker } from "/vm/erreur-du-worker.mjs";
 
 const etat = document.querySelector("#etat");
 const rapport = document.querySelector("#rapport");
@@ -41,7 +42,7 @@ worker.addEventListener("message", (event) => {
 
 worker.addEventListener("error", (event) => {
   for (const attente of enCours.values()) {
-    attente.reject(new Error(`Erreur du Worker runtime : ${event.message}`));
+    attente.reject(new Error(messageDErreurDuWorker("runtime", event)));
   }
   enCours.clear();
 });

@@ -272,3 +272,13 @@ test("la ligne de commande du noyau désigne la PREMIÈRE PARTITION, pas le disq
   assert.match(sources.guest.cmdline, /\broot=\/dev\/sda1\b/);
   assert.equal(manifesteDEssai().boot.cmdline, sources.guest.cmdline);
 });
+
+test("la ligne de commande ne porte aucun rootdelay= : l'initramfs le DORT à chaque boot (#165)", () => {
+  // `rootdelay=` n'allonge pas seulement l'attente de la racine (max(30, rootdelay) dans
+  // `scripts/local`) : le `init` d'initramfs-tools 0.142 (bookworm) fait d'abord
+  // `if [ "$ROOTDELAY" ]; then sleep "$ROOTDELAY"; fi`, sans condition sur le disque. Avec
+  // `rootdelay=120`, chaque boot payait 120 s, et `migration-coupee` est tombée 2 fois sur 2
+  // (PR #263, run 37075639310).
+  const lignes = [sources.guest.cmdline, manifesteDEssai().boot.cmdline];
+  for (const ligne of lignes) assert.doesNotMatch(ligne, /(?:^| )rootdelay=/);
+});

@@ -193,11 +193,13 @@ Messages qui peuvent s'afficher sur cet écran :
 > révoquée.
 >
 > Ce que vous avez à faire : Si vous avez votre feuille : tapez le code, puis cliquez sur « Ouvrir
-> mon coffre avec le code ». Si vous n'avez plus cette feuille, cliquez sur « Je n'ai plus cette
-> feuille — afficher un nouveau code » : un coffre VERROUILLÉ n'affiche aucun code, vous l'ouvrirez
-> donc d'abord avec votre phrase, et un nouveau code vous sera proposé ensuite. L'ancien code
-> continue d'ouvrir ce coffre tant que personne ne le retire. Si vous n'avez ni la feuille ni la
-> phrase et que vous n'avez encore rien mis dans ce coffre, abandonnez-le : dans les réglages du
+> mon coffre avec le code ».
+>
+> Replié sous « Je n'ai plus ma feuille » : Si vous n'avez plus cette feuille, cliquez sur « Je n'ai
+> plus cette feuille — afficher un nouveau code » : un coffre VERROUILLÉ n'affiche aucun code, vous
+> l'ouvrirez donc d'abord avec votre phrase, et un nouveau code vous sera proposé ensuite. L'ancien
+> code continue d'ouvrir ce coffre tant que personne ne le retire. Si vous n'avez ni la feuille ni
+> la phrase et que vous n'avez encore rien mis dans ce coffre, abandonnez-le : dans les réglages du
 > navigateur, effacez les données de ce site, rechargez la page, puis créez un nouveau coffre. Si
 > vous avez déjà mis des données dans ce coffre, n'effacez rien et demandez de l'aide.
 
@@ -289,12 +291,13 @@ Messages qui peuvent s'afficher sur cet écran :
 
 - L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur «
   Démarrer l'application ».
-- Démarrage en cours depuis N seconde(s), sur environ deux minutes. Le coffre travaille : N signe(s)
-  de vie reçu(s).
-- Le coffre travaille : N signe(s) de vie reçu(s).
-- En attente du premier signe de vie du coffre.
-- L'application est démarrée : elle s'affiche ci-dessous.
-- L'application s'affiche ci-dessous.
+- Votre application démarre sur cet appareil. Rien n'est envoyé sur Internet.
+- Démarrage en cours depuis NaN minutes, sur environ deux minutes. Le démarrage avance : le coffre a
+  répondu N fois.
+- Le démarrage avance : le coffre a répondu N fois.
+- Le démarrage commence : le coffre n'a pas encore répondu.
+- L'application est démarrée.
+- L'application est affichée.
 - Reprise de l'installation en cours… Ne fermez pas l'onglet.
 - Une nouvelle version de l'application est disponible : B. Votre coffre utilise la version A. La
   mise à jour transforme vos données pour la nouvelle version, au démarrage, dans votre navigateur :
@@ -312,7 +315,7 @@ Messages qui peuvent s'afficher sur cet écran :
 - Mise à jour en cours : comptez environ trois à quatre minutes, et ne fermez pas l'onglet. Si la
   page se fermait, vos données seraient retrouvées telles qu'avant ou telles qu'après la mise à
   jour, jamais entre les deux.
-- L'application est à jour : version N. Elle s'affiche ci-dessous.
+- L'application est à jour : version N.
 - Une mise à jour de votre application a été commencée et n'est pas terminée. Vos données sont
   intactes. Pour retrouver votre application, reprenez la mise à jour.
 - Vous pouvez d'abord faire une sauvegarde : elle contiendra vos données telles qu'elles sont, mise
@@ -381,9 +384,9 @@ Messages qui peuvent s'afficher sur cet écran :
 
 - L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur «
   Démarrer l'application ».
-- Démarrage en cours depuis N seconde(s), sur environ deux minutes. Le coffre travaille : N signe(s)
-  de vie reçu(s).
-- L'application est démarrée : elle s'affiche ci-dessous.
+- Démarrage en cours depuis NaN minutes, sur environ deux minutes. Le démarrage avance : le coffre a
+  répondu N fois.
+- L'application est démarrée.
 - Une nouvelle version de l'application est disponible : B. Votre coffre utilise la version A. La
   mise à jour transforme vos données pour la nouvelle version, au démarrage, dans votre navigateur :
   comptez environ trois à quatre minutes, et ne fermez pas l'onglet. Rien ne se fait sans vous :
@@ -400,7 +403,7 @@ Messages qui peuvent s'afficher sur cet écran :
 - Mise à jour en cours : comptez environ trois à quatre minutes, et ne fermez pas l'onglet. Si la
   page se fermait, vos données seraient retrouvées telles qu'avant ou telles qu'après la mise à
   jour, jamais entre les deux.
-- L'application est à jour : version N. Elle s'affiche ci-dessous.
+- L'application est à jour : version N.
 - Une mise à jour de votre application a été commencée et n'est pas terminée. Vos données sont
   intactes. Pour retrouver votre application, reprenez la mise à jour.
 - Vous pouvez d'abord faire une sauvegarde : elle contiendra vos données telles qu'elles sont, mise

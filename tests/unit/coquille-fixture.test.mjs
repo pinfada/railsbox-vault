@@ -77,6 +77,7 @@ test("le fichier témoin existe et porte le contenu AUTHENTIQUE", async () => {
 
 test("la fixture malveillante n'est publiée sur AUCUNE des deux origines", () => {
   for (const chemin of [
+    "public/coquille-epreuve/appariement.mjs",
     "public/coquille-epreuve/hostile.html",
     "public/coquille-epreuve/hostile.mjs",
     "public/coquille-epreuve/hostile-sw.mjs",

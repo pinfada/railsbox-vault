@@ -67,7 +67,7 @@ export const GESTES_ADMIS = Object.freeze([
     type: TYPES_APPLICATIFS.requeteHttp,
     geste: "demander au guest ce qu'il rend sur un chemin HTTP, et recevoir sa réponse",
     usage: Object.freeze([
-      "public/service-worker-du-cadre.mjs:115 › « return servirParLeCourtier(courtier, " +
+      "public/service-worker-du-cadre.mjs:118 › « return servirParLeCourtier(courtier, " +
         "event.request, url); » — le seul émetteur de PRODUIT : le Service Worker de la coquille " +
         "de cadre intercepte ce que le document servi demande, et n'a aucune autre voie vers le " +
         "guest, qui n'est joignable que depuis le Worker de confiance",
@@ -87,7 +87,7 @@ export const GESTES_ADMIS = Object.freeze([
     type: TYPES_APPLICATIFS.barriere,
     geste: "recevoir l'annonce d'une barrière de durabilité acquittée",
     usage: Object.freeze([
-      'public/vm/reference-banc.mjs:75 › « if (type === "mutation") » — l\'annonce existe déjà, ' +
+      'public/vm/reference-banc.mjs:76 › « if (type === "mutation") » — l\'annonce existe déjà, ' +
         "et elle ne porte AUCUN identifiant de requête : c'est une poussée, pas une réponse",
       "tests/e2e/coupure-generation-boot-froid.spec.mjs:160 › « une barrière a été acquittée » — " +
         "un scénario ne juge « écrit » qu'après cela, jamais après l'écriture seule",

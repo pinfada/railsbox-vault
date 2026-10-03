@@ -23,13 +23,16 @@ import {
   COFFRE,
   ECRANS,
   ECRANS_DE_L_APPLICATION,
+  ECRANS_DE_L_ENTREE,
   ETAPES,
   FICHIER_DE_PROGRESSION,
   GESTES_LONGS,
   LIBELLES_DE_LA_PAGE,
   LIMITE_DE_FIREFOX,
   MESSAGES,
+  PRINCIPAL_DE_L_ECRAN,
   PROGRESSION_INITIALE,
+  PROMESSE,
   SOUS_ETATS_DU_CODE,
   STATUTS,
   annonceDeLaSaisie,
@@ -79,6 +82,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     dernierFocusSurDemarrage = evenement.target === noeud("demarrer-application");
   });
   if (vueComplete) noeud("details-techniques").open = true;
+  ecrireLaPromesse();
 
   const moteur = moteurProbable(navigateur.userAgent);
   const etat = {
@@ -320,6 +324,72 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (focusDedans) noeud("parcours-titre").focus();
   }
 
+  /**
+   * La BARRE DU COFFRE (ADR 0043, R1-bis) : quand l'application tourne, « Sauvegarder »,
+   * « Verrouiller » et « Continuer » sont DÉPLACÉS dans la barre, dans son ordre visuel, puis rendus
+   * à leur place d'origine. Ce sont les mêmes boutons, mêmes identifiants ; seul le cadre de
+   * l'application est intouchable (le déplacer le rechargerait). Un geste dont le bloc d'étape est
+   * caché reste caché dans la barre (`data-hors-etape`), sauf Sauvegarder et Verrouiller, toujours
+   * offerts tant que l'application tourne.
+   */
+  const GESTES_DE_LA_BARRE = [
+    "sauvegarder-le-coffre",
+    "verrouiller-le-coffre",
+    "parcours-continuer",
+  ];
+  // La barre est RESPONSIVE : un geste n'y monte que si la largeur le permet ; sinon il reste à sa
+  // place, dans le panneau du menu « Coffre », où il demeure joignable (ADR 0043). Sous 640 px, la
+  // barre ne porte que le titre et « Coffre ».
+  const LARGEUR_MIN_DANS_LA_BARRE = Object.freeze({
+    "sauvegarder-le-coffre": 640,
+    "verrouiller-le-coffre": 640,
+    "parcours-continuer": 900,
+  });
+  const fenetre = doc.defaultView ?? null;
+  const assezLarge = (id) =>
+    typeof fenetre?.matchMedia !== "function" ||
+    fenetre.matchMedia(`(min-width: ${LARGEUR_MIN_DANS_LA_BARRE[id]}px)`).matches;
+  let barreDemandee = false;
+  for (const largeur of new Set(Object.values(LARGEUR_MIN_DANS_LA_BARRE))) {
+    fenetre
+      ?.matchMedia?.(`(min-width: ${largeur}px)`)
+      ?.addEventListener?.("change", () => placerLesGestes(barreDemandee));
+  }
+  const placesDOrigine = new Map();
+  function placerLesGestes(dansLaBarre) {
+    barreDemandee = dansLaBarre;
+    const barre = noeud("gestes-de-la-barre");
+    if (!barre) return;
+    const panneau = noeud("gestes-du-panneau") ?? barre;
+    for (const id of GESTES_DE_LA_BARRE) {
+      const bouton = noeud(id);
+      // Application démarrée : dans la barre si la largeur le permet, sinon en tête du panneau.
+      // Application arrêtée : à sa place d'origine, dans son étape.
+      const cible = !dansLaBarre ? null : assezLarge(id) ? barre : panneau;
+      if (cible && bouton.parentElement !== cible) {
+        if (!placesDOrigine.has(id)) {
+          const repere = doc.createComment(id);
+          bouton.before(repere);
+          placesDOrigine.set(id, repere);
+        }
+        cible.append(bouton);
+      } else if (!cible && placesDOrigine.has(id)) {
+        placesDOrigine.get(id).replaceWith(bouton);
+        placesDOrigine.delete(id);
+      }
+      const repere = placesDOrigine.get(id);
+      const horsEtape =
+        id === "parcours-continuer" && repere?.parentElement?.closest("[hidden]") != null;
+      bouton.toggleAttribute("data-hors-etape", horsEtape);
+    }
+    const cadre = noeud("cadre-applicatif");
+    if (dansLaBarre) cadre.tabIndex = -1;
+    const evitement = noeud("lien-d-evitement");
+    if (!evitement) return;
+    evitement.setAttribute("href", dansLaBarre ? "#cadre-applicatif" : "#parcours-titre");
+    evitement.textContent = dansLaBarre ? "Aller à l'application" : "Aller au parcours";
+  }
+
   function ecranAMontrer(releve, rapport) {
     etat.coffre = coffreObserve({
       etat: rapport.etat,
@@ -391,7 +461,10 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       ecran.attente ??
       (visibles.includes("phrase") ? attenteDeLaPhraseAnnoncee : "");
     dire("parcours-attente-annoncee", attente === "" ? "" : MESSAGES.duree(attente));
-    const suivante = etapeSuivante(ecranId);
+    dire("parcours-cas-rares", ecran.casRares ?? "");
+    noeud("parcours-feuille-perdue").hidden = ecran.casRares === null;
+    // Une seule étape annoncée : celle où « Continuer » mène (R1-bis, point 5).
+    const suivante = etapeAContinuer(ecranId);
     dire("parcours-suivante", suivante === null ? "" : MESSAGES.suivante(suivante.titre));
     // Le code tapé ne survit pas à son champ : un champ vidé par un geste vide aussi son annonce.
     if ((noeud("saisie-code")?.value ?? "") === "") dire("parcours-code-lu", "");
@@ -400,7 +473,19 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       "parcours-avertissement-revocation",
       MESSAGES.avertissementDeRevocation(releve.moyenDOuverture),
     );
-    montrerLesBlocs(visibles);
+    // L'application démarrée reste à l'écran à TOUTES les étapes (ADR 0043) : l'écran d'une étape
+    // qui ne la nomme pas ne la masque plus, il s'ajoute dans le panneau du coffre.
+    const cycleLu = lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement ?? null;
+    const applicationVisible = cycleLu === "application-demarree" && !etat.applicationArretee;
+    montrerLesBlocs(
+      applicationVisible && !visibles.includes("espace-de-travail")
+        ? [...visibles, "espace-de-travail"]
+        : visibles,
+    );
+    noeud("promesse").hidden = !ECRANS_DE_L_ENTREE.includes(ecranId);
+    // Sur « rouvrir », la promesse tient en une ligne : le champ de la phrase reste à l'écran (R1-bis, 7).
+    noeud("promesse-garanties").hidden = ecranId === "rouvrir";
+    marquerLePrincipal(ecranId);
     // Replier seulement les conseils quand Rails DÉMARRE. Le cadre reste à sa place :
     // le déplacer rechargerait son document et lui ferait perdre le port restreint.
     //
@@ -412,9 +497,11 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     // gestes longs fermés — le seul moment où déplacer un bouton ne perd aucun geste.
     const ligneDuCycle = lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement ?? null;
     const demarree = ligneDuCycle === "application-demarree" && !etat.applicationArretee;
-    direLEspaceDeTravail(demarree, rapport);
+    direLEspaceDeTravail(demarree, rapport, ligneDuCycle === "demarrage-en-cours");
     const auTravail = demarree || ligneDuCycle === "demarrage-en-cours";
-    const travailPret = !vueComplete && ECRANS_DE_L_APPLICATION.includes(ecranId) && auTravail;
+    // « L'application d'abord » suit l'état « application démarrée », à toutes les étapes (ADR 0043).
+    const travailPret =
+      !vueComplete && (demarree || (auTravail && ECRANS_DE_L_APPLICATION.includes(ecranId)));
     const modeTravail = String(travailPret);
     if (doc.documentElement.dataset.travailPret !== modeTravail) {
       const focusSurDemarrage =
@@ -424,6 +511,10 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       mettreLAideEnForme(travailPret);
       if (travailPret && focusSurDemarrage) noeud("parcours-titre").focus();
     }
+    placerLesGestes(travailPret);
+    // Avant le démarrage, le cadre vide n'est pas un arrêt de focus invisible (R1-bis, point 4).
+    const iframe = noeud("cadre-applicatif").querySelector("iframe");
+    if (iframe && !vueComplete) iframe.inert = !demarree;
     rendreOuSuisJe(ecranId);
     fermerLesGestesEnCours();
     // Le focus suit un CHANGEMENT d'écran, jamais le premier affichage (ADR 0040, § 5).
@@ -449,8 +540,34 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (fin && !etat.progression.visiteTerminee) pas("visite-terminee");
   }
 
+  /** La promesse de l'entrée (ADR 0043), écrite une fois depuis les textes du parcours. */
+  function ecrireLaPromesse() {
+    noeud("promesse-phrase").textContent = PROMESSE.phrase;
+    const liste = noeud("promesse-garanties");
+    liste.replaceChildren(
+      ...PROMESSE.garanties.map(({ titre, preuve }) => {
+        const item = doc.createElement("li");
+        const fort = doc.createElement("strong");
+        fort.textContent = titre;
+        const texte = doc.createElement("span");
+        texte.textContent = preuve;
+        item.append(fort, texte);
+        return item;
+      }),
+    );
+  }
+
+  /** UN seul bouton principal par écran (#266 M1) : la table des textes le désigne, la page le marque. */
+  function marquerLePrincipal(ecranId) {
+    const principal = PRINCIPAL_DE_L_ECRAN[ecranId] ?? null;
+    for (const bouton of doc.querySelectorAll("button[data-principal]")) {
+      if (bouton.id !== principal) delete bouton.dataset.principal;
+    }
+    if (principal !== null && noeud(principal) !== null) noeud(principal).dataset.principal = "";
+  }
+
   /** Le cadre replié dit qu'il attend son démarrage, au lieu d'un rectangle blanc (#242, défaut 11). */
-  function direLEspaceDeTravail(demarree, rapport) {
+  function direLEspaceDeTravail(demarree, rapport, enCours = false) {
     const espace = noeud("cycle-description")?.closest("[data-bloc]");
     const valeur = demarree ? "demarree" : "attente";
     if (espace !== null && espace !== undefined && espace.dataset.application !== valeur) {
@@ -458,7 +575,11 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     }
     dire(
       "cycle-description",
-      demarree ? MESSAGES.applicationAffichee : accueil.texteDeLEspaceEnAttente(rapport),
+      demarree
+        ? MESSAGES.applicationAffichee
+        : enCours
+          ? MESSAGES.demarrageSurCetAppareil
+          : accueil.texteDeLEspaceEnAttente(rapport),
     );
   }
 

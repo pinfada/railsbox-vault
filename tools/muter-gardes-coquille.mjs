@@ -66,7 +66,7 @@ const EPREUVE_OUVERTURE_PAR_LE_CODE = "tests/unit/coquille-ouverture-par-le-code
 const EPREUVE_PARCOURS_CONDUITES = "tests/unit/coquille-parcours-conduites.test.mjs";
 const PREUVE = "src/coquille/preuve-de-la-feuille.mjs";
 const EPREUVE_PREUVE = "tests/unit/coquille-preuve-de-la-feuille.test.mjs";
-const WORKER = "public/runtime-worker.mjs";
+const DEVERROUILLAGE = "public/runtime-worker-deverrouillage.mjs";
 
 /**
  * Les gardes de #161, et la façon exacte de les retirer.
@@ -1152,7 +1152,7 @@ export const MUTATIONS = Object.freeze([
   {
     nom: "le Worker n'inscrit la preuve qu'APRÈS l'ouverture du volume (#239)",
     garde: "deverrouiller — l'ordre ouvrir, constater, barrière",
-    fichier: WORKER,
+    fichier: DEVERROUILLAGE,
     avant: "    await ouvrirLeVolume(ouverte.dek);\n",
     apres:
       "    interne.eprouves = await constaterALOuverture(interne.backend, ouverte.identifiantEprouve);\n    await ouvrirLeVolume(ouverte.dek);\n",
@@ -1161,7 +1161,7 @@ export const MUTATIONS = Object.freeze([
   {
     nom: "seul un CODE éprouve une feuille, jamais une phrase ni une passkey (#239)",
     garde: "ouvrirLExistante — `identifiantEprouve` nul hors du code",
-    fichier: WORKER,
+    fichier: DEVERROUILLAGE,
     avant:
       '    identifiantEprouve: moyen.derivePar === "page" ? null : ouverte.identifiantEmplacement,\n',
     apres: "    identifiantEprouve: ouverte.identifiantEmplacement,\n",

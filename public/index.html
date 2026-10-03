@@ -12,9 +12,17 @@
       tabulation, et le lien d'évitement n'est jamais atteint au clavier (mesuré par
       `tests/apparence/parcours.spec.mjs` sur WebKit, revue de la PR #216, constat 15).
     -->
-    <a class="evitement" href="#parcours-titre" tabindex="0">Aller au parcours</a>
+    <a id="lien-d-evitement" class="evitement" href="#parcours-titre" tabindex="0"
+      >Aller au parcours</a
+    >
     <main>
-      <header class="entete-du-coffre">
+      <!--
+        L'EN-TÊTE devient la BARRE DE COFFRE quand l'application tourne (ADR 0043) : le nom, l'état qui
+        rappelle la promesse, « Sauvegarder » et « Verrouiller » (posés là par la mise en forme, sans
+        quitter leur section), et le menu « Coffre », qui ouvre le panneau du parcours à côté de
+        l'application. Un `details` : il se pilote au clavier sans aucun script de menu.
+      -->
+      <header class="entete-du-coffre" aria-label="Barre du coffre">
         <svg
           viewBox="0 0 24 24"
           fill="none"
@@ -27,7 +35,20 @@
         </svg>
         <h1>RailsBox Vault</h1>
         <p id="parcours-rang"></p>
+        <p class="barre-etat">Sur cet appareil · chiffré</p>
+        <!-- Les gestes de la barre, dans l'ordre visuel : le script y déplace les boutons (R1-bis). -->
+        <div id="gestes-de-la-barre"></div>
+        <details id="menu-du-coffre">
+          <summary>Coffre</summary>
+          <p><a href="#parcours-titre">Aller au panneau du coffre</a></p>
+        </details>
       </header>
+
+      <!-- La PROMESSE, à l'entrée (ADR 0043). Ses textes vivent dans `textes-du-parcours.mjs`. -->
+      <section id="promesse" aria-labelledby="promesse-phrase" hidden>
+        <p id="promesse-phrase"></p>
+        <ul id="promesse-garanties"></ul>
+      </section>
 
       <!--
         Le PARCOURS GUIDÉ (#193, ADR 0040). Un seul chemin, un écran à la fois : l'étape courante
@@ -53,6 +74,12 @@
       <section id="parcours" aria-labelledby="parcours-titre">
         <h2 id="parcours-titre" tabindex="-1">Préparation</h2>
         <!--
+          Les GESTES DU PANNEAU : sur un écran trop étroit pour la barre, Sauvegarder, Verrouiller et
+          Continuer viennent ici, en tête du panneau du coffre, plutôt que de retourner dans un bloc
+          que l'étape courante masque (ADR 0043).
+        -->
+        <div id="gestes-du-panneau"></div>
+        <!--
           L'AIDE de l'étape. Un conteneur neutre sur tous les écrans ; à l'étape 4, quand Rails est
           prêt, le branchement en fait un repli « Aide pour cette étape » (revue de la PR #216,
           constat 7) : un repli dont le résumé serait masqué exposerait un groupe sans nom.
@@ -60,6 +87,10 @@
         <div id="parcours-aide">
           <p id="parcours-ce-qui-va-se-passer"></p>
           <p id="parcours-attendu"></p>
+          <details id="parcours-feuille-perdue" hidden>
+            <summary>Je n'ai plus ma feuille</summary>
+            <p id="parcours-cas-rares"></p>
+          </details>
           <p id="parcours-limite"></p>
           <!-- Le COMPTE des feuilles de récupération que ce coffre porte déjà (#214). -->
           <p id="parcours-codes"></p>
@@ -299,7 +330,7 @@
         <div data-bloc="revocation" hidden>
           <p id="parcours-avertissement-revocation"></p>
           <p>
-            <button id="revoquer-en-urgence" type="button">
+            <button id="revoquer-en-urgence" type="button" data-danger>
               Révoquer tous les autres moyens d'ouvrir ce coffre
             </button>
           </p>

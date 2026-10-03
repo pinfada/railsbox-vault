@@ -665,7 +665,11 @@ test("la version SAISIE est transmise et OPPOSÉE ; une enveloppe antérieure es
   // La VERSION d'enveloppe réelle, lue de la coquille — et non le nombre de moyens proposés, que la
   // première rédaction avait pris pour elle (constat 12 de la revue de la PR #167). C'est elle que
   // les deux moitiés de l'épreuve encadrent : une version notée TROP HAUT refuse, la même version
-  // notée JUSTE ouvre.
+  // notée JUSTE ouvre. La mention n'est écrite qu'après un second aller-retour (l'inventaire
+  // rafraîchi), APRÈS la publication de l'état : on l'attend avant de la lire (#255).
+  await expect(page.locator("#deverrouillage-moyens")).toContainText(/version d'enveloppe \d+/, {
+    timeout: DELAI,
+  });
   const versionReelle = (await page.locator("#deverrouillage-moyens").textContent()).match(
     /version d'enveloppe (\d+)/,
   );

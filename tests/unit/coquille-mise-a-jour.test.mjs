@@ -262,6 +262,11 @@ test("la ligne de commande n'accueille qu'un schéma en chiffres, jamais une cha
   assert.equal(ligneDeCommande("root=/dev/sda1", N), `root=/dev/sda1 vault.schema=${N}`);
   assert.equal(ligneDeCommande("root=/dev/sda1", null), "root=/dev/sda1");
   assert.equal(ligneDeCommande("root=/dev/sda1", "1 init=/bin/sh"), "root=/dev/sda1");
+  // L'attente de la racine servie traverse intacte (#165).
+  assert.equal(
+    ligneDeCommande("root=/dev/sda1 rootdelay=120", N, { migrer: true }),
+    `root=/dev/sda1 rootdelay=120 vault.schema=${N} vault.migrer=1`,
+  );
 });
 
 test("le descripteur du courant est rendu tel quel", () => {

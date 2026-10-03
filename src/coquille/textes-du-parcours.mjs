@@ -8,6 +8,15 @@
 //
 // Pur, comme le reste du répertoire : ni DOM, ni stockage, ni horloge.
 
+/** L'estimation annoncée d'un premier démarrage : « environ deux minutes ». */
+const ESTIMATION_DU_DEMARRAGE_EN_SECONDES = 120;
+
+/** Une durée en clair, sans « (s) » : « 1 seconde », « 45 secondes », « 5 minutes ». */
+export function dureeEnClair(secondes) {
+  if (secondes < 120) return `${secondes} seconde${secondes > 1 ? "s" : ""}`;
+  return `${Math.floor(secondes / 60)} minutes`;
+}
+
 /** Les neuf étapes de la Definition of Ready de #193, dans l'ordre. */
 export const ETAPES = Object.freeze([
   Object.freeze({ rang: 1, titre: "Créer votre coffre" }),
@@ -270,8 +279,8 @@ export const ECRANS = Object.freeze({
     ceQuiVaSePasser: UN_CODE_A_DEJA_ETE_RENDU,
     attendu:
       "Si vous avez votre feuille : tapez le code, puis cliquez sur « Ouvrir mon coffre avec le " +
-      "code ». " +
-      SI_LE_CODE_EST_PERDU,
+      "code ».",
+    casRares: SI_LE_CODE_EST_PERDU,
     blocs: ["code", "nouveau-code"],
   }),
   "code-a-verifier": ecran(3, {
@@ -433,12 +442,14 @@ export const ECRANS = Object.freeze({
 });
 
 /** @param {number | null} rang */
-function ecran(rang, { titre, ceQuiVaSePasser, attendu, attente = null, blocs }) {
+function ecran(rang, { titre, ceQuiVaSePasser, attendu, casRares = null, attente = null, blocs }) {
   return Object.freeze({
     etape: rang,
     titre,
     ceQuiVaSePasser,
     attendu,
+    // Les cas rares, repliés sous « Je n'ai plus ma feuille » (R1-bis, point 6).
+    casRares,
     attente,
     blocs: Object.freeze([...blocs]),
   });
@@ -452,6 +463,62 @@ function ecran(rang, { titre, ceQuiVaSePasser, attendu, attente = null, blocs })
  */
 export const LIBELLES_DE_LA_PAGE = Object.freeze({
   aideDeLEtape: "Aide pour cette étape",
+});
+
+/**
+ * La PROMESSE, dite à l'entrée (ADR 0043) : une phrase, puis trois garanties et ce qui les fonde.
+ * Aucun mot technique : la personne doit comprendre en quelques secondes ce qu'elle va utiliser.
+ */
+export const PROMESSE = Object.freeze({
+  phrase:
+    "Votre application, chez vous : elle s'ouvre comme un site, mais tourne entièrement sur cet " +
+    "appareil, sans serveur.",
+  garanties: Object.freeze([
+    Object.freeze({
+      titre: "Elle tourne sur cet appareil",
+      preuve: "Tout se passe dans ce navigateur : aucun serveur ne fait le travail à votre place.",
+    }),
+    Object.freeze({
+      titre: "Vos données restent ici, chiffrées",
+      preuve:
+        "Rien n'est lisible sans votre secret, et rien ne quitte l'appareil sauf la sauvegarde que " +
+        "vous demandez.",
+    }),
+    Object.freeze({
+      titre: "Elle marche hors ligne",
+      preuve:
+        "Une fois démarrée, elle n'a plus besoin d'Internet : vous pouvez couper la connexion.",
+    }),
+  ]),
+});
+
+/** Les écrans d'ENTRÉE, ceux qui commencent par la promesse : créer un coffre, ou le rouvrir. */
+export const ECRANS_DE_L_ENTREE = Object.freeze(["creer", "rouvrir"]);
+
+/**
+ * Le geste PRINCIPAL de chaque écran (#266 M1) : un seul par écran, posé là où l'écran est décrit.
+ * Tous les autres boutons sont secondaires. Un écran absent de cette table n'a pas de principal.
+ */
+export const PRINCIPAL_DE_L_ECRAN = Object.freeze({
+  creer: "parcours-commencer",
+  choisir: "ouvrir-par-phrase",
+  "code-annonce": "creer-recuperation",
+  "code-feuille": "parcours-code-recopie",
+  "code-a-verrouiller": "verrouiller-le-coffre",
+  "code-verifier": "ouvrir-par-code",
+  "code-a-verifier": "verrouiller-le-coffre",
+  travailler: "demarrer-application",
+  accueil: "demarrer-application",
+  verrouiller: "verrouiller-le-coffre",
+  rouvrir: "ouvrir-par-phrase",
+  sauvegarder: "sauvegarder-le-coffre",
+  "restaurer-ailleurs": "parcours-continuer",
+  restaurer: "restaurer-le-coffre",
+  "recuperer-preparer": "verrouiller-le-coffre",
+  recuperer: "ouvrir-par-code",
+  revoquer: "parcours-sans-revoquer",
+  "termine-sans-revoquer": "parcours-retour-application",
+  termine: "parcours-retour-application",
 });
 
 /**
@@ -482,11 +549,11 @@ export const MESSAGES = Object.freeze({
   repriseEnCours: "Reprise de l'installation en cours… Ne fermez pas l'onglet.",
   sauvegardeEnCours: "Sauvegarde en cours… Ne fermez pas l'onglet.",
   restaurationEnCours: "Restauration en cours… Ne fermez pas l'onglet.",
-  applicationDemarree: "L'application est démarrée : elle s'affiche ci-dessous.",
+  applicationDemarree: "L'application est démarrée.",
   applicationEnAttente:
     "L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur « " +
     "Démarrer l'application ».",
-  applicationAffichee: "L'application s'affiche ci-dessous.",
+  applicationAffichee: "L'application est affichée.",
   // La zone de l'application ne nomme jamais un bouton absent (contre-recette QA de #249, 2).
   applicationEnAttenteDeLaReprise:
     "L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur « " +
@@ -498,10 +565,17 @@ export const MESSAGES = Object.freeze({
   applicationEnAttenteSousUnRefus:
     "L'application ne peut pas démarrer à cette adresse : le message affiché sur cette page dit " +
     "pourquoi, et ce que vous pouvez faire.",
+  // Au-delà de l'estimation, la page le DIT au lieu de répéter un chiffre figé (R1-bis, point 5).
   demarrageEnCours: (secondes, vie) =>
-    `Démarrage en cours depuis ${secondes} seconde(s), sur environ deux minutes. ${vie}`,
-  signesDeVie: (nombre) => `Le coffre travaille : ${nombre} signe(s) de vie reçu(s).`,
-  premierSigneDeVie: "En attente du premier signe de vie du coffre.",
+    secondes > ESTIMATION_DU_DEMARRAGE_EN_SECONDES
+      ? `Démarrage en cours depuis ${dureeEnClair(secondes)}. C'est plus long que prévu, cela ` +
+        `arrive sur cet appareil ; rien n'est perdu. ${vie}`
+      : `Démarrage en cours depuis ${dureeEnClair(secondes)}, sur environ deux minutes. ${vie}`,
+  // Ce que la page dit d'un démarrage, en langage clair (#266 m8).
+  signesDeVie: (nombre) => `Le démarrage avance : le coffre a répondu ${nombre} fois.`,
+  premierSigneDeVie: "Le démarrage commence : le coffre n'a pas encore répondu.",
+  demarrageSurCetAppareil:
+    "Votre application démarre sur cet appareil. Rien n'est envoyé sur Internet.",
   sauvegardePrete:
     "Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien ne " +
     "s'est enregistré, cliquez sur « Enregistrer la sauvegarde ».",
@@ -562,8 +636,7 @@ export const MESSAGES = Object.freeze({
     `Mise à jour en cours : comptez ${DUREE_DE_LA_MISE_A_JOUR}, et ne fermez pas l'onglet. Si la page ` +
     "se fermait, vos données seraient retrouvées telles qu'avant ou telles qu'après la mise à " +
     "jour, jamais entre les deux.",
-  miseAJourFaite: (version) =>
-    `L'application est à jour : version ${version}. Elle s'affiche ci-dessous.`,
+  miseAJourFaite: (version) => `L'application est à jour : version ${version}.`,
   // La PROGRESSION d'une mise à jour et de « Plus tard » : UNE durée par chemin, et la PHASE (Q2).
   miseAJourEnCoursDepuis: (secondes, phase) =>
     `Mise à jour en cours depuis ${secondes} seconde(s), sur ${DUREE_DE_LA_MISE_A_JOUR}. ${phase}`,

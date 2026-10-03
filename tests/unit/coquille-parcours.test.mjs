@@ -299,8 +299,10 @@ test("#239 : un code rendu et jamais éprouvé fait d'abord ÉPROUVER la feuille
       `${id} n'offre pas d'afficher un code`,
     );
   }
-  assert.match(ECRANS["code-verifier"].attendu, /effacez les données de ce site/);
-  assert.match(ECRANS["code-verifier"].attendu, /afficher un nouveau code/);
+  // R1-bis, point 6 : une phrase d'action ; les cas rares sont repliés sous « Je n'ai plus ma feuille ».
+  assert.match(ECRANS["code-verifier"].casRares, /effacez les données de ce site/);
+  assert.match(ECRANS["code-verifier"].casRares, /afficher un nouveau code/);
+  assert.doesNotMatch(ECRANS["code-verifier"].attendu, /effacez|n'avez plus/);
   assert.match(ECRANS["code-verifier"].ceQuiVaSePasser, /qu'une fois/);
   assert.match(ECRANS["code-a-verifier"].attendu, /afficher un nouveau code/);
   assert.match(ECRANS["code-a-verifier"].attendu, /Révoquer tous les autres moyens/);
@@ -362,7 +364,7 @@ test("coffre VERROUILLÉ : « je n'ai plus cette feuille » fait d'abord ouvrir 
   assert.equal(ecranCourant(verrouille), "code-verifier");
   assert.equal(ecranCourant({ ...verrouille, nouveauCodeDemande: true }), "rouvrir");
   assert.ok(ECRANS["code-verifier"].blocs.includes("nouveau-code"), "la sortie est sur l'écran");
-  assert.match(ECRANS["code-verifier"].attendu, /ouvrirez donc d'abord avec votre phrase/);
+  assert.match(ECRANS["code-verifier"].casRares, /ouvrirez donc d'abord avec votre phrase/);
   assert.equal(
     ecranCourant({ ...verrouille, moyens: ["recuperation"], nouveauCodeDemande: true }),
     "recuperer",
@@ -741,10 +743,16 @@ test("CONSTAT 6 : aucun refus du relais n'est annoncé avant qu'un démarrage ai
 test("la progression d'un démarrage dit le temps écoulé et les signes de vie réels", () => {
   assert.equal(
     progressionDuDemarrage({ ecouleMs: 45_400, signesDeVie: 9 }),
-    "Démarrage en cours depuis 45 seconde(s), sur environ deux minutes. Le coffre travaille : 9 signe(s) de vie reçu(s).",
+    "Démarrage en cours depuis 45 secondes, sur environ deux minutes. Le démarrage avance : le coffre a répondu 9 fois.",
   );
+  // R1-bis : au-delà de l'estimation, la page dit que c'est plus long, sans chiffre figé ni « (s) ».
+  const long = progressionDuDemarrage({ ecouleMs: 302_000, signesDeVie: 9 });
+  assert.match(long, /depuis 5 minutes\. C'est plus long que prévu.*rien n'est perdu/);
+  assert.doesNotMatch(long, /deux minutes|\(s\)/);
   assert.match(progressionDuDemarrage({ ecouleMs: -5, signesDeVie: 0 }), /depuis 0 seconde/);
-  assert.match(progressionDuDemarrage({ ecouleMs: 0, signesDeVie: 0 }), /premier signe de vie/);
+  assert.match(progressionDuDemarrage({ ecouleMs: 0, signesDeVie: 0 }), /pas encore répondu/);
+  // #266 m8 : plus de « signe(s) de vie reçu(s) », une phrase que tout le monde lit.
+  assert.doesNotMatch(progressionDuDemarrage({ ecouleMs: 0, signesDeVie: 3 }), /signe/);
 });
 
 test("une seconde révocation qui ne retire rien ne fait pas noter un numéro pour rien", () => {

@@ -13,6 +13,9 @@
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, Consolas, "Courier New", monospace;
   --espace: 24px;
+  --ombre: #111827;
+  --danger: #b91c1c;
+  --barre: 52px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -25,6 +28,9 @@
     --support: #262b34;
     --survol: #343b47;
     --inverse: #111318;
+    /* L'ombre d'un thème sombre est plus sombre que le fond, jamais claire (#266 m10). */
+    --ombre: #000000;
+    --danger: #fca5a5;
   }
 }
 * {
@@ -49,7 +55,7 @@ main {
   margin: 0 auto;
   background: var(--fond);
   border: 1px solid var(--bord);
-  box-shadow: 6px 6px 0 var(--bord);
+  box-shadow: 6px 6px 0 var(--ombre);
 }
 .entete-du-coffre {
   display: flex;
@@ -161,12 +167,7 @@ html[data-travail-pret="true"] #parcours-reussite {
   margin: 0 0 8px;
 }
 #parcours-continuer {
-  background: var(--fond);
-  color: var(--texte);
   margin-top: 16px;
-}
-#parcours-continuer:hover {
-  background: var(--survol);
 }
 #parcours p:empty,
 [data-bloc] p:empty {
@@ -210,6 +211,9 @@ input::file-selector-button {
   font: inherit;
   margin-right: 12px;
 }
+/* Le SECONDAIRE est la règle (#266 M1, ADR 0043). Le PRINCIPAL est désigné écran par écran dans
+   `textes-du-parcours.mjs` (PRINCIPAL_DE_L_ECRAN) et marqué par `data-principal` ; le geste qui
+   retire quelque chose porte `data-danger` dans le document. Aucune liste d'identifiants ici. */
 button,
 #sauvegarde-lien {
   width: 100%;
@@ -217,16 +221,27 @@ button,
   padding: 13px 16px;
   border: 1px solid var(--bord);
   border-radius: 0;
-  background: var(--texte);
-  color: var(--inverse);
+  background: var(--fond);
+  color: var(--texte);
   font: 600 14px/1.5 var(--sans);
   text-align: left;
   overflow-wrap: anywhere;
   cursor: pointer;
 }
 button:not(:disabled):hover {
+  background: var(--survol);
+}
+button[data-principal] {
+  background: var(--texte);
+  color: var(--inverse);
+}
+button[data-principal]:not(:disabled):hover {
   background: var(--inverse);
   color: var(--texte);
+}
+button[data-danger] {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 button:disabled {
   background: var(--support);
@@ -234,23 +249,13 @@ button:disabled {
   border-color: var(--separateur);
   cursor: default;
 }
-#ouvrir-par-passkey,
-#parcours-j-ai-une-sauvegarde,
-#parcours-revoir-code,
-#verrouiller-le-coffre {
-  background: var(--fond);
-  color: var(--texte);
+/* La révocation passe en DERNIER dans sa section, après la sauvegarde et « Terminer sans révoquer ». */
+#portabilite {
+  display: flex;
+  flex-direction: column;
 }
-#ouvrir-par-passkey:hover,
-#parcours-j-ai-une-sauvegarde:hover,
-#parcours-revoir-code:hover,
-#verrouiller-le-coffre:hover {
-  background: var(--survol);
-}
-#parcours-phrase-perdue {
-  background: transparent;
-  color: var(--texte);
-  border-color: var(--secondaire);
+#portabilite > [data-bloc="revocation"] {
+  order: 1;
 }
 [data-bloc] p:has(> button + button) {
   display: flex;
@@ -277,7 +282,9 @@ button:disabled {
   min-height: 44px;
   background: var(--texte);
   color: var(--inverse);
-  z-index: 1;
+  /* Au-dessus de la barre de l'application (z-index 3) et des bandeaux (4) : un lien d'évitement
+     focalisé doit se voir. */
+  z-index: 5;
 }
 .evitement:focus {
   transform: none;
@@ -373,6 +380,271 @@ main:has([data-bloc="espace-de-travail"]:not([hidden])) {
 html[data-vue="parcours"] [data-application="attente"] #cadre-applicatif iframe {
   height: 0;
   border-width: 0;
+}
+/* La PROMESSE de l'entrée (ADR 0043) : une phrase, trois garanties, avant le titre de l'étape. */
+#promesse {
+  margin-top: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--separateur);
+}
+#promesse-phrase {
+  font-size: 21px;
+  font-weight: 650;
+  line-height: 1.35;
+  letter-spacing: -0.4px;
+}
+#promesse-garanties {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+#promesse-garanties li {
+  border-left: 3px solid var(--bord);
+  padding-left: 12px;
+  font-size: 14px;
+  color: var(--secondaire);
+}
+#promesse-garanties strong {
+  display: block;
+  color: var(--texte);
+}
+/* La barre et son menu n'existent qu'autour de l'application démarrée. */
+.barre-etat,
+#menu-du-coffre {
+  display: none;
+}
+
+/* L'APPLICATION D'ABORD (ADR 0043). Dès que l'application démarre, le cadre prend toute la fenêtre
+   sous une barre fine ; le reste de la page devient le panneau du coffre, ouvert par le menu
+   « Coffre ». Rien n'est DÉPLACÉ dans le document — déplacer le cadre le rechargerait et perdrait le
+   port restreint : seules la mise en forme et la visibilité changent. */
+html[data-travail-pret="true"] body {
+  padding: 0;
+  overflow: hidden;
+}
+html[data-travail-pret="true"] main {
+  max-width: none;
+  border: 0;
+  box-shadow: none;
+  background: var(--fond-page);
+}
+html[data-travail-pret="true"] .entete-du-coffre {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 3;
+  height: var(--barre);
+  padding: 0 12px;
+  flex-wrap: nowrap;
+  background: var(--fond);
+}
+/* Le titre de la barre est le nom du coffre, pas celui de l'étape (R1-bis, point 2). */
+html[data-travail-pret="true"] .entete-du-coffre h1 {
+  margin: 0 12px 0 8px;
+  font-size: 15px;
+  line-height: var(--barre);
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+  /* Le titre cède la place aux gestes plutôt que de pousser « Coffre » hors de l'écran. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html[data-travail-pret="true"] #gestes-de-la-barre,
+html[data-travail-pret="true"] #menu-du-coffre {
+  flex-shrink: 0;
+}
+html[data-travail-pret="true"] #parcours-rang {
+  display: none;
+}
+/* Menu fermé, le titre de l'étape reste la cible du focus, sans être montré. */
+html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #parcours-titre {
+  visibility: visible;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+html[data-travail-pret="true"] .barre-etat {
+  display: block;
+  margin: 0;
+  font-size: 13px;
+  line-height: var(--barre);
+  color: var(--secondaire);
+  white-space: nowrap;
+}
+html[data-travail-pret="true"] #menu-du-coffre {
+  display: block;
+  position: relative;
+  border: 0;
+}
+#menu-du-coffre > summary {
+  width: 104px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--bord);
+  font-size: 14px;
+  font-weight: 600;
+}
+#menu-du-coffre[open] > summary {
+  background: var(--texte);
+  color: var(--inverse);
+}
+#menu-du-coffre > p {
+  position: absolute;
+  right: 0;
+  top: 48px;
+  margin: 0;
+  padding: 8px 12px;
+  white-space: nowrap;
+  background: var(--fond);
+  border: 1px solid var(--bord);
+  font-size: 13px;
+}
+#menu-du-coffre a {
+  color: var(--texte);
+}
+html[data-travail-pret="true"] [data-bloc="espace-de-travail"] {
+  position: fixed;
+  inset: var(--barre) 0 0;
+  z-index: 1;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--fond-page);
+  border-top: 1px solid var(--bord);
+}
+html[data-travail-pret="true"] #cadre-applicatif {
+  flex: 1;
+  min-height: 0;
+}
+html[data-travail-pret="true"] #cadre-applicatif iframe {
+  height: 100%;
+  border: 0;
+}
+html[data-travail-pret="true"] #version-de-l-application {
+  order: 1;
+  margin: 0;
+  padding: 2px 12px;
+  font-size: 12px;
+}
+/* L'ATTENTE du démarrage occupe la place de l'application, et dit la promesse en clair. */
+html[data-travail-pret="true"] [data-application="attente"] {
+  justify-content: center;
+  align-items: center;
+}
+html[data-travail-pret="true"] [data-application="attente"] #cadre-applicatif {
+  flex: 0;
+}
+html[data-travail-pret="true"] [data-application="attente"] #cycle-description {
+  display: block;
+  max-width: 32ch;
+  margin: 0 16px 120px;
+  font-size: 21px;
+  font-weight: 650;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--texte);
+}
+html[data-travail-pret="true"]:has([data-application="attente"])
+  #parcours-progression:not([hidden]) {
+  visibility: visible;
+  position: fixed;
+  top: calc(50% + 40px);
+  left: 50%;
+  z-index: 2;
+  width: min(420px, 80vw);
+  transform: translateX(-50%);
+}
+/* Menu FERMÉ : le panneau est caché (hors de l'ordre de tabulation), sauf ce qui doit rester à
+   portée — les gestes de la barre, l'attente, les refus et le geste qui rouvre. */
+html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open]))
+  main
+  > :not(header, [data-bloc="espace-de-travail"]) {
+  visibility: hidden;
+}
+html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open]))
+  :is(#parcours-attente, #parcours-refus):not(:empty),
+html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #rouvrir-la-coquille:not([hidden]) {
+  visibility: visible;
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  z-index: 4;
+  width: min(560px, calc(100% - 24px));
+  margin: 0;
+  transform: translateX(-50%);
+  background: var(--fond);
+  box-shadow: 4px 4px 0 var(--ombre);
+}
+html[data-travail-pret="true"]:not(:has(#menu-du-coffre[open])) #rouvrir-la-coquille:not([hidden]) {
+  bottom: 96px;
+}
+/* Menu OUVERT : le panneau du coffre s'ouvre à droite, l'application se resserre à sa gauche. */
+html[data-travail-pret="true"]:has(#menu-du-coffre[open]) main {
+  width: min(440px, 100%);
+  height: 100dvh;
+  margin: 0 0 0 auto;
+  padding-top: var(--barre);
+  overflow: auto;
+  border-left: 1px solid var(--bord);
+}
+html[data-travail-pret="true"]:has(#menu-du-coffre[open]) [data-bloc="espace-de-travail"] {
+  right: min(440px, 100%);
+}
+/* Les gestes de la barre : placés là par le script, dans l'ordre visuel (titre, Sauvegarder,
+   Verrouiller, Continuer, Coffre) ; l'ordre du clavier est donc celui de l'écran. */
+#gestes-de-la-barre {
+  display: none;
+}
+html[data-travail-pret="true"] #gestes-de-la-barre {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+  margin-right: 8px;
+}
+#gestes-de-la-barre > button {
+  width: auto;
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 14px;
+  white-space: nowrap;
+}
+#gestes-de-la-barre > [data-hors-etape],
+#gestes-du-panneau > [data-hors-etape] {
+  display: none;
+}
+/* Les gestes que la barre n'a pas la largeur de porter, en tête du panneau du coffre. */
+#gestes-du-panneau {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 20px;
+}
+#gestes-du-panneau:empty {
+  display: none;
+}
+/* Sur un écran étroit, la barre se replie en un seul bouton « Coffre ». */
+@media (max-width: 1023px) {
+  html[data-travail-pret="true"] .barre-etat {
+    display: none;
+  }
+}
+@media (max-width: 640px) {
+  html[data-travail-pret="true"] #parcours-titre {
+    max-width: calc(100% - 180px);
+  }
+  /* Sur un écran étroit, le panneau du coffre COUVRE l'écran au lieu de rétrécir l'application :
+     rétrécie de 440 px, elle tombait à une largeur nulle et la ligne de version se cassait lettre
+     par lettre. L'application est seulement masquée, jamais retirée : son cadre garde son document. */
+  html[data-travail-pret="true"]:has(#menu-du-coffre[open]) [data-bloc="espace-de-travail"] {
+    right: 0;
+    visibility: hidden;
+  }
 }
 @media (max-width: 380px) {
   :root {

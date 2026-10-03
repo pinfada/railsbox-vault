@@ -65,6 +65,7 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
   "code-a-verifier": ["verrouillageEnCours", "codesDejaRendus"],
   travailler: [
     "applicationEnAttente",
+    "demarrageSurCetAppareil",
     "demarrageEnCours",
     "signesDeVie",
     "premierSigneDeVie",
@@ -232,7 +233,7 @@ export async function libellesDeLaMiseEnForme() {
   return {
     evitement: libelleDuDocument(
       coquille,
-      /<a class="evitement"[^>]*>([^<]+)<\/a>/u,
+      /<a [^>]*class="evitement"[^>]*>\s*([^<]+?)\s*<\/a\s*>/u,
       "lien d'évitement",
     ),
     aide: LIBELLES_DE_LA_PAGE.aideDeLEtape,
@@ -307,6 +308,8 @@ function attenteDeLaPhraseRelue() {
 function sectionDEcran(id, libelles) {
   const ecran = ECRANS[id];
   const lignes = [ecran.ceQuiVaSePasser, MESSAGES.attendu(ecran.attendu)];
+  if (ecran.casRares !== null)
+    lignes.push(`Replié sous « Je n'ai plus ma feuille » : ${ecran.casRares}`);
   const attente =
     ecran.attente ?? (ecran.blocs.includes("phrase") ? attenteDeLaPhraseRelue() : null);
   if (attente !== null) lignes.push(MESSAGES.duree(attente));
