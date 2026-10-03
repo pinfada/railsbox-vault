@@ -128,9 +128,9 @@ async function aucunCodeEnClair(page, moment) {
 async function relireLaNote(page) {
   await expect(page.getByText(/L'application n'est pas encore démarrée/)).toBeVisible();
   await bouton(page, "Démarrer l'application").click();
-  await expect(
-    page.getByText("L'application est démarrée : elle s'affiche ci-dessous."),
-  ).toBeVisible({ timeout: BUDGET_DEMARRAGE_MS });
+  await expect(page.getByText("L'application est démarrée.")).toBeVisible({
+    timeout: BUDGET_DEMARRAGE_MS,
+  });
   await expect(pageServie(page).getByText(LIBELLE).first()).toBeVisible({
     timeout: BUDGET_PREMIERE_PAGE_MS,
   });
@@ -239,9 +239,9 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await expect(a.locator("#demarrer-application")).toBeDisabled();
     await expect(a.locator("#parcours-progression")).toBeVisible();
     await expect(alerte(a), "aucune alerte pendant le boot").toBeEmpty();
-    await expect(
-      a.getByText("L'application est démarrée : elle s'affiche ci-dessous."),
-    ).toBeVisible({ timeout: BUDGET_DEMARRAGE_MS });
+    await expect(a.getByText("L'application est démarrée.")).toBeVisible({
+      timeout: BUDGET_DEMARRAGE_MS,
+    });
     const servie = pageServie(a);
     await servie
       .getByLabel("Libellé", { exact: true })
