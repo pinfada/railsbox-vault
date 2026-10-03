@@ -164,9 +164,48 @@ export function ouvrirLeMagasinOpfs({
     (dossier ??= stockage
       .getDirectory()
       .then((racine) => racine.getDirectoryHandle(DOSSIER_DU_MAGASIN, { create: true })));
+  const primitives = primitivesOpfs(ouvrirLeDossier);
   const magasin = creerMagasinDArtefacts({
-    primitives: primitivesOpfs(ouvrirLeDossier),
+    primitives,
     ...(peutAdmettre ? { peutAdmettre } : {}),
   });
-  return borneDansLeTemps(magasin, delaiMs);
+  return {
+    ...borneDansLeTemps(magasin, delaiMs),
+    retenir: (courants) => retenir(primitives, magasin, courants),
+  };
+}
+
+/** Le journal de rétention : il ne JUGE rien (l'intégrité vient du descripteur), il retient seulement. */
+export const JOURNAL_DE_RETENTION = "retention.json";
+const EMPREINTE = /^[0-9a-f]{64}$/;
+
+async function lireLeJournal(primitives) {
+  const taille = await primitives.taille(JOURNAL_DE_RETENTION);
+  if (!taille || taille > 4096) return [];
+  const brut = new Uint8Array(taille);
+  await primitives.lire(JOURNAL_DE_RETENTION, 0, brut);
+  try {
+    const paquets = JSON.parse(new TextDecoder().decode(brut)).paquets;
+    return Array.isArray(paquets) ? paquets.filter((e) => EMPREINTE.test(e)).slice(0, 2) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * RÉTENTION en usage réel (ADR 0042 § 4) : après une acquisition réussie, garde le rootfs courant,
+ * le paquet courant et le paquet PRÉCÉDENT — celui d'avant la dernière mise à jour —, oublie le reste.
+ * Un journal altéré ne coûte au pire qu'un téléchargement : il ne sert jamais un octet.
+ */
+async function retenir(primitives, magasin, { rootfs, paquet }) {
+  const [courant, precedent] = await lireLeJournal(primitives);
+  const paquets =
+    courant && courant !== paquet ? [paquet, courant] : [paquet, precedent].filter(Boolean);
+  await primitives.supprimer(JOURNAL_DE_RETENTION);
+  await primitives.ecrire(
+    JOURNAL_DE_RETENTION,
+    0,
+    new TextEncoder().encode(JSON.stringify({ paquets })),
+  );
+  return magasin.purger([rootfs, ...paquets, JOURNAL_DE_RETENTION]);
 }

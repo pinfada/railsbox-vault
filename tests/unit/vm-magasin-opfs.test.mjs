@@ -121,6 +121,30 @@ test("un magasin trop lent cède : servir rend false, l'admission échoue MAGASI
   await assert.rejects(lent.admettre({}), { code: "MAGASIN_LENT" });
 });
 
+test("rétention : garde rootfs, paquet courant et paquet précédent, oublie l'avant-dernier", async () => {
+  const { stockage, fichiers } = fauxStockage({ synchrone: true });
+  const magasin = ouvrirLeMagasinOpfs({ stockage });
+  const morceau = (marque) => {
+    const octets = new Uint8Array(1024).fill(marque);
+    return { sha256: empreinteDe(octets), octets };
+  };
+  const [rootfs, v1, v2, v3] = [1, 2, 3, 4].map(morceau);
+  // Chaque boot admet ce qu'il vient de télécharger, puis retient.
+  const boot = async (paquet) => {
+    for (const artefact of [rootfs, paquet]) await magasin.admettre(artefact);
+    await magasin.retenir({ rootfs: rootfs.sha256, paquet: paquet.sha256 });
+  };
+  const presents = () => [rootfs, v1, v2, v3].map((artefact) => fichiers.has(artefact.sha256));
+
+  await boot(v1);
+  await boot(v2); // mise à jour v1 → v2
+  await boot(v2); // simple réouverture
+  assert.deepEqual(presents(), [true, true, true, false], "le précédent survit à une réouverture");
+
+  await boot(v3); // mise à jour v2 → v3
+  assert.deepEqual(presents(), [true, false, true, true], "l'avant-dernier est oublié");
+});
+
 test("budget serré : l'admission est refusée, typée, avant toute écriture", async () => {
   const { stockage, fichiers } = fauxStockage({ synchrone: true });
   const octets = new Uint8Array(4096);

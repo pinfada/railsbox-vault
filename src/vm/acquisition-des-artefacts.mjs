@@ -60,14 +60,19 @@ async function loadRuntime(runtime) {
     fetchBytes(runtime.kernel),
     fetchBytes(runtime.initrd),
   ]);
-  const disqueSysteme = await acquerirLeDisqueSysteme({
-    ...runtime.disqueSysteme,
-    magasin: ouvrirLeMagasinOpfs({
-      peutAdmettre: admissionSelonLeBudget(
-        createStorageBudget(bindNavigatorStorage(globalThis.navigator?.storage)),
-      ),
-    }),
+  const magasin = ouvrirLeMagasinOpfs({
+    peutAdmettre: admissionSelonLeBudget(
+      createStorageBudget(bindNavigatorStorage(globalThis.navigator?.storage)),
+    ),
   });
+  const disqueSysteme = await acquerirLeDisqueSysteme({ ...runtime.disqueSysteme, magasin });
+  // Le magasin est un cache : sa rétention ne fait jamais échouer un boot.
+  await magasin
+    ?.retenir({
+      rootfs: runtime.disqueSysteme.rootfs.sha256,
+      paquet: runtime.disqueSysteme.paquet.sha256,
+    })
+    .catch(() => {});
   const artifacts = {
     wasm,
     bios,
