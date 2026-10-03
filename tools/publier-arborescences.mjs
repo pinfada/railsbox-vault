@@ -26,6 +26,11 @@ import { ORIGINES } from "./publier-en-tetes.mjs";
 /** @type {readonly Source[]} */
 export const SOURCES_COQUILLE = Object.freeze([
   Object.freeze({
+    depuis: "public/favicon.ico",
+    vers: "favicon.ico",
+    role: "Icône du coffre, servie localement pour les onglets et les requêtes automatiques du navigateur.",
+  }),
+  Object.freeze({
     depuis: "public/index.html",
     vers: "index.html",
     role: "Document de la coquille de confiance. Servi sous la CSP stricte de l'ADR 0013.",
@@ -219,6 +224,11 @@ export const SOURCES_COQUILLE = Object.freeze([
  * @type {readonly Source[]} */
 export const SOURCES_APPLICATION = Object.freeze([
   Object.freeze({
+    depuis: "public/favicon.ico",
+    vers: "favicon.ico",
+    role: "Icône publique du cadre applicatif, sans code ni accès au coffre ; évite un 404 sur cette origine.",
+  }),
+  Object.freeze({
     depuis: "public/document-applicatif.html",
     vers: "document-applicatif.html",
     role:
@@ -295,14 +305,15 @@ export const PLACE_TENANTE_APPLICATION = `<!doctype html>
   <head>
     <meta charset="utf-8" />
     <title>Territoire applicatif — RailsBox Vault</title>
+    <link rel="icon" href="/favicon.ico" type="image/vnd.microsoft.icon" />
   </head>
   <body>
     <main>
       <h1>Territoire applicatif</h1>
       <p id="place-tenante" role="status">
         Cette origine sert les documents rendus par le guest et relayés par le proxy (ADR 0002).
-        Le seul artefact de ce dépôt qui y est publié est ce PROXY — le courtier, son Service Worker
-        et les modules qu'ils importent (ADR 0038) ; ce document-ci est une place tenante, présente
+        Cette origine publie le PROXY — le courtier, son Service Worker et les modules qu'ils
+        importent (ADR 0038) — ainsi que l'icône du cadre ; ce document-ci est une place tenante, présente
         pour que la frontière d'origine soit joignable et que le témoin d'en-têtes ait quelque chose
         à encadrer.
       </p>
