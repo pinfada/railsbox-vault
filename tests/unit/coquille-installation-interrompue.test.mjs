@@ -16,6 +16,7 @@ import {
   echecDUnArtefactDuDemarrage,
   echecDuPremierBoot,
   installationJamaisDemarree,
+  signatureDInstallationInterrompue,
 } from "../../src/coquille/installation-interrompue.mjs";
 import { reprendreSiSignatureConfirmee } from "../../src/coquille/reprise-installation.mjs";
 import { CODES_REFUS_COQUILLE as C } from "../../src/coquille/refus-de-coquille.mjs";
@@ -33,11 +34,17 @@ import { daterLaCreation, openOpfsVolume } from "../../src/vm/opfs-block-backend
 import {
   engagementSidecarName,
   generationJournalName,
+  instantaneSidecarName,
   manifestSidecarName,
+  temoinSequenceName,
 } from "../../src/vm/opfs-sync-access.mjs";
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 import { verserFluxDansVolume } from "../../src/vm/versement-de-disque.mjs";
+import {
+  MARQUEUR_SCELLEMENT_COMPLET,
+  SCELLEMENT_COMPLET_OFFSET,
+} from "../../src/vm/volume-chiffre-format.mjs";
 
 const NOM = "application";
 const TAILLE = 8 * SECTOR_SIZE;
@@ -372,9 +379,12 @@ const TABLE = [
  * de tous les secteurs, AVANT la racine initiale et la marque `VLTSEAL1`. La coupure est jouée sur
  * la deuxième écriture du fichier de volume, la première étant l'en-tête.
  */
-async function naissanceCoupeeAuScellement(store, { taille = TAILLE } = {}) {
+async function naissanceCoupeeAuScellement(
+  store,
+  { taille = TAILLE, ouvrir = store.openHandle } = {},
+) {
   const openHandle = async (nom) => {
-    const handle = await store.openHandle(nom);
+    const handle = await ouvrir(nom);
     if (nom !== NOM) return handle;
     let ecritures = 0;
     return new Proxy(handle, {
@@ -415,6 +425,165 @@ test("#264 : un rechargement au PREMIER démarrage se REPREND, jusqu'au manifest
   });
   assert.equal(reprise.reprise, true, reprise.motif);
   assert.equal(manifestes.has(NOM), true);
+});
+
+// --- Le chemin « journal vide » (#264), condition par condition -----------------------------------
+
+/**
+ * Le double, vu comme le VRAI support : un fichier OUVERT existe, même à 0 octet — `openOpfsSyncAccess`
+ * le crée (`create: true`), et `statOpfsVolume` le dit présent. Le `observer` du double, lui, confond
+ * vide et absent ; ce montage-ci rend la différence, et `oublier` simule un fichier qui n'existe pas.
+ */
+function supportFidele(store) {
+  const ouverts = new Set();
+  const oublies = new Set();
+  return {
+    openHandle: async (nom) => {
+      ouverts.add(nom);
+      oublies.delete(nom);
+      return store.openHandle(nom);
+    },
+    observer: async (nom) => ({
+      present: !oublies.has(nom) && (ouverts.has(nom) || store.sizeOf(nom) > 0),
+      size: store.sizeOf(nom),
+    }),
+    oublier: (nom) => oublies.add(nom),
+  };
+}
+
+async function ecrire(store, nom, octets, at = 0) {
+  const handle = await store.openHandle(nom);
+  handle.write(octets, { at });
+  handle.flush();
+  handle.close();
+}
+
+async function vider(store, nom) {
+  const handle = await store.openHandle(nom);
+  handle.truncate(0);
+  handle.flush();
+  handle.close();
+}
+
+const effacerLaMarque = (store) =>
+  ecrire(
+    store,
+    NOM,
+    new Uint8Array(MARQUEUR_SCELLEMENT_COMPLET.byteLength),
+    SCELLEMENT_COMPLET_OFFSET,
+  );
+
+/**
+ * Un volume NÉ, qui a SERVI (une génération validée), dont on a ensuite vidé le journal et
+ * l'engagement — l'état qu'un attaquant qui écrit dans l'OPFS fabrique pour faire proposer
+ * « Reprendre » sur le volume des données.
+ */
+async function serviPuisJournalVide() {
+  const store = createSyncAccessStore();
+  const support = supportFidele(store);
+  const ne = await openOpfsVolume({
+    name: NOM,
+    size: TAILLE,
+    cle: CLE,
+    identifiantVolume: ID,
+    openHandle: support.openHandle,
+  });
+  await ne.close();
+  await servir(store);
+  assert.ok(store.sizeOf(temoinSequenceName(NOM)) > 0, "servir écrit le témoin de séquence");
+  await vider(store, generationJournalName(NOM));
+  await vider(store, engagementSidecarName(NOM));
+  return { store, support };
+}
+
+function signature({ support }) {
+  return signatureDInstallationInterrompue({
+    nom: NOM,
+    octetsAnnonces: TAILLE,
+    observer: support.observer,
+    openHandle: support.openHandle,
+  });
+}
+
+test("#264 : la naissance coupée laisse témoin et instantané PRÉSENTS et VIDES — et se reprend", async () => {
+  const store = createSyncAccessStore();
+  const support = supportFidele(store);
+  await naissanceCoupeeAuScellement(store, { ouvrir: support.openHandle });
+  for (const voisin of [temoinSequenceName(NOM), instantaneSidecarName(NOM)]) {
+    assert.deepEqual(await support.observer(voisin), { present: true, size: 0 }, voisin);
+  }
+  const rendu = await signature({ support });
+  assert.equal(rendu.interrompue, true, rendu.motif ?? "");
+});
+
+test("#264 : journal ABSENT et engagement vide → interrompue", async () => {
+  const store = createSyncAccessStore();
+  const support = supportFidele(store);
+  await naissanceCoupeeAuScellement(store, { ouvrir: support.openHandle });
+  support.oublier(generationJournalName(NOM));
+  assert.equal((await support.observer(generationJournalName(NOM))).present, false);
+  const rendu = await signature({ support });
+  assert.equal(rendu.interrompue, true, rendu.motif ?? "");
+});
+
+test("#264 : un volume qui a SERVI, journal et engagement vidés → refus, par la MARQUE", async () => {
+  const etat = await serviPuisJournalVide();
+  // Témoin et instantané vidés aussi : seule la marque reste pour refuser.
+  await vider(etat.store, temoinSequenceName(NOM));
+  await vider(etat.store, instantaneSidecarName(NOM));
+  const rendu = await signature(etat);
+  assert.equal(rendu.interrompue, false);
+  assert.match(rendu.motif, /création s'est achevée/);
+});
+
+test("#264 : marque EFFACÉE, mais le témoin de séquence porte des octets → refus", async () => {
+  const etat = await serviPuisJournalVide();
+  await effacerLaMarque(etat.store);
+  const rendu = await signature(etat);
+  assert.equal(rendu.interrompue, false);
+  assert.match(rendu.motif, new RegExp(temoinSequenceName(NOM).replace(".", "\\.")));
+});
+
+test("#264 : marque effacée, témoin vidé, mais l'instantané porte des octets → refus", async () => {
+  const etat = await serviPuisJournalVide();
+  await effacerLaMarque(etat.store);
+  await vider(etat.store, temoinSequenceName(NOM));
+  await ecrire(etat.store, instantaneSidecarName(NOM), new Uint8Array(64).fill(0x44));
+  const rendu = await signature(etat);
+  assert.equal(rendu.interrompue, false);
+  assert.match(rendu.motif, new RegExp(instantaneSidecarName(NOM).replace(".", "\\.")));
+});
+
+test("#264 : RISQUE RÉSIDUEL consigné — qui fabrique TOUS ces états fait proposer « Reprendre »", async () => {
+  const etat = await serviPuisJournalVide();
+  await effacerLaMarque(etat.store);
+  await vider(etat.store, temoinSequenceName(NOM));
+  await vider(etat.store, instantaneSidecarName(NOM));
+  // Aucun de ces champs n'est authentifié : seule une marque authentifiée fermerait ce chemin.
+  assert.equal((await signature(etat)).interrompue, true);
+});
+
+test("#264 : un fichier d'une autre taille que la taille support → refus", async () => {
+  const store = createSyncAccessStore();
+  const support = supportFidele(store);
+  await naissanceCoupeeAuScellement(store, { ouvrir: support.openHandle });
+  const handle = await store.openHandle(NOM);
+  handle.truncate(store.sizeOf(NOM) + SECTOR_SIZE);
+  handle.flush();
+  handle.close();
+  const rendu = await signature({ support });
+  assert.equal(rendu.interrompue, false);
+  assert.match(rendu.motif, /pas la taille support/);
+});
+
+test("#264 : un en-tête invalide → refus", async () => {
+  const store = createSyncAccessStore();
+  const support = supportFidele(store);
+  await naissanceCoupeeAuScellement(store, { ouvrir: support.openHandle });
+  await ecrire(store, NOM, new Uint8Array(16));
+  const rendu = await signature({ support });
+  assert.equal(rendu.interrompue, false);
+  assert.match(rendu.motif, /^aucun journal de génération, et /);
 });
 
 for (const { etat, preparer, attendu } of TABLE) {
