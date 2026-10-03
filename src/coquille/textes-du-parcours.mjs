@@ -425,7 +425,10 @@ export const ECRANS = Object.freeze({
       "Vous avez fait le tour de votre coffre, sans rien révoquer : votre phrase, votre passkey et " +
       "votre feuille l'ouvrent toujours. Si un jour l'un de ces moyens a pu être vu, la révocation " +
       "reste disponible sur l'écran de votre application.",
-    attendu: "Pour vous servir de votre application, cliquez sur « Revenir à mon application ».",
+    attendu:
+      "Pour vous servir de votre application, cliquez sur « Revenir à mon application ». Pour recommencer le parcours depuis " +
+      "le début, effacez les données du site dans les réglages du navigateur : supprimer les " +
+      "cookies ne suffit pas.",
     blocs: ["retour"],
   }),
   termine: ecran(9, {
@@ -436,7 +439,9 @@ export const ECRANS = Object.freeze({
       "tomber entre de mauvaises mains, puis faites une nouvelle sauvegarde.",
     attendu:
       "Notez sur votre feuille le numéro de version indiqué ci-dessous. Pour vous servir de votre " +
-      "application, cliquez sur « Revenir à mon application ».",
+      "application, cliquez sur « Revenir à mon application ». Pour recommencer le parcours depuis " +
+      "le début, effacez les données du site dans les réglages du navigateur : supprimer les " +
+      "cookies ne suffit pas.",
     blocs: ["retour"],
   }),
 });

@@ -128,9 +128,17 @@ export const PROGRESSION_INITIALE = figerProgression({
   code: { rendu: false, version: null },
   feuilleEprouvee: false,
   visiteTerminee: false,
+  revocationFaite: false,
 });
 
-function figerProgression({ etapeAtteinte, origine, code, feuilleEprouvee, visiteTerminee }) {
+function figerProgression({
+  etapeAtteinte,
+  origine,
+  code,
+  feuilleEprouvee,
+  visiteTerminee,
+  revocationFaite = false,
+}) {
   return Object.freeze({
     version: FORMAT_DE_PROGRESSION,
     etapeAtteinte,
@@ -138,6 +146,8 @@ function figerProgression({ etapeAtteinte, origine, code, feuilleEprouvee, visit
     code: Object.freeze({ rendu: code.rendu, version: code.version }),
     feuilleEprouvee,
     visiteTerminee,
+    // Le FAIT que la révocation a eu lieu (#223) : l'étape 9 atteinte ne le dit pas.
+    revocationFaite,
   });
 }
 
@@ -166,7 +176,11 @@ export function lireProgression(texte) {
     });
   }
   if (!progressionBienFormee(brut)) return PROGRESSION_INITIALE;
-  return figerProgression({ ...brut, code: PROGRESSION_INITIALE.code });
+  return figerProgression({
+    ...brut,
+    code: PROGRESSION_INITIALE.code,
+    revocationFaite: brut.revocationFaite === true,
+  });
 }
 
 function champsCommunsAdmis(brut, cles, version) {
@@ -192,7 +206,11 @@ function progressionDuFormat1(brut) {
 }
 
 function progressionBienFormee(brut) {
-  const cles = "code,etapeAtteinte,feuilleEprouvee,origine,version,visiteTerminee";
+  // Écrit avant #223, le format 2 n'avait pas `revocationFaite` : il se relit encore, sans révocation.
+  const cles =
+    typeof brut?.revocationFaite === "boolean"
+      ? "code,etapeAtteinte,feuilleEprouvee,origine,revocationFaite,version,visiteTerminee"
+      : "code,etapeAtteinte,feuilleEprouvee,origine,version,visiteTerminee";
   if (!champsCommunsAdmis(brut, cles, FORMAT_DE_PROGRESSION)) return false;
   if (Object.keys(brut.code).sort().join(",") !== "rendu,version") return false;
   return typeof brut.feuilleEprouvee === "boolean" && typeof brut.visiteTerminee === "boolean";
@@ -207,7 +225,8 @@ export function ecrireProgression(progression) {
  * Ce qu'un pas du parcours change à la progression. Rend une NOUVELLE progression.
  *
  * @param {object} progression
- * @param {"etape" | "coffre-cree" | "code-rendu" | "feuille" | "visite-terminee" | "restauree"} evenement
+ * @param {"etape" | "coffre-cree" | "code-rendu" | "feuille" | "visite-terminee"
+ *   | "revocation-faite" | "restauree"} evenement
  * @param {number | boolean | null} [valeur] l'étape (`etape`), la version du code (`code-rendu`), ou
  *   ce que le Worker a constaté de la feuille (`feuille`)
  */
@@ -236,6 +255,9 @@ export function progressionApres(progression, evenement, valeur = null) {
   }
   if (evenement === "visite-terminee") {
     return figerProgression({ ...progression, visiteTerminee: true });
+  }
+  if (evenement === "revocation-faite") {
+    return figerProgression({ ...progression, revocationFaite: true });
   }
   if (evenement === "restauree") {
     return figerProgression({
@@ -352,7 +374,8 @@ export function ecranCourant({
       feuilleEprouvee,
       progression,
       sousEtatDuCode,
-      revocationFaite,
+      // Retenue par la progression, la révocation survit au rechargement (#223).
+      revocationFaite: revocationFaite || progression.revocationFaite === true,
       sansRevoquer,
       nouveauCodeDemande,
       moteur,

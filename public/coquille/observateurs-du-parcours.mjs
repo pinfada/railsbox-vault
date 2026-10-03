@@ -136,6 +136,7 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
     }
     if (ligne.evenement === "revoque") {
       etat.revocationFaite = true;
+      pas("revocation-faite");
       const revocation = lireJson("coquille-rapport").portabilite?.revocation ?? {};
       const retires = revocation.nombreRetires ?? 0;
       return reussir(

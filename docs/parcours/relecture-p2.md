@@ -703,7 +703,8 @@ Messages qui peuvent s'afficher sur cet écran :
 > disponible sur l'écran de votre application.
 >
 > Ce que vous avez à faire : Pour vous servir de votre application, cliquez sur « Revenir à mon
-> application ».
+> application ». Pour recommencer le parcours depuis le début, effacez les données du site dans les
+> réglages du navigateur : supprimer les cookies ne suffit pas.
 
 Boutons et champs : « Revenir à mon application ».
 
@@ -714,7 +715,9 @@ Boutons et champs : « Revenir à mon application ».
 > de mauvaises mains, puis faites une nouvelle sauvegarde.
 >
 > Ce que vous avez à faire : Notez sur votre feuille le numéro de version indiqué ci-dessous. Pour
-> vous servir de votre application, cliquez sur « Revenir à mon application ».
+> vous servir de votre application, cliquez sur « Revenir à mon application ». Pour recommencer le
+> parcours depuis le début, effacez les données du site dans les réglages du navigateur : supprimer
+> les cookies ne suffit pas.
 
 Boutons et champs : « Revenir à mon application ».
 
