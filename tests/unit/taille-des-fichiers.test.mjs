@@ -74,6 +74,14 @@ const HORS_PERIMETRE = [];
  */
 const SOUS_SURVEILLANCE = [
   {
+    fichier: "public/coquille/parcours-de-la-page.mjs",
+    lignes: 701,
+    motif:
+      "#269 (04/10/2026) y ajoute UNE ligne, celle qui écrit la taille de la sauvegarde avant le geste : " +
+      "le fichier était à 700 pile. Le calcul du texte vit dans `accueil-de-la-mise-a-jour.mjs`. À " +
+      "scinder par écran (rendre, observateurs, gestes) si une tranche le fait passer 750.",
+  },
+  {
     fichier: "src/coquille/conduites-du-parcours.mjs",
     lignes: 716,
     motif:

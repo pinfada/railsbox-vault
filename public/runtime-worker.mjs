@@ -44,6 +44,7 @@
 // pas, et le lui laisser créer un coffre ferait naître un volume dont l'unique clé est un papier.
 
 import {
+  CHAMP_DE_LA_TAILLE,
   TYPES_PRIVILEGIES,
   correlationAdmise,
   decoderMessage,
@@ -370,6 +371,8 @@ async function publierLInventaire(correlation) {
     feuilleEprouvee:
       interne.etat === ETATS_DU_VOLUME.ouvert && feuilleEprouvee(interne.eprouves, inventaire),
     identifiantVolume: IDENTIFIANT_VOLUME,
+    // La taille que fera une sauvegarde, dite avant le geste (#269) : un `stat`, le volume n'est pas lu.
+    [CHAMP_DE_LA_TAILLE]: await portabilite.tailleDeSauvegarde(),
     versionEnveloppe: inventaire.version,
     emplacements: inventaire.emplacements.map((emplacement) => ({
       typeKek: emplacement.typeKek,

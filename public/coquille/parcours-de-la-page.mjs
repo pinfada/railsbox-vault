@@ -495,6 +495,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       if (noeud("saisie-code") !== null) noeud("saisie-code").dataset.saisieFausse = "false";
     }
     nommerLesGestes(ecranId);
+    dire("sauvegarde-annonce", accueil.annonceDeSauvegarde(rapport)); // AVANT le geste (#269)
     dire(
       "parcours-avertissement-revocation",
       MESSAGES.avertissementDeRevocation(releve.moyenDOuverture, releve.moyensProposes ?? null),

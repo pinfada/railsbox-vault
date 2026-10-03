@@ -439,9 +439,14 @@ Messages qui peuvent s'afficher sur cet écran :
   Reprendre l'installation ».
 - Verrouillage en cours… Ne fermez pas l'onglet.
 - Sauvegarde en cours… Ne fermez pas l'onglet.
+- Votre sauvegarde fera environ 512 Mo. Prévoyez un support qui peut la recevoir (une clé USB ou un
+  dossier synchronisé, plutôt qu'une pièce jointe de courriel).
 - Sauvegarde prête. Votre navigateur l'enregistre, en général dans votre dossier Téléchargements,
   sous un nom qui commence par « coffre- » suivi de la date ; si rien ne s'est enregistré, cliquez
   sur « Enregistrer la sauvegarde ».
+- Sauvegarde de 512 Mo enregistrée dans votre dossier de téléchargements, sous un nom qui commence
+  par « coffre- » suivi de la date. Si rien ne s'est enregistré, cliquez sur « Enregistrer la
+  sauvegarde ».
 - Pensez à redémarrer l'application si vous voulez continuer à l'utiliser.
 - N moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V. — ou, pour un seul
   moyen — 1 moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V.
@@ -551,10 +556,15 @@ Boutons et champs : « Sauvegarder mon coffre », « Enregistrer la sauvegarde �
 
 Messages qui peuvent s'afficher sur cet écran :
 
+- Votre sauvegarde fera environ 512 Mo. Prévoyez un support qui peut la recevoir (une clé USB ou un
+  dossier synchronisé, plutôt qu'une pièce jointe de courriel).
 - Sauvegarde en cours… Ne fermez pas l'onglet.
 - Sauvegarde prête. Votre navigateur l'enregistre, en général dans votre dossier Téléchargements,
   sous un nom qui commence par « coffre- » suivi de la date ; si rien ne s'est enregistré, cliquez
   sur « Enregistrer la sauvegarde ».
+- Sauvegarde de 512 Mo enregistrée dans votre dossier de téléchargements, sous un nom qui commence
+  par « coffre- » suivi de la date. Si rien ne s'est enregistré, cliquez sur « Enregistrer la
+  sauvegarde ».
 - Pensez à redémarrer l'application si vous voulez continuer à l'utiliser.
 
 **Questions**

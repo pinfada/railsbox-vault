@@ -17,6 +17,7 @@ import {
   REPONSES_PRIVILEGIEES,
   enveloppePrivilegiee,
   feuilleEprouveeDuMessage,
+  tailleDeSauvegardeDuMessage,
 } from "/src/coquille/contrat-de-messages.mjs";
 import { chargeUtileDEtat } from "/src/coquille/etat-de-la-coquille.mjs";
 import { CAUSES_DE_MORT } from "/src/coquille/mort-du-worker.mjs";
@@ -160,6 +161,7 @@ export function creerCanalDeConfiance({ rapport, publier, pont }) {
     // ne voit jamais un coffre ouvert sans savoir si sa feuille est éprouvée.
     if (decode.type === TYPES_PRIVILEGIES.inventaireReponse) {
       rapport.feuilleEprouvee = feuilleEprouveeDuMessage(decode.message);
+      rapport.tailleDeSauvegarde = tailleDeSauvegardeDuMessage(decode.message);
       publier();
     }
     if (decode.type === TYPES_PRIVILEGIES.deverrouillageReponse) {

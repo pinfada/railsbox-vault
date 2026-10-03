@@ -9,6 +9,7 @@
 // Pur, comme le reste du répertoire : ni DOM, ni stockage, ni horloge.
 
 import { MOYEN_NOMME, lesAutresRetires } from "./moyens-nommes.mjs";
+import { enMegaoctets } from "./taille-en-clair.mjs";
 
 /** L'estimation annoncée d'un premier démarrage : « environ deux minutes ». */
 const ESTIMATION_DU_DEMARRAGE_EN_SECONDES = 120;
@@ -587,6 +588,13 @@ export const MESSAGES = Object.freeze({
     "Sauvegarde prête. Votre navigateur l'enregistre, en général dans votre dossier " +
     "Téléchargements, sous un nom qui commence par « coffre- » suivi de la date ; si rien ne " +
     "s'est enregistré, cliquez sur « Enregistrer la sauvegarde ».",
+  sauvegardeAnnoncee: (octets) =>
+    `Votre sauvegarde fera environ ${enMegaoctets(octets)} Mo. Prévoyez un support qui peut la ` +
+    "recevoir (une clé USB ou un dossier synchronisé, plutôt qu'une pièce jointe de courriel).",
+  sauvegardeEnregistree: (octets) =>
+    `Sauvegarde de ${enMegaoctets(octets)} Mo enregistrée dans votre dossier de téléchargements, ` +
+    "sous un nom qui commence par « coffre- » suivi de la date. Si rien ne s'est enregistré, " +
+    "cliquez sur « Enregistrer la sauvegarde ».",
   // Dite seulement si l'application TOURNAIT avant la sauvegarde (recette QA de la PR #249, Q7).
   redemarrerApresSauvegarde:
     " Pensez à redémarrer l'application si vous voulez continuer à l'utiliser.",

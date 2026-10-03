@@ -10,9 +10,12 @@ import { createSha256Stream } from "../../src/vm/sha256-stream.mjs";
 import {
   ARCHIVE_MAGIC,
   CONSISTENCY_KINDS,
+  PLAFOND_EN_TETE_ET_RECUPERATION,
   PREAMBLE_BYTES,
   hasArchiveMagic,
   readArchive,
+  tailleAnnonceeDeLArchive,
+  tailleDArchive,
   writeArchive,
 } from "../../src/vm/volume-export.mjs";
 import { exportVolumeToBytes, verifyArchive } from "../../src/vm/archive-en-memoire.mjs";
@@ -416,4 +419,46 @@ test("les trois garanties de cohérence connues sont acceptées et inscrites", a
     const verdict = await verifyArchive(archive);
     assert.equal(verdict.consistency.kind, kind);
   }
+});
+
+test("#269 : la taille d'une archive se calcule d'avance, sans lire le volume, et tombe juste", async () => {
+  const source = sourceVolume(64 * 1024);
+  const { archive, headerLength } = await exportVolumeToBytes({
+    source,
+    manifest: manifeste(source.size),
+    consistency: cohérence,
+    cle: CLE,
+  });
+
+  // L'archive RÉELLEMENT produite pèse exactement ce que la formule pure dit de ses parties.
+  assert.equal(
+    tailleDArchive({ tailleDuVolume: source.size, tailleDeLEnTete: headerLength }),
+    archive.byteLength,
+  );
+  const recuperation = 4096;
+  assert.equal(
+    tailleDArchive({
+      tailleDuVolume: source.size,
+      tailleDeLEnTete: headerLength,
+      tailleDeLaRecuperation: recuperation,
+    }),
+    archive.byteLength + recuperation,
+  );
+});
+
+test("#269 : la taille annoncée avant le geste ne dépend que de celle du volume, et ne la sous-estime pas", async () => {
+  const source = sourceVolume(64 * 1024);
+  const { archive } = await exportVolumeToBytes({
+    source,
+    manifest: manifeste(source.size),
+    consistency: cohérence,
+    cle: CLE,
+  });
+  const annoncee = tailleAnnonceeDeLArchive(source.size);
+  assert.ok(annoncee >= archive.byteLength, `annoncée ${annoncee} ≥ réelle ${archive.byteLength}`);
+  assert.ok(annoncee - archive.byteLength <= PLAFOND_EN_TETE_ET_RECUPERATION);
+  // Un volume de 547 Mio (le disque par défaut, région d'authentification comprise) s'annonce à
+  // 547 Mio près : les quelques kio de l'en-tête disparaissent dans l'arrondi au Mo.
+  const mio = 1024 * 1024;
+  assert.equal(Math.round(tailleAnnonceeDeLArchive(547 * mio) / mio), 547);
 });

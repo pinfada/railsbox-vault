@@ -126,7 +126,8 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
     dire("parcours-attente", "");
     if (ligne.evenement.endsWith("-refusee")) return refuser(ligne.code);
     if (ligne.evenement === "sauvegarde-prete") {
-      reussir(accueil.texteDeSauvegardePrete(etat.etaitDemarree === true));
+      const ecrite = lireJson("coquille-rapport").portabilite?.sauvegarde?.taille ?? null;
+      reussir(accueil.texteDeSauvegardePrete(etat.etaitDemarree === true, ecrite));
       // Un refus qui TIENT reste affiché après la sauvegarde (Q7) : elle ne l'a pas levé.
       const tient = accueil.refusQuiTient(lireJson("coquille-rapport"));
       return tient === null ? undefined : dire("parcours-refus", conduiteHumaine(tient));
