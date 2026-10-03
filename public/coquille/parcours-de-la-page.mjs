@@ -448,7 +448,15 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       "parcours-avertissement-revocation",
       MESSAGES.avertissementDeRevocation(releve.moyenDOuverture),
     );
-    montrerLesBlocs(visibles);
+    // L'application démarrée reste à l'écran à TOUTES les étapes (ADR 0043) : l'écran d'une étape
+    // qui ne la nomme pas ne la masque plus, il s'ajoute dans le panneau du coffre.
+    const cycleLu = lireLigneDEtat(noeud("cycle-etat").textContent)?.evenement ?? null;
+    const applicationVisible = cycleLu === "application-demarree" && !etat.applicationArretee;
+    montrerLesBlocs(
+      applicationVisible && !visibles.includes("espace-de-travail")
+        ? [...visibles, "espace-de-travail"]
+        : visibles,
+    );
     noeud("promesse").hidden = !ECRANS_DE_L_ENTREE.includes(ecranId);
     // Sur « rouvrir », la promesse tient en une ligne : le champ de la phrase reste à l'écran (R1-bis, 7).
     noeud("promesse-garanties").hidden = ecranId === "rouvrir";
