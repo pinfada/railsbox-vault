@@ -132,6 +132,22 @@ export function borneDansLeTemps(magasin, delaiMs = DELAI_DU_MAGASIN_MS) {
 }
 
 /**
+ * Ce que le magasin laisse TOUJOURS libre pour le volume : le cache cède au volume (ADR 0006), jamais
+ * l'inverse. Une admission qui entamerait cette marge est refusée.
+ */
+export const MARGE_RESERVEE_AU_VOLUME = 256 * 1024 * 1024;
+
+/**
+ * La règle d'admission tirée du budget de stockage (`createStorageBudget`). Une estimation
+ * indisponible refuse : sans mesure, on ne parie pas la place du volume sur un cache.
+ *
+ * @param {{ reserve(octets: number): Promise<{ sufficient: boolean | null }> }} budget
+ */
+export function admissionSelonLeBudget(budget, marge = MARGE_RESERVEE_AU_VOLUME) {
+  return async (octets) => (await budget.reserve(octets + marge)).sufficient === true;
+}
+
+/**
  * Ouvre le magasin réel sur l'OPFS de l'origine, ou rend `null` si l'OPFS manque (le boot télécharge).
  *
  * @param {{ stockage?: StorageManager, delaiMs?: number,

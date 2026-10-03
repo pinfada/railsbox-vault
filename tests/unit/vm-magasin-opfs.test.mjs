@@ -7,7 +7,13 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import test from "node:test";
 
-import { borneDansLeTemps, ouvrirLeMagasinOpfs } from "../../src/vm/magasin-opfs.mjs";
+import {
+  MARGE_RESERVEE_AU_VOLUME,
+  admissionSelonLeBudget,
+  borneDansLeTemps,
+  ouvrirLeMagasinOpfs,
+} from "../../src/vm/magasin-opfs.mjs";
+import { createStorageBudget } from "../../src/vm/storage-budget.mjs";
 
 const empreinteDe = (octets) => createHash("sha256").update(octets).digest("hex");
 
@@ -113,4 +119,24 @@ test("un magasin trop lent cède : servir rend false, l'admission échoue MAGASI
   const lent = borneDansLeTemps({ servir: () => jamais, admettre: () => jamais }, 5);
   assert.equal(await lent.servir({}, new Uint8Array(0)), false);
   await assert.rejects(lent.admettre({}), { code: "MAGASIN_LENT" });
+});
+
+test("budget serré : l'admission est refusée, typée, avant toute écriture", async () => {
+  const { stockage, fichiers } = fauxStockage({ synchrone: true });
+  const octets = new Uint8Array(4096);
+  // Assez pour l'artefact, pas pour l'artefact ET la marge du volume.
+  const serre = createStorageBudget({
+    estimate: async () => ({ quota: MARGE_RESERVEE_AU_VOLUME, usage: 0 }),
+  });
+  const magasin = ouvrirLeMagasinOpfs({ stockage, peutAdmettre: admissionSelonLeBudget(serre) });
+  await assert.rejects(magasin.admettre({ sha256: empreinteDe(octets), octets }), {
+    name: "AdmissionRefusee",
+  });
+  assert.equal(fichiers.size, 0);
+
+  const large = createStorageBudget({
+    estimate: async () => ({ quota: 2 * MARGE_RESERVEE_AU_VOLUME, usage: 0 }),
+  });
+  assert.equal(await admissionSelonLeBudget(large)(octets.byteLength), true);
+  assert.equal(await admissionSelonLeBudget(createStorageBudget({}))(octets.byteLength), false);
 });
