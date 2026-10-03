@@ -235,9 +235,12 @@ button[data-principal] {
   background: var(--texte);
   color: var(--inverse);
 }
+/* Survolé, le principal RESTE principal (#266 Q1) : inversé, il prenait l'allure d'un secondaire sous
+   le pointeur, et la recette l'a lu comme un bouton qui n'avait pas encore son style. */
 button[data-principal]:not(:disabled):hover {
-  background: var(--inverse);
-  color: var(--texte);
+  background: var(--texte);
+  color: var(--inverse);
+  text-decoration: underline;
 }
 button[data-danger] {
   color: var(--danger);
@@ -301,6 +304,24 @@ button:disabled {
 #parcours-refus:not(:empty) {
   border: 1px solid var(--bord);
   border-left-width: 4px;
+}
+/* Le champ refusé le montre, et cite le refus par `aria-describedby` (#266 M2). */
+input[aria-invalid="true"] {
+  border-color: var(--danger);
+  outline: 2px solid var(--danger);
+}
+/* Les lignes de validation EN DIRECT gardent leur place (#266 S2, même mécanisme que #251) : elles
+   s'écrivent pendant la saisie, au-dessus du bouton qui suit ; vides puis remplies, elles le
+   faisaient descendre sous la main qui le visait. */
+#parcours-code-lu,
+#parcours-code-lu:empty {
+  min-height: 3em;
+  margin: 0 0 16px;
+}
+#phrase-conseil,
+#phrase-conseil:empty {
+  min-height: 4.5em;
+  margin: 0 0 16px;
 }
 progress {
   display: block;
