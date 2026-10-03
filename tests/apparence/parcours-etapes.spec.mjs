@@ -76,12 +76,17 @@ async function jusquAuTravail(page) {
 
 async function simulerRailsPret(page) {
   await simulerLigneDuCycle(page, "cycle:application-demarree");
-  await expect(
-    page.getByText("L'application est démarrée : elle s'affiche ci-dessous.", { exact: true }),
-  ).toBeVisible();
+  // Application démarrée : les messages de l'étape vivent dans le panneau du menu « Coffre »
+  // (ADR 0043). On l'ouvre pour les lire, puis on le referme : l'application reprend l'écran.
+  const menu = page.locator("#menu-du-coffre > summary");
+  await expect(menu).toBeVisible();
+  await menu.click();
+  await expect(page.getByText("L'application est démarrée.", { exact: true })).toBeVisible();
   await expect(page.locator("#parcours-aide")).not.toHaveAttribute("open", "");
   await expect(page.getByText("Aide pour cette étape", { exact: true })).toBeVisible();
   await expect(bouton(page, "Démarrer l'application")).toBeHidden();
+  await menu.click();
+  await expect(page.locator("#menu-du-coffre")).not.toHaveAttribute("open", "");
 }
 
 /** Les messages de conduite sont à la taille du texte courant (constat 10). */
