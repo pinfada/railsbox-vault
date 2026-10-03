@@ -49,8 +49,15 @@ test.describe("le rendu initial et la saisie (#266 Q1, S2)", () => {
     await bouton(page, "Afficher mon code de récupération").click({ timeout: DELAI });
     const code = ((await page.getByText(FORME_DU_CODE).textContent()) ?? "").trim();
     await bouton(page, "J'ai recopié mon code").click();
+    // #266 M1 : « Verrouiller » est LE principal, y compris sous le pointeur ; « Revoir » ne l'est pas.
+    const verrouiller = bouton(page, "Verrouiller mon coffre");
+    await expect(verrouiller).toHaveAttribute("data-principal", "");
+    await expect(bouton(page, "Revoir mon code")).not.toHaveAttribute("data-principal");
+    await verrouiller.hover();
+    const fond = (l) => l.evaluate((b) => getComputedStyle(b).backgroundColor);
+    expect(await fond(verrouiller)).not.toBe(await fond(bouton(page, "Revoir mon code")));
     const recharge = page.waitForEvent("load");
-    await bouton(page, "Verrouiller mon coffre").click();
+    await verrouiller.click();
     await recharge;
     const champ = page.getByLabel("Code de récupération", { exact: true });
     await expect(champ).toBeVisible({ timeout: DELAI });
