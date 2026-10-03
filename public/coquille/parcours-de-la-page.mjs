@@ -360,15 +360,20 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     barreDemandee = dansLaBarre;
     const barre = noeud("gestes-de-la-barre");
     if (!barre) return;
+    const panneau = noeud("gestes-du-panneau") ?? barre;
     for (const id of GESTES_DE_LA_BARRE) {
       const bouton = noeud(id);
-      const iciDansLaBarre = dansLaBarre && assezLarge(id);
-      if (iciDansLaBarre && bouton.parentElement !== barre) {
-        const repere = doc.createComment(id);
-        bouton.before(repere);
-        placesDOrigine.set(id, repere);
-        barre.append(bouton);
-      } else if (!iciDansLaBarre && placesDOrigine.has(id)) {
+      // Application démarrée : dans la barre si la largeur le permet, sinon en tête du panneau.
+      // Application arrêtée : à sa place d'origine, dans son étape.
+      const cible = !dansLaBarre ? null : assezLarge(id) ? barre : panneau;
+      if (cible && bouton.parentElement !== cible) {
+        if (!placesDOrigine.has(id)) {
+          const repere = doc.createComment(id);
+          bouton.before(repere);
+          placesDOrigine.set(id, repere);
+        }
+        cible.append(bouton);
+      } else if (!cible && placesDOrigine.has(id)) {
         placesDOrigine.get(id).replaceWith(bouton);
         placesDOrigine.delete(id);
       }
