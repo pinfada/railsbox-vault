@@ -39,6 +39,24 @@ test.describe("le rendu initial et la saisie (#266 Q1, S2)", () => {
     await expect(ecran(page, "Créer votre coffre")).toBeHidden({ timeout: 5_000 });
   });
 
+  test("le refus de la phrase est relié au champ, et la correction l'efface (#266 M2)", async ({
+    page,
+  }) => {
+    await page.goto(new URL("/index.html", SHELL_ORIGIN).toString(), { waitUntil: "commit" });
+    await bouton(page, "Commencer").click({ timeout: DELAI });
+    const champ = page.getByLabel("Votre phrase", { exact: true });
+    await champ.fill("trop courte");
+    await bouton(page, "Créer mon coffre").click();
+    const refus = page.locator("#parcours-refus");
+    await expect(refus).not.toHaveText("");
+    await expect(champ).toHaveAttribute("aria-invalid", "true");
+    await expect(champ).toHaveAttribute("aria-describedby", /parcours-refus/);
+    await champ.fill(PHRASE);
+    await expect(refus).toHaveText("");
+    await expect(champ).not.toHaveAttribute("aria-invalid");
+    await expect(champ).toHaveAttribute("aria-describedby", "phrase-conseil");
+  });
+
   test("taper le code ne déplace pas « Ouvrir mon coffre avec le code » avant le clic", async ({
     page,
   }) => {

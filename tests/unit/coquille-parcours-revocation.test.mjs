@@ -52,7 +52,8 @@ test("sans révocation, l'étape 9 reste « revoquer »", () => {
 });
 
 test("un parcours.json du format 2 écrit avant #223 se relit encore, sans révocation", () => {
-  const { revocationFaite: _ignore, ...ancien } = JSON.parse(ecrireProgression(aLEtape9));
+  const ancien = JSON.parse(ecrireProgression(aLEtape9));
+  delete ancien.revocationFaite;
   const relue = lireProgression(JSON.stringify(ancien));
   assert.equal(relue.etapeAtteinte, 9);
   assert.equal(relue.revocationFaite, false);

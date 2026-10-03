@@ -16,6 +16,7 @@
 // public suffit. Ses OBSERVATEURS de ces relevés vivent à part, dans `observateurs-du-parcours.mjs`
 // (scission du 19/09/2026, #250) ; ce module garde l'écran, la progression et les gestes.
 
+import { relierLeRefusAuChamp } from "./refus-du-champ.mjs";
 import { annonceDAttente, moteurProbable } from "/src/coquille/attente-annoncee.mjs";
 import * as accueil from "/src/coquille/accueil-de-la-mise-a-jour.mjs";
 import { conduiteHumaine } from "/src/coquille/conduites-du-parcours.mjs";
@@ -96,6 +97,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     /** « Terminer sans révoquer » (l'étape 9 est facultative) ; « J'ai oublié ma phrase ». */
     sansRevoquer: false,
     phrasePerdue: false,
+    /** Le bouton du dernier geste : son champ porte le refus qui suit (#266 M2). */
+    idDuGeste: null,
     coffre: COFFRE.inconnu,
     ecran: null,
     /** L'écran montré au moment du dernier geste : c'est de lui qu'un geste réussi fait avancer. */
@@ -632,6 +635,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     dire("parcours-code-lu", annonceDeLaSaisie(etatDeLaSaisie(noeud("saisie-code").value)));
   });
 
+  relierLeRefusAuChamp({ doc, noeud, gesteCourant: () => etat.idDuGeste, dire });
+
   for (const [champ, boutons] of Object.entries(ENTREE_VAUT)) {
     noeud(champ)?.addEventListener("keydown", (evenement) => {
       if (evenement.key !== "Enter" || evenement.isComposing) return;
@@ -653,6 +658,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
       if (!(event.target instanceof Element) || event.target.closest("button") === null) return;
       etat.ecranDuGeste = etat.ecran;
       const id = event.target.closest("button").id;
+      etat.idDuGeste = id;
       etat.boutonDuGeste = GESTES_LONGS.includes(id) ? id : null;
       dire("parcours-refus", "");
       dire("parcours-reussite", "");
