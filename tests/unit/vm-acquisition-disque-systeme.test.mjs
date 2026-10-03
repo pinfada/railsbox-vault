@@ -22,6 +22,12 @@ import test from "node:test";
 
 import { acquerirLeDisqueSysteme } from "../../src/vm/acquisition-du-disque-systeme.mjs";
 import { composerDisqueSysteme, entreesDeLaTable } from "../../src/vm/disque-compose.mjs";
+import { creerMagasinDArtefacts } from "../../src/vm/magasin-d-artefacts.mjs";
+import { primitivesEnMemoire } from "./magasin-en-memoire.mjs";
+
+const injoignable = async () => {
+  throw new TypeError("Failed to fetch");
+};
 
 const MIO = 1024 * 1024;
 const empreinteDe = (octets) => createHash("sha256").update(octets).digest("hex");
@@ -171,4 +177,47 @@ test("un disque système hors budget est refusé AVANT d'allouer le tampon (revu
     // Rien n'a été demandé à l'origine : le refus précède l'acquisition.
     return true;
   });
+});
+
+test("avec le magasin (#247), une seconde acquisition ne transfère rien et rend le même disque", async () => {
+  const { recuperer, description } = cas();
+  const magasin = creerMagasinDArtefacts({ primitives: primitivesEnMemoire() });
+
+  const premier = await acquerirLeDisqueSysteme({ ...description, recuperer, magasin });
+  assert.deepEqual(premier.mesures.magasin, { rootfs: "admis", paquet: "admis" });
+  assert.equal(premier.mesures.transfereOctets, 6 * MIO);
+
+  const second = await acquerirLeDisqueSysteme({ ...description, recuperer: injoignable, magasin });
+  assert.deepEqual(second.mesures.magasin, { rootfs: "servi", paquet: "servi" });
+  assert.equal(second.mesures.transfereOctets, 0);
+  assert.deepEqual(second.tampon, premier.tampon);
+});
+
+test("une admission refusée sous budget n'empêche pas le disque, qui se retélécharge ensuite", async () => {
+  const { recuperer, description } = cas();
+  const magasin = creerMagasinDArtefacts({
+    primitives: primitivesEnMemoire(),
+    peutAdmettre: async () => false,
+  });
+
+  for (let fois = 0; fois < 2; fois += 1) {
+    const disque = await acquerirLeDisqueSysteme({ ...description, recuperer, magasin });
+    assert.deepEqual(disque.mesures.magasin, {
+      rootfs: "VAULT-ARTEFACTS-ADMISSION-REFUSEE",
+      paquet: "VAULT-ARTEFACTS-ADMISSION-REFUSEE",
+    });
+    assert.equal(disque.mesures.transfereOctets, 6 * MIO);
+  }
+});
+
+test("après purge du magasin, le boot retélécharge sans perte", async () => {
+  const { recuperer, description } = cas();
+  const magasin = creerMagasinDArtefacts({ primitives: primitivesEnMemoire() });
+  const premier = await acquerirLeDisqueSysteme({ ...description, recuperer, magasin });
+  await magasin.purger([]);
+
+  const second = await acquerirLeDisqueSysteme({ ...description, recuperer, magasin });
+  assert.deepEqual(second.mesures.magasin, { rootfs: "admis", paquet: "admis" });
+  assert.equal(second.mesures.transfereOctets, 6 * MIO);
+  assert.deepEqual(second.tampon, premier.tampon);
 });

@@ -69,6 +69,25 @@ async function verserLeMorceau({ tampon, debut, morceau, nom, recuperer }) {
 }
 
 /**
+ * SERT un morceau depuis le MAGASIN s'il y est et vérifié (#247), sinon le télécharge puis l'y range.
+ *
+ * Le magasin est un cache : une admission refusée ou en échec n'interrompt jamais l'acquisition,
+ * elle est seulement relevée. Rend les octets transférés et ce qu'a fait le magasin.
+ */
+async function servirOuTelecharger({ tampon, debut, morceau, nom, recuperer, magasin }) {
+  const vue = tampon.subarray(debut, debut + morceau.octets);
+  if (magasin && (await magasin.servir(morceau, vue))) return { transfere: 0, magasin: "servi" };
+  const transfere = await verserLeMorceau({ tampon, debut, morceau, nom, recuperer });
+  if (!magasin) return { transfere, magasin: "absent" };
+  try {
+    await magasin.admettre({ sha256: morceau.sha256, octets: vue });
+    return { transfere, magasin: "admis" };
+  } catch (erreur) {
+    return { transfere, magasin: erreur?.code ?? "echec" };
+  }
+}
+
+/**
  * PLAN du disque, REFUSÉ s'il dépasse le budget de mémoire.
  *
  * Le contrôle vit ici et pas seulement dans la forme du descripteur : ce tampon est alloué sur des
@@ -97,30 +116,38 @@ function planSousBudget({ rootfs, paquet }) {
  *
  * @param {{ rootfs: { url: string, octets: number, sha256: string },
  *           paquet: { url: string, octets: number, sha256: string },
- *           recuperer?: typeof fetch }} options
+ *           recuperer?: typeof fetch,
+ *           magasin?: ReturnType<typeof import("./magasin-d-artefacts.mjs").creerMagasinDArtefacts> }} options
  */
-export async function acquerirLeDisqueSysteme({ rootfs, paquet, recuperer = globalThis.fetch }) {
+export async function acquerirLeDisqueSysteme({
+  rootfs,
+  paquet,
+  recuperer = globalThis.fetch,
+  magasin,
+}) {
   const debut = Date.now();
   const plan = planSousBudget({ rootfs, paquet });
   const tampon = new Uint8Array(plan.octets);
 
   // En SÉRIE, et non en parallèle : deux flux concurrents doublent la mémoire des morceaux en vol
   // sans rien accélérer sur une origine unique, et le rootfs pèse à lui seul 385 Mio.
-  let transfereOctets = 0;
-  transfereOctets += await verserLeMorceau({
+  const parRootfs = await servirOuTelecharger({
     tampon,
     debut: plan.rootfs.debut,
     morceau: rootfs,
     nom: "rootfs",
     recuperer,
+    magasin,
   });
-  transfereOctets += await verserLeMorceau({
+  const parPaquet = await servirOuTelecharger({
     tampon,
     debut: plan.paquet.debut,
     morceau: paquet,
     nom: "paquet",
     recuperer,
+    magasin,
   });
+  const transfereOctets = parRootfs.transfere + parPaquet.transfere;
 
   // La table vient EN DERNIER : écrite d'abord, elle décrirait un disque dont les partitions ne
   // sont pas encore là, et un refus en cours d'acquisition laisserait un disque à demi vrai.
@@ -137,6 +164,7 @@ export async function acquerirLeDisqueSysteme({ rootfs, paquet, recuperer = glob
       transfereOctets,
       disqueOctets: tampon.byteLength,
       acquisitionMs: Date.now() - debut,
+      magasin: { rootfs: parRootfs.magasin, paquet: parPaquet.magasin },
     },
   };
 }
