@@ -79,6 +79,15 @@ const ENVIRON_DEUX_MINUTES =
   "l'onglet peut sembler figé : ne le fermez pas. Le bouton s'efface dès le premier clic, et la " +
   "progression s'affiche à sa place.";
 
+/**
+ * Après la visite, l'application a déjà été installée à l'étape 4 : le délai d'installation n'est
+ * plus celui qu'on annonce d'abord (#266 Q4, #242 point 4). Un démarrage suivant dure moins de 30 s.
+ */
+const DEMARRAGE_SUIVANT =
+  "Le démarrage prend en général moins de trente secondes. Si l'application doit être installée " +
+  "de nouveau, comptez environ deux minutes. Le bouton s'efface dès le premier clic, et la " +
+  "progression s'affiche à sa place.";
+
 const QUELQUES_SECONDES_DE_VERROUILLAGE = "Le verrouillage prend quelques secondes.";
 
 /**
@@ -174,17 +183,33 @@ const MOYEN_NOMME = Object.freeze({
   "webauthn-prf": "votre passkey",
   recuperation: "le code de votre feuille",
 });
-const LES_AUTRES_RETIRES = Object.freeze({
-  phrase:
-    "Votre passkey et vos codes de récupération ne fonctionneront plus : votre feuille de " +
-    "récupération ne servira plus à rien, créez-en une nouvelle ensuite.",
-  "webauthn-prf":
-    "Votre phrase et vos codes de récupération ne fonctionneront plus : votre feuille de " +
-    "récupération ne servira plus à rien, créez-en une nouvelle ensuite.",
-  recuperation:
-    "Votre phrase et votre passkey ne fonctionneront plus sur ce coffre : seul le code de votre " +
-    "feuille l'ouvrira.",
+const AUTRE_NOMME = Object.freeze({
+  phrase: "votre phrase",
+  "webauthn-prf": "votre passkey",
+  recuperation: "vos codes de récupération",
 });
+
+/**
+ * Ce que la révocation retire, en ne nommant que les moyens RÉELLEMENT présents (#266 Q3) : un coffre
+ * sans passkey n'entend jamais parler de passkey. `moyens` inconnu : tous les moyens possibles.
+ */
+function lesAutresRetires(moyen, moyens) {
+  const presents = Array.isArray(moyens) ? moyens : Object.keys(AUTRE_NOMME);
+  const autres = presents.filter((m) => m !== moyen && AUTRE_NOMME[m] !== undefined);
+  if (autres.length === 0) return "Aucun autre moyen n'ouvre ce coffre : rien ne sera retiré.";
+  const noms = autres.map((m) => AUTRE_NOMME[m]);
+  const liste =
+    noms.length === 1 ? noms[0] : `${noms.slice(0, -1).join(", ")} et ${noms[noms.length - 1]}`;
+  const sujet = liste.charAt(0).toUpperCase() + liste.slice(1);
+  const verbe =
+    noms.length === 1 && autres[0] !== "recuperation" ? "ne fonctionnera" : "ne fonctionneront";
+  const feuille = autres.includes("recuperation")
+    ? " : votre feuille de récupération ne servira plus à rien, créez-en une nouvelle ensuite."
+    : moyen === "recuperation"
+      ? " sur ce coffre : seul le code de votre feuille l'ouvrira."
+      : ".";
+  return `${sujet} ${verbe} plus${feuille}`;
+}
 
 /**
  * L'étape 3 éprouve la feuille en S'EN SERVANT (#239) : verrouiller, puis rouvrir par le code. Le
@@ -314,7 +339,7 @@ export const ECRANS = Object.freeze({
     attendu:
       "Cliquez sur « Démarrer l'application », attendez qu'elle s'affiche, puis utilisez-la. Quand " +
       "vous avez fini, cliquez sur « Verrouiller mon coffre ».",
-    attente: ENVIRON_DEUX_MINUTES,
+    attente: DEMARRAGE_SUIVANT,
     blocs: ["application", "verrouiller", "espace-de-travail", "sauvegarde", "revocation"],
   }),
   "travailler-sans-application": ecran(4, {
@@ -422,8 +447,8 @@ export const ECRANS = Object.freeze({
   "termine-sans-revoquer": ecran(9, {
     titre: "Parcours terminé",
     ceQuiVaSePasser:
-      "Vous avez fait le tour de votre coffre, sans rien révoquer : votre phrase, votre passkey et " +
-      "votre feuille l'ouvrent toujours. Si un jour l'un de ces moyens a pu être vu, la révocation " +
+      "Vous avez fait le tour de votre coffre, sans rien révoquer : chacun des moyens qui l'ouvraient " +
+      "l'ouvre toujours. Si un jour l'un de ces moyens a pu être vu, la révocation " +
       "reste disponible sur l'écran de votre application.",
     attendu:
       "Pour vous servir de votre application, cliquez sur « Revenir à mon application ». Pour recommencer le parcours depuis " +
@@ -582,7 +607,8 @@ export const MESSAGES = Object.freeze({
   demarrageSurCetAppareil:
     "Votre application démarre sur cet appareil. Rien n'est envoyé sur Internet.",
   sauvegardePrete:
-    "Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien ne " +
+    "Sauvegarde prête. Votre navigateur l'enregistre, en général dans votre dossier " +
+    "Téléchargements, sous un nom qui commence par « coffre- » suivi de la date ; si rien ne " +
     "s'est enregistré, cliquez sur « Enregistrer la sauvegarde ».",
   // Dite seulement si l'application TOURNAIT avant la sauvegarde (recette QA de la PR #249, Q7).
   redemarrerApresSauvegarde:
@@ -651,12 +677,12 @@ export const MESSAGES = Object.freeze({
   phaseTelechargement: "Étape en cours : téléchargement de l'application.",
   phaseDemarrage: "Étape en cours : démarrage de l'application.",
   phaseDonnees: "Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.",
-  avertissementDeRevocation: (moyen) =>
+  avertissementDeRevocation: (moyen, moyens = null) =>
     MOYEN_NOMME[moyen] === undefined
       ? "Seul le moyen avec lequel vous avez ouvert ce coffre continuera de l'ouvrir ; tous les " +
         "autres ne fonctionneront plus."
       : `Seul le moyen avec lequel vous venez d'ouvrir ce coffre — ${MOYEN_NOMME[moyen]} — ` +
-        `continuera de l'ouvrir. ${LES_AUTRES_RETIRES[moyen]}`,
+        `continuera de l'ouvrir. ${lesAutresRetires(moyen, moyens)}`,
   codesDejaRendus: (nombre) =>
     nombre <= 1
       ? "Ce coffre porte déjà un code de récupération. En afficher un nouveau n'efface pas " +

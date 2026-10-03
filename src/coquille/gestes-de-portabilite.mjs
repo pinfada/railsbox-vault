@@ -19,8 +19,17 @@ import { moyensProposes } from "./moyens-de-deverrouillage.mjs";
 import { ARCHIVE_ERROR_CODES } from "../vm/archive-errors.mjs";
 import { IMPORT_ERROR_CODES } from "../vm/import-errors.mjs";
 
-/** Le nom proposé au fichier enregistré. L'extension ne prouve rien : c'est le contenu qui décide. */
-export const NOM_DU_FICHIER_DE_SAUVEGARDE = "coffre.rbvault";
+/**
+ * Le nom PROPOSÉ au fichier enregistré, daté (#266 Q2) : le navigateur peut encore l'altérer (un
+ * « (2) » si le nom existe), la page ne promet donc que son début. L'extension ne prouve rien : c'est
+ * le contenu qui décide.
+ */
+export function nomDuFichierDeSauvegarde(date = new Date()) {
+  const jour = [date.getFullYear(), date.getMonth() + 1, date.getDate()]
+    .map((n) => String(n).padStart(2, "0"))
+    .join("-");
+  return `coffre-${jour}.rbvault`;
+}
 
 /**
  * Ce que la page dit d'un refus de portabilité. Les codes de la famille COQUILLE portent déjà leur
@@ -115,14 +124,14 @@ async function sauvegarderLeCoffre(contexte) {
 /** Remet l'archive au navigateur : un lien de téléchargement, cliqué une fois, gardé visible. */
 function offrirLeFichier(contexte, archive) {
   if (contexte.enregistrer !== undefined) {
-    contexte.enregistrer(archive, NOM_DU_FICHIER_DE_SAUVEGARDE);
+    contexte.enregistrer(archive, nomDuFichierDeSauvegarde());
     return;
   }
   const lien = contexte.noeud("sauvegarde-lien");
   if (lien === null) return;
   if (lien.href.startsWith("blob:")) URL.revokeObjectURL(lien.href);
   lien.href = URL.createObjectURL(archive);
-  lien.download = NOM_DU_FICHIER_DE_SAUVEGARDE;
+  lien.download = nomDuFichierDeSauvegarde();
   lien.hidden = false;
   lien.click();
 }

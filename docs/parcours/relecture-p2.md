@@ -361,10 +361,9 @@ Messages qui peuvent s'afficher sur cet écran :
 > Ce que vous avez à faire : Cliquez sur « Démarrer l'application », attendez qu'elle s'affiche,
 > puis utilisez-la. Quand vous avez fini, cliquez sur « Verrouiller mon coffre ».
 >
-> Durée : Le premier démarrage installe l'application : comptez environ deux minutes, parfois
-> davantage sur un appareil lent ou occupé. Les démarrages suivants sont plus courts. Pendant ce
-> temps, l'onglet peut sembler figé : ne le fermez pas. Le bouton s'efface dès le premier clic, et
-> la progression s'affiche à sa place.
+> Durée : Le démarrage prend en général moins de trente secondes. Si l'application doit être
+> installée de nouveau, comptez environ deux minutes. Le bouton s'efface dès le premier clic, et la
+> progression s'affiche à sa place.
 
 Boutons et champs : « Démarrer l'application », « Reprendre l'installation » (seulement si une
 installation a été interrompue), « Sauvegarder d'abord », « Mettre à jour l'application » et « Plus
@@ -439,8 +438,9 @@ Messages qui peuvent s'afficher sur cet écran :
   Reprendre l'installation ».
 - Verrouillage en cours… Ne fermez pas l'onglet.
 - Sauvegarde en cours… Ne fermez pas l'onglet.
-- Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien ne s'est
-  enregistré, cliquez sur « Enregistrer la sauvegarde ».
+- Sauvegarde prête. Votre navigateur l'enregistre, en général dans votre dossier Téléchargements,
+  sous un nom qui commence par « coffre- » suivi de la date ; si rien ne s'est enregistré, cliquez
+  sur « Enregistrer la sauvegarde ».
 - Pensez à redémarrer l'application si vous voulez continuer à l'utiliser.
 - N moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V.
 
@@ -550,8 +550,9 @@ Boutons et champs : « Sauvegarder mon coffre », « Enregistrer la sauvegarde �
 Messages qui peuvent s'afficher sur cet écran :
 
 - Sauvegarde en cours… Ne fermez pas l'onglet.
-- Sauvegarde prête. Votre navigateur l'enregistre sous le nom « coffre.rbvault » ; si rien ne s'est
-  enregistré, cliquez sur « Enregistrer la sauvegarde ».
+- Sauvegarde prête. Votre navigateur l'enregistre, en général dans votre dossier Téléchargements,
+  sous un nom qui commence par « coffre- » suivi de la date ; si rien ne s'est enregistré, cliquez
+  sur « Enregistrer la sauvegarde ».
 - Pensez à redémarrer l'application si vous voulez continuer à l'utiliser.
 
 **Questions**
@@ -698,9 +699,9 @@ Messages qui peuvent s'afficher sur cet écran :
 
 ### Écran : Parcours terminé
 
-> Vous avez fait le tour de votre coffre, sans rien révoquer : votre phrase, votre passkey et votre
-> feuille l'ouvrent toujours. Si un jour l'un de ces moyens a pu être vu, la révocation reste
-> disponible sur l'écran de votre application.
+> Vous avez fait le tour de votre coffre, sans rien révoquer : chacun des moyens qui l'ouvraient
+> l'ouvre toujours. Si un jour l'un de ces moyens a pu être vu, la révocation reste disponible sur
+> l'écran de votre application.
 >
 > Ce que vous avez à faire : Pour vous servir de votre application, cliquez sur « Revenir à mon
 > application ». Pour recommencer le parcours depuis le début, effacez les données du site dans les

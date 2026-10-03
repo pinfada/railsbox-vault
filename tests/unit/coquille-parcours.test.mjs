@@ -794,7 +794,7 @@ test("décision du 19/09 : l'étape 9 est FACULTATIVE, et sa conséquence est di
   assert.match(ECRANS.revoquer.ceQuiVaSePasser, /écrit au-dessus du bouton/);
   assert.match(ECRANS.revoquer.attendu, /Terminer sans révoquer/);
   assert.match(ECRANS.accueil.ceQuiVaSePasser, /écrit au-dessus du bouton/);
-  assert.match(ECRANS["termine-sans-revoquer"].ceQuiVaSePasser, /ouvrent toujours/);
+  assert.match(ECRANS["termine-sans-revoquer"].ceQuiVaSePasser, /l'ouvre toujours/);
   assert.ok(ECRANS_AVEC_RETOUR.includes("termine-sans-revoquer"));
   // L'écran 3 ne promet plus ce que la révocation retirerait.
   assert.match(ECRANS["code-verifier"].ceQuiVaSePasser, /tant que vous ne l'avez pas révoquée/);
