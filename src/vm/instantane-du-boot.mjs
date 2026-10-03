@@ -64,20 +64,31 @@ const ARTEFACTS_DE_L_IMAGE = Object.freeze([
  * (`tools/vm/mesurer-reprise.mjs`), qui hache les empreintes PUBLIÉES par le manifeste. Les deux ne
  * se rencontrent jamais — un instantané écrit sous Node vit dans un fichier local, celui-ci dans
  * OPFS —, et l'en-tête de l'autre fonction dit ce qu'il faudrait faire si cela changeait.
+ *
+ * `empreintesVerifiees` (#247) : l'empreinte hexadécimale d'un artefact DÉJÀ confrontée à son
+ * descripteur par l'acquisition (rootfs, paquet). Elle remplace le hachage de ses octets, à valeur
+ * identique au bit près : c'est le même SHA-256, déjà calculé.
  */
-export async function empreinteDeLImage(artifacts) {
+export async function empreinteDeLImage(artifacts, empreintesVerifiees = {}) {
   const flux = createSha256Stream();
   for (const nom of ARTEFACTS_DE_L_IMAGE) {
     const octets = artifacts[nom];
     if (!(octets instanceof Uint8Array)) {
       throw new Error(`Empreinte d'image impossible : l'artefact « ${nom} » manque.`);
     }
-    const partiel = createSha256Stream();
-    partiel.update(octets);
     flux.update(new TextEncoder().encode(`${nom}:`));
-    flux.update(partiel.digest());
+    flux.update(empreinteDeLArtefact(octets, empreintesVerifiees[nom]));
   }
   return flux.digest();
+}
+
+function empreinteDeLArtefact(octets, verifiee) {
+  if (typeof verifiee === "string" && /^[0-9a-f]{64}$/.test(verifiee)) {
+    return Uint8Array.from(verifiee.match(/../g), (paire) => Number.parseInt(paire, 16));
+  }
+  const partiel = createSha256Stream();
+  partiel.update(octets);
+  return partiel.digest();
 }
 
 /**

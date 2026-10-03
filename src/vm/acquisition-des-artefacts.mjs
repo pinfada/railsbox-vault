@@ -79,7 +79,13 @@ async function loadRuntime(runtime) {
     initrd.byteLength +
     disqueSysteme.mesures.transfereOctets;
   const empreintesV86Ms = await verifierEmpreintesV86(runtime, artifacts);
-  return { artifacts, transferredBytes, empreintesV86Ms, disqueSysteme: disqueSysteme.mesures };
+  return {
+    artifacts,
+    transferredBytes,
+    empreintesV86Ms,
+    disqueSysteme: disqueSysteme.mesures,
+    empreintesVerifiees: disqueSysteme.empreintesVerifiees,
+  };
 }
 
 /** Importe la classe V86, ses octets AYANT ÉTÉ confrontés au manifeste (#123). */
@@ -100,7 +106,7 @@ export function acquerirRuntime(runtime) {
 async function acquerirLesArtefacts(runtime) {
   await exigerContexteExecutable();
   const V86 = await importV86(runtime.lib);
-  const { artifacts, transferredBytes, empreintesV86Ms, disqueSysteme } =
+  const { artifacts, transferredBytes, empreintesV86Ms, disqueSysteme, empreintesVerifiees } =
     await loadRuntime(runtime);
   // L'EMPREINTE DE L'IMAGE est prise ICI, sur les octets tout juste acquis, et jamais plus tard.
   // Le rootfs est un tampon que le guest ÉCRIT (#65) : le hacher après un boot donnerait l'empreinte
@@ -112,6 +118,6 @@ async function acquerirLesArtefacts(runtime) {
     transferredBytes,
     empreintesV86Ms,
     disqueSysteme,
-    empreinteImage: await empreinteDeLImage(artifacts),
+    empreinteImage: await empreinteDeLImage(artifacts, empreintesVerifiees),
   };
 }
