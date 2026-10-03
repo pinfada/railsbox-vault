@@ -446,6 +446,14 @@ html[data-travail-pret="true"] .entete-du-coffre h1 {
   line-height: var(--barre);
   letter-spacing: -0.3px;
   white-space: nowrap;
+  /* Le titre cède la place aux gestes plutôt que de pousser « Coffre » hors de l'écran. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html[data-travail-pret="true"] #gestes-de-la-barre,
+html[data-travail-pret="true"] #menu-du-coffre {
+  flex-shrink: 0;
 }
 html[data-travail-pret="true"] #parcours-rang {
   display: none;
