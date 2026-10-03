@@ -244,7 +244,7 @@ const TABLE = Object.freeze({
   ],
   [E.rejeu]: [
     K.recopier,
-    "Le numéro de version que vous avez tapé est plus grand que celui de ce coffre. Relisez le " +
+    "Le numéro de feuille que vous avez tapé est plus grand que celui de ce coffre. Relisez le " +
       "numéro sur votre feuille. Si vous n'êtes pas sûr, videz ce champ et réessayez : le coffre " +
       "s'ouvrira, mais sans vérifier qu'on ne lui a pas remis une copie plus ancienne.",
   ],
@@ -441,7 +441,7 @@ const TABLE = Object.freeze({
   ],
   [C.messageMalforme]: [
     K.recopier,
-    "Ce qui a été saisi ou choisi n'a pas la forme attendue : le numéro de version est un nombre " +
+    "Ce qui a été saisi ou choisi n'a pas la forme attendue : le numéro de feuille est un nombre " +
       "entier, et une restauration demande un fichier de sauvegarde. Corrigez, puis réessayez.",
   ],
   [C.workerMort]: [
@@ -679,7 +679,7 @@ export const REFUS_SANS_CODE = Object.freeze({
     source: "La version notée sur la feuille est un nombre entier, à partir de 1.",
     classe: K.recopier,
     conduite:
-      "Le numéro de version se tape en chiffres, à partir de 1, tel qu'il est noté sur votre " +
+      "Le numéro de feuille se tape en chiffres, à partir de 1, tel qu'il est noté sur votre " +
       "feuille. Si vous n'en avez pas noté, laissez ce champ vide.",
   }),
   archiveNonChoisie: Object.freeze({

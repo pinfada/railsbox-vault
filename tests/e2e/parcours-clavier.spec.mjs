@@ -66,7 +66,7 @@ test("les neuf étapes sont traversées au clavier, y compris Rails et les refus
   await activer(a, bouton(a, "Afficher mon code de récupération"));
   await attendre(a, "Recopier votre code de récupération");
   const code = (await a.getByText(/^[0-9A-Z]{4}(-[0-9A-Z]{4}){6}$/).textContent()).trim();
-  const consigne = await a.getByText(/Numéro de version à noter à côté du code/).textContent();
+  const consigne = await a.getByText(/Numéro de feuille à noter à côté du code/).textContent();
   const version = /: (\d+)\./.exec(consigne)[1];
   // #239 : la feuille s'éprouve en verrouillant, puis en rouvrant par son code — au clavier aussi.
   await activer(a, bouton(a, "J'ai recopié mon code"));
@@ -155,7 +155,7 @@ test("les neuf étapes sont traversées au clavier, y compris Rails et les refus
   chronologie.etape("8-recuperation-clavier");
   await saisir(
     b,
-    b.getByLabel("Numéro de version noté sur votre feuille (facultatif)", { exact: true }),
+    b.getByLabel("Numéro de feuille noté sur votre feuille (facultatif)", { exact: true }),
     version,
   );
   await saisir(b, b.getByLabel("Code de récupération", { exact: true }), code);
