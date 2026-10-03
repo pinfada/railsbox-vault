@@ -76,7 +76,9 @@ async function verserLeMorceau({ tampon, debut, morceau, nom, recuperer }) {
  */
 async function servirOuTelecharger({ tampon, debut, morceau, nom, recuperer, magasin }) {
   const vue = tampon.subarray(debut, debut + morceau.octets);
-  if (magasin && (await magasin.servir(morceau, vue))) return { transfere: 0, magasin: "servi" };
+  if (magasin && (await magasin.servir(morceau, vue).catch(() => false))) {
+    return { transfere: 0, magasin: "servi" };
+  }
   const transfere = await verserLeMorceau({ tampon, debut, morceau, nom, recuperer });
   if (!magasin) return { transfere, magasin: "absent" };
   try {
@@ -131,21 +133,18 @@ export async function acquerirLeDisqueSysteme({
 
   // En SÉRIE, et non en parallèle : deux flux concurrents doublent la mémoire des morceaux en vol
   // sans rien accélérer sur une origine unique, et le rootfs pèse à lui seul 385 Mio.
+  const commun = { tampon, recuperer, magasin };
   const parRootfs = await servirOuTelecharger({
-    tampon,
+    ...commun,
     debut: plan.rootfs.debut,
     morceau: rootfs,
     nom: "rootfs",
-    recuperer,
-    magasin,
   });
   const parPaquet = await servirOuTelecharger({
-    tampon,
+    ...commun,
     debut: plan.paquet.debut,
     morceau: paquet,
     nom: "paquet",
-    recuperer,
-    magasin,
   });
   const transfereOctets = parRootfs.transfere + parPaquet.transfere;
 
@@ -160,6 +159,9 @@ export async function acquerirLeDisqueSysteme({
       rootfs: tampon.subarray(plan.rootfs.debut, plan.rootfs.debut + rootfs.octets),
       paquet: tampon.subarray(plan.paquet.debut, plan.paquet.debut + paquet.octets),
     },
+    // Confrontées au descripteur par le téléchargement OU par le magasin : l'empreinte d'image les
+    // reprend sans rehacher 522 Mio (#247).
+    empreintesVerifiees: { rootfs: rootfs.sha256, paquet: paquet.sha256 },
     mesures: {
       transfereOctets,
       disqueOctets: tampon.byteLength,
