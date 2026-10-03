@@ -30,7 +30,11 @@ import { reponseDeDemarrageRefuse } from "../../src/coquille/mise-a-jour-applica
 import { marquerLAcquisitionDesArtefacts } from "../../src/vm/acquisition-des-artefacts.mjs";
 import { SECTOR_SIZE } from "../../src/vm/block-geometry.mjs";
 import { daterLaCreation, openOpfsVolume } from "../../src/vm/opfs-block-backend.mjs";
-import { generationJournalName, manifestSidecarName } from "../../src/vm/opfs-sync-access.mjs";
+import {
+  engagementSidecarName,
+  generationJournalName,
+  manifestSidecarName,
+} from "../../src/vm/opfs-sync-access.mjs";
 import { STORAGE_ERROR_CODES } from "../../src/vm/storage-errors.mjs";
 import { createSyncAccessStore } from "../../src/vm/sync-access-double.mjs";
 import { verserFluxDansVolume } from "../../src/vm/versement-de-disque.mjs";
@@ -328,7 +332,90 @@ const TABLE = [
     },
     attendu: "refuser",
   },
+  {
+    etat: "naissance coupée au scellement : journal et engagement vides (#264)",
+    preparer: async () => {
+      const store = createSyncAccessStore();
+      await naissanceCoupeeAuScellement(store);
+      return { store, monte: primitives(store, REPONSES.servie) };
+    },
+    attendu: "reprendre",
+  },
+  {
+    etat: "naissance coupée, mais un engagement non vide — AMBIGU",
+    preparer: async () => {
+      const store = createSyncAccessStore();
+      await naissanceCoupeeAuScellement(store);
+      const handle = await store.openHandle(engagementSidecarName(NOM));
+      handle.write(new Uint8Array(64).fill(0x33), { at: 0 });
+      handle.flush();
+      handle.close();
+      return { store, monte: primitives(store, REPONSES.servie) };
+    },
+    attendu: "refuser",
+  },
+  {
+    etat: "naissance coupée d'un volume d'une AUTRE taille que le descripteur",
+    preparer: async () => {
+      const store = createSyncAccessStore();
+      await naissanceCoupeeAuScellement(store, { taille: 2 * TAILLE });
+      return { store, monte: primitives(store, REPONSES.servie) };
+    },
+    attendu: "refuser",
+  },
 ];
+
+/**
+ * Ce que laisse un RECHARGEMENT pendant le premier démarrage (#264, recette QA du 03/10/2026) : la
+ * naissance a alloué le fichier et posé son en-tête, retiré ses voisins orphelins — ce qui laisse le
+ * journal de génération et l'engagement à 0 octet —, puis la page est partie pendant le scellement
+ * de tous les secteurs, AVANT la racine initiale et la marque `VLTSEAL1`. La coupure est jouée sur
+ * la deuxième écriture du fichier de volume, la première étant l'en-tête.
+ */
+async function naissanceCoupeeAuScellement(store, { taille = TAILLE } = {}) {
+  const openHandle = async (nom) => {
+    const handle = await store.openHandle(nom);
+    if (nom !== NOM) return handle;
+    let ecritures = 0;
+    return new Proxy(handle, {
+      get(cible, cle) {
+        if (cle === "write") {
+          return (octets, options) => {
+            ecritures += 1;
+            if (ecritures > 1) throw new Error("coupure : la page a été rechargée");
+            return cible.write(octets, options);
+          };
+        }
+        const valeur = cible[cle];
+        return typeof valeur === "function" ? valeur.bind(cible) : valeur;
+      },
+    });
+  };
+  const erreur = await echecDe(
+    openOpfsVolume({ name: NOM, size: taille, cle: CLE, identifiantVolume: ID, openHandle }),
+  );
+  assert.notEqual(erreur, null, "la naissance a été coupée");
+  assert.ok(store.sizeOf(NOM) > 0, "le fichier de volume est alloué");
+  assert.equal(store.sizeOf(generationJournalName(NOM)), 0, "le journal est vide");
+  assert.equal(store.sizeOf(engagementSidecarName(NOM)), 0, "l'engagement est vide");
+}
+
+test("#264 : un rechargement au PREMIER démarrage se REPREND, jusqu'au manifeste", async () => {
+  const store = createSyncAccessStore();
+  await naissanceCoupeeAuScellement(store);
+  const { options, manifestes } = primitives(store, REPONSES.servie);
+
+  const erreur = await echecDe(installerSiNecessaire(options));
+  assert.equal(erreur?.code, C.volumeApplicatifSansManifeste);
+  assert.equal(erreur.installationInterrompue, true, erreur.motifDeLaSignature ?? "");
+
+  const reprise = await reprendreSiSignatureConfirmee({
+    ...options,
+    retirer: retirerDuStore(store),
+  });
+  assert.equal(reprise.reprise, true, reprise.motif);
+  assert.equal(manifestes.has(NOM), true);
+});
 
 for (const { etat, preparer, attendu } of TABLE) {
   test(`TABLE — ${etat} → ${attendu}`, async () => {
