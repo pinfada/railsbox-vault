@@ -1053,8 +1053,8 @@ export const MUTATIONS = Object.freeze([
     nom: "le fichier ne prouve rien du code : ses faits sont remis à l'initiale (17/09, gardé)",
     garde: "lireProgression — `code` relu à l'initiale",
     fichier: PARCOURS,
-    avant: "  return figerProgression({ ...brut, code: PROGRESSION_INITIALE.code });\n",
-    apres: "  return figerProgression(brut);\n",
+    avant: "    ...brut,\n    code: PROGRESSION_INITIALE.code,\n",
+    apres: "    ...brut,\n",
     epreuves: [EPREUVE_PARCOURS],
   },
   {
