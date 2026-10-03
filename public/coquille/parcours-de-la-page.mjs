@@ -337,18 +337,38 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     "verrouiller-le-coffre",
     "parcours-continuer",
   ];
+  // La barre est RESPONSIVE : un geste n'y monte que si la largeur le permet ; sinon il reste à sa
+  // place, dans le panneau du menu « Coffre », où il demeure joignable (ADR 0043). Sous 640 px, la
+  // barre ne porte que le titre et « Coffre ».
+  const LARGEUR_MIN_DANS_LA_BARRE = Object.freeze({
+    "sauvegarder-le-coffre": 640,
+    "verrouiller-le-coffre": 640,
+    "parcours-continuer": 900,
+  });
+  const fenetre = doc.defaultView ?? null;
+  const assezLarge = (id) =>
+    typeof fenetre?.matchMedia !== "function" ||
+    fenetre.matchMedia(`(min-width: ${LARGEUR_MIN_DANS_LA_BARRE[id]}px)`).matches;
+  let barreDemandee = false;
+  for (const largeur of new Set(Object.values(LARGEUR_MIN_DANS_LA_BARRE))) {
+    fenetre
+      ?.matchMedia?.(`(min-width: ${largeur}px)`)
+      ?.addEventListener?.("change", () => placerLesGestes(barreDemandee));
+  }
   const placesDOrigine = new Map();
   function placerLesGestes(dansLaBarre) {
+    barreDemandee = dansLaBarre;
     const barre = noeud("gestes-de-la-barre");
     if (!barre) return;
     for (const id of GESTES_DE_LA_BARRE) {
       const bouton = noeud(id);
-      if (dansLaBarre && bouton.parentElement !== barre) {
+      const iciDansLaBarre = dansLaBarre && assezLarge(id);
+      if (iciDansLaBarre && bouton.parentElement !== barre) {
         const repere = doc.createComment(id);
         bouton.before(repere);
         placesDOrigine.set(id, repere);
         barre.append(bouton);
-      } else if (!dansLaBarre && placesDOrigine.has(id)) {
+      } else if (!iciDansLaBarre && placesDOrigine.has(id)) {
         placesDOrigine.get(id).replaceWith(bouton);
         placesDOrigine.delete(id);
       }
