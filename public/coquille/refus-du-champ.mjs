@@ -3,8 +3,8 @@
 //
 // Seul un refus qui juge la VALEUR saisie accuse le champ (#266 B2-3) : un refus d'état — coffre déjà
 // ouvert dans un autre onglet, installation inachevée — s'affiche sans le marquer. Le refus qui juge
-// est PLACÉ sous le champ (B2-1), dans l'emplacement que la page lui réserve : le bouton qui suit ne
-// bouge pas quand il apparaît (B2-4).
+// est PLACÉ sous le champ et son bouton (B2-1), dans l'emplacement que la page lui réserve : rien ne
+// bouge quand il apparaît (B2-4), et le bouton n'est pas repoussé sous la ligne de flottaison (#251).
 
 const CHAMP_DU_GESTE = Object.freeze({
   "ouvrir-par-phrase": "saisie-phrase",
