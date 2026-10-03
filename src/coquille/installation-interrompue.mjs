@@ -25,8 +25,10 @@ import { constaterCreationSeule } from "../vm/opfs-datation-de-creation.mjs";
 import {
   engagementSidecarName,
   generationJournalName,
+  instantaneSidecarName,
   openOpfsSyncAccess,
   statOpfsVolume,
+  temoinSequenceName,
 } from "../vm/opfs-sync-access.mjs";
 import { ouvrirVolumeBrut } from "../vm/opfs-volume-brut.mjs";
 import {
@@ -115,6 +117,12 @@ async function naissanceCoupeeAvantSaRacine({ nom, octetsAnnonces, observer, ope
   if (engagement.present && engagement.size > 0) {
     return refusDeLaSignature("un engagement d'archive est déposé : ce n'est pas une naissance");
   }
+  for (const trace of tracesDeService(nom)) {
+    const voisin = await observer(trace);
+    if (voisin.present && voisin.size > 0) {
+      return refusDeLaSignature(`« ${trace} » porte des octets : ce volume a servi`);
+    }
+  }
   let lu;
   let tailleDuFichier;
   try {
@@ -152,6 +160,20 @@ async function naissanceCoupeeAvantSaRacine({ nom, octetsAnnonces, observer, ope
     );
   }
   return { interrompue: true, motif: null, tailleLogique };
+}
+
+/**
+ * Les voisins qu'un volume qui a SERVI laisse non vides, et qu'une naissance coupée laisse vides : le
+ * TÉMOIN de séquence, réécrit à chaque racine validée (`opfs-generation-voisins.mjs`), et l'INSTANTANÉ
+ * de reprise, écrit à la fermeture d'une session (`instantane/support-opfs.mjs`). Les mêmes que les traces de
+ * service de `portabilite-du-coffre.mjs`, dérivées des mêmes noms.
+ *
+ * VIDES, pas absents : la naissance les OUVRE pour en retirer un orphelin (`retirerVoisinsOrphelins`,
+ * `opfs-volume-ouverture.mjs`), et `openOpfsSyncAccess` les crée alors à 0 octet, AVANT le scellement.
+ * Exiger leur absence refuserait la naissance coupée elle-même, sur le vrai support.
+ */
+function tracesDeService(nom) {
+  return [temoinSequenceName(nom), instantaneSidecarName(nom)];
 }
 
 function refusDeLaSignature(motif, tailleLogique = null) {
