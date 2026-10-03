@@ -166,7 +166,7 @@ export const QUESTIONS = Object.freeze({
   ],
   3: [
     "Avant de cliquer, avez-vous compris que le code ne s'affichera qu'une fois ?",
-    "Savez-vous ce qu'il faut recopier (le code ET le numéro de version) et où ranger la feuille ?",
+    "Savez-vous ce qu'il faut recopier (le code ET le numéro de feuille) et où ranger la feuille ?",
     "Comprenez-vous qu'il faut ensuite verrouiller le coffre puis le rouvrir avec le code de votre feuille — et que, si vous vous êtes trompé en recopiant, votre phrase le rouvre et une nouvelle feuille peut être demandée ?",
   ],
   4: [
@@ -176,7 +176,7 @@ export const QUESTIONS = Object.freeze({
   ],
   5: [
     "Savez-vous ce que « verrouiller » change, et que la page va se recharger ?",
-    "Le champ « numéro de version » vous paraît-il utile, ou déroutant ?",
+    "Le champ « numéro de feuille » vous paraît-il utile, ou déroutant ?",
     "Si la phrase est refusée, le message vous rassure-t-il (rien de perdu, essais illimités) ?",
   ],
   6: [
@@ -191,7 +191,7 @@ export const QUESTIONS = Object.freeze({
   ],
   8: [
     "Comprenez-vous que le code sert quand la phrase est oubliée ?",
-    "Savez-vous où trouver le numéro de version à taper ?",
+    "Savez-vous où trouver le numéro de feuille à taper ?",
     "Si vous faites une faute de recopie, le message vous aide-t-il à la trouver ?",
   ],
   9: [

@@ -146,7 +146,7 @@ for (const theme of ["light", "dark"]) {
     }
     await page.emulateMedia({ media: "print" });
     await expect(code).toBeVisible();
-    await expect(page.locator("#parcours-consigne-feuille")).toContainText("Numéro de version");
+    await expect(page.locator("#parcours-consigne-feuille")).toContainText("Numéro de feuille");
     await expect(bouton(page, "J'ai recopié mon code")).toBeHidden();
     await capturer(page, {
       path: `${RACINE}/${testInfo.project.name}-${theme}-impression.png`,

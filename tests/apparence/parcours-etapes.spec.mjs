@@ -32,7 +32,7 @@ const QUATRE_LARGEURS = [320, 768, 1024, 1440];
 const FORME_DU_CODE = /^[0-9A-Z]{4}(-[0-9A-Z]{4}){6}$/;
 const LONG = { timeout: 180_000 };
 
-/** Étapes 1 à 3 jusqu'à la feuille affichée ; rend le code et le numéro de version. */
+/** Étapes 1 à 3 jusqu'à la feuille affichée ; rend le code et le numéro de feuille. */
 async function afficherLeCode(page) {
   await ouvrir(page);
   await bouton(page, "Commencer").click();
@@ -157,7 +157,7 @@ for (const theme of ["light", "dark"]) {
     await expect(page.getByLabel("Code de récupération", { exact: true })).toBeVisible(LONG);
     await verifierAux(page, testInfo, "etape-8-recuperer", DEUX_LARGEURS);
     await page
-      .getByLabel("Numéro de version noté sur votre feuille (facultatif)", { exact: true })
+      .getByLabel("Numéro de feuille noté sur votre feuille (facultatif)", { exact: true })
       .fill(version);
     await page.getByLabel("Code de récupération", { exact: true }).fill(code);
     await bouton(page, "Ouvrir mon coffre avec le code").click();

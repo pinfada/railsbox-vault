@@ -42,7 +42,7 @@ export const ETAPES = Object.freeze([
  */
 export const LIBELLES_DES_BLOCS = Object.freeze({
   commencer: ["« Commencer »", "« J'ai déjà une sauvegarde »"],
-  ancre: ["« Numéro de version noté sur votre feuille (facultatif) » (champ)"],
+  ancre: ["« Numéro de feuille noté sur votre feuille (facultatif) » (champ)"],
   phrase: ["« Votre phrase » (champ)", "« Créer mon coffre » ou « Ouvrir mon coffre »"],
   passkey: ["« Créer mon coffre avec une passkey » ou « Ouvrir mon coffre avec ma passkey »"],
   perdu: ["« J'ai oublié ma phrase : utiliser mon code de récupération »"],
@@ -255,10 +255,10 @@ export const ECRANS = Object.freeze({
     titre: "Recopier votre code de récupération",
     ceQuiVaSePasser:
       "Voici votre code. Il ne sera plus jamais affiché, et rien sur cet appareil n'en garde de copie. " +
-      "Recopiez-le à la main, avec le numéro de version, et rangez la feuille ailleurs que près de " +
+      "Recopiez-le à la main, avec le numéro de feuille, et rangez la feuille ailleurs que près de " +
       "cet appareil.",
     attendu:
-      "Recopiez le code et le numéro de version, puis cliquez sur « J'ai recopié mon code ».",
+      "Recopiez le code et le numéro de feuille, puis cliquez sur « J'ai recopié mon code ».",
     blocs: ["feuille"],
   }),
   "code-a-verrouiller": ecran(3, {
@@ -336,7 +336,7 @@ export const ECRANS = Object.freeze({
     titre: "Rouvrir votre coffre",
     ceQuiVaSePasser:
       "Votre coffre est verrouillé. Il s'ouvre avec la phrase que vous avez choisie. Si vous avez " +
-      "noté un numéro de version sur votre feuille, tapez-le : il empêche qu'on vous rende une copie " +
+      "noté un numéro de feuille sur votre feuille, tapez-le : il empêche qu'on vous rende une copie " +
       "plus ancienne de votre coffre sans que vous le sachiez.",
     attendu: "Tapez votre phrase, puis cliquez sur « Ouvrir mon coffre ».",
     blocs: ["ancre", "phrase", "passkey", "perdu"],
@@ -396,7 +396,7 @@ export const ECRANS = Object.freeze({
       "Le code de récupération de votre feuille rouvre votre coffre, même sans la phrase. Le numéro " +
       "de version noté à côté du code protège contre une copie plus ancienne : tapez-le aussi.",
     attendu:
-      "Tapez le numéro de version et le code de votre feuille, puis cliquez sur « Ouvrir mon coffre " +
+      "Tapez le numéro de feuille et le code de votre feuille, puis cliquez sur « Ouvrir mon coffre " +
       "avec le code ».",
     blocs: ["ancre", "code"],
   }),
@@ -412,7 +412,7 @@ export const ECRANS = Object.freeze({
     attendu:
       "Si personne n'a vu votre phrase ni votre feuille, cliquez sur « Terminer sans révoquer ». " +
       "Seulement si c'est nécessaire, cliquez sur « Révoquer tous les autres moyens d'ouvrir ce " +
-      "coffre », puis notez le nouveau numéro de version sur votre feuille.",
+      "coffre », puis notez le nouveau numéro de feuille sur votre feuille.",
     blocs: ["revocation", "sans-revoquer", "retour"],
   }),
   "termine-sans-revoquer": ecran(9, {
@@ -435,7 +435,7 @@ export const ECRANS = Object.freeze({
       "déjà faites restent ouvrables par les anciens moyens : détruisez-les si elles risquent de " +
       "tomber entre de mauvaises mains, puis faites une nouvelle sauvegarde.",
     attendu:
-      "Notez sur votre feuille le nouveau numéro de version. Pour vous servir de votre " +
+      "Notez sur votre feuille le nouveau numéro de feuille. Pour vous servir de votre " +
       "application, cliquez sur « Revenir à mon application ». Pour recommencer le parcours depuis " +
       "le début, effacez les données du site dans les réglages du navigateur : supprimer les " +
       "cookies ne suffit pas.",
@@ -539,7 +539,7 @@ export const MESSAGES = Object.freeze({
     "Vault vous le dira, et vous pourrez utiliser une phrase.",
   passkeyALOuverture: "Ce coffre s'ouvre aussi avec votre passkey.",
   consigneDeLaFeuille: (version) =>
-    `Numéro de version à noter à côté du code : ${version}. Recopiez les 7 groupes de 4 symboles ` +
+    `Numéro de feuille à noter à côté du code : ${version}. Recopiez les 7 groupes de 4 symboles ` +
     `exactement. Ce code ne sera plus jamais affiché.`,
   feuilleEprouvee:
     "Votre feuille est juste : son code a ouvert votre coffre. Gardez-la bien, loin de cet appareil.",
@@ -594,7 +594,7 @@ export const MESSAGES = Object.freeze({
     "Sauvegarde restaurée et vérifiée. Ouvrez maintenant le coffre avec votre code — avec un code " +
     "qui existait quand la sauvegarde a été faite.",
   revoque: (nombre, version) =>
-    `${nombre} moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : ${version}.`,
+    `${nombre} moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : ${version}.`,
   revoqueSansRien:
     "Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.",
   codeMasque: "(code masqué)",

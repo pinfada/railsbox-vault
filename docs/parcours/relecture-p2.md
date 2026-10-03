@@ -154,17 +154,17 @@ Messages qui peuvent s'afficher sur cet écran :
 ### Écran : Recopier votre code de récupération
 
 > Voici votre code. Il ne sera plus jamais affiché, et rien sur cet appareil n'en garde de copie.
-> Recopiez-le à la main, avec le numéro de version, et rangez la feuille ailleurs que près de cet
+> Recopiez-le à la main, avec le numéro de feuille, et rangez la feuille ailleurs que près de cet
 > appareil.
 >
-> Ce que vous avez à faire : Recopiez le code et le numéro de version, puis cliquez sur « J'ai
+> Ce que vous avez à faire : Recopiez le code et le numéro de feuille, puis cliquez sur « J'ai
 > recopié mon code ».
 
 Boutons et champs : « Votre code de récupération : » suivi du code, « J'ai recopié mon code ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
-- Numéro de version à noter à côté du code : N. Recopiez les 7 groupes de 4 symboles exactement. Ce
+- Numéro de feuille à noter à côté du code : N. Recopiez les 7 groupes de 4 symboles exactement. Ce
   code ne sera plus jamais affiché.
 
 ### Écran : Vérifier votre code de récupération
@@ -250,7 +250,7 @@ Messages qui peuvent s'afficher sur cet écran :
 
    _Votre réponse :_
 
-2. Savez-vous ce qu'il faut recopier (le code ET le numéro de version) et où ranger la feuille ?
+2. Savez-vous ce qu'il faut recopier (le code ET le numéro de feuille) et où ranger la feuille ?
 
    _Votre réponse :_
 
@@ -443,8 +443,8 @@ Messages qui peuvent s'afficher sur cet écran :
   sous un nom qui commence par « coffre- » suivi de la date ; si rien ne s'est enregistré, cliquez
   sur « Enregistrer la sauvegarde ».
 - Pensez à redémarrer l'application si vous voulez continuer à l'utiliser.
-- N moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V. — ou, pour un seul
-  moyen — 1 moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V.
+- N moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V. — ou, pour un seul
+  moyen — 1 moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V.
 
 ### Écran : Travailler dans l'application
 
@@ -493,7 +493,7 @@ Messages qui peuvent s'afficher sur cet écran :
 ### Écran : Rouvrir votre coffre
 
 > Votre coffre est verrouillé. Il s'ouvre avec la phrase que vous avez choisie. Si vous avez noté un
-> numéro de version sur votre feuille, tapez-le : il empêche qu'on vous rende une copie plus
+> numéro de feuille sur votre feuille, tapez-le : il empêche qu'on vous rende une copie plus
 > ancienne de votre coffre sans que vous le sachiez.
 >
 > Ce que vous avez à faire : Tapez votre phrase, puis cliquez sur « Ouvrir mon coffre ».
@@ -503,7 +503,7 @@ Messages qui peuvent s'afficher sur cet écran :
 > ») sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute et demie.
 > L'onglet peut sembler figé : ne le fermez pas.
 
-Boutons et champs : « Numéro de version noté sur votre feuille (facultatif) » (champ), « Votre
+Boutons et champs : « Numéro de feuille noté sur votre feuille (facultatif) » (champ), « Votre
 phrase » (champ), « Créer mon coffre » ou « Ouvrir mon coffre », « Créer mon coffre avec une passkey
 » ou « Ouvrir mon coffre avec ma passkey », « J'ai oublié ma phrase : utiliser mon code de
 récupération ».
@@ -524,7 +524,7 @@ Messages qui peuvent s'afficher sur cet écran :
 
    _Votre réponse :_
 
-2. Le champ « numéro de version » vous paraît-il utile, ou déroutant ?
+2. Le champ « numéro de feuille » vous paraît-il utile, ou déroutant ?
 
    _Votre réponse :_
 
@@ -640,10 +640,10 @@ Messages qui peuvent s'afficher sur cet écran :
 > Le code de récupération de votre feuille rouvre votre coffre, même sans la phrase. Le numéro de
 > version noté à côté du code protège contre une copie plus ancienne : tapez-le aussi.
 >
-> Ce que vous avez à faire : Tapez le numéro de version et le code de votre feuille, puis cliquez
+> Ce que vous avez à faire : Tapez le numéro de feuille et le code de votre feuille, puis cliquez
 > sur « Ouvrir mon coffre avec le code ».
 
-Boutons et champs : « Numéro de version noté sur votre feuille (facultatif) » (champ), « Code de
+Boutons et champs : « Numéro de feuille noté sur votre feuille (facultatif) » (champ), « Code de
 récupération » (champ), « Ouvrir mon coffre avec le code ».
 
 Messages qui peuvent s'afficher sur cet écran :
@@ -659,7 +659,7 @@ Messages qui peuvent s'afficher sur cet écran :
 
    _Votre réponse :_
 
-2. Savez-vous où trouver le numéro de version à taper ?
+2. Savez-vous où trouver le numéro de feuille à taper ?
 
    _Votre réponse :_
 
@@ -680,7 +680,7 @@ Messages qui peuvent s'afficher sur cet écran :
 >
 > Ce que vous avez à faire : Si personne n'a vu votre phrase ni votre feuille, cliquez sur «
 > Terminer sans révoquer ». Seulement si c'est nécessaire, cliquez sur « Révoquer tous les autres
-> moyens d'ouvrir ce coffre », puis notez le nouveau numéro de version sur votre feuille.
+> moyens d'ouvrir ce coffre », puis notez le nouveau numéro de feuille sur votre feuille.
 
 Boutons et champs : « Révoquer tous les autres moyens d'ouvrir ce coffre », « Terminer sans révoquer
 », « Revenir à mon application ».
@@ -696,8 +696,8 @@ Messages qui peuvent s'afficher sur cet écran :
   Seul le moyen avec lequel vous venez d'ouvrir ce coffre — le code de votre feuille — continuera de
   l'ouvrir. Votre phrase et votre passkey ne fonctionneront plus sur ce coffre : seul le code de
   votre feuille l'ouvrira.
-- N moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V. — ou, pour un seul
-  moyen — 1 moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V.
+- N moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V. — ou, pour un seul
+  moyen — 1 moyen(s) retiré(s). Nouveau numéro de feuille à noter sur votre feuille : V.
 - Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.
 
 ### Écran : Parcours terminé, rien n'a été révoqué
@@ -718,7 +718,7 @@ Boutons et champs : « Revenir à mon application ».
 > faites restent ouvrables par les anciens moyens : détruisez-les si elles risquent de tomber entre
 > de mauvaises mains, puis faites une nouvelle sauvegarde.
 >
-> Ce que vous avez à faire : Notez sur votre feuille le nouveau numéro de version. Pour vous servir
+> Ce que vous avez à faire : Notez sur votre feuille le nouveau numéro de feuille. Pour vous servir
 > de votre application, cliquez sur « Revenir à mon application ». Pour recommencer le parcours
 > depuis le début, effacez les données du site dans les réglages du navigateur : supprimer les
 > cookies ne suffit pas.
@@ -825,7 +825,7 @@ faire.
 - Ce que vous avez présenté n'ouvre pas ce coffre : la phrase est peut-être mal tapée (majuscules,
   accents, espaces), ou ce n'est pas le bon code. Rien n'a été perdu. Réessayez tranquillement : il
   n'y a pas de nombre d'essais limité.
-- Le numéro de version que vous avez tapé est plus grand que celui de ce coffre. Relisez le numéro
+- Le numéro de feuille que vous avez tapé est plus grand que celui de ce coffre. Relisez le numéro
   sur votre feuille. Si vous n'êtes pas sûr, videz ce champ et réessayez : le coffre s'ouvrira, mais
   sans vérifier qu'on ne lui a pas remis une copie plus ancienne.
 - Cette phrase ne suit pas la règle écrite sous le champ : au moins 12 caractères (les espaces au
@@ -840,9 +840,9 @@ faire.
 - Le code de récupération ne s'affiche qu'une fois, et celui-ci a déjà été affiché. Ouvrez le coffre
   avec le code de votre feuille pour le vérifier ; si vous ne l'avez pas noté, demandez un NOUVEAU
   code : l'ancien ouvrira ce coffre tant que personne ne le retire.
-- Ce qui a été saisi ou choisi n'a pas la forme attendue : le numéro de version est un nombre
+- Ce qui a été saisi ou choisi n'a pas la forme attendue : le numéro de feuille est un nombre
   entier, et une restauration demande un fichier de sauvegarde. Corrigez, puis réessayez.
-- Le numéro de version se tape en chiffres, à partir de 1, tel qu'il est noté sur votre feuille. Si
+- Le numéro de feuille se tape en chiffres, à partir de 1, tel qu'il est noté sur votre feuille. Si
   vous n'en avez pas noté, laissez ce champ vide.
 - Aucun fichier n'est choisi. Cliquez sur « Fichier de sauvegarde », choisissez le fichier
   enregistré par « Sauvegarder mon coffre », puis recommencez.

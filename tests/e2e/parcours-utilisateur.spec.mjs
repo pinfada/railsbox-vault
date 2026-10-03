@@ -188,7 +188,7 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await attendreLEcran(a, "Recopier votre code de récupération");
     code = ((await a.getByText(FORME_DU_CODE).textContent()) ?? "").trim();
     expect(code).toMatch(FORME_DU_CODE);
-    const consigne = await a.getByText(/Numéro de version à noter à côté du code/).textContent();
+    const consigne = await a.getByText(/Numéro de feuille à noter à côté du code/).textContent();
     version = /: (\d+)\./.exec(consigne ?? "")?.[1] ?? "";
     expect(version).toMatch(/^\d+$/);
     await bouton(a, "J'ai recopié mon code").click();
@@ -350,7 +350,7 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
   // --- 8. Récupérer par le code --------------------------------------------------------------------
   await chrono("8-recuperer", async () => {
     await b
-      .getByLabel("Numéro de version noté sur votre feuille (facultatif)", { exact: true })
+      .getByLabel("Numéro de feuille noté sur votre feuille (facultatif)", { exact: true })
       .fill(version);
     await b
       .getByLabel("Code de récupération", { exact: true })

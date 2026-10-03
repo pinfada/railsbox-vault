@@ -492,8 +492,8 @@ test("#239 : les écrans 5 à 9 et « Parcours terminé » portent « Revenir à
   for (const id of ["travailler", "rouvrir", "recuperer", "code-verifier", "code-annonce"]) {
     assert.equal(etapeApres(id, "retour", 4, 9), null, id);
   }
-  // #242 (12) : le numéro de version est nommé sans indication de position.
-  assert.match(ECRANS.termine.attendu, /nouveau numéro de version/);
+  // #242 (12) : le numéro de feuille est nommé sans indication de position.
+  assert.match(ECRANS.termine.attendu, /nouveau numéro de feuille/);
   assert.doesNotMatch(ECRANS.termine.attendu, /ci-dessus|ci-dessous/);
   assert.doesNotMatch(ECRANS.termine.attendu, /ci-dessus/);
 });
@@ -767,7 +767,7 @@ test("la progression d'un démarrage dit le temps écoulé et les signes de vie 
 });
 
 test("une seconde révocation qui ne retire rien ne fait pas noter un numéro pour rien", () => {
-  assert.match(MESSAGES.revoque(2, 5), /Nouveau numéro de version/);
+  assert.match(MESSAGES.revoque(2, 5), /Nouveau numéro de feuille/);
   assert.doesNotMatch(MESSAGES.revoqueSansRien, /numéro/);
 });
 

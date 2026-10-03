@@ -196,6 +196,13 @@ input {
   color: var(--texte);
   font: 16px/1.5 var(--mono);
 }
+/* Le code de 34 caractères tient dans son champ à 360 px (#266, m5). */
+@media (max-width: 400px) {
+  #saisie-code {
+    font-size: 13px;
+    padding-inline: 10px;
+  }
+}
 input[type="password"] {
   font-size: 18px;
   letter-spacing: 3px;
