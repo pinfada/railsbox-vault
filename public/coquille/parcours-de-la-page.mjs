@@ -474,7 +474,7 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     nommerLesGestes(ecranId);
     dire(
       "parcours-avertissement-revocation",
-      MESSAGES.avertissementDeRevocation(releve.moyenDOuverture),
+      MESSAGES.avertissementDeRevocation(releve.moyenDOuverture, releve.moyensProposes ?? null),
     );
     // L'application démarrée reste à l'écran à TOUTES les étapes (ADR 0043) : l'écran d'une étape
     // qui ne la nomme pas ne la masque plus, il s'ajoute dans le panneau du coffre.
