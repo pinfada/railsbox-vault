@@ -39,18 +39,44 @@ import {
 import { parseManifest } from "../vm/volume-manifest.mjs";
 
 /**
- * La SIGNATURE d'une installation interrompue (#173), mesurée en rejouant une interruption sur le
- * double (`tests/unit/vm-dater-la-creation.test.mjs`, `tests/unit/coquille-application.test.mjs`) :
- * TROIS conditions, et les trois ensemble — aucun manifeste jamais inscrit (déjà le contexte de cet
- * appel : `constaterLInstallation` n'y arrive que dans ce cas), un volume de la taille EXACTE que le
- * descripteur annonce, et un journal de génération qui ne porte que la racine de naissance
- * (`constaterCreationSeule`). Manquer l'une ou l'autre rend « autre chose » : le refus reste tel
- * quel, sans geste proposé — écraser un volume dont on n'est pas SÛR qu'il vient d'une installation
- * interrompue serait la décision que #171 a justement retirée à la coquille.
+ * La SIGNATURE d'une installation interrompue (#173, #264) : elle décide si « Reprendre
+ * l'installation » est proposé. Or ce geste RETIRE le volume `application`, qui est le disque des
+ * DONNÉES (`hdb` : la base SQLite et les pièces jointes, ADR 0041). Une signature vraie à tort
+ * efface donc les données de l'utilisateur : chaque condition ci-dessous est là pour l'empêcher.
  *
- * Le troisième pilier est aussi ce qui garantit qu'aucune DONNÉE n'est jamais écrasée : un volume sur
- * lequel un boot a validé une génération ne porte plus la seule racine de naissance (ADR 0037, note du
- * 19/09/2026). Une mesure qui LÈVE rend « autre chose », jamais une signature.
+ * Aucun manifeste n'a jamais été inscrit : c'est le contexte de l'appel, `constaterLInstallation` n'y
+ * arrive que dans ce cas. Ensuite, DEUX chemins, selon le journal de génération.
+ *
+ * **Chemin 1, le journal porte des octets** (#173), mesuré en rejouant une interruption sur le double
+ * (`tests/unit/vm-dater-la-creation.test.mjs`, `tests/unit/coquille-application.test.mjs`). Deux
+ * conditions, ensemble :
+ *  - le journal ne porte que la racine de naissance (`constaterCreationSeule`). C'est ce qui garantit
+ *    qu'aucune donnée n'est écrasée : un boot qui a validé une génération y a laissé une autre racine
+ *    (ADR 0037, note du 19/09/2026) ;
+ *  - le volume déclare la taille EXACTE que le descripteur annonce.
+ *
+ * **Chemin 2, le journal est absent ou vide** (#264, `naissanceCoupeeAvantSaRacine`) : la naissance
+ * a été coupée avant d'écrire sa racine. Six conditions, toutes ensemble :
+ *  - l'engagement d'archive est absent ou vide ;
+ *  - le témoin de séquence est absent ou vide ;
+ *  - l'instantané de reprise est absent ou vide ;
+ *  - l'en-tête v4 est lisible et déclare la taille annoncée par le descripteur ;
+ *  - le fichier fait exactement la taille support que cette taille donne ;
+ *  - la marque `VLTSEAL1` est ABSENTE.
+ *
+ * Il suffit qu'une condition manque pour rendre « autre chose ». Le refus reste alors tel quel, et
+ * aucun geste n'est proposé : écraser un volume dont on n'est pas SÛR qu'il vient d'une installation
+ * interrompue serait la décision que #171 a justement retirée à la coquille. Une mesure qui LÈVE rend
+ * aussi « autre chose », jamais une signature.
+ *
+ * **Risque résiduel, chemin 2.** Aucun de ces états n'est authentifié : la marque est dans l'en-tête
+ * en clair, à l'offset 64, et les voisins sont de simples fichiers. Un attaquant qui peut déjà écrire
+ * dans l'OPFS de l'origine peut fabriquer TOUS ces états à la fois : vider le journal, l'engagement,
+ * le témoin et l'instantané, puis effacer la marque. La coquille proposera alors « Reprendre » sur le
+ * volume des données. La perte est la même que le `removeEntry` dont cet attaquant dispose déjà ; elle
+ * est simplement déclenchée par un geste de l'interface. Seule une marque AUTHENTIFIÉE fermerait ce
+ * chemin, et elle reste hors de la PR de #264
+ * (`tests/unit/coquille-installation-interrompue.test.mjs`, « RISQUE RÉSIDUEL consigné »).
  *
  * @param {{ nom: string, octetsAnnonces: number, observer: Function, openHandle: Function,
  *           constaterCreation?: Function }} options
@@ -107,10 +133,12 @@ async function journalJamaisEcrit(nom, observer) {
  * Une coupure pendant le scellement laisse donc un en-tête SANS marque. Or l'ouverture REFUSE tout
  * volume sans marque (`creationInachevee`) : aucun guest n'a pu y écrire, et le reprendre n'écrase rien.
  *
- * Les QUATRE conditions, ensemble, en plus du journal vide déjà constaté : un engagement vide (une
- * restauration en dépose un), un en-tête v4 lisible qui déclare la taille annoncée par le descripteur,
- * un fichier de la taille support exacte que cette taille donne, et la marque ABSENTE. Un volume
- * dont le journal a été vidé APRÈS sa naissance porte la marque, et reste refusé.
+ * Les SIX conditions, ensemble, en plus du journal vide déjà constaté : un engagement vide (une
+ * restauration en dépose un), un témoin et un instantané vides (`tracesDeService`), un en-tête v4
+ * lisible qui déclare la taille annoncée par le descripteur, un fichier de la taille support exacte
+ * que cette taille donne, et la marque ABSENTE. Un volume dont le journal a été vidé APRÈS sa
+ * naissance porte la marque, et reste refusé. Si sa marque a aussi été effacée, le témoin qu'un boot
+ * a écrit le fait encore refuser.
  */
 async function naissanceCoupeeAvantSaRacine({ nom, octetsAnnonces, observer, openHandle }) {
   const engagement = await observer(engagementSidecarName(nom));
