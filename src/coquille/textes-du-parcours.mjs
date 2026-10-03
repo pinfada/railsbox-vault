@@ -8,6 +8,8 @@
 //
 // Pur, comme le reste du répertoire : ni DOM, ni stockage, ni horloge.
 
+import { MOYEN_NOMME, lesAutresRetires } from "./moyens-nommes.mjs";
+
 /** L'estimation annoncée d'un premier démarrage : « environ deux minutes ». */
 const ESTIMATION_DU_DEMARRAGE_EN_SECONDES = 120;
 
@@ -176,40 +178,6 @@ const UN_CODE_A_DEJA_ETE_RENDU =
 const CE_QUE_LA_REVOCATION_RETIRE =
   "Ce que la révocation retirerait est écrit au-dessus du bouton : cela dépend du moyen avec lequel " +
   "vous avez ouvert ce coffre.";
-
-/** Les moyens, tels qu'une personne les nomme, et ce que la révocation retire des autres. */
-const MOYEN_NOMME = Object.freeze({
-  phrase: "votre phrase",
-  "webauthn-prf": "votre passkey",
-  recuperation: "le code de votre feuille",
-});
-const AUTRE_NOMME = Object.freeze({
-  phrase: "votre phrase",
-  "webauthn-prf": "votre passkey",
-  recuperation: "vos codes de récupération",
-});
-
-/**
- * Ce que la révocation retire, en ne nommant que les moyens RÉELLEMENT présents (#266 Q3) : un coffre
- * sans passkey n'entend jamais parler de passkey. `moyens` inconnu : tous les moyens possibles.
- */
-function lesAutresRetires(moyen, moyens) {
-  const presents = Array.isArray(moyens) ? moyens : Object.keys(AUTRE_NOMME);
-  const autres = presents.filter((m) => m !== moyen && AUTRE_NOMME[m] !== undefined);
-  if (autres.length === 0) return "Aucun autre moyen n'ouvre ce coffre : rien ne sera retiré.";
-  const noms = autres.map((m) => AUTRE_NOMME[m]);
-  const liste =
-    noms.length === 1 ? noms[0] : `${noms.slice(0, -1).join(", ")} et ${noms[noms.length - 1]}`;
-  const sujet = liste.charAt(0).toUpperCase() + liste.slice(1);
-  const verbe =
-    noms.length === 1 && autres[0] !== "recuperation" ? "ne fonctionnera" : "ne fonctionneront";
-  const feuille = autres.includes("recuperation")
-    ? " : votre feuille de récupération ne servira plus à rien, créez-en une nouvelle ensuite."
-    : moyen === "recuperation"
-      ? " sur ce coffre : seul le code de votre feuille l'ouvrira."
-      : ".";
-  return `${sujet} ${verbe} plus${feuille}`;
-}
 
 /**
  * L'étape 3 éprouve la feuille en S'EN SERVANT (#239) : verrouiller, puis rouvrir par le code. Le
