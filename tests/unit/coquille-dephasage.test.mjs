@@ -401,6 +401,15 @@ test("DESCRIPTEUR : la ligne de commande SERVIE ne porte aucun paramètre vault.
   }
 });
 
+test("DESCRIPTEUR : l'attente de la racine `rootdelay=` est admise (#165)", () => {
+  const d = descripteur();
+  const forme = formeDuDescripteur({
+    ...d,
+    boot: { ...d.boot, cmdline: `${d.boot.cmdline} rootdelay=120` },
+  });
+  assert.equal(forme.valide, true, forme.motif);
+});
+
 test("DESCRIPTEUR : le précédent est contrôlé comme un paquet, et ne peut être plus récent", () => {
   const cas = [
     [{ application: { id: "ref", version: "1.1.0", schema: M } }, /égale ou plus récente/],
