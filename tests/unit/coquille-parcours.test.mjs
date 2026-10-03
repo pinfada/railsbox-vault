@@ -197,6 +197,7 @@ test("la progression écrite ne porte que ses champs : jamais le code, jamais la
     "etapeAtteinte",
     "feuilleEprouvee",
     "origine",
+    "revocationFaite",
     "version",
     "visiteTerminee",
   ]);
