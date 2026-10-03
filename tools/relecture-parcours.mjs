@@ -129,13 +129,21 @@ export const MESSAGES_PAR_ECRAN = Object.freeze({
     "applicationEnAttenteDeLInstallation",
     "verrouillageEnCours",
     "sauvegardeEnCours",
+    "sauvegardeAnnoncee",
     "sauvegardePrete",
+    "sauvegardeEnregistree",
     "redemarrerApresSauvegarde",
     "revoque",
   ],
   verrouiller: ["verrouillageEnCours"],
   rouvrir: ["passkeyALOuverture", "ouvertureEnCours", "coffreOuvert"],
-  sauvegarder: ["sauvegardeEnCours", "sauvegardePrete", "redemarrerApresSauvegarde"],
+  sauvegarder: [
+    "sauvegardeAnnoncee",
+    "sauvegardeEnCours",
+    "sauvegardePrete",
+    "sauvegardeEnregistree",
+    "redemarrerApresSauvegarde",
+  ],
   restaurer: ["restaurationEnCours", "restauree"],
   "recuperer-preparer": ["verrouillageEnCours"],
   recuperer: ["saisieIncomplete", "saisieComplete", "ouvertureEnCours", "coffreOuvert"],
@@ -248,6 +256,9 @@ export async function libellesDeLaMiseEnForme() {
 /** La valeur montrée à la place d'un nombre. */
 const N = "N";
 
+/** Le disque de données d'un coffre neuf : 512 Mio, quel que soit son contenu. */
+const TAILLE_DU_DISQUE_PAR_DEFAUT = 512 * 1024 * 1024;
+
 function texteDuMessage(nom) {
   if (nom === "limiteDeFirefox") return `${LIMITE_DE_FIREFOX} (seulement dans Firefox)`;
   const message = MESSAGES[nom];
@@ -263,6 +274,10 @@ function texteDuMessage(nom) {
     return message("V");
   }
   if (nom === "saisieIncomplete") return message(N, 28);
+  // Le disque par défaut, 512 Mio : la taille d'une sauvegarde est celle du disque (#269).
+  if (nom === "sauvegardeAnnoncee" || nom === "sauvegardeEnregistree") {
+    return message(TAILLE_DU_DISQUE_PAR_DEFAUT);
+  }
   if (nom === "miseAJourProposee") {
     return `${message("A", "B", true)} — ou, sans migration — ${message("A", "B", false)}`;
   }

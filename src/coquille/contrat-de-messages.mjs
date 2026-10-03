@@ -245,6 +245,20 @@ export function feuilleEprouveeDuMessage(corps) {
   return corps?.[CHAMP_DE_LA_FEUILLE] === true;
 }
 
+/**
+ * Le champ de `inventaireReponse` qui porte la taille ANNONCÉE d'une sauvegarde, en octets (#269).
+ * Même régime que `feuilleEprouvee` : il s'ajoute à une réponse du canal privilégié, et seul un
+ * entier positif vaut annonce ; absent ou de toute autre forme, il est lu « inconnue » et la page
+ * ne dit pas de chiffre.
+ */
+export const CHAMP_DE_LA_TAILLE = "tailleDeSauvegarde";
+
+/** @param {Record<string, unknown> | null | undefined} corps */
+export function tailleDeSauvegardeDuMessage(corps) {
+  const taille = corps?.[CHAMP_DE_LA_TAILLE];
+  return Number.isSafeInteger(taille) && taille > 0 ? taille : null;
+}
+
 /** @param {unknown} type */
 export function estTypePrivilegie(type) {
   return typeof type === "string" && TYPES_PRIVILEGIES_CONNUS.has(type);

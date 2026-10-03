@@ -76,6 +76,7 @@ import {
   ARCHIVE_MAGIC,
   PREAMBLE_BYTES,
   backendSource,
+  tailleAnnonceeDeLArchive,
   writeArchive,
 } from "/src/vm/volume-export.mjs";
 import { importArchive } from "/src/vm/volume-import.mjs";
@@ -180,6 +181,15 @@ export function brancherLaPortabilite(dependances) {
   return Object.freeze({
     /** Constate l'emplacement : l'inventaire et le déverrouillage en ont besoin AVANT d'agir. */
     constater: () => constaterLEmplacement(prim),
+
+    /**
+     * La taille ANNONCÉE de la sauvegarde (#269), ou `null` sans disque. Elle vient du seul `stat` du
+     * fichier : le volume n'est ni ouvert ni lu.
+     */
+    async tailleDeSauvegarde() {
+      const { present, size } = await prim.observer(NOM_DU_VOLUME_APPLICATIF);
+      return present && Number.isInteger(size) ? tailleAnnonceeDeLArchive(size) : null;
+    },
 
     /** Le refus d'un message arrivé pendant un geste long, jugé HORS de la file. */
     refusALArrivee: (type) => refusPendantUnGesteLong(type, gestesLongsEnCours),

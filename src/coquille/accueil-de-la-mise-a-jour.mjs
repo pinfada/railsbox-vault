@@ -188,12 +188,28 @@ export function attenduSousLeDephasage(rapport) {
 }
 
 /**
+ * La taille de la sauvegarde, dite AVANT le geste (#269) ; rien tant que le Worker ne l'a pas dite.
+ *
+ * @param {{ tailleDeSauvegarde?: number | null }} rapport
+ */
+export function annonceDeSauvegarde(rapport) {
+  const taille = rapport.tailleDeSauvegarde ?? null;
+  return taille === null ? "" : MESSAGES.sauvegardeAnnoncee(taille);
+}
+
+/**
  * Le texte d'une sauvegarde prête : « pensez à redémarrer » seulement si l'application TOURNAIT (Q7).
  *
+ * Avec la taille de l'archive enregistrée (#269), le texte la dit ; sans elle, il garde la forme sans
+ * chiffre plutôt que d'en inventer un.
+ *
  * @param {boolean} etaitDemarree
+ * @param {number | null} [taille] la taille rendue par le Worker, en octets
  */
-export function texteDeSauvegardePrete(etaitDemarree) {
-  return MESSAGES.sauvegardePrete + (etaitDemarree ? MESSAGES.redemarrerApresSauvegarde : "");
+export function texteDeSauvegardePrete(etaitDemarree, taille = null) {
+  const dit = Number.isSafeInteger(taille) && taille > 0 ? taille : null;
+  const base = dit === null ? MESSAGES.sauvegardePrete : MESSAGES.sauvegardeEnregistree(dit);
+  return base + (etaitDemarree ? MESSAGES.redemarrerApresSauvegarde : "");
 }
 
 /**

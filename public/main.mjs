@@ -112,6 +112,8 @@ const rapport = {
    * présent a ouvert ce coffre sur cet appareil. Garde des étapes 4 à 9 du parcours ; un booléen.
    */
   feuilleEprouvee: false,
+  /** La taille que fera une sauvegarde, en octets, dite avant le geste (#269) ; `null` si inconnue. */
+  tailleDeSauvegarde: null,
   // Ce que l'assemblage COÛTE, en millisecondes depuis l'évaluation de ce module.
   mesures: {
     canalPrivilegieMs: null,

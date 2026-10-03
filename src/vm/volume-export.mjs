@@ -290,6 +290,40 @@ export async function writeArchive({
   });
 }
 
+/**
+ * La taille EXACTE d'une archive : préambule, en-tête, contenu, section de récupération. Pure — elle
+ * ne lit rien —, et c'est la seule formule : `rapportDExport` la rend, l'annonce d'avant le geste
+ * l'utilise (#269).
+ *
+ * @param {{ tailleDuVolume: number, tailleDeLEnTete: number, tailleDeLaRecuperation?: number }} parties
+ */
+export function tailleDArchive({ tailleDuVolume, tailleDeLEnTete, tailleDeLaRecuperation = 0 }) {
+  return PREAMBLE_BYTES + tailleDeLEnTete + tailleDuVolume + tailleDeLaRecuperation;
+}
+
+/**
+ * Ce que l'en-tête et la section de récupération ajoutent AU PLUS au contenu : quelques kio chacun
+ * (l'en-tête JSON porte le manifeste et l'engagement, la section une page d'enveloppe). L'annonce
+ * d'avant le geste ne peut pas les connaître exactement — l'engagement exige la clé —, elle prend ce
+ * plafond, qui est sans effet sur un chiffre arrondi au Mo.
+ */
+export const PLAFOND_EN_TETE_ET_RECUPERATION = 64 * 1024;
+
+/**
+ * La taille que l'on ANNONCE d'une sauvegarde avant de la faire, à partir de la seule taille du
+ * volume (#269). Le volume est entièrement scellé dès sa création et l'archive en recopie les octets
+ * (ADR 0034) : la taille ne dépend donc pas du contenu, seulement de celle du disque.
+ *
+ * @param {number} tailleDuVolume
+ */
+export function tailleAnnonceeDeLArchive(tailleDuVolume) {
+  return tailleDArchive({
+    tailleDuVolume,
+    tailleDeLEnTete: PLAFOND_EN_TETE_ET_RECUPERATION / 2,
+    tailleDeLaRecuperation: PLAFOND_EN_TETE_ET_RECUPERATION / 2,
+  });
+}
+
 /** Compte rendu d'un export réussi. Extrait pour que l'orchestration reste lisible d'un œil. */
 function rapportDExport({ digest, source, headerBytes, guarantee, section, engagement, manifest }) {
   const recoveryLength = section === null ? 0 : section.octets.byteLength;
@@ -297,7 +331,11 @@ function rapportDExport({ digest, source, headerBytes, guarantee, section, engag
     digest,
     contentLength: source.size,
     headerLength: headerBytes.byteLength,
-    archiveLength: PREAMBLE_BYTES + headerBytes.byteLength + source.size + recoveryLength,
+    archiveLength: tailleDArchive({
+      tailleDuVolume: source.size,
+      tailleDeLEnTete: headerBytes.byteLength,
+      tailleDeLaRecuperation: recoveryLength,
+    }),
     manifest,
     consistency: guarantee,
     recovery: section === null ? null : section.descripteur,
