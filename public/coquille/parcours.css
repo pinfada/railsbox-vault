@@ -318,6 +318,20 @@ input[aria-invalid="true"] {
   min-height: 3em;
   margin: 0 0 16px;
 }
+/* Un code faux se lit comme une faute de champ (#266 B2-2) : même bord que le refus. */
+#parcours-code-lu[data-faute] {
+  border-left: 4px solid var(--danger);
+  padding-left: 12px;
+}
+/* L'emplacement du refus d'un champ (#266 B2-1, B2-4) : il garde sa place, vide ou rempli, pour que
+   le bouton qui suit ne bouge pas quand le refus apparaît. */
+.refus-du-champ {
+  min-height: 7.5em;
+  margin: 0 0 16px;
+}
+.refus-du-champ > #parcours-refus {
+  margin: 0;
+}
 #phrase-conseil,
 #phrase-conseil:empty {
   min-height: 4.5em;

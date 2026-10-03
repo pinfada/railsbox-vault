@@ -19,7 +19,7 @@
 import { relierLeRefusAuChamp } from "./refus-du-champ.mjs";
 import { annonceDAttente, moteurProbable } from "/src/coquille/attente-annoncee.mjs";
 import * as accueil from "/src/coquille/accueil-de-la-mise-a-jour.mjs";
-import { conduiteHumaine } from "/src/coquille/conduites-du-parcours.mjs";
+import { conduiteHumaine, refusJugeLaValeur } from "/src/coquille/conduites-du-parcours.mjs";
 import {
   COFFRE,
   ECRANS,
@@ -481,7 +481,11 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     const suivante = etapeAContinuer(ecranId);
     dire("parcours-suivante", suivante === null ? "" : MESSAGES.suivante(suivante.titre));
     // Le code tapé ne survit pas à son champ : un champ vidé par un geste vide aussi son annonce.
-    if ((noeud("saisie-code")?.value ?? "") === "") dire("parcours-code-lu", "");
+    if ((noeud("saisie-code")?.value ?? "") === "") {
+      dire("parcours-code-lu", "");
+      delete noeud("parcours-code-lu")?.dataset.faute;
+      if (noeud("saisie-code") !== null) noeud("saisie-code").dataset.saisieFausse = "false";
+    }
     nommerLesGestes(ecranId);
     dire(
       "parcours-avertissement-revocation",
@@ -642,11 +646,26 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     etat.sousEtatDuCode = SOUS_ETATS_DU_CODE.feuille;
   });
 
-  noeud("saisie-code")?.addEventListener("input", () => {
-    dire("parcours-code-lu", annonceDeLaSaisie(etatDeLaSaisie(noeud("saisie-code").value)));
+  const refusDuChamp = relierLeRefusAuChamp({
+    doc,
+    noeud,
+    gesteCourant: () => etat.idDuGeste,
+    dire,
+    jugeLaValeur: refusJugeLaValeur,
   });
 
-  relierLeRefusAuChamp({ doc, noeud, gesteCourant: () => etat.idDuGeste, dire });
+  // Un code mal recopié se dit comme une erreur de champ (#266 B2-2) : le champ est marqué tant que
+  // le code est faux, et cite son message.
+  noeud("saisie-code")?.addEventListener("input", () => {
+    const lue = etatDeLaSaisie(noeud("saisie-code").value);
+    const lu = noeud("parcours-code-lu");
+    const fausse = lue.code !== null;
+    dire("parcours-code-lu", annonceDeLaSaisie(lue));
+    if (fausse) lu.dataset.faute = "";
+    else delete lu.dataset.faute;
+    noeud("saisie-code").dataset.saisieFausse = String(fausse);
+    refusDuChamp.relier();
+  });
 
   for (const [champ, boutons] of Object.entries(ENTREE_VAUT)) {
     noeud(champ)?.addEventListener("keydown", (evenement) => {
