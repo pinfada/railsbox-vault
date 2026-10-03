@@ -164,6 +164,9 @@ test("un rechargement après l'affichage du code ne crée aucun second code : le
   await expect(bouton(page, "Afficher mon code de récupération")).toHaveCount(0);
   // L'écran nomme les deux sorties — en demander une nouvelle, ou révoquer si quelqu'un l'a vue —
   // et il ne conseille plus d'abandonner le coffre, ce qui n'était vrai que faute de mieux (#214).
+  // Depuis l'ADR 0043 (R1-bis), ces cas rares sont repliés sous « Je n'ai plus ma feuille » : on
+  // ouvre le repli, comme le ferait la personne qui a perdu sa feuille.
+  await page.getByText("Je n'ai plus ma feuille", { exact: true }).click();
   await expect(page.getByText(/afficher un nouveau code/).first()).toBeVisible();
   await expect(page.getByText(/ouvrirez donc d'abord avec votre phrase/)).toBeVisible();
 
