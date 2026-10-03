@@ -517,9 +517,11 @@ test("contre-recette de #244 : l'avertissement de révocation dépend du moyen d
   const code = await creerEtAfficherLeCode(page);
   await eprouverLaFeuille(page, code);
   const avertissement = page.locator("#parcours-avertissement-revocation");
-  // Ouvert par le CODE : la phrase et la passkey seraient retirées.
+  // Ouvert par le CODE : la phrase serait retirée ; ce coffre n'a pas de passkey, l'écran n'en parle
+  // donc pas (#266 Q3).
   await expect(avertissement).toContainText("— le code de votre feuille — continuera de l'ouvrir");
-  await expect(avertissement).toContainText("Votre phrase et votre passkey ne fonctionneront plus");
+  await expect(avertissement).toContainText("Votre phrase ne fonctionnera plus");
+  await expect(avertissement).not.toContainText("passkey");
   // Ouvert par la PHRASE : c'est la feuille qui serait retirée, et l'écran le dit en toutes lettres.
   await expect.poll(async () => (await lireLaProgression(page)).feuilleEprouvee).toBe(true);
   await ouvrirLaCoquille(page);

@@ -306,12 +306,12 @@ test("une personne suit les neuf étapes, de la création à la révocation, par
     await attendreLEcran(a, "Révoquer en urgence", BUDGET_DEVERROUILLAGE_MS);
     await expect(
       a.getByText(
-        /— le code de votre feuille — continuera de l.ouvrir. Votre phrase et votre passkey ne fonctionneront plus/,
+        /— le code de votre feuille — continuera de l.ouvrir. Votre phrase ne fonctionnera plus/,
       ),
     ).toBeVisible();
     await bouton(a, "Terminer sans révoquer").click();
     await attendreLEcran(a, "Parcours terminé");
-    await expect(a.getByText(/ouvrent toujours/)).toBeVisible();
+    await expect(a.getByText(/l'ouvre toujours/)).toBeVisible();
     // La phrase ouvre TOUJOURS : la visite n'a rien détruit.
     await bouton(a, "Revenir à mon application").click();
     await attendreLEcran(a, "Votre application");
