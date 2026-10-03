@@ -99,6 +99,8 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     phrasePerdue: false,
     /** Le bouton du dernier geste : son champ porte le refus qui suit (#266 M2). */
     idDuGeste: null,
+    /** Les changements d'écran depuis la dernière réussite dite ; `null` : aucune à effacer (#266 m6). */
+    changementsDepuisLaReussite: null,
     coffre: COFFRE.inconnu,
     ecran: null,
     /** L'écran montré au moment du dernier geste : c'est de lui qu'un geste réussi fait avancer. */
@@ -442,6 +444,15 @@ export function creerParcoursDeLaPage({ document: doc, location: loc, history: h
     if (ecranId === "refuse") dire("parcours-refus", conduiteHumaine(releve.dernierRefus));
     const precedent = etat.ecran;
     etat.ecran = ecranId;
+    // Une réussite ne reste pas affichée hors contexte (#266 m6) : elle accompagne l'écran où son
+    // geste mène, puis s'efface au changement d'écran suivant.
+    if (precedent !== ecranId && etat.changementsDepuisLaReussite !== null) {
+      etat.changementsDepuisLaReussite += 1;
+      if (etat.changementsDepuisLaReussite > 1) {
+        dire("parcours-reussite", "");
+        etat.changementsDepuisLaReussite = null;
+      }
+    }
     const visibles = blocsDeLEcran(ecranId, releve, rapport);
     const rang = rangAffiche(ecranId, etat.pointeur, etat.progression);
     dire("parcours-rang", rang === null ? "" : MESSAGES.rang(rang));

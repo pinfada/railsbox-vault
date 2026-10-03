@@ -61,6 +61,8 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
   function reussir(texte) {
     dire("parcours-refus", "");
     dire("parcours-reussite", texte);
+    // La réussite survit à l'écran qu'elle ouvre, pas au suivant (#266 m6) : voir `rendre`.
+    etat.changementsDepuisLaReussite = 0;
   }
 
   function surOuverture(avant) {
