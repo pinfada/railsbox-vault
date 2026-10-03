@@ -227,7 +227,12 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
         phase,
       });
       const signesDeVie = recus() - depart.battements;
-      dire("parcours-attente", chemin ?? progressionDuDemarrage({ ecouleMs, signesDeVie }));
+      // L'estimation suit celle de l'écran : la visite finie, un démarrage est un démarrage suivant.
+      const premier = etat.progression?.visiteTerminee !== true;
+      dire(
+        "parcours-attente",
+        chemin ?? progressionDuDemarrage({ ecouleMs, signesDeVie, premier }),
+      );
     };
     noeud("parcours-progression").hidden = false;
     annoncer();

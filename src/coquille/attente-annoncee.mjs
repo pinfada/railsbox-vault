@@ -125,6 +125,9 @@ export function annonceDAttente({ moyen, moteur = MOTEUR_PAR_DEFAUT }) {
   });
 }
 
+/** Ce que la coquille affiche pendant une ouverture dont aucune attente n'est annoncée (le code). */
+export const TEXTE_OUVERTURE_EN_COURS = "Ouverture en cours… Ne fermez pas cet onglet.";
+
 /** Ce que la coquille affiche PENDANT la dérivation. Un état, pas un compte à rebours. */
 export const TEXTE_EN_COURS =
   "Dérivation en cours… Ne fermez pas cet onglet ; l'onglet peut sembler figé le temps du calcul.";

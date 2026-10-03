@@ -29,7 +29,12 @@
 // lieu ICI, et ce qui franchit le port est la `CryptoKey` NON EXTRACTIBLE. La sortie PRF brute ne
 // quitte jamais cette page, et `enveloppePrivilegiee` refuse une clé extractible.
 
-import { TEXTE_EN_COURS, annonceDAttente, moteurProbable } from "./attente-annoncee.mjs";
+import {
+  TEXTE_EN_COURS,
+  TEXTE_OUVERTURE_EN_COURS,
+  annonceDAttente,
+  moteurProbable,
+} from "./attente-annoncee.mjs";
 import {
   AVERTISSEMENT_SANS_RECUPERATION,
   AVEU_SANS_ANCRE,
@@ -306,7 +311,11 @@ async function ouvrirPar(contexte, moyen, corps, avantEnvoi = null) {
   surMesure("geste");
   const annonce = annonceDAttente({ moyen, moteur: contexte.moteur });
   releve.attenteAnnoncee = annonce === null ? null : annonce.attenteMs;
-  dire(noeuds.attente, annonce === null ? "" : `${annonce.texte}\n${TEXTE_EN_COURS}`);
+  // Un moyen sans attente annoncée (le code) dit tout de même que l'ouverture court (#266 B2-5).
+  dire(
+    noeuds.attente,
+    annonce === null ? TEXTE_OUVERTURE_EN_COURS : `${annonce.texte}\n${TEXTE_EN_COURS}`,
+  );
   publier(contexte);
   await peindre();
   surMesure("annonce");

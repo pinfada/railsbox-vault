@@ -385,8 +385,10 @@ pre {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* Les lignes portent déjà leur numéro : la liste n'en ajoute pas un second (#266 m9). */
 #ou-suis-je-liste {
-  padding-left: 24px;
+  list-style: none;
+  padding-left: 0;
   font-size: 13px;
 }
 #ou-suis-je-liste li {

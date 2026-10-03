@@ -28,6 +28,7 @@ Dans « Où suis-je ? », chaque étape porte l'une de ces mentions :
 - étape passée
 - vous êtes ici
 - à venir
+- passée sans rien révoquer
 - non jouée sur cet appareil : le coffre y a été restauré
 
 ### Écran : Préparation
@@ -442,7 +443,8 @@ Messages qui peuvent s'afficher sur cet écran :
   sous un nom qui commence par « coffre- » suivi de la date ; si rien ne s'est enregistré, cliquez
   sur « Enregistrer la sauvegarde ».
 - Pensez à redémarrer l'application si vous voulez continuer à l'utiliser.
-- N moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V.
+- N moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V. — ou, pour un seul
+  moyen — 1 moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V.
 
 ### Écran : Travailler dans l'application
 
@@ -694,10 +696,11 @@ Messages qui peuvent s'afficher sur cet écran :
   Seul le moyen avec lequel vous venez d'ouvrir ce coffre — le code de votre feuille — continuera de
   l'ouvrir. Votre phrase et votre passkey ne fonctionneront plus sur ce coffre : seul le code de
   votre feuille l'ouvrira.
-- N moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V.
+- N moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V. — ou, pour un seul
+  moyen — 1 moyen(s) retiré(s). Nouveau numéro de version à noter sur votre feuille : V.
 - Aucun autre moyen n'ouvrait ce coffre : rien n'a été retiré, et votre feuille reste juste.
 
-### Écran : Parcours terminé
+### Écran : Parcours terminé, rien n'a été révoqué
 
 > Vous avez fait le tour de votre coffre, sans rien révoquer : chacun des moyens qui l'ouvraient
 > l'ouvre toujours. Si un jour l'un de ces moyens a pu être vu, la révocation reste disponible sur
@@ -715,10 +718,10 @@ Boutons et champs : « Revenir à mon application ».
 > faites restent ouvrables par les anciens moyens : détruisez-les si elles risquent de tomber entre
 > de mauvaises mains, puis faites une nouvelle sauvegarde.
 >
-> Ce que vous avez à faire : Notez sur votre feuille le numéro de version indiqué ci-dessous. Pour
-> vous servir de votre application, cliquez sur « Revenir à mon application ». Pour recommencer le
-> parcours depuis le début, effacez les données du site dans les réglages du navigateur : supprimer
-> les cookies ne suffit pas.
+> Ce que vous avez à faire : Notez sur votre feuille le nouveau numéro de version. Pour vous servir
+> de votre application, cliquez sur « Revenir à mon application ». Pour recommencer le parcours
+> depuis le début, effacez les données du site dans les réglages du navigateur : supprimer les
+> cookies ne suffit pas.
 
 Boutons et champs : « Revenir à mon application ».
 

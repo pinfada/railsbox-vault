@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { relierLeRefusAuChamp } from "../../public/coquille/refus-du-champ.mjs";
-import { refusJugeLaValeur } from "../../src/coquille/conduites-du-parcours.mjs";
+import { refusJugeLaValeur } from "../../src/coquille/refus-qui-jugent-une-valeur.mjs";
 import { CODES_REFUS_COQUILLE as C } from "../../src/coquille/refus-de-coquille.mjs";
 import { conduiteHumaine } from "../../src/coquille/conduites-du-parcours.mjs";
 import { DERIVATION_ERROR_CODES as D } from "../../src/vm/derivation/derivation-errors.mjs";
@@ -86,7 +86,13 @@ function page() {
     noeud(id).textContent = texte;
     relier();
   };
-  relierLeRefusAuChamp({ doc, noeud, gesteCourant: () => geste, dire, jugeLaValeur: refusJugeLaValeur });
+  relierLeRefusAuChamp({
+    doc,
+    noeud,
+    gesteCourant: () => geste,
+    dire,
+    jugeLaValeur: refusJugeLaValeur,
+  });
   return {
     noeud,
     dire,
