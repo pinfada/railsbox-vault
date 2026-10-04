@@ -1511,6 +1511,32 @@ vivent seules sur `/dev/sdb`, monté sur `/app/var`, avec les options de durabil
   laisse illisible, et le coffre est alors refusé (`VOLUME_APPLICATIF_SANS_MANIFESTE`) sans que les
   données soient perdues.
 
+## Le magasin d'artefacts : ce qu'il protège, et ce qu'il ne protège pas (#247, ADR 0044)
+
+L'[ADR 0044](docs/decisions/0044-le-magasin-d-artefacts.md) range le rootfs et les paquets dans
+`vault-artefacts/` de l'OPFS de l'origine de confiance, sous leur empreinte.
+
+**Ce qu'il protège.**
+
+- Aucun octet n'est servi avant d'avoir été vérifié : chaque tranche de 8 Mio est confrontée à la
+  **racine portée par le descripteur**, jamais à la liste de tranches rangée dans l'OPFS. Une
+  tranche ou une liste altérée dans l'OPFS rend « absent », et le démarrage retélécharge.
+- Aucun partiel n'est servi : l'admission écrit sous un nom provisoire puis renomme.
+- Le magasin cède toujours au volume : il n'admet rien qui entamerait la marge de 256 Mio laissée au
+  volume, et il est purgé avant toute réservation du volume qui manquerait de place.
+
+**Ce qu'il ne protège pas.**
+
+- **Un descripteur sans racine** : l'artefact est alors vérifié en entier contre son empreinte —
+  même garantie, chemin lent.
+- **Le hors-ligne gèle la version** : quand l'origine est injoignable, le dernier descripteur
+  vérifié fait foi. Une révocation publiée pendant la coupure n'est pas vue avant le retour du
+  réseau (gel de version au sens de TUF, accepté par l'amendement du 04/10 de l'ADR 0042 tant que
+  les paquets ne sont pas signés).
+- **Un adversaire qui écrit dans l'OPFS ET contrôle l'origine** : il peut servir un descripteur dont
+  la racine désigne ses propres tranches. Le magasin n'ajoute rien à la confiance faite à l'origine
+  (ADR 0042) ; seule la signature du jalon 6 y répondra.
+
 ## L'instantané de reprise contient la RAM invitée (#65)
 
 L'[ADR 0024](docs/decisions/0024-instantane-de-reprise.md) ajoute un sixième voisin de volume,

@@ -418,6 +418,9 @@ développeur et n'est PAS gouverné par l'URL (fait 5) : un Service Worker qui r
 sous une clé de requête et le rendrait pour une autre briserait la garantie que l'adresse porte.
 C'est ce cas résiduel, et lui seul, que **#151** garde ouvert.
 
+**Le 04/10/2026, #151 est fermée sans objet** (ADR 0044) : le magasin d'artefacts range sous
+l'empreinte vérifiée, et aucun Service Worker n'est installé sur l'origine.
+
 ### Une ADRESSE QUI N'EXISTE PAS relève elle aussi de la règle immuable
 
 C'est le bord neuf de la promesse, relevé par la revue de sécurité, et il ne se confond avec aucune
