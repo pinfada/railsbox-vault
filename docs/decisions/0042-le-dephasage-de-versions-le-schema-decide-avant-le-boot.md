@@ -256,3 +256,16 @@ décision ne disait pas à la personne, et un outil qui fabriquait un descripteu
   strictement antérieur, et `app:paquet` gagne deux gestes sans construction :
   `--courant-devient-precedent` (le paquet servi, avec les images EXACTES qui ont installé les
   coffres, devient le précédent) et `--retirer-precedent` (Q5).
+
+## Amendement du 04/10/2026 — le gel de version hors ligne (#247, ADR 0044)
+
+Quand l'origine est **injoignable** (`fetch` lève), le dernier descripteur vérifié, rangé au magasin
+d'artefacts, fait foi : la coquille démarre la version qu'il décrit et dit à la personne qu'elle
+travaille hors connexion, avec la version de telle date. C'est un **gel de version** (attaque «
+freeze » de TUF) : une révocation publiée pendant la coupure n'est pas vue avant le retour du
+réseau. Il est **accepté tant que les paquets ne sont pas signés** — sans signature, une origine
+joignable peut déjà servir n'importe quelle version, et le gel ne donne pas davantage à un
+adversaire. Il cesse d'être accepté avec la signature du jalon 6, qui devra borner sa durée.
+
+Dès que l'origine RÉPOND — refus, erreur HTTP, descripteur différent —, la présente décision
+s'applique telle quelle : l'origine fait foi, et le descripteur rangé est ignoré.

@@ -193,6 +193,7 @@ Les deux projets pourront partager ultérieurement des composants dont la fronti
 - [ADR 0041 — le paquet applicatif : partition 2 d un `hda` composé, données sur hdb, descripteur v2](docs/decisions/0041-le-paquet-applicatif-partition-2-d-un-hda-compose.md)
 - [ADR 0042 — le déphasage de versions : la version et le schéma décident avant le boot](docs/decisions/0042-le-dephasage-de-versions-le-schema-decide-avant-le-boot.md)
 - [ADR 0043 — l'application d'abord : la promesse à l'entrée, l'application plein écran](docs/decisions/0043-l-application-d-abord.md)
+- [ADR 0044 — le magasin d'artefacts : rangé sous l'empreinte, vérifié contre la racine du descripteur, cédant au volume](docs/decisions/0044-le-magasin-d-artefacts.md)
 
 ## Licence
 
