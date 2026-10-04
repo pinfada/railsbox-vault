@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-09-19T15:20:37Z" agent="Architecture documentation" version="24.0.0" type="device" pages="1">
+  <diagram id="pilotage-cible" name="03 · Pilotage cible">
+    <mxGraphModel dx="1600" dy="1080" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1080" math="0" shadow="0" background="#FFFFFF">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="kicker" value="RAILSBOX VAULT  /  ARCHITECTURE" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=12;fontColor=#526581;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="64" y="35" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="title" value="Un moteur commun, des projets isolés" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=34;fontColor=#172B4D;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="64" y="76" width="1150" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Architecture proposée · chaque projet possède son contexte, ses consignes et ses données" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=17;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="64" y="139" width="1390" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="accent" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#966317;strokeColor=#966317;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="64" y="187" width="1472" height="2" as="geometry" />
+        </mxCell>
+        <mxCell id="status" value="PROPOSÉ · NON IMPLÉMENTÉ" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=12;fontColor=#966317;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="38" width="376" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="footer" value="19 SEPT. 2026  ·  03 / 03" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=12;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="1025" width="256" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="shared" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#FAFCFE;strokeColor=#C7D4E5;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="64" y="220" width="1472" height="215" as="geometry" />
+        </mxCell>
+        <mxCell id="shared_title" value="Outillage commun" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=19;fontColor=#2457A7;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="92" y="242" width="1416" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="shared_sub" value="Une version des scripts et de l’interface" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=13;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="92" y="274" width="1416" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="selector" value="&lt;div style=&quot;font-size:18px;line-height:1.15;font-weight:bold&quot;&gt;Choix du projet&lt;/div&gt;&lt;div style=&quot;font-size:11px;line-height:1.2;margin-top:4px;color:#2457A7&quot;&gt;POINT D’ENTRÉE&lt;/div&gt;&lt;div style=&quot;font-size:14px;line-height:1.25;margin-top:6px;color:#526581&quot;&gt;Identifiant stable + dépôt.&lt;/div&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=10;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+          <mxGeometry x="96" y="310" width="296" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="sharedengine" value="&lt;div style=&quot;font-size:18px;line-height:1.15;font-weight:bold&quot;&gt;Cockpit + moteur&lt;/div&gt;&lt;div style=&quot;font-size:11px;line-height:1.2;margin-top:4px;color:#2457A7&quot;&gt;POWERSHELL · CLAUDE CODE&lt;/div&gt;&lt;div style=&quot;font-size:14px;line-height:1.25;margin-top:6px;color:#526581&quot;&gt;Le contexte accompagne chaque commande.&lt;/div&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=10;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+          <mxGeometry x="508" y="310" width="500" height="100" as="geometry" />
+        </mxCell>
+        <object id="context" label="&lt;div style=&quot;font-size:18px;line-height:1.15;font-weight:bold&quot;&gt;Contexte projet&lt;/div&gt;&lt;div style=&quot;font-size:11px;line-height:1.2;margin-top:4px;color:#2457A7&quot;&gt;CONFIGURATION&lt;/div&gt;&lt;div style=&quot;font-size:14px;line-height:1.25;margin-top:6px;color:#526581&quot;&gt;Dépôt, chemins et validations.&lt;/div&gt;" tooltip="Contrat à définir : identifiant du projet, dépôt, remote, branche principale, chemins des données, commandes de validation et documentation. Transmis au dashboard, aux agents et aux outils de nettoyage.">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=10;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="1124" y="310" width="380" height="100" as="geometry" />
+          </mxCell>
+        </object>
+        <mxCell id="projectA" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#ECF7F5;strokeColor=#ABD3CD;strokeWidth=1;dashed=1;dashPattern=6 4;" vertex="1" parent="1">
+          <mxGeometry x="64" y="550" width="700" height="335" as="geometry" />
+        </mxCell>
+        <mxCell id="projectA_title" value="Projet A · RailsBox Vault" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=19;fontColor=#147D79;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="92" y="572" width="644" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="projectA_sub" value="Contexte et données propres au projet" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=13;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="92" y="604" width="644" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="projectB" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#ECF7F5;strokeColor=#ABD3CD;strokeWidth=1;dashed=1;dashPattern=6 4;" vertex="1" parent="1">
+          <mxGeometry x="836" y="550" width="700" height="335" as="geometry" />
+        </mxCell>
+        <mxCell id="projectB_title" value="Projet B · autre dépôt" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=19;fontColor=#147D79;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="864" y="572" width="644" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="projectB_sub" value="Même outillage, contexte indépendant" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=13;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="864" y="604" width="644" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="cfg_a" value="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Consignes RailsBox&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;PROFIL PROJET&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Tests npm et décisions&lt;br&gt;d’architecture du coffre.&lt;/div&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+          <mxGeometry x="96" y="650" width="302" height="135" as="geometry" />
+        </mxCell>
+        <object id="data_a" label="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Données de pilotage&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;REGISTRE ISOLÉ&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Runs, verrous et rapports.&lt;br&gt;Briefs, archives et journaux.&lt;/div&gt;" tooltip="Tous les répertoires de runtime sont séparés par projet. Les opérations de reprise et de nettoyage sont limitées au contexte courant ; les verrous sont identifiés par projet + branche.">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="430" y="650" width="302" height="135" as="geometry" />
+          </mxCell>
+        </object>
+        <mxCell id="git_a" value="Dépôt Git   /   Worktrees   /   Pull requests   /   CI" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=16;fontColor=#147D79;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="96" y="815" width="636" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="cfg_b" value="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Consignes du projet&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;PROFIL PROJET&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Tests et documentation&lt;br&gt;propres à ce dépôt.&lt;/div&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+          <mxGeometry x="868" y="650" width="302" height="135" as="geometry" />
+        </mxCell>
+        <object id="data_b" label="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Données de pilotage&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;REGISTRE ISOLÉ&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Runs, verrous et rapports.&lt;br&gt;Briefs, archives et journaux.&lt;/div&gt;" tooltip="Tous les répertoires de runtime sont séparés par projet. Les opérations de reprise et de nettoyage sont limitées au contexte courant ; les verrous sont identifiés par projet + branche.">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="1202" y="650" width="302" height="135" as="geometry" />
+          </mxCell>
+        </object>
+        <mxCell id="git_b" value="Dépôt Git   /   Worktrees   /   Pull requests   /   CI" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=16;fontColor=#147D79;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="868" y="815" width="636" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="choose" value="Sélectionne" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="selector" target="sharedengine">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="configure" value="Configure" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="context" target="sharedengine">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="toA" value="Contexte A" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#147D79;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="sharedengine" target="projectA">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="633" y="490" />
+              <mxPoint x="414" y="490" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="toB" value="Contexte B" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#147D79;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;dashed=1;dashPattern=6 4;" edge="1" parent="1" source="sharedengine" target="projectB">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="883" y="490" />
+              <mxPoint x="1186" y="490" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="rule1_bg" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#ECF7F5;strokeColor=none;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="64" y="918" width="464" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="rule1_title" value="UNE IDENTITÉ PAR PROJET" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=15;fontColor=#147D79;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="82" y="931" width="428" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="rule1_body" value="Verrous et reprises : projet + branche." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=14;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="82" y="961" width="428" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="rule2_bg" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#ECF7F5;strokeColor=none;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="568" y="918" width="464" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="rule2_title" value="DES VUES FILTRÉES" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=15;fontColor=#147D79;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="586" y="931" width="428" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="rule2_body" value="Runs et coûts par projet ; totaux globaux signalés." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=14;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="586" y="961" width="428" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="rule3_bg" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#FCF6E9;strokeColor=none;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="1072" y="918" width="464" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="rule3_title" value="UNE ÉVOLUTION À RÉALISER" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=15;fontColor=#966317;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="931" width="428" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="rule3_body" value="Profils et propagation du contexte à implémenter." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=14;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="961" width="428" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="refs" value="Pointillés = séparation proposée · PILOTAGE_HOME seul ne fournit pas aujourd’hui cette isolation." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=12;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="64" y="1025" width="1160" height="24" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

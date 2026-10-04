@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-09-19T15:20:37Z" agent="Architecture documentation" version="24.0.0" type="device" pages="1">
+  <diagram id="pilotage-actuel" name="02 · Pilotage actuel">
+    <mxGraphModel dx="1600" dy="1080" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1080" math="0" shadow="0" background="#FFFFFF">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="kicker" value="RAILSBOX VAULT  /  ARCHITECTURE" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=12;fontColor=#526581;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="64" y="35" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="title" value="Le poste de pilotage du développement" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=34;fontColor=#172B4D;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="64" y="76" width="1150" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Vue d’ensemble de l’outillage · dépôt sélectionnable, registre partagé entre les projets" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=17;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="64" y="139" width="1390" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="accent" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#2457A7;strokeColor=#2457A7;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="64" y="187" width="1472" height="2" as="geometry" />
+        </mxCell>
+        <mxCell id="status" value="EXISTANT · SCRIPTS LOCAUX" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=12;fontColor=#2457A7;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="38" width="376" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="footer" value="19 SEPT. 2026  ·  02 / 03" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=12;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="1025" width="256" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="platform" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#FAFCFE;strokeColor=#C7D4E5;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="64" y="220" width="610" height="665" as="geometry" />
+        </mxCell>
+        <mxCell id="platform_title" value="Poste local" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=19;fontColor=#2457A7;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="92" y="242" width="554" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="platform_sub" value="Windows PowerShell · ~/.claude/pilotage" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=13;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="92" y="274" width="554" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="repo" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#ECF7F5;strokeColor=#ABD3CD;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="790" y="220" width="430" height="665" as="geometry" />
+        </mxCell>
+        <mxCell id="repo_title" value="Projet sélectionné" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=19;fontColor=#147D79;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="818" y="242" width="374" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="repo_sub" value="RailsBox Vault ou un autre dépôt Git" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=13;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="818" y="274" width="374" height="24" as="geometry" />
+        </mxCell>
+        <object id="terminal" label="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Cockpit&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;WINDOWS TERMINAL&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Dashboard des chantiers · superviseur Claude · coûts.&lt;/div&gt;" tooltip="pilotage.ps1 ouvre trois volets. Le dépôt est choisi par -Depot, le répertoire courant ou repository.path en dernier recours. Le superviseur s’exécute dans le dépôt.">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="96" y="335" width="546" height="130" as="geometry" />
+          </mxCell>
+        </object>
+        <object id="engine" label="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Moteur de pilotage&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;POWERSHELL · PILOTAGE.CORE&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Lance les agents, suit les runs et vérifie le nettoyage.&lt;/div&gt;" tooltip="Pilotage.Core.psm1 ; agent.ps1 ; run.ps1 ; doctor.ps1 ; etat.ps1 ; nettoyer-worktrees.ps1. Validation, heartbeat, preuves de fusion, rétention, revalidation avant nettoyage.">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="96" y="565" width="546" height="130" as="geometry" />
+          </mxCell>
+        </object>
+        <object id="registry" label="&lt;div style=&quot;font-size:18px;line-height:1.15;font-weight:bold&quot;&gt;Registre commun&lt;/div&gt;&lt;div style=&quot;font-size:11px;line-height:1.2;margin-top:4px;color:#2457A7&quot;&gt;FICHIERS LOCAUX&lt;/div&gt;&lt;div style=&quot;font-size:14px;line-height:1.25;margin-top:6px;color:#526581&quot;&gt;Runs · verrous · briefs · rapports · journaux.&lt;/div&gt;" tooltip="paths.runs, locks, briefs, reports, archive, logs : chemins résolus depuis la racine de pilotage. Les verrous et la recherche des runs utilisent la branche, sans identité du dépôt.">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=10;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="96" y="765" width="546" height="100" as="geometry" />
+          </mxCell>
+        </object>
+        <mxCell id="source" value="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Dépôt Git&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;CODE ET CONSIGNES&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Sources, documentation&lt;br&gt;et commandes de validation.&lt;/div&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+          <mxGeometry x="822" y="335" width="366" height="130" as="geometry" />
+        </mxCell>
+        <object id="agents" label="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Agents Claude&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;WORKTREES GIT&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Un brief et un rôle par chantier.&lt;br&gt;Implémentation, revue, QA.&lt;/div&gt;" tooltip="agent.ps1 reçoit -Depot et -Branche, crée le worktree sous .claude/worktrees, copie .claude/BRIEF.md et lance claude. Rôles admis : implementation, review, security-review, qa, challenge. Le rôle challenge intervient avant le gel du brief.">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="822" y="565" width="366" height="130" as="geometry" />
+          </mxCell>
+        </object>
+        <mxCell id="github" value="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;GitHub&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;SERVICE EXTERNE&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Pull requests.&lt;br&gt;Intégration continue.&lt;/div&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+          <mxGeometry x="1320" y="565" width="216" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="repo_note" value="Les worktrees appartiennent au dépôt ;&lt;br&gt;le registre reste commun au poste." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=15;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="822" y="772" width="366" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="select" value="Sélectionne · -Depot" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="terminal" target="source">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="launch" value="Pilote les chantiers" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="terminal" target="engine">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="spawn" value="Lance / suit" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="engine" target="agents">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="worktree" value="Fournit le code" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="source" target="agents">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="save" value="Enregistre les runs et rapports" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="engine" target="registry">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pr" value="PR / CI" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="agents" target="github">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="limit1_bg" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#FCF6E9;strokeColor=none;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="64" y="918" width="464" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="limit1_title" value="REGISTRE PARTAGÉ" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=15;fontColor=#966317;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="82" y="931" width="428" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="limit1_body" value="Le dashboard affiche les runs de tous les dépôts." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=14;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="82" y="961" width="428" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="limit2_bg" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#FCF6E9;strokeColor=none;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="568" y="918" width="464" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="limit2_title" value="COLLISIONS POSSIBLES" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=15;fontColor=#966317;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="586" y="931" width="428" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="limit2_body" value="Deux projets peuvent utiliser la même branche." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=14;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="586" y="961" width="428" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="limit3_bg" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#FCF6E9;strokeColor=none;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="1072" y="918" width="464" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="limit3_title" value="CONSIGNES À ADAPTER" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=15;fontColor=#966317;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="931" width="428" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="limit3_body" value="Tests et documentation restent liés au projet." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=14;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="961" width="428" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="refs" value="Cadres = périmètres · flèches = interactions · source : ~/.claude/pilotage, scripts et PROTOCOLE.md" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=12;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="64" y="1025" width="1160" height="24" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
