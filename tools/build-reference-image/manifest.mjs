@@ -13,6 +13,7 @@ import { ARTEFACTS_ATTENDUS, construireManifeste, validerManifeste } from "./man
 import { validerPaquet } from "../paquet/contrat-du-paquet.mjs";
 import { nomServi } from "../paquet/compression.mjs";
 import { comparerVersions, estUneVersion } from "../../src/coquille/dephasage.mjs";
+import { racineDeFichier } from "../paquet/racine-des-tranches.mjs";
 
 const dossierOutils = dirname(fileURLToPath(import.meta.url));
 export const RACINE_DEPOT = resolve(dossierOutils, "..", "..");
@@ -69,13 +70,16 @@ export function descripteurApplicatif(manifeste, versionRuntime) {
   // et `sha256` restent ceux de l'image DÉCOMPRESSÉE, que l'empreinte d'image et la datation lisent.
   const morceau = (nomImage, nomServi, role) => {
     const image = trouver(nomImage, role);
+    // La RACINE des tranches de 8 Mio (#247), calculée à la fabrication sur l'image décompressée.
+    const racine = image.racine === undefined ? {} : { racine: image.racine };
     if (nomServi === undefined || nomServi === null) {
-      return { nom: nomImage, octets: image.byteSize, sha256: image.sha256 };
+      return { nom: nomImage, octets: image.byteSize, sha256: image.sha256, ...racine };
     }
     return {
       nom: nomServi,
       octets: image.byteSize,
       sha256: image.sha256,
+      ...racine,
       compression: "gzip",
       transfertOctets: trouver(nomServi, role).byteSize,
     };
@@ -207,6 +211,13 @@ export function empreinteFichier(chemin) {
   };
 }
 
+/** Les images que le magasin range (rootfs, paquet courant et précédent) : elles portent une racine. */
+function imagesServiesDansLeMagasin({ paquet, precedent }) {
+  return new Set(
+    ["reference-rootfs.ext4", paquet.image.name, precedent?.image.name].filter(Boolean),
+  );
+}
+
 /**
  * @param {{ dossierArtefacts?: string, environnement?: Record<string, string> }} [options]
  * @returns {Record<string, any>}
@@ -247,7 +258,13 @@ export function assemblerManifeste(options = {}) {
       continue;
     }
     const decrit = metadonnees[nom] ?? metadonneesDUnServi(nom);
-    artefacts.push({ name: nom, ...decrit, ...empreinteFichier(chemin) });
+    const servi = imagesServiesDansLeMagasin({ paquet, precedent }).has(nom);
+    artefacts.push({
+      name: nom,
+      ...decrit,
+      ...empreinteFichier(chemin),
+      ...(servi ? { racine: racineDeFichier(chemin) } : {}),
+    });
   }
   if (manquants.length > 0) {
     throw new Error(motifDesManquants({ manquants, precedent, dossierArtefacts }));
