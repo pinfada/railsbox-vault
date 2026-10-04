@@ -4,6 +4,7 @@
 // voie asynchrone (`getFile` / `createWritable`).
 
 import { DOSSIER_DU_MAGASIN, creerMagasinDArtefacts } from "./magasin-d-artefacts.mjs";
+import { bindNavigatorStorage, createStorageBudget } from "./storage-budget.mjs";
 
 /** Au-delà, le magasin cède : la lecture rend « absent », l'admission est abandonnée (D1a). */
 export const DELAI_DU_MAGASIN_MS = 20_000;
@@ -194,6 +195,28 @@ export function budgetQuiCedeLeMagasin(budget, purger = () => purgerToutLeMagasi
       return budget.reserve(octets);
     },
   };
+}
+
+/**
+ * AVANT la CRÉATION d'un volume (premier démarrage, #247 D1c) : si la place manque pour ses `octets`,
+ * le magasin est vidé d'abord. Ne lève jamais : une mesure indisponible ou une purge manquée laisse
+ * seulement la création rencontrer, le cas échéant, son propre refus de place.
+ *
+ * @param {number} octets
+ * @param {{ stockage?: StorageManager, purger?: () => Promise<boolean> }} [options]
+ * @returns {Promise<{ purge: boolean }>}
+ */
+export async function libererPourLeVolume(
+  octets,
+  { stockage = globalThis.navigator?.storage, purger = () => purgerToutLeMagasin(stockage) } = {},
+) {
+  let purge = false;
+  const budget = budgetQuiCedeLeMagasin(
+    createStorageBudget(bindNavigatorStorage(stockage)),
+    async () => (purge = await purger()),
+  );
+  await budget.reserve(octets);
+  return { purge };
 }
 
 /**

@@ -13,6 +13,7 @@ import {
   bilanDesPurges,
   borneDansLeTemps,
   budgetQuiCedeLeMagasin,
+  libererPourLeVolume,
   ouvrirLeMagasinOpfs,
   purgerToutLeMagasin,
 } from "../../src/vm/magasin-opfs.mjs";
@@ -190,6 +191,24 @@ test("purgerToutLeMagasin retire le dossier, et ne lève jamais", async () => {
   assert.equal(bilanDesPurges().derniere, "NoModificationAllowedError");
   assert.equal(signaux.length, 1);
   assert.match(signaux[0], /VAULT-ARTEFACTS-PURGE-ECHOUEE/);
+});
+
+test("libererPourLeVolume : purge seulement si la place manque, et ne lève jamais", async () => {
+  let libre = 100;
+  const stockage = { estimate: async () => ({ quota: libre, usage: 0 }) };
+  let purges = 0;
+  const purger = async () => {
+    purges += 1;
+    libre = 10_000;
+    return true;
+  };
+  assert.deepEqual(await libererPourLeVolume(50, { stockage, purger }), { purge: false });
+  assert.equal(purges, 0, "la place suffit : le magasin reste");
+  assert.deepEqual(await libererPourLeVolume(500, { stockage, purger }), { purge: true });
+  assert.equal(purges, 1);
+  // Mesure indisponible : rien n'est purgé, rien ne lève.
+  assert.deepEqual(await libererPourLeVolume(500, { stockage: {}, purger }), { purge: false });
+  assert.equal(purges, 1);
 });
 
 test("purgerToutLeMagasin : un dossier déjà absent n'est ni compté ni signalé", async () => {

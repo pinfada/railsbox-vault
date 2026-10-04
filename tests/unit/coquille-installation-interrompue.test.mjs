@@ -850,3 +850,28 @@ test("#255 : l'acquisition MARQUE ses échecs sans code, et laisse les autres in
     V86: null,
   });
 });
+
+test("#247 D1c : la place est libérée AVANT la création du volume, jamais pour un volume installé", async () => {
+  const store = createSyncAccessStore();
+  const monte = primitives(store, REPONSES.servie);
+  const ordre = [];
+  const options = {
+    ...monte.options,
+    libererLaPlace: async (octets) => {
+      ordre.push(["liberer", octets]);
+      return { purge: true };
+    },
+    ouvrir: async (o) => {
+      ordre.push(["ouvrir"]);
+      return monte.options.ouvrir(o);
+    },
+  };
+  const rendu = await installerSiNecessaire(options);
+  assert.equal(rendu.installee, true);
+  assert.deepEqual(ordre[0], ["liberer", rendu.octets], "la purge précède la création");
+  assert.deepEqual(ordre[1], ["ouvrir"]);
+
+  ordre.length = 0;
+  assert.equal((await installerSiNecessaire(options)).installee, false);
+  assert.deepEqual(ordre, [], "un volume installé ne purge rien");
+});
