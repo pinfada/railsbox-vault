@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-09-19T15:20:37Z" agent="Architecture documentation" version="24.0.0" type="device" pages="1">
+  <diagram id="rbv-architecture" name="01 · Produit">
+    <mxGraphModel dx="1600" dy="1080" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1080" math="0" shadow="0" background="#FFFFFF">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="kicker" value="RAILSBOX VAULT  /  ARCHITECTURE" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=12;fontColor=#526581;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="64" y="35" width="900" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="title" value="Une application Rails, dans le navigateur" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=34;fontColor=#172B4D;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="64" y="76" width="1150" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Vue d’ensemble du produit · exécution locale, frontières de confiance et persistance" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=17;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="64" y="139" width="1390" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="accent" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#2457A7;strokeColor=#2457A7;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="64" y="187" width="1472" height="2" as="geometry" />
+        </mxCell>
+        <mxCell id="status" value="IMPLÉMENTÉ · EXPÉRIMENTAL" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=12;fontColor=#2457A7;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1160" y="38" width="376" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="footer" value="19 SEPT. 2026  ·  01 / 03" style="text;html=1;whiteSpace=wrap;align=right;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=12;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1280" y="1025" width="256" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="trust" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#FAFCFE;strokeColor=#C7D4E5;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="376" y="220" width="744" height="665" as="geometry" />
+        </mxCell>
+        <mxCell id="trust_title" value="Origine de confiance" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=19;fontColor=#2457A7;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="404" y="242" width="688" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="trust_sub" value="Coquille + Worker · clés et stockage isolés" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=13;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="404" y="274" width="688" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="app" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#F4F0FA;strokeColor=#D9CEEA;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="1168" y="220" width="368" height="665" as="geometry" />
+        </mxCell>
+        <mxCell id="app_title" value="Origine applicative" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=19;fontColor=#7053A6;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1196" y="242" width="312" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="app_sub" value="Origine distincte · code non fiable" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=13;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1196" y="274" width="312" height="24" as="geometry" />
+        </mxCell>
+        <object id="publication" label="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Distribution statique&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;HÉBERGEMENT WEB&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Coquille et artefacts&lt;br&gt;vérifiés par empreinte.&lt;/div&gt;" tooltip="Deux arbres de publication, un par origine. Le dépôt fournit les outils ; le déploiement réel reste à prouver. Les artefacts de l’image sont déposés séparément (ADR 0030, 0041).">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="64" y="310" width="248" height="140" as="geometry" />
+          </mxCell>
+        </object>
+        <mxCell id="user" value="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Utilisateur&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;PERSONNE&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Ouvre, travaille,&lt;br&gt;verrouille et sauvegarde.&lt;/div&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+          <mxGeometry x="64" y="555" width="248" height="145" as="geometry" />
+        </mxCell>
+        <object id="shell" label="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Coquille&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;INTERFACE WEB&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Ouverture et récupération.&lt;br&gt;Parcours et cycle de vie.&lt;/div&gt;" tooltip="public/index.html, public/main.mjs, src/coquille/. Preuve de la feuille constatée par le Worker ; réouverture de routine vers l’application ; révocation facultative et avertissement selon le moyen de la séance (ADR 0040, amendements des 18–19 septembre).">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="412" y="340" width="280" height="145" as="geometry" />
+          </mxCell>
+        </object>
+        <object id="worker" label="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Runtime de confiance&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;WORKER DÉDIÉ&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Clés, volumes et reprise.&lt;br&gt;Accès exclusif au stockage.&lt;/div&gt;" tooltip="Le handle OPFS ne quitte jamais le Worker. HKDF dérive les clés par domaine ; la clé maîtresse n’est pas utilisée directement par AES-GCM. Barrières de durabilité et générations transactionnelles (ADR 0033–0036).">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="412" y="565" width="280" height="145" as="geometry" />
+          </mxCell>
+        </object>
+        <mxCell id="frame" value="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Interface Rails&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#7053A6&quot;&gt;IFRAME SANDBOXÉE&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Affiche les pages Rails.&lt;br&gt;Aucun accès aux clés.&lt;/div&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#D9CEEA;strokeWidth=1.3;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="340" width="304" height="145" as="geometry" />
+        </mxCell>
+        <object id="relay" label="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Relais applicatif&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#7053A6&quot;&gt;SERVICE WORKER&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Transmet les requêtes HTTP&lt;br&gt;au Worker de confiance.&lt;/div&gt;" tooltip="Relais par MessagePort et troisième canal du Worker de confiance. La session Rails reste dans le Worker. Ni WebSocket ni EventSource relayés (ADR 0038).">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#D9CEEA;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="1200" y="565" width="304" height="145" as="geometry" />
+          </mxCell>
+        </object>
+        <object id="vm" label="&lt;div style=&quot;font-size:20px;line-height:1.15;font-weight:bold&quot;&gt;Application Rails&lt;/div&gt;&lt;div style=&quot;font-size:12px;line-height:1.2;margin-top:6px;color:#2457A7&quot;&gt;V86 · LINUX · RUBY&lt;/div&gt;&lt;div style=&quot;font-size:15px;line-height:1.25;margin-top:10px;color:#526581&quot;&gt;Exécution locale en WebAssembly.&lt;/div&gt;" tooltip="Le HTTP passe par le port série de la VM, sans réseau applicatif. hda est composé en RAM ; la VM lit hdb par l’adaptateur de blocs relié au Worker.">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=16;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="800" y="565" width="280" height="145" as="geometry" />
+          </mxCell>
+        </object>
+        <object id="opfs" label="&lt;div style=&quot;font-size:18px;line-height:1.15;font-weight:bold&quot;&gt;Volumes chiffrés&lt;/div&gt;&lt;div style=&quot;font-size:11px;line-height:1.2;margin-top:4px;color:#2457A7&quot;&gt;OPFS · ORIGINE DE CONFIANCE&lt;/div&gt;&lt;div style=&quot;font-size:14px;line-height:1.25;margin-top:6px;color:#526581&quot;&gt;Données + instantané de reprise.&lt;/div&gt;" tooltip="Volume v4, journal .gen, .manifest, .temoin, .cles, .instantane, .migration et engagement de restauration. Export RBVAULT1 v3. Les détails et limites de rejeu figurent dans SECURITY.md et les ADR 0034–0036.">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=10;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="412" y="765" width="280" height="105" as="geometry" />
+          </mxCell>
+        </object>
+        <object id="archive" label="&lt;div style=&quot;font-size:18px;line-height:1.15;font-weight:bold&quot;&gt;Sauvegarde portable&lt;/div&gt;&lt;div style=&quot;font-size:11px;line-height:1.2;margin-top:4px;color:#2457A7&quot;&gt;FICHIER UTILISATEUR&lt;/div&gt;&lt;div style=&quot;font-size:14px;line-height:1.25;margin-top:6px;color:#526581&quot;&gt;Archive chiffrée + récupération.&lt;/div&gt;" tooltip="Export puis restauration sur un autre appareil ou une autre origine. Sans tous les moyens d’ouverture, aucun séquestre ne permet la récupération.">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=10;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="64" y="765" width="248" height="105" as="geometry" />
+          </mxCell>
+        </object>
+        <object id="disks" label="&lt;div style=&quot;font-size:18px;line-height:1.15;font-weight:bold&quot;&gt;Code / données séparés&lt;/div&gt;&lt;div style=&quot;font-size:11px;line-height:1.2;margin-top:4px;color:#2457A7&quot;&gt;DISQUES VIRTUELS · ADR 0041&lt;/div&gt;&lt;div style=&quot;font-size:14px;line-height:1.25;margin-top:6px;color:#526581&quot;&gt;hda : système + paquet /app&lt;br&gt;hdb : données /app/var&lt;/div&gt;" tooltip="T1 #236 : descripteur v2 ; rootfs et paquet composent les partitions de hda. La graine initialise hdb avec vérification d’empreinte. Les écritures hors /app/var sont perdues au boot à froid. Le paquet entre dans la liaison d’instantané. Le geste de mise à jour et la comparaison de schémas restent à T2.">
+          <mxCell style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacing=10;fontFamily=Helvetica;fontColor=#172B4D;fillColor=#FFFFFF;strokeColor=#C7D4E5;strokeWidth=1.3;" vertex="1" parent="1">
+            <mxGeometry x="800" y="765" width="280" height="105" as="geometry" />
+          </mxCell>
+        </object>
+        <mxCell id="serve" value="Sert le logiciel" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="publication" target="shell">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="348" y="380" />
+              <mxPoint x="348" y="412" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="gesture" value="Ouvre / verrouille" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.8;entryDx=0;entryDy=0;" edge="1" parent="1" source="user" target="shell">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="188" y="520" />
+              <mxPoint x="348" y="520" />
+              <mxPoint x="348" y="456" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="frame_edge" value="Isole l’interface · iframe + MessagePort" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#7053A6;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="shell" target="frame">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="control" value="Commande · MessagePort" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="shell" target="worker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="fetch" value="Requêtes HTTP" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#7053A6;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="frame" target="relay">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="relay_edge" value="Relaie le HTTP · canal restreint" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#7053A6;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0;exitY=0.35;exitDx=0;exitDy=0;entryX=0.8;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="relay" target="worker">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1144" y="616" />
+              <mxPoint x="1144" y="530" />
+              <mxPoint x="636" y="530" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="http" value="HTTP série" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=1;exitY=0.3;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" edge="1" parent="1" source="worker" target="vm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="blocks" value="Blocs disque" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0;exitY=0.78;exitDx=0;exitDy=0;entryX=1;entryY=0.78;entryDx=0;entryDy=0;" edge="1" parent="1" source="vm" target="worker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="persist" value="Chiffre / persiste" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="worker" target="opfs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="export" value="Exporte" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0;exitY=0.8;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="worker" target="archive">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="348" y="681" />
+              <mxPoint x="348" y="817" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="mount" value="Monte les disques" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;endSize=7;strokeWidth=1.5;strokeColor=#2457A7;fontFamily=Helvetica;fontSize=13;fontColor=#526581;labelBackgroundColor=#FFFFFF;spacing=5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="vm" target="disks">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="key_bg" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#EEF4FC;strokeColor=none;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="64" y="918" width="464" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="key_title" value="FRONTIÈRES" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=15;fontColor=#2457A7;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="82" y="931" width="428" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="key_body" value="Cadres = origines · flèches = échanges orientés." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=14;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="82" y="961" width="428" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="local_bg" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#ECF7F5;strokeColor=none;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="568" y="918" width="464" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="local_title" value="PERSISTANCE" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=15;fontColor=#147D79;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="586" y="931" width="428" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="local_body" value="Seul /app/var conserve les données au boot à froid." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=14;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="586" y="961" width="428" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="statusnote_bg" value="" style="rounded=1;arcSize=16;absoluteArcSize=1;html=1;fillColor=#FCF6E9;strokeColor=none;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="1072" y="918" width="464" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="statusnote_title" value="PÉRIMÈTRE" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=15;fontColor=#966317;fontStyle=1;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="931" width="428" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="statusnote_body" value="Données réelles et production : gates fermés." style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=14;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="961" width="428" height="38" as="geometry" />
+        </mxCell>
+        <mxCell id="refs" value="Références : docs/architecture.md · ADR 0030, 0033–0036, 0038, 0040–0041 · SECURITY.md" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;spacing=0;fontFamily=Helvetica;fontSize=12;fontColor=#526581;fontStyle=0;strokeColor=none;fillColor=none;" vertex="1" parent="1">
+          <mxGeometry x="64" y="1025" width="1160" height="24" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
