@@ -8,6 +8,8 @@
 // fourre-tout que le projet a banni ailleurs (#240, #244 ; contrôle QA du 20/09/2026, rootfs en 403).
 
 import { acquerirLeDisqueSysteme } from "./acquisition-du-disque-systeme.mjs";
+import { admissionSelonLeBudget, ouvrirLeMagasinOpfs } from "./magasin-opfs.mjs";
+import { bindNavigatorStorage, createStorageBudget } from "./storage-budget.mjs";
 import { verifierEmpreintesV86, verifierLeModuleV86 } from "./empreintes-du-runtime-v86.mjs";
 import { empreinteDeLImage } from "./instantane-du-boot.mjs";
 import { exigerContexteExecutable } from "./runtime-environment.mjs";
@@ -58,7 +60,19 @@ async function loadRuntime(runtime) {
     fetchBytes(runtime.kernel),
     fetchBytes(runtime.initrd),
   ]);
-  const disqueSysteme = await acquerirLeDisqueSysteme(runtime.disqueSysteme);
+  const magasin = ouvrirLeMagasinOpfs({
+    peutAdmettre: admissionSelonLeBudget(
+      createStorageBudget(bindNavigatorStorage(globalThis.navigator?.storage)),
+    ),
+  });
+  const disqueSysteme = await acquerirLeDisqueSysteme({ ...runtime.disqueSysteme, magasin });
+  // Le magasin est un cache : sa rétention ne fait jamais échouer un boot.
+  await magasin
+    ?.retenir({
+      rootfs: runtime.disqueSysteme.rootfs.sha256,
+      paquet: runtime.disqueSysteme.paquet.sha256,
+    })
+    .catch(() => {});
   const artifacts = {
     wasm,
     bios,
