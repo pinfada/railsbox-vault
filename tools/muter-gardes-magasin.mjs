@@ -35,8 +35,9 @@ export const MUTATIONS = Object.freeze([
     nom: "aucun octet n'est servi avant vérification",
     garde: "servir — le verdict de verserEtVerifier",
     fichier: MAGASIN,
-    avant: "  if (await verserEtVerifier(contexte, morceau, cible, tranches)) return true;\n",
-    apres: "  await verserEtVerifier(contexte, morceau, cible, tranches);\n  return true;\n",
+    avant:
+      "  if (await verserEtVerifier(contexte, morceau, cible, tranches, jeton)) return true;\n",
+    apres: "  await verserEtVerifier(contexte, morceau, cible, tranches, jeton);\n  return true;\n",
     epreuves: [EPREUVE_MAGASIN],
   },
   {
@@ -87,8 +88,54 @@ export const MUTATIONS = Object.freeze([
     fichier: OPFS,
     avant:
       "    servir: (morceau, cible) =>\n" +
-      "      avantLEcheance(magasin.servir(morceau, cible), delaiMs, () => false),\n",
+      "      avantLEcheance(\n" +
+      "        (jeton) => magasin.servir(morceau, cible, jeton),\n" +
+      "        delaiMs,\n" +
+      "        () => false,\n" +
+      "      ),\n",
     apres: "    servir: (morceau, cible) => magasin.servir(morceau, cible),\n",
+    epreuves: [EPREUVE_OPFS],
+  },
+  // Revue de sécurité du 04/10/2026.
+  {
+    nom: "une tranche n'est copiée dans la cible qu'après vérification",
+    garde: "verserEtVerifier — la copie après le hachage",
+    fichier: MAGASIN,
+    avant: "    const vue = prive.subarray(0, fin - debut);\n    if ((await primitives.lire(",
+    apres: "    const vue = cible.subarray(debut, fin);\n    if ((await primitives.lire(",
+    epreuves: [EPREUVE_MAGASIN],
+  },
+  {
+    nom: "le jeton d'annulation est testé avant chaque copie",
+    garde: "verserEtVerifier — jeton.annule avant cible.set",
+    fichier: MAGASIN,
+    avant: "    if (jeton.annule) return false;\n    cible.set(vue, debut);\n",
+    apres: "    cible.set(vue, debut);\n",
+    epreuves: [EPREUVE_MAGASIN],
+  },
+  {
+    nom: "l'échéance annule le jeton",
+    garde: "avantLEcheance — jeton.annule = true",
+    fichier: OPFS,
+    avant: "      jeton.annule = true;\n",
+    apres: "",
+    epreuves: [EPREUVE_MAGASIN, EPREUVE_OPFS],
+  },
+  {
+    nom: "la racine est confrontée à l'admission",
+    garde: "admettre — racine calculée contre racine du descripteur",
+    fichier: MAGASIN,
+    avant: "  if (racine !== undefined && calculee !== racine) {\n",
+    apres: "  if (false) {\n",
+    epreuves: [EPREUVE_MAGASIN],
+  },
+  {
+    nom: "la rétention est bornée dans le temps",
+    garde: "borneDansLeTemps — retenir",
+    fichier: OPFS,
+    avant:
+      '      avantLEcheance(() => magasin.retenir(courants), delaiMs, magasinLent("rétention"));\n',
+    apres: "      magasin.retenir(courants);\n",
     epreuves: [EPREUVE_OPFS],
   },
 ]);

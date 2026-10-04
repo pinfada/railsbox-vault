@@ -18,6 +18,7 @@ import {
   empreintesDeTranches,
   racineDesTranches,
 } from "../../src/vm/magasin-d-artefacts.mjs";
+import { borneDansLeTemps } from "../../src/vm/magasin-opfs.mjs";
 import { primitivesEnMemoire } from "./magasin-en-memoire.mjs";
 
 const empreinteDe = (octets) => createHash("sha256").update(octets).digest("hex");
@@ -153,4 +154,108 @@ test("la purge garde les empreintes nommées et oublie les orphelines", async ()
   await magasin.admettre(b);
   assert.deepEqual(await magasin.purger([a.sha256]), [b.sha256]);
   assert.deepEqual((await primitives.lister()).sort(), [a.sha256, a.sha256 + ".tranches"].sort());
+});
+
+// --- Revue de sécurité du 04/10/2026 ---------------------------------------------------------------
+
+test("une lecture qui se dit COURTE refuse, même si les octets reçus sont les bons", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  const { octets, sha256 } = artefact(TAILLE);
+  await magasin.admettre({ sha256, octets });
+  const lire = primitives.lire;
+  primitives.lire = async (...args) => (await lire(...args)) - 1;
+  assert.equal(await magasin.servir({ sha256, octets: TAILLE }, new Uint8Array(TAILLE)), false);
+});
+
+const attendre = (ms) => new Promise((resoudre) => setTimeout(resoudre, ms));
+
+/** Primitives LENTES : chaque lecture attend `ms` avant de rendre ses octets. */
+function ralentir(primitives, ms) {
+  const lire = primitives.lire;
+  primitives.lire = async (nom, position, cible) => {
+    await attendre(ms);
+    return lire(nom, position, cible);
+  };
+}
+
+test("une tranche n'est copiée dans la cible qu'APRÈS vérification : l'altérée n'y entre jamais", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  const { octets, sha256 } = artefact(TAILLE);
+  const { racine } = await magasin.admettre({ sha256, octets });
+  primitives.fichiers.get(sha256).fill(0xfe, TRANCHE_OCTETS, 2 * TRANCHE_OCTETS);
+
+  const cible = new Uint8Array(TAILLE);
+  assert.equal(await magasin.servir({ sha256, octets: TAILLE, racine }, cible), false);
+  assert.ok(
+    cible.subarray(TRANCHE_OCTETS, 2 * TRANCHE_OCTETS).every((o) => o !== 0xfe),
+    "aucun octet de la tranche altérée n'a touché la cible",
+  );
+});
+
+test("servir abandonné à l'échéance n'écrit plus rien : la cible garde les octets téléchargés", async () => {
+  for (const avecRacine of [false, true]) {
+    const primitives = primitivesEnMemoire();
+    const magasin = creerMagasinDArtefacts({ primitives });
+    const { octets, sha256 } = artefact(TAILLE);
+    const { racine } = await magasin.admettre({ sha256, octets });
+    // L'OPFS ALTÉRÉ — sans racine, rien ne le voit avant le digest final — et LENT.
+    if (!avecRacine) primitives.fichiers.get(sha256).fill(0xfe);
+    ralentir(primitives, 15);
+    const borne = borneDansLeTemps(magasin, 5);
+    const cible = new Uint8Array(TAILLE);
+    const morceau = avecRacine ? { sha256, octets: TAILLE, racine } : { sha256, octets: TAILLE };
+
+    assert.equal(await borne.servir(morceau, cible), false);
+    cible.set(octets); // l'appelant télécharge par-dessus toute la plage
+    await attendre(150); // l'opération abandonnée a eu le temps de parcourir toutes ses tranches
+
+    assert.ok(!cible.includes(0xfe), "aucun octet de l'OPFS après l'échéance");
+    assert.equal(empreinteDe(cible), sha256, "le tampon final est celui du descripteur");
+    assert.ok(primitives.fichiers.has(sha256), "un abandon ne juge pas l'entrée : elle reste");
+  }
+});
+
+test("sans racine, un sha256 final faux rend false et oublie l'entrée : l'appelant retélécharge", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  const { octets, sha256 } = artefact(TAILLE);
+  await magasin.admettre({ sha256, octets });
+  primitives.fichiers.get(sha256)[TAILLE - 1] ^= 1;
+  assert.equal(await magasin.servir({ sha256, octets: TAILLE }, new Uint8Array(TAILLE)), false);
+  assert.equal(primitives.fichiers.has(sha256), false);
+});
+
+test("une racine incohérente à l'admission : rien n'est rangé, refus typé et journalisé", async () => {
+  const primitives = primitivesEnMemoire();
+  const journal = [];
+  const magasin = creerMagasinDArtefacts({ primitives, signaler: (m) => journal.push(m) });
+  const { octets, sha256 } = artefact(TAILLE);
+  await assert.rejects(magasin.admettre({ sha256, octets, racine: "0".repeat(64) }), {
+    code: "MAGASIN_RACINE_INCOHERENTE",
+  });
+  assert.deepEqual(await primitives.lister(), [], "ni octets, ni liste, ni partiel");
+  assert.equal(journal.length, 1);
+  assert.match(journal[0], /MAGASIN_RACINE_INCOHERENTE/);
+
+  const racine = await racineDesTranches(await empreintesDeTranches(octets));
+  const admis = await magasin.admettre({ sha256, octets, racine });
+  assert.equal(admis.racine, racine, "la bonne racine est admise");
+  assert.ok(primitives.fichiers.has(sha256));
+});
+
+test("une admission abandonnée (jeton annulé) cesse d'écrire et ne renomme rien", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  const { octets, sha256 } = artefact(TAILLE);
+  const jeton = { annule: false };
+  const ecrire = primitives.ecrire;
+  primitives.ecrire = async (...args) => {
+    await ecrire(...args);
+    jeton.annule = true;
+  };
+  assert.equal(await magasin.admettre({ sha256, octets }, jeton), null);
+  assert.equal(primitives.fichiers.has(sha256), false);
+  assert.equal(primitives.ecritures.length, 1, "plus aucune écriture après l'annulation");
 });
