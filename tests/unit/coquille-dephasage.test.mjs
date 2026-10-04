@@ -389,6 +389,18 @@ test("DESCRIPTEUR : le schéma servi est exigé, en chiffres", () => {
   assert.equal(formeDuDescripteur(descripteur()).valide, true);
 });
 
+test("la racine des tranches (#247) est FACULTATIVE ; présente, elle doit être une empreinte", () => {
+  const avec = (racine) =>
+    formeDuDescripteur(
+      descripteur({ rootfs: { nom: "rootfs.ext4", octets: 4096, sha256: E("a"), racine } }),
+    );
+  assert.equal(avec(undefined).valide, true);
+  assert.equal(avec(E("f")).valide, true);
+  const refus = avec("pas-une-empreinte");
+  assert.equal(refus.valide, false);
+  assert.match(refus.motif, /racine des tranches mal formée/);
+});
+
 test("DESCRIPTEUR : la ligne de commande SERVIE ne porte aucun paramètre vault.* (constat 2)", () => {
   for (const ajout of [" vault.schema=20260101000002", " vault.migrer=1", " vault.x=1"]) {
     const d = descripteur();

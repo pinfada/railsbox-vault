@@ -24,6 +24,7 @@
 // avant le premier battement du guest. Voir `empreinteDeLImage`.
 
 import { capturerInstantane, ouvrirInstantaneDeReprise } from "./instantane-de-reprise.mjs";
+import { budgetQuiCedeLeMagasin } from "./magasin-opfs.mjs";
 import { solderLeJournal } from "./instantane/solde-du-journal.mjs";
 import { supportInstantaneOpfs } from "./instantane/support-opfs.mjs";
 import { octetsEnHex } from "./format-chiffre/octets.mjs";
@@ -142,7 +143,8 @@ async function sousQuiescence({ adapter, session, backend, volume, etatPresent, 
       // Le QUOTA est demandé avant que `allouer` ne réserve un quart de gibioctet d'un seul
       // `truncate` (#9). Un moteur sans `estimate()` rend l'état « inconnu », que la conduite
       // laisse passer : l'inconnu n'est pas une capacité nulle.
-      budget: createStorageBudget(bindNavigatorStorage(navigator.storage)),
+      // Le magasin d'artefacts cède sa place avant que la capture n'en manque (#247).
+      budget: budgetQuiCedeLeMagasin(createStorageBudget(bindNavigatorStorage(navigator.storage))),
     });
     return { capture, violations: adapter.status().violations };
   } finally {
