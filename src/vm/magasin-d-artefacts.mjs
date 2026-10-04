@@ -107,14 +107,16 @@ export function tranchesEtRacineSync(octets, hacherSync) {
  *             supprimer(nom: string): Promise<void>,
  *             lister(): Promise<string[]> },
  *           hacher?: (octets: Uint8Array) => Promise<string>,
- *           peutAdmettre?: (octets: number) => Promise<boolean> }} options
+ *           peutAdmettre?: (octets: number) => Promise<boolean>,
+ *           signaler?: (message: string) => void }} options
  */
 export function creerMagasinDArtefacts({
   primitives,
   hacher = hacherParWebCrypto,
   peutAdmettre = async () => true,
+  signaler = (message) => globalThis.console?.warn(message),
 }) {
-  const contexte = { primitives, hacher, peutAdmettre };
+  const contexte = { primitives, hacher, peutAdmettre, signaler };
   return {
     /**
      * SERT un artefact rangé dans `cible` (une vue de `morceau.octets` octets), après vérification.
@@ -122,15 +124,19 @@ export function creerMagasinDArtefacts({
      *
      * @param {{ sha256: string, octets: number, racine?: string }} morceau
      * @param {Uint8Array} cible
+     * @param {{ annule: boolean }} [jeton] posé par l'appelant qui abandonne : plus rien n'est écrit
      */
-    servir: (morceau, cible) => servir(contexte, morceau, cible),
+    servir: (morceau, cible, jeton) => servir(contexte, morceau, cible, jeton),
     /**
      * ADMET un artefact DÉJÀ vérifié contre le descripteur (`octets` est une vue sur le tampon : aucune
      * copie). Le budget est consulté AVANT la première écriture ; un refus est typé (`AdmissionRefusee`).
+     * Avec la `racine` du descripteur, des tranches qui ne la donnent pas ne sont PAS rangées
+     * (`MAGASIN_RACINE_INCOHERENTE`). Abandonnée (jeton annulé), l'admission ne renomme rien et rend `null`.
      *
-     * @param {{ sha256: string, octets: Uint8Array }} artefact
+     * @param {{ sha256: string, octets: Uint8Array, racine?: string }} artefact
+     * @param {{ annule: boolean }} [jeton]
      */
-    admettre: (artefact) => admettre(contexte, artefact),
+    admettre: (artefact, jeton) => admettre(contexte, artefact, jeton),
     /** RÉTENTION : oublie toute empreinte hors de `garder` (rootfs courant, paquet courant et précédent). */
     purger: (garder) => purger(contexte, garder),
   };
@@ -159,19 +165,34 @@ async function lireLaListe({ primitives }, sha256, octets) {
   }
 }
 
-/** Lit et vérifie l'artefact rangé DANS `cible` (gros appels de 8 Mio). Rend `true` s'il est conforme. */
-async function verserEtVerifier({ primitives, hacher }, morceau, cible, tranches) {
+/** Un jeton jamais annulé : l'appelant qui ne borne pas l'opération dans le temps. */
+const SANS_ANNULATION = Object.freeze({ annule: false });
+
+/**
+ * Lit et vérifie l'artefact rangé, tranche par tranche, dans un TAMPON PRIVÉ de 8 Mio ; une tranche
+ * n'est COPIÉE dans `cible` qu'une fois lue en entier et vérifiée (revue du 04/10/2026, constat 1).
+ * Le jeton est testé à chaque tour, et juste avant chaque copie — sans `await` entre les deux : une
+ * opération abandonnée par son appelant n'écrit plus RIEN dans `cible`.
+ *
+ * Sans racine, une tranche ne peut être jugée seule : elle est copiée après lecture, et RIEN n'est
+ * servi avant le `digestHex` final. Un `false` laisse alors la plage entière à retélécharger.
+ */
+async function verserEtVerifier({ primitives, hacher }, morceau, cible, tranches, jeton) {
   const flux = tranches === null ? createSha256Stream() : null;
-  for (let debut = 0, index = 0; debut < morceau.octets; debut += TRANCHE_OCTETS, index += 1) {
-    const vue = cible.subarray(debut, Math.min(morceau.octets, debut + TRANCHE_OCTETS));
+  const prive = new Uint8Array(Math.min(morceau.octets, TRANCHE_OCTETS));
+  for (const [index, [debut, fin]] of bornesDesTranches(morceau.octets).entries()) {
+    if (jeton.annule) return false;
+    const vue = prive.subarray(0, fin - debut);
     if ((await primitives.lire(morceau.sha256, debut, vue)) !== vue.byteLength) return false;
     if (flux !== null) flux.update(vue);
     else if ((await hacher(vue)) !== tranches[index]) return false;
+    if (jeton.annule) return false;
+    cible.set(vue, debut);
   }
   return flux === null || flux.digestHex() === morceau.sha256;
 }
 
-async function servir(contexte, morceau, cible) {
+async function servir(contexte, morceau, cible, jeton = SANS_ANNULATION) {
   const { primitives, hacher } = contexte;
   if (!EMPREINTE.test(morceau.sha256) || cible.byteLength !== morceau.octets) return false;
   if ((await primitives.taille(morceau.sha256)) !== morceau.octets) {
@@ -187,13 +208,42 @@ async function servir(contexte, morceau, cible) {
       return false;
     }
   }
-  if (await verserEtVerifier(contexte, morceau, cible, tranches)) return true;
-  await oublier(contexte, morceau.sha256);
+  if (await verserEtVerifier(contexte, morceau, cible, tranches, jeton)) return true;
+  // Abandonnée, l'opération n'a rien jugé : l'entrée n'est pas en cause, elle reste rangée.
+  if (!jeton.annule) await oublier(contexte, morceau.sha256);
   return false;
 }
 
-async function admettre(contexte, { sha256, octets }) {
-  const { primitives, hacher, peutAdmettre } = contexte;
+/**
+ * Écrit le `.partiel` tranche par tranche, chacune COPIÉE d'abord dans un tampon privé : ce qui est
+ * haché est exactement ce qui est écrit. Le jeton est testé à chaque tour. Rend les empreintes, ou
+ * `null` si l'opération a été abandonnée.
+ */
+async function ecrireLePartiel({ primitives, hacher }, partiel, octets, jeton) {
+  const prive = new Uint8Array(Math.min(octets.byteLength, TRANCHE_OCTETS));
+  const tranches = [];
+  for (const [debut, fin] of bornesDesTranches(octets.byteLength)) {
+    if (jeton.annule) return null;
+    const vue = prive.subarray(0, fin - debut);
+    vue.set(octets.subarray(debut, fin));
+    tranches.push(await hacher(vue));
+    await primitives.ecrire(partiel, debut, vue);
+  }
+  return jeton.annule ? null : tranches;
+}
+
+/** L'admission refusée parce que les tranches ne donnent pas la racine du descripteur. */
+function racineIncoherente(sha256, attendue, obtenue) {
+  return Object.assign(
+    new Error(
+      `Artefact ${sha256} non rangé : racine des tranches ${obtenue}, le descripteur déclare ${attendue}.`,
+    ),
+    { code: "MAGASIN_RACINE_INCOHERENTE" },
+  );
+}
+
+async function admettre(contexte, { sha256, octets, racine }, jeton = SANS_ANNULATION) {
+  const { primitives, hacher, peutAdmettre, signaler } = contexte;
   if (!EMPREINTE.test(sha256)) throw new TypeError(`Empreinte invalide : ${sha256}`);
   if (!(await peutAdmettre(octets.byteLength))) {
     throw new AdmissionRefusee(
@@ -202,16 +252,23 @@ async function admettre(contexte, { sha256, octets }) {
   }
   await oublier(contexte, sha256);
   const partiel = sha256 + SUFFIXE_PARTIEL;
-  for (let debut = 0; debut < octets.byteLength; debut += TRANCHE_OCTETS) {
-    const fin = Math.min(octets.byteLength, debut + TRANCHE_OCTETS);
-    await primitives.ecrire(partiel, debut, octets.subarray(debut, fin));
+  const tranches = await ecrireLePartiel(contexte, partiel, octets, jeton);
+  if (tranches === null) return null;
+  const calculee = await racineDesTranches(tranches, hacher);
+  // Une racine fausse à la fabrication ferait réécrire l'artefact à CHAQUE démarrage, en silence :
+  // rien n'est rangé, et le refus est typé et journalisé (revue du 04/10/2026, constat 2).
+  if (racine !== undefined && calculee !== racine) {
+    await primitives.supprimer(partiel);
+    const erreur = racineIncoherente(sha256, racine, calculee);
+    signaler(`${erreur.code} : ${erreur.message}`);
+    throw erreur;
   }
-  const tranches = await empreintesDeTranches(octets, hacher);
   const liste = JSON.stringify({ sha256, octets: octets.byteLength, tranches });
   await primitives.ecrire(sha256 + SUFFIXE_TRANCHES, 0, new TextEncoder().encode(liste));
   // EN DERNIER : le nom définitif est le marqueur « complet ».
+  if (jeton.annule) return null;
   await primitives.renommer(partiel, sha256);
-  return { tranches, racine: await racineDesTranches(tranches, hacher) };
+  return { tranches, racine: calculee };
 }
 
 async function purger(contexte, garder) {

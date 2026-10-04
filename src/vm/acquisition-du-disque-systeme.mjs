@@ -73,6 +73,9 @@ async function verserLeMorceau({ tampon, debut, morceau, nom, recuperer }) {
  *
  * Le magasin est un cache : une admission refusée ou en échec n'interrompt jamais l'acquisition,
  * elle est seulement relevée. Rend les octets transférés et ce qu'a fait le magasin.
+ *
+ * Un `servir` en échec ou abandonné à l'échéance a pu copier des tranches dans la plage : le
+ * téléchargement la réécrit ENTIÈRE, et le magasin ne la touche plus (jeton annulé, #247).
  */
 async function servirOuTelecharger({ tampon, debut, morceau, nom, recuperer, magasin }) {
   const vue = tampon.subarray(debut, debut + morceau.octets);
@@ -82,7 +85,7 @@ async function servirOuTelecharger({ tampon, debut, morceau, nom, recuperer, mag
   const transfere = await verserLeMorceau({ tampon, debut, morceau, nom, recuperer });
   if (!magasin) return { transfere, magasin: "absent" };
   try {
-    await magasin.admettre({ sha256: morceau.sha256, octets: vue });
+    await magasin.admettre({ sha256: morceau.sha256, octets: vue, racine: morceau.racine });
     return { transfere, magasin: "admis" };
   } catch (erreur) {
     return { transfere, magasin: erreur?.code ?? "echec" };

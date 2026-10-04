@@ -126,6 +126,26 @@ test("un magasin trop lent cède : servir rend false, l'admission échoue MAGASI
   await assert.rejects(lent.admettre({}), { code: "MAGASIN_LENT" });
 });
 
+test("la rétention est bornée dans le temps : un magasin lent ne retient pas le boot", async () => {
+  const jamais = new Promise(() => {});
+  const lent = borneDansLeTemps({ servir: () => jamais, retenir: () => jamais }, 5);
+  await assert.rejects(lent.retenir({}), { code: "MAGASIN_LENT" });
+});
+
+test("à l'échéance, le jeton passé à servir et à admettre est annulé avant que l'appelant reprenne", async () => {
+  const jetons = [];
+  const jamais = new Promise(() => {});
+  const garder = (jeton) => (jetons.push(jeton), jamais);
+  const lent = borneDansLeTemps(
+    { servir: (_m, _c, jeton) => garder(jeton), admettre: (_a, jeton) => garder(jeton) },
+    5,
+  );
+  assert.equal(await lent.servir({}, new Uint8Array(0)), false);
+  assert.equal(jetons[0].annule, true);
+  await assert.rejects(lent.admettre({}), { code: "MAGASIN_LENT" });
+  assert.equal(jetons[1].annule, true);
+});
+
 test("le délai du magasin est de 20 s : au-delà, le démarrage retombe sur le téléchargement", () => {
   assert.equal(DELAI_DU_MAGASIN_MS, 20_000);
 });
