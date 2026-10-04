@@ -53,6 +53,28 @@ encore implémentée : tant qu'elle ne l'est pas, une origine injoignable empêc
 avant le magasin. La campagne de mutation `magasin` couvre les gardes 2 à 5 (7 mutants, 7 tués) ;
 celle du hors-ligne viendra avec son implémentation.
 
+## Amendement — Revue de sécurité du 04/10/2026
+
+Constats et correctifs (lot D1f) :
+
+1. **HIGH — un `servir` abandonné à l'échéance écrivait encore dans le disque.** `Promise.race`
+   rendait `false` sans arrêter la lecture, qui remplissait directement la plage que l'appelant
+   retéléchargeait : le guest pouvait booter des octets non vérifiés. Désormais chaque tranche est
+   lue dans un tampon privé de 8 Mio et copiée dans la cible seulement après vérification ; sans
+   racine, rien n'est servi avant le `sha256` final, et un échec laisse toute la plage au
+   téléchargement ; l'échéance pose un jeton d'annulation testé avant chaque copie, aussi pour
+   l'admission, qui cesse d'écrire et ne renomme rien.
+2. **MEDIUM — une racine fausse à la fabrication faisait réécrire l'artefact à chaque démarrage.**
+   `admettre` reçoit la racine du descripteur : des tranches qui ne la donnent pas ne sont pas
+   rangées (`MAGASIN_RACINE_INCOHERENTE`, journalisé). La fabrication (`racineDeFichier`, dans
+   `fabriquer-paquet` et `image:manifest`) confronte le fichier au `sha256` déclaré.
+3. **LOW — `retenir` n'était pas borné.** La rétention passe par la même échéance de 20 s.
+4. **LOW — la purge retire le `.partiel` d'une admission d'un autre onglet.** Non traité dans ce lot
+   : le coût d'un tel conflit est un téléchargement de plus, jamais un octet servi.
+
+La campagne `magasin` compte désormais 12 gardes (12 tués) : copie après vérification, jeton testé
+avant la copie, échéance qui annule, racine confrontée à l'admission, rétention bornée.
+
 ## Conséquences
 
 - La réouverture d'un coffre ne transfère plus le rootfs ni le paquet
