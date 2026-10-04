@@ -305,7 +305,11 @@ function nommerParEmpreinte(fichierTemporaire, { id, version, suffixe }) {
   renameSync(join(DOSSIER_ARTEFACTS, fichierTemporaire), join(DOSSIER_ARTEFACTS, nom));
   // L'image de CODE est rangée par le magasin d'artefacts : sa racine de tranches naît ici (#247).
   if (suffixe === "graine") return { name: nom, ...mesure };
-  return { name: nom, ...mesure, racine: racineDeFichier(join(DOSSIER_ARTEFACTS, nom)) };
+  return {
+    name: nom,
+    ...mesure,
+    racine: racineDeFichier(join(DOSSIER_ARTEFACTS, nom), mesure.sha256),
+  };
 }
 
 /**

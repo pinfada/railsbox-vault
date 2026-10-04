@@ -10,7 +10,10 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { creerMagasinDArtefacts, TRANCHE_OCTETS } from "../../src/vm/magasin-d-artefacts.mjs";
-import { tranchesEtRacineDeFichier } from "../../tools/paquet/racine-des-tranches.mjs";
+import {
+  racineDeFichier,
+  tranchesEtRacineDeFichier,
+} from "../../tools/paquet/racine-des-tranches.mjs";
 import { construirePaquet, validerPaquet } from "../../tools/paquet/contrat-du-paquet.mjs";
 import { descripteurApplicatif } from "../../tools/build-reference-image/manifest.mjs";
 import { primitivesEnMemoire } from "./magasin-en-memoire.mjs";
@@ -42,6 +45,21 @@ test("la racine de fabrication égale celle du magasin, sur plusieurs tranches",
     const cible = new Uint8Array(octets.byteLength);
     const morceau = { sha256, octets: octets.byteLength, racine: fabrication.racine };
     assert.equal(await magasin.servir(morceau, cible), true);
+  } finally {
+    rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test("la fabrication confronte la racine au sha256 déclaré : un fichier qui ne le donne pas est refusé", async () => {
+  const octets = octetsDeTest(TRANCHE_OCTETS + 99);
+  const dossier = mkdtempSync(join(tmpdir(), "racine-"));
+  try {
+    const chemin = join(dossier, "image.ext4");
+    writeFileSync(chemin, octets);
+    const { createHash } = await import("node:crypto");
+    const sha256 = createHash("sha256").update(octets).digest("hex");
+    assert.equal(racineDeFichier(chemin, sha256), tranchesEtRacineDeFichier(chemin).racine);
+    assert.throws(() => racineDeFichier(chemin, "0".repeat(64)), /Racine refusée/);
   } finally {
     rmSync(dossier, { recursive: true, force: true });
   }
