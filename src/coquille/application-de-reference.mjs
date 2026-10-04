@@ -44,6 +44,7 @@ import {
 } from "./descripteur-applicatif.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "./identites-du-coffre.mjs";
 import { daterLaCreation, openOpfsVolume } from "../vm/opfs-block-backend.mjs";
+import { libererPourLeVolume } from "../vm/magasin-opfs.mjs";
 import {
   manifestSidecarName,
   openOpfsSyncAccess,
@@ -189,6 +190,7 @@ export async function installerSiNecessaire({
   inscrire = writeVolumeManifest,
   openHandle = openOpfsSyncAccess,
   lireLeManifeste = readVolumeManifest,
+  libererLaPlace = libererPourLeVolume,
 }) {
   const nom = NOM_DU_VOLUME_APPLICATIF;
   // La taille du VOLUME est celle du disque de données, pas celle du fichier de graine : la graine
@@ -202,6 +204,9 @@ export async function installerSiNecessaire({
   // Rien n'existe : le manifeste est révoqué d'abord, pour que rien ne puisse ouvrir un volume à
   // demi versé entre-temps.
   await revoquer(nom);
+  // Le magasin d'artefacts CÈDE au volume (ADR 0006, #247) : s'il manque la place de le créer, le
+  // cache est vidé AVANT la première écriture du volume, jamais après.
+  await libererLaPlace(octets);
   try {
     return await installerDansUnVolumeNeuf({
       descripteur,
