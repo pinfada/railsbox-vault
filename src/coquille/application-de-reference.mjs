@@ -134,6 +134,8 @@ export async function adressesDuRuntime(descripteur, { recuperer = globalThis.fe
     sha256: descripteur[cle].sha256,
     compression: descripteur[cle].compression ?? null,
     transfertOctets: descripteur[cle].transfertOctets ?? null,
+    // La racine des tranches (#247) : le magasin vérifie contre ELLE, tenue par le descripteur.
+    ...(descripteur[cle].racine ? { racine: descripteur[cle].racine } : {}),
   });
   return {
     lib: exigerAdresse(adresses, "libv86.mjs"),

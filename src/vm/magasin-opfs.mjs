@@ -20,6 +20,37 @@ async function avecPoigneeSynchrone(fichier, agir) {
   }
 }
 
+async function lireFichier(fichier, position, cible) {
+  if (typeof fichier.createSyncAccessHandle === "function") {
+    return avecPoigneeSynchrone(fichier, (poignee) => poignee.read(cible, { at: position }));
+  }
+  const contenu = await fichier.getFile();
+  const tranche = await contenu.slice(position, position + cible.byteLength).arrayBuffer();
+  cible.set(new Uint8Array(tranche));
+  return tranche.byteLength;
+}
+
+async function ecrireFichier(fichier, position, octets) {
+  if (typeof fichier.createSyncAccessHandle === "function") {
+    await avecPoigneeSynchrone(fichier, (poignee) => {
+      let ecrits = 0;
+      while (ecrits < octets.byteLength) {
+        ecrits += poignee.write(octets.subarray(ecrits), { at: position + ecrits });
+      }
+      poignee.flush();
+    });
+    return;
+  }
+  const flux = await fichier.createWritable({ keepExistingData: true });
+  try {
+    await flux.write({ type: "write", position, data: octets });
+    await flux.close();
+  } catch (erreur) {
+    await flux.abort().catch(() => {});
+    throw erreur;
+  }
+}
+
 /**
  * @param {() => Promise<FileSystemDirectoryHandle>} dossier le dossier du magasin, ouvert à la demande
  */
@@ -35,40 +66,9 @@ export function primitivesOpfs(dossier) {
         throw erreur;
       }
     },
-    async lire(nom, position, cible) {
-      const fichier = await ouvrir(nom);
-      if (typeof fichier.createSyncAccessHandle === "function") {
-        return avecPoigneeSynchrone(fichier, (poignee) => poignee.read(cible, { at: position }));
-      }
-      const tranche = await (
-        await fichier.getFile()
-      )
-        .slice(position, position + cible.byteLength)
-        .arrayBuffer();
-      cible.set(new Uint8Array(tranche));
-      return tranche.byteLength;
-    },
-    async ecrire(nom, position, octets) {
-      const fichier = await ouvrir(nom, true);
-      if (typeof fichier.createSyncAccessHandle === "function") {
-        await avecPoigneeSynchrone(fichier, (poignee) => {
-          let ecrits = 0;
-          while (ecrits < octets.byteLength) {
-            ecrits += poignee.write(octets.subarray(ecrits), { at: position + ecrits });
-          }
-          poignee.flush();
-        });
-        return;
-      }
-      const flux = await fichier.createWritable({ keepExistingData: true });
-      try {
-        await flux.write({ type: "write", position, data: octets });
-        await flux.close();
-      } catch (erreur) {
-        await flux.abort().catch(() => {});
-        throw erreur;
-      }
-    },
+    lire: async (nom, position, cible) => lireFichier(await ouvrir(nom), position, cible),
+    ecrire: async (nom, position, octets) =>
+      ecrireFichier(await ouvrir(nom, true), position, octets),
     async renommer(de, vers) {
       const fichier = await ouvrir(de);
       if (typeof fichier.move === "function") {

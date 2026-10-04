@@ -187,6 +187,11 @@ function formeDUnMorceau(morceau, cle) {
   if (!EMPREINTE.test(String(morceau?.sha256 ?? ""))) {
     return `empreinte absente ou mal formée : ${cle}`;
   }
+  // La RACINE des tranches de 8 Mio (#247), facultative : sans elle, le magasin vérifie le sha256
+  // entier ; avec elle, il vérifie par tranches CONTRE ELLE, jamais contre une liste rangée en OPFS.
+  if (morceau.racine !== undefined && !EMPREINTE.test(String(morceau.racine))) {
+    return `racine des tranches mal formée : ${cle}`;
+  }
   if (morceau.compression === undefined) return null;
   if (morceau.compression !== COMPRESSION_GZIP) return `compression inconnue : ${cle}`;
   if (!entierBorne(morceau.transfertOctets, TAILLE_DISQUE_MAX)) {
