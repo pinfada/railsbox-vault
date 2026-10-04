@@ -147,16 +147,34 @@ export function admissionSelonLeBudget(budget, marge = MARGE_RESERVEE_AU_VOLUME)
   return async (octets) => (await budget.reserve(octets + marge)).sufficient === true;
 }
 
+/** Les purges ÉCHOUÉES depuis le chargement du module : un dossier tenu ne se tait plus (#247, D1c). */
+const bilan = { echecs: 0, derniere: null };
+
+/** Lecture seule du bilan des purges échouées : `{ echecs, derniere }` (nom de l'erreur). */
+export const bilanDesPurges = () => ({ ...bilan });
+
 /**
  * Vide tout le magasin de l'origine. Rend `false` sans lever si l'OPFS manque ou si une poignée le
- * tient encore : une purge manquée laisse seulement le refus de place du volume s'exprimer.
+ * tient encore : une purge manquée laisse seulement le refus de place du volume s'exprimer. Un
+ * dossier absent n'est pas un échec (rien à libérer) ; tout autre refus est COMPTÉ et signalé, sans
+ * jamais devenir une panne pour la personne.
  */
-export async function purgerToutLeMagasin(stockage = globalThis.navigator?.storage) {
+export async function purgerToutLeMagasin(
+  stockage = globalThis.navigator?.storage,
+  signaler = (message) => globalThis.console?.warn(message),
+) {
   if (typeof stockage?.getDirectory !== "function") return false;
   try {
     await (await stockage.getDirectory()).removeEntry(DOSSIER_DU_MAGASIN, { recursive: true });
     return true;
-  } catch {
+  } catch (erreur) {
+    if (erreur?.name === "NotFoundError") return false;
+    bilan.echecs += 1;
+    bilan.derniere = erreur?.name ?? "Error";
+    signaler(
+      `VAULT-ARTEFACTS-PURGE-ECHOUEE : le magasin n'a pas pu être vidé (${bilan.derniere}, ` +
+        `${bilan.echecs} échec(s)) ; le volume garde la priorité, le refus de place reste possible.`,
+    );
     return false;
   }
 }

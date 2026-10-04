@@ -10,6 +10,7 @@ import test from "node:test";
 import {
   MARGE_RESERVEE_AU_VOLUME,
   admissionSelonLeBudget,
+  bilanDesPurges,
   borneDansLeTemps,
   budgetQuiCedeLeMagasin,
   ouvrirLeMagasinOpfs,
@@ -181,8 +182,29 @@ test("purgerToutLeMagasin retire le dossier, et ne lève jamais", async () => {
       },
     }),
   };
-  assert.equal(await purgerToutLeMagasin(tenu), false);
+  const signaux = [];
+  const avant = bilanDesPurges().echecs;
+  assert.equal(await purgerToutLeMagasin(tenu, (m) => signaux.push(m)), false);
   assert.equal(await purgerToutLeMagasin({}), false);
+  assert.equal(bilanDesPurges().echecs, avant + 1, "le dossier tenu est compté");
+  assert.equal(bilanDesPurges().derniere, "NoModificationAllowedError");
+  assert.equal(signaux.length, 1);
+  assert.match(signaux[0], /VAULT-ARTEFACTS-PURGE-ECHOUEE/);
+});
+
+test("purgerToutLeMagasin : un dossier déjà absent n'est ni compté ni signalé", async () => {
+  const absent = {
+    getDirectory: async () => ({
+      removeEntry: async () => {
+        throw Object.assign(new Error("absent"), { name: "NotFoundError" });
+      },
+    }),
+  };
+  const signaux = [];
+  const avant = bilanDesPurges().echecs;
+  assert.equal(await purgerToutLeMagasin(absent, (m) => signaux.push(m)), false);
+  assert.equal(bilanDesPurges().echecs, avant);
+  assert.deepEqual(signaux, []);
 });
 
 test("budget serré : l'admission est refusée, typée, avant toute écriture", async () => {
