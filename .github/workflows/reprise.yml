@@ -203,9 +203,14 @@ jobs:
               tests/e2e/parcours-clavier.spec.mjs
           # La MISE À JOUR du paquet (#236 T2) a SON lot : sept ouvertures du coffre, quatre boots de
           # Rails dont un qui migre (Rails chargé deux fois), une sauvegarde et une restauration.
+          # `magasin-d-artefacts.spec.mjs` (#247, lot D1e) le rejoint : c'est le lot le moins chargé
+          # (un seul fichier, quatre boots ≈ 15 à 20 min, aucune mesure CI publiée), quand les lots 1
+          # à 3 visent déjà 29 à 36 min. Il ne tournait dans AUCUN lot jusqu'ici. Trois épreuves, deux
+          # boots de Rails chacune (≈ 3 min l'un, cf. `reprise-coquille-boot-froid`) : ≈ 18 min de
+          # plus, le lot 4 vise donc ≈ 38 min, sous la borne de 60 min du job, qui reste inchangée.
           - lot: "4"
             fichiers: >-
-              tests/e2e/mise-a-jour-du-paquet.spec.mjs
+              tests/e2e/mise-a-jour-du-paquet.spec.mjs tests/e2e/magasin-d-artefacts.spec.mjs
 
     env:
       VAULT_E2E_LOT: ${{ matrix.lot }}
