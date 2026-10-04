@@ -50,7 +50,8 @@ décisions.
 
 Les décisions 1 à 5 sont en service (D1a, D1b, D1c). La décision 6 (hors ligne) est arrêtée mais pas
 encore implémentée : tant qu'elle ne l'est pas, une origine injoignable empêche le démarrage, comme
-avant le magasin. La campagne de mutation `magasin` reste à écrire.
+avant le magasin. La campagne de mutation `magasin` couvre les gardes 2 à 5 (7 mutants, 7 tués) ;
+celle du hors-ligne viendra avec son implémentation.
 
 ## Conséquences
 
