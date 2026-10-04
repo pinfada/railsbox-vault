@@ -100,10 +100,17 @@ export function primitivesOpfs(dossier) {
   return primitives;
 }
 
-function avantLEcheance(promesse, delaiMs, quandEchu) {
+/**
+ * Lance `operation(jeton)` et rend son résultat, ou celui de `quandEchu` passé `delaiMs`. À l'échéance,
+ * le JETON est annulé AVANT que l'appelant reprenne la main : l'opération abandonnée le lit à chaque
+ * tour et n'écrit plus rien dans ce que l'appelant a repris (revue du 04/10/2026, constat 1).
+ */
+function avantLEcheance(operation, delaiMs, quandEchu) {
+  const jeton = { annule: false };
   let minuterie;
   const echeance = new Promise((resoudre, rejeter) => {
     minuterie = setTimeout(() => {
+      jeton.annule = true;
       try {
         resoudre(quandEchu());
       } catch (erreur) {
@@ -111,25 +118,41 @@ function avantLEcheance(promesse, delaiMs, quandEchu) {
       }
     }, delaiMs);
   });
-  return Promise.race([promesse, echeance]).finally(() => clearTimeout(minuterie));
+  return Promise.race([operation(jeton), echeance]).finally(() => clearTimeout(minuterie));
 }
 
+const magasinLent = (geste) => () => {
+  throw Object.assign(new Error(`Magasin d'artefacts trop lent : ${geste} abandonnée.`), {
+    code: "MAGASIN_LENT",
+  });
+};
+
 /**
- * Borne `servir` et `admettre` dans le temps : un magasin lent ne retarde jamais le boot au-delà de
- * `delaiMs` — on retombe sur le téléchargement (servir rend `false`, admettre échoue `MAGASIN_LENT`).
+ * Borne `servir`, `admettre` et `retenir` dans le temps : un magasin lent ne retarde jamais le boot
+ * au-delà de `delaiMs` — on retombe sur le téléchargement (servir rend `false`, admettre et retenir
+ * échouent `MAGASIN_LENT`), et l'opération abandonnée cesse d'écrire.
  */
 export function borneDansLeTemps(magasin, delaiMs = DELAI_DU_MAGASIN_MS) {
-  return {
+  const borne = {
     ...magasin,
     servir: (morceau, cible) =>
-      avantLEcheance(magasin.servir(morceau, cible), delaiMs, () => false),
+      avantLEcheance(
+        (jeton) => magasin.servir(morceau, cible, jeton),
+        delaiMs,
+        () => false,
+      ),
     admettre: (artefact) =>
-      avantLEcheance(magasin.admettre(artefact), delaiMs, () => {
-        throw Object.assign(new Error("Magasin d'artefacts trop lent : admission abandonnée."), {
-          code: "MAGASIN_LENT",
-        });
-      }),
+      avantLEcheance(
+        (jeton) => magasin.admettre(artefact, jeton),
+        delaiMs,
+        magasinLent("admission"),
+      ),
   };
+  if (magasin.retenir) {
+    borne.retenir = (courants) =>
+      avantLEcheance(() => magasin.retenir(courants), delaiMs, magasinLent("rétention"));
+  }
+  return borne;
 }
 
 /**
@@ -241,10 +264,10 @@ export function ouvrirLeMagasinOpfs({
     primitives,
     ...(peutAdmettre ? { peutAdmettre } : {}),
   });
-  return {
-    ...borneDansLeTemps(magasin, delaiMs),
-    retenir: (courants) => retenir(primitives, magasin, courants),
-  };
+  return borneDansLeTemps(
+    { ...magasin, retenir: (courants) => retenir(primitives, magasin, courants) },
+    delaiMs,
+  );
 }
 
 /** Le journal de rétention : il ne JUGE rien (l'intégrité vient du descripteur), il retient seulement. */

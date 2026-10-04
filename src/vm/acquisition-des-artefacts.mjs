@@ -66,7 +66,8 @@ async function loadRuntime(runtime) {
     ),
   });
   const disqueSysteme = await acquerirLeDisqueSysteme({ ...runtime.disqueSysteme, magasin });
-  // Le magasin est un cache : sa rétention ne fait jamais échouer un boot.
+  // Le magasin est un cache : sa rétention ne fait jamais échouer un boot, et elle est bornée dans
+  // le temps comme `servir` et `admettre` (revue du 04/10/2026, constat 3).
   await magasin
     ?.retenir({
       rootfs: runtime.disqueSysteme.rootfs.sha256,
