@@ -12,6 +12,8 @@ reports/
 .env
 .DS_Store
 Thumbs.db
+# Écrit par Chromium à la racine pendant les épreuves ; un commit automatique l'a déjà embarqué.
+/debug.log
 
 # Artefacts de l'image de reference : construits, jamais commites (le manifeste l'est).
 artifacts/
