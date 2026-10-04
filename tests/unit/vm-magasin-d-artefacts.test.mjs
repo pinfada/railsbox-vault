@@ -73,6 +73,15 @@ test("un artefact absent ou partiel n'est jamais servi", async () => {
   assert.deepEqual(await primitives.lister(), [], "l'entrée partielle est oubliée");
 });
 
+test("une lecture COURTE refuse, même si la cible contient déjà les bons octets", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  const { octets, sha256 } = artefact(TAILLE);
+  await magasin.admettre({ sha256, octets });
+  primitives.lire = async () => 0;
+  assert.equal(await magasin.servir({ sha256, octets: TAILLE }, octets.slice()), false);
+});
+
 test("une tranche altérée est rejetée et oubliée, avec ou sans racine", async () => {
   for (const avecRacine of [true, false]) {
     const primitives = primitivesEnMemoire();

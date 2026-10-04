@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 
 import {
+  DELAI_DU_MAGASIN_MS,
   MARGE_RESERVEE_AU_VOLUME,
   admissionSelonLeBudget,
   bilanDesPurges,
@@ -123,6 +124,10 @@ test("un magasin trop lent cède : servir rend false, l'admission échoue MAGASI
   const lent = borneDansLeTemps({ servir: () => jamais, admettre: () => jamais }, 5);
   assert.equal(await lent.servir({}, new Uint8Array(0)), false);
   await assert.rejects(lent.admettre({}), { code: "MAGASIN_LENT" });
+});
+
+test("le délai du magasin est de 20 s : au-delà, le démarrage retombe sur le téléchargement", () => {
+  assert.equal(DELAI_DU_MAGASIN_MS, 20_000);
 });
 
 test("rétention : garde rootfs, paquet courant et paquet précédent, oublie l'avant-dernier", async () => {
