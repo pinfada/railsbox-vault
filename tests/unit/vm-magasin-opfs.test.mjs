@@ -11,7 +11,9 @@ import {
   MARGE_RESERVEE_AU_VOLUME,
   admissionSelonLeBudget,
   borneDansLeTemps,
+  budgetQuiCedeLeMagasin,
   ouvrirLeMagasinOpfs,
+  purgerToutLeMagasin,
 } from "../../src/vm/magasin-opfs.mjs";
 import { createStorageBudget } from "../../src/vm/storage-budget.mjs";
 
@@ -143,6 +145,44 @@ test("rétention : garde rootfs, paquet courant et paquet précédent, oublie l'
 
   await boot(v3); // mise à jour v2 → v3
   assert.deepEqual(presents(), [true, false, true, true], "l'avant-dernier est oublié");
+});
+
+test("le magasin cède au volume : une réservation à court purge le magasin, puis remesure", async () => {
+  let libre = 100;
+  const budget = createStorageBudget({ estimate: async () => ({ quota: libre, usage: 0 }) });
+  let purges = 0;
+  const cede = budgetQuiCedeLeMagasin(budget, async () => {
+    purges += 1;
+    libre = 1000; // la place que tenait le magasin
+    return true;
+  });
+  assert.equal((await cede.reserve(50)).sufficient, true);
+  assert.equal(purges, 0, "pas de purge quand la place suffit");
+  assert.equal((await cede.reserve(500)).sufficient, true);
+  assert.equal(purges, 1);
+
+  const vide = budgetQuiCedeLeMagasin(budget, async () => false);
+  assert.equal((await vide.reserve(5000)).sufficient, false, "rien à purger : le refus reste");
+});
+
+test("purgerToutLeMagasin retire le dossier, et ne lève jamais", async () => {
+  const retraits = [];
+  const stockage = {
+    getDirectory: async () => ({
+      removeEntry: async (nom, options) => retraits.push([nom, options]),
+    }),
+  };
+  assert.equal(await purgerToutLeMagasin(stockage), true);
+  assert.deepEqual(retraits, [["vault-artefacts", { recursive: true }]]);
+  const tenu = {
+    getDirectory: async () => ({
+      removeEntry: async () => {
+        throw Object.assign(new Error("tenu"), { name: "NoModificationAllowedError" });
+      },
+    }),
+  };
+  assert.equal(await purgerToutLeMagasin(tenu), false);
+  assert.equal(await purgerToutLeMagasin({}), false);
 });
 
 test("budget serré : l'admission est refusée, typée, avant toute écriture", async () => {

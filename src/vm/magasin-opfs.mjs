@@ -148,6 +148,37 @@ export function admissionSelonLeBudget(budget, marge = MARGE_RESERVEE_AU_VOLUME)
 }
 
 /**
+ * Vide tout le magasin de l'origine. Rend `false` sans lever si l'OPFS manque ou si une poignée le
+ * tient encore : une purge manquée laisse seulement le refus de place du volume s'exprimer.
+ */
+export async function purgerToutLeMagasin(stockage = globalThis.navigator?.storage) {
+  if (typeof stockage?.getDirectory !== "function") return false;
+  try {
+    await (await stockage.getDirectory()).removeEntry(DOSSIER_DU_MAGASIN, { recursive: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Le magasin CÈDE AU VOLUME (ADR 0006) : une réservation du volume qui manquerait de place purge
+ * d'abord le magasin, puis mesure à nouveau. Le cache ne coûte jamais une écriture de données.
+ *
+ * @param {ReturnType<typeof import("./storage-budget.mjs").createStorageBudget>} budget
+ */
+export function budgetQuiCedeLeMagasin(budget, purger = () => purgerToutLeMagasin()) {
+  return {
+    ...budget,
+    async reserve(octets) {
+      const premiere = await budget.reserve(octets);
+      if (premiere.sufficient !== false || !(await purger())) return premiere;
+      return budget.reserve(octets);
+    },
+  };
+}
+
+/**
  * Ouvre le magasin réel sur l'OPFS de l'origine, ou rend `null` si l'OPFS manque (le boot télécharge).
  *
  * @param {{ stockage?: StorageManager, delaiMs?: number,

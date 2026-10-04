@@ -64,6 +64,7 @@ import {
 } from "/src/vm/opfs-sync-access.mjs";
 import { readSidecarBytes, writeSidecarBytes } from "/src/vm/opfs-volume-open.mjs";
 import { bindNavigatorStorage, createStorageBudget } from "/src/vm/storage-budget.mjs";
+import { budgetQuiCedeLeMagasin } from "/src/vm/magasin-opfs.mjs";
 import {
   EN_TETE_OCTETS,
   FORMAT_VOLUME_COURANT,
@@ -155,7 +156,9 @@ export const PRIMITIVES_OPFS = Object.freeze({
   budget: () =>
     globalThis.navigator?.storage === undefined
       ? null
-      : createStorageBudget(bindNavigatorStorage(globalThis.navigator.storage)),
+      : budgetQuiCedeLeMagasin(
+          createStorageBudget(bindNavigatorStorage(globalThis.navigator.storage)),
+        ),
   lireLeDescripteur,
 });
 
