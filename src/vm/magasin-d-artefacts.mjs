@@ -57,19 +57,45 @@ export async function hacherParWebCrypto(octets) {
 /** Empreintes des tranches de 8 Mio d'une vue — sans copie : chaque tranche est une sous-vue. */
 export async function empreintesDeTranches(octets, hacher = hacherParWebCrypto) {
   const empreintes = [];
-  for (let debut = 0; debut < octets.byteLength; debut += TRANCHE_OCTETS) {
-    empreintes.push(
-      await hacher(octets.subarray(debut, Math.min(octets.byteLength, debut + TRANCHE_OCTETS))),
-    );
+  for (const [debut, fin] of bornesDesTranches(octets.byteLength)) {
+    empreintes.push(await hacher(octets.subarray(debut, fin)));
   }
   return empreintes;
 }
 
-/** RACINE : SHA-256 de la concaténation des empreintes BRUTES (32 octets chacune) des tranches. */
-export async function racineDesTranches(empreintes, hacher = hacherParWebCrypto) {
+/** Les BORNES des tranches de 8 Mio d'un artefact de `octets` octets : `[début, fin[` de chacune. */
+export function bornesDesTranches(octets) {
+  const bornes = [];
+  for (let debut = 0; debut < octets; debut += TRANCHE_OCTETS) {
+    bornes.push([debut, Math.min(octets, debut + TRANCHE_OCTETS)]);
+  }
+  return bornes;
+}
+
+/** Ce que la racine hache : la concaténation des empreintes BRUTES (32 octets chacune). */
+export function concatenationDesEmpreintes(empreintes) {
   const concatenation = new Uint8Array(empreintes.length * 32);
   empreintes.forEach((hex, index) => concatenation.set(depuisHex(hex), index * 32));
-  return hacher(concatenation);
+  return concatenation;
+}
+
+/** RACINE : SHA-256 de la concaténation des empreintes BRUTES (32 octets chacune) des tranches. */
+export async function racineDesTranches(empreintes, hacher = hacherParWebCrypto) {
+  return hacher(concatenationDesEmpreintes(empreintes));
+}
+
+/**
+ * La même définition, SYNCHRONE, pour la fabrication (`tools/`) : un hacheur synchrone (Node
+ * `createHash`) rend la liste des empreintes de tranches et la racine, sans copie des octets.
+ *
+ * @param {Uint8Array} octets
+ * @param {(octets: Uint8Array) => string} hacherSync
+ */
+export function tranchesEtRacineSync(octets, hacherSync) {
+  const tranches = bornesDesTranches(octets.byteLength).map(([debut, fin]) =>
+    hacherSync(octets.subarray(debut, fin)),
+  );
+  return { tranches, racine: hacherSync(concatenationDesEmpreintes(tranches)) };
 }
 
 /**

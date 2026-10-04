@@ -42,6 +42,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { construirePaquet, nomDImage, validerPaquet } from "./contrat-du-paquet.mjs";
 import { compresserDeterministe, nomServi } from "./compression.mjs";
+import { racineDeFichier } from "./racine-des-tranches.mjs";
 import {
   identiteDeLApplication,
   secretsPresents,
@@ -302,7 +303,9 @@ function nommerParEmpreinte(fichierTemporaire, { id, version, suffixe }) {
     }
   }
   renameSync(join(DOSSIER_ARTEFACTS, fichierTemporaire), join(DOSSIER_ARTEFACTS, nom));
-  return { name: nom, ...mesure };
+  // L'image de CODE est rangée par le magasin d'artefacts : sa racine de tranches naît ici (#247).
+  if (suffixe === "graine") return { name: nom, ...mesure };
+  return { name: nom, ...mesure, racine: racineDeFichier(join(DOSSIER_ARTEFACTS, nom)) };
 }
 
 /**

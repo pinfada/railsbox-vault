@@ -69,6 +69,8 @@ export function construirePaquet({
       name: image.name ?? nomDImage({ id, version, sha256: image.sha256 }),
       byteSize: image.byteSize,
       sha256: image.sha256,
+      // La racine des tranches de 8 Mio (#247), facultative : le magasin vérifie contre elle.
+      ...(image.racine === undefined ? {} : { racine: image.racine }),
       servi: image.servi,
     },
     graine: {
@@ -111,6 +113,9 @@ function validerImage(partie, cle, ajouter) {
   }
   if (!estTaille(partie.byteSize)) ajouter(code, `${cle}.byteSize absent ou nul`);
   if (!EMPREINTE.test(partie.sha256 ?? "")) ajouter(code, `${cle}.sha256 absent ou mal formé`);
+  if (partie.racine !== undefined && !EMPREINTE.test(String(partie.racine))) {
+    ajouter(code, `${cle}.racine mal formée`);
+  }
   validerServi(partie.servi, cle, ajouter);
 }
 
