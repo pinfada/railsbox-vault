@@ -1800,3 +1800,25 @@ satisfont pas les mêmes preuves.
 - aucune donnée réelle avant fermeture des gates sécurité de `SECURITY.md` ;
 - aucun changement de format sans vecteur de compatibilité et sauvegarde ;
 - aucune mesure de performance ne désactive `flush`, authentification ou séparation d'origine.
+
+## Mesures de sortie du lot D1 — magasin d'artefacts (#247, 04/10/2026)
+
+Instruments : ceux du lot D-0 (`docs/mesures/2026-10-lot-d-reference.md`) et l'épreuve
+`tests/e2e/magasin-d-artefacts.spec.mjs`, qui publie `reports/e2e/magasin-d-artefacts.json`.
+
+| Mesure                   | Référence D-0    | Sortie D1               | Statut         |
+| ------------------------ | ---------------- | ----------------------- | -------------- |
+| Réouverture et transfert | 18–36 s, 177 Mio | —                       | non mesuré (1) |
+| Mise à jour de paquet    | —                | environ 48 Mio attendus | non mesuré (1) |
+| Surmémoire d'admission   | —                | —                       | non mesuré (1) |
+| Pic mémoire (témoin)     | inchangé attendu | —                       | non mesuré (2) |
+| Taille du magasin        | —                | —                       | non mesuré (1) |
+| Boot hors ligne          | —                | —                       | non mesuré (3) |
+
+1. Le 04/10, sur le poste de l'agent, le banc `/vm/reference.html` échoue à la préparation du volume
+   (`VAULT_STORAGE_HANDLE_LOST` sur la suppression du voisin `.gen`, profil neuf) ; l'épreuve
+   existante `reprise-mutation-boot-froid.spec.mjs` échoue de la même façon sans la tranche. Les
+   artefacts construits localement ne correspondent pas non plus au manifeste suivi. À reprendre en
+   CI ou sur un poste où l'épreuve de reprise passe.
+2. `node tools/mesurer-memoire.mjs --essais=2` dépend du même banc.
+3. Le mode hors ligne (ADR 0044 § 6) n'est pas encore implémenté.
