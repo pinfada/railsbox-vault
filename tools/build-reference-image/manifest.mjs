@@ -259,11 +259,13 @@ export function assemblerManifeste(options = {}) {
     }
     const decrit = metadonnees[nom] ?? metadonneesDUnServi(nom);
     const servi = imagesServiesDansLeMagasin({ paquet, precedent }).has(nom);
+    const empreinte = empreinteFichier(chemin);
     artefacts.push({
       name: nom,
       ...decrit,
-      ...empreinteFichier(chemin),
-      ...(servi ? { racine: racineDeFichier(chemin) } : {}),
+      ...empreinte,
+      // La racine est confrontée au sha256 déclaré du même fichier (revue du 04/10/2026, constat 2).
+      ...(servi ? { racine: racineDeFichier(chemin, empreinte.sha256) } : {}),
     });
   }
   if (manquants.length > 0) {
