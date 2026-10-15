@@ -94,7 +94,7 @@ jobs:
           fetch-depth: 0
 
       - name: Installation de Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           cache: npm
@@ -115,7 +115,7 @@ jobs:
       # (constaté sur le premier run de cette scission : lot 2 a rougi, préalable absent). Une
       # rétention courte suffit, l'artefact n'a de sens que pour ce run.
       - name: Partage de l'image construite
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: image-de-reference
           path: |
@@ -133,7 +133,7 @@ jobs:
       # `VAULT_E2E_EXIGER=1` transforme heureusement en rouge. Ce manifeste-ci décrit ce que le job
       # vient de construire ; c'est lui que les lots doivent lire.
       - name: Partage du manifeste de cette construction
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: manifeste-de-l-image
           path: tools/build-reference-image/manifest.json
@@ -218,7 +218,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Installation de Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           cache: npm
@@ -232,7 +232,7 @@ jobs:
       # `path: artifacts` (et non `artifacts/reference-image`) : l'artefact porte aussi
       # `application.json`, un SIBLING de `reference-image/` et non un fichier dedans.
       - name: Récupération de l'image construite
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: image-de-reference
           path: artifacts
@@ -240,7 +240,7 @@ jobs:
       # Le manifeste de la construction du job amont ÉCRASE celui du dépôt : les noms du paquet et
       # de la graine portent leur empreinte, et celui du dépôt décrit une autre construction.
       - name: Récupération du manifeste de cette construction
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: manifeste-de-l-image
           path: tools/build-reference-image
@@ -285,7 +285,7 @@ jobs:
 
       - name: Mesures du lot
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mesures-reprise-lot-${{ matrix.lot }}
           path: |
@@ -310,7 +310,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Installation de Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
           cache: npm
@@ -323,7 +323,7 @@ jobs:
       # `blob` s'appelle `rapport-lot-<n>.zip` (playwright.e2e.config.mjs), et les journaux d'espace
       # disque portent le numéro du lot. Le motif `mesures-reprise-lot-*` n'en suppose aucun nombre.
       - name: Récupération des mesures des lots
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: mesures-reprise-lot-*
           path: lots
@@ -339,7 +339,7 @@ jobs:
 
       - name: Mesures
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mesures-reprise
           path: |
