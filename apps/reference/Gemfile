@@ -24,7 +24,7 @@ gem "activejob", "8.1.4"
 gem "activemodel", "8.1.4"
 gem "activesupport", "8.1.4"
 
-gem "sqlite3", "= 2.9.6"
+gem "sqlite3", "2.10.1"
 
 # Puma 8.0.2 et non 6.6.1 : les versions 5.5.0 à 7.2.0 et 8.0.0 à 8.0.1 sont
 # exposées à CVE-2026-47736 et CVE-2026-47737 (analyseur PROXY protocol v1).
