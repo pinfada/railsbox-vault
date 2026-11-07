@@ -18,7 +18,7 @@
 #                            rouvert à froid était perdue 4 fois sur 4 (#209 ;
 #                            0/3 relues sur ext2 en boucle, 3/3 avec `extra`,
 #                            commit en 7 à 19 ms dans les deux modes). ADR 0004.
-#                            Écrit `3` et non `extra` : la gemme sqlite3 2.9.6
+#                            Écrit `3` et non `extra` : la gemme sqlite3 (constaté en 2.9.6)
 #                            ne connaît que les noms off/normal/full et refuse
 #                            les autres ; un entier est transmis tel quel.
 #
