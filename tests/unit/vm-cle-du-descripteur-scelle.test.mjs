@@ -118,7 +118,6 @@ test("séparation : l'info du descripteur n'est celle d'aucun des six domaines A
       encoderInfoDeDomaine({ domaine, identifiantVolume: IDENTIFIANT, versionDeFormat: 1 }),
     );
     assert.notDeepEqual(info, autre, domaine);
-    assert.notEqual(info.subarray(0, 40).toString("hex"), autre.subarray(0, 60).toString("hex"));
   }
   assert.ok(
     !Object.values(DOMAINES).includes(DOMAINE_DU_DESCRIPTEUR),

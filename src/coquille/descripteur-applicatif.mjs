@@ -285,14 +285,23 @@ function formeDesMorceaux(descripteur) {
  * référence, et la coquille doit alors se déclarer sans application plutôt qu'échouer. C'est la même
  * règle que l'état `indisponible` — nommer l'absence au lieu de la traiter comme une panne.
  *
- * @param {{ recuperer?: typeof fetch }} [options]
- * @returns {Promise<{ present: boolean, descripteur?: object, motif?: string }>}
+ * **Injoignable = un `TypeError` de `fetch`, et rien d'autre** (#247, D1g ; ADR 0044 § 6) : seul ce cas
+ * appelle `repliHorsConnexion`, qui rend le descripteur rangé et vérifié (`hors-connexion.mjs`). Un
+ * délai, une réponse HTTP — 5xx comprise — ou du HTML de portail captif n'y mènent jamais : l'origine
+ * fait foi. Sans repli fourni, le comportement est celui d'avant : « inatteignable », rien à démarrer.
+ *
+ * @param {{ recuperer?: typeof fetch, repliHorsConnexion?: () => Promise<object> }} [options]
+ * @returns {Promise<{ present: boolean, descripteur?: object, motif?: string,
+ *                     horsConnexion?: object | boolean, code?: string }>}
  */
-export async function lireLeDescripteur({ recuperer = globalThis.fetch } = {}) {
+export async function lireLeDescripteur({ recuperer = globalThis.fetch, repliHorsConnexion } = {}) {
   let reponse;
   try {
     reponse = await recuperer(ADRESSE_DESCRIPTEUR, { cache: "no-store" });
   } catch (erreur) {
+    if (erreur instanceof TypeError && repliHorsConnexion !== undefined) {
+      return repliHorsConnexion();
+    }
     return { present: false, motif: `descripteur inatteignable : ${erreur.message}` };
   }
   if (!reponse.ok) {
