@@ -37,7 +37,8 @@ for (const largeur of [360, 1280]) {
     const champ = page.getByLabel("Code de récupération", { exact: true });
     await expect(champ).toBeVisible({ timeout: 60_000 });
     const ouvrir = bouton(page, "Ouvrir mon coffre avec le code");
-    const y = async () => Math.round((await ouvrir.boundingBox()).y);
+    const y = async () =>
+      Math.round((await ouvrir.boundingBox()).y + (await page.evaluate(() => scrollY)));
     const depart = await y();
     const faux = code.slice(0, -1) + (code.endsWith("A") ? "B" : "A");
     for (const saisie of [code.slice(0, 20), faux, code, "", faux]) {

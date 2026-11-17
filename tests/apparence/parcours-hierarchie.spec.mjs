@@ -56,8 +56,21 @@ for (const largeur of LARGEURS) {
     await bouton(page, "Commencer").click();
     await expect(titre(page, "Choisir comment l'ouvrir")).toBeVisible();
     const champ = page.getByLabel("Votre phrase", { exact: true });
-    const y = async () => Math.round((await bouton(page, "Créer mon coffre").boundingBox()).y);
-    const depart = await y();
+    // Le conseil et son aide s'écrivent au montage de l'interface : on mesure une fois posés.
+    await expect(page.locator("#phrase-aide")).not.toBeEmpty();
+    const y = async () =>
+      Math.round(
+        (await bouton(page, "Créer mon coffre").boundingBox()).y +
+          (await page.evaluate(() => scrollY)),
+      );
+    // La page se pose en deux temps (interface, puis progression lue) : on mesure une fois immobile.
+    let depart = await y();
+    for (let essais = 0; essais < 20; essais += 1) {
+      await page.waitForTimeout(250);
+      const maintenant = await y();
+      if (maintenant === depart) break;
+      depart = maintenant;
+    }
     const phrasesTypiques = [
       "trop court",
       "douze car-",
