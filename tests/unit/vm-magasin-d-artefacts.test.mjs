@@ -259,3 +259,84 @@ test("une admission abandonnée (jeton annulé) cesse d'écrire et ne renomme ri
   assert.equal(primitives.fichiers.has(sha256), false);
   assert.equal(primitives.ecritures.length, 1, "plus aucune écriture après l'annulation");
 });
+
+// --- Revue de #292 : le jeton est testé AVANT chaque geste qui rend l'admission visible -----------
+
+test("une admission annulée pendant l'écriture de la liste ne renomme rien (jeton avant renommer)", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  const { octets, sha256 } = artefact(TAILLE);
+  const jeton = { annule: false };
+  const ecrire = primitives.ecrire;
+  primitives.ecrire = async (nom, ...reste) => {
+    await ecrire(nom, ...reste);
+    if (nom.endsWith(".tranches")) jeton.annule = true; // l'échéance tombe ici, et ici seulement
+  };
+  assert.equal(await magasin.admettre({ sha256, octets }, jeton), null);
+  assert.equal(primitives.fichiers.has(sha256), false, "le nom définitif ne naît pas");
+});
+
+test("une admission annulée avant la première tranche n'écrit RIEN", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  const { octets, sha256 } = artefact(TAILLE);
+  assert.equal(await magasin.admettre({ sha256, octets }, { annule: true }), null);
+  assert.equal(primitives.ecritures.length, 0);
+});
+
+test("une admission annulée à sa dernière tranche n'écrit ni liste ni nom définitif", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  const { octets, sha256 } = artefact(TAILLE);
+  const jeton = { annule: false };
+  let tranches = 0;
+  const ecrire = primitives.ecrire;
+  primitives.ecrire = async (...args) => {
+    await ecrire(...args);
+    tranches += 1;
+    if (tranches === 3) jeton.annule = true; // la 3e et dernière tranche vient d'être écrite
+  };
+  assert.equal(await magasin.admettre({ sha256, octets }, jeton), null);
+  assert.ok(![...primitives.fichiers.keys()].some((nom) => nom.endsWith(".tranches")));
+  assert.equal(primitives.fichiers.has(sha256), false);
+});
+
+test("une admission abandonnée retire SON partiel : aucun .partiel orphelin ne reste (revue de #292)", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  const { octets, sha256 } = artefact(TAILLE);
+  const jeton = { annule: false };
+  const ecrire = primitives.ecrire;
+  primitives.ecrire = async (...args) => {
+    await ecrire(...args);
+    jeton.annule = true;
+  };
+  assert.equal(await magasin.admettre({ sha256, octets }, jeton), null);
+  assert.deepEqual(await primitives.lister(), [], "ni partiel, ni liste, ni octets");
+});
+
+test("la purge garde un partiel dont l'empreinte est gardée, retire les autres (limite écrite)", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  const garde = "a".repeat(64);
+  const autre = "b".repeat(64);
+  primitives.fichiers.set(`${garde}.partiel`, new Uint8Array(3));
+  primitives.fichiers.set(`${autre}.partiel`, new Uint8Array(3));
+  await magasin.purger([garde]);
+  assert.deepEqual(await primitives.lister(), [`${garde}.partiel`]);
+});
+
+test("la purge s'arrête au jeton annulé : plus rien n'est oublié après l'échéance (revue de #292)", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  for (const marque of ["a", "b", "c"])
+    primitives.fichiers.set(marque.repeat(64), new Uint8Array(1));
+  const jeton = { annule: false };
+  const supprimer = primitives.supprimer;
+  primitives.supprimer = async (nom) => {
+    await supprimer(nom);
+    jeton.annule = true;
+  };
+  await magasin.purger([], jeton);
+  assert.ok((await primitives.lister()).length >= 1, "l'oubli s'est arrêté après l'annulation");
+});

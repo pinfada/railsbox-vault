@@ -138,7 +138,7 @@ export function creerMagasinDArtefacts({
      */
     admettre: (artefact, jeton) => admettre(contexte, artefact, jeton),
     /** RÉTENTION : oublie toute empreinte hors de `garder` (rootfs courant, paquet courant et précédent). */
-    purger: (garder) => purger(contexte, garder),
+    purger: (garder, jeton) => purger(contexte, garder, jeton),
   };
 }
 
@@ -253,7 +253,11 @@ async function admettre(contexte, { sha256, octets, racine }, jeton = SANS_ANNUL
   await oublier(contexte, sha256);
   const partiel = sha256 + SUFFIXE_PARTIEL;
   const tranches = await ecrireLePartiel(contexte, partiel, octets, jeton);
-  if (tranches === null) return null;
+  if (tranches === null) {
+    // Abandonnée à l'échéance : son partiel n'a plus d'auteur qui le renommera (revue de #292).
+    await primitives.supprimer(partiel);
+    return null;
+  }
   const calculee = await racineDesTranches(tranches, hacher);
   // Une racine fausse à la fabrication ferait réécrire l'artefact à CHAQUE démarrage, en silence :
   // rien n'est rangé, et le refus est typé et journalisé (revue du 04/10/2026, constat 2).
@@ -266,15 +270,25 @@ async function admettre(contexte, { sha256, octets, racine }, jeton = SANS_ANNUL
   const liste = JSON.stringify({ sha256, octets: octets.byteLength, tranches });
   await primitives.ecrire(sha256 + SUFFIXE_TRANCHES, 0, new TextEncoder().encode(liste));
   // EN DERNIER : le nom définitif est le marqueur « complet ».
-  if (jeton.annule) return null;
+  if (jeton.annule) {
+    await primitives.supprimer(partiel);
+    return null;
+  }
   await primitives.renommer(partiel, sha256);
   return { tranches, racine: calculee };
 }
 
-async function purger(contexte, garder) {
+/**
+ * RÉTENTION : oublie toute empreinte hors de `garder`. Le jeton est testé avant chaque oubli : une
+ * rétention abandonnée à l'échéance ne purge plus rien (revue de #292). Un `.partiel` d'une empreinte
+ * NON gardée est retiré aussi, même s'il appartient à l'admission d'un autre onglet — limite écrite
+ * (ADR 0044, amendement D1g) : le coût est un téléchargement de plus, jamais un octet servi.
+ */
+async function purger(contexte, garder, jeton = SANS_ANNULATION) {
   const gardees = new Set(garder);
   const oubliees = new Set();
   for (const nom of await contexte.primitives.lister()) {
+    if (jeton.annule) break;
     const sha256 = nom.slice(0, 64);
     if (!gardees.has(sha256) && !oubliees.has(sha256)) {
       oubliees.add(sha256);

@@ -134,8 +134,80 @@ export const MUTATIONS = Object.freeze([
     garde: "borneDansLeTemps — retenir",
     fichier: OPFS,
     avant:
-      '      avantLEcheance(() => magasin.retenir(courants), delaiMs, magasinLent("rétention"));\n',
+      "      avantLEcheance(\n" +
+      "        (jeton) => magasin.retenir(courants, jeton),\n" +
+      "        delaiMs,\n" +
+      '        magasinLent("rétention"),\n' +
+      "      );\n",
     apres: "      magasin.retenir(courants);\n",
+    epreuves: [EPREUVE_OPFS],
+  },
+  // Revue de #292 (lot D1g) : le jeton testé avant chaque geste visible, et les restes d'un abandon.
+  {
+    nom: "le jeton est testé avant le renommage définitif",
+    garde: "admettre — jeton.annule avant renommer",
+    fichier: MAGASIN,
+    avant:
+      "  if (jeton.annule) {\n    await primitives.supprimer(partiel);\n    return null;\n  }\n  await primitives.renommer(partiel, sha256);\n",
+    apres: "  await primitives.renommer(partiel, sha256);\n",
+    epreuves: [EPREUVE_MAGASIN],
+  },
+  {
+    nom: "le jeton est testé avant chaque tranche écrite",
+    garde: "ecrireLePartiel — jeton.annule au début du tour",
+    fichier: MAGASIN,
+    avant:
+      "    if (jeton.annule) return null;\n    const vue = prive.subarray(0, fin - debut);\n    vue.set(",
+    apres: "    const vue = prive.subarray(0, fin - debut);\n    vue.set(",
+    epreuves: [EPREUVE_MAGASIN],
+  },
+  {
+    nom: "le jeton est testé après la dernière tranche",
+    garde: "ecrireLePartiel — jeton.annule à la sortie",
+    fichier: MAGASIN,
+    avant: "  return jeton.annule ? null : tranches;\n",
+    apres: "  return tranches;\n",
+    epreuves: [EPREUVE_MAGASIN],
+  },
+  {
+    nom: "une admission abandonnée retire son partiel",
+    garde: "admettre — le partiel de l'abandon",
+    fichier: MAGASIN,
+    avant:
+      "    // Abandonnée à l'échéance : son partiel n'a plus d'auteur qui le renommera (revue de #292).\n    await primitives.supprimer(partiel);\n",
+    apres: "",
+    epreuves: [EPREUVE_MAGASIN],
+  },
+  {
+    nom: "la purge s'arrête au jeton annulé",
+    garde: "purger — jeton.annule",
+    fichier: MAGASIN,
+    avant: "    if (jeton.annule) break;\n",
+    apres: "",
+    epreuves: [EPREUVE_MAGASIN],
+  },
+  {
+    nom: "la rétention reçoit le jeton de l'échéance",
+    garde: "borneDansLeTemps — retenir(courants, jeton)",
+    fichier: OPFS,
+    avant: "        (jeton) => magasin.retenir(courants, jeton),\n",
+    apres: "        () => magasin.retenir(courants),\n",
+    epreuves: [EPREUVE_OPFS],
+  },
+  {
+    nom: "la rétention abandonnée n'efface pas le journal",
+    garde: "retenir — jeton testé avant de supprimer le journal",
+    fichier: OPFS,
+    avant: "  if (jeton.annule) return [];\n  await primitives.supprimer(JOURNAL_DE_RETENTION);\n",
+    apres: "  await primitives.supprimer(JOURNAL_DE_RETENTION);\n",
+    epreuves: [EPREUVE_OPFS],
+  },
+  {
+    nom: "la rétention abandonnée n'écrit pas le journal",
+    garde: "retenir — jeton testé avant d'écrire le journal",
+    fichier: OPFS,
+    avant: "  if (jeton.annule) return [];\n  await primitives.ecrire(\n",
+    apres: "  await primitives.ecrire(\n",
     epreuves: [EPREUVE_OPFS],
   },
 ]);
