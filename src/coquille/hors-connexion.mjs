@@ -37,9 +37,6 @@ import {
 import { IDENTIFIANT_DU_COFFRE } from "./identites-du-coffre.mjs";
 import { CODES_REFUS_COQUILLE as C, messageDeRefus } from "./refus-de-coquille.mjs";
 
-/** « Injoignable » : un `TypeError` levé par `fetch`, et rien d'autre (décision du 04/10/2026, n° 3). */
-export const estInjoignable = (erreur) => erreur instanceof TypeError;
-
 /**
  * Dérive la clé de scellement depuis la clé du coffre, et efface la clé du coffre dès que c'est fait.
  *

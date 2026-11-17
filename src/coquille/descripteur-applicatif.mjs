@@ -22,6 +22,13 @@ import { comparerSchemas, comparerVersions, estUneVersion } from "./dephasage.mj
 export const ADRESSE_DESCRIPTEUR = "/artifacts/application.json";
 
 /**
+ * « Injoignable » : un `TypeError` levé par `fetch`, et RIEN d'autre (décision du superviseur du
+ * 04/10/2026, n° 3 ; ADR 0044 § 6). `fetch` lève un `TypeError` quand il n'a obtenu aucune réponse ;
+ * un délai (`AbortError`), une réponse HTTP — 5xx comprise — ou du HTML de portail captif n'en sont pas.
+ */
+export const estInjoignable = (erreur) => erreur instanceof TypeError;
+
+/**
  * Version de descripteur que ce module sait lire. Une autre est refusée, jamais devinée.
  *
  * **v2 depuis #236 (ADR 0041), et la v1 n'est PAS portée.** La v1 décrivait UN disque — code et
@@ -334,7 +341,7 @@ export async function lireLeDescripteur({ recuperer = globalThis.fetch, repliHor
   try {
     reponse = await recuperer(ADRESSE_DESCRIPTEUR, { cache: "no-store" });
   } catch (erreur) {
-    if (erreur instanceof TypeError && repliHorsConnexion !== undefined) {
+    if (estInjoignable(erreur) && repliHorsConnexion !== undefined) {
       return repliHorsConnexion();
     }
     return { present: false, motif: `descripteur inatteignable : ${erreur.message}` };

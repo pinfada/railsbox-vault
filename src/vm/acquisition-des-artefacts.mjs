@@ -155,6 +155,17 @@ export async function acquerirLesPetitsArtefacts({
 }
 
 /**
+ * La réserve tient-elle TOUT ce que le boot a lu — les cinq petits artefacts, le rootfs et le paquet ?
+ * Seul un oui autorise à ranger le descripteur (`hors-connexion.mjs`) : sinon il promettrait un
+ * démarrage hors connexion que la réserve ne tient pas.
+ *
+ * @param {{ complet: boolean }} petits @param {{ magasin: Record<string, string> }} disque
+ */
+export function reserveTientTout(petits, disque) {
+  return petits.complet && Object.values(disque.magasin).every(dansLaReserve);
+}
+
+/**
  * RÉTENTION de la réserve après une acquisition : le rootfs et le paquet courants (et le paquet
  * précédent), plus les cinq petits artefacts courants, que le démarrage hors connexion lira (#247, D1g).
  * Le magasin est un cache : la rétention ne fait jamais échouer un boot, et elle est bornée dans le

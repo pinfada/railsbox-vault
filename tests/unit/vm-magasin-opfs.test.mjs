@@ -18,7 +18,9 @@ import {
   ouvrirLeMagasinOpfs,
   purgerToutLeMagasin,
 } from "../../src/vm/magasin-opfs.mjs";
+import { creerMagasinDArtefacts } from "../../src/vm/magasin-d-artefacts.mjs";
 import { createStorageBudget } from "../../src/vm/storage-budget.mjs";
+import { primitivesEnMemoire } from "./magasin-en-memoire.mjs";
 
 const empreinteDe = (octets) => createHash("sha256").update(octets).digest("hex");
 
@@ -375,4 +377,45 @@ test("la rétention garde le descripteur rangé, et les artefacts nommés en plu
   assert.ok(fichiers.has(empreinteDe(petit)), "l'artefact nommé en plus survit");
   assert.ok(!fichiers.has(empreinteDe(autre)), "l'autre est oublié");
   assert.ok(fichiers.has("descripteur.scelle"), "le descripteur rangé survit");
+});
+
+// --- Le descripteur rangé, sur le vrai chemin OPFS (sans `move` : copie puis suppression) ----------
+
+test("un descripteur rangé plus court REMPLACE le précédent sur le chemin OPFS sans move", async () => {
+  const { stockage, fichiers } = fauxStockage({ synchrone: false });
+  const magasin = ouvrirLeMagasinOpfs({ stockage });
+  await magasin.ecrireLeDescripteurScelle(new Uint8Array(500).fill(1));
+  await magasin.ecrireLeDescripteurScelle(new Uint8Array(100).fill(2));
+  assert.equal(
+    fichiers.get("descripteur.scelle").byteLength,
+    100,
+    "aucun octet de l'ancien fichier",
+  );
+  assert.deepEqual(await magasin.lireLeDescripteurScelle(), new Uint8Array(100).fill(2));
+});
+
+test("un partiel de descripteur laissé par une coupure est repris à zéro", async () => {
+  const { stockage, fichiers } = fauxStockage({ synchrone: true });
+  const magasin = ouvrirLeMagasinOpfs({ stockage });
+  fichiers.set("descripteur.scelle.partiel", new Uint8Array(500).fill(9));
+  await magasin.ecrireLeDescripteurScelle(new Uint8Array(100).fill(2));
+  assert.deepEqual(await magasin.lireLeDescripteurScelle(), new Uint8Array(100).fill(2));
+});
+
+test("un rangement déjà annulé n'écrit rien, et rend false", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  assert.equal(
+    await magasin.ecrireLeDescripteurScelle(new Uint8Array(10), { annule: true }),
+    false,
+  );
+  assert.equal(primitives.ecritures.length, 0);
+});
+
+test("une lecture courte du descripteur rangé le rend vide : refusé en aval, jamais tronqué", async () => {
+  const primitives = primitivesEnMemoire();
+  const magasin = creerMagasinDArtefacts({ primitives });
+  primitives.fichiers.set("descripteur.scelle", new Uint8Array(100).fill(1));
+  primitives.lire = async () => 10;
+  assert.deepEqual(await magasin.lireLeDescripteurScelle(), new Uint8Array(0));
 });

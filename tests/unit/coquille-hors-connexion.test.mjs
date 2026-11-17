@@ -9,14 +9,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { lireLeDescripteur } from "../../src/coquille/descripteur-applicatif.mjs";
+import { estInjoignable, lireLeDescripteur } from "../../src/coquille/descripteur-applicatif.mjs";
 import { ISSUES_DU_DEPHASAGE as I, deciderLeDephasage } from "../../src/coquille/dephasage.mjs";
 import { sceller } from "../../src/coquille/descripteur-scelle.mjs";
-import {
-  estInjoignable,
-  rangerLeDescripteur,
-  repliHorsConnexion,
-} from "../../src/coquille/hors-connexion.mjs";
+import { rangerLeDescripteur, repliHorsConnexion } from "../../src/coquille/hors-connexion.mjs";
 import { IDENTIFIANT_DU_COFFRE } from "../../src/coquille/identites-du-coffre.mjs";
 import { CODES_REFUS_COQUILLE as C } from "../../src/coquille/refus-de-coquille.mjs";
 import { deriverCleDeScellementDuDescripteur } from "../../src/vm/derivation/cle-du-descripteur-scelle.mjs";
@@ -339,4 +335,45 @@ test("la date rangée est l'instant du rangement (celle que la personne lira)", 
   await rangerLeDescripteur({ ...args, complet: true });
   const lu = await lire({ recuperer: reseauCoupe, magasin });
   assert.equal(lu.horsConnexion.rangeLe, MAINTENANT);
+});
+
+test("une panne de la clé du coffre n'est PAS un refus du descripteur : elle se propage", async () => {
+  const { magasin } = await magasinAvecDescripteur();
+  const verrouille = Object.assign(new Error("coffre verrouillé"), {
+    code: "VAULT_COQUILLE_VOLUME_VERROUILLE",
+  });
+  await assert.rejects(
+    lire({
+      recuperer: reseauCoupe,
+      magasin,
+      cle: {
+        cleDeVolume: async () => {
+          throw verrouille;
+        },
+      },
+    }),
+    verrouille,
+  );
+});
+
+test("un sceau faux journalise le motif mais ne montre que le code", async () => {
+  const { magasin, primitives } = await magasinAvecDescripteur();
+  const fichier = primitives.fichiers.get("descripteur.scelle");
+  fichier[fichier.byteLength - 1] ^= 1;
+  const journal = [];
+  const lu = await lire({ recuperer: reseauCoupe, magasin, journal });
+  assert.equal(lu.code, C.horsLigneDescripteurRefuse);
+  assert.match(journal[0], /sceau/);
+  assert.doesNotMatch(lu.motif, /sceau|HMAC/i);
+});
+
+test("une erreur INATTENDUE de l'ouverture n'est pas prise pour un refus du descripteur : elle se propage", async () => {
+  // Un proxy d'octets : lire `byteLength` lève un TypeError natif, que l'ouverture ne type pas.
+  const octets = new Proxy(new Uint8Array(100), {});
+  const magasin = { lireLeDescripteurScelle: async () => octets };
+  await assert.rejects(
+    lire({ recuperer: reseauCoupe, magasin }),
+    (erreur) => erreur instanceof TypeError && /incompatible receiver/.test(erreur.message),
+    "l'erreur native, intacte",
+  );
 });

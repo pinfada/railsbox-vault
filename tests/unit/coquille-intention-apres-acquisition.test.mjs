@@ -95,6 +95,46 @@ test("avantLeBootDuPaquet : rien n'est écrit à la construction ; le crochet in
   poserLaPhase(null);
 });
 
+test("le crochet reçoit ce que la réserve tient, et le rangement du descripteur PRÉCÈDE l'intention (#247, D1g)", async () => {
+  const ordre = [];
+  const avant = createManifest({
+    runtime: { version: "0.1.0", artifact: null, minWriter: "0.1.0" },
+    app: { id: "ref", version: "1.0.0", schema: M },
+    volumeSize: SECTOR_SIZE * 8,
+    volume: { id: "0123456789abcdef0123456789abcdef", algorithm: "aes-256-gcm" },
+  });
+  const crochet = avantLeBootDuPaquet({
+    nom: "application",
+    prepare: {
+      migration: true,
+      manifeste: avant,
+      descripteur: { application: { id: "ref", version: "1.1.0", schema: N } },
+    },
+    inscrire: async () => ordre.push("intention"),
+    avantLIntention: async (acquisition) => ordre.push(["rangement", acquisition]),
+  });
+  await crochet({ reserveComplete: true });
+  assert.deepEqual(ordre, [["rangement", { reserveComplete: true }], "intention"]);
+  poserLaPhase(null);
+});
+
+test("preparerLeBoot dit au crochet si la réserve tient TOUT : vrai seulement pour `true`", async () => {
+  const recus = [];
+  for (const reserveComplete of [true, false, undefined, "oui"]) {
+    await preparerLeBoot({
+      manifest: MANIFESTE,
+      runtimeBundle: { V86: class {}, artifacts: {}, empreinteImage: "e", reserveComplete },
+      avantLeBoot: async (acquisition) => recus.push(acquisition),
+    });
+  }
+  assert.deepEqual(recus, [
+    { reserveComplete: true },
+    { reserveComplete: false },
+    { reserveComplete: false },
+    { reserveComplete: false },
+  ]);
+});
+
 test("le démarrage n'inscrit l'intention QUE par le crochet (cliquet de source)", async () => {
   const { readFile } = await import("node:fs/promises");
   const source = await readFile(

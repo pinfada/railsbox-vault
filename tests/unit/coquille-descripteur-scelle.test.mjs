@@ -9,7 +9,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { CODES_REFUS_COQUILLE as C } from "../../src/coquille/refus-de-coquille.mjs";
+import { chainePrefixee, concatener } from "../../src/vm/format-chiffre/octets.mjs";
 import {
+  ETIQUETTE_DU_SCELLEMENT,
   EN_TETE_OCTETS,
   MAGIE_DU_DESCRIPTEUR_SCELLE,
   TAILLE_MAX_DE_LA_CHARGE,
@@ -212,5 +214,112 @@ test("le refus ne porte ni la clé, ni le contenu du fichier : un code, une rais
   } catch (erreur) {
     assert.deepEqual(Object.keys(erreur.contexte), ["raison"]);
     assert.ok(!JSON.stringify(erreur).includes("railsbox-vault-reference"));
+  }
+});
+
+// --- Des fichiers VALIDEMENT scellés, mais hors règle : seule la règle les refuse -----------------
+
+/** Scelle des octets quelconques sous l'étiquette du produit : le sceau est juste, le fichier non. */
+async function scellerBrut(avantLeSceau, cle) {
+  const sceau = new Uint8Array(
+    await crypto.subtle.sign(
+      "HMAC",
+      cle,
+      concatener(chainePrefixee(ETIQUETTE_DU_SCELLEMENT), avantLeSceau),
+    ),
+  );
+  return concatener(avantLeSceau, sceau);
+}
+
+function enTete({ magie = MAGIE_DU_DESCRIPTEUR_SCELLE, date = BigInt(RANGE_LE), longueur }) {
+  const octets = new Uint8Array(EN_TETE_OCTETS);
+  octets.set(new TextEncoder().encode(magie), 0);
+  const vue = new DataView(octets.buffer);
+  vue.setBigUint64(8, date);
+  vue.setUint32(16, longueur);
+  return octets;
+}
+
+const CHARGE = () =>
+  new TextEncoder().encode(
+    JSON.stringify({ descripteur: descripteurDEpreuve(), manifesteV86: MANIFESTE_V86 }),
+  );
+
+test("une AUTRE magie, sceau juste : refusée par la version, pas seulement par le sceau", async () => {
+  const charge = CHARGE();
+  for (const magie of ["VLTDSC02", "VLTDSC00", "XXXXXXXX"]) {
+    const octets = await scellerBrut(
+      concatener(enTete({ magie, longueur: charge.byteLength }), charge),
+      await cleDe(1),
+    );
+    await assert.rejects(
+      ouvrirLeDescripteurScelle({ octets, cle: await cleDe(1) }),
+      refus("format"),
+      magie,
+    );
+  }
+});
+
+test("une charge démesurée, longueur COHÉRENTE avec le fichier : refusée avant le sceau", async () => {
+  const charge = new Uint8Array(TAILLE_MAX_DE_LA_CHARGE + 1).fill(0x20);
+  const octets = new Uint8Array(EN_TETE_OCTETS + charge.byteLength + TAILLE_DU_SCEAU);
+  octets.set(enTete({ longueur: charge.byteLength }), 0);
+  octets.set(charge, EN_TETE_OCTETS);
+  await assert.rejects(ouvrirLeDescripteurScelle({ octets, cle: await cleDe(1) }), refus("format"));
+});
+
+test("une date au-delà de l'entier sûr, sceau juste : refusée sur son contenu", async () => {
+  const charge = CHARGE();
+  const octets = await scellerBrut(
+    concatener(enTete({ date: 2n ** 60n, longueur: charge.byteLength }), charge),
+    await cleDe(1),
+  );
+  await assert.rejects(
+    ouvrirLeDescripteurScelle({ octets, cle: await cleDe(1) }),
+    refus("contenu"),
+  );
+});
+
+test("une charge qui n'est pas de l'UTF-8 ou pas du JSON, sceau juste : refusée sur son contenu", async () => {
+  for (const charge of [
+    new Uint8Array([0xff, 0xfe, 0xfd]),
+    new TextEncoder().encode("{pas du json"),
+  ]) {
+    const octets = await scellerBrut(
+      concatener(enTete({ longueur: charge.byteLength }), charge),
+      await cleDe(1),
+    );
+    await assert.rejects(
+      ouvrirLeDescripteurScelle({ octets, cle: await cleDe(1) }),
+      refus("contenu"),
+    );
+  }
+});
+
+test("une charge sans descripteur ou sans manifeste v86, sceau juste : refusée sur son contenu", async () => {
+  for (const objet of [
+    { manifesteV86: MANIFESTE_V86 },
+    { descripteur: descripteurDEpreuve() },
+    null,
+    [],
+  ]) {
+    const charge = new TextEncoder().encode(JSON.stringify(objet));
+    const octets = await scellerBrut(
+      concatener(enTete({ longueur: charge.byteLength }), charge),
+      await cleDe(1),
+    );
+    await assert.rejects(
+      ouvrirLeDescripteurScelle({ octets, cle: await cleDe(1) }),
+      refus("contenu"),
+    );
+  }
+});
+
+test("un fichier qui n'est pas une vue d'octets est refusé par sa forme", async () => {
+  for (const octets of [null, undefined, "VLTDSC01", [1, 2, 3]]) {
+    await assert.rejects(
+      ouvrirLeDescripteurScelle({ octets, cle: await cleDe(1) }),
+      refus("format"),
+    );
   }
 });

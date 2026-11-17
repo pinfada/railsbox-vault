@@ -34,18 +34,26 @@ export function refusDeDemarrage(code, prepare) {
  * coffre sans volume : l'installation demande la graine, que le magasin ne garde pas.
  *
  * @param {{ cleDeVolume: () => Promise<Uint8Array>, nom: string, miseAJour: boolean,
- *           delaiMs: number }} entrees
+ *           delaiMs: number, lire?: Function, lireManifeste?: Function }} entrees
+ *   `lire` et `lireManifeste` sont injectés par les épreuves ; le produit n'en passe aucun.
  */
-export async function lireEtPreparer({ cleDeVolume, nom, miseAJour, delaiMs }) {
+export async function lireEtPreparer({
+  cleDeVolume,
+  nom,
+  miseAJour,
+  delaiMs,
+  lire = lireLeDescripteurDuDemarrage,
+  lireManifeste,
+}) {
   // L'origine d'abord ; le descripteur rangé et scellé seulement si elle est INJOIGNABLE (#247, D1g).
-  const lu = await lireLeDescripteurDuDemarrage({ cleDeVolume });
+  const lu = await lire({ cleDeVolume });
   if (lu.horsConnexion === true && lu.present === false) {
     return { rendu: refusDeDemarrage(lu.code, {}) };
   }
   // Le DÉPHASAGE est décidé ICI, avant toute installation et tout boot (#236 T2, ADR 0042) : le
   // manifeste du coffre est lu, confronté au descripteur, et un refus rend la main sans qu'un octet
   // du volume ait été écrit.
-  const prepare = await preparerLeDemarrage({ lu, nom, miseAJour, delaiMs });
+  const prepare = await preparerLeDemarrage({ lu, nom, miseAJour, delaiMs, lireManifeste });
   if (prepare.sansApplication) return { rendu: { demarree: false, motif: prepare.motif } };
   if (prepare.refus !== undefined) return { rendu: refusDeDemarrage(prepare.refus, prepare) };
   const refus = refusDuRepli({ lu, manifeste: prepare.manifeste });
@@ -103,11 +111,17 @@ export async function constaterPourLaPage({ nom, cleDeVolume, recuperer, magasin
  * @param {{ horsConnexion: object | null, cleDeVolume: () => Promise<Uint8Array>,
  *           descripteur: object, runtime: { manifesteV86: object } }} entrees
  */
-export function rangementAvantLIntention({ horsConnexion, cleDeVolume, descripteur, runtime }) {
+export function rangementAvantLIntention({
+  horsConnexion,
+  cleDeVolume,
+  descripteur,
+  runtime,
+  magasin = ouvrirLeMagasinOpfs(),
+}) {
   return async ({ reserveComplete }) => {
     if (horsConnexion !== null) return;
     await rangerLeDescripteur({
-      magasin: ouvrirLeMagasinOpfs(),
+      magasin,
       cleDeVolume,
       descripteur,
       manifesteV86: runtime.manifesteV86,
