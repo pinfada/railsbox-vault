@@ -68,7 +68,7 @@ test("B2-7 : un numéro de feuille qui n'en est pas un se dit au champ, avant le
   const message = page.locator(`#${decrit.split(" ")[0]}`);
   await expect(message).toBeVisible();
   await expect(message).toContainText("numéro de feuille");
-  await expect(message).toContainText("nombre");
+  await expect(message).toContainText("chiffres");
   await expect(message).not.toContainText("version");
   // Corrigé, le message s'efface et le champ n'est plus marqué.
   await ancre.fill("2");

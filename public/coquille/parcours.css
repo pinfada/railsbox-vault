@@ -96,18 +96,23 @@ p {
 }
 #parcours-rang {
   margin: 0 0 0 auto;
-  font-size: 11px;
+  font-size: 13px;
   text-transform: uppercase;
-  letter-spacing: 1.5px;
+  letter-spacing: 1px;
   font-weight: 700;
   color: var(--secondaire);
 }
+/* La HIÉRARCHIE (#266 M3) : ce qu'on FAIT se lit avant ce qu'on pourrait savoir. L'action est la plus
+   grande ligne du corps de page, l'explication se lit à la taille du texte courant, et rien — le
+   rang, la durée, la ligne suivante — ne descend sous 13 px. */
 #parcours-ce-qui-va-se-passer {
-  font-size: 14px;
+  font-size: 16px;
   color: var(--secondaire);
 }
 #parcours-attendu {
-  font-size: 14px;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.5;
   margin-bottom: 28px;
 }
 #parcours-attente-annoncee,
@@ -178,9 +183,7 @@ p:has(> [hidden]:only-child) {
 }
 label {
   display: block;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  font-size: 14px;
   font-weight: 700;
   margin-bottom: 8px;
 }
@@ -322,7 +325,7 @@ input[aria-invalid="true"] {
    faisaient descendre sous la main qui le visait. */
 #parcours-code-lu,
 #parcours-code-lu:empty {
-  min-height: 3em;
+  min-height: 3.2em;
   margin: 0 0 16px;
 }
 /* Un code faux se lit comme une faute de champ (#266 B2-2) : même bord que le refus. */
@@ -342,8 +345,30 @@ input[aria-invalid="true"] {
 }
 #phrase-conseil,
 #phrase-conseil:empty {
-  min-height: 4.5em;
+  min-height: 3.2em;
+  margin: 0 0 8px;
+}
+#phrase-aide {
   margin: 0 0 16px;
+  font-size: 14px;
+  color: var(--secondaire);
+}
+/* Le numéro de feuille qui n'en est pas un : le message occupe sa place quand il paraît (B2-7). */
+#parcours-ancre-lue {
+  margin: 0 0 16px;
+}
+#parcours-ancre-lue:not(:empty) {
+  border-left: 4px solid var(--danger);
+  padding-left: 12px;
+}
+/* Sur un écran étroit, un constat de deux lignes en tient trois : la place réservée suit (B2-4). */
+@media (max-width: 400px) {
+  #parcours-code-lu,
+  #parcours-code-lu:empty,
+  #phrase-conseil,
+  #phrase-conseil:empty {
+    min-height: 4.8em;
+  }
 }
 progress {
   display: block;
@@ -369,7 +394,7 @@ progress {
 #parcours-suivante {
   border-top: 1px solid var(--bord);
   padding-top: 20px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--secondaire);
   margin-top: 28px;
 }
@@ -404,9 +429,6 @@ pre {
 }
 #ou-suis-je-liste [aria-current] {
   font-weight: 700;
-}
-main:has([data-bloc="espace-de-travail"]:not([hidden])) {
-  max-width: 1024px;
 }
 #cycle-description {
   font-size: 13px;

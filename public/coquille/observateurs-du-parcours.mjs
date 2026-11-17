@@ -232,7 +232,7 @@ export function brancherLesObservateurs({ noeud, etat, dire, lireJson, pas, alle
       const premier = etat.progression?.visiteTerminee !== true;
       dire(
         "parcours-attente",
-        chemin ?? progressionDuDemarrage({ ecouleMs, signesDeVie, premier }),
+        chemin ?? progressionDuDemarrage({ ecouleMs, signesDeVie, premier, phase }),
       );
     };
     noeud("parcours-progression").hidden = false;

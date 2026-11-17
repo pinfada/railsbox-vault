@@ -29,7 +29,7 @@ Dans « Où suis-je ? », chaque étape porte l'une de ces mentions :
 - vous êtes ici
 - à venir
 - passée sans rien révoquer
-- non jouée sur cet appareil : le coffre y a été restauré
+- non jouée sur cet appareil : le coffre y est restauré
 
 ### Écran : Préparation
 
@@ -89,8 +89,8 @@ Messages qui peuvent s'afficher sur cet écran :
 >
 > Durée : Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas
 > deviner votre phrase en essayant. Comptez environ 2 secondes (dans Firefox : « environ 4 secondes
-> ») sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute et demie.
-> L'onglet peut sembler figé : ne le fermez pas.
+> ») sur ce navigateur ; plus sur un appareil lent ou occupé. L'onglet peut sembler figé : ne le
+> fermez pas.
 
 Boutons et champs : « Votre phrase » (champ), « Créer mon coffre » ou « Ouvrir mon coffre », « Créer
 mon coffre avec une passkey » ou « Ouvrir mon coffre avec ma passkey ».
@@ -209,8 +209,9 @@ plus cette feuille — afficher un nouveau code ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
-- N symbole(s) sur 28.
+- N symbole sur 28.
 - Code complet : aucune faute de recopie détectée.
+- Il y a une faute de recopie : relisez votre feuille, symbole par symbole.
 - Ouverture en cours… Ne fermez pas l'onglet.
 - Votre feuille est juste : son code a ouvert votre coffre. Gardez-la bien, loin de cet appareil.
 - Votre coffre est ouvert.
@@ -224,12 +225,14 @@ Messages qui peuvent s'afficher sur cet écran :
 > révoquée.
 >
 > Ce que vous avez à faire : Si vous avez votre feuille : cliquez sur « Verrouiller mon coffre »,
-> puis ouvrez le coffre avec le code que vous y avez recopié. Si vous n'avez plus cette feuille,
-> cliquez sur « Je n'ai plus cette feuille — afficher un nouveau code » : un nouveau code sera
-> affiché, une seule fois, et vous le recopierez sur une feuille neuve. L'ancien code continue
-> d'ouvrir ce coffre tant que personne ne le retire. Si quelqu'un d'autre a vu votre feuille,
-> cliquez aussi sur « Je n'ai plus cette feuille », puis, avant d'afficher un nouveau code, sur «
-> Révoquer tous les autres moyens d'ouvrir ce coffre » : les anciens codes seront retirés.
+> puis ouvrez le coffre avec le code que vous y avez recopié.
+>
+> Replié sous « Je n'ai plus ma feuille » : Si vous n'avez plus cette feuille, cliquez sur « Je n'ai
+> plus cette feuille — afficher un nouveau code » : un nouveau code sera affiché, une seule fois, et
+> vous le recopierez sur une feuille neuve. L'ancien code continue d'ouvrir ce coffre tant que
+> personne ne le retire. Si quelqu'un d'autre a vu votre feuille, cliquez aussi sur « Je n'ai plus
+> cette feuille », puis, avant d'afficher un nouveau code, sur « Révoquer tous les autres moyens
+> d'ouvrir ce coffre » : les anciens codes seront retirés.
 >
 > Durée : Le verrouillage prend quelques secondes.
 
@@ -294,7 +297,8 @@ Messages qui peuvent s'afficher sur cet écran :
   Démarrer l'application ».
 - Votre application démarre sur cet appareil. Rien n'est envoyé sur Internet.
 - Démarrage en cours depuis NaN minutes, sur environ deux minutes. Le démarrage avance : le coffre a
-  répondu N fois.
+  répondu N fois. (la phrase dit en plus l'étape en cours : « Étape en cours : préparation de
+  l'application. » ou « Étape en cours : démarrage de l'application. »)
 - Le démarrage avance : le coffre a répondu N fois.
 - Le démarrage commence : le coffre n'a pas encore répondu.
 - L'application est démarrée.
@@ -329,6 +333,7 @@ Messages qui peuvent s'afficher sur cet écran :
 - Démarrage de votre version actuelle depuis N seconde(s) ; comptez jusqu'à environ trois minutes.
   Étape en cours : démarrage de l'application.
 - Étape en cours : téléchargement de l'application.
+- Étape en cours : préparation de l'application.
 - Étape en cours : démarrage de l'application.
 - Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.
 - Version de l'application : V.
@@ -385,7 +390,8 @@ Messages qui peuvent s'afficher sur cet écran :
 - L'application n'est pas encore démarrée : elle s'affichera ici quand vous aurez cliqué sur «
   Démarrer l'application ».
 - Démarrage en cours depuis NaN minutes, sur environ deux minutes. Le démarrage avance : le coffre a
-  répondu N fois.
+  répondu N fois. (la phrase dit en plus l'étape en cours : « Étape en cours : préparation de
+  l'application. » ou « Étape en cours : démarrage de l'application. »)
 - L'application est démarrée.
 - Une nouvelle version de l'application est disponible : B. Votre coffre utilise la version A. La
   mise à jour transforme vos données pour la nouvelle version, au démarrage, dans votre navigateur :
@@ -416,6 +422,7 @@ Messages qui peuvent s'afficher sur cet écran :
 - Démarrage de votre version actuelle depuis N seconde(s) ; comptez jusqu'à environ trois minutes.
   Étape en cours : démarrage de l'application.
 - Étape en cours : téléchargement de l'application.
+- Étape en cours : préparation de l'application.
 - Étape en cours : démarrage de l'application.
 - Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.
 - Version de l'application : V.
@@ -504,9 +511,9 @@ Messages qui peuvent s'afficher sur cet écran :
 > Ce que vous avez à faire : Tapez votre phrase, puis cliquez sur « Ouvrir mon coffre ».
 >
 > Durée : Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas
-> deviner votre phrase en essayant. Comptez environ 2 secondes (dans Firefox : « environ 4 secondes
-> ») sur ce navigateur ; sur un appareil très occupé, cela peut aller jusqu'à une minute et demie.
-> L'onglet peut sembler figé : ne le fermez pas.
+> deviner votre phrase en essayant. Comptez de 2 à 20 secondes (dans Firefox : « de 4 à 20 secondes
+> ») sur ce navigateur ; plus sur un appareil lent ou occupé. L'onglet peut sembler figé : ne le
+> fermez pas.
 
 Boutons et champs : « Numéro de feuille noté sur votre feuille (facultatif) » (champ), « Votre
 phrase » (champ), « Créer mon coffre » ou « Ouvrir mon coffre », « Créer mon coffre avec une passkey
@@ -658,8 +665,9 @@ récupération » (champ), « Ouvrir mon coffre avec le code ».
 
 Messages qui peuvent s'afficher sur cet écran :
 
-- N symbole(s) sur 28.
+- N symbole sur 28.
 - Code complet : aucune faute de recopie détectée.
+- Il y a une faute de recopie : relisez votre feuille, symbole par symbole.
 - Ouverture en cours… Ne fermez pas l'onglet.
 - Votre coffre est ouvert.
 

@@ -305,9 +305,11 @@ test("#239 : un code rendu et jamais éprouvé fait d'abord ÉPROUVER la feuille
   assert.match(ECRANS["code-verifier"].casRares, /afficher un nouveau code/);
   assert.doesNotMatch(ECRANS["code-verifier"].attendu, /effacez|n'avez plus/);
   assert.match(ECRANS["code-verifier"].ceQuiVaSePasser, /qu'une fois/);
-  assert.match(ECRANS["code-a-verifier"].attendu, /afficher un nouveau code/);
-  assert.match(ECRANS["code-a-verifier"].attendu, /Révoquer tous les autres moyens/);
-  assert.doesNotMatch(ECRANS["code-a-verifier"].attendu, /effacez les données de ce site/);
+  // #266 M3 : l'écran voisin replie lui aussi ses cas rares ; l'action seule reste en clair.
+  assert.match(ECRANS["code-a-verifier"].casRares, /afficher un nouveau code/);
+  assert.match(ECRANS["code-a-verifier"].casRares, /Révoquer tous les autres moyens/);
+  assert.doesNotMatch(ECRANS["code-a-verifier"].casRares, /effacez les données de ce site/);
+  assert.doesNotMatch(ECRANS["code-a-verifier"].attendu, /n'avez plus|nouveau code/);
 });
 
 test("#239, VULN-04 : l'indice de parcours.json ne choisit que le premier formulaire, jamais un écran de travail", () => {
@@ -709,7 +711,7 @@ test("CONSTAT 3 : aucun texte écrit par le parcours ne porte un code en clair",
   }
   assert.equal(annonceDeLaSaisie(etatDeLaSaisie("")), "");
   assert.equal(annonceDeLaSaisie(etatDeLaSaisie(code)), MESSAGES.saisieComplete);
-  assert.equal(annonceDeLaSaisie(etatDeLaSaisie(code.slice(0, 9))), "8 symbole(s) sur 28.");
+  assert.equal(annonceDeLaSaisie(etatDeLaSaisie(code.slice(0, 9))), "8 symboles sur 28.");
 });
 
 test("CONSTAT 8 : un geste est en cours tant qu'une ligne publiée le dit, et ses boutons se ferment", () => {

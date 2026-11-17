@@ -676,7 +676,7 @@ export const CLASSEMENT_DES_CONDUITES = Object.freeze(
  *  l'épreuve relit dans les modules qui l'écrivent. */
 export const REFUS_SANS_CODE = Object.freeze({
   versionMalTapee: Object.freeze({
-    source: "La version notée sur la feuille est un nombre entier, à partir de 1.",
+    source: "Le numéro de feuille se tape en chiffres, à partir de 1",
     classe: K.recopier,
     conduite:
       "Le numéro de feuille se tape en chiffres, à partir de 1, tel qu'il est noté sur votre " +

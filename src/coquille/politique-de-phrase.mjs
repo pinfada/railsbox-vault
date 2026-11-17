@@ -2,6 +2,17 @@
 export const LONGUEUR_MINIMALE_PHRASE = 12;
 export const CODE_PHRASE_FAIBLE = "VAULT_PHRASE_TROP_FAIBLE";
 
+/** Le conseil qui accompagne tout constat : il ne change pas, la page peut l'écrire une fois (#266 B2-4). */
+export const CONSEIL_DE_CHOIX_DE_PHRASE =
+  "Choisissez plusieurs mots sans lien entre eux, ou un secret généré par votre gestionnaire de mots de passe.";
+
+/** Le constat varie avec la saisie ; le message entier reste celui que les refus et la relecture portent. */
+const verdict = (admise, constat) => ({
+  admise,
+  constat,
+  message: `${constat} ${CONSEIL_DE_CHOIX_DE_PHRASE}`,
+});
+
 /** Indication locale et prudente, sans prétendre mesurer l'entropie d'une phrase humaine. */
 export function evaluerPhrase(phrase) {
   const texte = String(phrase ?? "");
@@ -10,13 +21,11 @@ export function evaluerPhrase(phrase) {
   // `minLength` au même seuil numérique, en UTF-16 — jamais plus restrictif que ce compte (voir son
   // commentaire), et jamais l'inverse : cette fonction seule gouverne la création.
   const longueur = [...texte.trim()].length;
-  const conseil =
-    "Choisissez plusieurs mots sans lien entre eux, ou un secret généré par votre gestionnaire de mots de passe.";
   if (longueur < LONGUEUR_MINIMALE_PHRASE) {
-    return {
-      admise: false,
-      message: `Au moins ${LONGUEUR_MINIMALE_PHRASE} caractères hors espaces de bord sont nécessaires. ${conseil}`,
-    };
+    return verdict(
+      false,
+      `Au moins ${LONGUEUR_MINIMALE_PHRASE} caractères hors espaces de bord sont nécessaires.`,
+    );
   }
   // Répétitions et suites évidentes : ce filtre ne remplace pas un dictionnaire d'attaque.
   const simple = texte.trim().toLowerCase();
@@ -24,15 +33,12 @@ export function evaluerPhrase(phrase) {
     /^(.{1,4})\1+$/u.test(simple) ||
     /^(?:0123456789|1234567890|abcdefghijklmnopqrstuvwxyz|qwertyuiop|azertyuiop)+$/u.test(simple)
   ) {
-    return {
-      admise: false,
-      message: `Phrase trop prévisible : évitez les répétitions et les suites. ${conseil}`,
-    };
+    return verdict(false, "Phrase trop prévisible : évitez les répétitions et les suites.");
   }
-  return {
-    admise: true,
-    message: `Longueur suffisante (${longueur} caractères). La longueur seule ne garantit pas la robustesse. ${conseil}`,
-  };
+  return verdict(
+    true,
+    `Longueur suffisante (${longueur} caractères). La longueur seule ne garantit pas la robustesse.`,
+  );
 }
 
 export function exigerPhraseDeCreation(phrase) {

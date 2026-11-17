@@ -10,18 +10,25 @@
 
 import { MOYEN_NOMME, lesAutresRetires } from "./moyens-nommes.mjs";
 import { enMegaoctets } from "./taille-en-clair.mjs";
+import {
+  ATTENTE_DE_LA_MISE_A_JOUR,
+  ATTENTE_DE_LA_REPRISE,
+  DUREE_DE_LA_MISE_A_JOUR,
+  DUREE_DE_PLUS_TARD,
+  ESTIMATION_DU_DEMARRAGE_EN_SECONDES,
+  ESTIMATION_D_UN_DEMARRAGE_SUIVANT_EN_SECONDES,
+  dureeEnClair,
+} from "./durees-annoncees.mjs";
 
-/** L'estimation annoncée d'un premier démarrage : « environ deux minutes ». */
-const ESTIMATION_DU_DEMARRAGE_EN_SECONDES = 120;
-
-/** L'estimation d'un démarrage SUIVANT : « moins de trente secondes » (#266 B2-6). */
-const ESTIMATION_D_UN_DEMARRAGE_SUIVANT_EN_SECONDES = 30;
-
-/** Une durée en clair, sans « (s) » : « 1 seconde », « 45 secondes », « 5 minutes ». */
-export function dureeEnClair(secondes) {
-  if (secondes < 120) return `${secondes} seconde${secondes > 1 ? "s" : ""}`;
-  return `${Math.floor(secondes / 60)} minutes`;
-}
+// Les durées annoncées vivent dans `durees-annoncees.mjs` ; ce module les réexporte, comme avant.
+export {
+  ATTENTE_DE_LA_MISE_A_JOUR,
+  ATTENTE_DE_LA_REPRISE,
+  DUREE_DE_LA_MISE_A_JOUR,
+  DUREE_DE_PLUS_TARD,
+  dureeEnClair,
+  texteDAttenteDeLaPhrase,
+} from "./durees-annoncees.mjs";
 
 /** Les neuf étapes de la Definition of Ready de #193, dans l'ordre. */
 export const ETAPES = Object.freeze([
@@ -95,29 +102,6 @@ const DEMARRAGE_SUIVANT =
   "progression s'affiche à sa place.";
 
 const QUELQUES_SECONDES_DE_VERROUILLAGE = "Le verrouillage prend quelques secondes.";
-
-/**
- * Les DURÉES de la mise à jour, une par chemin (recette QA de la PR #249, Q2), fondées sur les mesures
- * publiées dans `docs/quality-attributes.md` : la mise à jour 1.0.0 → 1.1.0 a pris 165 à 216 s,
- * « Plus tard » 160 à 163 s. Le second est long parce que le disque de l'application est retéléchargé
- * en entier (#247) et que l'application démarre à froid — sauf si un instantané de la version
- * actuelle existe (mesuré 14 s par la contre-recette) : la page ne le sait pas sans coût, d'où la
- * borne HAUTE annoncée (contre-recette QA de la PR #249, défaut 4).
- */
-export const DUREE_DE_LA_MISE_A_JOUR = "environ trois à quatre minutes";
-export const DUREE_DE_PLUS_TARD = "jusqu'à environ trois minutes";
-
-/** Ce que l'écran annonce quand une mise à jour est proposée ou à reprendre (« Durée : … »). */
-export const ATTENTE_DE_LA_MISE_A_JOUR =
-  `La mise à jour prend ${DUREE_DE_LA_MISE_A_JOUR} : l'application est téléchargée, démarrée, puis ` +
-  "vos données sont mises à jour ; la progression dit l'étape en cours. Garder votre version " +
-  `actuelle avec « Plus tard » peut prendre ${DUREE_DE_PLUS_TARD} : l'application (environ 200 ` +
-  "Mo) est téléchargée de nouveau, puis elle redémarre entièrement.";
-
-/** Sous la REPRISE seule, « Plus tard » n'existe pas : la « Durée » n'en parle pas (défaut 6). */
-export const ATTENTE_DE_LA_REPRISE =
-  `La reprise de la mise à jour prend ${DUREE_DE_LA_MISE_A_JOUR} : l'application est téléchargée, ` +
-  "démarrée, puis la mise à jour de vos données se termine ; la progression dit l'étape en cours.";
 
 /**
  * La limite de Firefox, dite AVANT toute attente (revue de la PR #213, constat 9 ; ADR 0038) : sous
@@ -285,8 +269,9 @@ export const ECRANS = Object.freeze({
     ceQuiVaSePasser: UN_CODE_A_DEJA_ETE_RENDU,
     attendu:
       "Si vous avez votre feuille : cliquez sur « Verrouiller mon coffre », puis ouvrez le coffre " +
-      "avec le code que vous y avez recopié. " +
-      SI_LA_FEUILLE_EST_PERDUE,
+      "avec le code que vous y avez recopié.",
+    // Les cas rares se replient sous « Je n'ai plus ma feuille », comme à l'écran voisin (#266 M3).
+    casRares: SI_LA_FEUILLE_EST_PERDUE,
     attente: QUELQUES_SECONDES_DE_VERROUILLAGE,
     blocs: ["nouveau-code", "verrouiller"],
   }),
@@ -544,7 +529,9 @@ export const MESSAGES = Object.freeze({
     `exactement. Ce code ne sera plus jamais affiché.`,
   feuilleEprouvee:
     "Votre feuille est juste : son code a ouvert votre coffre. Gardez-la bien, loin de cet appareil.",
-  saisieIncomplete: (lus, total) => `${lus} symbole(s) sur ${total}.`,
+  saisieIncomplete: (lus, total) => `${lus} symbole${lus > 1 ? "s" : ""} sur ${total}.`,
+  // Le code complet mais faux : une ligne, que la place réservée sous le champ peut porter (B2-4).
+  saisieFausse: "Il y a une faute de recopie : relisez votre feuille, symbole par symbole.",
   saisieComplete: "Code complet : aucune faute de recopie détectée.",
   coffreOuvert: "Votre coffre est ouvert.",
   ouvertureEnCours: "Ouverture en cours… Ne fermez pas l'onglet.",
@@ -660,6 +647,9 @@ export const MESSAGES = Object.freeze({
     `Démarrage de votre version actuelle depuis ${secondes} seconde(s) ; comptez ` +
     `${DUREE_DE_PLUS_TARD}. ${phase}`,
   phaseTelechargement: "Étape en cours : téléchargement de l'application.",
+  // Un démarrage ORDINAIRE ne dit pas « téléchargement » : le magasin d'artefacts peut servir l'image
+  // déjà vérifiée (ADR 0044), et la phase du coffre n'en dit pas plus (#242 point 4).
+  phasePreparation: "Étape en cours : préparation de l'application.",
   phaseDemarrage: "Étape en cours : démarrage de l'application.",
   phaseDonnees: "Étape en cours : mise à jour de vos données — surtout, ne fermez pas l'onglet.",
   avertissementDeRevocation: (moyen, moyens = null) =>
@@ -687,14 +677,5 @@ export const STATUTS = Object.freeze({
   "a-venir": "à venir",
   // L'étape 9 facultative, passée par « Terminer sans révoquer » : elle n'a pas été jouée (#246).
   "sans-revoquer": "passée sans rien révoquer",
-  "non-jouee": "non jouée sur cet appareil : le coffre y a été restauré",
+  "non-jouee": "non jouée sur cet appareil : le coffre y est restauré",
 });
-
-/** Le texte de l'attente d'une phrase, pour une durée déjà dite (« environ 2 secondes »). */
-export function texteDAttenteDeLaPhrase(duree) {
-  return (
-    `Après votre clic, le coffre fait un calcul volontairement lent, pour qu'on ne puisse pas deviner ` +
-    `votre phrase en essayant. Comptez ${duree} sur ce navigateur ; sur un appareil très occupé, ` +
-    `cela peut aller jusqu'à une minute et demie. L'onglet peut sembler figé : ne le fermez pas.`
-  );
-}
