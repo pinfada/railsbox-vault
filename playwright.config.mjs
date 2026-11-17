@@ -40,6 +40,13 @@ const FRONTIERE_CSP = [
 const FRONTIERE_HIERARCHIE = ["**/hierarchie-de-cles-frontiere.spec.mjs"];
 
 /**
+ * Le DESCRIPTEUR SCELLÉ du démarrage hors connexion (#247, D1g ; ADR 0045) : un HMAC non extractible
+ * dérivé par HKDF, et un fichier rangé dans le vrai OPFS. Un garanti qui repose sur la plate-forme se
+ * mesure sur les trois moteurs ; aucun artefact v86, quelques secondes.
+ */
+const FRONTIERE_DESCRIPTEUR = ["**/descripteur-scelle.spec.mjs"];
+
+/**
  * Frontière entre deux applications partageant l'origine applicative (#46, ADR 0018). Exécutée sur
  * les trois moteurs pour le même motif que la frontière de CSP, et pour un motif de plus : le
  * partitionnement du stockage n'est pas identique d'un moteur à l'autre — l'OPFS et
@@ -283,6 +290,7 @@ export default defineConfig({
       testIgnore: [
         ...FRONTIERE_CSP,
         ...FRONTIERE_HIERARCHIE,
+        ...FRONTIERE_DESCRIPTEUR,
         ...FRONTIERE_APPLICATIONS,
         ...FRONTIERE_ENVELOPPE,
         ...FRONTIERE_ENGAGEMENT,
@@ -308,6 +316,11 @@ export default defineConfig({
       name: `frontiere-hierarchie-${nom}`,
       use: { browserName: nom },
       testMatch: FRONTIERE_HIERARCHIE,
+    })),
+    ...MOTEURS_CONNUS.map((nom) => ({
+      name: `frontiere-descripteur-${nom}`,
+      use: { browserName: nom },
+      testMatch: FRONTIERE_DESCRIPTEUR,
     })),
     ...MOTEURS_CONNUS.map((nom) => ({
       name: `frontiere-applications-${nom}`,
