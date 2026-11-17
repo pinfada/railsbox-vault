@@ -26,12 +26,12 @@ gem "activesupport", "8.1.4.1"
 
 gem "sqlite3", "= 2.10.2"
 
-# Puma 8.0.2 et non 6.6.1 : les versions 5.5.0 à 7.2.0 et 8.0.0 à 8.0.1 sont
+# Puma 8.0.3 et non 6.6.1 : les versions 5.5.0 à 7.2.0 et 8.0.0 à 8.0.2 sont
 # exposées à CVE-2026-47736 et CVE-2026-47737 (analyseur PROXY protocol v1).
 # La fixture n'active pas `proxy_protocol` — elle écoute sur 127.0.0.1 dans le
 # guest — donc elle n'est pas exploitable, mais une dépendance vulnérable ne se
 # tait pas : elle se corrige. Voir `SECURITY.md`, section « Analyse de secrets ».
-gem "puma", "= 8.0.2"
+gem "puma", "= 8.0.3"
 
 # Bootsnap ne change ni le comportement ni le code : il met en cache ce que le
 # démarrage recalcule à chaque fois — la résolution du `$LOAD_PATH` et la
