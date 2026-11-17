@@ -30,6 +30,7 @@ import { ecrireManifeste, DOSSIER_ARTEFACTS, RACINE_DEPOT } from "./manifest.mjs
 import { fabriquerLePaquet } from "../paquet/fabriquer-paquet.mjs";
 import { compresserDeterministe, nomServi } from "../paquet/compression.mjs";
 import { verifierEpinglage } from "./verify-pinning.mjs";
+import { obtenirConstructeur } from "../docker-constructeur.mjs";
 
 const dossierOutils = dirname(fileURLToPath(import.meta.url));
 const sources = JSON.parse(readFileSync(join(dossierOutils, "sources.json"), "utf8"));
@@ -73,7 +74,12 @@ function analyserArguments(arguments_) {
  */
 function executer(etape, arguments_) {
   const debut = Date.now();
-  const resultat = spawnSync("docker", arguments_, { stdio: "inherit", cwd: RACINE_DEPOT });
+  // Tout `docker build` passe par le constructeur choisi (#295) : le constructeur intégré de
+  // Docker ≥ 29.4.2 prive de sockets les processus 32 bits des étapes `RUN`.
+  const [commande, ...suite] = arguments_;
+  const argumentsEffectifs =
+    commande === "build" ? obtenirConstructeur().argumentsDeBuild(suite) : arguments_;
+  const resultat = spawnSync("docker", argumentsEffectifs, { stdio: "inherit", cwd: RACINE_DEPOT });
   if (resultat.error) {
     echouer(`Docker est indisponible (${etape}) : ${resultat.error.message}`, 127);
   }

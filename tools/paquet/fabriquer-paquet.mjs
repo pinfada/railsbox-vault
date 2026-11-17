@@ -42,6 +42,7 @@ import { dirname, join, resolve } from "node:path";
 
 import { construirePaquet, nomDImage, validerPaquet } from "./contrat-du-paquet.mjs";
 import { compresserDeterministe, nomServi } from "./compression.mjs";
+import { obtenirConstructeur } from "../docker-constructeur.mjs";
 import { racineDeFichier } from "./racine-des-tranches.mjs";
 import {
   identiteDeLApplication,
@@ -231,7 +232,14 @@ export function examinerLaSource(source, options) {
 
 /** @param {string} etape @param {string[]} arguments_ */
 function docker(etape, arguments_) {
-  const resultat = spawnSync("docker", arguments_, { stdio: "inherit", cwd: RACINE_DEPOT });
+  // Constructeur choisi une fois par processus : voir tools/docker-constructeur.mjs (#295).
+  const [commande, ...suite] = arguments_;
+  const argumentsEffectifs =
+    commande === "build" ? obtenirConstructeur().argumentsDeBuild(suite) : arguments_;
+  const resultat = spawnSync("docker", argumentsEffectifs, {
+    stdio: "inherit",
+    cwd: RACINE_DEPOT,
+  });
   if (resultat.error)
     throw new Error(`Docker est indisponible (${etape}) : ${resultat.error.message}`);
   if (resultat.status !== 0)
